@@ -2890,7 +2890,36 @@ export interface DocumentExtractedMetadata {
   applicabilityAssessment: 'NOT_EVALUATED';
 }
 
+export interface DocumentMetadataReadRequest {
+  /** Mutually exclusive with requestId; omitted means the latest revision. */
+  revision?: number;
+  /** Read-only resolution of a re-extraction whose response was interrupted. */
+  requestId?: string;
+}
+
+export interface DocumentMetadataReadResponse {
+  documentVersionId: string;
+  metadataId: string | null;
+  metadataRevision: number | null;
+  requestId: string | null;
+  extractedMetadata: DocumentExtractedMetadata | null;
+}
+
+export interface DocumentMetadataReextractRequest {
+  expectedMetadataRevision: number;
+  requestId: string;
+}
+
+export interface DocumentMetadataReextractResponse extends DocumentMetadataReadResponse {
+  metadataId: string;
+  metadataRevision: number;
+  requestId: string;
+  extractedMetadata: DocumentExtractedMetadata;
+  disposition: 'APPENDED' | 'IDEMPOTENT_REPLAY';
+}
+
 export interface CanonicalLibraryDocumentVersionSummary {
+  metadataRevision?: number | null;
   extractedMetadata?: DocumentExtractedMetadata | null;
   documentVersionId: string;
   businessRevision: string;

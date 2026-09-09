@@ -75,6 +75,19 @@ describe('actual PDF descriptive metadata', () => {
     });
   });
 
+  it('excludes only explicit trademark declarations and keeps the same model when real text mentions it', () => {
+    const metadata = extract([
+      [
+        'Copyright 2020 Boeing. Boeing, 707, 737 and 787 are all trademarks owned by The Boeing Company.',
+        'The following applicability paragraph describes the subject of the bulletin, independently of the preceding legal notice.',
+        '737-800 airplanes are discussed as a comparison.',
+      ],
+    ]);
+    expect(
+      metadata.mentionedAircraftModels.observations.map((item) => item.value),
+    ).toEqual(['737-800']);
+    expect(metadata.applicabilityAssessment).toBe('NOT_EVALUATED');
+  });
   it('keeps missing fields unknown without inferring ATA from document numbers or using PDF metadata titles', () => {
     const metadata = extract([
       ['737-31-21003 discusses a wiring change without labelled title.'],

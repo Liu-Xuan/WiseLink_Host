@@ -1,3 +1,4 @@
+import type { DocumentMetadataReadRequest, DocumentMetadataReadResponse, DocumentMetadataReextractRequest, DocumentMetadataReextractResponse } from '@shared/api.interface';
 import { mintDocumentUploadAuthority } from './document-upload-authority';
 import type { DocumentLibraryUploadRequest, DocumentUploadResponse } from '@shared/api.interface';
 import type { DocumentUploadAuthority } from './document-upload-authority';
@@ -5,7 +6,7 @@ import { createHash } from 'node:crypto';
 import { PdfjsDistLayoutExtractor } from '../../../../professional-input/parser/pdfjs-dist-layout-extractor.adapter';
 import { controlledPdfByteView, readActualPdfPageCount } from '../../migrated/ingress/pdfDocumentIdentityOwner.js';
 import { extractActualPdfMetadata } from '../../migrated/ingress/pdfDocumentMetadata.js';
-import { Inject, Injectable } from '@nestjs/common';
+import { HttpException, Inject, Injectable } from '@nestjs/common';
 import { FileService } from '@lark-apaas/fullstack-nestjs-core';
 
 import { DocumentManagementHostedCore } from '../documentManagementHostedCore.js';
@@ -78,16 +79,18 @@ export class DocumentManagementHostedService {
   }
 
   async ingestDocumentLibraryUpload(request: unknown, context: HostedRequestContext): Promise<DocumentUploadResponse> {
-    assertProductionMiaodaBrowserIdentityAvailable(hostedIdentity(context));
-    const input = documentLibraryUploadInput(request);
-    const receipt = await this.core.ingestFileServiceSelection({
-      idempotencyKey: `document-upload:${context.actorUserId}:${input.requestId}`,
-      selection: input.selection,
-      sourceChannel: 'document_library_upload',
-      sourceRef: `DOCUMENT_UPLOAD:${context.actorUserId}:${input.requestId}`,
-      descriptor: {},
-    }, { ...context, runtimeIngestAuthority: mintDocumentUploadAuthority(context) });
-    return this.uploadResponseWithCurrent(receipt, context);
+    return publicDmOperation(async () => {
+      assertProductionMiaodaBrowserIdentityAvailable(hostedIdentity(context));
+      const input = documentLibraryUploadInput(request);
+      const receipt = await this.core.ingestFileServiceSelection({
+        idempotencyKey: `document-upload:${context.actorUserId}:${input.requestId}`,
+        selection: input.selection,
+        sourceChannel: 'document_library_upload',
+        sourceRef: `DOCUMENT_UPLOAD:${context.actorUserId}:${input.requestId}`,
+        descriptor: {},
+      }, { ...context, runtimeIngestAuthority: mintDocumentUploadAuthority(context) });
+      return this.uploadResponseWithCurrent(receipt, context);
+    });
   }
 
   async confirmUploadedHistoricalImport(preflightId: string, request: unknown, context: HostedRequestContext) {
@@ -198,23 +201,74 @@ export class DocumentManagementHostedService {
   }
 
   async enrichDocumentMetadata(documentVersionId: string, context: HostedRequestContext) {
-    assertProductionMiaodaBrowserIdentityAvailable(hostedIdentity(context));
-    await this.authorizer.assertCanRead({ ...context, action: 'DOCUMENT_READ', documentVersionId });
-    const row = await this.catalog.readMetadataSource(documentVersionId, context.tenantId);
-    if (!row) throw Object.assign(new Error('Document metadata source is unavailable.'), { code: 'DOCUMENT_VERSION_NOT_FOUND', statusCode: 404 });
-    if (row.metadata?.extractedMetadata) return { documentVersionId, disposition: 'ALREADY_PRESENT', extractedMetadata: row.metadata?.extractedMetadata };
-    const selected = await this.readRegisteredOriginal(row);
+    return publicDmOperation(async () => {
+      assertProductionMiaodaBrowserIdentityAvailable(hostedIdentity(context));
+      await this.authorizer.assertCanRead({ ...context, action: 'DOCUMENT_READ', documentVersionId });
+      const row = await this.catalog.readMetadataSource(documentVersionId, context.tenantId);
+      if (!row) throw Object.assign(new Error('Document metadata source is unavailable.'), { code: 'DOCUMENT_VERSION_NOT_FOUND', statusCode: 404 });
+      if (row.metadata?.extractedMetadata) return { ...metadataReceipt(documentVersionId, row.metadata), disposition: 'ALREADY_PRESENT' as const };
+      const selected = await this.readRegisteredOriginal(row);
+      const extractedMetadata = this.extractRegisteredMetadata(row, selected);
+      // Recheck visibility after the source read and before inserting the derived record.
+      await this.authorizer.assertCanRead({ ...context, action: 'DOCUMENT_READ', documentVersionId });
+      const result = await this.catalog.fillMissingExtractedMetadata({ documentVersionId, sourceSha256: selected.sha256,
+        sourceByteLength: selected.byteLength, extractedMetadata });
+      return { documentVersionId, ...result };
+    });
+  }
+
+  async readDocumentMetadata(documentVersionId: string, request: unknown, context: HostedRequestContext): Promise<DocumentMetadataReadResponse> {
+    return publicDmOperation(async () => {
+      assertProductionMiaodaBrowserIdentityAvailable(hostedIdentity(context));
+      await this.authorizer.assertCanRead({ ...context, action: 'DOCUMENT_READ', documentVersionId });
+      const query = metadataReadQuery(request);
+      const row = await this.catalog.readMetadataSource(documentVersionId, context.tenantId);
+      if (!row) throw Object.assign(new Error('Document metadata source is unavailable.'), { code: 'DOCUMENT_VERSION_NOT_FOUND', statusCode: 404 });
+      const metadata = query.revision !== undefined || query.requestId !== undefined
+        ? await this.catalog.readExtractedMetadata({ documentVersionId, ...query }) : row.metadata;
+      return metadataReceipt(documentVersionId, metadata);
+    });
+  }
+
+  async reextractDocumentMetadata(documentVersionId: string, request: unknown, context: HostedRequestContext): Promise<DocumentMetadataReextractResponse> {
+    return publicDmOperation(async () => {
+      assertProductionMiaodaBrowserIdentityAvailable(hostedIdentity(context));
+      await this.authorizer.assertCanRead({ ...context, action: 'DOCUMENT_READ', documentVersionId });
+      const input = metadataReextractRequest(request);
+      const row = await this.catalog.readMetadataSource(documentVersionId, context.tenantId);
+      if (!row) throw Object.assign(new Error('Document metadata source is unavailable.'), { code: 'DOCUMENT_VERSION_NOT_FOUND', statusCode: 404 });
+      const replay = await this.catalog.readExtractedMetadata({ documentVersionId, requestId: input.requestId });
+      if (replay) {
+        if (replay.metadataRevision - 1 !== input.expectedMetadataRevision) {
+          throw Object.assign(new Error('Metadata request ID was already used with another expected revision.'), { code: 'DOCUMENT_METADATA_REQUEST_CONFLICT', statusCode: 409 });
+        }
+        return { documentVersionId, metadataId: replay.id, metadataRevision: replay.metadataRevision, requestId: input.requestId,
+          extractedMetadata: replay.extractedMetadata, disposition: 'IDEMPOTENT_REPLAY' };
+      }
+      if (!row.metadata || row.metadata.metadataRevision !== input.expectedMetadataRevision) {
+        throw Object.assign(new Error('Metadata revision changed; read the latest extraction before retrying.'), { code: 'DOCUMENT_METADATA_REVISION_CONFLICT', statusCode: 409 });
+      }
+      const selected = await this.readRegisteredOriginal(row);
+      const extractedMetadata = this.extractRegisteredMetadata(row, selected);
+      await this.authorizer.assertCanRead({ ...context, action: 'DOCUMENT_READ', documentVersionId });
+      const result = await this.catalog.appendExtractedMetadata({ documentVersionId, ...input,
+        sourceSha256: selected.sha256, sourceByteLength: selected.byteLength, extractedMetadata });
+      return { documentVersionId, metadataId: result.metadata.id, metadataRevision: result.metadata.metadataRevision,
+        requestId: input.requestId, extractedMetadata: result.metadata.extractedMetadata, disposition: result.disposition };
+    });
+  }
+
+  private extractRegisteredMetadata(
+    row: NonNullable<Awaited<ReturnType<MiaodaHostedDocumentCatalog['readMetadataSource']>>>,
+    selected: Awaited<ReturnType<MiaodaFileServiceArtifactStore['readSelection']>>,
+  ) {
     const view = controlledPdfByteView(selected.bytes);
     const layout = new PdfjsDistLayoutExtractor().extractLayoutWithDiagnostics(view.bytes);
     readActualPdfPageCount({ layout, actualSha256: selected.sha256, actualByteLength: selected.byteLength,
       inspectionSha256: createHash('sha256').update(view.bytes).digest('hex'), inspectionByteLength: view.bytes.byteLength });
     const extractedMetadata = extractActualPdfMetadata({ layout, actualSha256: selected.sha256, actualByteLength: selected.byteLength,
       identity: { documentFamily: row.family.documentFamily, issuer: row.family.issuerAuthority } });
-    // Recheck visibility after the source read and before inserting the derived record.
-    await this.authorizer.assertCanRead({ ...context, action: 'DOCUMENT_READ', documentVersionId });
-    const result = await this.catalog.fillMissingExtractedMetadata({ documentVersionId, sourceSha256: selected.sha256,
-      sourceByteLength: selected.byteLength, extractedMetadata });
-    return { documentVersionId, disposition: result.disposition, extractedMetadata: result.extractedMetadata };
+    return extractedMetadata;
   }
 
   private async readRegisteredOriginal(row: NonNullable<Awaited<ReturnType<MiaodaHostedDocumentCatalog['readMetadataSource']>>>) {
@@ -228,13 +282,15 @@ export class DocumentManagementHostedService {
   }
 
   async readDocumentOriginal(documentVersionId: string, context: HostedRequestContext) {
-    assertProductionMiaodaBrowserIdentityAvailable(hostedIdentity(context));
-    await this.authorizer.assertCanRead({ ...context, action: 'DOCUMENT_READ', documentVersionId });
-    const row = await this.catalog.readMetadataSource(documentVersionId, context.tenantId);
-    if (!row) throw Object.assign(new Error('Document original is unavailable.'), { code: 'DOCUMENT_VERSION_NOT_FOUND', statusCode: 404 });
-    const selected = await this.readRegisteredOriginal(row);
-    await this.authorizer.assertCanRead({ ...context, action: 'DOCUMENT_READ', documentVersionId });
-    return { bytes: selected.bytes, filename: row.version.originalFilename };
+    return publicDmOperation(async () => {
+      assertProductionMiaodaBrowserIdentityAvailable(hostedIdentity(context));
+      await this.authorizer.assertCanRead({ ...context, action: 'DOCUMENT_READ', documentVersionId });
+      const row = await this.catalog.readMetadataSource(documentVersionId, context.tenantId);
+      if (!row) throw Object.assign(new Error('Document original is unavailable.'), { code: 'DOCUMENT_VERSION_NOT_FOUND', statusCode: 404 });
+      const selected = await this.readRegisteredOriginal(row);
+      await this.authorizer.assertCanRead({ ...context, action: 'DOCUMENT_READ', documentVersionId });
+      return { bytes: selected.bytes, filename: row.version.originalFilename };
+    });
   }
 
   async listCurrentReferenceTargets(
@@ -264,6 +320,79 @@ export class DocumentManagementHostedService {
         issuerAuthority: document.detail.issuerAuthority,
       }));
   }
+}
+
+const PUBLIC_DM_REJECTIONS: Readonly<Record<string, { status: number; message: string }>> = {
+  CATALOG_EXACT_DOCUMENT_IDENTITY_CONFLICT: { status: 409, message: '文件与已有版本的出版身份记录不一致，请核对已有文档。' },
+  SAME_REVISION_CONTENT_CONFLICT: { status: 409, message: '相同修订已存在不同文件内容，请核对原件。' },
+  CURRENTNESS_CAS_CONFLICT: { status: 409, message: '文档当前版本已变化，请刷新后重试。' },
+  FAMILY_CREATE_CONFLICT: { status: 409, message: '文档已被另一请求登记，请刷新资料库。' },
+  FAMILY_IDENTITY_CONFLICT: { status: 409, message: '出版身份与已有文档不一致。' },
+  HOSTED_INGEST_INPUT_INVALID: { status: 400, message: '上传请求缺少必要信息。' },
+  DOCUMENT_UPLOAD_INPUT_INVALID: { status: 400, message: '上传请求格式不正确。' },
+  IDENTITY_NOT_COMMITTABLE: { status: 422, message: '原文尚不足以确认可登记的出版身份与修订。' },
+  INVALID_PDF_INPUT: { status: 422, message: '所选文件不是可读取的 PDF。' },
+  DM_PDF_TEXT_IDENTITY_UNAVAILABLE: { status: 422, message: 'PDF 原文文本不足以识别出版身份。' },
+  DM_PDF_FAMILY_UNRESOLVED: { status: 422, message: '暂不能从 PDF 原文识别文档类型。' },
+  DM_PDF_FAMILY_IDENTITY_NOT_ACTIVATED: { status: 422, message: '当前尚未支持此文档类型的出版身份提取。' },
+  DM_PDF_IDENTITY_UNRESOLVED: { status: 422, message: '暂不能从 PDF 原文确认出版身份。' },
+  DM_PDF_FAMILY_IDENTITY_CONFLICT: { status: 409, message: 'PDF 原文中出现相互冲突的出版身份。' },
+  SELECTION_ACTUAL_BYTE_MISMATCH: { status: 409, message: '所选文件内容与上传凭据不一致。' },
+  DOCUMENT_METADATA_REQUEST_INVALID: { status: 400, message: '元数据修订号或请求标识无效。' },
+  DOCUMENT_METADATA_REQUEST_CONFLICT: { status: 409, message: '该请求标识已用于不同的元数据修订，请核对已有回执。' },
+  DOCUMENT_METADATA_REVISION_CONFLICT: { status: 409, message: '元数据修订已变化，请读取最新结果后重新发起。' },
+  DOCUMENT_METADATA_SOURCE_MISMATCH: { status: 409, message: '原件与已登记文档版本不一致，本次未保存元数据。' },
+  DOCUMENT_METADATA_FILL_CONFLICT: { status: 409, message: '元数据来源核对未通过，本次未保存。' },
+  DOCUMENT_VERSION_NOT_FOUND: { status: 404, message: '文档版本不存在或当前用户无权访问。' },
+  DOCUMENT_ACTION_FORBIDDEN: { status: 403, message: '当前用户无权执行此文档操作。' },
+};
+
+async function publicDmOperation<T>(operation: () => Promise<T>): Promise<T> {
+  try {
+    return await operation();
+  } catch (error: unknown) {
+    const code = error && typeof error === 'object' && 'code' in error && typeof error.code === 'string' ? error.code : '';
+    const rejection = PUBLIC_DM_REJECTIONS[code];
+    if (!rejection) throw error;
+    // Only the bounded public code and message enter the HTTP response.
+    throw Object.assign(new HttpException({ code, message: rejection.message }, rejection.status), { code });
+  }
+}
+
+function metadataReceipt(documentVersionId: string, metadata: Awaited<ReturnType<MiaodaHostedDocumentCatalog['readExtractedMetadata']>>): DocumentMetadataReadResponse {
+  return { documentVersionId, metadataId: metadata?.id ?? null, metadataRevision: metadata?.metadataRevision ?? null,
+    requestId: metadata?.requestId ?? null, extractedMetadata: metadata?.extractedMetadata ?? null };
+}
+
+function invalidMetadataRequest(): never {
+  throw Object.assign(new Error('Metadata revision or request ID is invalid.'), { code: 'DOCUMENT_METADATA_REQUEST_INVALID', statusCode: 400 });
+}
+
+function validMetadataRequestId(value: unknown): string {
+  if (typeof value !== 'string' || !/^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$/u.test(value)) invalidMetadataRequest();
+  return value;
+}
+
+function metadataReextractRequest(value: unknown): DocumentMetadataReextractRequest {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) invalidMetadataRequest();
+  const input = value as Record<string, unknown>;
+  if (Object.keys(input).some(key => !['expectedMetadataRevision', 'requestId'].includes(key))) invalidMetadataRequest();
+  if (typeof input.expectedMetadataRevision !== 'number' || !Number.isSafeInteger(input.expectedMetadataRevision) || input.expectedMetadataRevision < 1 || input.expectedMetadataRevision >= 2147483647) invalidMetadataRequest();
+  return { expectedMetadataRevision: input.expectedMetadataRevision, requestId: validMetadataRequestId(input.requestId) };
+}
+
+function metadataReadQuery(value: unknown): DocumentMetadataReadRequest {
+  if (value === undefined) return {};
+  if (!value || typeof value !== 'object' || Array.isArray(value)) invalidMetadataRequest();
+  const input = value as Record<string, unknown>;
+  if (Object.keys(input).some(key => !['revision', 'requestId'].includes(key))) invalidMetadataRequest();
+  if (input.revision !== undefined && input.requestId !== undefined) invalidMetadataRequest();
+  if (input.requestId !== undefined) return { requestId: validMetadataRequestId(input.requestId) };
+  if (input.revision === undefined) return {};
+  if (typeof input.revision !== 'number' && (typeof input.revision !== 'string' || !/^[1-9][0-9]*$/u.test(input.revision))) invalidMetadataRequest();
+  const revision = Number(input.revision);
+  if (!Number.isSafeInteger(revision) || revision < 1 || revision > 2147483647) invalidMetadataRequest();
+  return { revision };
 }
 
 function canonicalDocumentNumberLookupKey(value: string): string {

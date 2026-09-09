@@ -2,6 +2,7 @@ import { createElement } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { LibraryMetadataObservations } from '../../client/src/pages/WorkspaceHomePage/LibraryMetadata';
 import { LibraryClassificationControls } from '../../client/src/pages/WorkspaceHomePage/LibraryClassificationControls';
+import { MetadataRevisionActions } from '../../client/src/pages/WorkspaceHomePage/MetadataRevisionActions';
 import { libraryMetadata } from './fixtures/canonical-library';
 
 jest.mock('@client/src/components/ui/button', () => ({ Button: 'button' }));
@@ -11,6 +12,26 @@ jest.mock('@client/src/api/canonical-host', () => ({
 }));
 
 describe('version-scoped metadata and full catalog facets', () => {
+  it('offers explicit reextraction and historical evidence without destructive recovery', () => {
+    const html = renderToStaticMarkup(createElement(MetadataRevisionActions, {
+      documentVersionId: 'DV-1', metadataRevision: 3, onRefresh: jest.fn(), renderMetadata: () => null,
+    }));
+    expect(html).toContain('重新提取元数据');
+    expect(html).toContain('查看上一修订证据');
+    expect(html).toContain('保留旧提取结果');
+    expect(html).toContain('不新建文档版本或评估任务');
+    expect(html).not.toContain('只读核对本次请求');
+  });
+
+  it('requires reading a revision before any reextraction when catalog revision is absent', () => {
+    const html = renderToStaticMarkup(createElement(MetadataRevisionActions, {
+      documentVersionId: 'DV-1', metadataRevision: null, onRefresh: jest.fn(), renderMetadata: () => null,
+    }));
+    expect(html).toContain('尚未读取');
+    expect(html).toMatch(/disabled="">重新提取元数据/);
+    expect(html).not.toContain('查看上一修订证据');
+  });
+
   it('shows original page evidence and never turns mentioned aircraft into applicability', () => {
     const metadata = libraryMetadata();
     metadata.title.observations[0].evidence[0].text =

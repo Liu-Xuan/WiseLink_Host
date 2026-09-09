@@ -4,6 +4,7 @@ import type {
   DocumentExtractedMetadata,
 } from '@shared/api.interface';
 import { Button } from '@client/src/components/ui/button';
+import { MetadataRevisionActions } from './MetadataRevisionActions';
 import {
   enrichDocumentVersionMetadata,
   getCanonicalHostClientSessionGeneration,
@@ -125,7 +126,16 @@ export function LibraryMetadata({
     <section className="library-version-metadata" aria-label="版本原文元数据">
       <h4>本版本元数据</h4>
       {version.extractedMetadata ? (
-        <LibraryMetadataObservations metadata={version.extractedMetadata} />
+        <>
+          <LibraryMetadataObservations metadata={version.extractedMetadata} />
+          <MetadataRevisionActions
+            key={version.documentVersionId}
+            documentVersionId={version.documentVersionId}
+            metadataRevision={'metadataRevision' in version && typeof version.metadataRevision === 'number' ? version.metadataRevision : null}
+            onRefresh={onRefresh}
+            renderMetadata={(metadata) => <LibraryMetadataObservations metadata={metadata} />}
+          />
+        </>
       ) : (
         <>
           <p className="library-classification-note">

@@ -810,6 +810,21 @@ export class MiaodaHostedDocumentCatalog {
           };
         }
       }
+      if (tenantId && actorUserId && acquisition.acquiredBy === actorUserId
+        && acquisition.idempotencyKey.startsWith(`tenant:${encodeURIComponent(tenantId)}:request:`)
+        && acquisition.status === 'ACQUIRED_READBACK_VERIFIED') {
+        const exactPreflights = await this.db.select().from(dmIngressPreflight).where(and(
+          eq(dmIngressPreflight.acquisitionId, acquisition.acquisitionId),
+          inArray(dmIngressPreflight.decision, ['REUSE_EXACT', 'RESUME_EXISTING_PROCESS']),
+          eq(dmIngressPreflight.status, 'READY'),
+        )).limit(2);
+        if (exactPreflights.length === 1 && exactPreflights[0].executionAuthorized === false
+          && !exactPreflights[0].documentVersionId && !exactPreflights[0].commitIdempotencyKey) {
+          return { status: 'INCOMPLETE', acquisitionId: acquisition.acquisitionId,
+            exactPreflightId: exactPreflights[0].preflightId,
+            exactSourceDescriptor: recordJson(acquisition.sourceDescriptorJson) };
+        }
+      }
       return { status: 'INCOMPLETE', acquisitionId: acquisition.acquisitionId };
     }
     const rows = await this.db.select({
@@ -1705,7 +1720,10 @@ export class MiaodaHostedDocumentCatalog {
       .from(dmDocumentVersion)
       .innerJoin(dmPublicationFamily, eq(dmPublicationFamily.familyId, dmDocumentVersion.familyId))
       .innerJoin(dmSourceArtifact, eq(dmSourceArtifact.sourceArtifactId, dmDocumentVersion.sourceArtifactId))
-      .leftJoin(dmDocumentVersionMetadata, eq(dmDocumentVersionMetadata.documentVersionId, dmDocumentVersion.documentVersionId))
+      .leftJoin(dmDocumentVersionMetadata, and(
+        eq(dmDocumentVersionMetadata.documentVersionId, dmDocumentVersion.documentVersionId),
+        sql`${dmDocumentVersionMetadata.metadataRevision} = (select max(m.metadata_revision) from dm_document_version_metadata m where m.document_version_id = ${dmDocumentVersion.documentVersionId})`,
+      ))
       .where(and(eq(dmDocumentVersion.documentVersionId, documentVersionId),
         sql`starts_with(${dmPublicationFamily.canonicalIdentityKey}, ${tenantFamilyIdentityPrefix(tenantId)})`)).limit(1);
     return row || null;
@@ -1727,11 +1745,66 @@ export class MiaodaHostedDocumentCatalog {
       }
       const [inserted] = await transaction.insert(dmDocumentVersionMetadata).values({
         documentVersionId: input.documentVersionId, extractedMetadata: input.extractedMetadata,
-      }).onConflictDoNothing({ target: dmDocumentVersionMetadata.documentVersionId }).returning();
+      }).onConflictDoNothing({ target: [dmDocumentVersionMetadata.documentVersionId, dmDocumentVersionMetadata.metadataRevision] }).returning();
       const [metadata] = inserted ? [inserted] : await transaction.select().from(dmDocumentVersionMetadata)
-        .where(eq(dmDocumentVersionMetadata.documentVersionId, input.documentVersionId)).limit(1);
+        .where(eq(dmDocumentVersionMetadata.documentVersionId, input.documentVersionId)).orderBy(desc(dmDocumentVersionMetadata.metadataRevision)).limit(1);
       if (!metadata) fail('DOCUMENT_METADATA_FILL_CONFLICT', 'Document metadata was not persisted.');
-      return { disposition: inserted ? 'ENRICHED' as const : 'ALREADY_PRESENT' as const, extractedMetadata: metadata.extractedMetadata };
+      return { disposition: inserted ? 'ENRICHED' as const : 'ALREADY_PRESENT' as const, metadataId: metadata.id, metadataRevision: metadata.metadataRevision, requestId: metadata.requestId, extractedMetadata: metadata.extractedMetadata };
+    });
+  }
+
+  async readExtractedMetadata(input: { documentVersionId: string; revision?: number; requestId?: string }) {
+    const [metadata] = await this.db.select().from(dmDocumentVersionMetadata).where(and(
+      eq(dmDocumentVersionMetadata.documentVersionId, input.documentVersionId),
+      input.revision === undefined ? undefined : eq(dmDocumentVersionMetadata.metadataRevision, input.revision),
+      input.requestId === undefined ? undefined : eq(dmDocumentVersionMetadata.requestId, input.requestId),
+    )).orderBy(desc(dmDocumentVersionMetadata.metadataRevision)).limit(1);
+    return metadata || null;
+  }
+
+  async appendExtractedMetadata(input: {
+    documentVersionId: string;
+    sourceSha256: string;
+    sourceByteLength: number;
+    expectedMetadataRevision: number;
+    requestId: string;
+    extractedMetadata: import('@shared/api.interface').DocumentExtractedMetadata;
+  }) {
+    return this.db.transaction(async (transaction) => {
+      // Serialize the short append transaction using the existing immutable
+      // version row as its lock target; no data in that row is changed.
+      const [version] = await transaction.select().from(dmDocumentVersion).where(and(
+        eq(dmDocumentVersion.documentVersionId, input.documentVersionId),
+        eq(dmDocumentVersion.pdfSha256, input.sourceSha256),
+        eq(dmDocumentVersion.byteLength, input.sourceByteLength),
+      )).for('update');
+      if (!version || input.extractedMetadata.sourceSha256 !== version.pdfSha256 || input.extractedMetadata.sourceByteLength !== version.byteLength) {
+        throw Object.assign(new Error('Re-extracted metadata does not match its immutable document source.'), { code: 'DOCUMENT_METADATA_SOURCE_MISMATCH', statusCode: 409 });
+      }
+      const [replay] = await transaction.select().from(dmDocumentVersionMetadata).where(and(
+        eq(dmDocumentVersionMetadata.documentVersionId, input.documentVersionId),
+        eq(dmDocumentVersionMetadata.requestId, input.requestId),
+      )).limit(1);
+      if (replay) {
+        if (replay.metadataRevision - 1 !== input.expectedMetadataRevision) {
+          throw Object.assign(new Error('Metadata request ID was already used with another expected revision.'), { code: 'DOCUMENT_METADATA_REQUEST_CONFLICT', statusCode: 409 });
+        }
+        return { disposition: 'IDEMPOTENT_REPLAY' as const, metadata: replay };
+      }
+      const [latest] = await transaction.select().from(dmDocumentVersionMetadata)
+        .where(eq(dmDocumentVersionMetadata.documentVersionId, input.documentVersionId))
+        .orderBy(desc(dmDocumentVersionMetadata.metadataRevision)).limit(1);
+      if (!latest || latest.metadataRevision !== input.expectedMetadataRevision) {
+        throw Object.assign(new Error('Metadata revision changed; read the latest extraction before retrying.'), { code: 'DOCUMENT_METADATA_REVISION_CONFLICT', statusCode: 409 });
+      }
+      const [metadata] = await transaction.insert(dmDocumentVersionMetadata).values({
+        documentVersionId: input.documentVersionId,
+        metadataRevision: input.expectedMetadataRevision + 1,
+        requestId: input.requestId,
+        extractedMetadata: input.extractedMetadata,
+      }).returning();
+      if (!metadata) fail('DOCUMENT_METADATA_APPEND_FAILED', 'Re-extracted metadata was not persisted.');
+      return { disposition: 'APPENDED' as const, metadata };
     });
   }
 

@@ -4,6 +4,48 @@ function text(value) {
     .trim();
 }
 
+// Publication-module cover pages place the subject between their primary
+// publication heading and the Publication/Issue row, without a Subject label.
+function boeingPublicationTitle(lines, identity) {
+  if (identity?.issuer !== 'BOEING' || identity?.documentFamily !== 'SB')
+    return null;
+  for (const [index, line] of lines.entries()) {
+    const heading = line.text.match(
+      /^Service Bulletin\s+(B787-\d{5}-SB\d{6}-\d{2})\s+(.+)$/iu,
+    );
+    if (!heading) continue;
+    const continuation = [];
+    for (const next of lines.slice(index + 1, index + 6)) {
+      if (
+        /\bPublication\s*:/iu.test(next.text) ||
+        /^Issue\s+\d/iu.test(next.text)
+      ) {
+        // The primary identity must also occur in the adjacent publication row.
+        if (!next.text.includes(heading[1])) break;
+        return {
+          value: [heading[2], ...continuation].join(' '),
+          evidence: [line.text, ...continuation].join(' '),
+        };
+      }
+      if (/\b(?:Copyright|BOEING PROPRIETARY|TITLE PAGE)\b/iu.test(next.text))
+        break;
+      continuation.push(next.text);
+    }
+  }
+  return null;
+}
+
+function trademarkDeclarationRanges(pageText) {
+  return [
+    ...pageText.matchAll(
+      /[^.!?]*\b(?:are|is)\s+(?:all\s+)?(?:registered\s+)?trademarks?\s+(?:owned\s+by|of)\b[^.!?]*(?:[.!?]|$)/giu,
+    ),
+  ].map((match) => ({
+    start: match.index,
+    end: match.index + match[0].length,
+  }));
+}
+
 /** Source observations only. Identity/currentness remain owned by the ingress owner. */
 export function extractActualPdfMetadata({
   layout,
@@ -77,6 +119,10 @@ export function extractActualPdfMetadata({
         previous.text += ` ${run.text}`;
       else lines.push({ ...run });
     }
+    const publicationTitle =
+      page === 1 ? boeingPublicationTitle(lines, identity) : null;
+    if (publicationTitle)
+      add('title', publicationTitle.value, page, publicationTitle.evidence);
     // A labelled title can be split into PDF text runs. Stop at the next label.
     if (page <= 3) {
       for (const [index, line] of lines.entries()) {
@@ -119,9 +165,16 @@ export function extractActualPdfMetadata({
     )) {
       add('ata', match[1], page, match[0]);
     }
+    const trademarkRanges = trademarkDeclarationRanges(pageText);
     for (const match of pageText.matchAll(
       /\b(?:A(?:220|300|310|318|319|320|321|330|340|350|380)(?:[ -]?(?:\d{3}|NEO|CEO))?|(?:B(?:OEING)?\s*)?(?:707|717|727|737|747|757|767|777|787)(?:[ -]?(?:MAX(?:[ -]?(?:7|8|9|10))?|NG|(?:[1-9]00|7|8|9|10)(?:ER|LR)?))?)\b/giu,
     )) {
+      if (
+        trademarkRanges.some(
+          (range) => match.index >= range.start && match.index < range.end,
+        )
+      )
+        continue;
       add(
         'mentionedAircraftModels',
         match[0]

@@ -350,6 +350,35 @@ describe('historical import explicit confirmation', () => {
         createdAt: new Date(),
       });
     });
+    it('returns pending exact recovery only for the same actor, tenant and single original READY exact preflight', async () => {
+      await client`update dm_ingress_preflight set decision='RESUME_EXISTING_PROCESS'`;
+      const input = {
+        idempotencyKey: `tenant:${context.tenantId}:request:old`,
+        expectedAcquisitionId: 'old-acquisition',
+        sourceChannel: 'miaoda_file_service_selection',
+        sourceRef: 'selection',
+        selection: { bucketId: 'bucket', filePath: '/source.pdf' },
+        tenantId: context.tenantId,
+        actorUserId: context.actorUserId,
+      };
+      await expect(
+        catalog.findIngestionByIdempotency(input),
+      ).resolves.toMatchObject({
+        status: 'INCOMPLETE',
+        exactPreflightId: 'old-preflight',
+        exactSourceDescriptor: sourceDescriptor,
+      });
+      for (const scope of [{ actorUserId: 'other' }, { tenantId: 'other' }]) {
+        expect(
+          await catalog.findIngestionByIdempotency({ ...input, ...scope }),
+        ).not.toHaveProperty('exactPreflightId');
+      }
+      await client`insert into dm_ingress_preflight(preflight_id,acquisition_id,decision,status,execution_authorized) values('ambiguous','old-acquisition','RESUME_EXISTING_PROCESS','READY',false)`;
+      expect(
+        await catalog.findIngestionByIdempotency(input),
+      ).not.toHaveProperty('exactPreflightId');
+      expect(await client`select * from dm_document_version`).toHaveLength(1);
+    });
     it('recovers an interrupted upload response as the existing pending confirmation', async () => {
       await expect(
         catalog.findIngestionByIdempotency({

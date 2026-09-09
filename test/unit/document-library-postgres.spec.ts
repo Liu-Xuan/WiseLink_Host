@@ -26,7 +26,7 @@ const enabled = process.env.WL_DM_LIBRARY_LOCAL_PG === '1';
       create temporary table dm_document (document_id text,family_id text);
       create temporary table dm_publication_family (family_id text,canonical_document_number text,document_family text,issuer_authority text,created_at timestamptz,updated_at timestamptz,canonical_identity_key text,current_document_version_id text);
       create temporary table dm_document_version (document_version_id text,document_id text,family_id text,source_artifact_id text,business_revision text,revision_date text,source_generated_date text,original_filename text,byte_length int,committed_at timestamptz);
-      create temporary table dm_document_version_metadata (document_version_id text,extracted_metadata jsonb);
+      create temporary table dm_document_version_metadata (document_version_id text,extracted_metadata jsonb,metadata_revision integer not null default 1,unique(document_version_id,metadata_revision));
       create temporary table dm_acquisition (document_version_id text,source_artifact_id text,acquired_by text,status text,idempotency_key text);`);
       for (const id of [
         'a',
@@ -42,7 +42,7 @@ const enabled = process.env.WL_DM_LIBRARY_LOCAL_PG === '1';
         await client`insert into dm_document_version values (${id},${id},${id},'shared-source','R1','','',${`${id}.pdf`},100,'2026-09-01')`;
         await client`insert into dm_acquisition values (${id},${id === 'mismatch' ? 'wrong-source' : 'shared-source'},${id === 'hidden' ? 'u2' : 'u1'},${id === 'pending' ? 'ACQUIRED_READBACK_VERIFIED' : 'COMMITTED_CANONICAL'},${`tenant:${id === 'scope' ? 't2' : 't1'}:request:${id}`})`;
       }
-      await client`insert into dm_document_version_metadata values ('a', ${JSON.stringify({ ata: { observations: [{ value: '34' }, { value: '34' }] }, mentionedAircraftModels: { observations: [{ value: '787' }] }, title: { observations: [{ value: 'Flight navigation' }] } })})`;
+      await client`insert into dm_document_version_metadata (document_version_id,extracted_metadata) values ('a', ${JSON.stringify({ ata: { observations: [{ value: '34' }, { value: '34' }] }, mentionedAircraftModels: { observations: [{ value: '787' }] }, title: { observations: [{ value: 'Flight navigation' }] } })})`;
     });
     afterAll(async () => {
       await client.end();
@@ -57,6 +57,8 @@ const enabled = process.env.WL_DM_LIBRARY_LOCAL_PG === '1';
             row.versions[0].readerWorkItemId === '' && row.workItemCount === 0,
         ),
       ).toBe(true);
+      expect(first.rows[0].versions[0].metadataRevision).toBeNull();
+      expect(first.rows[1].versions[0].metadataRevision).toBe(1);
       expect(first.familyCounts).toEqual({ SB: 2 });
       expect(first.ataCounts).toEqual({ '34': 1, __UNKNOWN__: 1 });
       expect(first.aircraftModelCounts).toEqual({ '787': 1, __UNKNOWN__: 1 });
@@ -118,6 +120,59 @@ const enabled = process.env.WL_DM_LIBRARY_LOCAL_PG === '1';
         }),
       ).toBe(false);
       await client`delete from dm_document_version where document_version_id in ('a-old','a-private')`;
+      await client`delete from dm_acquisition where document_version_id='a-old'`;
+    });
+
+    it('selects only the latest metadata revision per exact version before search and counts', async () => {
+      await client`insert into work_item values ('a','a','wi-a','t1','u1',null,null,'2026-09-01')`;
+      await client`insert into dm_document_version values ('a-old','a','a','old-source','R0','','','old.pdf',90,'2026-08-01')`;
+      await client`insert into dm_acquisition values ('a-old','old-source','u1','LINKED_EXACT_DOCUMENT_VERSION','tenant:t1:request:old')`;
+      for (const [version, revision, title, ata, model] of [
+        ['a', 2, 'Corrected avionics', '46', '777'],
+        ['a-old', 1, 'Historical radio', '23', '737'],
+        ['hidden', 99, 'Private revision', '99', '999'],
+      ] as const) {
+        await client`insert into dm_document_version_metadata values (${version},${JSON.stringify({ title: { observations: [{ value: title }] }, ata: { observations: [{ value: ata }] }, mentionedAircraftModels: { observations: [{ value: model }] } })},${revision})`;
+      }
+      const [result] = await listOwnedLibraryFamilies(db as never, scope);
+      expect(result.totalCount).toBe(2);
+      expect(result.familyCounts).toEqual({ SB: 2 });
+      expect(result.ataCounts).toEqual({ '46': 1, '23': 1, __UNKNOWN__: 1 });
+      expect(result.aircraftModelCounts).toEqual({
+        '777': 1,
+        '737': 1,
+        __UNKNOWN__: 1,
+      });
+      const family = result.rows.find((row) => row.familyId === 'a')!;
+      expect(
+        family.versions.map((version) => version.documentVersionId),
+      ).toEqual(['a', 'a-old']);
+      expect(family.workItemCount).toBe(1);
+      expect(family.versions[0].workItemCount).toBe(1);
+      expect(family.versions[0].metadataRevision).toBe(2);
+      expect(family.versions[1].metadataRevision).toBe(1);
+      expect(
+        family.versions[0].extractedMetadata?.title.observations[0].value,
+      ).toBe('Corrected avionics');
+      expect(
+        family.versions[1].extractedMetadata?.title.observations[0].value,
+      ).toBe('Historical radio');
+      for (const search of ['navigation', 'Private revision']) {
+        const [missing] = await listOwnedLibraryFamilies(db as never, {
+          ...scope,
+          search,
+        });
+        expect(missing.totalCount).toBe(0);
+      }
+      const [historical] = await listOwnedLibraryFamilies(db as never, {
+        ...scope,
+        search: 'Historical radio',
+      });
+      expect(historical.totalCount).toBe(1);
+      expect(historical.rows[0].versions).toHaveLength(2);
+      await client`delete from work_item where work_item_id='wi-a'`;
+      await client`delete from dm_document_version_metadata where metadata_revision > 1 or document_version_id='a-old'`;
+      await client`delete from dm_document_version where document_version_id='a-old'`;
       await client`delete from dm_acquisition where document_version_id='a-old'`;
     });
 

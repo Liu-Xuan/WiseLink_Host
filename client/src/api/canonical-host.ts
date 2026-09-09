@@ -25,6 +25,10 @@ import type {
   CanonicalLibraryTasksResponse,
   CanonicalLibraryQuicklookResponse,
   DocumentExtractedMetadata,
+  DocumentMetadataReadRequest,
+  DocumentMetadataReadResponse,
+  DocumentMetadataReextractRequest,
+  DocumentMetadataReextractResponse,
   DocumentUploadRequest,
   DocumentUploadResponse,
   DocumentHistoricalImportRequest,
@@ -476,10 +480,10 @@ export async function getCanonicalLibraryTasks(
 
 async function readCanonicalLibrary<T>(input: {
   url: string;
-  params?: CanonicalLibraryTasksRequest;
+  params?: CanonicalLibraryTasksRequest | DocumentMetadataReadQuery;
   signal?: AbortSignal;
   method?: 'GET' | 'POST';
-  data?: DocumentUploadRequest | DocumentHistoricalImportRequest;
+  data?: DocumentUploadRequest | DocumentHistoricalImportRequest | DocumentMetadataReextractRequest;
 }): Promise<T> {
   const requestGeneration = clientSessionGeneration;
   try {
@@ -533,6 +537,81 @@ export async function enrichDocumentVersionMetadata(documentVersionId: string): 
   });
   if (receipt.documentVersionId !== documentVersionId ||
     !['ENRICHED', 'ALREADY_PRESENT'].includes(receipt.disposition) ||
+    receipt.extractedMetadata?.source !== 'ACTUAL_PDF_TEXT') {
+    throw new Error('DOCUMENT_METADATA_RECEIPT_MISMATCH');
+  }
+  return receipt;
+}
+
+export async function readDocumentVersionOriginal(
+  documentVersionId: string,
+  signal?: AbortSignal,
+): Promise<Blob> {
+  const generation = clientSessionGeneration;
+  try {
+    // Platform Axios installs its existing CSRF header and application base path.
+    const response = await axiosForBackend<ArrayBuffer>({
+      url: `/api/document-management/document-versions/${encodeURIComponent(documentVersionId)}/original`,
+      method: 'GET', responseType: 'arraybuffer', signal,
+    });
+    if (response.status === 401) throw clientLoginRequired('SESSION_REQUIRED', generation);
+    if (response.status === 403 || response.status === 404) throw canonicalObjectNotFound();
+    if (response.status < 200 || response.status >= 300) {
+      throw backendResponseError(null, 'DOCUMENT_ORIGINAL_READ_FAILED', response.status);
+    }
+    if (signal?.aborted || generation !== clientSessionGeneration) {
+      throw new Error('DOCUMENT_ORIGINAL_READ_OBSOLETE');
+    }
+    const contentType = String(response.headers?.['content-type'] ?? '').split(';')[0].trim().toLowerCase();
+    if (!(response.data instanceof ArrayBuffer) || !response.data.byteLength ||
+      (contentType && !['application/pdf', 'application/octet-stream'].includes(contentType)) ||
+      !new TextDecoder().decode(response.data.slice(0, 1024)).includes('%PDF-')) {
+      throw new Error('DOCUMENT_ORIGINAL_NOT_PDF');
+    }
+    return new Blob([response.data], { type: 'application/pdf' });
+  } catch (reason: unknown) {
+    if (!signal?.aborted) logCanonicalRequestFailure('读取文档版本原件失败', reason);
+    throw normalizedDirectObjectError(reason, generation);
+  }
+}
+
+export type DocumentMetadataReadReceipt = DocumentMetadataReadResponse;
+export type DocumentMetadataReextractReceipt = DocumentMetadataReextractResponse;
+export type DocumentMetadataReadQuery =
+  | (Pick<Required<DocumentMetadataReadRequest>, 'revision'> & { requestId?: never })
+  | (Pick<Required<DocumentMetadataReadRequest>, 'requestId'> & { revision?: never });
+
+export async function readDocumentVersionMetadata(
+  documentVersionId: string,
+  query?: DocumentMetadataReadQuery,
+): Promise<DocumentMetadataReadReceipt> {
+  const receipt = await readCanonicalLibrary<DocumentMetadataReadReceipt>({
+    url: `/api/document-management/document-versions/${encodeURIComponent(documentVersionId)}/metadata`,
+    ...(query ? { params: query } : {}),
+  });
+  if (receipt?.documentVersionId !== documentVersionId ||
+    (receipt.metadataId === null && (receipt.metadataRevision !== null || receipt.extractedMetadata !== null || receipt.requestId !== null)) ||
+    (receipt.metadataId !== null && (!receipt.metadataId || !Number.isInteger(receipt.metadataRevision) ||
+      Number(receipt.metadataRevision) < 1 || receipt.extractedMetadata?.source !== 'ACTUAL_PDF_TEXT')) ||
+    (query?.revision && receipt.metadataRevision !== query.revision) ||
+    (query?.requestId && receipt.metadataId !== null && receipt.requestId !== query.requestId)) {
+    throw new Error('DOCUMENT_METADATA_RECEIPT_MISMATCH');
+  }
+  return receipt;
+}
+
+export async function reextractDocumentVersionMetadata(
+  documentVersionId: string,
+  input: DocumentMetadataReextractRequest,
+): Promise<DocumentMetadataReextractReceipt> {
+  const receipt = await readCanonicalLibrary<DocumentMetadataReextractReceipt>({
+    url: `/api/document-management/document-versions/${encodeURIComponent(documentVersionId)}/metadata/reextract`,
+    method: 'POST', data: input,
+  });
+  if (receipt?.documentVersionId !== documentVersionId ||
+    receipt.requestId !== input.requestId || !receipt.metadataId ||
+    receipt.metadataRevision !== input.expectedMetadataRevision + 1 ||
+    !['APPENDED', 'IDEMPOTENT_REPLAY'].includes(receipt.disposition) ||
     receipt.extractedMetadata?.source !== 'ACTUAL_PDF_TEXT') {
     throw new Error('DOCUMENT_METADATA_RECEIPT_MISMATCH');
   }

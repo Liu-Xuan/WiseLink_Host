@@ -6,6 +6,7 @@ import { StaticRouter } from 'react-router-dom/server';
 import { LibraryHierarchy } from '../../client/src/pages/WorkspaceHomePage/LibraryHierarchy';
 
 jest.mock('@client/src/components/ui/button', () => ({ Button: 'button' }));
+jest.mock('@client/src/api/canonical-host', () => ({ getCanonicalHostClientSessionGeneration: () => 1 }));
 jest.mock(
   '@lark-apaas/client-toolkit/utils/resolveAppUrl',
   () => ({ resolveAppUrl: (path: string) => path }),
@@ -79,9 +80,11 @@ describe('library category hierarchy', () => {
       ),
     );
     expect(html).toContain(
-      '/api/document-management/document-versions/DV%2Fexact-old/original',
+      'data-document-version-id="DV/exact-old"',
     );
     expect(html).not.toContain('/work-items//');
+    expect(html).not.toContain('/original');
+    expect(html).toContain('读取原件以预览');
     expect(html).toContain('共 7 份');
     expect(html).toContain('非适用性');
     expect(html).toContain('可能来自历史版本');

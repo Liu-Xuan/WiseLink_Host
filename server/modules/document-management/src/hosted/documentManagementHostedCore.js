@@ -2,6 +2,7 @@ import { getDocumentFamilyAdapter } from '../migrated/adapters/documentFamilyAda
 import {
   buildGovernedDocumentIngressPreflightDecision,
   documentIngressCodeFromFilename,
+  documentIngressIdentityFromDescriptor,
 } from '../migrated/ingress/documentIngressPreflight.js';
 import {
   controlledPdfByteView,
@@ -320,6 +321,8 @@ function assertExactDocumentIdentity({
     businessRevision: incoming.businessRevision,
     revisionDate: incoming.revisionDate,
     sourceGeneratedDate: incoming.sourceGeneratedDate,
+    pdfSha256: incoming.sha256,
+    byteLength: Number(incoming.sizeBytes),
   };
   const actual = {
     canonicalIdentityKey: family?.canonicalIdentityKey || '',
@@ -330,10 +333,21 @@ function assertExactDocumentIdentity({
     businessRevision: version?.businessRevision || '',
     revisionDate: version?.revisionDate || '',
     sourceGeneratedDate: version?.sourceGeneratedDate || '',
+    pdfSha256: version?.pdfSha256 || '',
+    byteLength: Number(version?.byteLength),
   };
+  // Older commits used their publication date as the derived revision key.
+  // Preserve that immutable identity only when its raw fields reproduce the
+  // newly preferred business-revision key. Every raw field and byte stays exact.
+  const legacyDateKeyEquivalent = Boolean(actual.revisionDate)
+    && actual.canonicalRevisionIdentity === `DATE:${actual.revisionDate}`
+    && expected.canonicalRevisionIdentity === documentIngressIdentityFromDescriptor({
+      businessRevision: actual.businessRevision, revisionDate: actual.revisionDate,
+    }, { canonicalDocumentFamily: actual.documentFamily }).comparableVersion;
   if (
-    !family ||
-    Object.keys(expected).some((key) => actual[key] !== expected[key])
+    !family || !version ||
+    Object.keys(expected).some((key) => actual[key] !== expected[key]
+      && !(key === 'canonicalRevisionIdentity' && legacyDateKeyEquivalent))
   ) {
     fail(
       'CATALOG_EXACT_DOCUMENT_IDENTITY_CONFLICT',
@@ -887,7 +901,7 @@ export class DocumentManagementHostedCore {
     const observedFamily = familyIdentityKey
       ? await this.catalog.observeFamily(familyIdentityKey)
       : null;
-    const preflightId = deterministicId(
+    const preflightId = incompleteIngestion?.exactPreflightId || deterministicId(
       'preflight',
       acquisition.acquisitionId,
       decision.decision,
@@ -916,7 +930,8 @@ export class DocumentManagementHostedCore {
         storedPreflight,
         normalizedDescriptor,
       });
-    } else if (decision.decision !== 'INGEST_NEW_FAMILY') {
+    } else if (!(incompleteIngestion.exactPreflightId && EXACT_LINK_DECISIONS.has(decision.decision))
+      && decision.decision !== 'INGEST_NEW_FAMILY') {
       fail(
         'INCOMPLETE_INGESTION_RECOVERY_DECISION_UNSUPPORTED',
         'Narrow residual recovery only supports the original new-family commit path.',
@@ -946,6 +961,39 @@ export class DocumentManagementHostedCore {
             issuerAuthority,
           },
         });
+      }
+      if (incompleteIngestion) {
+        // Only the same acquired source and its original READY exact preflight
+        // may resume here. This does not authorize new-family or historical repair.
+        const { extractedMetadata: _newMetadataObservation, ...verifiedSourceDescriptor } = acquisitionRecord.sourceDescriptor;
+        const originalDescriptor = incompleteIngestion.exactSourceDescriptor;
+        acquisition = await this.catalog.recordAcquisition({
+          sourceArtifact: sourceArtifactRecord,
+          acquisition: {
+            ...acquisitionRecord,
+            // Preserve the original metadata observation (including extractedAt).
+            // All identity and storage fields still come from the fresh byte read.
+            sourceDescriptor: { ...verifiedSourceDescriptor,
+              ...(Object.hasOwn(originalDescriptor || {}, 'extractedMetadata')
+                ? { extractedMetadata: originalDescriptor.extractedMetadata } : {}),
+            },
+          },
+        });
+        storedPreflight = await this.catalog.recordPreflight(preflightRecord);
+        assertDescriptorIdentityReadback({ acquisition, storedPreflight, normalizedDescriptor });
+        const recoveredDescriptor = parsedJsonField(storedPreflight, 'normalizedDescriptor', 'normalizedDescriptorJson');
+        if (['sha256', 'sizeBytes', 'businessRevision', 'revisionDate', 'sourceGeneratedDate', 'identityAuthority']
+          .some((key) => recoveredDescriptor?.[key] !== normalizedDescriptor[key])
+          || acquisition.acquisitionId !== incompleteIngestion.acquisitionId
+          || acquisition.documentVersionId
+          || storedPreflight?.preflightId !== incompleteIngestion.exactPreflightId
+          || storedPreflight.acquisitionId !== acquisition.acquisitionId
+          || storedPreflight.status !== 'READY'
+          || storedPreflight.executionAuthorized !== false
+          || storedPreflight.decision !== decision.decision
+          || storedPreflight.documentVersionId || storedPreflight.commitIdempotencyKey) {
+          fail('INCOMPLETE_EXACT_LINK_STATE_CONFLICT', 'The original pending exact-link observation no longer matches this acquisition.');
+        }
       }
       await this.catalog.linkAcquisitionToVersion({
         acquisitionId: acquisition.acquisitionId,

@@ -2,7 +2,7 @@ import type {
   DocumentUploadIdentity,
   DocumentUploadResponse,
 } from '@shared/api.interface';
-import { resolveAppUrl } from '@lark-apaas/client-toolkit/utils/resolveAppUrl';
+import { DocumentOriginalPreview } from './DocumentOriginalPreview';
 
 function UploadIdentity({
   identity,
@@ -61,15 +61,9 @@ export function DocumentUploadReceipt({
               : '当前版本未改变。'}
             没有创建评估任务。
           </p>
-          <a
-            href={resolveAppUrl(
-              `/api/document-management/document-versions/${encodeURIComponent(receipt.documentVersionId!)}/original`,
-            )}
-            target="_blank"
-            rel="noopener noreferrer"
-          >
+          <DocumentOriginalPreview key={receipt.documentVersionId} documentVersionId={receipt.documentVersionId!}>
             打开已登记版本原件（新标签页）
-          </a>
+          </DocumentOriginalPreview>
           <p className="library-classification-note">
             目录正在刷新；现有搜索或筛选可能隐藏此文档。
           </p>
