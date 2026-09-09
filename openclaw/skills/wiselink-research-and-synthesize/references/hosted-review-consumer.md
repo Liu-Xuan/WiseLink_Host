@@ -86,3 +86,5 @@ JobAid v2 的模型 candidate 只生成答复、引用、问题与工作更新�
 明确的 Host MCP 提交拒绝不会被当作成功：只有同一 attempt 的只读结果确认 RUNNING、commitStartedAt/resultContentHash 均为空、projectionApplied/recoveryAvailable 均为 false 时，消费者才调用现有原子取消接口，保存失败原因并结束本候选。网络结果不明、状态读回失败、身份不符或已进入提交阶段均不取消、不重放；Host 的 COMMITTING 截止点继续防止竞争取消。
 
 进程重启后，如已存在明确 Host 拒绝的 commit.error，先核对其与原 commit.started 的调用摘要，以及原 begin.result 与当前请求的绑定，再实时读取同一 attempt。只有当前仍明确未进入提交阶段时才结束失败候选；保留原始检查点，追加本次状态读回，不用新 Skill 版本重新生成旧 ResultEnvelope，也不重放模型或提交。旧状态快照不能授权取消。
+
+来源读取只接受本轮 availableSourceRefIds。已随上下文交付的方法条款和工程师陈述的 evidenceRef 可用于工作依据，但不是读取句柄。整批请求不合法时不读取其中任何片段，也不替换、过滤或映射模型标识；由同一模型在原会话/租约/总时限内纠正，来源请求与候选内容合计最多两次纠正，超限保留失败。
