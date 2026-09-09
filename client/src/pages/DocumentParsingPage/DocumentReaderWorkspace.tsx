@@ -82,6 +82,11 @@ export function DocumentReaderWorkspace({
   );
   const idPrefix = useId().replace(/:/gu, '');
   const panelId = `${idPrefix}-panel`;
+  const semantic: boolean =
+    data.readerProjection?.translation.status ===
+    'SEMANTIC_READING_AID_AVAILABLE';
+  const showSemantic: boolean =
+    semantic || readerMode === 'bilingual' || readerMode === 'translation';
 
   function handleModeKeyDown(
     event: KeyboardEvent<HTMLButtonElement>,
@@ -115,14 +120,15 @@ export function DocumentReaderWorkspace({
       id="workspace-reader"
     >
       <div className="parse-panel-label">
-        <FileSearch aria-hidden="true" /> 原文与解析
+        <FileSearch aria-hidden="true" /> 文档阅读
       </div>
       <div className="parse-reader-modes" role="tablist" aria-label="原文视图">
         {capabilities.map((capability: ReaderCapability) => {
           const Icon =
             capability.mode === 'source'
               ? FileSearch
-              : capability.mode === 'bilingual'
+              : capability.mode === 'bilingual' ||
+                  capability.mode === 'translation'
                 ? Languages
                 : Search;
           return (
@@ -152,7 +158,7 @@ export function DocumentReaderWorkspace({
         <span>当前事项 · 可追溯来源</span>
       </div>
 
-      {readerMode === 'source' ? (
+      {readerMode === 'source' && !semantic ? (
         <section
           id={panelId}
           className="parse-reader-source-view"
@@ -188,12 +194,12 @@ export function DocumentReaderWorkspace({
         </section>
       ) : null}
 
-      {readerMode === 'bilingual' ? (
+      {showSemantic ? (
         <section
           id={panelId}
           className="parse-reader-bilingual-view"
           role="tabpanel"
-          aria-labelledby={`${idPrefix}-bilingual`}
+          aria-labelledby={`${idPrefix}-${readerMode}`}
         >
           <SemanticBilingualReader
             translation={
@@ -204,6 +210,14 @@ export function DocumentReaderWorkspace({
             }
             onSourceRefSelect={onSourceRefSelect}
             workItem={data.workItem}
+            mode={
+              readerMode === 'structured'
+                ? 'original'
+                : readerMode === 'bilingual'
+                  ? 'bilingual'
+                  : 'translation'
+            }
+            initialAnalysis={data.initialAnalysis}
             canRequestBlockTranslation={
               data.initialAnalysis?.canRequestBlockTranslation
             }
@@ -212,7 +226,7 @@ export function DocumentReaderWorkspace({
         </section>
       ) : null}
 
-      {readerMode === 'structured' ? (
+      {readerMode === 'structured' && !semantic ? (
         <section
           id={panelId}
           className="parse-reader-structured-view"

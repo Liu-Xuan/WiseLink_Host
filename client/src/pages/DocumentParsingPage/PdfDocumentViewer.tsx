@@ -444,7 +444,7 @@ function PdfCanvasPage({
         page = await document.getPage(pageNumber);
         if (!active || !frame || !canvas) return;
         const baseViewport = page.getViewport({ scale: 1 });
-        const availableWidth: number = Math.max(240, frame.clientWidth - 18);
+        const availableWidth: number = Math.max(1, frame.clientWidth - 18);
         const cssScale: number = (availableWidth / baseViewport.width) * zoom;
         const viewport = page.getViewport({ scale: cssScale });
         const outputScale: number = Math.min(window.devicePixelRatio || 1, 2);
@@ -472,7 +472,11 @@ function PdfCanvasPage({
       }
     }
 
+    let observedWidth: number = frame.clientWidth;
     const observer = new ResizeObserver(() => {
+      // Canvas height changes must not restart the render that set that height.
+      if (frame.clientWidth === observedWidth) return;
+      observedWidth = frame.clientWidth;
       cancelRender?.();
       void render();
     });

@@ -16,6 +16,7 @@ import {
 interface AssessmentReadingBriefProps {
   result: AssessmentReadingResult;
   depth?: 'list' | 'brief' | 'full';
+  presentation?: 'complete' | 'claims';
   onOpenClaim?: (
     selection: AssessmentClaimSelection,
     trigger: HTMLButtonElement,
@@ -25,6 +26,7 @@ interface AssessmentReadingBriefProps {
 const AssessmentReadingBrief: FC<AssessmentReadingBriefProps> = ({
   result,
   depth = 'brief',
+  presentation = 'complete',
   onOpenClaim,
 }) => {
   const groups: AssessmentClaimGroups = assessmentClaimGroups(result);
@@ -66,28 +68,37 @@ const AssessmentReadingBrief: FC<AssessmentReadingBriefProps> = ({
       data-result-revision={result.resultRevision}
       aria-label="已保存的工程认识"
     >
-      <header className="space-y-2">
-        <p className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
-          <BookOpen className="size-4" aria-hidden="true" />
-          {result.scope.kind === 'ENGINEERING_MATTER'
-            ? '事项工作认识'
-            : '当前对象的工程认识'}
-          <span>· 已保存候选，尚非实施决定</span>
-        </p>
-        <h2 className="break-words text-xl font-semibold leading-8">
-          {result.content.headline}
-        </h2>
-        <p className="whitespace-pre-wrap break-words text-sm leading-7">
-          {depth === 'list' ? result.content.listBrief : result.content.lead}
-        </p>
-      </header>
-      {depth !== 'list' && groups.decisive.length > 0 ? (
+      {presentation === 'complete' ? (
+        <header className="space-y-2">
+          <p className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
+            <BookOpen className="size-4" aria-hidden="true" />
+            {result.scope.kind === 'ENGINEERING_MATTER'
+              ? '事项工作认识'
+              : '当前对象的工程认识'}
+            <span>· 已保存候选，尚非实施决定</span>
+          </p>
+          <h2 className="break-words text-xl font-semibold leading-8">
+            {result.content.headline}
+          </h2>
+          <p className="whitespace-pre-wrap break-words text-sm leading-7">
+            {depth === 'list' ? result.content.listBrief : result.content.lead}
+          </p>
+        </header>
+      ) : null}
+      {presentation === 'claims' ? (
+        <ul className="space-y-4">{result.content.claims.map(renderClaim)}</ul>
+      ) : null}
+      {presentation === 'complete' &&
+      depth !== 'list' &&
+      groups.decisive.length > 0 ? (
         <div className="space-y-3 border-l-2 border-primary/40 pl-4">
           <h3 className="text-sm font-medium">决定性条件与待核判断</h3>
           <ul className="space-y-4">{groups.decisive.map(renderClaim)}</ul>
         </div>
       ) : null}
-      {depth !== 'list' && groups.supporting.length > 0 ? (
+      {presentation === 'complete' &&
+      depth !== 'list' &&
+      groups.supporting.length > 0 ? (
         depth === 'full' ? (
           <ul className="space-y-4">{groups.supporting.map(renderClaim)}</ul>
         ) : (

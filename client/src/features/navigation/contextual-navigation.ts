@@ -133,6 +133,16 @@ export function buildEngineeringQuicklook(
   const view = toWorkItemView(page);
   const overall = view.overall;
   const projection = page.workItem.integratedAssessment?.overallSynthesis;
+  const base = page.workItem.integratedAssessment?.baseRules;
+  const problem = isJobAidProblemProjection(base) ? base : null;
+  const preferProblem =
+    problem &&
+    (!projection?.readingResult ||
+      projection.status === 'STALE' ||
+      projection.basedOnJobAidWorkRevisionRef !== problem.workRevisionRef);
+  const readingResult = preferProblem
+    ? problem.readingResult
+    : (projection?.readingResult ?? null);
   const applicabilityStatements: string[] = [
     statementText(overall?.applicability.sourceScope ?? null),
     statementText(overall?.applicability.fleetMatch ?? null),
@@ -165,18 +175,26 @@ export function buildEngineeringQuicklook(
   ];
 
   return {
-    readingResult: projection?.readingResult ?? null,
-    resultIdentity: projection
+    readingResult,
+    resultIdentity: readingResult
       ? {
-          resultRef: projection.sourceResultId,
-          revision: projection.revision,
+          resultRef: readingResult.resultRef,
+          revision: readingResult.resultRevision,
           workItemId: page.workItem.workItemId,
           documentVersionId: page.workItem.source.documentVersionId,
         }
-      : null,
+      : projection
+        ? {
+            resultRef: projection.sourceResultId,
+            revision: projection.revision,
+            workItemId: page.workItem.workItemId,
+            documentVersionId: page.workItem.source.documentVersionId,
+          }
+        : null,
     authorityLabel: AUTHORITY_LABELS[view.authority],
     freshnessLabel: FRESHNESS_LABELS[view.freshness],
     currentJudgment:
+      readingResult?.content.headline ??
       overall?.conclusion?.text ??
       '当前资料尚未返回可直接使用的工程摘要，可先进入工作台查看结构化内容与原文。',
     applicabilitySummary:
@@ -202,6 +220,9 @@ export function buildEngineeringQuicklook(
     derivedArtifactCount: countQuicklookDerivedArtifacts(
       page.relatedDocuments.relations,
     ),
+    sourceReadNote: preferProblem
+      ? '这里展示已保存的问题认识；整体意见尚未形成或基于不同工作版本，不与新分析拼接。'
+      : undefined,
   };
 }
 
@@ -254,14 +275,21 @@ export function buildLibraryEngineeringQuicklook(
   ];
   return {
     readingResult: result?.readingResult ?? null,
-    resultIdentity: result
+    resultIdentity: result?.readingResult
       ? {
-          resultRef: result.sourceResultId,
-          revision: result.revision,
+          resultRef: result.readingResult.resultRef,
+          revision: result.readingResult.resultRevision,
           workItemId: response.document.workItemId,
           documentVersionId: response.document.documentVersionId,
         }
-      : null,
+      : result
+        ? {
+            resultRef: result.sourceResultId,
+            revision: result.revision,
+            workItemId: response.document.workItemId,
+            documentVersionId: response.document.documentVersionId,
+          }
+        : null,
     authorityLabel:
       result?.jobAidRoundCompletion === 'IN_PROGRESS'
         ? '分析进行中 · 已保存工作'
@@ -271,6 +299,7 @@ export function buildLibraryEngineeringQuicklook(
     freshnessLabel:
       result?.status === 'STALE' ? '结论需更新' : '原文未在本次核验',
     currentJudgment: firstNonEmpty(
+      result?.readingResult?.content.headline,
       summary?.conclusion.text,
       result?.overallCandidate,
       '当前资料尚无已保存的工程摘要，可进入工作台查看解析与评估进度。',
@@ -319,6 +348,8 @@ export function quicklookMarkdown(
       `## ${content.headline}`,
       '',
       '> 已保存候选认识；不代表正式采用、批准或实施决定。',
+      `> 结果版本：${quicklook.readingResult.resultRef} · ${quicklook.readingResult.resultRevision}`,
+      ...(quicklook.sourceReadNote ? ['', quicklook.sourceReadNote] : []),
       '',
       content.listBrief,
       '',
