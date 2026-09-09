@@ -871,6 +871,7 @@ export default function DocumentParsingPage() {
       <WorkbenchShell
         key={`${sessionGeneration}:${workItemId}`}
         retainTabScroll
+        readingLayout={activeNode === 'package' || activeNode === 'reader'}
         contextLabel={`${pkg?.documentIdentity?.documentCode ?? fileLabel} · ${WORKBENCH_TABS.find((tab) => tab.key === activeNode)?.label ?? '综合评估'}`}
         navigator={
           <>
@@ -943,91 +944,100 @@ export default function DocumentParsingPage() {
             </div>
           </header>
         ) : null}
-        {/* §7 AuthorityStrip：候选/有效性/文件版本状态，全工作台固定可见 */}
-        <AuthorityStrip view={workItemView} />
-        <InitialAnalysisProgress
-          key={`${sessionGeneration}:${workItemId}`}
-          workItemId={workItemId}
-          sessionGeneration={sessionGeneration}
-          initial={data.initialAnalysis}
-          timeline={data.timeline}
-          onRevisionChanged={() => {
-            void load(activeQuery);
-          }}
-          onAccessLost={() => {
-            void load(activeQuery);
-          }}
-        />
+        <details
+          className="parse-reading-context"
+          open={activeNode !== 'package' && activeNode !== 'reader'}
+        >
+          <summary>
+            文档状态与分析进度
+            <span>展开查看 · 候选意见仍需工程师确认</span>
+          </summary>
+          {/* 阅读态只折叠展示，保留状态读取、权限与候选确认边界。 */}
+          <AuthorityStrip view={workItemView} />
+          <InitialAnalysisProgress
+            key={`${sessionGeneration}:${workItemId}`}
+            workItemId={workItemId}
+            sessionGeneration={sessionGeneration}
+            initial={data.initialAnalysis}
+            timeline={data.timeline}
+            onRevisionChanged={() => {
+              void load(activeQuery);
+            }}
+            onAccessLost={() => {
+              void load(activeQuery);
+            }}
+          />
+          {integratedAssessment ? (
+            <details
+              className={`parse-overall-bar${
+                /* §06 需更新传播：进入需重综合态时琥珀色光线传播一次 */
+                overallCandidate?.status === 'STALE' ||
+                integratedAssessment.overallSynthesis?.staleReason
+                  ? ' wl-stale-flash is-stale'
+                  : ''
+              }`}
+              open={searchParams.get('obar') === '1'}
+            >
+              <summary
+                onClick={(event) => {
+                  event.preventDefault();
+                  updateDeepLink({
+                    obar: searchParams.get('obar') === '1' ? null : '1',
+                  });
+                }}
+              >
+                <Sparkles aria-hidden="true" />
+                <span>工程摘要</span>
+                <strong>
+                  {overallCandidate?.status === 'STALE' ||
+                  integratedAssessment.overallSynthesis?.staleReason
+                    ? '结论需更新'
+                    : overallEngineeringSummary
+                      ? '已绑定原文依据'
+                      : '等待重新生成'}
+                </strong>
+                <small title={overallEngineeringSummary?.conclusion.text ?? ''}>
+                  {overallEngineeringSummary?.conclusion.text ??
+                    '当前候选缺少逐结论原文绑定，需重新生成工程摘要'}
+                </small>
+                <ChevronDown aria-hidden="true" />
+              </summary>
+              {overallEngineeringStatements.length > 0 ? (
+                <ul className="parse-overall-bar-findings">
+                  {overallEngineeringStatements.map((statement, index) => (
+                    <li key={`${statement.text}-${index}`}>
+                      <strong>{statement.text}</strong>
+                      <span>
+                        {statement.basis === 'SOURCE_FACT'
+                          ? '来源事实'
+                          : '条件性推断'}
+                      </span>
+                      {statement.sourceRefIds.length ? (
+                        <button
+                          type="button"
+                          onClick={() =>
+                            locateSourceRef(null, statement.sourceRefIds[0])
+                          }
+                        >
+                          <LocateFixed aria-hidden="true" />
+                          {statement.sourceRefIds.length} 条依据
+                        </button>
+                      ) : null}
+                    </li>
+                  ))}
+                </ul>
+              ) : (
+                <p className="parse-overall-bar-empty">
+                  当前候选没有逐结论绑定当前文件版本的原文依据，不能作为工程摘要展示。
+                </p>
+              )}
+            </details>
+          ) : null}
+        </details>
         {loading ? (
           <p className="wl-projection-refresh" role="status">
             正在刷新当前结果…仍显示上次读回的内容，尚未确认最新状态；确认和采纳暂不可用。
           </p>
-        ) : null}
-        {integratedAssessment ? (
-          <details
-            className={`parse-overall-bar${
-              /* §06 需更新传播：进入需重综合态时琥珀色光线传播一次 */
-              overallCandidate?.status === 'STALE' ||
-              integratedAssessment.overallSynthesis?.staleReason
-                ? ' wl-stale-flash is-stale'
-                : ''
-            }`}
-            open={searchParams.get('obar') === '1'}
-          >
-            <summary
-              onClick={(event) => {
-                event.preventDefault();
-                updateDeepLink({
-                  obar: searchParams.get('obar') === '1' ? null : '1',
-                });
-              }}
-            >
-              <Sparkles aria-hidden="true" />
-              <span>工程摘要</span>
-              <strong>
-                {overallCandidate?.status === 'STALE' ||
-                integratedAssessment.overallSynthesis?.staleReason
-                  ? '结论需更新'
-                  : overallEngineeringSummary
-                    ? '已绑定原文依据'
-                    : '等待重新生成'}
-              </strong>
-              <small title={overallEngineeringSummary?.conclusion.text ?? ''}>
-                {overallEngineeringSummary?.conclusion.text ??
-                  '当前候选缺少逐结论原文绑定，需重新生成工程摘要'}
-              </small>
-              <ChevronDown aria-hidden="true" />
-            </summary>
-            {overallEngineeringStatements.length > 0 ? (
-              <ul className="parse-overall-bar-findings">
-                {overallEngineeringStatements.map((statement, index) => (
-                  <li key={`${statement.text}-${index}`}>
-                    <strong>{statement.text}</strong>
-                    <span>
-                      {statement.basis === 'SOURCE_FACT'
-                        ? '来源事实'
-                        : '条件性推断'}
-                    </span>
-                    {statement.sourceRefIds.length ? (
-                      <button
-                        type="button"
-                        onClick={() =>
-                          locateSourceRef(null, statement.sourceRefIds[0])
-                        }
-                      >
-                        <LocateFixed aria-hidden="true" />
-                        {statement.sourceRefIds.length} 条依据
-                      </button>
-                    ) : null}
-                  </li>
-                ))}
-              </ul>
-            ) : (
-              <p className="parse-overall-bar-empty">
-                当前候选没有逐结论绑定当前文件版本的原文依据，不能作为工程摘要展示。
-              </p>
-            )}
-          </details>
         ) : null}
 
         {activeNode === 'document' ? (
