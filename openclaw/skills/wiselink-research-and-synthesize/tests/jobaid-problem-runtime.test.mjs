@@ -269,3 +269,55 @@ test('a Host addresses rejection identifies the wrong field and preserves the wo
   assert.equal(f.store.size, 1);
   assert.deepEqual([...f.store.values()][0].content, corrected);
 });
+
+test('Host risk rejection reports all supplied shape errors and saves corrected candidate unchanged', async () => {
+  const invalid = { ...completed, issues: [{
+    riskScenarios: [{ conditions: 'synthetic sensitive condition', severity: null, likelihood: null }],
+    requirementHandling: [{ conditions: 'synthetic requirement' }],
+    openQuestions: [{ affects: ['synthetic implication'] }],
+  }] };
+  const corrected = { ...completed, issues: [{
+    riskScenarios: [{ conditions: ['待确认条件'], severity: null, likelihood: null }],
+    requirementHandling: [{ conditions: ['待确认适用范围'] }],
+    openQuestions: [{ affects: '条件未确认，结论仍有保留。' }],
+  }] };
+  const f = fixture([
+    { action: 'SAVE_WORK', work: invalid },
+    { action: 'SAVE_WORK', work: corrected },
+    { action: 'FINISH' },
+  ]);
+  const save = f.options.saveAssessmentWork;
+  let attempts = 0;
+  f.options.saveAssessmentWork = async (input) => {
+    if (++attempts === 1) {
+      assert.deepEqual(JSON.parse(input.workJson), invalid);
+      throw Object.assign(new Error('REVIEW_HOST_MCP_TOOL_FAILED'), {
+        hostErrorCode: 'JOBAID_RISK_CONDITIONS_INVALID',
+      });
+    }
+    return save(input);
+  };
+  await f.run();
+  const receipt = JSON.parse(f.calls[1].messages.at(-1).content);
+  assert.equal(receipt.errorCode, 'JOBAID_RISK_CONDITIONS_INVALID');
+  assert.deepEqual(receipt.fieldErrors, [
+    { path: 'work.issues[0].riskScenarios[0].conditions', expected: 'array', received: 'string' },
+    { path: 'work.issues[0].openQuestions[0].affects', expected: 'non-empty string', received: 'array' },
+    { path: 'work.issues[0].requirementHandling[0].conditions', expected: 'array', received: 'string' },
+  ]);
+  assert.equal(JSON.stringify(receipt).includes('synthetic'), false);
+  assert.equal(f.store.size, 1);
+  assert.deepEqual([...f.store.values()][0].content, corrected);
+});
+
+test('work shape diagnostics leave nullable unknowns intact and identify nested item and enum types', async () => {
+  const { jobAidWorkTypeErrors } = await import('../scripts/jobaid-work-shape.mjs');
+  const work = { issues: [{ riskScenarios: [{ severity: null, likelihood: null, importantEvent: null,
+    conditions: ['valid', 1] }], measures: [{ status: 'NOT_A_STATUS' }] }] };
+  const original = structuredClone(work);
+  const errors = jobAidWorkTypeErrors(work);
+  assert.equal(errors.length, 2);
+  assert.equal(errors[0].path, 'work.issues[0].riskScenarios[0].conditions[1]');
+  assert.equal(errors[1].path, 'work.issues[0].measures[0].status');
+  assert.deepEqual(work, original);
+});

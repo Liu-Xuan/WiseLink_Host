@@ -1,3 +1,4 @@
+import { jobAidWorkTypeErrors } from './jobaid-work-shape.mjs';
 import { randomUUID } from 'node:crypto';
 import {
   M3_MAX_COMPLETION_TOKENS,
@@ -298,7 +299,7 @@ export async function invokeHostedJobAidProblemModel(
         expectedWorkRevision,
         instruction:
           'Correct only the rejected step or substantive work using the original evidence. Existing saved work remains available; never invent sources or turn failure into completion.',
-        ...measureAddressesCorrection(code, submittedWork),
+        ...workShapeCorrection(code, submittedWork),
       };
       await options.observeCandidateRejection?.({
         correctionNo: corrections,
@@ -323,30 +324,16 @@ export async function invokeHostedJobAidProblemModel(
 
 // Explain the existing Host rejection using types/positions only. The original
 // work is still submitted unchanged and only the Host can accept a revision.
-function measureAddressesCorrection(code, work) {
-  if (code !== 'JOBAID_MEASURE_ADDRESSES_INVALID') return {};
-  const fields = [];
-  if (Array.isArray(work?.issues)) {
-    work.issues.forEach((issue, issueIndex) => {
-      if (!Array.isArray(issue?.measures)) return;
-      issue.measures.forEach((measure, measureIndex) => {
-        if (typeof measure?.addresses === 'string' && measure.addresses.trim())
-          return;
-        fields.push({
-          path: `work.issues[${issueIndex}].measures[${measureIndex}].addresses`,
-          expected: 'non-empty string',
-          received: Array.isArray(measure?.addresses)
-            ? 'array'
-            : measure?.addresses === null
-              ? 'null'
-              : typeof measure?.addresses,
-        });
-      });
-    });
-  }
+function workShapeCorrection(code, work) {
+  if (!work) return {};
+  const fieldErrors = jobAidWorkTypeErrors(work);
+  if (!fieldErrors.length) return {};
   return {
-    fieldErrors: fields,
+    fieldErrors,
     instruction:
-      'Correct measures[].addresses: supply one non-empty string explaining which problem or risk the measure addresses, supported by the original evidence. It is not an array, issue-key list, object, or status. Preserve justified analysis and unknowns; do not invent a relationship or remove a substantive measure merely to pass validation. The rejected field is addresses; changing status does not repair it. The Host will validate the revised work.',
+      'Correct the reported field types using the original evidence and the work-update shape. conditions, limitations and basisRefs are arrays of strings; addresses is one non-empty string describing the problem or risk addressed. Preserve justified analysis and unknowns; do not invent content or remove substantive work merely to pass validation. The Host will validate the revised work.' +
+      (code === 'JOBAID_MEASURE_ADDRESSES_INVALID'
+        ? ' The rejected field is addresses; changing status does not repair it.'
+        : ''),
   };
 }
