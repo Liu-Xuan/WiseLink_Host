@@ -1,0 +1,102 @@
+.library-hierarchy {
+  min-width: 0;
+}
+.library-grouping-controls {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  padding-block: 8px;
+}
+.library-classification-note {
+  margin: 8px 0 12px;
+  color: var(--wl-muted);
+  font-size: 12px;
+  line-height: 1.6;
+}
+.library-category-tree > details,
+.library-unclassified-group {
+  margin-block: 8px;
+  border: 1px solid var(--wl-border);
+  border-radius: 10px;
+  background: var(--wl-well);
+}
+.library-hierarchy summary {
+  padding: 12px;
+  cursor: pointer;
+  overflow-wrap: anywhere;
+}
+.library-hierarchy summary > span,
+.library-hierarchy summary > small {
+  margin-inline-start: 8px;
+}
+.library-category-tree > details > summary,
+.library-unclassified-group > summary {
+  font-size: 13px;
+  color: var(--wl-ink);
+}
+.library-family-tree,
+.library-version-tree {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+}
+.library-family-tree {
+  padding: 0 8px 8px;
+}
+.library-family-tree > li {
+  margin-top: 6px;
+}
+.library-family-tree details {
+  border: 1px solid var(--wl-border);
+  border-radius: 8px;
+  background: var(--wl-frame);
+}
+.library-family-tree details.is-selected {
+  border-color: var(--wl-border-strong);
+  background: var(--wl-selected);
+}
+.library-family-tree summary {
+  font-size: 13px;
+}
+.library-family-tree small,
+.library-family-actions {
+  color: var(--wl-muted);
+  font-size: 12px;
+}
+.library-family-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 0 12px 8px;
+}
+.library-version-tree {
+  margin: 0 12px 12px 20px;
+  border-left: 1px solid var(--wl-border-strong);
+  padding-left: 12px;
+}
+.library-version-tree a {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 12px;
+  padding: 10px 6px;
+  color: var(--wl-ink);
+  font-size: 12px;
+  text-decoration: none;
+  overflow-wrap: anywhere;
+}
+.library-version-tree a:hover {
+  background: var(--wl-selected);
+}
+.library-version-tree small {
+  width: 100%;
+}
+.library-hierarchy summary:focus-visible,
+.library-version-tree a:focus-visible {
+  outline: 2px solid var(--wl-accent);
+  outline-offset: 2px;
+}
+.library-unclassified-group > .library-category-tree {
+  padding-inline: 8px;
+}

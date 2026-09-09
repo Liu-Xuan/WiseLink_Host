@@ -1373,7 +1373,7 @@ test('requires 24 MCP capabilities, five review tools, and hosted provenance', (
   assert.ok(HOST_MCP_TOOLS.includes('commit_applicability_candidate'));
   assert.equal(
     WISELINK_SKILL_VERSION,
-    'wiselink-research-and-synthesize@r09.c58',
+    'wiselink-research-and-synthesize@r09.c59',
   );
   assert.equal(
     WISELINK_SKILL_COMPATIBILITY_REF,
@@ -6973,6 +6973,73 @@ test('JobAid auto tool choice still rejects prose-only and unauthorized source r
     await assert.rejects(invokeReviewWithTransport({ input: { context: { problemAssessment: {} }, availableSourceRefIds: [] } }, {
       gatewayUrl: 'https://official.invalid', gatewayToken: 'fixture-only', configuredModelVersion: 'fixture/provider',
     }, { requestGateway: async () => Response.json({ choices: [{ message }] }) }), /REVIEW_GATEWAY_OUTPUT_FUNCTION_COUNT_INVALID|REVIEW_MODEL_SOURCE_REQUEST_INVALID/u);
+  }
+});
+
+test('JobAid corrects delivered method evidence used as a read handle without reading any part of the rejected batch', async () => {
+  const reads = [];
+  const rejections = [];
+  const sessions = [];
+  const candidate = { responseType: 'ANSWER', answer: '已核对正文，方法按已交付内容使用。', sourceRefs: ['page1'],
+    missingInputs: [], candidateEvidenceRefs: [], warnings: [] };
+  let requests = 0;
+  const result = await invokeReviewWithTransport({ input: {
+    availableSourceRefIds: ['page1'], context: { problemAssessment: { deliveredEvidence: [
+      { evidenceRef: 'method:controls', kind: 'METHOD_CLAUSE', excerpt: 'Fixture method.' },
+    ] } },
+  } }, {
+    gatewayUrl: 'https://official.invalid', gatewayToken: 'fixture-only', configuredModelVersion: 'fixture/provider',
+    nativeSessionKey: 'agent:wiselink-engineering:review:ACTX-RS-source-correction',
+    readSourceRefs: async (ids) => { reads.push(ids); return ids.map((sourceRefId) => ({ sourceRefId, evidenceRef: sourceRefId, excerpt: 'Fixture passage.' })); },
+    observeCandidateRejection: async (value) => rejections.push(value),
+    validateCandidate: async () => assert.deepEqual(reads, [['page1']]),
+  }, { requestGateway: async (_url, init) => {
+    requests++;
+    sessions.push(init.headers['x-openclaw-session-key']);
+    const body = JSON.parse(init.body);
+    if (requests === 2) {
+      assert.deepEqual(reads, []);
+      const feedback = JSON.parse(body.messages.at(-1).content);
+      assert.equal(feedback.sourceReadAccepted, false);
+      assert.deepEqual(feedback.readableSourceRefIds, ['page1']);
+      assert.deepEqual(feedback.alreadyDeliveredEvidenceRefs, ['method:controls']);
+      assert.match(feedback.instruction, /none of its sources were read/u);
+    }
+    const reading = requests < 3;
+    return Response.json({ choices: [{ message: { content: null, tool_calls: [{
+      id: `call-${requests}`, type: 'function', function: {
+        name: reading ? 'read_wiselink_review_sources' : 'return_wiselink_review_candidate',
+        arguments: JSON.stringify(reading ? { sourceRefIds: requests === 1 ? ['page1', 'method:controls'] : ['page1'] } : { candidate }),
+      },
+    }] } }] });
+  } });
+  assert.equal(requests, 3);
+  assert.equal(new Set(sessions).size, 1);
+  assert.deepEqual(reads, [['page1']]);
+  assert.deepEqual(rejections, [{ modelRound: 1, correctionNo: 1,
+    errorCode: 'REVIEW_MODEL_SOURCE_REQUEST_INVALID', validationStage: 'SOURCE_REQUEST' }]);
+  assert.deepEqual(result.output.sourceRefs, ['page1']);
+  assert.equal(result.output.jobAidWorkingDelta, null);
+});
+
+test('invalid source requests stop after two model corrections without any Host read', async () => {
+  for (const sourceRefIds of [['unknown-handle'], ['page1', 'page1'], { item: ['page1'] }]) {
+    let requests = 0;
+    const rejections = [];
+    await assert.rejects(invokeReviewWithTransport({ input: {
+      availableSourceRefIds: ['page1'], context: { problemAssessment: {} },
+    } }, {
+      gatewayUrl: 'https://official.invalid', gatewayToken: 'fixture-only', configuredModelVersion: 'fixture/provider',
+      readSourceRefs: () => assert.fail('Invalid requests must never reach the Host'),
+      observeCandidateRejection: async (value) => rejections.push(value),
+    }, { requestGateway: async () => {
+      requests++;
+      return Response.json({ choices: [{ message: { content: null, tool_calls: [{ id: `r${requests}`, type: 'function', function: {
+        name: 'read_wiselink_review_sources', arguments: JSON.stringify({ sourceRefIds }),
+      } }] } }] });
+    } }), /REVIEW_MODEL_SOURCE_REQUEST_INVALID/u);
+    assert.equal(requests, 3);
+    assert.equal(rejections.length, 2);
   }
 });
 

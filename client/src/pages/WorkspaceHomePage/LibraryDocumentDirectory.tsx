@@ -24,6 +24,7 @@ import {
 import type { useLibraryDocuments } from './useLibraryDocuments';
 import { libraryEntryId } from './library-document-read';
 import { libraryDateLabel } from './library-document-presentation';
+import { LibraryHierarchy } from './LibraryHierarchy';
 
 interface LibraryDocumentDirectoryProps {
   directory: ReturnType<typeof useLibraryDocuments>;
@@ -119,7 +120,14 @@ export function LibraryDocumentDirectory({
         </div>
       ) : null}
       <div className="library-tree-recent-wrapper">
-        {directory.items.length ? (
+        {directory.items.length && !taskMode ? (
+          <LibraryHierarchy
+            documents={directory.items.filter((item) => item.kind === 'DOCUMENT')}
+            selectedId={selectedId}
+            hasMore={Boolean(directory.nextCursor)}
+            onSelect={onSelect}
+          />
+        ) : directory.items.length ? (
           <ul className="library-recent-rows" aria-label={label}>
             {directory.items.map((document) => {
               const itemId = libraryEntryId(document);
