@@ -9,6 +9,8 @@
 本地 Skill c63 共 40 个文件、238 项检查通过。新增迁移 0029 已在开发库执行，并在核对只有本次 15 条结构差异后迁移到线上；保留原有 RLS、身份映射和业务数据。数据库生成器丢失了既有自引用、索引条件和 JSON 业务类型，因此只合入本次生成的新表与两列，保留原有正确声明。随后将新表权限收窄为 SELECT/INSERT/UPDATE，核对四条仅涉及本表的策略差异后迁移成功。Host 提交 `09d3877510bd20baa4d42798ee1bd8cdf779cb6b` 已仅推送 origin，release `7683570956258167998` finished；官方 c63 安装回合 `7683571951973534898` 完成，正式目录 40/40 文件摘要匹配，238 项检查通过。单事项 scope 与唯一 cron 在无在途任务时切回 M3 `WI-33f5b8fa-53e3-44ec-8b9f-05bbd1e03df0`；配套 scope release `7683573187456077001` finished，同一 cron 于 00:34 恢复 60 秒自然调度，其他参数与历史保留。正常页面端到端验证仍在进行；旧 M3/DLI 失败仍保留，不能因技术发布完成而标记原分析循环完成。
 
 
+00:50 普通聊天实测：M3 Turn12 的输入正常保存，但讨论历史误用默认 SQL 上下文，准备阶段返回 REVIEW_TURN_NOT_FOUND。修订 `c230326d92d159acdaf9d65352b5f0931235919c` 复用现有受控 actor 事务读取，36 项相关检查与服务端构建通过，release `7683576775129173187` finished。Turn13 正常新请求已通过上下文准备并实际读取六个原文片段；随后模型将普通文档引用填入附件候选证据，因 REVIEW_MODEL_CANDIDATE_EVIDENCE_REF_NOT_ATTACHMENT 终止，回答未保存，工作修订仍未更新。c64 补齐聊天字段说明及同回合最多两次模型纠正，239 项本地检查通过；安装及新页面验证继续进行。
+
 更新日期：2026-09-09。依据：[R10 云文档](https://hv5zjf4j8yb.feishu.cn/docx/MA3fdjEycoISjHxptAqcsyxvn9b) 与 [当前正文镜像](WISELINK_R10_CURRENT.md)。当前运行证据以本页 9 月 8 日记录为准；云文档及正文镜像 revision 2215 的运行状态保留原时点，按用户要求不随每次排障更新。9 月 6 日发布复核与数据库/存储续查见 [存储异常记录](WL31_HOSTED_STORAGE_INCIDENT_20260905.md)，此前功能发布和页面证据见 [交接与响应记录](WL31_R10_CONTEXT_HANDOFF_PERFORMANCE.md)，视觉交付见 [Satin 运行记录](WL31_R10_SATIN_HOSTED_ROLLOUT_20260905.md)。
 
 主控交接：用户于 2026-09-07 指定 [WiseLink R10 项目主控（2026-09-07 接管）](codex://threads/01a079d1-918d-7af1-a283-75968ec294ea) 接替 [WiseLink R09 项目主控（接替旧主控）](codex://threads/01a06562-e90c-7340-9fd5-9a96cdd3073f)。新主控承接当前 R10 目标、已有业务授权和分工，并核对 [2026-09-06 接管任务](codex://threads/01a0726d-5e6e-7b70-b1b9-a7e84fd1d31b) 的存储调查结论。此次接管时本地 HEAD 为 `408de9f17`；工作区已有 AGENTS/技能整理及临时产物，独立保留。历史待办不覆盖当前执行顺序，最新推送边界见下一段。

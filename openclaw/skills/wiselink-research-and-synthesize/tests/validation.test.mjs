@@ -1374,7 +1374,7 @@ test('requires 25 MCP capabilities, six review tools, and hosted provenance', ()
   assert.ok(HOST_MCP_TOOLS.includes('commit_applicability_candidate'));
   assert.equal(
     WISELINK_SKILL_VERSION,
-    'wiselink-research-and-synthesize@r09.c63',
+    'wiselink-research-and-synthesize@r09.c64',
   );
   assert.equal(
     WISELINK_SKILL_COMPATIBILITY_REF,
@@ -4798,7 +4798,7 @@ test('offers source reading and one final candidate function with blank assistan
   assert.equal(result.provenance.modelVersion, 'openai-codex/gpt-5.4');
   assert.equal(
     result.provenance.promptVersion,
-    'wiselink.3_1.review_prompt.v1.c42',
+    'wiselink.3_1.review_prompt.v1.c43',
   );
 });
 
@@ -4851,7 +4851,7 @@ test('falls back to the configured model and records only output shape v2', asyn
   assert.equal(result.provenance.modelVersion, 'provider/configured');
   assert.equal(
     result.provenance.promptVersion,
-    'wiselink.3_1.review_prompt.v1.c42',
+    'wiselink.3_1.review_prompt.v1.c43',
   );
   assert.equal(
     outputShape.schemaVersion,
@@ -7265,4 +7265,46 @@ test('a model cannot invoke Aily when Host marks the user delegation unavailable
     queryAily: async () => { called = true; },
   }), /AILY_QUERY_ARGUMENTS_INVALID/u);
   assert.equal(called, false);
+});
+
+test('free chat corrects invalid attachment citations within the same bounded exchange', async () => {
+  for (const alwaysInvalid of [false, true]) {
+    let requests = 0;
+    let validations = 0;
+    const rejections = [];
+    const pending = invokeReviewWithTransport({ input: { context: { purpose: 'CHAT' }, attachmentRefs: [] } }, {
+      gatewayUrl: 'https://official.invalid', gatewayToken: 'fixture-only', configuredModelVersion: 'fixture/provider',
+      observeCandidateRejection: async (value) => rejections.push(value),
+      validateCandidate: async (candidate) => {
+        validations++;
+        if (candidate.candidateEvidenceRefs.length) {
+          assert.deepEqual(candidate.candidateEvidenceRefs, ['ordinary-document-source']);
+          throw new Error('REVIEW_MODEL_CANDIDATE_EVIDENCE_REF_NOT_ATTACHMENT');
+        }
+        assert.equal(candidate.reviewActionDraft, null);
+        assert.deepEqual(candidate.affectedItemIds, []);
+      },
+    }, { requestGateway: async (_url, init) => {
+      requests++;
+      const body = JSON.parse(init.body);
+      if (requests > 1) {
+        const receipt = JSON.parse(body.messages[2].content);
+        assert.equal(receipt.validationError, 'REVIEW_MODEL_CANDIDATE_EVIDENCE_REF_NOT_ATTACHMENT');
+        assert.match(receipt.instruction, /Ordinary document SourceRefs belong only in sourceRefs/u);
+        assert.match(receipt.instruction, /do not add a working delta/u);
+      }
+      return Response.json({ choices: [{ message: { content: null, tool_calls: [{ id: `chat-citation-${requests}`, type: 'function', function: {
+        name: 'return_wiselink_review_candidate', arguments: JSON.stringify({
+          responseType: 'ANSWER', answer: '讨论答复', sourceRefs: [], missingInputs: [], warnings: [],
+          candidateEvidenceRefs: requests === 1 || alwaysInvalid ? ['ordinary-document-source'] : [],
+          reviewActionDraft: null, affectedItemIds: [],
+        }),
+      } }] } }] });
+    } });
+    if (alwaysInvalid) await assert.rejects(pending, /REVIEW_MODEL_CANDIDATE_EVIDENCE_REF_NOT_ATTACHMENT/u);
+    else assert.deepEqual((await pending).output.candidateEvidenceRefs, []);
+    assert.equal(requests, alwaysInvalid ? 3 : 2);
+    assert.equal(validations, requests);
+    assert.equal(rejections.length, alwaysInvalid ? 2 : 1);
+  }
 });

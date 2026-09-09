@@ -68,7 +68,7 @@ const REVIEW_RESPONSE_TYPES = [
   'AFFECTED_ITEMS_PREVIEW',
   'TASK_STATUS',
 ];
-const REVIEW_PROMPT_VERSION = 'wiselink.3_1.review_prompt.v1.c42';
+const REVIEW_PROMPT_VERSION = 'wiselink.3_1.review_prompt.v1.c43';
 const WISELINK_HOST_MCP_CONFIG_KEYS = new Set([
   WISELINK_HOST_MCP_NAME,
   'wiselink_host_controller',
@@ -501,7 +501,7 @@ export async function invokeHostedReviewModel(input, options = {}, dependencies 
         if (typeof options.validateCandidate === 'function') await options.validateCandidate(candidate);
       } catch (error) {
         const errorCode = candidateValidationErrorCode(error);
-        if (!(isMatter || isJobAid) || typeof options.validateCandidate !== 'function' || !errorCode ||
+        if (!(isMatter || isJobAid || isChat) || typeof options.validateCandidate !== 'function' || !errorCode ||
           candidateCorrections >= MAX_REVIEW_MODEL_CORRECTIONS ||
           typeof toolCall.id !== 'string' || toolCall.id.trim() === '') throw error;
         candidateCorrections += 1;
@@ -517,7 +517,9 @@ export async function invokeHostedReviewModel(input, options = {}, dependencies 
           { role: 'tool', tool_call_id: toolCall.id, content: canonicalJson({
             candidateAccepted: false, validationError: errorCode,
             availableEvidenceRefs: candidateFeedbackEvidenceRefs(input, sourceCache),
-            instruction: isJobAid
+            instruction: isChat
+              ? 'Correct this discussion answer using the same question and actually read sources. Ordinary document SourceRefs belong only in sourceRefs. For ANSWER, SOURCE_LINK, CLARIFYING_QUESTION, INPUT_REQUEST or TASK_STATUS, candidateEvidenceRefs must be []; this field only accepts current attachmentRefs for CANDIDATE_EVIDENCE. Keep reviewActionDraft=null and affectedItemIds=[]; do not add a working delta or change the assessment. Return the complete corrected candidate through the declared output function, using candidateJson only when the Matter contract requires it. Never invent sources or claim that a rejected answer was saved.'
+              : isJobAid
               ? 'Return the complete corrected JobAid candidate directly as the declared function arguments, without a candidate wrapper. Keep the original question, unaffected issues and their premises. candidateEvidenceRefs may contain only current input.attachmentRefs actually read this turn; ordinary document SourceRefs belong in sourceRefs or working-delta evidence fields, never candidateEvidenceRefs. With no attachments use []. Omit reviewActionDraft and affectedItemIds; the driver owns their fixed no-formal-action values. Omit jobAidWorkingDelta only when no work changes. Read any additional passage through the read function. Never invent references, drop findings merely to pass validation, or claim the rejected candidate was saved.'
               : 'Correct the candidate using the current contract and registered evidence. Keep the original question, unchanged claims and source meaning. Read any additional passage through the read function. Every document premise in the resulting reading must be included in that input\'s checked coverage; an updated coverage entry replaces its old checked range, so include every cited passage for that input, not just representative anchors. Return the complete corrected candidate; do not invent evidence or coverage, remove a substantive finding merely to pass validation, or claim that anything was saved.',
           }) },
@@ -1625,6 +1627,7 @@ function buildReviewPrompt(input) {
       ...(input.input?.context?.aily?.available === true ? [`Use ${REVIEW_AILY_FUNCTION_NAME} when the engineer asks to search Feishu knowledge or external context is relevant. It uses this engineer's delegated identity and only the configured agent. Its reply is candidate retrieval, not verified original-source evidence; retain attribution and URLs in answer text only.`] : []),
       ...(isMatter ? ['Serialize the candidate as candidateJson with the usual Matter output keys, but always set matterWorkingDelta=null. context.matterWorking contains the saved understanding and authorized input catalog for discussion only.'] : []),
       'This is free discussion, not an assessment update. Answer the question, clarify premises and read relevant available sources as needed. Do not regenerate the assessment, produce a working delta, or propose a formal ReviewAction, even when the message requests a correction or contains new material. Explain the correction in the conversation and leave incorporation to the separate Update Assessment action.',
+      'For an ordinary answer, explanation or source link, set candidateEvidenceRefs=[]. Put actually read document citations in sourceRefs only; candidateEvidenceRefs is reserved for current attachmentRefs when responseType=CANDIDATE_EVIDENCE. With no current attachments it must be [].',
       'Set reviewActionDraft=null and affectedItemIds=[]. Do not use RESYNTHESIS_RESULT or claim that saved understanding has changed. Earlier engineer statements and assistant replies are discussion candidates, not verified facts. savedUnderstanding is the current saved reading, not proof that any cited source was read this turn. Use source reads for citations. If Aily is unavailable in the Host context, say so when relevant; never claim to search Feishu spaces or chats without an actual tool result.',
     ] : isJobAid ? jobAidReviewGuidance() : isMatter ? matterReviewGuidance() : [
       'For an explanation, source link, clarification, input request, or task status, set candidateEvidenceRefs and affectedItemIds to [] and reviewActionDraft to null.',

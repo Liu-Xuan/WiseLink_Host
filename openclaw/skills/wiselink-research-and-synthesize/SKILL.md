@@ -12,7 +12,7 @@ description: Orchestrate the single official hosted WiseLink engineering profile
 - hosted app：`app_17c3zn24kv2`
 - logical profile：`wiselink-engineering`
 - model policy：`official-hosted-profile-config`（任务可绑定已登记的内置或用户授权自定义模型；仍经唯一官方 Hosted profile/Gateway）
-- Skill：`wiselink-research-and-synthesize@r09.c63`
+- Skill：`wiselink-research-and-synthesize@r09.c64`
 - Skill compatibility：`wiselink-research-and-synthesize@r09`（历史任务最低接受 `r09.c10`，翻译 v2 必须为 `r09.c44` 或更新兼容包）
 - Host MCP：`wiselink-openclaw-engineering-assessment@1.2.0`（保留既有工具，新增语义翻译工作与 JobAid 来源/工作工具）
 - Host 集成提交：以本次发布包清单记录的实际提交为准
@@ -414,6 +414,8 @@ commit_review_turn_candidate
 
 这些 Host 工具只能由 `scripts/run-hosted-review-turn.mjs` 的确定性外部驱动调用，不得由对话模型直接调用。
 
+c64 补齐普通聊天的附件候选证据规则：普通文档引用仅进入 sourceRefs，解释类回答的 candidateEvidenceRefs 必须为空。候选校验失败可在同一回合、原预算和来源范围内最多由模型纠正两次；不修改旧候选、不跳过校验，也不自动重放已终止回合。
+
 c63 将 `context.purpose=CHAT` 作为自由讨论：可读材料、解释和调用 Aily，但禁止 working delta、正式 ReviewAction 和重算。
 `UPDATE_ASSESSMENT` 只吸收 Host 冻结的选中讨论及真实附件；旧助手回复仍是候选，不能当正式证据。
 Aily 使用本轮用户的短期授权，驱动通过 `query_review_aily` 发起并轮询；结果注明检索来源，不写入 Host SourceRef 集合，
@@ -551,7 +553,7 @@ Interactive Review 的复杂 ResultEnvelope 必须由 `sealResultEnvelope` 生�
 当前 validator 强制：
 
 - `modelVersion` 优先取响应中可读实际模型；绑定任务未回报实际模型时使用 `configured-route:<modelRef>`，旧无绑定任务使用无 fallback 的 configured endpoint。后两者只证明路由，不代表已暴露下游具体模型，也不做具体版本等值判断
-- `skillVersion=wiselink-research-and-synthesize@r09.c63`
+- `skillVersion=wiselink-research-and-synthesize@r09.c64`
 - `toolVersions.wiselink-openclaw-engineering-assessment=1.2.0`
 - `promptVersion` 非空并来自当前运行
 - task/result exact binding、SourceRef allowlist 和 canonical hash 一致
