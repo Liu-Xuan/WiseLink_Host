@@ -107,6 +107,7 @@ export function assertCanonicalHostOpenClawRuntimePolicy(
       'wiselink-translation-block@r09.c46',
       'wiselink-translation-block@r09.c47',
       'wiselink-translation-block@r09.c48',
+      'wiselink-translation-block@r09.c49',
     ].includes(result.promptVersion) ||
       (parseCompatibleSkillRevision(
         result.skillVersion,
