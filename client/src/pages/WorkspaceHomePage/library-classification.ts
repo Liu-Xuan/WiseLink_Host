@@ -8,7 +8,7 @@ export type LibraryGrouping = 'category' | 'ata' | 'aircraft';
 
 export const LIBRARY_GROUPINGS: { value: LibraryGrouping; label: string }[] = [
   { value: 'category', label: '文档类别' },
-  { value: 'ata', label: 'ATA 章节' },
+  { value: 'ata', label: 'ATA 编号' },
   { value: 'aircraft', label: '文档提及机型' },
 ];
 

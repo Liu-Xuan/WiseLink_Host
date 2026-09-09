@@ -21,7 +21,7 @@ describe('joint facet controls and directory path actions', () => {
     const onFilterChange = jest.fn();
     const buttons = actions(LibraryClassificationControls({ grouping: 'category', onGroupingChange, filters, onFilterChange, disabled: false,
       counts: { familyCounts: { SB: 3, SL: 2 }, ataCounts: { '34': 3 }, aircraftModelCounts: { '737': 3 } } }));
-    const order = buttons.find((button) => Children.toArray(button.props.children).join('') === 'ATA 章节优先');
+    const order = buttons.find((button) => Children.toArray(button.props.children).join('') === 'ATA 编号优先');
     expect(order).toBeDefined();
     order?.props.onClick?.();
     expect(onGroupingChange).toHaveBeenCalledWith('ata');

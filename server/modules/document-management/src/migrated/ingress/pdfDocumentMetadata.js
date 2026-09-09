@@ -35,6 +35,54 @@ function boeingPublicationTitle(lines, identity) {
   return null;
 }
 
+function labelledTitle(lines, index, label) {
+  const line = lines[index];
+  const value = (label[1] || lines[index + 1]?.text || '').split(
+    /\s+(?:Reference|References|ATA|Date|Revision|Number|Applicability|Effectivity|Summary|Description|Status|Background)\s*:/iu,
+  )[0];
+  const result = {
+    value,
+    evidence: label[1] ? line.text : `${line.text} ${value}`,
+  };
+  // In the proven two-column SUBJECT block, the value starts in a separate
+  // PDF run to the right of the label. Follow only tightly spaced continuation
+  // lines aligned to that value column, stopping before the next section.
+  const labelIndex = line.runs.findIndex((run) =>
+    /\b(?:issue\s+title|subject|title)\s*:\s*$/iu.test(run.text),
+  );
+  const labelRun = line.runs[labelIndex];
+  const valueRun = line.runs[labelIndex + 1];
+  if (
+    labelIndex < 0 ||
+    !valueRun ||
+    !Number.isFinite(valueRun.x) ||
+    valueRun.x <= labelRun.x ||
+    !Number.isFinite(valueRun.fontSize) ||
+    valueRun.fontSize <= 0
+  )
+    return result;
+  let previous = line;
+  for (const next of lines.slice(index + 1)) {
+    const gap = previous.y - next.y;
+    if (
+      !Number.isFinite(gap) ||
+      gap <= 0 ||
+      gap > valueRun.fontSize * 1.6 ||
+      Math.abs(next.x - valueRun.x) > 2 ||
+      Math.abs(next.fontSize - valueRun.fontSize) > 0.5 ||
+      /^(?:[A-Z][A-Z /-]*:|EXPORT CONTROLLED|BOEING PROPRIETARY|Copyright)(?=\s|$)/u.test(
+        next.text,
+      )
+    )
+      break;
+    if (result.value.length + next.text.length + 1 > 350) break;
+    result.value += ` ${next.text}`;
+    result.evidence += ` ${next.text}`;
+    previous = next;
+  }
+  return result;
+}
+
 function trademarkDeclarationRanges(pageText) {
   return [
     ...pageText.matchAll(
@@ -65,7 +113,14 @@ export function extractActualPdfMetadata({
     )
       continue;
     if (!pages.has(page)) pages.set(page, []);
-    pages.get(page).push({ text: text(run.text), y: Number(run.y) });
+    pages
+      .get(page)
+      .push({
+        text: text(run.text),
+        x: Number(run.x),
+        y: Number(run.y),
+        fontSize: Number(run.fontSize),
+      });
   }
   const fields = Object.fromEntries(
     ['title', 'documentType', 'issuer', 'ata', 'mentionedAircraftModels'].map(
@@ -115,9 +170,10 @@ export function extractActualPdfMetadata({
         previous &&
         Number.isFinite(run.y) &&
         Math.abs(previous.y - run.y) < 2
-      )
+      ) {
         previous.text += ` ${run.text}`;
-      else lines.push({ ...run });
+        previous.runs.push(run);
+      } else lines.push({ ...run, runs: [run] });
     }
     const publicationTitle =
       page === 1 ? boeingPublicationTitle(lines, identity) : null;
@@ -130,16 +186,9 @@ export function extractActualPdfMetadata({
           /\b(?:issue\s+title|subject|title)\s*:\s*(.*)/iu,
         );
         if (!label) continue;
-        const value = (label[1] || lines[index + 1]?.text || '').split(
-          /\s+(?:Reference|References|ATA|Date|Revision|Number|Applicability|Effectivity|Summary|Description|Status|Background)\s*:/iu,
-        )[0];
-        if (value.length >= 3 && value.length <= 350)
-          add(
-            'title',
-            value,
-            page,
-            label[1] ? line.text : `${line.text} ${value}`,
-          );
+        const title = labelledTitle(lines, index, label);
+        if (title.value.length >= 3 && title.value.length <= 350)
+          add('title', title.value, page, title.evidence);
       }
       const typePattern = typePatterns[identity?.documentFamily];
       const typeMatch = typePattern && pageText.match(typePattern);
@@ -161,13 +210,15 @@ export function extractActualPdfMetadata({
         );
     }
     for (const match of pageText.matchAll(
-      /\bATA(?:\s+(?:CHAPTER|CHAP(?:TER)?\.?|SYSTEM|NO\.?))?\s*[:#-]?\s*(\d{2}(?:-\d{2}(?:-\d{2})?)?)\b/giu,
+      /\bATA(?:\s+(?:CHAPTER|CHAP(?:TER)?\.?|SYSTEM|NO\.?))?\s*[:#-]?\s*(\d{6}|\d{4}|\d{2}(?:-\d{2}(?:-\d{2})?)?)\b/giu,
     )) {
       add('ata', match[1], page, match[0]);
     }
     const trademarkRanges = trademarkDeclarationRanges(pageText);
+    // Numeric variants require a written separator. A bare 7077 is a number,
+    // not evidence for 707-7. Preserve explicit slash lists as one source phrase.
     for (const match of pageText.matchAll(
-      /\b(?:A(?:220|300|310|318|319|320|321|330|340|350|380)(?:[ -]?(?:\d{3}|NEO|CEO))?|(?:B(?:OEING)?\s*)?(?:707|717|727|737|747|757|767|777|787)(?:[ -]?(?:MAX(?:[ -]?(?:7|8|9|10))?|NG|(?:[1-9]00|7|8|9|10)(?:ER|LR)?))?)\b/giu,
+      /\b(?:A(?:220|300|310|318|319|320|321|330|340|350|380)(?:[ -]?(?:\d{3}|NEO|CEO))?|(?:B(?:OEING)?\s*)?(?:707|717|727|737|747|757|767|777|787)(?:[ -]?(?:MAX(?:[ -]?(?:7|8|9|10))?|NG)|[ -](?:8200|[1-9]00|10|7|8|9)(?:ER|LR)?(?:\/(?:8200|[1-9]00|10|7|8|9)(?:ER|LR)?)*)?)\b/giu,
     )) {
       if (
         trademarkRanges.some(
