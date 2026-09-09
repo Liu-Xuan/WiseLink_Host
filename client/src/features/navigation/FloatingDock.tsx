@@ -5,7 +5,6 @@ import {
   ClipboardList,
   FileClock,
   Files,
-  Grid3X3,
   LibraryBig,
   MessagesSquare,
   Search,
@@ -17,6 +16,7 @@ import {
   useCurrentObjectContext,
 } from '@client/src/app/providers/CurrentObjectContextProvider';
 import VisualModeControl from '@client/src/components/VisualModeControl';
+import WiseLinkBrandMark from '@client/src/components/WiseLinkBrandMark';
 import { libraryViewMode } from '@client/src/pages/WorkspaceHomePage/library-view-mode';
 
 import './floating-dock.css';
@@ -159,7 +159,7 @@ export default function FloatingDock() {
         to="/library"
         aria-label="WiseLink 资料库"
       >
-        <Grid3X3 aria-hidden="true" />
+        <WiseLinkBrandMark size={46} />
       </NavLink>
 
       <nav className="wl-dock-group wl-dock-global" aria-label="全局导航">
