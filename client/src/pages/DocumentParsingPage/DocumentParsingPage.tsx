@@ -563,11 +563,29 @@ export default function DocumentParsingPage() {
 
   if (loading && data === null) {
     return (
-      <LockedState
-        title="正在读取当前工程事项…"
-        role="status"
-        ariaLive="polite"
-      />
+      <main
+        className="parse-shell parse-shell--workbench"
+        aria-busy="true"
+      >
+        <WorkbenchShell
+          key={`${sessionGeneration}:${workItemId}`}
+          retainTabScroll
+          readingLayout={activeNode === 'package' || activeNode === 'reader'}
+          contextLabel="工程分析工作台"
+          tabs={WORKBENCH_TABS}
+          activeTab={activeNode}
+          contentMode={
+            activeNode === 'package' || activeNode === 'reader'
+              ? 'workspace'
+              : 'flow'
+          }
+          onTabChange={handleTabChange}
+        >
+          <span className="wl-visually-hidden" role="status" aria-live="polite">
+            正在读取文档内容
+          </span>
+        </WorkbenchShell>
+      </main>
     );
   }
   if (error || data === null) {
@@ -1878,7 +1896,7 @@ export default function DocumentParsingPage() {
 
 function LockedState(props: {
   title: string;
-  role?: 'status' | 'alert';
+  role?: 'alert';
   ariaLive?: 'polite' | 'assertive';
   onRetry?: () => void;
   onBack?: () => void;
@@ -1888,16 +1906,13 @@ function LockedState(props: {
       className="parse-shell parse-locked-shell"
       role={props.role}
       aria-live={props.ariaLive}
-      aria-busy={props.role === 'status'}
     >
       <section className="parse-panel parse-locked-card">
         <LockKeyhole aria-hidden="true" />
         <p className="parse-eyebrow">工程评估工作台</p>
         <h1>{props.title}</h1>
         <p className="parse-locked-guidance">
-          {props.role === 'status'
-            ? '正在获取当前文件、评估与依据，请稍候。'
-            : '请确认工作链接和访问权限后重试。'}
+          请确认工作链接和访问权限后重试。
         </p>
         {props.role === 'alert' ? (
           <div className="parse-locked-actions">
