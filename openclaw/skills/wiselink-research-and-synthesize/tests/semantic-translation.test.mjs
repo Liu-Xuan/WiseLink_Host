@@ -51,6 +51,38 @@ test('one batched check preserves all candidate text and aliases without conflic
   assert.ok(!JSON.stringify(view).includes('TB-'));
   assert.ok(request.messages[0].content.includes('Return {checks:'));
   assert.ok(!request.messages[0].content.includes('Return {blockId,issues:'));
+  assert.ok(request.messages[0].content.includes('["B1","B2"]'));
+  assert.ok(request.messages[0].content.includes('exactly 2 entries'));
+});
+
+test('failed checks record the first invalid field without retaining model or source text or redispatching', async () => {
+  const empty = { blockId: 'b1', issues: [] };
+  const finding = { code: 'SYNTHETIC', severity: 'REVIEW', message: 'Synthetic private candidate text', anchorIds: ['a2'] };
+  const cases = [
+    [{ checks: [empty] }, '$.checks', 'CHECK_COUNT_MISMATCH'],
+    [{ checks: [{ blockId: 'b2', issues: [] }, empty] }, '$.checks[0].blockId', 'BLOCK_ORDER_OR_SCOPE_MISMATCH'],
+    [{ checks: [empty, { blockId: 'b2', issues: null }] }, '$.checks[1].issues', 'ARRAY_REQUIRED'],
+    [{ checks: [empty, { blockId: 'b2', issues: [{ ...finding, severity: 'WARNING' }] }] }, '$.checks[1].issues[0].severity', 'UNSUPPORTED_SEVERITY'],
+    [{ checks: [empty, { blockId: 'b2', issues: [{ ...finding, message: '' }] }] }, '$.checks[1].issues[0].message', 'NONEMPTY_STRING_REQUIRED'],
+    [{ checks: [empty, { blockId: 'b2', issues: [{ ...finding, anchorIds: [] }] }] }, '$.checks[1].issues[0].anchorIds', 'NONEMPTY_ANCHOR_ARRAY_REQUIRED'],
+    [{ checks: [empty, { blockId: 'b2', issues: [{ ...finding, anchorIds: ['a1'] }] }] }, '$.checks[1].issues[0].anchorIds', 'ANCHOR_OUTSIDE_BLOCK'],
+    [{ checks: [empty, { blockId: 'b2', issues: [{ ...finding, ['Synthetic private unexpected key']: true }] }] }, '$.checks[1].issues[0]', 'EXACT_FIELDS_REQUIRED'],
+  ];
+  for (const [value, path, reason] of cases) {
+    let requests = 0;
+    const observations = [];
+    await assert.rejects(invokeHostedTranslationBlock(checkBatch(), {
+      ...options(), observeModelOutput: async (shape, round) => observations.push({ shape, round }),
+    }, { requestGateway: async () => { requests++; return response(value); } }), /TRANSLATION_(?:SEMANTIC_REVIEW_INVALID|OUTPUT_KEYS_INVALID)/u);
+    assert.equal(requests, 1);
+    assert.equal(observations.length, 2);
+    assert.equal(observations[1].round, 2);
+    assert.equal(observations[1].shape.stage, 'OUTPUT_VALIDATION');
+    assert.equal(observations[1].shape.validation.path, path);
+    assert.equal(observations[1].shape.validation.reason, reason);
+    assert.ok(!JSON.stringify(observations).includes('Synthetic private'));
+    assert.ok(!JSON.stringify(observations).includes('Second complete block.'));
+  }
 });
 
 test('batched checks reject missing, reordered or cross-block results and changed target mappings', () => {

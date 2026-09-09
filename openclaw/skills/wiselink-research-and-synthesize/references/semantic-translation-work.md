@@ -20,6 +20,8 @@
 
 保存以 workspace、generation request 和 block 绑定；相同请求内容冲突明确失败，正文与来源版本不可覆盖。保存响应未知时先 READ，再仅重交同一幂等保存，不能重新生成。HTTP 408/504 或传输中断不证明远端已停止；记录 GENERATION_UNKNOWN 并停止当前运行。原生 profile 的全部内部工具权限尚未证明为纯生成，因此不启用未知生成的自动补发。HTTP 200 无有效函数候选属于输出协议失败，不当作自动可重试网络故障。
 
+输出先在 B/A/U 别名范围内校验，再恢复 Host ID 并复核。失败时另存 `translation-<generationRequestRef>.output-shape-2.json`，只包含首个失败字段路径、固定原因、类型与数量；不保存模型字段正文、未知键名或私有思考。检查失败不补发模型、不部分采用同批检查，也不把日志缺少细节当作已定位原因。
+
 取消或到期后的迟到写入被 Host 拒绝。之后正常新 attempt 可接续同一 workspace，已保存、已检查版本按实际依赖复用，旧模型来源继续显示；不能复活旧终态、换 WorkItem 掩盖失败或冒充新模型重新生成了旧正文。块保存不推进全局 WorkItem revision。
 
 页面的“继续中文翻译”或“重新翻译此完整块”通过 Host 保存明确的正常请求。消费者采用 Host 阶段返回的 requestId 领取同一请求，并使用该请求独立的本地检查点。回执未知时重读同一 requestId；终态只返回原回执，不再次领取。指定块的重译保留旧可读版本到新候选检查通过，最终组装必须确认指定块已由本次请求替换；未替换则明确失败，不能把旧完整正文当作本次重译成功。页面按 workspace 版本读回部分进展，不依赖块保存推进 WorkItem revision。
@@ -28,7 +30,7 @@
 
 Reader 从 Host 保存结果显示 PARTIAL、COMPLETE_WITH_ISSUES 或 COMPLETE，区分已保存、待检查、可读与待处理。点击自然段显示其全部实际来源；复制与导出保留完成范围及缺项。人工修订生成独立版本、明确人工来源，保留旧模型正文，仍是阅读候选。
 
-所有可做批次结束后，ASSEMBLE 由 Host 读取当前选用版本、保存最终产物并返回 manifest。模型不重印全文；最终 ResultEnvelope 仅引用 Host 产物与精确 manifest，使用实际 Skill c46 和 `wiselink-translation-block@r09.c46`。即使全部复用旧块，最终组装也必须使用 v2 运行协议，且实际模型记录为 `host-assembly/no-model-call`。提交继续通过既有 `commit_translation_candidate` 字节分片与 FINALIZE，最终提交未知只查询原 attempt 的精确结果身份。
+所有可做批次结束后，ASSEMBLE 由 Host 读取当前选用版本、保存最终产物并返回 manifest。模型不重印全文；最终 ResultEnvelope 仅引用 Host 产物与精确 manifest，使用实际 Skill c47 和 `wiselink-translation-block@r09.c47`。即使全部复用旧块，最终组装也必须使用 v2 运行协议，且实际模型记录为 `host-assembly/no-model-call`。提交继续通过既有 `commit_translation_candidate` 字节分片与 FINALIZE，最终提交未知只查询原 attempt 的精确结果身份。
 
 `WL_TRANSLATION_V2_ENABLED=1` 用于启用新请求；旧 v1 译文继续独立读取。已有 v2 workspace 可恢复。直接使用已验证英文的 Applicability/JobAid/Overall 保持各自真实来源与授权，不用虚构中文满足旧前置条件。知识产品导入仍要求对应最终提交和当前选用版本，部分可读范围不冒充完整或正式采用。
 
