@@ -407,7 +407,7 @@ test('typed Overall finish preserves quotes and line breaks with one JSON encodi
   const parameters = f.calls[0].tools[0].function.parameters;
   assert.deepEqual(parameters.required, ['step']);
   assert.equal(parameters.properties.step.type, 'object');
-  assert.equal(parameters.properties.step.properties.work.properties.issues.type, 'array');
+  assert.equal(parameters.properties.step.properties.work.properties.issues.anyOf[0].type, 'array');
 });
 
 test('typed step unwraps only exact declared native arrays without editing content or extra fields', async () => {
@@ -422,4 +422,19 @@ test('typed step unwraps only exact declared native arrays without editing conte
   assert.deepEqual(decodeJobAidStep({ action: 'READ_SOURCES', sourceRefs: { item: ['ref'], extra: true } }).sourceRefs,
     { item: ['ref'], extra: true });
   assert.deepEqual(step.work.issues.item[0].measures.item[0].basisRefs, { item: ['ref'] });
+});
+
+
+test('native array schema preserves cardinality and item constraints in the exact lossless envelope', async () => {
+  const { jobAidFunctionSchema, decodeJobAidValue } = await import('../scripts/jobaid-work-shape.mjs');
+  const shape = { type: 'array', minItems: 1, maxItems: 2, items: { type: 'string', enum: ['ref:1', 'ref:2'] } };
+  const schema = jobAidFunctionSchema(shape);
+  assert.deepEqual(schema.anyOf[0], shape);
+  assert.deepEqual(schema.anyOf[1], { type: 'object', additionalProperties: false,
+    required: ['item'], properties: { item: shape } });
+  assert.deepEqual(decodeJobAidValue({ item: ['ref:1'] }, shape), ['ref:1']);
+  for (const invalid of [{ item: 'ref:1' }, { item: ['ref:1'], extra: true }, { other: ['ref:1'] }]) {
+    assert.deepEqual(decodeJobAidValue(invalid, shape), invalid);
+  }
+  assert.deepEqual(jobAidFunctionSchema(shape), schema);
 });

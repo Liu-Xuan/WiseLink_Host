@@ -16,7 +16,14 @@ export function jobAidFunctionSchema(shape) {
   if (!shape || typeof shape !== 'object') return shape;
   const { nullable: allowsNull, ...rest } = shape;
   const schema = Object.fromEntries(Object.entries(rest).map(([key, value]) => [key, jobAidFunctionSchema(value)]));
-  return allowsNull ? { anyOf: [schema, { type: 'null' }] } : schema;
+  // The native validator runs before decodeJobAidValue. Admit exactly the
+  // lossless array envelope already understood there, with identical item and
+  // cardinality constraints. Singletons and malformed envelopes stay invalid.
+  const transport = schema.type === 'array' ? { anyOf: [schema, {
+    type: 'object', additionalProperties: false, required: ['item'],
+    properties: { item: schema },
+  }] } : schema;
+  return allowsNull ? { anyOf: [transport, { type: 'null' }] } : transport;
 }
 
 export const JOBAID_WORK_UPDATE_SHAPE = object({

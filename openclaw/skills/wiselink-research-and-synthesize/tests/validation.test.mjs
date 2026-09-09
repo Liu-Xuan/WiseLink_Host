@@ -1373,7 +1373,7 @@ test('requires 24 MCP capabilities, five review tools, and hosted provenance', (
   assert.ok(HOST_MCP_TOOLS.includes('commit_applicability_candidate'));
   assert.equal(
     WISELINK_SKILL_VERSION,
-    'wiselink-research-and-synthesize@r09.c61',
+    'wiselink-research-and-synthesize@r09.c62',
   );
   assert.equal(
     WISELINK_SKILL_COMPATIBILITY_REF,
@@ -6948,11 +6948,11 @@ test('JobAid review uses a typed candidate and preserves quoted text, nulls, loc
     assert.deepEqual(schema.required, ['answer', 'sourceRefs', 'missingInputs', 'candidateEvidenceRefs', 'warnings']);
     assert.equal(schema.properties.candidate, undefined);
     assert.equal(schema.additionalProperties, false);
-    assert.equal(schema.properties.jobAidWorkingDelta.anyOf[0].properties.issues.type, 'array');
+    assert.equal(schema.properties.jobAidWorkingDelta.anyOf[0].properties.issues.anyOf[0].type, 'array');
     assert.equal(schema.properties.reviewActionDraft, undefined);
     assert.equal(schema.properties.affectedItemIds, undefined);
-    assert.equal(schema.properties.candidateEvidenceRefs.maxItems, 0);
-    const riskShape = schema.properties.jobAidWorkingDelta.anyOf[0].properties.issues.items.properties.riskScenarios.items.properties;
+    assert.equal(schema.properties.candidateEvidenceRefs.anyOf[0].maxItems, 0);
+    const riskShape = schema.properties.jobAidWorkingDelta.anyOf[0].properties.issues.anyOf[0].items.properties.riskScenarios.anyOf[0].items.properties;
     assert.deepEqual(riskShape.importantEvent.anyOf[0].properties.event.enum,
       ['空中停车', '重力放起落架', '爆胎／脱胎', '空中释压', '通讯中断', '客货舱火警／烟雾']);
     assert.deepEqual(riskShape.severity.anyOf[0].properties.label.enum, ['轻微', '重要', '严重', '灾难']);
@@ -7206,7 +7206,7 @@ test('JobAid attachment citation feedback keeps the candidate unchanged until th
     requests++;
     const body = JSON.parse(init.body);
     const field = body.tools[0].function.parameters.properties.candidateEvidenceRefs;
-    assert.deepEqual(field.items.enum, ['attachment:1']);
+    assert.deepEqual(field.anyOf[0].items.enum, ['attachment:1']);
     if (requests > 1) {
       const receipt = JSON.parse(body.messages[2].content);
       feedback.push(receipt);
