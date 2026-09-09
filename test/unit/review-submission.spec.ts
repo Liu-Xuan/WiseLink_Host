@@ -5,8 +5,69 @@ import type {
 import {
   automaticReviewAvailable,
   reviewSubmissionIntent,
+  assessmentDiscussionTurns,
+  assessmentUpdateRequest,
+  latestAssessmentCandidateId,
 } from '../../client/src/features/review/review-submission';
 import { reviewOperationErrorPresentation } from '../../client/src/features/review/continuous-review-state';
+import { reviewUiTurn } from './fixtures/review-ui';
+
+describe('explicit assessment update scope', () => {
+  it('selects only answered same-scope chats after the last explicit update', () => {
+    const view = conversation(true);
+    view.turns = [
+      { ...reviewUiTurn(1, true), purpose: 'CHAT' },
+      { ...reviewUiTurn(2, true), purpose: 'UPDATE_ASSESSMENT' },
+      { ...reviewUiTurn(3, true), purpose: 'CHAT' },
+      { ...reviewUiTurn(4), purpose: 'CHAT' },
+      {
+        ...reviewUiTurn(5, true),
+        purpose: 'CHAT',
+        reviewScope: { kind: 'ENGINEERING_MATTER', matterId: 'other' },
+      },
+      reviewUiTurn(6, true),
+    ];
+    expect(assessmentDiscussionTurns(view).map((turn) => turn.turnNo)).toEqual([
+      3,
+    ]);
+    expect(latestAssessmentCandidateId(view.turns)).toBe('TURN-6');
+    view.turns.push({ ...reviewUiTurn(7, true), purpose: 'CHAT' });
+    expect(latestAssessmentCandidateId(view.turns)).toBe('TURN-6');
+  });
+  it('copies reviewed IDs, version, scope and model without consuming a draft', () => {
+    const view = conversation(true);
+    const ids = ['TURN-3'];
+    const scope: AppendMatterReviewScope = {
+      kind: 'ENGINEERING_MATTER',
+      matterId: 'M',
+      expectedWorkingRevision: 2,
+    };
+    const request = assessmentUpdateRequest(
+      'REQ-U',
+      view,
+      ids,
+      'model-a',
+      scope,
+      'criterion-a',
+    );
+    ids.push('TURN-4');
+    scope.expectedWorkingRevision = 9;
+    view.currentWorkItemRevision = 8;
+    expect(request).toMatchObject({
+      purpose: 'UPDATE_ASSESSMENT',
+      executionMode: 'AUTOMATIC',
+      includedDiscussionTurnIds: ['TURN-3'],
+      expectedInputRevision: 7,
+      modelRef: 'model-a',
+      reviewScope: { expectedWorkingRevision: 2 },
+      selectedEvaluationItemId: 'criterion-a',
+    });
+    expect(request.attachmentSelection).toBeUndefined();
+    expect(
+      assessmentUpdateRequest('REQ-E', view, []).includedDiscussionTurnIds,
+    ).toEqual([]);
+  });
+});
 
 describe('new review turn automatic execution opt-in', () => {
   it('copies the exact matter basis and target claim and preserves them through an uncertain retry', () => {

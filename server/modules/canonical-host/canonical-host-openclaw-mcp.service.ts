@@ -650,6 +650,43 @@ export class CanonicalHostOpenClawMcpService {
     );
 
     server.registerTool(
+      'query_review_aily',
+      {
+        title: '以本轮工程师身份检索 Aily',
+        description:
+          '仅限已授权的自由对话 attempt；发起只读检索或读取同一 attempt 已登记的检索结果。令牌不进入工具参数或结果。',
+        inputSchema: z
+          .object({
+            attemptRef,
+            requestKey: z.string().min(1).max(200).optional(),
+            query: z.string().min(1).max(4000).optional(),
+            queryRef: z.string().uuid().optional(),
+          })
+          .strict(),
+        annotations: beginAnnotations,
+      },
+      async ({
+        attemptRef: selectedAttemptRef,
+        requestKey,
+        query,
+        queryRef,
+      }) => {
+        if (queryRef && requestKey === undefined && query === undefined)
+          return textResult(
+            await this.review.queryAily(selectedAttemptRef, { queryRef }),
+          );
+        if (!queryRef && requestKey && query)
+          return textResult(
+            await this.review.queryAily(selectedAttemptRef, {
+              requestKey,
+              query,
+            }),
+          );
+        throw new Error('AILY_QUERY_ARGUMENTS_INVALID');
+      },
+    );
+
+    server.registerTool(
       'get_action_attempt_status',
       {
         title: '读取通用 ActionAttempt 状态',

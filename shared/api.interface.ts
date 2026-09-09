@@ -220,6 +220,9 @@ export interface PendingReviewTurnResponse {
 }
 
 export interface ReviewTurnReadModel {
+  /** Absent on historical turns, which retain their original review semantics. */
+  purpose?: 'CHAT' | 'UPDATE_ASSESSMENT';
+  includedDiscussionTurnIds?: string[];
   reviewTurnId: string;
   turnNo: number;
   requestId: string;
@@ -292,6 +295,11 @@ export interface AppendMatterReviewScope {
 }
 
 export interface AppendReviewTextTurnRequest {
+  purpose?: 'CHAT' | 'UPDATE_ASSESSMENT';
+  /** Explicitly selected, saved discussion turns from this conversation and scope. */
+  includedDiscussionTurnIds?: string[];
+  /** Required for an explicit update; checked against the current Host revision. */
+  expectedInputRevision?: number;
   requestId: string;
   userMessage: string;
   /** Host reauthorizes the full Matter and freezes its actual inputs. */
@@ -2972,7 +2980,11 @@ export interface DocumentUploadIdentity {
 export interface DocumentUploadResponse {
   status: 'COMMITTED' | 'REVIEW_REQUIRED';
   identity: DocumentUploadIdentity | null;
-  currentVersion: { documentVersionId: string; identity: DocumentUploadIdentity | null; access: 'READABLE' | 'NOT_AUTHORIZED' } | null;
+  currentVersion: {
+    documentVersionId: string;
+    identity: DocumentUploadIdentity | null;
+    access: 'READABLE' | 'NOT_AUTHORIZED';
+  } | null;
   disposition: string;
   decision: string;
   preflightId: string;

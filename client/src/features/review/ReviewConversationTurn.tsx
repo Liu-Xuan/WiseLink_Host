@@ -17,6 +17,7 @@ interface ReviewConversationTurnBaseProps {
   conversation: ReviewConversationReadModel;
   currentRevision: number;
   isCurrent: boolean;
+  assessmentCurrent?: boolean;
   formalActionsAllowed?: boolean;
 }
 
@@ -40,14 +41,16 @@ export default function ReviewConversationTurn(
   const interactive: ReviewConversationTurnActions | null =
     !props.readOnly && 'onConfirm' in props ? props : null;
   const candidate = props.turn.assistantCandidate;
+  const chat: boolean = props.turn.purpose === 'CHAT';
+  const assessmentCurrent: boolean = props.assessmentCurrent ?? props.isCurrent;
   const matterScope: boolean =
     props.turn.reviewScope?.kind === 'ENGINEERING_MATTER';
-  const draft = candidate?.reviewActionDraft ?? null;
+  const draft = chat ? null : (candidate?.reviewActionDraft ?? null);
   const snapshot = draft?.decisionSnapshot ?? null;
   const dispositions = draft?.uncertaintyDispositions ?? [];
   const draftCurrent =
     interactive !== null &&
-    props.isCurrent &&
+    assessmentCurrent &&
     props.conversation.status === 'ACTIVE' &&
     props.conversation.currentRevisionSynced &&
     draft?.baseRevision === props.currentRevision;
@@ -86,21 +89,27 @@ export default function ReviewConversationTurn(
       {candidate ? (
         <div className="continuous-review-candidate">
           <header>
-            <strong>{responseTypeLabel(candidate.responseType)}</strong>
+            <strong>
+              {chat ? '讨论答复' : responseTypeLabel(candidate.responseType)}
+            </strong>
             <span>
               <CheckCircle2 aria-hidden="true" />
-              {props.readOnly ? '已保存候选 · 仅供追溯' : '候选已生成 · 未采纳'}
+              {chat
+                ? '已保存讨论 · 未更新评估'
+                : props.readOnly
+                  ? '已保存候选 · 仅供追溯'
+                  : '候选已生成 · 未采纳'}
             </span>
           </header>
           <p>{candidate.answer}</p>
-          {candidate.jobAidWorkingUpdate ? (
+          {!chat && candidate.jobAidWorkingUpdate ? (
             <p role="status">
               {candidate.jobAidWorkingUpdate.status === 'APPLIED'
                 ? `问题评估工作已更新至修订 ${candidate.jobAidWorkingUpdate.workRevision}，相关问题和完整前提已保存。`
                 : '本轮答复沿用已有问题认识，工作内容未变。'}
             </p>
           ) : null}
-          {candidate.matterWorkingUpdate ? (
+          {!chat && candidate.matterWorkingUpdate ? (
             <MatterWorkingReceipt receipt={candidate.matterWorkingUpdate} />
           ) : null}
           {candidate.sourceRefs.length ? (
@@ -110,7 +119,7 @@ export default function ReviewConversationTurn(
               onLocateSourceRef={interactive?.onLocateSourceRef}
             />
           ) : null}
-          {candidate.candidateEvidenceRefs.length ? (
+          {!chat && candidate.candidateEvidenceRefs.length ? (
             <p className="continuous-review-evidence-count">
               已形成 {candidate.candidateEvidenceRefs.length}{' '}
               条候选依据，确认前不会写入正式判断。
@@ -238,7 +247,7 @@ export default function ReviewConversationTurn(
                   此草稿已在当前页面拒绝；没有修改 Host
                   current，也没有推进事项版本。继续对话可形成新草稿。
                 </p>
-              ) : !props.isCurrent ? (
+              ) : !assessmentCurrent ? (
                 <p className="continuous-review-draft-stale">
                   历史回合草稿仅供追溯；请在当前回合核对并显式确认最新草稿。
                 </p>
@@ -295,9 +304,11 @@ export default function ReviewConversationTurn(
           ) : null}
           <footer className="continuous-review-candidate-runtime">
             <span>
-              {matterScope
-                ? '事项工作变化以 Host 工作记录读回为准；回复本身不是正式采用，成员 WorkItem current 与正式状态不因此推进。'
-                : '候选阶段没有采纳输入，也不会修改 WorkItem current、revision 或 STALE 状态。'}
+              {chat
+                ? '此答复仅用于讨论；只有显式更新评估才重算，正式采用仍独立处理。'
+                : matterScope
+                  ? '事项工作变化以 Host 工作记录读回为准；回复本身不是正式采用，成员 WorkItem current 与正式状态不因此推进。'
+                  : '候选阶段没有采纳输入，也不会修改 WorkItem current、revision 或 STALE 状态。'}
             </span>
             <span title={candidate.actionAttemptRef}>
               Attempt {shortRef(candidate.actionAttemptRef)} · Model{' '}
@@ -314,9 +325,11 @@ export default function ReviewConversationTurn(
         <div className="continuous-review-pending" role="status">
           <RefreshCw aria-hidden="true" />
           <div>
-            <strong>候选尚未读回</strong>
+            <strong>{chat ? '讨论答复尚未读回' : '候选尚未读回'}</strong>
             <span>
-              工程师输入已经记录，候选结果尚未返回。
+              {chat
+                ? '对话已经记录，答复尚未返回；未请求更新评估。'
+                : '工程师输入已经记录，候选结果尚未返回。'}
               保存输入不会自动采用意见，WorkItem current、revision 与 STALE
               状态均未因此改变。
             </span>

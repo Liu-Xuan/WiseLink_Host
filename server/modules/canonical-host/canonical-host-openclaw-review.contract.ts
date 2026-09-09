@@ -404,6 +404,17 @@ export function parseReviewTurnCandidateContract(input: {
     requiredRecord(record.jobAidWorkingDelta, 'REVIEW_JOBAID_DELTA_INVALID');
   if (isMatter && record.reviewActionDraft !== null)
     fail('REVIEW_MATTER_FORMAL_ACTION_FORBIDDEN');
+  if (
+    task.context.purpose === 'CHAT' &&
+    (record.reviewActionDraft !== null ||
+      record.matterWorkingDelta != null ||
+      record.jobAidWorkingDelta != null ||
+      (Array.isArray(record.affectedItemIds) &&
+        record.affectedItemIds.length > 0) ||
+      record.responseType === 'RESYNTHESIS_RESULT' ||
+      record.responseType === 'REVIEW_ACTION_DRAFT')
+  )
+    fail('REVIEW_CHAT_ASSESSMENT_MUTATION_FORBIDDEN');
   const matterWorkingDelta = isMatter
     ? parseMatterWorkingDeltaProposal(record.matterWorkingDelta)
     : undefined;

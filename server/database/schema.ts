@@ -117,6 +117,41 @@ export const fileAttachmentArray = customType<{
   },
 });
 
+export const reviewAilyQuery = pgTable("review_aily_query", {
+  queryRef: uuid("query_ref").primaryKey().defaultRandom(),
+  attemptRef: varchar("attempt_ref", { length: 96 }).notNull(),
+  tenantId: varchar("tenant_id", { length: 255 }).notNull(),
+  actorId: varchar("actor_id", { length: 255 }).notNull(),
+  sessionId: uuid("session_id").notNull(),
+  agentId: varchar("agent_id", { length: 96 }).notNull(),
+  requestKey: varchar("request_key", { length: 200 }).notNull(),
+  queryText: text("query_text").notNull(),
+  chatId: varchar("chat_id", { length: 96 }),
+  status: varchar("status", { length: 32 }).notNull().default('STARTING'),
+  answerText: text("answer_text"),
+  errorCode: varchar("error_code", { length: 96 }),
+  // System field: Creation time (auto-filled, do not modify)
+  createdAt: customTimestamptz("_created_at", { precision: 3 }).notNull().default(sql`CURRENT_TIMESTAMP`),
+  // System field: Creator (auto-filled, do not modify)
+  createdBy: userProfile("_created_by"),
+  // System field: Update time (auto-filled, do not modify)
+  updatedAt: customTimestamptz("_updated_at", { precision: 3 }).notNull().default(sql`CURRENT_TIMESTAMP`),
+  // System field: Updater (auto-filled, do not modify)
+  updatedBy: userProfile("_updated_by"),
+}, (table) => [
+  uniqueIndex("review_aily_query_attempt_request").on(table.attemptRef, table.requestKey),
+  foreignKey({
+    columns: [table.attemptRef],
+    foreignColumns: [actionAttempt.attemptId],
+    name: "review_aily_query_attempt_ref_fkey",
+  }),
+  foreignKey({
+    columns: [table.sessionId],
+    foreignColumns: [identitySession.id],
+    name: "review_aily_query_session_id_fkey",
+  }),
+]);
+
 export const assessmentWorkRevision = pgTable("assessment_work_revision", {
   id: uuid("id").primaryKey().defaultRandom(),
   assessmentWorkRevisionId: varchar("assessment_work_revision_id", { length: 96 }).notNull().unique(),
@@ -1111,6 +1146,8 @@ export const identitySession = pgTable("identity_session", {
   id: uuid("id").primaryKey().defaultRandom(),
   sessionTokenHash: varchar("session_token_hash", { length: 64 }).notNull().unique(),
   subjectMappingId: uuid("subject_mapping_id").notNull(),
+  ailyAccessTokenSealed: text("aily_access_token_sealed"),
+  ailyAccessTokenExpiresAt: customTimestamptz("aily_access_token_expires_at", { precision: 3 }),
   feishuUserId: varchar("feishu_user_id", { length: 255 }),
   revision: integer("revision").notNull().default(1),
   expiresAt: customTimestamptz("expires_at", { precision: 3 }).notNull(),
@@ -1624,3 +1661,5 @@ export const translationKnowledgeSourceRefTable = translationKnowledgeSourceRef;
 export const workItemTable = workItem;
 
 export const assessmentWorkRevisionTable = assessmentWorkRevision;
+
+export const reviewAilyQueryTable = reviewAilyQuery;

@@ -13,6 +13,15 @@ jest.mock('@client/src/components/ui/button', () => ({ Button: 'button' }), {
 import ReviewConversationTurn from '../../client/src/features/review/ReviewConversationTurn';
 
 describe('ReviewConversationTurn candidate boundary', () => {
+  it('labels chat as discussion, not a pending assessment', () => {
+    const html = render({
+      ...turn({ assistantCandidate: null }),
+      purpose: 'CHAT',
+    });
+    expect(html).toContain('讨论答复尚未读回');
+    expect(html).toContain('未请求更新评估');
+    expect(html).not.toContain('候选尚未读回');
+  });
   it('renders a missing candidate without inventing an execution state', () => {
     const html = render(turn({ assistantCandidate: null }));
 
@@ -107,6 +116,28 @@ describe('ReviewConversationTurn candidate boundary', () => {
     expect(preview).not.toContain('确认修改');
     expect(explicitConfirmation).toContain('确认修改');
     expect(explicitConfirmation).toContain('不会立即得到完成结果');
+    const chat = render({ ...reviewTurn, purpose: 'CHAT' });
+    expect(chat).toContain('讨论答复');
+    expect(chat).not.toContain('查看详细差异');
+    expect(chat).not.toContain('确认修改');
+    const previousCandidate = renderToStaticMarkup(
+      createElement(ReviewConversationTurn, {
+        turn: reviewTurn,
+        conversation: conversation(reviewTurn),
+        currentRevision: 7,
+        isCurrent: false,
+        assessmentCurrent: true,
+        busy: false,
+        confirming: false,
+        rejected: false,
+        onBeginConfirm: () => undefined,
+        onCancelConfirm: () => undefined,
+        onRejectDraft: () => undefined,
+        onConfirm: () => undefined,
+        onLocateSourceRef: () => undefined,
+      }),
+    );
+    expect(previousCandidate).toContain('查看详细差异');
   });
 });
 

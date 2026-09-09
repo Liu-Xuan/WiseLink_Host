@@ -39,6 +39,7 @@ export function buildMatterReviewContext(input: {
   basis: EngineeringMatterWorkingBasis;
   conversation: PersistedReviewConversation;
   turn: PersistedReviewTurn;
+  discussionEvidence?: AssessmentEvidence[];
   documents: Array<{
     binding: EngineeringMatterWorkingInputBinding;
     workItem: CanonicalWorkItemProjection;
@@ -180,6 +181,12 @@ export function buildMatterReviewContext(input: {
     recordedAt: input.turn.createdAt.toISOString(),
   };
   evidence.set(engineerEvidence.evidenceRef, engineerEvidence);
+  for (const item of input.discussionEvidence ?? []) {
+    const existing = evidence.get(item.evidenceRef);
+    if (existing && JSON.stringify(existing) !== JSON.stringify(item))
+      fail('REVIEW_MATTER_EVIDENCE_IDENTITY_DRIFT');
+    evidence.set(item.evidenceRef, structuredClone(item));
+  }
   const safeEvidence = (item: AssessmentEvidence) => ({
     evidenceRef: item.evidenceRef,
     kind: item.kind,

@@ -247,7 +247,7 @@ describe('continuous review client state', () => {
       /selectedEvaluationItemId:\s*string\s*\|\s*null;/u,
     );
     expect(panelSource).toMatch(
-      /requestId,\s*userMessage,\s*\.\.\.\(submission\.modelRef[^\n]+\n\s*selectedEvaluationItemId,/u,
+      /selectedEvaluationItemId: submission\.selectedEvaluationItemId \?\? null/u,
     );
   });
 

@@ -15,12 +15,20 @@ export default function useReviewWorkingRefresh(
     ...(conversation?.turns ?? []),
   ]
     .reverse()
-    .find((turn: ReviewTurnReadModel) => Boolean(turn.assistantCandidate));
+    .find(
+      (turn: ReviewTurnReadModel) =>
+        turn.purpose !== 'CHAT' &&
+        Boolean(
+          turn.assistantCandidate?.matterWorkingUpdate ||
+          turn.assistantCandidate?.jobAidWorkingUpdate,
+        ),
+    );
   const completedKey: string = completed?.assistantCandidate
     ? JSON.stringify([
         completed.reviewTurnId,
         completed.assistantCandidate.completedAt,
         completed.assistantCandidate.matterWorkingUpdate ?? null,
+        completed.assistantCandidate.jobAidWorkingUpdate ?? null,
       ])
     : '';
   useEffect(() => {

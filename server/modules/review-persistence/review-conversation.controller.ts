@@ -120,6 +120,9 @@ function reviewTextBody(body: unknown): AppendReviewTextTurnRequest {
     'attachmentSelection',
     'modelRef',
     'reviewScope',
+    'purpose',
+    'includedDiscussionTurnIds',
+    'expectedInputRevision',
   ]);
   const requestId: string = requiredIdentifier(
     value.requestId,
@@ -133,6 +136,39 @@ function reviewTextBody(body: unknown): AppendReviewTextTurnRequest {
     throw badRequest('REVIEW_TURN_MESSAGE_INVALID');
   }
   const input: AppendReviewTextTurnRequest = { requestId, userMessage };
+  if (value.purpose !== undefined) {
+    if (value.purpose !== 'CHAT' && value.purpose !== 'UPDATE_ASSESSMENT')
+      throw badRequest('REVIEW_TURN_PURPOSE_INVALID');
+    input.purpose = value.purpose;
+    if (value.executionMode !== 'AUTOMATIC')
+      throw badRequest('REVIEW_TURN_EXECUTION_REQUIRED');
+  }
+  if (value.purpose === 'UPDATE_ASSESSMENT') {
+    if (
+      !Number.isSafeInteger(value.expectedInputRevision) ||
+      Number(value.expectedInputRevision) < 0
+    )
+      throw badRequest('REVIEW_UPDATE_REVISION_REQUIRED');
+    if (
+      !Array.isArray(value.includedDiscussionTurnIds) ||
+      value.includedDiscussionTurnIds.length > 100
+    )
+      throw badRequest('REVIEW_UPDATE_DISCUSSION_INVALID');
+    input.expectedInputRevision = Number(value.expectedInputRevision);
+    input.includedDiscussionTurnIds = value.includedDiscussionTurnIds.map(
+      (id) => requiredIdentifier(id, 'REVIEW_UPDATE_DISCUSSION_INVALID'),
+    );
+    if (
+      new Set(input.includedDiscussionTurnIds).size !==
+      input.includedDiscussionTurnIds.length
+    )
+      throw badRequest('REVIEW_UPDATE_DISCUSSION_INVALID');
+  } else if (
+    value.includedDiscussionTurnIds !== undefined ||
+    value.expectedInputRevision !== undefined
+  ) {
+    throw badRequest('REVIEW_UPDATE_FIELDS_UNEXPECTED');
+  }
   if (value.reviewScope !== undefined) {
     const scope = objectBody(value.reviewScope);
     strictKeys(scope, [

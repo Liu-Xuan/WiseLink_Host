@@ -90,6 +90,10 @@ export interface PersistedReviewTurn {
   userMessage: string;
   reviewScope?: PersistedMatterReviewScope | null;
   selectedEvaluationItemId?: string | null;
+  purpose?: ReviewEngineerInputPayload['purpose'];
+  ailySessionId?: string;
+  includedDiscussionTurnIds?: string[];
+  expectedInputRevision?: number;
   executionRequested?: boolean;
   requestedModel?: CanonicalExecutionModelSelection;
   inputType: string;
@@ -1012,6 +1016,10 @@ export class ReviewConversationRepository {
     userMessage: string;
     reviewScope?: PersistedMatterReviewScope | null;
     selectedEvaluationItemId?: string | null;
+    purpose?: ReviewEngineerInputPayload['purpose'];
+    ailySessionId?: string;
+    includedDiscussionTurnIds?: string[];
+    expectedInputRevision?: number;
     executionRequested?: boolean;
     requestedModel?: CanonicalExecutionModelSelection;
     currentRevision: number;
@@ -1030,6 +1038,7 @@ export class ReviewConversationRepository {
         input.executionRequested === true,
         input.requestedModel,
         input.reviewScope,
+        input,
       );
       return { turn: existing, replayed: true };
     }
@@ -1040,6 +1049,14 @@ export class ReviewConversationRepository {
     const storedInput: string = encodeEngineerInput({
       schemaVersion: 'wiselink.3_1.review_engineer_input.v1.c7',
       userMessage: input.userMessage,
+      ...(input.purpose ? { purpose: input.purpose } : {}),
+      ...(input.ailySessionId ? { ailySessionId: input.ailySessionId } : {}),
+      ...(input.includedDiscussionTurnIds
+        ? { includedDiscussionTurnIds: [...input.includedDiscussionTurnIds] }
+        : {}),
+      ...(input.expectedInputRevision !== undefined
+        ? { expectedInputRevision: input.expectedInputRevision }
+        : {}),
       selectedEvaluationItemId: input.selectedEvaluationItemId ?? null,
       executionRequested: input.executionRequested === true,
       ...(input.requestedModel
@@ -1082,6 +1099,7 @@ export class ReviewConversationRepository {
         input.executionRequested === true,
         input.requestedModel,
         input.reviewScope,
+        input,
       );
       return { turn: replay, replayed: true };
     }
@@ -1686,6 +1704,10 @@ function persistedTurn(row: SelectedReviewTurn): PersistedReviewTurn {
     requestId: row.requestId,
     inputRevision: row.inputRevision,
     userMessage: turnInput.userMessage,
+    purpose: turnInput.purpose,
+    ailySessionId: turnInput.ailySessionId,
+    includedDiscussionTurnIds: turnInput.includedDiscussionTurnIds,
+    expectedInputRevision: turnInput.expectedInputRevision,
     reviewScope: parsePersistedMatterReviewScope(row.reviewScopeJson),
     selectedEvaluationItemId: turnInput.selectedEvaluationItemId ?? null,
     executionRequested: turnInput.executionRequested === true,
@@ -1937,8 +1959,16 @@ function assertIdempotentReplay(
   executionRequested: boolean,
   requestedModel?: CanonicalExecutionModelSelection,
   reviewScope?: PersistedMatterReviewScope | null,
+  intent?: Pick<
+    ReviewEngineerInputPayload,
+    'purpose' | 'includedDiscussionTurnIds' | 'expectedInputRevision'
+  >,
 ): void {
   if (
+    turn.purpose !== intent?.purpose ||
+    turn.expectedInputRevision !== intent?.expectedInputRevision ||
+    canonicalJson(turn.includedDiscussionTurnIds ?? null) !==
+      canonicalJson(intent?.includedDiscussionTurnIds ?? null) ||
     turn.userMessage !== userMessage ||
     canonicalJson(turn.reviewScope ?? null) !==
       canonicalJson(reviewScope ?? null) ||
@@ -1985,6 +2015,23 @@ function validateEngineerInput(value: unknown): void {
   const record: Record<string, unknown> = value as Record<string, unknown>;
   if (
     record.schemaVersion !== 'wiselink.3_1.review_engineer_input.v1.c7' ||
+    (record.ailySessionId !== undefined &&
+      (typeof record.ailySessionId !== 'string' ||
+        !record.ailySessionId.trim())) ||
+    (record.purpose !== undefined &&
+      record.purpose !== 'CHAT' &&
+      record.purpose !== 'UPDATE_ASSESSMENT') ||
+    (record.includedDiscussionTurnIds !== undefined &&
+      (!Array.isArray(record.includedDiscussionTurnIds) ||
+        record.includedDiscussionTurnIds.length > 100 ||
+        record.includedDiscussionTurnIds.some(
+          (id) => typeof id !== 'string' || !id.trim(),
+        ) ||
+        new Set(record.includedDiscussionTurnIds).size !==
+          record.includedDiscussionTurnIds.length)) ||
+    (record.expectedInputRevision !== undefined &&
+      (!Number.isSafeInteger(record.expectedInputRevision) ||
+        Number(record.expectedInputRevision) < 0)) ||
     typeof record.userMessage !== 'string' ||
     !record.userMessage.trim() ||
     (record.executionRequested !== undefined &&

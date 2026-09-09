@@ -76,6 +76,7 @@ import type { CanonicalHostBindingState } from './canonical-host.types';
 import { MiaodaCanonicalWorkItemRegistrarAdapter } from '../work-item/miaoda-canonical-work-item-registrar.adapter';
 import { WorkItemRuntimeModule } from '../work-item/work-item-runtime.module';
 import { IdentityModule } from '../identity/identity.module';
+import { ReviewAilyService } from './review-aily.service';
 import { ReviewPersistenceModule } from '../review-persistence/review-persistence.module';
 import { OrdinaryWorkItemService } from '../work-item/ordinary-work-item.service';
 import { UnconfiguredCanonicalPdfProducerAdapter } from './unconfigured-canonical-pdf-producer.adapter';
@@ -223,6 +224,7 @@ export interface CanonicalHostModuleOptions {
     CanonicalFleetMasterDataRepository,
     MiaodaApplicabilityControlledSelectionAdapter,
     CanonicalHostOpenClawReviewService,
+    ReviewAilyService,
     CanonicalHostCommonContextService,
     CanonicalJobAidProblemService,
     JobAidWorkRepository,
@@ -481,6 +483,7 @@ export class CanonicalHostModule {
         CanonicalFleetMasterDataRepository,
         MiaodaApplicabilityControlledSelectionAdapter,
         CanonicalHostOpenClawReviewService,
+        ReviewAilyService,
         CanonicalHostCommonContextService,
         CanonicalJobAidProblemService,
         JobAidWorkRepository,

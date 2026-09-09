@@ -131,6 +131,17 @@ export function reviewExecutionPresentation(
           description: '执行已完成，但候选尚未读回；可重新读取讨论查看结果。',
         }
       : {}),
+    ...(turn.purpose === 'CHAT'
+      ? {
+          label: `讨论 · ${copy.label}`,
+          description:
+            status === 'SUCCEEDED'
+              ? turn.assistantCandidate
+                ? '讨论答复已保存，未更新评估。'
+                : '讨论执行已完成，答复尚未读回。'
+              : `${copy.description.replace(/候选结果/gu, '讨论答复')} 此请求不更新评估。`,
+        }
+      : {}),
     status,
     attemptRef: stringField(execution, 'attemptRef'),
     requestedAt: stringField(execution, 'requestedAt'),
