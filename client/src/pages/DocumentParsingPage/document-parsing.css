@@ -831,6 +831,13 @@
     flex-direction: column;
   }
 
+  /* Explicit PDF mode must override the generic workspace display:flex. */
+  .wl-workbench-main.is-workspace
+    .parse-reader-split.is-pdf-active
+    > .parse-reader-workspace {
+    display: none;
+  }
+
   .wl-workbench-main.is-workspace .parse-reader-structured-view {
     display: flex;
     min-height: 0;
