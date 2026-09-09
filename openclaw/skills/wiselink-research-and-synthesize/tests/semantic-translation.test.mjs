@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { canonicalSha256, WISELINK_SKILL_VERSION } from '../scripts/validate-payload.mjs';
-import { invokeHostedTranslationBlock, validateTranslationBlockOutput, validateTranslationSemanticBatch } from '../scripts/invoke-hosted-translation-block.mjs';
+import { invokeHostedTranslationBlock, normalizeTranslationCheckSeverity, validateTranslationBlockOutput, validateTranslationSemanticBatch } from '../scripts/invoke-hosted-translation-block.mjs';
 import { runSemanticTranslation } from '../scripts/run-semantic-translation.mjs';
 
 const model = { modelRef: 'miaoda/minimax-m3', displayName: 'Synthetic M3', providerKind: 'BUILT_IN', settingsRevision: 1, selectedAt: '2026-09-09T00:00:00.000Z' };
@@ -51,6 +51,61 @@ test('one batched check preserves all candidate text and aliases without conflic
   assert.ok(!JSON.stringify(view).includes('TB-'));
   assert.ok(request.messages[0].content.includes('Return {checks:'));
   assert.ok(!request.messages[0].content.includes('Return {blockId,issues:'));
+  assert.ok(request.messages[0].content.includes('["B1","B2"]'));
+  assert.ok(request.messages[0].content.includes('exactly 2 entries'));
+});
+
+test('failed checks record the first invalid field without retaining model or source text or redispatching', async () => {
+  const empty = { blockId: 'b1', issues: [] };
+  const finding = { code: 'SYNTHETIC', severity: 'REVIEW', message: 'Synthetic private candidate text', anchorIds: ['a2'] };
+  const cases = [
+    [{ checks: [empty] }, '$.checks', 'CHECK_COUNT_MISMATCH'],
+    [{ checks: [{ blockId: 'b2', issues: [] }, empty] }, '$.checks[0].blockId', 'BLOCK_ORDER_OR_SCOPE_MISMATCH'],
+    [{ checks: [empty, { blockId: 'b2', issues: null }] }, '$.checks[1].issues', 'ARRAY_REQUIRED'],
+    [{ checks: [empty, { blockId: 'b2', issues: [{ ...finding, severity: 'WARNING' }] }] }, '$.checks[1].issues[0].severity', 'UNSUPPORTED_SEVERITY'],
+    [{ checks: [empty, { blockId: 'b2', issues: [{ ...finding, message: '' }] }] }, '$.checks[1].issues[0].message', 'NONEMPTY_STRING_REQUIRED'],
+    [{ checks: [empty, { blockId: 'b2', issues: [{ ...finding, anchorIds: [] }] }] }, '$.checks[1].issues[0].anchorIds', 'NONEMPTY_ANCHOR_ARRAY_REQUIRED'],
+    [{ checks: [empty, { blockId: 'b2', issues: [{ ...finding, anchorIds: ['a1'] }] }] }, '$.checks[1].issues[0].anchorIds', 'ANCHOR_OUTSIDE_BLOCK'],
+    [{ checks: [empty, { blockId: 'b2', issues: [{ ...finding, ['Synthetic private unexpected key']: true }] }] }, '$.checks[1].issues[0]', 'EXACT_FIELDS_REQUIRED'],
+  ];
+  for (const [value, path, reason] of cases) {
+    let requests = 0;
+    const observations = [];
+    await assert.rejects(invokeHostedTranslationBlock(checkBatch(), {
+      ...options(), observeModelOutput: async (shape, round) => observations.push({ shape, round }),
+    }, { requestGateway: async () => { requests++; return response(value); } }), /TRANSLATION_(?:SEMANTIC_REVIEW_INVALID|OUTPUT_KEYS_INVALID)/u);
+    assert.equal(requests, 1);
+    assert.equal(observations.length, 2);
+    assert.equal(observations[1].round, 2);
+    assert.equal(observations[1].shape.stage, 'OUTPUT_VALIDATION');
+    assert.equal(observations[1].shape.validation.path, path);
+    assert.equal(observations[1].shape.validation.reason, reason);
+    assert.ok(!JSON.stringify(observations).includes('Synthetic private'));
+    assert.ok(!JSON.stringify(observations).includes('Second complete block.'));
+  }
+});
+
+test('a 29-block check accepts equivalent severity casing while retaining the blocking finding and every binding', async () => {
+  const source = checkBatch();
+  source.blocks = Array.from({ length: 29 }, (_, index) => ({ blockId: `b${index + 1}`, anchorIds: [`a${index + 1}`] }));
+  source.anchors = source.blocks.map((block, index) => ({ anchorId: block.anchorIds[0], sourceText: `Synthetic source ${index + 1}.` }));
+  source.checkCandidates = source.blocks.map((block, index) => ({ blockId: block.blockId, blockRevisionId: `TB-${index + 1}`, rowVersion: 2,
+    candidate: { blockId: block.blockId, elements: [{ kind: 'paragraph', translatedText: `合成译文 ${index + 1}。`, anchorIds: block.anchorIds }] } }));
+  const modelOutput = { checks: source.blocks.map((_block, index) => ({ blockId: `B${index + 1}`, issues: index === 7 ? [
+    { code: 'SYNTHETIC_NEGATION_CHANGED', severity: 'block', message: 'Synthetic condition was changed.', anchorIds: ['A8'] },
+  ] : [] })) };
+  let calls = 0;
+  const result = await invokeHostedTranslationBlock(source, options(), { requestGateway: async () => { calls++; return response(modelOutput); } });
+  assert.equal(calls, 1);
+  assert.deepEqual(result.output.checks.map((check) => check.blockId), source.blocks.map((block) => block.blockId));
+  assert.deepEqual(result.output.checks[7].issues, [
+    { code: 'SYNTHETIC_NEGATION_CHANGED', severity: 'BLOCK', message: 'Synthetic condition was changed.', anchorIds: ['a8'] },
+  ]);
+  assert.equal(modelOutput.checks[7].issues[0].severity, 'block');
+  for (const severity of ['warning', ' BLOCK ', '', null]) {
+    const raw = { blockId: 'b1', issues: [{ code: 'TEST', severity, message: 'Synthetic', anchorIds: ['a1'] }] };
+    assert.throws(() => validateTranslationBlockOutput({ purpose: 'CHECK', blocks: source.blocks.slice(0, 1) }, normalizeTranslationCheckSeverity('CHECK', raw)), /SEMANTIC_REVIEW_INVALID/u);
+  }
 });
 
 test('batched checks reject missing, reordered or cross-block results and changed target mappings', () => {
