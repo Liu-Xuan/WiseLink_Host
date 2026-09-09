@@ -894,8 +894,19 @@ export class CanonicalHostOpenClawReviewService {
   }
 
   private async discussionHistory(binding: ReviewBinding) {
-    const aggregate = await this.conversations.loadById(
-      binding.conversation.reviewConversationId,
+    const repository = this.matterWorkingRepository;
+    if (!repository)
+      throw reviewConflict('REVIEW_RUNTIME_ACTOR_CONTEXT_UNAVAILABLE');
+    // Hosted SQL middleware restores its actor before every query. Read the
+    // conversation and turns through the same verified actor transaction used
+    // by Matter history, rather than the browser-oriented default executor.
+    const aggregate = await repository.withActorTransaction(
+      binding.conversation.actorId,
+      ({ database }) =>
+        this.conversations.loadById(
+          binding.conversation.reviewConversationId,
+          database,
+        ),
     );
     if (
       !aggregate ||
