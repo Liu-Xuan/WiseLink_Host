@@ -3,7 +3,7 @@ import { JOBAID_WORK_UPDATE_SHAPE, decodeJobAidValue } from './jobaid-work-shape
 import { JOBAID_WORK_GUIDANCE } from './jobaid-problem-guidance.mjs';
 import { REVIEW_JOBAID_TASK_SCHEMA, REVIEW_JOBAID_CANDIDATE_SCHEMA } from './validate-payload.mjs';
 
-import { createHash } from 'node:crypto';
+import { createHash, randomUUID } from 'node:crypto';
 import {
   chmod,
   link,
@@ -35,6 +35,8 @@ import {
   canonicalJson,
   canonicalSha256,
   validateExecutionModelSelection,
+  validateTaskEnvelope,
+  validateReviewTask,
 } from './validate-payload.mjs';
 
 const DRIVER_SCHEMA = 'wiselink.3_1.hosted_review_driver.v1';
@@ -98,6 +100,7 @@ export async function runHostedReviewTurn(options, dependencies = {}) {
   if (typeof remoteCall !== 'function' || typeof invokeModel !== 'function') {
     throw new Error('REVIEW_DRIVER_DEPENDENCY_REQUIRED');
   }
+  await reconcileRejectedReviewCheckpoint(checkpoint, normalized, remoteCall);
 
   const callCounts = new Map();
   let beginResult = null;
@@ -248,6 +251,53 @@ export async function runHostedReviewTurn(options, dependencies = {}) {
     result: report,
   });
   return report;
+}
+
+// A prior process may have exited after a definite Host rejection, before the
+// consumer could end its attempt. Reconcile that exact request without rebuilding
+// a ResultEnvelope under the newly installed Skill or replaying any model/commit.
+async function reconcileRejectedReviewCheckpoint(checkpoint, options, callTool) {
+  const rejection = await checkpoint.readOptional('commit.error');
+  const code = safeHostErrorCode(rejection?.hostErrorCode);
+  if (rejection?.receivedHostToolError !== true || !code) return;
+  if (await checkpoint.readOptional('commit.result')) return;
+  const started = await checkpoint.readOptional('commit.started');
+  const receipt = await checkpoint.readOptional('begin.result');
+  if (!started?.argsHash || !receipt) throw new Error('REVIEW_REJECTED_COMMIT_CHECKPOINT_INCOMPLETE');
+  assertCheckpointHash(rejection, started.argsHash, 'commit');
+  assertCheckpointHash(receipt, canonicalSha256({
+    reviewConversationRef: options.reviewConversationRef, requestId: options.requestId,
+  }), 'begin');
+  const begin = receipt.value;
+  validateTaskEnvelope(begin?.task);
+  const task = validateReviewTask(begin.task.modelInput);
+  if (begin.status !== 'RUNNING' || begin.task.taskType !== 'OPENCLAW_INTERACTIVE_REVIEW' ||
+    begin.attemptRef !== begin.task.operationRef ||
+    task.reviewConversationRef !== options.reviewConversationRef || task.requestId !== options.requestId) {
+    throw new Error('REVIEW_REJECTED_COMMIT_BINDING_MISMATCH');
+  }
+  // Always read the Host now. The original status.result is historical evidence.
+  const readback = await callTool('get_action_attempt_status', { attemptRef: begin.attemptRef });
+  if (!isUnpreparedReviewAttempt(readback, begin.attemptRef)) {
+    throw new Error('REVIEW_REJECTED_COMMIT_RECOVERY_STATE_UNCERTAIN');
+  }
+  await checkpoint.writeOnce(`commit-rejection-status-${randomUUID()}`, {
+    schemaVersion: DRIVER_SCHEMA, observedAt: new Date().toISOString(),
+    commitArgsHash: started.argsHash, hostErrorCode: code, value: readback,
+  });
+  throw Object.assign(new Error('REVIEW_COMMIT_REJECTED_BEFORE_PREPARE'), {
+    code: 'REVIEW_COMMIT_REJECTED_BEFORE_PREPARE', readback,
+    rejectedCommit: { attemptRef: begin.attemptRef, hostErrorCode: code,
+      workItemId: begin.task.workItemId, reviewTurnRef: task.reviewTurnRef },
+  });
+}
+
+export function isUnpreparedReviewAttempt(value, attemptRef) {
+  return typeof attemptRef === 'string' && attemptRef.length > 0 &&
+    value?.attemptRef === attemptRef && value?.taskType === 'OPENCLAW_INTERACTIVE_REVIEW' &&
+    value?.status === 'RUNNING' && value?.commitStartedAt === null &&
+    value?.resultContentHash === null && value?.projectionApplied === false &&
+    value?.recoveryAvailable === false;
 }
 
 export async function invokeHostedReviewModel(input, options = {}, dependencies = {}) {

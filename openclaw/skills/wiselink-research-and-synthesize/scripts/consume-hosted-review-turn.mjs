@@ -8,6 +8,7 @@ import {
   assertHostedModelGatewayReady,
   createHostMcpConnection,
   invokeHostedReviewModel,
+  isUnpreparedReviewAttempt,
   resolveRuntimeConfig,
   runHostedReviewTurn,
 } from './run-hosted-review-turn.mjs';
@@ -60,16 +61,19 @@ export async function consumePendingReviewTurn(options, dependencies) {
       result,
     };
   } catch (error) {
+    const recovery = error?.rejectedCommit;
+    if (error?.code === 'REVIEW_COMMIT_REJECTED_BEFORE_PREPARE' &&
+      recovery?.workItemId === options.workItemId && recovery?.reviewTurnRef === next.reviewTurnRef &&
+      (startedAttempt === null || startedAttempt === recovery.attemptRef) &&
+      /^[A-Z][A-Z0-9_]+$/u.test(recovery?.hostErrorCode ?? '')) {
+      startedAttempt = recovery.attemptRef;
+      commitStarted = true;
+      commitRejection = recovery.hostErrorCode;
+    }
     const readback = error?.readback;
     const rejectedBeforePrepare = commitRejection !== null &&
-      error?.code === 'HOST_MCP_COMMIT_OUTCOME_UNKNOWN' &&
-      readback?.attemptRef === startedAttempt &&
-      readback?.taskType === 'OPENCLAW_INTERACTIVE_REVIEW' &&
-      readback?.status === 'RUNNING' &&
-      readback?.commitStartedAt === null &&
-      readback?.resultContentHash === null &&
-      readback?.projectionApplied === false &&
-      readback?.recoveryAvailable === false;
+      ['HOST_MCP_COMMIT_OUTCOME_UNKNOWN', 'REVIEW_COMMIT_REJECTED_BEFORE_PREPARE'].includes(error?.code) &&
+      isUnpreparedReviewAttempt(readback, startedAttempt);
     const code = rejectedBeforePrepare ? commitRejection : errorCode(error);
     // A local/model failure before commit ends only this candidate attempt.
     // A definite Host rejection plus exact readback proves prepare never ran.

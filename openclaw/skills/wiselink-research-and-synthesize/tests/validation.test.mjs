@@ -7,6 +7,7 @@ import { join } from 'node:path';
 import test from 'node:test';
 import { bindWholeDocumentTranslation, invokeHostedInitialModel as invokeInitialWithTransport } from '../scripts/invoke-hosted-initial-model.mjs';
 import { requestHostedGateway } from '../scripts/request-hosted-gateway.mjs';
+import { consumePendingReviewTurn } from '../scripts/consume-hosted-review-turn.mjs';
 
 import {
   WISELINK_HOST_MCP_NAME,
@@ -1372,7 +1373,7 @@ test('requires 24 MCP capabilities, five review tools, and hosted provenance', (
   assert.ok(HOST_MCP_TOOLS.includes('commit_applicability_candidate'));
   assert.equal(
     WISELINK_SKILL_VERSION,
-    'wiselink-research-and-synthesize@r09.c57',
+    'wiselink-research-and-synthesize@r09.c58',
   );
   assert.equal(
     WISELINK_SKILL_COMPATIBILITY_REF,
@@ -5160,6 +5161,102 @@ test('recovers an ambiguous checkpointed review commit with one status read and 
   assert.equal(counts.get('commit_review_turn_candidate'), 1);
   assert.equal(counts.get('get_action_attempt_status'), 1);
 });
+
+test('a restarted consumer settles a prior-version rejected commit with live status and no model or commit replay', async (t) => {
+  const f = await rejectedReviewCheckpoint(t);
+  // Represent a result sealed by a previous installed Skill. The recovery must
+  // not regenerate/reseal that result or demand the new version's commit hash.
+  for (const name of ['commit.started', 'commit.error']) {
+    const file = join(f.checkpointDir, `${name}.json`);
+    const value = JSON.parse(await readFile(file, 'utf8'));
+    value.argsHash = canonicalSha256({ version: 'prior-installation', candidate: 'unchanged' });
+    await writeFile(file, JSON.stringify(value), { mode: 0o600 });
+  }
+  const originals = new Map(await Promise.all((await readdir(f.checkpointDir)).map(async (name) =>
+    [name, await readFile(join(f.checkpointDir, name), 'utf8')])));
+  const calls = [];
+  const result = await f.consume(calls, f.unprepared);
+  assert.equal(result.status, 'REQUIRES_ATTENTION');
+  assert.equal(result.errorCode, 'JOBAID_IMPORTANT_EVENT_CATEGORY');
+  assert.deepEqual(calls, ['get_pending_review_turn', 'get_action_attempt_status', 'cancel_action_attempt']);
+  for (const [name, bytes] of originals) assert.equal(await readFile(join(f.checkpointDir, name), 'utf8'), bytes);
+  const extra = (await readdir(f.checkpointDir)).filter((name) => !originals.has(name));
+  assert.equal(extra.length, 1);
+  assert.match(extra[0], /^commit-rejection-status-/u);
+});
+
+test('rejected checkpoint recovery requires current exact unprepared status and original request binding', async (t) => {
+  const f = await rejectedReviewCheckpoint(t);
+  for (const status of [
+    { ...f.unprepared, status: 'COMMITTING' },
+    { ...f.unprepared, status: 'SUCCEEDED' },
+    { ...f.unprepared, attemptRef: 'other-attempt' },
+    { ...f.unprepared, resultContentHash: 'now-sealed' },
+  ]) {
+    const calls = [];
+    await assert.rejects(f.consume(calls, status), /REVIEW_REJECTED_COMMIT_RECOVERY_STATE_UNCERTAIN/u);
+    assert.deepEqual(calls, ['get_pending_review_turn', 'get_action_attempt_status']);
+  }
+  const calls = [];
+  await assert.rejects(f.consume(calls, f.unprepared, 'different-request'), /REVIEW_CHECKPOINT_ARGUMENT_MISMATCH:begin/u);
+  assert.deepEqual(calls, ['get_pending_review_turn']);
+  const errorFile = join(f.checkpointDir, 'commit.error.json');
+  const rejection = JSON.parse(await readFile(errorFile, 'utf8'));
+  rejection.argsHash = 'different-commit';
+  await writeFile(errorFile, JSON.stringify(rejection), { mode: 0o600 });
+  calls.length = 0;
+  await assert.rejects(f.consume(calls, f.unprepared), /REVIEW_CHECKPOINT_ARGUMENT_MISMATCH:commit/u);
+  assert.deepEqual(calls, ['get_pending_review_turn']);
+});
+
+async function rejectedReviewCheckpoint(t) {
+  const root = await mkdtemp(join(tmpdir(), 'wiselink-review-rejected-restart-'));
+  t.after(() => rm(root, { recursive: true, force: true }));
+  const reviewTask = await readJson(REVIEW_TASK_FIXTURE_URL);
+  const task = makeTask('OPENCLAW_INTERACTIVE_REVIEW', reviewTask);
+  const checkpointDir = join(root, encodeURIComponent(reviewTask.reviewTurnRef));
+  const unprepared = { attemptRef: task.operationRef, taskType: task.taskType, status: 'RUNNING',
+    commitStartedAt: null, resultContentHash: null, recoveryAvailable: false,
+    projectionApplied: false, terminalReason: null };
+  await assert.rejects(runHostedReviewTurn({ reviewConversationRef: reviewTask.reviewConversationRef,
+    requestId: reviewTask.requestId, checkpointDir }, {
+    callTool: async (name, args) => {
+      if (name === 'begin_review_turn') return runningBegin(task);
+      if (name === 'get_review_turn_context') return reviewContext(task, reviewTask);
+      if (name === 'read_source_refs') return {
+        schemaVersion: 'wiselink.3_1.review_source_refs.v1.c2', attemptRef: task.operationRef,
+        sourceRefs: args.sourceRefIds.map((sourceRefId) => ({ sourceRefId, kind: 'page', statement: 'Fixture.' })),
+      };
+      if (name === 'commit_review_turn_candidate') return readHostMcpJsonResult({ isError: true,
+        content: [{ type: 'text', text: 'JOBAID_IMPORTANT_EVENT_CATEGORY' }] }, name);
+      if (name === 'get_action_attempt_status') return unprepared;
+      assert.fail(name);
+    },
+    invokeModel: async (_input, { readSourceRefs }) => {
+      await readSourceRefs([reviewTask.resourceRefs[0].sourceRefId]);
+      return { output: { responseType: 'SOURCE_LINK', answer: '候选',
+        sourceRefs: [reviewTask.resourceRefs[0].sourceRefId], missingInputs: [],
+        candidateEvidenceRefs: [], reviewActionDraft: null, affectedItemIds: [], warnings: [] }, provenance: provenance() };
+    },
+  }), /HOST_MCP_COMMIT_OUTCOME_UNKNOWN/u);
+  return { checkpointDir, unprepared,
+    consume: (calls, currentStatus, requestId = reviewTask.requestId) => consumePendingReviewTurn({
+      workItemId: task.workItemId, checkpointRoot: root,
+    }, {
+      invokeModel: () => assert.fail('Must not invoke a model during rejected-commit recovery'),
+      callTool: async (name, args) => {
+        calls.push(name);
+        if (name === 'get_pending_review_turn') return { busy: false, next: {
+          reviewConversationRef: reviewTask.reviewConversationRef, reviewTurnRef: reviewTask.reviewTurnRef, requestId,
+        } };
+        assert.equal(args.attemptRef, task.operationRef);
+        if (name === 'get_action_attempt_status') return currentStatus;
+        if (name === 'cancel_action_attempt') return { attemptRef: task.operationRef, status: 'CANCELLED' };
+        assert.fail(`Must not replay ${name}`);
+      },
+    }),
+  };
+}
 
 test('never retries invalid model arguments after output-shape checkpoint', async (t) => {
   const checkpointDir = await mkdtemp(
