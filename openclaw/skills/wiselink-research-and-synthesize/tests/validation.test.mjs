@@ -7,6 +7,7 @@ import { join } from 'node:path';
 import test from 'node:test';
 import { bindWholeDocumentTranslation, invokeHostedInitialModel as invokeInitialWithTransport } from '../scripts/invoke-hosted-initial-model.mjs';
 import { requestHostedGateway } from '../scripts/request-hosted-gateway.mjs';
+import { consumePendingReviewTurn } from '../scripts/consume-hosted-review-turn.mjs';
 
 import {
   WISELINK_HOST_MCP_NAME,
@@ -1372,7 +1373,7 @@ test('requires 24 MCP capabilities, five review tools, and hosted provenance', (
   assert.ok(HOST_MCP_TOOLS.includes('commit_applicability_candidate'));
   assert.equal(
     WISELINK_SKILL_VERSION,
-    'wiselink-research-and-synthesize@r09.c49',
+    'wiselink-research-and-synthesize@r09.c58',
   );
   assert.equal(
     WISELINK_SKILL_COMPATIBILITY_REF,
@@ -5161,6 +5162,102 @@ test('recovers an ambiguous checkpointed review commit with one status read and 
   assert.equal(counts.get('get_action_attempt_status'), 1);
 });
 
+test('a restarted consumer settles a prior-version rejected commit with live status and no model or commit replay', async (t) => {
+  const f = await rejectedReviewCheckpoint(t);
+  // Represent a result sealed by a previous installed Skill. The recovery must
+  // not regenerate/reseal that result or demand the new version's commit hash.
+  for (const name of ['commit.started', 'commit.error']) {
+    const file = join(f.checkpointDir, `${name}.json`);
+    const value = JSON.parse(await readFile(file, 'utf8'));
+    value.argsHash = canonicalSha256({ version: 'prior-installation', candidate: 'unchanged' });
+    await writeFile(file, JSON.stringify(value), { mode: 0o600 });
+  }
+  const originals = new Map(await Promise.all((await readdir(f.checkpointDir)).map(async (name) =>
+    [name, await readFile(join(f.checkpointDir, name), 'utf8')])));
+  const calls = [];
+  const result = await f.consume(calls, f.unprepared);
+  assert.equal(result.status, 'REQUIRES_ATTENTION');
+  assert.equal(result.errorCode, 'JOBAID_IMPORTANT_EVENT_CATEGORY');
+  assert.deepEqual(calls, ['get_pending_review_turn', 'get_action_attempt_status', 'cancel_action_attempt']);
+  for (const [name, bytes] of originals) assert.equal(await readFile(join(f.checkpointDir, name), 'utf8'), bytes);
+  const extra = (await readdir(f.checkpointDir)).filter((name) => !originals.has(name));
+  assert.equal(extra.length, 1);
+  assert.match(extra[0], /^commit-rejection-status-/u);
+});
+
+test('rejected checkpoint recovery requires current exact unprepared status and original request binding', async (t) => {
+  const f = await rejectedReviewCheckpoint(t);
+  for (const status of [
+    { ...f.unprepared, status: 'COMMITTING' },
+    { ...f.unprepared, status: 'SUCCEEDED' },
+    { ...f.unprepared, attemptRef: 'other-attempt' },
+    { ...f.unprepared, resultContentHash: 'now-sealed' },
+  ]) {
+    const calls = [];
+    await assert.rejects(f.consume(calls, status), /REVIEW_REJECTED_COMMIT_RECOVERY_STATE_UNCERTAIN/u);
+    assert.deepEqual(calls, ['get_pending_review_turn', 'get_action_attempt_status']);
+  }
+  const calls = [];
+  await assert.rejects(f.consume(calls, f.unprepared, 'different-request'), /REVIEW_CHECKPOINT_ARGUMENT_MISMATCH:begin/u);
+  assert.deepEqual(calls, ['get_pending_review_turn']);
+  const errorFile = join(f.checkpointDir, 'commit.error.json');
+  const rejection = JSON.parse(await readFile(errorFile, 'utf8'));
+  rejection.argsHash = 'different-commit';
+  await writeFile(errorFile, JSON.stringify(rejection), { mode: 0o600 });
+  calls.length = 0;
+  await assert.rejects(f.consume(calls, f.unprepared), /REVIEW_CHECKPOINT_ARGUMENT_MISMATCH:commit/u);
+  assert.deepEqual(calls, ['get_pending_review_turn']);
+});
+
+async function rejectedReviewCheckpoint(t) {
+  const root = await mkdtemp(join(tmpdir(), 'wiselink-review-rejected-restart-'));
+  t.after(() => rm(root, { recursive: true, force: true }));
+  const reviewTask = await readJson(REVIEW_TASK_FIXTURE_URL);
+  const task = makeTask('OPENCLAW_INTERACTIVE_REVIEW', reviewTask);
+  const checkpointDir = join(root, encodeURIComponent(reviewTask.reviewTurnRef));
+  const unprepared = { attemptRef: task.operationRef, taskType: task.taskType, status: 'RUNNING',
+    commitStartedAt: null, resultContentHash: null, recoveryAvailable: false,
+    projectionApplied: false, terminalReason: null };
+  await assert.rejects(runHostedReviewTurn({ reviewConversationRef: reviewTask.reviewConversationRef,
+    requestId: reviewTask.requestId, checkpointDir }, {
+    callTool: async (name, args) => {
+      if (name === 'begin_review_turn') return runningBegin(task);
+      if (name === 'get_review_turn_context') return reviewContext(task, reviewTask);
+      if (name === 'read_source_refs') return {
+        schemaVersion: 'wiselink.3_1.review_source_refs.v1.c2', attemptRef: task.operationRef,
+        sourceRefs: args.sourceRefIds.map((sourceRefId) => ({ sourceRefId, kind: 'page', statement: 'Fixture.' })),
+      };
+      if (name === 'commit_review_turn_candidate') return readHostMcpJsonResult({ isError: true,
+        content: [{ type: 'text', text: 'JOBAID_IMPORTANT_EVENT_CATEGORY' }] }, name);
+      if (name === 'get_action_attempt_status') return unprepared;
+      assert.fail(name);
+    },
+    invokeModel: async (_input, { readSourceRefs }) => {
+      await readSourceRefs([reviewTask.resourceRefs[0].sourceRefId]);
+      return { output: { responseType: 'SOURCE_LINK', answer: '候选',
+        sourceRefs: [reviewTask.resourceRefs[0].sourceRefId], missingInputs: [],
+        candidateEvidenceRefs: [], reviewActionDraft: null, affectedItemIds: [], warnings: [] }, provenance: provenance() };
+    },
+  }), /HOST_MCP_COMMIT_OUTCOME_UNKNOWN/u);
+  return { checkpointDir, unprepared,
+    consume: (calls, currentStatus, requestId = reviewTask.requestId) => consumePendingReviewTurn({
+      workItemId: task.workItemId, checkpointRoot: root,
+    }, {
+      invokeModel: () => assert.fail('Must not invoke a model during rejected-commit recovery'),
+      callTool: async (name, args) => {
+        calls.push(name);
+        if (name === 'get_pending_review_turn') return { busy: false, next: {
+          reviewConversationRef: reviewTask.reviewConversationRef, reviewTurnRef: reviewTask.reviewTurnRef, requestId,
+        } };
+        assert.equal(args.attemptRef, task.operationRef);
+        if (name === 'get_action_attempt_status') return currentStatus;
+        if (name === 'cancel_action_attempt') return { attemptRef: task.operationRef, status: 'CANCELLED' };
+        assert.fail(`Must not replay ${name}`);
+      },
+    }),
+  };
+}
+
 test('never retries invalid model arguments after output-shape checkpoint', async (t) => {
   const checkpointDir = await mkdtemp(
     join(tmpdir(), 'wiselink-review-driver-fail-closed-'),
@@ -6824,3 +6921,189 @@ function attemptStatus(task, statusValue, result) {
 async function readJson(url) {
   return JSON.parse(await readFile(url, 'utf8'));
 }
+
+test('JobAid review uses a typed candidate and preserves quoted text, nulls, local work and unknown fields for validation', async () => {
+  const candidate = {
+    responseType: 'RESYNTHESIS_RESULT', answer: '条件“Windows 10”\n路径 C:\\test',
+    sourceRefs: [], missingInputs: [], candidateEvidenceRefs: [], reviewActionDraft: null,
+    affectedItemIds: [], warnings: [],
+    jobAidWorkingDelta: { schemaVersion: 'wiselink.jobaid-problem-work.v2',
+      issues: [{ issueKey: 'ref1', riskScenarios: [{ conditions: ['未核查'], likelihood: null }],
+        unknownField: { item: ['preserve'] } }], unchangedIssueKeys: ['app1'] },
+  };
+  const native = structuredClone(candidate);
+  delete native.reviewActionDraft;
+  delete native.affectedItemIds;
+  native.sourceRefs = { item: [] };
+  native.jobAidWorkingDelta.issues = { item: native.jobAidWorkingDelta.issues };
+  native.jobAidWorkingDelta.issues.item[0].riskScenarios[0].conditions = { item: ['未核查'] };
+  let validated = 0;
+  const result = await invokeReviewWithTransport({ input: { context: { problemAssessment: {} } } }, {
+    gatewayUrl: 'https://official.invalid', gatewayToken: 'fixture-only', configuredModelVersion: 'fixture/provider',
+    validateCandidate: async (value) => { validated++; assert.deepEqual(value, candidate); },
+  }, { requestGateway: async (_url, init) => {
+    const body = JSON.parse(init.body);
+    assert.equal(body.tool_choice, 'auto');
+    const schema = body.tools[0].function.parameters;
+    assert.deepEqual(schema.required, ['candidate']);
+    assert.equal(schema.properties.candidate.properties.jobAidWorkingDelta.properties.issues.type, 'array');
+    assert.equal(schema.properties.candidate.properties.reviewActionDraft, undefined);
+    assert.equal(schema.properties.candidate.properties.affectedItemIds, undefined);
+    assert.equal(schema.properties.candidate.properties.candidateEvidenceRefs.maxItems, 0);
+    const riskShape = schema.properties.candidate.properties.jobAidWorkingDelta.properties.issues.items.properties.riskScenarios.items.properties;
+    assert.deepEqual(riskShape.importantEvent.properties.event.enum,
+      ['空中停车', '重力放起落架', '爆胎／脱胎', '空中释压', '通讯中断', '客货舱火警／烟雾']);
+    assert.deepEqual(riskShape.severity.properties.label.enum, ['轻微', '重要', '严重', '灾难']);
+    assert.deepEqual(riskShape.likelihood.properties.label.enum,
+      ['可能', '不大可能', '不可能（极少）', '极不可能（极端少）']);
+    assert.equal(riskShape.importantEvent.nullable, true);
+    return Response.json({ choices: [{ message: { content: null, tool_calls: [{ id: 'typed-review',
+      type: 'function', function: { name: 'return_wiselink_review_candidate', arguments: JSON.stringify({ candidate: native }) },
+    }] } }] });
+  } });
+  assert.equal(validated, 1);
+  assert.deepEqual(result.output, candidate);
+});
+
+test('JobAid auto tool choice still rejects prose-only and unauthorized source requests', async () => {
+  for (const message of [ { content: '{"candidate":{"answer":"not a tool call"}}' },
+    { content: null, tool_calls: [{ id: 'unauthorized', type: 'function', function: {
+      name: 'read_wiselink_review_sources', arguments: '{"sourceRefIds":["not-allowed"]}',
+    } }] } ]) {
+    await assert.rejects(invokeReviewWithTransport({ input: { context: { problemAssessment: {} }, availableSourceRefIds: [] } }, {
+      gatewayUrl: 'https://official.invalid', gatewayToken: 'fixture-only', configuredModelVersion: 'fixture/provider',
+    }, { requestGateway: async () => Response.json({ choices: [{ message }] }) }), /REVIEW_GATEWAY_OUTPUT_FUNCTION_COUNT_INVALID|REVIEW_MODEL_SOURCE_REQUEST_INVALID/u);
+  }
+});
+
+test('gateway required-tool contract failure is reported once without transient retries', async () => {
+  let requests = 0;
+  const progress = [];
+  await assert.rejects(invokeReviewWithTransport({ input: {} }, {
+    gatewayUrl: 'https://official.invalid', gatewayToken: 'fixture-only', configuredModelVersion: 'fixture/provider',
+    observeProgress: async (event) => { progress.push(event); },
+  }, { requestGateway: async () => {
+    requests++;
+    return Response.json({ error: { type: 'api_error', message: 'tool_choice=required was not satisfied by the agent response' } }, { status: 502 });
+  }, wait: async () => { assert.fail('contract failure must not retry'); } }), /REVIEW_TOOL_CHOICE_NOT_SATISFIED/u);
+  assert.equal(requests, 1);
+  assert.deepEqual(progress.map((event) => event.kind), ['MODEL_REQUEST']);
+});
+
+test('leased JobAid review spans the former 8-minute cutoff with bounded responses and stops on lease loss', async (t) => {
+  let now = 0;
+  const budgets = [];
+  const realTimeout = AbortSignal.timeout;
+  t.mock.method(Date, 'now', () => now);
+  t.mock.method(AbortSignal, 'timeout', (ms) => { budgets.push(ms); return realTimeout(30_000); });
+  const input = { input: { context: { problemAssessment: {} }, availableSourceRefIds: ['s1', 's2'] } };
+  const candidate = { responseType: 'ANSWER', answer: '保留未知', sourceRefs: [], missingInputs: [],
+    candidateEvidenceRefs: [], reviewActionDraft: null, affectedItemIds: [], warnings: [], jobAidWorkingDelta: null };
+  const options = {
+    gatewayUrl: 'https://official.invalid', gatewayToken: 'fixture-only', configuredModelVersion: 'fixture/provider',
+    observeProgress: async () => {},
+    readSourceRefs: async (ids) => ids.map((id) => ({ sourceRefId: id, evidenceRef: id, excerpt: 'fixture' })),
+  };
+  let requests = 0;
+  const transport = { requestGateway: async () => {
+    requests++;
+    const reading = requests < 3;
+    now = requests === 1 ? 9 * 60_000 : 25 * 60_000;
+    return Response.json({ choices: [{ message: { content: null, tool_calls: [{ id: `r${requests}`, type: 'function', function: {
+      name: reading ? 'read_wiselink_review_sources' : 'return_wiselink_review_candidate',
+      arguments: JSON.stringify(reading ? { sourceRefIds: [`s${requests}`] } : { candidate: Object.fromEntries(Object.entries(candidate).filter(([key]) => !['reviewActionDraft', 'affectedItemIds', 'jobAidWorkingDelta'].includes(key))) }),
+    } }] } }] });
+  } };
+  const result = await invokeReviewWithTransport(input, options, transport);
+  assert.deepEqual(result.output, candidate);
+  assert.deepEqual(budgets, [15 * 60_000, 15 * 60_000, 5 * 60_000]);
+  now = 0; requests = 0;
+  let renewals = 0;
+  await assert.rejects(invokeReviewWithTransport(input, { ...options, observeProgress: async () => {
+    if (++renewals === 2) throw new Error('ACTION_ATTEMPT_LEASE_EXPIRED');
+  } }, transport), /ACTION_ATTEMPT_LEASE_EXPIRED/u);
+  assert.equal(requests, 1);
+  now = 0; requests = 0;
+  await assert.rejects(invokeReviewWithTransport(input, { ...options, timeoutMs: 480_000 }, transport), /REVIEW_MODEL_TIMEOUT/u);
+  assert.equal(requests, 1);
+  now = 0; requests = 0;
+  await assert.rejects(invokeReviewWithTransport(input, { ...options, observeProgress: undefined }, transport), /REVIEW_MODEL_TIMEOUT/u);
+  assert.equal(requests, 1);
+  now = 0; requests = 0;
+  await assert.rejects(invokeReviewWithTransport(input, { ...options, timeoutMs: 3 * 60 * 60_000 }, {
+    requestGateway: async (...args) => {
+      const response = await transport.requestGateway(...args);
+      now = 31 * 60_000;
+      return response;
+    },
+  }), /REVIEW_MODEL_TIMEOUT/u);
+  assert.equal(requests, 1);
+});
+
+test('public HTTP 200 Gateway idle-timeout text is a failure, never a candidate or retry instruction', async () => {
+  let calls = 0;
+  await assert.rejects(invokeReviewWithTransport({ input: {} }, {
+    gatewayUrl: 'https://official.invalid', gatewayToken: 'fixture-only', configuredModelVersion: 'fixture/provider',
+    observeProgress: async () => {},
+  }, { requestGateway: async () => {
+    calls++;
+    return Response.json({ choices: [{ message: { content: 'LLM request timed out.\n\nThe model did not produce a response before the model idle timeout. Please try again, or increase `models.providers.<id>.timeoutSeconds` for slow local or self-hosted providers. If `agents.defaults.timeoutSeconds` or a run-specific timeout is lower, raise that ceiling too; provider timeouts cannot extend the whole agent run.' }, finish_reason: 'stop' }] });
+  }, wait: async () => assert.fail('must not retry ambiguous timeout') }), /REVIEW_GATEWAY_MODEL_IDLE_TIMEOUT/u);
+  assert.equal(calls, 1);
+});
+
+test('JobAid wire rejects model-supplied formal fields instead of overwriting them with protocol constants', async () => {
+  for (const supplied of [{ reviewActionDraft: null }, { reviewActionDraft: { approved: true } }, { affectedItemIds: [] }, { affectedItemIds: ['WI-other'] }]) {
+    let validated = false;
+    await assert.rejects(invokeReviewWithTransport({ input: { context: { problemAssessment: {} } } }, {
+      gatewayUrl: 'https://official.invalid', gatewayToken: 'fixture-only', configuredModelVersion: 'fixture/provider',
+      validateCandidate: async () => { validated = true; },
+    }, { requestGateway: async () => Response.json({ choices: [{ message: { content: null, tool_calls: [{
+      type: 'function', function: { name: 'return_wiselink_review_candidate', arguments: JSON.stringify({ candidate: {
+        responseType: 'ANSWER', answer: '候选', sourceRefs: [], missingInputs: [], candidateEvidenceRefs: [], warnings: [], ...supplied,
+      } }) },
+    }] } }] }) }), /REVIEW_JOBAID_FORMAL_FIELD_FORBIDDEN/u);
+    assert.equal(validated, false);
+  }
+});
+
+test('JobAid attachment citation feedback keeps the candidate unchanged until the model corrects it', async () => {
+  const feedback = [];
+  let requests = 0;
+  let validations = 0;
+  const result = await invokeReviewWithTransport({ input: { context: { problemAssessment: {} }, attachmentRefs: ['attachment:1'] } }, {
+    gatewayUrl: 'https://official.invalid', gatewayToken: 'fixture-only', configuredModelVersion: 'fixture/provider',
+    validateCandidate: async (candidate) => {
+      validations++;
+      assert.equal(candidate.reviewActionDraft, null);
+      assert.deepEqual(candidate.affectedItemIds, []);
+      assert.equal(candidate.jobAidWorkingDelta, null);
+      if (validations === 1) {
+        assert.deepEqual(candidate.candidateEvidenceRefs, ['ordinary-document-source']);
+        throw new Error('REVIEW_MODEL_CANDIDATE_EVIDENCE_REF_NOT_ATTACHMENT');
+      }
+      assert.deepEqual(candidate.candidateEvidenceRefs, []);
+    },
+  }, { requestGateway: async (_url, init) => {
+    requests++;
+    const body = JSON.parse(init.body);
+    const field = body.tools[0].function.parameters.properties.candidate.properties.candidateEvidenceRefs;
+    assert.deepEqual(field.items.enum, ['attachment:1']);
+    if (requests > 1) {
+      const receipt = JSON.parse(body.messages[2].content);
+      feedback.push(receipt);
+      assert.match(receipt.instruction, /ordinary document SourceRefs/u);
+      assert.equal(receipt.instruction.includes('coverageUpdates'), false);
+    }
+    return Response.json({ choices: [{ message: { content: null, tool_calls: [{ id: `citation-${requests}`, type: 'function', function: {
+      name: 'return_wiselink_review_candidate', arguments: JSON.stringify({ candidate: {
+        responseType: 'ANSWER', answer: '候选', sourceRefs: [], missingInputs: [], warnings: [],
+        candidateEvidenceRefs: requests === 1 ? ['ordinary-document-source'] : [],
+      } }),
+    } }] } }] });
+  } });
+  assert.equal(requests, 2);
+  assert.equal(validations, 2);
+  assert.equal(feedback[0].validationError, 'REVIEW_MODEL_CANDIDATE_EVIDENCE_REF_NOT_ATTACHMENT');
+  assert.deepEqual(result.output.candidateEvidenceRefs, []);
+});

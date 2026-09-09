@@ -29,6 +29,17 @@ export function createHostedReviewRequester({ requestGateway = requestHostedGate
       try {
         response = await requestGateway(endpoint, init);
         if (!TRANSIENT_HTTP_STATUSES.has(response.status)) return response;
+        if (response.status === 502) {
+          // Preserve the body for the caller, including transports with one-shot text().
+          const body = await response.text();
+          response = { status: response.status, ok: response.ok, text: async () => body };
+          let payload;
+          try { payload = JSON.parse(body); } catch { /* Existing HTTP handling owns malformed bodies. */ }
+          if (payload?.error?.type === 'api_error' &&
+              payload.error.message === 'tool_choice=required was not satisfied by the agent response') {
+            throw new Error('REVIEW_TOOL_CHOICE_NOT_SATISFIED');
+          }
+        }
         retryCode = `REVIEW_GATEWAY_HTTP_${response.status}`;
       } catch (cause) {
         error = cause;

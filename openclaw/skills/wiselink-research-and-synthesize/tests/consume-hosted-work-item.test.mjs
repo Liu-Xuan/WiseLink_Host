@@ -239,6 +239,32 @@ test('Host identity mismatch stops before any operation', async (t) => {
   }), /HOST_INITIAL_STATUS_UNAVAILABLE/u);
 });
 
+test('a terminal Host validation failure retains its specific safe code through cancellation', async (t) => {
+  const input = await options(t);
+  const cancellations = [];
+  const result = await consumeHostedWorkItem(input, {
+    callTool: async (name, args) => {
+      if (name === 'get_pending_review_turn') return { next: null, busy: false };
+      if (name === 'get_parse_status') return status();
+      if (name === 'begin_translation') return { status: 'RUNNING', attemptRef: 'AQ-new' };
+      if (name === 'cancel_action_attempt') {
+        cancellations.push(args);
+        return { status: 'CANCELLED', attemptRef: 'AQ-new' };
+      }
+      assert.fail(name);
+    },
+    runInitial: async (run) => {
+      await run.callTool('begin_translation', {});
+      throw Object.assign(new Error('REVIEW_HOST_MCP_TOOL_FAILED:save_assessment_work'), {
+        hostErrorCode: 'JOBAID_MEASURE_ADDRESSES_INVALID',
+      });
+    },
+  });
+  assert.equal(result.errorCode, 'JOBAID_MEASURE_ADDRESSES_INVALID');
+  assert.equal(cancellations.length, 1);
+  assert.equal(cancellations[0].reason, 'HOSTED_INITIAL_EXECUTION_FAILED:JOBAID_MEASURE_ADDRESSES_INVALID');
+});
+
 test('translation rejection diagnostics survive attempt cancellation and cannot be replayed', async (t) => {
   const input = await options(t);
   const report = { round: 3, correctionRound: 2, findingCount: 1,

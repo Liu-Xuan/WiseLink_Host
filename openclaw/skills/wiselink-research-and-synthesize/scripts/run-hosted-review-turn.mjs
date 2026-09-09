@@ -1,8 +1,9 @@
 #!/usr/bin/env node
+import { JOBAID_WORK_UPDATE_SHAPE, decodeJobAidValue } from './jobaid-work-shape.mjs';
 import { JOBAID_WORK_GUIDANCE } from './jobaid-problem-guidance.mjs';
 import { REVIEW_JOBAID_TASK_SCHEMA, REVIEW_JOBAID_CANDIDATE_SCHEMA } from './validate-payload.mjs';
 
-import { createHash } from 'node:crypto';
+import { createHash, randomUUID } from 'node:crypto';
 import {
   chmod,
   link,
@@ -34,6 +35,8 @@ import {
   canonicalJson,
   canonicalSha256,
   validateExecutionModelSelection,
+  validateTaskEnvelope,
+  validateReviewTask,
 } from './validate-payload.mjs';
 
 const DRIVER_SCHEMA = 'wiselink.3_1.hosted_review_driver.v1';
@@ -97,6 +100,7 @@ export async function runHostedReviewTurn(options, dependencies = {}) {
   if (typeof remoteCall !== 'function' || typeof invokeModel !== 'function') {
     throw new Error('REVIEW_DRIVER_DEPENDENCY_REQUIRED');
   }
+  await reconcileRejectedReviewCheckpoint(checkpoint, normalized, remoteCall);
 
   const callCounts = new Map();
   let beginResult = null;
@@ -249,6 +253,53 @@ export async function runHostedReviewTurn(options, dependencies = {}) {
   return report;
 }
 
+// A prior process may have exited after a definite Host rejection, before the
+// consumer could end its attempt. Reconcile that exact request without rebuilding
+// a ResultEnvelope under the newly installed Skill or replaying any model/commit.
+async function reconcileRejectedReviewCheckpoint(checkpoint, options, callTool) {
+  const rejection = await checkpoint.readOptional('commit.error');
+  const code = safeHostErrorCode(rejection?.hostErrorCode);
+  if (rejection?.receivedHostToolError !== true || !code) return;
+  if (await checkpoint.readOptional('commit.result')) return;
+  const started = await checkpoint.readOptional('commit.started');
+  const receipt = await checkpoint.readOptional('begin.result');
+  if (!started?.argsHash || !receipt) throw new Error('REVIEW_REJECTED_COMMIT_CHECKPOINT_INCOMPLETE');
+  assertCheckpointHash(rejection, started.argsHash, 'commit');
+  assertCheckpointHash(receipt, canonicalSha256({
+    reviewConversationRef: options.reviewConversationRef, requestId: options.requestId,
+  }), 'begin');
+  const begin = receipt.value;
+  validateTaskEnvelope(begin?.task);
+  const task = validateReviewTask(begin.task.modelInput);
+  if (begin.status !== 'RUNNING' || begin.task.taskType !== 'OPENCLAW_INTERACTIVE_REVIEW' ||
+    begin.attemptRef !== begin.task.operationRef ||
+    task.reviewConversationRef !== options.reviewConversationRef || task.requestId !== options.requestId) {
+    throw new Error('REVIEW_REJECTED_COMMIT_BINDING_MISMATCH');
+  }
+  // Always read the Host now. The original status.result is historical evidence.
+  const readback = await callTool('get_action_attempt_status', { attemptRef: begin.attemptRef });
+  if (!isUnpreparedReviewAttempt(readback, begin.attemptRef)) {
+    throw new Error('REVIEW_REJECTED_COMMIT_RECOVERY_STATE_UNCERTAIN');
+  }
+  await checkpoint.writeOnce(`commit-rejection-status-${randomUUID()}`, {
+    schemaVersion: DRIVER_SCHEMA, observedAt: new Date().toISOString(),
+    commitArgsHash: started.argsHash, hostErrorCode: code, value: readback,
+  });
+  throw Object.assign(new Error('REVIEW_COMMIT_REJECTED_BEFORE_PREPARE'), {
+    code: 'REVIEW_COMMIT_REJECTED_BEFORE_PREPARE', readback,
+    rejectedCommit: { attemptRef: begin.attemptRef, hostErrorCode: code,
+      workItemId: begin.task.workItemId, reviewTurnRef: task.reviewTurnRef },
+  });
+}
+
+export function isUnpreparedReviewAttempt(value, attemptRef) {
+  return typeof attemptRef === 'string' && attemptRef.length > 0 &&
+    value?.attemptRef === attemptRef && value?.taskType === 'OPENCLAW_INTERACTIVE_REVIEW' &&
+    value?.status === 'RUNNING' && value?.commitStartedAt === null &&
+    value?.resultContentHash === null && value?.projectionApplied === false &&
+    value?.recoveryAvailable === false;
+}
+
 export async function invokeHostedReviewModel(input, options = {}, dependencies = {}) {
   const modelHeaders = executionModelHeaders(options);
   const maxCompletionTokens = options.executionModel?.modelRef === 'miaoda/minimax-m3'
@@ -265,7 +316,6 @@ export async function invokeHostedReviewModel(input, options = {}, dependencies 
     options.agentId ?? WISELINK_PROFILE_REF,
     'REVIEW_AGENT_REQUIRED',
   );
-  const timeoutMs = positiveInteger(options.timeoutMs, 480_000);
   const configuredModelVersion = requiredText(
     options.configuredModelVersion,
     'REVIEW_MODEL_CONFIG_UNREADABLE',
@@ -280,6 +330,14 @@ export async function invokeHostedReviewModel(input, options = {}, dependencies 
   const prompt = buildReviewPrompt(input);
   const isMatter = isRecord(input.input?.context?.matterWorking);
   const isJobAid = isRecord(input.input?.context?.problemAssessment);
+  // The live JobAid review was still producing output when the legacy 8-minute
+  // budget aborted it. Match initial problem analysis's 30-minute total only
+  // when the caller renews the exact Host lease before each request. One
+  // response stays below the 30-minute lease; Host's 60-minute deadline holds.
+  const leasedJobAid = isJobAid && typeof options.observeProgress === 'function';
+  const timeoutMs = leasedJobAid
+    ? Math.min(positiveInteger(options.timeoutMs, 30 * 60_000), 30 * 60_000)
+    : positiveInteger(options.timeoutMs, 480_000);
   const sessionDiscriminator = requiredText(
     options.sessionDiscriminator ?? canonicalSha256(input),
     'REVIEW_MODEL_SESSION_DISCRIMINATOR_REQUIRED',
@@ -316,7 +374,7 @@ export async function invokeHostedReviewModel(input, options = {}, dependencies 
     if (remainingMs <= 0) throw new Error('REVIEW_MODEL_TIMEOUT');
     round += 1;
     inputUnits += Buffer.byteLength(JSON.stringify(messages));
-    const signal = AbortSignal.timeout(remainingMs);
+    const signal = AbortSignal.timeout(leasedJobAid ? Math.min(remainingMs, 15 * 60_000) : remainingMs);
     let response;
     let text;
     try {
@@ -333,8 +391,8 @@ export async function invokeHostedReviewModel(input, options = {}, dependencies 
           model: `openclaw/${agentId}`,
           ...(nativeSessionKey ? {} : { user: `review-driver:${sha256(sessionDiscriminator).slice(0, 24)}` }),
           messages,
-          tools: [reviewCandidateFunctionTool(isMatter || isJobAid), reviewSourceFunctionTool()],
-          tool_choice: 'required',
+          tools: [reviewCandidateFunctionTool(isMatter, isJobAid, input.input?.attachmentRefs ?? []), reviewSourceFunctionTool()],
+          tool_choice: isJobAid ? 'auto' : 'required',
           parallel_tool_calls: false,
           n: 1,
           stream: false,
@@ -371,6 +429,13 @@ export async function invokeHostedReviewModel(input, options = {}, dependencies 
     if (observeOutputShape) await observeOutputShape(outputShape, round);
     if (!response.ok) throw new Error(`REVIEW_GATEWAY_HTTP_${response.status}`);
     if (outputShape.hasAnalysis) throw new Error('REVIEW_MODEL_ANALYSIS_FORBIDDEN');
+    // This exact public Gateway error was returned as HTTP 200 with no calls.
+    // Report the upstream timeout, rather than a misleading function-count
+    // error. It is not candidate text and never authorizes a retry or commit.
+    if (payload.choices?.length === 1 && !payload.choices[0].message?.tool_calls?.length &&
+      payload.choices[0].message?.content === 'LLM request timed out.\n\nThe model did not produce a response before the model idle timeout. Please try again, or increase `models.providers.<id>.timeoutSeconds` for slow local or self-hosted providers. If `agents.defaults.timeoutSeconds` or a run-specific timeout is lower, raise that ceiling too; provider timeouts cannot extend the whole agent run.') {
+      throw new Error('REVIEW_GATEWAY_MODEL_IDLE_TIMEOUT');
+    }
     const { argumentsText, output, toolCall } = readReviewCandidateArguments(payload);
     outputUnits += Buffer.byteLength(argumentsText);
     const choice = payload.choices[0];
@@ -382,7 +447,19 @@ export async function invokeHostedReviewModel(input, options = {}, dependencies 
       let candidate;
       try {
         candidate = output;
-        if (isMatter || isJobAid) {
+        if (isJobAid) {
+          if (Object.keys(output).length !== 1 || !isRecord(output.candidate)) {
+            throw new Error('REVIEW_JOBAID_CANDIDATE_OBJECT_REQUIRED');
+          }
+          const authored = decodeJobAidValue(output.candidate, jobAidReviewCandidateShape());
+          if (Object.hasOwn(authored, 'reviewActionDraft') || Object.hasOwn(authored, 'affectedItemIds')) {
+            throw new Error('REVIEW_JOBAID_FORMAL_FIELD_FORBIDDEN');
+          }
+          // JobAid has no formal-action operation. These protocol constants
+          // are driver-owned, never a model choice or a repair of supplied data.
+          candidate = { ...authored, reviewActionDraft: null, affectedItemIds: [],
+            jobAidWorkingDelta: Object.hasOwn(authored, 'jobAidWorkingDelta') ? authored.jobAidWorkingDelta : null };
+        } else if (isMatter) {
           if (Object.keys(output).length !== 1 || typeof output.candidateJson !== 'string') {
             throw new Error('REVIEW_MATTER_CANDIDATE_JSON_REQUIRED');
           }
@@ -407,7 +484,9 @@ export async function invokeHostedReviewModel(input, options = {}, dependencies 
           { role: 'tool', tool_call_id: toolCall.id, content: canonicalJson({
             candidateAccepted: false, validationError: errorCode,
             availableEvidenceRefs: candidateFeedbackEvidenceRefs(input, sourceCache),
-            instruction: 'Correct the candidate using the current contract and registered evidence. Keep the original question, unchanged claims and source meaning. Read any additional passage through the read function. Every document premise in the resulting reading must be included in that input\'s checked coverage; an updated coverage entry replaces its old checked range, so include every cited passage for that input, not just representative anchors. Return the complete corrected candidate; do not invent evidence or coverage, remove a substantive finding merely to pass validation, or claim that anything was saved.',
+            instruction: isJobAid
+              ? 'Return the complete corrected JobAid candidate through the declared function. Keep the original question, unaffected issues and their premises. candidateEvidenceRefs may contain only current input.attachmentRefs actually read this turn; ordinary document SourceRefs belong in sourceRefs or working-delta evidence fields, never candidateEvidenceRefs. With no attachments use []. Omit reviewActionDraft and affectedItemIds; the driver owns their fixed no-formal-action values. Omit jobAidWorkingDelta only when no work changes. Read any additional passage through the read function. Never invent references, drop findings merely to pass validation, or claim the rejected candidate was saved.'
+              : 'Correct the candidate using the current contract and registered evidence. Keep the original question, unchanged claims and source meaning. Read any additional passage through the read function. Every document premise in the resulting reading must be included in that input\'s checked coverage; an updated coverage entry replaces its old checked range, so include every cited passage for that input, not just representative anchors. Return the complete corrected candidate; do not invent evidence or coverage, remove a substantive finding merely to pass validation, or claim that anything was saved.',
           }) },
         ];
         continue;
@@ -1350,7 +1429,33 @@ function reviewResponseTypes(isMatter) {
     : REVIEW_RESPONSE_TYPES;
 }
 
-function reviewCandidateFunctionTool(isMatter = false) {
+function jobAidReviewCandidateShape(attachmentRefs = []) {
+  const strings = { type: 'array', items: { type: 'string', minLength: 1 } };
+  return {
+    type: 'object', additionalProperties: false,
+    required: MODEL_OUTPUT_KEYS.filter((key) => !['reviewActionDraft', 'affectedItemIds'].includes(key)),
+    properties: {
+      responseType: { type: 'string', enum: reviewResponseTypes(true) },
+      answer: { type: 'string', minLength: 1 },
+      sourceRefs: strings, missingInputs: strings,
+      candidateEvidenceRefs: { ...strings,
+        description: 'Only current engineer attachment refs actually read in this turn. Never document SourceRefs, method refs or work dependencies. Empty when no current attachments exist.',
+        ...(attachmentRefs.length ? { items: { ...strings.items, enum: [...attachmentRefs] } } : { maxItems: 0 }),
+      },
+      warnings: strings, jobAidWorkingDelta: { ...JOBAID_WORK_UPDATE_SHAPE, nullable: true },
+    },
+  };
+}
+
+function reviewCandidateFunctionTool(isMatter = false, isJobAid = false, attachmentRefs = []) {
+  if (isJobAid) return {
+    type: 'function', function: {
+      name: REVIEW_OUTPUT_FUNCTION_NAME,
+      description: 'Return the complete JobAid review candidate object. Host validation and atomic candidate save follow in the driver.',
+      parameters: { type: 'object', additionalProperties: false, required: ['candidate'],
+        properties: { candidate: jobAidReviewCandidateShape(attachmentRefs) } },
+    },
+  };
   if (isMatter) {
     return {
       type: 'function',
@@ -1439,8 +1544,9 @@ function matterReviewGuidance() {
 
 function jobAidReviewGuidance() {
   return [
-    `Serialize the complete candidate as candidateJson with exactly ${[...MODEL_OUTPUT_KEYS, 'jobAidWorkingDelta'].join(', ')}. Use responseType ANSWER, CLARIFYING_QUESTION, SOURCE_LINK, INPUT_REQUEST, TASK_STATUS or RESYNTHESIS_RESULT as appropriate. Always set reviewActionDraft=null and affectedItemIds=[].`,
-    'context.problemAssessment is the actual saved JobAid problem work, method material, available source catalog and earlier discussion. Use jobAidWorkingDelta=null for explanations and questions that change no working understanding. For a correction or new material, include a local work update preserving every unaffected issue and source/premise identity. Host saves the complete revised understanding and this reply atomically with CAS; this is an ordinary candidate update, not formal adoption. Never reconstruct a criterion checklist or generate replacement reasoning from an abbreviated brief.',
+    `Return the complete candidate directly in the candidate object (never JSON.stringify or a candidateJson string), with required fields ${MODEL_OUTPUT_KEYS.filter((key) => !['reviewActionDraft', 'affectedItemIds'].includes(key)).join(', ')}. Include jobAidWorkingDelta when updating work. Use responseType ANSWER, CLARIFYING_QUESTION, SOURCE_LINK, INPUT_REQUEST, TASK_STATUS or RESYNTHESIS_RESULT as appropriate. Never emit reviewActionDraft or affectedItemIds: the driver binds the fixed no-formal-action values null and [] and rejects model-supplied formal fields.`,
+    'sourceRefs are document or attachment resources actually read this turn. candidateEvidenceRefs is a different field: use only current input.attachmentRefs that were actually read. With no current attachments it must be []. Never put ordinary document SourceRefs, method references or working-delta source dependencies in candidateEvidenceRefs.',
+    'context.problemAssessment is the actual saved JobAid problem work, method material, available source catalog and earlier discussion. Omit jobAidWorkingDelta for explanations and questions that change no working understanding. For a correction or new material, include a local work update preserving every unaffected issue and source/premise identity. Host saves the complete revised understanding and this reply atomically with CAS; this is an ordinary candidate update, not formal adoption. Never reconstruct a criterion checklist or generate replacement reasoning from an abbreviated brief.',
     'Read relevant DOCUMENT_PASSAGE and ENGINEER_ATTACHMENT resources through the current source-read function. The catalog is not a read receipt. Previously saved sources freshly supplied in deliveredEvidence may support retained work; new citations require actual current delivery. Keep sourceRefs limited to resources read this turn; method evidence remains METHOD_CLAUSE in the working update and never pretends to be a document SourceRef. ENGINEER_ATTACHMENT proves only what the uploaded material reports, not implemented controls or controlled Host facts.',
     JOBAID_WORK_GUIDANCE,
   ];

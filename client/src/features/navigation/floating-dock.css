@@ -22,14 +22,8 @@
   flex: 0 0 46px;
   place-items: center;
   border-radius: 16px;
-  color: #fff;
-  background: linear-gradient(145deg, #2489ff, #786eff);
-  box-shadow: 0 12px 28px rgb(37 112 240 / 24%);
-}
-
-.wl-dock-logo svg {
-  width: 23px;
-  height: 23px;
+  overflow: hidden;
+  background: #fff;
 }
 
 .wl-dock-group {
@@ -334,8 +328,7 @@
 }
 
 .wl-dock-logo {
-  color: var(--primary-foreground);
-  background: var(--wl-accent);
+  background: #fff;
   box-shadow: 0 10px 24px var(--wl-g1-contact-shadow);
 }
 

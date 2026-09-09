@@ -1,3 +1,4 @@
+import { jobAidWorkTypeErrors, jobAidWorkDependencyErrors, JOBAID_STEP_SHAPE, decodeJobAidStep } from './jobaid-work-shape.mjs';
 import { randomUUID } from 'node:crypto';
 import {
   M3_MAX_COMPLETION_TOKENS,
@@ -143,14 +144,8 @@ export async function invokeHostedJobAidProblemModel(
               parameters: {
                 type: 'object',
                 additionalProperties: false,
-                required: ['stepJson'],
-                properties: {
-                  stepJson: {
-                    type: 'string',
-                    description:
-                      'Complete JSON step as specified in the system instructions.',
-                  },
-                },
+                required: ['step'],
+                properties: { step: JOBAID_STEP_SHAPE },
               },
             },
           },
@@ -212,11 +207,12 @@ export async function invokeHostedJobAidProblemModel(
       throw new Error('JOBAID_MODEL_OUTPUT_FUNCTION_INVALID');
     outputUnits += Buffer.byteLength(call.function.arguments);
     let receipt;
+    let submittedWork;
     try {
       const args = parseStrictJsonObject(call.function.arguments);
-      if (Object.keys(args).length !== 1 || typeof args.stepJson !== 'string')
-        throw new Error('JOBAID_STEP_JSON_REQUIRED');
-      const step = parseStrictJsonObject(args.stepJson);
+      if (Object.keys(args).length !== 1 || !args.step || typeof args.step !== 'object' || Array.isArray(args.step))
+        throw new Error('JOBAID_STEP_OBJECT_REQUIRED');
+      const step = decodeJobAidStep(args.step);
       if (step.action === 'READ_SOURCES') {
         if (
           !Array.isArray(step.sourceRefs) ||
@@ -233,7 +229,10 @@ export async function invokeHostedJobAidProblemModel(
         if (receipt?.status !== 'AVAILABLE' || !Array.isArray(receipt.evidence))
           throw new Error('JOBAID_SOURCE_READ_FAILED');
       } else if (step.action === 'SAVE_WORK' || step.action === 'FINISH') {
-        if (step.work !== undefined) receipt = await save(step.work);
+        if (step.work !== undefined) {
+          submittedWork = step.work;
+          receipt = await save(step.work);
+        }
         else if (step.action === 'SAVE_WORK')
           throw new Error('JOBAID_WORK_REQUIRED');
         if (step.action === 'FINISH') {
@@ -294,10 +293,12 @@ export async function invokeHostedJobAidProblemModel(
         expectedWorkRevision,
         instruction:
           'Correct only the rejected step or substantive work using the original evidence. Existing saved work remains available; never invent sources or turn failure into completion.',
+        ...workShapeCorrection(code, submittedWork),
       };
       await options.observeCandidateRejection?.({
         correctionNo: corrections,
         code,
+        ...(receipt.fieldErrors ? { fieldErrors: receipt.fieldErrors } : {}),
       });
     }
     // The configured Gateway resumes this native session's history. Keep one
@@ -314,4 +315,22 @@ export async function invokeHostedJobAidProblemModel(
     ];
   }
   throw new Error('JOBAID_MODEL_BUDGET_EXHAUSTED');
+}
+
+// Explain the existing Host rejection using types/positions only. The original
+// work is still submitted unchanged and only the Host can accept a revision.
+function workShapeCorrection(code, work) {
+  if (!work) return {};
+  const fieldErrors = [...jobAidWorkTypeErrors(work),
+    ...(code === 'JOBAID_ISSUE_DEPENDENCY_MISSING' ? jobAidWorkDependencyErrors(work) : []),
+  ];
+  if (!fieldErrors.length) return {};
+  return {
+    fieldErrors,
+    instruction:
+      'Reconcile every reported citation with the same issue sourceDependencies or premiseRefs; include the exact already-used evidenceRef, including requirementHandling.methodRef. Do not remove supported statements to hide a missing dependency. Correct the reported field types using the original evidence and the work-update shape. conditions, limitations and basisRefs are arrays of strings; addresses is one non-empty string describing the problem or risk addressed. Preserve justified analysis and unknowns; do not invent content or remove substantive work merely to pass validation. The Host will validate the revised work.' +
+      (code === 'JOBAID_MEASURE_ADDRESSES_INVALID'
+        ? ' The rejected field is addresses; changing status does not repair it.'
+        : ''),
+  };
 }

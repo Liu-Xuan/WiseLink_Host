@@ -249,7 +249,7 @@ function initialComplete(value) {
 }
 
 function errorCode(error) {
-  const text = String(error?.code ?? error?.message ?? 'HOSTED_INITIAL_FAILED');
+  const text = String(error?.hostErrorCode ?? error?.code ?? error?.message ?? 'HOSTED_INITIAL_FAILED');
   return /^[A-Z][A-Z0-9_:.-]{0,199}$/u.test(text)
     ? text : text.match(/^[A-Z][A-Z0-9_]{0,119}/u)?.[0] ?? 'HOSTED_INITIAL_FAILED';
 }

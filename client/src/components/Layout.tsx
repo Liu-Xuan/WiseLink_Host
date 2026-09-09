@@ -1,3 +1,4 @@
+import { useEffect } from 'react';
 import { Search, Settings2 } from 'lucide-react';
 import { NavLink, Outlet, useLocation } from 'react-router-dom';
 
@@ -8,11 +9,23 @@ import {
 } from '@client/src/app/providers/CurrentObjectContextProvider';
 import { CurrentUserSessionProvider } from '@client/src/app/providers/CurrentUserSessionProvider';
 import CurrentUserControl from '@client/src/components/CurrentUserControl';
+import WiseLinkBrandMark from '@client/src/components/WiseLinkBrandMark';
 import FloatingDock from '@client/src/features/navigation/FloatingDock';
 
 import './app-shell.css';
 
 const Layout = () => {
+  useEffect(() => {
+    // The hosted HTML template replaces the favicon with the platform avatar.
+    const favicon: HTMLLinkElement | null =
+      document.querySelector('link[rel="icon"]');
+    if (favicon) {
+      favicon.href = `${import.meta.env.BASE_URL}wiselink-brand.png`;
+      favicon.type = 'image/png';
+      favicon.sizes.value = '256x256';
+    }
+  }, []);
+
   return (
     <CurrentUserSessionProvider>
       <CurrentObjectContextProvider>
@@ -49,7 +62,7 @@ function LayoutChrome() {
         <header className="wiselink-app-header" role="banner">
           <NavLink className="wiselink-app-brand" to="/library">
             <span className="wiselink-app-mark" aria-hidden="true">
-              W
+              <WiseLinkBrandMark size={34} />
             </span>
             <span>
               <strong>WiseLink</strong>
