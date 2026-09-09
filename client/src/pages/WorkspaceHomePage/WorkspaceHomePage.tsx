@@ -57,6 +57,7 @@ import {
   libraryVersionLabel,
 } from './library-document-presentation';
 import './workspace-home.css';
+import './library-hierarchy.css';
 
 export default function WorkspaceHomePage() {
   const { authenticationRequired, sessionGeneration } = useCurrentUserSession();
