@@ -212,6 +212,7 @@ export async function invokeHostedJobAidProblemModel(
       throw new Error('JOBAID_MODEL_OUTPUT_FUNCTION_INVALID');
     outputUnits += Buffer.byteLength(call.function.arguments);
     let receipt;
+    let submittedWork;
     try {
       const args = parseStrictJsonObject(call.function.arguments);
       if (Object.keys(args).length !== 1 || typeof args.stepJson !== 'string')
@@ -233,7 +234,10 @@ export async function invokeHostedJobAidProblemModel(
         if (receipt?.status !== 'AVAILABLE' || !Array.isArray(receipt.evidence))
           throw new Error('JOBAID_SOURCE_READ_FAILED');
       } else if (step.action === 'SAVE_WORK' || step.action === 'FINISH') {
-        if (step.work !== undefined) receipt = await save(step.work);
+        if (step.work !== undefined) {
+          submittedWork = step.work;
+          receipt = await save(step.work);
+        }
         else if (step.action === 'SAVE_WORK')
           throw new Error('JOBAID_WORK_REQUIRED');
         if (step.action === 'FINISH') {
@@ -294,6 +298,7 @@ export async function invokeHostedJobAidProblemModel(
         expectedWorkRevision,
         instruction:
           'Correct only the rejected step or substantive work using the original evidence. Existing saved work remains available; never invent sources or turn failure into completion.',
+        ...measureAddressesCorrection(code, submittedWork),
       };
       await options.observeCandidateRejection?.({
         correctionNo: corrections,
@@ -314,4 +319,34 @@ export async function invokeHostedJobAidProblemModel(
     ];
   }
   throw new Error('JOBAID_MODEL_BUDGET_EXHAUSTED');
+}
+
+// Explain the existing Host rejection using types/positions only. The original
+// work is still submitted unchanged and only the Host can accept a revision.
+function measureAddressesCorrection(code, work) {
+  if (code !== 'JOBAID_MEASURE_ADDRESSES_INVALID') return {};
+  const fields = [];
+  if (Array.isArray(work?.issues)) {
+    work.issues.forEach((issue, issueIndex) => {
+      if (!Array.isArray(issue?.measures)) return;
+      issue.measures.forEach((measure, measureIndex) => {
+        if (typeof measure?.addresses === 'string' && measure.addresses.trim())
+          return;
+        fields.push({
+          path: `work.issues[${issueIndex}].measures[${measureIndex}].addresses`,
+          expected: 'non-empty string',
+          received: Array.isArray(measure?.addresses)
+            ? 'array'
+            : measure?.addresses === null
+              ? 'null'
+              : typeof measure?.addresses,
+        });
+      });
+    });
+  }
+  return {
+    fieldErrors: fields,
+    instruction:
+      'Correct measures[].addresses: supply one non-empty string explaining which problem or risk the measure addresses, supported by the original evidence. It is not an array, issue-key list, object, or status. Preserve justified analysis and unknowns; do not invent a relationship or remove a substantive measure merely to pass validation. The rejected field is addresses; changing status does not repair it. The Host will validate the revised work.',
+  };
 }

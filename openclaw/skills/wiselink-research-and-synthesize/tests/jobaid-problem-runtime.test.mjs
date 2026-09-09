@@ -230,3 +230,42 @@ test('Overall consistency reuses the exact completed work and does not re-save u
   assert.equal(f.saves.length, 0);
   assert.equal(f.reads.length, 0);
 });
+
+test('a Host addresses rejection identifies the wrong field and preserves the work for model correction', async () => {
+  const invalid = { ...completed, issues: [{ measures: [
+    { addresses: ['synthetic problem'], status: 'PROPOSED' },
+    { addresses: '   ', status: 'PROPOSED' },
+  ] }] };
+  const corrected = { ...completed, issues: [{ measures: [
+    { addresses: '针对已有证据中的兼容性问题。', status: 'PROPOSED' },
+    { addresses: '核对尚未确认的构型条件。', status: 'PROPOSED' },
+  ] }] };
+  const f = fixture([
+    { action: 'SAVE_WORK', work: invalid },
+    { action: 'SAVE_WORK', work: corrected },
+    { action: 'FINISH' },
+  ]);
+  const save = f.options.saveAssessmentWork;
+  let attempts = 0;
+  f.options.saveAssessmentWork = async (input) => {
+    if (++attempts === 1) {
+      assert.deepEqual(JSON.parse(input.workJson), invalid, 'no silent coercion before Host validation');
+      throw Object.assign(new Error('REVIEW_HOST_MCP_TOOL_FAILED:save_assessment_work'), {
+        hostErrorCode: 'JOBAID_MEASURE_ADDRESSES_INVALID',
+      });
+    }
+    return save(input);
+  };
+  const result = await f.run();
+  const receipt = JSON.parse(f.calls[1].messages.at(-1).content);
+  assert.equal(receipt.errorCode, 'JOBAID_MEASURE_ADDRESSES_INVALID');
+  assert.deepEqual(receipt.fieldErrors, [
+    { path: 'work.issues[0].measures[0].addresses', expected: 'non-empty string', received: 'array' },
+    { path: 'work.issues[0].measures[1].addresses', expected: 'non-empty string', received: 'string' },
+  ]);
+  assert.match(receipt.instruction, /changing status does not repair it/u);
+  assert.equal(JSON.stringify(receipt).includes('synthetic problem'), false);
+  assert.equal(result.output.workRevisionRef, 'JAWR-1');
+  assert.equal(f.store.size, 1);
+  assert.deepEqual([...f.store.values()][0].content, corrected);
+});
