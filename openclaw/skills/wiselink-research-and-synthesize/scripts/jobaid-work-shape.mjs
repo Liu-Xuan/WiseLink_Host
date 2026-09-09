@@ -110,7 +110,7 @@ export const JOBAID_STEP_SHAPE = {
 // The native function channel represents some declared arrays as {item:[...]}.
 // Decode only that exact transport wrapper. Preserve all content and unknown
 // fields; malformed wrappers remain unchanged for the existing validators.
-export function decodeJobAidStep(step) {
+export function decodeJobAidValue(input, shape) {
   function decode(value, schema) {
     if (schema.type === 'array') {
       const items = value && !Array.isArray(value) && typeof value === 'object' &&
@@ -119,9 +119,11 @@ export function decodeJobAidStep(step) {
     }
     if (schema.type === 'object' && value && !Array.isArray(value) && typeof value === 'object') {
       return Object.fromEntries(Object.entries(value).map(([key, item]) =>
-        [key, schema.properties[key] ? decode(item, schema.properties[key]) : item]));
+        [key, schema.properties?.[key] ? decode(item, schema.properties[key]) : item]));
     }
     return value;
   }
-  return decode(step, JOBAID_STEP_SHAPE);
+  return decode(input, shape);
 }
+
+export const decodeJobAidStep = (step) => decodeJobAidValue(step, JOBAID_STEP_SHAPE);

@@ -1,4 +1,5 @@
 #!/usr/bin/env node
+import { JOBAID_WORK_UPDATE_SHAPE, decodeJobAidValue } from './jobaid-work-shape.mjs';
 import { JOBAID_WORK_GUIDANCE } from './jobaid-problem-guidance.mjs';
 import { REVIEW_JOBAID_TASK_SCHEMA, REVIEW_JOBAID_CANDIDATE_SCHEMA } from './validate-payload.mjs';
 
@@ -333,8 +334,8 @@ export async function invokeHostedReviewModel(input, options = {}, dependencies 
           model: `openclaw/${agentId}`,
           ...(nativeSessionKey ? {} : { user: `review-driver:${sha256(sessionDiscriminator).slice(0, 24)}` }),
           messages,
-          tools: [reviewCandidateFunctionTool(isMatter || isJobAid), reviewSourceFunctionTool()],
-          tool_choice: 'required',
+          tools: [reviewCandidateFunctionTool(isMatter, isJobAid), reviewSourceFunctionTool()],
+          tool_choice: isJobAid ? 'auto' : 'required',
           parallel_tool_calls: false,
           n: 1,
           stream: false,
@@ -382,7 +383,12 @@ export async function invokeHostedReviewModel(input, options = {}, dependencies 
       let candidate;
       try {
         candidate = output;
-        if (isMatter || isJobAid) {
+        if (isJobAid) {
+          if (Object.keys(output).length !== 1 || !isRecord(output.candidate)) {
+            throw new Error('REVIEW_JOBAID_CANDIDATE_OBJECT_REQUIRED');
+          }
+          candidate = decodeJobAidValue(output.candidate, jobAidReviewCandidateShape());
+        } else if (isMatter) {
           if (Object.keys(output).length !== 1 || typeof output.candidateJson !== 'string') {
             throw new Error('REVIEW_MATTER_CANDIDATE_JSON_REQUIRED');
           }
@@ -1350,7 +1356,30 @@ function reviewResponseTypes(isMatter) {
     : REVIEW_RESPONSE_TYPES;
 }
 
-function reviewCandidateFunctionTool(isMatter = false) {
+function jobAidReviewCandidateShape() {
+  const strings = { type: 'array', items: { type: 'string', minLength: 1 } };
+  return {
+    type: 'object', additionalProperties: false,
+    required: [...MODEL_OUTPUT_KEYS, 'jobAidWorkingDelta'],
+    properties: {
+      responseType: { type: 'string', enum: reviewResponseTypes(true) },
+      answer: { type: 'string', minLength: 1 },
+      sourceRefs: strings, missingInputs: strings, candidateEvidenceRefs: strings,
+      reviewActionDraft: { type: 'null' }, affectedItemIds: { ...strings, maxItems: 0 },
+      warnings: strings, jobAidWorkingDelta: { ...JOBAID_WORK_UPDATE_SHAPE, nullable: true },
+    },
+  };
+}
+
+function reviewCandidateFunctionTool(isMatter = false, isJobAid = false) {
+  if (isJobAid) return {
+    type: 'function', function: {
+      name: REVIEW_OUTPUT_FUNCTION_NAME,
+      description: 'Return the complete JobAid review candidate object. Host validation and atomic candidate save follow in the driver.',
+      parameters: { type: 'object', additionalProperties: false, required: ['candidate'],
+        properties: { candidate: jobAidReviewCandidateShape() } },
+    },
+  };
   if (isMatter) {
     return {
       type: 'function',
@@ -1439,7 +1468,7 @@ function matterReviewGuidance() {
 
 function jobAidReviewGuidance() {
   return [
-    `Serialize the complete candidate as candidateJson with exactly ${[...MODEL_OUTPUT_KEYS, 'jobAidWorkingDelta'].join(', ')}. Use responseType ANSWER, CLARIFYING_QUESTION, SOURCE_LINK, INPUT_REQUEST, TASK_STATUS or RESYNTHESIS_RESULT as appropriate. Always set reviewActionDraft=null and affectedItemIds=[].`,
+    `Return the complete candidate directly in the candidate object (never JSON.stringify or a candidateJson string), with exactly ${[...MODEL_OUTPUT_KEYS, 'jobAidWorkingDelta'].join(', ')}. Use responseType ANSWER, CLARIFYING_QUESTION, SOURCE_LINK, INPUT_REQUEST, TASK_STATUS or RESYNTHESIS_RESULT as appropriate. Always set reviewActionDraft=null and affectedItemIds=[].`,
     'context.problemAssessment is the actual saved JobAid problem work, method material, available source catalog and earlier discussion. Use jobAidWorkingDelta=null for explanations and questions that change no working understanding. For a correction or new material, include a local work update preserving every unaffected issue and source/premise identity. Host saves the complete revised understanding and this reply atomically with CAS; this is an ordinary candidate update, not formal adoption. Never reconstruct a criterion checklist or generate replacement reasoning from an abbreviated brief.',
     'Read relevant DOCUMENT_PASSAGE and ENGINEER_ATTACHMENT resources through the current source-read function. The catalog is not a read receipt. Previously saved sources freshly supplied in deliveredEvidence may support retained work; new citations require actual current delivery. Keep sourceRefs limited to resources read this turn; method evidence remains METHOD_CLAUSE in the working update and never pretends to be a document SourceRef. ENGINEER_ATTACHMENT proves only what the uploaded material reports, not implemented controls or controlled Host facts.',
     JOBAID_WORK_GUIDANCE,

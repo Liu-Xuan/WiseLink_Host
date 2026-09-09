@@ -1372,7 +1372,7 @@ test('requires 24 MCP capabilities, five review tools, and hosted provenance', (
   assert.ok(HOST_MCP_TOOLS.includes('commit_applicability_candidate'));
   assert.equal(
     WISELINK_SKILL_VERSION,
-    'wiselink-research-and-synthesize@r09.c53',
+    'wiselink-research-and-synthesize@r09.c54',
   );
   assert.equal(
     WISELINK_SKILL_COMPATIBILITY_REF,
@@ -6824,3 +6824,59 @@ function attemptStatus(task, statusValue, result) {
 async function readJson(url) {
   return JSON.parse(await readFile(url, 'utf8'));
 }
+
+test('JobAid review uses a typed candidate and preserves quoted text, nulls, local work and unknown fields for validation', async () => {
+  const candidate = {
+    responseType: 'RESYNTHESIS_RESULT', answer: '条件“Windows 10”\n路径 C:\\test',
+    sourceRefs: [], missingInputs: [], candidateEvidenceRefs: [], reviewActionDraft: null,
+    affectedItemIds: [], warnings: [],
+    jobAidWorkingDelta: { schemaVersion: 'wiselink.jobaid-problem-work.v2',
+      issues: [{ issueKey: 'ref1', riskScenarios: [{ conditions: ['未核查'], likelihood: null }],
+        unknownField: { item: ['preserve'] } }], unchangedIssueKeys: ['app1'] },
+  };
+  const native = structuredClone(candidate);
+  native.sourceRefs = { item: [] };
+  native.jobAidWorkingDelta.issues = { item: native.jobAidWorkingDelta.issues };
+  native.jobAidWorkingDelta.issues.item[0].riskScenarios[0].conditions = { item: ['未核查'] };
+  let validated = 0;
+  const result = await invokeReviewWithTransport({ input: { context: { problemAssessment: {} } } }, {
+    gatewayUrl: 'https://official.invalid', gatewayToken: 'fixture-only', configuredModelVersion: 'fixture/provider',
+    validateCandidate: async (value) => { validated++; assert.deepEqual(value, candidate); },
+  }, { requestGateway: async (_url, init) => {
+    const body = JSON.parse(init.body);
+    assert.equal(body.tool_choice, 'auto');
+    const schema = body.tools[0].function.parameters;
+    assert.deepEqual(schema.required, ['candidate']);
+    assert.equal(schema.properties.candidate.properties.jobAidWorkingDelta.properties.issues.type, 'array');
+    return Response.json({ choices: [{ message: { content: null, tool_calls: [{ id: 'typed-review',
+      type: 'function', function: { name: 'return_wiselink_review_candidate', arguments: JSON.stringify({ candidate: native }) },
+    }] } }] });
+  } });
+  assert.equal(validated, 1);
+  assert.deepEqual(result.output, candidate);
+});
+
+test('JobAid auto tool choice still rejects prose-only and unauthorized source requests', async () => {
+  for (const message of [ { content: '{"candidate":{"answer":"not a tool call"}}' },
+    { content: null, tool_calls: [{ id: 'unauthorized', type: 'function', function: {
+      name: 'read_wiselink_review_sources', arguments: '{"sourceRefIds":["not-allowed"]}',
+    } }] } ]) {
+    await assert.rejects(invokeReviewWithTransport({ input: { context: { problemAssessment: {} }, availableSourceRefIds: [] } }, {
+      gatewayUrl: 'https://official.invalid', gatewayToken: 'fixture-only', configuredModelVersion: 'fixture/provider',
+    }, { requestGateway: async () => Response.json({ choices: [{ message }] }) }), /REVIEW_GATEWAY_OUTPUT_FUNCTION_COUNT_INVALID|REVIEW_MODEL_SOURCE_REQUEST_INVALID/u);
+  }
+});
+
+test('gateway required-tool contract failure is reported once without transient retries', async () => {
+  let requests = 0;
+  const progress = [];
+  await assert.rejects(invokeReviewWithTransport({ input: {} }, {
+    gatewayUrl: 'https://official.invalid', gatewayToken: 'fixture-only', configuredModelVersion: 'fixture/provider',
+    observeProgress: async (event) => { progress.push(event); },
+  }, { requestGateway: async () => {
+    requests++;
+    return Response.json({ error: { type: 'api_error', message: 'tool_choice=required was not satisfied by the agent response' } }, { status: 502 });
+  }, wait: async () => { assert.fail('contract failure must not retry'); } }), /REVIEW_TOOL_CHOICE_NOT_SATISFIED/u);
+  assert.equal(requests, 1);
+  assert.deepEqual(progress.map((event) => event.kind), ['MODEL_REQUEST']);
+});
