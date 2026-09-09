@@ -80,3 +80,5 @@ c22 在 Host 提供 `nativeSessionKey` 时承接相同授权范围的跨轮模�
 现有 driver 遇到不确定提交仍保留既有只读恢复规则，并明确报告需继续处理；不把“恢复待处理”显示为候选成功。
 
 JobAid v2 复核在驱动提供逐请求 Host 续租回调时，使用与初始问题分析一致的 30 分钟总模型预算，单响应最多 15 分钟；显式更短预算仍生效，续租失败停止后续请求。未绑定续租的直接调用和其他复核沿用原预算。Host 的 30 分钟 lease、60 分钟 deadline 及原生全局/provider 超时均不因此改变。网关以 HTTP 200 返回已确认的公开 idle-timeout 提示时，报告 `REVIEW_GATEWAY_MODEL_IDLE_TIMEOUT` 并停止，不把它当候选或自动重试指令。
+
+JobAid v2 的模型 candidate 只生成答复、引用、问题与工作更新。`reviewActionDraft` 和 `affectedItemIds` 不属于模型函数参数，若模型显式提供则拒绝；驱动在既有完整候选契约中绑定固定的 `null` 与 `[]`。无工作变化时模型可省略 `jobAidWorkingDelta`，驱动按协议绑定 `null`。正文来源放在 `sourceRefs` 或工作认识的依据字段；`candidateEvidenceRefs` 仅限本轮已读取的工程师附件，无附件时必须为空。完整候选仍经过原校验与 Host 事务。

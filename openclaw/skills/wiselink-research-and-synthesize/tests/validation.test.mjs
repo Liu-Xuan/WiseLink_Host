@@ -1372,7 +1372,7 @@ test('requires 24 MCP capabilities, five review tools, and hosted provenance', (
   assert.ok(HOST_MCP_TOOLS.includes('commit_applicability_candidate'));
   assert.equal(
     WISELINK_SKILL_VERSION,
-    'wiselink-research-and-synthesize@r09.c55',
+    'wiselink-research-and-synthesize@r09.c56',
   );
   assert.equal(
     WISELINK_SKILL_COMPATIBILITY_REF,
@@ -6835,6 +6835,8 @@ test('JobAid review uses a typed candidate and preserves quoted text, nulls, loc
         unknownField: { item: ['preserve'] } }], unchangedIssueKeys: ['app1'] },
   };
   const native = structuredClone(candidate);
+  delete native.reviewActionDraft;
+  delete native.affectedItemIds;
   native.sourceRefs = { item: [] };
   native.jobAidWorkingDelta.issues = { item: native.jobAidWorkingDelta.issues };
   native.jobAidWorkingDelta.issues.item[0].riskScenarios[0].conditions = { item: ['未核查'] };
@@ -6848,6 +6850,9 @@ test('JobAid review uses a typed candidate and preserves quoted text, nulls, loc
     const schema = body.tools[0].function.parameters;
     assert.deepEqual(schema.required, ['candidate']);
     assert.equal(schema.properties.candidate.properties.jobAidWorkingDelta.properties.issues.type, 'array');
+    assert.equal(schema.properties.candidate.properties.reviewActionDraft, undefined);
+    assert.equal(schema.properties.candidate.properties.affectedItemIds, undefined);
+    assert.equal(schema.properties.candidate.properties.candidateEvidenceRefs.maxItems, 0);
     return Response.json({ choices: [{ message: { content: null, tool_calls: [{ id: 'typed-review',
       type: 'function', function: { name: 'return_wiselink_review_candidate', arguments: JSON.stringify({ candidate: native }) },
     }] } }] });
@@ -6902,7 +6907,7 @@ test('leased JobAid review spans the former 8-minute cutoff with bounded respons
     now = requests === 1 ? 9 * 60_000 : 25 * 60_000;
     return Response.json({ choices: [{ message: { content: null, tool_calls: [{ id: `r${requests}`, type: 'function', function: {
       name: reading ? 'read_wiselink_review_sources' : 'return_wiselink_review_candidate',
-      arguments: JSON.stringify(reading ? { sourceRefIds: [`s${requests}`] } : { candidate }),
+      arguments: JSON.stringify(reading ? { sourceRefIds: [`s${requests}`] } : { candidate: Object.fromEntries(Object.entries(candidate).filter(([key]) => !['reviewActionDraft', 'affectedItemIds', 'jobAidWorkingDelta'].includes(key))) }),
     } }] } }] });
   } };
   const result = await invokeReviewWithTransport(input, options, transport);
@@ -6941,4 +6946,60 @@ test('public HTTP 200 Gateway idle-timeout text is a failure, never a candidate 
     return Response.json({ choices: [{ message: { content: 'LLM request timed out.\n\nThe model did not produce a response before the model idle timeout. Please try again, or increase `models.providers.<id>.timeoutSeconds` for slow local or self-hosted providers. If `agents.defaults.timeoutSeconds` or a run-specific timeout is lower, raise that ceiling too; provider timeouts cannot extend the whole agent run.' }, finish_reason: 'stop' }] });
   }, wait: async () => assert.fail('must not retry ambiguous timeout') }), /REVIEW_GATEWAY_MODEL_IDLE_TIMEOUT/u);
   assert.equal(calls, 1);
+});
+
+test('JobAid wire rejects model-supplied formal fields instead of overwriting them with protocol constants', async () => {
+  for (const supplied of [{ reviewActionDraft: null }, { reviewActionDraft: { approved: true } }, { affectedItemIds: [] }, { affectedItemIds: ['WI-other'] }]) {
+    let validated = false;
+    await assert.rejects(invokeReviewWithTransport({ input: { context: { problemAssessment: {} } } }, {
+      gatewayUrl: 'https://official.invalid', gatewayToken: 'fixture-only', configuredModelVersion: 'fixture/provider',
+      validateCandidate: async () => { validated = true; },
+    }, { requestGateway: async () => Response.json({ choices: [{ message: { content: null, tool_calls: [{
+      type: 'function', function: { name: 'return_wiselink_review_candidate', arguments: JSON.stringify({ candidate: {
+        responseType: 'ANSWER', answer: '候选', sourceRefs: [], missingInputs: [], candidateEvidenceRefs: [], warnings: [], ...supplied,
+      } }) },
+    }] } }] }) }), /REVIEW_JOBAID_FORMAL_FIELD_FORBIDDEN/u);
+    assert.equal(validated, false);
+  }
+});
+
+test('JobAid attachment citation feedback keeps the candidate unchanged until the model corrects it', async () => {
+  const feedback = [];
+  let requests = 0;
+  let validations = 0;
+  const result = await invokeReviewWithTransport({ input: { context: { problemAssessment: {} }, attachmentRefs: ['attachment:1'] } }, {
+    gatewayUrl: 'https://official.invalid', gatewayToken: 'fixture-only', configuredModelVersion: 'fixture/provider',
+    validateCandidate: async (candidate) => {
+      validations++;
+      assert.equal(candidate.reviewActionDraft, null);
+      assert.deepEqual(candidate.affectedItemIds, []);
+      assert.equal(candidate.jobAidWorkingDelta, null);
+      if (validations === 1) {
+        assert.deepEqual(candidate.candidateEvidenceRefs, ['ordinary-document-source']);
+        throw new Error('REVIEW_MODEL_CANDIDATE_EVIDENCE_REF_NOT_ATTACHMENT');
+      }
+      assert.deepEqual(candidate.candidateEvidenceRefs, []);
+    },
+  }, { requestGateway: async (_url, init) => {
+    requests++;
+    const body = JSON.parse(init.body);
+    const field = body.tools[0].function.parameters.properties.candidate.properties.candidateEvidenceRefs;
+    assert.deepEqual(field.items.enum, ['attachment:1']);
+    if (requests > 1) {
+      const receipt = JSON.parse(body.messages[2].content);
+      feedback.push(receipt);
+      assert.match(receipt.instruction, /ordinary document SourceRefs/u);
+      assert.equal(receipt.instruction.includes('coverageUpdates'), false);
+    }
+    return Response.json({ choices: [{ message: { content: null, tool_calls: [{ id: `citation-${requests}`, type: 'function', function: {
+      name: 'return_wiselink_review_candidate', arguments: JSON.stringify({ candidate: {
+        responseType: 'ANSWER', answer: '候选', sourceRefs: [], missingInputs: [], warnings: [],
+        candidateEvidenceRefs: requests === 1 ? ['ordinary-document-source'] : [],
+      } }),
+    } }] } }] });
+  } });
+  assert.equal(requests, 2);
+  assert.equal(validations, 2);
+  assert.equal(feedback[0].validationError, 'REVIEW_MODEL_CANDIDATE_EVIDENCE_REF_NOT_ATTACHMENT');
+  assert.deepEqual(result.output.candidateEvidenceRefs, []);
 });

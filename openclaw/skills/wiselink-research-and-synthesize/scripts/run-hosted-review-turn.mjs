@@ -341,7 +341,7 @@ export async function invokeHostedReviewModel(input, options = {}, dependencies 
           model: `openclaw/${agentId}`,
           ...(nativeSessionKey ? {} : { user: `review-driver:${sha256(sessionDiscriminator).slice(0, 24)}` }),
           messages,
-          tools: [reviewCandidateFunctionTool(isMatter, isJobAid), reviewSourceFunctionTool()],
+          tools: [reviewCandidateFunctionTool(isMatter, isJobAid, input.input?.attachmentRefs ?? []), reviewSourceFunctionTool()],
           tool_choice: isJobAid ? 'auto' : 'required',
           parallel_tool_calls: false,
           n: 1,
@@ -401,7 +401,14 @@ export async function invokeHostedReviewModel(input, options = {}, dependencies 
           if (Object.keys(output).length !== 1 || !isRecord(output.candidate)) {
             throw new Error('REVIEW_JOBAID_CANDIDATE_OBJECT_REQUIRED');
           }
-          candidate = decodeJobAidValue(output.candidate, jobAidReviewCandidateShape());
+          const authored = decodeJobAidValue(output.candidate, jobAidReviewCandidateShape());
+          if (Object.hasOwn(authored, 'reviewActionDraft') || Object.hasOwn(authored, 'affectedItemIds')) {
+            throw new Error('REVIEW_JOBAID_FORMAL_FIELD_FORBIDDEN');
+          }
+          // JobAid has no formal-action operation. These protocol constants
+          // are driver-owned, never a model choice or a repair of supplied data.
+          candidate = { ...authored, reviewActionDraft: null, affectedItemIds: [],
+            jobAidWorkingDelta: Object.hasOwn(authored, 'jobAidWorkingDelta') ? authored.jobAidWorkingDelta : null };
         } else if (isMatter) {
           if (Object.keys(output).length !== 1 || typeof output.candidateJson !== 'string') {
             throw new Error('REVIEW_MATTER_CANDIDATE_JSON_REQUIRED');
@@ -427,7 +434,9 @@ export async function invokeHostedReviewModel(input, options = {}, dependencies 
           { role: 'tool', tool_call_id: toolCall.id, content: canonicalJson({
             candidateAccepted: false, validationError: errorCode,
             availableEvidenceRefs: candidateFeedbackEvidenceRefs(input, sourceCache),
-            instruction: 'Correct the candidate using the current contract and registered evidence. Keep the original question, unchanged claims and source meaning. Read any additional passage through the read function. Every document premise in the resulting reading must be included in that input\'s checked coverage; an updated coverage entry replaces its old checked range, so include every cited passage for that input, not just representative anchors. Return the complete corrected candidate; do not invent evidence or coverage, remove a substantive finding merely to pass validation, or claim that anything was saved.',
+            instruction: isJobAid
+              ? 'Return the complete corrected JobAid candidate through the declared function. Keep the original question, unaffected issues and their premises. candidateEvidenceRefs may contain only current input.attachmentRefs actually read this turn; ordinary document SourceRefs belong in sourceRefs or working-delta evidence fields, never candidateEvidenceRefs. With no attachments use []. Omit reviewActionDraft and affectedItemIds; the driver owns their fixed no-formal-action values. Omit jobAidWorkingDelta only when no work changes. Read any additional passage through the read function. Never invent references, drop findings merely to pass validation, or claim the rejected candidate was saved.'
+              : 'Correct the candidate using the current contract and registered evidence. Keep the original question, unchanged claims and source meaning. Read any additional passage through the read function. Every document premise in the resulting reading must be included in that input\'s checked coverage; an updated coverage entry replaces its old checked range, so include every cited passage for that input, not just representative anchors. Return the complete corrected candidate; do not invent evidence or coverage, remove a substantive finding merely to pass validation, or claim that anything was saved.',
           }) },
         ];
         continue;
@@ -1370,28 +1379,31 @@ function reviewResponseTypes(isMatter) {
     : REVIEW_RESPONSE_TYPES;
 }
 
-function jobAidReviewCandidateShape() {
+function jobAidReviewCandidateShape(attachmentRefs = []) {
   const strings = { type: 'array', items: { type: 'string', minLength: 1 } };
   return {
     type: 'object', additionalProperties: false,
-    required: [...MODEL_OUTPUT_KEYS, 'jobAidWorkingDelta'],
+    required: MODEL_OUTPUT_KEYS.filter((key) => !['reviewActionDraft', 'affectedItemIds'].includes(key)),
     properties: {
       responseType: { type: 'string', enum: reviewResponseTypes(true) },
       answer: { type: 'string', minLength: 1 },
-      sourceRefs: strings, missingInputs: strings, candidateEvidenceRefs: strings,
-      reviewActionDraft: { type: 'null' }, affectedItemIds: { ...strings, maxItems: 0 },
+      sourceRefs: strings, missingInputs: strings,
+      candidateEvidenceRefs: { ...strings,
+        description: 'Only current engineer attachment refs actually read in this turn. Never document SourceRefs, method refs or work dependencies. Empty when no current attachments exist.',
+        ...(attachmentRefs.length ? { items: { ...strings.items, enum: [...attachmentRefs] } } : { maxItems: 0 }),
+      },
       warnings: strings, jobAidWorkingDelta: { ...JOBAID_WORK_UPDATE_SHAPE, nullable: true },
     },
   };
 }
 
-function reviewCandidateFunctionTool(isMatter = false, isJobAid = false) {
+function reviewCandidateFunctionTool(isMatter = false, isJobAid = false, attachmentRefs = []) {
   if (isJobAid) return {
     type: 'function', function: {
       name: REVIEW_OUTPUT_FUNCTION_NAME,
       description: 'Return the complete JobAid review candidate object. Host validation and atomic candidate save follow in the driver.',
       parameters: { type: 'object', additionalProperties: false, required: ['candidate'],
-        properties: { candidate: jobAidReviewCandidateShape() } },
+        properties: { candidate: jobAidReviewCandidateShape(attachmentRefs) } },
     },
   };
   if (isMatter) {
@@ -1482,8 +1494,9 @@ function matterReviewGuidance() {
 
 function jobAidReviewGuidance() {
   return [
-    `Return the complete candidate directly in the candidate object (never JSON.stringify or a candidateJson string), with exactly ${[...MODEL_OUTPUT_KEYS, 'jobAidWorkingDelta'].join(', ')}. Use responseType ANSWER, CLARIFYING_QUESTION, SOURCE_LINK, INPUT_REQUEST, TASK_STATUS or RESYNTHESIS_RESULT as appropriate. Always set reviewActionDraft=null and affectedItemIds=[].`,
-    'context.problemAssessment is the actual saved JobAid problem work, method material, available source catalog and earlier discussion. Use jobAidWorkingDelta=null for explanations and questions that change no working understanding. For a correction or new material, include a local work update preserving every unaffected issue and source/premise identity. Host saves the complete revised understanding and this reply atomically with CAS; this is an ordinary candidate update, not formal adoption. Never reconstruct a criterion checklist or generate replacement reasoning from an abbreviated brief.',
+    `Return the complete candidate directly in the candidate object (never JSON.stringify or a candidateJson string), with required fields ${MODEL_OUTPUT_KEYS.filter((key) => !['reviewActionDraft', 'affectedItemIds'].includes(key)).join(', ')}. Include jobAidWorkingDelta when updating work. Use responseType ANSWER, CLARIFYING_QUESTION, SOURCE_LINK, INPUT_REQUEST, TASK_STATUS or RESYNTHESIS_RESULT as appropriate. Never emit reviewActionDraft or affectedItemIds: the driver binds the fixed no-formal-action values null and [] and rejects model-supplied formal fields.`,
+    'sourceRefs are document or attachment resources actually read this turn. candidateEvidenceRefs is a different field: use only current input.attachmentRefs that were actually read. With no current attachments it must be []. Never put ordinary document SourceRefs, method references or working-delta source dependencies in candidateEvidenceRefs.',
+    'context.problemAssessment is the actual saved JobAid problem work, method material, available source catalog and earlier discussion. Omit jobAidWorkingDelta for explanations and questions that change no working understanding. For a correction or new material, include a local work update preserving every unaffected issue and source/premise identity. Host saves the complete revised understanding and this reply atomically with CAS; this is an ordinary candidate update, not formal adoption. Never reconstruct a criterion checklist or generate replacement reasoning from an abbreviated brief.',
     'Read relevant DOCUMENT_PASSAGE and ENGINEER_ATTACHMENT resources through the current source-read function. The catalog is not a read receipt. Previously saved sources freshly supplied in deliveredEvidence may support retained work; new citations require actual current delivery. Keep sourceRefs limited to resources read this turn; method evidence remains METHOD_CLAUSE in the working update and never pretends to be a document SourceRef. ENGINEER_ATTACHMENT proves only what the uploaded material reports, not implemented controls or controlled Host facts.',
     JOBAID_WORK_GUIDANCE,
   ];
