@@ -1,7 +1,7 @@
-/* The scope column belongs to the frame; the reading content is one inset paper sheet. */
+/* Library navigation lives in the shell; the reading sheet uses the full width. */
 .library-home.library-atlas-home {
   display: grid;
-  grid-template-columns: 188px minmax(0, 1fr);
+  grid-template-columns: minmax(0, 1fr);
   gap: 0;
   /* Include the existing shell's header and body padding so short lists do not push the sheet outside the frame. */
   min-height: calc(100dvh - 120px);
@@ -11,60 +11,42 @@
   background: transparent;
 }
 
-.atlas-library-scope {
-  padding: 26px 18px;
-  border-right: 0;
-  background: transparent;
-}
-
-.atlas-library-scope h2 {
-  margin: 10px 0 8px;
-  font-size: 19px;
-  font-weight: 650;
-}
-.atlas-library-scope h3 {
-  margin: 0 0 12px;
-  font-size: 12px;
-  font-weight: 600;
-}
-.atlas-library-scope p {
-  color: var(--wl-muted);
-  font-size: 12px;
-  line-height: 1.8;
-}
-.atlas-library-eyebrow {
-  color: var(--wl-muted);
-  font-size: 10px;
-  letter-spacing: 0.12em;
-}
-.atlas-library-scope section {
-  margin-top: 28px;
-  padding-top: 20px;
-  border-top: 1px solid var(--wl-border);
-}
-.atlas-library-scope-nav {
-  display: grid;
-  gap: 5px;
-  margin-top: 28px;
-}
-.atlas-library-scope-nav > button {
-  justify-content: flex-start;
-  gap: 10px;
-  width: 100%;
-  color: var(--wl-muted);
-}
-.atlas-library-scope-nav > button[aria-pressed='true'] {
-  color: var(--wl-ink);
-  background: var(--wl-selected);
-}
 .atlas-library-content {
   min-width: 0;
-  margin-left: 14px;
+  margin-left: 0;
   overflow: hidden;
   border: 1px solid var(--wl-border);
   border-radius: 20px;
   background: var(--wl-sheet);
   box-shadow: var(--wl-sheet-shadow);
+}
+
+.library-reading-tools {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 0 28px 12px;
+  color: var(--wl-muted);
+  font-size: 12px;
+}
+
+.library-reading-help summary {
+  cursor: pointer;
+}
+
+.library-reading-help p {
+  max-width: 64ch;
+  margin-block: 8px 0;
+  line-height: 1.7;
+}
+
+.library-task-scope {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
 }
 .library-atlas-home .library-home-header {
   padding: 28px 28px 16px;
@@ -414,9 +396,6 @@
 }
 
 @media (max-width: 1250px) {
-  .library-home.library-atlas-home {
-    grid-template-columns: 160px minmax(0, 1fr);
-  }
   .atlas-library-browser.has-inspector {
     grid-template-columns: minmax(0, 1fr);
   }
@@ -445,27 +424,6 @@
   .library-home.library-atlas-home {
     display: block;
     border-radius: 0;
-  }
-  .atlas-library-scope {
-    padding: 14px;
-    border-right: 0;
-    border-bottom: 1px solid var(--wl-border);
-  }
-  .atlas-library-scope > h2,
-  .atlas-library-scope > p,
-  .atlas-library-scope > section,
-  .atlas-library-scope > span {
-    display: none;
-  }
-  .atlas-library-scope-nav {
-    display: flex;
-    flex-wrap: wrap;
-    gap: 6px;
-    margin: 0;
-  }
-  .atlas-library-scope-nav > button {
-    width: auto;
-    flex: 1;
   }
   .library-atlas-home .library-home-header {
     padding: 20px 16px 12px;

@@ -66,7 +66,7 @@ describe('reviewed assessment update boundary', () => {
       ),
       'utf8',
     );
-    expect(source).toContain('/dialogues?workItemId=');
+    expect(source).toContain('<ContextualDialogue');
     expect(source).toContain('<AssessmentUpdateControl');
     expect(source).not.toContain('canonicalHost.appendReviewTextTurn');
     expect(source).not.toContain('发送并分析');

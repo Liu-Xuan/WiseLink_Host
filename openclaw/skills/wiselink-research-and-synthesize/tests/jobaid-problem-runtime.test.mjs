@@ -439,6 +439,32 @@ test('native array schema preserves cardinality and item constraints in the exac
   assert.deepEqual(jobAidFunctionSchema(shape), schema);
 });
 
+test('Turn 26 premise envelopes decode losslessly without filling absent fields or dropping unknown content', async () => {
+  const { JOBAID_WORK_UPDATE_SHAPE, jobAidFunctionSchema, decodeJobAidValue } = await import('../scripts/jobaid-work-shape.mjs');
+  const shape = JOBAID_WORK_UPDATE_SHAPE.properties.issues.items.properties.statements.items.properties.premises;
+  const item = { evidenceRef: 'source:exact:ref', role: 'SUPPORTS', explanation: '原文 "quote"\n条件', limitation: null };
+  const schema = jobAidFunctionSchema(shape);
+  assert.deepEqual(schema.anyOf[2].properties.item.required, ['evidenceRef', 'role', 'explanation', 'limitation']);
+  assert.deepEqual(schema.anyOf[3].properties.item.properties.item, schema.anyOf[0]);
+  for (const wrapped of [{ item }, { item: { item: [item, { ...item, role: 'LIMITS' }] } }]) {
+    const before = structuredClone(wrapped);
+    const work = { issues: [{ statements: [{ premises: wrapped }] }], sourceRefs: { item: ['unknown:keep'] } };
+    const decoded = decodeJobAidValue(work, JOBAID_WORK_UPDATE_SHAPE);
+    assert.deepEqual(decoded.issues[0].statements[0].premises,
+      Array.isArray(wrapped.item.item) ? wrapped.item.item : [item]);
+    assert.deepEqual(decoded.sourceRefs, { item: ['unknown:keep'] });
+    assert.deepEqual(wrapped, before);
+  }
+  const { limitation, ...incomplete } = item;
+  for (const invalid of [{}, { item: {} }, { item: incomplete }, { item, extra: true },
+    { item: { item: [item], extra: true } }, { item: { item: { item: [item] } } }]) {
+    assert.deepEqual(decodeJobAidValue(invalid, shape), invalid);
+  }
+  const unknown = { ...item, unexpected: 'preserve for Host rejection' };
+  assert.deepEqual(decodeJobAidValue({ item: unknown }, shape), [unknown]);
+  assert.deepEqual(decodeJobAidValue({ item }, JOBAID_WORK_UPDATE_SHAPE.properties.retiredIssues), { item });
+});
+
 test('knowledge dispatch is one-shot; unknown response reads the same request and preserves provenance', async () => {
   const queries = [];
   const evidence = { evidenceRef: 'query:aily:receipt', kind: 'QUERY_RECEIPT', excerpt: 'Partial source lead', queryProvenance: { origin: 'AILY_RETRIEVAL', queryText: 'Find applicable directive', status: 'UNKNOWN', originalDocumentsVerified: false } };
