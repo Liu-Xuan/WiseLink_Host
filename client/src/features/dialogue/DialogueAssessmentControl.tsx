@@ -22,10 +22,12 @@ import {
   type DialogueChosenContribution,
 } from './dialogue-assessment-selection';
 import { dialogueAssessmentOperation } from './dialogue-assessment-operation';
+import { dialogueFocusOptions } from './dialogue-focus';
 
 interface DialogueAssessmentControlProps {
   thread: DialogueThreadReadModel;
   workItems: DialogueWorkItemOption[];
+  focusWorkItemIds?: string[];
   disabled: boolean;
   error: string;
   hasDraft: boolean;
@@ -36,13 +38,35 @@ interface DialogueAssessmentControlProps {
 export const DialogueAssessmentControl: FC<DialogueAssessmentControlProps> = ({
   thread,
   workItems,
+  focusWorkItemIds = [],
   disabled,
   error,
   hasDraft,
   execute,
   onAccepted,
 }) => {
-  const [target, setTarget] = useState('');
+  const [targetChoice, setTarget] = useState('');
+  const targetIds: string[] = [
+    ...new Set(
+      thread.contributions
+        .filter((item) => item.status === 'ACTIVE')
+        .map((item) => item.workItemId),
+    ),
+  ];
+  const targetOptions: DialogueWorkItemOption[] = dialogueFocusOptions(
+    targetIds,
+    workItems.filter((item) => targetIds.includes(item.workItemId)),
+    thread,
+  );
+  const preferred: string =
+    focusWorkItemIds.length === 1 && targetIds.includes(focusWorkItemIds[0])
+      ? focusWorkItemIds[0]
+      : targetIds.length === 1
+        ? targetIds[0]
+        : '';
+  const target: string = targetIds.includes(targetChoice)
+    ? targetChoice
+    : preferred;
   const [context, setContext] = useState<DialogueWorkingContext | null>(null);
   const [chosen, setChosen] = useState<DialogueChosenContribution[]>([]);
   const [instruction, setInstruction] = useState('');
@@ -57,13 +81,18 @@ export const DialogueAssessmentControl: FC<DialogueAssessmentControlProps> = ({
     thread.contributions,
     target,
   );
-  const readCurrent = (): void => {
+  const readCurrent = (workItemId: string = target): void => {
+    if (!workItemId || disabled) return;
     let result: DialogueWorkingContext | null = null;
     setContext(null);
     setReceipt(null);
     void execute(
       async (signal) => {
-        result = await readDialogueContext(thread.threadRef, target, signal);
+        result = await readDialogueContext(
+          thread.threadRef,
+          workItemId,
+          signal,
+        );
         return readDialogue(thread.threadRef, signal);
       },
       { done: () => setContext(result) },
@@ -74,8 +103,8 @@ export const DialogueAssessmentControl: FC<DialogueAssessmentControlProps> = ({
       !context ||
       disabled ||
       error ||
-      !instruction.trim() ||
       instruction.length > 2000 ||
+      context.workItemId !== target ||
       !selectionValid
     )
       return;
@@ -85,7 +114,9 @@ export const DialogueAssessmentControl: FC<DialogueAssessmentControlProps> = ({
       expectedWorkItemRevision: context.workItemRevision,
       expectedWorkingRef: context.workingRef,
       contributions: chosen,
-      userMessage: instruction,
+      userMessage:
+        instruction.trim() ||
+        '请结合本次选中的补充内容，核对当前资料并更新工作判断，说明判断变化、依据和仍待确认的事项。',
     };
     const operation = dialogueAssessmentOperation(thread.threadRef, input);
     void execute(operation.run, {
@@ -102,51 +133,65 @@ export const DialogueAssessmentControl: FC<DialogueAssessmentControlProps> = ({
     });
   };
   return (
-    <details className="space-y-3 border-t pt-3 text-sm">
-      <summary>用选定贡献更新工作判断</summary>
+    <details
+      className="space-y-3 border-t pt-3 text-sm"
+      onToggle={(event) => {
+        if (event.currentTarget.open && !context && !receipt) readCurrent();
+      }}
+    >
+      <summary>用讨论中的补充更新评估</summary>
       <p className="text-xs text-muted-foreground">
         单次更新一份资料。只有明确选中的私人贡献进入本次请求；不分享，不正式采用。
       </p>
-      <Select
-        value={target}
-        disabled={disabled}
-        onValueChange={(value) => {
-          setTarget(value);
-          setContext(null);
-          setChosen([]);
-          setReceipt(null);
-        }}
-      >
-        <SelectTrigger aria-label="重评目标资料">
-          <SelectValue placeholder="选择目标资料" />
-        </SelectTrigger>
-        <SelectContent>
-          {workItems.map((item) => (
-            <SelectItem key={item.workItemId} value={item.workItemId}>
-              {item.label}
-            </SelectItem>
-          ))}
-        </SelectContent>
-      </Select>
-      <Button
-        variant="outline"
-        disabled={disabled || !target}
-        onClick={readCurrent}
-      >
-        读取当前工作版本
-      </Button>
-      {context && (
+      {!targetIds.length && <p>先在对话中选取需要补充的原话并保存。</p>}
+      {targetOptions.length === 1 ? (
+        <p className="font-medium">更新：{targetOptions[0].label}</p>
+      ) : targetOptions.length > 1 ? (
+        <Select
+          value={target}
+          disabled={disabled}
+          onValueChange={(value) => {
+            setTarget(value);
+            setContext(null);
+            setChosen([]);
+            setReceipt(null);
+            readCurrent(value);
+          }}
+        >
+          <SelectTrigger aria-label="重评目标资料">
+            <SelectValue placeholder="选择目标资料" />
+          </SelectTrigger>
+          <SelectContent>
+            {targetOptions.map((item) => (
+              <SelectItem key={item.workItemId} value={item.workItemId}>
+                {item.label}
+                {item.description ? ` · ${item.description}` : ''}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+      ) : null}
+      {target && (
+        <Button
+          variant="ghost"
+          size="sm"
+          disabled={disabled || !target}
+          onClick={() => readCurrent()}
+        >
+          {disabled ? '正在读取…' : context ? '刷新工作版本' : '读取工作版本'}
+        </Button>
+      )}
+      {context && context.workItemId === target && (
         <>
-          <p>
-            资料修订 {context.workItemRevision} · 当前工作版本{' '}
-            {context.workingRevision ?? '暂无'}· 读取于 {context.readAt}
-          </p>
-          <p className="whitespace-pre-wrap break-words">
-            {context.summary || '尚无工作判断'}
-          </p>
-          <p className="break-all text-xs">
-            资料版本：{context.documentVersionId}
-          </p>
+          <details className="text-xs text-muted-foreground">
+            <summary>
+              基于工作版本 {context.workingRevision ?? '暂无'} · 查看当前判断
+            </summary>
+            <p className="whitespace-pre-wrap break-words">
+              {context.summary || '尚无工作判断'}
+            </p>
+          </details>
+          <p>选择本次要纳入的补充内容：</p>
           <div className="space-y-2" aria-label="明确选择本次输入贡献">
             {!candidates.length && <p>该资料暂无可选择的私人贡献。</p>}
             {candidates.map((item) => (
@@ -188,7 +233,7 @@ export const DialogueAssessmentControl: FC<DialogueAssessmentControlProps> = ({
             value={instruction}
             maxLength={2000}
             disabled={disabled}
-            placeholder="说明本次需要重新判断的问题"
+            placeholder="本次更新重点（选填），例如核实某项假设或比较新增材料"
             onChange={(event) => setInstruction(event.target.value)}
           />
           {hasDraft && <p>对话输入框中的未发送草稿不会进入本次更新。</p>}
@@ -212,12 +257,11 @@ export const DialogueAssessmentControl: FC<DialogueAssessmentControlProps> = ({
               disabled ||
               Boolean(error) ||
               !selectionValid ||
-              instruction.length > 2000 ||
-              !instruction.trim()
+              instruction.length > 2000
             }
             onClick={submit}
           >
-            确认以 {chosen.length} 条贡献更新工作判断
+            用 {chosen.length} 条补充更新评估
           </Button>
         </>
       )}

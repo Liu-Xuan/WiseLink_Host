@@ -36,6 +36,10 @@ import { usePrivateDialogue } from './usePrivateDialogue';
 import { DialogueAssessmentControl } from './DialogueAssessmentControl';
 import { dialogueAilyError } from './dialogue-state';
 import {
+  DialogueFocusPicker,
+  type DialogueWorkItemSearch,
+} from './DialogueFocusPicker';
+import {
   dialogueFocusOptions,
   restoreDialogueFocus,
   type DialogueFocusState,
@@ -45,6 +49,7 @@ export interface PrivateDialoguePanelProps {
   threadRef?: string;
   /** Current Host-authorized search choices; changing them does not change selected focus IDs. */
   workItems: DialogueWorkItemOption[];
+  workItemSearch?: DialogueWorkItemSearch;
   initialWorkItemIds?: string[];
   onThreadReady?(threadRef: string): void;
   onAssessmentAccepted?(result: DialogueAssessmentResponse): void;
@@ -66,6 +71,7 @@ export const PrivateDialoguePanel: FC<PrivateDialoguePanelProps> = (props) => {
 const PrivateDialogueContent: FC<PrivateDialoguePanelProps> = ({
   threadRef,
   workItems,
+  workItemSearch,
   initialWorkItemIds,
   onThreadReady,
   onAssessmentAccepted,
@@ -178,34 +184,13 @@ const PrivateDialogueContent: FC<PrivateDialoguePanelProps> = ({
           )}
         </div>
       )}
-      <div className="flex flex-wrap gap-2" aria-label="当前关注资料">
-        <span className="text-sm">
-          下一条消息关注：
-          {validFocus.length ? `${validFocus.length} 份` : '无指定资料'}
-        </span>
-        {focusOptions.map((item) => (
-          <Button
-            key={item.workItemId}
-            size="sm"
-            variant="outline"
-            aria-pressed={validFocus.includes(item.workItemId)}
-            disabled={
-              locked ||
-              (!validFocus.includes(item.workItemId) && validFocus.length >= 8)
-            }
-            onClick={() =>
-              setFocus({
-                initialized: true,
-                ids: validFocus.includes(item.workItemId)
-                  ? validFocus.filter((id) => id !== item.workItemId)
-                  : [...validFocus, item.workItemId],
-              })
-            }
-          >
-            {item.label}
-          </Button>
-        ))}
-      </div>
+      <DialogueFocusPicker
+        ids={validFocus}
+        options={focusOptions}
+        search={workItemSearch}
+        disabled={locked}
+        onChange={(ids) => setFocus({ ids, initialized: true })}
+      />
       {!thread ? (
         <Button disabled={locked || Boolean(threadRef)} onClick={start}>
           开始私人对话
@@ -392,6 +377,7 @@ const PrivateDialogueContent: FC<PrivateDialoguePanelProps> = ({
           <DialogueAssessmentControl
             thread={thread}
             workItems={workItems}
+            focusWorkItemIds={validFocus}
             disabled={locked}
             error={error}
             hasDraft={Boolean(draft.trim())}

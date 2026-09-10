@@ -28,6 +28,9 @@ import {
 export interface DialogueWorkItemOption {
   workItemId: string;
   label: string;
+  documentVersionId?: string;
+  createdAt?: string;
+  description?: string;
 }
 export interface DialogueSelection {
   messageRef: string;
@@ -58,7 +61,9 @@ export const DialogueContributionPicker: FC<
 > = ({ message, workItems, contributions, disabled, onClose, onSave }) => {
   const [sourcePart, setSourcePart] = useState<'USER' | 'ASSISTANT'>('USER');
   const [selection, setSelection] = useState({ start: 0, end: 0 });
-  const [workItemId, setWorkItemId] = useState('');
+  const [workItemId, setWorkItemId] = useState(
+    message.focus.length === 1 ? message.focus[0].workItemId : '',
+  );
   const [kind, setKind] = useState<DialogueContributionKind>('QUESTION');
   const [supersedes, setSupersedes] = useState('none');
   const prior = contributions.filter(
@@ -138,6 +143,7 @@ export const DialogueContributionPicker: FC<
             {workItems.map((item) => (
               <SelectItem key={item.workItemId} value={item.workItemId}>
                 {item.label}
+                {item.description ? ` · ${item.description}` : ''}
               </SelectItem>
             ))}
           </SelectContent>

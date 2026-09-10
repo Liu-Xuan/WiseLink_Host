@@ -16,7 +16,6 @@ import type {
 } from '@shared/dialogue.interface';
 import type { DialogueWorkItemOption } from '@client/src/features/dialogue/DialogueContributionPicker';
 import { Button } from '@client/src/components/ui/button';
-import { Input } from '@client/src/components/ui/input';
 
 export default function DialoguePage() {
   const session = useCurrentUserSession();
@@ -103,6 +102,9 @@ function DialoguePageContent() {
             setFocusedOption({
               workItemId: document.workItemId,
               label: `${document.documentCode} · ${document.businessRevision}`,
+              documentVersionId: document.documentVersionId,
+              createdAt: document.createdAt,
+              description: `当前评估 · ${new Date(document.createdAt).toLocaleString()}`,
             });
         })
         .catch(() => {
@@ -130,7 +132,10 @@ function DialoguePageContent() {
       ? [
           {
             workItemId: item.workItemId,
-            label: `${item.documentCode} · ${item.businessRevision} · ${item.workItemId.slice(-8)}`,
+            label: `${item.documentCode} · ${item.businessRevision}`,
+            documentVersionId: item.documentVersionId,
+            createdAt: item.createdAt,
+            description: `${new Date(item.createdAt).toLocaleString()} 创建${item.readingSummary?.headline ? ` · ${item.readingSummary.headline}` : ''}`,
           },
         ]
       : [],
@@ -204,31 +209,18 @@ function DialoguePageContent() {
         ) : null}
       </aside>
       <section className="min-w-0 space-y-4">
-        <div className="space-y-2">
-          <label htmlFor="dialogue-task-search">查找可关联的任务</label>
-          <Input
-            id="dialogue-task-search"
-            value={search}
-            onChange={(event) => setSearch(event.target.value)}
-            placeholder="搜索文件编号或任务"
-          />
-          {directory.error ? (
-            <p role="alert">{directory.error.message}</p>
-          ) : null}
-          {focusError ? <p role="alert">{focusError}</p> : null}
-          {directory.nextCursor ? (
-            <Button
-              variant="ghost"
-              disabled={directory.loading}
-              onClick={directory.loadMore}
-            >
-              加载更多任务
-            </Button>
-          ) : null}
-        </div>
+        {focusError ? <p role="alert">{focusError}</p> : null}
         <PrivateDialoguePanel
           threadRef={threadRef}
           workItems={options}
+          workItemSearch={{
+            value: search,
+            onChange: setSearch,
+            loading: directory.loading,
+            error: directory.error?.message,
+            hasMore: Boolean(directory.nextCursor),
+            loadMore: directory.loadMore,
+          }}
           initialWorkItemIds={focusId ? [focusId] : []}
           onThreadReady={onThreadReady}
           onAssessmentAccepted={setReceipt}
