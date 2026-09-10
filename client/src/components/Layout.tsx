@@ -9,6 +9,7 @@ import {
 } from '@client/src/app/providers/CurrentObjectContextProvider';
 import { CurrentUserSessionProvider } from '@client/src/app/providers/CurrentUserSessionProvider';
 import CurrentUserControl from '@client/src/components/CurrentUserControl';
+import AtlasLauncher from '@client/src/features/atlas/AtlasLauncher';
 import FloatingDock from '@client/src/features/navigation/FloatingDock';
 
 import './app-shell.css';
@@ -112,6 +113,7 @@ function LayoutChrome() {
             >
               <Search aria-hidden="true" />
             </NavLink>
+            <AtlasLauncher />
             <CurrentUserControl />
             <NavLink
               className="wiselink-header-icon-action"

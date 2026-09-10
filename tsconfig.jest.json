@@ -2,6 +2,7 @@
   "extends": "./tsconfig.node.json",
   "compilerOptions": {
     "allowJs": true,
+    "resolveJsonModule": true,
     "jsx": "react-jsx",
     "noEmit": true,
     "types": ["node", "jest"],

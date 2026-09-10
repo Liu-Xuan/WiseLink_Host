@@ -1,0 +1,35 @@
+{
+  "sourceReading": "Readonly raw OOXML; Files text unavailable; artifact_tool daemon startup timed out. Sources unchanged.",
+  "ispec": {
+    "chapterRecords": 116,
+    "standardSectionRangeRecords": 325,
+    "expandedRows": 546,
+    "uniqueExpandedCodes": 545,
+    "chaptersWithExpandedEntries": 61,
+    "expandedKinds": {
+      "single": 316,
+      "expanded_multiple": 2,
+      "expanded_range": 228
+    },
+    "duplicateCodes": {
+      "45-45": [
+        "'ATA_4位展开'!A200:R200",
+        "'ATA_4位展开'!A205:R205"
+      ]
+    },
+    "missingTitleRows": [
+      "'ATA_4位展开'!A5:R5",
+      "'ATA_4位展开'!A6:R6"
+    ]
+  },
+  "jasc": {
+    "chapterIndexRecords": 102,
+    "codeRows": 547,
+    "uniqueCodes": 547,
+    "chaptersWithCodes": 51
+  },
+  "codeTextOverlap": 260,
+  "overlapIsEquivalence": false,
+  "editionVerified": false,
+  "fmcAircraftSpecificMappingVerified": false
+}

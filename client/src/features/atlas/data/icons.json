@@ -1,0 +1,232 @@
+{
+  "paths": {
+    "matter": "<circle cx=\"12\" cy=\"12\" r=\"8.5\"/><path d=\"M8 9h8M8 12h6M8 15h4\"/>",
+    "document": "<path d=\"M6 3h8l4 4v14H6zM14 3v5h4M9 12h6M9 16h5\"/>",
+    "family": "<path d=\"M3 7V4h13M6 10V7h13M9 10h12v11H9z\"/>",
+    "revision": "<path d=\"M7 5v14M7 10h6a4 4 0 0 0 4-4\"/><circle cx=\"7\" cy=\"4\" r=\"2\"/><circle cx=\"7\" cy=\"20\" r=\"2\"/><circle cx=\"17\" cy=\"4\" r=\"2\"/><path d=\"m15 14 3 3-3 3\"/>",
+    "aircraft": "<path d=\"M12 2c1 0 1.5 1 1.5 3v4L21 14v2l-7.5-2v5l2.5 2v1l-4-1-4 1v-1l2.5-2v-5L3 16v-2l7.5-5V5C10.5 3 11 2 12 2Z\"/>",
+    "configuration": "<path d=\"m12 2 9 5v10l-9 5-9-5V7zM3 7l9 5 9-5M12 12v10M7.5 4.5l9 5v5\"/>",
+    "event": "<path d=\"m12 2 10 10-10 10L2 12zM12 7v6M12 17h.01\"/>",
+    "reliability": "<path d=\"M3 4v16h18M6 15l4-5 4 3 6-7\"/><circle cx=\"10\" cy=\"10\" r=\"1\"/><circle cx=\"14\" cy=\"13\" r=\"1\"/>",
+    "knowledge": "<path d=\"M12 6c-3-2-6-2-10-1v15c4-1 7-1 10 1 3-2 6-2 10-1V5c-4-1-7-1-10 1ZM12 6v15M5 9h4M15 9h4M5 13h4M15 13h4\"/>",
+    "issue": "<path d=\"M5 3h14a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2h-7l-5 3v-3H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2Z\"/><path d=\"M9 8a3 3 0 1 1 4 2.8c-1 .4-1 1.1-1 2.2M12 16h.01\"/>",
+    "insight": "<path d=\"M4 4h16v14H10l-6 4zM8 8h8M8 12h5\"/>",
+    "evidence": "<path d=\"M7 3H3v5M17 3h4v5M3 16v5h4M21 16v5h-4M7 9h3v5H6v-2l1-3ZM15 9h3v5h-4v-2l1-3Z\"/>",
+    "measure": "<path d=\"M8 5H5v17h14V5h-3M8 2h8v5H8zM8 11h8M8 15h8M8 19h5\"/>",
+    "feedback": "<path d=\"M5 8a8 8 0 1 1-1 9M3 3v6h6M9 12h6M9 16h4\"/>",
+    "attachment": "<path d=\"m9 16 7-7a3 3 0 0 0-4-4l-7 7a5 5 0 0 0 7 7l8-8M8 14l6-6\"/>",
+    "search": "<circle cx=\"10.5\" cy=\"10.5\" r=\"6.5\"/><path d=\"m16 16 5 5\"/>",
+    "panorama": "<circle cx=\"12\" cy=\"12\" r=\"3\"/><circle cx=\"3\" cy=\"8\" r=\"1.3\"/><circle cx=\"19\" cy=\"4\" r=\"1.3\"/><circle cx=\"20\" cy=\"19\" r=\"1.3\"/><circle cx=\"4\" cy=\"20\" r=\"1.3\"/><path d=\"m5 9 4 2m5-1 4-5m-4 10 5 3M6 19l4-5\"/>",
+    "filter": "<path d=\"M3 5h18M6 12h12M9 19h6\"/>",
+    "close": "<path d=\"m6 6 12 12M6 18 18 6\"/>",
+    "arrow": "<path d=\"M4 12h16m-6-6 6 6-6 6\"/>",
+    "back": "<path d=\"M20 12H4m6-6-6 6 6 6\"/>",
+    "plus": "<path d=\"M12 4v16M4 12h16\"/>",
+    "minus": "<path d=\"M4 12h16\"/>",
+    "fit": "<path d=\"M3 9V3h6M15 3h6v6M21 15v6h-6M9 21H3v-6\"/>",
+    "settings": "<path d=\"M3 6h18M3 12h18M3 18h18M8 3v6M16 9v6M9 15v6\"/>",
+    "list": "<path d=\"M8 5h13M8 12h13M8 19h13M3 5h.01M3 12h.01M3 19h.01\"/>",
+    "link": "<path d=\"m9 15 6-6M8 16l-2 2a3.5 3.5 0 0 1-5-5l5-5a3.5 3.5 0 0 1 5 0M16 8l2-2a3.5 3.5 0 0 1 5 5l-5 5a3.5 3.5 0 0 1-5 0\"/>",
+    "menu": "<path d=\"M4 6h16M4 12h16M4 18h16\"/>",
+    "sun": "<circle cx=\"12\" cy=\"12\" r=\"4\"/><path d=\"M12 2v2M12 20v2M2 12h2M20 12h2M5 5l1 1M18 18l1 1M5 19l1-1M18 6l1-1\"/>",
+    "moon": "<path d=\"M21 14A9 9 0 0 1 10 3a7 7 0 0 0 11 11Z\"/>",
+    "check": "<path d=\"m5 12 4 4L19 6\"/>",
+    "pin": "<path d=\"m8 3 11 5-4 2-2 5-4 2-1-6-4-2zM9 17l-5 5\"/>",
+    "system": "<path d=\"M8 3h8l5 5v8l-5 5H8l-5-5V8z\"/><rect x=\"8\" y=\"8\" width=\"8\" height=\"8\" rx=\"2\"/><path d=\"M12 3v3M12 18v3M3 12h3M18 12h3\"/>",
+    "hardware": "<rect x=\"6\" y=\"5\" width=\"12\" height=\"14\" rx=\"2\"/><path d=\"M9 9h6M9 12h6M9 15h2M3 8h3M3 16h3M18 8h3M18 16h3\"/>",
+    "software": "<rect x=\"4\" y=\"3\" width=\"16\" height=\"18\" rx=\"3\"/><path d=\"m10 9-3 3 3 3m4-6 3 3-3 3\"/>",
+    "data": "<ellipse cx=\"12\" cy=\"6\" rx=\"7\" ry=\"3\"/><path d=\"M5 6v6c0 4 14 4 14 0V6M5 12v6c0 4 14 4 14 0v-6\"/>",
+    "center": "<circle cx=\"12\" cy=\"12\" r=\"6\"/><path d=\"M12 2v4M12 18v4M2 12h4M18 12h4\"/>",
+    "domain": "<circle cx=\"12\" cy=\"12\" r=\"3\"/><circle cx=\"4\" cy=\"5\" r=\"2\"/><circle cx=\"20\" cy=\"5\" r=\"2\"/><circle cx=\"12\" cy=\"21\" r=\"2\"/><path d=\"m6 6 4 4m4 0 4-4m-6 9v4\"/>",
+    "chevron": "<path d=\"m9 5 7 7-7 7\"/>",
+    "compare": "<path d=\"M4 7h16m-4-4 4 4-4 4M20 17H4m4-4-4 4 4 4\"/>",
+    "reference": "<path d=\"M9 5H5v14h10v-4M14 3h7v7M21 3l-9 9\"/>",
+    "translation": "<path d=\"M3 5h11M8 3v2M6 8c1 3 3 5 7 7M12 5c-1 5-4 8-9 10m11 6 4-10 4 10m-6-4h4\"/>",
+    "layout": "<rect x=\"3\" y=\"3\" width=\"6\" height=\"6\" rx=\"1\"/><rect x=\"15\" y=\"3\" width=\"6\" height=\"6\" rx=\"1\"/><rect x=\"9\" y=\"15\" width=\"6\" height=\"6\" rx=\"1\"/><path d=\"M6 9v3h12V9m-6 3v3\"/>",
+    "image": "<rect x=\"3\" y=\"4\" width=\"18\" height=\"16\" rx=\"3\"/><circle cx=\"8\" cy=\"9\" r=\"2\"/><path d=\"m3 17 5-4 4 3 4-6 5 7\"/>",
+    "classification": "<rect x=\"9\" y=\"2\" width=\"6\" height=\"5\" rx=\"1.4\"/><path d=\"M12 7v6M5 16v-3h14v3\"/><rect x=\"2\" y=\"16\" width=\"6\" height=\"5\" rx=\"1.4\"/><rect x=\"16\" y=\"16\" width=\"6\" height=\"5\" rx=\"1.4\"/>",
+    "play": "<circle cx=\"12\" cy=\"12\" r=\"9\"/><path d=\"m10 8 6 4-6 4z\"/>",
+    "pause": "<path d=\"M8 5v14M16 5v14\"/>",
+    "skip": "<path d=\"m5 5 10 7-10 7zM19 5v14\"/>",
+    "audio": "<path d=\"M4 9h4l4-4v14l-4-4H4zM16 8a6 6 0 0 1 0 8m3-11a10 10 0 0 1 0 14\"/>",
+    "restore": "<path d=\"M3 4v6h6M3 10a9 9 0 1 1 2 8\"/>"
+  },
+  "categories": {
+    "matter": {
+      "key": "matter",
+      "label": "工程事项",
+      "shape": "circle",
+      "dark": "#d9c6a6",
+      "light": "#715e41",
+      "description": "关注问题的容器；双环强调聚合，不表示高风险。"
+    },
+    "document": {
+      "key": "document",
+      "label": "工程文档",
+      "shape": "round-rectangle",
+      "dark": "#bac4d1",
+      "light": "#506070",
+      "description": "来源版本与文档解读；图标保持纸页形。"
+    },
+    "family": {
+      "key": "family",
+      "label": "文档族",
+      "shape": "round-rectangle",
+      "dark": "#a9bbca",
+      "light": "#496577",
+      "description": "多个版本的共同身份；叠页不等于重复资料。"
+    },
+    "revision": {
+      "key": "revision",
+      "label": "修订版本",
+      "shape": "round-rectangle",
+      "dark": "#b9b1cd",
+      "light": "#685a82",
+      "description": "保留改版谱系和具体引用版本。"
+    },
+    "aircraft": {
+      "key": "aircraft",
+      "label": "飞机 / 资产",
+      "shape": "round-octagon",
+      "dark": "#b8c9cf",
+      "light": "#4c6571",
+      "description": "实际对象；不混入构型记录或评估结果。"
+    },
+    "configuration": {
+      "key": "configuration",
+      "label": "构型记录",
+      "shape": "hexagon",
+      "dark": "#98beb1",
+      "light": "#3f7161",
+      "description": "件号、序号、软件及记录时点。"
+    },
+    "event": {
+      "key": "event",
+      "label": "故障 / 观察",
+      "shape": "diamond",
+      "dark": "#d9b183",
+      "light": "#95602e",
+      "description": "单次异常，不用此图标代表风险等级。"
+    },
+    "reliability": {
+      "key": "reliability",
+      "label": "可靠性窗口",
+      "shape": "ellipse",
+      "dark": "#b1a1cb",
+      "light": "#725d95",
+      "description": "计数或率的口径、时间窗口和分母。"
+    },
+    "knowledge": {
+      "key": "knowledge",
+      "label": "知识 / 案例",
+      "shape": "round-rectangle",
+      "dark": "#c6adb7",
+      "light": "#865d6d",
+      "description": "知识类型不等于RAG；检索渠道另标。"
+    },
+    "issue": {
+      "key": "issue",
+      "label": "分析问题",
+      "shape": "round-rectangle",
+      "dark": "#b9bfad",
+      "light": "#5f6e47",
+      "description": "尚待解释的问题；不是固定表项。"
+    },
+    "insight": {
+      "key": "insight",
+      "label": "阶段认识",
+      "shape": "round-rectangle",
+      "dark": "#a2bca8",
+      "light": "#4e7058",
+      "description": "当前有条件的认识；不使用勾选批准符号。"
+    },
+    "evidence": {
+      "key": "evidence",
+      "label": "原文依据",
+      "shape": "round-rectangle",
+      "dark": "#c7c3b6",
+      "light": "#6d6657",
+      "description": "来源片段与主张的准确映射，按需展开。"
+    },
+    "measure": {
+      "key": "measure",
+      "label": "工程措施",
+      "shape": "round-rectangle",
+      "dark": "#c1b595",
+      "light": "#807046",
+      "description": "措施、EO或工卡身份；不能图标默认为已执行。"
+    },
+    "feedback": {
+      "key": "feedback",
+      "label": "执行反馈",
+      "shape": "round-rectangle",
+      "dark": "#9cbec0",
+      "light": "#476e70",
+      "description": "真实回执或观察，不等于措施有效。"
+    },
+    "attachment": {
+      "key": "attachment",
+      "label": "附件",
+      "shape": "round-rectangle",
+      "dark": "#b0b0b0",
+      "light": "#686868",
+      "description": "附件是独立文件时才单列，不复制已有记录。"
+    },
+    "system": {
+      "key": "system",
+      "label": "技术系统 / 组件族",
+      "shape": "round-octagon",
+      "dark": "#bfc8bd",
+      "light": "#53644f",
+      "description": "稳定技术概念；观察中心使用外圈，不复制一份锚点实体。"
+    },
+    "hardware": {
+      "key": "hardware",
+      "label": "产品型号 / 硬件族",
+      "shape": "hexagon",
+      "dark": "#bac2cc",
+      "light": "#586777",
+      "description": "产品型号不等于序号化设备或当前装机记录。"
+    },
+    "software": {
+      "key": "software",
+      "label": "软件标准",
+      "shape": "round-rectangle",
+      "dark": "#aaa8c5",
+      "light": "#6b6581",
+      "description": "独立标准与来源范围，不把字母版本当作升级或适用证明。"
+    },
+    "data": {
+      "key": "data",
+      "label": "数据 / 功能主题",
+      "shape": "round-rectangle",
+      "dark": "#bab3a4",
+      "light": "#76684e",
+      "description": "有限定义的主题，用于探索；不是自动生成的故障原因。"
+    },
+    "reference": {
+      "key": "reference",
+      "label": "引用线索",
+      "shape": "round-rectangle",
+      "dark": "#b8afa1",
+      "light": "#857257",
+      "description": "引用出现位置可核查；未取得目标原文时不造文档版本。"
+    },
+    "translation": {
+      "key": "translation",
+      "label": "译文表示",
+      "shape": "round-rectangle",
+      "dark": "#aabfb8",
+      "light": "#537a6c",
+      "description": "同一源文的阅读表示，不重复计为独立工程文档。"
+    },
+    "classification": {
+      "key": "classification",
+      "label": "分类锚点",
+      "shape": "round-octagon",
+      "dark": "#c8c0a7",
+      "light": "#7c7257",
+      "description": "来源命名空间下的专业分类，不等于技术对象或适用性。"
+    }
+  }
+}
