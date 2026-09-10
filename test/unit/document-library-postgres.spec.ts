@@ -1,5 +1,6 @@
 import { drizzle } from 'drizzle-orm/postgres-js';
 import postgres from 'postgres';
+import { libraryAircraftMentionAliases } from '../../shared/library-aircraft-mentions';
 import { listOwnedLibraryFamilies } from '../../server/modules/document-management/src/hosted/nest/miaoda-hosted-library-query';
 import { MiaodaHostedDocumentCatalog } from '../../server/modules/document-management/src/hosted/nest/miaoda-hosted-document-catalog';
 
@@ -99,9 +100,9 @@ const enabled = process.env.WL_DM_LIBRARY_LOCAL_PG === '1';
     it('matches authoritative parent/child mentions exactly and preserves unknown documents in all results', async () => {
       await client`insert into dm_document_version_metadata values ('a', ${JSON.stringify({ mentionedAircraftModels: { observations: [{ value: ' 787-9 ' }] } })}, 9)`;
       try {
-        const [parent] = await listOwnedLibraryFamilies(db as never, { ...scope, fleetMentionValues: ['787', '787-9'] });
+        const [parent] = await listOwnedLibraryFamilies(db as never, { ...scope, fleetMentionValues: ['B787', 'B787-9'].flatMap(libraryAircraftMentionAliases) });
         expect(parent.rows.map((row) => row.familyId)).toEqual(['a']);
-        const [child] = await listOwnedLibraryFamilies(db as never, { ...scope, fleetMentionValues: ['787-9'] });
+        const [child] = await listOwnedLibraryFamilies(db as never, { ...scope, fleetMentionValues: libraryAircraftMentionAliases('B787-9') });
         expect(child.totalCount).toBe(1);
         const [wrong] = await listOwnedLibraryFamilies(db as never, { ...scope, fleetMentionValues: ['787-10'] });
         expect(wrong.totalCount).toBe(0);

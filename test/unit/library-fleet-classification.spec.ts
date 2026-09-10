@@ -25,6 +25,18 @@ function buttons(node: ReactNode): ReactElement<ActionProps>[] {
 }
 
 describe('authoritative fleet library classification', () => {
+  it('matches real B787-9 authority to 787-9 document mentions without inventing parentage or stripping other letters', () => {
+    const source = { ...catalog, families: [{ fleetFamily: 'B787', models: ['B787-9'] }, { fleetFamily: 'A320', models: ['A320-200'] }] };
+    const fleetDocuments = [document('child', '787-9'), document('prefixed', 'B787-9'), document('sibling', '787-10'), document('broad', '787'), document('wrong-prefix', 'C787-9'), document('airbus-unmapped', '320-200')];
+    const filters = { fleetFamily: 'B787', fleetModel: 'B787-9' };
+    expect(fleetDocuments.filter((item) => matchesLibraryFleet(item, source, filters)).map((item) => item.familyId)).toEqual(['child', 'prefixed']);
+    expect(fleetDocuments.filter((item) => matchesLibraryFleet(item, source, { fleetFamily: 'B787' })).map((item) => item.familyId)).toEqual(['child', 'prefixed', 'broad']);
+    expect(matchesLibraryFleet(fleetDocuments[5], source, { fleetFamily: 'A320', fleetModel: 'A320-200' })).toBe(false);
+    const tree = buildLibraryHierarchy(fleetDocuments, 'aircraft', filters, source);
+    expect(tree[0].key).toBe('B787');
+    expect(tree[0].children[0].key).toBe('B787-9');
+    expect(tree[0].children[0].documents.map((item) => item.familyId)).toEqual(['child', 'prefixed']);
+  });
   const parent = document('parent', '787');
   const child = document('child', ' 787-9 ');
   const sibling = document('sibling', '787-10');
