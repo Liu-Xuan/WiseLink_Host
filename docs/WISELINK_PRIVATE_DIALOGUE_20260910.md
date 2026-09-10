@@ -12,3 +12,5 @@
 数据库迁移 `0030_personal_dialogue.sql` 已按 dev → main 正常环境迁移执行，读回环境差异为空。新增四张表使用现有 actor transaction 与 RLS；旧 attempt 关联 Aily 查询继续兼容。
 
 本地验证覆盖原文 UTF-16 选段、私人读回、上下文继承授权、并发 CAS、贡献纠正/撤回、评估请求幂等及前端权限失效清理；隔离 PostgreSQL 使用真实迁移和 RLS。技术发布与实际 Aily → 贡献 → OpenClaw → 新工作稿 → Aily 读回的业务验收分别记录，不能相互替代。
+
+线上接入修订：首次 release `7683769644624432059` 的私人列表返回 `ENGINEERING_MATTER_RUNTIME_AUTHORIZATION_UNAVAILABLE`。原因是普通浏览器 SQL 身份无法直接进入仅供后台服务使用的 actor transaction。新增仅对话控制器可用的 SQL 作用域：先验证妙搭 Hosted 原生最终用户和 `wl_session`，要求用户、租户、应用一致，再在独立 SQL 异步上下文内使用该真实 actor。原请求身份、后台 service-role 校验和 RLS 均保留。真实 SDK + 隔离 PostgreSQL 验证了并发身份隔离、作用域退出恢复，以及过期/错用户/错租户/系统调用/本地伪造入口的拒绝。

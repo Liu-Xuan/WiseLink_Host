@@ -2,6 +2,7 @@ import { Body, Controller, Get, Param, Post, Query, Req } from '@nestjs/common';
 import { NeedLogin } from '@lark-apaas/fullstack-nestjs-core';
 import type { Request } from 'express';
 import { DialogueAssessmentService } from './dialogue-assessment.service';
+import { DialogueBrowserScope } from './dialogue-browser-scope.service';
 import { DialogueService } from './dialogue.service';
 
 @NeedLogin()
@@ -10,14 +11,15 @@ export class DialogueController {
   constructor(
     private readonly service: DialogueService,
     private readonly assessments: DialogueAssessmentService,
+    private readonly browser: DialogueBrowserScope,
   ) {}
   @Get()
   list(@Req() request: Request, @Query('beforeThreadRef') before?: string) {
-    return this.service.list(request, before);
+    return this.browser.run(request, () => this.service.list(request, before));
   }
   @Post()
   create(@Body() body: unknown, @Req() request: Request) {
-    return this.service.create(body, request);
+    return this.browser.run(request, () => this.service.create(body, request));
   }
   @Get(':threadRef')
   read(
@@ -25,7 +27,9 @@ export class DialogueController {
     @Req() request: Request,
     @Query('beforeMessageRef') before?: string,
   ) {
-    return this.service.read(ref, request, before);
+    return this.browser.run(request, () =>
+      this.service.read(ref, request, before),
+    );
   }
   @Get(':threadRef/context')
   currentContext(
@@ -33,7 +37,9 @@ export class DialogueController {
     @Query('workItemId') workItemId: string,
     @Req() request: Request,
   ) {
-    return this.service.currentContext(ref, workItemId, request);
+    return this.browser.run(request, () =>
+      this.service.currentContext(ref, workItemId, request),
+    );
   }
   @Post(':threadRef/assessment-requests')
   assessment(
@@ -41,7 +47,9 @@ export class DialogueController {
     @Body() body: unknown,
     @Req() request: Request,
   ) {
-    return this.assessments.request(ref, body, request);
+    return this.browser.run(request, () =>
+      this.assessments.request(ref, body, request),
+    );
   }
   @Post(':threadRef/messages')
   append(
@@ -49,7 +57,9 @@ export class DialogueController {
     @Body() body: unknown,
     @Req() request: Request,
   ) {
-    return this.service.append(ref, body, request);
+    return this.browser.run(request, () =>
+      this.service.append(ref, body, request),
+    );
   }
   @Post(':threadRef/messages/:messageRef/resume')
   resume(
@@ -57,7 +67,9 @@ export class DialogueController {
     @Param('messageRef') messageRef: string,
     @Req() request: Request,
   ) {
-    return this.service.resume(ref, messageRef, request);
+    return this.browser.run(request, () =>
+      this.service.resume(ref, messageRef, request),
+    );
   }
   @Post(':threadRef/contributions')
   contribute(
@@ -65,7 +77,9 @@ export class DialogueController {
     @Body() body: unknown,
     @Req() request: Request,
   ) {
-    return this.service.contribute(ref, body, request);
+    return this.browser.run(request, () =>
+      this.service.contribute(ref, body, request),
+    );
   }
   @Post(':threadRef/contributions/:contributionRef/withdraw')
   withdraw(
@@ -74,6 +88,8 @@ export class DialogueController {
     @Body() body: unknown,
     @Req() request: Request,
   ) {
-    return this.service.withdraw(ref, contributionRef, body, request);
+    return this.browser.run(request, () =>
+      this.service.withdraw(ref, contributionRef, body, request),
+    );
   }
 }
