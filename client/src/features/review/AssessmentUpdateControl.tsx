@@ -78,38 +78,38 @@ export default function AssessmentUpdateControl(props: Props) {
         props.reviewScope?.expectedWorkingRevision),
   );
 
+  function buildPreview(): Preview {
+    const turns = assessmentDiscussionTurns(props.conversation);
+    return {
+      conversation: props.conversation,
+      turns,
+      ids: turns.map((turn) => turn.reviewTurnId),
+      scope: props.reviewScope ? { ...props.reviewScope } : undefined,
+      modelRef: props.modelRef,
+      modelLabel: props.modelLabel,
+      selectedEvaluationItemId: props.selectedEvaluationItemId,
+    };
+  }
+
   function showPreview(): void {
     if (!pending) {
       setNotice('');
       setMustReopen(false);
-      const turns: ReviewTurnReadModel[] = assessmentDiscussionTurns(
-        props.conversation,
-      );
-      setPreview({
-        conversation: props.conversation,
-        turns,
-        ids: turns
-          .slice(0, 100)
-          .map((turn: ReviewTurnReadModel) => turn.reviewTurnId),
-        scope: props.reviewScope ? { ...props.reviewScope } : undefined,
-        modelRef: props.modelRef,
-        modelLabel: props.modelLabel,
-        selectedEvaluationItemId: props.selectedEvaluationItemId,
-      });
+      setPreview(buildPreview());
     }
     setOpen(true);
   }
 
   async function submit(): Promise<void> {
-    if (
-      !preview ||
-      submittingRef.current ||
-      props.disabled ||
-      mustReopen ||
-      (!pending && changed) ||
-      preview.ids.length > 100
-    )
+    const currentPreview = pending && preview ? preview : buildPreview();
+    if (currentPreview.ids.length > 100) {
+      setPreview(currentPreview);
+      setNotice('待纳入讨论超过单次 100 条上限；本次未提交，也未截断内容。');
+      setOpen(true);
       return;
+    }
+    if (submittingRef.current || props.disabled || mustReopen) return;
+    setPreview(currentPreview);
     const requestEpoch: number = epoch.current;
     submittingRef.current = true;
     const session: number =
@@ -124,23 +124,23 @@ export default function AssessmentUpdateControl(props: Props) {
         pending ??
         assessmentUpdateRequest(
           createRequestCorrelationId(),
-          preview.conversation,
-          preview.ids,
-          preview.modelRef,
-          preview.scope,
-          preview.selectedEvaluationItemId,
+          currentPreview.conversation,
+          currentPreview.ids,
+          currentPreview.modelRef,
+          currentPreview.scope,
+          currentPreview.selectedEvaluationItemId,
         );
       setPending(request);
       const response = await canonicalHost.appendReviewTextTurn(
-        preview.conversation.workItemId,
-        preview.conversation.reviewConversationId,
+        currentPreview.conversation.workItemId,
+        currentPreview.conversation.reviewConversationId,
         request,
       );
       if (!current()) return;
       assertReviewConversationScope(
         response.conversation,
-        preview.conversation.workItemId,
-        preview.conversation.reviewScope ?? undefined,
+        currentPreview.conversation.workItemId,
+        currentPreview.conversation.reviewScope ?? undefined,
       );
       props.onResult(response.conversation);
       setPending(null);
@@ -148,6 +148,7 @@ export default function AssessmentUpdateControl(props: Props) {
       setOpen(false);
     } catch (reason) {
       if (current()) {
+        setOpen(true);
         const failure = reviewOperationErrorPresentation(reason);
         setNotice(`${failure.message} 错误码：${failure.code ?? '未返回'}。`);
         if (
@@ -177,15 +178,26 @@ export default function AssessmentUpdateControl(props: Props) {
         type="button"
         variant="outline"
         disabled={props.disabled || submitting}
-        onClick={showPreview}
+        onClick={() => void submit()}
       >
         {submitting
           ? '正在请求更新…'
           : pending
-            ? '核对更新评估请求'
+            ? '重试更新评估'
             : '更新评估'}
       </Button>
-      <small>先自由讨论；点击更新评估才重算。正式采用仍须单独确认。</small>
+      <div className="flex items-center gap-3 text-sm">
+        <span>已保存的新讨论自动汇集。正式采用仍须单独确认。</span>
+        <Button
+          type="button"
+          variant="ghost"
+          size="sm"
+          disabled={submitting}
+          onClick={showPreview}
+        >
+          查看本次输入
+        </Button>
+      </div>
       {preview ? (
         <AssessmentUpdatePreview
           open={open}
@@ -194,9 +206,6 @@ export default function AssessmentUpdateControl(props: Props) {
           }}
           turns={preview.turns}
           selectedIds={preview.ids}
-          onSelectionChange={(ids: string[]) => {
-            if (!pending) setPreview({ ...preview, ids });
-          }}
           revision={preview.conversation.currentWorkItemRevision}
           workingRevision={preview.scope?.expectedWorkingRevision}
           materialTitle={props.materialTitle}
@@ -211,24 +220,25 @@ export default function AssessmentUpdateControl(props: Props) {
           pending={Boolean(pending)}
           notice={
             changed && !pending
-              ? '范围版本已变化，请关闭预览后重新打开核对。'
+              ? '范围已有新版本，点击更新时将自动使用当前版本。'
               : notice
           }
           disabled={
             props.disabled ||
             mustReopen ||
             submitting ||
-            (!pending && changed) ||
             preview.ids.length > 100
           }
           onConfirm={() => void submit()}
         />
       ) : null}
       {changed && !pending ? (
-        <p role="alert">范围版本已变化，请关闭预览后重新打开核对。</p>
+        <p role="alert">范围已有新版本，点击更新时将自动使用当前版本。</p>
       ) : null}
       {preview && preview.ids.length > 100 ? (
-        <p role="alert">单次最多纳入 100 条对话，请减少选择。</p>
+        <p role="alert">
+          待纳入讨论超过单次 100 条上限；本次未提交，也未截断内容。
+        </p>
       ) : null}
     </div>
   );

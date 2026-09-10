@@ -15,7 +15,10 @@ import {
 import { DialogueMessages } from '../../client/src/features/dialogue/DialogueMessages';
 import { DialogueRequests } from '../../client/src/features/dialogue/dialogue-requests';
 import { dialogueAssessmentOperation } from '../../client/src/features/dialogue/dialogue-assessment-operation';
-import { dialogueAssessmentSelectionValid } from '../../client/src/features/dialogue/dialogue-assessment-selection';
+import {
+  dialogueAssessmentSelectionValid,
+  defaultDialogueAssessmentContributions,
+} from '../../client/src/features/dialogue/dialogue-assessment-selection';
 import {
   dialogueFocusOptions,
   restoreDialogueFocus,
@@ -93,6 +96,39 @@ describe('private dialogue text and read state', () => {
       usedBy: [],
     };
     const chosen = [{ contributionRef: 'c', expectedRevision: 2 }];
+    expect(
+      defaultDialogueAssessmentContributions(
+        [
+          {
+            ...contribution,
+            usedBy: [
+              {
+                reviewTurnId: 'failed-update',
+                workItemId: 'target',
+                workingRef: null,
+              },
+            ],
+          },
+          {
+            ...contribution,
+            contributionRef: 'correction',
+            kind: 'CORRECTION',
+            revision: 3,
+          },
+          {
+            ...contribution,
+            contributionRef: 'withdrawn',
+            status: 'WITHDRAWN',
+          },
+          { ...contribution, contributionRef: 'foreign', workItemId: 'other' },
+        ],
+        'target',
+      ),
+    ).toEqual([
+      ...chosen,
+      { contributionRef: 'correction', expectedRevision: 3 },
+    ]);
+
     expect(
       dialogueAssessmentSelectionValid(chosen, [contribution], 'target'),
     ).toBe(true);

@@ -24,3 +24,21 @@ export function dialogueAssessmentSelectionValid(
     )
   );
 }
+
+/** Every active contribution in the current task is included by default.
+ * usedBy records request binding, not successful consumption, so it must not
+ * exclude input after a failed or still-running update.
+ */
+export function defaultDialogueAssessmentContributions(
+  contributions: DialogueContributionReadModel[],
+  workItemId: string,
+): DialogueChosenContribution[] {
+  return contributions
+    .filter(
+      (item) => item.workItemId === workItemId && item.status === 'ACTIVE',
+    )
+    .map((item) => ({
+      contributionRef: item.contributionRef,
+      expectedRevision: item.revision,
+    }));
+}

@@ -52,6 +52,37 @@ const turn = {
 describe('ReviewConversationService session and ACL boundary', () => {
   afterEach(() => jest.restoreAllMocks());
 
+  it('binds a new explicit update to the currently verified request session', async () => {
+    jest
+      .spyOn(executorScope, 'isOpenClawAutomaticReviewConfigured')
+      .mockReturnValue(true);
+    const setup = makeService();
+    setup.conversations.loadById.mockResolvedValue({ conversation, turns: [] });
+    setup.conversations.appendTextTurn.mockResolvedValue({
+      turn,
+      replayed: false,
+    });
+    await setup.service.appendTextTurn(
+      'WI-1',
+      'RC-1',
+      {
+        requestId: 'new-update',
+        userMessage: '更新',
+        purpose: 'UPDATE_ASSESSMENT',
+        executionMode: 'AUTOMATIC',
+        expectedInputRevision: 7,
+        includedDiscussionTurnIds: [],
+      },
+      {} as never,
+    );
+    expect(setup.conversations.appendTextTurn).toHaveBeenCalledWith(
+      expect.objectContaining({
+        ailySessionId: 'session-1',
+        purpose: 'UPDATE_ASSESSMENT',
+      }),
+    );
+  });
+
   it('rejects an outdated explicit update and foreign or unanswered discussion before writing', async () => {
     jest
       .spyOn(executorScope, 'isOpenClawAutomaticReviewConfigured')

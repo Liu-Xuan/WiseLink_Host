@@ -13,11 +13,15 @@ import { reviewOperationErrorPresentation } from '../../client/src/features/revi
 import { reviewUiTurn } from './fixtures/review-ui';
 
 describe('explicit assessment update scope', () => {
-  it('selects only answered same-scope chats after the last explicit update', () => {
+  it('excludes only chats included in a successful same-scope update', () => {
     const view = conversation(true);
     view.turns = [
       { ...reviewUiTurn(1, true), purpose: 'CHAT' },
-      { ...reviewUiTurn(2, true), purpose: 'UPDATE_ASSESSMENT' },
+      {
+        ...reviewUiTurn(2, true),
+        purpose: 'UPDATE_ASSESSMENT',
+        includedDiscussionTurnIds: ['TURN-1'],
+      },
       { ...reviewUiTurn(3, true), purpose: 'CHAT' },
       { ...reviewUiTurn(4), purpose: 'CHAT' },
       {
@@ -33,6 +37,35 @@ describe('explicit assessment update scope', () => {
     expect(latestAssessmentCandidateId(view.turns)).toBe('TURN-6');
     view.turns.push({ ...reviewUiTurn(7, true), purpose: 'CHAT' });
     expect(latestAssessmentCandidateId(view.turns)).toBe('TURN-6');
+  });
+  it('retains unconsumed chats after failed updates and does not infer consumption from turn order', () => {
+    const view = conversation(true);
+    view.turns = [
+      { ...reviewUiTurn(1, true), purpose: 'CHAT' },
+      { ...reviewUiTurn(2, true), purpose: 'CHAT' },
+      {
+        ...reviewUiTurn(3),
+        purpose: 'UPDATE_ASSESSMENT',
+        includedDiscussionTurnIds: ['TURN-1', 'TURN-2'],
+      },
+      {
+        ...reviewUiTurn(4, true),
+        purpose: 'UPDATE_ASSESSMENT',
+        includedDiscussionTurnIds: ['TURN-2'],
+      },
+    ];
+    expect(
+      assessmentDiscussionTurns(view).map((turn) => turn.reviewTurnId),
+    ).toEqual(['TURN-1']);
+    view.turns.push({
+      ...reviewUiTurn(5, true),
+      purpose: 'UPDATE_ASSESSMENT',
+      includedDiscussionTurnIds: ['TURN-1'],
+      reviewScope: { kind: 'ENGINEERING_MATTER', matterId: 'other' },
+    });
+    expect(
+      assessmentDiscussionTurns(view).map((turn) => turn.reviewTurnId),
+    ).toEqual(['TURN-1']);
   });
   it('copies reviewed IDs, version, scope and model without consuming a draft', () => {
     const view = conversation(true);
