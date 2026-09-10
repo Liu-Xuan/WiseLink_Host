@@ -22,6 +22,7 @@ import { hostActor } from './canonical-host-request-actor';
 import { EngineeringMatterService } from './engineering-matter.service';
 import { EngineeringMatterWorkingService } from './engineering-matter-working.service';
 import { EngineeringMatterDirectoryService } from './engineering-matter-directory.service';
+import { parseMatterMaterial } from './matter-material';
 
 @NeedLogin()
 @UseGuards(ProductionMiaodaBrowserObjectIngressGuard)
@@ -56,6 +57,50 @@ export class EngineeringMatterController {
   readWorking(@Param('matterId') matterId: string, @Req() request: Request) {
     return this.working.readWorking(
       requiredText(matterId, 'MATTER_ID', 96),
+      hostActor(request),
+    );
+  }
+
+  @Get(':matterId/materials')
+  readMaterials(@Param('matterId') matterId: string, @Req() request: Request) {
+    return this.matters.readMaterials(
+      requiredText(matterId, 'MATTER_ID', 96),
+      hostActor(request),
+    );
+  }
+
+  @Post(':matterId/materials')
+  reviseMaterials(
+    @Param('matterId') matterId: string,
+    @Body() body: unknown,
+    @Req() request: Request,
+  ) {
+    const value = strictBody(body, [
+      'requestId',
+      'expectedMatterRevision',
+      'changeSummary',
+      'upserts',
+    ]);
+    if (
+      !Number.isSafeInteger(value.expectedMatterRevision) ||
+      Number(value.expectedMatterRevision) < 1 ||
+      !Array.isArray(value.upserts) ||
+      value.upserts.length < 1 ||
+      value.upserts.length > 96
+    )
+      throw new BadRequestException('MATTER_MATERIAL_COMMAND_INVALID');
+    return this.matters.reviseMaterials(
+      requiredText(matterId, 'MATTER_ID', 96),
+      {
+        requestId: requiredText(value.requestId, 'REQUEST_ID', 96),
+        expectedMatterRevision: Number(value.expectedMatterRevision),
+        changeSummary: requiredText(
+          value.changeSummary,
+          'CHANGE_SUMMARY',
+          1000,
+        ),
+        upserts: value.upserts.map(parseMatterMaterial),
+      },
       hostActor(request),
     );
   }

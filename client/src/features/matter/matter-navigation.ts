@@ -39,7 +39,7 @@ export function buildMatterObjectContext(
     routeWorkItemId: '',
     displayCode: matter.title,
     title: working.current?.state.focus.question ?? '持续形成与修正工程认识',
-    meta: `${matter.catalog.entries.length} 份关联资料`,
+    meta: `${matter.catalog.entries.length + (matter.materials?.length ?? 0)} 项材料关系`,
     statusLabel: working.current
       ? `工作修订 ${working.currentWorkingRevision} · 候选认识`
       : '尚无事项综合认识',

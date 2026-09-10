@@ -46,6 +46,246 @@ const SB_WORK_ITEM_ID = 'WI-LOCAL-737-34-3830-ASSESSMENT';
 const REQUEST_REUSE_WORK_ITEM_ID = 'WI-DM-FTD-FD88DCB9CF64CF3B-RERUN';
 
 test(
+  'v5 direct family materials preserve scope, expectations, replay and full-source authorization',
+  { skip: !databaseUrl, concurrency: false },
+  async () => {
+    assertSafeIsolatedDatabase(databaseUrl);
+    const sql = postgres(databaseUrl, { max: 8, onnotice() {} });
+    const connections = [];
+    try {
+      const fixtures = await loadRealDocumentFixtures();
+      await resetDatabase(sql);
+      await seedRealDocumentWorkItems(sql, fixtures);
+      // The new path must authorize an acquired document even with no owned WI.
+      await sql`UPDATE work_item SET requested_by_user_id = 'actor-B' WHERE document_version_id = ${fixtures.ftd.documentVersionId}`;
+      await sql`UPDATE dm_publication_family SET canonical_identity_key = 'tenant:tenant-A:family:direct-ftd'
+        WHERE family_id = 'family_real_ftd_31_21002'`;
+      await sql`UPDATE dm_acquisition SET idempotency_key = 'tenant:tenant-A:request:direct-ftd', status = 'COMMITTED_CANONICAL'
+        WHERE document_version_id = ${fixtures.ftd.documentVersionId}`;
+      assert.equal(
+        (
+          await sql`SELECT engineering_matter_uri_component('租户 A/!') AS encoded`
+        )[0].encoded,
+        encodeURIComponent('租户 A/!'),
+      );
+      const owner = await reserveActorService('actor-A');
+      const second = await reserveActorService('actor-A');
+      const outsider = await reserveActorService('actor-B');
+      connections.push(owner, second, outsider);
+      const before = (await sql`SELECT count(*) AS n FROM work_item`)[0].n;
+      const binding = {
+        tenantId: 'tenant-A',
+        actorUserId: 'actor-A',
+        documentVersionId: fixtures.ftd.documentVersionId,
+      };
+      const results = await Promise.all([
+        owner.matters.ensureFamilyMatter(binding),
+        second.matters.ensureFamilyMatter(binding),
+      ]);
+      assert.equal(results.filter((x) => x.created).length, 1);
+      assert.equal(results[0].matterId, results[1].matterId);
+      const scope = { tenantId: 'tenant-A', matterId: results[0].matterId };
+      const original = await owner.matters.readMaterials(scope);
+      assert.equal(original.materials[0].kind, 'MEMBER');
+      assert.equal(
+        original.materials[0].documentVersionId,
+        fixtures.ftd.documentVersionId,
+      );
+      assert.equal((await owner.matters.loadCurrent(scope)).links.length, 0);
+      const pending = await owner.workingService.readWorking(
+        scope.matterId,
+        owner.actor,
+      );
+      assert.equal(pending.pendingInputs.length, 1);
+      assert.equal(pending.pendingInputs[0].current.kind, 'DOCUMENT_VERSION');
+      assert.equal(pending.pendingInputs[0].current.workItemId, null);
+      assert.equal(
+        (await sql`SELECT count(*) AS n FROM work_item`)[0].n,
+        before,
+      );
+      const independent = await owner.matters.ensureFamilyMatter({
+        ...binding,
+        documentVersionId: fixtures.sb.documentVersionId,
+      });
+      assert.notEqual(
+        independent.matterId,
+        scope.matterId,
+        'different families do not merge by classifier or similarity',
+      );
+      const expected = {
+        materialId: 'expected-followup',
+        kind: 'EXPECTED',
+        familyId: null,
+        documentVersionId: null,
+        scope: '构造测试：后续冷启动措施',
+        contribution: '核对措施范围',
+        basis: [
+          {
+            documentVersionId: fixtures.ftd.documentVersionId,
+            sourceRefId: 'synthetic-scope-source',
+          },
+        ],
+        origin: 'ENGINEER',
+        disposition: 'INCLUDED',
+        expected: {
+          issuer: 'OEM',
+          documentNumber: null,
+          description: '后续工程资料，未提供文号',
+          expectedContribution: '核对是否覆盖持续告警',
+          expectedDate: null,
+          sourceAsOf: '2026-09-11',
+          publicationStatus: 'PLANNED',
+          acquisitionStatus: 'NOT_ACQUIRED',
+          fulfilledBy: [],
+        },
+      };
+      const command = {
+        requestId: 'expected-1',
+        expectedMatterRevision: 1,
+        changeSummary: '构造预期资料协议，不代表真实文件内容。',
+        upserts: [expected],
+      };
+      const revision = await owner.matters.reviseMaterials({
+        ...scope,
+        actorUserId: 'actor-A',
+        command,
+      });
+      assert.equal(revision.materials.matterRevision, 2);
+      assert.equal(revision.materials.materials.length, 2);
+      const fulfilled = {
+        ...expected,
+        expected: {
+          ...expected.expected,
+          acquisitionStatus: 'PARTIALLY_ACQUIRED',
+          fulfilledBy: [
+            {
+              familyId: 'family_58068371edd11c2b3c8aecf0',
+              documentVersionId: fixtures.sb.documentVersionId,
+              scope: '仅所核对范围',
+            },
+          ],
+        },
+      };
+      await owner.matters.reviseMaterials({
+        ...scope,
+        actorUserId: 'actor-A',
+        command: {
+          requestId: 'expected-2',
+          expectedMatterRevision: 2,
+          changeSummary: '构造部分匹配。',
+          upserts: [fulfilled],
+        },
+      });
+      const replay = await owner.matters.reviseMaterials({
+        ...scope,
+        actorUserId: 'actor-A',
+        command,
+      });
+      assert.equal(replay.replayed, true);
+      assert.deepEqual(
+        replay.materials,
+        revision.materials,
+        'response-loss recovery returns the same historical composition',
+      );
+      await assert.rejects(
+        owner.matters.reviseMaterials({
+          ...scope,
+          actorUserId: 'actor-A',
+          command: {
+            ...command,
+            changeSummary: 'changed replay',
+          },
+        }),
+        /reused with new input/u,
+      );
+      await assert.rejects(
+        outsider.matters.readMaterials(scope),
+        /not available/u,
+      );
+      // A manually organized MEMBER remains authoritative without a default marker.
+      await sql`UPDATE engineering_matter SET default_family_id = NULL WHERE matter_id = ${scope.matterId}`;
+      const reusedExplicit = await owner.matters.ensureFamilyMatter(binding);
+      assert.equal(reusedExplicit.matterId, scope.matterId);
+      assert.equal(reusedExplicit.created, false);
+      const relatedScope = {
+        tenantId: 'tenant-A',
+        matterId: independent.matterId,
+      };
+      await owner.matters.reviseMaterials({
+        ...relatedScope,
+        actorUserId: 'actor-A',
+        command: {
+          requestId: 'related-family',
+          expectedMatterRevision: 1,
+          changeSummary: '构造跨事项相关材料，保留其范围。',
+          upserts: [
+            {
+              ...original.materials[0],
+              materialId: 'related-ftd',
+              kind: 'RELATED',
+              origin: 'ENGINEER',
+              scope: '限定相关范围',
+            },
+          ],
+        },
+      });
+      const newerVersionId = 'document_version_constructed_r2';
+      await sql`INSERT INTO dm_document_version
+        SELECT (jsonb_populate_record(NULL::dm_document_version, to_jsonb(v) || jsonb_build_object(
+          'id', gen_random_uuid(), 'document_version_id', ${newerVersionId}::text,
+          'revision_id', 'constructed-r2', 'canonical_revision_identity', 'CONSTRUCTED:R2',
+          'business_revision', 'CONSTRUCTED R2', 'acquisition_id', 'acquisition_constructed_r2'))).*
+        FROM dm_document_version v WHERE v.document_version_id = ${fixtures.ftd.documentVersionId}`;
+      await sql`INSERT INTO dm_acquisition
+        SELECT (jsonb_populate_record(NULL::dm_acquisition, to_jsonb(a) || jsonb_build_object(
+          'id', gen_random_uuid(), 'acquisition_id', 'acquisition_constructed_r2',
+          'document_version_id', ${newerVersionId}::text, 'idempotency_key', 'tenant:tenant-A:request:constructed-r2'))).*
+        FROM dm_acquisition a WHERE a.document_version_id = ${fixtures.ftd.documentVersionId}`;
+      await sql`UPDATE dm_publication_family SET current_document_version_id = ${newerVersionId}, current_generation = 2
+        WHERE family_id = 'family_real_ftd_31_21002'`;
+      const continued = await owner.matters.ensureFamilyMatter({
+        ...binding,
+        documentVersionId: newerVersionId,
+      });
+      assert.equal(continued.matterId, scope.matterId);
+      assert.equal(continued.created, false);
+      const changed = await owner.matters.readMaterials(scope);
+      assert.equal(changed.matterRevision, 4);
+      assert.equal(
+        changed.materials.find((x) => x.kind === 'MEMBER').documentVersionId,
+        newerVersionId,
+      );
+      const relatedChanged = await owner.matters.readMaterials(relatedScope);
+      assert.equal(relatedChanged.matterRevision, 3);
+      const relatedMaterial = relatedChanged.materials.find(
+        (x) => x.kind === 'RELATED',
+      );
+      assert.equal(relatedMaterial.documentVersionId, newerVersionId);
+      assert.equal(relatedMaterial.scope, '限定相关范围');
+      await owner.matters.ensureFamilyMatter(binding);
+      assert.deepEqual(
+        await owner.matters.readMaterials(scope),
+        changed,
+        'late older intake does not roll back the selected material version',
+      );
+      await sql`UPDATE work_item SET requested_by_user_id = 'actor-B' WHERE work_item_id = ${SB_WORK_ITEM_ID}`;
+      await assert.rejects(
+        owner.matters.readMaterials(scope),
+        /not available/u,
+        'a revoked fulfilled source hides the whole current composition',
+      );
+      assert.equal(
+        (await sql`SELECT count(*) AS n FROM work_item`)[0].n,
+        before,
+      );
+    } finally {
+      for (const connection of connections) await connection.release();
+      await sql.end();
+    }
+  },
+);
+
+test(
   'R09 Engineering Matter creates, revises and reads two real-document WorkItems with fresh ACL/currentness',
   { skip: !databaseUrl, concurrency: false },
   async () => {
@@ -501,6 +741,10 @@ async function resetDatabase(sql) {
     'migrations/0001_document_management_hosted_catalog.sql',
   );
   await applyMigration(sql, 'migrations/0014_engineering_matter_catalog.sql');
+  await sql.unsafe(
+    'ALTER TABLE work_item ADD COLUMN initial_aily_session_id uuid',
+  );
+  await applyMigration(sql, 'migrations/0032_engineering_matter_material.sql');
   await applyMigration(
     sql,
     'migrations/0023_engineering_matter_working_state.sql',
@@ -538,6 +782,10 @@ async function resetDatabase(sql) {
   // PostgreSQL row-locking SELECT also requires UPDATE privilege. The same
   // owner RLS policy continues to apply; only this isolated fixture grants it.
   await sql.unsafe('GRANT UPDATE ON work_item TO authenticated');
+  await sql.unsafe('GRANT UPDATE ON dm_publication_family TO authenticated');
+  await sql.unsafe(
+    'GRANT SELECT, INSERT ON engineering_matter_material_link TO authenticated, service_role',
+  );
   // Isolated equivalents of the platform's existing table privileges and
   // Hosted actor policies. No production GRANT is introduced by migration 24.
   await sql.unsafe('GRANT USAGE ON SCHEMA public TO service_role');
@@ -922,6 +1170,7 @@ async function reserveActorService(actorId, tenantId = 'tenant-A') {
     );
     return {
       service,
+      matters,
       working,
       workingService,
       database: db,
@@ -1366,7 +1615,7 @@ async function assertSecurityDefinerAndDirectRlsDenials(sql, matterId) {
       )
     ORDER BY procedure.proname
   `;
-  assert.equal(functions.length, 5);
+  assert.equal(functions.length, 7);
   for (const fn of functions) {
     assert.equal(fn.prosecdef, true, fn.proname);
     assert.equal(fn.returns_boolean, true, fn.proname);

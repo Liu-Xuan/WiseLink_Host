@@ -19,6 +19,7 @@ import type {
 import AssessmentReadingBrief from './AssessmentReadingBrief';
 import ClaimEvidenceDialog from './ClaimEvidenceDialog';
 import MatterMembers from './MatterMembers';
+import MatterMaterials from './MatterMaterials';
 import MatterWorkingDetails from './MatterWorkingDetails';
 import {
   readSavedAssessmentClaim,
@@ -190,7 +191,10 @@ const MatterWorkspace: FC<MatterWorkspaceProps> = ({
       <header className="flex flex-wrap items-center justify-between gap-4">
         <div className="space-y-1">
           <p className="text-xs text-muted-foreground">
-            工程事项 · {data.matter.catalog.entries.length} 份关联资料
+            工程事项 ·{' '}
+            {data.matter.catalog.entries.length +
+              (data.matter.materials?.length ?? 0)}{' '}
+            项材料关系
           </p>
           <h1 className="break-words text-2xl font-semibold">
             {data.matter.title}
@@ -353,6 +357,7 @@ const MatterWorkspace: FC<MatterWorkspaceProps> = ({
         </div>
         <div className="grid gap-6 xl:grid-cols-[minmax(0,1fr)_20rem]">
           <div className="wl-overall-hero wl-glass-content">
+            <MatterMaterials materials={data.matter.materials ?? []} />
             <MatterMembers
               members={data.matter.catalog.entries}
               onOpenMember={(member: EngineeringMatterCatalogEntry) =>

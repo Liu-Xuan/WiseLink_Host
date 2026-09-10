@@ -15,7 +15,7 @@ export interface EngineeringMatterWorkingFocus {
 }
 
 /** Exact Host-owned input identity observed for one Matter working revision. */
-export interface EngineeringMatterWorkingInputBinding {
+export interface EngineeringMatterWorkItemInputBinding {
   /** Stable within the Matter. The first increment uses the WorkItem id. */
   inputId: string;
   workItemId: string;
@@ -24,6 +24,21 @@ export interface EngineeringMatterWorkingInputBinding {
   resultRef: string | null;
   resultRevision: number | null;
 }
+
+export interface EngineeringMatterDocumentInputBinding {
+  kind: 'DOCUMENT_VERSION';
+  inputId: string;
+  familyId: string;
+  documentVersionId: string;
+  workItemId: null;
+  workItemRevision: null;
+  resultRef: null;
+  resultRevision: null;
+}
+
+export type EngineeringMatterWorkingInputBinding =
+  | EngineeringMatterWorkItemInputBinding
+  | EngineeringMatterDocumentInputBinding;
 
 export interface EngineeringMatterWorkingTextItem {
   itemId: string;

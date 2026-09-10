@@ -899,7 +899,7 @@ function validatedInputBindings(
   value.forEach(validateBinding);
   uniqueMap(value, 'inputId', 'ENGINEERING_MATTER_WORKING_INPUT_ID_DUPLICATE');
   uniqueMap(
-    value,
+    value.filter((item) => item.workItemId !== null),
     'workItemId',
     'ENGINEERING_MATTER_WORKING_INPUT_WORK_ITEM_DUPLICATE',
   );
@@ -911,6 +911,21 @@ function validateBinding(
 ): asserts value is EngineeringMatterWorkingInputBinding {
   if (!isRecord(value)) fail('ENGINEERING_MATTER_WORKING_INPUT_INVALID');
   requiredText(value.inputId, 'ENGINEERING_MATTER_WORKING_INPUT_ID_REQUIRED');
+  if (value.kind === 'DOCUMENT_VERSION') {
+    requiredText(value.familyId, 'ENGINEERING_MATTER_WORKING_FAMILY_REQUIRED');
+    requiredText(
+      value.documentVersionId,
+      'ENGINEERING_MATTER_WORKING_DOCUMENT_VERSION_REQUIRED',
+    );
+    if (
+      value.workItemId !== null ||
+      value.workItemRevision !== null ||
+      value.resultRef !== null ||
+      value.resultRevision !== null
+    )
+      fail('ENGINEERING_MATTER_WORKING_DIRECT_INPUT_INVALID');
+    return;
+  }
   requiredText(
     value.workItemId,
     'ENGINEERING_MATTER_WORKING_WORK_ITEM_ID_REQUIRED',

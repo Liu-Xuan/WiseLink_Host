@@ -1,4 +1,7 @@
-import { Inject, Injectable } from '@nestjs/common';
+import { Inject, Injectable, Optional } from '@nestjs/common';
+import type { ReviseMatterMaterialsRequest } from '@shared/matter-material.interface';
+import { isHostedCanonicalFinalUserActor } from '../work-item/miaoda-hosted-canonical-object-access.adapter';
+import { EngineeringMatterWorkingRepository } from './engineering-matter-working.repository';
 
 import type {
   CreateEngineeringMatterRequest,
@@ -42,7 +45,48 @@ export class EngineeringMatterService {
     private readonly documentVersions: MiaodaDocumentVersionSourceResolver,
     @Inject(CANONICAL_OBJECT_ACCESS)
     private readonly objectAccess: CanonicalObjectAccessPort,
+    @Optional()
+    private readonly actorTransactions?: EngineeringMatterWorkingRepository,
   ) {}
+
+  /** Called only after the normal DM upload has persisted and authorized its source. */
+  async organizeDocumentIntake(input: {
+    tenantId: string;
+    actorUserId: string;
+    documentVersionId: string;
+  }) {
+    if (!this.actorTransactions)
+      throw new Error('MATTER_MATERIAL_RUNTIME_UNAVAILABLE');
+    return this.actorTransactions.withActorTransaction(
+      input.actorUserId,
+      ({ database }) => this.matters.ensureFamilyMatter(input, database),
+    );
+  }
+
+  async readMaterials(matterId: string, actor: CanonicalHostActor) {
+    requireNativeMaterialActor(actor);
+    return this.matters.readMaterials({ tenantId: actor.tenantId, matterId });
+  }
+
+  async reviseMaterials(
+    matterId: string,
+    command: ReviseMatterMaterialsRequest,
+    actor: CanonicalHostActor,
+  ) {
+    requireNativeMaterialActor(actor);
+    // A browser correction is an engineer instruction, never an inferred document fact.
+    if (command.upserts.some((material) => material.origin !== 'ENGINEER'))
+      throw Object.assign(
+        new Error('MATTER_MATERIAL_ENGINEER_ORIGIN_REQUIRED'),
+        { statusCode: 400 },
+      );
+    return this.matters.reviseMaterials({
+      tenantId: actor.tenantId,
+      actorUserId: actor.userId,
+      matterId,
+      command,
+    });
+  }
 
   async create(
     input: CreateEngineeringMatterRequest,
@@ -129,6 +173,7 @@ export class EngineeringMatterService {
     const snapshot: EngineeringMatterSnapshot | null =
       await this.matters.loadCurrent({ tenantId: actor.tenantId, matterId });
     if (!snapshot) throw matterNotFound();
+    if (snapshot.materials?.length) requireNativeMaterialActor(actor);
     const entries: EngineeringMatterCatalogEntry[] = await Promise.all(
       snapshot.links.map(
         async (
@@ -150,7 +195,10 @@ export class EngineeringMatterService {
       throw matterReadConflict();
     }
     return {
-      schemaVersion: 'wiselink.3_1.engineering_matter_catalog.v1',
+      schemaVersion: snapshot.materials?.length
+        ? 'wiselink.3_1.engineering_matter_catalog.v2'
+        : 'wiselink.3_1.engineering_matter_catalog.v1',
+      ...(snapshot.materials?.length ? { materials: snapshot.materials } : {}),
       matterId: snapshot.matterId,
       title: snapshot.title,
       status: snapshot.status,
@@ -161,15 +209,22 @@ export class EngineeringMatterService {
         changeSummary: snapshot.changeSummary,
         createdAt: snapshot.revisionCreatedAt.toISOString(),
       },
-      catalog: { scope: 'CROSS_WORK_ITEM', entries },
+      catalog: {
+        scope: snapshot.materials?.length
+          ? 'MATTER_MATERIALS'
+          : 'CROSS_WORK_ITEM',
+        entries,
+      },
       authorization: {
-        policy: 'ALL_LINKED_WORK_ITEMS_REQUIRED',
+        policy: snapshot.materials?.length
+          ? 'ALL_MATERIAL_SOURCES_REQUIRED'
+          : 'ALL_LINKED_WORK_ITEMS_REQUIRED',
         authorizedWorkItemCount: entries.length,
       },
       authority: {
         workItemCurrentRemainsAuthoritative: true,
         documentManagementRemainsAuthoritative: true,
-        sourceRefsRemainWorkItemScoped: true,
+        sourceRefsRemainWorkItemScoped: !snapshot.materials?.length,
         matterCreatesAssessmentCurrent: false,
       },
     };
@@ -232,6 +287,20 @@ export class EngineeringMatterService {
       throw workItemDocumentConflict();
     }
     return { scoped, source };
+  }
+}
+
+function requireNativeMaterialActor(actor: CanonicalHostActor): void {
+  const identity = actor.objectAccessActor;
+  if (
+    !identity ||
+    !isHostedCanonicalFinalUserActor(identity) ||
+    identity.tenantId !== actor.tenantId ||
+    identity.canonicalSubject.id !== actor.userId
+  ) {
+    throw Object.assign(new Error('CANONICAL_IDENTITY_HANDOFF_UNAVAILABLE'), {
+      statusCode: 503,
+    });
   }
 }
 

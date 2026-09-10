@@ -5,9 +5,16 @@ import {
   DRIZZLE_DATABASE,
   type PostgresJsDatabase,
 } from '@lark-apaas/fullstack-nestjs-core';
-import { and, asc, eq } from 'drizzle-orm';
+import { and, asc, eq, sql } from 'drizzle-orm';
 
 import type { EngineeringMatterWorkItemRole } from '@shared/api.interface';
+import type {
+  MatterMaterialLink,
+  MatterMaterialsReadModel,
+  ReviseMatterMaterialsRequest,
+} from '@shared/matter-material.interface';
+import { canonicalJson } from '../action-attempt/action-attempt-envelope';
+import { mergeMatterMaterials, parseMatterMaterial } from './matter-material';
 
 import {
   engineeringMatter,
@@ -29,10 +36,11 @@ export interface EngineeringMatterSnapshot {
   status: 'ACTIVE';
   currentRevisionNo: number;
   currentMatterRevisionId: string;
-  changeKind: 'CREATED' | 'WORK_ITEM_LINKED';
+  changeKind: 'CREATED' | 'WORK_ITEM_LINKED' | 'MATERIALS_REVISED';
   changeSummary: string;
   revisionCreatedAt: Date;
   links: EngineeringMatterRevisionLinkSnapshot[];
+  materials?: MatterMaterialLink[];
 }
 
 export interface EngineeringMatterCreateResult {
@@ -51,6 +59,258 @@ export class EngineeringMatterRepository {
   constructor(
     @Inject(DRIZZLE_DATABASE) private readonly db: PostgresJsDatabase,
   ) {}
+
+  /** Uses a real DocumentVersion and the existing owner management scope. */
+  async ensureFamilyMatter(
+    input: {
+      tenantId: string;
+      actorUserId: string;
+      documentVersionId: string;
+    },
+    executor: PostgresJsDatabase = this.db,
+  ): Promise<{ matterId: string; created: boolean }> {
+    return executor.transaction(async (database) => {
+      const [source] = await database.execute<{
+        family_id: string;
+        canonical_document_number: string;
+        current_document_version_id: string | null;
+      }>(sql`
+        SELECT f.family_id, f.canonical_document_number, f.current_document_version_id
+        FROM dm_document_version v JOIN dm_publication_family f ON f.family_id = v.family_id
+        WHERE v.document_version_id = ${input.documentVersionId}
+          AND engineering_matter_document_owned_by_actor(${input.tenantId}::varchar, v.document_version_id)
+          AND current_setting('app.user_id', true) = ${input.actorUserId}
+          AND v.lifecycle_status = 'COMMITTED_IMMUTABLE'
+        FOR UPDATE OF f`);
+      if (!source) throw matterNotFound();
+      // Discover current explicit membership before creating a default. Related
+      // scopes follow source changes too, but do not imply membership.
+      const affected = await database.execute<{
+        matter_id: string;
+        is_member: boolean;
+      }>(sql`
+        SELECT m.matter_id,
+          (m.default_family_id = ${source.family_id} OR EXISTS (
+            SELECT 1 FROM engineering_matter_material_link l
+            WHERE l.matter_revision_id = m.current_matter_revision_id
+              AND l.family_id = ${source.family_id} AND l.kind = 'MEMBER'
+              AND l.material_json::jsonb ->> 'disposition' = 'INCLUDED'
+          )) IS TRUE AS is_member
+        FROM engineering_matter m
+        WHERE m.tenant_id = ${input.tenantId} AND m.created_by_user_id = ${input.actorUserId}
+          AND (m.default_family_id = ${source.family_id} OR EXISTS (
+            SELECT 1 FROM engineering_matter_material_link l
+            WHERE l.matter_revision_id = m.current_matter_revision_id
+              AND l.family_id = ${source.family_id}
+              AND l.material_json::jsonb ->> 'disposition' = 'INCLUDED'
+          ))
+        ORDER BY m.matter_id
+        FOR UPDATE OF m`);
+      for (const existing of affected) {
+        if (source.current_document_version_id !== input.documentVersionId)
+          continue;
+        const current = await this.readMaterials(
+          { tenantId: input.tenantId, matterId: existing.matter_id },
+          database,
+        );
+        const upserts = current.materials
+          .filter(
+            (material) =>
+              material.kind !== 'EXPECTED' &&
+              material.familyId === source.family_id &&
+              material.documentVersionId !== input.documentVersionId &&
+              material.disposition === 'INCLUDED',
+          )
+          .map(
+            (material) =>
+              ({
+                ...material,
+                documentVersionId: input.documentVersionId,
+              }) as MatterMaterialLink,
+          );
+        if (upserts.length)
+          await this.reviseMaterials(
+            {
+              ...input,
+              matterId: existing.matter_id,
+              command: {
+                requestId: `source-${randomUUID()}`,
+                expectedMatterRevision: current.matterRevision,
+                changeSummary:
+                  '同一文件 family 的当前版本已变化；后继分析尚待覆盖。',
+                upserts,
+              },
+            },
+            database,
+          );
+      }
+      const existingMember = affected.find((matter) => matter.is_member);
+      if (existingMember)
+        return { matterId: existingMember.matter_id, created: false };
+      const matterId = `MAT-${randomUUID()}`;
+      const revisionId = `MREV-${randomUUID()}`;
+      const requestId = `family:${source.family_id}`;
+      const material: MatterMaterialLink = {
+        materialId: `family:${source.family_id}`,
+        kind: 'MEMBER',
+        familyId: source.family_id,
+        documentVersionId: input.documentVersionId,
+        scope: '正式受理文件的工程问题范围，目标适用性仍需分析。',
+        contribution: '默认主文件；后续按实际问题连续性调整材料关系。',
+        basis: [],
+        origin: 'DEFAULT_INTAKE',
+        disposition: 'INCLUDED',
+      };
+      const command = canonicalJson({
+        documentVersionId: input.documentVersionId,
+        material,
+      });
+      await database.execute(sql`INSERT INTO engineering_matter
+        (matter_id, tenant_id, title, status, current_revision_no, current_matter_revision_id,
+         request_id, created_by_user_id, default_family_id)
+        VALUES (${matterId}, ${input.tenantId}, ${source.canonical_document_number}, 'ACTIVE', 1,
+          ${revisionId}, ${requestId}, ${input.actorUserId}, ${source.family_id})`);
+      await database.execute(sql`INSERT INTO engineering_matter_revision
+        (matter_revision_id, matter_id, tenant_id, revision_no, request_id, change_kind,
+         change_summary, changed_work_item_id, created_by_user_id, material_command_json)
+        VALUES (${revisionId}, ${matterId}, ${input.tenantId}, 1, ${requestId}, 'CREATED',
+          '正式文件首次受理，按 family 建立工程事项。', NULL, ${input.actorUserId}, ${command})`);
+      await insertMaterials(database, { ...input, matterId, revisionId }, [
+        material,
+      ]);
+      return { matterId, created: true };
+    });
+  }
+
+  async readMaterials(
+    input: { tenantId: string; matterId: string },
+    database = this.db,
+  ): Promise<MatterMaterialsReadModel> {
+    const [matter] = await database.execute<{
+      current_matter_revision_id: string;
+      current_revision_no: number;
+    }>(sql`
+      SELECT current_matter_revision_id, current_revision_no FROM engineering_matter
+      WHERE tenant_id = ${input.tenantId} AND matter_id = ${input.matterId}`);
+    if (!matter) throw matterNotFound();
+    return {
+      matterId: input.matterId,
+      matterRevisionId: matter.current_matter_revision_id,
+      matterRevision: matter.current_revision_no,
+      materials: await loadMaterials(
+        database,
+        input.tenantId,
+        input.matterId,
+        matter.current_matter_revision_id,
+      ),
+    };
+  }
+
+  async reviseMaterials(
+    input: {
+      tenantId: string;
+      actorUserId: string;
+      matterId: string;
+      command: ReviseMatterMaterialsRequest;
+    },
+    executor: PostgresJsDatabase = this.db,
+  ): Promise<{ materials: MatterMaterialsReadModel; replayed: boolean }> {
+    const command = input.command;
+    if (
+      !/^[A-Za-z0-9:_-]{1,96}$/u.test(command.requestId) ||
+      !Number.isSafeInteger(command.expectedMatterRevision) ||
+      command.expectedMatterRevision < 1 ||
+      typeof command.changeSummary !== 'string' ||
+      !command.changeSummary.trim() ||
+      command.changeSummary.length > 1000 ||
+      !Array.isArray(command.upserts) ||
+      command.upserts.length < 1 ||
+      command.upserts.length > 96
+    ) {
+      throw new Error('MATTER_MATERIAL_COMMAND_INVALID');
+    }
+    command.upserts.forEach(parseMatterMaterial);
+    const commandJson = canonicalJson(command);
+    return executor.transaction(async (database) => {
+      const [matter] = await database.execute<{
+        current_matter_revision_id: string;
+        current_revision_no: number;
+      }>(sql`
+        SELECT current_matter_revision_id, current_revision_no FROM engineering_matter
+        WHERE tenant_id = ${input.tenantId} AND matter_id = ${input.matterId}
+          AND created_by_user_id = ${input.actorUserId}
+          AND current_setting('app.user_id', true) = ${input.actorUserId}
+        FOR UPDATE`);
+      if (!matter) throw matterNotFound();
+      const [replay] = await database.execute<{
+        matter_revision_id: string;
+        revision_no: number;
+        material_command_json: string | null;
+      }>(sql`
+        SELECT matter_revision_id, revision_no, material_command_json FROM engineering_matter_revision
+        WHERE tenant_id = ${input.tenantId} AND matter_id = ${input.matterId} AND request_id = ${command.requestId}`);
+      if (replay) {
+        if (replay.material_command_json !== commandJson)
+          throw matterRequestReplayMismatch();
+        return {
+          replayed: true,
+          materials: {
+            matterId: input.matterId,
+            matterRevisionId: replay.matter_revision_id,
+            matterRevision: replay.revision_no,
+            materials: await loadMaterials(
+              database,
+              input.tenantId,
+              input.matterId,
+              replay.matter_revision_id,
+            ),
+          },
+        };
+      }
+      if (matter.current_revision_no !== command.expectedMatterRevision)
+        throw matterCasConflict();
+      const before = await loadMaterials(
+        database,
+        input.tenantId,
+        input.matterId,
+        matter.current_matter_revision_id,
+      );
+      const materials = mergeMatterMaterials(before, command.upserts);
+      const revisionId = `MREV-${randomUUID()}`;
+      const revisionNo = matter.current_revision_no + 1;
+      await database.execute(sql`INSERT INTO engineering_matter_revision
+        (matter_revision_id, matter_id, tenant_id, revision_no, request_id, change_kind, change_summary,
+         changed_work_item_id, created_by_user_id, material_command_json)
+        VALUES (${revisionId}, ${input.matterId}, ${input.tenantId}, ${revisionNo}, ${command.requestId},
+          'MATERIALS_REVISED', ${command.changeSummary}, NULL, ${input.actorUserId}, ${commandJson})`);
+      await database.execute(sql`INSERT INTO engineering_matter_revision_work_item
+        (matter_revision_id, matter_id, tenant_id, work_item_id, ordinal, relation_role, linked_at_work_item_revision)
+        SELECT ${revisionId}, matter_id, tenant_id, work_item_id, ordinal, relation_role, linked_at_work_item_revision
+        FROM engineering_matter_revision_work_item WHERE tenant_id = ${input.tenantId}
+          AND matter_id = ${input.matterId} AND matter_revision_id = ${matter.current_matter_revision_id}`);
+      await insertMaterials(database, { ...input, revisionId }, materials);
+      const updated = await database.execute(sql`UPDATE engineering_matter
+        SET current_matter_revision_id = ${revisionId}, current_revision_no = ${revisionNo}, updated_at = CURRENT_TIMESTAMP
+        WHERE tenant_id = ${input.tenantId} AND matter_id = ${input.matterId}
+          AND current_revision_no = ${command.expectedMatterRevision}
+          AND current_matter_revision_id = ${matter.current_matter_revision_id} RETURNING matter_id`);
+      if (updated.length !== 1) throw matterCasConflict();
+      return {
+        replayed: false,
+        materials: {
+          matterId: input.matterId,
+          matterRevisionId: revisionId,
+          matterRevision: revisionNo,
+          materials: await loadMaterials(
+            database,
+            input.tenantId,
+            input.matterId,
+            revisionId,
+          ),
+        },
+      };
+    });
+  }
 
   async create(input: {
     tenantId: string;
@@ -203,6 +463,16 @@ export class EngineeringMatterRepository {
         await transaction
           .insert(engineeringMatterRevisionWorkItem)
           .values(copiedLinks);
+        await insertMaterials(
+          transaction as PostgresJsDatabase,
+          {
+            tenantId: input.tenantId,
+            actorUserId: input.actorUserId,
+            matterId: input.matterId,
+            revisionId: nextMatterRevisionId,
+          },
+          current.materials ?? [],
+        );
         const updated: Array<{ matterId: string }> = await transaction
           .update(engineeringMatter)
           .set({
@@ -308,7 +578,9 @@ export class EngineeringMatterRepository {
     if (
       row.status !== 'ACTIVE' ||
       row.revisionNo !== row.currentRevisionNo ||
-      (row.changeKind !== 'CREATED' && row.changeKind !== 'WORK_ITEM_LINKED')
+      !['CREATED', 'WORK_ITEM_LINKED', 'MATERIALS_REVISED'].includes(
+        row.changeKind,
+      )
     ) {
       throw matterPersistenceError();
     }
@@ -328,7 +600,14 @@ export class EngineeringMatterRepository {
         ),
       )
       .orderBy(asc(engineeringMatterRevisionWorkItem.ordinal));
-    if (linkRows.length === 0) throw matterPersistenceError();
+    const materials = await loadMaterials(
+      executor,
+      row.tenantId,
+      row.matterId,
+      row.currentMatterRevisionId,
+    );
+    if (linkRows.length === 0 && materials.length === 0)
+      throw matterPersistenceError();
     const links: EngineeringMatterRevisionLinkSnapshot[] = linkRows.map(
       (link: typeof engineeringMatterRevisionWorkItem.$inferSelect) => ({
         workItemId: link.workItemId,
@@ -344,10 +623,11 @@ export class EngineeringMatterRepository {
       status: row.status,
       currentRevisionNo: row.currentRevisionNo,
       currentMatterRevisionId: row.currentMatterRevisionId,
-      changeKind: row.changeKind,
+      changeKind: row.changeKind as EngineeringMatterSnapshot['changeKind'],
       changeSummary: row.changeSummary,
       revisionCreatedAt: row.revisionCreatedAt,
       links,
+      ...(materials.length ? { materials } : {}),
     };
   }
 
@@ -408,6 +688,37 @@ interface EngineeringMatterRevisionRequest {
   changedWorkItemId: string;
   changeKind: 'CREATED' | 'WORK_ITEM_LINKED';
   changeSummary: string;
+}
+
+export async function loadMaterials(
+  database: PostgresJsDatabase,
+  tenantId: string,
+  matterId: string,
+  revisionId: string,
+): Promise<MatterMaterialLink[]> {
+  const rows = await database.execute<{ material_json: string }>(sql`
+    SELECT material_json FROM engineering_matter_material_link
+    WHERE tenant_id = ${tenantId} AND matter_id = ${matterId} AND matter_revision_id = ${revisionId}
+    ORDER BY material_id`);
+  return rows.map((row) => parseMatterMaterial(JSON.parse(row.material_json)));
+}
+
+async function insertMaterials(
+  database: PostgresJsDatabase,
+  scope: {
+    tenantId: string;
+    actorUserId: string;
+    matterId: string;
+    revisionId: string;
+  },
+  materials: MatterMaterialLink[],
+): Promise<void> {
+  for (const material of materials) {
+    await database.execute(sql`INSERT INTO engineering_matter_material_link
+      (tenant_id, matter_id, matter_revision_id, material_id, kind, family_id, document_version_id, material_json, created_by_user_id)
+      VALUES (${scope.tenantId}, ${scope.matterId}, ${scope.revisionId}, ${material.materialId}, ${material.kind},
+        ${material.familyId}, ${material.documentVersionId}, ${canonicalJson(material)}, ${scope.actorUserId})`);
+  }
 }
 
 function requiredRole(value: string): EngineeringMatterWorkItemRole {

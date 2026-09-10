@@ -154,7 +154,7 @@ export class EngineeringMatterDirectoryService {
           (entry) => entry.relationRole === 'PRIMARY',
         );
         if (
-          primary.length !== 1 ||
+          (primary.length !== 1 && !matter.materials?.length) ||
           matter.currentRevision.matterRevisionId !==
             working.currentMatterRevisionId
         )
@@ -172,7 +172,7 @@ export class EngineeringMatterDirectoryService {
         return {
           matterId: matter.matterId,
           title: matter.title,
-          primaryWorkItemId: primary[0].workItemId,
+          primaryWorkItemId: primary[0]?.workItemId ?? null,
           createdAt: row.createdAt.toISOString(),
           updatedAt: working.current?.createdAt ?? row.updatedAt.toISOString(),
           currentMatterRevisionId: working.currentMatterRevisionId,

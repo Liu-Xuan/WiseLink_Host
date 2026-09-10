@@ -6,7 +6,8 @@ import { createHash } from 'node:crypto';
 import { PdfjsDistLayoutExtractor } from '../../../../professional-input/parser/pdfjs-dist-layout-extractor.adapter';
 import { controlledPdfByteView, readActualPdfPageCount } from '../../migrated/ingress/pdfDocumentIdentityOwner.js';
 import { extractActualPdfMetadata } from '../../migrated/ingress/pdfDocumentMetadata.js';
-import { HttpException, Inject, Injectable } from '@nestjs/common';
+import { HttpException, Inject, Injectable, Optional } from '@nestjs/common';
+import { EngineeringMatterService } from '../../../../canonical-host/engineering-matter.service';
 import { FileService } from '@lark-apaas/fullstack-nestjs-core';
 
 import { DocumentManagementHostedCore } from '../documentManagementHostedCore.js';
@@ -63,6 +64,7 @@ export class DocumentManagementHostedService {
     private readonly catalog: MiaodaHostedDocumentCatalog,
     @Inject(DOCUMENT_MANAGEMENT_INGEST_AUTHORIZER)
     private readonly authorizer: DocumentManagementIngestAuthorizer,
+    @Optional() private readonly matters?: EngineeringMatterService,
   ) {
     this.artifactStore = new MiaodaFileServiceArtifactStore(fileService);
     this.core = new DocumentManagementHostedCore({
@@ -121,6 +123,18 @@ export class DocumentManagementHostedService {
 
   private async uploadResponseWithCurrent(receipt: Record<string, unknown>, context: HostedRequestContext): Promise<DocumentUploadResponse> {
     const response = documentUploadResponse(receipt);
+    if (response.status === 'COMMITTED' && response.documentVersionId) {
+      try {
+        if (!this.matters) throw new Error('MATTER_MATERIAL_RUNTIME_UNAVAILABLE');
+        const organized = await this.matters.organizeDocumentIntake({
+          tenantId: context.tenantId, actorUserId: context.actorUserId, documentVersionId: response.documentVersionId,
+        });
+        response.matterId = organized.matterId;
+      } catch (cause: unknown) {
+        throw new HttpException({ code: 'DOCUMENT_SAVED_MATTER_PENDING',
+          message: '文件已保存，事项归集尚未完成。请用原上传请求重试。' }, 503, { cause });
+      }
+    }
     const currentId = response.historicalImport?.expectedCurrentDocumentVersionId;
     if (!currentId) return response;
     try {

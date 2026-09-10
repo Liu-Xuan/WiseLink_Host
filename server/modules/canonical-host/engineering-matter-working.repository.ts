@@ -28,6 +28,8 @@ import {
   workItem,
 } from '../../database/schema';
 import { canonicalJson } from '../action-attempt/action-attempt-envelope';
+import { loadMaterials } from './engineering-matter.repository';
+import { materialInputBindings } from './matter-material';
 import {
   assertEngineeringMatterWorkingBindingsCurrent,
   engineeringMatterWorkingChangeFromCommand,
@@ -125,7 +127,11 @@ export class EngineeringMatterWorkingRepository {
     return new Promise<T>((resolve, reject) => {
       this.sqlContext.use(
         {
-          userContext: { userId: actorUserId, isSystemAccount: true, roles: [] },
+          userContext: {
+            userId: actorUserId,
+            isSystemAccount: true,
+            roles: [],
+          },
         } as Request,
         {} as Response,
         () => {
@@ -572,21 +578,31 @@ async function loadCurrentInputBindings(
   const rows = await (lockMembers
     ? query.for('share', { of: workItem })
     : query);
-  if (rows.length === 0) throw workingPersistenceError();
+  const materials = await loadMaterials(
+    executor,
+    input.tenantId,
+    input.matterId,
+    input.matterRevisionId,
+  );
+  if (rows.length === 0 && materials.length === 0)
+    throw workingPersistenceError();
   if (
     requiredActorUserId &&
     rows.some((row) => row.requestedByUserId !== requiredActorUserId)
   ) {
     throw runtimeAuthorizationUnavailable();
   }
-  return rows.map((row) =>
-    engineeringMatterInputBinding({
-      workItemId: row.workItemId,
-      workItemRevision: row.workItemRevision,
-      documentVersionId: row.documentVersionId,
-      projection: parseProjection(row.projectionJson),
-    }),
-  );
+  return [
+    ...rows.map((row) =>
+      engineeringMatterInputBinding({
+        workItemId: row.workItemId,
+        workItemRevision: row.workItemRevision,
+        documentVersionId: row.documentVersionId,
+        projection: parseProjection(row.projectionJson),
+      }),
+    ),
+    ...materialInputBindings(materials),
+  ];
 }
 
 function assessmentResultIdentity(

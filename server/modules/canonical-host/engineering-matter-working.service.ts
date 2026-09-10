@@ -22,6 +22,8 @@ import {
   type EngineeringMatterWorkingTransactionExecutor,
 } from './engineering-matter-working.repository';
 import { engineeringMatterPendingInputs } from './engineering-matter-working-state';
+import { materialInputBindings } from './matter-material';
+import { isHostedCanonicalFinalUserActor } from '../work-item/miaoda-hosted-canonical-object-access.adapter';
 import {
   EngineeringMatterRepository,
   type EngineeringMatterRevisionLinkSnapshot,
@@ -118,7 +120,9 @@ export class EngineeringMatterWorkingService {
           !snapshot ||
           snapshot.currentMatterRevisionId !==
             authorized.currentMatterRevisionId ||
-          snapshot.links.length !== authorized.currentInputs.length
+          snapshot.links.length +
+            materialInputBindings(snapshot.materials ?? []).length !==
+            authorized.currentInputs.length
         ) {
           throw workingReadConflict();
         }
@@ -221,11 +225,16 @@ export class EngineeringMatterWorkingService {
       matterId,
     });
     if (!snapshot) throw matterNotFound();
+    if (snapshot.materials?.length && (!actor.objectAccessActor ||
+        !isHostedCanonicalFinalUserActor(actor.objectAccessActor) ||
+        actor.objectAccessActor.tenantId !== actor.tenantId ||
+        actor.objectAccessActor.canonicalSubject.id !== actor.userId)) throw identityHandoffUnavailable();
     const currentInputs = await Promise.all(
       snapshot.links.map((link: EngineeringMatterRevisionLinkSnapshot) =>
         this.requireInput(link.workItemId, actor),
       ),
     );
+    currentInputs.push(...materialInputBindings(snapshot.materials ?? []));
     const confirmed = await this.matters.loadCurrent({
       tenantId: actor.tenantId,
       matterId,
