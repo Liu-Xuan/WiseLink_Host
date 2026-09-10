@@ -1352,7 +1352,7 @@ test('accepts shared background in new JobAid and Overall inputs while retaining
   validatePayload('synthesis-input', { ...overall, commonContext });
 });
 
-test('requires 25 MCP capabilities, six review tools, and hosted provenance', () => {
+test('requires 26 MCP capabilities, six review tools, and hosted provenance', () => {
   assert.deepEqual(INITIAL_ANALYSIS_OPERATIONS, [
     'TRANSLATE',
     'EXTRACT_APPLICABILITY',
@@ -1367,9 +1367,9 @@ test('requires 25 MCP capabilities, six review tools, and hosted provenance', ()
     'get_action_attempt_status',
     'commit_review_turn_candidate',
   ]);
-  assert.equal(HOST_MCP_TOOLS.length, 25);
-  assert.equal(new Set(HOST_MCP_TOOLS).size, 25);
-  for (const name of ['translation_workspace', 'read_assessment_sources', 'save_assessment_work', 'read_assessment_work']) assert.ok(HOST_MCP_TOOLS.includes(name));
+  assert.equal(HOST_MCP_TOOLS.length, 26);
+  assert.equal(new Set(HOST_MCP_TOOLS).size, 26);
+  for (const name of ['translation_workspace', 'read_assessment_sources', 'query_assessment_knowledge', 'save_assessment_work', 'read_assessment_work']) assert.ok(HOST_MCP_TOOLS.includes(name));
   assert.ok(HOST_MCP_TOOLS.includes('begin_applicability_evaluation'));
   assert.ok(HOST_MCP_TOOLS.includes('commit_applicability_candidate'));
   assert.equal(
