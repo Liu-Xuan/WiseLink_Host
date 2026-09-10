@@ -1395,6 +1395,26 @@ async function assertWorkingRevisionFlow(
       },
     },
   );
+  const uncoveredCommand = structuredClone(command);
+  uncoveredCommand.nextProblemWork.evidence.push({
+    ...structuredClone(evidence),
+    evidenceRef: 'EVIDENCE-UNCOVERED-RISK',
+    sourceRefId: 'SRC-UNCOVERED-RISK',
+  });
+  uncoveredCommand.nextProblemWork.readSourceRefs.push(
+    'EVIDENCE-UNCOVERED-RISK',
+  );
+  await assert.rejects(
+    owner.working.commit({
+      tenantId: owner.actor.tenantId,
+      actorUserId: owner.actor.userId,
+      matterId,
+      command: uncoveredCommand,
+      currentInputs: basis.currentInputs,
+      source: null,
+    }),
+    /ENGINEERING_MATTER_WORKING_PROBLEM_EVIDENCE_NOT_COVERED/u,
+  );
   const commit = await owner.working.withTransaction(async (executor) => {
     const result = await executor.appendWorkingRevision({
       tenantId: owner.actor.tenantId,
@@ -1482,6 +1502,50 @@ async function assertWorkingRevisionFlow(
     ),
     /RUNTIME_AUTHORIZATION_UNAVAILABLE/u,
   );
+
+  // A retained input can outlive its composition membership. Revoking that
+  // input must reject the selected saved work, even when current links remain visible.
+  const [storedWork] =
+    await sql`SELECT state_json FROM engineering_matter_work_revision
+    WHERE matter_work_revision_id = ${exactInput.workRef}`;
+  const retainedState = JSON.parse(storedWork.state_json);
+  retainedState.coverage.push({
+    ...structuredClone(retainedState.coverage[0]),
+    binding: {
+      ...structuredClone(retainedState.coverage[0].binding),
+      inputId: REQUEST_REUSE_WORK_ITEM_ID,
+      workItemId: REQUEST_REUSE_WORK_ITEM_ID,
+    },
+  });
+  const [retainedOwner] = await sql`SELECT requested_by_user_id FROM work_item
+    WHERE work_item_id = ${REQUEST_REUSE_WORK_ITEM_ID}`;
+  await sql`UPDATE engineering_matter_work_revision SET state_json = ${JSON.stringify(retainedState)}
+    WHERE matter_work_revision_id = ${exactInput.workRef}`;
+  try {
+    await sql`UPDATE work_item SET requested_by_user_id = 'actor-B'
+      WHERE work_item_id = ${REQUEST_REUSE_WORK_ITEM_ID}`;
+    await assert.rejects(
+      owner.working.loadCurrent({ tenantId: owner.actor.tenantId, matterId }),
+      /RUNTIME_AUTHORIZATION_UNAVAILABLE/u,
+    );
+    await assert.rejects(
+      owner.workingService.readWorkingRevision(
+        matterId,
+        exactInput.workRef,
+        owner.actor,
+      ),
+      /RUNTIME_AUTHORIZATION_UNAVAILABLE/u,
+    );
+    await assert.rejects(
+      owner.runtime(() => owner.working.readByRefForRuntime(exactInput)),
+      /RUNTIME_AUTHORIZATION_UNAVAILABLE/u,
+    );
+  } finally {
+    await sql`UPDATE work_item SET requested_by_user_id = ${retainedOwner.requested_by_user_id}
+      WHERE work_item_id = ${REQUEST_REUSE_WORK_ITEM_ID}`;
+    await sql`UPDATE engineering_matter_work_revision SET state_json = ${storedWork.state_json}
+      WHERE matter_work_revision_id = ${exactInput.workRef}`;
+  }
 
   const replay = await owner.workingService.applyWorkingUpdate(
     matterId,

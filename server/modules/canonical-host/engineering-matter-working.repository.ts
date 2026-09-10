@@ -174,7 +174,7 @@ export class EngineeringMatterWorkingRepository {
       )
       .orderBy(desc(engineeringMatterWorkRevision.workingRevision))
       .limit(1);
-    return row ? readModel(row) : null;
+    return row ? authorizedReadModel(row, executor) : null;
   }
 
   /** Exact saved identity, constrained before loading the full investigation body. */
@@ -193,7 +193,7 @@ export class EngineeringMatterWorkingRepository {
         ),
       )
       .limit(1);
-    return row ? readModel(row) : null;
+    return row ? authorizedReadModel(row, executor) : null;
   }
 
   async readByRefForRuntime(input: {
@@ -259,7 +259,7 @@ export class EngineeringMatterWorkingRepository {
         ),
       )
       .limit(1);
-    return row ? readModel(row) : null;
+    return row ? authorizedReadModel(row, this.db) : null;
   }
 
   /**
@@ -458,7 +458,7 @@ export class EngineeringMatterWorkingRepository {
       .returning();
     if (!stored) throw workingPersistenceError();
     return {
-      revision: readModel(stored),
+      revision: await authorizedReadModel(stored, executor),
       replayed: false,
       resultChanged: materialized.resultChanged,
       coverageChanged: materialized.coverageChanged,
@@ -534,7 +534,7 @@ export class EngineeringMatterWorkingRepository {
         )
       : null;
     return {
-      revision: readModel(row),
+      revision: await authorizedReadModel(row, executor),
       replayed,
       resultChanged:
         canonicalJson(previousState?.substantiveResult ?? null) !==
@@ -709,6 +709,45 @@ function assertCommandBindingsCurrent(
       throw workingInputConflict();
     }
   }
+}
+
+/** Check retained sources after choosing the exact/latest row: never fall back to older work. */
+async function authorizedReadModel(
+  row: WorkRevisionRow,
+  executor: EngineeringMatterWorkingDatabaseExecutor,
+): Promise<EngineeringMatterWorkingRevisionReadModel> {
+  const revision = readModel(row);
+  const bindings = [
+    ...revision.state.substantiveInputs,
+    ...revision.state.coverage.map((item) => item.binding),
+  ];
+  const evidence = [
+    ...(revision.state.substantiveResult?.evidence ?? []),
+    ...(revision.state.problemWork?.evidence ?? []),
+  ];
+  const workItemIds = new Set([
+    ...bindings.flatMap((item) => (item.workItemId ? [item.workItemId] : [])),
+    ...evidence.flatMap((item) =>
+      'workItemId' in item && item.workItemId ? [item.workItemId] : [],
+    ),
+  ]);
+  const documentVersionIds = new Set([
+    ...bindings.map((item) => item.documentVersionId),
+    ...evidence.flatMap((item) =>
+      item.kind === 'DOCUMENT_PASSAGE' ? [item.documentVersionId] : [],
+    ),
+  ]);
+  const [access] = await executor.execute<{ allowed: boolean }>(sql`
+    SELECT NOT EXISTS (
+      SELECT 1 FROM jsonb_array_elements_text(${JSON.stringify([...workItemIds])}::jsonb) AS w(id)
+      WHERE engineering_matter_work_item_owned_by_actor(${row.tenantId}, w.id::varchar) IS NOT TRUE
+    ) AND NOT EXISTS (
+      SELECT 1 FROM jsonb_array_elements_text(${JSON.stringify([...documentVersionIds])}::jsonb) AS d(id)
+      WHERE engineering_matter_document_owned_by_actor(${row.tenantId}, d.id::varchar) IS NOT TRUE
+    ) AS allowed
+  `);
+  if (access?.allowed !== true) throw runtimeAuthorizationUnavailable();
+  return revision;
 }
 
 function readModel(
