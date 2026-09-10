@@ -552,3 +552,56 @@ test('workJson preserves complete content and rejects ambiguous or non-object JS
   assert.deepEqual(JSON.parse(f.saves[0].workJson), work);
 });
 
+
+
+test('120 source requests use 96+24 Host batches and preserve all PAGE evidence', async () => {
+  const refs = Array.from({ length: 120 }, (_, index) => `source:synthetic:${index}`);
+  const readCalls = [];
+  const footnote = { evidenceRef: 'source:page-footnote', excerpt: '仅在条件成立时适用。', kind: 'DOCUMENT_PASSAGE' };
+  const f = fixture([{ action: 'READ_SOURCES', sourceRefs: refs, purpose: '读取全部已选原文及页脚条件', context: 'PAGE' },
+    { action: 'FINISH', work: completed }], {
+    readAssessmentSources: async input => {
+      readCalls.push(input);
+      assert.ok(input.sourceRefs.length <= 96);
+      return { schemaVersion: 'wiselink.jobaid-source-read.v2', status: 'AVAILABLE', scope: 'PAGE', completeRequestedScope: true,
+        sourceRefs: [...input.sourceRefs, footnote.evidenceRef],
+        evidence: [...input.sourceRefs.map(evidenceRef => ({ evidenceRef, excerpt: `原文 ${evidenceRef}` })), footnote] };
+    },
+  });
+  await f.run();
+  assert.deepEqual(readCalls.map(call => call.sourceRefs.length), [96, 24]);
+  assert.deepEqual(readCalls.flatMap(call => call.sourceRefs), refs);
+  assert.ok(readCalls.every(call => call.context === 'PAGE' && call.purpose === '读取全部已选原文及页脚条件'));
+  const receipt = JSON.parse(f.calls[1].messages.at(-1).content);
+  assert.equal(receipt.completeRequestedScope, true);
+  assert.equal(receipt.evidence.length, 121);
+  assert.deepEqual(new Set(receipt.sourceRefs), new Set([...refs, footnote.evidenceRef]));
+  assert.deepEqual(receipt.evidence.find(item => item.evidenceRef === footnote.evidenceRef), footnote);
+});
+
+test('a later source batch failure stops reading and never reports complete scope or saves work', async () => {
+  const refs = Array.from({ length: 210 }, (_, index) => `source:synthetic:${index}`);
+  let reads = 0;
+  const f = fixture([{ action: 'READ_SOURCES', sourceRefs: refs, purpose: '读取原文', context: 'EXACT' }], {
+    readAssessmentSources: async input => {
+      reads++;
+      if (reads === 2) throw new Error('JOBAID_SOURCE_READ_FAILED');
+      return { status: 'AVAILABLE', scope: 'EXACT', completeRequestedScope: true,
+        sourceRefs: input.sourceRefs, evidence: input.sourceRefs.map(evidenceRef => ({ evidenceRef, excerpt: '原文' })) };
+    },
+  });
+  await assert.rejects(f.run(), /JOBAID_SOURCE_READ_FAILED/);
+  assert.equal(reads, 2);
+  assert.equal(f.calls.length, 1);
+  assert.equal(f.saves.length, 0);
+});
+
+test('overlapping source batches cannot silently replace different source content', async () => {
+  const { readJobAidSourceBatches } = await import('../scripts/run-jobaid-problem-assessment.mjs');
+  const sourceRefs = Array.from({ length: 97 }, (_, index) => `ref:${index}`);
+  let calls = 0;
+  await assert.rejects(readJobAidSourceBatches({ sourceRefs, context: 'PAGE', purpose: '原文' }, async input => ({
+    status: 'AVAILABLE', scope: 'PAGE', completeRequestedScope: true, sourceRefs: input.sourceRefs,
+    evidence: [{ evidenceRef: 'same-page', excerpt: `changed ${++calls}` }],
+  })), /JOBAID_SOURCE_READ_FAILED:INCONSISTENT_EVIDENCE/);
+});
