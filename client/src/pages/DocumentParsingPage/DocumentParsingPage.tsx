@@ -671,6 +671,11 @@ export default function DocumentParsingPage() {
     );
   const overallEngineeringSummary =
     overallCandidate?.engineeringSummary ?? null;
+  const overallReadingResult = overallCandidate?.readingResult ?? null;
+  const overallLead =
+    overallReadingResult?.content.lead ??
+    overallEngineeringSummary?.conclusion.text ??
+    '';
   const overallEngineeringStatements = overallEngineeringSummary
     ? [
         ...overallEngineeringSummary.whyItMatters,
@@ -1008,17 +1013,26 @@ export default function DocumentParsingPage() {
                   {overallCandidate?.status === 'STALE' ||
                   integratedAssessment.overallSynthesis?.staleReason
                     ? '结论需更新'
-                    : overallEngineeringSummary
-                      ? '已绑定原文依据'
-                      : '等待重新生成'}
+                    : overallReadingResult
+                      ? '已保存判断与依据'
+                      : overallEngineeringSummary
+                        ? '已绑定原文依据'
+                        : '等待重新生成'}
                 </strong>
-                <small title={overallEngineeringSummary?.conclusion.text ?? ''}>
-                  {overallEngineeringSummary?.conclusion.text ??
+                <small title={overallLead}>
+                  {overallLead ||
                     '当前候选缺少逐结论原文绑定，需重新生成工程摘要'}
                 </small>
                 <ChevronDown aria-hidden="true" />
               </summary>
-              {overallEngineeringStatements.length > 0 ? (
+              {overallReadingResult ? (
+                <SavedAssessmentReading
+                  result={overallReadingResult}
+                  depth="brief"
+                  locationSuffix="overall-bar"
+                  onLocateDocument={locateAssessmentDocument}
+                />
+              ) : overallEngineeringStatements.length > 0 ? (
                 <ul className="parse-overall-bar-findings">
                   {overallEngineeringStatements.map((statement, index) => (
                     <li key={`${statement.text}-${index}`}>
