@@ -241,18 +241,25 @@ export class EngineeringMatterWorkingRepository {
     }
   }
 
-  async findBySource(input: {
-    tenantId: string;
-    matterId: string;
-    source: EngineeringMatterWorkingRevisionSource;
-  }): Promise<EngineeringMatterWorkingRevisionReadModel | null> {
-    const [row] = await this.db
+  async findBySource(
+    input: {
+      tenantId: string;
+      matterId: string;
+      source: EngineeringMatterWorkingRevisionSource;
+      requestId?: string;
+    },
+    executor: EngineeringMatterWorkingDatabaseExecutor = this.db,
+  ): Promise<EngineeringMatterWorkingRevisionReadModel | null> {
+    const [row] = await executor
       .select()
       .from(engineeringMatterWorkRevision)
       .where(
         and(
           eq(engineeringMatterWorkRevision.tenantId, input.tenantId),
           eq(engineeringMatterWorkRevision.matterId, input.matterId),
+          ...(input.requestId
+            ? [eq(engineeringMatterWorkRevision.requestId, input.requestId)]
+            : []),
           eq(
             engineeringMatterWorkRevision.actionAttemptId,
             input.source.actionAttemptId,
@@ -265,8 +272,9 @@ export class EngineeringMatterWorkingRepository {
               ),
         ),
       )
+      .orderBy(desc(engineeringMatterWorkRevision.workingRevision))
       .limit(1);
-    return row ? authorizedReadModel(row, this.db) : null;
+    return row ? authorizedReadModel(row, executor) : null;
   }
 
   /**
@@ -568,11 +576,12 @@ export class EngineeringMatterWorkingRepository {
       coded('ENGINEERING_MATTER_WORKING_SOURCE_INVALID', 409);
     if (
       !attempt ||
-      attempt.status !== 'COMMITTING' ||
+      !['RUNNING', 'COMMITTING'].includes(attempt.status) ||
       !attempt.taskEnvelopeJson ||
       attempt.matterRevisionId !== input.command.basedOnMatterRevisionId ||
-      attempt.baseRevision !== input.command.expectedWorkingRevision ||
-      attempt.triggerRequestId !== input.command.requestId
+      (attempt.status === 'COMMITTING' &&
+        (attempt.baseRevision !== input.command.expectedWorkingRevision ||
+          attempt.triggerRequestId !== input.command.requestId))
     )
       throw invalid();
     const task = parseMatterTaskEnvelope(attempt.taskEnvelopeJson);
@@ -598,6 +607,16 @@ export class EngineeringMatterWorkingRepository {
       },
       executor,
     );
+    if (attempt.status === 'RUNNING') {
+      const current = await this.loadCurrent(input, executor);
+      if (
+        (current?.workingRevision ?? 0) !==
+          input.command.expectedWorkingRevision ||
+        ((current?.workingRevision ?? 0) !== task.baseRevision &&
+          current?.source?.actionAttemptId !== attempt.attemptId)
+      )
+        throw workingCasConflict();
+    }
     return task.workingBasis.inputs;
   }
 
@@ -617,7 +636,7 @@ export class EngineeringMatterWorkingRepository {
       )
       .limit(1);
     if (requestRow) return requestRow;
-    if (!input.source) return null;
+    if (!input.source || input.source.reviewTurnId === null) return null;
     const [sourceRow] = await executor
       .select()
       .from(engineeringMatterWorkRevision)

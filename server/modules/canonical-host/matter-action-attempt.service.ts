@@ -1,3 +1,4 @@
+import type { EngineeringMatterWorkingRevisionCommand } from '@shared/matter-working.interface';
 import { randomUUID } from 'node:crypto';
 import { Injectable } from '@nestjs/common';
 import { and, desc, eq, inArray } from 'drizzle-orm';
@@ -264,7 +265,7 @@ export class MatterActionAttemptService {
         row.leaseExpiresAt &&
         row.leaseExpiresAt > now
       )
-        return runningClaim(row);
+        return this.runningClaim(executor, row);
       if (!['QUEUED', 'RETRY_SCHEDULED'].includes(row.status))
         return { error: `ACTION_ATTEMPT_${row.status}` };
       if (row.deadlineAt && row.deadlineAt <= now) {
@@ -278,7 +279,10 @@ export class MatterActionAttemptService {
         return { error: 'ACTION_ATTEMPT_TIMED_OUT' };
       }
       const current = await executor.loadCurrent(input);
-      if ((current?.workingRevision ?? 0) !== row.baseRevision) {
+      if (
+        (current?.workingRevision ?? 0) !== row.baseRevision &&
+        current?.source?.actionAttemptId !== row.attemptId
+      ) {
         await queue.finishTerminal({
           attemptId: row.attemptId,
           fromStatus: row.status,
@@ -317,7 +321,8 @@ export class MatterActionAttemptService {
           if (!isLeaseSlotConflict(error)) throw error;
         }
         if (claimed)
-          return runningClaim(
+          return this.runningClaim(
+            executor,
             await this.scopedRow(executor, queue, input, input.attemptRef),
           );
       }
@@ -373,6 +378,101 @@ export class MatterActionAttemptService {
       if (result !== 'CANCELLED')
         throw failure(`ACTION_ATTEMPT_CANCEL_${result}`);
       return this.scopedRow(executor, queue, input, input.attemptRef);
+    });
+  }
+
+  /** Receives a Host-materialized JobAid command; the model cannot set input bindings. */
+  saveWorkingDraft(
+    input: MatterAttemptScope &
+      ActionAttemptFence & {
+        principalId: string;
+        command: EngineeringMatterWorkingRevisionCommand;
+      },
+  ) {
+    return this.authorized(input, async (executor, queue) => {
+      // Keep the same lock order as commit and working append: Matter, then attempt.
+      await executor.database
+        .select({ id: engineeringMatter.matterId })
+        .from(engineeringMatter)
+        .where(
+          and(
+            eq(engineeringMatter.tenantId, input.tenantId),
+            eq(engineeringMatter.matterId, input.matterId),
+          ),
+        )
+        .limit(1)
+        .for('update');
+      await executor.database
+        .select({ id: actionAttempt.attemptId })
+        .from(actionAttempt)
+        .where(eq(actionAttempt.operationRef, input.attemptRef))
+        .limit(1)
+        .for('update');
+      const row = await this.scopedRow(
+        executor,
+        queue,
+        input,
+        input.attemptRef,
+      );
+      const task = checkedTask(row);
+      const source = {
+        kind: 'ENGINEERING_MATTER' as const,
+        actionAttemptId: row.attemptId,
+        reviewTurnId: null,
+      };
+      const priorSave = await this.working.findBySource(
+        { ...input, source, requestId: input.command.requestId },
+        executor.database,
+      );
+      if (!priorSave) {
+        assertLease(row, input);
+        const now = new Date();
+        if (
+          row.status !== 'RUNNING' ||
+          !row.leaseExpiresAt ||
+          row.leaseExpiresAt <= now ||
+          !row.deadlineAt ||
+          row.deadlineAt <= now ||
+          row.cancelRequestedAt
+        )
+          throw failure('ACTION_ATTEMPT_SAVE_FENCE_REJECTED');
+      }
+      // Repository replay compares the complete command and the exact save request.
+      return executor.appendWorkingRevision({
+        tenantId: input.tenantId,
+        matterId: input.matterId,
+        actorUserId: input.actorUserId,
+        command: input.command,
+        currentInputs: task.workingBasis.inputs,
+        source,
+      });
+    });
+  }
+
+  readSavedWork(
+    input: MatterAttemptScope & { attemptRef: string; requestId: string },
+  ) {
+    if (!input.requestId.trim())
+      throw failure('MATTER_SAVE_REQUEST_REQUIRED', 400);
+    return this.authorized(input, async (executor, queue) => {
+      const row = await this.scopedRow(
+        executor,
+        queue,
+        input,
+        input.attemptRef,
+      );
+      return this.working.findBySource(
+        {
+          ...input,
+          requestId: input.requestId,
+          source: {
+            kind: 'ENGINEERING_MATTER',
+            actionAttemptId: row.attemptId,
+            reviewTurnId: null,
+          },
+        },
+        executor.database,
+      );
     });
   }
 
@@ -454,7 +554,23 @@ export class MatterActionAttemptService {
         .limit(1)
         .for('update');
       const current = await executor.loadCurrent(input);
-      if ((current?.workingRevision ?? 0) !== row.baseRevision) {
+      const targetWorkRef = finishWorkRef(result);
+      const savedByThisAttempt =
+        targetWorkRef !== null &&
+        current?.matterWorkRevisionId === targetWorkRef &&
+        current.source?.actionAttemptId === row.attemptId &&
+        current.workingRevision > row.baseRevision!;
+      if (
+        targetWorkRef &&
+        (!savedByThisAttempt ||
+          !current?.state.problemWork ||
+          current.state.problemWork.roundCompletion === 'IN_PROGRESS')
+      )
+        throw failure('JOBAID_FINISH_EXACT_COMPLETED_WORK_REQUIRED');
+      if (
+        (current?.workingRevision ?? 0) !== row.baseRevision &&
+        !savedByThisAttempt
+      ) {
         if (
           !(await queue.finishTerminal({
             attemptId: row.attemptId,
@@ -500,6 +616,7 @@ export class MatterActionAttemptService {
       const result = checkedResult(row);
       if (result.status !== 'SUCCEEDED')
         throw failure('ACTION_ATTEMPT_RESULT_NOT_CANDIDATE');
+      const targetWorkRef = finishWorkRef(result);
       const [stored] = await executor.database
         .select()
         .from(engineeringMatterWorkRevision)
@@ -508,6 +625,14 @@ export class MatterActionAttemptService {
             eq(engineeringMatterWorkRevision.tenantId, input.tenantId),
             eq(engineeringMatterWorkRevision.matterId, input.matterId),
             eq(engineeringMatterWorkRevision.actionAttemptId, row.attemptId),
+            ...(targetWorkRef
+              ? [
+                  eq(
+                    engineeringMatterWorkRevision.matterWorkRevisionId,
+                    targetWorkRef,
+                  ),
+                ]
+              : []),
           ),
         )
         .limit(1);
@@ -515,9 +640,11 @@ export class MatterActionAttemptService {
       if (
         stored.reviewTurnId !== null ||
         stored.createdByUserId !== input.actorUserId ||
-        stored.workingRevision !== row.baseRevision! + 1 ||
         stored.basedOnMatterRevisionId !== row.matterRevisionId ||
-        stored.requestId !== row.triggerRequestId
+        (targetWorkRef
+          ? stored.workingRevision <= row.baseRevision!
+          : stored.workingRevision !== row.baseRevision! + 1 ||
+            stored.requestId !== row.triggerRequestId)
       )
         throw failure('MATTER_ATTEMPT_SAVED_WORK_MISMATCH');
       const work = await this.working.readByRef(
@@ -549,6 +676,39 @@ export class MatterActionAttemptService {
       }
       return { row, work, recovered };
     });
+  }
+
+  private async runningClaim(
+    executor: EngineeringMatterWorkingTransactionExecutor,
+    row: MatterActionAttemptRow,
+  ) {
+    if (
+      row.status !== 'RUNNING' ||
+      !row.leaseToken ||
+      !row.leaseExpiresAt ||
+      row.executorSessionKey !== `g2-action-attempt:${row.operationRef}`
+    )
+      throw failure('ACTION_ATTEMPT_CLAIM_READBACK_INVALID');
+    return {
+      attemptRef: row.operationRef!,
+      status: 'RUNNING' as const,
+      leaseToken: row.leaseToken,
+      leaseGeneration: row.leaseGeneration,
+      leaseExpiresAt: row.leaseExpiresAt.toISOString(),
+      task: checkedTask(row),
+      savedWork: await this.working.findBySource(
+        {
+          tenantId: row.tenantId,
+          matterId: row.matterId,
+          source: {
+            kind: 'ENGINEERING_MATTER',
+            actionAttemptId: row.attemptId,
+            reviewTurnId: null,
+          },
+        },
+        executor.database,
+      ),
+    };
   }
 
   private async scopedRow(
@@ -619,22 +779,21 @@ function checkedTask(row: MatterActionAttemptRow): OpenClawMatterTaskEnvelope {
   return task;
 }
 
-function runningClaim(row: MatterActionAttemptRow) {
+function finishWorkRef(result: OpenClawMatterResultEnvelope): string | null {
+  if (result.status !== 'SUCCEEDED' || !result.modelOutput) return null;
+  const output: unknown = JSON.parse(result.modelOutput);
   if (
-    row.status !== 'RUNNING' ||
-    !row.leaseToken ||
-    !row.leaseExpiresAt ||
-    row.executorSessionKey !== `g2-action-attempt:${row.operationRef}`
+    typeof output !== 'object' ||
+    output === null ||
+    !('workRevisionRef' in output)
   )
-    throw failure('ACTION_ATTEMPT_CLAIM_READBACK_INVALID');
-  return {
-    attemptRef: row.operationRef!,
-    status: 'RUNNING' as const,
-    leaseToken: row.leaseToken,
-    leaseGeneration: row.leaseGeneration,
-    leaseExpiresAt: row.leaseExpiresAt.toISOString(),
-    task: checkedTask(row),
-  };
+    return null;
+  if (
+    typeof output.workRevisionRef !== 'string' ||
+    !output.workRevisionRef.trim()
+  )
+    throw failure('JOBAID_FINAL_OUTPUT_INVALID');
+  return output.workRevisionRef;
 }
 
 function checkedResult(

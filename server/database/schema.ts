@@ -1040,7 +1040,7 @@ export const engineeringMatterWorkRevision = pgTable("engineering_matter_work_re
   uniqueIndex("uk_engineering_matter_work_revision_scope").on(table.tenantId, table.matterId, table.matterWorkRevisionId),
   uniqueIndex("uk_engineering_matter_work_revision_number").on(table.matterId, table.workingRevision),
   uniqueIndex("uk_engineering_matter_work_revision_request").on(table.matterId, table.requestId),
-  uniqueIndex("uk_engineering_matter_work_revision_attempt").on(table.actionAttemptId),
+  uniqueIndex("uk_engineering_matter_work_revision_attempt").on(table.actionAttemptId).where(sql`${table.actionAttemptId} IS NOT NULL AND ${table.reviewTurnId} IS NOT NULL`),
   uniqueIndex("uk_engineering_matter_work_revision_turn").on(table.reviewTurnId),
   index("idx_engineering_matter_work_revision_history").on(table.matterId, table.workingRevision),
   foreignKey({

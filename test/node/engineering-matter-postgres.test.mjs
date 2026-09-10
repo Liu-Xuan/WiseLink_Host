@@ -1085,6 +1085,10 @@ async function resetDatabase(sql) {
     sql,
     'migrations/0035_engineering_matter_attempt_work.sql',
   );
+  await applyMigration(
+    sql,
+    'migrations/0036_matter_jobaid_save_before_finish.sql',
+  );
   await sql.unsafe('ALTER TABLE action_attempt ENABLE ROW LEVEL SECURITY');
   // Emulate existing platform permissive policies: the new restrictive policy
   // must hold even when a legacy policy allows all rows.
@@ -2067,6 +2071,7 @@ async function assertMatterLeaseLifecycle(sql, owner, matterId) {
     'TIMED_OUT',
   );
   await assertMatterCommitRecovery(sql, owner, service, input);
+  await assertSaveBeforeFinish(sql, owner, service, input);
 }
 
 async function assertRealMatterAttemptSave(sql, owner, matterId) {
@@ -2847,4 +2852,164 @@ function matterResult(task, status = 'SUCCEEDED') {
     errorCode: status === 'FAILED' ? 'FIXTURE_FAILED' : null,
     errorDetail: status === 'FAILED' ? 'isolated failure' : null,
   });
+}
+
+async function assertSaveBeforeFinish(sql, owner, service, baseInput) {
+  const basis = await owner.workingService.resolveWorkingBasis(
+    baseInput.matterId,
+    owner.actor,
+  );
+  const scope = {
+    tenantId: baseInput.tenantId,
+    matterId: baseInput.matterId,
+    actorUserId: baseInput.actorUserId,
+  };
+  const reserved = await owner.runtime(() =>
+    service.reserve({
+      ...baseInput,
+      expectedWorkingRevision: basis.working.workingRevision,
+      idempotencyKey: 'save-before-finish',
+    }),
+  );
+  const claimInput = {
+    ...scope,
+    attemptRef: reserved.task.operationRef,
+    principalId: 'hosted-test',
+  };
+  const firstLease = await owner.runtime(() => service.claim(claimInput));
+  let fence = {
+    ...claimInput,
+    leaseToken: firstLease.leaseToken,
+    leaseGeneration: firstLease.leaseGeneration,
+  };
+  const command = {
+    requestId: 'SAVE-DRAFT-FIRST',
+    expectedWorkingRevision: basis.working.workingRevision,
+    basedOnMatterRevisionId: reserved.task.subject.matterRevisionId,
+    updateKind: 'CORRECTION',
+    changeSummary: '保存本轮第一份工作。',
+    nextFocus: {
+      ...basis.working.state.focus,
+      question: '第一份候选工作关注范围。',
+    },
+    claimDelta: null,
+    openQuestionDelta: null,
+    reviewConditionDelta: null,
+    nextSubstantiveResult: null,
+    substantiveInputs: [],
+    coverageUpdates: [],
+  };
+  await assert.rejects(
+    owner.runtime(() =>
+      service.saveWorkingDraft({ ...fence, leaseGeneration: 99, command }),
+    ),
+    /LEASE_FENCE_REJECTED/u,
+  );
+  const first = await owner.runtime(() =>
+    service.saveWorkingDraft({ ...fence, command }),
+  );
+  assert.equal(
+    (await owner.runtime(() => service.read(claimInput))).status,
+    'RUNNING',
+  );
+  assert.equal(
+    (
+      await owner.runtime(() =>
+        service.readSavedWork({ ...claimInput, requestId: command.requestId }),
+      )
+    ).matterWorkRevisionId,
+    first.revision.matterWorkRevisionId,
+  );
+  await sql`UPDATE action_attempt SET lease_expires_at = now() - interval '1 minute' WHERE attempt_id = ${reserved.row.attemptId}`;
+  const resumed = await owner.runtime(() => service.claim(claimInput));
+  assert.equal(resumed.status, 'RUNNING');
+  assert.equal(
+    resumed.savedWork.matterWorkRevisionId,
+    first.revision.matterWorkRevisionId,
+  );
+  fence = {
+    ...claimInput,
+    leaseToken: resumed.leaseToken,
+    leaseGeneration: resumed.leaseGeneration,
+  };
+  const secondCommand = {
+    ...command,
+    requestId: 'SAVE-DRAFT-SECOND',
+    expectedWorkingRevision: first.revision.workingRevision,
+    nextFocus: { ...command.nextFocus, question: '继续保存的第二份候选工作。' },
+  };
+  const second = await owner.runtime(() =>
+    service.saveWorkingDraft({ ...fence, command: secondCommand }),
+  );
+  assert.equal(
+    second.revision.workingRevision,
+    first.revision.workingRevision + 1,
+  );
+  const repeated = await owner.runtime(() =>
+    service.saveWorkingDraft({ ...fence, command }),
+  );
+  assert.equal(repeated.replayed, true);
+  assert.equal(
+    repeated.revision.matterWorkRevisionId,
+    first.revision.matterWorkRevisionId,
+    'lost first response resolves to the first save even after another save',
+  );
+  await assert.rejects(
+    owner.runtime(() =>
+      service.saveWorkingDraft({
+        ...fence,
+        command: { ...command, changeSummary: 'different' },
+      }),
+    ),
+    /REPLAY_MISMATCH/u,
+  );
+  const { contentHash: _hash, ...resultBody } = matterResult(reserved.task);
+  const finishResult = (ref) =>
+    sealMatterResultEnvelope({
+      ...resultBody,
+      modelOutput: JSON.stringify({ workRevisionRef: ref }),
+    });
+  await assert.rejects(
+    owner.runtime(() =>
+      service.prepareCommit({
+        ...fence,
+        result: finishResult(first.revision.matterWorkRevisionId),
+      }),
+    ),
+    /JOBAID_FINISH_EXACT_COMPLETED_WORK_REQUIRED/u,
+  );
+  const prepared = await owner.runtime(() =>
+    service.prepareCommit({
+      ...fence,
+      result: finishResult(second.revision.matterWorkRevisionId),
+    }),
+  );
+  assert.equal(prepared.row.status, 'COMMITTING');
+  const finished = await owner.runtime(() => service.finish(fence));
+  assert.equal(
+    finished.work.matterWorkRevisionId,
+    second.revision.matterWorkRevisionId,
+  );
+  assert.equal(finished.row.status, 'SUCCEEDED');
+  assert.equal(
+    (
+      await owner.runtime(() =>
+        service.readSavedWork({ ...claimInput, requestId: command.requestId }),
+      )
+    ).matterWorkRevisionId,
+    first.revision.matterWorkRevisionId,
+  );
+  await assert.rejects(
+    owner.runtime(() =>
+      service.saveWorkingDraft({
+        ...fence,
+        command: {
+          ...secondCommand,
+          requestId: 'SAVE-AFTER-FINISH',
+          expectedWorkingRevision: second.revision.workingRevision,
+        },
+      }),
+    ),
+    /LEASE_FENCE_REJECTED|SAVE_FENCE_REJECTED/u,
+  );
 }
