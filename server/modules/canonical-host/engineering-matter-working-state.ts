@@ -139,6 +139,19 @@ export function materializeEngineeringMatterWorkingState(input: {
     }
   }
 
+  // Full work retains material beyond the short reader, including risk and measure evidence.
+  for (const evidence of input.command.nextProblemWork?.evidence ?? []) {
+    if (evidence.kind !== 'DOCUMENT_PASSAGE') continue;
+    const covered = coverage.find(
+      (item) =>
+        item.binding.workItemId === evidence.workItemId &&
+        item.binding.documentVersionId === evidence.documentVersionId &&
+        item.checkedSourceRefIds.includes(evidence.sourceRefId),
+    );
+    if (!covered)
+      fail('ENGINEERING_MATTER_WORKING_PROBLEM_EVIDENCE_NOT_COVERED');
+  }
+
   const state: EngineeringMatterWorkingState = {
     schemaVersion: 'wiselink.3_1.engineering_matter_working_state.v1',
     focus,
@@ -602,20 +615,6 @@ function validateState(
     (item) => item.binding.inputId,
     'COVERAGE_INPUT_ID_DUPLICATE',
   );
-  // Full work retains material beyond the short reader, including risk and measure evidence.
-  for (const evidence of (
-    value.problemWork as EngineeringMatterWorkingState['problemWork']
-  )?.evidence ?? []) {
-    if (evidence.kind !== 'DOCUMENT_PASSAGE') continue;
-    const covered = (value.coverage as EngineeringMatterWorkingCoverage[]).find(
-      (item) =>
-        item.binding.workItemId === evidence.workItemId &&
-        item.binding.documentVersionId === evidence.documentVersionId &&
-        item.checkedSourceRefIds.includes(evidence.sourceRefId),
-    );
-    if (!covered)
-      fail('ENGINEERING_MATTER_WORKING_PROBLEM_EVIDENCE_NOT_COVERED');
-  }
 }
 
 function validateReadingResult(

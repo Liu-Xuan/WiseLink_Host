@@ -44,6 +44,10 @@ const {
   materializeJobAidWork,
 } = require('../../server/modules/canonical-host/jobaid-problem-work.ts');
 
+const {
+  materializeEngineeringMatterWorkingState,
+} = require('../../server/modules/canonical-host/engineering-matter-working-state.ts');
+
 const databaseUrl = process.env.ENGINEERING_MATTER_TEST_DATABASE_URL;
 const FTD_WORK_ITEM_ID = 'WI-DM-FTD-FD88DCB9CF64CF3B';
 const SB_WORK_ITEM_ID = 'WI-LOCAL-737-34-3830-ASSESSMENT';
@@ -1466,6 +1470,28 @@ async function assertWorkingRevisionFlow(
     owner.working.readByRefForRuntime(exactInput),
   );
   assert.deepEqual(exact.state.problemWork, command.nextProblemWork);
+  const coverageOnly = materializeEngineeringMatterWorkingState({
+    matterId,
+    current: exact.state,
+    command: {
+      ...structuredClone(command),
+      requestId: 'coverage-only-retained-full-work',
+      expectedWorkingRevision: 1,
+      updateKind: 'MATERIAL_INCORPORATION',
+      nextFocus: null,
+      nextSubstantiveResult: null,
+      nextProblemWork: null,
+      claimDelta: null,
+      substantiveInputs: [],
+      coverageUpdates: command.coverageUpdates.map((item) => ({
+        ...structuredClone(item),
+        checkedSourceRefIds: ['SRC-NEW-BOUNDED-READ'],
+        contribution: 'NO_MATERIAL_CHANGE',
+      })),
+    },
+  });
+  assert.deepEqual(coverageOnly.state.problemWork, exact.state.problemWork);
+
   assert.equal(exact.state.problemWork.issues[0].riskScenarios[0].score, null);
   assert.deepEqual(
     await owner.workingService.readWorkingRevision(
