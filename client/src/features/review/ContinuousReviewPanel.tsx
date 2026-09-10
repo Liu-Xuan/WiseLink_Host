@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
+import ContextualDialogue from '@client/src/features/dialogue/ContextualDialogue';
 import { useWorkbenchPanelActive } from '@client/src/features/workbench/RetainedWorkbenchPanel';
 import { MessageSquareText, RefreshCw, TriangleAlert } from 'lucide-react';
 
@@ -102,6 +103,7 @@ export default function ContinuousReviewPanel({
   const [message, setMessage] = useReviewDraft(draftScopeKey);
   const models = useTaskModelOptions();
   const [modelRef, setModelRef] = useState('');
+  const [dialogueOpen, setDialogueOpen] = useState(false);
   const [busyAction, setBusyAction] = useState<
     'start' | 'update' | 'close' | 'confirm' | null
   >(null);
@@ -600,20 +602,30 @@ export default function ContinuousReviewPanel({
               conversation?.defaultModel?.displayName ?? '此事项的模型'
             }
           />
-          <p>
-            普通问答由 Aily 私人对话承接；选择原话并提交更新后，OpenClaw
-            才执行评估。
-          </p>
-          <Button asChild>
-            <Link
-              to={`/dialogues?workItemId=${encodeURIComponent(workItemId)}`}
-            >
-              进入 Aily 私人对话
-            </Link>
-          </Button>
+          <details
+            className="space-y-3"
+            onToggle={(event) => {
+              if (event.currentTarget.open) setDialogueOpen(true);
+            }}
+          >
+            <summary className="cursor-pointer font-medium">
+              与 Aily 讨论当前资料
+            </summary>
+            {dialogueOpen && (
+              <ContextualDialogue
+                key={`${workItemId}:${matterId}`}
+                document={{
+                  workItemId,
+                  label: materials?.primary.title ?? '当前资料',
+                  documentVersionId: materials?.primary.documentVersionId,
+                }}
+                assessmentEnabled={!matterId}
+              />
+            )}
+          </details>
           {message ? (
             <div className="space-y-2">
-              <p>此前未发送的草稿（可复制到私人对话）：</p>
+              <p>此前未发送的草稿（可复制到上方对话）：</p>
               <Textarea value={message} readOnly />
               <Button variant="ghost" onClick={() => setMessage('')}>
                 清除旧草稿

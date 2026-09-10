@@ -18,7 +18,7 @@ export const DialogueMessages: FC<DialogueMessagesProps> = ({
   onSelect,
   onResume,
 }) => (
-  <div className="space-y-6" aria-label="私人对话记录">
+  <div className="space-y-6" aria-label="开放式对话记录">
     {!thread.messages.length && (
       <p className="text-sm text-muted-foreground">还没有消息。</p>
     )}

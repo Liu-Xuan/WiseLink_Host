@@ -8,6 +8,7 @@ import {
 export async function listDialogues(
   signal: AbortSignal,
   beforeThreadRef?: string,
+  workItemId?: string,
 ): Promise<DialogueThreadSummary[]> {
   const generation = getCanonicalHostClientSessionGeneration();
   try {
@@ -15,7 +16,7 @@ export async function listDialogues(
       url: '/api/dialogues',
       method: 'GET',
       signal,
-      params: beforeThreadRef ? { beforeThreadRef } : undefined,
+      params: { beforeThreadRef, workItemId },
       headers: { 'Cache-Control': 'no-cache' },
     });
     if (

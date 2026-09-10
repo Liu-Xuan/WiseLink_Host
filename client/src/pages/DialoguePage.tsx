@@ -9,7 +9,6 @@ import { useCurrentUserSession } from '@client/src/app/providers/CurrentUserSess
 import { getCanonicalLibraryQuicklook } from '@client/src/api/canonical-host';
 import { listDialogues } from '@client/src/api/dialogue-directory';
 import { PrivateDialoguePanel } from '@client/src/features/dialogue/PrivateDialoguePanel';
-import { useLibraryDocuments } from './WorkspaceHomePage/useLibraryDocuments';
 import type {
   DialogueThreadSummary,
   DialogueAssessmentResponse,
@@ -36,15 +35,6 @@ function DialoguePageContent() {
     session.profileSettled &&
     !session.authenticationRequired &&
     Boolean(session.currentUser.user_id);
-  const [search, setSearch] = useState('');
-  const directory = useLibraryDocuments(
-    search,
-    session.sessionGeneration,
-    !authenticated,
-    0,
-    'tasks',
-    '',
-  );
   const [threads, setThreads] = useState<DialogueThreadSummary[]>([]);
   const [listError, setListError] = useState('');
   const [listRevision, setListRevision] = useState(0);
@@ -108,7 +98,8 @@ function DialoguePageContent() {
             });
         })
         .catch(() => {
-          if (!disposed) setFocusError('指定任务无法读取，请在下方重新选择。');
+          if (!disposed)
+            setFocusError('指定资料无法读取，请从资料库重新进入。');
         });
     return () => {
       disposed = true;
@@ -127,28 +118,13 @@ function DialoguePageContent() {
     },
     [threadRef, focusId, navigate],
   );
-  const options: DialogueWorkItemOption[] = directory.items.flatMap((item) =>
-    item.kind === 'TASK'
-      ? [
-          {
-            workItemId: item.workItemId,
-            label: `${item.documentCode} · ${item.businessRevision}`,
-            documentVersionId: item.documentVersionId,
-            createdAt: item.createdAt,
-            description: `${new Date(item.createdAt).toLocaleString()} 创建${item.readingSummary?.headline ? ` · ${item.readingSummary.headline}` : ''}`,
-          },
-        ]
-      : [],
-  );
-  if (
-    focusedOption &&
-    !options.some((item) => item.workItemId === focusedOption.workItemId)
-  )
-    options.unshift(focusedOption);
+  const options: DialogueWorkItemOption[] = focusedOption
+    ? [focusedOption]
+    : [];
   if (!authenticated)
     return (
       <main className="p-6">
-        <h1>私人对话</h1>
+        <h1>开放式对话</h1>
         <p>
           {session.profileSettled
             ? '请连接飞书身份后继续。'
@@ -164,16 +140,20 @@ function DialoguePageContent() {
   return (
     <main className="mx-auto grid w-full max-w-7xl gap-6 p-6 lg:grid-cols-[220px_minmax(0,1fr)]">
       <aside className="space-y-3">
-        <h1 className="text-xl font-semibold">私人对话</h1>
+        <h1 className="text-xl font-semibold">开放式对话</h1>
         <Button asChild>
           <Link to="/dialogues" onClick={() => setReceipt(null)}>
             新建对话
           </Link>
         </Button>
         <p className="text-sm text-muted-foreground">
-          仅本人可见。选择原话后可将其加入指定任务，再明确发起评估更新。
+          开放式对话主要在飞书中与 Aily
+          机器人进行。围绕具体文档或事项，请从资料库进入交互复核。这里保留本人已有对话与补充记录。
         </p>
-        <nav aria-label="历史私人会话" className="space-y-2">
+        <Button asChild variant="outline">
+          <Link to="/library">打开资料库</Link>
+        </Button>
+        <nav aria-label="历史对话" className="space-y-2">
           {threads.map((item) => (
             <Link
               key={item.threadRef}
@@ -213,14 +193,6 @@ function DialoguePageContent() {
         <PrivateDialoguePanel
           threadRef={threadRef}
           workItems={options}
-          workItemSearch={{
-            value: search,
-            onChange: setSearch,
-            loading: directory.loading,
-            error: directory.error?.message,
-            hasMore: Boolean(directory.nextCursor),
-            loadMore: directory.loadMore,
-          }}
           initialWorkItemIds={focusId ? [focusId] : []}
           onThreadReady={onThreadReady}
           onAssessmentAccepted={setReceipt}
