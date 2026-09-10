@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import { randomUUID } from 'node:crypto';
 import { readFile } from 'node:fs/promises';
 import { createRequire } from 'node:module';
 import { resolve } from 'node:path';
@@ -48,6 +49,13 @@ const {
   materializeEngineeringMatterWorkingState,
 } = require('../../server/modules/canonical-host/engineering-matter-working-state.ts');
 
+const {
+  MatterActionAttemptService,
+} = require('../../server/modules/canonical-host/matter-action-attempt.service.ts');
+const {
+  CANONICAL_INITIAL_MODEL_REF,
+  taskModelSelection,
+} = require('../../server/modules/model-settings/canonical-model-catalog.ts');
 const databaseUrl = process.env.ENGINEERING_MATTER_TEST_DATABASE_URL;
 const FTD_WORK_ITEM_ID = 'WI-DM-FTD-FD88DCB9CF64CF3B';
 const SB_WORK_ITEM_ID = 'WI-LOCAL-737-34-3830-ASSESSMENT';
@@ -346,7 +354,7 @@ test(
         await assert.rejects(
           sql`INSERT INTO action_attempt
           SELECT (jsonb_populate_record(NULL::action_attempt, to_jsonb(a) ||
-            ${sql.json({ ...patch, attempt_id: 'ATT-MATTER-INVALID', attempt_no: 2, status: 'SUCCEEDED' })}::jsonb)).*
+            ${sql.json({ ...patch, id: randomUUID(), attempt_id: 'ATT-MATTER-INVALID', attempt_no: 2, status: 'SUCCEEDED' })}::jsonb)).*
           FROM action_attempt a WHERE attempt_id = 'ATT-MATTER-SUBJECT'`,
           (error) => error.constraint_name === constraint,
         );
@@ -354,7 +362,7 @@ test(
       await assert.rejects(
         sql`INSERT INTO action_attempt
           SELECT (jsonb_populate_record(NULL::action_attempt, to_jsonb(a) || jsonb_build_object(
-            'attempt_id', 'ATT-MATTER-CONCURRENT', 'attempt_no', 2))).*
+            'id', gen_random_uuid(), 'attempt_id', 'ATT-MATTER-CONCURRENT', 'attempt_no', 2))).*
           FROM action_attempt a WHERE attempt_id = 'ATT-MATTER-SUBJECT'`,
         /uk_action_attempt_active_matter_task/u,
       );
@@ -478,6 +486,7 @@ test(
         );
 
         await assertRealMatterAttemptSave(sql, owner, created.matter.matterId);
+        await assertMatterLeaseLifecycle(sql, owner, created.matter.matterId);
 
         await assertLinkReplayMismatchAndCasConflict(
           owner,
@@ -818,17 +827,19 @@ async function resetDatabase(sql) {
         UNIQUE (tenant_id, action_type, document_version_id, run_key)
     )
   `);
-  await sql.unsafe(`
-    CREATE TABLE action_attempt (
-      attempt_id varchar(96) PRIMARY KEY,
-      tenant_id varchar(128), actor_user_id varchar(255), work_item_id varchar(96),
-      action_type varchar(64), status varchar(32), request_origin varchar(32),
-      input_revision integer, idempotency_key varchar(255),
-      document_version_id varchar(96), base_revision integer, attempt_no integer NOT NULL DEFAULT 1,
-      trigger_request_id varchar(96), commit_started_at timestamptz,
-      result_content_hash text, result_envelope_json text
-    )
-  `);
+  const attemptDdl = await readFile(
+    resolve(process.cwd(), 'server/database/work-item.ddl.sql'),
+    'utf8',
+  );
+  await sql.unsafe(
+    attemptDdl.match(/CREATE TABLE action_attempt \([\s\S]*?\n\);/u)[0],
+  );
+  await sql.unsafe(`ALTER TABLE action_attempt
+    ALTER COLUMN trigger_request_id SET DEFAULT 'REQ-ISOLATED-FIXTURE',
+    ALTER COLUMN request_origin SET DEFAULT 'OPENCLAW_MCP_V1',
+    ADD COLUMN review_activity_json text,
+    ADD COLUMN execution_model_json text`);
+  await applyMigration(sql, 'migrations/0003_action_attempt_openclaw_v1.sql');
   await sql.unsafe(`
     CREATE TABLE review_turn (
       review_turn_id varchar(96) PRIMARY KEY,
@@ -862,7 +873,10 @@ async function resetDatabase(sql) {
     sql,
     'migrations/0034_action_attempt_matter_subject.sql',
   );
-  await applyMigration(sql, 'migrations/0035_engineering_matter_attempt_work.sql');
+  await applyMigration(
+    sql,
+    'migrations/0035_engineering_matter_attempt_work.sql',
+  );
   await sql.unsafe('ALTER TABLE action_attempt ENABLE ROW LEVEL SECURITY');
   // Emulate existing platform permissive policies: the new restrictive policy
   // must hold even when a legacy policy allows all rows.
@@ -1706,6 +1720,136 @@ async function assertWorkingRevisionFlow(
     WHERE matter_id = ${matterId}
   `;
   assert.equal(rows.revision_count, 1);
+}
+
+async function assertMatterLeaseLifecycle(sql, owner, matterId) {
+  const service = new MatterActionAttemptService(owner.working, {
+    captureForNewTask: async (_tenant, now) =>
+      taskModelSelection(CANONICAL_INITIAL_MODEL_REF, now),
+  });
+  const scope = { tenantId: 'tenant-A', actorUserId: 'actor-A', matterId };
+  const basis = await owner.workingService.resolveWorkingBasis(
+    matterId,
+    owner.actor,
+  );
+  const input = {
+    ...scope,
+    idempotencyKey: 'matter-lease-test',
+    expectedMatterRevisionId: basis.snapshot.currentMatterRevisionId,
+    expectedMatterRevision: basis.snapshot.currentRevisionNo,
+    expectedWorkingRevision: basis.working.workingRevision,
+    trigger: {
+      kind: 'USER_REQUEST',
+      requestId: 'request-lease',
+      instruction: '复核边界',
+    },
+    modelInput: { testOnly: 'lease transaction fixture' },
+    sourceRefs: [],
+  };
+  const reservation = await owner.runtime(() => service.reserve(input));
+  assert.equal(reservation.row.workItemId, null);
+  assert.equal(reservation.created, true);
+  const replay = await owner.runtime(() => service.reserve(input));
+  assert.equal(replay.created, false);
+  assert.equal(replay.task.operationRef, reservation.task.operationRef);
+  await assert.rejects(
+    owner.runtime(() =>
+      service.reserve({ ...input, modelInput: { changed: true } }),
+    ),
+    /IDEMPOTENCY_REPLAY_MISMATCH/u,
+  );
+  const claimInput = {
+    ...scope,
+    attemptRef: reservation.task.operationRef,
+    principalId: 'hosted-test',
+  };
+  // Occupy slot zero with an existing WorkItem execution, exercising the
+  // same tenant-wide pool and rollback-to-savepoint behavior.
+  await sql`INSERT INTO action_attempt (attempt_id, work_item_id, action_type,
+    actor_user_id, tenant_id, status, lease_slot, lease_token)
+    VALUES ('ATT-SLOT-ZERO', ${FTD_WORK_ITEM_ID}, 'OPENCLAW_TRANSLATE', 'actor-A', 'tenant-A', 'RUNNING', 0, 'slot-zero')`;
+  const lease = await owner.runtime(() => service.claim(claimInput));
+  assert.equal(lease.status, 'RUNNING');
+  const read = await owner.runtime(() => service.read(claimInput));
+  assert.equal(read.leaseSlot, 1);
+  assert.equal(read.claimCount, 1);
+  assert.equal(
+    (await owner.runtime(() => service.claim(claimInput))).leaseToken,
+    lease.leaseToken,
+  );
+  await assert.rejects(
+    owner.runtime(() =>
+      service.claim({ ...claimInput, actorUserId: 'actor-B' }),
+    ),
+  );
+  await assert.rejects(
+    owner.runtime(() =>
+      service.heartbeat({ ...claimInput, ...lease, leaseGeneration: 99 }),
+    ),
+    /LEASE_FENCE_REJECTED/u,
+  );
+  await owner.runtime(() => service.heartbeat({ ...claimInput, ...lease }));
+  const cancelled = await owner.runtime(() =>
+    service.cancel({ ...claimInput, reason: 'fixture cancelled' }),
+  );
+  assert.equal(cancelled.status, 'CANCELLED');
+  assert.equal(cancelled.leaseSlot, null);
+  await assert.rejects(
+    owner.runtime(() => service.claim(claimInput)),
+    /CANCELLED/u,
+  );
+  assert.equal(
+    (await owner.runtime(() => service.reserve(input))).created,
+    false,
+    'cancelled exact request is not silently re-created',
+  );
+  const successor = await owner.runtime(() =>
+    service.reserve({ ...input, idempotencyKey: 'matter-lease-successor' }),
+  );
+  await sql`UPDATE action_attempt SET deadline_at = now() - interval '1 minute'
+    WHERE attempt_id = ${successor.row.attemptId}`;
+  await assert.rejects(
+    owner.runtime(() =>
+      service.claim({ ...claimInput, attemptRef: successor.task.operationRef }),
+    ),
+    /TIMED_OUT/u,
+  );
+  assert.equal(
+    (
+      await owner.runtime(() =>
+        service.read({
+          ...claimInput,
+          attemptRef: successor.task.operationRef,
+        }),
+      )
+    ).status,
+    'TIMED_OUT',
+    'planned terminalization survives the caller-facing error',
+  );
+  const retriable = await owner.runtime(() =>
+    service.reserve({ ...input, idempotencyKey: 'matter-lease-recovery' }),
+  );
+  const retryInput = { ...claimInput, attemptRef: retriable.task.operationRef };
+  const oldLease = await owner.runtime(() => service.claim(retryInput));
+  await sql`UPDATE action_attempt SET lease_expires_at = now() - interval '1 minute'
+    WHERE attempt_id = ${retriable.row.attemptId}`;
+  const newLease = await owner.runtime(() => service.claim(retryInput));
+  assert.equal(newLease.leaseGeneration, oldLease.leaseGeneration + 1);
+  assert.notEqual(newLease.leaseToken, oldLease.leaseToken);
+  await assert.rejects(
+    owner.runtime(() => service.heartbeat({ ...retryInput, ...oldLease })),
+    /LEASE_FENCE_REJECTED/u,
+  );
+  await sql`UPDATE action_attempt SET deadline_at = now() - interval '1 minute'
+    WHERE attempt_id = ${retriable.row.attemptId}`;
+  await assert.rejects(
+    owner.runtime(() => service.claim(retryInput)),
+    /TIMED_OUT/u,
+  );
+  assert.equal(
+    (await owner.runtime(() => service.read(retryInput))).status,
+    'TIMED_OUT',
+  );
 }
 
 async function assertRealMatterAttemptSave(sql, owner, matterId) {

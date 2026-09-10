@@ -1,3 +1,5 @@
+import { CanonicalModelSettingsModule } from '../model-settings/canonical-model-settings.module';
+import { MatterActionAttemptService } from './matter-action-attempt.service';
 import { Module } from '@nestjs/common';
 import { WorkItemRuntimeModule } from '../work-item/work-item-runtime.module';
 import { EngineeringMatterRepository } from './engineering-matter.repository';
@@ -8,8 +10,9 @@ import { EngineeringMatterDirectoryService } from './engineering-matter-director
 
 /** Shared Matter storage and authorization without a Review/Host module cycle. */
 @Module({
-  imports: [WorkItemRuntimeModule],
+  imports: [WorkItemRuntimeModule, CanonicalModelSettingsModule],
   providers: [
+    MatterActionAttemptService,
     EngineeringMatterRepository,
     EngineeringMatterService,
     EngineeringMatterWorkingRepository,
@@ -17,6 +20,7 @@ import { EngineeringMatterDirectoryService } from './engineering-matter-director
     EngineeringMatterDirectoryService,
   ],
   exports: [
+    MatterActionAttemptService,
     EngineeringMatterRepository,
     EngineeringMatterService,
     EngineeringMatterWorkingRepository,
