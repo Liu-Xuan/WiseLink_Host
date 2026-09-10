@@ -2,6 +2,7 @@ import { isJobAidProblemProjection } from '@shared/jobaid-problem-assessment.int
 import JobAidProblemWorkspace from './JobAidProblemWorkspace';
 import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import {
+  Link,
   useLocation,
   useNavigate,
   useParams,
@@ -1716,7 +1717,7 @@ export default function DocumentParsingPage() {
               </>
             ) : (
               <div className="parse-assessment-empty" id="workspace-review">
-                <p>可在下方继续讨论已有分析、补充材料或提出问题。</p>
+                <p>可进入私人对话核对已有分析，或在下方明确发起评估更新。</p>
               </div>
             )}
           </JobAidProblemWorkspace>
@@ -1885,9 +1886,9 @@ export default function DocumentParsingPage() {
 
         <footer className="parse-footer">
           <span>当前工程事项 · 候选意见需工程师确认</span>
-          <a href={data.entry.deepLinkPath}>
-            继续与 WiseLink 讨论 <ArrowUpRight />
-          </a>
+          <Link to={`/dialogues?workItemId=${encodeURIComponent(workItemId)}`}>
+            与 Aily 继续讨论 <ArrowUpRight />
+          </Link>
         </footer>
       </WorkbenchShell>
     </main>

@@ -1,6 +1,7 @@
 import React from 'react';
 import { Navigate, Route, Routes, useLocation } from 'react-router-dom';
 
+import DialoguePage from './pages/DialoguePage';
 import Layout from './components/Layout';
 import WorkItemOverviewPage from './features/workitem/WorkItemOverviewPage';
 import EngineeringMatterPage from './features/matter/EngineeringMatterPage';
@@ -32,6 +33,8 @@ const RoutesComponent = () => {
     <Routes>
       <Route element={<Layout />}>
         <Route index element={<LibraryIndexRedirect />} />
+        <Route path="dialogues" element={<DialoguePage />} />
+        <Route path="dialogues/:threadRef" element={<DialoguePage />} />
         <Route path="library" element={<WorkspaceHomePage />} />
         <Route path="matters/:matterId" element={<EngineeringMatterPage />} />
         <Route

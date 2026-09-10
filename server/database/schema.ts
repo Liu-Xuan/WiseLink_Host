@@ -117,9 +117,161 @@ export const fileAttachmentArray = customType<{
   },
 });
 
+export const dialogueAssessmentRequest = pgTable("dialogue_assessment_request", {
+  requestRef: uuid("request_ref").primaryKey().defaultRandom(),
+  threadRef: uuid("thread_ref").notNull(),
+  tenantId: varchar("tenant_id", { length: 255 }).notNull(),
+  actorId: varchar("actor_id", { length: 255 }).notNull(),
+  requestKey: varchar("request_key", { length: 200 }).notNull(),
+  workItemId: varchar("work_item_id", { length: 96 }).notNull(),
+  requestJson: text("request_json").notNull(),
+  inputJson: text("input_json").notNull(),
+  userMessage: text("user_message").notNull(),
+  reviewConversationId: varchar("review_conversation_id", { length: 96 }).notNull(),
+  reviewTurnId: varchar("review_turn_id", { length: 96 }),
+  // System field: Creation time (auto-filled, do not modify)
+  createdAt: customTimestamptz("_created_at", { precision: 3 }).notNull().default(sql`CURRENT_TIMESTAMP`),
+  // System field: Creator (auto-filled, do not modify)
+  createdBy: userProfile("_created_by"),
+  // System field: Update time (auto-filled, do not modify)
+  updatedAt: customTimestamptz("_updated_at", { precision: 3 }).notNull().default(sql`CURRENT_TIMESTAMP`),
+  // System field: Updater (auto-filled, do not modify)
+  updatedBy: userProfile("_updated_by"),
+}, (table) => [
+  uniqueIndex("dialogue_assessment_request_thread_ref_request_key_key").on(table.threadRef, table.requestKey),
+  foreignKey({
+    columns: [table.reviewTurnId],
+    foreignColumns: [reviewTurn.reviewTurnId],
+    name: "dialogue_assessment_request_review_turn_id_fkey",
+  }),
+  foreignKey({
+    columns: [table.actorId, table.tenantId, table.threadRef],
+    foreignColumns: [dialogueThread.actorId, dialogueThread.tenantId, dialogueThread.threadRef],
+    name: "dialogue_assessment_request_tenant_id_actor_id_thread_ref_fkey",
+  }),
+  foreignKey({
+    columns: [table.tenantId, table.workItemId],
+    foreignColumns: [workItem.tenantId, workItem.workItemId],
+    name: "dialogue_assessment_request_tenant_id_work_item_id_fkey",
+  }),
+  foreignKey({
+    columns: [table.reviewConversationId],
+    foreignColumns: [reviewConversation.reviewConversationId],
+    name: "dialogue_assessment_request_review_conversation_id_fkey",
+  }),
+]);
+
+export const discussionContribution = pgTable("discussion_contribution", {
+  contributionRef: uuid("contribution_ref").primaryKey().defaultRandom(),
+  threadRef: uuid("thread_ref").notNull(),
+  messageRef: uuid("message_ref").notNull(),
+  tenantId: varchar("tenant_id", { length: 255 }).notNull(),
+  actorId: varchar("actor_id", { length: 255 }).notNull(),
+  requestKey: varchar("request_key", { length: 200 }).notNull(),
+  workItemId: varchar("work_item_id", { length: 96 }).notNull(),
+  revision: integer("revision").notNull().default(1),
+  sourcePart: varchar("source_part", { length: 16 }).notNull(),
+  selectedText: text("selected_text").notNull(),
+  selectionJson: text("selection_json").notNull(),
+  kind: varchar("kind", { length: 32 }).notNull(),
+  status: varchar("status", { length: 16 }).notNull().default('ACTIVE'),
+  audience: varchar("audience", { length: 16 }).notNull().default('PRIVATE'),
+  supersedesRef: uuid("supersedes_ref"),
+  withdrawRequestKey: varchar("withdraw_request_key", { length: 200 }),
+  usedByJson: text("used_by_json").notNull().default('[]'),
+  // System field: Creation time (auto-filled, do not modify)
+  createdAt: customTimestamptz("_created_at", { precision: 3 }).notNull().default(sql`CURRENT_TIMESTAMP`),
+  // System field: Creator (auto-filled, do not modify)
+  createdBy: userProfile("_created_by"),
+  // System field: Update time (auto-filled, do not modify)
+  updatedAt: customTimestamptz("_updated_at", { precision: 3 }).notNull().default(sql`CURRENT_TIMESTAMP`),
+  // System field: Updater (auto-filled, do not modify)
+  updatedBy: userProfile("_updated_by"),
+}, (table) => [
+  uniqueIndex("discussion_contribution_thread_ref_request_key_key").on(table.threadRef, table.requestKey),
+  index("idx_discussion_contribution_target").on(table.tenantId, table.actorId, table.workItemId, table.status),
+  foreignKey({
+    columns: [table.supersedesRef],
+    foreignColumns: [discussionContribution.contributionRef],
+    name: "discussion_contribution_supersedes_ref_fkey",
+  }),
+  foreignKey({
+    columns: [table.actorId, table.tenantId, table.threadRef],
+    foreignColumns: [dialogueThread.actorId, dialogueThread.tenantId, dialogueThread.threadRef],
+    name: "discussion_contribution_tenant_id_actor_id_thread_ref_fkey",
+  }),
+  foreignKey({
+    columns: [table.actorId, table.messageRef, table.tenantId, table.threadRef],
+    foreignColumns: [dialogueMessage.actorId, dialogueMessage.messageRef, dialogueMessage.tenantId, dialogueMessage.threadRef],
+    name: "discussion_contribution_tenant_id_actor_id_thread_ref_mess_fkey",
+  }),
+  foreignKey({
+    columns: [table.tenantId, table.workItemId],
+    foreignColumns: [workItem.tenantId, workItem.workItemId],
+    name: "discussion_contribution_tenant_id_work_item_id_fkey",
+  }),
+]);
+
+export const dialogueMessage = pgTable("dialogue_message", {
+  messageRef: uuid("message_ref").primaryKey().defaultRandom(),
+  threadRef: uuid("thread_ref").notNull(),
+  tenantId: varchar("tenant_id", { length: 255 }).notNull(),
+  actorId: varchar("actor_id", { length: 255 }).notNull(),
+  requestKey: varchar("request_key", { length: 200 }).notNull(),
+  threadRevision: integer("thread_revision").notNull(),
+  userText: text("user_text").notNull(),
+  origin: varchar("origin", { length: 32 }).notNull(),
+  originJson: text("origin_json").notNull().default('{}'),
+  focusJson: text("focus_json").notNull().default('[]'),
+  contextJson: text("context_json").notNull().default('{}'),
+  purpose: varchar("purpose", { length: 32 }).notNull(),
+  executor: varchar("executor", { length: 16 }).notNull(),
+  // System field: Creation time (auto-filled, do not modify)
+  createdAt: customTimestamptz("_created_at", { precision: 3 }).notNull().default(sql`CURRENT_TIMESTAMP`),
+  // System field: Creator (auto-filled, do not modify)
+  createdBy: userProfile("_created_by"),
+  // System field: Update time (auto-filled, do not modify)
+  updatedAt: customTimestamptz("_updated_at", { precision: 3 }).notNull().default(sql`CURRENT_TIMESTAMP`),
+  // System field: Updater (auto-filled, do not modify)
+  updatedBy: userProfile("_updated_by"),
+}, (table) => [
+  uniqueIndex("dialogue_message_thread_ref_request_key_key").on(table.threadRef, table.requestKey),
+  uniqueIndex("dialogue_message_thread_ref_thread_revision_key").on(table.threadRef, table.threadRevision),
+  uniqueIndex("dialogue_message_tenant_id_actor_id_message_ref_key").on(table.tenantId, table.actorId, table.messageRef),
+  uniqueIndex("dialogue_message_tenant_id_actor_id_thread_ref_message_ref_key").on(table.tenantId, table.actorId, table.threadRef, table.messageRef),
+  index("idx_dialogue_message_thread").on(table.threadRef, table.createdAt, table.messageRef),
+  foreignKey({
+    columns: [table.actorId, table.tenantId, table.threadRef],
+    foreignColumns: [dialogueThread.actorId, dialogueThread.tenantId, dialogueThread.threadRef],
+    name: "dialogue_message_tenant_id_actor_id_thread_ref_fkey",
+  }),
+]);
+
+export const dialogueThread = pgTable("dialogue_thread", {
+  threadRef: uuid("thread_ref").primaryKey().defaultRandom(),
+  tenantId: varchar("tenant_id", { length: 255 }).notNull(),
+  actorId: varchar("actor_id", { length: 255 }).notNull(),
+  requestKey: varchar("request_key", { length: 200 }).notNull(),
+  requestJson: text("request_json").notNull(),
+  revision: integer("revision").notNull().default(1),
+  audience: varchar("audience", { length: 16 }).notNull().default('PRIVATE'),
+  focusJson: text("focus_json").notNull().default('[]'),
+  // System field: Creation time (auto-filled, do not modify)
+  createdAt: customTimestamptz("_created_at", { precision: 3 }).notNull().default(sql`CURRENT_TIMESTAMP`),
+  // System field: Creator (auto-filled, do not modify)
+  createdBy: userProfile("_created_by"),
+  // System field: Update time (auto-filled, do not modify)
+  updatedAt: customTimestamptz("_updated_at", { precision: 3 }).notNull().default(sql`CURRENT_TIMESTAMP`),
+  // System field: Updater (auto-filled, do not modify)
+  updatedBy: userProfile("_updated_by"),
+}, (table) => [
+  uniqueIndex("dialogue_thread_tenant_id_actor_id_request_key_key").on(table.tenantId, table.actorId, table.requestKey),
+  uniqueIndex("dialogue_thread_tenant_id_actor_id_thread_ref_key").on(table.tenantId, table.actorId, table.threadRef),
+]);
+
 export const reviewAilyQuery = pgTable("review_aily_query", {
   queryRef: uuid("query_ref").primaryKey().defaultRandom(),
-  attemptRef: varchar("attempt_ref", { length: 96 }).notNull(),
+  attemptRef: varchar("attempt_ref", { length: 96 }),
   tenantId: varchar("tenant_id", { length: 255 }).notNull(),
   actorId: varchar("actor_id", { length: 255 }).notNull(),
   sessionId: uuid("session_id").notNull(),
@@ -130,6 +282,8 @@ export const reviewAilyQuery = pgTable("review_aily_query", {
   status: varchar("status", { length: 32 }).notNull().default('STARTING'),
   answerText: text("answer_text"),
   errorCode: varchar("error_code", { length: 96 }),
+  messageRef: uuid("message_ref").unique(),
+  remoteSessionId: varchar("remote_session_id", { length: 96 }),
   // System field: Creation time (auto-filled, do not modify)
   createdAt: customTimestamptz("_created_at", { precision: 3 }).notNull().default(sql`CURRENT_TIMESTAMP`),
   // System field: Creator (auto-filled, do not modify)
@@ -140,6 +294,8 @@ export const reviewAilyQuery = pgTable("review_aily_query", {
   updatedBy: userProfile("_updated_by"),
 }, (table) => [
   uniqueIndex("review_aily_query_attempt_request").on(table.attemptRef, table.requestKey),
+  uniqueIndex("review_aily_query_message_unique").on(table.messageRef),
+  uniqueIndex("review_aily_query_remote_active").on(table.tenantId, table.actorId, table.agentId, table.remoteSessionId),
   foreignKey({
     columns: [table.attemptRef],
     foreignColumns: [actionAttempt.attemptId],
@@ -149,6 +305,11 @@ export const reviewAilyQuery = pgTable("review_aily_query", {
     columns: [table.sessionId],
     foreignColumns: [identitySession.id],
     name: "review_aily_query_session_id_fkey",
+  }),
+  foreignKey({
+    columns: [table.messageRef],
+    foreignColumns: [dialogueMessage.messageRef],
+    name: "review_aily_query_message_ref_fkey",
   }),
 ]);
 
@@ -1663,3 +1824,8 @@ export const workItemTable = workItem;
 export const assessmentWorkRevisionTable = assessmentWorkRevision;
 
 export const reviewAilyQueryTable = reviewAilyQuery;
+
+export const dialogueAssessmentRequestTable = dialogueAssessmentRequest;
+export const dialogueMessageTable = dialogueMessage;
+export const dialogueThreadTable = dialogueThread;
+export const discussionContributionTable = discussionContribution;

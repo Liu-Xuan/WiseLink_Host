@@ -64,3 +64,11 @@ W1 必须保留首次组装的上下文及 query 用于同消息重放；新工�
 官方创建接口规定非零 code 为失败。流式请求若收到 HTTP 200 的 JSON 拒绝，现保存 `AILY_API_REJECTED_<code>` 并记 FAILED，避免误报为断流未知。若收到有效异步 chat/session 回执，则先保存远端 ID、保留 UNKNOWN，不能假报收到完整回答或再 POST。新增 3 项对应测试通过，服务/传输两组共 35 项通过。
 
 主控已复制上述 19 项跨层测试，并修复仓库返回类型推断问题；canonical 服务端 TypeScript 检查现已通过。W6 只读复核另发现后台刷新锁草稿、已加载旧页的权限复核、纠正缺少替代旧贡献的入口及 UNKNOWN 文案问题，已交前端 owner 修订，尚未以代码阅读代替页面验收。
+
+## W5 并发与中断恢复补充
+
+主控交接后，本任务窄改 `review-conversation.repository.ts` 与 `dialogue-assessment.{service,repository}.ts`：对已存对话评估请求，在真实 actor 事务中核对 tenant/actor/workItem/conversation 和冻结原文，锁请求并优先找回已有 ReviewTurn；新建时锁 `work_item`，核对业务 revision 与最新 workingRef 后在同一事务插入。该锁与 JobAid 工作版提交共用，覆盖第一版尚不存在的情况。普通 Review 请求保持原调用路径。
+
+W5 在复核当前来源 ACL 后，精确查找原 request 的 ReviewTurn；即使会话已关闭、上次绑定回写丢失，也只绑定和返回原任务，不重新派发。绑定查询额外校验原 requestId。
+
+验证：相关 Jest 4 套共 28 项通过，server tsc 与改动文件 ESLint 通过。新增本地 PostgreSQL 测试 `test/node/dialogue-assessment-dispatch-postgres.test.mjs` 三个场景通过：底稿先提交则拒绝旧基线；并发同请求只生成一个任务且新基线下仍回放原任务；创建任务期间工作项行锁阻止底稿抢先更新。该测试使用临时隔离 schema、生产保护逻辑及真实 INSERT；只替换工程输入投影读取，不覆盖完整 Hosted RLS、Review 触发器或线上业务验收。临时 schema 已清理。

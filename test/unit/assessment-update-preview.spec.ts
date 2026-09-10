@@ -58,7 +58,7 @@ describe('reviewed assessment update boundary', () => {
     expect(source).not.toContain('setMessage');
     expect(source).toContain('mustReopen');
   });
-  it('explicitly sends CHAT without injecting assessment selection fields', () => {
+  it('routes ordinary dialogue to Aily while keeping explicit assessment controls', () => {
     const source = readFileSync(
       resolve(
         __dirname,
@@ -66,16 +66,9 @@ describe('reviewed assessment update boundary', () => {
       ),
       'utf8',
     );
-    const request = source.slice(
-      source.indexOf(
-        'const response = await canonicalHost.appendReviewTextTurn',
-      ),
-      source.indexOf('async function closeConversation'),
-    );
-    expect(request).toContain("purpose: 'CHAT'");
-    expect(request).toContain("executionMode: 'AUTOMATIC'");
-    expect(request).not.toContain('includedDiscussionTurnIds:');
-    expect(request).not.toContain('expectedInputRevision:');
+    expect(source).toContain('/dialogues?workItemId=');
+    expect(source).toContain('<AssessmentUpdateControl');
+    expect(source).not.toContain('canonicalHost.appendReviewTextTurn');
     expect(source).not.toContain('发送并分析');
   });
 });
