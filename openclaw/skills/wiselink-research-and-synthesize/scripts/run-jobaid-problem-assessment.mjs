@@ -84,6 +84,37 @@ export function validateJobAidProblemInput(input) {
   return input;
 }
 
+// Keep provenance next to its readable source instead of sending each long
+// evidence reference twice. The Host input and its bindings remain untouched.
+export function projectJobAidModelInput(input) {
+  if (!Array.isArray(input.contextPackage?.sourceOrigins)) return input;
+  const sources = new Set(input.availableSources.map((source) => source.ref));
+  const origins = new Map();
+  const unmatched = [];
+  for (const entry of input.contextPackage.sourceOrigins) {
+    const { evidenceRef, ...origin } = entry;
+    if (!sources.has(evidenceRef)) {
+      unmatched.push(entry);
+      continue;
+    }
+    const items = origins.get(evidenceRef) ?? [];
+    items.push(origin);
+    origins.set(evidenceRef, items);
+  }
+  const { sourceOrigins: _sourceOrigins, ...contextPackage } = input.contextPackage;
+  return {
+    ...input,
+    availableSources: input.availableSources.map((source) => ({
+      ...source,
+      ...(origins.has(source.ref) ? { sourceOrigins: origins.get(source.ref) } : {}),
+    })),
+    contextPackage: {
+      ...contextPackage,
+      ...(unmatched.length ? { sourceOrigins: unmatched } : {}),
+    },
+  };
+}
+
 /** Read/save intents are executed by existing Host callbacks, never by the model. */
 export async function invokeHostedJobAidProblemModel(
   { operation, modelInput },
@@ -105,7 +136,7 @@ export async function invokeHostedJobAidProblemModel(
   const systemMessage = { role: 'system', content: GUIDE };
   let messages = [
     systemMessage,
-    { role: 'user', content: JSON.stringify(modelInput) },
+    { role: 'user', content: JSON.stringify(projectJobAidModelInput(modelInput)) },
   ];
   let expectedWorkRevision = modelInput.expectedWorkRevision;
   let saved = modelInput.previousWork

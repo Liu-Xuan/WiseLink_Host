@@ -1,6 +1,44 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { invokeHostedJobAidProblemModel } from '../scripts/run-jobaid-problem-assessment.mjs';
+import { invokeHostedJobAidProblemModel, projectJobAidModelInput } from '../scripts/run-jobaid-problem-assessment.mjs';
+
+test('source transport removes repeated identifiers without losing distinct sources, provenance or text', () => {
+  const input = modelInput();
+  input.availableSources = Array.from({ length: 446 }, (_, index) => ({
+    ref: `source:document-version-${'a'.repeat(64)}:source-reference-${index}`,
+    kind: 'DOCUMENT_PASSAGE', title: 'Same document title',
+    versionLabel: `Version ${index}`, locator: { page: index + 1 },
+  }));
+  input.contextPackage = {
+    primaryDocument: { readingStatus: 'AVAILABLE' },
+    supplementaryMaterials: { status: 'PARTIAL', reason: 'Restricted reference' },
+    sourceOrigins: input.availableSources.map((source, index) => ({
+      evidenceRef: source.ref,
+      origin: index % 2 ? 'RELATED_DOCUMENT' : 'PRIMARY_DOCUMENT',
+      contentNature: 'SOURCE_DOCUMENT_CONTENT',
+    })),
+  };
+  input.contextPackage.sourceOrigins.push({
+    evidenceRef: 'unmatched-statement', origin: 'REVIEW_CONVERSATION',
+    contentNature: 'UNVERIFIED_ENGINEER_STATEMENT',
+  });
+  input.deliveredEvidence = [{ evidenceRef: input.availableSources[0].ref, excerpt: 'Full original condition, exception and footnote remain here.' }];
+  const original = structuredClone(input);
+  const projected = projectJobAidModelInput(input);
+  assert.deepEqual(input, original, 'never mutate the Host-bound input');
+  assert.deepEqual(projected.availableSources.map(({ sourceOrigins, ...source }) => source), input.availableSources);
+  assert.deepEqual(projected.deliveredEvidence, input.deliveredEvidence);
+  const restoredOrigins = projected.availableSources.flatMap(({ ref, sourceOrigins = [] }) =>
+    sourceOrigins.map((origin) => ({ evidenceRef: ref, ...origin })),
+  ).concat(projected.contextPackage.sourceOrigins);
+  assert.deepEqual(restoredOrigins, input.contextPackage.sourceOrigins);
+  const { sourceOrigins: originalOrigins, ...originalContext } = input.contextPackage;
+  const { sourceOrigins: unmatchedOrigins, ...projectedContext } = projected.contextPackage;
+  assert.deepEqual(projectedContext, originalContext);
+  assert.ok(Buffer.byteLength(JSON.stringify(projected)) < Buffer.byteLength(JSON.stringify(input)));
+  const legacy = modelInput();
+  assert.deepEqual(projectJobAidModelInput(legacy), legacy);
+});
 
 function modelInput() {
   return {
