@@ -1367,14 +1367,14 @@ test('requires 26 MCP capabilities, six review tools, and hosted provenance', ()
     'get_action_attempt_status',
     'commit_review_turn_candidate',
   ]);
-  assert.equal(HOST_MCP_TOOLS.length, 26);
-  assert.equal(new Set(HOST_MCP_TOOLS).size, 26);
+  assert.equal(HOST_MCP_TOOLS.length, 29);
+  assert.equal(new Set(HOST_MCP_TOOLS).size, 29);
   for (const name of ['translation_workspace', 'read_assessment_sources', 'query_assessment_knowledge', 'save_assessment_work', 'read_assessment_work']) assert.ok(HOST_MCP_TOOLS.includes(name));
   assert.ok(HOST_MCP_TOOLS.includes('begin_applicability_evaluation'));
   assert.ok(HOST_MCP_TOOLS.includes('commit_applicability_candidate'));
   assert.equal(
     WISELINK_SKILL_VERSION,
-    'wiselink-research-and-synthesize@r09.c74',
+    'wiselink-research-and-synthesize@r09.c75',
   );
   assert.equal(
     WISELINK_SKILL_COMPATIBILITY_REF,

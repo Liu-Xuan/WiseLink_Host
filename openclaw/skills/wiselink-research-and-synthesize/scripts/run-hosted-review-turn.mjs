@@ -966,7 +966,7 @@ export async function createHostMcpConnection(options) {
   };
 }
 
-function validateHostToolMetadata(value) {
+export function validateHostToolMetadata(value) {
   const tools = Array.isArray(value?.tools) ? value.tools : [];
   // The pending-work query is an additive control-plane capability. It does
   // not change the established C3 model/commit contract or the required tools.
