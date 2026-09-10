@@ -31,6 +31,7 @@ const {
 const {
   EngineeringMatterWorkingService,
 } = require('../../server/modules/canonical-host/engineering-matter-working.service.ts');
+const { EngineeringIssueSearchService } = require('../../server/modules/canonical-host/engineering-issue-search.service.ts');
 const {
   MiaodaDocumentVersionSourceResolver,
 } = require('../../server/modules/work-item/miaoda-document-version-source.resolver.ts');
@@ -1123,6 +1124,9 @@ async function resetDatabase(sql) {
   for (const policy of runtimePolicies) {
     assert.deepEqual([...policy.roles].sort(), ['authenticated', 'service_role']);
   }
+  await sql.unsafe('CREATE UNIQUE INDEX work_item_tenant_identity ON work_item(tenant_id, work_item_id)');
+  await applyMigration(sql, 'migrations/0026_assessment_work_revision.sql');
+  await sql.unsafe('GRANT SELECT ON assessment_work_revision TO authenticated, service_role');
   await sql.unsafe('ALTER TABLE action_attempt ENABLE ROW LEVEL SECURITY');
   // Emulate existing platform permissive policies: the new restrictive policy
   // must hold even when a legacy policy allows all rows.
@@ -1335,6 +1339,17 @@ async function assertHostedCandidateRls(sql, owner, matterId) {
   assert.equal(result.revision.workingRevision, 2);
   assert.deepEqual(result.revision.source, source);
   assert.equal(result.revision.state.substantiveResult.candidateOnly, true);
+  const issueSearch = new EngineeringIssueSearchService(owner.database, {
+    readBrowserRevision: () => { throw new Error('Unexpected WorkItem result'); },
+  }, owner.workingService);
+  const question = result.revision.state.problemWork.issues[0].question;
+  const hit = (await issueSearch.search(question, owner.actor)).hits.find(item => item.subjectId === matterId);
+  assert.equal(hit.workRef, result.revision.matterWorkRevisionId);
+  const [older] = await sql`SELECT matter_work_revision_id FROM engineering_matter_work_revision
+    WHERE matter_id = ${matterId} AND working_revision = 1`;
+  const oldIssue = await issueSearch.read({ ...hit, workRef: older.matter_work_revision_id }, owner.actor);
+  assert.equal(oldIssue.identity.workRevision, 1);
+  assert.notEqual(oldIssue.issue.statements[0].text, result.revision.state.problemWork.issues[0].statements[0].text);
   const replay = await commit();
   assert.equal(replay.replayed, true);
   assert.equal(
@@ -1830,6 +1845,21 @@ async function assertWorkingRevisionFlow(
     owner.working.readByRefForRuntime(exactInput),
   );
   assert.deepEqual(exact.state.problemWork, command.nextProblemWork);
+  const issues = new EngineeringIssueSearchService(owner.database, {
+    readBrowserRevision: () => { throw new Error('Unexpected WorkItem result'); },
+  }, owner.workingService);
+  const question = exact.state.problemWork.issues[0].question;
+  const matches = await issues.search(question, owner.actor);
+  const hit = matches.hits.find(item => item.subjectId === matterId);
+  assert.ok(hit, 'the SQL issue query must find the saved question');
+  assert.equal(hit.workRef, exact.matterWorkRevisionId);
+  assert.equal(hit.issueKey, exact.state.problemWork.issues[0].issueKey);
+  assert.deepEqual(Object.keys(hit).sort(), ['issueKey', 'question', 'sourceRefs', 'subjectId', 'subjectKind', 'workRef', 'workRevision'].sort());
+  assert.deepEqual((await issues.read(hit, owner.actor)).issue, exact.state.problemWork.issues[0]);
+  assert.deepEqual((await issues.search(question, actor('actor-B'))).hits, []);
+  assert.deepEqual((await issues.search(question, actor('actor-A', 'tenant-B'))).hits, []);
+  assert.deepEqual((await issues.search("%' OR 1=1 --", owner.actor)).hits, []);
+  await assert.rejects(issues.read({ ...hit, workRef: 'MWR-UNKNOWN' }, owner.actor), /not available|NOT_FOUND/i);
   const coverageOnly = materializeEngineeringMatterWorkingState({
     matterId,
     current: exact.state,
