@@ -1,3 +1,4 @@
+import { AsyncLocalStorage } from 'node:async_hooks';
 import { Inject, Injectable } from '@nestjs/common';
 import type { Request } from 'express';
 
@@ -25,6 +26,22 @@ export interface ResolvedSession {
 
 @Injectable()
 export class SessionResolver {
+  private readonly requestSession = new AsyncLocalStorage<{
+    request: Request;
+    session: ResolvedSession | null;
+  }>();
+
+  /** Reuse an identity verified before a server-only SQL scope, for this request only. */
+  async withRequestSession<T>(
+    request: Request,
+    operation: (session: ResolvedSession | null) => Promise<T>,
+  ): Promise<T> {
+    const session = await this.resolve(request);
+    return this.requestSession.run({ request, session }, () =>
+      operation(session),
+    );
+  }
+
   constructor(
     private readonly sessionStore: SessionStore,
     @Inject(OAUTH_CONFIG)
@@ -41,6 +58,13 @@ export class SessionResolver {
    * caller-asserted field.
    */
   async resolve(httpRequest: Request): Promise<ResolvedSession | null> {
+    const verified = this.requestSession.getStore();
+    if (verified?.request === httpRequest) {
+      return verified.session &&
+        verified.session.session.expiresAt.getTime() > Date.now()
+        ? verified.session
+        : null;
+    }
     const token = this.extractToken(httpRequest);
     if (!token) return null;
 

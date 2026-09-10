@@ -14,3 +14,5 @@
 本地验证覆盖原文 UTF-16 选段、私人读回、上下文继承授权、并发 CAS、贡献纠正/撤回、评估请求幂等及前端权限失效清理；隔离 PostgreSQL 使用真实迁移和 RLS。技术发布与实际 Aily → 贡献 → OpenClaw → 新工作稿 → Aily 读回的业务验收分别记录，不能相互替代。
 
 线上接入修订：首次 release `7683769644624432059` 的私人列表返回 `ENGINEERING_MATTER_RUNTIME_AUTHORIZATION_UNAVAILABLE`。原因是普通浏览器 SQL 身份无法直接进入仅供后台服务使用的 actor transaction。新增仅对话控制器可用的 SQL 作用域：先验证妙搭 Hosted 原生最终用户和 `wl_session`，要求用户、租户、应用一致，再在独立 SQL 异步上下文内使用该真实 actor。原请求身份、后台 service-role 校验和 RLS 均保留。真实 SDK + 隔离 PostgreSQL 验证了并发身份隔离、作用域退出恢复，以及过期/错用户/错租户/系统调用/本地伪造入口的拒绝。
+
+随后读回确认下游重复 `SessionResolver.resolve` 在服务 SQL 角色下无法读取原本仅认证用户可读的会话表。修复为先验证一次，并仅在当前精确 HTTP 请求的异步作用域复用这一结果；普通请求解析不缓存，过期仍拒绝，新请求不继承。`ReviewConversationService` 的嵌套授权也沿用同一请求身份，对象权限继续新鲜读取。会话表策略保持不变；上述真实 SDK/数据库检查已增加该角色差异回归，身份接口 25 项测试通过。
