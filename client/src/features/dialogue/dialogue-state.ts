@@ -79,6 +79,8 @@ export function dialogueResponseLabel(
 }
 
 export function dialogueAilyError(error: string): string {
+  if (error === 'USER_REAUTHORIZATION_REQUIRED') return '需要重新连接飞书身份';
+  if (error === 'NOT_CONFIGURED') return '尚未配置 Aily 对话服务';
   return error.includes('AILY_')
     ? 'Aily 暂未完成本次回答。已收到的内容仍保留；稍后可查看已存状态，不会自动重新生成。'
     : error;
