@@ -3,6 +3,7 @@ import type {
   AssessmentReadingClaim,
   AssessmentReadingResult,
 } from './assessment-reading.interface';
+import type { JobAidProblemWorkContent } from './jobaid-problem-assessment.interface';
 
 export type EngineeringMatterWorkingUpdateKind =
   | 'INITIAL_SYNTHESIS'
@@ -15,7 +16,7 @@ export interface EngineeringMatterWorkingFocus {
 }
 
 /** Exact Host-owned input identity observed for one Matter working revision. */
-export interface EngineeringMatterWorkingInputBinding {
+export interface EngineeringMatterWorkItemInputBinding {
   /** Stable within the Matter. The first increment uses the WorkItem id. */
   inputId: string;
   workItemId: string;
@@ -24,6 +25,21 @@ export interface EngineeringMatterWorkingInputBinding {
   resultRef: string | null;
   resultRevision: number | null;
 }
+
+export interface EngineeringMatterDocumentInputBinding {
+  kind: 'DOCUMENT_VERSION';
+  inputId: string;
+  familyId: string;
+  documentVersionId: string;
+  workItemId: null;
+  workItemRevision: null;
+  resultRef: null;
+  resultRevision: null;
+}
+
+export type EngineeringMatterWorkingInputBinding =
+  | EngineeringMatterWorkItemInputBinding
+  | EngineeringMatterDocumentInputBinding;
 
 export interface EngineeringMatterWorkingTextItem {
   itemId: string;
@@ -54,6 +70,8 @@ export interface EngineeringMatterWorkingState {
   reviewConditions: EngineeringMatterWorkingTextItem[];
   substantiveInputs: EngineeringMatterWorkingInputBinding[];
   coverage: EngineeringMatterWorkingCoverage[];
+  /** Complete saved investigation; absent only on historical summary-only work. */
+  problemWork?: JobAidProblemWorkContent;
 }
 
 export interface EngineeringMatterWorkingClaimDelta {
@@ -89,12 +107,13 @@ export interface EngineeringMatterWorkingRevisionCommand {
   /** Member inputs used by the next result; may be empty for non-document premises. */
   substantiveInputs: EngineeringMatterWorkingInputBinding[];
   coverageUpdates: EngineeringMatterWorkingCoverage[];
+  /** Host-materialized full investigation. Omission preserves prior saved work. */
+  nextProblemWork?: JobAidProblemWorkContent;
 }
 
-export interface EngineeringMatterWorkingRevisionSource {
-  actionAttemptId: string;
-  reviewTurnId: string;
-}
+export type EngineeringMatterWorkingRevisionSource =
+  | { actionAttemptId: string; reviewTurnId: string }
+  | { kind: 'ENGINEERING_MATTER'; actionAttemptId: string; reviewTurnId: null };
 
 export interface EngineeringMatterWorkingRevisionChange {
   changedBecause: string | null;

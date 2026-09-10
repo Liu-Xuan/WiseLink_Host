@@ -6,11 +6,12 @@ import {
 } from '../document-management/src/hosted/nest';
 import { OrdinaryDocumentManagementAuthorizer } from './ordinary-document-management-authorizer';
 import { WorkItemRuntimeModule } from '../work-item/work-item-runtime.module';
+import { EngineeringMatterModule } from '../canonical-host/engineering-matter.module';
 
 @Module({
   imports: [
     DocumentManagementHostedModule.register({
-      imports: [WorkItemRuntimeModule],
+      imports: [WorkItemRuntimeModule, EngineeringMatterModule],
       authorizerProvider: {
         provide: DOCUMENT_MANAGEMENT_INGEST_AUTHORIZER,
         useClass: OrdinaryDocumentManagementAuthorizer,

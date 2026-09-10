@@ -19,7 +19,10 @@ import type {
 import AssessmentReadingBrief from './AssessmentReadingBrief';
 import ClaimEvidenceDialog from './ClaimEvidenceDialog';
 import MatterMembers from './MatterMembers';
+import MatterMaterials from './MatterMaterials';
 import MatterWorkingDetails from './MatterWorkingDetails';
+import MatterProblemWork from './MatterProblemWork';
+import MatterDocumentSourceDialog from './MatterDocumentSourceDialog';
 import {
   readSavedAssessmentClaim,
   type AssessmentClaimSelection,
@@ -129,6 +132,7 @@ const MatterWorkspace: FC<MatterWorkspaceProps> = ({
     > & { sourceRefId?: string },
   ): void {
     saveLocation();
+    if (!evidence.workItemId) setClaimSelection(null);
     navigate(matterDocumentRoute(matterId, evidence, panel));
   }
 
@@ -190,7 +194,10 @@ const MatterWorkspace: FC<MatterWorkspaceProps> = ({
       <header className="flex flex-wrap items-center justify-between gap-4">
         <div className="space-y-1">
           <p className="text-xs text-muted-foreground">
-            工程事项 · {data.matter.catalog.entries.length} 份关联资料
+            工程事项 ·{' '}
+            {data.matter.catalog.entries.length +
+              (data.matter.materials?.length ?? 0)}{' '}
+            项材料关系
           </p>
           <h1 className="break-words text-2xl font-semibold">
             {data.matter.title}
@@ -269,6 +276,10 @@ const MatterWorkspace: FC<MatterWorkspaceProps> = ({
                 </Button>
               </div>
             )}
+            <MatterProblemWork
+              revision={data.working.current}
+              onLocateDocument={openDocument}
+            />
           </div>
           <aside className="wl-side-panel">
             <MatterWorkingDetails
@@ -353,6 +364,7 @@ const MatterWorkspace: FC<MatterWorkspaceProps> = ({
         </div>
         <div className="grid gap-6 xl:grid-cols-[minmax(0,1fr)_20rem]">
           <div className="wl-overall-hero wl-glass-content">
+            <MatterMaterials materials={data.matter.materials ?? []} />
             <MatterMembers
               members={data.matter.catalog.entries}
               onOpenMember={(member: EngineeringMatterCatalogEntry) =>
@@ -371,6 +383,17 @@ const MatterWorkspace: FC<MatterWorkspaceProps> = ({
           </aside>
         </div>
       </RetainedWorkbenchPanel>
+      {searchParams.get('sourceDocument') ? <MatterDocumentSourceDialog
+        key={`${sessionGeneration}:${searchParams.get('sourceDocument')}:${searchParams.get('sourceRef')}`}
+        documentVersionId={searchParams.get('sourceDocument')!}
+        sourceRef={searchParams.get('sourceRef')}
+        onClose={() => {
+          const params = new URLSearchParams(searchParams);
+          params.delete('sourceDocument');
+          params.delete('sourceRef');
+          setSearchParams(params);
+        }}
+      /> : null}
       <ClaimEvidenceDialog
         selection={claimSelection}
         readClaim={readClaim}

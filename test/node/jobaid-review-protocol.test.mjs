@@ -390,7 +390,7 @@ test('actual JobAid Host task and native Review driver preserve initial work thr
                       (tool) =>
                         tool.function.name ===
                         'return_wiselink_review_candidate',
-                    ).function.parameters.properties.candidateJson.type,
+                    ).function.parameters.properties.answer.type,
                     'string',
                   );
                 } else
@@ -404,8 +404,6 @@ test('actual JobAid Host task and native Review driver preserve initial work thr
                   sourceRefs: [doc.evidenceRef],
                   missingInputs: [],
                   candidateEvidenceRefs: [],
-                  reviewActionDraft: null,
-                  affectedItemIds: [],
                   warnings: [],
                   jobAidWorkingDelta: delta,
                 };
@@ -427,7 +425,7 @@ test('actual JobAid Host task and native Review driver preserve initial work thr
                               arguments: JSON.stringify(
                                 modelCalls === 1
                                   ? { sourceRefIds: [doc.evidenceRef] }
-                                  : { candidateJson: JSON.stringify(output) },
+                                  : output,
                               ),
                             },
                           },

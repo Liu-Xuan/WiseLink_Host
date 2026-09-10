@@ -22,6 +22,8 @@ import {
   type EngineeringMatterWorkingTransactionExecutor,
 } from './engineering-matter-working.repository';
 import { engineeringMatterPendingInputs } from './engineering-matter-working-state';
+import { materialInputBindings } from './matter-material';
+import { isHostedCanonicalFinalUserActor } from '../work-item/miaoda-hosted-canonical-object-access.adapter';
 import {
   EngineeringMatterRepository,
   type EngineeringMatterRevisionLinkSnapshot,
@@ -72,6 +74,29 @@ export class EngineeringMatterWorkingService {
   }
 
   /** Browser path: requires the native actor and fresh object access per member. */
+  async readWorkingRevision(
+    matterId: string,
+    workRef: string,
+    actor: CanonicalHostActor,
+  ): Promise<EngineeringMatterWorkingRevisionReadModel> {
+    await this.authorizedMatter(matterId, actor, 0);
+    const revision = await this.working.readByRef({
+      tenantId: actor.tenantId,
+      matterId,
+      workRef,
+    });
+    if (!revision) throw matterNotFound();
+    // Historical work can contain a member that is no longer in the current composition.
+    for (const workItemId of new Set(
+      [
+        ...revision.state.substantiveInputs,
+        ...revision.state.coverage.map((item) => item.binding),
+      ].flatMap((binding) => (binding.workItemId ? [binding.workItemId] : [])),
+    ))
+      await this.requireInput(workItemId, actor);
+    return revision;
+  }
+
   async resolveWorkingBasis(
     matterId: string,
     actor: CanonicalHostActor,
@@ -118,7 +143,9 @@ export class EngineeringMatterWorkingService {
           !snapshot ||
           snapshot.currentMatterRevisionId !==
             authorized.currentMatterRevisionId ||
-          snapshot.links.length !== authorized.currentInputs.length
+          snapshot.links.length +
+            materialInputBindings(snapshot.materials ?? []).length !==
+            authorized.currentInputs.length
         ) {
           throw workingReadConflict();
         }
@@ -221,11 +248,20 @@ export class EngineeringMatterWorkingService {
       matterId,
     });
     if (!snapshot) throw matterNotFound();
+    if (
+      snapshot.materials?.length &&
+      (!actor.objectAccessActor ||
+        !isHostedCanonicalFinalUserActor(actor.objectAccessActor) ||
+        actor.objectAccessActor.tenantId !== actor.tenantId ||
+        actor.objectAccessActor.canonicalSubject.id !== actor.userId)
+    )
+      throw identityHandoffUnavailable();
     const currentInputs = await Promise.all(
       snapshot.links.map((link: EngineeringMatterRevisionLinkSnapshot) =>
         this.requireInput(link.workItemId, actor),
       ),
     );
+    currentInputs.push(...materialInputBindings(snapshot.materials ?? []));
     const confirmed = await this.matters.loadCurrent({
       tenantId: actor.tenantId,
       matterId,

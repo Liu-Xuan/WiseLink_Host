@@ -643,6 +643,49 @@ test(
       await t.test(
         'actual Hosted actor scope hides work from another actor or tenant and rejects changed source',
         async () => {
+          assert.deepEqual(
+            await hosted(() =>
+              repository.readByRefForRuntime({
+                ...scope,
+                workRevisionRef: saved.workRevisionRef,
+              }),
+            ),
+            saved,
+          );
+          assert.deepEqual(
+            await hosted(() => repository.listHeadersForRuntime(scope)),
+            [
+              {
+                workRevisionRef: saved.workRevisionRef,
+                workRevision: saved.workRevision,
+              },
+            ],
+          );
+          for (const changedScope of [
+            { actorUserId: 'actor-other' },
+            { tenantId: 'other-tenant' },
+            { workItemId: 'WI-other' },
+          ]) {
+            assert.equal(
+              await hosted(() =>
+                repository.readByRefForRuntime({
+                  ...scope,
+                  ...changedScope,
+                  workRevisionRef: saved.workRevisionRef,
+                }),
+              ),
+              null,
+            );
+            assert.deepEqual(
+              await hosted(() =>
+                repository.listHeadersForRuntime({
+                  ...scope,
+                  ...changedScope,
+                }),
+              ),
+              [],
+            );
+          }
           assert.equal(
             await hosted(() => repository.latest(scope)),
             null,

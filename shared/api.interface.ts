@@ -2978,6 +2978,8 @@ export interface DocumentUploadIdentity {
 }
 
 export interface DocumentUploadResponse {
+  /** Present after a committed formal upload has joined its default family Matter. */
+  matterId?: string;
   status: 'COMMITTED' | 'REVIEW_REQUIRED';
   identity: DocumentUploadIdentity | null;
   currentVersion: {
@@ -3078,7 +3080,7 @@ export interface EngineeringMatterDirectoryResponse {
   items: Array<{
     matterId: string;
     title: string;
-    primaryWorkItemId: string;
+    primaryWorkItemId: string | null;
     createdAt: string;
     updatedAt: string;
     currentMatterRevisionId: string;
@@ -3137,29 +3139,30 @@ export interface EngineeringMatterCatalogEntry {
  * server-side session value.
  */
 export interface EngineeringMatterReadModel {
-  schemaVersion: 'wiselink.3_1.engineering_matter_catalog.v1';
+  schemaVersion: 'wiselink.3_1.engineering_matter_catalog.v1' | 'wiselink.3_1.engineering_matter_catalog.v2';
+  materials?: import('./matter-material.interface').MatterMaterialLink[];
   matterId: string;
   title: string;
   status: 'ACTIVE';
   currentRevision: {
     matterRevisionId: string;
     revisionNo: number;
-    changeKind: 'CREATED' | 'WORK_ITEM_LINKED';
+    changeKind: 'CREATED' | 'WORK_ITEM_LINKED' | 'MATERIALS_REVISED';
     changeSummary: string;
     createdAt: string;
   };
   catalog: {
-    scope: 'CROSS_WORK_ITEM';
+    scope: 'CROSS_WORK_ITEM' | 'MATTER_MATERIALS';
     entries: EngineeringMatterCatalogEntry[];
   };
   authorization: {
-    policy: 'ALL_LINKED_WORK_ITEMS_REQUIRED';
+    policy: 'ALL_LINKED_WORK_ITEMS_REQUIRED' | 'ALL_MATERIAL_SOURCES_REQUIRED';
     authorizedWorkItemCount: number;
   };
   authority: {
     workItemCurrentRemainsAuthoritative: true;
     documentManagementRemainsAuthoritative: true;
-    sourceRefsRemainWorkItemScoped: true;
+    sourceRefsRemainWorkItemScoped: boolean;
     matterCreatesAssessmentCurrent: false;
   };
 }

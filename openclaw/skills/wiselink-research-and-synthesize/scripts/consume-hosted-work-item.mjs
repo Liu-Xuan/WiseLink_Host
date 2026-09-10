@@ -7,6 +7,8 @@ import process from 'node:process';
 import { pathToFileURL } from 'node:url';
 
 import { consumePendingReviewTurn } from './consume-hosted-review-turn.mjs';
+import { consumeHostedMatter } from './consume-hosted-matter.mjs';
+import { invokeHostedJobAidProblemModel } from './run-jobaid-problem-assessment.mjs';
 import { invokeHostedInitialModel } from './invoke-hosted-initial-model.mjs';
 import { INITIAL_ANALYSIS_OPERATIONS, parseConfigurationEvidenceReevaluationStatus, runInitialAnalysis } from './orchestrate-host-mcp.mjs';
 import {
@@ -42,6 +44,7 @@ const INITIAL_TOOLS = new Set([
 
 /** Drain dependency-ready initial stages within one native tick; commits remain serial. */
 export async function consumeHostedWorkItem(options, dependencies) {
+  if (!options.workItemId && options.matterId) return consumeHostedMatter(options, dependencies);
   let statusResult = await dependencies.callTool('get_parse_status', {
     workItemId: options.workItemId,
   });
@@ -54,7 +57,8 @@ export async function consumeHostedWorkItem(options, dependencies) {
       { ...options, checkpointRoot: join(options.checkpointRoot, 'review') },
       { callTool: dependencies.callTool, invokeModel: dependencies.invokeReviewModel },
     );
-    if (initialComplete(initial)) return review;
+    if (initialComplete(initial)) return review.status === 'IDLE' && options.matterId
+      ? consumeHostedMatter(options, dependencies) : review;
     if (review.status !== 'IDLE') {
       return { ...review, initialStatus: initial.status, initialStages: initial.stages };
     }
@@ -262,23 +266,26 @@ function option(argv, name) {
 
 async function main(argv, env) {
   if (argv.includes('--help')) {
-    process.stdout.write('Usage: node consume-hosted-work-item.mjs --work-item-id WI-... [--applicability-context-ref REF] [--checkpoint-root PATH] [--openclaw-config PATH]\nDependency-ready initial stages with serial Host commits, or one pending candidate-only review, per native cron tick.\n');
+    process.stdout.write('Usage: node consume-hosted-work-item.mjs [--work-item-id WI-...] [--matter-id MAT-...] [--applicability-context-ref REF] [--checkpoint-root PATH] [--openclaw-config PATH]\nOne existing native tick: initial stages, explicit Review, then optional Matter continuation. At least one exact subject is required.\n');
     return;
   }
   const workItemId = option(argv, '--work-item-id');
-  if (!workItemId?.trim()) throw new Error('INITIAL_WORK_ITEM_ID_REQUIRED');
+  const matterId = option(argv, '--matter-id');
+  if (!workItemId?.trim() && !matterId?.trim()) throw new Error('INITIAL_WORK_ITEM_OR_MATTER_ID_REQUIRED');
   const runtime = await resolveRuntimeConfig(argv, env);
   assertHostedModelGatewayReady(runtime);
   const connection = await createHostMcpConnection(runtime);
   try {
     const result = await consumeHostedWorkItem({
       workItemId,
+      matterId,
       applicabilityContextRef: option(argv, '--applicability-context-ref'),
       checkpointRoot: option(argv, '--checkpoint-root') ?? join(homedir(), '.openclaw', 'wiselink-work-item-runs'),
     }, {
       callTool: connection.callTool,
       invokeInitialModel: (input, hooks) => invokeHostedInitialModel(input, { ...runtime, ...hooks }),
       invokeReviewModel: (input, hooks) => invokeHostedReviewModel(input, { ...runtime, ...hooks }),
+      invokeMatterModel: (input, hooks) => invokeHostedJobAidProblemModel(input, { ...runtime, ...hooks }),
       runtimeProvenance: {
         modelVersion: runtime.configuredModelVersion,
         promptVersion: WISELINK_APPLICABILITY_PROMPT_VERSION,

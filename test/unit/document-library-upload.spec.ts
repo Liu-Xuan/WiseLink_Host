@@ -50,6 +50,9 @@ describe('ordinary document library upload', () => {
   });
   function service() {
     const ingest = jest.fn().mockResolvedValue(receipt);
+    const organizeDocumentIntake = jest
+      .fn()
+      .mockResolvedValue({ matterId: 'MAT-family', created: true });
     jest
       .mocked(DocumentManagementHostedCore)
       .mockImplementation(
@@ -60,8 +63,10 @@ describe('ordinary document library upload', () => {
         {} as never,
         {} as never,
         {} as never,
+        { organizeDocumentIntake } as never,
       ),
       ingest,
+      organizeDocumentIntake,
     };
   }
   it('returns a bounded 409 for the known exact-identity conflict without stack or internal details', async () => {
@@ -96,6 +101,17 @@ describe('ordinary document library upload', () => {
       f.service.ingestDocumentLibraryUpload(request, context),
     ).rejects.toBe(failure);
   });
+  it('reports saved-source organization failure and resumes with the original upload identity', async () => {
+    const target = service();
+    target.organizeDocumentIntake.mockRejectedValueOnce(new Error('temporary organization interruption'));
+    await expect(target.service.ingestDocumentLibraryUpload(request, context)).rejects.toMatchObject({
+      status: 503, response: { code: 'DOCUMENT_SAVED_MATTER_PENDING' },
+    });
+    await expect(target.service.ingestDocumentLibraryUpload(request, context)).resolves.toMatchObject({
+      documentVersionId: 'v1', matterId: 'MAT-family',
+    });
+    expect(target.ingest.mock.calls[0][0].idempotencyKey).toBe(target.ingest.mock.calls[1][0].idempotencyKey);
+  });
   it('binds production user authority and source server-side without a development role or WorkItem', async () => {
     const target = service();
     const result = await target.service.ingestDocumentLibraryUpload(
@@ -104,8 +120,14 @@ describe('ordinary document library upload', () => {
     );
     expect(result).toMatchObject({
       status: 'COMMITTED',
+      matterId: 'MAT-family',
       documentVersionId: 'v1',
       identity: { documentNumber: '787-34-001', businessRevision: 'R1' },
+    });
+    expect(target.organizeDocumentIntake).toHaveBeenCalledWith({
+      tenantId: 't1',
+      actorUserId: 'u1',
+      documentVersionId: 'v1',
     });
     const [actual, scope] = target.ingest.mock.calls[0];
     expect(actual).toMatchObject({

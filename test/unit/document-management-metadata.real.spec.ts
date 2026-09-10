@@ -3,21 +3,37 @@ import { createHash } from 'node:crypto';
 import { PdfjsDistLayoutExtractor } from '../../server/modules/professional-input/parser/pdfjs-dist-layout-extractor.adapter';
 import { extractActualPdfMetadata } from '../../server/modules/document-management/src/migrated/ingress/pdfDocumentMetadata.js';
 import type { DocumentExtractedMetadata } from '@shared/api.interface';
+import { documentSourceReading } from '../../server/modules/document-management/src/hosted/nest/document-source-reading';
+import type { DocumentSourceReading } from '@shared/document-source-reading.interface';
 
 const actualPdf = process.env.WL_DM_METADATA_REAL_PDF_PATH?.trim();
 (actualPdf ? describe : describe.skip)('actual Boeing 787 PDF metadata', () => {
   let metadata: DocumentExtractedMetadata;
+  let pages: DocumentSourceReading;
   beforeAll(async () => {
     const bytes = await readFile(actualPdf!);
     const layout = new PdfjsDistLayoutExtractor().extractLayoutWithDiagnostics(
       bytes,
     );
+    pages = documentSourceReading({ documentVersionId: 'real-pdf-test-version', filename: 'SB-787-31-0019-01.pdf',
+      sha256: createHash('sha256').update(bytes).digest('hex'), byteLength: bytes.length,
+      layout, pageStart: 1, pageEnd: 2 });
     metadata = extractActualPdfMetadata({
       layout,
       actualSha256: createHash('sha256').update(bytes).digest('hex'),
       actualByteLength: bytes.length,
       identity: { documentFamily: 'SB', issuer: 'BOEING' },
     });
+  });
+  it('reads distinct physical page text and emits exact direct-document anchors', () => {
+    expect(pages.pages).toHaveLength(2);
+    expect(pages.pages[0].text).toMatch(/INDICATING\/RECORDING\s+SYSTEM/);
+    expect(pages.pages[1].text.length).toBeGreaterThan(50);
+    expect(pages.pages[1].text).not.toEqual(pages.pages[0].text);
+    expect(pages.pages[1].evidence).toMatchObject({ workItemId: null,
+      documentVersionId: 'real-pdf-test-version', sourceRefId: 'DOCUMENT_VERSION:real-pdf-test-version:page:2',
+      excerpt: pages.pages[1].text });
+    expect(pages.pages[1].visualContentVerified).toBe(false);
   });
   it('reads the unlabelled multi-line publication title from page one', () => {
     expect(metadata.title.observations).toEqual([

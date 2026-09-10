@@ -28,10 +28,12 @@ import { canonicalJson } from './action-attempt-envelope';
 import { INITIAL_ANALYSIS_REQUEST_SCHEMA } from './initial-analysis-request';
 import type {
   OpenClawResultEnvelope,
+  AnyOpenClawResultEnvelope,
   OpenClawTaskEnvelope,
 } from './action-attempt-envelope.types';
 import type {
   ActionAttemptRow,
+  MatterActionAttemptRow,
   ActionAttemptWorkItemBinding,
   ReserveActionAttemptInput,
 } from './action-attempt.types';
@@ -123,6 +125,30 @@ export class ActionAttemptRepository {
       .where(eq(actionAttempt.operationRef, operationRef))
       .limit(1);
     return (row as ActionAttemptRow | undefined) ?? null;
+  }
+
+  async readMatterByOperationRef(
+    operationRef: string,
+  ): Promise<MatterActionAttemptRow | null> {
+    const [row] = await this.db
+      .select()
+      .from(actionAttempt)
+      .where(
+        and(
+          eq(actionAttempt.operationRef, operationRef),
+          eq(actionAttempt.subjectKind, 'ENGINEERING_MATTER'),
+          isNull(actionAttempt.workItemId),
+        ),
+      )
+      .limit(1);
+    if (!row) return null;
+    if (
+      !row.matterId ||
+      !row.matterRevisionId ||
+      row.documentVersionId !== null
+    )
+      throw new Error('ACTION_ATTEMPT_SUBJECT_INVALID');
+    return { ...row, subjectKind: 'ENGINEERING_MATTER', workItemId: null };
   }
 
   async readByAttemptId(attemptId: string): Promise<ActionAttemptRow | null> {
@@ -520,6 +546,8 @@ export class ActionAttemptRepository {
     leaseSlot: number;
     now: Date;
     leaseMs: number;
+    /** Actor-bound callers use a savepoint to recover a slot collision. */
+    propagateSlotConflict?: boolean;
   }): Promise<ActionAttemptRow | null> {
     try {
       const [claimed] = await this.db
@@ -562,7 +590,8 @@ export class ActionAttemptRepository {
         .returning();
       return (claimed as ActionAttemptRow | undefined) ?? null;
     } catch (cause) {
-      if (isLeaseSlotConflict(cause)) return null;
+      if (isLeaseSlotConflict(cause) && !input.propagateSlotConflict)
+        return null;
       throw cause;
     }
   }
@@ -709,7 +738,7 @@ export class ActionAttemptRepository {
     attemptId: string;
     leaseToken: string;
     leaseGeneration: number;
-    result: OpenClawResultEnvelope;
+    result: AnyOpenClawResultEnvelope;
     now: Date;
     recoveryLeaseMs: number;
   }): Promise<ActionAttemptRow | null> {
@@ -756,7 +785,7 @@ export class ActionAttemptRepository {
     now: Date;
     leaseToken?: string;
     leaseGeneration?: number;
-    result?: OpenClawResultEnvelope;
+    result?: AnyOpenClawResultEnvelope;
     projectionApplied?: boolean;
     errorCode?: string;
     errorMessage?: string;
@@ -956,7 +985,7 @@ function unclaimedInitialRequest(row: ActionAttemptRow) {
   );
 }
 
-function isLeaseSlotConflict(cause: unknown): boolean {
+export function isLeaseSlotConflict(cause: unknown): boolean {
   let current = cause;
   for (let depth = 0; depth < 5; depth += 1) {
     if (!current || typeof current !== 'object') return false;

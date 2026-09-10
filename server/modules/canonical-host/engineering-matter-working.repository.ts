@@ -9,7 +9,7 @@ import {
   type PostgresJsDatabase,
 } from '@lark-apaas/fullstack-nestjs-core';
 import type { Request, Response } from 'express';
-import { and, asc, desc, eq, or, sql } from 'drizzle-orm';
+import { and, asc, desc, eq, isNull, or, sql } from 'drizzle-orm';
 
 import type {
   EngineeringMatterWorkingCommitResult,
@@ -21,13 +21,20 @@ import type {
 
 import {
   engineeringMatter,
+  actionAttempt,
   engineeringMatterRevision,
   engineeringMatterRevisionWorkItem,
   engineeringMatterWorkRevision,
   identitySubjectMapping,
   workItem,
 } from '../../database/schema';
-import { canonicalJson } from '../action-attempt/action-attempt-envelope';
+import {
+  canonicalJson,
+  parseMatterTaskEnvelope,
+} from '../action-attempt/action-attempt-envelope';
+import type { OpenClawMatterTaskEnvelope } from '../action-attempt/action-attempt-envelope.types';
+import { loadMaterials } from './engineering-matter.repository';
+import { materialInputBindings } from './matter-material';
 import {
   assertEngineeringMatterWorkingBindingsCurrent,
   engineeringMatterWorkingChangeFromCommand,
@@ -125,7 +132,11 @@ export class EngineeringMatterWorkingRepository {
     return new Promise<T>((resolve, reject) => {
       this.sqlContext.use(
         {
-          userContext: { userId: actorUserId, isSystemAccount: true, roles: [] },
+          userContext: {
+            userId: actorUserId,
+            isSystemAccount: true,
+            roles: [],
+          },
         } as Request,
         {} as Response,
         () => {
@@ -168,7 +179,50 @@ export class EngineeringMatterWorkingRepository {
       )
       .orderBy(desc(engineeringMatterWorkRevision.workingRevision))
       .limit(1);
-    return row ? readModel(row) : null;
+    return row ? authorizedReadModel(row, executor) : null;
+  }
+
+  /** Exact saved identity, constrained before loading the full investigation body. */
+  async readByRef(
+    input: { tenantId: string; matterId: string; workRef: string },
+    executor: EngineeringMatterWorkingDatabaseExecutor = this.db,
+  ): Promise<EngineeringMatterWorkingRevisionReadModel | null> {
+    const [row] = await executor
+      .select()
+      .from(engineeringMatterWorkRevision)
+      .where(
+        and(
+          eq(engineeringMatterWorkRevision.tenantId, input.tenantId),
+          eq(engineeringMatterWorkRevision.matterId, input.matterId),
+          eq(engineeringMatterWorkRevision.matterWorkRevisionId, input.workRef),
+        ),
+      )
+      .limit(1);
+    return row ? authorizedReadModel(row, executor) : null;
+  }
+
+  async readByRefForRuntime(input: {
+    tenantId: string;
+    matterId: string;
+    workRef: string;
+    actorUserId: string;
+  }): Promise<EngineeringMatterWorkingRevisionReadModel | null> {
+    return this.withActorTransaction(
+      input.actorUserId,
+      async ({ database }) => {
+        await this.authorizeRuntimeInputs(input, database);
+        const revision = await this.readByRef(input, database);
+        if (revision)
+          await this.authorizeRuntimeInputs(
+            {
+              ...input,
+              basedOnMatterRevisionId: revision.basedOnMatterRevisionId,
+            },
+            database,
+          );
+        return revision;
+      },
+    );
   }
 
   async commit(
@@ -187,30 +241,40 @@ export class EngineeringMatterWorkingRepository {
     }
   }
 
-  async findBySource(input: {
-    tenantId: string;
-    matterId: string;
-    source: EngineeringMatterWorkingRevisionSource;
-  }): Promise<EngineeringMatterWorkingRevisionReadModel | null> {
-    const [row] = await this.db
+  async findBySource(
+    input: {
+      tenantId: string;
+      matterId: string;
+      source: EngineeringMatterWorkingRevisionSource;
+      requestId?: string;
+    },
+    executor: EngineeringMatterWorkingDatabaseExecutor = this.db,
+  ): Promise<EngineeringMatterWorkingRevisionReadModel | null> {
+    const [row] = await executor
       .select()
       .from(engineeringMatterWorkRevision)
       .where(
         and(
           eq(engineeringMatterWorkRevision.tenantId, input.tenantId),
           eq(engineeringMatterWorkRevision.matterId, input.matterId),
+          ...(input.requestId
+            ? [eq(engineeringMatterWorkRevision.requestId, input.requestId)]
+            : []),
           eq(
             engineeringMatterWorkRevision.actionAttemptId,
             input.source.actionAttemptId,
           ),
-          eq(
-            engineeringMatterWorkRevision.reviewTurnId,
-            input.source.reviewTurnId,
-          ),
+          input.source.reviewTurnId === null
+            ? isNull(engineeringMatterWorkRevision.reviewTurnId)
+            : eq(
+                engineeringMatterWorkRevision.reviewTurnId,
+                input.source.reviewTurnId,
+              ),
         ),
       )
+      .orderBy(desc(engineeringMatterWorkRevision.workingRevision))
       .limit(1);
-    return row ? readModel(row) : null;
+    return row ? authorizedReadModel(row, executor) : null;
   }
 
   /**
@@ -313,6 +377,73 @@ export class EngineeringMatterWorkingRepository {
     };
   }
 
+  /** Re-authorize every frozen input and the exact prior work, not a latest substitute. */
+  async authorizeAttemptWorkingBasis(
+    input: {
+      tenantId: string;
+      matterId: string;
+      actorUserId: string;
+      basedOnMatterRevisionId: string;
+      baseRevision: number;
+      basis: OpenClawMatterTaskEnvelope['workingBasis'];
+    },
+    executor: EngineeringMatterWorkingDatabaseExecutor,
+  ): Promise<void> {
+    await this.authorizeRuntimeInputs(input, executor);
+    const registered = await loadCurrentInputBindings(
+      executor,
+      {
+        tenantId: input.tenantId,
+        matterId: input.matterId,
+        matterRevisionId: input.basedOnMatterRevisionId,
+      },
+      input.actorUserId,
+    );
+    const byId = new Map(
+      registered.map((binding) => [binding.inputId, binding]),
+    );
+    if (
+      input.basis.inputs.length !== byId.size ||
+      new Set(input.basis.inputs.map((binding) => binding.inputId)).size !==
+        byId.size
+    )
+      throw workingInputConflict();
+    for (const frozen of input.basis.inputs) {
+      const current = byId.get(frozen.inputId);
+      if (
+        !current ||
+        frozen.workItemId !== current.workItemId ||
+        (frozen.workItemId === null &&
+          canonicalJson(frozen) !== canonicalJson(current))
+      )
+        throw workingInputConflict();
+    }
+    await assertOwnedSources(
+      executor,
+      input.tenantId,
+      new Set(
+        input.basis.inputs.flatMap((binding) =>
+          binding.workItemId ? [binding.workItemId] : [],
+        ),
+      ),
+      new Set(input.basis.inputs.map((binding) => binding.documentVersionId)),
+    );
+    if (input.basis.priorWorkRef === null) {
+      if (input.baseRevision !== 0) throw workingInputConflict();
+    } else {
+      const prior = await this.readByRef(
+        {
+          tenantId: input.tenantId,
+          matterId: input.matterId,
+          workRef: input.basis.priorWorkRef,
+        },
+        executor,
+      );
+      if (!prior || prior.workingRevision !== input.baseRevision)
+        throw workingInputConflict();
+    }
+  }
+
   private async appendWorkingRevision(
     input: EngineeringMatterWorkingCommitInput,
     executor: EngineeringMatterWorkingDatabaseExecutor,
@@ -348,22 +479,29 @@ export class EngineeringMatterWorkingRepository {
       assertExactReplay(serializedReplay, input);
       return this.resultForStored(executor, serializedReplay, true);
     }
+    const frozenInputs =
+      input.source?.reviewTurnId === null
+        ? await this.frozenAttemptInputs(input, executor)
+        : null;
     if (
+      frozenInputs === null &&
       matter.currentMatterRevisionId !== input.command.basedOnMatterRevisionId
     ) {
       throw workingMembershipConflict();
     }
 
-    const currentInputs = await loadCurrentInputBindings(
-      executor,
-      {
-        tenantId: input.tenantId,
-        matterId: input.matterId,
-        matterRevisionId: matter.currentMatterRevisionId,
-      },
-      input.actorUserId,
-      true,
-    );
+    const currentInputs =
+      frozenInputs ??
+      (await loadCurrentInputBindings(
+        executor,
+        {
+          tenantId: input.tenantId,
+          matterId: input.matterId,
+          matterRevisionId: matter.currentMatterRevisionId,
+        },
+        input.actorUserId,
+        true,
+      ));
     assertEngineeringMatterWorkingBindingsCurrent({
       expected: input.currentInputs,
       current: currentInputs,
@@ -409,11 +547,77 @@ export class EngineeringMatterWorkingRepository {
       .returning();
     if (!stored) throw workingPersistenceError();
     return {
-      revision: readModel(stored),
+      revision: await authorizedReadModel(stored, executor),
       replayed: false,
       resultChanged: materialized.resultChanged,
       coverageChanged: materialized.coverageChanged,
     };
+  }
+
+  private async frozenAttemptInputs(
+    input: EngineeringMatterWorkingCommitInput,
+    executor: EngineeringMatterWorkingDatabaseExecutor,
+  ): Promise<EngineeringMatterWorkingInputBinding[]> {
+    const [attempt] = await executor
+      .select()
+      .from(actionAttempt)
+      .where(
+        and(
+          eq(actionAttempt.attemptId, input.source!.actionAttemptId),
+          eq(actionAttempt.tenantId, input.tenantId),
+          eq(actionAttempt.actorUserId, input.actorUserId),
+          eq(actionAttempt.subjectKind, 'ENGINEERING_MATTER'),
+          eq(actionAttempt.matterId, input.matterId),
+        ),
+      )
+      .limit(1)
+      .for('share');
+    const invalid = () =>
+      coded('ENGINEERING_MATTER_WORKING_SOURCE_INVALID', 409);
+    if (
+      !attempt ||
+      !['RUNNING', 'COMMITTING'].includes(attempt.status) ||
+      !attempt.taskEnvelopeJson ||
+      attempt.matterRevisionId !== input.command.basedOnMatterRevisionId ||
+      (attempt.status === 'COMMITTING' &&
+        (attempt.baseRevision !== input.command.expectedWorkingRevision ||
+          attempt.triggerRequestId !== input.command.requestId))
+    )
+      throw invalid();
+    const task = parseMatterTaskEnvelope(attempt.taskEnvelopeJson);
+    if (
+      task.actionAttemptId !== attempt.attemptId ||
+      task.operationRef !== attempt.operationRef ||
+      task.tenantId !== input.tenantId ||
+      task.subject.matterId !== input.matterId ||
+      task.subject.matterRevisionId !== attempt.matterRevisionId ||
+      task.baseRevision !== attempt.baseRevision ||
+      task.inputRevision !== attempt.inputRevision ||
+      task.inputHash !== attempt.taskInputHash
+    )
+      throw invalid();
+    await this.authorizeAttemptWorkingBasis(
+      {
+        tenantId: input.tenantId,
+        matterId: input.matterId,
+        actorUserId: input.actorUserId,
+        basedOnMatterRevisionId: task.subject.matterRevisionId,
+        baseRevision: task.baseRevision,
+        basis: task.workingBasis,
+      },
+      executor,
+    );
+    if (attempt.status === 'RUNNING') {
+      const current = await this.loadCurrent(input, executor);
+      if (
+        (current?.workingRevision ?? 0) !==
+          input.command.expectedWorkingRevision ||
+        ((current?.workingRevision ?? 0) !== task.baseRevision &&
+          current?.source?.actionAttemptId !== attempt.attemptId)
+      )
+        throw workingCasConflict();
+    }
+    return task.workingBasis.inputs;
   }
 
   private async findReplay(
@@ -432,7 +636,7 @@ export class EngineeringMatterWorkingRepository {
       )
       .limit(1);
     if (requestRow) return requestRow;
-    if (!input.source) return null;
+    if (!input.source || input.source.reviewTurnId === null) return null;
     const [sourceRow] = await executor
       .select()
       .from(engineeringMatterWorkRevision)
@@ -444,10 +648,14 @@ export class EngineeringMatterWorkingRepository {
               engineeringMatterWorkRevision.actionAttemptId,
               input.source.actionAttemptId,
             ),
-            eq(
-              engineeringMatterWorkRevision.reviewTurnId,
-              input.source.reviewTurnId,
-            ),
+            ...(input.source.reviewTurnId === null
+              ? []
+              : [
+                  eq(
+                    engineeringMatterWorkRevision.reviewTurnId,
+                    input.source.reviewTurnId,
+                  ),
+                ]),
           ),
         ),
       )
@@ -485,7 +693,7 @@ export class EngineeringMatterWorkingRepository {
         )
       : null;
     return {
-      revision: readModel(row),
+      revision: await authorizedReadModel(row, executor),
       replayed,
       resultChanged:
         canonicalJson(previousState?.substantiveResult ?? null) !==
@@ -572,21 +780,31 @@ async function loadCurrentInputBindings(
   const rows = await (lockMembers
     ? query.for('share', { of: workItem })
     : query);
-  if (rows.length === 0) throw workingPersistenceError();
+  const materials = await loadMaterials(
+    executor,
+    input.tenantId,
+    input.matterId,
+    input.matterRevisionId,
+  );
+  if (rows.length === 0 && materials.length === 0)
+    throw workingPersistenceError();
   if (
     requiredActorUserId &&
     rows.some((row) => row.requestedByUserId !== requiredActorUserId)
   ) {
     throw runtimeAuthorizationUnavailable();
   }
-  return rows.map((row) =>
-    engineeringMatterInputBinding({
-      workItemId: row.workItemId,
-      workItemRevision: row.workItemRevision,
-      documentVersionId: row.documentVersionId,
-      projection: parseProjection(row.projectionJson),
-    }),
-  );
+  return [
+    ...rows.map((row) =>
+      engineeringMatterInputBinding({
+        workItemId: row.workItemId,
+        workItemRevision: row.workItemRevision,
+        documentVersionId: row.documentVersionId,
+        projection: parseProjection(row.projectionJson),
+      }),
+    ),
+    ...materialInputBindings(materials),
+  ];
 }
 
 function assessmentResultIdentity(
@@ -652,6 +870,59 @@ function assertCommandBindingsCurrent(
   }
 }
 
+/** Check retained sources after choosing the exact/latest row: never fall back to older work. */
+async function authorizedReadModel(
+  row: WorkRevisionRow,
+  executor: EngineeringMatterWorkingDatabaseExecutor,
+): Promise<EngineeringMatterWorkingRevisionReadModel> {
+  const revision = readModel(row);
+  const bindings = [
+    ...revision.state.substantiveInputs,
+    ...revision.state.coverage.map((item) => item.binding),
+  ];
+  const evidence = [
+    ...(revision.state.substantiveResult?.evidence ?? []),
+    ...(revision.state.problemWork?.evidence ?? []),
+  ];
+  const workItemIds = new Set([
+    ...bindings.flatMap((item) => (item.workItemId ? [item.workItemId] : [])),
+    ...evidence.flatMap((item) =>
+      'workItemId' in item && item.workItemId ? [item.workItemId] : [],
+    ),
+  ]);
+  const documentVersionIds = new Set([
+    ...bindings.map((item) => item.documentVersionId),
+    ...evidence.flatMap((item) =>
+      item.kind === 'DOCUMENT_PASSAGE' ? [item.documentVersionId] : [],
+    ),
+  ]);
+  await assertOwnedSources(
+    executor,
+    row.tenantId,
+    workItemIds,
+    documentVersionIds,
+  );
+  return revision;
+}
+
+async function assertOwnedSources(
+  executor: EngineeringMatterWorkingDatabaseExecutor,
+  tenantId: string,
+  workItemIds: Set<string>,
+  documentVersionIds: Set<string>,
+): Promise<void> {
+  const [access] = await executor.execute<{ allowed: boolean }>(sql`
+    SELECT NOT EXISTS (
+      SELECT 1 FROM jsonb_array_elements_text(${JSON.stringify([...workItemIds])}::jsonb) AS w(id)
+      WHERE engineering_matter_work_item_owned_by_actor(${tenantId}, w.id::varchar) IS NOT TRUE
+    ) AND NOT EXISTS (
+      SELECT 1 FROM jsonb_array_elements_text(${JSON.stringify([...documentVersionIds])}::jsonb) AS d(id)
+      WHERE engineering_matter_document_owned_by_actor(${tenantId}, d.id::varchar) IS NOT TRUE
+    ) AS allowed
+  `);
+  if (access?.allowed !== true) throw runtimeAuthorizationUnavailable();
+}
+
 function readModel(
   row: WorkRevisionRow,
 ): EngineeringMatterWorkingRevisionReadModel {
@@ -674,14 +945,20 @@ function readModel(
   ) {
     throw workingPersistenceError();
   }
-  const source =
+  const source: EngineeringMatterWorkingRevisionSource | null =
     row.actionAttemptId && row.reviewTurnId
       ? {
           actionAttemptId: row.actionAttemptId,
           reviewTurnId: row.reviewTurnId,
         }
-      : null;
-  if ((row.actionAttemptId === null) !== (row.reviewTurnId === null)) {
+      : row.actionAttemptId
+        ? {
+            kind: 'ENGINEERING_MATTER',
+            actionAttemptId: row.actionAttemptId,
+            reviewTurnId: null,
+          }
+        : null;
+  if (row.actionAttemptId === null && row.reviewTurnId !== null) {
     throw workingPersistenceError();
   }
   return {
@@ -707,7 +984,10 @@ function validateCommitInput(input: EngineeringMatterWorkingCommitInput): void {
   if (input.source) {
     if (
       input.source.actionAttemptId.trim() === '' ||
-      input.source.reviewTurnId.trim() === ''
+      (input.source.reviewTurnId === null
+        ? !('kind' in input.source) ||
+          input.source.kind !== 'ENGINEERING_MATTER'
+        : input.source.reviewTurnId.trim() === '')
     ) {
       throw workingInputConflict();
     }

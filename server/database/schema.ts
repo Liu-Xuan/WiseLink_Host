@@ -890,6 +890,46 @@ export const translationKnowledgeCandidate = pgTable("translation_knowledge_cand
   }),
 ]);
 
+export const engineeringMatterMaterialLink = pgTable("engineering_matter_material_link", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  tenantId: varchar("tenant_id", { length: 128 }).notNull(),
+  matterId: varchar("matter_id", { length: 96 }).notNull(),
+  matterRevisionId: varchar("matter_revision_id", { length: 96 }).notNull(),
+  materialId: varchar("material_id", { length: 96 }).notNull(),
+  kind: varchar("kind", { length: 32 }).notNull(),
+  familyId: varchar("family_id", { length: 96 }),
+  documentVersionId: varchar("document_version_id", { length: 96 }),
+  materialJson: text("material_json").notNull(),
+  createdByUserId: varchar("created_by_user_id", { length: 255 }).notNull(),
+  // System field: Creation time (auto-filled, do not modify)
+  createdAt: customTimestamptz("_created_at", { precision: 3 }).notNull().default(sql`CURRENT_TIMESTAMP`),
+  // System field: Creator (auto-filled, do not modify)
+  createdBy: userProfile("_created_by"),
+  // System field: Update time (auto-filled, do not modify)
+  updatedAt: customTimestamptz("_updated_at", { precision: 3 }).notNull().default(sql`CURRENT_TIMESTAMP`),
+  // System field: Updater (auto-filled, do not modify)
+  updatedBy: userProfile("_updated_by"),
+}, (table) => [
+  uniqueIndex("uk_engineering_matter_material_revision").on(table.matterRevisionId, table.materialId),
+  index("idx_engineering_matter_material_family").on(table.tenantId, table.familyId, table.matterRevisionId),
+  foreignKey({
+    columns: [table.familyId],
+    foreignColumns: [dmPublicationFamily.familyId],
+    name: "engineering_matter_material_link_family_id_fkey",
+  }),
+  foreignKey({
+    columns: [table.documentVersionId],
+    foreignColumns: [dmDocumentVersion.documentVersionId],
+    name: "engineering_matter_material_link_document_version_id_fkey",
+  }),
+  foreignKey({
+    columns: [table.matterId, table.matterRevisionId, table.tenantId],
+    foreignColumns: [engineeringMatterRevision.matterId, engineeringMatterRevision.matterRevisionId, engineeringMatterRevision.tenantId],
+    name: "fk_engineering_matter_material_revision",
+  }),
+]);
+
+
 export const engineeringMatterRevisionWorkItem = pgTable("engineering_matter_revision_work_item", {
   id: uuid("id").primaryKey().defaultRandom(),
   matterRevisionId: varchar("matter_revision_id", { length: 96 }).notNull(),
@@ -924,9 +964,10 @@ export const engineeringMatterRevision = pgTable("engineering_matter_revision", 
   requestId: varchar("request_id", { length: 96 }).notNull(),
   changeKind: varchar("change_kind", { length: 32 }).notNull(),
   changeSummary: text("change_summary").notNull(),
-  changedWorkItemId: varchar("changed_work_item_id", { length: 96 }).notNull(),
+  changedWorkItemId: varchar("changed_work_item_id", { length: 96 }),
   createdByUserId: varchar("created_by_user_id", { length: 255 }).notNull(),
   createdAt: customTimestamptz("created_at", { precision: 3 }).notNull().default(sql`CURRENT_TIMESTAMP`),
+  materialCommandJson: text("material_command_json"),
 }, (table) => [
   uniqueIndex("uk_engineering_matter_revision_business_id").on(table.matterRevisionId),
   uniqueIndex("uk_engineering_matter_revision_scope").on(table.tenantId, table.matterId, table.matterRevisionId),
@@ -957,15 +998,22 @@ export const engineeringMatter = pgTable("engineering_matter", {
   createdByUserId: varchar("created_by_user_id", { length: 255 }).notNull(),
   createdAt: customTimestamptz("created_at", { precision: 3 }).notNull().default(sql`CURRENT_TIMESTAMP`),
   updatedAt: customTimestamptz("updated_at", { precision: 3 }).notNull().default(sql`CURRENT_TIMESTAMP`),
+  defaultFamilyId: varchar("default_family_id", { length: 96 }),
 }, (table) => [
   uniqueIndex("uk_engineering_matter_business_id").on(table.matterId),
   uniqueIndex("uk_engineering_matter_tenant_identity").on(table.tenantId, table.matterId),
   uniqueIndex("uk_engineering_matter_create_request").on(table.tenantId, table.createdByUserId, table.requestId),
   index("idx_engineering_matter_owner").on(table.tenantId, table.createdByUserId, table.updatedAt),
+  uniqueIndex("uk_engineering_matter_default_family").on(table.tenantId, table.createdByUserId, table.defaultFamilyId),
   foreignKey({
-    columns: [table.tenantId, table.matterId, table.currentMatterRevisionId],
-    foreignColumns: [engineeringMatterRevision.tenantId, engineeringMatterRevision.matterId, engineeringMatterRevision.matterRevisionId],
+    columns: [table.currentMatterRevisionId, table.matterId, table.tenantId],
+    foreignColumns: [engineeringMatterRevision.matterId, engineeringMatterRevision.matterRevisionId, engineeringMatterRevision.tenantId],
     name: "fk_engineering_matter_current_revision",
+  }),
+  foreignKey({
+    columns: [table.defaultFamilyId],
+    foreignColumns: [dmPublicationFamily.familyId],
+    name: "engineering_matter_default_family_id_fkey",
   }),
 ]);
 
@@ -992,7 +1040,7 @@ export const engineeringMatterWorkRevision = pgTable("engineering_matter_work_re
   uniqueIndex("uk_engineering_matter_work_revision_scope").on(table.tenantId, table.matterId, table.matterWorkRevisionId),
   uniqueIndex("uk_engineering_matter_work_revision_number").on(table.matterId, table.workingRevision),
   uniqueIndex("uk_engineering_matter_work_revision_request").on(table.matterId, table.requestId),
-  uniqueIndex("uk_engineering_matter_work_revision_attempt").on(table.actionAttemptId),
+  uniqueIndex("uk_engineering_matter_work_revision_attempt").on(table.actionAttemptId).where(sql`${table.actionAttemptId} IS NOT NULL AND ${table.reviewTurnId} IS NOT NULL`),
   uniqueIndex("uk_engineering_matter_work_revision_turn").on(table.reviewTurnId),
   index("idx_engineering_matter_work_revision_history").on(table.matterId, table.workingRevision),
   foreignKey({
@@ -1446,7 +1494,10 @@ export const externalSearchRun = pgTable("external_search_run", {
 export const actionAttempt = pgTable("action_attempt", {
   id: uuid("id").primaryKey().defaultRandom(),
   attemptId: varchar("attempt_id", { length: 96 }).notNull().unique(),
-  workItemId: varchar("work_item_id", { length: 96 }).notNull(),
+  workItemId: varchar("work_item_id", { length: 96 }),
+  subjectKind: varchar("subject_kind", { length: 32 }).notNull().default('WORK_ITEM'),
+  matterId: varchar("matter_id", { length: 96 }),
+  matterRevisionId: varchar("matter_revision_id", { length: 96 }),
   actionType: varchar("action_type", { length: 64 }).notNull(),
   attemptNo: integer("attempt_no").notNull().default(1),
   triggerRequestId: varchar("trigger_request_id", { length: 96 }).notNull(),
@@ -1500,6 +1551,13 @@ export const actionAttempt = pgTable("action_attempt", {
   updatedBy: userProfile("_updated_by"),
 }, (table) => [
   uniqueIndex("uk_action_attempt_business_id").on(table.attemptId),
+  uniqueIndex("uk_action_attempt_matter_number").on(table.tenantId, table.matterId, table.actionType, table.attemptNo).where(sql`${table.subjectKind} = 'ENGINEERING_MATTER'`),
+  uniqueIndex("uk_action_attempt_active_matter_task").on(table.tenantId, table.matterId, table.actionType).where(sql`${table.subjectKind} = 'ENGINEERING_MATTER' AND ${table.status} IN ('QUEUED', 'RUNNING', 'RETRY_SCHEDULED', 'COMMITTING')`),
+  foreignKey({
+    columns: [table.tenantId, table.matterId, table.matterRevisionId],
+    foreignColumns: [engineeringMatterRevision.tenantId, engineeringMatterRevision.matterId, engineeringMatterRevision.matterRevisionId],
+    name: "fk_action_attempt_matter_basis",
+  }),
   uniqueIndex("uk_action_attempt_primary").on(table.workItemId, table.actionType, table.attemptNo),
   index("idx_action_attempt_status").on(table.status, table.updatedAt),
   index("idx_action_attempt_work_item").on(table.workItemId, table.attemptNo),
@@ -1835,3 +1893,5 @@ export const dialogueAssessmentRequestTable = dialogueAssessmentRequest;
 export const dialogueMessageTable = dialogueMessage;
 export const dialogueThreadTable = dialogueThread;
 export const discussionContributionTable = discussionContribution;
+
+export const engineeringMatterMaterialLinkTable = engineeringMatterMaterialLink;

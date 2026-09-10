@@ -16,6 +16,12 @@ export function matterDocumentRoute(
   > & { sourceRefId?: string },
   returnPanel: 'brief' | 'review' | 'materials' = 'brief',
 ): string {
+  if (!evidence.workItemId) {
+    const params = new URLSearchParams({ sourceDocument: evidence.documentVersionId });
+    if (evidence.sourceRefId) params.set('sourceRef', evidence.sourceRefId);
+    if (returnPanel !== 'brief') params.set('panel', returnPanel);
+    return `${matterOverviewRoute(matterId)}?${params.toString()}`;
+  }
   const params: URLSearchParams = new URLSearchParams({
     node: 'reader',
     tab: 'reader',
@@ -39,7 +45,7 @@ export function buildMatterObjectContext(
     routeWorkItemId: '',
     displayCode: matter.title,
     title: working.current?.state.focus.question ?? '持续形成与修正工程认识',
-    meta: `${matter.catalog.entries.length} 份关联资料`,
+    meta: `${matter.catalog.entries.length + (matter.materials?.length ?? 0)} 项材料关系`,
     statusLabel: working.current
       ? `工作修订 ${working.currentWorkingRevision} · 候选认识`
       : '尚无事项综合认识',

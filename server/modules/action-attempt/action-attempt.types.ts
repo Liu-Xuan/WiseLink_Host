@@ -140,3 +140,14 @@ export interface ActionAttemptRow {
   createdAt: Date;
   updatedAt: Date;
 }
+
+/** A validated view of a real Matter row in the shared ActionAttempt queue. */
+export interface MatterActionAttemptRow extends Omit<
+  ActionAttemptRow,
+  'workItemId'
+> {
+  subjectKind: 'ENGINEERING_MATTER';
+  workItemId: null;
+  matterId: string;
+  matterRevisionId: string;
+}

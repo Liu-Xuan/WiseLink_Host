@@ -41,6 +41,89 @@ const scope = {
 };
 
 describe('JobAid continuation requests', () => {
+  it.each([false, true])(
+    'binds Overall to its saved JobAid ref and rejects a newer unbound revision: %s',
+    async (hasNewer) => {
+      const h = harness();
+      const exact = savedWork();
+      const newer = {
+        ...exact,
+        workRevisionRef: 'JAWR-NEWER',
+        workRevision: 4,
+      };
+      h.current().integratedAssessment = {
+        status: 'BASE_RULE_CANDIDATE_READY',
+        baseRules: {
+          schemaVersion: JOBAID_PROBLEM_RESULT_SCHEMA,
+          workRevisionRef: exact.workRevisionRef,
+          workRevision: exact.workRevision,
+        },
+      } as never;
+      h.work.listForRuntime.mockResolvedValue(
+        hasNewer ? [newer, exact] : [exact],
+      );
+      h.work.readByRefForRuntime.mockResolvedValue(exact);
+      if (hasNewer) {
+        await expect(
+          h.service.enqueueOverall(h.current(), TENANT, 'permission'),
+        ).rejects.toThrow('JOBAID_OVERALL_EXACT_WORK_REQUIRED');
+        expect(h.rows.size).toBe(0);
+        return;
+      }
+      const queued = await h.service.enqueueOverall(
+        h.current(),
+        TENANT,
+        'permission',
+      );
+      const input = parseJobAidProblemTask(h.task(queued.attemptRef));
+      expect(input.previousWork).toEqual(exact);
+      expect(input.modelInput.expectedWorkRevision).toBe(3);
+      expect(h.work.readByRefForRuntime).toHaveBeenCalledWith({
+        tenantId: TENANT,
+        actorUserId: OWNER,
+        workItemId: scope.workItemId,
+        workRevisionRef: exact.workRevisionRef,
+      });
+    },
+  );
+
+  it.each(['missing', 'version', 'unfinished'])(
+    'rejects %s exact Overall work instead of substituting the latest work',
+    async (failure) => {
+      const h = harness();
+      const exact = savedWork();
+      h.current().integratedAssessment = {
+        status: 'BASE_RULE_CANDIDATE_READY',
+        baseRules: {
+          schemaVersion: JOBAID_PROBLEM_RESULT_SCHEMA,
+          workRevisionRef: exact.workRevisionRef,
+          workRevision: exact.workRevision,
+        },
+      } as never;
+      h.work.listForRuntime.mockResolvedValue([exact]);
+      h.work.readByRefForRuntime.mockResolvedValue(
+        failure === 'missing'
+          ? null
+          : {
+              ...exact,
+              documentVersionId:
+                failure === 'version' ? 'DV-OTHER' : exact.documentVersionId,
+              content: {
+                ...exact.content,
+                roundCompletion:
+                  failure === 'unfinished'
+                    ? 'IN_PROGRESS'
+                    : exact.content.roundCompletion,
+              },
+            },
+      );
+      await expect(
+        h.service.enqueueOverall(h.current(), TENANT, 'permission'),
+      ).rejects.toThrow('JOBAID_OVERALL_EXACT_WORK_REQUIRED');
+      expect(h.rows.size).toBe(0);
+    },
+  );
+
   it('prepares the same queued request with its reserved knowledge connector', async () => {
     const binding = { sessionId: '11111111-1111-4111-8111-111111111111', agentId: 'bound-agent-only' };
     const knowledge = { binding: jest.fn().mockResolvedValue({ binding, access: { available: true } }) };
@@ -322,6 +405,8 @@ describe('JobAid continuation requests', () => {
         baseRules: {
           schemaVersion: JOBAID_PROBLEM_RESULT_SCHEMA,
           sourceResultId: 'openclaw-dynamic://prior',
+          workRevisionRef: savedWork().workRevisionRef,
+          workRevision: savedWork().workRevision,
         },
       } as never;
       const serving = structuredClone(workItem.integratedAssessment);
@@ -496,6 +581,17 @@ function harness(knowledge?: { binding: jest.Mock }, initialAilySessionId?: stri
   const actorExecutor = { kind: 'host-owner-transaction' };
   const work = {
     listForRuntime: jest.fn(async (): Promise<JobAidWorkRevision[]> => []),
+    listHeadersForRuntime: jest.fn(async (input: unknown) =>
+      (await work.listForRuntime(input as never)).map(
+        ({ workRevisionRef, workRevision }) => ({
+          workRevisionRef,
+          workRevision,
+        }),
+      ),
+    ),
+    readByRefForRuntime: jest.fn(
+      async (): Promise<JobAidWorkRevision | null> => savedWork(),
+    ),
     withActorTransaction: jest.fn(
       async (
         _actorUserId: string,

@@ -96,3 +96,11 @@ JobAid 的 `responseType` 是可选展示分类。省略时，驱动按是否附
 原生函数先校验参数，再交给驱动。JobAid 的函数 JSON Schema 与现有解码器同时接受声明数组位置的普通数组和精确 `{item:[...]}` 封套；两条分支保留相同元素规则及数量限制。封套多键、item 非数组、单对象替代数组、错误嵌套和未知枚举仍拒绝。这里只解开传输封套，不补工程内容或修改旧失败候选。
 
 JobAid c5 可省略没有新增条目的 sourceRefs、missingInputs、candidateEvidenceRefs、warnings；省略只表达空集合，已提供的 null、空字符串、错误类型不会被修复或替换。工作增量的 retiredIssues 和 unchangedIssueKeys 省略语义与 Host 一致，旧问题仍须完整分区。带已知结果函数失败横幅的原生 idle-timeout 文本也按超时失败收尾，不自动重试。
+
+### Matter 持续评估接线
+
+同一 `consume-hosted-work-item.mjs` 支持可选 `--matter-id MAT-...`；可以只指定 Matter，也可以与原 WorkItem 一起指定。一起指定时先保留初始链路和显式 Review，二者无待执行工作后才处理 Matter。不增加 cron、队列或并行消费者。
+
+`next_matter_assessment` 由 Host 根据当前材料版本、覆盖记录和精确前次工作登记来源变化任务。已有活动任务直接读回；相同版本条件下已取消或失败的自动请求不会更换 requestId 重跑。登记依赖单独启用的精确 Matter/actor 服务范围，原 WorkItem allowlist 不授予 Matter 权限。
+
+Matter 使用相同官方 Hosted profile 和 JobAid 模型循环，按物理页读取文本层，并通过 Host `SAVE_WORK` 保存完整工作、按精确 workRef `FINISH`。原件图像、扫描和未读页不声明已核实。提交响应丢失时先读 Host 状态并仅重放已保存的同一结果；模型响应未知时保留 checkpoint 并要求处理，不重复模型请求。这些代码接线不代表安装、启用或真实业务验收已经完成。

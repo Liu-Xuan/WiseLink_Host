@@ -125,6 +125,16 @@ export class DocumentManagementHostedController {
     });
   }
 
+  @Get('document-versions/:documentVersionId/source-pages')
+  @Header('Cache-Control', 'private, no-store')
+  readDocumentSourcePages(
+    @Param('documentVersionId') documentVersionId: string,
+    @Query() query: Record<string, unknown>,
+    @Req() request: Request,
+  ) {
+    return this.service.readDocumentSourcePages(documentVersionId, query, contextFromRequest(request));
+  }
+
   @Get('document-versions/:documentVersionId')
   getDocumentVersion(
     @Param('documentVersionId') documentVersionId: string,

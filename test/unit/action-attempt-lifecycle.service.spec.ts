@@ -492,8 +492,9 @@ describe('ActionAttemptLifecycleService', () => {
     expect(ACTION_ATTEMPT_LEASE_MS).toBe(30 * 60_000);
     expect(ACTION_ATTEMPT_DEFAULT_DEADLINE_MS).toBe(60 * 60_000);
     expect(
+      // Lease time starts at claim, after asynchronous reservation/model setup.
       new Date(claim.leaseExpiresAt).getTime() -
-        repository.row!.createdAt.getTime(),
+        repository.row!.startedAt!.getTime(),
     ).toBe(ACTION_ATTEMPT_LEASE_MS);
     expect(
       repository.row!.deadlineAt.getTime() -

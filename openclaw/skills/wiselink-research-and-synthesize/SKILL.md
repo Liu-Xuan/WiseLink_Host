@@ -12,7 +12,7 @@ description: Orchestrate the single official hosted WiseLink engineering profile
 - hosted app：`app_17c3zn24kv2`
 - logical profile：`wiselink-engineering`
 - model policy：`official-hosted-profile-config`（任务可绑定已登记的内置或用户授权自定义模型；仍经唯一官方 Hosted profile/Gateway）
-- Skill：`wiselink-research-and-synthesize@r09.c73`
+- Skill：`wiselink-research-and-synthesize@r09.c74`
 - Skill compatibility：`wiselink-research-and-synthesize@r09`（历史任务最低接受 `r09.c10`，翻译 v2 必须为 `r09.c44` 或更新兼容包）
 - Host MCP：`wiselink-openclaw-engineering-assessment@1.2.0`（保留既有工具，新增语义翻译工作与 JobAid 来源/工作工具）
 - Host 集成提交：以本次发布包清单记录的实际提交为准
@@ -369,6 +369,7 @@ Host 的 `review_turn_task.v1.c4` 仍经同一驱动、原生会话和五个 MCP
 - 非 null delta 精确包含 `updateKind/changeSummary/nextFocus/claimDelta/readingPresentation/`
   `openQuestionDelta/reviewConditionDelta/coverageUpdates`。claimDelta 按稳定 claimId 添加、替换、撤销或明确保持，
   写出 changedBecause；readingPresentation 与新的 claims 一起构成同一阅读结果。局部纠正保留未变化正文和依据。
+- 当 Host 提供 `context.matterWorking.problemWorkSchema` 时，实质更新在 delta 中增加 `problemWork`，使用同一 JobAid v2 完整问题更新格式；此时 `claimDelta` 和 `readingPresentation` 均为 null，由 Host 从完整工作派生同一阅读结果。`previousProblemWork` 是该事项确切的已存工作，保留未变化问题、措施限制、依赖和方法；成员的 `previousProblemAssessment` 仅为其他主体候选上下文。仅补覆盖时省略 `problemWork`。
 - DOCUMENT_PASSAGE 目录不包含正文；任何答复引用、变化 claim 的文档前提与 coverage 都必须本轮实际读取。
   使用本轮 task-local source key，不能用另一个文档的同名原 SourceRef；工程师陈述只可用 Host 已提供的文本。
 - coverage 按 inputRef 记录实际读过的 source keys、明确检查范围、SUBSTANTIVE 或 NO_MATERIAL_CHANGE 及理由。
@@ -557,7 +558,7 @@ Interactive Review 的复杂 ResultEnvelope 必须由 `sealResultEnvelope` 生�
 当前 validator 强制：
 
 - `modelVersion` 优先取响应中可读实际模型；绑定任务未回报实际模型时使用 `configured-route:<modelRef>`，旧无绑定任务使用无 fallback 的 configured endpoint。后两者只证明路由，不代表已暴露下游具体模型，也不做具体版本等值判断
-- `skillVersion=wiselink-research-and-synthesize@r09.c73`
+- `skillVersion=wiselink-research-and-synthesize@r09.c74`
 - `toolVersions.wiselink-openclaw-engineering-assessment=1.2.0`
 - `promptVersion` 非空并来自当前运行
 - task/result exact binding、SourceRef allowlist 和 canonical hash 一致

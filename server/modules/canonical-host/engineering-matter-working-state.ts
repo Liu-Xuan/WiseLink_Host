@@ -18,6 +18,7 @@ import type {
 } from '@shared/matter-working.interface';
 
 import { canonicalJson } from '../action-attempt/action-attempt-envelope';
+import { validateMatterProblemWork } from './matter-problem-work';
 
 export interface EngineeringMatterWorkingMaterialization {
   state: EngineeringMatterWorkingState;
@@ -72,6 +73,16 @@ export function materializeEngineeringMatterWorkingState(input: {
     current: currentResult,
     command: input.command,
   });
+  if (
+    input.current?.problemWork &&
+    input.command.nextSubstantiveResult &&
+    !input.command.nextProblemWork
+  )
+    fail('ENGINEERING_MATTER_PROBLEM_WORK_UPDATE_REQUIRED');
+  if (input.command.nextProblemWork && !input.command.nextSubstantiveResult)
+    fail('ENGINEERING_MATTER_PROBLEM_WORK_READING_REQUIRED');
+  const problemWork =
+    input.command.nextProblemWork ?? input.current?.problemWork;
   const resultChanged: boolean =
     canonicalJson(currentResult) !== canonicalJson(nextResult);
 
@@ -94,6 +105,16 @@ export function materializeEngineeringMatterWorkingState(input: {
     ? validatedInputBindings(input.command.substantiveInputs)
     : (input.current?.substantiveInputs ?? []);
 
+  const priorDocumentCovered = (evidence: AssessmentEvidence): boolean => {
+    if (evidence.kind !== 'DOCUMENT_PASSAGE' || !input.current) return false;
+    const priorEvidence = input.current.problemWork?.evidence ?? input.current.substantiveResult?.evidence ?? [];
+    return priorEvidence.some(item => canonicalJson(item) === canonicalJson(evidence)) &&
+      (input.current.problemWork?.readSourceRefs.includes(evidence.evidenceRef) ||
+      input.current.coverage.some(item => item.binding.documentVersionId === evidence.documentVersionId &&
+        (evidence.workItemId === null || item.binding.workItemId === evidence.workItemId) &&
+        item.checkedSourceRefIds.includes(evidence.sourceRefId)));
+  };
+
   if (input.command.nextSubstantiveResult) {
     const coverageByInputId = new Map(
       coverage.map((item: EngineeringMatterWorkingCoverage) => [
@@ -115,10 +136,11 @@ export function materializeEngineeringMatterWorkingState(input: {
       if (evidence.kind !== 'DOCUMENT_PASSAGE') continue;
       const binding = substantiveInputs.find(
         (candidate) =>
-          candidate.workItemId === evidence.workItemId &&
+          (evidence.workItemId === null || candidate.workItemId === evidence.workItemId) &&
           candidate.documentVersionId === evidence.documentVersionId,
       );
       if (!binding) {
+        if (priorDocumentCovered(evidence)) continue;
         fail('ENGINEERING_MATTER_WORKING_DOCUMENT_EVIDENCE_INPUT_MISSING');
       }
       const checked = coverageByInputId.get(binding.inputId)!;
@@ -126,6 +148,19 @@ export function materializeEngineeringMatterWorkingState(input: {
         fail('ENGINEERING_MATTER_WORKING_DOCUMENT_EVIDENCE_NOT_CHECKED');
       }
     }
+  }
+
+  // Full work retains material beyond the short reader, including risk and measure evidence.
+  for (const evidence of input.command.nextProblemWork?.evidence ?? []) {
+    if (evidence.kind !== 'DOCUMENT_PASSAGE') continue;
+    const covered = coverage.find(
+      (item) =>
+        (evidence.workItemId === null || item.binding.workItemId === evidence.workItemId) &&
+        item.binding.documentVersionId === evidence.documentVersionId &&
+        item.checkedSourceRefIds.includes(evidence.sourceRefId),
+    );
+    if (!covered && !priorDocumentCovered(evidence))
+      fail('ENGINEERING_MATTER_WORKING_PROBLEM_EVIDENCE_NOT_COVERED');
   }
 
   const state: EngineeringMatterWorkingState = {
@@ -136,6 +171,7 @@ export function materializeEngineeringMatterWorkingState(input: {
     reviewConditions: reviewConditions.items,
     substantiveInputs,
     coverage,
+    ...(problemWork ? { problemWork: structuredClone(problemWork) } : {}),
   };
   validateState(state, input.matterId);
 
@@ -279,9 +315,13 @@ function materializeResult(input: {
     input.current?.content.claims ?? [],
     delta!,
   );
+  // Full JobAid work groups statements by issue. An addition within an older
+  // issue may precede claims from later issues without changing those claims.
+  const comparableClaims = (claims: AssessmentReadingClaim[]) => input.command.nextProblemWork
+    ? [...claims].sort((left, right) => left.claimId.localeCompare(right.claimId)) : claims;
   if (
-    canonicalJson(materializedClaims) !==
-    canonicalJson(candidate.content.claims)
+    canonicalJson(comparableClaims(materializedClaims)) !==
+    canonicalJson(comparableClaims(candidate.content.claims))
   ) {
     fail('ENGINEERING_MATTER_WORKING_LOCAL_PATCH_MISMATCH');
   }
@@ -561,6 +601,14 @@ function validateState(
   if (value.substantiveResult !== null) {
     validateReadingResult(value.substantiveResult, matterId);
   }
+  if (value.problemWork !== undefined)
+    validateMatterProblemWork(
+      value.problemWork as NonNullable<
+        EngineeringMatterWorkingState['problemWork']
+      >,
+      matterId,
+      value.substantiveResult as AssessmentReadingResult | null,
+    );
   if (
     !Array.isArray(value.openQuestions) ||
     !Array.isArray(value.reviewConditions)
@@ -716,10 +764,11 @@ function validateEvidence(value: unknown): asserts value is AssessmentEvidence {
   );
   switch (value.kind) {
     case 'DOCUMENT_PASSAGE':
-      requiredText(
-        value.workItemId,
-        'ENGINEERING_MATTER_WORKING_EVIDENCE_WORK_ITEM_REQUIRED',
-      );
+      if (value.workItemId !== null)
+        requiredText(
+          value.workItemId,
+          'ENGINEERING_MATTER_WORKING_EVIDENCE_WORK_ITEM_REQUIRED',
+        );
       requiredText(
         value.documentVersionId,
         'ENGINEERING_MATTER_WORKING_EVIDENCE_DOCUMENT_VERSION_REQUIRED',
@@ -899,7 +948,7 @@ function validatedInputBindings(
   value.forEach(validateBinding);
   uniqueMap(value, 'inputId', 'ENGINEERING_MATTER_WORKING_INPUT_ID_DUPLICATE');
   uniqueMap(
-    value,
+    value.filter((item) => item.workItemId !== null),
     'workItemId',
     'ENGINEERING_MATTER_WORKING_INPUT_WORK_ITEM_DUPLICATE',
   );
@@ -911,6 +960,21 @@ function validateBinding(
 ): asserts value is EngineeringMatterWorkingInputBinding {
   if (!isRecord(value)) fail('ENGINEERING_MATTER_WORKING_INPUT_INVALID');
   requiredText(value.inputId, 'ENGINEERING_MATTER_WORKING_INPUT_ID_REQUIRED');
+  if (value.kind === 'DOCUMENT_VERSION') {
+    requiredText(value.familyId, 'ENGINEERING_MATTER_WORKING_FAMILY_REQUIRED');
+    requiredText(
+      value.documentVersionId,
+      'ENGINEERING_MATTER_WORKING_DOCUMENT_VERSION_REQUIRED',
+    );
+    if (
+      value.workItemId !== null ||
+      value.workItemRevision !== null ||
+      value.resultRef !== null ||
+      value.resultRevision !== null
+    )
+      fail('ENGINEERING_MATTER_WORKING_DIRECT_INPUT_INVALID');
+    return;
+  }
   requiredText(
     value.workItemId,
     'ENGINEERING_MATTER_WORKING_WORK_ITEM_ID_REQUIRED',

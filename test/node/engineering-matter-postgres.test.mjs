@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import { randomUUID } from 'node:crypto';
 import { readFile } from 'node:fs/promises';
 import { createRequire } from 'node:module';
 import { resolve } from 'node:path';
@@ -40,10 +41,357 @@ const {
   MiaodaWorkItemRepository,
 } = require('../../server/modules/work-item/miaoda-work-item.repository.ts');
 
+const {
+  materializeJobAidWork,
+} = require('../../server/modules/canonical-host/jobaid-problem-work.ts');
+
+const {
+  materializeEngineeringMatterWorkingState,
+} = require('../../server/modules/canonical-host/engineering-matter-working-state.ts');
+
+const { jobAidProblemModelWorkContent } = require('../../server/modules/canonical-host/jobaid-problem-task.ts');
+const {
+  MatterActionAttemptService,
+} = require('../../server/modules/canonical-host/matter-action-attempt.service.ts');
+const {
+  CANONICAL_INITIAL_MODEL_REF,
+  taskModelSelection,
+} = require('../../server/modules/model-settings/canonical-model-catalog.ts');
+const {
+  sealMatterResultEnvelope,
+} = require('../../server/modules/action-attempt/action-attempt-envelope.ts');
 const databaseUrl = process.env.ENGINEERING_MATTER_TEST_DATABASE_URL;
 const FTD_WORK_ITEM_ID = 'WI-DM-FTD-FD88DCB9CF64CF3B';
 const SB_WORK_ITEM_ID = 'WI-LOCAL-737-34-3830-ASSESSMENT';
 const REQUEST_REUSE_WORK_ITEM_ID = 'WI-DM-FTD-FD88DCB9CF64CF3B-RERUN';
+
+test(
+  'v5 direct family materials preserve scope, expectations, replay and full-source authorization',
+  { skip: !databaseUrl, concurrency: false },
+  async () => {
+    assertSafeIsolatedDatabase(databaseUrl);
+    const sql = postgres(databaseUrl, { max: 8, onnotice() {} });
+    const connections = [];
+    try {
+      const fixtures = await loadRealDocumentFixtures();
+      await resetDatabase(sql);
+      await seedRealDocumentWorkItems(sql, fixtures);
+      // The new path must authorize an acquired document even with no owned WI.
+      await sql`UPDATE work_item SET requested_by_user_id = 'actor-B' WHERE document_version_id = ${fixtures.ftd.documentVersionId}`;
+      await sql`UPDATE dm_publication_family SET canonical_identity_key = 'tenant:tenant-A:family:direct-ftd'
+        WHERE family_id = 'family_real_ftd_31_21002'`;
+      await sql`UPDATE dm_acquisition SET idempotency_key = 'tenant:tenant-A:request:direct-ftd', status = 'COMMITTED_CANONICAL'
+        WHERE document_version_id = ${fixtures.ftd.documentVersionId}`;
+      assert.equal(
+        (
+          await sql`SELECT engineering_matter_uri_component('租户 A/!') AS encoded`
+        )[0].encoded,
+        encodeURIComponent('租户 A/!'),
+      );
+      const owner = await reserveActorService('actor-A');
+      const second = await reserveActorService('actor-A');
+      const outsider = await reserveActorService('actor-B');
+      connections.push(owner, second, outsider);
+      const before = (await sql`SELECT count(*) AS n FROM work_item`)[0].n;
+      const binding = {
+        tenantId: 'tenant-A',
+        actorUserId: 'actor-A',
+        documentVersionId: fixtures.ftd.documentVersionId,
+      };
+      const results = await Promise.all([
+        owner.runtime(() =>
+          owner.working.withActorTransaction('actor-A', ({ database }) =>
+            owner.matters.ensureFamilyMatter(binding, database),
+          ),
+        ),
+        second.matters.ensureFamilyMatter(binding),
+      ]);
+      assert.equal(results.filter((x) => x.created).length, 1);
+      assert.equal(results[0].matterId, results[1].matterId);
+      const scope = { tenantId: 'tenant-A', matterId: results[0].matterId };
+      const original = await owner.matters.readMaterials(scope);
+      assert.equal(original.materials[0].kind, 'MEMBER');
+      assert.equal(
+        original.materials[0].documentVersionId,
+        fixtures.ftd.documentVersionId,
+      );
+      assert.equal((await owner.matters.loadCurrent(scope)).links.length, 0);
+      const pending = await owner.workingService.readWorking(
+        scope.matterId,
+        owner.actor,
+      );
+      assert.equal(pending.pendingInputs.length, 1);
+      assert.equal(pending.pendingInputs[0].current.kind, 'DOCUMENT_VERSION');
+      assert.equal(pending.pendingInputs[0].current.workItemId, null);
+      assert.equal(
+        (await sql`SELECT count(*) AS n FROM work_item`)[0].n,
+        before,
+      );
+      const independent = await owner.matters.ensureFamilyMatter({
+        ...binding,
+        documentVersionId: fixtures.sb.documentVersionId,
+      });
+      assert.notEqual(
+        independent.matterId,
+        scope.matterId,
+        'different families do not merge by classifier or similarity',
+      );
+      const expected = {
+        materialId: 'expected-followup',
+        kind: 'EXPECTED',
+        familyId: null,
+        documentVersionId: null,
+        scope: '构造测试：后续冷启动措施',
+        contribution: '核对措施范围',
+        basis: [
+          {
+            documentVersionId: fixtures.ftd.documentVersionId,
+            sourceRefId: 'synthetic-scope-source',
+          },
+        ],
+        origin: 'ENGINEER',
+        disposition: 'INCLUDED',
+        expected: {
+          issuer: 'OEM',
+          documentNumber: null,
+          description: '后续工程资料，未提供文号',
+          expectedContribution: '核对是否覆盖持续告警',
+          expectedDate: null,
+          sourceAsOf: '2026-09-11',
+          publicationStatus: 'PLANNED',
+          acquisitionStatus: 'NOT_ACQUIRED',
+          fulfilledBy: [],
+        },
+      };
+      const command = {
+        requestId: 'expected-1',
+        expectedMatterRevision: 1,
+        changeSummary: '构造预期资料协议，不代表真实文件内容。',
+        upserts: [expected],
+      };
+      const revision = await owner.matters.reviseMaterials({
+        ...scope,
+        actorUserId: 'actor-A',
+        command,
+      });
+      assert.equal(revision.materials.matterRevision, 2);
+      assert.equal(revision.materials.materials.length, 2);
+      const fulfilled = {
+        ...expected,
+        expected: {
+          ...expected.expected,
+          acquisitionStatus: 'PARTIALLY_ACQUIRED',
+          fulfilledBy: [
+            {
+              familyId: 'family_58068371edd11c2b3c8aecf0',
+              documentVersionId: fixtures.sb.documentVersionId,
+              scope: '仅所核对范围',
+            },
+          ],
+        },
+      };
+      await owner.matters.reviseMaterials({
+        ...scope,
+        actorUserId: 'actor-A',
+        command: {
+          requestId: 'expected-2',
+          expectedMatterRevision: 2,
+          changeSummary: '构造部分匹配。',
+          upserts: [fulfilled],
+        },
+      });
+      const replay = await owner.matters.reviseMaterials({
+        ...scope,
+        actorUserId: 'actor-A',
+        command,
+      });
+      assert.equal(replay.replayed, true);
+      assert.deepEqual(
+        replay.materials,
+        revision.materials,
+        'response-loss recovery returns the same historical composition',
+      );
+      await assert.rejects(
+        owner.matters.reviseMaterials({
+          ...scope,
+          actorUserId: 'actor-A',
+          command: {
+            ...command,
+            changeSummary: 'changed replay',
+          },
+        }),
+        /reused with new input/u,
+      );
+      await assert.rejects(
+        outsider.matters.readMaterials(scope),
+        /not available/u,
+      );
+      // A manually organized MEMBER remains authoritative without a default marker.
+      await sql`UPDATE engineering_matter SET default_family_id = NULL WHERE matter_id = ${scope.matterId}`;
+      const reusedExplicit = await owner.matters.ensureFamilyMatter(binding);
+      assert.equal(reusedExplicit.matterId, scope.matterId);
+      assert.equal(reusedExplicit.created, false);
+      const relatedScope = {
+        tenantId: 'tenant-A',
+        matterId: independent.matterId,
+      };
+      await owner.matters.reviseMaterials({
+        ...relatedScope,
+        actorUserId: 'actor-A',
+        command: {
+          requestId: 'related-family',
+          expectedMatterRevision: 1,
+          changeSummary: '构造跨事项相关材料，保留其范围。',
+          upserts: [
+            {
+              ...original.materials[0],
+              materialId: 'related-ftd',
+              kind: 'RELATED',
+              origin: 'ENGINEER',
+              scope: '限定相关范围',
+            },
+          ],
+        },
+      });
+      const newerVersionId = 'document_version_constructed_r2';
+      await sql`INSERT INTO dm_document_version
+        SELECT (jsonb_populate_record(NULL::dm_document_version, to_jsonb(v) || jsonb_build_object(
+          'id', gen_random_uuid(), 'document_version_id', ${newerVersionId}::text,
+          'revision_id', 'constructed-r2', 'canonical_revision_identity', 'CONSTRUCTED:R2',
+          'business_revision', 'CONSTRUCTED R2', 'acquisition_id', 'acquisition_constructed_r2'))).*
+        FROM dm_document_version v WHERE v.document_version_id = ${fixtures.ftd.documentVersionId}`;
+      await sql`INSERT INTO dm_acquisition
+        SELECT (jsonb_populate_record(NULL::dm_acquisition, to_jsonb(a) || jsonb_build_object(
+          'id', gen_random_uuid(), 'acquisition_id', 'acquisition_constructed_r2',
+          'document_version_id', ${newerVersionId}::text, 'idempotency_key', 'tenant:tenant-A:request:constructed-r2'))).*
+        FROM dm_acquisition a WHERE a.document_version_id = ${fixtures.ftd.documentVersionId}`;
+      await sql`UPDATE dm_publication_family SET current_document_version_id = ${newerVersionId}, current_generation = 2
+        WHERE family_id = 'family_real_ftd_31_21002'`;
+      const continued = await owner.runtime(() =>
+        owner.working.withActorTransaction('actor-A', ({ database }) =>
+          owner.matters.ensureFamilyMatter(
+            {
+              ...binding,
+              documentVersionId: newerVersionId,
+            },
+            database,
+          ),
+        ),
+      );
+      assert.equal(continued.matterId, scope.matterId);
+      assert.equal(continued.created, false);
+      const changed = await owner.matters.readMaterials(scope);
+      assert.equal(changed.matterRevision, 4);
+      assert.equal(
+        changed.materials.find((x) => x.kind === 'MEMBER').documentVersionId,
+        newerVersionId,
+      );
+      const relatedChanged = await owner.matters.readMaterials(relatedScope);
+      assert.equal(relatedChanged.matterRevision, 3);
+      const relatedMaterial = relatedChanged.materials.find(
+        (x) => x.kind === 'RELATED',
+      );
+      assert.equal(relatedMaterial.documentVersionId, newerVersionId);
+      assert.equal(relatedMaterial.scope, '限定相关范围');
+      await owner.matters.ensureFamilyMatter(binding);
+      assert.deepEqual(
+        await owner.matters.readMaterials(scope),
+        changed,
+        'late older intake does not roll back the selected material version',
+      );
+      // A real Matter attempt has no WorkItem/document identity and remains
+      // bound to the exact composition even when later inputs become pending.
+      await sql`INSERT INTO action_attempt (
+        attempt_id, tenant_id, actor_user_id, subject_kind, matter_id,
+        matter_revision_id, action_type, status, input_revision, base_revision
+      ) VALUES ('ATT-MATTER-SUBJECT', 'tenant-A', 'actor-A', 'ENGINEERING_MATTER',
+        ${scope.matterId}, ${changed.matterRevisionId}, 'OPENCLAW_MATTER_ASSESSMENT', 'QUEUED', 4, 0)`;
+      const readAttempt = (connection) =>
+        connection.database.execute(drizzleSql`
+        SELECT attempt_id, work_item_id FROM action_attempt
+        WHERE attempt_id = 'ATT-MATTER-SUBJECT'`);
+      assert.equal((await readAttempt(owner)).length, 1);
+      assert.equal((await readAttempt(owner))[0].work_item_id, null);
+      assert.equal((await readAttempt(outsider)).length, 0);
+      const readHostedAttempt = (connection) =>
+        connection.runtime(() =>
+          connection.working.withActorTransaction(
+            connection.actor.userId,
+            ({ database }) =>
+              database.execute(
+                drizzleSql`SELECT attempt_id FROM action_attempt WHERE attempt_id = 'ATT-MATTER-SUBJECT'`,
+              ),
+          ),
+        );
+      assert.equal((await readHostedAttempt(owner)).length, 1);
+      assert.equal((await readHostedAttempt(outsider)).length, 0);
+      await assert.rejects(
+        sql`UPDATE action_attempt SET subject_kind = 'WORK_ITEM', matter_id = NULL,
+          matter_revision_id = NULL, work_item_id = ${FTD_WORK_ITEM_ID}, action_type = 'OPENCLAW_INTERACTIVE_REVIEW'
+          WHERE attempt_id = 'ATT-MATTER-SUBJECT'`,
+        /ACTION_ATTEMPT_SUBJECT_IMMUTABLE/u,
+      );
+
+      await assert.rejects(
+        owner.database
+          .execute(drizzleSql`UPDATE action_attempt SET actor_user_id = 'actor-B'
+          WHERE attempt_id = 'ATT-MATTER-SUBJECT'`),
+        (error) => error.cause?.message === 'ACTION_ATTEMPT_SUBJECT_IMMUTABLE',
+      );
+      await assert.rejects(
+        sql`UPDATE action_attempt SET work_item_id = ${FTD_WORK_ITEM_ID} WHERE attempt_id = 'ATT-MATTER-SUBJECT'`,
+        /ACTION_ATTEMPT_SUBJECT_IMMUTABLE/u,
+      );
+      await assert.rejects(
+        sql`UPDATE action_attempt SET tenant_id = 'tenant-B' WHERE attempt_id = 'ATT-MATTER-SUBJECT'`,
+        /ACTION_ATTEMPT_SUBJECT_IMMUTABLE/u,
+      );
+      for (const [patch, constraint] of [
+        [{ tenant_id: 'tenant-B' }, 'fk_action_attempt_matter_basis'],
+        [{ work_item_id: FTD_WORK_ITEM_ID }, 'ck_action_attempt_subject'],
+        [
+          { document_version_id: fixtures.ftd.documentVersionId },
+          'ck_action_attempt_subject',
+        ],
+        [{ matter_revision_id: null }, 'ck_action_attempt_subject'],
+      ]) {
+        await assert.rejects(
+          sql`INSERT INTO action_attempt
+          SELECT (jsonb_populate_record(NULL::action_attempt, to_jsonb(a) ||
+            ${sql.json({ ...patch, id: randomUUID(), attempt_id: 'ATT-MATTER-INVALID', attempt_no: 2, status: 'SUCCEEDED' })}::jsonb)).*
+          FROM action_attempt a WHERE attempt_id = 'ATT-MATTER-SUBJECT'`,
+          (error) => error.constraint_name === constraint,
+        );
+      }
+      await assert.rejects(
+        sql`INSERT INTO action_attempt
+          SELECT (jsonb_populate_record(NULL::action_attempt, to_jsonb(a) || jsonb_build_object(
+            'id', gen_random_uuid(), 'attempt_id', 'ATT-MATTER-CONCURRENT', 'attempt_no', 2))).*
+          FROM action_attempt a WHERE attempt_id = 'ATT-MATTER-SUBJECT'`,
+        /uk_action_attempt_active_matter_task/u,
+      );
+      await sql`UPDATE work_item SET requested_by_user_id = 'actor-B' WHERE work_item_id = ${SB_WORK_ITEM_ID}`;
+      await assert.rejects(
+        owner.matters.readMaterials(scope),
+        /not available/u,
+        'a revoked fulfilled source hides the whole current composition',
+      );
+      assert.equal(
+        (await readAttempt(owner)).length,
+        0,
+        'revoking a material also hides its attempt',
+      );
+      assert.equal((await readHostedAttempt(owner)).length, 0);
+      assert.equal(
+        (await sql`SELECT count(*) AS n FROM work_item`)[0].n,
+        before,
+      );
+    } finally {
+      for (const connection of connections) await connection.release();
+      await sql.end();
+    }
+  },
+);
 
 test(
   'R09 Engineering Matter creates, revises and reads two real-document WorkItems with fresh ACL/currentness',
@@ -140,6 +488,9 @@ test(
           created.matter.matterId,
           linked.matter.currentRevision.matterRevisionId,
         );
+
+        await assertRealMatterAttemptSave(sql, owner, created.matter.matterId);
+        await assertMatterLeaseLifecycle(sql, owner, created.matter.matterId);
 
         await assertLinkReplayMismatchAndCasConflict(
           owner,
@@ -419,6 +770,233 @@ async function loadRealDocumentFixtures() {
   };
 }
 
+test(
+  'Matter commits frozen inputs while later material remains pending',
+  { skip: !databaseUrl, concurrency: false },
+  async () => {
+    assertSafeIsolatedDatabase(databaseUrl);
+    const sql = postgres(databaseUrl, { max: 8, onnotice() {} });
+    let owner;
+    try {
+      const fixtures = await loadRealDocumentFixtures();
+      await resetDatabase(sql);
+      await seedRealDocumentWorkItems(sql, fixtures);
+      owner = await reserveActorService('actor-A');
+      const created = await owner.matters.ensureFamilyMatter({
+        tenantId: 'tenant-A',
+        actorUserId: 'actor-A',
+        documentVersionId: fixtures.ftd.documentVersionId,
+      });
+      const scope = {
+        tenantId: 'tenant-A',
+        actorUserId: 'actor-A',
+        matterId: created.matterId,
+      };
+      const initial = await owner.matters.loadCurrent(scope);
+      await assertWorkingRevisionFlow(
+        sql,
+        owner,
+        scope.matterId,
+        initial.currentMatterRevisionId,
+      );
+      const [priorRow] =
+        await sql`SELECT matter_work_revision_id, state_json FROM engineering_matter_work_revision
+        WHERE matter_id = ${scope.matterId} ORDER BY working_revision DESC LIMIT 1`;
+      const [retained] =
+        await sql`SELECT revision, document_version_id, requested_by_user_id FROM work_item
+        WHERE work_item_id = ${REQUEST_REUSE_WORK_ITEM_ID}`;
+      const priorState = JSON.parse(priorRow.state_json);
+      priorState.coverage.push({
+        ...structuredClone(priorState.coverage[0]),
+        binding: {
+          inputId: REQUEST_REUSE_WORK_ITEM_ID,
+          workItemId: REQUEST_REUSE_WORK_ITEM_ID,
+          workItemRevision: retained.revision,
+          documentVersionId: retained.document_version_id,
+          resultRef: null,
+          resultRevision: null,
+        },
+      });
+      await sql`UPDATE engineering_matter_work_revision SET state_json = ${JSON.stringify(priorState)}
+        WHERE matter_work_revision_id = ${priorRow.matter_work_revision_id}`;
+      const basis = await owner.workingService.resolveWorkingBasis(
+        scope.matterId,
+        owner.actor,
+      );
+      const service = new MatterActionAttemptService(owner.working, {
+        captureForNewTask: async (_tenant, now) =>
+          taskModelSelection(CANONICAL_INITIAL_MODEL_REF, now),
+      });
+      const reserved = await owner.runtime(() =>
+        service.reserve({
+          ...scope,
+          idempotencyKey: 'frozen-input-task',
+          expectedMatterRevisionId: initial.currentMatterRevisionId,
+          expectedMatterRevision: initial.currentRevisionNo,
+          expectedWorkingRevision: basis.working.workingRevision,
+          trigger: {
+            kind: 'USER_REQUEST',
+            requestId: 'frozen-input-request',
+            instruction: '复核现有来源',
+          },
+          modelInput: { fixture: 'frozen input' },
+          sourceRefs: [],
+        }),
+      );
+      assert.deepEqual(reserved.task.workingBasis.inputs, basis.currentInputs);
+      assert.equal(
+        reserved.task.workingBasis.priorWorkRef,
+        basis.working.matterWorkRevisionId,
+      );
+      const claimInput = {
+        ...scope,
+        attemptRef: reserved.task.operationRef,
+        principalId: 'hosted-test',
+      };
+      try {
+        await sql`UPDATE work_item SET requested_by_user_id = 'actor-B' WHERE work_item_id = ${REQUEST_REUSE_WORK_ITEM_ID}`;
+        await assert.rejects(
+          owner.runtime(() => service.read(claimInput)),
+          /RUNTIME_AUTHORIZATION_UNAVAILABLE/u,
+          'exact prior work authorization includes retained sources outside current composition',
+        );
+        await assert.rejects(
+          owner.runtime(() => service.claim(claimInput)),
+          /RUNTIME_AUTHORIZATION_UNAVAILABLE/u,
+        );
+      } finally {
+        await sql`UPDATE work_item SET requested_by_user_id = ${retained.requested_by_user_id} WHERE work_item_id = ${REQUEST_REUSE_WORK_ITEM_ID}`;
+      }
+      const lease = await owner.runtime(() => service.claim(claimInput));
+      const [family] =
+        await sql`SELECT family_id FROM dm_document_version WHERE document_version_id = ${fixtures.sb.documentVersionId}`;
+      const changed = await owner.matters.reviseMaterials({
+        ...scope,
+        command: {
+          requestId: 'ADD-MATERIAL-WHILE-RUNNING',
+          expectedMatterRevision: initial.currentRevisionNo,
+          changeSummary: '运行中补入另一份实际已取得材料。',
+          upserts: [
+            {
+              materialId: 'late-sb',
+              kind: 'RELATED',
+              familyId: family.family_id,
+              documentVersionId: fixtures.sb.documentVersionId,
+              scope: '后继待调查范围',
+              contribution: '核查是否改变当前判断',
+              basis: [],
+              origin: 'ENGINEER',
+              disposition: 'INCLUDED',
+            },
+          ],
+        },
+      });
+      assert.notEqual(
+        changed.materials.matterRevisionId,
+        reserved.task.subject.matterRevisionId,
+      );
+      const fence = {
+        ...claimInput,
+        leaseToken: lease.leaseToken,
+        leaseGeneration: lease.leaseGeneration,
+      };
+      const prepared = await owner.runtime(() =>
+        service.prepareCommit({ ...fence, result: matterResult(lease.task) }),
+      );
+      const command = {
+        requestId: prepared.row.triggerRequestId,
+        expectedWorkingRevision: prepared.task.baseRevision,
+        basedOnMatterRevisionId: prepared.task.subject.matterRevisionId,
+        updateKind: 'CORRECTION',
+        changeSummary: '完成已冻结范围，新材料留待后继。',
+        nextFocus: {
+          ...basis.working.state.focus,
+          question: '冻结范围的候选复核。',
+        },
+        claimDelta: null,
+        openQuestionDelta: null,
+        reviewConditionDelta: null,
+        nextSubstantiveResult: null,
+        substantiveInputs: [],
+        coverageUpdates: [],
+      };
+      const save = (inputs) =>
+        owner.runtime(() =>
+          owner.working.withActorTransaction(scope.actorUserId, (executor) =>
+            executor.appendWorkingRevision({
+              ...scope,
+              command,
+              currentInputs: inputs,
+              source: {
+                kind: 'ENGINEERING_MATTER',
+                actionAttemptId: prepared.row.attemptId,
+                reviewTurnId: null,
+              },
+            }),
+          ),
+        );
+      const current = await owner.workingService.resolveWorkingBasis(
+        scope.matterId,
+        owner.actor,
+      );
+      await assert.rejects(
+        save(current.currentInputs),
+        /WORKING_INPUT/u,
+        'latest inputs cannot replace frozen input bindings',
+      );
+      const saved = await save(prepared.task.workingBasis.inputs);
+      assert.equal(
+        saved.revision.basedOnMatterRevisionId,
+        initial.currentMatterRevisionId,
+      );
+      assert.deepEqual(
+        saved.revision.state.problemWork,
+        basis.working.state.problemWork,
+      );
+      await owner.runtime(() => service.finish(fence));
+      const visible = await owner.workingService.readWorking(
+        scope.matterId,
+        owner.actor,
+      );
+      assert(
+        visible.pendingInputs.some(
+          (input) =>
+            input.current.documentVersionId === fixtures.sb.documentVersionId,
+        ),
+      );
+      assert.equal(
+        (await owner.runtime(() => service.read(claimInput))).taskInputHash,
+        reserved.task.inputHash,
+      );
+      const automatic = await owner.runtime(() => service.nextForRuntime(scope));
+      assert.equal(automatic.next.status, 'QUEUED');
+      const nextScope = { ...claimInput, attemptRef: automatic.next.attemptRef };
+      const nextRow = await owner.runtime(() => service.read(nextScope));
+      const nextTask = JSON.parse(nextRow.taskEnvelopeJson);
+      assert.equal(nextTask.trigger.kind, 'SOURCE_CHANGE');
+      assert.equal(nextTask.subject.matterRevisionId, changed.materials.matterRevisionId);
+      assert.equal(nextTask.workingBasis.priorWorkRef, saved.revision.matterWorkRevisionId);
+      assert(nextTask.workingBasis.inputs.some(input => input.documentVersionId === fixtures.sb.documentVersionId));
+      assert.equal((await owner.runtime(() => service.nextForRuntime(scope))).next.attemptRef, automatic.next.attemptRef);
+      await owner.runtime(() => service.cancel({ ...nextScope, reason: 'Bounded automatic-dispatch test complete' }));
+      const stopped = await owner.runtime(() => service.nextForRuntime(scope));
+      assert.equal(stopped.next.attemptRef, automatic.next.attemptRef);
+      assert.equal(stopped.next.status, 'CANCELLED', 'a later tick cannot manufacture a replacement request after cancellation');
+      await owner.workingService.applyWorkingUpdate(scope.matterId, { ...command,
+        requestId: 'MANUAL-WORK-AFTER-AUTO-CANCEL', basedOnMatterRevisionId: changed.materials.matterRevisionId,
+        expectedWorkingRevision: saved.revision.workingRevision,
+        nextFocus: { ...command.nextFocus, question: '保留工作进展，不重置已取消的来源请求。' } }, owner.actor);
+      assert.equal((await owner.runtime(() => service.nextForRuntime(scope))).next.attemptRef, automatic.next.attemptRef,
+        'working progress alone cannot start a replacement model run for unchanged sources');
+
+
+    } finally {
+      if (owner) await owner.release();
+      await sql.end();
+    }
+  },
+);
+
 async function readJson(path) {
   return JSON.parse(await readFile(resolve(process.cwd(), path), 'utf8'));
 }
@@ -480,14 +1058,19 @@ async function resetDatabase(sql) {
         UNIQUE (tenant_id, action_type, document_version_id, run_key)
     )
   `);
-  await sql.unsafe(`
-    CREATE TABLE action_attempt (
-      attempt_id varchar(96) PRIMARY KEY,
-      tenant_id varchar(128), actor_user_id varchar(255), work_item_id varchar(96),
-      action_type varchar(64), status varchar(32), request_origin varchar(32),
-      input_revision integer, idempotency_key varchar(255)
-    )
-  `);
+  const attemptDdl = await readFile(
+    resolve(process.cwd(), 'server/database/work-item.ddl.sql'),
+    'utf8',
+  );
+  await sql.unsafe(
+    attemptDdl.match(/CREATE TABLE action_attempt \([\s\S]*?\n\);/u)[0],
+  );
+  await sql.unsafe(`ALTER TABLE action_attempt
+    ALTER COLUMN trigger_request_id SET DEFAULT 'REQ-ISOLATED-FIXTURE',
+    ALTER COLUMN request_origin SET DEFAULT 'OPENCLAW_MCP_V1',
+    ADD COLUMN review_activity_json text,
+    ADD COLUMN execution_model_json text`);
+  await applyMigration(sql, 'migrations/0003_action_attempt_openclaw_v1.sql');
   await sql.unsafe(`
     CREATE TABLE review_turn (
       review_turn_id varchar(96) PRIMARY KEY,
@@ -501,6 +1084,14 @@ async function resetDatabase(sql) {
     'migrations/0001_document_management_hosted_catalog.sql',
   );
   await applyMigration(sql, 'migrations/0014_engineering_matter_catalog.sql');
+  await sql.unsafe(
+    'ALTER TABLE work_item ADD COLUMN initial_aily_session_id uuid',
+  );
+  await applyMigration(sql, 'migrations/0032_engineering_matter_material.sql');
+  await applyMigration(
+    sql,
+    'migrations/0033_engineering_matter_explicit_material_runtime.sql',
+  );
   await applyMigration(
     sql,
     'migrations/0023_engineering_matter_working_state.sql',
@@ -508,6 +1099,38 @@ async function resetDatabase(sql) {
   await applyMigration(
     sql,
     'migrations/0024_engineering_matter_hosted_runtime_actor.sql',
+  );
+  await applyMigration(
+    sql,
+    'migrations/0034_action_attempt_matter_subject.sql',
+  );
+  await applyMigration(
+    sql,
+    'migrations/0035_engineering_matter_attempt_work.sql',
+  );
+  await applyMigration(
+    sql,
+    'migrations/0036_matter_jobaid_save_before_finish.sql',
+  );
+  await applyMigration(
+    sql,
+    'migrations/0037_matter_restrictive_policy_runtime_roles.sql',
+  );
+  const runtimePolicies = await sql.unsafe(`SELECT policyname, roles FROM pg_policies
+    WHERE policyname IN ('action_attempt_matter_subject_boundary',
+      'engineering_matter_work_real_attempt_boundary')`);
+  assert.equal(runtimePolicies.length, 2);
+  for (const policy of runtimePolicies) {
+    assert.deepEqual([...policy.roles].sort(), ['authenticated', 'service_role']);
+  }
+  await sql.unsafe('ALTER TABLE action_attempt ENABLE ROW LEVEL SECURITY');
+  // Emulate existing platform permissive policies: the new restrictive policy
+  // must hold even when a legacy policy allows all rows.
+  await sql.unsafe(
+    'CREATE POLICY legacy_attempt_access ON action_attempt TO authenticated, service_role USING (true)',
+  );
+  await sql.unsafe(
+    'GRANT SELECT, INSERT, UPDATE ON action_attempt TO authenticated, service_role',
   );
   await sql.unsafe('ALTER TABLE work_item ENABLE ROW LEVEL SECURITY');
   await sql.unsafe(`
@@ -538,7 +1161,18 @@ async function resetDatabase(sql) {
   // PostgreSQL row-locking SELECT also requires UPDATE privilege. The same
   // owner RLS policy continues to apply; only this isolated fixture grants it.
   await sql.unsafe('GRANT UPDATE ON work_item TO authenticated');
+  await sql.unsafe('GRANT UPDATE ON dm_publication_family TO authenticated');
+  await sql.unsafe(
+    'GRANT SELECT, INSERT ON engineering_matter_material_link TO authenticated, service_role',
+  );
   // Isolated equivalents of the platform's existing table privileges and
+  await sql.unsafe(
+    'GRANT SELECT ON dm_document_version, dm_publication_family TO service_role',
+  );
+  await sql.unsafe('GRANT UPDATE ON dm_publication_family TO service_role');
+  await sql.unsafe(
+    'GRANT INSERT ON engineering_matter, engineering_matter_revision, engineering_matter_revision_work_item TO service_role',
+  );
   // Hosted actor policies. No production GRANT is introduced by migration 24.
   await sql.unsafe('GRANT USAGE ON SCHEMA public TO service_role');
   await sql.unsafe(
@@ -612,6 +1246,10 @@ async function assertHostedCandidateRls(sql, owner, matterId) {
   command.nextSubstantiveResult.resultRevision = 2;
   command.nextSubstantiveResult.content.claims[0].text =
     'The corrected condition remains candidate-only.';
+  command.nextProblemWork.issues[0].statements = structuredClone(
+    command.nextSubstantiveResult.content.claims,
+  );
+  command.nextProblemWork.changeSummary = command.changeSummary;
   command.claimDelta = {
     changedBecause: 'The engineer corrected the test premise.',
     additions: [],
@@ -922,6 +1560,7 @@ async function reserveActorService(actorId, tenantId = 'tenant-A') {
     );
     return {
       service,
+      matters,
       working,
       workingService,
       database: db,
@@ -972,13 +1611,13 @@ async function assertWorkingRevisionFlow(
     versionLabel: '2025-09-26',
     excerpt: 'The source-bound condition.',
     kind: 'DOCUMENT_PASSAGE',
-    workItemId: FTD_WORK_ITEM_ID,
+    workItemId: basis.currentInputs[0].workItemId,
     documentVersionId: basis.currentInputs[0].documentVersionId,
     sourceRefId: 'SRC-WORKING-1',
     locator: 'page 1',
   };
   const claim = {
-    claimId: 'CLAIM-WORKING-1',
+    claimId: `${matterId}:issue:source:claim:condition`,
     text: 'The engineering condition remains candidate-only.',
     basis: 'SOURCE_FACT',
     premises: [
@@ -1041,6 +1680,101 @@ async function assertWorkingRevisionFlow(
       reason: 'Contributed to the candidate Matter reading.',
     })),
   };
+  command.nextProblemWork = materializeJobAidWork(
+    {
+      schemaVersion: 'wiselink.jobaid-problem-work.v2',
+      headline: command.nextSubstantiveResult.content.headline,
+      listBrief: command.nextSubstantiveResult.content.listBrief,
+      understanding: command.nextSubstantiveResult.content.lead,
+      decisiveIssueKeys: ['source'],
+      roundCompletion: 'COMPLETE_WITH_OPEN_QUESTIONS',
+      completionReason: '完成本轮来源核查，实际措施状态待确认。',
+      changeSummary: command.changeSummary,
+      unchangedExplanation: '保留完整条件。',
+      issues: [
+        {
+          issueKey: 'source',
+          question: '源条件意味着什么？',
+          understanding: claim.text,
+          statements: [
+            {
+              claimKey: 'condition',
+              text: claim.text,
+              basis: claim.basis,
+              premises: claim.premises,
+            },
+          ],
+          riskScenarios: [
+            {
+              scenario: '未确认条件下的风险',
+              conditions: ['对象状态尚未确认'],
+              method: 'JA_AC_R01',
+              severity: null,
+              likelihood: null,
+              importantEvent: null,
+              limitations: ['缺少对象数据'],
+              controlComparison: '尚无法比较措施效果',
+            },
+          ],
+          measures: [
+            {
+              text: '补充对象记录',
+              addresses: '确认前提是否成立',
+              limitations: ['尚未实施'],
+              status: 'PROPOSED',
+              basisRefs: [evidence.evidenceRef],
+            },
+          ],
+          otherClassifications: [],
+          openQuestions: [
+            {
+              question: '对象状态是什么？',
+              affects: '适用范围',
+              nextEvidence: '对象记录',
+              reason: '当前尚未取得',
+            },
+          ],
+          requirementHandling: [],
+          sourceDependencies: [evidence.evidenceRef],
+          premiseRefs: [],
+        },
+      ],
+    },
+    {
+      matterId,
+      previous: null,
+      evidence: [evidence],
+      readSourceRefs: [evidence.evidenceRef],
+      capabilities: [],
+      history: {
+        required: false,
+        priorAssessmentRefs: [],
+        engineeringDocumentRefs: [],
+        coverage: 'NOT_REQUIRED',
+        limitation: null,
+      },
+    },
+  );
+  const uncoveredCommand = structuredClone(command);
+  uncoveredCommand.nextProblemWork.evidence.push({
+    ...structuredClone(evidence),
+    evidenceRef: 'EVIDENCE-UNCOVERED-RISK',
+    sourceRefId: 'SRC-UNCOVERED-RISK',
+  });
+  uncoveredCommand.nextProblemWork.readSourceRefs.push(
+    'EVIDENCE-UNCOVERED-RISK',
+  );
+  await assert.rejects(
+    owner.working.commit({
+      tenantId: owner.actor.tenantId,
+      actorUserId: owner.actor.userId,
+      matterId,
+      command: uncoveredCommand,
+      currentInputs: basis.currentInputs,
+      source: null,
+    }),
+    /ENGINEERING_MATTER_WORKING_PROBLEM_EVIDENCE_NOT_COVERED/u,
+  );
   const commit = await owner.working.withTransaction(async (executor) => {
     const result = await executor.appendWorkingRevision({
       tenantId: owner.actor.tenantId,
@@ -1052,7 +1786,9 @@ async function assertWorkingRevisionFlow(
     });
     // A separate real connection must be blocked even after append has
     // returned: member versions and owners stay pinned until COMMIT.
-    for (const binding of basis.currentInputs) {
+    for (const binding of basis.currentInputs.filter(
+      (item) => item.workItemId !== null,
+    )) {
       for (const mutation of ['revision', 'owner']) {
         await assert.rejects(
           attemptConcurrentMemberUpdate(sql, binding, mutation),
@@ -1070,7 +1806,9 @@ async function assertWorkingRevisionFlow(
   };
   // After COMMIT the same writes are allowed; each probe rolls back so the
   // replay/pending assertions below keep their original fixture identities.
-  for (const binding of basis.currentInputs) {
+  for (const binding of basis.currentInputs.filter(
+    (item) => item.workItemId !== null,
+  )) {
     await attemptConcurrentMemberUpdate(sql, binding, 'revision');
     await attemptConcurrentMemberUpdate(sql, binding, 'owner');
   }
@@ -1082,6 +1820,122 @@ async function assertWorkingRevisionFlow(
     'MATTER-READING-1',
   );
   assert.deepEqual(committed.working.pendingInputs, []);
+  const exactInput = {
+    tenantId: owner.actor.tenantId,
+    matterId,
+    actorUserId: owner.actor.userId,
+    workRef: commit.revision.matterWorkRevisionId,
+  };
+  const exact = await owner.runtime(() =>
+    owner.working.readByRefForRuntime(exactInput),
+  );
+  assert.deepEqual(exact.state.problemWork, command.nextProblemWork);
+  const coverageOnly = materializeEngineeringMatterWorkingState({
+    matterId,
+    current: exact.state,
+    command: {
+      ...structuredClone(command),
+      requestId: 'coverage-only-retained-full-work',
+      expectedWorkingRevision: 1,
+      updateKind: 'MATERIAL_INCORPORATION',
+      nextFocus: null,
+      nextSubstantiveResult: null,
+      nextProblemWork: null,
+      claimDelta: null,
+      substantiveInputs: [],
+      coverageUpdates: command.coverageUpdates.map((item) => ({
+        ...structuredClone(item),
+        checkedSourceRefIds: ['SRC-NEW-BOUNDED-READ'],
+        contribution: 'NO_MATERIAL_CHANGE',
+      })),
+    },
+  });
+  assert.deepEqual(coverageOnly.state.problemWork, exact.state.problemWork);
+
+  assert.equal(exact.state.problemWork.issues[0].riskScenarios[0].score, null);
+  assert.deepEqual(
+    await owner.workingService.readWorkingRevision(
+      matterId,
+      exactInput.workRef,
+      owner.actor,
+    ),
+    exact,
+  );
+  assert.equal(
+    await owner.runtime(() =>
+      owner.working.readByRefForRuntime({
+        ...exactInput,
+        workRef: 'MWR-missing',
+      }),
+    ),
+    null,
+  );
+  await assert.rejects(
+    owner.runtime(() =>
+      owner.working.readByRefForRuntime({
+        ...exactInput,
+        actorUserId: 'actor-B',
+      }),
+    ),
+    /RUNTIME_AUTHORIZATION_UNAVAILABLE/u,
+  );
+  await assert.rejects(
+    owner.runtime(() =>
+      owner.working.readByRefForRuntime({
+        ...exactInput,
+        tenantId: 'tenant-B',
+      }),
+    ),
+    /RUNTIME_AUTHORIZATION_UNAVAILABLE/u,
+  );
+
+  // A retained input can outlive its composition membership. Revoking that
+  // input must reject the selected saved work, even when current links remain visible.
+  const [storedWork] =
+    await sql`SELECT state_json FROM engineering_matter_work_revision
+    WHERE matter_work_revision_id = ${exactInput.workRef}`;
+  const retainedState = JSON.parse(storedWork.state_json);
+  const [retainedOwner] =
+    await sql`SELECT requested_by_user_id, revision, document_version_id FROM work_item
+    WHERE work_item_id = ${REQUEST_REUSE_WORK_ITEM_ID}`;
+  retainedState.coverage.push({
+    ...structuredClone(retainedState.coverage[0]),
+    binding: {
+      inputId: REQUEST_REUSE_WORK_ITEM_ID,
+      workItemId: REQUEST_REUSE_WORK_ITEM_ID,
+      workItemRevision: retainedOwner.revision,
+      documentVersionId: retainedOwner.document_version_id,
+      resultRef: null,
+      resultRevision: null,
+    },
+  });
+  await sql`UPDATE engineering_matter_work_revision SET state_json = ${JSON.stringify(retainedState)}
+    WHERE matter_work_revision_id = ${exactInput.workRef}`;
+  try {
+    await sql`UPDATE work_item SET requested_by_user_id = 'actor-B'
+      WHERE work_item_id = ${REQUEST_REUSE_WORK_ITEM_ID}`;
+    await assert.rejects(
+      owner.working.loadCurrent({ tenantId: owner.actor.tenantId, matterId }),
+      /RUNTIME_AUTHORIZATION_UNAVAILABLE/u,
+    );
+    await assert.rejects(
+      owner.workingService.readWorkingRevision(
+        matterId,
+        exactInput.workRef,
+        owner.actor,
+      ),
+      /RUNTIME_AUTHORIZATION_UNAVAILABLE/u,
+    );
+    await assert.rejects(
+      owner.runtime(() => owner.working.readByRefForRuntime(exactInput)),
+      /RUNTIME_AUTHORIZATION_UNAVAILABLE/u,
+    );
+  } finally {
+    await sql`UPDATE work_item SET requested_by_user_id = ${retainedOwner.requested_by_user_id}
+      WHERE work_item_id = ${REQUEST_REUSE_WORK_ITEM_ID}`;
+    await sql`UPDATE engineering_matter_work_revision SET state_json = ${storedWork.state_json}
+      WHERE matter_work_revision_id = ${exactInput.workRef}`;
+  }
 
   const replay = await owner.workingService.applyWorkingUpdate(
     matterId,
@@ -1120,6 +1974,276 @@ async function assertWorkingRevisionFlow(
     WHERE matter_id = ${matterId}
   `;
   assert.equal(rows.revision_count, 1);
+}
+
+async function assertMatterLeaseLifecycle(sql, owner, matterId) {
+  const service = new MatterActionAttemptService(owner.working, {
+    captureForNewTask: async (_tenant, now) =>
+      taskModelSelection(CANONICAL_INITIAL_MODEL_REF, now),
+  });
+  const scope = { tenantId: 'tenant-A', actorUserId: 'actor-A', matterId };
+  const basis = await owner.workingService.resolveWorkingBasis(
+    matterId,
+    owner.actor,
+  );
+  const input = {
+    ...scope,
+    idempotencyKey: 'matter-lease-test',
+    expectedMatterRevisionId: basis.snapshot.currentMatterRevisionId,
+    expectedMatterRevision: basis.snapshot.currentRevisionNo,
+    expectedWorkingRevision: basis.working.workingRevision,
+    trigger: {
+      kind: 'USER_REQUEST',
+      requestId: 'request-lease',
+      instruction: '复核边界',
+    },
+    modelInput: { testOnly: 'lease transaction fixture' },
+    sourceRefs: [],
+  };
+  const reservation = await owner.runtime(() => service.reserve(input));
+  assert.equal(reservation.row.workItemId, null);
+  assert.equal(reservation.created, true);
+  const replay = await owner.runtime(() => service.reserve(input));
+  assert.equal(replay.created, false);
+  assert.equal(replay.task.operationRef, reservation.task.operationRef);
+  await assert.rejects(
+    owner.runtime(() =>
+      service.reserve({ ...input, modelInput: { changed: true } }),
+    ),
+    /IDEMPOTENCY_REPLAY_MISMATCH/u,
+  );
+  const claimInput = {
+    ...scope,
+    attemptRef: reservation.task.operationRef,
+    principalId: 'hosted-test',
+  };
+  // Occupy slot zero with an existing WorkItem execution, exercising the
+  // same tenant-wide pool and rollback-to-savepoint behavior.
+  await sql`INSERT INTO action_attempt (attempt_id, work_item_id, action_type,
+    actor_user_id, tenant_id, status, lease_slot, lease_token)
+    VALUES ('ATT-SLOT-ZERO', ${FTD_WORK_ITEM_ID}, 'OPENCLAW_TRANSLATE', 'actor-A', 'tenant-A', 'RUNNING', 0, 'slot-zero')`;
+  const lease = await owner.runtime(() => service.claim(claimInput));
+  assert.equal(lease.status, 'RUNNING');
+  const read = await owner.runtime(() => service.read(claimInput));
+  assert.equal(read.leaseSlot, 1);
+  assert.equal(read.claimCount, 1);
+  assert.equal(
+    (await owner.runtime(() => service.claim(claimInput))).leaseToken,
+    lease.leaseToken,
+  );
+  await assert.rejects(
+    owner.runtime(() =>
+      service.claim({ ...claimInput, actorUserId: 'actor-B' }),
+    ),
+  );
+  await assert.rejects(
+    owner.runtime(() =>
+      service.heartbeat({ ...claimInput, ...lease, leaseGeneration: 99 }),
+    ),
+    /LEASE_FENCE_REJECTED/u,
+  );
+  await owner.runtime(() => service.heartbeat({ ...claimInput, ...lease }));
+  const cancelled = await owner.runtime(() =>
+    service.cancel({ ...claimInput, reason: 'fixture cancelled' }),
+  );
+  assert.equal(cancelled.status, 'CANCELLED');
+  assert.equal(cancelled.leaseSlot, null);
+  await assert.rejects(
+    owner.runtime(() => service.claim(claimInput)),
+    /CANCELLED/u,
+  );
+  assert.equal(
+    (await owner.runtime(() => service.reserve(input))).created,
+    false,
+    'cancelled exact request is not silently re-created',
+  );
+  const successor = await owner.runtime(() =>
+    service.reserve({ ...input, idempotencyKey: 'matter-lease-successor' }),
+  );
+  await sql`UPDATE action_attempt SET deadline_at = now() - interval '1 minute'
+    WHERE attempt_id = ${successor.row.attemptId}`;
+  await assert.rejects(
+    owner.runtime(() =>
+      service.claim({ ...claimInput, attemptRef: successor.task.operationRef }),
+    ),
+    /TIMED_OUT/u,
+  );
+  assert.equal(
+    (
+      await owner.runtime(() =>
+        service.read({
+          ...claimInput,
+          attemptRef: successor.task.operationRef,
+        }),
+      )
+    ).status,
+    'TIMED_OUT',
+    'planned terminalization survives the caller-facing error',
+  );
+  const retriable = await owner.runtime(() =>
+    service.reserve({ ...input, idempotencyKey: 'matter-lease-recovery' }),
+  );
+  const retryInput = { ...claimInput, attemptRef: retriable.task.operationRef };
+  const oldLease = await owner.runtime(() => service.claim(retryInput));
+  await sql`UPDATE action_attempt SET lease_expires_at = now() - interval '1 minute'
+    WHERE attempt_id = ${retriable.row.attemptId}`;
+  const newLease = await owner.runtime(() => service.claim(retryInput));
+  assert.equal(newLease.leaseGeneration, oldLease.leaseGeneration + 1);
+  assert.notEqual(newLease.leaseToken, oldLease.leaseToken);
+  await assert.rejects(
+    owner.runtime(() => service.heartbeat({ ...retryInput, ...oldLease })),
+    /LEASE_FENCE_REJECTED/u,
+  );
+  await sql`UPDATE action_attempt SET deadline_at = now() - interval '1 minute'
+    WHERE attempt_id = ${retriable.row.attemptId}`;
+  await assert.rejects(
+    owner.runtime(() => service.claim(retryInput)),
+    /TIMED_OUT/u,
+  );
+  assert.equal(
+    (await owner.runtime(() => service.read(retryInput))).status,
+    'TIMED_OUT',
+  );
+  await assertMatterCommitRecovery(sql, owner, service, input);
+  await assertSaveBeforeFinish(sql, owner, service, input);
+  await assertRawMatterJobAidSave(sql, owner, service, input);
+}
+
+async function assertRealMatterAttemptSave(sql, owner, matterId) {
+  const basis = await owner.workingService.resolveWorkingBasis(
+    matterId,
+    owner.actor,
+  );
+  const source = {
+    kind: 'ENGINEERING_MATTER',
+    actionAttemptId: 'ATT-REAL-MATTER-SAVE',
+    reviewTurnId: null,
+  };
+  const command = {
+    requestId: 'REQ-REAL-MATTER-SAVE',
+    expectedWorkingRevision: basis.working.workingRevision,
+    basedOnMatterRevisionId: basis.snapshot.currentMatterRevisionId,
+    updateKind: 'CORRECTION',
+    changeSummary: '保留完整问题工作，更新本轮关注范围。',
+    nextFocus: {
+      ...basis.working.state.focus,
+      question: '复核保存的事项工作与适用边界。',
+    },
+    claimDelta: null,
+    openQuestionDelta: null,
+    reviewConditionDelta: null,
+    nextSubstantiveResult: null,
+    substantiveInputs: [],
+    coverageUpdates: [],
+  };
+  const attempts = new MatterActionAttemptService(owner.working, {
+    captureForNewTask: async (_tenant, now) =>
+      taskModelSelection(CANONICAL_INITIAL_MODEL_REF, now),
+  });
+  const reserved = await owner.runtime(() =>
+    attempts.reserveJobAid({
+      tenantId: 'tenant-A',
+      matterId,
+      actorUserId: owner.actor.userId,
+      idempotencyKey: 'real-matter-save-binding',
+      expectedMatterRevisionId: command.basedOnMatterRevisionId,
+      expectedMatterRevision: basis.snapshot.currentRevisionNo,
+      expectedWorkingRevision: command.expectedWorkingRevision,
+      trigger: {
+        kind: 'USER_REQUEST',
+        requestId: 'real-matter-save-binding',
+        instruction: '测试真实来源保存',
+      },
+    }),
+  );
+  assert.equal(reserved.task.modelInput.schemaVersion, 'wiselink.matter-jobaid-task.v2');
+  assert.equal(reserved.task.modelInput.modelInput.subject.matterId, matterId);
+  assert.equal(reserved.task.modelInput.modelInput.previousWork.workRevisionRef, basis.working.matterWorkRevisionId);
+  assert.deepEqual(reserved.task.modelInput.modelInput.availableDocuments.map(item => item.documentVersionId).sort(),
+    [...new Set(reserved.task.workingBasis.inputs.map(item => item.documentVersionId))].sort());
+  assert.equal('workItemId' in reserved.task.modelInput.modelInput.subject, false);
+  source.actionAttemptId = reserved.row.attemptId;
+  command.requestId = reserved.row.triggerRequestId;
+  const save = (candidate = command, candidateSource = source) =>
+    owner.runtime(() =>
+      owner.working.withActorTransaction(
+        owner.actor.userId,
+        async (executor) => {
+          await executor.authorizeRuntimeInputs({
+            tenantId: 'tenant-A',
+            matterId,
+            actorUserId: owner.actor.userId,
+          });
+          return executor.appendWorkingRevision({
+            tenantId: 'tenant-A',
+            matterId,
+            actorUserId: owner.actor.userId,
+            command: candidate,
+            currentInputs: basis.currentInputs,
+            source: candidateSource,
+          });
+        },
+      ),
+    );
+  const rlsDenied = (error) =>
+    error.cause?.code === '42501' ||
+    error.code === '42501' ||
+    error.code === 'ENGINEERING_MATTER_WORKING_SOURCE_INVALID';
+  await assert.rejects(save(), rlsDenied, 'QUEUED is not a durable commit');
+  await sql`UPDATE action_attempt SET status = 'COMMITTING' WHERE attempt_id = ${source.actionAttemptId}`;
+  await assert.rejects(
+    save(),
+    rlsDenied,
+    'status alone is not a durable result',
+  );
+  await sql`UPDATE action_attempt SET commit_started_at = now(), result_content_hash = ${'a'.repeat(64)},
+    result_envelope_json = ${JSON.stringify({ schemaVersion: 'wiselink.3_1.openclaw_result_envelope.v2', status: 'SUCCEEDED' })}
+    WHERE attempt_id = ${source.actionAttemptId}`;
+  await assert.rejects(
+    save({ ...command, requestId: 'REQ-WRONG-MATTER-SAVE' }),
+    rlsDenied,
+  );
+  await sql`UPDATE action_attempt SET base_revision = 0 WHERE attempt_id = ${source.actionAttemptId}`;
+  await assert.rejects(
+    save(),
+    rlsDenied,
+    'Matter working CAS belongs to this attempt',
+  );
+  await sql`UPDATE action_attempt SET base_revision = ${command.expectedWorkingRevision} WHERE attempt_id = ${source.actionAttemptId}`;
+  await sql`INSERT INTO review_turn(review_turn_id) VALUES ('RT-FAKE-MATTER-SAVE')`;
+  await assert.rejects(
+    owner.workingService.applyWorkingUpdate(matterId, command, owner.actor, {
+      source: {
+        actionAttemptId: source.actionAttemptId,
+        reviewTurnId: 'RT-FAKE-MATTER-SAVE',
+      },
+    }),
+    rlsDenied,
+    'native broad policy cannot disguise a real Matter attempt as a ReviewTurn',
+  );
+  const saved = await save();
+  assert.equal(saved.replayed, false);
+  assert.deepEqual(saved.revision.source, source);
+  assert.deepEqual(
+    saved.revision.state.problemWork,
+    basis.working.state.problemWork,
+  );
+  const readBySource = await owner.working.findBySource({
+    tenantId: 'tenant-A',
+    matterId,
+    source,
+  });
+  assert.equal(
+    readBySource.matterWorkRevisionId,
+    saved.revision.matterWorkRevisionId,
+  );
+  await sql`UPDATE action_attempt SET status = 'SUCCEEDED' WHERE attempt_id = ${source.actionAttemptId}`;
+  const recovered = await save();
+  assert.equal(recovered.replayed, true);
+  assert.equal(
+    recovered.revision.matterWorkRevisionId,
+    saved.revision.matterWorkRevisionId,
+  );
 }
 
 async function assertReviewScopeIsImmutable(sql) {
@@ -1366,7 +2490,7 @@ async function assertSecurityDefinerAndDirectRlsDenials(sql, matterId) {
       )
     ORDER BY procedure.proname
   `;
-  assert.equal(functions.length, 5);
+  assert.equal(functions.length, 7);
   for (const fn of functions) {
     assert.equal(fn.prosecdef, true, fn.proname);
     assert.equal(fn.returns_boolean, true, fn.proname);
@@ -1536,4 +2660,495 @@ async function assertMatterHistory(sql) {
       { revision_no: 3, linked_work_item_count: 3 },
     ],
   );
+}
+
+async function assertMatterCommitRecovery(sql, owner, service, baseInput) {
+  const reserved = await owner.runtime(() =>
+    service.reserve({ ...baseInput, idempotencyKey: 'matter-durable-commit' }),
+  );
+  const scope = {
+    tenantId: baseInput.tenantId,
+    matterId: baseInput.matterId,
+    actorUserId: baseInput.actorUserId,
+  };
+  const claimInput = {
+    ...scope,
+    attemptRef: reserved.task.operationRef,
+    principalId: 'hosted-test',
+  };
+  const lease = await owner.runtime(() => service.claim(claimInput));
+  const fence = {
+    ...claimInput,
+    leaseToken: lease.leaseToken,
+    leaseGeneration: lease.leaseGeneration,
+  };
+  const result = matterResult(lease.task);
+  await assert.rejects(
+    owner.runtime(() =>
+      service.prepareCommit({ ...fence, leaseGeneration: 99, result }),
+    ),
+    /LEASE_FENCE_REJECTED/u,
+  );
+  const prepared = await owner.runtime(() =>
+    service.prepareCommit({ ...fence, result }),
+  );
+  assert.equal(prepared.row.status, 'COMMITTING');
+  assert.equal(prepared.recovery, false);
+  assert.equal(
+    (await owner.runtime(() => service.prepareCommit({ ...fence, result })))
+      .recovery,
+    true,
+  );
+  const { contentHash: _hash, ...body } = result;
+  await assert.rejects(
+    owner.runtime(() =>
+      service.prepareCommit({
+        ...fence,
+        result: sealMatterResultEnvelope({
+          ...body,
+          modelOutput: '{"different":true}',
+        }),
+      }),
+    ),
+    /REPLAY_MISMATCH/u,
+  );
+  const recovery = await owner.runtime(() => service.claim(claimInput));
+  assert.equal(recovery.status, 'COMMITTING');
+  assert.deepEqual(recovery.recoveryResult, result);
+  await assert.rejects(
+    owner.runtime(() =>
+      service.claim({ ...claimInput, principalId: 'other-principal' }),
+    ),
+    /LEASE_OWNER_MISMATCH/u,
+  );
+  await assert.rejects(
+    owner.runtime(() => service.cancel({ ...claimInput, reason: 'too late' })),
+    /CANCEL_TOO_LATE/u,
+  );
+  await assert.rejects(
+    owner.runtime(() => service.finish(fence)),
+    /WORK_NOT_SAVED/u,
+  );
+  await sql`UPDATE action_attempt SET lease_expires_at = now() - interval '1 minute', deadline_at = now() - interval '1 minute'
+    WHERE attempt_id = ${prepared.row.attemptId}`;
+  assert.equal(
+    (await owner.runtime(() => service.claim(claimInput))).status,
+    'COMMITTING',
+  );
+  const basis = await owner.workingService.resolveWorkingBasis(
+    scope.matterId,
+    owner.actor,
+  );
+  const command = {
+    requestId: prepared.row.triggerRequestId,
+    expectedWorkingRevision: prepared.task.baseRevision,
+    basedOnMatterRevisionId: prepared.task.subject.matterRevisionId,
+    updateKind: 'CORRECTION',
+    changeSummary: '隔离测试：持久结果恢复保存。',
+    nextFocus: {
+      ...basis.working.state.focus,
+      question: '核对候选持久化后的读取。',
+    },
+    claimDelta: null,
+    openQuestionDelta: null,
+    reviewConditionDelta: null,
+    nextSubstantiveResult: null,
+    substantiveInputs: [],
+    coverageUpdates: [],
+  };
+  const saved = await owner.runtime(() =>
+    owner.working.withActorTransaction(scope.actorUserId, (executor) =>
+      executor.appendWorkingRevision({
+        ...scope,
+        command,
+        currentInputs: basis.currentInputs,
+        source: {
+          kind: 'ENGINEERING_MATTER',
+          actionAttemptId: prepared.row.attemptId,
+          reviewTurnId: null,
+        },
+      }),
+    ),
+  );
+  const finished = await owner.runtime(() => service.finish(fence));
+  assert.equal(finished.row.status, 'SUCCEEDED');
+  assert.equal(finished.row.projectionApplied, false);
+  assert.equal(finished.row.leaseSlot, null);
+  assert.equal(
+    finished.work.matterWorkRevisionId,
+    saved.revision.matterWorkRevisionId,
+  );
+  const replay = await owner.runtime(() => service.finish(fence));
+  assert.equal(replay.recovered, true);
+  assert.equal(
+    replay.work.matterWorkRevisionId,
+    finished.work.matterWorkRevisionId,
+  );
+  assert.equal(
+    (await owner.runtime(() => service.prepareCommit({ ...fence, result }))).row
+      .status,
+    'SUCCEEDED',
+  );
+  for (const status of ['WAITING_INPUT', 'FAILED']) {
+    const next = await owner.runtime(() =>
+      service.reserve({
+        ...baseInput,
+        expectedWorkingRevision: finished.work.workingRevision,
+        idempotencyKey: `matter-terminal-${status}`,
+      }),
+    );
+    const nextScope = { ...claimInput, attemptRef: next.task.operationRef };
+    const claimed = await owner.runtime(() => service.claim(nextScope));
+    const terminal = await owner.runtime(() =>
+      service.prepareCommit({
+        ...nextScope,
+        leaseToken: claimed.leaseToken,
+        leaseGeneration: claimed.leaseGeneration,
+        result: matterResult(claimed.task, status),
+      }),
+    );
+    assert.equal(terminal.row.status, status);
+    assert.equal(terminal.row.leaseSlot, null);
+    assert.equal(
+      (await owner.working.loadCurrent(scope)).workingRevision,
+      finished.work.workingRevision,
+    );
+  }
+  const racing = await owner.runtime(() =>
+    service.reserve({
+      ...baseInput,
+      expectedWorkingRevision: finished.work.workingRevision,
+      idempotencyKey: 'matter-working-cas-race',
+    }),
+  );
+  const racingScope = { ...claimInput, attemptRef: racing.task.operationRef };
+  const racingLease = await owner.runtime(() => service.claim(racingScope));
+  await owner.workingService.applyWorkingUpdate(
+    scope.matterId,
+    {
+      ...command,
+      requestId: 'REQ-MANUAL-WORK-BEFORE-MATTER-COMMIT',
+      expectedWorkingRevision: finished.work.workingRevision,
+      nextFocus: {
+        ...command.nextFocus,
+        question: '用户更新后的事项关注范围。',
+      },
+    },
+    owner.actor,
+  );
+  await assert.rejects(
+    owner.runtime(() =>
+      service.prepareCommit({
+        ...racingScope,
+        leaseToken: racingLease.leaseToken,
+        leaseGeneration: racingLease.leaseGeneration,
+        result: matterResult(racingLease.task),
+      }),
+    ),
+    /MATTER_WORKING_REVISION_CHANGED_BEFORE_COMMIT/u,
+  );
+  assert.equal(
+    (await owner.runtime(() => service.read(racingScope))).status,
+    'CONFLICT',
+  );
+  assert.equal(
+    (await owner.working.loadCurrent(scope)).workingRevision,
+    finished.work.workingRevision + 1,
+  );
+}
+
+function matterResult(task, status = 'SUCCEEDED') {
+  return sealMatterResultEnvelope({
+    schemaVersion: 'wiselink.3_1.openclaw_result_envelope.v2',
+    actionAttemptId: task.actionAttemptId,
+    operationRef: task.operationRef,
+    taskType: task.taskType,
+    subject: task.subject,
+    baseRevision: task.baseRevision,
+    status,
+    businessOutcome:
+      status === 'SUCCEEDED'
+        ? 'CANDIDATE_READY'
+        : status === 'WAITING_INPUT'
+          ? 'WAITING_INPUT'
+          : 'NOT_PRODUCED',
+    candidateStatus: status === 'WAITING_INPUT' ? 'WAITING_INPUT' : null,
+    modelOutput: status === 'SUCCEEDED' ? '{"isolatedCandidate":true}' : null,
+    outputArtifactRefs: [],
+    sourceRefs: task.sourceRefs,
+    factsConsidered: [],
+    missingInputs:
+      status === 'WAITING_INPUT'
+        ? [{ code: 'MISSING_RECORD', message: '缺少对象记录。' }]
+        : [],
+    conflicts: [],
+    warnings: [],
+    modelVersion: 'isolated-fixture',
+    promptVersion: 'isolated-fixture',
+    skillVersion: 'isolated-fixture',
+    toolVersions: {},
+    runMetrics: { durationMs: 1, inputUnits: 1, outputUnits: 1 },
+    errorCode: status === 'FAILED' ? 'FIXTURE_FAILED' : null,
+    errorDetail: status === 'FAILED' ? 'isolated failure' : null,
+  });
+}
+
+async function assertSaveBeforeFinish(sql, owner, service, baseInput) {
+  const basis = await owner.workingService.resolveWorkingBasis(
+    baseInput.matterId,
+    owner.actor,
+  );
+  const scope = {
+    tenantId: baseInput.tenantId,
+    matterId: baseInput.matterId,
+    actorUserId: baseInput.actorUserId,
+  };
+  const { modelInput: _modelInput, sourceRefs: _sourceRefs, ...jobAidInput } = baseInput;
+  const reserved = await owner.runtime(() =>
+    service.reserveJobAid({
+      ...jobAidInput,
+      expectedWorkingRevision: basis.working.workingRevision,
+      idempotencyKey: 'save-before-finish',
+    }),
+  );
+  const claimInput = {
+    ...scope,
+    attemptRef: reserved.task.operationRef,
+    principalId: 'hosted-test',
+  };
+  const firstLease = await owner.runtime(() => service.claim(claimInput));
+  let fence = {
+    ...claimInput,
+    leaseToken: firstLease.leaseToken,
+    leaseGeneration: firstLease.leaseGeneration,
+  };
+  const documentVersionId = reserved.task.workingBasis.inputs[0].documentVersionId;
+  const sourceRefId = `DOCUMENT_VERSION:${documentVersionId}:page:1`;
+  const page = { page: 1, sourceRefId, text: 'Isolated PostgreSQL source reading fixture.',
+    textLayerStatus: 'PRESENT', visualContentVerified: false,
+    evidence: { kind: 'DOCUMENT_PASSAGE', evidenceRef: sourceRefId, sourceRefId,
+      workItemId: null, documentVersionId, title: 'Test source', versionLabel: null,
+      locator: 'PDF 第 1 页（文本层）', excerpt: 'Isolated PostgreSQL source reading fixture.' } };
+  const reading = { documentVersionId, sourceSha256: 'a'.repeat(64), sourceByteLength: 123,
+    pageCount: 1, extractionScope: 'NATIVE_TEXT_LAYER', pages: [page] };
+  let readerCalls = 0;
+  const readInput = { ...fence, documentVersionId, pageStart: 1, purpose: '测试精确来源阅读回执' };
+  const reader = async () => { readerCalls += 1; return structuredClone(reading); };
+  await assert.rejects(owner.runtime(() => service.readSourcePages({ ...readInput, leaseGeneration: 99 }, reader)), /LEASE_FENCE_REJECTED/u);
+  await assert.rejects(owner.runtime(() => service.readSourcePages({ ...readInput, documentVersionId: 'DV-NOT-IN-TASK' }, reader)), /SOURCE_NOT_REGISTERED/u);
+  assert.equal(readerCalls, 0);
+  assert.deepEqual(await owner.runtime(() => service.readSourcePages(readInput, reader)), reading);
+  await assert.rejects(owner.runtime(() => service.readSourcePages(readInput,
+    async () => ({ ...reading, sourceSha256: 'b'.repeat(64) }))), /SOURCE_READ_IDENTITY_CHANGED/u);
+  await assert.rejects(owner.runtime(() => service.readSourcePages(readInput, async () => {
+    await sql`UPDATE action_attempt SET lease_expires_at = now() - interval '1 second' WHERE attempt_id = ${reserved.row.attemptId}`;
+    return reading;
+  })), /SOURCE_READ_FENCE_REJECTED/u);
+  await sql`UPDATE action_attempt SET lease_expires_at = ${new Date(firstLease.leaseExpiresAt)} WHERE attempt_id = ${reserved.row.attemptId}`;
+  const [readback] = await sql`SELECT review_activity_json FROM action_attempt WHERE attempt_id = ${reserved.row.attemptId}`;
+  const sourceEvents = JSON.parse(readback.review_activity_json).filter(event => event.kind === 'MATTER_SOURCE_PAGES_READ');
+  assert.equal(sourceEvents.length, 1);
+  assert.deepEqual(sourceEvents[0].reading, reading);
+  const command = {
+    requestId: 'SAVE-DRAFT-FIRST',
+    expectedWorkingRevision: basis.working.workingRevision,
+    basedOnMatterRevisionId: reserved.task.subject.matterRevisionId,
+    updateKind: 'CORRECTION',
+    changeSummary: '保存本轮第一份工作。',
+    nextFocus: {
+      ...basis.working.state.focus,
+      question: '第一份候选工作关注范围。',
+    },
+    claimDelta: null,
+    openQuestionDelta: null,
+    reviewConditionDelta: null,
+    nextSubstantiveResult: null,
+    substantiveInputs: [],
+    coverageUpdates: [],
+  };
+  await assert.rejects(
+    owner.runtime(() =>
+      service.saveWorkingDraft({ ...fence, leaseGeneration: 99, command }),
+    ),
+    /LEASE_FENCE_REJECTED/u,
+  );
+  const first = await owner.runtime(() =>
+    service.saveWorkingDraft({ ...fence, command }),
+  );
+  assert.equal(
+    (await owner.runtime(() => service.read(claimInput))).status,
+    'RUNNING',
+  );
+  assert.equal(
+    (
+      await owner.runtime(() =>
+        service.readSavedWork({ ...claimInput, requestId: command.requestId }),
+      )
+    ).matterWorkRevisionId,
+    first.revision.matterWorkRevisionId,
+  );
+  await sql`UPDATE action_attempt SET lease_expires_at = now() - interval '1 minute' WHERE attempt_id = ${reserved.row.attemptId}`;
+  const resumed = await owner.runtime(() => service.claim(claimInput));
+  assert.equal(resumed.status, 'RUNNING');
+  assert.equal(
+    resumed.savedWork.matterWorkRevisionId,
+    first.revision.matterWorkRevisionId,
+  );
+  fence = {
+    ...claimInput,
+    leaseToken: resumed.leaseToken,
+    leaseGeneration: resumed.leaseGeneration,
+  };
+  const secondCommand = {
+    ...command,
+    requestId: 'SAVE-DRAFT-SECOND',
+    expectedWorkingRevision: first.revision.workingRevision,
+    nextFocus: { ...command.nextFocus, question: '继续保存的第二份候选工作。' },
+  };
+  const second = await owner.runtime(() =>
+    service.saveWorkingDraft({ ...fence, command: secondCommand }),
+  );
+  assert.equal(
+    second.revision.workingRevision,
+    first.revision.workingRevision + 1,
+  );
+  const repeated = await owner.runtime(() =>
+    service.saveWorkingDraft({ ...fence, command }),
+  );
+  assert.equal(repeated.replayed, true);
+  assert.equal(
+    repeated.revision.matterWorkRevisionId,
+    first.revision.matterWorkRevisionId,
+    'lost first response resolves to the first save even after another save',
+  );
+  await assert.rejects(
+    owner.runtime(() =>
+      service.saveWorkingDraft({
+        ...fence,
+        command: { ...command, changeSummary: 'different' },
+      }),
+    ),
+    /REPLAY_MISMATCH/u,
+  );
+  const { contentHash: _hash, ...resultBody } = matterResult(reserved.task);
+  const finishResult = (ref) =>
+    sealMatterResultEnvelope({
+      ...resultBody,
+      modelOutput: JSON.stringify({ workRevisionRef: ref }),
+    });
+  await assert.rejects(
+    owner.runtime(() =>
+      service.prepareCommit({
+        ...fence,
+        result: finishResult(first.revision.matterWorkRevisionId),
+      }),
+    ),
+    /JOBAID_FINISH_EXACT_COMPLETED_WORK_REQUIRED/u,
+  );
+  const prepared = await owner.runtime(() =>
+    service.prepareCommit({
+      ...fence,
+      result: finishResult(second.revision.matterWorkRevisionId),
+    }),
+  );
+  assert.equal(prepared.row.status, 'COMMITTING');
+  const finished = await owner.runtime(() => service.finish(fence));
+  assert.equal(
+    finished.work.matterWorkRevisionId,
+    second.revision.matterWorkRevisionId,
+  );
+  assert.equal(finished.row.status, 'SUCCEEDED');
+  assert.equal(
+    (
+      await owner.runtime(() =>
+        service.readSavedWork({ ...claimInput, requestId: command.requestId }),
+      )
+    ).matterWorkRevisionId,
+    first.revision.matterWorkRevisionId,
+  );
+  await assert.rejects(
+    owner.runtime(() =>
+      service.saveWorkingDraft({
+        ...fence,
+        command: {
+          ...secondCommand,
+          requestId: 'SAVE-AFTER-FINISH',
+          expectedWorkingRevision: second.revision.workingRevision,
+        },
+      }),
+    ),
+    /LEASE_FENCE_REJECTED|SAVE_FENCE_REJECTED/u,
+  );
+}
+
+async function assertRawMatterJobAidSave(sql, owner, service, baseInput) {
+  const { modelInput: _modelInput, sourceRefs: _sourceRefs, ...request } = baseInput;
+  const previous = await owner.working.loadCurrent(request);
+  assert.ok(previous.state.problemWork);
+  const reserved = await owner.runtime(() => service.reserveJobAid({ ...request,
+    idempotencyKey: 'raw-matter-jobaid', expectedWorkingRevision: previous.workingRevision }));
+  const scope = { tenantId: request.tenantId, matterId: request.matterId, actorUserId: request.actorUserId,
+    attemptRef: reserved.task.operationRef, principalId: 'hosted-test' };
+  const claim = await owner.runtime(() => service.claim(scope));
+  const fence = { ...scope, leaseToken: claim.leaseToken, leaseGeneration: claim.leaseGeneration };
+  const method = reserved.task.modelInput.sourceCatalog.find(item => item.kind === 'METHOD_CLAUSE');
+  const methodRead = await owner.runtime(() => service.readRegisteredSources({ ...fence,
+    sourceRefs: [method.evidenceRef], purpose: '读取实际登记的方法条款' }));
+  assert.deepEqual(methodRead.evidence, [method]);
+  await assert.rejects(owner.runtime(() => service.readRegisteredSources({ ...fence,
+    sourceRefs: ['method-not-registered'], purpose: '拒绝伪造来源' })), /SOURCE_NOT_REGISTERED/u);
+  const documentVersionId = reserved.task.workingBasis.inputs[0].documentVersionId;
+  const sourceRefId = `DOCUMENT_VERSION:${documentVersionId}:page:1`;
+  const text = 'Raw save PostgreSQL fixture: a reported normal inspection is bounded to that inspection.';
+  const reading = { documentVersionId, sourceSha256: 'a'.repeat(64), sourceByteLength: 123, pageCount: 1,
+    extractionScope: 'NATIVE_TEXT_LAYER', pages: [{ page: 1, sourceRefId, text, textLayerStatus: 'PRESENT', visualContentVerified: false,
+      evidence: { kind: 'DOCUMENT_PASSAGE', documentVersionId, workItemId: null, evidenceRef: sourceRefId, sourceRefId,
+        title: 'Raw save fixture', versionLabel: null, locator: 'PDF 第 1 页（文本层）', excerpt: text } }] };
+  const work = jobAidProblemModelWorkContent(previous.state.problemWork);
+  work.changeSummary = '按实际阅读的来源保存完整工作。';
+  work.issues[0].statements[0].premises[0].evidenceRef = sourceRefId;
+  work.issues[0].sourceDependencies.push(sourceRefId);
+  work.issues[0].premiseRefs.push(sourceRefId);
+  const saveInput = { ...fence, requestId: 'RAW-SAVE-ONE', expectedWorkRevision: previous.workingRevision, workJson: JSON.stringify(work) };
+  await assert.rejects(owner.runtime(() => service.saveJobAidWork(saveInput)), /SOURCE_NOT_DELIVERED/u);
+  await owner.runtime(() => service.readSourcePages({ ...fence, documentVersionId, pageStart: 1, purpose: '测试来源' }, async () => reading));
+  const first = await owner.runtime(() => service.saveJobAidWork(saveInput));
+  const saved = await owner.runtime(() => service.readSavedWork({ ...scope, requestId: saveInput.requestId }));
+  assert.equal(saved.matterWorkRevisionId, first.workRevisionRef);
+  assert.equal(saved.state.problemWork.issues[0].statements[0].premises[0].evidenceRef, sourceRefId);
+  const secondInput = { ...saveInput, requestId: 'RAW-SAVE-TWO', expectedWorkRevision: first.workRevision,
+    workJson: JSON.stringify({ ...work, headline: '第二份完整候选工作', changeSummary: '补充完整认识。' }) };
+  const second = await owner.runtime(() => service.saveJobAidWork(secondInput));
+  const replay = await owner.runtime(() => service.saveJobAidWork(saveInput));
+  assert.equal(replay.workRevisionRef, first.workRevisionRef);
+  assert.equal(replay.replayed, true);
+  await assert.rejects(owner.runtime(() => service.saveJobAidWork({ ...saveInput, workJson: secondInput.workJson })), /SAVE_REPLAY_MISMATCH/u);
+  const { contentHash: _contentHash, ...result } = matterResult(claim.task);
+  result.modelOutput = JSON.stringify({ workRevisionRef: second.workRevisionRef });
+  const sealed = sealMatterResultEnvelope(result);
+  const finished = await owner.runtime(() => service.finishJobAid({ ...fence, result: sealed }));
+  assert.equal(finished.status, 'SUCCEEDED');
+  assert.equal(finished.workRevisionRef, second.workRevisionRef);
+  assert.equal((await owner.runtime(() => service.saveJobAidWork(saveInput))).workRevisionRef, first.workRevisionRef);
+  const versionedInput = reserved.task.workingBasis.inputs.find(input => input.workItemId !== null);
+  assert.ok(versionedInput);
+  const [beforeAdvance] = await sql`SELECT revision FROM work_item WHERE work_item_id = ${versionedInput.workItemId}`;
+  let previousAutomaticRef = null;
+  try {
+    for (let step = 1; step <= 2; step += 1) {
+      await sql`UPDATE work_item SET revision = ${beforeAdvance.revision + step} WHERE work_item_id = ${versionedInput.workItemId}`;
+      const changedSource = await owner.runtime(() => service.nextForRuntime(scope));
+      assert.notEqual(changedSource.next.attemptRef, previousAutomaticRef,
+        'each new source version within the same Matter revision needs a distinct automatic request');
+      const nextScope = { ...scope, attemptRef: changedSource.next.attemptRef };
+      const nextRow = await owner.runtime(() => service.read(nextScope));
+      assert.equal(nextRow.matterRevisionId, reserved.task.subject.matterRevisionId);
+      await owner.runtime(() => service.cancel({ ...nextScope, reason: 'Source-version dispatch verified' }));
+      assert.equal((await owner.runtime(() => service.nextForRuntime(scope))).next.attemptRef, changedSource.next.attemptRef);
+      previousAutomaticRef = changedSource.next.attemptRef;
+    }
+  } finally {
+    await sql`UPDATE work_item SET revision = ${beforeAdvance.revision} WHERE work_item_id = ${versionedInput.workItemId}`;
+  }
+
 }

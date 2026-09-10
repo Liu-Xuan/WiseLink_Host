@@ -1,4 +1,7 @@
-import { Inject, Injectable, Logger } from '@nestjs/common';
+import { Inject, Injectable, Logger, Optional } from '@nestjs/common';
+import { MatterActionAttemptService } from './matter-action-attempt.service';
+import { registerMatterAttemptMcpTools } from './matter-attempt-mcp-tools';
+import { DocumentManagementHostedService } from '../document-management/src/hosted/nest/document-management-hosted.service';
 import {
   toNodeHandler,
   type NodeMcpRequestHandler,
@@ -198,6 +201,8 @@ export class CanonicalHostOpenClawMcpService {
     @Inject(CANONICAL_SERVICE_SCOPE_AUTHORIZATION)
     private readonly serviceScope: CanonicalServiceScopeAuthorizationPort,
     private readonly problemAssessment: CanonicalJobAidProblemService,
+    @Optional() private readonly matterAttempts?: MatterActionAttemptService,
+    @Optional() private readonly matterDocuments?: DocumentManagementHostedService,
   ) {
     const handler = createMcpHandler(() => this.createServer(), {
       legacy: 'stateless',
@@ -228,6 +233,7 @@ export class CanonicalHostOpenClawMcpService {
       this.vertical,
       this.serviceScope,
     );
+    if (this.matterAttempts) registerMatterAttemptMcpTools(server, this.matterAttempts, this.serviceScope, this.matterDocuments);
 
     server.registerTool(
       'begin_translation',

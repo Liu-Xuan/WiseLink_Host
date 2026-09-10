@@ -12,6 +12,7 @@ import type {
   EngineeringMatterWorkingUpdateKind,
 } from '@shared/matter-working.interface';
 import { canonicalJson } from '../action-attempt/action-attempt-envelope';
+import { materializeJobAidWork } from './jobaid-problem-work';
 import { isReviewRuntimeActivity } from '../action-attempt/review-evidence-activity';
 import {
   parsePersistedMatterReviewScope,
@@ -41,6 +42,8 @@ export interface FrozenMatterReviewContext {
 
 /** Model proposes content and checked ranges; Host supplies identities and CAS. */
 export interface MatterWorkingDeltaProposal {
+  /** JobAid v2 local issue update; Host supplies subject, receipts and previous work. */
+  problemWork?: Record<string, unknown>;
   updateKind: EngineeringMatterWorkingUpdateKind;
   changeSummary: string;
   nextFocus: EngineeringMatterWorkingFocus | null;
@@ -125,7 +128,10 @@ export function parseMatterWorkingDeltaProposal(
     'openQuestionDelta',
     'reviewConditionDelta',
     'coverageUpdates',
+    ...('problemWork' in item ? ['problemWork'] : []),
   ]);
+  if ('problemWork' in item)
+    object(item.problemWork, 'REVIEW_MATTER_PROBLEM_WORK_INVALID');
   if (
     !['INITIAL_SYNTHESIS', 'CORRECTION', 'MATERIAL_INCORPORATION'].includes(
       String(item.updateKind),
@@ -200,19 +206,97 @@ export function matterWorkingCommand(input: {
   attemptRef: string;
   resolvedSourceRefIds: ReadonlySet<string>;
 }): EngineeringMatterWorkingRevisionCommand {
-  const { context, proposal } = input;
+  const { context } = input;
+  let proposal = input.proposal;
   const sources = new Map(
     context.evidenceSources.map((item) => [item.evidenceRef, item]),
   );
   const prior = context.workingState?.substantiveResult ?? null;
   const evidence = new Map(
-    (prior?.evidence ?? []).map((item) => [item.evidenceRef, item]),
+    (context.workingState?.problemWork?.evidence ?? prior?.evidence ?? []).map(
+      (item) => [item.evidenceRef, item],
+    ),
   );
   for (const item of context.readingEvidence) {
     const existing = evidence.get(item.evidenceRef);
     if (existing && canonicalJson(existing) !== canonicalJson(item))
       fail('REVIEW_MATTER_EVIDENCE_IDENTITY_DRIFT');
     evidence.set(item.evidenceRef, item);
+  }
+
+  const nextProblemWork = proposal.problemWork
+    ? materializeJobAidWork(proposal.problemWork, {
+        matterId: context.scope.matterId,
+        previous: context.workingState?.problemWork ?? null,
+        evidence: [...evidence.values()],
+        readSourceRefs: [
+          ...new Set([
+            ...(context.workingState?.problemWork?.readSourceRefs ?? []),
+            ...context.readingEvidence
+              .filter(
+                (item) =>
+                  item.kind !== 'DOCUMENT_PASSAGE' ||
+                  input.resolvedSourceRefIds.has(
+                    sources.get(item.evidenceRef)?.sourceRefId ?? '',
+                  ),
+              )
+              .map((item) => item.evidenceRef),
+          ]),
+        ],
+        capabilities: context.workingState?.problemWork?.capabilities ?? [],
+        history: context.workingState?.problemWork?.historyReview ?? {
+          required: false,
+          priorAssessmentRefs: [],
+          engineeringDocumentRefs: [],
+          coverage: 'NOT_REQUIRED',
+          limitation: null,
+        },
+      })
+    : undefined;
+  if (nextProblemWork) {
+    if (proposal.claimDelta !== null || proposal.readingPresentation !== null)
+      fail('REVIEW_MATTER_PROBLEM_DUPLICATE_READING');
+    const priorClaims = new Map(
+      (prior?.content.claims ?? []).map((claim) => [claim.claimId, claim]),
+    );
+    const claims = nextProblemWork.issues.flatMap((issue) => issue.statements);
+    const nextIds = new Set(claims.map((claim) => claim.claimId));
+    proposal = {
+      ...proposal,
+      claimDelta: {
+        changedBecause: nextProblemWork.changeSummary,
+        additions: claims.filter((claim) => !priorClaims.has(claim.claimId)),
+        replacements: claims.filter(
+          (claim) =>
+            priorClaims.has(claim.claimId) &&
+            canonicalJson(priorClaims.get(claim.claimId)) !==
+              canonicalJson(claim),
+        ),
+        retirements: [...priorClaims.keys()]
+          .filter((id) => !nextIds.has(id))
+          .map((claimId) => ({
+            claimId,
+            reason: nextProblemWork.changeSummary,
+          })),
+        explicitlyUnchangedClaimIds: claims
+          .filter(
+            (claim) =>
+              canonicalJson(priorClaims.get(claim.claimId) ?? null) ===
+              canonicalJson(claim),
+          )
+          .map((claim) => claim.claimId),
+      },
+      readingPresentation: {
+        headline: nextProblemWork.headline,
+        listBrief: nextProblemWork.listBrief,
+        lead: nextProblemWork.understanding,
+        decisiveClaimIds: nextProblemWork.issues
+          .filter((issue) =>
+            nextProblemWork.decisiveIssueKeys.includes(issue.issueKey),
+          )
+          .flatMap((issue) => issue.statements.map((claim) => claim.claimId)),
+      },
+    };
   }
 
   let nextSubstantiveResult: AssessmentReadingResult | null = null;
@@ -347,6 +431,7 @@ export function matterWorkingCommand(input: {
       ? context.scope.inputs.filter((item) => contributingIds.has(item.inputId))
       : [],
     coverageUpdates,
+    ...(nextProblemWork ? { nextProblemWork } : {}),
   };
   materializeEngineeringMatterWorkingState({
     matterId: context.scope.matterId,
