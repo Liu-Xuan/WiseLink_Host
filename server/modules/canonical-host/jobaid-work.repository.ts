@@ -159,6 +159,24 @@ export class JobAidWorkRepository {
   }
 
   /** Exact revision lookup stays inside the owner/RLS scope, never a global id lookup. */
+  async readByRef(
+    input: { tenantId: string; workItemId: string; workRevisionRef: string },
+    database = this.db,
+  ): Promise<JobAidWorkRevision | null> {
+    const [row] = await database
+      .select()
+      .from(assessmentWorkRevision)
+      .where(
+        and(
+          eq(assessmentWorkRevision.tenantId, input.tenantId),
+          eq(assessmentWorkRevision.workItemId, input.workItemId),
+          eq(assessmentWorkRevision.assessmentWorkRevisionId, input.workRevisionRef),
+        ),
+      )
+      .limit(1);
+    return row ? project(row) : null;
+  }
+
   async readByRefForRuntime(input: {
     tenantId: string;
     workItemId: string;
@@ -167,23 +185,7 @@ export class JobAidWorkRepository {
   }): Promise<JobAidWorkRevision | null> {
     return this.actorTransactions.withActorTransaction(
       input.actorUserId,
-      async ({ database }) => {
-        const [row] = await database
-          .select()
-          .from(assessmentWorkRevision)
-          .where(
-            and(
-              eq(assessmentWorkRevision.tenantId, input.tenantId),
-              eq(assessmentWorkRevision.workItemId, input.workItemId),
-              eq(
-                assessmentWorkRevision.assessmentWorkRevisionId,
-                input.workRevisionRef,
-              ),
-            ),
-          )
-          .limit(1);
-        return row ? project(row) : null;
-      },
+      ({ database }) => this.readByRef(input, database),
     );
   }
 

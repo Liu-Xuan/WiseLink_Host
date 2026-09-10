@@ -22,6 +22,7 @@ import MatterMembers from './MatterMembers';
 import MatterMaterials from './MatterMaterials';
 import MatterWorkingDetails from './MatterWorkingDetails';
 import MatterProblemWork from './MatterProblemWork';
+import EngineeringIssueSearch from './EngineeringIssueSearch';
 import MatterDocumentSourceDialog from './MatterDocumentSourceDialog';
 import {
   readSavedAssessmentClaim,
@@ -345,6 +346,7 @@ const MatterWorkspace: FC<MatterWorkspaceProps> = ({
         </div>
       </RetainedWorkbenchPanel>
       <RetainedWorkbenchPanel active={panel === 'materials'}>
+        <EngineeringIssueSearch matterId={matterId} />
         <div className="mb-4 flex flex-wrap items-center gap-3">
           <Button
             variant="outline"

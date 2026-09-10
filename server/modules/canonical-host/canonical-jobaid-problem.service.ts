@@ -1198,6 +1198,27 @@ export class CanonicalJobAidProblemService {
     };
   }
 
+  async readBrowserRevision(
+    workItemId: string,
+    workRevisionRef: string,
+    actor: CanonicalHostActor,
+  ): Promise<JobAidWorkRevision> {
+    await authorizeAndLoadCanonicalWorkItem({
+      authorization: this.authorization,
+      permissionSnapshots: this.permissionSnapshots,
+      registrar: this.registrar,
+      actor,
+      action: 'READ_DOCUMENT_PARSING',
+      workItemId,
+    });
+    const revision = await this.work.readByRef({
+      tenantId: actor.tenantId, workItemId, workRevisionRef,
+    });
+    if (!revision) throw Object.assign(new Error('JOBAID_WORK_NOT_FOUND'), { statusCode: 404 });
+    await this.assertEvidenceOwned(revision.content.evidence, actor.tenantId, actor.userId, workItemId);
+    return revision;
+  }
+
   async readBrowser(
     workItemId: string,
     actor: CanonicalHostActor,

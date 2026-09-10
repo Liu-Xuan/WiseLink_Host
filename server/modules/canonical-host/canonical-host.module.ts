@@ -1,3 +1,5 @@
+import { EngineeringIssueSearchService } from './engineering-issue-search.service';
+import { EngineeringIssueSearchController } from './engineering-issue-search.controller';
 import {
   Module,
   type DynamicModule,
@@ -189,6 +191,7 @@ export interface CanonicalHostModuleOptions {
   ],
   controllers: [
     DialogueController,
+    EngineeringIssueSearchController,
     CanonicalHostController,
     CanonicalPdfPreviewController,
     CanonicalHostOpenApiController,
@@ -242,6 +245,7 @@ export interface CanonicalHostModuleOptions {
     ReviewAilyService,
     InitialAssessmentKnowledgeService,
     CanonicalHostCommonContextService,
+    EngineeringIssueSearchService,
     CanonicalJobAidProblemService,
     JobAidWorkRepository,
     CanonicalHostReviewActionService,
@@ -436,6 +440,7 @@ export class CanonicalHostModule {
       ],
       controllers: [
         DialogueController,
+        EngineeringIssueSearchController,
         CanonicalHostController,
         CanonicalPdfPreviewController,
         CanonicalHostOpenApiController,
@@ -509,6 +514,7 @@ export class CanonicalHostModule {
         ReviewAilyService,
     InitialAssessmentKnowledgeService,
         CanonicalHostCommonContextService,
+        EngineeringIssueSearchService,
         CanonicalJobAidProblemService,
         JobAidWorkRepository,
         CanonicalHostReviewActionService,

@@ -1,4 +1,5 @@
 import type { JobAidWorkingReadModel } from '@shared/jobaid-problem-assessment.interface';
+import type { EngineeringIssueRead, EngineeringIssueSearchHit, EngineeringIssueSearchResponse } from '@shared/engineering-issue-search.interface';
 import type { CanonicalLibraryFleetCatalog } from '@shared/library-fleet.interface';
 import type {
   AppendReviewTextTurnRequest,
@@ -788,6 +789,25 @@ export function readJobAidAssessmentWork(
     method: 'GET',
     operation: '读取已保存的问题评估',
   });
+}
+
+export function searchEngineeringIssues(search: string): Promise<EngineeringIssueSearchResponse> {
+  return reviewConversationRequest<EngineeringIssueSearchResponse>({
+    url: `/api/canonical-host/engineering-issues?${new URLSearchParams({ search })}`,
+    method: 'GET', operation: '查找已保存的问题',
+  });
+}
+
+export async function readEngineeringIssue(hit: EngineeringIssueSearchHit): Promise<EngineeringIssueRead> {
+  const { subjectKind, subjectId, workRef, issueKey } = hit;
+  const read = await reviewConversationRequest<EngineeringIssueRead>({
+    url: `/api/canonical-host/engineering-issues/work?${new URLSearchParams({ subjectKind, subjectId, workRef, issueKey })}`,
+    method: 'GET', operation: '展开已保存的问题',
+  });
+  if (read.identity.subjectKind !== subjectKind || read.identity.subjectId !== subjectId ||
+    read.identity.workRef !== workRef || read.identity.issueKey !== issueKey)
+    throw new Error('问题读回的范围或工作版本不一致，请重新查找。');
+  return read;
 }
 
 export async function getDocumentParsingPage(
