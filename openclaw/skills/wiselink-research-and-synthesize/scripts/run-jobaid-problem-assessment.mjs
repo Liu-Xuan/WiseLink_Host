@@ -19,6 +19,45 @@ import { requestHostedGateway } from './request-hosted-gateway.mjs';
 
 export const JOBAID_PROBLEM_TASK_SCHEMA = 'wiselink.jobaid-problem-task.v2';
 const FUNCTION = 'return_wiselink_assessment_step';
+const { work: _workShape, ...stepProperties } = JOBAID_STEP_SHAPE.properties;
+const transportStepShape = {
+  ...JOBAID_STEP_SHAPE,
+  properties: { ...stepProperties, workJson: { type: 'string', minLength: 2,
+    description: 'Complete work update encoded as JSON text. Preserve arrays, nulls and every original field.' } },
+};
+
+export function parseJobAidWorkJson(value) {
+  let work;
+  try { work = parseStrictJsonObject(value); }
+  catch { throw new Error('JOBAID_WORK_JSON_INVALID'); }
+  // JSON.parse accepts duplicate keys by discarding earlier values. Reject
+  // those before submitting any model-authored material to the Host.
+  const tokens = value.match(/"(?:[^"\\]|\\.)*"|[{}\[\],:]|true|false|null|-?\d+(?:\.\d+)?(?:[eE][+-]?\d+)?/gs);
+  let index = 0;
+  function visit() {
+    const token = tokens[index++];
+    if (token === '{') {
+      const keys = new Set();
+      while (tokens[index] !== '}') {
+        const key = JSON.parse(tokens[index++]);
+        if (keys.has(key)) throw new Error('JOBAID_WORK_JSON_DUPLICATE_KEY');
+        keys.add(key);
+        index++; // colon; syntax was already validated
+        visit();
+        if (tokens[index] === ',') index++;
+      }
+      index++;
+    } else if (token === '[') {
+      while (tokens[index] !== ']') {
+        visit();
+        if (tokens[index] === ',') index++;
+      }
+      index++;
+    }
+  }
+  visit();
+  return work;
+}
 import { JOBAID_PROBLEM_GUIDANCE as GUIDE } from './jobaid-problem-guidance.mjs';
 
 export function validateJobAidProblemInput(input) {
@@ -145,7 +184,7 @@ export async function invokeHostedJobAidProblemModel(
                 type: 'object',
                 additionalProperties: false,
                 required: ['step'],
-                properties: { step: jobAidFunctionSchema(JOBAID_STEP_SHAPE) },
+                properties: { step: jobAidFunctionSchema(transportStepShape) },
               },
             },
           },
@@ -212,6 +251,8 @@ export async function invokeHostedJobAidProblemModel(
       const args = parseStrictJsonObject(call.function.arguments);
       if (Object.keys(args).length !== 1 || !args.step || typeof args.step !== 'object' || Array.isArray(args.step))
         throw new Error('JOBAID_STEP_OBJECT_REQUIRED');
+      if (Object.keys(args.step).some(key => !Object.hasOwn(transportStepShape.properties, key)))
+        throw new Error('JOBAID_STEP_FIELD_INVALID');
       const step = decodeJobAidStep(args.step);
       if (step.action === 'READ_SOURCES') {
         if (
@@ -251,9 +292,9 @@ export async function invokeHostedJobAidProblemModel(
             throw new Error('JOBAID_KNOWLEDGE_RECEIPT_INVALID');
         }
       } else if (step.action === 'SAVE_WORK' || step.action === 'FINISH') {
-        if (step.work !== undefined) {
-          submittedWork = step.work;
-          receipt = await save(step.work);
+        if (step.workJson !== undefined) {
+          submittedWork = parseJobAidWorkJson(step.workJson);
+          receipt = await save(submittedWork);
         }
         else if (step.action === 'SAVE_WORK')
           throw new Error('JOBAID_WORK_REQUIRED');

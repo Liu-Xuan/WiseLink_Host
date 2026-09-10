@@ -63,7 +63,11 @@ function fixture(steps, overrides = {}) {
   const dependencies = {
     requestGateway: async (_url, request) => {
       calls.push(JSON.parse(request.body));
-      const step = steps.shift();
+      let step = steps.shift();
+      if (step && Object.hasOwn(step, 'work')) {
+        const { work, ...rest } = step;
+        step = { ...rest, workJson: JSON.stringify(work) };
+      }
       if (step instanceof Error) throw step;
       if (typeof step === 'number')
         return new Response(JSON.stringify({ error: 'synthetic timeout' }), {
@@ -407,7 +411,8 @@ test('typed Overall finish preserves quotes and line breaks with one JSON encodi
   const parameters = f.calls[0].tools[0].function.parameters;
   assert.deepEqual(parameters.required, ['step']);
   assert.equal(parameters.properties.step.type, 'object');
-  assert.equal(parameters.properties.step.properties.work.properties.issues.anyOf[0].type, 'array');
+  assert.equal(parameters.properties.step.properties.work, undefined);
+  assert.equal(parameters.properties.step.properties.workJson.type, 'string');
 });
 
 test('typed step unwraps only exact declared native arrays without editing content or extra fields', async () => {
@@ -494,4 +499,28 @@ test('unavailable knowledge stays explicit and permits conditional saved work wi
   assert.equal(receipt.status, 'UNAVAILABLE');
   assert.equal(receipt.error, 'USER_REAUTHORIZATION_REQUIRED');
   assert.equal(f.saves.length, 1);
+});
+
+
+test('workJson preserves complete content and rejects ambiguous or non-object JSON', async () => {
+  const { parseJobAidWorkJson } = await import('../scripts/run-jobaid-problem-assessment.mjs');
+  const work = { ...completed, sample: { empty: [], unknown: null, text: '引号 "quoted"\n换行 \\ 路径' } };
+  assert.deepEqual(parseJobAidWorkJson(JSON.stringify(work)), work);
+  for (const value of ['[]', 'null', '"text"', '{bad}', '{"a":1,"a":2}', '{"nested":[{"a":1,"\\u0061":2}]}']) {
+    assert.throws(() => parseJobAidWorkJson(value), /JOBAID_WORK_JSON_/);
+  }
+  const f = fixture([{ action: 'SAVE_WORK', workJson: JSON.stringify(work) }, { action: 'FINISH' }]);
+  await f.run();
+  assert.deepEqual(JSON.parse(f.saves[0].workJson), work);
+});
+
+
+test('native function schema accepts workJson independently of nested work types', async () => {
+  const { default: Ajv } = await import('ajv');
+  const f = fixture([{ action: 'FINISH', workJson: JSON.stringify(completed) }]);
+  await f.run();
+  const validate = new Ajv().compile(f.calls[0].tools[0].function.parameters);
+  assert.equal(validate({ step: { action: 'SAVE_WORK', workJson: JSON.stringify({ nested: [[], null, { text: '"\n' }] }) } }), true);
+  assert.equal(validate({ step: { action: 'SAVE_WORK', work: completed } }), false);
+  assert.equal(validate({ step: { action: 'SAVE_WORK', workJson: completed } }), false);
 });
