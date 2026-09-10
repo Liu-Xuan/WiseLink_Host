@@ -16,6 +16,12 @@ export function matterDocumentRoute(
   > & { sourceRefId?: string },
   returnPanel: 'brief' | 'review' | 'materials' = 'brief',
 ): string {
+  if (!evidence.workItemId) {
+    const params = new URLSearchParams({ sourceDocument: evidence.documentVersionId });
+    if (evidence.sourceRefId) params.set('sourceRef', evidence.sourceRefId);
+    if (returnPanel !== 'brief') params.set('panel', returnPanel);
+    return `${matterOverviewRoute(matterId)}?${params.toString()}`;
+  }
   const params: URLSearchParams = new URLSearchParams({
     node: 'reader',
     tab: 'reader',

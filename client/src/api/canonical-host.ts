@@ -551,6 +551,16 @@ export async function enrichDocumentVersionMetadata(documentVersionId: string): 
   return receipt;
 }
 
+export async function readDocumentVersionSourcePage(documentVersionId: string, page: number, signal?: AbortSignal) {
+  const reading = await readCanonicalLibrary<import('@shared/document-source-reading.interface').DocumentSourceReading>({
+    url: `/api/document-management/document-versions/${encodeURIComponent(documentVersionId)}/source-pages?pageStart=${page}`,
+    method: 'GET', signal,
+  });
+  if (reading.documentVersionId !== documentVersionId || reading.extractionScope !== 'NATIVE_TEXT_LAYER' ||
+    reading.pages.length !== 1 || reading.pages[0]?.page !== page) throw new Error('DOCUMENT_SOURCE_READING_MISMATCH');
+  return reading;
+}
+
 export async function readDocumentVersionOriginal(
   documentVersionId: string,
   signal?: AbortSignal,

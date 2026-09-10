@@ -126,6 +126,45 @@ describe('existing-version metadata enrichment', () => {
     else process.env.MIAODA_LOCAL_DEV = previousLocal;
   });
 
+  it('reads actual page text with a direct DocumentVersion anchor and rechecks authorization', async () => {
+    const f = fixture();
+    const reading = await f.service.readDocumentSourcePages('version-1', { pageStart: '1' }, context);
+    expect(reading).toMatchObject({ documentVersionId: 'version-1', sourceSha256: sha256,
+      extractionScope: 'NATIVE_TEXT_LAYER', pageCount: 1, pages: [{ page: 1,
+        text: layout.textRuns[0].text, visualContentVerified: false,
+        textLayerStatus: 'VISUAL_TEXT_UNVERIFIED',
+        evidence: { workItemId: null, sourceRefId: 'DOCUMENT_VERSION:version-1:page:1' } }] });
+    expect(f.authorizer.assertCanRead).toHaveBeenCalledTimes(2);
+    expect(f.catalog.fillMissingExtractedMetadata).not.toHaveBeenCalled();
+    expect(f.catalog.appendExtractedMetadata).not.toHaveBeenCalled();
+  });
+
+  it('does not return page text when authorization is revoked during extraction', async () => {
+    const f = fixture();
+    f.authorizer.assertCanRead.mockResolvedValueOnce(undefined).mockRejectedValueOnce(new Error('REVOKED'));
+    await expect(f.service.readDocumentSourcePages('version-1', { pageStart: 1 }, context)).rejects.toThrow();
+    expect(f.parse).toHaveBeenCalledTimes(1);
+  });
+
+  it('rejects changed physical bytes before page extraction', async () => {
+    const f = fixture();
+    f.catalog.readMetadataSource.mockResolvedValue({ ...sourceRow(), version: { ...sourceRow().version, pdfSha256: 'different' } });
+    await expect(f.service.readDocumentSourcePages('version-1', { pageStart: 1 }, context)).rejects.toThrow();
+    expect(f.parse).not.toHaveBeenCalled();
+  });
+
+  it.each([{ pageStart: 0 }, { pageStart: 1, pageEnd: 9 }, { pageStart: 1.5 },
+    { pageStart: 1, workItemId: 'invented' }, { pageStart: '1e0' }])('rejects invalid or unbounded page requests %j', async (request) => {
+    const f = fixture();
+    await expect(f.service.readDocumentSourcePages('version-1', request, context)).rejects.toThrow();
+    expect(f.read).not.toHaveBeenCalled();
+  });
+
+  it('does not clamp an out-of-range page to another source', async () => {
+    const f = fixture();
+    await expect(f.service.readDocumentSourcePages('version-1', { pageStart: 2 }, context)).rejects.toThrow();
+  });
+
   it('uses only the registered immutable source and rechecks access before one enrichment insert', async () => {
     const f = fixture();
     await expect(

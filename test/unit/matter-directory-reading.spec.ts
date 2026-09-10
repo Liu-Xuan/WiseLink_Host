@@ -153,6 +153,17 @@ describe('real matter directory and saved list summaries', () => {
     expect(html.split('data-claim-id="condition-4"')).toHaveLength(3);
   });
 
+  it('keeps direct document sources in the Matter without inventing a WorkItem', () => {
+    const route = matterDocumentRoute('matter/a', {
+      workItemId: null, documentVersionId: 'DV-OLD', sourceRefId: 'DOCUMENT_VERSION:DV-OLD:page:3',
+    }, 'review');
+    const url = new URL(route, 'https://example.invalid');
+    expect(url.pathname).toBe('/matters/matter%2Fa');
+    expect(url.searchParams.get('sourceDocument')).toBe('DV-OLD');
+    expect(url.searchParams.get('sourceRef')).toBe('DOCUMENT_VERSION:DV-OLD:page:3');
+    expect(url.searchParams.get('panel')).toBe('review');
+  });
+
   it('round trips the exact original member, document version and discussion panel using local routes', () => {
     const route = matterDocumentRoute(
       'matter/a',

@@ -3,6 +3,7 @@ import { mintDocumentUploadAuthority } from './document-upload-authority';
 import type { DocumentLibraryUploadRequest, DocumentUploadResponse } from '@shared/api.interface';
 import type { DocumentUploadAuthority } from './document-upload-authority';
 import { createHash } from 'node:crypto';
+import { documentSourcePageRange, documentSourceReading } from './document-source-reading';
 import { PdfjsDistLayoutExtractor } from '../../../../professional-input/parser/pdfjs-dist-layout-extractor.adapter';
 import { controlledPdfByteView, readActualPdfPageCount } from '../../migrated/ingress/pdfDocumentIdentityOwner.js';
 import { extractActualPdfMetadata } from '../../migrated/ingress/pdfDocumentMetadata.js';
@@ -304,6 +305,25 @@ export class DocumentManagementHostedService {
       const selected = await this.readRegisteredOriginal(row);
       await this.authorizer.assertCanRead({ ...context, action: 'DOCUMENT_READ', documentVersionId });
       return { bytes: selected.bytes, filename: row.version.originalFilename };
+    });
+  }
+
+  async readDocumentSourcePages(documentVersionId: string, request: unknown, context: HostedRequestContext) {
+    return publicDmOperation(async () => {
+      assertProductionMiaodaBrowserIdentityAvailable(hostedIdentity(context));
+      const range = documentSourcePageRange(request);
+      await this.authorizer.assertCanRead({ ...context, action: 'DOCUMENT_READ', documentVersionId });
+      const row = await this.catalog.readMetadataSource(documentVersionId, context.tenantId);
+      if (!row) throw Object.assign(new Error('Document original is unavailable.'), { code: 'DOCUMENT_VERSION_NOT_FOUND', statusCode: 404 });
+      const selected = await this.readRegisteredOriginal(row);
+      const view = controlledPdfByteView(selected.bytes);
+      const layout = new PdfjsDistLayoutExtractor().extractLayoutWithDiagnostics(view.bytes);
+      readActualPdfPageCount({ layout, actualSha256: selected.sha256, actualByteLength: selected.byteLength,
+        inspectionSha256: createHash('sha256').update(view.bytes).digest('hex'), inspectionByteLength: view.bytes.byteLength });
+      const reading = documentSourceReading({ ...range, layout, documentVersionId,
+        filename: row.version.originalFilename, sha256: selected.sha256, byteLength: selected.byteLength });
+      await this.authorizer.assertCanRead({ ...context, action: 'DOCUMENT_READ', documentVersionId });
+      return reading;
     });
   }
 

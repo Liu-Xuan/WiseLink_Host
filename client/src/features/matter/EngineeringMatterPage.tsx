@@ -22,6 +22,7 @@ import MatterMembers from './MatterMembers';
 import MatterMaterials from './MatterMaterials';
 import MatterWorkingDetails from './MatterWorkingDetails';
 import MatterProblemWork from './MatterProblemWork';
+import MatterDocumentSourceDialog from './MatterDocumentSourceDialog';
 import {
   readSavedAssessmentClaim,
   type AssessmentClaimSelection,
@@ -131,6 +132,7 @@ const MatterWorkspace: FC<MatterWorkspaceProps> = ({
     > & { sourceRefId?: string },
   ): void {
     saveLocation();
+    if (!evidence.workItemId) setClaimSelection(null);
     navigate(matterDocumentRoute(matterId, evidence, panel));
   }
 
@@ -381,6 +383,17 @@ const MatterWorkspace: FC<MatterWorkspaceProps> = ({
           </aside>
         </div>
       </RetainedWorkbenchPanel>
+      {searchParams.get('sourceDocument') ? <MatterDocumentSourceDialog
+        key={`${sessionGeneration}:${searchParams.get('sourceDocument')}:${searchParams.get('sourceRef')}`}
+        documentVersionId={searchParams.get('sourceDocument')!}
+        sourceRef={searchParams.get('sourceRef')}
+        onClose={() => {
+          const params = new URLSearchParams(searchParams);
+          params.delete('sourceDocument');
+          params.delete('sourceRef');
+          setSearchParams(params);
+        }}
+      /> : null}
       <ClaimEvidenceDialog
         selection={claimSelection}
         readClaim={readClaim}

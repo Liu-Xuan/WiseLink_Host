@@ -7,8 +7,8 @@ import {
 } from '@client/src/api/canonical-host';
 
 export function DocumentOriginalPreview({
-  documentVersionId, children,
-}: { documentVersionId: string; children: ReactNode }) {
+  documentVersionId, children, page,
+}: { documentVersionId: string; children: ReactNode; page?: number }) {
   const [preview, setPreview] = useState<{url: string; documentVersionId: string; generation: number} | null>(null);
   const url = preview?.documentVersionId === documentVersionId &&
     preview.generation === getCanonicalHostClientSessionGeneration() ? preview.url : null;
@@ -64,7 +64,7 @@ export function DocumentOriginalPreview({
   return (
     <span className="library-original-preview" data-document-version-id={documentVersionId}>
       {url ? <>
-        <a href={url} target="_blank" rel="noopener noreferrer">{children}</a>
+        <a href={page && Number.isSafeInteger(page) && page > 0 ? `${url}#page=${page}` : url} target="_blank" rel="noopener noreferrer">{children}</a>
         <span role="status">原件已读取，请点击链接在新标签页打开。</span>
       </> : <Button variant="ghost" size="sm" disabled={busy} onClick={() => { void prepare(); }}>
         {busy ? '正在读取原件…' : '读取原件以预览'}
