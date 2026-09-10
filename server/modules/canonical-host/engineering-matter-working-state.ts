@@ -18,6 +18,7 @@ import type {
 } from '@shared/matter-working.interface';
 
 import { canonicalJson } from '../action-attempt/action-attempt-envelope';
+import { validateMatterProblemWork } from './matter-problem-work';
 
 export interface EngineeringMatterWorkingMaterialization {
   state: EngineeringMatterWorkingState;
@@ -72,6 +73,16 @@ export function materializeEngineeringMatterWorkingState(input: {
     current: currentResult,
     command: input.command,
   });
+  if (
+    input.current?.problemWork &&
+    input.command.nextSubstantiveResult &&
+    !input.command.nextProblemWork
+  )
+    fail('ENGINEERING_MATTER_PROBLEM_WORK_UPDATE_REQUIRED');
+  if (input.command.nextProblemWork && !input.command.nextSubstantiveResult)
+    fail('ENGINEERING_MATTER_PROBLEM_WORK_READING_REQUIRED');
+  const problemWork =
+    input.command.nextProblemWork ?? input.current?.problemWork;
   const resultChanged: boolean =
     canonicalJson(currentResult) !== canonicalJson(nextResult);
 
@@ -136,6 +147,7 @@ export function materializeEngineeringMatterWorkingState(input: {
     reviewConditions: reviewConditions.items,
     substantiveInputs,
     coverage,
+    ...(problemWork ? { problemWork: structuredClone(problemWork) } : {}),
   };
   validateState(state, input.matterId);
 
@@ -561,6 +573,14 @@ function validateState(
   if (value.substantiveResult !== null) {
     validateReadingResult(value.substantiveResult, matterId);
   }
+  if (value.problemWork !== undefined)
+    validateMatterProblemWork(
+      value.problemWork as NonNullable<
+        EngineeringMatterWorkingState['problemWork']
+      >,
+      matterId,
+      value.substantiveResult as AssessmentReadingResult | null,
+    );
   if (
     !Array.isArray(value.openQuestions) ||
     !Array.isArray(value.reviewConditions)

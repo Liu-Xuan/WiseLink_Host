@@ -62,9 +62,23 @@ export class EngineeringMatterController {
   }
 
   @Get(':matterId/materials')
+  // Static suffix routes above the generic Matter read.
   readMaterials(@Param('matterId') matterId: string, @Req() request: Request) {
     return this.matters.readMaterials(
       requiredText(matterId, 'MATTER_ID', 96),
+      hostActor(request),
+    );
+  }
+
+  @Get(':matterId/working/:workRef')
+  readWorkingRevision(
+    @Param('matterId') matterId: string,
+    @Param('workRef') workRef: string,
+    @Req() request: Request,
+  ) {
+    return this.working.readWorkingRevision(
+      requiredText(matterId, 'MATTER_ID', 96),
+      requiredText(workRef, 'WORK_REF', 96),
       hostActor(request),
     );
   }

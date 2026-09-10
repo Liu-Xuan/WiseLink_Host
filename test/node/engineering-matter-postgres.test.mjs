@@ -40,6 +40,10 @@ const {
   MiaodaWorkItemRepository,
 } = require('../../server/modules/work-item/miaoda-work-item.repository.ts');
 
+const {
+  materializeJobAidWork,
+} = require('../../server/modules/canonical-host/jobaid-problem-work.ts');
+
 const databaseUrl = process.env.ENGINEERING_MATTER_TEST_DATABASE_URL;
 const FTD_WORK_ITEM_ID = 'WI-DM-FTD-FD88DCB9CF64CF3B';
 const SB_WORK_ITEM_ID = 'WI-LOCAL-737-34-3830-ASSESSMENT';
@@ -882,6 +886,10 @@ async function assertHostedCandidateRls(sql, owner, matterId) {
   command.nextSubstantiveResult.resultRevision = 2;
   command.nextSubstantiveResult.content.claims[0].text =
     'The corrected condition remains candidate-only.';
+  command.nextProblemWork.issues[0].statements = structuredClone(
+    command.nextSubstantiveResult.content.claims,
+  );
+  command.nextProblemWork.changeSummary = command.changeSummary;
   command.claimDelta = {
     changedBecause: 'The engineer corrected the test premise.',
     additions: [],
@@ -1249,7 +1257,7 @@ async function assertWorkingRevisionFlow(
     locator: 'page 1',
   };
   const claim = {
-    claimId: 'CLAIM-WORKING-1',
+    claimId: `${matterId}:issue:source:claim:condition`,
     text: 'The engineering condition remains candidate-only.',
     basis: 'SOURCE_FACT',
     premises: [
@@ -1312,6 +1320,81 @@ async function assertWorkingRevisionFlow(
       reason: 'Contributed to the candidate Matter reading.',
     })),
   };
+  command.nextProblemWork = materializeJobAidWork(
+    {
+      schemaVersion: 'wiselink.jobaid-problem-work.v2',
+      headline: command.nextSubstantiveResult.content.headline,
+      listBrief: command.nextSubstantiveResult.content.listBrief,
+      understanding: command.nextSubstantiveResult.content.lead,
+      decisiveIssueKeys: ['source'],
+      roundCompletion: 'COMPLETE_WITH_OPEN_QUESTIONS',
+      completionReason: '完成本轮来源核查，实际措施状态待确认。',
+      changeSummary: command.changeSummary,
+      unchangedExplanation: '保留完整条件。',
+      issues: [
+        {
+          issueKey: 'source',
+          question: '源条件意味着什么？',
+          understanding: claim.text,
+          statements: [
+            {
+              claimKey: 'condition',
+              text: claim.text,
+              basis: claim.basis,
+              premises: claim.premises,
+            },
+          ],
+          riskScenarios: [
+            {
+              scenario: '未确认条件下的风险',
+              conditions: ['对象状态尚未确认'],
+              method: 'JA_AC_R01',
+              severity: null,
+              likelihood: null,
+              importantEvent: null,
+              limitations: ['缺少对象数据'],
+              controlComparison: '尚无法比较措施效果',
+            },
+          ],
+          measures: [
+            {
+              text: '补充对象记录',
+              addresses: '确认前提是否成立',
+              limitations: ['尚未实施'],
+              status: 'PROPOSED',
+              basisRefs: [evidence.evidenceRef],
+            },
+          ],
+          otherClassifications: [],
+          openQuestions: [
+            {
+              question: '对象状态是什么？',
+              affects: '适用范围',
+              nextEvidence: '对象记录',
+              reason: '当前尚未取得',
+            },
+          ],
+          requirementHandling: [],
+          sourceDependencies: [evidence.evidenceRef],
+          premiseRefs: [],
+        },
+      ],
+    },
+    {
+      matterId,
+      previous: null,
+      evidence: [evidence],
+      readSourceRefs: [evidence.evidenceRef],
+      capabilities: [],
+      history: {
+        required: false,
+        priorAssessmentRefs: [],
+        engineeringDocumentRefs: [],
+        coverage: 'NOT_REQUIRED',
+        limitation: null,
+      },
+    },
+  );
   const commit = await owner.working.withTransaction(async (executor) => {
     const result = await executor.appendWorkingRevision({
       tenantId: owner.actor.tenantId,
@@ -1353,6 +1436,52 @@ async function assertWorkingRevisionFlow(
     'MATTER-READING-1',
   );
   assert.deepEqual(committed.working.pendingInputs, []);
+  const exactInput = {
+    tenantId: owner.actor.tenantId,
+    matterId,
+    actorUserId: owner.actor.userId,
+    workRef: commit.revision.matterWorkRevisionId,
+  };
+  const exact = await owner.runtime(() =>
+    owner.working.readByRefForRuntime(exactInput),
+  );
+  assert.deepEqual(exact.state.problemWork, command.nextProblemWork);
+  assert.equal(exact.state.problemWork.issues[0].riskScenarios[0].score, null);
+  assert.deepEqual(
+    await owner.workingService.readWorkingRevision(
+      matterId,
+      exactInput.workRef,
+      owner.actor,
+    ),
+    exact,
+  );
+  assert.equal(
+    await owner.runtime(() =>
+      owner.working.readByRefForRuntime({
+        ...exactInput,
+        workRef: 'MWR-missing',
+      }),
+    ),
+    null,
+  );
+  await assert.rejects(
+    owner.runtime(() =>
+      owner.working.readByRefForRuntime({
+        ...exactInput,
+        actorUserId: 'actor-B',
+      }),
+    ),
+    /RUNTIME_AUTHORIZATION_UNAVAILABLE/u,
+  );
+  await assert.rejects(
+    owner.runtime(() =>
+      owner.working.readByRefForRuntime({
+        ...exactInput,
+        tenantId: 'tenant-B',
+      }),
+    ),
+    /RUNTIME_AUTHORIZATION_UNAVAILABLE/u,
+  );
 
   const replay = await owner.workingService.applyWorkingUpdate(
     matterId,

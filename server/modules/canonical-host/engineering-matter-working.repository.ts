@@ -177,6 +177,49 @@ export class EngineeringMatterWorkingRepository {
     return row ? readModel(row) : null;
   }
 
+  /** Exact saved identity, constrained before loading the full investigation body. */
+  async readByRef(
+    input: { tenantId: string; matterId: string; workRef: string },
+    executor: EngineeringMatterWorkingDatabaseExecutor = this.db,
+  ): Promise<EngineeringMatterWorkingRevisionReadModel | null> {
+    const [row] = await executor
+      .select()
+      .from(engineeringMatterWorkRevision)
+      .where(
+        and(
+          eq(engineeringMatterWorkRevision.tenantId, input.tenantId),
+          eq(engineeringMatterWorkRevision.matterId, input.matterId),
+          eq(engineeringMatterWorkRevision.matterWorkRevisionId, input.workRef),
+        ),
+      )
+      .limit(1);
+    return row ? readModel(row) : null;
+  }
+
+  async readByRefForRuntime(input: {
+    tenantId: string;
+    matterId: string;
+    workRef: string;
+    actorUserId: string;
+  }): Promise<EngineeringMatterWorkingRevisionReadModel | null> {
+    return this.withActorTransaction(
+      input.actorUserId,
+      async ({ database }) => {
+        await this.authorizeRuntimeInputs(input, database);
+        const revision = await this.readByRef(input, database);
+        if (revision)
+          await this.authorizeRuntimeInputs(
+            {
+              ...input,
+              basedOnMatterRevisionId: revision.basedOnMatterRevisionId,
+            },
+            database,
+          );
+        return revision;
+      },
+    );
+  }
+
   async commit(
     input: EngineeringMatterWorkingCommitInput,
   ): Promise<EngineeringMatterWorkingCommitResult> {

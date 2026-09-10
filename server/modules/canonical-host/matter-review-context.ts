@@ -8,6 +8,7 @@ import type {
 } from '../review-persistence/review-conversation.repository';
 import type { PersistedMatterReviewScope } from '../review-persistence/review-business-scope';
 import type { FrozenReviewSourceRef } from './canonical-host-openclaw-review.contract';
+import { JOBAID_METHOD_EVIDENCE } from './jobaid-method-pack';
 import type { EngineeringMatterWorkingBasis } from './engineering-matter-working.service';
 import {
   engineeringMatterPendingInputs,
@@ -54,11 +55,18 @@ export function buildMatterReviewContext(input: {
   assertMatterReviewBasis(input.scope, input.basis);
   const prior = input.basis.working?.state.substantiveResult ?? null;
   const evidence = new Map(
-    (prior?.evidence ?? []).map((item) => [
-      item.evidenceRef,
-      structuredClone(item),
-    ]),
+    (
+      input.basis.working?.state.problemWork?.evidence ??
+      prior?.evidence ??
+      []
+    ).map((item) => [item.evidenceRef, structuredClone(item)]),
   );
+  for (const method of JOBAID_METHOD_EVIDENCE) {
+    const priorMethod = evidence.get(method.evidenceRef);
+    if (priorMethod && JSON.stringify(priorMethod) !== JSON.stringify(method))
+      fail('REVIEW_MATTER_EVIDENCE_IDENTITY_DRIFT');
+    evidence.set(method.evidenceRef, structuredClone(method));
+  }
   const resourceRefs: FrozenReviewSourceRef[] = [];
   const evidenceSources: FrozenMatterReviewContext['evidenceSources'] = [];
   const pending = new Set(
@@ -207,6 +215,7 @@ export function buildMatterReviewContext(input: {
       evidenceSources,
     },
     model: {
+      problemWorkSchema: 'wiselink.jobaid-problem-work.v2',
       title: input.basis.snapshot.title,
       workingRevision: input.scope.expectedWorkingRevision,
       targetClaimId: input.scope.targetClaimId,
@@ -215,6 +224,15 @@ export function buildMatterReviewContext(input: {
         ? {
             content: structuredClone(prior.content),
             evidence: prior.evidence.map(safeEvidence),
+          }
+        : null,
+      previousProblemWork: input.basis.working?.state.problemWork
+        ? {
+            workRevisionRef: input.basis.working.matterWorkRevisionId,
+            content: jobAidProblemModelWorkContent(
+              input.basis.working.state.problemWork,
+            ),
+            candidateOnly: true,
           }
         : null,
       focus: input.basis.working?.state.focus ?? null,

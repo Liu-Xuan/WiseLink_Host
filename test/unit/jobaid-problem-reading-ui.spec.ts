@@ -30,8 +30,32 @@ import {
   jobAidReadAfterFailure,
 } from '../../client/src/pages/DocumentParsingPage/useJobAidWorkingRead';
 import { jobAidReadingFixture } from './semantic-reading-ui.fixtures';
+import MatterProblemWork from '../../client/src/features/matter/MatterProblemWork';
+import { jobAidReadingResult } from '@shared/jobaid-problem-assessment.interface';
 
 describe('problem-oriented JobAid reading', () => {
+  it('uses the same complete issue reader for a saved Matter investigation', () => {
+    const saved = jobAidReadingFixture().current!;
+    const reading = jobAidReadingResult(saved);
+    reading.scope = { kind: 'ENGINEERING_MATTER', matterId: 'MAT-test' };
+    const html = renderToStaticMarkup(createElement(MatterProblemWork, {
+      revision: {
+        matterWorkRevisionId: 'MWR-test', matterId: 'MAT-test', workingRevision: 1,
+        basedOnMatterRevisionId: 'MR-test', updateKind: 'INITIAL_SYNTHESIS', changeSummary: '本轮问题',
+        substantiveResultRef: reading.resultRef, substantiveResultRevision: reading.resultRevision,
+        state: { schemaVersion: 'wiselink.3_1.engineering_matter_working_state.v1', focus: { question: '措施是否有效？', targetRefs: [] },
+          substantiveResult: reading, problemWork: saved.content, openQuestions: [], reviewConditions: [], substantiveInputs: [], coverage: [] },
+        change: { changedBecause: '核查条件', addedClaimIds: [], replacedClaimIds: [], retiredClaims: [], explicitlyUnchangedClaimIds: [], openQuestionDelta: null, reviewConditionDelta: null, coverageUpdates: [] },
+        source: null, createdAt: saved.createdAt,
+      }, onLocateDocument: jest.fn(),
+    }));
+    expect(html).toContain('已保存的问题分析');
+    expect(html).toContain('仅对构型 A');
+    expect(html).toContain('不能替代有效性验证');
+    expect(html).toContain('依据不足，未计算');
+    expect(html).toContain('EO 属性');
+    expect(html).not.toContain('0 分');
+  });
   it('keeps saved work, material conditions and real questions visible after failed execution', () => {
     const data = jobAidReadingFixture();
     const html = renderToStaticMarkup(

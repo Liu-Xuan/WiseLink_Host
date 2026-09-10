@@ -4450,7 +4450,7 @@ function validateFrozenMatterReviewContext(value, resourceIds) {
   }
   if (value.workingState !== null) {
     const state = value.workingState;
-    exactKeys(state, ['schemaVersion', 'focus', 'substantiveResult', 'openQuestions', 'reviewConditions', 'substantiveInputs', 'coverage'], [], 'review matter working state');
+    exactKeys(state, ['schemaVersion', 'focus', 'substantiveResult', 'openQuestions', 'reviewConditions', 'substantiveInputs', 'coverage'], ['problemWork'], 'review matter working state');
     equal(state.schemaVersion, 'wiselink.3_1.engineering_matter_working_state.v1', 'REVIEW_MATTER_WORKING_STATE_INVALID');
     validateMatterFocus(state.focus);
     validateMatterTextItems(state.openQuestions);
@@ -4532,7 +4532,7 @@ function validateMatterEvidenceList(values) {
 }
 
 function matterReviewEvidence(context) {
-  const evidence = new Map((context.workingState?.substantiveResult?.evidence ?? []).map((item) => [item.evidenceRef, item]));
+  const evidence = new Map((context.workingState?.problemWork?.evidence ?? context.workingState?.substantiveResult?.evidence ?? []).map((item) => [item.evidenceRef, item]));
   for (const item of context.readingEvidence) {
     const prior = evidence.get(item.evidenceRef);
     if (prior && canonicalJson(prior) !== canonicalJson(item)) fail('REVIEW_MATTER_EVIDENCE_IDENTITY_DRIFT');
@@ -4576,7 +4576,7 @@ function assertMatterClaimEvidence(claims, evidence) {
 
 function validateMatterWorkingDelta(task, value) {
   if (value === null) return;
-  exactKeys(value, ['updateKind', 'changeSummary', 'nextFocus', 'claimDelta', 'readingPresentation', 'openQuestionDelta', 'reviewConditionDelta', 'coverageUpdates'], [], 'review matter delta');
+  exactKeys(value, ['updateKind', 'changeSummary', 'nextFocus', 'claimDelta', 'readingPresentation', 'openQuestionDelta', 'reviewConditionDelta', 'coverageUpdates'], ['problemWork'], 'review matter delta');
   if (!['INITIAL_SYNTHESIS', 'CORRECTION', 'MATERIAL_INCORPORATION'].includes(value.updateKind)) fail('REVIEW_MATTER_UPDATE_KIND_INVALID');
   nonEmpty(value.changeSummary, 'REVIEW_MATTER_CHANGE_SUMMARY_REQUIRED');
   const context = task.matterContext;
@@ -4584,7 +4584,7 @@ function validateMatterWorkingDelta(task, value) {
   let nextClaims = null;
   if (value.nextFocus !== null) validateMatterFocus(value.nextFocus);
   if ((value.claimDelta === null) !== (value.readingPresentation === null)) fail('REVIEW_MATTER_PRESENTATION_DELTA_REQUIRED');
-  if (current === null && (value.updateKind !== 'INITIAL_SYNTHESIS' || value.nextFocus === null || value.claimDelta === null)) {
+  if (current === null && (value.updateKind !== 'INITIAL_SYNTHESIS' || value.nextFocus === null || (value.claimDelta === null && value.problemWork === undefined))) {
     fail('REVIEW_MATTER_INITIAL_SYNTHESIS_REQUIRED');
   }
   if (current !== null && value.updateKind === 'INITIAL_SYNTHESIS') fail('REVIEW_MATTER_UPDATE_KIND_INVALID');
@@ -4609,6 +4609,14 @@ function validateMatterWorkingDelta(task, value) {
     exactKeys(value.readingPresentation, ['headline', 'listBrief', 'lead', 'decisiveClaimIds'], [], 'review matter reading presentation');
     validateEngineeringReadingSummary({ schemaVersion: 'wiselink.3_1.assessment_reading.v1', ...value.readingPresentation, claims });
     assertMatterClaimEvidence(claims, matterReviewEvidence(context));
+  }
+  if (value.problemWork !== undefined) {
+    if (value.claimDelta !== null || value.readingPresentation !== null) fail('REVIEW_MATTER_PROBLEM_DUPLICATE_READING');
+    validateJobAidWorkDelta(value.problemWork, current?.problemWork ?? null, [...matterReviewEvidence(context).values()]);
+    const issues = new Map((current?.problemWork?.issues ?? []).map((issue) => [issue.issueKey, issue]));
+    for (const retired of value.problemWork.retiredIssues ?? []) issues.delete(retired.issueKey);
+    for (const issue of value.problemWork.issues) issues.set(issue.issueKey, issue);
+    nextClaims = [...issues.values()].flatMap((issue) => issue.statements);
   }
   for (const [key, priorKey] of [['openQuestionDelta', 'openQuestions'], ['reviewConditionDelta', 'reviewConditions']]) {
     const delta = value[key];
@@ -4746,6 +4754,10 @@ function validateFrozenJobAidReviewContext(task) {
 }
 function validateJobAidReviewDelta(task, delta) {
   if (delta === null) return;
+  return validateJobAidWorkDelta(delta, task.jobAidContext.previousWork?.content ?? null, task.jobAidContext.sourceCatalog);
+}
+
+function validateJobAidWorkDelta(delta, previousContent, sourceCatalog) {
   assertObject(delta, 'REVIEW_JOBAID_DELTA_INVALID');
   equal(delta.schemaVersion, 'wiselink.jobaid-problem-work.v2', 'REVIEW_JOBAID_WORK_SCHEMA_INVALID');
   for (const key of ['headline', 'listBrief', 'understanding', 'completionReason', 'changeSummary', 'unchangedExplanation']) nonEmpty(delta[key], `REVIEW_JOBAID_${key.toUpperCase()}_REQUIRED`);
@@ -4756,11 +4768,11 @@ function validateJobAidReviewDelta(task, delta) {
   const retired = delta.retiredIssues === undefined ? [] : delta.retiredIssues;
   uniqueTextArray(unchanged, 'REVIEW_JOBAID_UNCHANGED_INVALID');
   array(retired, 'REVIEW_JOBAID_RETIREMENTS_INVALID');
-  const prior = task.jobAidContext.previousWork?.content.issues.map((issue) => issue.issueKey) ?? [];
+  const prior = previousContent?.issues.map((issue) => issue.issueKey) ?? [];
   const keys = [...delta.issues.map((issue) => issue.issueKey), ...unchanged, ...retired.map((issue) => issue.issueKey)];
   uniqueTextArray(keys, 'REVIEW_JOBAID_ISSUE_PARTITION_INVALID');
   if (prior.some((key) => !keys.includes(key)) || [...unchanged, ...retired.map((issue) => issue.issueKey)].some((key) => !prior.includes(key))) fail('REVIEW_JOBAID_PRIOR_ISSUE_OMITTED');
-  const allowed = new Set(task.jobAidContext.sourceCatalog.map((item) => item.evidenceRef));
+  const allowed = new Set(sourceCatalog.map((item) => item.evidenceRef));
   const invalid = jobAidDeltaEvidenceEntries(delta).filter((entry) => !allowed.has(entry.evidenceRef));
   if (invalid.length) {
     const error = new Error('REVIEW_JOBAID_EVIDENCE_NOT_REGISTERED');
@@ -4785,6 +4797,15 @@ export function reviewCandidateSourceRefIds(task, candidate) {
         const sourceRefId = sources.get(premise.evidenceRef);
         if (!sourceRefId) fail('REVIEW_MATTER_CHANGED_CLAIM_SOURCE_NOT_AVAILABLE');
         refs.push(sourceRefId);
+      }
+    }
+    if (delta.problemWork) {
+      const previousReads = new Set(task.matterContext.workingState?.problemWork?.readSourceRefs ?? []);
+      for (const ref of jobAidDeltaEvidenceRefs(delta.problemWork)) {
+        if (evidence.get(ref)?.kind !== 'DOCUMENT_PASSAGE' || previousReads.has(ref)) continue;
+        const sourceRef = sources.get(ref);
+        if (!sourceRef) fail('REVIEW_MATTER_CHANGED_CLAIM_SOURCE_NOT_AVAILABLE');
+        refs.push(sourceRef);
       }
     }
     refs.push(...delta.coverageUpdates.flatMap((item) => item.checkedSourceRefIds));

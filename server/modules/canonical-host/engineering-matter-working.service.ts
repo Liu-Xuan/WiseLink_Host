@@ -74,6 +74,29 @@ export class EngineeringMatterWorkingService {
   }
 
   /** Browser path: requires the native actor and fresh object access per member. */
+  async readWorkingRevision(
+    matterId: string,
+    workRef: string,
+    actor: CanonicalHostActor,
+  ): Promise<EngineeringMatterWorkingRevisionReadModel> {
+    await this.authorizedMatter(matterId, actor, 0);
+    const revision = await this.working.readByRef({
+      tenantId: actor.tenantId,
+      matterId,
+      workRef,
+    });
+    if (!revision) throw matterNotFound();
+    // Historical work can contain a member that is no longer in the current composition.
+    for (const workItemId of new Set(
+      [
+        ...revision.state.substantiveInputs,
+        ...revision.state.coverage.map((item) => item.binding),
+      ].flatMap((binding) => (binding.workItemId ? [binding.workItemId] : [])),
+    ))
+      await this.requireInput(workItemId, actor);
+    return revision;
+  }
+
   async resolveWorkingBasis(
     matterId: string,
     actor: CanonicalHostActor,
@@ -225,10 +248,14 @@ export class EngineeringMatterWorkingService {
       matterId,
     });
     if (!snapshot) throw matterNotFound();
-    if (snapshot.materials?.length && (!actor.objectAccessActor ||
+    if (
+      snapshot.materials?.length &&
+      (!actor.objectAccessActor ||
         !isHostedCanonicalFinalUserActor(actor.objectAccessActor) ||
         actor.objectAccessActor.tenantId !== actor.tenantId ||
-        actor.objectAccessActor.canonicalSubject.id !== actor.userId)) throw identityHandoffUnavailable();
+        actor.objectAccessActor.canonicalSubject.id !== actor.userId)
+    )
+      throw identityHandoffUnavailable();
     const currentInputs = await Promise.all(
       snapshot.links.map((link: EngineeringMatterRevisionLinkSnapshot) =>
         this.requireInput(link.workItemId, actor),

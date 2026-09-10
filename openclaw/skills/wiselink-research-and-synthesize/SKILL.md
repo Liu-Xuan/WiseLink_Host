@@ -369,6 +369,7 @@ Host 的 `review_turn_task.v1.c4` 仍经同一驱动、原生会话和五个 MCP
 - 非 null delta 精确包含 `updateKind/changeSummary/nextFocus/claimDelta/readingPresentation/`
   `openQuestionDelta/reviewConditionDelta/coverageUpdates`。claimDelta 按稳定 claimId 添加、替换、撤销或明确保持，
   写出 changedBecause；readingPresentation 与新的 claims 一起构成同一阅读结果。局部纠正保留未变化正文和依据。
+- 当 Host 提供 `context.matterWorking.problemWorkSchema` 时，实质更新在 delta 中增加 `problemWork`，使用同一 JobAid v2 完整问题更新格式；此时 `claimDelta` 和 `readingPresentation` 均为 null，由 Host 从完整工作派生同一阅读结果。`previousProblemWork` 是该事项确切的已存工作，保留未变化问题、措施限制、依赖和方法；成员的 `previousProblemAssessment` 仅为其他主体候选上下文。仅补覆盖时省略 `problemWork`。
 - DOCUMENT_PASSAGE 目录不包含正文；任何答复引用、变化 claim 的文档前提与 coverage 都必须本轮实际读取。
   使用本轮 task-local source key，不能用另一个文档的同名原 SourceRef；工程师陈述只可用 Host 已提供的文本。
 - coverage 按 inputRef 记录实际读过的 source keys、明确检查范围、SUBSTANTIVE 或 NO_MATERIAL_CHANGE 及理由。

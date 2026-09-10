@@ -55,14 +55,16 @@ export function calculateJaAcRisk(
   return { score, riskGrade, gradeMeaning: gradeMeanings[riskGrade - 1] };
 }
 
-export interface JobAidWorkValidationContext {
-  workItemId: string;
+export type JobAidWorkValidationContext = (
+  | { workItemId: string; matterId?: never }
+  | { matterId: string; workItemId?: never }
+) & {
   previous: JobAidProblemWorkContent | null;
   evidence: AssessmentEvidence[];
   readSourceRefs: string[];
   capabilities: JobAidProblemWorkContent['capabilities'];
   history: JobAidProblemWorkContent['historyReview'];
-}
+};
 
 /** Materialize a complete revision from a bounded local update, never an empty legacy table. */
 export function materializeJobAidWork(
@@ -70,6 +72,9 @@ export function materializeJobAidWork(
   context: JobAidWorkValidationContext,
 ): JobAidProblemWorkContent {
   const value = object(raw, 'WORK');
+  const subjectId = text(context.matterId ?? context.workItemId, 'SUBJECT');
+  if (context.matterId !== undefined && context.workItemId !== undefined)
+    fail('SUBJECT_AMBIGUOUS');
   if (value.schemaVersion !== JOBAID_PROBLEM_WORK_SCHEMA) fail('SCHEMA');
   const read = new Set(context.readSourceRefs);
   const registry = new Map(
@@ -105,8 +110,7 @@ export function materializeJobAidWork(
       const issue = object(item, 'ISSUE');
       const issueKey = key(issue.issueKey);
       const issueRef =
-        prior.get(issueKey)?.issueRef ??
-        `${context.workItemId}:issue:${issueKey}`;
+        prior.get(issueKey)?.issueRef ?? `${subjectId}:issue:${issueKey}`;
       const statements: AssessmentReadingClaim[] = array(
         issue.statements,
         'STATEMENTS',

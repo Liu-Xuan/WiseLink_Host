@@ -3205,6 +3205,27 @@ test('official initial model adapter selects the Overall v2 contract and sends t
   assert.deepEqual(result.output, candidate);
 });
 
+test('Matter Review accepts full issue work and keeps read coverage and registered evidence boundaries', async () => {
+  const { reviewTask, delta } = await matterReviewFixture(1);
+  const work = {
+    schemaVersion: 'wiselink.jobaid-problem-work.v2', headline: '完整问题工作', listBrief: '保留条件',
+    understanding: '保留三个独立条件', completionReason: '本轮完成，构型待核查', changeSummary: '形成完整问题',
+    unchangedExplanation: '首次保存', roundCompletion: 'COMPLETE_WITH_OPEN_QUESTIONS', decisiveIssueKeys: ['scope'],
+    issues: [{ issueKey: 'scope', statements: delta.claimDelta.additions.map(({ claimId, ...claim }) => ({ ...claim, claimKey: claimId })) }],
+  };
+  const fullDelta = { ...delta, claimDelta: null, readingPresentation: null, problemWork: work };
+  validateReviewCandidate(reviewTask, matterReviewCandidate(reviewTask, fullDelta));
+  assert.throws(() => validateReviewCandidate(reviewTask, matterReviewCandidate(reviewTask, { ...fullDelta,
+    claimDelta: delta.claimDelta, readingPresentation: delta.readingPresentation,
+  })), /REVIEW_MATTER_PROBLEM_DUPLICATE_READING/u);
+  const invalid = structuredClone(fullDelta);
+  invalid.problemWork.issues[0].statements[0].premises[0].evidenceRef = 'not-authorized';
+  assert.throws(() => validateReviewCandidate(reviewTask, matterReviewCandidate(reviewTask, invalid)), /REVIEW_JOBAID_EVIDENCE_NOT_REGISTERED/u);
+  const wrongScope = structuredClone(fullDelta);
+  wrongScope.coverageUpdates[0].inputRef = 'matter-input:3';
+  assert.throws(() => validateReviewCandidate(reviewTask, matterReviewCandidate(reviewTask, wrongScope)), /REVIEW_MATTER_COVERAGE_SOURCE_NOT_ALLOWED/u);
+});
+
 test('Matter Review c4 validates exact Host deltas while retaining the WorkItem c3 contract', async () => {
   for (const turnNo of [1, 2]) {
     const { reviewTask, delta } = await matterReviewFixture(turnNo);

@@ -21,6 +21,7 @@ import ClaimEvidenceDialog from './ClaimEvidenceDialog';
 import MatterMembers from './MatterMembers';
 import MatterMaterials from './MatterMaterials';
 import MatterWorkingDetails from './MatterWorkingDetails';
+import MatterProblemWork from './MatterProblemWork';
 import {
   readSavedAssessmentClaim,
   type AssessmentClaimSelection,
@@ -273,6 +274,10 @@ const MatterWorkspace: FC<MatterWorkspaceProps> = ({
                 </Button>
               </div>
             )}
+            <MatterProblemWork
+              revision={data.working.current}
+              onLocateDocument={openDocument}
+            />
           </div>
           <aside className="wl-side-panel">
             <MatterWorkingDetails

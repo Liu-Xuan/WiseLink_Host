@@ -3,6 +3,7 @@ import type {
   AssessmentReadingClaim,
   AssessmentReadingResult,
 } from './assessment-reading.interface';
+import type { JobAidProblemWorkContent } from './jobaid-problem-assessment.interface';
 
 export type EngineeringMatterWorkingUpdateKind =
   | 'INITIAL_SYNTHESIS'
@@ -69,6 +70,8 @@ export interface EngineeringMatterWorkingState {
   reviewConditions: EngineeringMatterWorkingTextItem[];
   substantiveInputs: EngineeringMatterWorkingInputBinding[];
   coverage: EngineeringMatterWorkingCoverage[];
+  /** Complete saved investigation; absent only on historical summary-only work. */
+  problemWork?: JobAidProblemWorkContent;
 }
 
 export interface EngineeringMatterWorkingClaimDelta {
@@ -104,6 +107,8 @@ export interface EngineeringMatterWorkingRevisionCommand {
   /** Member inputs used by the next result; may be empty for non-document premises. */
   substantiveInputs: EngineeringMatterWorkingInputBinding[];
   coverageUpdates: EngineeringMatterWorkingCoverage[];
+  /** Host-materialized full investigation. Omission preserves prior saved work. */
+  nextProblemWork?: JobAidProblemWorkContent;
 }
 
 export interface EngineeringMatterWorkingRevisionSource {
