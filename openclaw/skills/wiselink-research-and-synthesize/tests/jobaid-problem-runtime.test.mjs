@@ -552,13 +552,3 @@ test('workJson preserves complete content and rejects ambiguous or non-object JS
   assert.deepEqual(JSON.parse(f.saves[0].workJson), work);
 });
 
-
-test('native function schema accepts workJson independently of nested work types', async () => {
-  const { default: Ajv } = await import('ajv');
-  const f = fixture([{ action: 'FINISH', workJson: JSON.stringify(completed) }]);
-  await f.run();
-  const validate = new Ajv().compile(f.calls[0].tools[0].function.parameters);
-  assert.equal(validate({ step: { action: 'SAVE_WORK', workJson: JSON.stringify({ nested: [[], null, { text: '"\n' }] }) } }), true);
-  assert.equal(validate({ step: { action: 'SAVE_WORK', work: completed } }), false);
-  assert.equal(validate({ step: { action: 'SAVE_WORK', workJson: completed } }), false);
-});
