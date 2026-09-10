@@ -88,6 +88,51 @@ describe('authorized engineering issue search and exact expansion', () => {
     expect((await h.service.search('工具', actor)).hits).toHaveLength(0);
     expect(h.jobAid.readBrowserRevision).toHaveBeenCalledTimes(2);
   });
+  it('continues past a full page of revoked work to find later readable issues', async () => {
+    const h = setup();
+    const denied = Array.from({ length: 51 }, (_, n) => ({
+      ...h.identity,
+      workRef: 'revoked-work',
+      issueKey: `revoked-${String(n).padStart(3, '0')}`,
+    }));
+    h.db.execute
+      .mockResolvedValueOnce(denied)
+      .mockResolvedValueOnce([h.identity]);
+    const result = await h.service.search('工具', actor);
+    expect(result.hits.map((hit) => hit.workRef)).toEqual([h.identity.workRef]);
+    expect(result.hasMore).toBe(false);
+    expect(h.db.execute).toHaveBeenCalledTimes(2);
+    // One denied exact work read is shared across its issues, never exposed.
+    expect(h.jobAid.readBrowserRevision).toHaveBeenCalledTimes(2);
+  });
+
+  it('counts only readable hits toward the result limit and hasMore', async () => {
+    const h = setup();
+    const issues = Array.from({ length: 51 }, (_, n) => ({
+      ...structuredClone(h.saved.content.issues[0]),
+      issueKey: `readable-${String(n).padStart(3, '0')}`,
+    }));
+    h.saved.content.issues = issues;
+    h.db.execute
+      .mockResolvedValueOnce(
+        Array.from({ length: 51 }, (_, n) => ({
+          ...h.identity,
+          workRef: 'revoked-work',
+          issueKey: `denied-${n}`,
+        })),
+      )
+      .mockResolvedValueOnce(
+        issues.map((issue) => ({ ...h.identity, issueKey: issue.issueKey })),
+      );
+    const result = await h.service.search('工具', actor);
+    expect(result.hits).toHaveLength(50);
+    expect(result.hasMore).toBe(true);
+    expect(result.hits.every((hit) => hit.workRef === h.identity.workRef)).toBe(
+      true,
+    );
+    expect(h.db.execute).toHaveBeenCalledTimes(2);
+  });
+
   it('returns only authorized issue headers and expands the saved identity without asking for latest work', async () => {
     const h = setup();
     const found = await h.service.search('工具', actor);

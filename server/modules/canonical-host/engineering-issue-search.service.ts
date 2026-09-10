@@ -44,11 +44,15 @@ export class EngineeringIssueSearchService {
     const search = typeof query === 'string' ? query.trim() : '';
     if (!search || search.length > 200)
       throw new BadRequestException('ENGINEERING_ISSUE_QUERY_INVALID');
-    // SQL narrows current saved work to matching issues before any body is loaded.
-    // No derived index or second copy of engineering work needs synchronization.
-    const candidates = await this.db.execute<
-      EngineeringIssueSearchHit & Record<string, unknown>
-    >(sql`
+    const hits: EngineeringIssueSearchHit[] = [];
+    const workReads = new Map<string, Promise<SavedIssueWork>>();
+    let cursor: IssueIdentity | undefined;
+    // Page across denied work too: SQL's limit must not hide later readable issues.
+    // The cursor stays internal and pagination hints count authorized hits only.
+    while (hits.length < 51) {
+      const candidates = await this.db.execute<
+        EngineeringIssueSearchHit & Record<string, unknown>
+      >(sql`
       WITH works AS (
         SELECT 'WORK_ITEM'::text AS kind, w.work_item_id AS subject_id,
           w.assessment_work_revision_id AS work_ref, w.work_revision AS revision,
@@ -72,30 +76,38 @@ export class EngineeringIssueSearchService {
         issue ->> 'question' AS question, issue -> 'sourceDependencies' AS "sourceRefs"
       FROM works CROSS JOIN LATERAL jsonb_array_elements(content -> 'issues') issue
       WHERE strpos(lower(issue::text), lower(${search})) > 0
-      ORDER BY subject_id, work_ref, issue ->> 'issueKey'
+        ${
+          cursor
+            ? sql`AND (kind, subject_id, work_ref, issue ->> 'issueKey') >
+          (${cursor.subjectKind}, ${cursor.subjectId}, ${cursor.workRef}, ${cursor.issueKey})`
+            : sql``
+        }
+      ORDER BY kind, subject_id, work_ref, issue ->> 'issueKey'
       LIMIT 51
     `);
-    const hits: EngineeringIssueSearchHit[] = [];
-    const workReads = new Map<string, Promise<SavedIssueWork>>();
-    for (const candidate of candidates) {
-      try {
-        // Reuse exact-work/source authorization, including retained private and
-        // removed sources. Search metadata must not bypass the full reader.
-        const key = JSON.stringify([
-          candidate.subjectKind,
-          candidate.subjectId,
-          candidate.workRef,
-        ]);
-        let work = workReads.get(key);
-        if (!work) {
-          work = this.loadWork(candidate, actor);
-          workReads.set(key, work);
+      for (const candidate of candidates) {
+        try {
+          // Reuse exact-work/source authorization, including retained private and
+          // removed sources. Search metadata must not bypass the full reader.
+          const key = JSON.stringify([
+            candidate.subjectKind,
+            candidate.subjectId,
+            candidate.workRef,
+          ]);
+          let work = workReads.get(key);
+          if (!work) {
+            work = this.loadWork(candidate, actor);
+            workReads.set(key, work);
+          }
+          const read = this.issueFromWork(candidate, await work);
+          hits.push(read.identity);
+          if (hits.length === 51) break;
+        } catch (error: unknown) {
+          if (!isAccessUnavailable(error)) throw error;
         }
-        const read = this.issueFromWork(candidate, await work);
-        hits.push(read.identity);
-      } catch (error: unknown) {
-        if (!isAccessUnavailable(error)) throw error;
       }
+      if (candidates.length < 51 || hits.length === 51) break;
+      cursor = candidates[candidates.length - 1];
     }
     // Even pagination hints derive only from authorized hits.
     return { hits: hits.slice(0, 50), hasMore: hits.length > 50 };
