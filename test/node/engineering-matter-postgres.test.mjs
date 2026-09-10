@@ -1112,6 +1112,17 @@ async function resetDatabase(sql) {
     sql,
     'migrations/0036_matter_jobaid_save_before_finish.sql',
   );
+  await applyMigration(
+    sql,
+    'migrations/0037_matter_restrictive_policy_runtime_roles.sql',
+  );
+  const runtimePolicies = await sql.unsafe(`SELECT policyname, roles FROM pg_policies
+    WHERE policyname IN ('action_attempt_matter_subject_boundary',
+      'engineering_matter_work_real_attempt_boundary')`);
+  assert.equal(runtimePolicies.length, 2);
+  for (const policy of runtimePolicies) {
+    assert.deepEqual([...policy.roles].sort(), ['authenticated', 'service_role']);
+  }
   await sql.unsafe('ALTER TABLE action_attempt ENABLE ROW LEVEL SECURITY');
   // Emulate existing platform permissive policies: the new restrictive policy
   // must hold even when a legacy policy allows all rows.
