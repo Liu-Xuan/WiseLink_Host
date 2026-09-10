@@ -105,7 +105,11 @@ export default function WorkspaceHomePage() {
     treeMode !== 'matter',
     catalogFilters,
   );
-  const fleet = useLibraryFleetCatalog(sessionGeneration, treeMode === 'document' && !authenticationRequired, refreshRevision);
+  const fleet = useLibraryFleetCatalog(
+    sessionGeneration,
+    treeMode === 'document' && !authenticationRequired,
+    refreshRevision,
+  );
   const matters = useMatterDirectory(
     search,
     deepLinkedWorkItemId,
@@ -218,7 +222,13 @@ export default function WorkspaceHomePage() {
     params.set('mode', 'document');
     params.delete('familyId');
     params.delete('workItemId');
-    for (const key of ['normalizedFamily', 'ata', 'aircraftModel', 'fleetFamily', 'fleetModel'] as const) {
+    for (const key of [
+      'normalizedFamily',
+      'ata',
+      'aircraftModel',
+      'fleetFamily',
+      'fleetModel',
+    ] as const) {
       const value = filters[key];
       if (value) params.set(key, value);
       else params.delete(key);
@@ -233,16 +243,6 @@ export default function WorkspaceHomePage() {
     else params.delete('familyId');
     params.delete('workItemId');
     params.delete('search');
-    setSearchParams(params);
-  }
-
-  function viewDocuments(): void {
-    const params = new URLSearchParams(searchParams);
-    params.set('mode', 'document');
-    params.delete('workItemId');
-    params.delete('familyId');
-    params.delete('search');
-    params.delete('linkMatterId');
     setSearchParams(params);
   }
 
@@ -350,57 +350,6 @@ export default function WorkspaceHomePage() {
       className="library-home library-atlas-home"
       aria-busy={directory.loading || quicklook.loading || matters.loading}
     >
-      <aside className="atlas-library-scope" aria-label="资料库阅读范围">
-        <span className="atlas-library-eyebrow">资料与工程问题</span>
-        <h2>工程资料</h2>
-        <p>当前账户可见的真实资料</p>
-        <nav
-          className="atlas-library-scope-nav"
-          aria-label="事项、文档与任务视图"
-        >
-          <Button
-            variant="ghost"
-            aria-pressed={treeMode === 'matter'}
-            onClick={viewMatters}
-          >
-            <Workflow aria-hidden="true" />
-            工程事项
-          </Button>
-          <Button
-            variant="ghost"
-            aria-pressed={treeMode === 'document'}
-            onClick={viewDocuments}
-          >
-            <FileText aria-hidden="true" />
-            工程文档
-          </Button>
-          <Button
-            variant="ghost"
-            aria-pressed={treeMode === 'tasks'}
-            onClick={() => viewTasks()}
-          >
-            <Clock3 aria-hidden="true" />
-            评估任务
-          </Button>
-        </nav>
-        <section>
-          <h3>阅读顺序</h3>
-          <p>先看问题与当前认识，再核对背景、措施前提和原文。</p>
-          <p>实施与故障记录没有返回时，保留未核实。</p>
-        </section>
-        {treeMode === 'tasks' && familyId ? (
-          <section>
-            <p>仅显示所选文档的任务</p>
-            <Button variant="ghost" onClick={() => viewTasks()}>
-              查看全部任务
-            </Button>
-          </section>
-        ) : null}
-        <section>
-          <h3>资料空间</h3>
-          <p>当前工程资料。此页不混入图谱示例或预置运行记录。</p>
-        </section>
-      </aside>
       <div className="atlas-library-content">
         <header className="library-home-header">
           <div>
@@ -441,6 +390,23 @@ export default function WorkspaceHomePage() {
             </strong>
           </div>
         </header>
+
+        <div className="library-reading-tools">
+          <details className="library-reading-help">
+            <summary>阅读帮助</summary>
+            <p>
+              先看问题与当前认识，再核对背景、措施前提和原文。实施与故障记录没有返回时，保留未核实。
+            </p>
+          </details>
+          {treeMode === 'tasks' && familyId ? (
+            <div className="library-task-scope">
+              <span>仅显示所选文档的任务</span>
+              <Button variant="ghost" onClick={() => viewTasks()}>
+                查看全部任务
+              </Button>
+            </div>
+          ) : null}
+        </div>
 
         <details className="library-entry-disclosure" id="library-search">
           <summary>

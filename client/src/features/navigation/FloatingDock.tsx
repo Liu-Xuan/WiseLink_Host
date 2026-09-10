@@ -1,3 +1,4 @@
+import { Fragment } from 'react';
 import { Link, NavLink, useLocation } from 'react-router-dom';
 import {
   Activity,
@@ -16,6 +17,7 @@ import {
 } from '@client/src/app/providers/CurrentObjectContextProvider';
 import VisualModeControl from '@client/src/components/VisualModeControl';
 import WiseLinkBrandMark from '@client/src/components/WiseLinkBrandMark';
+import { libraryViewMode } from '@client/src/pages/WorkspaceHomePage/library-view-mode';
 
 import './floating-dock.css';
 
@@ -35,6 +37,7 @@ export default function FloatingDock() {
   const activeNode: string = params.get('node') ?? '';
   const isLibraryRoute: boolean =
     location.pathname === '/library' || location.pathname === '/';
+  const selectedLibraryMode = libraryViewMode(params);
   const globalItems: DockItemView[] = [
     {
       key: 'library',
@@ -154,7 +157,38 @@ export default function FloatingDock() {
       <nav className="wl-dock-group wl-dock-global" aria-label="全局导航">
         <span className="wl-dock-group-label">全局</span>
         {globalItems.map((item: DockItemView) => (
-          <DockItem key={item.key} item={item} />
+          <Fragment key={item.key}>
+            <DockItem item={item} />
+            {item.key === 'library' && isLibraryRoute ? (
+              <div
+                className="wl-dock-library-views"
+                role="group"
+                aria-label="资料库视图"
+              >
+                {(
+                  [
+                    ['matter', '工程事项'],
+                    ['document', '工程文档'],
+                    ['tasks', '评估任务'],
+                  ] as const
+                ).map(([mode, label]) => (
+                  <Link
+                    key={mode}
+                    to={`/library?mode=${mode}`}
+                    aria-current={
+                      selectedLibraryMode === mode &&
+                      location.hash !== '#library-search'
+                        ? 'page'
+                        : undefined
+                    }
+                    className="wl-dock-library-view"
+                  >
+                    {label}
+                  </Link>
+                ))}
+              </div>
+            ) : null}
+          </Fragment>
         ))}
       </nav>
 
@@ -211,7 +245,9 @@ function DockItem({ item }: { item: DockItemView }) {
       className={`wl-dock-item${item.active ? ' is-active' : ''}`}
       title={item.label}
       aria-label={item.label}
-      aria-current={item.active ? 'page' : undefined}
+      aria-current={
+        item.active ? (item.key === 'library' ? 'location' : 'page') : undefined
+      }
     >
       <Icon aria-hidden="true" />
       <span>{item.label}</span>
