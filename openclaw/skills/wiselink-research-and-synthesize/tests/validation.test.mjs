@@ -1374,7 +1374,7 @@ test('requires 25 MCP capabilities, six review tools, and hosted provenance', ()
   assert.ok(HOST_MCP_TOOLS.includes('commit_applicability_candidate'));
   assert.equal(
     WISELINK_SKILL_VERSION,
-    'wiselink-research-and-synthesize@r09.c68',
+    'wiselink-research-and-synthesize@r09.c69',
   );
   assert.equal(
     WISELINK_SKILL_COMPATIBILITY_REF,
@@ -3842,6 +3842,41 @@ test('stops a SOURCE_LINK without SourceRefs before review commit', async (t) =>
     calls.map(({ name }) => name),
     ['begin_review_turn', 'get_review_turn_context'],
   );
+});
+
+test('projects current task mentions in saved dialogue text without altering Host input or accepting other control values', async (t) => {
+  for (const includeLease of [false, true]) {
+    const checkpointDir = await mkdtemp(join(tmpdir(), 'wiselink-dialogue-projection-'));
+    t.after(() => rm(checkpointDir, { recursive: true, force: true }));
+    const reviewTask = await readJson(REVIEW_TASK_FIXTURE_URL);
+    const original = `Win7 仅为假设。Aily 先前答复读取 WorkItem ${WORK_ITEM_ID}（Revision 6）。${includeLease ? LEASE_TOKEN : ''}`;
+    reviewTask.userMessage = original;
+    reviewTask.context.engineerInput = { text: original };
+    const task = makeTask('OPENCLAW_INTERACTIVE_REVIEW', reviewTask);
+    let modelCalls = 0;
+    await assert.rejects(runHostedReviewTurn({
+      reviewConversationRef: reviewTask.reviewConversationRef,
+      requestId: reviewTask.requestId,
+      checkpointDir,
+    }, {
+      callTool: async (name) => {
+        if (name === 'begin_review_turn') return runningBegin(task);
+        if (name === 'get_review_turn_context') return reviewContext(task, reviewTask);
+        throw new Error('UNEXPECTED_TOOL:' + name);
+      },
+      invokeModel: async (input) => {
+        modelCalls += 1;
+        assert.equal(JSON.stringify(input).includes(WORK_ITEM_ID), false);
+        assert.equal(input.input.userMessage, original.replaceAll(WORK_ITEM_ID, '【当前资料任务】'));
+        assert.equal(input.input.context.engineerInput.text, input.input.userMessage);
+        assert.match(input.inputProjectionNote, /原始对话与精确归属保存在 Host/u);
+        throw new Error('FIXTURE_MODEL_REACHED');
+      },
+    }), includeLease ? /REVIEW_MODEL_CONTROL_PLANE_VALUE_FORBIDDEN/u : /FIXTURE_MODEL_REACHED/u);
+    assert.equal(modelCalls, includeLease ? 0 : 1);
+    assert.equal(reviewTask.userMessage, original);
+    assert.equal(task.modelInput.context.engineerInput.text, original);
+  }
 });
 
 test('runs a review turn from durable checkpoints without replaying remote work', async (t) => {

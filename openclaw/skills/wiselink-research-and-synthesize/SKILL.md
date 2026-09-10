@@ -12,7 +12,7 @@ description: Orchestrate the single official hosted WiseLink engineering profile
 - hosted app：`app_17c3zn24kv2`
 - logical profile：`wiselink-engineering`
 - model policy：`official-hosted-profile-config`（任务可绑定已登记的内置或用户授权自定义模型；仍经唯一官方 Hosted profile/Gateway）
-- Skill：`wiselink-research-and-synthesize@r09.c68`
+- Skill：`wiselink-research-and-synthesize@r09.c69`
 - Skill compatibility：`wiselink-research-and-synthesize@r09`（历史任务最低接受 `r09.c10`，翻译 v2 必须为 `r09.c44` 或更新兼容包）
 - Host MCP：`wiselink-openclaw-engineering-assessment@1.2.0`（保留既有工具，新增语义翻译工作与 JobAid 来源/工作工具）
 - Host 集成提交：以本次发布包清单记录的实际提交为准
@@ -62,6 +62,8 @@ Host 新任务若为 `wiselink.jobaid-problem-task.v2`，执行问题分析协�
 - `workItemId` 只用于 INITIAL_ANALYSIS 的 Host MCP 控制面。INTERACTIVE_REVIEW 入口只接收
   `reviewConversationRef` 和 `requestId`；Host 派生其余身份和业务绑定。Host review context 中的
   `workItemId` 在送模型前移除。
+  c69 同时处理已保存对话正文中引用当前任务精确 ID 的情形：仅在模型视图替换为
+  `【当前资料任务】` 并注明投影，Host 原话及证据绑定不变；租约、attempt 等其他控制值仍拒绝。
 - TaskEnvelope 中的 `actorContextRef` 是 Host 控制面引用，不发送给模型，也不视为凭据或 ACL 替代品。
 - 不使用本地 OpenClaw/Docker、OpenAI/Codex OAuth、未获用户授权或未登记的外部 provider、通用 shell、
   自造直连模型 HTTP、普通 app OpenAPI 伪造 invoke 或旧 0.11 runtime。用户授权的自定义模型只能通过
@@ -555,7 +557,7 @@ Interactive Review 的复杂 ResultEnvelope 必须由 `sealResultEnvelope` 生�
 当前 validator 强制：
 
 - `modelVersion` 优先取响应中可读实际模型；绑定任务未回报实际模型时使用 `configured-route:<modelRef>`，旧无绑定任务使用无 fallback 的 configured endpoint。后两者只证明路由，不代表已暴露下游具体模型，也不做具体版本等值判断
-- `skillVersion=wiselink-research-and-synthesize@r09.c68`
+- `skillVersion=wiselink-research-and-synthesize@r09.c69`
 - `toolVersions.wiselink-openclaw-engineering-assessment=1.2.0`
 - `promptVersion` 非空并来自当前运行
 - task/result exact binding、SourceRef allowlist 和 canonical hash 一致

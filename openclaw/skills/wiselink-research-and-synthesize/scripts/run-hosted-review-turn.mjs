@@ -136,6 +136,10 @@ export async function runHostedReviewTurn(options, dependencies = {}) {
     requestId: normalized.requestId,
     callTool,
     respond: async ({ input, readSourceRefs, validateCandidate }) => {
+      // A saved dialogue may quote the current task id in prose. Keep the Host
+      // record intact, but project that exact reference out of model text too.
+      const projected = projectCurrentTaskMentions(input, beginResult?.task?.workItemId);
+      input = projected.input;
       assertModelInputHasNoControlPlane(input, normalized, beginResult);
       const nativeSessionKey = hostNativeSessionKey(beginResult);
       const isMatter = beginResult.task.modelInput.schemaVersion === REVIEW_MATTER_TASK_SCHEMA;
@@ -147,6 +151,9 @@ export async function runHostedReviewTurn(options, dependencies = {}) {
         candidateOnly: true,
         input,
         sourceRefs: [],
+        ...(projected.changed ? {
+          inputProjectionNote: '模型视图中当前任务的内部标识已替换为【当前资料任务】；原始对话与精确归属保存在 Host，替换不改变陈述性质或证据引用。',
+        } : {}),
       };
       assertModelInputHasNoControlPlane(
         generationInput,
@@ -1277,6 +1284,22 @@ function validateModelCandidateOutput(output, readSourceRefIds, candidateEvidenc
   ) {
     throw new Error('REVIEW_MODEL_READ_ONLY_SIDE_EFFECT_INVALID');
   }
+}
+
+function projectCurrentTaskMentions(input, workItemId) {
+  if (typeof workItemId !== 'string' || !workItemId) return { input, changed: false };
+  let changed = false;
+  const project = (value) => {
+    if (typeof value === 'string') {
+      if (!value.includes(workItemId)) return value;
+      changed = true;
+      return value.replaceAll(workItemId, '【当前资料任务】');
+    }
+    if (Array.isArray(value)) return value.map(project);
+    if (!isRecord(value)) return value;
+    return Object.fromEntries(Object.entries(value).map(([key, child]) => [key, project(child)]));
+  };
+  return { input: project(input), changed };
 }
 
 function assertModelInputHasNoControlPlane(value, options, begin) {
