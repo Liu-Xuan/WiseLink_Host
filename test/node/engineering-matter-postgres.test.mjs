@@ -2868,9 +2868,10 @@ async function assertSaveBeforeFinish(sql, owner, service, baseInput) {
     matterId: baseInput.matterId,
     actorUserId: baseInput.actorUserId,
   };
+  const { modelInput: _modelInput, sourceRefs: _sourceRefs, ...jobAidInput } = baseInput;
   const reserved = await owner.runtime(() =>
-    service.reserve({
-      ...baseInput,
+    service.reserveJobAid({
+      ...jobAidInput,
       expectedWorkingRevision: basis.working.workingRevision,
       idempotencyKey: 'save-before-finish',
     }),
@@ -2886,6 +2887,33 @@ async function assertSaveBeforeFinish(sql, owner, service, baseInput) {
     leaseToken: firstLease.leaseToken,
     leaseGeneration: firstLease.leaseGeneration,
   };
+  const documentVersionId = reserved.task.workingBasis.inputs[0].documentVersionId;
+  const sourceRefId = `DOCUMENT_VERSION:${documentVersionId}:page:1`;
+  const page = { page: 1, sourceRefId, text: 'Isolated PostgreSQL source reading fixture.',
+    textLayerStatus: 'PRESENT', visualContentVerified: false,
+    evidence: { kind: 'DOCUMENT_PASSAGE', evidenceRef: sourceRefId, sourceRefId,
+      workItemId: null, documentVersionId, title: 'Test source', versionLabel: null,
+      locator: 'PDF 第 1 页（文本层）', excerpt: 'Isolated PostgreSQL source reading fixture.' } };
+  const reading = { documentVersionId, sourceSha256: 'a'.repeat(64), sourceByteLength: 123,
+    pageCount: 1, extractionScope: 'NATIVE_TEXT_LAYER', pages: [page] };
+  let readerCalls = 0;
+  const readInput = { ...fence, documentVersionId, pageStart: 1, purpose: '测试精确来源阅读回执' };
+  const reader = async () => { readerCalls += 1; return structuredClone(reading); };
+  await assert.rejects(owner.runtime(() => service.readSourcePages({ ...readInput, leaseGeneration: 99 }, reader)), /LEASE_FENCE_REJECTED/u);
+  await assert.rejects(owner.runtime(() => service.readSourcePages({ ...readInput, documentVersionId: 'DV-NOT-IN-TASK' }, reader)), /SOURCE_NOT_REGISTERED/u);
+  assert.equal(readerCalls, 0);
+  assert.deepEqual(await owner.runtime(() => service.readSourcePages(readInput, reader)), reading);
+  await assert.rejects(owner.runtime(() => service.readSourcePages(readInput,
+    async () => ({ ...reading, sourceSha256: 'b'.repeat(64) }))), /SOURCE_READ_IDENTITY_CHANGED/u);
+  await assert.rejects(owner.runtime(() => service.readSourcePages(readInput, async () => {
+    await sql`UPDATE action_attempt SET lease_expires_at = now() - interval '1 second' WHERE attempt_id = ${reserved.row.attemptId}`;
+    return reading;
+  })), /SOURCE_READ_FENCE_REJECTED/u);
+  await sql`UPDATE action_attempt SET lease_expires_at = ${new Date(firstLease.leaseExpiresAt)} WHERE attempt_id = ${reserved.row.attemptId}`;
+  const [readback] = await sql`SELECT review_activity_json FROM action_attempt WHERE attempt_id = ${reserved.row.attemptId}`;
+  const sourceEvents = JSON.parse(readback.review_activity_json).filter(event => event.kind === 'MATTER_SOURCE_PAGES_READ');
+  assert.equal(sourceEvents.length, 1);
+  assert.deepEqual(sourceEvents[0].reading, reading);
   const command = {
     requestId: 'SAVE-DRAFT-FIRST',
     expectedWorkingRevision: basis.working.workingRevision,

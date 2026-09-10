@@ -68,8 +68,8 @@ export function buildMatterJobAidTask(input: {
       expectedWorkRevision: input.previous?.workingRevision ?? 0,
       historyReview,
       capabilities: [
-        { capability: 'registered_source_reading', status: 'NOT_CONNECTED' as const,
-          impact: '事项来源工具尚未接通；目录中的文档不等于已读正文。' },
+        { capability: 'registered_source_reading', status: 'AVAILABLE' as const,
+          impact: '可按任务封存版本读取 PDF 文本层；图像和扫描内容未声明已核实，目录中的文档不等于已读正文。' },
         { capability: 'fleet_configuration', status: 'NOT_CONNECTED' as const,
           impact: '未取得当前对象的受控装机、执行或构型查询。' },
         { capability: 'reliability_history', status: 'NOT_CONNECTED' as const,

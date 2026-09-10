@@ -2,7 +2,9 @@ import type { EngineeringMatterWorkingRevisionCommand } from '@shared/matter-wor
 import { buildMatterJobAidTask, MATTER_JOBAID_TASK_SCHEMA } from './matter-jobaid-task';
 import { randomUUID } from 'node:crypto';
 import { Injectable } from '@nestjs/common';
-import { and, desc, eq, inArray } from 'drizzle-orm';
+import { and, desc, eq, inArray, sql } from 'drizzle-orm';
+import type { DocumentSourceReading } from '@shared/document-source-reading.interface';
+import { documentSourcePageRange } from '../document-management/src/hosted/nest/document-source-reading';
 import {
   actionAttempt,
   engineeringMatter,
@@ -380,6 +382,56 @@ export class MatterActionAttemptService {
           now.getTime() + ACTION_ATTEMPT_LEASE_MS,
         ).toISOString(),
       };
+    });
+  }
+
+  /** Reader is a Host service, never a model-supplied evidence payload. */
+  readSourcePages(input: MatterAttemptScope & ActionAttemptFence & {
+    principalId: string; documentVersionId: string; pageStart: number; pageEnd?: number; purpose: string;
+  }, reader: (documentVersionId: string, range: { pageStart: number; pageEnd: number }) => Promise<DocumentSourceReading>) {
+    const range = documentSourcePageRange({ pageStart: input.pageStart, pageEnd: input.pageEnd });
+    if (!input.purpose.trim() || input.purpose.length > 4000) throw failure('JOBAID_SOURCE_PURPOSE_REQUIRED', 400);
+    return this.authorized(input, async (executor, queue) => {
+      const initial = await this.scopedRow(executor, queue, input, input.attemptRef);
+      const task = checkedTask(initial);
+      assertRunningSourceLease(initial, input);
+      const priorWork = task.workingBasis.priorWorkRef ? await this.working.readByRef({
+        tenantId: input.tenantId, matterId: input.matterId, workRef: task.workingBasis.priorWorkRef,
+      }, executor.database) : null;
+      const priorEvidence = priorWork?.state.problemWork?.evidence ?? priorWork?.state.substantiveResult?.evidence ?? [];
+      if (task.modelInput.schemaVersion !== MATTER_JOBAID_TASK_SCHEMA ||
+          !(task.workingBasis.inputs.some((binding) => binding.documentVersionId === input.documentVersionId) ||
+            priorEvidence.some((item) => item.kind === 'DOCUMENT_PASSAGE' && item.documentVersionId === input.documentVersionId)))
+        throw failure('JOBAID_SOURCE_NOT_REGISTERED', 404);
+      const reading = await reader(input.documentVersionId, range);
+      if (reading.documentVersionId !== input.documentVersionId || reading.extractionScope !== 'NATIVE_TEXT_LAYER' ||
+        reading.pages.length !== range.pageEnd - range.pageStart + 1 || reading.pages.some((page, index) =>
+          page.page !== range.pageStart + index || page.sourceRefId !== `DOCUMENT_VERSION:${input.documentVersionId}:page:${page.page}` ||
+          Boolean(page.text) !== (page.evidence !== null) ||
+          (page.evidence !== null && (page.evidence.documentVersionId !== input.documentVersionId ||
+            page.evidence.workItemId !== null || page.evidence.sourceRefId !== page.sourceRefId ||
+            page.evidence.evidenceRef !== page.sourceRefId || page.evidence.excerpt !== page.text))))
+        throw failure('MATTER_SOURCE_READ_BINDING_MISMATCH');
+      await executor.database.select({ id: actionAttempt.attemptId }).from(actionAttempt)
+        .where(eq(actionAttempt.attemptId, initial.attemptId)).for('update');
+      const current = await this.scopedRow(executor, queue, input, input.attemptRef);
+      assertRunningSourceLease(current, input);
+      if (current.taskInputHash !== initial.taskInputHash) throw failure('MATTER_SOURCE_READ_BINDING_MISMATCH');
+      const events: unknown[] = JSON.parse(current.reviewActivityJson ?? '[]');
+      for (const event of events) {
+        if (!event || typeof event !== 'object' || !('kind' in event) || event.kind !== 'MATTER_SOURCE_PAGES_READ' || !('reading' in event)) continue;
+        const prior = event.reading as DocumentSourceReading;
+        if (prior.documentVersionId !== reading.documentVersionId) continue;
+        if (prior.sourceSha256 !== reading.sourceSha256 || prior.sourceByteLength !== reading.sourceByteLength ||
+          reading.pages.some((page) => prior.pages.some((old) => old.sourceRefId === page.sourceRefId && canonicalJson(old) !== canonicalJson(page))))
+          throw failure('MATTER_SOURCE_READ_IDENTITY_CHANGED');
+      }
+      const activity = { kind: 'MATTER_SOURCE_PAGES_READ', observedAt: new Date().toISOString(),
+        purpose: input.purpose, reading };
+      await executor.database.update(actionAttempt).set({
+        reviewActivityJson: sql`(COALESCE(${actionAttempt.reviewActivityJson}::jsonb, '[]'::jsonb) || ${canonicalJson([activity])}::jsonb)::text`,
+      }).where(eq(actionAttempt.attemptId, current.attemptId));
+      return reading;
     });
   }
 
@@ -870,4 +922,12 @@ function failure(
   statusCode = 409,
 ): Error & { code: string; statusCode: number } {
   return Object.assign(new Error(code), { code, statusCode });
+}
+
+function assertRunningSourceLease(row: MatterActionAttemptRow, input: ActionAttemptFence & { principalId: string }): void {
+  assertLease(row, input);
+  const now = new Date();
+  if (row.status !== 'RUNNING' || !row.leaseExpiresAt || row.leaseExpiresAt <= now ||
+    !row.deadlineAt || row.deadlineAt <= now || row.cancelRequestedAt)
+    throw failure('MATTER_SOURCE_READ_FENCE_REJECTED');
 }

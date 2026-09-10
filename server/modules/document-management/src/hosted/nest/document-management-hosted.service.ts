@@ -309,8 +309,15 @@ export class DocumentManagementHostedService {
   }
 
   async readDocumentSourcePages(documentVersionId: string, request: unknown, context: HostedRequestContext) {
+    assertProductionMiaodaBrowserIdentityAvailable(hostedIdentity(context));
+    return this.readDocumentSourcePagesForRuntime(documentVersionId, request, context);
+  }
+
+  /** Internal service call after executor scope authorization; never impersonates browser ingress. */
+  async readDocumentSourcePagesForRuntime(documentVersionId: string, request: unknown,
+    scope: { actorUserId: string; tenantId: string; roles?: string[] }) {
     return publicDmOperation(async () => {
-      assertProductionMiaodaBrowserIdentityAvailable(hostedIdentity(context));
+      const context = { actorUserId: scope.actorUserId, tenantId: scope.tenantId, roles: [...(scope.roles ?? [])] };
       const range = documentSourcePageRange(request);
       await this.authorizer.assertCanRead({ ...context, action: 'DOCUMENT_READ', documentVersionId });
       const row = await this.catalog.readMetadataSource(documentVersionId, context.tenantId);
