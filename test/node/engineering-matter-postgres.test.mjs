@@ -477,6 +477,8 @@ test(
           linked.matter.currentRevision.matterRevisionId,
         );
 
+        await assertRealMatterAttemptSave(sql, owner, created.matter.matterId);
+
         await assertLinkReplayMismatchAndCasConflict(
           owner,
           created.matter.matterId,
@@ -822,7 +824,9 @@ async function resetDatabase(sql) {
       tenant_id varchar(128), actor_user_id varchar(255), work_item_id varchar(96),
       action_type varchar(64), status varchar(32), request_origin varchar(32),
       input_revision integer, idempotency_key varchar(255),
-      document_version_id varchar(96), base_revision integer, attempt_no integer NOT NULL DEFAULT 1
+      document_version_id varchar(96), base_revision integer, attempt_no integer NOT NULL DEFAULT 1,
+      trigger_request_id varchar(96), commit_started_at timestamptz,
+      result_content_hash text, result_envelope_json text
     )
   `);
   await sql.unsafe(`
@@ -858,6 +862,7 @@ async function resetDatabase(sql) {
     sql,
     'migrations/0034_action_attempt_matter_subject.sql',
   );
+  await applyMigration(sql, 'migrations/0035_engineering_matter_attempt_work.sql');
   await sql.unsafe('ALTER TABLE action_attempt ENABLE ROW LEVEL SECURITY');
   // Emulate existing platform permissive policies: the new restrictive policy
   // must hold even when a legacy policy allows all rows.
@@ -1701,6 +1706,120 @@ async function assertWorkingRevisionFlow(
     WHERE matter_id = ${matterId}
   `;
   assert.equal(rows.revision_count, 1);
+}
+
+async function assertRealMatterAttemptSave(sql, owner, matterId) {
+  const basis = await owner.workingService.resolveWorkingBasis(
+    matterId,
+    owner.actor,
+  );
+  const source = {
+    kind: 'ENGINEERING_MATTER',
+    actionAttemptId: 'ATT-REAL-MATTER-SAVE',
+    reviewTurnId: null,
+  };
+  const command = {
+    requestId: 'REQ-REAL-MATTER-SAVE',
+    expectedWorkingRevision: basis.working.workingRevision,
+    basedOnMatterRevisionId: basis.snapshot.currentMatterRevisionId,
+    updateKind: 'CORRECTION',
+    changeSummary: '保留完整问题工作，更新本轮关注范围。',
+    nextFocus: {
+      ...basis.working.state.focus,
+      question: '复核保存的事项工作与适用边界。',
+    },
+    claimDelta: null,
+    openQuestionDelta: null,
+    reviewConditionDelta: null,
+    nextSubstantiveResult: null,
+    substantiveInputs: [],
+    coverageUpdates: [],
+  };
+  await sql`INSERT INTO action_attempt (attempt_id, tenant_id, actor_user_id,
+    subject_kind, matter_id, matter_revision_id, action_type, status,
+    request_origin, input_revision, base_revision, trigger_request_id)
+    VALUES (${source.actionAttemptId}, 'tenant-A', 'actor-A', 'ENGINEERING_MATTER',
+      ${matterId}, ${command.basedOnMatterRevisionId}, 'OPENCLAW_MATTER_ASSESSMENT',
+      'QUEUED', 'OPENCLAW_MCP_V1', ${basis.snapshot.currentRevisionNo},
+      ${command.expectedWorkingRevision}, ${command.requestId})`;
+  const save = (candidate = command, candidateSource = source) =>
+    owner.runtime(() =>
+      owner.working.withActorTransaction(
+        owner.actor.userId,
+        async (executor) => {
+          await executor.authorizeRuntimeInputs({
+            tenantId: 'tenant-A',
+            matterId,
+            actorUserId: owner.actor.userId,
+          });
+          return executor.appendWorkingRevision({
+            tenantId: 'tenant-A',
+            matterId,
+            actorUserId: owner.actor.userId,
+            command: candidate,
+            currentInputs: basis.currentInputs,
+            source: candidateSource,
+          });
+        },
+      ),
+    );
+  const rlsDenied = (error) =>
+    error.cause?.code === '42501' || error.code === '42501';
+  await assert.rejects(save(), rlsDenied, 'QUEUED is not a durable commit');
+  await sql`UPDATE action_attempt SET status = 'COMMITTING' WHERE attempt_id = ${source.actionAttemptId}`;
+  await assert.rejects(
+    save(),
+    rlsDenied,
+    'status alone is not a durable result',
+  );
+  await sql`UPDATE action_attempt SET commit_started_at = now(), result_content_hash = ${'a'.repeat(64)},
+    result_envelope_json = ${JSON.stringify({ schemaVersion: 'wiselink.3_1.openclaw_result_envelope.v2', status: 'SUCCEEDED' })}
+    WHERE attempt_id = ${source.actionAttemptId}`;
+  await assert.rejects(
+    save({ ...command, requestId: 'REQ-WRONG-MATTER-SAVE' }),
+    rlsDenied,
+  );
+  await sql`UPDATE action_attempt SET base_revision = 0 WHERE attempt_id = ${source.actionAttemptId}`;
+  await assert.rejects(
+    save(),
+    rlsDenied,
+    'Matter working CAS belongs to this attempt',
+  );
+  await sql`UPDATE action_attempt SET base_revision = ${command.expectedWorkingRevision} WHERE attempt_id = ${source.actionAttemptId}`;
+  await sql`INSERT INTO review_turn(review_turn_id) VALUES ('RT-FAKE-MATTER-SAVE')`;
+  await assert.rejects(
+    owner.workingService.applyWorkingUpdate(matterId, command, owner.actor, {
+      source: {
+        actionAttemptId: source.actionAttemptId,
+        reviewTurnId: 'RT-FAKE-MATTER-SAVE',
+      },
+    }),
+    rlsDenied,
+    'native broad policy cannot disguise a real Matter attempt as a ReviewTurn',
+  );
+  const saved = await save();
+  assert.equal(saved.replayed, false);
+  assert.deepEqual(saved.revision.source, source);
+  assert.deepEqual(
+    saved.revision.state.problemWork,
+    basis.working.state.problemWork,
+  );
+  const readBySource = await owner.working.findBySource({
+    tenantId: 'tenant-A',
+    matterId,
+    source,
+  });
+  assert.equal(
+    readBySource.matterWorkRevisionId,
+    saved.revision.matterWorkRevisionId,
+  );
+  await sql`UPDATE action_attempt SET status = 'SUCCEEDED' WHERE attempt_id = ${source.actionAttemptId}`;
+  const recovered = await save();
+  assert.equal(recovered.replayed, true);
+  assert.equal(
+    recovered.revision.matterWorkRevisionId,
+    saved.revision.matterWorkRevisionId,
+  );
 }
 
 async function assertReviewScopeIsImmutable(sql) {

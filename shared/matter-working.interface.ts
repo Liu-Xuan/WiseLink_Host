@@ -111,10 +111,9 @@ export interface EngineeringMatterWorkingRevisionCommand {
   nextProblemWork?: JobAidProblemWorkContent;
 }
 
-export interface EngineeringMatterWorkingRevisionSource {
-  actionAttemptId: string;
-  reviewTurnId: string;
-}
+export type EngineeringMatterWorkingRevisionSource =
+  | { actionAttemptId: string; reviewTurnId: string }
+  | { kind: 'ENGINEERING_MATTER'; actionAttemptId: string; reviewTurnId: null };
 
 export interface EngineeringMatterWorkingRevisionChange {
   changedBecause: string | null;

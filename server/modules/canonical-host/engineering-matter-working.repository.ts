@@ -9,7 +9,7 @@ import {
   type PostgresJsDatabase,
 } from '@lark-apaas/fullstack-nestjs-core';
 import type { Request, Response } from 'express';
-import { and, asc, desc, eq, or, sql } from 'drizzle-orm';
+import { and, asc, desc, eq, isNull, or, sql } from 'drizzle-orm';
 
 import type {
   EngineeringMatterWorkingCommitResult,
@@ -252,10 +252,12 @@ export class EngineeringMatterWorkingRepository {
             engineeringMatterWorkRevision.actionAttemptId,
             input.source.actionAttemptId,
           ),
-          eq(
-            engineeringMatterWorkRevision.reviewTurnId,
-            input.source.reviewTurnId,
-          ),
+          input.source.reviewTurnId === null
+            ? isNull(engineeringMatterWorkRevision.reviewTurnId)
+            : eq(
+                engineeringMatterWorkRevision.reviewTurnId,
+                input.source.reviewTurnId,
+              ),
         ),
       )
       .limit(1);
@@ -493,10 +495,14 @@ export class EngineeringMatterWorkingRepository {
               engineeringMatterWorkRevision.actionAttemptId,
               input.source.actionAttemptId,
             ),
-            eq(
-              engineeringMatterWorkRevision.reviewTurnId,
-              input.source.reviewTurnId,
-            ),
+            ...(input.source.reviewTurnId === null
+              ? []
+              : [
+                  eq(
+                    engineeringMatterWorkRevision.reviewTurnId,
+                    input.source.reviewTurnId,
+                  ),
+                ]),
           ),
         ),
       )
@@ -772,14 +778,20 @@ function readModel(
   ) {
     throw workingPersistenceError();
   }
-  const source =
+  const source: EngineeringMatterWorkingRevisionSource | null =
     row.actionAttemptId && row.reviewTurnId
       ? {
           actionAttemptId: row.actionAttemptId,
           reviewTurnId: row.reviewTurnId,
         }
-      : null;
-  if ((row.actionAttemptId === null) !== (row.reviewTurnId === null)) {
+      : row.actionAttemptId
+        ? {
+            kind: 'ENGINEERING_MATTER',
+            actionAttemptId: row.actionAttemptId,
+            reviewTurnId: null,
+          }
+        : null;
+  if (row.actionAttemptId === null && row.reviewTurnId !== null) {
     throw workingPersistenceError();
   }
   return {
@@ -805,7 +817,10 @@ function validateCommitInput(input: EngineeringMatterWorkingCommitInput): void {
   if (input.source) {
     if (
       input.source.actionAttemptId.trim() === '' ||
-      input.source.reviewTurnId.trim() === ''
+      (input.source.reviewTurnId === null
+        ? !('kind' in input.source) ||
+          input.source.kind !== 'ENGINEERING_MATTER'
+        : input.source.reviewTurnId.trim() === '')
     ) {
       throw workingInputConflict();
     }
