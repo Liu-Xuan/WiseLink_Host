@@ -453,7 +453,7 @@ export class CanonicalJobAidProblemService {
         readScope,
         reviewSelection,
       ),
-      this.work.listForRuntime({
+      this.work.listHeadersForRuntime({
         tenantId: tenantId,
         workItemId: workItem.workItemId,
         actorUserId,
@@ -476,24 +476,47 @@ export class CanonicalJobAidProblemService {
       ...common.availableReadingEvidence,
       ...extraEvidence,
     ];
-    // Authorize the complete new input inside buildModelInput, before the
-    // lifecycle persists or claims an attempt. begin also rechecks replays.
-    const sourceBindings = await this.sourceBindings(
-      [...sourceCatalog, ...(history[0]?.content.evidence ?? [])],
-      workItem,
-      tenantId,
-      actorUserId,
-    );
-    const previousWork = history[0] ?? null;
+    const base = workItem.integratedAssessment?.baseRules;
+    if (purpose === 'OVERALL_CONSISTENCY' && !isJobAidProblemProjection(base))
+      throw new Error('JOBAID_OVERALL_EXACT_WORK_REQUIRED');
+    const previousWorkRef =
+      purpose === 'OVERALL_CONSISTENCY' && isJobAidProblemProjection(base)
+        ? base.workRevisionRef
+        : history[0]?.workRevisionRef;
+    const previousWork = previousWorkRef
+      ? await this.work.readByRefForRuntime({
+          tenantId,
+          workItemId: workItem.workItemId,
+          actorUserId,
+          workRevisionRef: previousWorkRef,
+        })
+      : null;
+    if (previousWorkRef && !previousWork)
+      throw new Error(
+        purpose === 'OVERALL_CONSISTENCY'
+          ? 'JOBAID_OVERALL_EXACT_WORK_REQUIRED'
+          : 'JOBAID_PREVIOUS_WORK_NOT_FOUND',
+      );
     if (purpose === 'OVERALL_CONSISTENCY') {
-      const base = workItem.integratedAssessment?.baseRules;
+      if (!isJobAidProblemProjection(base))
+        throw new Error('JOBAID_OVERALL_EXACT_WORK_REQUIRED');
       if (
-        !isJobAidProblemProjection(base) ||
         !previousWork ||
+        previousWork.workRevisionRef !== history[0]?.workRevisionRef ||
+        previousWork.workRevision !== base.workRevision ||
+        previousWork.documentVersionId !== workItem.source.documentVersionId ||
         previousWork.content.roundCompletion === 'IN_PROGRESS'
       )
         throw new Error('JOBAID_OVERALL_EXACT_WORK_REQUIRED');
     }
+    // Authorize the complete new input inside buildModelInput, before the
+    // lifecycle persists or claims an attempt. begin also rechecks replays.
+    const sourceBindings = await this.sourceBindings(
+      [...sourceCatalog, ...(previousWork?.content.evidence ?? [])],
+      workItem,
+      tenantId,
+      actorUserId,
+    );
     const taskInput = buildJobAidProblemTask({
       workItem,
       actorUserId,

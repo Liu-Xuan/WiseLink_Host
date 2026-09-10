@@ -158,6 +158,62 @@ export class JobAidWorkRepository {
     );
   }
 
+  /** Exact revision lookup stays inside the owner/RLS scope, never a global id lookup. */
+  async readByRefForRuntime(input: {
+    tenantId: string;
+    workItemId: string;
+    actorUserId: string;
+    workRevisionRef: string;
+  }): Promise<JobAidWorkRevision | null> {
+    return this.actorTransactions.withActorTransaction(
+      input.actorUserId,
+      async ({ database }) => {
+        const [row] = await database
+          .select()
+          .from(assessmentWorkRevision)
+          .where(
+            and(
+              eq(assessmentWorkRevision.tenantId, input.tenantId),
+              eq(assessmentWorkRevision.workItemId, input.workItemId),
+              eq(
+                assessmentWorkRevision.assessmentWorkRevisionId,
+                input.workRevisionRef,
+              ),
+            ),
+          )
+          .limit(1);
+        return row ? project(row) : null;
+      },
+    );
+  }
+
+  /** Context discovery needs identities, not every historical issue body. */
+  async listHeadersForRuntime(input: {
+    tenantId: string;
+    workItemId: string;
+    actorUserId: string;
+  }): Promise<
+    Array<Pick<JobAidWorkRevision, 'workRevisionRef' | 'workRevision'>>
+  > {
+    return this.actorTransactions.withActorTransaction(
+      input.actorUserId,
+      ({ database }) =>
+        database
+          .select({
+            workRevisionRef: assessmentWorkRevision.assessmentWorkRevisionId,
+            workRevision: assessmentWorkRevision.workRevision,
+          })
+          .from(assessmentWorkRevision)
+          .where(
+            and(
+              eq(assessmentWorkRevision.tenantId, input.tenantId),
+              eq(assessmentWorkRevision.workItemId, input.workItemId),
+            ),
+          )
+          .orderBy(desc(assessmentWorkRevision.workRevision)),
+    );
+  }
+
   async listForRuntime(input: {
     tenantId: string;
     workItemId: string;
