@@ -28,7 +28,7 @@ W1 必须保留首次组装的上下文及 query 用于同消息重放；新工�
 | 项目 | 本轮证据 | 可交付边界 |
 | --- | --- | --- |
 | 创建对话/session 参数 | 官方 SDK 固定提交定义＋本地传输测试 | 可实现 API 接续，尚非本轮真实两轮实测 |
-| GET 同轮结果 | 官方 GET 正文已读取；需要 `aily:agent_chat:read`，响应为 `data.content/status/finish_reason` | helper 可测；当前 write-only 授权下不自动调用，不映射未经实例证实的终态 |
+| GET 同轮结果 | 官方 GET 正文及两条既有测试对话只读回查；实际成功状态为 `Completed`、finish_reason 缺省 | CLI 当前用户可读；Host write-only OAuth 不据此启用 GET，其他终态不猜测 |
 | 原生可信身份 | 当前 `canonical-host-mcp.openapi.controller.ts` 仍要求官方 service-scope，默认 unavailable；拒绝自报 header/body 身份的现有测试通过 | 不启用原生对象工具，不将模型填的用户 ID 当授权 |
 | 原生回流/编辑/撤回 | 本轮未取得目标实例事件证据 | 采用登录后的 `FEISHU_EXCERPT` 明确摘录；不宣称完整同步 |
 | 多人/记忆撤权 | 本轮没有两用户实例实验 | 私人默认；不得以新 session 或删引用宣称脱敏、清除长期记忆 |
@@ -54,3 +54,13 @@ W1 必须保留首次组装的上下文及 query 用于同消息重放；新工�
 恢复入口回归覆盖：仅补首次 query 尚未创建的投递，沿用首次保存的 generationQuery；已经有 UNKNOWN、FAILED 或 COMPLETED query 时不再 POST；摘录消息不能通过恢复入口变成生成请求。同请求原话改变则拒绝，当前工作版和历史回答版本分别保留。另将直接聊天来源标为 AILY_DIALOGUE，旧检索保持 AILY_RETRIEVAL；GET helper 保留原始 finish_reason，不自行提升为成功。
 
 以上是代码消费者与 mock 外部依赖的验证，未称页面或生产回合已成功。迁移、最小 W6 页面及真实非敏感实例验收由主控联合推进，read scope 与远端状态映射仍待正常授权和实测。
+
+## E1 同轮读取与传输错误增量
+
+使用既有 CLI 用户身份，只读 GET `agent_4km47c77ujwqphg` 的已记录测试 chat：`7683562995163712778` 返回 Completed、3401 字符公开文本；`7683720367274019812`（此前 SSE 连通测试）返回 Completed、7 字符。未创建新对话、未新增权限、未读取其它会话。第二条成功 payload 离线交给编译后的 `readAilyChatResult`，精确解析为“连接测试成功。”。离线解析没有网络调用，真实网络操作仅两次 GET。
+
+该证据证明当前 agent API 可读取同一 SSE chat、Completed 是真实 GET 成功状态；不证明 Host 登录授权已有 read，不证明新的两轮 session、在途断流恢复或长期记忆撤权。CLI 返回成功 payload 已解包，离线校验使用显式成功 envelope，不声称保存了未经处理的原始 HTTP wire。
+
+官方创建接口规定非零 code 为失败。流式请求若收到 HTTP 200 的 JSON 拒绝，现保存 `AILY_API_REJECTED_<code>` 并记 FAILED，避免误报为断流未知。若收到有效异步 chat/session 回执，则先保存远端 ID、保留 UNKNOWN，不能假报收到完整回答或再 POST。新增 3 项对应测试通过，服务/传输两组共 35 项通过。
+
+主控已复制上述 19 项跨层测试，并修复仓库返回类型推断问题；canonical 服务端 TypeScript 检查现已通过。W6 只读复核另发现后台刷新锁草稿、已加载旧页的权限复核、纠正缺少替代旧贡献的入口及 UNKNOWN 文案问题，已交前端 owner 修订，尚未以代码阅读代替页面验收。

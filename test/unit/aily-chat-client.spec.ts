@@ -178,4 +178,38 @@ describe('Host Aily transport', () => {
       remoteFinishReason: 'stop',
     });
   });
+
+  it('distinguishes an HTTP 200 application rejection from an interrupted generation', async () => {
+    globalThis.fetch = jest
+      .fn()
+      .mockResolvedValue(
+        Response.json({ code: 2700001, msg: 'private diagnostic' }),
+      );
+    await expect(
+      streamAilyChat(request, async () => undefined),
+    ).rejects.toThrow('AILY_API_REJECTED_2700001');
+    expect(globalThis.fetch).toHaveBeenCalledTimes(1);
+  });
+
+  it('retains an asynchronous receipt without pretending it was a completed streamed answer', async () => {
+    globalThis.fetch = jest
+      .fn()
+      .mockResolvedValue(
+        Response.json({
+          code: 0,
+          data: { agent_chat_id: '123', session_id: 'remote-1' },
+        }),
+      );
+    const progress = jest.fn().mockResolvedValue(undefined);
+    await expect(streamAilyChat(request, progress)).rejects.toThrow(
+      'AILY_STREAM_RESULT_UNCONFIRMED',
+    );
+    expect(progress).toHaveBeenCalledWith({
+      chatId: '123',
+      remoteSessionId: 'remote-1',
+      answer: '',
+      status: 'RUNNING',
+    });
+    expect(globalThis.fetch).toHaveBeenCalledTimes(1);
+  });
 });

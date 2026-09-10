@@ -64,6 +64,15 @@ export async function streamAilyChat(
   request: AilyChatRequest,
   onProgress: (progress: AilyStreamProgress) => Promise<void>,
 ) {
+  const saveProgress = async (progress: AilyStreamProgress) => {
+    if (
+      request.remoteSessionId &&
+      progress.remoteSessionId &&
+      request.remoteSessionId !== progress.remoteSessionId
+    )
+      throw new Error('AILY_STREAM_SESSION_MISMATCH');
+    await onProgress(progress);
+  };
   const response = await fetch(chatUrl(request.agentId), {
     method: 'POST',
     headers: {
@@ -75,15 +84,53 @@ export async function streamAilyChat(
     signal: AbortSignal.timeout(300_000),
     redirect: 'error',
   });
-  return consumeAilyChatStream(response, async (progress) => {
-    if (
-      request.remoteSessionId &&
-      progress.remoteSessionId &&
-      request.remoteSessionId !== progress.remoteSessionId
-    )
-      throw new Error('AILY_STREAM_SESSION_MISMATCH');
-    await onProgress(progress);
-  });
+  // Feishu's application error code is independent of the HTTP status. A JSON
+  // rejection must not be mistaken for a lost stream or retried generation.
+  if (
+    response.ok &&
+    response.headers.get('content-type')?.startsWith('application/json')
+  ) {
+    const body = await readResultBody(response);
+    if (body && typeof body === 'object' && !Array.isArray(body)) {
+      const envelope = body as Record<string, unknown>;
+      if (
+        typeof envelope.code === 'number' &&
+        Number.isSafeInteger(envelope.code) &&
+        envelope.code > 0
+      )
+        throw new Error(`AILY_API_REJECTED_${envelope.code}`);
+      const data = envelope.data;
+      if (
+        envelope.code === 0 &&
+        data &&
+        typeof data === 'object' &&
+        !Array.isArray(data)
+      ) {
+        const receipt = data as Record<string, unknown>;
+        if (
+          typeof receipt.agent_chat_id === 'string' &&
+          /^\d{1,64}$/u.test(receipt.agent_chat_id) &&
+          (receipt.session_id === undefined ||
+            (typeof receipt.session_id === 'string' &&
+              /^[A-Za-z0-9_-]{1,96}$/u.test(receipt.session_id)))
+        ) {
+          // Preserve a returned asynchronous receipt, but never invent completion
+          // or submit a replacement POST because a stream was not returned.
+          await saveProgress({
+            chatId: receipt.agent_chat_id,
+            answer: '',
+            status: 'RUNNING',
+            ...(typeof receipt.session_id === 'string'
+              ? { remoteSessionId: receipt.session_id }
+              : {}),
+          });
+          throw new Error('AILY_STREAM_RESULT_UNCONFIRMED');
+        }
+      }
+    }
+    throw new Error('AILY_STREAM_RESPONSE_INVALID');
+  }
+  return consumeAilyChatStream(response, saveProgress);
 }
 
 /** Read one existing result; never creates/retries a generation. Caller must have

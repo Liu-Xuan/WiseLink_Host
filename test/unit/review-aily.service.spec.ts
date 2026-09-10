@@ -255,6 +255,34 @@ describe('review Aily queries', () => {
     query: 'W3 尚未重评；解释 Win7 纠正的影响',
   };
 
+  it('persists a nonzero JSON application code as a rejected request, with no retry', async () => {
+    const { service, execute } = harness();
+    execute
+      .mockResolvedValueOnce([{ thread_ref: messageRef }])
+      .mockResolvedValueOnce([{ query_ref: queryRef, status: 'RUNNING' }])
+      .mockResolvedValue([{ query_ref: queryRef }]);
+    globalThis.fetch = jest
+      .fn()
+      .mockResolvedValue(Response.json({ code: 2700001, msg: 'private' }));
+    const update = jest.spyOn(
+      service as never as { update: (...args: unknown[]) => Promise<void> },
+      'update',
+    );
+    const result = await service.startMessage(actor, input);
+    await new Promise(setImmediate);
+    expect(update).toHaveBeenLastCalledWith(
+      actor,
+      null,
+      result.queryRef,
+      'FAILED',
+      null,
+      null,
+      'AILY_API_REJECTED_2700001',
+      undefined,
+    );
+    expect(globalThis.fetch).toHaveBeenCalledTimes(1);
+  });
+
   it('dispatches a persisted AILY message directly, without a retrieval wrapper or attempt', async () => {
     const { service, execute } = harness();
     execute

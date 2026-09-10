@@ -292,7 +292,9 @@ export class ReviewAilyService {
         actor,
         attemptRef,
         queryRef,
-        /^AILY_HTTP_(400|401|403|404|422)$/u.test(reason) && !progress.chatId
+        (/^AILY_HTTP_(400|401|403|404|422)$/u.test(reason) ||
+          /^AILY_API_REJECTED_\d+$/u.test(reason)) &&
+          !progress.chatId
           ? 'FAILED'
           : 'UNKNOWN',
         progress.chatId,
