@@ -303,6 +303,38 @@ describe('translation v2 quality and actual reading coverage', () => {
       ).toContain('PROTECTED_VALUE_CHANGED');
     }
   });
+  it('identifies omitted values and repeated footnotes so a correction can preserve the source', () => {
+    const sourcePlan = plan([
+      'PN4A-0018-0003 Displays and Crew Alerting (DCA) Sys- 31 DCA EMPPI OPS *[1]*[1]',
+      'tem',
+    ]);
+    const check = checkTranslationBlockV2({
+      plan: sourcePlan,
+      candidate: candidate(
+        sourcePlan,
+        'PN4A-0018-0003 显示与机组警告 (DCA) 系统 2',
+      ),
+    });
+    const issue = check.issues.find(
+      (item) => item.code === 'PROTECTED_VALUE_CHANGED',
+    );
+    expect(issue?.severity).toBe('BLOCK');
+    expect(issue?.message).toContain(
+      '"missing":{"dates":[],"identifiers":[],"numbers":["1","1","31"]}',
+    );
+    expect(issue?.message).toContain(
+      '"added":{"dates":[],"identifiers":[],"numbers":["2"]}',
+    );
+    expect(
+      checkTranslationBlockV2({
+        plan: sourcePlan,
+        candidate: candidate(
+          sourcePlan,
+          'PN4A-0018-0003 显示与机组警告 (DCA) 系统 31 DCA EMPPI OPS *[1]*[1]',
+        ),
+      }).issues,
+    ).toEqual([]);
+  });
   it('accepts spacing in equivalent Chinese publication dates while retaining changed-date detection', () => {
     const sourcePlan = plan(['Issue 001, 24 Sep 2020']);
     for (const date of ['2020 年 9 月 24 日', '2020年 9月 24日']) {
