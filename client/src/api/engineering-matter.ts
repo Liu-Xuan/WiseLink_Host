@@ -10,6 +10,10 @@ import type {
   LinkEngineeringMatterWorkItemResponse,
 } from '@shared/api.interface';
 import type { EngineeringMatterWorkingReadModel } from '@shared/matter-working.interface';
+import type {
+  MatterMaterialsReadModel,
+  ReviseMatterMaterialsRequest,
+} from '@shared/matter-material.interface';
 
 import {
   getCanonicalHostClientSessionGeneration,
@@ -150,10 +154,43 @@ function invalidMatterReadback(): EngineeringMatterClientError {
   });
 }
 
+export async function reviseEngineeringMatterMaterials(
+  matterId: string,
+  input: ReviseMatterMaterialsRequest,
+): Promise<MatterMaterialsReadModel> {
+  const response: { materials: MatterMaterialsReadModel; replayed: boolean } =
+    await requestEngineeringMatter(
+      `${matterPath(matterId)}/materials`,
+      'POST',
+      input,
+    );
+  if (
+    response.materials.matterId !== matterId ||
+    response.materials.matterRevision !== input.expectedMatterRevision + 1 ||
+    input.upserts.some(
+      (expected) =>
+        !response.materials.materials.some(
+          (actual) =>
+            actual.materialId === expected.materialId &&
+            actual.kind === expected.kind &&
+            actual.disposition === expected.disposition &&
+            actual.scope === expected.scope &&
+            actual.contribution === expected.contribution &&
+            actual.origin === 'ENGINEER',
+        ),
+    )
+  )
+    throw invalidMatterReadback();
+  return response.materials;
+}
+
 async function requestEngineeringMatter<T>(
   url: string,
   method: 'GET' | 'POST',
-  data?: CreateEngineeringMatterRequest | LinkEngineeringMatterWorkItemRequest,
+  data?:
+    | CreateEngineeringMatterRequest
+    | LinkEngineeringMatterWorkItemRequest
+    | ReviseMatterMaterialsRequest,
   signal?: AbortSignal,
   params?: EngineeringMatterDirectoryRequest,
 ): Promise<T> {

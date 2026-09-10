@@ -97,9 +97,17 @@ JobAid 的 `responseType` 是可选展示分类。省略时，驱动按是否附
 
 JobAid c5 可省略没有新增条目的 sourceRefs、missingInputs、candidateEvidenceRefs、warnings；省略只表达空集合，已提供的 null、空字符串、错误类型不会被修复或替换。工作增量的 retiredIssues 和 unchangedIssueKeys 省略语义与 Host 一致，旧问题仍须完整分区。带已知结果函数失败横幅的原生 idle-timeout 文本也按超时失败收尾，不自动重试。
 
-### Matter 持续评估接线
+### 原生并发与 Matter 持续评估接线
 
-同一 `consume-hosted-work-item.mjs` 支持可选 `--matter-id MAT-...`；可以只指定 Matter，也可以与原 WorkItem 一起指定。一起指定时先保留初始链路和显式 Review，二者无待执行工作后才处理 Matter。不增加 cron、队列或并行消费者。
+每个原生 command cron 只绑定一个获授权 subject：`--work-item-id WI-...` 或 `--matter-id MAT-...` 二选一。同时指定会在连接 MCP 前明确拒绝，不能把 Matter 排在文档初评之后。不同 subject 使用不同原生 job，由 OpenClaw 自带 cron/lane 并发与同 job 不重叠机制管理；“统一消费者”指复用同一执行实现、Host ActionAttempt 和恢复协议，不是全局单线程，也不限制只能配置一个 cron。
+
+本实例于 2026-09-11 只读核实：OpenClaw 2026.6.6 的 `cron.maxConcurrentRuns=8`、`agents.defaults.maxConcurrent=4`、`agents.defaults.subagents.maxConcurrent=8`；不同 sessionKey 使用独立 session lane，同一 sessionKey 串行。上述为实际当前值而非应用硬编码目标；不调用进程内私有队列 API，不为独立业务任务额外创建推理 Agent。Host 现有 ActionAttempt 共享 4 个租约槽，仍由原子领取/CAS约束实际工作。其他平台或模型额外限流需要按实际响应处理。
+
+作业配置必须与 Host 精确目标授权一致；目前 WorkItem 和 Matter 仍分别只有一个显式配置绑定，这不是允许扫描或消费同租户所有事项。多个目标的范围扩展必须接入真实授权后再启用，不能只复制 cron。一个目标不要配置重复 job，避免绕过原生同 job 不重叠；初始化、明确重评和自动来源续接仍遵守该 subject 的依赖和租约。
+
+Matter 独立原文读取沿用 Host 每次最多 8 页的范围接口，仅合并实际请求的连续页，不跨未请求的空隙。每轮最多 4 个独立范围并发，已启动读取全部结束后才进入模型下一步或报告失败；失败不伪装成完整结果，后续未启动范围不继续派发。来源授权、版本、原件检查和读取回执仍由 Host 执行；共享工作保存和最终提交不并发。
+
+安装共享 Skill 前要识别所有使用它的原生 job，并在获授权的维护窗口等待这些 job 空闲；保留各 job 的目标、参数、运行历史及原启用状态。当前 c76 仅完成代码和本地验证，不代表线上作业、并发参数或范围已经迁移。
 
 `next_matter_assessment` 由 Host 根据当前材料版本、覆盖记录和精确前次工作登记来源变化任务。已有活动任务直接读回；相同版本条件下已取消或失败的自动请求不会更换 requestId 重跑。登记依赖单独启用的精确 Matter/actor 服务范围，原 WorkItem allowlist 不授予 Matter 权限。
 

@@ -81,3 +81,66 @@ test('idle or terminal requests never claim or invoke a model', async () => {
     assert.equal(result.status, next ? 'REQUIRES_ATTENTION' : 'IDLE'); assert.equal(calls, 1);
   }
 });
+
+function sourceReading(input) {
+  return { documentVersionId: input.documentVersionId, pageCount: 12, extractionScope: 'NATIVE_TEXT_LAYER',
+    pages: Array.from({ length: input.pageEnd - input.pageStart + 1 }, (_, index) => {
+      const page = input.pageStart + index;
+      const sourceRefId = `DOCUMENT_VERSION:${input.documentVersionId}:page:${page}`;
+      return { page, sourceRefId, textLayerStatus: 'PRESENT', evidence: { evidenceRef: sourceRefId, excerpt: 'test source' } };
+    }) };
+}
+
+test('Matter groups exact contiguous pages using the Host limit and starts independent reads together', async () => {
+  const { readMatterAssessmentSources } = await import('../scripts/consume-hosted-matter.mjs');
+  const sourceRefs = Array.from({ length: 10 }, (_, index) => `DOCUMENT_VERSION:DV-one:page:${index + 1}`);
+  sourceRefs.push('DOCUMENT_VERSION:DV-two:page:1');
+  const calls = []; const releases = [];
+  const pending = readMatterAssessmentSources({ sourceRefs, purpose: 'compare', context: 'PAGE' }, {
+    sourceCatalog: [], availableDocuments: [{ documentVersionId: 'DV-one' }, { documentVersionId: 'DV-two' }],
+  }, async (operation, input) => {
+    assert.equal(operation, 'READ_SOURCES'); calls.push(input);
+    await new Promise(resolve => releases.push(resolve));
+    return sourceReading(input);
+  });
+  assert.equal(calls.length, 3, 'all independent ranges start before any result arrives');
+  assert.deepEqual(calls.map(({ pageStart, pageEnd }) => [pageStart, pageEnd]), [[1, 8], [9, 10], [1, 1]]);
+  releases.reverse().forEach(resolve => resolve());
+  const result = await pending;
+  assert.deepEqual(result.sourceRefs, sourceRefs);
+  assert.equal(result.documents.length, 11);
+  assert.equal(result.originalVisualContentVerified, false);
+});
+
+test('Matter validates all source handles before dispatch and rejects duplicate or foreign selections', async () => {
+  const { readMatterAssessmentSources } = await import('../scripts/consume-hosted-matter.mjs');
+  let calls = 0;
+  for (const sourceRefs of [['METHOD-one', 'DOCUMENT_VERSION:foreign:page:1'], ['METHOD-one', 'METHOD-one']]) {
+    await assert.rejects(readMatterAssessmentSources({ sourceRefs, purpose: 'read', context: 'PAGE' }, {
+      sourceCatalog: [{ evidenceRef: 'METHOD-one' }], availableDocuments: [],
+    }, async () => { calls += 1; }), /JOBAID_SOURCE_/);
+  }
+  assert.equal(calls, 0);
+});
+
+test('Matter reads at most four ranges at once and settles them before reporting a failure', async () => {
+  const { readMatterAssessmentSources } = await import('../scripts/consume-hosted-matter.mjs');
+  const availableDocuments = Array.from({ length: 5 }, (_, index) => ({ documentVersionId: `DV-${index}` }));
+  const sourceRefs = availableDocuments.map(item => `DOCUMENT_VERSION:${item.documentVersionId}:page:1`);
+  const releases = []; const calls = []; let failed = false;
+  const pending = readMatterAssessmentSources({ sourceRefs, purpose: 'read', context: 'PAGE' }, {
+    sourceCatalog: [], availableDocuments,
+  }, async (_operation, input) => {
+    calls.push(input.documentVersionId);
+    if (input.documentVersionId === 'DV-0') throw new Error('SOURCE_ACCESS_REVOKED');
+    await new Promise(resolve => releases.push(resolve));
+    return sourceReading(input);
+  });
+  const checked = assert.rejects(pending, /SOURCE_ACCESS_REVOKED/).then(() => { failed = true; });
+  await new Promise(resolve => setImmediate(resolve));
+  assert.equal(calls.length, 4);
+  assert.equal(failed, false, 'no source callback is left running when the caller receives failure');
+  releases.forEach(resolve => resolve());
+  await checked;
+  assert.equal(calls.length, 4, 'later ranges are not started after a failed batch');
+});

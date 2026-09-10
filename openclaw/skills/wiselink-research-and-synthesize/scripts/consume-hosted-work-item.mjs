@@ -42,9 +42,11 @@ const INITIAL_TOOLS = new Set([
   'begin_overall_synthesis', 'commit_overall_candidate',
 ]);
 
-/** Drain dependency-ready initial stages within one native tick; commits remain serial. */
+/** One native job owns one subject; OpenClaw schedules independent jobs concurrently.
+ * Dependencies within a WorkItem and shared-work commits remain ordered. */
 export async function consumeHostedWorkItem(options, dependencies) {
-  if (!options.workItemId && options.matterId) return consumeHostedMatter(options, dependencies);
+  assertSingleConsumerSubject(options);
+  if (options.matterId) return consumeHostedMatter(options, dependencies);
   let statusResult = await dependencies.callTool('get_parse_status', {
     workItemId: options.workItemId,
   });
@@ -57,8 +59,7 @@ export async function consumeHostedWorkItem(options, dependencies) {
       { ...options, checkpointRoot: join(options.checkpointRoot, 'review') },
       { callTool: dependencies.callTool, invokeModel: dependencies.invokeReviewModel },
     );
-    if (initialComplete(initial)) return review.status === 'IDLE' && options.matterId
-      ? consumeHostedMatter(options, dependencies) : review;
+    if (initialComplete(initial)) return review;
     if (review.status !== 'IDLE') {
       return { ...review, initialStatus: initial.status, initialStages: initial.stages };
     }
@@ -264,14 +265,22 @@ function option(argv, name) {
   return index < 0 ? undefined : argv[index + 1];
 }
 
+function assertSingleConsumerSubject({ workItemId, matterId }) {
+  const hasWorkItem = typeof workItemId === 'string' && Boolean(workItemId.trim());
+  const hasMatter = typeof matterId === 'string' && Boolean(matterId.trim());
+  if (hasWorkItem === hasMatter) throw new Error('CONSUMER_SINGLE_SUBJECT_REQUIRED');
+  if ((hasWorkItem && !/^WI-\S+$/.test(workItemId)) ||
+      (hasMatter && !/^MAT-\S+$/.test(matterId))) throw new Error('CONSUMER_SUBJECT_INVALID');
+}
+
 async function main(argv, env) {
   if (argv.includes('--help')) {
-    process.stdout.write('Usage: node consume-hosted-work-item.mjs [--work-item-id WI-...] [--matter-id MAT-...] [--applicability-context-ref REF] [--checkpoint-root PATH] [--openclaw-config PATH]\nOne existing native tick: initial stages, explicit Review, then optional Matter continuation. At least one exact subject is required.\n');
+    process.stdout.write('Usage: node consume-hosted-work-item.mjs [--work-item-id WI-...] [--matter-id MAT-...] [--applicability-context-ref REF] [--checkpoint-root PATH] [--openclaw-config PATH]\nOne native job per authorized subject. Choose exactly one WorkItem or Matter; independent jobs use native cron concurrency.\n');
     return;
   }
   const workItemId = option(argv, '--work-item-id');
   const matterId = option(argv, '--matter-id');
-  if (!workItemId?.trim() && !matterId?.trim()) throw new Error('INITIAL_WORK_ITEM_OR_MATTER_ID_REQUIRED');
+  assertSingleConsumerSubject({ workItemId, matterId });
   const runtime = await resolveRuntimeConfig(argv, env);
   assertHostedModelGatewayReady(runtime);
   const connection = await createHostMcpConnection(runtime);

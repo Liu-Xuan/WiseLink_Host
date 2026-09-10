@@ -1,3 +1,4 @@
+import { validateHostToolMetadata } from '../openclaw/skills/wiselink-research-and-synthesize/scripts/run-hosted-review-turn.mjs';
 import assert from 'node:assert/strict';
 import { createHash } from 'node:crypto';
 import { createServer } from 'node:http';
@@ -18,6 +19,7 @@ const { CanonicalHostOpenClawMcpService } = await import(
   pathToFileURL(join(moduleRoot, 'canonical-host-openclaw-mcp.service.js'))
 );
 
+let advertisedOpenClawTools = [];
 const calls = [];
 const dynamicCalls = [];
 const orchestratorCalls = [];
@@ -464,6 +466,7 @@ const openClawMcp = new CanonicalHostOpenClawMcpService(
     saveWork: async (input) => { problemWorkCalls.push({ tool: 'save_assessment_work', ...input }); return { workRevisionRef: 'JA-SYNTHETIC-1' }; },
     readAttemptWork: async (attemptRef, requestId) => { problemWorkCalls.push({ tool: 'read_assessment_work', attemptRef, requestId }); return { workRevisionRef: 'JA-SYNTHETIC-1' }; },
   },
+  {}, // Register Matter tools exactly as the production module does.
 );
 
 const httpServer = createServer(async (request, response) => {
@@ -622,12 +625,19 @@ try {
   );
   try {
     const listed = await openClawClient.listTools();
+    advertisedOpenClawTools = listed.tools;
+    validateHostToolMetadata(listed);
+    assert.throws(() => validateHostToolMetadata({ tools: listed.tools.filter(t => t.name !== 'matter_action_attempt') }), /REVIEW_HOST_MCP_EXACT20_MISMATCH/);
+    assert.throws(() => validateHostToolMetadata({ tools: [...listed.tools, { name: 'unexpected_tool' }] }), /REVIEW_HOST_MCP_EXACT20_MISMATCH/);
     assert.deepEqual(
       listed.tools.map(({ name }) => name),
       [
         'get_parse_status',
         'query_parsed_package',
         'get_deep_link',
+        'next_matter_assessment',
+        'begin_matter_assessment',
+        'matter_action_attempt',
         'begin_translation',
         'translation_workspace',
         'commit_translation_candidate',
@@ -654,7 +664,7 @@ try {
         'cancel_action_attempt',
       ],
     );
-    assert.equal(listed.tools.length, 27);
+    assert.equal(listed.tools.length, 30);
     assert.equal(openClawClient.getServerVersion()?.version, '1.2.0');
     const semanticBegin = await openClawClient.callTool({ name: 'begin_translation', arguments: { workItemId: 'WI-SEMANTIC', requestId: 'synthetic-v2' } });
     assert.notEqual(semanticBegin.isError, true);
@@ -1161,39 +1171,11 @@ try {
           'query_parsed_package',
           'get_deep_link',
         ],
-        openClawTools: [
-          'get_parse_status',
-          'query_parsed_package',
-          'get_deep_link',
-          'begin_translation',
-          'translation_workspace',
-          'commit_translation_candidate',
-          'begin_applicability_evaluation',
-          'commit_applicability_candidate',
-          'begin_dynamic_evaluation',
-          'read_assessment_sources',
-        'query_assessment_knowledge',
-          'save_assessment_work',
-          'read_assessment_work',
-          'commit_dynamic_evaluation_candidate',
-          'record_oem_discovery_run',
-          'begin_overall_synthesis',
-          'resume_overall_synthesis',
-          'commit_overall_candidate',
-          'get_pending_review_turn',
-          'begin_review_turn',
-          'get_review_turn_context',
-          'read_source_refs',
-          'query_review_aily',
-          'get_action_attempt_status',
-          'commit_review_turn_candidate',
-          'heartbeat_action_attempt',
-          'cancel_action_attempt',
-        ],
+        openClawTools: advertisedOpenClawTools.map(tool => tool.name),
         resources: 0,
         prompts: 0,
         ailyMutationTools: 0,
-        openClawCandidateMutationTools: 15,
+        openClawCandidateMutationTools: advertisedOpenClawTools.filter(tool => tool.annotations?.readOnlyHint === false).length,
         servedMethods: ['POST'],
         rejectedClientTransportMethods: [
           ...new Set(methods.filter((method) => method !== 'POST')),

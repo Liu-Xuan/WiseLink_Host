@@ -2,7 +2,7 @@ import { join } from 'node:path';
 import { canonicalSha256, validateRuntimeProvenance } from './validate-payload.mjs';
 import { createCheckpointStore } from './run-hosted-review-turn.mjs';
 
-/** Called by the existing native consumer; there is no second scheduler or queue. */
+/** Called by a subject-scoped native job; lifecycle and leases remain Host-owned. */
 export async function consumeHostedMatter(options, dependencies) {
   const pending = await dependencies.callTool('next_matter_assessment', { matterId: options.matterId });
   if (pending?.matterId !== options.matterId) throw new Error('MATTER_PENDING_BINDING_MISMATCH');
@@ -40,29 +40,10 @@ export async function consumeHostedMatter(options, dependencies) {
         executionModel: task.executionModel, sessionDiscriminator: `${target.attemptRef}:${claim.leaseGeneration}`,
         resumeSavedWork: Boolean(claim.savedWork),
         heartbeat: () => call('HEARTBEAT'),
-        readAssessmentSources: async (intent) => {
-          const evidence = []; const sourceRefs = []; const documents = [];
-          const known = intent.sourceRefs.filter(ref => task.modelInput.sourceCatalog.some(item => item.evidenceRef === ref));
-          if (known.length) {
-            const read = await call('READ_REGISTERED', { sourceRefs: known, purpose: intent.purpose });
-            evidence.push(...read.evidence); sourceRefs.push(...read.sourceRefs);
-          }
-          for (const ref of intent.sourceRefs.filter(ref => !known.includes(ref))) {
-            const document = modelInput.availableDocuments.find(item => ref.startsWith(`DOCUMENT_VERSION:${item.documentVersionId}:page:`));
-            const number = document ? ref.slice(`DOCUMENT_VERSION:${document.documentVersionId}:page:`.length) : '';
-            if (!/^[1-9]\d*$/.test(number) || !Number.isSafeInteger(Number(number))) throw new Error('JOBAID_SOURCE_NOT_REGISTERED');
-            const read = await call('READ_SOURCES', { documentVersionId: document.documentVersionId, pageStart: Number(number), purpose: intent.purpose });
-            if (read.documentVersionId !== document.documentVersionId || read.pages?.length !== 1 || read.pages[0].sourceRefId !== ref)
-              throw new Error('MATTER_SOURCE_READ_BINDING_MISMATCH');
-            documents.push({ documentVersionId: read.documentVersionId, pageCount: read.pageCount,
-              extractionScope: read.extractionScope, page: read.pages[0].page,
-              textLayerStatus: read.pages[0].textLayerStatus, visualContentVerified: false });
-            sourceRefs.push(ref);
-            if (read.pages[0].evidence) evidence.push(read.pages[0].evidence);
-          }
-          return { status: 'AVAILABLE', evidence, sourceRefs, documents, scope: intent.context,
-            completeRequestedScope: true, limitation: '仅所列物理页文本层；未验证扫描、图表或全文覆盖。' };
-        },
+        readAssessmentSources: (intent) => readMatterAssessmentSources(intent, {
+          sourceCatalog: task.modelInput.sourceCatalog,
+          availableDocuments: modelInput.availableDocuments,
+        }, call),
         saveAssessmentWork: (input) => call('SAVE_WORK', input),
         readAssessmentWork: async ({ requestId }) => {
           const revision = await dependencies.callTool('matter_action_attempt', { ...target, operation: 'READ_SAVED_WORK', requestId });
@@ -121,4 +102,64 @@ async function withLeaseHeartbeat(invoke, heartbeat) {
     clearInterval(timer);
     if (pending) await pending;
   }
+}
+
+/** Use the existing Host page-range reader; no extra scheduler or result store.
+ * Independent reads overlap, but every started read settles before the model continues. */
+export async function readMatterAssessmentSources(intent, context, call) {
+  if (!Array.isArray(intent.sourceRefs) || !intent.sourceRefs.length || intent.sourceRefs.length > 96 ||
+      new Set(intent.sourceRefs).size !== intent.sourceRefs.length ||
+      intent.sourceRefs.some(ref => typeof ref !== 'string' || !ref)) throw new Error('JOBAID_SOURCE_SELECTION_INVALID');
+  const registered = new Set(context.sourceCatalog.map(item => item.evidenceRef));
+  const known = intent.sourceRefs.filter(ref => registered.has(ref));
+  const pagesByDocument = new Map();
+  // Validate the whole selection before starting any read, including the first registered batch.
+  for (const ref of intent.sourceRefs.filter(ref => !registered.has(ref))) {
+    const document = context.availableDocuments.find(item => ref.startsWith(`DOCUMENT_VERSION:${item.documentVersionId}:page:`));
+    const number = document ? ref.slice(`DOCUMENT_VERSION:${document.documentVersionId}:page:`.length) : '';
+    if (!/^[1-9]\d*$/.test(number) || !Number.isSafeInteger(Number(number))) throw new Error('JOBAID_SOURCE_NOT_REGISTERED');
+    const pages = pagesByDocument.get(document.documentVersionId) ?? [];
+    pages.push(Number(number));
+    pagesByDocument.set(document.documentVersionId, pages);
+  }
+  const requests = known.length ? [{ operation: 'READ_REGISTERED', sourceRefs: known }] : [];
+  for (const [documentVersionId, pages] of pagesByDocument) {
+    pages.sort((a, b) => a - b);
+    for (let index = 0; index < pages.length;) {
+      const pageStart = pages[index++];
+      let pageEnd = pageStart;
+      while (index < pages.length && pages[index] === pageEnd + 1 && pageEnd - pageStart < 7) pageEnd = pages[index++];
+      requests.push({ operation: 'READ_SOURCES', documentVersionId, pageStart, pageEnd });
+    }
+  }
+  const evidence = []; const sourceRefs = []; const documents = [];
+  for (let offset = 0; offset < requests.length; offset += 4) {
+    const batch = requests.slice(offset, offset + 4);
+    const results = await Promise.allSettled(batch.map(async ({ operation, ...input }) => {
+      const read = await call(operation, { ...input, purpose: intent.purpose });
+      if (operation === 'READ_REGISTERED') {
+        if (!Array.isArray(read.sourceRefs) || !Array.isArray(read.evidence) ||
+            read.sourceRefs.length !== input.sourceRefs.length || input.sourceRefs.some(ref => !read.sourceRefs.includes(ref)))
+          throw new Error('MATTER_SOURCE_READ_BINDING_MISMATCH');
+        return { evidence: read.evidence, sourceRefs: read.sourceRefs, documents: [] };
+      }
+      if (read.documentVersionId !== input.documentVersionId || !Array.isArray(read.pages) ||
+          read.pages.length !== input.pageEnd - input.pageStart + 1 || read.pages.some((page, index) =>
+            page.page !== input.pageStart + index || page.sourceRefId !== `DOCUMENT_VERSION:${input.documentVersionId}:page:${page.page}`))
+        throw new Error('MATTER_SOURCE_READ_BINDING_MISMATCH');
+      return {
+        evidence: read.pages.flatMap(page => page.evidence ? [page.evidence] : []),
+        sourceRefs: read.pages.map(page => page.sourceRefId),
+        documents: read.pages.map(page => ({ documentVersionId: read.documentVersionId, pageCount: read.pageCount,
+          extractionScope: read.extractionScope, page: page.page, textLayerStatus: page.textLayerStatus, visualContentVerified: false })),
+      };
+    }));
+    const failure = results.find(result => result.status === 'rejected');
+    if (failure) throw failure.reason;
+    for (const result of results) {
+      evidence.push(...result.value.evidence); sourceRefs.push(...result.value.sourceRefs); documents.push(...result.value.documents);
+    }
+  }
+  return { status: 'AVAILABLE', evidence, sourceRefs, documents, scope: intent.context,
+    completeRequestedScope: true, originalVisualContentVerified: false };
 }

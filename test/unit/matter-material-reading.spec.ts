@@ -2,6 +2,15 @@ import { createElement } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 jest.mock('@client/src/components/ui/button', () => ({ Button: 'button' }), { virtual: true });
 jest.mock('@client/src/api/canonical-host', () => ({ getCanonicalHostClientSessionGeneration: () => 1 }));
+jest.mock('@client/src/app/providers/CurrentUserSessionProvider', () => ({ useCurrentUserSession: () => ({ authenticationRequired: false }) }));
+jest.mock('@client/src/api/engineering-matter', () => ({ reviseEngineeringMatterMaterials: jest.fn() }));
+jest.mock('@client/src/components/ui/input', () => ({ Input: 'input' }));
+jest.mock('@client/src/components/ui/textarea', () => ({ Textarea: 'textarea' }));
+jest.mock('@client/src/components/ui/dialog', () => ({
+  Dialog: ({ children }: { children: import('react').ReactNode }) => children,
+  DialogContent: () => null, DialogDescription: 'p', DialogHeader: 'header', DialogTitle: 'h2',
+  DialogTrigger: ({ children }: { children: import('react').ReactNode }) => children,
+}));
 import MatterMaterials from '../../client/src/features/matter/MatterMaterials';
 import type { MatterMaterialLink } from '@shared/matter-material.interface';
 
@@ -18,7 +27,7 @@ it('reads actual material and expectation state without creating a fake document
       publicationStatus: 'PLANNED', acquisitionStatus: 'NOT_ACQUIRED', fulfilledBy: [],
     },
   }];
-  const html = renderToStaticMarkup(createElement(MatterMaterials, { materials }));
+  const html = renderToStaticMarkup(createElement(MatterMaterials, { materials, matterId: 'MAT-1', revision: 1, disabled: false, onSaved: async () => undefined }));
   expect(html).toContain('相关参考');
   expect(html).toContain('限制措施覆盖范围');
   expect(html).toContain('计划发布');
