@@ -1,4 +1,5 @@
 import type { CanonicalLibraryDocumentSummary } from '@shared/api.interface';
+import type { CanonicalLibraryFleetCatalog } from '@shared/library-fleet.interface';
 import { Button } from '@client/src/components/ui/button';
 import {
   documentLabel,
@@ -26,6 +27,7 @@ interface LibraryHierarchyProps {
   filters?: LibraryCatalogFilters;
   onFilterChange?: (filters: LibraryCatalogFilters) => void;
   disabled?: boolean;
+  fleetCatalog?: CanonicalLibraryFleetCatalog | null;
 }
 
 export function LibraryHierarchy({
@@ -38,8 +40,9 @@ export function LibraryHierarchy({
   filters = {},
   onFilterChange,
   disabled = false,
+  fleetCatalog,
 }: LibraryHierarchyProps) {
-  const groups = buildLibraryHierarchy(documents, grouping, filters);
+  const groups = buildLibraryHierarchy(documents, grouping, filters, fleetCatalog);
   const labelFor = (dimension: LibraryGrouping) => LIBRARY_GROUPINGS.find((option) => option.value === dimension)?.label;
 
   function documentRows(items: CanonicalLibraryDocumentSummary[]) {
@@ -108,7 +111,8 @@ export function LibraryHierarchy({
       {items.map((group) => {
         const facet = LIBRARY_GROUPING_FACETS[group.dimension];
         const pathLabel = Object.entries(group.pathFilters)
-          .map(([key, value]) => `${key === 'normalizedFamily' ? '类别' : key === 'ata' ? 'ATA' : '机型'} ${value === '__UNKNOWN__' ? '未分类' : value}`).join(' / ');
+          .filter(([, value]) => Boolean(value))
+          .map(([key, value]) => `${key === 'normalizedFamily' ? '类别' : key === 'ata' ? 'ATA' : key === 'fleetFamily' ? '父机型' : key === 'fleetModel' ? '子机型' : '机型'} ${value === '__UNKNOWN__' ? '未分类' : value}`).join(' / ');
         return <details key={`${group.dimension}:${group.key}`} open={depth === 0 || Boolean(filters[facet])}
           data-facet={facet} data-facet-value={group.key}>
           <summary>
@@ -140,7 +144,7 @@ export function LibraryHierarchy({
       </p>
       <p className="library-classification-note">
         三项筛选共同生效，切换首层只改变目录层级。ATA 与正文提及机型（非适用性）按文档族各获权版本的原文观察值归类，全部待核；可能来自历史版本或不同版本，不代表同版关联。
-        未分类表示尚未提取或本次文本未检出；可在文档快览查看依据或补提取。
+        机型父子关系仅来自当前有效机队，非本司机型不单列分支；未归入机队的资料仍保留。未分类表示尚未提取或本次文本未检出；可在文档快览查看依据或补提取。
       </p>
       <div key={grouping}>{categoryRows(groups)}</div>
     </section>

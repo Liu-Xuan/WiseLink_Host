@@ -31,6 +31,8 @@ export function useLibraryDocuments(
   const aircraftModel =
     mode === 'document' ? (filters.aircraftModel ?? '') : '';
   const [read, setRead] = useState<LibraryDocumentsRead | null>(null);
+  const fleetFamily = mode === 'document' ? (filters.fleetFamily ?? '') : '';
+  const fleetModel = mode === 'document' ? (filters.fleetModel ?? '') : '';
   const controllerRef = useRef<AbortController | null>(null);
   const discardedRef = useRef<Set<string>>(new Set());
   const readPage = useCallback(
@@ -56,6 +58,8 @@ export function useLibraryDocuments(
         normalizedFamily,
         ata,
         aircraftModel,
+        fleetFamily,
+        fleetModel,
       };
       setRead((prior: LibraryDocumentsRead | null) =>
         beginLibraryDocumentsRead(prior, empty),
@@ -74,6 +78,8 @@ export function useLibraryDocuments(
             ...(normalizedFamily ? { normalizedFamily } : {}),
             ...(ata ? { ata } : {}),
             ...(aircraftModel ? { aircraftModel } : {}),
+            ...(fleetFamily ? { fleetFamily } : {}),
+            ...(fleetModel ? { fleetModel } : {}),
           },
           controller.signal,
         );
@@ -106,6 +112,8 @@ export function useLibraryDocuments(
       normalizedFamily,
       ata,
       aircraftModel,
+      fleetFamily,
+      fleetModel,
     ],
   );
 
@@ -123,7 +131,9 @@ export function useLibraryDocuments(
     read.familyId === familyId &&
     (read.normalizedFamily ?? '') === normalizedFamily &&
     (read.ata ?? '') === ata &&
-    (read.aircraftModel ?? '') === aircraftModel
+    (read.aircraftModel ?? '') === aircraftModel &&
+    (read.fleetFamily ?? '') === fleetFamily &&
+    (read.fleetModel ?? '') === fleetModel
       ? read
       : null;
   const discard = useCallback((workItemId: string): void => {

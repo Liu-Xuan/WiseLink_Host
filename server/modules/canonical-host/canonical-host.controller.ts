@@ -76,6 +76,12 @@ export class CanonicalHostController {
     );
   }
 
+  @Get('library/fleet-catalog')
+  fleetCatalog(@Req() httpRequest: Request) {
+    if (!this.libraryDocuments) throw new Error('CANONICAL_LIBRARY_SERVICE_UNCONFIGURED');
+    return this.libraryDocuments.fleetCatalog(hostActor(httpRequest));
+  }
+
   @Get('library/documents')
   documents(
     @Query('search') search: string | undefined,
@@ -85,6 +91,8 @@ export class CanonicalHostController {
     @Query('normalizedFamily') normalizedFamily?: string,
     @Query('ata') ata?: string,
     @Query('aircraftModel') aircraftModel?: string,
+    @Query('fleetFamily') fleetFamily?: string,
+    @Query('fleetModel') fleetModel?: string,
   ) {
     if (!this.libraryDocuments)
       throw new Error('CANONICAL_LIBRARY_SERVICE_UNCONFIGURED');
@@ -94,6 +102,8 @@ export class CanonicalHostController {
         normalizedFamily,
         ata,
         aircraftModel,
+        fleetFamily,
+        fleetModel,
         cursor,
         ...(limit === undefined
           ? {}

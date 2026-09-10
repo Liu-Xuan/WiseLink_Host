@@ -19,6 +19,8 @@ export interface OwnedLibraryFamilyQuery {
   normalizedFamily?: string;
   ata?: string;
   aircraftModel?: string;
+  /** Server-resolved values from the current tenant fleet; never user SQL. */
+  fleetMentionValues?: string[];
   cursor: { createdAt: string; itemId: string } | null;
   limit: number;
 }
@@ -219,6 +221,10 @@ export function listOwnedLibraryFamilies(
             ? input.normalizedFamily === '__UNKNOWN__'
               ? sql`${matched.normalizedFamily} = ''`
               : eq(matched.normalizedFamily, input.normalizedFamily)
+            : undefined,
+          input.fleetMentionValues
+            ? sql`exists (select 1 from jsonb_array_elements_text(${matched.aircraftValues}) mention(value)
+                where upper(btrim(mention.value)) in (${sql.join(input.fleetMentionValues.map((value) => sql`${value}`), sql`, `)}))`
             : undefined,
           input.ata
             ? input.ata === '__UNKNOWN__'

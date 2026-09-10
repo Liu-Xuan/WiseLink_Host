@@ -19,6 +19,8 @@ export interface LibraryDocumentsRead {
   normalizedFamily?: string;
   ata?: string;
   aircraftModel?: string;
+  fleetFamily?: string;
+  fleetModel?: string;
   totalCount?: number;
   familyCounts?: Record<string, number>;
   ataCounts?: Record<string, number>;
@@ -32,7 +34,9 @@ function sameFilters(
   return (
     (a.normalizedFamily ?? '') === (b.normalizedFamily ?? '') &&
     (a.ata ?? '') === (b.ata ?? '') &&
-    (a.aircraftModel ?? '') === (b.aircraftModel ?? '')
+    (a.aircraftModel ?? '') === (b.aircraftModel ?? '') &&
+    (a.fleetFamily ?? '') === (b.fleetFamily ?? '') &&
+    (a.fleetModel ?? '') === (b.fleetModel ?? '')
   );
 }
 

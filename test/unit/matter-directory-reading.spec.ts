@@ -1,10 +1,16 @@
 import { createElement } from 'react';
-jest.mock('@client/src/api/canonical-host', () => ({ getCanonicalHostClientSessionGeneration: () => 1 }));
+jest.mock('@client/src/api/canonical-host', () => ({
+  getCanonicalHostClientSessionGeneration: () => 1,
+}));
 import { renderToStaticMarkup } from 'react-dom/server';
 import { StaticRouter } from 'react-router-dom/server';
 import type { EngineeringMatterDirectoryResponse } from '@shared/api.interface';
 import type { AssessmentReadingSummary } from '@shared/assessment-reading.interface';
-jest.mock('@lark-apaas/client-toolkit/utils/resolveAppUrl', () => ({ resolveAppUrl: (path: string) => path }), { virtual: true });
+jest.mock(
+  '@lark-apaas/client-toolkit/utils/resolveAppUrl',
+  () => ({ resolveAppUrl: (path: string) => path }),
+  { virtual: true },
+);
 
 jest.mock('@client/src/components/ui/button', () => ({ Button: 'button' }), {
   virtual: true,
@@ -33,7 +39,13 @@ const summary: AssessmentReadingSummary = {
 
 describe('real matter directory and saved list summaries', () => {
   it('separates real matters from legacy WorkItem links and the document catalog', () => {
-    expect(libraryViewMode(new URLSearchParams())).toBe('document');
+    expect(libraryViewMode(new URLSearchParams())).toBe('matter');
+    expect(libraryViewMode(new URLSearchParams('mode=document'))).toBe(
+      'document',
+    );
+    expect(libraryViewMode(new URLSearchParams('familyId=family-1'))).toBe(
+      'document',
+    );
     expect(libraryViewMode(new URLSearchParams('mode=matter'))).toBe('matter');
     expect(
       libraryViewMode(new URLSearchParams('mode=matter&workItemId=WI-1')),

@@ -96,6 +96,21 @@ const enabled = process.env.WL_DM_LIBRARY_LOCAL_PG === '1';
       });
       expect(empty).toMatchObject({ rows: [], totalCount: 0, ataCounts: {} });
     });
+    it('matches authoritative parent/child mentions exactly and preserves unknown documents in all results', async () => {
+      await client`insert into dm_document_version_metadata values ('a', ${JSON.stringify({ mentionedAircraftModels: { observations: [{ value: ' 787-9 ' }] } })}, 9)`;
+      try {
+        const [parent] = await listOwnedLibraryFamilies(db as never, { ...scope, fleetMentionValues: ['787', '787-9'] });
+        expect(parent.rows.map((row) => row.familyId)).toEqual(['a']);
+        const [child] = await listOwnedLibraryFamilies(db as never, { ...scope, fleetMentionValues: ['787-9'] });
+        expect(child.totalCount).toBe(1);
+        const [wrong] = await listOwnedLibraryFamilies(db as never, { ...scope, fleetMentionValues: ['787-10'] });
+        expect(wrong.totalCount).toBe(0);
+        const [all] = await listOwnedLibraryFamilies(db as never, scope);
+        expect(all.rows.map((row) => row.familyId)).toEqual(['b', 'a']);
+      } finally {
+        await client`delete from dm_document_version_metadata where metadata_revision = 9`;
+      }
+    });
     it('uses parameterized jsonb_exists for the production SB + ATA 4613 filter and exact aircraft values', async () => {
       await client`insert into dm_document_version_metadata values ('a', ${JSON.stringify({ ata: { observations: [{ value: '4613' }] }, mentionedAircraftModels: { observations: [{ value: '737' }] } })}, 2)`;
       try {
