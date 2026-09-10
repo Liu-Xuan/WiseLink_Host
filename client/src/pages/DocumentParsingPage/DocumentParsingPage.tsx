@@ -1743,8 +1743,8 @@ export default function DocumentParsingPage() {
             materials={{
               primary: {
                 title:
-                  pkg?.title ??
                   pkg?.documentIdentity?.documentCode ??
+                  pkg?.title ??
                   fileLabel,
                 documentVersionId: data.workItem.source.documentVersionId,
                 versionLabel: workItemView.documentVersion,

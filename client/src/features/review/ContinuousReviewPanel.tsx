@@ -599,7 +599,12 @@ export default function ContinuousReviewPanel({
               key={`${workItemId}:${matterId}`}
               document={{
                 workItemId,
-                label: materials?.primary.title ?? '当前资料',
+                label: [
+                  materials?.primary.title ?? '当前资料',
+                  materials?.primary.versionLabel,
+                ]
+                  .filter(Boolean)
+                  .join(' · '),
                 documentVersionId: materials?.primary.documentVersionId,
               }}
               assessmentEnabled={!matterId}
