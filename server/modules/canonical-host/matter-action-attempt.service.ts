@@ -92,7 +92,12 @@ export class MatterActionAttemptService {
         .orderBy(desc(actionAttempt.createdAt))
         .limit(1);
       if (existing) {
-        const row = await scopedRow(queue, input, existing.operationRef ?? '');
+        const row = await this.scopedRow(
+          executor,
+          queue,
+          input,
+          existing.operationRef ?? '',
+        );
         const task = checkedTask(row);
         if (
           task.subject.matterRevisionId !== input.expectedMatterRevisionId ||
@@ -155,6 +160,11 @@ export class MatterActionAttemptService {
               matterRevisionId: input.expectedMatterRevisionId,
             },
             trigger: structuredClone(input.trigger),
+            workingBasis: {
+              inputs: (await executor.authorizeRuntimeInputs(input))
+                .currentInputs,
+              priorWorkRef: current?.matterWorkRevisionId ?? null,
+            },
             priority: 100,
             inputRevision: input.expectedMatterRevision,
             baseRevision: input.expectedWorkingRevision,
@@ -200,7 +210,7 @@ export class MatterActionAttemptService {
         updatedAt: now,
       });
       return {
-        row: await scopedRow(queue, input, task.operationRef),
+        row: await this.scopedRow(executor, queue, input, task.operationRef),
         task,
         created: true,
       };
@@ -210,8 +220,8 @@ export class MatterActionAttemptService {
   read(
     input: MatterAttemptScope & { attemptRef: string },
   ): Promise<MatterActionAttemptRow> {
-    return this.authorized(input, (_executor, queue) =>
-      scopedRow(queue, input, input.attemptRef),
+    return this.authorized(input, (executor, queue) =>
+      this.scopedRow(executor, queue, input, input.attemptRef),
     );
   }
 
@@ -221,7 +231,7 @@ export class MatterActionAttemptService {
     if (!input.principalId?.trim())
       throw failure('ACTION_ATTEMPT_LEASE_OWNER_REQUIRED', 400);
     const outcome = await this.authorized(input, async (executor, queue) => {
-      let row = await scopedRow(queue, input, input.attemptRef);
+      let row = await this.scopedRow(executor, queue, input, input.attemptRef);
       const now = new Date();
       if (row.status === 'COMMITTING') {
         if (row.leaseOwner !== input.principalId)
@@ -234,7 +244,7 @@ export class MatterActionAttemptService {
         row.leaseExpiresAt <= now
       ) {
         await queue.recoverExpiredRunning({ attemptId: row.attemptId, now });
-        row = await scopedRow(queue, input, input.attemptRef);
+        row = await this.scopedRow(executor, queue, input, input.attemptRef);
       }
       if (row.status === 'RUNNING' && row.deadlineAt && row.deadlineAt <= now) {
         await queue.finishTerminal({
@@ -307,7 +317,9 @@ export class MatterActionAttemptService {
           if (!isLeaseSlotConflict(error)) throw error;
         }
         if (claimed)
-          return runningClaim(await scopedRow(queue, input, input.attemptRef));
+          return runningClaim(
+            await this.scopedRow(executor, queue, input, input.attemptRef),
+          );
       }
       return { error: 'ACTION_ATTEMPT_CLAIM_UNAVAILABLE' };
     });
@@ -318,8 +330,13 @@ export class MatterActionAttemptService {
   heartbeat(
     input: MatterAttemptScope & ActionAttemptFence & { principalId: string },
   ) {
-    return this.authorized(input, async (_executor, queue) => {
-      const row = await scopedRow(queue, input, input.attemptRef);
+    return this.authorized(input, async (executor, queue) => {
+      const row = await this.scopedRow(
+        executor,
+        queue,
+        input,
+        input.attemptRef,
+      );
       assertLease(row, input);
       const now = new Date();
       if (
@@ -341,8 +358,13 @@ export class MatterActionAttemptService {
   }
 
   cancel(input: MatterAttemptScope & { attemptRef: string; reason: string }) {
-    return this.authorized(input, async (_executor, queue) => {
-      const row = await scopedRow(queue, input, input.attemptRef);
+    return this.authorized(input, async (executor, queue) => {
+      const row = await this.scopedRow(
+        executor,
+        queue,
+        input,
+        input.attemptRef,
+      );
       const result = await queue.requestCancel({
         attemptId: row.attemptId,
         reason: input.reason,
@@ -350,7 +372,7 @@ export class MatterActionAttemptService {
       });
       if (result !== 'CANCELLED')
         throw failure(`ACTION_ATTEMPT_CANCEL_${result}`);
-      return scopedRow(queue, input, input.attemptRef);
+      return this.scopedRow(executor, queue, input, input.attemptRef);
     });
   }
 
@@ -360,7 +382,7 @@ export class MatterActionAttemptService {
       ActionAttemptFence & { principalId: string; result: unknown },
   ) {
     const outcome = await this.authorized(input, async (executor, queue) => {
-      let row = await scopedRow(queue, input, input.attemptRef);
+      let row = await this.scopedRow(executor, queue, input, input.attemptRef);
       const task = checkedTask(row);
       const result = parseMatterResultEnvelope({ task, value: input.result });
       if (
@@ -413,7 +435,7 @@ export class MatterActionAttemptService {
         )
           throw failure('ACTION_ATTEMPT_TERMINALIZATION_LOST');
         return {
-          row: await scopedRow(queue, input, input.attemptRef),
+          row: await this.scopedRow(executor, queue, input, input.attemptRef),
           task,
           result,
           recovery: false,
@@ -459,7 +481,7 @@ export class MatterActionAttemptService {
         }))
       )
         throw failure('ACTION_ATTEMPT_COMMIT_CUTOFF_LOST');
-      row = await scopedRow(queue, input, input.attemptRef);
+      row = await this.scopedRow(executor, queue, input, input.attemptRef);
       return { row, task, result: checkedResult(row), recovery: false };
     });
     if ('error' in outcome) throw failure(outcome.error);
@@ -471,7 +493,7 @@ export class MatterActionAttemptService {
     input: MatterAttemptScope & ActionAttemptFence & { principalId: string },
   ) {
     return this.authorized(input, async (executor, queue) => {
-      let row = await scopedRow(queue, input, input.attemptRef);
+      let row = await this.scopedRow(executor, queue, input, input.attemptRef);
       if (!['COMMITTING', 'SUCCEEDED'].includes(row.status))
         throw failure('ACTION_ATTEMPT_NOT_COMMITTING');
       if (row.status === 'COMMITTING') assertLease(row, input);
@@ -523,10 +545,38 @@ export class MatterActionAttemptService {
           }))
         )
           throw failure('ACTION_ATTEMPT_TERMINALIZATION_LOST');
-        row = await scopedRow(queue, input, input.attemptRef);
+        row = await this.scopedRow(executor, queue, input, input.attemptRef);
       }
       return { row, work, recovered };
     });
+  }
+
+  private async scopedRow(
+    executor: EngineeringMatterWorkingTransactionExecutor,
+    queue: ActionAttemptRepository,
+    scope: MatterAttemptScope,
+    ref: string,
+  ): Promise<MatterActionAttemptRow> {
+    const row = await queue.readMatterByOperationRef(ref);
+    if (
+      !row ||
+      row.tenantId !== scope.tenantId ||
+      row.actorUserId !== scope.actorUserId ||
+      row.matterId !== scope.matterId ||
+      row.requestOrigin !== ACTION_ATTEMPT_REQUEST_ORIGIN
+    )
+      throw failure('ACTION_ATTEMPT_NOT_FOUND', 404);
+    const task = checkedTask(row);
+    await this.working.authorizeAttemptWorkingBasis(
+      {
+        ...scope,
+        basedOnMatterRevisionId: task.subject.matterRevisionId,
+        baseRevision: task.baseRevision,
+        basis: task.workingBasis,
+      },
+      executor.database,
+    );
+    return row;
   }
 
   private authorized<T>(
@@ -547,24 +597,6 @@ export class MatterActionAttemptService {
       },
     );
   }
-}
-
-async function scopedRow(
-  queue: ActionAttemptRepository,
-  scope: MatterAttemptScope,
-  ref: string,
-): Promise<MatterActionAttemptRow> {
-  const row = await queue.readMatterByOperationRef(ref);
-  if (
-    !row ||
-    row.tenantId !== scope.tenantId ||
-    row.actorUserId !== scope.actorUserId ||
-    row.matterId !== scope.matterId ||
-    row.requestOrigin !== ACTION_ATTEMPT_REQUEST_ORIGIN
-  )
-    throw failure('ACTION_ATTEMPT_NOT_FOUND', 404);
-  checkedTask(row);
-  return row;
 }
 
 function checkedTask(row: MatterActionAttemptRow): OpenClawMatterTaskEnvelope {

@@ -1,3 +1,4 @@
+import type { EngineeringMatterWorkingInputBinding } from '@shared/matter-working.interface';
 import type { CanonicalExecutionModelSelection } from '@shared/api.interface';
 
 export type OpenClawActionTaskType =
@@ -106,6 +107,11 @@ export interface OpenClawMatterTaskEnvelope extends Omit<
   taskType: 'OPENCLAW_MATTER_ASSESSMENT';
   subject: EngineeringMatterAttemptSubject;
   trigger: EngineeringMatterAttemptTrigger;
+  /** Host-captured execution basis; never supplied by the model. */
+  workingBasis: {
+    inputs: EngineeringMatterWorkingInputBinding[];
+    priorWorkRef: string | null;
+  };
 }
 
 export type AnyOpenClawTaskEnvelope =

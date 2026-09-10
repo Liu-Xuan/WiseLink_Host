@@ -769,6 +769,211 @@ async function loadRealDocumentFixtures() {
   };
 }
 
+test(
+  'Matter commits frozen inputs while later material remains pending',
+  { skip: !databaseUrl, concurrency: false },
+  async () => {
+    assertSafeIsolatedDatabase(databaseUrl);
+    const sql = postgres(databaseUrl, { max: 8, onnotice() {} });
+    let owner;
+    try {
+      const fixtures = await loadRealDocumentFixtures();
+      await resetDatabase(sql);
+      await seedRealDocumentWorkItems(sql, fixtures);
+      owner = await reserveActorService('actor-A');
+      const created = await owner.matters.ensureFamilyMatter({
+        tenantId: 'tenant-A',
+        actorUserId: 'actor-A',
+        documentVersionId: fixtures.ftd.documentVersionId,
+      });
+      const scope = {
+        tenantId: 'tenant-A',
+        actorUserId: 'actor-A',
+        matterId: created.matterId,
+      };
+      const initial = await owner.matters.loadCurrent(scope);
+      await assertWorkingRevisionFlow(
+        sql,
+        owner,
+        scope.matterId,
+        initial.currentMatterRevisionId,
+      );
+      const [priorRow] =
+        await sql`SELECT matter_work_revision_id, state_json FROM engineering_matter_work_revision
+        WHERE matter_id = ${scope.matterId} ORDER BY working_revision DESC LIMIT 1`;
+      const [retained] =
+        await sql`SELECT revision, document_version_id, requested_by_user_id FROM work_item
+        WHERE work_item_id = ${REQUEST_REUSE_WORK_ITEM_ID}`;
+      const priorState = JSON.parse(priorRow.state_json);
+      priorState.coverage.push({
+        ...structuredClone(priorState.coverage[0]),
+        binding: {
+          inputId: REQUEST_REUSE_WORK_ITEM_ID,
+          workItemId: REQUEST_REUSE_WORK_ITEM_ID,
+          workItemRevision: retained.revision,
+          documentVersionId: retained.document_version_id,
+          resultRef: null,
+          resultRevision: null,
+        },
+      });
+      await sql`UPDATE engineering_matter_work_revision SET state_json = ${JSON.stringify(priorState)}
+        WHERE matter_work_revision_id = ${priorRow.matter_work_revision_id}`;
+      const basis = await owner.workingService.resolveWorkingBasis(
+        scope.matterId,
+        owner.actor,
+      );
+      const service = new MatterActionAttemptService(owner.working, {
+        captureForNewTask: async (_tenant, now) =>
+          taskModelSelection(CANONICAL_INITIAL_MODEL_REF, now),
+      });
+      const reserved = await owner.runtime(() =>
+        service.reserve({
+          ...scope,
+          idempotencyKey: 'frozen-input-task',
+          expectedMatterRevisionId: initial.currentMatterRevisionId,
+          expectedMatterRevision: initial.currentRevisionNo,
+          expectedWorkingRevision: basis.working.workingRevision,
+          trigger: {
+            kind: 'USER_REQUEST',
+            requestId: 'frozen-input-request',
+            instruction: '复核现有来源',
+          },
+          modelInput: { fixture: 'frozen input' },
+          sourceRefs: [],
+        }),
+      );
+      assert.deepEqual(reserved.task.workingBasis.inputs, basis.currentInputs);
+      assert.equal(
+        reserved.task.workingBasis.priorWorkRef,
+        basis.working.matterWorkRevisionId,
+      );
+      const claimInput = {
+        ...scope,
+        attemptRef: reserved.task.operationRef,
+        principalId: 'hosted-test',
+      };
+      try {
+        await sql`UPDATE work_item SET requested_by_user_id = 'actor-B' WHERE work_item_id = ${REQUEST_REUSE_WORK_ITEM_ID}`;
+        await assert.rejects(
+          owner.runtime(() => service.read(claimInput)),
+          /RUNTIME_AUTHORIZATION_UNAVAILABLE/u,
+          'exact prior work authorization includes retained sources outside current composition',
+        );
+        await assert.rejects(
+          owner.runtime(() => service.claim(claimInput)),
+          /RUNTIME_AUTHORIZATION_UNAVAILABLE/u,
+        );
+      } finally {
+        await sql`UPDATE work_item SET requested_by_user_id = ${retained.requested_by_user_id} WHERE work_item_id = ${REQUEST_REUSE_WORK_ITEM_ID}`;
+      }
+      const lease = await owner.runtime(() => service.claim(claimInput));
+      const [family] =
+        await sql`SELECT family_id FROM dm_document_version WHERE document_version_id = ${fixtures.sb.documentVersionId}`;
+      const changed = await owner.matters.reviseMaterials({
+        ...scope,
+        command: {
+          requestId: 'ADD-MATERIAL-WHILE-RUNNING',
+          expectedMatterRevision: initial.currentRevisionNo,
+          changeSummary: '运行中补入另一份实际已取得材料。',
+          upserts: [
+            {
+              materialId: 'late-sb',
+              kind: 'RELATED',
+              familyId: family.family_id,
+              documentVersionId: fixtures.sb.documentVersionId,
+              scope: '后继待调查范围',
+              contribution: '核查是否改变当前判断',
+              basis: [],
+              origin: 'ENGINEER',
+              disposition: 'INCLUDED',
+            },
+          ],
+        },
+      });
+      assert.notEqual(
+        changed.materials.matterRevisionId,
+        reserved.task.subject.matterRevisionId,
+      );
+      const fence = {
+        ...claimInput,
+        leaseToken: lease.leaseToken,
+        leaseGeneration: lease.leaseGeneration,
+      };
+      const prepared = await owner.runtime(() =>
+        service.prepareCommit({ ...fence, result: matterResult(lease.task) }),
+      );
+      const command = {
+        requestId: prepared.row.triggerRequestId,
+        expectedWorkingRevision: prepared.task.baseRevision,
+        basedOnMatterRevisionId: prepared.task.subject.matterRevisionId,
+        updateKind: 'CORRECTION',
+        changeSummary: '完成已冻结范围，新材料留待后继。',
+        nextFocus: {
+          ...basis.working.state.focus,
+          question: '冻结范围的候选复核。',
+        },
+        claimDelta: null,
+        openQuestionDelta: null,
+        reviewConditionDelta: null,
+        nextSubstantiveResult: null,
+        substantiveInputs: [],
+        coverageUpdates: [],
+      };
+      const save = (inputs) =>
+        owner.runtime(() =>
+          owner.working.withActorTransaction(scope.actorUserId, (executor) =>
+            executor.appendWorkingRevision({
+              ...scope,
+              command,
+              currentInputs: inputs,
+              source: {
+                kind: 'ENGINEERING_MATTER',
+                actionAttemptId: prepared.row.attemptId,
+                reviewTurnId: null,
+              },
+            }),
+          ),
+        );
+      const current = await owner.workingService.resolveWorkingBasis(
+        scope.matterId,
+        owner.actor,
+      );
+      await assert.rejects(
+        save(current.currentInputs),
+        /WORKING_INPUT/u,
+        'latest inputs cannot replace frozen input bindings',
+      );
+      const saved = await save(prepared.task.workingBasis.inputs);
+      assert.equal(
+        saved.revision.basedOnMatterRevisionId,
+        initial.currentMatterRevisionId,
+      );
+      assert.deepEqual(
+        saved.revision.state.problemWork,
+        basis.working.state.problemWork,
+      );
+      await owner.runtime(() => service.finish(fence));
+      const visible = await owner.workingService.readWorking(
+        scope.matterId,
+        owner.actor,
+      );
+      assert(
+        visible.pendingInputs.some(
+          (input) =>
+            input.current.documentVersionId === fixtures.sb.documentVersionId,
+        ),
+      );
+      assert.equal(
+        (await owner.runtime(() => service.read(claimInput))).taskInputHash,
+        reserved.task.inputHash,
+      );
+    } finally {
+      if (owner) await owner.release();
+      await sql.end();
+    }
+  },
+);
+
 async function readJson(path) {
   return JSON.parse(await readFile(resolve(process.cwd(), path), 'utf8'));
 }
@@ -1368,7 +1573,7 @@ async function assertWorkingRevisionFlow(
     versionLabel: '2025-09-26',
     excerpt: 'The source-bound condition.',
     kind: 'DOCUMENT_PASSAGE',
-    workItemId: FTD_WORK_ITEM_ID,
+    workItemId: basis.currentInputs[0].workItemId,
     documentVersionId: basis.currentInputs[0].documentVersionId,
     sourceRefId: 'SRC-WORKING-1',
     locator: 'page 1',
@@ -1543,7 +1748,9 @@ async function assertWorkingRevisionFlow(
     });
     // A separate real connection must be blocked even after append has
     // returned: member versions and owners stay pinned until COMMIT.
-    for (const binding of basis.currentInputs) {
+    for (const binding of basis.currentInputs.filter(
+      (item) => item.workItemId !== null,
+    )) {
       for (const mutation of ['revision', 'owner']) {
         await assert.rejects(
           attemptConcurrentMemberUpdate(sql, binding, mutation),
@@ -1561,7 +1768,9 @@ async function assertWorkingRevisionFlow(
   };
   // After COMMIT the same writes are allowed; each probe rolls back so the
   // replay/pending assertions below keep their original fixture identities.
-  for (const binding of basis.currentInputs) {
+  for (const binding of basis.currentInputs.filter(
+    (item) => item.workItemId !== null,
+  )) {
     await attemptConcurrentMemberUpdate(sql, binding, 'revision');
     await attemptConcurrentMemberUpdate(sql, binding, 'owner');
   }
@@ -1648,16 +1857,20 @@ async function assertWorkingRevisionFlow(
     await sql`SELECT state_json FROM engineering_matter_work_revision
     WHERE matter_work_revision_id = ${exactInput.workRef}`;
   const retainedState = JSON.parse(storedWork.state_json);
+  const [retainedOwner] =
+    await sql`SELECT requested_by_user_id, revision, document_version_id FROM work_item
+    WHERE work_item_id = ${REQUEST_REUSE_WORK_ITEM_ID}`;
   retainedState.coverage.push({
     ...structuredClone(retainedState.coverage[0]),
     binding: {
-      ...structuredClone(retainedState.coverage[0].binding),
       inputId: REQUEST_REUSE_WORK_ITEM_ID,
       workItemId: REQUEST_REUSE_WORK_ITEM_ID,
+      workItemRevision: retainedOwner.revision,
+      documentVersionId: retainedOwner.document_version_id,
+      resultRef: null,
+      resultRevision: null,
     },
   });
-  const [retainedOwner] = await sql`SELECT requested_by_user_id FROM work_item
-    WHERE work_item_id = ${REQUEST_REUSE_WORK_ITEM_ID}`;
   await sql`UPDATE engineering_matter_work_revision SET state_json = ${JSON.stringify(retainedState)}
     WHERE matter_work_revision_id = ${exactInput.workRef}`;
   try {
@@ -1883,13 +2096,30 @@ async function assertRealMatterAttemptSave(sql, owner, matterId) {
     substantiveInputs: [],
     coverageUpdates: [],
   };
-  await sql`INSERT INTO action_attempt (attempt_id, tenant_id, actor_user_id,
-    subject_kind, matter_id, matter_revision_id, action_type, status,
-    request_origin, input_revision, base_revision, trigger_request_id)
-    VALUES (${source.actionAttemptId}, 'tenant-A', 'actor-A', 'ENGINEERING_MATTER',
-      ${matterId}, ${command.basedOnMatterRevisionId}, 'OPENCLAW_MATTER_ASSESSMENT',
-      'QUEUED', 'OPENCLAW_MCP_V1', ${basis.snapshot.currentRevisionNo},
-      ${command.expectedWorkingRevision}, ${command.requestId})`;
+  const attempts = new MatterActionAttemptService(owner.working, {
+    captureForNewTask: async (_tenant, now) =>
+      taskModelSelection(CANONICAL_INITIAL_MODEL_REF, now),
+  });
+  const reserved = await owner.runtime(() =>
+    attempts.reserve({
+      tenantId: 'tenant-A',
+      matterId,
+      actorUserId: owner.actor.userId,
+      idempotencyKey: 'real-matter-save-binding',
+      expectedMatterRevisionId: command.basedOnMatterRevisionId,
+      expectedMatterRevision: basis.snapshot.currentRevisionNo,
+      expectedWorkingRevision: command.expectedWorkingRevision,
+      trigger: {
+        kind: 'USER_REQUEST',
+        requestId: 'real-matter-save-binding',
+        instruction: '测试真实来源保存',
+      },
+      modelInput: { fixture: 'real source binding' },
+      sourceRefs: [],
+    }),
+  );
+  source.actionAttemptId = reserved.row.attemptId;
+  command.requestId = reserved.row.triggerRequestId;
   const save = (candidate = command, candidateSource = source) =>
     owner.runtime(() =>
       owner.working.withActorTransaction(
@@ -1912,7 +2142,9 @@ async function assertRealMatterAttemptSave(sql, owner, matterId) {
       ),
     );
   const rlsDenied = (error) =>
-    error.cause?.code === '42501' || error.code === '42501';
+    error.cause?.code === '42501' ||
+    error.code === '42501' ||
+    error.code === 'ENGINEERING_MATTER_WORKING_SOURCE_INVALID';
   await assert.rejects(save(), rlsDenied, 'QUEUED is not a durable commit');
   await sql`UPDATE action_attempt SET status = 'COMMITTING' WHERE attempt_id = ${source.actionAttemptId}`;
   await assert.rejects(

@@ -40,7 +40,8 @@ export type AssessmentEvidence = {
 } & (
   | {
       kind: 'DOCUMENT_PASSAGE';
-      workItemId: string;
+      /** Direct document material has no WorkItem execution identity. */
+      workItemId: string | null;
       documentVersionId: string;
       sourceRefId: string;
       locator: string;

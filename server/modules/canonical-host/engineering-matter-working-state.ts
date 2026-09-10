@@ -749,10 +749,11 @@ function validateEvidence(value: unknown): asserts value is AssessmentEvidence {
   );
   switch (value.kind) {
     case 'DOCUMENT_PASSAGE':
-      requiredText(
-        value.workItemId,
-        'ENGINEERING_MATTER_WORKING_EVIDENCE_WORK_ITEM_REQUIRED',
-      );
+      if (value.workItemId !== null)
+        requiredText(
+          value.workItemId,
+          'ENGINEERING_MATTER_WORKING_EVIDENCE_WORK_ITEM_REQUIRED',
+        );
       requiredText(
         value.documentVersionId,
         'ENGINEERING_MATTER_WORKING_EVIDENCE_DOCUMENT_VERSION_REQUIRED',

@@ -102,6 +102,7 @@ export function parseMatterTaskEnvelope(
       'tenantId',
       'subject',
       'trigger',
+      'workingBasis',
       'inputRevision',
       'baseRevision',
       'sourceRefs',
@@ -138,6 +139,7 @@ function assertTaskFields(envelope: AnyOpenClawTaskEnvelope): void {
       fail('TASK_ENVELOPE_TASK_TYPE_INVALID');
     assertMatterSubject(envelope.subject);
     assertMatterTrigger(envelope.trigger);
+    assertMatterWorkingBasis(envelope.workingBasis, envelope.baseRevision);
   }
   if (
     !Number.isSafeInteger(envelope.priority) ||
@@ -383,6 +385,76 @@ function assertMatterSubject(value: unknown): void {
     fail('ACTION_ENVELOPE_SUBJECT_INVALID');
   requiredText(value.matterId, 'ACTION_ENVELOPE_SUBJECT_INVALID');
   requiredText(value.matterRevisionId, 'ACTION_ENVELOPE_SUBJECT_INVALID');
+}
+
+function assertMatterWorkingBasis(value: unknown, baseRevision: number): void {
+  const code = 'TASK_ENVELOPE_WORKING_BASIS_INVALID';
+  if (!isRecord(value)) fail(code);
+  assertExactKeys(value, ['inputs', 'priorWorkRef'], code);
+  if (baseRevision === 0) {
+    if (value.priorWorkRef !== null) fail(code);
+  } else requiredText(value.priorWorkRef, code);
+  const inputs = requiredArray(value.inputs, code);
+  const ids = new Set<string>();
+  const workItems = new Set<string>();
+  for (const item of inputs) {
+    if (!isRecord(item)) fail(code);
+    const id = requiredText(item.inputId, code);
+    if (ids.has(id)) fail(code);
+    ids.add(id);
+    requiredText(item.documentVersionId, code);
+    if (item.kind === 'DOCUMENT_VERSION') {
+      assertExactKeys(
+        item,
+        [
+          'kind',
+          'inputId',
+          'familyId',
+          'documentVersionId',
+          'workItemId',
+          'workItemRevision',
+          'resultRef',
+          'resultRevision',
+        ],
+        code,
+      );
+      requiredText(item.familyId, code);
+      if (
+        item.workItemId !== null ||
+        item.workItemRevision !== null ||
+        item.resultRef !== null ||
+        item.resultRevision !== null
+      )
+        fail(code);
+    } else {
+      assertExactKeys(
+        item,
+        [
+          'inputId',
+          'workItemId',
+          'workItemRevision',
+          'documentVersionId',
+          'resultRef',
+          'resultRevision',
+        ],
+        code,
+      );
+      const workItemId = requiredText(item.workItemId, code);
+      if (workItems.has(workItemId)) fail(code);
+      workItems.add(workItemId);
+      requiredRevision(item.workItemRevision, code);
+      if (item.resultRef === null) {
+        if (item.resultRevision !== null) fail(code);
+      } else {
+        requiredText(item.resultRef, code);
+        if (
+          !Number.isSafeInteger(item.resultRevision) ||
+          Number(item.resultRevision) < 1
+        )
+          fail(code);
+      }
+    }
+  }
 }
 
 function assertMatterTrigger(value: unknown): void {

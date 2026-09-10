@@ -207,6 +207,7 @@ function matterTaskEnvelope() {
       matterRevisionId: 'MR-test',
     },
     trigger: { kind: 'SOURCE_CHANGE', inputIds: ['material-test'] },
+    workingBasis: { inputs: [], priorWorkRef: null },
     inputRevision: 2,
     baseRevision: 0,
   });
