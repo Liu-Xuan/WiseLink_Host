@@ -112,16 +112,23 @@ export function checkTranslationBlockV2(input: {
       .map((element) => element.translatedText)
       .join('\n');
     const scope = group.anchors.map((anchor) => anchor.anchorId);
+    const originalValues = protectedValues(sourceText);
+    const wrappedValues = protectedValues(
+      joinWrappedSourceIdentifiers(sourceText),
+    );
+    const translatedValues = protectedValues(translatedText);
     if (
-      canonicalJson(protectedValues(sourceText)) !==
-        canonicalJson(protectedValues(translatedText)) &&
-      canonicalJson(
-        protectedValues(joinWrappedSourceIdentifiers(sourceText)),
-      ) !== canonicalJson(protectedValues(translatedText))
+      canonicalJson(originalValues) !== canonicalJson(translatedValues) &&
+      canonicalJson(wrappedValues) !== canonicalJson(translatedValues)
     )
       add(
         'PROTECTED_VALUE_CHANGED',
-        '数值、完整日期或原文字母数字标识的值或出现次数不一致。',
+        '数值、完整日期或原文字母数字标识的值或出现次数不一致。' +
+          `原文字面对照（重复值逐次列出）：${JSON.stringify(protectedValueChanges(originalValues, translatedValues))}。` +
+          (canonicalJson(originalValues) !== canonicalJson(wrappedValues)
+            ? `显式换行连写对照：${JSON.stringify(protectedValueChanges(wrappedValues, translatedValues))}。`
+            : '') +
+          '请回到所列来源锚点恢复遗漏或纠正新增值，不改写原文标识。',
         scope,
       );
     if (
@@ -372,6 +379,35 @@ function protectedValues(value: string) {
     .map((match) => String(Number(match[0])))
     .sort();
   return { dates: normalized.dates, identifiers, numbers };
+}
+
+function protectedValueChanges(
+  source: ReturnType<typeof protectedValues>,
+  translated: ReturnType<typeof protectedValues>,
+) {
+  const subtract = (left: string[], right: string[]): string[] => {
+    const remaining = new Map<string, number>();
+    for (const value of right)
+      remaining.set(value, (remaining.get(value) ?? 0) + 1);
+    return left.filter((value) => {
+      const count = remaining.get(value) ?? 0;
+      if (count === 0) return true;
+      remaining.set(value, count - 1);
+      return false;
+    });
+  };
+  const difference = (
+    left: ReturnType<typeof protectedValues>,
+    right: ReturnType<typeof protectedValues>,
+  ) => ({
+    dates: subtract(left.dates, right.dates),
+    identifiers: subtract(left.identifiers, right.identifiers),
+    numbers: subtract(left.numbers, right.numbers),
+  });
+  return {
+    missing: difference(source, translated),
+    added: difference(translated, source),
+  };
 }
 const unitNames: Record<string, string> = {
   s: 's',
