@@ -4,11 +4,11 @@ interface WiseLinkBrandMarkProps {
   size: number;
 }
 
-/** Faithful web export of the user-supplied WiseLink飞信.psd. */
+/** User-supplied wiselink-app-icon.svg, preserved without redrawing. */
 export default function WiseLinkBrandMark({ size }: WiseLinkBrandMarkProps) {
   return (
     <Image
-      src={`${import.meta.env.BASE_URL}wiselink-brand.png`}
+      src={`${import.meta.env.BASE_URL}wiselink-mark.svg`}
       alt=""
       aria-hidden="true"
       width={size}

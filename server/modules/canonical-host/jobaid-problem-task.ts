@@ -8,6 +8,7 @@ import type {
 } from '@shared/api.interface';
 import {
   JOBAID_PROBLEM_TASK_SCHEMA,
+  type JobAidAssessmentContextPackage,
   type JobAidProblemIssue,
   type JobAidProblemWorkContent,
   type JobAidWorkRevision,
@@ -20,6 +21,7 @@ import {
   JOBAID_METHOD_EVIDENCE,
 } from './jobaid-method-pack';
 import { overallModelEvidenceRegistry } from './overall-assessment-reading';
+import { buildJobAidContextPackage } from './jobaid-context-package';
 
 export interface JobAidSourceBinding {
   workItemId: string;
@@ -66,6 +68,8 @@ export interface JobAidProblemModelInput extends Record<string, unknown> {
   historyReview: JobAidProblemWorkContent['historyReview'];
   /** Actual earlier user wording remains discussion, never controlled facts. */
   discussion: CanonicalCommonAssessmentContext['discussion'];
+  /** Absent only on tasks persisted before source provenance was projected. */
+  contextPackage?: JobAidAssessmentContextPackage;
 }
 
 export type JobAidProblemModelWorkContent = Omit<
@@ -212,6 +216,12 @@ export function buildJobAidProblemTask(input: {
         )
         .map((item) => item.evidenceRef),
       ...(previousWork?.content.readSourceRefs ?? []),
+      ...catalog.flatMap((item) =>
+        item.kind === 'DOCUMENT_PASSAGE' && input.common.relatedMaterials.items.some(
+          (related) => related.documentVersionRef === item.documentVersionId &&
+            related.readFragments.some((fragment) => fragment.sourceRefId === item.sourceRefId),
+        ) ? [item.evidenceRef] : [],
+      ),
     ]),
   ];
   const capabilities: JobAidProblemWorkContent['capabilities'] = [
@@ -321,6 +331,13 @@ export function buildJobAidProblemTask(input: {
           }
         : null,
       expectedWorkRevision: input.expectedWorkRevision,
+      contextPackage: buildJobAidContextPackage({
+        workItem: input.workItem,
+        common: input.common,
+        catalog,
+        initiallyDeliveredRefs,
+        previousWorkRevision: previousWork?.workRevision ?? null,
+      }),
       capabilities,
       historyReview,
       discussion: structuredClone(input.common.discussion),

@@ -4,9 +4,25 @@
  * ============================================================ */
 
 .wiselink-app-shell {
+  --wl-sheet-shadow: 0 2px 8px color-mix(in srgb, var(--wl-g3-shadow) 50%, transparent);
+
   min-height: 100vh;
   font-family: var(--wl-font);
   color: var(--wl-ink);
+}
+
+/* One continuous frame owns the outer edge. Navigation and header are parts of it,
+ * not separate floating glass objects; content keeps its own quiet paper surface. */
+.wiselink-app-shell::before {
+  position: fixed;
+  z-index: 0;
+  inset: 8px;
+  border: 1px solid var(--wl-material-edge);
+  border-radius: 24px;
+  background: var(--wl-frame-solid);
+  box-shadow: 0 3px 12px color-mix(in srgb, var(--wl-g1-shadow) 50%, transparent);
+  pointer-events: none;
+  content: '';
 }
 
 /* 工作台的 Header 与可用高度只有 AppShell 一个 owner。
@@ -58,7 +74,7 @@
   width: 100%;
   height: 100%;
   object-fit: contain;
-  background: #fff;
+  background: transparent;
 }
 
 .wiselink-app-context svg {
@@ -358,25 +374,34 @@ select:focus-visible {
   margin-left: 104px;
 }
 
-/* Design object bar: one neutral film, a fine edge, no floating capsule shadow.
- * Keep the g1 class so compatible / reduced-transparency remain effective. */
+/* The object bar belongs to the shared frame in every visual mode. */
 .wiselink-app-chrome.wl-glass-nav,
 html[data-wl-visual-mode] .wiselink-app-chrome.wl-glass-nav {
-  border: 1px solid var(--wl-border);
-  background: var(--wl-glass-nav);
-  box-shadow: inset 0 1px 0 var(--wl-material-edge);
-  -webkit-backdrop-filter: blur(var(--wl-objectbar-blur, 24px)) saturate(100%);
-  backdrop-filter: blur(var(--wl-objectbar-blur, 24px)) saturate(100%);
-}
-
-html[data-wl-visual-mode='ultra'] .wiselink-app-chrome {
-  --wl-objectbar-blur: 30px;
+  border: 0;
+  border-bottom: 1px solid var(--wl-border);
+  border-radius: 0;
+  background: var(--wl-frame-solid);
+  box-shadow: none;
+  -webkit-backdrop-filter: none;
+  backdrop-filter: none;
 }
 
 .wiselink-app-shell.is-workbench-route .wiselink-app-chrome.wl-glass-nav {
-  background: var(--wl-glass-content);
+  background: var(--wl-frame-solid);
   -webkit-backdrop-filter: none;
   backdrop-filter: none;
+}
+
+.wiselink-header-icon-action,
+.wiselink-account-control,
+.wiselink-account-state {
+  border-color: var(--wl-border);
+  background: var(--wl-sheet-muted);
+  box-shadow: none;
+}
+
+body[data-wl-immersive='true'] .wiselink-app-shell::before {
+  display: none;
 }
 
 .wiselink-object-kind,
@@ -432,6 +457,13 @@ html[data-wl-theme='dark'] .wiselink-app-chrome {
 }
 
 @media (max-width: 720px) {
+  .wiselink-app-shell::before {
+    inset: 0;
+    border: 0;
+    border-radius: 0;
+    box-shadow: none;
+  }
+
   .wiselink-app-shell.is-workbench-route {
     --wl-app-header-block-size: 0px;
   }

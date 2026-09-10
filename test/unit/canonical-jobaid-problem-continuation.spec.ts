@@ -1,4 +1,5 @@
 import type { CanonicalWorkItemProjection } from '@shared/api.interface';
+import type { AssessmentEvidence } from '@shared/assessment-reading.interface';
 import {
   JOBAID_PROBLEM_RESULT_SCHEMA,
   JOBAID_PROBLEM_WORK_SCHEMA,
@@ -24,7 +25,7 @@ import {
   createConfigurationEvidenceReevaluation,
 } from '../../server/modules/canonical-host/configuration-evidence/configuration-evidence-reevaluation.state';
 import { JOBAID_METHOD_BINDING } from '../../server/modules/canonical-host/jobaid-method-pack';
-import { parseJobAidProblemTask } from '../../server/modules/canonical-host/jobaid-problem-task';
+import { buildJobAidProblemTask, parseJobAidProblemTask } from '../../server/modules/canonical-host/jobaid-problem-task';
 
 const REQUEST_1 = '00000000-0000-4000-8000-000000000101';
 const REQUEST_2 = '00000000-0000-4000-8000-000000000102';
@@ -40,6 +41,62 @@ const scope = {
 };
 
 describe('JobAid continuation requests', () => {
+  it('delivers supplemental source context without treating inaccessible references or user assumptions as primary-source failures', () => {
+    const workItem = projection();
+    const common = projectCommonAssessmentContext(workItem, {
+      context: { status: 'AVAILABLE' }, documentReadingStatus: 'AVAILABLE',
+      items: [], sections: [], resourceRefs: [],
+    }, []);
+    const reference = {
+      documentCode: 'OEM-RELATED', documentVersionRef: 'DV-RELATED',
+      documentType: 'SB' as const, contributionRoles: [],
+      sourceAuthority: 'OEM_FORMAL' as const, targetApplicability: 'NOT_EVALUATED' as const,
+      currentness: 'HISTORICAL' as const, availability: 'AVAILABLE' as const,
+      contextUse: 'BACKGROUND_ONLY' as const, selection: 'BACKGROUND_CANDIDATE' as const,
+      reasonCodes: [], availableSourceRefIds: ['SR-RELATED'],
+      readFragments: [{ sourceRefId: 'SR-RELATED', excerpt: 'Reported earlier measure; effect not verified.' }],
+    };
+    common.relatedMaterials.items = [reference, {
+      ...reference, documentCode: 'RESTRICTED-MANUAL', documentVersionRef: null,
+      availability: 'ACCESS_DENIED', availableSourceRefIds: [], readFragments: [],
+      reasonCodes: ['REFERENCE_ACCESS_DENIED'],
+    }];
+    const evidence: AssessmentEvidence[] = [{
+      evidenceRef: 'primary', kind: 'DOCUMENT_PASSAGE', title: 'Primary SB',
+      versionLabel: 'R1', excerpt: 'No compliance time is given.',
+      workItemId: workItem.workItemId, documentVersionId: 'DV-JOBAID', sourceRefId: 'SR-1', locator: 'page 1-1',
+    }, {
+      evidenceRef: 'related', kind: 'DOCUMENT_PASSAGE', title: 'OEM related',
+      versionLabel: 'R0', excerpt: reference.readFragments[0].excerpt,
+      workItemId: 'WI-RELATED', documentVersionId: 'DV-RELATED', sourceRefId: 'SR-RELATED', locator: 'page 2-2',
+    }, {
+      evidenceRef: 'assumption', kind: 'ENGINEER_STATEMENT', origin: 'REVIEW_CONVERSATION',
+      title: 'User hypothesis', versionLabel: null, excerpt: '假设测试设备使用 Win7，尚未核实。',
+      reviewConversationId: 'RC', reviewTurnId: 'RT', engineerSuppliedInputId: 'ESI', recordedAt: '2026-09-10T00:00:00.000Z',
+    }];
+    const task = buildJobAidProblemTask({
+      workItem, actorUserId: OWNER, permissionSnapshotVersion: 'permission',
+      purpose: 'INITIAL_PROBLEM_ASSESSMENT', sourceCatalog: evidence, sourceBindings: [],
+      common, previousWork: null, expectedWorkRevision: 0, priorAssessmentRefs: [],
+    });
+    const delivered = task.modelInput.deliveredEvidence;
+    const related = delivered.find((item) => item.title === 'OEM related')!;
+    expect(related.excerpt).toBe(reference.readFragments[0].excerpt);
+    expect(delivered.find((item) => item.title === 'Primary SB')).toBeUndefined();
+    expect(task.modelInput.contextPackage).toMatchObject({
+      basedOnWorkItemRevision: workItem.revision,
+      primaryDocument: { readingStatus: 'AVAILABLE' },
+      supplementaryMaterials: { items: [
+        { sourceAuthority: 'OEM_FORMAL', currentness: 'HISTORICAL', contextUse: 'BACKGROUND_ONLY', deliveredEvidenceRefs: [related.evidenceRef] },
+        { documentCode: 'RESTRICTED-MANUAL', availability: 'ACCESS_DENIED', reasonCodes: ['REFERENCE_ACCESS_DENIED'], deliveredEvidenceRefs: [] },
+      ] },
+      knowledgeRetrieval: { status: 'NOT_CONNECTED' },
+    });
+    expect(task.modelInput.contextPackage?.sourceOrigins).toContainEqual({
+      evidenceRef: 'assumption', origin: 'REVIEW_CONVERSATION', contentNature: 'UNVERIFIED_ENGINEER_STATEMENT',
+    });
+    expect(delivered.find((item) => item.evidenceRef === 'assumption')?.excerpt).toBe(evidence[2].excerpt);
+  });
   const originalFlag = process.env.WL_JOBAID_PROBLEM_V2_ENABLED;
   beforeEach(() => {
     process.env.WL_JOBAID_PROBLEM_V2_ENABLED = '1';

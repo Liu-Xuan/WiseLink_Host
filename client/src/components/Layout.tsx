@@ -17,13 +17,14 @@ import './app-shell.css';
 const Layout = () => {
   useEffect(() => {
     // The hosted HTML template replaces the favicon with the platform avatar.
-    const favicon: HTMLLinkElement | null =
-      document.querySelector('link[rel="icon"]');
-    if (favicon) {
-      favicon.href = `${import.meta.env.BASE_URL}wiselink-brand.png`;
-      favicon.type = 'image/png';
-      favicon.sizes.value = '256x256';
-    }
+    const favicon: HTMLLinkElement =
+      document.querySelector<HTMLLinkElement>('link[rel="icon"]') ??
+      document.createElement('link');
+    favicon.rel = 'icon';
+    favicon.href = `${import.meta.env.BASE_URL}wiselink-mark.svg`;
+    favicon.type = 'image/svg+xml';
+    favicon.sizes.value = 'any';
+    if (!favicon.isConnected) document.head.append(favicon);
   }, []);
 
   return (
