@@ -1,0 +1,15 @@
+<svg width="512" height="512" viewBox="0 0 512 512" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <title>WiseLink</title>
+  <rect width="512" height="512" rx="96" fill="white"/>
+  <g transform="translate(96 116) scale(2)">
+    <path d="M77 117.5L137 86.5" stroke="#3195F4" stroke-opacity="0.55" stroke-width="5"/>
+    <path d="M85 52L77 117" stroke="#3195F4" stroke-opacity="0.55" stroke-width="5"/>
+    <path d="M26.5 87L85.5 52" stroke="#3195F4" stroke-opacity="0.55" stroke-width="5"/>
+    <path d="M23.5 23.5L26.5 87.5" stroke="#3195F4" stroke-opacity="0.55" stroke-width="5"/>
+    <path d="M46 23C46 35.7025 35.7025 46 23 46C10.2975 46 0 35.7025 0 23C0 10.2975 10.2975 0 23 0C35.7025 0 46 10.2975 46 23Z" fill="#3195F4"/>
+    <path d="M26.5 67C37.2696 67 46 75.7304 46 86.5C46 97.2696 37.2696 106 26.5 106C15.7304 106 7 97.2696 7 86.5C7 75.7304 15.7304 67 26.5 67Z" fill="#3195F4"/>
+    <circle cx="85" cy="52" r="18" fill="#3195F4"/>
+    <circle cx="77.5" cy="117.5" r="22.5" fill="#3195F4"/>
+    <circle cx="137" cy="87" r="23" fill="#3195F4"/>
+  </g>
+</svg>

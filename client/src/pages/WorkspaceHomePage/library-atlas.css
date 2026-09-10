@@ -1,19 +1,20 @@
-/* Guided Atlas reading layout; solid content surfaces, shared shell stays unchanged. */
+/* The scope column belongs to the frame; the reading content is one inset paper sheet. */
 .library-home.library-atlas-home {
   display: grid;
   grid-template-columns: 188px minmax(0, 1fr);
   gap: 0;
-  min-height: calc(100dvh - 78px);
+  /* Include the existing shell's header and body padding so short lists do not push the sheet outside the frame. */
+  min-height: calc(100dvh - 120px);
   padding: 0;
-  border: 1px solid var(--wl-border);
-  border-radius: 0 0 18px 18px;
-  background: var(--wl-sheet);
+  border: 0;
+  border-radius: 0;
+  background: transparent;
 }
 
 .atlas-library-scope {
   padding: 26px 18px;
-  border-right: 1px solid var(--wl-border);
-  background: var(--wl-frame-solid);
+  border-right: 0;
+  background: transparent;
 }
 
 .atlas-library-scope h2 {
@@ -58,7 +59,12 @@
 }
 .atlas-library-content {
   min-width: 0;
-  background: var(--wl-sheet-muted);
+  margin-left: 14px;
+  overflow: hidden;
+  border: 1px solid var(--wl-border);
+  border-radius: 20px;
+  background: var(--wl-sheet);
+  box-shadow: var(--wl-sheet-shadow);
 }
 .library-atlas-home .library-home-header {
   padding: 28px 28px 16px;
@@ -211,10 +217,11 @@
   min-width: 0;
 }
 .atlas-library-subject > svg {
-  width: 17px;
+  width: 19px;
   height: 20px;
-  flex: 0 0 17px;
-  color: var(--wl-accent);
+  flex: 0 0 19px;
+  stroke-width: 1.7px;
+  color: var(--wl-muted);
 }
 .atlas-library-subject > span,
 .atlas-library-brief,
@@ -232,7 +239,7 @@
 }
 .atlas-library-brief {
   color: var(--wl-muted);
-  font-size: 12px;
+  font-size: 13px;
   line-height: 1.8;
   overflow-wrap: anywhere;
 }
@@ -241,7 +248,7 @@
   font-weight: 500;
 }
 .atlas-library-progress {
-  font-size: 11px;
+  font-size: 12px;
   line-height: 1.7;
 }
 .atlas-library-progress strong {
@@ -249,7 +256,7 @@
 }
 .atlas-library-select small {
   color: var(--wl-muted);
-  font-size: 11px;
+  font-size: 12px;
   line-height: 1.7;
 }
 .atlas-library-decisive {
@@ -261,7 +268,7 @@
   align-items: center;
   gap: 4px;
   flex: 0 0 50px;
-  font-size: 11px;
+  font-size: 12px;
   color: var(--wl-ink);
 }
 .atlas-library-open svg {
@@ -320,15 +327,18 @@
   padding: 4px 0 22px;
 }
 .atlas-library-inspector-title > svg {
-  width: 46px;
-  height: 46px;
-  padding: 12px;
+  box-sizing: border-box;
+  width: 52px;
+  height: 56px;
+  padding: 14px;
+  stroke-width: 1.7px;
   border-radius: 14px;
   background: var(--wl-sheet);
   color: var(--wl-accent);
+  box-shadow: none;
 }
 .atlas-library-inspector-title h2 {
-  font-size: 21px;
+  font-size: 23px;
   font-weight: 600;
   line-height: 1.5;
 }
@@ -338,7 +348,7 @@
 }
 .atlas-library-inspector p,
 .atlas-library-inspector li {
-  font-size: 12px;
+  font-size: 13px;
   line-height: 1.9;
 }
 .atlas-library-reading-block {
@@ -428,6 +438,10 @@
 }
 
 @media (max-width: 760px) {
+  .atlas-library-content {
+    margin-left: 0;
+    border-radius: 14px;
+  }
   .library-home.library-atlas-home {
     display: block;
     border-radius: 0;
