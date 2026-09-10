@@ -5,6 +5,10 @@ import {
   parseTaskEnvelope,
   sealResultEnvelope,
   sealTaskEnvelope,
+  sealMatterTaskEnvelope,
+  sealMatterResultEnvelope,
+  parseMatterTaskEnvelope,
+  parseMatterResultEnvelope,
 } from '../../server/modules/action-attempt/action-attempt-envelope';
 
 describe('OpenClaw ActionAttempt envelopes', () => {
@@ -99,6 +103,114 @@ describe('OpenClaw ActionAttempt envelopes', () => {
     ).toEqual(translationResult);
   });
 });
+
+describe('Matter ActionAttempt envelopes', () => {
+  it('binds a real Matter without a WorkItem, document identity or ReviewTurn', () => {
+    const task = matterTaskEnvelope();
+    expect(parseMatterTaskEnvelope(canonicalJson(task))).toEqual(task);
+    expect(task).not.toHaveProperty('workItemId');
+    expect(task).not.toHaveProperty('documentVersionId');
+    expect(() => parseTaskEnvelope(canonicalJson(task))).toThrow();
+    for (const extra of [
+      { workItemId: 'WI-anchor' },
+      { reviewTurnId: 'TURN-fake' },
+    ])
+      expect(() =>
+        parseMatterTaskEnvelope(canonicalJson({ ...task, ...extra })),
+      ).toThrow('TASK_ENVELOPE_SCHEMA_INVALID');
+  });
+
+  it('rejects invalid triggers and mutation of the frozen input', () => {
+    const task = matterTaskEnvelope();
+    expect(() =>
+      parseMatterTaskEnvelope(
+        canonicalJson({
+          ...task,
+          subject: { ...task.subject, matterId: 'another' },
+        }),
+      ),
+    ).toThrow('TASK_ENVELOPE_INPUT_HASH_MISMATCH');
+    for (const trigger of [
+      { kind: 'SOURCE_CHANGE', inputIds: [] },
+      { kind: 'SOURCE_CHANGE', inputIds: ['a', 'a'] },
+      { kind: 'REVISIT', workRef: 'work:1', conditionIds: [] },
+      { kind: 'USER_REQUEST', requestId: 'r', instruction: '' },
+      { kind: 'CHAT', reviewTurnId: 't' },
+    ])
+      expect(() =>
+        parseMatterTaskEnvelope(canonicalJson({ ...task, trigger })),
+      ).toThrow('TASK_ENVELOPE_TRIGGER_INVALID');
+  });
+
+  it('uses the same result semantics and exact-source checks for Matter results', () => {
+    const task = matterTaskEnvelope();
+    const {
+      workItemId: _wi,
+      contentHash: _hash,
+      ...legacy
+    } = resultEnvelope(taskEnvelope());
+    const result = sealMatterResultEnvelope({
+      ...legacy,
+      schemaVersion: 'wiselink.3_1.openclaw_result_envelope.v2',
+      taskType: 'OPENCLAW_MATTER_ASSESSMENT',
+      subject: task.subject,
+      baseRevision: task.baseRevision,
+    });
+    expect(parseMatterResultEnvelope({ task, value: result })).toEqual(result);
+    expect(() =>
+      parseMatterResultEnvelope({
+        task,
+        value: sealMatterResultEnvelope({
+          ...result,
+          subject: { ...task.subject, matterRevisionId: 'other-revision' },
+        }),
+      }),
+    ).toThrow('RESULT_ENVELOPE_SUBJECT_MISMATCH');
+    expect(() =>
+      parseMatterResultEnvelope({
+        task,
+        value: sealMatterResultEnvelope({
+          ...result,
+          sourceRefs: [
+            { ref: 'artifact://not-authorized', sha256: 'a'.repeat(64) },
+          ],
+        }),
+      }),
+    ).toThrow('RESULT_ENVELOPE_SOURCE_REF_UNAUTHORIZED');
+    expect(() =>
+      parseMatterResultEnvelope({
+        task,
+        value: sealMatterResultEnvelope({
+          ...result,
+          status: 'WAITING_INPUT',
+          modelOutput: null,
+        }),
+      }),
+    ).toThrow('RESULT_ENVELOPE_WAITING_INPUT_SEMANTICS_INVALID');
+  });
+});
+
+function matterTaskEnvelope() {
+  const {
+    workItemId: _wi,
+    documentVersionId: _dv,
+    inputHash: _hash,
+    ...legacy
+  } = taskEnvelope();
+  return sealMatterTaskEnvelope({
+    ...legacy,
+    schemaVersion: 'wiselink.3_1.openclaw_task_envelope.v2',
+    taskType: 'OPENCLAW_MATTER_ASSESSMENT',
+    subject: {
+      kind: 'ENGINEERING_MATTER',
+      matterId: 'MATTER-test',
+      matterRevisionId: 'MR-test',
+    },
+    trigger: { kind: 'SOURCE_CHANGE', inputIds: ['material-test'] },
+    inputRevision: 2,
+    baseRevision: 0,
+  });
+}
 
 function taskEnvelope() {
   return sealTaskEnvelope({

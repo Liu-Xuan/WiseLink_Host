@@ -1494,7 +1494,10 @@ export const externalSearchRun = pgTable("external_search_run", {
 export const actionAttempt = pgTable("action_attempt", {
   id: uuid("id").primaryKey().defaultRandom(),
   attemptId: varchar("attempt_id", { length: 96 }).notNull().unique(),
-  workItemId: varchar("work_item_id", { length: 96 }).notNull(),
+  workItemId: varchar("work_item_id", { length: 96 }),
+  subjectKind: varchar("subject_kind", { length: 32 }).notNull().default('WORK_ITEM'),
+  matterId: varchar("matter_id", { length: 96 }),
+  matterRevisionId: varchar("matter_revision_id", { length: 96 }),
   actionType: varchar("action_type", { length: 64 }).notNull(),
   attemptNo: integer("attempt_no").notNull().default(1),
   triggerRequestId: varchar("trigger_request_id", { length: 96 }).notNull(),
@@ -1548,6 +1551,13 @@ export const actionAttempt = pgTable("action_attempt", {
   updatedBy: userProfile("_updated_by"),
 }, (table) => [
   uniqueIndex("uk_action_attempt_business_id").on(table.attemptId),
+  uniqueIndex("uk_action_attempt_matter_number").on(table.tenantId, table.matterId, table.actionType, table.attemptNo).where(sql`${table.subjectKind} = 'ENGINEERING_MATTER'`),
+  uniqueIndex("uk_action_attempt_active_matter_task").on(table.tenantId, table.matterId, table.actionType).where(sql`${table.subjectKind} = 'ENGINEERING_MATTER' AND ${table.status} IN ('QUEUED', 'RUNNING', 'RETRY_SCHEDULED', 'COMMITTING')`),
+  foreignKey({
+    columns: [table.tenantId, table.matterId, table.matterRevisionId],
+    foreignColumns: [engineeringMatterRevision.tenantId, engineeringMatterRevision.matterId, engineeringMatterRevision.matterRevisionId],
+    name: "fk_action_attempt_matter_basis",
+  }),
   uniqueIndex("uk_action_attempt_primary").on(table.workItemId, table.actionType, table.attemptNo),
   index("idx_action_attempt_status").on(table.status, table.updatedAt),
   index("idx_action_attempt_work_item").on(table.workItemId, table.attemptNo),

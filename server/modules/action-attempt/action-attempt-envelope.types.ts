@@ -85,6 +85,33 @@ export interface OpenClawDynamicTaskEnvelope extends OpenClawTaskEnvelope {
   modelInput: OpenClawDynamicTaskModelInput;
 }
 
+/** New Matter requests never include a member WorkItem execution identity. */
+export interface EngineeringMatterAttemptSubject {
+  kind: 'ENGINEERING_MATTER';
+  matterId: string;
+  matterRevisionId: string;
+}
+
+export type EngineeringMatterAttemptTrigger =
+  | { kind: 'SOURCE_CHANGE'; inputIds: string[] }
+  | { kind: 'COMPOSITION_CHANGE'; previousMatterRevisionId: string | null }
+  | { kind: 'REVISIT'; workRef: string; conditionIds: string[] }
+  | { kind: 'USER_REQUEST'; requestId: string; instruction: string };
+
+export interface OpenClawMatterTaskEnvelope extends Omit<
+  OpenClawTaskEnvelope,
+  'schemaVersion' | 'taskType' | 'workItemId' | 'documentVersionId'
+> {
+  schemaVersion: 'wiselink.3_1.openclaw_task_envelope.v2';
+  taskType: 'OPENCLAW_MATTER_ASSESSMENT';
+  subject: EngineeringMatterAttemptSubject;
+  trigger: EngineeringMatterAttemptTrigger;
+}
+
+export type AnyOpenClawTaskEnvelope =
+  | OpenClawTaskEnvelope
+  | OpenClawMatterTaskEnvelope;
+
 export type OpenClawResultBusinessOutcome =
   | 'CANDIDATE_READY'
   | 'UNKNOWN'
@@ -125,6 +152,19 @@ export interface OpenClawResultEnvelope {
   errorCode: string | null;
   errorDetail: string | null;
 }
+
+export interface OpenClawMatterResultEnvelope extends Omit<
+  OpenClawResultEnvelope,
+  'schemaVersion' | 'taskType' | 'workItemId'
+> {
+  schemaVersion: 'wiselink.3_1.openclaw_result_envelope.v2';
+  taskType: 'OPENCLAW_MATTER_ASSESSMENT';
+  subject: EngineeringMatterAttemptSubject;
+}
+
+export type AnyOpenClawResultEnvelope =
+  | OpenClawResultEnvelope
+  | OpenClawMatterResultEnvelope;
 
 interface OpenClawClaimBase {
   attemptRef: string;

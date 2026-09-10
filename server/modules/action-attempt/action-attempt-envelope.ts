@@ -4,6 +4,10 @@ import { parseExecutionModel } from '../model-settings/canonical-execution-model
 import type {
   ActionEnvelopeArtifactRef,
   ActionEnvelopeMissingInput,
+  AnyOpenClawTaskEnvelope,
+  AnyOpenClawResultEnvelope,
+  OpenClawMatterTaskEnvelope,
+  OpenClawMatterResultEnvelope,
   OpenClawResultEnvelope,
   OpenClawTaskEnvelope,
 } from './action-attempt-envelope.types';
@@ -37,6 +41,18 @@ export function sealResultEnvelope(
   return { ...envelope, contentHash: canonicalSha256(envelope) };
 }
 
+export function sealMatterTaskEnvelope(
+  envelope: Omit<OpenClawMatterTaskEnvelope, 'inputHash'>,
+): OpenClawMatterTaskEnvelope {
+  return { ...envelope, inputHash: canonicalSha256(envelope) };
+}
+
+export function sealMatterResultEnvelope(
+  envelope: Omit<OpenClawMatterResultEnvelope, 'contentHash'>,
+): OpenClawMatterResultEnvelope {
+  return { ...envelope, contentHash: canonicalSha256(envelope) };
+}
+
 export function parseTaskEnvelope(value: string): OpenClawTaskEnvelope {
   const record = parseRecord(value, 'TASK_ENVELOPE_JSON_INVALID');
   assertExactKeys(
@@ -67,10 +83,62 @@ export function parseTaskEnvelope(value: string): OpenClawTaskEnvelope {
   if (envelope.schemaVersion !== 'wiselink.3_1.openclaw_task_envelope.v1') {
     fail('TASK_ENVELOPE_SCHEMA_UNSUPPORTED');
   }
+  assertTaskFields(envelope);
+  return envelope;
+}
+
+export function parseMatterTaskEnvelope(
+  value: string,
+): OpenClawMatterTaskEnvelope {
+  const record = parseRecord(value, 'TASK_ENVELOPE_JSON_INVALID');
+  assertExactKeys(
+    record,
+    [
+      'schemaVersion',
+      'actionAttemptId',
+      'operationRef',
+      'taskType',
+      'priority',
+      'tenantId',
+      'subject',
+      'trigger',
+      'inputRevision',
+      'baseRevision',
+      'sourceRefs',
+      'allowedConnectors',
+      'hostResolvedMissingInputs',
+      'modelInput',
+      'deadline',
+      'idempotencyKey',
+      'inputHash',
+      ...('executionModel' in record ? ['executionModel'] : []),
+    ],
+    'TASK_ENVELOPE_SCHEMA_INVALID',
+  );
+  if (record.schemaVersion !== 'wiselink.3_1.openclaw_task_envelope.v2')
+    fail('TASK_ENVELOPE_SCHEMA_UNSUPPORTED');
+  const envelope = record as unknown as OpenClawMatterTaskEnvelope;
+  assertTaskFields(envelope);
+  return envelope;
+}
+
+function assertTaskFields(envelope: AnyOpenClawTaskEnvelope): void {
   requiredText(envelope.actionAttemptId, 'TASK_ENVELOPE_ATTEMPT_REQUIRED');
   requiredText(envelope.operationRef, 'TASK_ENVELOPE_OPERATION_REF_REQUIRED');
-  if (!TASK_TYPES.has(envelope.taskType))
-    fail('TASK_ENVELOPE_TASK_TYPE_INVALID');
+  if (envelope.schemaVersion === 'wiselink.3_1.openclaw_task_envelope.v1') {
+    if (!TASK_TYPES.has(envelope.taskType))
+      fail('TASK_ENVELOPE_TASK_TYPE_INVALID');
+    requiredText(envelope.workItemId, 'TASK_ENVELOPE_WORK_ITEM_REQUIRED');
+    requiredText(
+      envelope.documentVersionId,
+      'TASK_ENVELOPE_DOCUMENT_VERSION_REQUIRED',
+    );
+  } else {
+    if (envelope.taskType !== 'OPENCLAW_MATTER_ASSESSMENT')
+      fail('TASK_ENVELOPE_TASK_TYPE_INVALID');
+    assertMatterSubject(envelope.subject);
+    assertMatterTrigger(envelope.trigger);
+  }
   if (
     !Number.isSafeInteger(envelope.priority) ||
     envelope.priority < 0 ||
@@ -79,7 +147,6 @@ export function parseTaskEnvelope(value: string): OpenClawTaskEnvelope {
     fail('TASK_ENVELOPE_PRIORITY_INVALID');
   }
   requiredText(envelope.tenantId, 'TASK_ENVELOPE_TENANT_REQUIRED');
-  requiredText(envelope.workItemId, 'TASK_ENVELOPE_WORK_ITEM_REQUIRED');
   requiredRevision(
     envelope.inputRevision,
     'TASK_ENVELOPE_INPUT_REVISION_INVALID',
@@ -87,10 +154,6 @@ export function parseTaskEnvelope(value: string): OpenClawTaskEnvelope {
   requiredRevision(
     envelope.baseRevision,
     'TASK_ENVELOPE_BASE_REVISION_INVALID',
-  );
-  requiredText(
-    envelope.documentVersionId,
-    'TASK_ENVELOPE_DOCUMENT_VERSION_REQUIRED',
   );
   requiredArray(
     envelope.sourceRefs,
@@ -124,7 +187,6 @@ export function parseTaskEnvelope(value: string): OpenClawTaskEnvelope {
   ) {
     fail('TASK_ENVELOPE_INPUT_HASH_MISMATCH');
   }
-  return envelope;
 }
 
 export function parseResultEnvelope(input: {
@@ -167,19 +229,81 @@ export function parseResultEnvelope(input: {
   if (result.schemaVersion !== 'wiselink.3_1.openclaw_result_envelope.v1') {
     fail('RESULT_ENVELOPE_SCHEMA_UNSUPPORTED');
   }
-  if (result.actionAttemptId !== input.task.actionAttemptId) {
+  assertResultFields(result, input.task);
+  return result;
+}
+
+export function parseMatterResultEnvelope(input: {
+  value: unknown;
+  task: OpenClawMatterTaskEnvelope;
+}): OpenClawMatterResultEnvelope {
+  if (!isRecord(input.value)) fail('RESULT_ENVELOPE_INVALID');
+  const value = input.value;
+  assertExactKeys(
+    value,
+    [
+      'schemaVersion',
+      'actionAttemptId',
+      'operationRef',
+      'taskType',
+      'subject',
+      'baseRevision',
+      'status',
+      'businessOutcome',
+      'candidateStatus',
+      'modelOutput',
+      'outputArtifactRefs',
+      'sourceRefs',
+      'factsConsidered',
+      'missingInputs',
+      'conflicts',
+      'warnings',
+      'modelVersion',
+      'promptVersion',
+      'skillVersion',
+      'toolVersions',
+      'runMetrics',
+      'contentHash',
+      'errorCode',
+      'errorDetail',
+    ],
+    'RESULT_ENVELOPE_SCHEMA_INVALID',
+  );
+  if (value.schemaVersion !== 'wiselink.3_1.openclaw_result_envelope.v2')
+    fail('RESULT_ENVELOPE_SCHEMA_UNSUPPORTED');
+  const result = value as unknown as OpenClawMatterResultEnvelope;
+  assertResultFields(result, input.task);
+  return result;
+}
+
+function assertResultFields(
+  result: AnyOpenClawResultEnvelope,
+  task: AnyOpenClawTaskEnvelope,
+): void {
+  if (result.actionAttemptId !== task.actionAttemptId) {
     fail('RESULT_ENVELOPE_ATTEMPT_MISMATCH');
   }
-  if (result.operationRef !== input.task.operationRef) {
+  if (result.operationRef !== task.operationRef) {
     fail('RESULT_ENVELOPE_OPERATION_REF_MISMATCH');
   }
-  if (result.taskType !== input.task.taskType) {
+  if (result.taskType !== task.taskType) {
     fail('RESULT_ENVELOPE_TASK_TYPE_MISMATCH');
   }
-  if (result.workItemId !== input.task.workItemId) {
-    fail('RESULT_ENVELOPE_WORK_ITEM_MISMATCH');
+  if (result.schemaVersion === 'wiselink.3_1.openclaw_result_envelope.v1') {
+    if (
+      task.schemaVersion !== 'wiselink.3_1.openclaw_task_envelope.v1' ||
+      result.workItemId !== task.workItemId
+    )
+      fail('RESULT_ENVELOPE_WORK_ITEM_MISMATCH');
+  } else {
+    assertMatterSubject(result.subject);
+    if (
+      task.schemaVersion !== 'wiselink.3_1.openclaw_task_envelope.v2' ||
+      canonicalJson(result.subject) !== canonicalJson(task.subject)
+    )
+      fail('RESULT_ENVELOPE_SUBJECT_MISMATCH');
   }
-  if (result.baseRevision !== input.task.baseRevision) {
+  if (result.baseRevision !== task.baseRevision) {
     fail('RESULT_ENVELOPE_BASE_REVISION_MISMATCH');
   }
   if (!['SUCCEEDED', 'WAITING_INPUT', 'FAILED'].includes(result.status)) {
@@ -229,8 +353,8 @@ export function parseResultEnvelope(input: {
     result.errorDetail,
     'RESULT_ENVELOPE_ERROR_DETAIL_INVALID',
   );
-  assertSourceRefsAllowed(result.sourceRefs, input.task);
-  assertBusinessOutcome(result, input.task);
+  assertSourceRefsAllowed(result.sourceRefs, task);
+  assertBusinessOutcome(result, task);
   const { contentHash: _contentHash, ...unsealed } = result;
   if (
     !SHA256_PATTERN.test(result.contentHash) ||
@@ -238,7 +362,6 @@ export function parseResultEnvelope(input: {
   ) {
     fail('RESULT_ENVELOPE_CONTENT_HASH_MISMATCH');
   }
-  return result;
 }
 
 export function parseStoredResultEnvelope(input: {
@@ -249,9 +372,55 @@ export function parseStoredResultEnvelope(input: {
   return parseResultEnvelope({ value: parsed, task: input.task });
 }
 
+function assertMatterSubject(value: unknown): void {
+  if (!isRecord(value)) fail('ACTION_ENVELOPE_SUBJECT_INVALID');
+  assertExactKeys(
+    value,
+    ['kind', 'matterId', 'matterRevisionId'],
+    'ACTION_ENVELOPE_SUBJECT_INVALID',
+  );
+  if (value.kind !== 'ENGINEERING_MATTER')
+    fail('ACTION_ENVELOPE_SUBJECT_INVALID');
+  requiredText(value.matterId, 'ACTION_ENVELOPE_SUBJECT_INVALID');
+  requiredText(value.matterRevisionId, 'ACTION_ENVELOPE_SUBJECT_INVALID');
+}
+
+function assertMatterTrigger(value: unknown): void {
+  const code = 'TASK_ENVELOPE_TRIGGER_INVALID';
+  if (!isRecord(value)) fail(code);
+  switch (value.kind) {
+    case 'SOURCE_CHANGE':
+      assertExactKeys(value, ['kind', 'inputIds'], code);
+      assertNonemptyUniqueTexts(value.inputIds, code);
+      return;
+    case 'COMPOSITION_CHANGE':
+      assertExactKeys(value, ['kind', 'previousMatterRevisionId'], code);
+      assertNullableText(value.previousMatterRevisionId, code);
+      return;
+    case 'REVISIT':
+      assertExactKeys(value, ['kind', 'workRef', 'conditionIds'], code);
+      requiredText(value.workRef, code);
+      assertNonemptyUniqueTexts(value.conditionIds, code);
+      return;
+    case 'USER_REQUEST':
+      assertExactKeys(value, ['kind', 'requestId', 'instruction'], code);
+      requiredText(value.requestId, code);
+      requiredText(value.instruction, code);
+      return;
+    default:
+      fail(code);
+  }
+}
+
+function assertNonemptyUniqueTexts(value: unknown, code: string): void {
+  assertStringArray(value, code);
+  const texts = value as string[];
+  if (texts.length === 0 || new Set(texts).size !== texts.length) fail(code);
+}
+
 function assertBusinessOutcome(
-  result: OpenClawResultEnvelope,
-  task: OpenClawTaskEnvelope,
+  result: AnyOpenClawResultEnvelope,
+  task: AnyOpenClawTaskEnvelope,
 ): void {
   if (result.status === 'SUCCEEDED') {
     if (
@@ -301,7 +470,7 @@ function assertBusinessOutcome(
 
 function assertSourceRefsAllowed(
   resultRefs: ActionEnvelopeArtifactRef[],
-  task: OpenClawTaskEnvelope,
+  task: AnyOpenClawTaskEnvelope,
 ): void {
   const allowed = new Map(
     task.sourceRefs.map((item) => [item.ref, item.sha256]),

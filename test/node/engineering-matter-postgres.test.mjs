@@ -287,12 +287,89 @@ test(
         changed,
         'late older intake does not roll back the selected material version',
       );
+      // A real Matter attempt has no WorkItem/document identity and remains
+      // bound to the exact composition even when later inputs become pending.
+      await sql`INSERT INTO action_attempt (
+        attempt_id, tenant_id, actor_user_id, subject_kind, matter_id,
+        matter_revision_id, action_type, status, input_revision, base_revision
+      ) VALUES ('ATT-MATTER-SUBJECT', 'tenant-A', 'actor-A', 'ENGINEERING_MATTER',
+        ${scope.matterId}, ${changed.matterRevisionId}, 'OPENCLAW_MATTER_ASSESSMENT', 'QUEUED', 4, 0)`;
+      const readAttempt = (connection) =>
+        connection.database.execute(drizzleSql`
+        SELECT attempt_id, work_item_id FROM action_attempt
+        WHERE attempt_id = 'ATT-MATTER-SUBJECT'`);
+      assert.equal((await readAttempt(owner)).length, 1);
+      assert.equal((await readAttempt(owner))[0].work_item_id, null);
+      assert.equal((await readAttempt(outsider)).length, 0);
+      const readHostedAttempt = (connection) =>
+        connection.runtime(() =>
+          connection.working.withActorTransaction(
+            connection.actor.userId,
+            ({ database }) =>
+              database.execute(
+                drizzleSql`SELECT attempt_id FROM action_attempt WHERE attempt_id = 'ATT-MATTER-SUBJECT'`,
+              ),
+          ),
+        );
+      assert.equal((await readHostedAttempt(owner)).length, 1);
+      assert.equal((await readHostedAttempt(outsider)).length, 0);
+      await assert.rejects(
+        sql`UPDATE action_attempt SET subject_kind = 'WORK_ITEM', matter_id = NULL,
+          matter_revision_id = NULL, work_item_id = ${FTD_WORK_ITEM_ID}, action_type = 'OPENCLAW_INTERACTIVE_REVIEW'
+          WHERE attempt_id = 'ATT-MATTER-SUBJECT'`,
+        /ACTION_ATTEMPT_SUBJECT_IMMUTABLE/u,
+      );
+
+      await assert.rejects(
+        owner.database
+          .execute(drizzleSql`UPDATE action_attempt SET actor_user_id = 'actor-B'
+          WHERE attempt_id = 'ATT-MATTER-SUBJECT'`),
+        (error) => error.cause?.message === 'ACTION_ATTEMPT_SUBJECT_IMMUTABLE',
+      );
+      await assert.rejects(
+        sql`UPDATE action_attempt SET work_item_id = ${FTD_WORK_ITEM_ID} WHERE attempt_id = 'ATT-MATTER-SUBJECT'`,
+        /ACTION_ATTEMPT_SUBJECT_IMMUTABLE/u,
+      );
+      await assert.rejects(
+        sql`UPDATE action_attempt SET tenant_id = 'tenant-B' WHERE attempt_id = 'ATT-MATTER-SUBJECT'`,
+        /ACTION_ATTEMPT_SUBJECT_IMMUTABLE/u,
+      );
+      for (const [patch, constraint] of [
+        [{ tenant_id: 'tenant-B' }, 'fk_action_attempt_matter_basis'],
+        [{ work_item_id: FTD_WORK_ITEM_ID }, 'ck_action_attempt_subject'],
+        [
+          { document_version_id: fixtures.ftd.documentVersionId },
+          'ck_action_attempt_subject',
+        ],
+        [{ matter_revision_id: null }, 'ck_action_attempt_subject'],
+      ]) {
+        await assert.rejects(
+          sql`INSERT INTO action_attempt
+          SELECT (jsonb_populate_record(NULL::action_attempt, to_jsonb(a) ||
+            ${sql.json({ ...patch, attempt_id: 'ATT-MATTER-INVALID', attempt_no: 2, status: 'SUCCEEDED' })}::jsonb)).*
+          FROM action_attempt a WHERE attempt_id = 'ATT-MATTER-SUBJECT'`,
+          (error) => error.constraint_name === constraint,
+        );
+      }
+      await assert.rejects(
+        sql`INSERT INTO action_attempt
+          SELECT (jsonb_populate_record(NULL::action_attempt, to_jsonb(a) || jsonb_build_object(
+            'attempt_id', 'ATT-MATTER-CONCURRENT', 'attempt_no', 2))).*
+          FROM action_attempt a WHERE attempt_id = 'ATT-MATTER-SUBJECT'`,
+        /uk_action_attempt_active_matter_task/u,
+      );
       await sql`UPDATE work_item SET requested_by_user_id = 'actor-B' WHERE work_item_id = ${SB_WORK_ITEM_ID}`;
       await assert.rejects(
         owner.matters.readMaterials(scope),
         /not available/u,
         'a revoked fulfilled source hides the whole current composition',
       );
+      assert.equal(
+        (await readAttempt(owner)).length,
+        0,
+        'revoking a material also hides its attempt',
+      );
+      assert.equal((await readHostedAttempt(owner)).length, 0);
       assert.equal(
         (await sql`SELECT count(*) AS n FROM work_item`)[0].n,
         before,
@@ -744,7 +821,8 @@ async function resetDatabase(sql) {
       attempt_id varchar(96) PRIMARY KEY,
       tenant_id varchar(128), actor_user_id varchar(255), work_item_id varchar(96),
       action_type varchar(64), status varchar(32), request_origin varchar(32),
-      input_revision integer, idempotency_key varchar(255)
+      input_revision integer, idempotency_key varchar(255),
+      document_version_id varchar(96), base_revision integer, attempt_no integer NOT NULL DEFAULT 1
     )
   `);
   await sql.unsafe(`
@@ -775,6 +853,19 @@ async function resetDatabase(sql) {
   await applyMigration(
     sql,
     'migrations/0024_engineering_matter_hosted_runtime_actor.sql',
+  );
+  await applyMigration(
+    sql,
+    'migrations/0034_action_attempt_matter_subject.sql',
+  );
+  await sql.unsafe('ALTER TABLE action_attempt ENABLE ROW LEVEL SECURITY');
+  // Emulate existing platform permissive policies: the new restrictive policy
+  // must hold even when a legacy policy allows all rows.
+  await sql.unsafe(
+    'CREATE POLICY legacy_attempt_access ON action_attempt TO authenticated, service_role USING (true)',
+  );
+  await sql.unsafe(
+    'GRANT SELECT, INSERT, UPDATE ON action_attempt TO authenticated, service_role',
   );
   await sql.unsafe('ALTER TABLE work_item ENABLE ROW LEVEL SECURITY');
   await sql.unsafe(`
