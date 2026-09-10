@@ -327,3 +327,30 @@ test('one tick drains ready stages with fresh Host revisions and serial commits'
   assert.equal(result.workItemRevision, 5);
   assert.equal(result.nextOperation, null);
 });
+
+test('native jobs require one subject and never hide Matter behind a WorkItem dependency', async () => {
+  let calls = 0;
+  const dependencies = { callTool: async () => { calls += 1; } };
+  for (const input of [{}, { workItemId: 'WI-one', matterId: 'MAT-one' }]) {
+    await assert.rejects(consumeHostedWorkItem(input, dependencies), /CONSUMER_SINGLE_SUBJECT_REQUIRED/);
+  }
+  assert.equal(calls, 0);
+});
+
+test('independent native job invocations progress while another subject is waiting', async () => {
+  let finishWorkItemRead;
+  const workItemRead = new Promise(resolve => { finishWorkItemRead = resolve; });
+  const workItem = consumeHostedWorkItem({ workItemId: 'WI-new' }, {
+    callTool: async name => { assert.equal(name, 'get_parse_status'); return workItemRead; },
+  });
+  const matter = await consumeHostedWorkItem({ matterId: 'MAT-other' }, {
+    callTool: async (name, input) => {
+      assert.equal(name, 'next_matter_assessment');
+      assert.deepEqual(input, { matterId: 'MAT-other' });
+      return { matterId: input.matterId, next: null };
+    },
+  });
+  assert.equal(matter.status, 'IDLE');
+  finishWorkItemRead(status({ status: 'NOT_READY', nextOperation: null }));
+  assert.equal((await workItem).status, 'NOT_READY');
+});

@@ -1,5 +1,11 @@
 # 官方托管 R10 c39 发布与 UAT runbook
 
+## 当前并发约定（2026-09-11 用户修订）
+
+优先使用 OpenClaw 原生 cron、session lane 和并发限额。一个原生 job 绑定一个 Host 明确授权的 subject，独立 subject 可并发；同 subject 的工作指针和提交保留 Host 租约、事务及 CAS。Matter 不等待其他文档的初评完成。现有精确授权范围没有自动扩大。
+
+旧章节的“唯一消费者/唯一 cron”描述历史部署，不再是全局串行限制。共用一份 Skill 的 job 应在获授权维护窗口全部空闲后安装，并按各自原状态恢复；有在途工作不得中途换 Skill、模型或输入。代码与配置准备、安装读回、真实并发和业务验收分别记录。详细接口及限额见 [消费者说明](hosted-review-consumer.md)。
+
 c39 为真实 DLI c38 候选的未登记依据 ID 失败增加同一原生会话内的有界纠正。Turn8 已正确返回三个字符串字段，
 但 6 个不同依据 ID 漏掉 `document:1`（共 8 个 premise 引用）；目录和实际已读来源映射一致，旧候选不修补、不重放。
 驱动在提交前执行现有完整 c4/来源/增量校验，将安全错误码及本轮已读或已提供的 evidenceRef 反馈给模型，最多纠正
@@ -132,7 +138,7 @@ c24 可选控制元数据兼容旧任务，但旧 Skill 不接受新字段，因
    优先读回非空、可识别的实际 `modelVersion`；响应未提供时，绑定任务记录 `configured-route:<modelRef>`，旧任务才使用唯一 configured endpoint。它们只证明路由，不解释为未暴露的下游具体模型。重复 agent、
    不可读 primary、fallbacks 非数组或非空均在调用模型前停止；
 4. 同名 Skill 只有一个，安装版本精确
-   `wiselink-research-and-synthesize@r09.c75`；
+   `wiselink-research-and-synthesize@r09.c76`；
 5. Host MCP package/version 为
    `wiselink-openclaw-engineering-assessment@1.2.0`，exact 20 tools 可见；
 6. C3 successor 已进入 current Hosted release；只凭 Git commit 不等于 deployed readback；

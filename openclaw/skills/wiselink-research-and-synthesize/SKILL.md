@@ -12,7 +12,7 @@ description: Orchestrate the single official hosted WiseLink engineering profile
 - hosted app：`app_17c3zn24kv2`
 - logical profile：`wiselink-engineering`
 - model policy：`official-hosted-profile-config`（任务可绑定已登记的内置或用户授权自定义模型；仍经唯一官方 Hosted profile/Gateway）
-- Skill：`wiselink-research-and-synthesize@r09.c75`
+- Skill：`wiselink-research-and-synthesize@r09.c76`
 - Skill compatibility：`wiselink-research-and-synthesize@r09`（历史任务最低接受 `r09.c10`，翻译 v2 必须为 `r09.c44` 或更新兼容包）
 - Host MCP：`wiselink-openclaw-engineering-assessment@1.2.0`（保留既有工具，新增语义翻译工作与 JobAid 来源/工作工具）
 - Host 集成提交：以本次发布包清单记录的实际提交为准
@@ -199,7 +199,7 @@ Host 返回 `wiselink.3_1.translation_task.v2` 时，运行 [语义块翻译工�
   原时间预算、模型选择、保真校验和候选提交边界继续生效。
 - c32 修复实跑 DLI 在 20 分钟到期时仅通过 275/437 单元的问题：全文生成和纠正共享 45 分钟总预算，
   单次响应最多 15 分钟。确定性适配器在每轮请求前以原 attempt/lease 调用 Host heartbeat，续租失败即停止后续
-  模型调用和提交；模型不接触租约。既有 30 分钟租约及 60 分钟 attempt deadline 不变。原生唯一消费者须配置
+  模型调用和提交；模型不接触租约。既有 30 分钟租约及 60 分钟 attempt deadline 不变。每个原生消费任务须配置
   60 分钟 timeout；运行超过 15 分钟后将后续初始阶段留给下一次自然 tick。总预算或单响应超时保留具体错误码，
   不重放已失败 attempt，不改变全文输入、模型、输出窗口、纠正次数或最终保真校验。
 - c33 将 Initial 与 Review 的非流式 Gateway 请求改为 Node 核心 HTTP/HTTPS 单次连接，避免 `fetch` 的
@@ -558,7 +558,7 @@ Interactive Review 的复杂 ResultEnvelope 必须由 `sealResultEnvelope` 生�
 当前 validator 强制：
 
 - `modelVersion` 优先取响应中可读实际模型；绑定任务未回报实际模型时使用 `configured-route:<modelRef>`，旧无绑定任务使用无 fallback 的 configured endpoint。后两者只证明路由，不代表已暴露下游具体模型，也不做具体版本等值判断
-- `skillVersion=wiselink-research-and-synthesize@r09.c75`
+- `skillVersion=wiselink-research-and-synthesize@r09.c76`
 - `toolVersions.wiselink-openclaw-engineering-assessment=1.2.0`
 - `promptVersion` 非空并来自当前运行
 - task/result exact binding、SourceRef allowlist 和 canonical hash 一致
