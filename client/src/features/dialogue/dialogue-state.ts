@@ -72,6 +72,8 @@ export function dialogueResponseLabel(
   if (message.response.status === 'FAILED') return 'Aily 回答失败';
   if (message.response.status === 'UNKNOWN')
     return '已保存收到的内容，Aily 完成情况未确认；不会自动重新生成，刷新仅读取 Host 已存状态';
+  if (['STARTING', 'RUNNING'].includes(message.response.status))
+    return 'Aily 正在回答';
   if (message.response.incomplete) return 'Aily 回答不完整';
   return message.response.status === 'COMPLETED'
     ? 'Aily 解释 · 不等于工作判断或正式采用'
