@@ -50,6 +50,7 @@ export interface CanonicalVerifiedApplicabilityContextScope extends CanonicalVer
 }
 
 export interface CanonicalServiceScopeAuthorizationPort {
+  authorizeOpenClawMatterRequest?(input: { matterId: string }): Promise<Omit<CanonicalVerifiedMatterAttemptScope, 'attemptRef'>>;
   /** Older adapters have no Matter authority; consumers must fail closed. */
   authorizeOpenClawMatterAttempt?(input: CanonicalMatterAttemptAuthorization): Promise<CanonicalVerifiedMatterAttemptScope>;
   authorizeWorkItemRead(input: {

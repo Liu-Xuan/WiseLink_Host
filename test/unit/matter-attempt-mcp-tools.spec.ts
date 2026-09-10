@@ -1,8 +1,8 @@
 import { registerMatterAttemptMcpTools } from '../../server/modules/canonical-host/matter-attempt-mcp-tools';
 
-function fixture(allowed = true) {
+function fixture(allowed = true, tool = 'matter_action_attempt') {
   const registerTool = jest.fn();
-  const attempts = { claim: jest.fn().mockResolvedValue({ status: 'RUNNING' }),
+  const attempts = { reserveJobAid: jest.fn().mockResolvedValue({ task: { operationRef: 'AQ-new' }, row: { status: 'QUEUED' }, created: true }), claim: jest.fn().mockResolvedValue({ status: 'RUNNING' }),
     read: jest.fn().mockResolvedValue({ status: 'RUNNING', errorCode: null, deadlineAt: null,
       leaseToken: 'private-token', taskEnvelopeJson: 'private-task' }),
     heartbeat: jest.fn(), cancel: jest.fn().mockResolvedValue({ status: 'CANCELLED' }),
@@ -10,15 +10,28 @@ function fixture(allowed = true) {
   const scope = { appId: 'app_17bzc551rsg', actorUserId: 'host-actor', tenantId: 'host-tenant',
     principalId: 'service:executor', matterId: 'MAT-one', attemptRef: 'AQ-one' };
   const authorizeOpenClawMatterAttempt = jest.fn().mockResolvedValue(scope);
+  const authorizeOpenClawMatterRequest = jest.fn().mockResolvedValue(scope);
   registerMatterAttemptMcpTools({ registerTool } as never, attempts as never,
-    allowed ? { authorizeOpenClawMatterAttempt } as never : {} as never);
-  const [name, definition, handler] = registerTool.mock.calls[0];
+    allowed ? { authorizeOpenClawMatterAttempt, authorizeOpenClawMatterRequest } as never : {} as never);
+  const [name, definition, handler] = registerTool.mock.calls.find(([name]) => name === tool)!;
   return { attempts, scope, authorizeOpenClawMatterAttempt, name,
     call: (input: unknown) => handler(definition.inputSchema.parse(input)) };
 }
 const request = { operation: 'CLAIM', matterId: 'MAT-one', attemptRef: 'AQ-one' };
 
 describe('Matter MCP existing attempt lifecycle', () => {
+  it('creates a Host-built JobAid request with exact CAS and no caller model context', async () => {
+    const f = fixture(true, 'begin_matter_assessment');
+    const input = { matterId: 'MAT-one', expectedMatterRevisionId: 'MR-one', expectedMatterRevision: 2,
+      expectedWorkingRevision: 3, requestId: 'request-one', instruction: '复核新增资料' };
+    await f.call(input);
+    expect(f.attempts.reserveJobAid).toHaveBeenCalledWith({ tenantId: 'host-tenant', actorUserId: 'host-actor',
+      matterId: 'MAT-one', expectedMatterRevisionId: 'MR-one', expectedMatterRevision: 2,
+      expectedWorkingRevision: 3, idempotencyKey: 'matter:MAT-one:request-one',
+      trigger: { kind: 'USER_REQUEST', requestId: 'request-one', instruction: '复核新增资料' } });
+    expect(() => f.call({ ...input, modelInput: { forged: true } })).toThrow();
+  });
+
   it('passes only Host-authorized identity to the real Matter service', async () => {
     const f = fixture();
     expect(f.name).toBe('matter_action_attempt');

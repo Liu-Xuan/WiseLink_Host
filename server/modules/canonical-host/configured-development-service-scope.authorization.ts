@@ -77,13 +77,19 @@ export class ConfiguredDevelopmentCanonicalServiceScopeAuthorization implements 
   }
 
   async authorizeOpenClawMatterAttempt(input: CanonicalMatterAttemptAuthorization): Promise<CanonicalVerifiedMatterAttemptScope> {
+    const scope = await this.authorizeOpenClawMatterRequest(input);
+    if (!input.attemptRef.trim()) throw Object.assign(new Error('ACTION_ATTEMPT_NOT_FOUND'), { code: 'ACTION_ATTEMPT_NOT_FOUND', statusCode: 404 });
+    return { ...scope, attemptRef: input.attemptRef };
+  }
+
+  async authorizeOpenClawMatterRequest(input: { matterId: string }): Promise<Omit<CanonicalVerifiedMatterAttemptScope, 'attemptRef'>> {
     const config = requiredMatterConfig();
-    if (input.matterId !== config.matterId || !input.attemptRef.trim()) {
+    if (input.matterId !== config.matterId) {
       throw Object.assign(new Error('ACTION_ATTEMPT_NOT_FOUND'), { code: 'ACTION_ATTEMPT_NOT_FOUND', statusCode: 404 });
     }
     return { principalId: config.principalId, appId: CANONICAL_APP_ID,
       tenantId: config.tenantId, actorUserId: config.actorUserId,
-      matterId: config.matterId, attemptRef: input.attemptRef };
+      matterId: config.matterId };
   }
 
   async authorizeOpenClawWorkItem(input: {

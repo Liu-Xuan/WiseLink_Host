@@ -10,6 +10,28 @@ const fence = { leaseToken: z.string().uuid(), leaseGeneration: z.number().int()
 /** Same durable attempt service and queue; caller cannot supply tenant, actor or principal. */
 export function registerMatterAttemptMcpTools(server: McpServer, attempts: MatterActionAttemptService,
   authorization: CanonicalServiceScopeAuthorizationPort): void {
+  server.registerTool('begin_matter_assessment', {
+    title: '申请事项持续评估',
+    description: '按精确事项和工作版本登记一个评估请求；Host 组装来源与前次完整工作，同一请求可重复读回。',
+    inputSchema: z.object({ matterId: target.matterId,
+      expectedMatterRevisionId: z.string().trim().min(1).max(96),
+      expectedMatterRevision: z.number().int().positive(),
+      expectedWorkingRevision: z.number().int().nonnegative(),
+      requestId: z.string().trim().min(1).max(96), instruction: z.string().trim().min(1).max(4000),
+    }).strict(),
+    annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: false },
+  }, async (input) => {
+    if (!authorization.authorizeOpenClawMatterRequest) throw canonicalServiceScopeUnavailable();
+    const scope = await authorization.authorizeOpenClawMatterRequest({ matterId: input.matterId });
+    if (scope.appId !== 'app_17bzc551rsg' || scope.matterId !== input.matterId ||
+      !scope.actorUserId || !scope.tenantId || !scope.principalId) throw canonicalServiceScopeUnavailable();
+    const result = await attempts.reserveJobAid({ tenantId: scope.tenantId, actorUserId: scope.actorUserId,
+      matterId: scope.matterId, expectedMatterRevisionId: input.expectedMatterRevisionId,
+      expectedMatterRevision: input.expectedMatterRevision, expectedWorkingRevision: input.expectedWorkingRevision,
+      idempotencyKey: `matter:${scope.matterId}:${input.requestId}`,
+      trigger: { kind: 'USER_REQUEST', requestId: input.requestId, instruction: input.instruction } });
+    return textResult({ attemptRef: result.task.operationRef, status: result.row.status, created: result.created });
+  });
   server.registerTool('matter_action_attempt', {
     title: '读取或继续事项评估任务',
     description: '对精确授权的事项任务执行领取、状态读取、续期、取消或按保存请求读取工作；不会新建任务或形成正式采用。',

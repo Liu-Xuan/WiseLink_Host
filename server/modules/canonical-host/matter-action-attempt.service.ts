@@ -1,4 +1,5 @@
 import type { EngineeringMatterWorkingRevisionCommand } from '@shared/matter-working.interface';
+import { buildMatterJobAidTask, MATTER_JOBAID_TASK_SCHEMA } from './matter-jobaid-task';
 import { randomUUID } from 'node:crypto';
 import { Injectable } from '@nestjs/common';
 import { and, desc, eq, inArray } from 'drizzle-orm';
@@ -53,6 +54,8 @@ export interface ReserveMatterAttempt extends MatterAttemptScope {
   sourceRefs: OpenClawMatterTaskEnvelope['sourceRefs'];
 }
 
+export type ReserveMatterJobAidAttempt = Omit<ReserveMatterAttempt, 'modelInput' | 'sourceRefs'>;
+
 /** Subject adapter for the existing durable queue, lease slots and cancellation. */
 @Injectable()
 export class MatterActionAttemptService {
@@ -61,7 +64,18 @@ export class MatterActionAttemptService {
     private readonly models: CanonicalModelSettingsService,
   ) {}
 
-  reserve(input: ReserveMatterAttempt): Promise<{
+  reserve(input: ReserveMatterAttempt) {
+    return this.reserveInternal(input);
+  }
+
+  /** Host builds the entire JobAid context; callers supply only the request and CAS. */
+  reserveJobAid(input: ReserveMatterJobAidAttempt) {
+    if ('modelInput' in input || 'sourceRefs' in input)
+      throw failure('MATTER_JOBAID_HOST_CONTEXT_REQUIRED', 400);
+    return this.reserveInternal(input);
+  }
+
+  private reserveInternal(input: ReserveMatterAttempt | ReserveMatterJobAidAttempt): Promise<{
     row: MatterActionAttemptRow;
     task: OpenClawMatterTaskEnvelope;
     created: boolean;
@@ -105,8 +119,10 @@ export class MatterActionAttemptService {
           task.inputRevision !== input.expectedMatterRevision ||
           task.baseRevision !== input.expectedWorkingRevision ||
           canonicalJson(task.trigger) !== canonicalJson(input.trigger) ||
-          canonicalJson(task.modelInput) !== canonicalJson(input.modelInput) ||
-          canonicalJson(task.sourceRefs) !== canonicalJson(input.sourceRefs)
+          ('modelInput' in input
+            ? canonicalJson(task.modelInput) !== canonicalJson(input.modelInput) ||
+              canonicalJson(task.sourceRefs) !== canonicalJson(input.sourceRefs)
+            : task.modelInput.schemaVersion !== MATTER_JOBAID_TASK_SCHEMA)
         )
           throw failure('ACTION_ATTEMPT_IDEMPOTENCY_REPLAY_MISMATCH');
         return { row, task, created: false };
@@ -147,6 +163,12 @@ export class MatterActionAttemptService {
         .orderBy(desc(actionAttempt.attemptNo))
         .limit(1);
       const now = new Date();
+      const authorizedInputs = (await executor.authorizeRuntimeInputs(input)).currentInputs;
+      const modelInput = 'modelInput' in input ? input.modelInput : buildMatterJobAidTask({
+        matterId: input.matterId, matterRevisionId: input.expectedMatterRevisionId,
+        actorUserId: input.actorUserId, title: matter.title,
+        inputs: authorizedInputs, trigger: input.trigger, previous: current,
+      });
       const task = parseMatterTaskEnvelope(
         canonicalJson(
           sealMatterTaskEnvelope({
@@ -162,17 +184,16 @@ export class MatterActionAttemptService {
             },
             trigger: structuredClone(input.trigger),
             workingBasis: {
-              inputs: (await executor.authorizeRuntimeInputs(input))
-                .currentInputs,
+              inputs: authorizedInputs,
               priorWorkRef: current?.matterWorkRevisionId ?? null,
             },
             priority: 100,
             inputRevision: input.expectedMatterRevision,
             baseRevision: input.expectedWorkingRevision,
-            sourceRefs: structuredClone(input.sourceRefs),
+            sourceRefs: 'sourceRefs' in input ? structuredClone(input.sourceRefs) : [],
             allowedConnectors: [],
             hostResolvedMissingInputs: [],
-            modelInput: structuredClone(input.modelInput),
+            modelInput: structuredClone(modelInput),
             executionModel: await this.models.captureForNewTask(
               input.tenantId,
               now,

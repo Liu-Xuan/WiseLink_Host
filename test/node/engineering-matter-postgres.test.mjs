@@ -2106,7 +2106,7 @@ async function assertRealMatterAttemptSave(sql, owner, matterId) {
       taskModelSelection(CANONICAL_INITIAL_MODEL_REF, now),
   });
   const reserved = await owner.runtime(() =>
-    attempts.reserve({
+    attempts.reserveJobAid({
       tenantId: 'tenant-A',
       matterId,
       actorUserId: owner.actor.userId,
@@ -2119,10 +2119,14 @@ async function assertRealMatterAttemptSave(sql, owner, matterId) {
         requestId: 'real-matter-save-binding',
         instruction: '测试真实来源保存',
       },
-      modelInput: { fixture: 'real source binding' },
-      sourceRefs: [],
     }),
   );
+  assert.equal(reserved.task.modelInput.schemaVersion, 'wiselink.matter-jobaid-task.v2');
+  assert.equal(reserved.task.modelInput.modelInput.subject.matterId, matterId);
+  assert.equal(reserved.task.modelInput.modelInput.previousWork.workRevisionRef, basis.working.matterWorkRevisionId);
+  assert.deepEqual(reserved.task.modelInput.modelInput.availableDocuments.map(item => item.documentVersionId).sort(),
+    [...new Set(reserved.task.workingBasis.inputs.map(item => item.documentVersionId))].sort());
+  assert.equal('workItemId' in reserved.task.modelInput.modelInput.subject, false);
   source.actionAttemptId = reserved.row.attemptId;
   command.requestId = reserved.row.triggerRequestId;
   const save = (candidate = command, candidateSource = source) =>
