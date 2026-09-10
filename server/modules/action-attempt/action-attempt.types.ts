@@ -34,6 +34,11 @@ export interface ReserveActionAttemptInput {
   deadlineAt?: Date;
   sourceRefs?: OpenClawTaskEnvelope['sourceRefs'];
   allowedConnectors?: string[];
+  /** Host-only binding, compared under the same WorkItem lock as reservation. */
+  initialKnowledgeSession?: {
+    expectedSessionId: string | null;
+    replacement?: { sessionId: string; actorId: string; tenantId: string };
+  };
   hostResolvedMissingInputs?: OpenClawTaskEnvelope['hostResolvedMissingInputs'];
   buildModelInput(
     identity: NewActionAttemptIdentity,

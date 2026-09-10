@@ -203,6 +203,115 @@ test(
           ),
         );
       await seed(sql);
+      await t.test(
+        'knowledge rebinding and reservation share one WorkItem transaction',
+        async () => {
+          const workItemId = 'WI-knowledge-rebind';
+          await sql`INSERT INTO work_item(work_item_id,tenant_id,requested_by_user_id,revision,document_version_id)
+          VALUES (${workItemId},${scope.tenantId},${scope.actorUserId},1,'dv-job')`;
+          const attempts = new ActionAttemptRepository(db);
+          const sessions = [
+            '11111111-1111-4111-8111-111111111111',
+            '22222222-2222-4222-8222-222222222222',
+          ];
+          const row = (key) => ({
+            attemptId: `ATT-rebind-${key}`,
+            operationRef: `AQ-rebind-${key}`,
+            workItemId,
+            tenantId: scope.tenantId,
+            documentVersionId: 'dv-job',
+            actionType: 'OPENCLAW_DYNAMIC_EVALUATION',
+            status: 'QUEUED',
+            baseRevision: 1,
+            idempotencyKey: `openclaw-v2:dynamic:${workItemId}:dv-job:${key}`,
+            taskEnvelopeJson: JSON.stringify({
+              allowedConnectors: ['feishu-aily-user'],
+            }),
+          });
+          const binding = (sessionId, expectedSessionId = null) => ({
+            expectedSessionId,
+            replacement: {
+              sessionId,
+              actorId: scope.actorUserId,
+              tenantId: scope.tenantId,
+            },
+          });
+          const results = await Promise.allSettled(
+            sessions.map((sessionId, index) =>
+              attempts.reserve(row(String(index)), binding(sessionId)),
+            ),
+          );
+          assert.equal(
+            results.filter((result) => result.status === 'fulfilled').length,
+            1,
+          );
+          const winner = results.findIndex(
+            (result) => result.status === 'fulfilled',
+          );
+          const readSession = async () =>
+            (
+              await sql`SELECT initial_aily_session_id AS session FROM work_item WHERE work_item_id=${workItemId}`
+            )[0].session;
+          assert.equal(await readSession(), sessions[winner]);
+          const replay = await attempts.reserve(
+            row(String(winner)),
+            binding(sessions[1 - winner]),
+          );
+          assert.equal(replay.created, false);
+          assert.equal(
+            await readSession(),
+            sessions[winner],
+            'replay does not rebind the running input',
+          );
+          assert.equal(
+            (
+              await sql`SELECT count(*)::int AS n FROM action_attempt WHERE work_item_id=${workItemId}`
+            )[0].n,
+            1,
+          );
+          await sql`UPDATE action_attempt SET status='CANCELLED' WHERE work_item_id=${workItemId}`;
+          await assert.rejects(
+            attempts.reserve(row('stale'), binding(sessions[1 - winner])),
+            /KNOWLEDGE_BINDING_CHANGED/u,
+          );
+          await assert.rejects(
+            attempts.reserve(row('omitted')),
+            /KNOWLEDGE_BINDING_CHANGED/u,
+          );
+          await assert.rejects(
+            attempts.reserve(row('wrong-owner'), {
+              ...binding(sessions[1 - winner], sessions[winner]),
+              replacement: {
+                sessionId: sessions[1 - winner],
+                actorId: 'other-owner',
+                tenantId: scope.tenantId,
+              },
+            }),
+            /KNOWLEDGE_BINDING_CHANGED/u,
+          );
+          const conflict = {
+            ...row('rollback'),
+            attemptId: `ATT-rebind-${winner}`,
+          };
+          await assert.rejects(
+            attempts.reserve(
+              conflict,
+              binding(sessions[1 - winner], sessions[winner]),
+            ),
+          );
+          assert.equal(
+            await readSession(),
+            sessions[winner],
+            'failed insert rolls back the grant binding',
+          );
+          await attempts.reserve(
+            row('next'),
+            binding(sessions[1 - winner], sessions[winner]),
+          );
+          assert.equal(await readSession(), sessions[1 - winner]);
+          await sql`UPDATE action_attempt SET status='CANCELLED' WHERE work_item_id=${workItemId}`;
+        },
+      );
 
       await t.test(
         'actual identity RLS filters an unbound Hosted query and admits only the bound official actor',

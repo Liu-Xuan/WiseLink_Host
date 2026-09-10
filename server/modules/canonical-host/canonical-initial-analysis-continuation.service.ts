@@ -1,4 +1,14 @@
-import { Inject, Injectable } from '@nestjs/common';
+import {
+  ForbiddenException,
+  Inject,
+  Injectable,
+  Optional,
+} from '@nestjs/common';
+import {
+  SessionResolver,
+  type ResolvedSession,
+} from '../identity/session-resolver.service';
+import { ReviewAilyService } from './review-aily.service';
 import { z } from 'zod/v4';
 import type {
   CanonicalInitialAnalysisContinuationReceipt,
@@ -69,12 +79,15 @@ export class CanonicalInitialAnalysisContinuationService {
     private readonly initial: CanonicalHostInitialAnalysisStatusService,
     private readonly translation: CanonicalHostOpenClawTranslationService,
     private readonly jobAid: CanonicalJobAidProblemService,
+    @Optional() private readonly sessions?: SessionResolver,
+    @Optional() private readonly aily?: ReviewAilyService,
   ) {}
 
   async request(
     workItemId: string,
     raw: unknown,
     actor: CanonicalHostActor,
+    session?: ResolvedSession | null,
   ): Promise<CanonicalInitialAnalysisContinuationReceipt> {
     const input = command.parse(raw);
     if (input.operation !== 'TRANSLATE' && input.retranslateBlockIds)
@@ -179,6 +192,10 @@ export class CanonicalInitialAnalysisContinuationService {
         .optional()
         .parse(task.modelInput.retranslateBlockIds);
     }
+    const authorizedKnowledgeSession =
+      input.operation === 'TRANSLATE'
+        ? undefined
+        : await this.currentKnowledgeSession(actor, session);
     const reserved =
       input.operation === 'TRANSLATE'
         ? await this.translation.enqueueContinuation(
@@ -195,6 +212,7 @@ export class CanonicalInitialAnalysisContinuationService {
             input.operation === 'EVALUATE_JOBAID'
               ? 'INITIAL_PROBLEM_ASSESSMENT'
               : 'OVERALL_CONSISTENCY',
+            authorizedKnowledgeSession,
           );
     return {
       requestId: input.requestId,
@@ -203,6 +221,33 @@ export class CanonicalInitialAnalysisContinuationService {
       replayed: !reserved.created,
       candidateOnly: true,
     };
+  }
+
+  private async currentKnowledgeSession(
+    actor: CanonicalHostActor,
+    session?: ResolvedSession | null,
+  ) {
+    if (!session) return undefined;
+    if (
+      session.actor.canonicalSubject.id !== actor.userId ||
+      session.actor.tenantId !== actor.tenantId ||
+      session.actor.applicationScopeId !== actor.appId
+    )
+      throw new ForbiddenException('INITIAL_CONTINUATION_IDENTITY_MISMATCH');
+    if (!this.sessions || !this.aily)
+      throw new Error('INITIAL_CONTINUATION_AUTHORIZATION_RUNTIME_UNAVAILABLE');
+    const binding = {
+      sessionId: session.session.id,
+      actorId: actor.userId,
+      tenantId: actor.tenantId,
+    };
+    const access = await this.sessions.withVerifiedServiceSql(
+      () => this.aily!.availability(binding),
+      actor.userId,
+    );
+    // Optional retrieval must not block source analysis when native consent
+    // is unavailable. The prepared task reports its actual knowledge access.
+    return access.available ? binding : undefined;
   }
 }
 

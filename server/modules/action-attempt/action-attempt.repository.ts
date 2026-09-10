@@ -33,6 +33,7 @@ import type {
 import type {
   ActionAttemptRow,
   ActionAttemptWorkItemBinding,
+  ReserveActionAttemptInput,
 } from './action-attempt.types';
 
 const ACTIVE_STATUSES = [
@@ -222,6 +223,7 @@ export class ActionAttemptRepository {
 
   async reserve(
     attempt: typeof actionAttempt.$inferInsert,
+    knowledge?: ReserveActionAttemptInput['initialKnowledgeSession'],
   ): Promise<ActionAttemptReservation> {
     if (attempt.idempotencyKey?.startsWith('openclaw-v2:')) {
       // Serialize an explicit request against the ordinary WI row. The legacy
@@ -232,6 +234,8 @@ export class ActionAttemptRepository {
             id: workItem.workItemId,
             revision: workItem.revision,
             documentVersionId: workItem.documentVersionId,
+            initialAilySessionId: workItem.initialAilySessionId,
+            requestedByUserId: workItem.requestedByUserId,
           })
           .from(workItem)
           .where(
@@ -284,6 +288,45 @@ export class ActionAttemptRepository {
           )
           .limit(1);
         if (active) throw activeAttemptConflict();
+        const task = JSON.parse(
+          String(attempt.taskEnvelopeJson),
+        ) as OpenClawTaskEnvelope;
+        const usesKnowledge =
+          task.allowedConnectors.includes('feishu-aily-user');
+        const initialAssessment = [
+          'OPENCLAW_DYNAMIC_EVALUATION',
+          'OPENCLAW_OVERALL_SYNTHESIS',
+        ].includes(String(attempt.actionType));
+        if (
+          ((usesKnowledge ||
+            (initialAssessment && owner.initialAilySessionId !== null)) &&
+            !knowledge) ||
+          (knowledge && !initialAssessment) ||
+          (knowledge &&
+            knowledge.expectedSessionId !== owner.initialAilySessionId)
+        )
+          throw new Error('ACTION_ATTEMPT_KNOWLEDGE_BINDING_CHANGED');
+        if (knowledge?.replacement) {
+          const replacement = knowledge.replacement;
+          if (
+            !usesKnowledge ||
+            replacement.actorId !== owner.requestedByUserId ||
+            replacement.tenantId !== attempt.tenantId
+          )
+            throw new Error('ACTION_ATTEMPT_KNOWLEDGE_BINDING_CHANGED');
+          await transaction
+            .update(workItem)
+            .set({
+              initialAilySessionId: replacement.sessionId,
+              updatedAt: new Date(),
+            })
+            .where(
+              and(
+                eq(workItem.workItemId, String(attempt.workItemId)),
+                eq(workItem.tenantId, String(attempt.tenantId)),
+              ),
+            );
+        }
         return this.insertReservation(attempt, transaction);
       });
     }

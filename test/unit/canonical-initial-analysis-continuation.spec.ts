@@ -7,6 +7,7 @@ import {
   sealTaskEnvelope,
 } from '../../server/modules/action-attempt/action-attempt-envelope';
 import { CanonicalInitialAnalysisContinuationService } from '../../server/modules/canonical-host/canonical-initial-analysis-continuation.service';
+import type { ResolvedSession } from '../../server/modules/identity/session-resolver.service';
 
 const actor = {
   userId: 'owner',
@@ -32,6 +33,42 @@ const configuration = {
 };
 
 describe('owner-requested initial continuation', () => {
+  it.each([true, false])(
+    'automatically uses only an available current verified grant (%s)',
+    async (available) => {
+      const h = harness();
+      h.aily.availability.mockResolvedValue({ available });
+      const session = {
+        actor: {
+          canonicalSubject: { id: actor.userId },
+          tenantId: actor.tenantId,
+          applicationScopeId: actor.appId,
+        },
+        session: { id: '11111111-1111-4111-8111-111111111111' },
+      } as ResolvedSession;
+      await h.send({ ...request, operation: 'EVALUATE_JOBAID' }, session);
+      expect(h.sessions.withVerifiedServiceSql).toHaveBeenCalledTimes(1);
+      expect(h.jobAid.enqueueContinuation).toHaveBeenCalledWith(
+        h.workItem,
+        actor.tenantId,
+        'permission-1',
+        request.requestId,
+        'INITIAL_PROBLEM_ASSESSMENT',
+        available
+          ? {
+              sessionId: session.session.id,
+              actorId: actor.userId,
+              tenantId: actor.tenantId,
+            }
+          : undefined,
+      );
+      session.actor.tenantId = 'other-tenant';
+      await expect(
+        h.send({ ...request, operation: 'EVALUATE_JOBAID' }, session),
+      ).rejects.toThrow('INITIAL_CONTINUATION_IDENTITY_MISMATCH');
+      expect(h.jobAid.enqueueContinuation).toHaveBeenCalledTimes(1);
+    },
+  );
   let prior: Record<string, string | undefined>;
   beforeEach(() => {
     prior = Object.fromEntries(
@@ -193,6 +230,7 @@ describe('owner-requested initial continuation', () => {
       'permission-1',
       request.requestId,
       'INITIAL_PROBLEM_ASSESSMENT',
+      undefined,
     );
   });
 
@@ -303,6 +341,12 @@ function harness() {
       created: true,
     })),
   };
+  const sessions = {
+    withVerifiedServiceSql: jest.fn(async (operation: () => Promise<unknown>) =>
+      operation(),
+    ),
+  };
+  const aily = { availability: jest.fn(async () => ({ available: true })) };
   const service = new CanonicalInitialAnalysisContinuationService(
     authorization as never,
     permissions as never,
@@ -311,6 +355,8 @@ function harness() {
     initial as never,
     translation as never,
     jobAid as never,
+    sessions as never,
+    aily as never,
   );
   return {
     workItem,
@@ -322,7 +368,10 @@ function harness() {
     initial,
     translation,
     jobAid,
+    sessions,
+    aily,
     order,
-    send: (body: unknown) => service.request(workItem.workItemId, body, actor),
+    send: (body: unknown, session?: ResolvedSession) =>
+      service.request(workItem.workItemId, body, actor, session),
   };
 }
