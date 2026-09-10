@@ -41,6 +41,32 @@ const scope = {
 };
 
 describe('JobAid continuation requests', () => {
+  it('prepares the same queued request with its reserved knowledge connector', async () => {
+    const binding = { sessionId: '11111111-1111-4111-8111-111111111111', agentId: 'bound-agent-only' };
+    const knowledge = { binding: jest.fn().mockResolvedValue({ binding, access: { available: true } }) };
+    const h = harness(knowledge, binding.sessionId);
+    const queued = await h.enqueue(REQUEST_1);
+    const reserved = h.task(queued.attemptRef);
+    expect(reserved.allowedConnectors).toEqual(['feishu-aily-user']);
+    expect(readInitialAnalysisRequestInput(reserved)?.requestId).toBe(REQUEST_1);
+    const begun = await h.service.begin(h.current(), scope, 'INITIAL_PROBLEM_ASSESSMENT', REQUEST_1);
+    expect(begun.attemptRef).toBe(queued.attemptRef);
+    expect(begun.task.allowedConnectors).toEqual(reserved.allowedConnectors);
+    expect(parseJobAidProblemTask(begun.task).knowledgeBinding).toEqual(binding);
+    expect(h.attempts.reserve).toHaveBeenCalledTimes(1);
+    for (const allowedConnectors of [['other-connector'], ['feishu-aily-user', 'feishu-aily-user']]) {
+      expect(() => readInitialAnalysisRequestInput({ ...reserved, allowedConnectors })).toThrow(
+        'ACTION_ATTEMPT_INITIAL_REQUEST_BINDING_INVALID',
+      );
+    }
+    expect(() => readInitialAnalysisRequestInput({
+      ...reserved,
+      taskType: 'OPENCLAW_TRANSLATE',
+      idempotencyKey: reserved.idempotencyKey.replace(':dynamic:', ':translate:'),
+      modelInput: { ...reserved.modelInput, taskType: 'OPENCLAW_TRANSLATE' },
+    })).toThrow('ACTION_ATTEMPT_INITIAL_REQUEST_BINDING_INVALID');
+  });
+
   it('keeps initial user-session binding in the Host envelope and out of model input', async () => {
     const binding = { sessionId: '11111111-1111-4111-8111-111111111111', agentId: 'bound-agent-only' };
     const knowledge = { binding: jest.fn().mockResolvedValue({ binding, access: { available: true } }) };

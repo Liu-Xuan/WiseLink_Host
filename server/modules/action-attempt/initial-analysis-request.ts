@@ -52,10 +52,18 @@ export function readInitialAnalysisRequestInput(
     OPENCLAW_DYNAMIC_EVALUATION: 'dynamic',
     OPENCLAW_OVERALL_SYNTHESIS: 'overall',
   }[request.taskType];
+  // The browser reserves the connector scope used by the authorized Host
+  // preparation. Translation never uses knowledge retrieval. Replay still
+  // requires this exact connector list and preparation verifies the grant.
+  const connectorsValid = task.allowedConnectors.length === 0 || (
+    request.taskType !== 'OPENCLAW_TRANSLATE' &&
+    task.allowedConnectors.length === 1 &&
+    task.allowedConnectors[0] === 'feishu-aily-user'
+  );
   if (
     task.taskType !== request.taskType ||
     task.sourceRefs.length !== 1 ||
-    task.allowedConnectors.length !== 0 ||
+    !connectorsValid ||
     task.idempotencyKey !==
       `openclaw-v2:${operation}:${task.workItemId}:${task.documentVersionId}:${request.requestId}`
   )
