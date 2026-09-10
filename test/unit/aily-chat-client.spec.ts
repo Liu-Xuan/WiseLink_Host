@@ -126,4 +126,37 @@ describe('Host Aily transport', () => {
     ).rejects.toThrow('AILY_AGENT_INVALID');
     expect(globalThis.fetch).not.toHaveBeenCalled();
   });
+
+  it('rejects an oversized wire response even when the excess is non-public content', async () => {
+    globalThis.fetch = jest.fn().mockResolvedValue(
+      Response.json({
+        code: 0,
+        data: {
+          status: 'Completed',
+          content: [{ type: 'reasoning', text: 'x'.repeat(2_000_001) }],
+        },
+      }),
+    );
+    await expect(
+      readAilyChatResult({ ...request, chatId: '123' }),
+    ).rejects.toThrow('AILY_RESULT_TOO_LARGE');
+    expect(globalThis.fetch).toHaveBeenCalledTimes(1);
+  });
+
+  it('does not accept a stream returning a different remote session', async () => {
+    globalThis.fetch = jest
+      .fn()
+      .mockResolvedValue(
+        new Response(
+          'event: start\ndata: {"agent_chat_id":"123","session_id":"other-session"}\n\n',
+          { headers: { 'content-type': 'text/event-stream' } },
+        ),
+      );
+    const progress = jest.fn();
+    await expect(streamAilyChat(request, progress)).rejects.toThrow(
+      'AILY_STREAM_SESSION_MISMATCH',
+    );
+    expect(progress).not.toHaveBeenCalled();
+    expect(globalThis.fetch).toHaveBeenCalledTimes(1);
+  });
 });

@@ -34,6 +34,32 @@ function requestBody(request: AilyChatRequest, stream: boolean) {
   });
 }
 
+async function readResultBody(response: Response): Promise<unknown> {
+  if (!response.body) throw new Error('AILY_RESULT_INVALID');
+  const reader = response.body.getReader();
+  const decoder = new TextDecoder('utf-8', { fatal: true });
+  let text = '';
+  let bytes = 0;
+  try {
+    while (true) {
+      const chunk = await reader.read();
+      if (chunk.done) break;
+      bytes += chunk.value.byteLength;
+      if (bytes > 2_000_000) throw new Error('AILY_RESULT_TOO_LARGE');
+      text += decoder.decode(chunk.value, { stream: true });
+    }
+    text += decoder.decode();
+    try {
+      return JSON.parse(text) as unknown;
+    } catch {
+      throw new Error('AILY_RESULT_INVALID');
+    }
+  } finally {
+    await reader.cancel().catch(() => undefined);
+    reader.releaseLock();
+  }
+}
+
 export async function streamAilyChat(
   request: AilyChatRequest,
   onProgress: (progress: AilyStreamProgress) => Promise<void>,
@@ -80,7 +106,7 @@ export async function readAilyChatResult(input: {
     redirect: 'error',
   });
   if (!response.ok) throw new Error(`AILY_HTTP_${response.status}`);
-  const body: unknown = await response.json();
+  const body = await readResultBody(response);
   if (!body || typeof body !== 'object' || Array.isArray(body))
     throw new Error('AILY_RESULT_INVALID');
   const envelope = body as Record<string, unknown>;
