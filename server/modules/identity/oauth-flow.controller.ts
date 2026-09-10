@@ -102,10 +102,7 @@ export class OauthFlowController {
     authorizeUrl.searchParams.set('response_type', 'code');
     authorizeUrl.searchParams.set('state', state);
     if (ailyAgentId())
-      authorizeUrl.searchParams.set(
-        'scope',
-        'aily:agent_chat:read aily:agent_chat:write',
-      );
+      authorizeUrl.searchParams.set('scope', 'aily:agent_chat:write');
     authorizeUrl.searchParams.set('code_challenge', pkce.codeChallenge);
     authorizeUrl.searchParams.set(
       'code_challenge_method',

@@ -24,7 +24,11 @@
 
 c68 改进证据引用纠正反馈：沿用原来的精确登记检查，提供错误字段位置、错误标识和本轮已读的准确标识，限制最多32处反馈并保留总数。模型自行核对后提交完整新候选；不做近似匹配、自动替换、引用重绑定或旧候选重放。该修复针对已经证实的抄写错误，不宣称解决原生超时或 M3 类型生成问题。Aily OAuth 新权限确认仍待答复。 c68 提交 `3dda4ced1f00cfb98056a9a12545210923c3ba5e` 已仅推送 origin；安装回合 `7683680984924376015` 完成，正式目录40/40摘要一致、246项检查通过，原cron恢复并计划07:29:18自然调度。Host沿用633fa8360；未为本次Skill改动另发Host。c68尚无新的业务更新成功证据，完整主循环仍未完成。
 
-更新日期：2026-09-10。依据：[R10 云文档](https://hv5zjf4j8yb.feishu.cn/docx/MA3fdjEycoISjHxptAqcsyxvn9b) 与 [当前正文镜像](WISELINK_R10_CURRENT.md)。当前运行证据以本页顶部 9 月 10 日记录为准；云文档及正文镜像 revision 2215 的运行状态保留原时点，按用户要求不随每次排障更新。9 月 6 日发布复核与数据库/存储续查见 [存储异常记录](WL31_HOSTED_STORAGE_INCIDENT_20260905.md)，此前功能发布和页面证据见 [交接与响应记录](WL31_R10_CONTEXT_HANDOFF_PERFORMANCE.md)，视觉交付见 [Satin 运行记录](WL31_R10_SATIN_HOSTED_ROLLOUT_20260905.md)。
+10:05 Aily 最小权限接入：用户先确认接入及用户身份读取权限，Host 配置随 `6e97e4a52` / release `7683695167439735736` 生效；开发者后台只新增用户身份 read，随后按用户“尽量免审”的要求取消未保存的 1.0.5 发布页，未提交管理员审核。read 虽显示待发布、可调试，09:11 正常 OAuth 仍返回 20027。云文档已由获授权子智能体更新并读回至 revision 2231，历史保留。
+
+用户要求继续后，改为复用已经开通的用户身份 `aily:agent_chat:write`：Host POST `stream:true` 后在原 query 记录保存公开答复，调用方只轮询本地记录，不再 GET Aily；OAuth 仅申请 write。实际 CLI 用户身份连通性对话 `7683720367274019812` 返回 start / message_delta / done Completed；编译后的解析器完整解析该真实响应。后台流最多5分钟，断流与无法确认完成均保留已收文本并标记 UNKNOWN，Host 中断遗留的运行记录6分钟后可由读取确认未知；同一请求键不再次发起。只保留 content，不保存推理或工具事件；旧身份、租户、attempt/session 绑定及候选边界保留。38项相关检查、服务端类型、定向 lint 与生产构建通过；此处为发布前实现证据，尚不代表 WiseLink OAuth 和真实业务检索闭环完成。
+
+更新日期：2026-09-10。依据：[R10 云文档](https://hv5zjf4j8yb.feishu.cn/docx/MA3fdjEycoISjHxptAqcsyxvn9b) 与 [当前正文镜像](WISELINK_R10_CURRENT.md)。当前运行证据以本页顶部 9 月 10 日记录为准；云文档及正文镜像已按用户要求同步至 revision 2231；后续实证仍分别记录，避免逐次排障回写。9 月 6 日发布复核与数据库/存储续查见 [存储异常记录](WL31_HOSTED_STORAGE_INCIDENT_20260905.md)，此前功能发布和页面证据见 [交接与响应记录](WL31_R10_CONTEXT_HANDOFF_PERFORMANCE.md)，视觉交付见 [Satin 运行记录](WL31_R10_SATIN_HOSTED_ROLLOUT_20260905.md)。
 
 主控交接：用户于 2026-09-07 指定 [WiseLink R10 项目主控（2026-09-07 接管）](codex://threads/01a079d1-918d-7af1-a283-75968ec294ea) 接替 [WiseLink R09 项目主控（接替旧主控）](codex://threads/01a06562-e90c-7340-9fd5-9a96cdd3073f)。新主控承接当前 R10 目标、已有业务授权和分工，并核对 [2026-09-06 接管任务](codex://threads/01a0726d-5e6e-7b70-b1b9-a7e84fd1d31b) 的存储调查结论。此次接管时本地 HEAD 为 `408de9f17`；工作区已有 AGENTS/技能整理及临时产物，独立保留。历史待办不覆盖当前执行顺序，最新推送边界见下一段。
 

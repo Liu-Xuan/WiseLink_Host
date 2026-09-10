@@ -77,7 +77,9 @@ describe('review Aily queries', () => {
       .mockRejectedValue(new Error('transport unavailable'));
     globalThis.fetch = fetchMock;
     const result = await service.start(actor, 'ATTEMPT', 'request', 'FMC');
-    expect(result.status).toBe('UNKNOWN');
+    expect(result.status).toBe('RUNNING');
+    await new Promise(setImmediate);
+    expect(execute).toHaveBeenCalledTimes(2);
     expect(fetchMock).toHaveBeenCalledTimes(1);
     expect(fetchMock.mock.invocationCallOrder[0]).toBeGreaterThan(
       execute.mock.invocationCallOrder[0],
@@ -85,24 +87,22 @@ describe('review Aily queries', () => {
     expect(
       withActorTransaction.mock.calls.every(([id]) => id === actor.actorId),
     ).toBe(true);
-    execute
-      .mockResolvedValueOnce([])
-      .mockResolvedValueOnce([
-        {
-          query_ref: result.queryRef,
-          query_text: 'FMC',
-          session_id: actor.sessionId,
-          status: 'UNKNOWN',
-          error_code: 'AILY_UPSTREAM_UNAVAILABLE',
-        },
-      ]);
+    execute.mockResolvedValueOnce([]).mockResolvedValueOnce([
+      {
+        query_ref: result.queryRef,
+        query_text: 'FMC',
+        session_id: actor.sessionId,
+        status: 'UNKNOWN',
+        error_code: 'AILY_UPSTREAM_UNAVAILABLE',
+      },
+    ]);
     expect(
       (await service.start(actor, 'ATTEMPT', 'request', 'FMC')).status,
     ).toBe('UNKNOWN');
     expect(fetchMock).toHaveBeenCalledTimes(1);
   });
 
-  it('reads only the stored agent/chat binding and returns text as unverified retrieval', async () => {
+  it('returns locally saved retrieval without any read-scope request', async () => {
     const { service, execute } = harness();
     const queryRef = '22222222-2222-4222-8222-222222222222';
     execute.mockResolvedValueOnce([
@@ -110,38 +110,101 @@ describe('review Aily queries', () => {
         query_ref: queryRef,
         agent_id: 'agent_test',
         chat_id: '123456',
-        status: 'RUNNING',
+        status: 'COMPLETED',
+        answer_text: '检索摘录及来源链接',
       },
     ]);
-    execute.mockResolvedValueOnce([{ query_ref: queryRef }]);
-    const fetchMock = jest.fn().mockResolvedValue(
-      new Response(
-        JSON.stringify({
-          code: 0,
-          data: {
-            status: 'Completed',
-            content: [
-              { type: 'text', text: '检索摘录及来源链接' },
-              { type: 'artifact', agent_artifact_id: 'unread' },
-            ],
-          },
-        }),
-      ),
-    );
+    const fetchMock = jest.fn();
     globalThis.fetch = fetchMock;
     expect(await service.result(actor, 'ATTEMPT', queryRef)).toMatchObject({
       status: 'COMPLETED',
       answer: '检索摘录及来源链接',
       candidateOnly: true,
+      incomplete: false,
       originalDocumentsVerified: false,
     });
-    expect(fetchMock.mock.calls[0][0]).toBe(
-      'https://open.feishu.cn/open-apis/aily/v1/agents/agent_test/chats/123456',
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  it('saves partial text as UNKNOWN on EOF and never starts a GET', async () => {
+    const { service, execute } = harness();
+    execute.mockResolvedValue([{ query_ref: 'query', status: 'RUNNING' }]);
+    globalThis.fetch = jest
+      .fn()
+      .mockResolvedValue(
+        new Response(
+          'event: start\ndata: {"agent_chat_id":"123"}\n\n' +
+            'event: message_delta\ndata: {"agent_chat_id":"123","delta":{"type":"content","text":"已收片段"}}\n\n',
+          { headers: { 'content-type': 'text/event-stream' } },
+        ),
+      );
+    const update = jest.spyOn(
+      service as never as { update: (...args: unknown[]) => Promise<void> },
+      'update',
     );
-    expect(fetchMock.mock.calls[0][1]).toMatchObject({
-      method: 'GET',
-      redirect: 'error',
+    const result = await service.start(actor, 'ATTEMPT', 'request', 'FMC');
+    await new Promise(setImmediate);
+    expect(update).toHaveBeenLastCalledWith(
+      actor,
+      'ATTEMPT',
+      result.queryRef,
+      'UNKNOWN',
+      '123',
+      '已收片段',
+      'AILY_STREAM_INTERRUPTED',
+    );
+    expect(globalThis.fetch).toHaveBeenCalledTimes(1);
+    const [, init] = (globalThis.fetch as jest.Mock).mock.calls[0];
+    expect(init.method).toBe('POST');
+    expect(JSON.parse(init.body).stream).toBe(true);
+  });
+
+  it('marks an abandoned stream UNKNOWN while preserving saved text', async () => {
+    const { service, execute } = harness();
+    const queryRef = '22222222-2222-4222-8222-222222222222';
+    execute
+      .mockResolvedValueOnce([
+        {
+          query_ref: queryRef,
+          status: 'RUNNING',
+          answer_text: '部分答复',
+          chat_id: '123',
+          _created_at: new Date(Date.now() - 361_000),
+        },
+      ])
+      .mockResolvedValueOnce([{ query_ref: queryRef }]);
+    globalThis.fetch = jest.fn();
+    expect(await service.result(actor, 'ATTEMPT', queryRef)).toMatchObject({
+      status: 'UNKNOWN',
+      answer: '部分答复',
+      incomplete: true,
+      error: 'AILY_STREAM_RESULT_UNCONFIRMED',
     });
+    expect(globalThis.fetch).not.toHaveBeenCalled();
+  });
+
+  it('keeps live streams RUNNING and requires a valid grant even for saved answers', async () => {
+    const queryRef = '22222222-2222-4222-8222-222222222222';
+    const active = harness();
+    active.execute.mockResolvedValueOnce([
+      {
+        query_ref: queryRef,
+        status: 'RUNNING',
+        _created_at: new Date(),
+      },
+    ]);
+    globalThis.fetch = jest.fn();
+    expect(
+      await active.service.result(actor, 'ATTEMPT', queryRef),
+    ).toMatchObject({ status: 'RUNNING' });
+    const revoked = harness(false);
+    revoked.execute.mockResolvedValueOnce([
+      { query_ref: queryRef, status: 'COMPLETED', answer_text: 'private' },
+    ]);
+    await expect(
+      revoked.service.result(actor, 'ATTEMPT', queryRef),
+    ).rejects.toThrow('AILY_USER_REAUTHORIZATION_REQUIRED');
+    expect(globalThis.fetch).not.toHaveBeenCalled();
   });
 
   it('rejects a query outside the authorized attempt before contacting Feishu', async () => {
