@@ -60,6 +60,20 @@ describe('OauthFlowController official OAuth contract', () => {
     expect(`${url.origin}${url.pathname}`).toBe('https://accounts.feishu.cn/open-apis/authen/v1/authorize');
   });
 
+  it('requests only the existing Aily write scope for streamed conversations', async () => {
+    const previous = process.env.WL_AILY_AGENT_ID;
+    process.env.WL_AILY_AGENT_ID = 'agent_test';
+    try {
+      const response = fakeResponse();
+      await controller(configured, { issue: jest.fn().mockResolvedValue('state-1') }, {}, {}, {}).beginAuthorize(response as never);
+      const url = new URL(response.json.mock.calls[0][0].authorizeUrl);
+      expect(url.searchParams.get('scope')).toBe('aily:agent_chat:write');
+    } finally {
+      if (previous === undefined) delete process.env.WL_AILY_AGENT_ID;
+      else process.env.WL_AILY_AGENT_ID = previous;
+    }
+  });
+
   it('sends state + PKCE S256 + exact callback URL', async () => {
     const state = { issue: jest.fn().mockResolvedValue('state-1') }; const response = fakeResponse();
     await controller(configured, state, {}, {}, {}).beginAuthorize(response as never);
