@@ -17,6 +17,7 @@ export interface ReviewAilyActor {
 }
 interface QueryRow extends Record<string, unknown> {
   query_ref: string;
+  message_ref?: string | null;
   query_text: string;
   session_id: string;
   agent_id: string;
@@ -423,7 +424,7 @@ export class ReviewAilyService {
       incomplete: row.status !== 'COMPLETED',
       error: row.error_code,
       candidateOnly: true,
-      sourceKind: 'AILY_RETRIEVAL',
+      sourceKind: row.message_ref ? 'AILY_DIALOGUE' : 'AILY_RETRIEVAL',
       originalDocumentsVerified: false,
     };
   }

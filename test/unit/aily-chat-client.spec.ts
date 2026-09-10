@@ -159,4 +159,23 @@ describe('Host Aily transport', () => {
     expect(progress).not.toHaveBeenCalled();
     expect(globalThis.fetch).toHaveBeenCalledTimes(1);
   });
+
+  it('preserves the remote finish reason without turning a cancelled result into success', async () => {
+    globalThis.fetch = jest.fn().mockResolvedValue(
+      Response.json({
+        code: 0,
+        data: {
+          status: 'Cancelled',
+          finish_reason: 'stop',
+          content: [{ type: 'text', text: '部分公开文本' }],
+        },
+      }),
+    );
+    expect(await readAilyChatResult({ ...request, chatId: '123' })).toEqual({
+      chatId: '123',
+      answer: '部分公开文本',
+      remoteStatus: 'Cancelled',
+      remoteFinishReason: 'stop',
+    });
+  });
 });

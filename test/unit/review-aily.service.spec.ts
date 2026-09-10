@@ -381,6 +381,7 @@ describe('review Aily queries', () => {
         query_ref: queryRef,
         status: 'COMPLETED',
         answer_text: '本人保存的解释',
+        message_ref: messageRef,
       },
     ]);
     globalThis.fetch = jest.fn();
@@ -390,7 +391,11 @@ describe('review Aily queries', () => {
         messageRef,
         queryRef,
       ),
-    ).toMatchObject({ answer: '本人保存的解释', status: 'COMPLETED' });
+    ).toMatchObject({
+      answer: '本人保存的解释',
+      status: 'COMPLETED',
+      sourceKind: 'AILY_DIALOGUE',
+    });
     expect(globalThis.fetch).not.toHaveBeenCalled();
     execute.mockResolvedValueOnce([]);
     await expect(

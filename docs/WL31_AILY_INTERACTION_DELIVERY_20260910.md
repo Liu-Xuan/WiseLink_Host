@@ -44,3 +44,13 @@ W1 必须保留首次组装的上下文及 query 用于同消息重放；新工�
 待主控集成验证：W1 HTTP→消息→直接 Aily→本地回答读取；无对象和跨对象归集；纠正后明确重评及下一轮读取新工作版。W4 要核对选段是否来自已保存公开文本、相同提交幂等、相同文字不同提交不合并，以及用户摘录不能伪造 VERIFIED_EVENT。真实 read 权限、E1 多轮/中断回查与 E3 两用户身份验证由主控统一安排。
 
 当前不报告已完成完整用户闭环；goal 保持活动直至负责范围的开发和验证交付。
+
+## 跨层交互复核增量
+
+主控已集成首两批实现（主线 `5cfc6da66`、`8de0c162c`），并接入 W1 的消息/贡献消费者。新增 `dialogue-service-interaction.spec.ts`、`dialogue-context-interaction.spec.ts` 对该实际实现作隔离回归，共 19 项通过。
+
+复核发现并由主控修复：长历史超 60000 字符的输入上限；回答继承的对象权限在早期消息退出分页后丢失；页面没有结算进程中断遗留的 RUNNING；飞书摘录省略 purpose 时会重新生成；孤立确认缺少上一问。修复后实际上下文保存 `contextWorkItemIds` 并复核继承权限，按总预算保留完整历史轮次并记录省略，摘录默认为 CONTRIBUTION_ONLY，读回结算 UNKNOWN，贡献携带必要原问答。
+
+恢复入口回归覆盖：仅补首次 query 尚未创建的投递，沿用首次保存的 generationQuery；已经有 UNKNOWN、FAILED 或 COMPLETED query 时不再 POST；摘录消息不能通过恢复入口变成生成请求。同请求原话改变则拒绝，当前工作版和历史回答版本分别保留。另将直接聊天来源标为 AILY_DIALOGUE，旧检索保持 AILY_RETRIEVAL；GET helper 保留原始 finish_reason，不自行提升为成功。
+
+以上是代码消费者与 mock 外部依赖的验证，未称页面或生产回合已成功。迁移、最小 W6 页面及真实非敏感实例验收由主控联合推进，read scope 与远端状态映射仍待正常授权和实测。

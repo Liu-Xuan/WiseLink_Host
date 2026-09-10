@@ -116,6 +116,12 @@ export async function readAilyChatResult(input: {
     throw new Error('AILY_RESULT_INVALID');
   const result = data as Record<string, unknown>;
   if (
+    result.finish_reason !== undefined &&
+    (typeof result.finish_reason !== 'string' ||
+      result.finish_reason.length > 200)
+  )
+    throw new Error('AILY_RESULT_INVALID');
+  if (
     typeof result.status !== 'string' ||
     !result.status ||
     result.status.length > 96 ||
@@ -133,5 +139,12 @@ export async function readAilyChatResult(input: {
   }
   const answer = text.join('\n');
   if (answer.length > 60_000) throw new Error('AILY_RESULT_TOO_LARGE');
-  return { chatId: input.chatId, answer, remoteStatus: result.status };
+  return {
+    chatId: input.chatId,
+    answer,
+    remoteStatus: result.status,
+    ...(typeof result.finish_reason === 'string'
+      ? { remoteFinishReason: result.finish_reason }
+      : {}),
+  };
 }
