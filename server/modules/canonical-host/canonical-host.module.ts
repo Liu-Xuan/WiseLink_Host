@@ -79,6 +79,7 @@ import { IdentityModule } from '../identity/identity.module';
 import { ReviewAilyService } from './review-aily.service';
 import { DialogueAssessmentRepository } from './dialogue-assessment.repository';
 import { DialogueAssessmentService } from './dialogue-assessment.service';
+import { DialogueBrowserScope } from './dialogue-browser-scope.service';
 import { DialogueController } from './dialogue.controller';
 import { DialogueService } from './dialogue.service';
 import { DialogueRepository } from './dialogue.repository';
@@ -234,6 +235,7 @@ export interface CanonicalHostModuleOptions {
     DialogueAssessmentRepository,
     DialogueAssessmentService,
     DialogueService,
+    DialogueBrowserScope,
     DialogueRepository,
     DialogueContextService,
     ReviewAilyService,
@@ -499,6 +501,7 @@ export class CanonicalHostModule {
         DialogueAssessmentRepository,
         DialogueAssessmentService,
         DialogueService,
+        DialogueBrowserScope,
         DialogueRepository,
         DialogueContextService,
         ReviewAilyService,
