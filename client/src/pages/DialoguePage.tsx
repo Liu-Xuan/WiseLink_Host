@@ -15,6 +15,7 @@ import type {
 } from '@shared/dialogue.interface';
 import type { DialogueWorkItemOption } from '@client/src/features/dialogue/DialogueContributionPicker';
 import { Button } from '@client/src/components/ui/button';
+import { OfficialOauthLink } from '@client/src/components/OfficialOauthLink';
 
 export default function DialoguePage() {
   const session = useCurrentUserSession();
@@ -132,7 +133,7 @@ function DialoguePageContent() {
         </p>
         {session.profileSettled ? (
           <Button asChild>
-            <Link to="/client/oauth/callback">连接飞书身份</Link>
+            <OfficialOauthLink>连接飞书身份</OfficialOauthLink>
           </Button>
         ) : null}
       </main>
