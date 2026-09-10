@@ -178,6 +178,11 @@ export class CanonicalHostCommonContextService {
       workItem,
       related,
       priorTurns,
+      history.includedDiscussionTurnIds !== undefined,
+    );
+    const includedTurns = selectDiscussionTurns(
+      priorTurns,
+      history.includedDiscussionTurnIds !== undefined,
     );
     if (!actorMappingActive) common.discussion.status = 'ACCESS_DENIED';
     const delivered = new Set(
@@ -192,7 +197,7 @@ export class CanonicalHostCommonContextService {
       common,
       availableReadingEvidence: [
         ...(related.readingEvidence ?? []),
-        ...priorTurns.slice(-12).map(
+        ...includedTurns.map(
           (turn): AssessmentEvidence => ({
             evidenceRef: `engineer-statement:${turn.engineerSuppliedInputId}`,
             kind: 'ENGINEER_STATEMENT',
@@ -601,11 +606,11 @@ export function projectCommonAssessmentContext(
     'context' | 'items' | 'sections' | 'resourceRefs' | 'documentReadingStatus'
   >,
   priorTurns: PersistedReviewTurn[],
+  explicitlySelected = false,
 ): CanonicalCommonAssessmentContext {
   // Recent turns carry the actual engineer wording and saved working answer.
   // Earlier turns are counted explicitly, never represented as a made-up summary.
-  const orderedTurns = [...priorTurns].sort((a, b) => a.turnNo - b.turnNo);
-  const includedTurns = orderedTurns.slice(-12);
+  const includedTurns = selectDiscussionTurns(priorTurns, explicitlySelected);
   return {
     primaryDocument: {
       documentVersionRef: workItem.source.documentVersionId,
@@ -665,9 +670,9 @@ export function projectCommonAssessmentContext(
       }),
     },
     discussion: {
-      status: orderedTurns.length ? 'AVAILABLE' : 'NO_PRIOR_DISCUSSION',
-      totalPriorTurns: orderedTurns.length,
-      omittedEarlierTurns: orderedTurns.length - includedTurns.length,
+      status: priorTurns.length ? 'AVAILABLE' : 'NO_PRIOR_DISCUSSION',
+      totalPriorTurns: priorTurns.length,
+      omittedEarlierTurns: priorTurns.length - includedTurns.length,
       turns: includedTurns.map((turn) => ({
         turnNo: turn.turnNo,
         fromCurrentRevision: turn.inputRevision === workItem.revision,
@@ -684,6 +689,18 @@ export function projectCommonAssessmentContext(
     },
     knowledgeRetrieval: { status: 'NOT_CONNECTED', fragments: [] },
   };
+}
+
+function selectDiscussionTurns(
+  turns: PersistedReviewTurn[],
+  explicitlySelected: boolean,
+): PersistedReviewTurn[] {
+  const ordered: PersistedReviewTurn[] = [...turns].sort(
+    (a, b) => a.turnNo - b.turnNo,
+  );
+  // Automatic history stays bounded; an explicit selection is already the
+  // user's input scope and must not silently lose an earlier correction.
+  return explicitlySelected ? ordered : ordered.slice(-12);
 }
 
 function relatedDocumentResourceRefs(
