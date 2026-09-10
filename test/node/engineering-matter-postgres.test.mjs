@@ -79,7 +79,11 @@ test(
         documentVersionId: fixtures.ftd.documentVersionId,
       };
       const results = await Promise.all([
-        owner.matters.ensureFamilyMatter(binding),
+        owner.runtime(() =>
+          owner.working.withActorTransaction('actor-A', ({ database }) =>
+            owner.matters.ensureFamilyMatter(binding, database),
+          ),
+        ),
         second.matters.ensureFamilyMatter(binding),
       ]);
       assert.equal(results.filter((x) => x.created).length, 1);
@@ -243,10 +247,17 @@ test(
         FROM dm_acquisition a WHERE a.document_version_id = ${fixtures.ftd.documentVersionId}`;
       await sql`UPDATE dm_publication_family SET current_document_version_id = ${newerVersionId}, current_generation = 2
         WHERE family_id = 'family_real_ftd_31_21002'`;
-      const continued = await owner.matters.ensureFamilyMatter({
-        ...binding,
-        documentVersionId: newerVersionId,
-      });
+      const continued = await owner.runtime(() =>
+        owner.working.withActorTransaction('actor-A', ({ database }) =>
+          owner.matters.ensureFamilyMatter(
+            {
+              ...binding,
+              documentVersionId: newerVersionId,
+            },
+            database,
+          ),
+        ),
+      );
       assert.equal(continued.matterId, scope.matterId);
       assert.equal(continued.created, false);
       const changed = await owner.matters.readMaterials(scope);
@@ -747,6 +758,10 @@ async function resetDatabase(sql) {
   await applyMigration(sql, 'migrations/0032_engineering_matter_material.sql');
   await applyMigration(
     sql,
+    'migrations/0033_engineering_matter_explicit_material_runtime.sql',
+  );
+  await applyMigration(
+    sql,
     'migrations/0023_engineering_matter_working_state.sql',
   );
   await applyMigration(
@@ -787,6 +802,13 @@ async function resetDatabase(sql) {
     'GRANT SELECT, INSERT ON engineering_matter_material_link TO authenticated, service_role',
   );
   // Isolated equivalents of the platform's existing table privileges and
+  await sql.unsafe(
+    'GRANT SELECT ON dm_document_version, dm_publication_family TO service_role',
+  );
+  await sql.unsafe('GRANT UPDATE ON dm_publication_family TO service_role');
+  await sql.unsafe(
+    'GRANT INSERT ON engineering_matter, engineering_matter_revision, engineering_matter_revision_work_item TO service_role',
+  );
   // Hosted actor policies. No production GRANT is introduced by migration 24.
   await sql.unsafe('GRANT USAGE ON SCHEMA public TO service_role');
   await sql.unsafe(
