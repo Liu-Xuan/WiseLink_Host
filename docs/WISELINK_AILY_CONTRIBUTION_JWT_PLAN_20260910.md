@@ -40,3 +40,19 @@
 | Host 技术发布与真实小范围验证 | 同一用户、同一事项、明确版本保存一条已授权补充，读回并撤销测试贡献；不自动评估或正式采用 |
 
 当前仍需补齐：官方 ID 命名空间说明、真实请求精确映射证据、可审阅的上述配置值和目标绑定方案。这些条件只限制原生写入启用，不阻断已完成的 Host 默认汇集改动。
+
+## 原生会话 API 的只读实测补充
+
+2026-09-10 使用已有 CLI 用户授权，对指定 Agent 成功执行以下原生接口。未增加 scope、读取密钥、发送消息或修改 Agent 配置。此结果仅证明该 CLI 调用身份可读，不代表 Host OAuth 应用已经获得相同授权。
+
+| 官方原生路径（统一前缀 `/open-apis/aily/v1`） | 实际返回字段 |
+| --- | --- |
+| `GET /agents/{agent_id}/sessions` | `sessions`、`has_more`、`next_page_token`；会话项为 `created_at`、`last_chat_at`、`name`、`session_id`、`status` |
+| `GET /agents/{agent_id}/sessions/{session_id}` | 上述会话字段及 `turns`；轮次项为 `agent_chat_id`、`created_at`、`status` |
+| `GET /agents/{agent_id}/chats/{agent_chat_id}` | `content[{type,text}]`、`status`，即 Agent 回复 |
+
+[官方获取对话结果文档](https://open.feishu.cn/document/uAjLw4CM/ukTMukTMukTM/aily-v1/agent-agent_chat/get.md)规定读取权限为 `aily:agent_chat:read`，实际路径是 `/chats/{agent_chat_id}`；帮助概览中的 `/agent_chats` 不能代替详细接口合同。[原生 OpenAPI 概览](https://aily.feishu.cn/hc/1u7kleqg/t973w36g)列出上述会话列表和详情能力。这里没有调用旧工作流的 `aily_session` 接口。
+
+实测结构没有返回用户原始输入、SDK `customParams` 或 Host 任务绑定。已存在的 Host 请求可以用其持久化引用精确关联；没有 Host 记录的原生会话，不能靠名称、时间或同名资料推断归属。因此，读取 Agent 答复尚不能完成 SDK 用户原话的自动保存，当前缺口是内容与关联合同，不是把成功读取误报为缺权限。
+
+安全恢复条件是：取得官方支持的用户原始消息读取合同及可信 Host 目标关联方式，并在当前用户权限内验证二者；或者在前述 JWT 命名空间确证后启用独立候选贡献入口，明确保留“Agent 传入补充”的来源性质。仅增加读取 scope 不能补出接口未返回的字段。正式业务更新仍需当前事项的真实补充、纠正或待核实问题，以及相应材料；旧测试假设不能改写成新事实，也不能用安装或单测替代两轮业务验收。
