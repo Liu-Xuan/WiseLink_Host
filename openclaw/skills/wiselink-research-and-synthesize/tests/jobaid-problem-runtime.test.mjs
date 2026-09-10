@@ -1,6 +1,44 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { invokeHostedJobAidProblemModel } from '../scripts/run-jobaid-problem-assessment.mjs';
+import { invokeHostedJobAidProblemModel, projectJobAidModelInput } from '../scripts/run-jobaid-problem-assessment.mjs';
+
+test('source transport removes repeated identifiers without losing distinct sources, provenance or text', () => {
+  const input = modelInput();
+  input.availableSources = Array.from({ length: 446 }, (_, index) => ({
+    ref: `source:document-version-${'a'.repeat(64)}:source-reference-${index}`,
+    kind: 'DOCUMENT_PASSAGE', title: 'Same document title',
+    versionLabel: `Version ${index}`, locator: { page: index + 1 },
+  }));
+  input.contextPackage = {
+    primaryDocument: { readingStatus: 'AVAILABLE' },
+    supplementaryMaterials: { status: 'PARTIAL', reason: 'Restricted reference' },
+    sourceOrigins: input.availableSources.map((source, index) => ({
+      evidenceRef: source.ref,
+      origin: index % 2 ? 'RELATED_DOCUMENT' : 'PRIMARY_DOCUMENT',
+      contentNature: 'SOURCE_DOCUMENT_CONTENT',
+    })),
+  };
+  input.contextPackage.sourceOrigins.push({
+    evidenceRef: 'unmatched-statement', origin: 'REVIEW_CONVERSATION',
+    contentNature: 'UNVERIFIED_ENGINEER_STATEMENT',
+  });
+  input.deliveredEvidence = [{ evidenceRef: input.availableSources[0].ref, excerpt: 'Full original condition, exception and footnote remain here.' }];
+  const original = structuredClone(input);
+  const projected = projectJobAidModelInput(input);
+  assert.deepEqual(input, original, 'never mutate the Host-bound input');
+  assert.deepEqual(projected.availableSources.map(({ sourceOrigins, ...source }) => source), input.availableSources);
+  assert.deepEqual(projected.deliveredEvidence, input.deliveredEvidence);
+  const restoredOrigins = projected.availableSources.flatMap(({ ref, sourceOrigins = [] }) =>
+    sourceOrigins.map((origin) => ({ evidenceRef: ref, ...origin })),
+  ).concat(projected.contextPackage.sourceOrigins);
+  assert.deepEqual(restoredOrigins, input.contextPackage.sourceOrigins);
+  const { sourceOrigins: originalOrigins, ...originalContext } = input.contextPackage;
+  const { sourceOrigins: unmatchedOrigins, ...projectedContext } = projected.contextPackage;
+  assert.deepEqual(projectedContext, originalContext);
+  assert.ok(Buffer.byteLength(JSON.stringify(projected)) < Buffer.byteLength(JSON.stringify(input)));
+  const legacy = modelInput();
+  assert.deepEqual(projectJobAidModelInput(legacy), legacy);
+});
 
 function modelInput() {
   return {
@@ -63,7 +101,11 @@ function fixture(steps, overrides = {}) {
   const dependencies = {
     requestGateway: async (_url, request) => {
       calls.push(JSON.parse(request.body));
-      const step = steps.shift();
+      let step = steps.shift();
+      if (step && Object.hasOwn(step, 'work')) {
+        const { work, ...rest } = step;
+        step = { ...rest, workJson: JSON.stringify(work) };
+      }
       if (step instanceof Error) throw step;
       if (typeof step === 'number')
         return new Response(JSON.stringify({ error: 'synthetic timeout' }), {
@@ -407,7 +449,8 @@ test('typed Overall finish preserves quotes and line breaks with one JSON encodi
   const parameters = f.calls[0].tools[0].function.parameters;
   assert.deepEqual(parameters.required, ['step']);
   assert.equal(parameters.properties.step.type, 'object');
-  assert.equal(parameters.properties.step.properties.work.properties.issues.anyOf[0].type, 'array');
+  assert.equal(parameters.properties.step.properties.work, undefined);
+  assert.equal(parameters.properties.step.properties.workJson.type, 'string');
 });
 
 test('typed step unwraps only exact declared native arrays without editing content or extra fields', async () => {
@@ -495,3 +538,17 @@ test('unavailable knowledge stays explicit and permits conditional saved work wi
   assert.equal(receipt.error, 'USER_REAUTHORIZATION_REQUIRED');
   assert.equal(f.saves.length, 1);
 });
+
+
+test('workJson preserves complete content and rejects ambiguous or non-object JSON', async () => {
+  const { parseJobAidWorkJson } = await import('../scripts/run-jobaid-problem-assessment.mjs');
+  const work = { ...completed, sample: { empty: [], unknown: null, text: '引号 "quoted"\n换行 \\ 路径' } };
+  assert.deepEqual(parseJobAidWorkJson(JSON.stringify(work)), work);
+  for (const value of ['[]', 'null', '"text"', '{bad}', '{"a":1,"a":2}', '{"nested":[{"a":1,"\\u0061":2}]}']) {
+    assert.throws(() => parseJobAidWorkJson(value), /JOBAID_WORK_JSON_/);
+  }
+  const f = fixture([{ action: 'SAVE_WORK', workJson: JSON.stringify(work) }, { action: 'FINISH' }]);
+  await f.run();
+  assert.deepEqual(JSON.parse(f.saves[0].workJson), work);
+});
+

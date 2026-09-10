@@ -125,6 +125,45 @@ describe('shared pre-evaluation context', () => {
     });
   });
 
+  it.each([false, true])('keeps evidence and discussion aligned for explicit selection=%s', async (explicit) => {
+    const turns = Array.from({ length: 14 }, (_, index) => ({
+      turnNo: index + 1,
+      reviewTurnId: `RT-${index + 1}`,
+      engineerSuppliedInputId: `ESI-${index + 1}`,
+      reviewConversationId: 'RC-HISTORY',
+      inputRevision: 2,
+      userMessage: `Correction ${index + 1}`,
+      attachmentBindings: [],
+      assistantCandidate: null,
+      createdAt: new Date('2026-09-05T05:00:00Z'),
+    })) as PersistedReviewTurn[];
+    const service = new CanonicalHostCommonContextService(
+      {
+        hasActiveOfficialActorMapping: jest.fn(async () => true),
+        loadCurrent: jest.fn(async () => ({
+          conversation: { reviewConversationId: 'RC-HISTORY' },
+          turns: [...turns].reverse(),
+        })),
+      } as never,
+      {} as never,
+      {} as never,
+    );
+    const result = await service.build(workItem, {
+      tenantId: 'tenant-one', actorId: 'engineer-owner',
+    }, {
+      asOf: '2026-09-05T06:00:00Z',
+      ...(explicit ? { includedDiscussionTurnIds: turns.map((turn) => turn.reviewTurnId) } : {}),
+    });
+    const expected = explicit ? turns : turns.slice(-12);
+    expect(result.common.discussion.turns.map((turn) => turn.question)).toEqual(
+      expected.map((turn) => turn.userMessage),
+    );
+    expect(result.availableReadingEvidence.map((item) => item.excerpt)).toEqual(
+      expected.map((turn) => turn.userMessage),
+    );
+    expect(result.common.discussion.omittedEarlierTurns).toBe(explicit ? 0 : 2);
+  });
+
   it('builds before any evaluation using the WorkItem owner, not a service identity', async () => {
     const conversations = {
       loadCurrent: jest.fn(async () => null),

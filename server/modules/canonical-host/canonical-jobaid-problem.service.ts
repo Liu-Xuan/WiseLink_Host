@@ -207,6 +207,9 @@ export class CanonicalJobAidProblemService {
       allowedConnectors: loaded.row.initialAilySessionId
         ? ['feishu-aily-user']
         : [],
+      initialKnowledgeSession: {
+        expectedSessionId: loaded.row.initialAilySessionId ?? null,
+      },
       buildModelInput: (identity) =>
         this.buildInput(
           workItem,
@@ -246,6 +249,11 @@ export class CanonicalJobAidProblemService {
     permissionSnapshotVersion: string,
     requestId: string,
     purpose: 'INITIAL_PROBLEM_ASSESSMENT' | 'OVERALL_CONSISTENCY',
+    authorizedKnowledgeSession?: {
+      sessionId: string;
+      actorId: string;
+      tenantId: string;
+    },
   ) {
     if (!permissionSnapshotVersion.trim())
       throw new Error('JOBAID_PERMISSION_SNAPSHOT_REQUIRED');
@@ -295,9 +303,16 @@ export class CanonicalJobAidProblemService {
           sha256: execution.package.artifact.sha256,
         },
       ],
-      allowedConnectors: loaded.row.initialAilySessionId
-        ? ['feishu-aily-user']
-        : [],
+      allowedConnectors:
+        authorizedKnowledgeSession || loaded.row.initialAilySessionId
+          ? ['feishu-aily-user']
+          : [],
+      initialKnowledgeSession: {
+        expectedSessionId: loaded.row.initialAilySessionId ?? null,
+        ...(authorizedKnowledgeSession
+          ? { replacement: authorizedKnowledgeSession }
+          : {}),
+      },
       buildModelInput: async () =>
         buildInitialAnalysisRequestInput({ taskType, requestId }),
     });
@@ -395,6 +410,9 @@ export class CanonicalJobAidProblemService {
       allowedConnectors: loaded.row.initialAilySessionId
         ? ['feishu-aily-user']
         : [],
+      initialKnowledgeSession: {
+        expectedSessionId: loaded.row.initialAilySessionId ?? null,
+      },
       buildModelInput: (identity) =>
         this.buildInput(
           workItem,

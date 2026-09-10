@@ -10,6 +10,7 @@ import {
 } from '@nestjs/common';
 import { NeedLogin } from '@lark-apaas/fullstack-nestjs-core';
 import { z } from 'zod/v4';
+import { SessionResolver } from '../identity/session-resolver.service';
 import type { Request } from 'express';
 import { ProductionMiaodaBrowserObjectIngressGuard } from '../work-item/production-miaoda-browser-ingress';
 import { hostActor } from './canonical-host-request-actor';
@@ -21,6 +22,7 @@ import { CanonicalInitialAnalysisContinuationService } from './canonical-initial
 export class CanonicalInitialAnalysisContinuationController {
   constructor(
     private readonly service: CanonicalInitialAnalysisContinuationService,
+    private readonly sessions: SessionResolver,
   ) {}
 
   @Post('continue')
@@ -30,7 +32,9 @@ export class CanonicalInitialAnalysisContinuationController {
     @Req() request: Request,
   ) {
     try {
-      return await this.service.request(workItemId, body, hostActor(request));
+      return await this.sessions.withRequestSession(request, (session) =>
+        this.service.request(workItemId, body, hostActor(request), session),
+      );
     } catch (error) {
       if (error instanceof z.ZodError)
         throw new BadRequestException('INITIAL_CONTINUATION_REQUEST_INVALID');
