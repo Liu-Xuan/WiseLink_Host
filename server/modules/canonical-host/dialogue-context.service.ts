@@ -62,10 +62,12 @@ export class DialogueContextService {
       objectAccessActor: session.actor,
     };
     const contributions = includeContributions
-      ? await this.repository.relevantContributions(
-          { tenantId: actor.tenantId, actorId: actor.userId },
-          ids,
-        )
+      ? (
+          await this.repository.relevantContributions(
+            { tenantId: actor.tenantId, actorId: actor.userId },
+            ids,
+          )
+        ).filter((row) => !row.consumed_working_ref)
       : [];
     const contributionContexts = new Map<string, DialogueMessageRow[]>();
     for (const row of contributions) {
@@ -110,6 +112,10 @@ export class DialogueContextService {
             )
             .map((row) => ({
               contributionRef: row.contribution_ref,
+              revision: row.revision,
+              sourcePart: row.source_part,
+              origin: contributionContexts.get(row.contribution_ref)!.at(-1)!
+                .origin,
               kind: row.kind,
               selectedText: row.selected_text,
               sourceContext: contributionContexts

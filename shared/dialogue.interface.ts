@@ -23,6 +23,9 @@ export interface DialogueWorkingContext {
   openQuestions: string[];
   pendingContributions: Array<{
     contributionRef: string;
+    revision?: number;
+    sourcePart?: 'USER' | 'ASSISTANT';
+    origin?: DialogueOrigin;
     kind: DialogueContributionKind;
     selectedText: string;
     sourceContext: Array<{

@@ -17,7 +17,6 @@ import {
 } from '@client/src/components/ui/select';
 import type { DialogueWorkItemOption } from './DialogueContributionPicker';
 import type { usePrivateDialogue } from './usePrivateDialogue';
-import { defaultDialogueAssessmentContributions } from './dialogue-assessment-selection';
 import { dialogueAssessmentOperation } from './dialogue-assessment-operation';
 import { dialogueFocusOptions } from './dialogue-focus';
 
@@ -65,21 +64,13 @@ export const DialogueAssessmentControl: FC<DialogueAssessmentControlProps> = ({
     ? targetChoice
     : preferred;
   const [context, setContext] = useState<DialogueWorkingContext | null>(null);
-  const chosen = defaultDialogueAssessmentContributions(
-    thread.contributions,
-    target,
-  );
   const [instruction, setInstruction] = useState('');
   const [receipt, setReceipt] = useState<DialogueAssessmentResponse | null>(
     null,
   );
-  const candidates = thread.contributions.filter(
-    (item) =>
-      item.workItemId === target &&
-      item.status === 'ACTIVE' &&
-      !item.consumedWorkingRef,
-  );
-  const selectionValid = chosen.length > 0;
+  const candidates =
+    context?.workItemId === target ? context.pendingContributions : [];
+  const selectionValid = candidates.length > 0;
   const readCurrent = (workItemId: string = target): void => {
     if (!workItemId || disabled) return;
     let result: DialogueWorkingContext | null = null;
@@ -190,7 +181,9 @@ export const DialogueAssessmentControl: FC<DialogueAssessmentControlProps> = ({
             </p>
           </details>
           <details>
-            <summary>已汇集 {chosen.length} 条补充 · 查看原话与来源</summary>
+            <summary>
+              当前待用 {candidates.length} 条补充 · 查看原话与来源
+            </summary>
             <div className="space-y-3 py-2">
               {candidates.map((item) => (
                 <article
@@ -201,15 +194,14 @@ export const DialogueAssessmentControl: FC<DialogueAssessmentControlProps> = ({
                     {item.selectedText}
                   </p>
                   <p className="text-xs text-muted-foreground">
-                    {item.sourcePart === 'USER' ? '用户原话' : 'Aily 答复'} ·{' '}
-                    {item.kind} · 修订 {item.revision}
+                    {item.sourcePart === 'ASSISTANT'
+                      ? 'Aily 候选答复'
+                      : item.origin === 'FEISHU_EXCERPT'
+                        ? '用户提交摘录'
+                        : '用户陈述'}{' '}
+                    · {item.kind}
+                    {item.revision ? ` · 修订 ${item.revision}` : ''}
                   </p>
-                  {item.usedBy.length > 0 && (
-                    <p className="text-xs text-muted-foreground">
-                      已关联 {item.usedBy.length}{' '}
-                      次更新请求；请求关联不代表已成功消费。
-                    </p>
-                  )}
                 </article>
               ))}
             </div>
