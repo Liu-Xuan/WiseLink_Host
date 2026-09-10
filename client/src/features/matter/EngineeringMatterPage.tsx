@@ -366,7 +366,13 @@ const MatterWorkspace: FC<MatterWorkspaceProps> = ({
         </div>
         <div className="grid gap-6 xl:grid-cols-[minmax(0,1fr)_20rem]">
           <div className="wl-overall-hero wl-glass-content">
-            <MatterMaterials materials={data.matter.materials ?? []} />
+            <MatterMaterials
+              materials={data.matter.materials ?? []}
+              matterId={matterId}
+              revision={data.matter.currentRevision.revisionNo}
+              disabled={loading || authenticationRequired}
+              onSaved={refresh}
+            />
             <MatterMembers
               members={data.matter.catalog.entries}
               onOpenMember={(member: EngineeringMatterCatalogEntry) =>
@@ -385,17 +391,19 @@ const MatterWorkspace: FC<MatterWorkspaceProps> = ({
           </aside>
         </div>
       </RetainedWorkbenchPanel>
-      {searchParams.get('sourceDocument') ? <MatterDocumentSourceDialog
-        key={`${sessionGeneration}:${searchParams.get('sourceDocument')}:${searchParams.get('sourceRef')}`}
-        documentVersionId={searchParams.get('sourceDocument')!}
-        sourceRef={searchParams.get('sourceRef')}
-        onClose={() => {
-          const params = new URLSearchParams(searchParams);
-          params.delete('sourceDocument');
-          params.delete('sourceRef');
-          setSearchParams(params);
-        }}
-      /> : null}
+      {searchParams.get('sourceDocument') ? (
+        <MatterDocumentSourceDialog
+          key={`${sessionGeneration}:${searchParams.get('sourceDocument')}:${searchParams.get('sourceRef')}`}
+          documentVersionId={searchParams.get('sourceDocument')!}
+          sourceRef={searchParams.get('sourceRef')}
+          onClose={() => {
+            const params = new URLSearchParams(searchParams);
+            params.delete('sourceDocument');
+            params.delete('sourceRef');
+            setSearchParams(params);
+          }}
+        />
+      ) : null}
       <ClaimEvidenceDialog
         selection={claimSelection}
         readClaim={readClaim}

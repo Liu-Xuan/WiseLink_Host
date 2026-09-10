@@ -1,5 +1,6 @@
 import type { MatterMaterialLink } from '@shared/matter-material.interface';
 import { DocumentOriginalPreview } from '@client/src/pages/WorkspaceHomePage/DocumentOriginalPreview';
+import EditMatterMaterial from './EditMatterMaterial';
 
 const kindLabels = {
   MEMBER: '同事项成员',
@@ -20,8 +21,16 @@ const acquisitionLabels = {
 
 export default function MatterMaterials({
   materials,
+  matterId,
+  revision,
+  disabled,
+  onSaved,
 }: {
   materials: MatterMaterialLink[];
+  matterId: string;
+  revision: number;
+  disabled: boolean;
+  onSaved: () => Promise<void>;
 }) {
   if (!materials.length) return null;
   return (
@@ -43,6 +52,14 @@ export default function MatterMaterials({
             <p className="whitespace-pre-wrap text-sm leading-7">
               {material.contribution}
             </p>
+            <EditMatterMaterial
+              key={`${revision}:${material.materialId}`}
+              matterId={matterId}
+              revision={revision}
+              material={material}
+              disabled={disabled}
+              onSaved={onSaved}
+            />
             {material.kind === 'EXPECTED' ? (
               <>
                 <p className="text-sm">{material.expected.description}</p>

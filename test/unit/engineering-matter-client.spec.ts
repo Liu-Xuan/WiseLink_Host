@@ -15,7 +15,9 @@ import {
   getEngineeringMatterDirectory,
   getEngineeringMatterWorkspace,
   linkEngineeringMatterWorkItem,
+  reviseEngineeringMatterMaterials,
 } from '../../client/src/api/engineering-matter';
+import type { ReviseMatterMaterialsRequest } from '../../shared/matter-material.interface';
 
 function matter() {
   return {
@@ -185,5 +187,54 @@ describe('engineering matter browser API bindings', () => {
       return { status: 200, data: matter() };
     });
     await expect(getEngineeringMatter('M/1')).rejects.toThrow('登录状态已变化');
+  });
+  it('keeps the material correction request for an uncertain response and accepts its replay', async () => {
+    const input: ReviseMatterMaterialsRequest = {
+      requestId: 'REQ-MATERIAL',
+      expectedMatterRevision: 2,
+      changeSummary: '范围不连续，改为参考',
+      upserts: [
+        {
+          materialId: 'MM-1',
+          kind: 'RELATED',
+          familyId: 'F-1',
+          documentVersionId: 'DV-1',
+          scope: '措施前提',
+          contribution: '仅支持工具版本限制',
+          basis: [],
+          origin: 'ENGINEER',
+          disposition: 'INCLUDED',
+        },
+      ],
+    };
+    request.mockRejectedValueOnce(new Error('response lost'));
+    await expect(
+      reviseEngineeringMatterMaterials('M/1', input),
+    ).rejects.toThrow('response lost');
+    const materials = {
+      matterId: 'M/1',
+      matterRevisionId: 'MR-3',
+      matterRevision: 3,
+      materials: input.upserts,
+    };
+    request.mockResolvedValueOnce({
+      status: 200,
+      data: { materials, replayed: true },
+    });
+    expect(await reviseEngineeringMatterMaterials('M/1', input)).toBe(
+      materials,
+    );
+    expect(request.mock.calls[0][0].data).toBe(input);
+    expect(request.mock.calls[1][0].data).toBe(input);
+    expect(request.mock.calls[1][0].url).toBe(
+      '/api/canonical-host/engineering-matters/M%2F1/materials',
+    );
+    request.mockResolvedValueOnce({
+      status: 200,
+      data: { materials: { ...materials, matterRevision: 4 } },
+    });
+    await expect(
+      reviseEngineeringMatterMaterials('M/1', input),
+    ).rejects.toMatchObject({ statusCode: 403 });
   });
 });
