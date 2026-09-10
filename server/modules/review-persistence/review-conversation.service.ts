@@ -282,7 +282,7 @@ export class ReviewConversationService {
       expectedInputRevision: input.expectedInputRevision,
       executionRequested: input.executionRequested,
       ailySessionId:
-        input.purpose === 'CHAT'
+        input.purpose === 'CHAT' || input.purpose === 'UPDATE_ASSESSMENT'
           ? input.authorized.session.session.id
           : undefined,
       currentRevision: input.authorized.grant.workItemRevision,

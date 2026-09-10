@@ -61,6 +61,11 @@ export function readStoredOverallEvidence(
             ? null
             : text(item.versionLabel, 'OVERALL_EVIDENCE_VERSION_INVALID'),
         excerpt: text(item.excerpt, 'OVERALL_EVIDENCE_EXCERPT_INVALID'),
+        ...(item.dialogueSource === undefined
+          ? {}
+          : {
+              dialogueSource: readDialogueEvidenceSource(item.dialogueSource),
+            }),
       };
       switch (item.kind) {
         case 'ENGINEER_ATTACHMENT':
@@ -546,4 +551,23 @@ function positiveInteger(value: unknown, code: string): number {
   if (typeof value !== 'number' || !Number.isSafeInteger(value) || value < 1)
     throw new Error(code);
   return value;
+}
+
+function readDialogueEvidenceSource(value: unknown) {
+  const item = record(value, 'DIALOGUE_EVIDENCE_SOURCE_INVALID');
+  return {
+    requestRef: text(item.requestRef, 'DIALOGUE_EVIDENCE_REQUEST_INVALID'),
+    contributionRef: text(
+      item.contributionRef,
+      'DIALOGUE_EVIDENCE_REF_INVALID',
+    ),
+    revision: positiveInteger(
+      item.revision,
+      'DIALOGUE_EVIDENCE_REVISION_INVALID',
+    ),
+    contextWorkItemIds: array(
+      item.contextWorkItemIds,
+      'DIALOGUE_EVIDENCE_CONTEXT_INVALID',
+    ).map((id) => text(id, 'DIALOGUE_EVIDENCE_CONTEXT_INVALID')),
+  };
 }

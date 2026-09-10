@@ -1,5 +1,6 @@
 import { jobAidWorkTypeErrors, jobAidWorkDependencyErrors, JOBAID_STEP_SHAPE, decodeJobAidStep, jobAidFunctionSchema } from './jobaid-work-shape.mjs';
 import { randomUUID } from 'node:crypto';
+import { isDeepStrictEqual } from 'node:util';
 import {
   M3_MAX_COMPLETION_TOKENS,
   actualModelVersion,
@@ -113,6 +114,35 @@ export function projectJobAidModelInput(input) {
       ...(unmatched.length ? { sourceOrigins: unmatched } : {}),
     },
   };
+}
+
+// A model may request more sources than one Host MCP call accepts. Preserve
+// the entire intent, while each batch retains the Host's scope and lease checks.
+export async function readJobAidSourceBatches(intent, read) {
+  const batchSize = 96;
+  if (intent.sourceRefs.length <= batchSize) return read(intent);
+  if (new Set(intent.sourceRefs).size !== intent.sourceRefs.length)
+    throw new Error('JOBAID_SOURCE_SELECTION_INVALID');
+  let first;
+  const sourceRefs = new Set();
+  const evidence = new Map();
+  for (let offset = 0; offset < intent.sourceRefs.length; offset += batchSize) {
+    const requested = intent.sourceRefs.slice(offset, offset + batchSize);
+    const result = await read({ ...intent, sourceRefs: requested });
+    if (result?.status !== 'AVAILABLE' || result.scope !== intent.context ||
+      result.completeRequestedScope !== true || !Array.isArray(result.sourceRefs) ||
+      !Array.isArray(result.evidence) || requested.some(ref => !result.sourceRefs.includes(ref)))
+      throw new Error('JOBAID_SOURCE_READ_FAILED:INCOMPLETE_BATCH');
+    first ??= result;
+    for (const item of result.evidence) {
+      if (!item || typeof item.evidenceRef !== 'string' ||
+        (evidence.has(item.evidenceRef) && !isDeepStrictEqual(evidence.get(item.evidenceRef), item)))
+        throw new Error('JOBAID_SOURCE_READ_FAILED:INCONSISTENT_EVIDENCE');
+      evidence.set(item.evidenceRef, item);
+    }
+    for (const ref of result.sourceRefs) sourceRefs.add(ref);
+  }
+  return { ...first, sourceRefs: [...sourceRefs], evidence: [...evidence.values()] };
 }
 
 /** Read/save intents are executed by existing Host callbacks, never by the model. */
@@ -293,11 +323,11 @@ export async function invokeHostedJobAidProblemModel(
           !['EXACT', 'PAGE'].includes(step.context)
         )
           throw new Error('JOBAID_SOURCE_STEP_INVALID');
-        receipt = await options.readAssessmentSources({
+        receipt = await readJobAidSourceBatches({
           sourceRefs: step.sourceRefs,
           purpose: step.purpose,
           context: step.context,
-        });
+        }, options.readAssessmentSources);
         if (receipt?.status !== 'AVAILABLE' || !Array.isArray(receipt.evidence))
           throw new Error('JOBAID_SOURCE_READ_FAILED');
       } else if (step.action === 'QUERY_KNOWLEDGE') {

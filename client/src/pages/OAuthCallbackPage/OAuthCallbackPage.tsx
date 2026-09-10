@@ -10,6 +10,12 @@ import {
 } from '@client/src/api/identity-oauth';
 import { Button } from '@client/src/components/ui/button';
 import {
+  clearOauthReturnPath,
+  readOauthReturnPath,
+  rememberOauthReturnPath,
+  safeOauthReturnPath,
+} from './oauth-return-location';
+import {
   toOauthFailureCode,
   type OAuthFailureCode,
 } from './oauth-failure-code';
@@ -22,6 +28,20 @@ export default function OAuthCallbackPage() {
   const [failureCode, setFailureCode] = useState<OAuthFailureCode | null>(null);
   const [authorizeUrl, setAuthorizeUrl] = useState<string | null>(null);
   const [attempt, setAttempt] = useState<number>(0);
+  const [returnSaved, setReturnSaved] = useState(false);
+  const [returnStorage] = useState(() => {
+    try {
+      return window.sessionStorage;
+    } catch {
+      return null;
+    }
+  });
+  const [returnPath] = useState(() => {
+    const params = new URLSearchParams(window.location.search);
+    return params.has('code') || params.has('state') || params.has('error')
+      ? readOauthReturnPath(params.get('state'), returnStorage)
+      : safeOauthReturnPath(params.get('returnTo'));
+  });
 
   useEffect(() => {
     let active = true;
@@ -33,9 +53,10 @@ export default function OAuthCallbackPage() {
     const codes = callbackParams.getAll('code');
     const states = callbackParams.getAll('state');
     const providerError = callbackParams.has('error');
-    const hadCallbackQuery = codes.length > 0 || states.length > 0 || providerError;
-    const code = codes.length === 1 ? codes[0]?.trim() ?? '' : '';
-    const state = states.length === 1 ? states[0]?.trim() ?? '' : '';
+    const hadCallbackQuery =
+      codes.length > 0 || states.length > 0 || providerError;
+    const code = codes.length === 1 ? (codes[0]?.trim() ?? '') : '';
+    const state = states.length === 1 ? (states[0]?.trim() ?? '') : '';
 
     if (hadCallbackQuery) {
       window.history.replaceState(
@@ -54,12 +75,22 @@ export default function OAuthCallbackPage() {
       }
       if (code && state) {
         await exchangeOfficialOauthCallback({ code, state });
-        if (active) navigate('/', { replace: true });
+        if (active) {
+          clearOauthReturnPath(returnStorage);
+          navigate(returnPath ?? '/', { replace: true });
+        }
         return;
       }
 
       const nextAuthorizeUrl = await startOfficialOauth();
       if (active) {
+        setReturnSaved(
+          rememberOauthReturnPath(
+            returnPath,
+            new URL(nextAuthorizeUrl).searchParams.get('state')!,
+            returnStorage,
+          ),
+        );
         setAuthorizeUrl(nextAuthorizeUrl);
         setStatus('READY');
       }
@@ -73,14 +104,17 @@ export default function OAuthCallbackPage() {
     return () => {
       active = false;
     };
-  }, [attempt, navigate]);
+  }, [attempt, navigate, returnPath, returnStorage]);
 
   return (
     <main className="flex min-h-screen items-center justify-center bg-background p-6">
       <section className="w-full max-w-lg rounded-2xl border bg-card p-8 text-card-foreground shadow-sm">
         {status === 'WORKING' ? (
           <div className="flex flex-col items-center gap-4 text-center">
-            <LoaderCircle className="size-8 animate-spin text-primary" aria-hidden="true" />
+            <LoaderCircle
+              className="size-8 animate-spin text-primary"
+              aria-hidden="true"
+            />
             <div>
               <h1 className="text-xl font-semibold">正在连接飞书身份</h1>
               <p className="mt-2 text-sm text-muted-foreground">
@@ -93,7 +127,8 @@ export default function OAuthCallbackPage() {
             <div>
               <h1 className="text-xl font-semibold">飞书身份连接已就绪</h1>
               <p className="mt-2 text-sm text-muted-foreground">
-                使用官方飞书授权页继续。授权完成后将自动返回 WiseLink。
+                使用官方飞书授权页继续。授权完成后将自动返回
+                {returnSaved ? '原任务页面' : '资料库'}。
               </p>
             </div>
             <Button asChild data-ai-section-type="button">
@@ -101,8 +136,14 @@ export default function OAuthCallbackPage() {
             </Button>
           </div>
         ) : (
-          <div className="flex flex-col items-center gap-4 text-center" role="alert">
-            <CircleAlert className="size-8 text-destructive" aria-hidden="true" />
+          <div
+            className="flex flex-col items-center gap-4 text-center"
+            role="alert"
+          >
+            <CircleAlert
+              className="size-8 text-destructive"
+              aria-hidden="true"
+            />
             <div>
               <h1 className="text-xl font-semibold">飞书身份连接未完成</h1>
               <p className="mt-2 text-sm text-muted-foreground">
@@ -116,7 +157,9 @@ export default function OAuthCallbackPage() {
             </div>
             <Button
               type="button"
-              onClick={() => setAttempt((current: number): number => current + 1)}
+              onClick={() =>
+                setAttempt((current: number): number => current + 1)
+              }
               data-ai-section-type="button"
             >
               重新连接

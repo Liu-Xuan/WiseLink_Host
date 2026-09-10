@@ -162,6 +162,22 @@ describe('dialogue context interaction', () => {
         work_item_id: 'A',
         kind: 'HYPOTHESIS',
         selected_text: '是的',
+        revision: 2,
+        source_part: 'USER',
+      },
+      {
+        contribution_ref: 'C2',
+        thread_ref: 'another-thread',
+        work_item_id: 'A',
+        kind: 'CORRECTION',
+        selected_text: '另一对话的纠正',
+      },
+      {
+        contribution_ref: 'C3',
+        work_item_id: 'A',
+        kind: 'HYPOTHESIS',
+        selected_text: '已成功消费',
+        consumed_working_ref: 'W3',
       },
     ]);
     h.contributionContext.mockResolvedValue([
@@ -175,6 +191,7 @@ describe('dialogue context interaction', () => {
       },
       {
         message_ref: 'M2',
+        origin: 'FEISHU_EXCERPT',
         user_text: '是的',
         query_status: null,
         answer_text: null,
@@ -183,7 +200,14 @@ describe('dialogue context interaction', () => {
       },
     ]);
     const current = await h.service.current(session, ['A']);
+    expect(
+      current[0].pendingContributions.map((item) => item.contributionRef),
+    ).toEqual(['C1', 'C2']);
+    expect(h.contributionContext).toHaveBeenCalledTimes(2);
     expect(current[0].pendingContributions[0]).toMatchObject({
+      revision: 2,
+      sourcePart: 'USER',
+      origin: 'FEISHU_EXCERPT',
       selectedText: '是的',
       sourceContext: [
         expect.objectContaining({ assistantText: 'Win10 仅为测试假设吗？' }),

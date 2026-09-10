@@ -1371,6 +1371,9 @@ export class CanonicalJobAidProblemService {
       [primaryWorkItemId, null],
     ]);
     for (const item of evidence)
+      for (const id of item.dialogueSource?.contextWorkItemIds ?? [])
+        bindings.set(id, bindings.get(id) ?? null);
+    for (const item of evidence)
       if (item.kind === 'DOCUMENT_PASSAGE')
         bindings.set(item.workItemId, item.documentVersionId);
     for (const item of evidence)

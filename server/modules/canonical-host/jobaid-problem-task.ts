@@ -214,7 +214,8 @@ export function buildJobAidProblemTask(input: {
       ...catalog
         .filter(
           (item) =>
-            item.kind === 'ENGINEER_STATEMENT' || item.kind === 'HOST_FACT',
+            (item.kind === 'ENGINEER_STATEMENT' && !item.dialogueSource) ||
+            item.kind === 'HOST_FACT',
         )
         .map((item) => item.evidenceRef),
       ...(previousWork?.content.readSourceRefs ?? []),

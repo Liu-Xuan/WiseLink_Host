@@ -90,6 +90,20 @@ export class DialogueAssessmentRepository {
     });
   }
 
+  async findForTurn(scope: DialogueScope, workItemId: string, turnId: string) {
+    return this.dialogues.transaction(scope, async (db) => {
+      const [row] = await db.execute<DialogueAssessmentRow>(sql`
+        SELECT r.* FROM dialogue_assessment_request r
+        JOIN review_turn t ON t.request_id='dialogue-' || r.request_ref::text
+          AND t.review_conversation_id=r.review_conversation_id
+          AND t.tenant_id=r.tenant_id AND t.actor_id=r.actor_id
+          AND t.work_item_id=r.work_item_id
+        WHERE r.tenant_id=${scope.tenantId} AND r.actor_id=${scope.actorId}
+          AND r.work_item_id=${workItemId} AND t.review_turn_id=${turnId}`);
+      return row ?? null;
+    });
+  }
+
   async findTurn(
     scope: DialogueScope,
     request: DialogueAssessmentRow,

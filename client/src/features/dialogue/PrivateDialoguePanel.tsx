@@ -1,4 +1,5 @@
 import { Link } from 'react-router-dom';
+import { OfficialOauthLink } from '@client/src/components/OfficialOauthLink';
 import { useEffect, useState, type FC } from 'react';
 import { useCurrentUserSession } from '@client/src/app/providers/CurrentUserSessionProvider';
 import {
@@ -257,7 +258,7 @@ const PrivateDialogueContent: FC<PrivateDialoguePanelProps> = ({
           {!thread.aily.available &&
           thread.aily.reason === 'USER_REAUTHORIZATION_REQUIRED' ? (
             <Button asChild variant="outline">
-              <Link to="/client/oauth/callback">连接飞书身份以使用 Aily</Link>
+              <OfficialOauthLink>连接飞书身份以使用 Aily</OfficialOauthLink>
             </Button>
           ) : null}
           <div className="grid gap-2 sm:grid-cols-2">

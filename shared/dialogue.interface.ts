@@ -23,6 +23,9 @@ export interface DialogueWorkingContext {
   openQuestions: string[];
   pendingContributions: Array<{
     contributionRef: string;
+    revision?: number;
+    sourcePart?: 'USER' | 'ASSISTANT';
+    origin?: DialogueOrigin;
     kind: DialogueContributionKind;
     selectedText: string;
     sourceContext: Array<{
@@ -74,6 +77,7 @@ export interface DialogueContributionReadModel {
   supersedesRef: string | null;
   audience: 'PRIVATE';
   createdAt: string;
+  consumedWorkingRef?: string | null;
   usedBy: Array<{
     reviewTurnId: string;
     workItemId: string;
@@ -129,6 +133,7 @@ export interface RequestDialogueAssessment {
   expectedWorkItemRevision: number;
   expectedWorkingRef: string | null;
   contributions: Array<{ contributionRef: string; expectedRevision: number }>;
+  collectionMode?: 'ALL_PENDING';
   userMessage: string;
 }
 

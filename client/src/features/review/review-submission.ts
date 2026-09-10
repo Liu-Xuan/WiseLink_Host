@@ -9,16 +9,21 @@ import { sameReviewScope } from './review-scope';
 export function assessmentDiscussionTurns(
   conversation: ReviewConversationReadModel,
 ): ReviewTurnReadModel[] {
-  const lastUpdate: number = conversation.turns.reduce(
-    (last: number, turn: ReviewTurnReadModel) =>
-      turn.purpose === 'UPDATE_ASSESSMENT' ? Math.max(last, turn.turnNo) : last,
-    0,
+  const consumed = new Set(
+    conversation.turns
+      .filter(
+        (turn) =>
+          turn.purpose === 'UPDATE_ASSESSMENT' &&
+          Boolean(turn.assistantCandidate) &&
+          sameReviewScope(turn.reviewScope, conversation.reviewScope),
+      )
+      .flatMap((turn) => turn.includedDiscussionTurnIds ?? []),
   );
   return conversation.turns
     .filter(
       (turn: ReviewTurnReadModel) =>
         turn.purpose === 'CHAT' &&
-        turn.turnNo > lastUpdate &&
+        !consumed.has(turn.reviewTurnId) &&
         Boolean(turn.assistantCandidate) &&
         sameReviewScope(turn.reviewScope, conversation.reviewScope),
     )

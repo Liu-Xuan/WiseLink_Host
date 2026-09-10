@@ -17,10 +17,6 @@ import {
 } from '@client/src/components/ui/select';
 import type { DialogueWorkItemOption } from './DialogueContributionPicker';
 import type { usePrivateDialogue } from './usePrivateDialogue';
-import {
-  dialogueAssessmentSelectionValid,
-  type DialogueChosenContribution,
-} from './dialogue-assessment-selection';
 import { dialogueAssessmentOperation } from './dialogue-assessment-operation';
 import { dialogueFocusOptions } from './dialogue-focus';
 
@@ -68,19 +64,13 @@ export const DialogueAssessmentControl: FC<DialogueAssessmentControlProps> = ({
     ? targetChoice
     : preferred;
   const [context, setContext] = useState<DialogueWorkingContext | null>(null);
-  const [chosen, setChosen] = useState<DialogueChosenContribution[]>([]);
   const [instruction, setInstruction] = useState('');
   const [receipt, setReceipt] = useState<DialogueAssessmentResponse | null>(
     null,
   );
-  const candidates = thread.contributions.filter(
-    (item) => item.workItemId === target && item.status === 'ACTIVE',
-  );
-  const selectionValid = dialogueAssessmentSelectionValid(
-    chosen,
-    thread.contributions,
-    target,
-  );
+  const candidates =
+    context?.workItemId === target ? context.pendingContributions : [];
+  const selectionValid = candidates.length > 0;
   const readCurrent = (workItemId: string = target): void => {
     if (!workItemId || disabled) return;
     let result: DialogueWorkingContext | null = null;
@@ -113,10 +103,11 @@ export const DialogueAssessmentControl: FC<DialogueAssessmentControlProps> = ({
       workItemId: target,
       expectedWorkItemRevision: context.workItemRevision,
       expectedWorkingRef: context.workingRef,
-      contributions: chosen,
+      contributions: [],
+      collectionMode: 'ALL_PENDING',
       userMessage:
         instruction.trim() ||
-        '请结合本次选中的补充内容，核对当前资料并更新工作判断，说明判断变化、依据和仍待确认的事项。',
+        '请结合本次汇集的补充内容，核对当前资料并更新工作判断，说明判断变化、依据和仍待确认的事项。',
     };
     const operation = dialogueAssessmentOperation(thread.threadRef, input);
     void execute(operation.run, {
@@ -126,7 +117,6 @@ export const DialogueAssessmentControl: FC<DialogueAssessmentControlProps> = ({
         if (!result) return;
         setReceipt(result);
         setContext(null);
-        setChosen([]);
         setInstruction('');
         onAccepted?.(result);
       },
@@ -141,7 +131,7 @@ export const DialogueAssessmentControl: FC<DialogueAssessmentControlProps> = ({
     >
       <summary>用讨论中的补充更新评估</summary>
       <p className="text-xs text-muted-foreground">
-        单次更新一份资料。只有明确选中的私人贡献进入本次请求；不分享，不正式采用。
+        当前资料的有效补充自动汇集，点击更新后才重新评估。
       </p>
       {!targetIds.length && <p>先在对话中选取需要补充的原话并保存。</p>}
       {targetOptions.length === 1 ? (
@@ -153,7 +143,6 @@ export const DialogueAssessmentControl: FC<DialogueAssessmentControlProps> = ({
           onValueChange={(value) => {
             setTarget(value);
             setContext(null);
-            setChosen([]);
             setReceipt(null);
             readCurrent(value);
           }}
@@ -191,43 +180,32 @@ export const DialogueAssessmentControl: FC<DialogueAssessmentControlProps> = ({
               {context.summary || '尚无工作判断'}
             </p>
           </details>
-          <p>选择本次要纳入的补充内容：</p>
-          <div className="space-y-2" aria-label="明确选择本次输入贡献">
-            {!candidates.length && <p>该资料暂无可选择的私人贡献。</p>}
-            {candidates.map((item) => (
-              <Button
-                key={item.contributionRef}
-                variant="outline"
-                className="h-auto max-w-full whitespace-pre-wrap break-words text-left"
-                disabled={disabled}
-                aria-pressed={chosen.some(
-                  (selected) =>
-                    selected.contributionRef === item.contributionRef,
-                )}
-                onClick={() =>
-                  setChosen(
-                    chosen.some(
-                      (selected) =>
-                        selected.contributionRef === item.contributionRef,
-                    )
-                      ? chosen.filter(
-                          (selected) =>
-                            selected.contributionRef !== item.contributionRef,
-                        )
-                      : [
-                          ...chosen,
-                          {
-                            contributionRef: item.contributionRef,
-                            expectedRevision: item.revision,
-                          },
-                        ],
-                  )
-                }
-              >
-                {item.selectedText}
-              </Button>
-            ))}
-          </div>
+          <details>
+            <summary>
+              当前待用 {candidates.length} 条补充 · 查看原话与来源
+            </summary>
+            <div className="space-y-3 py-2">
+              {candidates.map((item) => (
+                <article
+                  key={item.contributionRef}
+                  className="space-y-1 border-b pb-2"
+                >
+                  <p className="whitespace-pre-wrap break-words">
+                    {item.selectedText}
+                  </p>
+                  <p className="text-xs text-muted-foreground">
+                    {item.sourcePart === 'ASSISTANT'
+                      ? 'Aily 候选答复'
+                      : item.origin === 'FEISHU_EXCERPT'
+                        ? '用户提交摘录'
+                        : '用户陈述'}{' '}
+                    · {item.kind}
+                    {item.revision ? ` · 修订 ${item.revision}` : ''}
+                  </p>
+                </article>
+              ))}
+            </div>
+          </details>
           <Textarea
             aria-label="本次更新要求"
             value={instruction}
@@ -238,20 +216,6 @@ export const DialogueAssessmentControl: FC<DialogueAssessmentControlProps> = ({
           />
           {hasDraft && <p>对话输入框中的未发送草稿不会进入本次更新。</p>}
           {error && <p>请先重新读取当前工作版本，核对后再提交。</p>}
-          {!!chosen.length && !selectionValid && (
-            <div role="alert">
-              <p>
-                所选贡献已变化、撤回或超出20条。不会缩小输入范围，请清除选择后重新核对。
-              </p>
-              <Button
-                variant="outline"
-                disabled={disabled}
-                onClick={() => setChosen([])}
-              >
-                清除选择并重新核对
-              </Button>
-            </div>
-          )}
           <Button
             disabled={
               disabled ||
@@ -261,7 +225,7 @@ export const DialogueAssessmentControl: FC<DialogueAssessmentControlProps> = ({
             }
             onClick={submit}
           >
-            用 {chosen.length} 条补充更新评估
+            更新评估
           </Button>
         </>
       )}

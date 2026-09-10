@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { Link } from 'react-router-dom';
 import ContextualDialogue from '@client/src/features/dialogue/ContextualDialogue';
+import { OfficialOauthLink } from '@client/src/components/OfficialOauthLink';
 import { useWorkbenchPanelActive } from '@client/src/features/workbench/RetainedWorkbenchPanel';
 import { MessageSquareText, RefreshCw, TriangleAlert } from 'lucide-react';
 
@@ -699,7 +699,7 @@ export default function ContinuousReviewPanel({
             <span>{error.message}</span>
             {error.code === 'OFFICIAL_OAUTH_SESSION_REQUIRED' ? (
               <Button asChild>
-                <Link to="/client/oauth/callback">连接飞书身份</Link>
+                <OfficialOauthLink>连接飞书身份</OfficialOauthLink>
               </Button>
             ) : (
               <dl>

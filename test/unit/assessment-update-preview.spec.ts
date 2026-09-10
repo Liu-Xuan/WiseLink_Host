@@ -22,7 +22,6 @@ describe('reviewed assessment update boundary', () => {
         onOpenChange: () => undefined,
         turns: [{ ...reviewUiTurn(3, true), purpose: 'CHAT' }],
         selectedIds: ['TURN-3'],
-        onSelectionChange: () => undefined,
         revision: 7,
         workingRevision: 2,
         materialTitle: 'SB sample',
@@ -34,13 +33,14 @@ describe('reviewed assessment update boundary', () => {
         onConfirm: () => undefined,
       }),
     );
-    expect(html).toContain('核对本次更新评估范围');
+    expect(html).toContain('本次评估输入');
     expect(html).toContain('DV-exact');
     expect(html).toContain('工作版本 2');
     expect(html).toContain('actual-model');
     expect(html).toContain('未发送文字及附件不在本次范围内');
     expect(html).toContain('保留已有候选，等待核对。');
-    expect(html).toContain('确认范围并更新评估');
+    expect(html).toContain('已自动汇集');
+    expect(html).not.toContain('aria-pressed');
   });
   it('preserves separate immutable update retry and never consumes the composer', () => {
     const source = readFileSync(
@@ -53,7 +53,7 @@ describe('reviewed assessment update boundary', () => {
     expect(source).toContain('pending ??');
     expect(source).toContain('submittingRef.current');
     expect(source).toContain('preview.scope');
-    expect(source).toContain('preview.modelRef');
+    expect(source).toContain('currentPreview.modelRef');
     expect(source).toContain('turn.requestId === pending.requestId');
     expect(source).not.toContain('setMessage');
     expect(source).toContain('mustReopen');
