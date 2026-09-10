@@ -105,11 +105,11 @@ describe('database-backed canonical library', () => {
     });
     expect(
       repository.listDocuments.mock.calls[0][0].fleetMentionValues,
-    ).toEqual(['787', '787-9', '787-10']);
+    ).toEqual(['787', 'B787', '787-9', 'B787-9', '787-10', 'B787-10']);
     await service.list({ fleetFamily: '787', fleetModel: '787-9' }, actor);
     expect(
       repository.listDocuments.mock.calls[1][0].fleetMentionValues,
-    ).toEqual(['787-9']);
+    ).toEqual(['787-9', 'B787-9']);
     await expect(service.list({ fleetFamily: '737' }, actor)).rejects.toThrow(
       'LIBRARY_FLEET_FILTER_INVALID',
     );

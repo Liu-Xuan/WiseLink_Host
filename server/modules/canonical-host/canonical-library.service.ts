@@ -10,6 +10,7 @@ import {
 } from '@nestjs/common';
 import { CanonicalFleetMasterDataRepository } from './canonical-fleet-master-data.repository';
 import type { CanonicalLibraryFleetCatalog } from '@shared/library-fleet.interface';
+import { libraryAircraftMentionAliases } from '@shared/library-aircraft-mentions';
 import type {
   CanonicalLibraryDocumentSummary,
   CanonicalLibraryDocumentsRequest,
@@ -105,9 +106,12 @@ export class CanonicalLibraryService {
       );
       if (!family || (fleetModel && !family.models.includes(fleetModel)))
         throw new BadRequestException('LIBRARY_FLEET_FILTER_INVALID');
-      fleetMentionValues = fleetModel
+      const selectedMentions = fleetModel
         ? [fleetModel]
         : [family.fleetFamily, ...family.models];
+      fleetMentionValues = [
+        ...new Set(selectedMentions.flatMap(libraryAircraftMentionAliases)),
+      ];
       fleetRevision = [
         catalog.source!.sourceSnapshotId,
         catalog.source!.authorityRevision,
@@ -115,7 +119,7 @@ export class CanonicalLibraryService {
       ];
     }
     const context = fleetFamily
-      ? `DOCUMENTS:${JSON.stringify([normalizedFamily, ata, fleetFamily, fleetModel, fleetRevision])}`
+      ? `DOCUMENTS:${JSON.stringify([normalizedFamily, ata, fleetFamily, fleetModel, fleetRevision, fleetMentionValues])}`
       : normalizedFamily || ata || aircraftModel
         ? `DOCUMENTS:${JSON.stringify([normalizedFamily, ata, aircraftModel])}`
         : 'DOCUMENTS';

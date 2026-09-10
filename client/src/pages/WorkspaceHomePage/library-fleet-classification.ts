@@ -1,5 +1,6 @@
 import type { CanonicalLibraryDocumentSummary } from '@shared/api.interface';
 import type { CanonicalLibraryFleetCatalog } from '@shared/library-fleet.interface';
+import { libraryAircraftMentionAliases } from '@shared/library-aircraft-mentions';
 import {
   documentClassificationValues,
   type LibraryCatalogFilters,
@@ -30,10 +31,15 @@ export function matchesLibraryFleet(
     return (
       family.models.some(
         (model) => normalized(model) === normalized(filters.fleetModel ?? ''),
-      ) && values.includes(normalized(filters.fleetModel))
+      ) &&
+      libraryAircraftMentionAliases(filters.fleetModel).some((alias) =>
+        values.includes(alias),
+      )
     );
   return [family.fleetFamily, ...family.models].some((value) =>
-    values.includes(normalized(value)),
+    libraryAircraftMentionAliases(value).some((alias) =>
+      values.includes(alias),
+    ),
   );
 }
 
