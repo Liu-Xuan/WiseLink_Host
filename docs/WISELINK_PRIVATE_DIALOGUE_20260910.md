@@ -16,3 +16,5 @@
 线上接入修订：首次 release `7683769644624432059` 的私人列表返回 `ENGINEERING_MATTER_RUNTIME_AUTHORIZATION_UNAVAILABLE`。原因是普通浏览器 SQL 身份无法直接进入仅供后台服务使用的 actor transaction。新增仅对话控制器可用的 SQL 作用域：先验证妙搭 Hosted 原生最终用户和 `wl_session`，要求用户、租户、应用一致，再在独立 SQL 异步上下文内使用该真实 actor。原请求身份、后台 service-role 校验和 RLS 均保留。真实 SDK + 隔离 PostgreSQL 验证了并发身份隔离、作用域退出恢复，以及过期/错用户/错租户/系统调用/本地伪造入口的拒绝。
 
 随后读回确认下游重复 `SessionResolver.resolve` 在服务 SQL 角色下无法读取原本仅认证用户可读的会话表。修复为先验证一次，并仅在当前精确 HTTP 请求的异步作用域复用这一结果；普通请求解析不缓存，过期仍拒绝，新请求不继承。`ReviewConversationService` 的嵌套授权也沿用同一请求身份，对象权限继续新鲜读取。会话表策略保持不变；上述真实 SDK/数据库检查已增加该角色差异回归，身份接口 25 项测试通过。
+
+显式更新继续使用原 Review 表的浏览器写权限：会话创建与 Review 服务在原浏览器 SQL 身份中执行；仅冻结请求和版本检查进入受控服务作用域，同一事务中的 ReviewTurn 插入再恢复原浏览器身份。真实 SDK/数据库验证了服务角色不能直接插入 ReviewTurn、浏览器角色不能读私人冻结请求，且身份切换后并发版本检查仍成立。未扩大任何既有表策略。

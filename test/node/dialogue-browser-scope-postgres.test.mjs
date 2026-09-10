@@ -49,6 +49,9 @@ test(
       const working = new EngineeringMatterWorkingRepository(db, middleware, {
         roleSchema: 'wiselink_dialogue_browser_test',
       });
+      const noop = async () => {
+        assert.fail('wrong expected actor entered scope');
+      };
       let sessionReads = 0;
       const sessions = new SessionResolver(
         {
@@ -80,8 +83,9 @@ test(
           applicationScopeId: 'app_17bzc551rsg',
           sessionEnvironment: 'runtime',
         },
+        middleware,
       );
-      const scope = new DialogueBrowserScope(sessions, middleware);
+      const scope = new DialogueBrowserScope(sessions);
       const request = (id) => ({
         headers: { cookie: `wl_session=${id}` },
         body: { actorId: 'forged' },
@@ -133,6 +137,20 @@ test(
               await new Promise((resolve) =>
                 setTimeout(resolve, actorId === 'actor-A' ? 10 : 1),
               );
+              await sessions.withVerifiedBrowserSql(async () => {
+                assert.deepEqual(await read(), {
+                  role: 'authenticated_wiselink_dialogue_browser_test',
+                  actor: actorId,
+                });
+              });
+              assert.deepEqual(await read(), {
+                role: 'service_role_wiselink_dialogue_browser_test',
+                actor: actorId,
+              });
+              assert.throws(
+                () => sessions.withVerifiedServiceSql(noop, 'other-actor'),
+                /DIALOGUE_BROWSER_IDENTITY_MISMATCH/,
+              );
               await working.withActorTransaction(
                 actorId,
                 async ({ database }) => {
@@ -160,6 +178,14 @@ test(
         sessionReads,
         4,
         'two original validations plus two different-request probes; nested callers reuse the verified identity',
+      );
+      assert.throws(
+        () => sessions.withVerifiedServiceSql(noop),
+        /OFFICIAL_OAUTH_SESSION_REQUIRED/,
+      );
+      assert.throws(
+        () => sessions.withVerifiedBrowserSql(noop),
+        /OFFICIAL_OAUTH_SESSION_REQUIRED/,
       );
       const noRun = () => {
         assert.fail('unauthorized scope executed');

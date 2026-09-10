@@ -1,6 +1,13 @@
 import { AsyncLocalStorage } from 'node:async_hooks';
-import { Inject, Injectable } from '@nestjs/common';
-import type { Request } from 'express';
+import {
+  ForbiddenException,
+  Inject,
+  Injectable,
+  UnauthorizedException,
+} from '@nestjs/common';
+import { SqlExecutionContextMiddleware } from '@lark-apaas/fullstack-nestjs-core';
+import type { Request, Response } from 'express';
+import { miaodaHostedFinalUserActor } from '../work-item/production-miaoda-browser-ingress';
 
 import { SessionStore } from './session.store';
 import type { VerifiedIdentity } from './identity.types';
@@ -46,7 +53,62 @@ export class SessionResolver {
     private readonly sessionStore: SessionStore,
     @Inject(OAUTH_CONFIG)
     private readonly oauthConfig: OAuthConfigPort,
+    private readonly sqlContext?: SqlExecutionContextMiddleware,
   ) {}
+
+  /** Enter only after the current request's opaque session and native identity agree. */
+  withVerifiedServiceSql<T>(
+    operation: () => Promise<T>,
+    expectedActorId?: string,
+  ): Promise<T> {
+    const verified = this.verifiedSqlRequest(expectedActorId);
+    return this.runSql(
+      {
+        userContext: {
+          userId: verified.session.actor.canonicalSubject.id,
+          isSystemAccount: true,
+          roles: [],
+        },
+      } as Request,
+      operation,
+    );
+  }
+
+  /** Restore the same native browser SQL identity for existing browser-only writes. */
+  withVerifiedBrowserSql<T>(operation: () => Promise<T>): Promise<T> {
+    return this.runSql(this.verifiedSqlRequest().request, operation);
+  }
+
+  private verifiedSqlRequest(expectedActorId?: string) {
+    const verified = this.requestSession.getStore();
+    if (
+      !verified?.session ||
+      verified.session.session.expiresAt.getTime() <= Date.now()
+    )
+      throw new UnauthorizedException('OFFICIAL_OAUTH_SESSION_REQUIRED');
+    const native = miaodaHostedFinalUserActor(verified.request.userContext);
+    const actor = verified.session.actor;
+    if (
+      !/^[A-Za-z0-9_-]{1,255}$/u.test(actor.canonicalSubject.id) ||
+      native.canonicalSubject.id !== actor.canonicalSubject.id ||
+      native.tenantId !== actor.tenantId ||
+      native.applicationScopeId !== actor.applicationScopeId ||
+      (expectedActorId !== undefined &&
+        expectedActorId !== actor.canonicalSubject.id)
+    )
+      throw new ForbiddenException('DIALOGUE_BROWSER_IDENTITY_MISMATCH');
+    return { request: verified.request, session: verified.session };
+  }
+
+  private runSql<T>(request: Request, operation: () => Promise<T>): Promise<T> {
+    if (!this.sqlContext)
+      throw new ForbiddenException('VERIFIED_SQL_CONTEXT_UNAVAILABLE');
+    return new Promise<T>((resolve, reject) => {
+      this.sqlContext!.use(request, {} as Response, () => {
+        void Promise.resolve().then(operation).then(resolve, reject);
+      });
+    });
+  }
 
   /**
    * Resolve the session from the request. Returns null when:

@@ -18,6 +18,7 @@ describe('explicit dialogue assessment submission', () => {
   };
   function harness() {
     const sessions = {
+      withVerifiedBrowserSql: jest.fn(async (run) => run()),
       resolve: jest.fn().mockResolvedValue({
         actor: { canonicalSubject: { id: 'actor' }, tenantId: 'tenant' },
       }),
@@ -108,6 +109,7 @@ describe('explicit dialogue assessment submission', () => {
       'WI-B',
     ]);
     expect(result.reviewTurnId).toBe('RT-A');
+    expect(h.sessions.withVerifiedBrowserSql).toHaveBeenCalledTimes(2);
   });
   it.each([
     { workItemRevision: 8, workingRef: 'work-4' },
