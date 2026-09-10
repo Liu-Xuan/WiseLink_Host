@@ -245,7 +245,7 @@ describe('official OAuth -> persistent session G0', () => {
         .mockResolvedValue({ ok: true }),
     };
     const controller = new OauthSessionDevelopmentWorkItemController(
-      { resolve: jest.fn().mockResolvedValue({ actor }) } as never,
+      { resolve: jest.fn().mockResolvedValue({ actor, session: { id: "11111111-1111-4111-8111-111111111111" } }) } as never,
       workItems as never,
     );
     const previousSandbox = process.env.SANDBOX_ID;
@@ -281,6 +281,7 @@ describe('official OAuth -> persistent session G0', () => {
         platformRoles: ['authenticated', 'wiselink_development'],
         env: 'runtime',
       }),
+      '11111111-1111-4111-8111-111111111111',
     );
     process.env.SANDBOX_ID = 'unit-hosted-sandbox';
     try {
@@ -312,6 +313,7 @@ describe('official OAuth -> persistent session G0', () => {
         canonicalSubject: { namespace: 'MIAODA_USER_ID', id: 'miaoda-user-1' },
         identityProvenance: 'MIAODA_GATEWAY_USER_CONTEXT',
       }),
+      '11111111-1111-4111-8111-111111111111',
     );
     process.env.SANDBOX_ID = 'unit-hosted-sandbox';
     try {

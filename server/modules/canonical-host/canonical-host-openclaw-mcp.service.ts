@@ -424,6 +424,21 @@ export class CanonicalHostOpenClawMcpService {
     );
 
     server.registerTool(
+      'query_assessment_knowledge',
+      {
+        title: '按需检索初始评估补充知识',
+        description: '仅使用新任务绑定的当前用户授权和官方智能体。提交一次requestKey/query，再按queryRef读取；提交响应不确定时仅传原requestKey读取，不重新发起。结果是未核实补充材料，失败/不确定必须保留。',
+        inputSchema: z.object({ attemptRef, leaseToken, leaseGeneration,
+          requestKey: z.string().min(1).max(200).optional(),
+          query: z.string().trim().min(1).max(4000).optional(),
+          queryRef: z.string().uuid().optional(),
+        }).strict(),
+        annotations: beginAnnotations,
+      },
+      async input => textResult(await this.problemAssessment.queryKnowledge(input)),
+    );
+
+    server.registerTool(
       'save_assessment_work',
       {
         title: '保存 JobAid 问题工作正文',

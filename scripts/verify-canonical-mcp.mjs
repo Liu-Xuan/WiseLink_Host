@@ -459,6 +459,7 @@ const openClawMcp = new CanonicalHostOpenClawMcpService(
   attempts,
   serviceScope,
   {
+    queryKnowledge: async (input) => { problemWorkCalls.push({ tool: 'query_assessment_knowledge', ...input }); return { status: 'UNAVAILABLE', evidence: [], synthetic: true }; },
     readSources: async (input) => { problemWorkCalls.push({ tool: 'read_assessment_sources', ...input }); return { sources: [], synthetic: true }; },
     saveWork: async (input) => { problemWorkCalls.push({ tool: 'save_assessment_work', ...input }); return { workRevisionRef: 'JA-SYNTHETIC-1' }; },
     readAttemptWork: async (attemptRef, requestId) => { problemWorkCalls.push({ tool: 'read_assessment_work', attemptRef, requestId }); return { workRevisionRef: 'JA-SYNTHETIC-1' }; },
@@ -634,6 +635,7 @@ try {
         'commit_applicability_candidate',
         'begin_dynamic_evaluation',
         'read_assessment_sources',
+        'query_assessment_knowledge',
         'save_assessment_work',
         'read_assessment_work',
         'commit_dynamic_evaluation_candidate',
@@ -645,13 +647,14 @@ try {
         'begin_review_turn',
         'get_review_turn_context',
         'read_source_refs',
+        'query_review_aily',
         'get_action_attempt_status',
         'commit_review_turn_candidate',
         'heartbeat_action_attempt',
         'cancel_action_attempt',
       ],
     );
-    assert.equal(listed.tools.length, 25);
+    assert.equal(listed.tools.length, 27);
     assert.equal(openClawClient.getServerVersion()?.version, '1.2.0');
     const semanticBegin = await openClawClient.callTool({ name: 'begin_translation', arguments: { workItemId: 'WI-SEMANTIC', requestId: 'synthetic-v2' } });
     assert.notEqual(semanticBegin.isError, true);
@@ -668,9 +671,13 @@ try {
     assert.deepEqual(problemWorkCalls, [
       { tool: 'read_assessment_sources', ...sourceRead }, { tool: 'save_assessment_work', ...workSave }, { tool: 'read_assessment_work', ...workRead },
     ]);
+    const queryInput = { ...fence, requestKey: 'synthetic-query', query: 'Find an original source' };
+    assert.notEqual((await openClawClient.callTool({ name: 'query_assessment_knowledge', arguments: queryInput })).isError, true);
+    assert.deepEqual(problemWorkCalls.at(-1), { tool: 'query_assessment_knowledge', ...queryInput });
+    assert.equal((await openClawClient.callTool({ name: 'query_assessment_knowledge', arguments: { ...queryInput, sessionId: 'untrusted-session' } })).isError, true);
     const injected = await openClawClient.callTool({ name: 'save_assessment_work', arguments: { ...workSave, actor: 'synthetic-injected' } });
     assert.equal(injected.isError, true);
-    assert.equal(problemWorkCalls.length, 3);
+    assert.equal(problemWorkCalls.length, 4);
 
     const largeTranslation = largeTranslationResultEnvelope();
     assert.ok(
@@ -1165,6 +1172,7 @@ try {
           'commit_applicability_candidate',
           'begin_dynamic_evaluation',
           'read_assessment_sources',
+        'query_assessment_knowledge',
           'save_assessment_work',
           'read_assessment_work',
           'commit_dynamic_evaluation_candidate',
@@ -1176,6 +1184,7 @@ try {
           'begin_review_turn',
           'get_review_turn_context',
           'read_source_refs',
+          'query_review_aily',
           'get_action_attempt_status',
           'commit_review_turn_candidate',
           'heartbeat_action_attempt',

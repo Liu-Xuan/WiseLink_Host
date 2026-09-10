@@ -66,6 +66,7 @@ export const HOST_MCP_TOOLS = [
   'begin_dynamic_evaluation',
   'commit_dynamic_evaluation_candidate',
   'read_assessment_sources',
+  'query_assessment_knowledge',
   'save_assessment_work',
   'read_assessment_work',
   'record_oem_discovery_run',
@@ -1254,6 +1255,7 @@ function problemAssessmentHooks(begin, callTool) {
   const control = { attemptRef: begin.attemptRef, leaseToken: begin.leaseToken, leaseGeneration: begin.leaseGeneration };
   return {
     heartbeat: () => heartbeatAttempt(begin, callTool),
+    queryAssessmentKnowledge: (intent) => callTool('query_assessment_knowledge', { ...intent, ...control }),
     readAssessmentSources: (intent) => callTool('read_assessment_sources', { ...intent, ...control }),
     saveAssessmentWork: (intent) => callTool('save_assessment_work', { ...intent, ...control }),
     readAssessmentWork: (intent) => callTool('read_assessment_work', { ...intent, attemptRef: begin.attemptRef }),

@@ -70,6 +70,7 @@ export interface JobAidProblemModelInput extends Record<string, unknown> {
   discussion: CanonicalCommonAssessmentContext['discussion'];
   /** Absent only on tasks persisted before source provenance was projected. */
   contextPackage?: JobAidAssessmentContextPackage;
+  knowledgeAccess?: import("@shared/jobaid-problem-assessment.interface").JobAidKnowledgeAccess;
 }
 
 export type JobAidProblemModelWorkContent = Omit<
@@ -104,6 +105,7 @@ export function jobAidProblemModelWorkContent(
 
 export interface JobAidProblemTaskInput extends Record<string, unknown> {
   schemaVersion: typeof JOBAID_PROBLEM_TASK_SCHEMA;
+  knowledgeBinding?: import("./initial-assessment-knowledge.service").InitialKnowledgeBinding;
   actorUserId: string;
   permissionSnapshotVersion: string;
   sourceBindings: JobAidSourceBinding[];

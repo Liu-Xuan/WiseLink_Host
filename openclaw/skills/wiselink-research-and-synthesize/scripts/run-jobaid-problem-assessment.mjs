@@ -228,6 +228,28 @@ export async function invokeHostedJobAidProblemModel(
         });
         if (receipt?.status !== 'AVAILABLE' || !Array.isArray(receipt.evidence))
           throw new Error('JOBAID_SOURCE_READ_FAILED');
+      } else if (step.action === 'QUERY_KNOWLEDGE') {
+        if (typeof step.query !== 'string' || !step.query.trim() || step.query.length > 4000)
+          throw new Error('JOBAID_KNOWLEDGE_QUERY_INVALID');
+        if (!modelInput.knowledgeAccess?.available || !options.queryAssessmentKnowledge) {
+          receipt = { status: 'UNAVAILABLE', error: modelInput.knowledgeAccess?.reason ?? 'NOT_CONNECTED', evidence: [], candidateOnly: true, originalDocumentsVerified: false };
+        } else {
+          const requestKey = `JA-query-${randomUUID()}`;
+          try { receipt = await options.queryAssessmentKnowledge({ requestKey, query: step.query }); }
+          catch {
+            // A transport failure cannot authorize replaying the upstream query.
+            receipt = await options.queryAssessmentKnowledge({ requestKey });
+          }
+          while (receipt?.status === 'RUNNING') {
+            if (!receipt.queryRef) throw new Error('JOBAID_KNOWLEDGE_RECEIPT_INVALID');
+            if (Date.now() - startedAt >= timeoutMs) throw new Error('JOBAID_MODEL_BUDGET_EXHAUSTED');
+            await options.heartbeat?.();
+            await (dependencies.sleep ?? (ms => new Promise(resolve => setTimeout(resolve, ms))))(3000);
+            receipt = await options.queryAssessmentKnowledge({ queryRef: receipt.queryRef });
+          }
+          if (!['COMPLETED','FAILED','UNKNOWN','UNAVAILABLE'].includes(receipt?.status) || !Array.isArray(receipt.evidence))
+            throw new Error('JOBAID_KNOWLEDGE_RECEIPT_INVALID');
+        }
       } else if (step.action === 'SAVE_WORK' || step.action === 'FINISH') {
         if (step.work !== undefined) {
           submittedWork = step.work;

@@ -162,6 +162,7 @@ export class OrdinaryWorkItemService {
     input: OrdinaryPdfParseInput,
     actor: CanonicalHostActor,
     origin: 'MIAODA' | 'AILY' = 'MIAODA',
+    initialAilySessionId?: string,
   ): Promise<CanonicalOrdinaryWorkItemRunResponse> {
     assertProductionMiaodaBrowserIdentityAvailable(actor);
     if (input.selection !== undefined) {
@@ -173,7 +174,18 @@ export class OrdinaryWorkItemService {
         },
       );
     }
-    return this.runPdf(input, actor, origin, 'canonical');
+    return this.runPdf(
+      input,
+      actor,
+      origin,
+      'canonical',
+      false,
+      undefined,
+      false,
+      undefined,
+      undefined,
+      initialAilySessionId,
+    );
   }
 
   async parseS1000d(
@@ -255,6 +267,7 @@ export class OrdinaryWorkItemService {
     input: CanonicalDevelopmentWorkItemRunRequest,
     sessionActor: CanonicalMiaodaFinalUserActorContext,
     gatewayActor: CanonicalMiaodaFinalUserActorContext,
+    initialAilySessionId?: string,
   ): Promise<CanonicalOrdinaryWorkItemRunResponse> {
     assertOauthSessionDevelopmentActors(sessionActor, gatewayActor);
     const developmentRunToken = requiredDevelopmentRunToken(
@@ -279,6 +292,9 @@ export class OrdinaryWorkItemService {
       true,
       undefined,
       true,
+      undefined,
+      undefined,
+      initialAilySessionId,
     );
   }
 
@@ -378,6 +394,7 @@ export class OrdinaryWorkItemService {
     oauthSessionCreate = false,
     retryTarget?: ExistingParseRunTarget,
     existingAuthorization?: CanonicalHostActionContext,
+    initialAilySessionId?: string,
   ): Promise<CanonicalOrdinaryWorkItemRunResponse> {
     const context = hostedRequestContext(actor, oauthSessionCreate);
     const documentVersionId = input.documentVersionId
@@ -427,6 +444,7 @@ export class OrdinaryWorkItemService {
         : {
             analysisModel: taskModelSelection(input.modelRef),
             modelChoiceExplicit: input.modelRef !== undefined,
+            ...(initialAilySessionId ? { initialAilySessionId } : {}),
           }),
     };
     const reservation = retryTarget

@@ -15,6 +15,10 @@ export type OverallAssessmentReadingSummary = Omit<
 > & { schemaVersion: 'wiselink.3_1.overall_engineering_summary.v2' };
 
 export interface OverallModelEvidence {
+  queryProvenance?: Extract<
+    AssessmentEvidence,
+    { kind: 'QUERY_RECEIPT' }
+  >['queryProvenance'];
   evidenceRef: string;
   kind: AssessmentEvidence['kind'];
   title: string;
@@ -33,6 +37,9 @@ export function overallModelEvidenceRegistry(
     versionLabel: item.versionLabel,
     excerpt: item.excerpt,
     locator: 'locator' in item ? item.locator : null,
+    ...(item.kind === 'QUERY_RECEIPT' && item.queryProvenance
+      ? { queryProvenance: structuredClone(item.queryProvenance) }
+      : {}),
   }));
 }
 
@@ -198,6 +205,22 @@ export function readStoredOverallEvidence(
             ),
           };
         case 'QUERY_RECEIPT':
+          if (item.queryProvenance !== undefined) {
+            const provenance = record(
+              item.queryProvenance,
+              'OVERALL_QUERY_PROVENANCE_INVALID',
+            );
+            if (
+              provenance.origin !== 'AILY_RETRIEVAL' ||
+              provenance.originalDocumentsVerified !== false ||
+              !['COMPLETED', 'FAILED', 'UNKNOWN'].includes(
+                String(provenance.status),
+              ) ||
+              typeof provenance.queryText !== 'string' ||
+              !provenance.queryText.trim()
+            )
+              throw new Error('OVERALL_QUERY_PROVENANCE_INVALID');
+          }
           if (item.coverage !== 'COMPLETE' && item.coverage !== 'PARTIAL')
             throw new Error('OVERALL_EVIDENCE_QUERY_COVERAGE_INVALID');
           return {
@@ -216,6 +239,16 @@ export function readStoredOverallEvidence(
               'OVERALL_EVIDENCE_QUERY_TIME_INVALID',
             ),
             coverage: item.coverage,
+            ...(item.queryProvenance
+              ? {
+                  queryProvenance: structuredClone(
+                    item.queryProvenance,
+                  ) as Extract<
+                    AssessmentEvidence,
+                    { kind: 'QUERY_RECEIPT' }
+                  >['queryProvenance'],
+                }
+              : {}),
           };
         case 'PRIOR_RESULT':
           return {

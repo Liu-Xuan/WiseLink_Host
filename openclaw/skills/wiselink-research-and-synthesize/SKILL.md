@@ -12,7 +12,7 @@ description: Orchestrate the single official hosted WiseLink engineering profile
 - hosted app：`app_17c3zn24kv2`
 - logical profile：`wiselink-engineering`
 - model policy：`official-hosted-profile-config`（任务可绑定已登记的内置或用户授权自定义模型；仍经唯一官方 Hosted profile/Gateway）
-- Skill：`wiselink-research-and-synthesize@r09.c69`
+- Skill：`wiselink-research-and-synthesize@r09.c70`
 - Skill compatibility：`wiselink-research-and-synthesize@r09`（历史任务最低接受 `r09.c10`，翻译 v2 必须为 `r09.c44` 或更新兼容包）
 - Host MCP：`wiselink-openclaw-engineering-assessment@1.2.0`（保留既有工具，新增语义翻译工作与 JobAid 来源/工作工具）
 - Host 集成提交：以本次发布包清单记录的实际提交为准
@@ -46,7 +46,7 @@ c41 明确 Review 新生成的用户阅读文字默认使用简体中文，并�
 
 Host 新任务若为 `wiselink.jobaid-problem-task.v2`，执行问题分析协议：先理解问题与完整来源条件，按需读来源，完成一段实质分析即保存，再做整体一致性检查。此分支不适用下文旧 Dynamic 的 N/N、`criterionTable`、逐行结论或 28KB 目标，也不要求先生成完整中文译文。旧任务仍按其已封存版本处理，不把旧产物伪装为问题工作。
 
-`run-jobaid-problem-assessment.mjs` 通过现有官方 Gateway 与确定性 Host 回调执行 `read_assessment_sources`、`save_assessment_work`、`read_assessment_work`。模型只返回读取/保存/完成意图；requestId、lease、最终 sealed ResultEnvelope 由驱动持有。已保存内容可在失败后阅读，同一请求响应丢失先读回原请求，不重复生成已保存正文。最终提交只绑定已保存的精确工作版本；Overall 保留该版本的完整问题和条件，不重新执行旧 Base 流程。
+`run-jobaid-problem-assessment.mjs` 通过现有官方 Gateway 与确定性 Host 回调执行 `read_assessment_sources`、`query_assessment_knowledge`、`save_assessment_work`、`read_assessment_work`。模型只返回读取/保存/完成意图；requestId、lease、最终 sealed ResultEnvelope 由驱动持有。已保存内容可在失败后阅读，同一请求响应丢失先读回原请求，不重复生成已保存正文。最终提交只绑定已保存的精确工作版本；Overall 保留该版本的完整问题和条件，不重新执行旧 Base 流程。
 
 `wiselink.3_1.applicability_task.v2` 的 `sourceReadingMode=VERIFIED_ENGLISH` 使用实际英文 SourceExpressions/SourceContext，`bilingualBinding=null`、`bilingualSourceUnits=[]`。保持原 AST、Host Fleet 匹配与 UNKNOWN 边界。旧 v1 继续检查其原译文绑定。
 
@@ -557,7 +557,7 @@ Interactive Review 的复杂 ResultEnvelope 必须由 `sealResultEnvelope` 生�
 当前 validator 强制：
 
 - `modelVersion` 优先取响应中可读实际模型；绑定任务未回报实际模型时使用 `configured-route:<modelRef>`，旧无绑定任务使用无 fallback 的 configured endpoint。后两者只证明路由，不代表已暴露下游具体模型，也不做具体版本等值判断
-- `skillVersion=wiselink-research-and-synthesize@r09.c69`
+- `skillVersion=wiselink-research-and-synthesize@r09.c70`
 - `toolVersions.wiselink-openclaw-engineering-assessment=1.2.0`
 - `promptVersion` 非空并来自当前运行
 - task/result exact binding、SourceRef allowlist 和 canonical hash 一致

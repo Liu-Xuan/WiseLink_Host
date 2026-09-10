@@ -11,6 +11,7 @@ import type {
 import { reviewSourceRefLabel } from './continuous-review-state';
 import ReviewExecutionStatus from './ReviewExecutionStatus';
 import MatterWorkingReceipt from './MatterWorkingReceipt';
+import ReviewEngineerInput from './ReviewEngineerInput';
 
 interface ReviewConversationTurnBaseProps {
   turn: ReviewTurnReadModel;
@@ -68,7 +69,7 @@ export default function ReviewConversationTurn(
             {formatReviewTime(props.turn.createdAt)}
           </span>
         </header>
-        <p>{props.turn.engineerSuppliedInput.text}</p>
+        <ReviewEngineerInput text={props.turn.engineerSuppliedInput.text} />
         <small>
           {props.readOnly ? '已保存的工程师输入' : '候选输入，尚未采纳'}
           {props.turn.engineerSuppliedInput.attachmentRefs.length

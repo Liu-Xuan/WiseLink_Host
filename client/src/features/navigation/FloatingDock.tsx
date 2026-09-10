@@ -1,8 +1,7 @@
-import { NavLink, useLocation } from 'react-router-dom';
+import { Link, NavLink, useLocation } from 'react-router-dom';
 import {
   Activity,
   BookOpenCheck,
-  ClipboardList,
   FileClock,
   Files,
   LibraryBig,
@@ -17,7 +16,6 @@ import {
 } from '@client/src/app/providers/CurrentObjectContextProvider';
 import VisualModeControl from '@client/src/components/VisualModeControl';
 import WiseLinkBrandMark from '@client/src/components/WiseLinkBrandMark';
-import { libraryViewMode } from '@client/src/pages/WorkspaceHomePage/library-view-mode';
 
 import './floating-dock.css';
 
@@ -35,31 +33,15 @@ export default function FloatingDock() {
   const { currentObject } = useCurrentObjectContext();
   const params = new URLSearchParams(location.search);
   const activeNode: string = params.get('node') ?? '';
-  const libraryMode =
-    location.pathname === '/library' || location.pathname === '/'
-      ? libraryViewMode(params)
-      : null;
+  const isLibraryRoute: boolean =
+    location.pathname === '/library' || location.pathname === '/';
   const globalItems: DockItemView[] = [
     {
       key: 'library',
       label: '资料库',
       icon: LibraryBig,
       to: '/library',
-      active: libraryMode === 'document',
-    },
-    {
-      key: 'matters',
-      label: '工程事项',
-      icon: BookOpenCheck,
-      to: '/library?mode=matter',
-      active: libraryMode === 'matter',
-    },
-    {
-      key: 'tasks',
-      label: '最近任务',
-      icon: ClipboardList,
-      to: '/library?mode=tasks',
-      active: libraryMode === 'tasks',
+      active: isLibraryRoute && location.hash !== '#library-search',
     },
     {
       key: 'dialogues',
@@ -224,7 +206,7 @@ export default function FloatingDock() {
 function DockItem({ item }: { item: DockItemView }) {
   const Icon = item.icon;
   return (
-    <NavLink
+    <Link
       to={item.to}
       className={`wl-dock-item${item.active ? ' is-active' : ''}`}
       title={item.label}
@@ -236,6 +218,6 @@ function DockItem({ item }: { item: DockItemView }) {
       {item.badge !== undefined ? (
         <small className="wl-dock-badge">{item.badge}</small>
       ) : null}
-    </NavLink>
+    </Link>
   );
 }

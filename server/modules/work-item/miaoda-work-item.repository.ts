@@ -20,6 +20,8 @@ const ACTION_TYPE = 'PARSE_PDF';
 
 export interface WorkItemReservationInput {
   analysisModel?: CanonicalExecutionModelSelection;
+  /** Server-resolved session from this task's creation request; never client JSON. */
+  initialAilySessionId?: string;
   modelChoiceExplicit?: boolean;
   tenantId: string;
   actorUserId: string;
@@ -141,6 +143,7 @@ export class MiaodaWorkItemRepository {
           analysisModelJson: input.analysisModel
             ? JSON.stringify(input.analysisModel)
             : null,
+          initialAilySessionId: input.initialAilySessionId ?? null,
           requestId: candidate.requestId,
           status: 'RESERVED',
           revision: 0,
