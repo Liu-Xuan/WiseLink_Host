@@ -175,12 +175,10 @@ describe('owner-requested initial continuation', () => {
     },
   );
 
-  it('rejects JobAid until translation is terminal and applicability is ready, and requires confirmed SB before reservation', async () => {
+  it('requires ready applicability and confirmed SB, while unstarted translation does not block source analysis', async () => {
     const h = harness();
     const jobAid = { ...request, operation: 'EVALUATE_JOBAID' };
     h.status.stages.translation.status = 'PENDING';
-    await expect(h.send(jobAid)).rejects.toThrow('PREREQUISITE_NOT_READY');
-    h.status.stages.translation.status = 'FAILED';
     h.status.stages.applicability.status = 'FAILED';
     await expect(h.send(jobAid)).rejects.toThrow('PREREQUISITE_NOT_READY');
     h.status.stages.applicability.status = 'WAITING_INPUT';

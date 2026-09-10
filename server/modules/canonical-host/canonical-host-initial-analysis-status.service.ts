@@ -678,7 +678,7 @@ export function canContinueInitialStage(
     !(
       stages.translation.status === 'SUCCEEDED' ||
       (englishAssessmentEnabled &&
-        ['FAILED', 'CONFLICT'].includes(stages.translation.status))
+        ['PENDING', 'FAILED', 'CONFLICT'].includes(stages.translation.status))
     )
   )
     return false;
@@ -709,11 +709,26 @@ function deriveProgression(
     stage: AilyInitialAnalysisStageStatus;
     operation: AilyInitialAnalysisOperation;
   }> = [
-    { stage: stages.translation, operation: 'TRANSLATE' },
+    ...(!englishAssessmentEnabled
+      ? [{ stage: stages.translation, operation: 'TRANSLATE' as const }]
+      : []),
     { stage: stages.applicability, operation: 'EXTRACT_APPLICABILITY' },
     { stage: stages.jobAid, operation: 'EVALUATE_JOBAID' },
     { stage: stages.overall, operation: 'SYNTHESIZE_OVERALL' },
+    ...(englishAssessmentEnabled
+      ? [{ stage: stages.translation, operation: 'TRANSLATE' as const }]
+      : []),
   ];
+  // Verified-English analysis consumes the parsed source directly. A new
+  // translation must not delay that analysis, while a running attempt or an
+  // explicit continuation retains its existing execution and CAS ownership.
+  if (ordered.some((item) => item.stage.status === 'BUSY'))
+    return { status: 'BUSY', nextOperation: null };
+  const requested = ordered.find(
+    (item) => item.stage.status === 'PENDING' && item.stage.requestId,
+  );
+  if (requested)
+    return { status: 'REQUIRED', nextOperation: requested.operation };
   let hasNonBlockingMissingInput = false;
   let deferredTranslationStatus: 'FAILED' | 'CONFLICT' | null = null;
   for (const item of ordered) {

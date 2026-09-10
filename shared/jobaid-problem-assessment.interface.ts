@@ -3,7 +3,10 @@ import type {
   AssessmentReadingClaim,
   AssessmentReadingResult,
 } from './assessment-reading.interface';
-import type { UnifiedPackageArtifactDescriptor } from './api.interface';
+import type {
+  CanonicalCommonAssessmentContext,
+  UnifiedPackageArtifactDescriptor,
+} from './api.interface';
 
 export const JOBAID_PROBLEM_WORK_SCHEMA =
   'wiselink.jobaid-problem-work.v2' as const;
@@ -11,6 +14,40 @@ export const JOBAID_PROBLEM_TASK_SCHEMA =
   'wiselink.jobaid-problem-task.v2' as const;
 export const JOBAID_PROBLEM_RESULT_SCHEMA =
   'wiselink.jobaid-problem-result.v2' as const;
+
+/** Model-facing context saved in the existing versioned assessment task input. */
+export interface JobAidAssessmentContextPackage {
+  basedOnWorkItemRevision: number;
+  basedOnWorkingRevision: number | null;
+  primaryDocument: CanonicalCommonAssessmentContext['primaryDocument'] & {
+    readingStatus: CanonicalCommonAssessmentContext['documentReading']['status'];
+  };
+  supplementaryMaterials: {
+    status: CanonicalCommonAssessmentContext['relatedMaterials']['status'];
+    reason: string | null;
+    items: Array<
+      Omit<
+        CanonicalCommonAssessmentContext['relatedMaterials']['items'][number],
+        'availableSourceRefIds' | 'readFragments'
+      > & {
+        availableEvidenceRefs: string[];
+        deliveredEvidenceRefs: string[];
+      }
+    >;
+  };
+  sourceOrigins: Array<{
+    evidenceRef: string;
+    origin: string;
+    contentNature:
+      | 'SOURCE_DOCUMENT_CONTENT'
+      | 'UNVERIFIED_ENGINEER_STATEMENT'
+      | 'UNVERIFIED_QUERY_RESPONSE'
+      | 'PRIOR_CANDIDATE'
+      | 'CONTROLLED_HOST_FACT'
+      | 'METHOD_MATERIAL';
+  }>;
+  knowledgeRetrieval: CanonicalCommonAssessmentContext['knowledgeRetrieval'];
+}
 
 export interface JobAidMethodBinding {
   packRef: string;

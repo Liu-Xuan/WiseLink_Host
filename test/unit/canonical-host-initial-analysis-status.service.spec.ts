@@ -187,7 +187,6 @@ describe('CanonicalHost initial-analysis status projection', () => {
   );
 
   it.each([
-    ['translation', 'PENDING'],
     ['translation', 'BUSY'],
     ['applicability', 'FAILED'],
     ['applicability', 'CONFLICT'],
@@ -412,6 +411,42 @@ describe('CanonicalHost initial-analysis status projection', () => {
         { englishAssessmentEnabled: true },
       ),
     ).toMatchObject({ status: 'BUSY', nextOperation: null });
+  });
+  it('starts source-based analysis before an unrequested translation, retaining translation as pending', () => {
+    const workItem = parsedWorkItem();
+    const status = projectCanonicalHostInitialAnalysisStatus(workItem, [], {
+      englishAssessmentEnabled: true,
+    });
+    expect(status).toMatchObject({
+      nextOperation: 'EVALUATE_JOBAID',
+      stages: {
+        translation: { status: 'PENDING' },
+        applicability: { status: 'WAITING_INPUT' },
+      },
+    });
+    expect(canContinueInitialStage(status.stages, 'EVALUATE_JOBAID', true)).toBe(true);
+    expect(canContinueInitialStage(status.stages, 'EVALUATE_JOBAID', false)).toBe(false);
+    expect(projectCanonicalHostInitialAnalysisStatus(workItem, []).nextOperation).toBe('TRANSLATE');
+    workItem.applicabilityInput = applicabilityInput(workItem);
+    expect(projectCanonicalHostInitialAnalysisStatus(workItem, [], {
+      englishAssessmentEnabled: true,
+    }).nextOperation).toBe('EXTRACT_APPLICABILITY');
+  });
+
+  it('honors an explicitly queued translation and waits for it before starting source analysis', () => {
+    const workItem = parsedWorkItem();
+    const queued = {
+      ...attempt('OPENCLAW_TRANSLATE', 'QUEUED'),
+      requestId: 'explicit-translation',
+    };
+    expect(projectCanonicalHostInitialAnalysisStatus(workItem, [queued], {
+      englishAssessmentEnabled: true,
+    }).nextOperation).toBe('TRANSLATE');
+    expect(projectCanonicalHostInitialAnalysisStatus(workItem, [{
+      ...queued, status: 'RUNNING',
+    }], { englishAssessmentEnabled: true })).toMatchObject({
+      status: 'BUSY', nextOperation: null,
+    });
   });
   it('keeps missing aircraft selection explicit without blocking document-level candidates', () => {
     const workItem = translatedWorkItem(parsedWorkItem());
