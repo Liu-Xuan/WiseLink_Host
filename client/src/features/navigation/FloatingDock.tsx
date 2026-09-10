@@ -62,6 +62,13 @@ export default function FloatingDock() {
       active: libraryMode === 'tasks',
     },
     {
+      key: 'dialogues',
+      label: '私人对话',
+      icon: MessagesSquare,
+      to: '/dialogues',
+      active: location.pathname.startsWith('/dialogues'),
+    },
+    {
       key: 'search',
       label: '搜索',
       icon: Search,

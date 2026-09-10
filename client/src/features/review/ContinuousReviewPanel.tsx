@@ -1,17 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { useWorkbenchPanelActive } from '@client/src/features/workbench/RetainedWorkbenchPanel';
-import { useDropzone } from 'react-dropzone';
-import {
-  FileCheck2,
-  FileUp,
-  MessageSquareText,
-  Paperclip,
-  RefreshCw,
-  Send,
-  TriangleAlert,
-  X,
-} from 'lucide-react';
+import { MessageSquareText, RefreshCw, TriangleAlert } from 'lucide-react';
 
 import { canonicalHost } from '@client/src/api';
 import { getCanonicalHostClientSessionGeneration } from '@client/src/api/canonical-host';
@@ -19,7 +9,6 @@ import {
   getHostedRuntimeFingerprint,
   type HostedRuntimeFingerprintResponse,
 } from '@client/src/api/runtime-probe';
-import { uploadFile } from '@client/src/components/business-ui/api/files/service';
 import { runtimeBuildFingerprint } from '@client/src/config/runtime-build';
 import { Button } from '@client/src/components/ui/button';
 import { Textarea } from '@client/src/components/ui/textarea';
@@ -49,8 +38,6 @@ import { reviewConversationHasActiveExecution } from './review-execution';
 import {
   automaticReviewAvailable,
   latestAssessmentCandidateId,
-  reviewSubmissionIntent,
-  type ReviewSubmissionIntent,
 } from './review-submission';
 import {
   continuousReviewControls,
@@ -63,13 +50,6 @@ import {
 } from './continuous-review-state';
 
 import './continuous-review-panel.css';
-
-const MAX_PDF_BYTES = 100 * 1024 * 1024;
-
-interface UploadedReviewSelection {
-  bucketId: string;
-  filePath: string;
-}
 
 type ReviewActionReceipt = ConfirmReviewActionDraftResponse['reviewAction'];
 
@@ -122,11 +102,8 @@ export default function ContinuousReviewPanel({
   const [message, setMessage] = useReviewDraft(draftScopeKey);
   const models = useTaskModelOptions();
   const [modelRef, setModelRef] = useState('');
-  const [file, setFile] = useState<File | null>(null);
-  const [uploadedSelection, setUploadedSelection] =
-    useState<UploadedReviewSelection | null>(null);
   const [busyAction, setBusyAction] = useState<
-    'start' | 'append' | 'update' | 'close' | 'confirm' | null
+    'start' | 'update' | 'close' | 'confirm' | null
   >(null);
   const [refreshing, setRefreshing] = useState(true);
   const [readFailed, setReadFailed] = useState(false);
@@ -137,10 +114,8 @@ export default function ContinuousReviewPanel({
   const [errorFingerprint, setErrorFingerprint] =
     useState<HostedRuntimeFingerprintResponse | null>(null);
   const [errorFingerprintReading, setErrorFingerprintReading] = useState(false);
-  const [activeRequestId, setActiveRequestId] = useState<string | null>(null);
   const [confirmingTurnId, setConfirmingTurnId] = useState<string | null>(null);
   const [rejectedDraftRefs, setRejectedDraftRefs] = useState<string[]>([]);
-  const submissionRef = useRef<ReviewSubmissionIntent | null>(null);
   const errorEpochRef = useRef(0);
   const readEpochRef = useRef(0);
   const presentation = continuousReviewPresentation(conversation);
@@ -165,10 +140,6 @@ export default function ContinuousReviewPanel({
       if (reviewErrorRevokesReadback(reason)) {
         setConversation(null);
         setMessage('');
-        setFile(null);
-        setUploadedSelection(null);
-        submissionRef.current = null;
-        setActiveRequestId(null);
         setAccessUnavailable(true);
       }
       const errorEpoch = errorEpochRef.current + 1;
@@ -268,45 +239,6 @@ export default function ContinuousReviewPanel({
     turns.current,
   ]);
 
-  const onDrop = useCallback(
-    (acceptedFiles: File[]) => {
-      const selected = acceptedFiles[0] ?? null;
-      setUploadedSelection(null);
-      submissionRef.current = null;
-      setActiveRequestId(null);
-      clearError();
-      if (!selected) {
-        setFile(null);
-        setError(
-          reviewInputError('REVIEW_PDF_REQUIRED', '请选择一个 PDF 文件。'),
-        );
-        return;
-      }
-      if (!selected.name.toLowerCase().endsWith('.pdf')) {
-        setFile(null);
-        setError(
-          reviewInputError(
-            'REVIEW_PDF_TYPE_INVALID',
-            '当前补充资料入口仅接受 PDF。',
-          ),
-        );
-        return;
-      }
-      if (selected.size <= 0 || selected.size > MAX_PDF_BYTES) {
-        setFile(null);
-        setError(
-          reviewInputError(
-            'REVIEW_PDF_SIZE_INVALID',
-            'PDF 不能为空，且文件大小不能超过 100 MB。',
-          ),
-        );
-        return;
-      }
-      setFile(selected);
-    },
-    [clearError],
-  );
-
   const { editorDisabled, actionsDisabled: busy } = continuousReviewControls(
     presentation,
     busyAction !== null,
@@ -317,14 +249,6 @@ export default function ContinuousReviewPanel({
     refreshing,
     readFailed,
   );
-  const { getInputProps, getRootProps, isDragActive } = useDropzone({
-    accept: { 'application/pdf': ['.pdf'] },
-    disabled: editorDisabled,
-    maxFiles: 1,
-    multiple: false,
-    onDrop,
-  });
-
   async function startOrSync(): Promise<void> {
     if (busy || !presentation.canStartOrSync) return;
     setBusyAction('start');
@@ -342,88 +266,6 @@ export default function ContinuousReviewPanel({
       setConversation(response.conversation);
       setCurrentRevision(response.conversation.currentWorkItemRevision);
       setReadFailed(false);
-    } catch (reason) {
-      captureError(reason);
-    } finally {
-      setBusyAction(null);
-    }
-  }
-
-  async function appendTurn(): Promise<void> {
-    const userMessage = message.trim();
-    if (
-      busy ||
-      !conversation ||
-      conversation.status !== 'ACTIVE' ||
-      !conversation.currentRevisionSynced ||
-      !userMessage ||
-      !models.ready ||
-      !automaticReviewAvailable(conversation)
-    ) {
-      return;
-    }
-    setBusyAction('append');
-    clearError();
-    try {
-      const basis = reviewSubmissionIntent(
-        submissionRef.current,
-        submissionRef.current?.requestId ?? createRequestCorrelationId(),
-        conversation,
-        modelRef || undefined,
-        reviewScope,
-      );
-      const submission: ReviewSubmissionIntent = submissionRef.current ?? {
-        ...basis,
-        userMessage,
-        selectedEvaluationItemId,
-      };
-      submissionRef.current = submission;
-      const requestId = submission.requestId;
-      setActiveRequestId(requestId);
-      let selection = uploadedSelection;
-      if (file && !selection) {
-        await canonicalHost.requireOfficialOauthSession();
-        const uploaded = await uploadFile(file, {
-          filePath: `wiselink/review-input/${requestId}/${safePdfName(file.name)}`,
-          contentType: 'application/pdf',
-          upsert: false,
-        });
-        selection = {
-          bucketId: uploaded.bucketId,
-          filePath: uploaded.filePath,
-        };
-        setUploadedSelection(selection);
-      }
-      const response = await canonicalHost.appendReviewTextTurn(
-        workItemId,
-        conversation.reviewConversationId,
-        {
-          requestId,
-          purpose: 'CHAT',
-          executionMode: 'AUTOMATIC',
-          userMessage: submission.userMessage ?? userMessage,
-          ...(submission.modelRef ? { modelRef: submission.modelRef } : {}),
-          selectedEvaluationItemId: submission.selectedEvaluationItemId ?? null,
-          ...(submission.reviewScope
-            ? { reviewScope: submission.reviewScope }
-            : {}),
-          ...(selection ? { attachmentSelection: selection } : {}),
-        },
-      );
-      assertReviewConversationScope(
-        response.conversation,
-        workItemId,
-        conversationScope,
-      );
-      setConversation(response.conversation);
-      setCurrentRevision(response.conversation.currentWorkItemRevision);
-      setReadFailed(false);
-      setMessage('');
-      setModelRef('');
-      setFile(null);
-      setUploadedSelection(null);
-      submissionRef.current = null;
-      setActiveRequestId(null);
     } catch (reason) {
       captureError(reason);
     } finally {
@@ -749,109 +591,35 @@ export default function ContinuousReviewPanel({
           ) : null}
           <TaskModelPicker
             id="review-model"
-            label="对话与下次更新的模型"
+            label="下次更新评估的模型"
             value={modelRef}
             onChange={setModelRef}
             catalog={models}
-            disabled={editorDisabled || submissionRef.current !== null}
+            disabled={editorDisabled}
             inheritLabel={
               conversation?.defaultModel?.displayName ?? '此事项的模型'
             }
           />
-          {submissionRef.current && !busy ? (
-            <small>
-              提交结果待核对，重试保持本轮模型。编辑内容会开始新请求。
-            </small>
-          ) : null}
-          <label htmlFor="continuous-review-message">
-            工程师对话
-            <span>
-              {automaticReviewAvailable(conversation)
-                ? '发送只进行讨论，不触发更新评估；已有评估请求不因此改变范围'
-                : '当前 Host 未开放自动对话与更新评估，输入保留，不会伪装成已接通'}
-            </span>
-          </label>
-          <Textarea
-            id="continuous-review-message"
-            value={message}
-            maxLength={20_000}
-            disabled={editorDisabled}
-            placeholder="补充事实、提出疑问，或说明希望核对的判断"
-            onChange={(event) => {
-              submissionRef.current = null;
-              setActiveRequestId(null);
-              setMessage(event.target.value);
-            }}
-          />
-          {busyAction === 'append' && activeRequestId ? (
-            <div className="continuous-review-generation" role="status">
-              <RefreshCw aria-hidden="true" />
-              <div>
-                <strong>正在保存对话与答复请求</strong>
-                <span title={activeRequestId}>
-                  requestId {shortRequestId(activeRequestId)}
-                  ；此阶段不会采纳输入，也不会修改 WorkItem current、revision 或
-                  STALE 状态。
-                </span>
-              </div>
+          <p>
+            普通问答由 Aily 私人对话承接；选择原话并提交更新后，OpenClaw
+            才执行评估。
+          </p>
+          <Button asChild>
+            <Link
+              to={`/dialogues?workItemId=${encodeURIComponent(workItemId)}`}
+            >
+              进入 Aily 私人对话
+            </Link>
+          </Button>
+          {message ? (
+            <div className="space-y-2">
+              <p>此前未发送的草稿（可复制到私人对话）：</p>
+              <Textarea value={message} readOnly />
+              <Button variant="ghost" onClick={() => setMessage('')}>
+                清除旧草稿
+              </Button>
             </div>
           ) : null}
-          <div className="continuous-review-compose-row">
-            <div
-              {...getRootProps({
-                className: `continuous-review-drop${
-                  isDragActive ? ' is-active' : ''
-                }${file ? ' has-file' : ''}`,
-                role: 'button',
-                'aria-label': file
-                  ? `更换补充 PDF，当前为 ${file.name}`
-                  : '选择一份补充 PDF',
-                'aria-disabled': editorDisabled,
-              })}
-            >
-              <input {...getInputProps()} />
-              {file ? (
-                <FileCheck2 aria-hidden="true" />
-              ) : (
-                <Paperclip aria-hidden="true" />
-              )}
-              <span>{file ? file.name : '附加一份 PDF（可选）'}</span>
-            </div>
-            {file ? (
-              <button
-                type="button"
-                className="continuous-review-remove-file"
-                aria-label="移除补充 PDF"
-                disabled={editorDisabled}
-                onClick={() => {
-                  setFile(null);
-                  setUploadedSelection(null);
-                  submissionRef.current = null;
-                  setActiveRequestId(null);
-                }}
-              >
-                <X aria-hidden="true" />
-              </button>
-            ) : null}
-            <Button
-              type="button"
-              disabled={
-                busy ||
-                !presentation.composerEnabled ||
-                !message.trim() ||
-                !models.ready ||
-                !automaticReviewAvailable(conversation)
-              }
-              onClick={() => void appendTurn()}
-            >
-              {file && !uploadedSelection ? (
-                <FileUp aria-hidden="true" />
-              ) : (
-                <Send aria-hidden="true" />
-              )}
-              {busyAction === 'append' ? '正在提交…' : '发送'}
-            </Button>
-          </div>
           {conversation ? (
             <AssessmentUpdateControl
               conversation={conversation}
@@ -873,7 +641,7 @@ export default function ContinuousReviewPanel({
                 !models.ready ||
                 !automaticReviewAvailable(conversation)
               }
-              hasUnsentDraft={Boolean(message.trim() || file)}
+              hasUnsentDraft={Boolean(message.trim())}
               materialTitle={materials?.primary.title}
               documentVersionId={materials?.primary.documentVersionId}
               onBusy={(value: boolean) => {
@@ -889,7 +657,7 @@ export default function ContinuousReviewPanel({
             />
           ) : null}
           <div className="continuous-review-compose-footer">
-            <span>单次最多附加 1 份 PDF，最大 100 MB。</span>
+            <span>本页保留评估历史、显式更新与正式采用。</span>
             {!matterId ? (
               <Button
                 type="button"
@@ -901,7 +669,7 @@ export default function ContinuousReviewPanel({
                 结束本轮讨论
               </Button>
             ) : (
-              <span>离开页面会保留未发送文字，不会关闭事项。</span>
+              <span>离开页面不会关闭事项。</span>
             )}
           </div>
         </div>
@@ -979,41 +747,18 @@ export default function ContinuousReviewPanel({
                 ) : null}
               </dl>
             )}
-            {activeRequestId ? (
-              <small>
-                当前输入与 requestId {shortRequestId(activeRequestId)}
-                已保留；再次提交会复用同一标识，避免重复回合。
-              </small>
-            ) : null}
           </div>
         </div>
       ) : null}
     </section>
   );
 }
-
-function safePdfName(fileName: string): string {
-  const base = fileName
-    .normalize('NFKD')
-    .replace(/\.pdf$/iu, '')
-    .toLowerCase()
-    .replace(/[^a-z0-9._-]+/gu, '-')
-    .replace(/^[^a-z0-9]+/u, '')
-    .slice(0, 120)
-    .replace(/[^a-z0-9]+$/u, '');
-  return `${base || 'review-attachment'}.pdf`;
-}
-
-function shortRequestId(value: string): string {
-  return value.length <= 18 ? value : `${value.slice(0, 8)}…${value.slice(-6)}`;
-}
-
 function reviewInputError(
   code: string,
   message: string,
 ): ReviewOperationErrorPresentation {
   return {
-    title: '补充资料不可用',
+    title: '引用暂不可用',
     message,
     code,
     retryable: null,

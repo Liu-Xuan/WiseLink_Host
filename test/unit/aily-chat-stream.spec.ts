@@ -48,6 +48,16 @@ describe('Aily SSE public answer reader', () => {
 
   it.each([
     [
+      'invalid remote session',
+      frame('start', {
+        agent_chat_id: '123',
+        session_id: { token: 'private' },
+      }) +
+        delta('部分') +
+        done,
+      'AILY_STREAM_SESSION_INVALID',
+    ],
+    [
       'EOF after partial answer',
       start + delta('部分'),
       'AILY_STREAM_INTERRUPTED',

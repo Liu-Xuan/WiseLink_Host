@@ -77,6 +77,12 @@ import { MiaodaCanonicalWorkItemRegistrarAdapter } from '../work-item/miaoda-can
 import { WorkItemRuntimeModule } from '../work-item/work-item-runtime.module';
 import { IdentityModule } from '../identity/identity.module';
 import { ReviewAilyService } from './review-aily.service';
+import { DialogueAssessmentRepository } from './dialogue-assessment.repository';
+import { DialogueAssessmentService } from './dialogue-assessment.service';
+import { DialogueController } from './dialogue.controller';
+import { DialogueService } from './dialogue.service';
+import { DialogueRepository } from './dialogue.repository';
+import { DialogueContextService } from './dialogue-context.service';
 import { ReviewPersistenceModule } from '../review-persistence/review-persistence.module';
 import { OrdinaryWorkItemService } from '../work-item/ordinary-work-item.service';
 import { UnconfiguredCanonicalPdfProducerAdapter } from './unconfigured-canonical-pdf-producer.adapter';
@@ -180,6 +186,7 @@ export interface CanonicalHostModuleOptions {
     BatchApplicabilityModule,
   ],
   controllers: [
+    DialogueController,
     CanonicalHostController,
     CanonicalPdfPreviewController,
     CanonicalHostOpenApiController,
@@ -224,6 +231,11 @@ export interface CanonicalHostModuleOptions {
     CanonicalFleetMasterDataRepository,
     MiaodaApplicabilityControlledSelectionAdapter,
     CanonicalHostOpenClawReviewService,
+    DialogueAssessmentRepository,
+    DialogueAssessmentService,
+    DialogueService,
+    DialogueRepository,
+    DialogueContextService,
     ReviewAilyService,
     CanonicalHostCommonContextService,
     CanonicalJobAidProblemService,
@@ -419,6 +431,7 @@ export class CanonicalHostModule {
         ...(options.imports ?? []),
       ],
       controllers: [
+        DialogueController,
         CanonicalHostController,
         CanonicalPdfPreviewController,
         CanonicalHostOpenApiController,
@@ -483,6 +496,11 @@ export class CanonicalHostModule {
         CanonicalFleetMasterDataRepository,
         MiaodaApplicabilityControlledSelectionAdapter,
         CanonicalHostOpenClawReviewService,
+        DialogueAssessmentRepository,
+        DialogueAssessmentService,
+        DialogueService,
+        DialogueRepository,
+        DialogueContextService,
         ReviewAilyService,
         CanonicalHostCommonContextService,
         CanonicalJobAidProblemService,

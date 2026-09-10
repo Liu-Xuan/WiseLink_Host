@@ -91,7 +91,7 @@ describe('continuous review client state', () => {
     ).toContain('授权');
   });
 
-  it('wires draft controls separately while preserving submission and revoked-access cleanup', async () => {
+  it('preserves the legacy draft readback and revoked-access cleanup after dialogue migration', async () => {
     const source = await readFile(
       resolve(
         __dirname,
@@ -100,17 +100,10 @@ describe('continuous review client state', () => {
       'utf8',
     );
 
-    expect(source).toMatch(/<Textarea[\s\S]*?disabled=\{editorDisabled\}/u);
-    expect(source).toContain('disabled: editorDisabled');
-    expect(source).toContain("'aria-disabled': editorDisabled");
+    expect(source).toMatch(/<Textarea value=\{message\} readOnly/u);
+    expect(source).not.toContain('async function appendTurn');
     expect(source).toMatch(
-      /busy\s*\|\|\s*!presentation\.composerEnabled\s*\|\|\s*!message\.trim\(\)\s*\|\|\s*!models\.ready/u,
-    );
-    expect(source).toMatch(
-      /async function appendTurn\(\)[\s\S]*?if \(\s*busy \|\|/u,
-    );
-    expect(source).toMatch(
-      /reviewErrorRevokesReadback\(reason\)[\s\S]*?setConversation\(null\)[\s\S]*?setMessage\(''\)[\s\S]*?setFile\(null\)/u,
+      /reviewErrorRevokesReadback\(reason\)[\s\S]*?setConversation\(null\)[\s\S]*?setMessage\(''\)/u,
     );
     expect(source).toContain("captureError(reason, 'refresh')");
     expect(source).toContain('setReadFailed(true)');
@@ -247,7 +240,7 @@ describe('continuous review client state', () => {
       /selectedEvaluationItemId:\s*string\s*\|\s*null;/u,
     );
     expect(panelSource).toMatch(
-      /selectedEvaluationItemId: submission\.selectedEvaluationItemId \?\? null/u,
+      /selectedEvaluationItemId=\{selectedEvaluationItemId\}/u,
     );
   });
 

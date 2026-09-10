@@ -1,5 +1,6 @@
 export interface AilyStreamProgress {
   chatId: string | null;
+  remoteSessionId?: string;
   answer: string;
   status: 'RUNNING' | 'COMPLETED' | 'FAILED';
 }
@@ -58,6 +59,14 @@ export async function consumeAilyChatStream(
     if (name === 'start') {
       if (progress.chatId) throw new Error('AILY_STREAM_EVENT_INVALID');
       progress.chatId = id;
+      if (value.session_id !== undefined) {
+        if (
+          typeof value.session_id !== 'string' ||
+          !/^[A-Za-z0-9_-]{1,96}$/u.test(value.session_id)
+        )
+          throw new Error('AILY_STREAM_SESSION_INVALID');
+        progress.remoteSessionId = value.session_id;
+      }
       await onProgress({ ...progress });
       return;
     }
