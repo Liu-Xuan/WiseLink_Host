@@ -103,7 +103,6 @@ export default function ContinuousReviewPanel({
   const [message, setMessage] = useReviewDraft(draftScopeKey);
   const models = useTaskModelOptions();
   const [modelRef, setModelRef] = useState('');
-  const [dialogueOpen, setDialogueOpen] = useState(false);
   const [busyAction, setBusyAction] = useState<
     'start' | 'update' | 'close' | 'confirm' | null
   >(null);
@@ -392,313 +391,303 @@ export default function ContinuousReviewPanel({
       className="continuous-review"
       aria-labelledby="continuous-review-title"
     >
-      <header className="continuous-review-header">
-        <div>
-          <span>持续工程复核</span>
-          <h3 id="continuous-review-title">围绕当前事项继续核对</h3>
-          <p>
-            自由讨论不会改写当前评估。讨论充分后点击“更新评估”，核对范围后才重算；正式采用与实施决定仍独立处理。
-          </p>
-        </div>
-        <div className="continuous-review-toolbar">
-          <span
-            className={`continuous-review-state${presentation.stateClassName}`}
-            data-state={presentation.state.toLowerCase()}
-          >
-            {presentation.stateLabel}
-          </span>
-          <Button
-            type="button"
-            size="sm"
-            variant="outline"
-            disabled={busy}
-            onClick={() => void readCurrent()}
-          >
-            <RefreshCw aria-hidden="true" />
-            {refreshing ? '正在读取…' : '重新读取'}
-          </Button>
-        </div>
-      </header>
-      {workingRefreshError ? <p role="alert">{workingRefreshError}</p> : null}
-
-      {materials ? (
-        <ReviewMaterialsPanel
-          context={materials}
-          turns={conversation?.turns ?? []}
-          refreshing={refreshing}
-          onLocateSourceRef={onLocateSourceRef}
+      {!readFailed && (
+        <ContextualDialogue
+          key={`${workItemId}:${matterId}`}
+          document={{
+            workItemId,
+            label: materials?.primary.title ?? '当前资料',
+            documentVersionId: materials?.primary.documentVersionId,
+          }}
         />
-      ) : null}
-
-      {confirmationReceipt ? (
-        <div className="continuous-review-receipt" role="status">
-          <TriangleAlert aria-hidden="true" />
+      )}
+      <details className="space-y-4">
+        <summary className="cursor-pointer text-sm font-medium">
+          评估记录与更新
+        </summary>
+        <header className="continuous-review-header">
           <div>
-            <strong>
-              复核意见已写入事项版本 {confirmationReceipt.workItemRevision}
-            </strong>
-            <span>
-              {confirmationReceipt.overallStatus === 'STALE'
-                ? '原整体意见已标记为需更新；'
-                : '当前尚无可更新的整体意见；'}
-              仅受影响项目进入下一轮重新综合，尚未执行完成。
-            </span>
+            <span>持续工程复核</span>
+            <h3 id="continuous-review-title">围绕当前事项继续核对</h3>
+            <p>
+              自由讨论不会改写当前评估。需更新时填写并核对评估输入后重算；正式采用与实施决定仍独立处理。
+            </p>
           </div>
-        </div>
-      ) : null}
+          <div className="continuous-review-toolbar">
+            <span
+              className={`continuous-review-state${presentation.stateClassName}`}
+              data-state={presentation.state.toLowerCase()}
+            >
+              {presentation.stateLabel}
+            </span>
+            <Button
+              type="button"
+              size="sm"
+              variant="outline"
+              disabled={busy}
+              onClick={() => void readCurrent()}
+            >
+              <RefreshCw aria-hidden="true" />
+              {refreshing ? '正在读取…' : '重新读取'}
+            </Button>
+          </div>
+        </header>
+        {workingRefreshError ? <p role="alert">{workingRefreshError}</p> : null}
 
-      {conversation ? (
-        <div
-          className={`continuous-review-sync${refreshing ? ' is-refreshing' : ''}`}
-          role="status"
-        >
-          <div>
-            <span>讨论依据</span>
-            <strong>
-              {readFailed ? '上次读回：讨论版本 ' : '已同步至事项版本 '}
-              {conversation.lastSyncedRevision} · 页面事项版本 {currentRevision}
-            </strong>
-            {readbackMessage ? (
-              <small role={readFailed ? 'alert' : undefined}>
-                {readbackMessage}
-              </small>
+        {materials ? (
+          <ReviewMaterialsPanel
+            context={materials}
+            turns={conversation?.turns ?? []}
+            refreshing={refreshing}
+            onLocateSourceRef={onLocateSourceRef}
+          />
+        ) : null}
+
+        {confirmationReceipt ? (
+          <div className="continuous-review-receipt" role="status">
+            <TriangleAlert aria-hidden="true" />
+            <div>
+              <strong>
+                复核意见已写入事项版本 {confirmationReceipt.workItemRevision}
+              </strong>
+              <span>
+                {confirmationReceipt.overallStatus === 'STALE'
+                  ? '原整体意见已标记为需更新；'
+                  : '当前尚无可更新的整体意见；'}
+                仅受影响项目进入下一轮重新综合，尚未执行完成。
+              </span>
+            </div>
+          </div>
+        ) : null}
+
+        {conversation ? (
+          <div
+            className={`continuous-review-sync${refreshing ? ' is-refreshing' : ''}`}
+            role="status"
+          >
+            <div>
+              <span>讨论依据</span>
+              <strong>
+                {readFailed ? '上次读回：讨论版本 ' : '已同步至事项版本 '}
+                {conversation.lastSyncedRevision} · 页面事项版本{' '}
+                {currentRevision}
+              </strong>
+              {readbackMessage ? (
+                <small role={readFailed ? 'alert' : undefined}>
+                  {readbackMessage}
+                </small>
+              ) : null}
+            </div>
+            {presentation.state === 'STALE_CONTEXT' ? (
+              <>
+                <p>
+                  <strong>{presentation.contextTitle}</strong>
+                  {presentation.contextMessage}
+                </p>
+                <Button
+                  type="button"
+                  size="sm"
+                  disabled={busy}
+                  onClick={() => void startOrSync()}
+                >
+                  同步到最新版本
+                </Button>
+              </>
             ) : null}
           </div>
-          {presentation.state === 'STALE_CONTEXT' ? (
-            <>
-              <p>
-                <strong>{presentation.contextTitle}</strong>
-                {presentation.contextMessage}
-              </p>
-              <Button
-                type="button"
-                size="sm"
-                disabled={busy}
-                onClick={() => void startOrSync()}
-              >
-                同步到最新版本
-              </Button>
-            </>
-          ) : null}
-        </div>
-      ) : (
-        <div className="continuous-review-empty">
-          <MessageSquareText aria-hidden="true" />
-          <div>
-            <strong>开始一轮可追溯的工程复核</strong>
-            <p>讨论会自动绑定当前事项版本，不会在浏览器另建状态。</p>
-          </div>
-          <Button
-            type="button"
-            data-review-start
-            disabled={busy}
-            onClick={() => void startOrSync()}
-          >
-            {refreshing
-              ? '正在读取…'
-              : busyAction === 'start'
-                ? '正在开始…'
-                : '开始复核讨论'}
-          </Button>
-        </div>
-      )}
-
-      {currentTurn ? (
-        <div className="continuous-review-turns" aria-label="复核讨论记录">
-          {turns.history.length ? (
-            <details
-              className="continuous-review-history"
-              open={
-                currentTurn.purpose === 'CHAT' && Boolean(assessmentCandidateId)
-              }
-            >
-              <summary>历史回合 · {turns.history.length}</summary>
-              <div>
-                {turns.history.map((turn) => (
-                  <ReviewConversationTurn
-                    key={turn.reviewTurnId}
-                    turn={turn}
-                    conversation={conversation!}
-                    currentRevision={currentRevision}
-                    isCurrent={false}
-                    assessmentCurrent={
-                      turn.reviewTurnId === assessmentCandidateId
-                    }
-                    formalActionsAllowed={!matterId}
-                    busy={busy}
-                    confirming={confirmingTurnId === turn.reviewTurnId}
-                    rejected={
-                      !!turn.assistantCandidate?.reviewActionDraft &&
-                      rejectedDraftRefs.includes(
-                        turn.assistantCandidate.reviewActionDraft
-                          .reviewActionDraftRef,
-                      )
-                    }
-                    onBeginConfirm={() =>
-                      setConfirmingTurnId(turn.reviewTurnId)
-                    }
-                    onCancelConfirm={() => setConfirmingTurnId(null)}
-                    onRejectDraft={() => rejectDraft(turn)}
-                    onConfirm={() => void confirmDraft(turn)}
-                    onLocateSourceRef={(sourceRef: string) =>
-                      locateTurnSource(turn, sourceRef)
-                    }
-                  />
-                ))}
-              </div>
-            </details>
-          ) : null}
-          <div className="continuous-review-current-label">
-            <span>当前回合</span>
-            <strong>Turn {currentTurn.turnNo}</strong>
-          </div>
-          <ReviewConversationTurn
-            key={currentTurn.reviewTurnId}
-            turn={currentTurn}
-            conversation={conversation!}
-            currentRevision={currentRevision}
-            isCurrent
-            assessmentCurrent={
-              currentTurn.reviewTurnId === assessmentCandidateId
-            }
-            formalActionsAllowed={!matterId}
-            busy={busy}
-            confirming={confirmingTurnId === currentTurn.reviewTurnId}
-            rejected={
-              !!currentTurn.assistantCandidate?.reviewActionDraft &&
-              rejectedDraftRefs.includes(
-                currentTurn.assistantCandidate.reviewActionDraft
-                  .reviewActionDraftRef,
-              )
-            }
-            onBeginConfirm={() => setConfirmingTurnId(currentTurn.reviewTurnId)}
-            onCancelConfirm={() => setConfirmingTurnId(null)}
-            onRejectDraft={() => rejectDraft(currentTurn)}
-            onConfirm={() => void confirmDraft(currentTurn)}
-            onLocateSourceRef={(sourceRef: string) =>
-              locateTurnSource(currentTurn, sourceRef)
-            }
-          />
-        </div>
-      ) : conversation ? (
-        <p className="continuous-review-no-turns">当前讨论还没有补充内容。</p>
-      ) : null}
-
-      {!accessUnavailable && !readFailed && (
-        <details
-          className="space-y-3"
-          onToggle={(event) => {
-            if (event.currentTarget.open) setDialogueOpen(true);
-          }}
-        >
-          <summary className="cursor-pointer font-medium">
-            与 Aily 讨论当前资料
-          </summary>
-          {dialogueOpen && (
-            <ContextualDialogue
-              key={`${workItemId}:${matterId}`}
-              document={{
-                workItemId,
-                label: [
-                  materials?.primary.title ?? '当前资料',
-                  materials?.primary.versionLabel,
-                ]
-                  .filter(Boolean)
-                  .join(' · '),
-                documentVersionId: materials?.primary.documentVersionId,
-              }}
-              assessmentEnabled={!matterId}
-            />
-          )}
-        </details>
-      )}
-
-      {active ? (
-        <div className="continuous-review-composer">
-          {discussionClaimText ? (
-            <blockquote className="whitespace-pre-wrap break-words border-l-2 border-border pl-3 text-sm leading-7">
-              本轮围绕：{discussionClaimText}
-            </blockquote>
-          ) : null}
-          <TaskModelPicker
-            id="review-model"
-            label="下次更新评估的模型"
-            value={modelRef}
-            onChange={setModelRef}
-            catalog={models}
-            disabled={editorDisabled}
-            inheritLabel={
-              conversation?.defaultModel?.displayName ?? '此事项的模型'
-            }
-          />
-          {message ? (
-            <div className="space-y-2">
-              <p>此前未发送的草稿（可复制到上方对话）：</p>
-              <Textarea value={message} readOnly />
-              <Button variant="ghost" onClick={() => setMessage('')}>
-                清除旧草稿
-              </Button>
+        ) : (
+          <div className="continuous-review-empty">
+            <MessageSquareText aria-hidden="true" />
+            <div>
+              <strong>开始一轮可追溯的工程复核</strong>
+              <p>讨论会自动绑定当前事项版本，不会在浏览器另建状态。</p>
             </div>
-          ) : null}
-          {conversation ? (
-            <AssessmentUpdateControl
-              conversation={conversation}
-              reviewScope={reviewScope}
-              selectedEvaluationItemId={selectedEvaluationItemId}
-              modelRef={modelRef || undefined}
-              modelLabel={
-                models.data?.options.find(
-                  (model) => model.modelRef === modelRef,
-                )?.displayName ??
-                conversation.defaultModel?.displayName ??
-                '此事项的模型'
-              }
-              disabled={
-                busy ||
-                hasActiveExecution ||
-                readFailed ||
-                !presentation.composerEnabled ||
-                !models.ready ||
-                !automaticReviewAvailable(conversation)
-              }
-              hasUnsentDraft={Boolean(message.trim())}
-              materialTitle={materials?.primary.title}
-              documentVersionId={materials?.primary.documentVersionId}
-              onBusy={(value: boolean) => {
-                setBusyAction(value ? 'update' : null);
-                if (value) clearError();
-              }}
-              onResult={(next: ReviewConversationReadModel) => {
-                setConversation(next);
-                setCurrentRevision(next.currentWorkItemRevision);
-                setReadFailed(false);
-              }}
-              onError={captureError}
-            />
-          ) : null}
-          <div className="continuous-review-compose-footer">
-            <span>本页保留评估历史、显式更新与正式采用。</span>
-            {!matterId ? (
-              <Button
-                type="button"
-                size="sm"
-                variant="ghost"
-                disabled={busy}
-                onClick={() => void closeConversation()}
-              >
-                结束本轮讨论
-              </Button>
-            ) : (
-              <span>离开页面不会关闭事项。</span>
-            )}
+            <Button
+              type="button"
+              data-review-start
+              disabled={busy}
+              onClick={() => void startOrSync()}
+            >
+              {refreshing
+                ? '正在读取…'
+                : busyAction === 'start'
+                  ? '正在开始…'
+                  : '开始复核讨论'}
+            </Button>
           </div>
-        </div>
-      ) : presentation.state === 'CLOSED' ? (
-        <div className="continuous-review-closed">
-          <strong>{presentation.contextTitle}</strong>
-          <span>{presentation.contextMessage}</span>
-        </div>
-      ) : null}
+        )}
+
+        {currentTurn ? (
+          <div className="continuous-review-turns" aria-label="复核讨论记录">
+            {turns.history.length ? (
+              <details
+                className="continuous-review-history"
+                open={
+                  currentTurn.purpose === 'CHAT' &&
+                  Boolean(assessmentCandidateId)
+                }
+              >
+                <summary>历史回合 · {turns.history.length}</summary>
+                <div>
+                  {turns.history.map((turn) => (
+                    <ReviewConversationTurn
+                      key={turn.reviewTurnId}
+                      turn={turn}
+                      conversation={conversation!}
+                      currentRevision={currentRevision}
+                      isCurrent={false}
+                      assessmentCurrent={
+                        turn.reviewTurnId === assessmentCandidateId
+                      }
+                      formalActionsAllowed={!matterId}
+                      busy={busy}
+                      confirming={confirmingTurnId === turn.reviewTurnId}
+                      rejected={
+                        !!turn.assistantCandidate?.reviewActionDraft &&
+                        rejectedDraftRefs.includes(
+                          turn.assistantCandidate.reviewActionDraft
+                            .reviewActionDraftRef,
+                        )
+                      }
+                      onBeginConfirm={() =>
+                        setConfirmingTurnId(turn.reviewTurnId)
+                      }
+                      onCancelConfirm={() => setConfirmingTurnId(null)}
+                      onRejectDraft={() => rejectDraft(turn)}
+                      onConfirm={() => void confirmDraft(turn)}
+                      onLocateSourceRef={(sourceRef: string) =>
+                        locateTurnSource(turn, sourceRef)
+                      }
+                    />
+                  ))}
+                </div>
+              </details>
+            ) : null}
+            <div className="continuous-review-current-label">
+              <span>当前回合</span>
+              <strong>Turn {currentTurn.turnNo}</strong>
+            </div>
+            <ReviewConversationTurn
+              key={currentTurn.reviewTurnId}
+              turn={currentTurn}
+              conversation={conversation!}
+              currentRevision={currentRevision}
+              isCurrent
+              assessmentCurrent={
+                currentTurn.reviewTurnId === assessmentCandidateId
+              }
+              formalActionsAllowed={!matterId}
+              busy={busy}
+              confirming={confirmingTurnId === currentTurn.reviewTurnId}
+              rejected={
+                !!currentTurn.assistantCandidate?.reviewActionDraft &&
+                rejectedDraftRefs.includes(
+                  currentTurn.assistantCandidate.reviewActionDraft
+                    .reviewActionDraftRef,
+                )
+              }
+              onBeginConfirm={() =>
+                setConfirmingTurnId(currentTurn.reviewTurnId)
+              }
+              onCancelConfirm={() => setConfirmingTurnId(null)}
+              onRejectDraft={() => rejectDraft(currentTurn)}
+              onConfirm={() => void confirmDraft(currentTurn)}
+              onLocateSourceRef={(sourceRef: string) =>
+                locateTurnSource(currentTurn, sourceRef)
+              }
+            />
+          </div>
+        ) : conversation ? (
+          <p className="continuous-review-no-turns">当前讨论还没有补充内容。</p>
+        ) : null}
+
+        {active ? (
+          <div className="continuous-review-composer">
+            {discussionClaimText ? (
+              <blockquote className="whitespace-pre-wrap break-words border-l-2 border-border pl-3 text-sm leading-7">
+                本轮围绕：{discussionClaimText}
+              </blockquote>
+            ) : null}
+            <TaskModelPicker
+              id="review-model"
+              label="下次更新评估的模型"
+              value={modelRef}
+              onChange={setModelRef}
+              catalog={models}
+              disabled={editorDisabled}
+              inheritLabel={
+                conversation?.defaultModel?.displayName ?? '此事项的模型'
+              }
+            />
+            {message ? (
+              <div className="space-y-2">
+                <p>此前未发送的草稿（可复制到上方对话）：</p>
+                <Textarea value={message} readOnly />
+                <Button variant="ghost" onClick={() => setMessage('')}>
+                  清除旧草稿
+                </Button>
+              </div>
+            ) : null}
+            {conversation ? (
+              <AssessmentUpdateControl
+                conversation={conversation}
+                reviewScope={reviewScope}
+                selectedEvaluationItemId={selectedEvaluationItemId}
+                modelRef={modelRef || undefined}
+                modelLabel={
+                  models.data?.options.find(
+                    (model) => model.modelRef === modelRef,
+                  )?.displayName ??
+                  conversation.defaultModel?.displayName ??
+                  '此事项的模型'
+                }
+                disabled={
+                  busy ||
+                  hasActiveExecution ||
+                  readFailed ||
+                  !presentation.composerEnabled ||
+                  !models.ready ||
+                  !automaticReviewAvailable(conversation)
+                }
+                hasUnsentDraft={Boolean(message.trim())}
+                materialTitle={materials?.primary.title}
+                documentVersionId={materials?.primary.documentVersionId}
+                onBusy={(value: boolean) => {
+                  setBusyAction(value ? 'update' : null);
+                  if (value) clearError();
+                }}
+                onResult={(next: ReviewConversationReadModel) => {
+                  setConversation(next);
+                  setCurrentRevision(next.currentWorkItemRevision);
+                  setReadFailed(false);
+                }}
+                onError={captureError}
+              />
+            ) : null}
+            <div className="continuous-review-compose-footer">
+              <span>本页保留评估历史、显式更新与正式采用。</span>
+              {!matterId ? (
+                <Button
+                  type="button"
+                  size="sm"
+                  variant="ghost"
+                  disabled={busy}
+                  onClick={() => void closeConversation()}
+                >
+                  结束本轮讨论
+                </Button>
+              ) : (
+                <span>离开页面不会关闭事项。</span>
+              )}
+            </div>
+          </div>
+        ) : presentation.state === 'CLOSED' ? (
+          <div className="continuous-review-closed">
+            <strong>{presentation.contextTitle}</strong>
+            <span>{presentation.contextMessage}</span>
+          </div>
+        ) : null}
+      </details>
 
       {error ? (
         <div className="continuous-review-error" role="alert">

@@ -64,6 +64,7 @@
     "dev:local": "node ./scripts/dev-local.js"
   },
   "dependencies": {
+    "@lark-apaas/aily-web-sdk": "0.0.12",
     "@lark-apaas/fullstack-nestjs-core": "^1.1.57",
     "@lark-apaas/nestjs-common": "^0.1.9",
     "@modelcontextprotocol/node": "^2.0.0",

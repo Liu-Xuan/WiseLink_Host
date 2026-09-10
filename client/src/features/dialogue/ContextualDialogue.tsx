@@ -1,94 +1,71 @@
-import { useEffect, useState } from 'react';
-import { useCurrentUserSession } from '@client/src/app/providers/CurrentUserSessionProvider';
-import { listDialogues } from '@client/src/api/dialogue-directory';
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from '@client/src/components/ui/select';
+import { useEffect, useRef, useState } from 'react';
+import { initAgentChat, type AgentSDKInstance } from '@lark-apaas/aily-web-sdk';
 import { Button } from '@client/src/components/ui/button';
-import { PrivateDialoguePanel } from './PrivateDialoguePanel';
-import type { DialogueThreadSummary } from '@shared/dialogue.interface';
 import type { DialogueWorkItemOption } from './DialogueContributionPicker';
 
-/** Reuse the authenticated dialogue and contribution flow within the current document. */
+// Public embed channel identifier issued by Aily; authentication is handled by
+// the native iframe using the existing Feishu-account / self-only channel policy.
+const CHANNEL_TOKEN = 'wsk_4pPoq3JOZhcjgo35HjFOd7';
+
+/** Native Aily owns its editor, messages, history, attachments and login. */
 export default function ContextualDialogue({
   document,
-  assessmentEnabled = true,
 }: {
   document: DialogueWorkItemOption;
-  assessmentEnabled?: boolean;
 }) {
-  const session = useCurrentUserSession();
-  const [threads, setThreads] = useState<DialogueThreadSummary[]>([]);
-  const [threadRef, setThreadRef] = useState<string>();
-  const [loading, setLoading] = useState(true);
+  const rootRef = useRef<HTMLDivElement>(null);
   const [error, setError] = useState('');
-  const [revision, setRevision] = useState(0);
+  const [attempt, setAttempt] = useState(0);
+
   useEffect(() => {
-    const controller = new AbortController();
-    setLoading(true);
+    const root = rootRef.current;
+    if (!root) return;
+    // Give each initialization its own node: a late SDK completion must never
+    // remove an iframe belonging to the next document or React effect.
+    const mount = window.document.createElement('div');
+    mount.style.height = '100%';
+    root.appendChild(mount);
+    let disposed = false;
+    let instance: AgentSDKInstance | undefined;
     setError('');
-    void listDialogues(controller.signal, undefined, document.workItemId)
-      .then((rows) => {
-        if (controller.signal.aborted) return;
-        setThreads(rows);
-        setThreadRef(rows[0]?.threadRef);
+    void initAgentChat(mount, { channelToken: CHANNEL_TOKEN })
+      .then(async (next) => {
+        if (disposed) await next.destroy();
+        else instance = next;
       })
       .catch((reason: unknown) => {
-        if (!controller.signal.aborted)
-          setError(reason instanceof Error ? reason.message : '对话读取失败');
-      })
-      .finally(() => {
-        if (!controller.signal.aborted) setLoading(false);
+        if (!disposed)
+          setError(reason instanceof Error ? reason.message : 'Aily 加载失败');
       });
-    return () => controller.abort();
-  }, [document.workItemId, session.sessionGeneration, revision]);
-  if (loading) return <p role="status">正在读取此资料的对话…</p>;
-  if (error)
-    return (
-      <div role="alert">
-        <p>{error}</p>
-        <Button onClick={() => setRevision((value) => value + 1)}>
-          重新读取
-        </Button>
-      </div>
-    );
+    return () => {
+      disposed = true;
+      mount.remove();
+      if (instance) void instance.destroy();
+    };
+  }, [document.workItemId, attempt]);
+
   return (
-    <div className="space-y-3">
-      <p className="text-sm text-muted-foreground">
-        可在飞书 Aily
-        中开展开放式对话，也可在这里围绕当前资料提问或保存飞书片段。
-      </p>
-      {threads.length > 1 && (
-        <Select value={threadRef} onValueChange={setThreadRef}>
-          <SelectTrigger aria-label="此资料的对话记录">
-            <SelectValue />
-          </SelectTrigger>
-          <SelectContent>
-            {threads.map((thread) => (
-              <SelectItem key={thread.threadRef} value={thread.threadRef}>
-                {new Date(thread.createdAt).toLocaleString()}
-              </SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
-      )}
-      {!assessmentEnabled && (
-        <p className="text-sm text-muted-foreground">
-          这里讨论事项关联的主资料；事项评估请使用本页的更新评估操作。
-        </p>
-      )}
-      <PrivateDialoguePanel
-        threadRef={threadRef}
-        workItems={[document]}
-        initialWorkItemIds={[document.workItemId]}
-        contextual
-        assessmentEnabled={assessmentEnabled}
-        onThreadReady={setThreadRef}
+    <div className="space-y-2">
+      <div
+        ref={rootRef}
+        className="h-[min(680px,75vh)] min-h-[420px] overflow-hidden rounded-lg border border-border bg-background"
+        aria-label="Aily 原生聊天窗口"
       />
+      {error && (
+        <div role="alert" className="flex items-center gap-3 text-sm">
+          <span>{error}</span>
+          <Button
+            variant="outline"
+            onClick={() => setAttempt((value) => value + 1)}
+          >
+            重新加载
+          </Button>
+        </div>
+      )}
+      <p className="text-xs text-muted-foreground">
+        当前页面资料尚未自动传入
+        Aily；可在聊天中说明资料名称。讨论不会自动更新评估。
+      </p>
     </div>
   );
 }
