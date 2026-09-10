@@ -29,12 +29,29 @@ export interface CanonicalVerifiedOpenClawAttemptScope extends CanonicalVerified
   attemptRef: string;
 }
 
+export interface CanonicalMatterAttemptAuthorization {
+  operation: 'CLAIM' | 'STATUS' | 'HEARTBEAT' | 'CANCEL' | 'READ_SAVED_WORK';
+  matterId: string;
+  attemptRef: string;
+}
+
+export interface CanonicalVerifiedMatterAttemptScope {
+  principalId: string;
+  appId: string;
+  tenantId: string;
+  actorUserId: string;
+  matterId: string;
+  attemptRef: string;
+}
+
 export interface CanonicalVerifiedApplicabilityContextScope extends CanonicalVerifiedServiceScope {
   applicabilityContextRef: string;
   requestId: string;
 }
 
 export interface CanonicalServiceScopeAuthorizationPort {
+  /** Older adapters have no Matter authority; consumers must fail closed. */
+  authorizeOpenClawMatterAttempt?(input: CanonicalMatterAttemptAuthorization): Promise<CanonicalVerifiedMatterAttemptScope>;
   authorizeWorkItemRead(input: {
     transport: 'OPENAPI_REST' | 'READONLY_MCP';
     operation: 'READ_STATUS' | 'QUERY_PARSED_PACKAGE' | 'READ_DEEP_LINK';

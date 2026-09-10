@@ -1,0 +1,57 @@
+import { registerMatterAttemptMcpTools } from '../../server/modules/canonical-host/matter-attempt-mcp-tools';
+
+function fixture(allowed = true) {
+  const registerTool = jest.fn();
+  const attempts = { claim: jest.fn().mockResolvedValue({ status: 'RUNNING' }),
+    read: jest.fn().mockResolvedValue({ status: 'RUNNING', errorCode: null, deadlineAt: null,
+      leaseToken: 'private-token', taskEnvelopeJson: 'private-task' }),
+    heartbeat: jest.fn(), cancel: jest.fn().mockResolvedValue({ status: 'CANCELLED' }),
+    readSavedWork: jest.fn().mockResolvedValue({ matterWorkRevisionId: 'MWR-exact' }) };
+  const scope = { appId: 'app_17bzc551rsg', actorUserId: 'host-actor', tenantId: 'host-tenant',
+    principalId: 'service:executor', matterId: 'MAT-one', attemptRef: 'AQ-one' };
+  const authorizeOpenClawMatterAttempt = jest.fn().mockResolvedValue(scope);
+  registerMatterAttemptMcpTools({ registerTool } as never, attempts as never,
+    allowed ? { authorizeOpenClawMatterAttempt } as never : {} as never);
+  const [name, definition, handler] = registerTool.mock.calls[0];
+  return { attempts, scope, authorizeOpenClawMatterAttempt, name,
+    call: (input: unknown) => handler(definition.inputSchema.parse(input)) };
+}
+const request = { operation: 'CLAIM', matterId: 'MAT-one', attemptRef: 'AQ-one' };
+
+describe('Matter MCP existing attempt lifecycle', () => {
+  it('passes only Host-authorized identity to the real Matter service', async () => {
+    const f = fixture();
+    expect(f.name).toBe('matter_action_attempt');
+    await f.call(request);
+    expect(f.attempts.claim).toHaveBeenCalledWith(f.scope);
+  });
+  it('rejects injected identity fields and fences before dispatch', () => {
+    const f = fixture();
+    expect(() => f.call({ ...request, actorUserId: 'forged' })).toThrow();
+    expect(() => f.call({ ...request, operation: 'HEARTBEAT', leaseGeneration: 1 })).toThrow();
+    expect(f.authorizeOpenClawMatterAttempt).not.toHaveBeenCalled();
+  });
+  it('fails closed for older adapters with no Matter authorization', async () => {
+    const f = fixture(false);
+    await expect(f.call(request)).rejects.toMatchObject({ statusCode: 503 });
+    expect(f.attempts.claim).not.toHaveBeenCalled();
+  });
+  it('rejects a scope returned for a different object or operation reference', async () => {
+    const f = fixture();
+    f.authorizeOpenClawMatterAttempt.mockResolvedValue({ ...f.scope, attemptRef: 'AQ-other' });
+    await expect(f.call(request)).rejects.toMatchObject({ statusCode: 503 });
+    expect(f.attempts.claim).not.toHaveBeenCalled();
+  });
+  it('projects status without leaking a lease token or task body', async () => {
+    const f = fixture();
+    const result = await f.call({ ...request, operation: 'STATUS' });
+    expect(JSON.stringify(result)).not.toMatch(/private-token|private-task|leaseToken|taskEnvelopeJson/);
+    expect(JSON.stringify(result)).toContain('RUNNING');
+  });
+  it('reads the exact save request without claiming or creating another attempt', async () => {
+    const f = fixture();
+    await f.call({ ...request, operation: 'READ_SAVED_WORK', requestId: 'save-first' });
+    expect(f.attempts.readSavedWork).toHaveBeenCalledWith({ ...f.scope, requestId: 'save-first' });
+    expect(f.attempts.claim).not.toHaveBeenCalled();
+  });
+});

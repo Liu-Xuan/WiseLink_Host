@@ -7,6 +7,9 @@ const KEYS = [
   'WL_OPENCLAW_SERVICE_PRINCIPAL_ID',
   'WL_OPENCLAW_SERVICE_TENANT_ID',
   'WL_OPENCLAW_SERVICE_WORK_ITEM_ID',
+  'WL_OPENCLAW_MATTER_SCOPE_ENABLED',
+  'WL_OPENCLAW_SERVICE_MATTER_ID',
+  'WL_OPENCLAW_SERVICE_MATTER_ACTOR_ID',
   'WL_OPENCLAW_APPLICABILITY_CONTEXT_REF',
   'WL_OPENCLAW_DEVELOPMENT_CREATE_ENABLED',
   'WL_OPENCLAW_DEVELOPMENT_DOCUMENT_VERSION_ID',
@@ -24,6 +27,28 @@ describe('ConfiguredDevelopmentCanonicalServiceScopeAuthorization', () => {
       if (value === undefined) delete process.env[key];
       else process.env[key] = value;
     }
+  });
+
+  it('requires a separate exact Matter and actor scope; it never converts the WorkItem allowlist', async () => {
+    for (const key of KEYS) delete process.env[key];
+    Object.assign(process.env, { WL_OPENCLAW_SERVICE_SCOPE_ENABLED: '1',
+      WL_OPENCLAW_GATEWAY_AUTH_MODE: 'API_KEY', WL_OPENCLAW_SERVICE_SCOPE_ENV: 'DEV',
+      WL_OPENCLAW_SERVICE_PRINCIPAL_ID: 'service:executor', WL_OPENCLAW_SERVICE_TENANT_ID: 'tenant-1',
+      WL_OPENCLAW_SERVICE_WORK_ITEM_ID: 'WI-one' });
+    const service = new ConfiguredDevelopmentCanonicalServiceScopeAuthorization();
+    const request = { operation: 'CLAIM' as const, matterId: 'MAT-one', attemptRef: 'AQ-one' };
+    await expect(service.authorizeOpenClawMatterAttempt(request)).rejects.toMatchObject({ statusCode: 503 });
+    Object.assign(process.env, { WL_OPENCLAW_MATTER_SCOPE_ENABLED: '1',
+      WL_OPENCLAW_SERVICE_MATTER_ID: 'MAT-one', WL_OPENCLAW_SERVICE_MATTER_ACTOR_ID: 'actor-1' });
+    await expect(service.authorizeOpenClawMatterAttempt(request)).resolves.toMatchObject({
+      matterId: 'MAT-one', actorUserId: 'actor-1', tenantId: 'tenant-1', principalId: 'service:executor' });
+    await expect(service.authorizeOpenClawMatterAttempt({ ...request, matterId: 'MAT-two' })).rejects.toMatchObject({ statusCode: 404 });
+    await expect(service.authorizeWorkItemRead({ transport: 'OPENAPI_REST', operation: 'READ_STATUS', workItemId: 'WI-two' })).rejects.toMatchObject({ statusCode: 404 });
+    delete process.env.WL_OPENCLAW_SERVICE_WORK_ITEM_ID;
+    await expect(service.assertTransport({ transport: 'OPENCLAW_MCP' })).resolves.toBeUndefined();
+    await expect(service.assertTransport({ transport: 'READONLY_MCP' })).rejects.toMatchObject({ statusCode: 503 });
+    process.env.WL_OPENCLAW_SERVICE_SCOPE_ENV = 'PROD';
+    await expect(service.authorizeOpenClawMatterAttempt(request)).rejects.toMatchObject({ statusCode: 503 });
   });
 
   it('fails closed when explicit gateway and DEV scope configuration is absent', async () => {

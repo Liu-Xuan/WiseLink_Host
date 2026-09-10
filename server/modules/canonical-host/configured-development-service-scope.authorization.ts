@@ -4,6 +4,8 @@ import { Injectable } from '@nestjs/common';
 
 import {
   canonicalServiceScopeUnavailable,
+  type CanonicalMatterAttemptAuthorization,
+  type CanonicalVerifiedMatterAttemptScope,
   type CanonicalServiceScopeAuthorizationPort,
   type CanonicalVerifiedApplicabilityContextScope,
   type CanonicalVerifiedDevelopmentCreateScope,
@@ -21,7 +23,8 @@ const CANONICAL_APP_ID = 'app_17bzc551rsg';
  * is unusable unless all non-secret configuration fields are present. The
  * optional creation scope is separately bound to one exact current
  * DocumentVersion and one UUID run token; ordinary OpenClaw calls remain
- * bound to one exact WorkItem.
+ * bound to one exact WorkItem. Matter operations separately require an enabled
+ * exact Matter/actor binding and never inherit the WorkItem allowlist.
  */
 @Injectable()
 // Supplied as the executor/service delegate through CanonicalHostModule.forRoot().
@@ -68,8 +71,19 @@ export class ConfiguredDevelopmentCanonicalServiceScopeAuthorization implements 
   async assertTransport(input: {
     transport: 'READONLY_MCP' | 'OPENCLAW_MCP';
   }): Promise<void> {
-    void input;
-    requiredConfig();
+    if (input.transport === 'OPENCLAW_MCP' && !process.env.WL_OPENCLAW_SERVICE_WORK_ITEM_ID) {
+      requiredMatterConfig();
+    } else requiredConfig();
+  }
+
+  async authorizeOpenClawMatterAttempt(input: CanonicalMatterAttemptAuthorization): Promise<CanonicalVerifiedMatterAttemptScope> {
+    const config = requiredMatterConfig();
+    if (input.matterId !== config.matterId || !input.attemptRef.trim()) {
+      throw Object.assign(new Error('ACTION_ATTEMPT_NOT_FOUND'), { code: 'ACTION_ATTEMPT_NOT_FOUND', statusCode: 404 });
+    }
+    return { principalId: config.principalId, appId: CANONICAL_APP_ID,
+      tenantId: config.tenantId, actorUserId: config.actorUserId,
+      matterId: config.matterId, attemptRef: input.attemptRef };
   }
 
   async authorizeOpenClawWorkItem(input: {
@@ -214,6 +228,15 @@ function requiredConfig(): DevelopmentServiceScopeConfig {
     ...base,
     workItemId,
   };
+}
+
+function requiredMatterConfig() {
+  const base = requiredBaseConfig();
+  const matterId = process.env.WL_OPENCLAW_SERVICE_MATTER_ID;
+  const actorUserId = process.env.WL_OPENCLAW_SERVICE_MATTER_ACTOR_ID;
+  if (process.env.WL_OPENCLAW_MATTER_SCOPE_ENABLED !== '1' ||
+      !matterId?.startsWith('MAT-') || !actorUserId?.trim()) throw canonicalServiceScopeUnavailable();
+  return { ...base, matterId, actorUserId };
 }
 
 function requiredDevelopmentCreateConfig(): DevelopmentCreateScopeConfig {
