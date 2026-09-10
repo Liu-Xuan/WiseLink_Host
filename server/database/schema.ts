@@ -1546,7 +1546,13 @@ export const workItem = pgTable("work_item", {
   createdBy: userProfile("_created_by"),
   // System field: Updater (auto-filled, do not modify)
   updatedBy: userProfile("_updated_by"),
+  initialAilySessionId: uuid("initial_aily_session_id"),
 }, (table) => [
+  foreignKey({
+    columns: [table.initialAilySessionId],
+    foreignColumns: [identitySession.id],
+    name: "work_item_initial_aily_session_fkey",
+  }),
   uniqueIndex("uk_work_item_business_id").on(table.workItemId),
   index("idx_work_item_status").on(table.status, table.updatedAt),
   index("idx_work_item_document").on(table.documentId, table.documentVersionId),

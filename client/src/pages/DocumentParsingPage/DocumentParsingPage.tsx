@@ -1717,7 +1717,9 @@ export default function DocumentParsingPage() {
               </>
             ) : (
               <div className="parse-assessment-empty" id="workspace-review">
-                <p>可进入私人对话核对已有分析，或在下方明确发起评估更新。</p>
+                <p>
+                  可在交互复核中与 Aily 讨论已有分析，或在下方明确发起评估更新。
+                </p>
               </div>
             )}
           </JobAidProblemWorkspace>
@@ -1886,7 +1888,9 @@ export default function DocumentParsingPage() {
 
         <footer className="parse-footer">
           <span>当前工程事项 · 候选意见需工程师确认</span>
-          <Link to={`/dialogues?workItemId=${encodeURIComponent(workItemId)}`}>
+          <Link
+            to={`/work-items/${encodeURIComponent(workItemId)}/documents?node=review&tab=review`}
+          >
             与 Aily 继续讨论 <ArrowUpRight />
           </Link>
         </footer>

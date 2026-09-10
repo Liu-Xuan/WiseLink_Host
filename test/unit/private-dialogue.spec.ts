@@ -19,9 +19,7 @@ import { dialogueAssessmentSelectionValid } from '../../client/src/features/dial
 import {
   dialogueFocusOptions,
   restoreDialogueFocus,
-  groupDialogueWorkItems,
 } from '../../client/src/features/dialogue/dialogue-focus';
-import { DialogueFocusPicker } from '../../client/src/features/dialogue/DialogueFocusPicker';
 import {
   appendDialogue,
   readDialogue,
@@ -78,51 +76,6 @@ const thread = (revision = 1): DialogueThreadReadModel => ({
 });
 
 describe('private dialogue text and read state', () => {
-  it('shows only selected material by default and groups history without merging different document versions', () => {
-    const options = [
-      {
-        workItemId: 'old',
-        label: 'SB 001',
-        documentVersionId: 'version-a',
-        createdAt: '2026-09-08',
-      },
-      {
-        workItemId: 'current',
-        label: 'SB 001',
-        documentVersionId: 'version-a',
-        createdAt: '2026-09-10',
-      },
-      {
-        workItemId: 'other',
-        label: 'SB 001',
-        documentVersionId: 'version-b',
-        createdAt: '2026-09-09',
-      },
-      {
-        workItemId: 'unselected',
-        label: '其他资料',
-        documentVersionId: 'version-c',
-      },
-    ];
-    expect(
-      groupDialogueWorkItems(options).map((group) =>
-        group.map((item) => item.workItemId),
-      ),
-    ).toEqual([['current', 'old'], ['other'], ['unselected']]);
-    const markup = renderToStaticMarkup(
-      createElement(DialogueFocusPicker, {
-        ids: ['old'],
-        options,
-        disabled: false,
-        onChange: jest.fn(),
-      }),
-    );
-    expect(markup).toContain('围绕以下资料讨论');
-    expect(markup).toContain('更换或补充资料');
-    expect(markup).not.toContain('其他资料');
-    expect(markup).not.toContain('aria-pressed');
-    expect(options[0].workItemId).toBe('old');
-  });
   it('requires every explicitly selected contribution to remain active at its selected revision', () => {
     const contribution: DialogueContributionReadModel = {
       contributionRef: 'c',

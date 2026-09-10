@@ -43,11 +43,15 @@ export class DialogueService {
     private readonly aily: ReviewAilyService,
   ) {}
 
-  async list(request: Request, before?: string) {
+  async list(request: Request, before?: string, workItemValue?: string) {
     const session = await this.session(request);
+    const workItemId =
+      workItemValue === undefined ? undefined : dialogueText(workItemValue, 96);
+    if (workItemId) await this.context.authorize(session, [workItemId]);
     return this.repository.list(
       scope(session),
       before === undefined ? undefined : dialogueId(before),
+      workItemId,
     );
   }
 

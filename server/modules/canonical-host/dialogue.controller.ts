@@ -14,8 +14,14 @@ export class DialogueController {
     private readonly browser: DialogueBrowserScope,
   ) {}
   @Get()
-  list(@Req() request: Request, @Query('beforeThreadRef') before?: string) {
-    return this.browser.run(request, () => this.service.list(request, before));
+  list(
+    @Req() request: Request,
+    @Query('beforeThreadRef') before?: string,
+    @Query('workItemId') workItemId?: string,
+  ) {
+    return this.browser.run(request, () =>
+      this.service.list(request, before, workItemId),
+    );
   }
   @Post()
   create(@Body() body: unknown, @Req() request: Request) {

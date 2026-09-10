@@ -36,10 +36,6 @@ import { usePrivateDialogue } from './usePrivateDialogue';
 import { DialogueAssessmentControl } from './DialogueAssessmentControl';
 import { dialogueAilyError } from './dialogue-state';
 import {
-  DialogueFocusPicker,
-  type DialogueWorkItemSearch,
-} from './DialogueFocusPicker';
-import {
   dialogueFocusOptions,
   restoreDialogueFocus,
   type DialogueFocusState,
@@ -49,7 +45,8 @@ export interface PrivateDialoguePanelProps {
   threadRef?: string;
   /** Current Host-authorized search choices; changing them does not change selected focus IDs. */
   workItems: DialogueWorkItemOption[];
-  workItemSearch?: DialogueWorkItemSearch;
+  contextual?: boolean;
+  assessmentEnabled?: boolean;
   initialWorkItemIds?: string[];
   onThreadReady?(threadRef: string): void;
   onAssessmentAccepted?(result: DialogueAssessmentResponse): void;
@@ -59,7 +56,7 @@ export const PrivateDialoguePanel: FC<PrivateDialoguePanelProps> = (props) => {
   const session = useCurrentUserSession();
   if (!session.profileSettled) return <p>正在确认登录状态…</p>;
   if (session.authenticationRequired || !session.currentUser.user_id)
-    return <p>请登录后读取私人对话。</p>;
+    return <p>请登录后读取开放式对话。</p>;
   return (
     <PrivateDialogueContent
       key={`${session.sessionGeneration}:${session.currentUser.user_id}:${props.threadRef ?? 'new'}`}
@@ -71,7 +68,8 @@ export const PrivateDialoguePanel: FC<PrivateDialoguePanelProps> = (props) => {
 const PrivateDialogueContent: FC<PrivateDialoguePanelProps> = ({
   threadRef,
   workItems,
-  workItemSearch,
+  contextual = false,
+  assessmentEnabled = true,
   initialWorkItemIds,
   onThreadReady,
   onAssessmentAccepted,
@@ -84,7 +82,7 @@ const PrivateDialogueContent: FC<PrivateDialoguePanelProps> = ({
   const [sourceLabel, setSourceLabel] = useState('');
   const [focus, setFocus] = useState<DialogueFocusState>({
     ids: [...new Set(initialWorkItemIds ?? [])].slice(0, 8),
-    initialized: !threadRef && initialWorkItemIds !== undefined,
+    initialized: (contextual || !threadRef) && initialWorkItemIds !== undefined,
   });
   const [selected, setSelected] = useState<DialogueMessageReadModel | null>(
     null,
@@ -161,10 +159,10 @@ const PrivateDialogueContent: FC<PrivateDialoguePanelProps> = ({
   return (
     <section
       className="min-w-0 space-y-4 rounded-lg border bg-background p-4"
-      aria-label="私下与 Aily 讨论"
+      aria-label="与 Aily 讨论"
     >
       <header className="space-y-1">
-        <h2 className="font-semibold">私下与 Aily 讨论</h2>
+        <h2 className="font-semibold">与 Aily 讨论</h2>
         <p className="text-xs text-muted-foreground">
           仅自己可见。普通聊天不会更新工作判断；保存贡献也不代表正式采用。
         </p>
@@ -184,16 +182,26 @@ const PrivateDialogueContent: FC<PrivateDialoguePanelProps> = ({
           )}
         </div>
       )}
-      <DialogueFocusPicker
-        ids={validFocus}
-        options={focusOptions}
-        search={workItemSearch}
-        disabled={locked}
-        onChange={(ids) => setFocus({ ids, initialized: true })}
-      />
+      <div
+        className="rounded-md bg-muted/40 p-3 text-sm"
+        aria-label="当前讨论资料"
+      >
+        {validFocus.length ? (
+          focusOptions
+            .filter((item) => validFocus.includes(item.workItemId))
+            .map((item) => <p key={item.workItemId}>{item.label}</p>)
+        ) : (
+          <p>可在飞书中与 Aily 自由讨论。</p>
+        )}
+        {!contextual && (
+          <Link className="underline" to="/library">
+            从资料库进入文档或事项的交互复核
+          </Link>
+        )}
+      </div>
       {!thread ? (
         <Button disabled={locked || Boolean(threadRef)} onClick={start}>
-          开始私人对话
+          开始讨论
         </Button>
       ) : (
         <>
@@ -302,7 +310,7 @@ const PrivateDialogueContent: FC<PrivateDialoguePanelProps> = ({
             />
           )}
           <Textarea
-            aria-label="尚未发送的私人输入"
+            aria-label="尚未发送的对话输入"
             value={draft}
             maxLength={20000}
             disabled={locked}
@@ -374,16 +382,18 @@ const PrivateDialogueContent: FC<PrivateDialoguePanelProps> = ({
               </div>
             ))}
           </details>
-          <DialogueAssessmentControl
-            thread={thread}
-            workItems={workItems}
-            focusWorkItemIds={validFocus}
-            disabled={locked}
-            error={error}
-            hasDraft={Boolean(draft.trim())}
-            execute={execute}
-            onAccepted={onAssessmentAccepted}
-          />
+          {assessmentEnabled && (
+            <DialogueAssessmentControl
+              thread={thread}
+              workItems={focusOptions}
+              focusWorkItemIds={validFocus}
+              disabled={locked}
+              error={error}
+              hasDraft={Boolean(draft.trim())}
+              execute={execute}
+              onAccepted={onAssessmentAccepted}
+            />
+          )}
         </>
       )}
       {selected &&
@@ -394,7 +404,7 @@ const PrivateDialogueContent: FC<PrivateDialoguePanelProps> = ({
             key={selected.messageRef}
             message={selected}
             contributions={thread.contributions}
-            workItems={workItems}
+            workItems={focusOptions}
             disabled={locked}
             onClose={() => setSelected(null)}
             onSave={save}

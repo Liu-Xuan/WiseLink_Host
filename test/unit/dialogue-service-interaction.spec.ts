@@ -47,6 +47,7 @@ describe('dialogue API interaction boundaries', () => {
       nextMessageCursor: null,
     };
     const repository = {
+      list: jest.fn().mockResolvedValue([]),
       read: jest.fn(async () => state),
       findReplay: jest.fn(async () => state.messages[0] ?? null),
       readMessage: jest.fn(async () => state.messages[0]),
@@ -106,6 +107,25 @@ describe('dialogue API interaction boundaries', () => {
     );
     return { service, repository, context, aily, state, generation };
   }
+
+  it('authorizes the current document before reading its existing conversations', async () => {
+    const h = harness();
+    await h.service.list(request, undefined, 'WI-current');
+    expect(h.context.authorize).toHaveBeenCalledWith(expect.anything(), [
+      'WI-current',
+    ]);
+    expect(h.repository.list).toHaveBeenCalledWith(
+      expect.objectContaining({ actorId: 'alice', tenantId: 'tenant' }),
+      undefined,
+      'WI-current',
+    );
+    h.repository.list.mockClear();
+    h.context.authorize.mockRejectedValueOnce(new Error('denied'));
+    await expect(
+      h.service.list(request, undefined, 'WI-denied'),
+    ).rejects.toThrow('denied');
+    expect(h.repository.list).not.toHaveBeenCalled();
+  });
 
   it('defaults a Feishu excerpt to saving, without generating another answer', async () => {
     const h = harness();

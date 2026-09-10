@@ -88,6 +88,7 @@ export class DialogueRepository {
   async list(
     scope: DialogueScope,
     before?: string,
+    workItemId?: string,
   ): Promise<Array<{ threadRef: string; createdAt: string }>> {
     return this.transaction(scope, async (db) => {
       const rows = await db.execute<{
@@ -96,6 +97,7 @@ export class DialogueRepository {
       }>(sql`
         SELECT thread_ref, _created_at FROM dialogue_thread
         WHERE tenant_id=${scope.tenantId} AND actor_id=${scope.actorId}
+        ${workItemId ? sql`AND focus_json::jsonb @> ${JSON.stringify([workItemId])}::jsonb` : sql``}
         ${
           before
             ? sql`AND (_created_at, thread_ref) < (

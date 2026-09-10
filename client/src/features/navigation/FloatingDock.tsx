@@ -63,7 +63,7 @@ export default function FloatingDock() {
     },
     {
       key: 'dialogues',
-      label: '私人对话',
+      label: '开放式对话',
       icon: MessagesSquare,
       to: '/dialogues',
       active: location.pathname.startsWith('/dialogues'),
