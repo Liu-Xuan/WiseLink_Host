@@ -2,7 +2,7 @@ import { registerMatterAttemptMcpTools } from '../../server/modules/canonical-ho
 
 function fixture(allowed = true, tool = 'matter_action_attempt') {
   const registerTool = jest.fn();
-  const attempts = { reserveJobAid: jest.fn().mockResolvedValue({ task: { operationRef: 'AQ-new' }, row: { status: 'QUEUED' }, created: true }), claim: jest.fn().mockResolvedValue({ status: 'RUNNING' }),
+  const attempts = { saveJobAidWork: jest.fn().mockResolvedValue({ workRevisionRef: 'MWR-one' }), finishJobAid: jest.fn().mockResolvedValue({ status: 'SUCCEEDED' }), reserveJobAid: jest.fn().mockResolvedValue({ task: { operationRef: 'AQ-new' }, row: { status: 'QUEUED' }, created: true }), claim: jest.fn().mockResolvedValue({ status: 'RUNNING' }),
     read: jest.fn().mockResolvedValue({ status: 'RUNNING', errorCode: null, deadlineAt: null,
       leaseToken: 'private-token', taskEnvelopeJson: 'private-task' }),
     heartbeat: jest.fn(), cancel: jest.fn().mockResolvedValue({ status: 'CANCELLED' }),
@@ -39,6 +39,16 @@ describe('Matter MCP existing attempt lifecycle', () => {
     await f.call({ ...request, operation: 'READ_SOURCES', documentVersionId: 'DV-one', pageStart: 2,
       purpose: '核对前提', leaseToken: 'f1111111-1111-4111-8111-111111111111', leaseGeneration: 1 });
     expect(f.documents.readDocumentSourcePagesForRuntime).toHaveBeenCalledWith('DV-one', { pageStart: 2, pageEnd: 2 }, f.scope);
+  });
+
+  it('dispatches raw work and exact finish through the Host-authorized Matter processor', async () => {
+    const f = fixture();
+    const fence = { leaseToken: 'f1111111-1111-4111-8111-111111111111', leaseGeneration: 1 };
+    await f.call({ ...request, ...fence, operation: 'SAVE_WORK', requestId: 'save-one', expectedWorkRevision: 0, workJson: '{}' });
+    expect(f.attempts.saveJobAidWork).toHaveBeenCalledWith({ ...f.scope, ...fence, requestId: 'save-one', expectedWorkRevision: 0, workJson: '{}' });
+    const result = { status: 'SUCCEEDED', modelOutput: JSON.stringify({ workRevisionRef: 'MWR-one' }) };
+    await f.call({ ...request, ...fence, operation: 'FINISH', result });
+    expect(f.attempts.finishJobAid).toHaveBeenCalledWith({ ...f.scope, ...fence, result });
   });
 
   it('passes only Host-authorized identity to the real Matter service', async () => {

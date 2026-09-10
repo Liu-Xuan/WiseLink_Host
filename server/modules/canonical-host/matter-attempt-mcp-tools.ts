@@ -42,6 +42,9 @@ export function registerMatterAttemptMcpTools(server: McpServer, attempts: Matte
       z.object({ ...target, ...fence, operation: z.literal('HEARTBEAT') }).strict(),
       z.object({ ...target, operation: z.literal('CANCEL'), reason: z.string().trim().min(1).max(4000) }).strict(),
       z.object({ ...target, operation: z.literal('READ_SAVED_WORK'), requestId: z.string().trim().min(1).max(255) }).strict(),
+      z.object({ ...target, ...fence, operation: z.literal('SAVE_WORK'), requestId: z.string().trim().min(1).max(255),
+        expectedWorkRevision: z.number().int().nonnegative(), workJson: z.string().min(2).max(1_000_000) }).strict(),
+      z.object({ ...target, ...fence, operation: z.literal('FINISH'), result: z.record(z.string(), z.unknown()) }).strict(),
       z.object({ ...target, ...fence, operation: z.literal('READ_SOURCES'),
         documentVersionId: z.string().trim().min(1).max(160), pageStart: z.number().int().positive(),
         pageEnd: z.number().int().positive().optional(), purpose: z.string().trim().min(1).max(4000),
@@ -57,6 +60,11 @@ export function registerMatterAttemptMcpTools(server: McpServer, attempts: Matte
       scope.attemptRef !== input.attemptRef || !scope.actorUserId || !scope.tenantId || !scope.principalId)
       throw canonicalServiceScopeUnavailable();
     switch (input.operation) {
+      case 'SAVE_WORK': return textResult(await attempts.saveJobAidWork({ ...scope, leaseToken: input.leaseToken,
+        leaseGeneration: input.leaseGeneration, requestId: input.requestId,
+        expectedWorkRevision: input.expectedWorkRevision, workJson: input.workJson }));
+      case 'FINISH': return textResult(await attempts.finishJobAid({ ...scope, leaseToken: input.leaseToken,
+        leaseGeneration: input.leaseGeneration, result: input.result }));
       case 'READ_SOURCES': {
         if (!documents) throw canonicalServiceScopeUnavailable();
         return textResult(await attempts.readSourcePages({ ...scope, leaseToken: input.leaseToken,

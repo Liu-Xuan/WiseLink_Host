@@ -105,6 +105,16 @@ export function materializeEngineeringMatterWorkingState(input: {
     ? validatedInputBindings(input.command.substantiveInputs)
     : (input.current?.substantiveInputs ?? []);
 
+  const priorDocumentCovered = (evidence: AssessmentEvidence): boolean => {
+    if (evidence.kind !== 'DOCUMENT_PASSAGE' || !input.current) return false;
+    const priorEvidence = input.current.problemWork?.evidence ?? input.current.substantiveResult?.evidence ?? [];
+    return priorEvidence.some(item => canonicalJson(item) === canonicalJson(evidence)) &&
+      (input.current.problemWork?.readSourceRefs.includes(evidence.evidenceRef) ||
+      input.current.coverage.some(item => item.binding.documentVersionId === evidence.documentVersionId &&
+        (evidence.workItemId === null || item.binding.workItemId === evidence.workItemId) &&
+        item.checkedSourceRefIds.includes(evidence.sourceRefId)));
+  };
+
   if (input.command.nextSubstantiveResult) {
     const coverageByInputId = new Map(
       coverage.map((item: EngineeringMatterWorkingCoverage) => [
@@ -126,10 +136,11 @@ export function materializeEngineeringMatterWorkingState(input: {
       if (evidence.kind !== 'DOCUMENT_PASSAGE') continue;
       const binding = substantiveInputs.find(
         (candidate) =>
-          candidate.workItemId === evidence.workItemId &&
+          (evidence.workItemId === null || candidate.workItemId === evidence.workItemId) &&
           candidate.documentVersionId === evidence.documentVersionId,
       );
       if (!binding) {
+        if (priorDocumentCovered(evidence)) continue;
         fail('ENGINEERING_MATTER_WORKING_DOCUMENT_EVIDENCE_INPUT_MISSING');
       }
       const checked = coverageByInputId.get(binding.inputId)!;
@@ -144,11 +155,11 @@ export function materializeEngineeringMatterWorkingState(input: {
     if (evidence.kind !== 'DOCUMENT_PASSAGE') continue;
     const covered = coverage.find(
       (item) =>
-        item.binding.workItemId === evidence.workItemId &&
+        (evidence.workItemId === null || item.binding.workItemId === evidence.workItemId) &&
         item.binding.documentVersionId === evidence.documentVersionId &&
         item.checkedSourceRefIds.includes(evidence.sourceRefId),
     );
-    if (!covered)
+    if (!covered && !priorDocumentCovered(evidence))
       fail('ENGINEERING_MATTER_WORKING_PROBLEM_EVIDENCE_NOT_COVERED');
   }
 
@@ -304,9 +315,13 @@ function materializeResult(input: {
     input.current?.content.claims ?? [],
     delta!,
   );
+  // Full JobAid work groups statements by issue. An addition within an older
+  // issue may precede claims from later issues without changing those claims.
+  const comparableClaims = (claims: AssessmentReadingClaim[]) => input.command.nextProblemWork
+    ? [...claims].sort((left, right) => left.claimId.localeCompare(right.claimId)) : claims;
   if (
-    canonicalJson(materializedClaims) !==
-    canonicalJson(candidate.content.claims)
+    canonicalJson(comparableClaims(materializedClaims)) !==
+    canonicalJson(comparableClaims(candidate.content.claims))
   ) {
     fail('ENGINEERING_MATTER_WORKING_LOCAL_PATCH_MISMATCH');
   }

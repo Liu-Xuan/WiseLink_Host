@@ -1,3 +1,4 @@
+import { materializeMatterJobAidCommand } from '../../server/modules/canonical-host/matter-jobaid-save';
 import type { AssessmentEvidence } from '@shared/assessment-reading.interface';
 import { jobAidReadingResult } from '@shared/jobaid-problem-assessment.interface';
 import {
@@ -524,4 +525,51 @@ it('does not promote an Aily query answer to verified source fact', () => {
       evidence: [query, engineer, ...JOBAID_METHOD_EVIDENCE],
     }),
   ).toThrow('JOBAID_SOURCE_FACT_REQUIRES_DIRECT_SOURCE');
+});
+
+it('saves a new statement inside an existing issue while preserving full issue reading order', () => {
+  const base = { matterId: 'MAT-order', matterRevisionId: 'MR-1', attemptRef: 'AQ-1',
+    requestId: 'save-1', expectedWorkRevision: 0, previous: null,
+    inputs: [{ inputId: 'WI-test', workItemId: 'WI-test', workItemRevision: 1, documentVersionId: 'dv', resultRef: null, resultRevision: null }],
+    evidence, readSourceRefs: context.readSourceRefs, capabilities: context.capabilities, history: context.history };
+  const command = materializeMatterJobAidCommand({ ...base, proposal: update() });
+  const first = materializeEngineeringMatterWorkingState({ matterId: base.matterId, current: null, command });
+  const expanded = update();
+  expanded.issues[0].statements.push({ ...expanded.issues[0].statements[0], claimKey: 'added', text: '新增的局部判断仍保留条件。' });
+  const second = materializeMatterJobAidCommand({ ...base, requestId: 'save-2', expectedWorkRevision: 1,
+    previous: { matterWorkRevisionId: 'MWR-1', matterId: base.matterId, workingRevision: 1,
+      basedOnMatterRevisionId: 'MR-1', updateKind: 'INITIAL_SYNTHESIS', changeSummary: command.changeSummary,
+      substantiveResultRef: command.nextSubstantiveResult!.resultRef, substantiveResultRevision: 1,
+      state: first.state, change: { changedBecause: null, addedClaimIds: [], replacedClaimIds: [], retiredClaims: [],
+        explicitlyUnchangedClaimIds: [], openQuestionDelta: null, reviewConditionDelta: null, coverageUpdates: [] },
+      source: null, createdAt: '2026-09-11T00:00:00Z' }, proposal: expanded });
+  const saved = materializeEngineeringMatterWorkingState({ matterId: base.matterId, current: first.state, command: second });
+  expect(saved.state.substantiveResult!.content.claims.map(claim => claim.claimId)).toEqual([
+    'MAT-order:issue:a:claim:condition', 'MAT-order:issue:a:claim:added', 'MAT-order:issue:b:claim:condition',
+  ]);
+  const newerDocument = { ...document, documentVersionId: 'dv-new', evidenceRef: 'new-page', sourceRefId: 'new-source' };
+  const previousRevision = { matterWorkRevisionId: 'MWR-current', matterId: base.matterId, workingRevision: 2,
+    basedOnMatterRevisionId: 'MR-1', updateKind: 'CORRECTION' as const, changeSummary: second.changeSummary,
+    substantiveResultRef: second.nextSubstantiveResult!.resultRef, substantiveResultRevision: 2,
+    state: saved.state, change: { changedBecause: null, addedClaimIds: [], replacedClaimIds: [], retiredClaims: [],
+      explicitlyUnchangedClaimIds: [], openQuestionDelta: null, reviewConditionDelta: null, coverageUpdates: [] },
+    source: null, createdAt: '2026-09-11T00:00:00Z' };
+  // Keep all earlier statements explicit while adding a new-version premise.
+  const proposal = { ...expanded, issues: structuredClone(expanded.issues) };
+  proposal.issues[0].statements[0].premises[0].evidenceRef = newerDocument.evidenceRef;
+  proposal.issues[0].sourceDependencies.push(newerDocument.evidenceRef);
+  const newerBase = { ...base, inputs: [{ ...base.inputs[0], documentVersionId: 'dv-new' }],
+    evidence: [...evidence, newerDocument], readSourceRefs: [...context.readSourceRefs, newerDocument.evidenceRef] };
+  const third = materializeMatterJobAidCommand({ ...newerBase, previous: previousRevision,
+    requestId: 'save-new-version', expectedWorkRevision: 2, proposal });
+  const thirdState = materializeEngineeringMatterWorkingState({ matterId: base.matterId, current: saved.state, command: third }).state;
+  expect(thirdState.coverage[0].binding.documentVersionId).toBe('dv-new');
+  expect(thirdState.problemWork!.evidence.some(item => item.evidenceRef === document.evidenceRef)).toBe(true);
+  const fourth = materializeMatterJobAidCommand({ ...newerBase, previous: { ...previousRevision, state: thirdState, workingRevision: 3 },
+    requestId: 'save-after-new-version', expectedWorkRevision: 3, proposal });
+  expect(() => materializeEngineeringMatterWorkingState({ matterId: base.matterId, current: thirdState, command: fourth })).not.toThrow();
+  const forged = structuredClone(fourth);
+  forged.nextProblemWork!.evidence.find(item => item.evidenceRef === document.evidenceRef)!.excerpt = '伪造旧版内容';
+  expect(() => materializeEngineeringMatterWorkingState({ matterId: base.matterId, current: thirdState, command: forged })).toThrow();
+
 });

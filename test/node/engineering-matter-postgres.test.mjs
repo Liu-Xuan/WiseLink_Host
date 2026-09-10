@@ -49,6 +49,7 @@ const {
   materializeEngineeringMatterWorkingState,
 } = require('../../server/modules/canonical-host/engineering-matter-working-state.ts');
 
+const { jobAidProblemModelWorkContent } = require('../../server/modules/canonical-host/jobaid-problem-task.ts');
 const {
   MatterActionAttemptService,
 } = require('../../server/modules/canonical-host/matter-action-attempt.service.ts');
@@ -2072,6 +2073,7 @@ async function assertMatterLeaseLifecycle(sql, owner, matterId) {
   );
   await assertMatterCommitRecovery(sql, owner, service, input);
   await assertSaveBeforeFinish(sql, owner, service, input);
+  await assertRawMatterJobAidSave(owner, service, input);
 }
 
 async function assertRealMatterAttemptSave(sql, owner, matterId) {
@@ -3044,4 +3046,49 @@ async function assertSaveBeforeFinish(sql, owner, service, baseInput) {
     ),
     /LEASE_FENCE_REJECTED|SAVE_FENCE_REJECTED/u,
   );
+}
+
+async function assertRawMatterJobAidSave(owner, service, baseInput) {
+  const { modelInput: _modelInput, sourceRefs: _sourceRefs, ...request } = baseInput;
+  const previous = await owner.working.loadCurrent(request);
+  assert.ok(previous.state.problemWork);
+  const reserved = await owner.runtime(() => service.reserveJobAid({ ...request,
+    idempotencyKey: 'raw-matter-jobaid', expectedWorkingRevision: previous.workingRevision }));
+  const scope = { tenantId: request.tenantId, matterId: request.matterId, actorUserId: request.actorUserId,
+    attemptRef: reserved.task.operationRef, principalId: 'hosted-test' };
+  const claim = await owner.runtime(() => service.claim(scope));
+  const fence = { ...scope, leaseToken: claim.leaseToken, leaseGeneration: claim.leaseGeneration };
+  const documentVersionId = reserved.task.workingBasis.inputs[0].documentVersionId;
+  const sourceRefId = `DOCUMENT_VERSION:${documentVersionId}:page:1`;
+  const text = 'Raw save PostgreSQL fixture: a reported normal inspection is bounded to that inspection.';
+  const reading = { documentVersionId, sourceSha256: 'a'.repeat(64), sourceByteLength: 123, pageCount: 1,
+    extractionScope: 'NATIVE_TEXT_LAYER', pages: [{ page: 1, sourceRefId, text, textLayerStatus: 'PRESENT', visualContentVerified: false,
+      evidence: { kind: 'DOCUMENT_PASSAGE', documentVersionId, workItemId: null, evidenceRef: sourceRefId, sourceRefId,
+        title: 'Raw save fixture', versionLabel: null, locator: 'PDF 第 1 页（文本层）', excerpt: text } }] };
+  const work = jobAidProblemModelWorkContent(previous.state.problemWork);
+  work.changeSummary = '按实际阅读的来源保存完整工作。';
+  work.issues[0].statements[0].premises[0].evidenceRef = sourceRefId;
+  work.issues[0].sourceDependencies.push(sourceRefId);
+  work.issues[0].premiseRefs.push(sourceRefId);
+  const saveInput = { ...fence, requestId: 'RAW-SAVE-ONE', expectedWorkRevision: previous.workingRevision, workJson: JSON.stringify(work) };
+  await assert.rejects(owner.runtime(() => service.saveJobAidWork(saveInput)), /SOURCE_NOT_DELIVERED/u);
+  await owner.runtime(() => service.readSourcePages({ ...fence, documentVersionId, pageStart: 1, purpose: '测试来源' }, async () => reading));
+  const first = await owner.runtime(() => service.saveJobAidWork(saveInput));
+  const saved = await owner.runtime(() => service.readSavedWork({ ...scope, requestId: saveInput.requestId }));
+  assert.equal(saved.matterWorkRevisionId, first.workRevisionRef);
+  assert.equal(saved.state.problemWork.issues[0].statements[0].premises[0].evidenceRef, sourceRefId);
+  const secondInput = { ...saveInput, requestId: 'RAW-SAVE-TWO', expectedWorkRevision: first.workRevision,
+    workJson: JSON.stringify({ ...work, headline: '第二份完整候选工作', changeSummary: '补充完整认识。' }) };
+  const second = await owner.runtime(() => service.saveJobAidWork(secondInput));
+  const replay = await owner.runtime(() => service.saveJobAidWork(saveInput));
+  assert.equal(replay.workRevisionRef, first.workRevisionRef);
+  assert.equal(replay.replayed, true);
+  await assert.rejects(owner.runtime(() => service.saveJobAidWork({ ...saveInput, workJson: secondInput.workJson })), /SAVE_REPLAY_MISMATCH/u);
+  const { contentHash: _contentHash, ...result } = matterResult(claim.task);
+  result.modelOutput = JSON.stringify({ workRevisionRef: second.workRevisionRef });
+  const sealed = sealMatterResultEnvelope(result);
+  const finished = await owner.runtime(() => service.finishJobAid({ ...fence, result: sealed }));
+  assert.equal(finished.status, 'SUCCEEDED');
+  assert.equal(finished.workRevisionRef, second.workRevisionRef);
+  assert.equal((await owner.runtime(() => service.saveJobAidWork(saveInput))).workRevisionRef, first.workRevisionRef);
 }

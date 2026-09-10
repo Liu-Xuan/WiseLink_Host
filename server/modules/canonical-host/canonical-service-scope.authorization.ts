@@ -30,7 +30,7 @@ export interface CanonicalVerifiedOpenClawAttemptScope extends CanonicalVerified
 }
 
 export interface CanonicalMatterAttemptAuthorization {
-  operation: 'CLAIM' | 'STATUS' | 'HEARTBEAT' | 'CANCEL' | 'READ_SAVED_WORK' | 'READ_SOURCES';
+  operation: 'CLAIM' | 'STATUS' | 'HEARTBEAT' | 'CANCEL' | 'READ_SAVED_WORK' | 'READ_SOURCES' | 'SAVE_WORK' | 'FINISH';
   matterId: string;
   attemptRef: string;
 }

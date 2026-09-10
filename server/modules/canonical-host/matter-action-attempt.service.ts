@@ -1,5 +1,7 @@
 import type { EngineeringMatterWorkingRevisionCommand } from '@shared/matter-working.interface';
 import { buildMatterJobAidTask, MATTER_JOBAID_TASK_SCHEMA } from './matter-jobaid-task';
+import { materializeMatterJobAidCommand } from './matter-jobaid-save';
+import type { AssessmentEvidence } from '@shared/assessment-reading.interface';
 import { randomUUID } from 'node:crypto';
 import { Injectable } from '@nestjs/common';
 import { and, desc, eq, inArray, sql } from 'drizzle-orm';
@@ -522,6 +524,62 @@ export class MatterActionAttemptService {
     });
   }
 
+  saveJobAidWork(input: MatterAttemptScope & ActionAttemptFence & {
+    principalId: string; requestId: string; expectedWorkRevision: number; workJson: string;
+  }) {
+    if (!input.requestId.trim() || input.requestId.length > 255 || !Number.isSafeInteger(input.expectedWorkRevision) ||
+      input.expectedWorkRevision < 0 || input.workJson.length > 1_000_000) throw failure('MATTER_JOBAID_SAVE_INPUT_INVALID', 400);
+    const proposal: unknown = JSON.parse(input.workJson);
+    return this.authorized(input, async (executor, queue) => {
+      await executor.database.select({ id: engineeringMatter.matterId }).from(engineeringMatter)
+        .where(and(eq(engineeringMatter.tenantId, input.tenantId), eq(engineeringMatter.matterId, input.matterId))).for('update');
+      await executor.database.select({ id: actionAttempt.attemptId }).from(actionAttempt)
+        .where(eq(actionAttempt.operationRef, input.attemptRef)).for('update');
+      const row = await this.scopedRow(executor, queue, input, input.attemptRef);
+      const task = checkedTask(row);
+      if (task.modelInput.schemaVersion !== MATTER_JOBAID_TASK_SCHEMA) throw failure('MATTER_JOBAID_TASK_REQUIRED');
+      const taskInput = task.modelInput as ReturnType<typeof buildMatterJobAidTask>;
+      const source = { kind: 'ENGINEERING_MATTER' as const, actionAttemptId: row.attemptId, reviewTurnId: null };
+      const events: Array<Record<string, unknown>> = JSON.parse(row.reviewActivityJson ?? '[]');
+      const replay = events.find(event => event.kind === 'MATTER_JOBAID_WORK_SAVED' && event.requestId === input.requestId);
+      if (replay) {
+        if (replay.expectedWorkRevision !== input.expectedWorkRevision || canonicalJson(replay.proposal) !== canonicalJson(proposal))
+          throw failure('MATTER_JOBAID_SAVE_REPLAY_MISMATCH');
+        const revision = await this.working.findBySource({ ...input, source, requestId: input.requestId }, executor.database);
+        if (!revision || revision.matterWorkRevisionId !== replay.workRevisionRef) throw failure('MATTER_JOBAID_SAVE_READBACK_MISMATCH');
+        return { workRevisionRef: revision.matterWorkRevisionId, workRevision: revision.workingRevision, replayed: true };
+      }
+      assertRunningSourceLease(row, input);
+      const previous = await executor.loadCurrent(input);
+      if ((previous?.workingRevision ?? 0) !== input.expectedWorkRevision) throw failure('ENGINEERING_MATTER_WORKING_CAS_CONFLICT');
+      const registry = new Map<string, AssessmentEvidence>();
+      const add = (evidence: AssessmentEvidence) => {
+        const prior = registry.get(evidence.evidenceRef);
+        if (prior && canonicalJson(prior) !== canonicalJson(evidence)) throw failure('MATTER_SOURCE_READ_IDENTITY_CHANGED');
+        registry.set(evidence.evidenceRef, evidence);
+      };
+      taskInput.sourceCatalog.forEach(add);
+      previous?.state.problemWork?.evidence.forEach(add);
+      const readRefs = new Set([...taskInput.initiallyDeliveredRefs, ...(previous?.state.problemWork?.readSourceRefs ?? [])]);
+      for (const event of events.filter(item => item.kind === 'MATTER_SOURCE_PAGES_READ')) {
+        const reading = event.reading as DocumentSourceReading;
+        for (const page of reading.pages) if (page.evidence) { add(page.evidence); readRefs.add(page.evidence.evidenceRef); }
+      }
+      const command = materializeMatterJobAidCommand({ matterId: input.matterId, matterRevisionId: task.subject.matterRevisionId,
+        attemptRef: input.attemptRef, requestId: input.requestId, expectedWorkRevision: input.expectedWorkRevision,
+        previous, inputs: task.workingBasis.inputs, proposal, evidence: [...registry.values()], readSourceRefs: [...readRefs],
+        capabilities: taskInput.modelInput.capabilities, history: taskInput.modelInput.historyReview });
+      const saved = await executor.appendWorkingRevision({ tenantId: input.tenantId, matterId: input.matterId,
+        actorUserId: input.actorUserId, command, currentInputs: task.workingBasis.inputs, source });
+      const receipt = { kind: 'MATTER_JOBAID_WORK_SAVED', requestId: input.requestId,
+        expectedWorkRevision: input.expectedWorkRevision, proposal, workRevisionRef: saved.revision.matterWorkRevisionId };
+      await executor.database.update(actionAttempt).set({
+        reviewActivityJson: sql`(COALESCE(${actionAttempt.reviewActivityJson}::jsonb, '[]'::jsonb) || ${canonicalJson([receipt])}::jsonb)::text`,
+      }).where(eq(actionAttempt.attemptId, row.attemptId));
+      return { workRevisionRef: saved.revision.matterWorkRevisionId, workRevision: saved.revision.workingRevision, replayed: saved.replayed };
+    });
+  }
+
   readSavedWork(
     input: MatterAttemptScope & { attemptRef: string; requestId: string },
   ) {
@@ -550,6 +608,21 @@ export class MatterActionAttemptService {
   }
 
   /** Durable cutoff. Result replay is checked before any candidate is written. */
+  async finishJobAid(input: MatterAttemptScope & ActionAttemptFence & { principalId: string; result: unknown }) {
+    if (input.result && typeof input.result === 'object' && 'status' in input.result && input.result.status === 'SUCCEEDED') {
+      const output: unknown = 'modelOutput' in input.result && typeof input.result.modelOutput === 'string'
+        ? JSON.parse(input.result.modelOutput) : null;
+      if (!output || typeof output !== 'object' || !('workRevisionRef' in output) ||
+        typeof output.workRevisionRef !== 'string' || !output.workRevisionRef.trim())
+        throw failure('JOBAID_FINISH_EXACT_COMPLETED_WORK_REQUIRED');
+    }
+    const prepared = await this.prepareCommit(input);
+    if (prepared.result.status !== 'SUCCEEDED') return { attemptRef: input.attemptRef, status: prepared.row.status };
+    const finished = await this.finish(input);
+    return { attemptRef: input.attemptRef, status: finished.row.status,
+      workRevisionRef: finished.work.matterWorkRevisionId, workRevision: finished.work.workingRevision };
+  }
+
   async prepareCommit(
     input: MatterAttemptScope &
       ActionAttemptFence & { principalId: string; result: unknown },
