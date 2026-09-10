@@ -1,4 +1,6 @@
 import { Button } from '@client/src/components/ui/button';
+import { LibraryFleetControls } from './LibraryFleetControls';
+import type { LibraryFleetRead } from './useLibraryFleetCatalog';
 import {
   LIBRARY_GROUPINGS,
   LIBRARY_UNCLASSIFIED,
@@ -20,6 +22,7 @@ export function LibraryClassificationControls({
   onFilterChange,
   counts,
   disabled,
+  fleet,
 }: {
   grouping: LibraryGrouping;
   onGroupingChange: (value: LibraryGrouping) => void;
@@ -27,6 +30,7 @@ export function LibraryClassificationControls({
   onFilterChange: (value: LibraryCatalogFilters) => void;
   counts: LibraryFacetCounts;
   disabled: boolean;
+  fleet?: LibraryFleetRead;
 }) {
   const facets: {
     key: LibraryFacetKey;
@@ -35,11 +39,6 @@ export function LibraryClassificationControls({
   }[] = [
     { key: 'normalizedFamily', label: '文档类别', counts: counts.familyCounts },
     { key: 'ata', label: 'ATA（待核）', counts: counts.ataCounts },
-    {
-      key: 'aircraftModel',
-      label: '正文提及机型（非适用性）',
-      counts: counts.aircraftModelCounts,
-    },
   ];
   return (
     <section className="library-classification-controls" aria-label="目录层级与联合筛选">
@@ -122,6 +121,7 @@ export function LibraryClassificationControls({
             ) : null}
           </div>
         ))}
+        <LibraryFleetControls fleet={fleet} filters={filters} onFilterChange={onFilterChange} disabled={disabled} />
         {Object.values(filters).some(Boolean) ? <Button variant="ghost" size="sm" className="library-clear-facets"
           disabled={disabled} onClick={() => onFilterChange({})}>清除三项筛选（保留搜索）</Button> : null}
       </details>

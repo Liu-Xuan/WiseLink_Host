@@ -4,8 +4,12 @@ import {
   BadRequestException,
   Inject,
   Injectable,
+  Logger,
   Optional,
+  ServiceUnavailableException,
 } from '@nestjs/common';
+import { CanonicalFleetMasterDataRepository } from './canonical-fleet-master-data.repository';
+import type { CanonicalLibraryFleetCatalog } from '@shared/library-fleet.interface';
 import type {
   CanonicalLibraryDocumentSummary,
   CanonicalLibraryDocumentsRequest,
@@ -33,6 +37,7 @@ import {
 
 @Injectable()
 export class CanonicalLibraryService {
+  private readonly logger = new Logger(CanonicalLibraryService.name);
   constructor(
     private readonly repository: CanonicalLibraryRepository,
     @Inject(CANONICAL_AUTHORIZATION)
@@ -40,7 +45,30 @@ export class CanonicalLibraryService {
     @Inject(CANONICAL_PERMISSION_SNAPSHOT)
     private readonly permissions: CanonicalPermissionSnapshotPort,
     @Optional() private readonly jobAid?: CanonicalJobAidProblemService,
+    @Optional() private readonly fleet?: CanonicalFleetMasterDataRepository,
   ) {}
+
+  async fleetCatalog(
+    actor: CanonicalHostActor,
+  ): Promise<CanonicalLibraryFleetCatalog> {
+    const { tenantId } = ownedScope(actor);
+    try {
+      if (!this.fleet) throw new Error('FLEET_REPOSITORY_UNCONFIGURED');
+      return await this.fleet.readLibraryCatalog({
+        tenantId,
+        asOf: new Date().toISOString().slice(0, 10),
+      });
+    } catch (error) {
+      this.logger.error(
+        'LIBRARY_FLEET_CATALOG_READ_FAILED',
+        error instanceof Error ? error.stack : 'Non-Error database failure',
+      );
+      throw new ServiceUnavailableException({
+        code: 'LIBRARY_FLEET_CATALOG_READ_FAILED',
+        message: 'Unable to read current fleet catalog',
+      });
+    }
+  }
 
   async list(
     input: CanonicalLibraryDocumentsRequest,
@@ -48,13 +76,58 @@ export class CanonicalLibraryService {
   ): Promise<CanonicalLibraryDocumentsResponse> {
     const scope = ownedScope(actor);
     const normalizedFamily = input.normalizedFamily?.trim() ?? '';
-    if (normalizedFamily.length > 96) throw new BadRequestException('LIBRARY_FAMILY_INVALID');
+    if (normalizedFamily.length > 96)
+      throw new BadRequestException('LIBRARY_FAMILY_INVALID');
     const ata = input.ata?.trim() ?? '';
     const aircraftModel = input.aircraftModel?.trim() ?? '';
-    if (ata.length > 96 || aircraftModel.length > 96) throw new BadRequestException('LIBRARY_FILTER_INVALID');
-    const context = normalizedFamily || ata || aircraftModel ? `DOCUMENTS:${JSON.stringify([normalizedFamily, ata, aircraftModel])}` : 'DOCUMENTS';
+    if (ata.length > 96 || aircraftModel.length > 96)
+      throw new BadRequestException('LIBRARY_FILTER_INVALID');
+    const fleetFamily = input.fleetFamily?.trim().toUpperCase() ?? '';
+    const fleetModel = input.fleetModel?.trim().toUpperCase() ?? '';
+    if (
+      fleetFamily.length > 96 ||
+      fleetModel.length > 96 ||
+      (fleetModel && !fleetFamily) ||
+      (fleetFamily && aircraftModel)
+    ) {
+      throw new BadRequestException('LIBRARY_FLEET_FILTER_INVALID');
+    }
+    let fleetMentionValues: string[] | undefined;
+    let fleetRevision: string[] | undefined;
+    if (fleetFamily) {
+      const catalog = await this.fleetCatalog(actor);
+      if (catalog.status === 'MISSING')
+        throw new ServiceUnavailableException({
+          code: 'LIBRARY_FLEET_CATALOG_MISSING',
+        });
+      const family = catalog.families.find(
+        (item) => item.fleetFamily === fleetFamily,
+      );
+      if (!family || (fleetModel && !family.models.includes(fleetModel)))
+        throw new BadRequestException('LIBRARY_FLEET_FILTER_INVALID');
+      fleetMentionValues = fleetModel
+        ? [fleetModel]
+        : [family.fleetFamily, ...family.models];
+      fleetRevision = [
+        catalog.source!.sourceSnapshotId,
+        catalog.source!.authorityRevision,
+        catalog.asOf,
+      ];
+    }
+    const context = fleetFamily
+      ? `DOCUMENTS:${JSON.stringify([normalizedFamily, ata, fleetFamily, fleetModel, fleetRevision])}`
+      : normalizedFamily || ata || aircraftModel
+        ? `DOCUMENTS:${JSON.stringify([normalizedFamily, ata, aircraftModel])}`
+        : 'DOCUMENTS';
     const query = listQuery(input, context);
-    const [result] = await this.repository.listDocuments({ ...scope, ...query, normalizedFamily, ata, aircraftModel });
+    const [result] = await this.repository.listDocuments({
+      ...scope,
+      ...query,
+      normalizedFamily,
+      ata,
+      aircraftModel,
+      ...(fleetMentionValues ? { fleetMentionValues } : {}),
+    });
     const rows = result.rows;
     const items: CanonicalLibraryDocumentSummary[] = rows
       .slice(0, query.limit)
@@ -79,12 +152,7 @@ export class CanonicalLibraryService {
       items,
       nextCursor:
         rows.length > query.limit && last
-          ? encodeCursor(
-              last.createdAt,
-              last.familyId,
-              query.search,
-              context,
-            )
+          ? encodeCursor(last.createdAt, last.familyId, query.search, context)
           : null,
       fileReadPerformed: false,
     };

@@ -3003,6 +3003,8 @@ export interface DocumentUploadResponse {
 export type DocumentUploadRequest = DocumentLibraryUploadRequest;
 
 export interface CanonicalLibraryDocumentsRequest {
+  fleetFamily?: string;
+  fleetModel?: string;
   normalizedFamily?: string;
   ata?: string;
   aircraftModel?: string;

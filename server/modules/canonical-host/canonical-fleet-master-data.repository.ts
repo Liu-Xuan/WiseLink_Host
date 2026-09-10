@@ -4,6 +4,7 @@ import {
   type PostgresJsDatabase,
 } from '@lark-apaas/fullstack-nestjs-core';
 import { and, eq, inArray, isNull, lte, or, sql } from 'drizzle-orm';
+import type { CanonicalLibraryFleetCatalog } from '@shared/library-fleet.interface';
 
 import {
   canonicalFleetAliasVersion,
@@ -52,14 +53,101 @@ interface FleetFactRow {
 
 /**
  * Tenant-scoped read owner for the current canonical FleetMasterData head.
- * It returns only records for the selected aircraft; the 0.10 migration file
- * is never opened by product runtime.
+ * Aircraft reads return only the selected aircraft; library reads expose an
+ * aggregate classification hierarchy. Runtime never opens migration files.
  */
 @Injectable()
 export class CanonicalFleetMasterDataRepository {
   constructor(
     @Inject(DRIZZLE_DATABASE) private readonly db: PostgresJsDatabase,
   ) {}
+
+  async readLibraryCatalog(input: {
+    tenantId: string;
+    asOf: string;
+  }): Promise<CanonicalLibraryFleetCatalog> {
+    const tenantId = requiredText(input.tenantId);
+    const asOf = requiredIsoDate(input.asOf);
+    // One statement binds the hierarchy to one current head, even during imports.
+    const rows = await this.db
+      .select({
+        sourceSnapshotId: canonicalFleetSourceSnapshot.sourceSnapshotId,
+        sourceRevisionKey: canonicalFleetSourceSnapshot.sourceRevisionKey,
+        sourceAsOf: canonicalFleetSourceSnapshot.sourceAsOf,
+        authorityRevision: canonicalFleetScopeHead.authorityRevision,
+        assetId: canonicalFleetAssetVersion.assetId,
+        fleetFamily: canonicalFleetAssetVersion.fleetFamily,
+        aircraftModel: canonicalFleetAssetVersion.aircraftModel,
+      })
+      .from(canonicalFleetScopeHead)
+      .innerJoin(
+        canonicalFleetSourceSnapshot,
+        and(
+          eq(
+            canonicalFleetSourceSnapshot.tenantId,
+            canonicalFleetScopeHead.tenantId,
+          ),
+          eq(
+            canonicalFleetSourceSnapshot.sourceSnapshotId,
+            canonicalFleetScopeHead.currentSourceSnapshotId,
+          ),
+        ),
+      )
+      .leftJoin(
+        canonicalFleetAssetVersion,
+        and(
+          eq(
+            canonicalFleetAssetVersion.tenantId,
+            canonicalFleetScopeHead.tenantId,
+          ),
+          eq(
+            canonicalFleetAssetVersion.sourceSnapshotId,
+            canonicalFleetSourceSnapshot.sourceSnapshotId,
+          ),
+          eq(canonicalFleetAssetVersion.status, 'ACTIVE'),
+          sql`${canonicalFleetAssetVersion.validFrom}::date <= ${asOf}::date`,
+          or(
+            isNull(canonicalFleetAssetVersion.validTo),
+            sql`${canonicalFleetAssetVersion.validTo}::date > ${asOf}::date`,
+          ),
+        ),
+      )
+      .where(eq(canonicalFleetScopeHead.tenantId, tenantId));
+    const head = rows[0];
+    const families = new Map<string, Set<string>>();
+    let unclassifiedAssetCount = 0;
+    for (const row of rows) {
+      if (!row.assetId) continue;
+      const family = row.fleetFamily?.trim().toUpperCase();
+      const model = row.aircraftModel?.trim().toUpperCase();
+      if (!family || !model) unclassifiedAssetCount++;
+      if (!family) continue;
+      const models = families.get(family) ?? new Set<string>();
+      if (model) models.add(model);
+      families.set(family, models);
+    }
+    return {
+      scope: 'CURRENT_TENANT_ACTIVE_FLEET',
+      status: head ? 'AVAILABLE' : 'MISSING',
+      asOf,
+      source: head
+        ? {
+            sourceSnapshotId: head.sourceSnapshotId,
+            sourceRevisionKey: head.sourceRevisionKey,
+            sourceAsOf: head.sourceAsOf,
+            authorityRevision: String(head.authorityRevision),
+          }
+        : null,
+      families: [...families]
+        .sort(([a], [b]) => a.localeCompare(b))
+        .map(([fleetFamily, models]) => ({
+          fleetFamily,
+          models: [...models].sort(),
+        })),
+      unclassifiedAssetCount,
+      semantics: 'DOCUMENT_MENTION_CLASSIFICATION_ONLY',
+    };
+  }
 
   /** Fresh tenant-scoped canonical head; callers cannot select a revision. */
   async readCurrentHead(input: {

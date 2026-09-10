@@ -77,6 +77,7 @@ export class CanonicalLibraryRepository {
       normalizedFamily?: string;
       ata?: string;
       aircraftModel?: string;
+      fleetMentionValues?: string[];
       search: string;
       cursor: CanonicalLibraryCursor | null;
       limit: number;

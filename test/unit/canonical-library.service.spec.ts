@@ -69,7 +69,16 @@ function target() {
       .fn()
       .mockResolvedValue({ permissionSnapshotVersion: 'p-1' }),
   };
+  const fleet = {
+    readLibraryCatalog: jest.fn().mockResolvedValue({
+      status: 'AVAILABLE',
+      asOf: '2026-09-10',
+      source: { sourceSnapshotId: 'fleet-1', authorityRevision: '1' },
+      families: [{ fleetFamily: '787', models: ['787-9', '787-10'] }],
+    }),
+  };
   return {
+    fleet,
     repository,
     authorization,
     permissions,
@@ -77,11 +86,74 @@ function target() {
       repository as never,
       authorization as never,
       permissions as never,
+      undefined,
+      fleet as never,
     ),
   };
 }
 
 describe('database-backed canonical library', () => {
+  it('resolves parent/child classifications from the tenant catalog and binds cursors to its revision', async () => {
+    const { service, repository, fleet } = target();
+    const parent = await service.list(
+      { fleetFamily: ' 787 ', limit: 2 },
+      actor,
+    );
+    expect(fleet.readLibraryCatalog).toHaveBeenCalledWith({
+      tenantId: 'tenant-a',
+      asOf: expect.stringMatching(/^\d{4}-\d{2}-\d{2}$/u),
+    });
+    expect(
+      repository.listDocuments.mock.calls[0][0].fleetMentionValues,
+    ).toEqual(['787', '787-9', '787-10']);
+    await service.list({ fleetFamily: '787', fleetModel: '787-9' }, actor);
+    expect(
+      repository.listDocuments.mock.calls[1][0].fleetMentionValues,
+    ).toEqual(['787-9']);
+    await expect(service.list({ fleetFamily: '737' }, actor)).rejects.toThrow(
+      'LIBRARY_FLEET_FILTER_INVALID',
+    );
+    await expect(service.list({ fleetModel: '787-9' }, actor)).rejects.toThrow(
+      'LIBRARY_FLEET_FILTER_INVALID',
+    );
+    fleet.readLibraryCatalog.mockResolvedValue({
+      status: 'AVAILABLE',
+      asOf: '2026-09-10',
+      source: { sourceSnapshotId: 'fleet-2', authorityRevision: '2' },
+      families: [{ fleetFamily: '787', models: ['787-9'] }],
+    });
+    await expect(
+      service.list({ fleetFamily: '787', cursor: parent.nextCursor! }, actor),
+    ).rejects.toThrow('LIBRARY_CURSOR_INVALID');
+  });
+
+  it('distinguishes missing and failed catalog reads without blocking all documents or bypassing identity', async () => {
+    const { service, fleet, repository } = target();
+    fleet.readLibraryCatalog.mockResolvedValue({
+      status: 'MISSING',
+      source: null,
+      families: [],
+    });
+    expect(await service.fleetCatalog(actor)).toMatchObject({
+      status: 'MISSING',
+    });
+    await expect(
+      service.list({ fleetFamily: '787' }, actor),
+    ).rejects.toMatchObject({
+      response: { code: 'LIBRARY_FLEET_CATALOG_MISSING' },
+    });
+    fleet.readLibraryCatalog.mockRejectedValue(new Error('database down'));
+    await expect(service.fleetCatalog(actor)).rejects.toMatchObject({
+      response: { code: 'LIBRARY_FLEET_CATALOG_READ_FAILED' },
+    });
+    await service.list({}, actor);
+    expect(repository.listDocuments).toHaveBeenCalledTimes(1);
+    fleet.readLibraryCatalog.mockClear();
+    await expect(
+      service.fleetCatalog({ ...actor, tenantId: 'other' }),
+    ).rejects.toThrow('CANONICAL_IDENTITY_HANDOFF_UNAVAILABLE');
+    expect(fleet.readLibraryCatalog).not.toHaveBeenCalled();
+  });
   it('paginates a fresh owner-scoped database directory without any file dependencies', async () => {
     const { service, repository } = target();
     const first = await service.listTasks({ search: '737', limit: 2 }, actor);

@@ -1,4 +1,5 @@
 import type { JobAidWorkingReadModel } from '@shared/jobaid-problem-assessment.interface';
+import type { CanonicalLibraryFleetCatalog } from '@shared/library-fleet.interface';
 import type {
   AppendReviewTextTurnRequest,
   AppendReviewTextTurnResponse,
@@ -430,6 +431,13 @@ export async function getLibraryIndex(
     );
     throw normalizedDirectObjectError(error, requestGeneration);
   }
+}
+
+export async function getCanonicalLibraryFleetCatalog(signal?: AbortSignal): Promise<CanonicalLibraryFleetCatalog> {
+  return readCanonicalLibrary<CanonicalLibraryFleetCatalog>({
+    url: '/api/canonical-host/library/fleet-catalog',
+    signal,
+  });
 }
 
 export async function getCanonicalLibraryDocuments(

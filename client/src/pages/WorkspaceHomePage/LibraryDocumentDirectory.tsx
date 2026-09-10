@@ -22,11 +22,16 @@ import {
   libraryVersionLabel,
 } from './library-document-presentation';
 import type { useLibraryDocuments } from './useLibraryDocuments';
+import type { LibraryFleetRead } from './useLibraryFleetCatalog';
 import { libraryEntryId } from './library-document-read';
 import { libraryDateLabel } from './library-document-presentation';
 import { LibraryHierarchy } from './LibraryHierarchy';
+import LibraryDocumentRows from './LibraryDocumentRows';
 import { LibraryClassificationControls } from './LibraryClassificationControls';
-import type { LibraryCatalogFilters, LibraryGrouping } from './library-classification';
+import type {
+  LibraryCatalogFilters,
+  LibraryGrouping,
+} from './library-classification';
 
 interface LibraryDocumentDirectoryProps {
   directory: ReturnType<typeof useLibraryDocuments>;
@@ -42,6 +47,7 @@ interface LibraryDocumentDirectoryProps {
   onRefresh: () => void;
   onSelect: (itemId: string) => void;
   filters?: LibraryCatalogFilters;
+  fleet?: LibraryFleetRead;
   onFilterChange?: (filters: LibraryCatalogFilters) => void;
 }
 
@@ -59,9 +65,11 @@ export function LibraryDocumentDirectory({
   onRefresh,
   onSelect,
   filters = {},
+  fleet,
   onFilterChange,
 }: LibraryDocumentDirectoryProps) {
   const [grouping, setGrouping] = useState<LibraryGrouping>('category');
+  const [catalogView, setCatalogView] = useState<'list' | 'tree'>('list');
   const taskMode = mode === 'tasks';
   const filtered = Boolean(search || Object.values(filters).some(Boolean));
   const label = taskMode ? '评估任务' : '工程文档';
@@ -98,7 +106,11 @@ export function LibraryDocumentDirectory({
               value={searchText}
               maxLength={200}
               onChange={(event) => onSearchTextChange(event.target.value)}
-              placeholder={taskMode ? '文档编号、文件名或资料类型' : '编号、标题、ATA 或正文提及机型'}
+              placeholder={
+                taskMode
+                  ? '文档编号、文件名或资料类型'
+                  : '编号、标题、ATA 或正文提及机型'
+              }
               autoComplete="off"
             />
           </div>
@@ -112,12 +124,51 @@ export function LibraryDocumentDirectory({
           ? '按创建时间显示当前账户的评估任务，同一文档可以有多次评估。'
           : '每个 family 显示一份工程文档，当前版本与历史版本由文档管理模块统一管理。'}
       </p>
-      {!taskMode ? <LibraryClassificationControls grouping={grouping}
-        onGroupingChange={setGrouping} filters={filters}
-        onFilterChange={onFilterChange ?? (() => undefined)} counts={directory}
-        disabled={authenticationRequired || directory.loading || !onFilterChange} /> : null}
-      {!taskMode && !directory.items.length && directory.totalCount !== undefined ?
-        <p className="library-classification-note">当前搜索与筛选共 {directory.totalCount} 份文档。</p> : null}
+      {!taskMode ? (
+        <div
+          className="atlas-library-view-switch"
+          role="group"
+          aria-label="文档列表与分类目录"
+        >
+          <Button
+            variant="outline"
+            aria-pressed={catalogView === 'list'}
+            onClick={() => setCatalogView('list')}
+          >
+            文档列表
+          </Button>
+          <Button
+            variant="outline"
+            aria-pressed={catalogView === 'tree'}
+            onClick={() => setCatalogView('tree')}
+          >
+            分类目录
+          </Button>
+        </div>
+      ) : null}
+      {!taskMode ? (
+        <details className="atlas-library-filters">
+          <summary>类别、ATA 与机型联合筛选</summary>
+          <LibraryClassificationControls
+            grouping={grouping}
+            onGroupingChange={setGrouping}
+            filters={filters}
+            onFilterChange={onFilterChange ?? (() => undefined)}
+            counts={directory}
+            fleet={fleet}
+            disabled={
+              authenticationRequired || directory.loading || !onFilterChange
+            }
+          />
+        </details>
+      ) : null}
+      {!taskMode &&
+      !directory.items.length &&
+      directory.totalCount !== undefined ? (
+        <p className="library-classification-note">
+          当前搜索与筛选共 {directory.totalCount} 份文档。
+        </p>
+      ) : null}
       {directory.error ? (
         <div className="library-catalog-error" role="alert">
           <CircleAlert aria-hidden="true" />
@@ -134,14 +185,25 @@ export function LibraryDocumentDirectory({
         </div>
       ) : null}
       <div className="library-tree-recent-wrapper">
-        {directory.items.length && !taskMode ? (
+        {directory.items.length && !taskMode && catalogView === 'list' ? (
+          <LibraryDocumentRows
+            documents={directory.items.filter(
+              (item) => item.kind === 'DOCUMENT',
+            )}
+            selectedId={selectedId}
+            onSelect={onSelect}
+          />
+        ) : directory.items.length && !taskMode ? (
           <LibraryHierarchy
-            documents={directory.items.filter((item) => item.kind === 'DOCUMENT')}
+            documents={directory.items.filter(
+              (item) => item.kind === 'DOCUMENT',
+            )}
             selectedId={selectedId}
             hasMore={Boolean(directory.nextCursor)}
             totalCount={directory.totalCount}
             grouping={grouping}
             filters={filters}
+            fleetCatalog={fleet?.catalog ?? null}
             onFilterChange={onFilterChange}
             disabled={authenticationRequired || directory.loading}
             onSelect={onSelect}

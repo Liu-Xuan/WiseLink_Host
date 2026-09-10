@@ -3,6 +3,8 @@ import type {
   CanonicalLibraryDocumentsRequest,
   DocumentMetadataField,
 } from '@shared/api.interface';
+import type { CanonicalLibraryFleetCatalog } from '@shared/library-fleet.interface';
+import { libraryFleetBranches, matchesLibraryFleet } from './library-fleet-classification';
 
 export type LibraryGrouping = 'category' | 'ata' | 'aircraft';
 
@@ -18,7 +20,7 @@ export interface LibraryCategoryGroup {
   documents: CanonicalLibraryDocumentSummary[];
 }
 
-export type LibraryFacetKey = 'normalizedFamily' | 'ata' | 'aircraftModel';
+export type LibraryFacetKey = 'normalizedFamily' | 'ata' | 'aircraftModel' | 'fleetFamily' | 'fleetModel';
 export type LibraryCatalogFilters = Pick<
   CanonicalLibraryDocumentsRequest,
   LibraryFacetKey
@@ -96,15 +98,17 @@ export function buildLibraryHierarchy(
   documents: CanonicalLibraryDocumentSummary[],
   first: LibraryGrouping = 'category',
   filters: LibraryCatalogFilters = {},
+  fleetCatalog?: CanonicalLibraryFleetCatalog | null,
 ): LibraryHierarchyGroup[] {
   const order = libraryGroupingOrder(first);
-  const matching = documents.filter((document) => order.every((dimension) => {
+  const matching = documents.filter((document) => matchesLibraryFleet(document, fleetCatalog ?? null, filters) && order.every((dimension) => {
     const selected = filters[LIBRARY_GROUPING_FACETS[dimension]];
     return !selected || documentClassificationValues(document, dimension).includes(selected);
   }));
   function branch(items: CanonicalLibraryDocumentSummary[], depth: number, pathFilters: LibraryCatalogFilters): LibraryHierarchyGroup[] {
     const dimension = order[depth];
     if (!dimension) return [];
+    if (dimension === 'aircraft' && fleetCatalog !== undefined) return libraryFleetBranches(items, fleetCatalog, filters, pathFilters, (members, path) => branch(members, depth + 1, path));
     const facet = LIBRARY_GROUPING_FACETS[dimension];
     return groupLibraryDocuments(items, dimension)
       .filter((group) => !filters[facet] || group.key === filters[facet])
