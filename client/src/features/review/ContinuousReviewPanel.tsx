@@ -584,6 +584,30 @@ export default function ContinuousReviewPanel({
         <p className="continuous-review-no-turns">当前讨论还没有补充内容。</p>
       ) : null}
 
+      {!accessUnavailable && !readFailed && (
+        <details
+          className="space-y-3"
+          onToggle={(event) => {
+            if (event.currentTarget.open) setDialogueOpen(true);
+          }}
+        >
+          <summary className="cursor-pointer font-medium">
+            与 Aily 讨论当前资料
+          </summary>
+          {dialogueOpen && (
+            <ContextualDialogue
+              key={`${workItemId}:${matterId}`}
+              document={{
+                workItemId,
+                label: materials?.primary.title ?? '当前资料',
+                documentVersionId: materials?.primary.documentVersionId,
+              }}
+              assessmentEnabled={!matterId}
+            />
+          )}
+        </details>
+      )}
+
       {active ? (
         <div className="continuous-review-composer">
           {discussionClaimText ? (
@@ -602,27 +626,6 @@ export default function ContinuousReviewPanel({
               conversation?.defaultModel?.displayName ?? '此事项的模型'
             }
           />
-          <details
-            className="space-y-3"
-            onToggle={(event) => {
-              if (event.currentTarget.open) setDialogueOpen(true);
-            }}
-          >
-            <summary className="cursor-pointer font-medium">
-              与 Aily 讨论当前资料
-            </summary>
-            {dialogueOpen && (
-              <ContextualDialogue
-                key={`${workItemId}:${matterId}`}
-                document={{
-                  workItemId,
-                  label: materials?.primary.title ?? '当前资料',
-                  documentVersionId: materials?.primary.documentVersionId,
-                }}
-                assessmentEnabled={!matterId}
-              />
-            )}
-          </details>
           {message ? (
             <div className="space-y-2">
               <p>此前未发送的草稿（可复制到上方对话）：</p>
