@@ -438,3 +438,34 @@ test('native array schema preserves cardinality and item constraints in the exac
   }
   assert.deepEqual(jobAidFunctionSchema(shape), schema);
 });
+
+test('knowledge dispatch is one-shot; unknown response reads the same request and preserves provenance', async () => {
+  const queries = [];
+  const evidence = { evidenceRef: 'query:aily:receipt', kind: 'QUERY_RECEIPT', excerpt: 'Partial source lead', queryProvenance: { origin: 'AILY_RETRIEVAL', queryText: 'Find applicable directive', status: 'UNKNOWN', originalDocumentsVerified: false } };
+  const f = fixture([{ action: 'QUERY_KNOWLEDGE', query: 'Find applicable directive' }, { action: 'FINISH', work: completed }], {
+    queryAssessmentKnowledge: async input => {
+      queries.push(input);
+      if (queries.length === 1) throw new Error('transport lost');
+      return { queryRef: 'receipt', status: 'UNKNOWN', evidence: [evidence], candidateOnly: true, originalDocumentsVerified: false };
+    },
+  });
+  await f.run({ ...modelInput(), knowledgeAccess: { available: true } });
+  assert.equal(queries.length, 2);
+  assert.deepEqual(queries[1], { requestKey: queries[0].requestKey });
+  const body = f.calls[1];
+  assert.deepEqual(JSON.parse(body.messages.at(-1).content).evidence, [evidence]);
+  assert.doesNotMatch(JSON.stringify(f.calls), /knowledgeBinding|sessionId|actorUserId|tenantId|leaseToken/);
+});
+
+test('unavailable knowledge stays explicit and permits conditional saved work without dispatch', async () => {
+  let dispatches = 0;
+  const f = fixture([{ action: 'QUERY_KNOWLEDGE', query: 'Find directive' }, { action: 'FINISH', work: completed }], {
+    queryAssessmentKnowledge: async () => { dispatches++; throw new Error('must not dispatch'); },
+  });
+  await f.run({ ...modelInput(), knowledgeAccess: { available: false, reason: 'USER_REAUTHORIZATION_REQUIRED' } });
+  assert.equal(dispatches, 0);
+  const receipt = JSON.parse(f.calls[1].messages.at(-1).content);
+  assert.equal(receipt.status, 'UNAVAILABLE');
+  assert.equal(receipt.error, 'USER_REAUTHORIZATION_REQUIRED');
+  assert.equal(f.saves.length, 1);
+});

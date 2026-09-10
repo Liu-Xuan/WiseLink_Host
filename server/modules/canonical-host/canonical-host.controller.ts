@@ -4,6 +4,7 @@ import {
   Body,
   Controller,
   Get,
+  ForbiddenException,
   Param,
   Post,
   Query,
@@ -31,6 +32,7 @@ import { CanonicalHostLibraryIndexService } from './canonical-host-library-index
 import { CanonicalLibraryService } from './canonical-library.service';
 import type { CanonicalHostActor } from './canonical-host.types';
 import { hostActor } from './canonical-host-request-actor';
+import { SessionResolver } from '../identity/session-resolver.service';
 
 const ENGINEER_DECISIONS = new Set<CanonicalEngineerReviewDecision>([
   'confirmed_pass',
@@ -54,6 +56,7 @@ export class CanonicalHostController {
     @Optional()
     private readonly libraryDocuments?: CanonicalLibraryService,
     @Optional() private readonly jobAid?: CanonicalJobAidProblemService,
+    @Optional() private readonly sessions?: SessionResolver,
   ) {}
 
   @Get('identity-context')
@@ -69,16 +72,30 @@ export class CanonicalHostController {
   }
 
   @Post('work-items/parse-pdf')
-  runPdf(@Body() request: unknown, @Req() httpRequest: Request) {
+  async runPdf(@Body() request: unknown, @Req() httpRequest: Request) {
+    const actor = hostActor(httpRequest);
+    const session = await this.sessions?.resolve(httpRequest);
+    if (
+      session &&
+      (session.actor.canonicalSubject.id !== actor.userId ||
+        session.actor.tenantId !== actor.tenantId ||
+        session.actor.applicationScopeId !== actor.appId)
+    )
+      throw new ForbiddenException(
+        'INITIAL_KNOWLEDGE_BROWSER_IDENTITY_MISMATCH',
+      );
     return this.workItems.parsePdf(
       request as Parameters<OrdinaryWorkItemService['parsePdf']>[0],
-      hostActor(httpRequest),
+      actor,
+      'MIAODA',
+      session?.session.id,
     );
   }
 
   @Get('library/fleet-catalog')
   fleetCatalog(@Req() httpRequest: Request) {
-    if (!this.libraryDocuments) throw new Error('CANONICAL_LIBRARY_SERVICE_UNCONFIGURED');
+    if (!this.libraryDocuments)
+      throw new Error('CANONICAL_LIBRARY_SERVICE_UNCONFIGURED');
     return this.libraryDocuments.fleetCatalog(hostActor(httpRequest));
   }
 

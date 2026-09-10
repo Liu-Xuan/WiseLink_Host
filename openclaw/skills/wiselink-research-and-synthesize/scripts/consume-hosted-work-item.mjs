@@ -36,7 +36,7 @@ const INITIAL_TOOLS = new Set([
   'translation_workspace',
   'begin_applicability_evaluation', 'commit_applicability_candidate',
   'begin_dynamic_evaluation', 'commit_dynamic_evaluation_candidate',
-  'read_assessment_sources', 'save_assessment_work', 'read_assessment_work',
+  'query_assessment_knowledge', 'read_assessment_sources', 'save_assessment_work', 'read_assessment_work',
   'begin_overall_synthesis', 'commit_overall_candidate',
 ]);
 
@@ -154,6 +154,7 @@ export async function runHostedInitialStage(options, dependencies) {
         timeoutMs: runtimeHooks.timeoutMs,
         sessionDiscriminator: runtimeHooks.sessionDiscriminator ?? runBinding.requestId,
         readAssessmentSources: runtimeHooks.readAssessmentSources,
+        queryAssessmentKnowledge: runtimeHooks.queryAssessmentKnowledge,
         saveAssessmentWork: runtimeHooks.saveAssessmentWork,
         readAssessmentWork: runtimeHooks.readAssessmentWork,
         observeModelOutput: (shape, round = 1) => checkpoint.writeOnce(

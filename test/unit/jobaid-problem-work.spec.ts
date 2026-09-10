@@ -273,3 +273,13 @@ describe('JobAid problem work keeps method semantics, delivery and incremental s
     ).toThrow('JOBAID_SOURCE_NOT_REGISTERED');
   });
 });
+
+it('does not promote an Aily query answer to verified source fact', () => {
+  const query: AssessmentEvidence = {
+    evidenceRef: document.evidenceRef, kind: 'QUERY_RECEIPT', title: 'Unverified answer',
+    versionLabel: null, excerpt: document.excerpt, receiptRef: 'receipt', checkedScope: 'query',
+    queriedAt: '2026-09-10T00:00:00.000Z', coverage: 'PARTIAL',
+    queryProvenance: { origin: 'AILY_RETRIEVAL', queryText: 'query', status: 'COMPLETED', originalDocumentsVerified: false },
+  };
+  expect(() => materializeJobAidWork(update(), { ...context, evidence: [query, engineer, ...JOBAID_METHOD_EVIDENCE] })).toThrow("JOBAID_SOURCE_FACT_REQUIRES_DIRECT_SOURCE");
+});

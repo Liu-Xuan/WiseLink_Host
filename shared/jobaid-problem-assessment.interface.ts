@@ -46,7 +46,25 @@ export interface JobAidAssessmentContextPackage {
       | 'CONTROLLED_HOST_FACT'
       | 'METHOD_MATERIAL';
   }>;
-  knowledgeRetrieval: CanonicalCommonAssessmentContext['knowledgeRetrieval'];
+  knowledgeRetrieval: {
+    status: 'NOT_CONNECTED' | 'NOT_REQUESTED' | 'UNAVAILABLE';
+    reason?: string;
+    fragments: [];
+  };
+}
+
+export interface JobAidKnowledgeAccess {
+  available: boolean;
+  reason?: string;
+}
+
+export interface JobAidKnowledgeQueryReceipt {
+  queryRef: string | null;
+  status: 'RUNNING' | 'COMPLETED' | 'FAILED' | 'UNKNOWN' | 'UNAVAILABLE';
+  error: string | null;
+  evidence: AssessmentEvidence[];
+  candidateOnly: true;
+  originalDocumentsVerified: false;
 }
 
 export interface JobAidMethodBinding {

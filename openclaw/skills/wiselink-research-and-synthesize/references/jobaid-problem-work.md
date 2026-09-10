@@ -39,3 +39,5 @@ Review c5 沿用已有五个 Review 工具。文档和附件只经注册 SourceR
 确定性验证覆盖 16 格风险矩阵、未知值、长条件、两轮局部纠正、来源注册与实际交付。原生驱动测试覆盖来源读取、实质保存、408 后保留工作、取消后停止以及响应丢失时读回原请求。独立 PostgreSQL 测试使用实际 RLS、SDK actor 事务和 Review 持久化函数，验证并发 CAS、取消迟到写入、两轮 Review 原子保存与重放。
 
 这些是本地证据。真实模型评估、Host/Skill 发布和 M3/DLI 业务闭环由集成任务执行，不能从本地测试推断已完成线上运行。
+
+- `query_assessment_knowledge`：只由 Host 使用新任务原已授权会话调用官方 Aily；模型只提供 query。提交响应不确定时仅传原 requestKey 查询，不重发；COMPLETED/FAILED/UNKNOWN 非空回执是未核实补充材料，保存并保留查询来源。UNAVAILABLE 不阻断有依据的条件分析，需保留缺口。

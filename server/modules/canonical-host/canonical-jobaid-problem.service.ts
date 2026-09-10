@@ -1,4 +1,5 @@
-import { Inject, Injectable } from '@nestjs/common';
+import { InitialAssessmentKnowledgeService } from './initial-assessment-knowledge.service';
+import { Inject, Injectable, Optional } from '@nestjs/common';
 import type { PostgresJsDatabase } from '@lark-apaas/fullstack-nestjs-core';
 import type { AssessmentEvidence } from '@shared/assessment-reading.interface';
 import type {
@@ -77,6 +78,7 @@ import {
 } from './jobaid-problem-work';
 import {
   JobAidWorkRepository,
+  assertJobAidWorkFence,
   type JobAidWorkFence,
 } from './jobaid-work.repository';
 import {
@@ -118,6 +120,7 @@ export class CanonicalJobAidProblemService {
     private readonly conversations: ReviewConversationRepository,
     private readonly common: CanonicalHostCommonContextService,
     private readonly work: JobAidWorkRepository,
+    @Optional() private readonly knowledge?: InitialAssessmentKnowledgeService,
   ) {}
 
   /** Deployment first installs dual readers; only explicitly enabled NEW tasks use v2. */
@@ -201,7 +204,9 @@ export class CanonicalJobAidProblemService {
           sha256: workItem.package.artifact.sha256,
         },
       ],
-      allowedConnectors: [],
+      allowedConnectors: loaded.row.initialAilySessionId
+        ? ['feishu-aily-user']
+        : [],
       buildModelInput: (identity) =>
         this.buildInput(
           workItem,
@@ -290,7 +295,9 @@ export class CanonicalJobAidProblemService {
           sha256: execution.package.artifact.sha256,
         },
       ],
-      allowedConnectors: [],
+      allowedConnectors: loaded.row.initialAilySessionId
+        ? ['feishu-aily-user']
+        : [],
       buildModelInput: async () =>
         buildInitialAnalysisRequestInput({ taskType, requestId }),
     });
@@ -385,7 +392,9 @@ export class CanonicalJobAidProblemService {
           sha256: workItem.package.artifact.sha256,
         },
       ],
-      allowedConnectors: [],
+      allowedConnectors: loaded.row.initialAilySessionId
+        ? ['feishu-aily-user']
+        : [],
       buildModelInput: (identity) =>
         this.buildInput(
           workItem,
@@ -467,7 +476,7 @@ export class CanonicalJobAidProblemService {
       )
         throw new Error('JOBAID_OVERALL_EXACT_WORK_REQUIRED');
     }
-    return buildJobAidProblemTask({
+    const taskInput = buildJobAidProblemTask({
       workItem,
       actorUserId,
       permissionSnapshotVersion: permissionSnapshotVersion,
@@ -479,6 +488,30 @@ export class CanonicalJobAidProblemService {
       expectedWorkRevision: history[0]?.workRevision ?? 0,
       priorAssessmentRefs: history.map((revision) => revision.workRevisionRef),
     });
+    if (purpose !== 'PROBLEM_REVIEW') {
+      const loaded = await this.workItems.loadTenantScopedProjection(
+        workItem.workItemId,
+        tenantId,
+      );
+      const knowledge = await this.knowledge?.binding(
+        { tenantId, actorId: actorUserId, workItemId: workItem.workItemId },
+        loaded?.row.initialAilySessionId,
+      );
+      taskInput.knowledgeBinding = knowledge?.binding;
+      taskInput.modelInput.knowledgeAccess = knowledge?.access ?? {
+        available: false,
+        reason: 'NOT_CONFIGURED',
+      };
+      if (taskInput.modelInput.contextPackage)
+        taskInput.modelInput.contextPackage.knowledgeRetrieval = {
+          status: knowledge?.binding ? 'NOT_REQUESTED' : 'UNAVAILABLE',
+          reason:
+            knowledge?.access.reason ??
+            (knowledge?.binding ? undefined : 'NOT_CONFIGURED'),
+          fragments: [],
+        };
+    }
+    return taskInput;
   }
 
   async readCurrentWorkForRuntime(input: {
@@ -634,6 +667,88 @@ export class CanonicalJobAidProblemService {
     };
   }
 
+  async queryKnowledge(input: {
+    attemptRef: string;
+    leaseToken: string;
+    leaseGeneration: number;
+    requestKey?: string;
+    query?: string;
+    queryRef?: string;
+  }) {
+    const { row, task, taskInput, scope } = await this.authorizedAttempt(
+      input.attemptRef,
+      'READ_ASSESSMENT_SOURCES',
+    );
+    assertJobAidWorkFence(row, { ...input, principalId: scope.principalId });
+    await this.assertSourcesAuthorized(
+      taskInput.sourceCatalog,
+      taskInput,
+      scope.tenantId,
+      scope.workItemId,
+    );
+    if (
+      !this.knowledge ||
+      !taskInput.knowledgeBinding ||
+      !task.allowedConnectors.includes('feishu-aily-user')
+    )
+      return {
+        queryRef: null,
+        status: 'UNAVAILABLE',
+        error: taskInput.modelInput.knowledgeAccess?.reason ?? 'NOT_CONNECTED',
+        evidence: [],
+        candidateOnly: true,
+        originalDocumentsVerified: false,
+      };
+    await this.work.recordSourceRead({
+      row,
+      actorUserId: taskInput.actorUserId,
+      fence: { ...input, principalId: scope.principalId },
+      sourceBindings: taskInput.sourceBindings,
+      sourceRefs: [],
+      purpose: '按需知识检索授权检查',
+    });
+    let receipt;
+    try {
+      receipt = await this.knowledge.query(
+        {
+          tenantId: scope.tenantId,
+          actorId: taskInput.actorUserId,
+          workItemId: scope.workItemId,
+        },
+        taskInput.knowledgeBinding,
+        row.attemptId,
+        input,
+      );
+    } catch (error) {
+      if (
+        error instanceof Error &&
+        error.message === 'AILY_USER_REAUTHORIZATION_REQUIRED'
+      )
+        return {
+          queryRef: input.queryRef ?? null,
+          status: 'UNAVAILABLE',
+          error: error.message,
+          evidence: [],
+          candidateOnly: true,
+          originalDocumentsVerified: false,
+        };
+      throw error;
+    }
+    if (receipt.evidence.length)
+      await this.work.recordSourceRead({
+        row,
+        actorUserId: taskInput.actorUserId,
+        fence: { ...input, principalId: scope.principalId },
+        sourceBindings: taskInput.sourceBindings,
+        sourceRefs: receipt.evidence.map((item) => item.evidenceRef),
+        purpose: '读取实际知识检索回执',
+      });
+    return {
+      ...receipt,
+      evidence: overallModelEvidenceRegistry(receipt.evidence),
+    };
+  }
+
   async saveWork(input: {
     attemptRef: string;
     leaseToken: string;
@@ -674,7 +789,17 @@ export class CanonicalJobAidProblemService {
     const content = materializeJobAidWork(command, {
       workItemId: scope.workItemId,
       previous: previous?.content ?? null,
-      evidence: taskInput.sourceCatalog,
+      evidence: [
+        ...taskInput.sourceCatalog,
+        ...((await this.knowledge?.saved(
+          {
+            tenantId: scope.tenantId,
+            actorId: taskInput.actorUserId,
+            workItemId: scope.workItemId,
+          },
+          row.attemptId,
+        )) ?? []),
+      ],
       readSourceRefs: readRefs,
       capabilities: taskInput.modelInput.capabilities,
       history: taskInput.modelInput.historyReview,
@@ -1202,6 +1327,28 @@ export class CanonicalJobAidProblemService {
       ))
     )
       throw new Error('JOBAID_ACTOR_AUTHORIZATION_CHANGED');
+    const queried = evidence.filter(
+      (item) =>
+        item.kind === 'QUERY_RECEIPT' &&
+        item.queryProvenance?.origin === 'AILY_RETRIEVAL',
+    );
+    if (queried.length) {
+      const saved =
+        (await this.knowledge?.saved(
+          { tenantId, actorId: actorUserId, workItemId: primaryWorkItemId },
+          undefined,
+          database,
+        )) ?? [];
+      for (const item of queried)
+        if (
+          !saved.some(
+            (receipt) =>
+              receipt.evidenceRef === item.evidenceRef &&
+              canonicalJson(receipt) === canonicalJson(item),
+          )
+        )
+          throw new Error('JOBAID_QUERY_RECEIPT_AUTHORIZATION_CHANGED');
+    }
     const bindings = new Map<string, string | null>([
       [primaryWorkItemId, null],
     ]);

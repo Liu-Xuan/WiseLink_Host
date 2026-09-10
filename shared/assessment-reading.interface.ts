@@ -68,6 +68,13 @@ export type AssessmentEvidence = {
       checkedScope: string;
       queriedAt: string;
       coverage: 'COMPLETE' | 'PARTIAL';
+      /** A retrieval response is supplemental material, not verified source text. */
+      queryProvenance?: {
+        origin: 'AILY_RETRIEVAL';
+        queryText: string;
+        status: 'COMPLETED' | 'FAILED' | 'UNKNOWN';
+        originalDocumentsVerified: false;
+      };
     }
   | {
       kind: 'PRIOR_RESULT';

@@ -57,6 +57,7 @@ export class OauthSessionDevelopmentWorkItemController {
       input,
       session.actor,
       miaodaHostedFinalUserActor(request.userContext),
+      session.session.id,
     );
   }
 

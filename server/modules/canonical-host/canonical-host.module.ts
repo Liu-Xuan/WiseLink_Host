@@ -76,6 +76,7 @@ import type { CanonicalHostBindingState } from './canonical-host.types';
 import { MiaodaCanonicalWorkItemRegistrarAdapter } from '../work-item/miaoda-canonical-work-item-registrar.adapter';
 import { WorkItemRuntimeModule } from '../work-item/work-item-runtime.module';
 import { IdentityModule } from '../identity/identity.module';
+import { InitialAssessmentKnowledgeService } from './initial-assessment-knowledge.service';
 import { ReviewAilyService } from './review-aily.service';
 import { DialogueAssessmentRepository } from './dialogue-assessment.repository';
 import { DialogueAssessmentService } from './dialogue-assessment.service';
@@ -239,6 +240,7 @@ export interface CanonicalHostModuleOptions {
     DialogueRepository,
     DialogueContextService,
     ReviewAilyService,
+    InitialAssessmentKnowledgeService,
     CanonicalHostCommonContextService,
     CanonicalJobAidProblemService,
     JobAidWorkRepository,
@@ -505,6 +507,7 @@ export class CanonicalHostModule {
         DialogueRepository,
         DialogueContextService,
         ReviewAilyService,
+    InitialAssessmentKnowledgeService,
         CanonicalHostCommonContextService,
         CanonicalJobAidProblemService,
         JobAidWorkRepository,

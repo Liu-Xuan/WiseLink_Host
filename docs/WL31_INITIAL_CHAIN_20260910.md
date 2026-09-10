@@ -21,3 +21,15 @@ JobAid / Overall 的既有持久任务输入新增 `contextPackage`，保存事�
 ## 验证与限制
 
 64 项 Host 定向测试、14 项初始 Skill 协议测试通过；服务端类型检查、定向 lint 和生产构建通过。测试文件为仓库既有 lint 忽略范围。当前 worktree 未配置独立 dev server，因此未伪称读取本地服务运行日志；线上最近 30 分钟 JOBAID error 查询为空，仅说明该查询范围没有返回日志。新业务流仍需发布后从正常入口验证，未新增业务写入、未迁移 scope、未正式采用。
+
+## 按需知识检索接线（第二批）
+
+正常 PDF 新任务从已解析、身份一致的 OAuth 浏览器会话保存 `initial_aily_session_id`；旧任务保持 NULL，重试不换会话。新 JobAid/Overall 的外层 Host task 绑定会话与官方 agent，内层模型输入仅告知检索是否可用。初始排队请求和 claim 使用同一 connector 选择，完整模型上下文仍在 claim 时准备。
+
+新增 `query_assessment_knowledge` 通过既有用户授权 Aily 服务执行只读查询；每次新请求使用一个 requestKey，提交响应不确定时按同一 key 读本地记录，不重新提交。有效 lease、原任务完整来源授权、任务 owner 和已存会话绑定均需匹配；失效授权明确返回 UNAVAILABLE。真实返回的 COMPLETED/FAILED/UNKNOWN 非空文字保存为 QUERY_RECEIPT，保留查询、时间、状态、PARTIAL 覆盖和 originalDocumentsVerified=false。读取回执才加入可引用集合，save 合并实际持久化回执；再读取已保存工作时校验原 owner/tenant/task 下的确切回执。查询文字不能作为 SOURCE_FACT 的直接依据。
+
+0031 已由主控发布 7683797322245802959（a50f96732）附带平台同步，主控读回 db-env-diff changes=[]；迁移工件本分支提交 317562cd9，canonical 对应 43245b4a5。此项结构上线不等于检索路径已验收。
+
+本地验证：独立 PostgreSQL 数据库加载实际 0029、0030 query 策略和0031，正确 initial/overall 允许；错误 actor/tenant/session/agent/attempt、缺 connector、旧任务 NULL 绑定、取消后新插入拒绝；取消后既有查询保留部分结果，旧 Review/private message 路径仍可用。新增 Host 测试覆盖 lease/取消、授权失效、确切回执和存储投影，模型边界测试确认 begin.modelInput 无 Host 会话/agent 控制绑定。Skill 实际请求体测试覆盖不确定提交只读原 key、不可用仍可保存条件分析和回执 provenance。相关既有测试、服务端类型检查、eslint 和 production build 通过。
+
+尚待主控集成 Host/Skill 接线、安排官方 cron/scope 窗口，再由正常新任务验证 Hosted M3 与 DLI。不得把上述测试或发布结构当作真实全链完成证据；不手动调用 driver，不覆盖 WI33 交互运行窗口。

@@ -46,7 +46,7 @@ c41 明确 Review 新生成的用户阅读文字默认使用简体中文，并�
 
 Host 新任务若为 `wiselink.jobaid-problem-task.v2`，执行问题分析协议：先理解问题与完整来源条件，按需读来源，完成一段实质分析即保存，再做整体一致性检查。此分支不适用下文旧 Dynamic 的 N/N、`criterionTable`、逐行结论或 28KB 目标，也不要求先生成完整中文译文。旧任务仍按其已封存版本处理，不把旧产物伪装为问题工作。
 
-`run-jobaid-problem-assessment.mjs` 通过现有官方 Gateway 与确定性 Host 回调执行 `read_assessment_sources`、`save_assessment_work`、`read_assessment_work`。模型只返回读取/保存/完成意图；requestId、lease、最终 sealed ResultEnvelope 由驱动持有。已保存内容可在失败后阅读，同一请求响应丢失先读回原请求，不重复生成已保存正文。最终提交只绑定已保存的精确工作版本；Overall 保留该版本的完整问题和条件，不重新执行旧 Base 流程。
+`run-jobaid-problem-assessment.mjs` 通过现有官方 Gateway 与确定性 Host 回调执行 `read_assessment_sources`、`query_assessment_knowledge`、`save_assessment_work`、`read_assessment_work`。模型只返回读取/保存/完成意图；requestId、lease、最终 sealed ResultEnvelope 由驱动持有。已保存内容可在失败后阅读，同一请求响应丢失先读回原请求，不重复生成已保存正文。最终提交只绑定已保存的精确工作版本；Overall 保留该版本的完整问题和条件，不重新执行旧 Base 流程。
 
 `wiselink.3_1.applicability_task.v2` 的 `sourceReadingMode=VERIFIED_ENGLISH` 使用实际英文 SourceExpressions/SourceContext，`bilingualBinding=null`、`bilingualSourceUnits=[]`。保持原 AST、Host Fleet 匹配与 UNKNOWN 边界。旧 v1 继续检查其原译文绑定。
 

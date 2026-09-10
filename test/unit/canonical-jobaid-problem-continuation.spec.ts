@@ -41,6 +41,19 @@ const scope = {
 };
 
 describe('JobAid continuation requests', () => {
+  it('keeps initial user-session binding in the Host envelope and out of model input', async () => {
+    const binding = { sessionId: '11111111-1111-4111-8111-111111111111', agentId: 'bound-agent-only' };
+    const knowledge = { binding: jest.fn().mockResolvedValue({ binding, access: { available: true } }) };
+    const h = harness(knowledge, binding.sessionId);
+    const begun = await h.service.begin(h.current(), scope, 'INITIAL_PROBLEM_ASSESSMENT');
+    expect(begun.task.allowedConnectors).toEqual(['feishu-aily-user']);
+    expect(parseJobAidProblemTask(begun.task).knowledgeBinding).toEqual(binding);
+    expect(begun.modelInput.knowledgeAccess).toEqual({ available: true });
+    expect(begun.modelInput.contextPackage?.knowledgeRetrieval.status).toBe('NOT_REQUESTED');
+    expect(JSON.stringify(begun.modelInput)).not.toMatch(/knowledgeBinding|sessionId|bound-agent-only|actorUserId|tenantId|leaseToken/);
+    expect(JSON.stringify(begun.modelInput)).not.toContain(binding.sessionId);
+  });
+
   it('delivers supplemental source context without treating inaccessible references or user assumptions as primary-source failures', () => {
     const workItem = projection();
     const common = projectCommonAssessmentContext(workItem, {
@@ -411,7 +424,7 @@ describe('JobAid continuation requests', () => {
   });
 });
 
-function harness() {
+function harness(knowledge?: { binding: jest.Mock }, initialAilySessionId?: string) {
   let current = projection();
   const rows = new Map<string, ActionAttemptRow>();
   const task = (attemptRef: string) =>
@@ -445,6 +458,7 @@ function harness() {
     loadTenantScopedProjection: jest.fn(async () => ({
       row: {
         requestedByUserId: OWNER,
+        initialAilySessionId,
         documentVersionId: current.source.documentVersionId,
       },
       projection: current,
@@ -495,7 +509,7 @@ function harness() {
         baseRevision: input.baseRevision,
         documentVersionId: input.documentVersionId,
         sourceRefs: input.sourceRefs!,
-        allowedConnectors: [],
+        allowedConnectors: input.allowedConnectors ?? [],
         hostResolvedMissingInputs: [],
         modelInput: await input.buildModelInput({
           attemptId: actionAttemptId,
@@ -571,6 +585,7 @@ function harness() {
       })),
     } as never,
     work as never,
+    knowledge as never,
   );
   return {
     service,

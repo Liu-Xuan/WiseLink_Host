@@ -126,8 +126,8 @@ export function jobAidWorkDependencyErrors(work) {
 export const JOBAID_STEP_SHAPE = {
   type: 'object', additionalProperties: false, required: ['action'],
   properties: {
-    action: choice('READ_SOURCES', 'SAVE_WORK', 'FINISH'),
-    sourceRefs: texts, purpose: text, context: choice('PAGE', 'EXACT'),
+    action: choice('READ_SOURCES', 'QUERY_KNOWLEDGE', 'SAVE_WORK', 'FINISH'),
+    sourceRefs: texts, purpose: text, query: text, context: choice('PAGE', 'EXACT'),
     work: JOBAID_WORK_UPDATE_SHAPE, continueReason: text, consistencyCheck: text,
   },
 };
