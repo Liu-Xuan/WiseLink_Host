@@ -11,6 +11,18 @@ const fence = { leaseToken: z.string().uuid(), leaseGeneration: z.number().int()
 /** Same durable attempt service and queue; caller cannot supply tenant, actor or principal. */
 export function registerMatterAttemptMcpTools(server: McpServer, attempts: MatterActionAttemptService,
   authorization: CanonicalServiceScopeAuthorizationPort, documents?: DocumentManagementHostedService): void {
+  server.registerTool('next_matter_assessment', {
+    title: '读取事项待执行评估',
+    description: '由现有消费者观察来源变化并登记所需的持续评估；已存在的任务直接读回，不重复创建失败请求。',
+    inputSchema: z.object({ matterId: target.matterId }).strict(),
+    annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: false },
+  }, async (input) => {
+    if (!authorization.authorizeOpenClawMatterRequest || !documents) throw canonicalServiceScopeUnavailable();
+    const scope = await authorization.authorizeOpenClawMatterRequest(input);
+    if (scope.appId !== 'app_17bzc551rsg' || scope.matterId !== input.matterId || !scope.actorUserId || !scope.tenantId)
+      throw canonicalServiceScopeUnavailable();
+    return textResult(await attempts.nextForRuntime(scope));
+  });
   server.registerTool('begin_matter_assessment', {
     title: '申请事项持续评估',
     description: '按精确事项和工作版本登记一个评估请求；Host 组装来源与前次完整工作，同一请求可重复读回。',
@@ -45,6 +57,8 @@ export function registerMatterAttemptMcpTools(server: McpServer, attempts: Matte
       z.object({ ...target, ...fence, operation: z.literal('SAVE_WORK'), requestId: z.string().trim().min(1).max(255),
         expectedWorkRevision: z.number().int().nonnegative(), workJson: z.string().min(2).max(1_000_000) }).strict(),
       z.object({ ...target, ...fence, operation: z.literal('FINISH'), result: z.record(z.string(), z.unknown()) }).strict(),
+      z.object({ ...target, ...fence, operation: z.literal('READ_REGISTERED'), sourceRefs: z.array(z.string().min(1).max(512)).min(1).max(96),
+        purpose: z.string().trim().min(1).max(4000) }).strict(),
       z.object({ ...target, ...fence, operation: z.literal('READ_SOURCES'),
         documentVersionId: z.string().trim().min(1).max(160), pageStart: z.number().int().positive(),
         pageEnd: z.number().int().positive().optional(), purpose: z.string().trim().min(1).max(4000),
@@ -60,6 +74,8 @@ export function registerMatterAttemptMcpTools(server: McpServer, attempts: Matte
       scope.attemptRef !== input.attemptRef || !scope.actorUserId || !scope.tenantId || !scope.principalId)
       throw canonicalServiceScopeUnavailable();
     switch (input.operation) {
+      case 'READ_REGISTERED': return textResult(await attempts.readRegisteredSources({ ...scope, leaseToken: input.leaseToken,
+        leaseGeneration: input.leaseGeneration, sourceRefs: input.sourceRefs, purpose: input.purpose }));
       case 'SAVE_WORK': return textResult(await attempts.saveJobAidWork({ ...scope, leaseToken: input.leaseToken,
         leaseGeneration: input.leaseGeneration, requestId: input.requestId,
         expectedWorkRevision: input.expectedWorkRevision, workJson: input.workJson }));
@@ -84,6 +100,7 @@ export function registerMatterAttemptMcpTools(server: McpServer, attempts: Matte
         const row = await attempts.read(scope);
         return textResult({ attemptRef: scope.attemptRef, matterId: scope.matterId,
           status: row.status, errorCode: row.errorCode,
+          resultContentHash: row.resultContentHash,
           deadline: row.deadlineAt?.toISOString() ?? null });
       }
     }

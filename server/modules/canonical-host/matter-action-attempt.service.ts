@@ -1,6 +1,7 @@
-import type { EngineeringMatterWorkingRevisionCommand } from '@shared/matter-working.interface';
+import type { EngineeringMatterWorkingRevisionCommand, EngineeringMatterWorkingInputBinding } from '@shared/matter-working.interface';
 import { buildMatterJobAidTask, MATTER_JOBAID_TASK_SCHEMA } from './matter-jobaid-task';
 import { materializeMatterJobAidCommand } from './matter-jobaid-save';
+import { engineeringMatterPendingInputs } from './engineering-matter-working-state';
 import type { AssessmentEvidence } from '@shared/assessment-reading.interface';
 import { randomUUID } from 'node:crypto';
 import { Injectable } from '@nestjs/common';
@@ -18,6 +19,7 @@ import {
 } from '../action-attempt/action-attempt.repository';
 import {
   canonicalJson,
+  canonicalSha256,
   parseMatterTaskEnvelope,
   parseMatterResultEnvelope,
   sealMatterTaskEnvelope,
@@ -58,7 +60,9 @@ export interface ReserveMatterAttempt extends MatterAttemptScope {
   sourceRefs: OpenClawMatterTaskEnvelope['sourceRefs'];
 }
 
-export type ReserveMatterJobAidAttempt = Omit<ReserveMatterAttempt, 'modelInput' | 'sourceRefs'>;
+export type ReserveMatterJobAidAttempt = Omit<ReserveMatterAttempt, 'modelInput' | 'sourceRefs'> & {
+  expectedInputs?: EngineeringMatterWorkingInputBinding[];
+};
 
 /** Subject adapter for the existing durable queue, lease slots and cancellation. */
 @Injectable()
@@ -77,6 +81,51 @@ export class MatterActionAttemptService {
     if ('modelInput' in input || 'sourceRefs' in input)
       throw failure('MATTER_JOBAID_HOST_CONTEXT_REQUIRED', 400);
     return this.reserveInternal(input);
+  }
+
+  /** One existing consumer tick observes source changes; the Host decides whether work is needed. */
+  async nextForRuntime(input: MatterAttemptScope) {
+    const observed = await this.authorized(input, async (executor, queue) => {
+      const [active] = await executor.database.select({ ref: actionAttempt.operationRef }).from(actionAttempt)
+        .where(and(eq(actionAttempt.tenantId, input.tenantId), eq(actionAttempt.matterId, input.matterId),
+          inArray(actionAttempt.status, ['QUEUED', 'RUNNING', 'RETRY_SCHEDULED', 'COMMITTING'])))
+        .orderBy(desc(actionAttempt.createdAt)).limit(1);
+      if (active?.ref) {
+        const row = await this.scopedRow(executor, queue, input, active.ref);
+        return { next: { attemptRef: active.ref, status: row.status } };
+      }
+      const [matter] = await executor.database.select().from(engineeringMatter)
+        .where(and(eq(engineeringMatter.tenantId, input.tenantId), eq(engineeringMatter.matterId, input.matterId))).limit(1);
+      if (!matter) throw failure('ENGINEERING_MATTER_NOT_FOUND', 404);
+      const current = await executor.loadCurrent(input);
+      const bindings = (await executor.authorizeRuntimeInputs(input)).currentInputs;
+      const pending = engineeringMatterPendingInputs(current?.state ?? null, bindings);
+      const compositionChanged = current && current.basedOnMatterRevisionId !== matter.currentMatterRevisionId;
+      if (!pending.length && !compositionChanged) return { next: null };
+      const trigger: EngineeringMatterAttemptTrigger = pending.length
+        ? { kind: 'SOURCE_CHANGE', inputIds: pending.map(item => item.inputId) }
+        : { kind: 'COMPOSITION_CHANGE', previousMatterRevisionId: current?.basedOnMatterRevisionId ?? null };
+      // A partial save is not a new source event and must not reset a failed
+      // automatic request. New source versions produce a different key.
+      const idempotencyKey = `matter-auto:${input.matterId}:${canonicalSha256({
+        matterRevisionId: matter.currentMatterRevisionId, inputs: bindings })}`;
+      const [existing] = await executor.database.select({ ref: actionAttempt.operationRef }).from(actionAttempt)
+        .where(and(eq(actionAttempt.tenantId, input.tenantId), eq(actionAttempt.idempotencyKey, idempotencyKey))).limit(1);
+      if (existing?.ref) {
+        const row = await this.scopedRow(executor, queue, input, existing.ref);
+        return { next: { attemptRef: existing.ref, status: row.status } };
+      }
+      return { reservation: { ...input, trigger,
+        expectedMatterRevisionId: matter.currentMatterRevisionId, expectedMatterRevision: matter.currentRevisionNo,
+        expectedWorkingRevision: current?.workingRevision ?? 0,
+        expectedInputs: bindings,
+        // The source roster can exceed the request-key column limit. Reuse the
+        // existing canonical digest; include changing WorkItem/result versions too.
+        idempotencyKey } };
+    });
+    if ('next' in observed) return { matterId: input.matterId, next: observed.next };
+    const reserved = await this.reserveJobAid(observed.reservation);
+    return { matterId: input.matterId, next: { attemptRef: reserved.task.operationRef, status: reserved.row.status } };
   }
 
   private reserveInternal(input: ReserveMatterAttempt | ReserveMatterJobAidAttempt): Promise<{
@@ -122,6 +171,8 @@ export class MatterActionAttemptService {
           task.subject.matterRevisionId !== input.expectedMatterRevisionId ||
           task.inputRevision !== input.expectedMatterRevision ||
           task.baseRevision !== input.expectedWorkingRevision ||
+          ('expectedInputs' in input && input.expectedInputs !== undefined &&
+            canonicalJson(task.workingBasis.inputs) !== canonicalJson(input.expectedInputs)) ||
           canonicalJson(task.trigger) !== canonicalJson(input.trigger) ||
           ('modelInput' in input
             ? canonicalJson(task.modelInput) !== canonicalJson(input.modelInput) ||
@@ -168,6 +219,9 @@ export class MatterActionAttemptService {
         .limit(1);
       const now = new Date();
       const authorizedInputs = (await executor.authorizeRuntimeInputs(input)).currentInputs;
+      if ('expectedInputs' in input && input.expectedInputs !== undefined &&
+        canonicalJson(authorizedInputs) !== canonicalJson(input.expectedInputs))
+        throw failure('ACTION_ATTEMPT_RESERVATION_BINDING_CHANGED');
       const modelInput = 'modelInput' in input ? input.modelInput : buildMatterJobAidTask({
         matterId: input.matterId, matterRevisionId: input.expectedMatterRevisionId,
         actorUserId: input.actorUserId, title: matter.title,
@@ -388,6 +442,32 @@ export class MatterActionAttemptService {
   }
 
   /** Reader is a Host service, never a model-supplied evidence payload. */
+  readRegisteredSources(input: MatterAttemptScope & ActionAttemptFence & { principalId: string; sourceRefs: string[]; purpose: string }) {
+    if (!input.sourceRefs.length || input.sourceRefs.length > 96 || new Set(input.sourceRefs).size !== input.sourceRefs.length ||
+      !input.purpose.trim() || input.purpose.length > 4000) throw failure('JOBAID_SOURCE_SELECTION_INVALID', 400);
+    return this.authorized(input, async (executor, queue) => {
+      await executor.database.select({ id: actionAttempt.attemptId }).from(actionAttempt)
+        .where(eq(actionAttempt.operationRef, input.attemptRef)).for('update');
+      const row = await this.scopedRow(executor, queue, input, input.attemptRef);
+      assertRunningSourceLease(row, input);
+      const task = checkedTask(row);
+      if (task.modelInput.schemaVersion !== MATTER_JOBAID_TASK_SCHEMA) throw failure('MATTER_JOBAID_TASK_REQUIRED');
+      const taskInput = task.modelInput as ReturnType<typeof buildMatterJobAidTask>;
+      const evidence = input.sourceRefs.map(ref => {
+        const item = taskInput.sourceCatalog.find(item => item.evidenceRef === ref);
+        if (!item || (item.kind === 'DOCUMENT_PASSAGE' && !taskInput.initiallyDeliveredRefs.includes(ref)))
+          throw failure('JOBAID_SOURCE_NOT_REGISTERED', 404);
+        return item;
+      });
+      const receipt = { kind: 'MATTER_REGISTERED_SOURCES_READ', sourceRefs: input.sourceRefs,
+        purpose: input.purpose, evidence, observedAt: new Date().toISOString() };
+      await executor.database.update(actionAttempt).set({
+        reviewActivityJson: sql`(COALESCE(${actionAttempt.reviewActivityJson}::jsonb, '[]'::jsonb) || ${canonicalJson([receipt])}::jsonb)::text`,
+      }).where(eq(actionAttempt.attemptId, row.attemptId));
+      return { evidence, sourceRefs: input.sourceRefs };
+    });
+  }
+
   readSourcePages(input: MatterAttemptScope & ActionAttemptFence & {
     principalId: string; documentVersionId: string; pageStart: number; pageEnd?: number; purpose: string;
   }, reader: (documentVersionId: string, range: { pageStart: number; pageEnd: number }) => Promise<DocumentSourceReading>) {
@@ -547,7 +627,8 @@ export class MatterActionAttemptService {
           throw failure('MATTER_JOBAID_SAVE_REPLAY_MISMATCH');
         const revision = await this.working.findBySource({ ...input, source, requestId: input.requestId }, executor.database);
         if (!revision || revision.matterWorkRevisionId !== replay.workRevisionRef) throw failure('MATTER_JOBAID_SAVE_READBACK_MISMATCH');
-        return { workRevisionRef: revision.matterWorkRevisionId, workRevision: revision.workingRevision, replayed: true };
+        return { workRevisionRef: revision.matterWorkRevisionId, workRevision: revision.workingRevision,
+          roundCompletion: revision.state.problemWork?.roundCompletion, replayed: true };
       }
       assertRunningSourceLease(row, input);
       const previous = await executor.loadCurrent(input);
@@ -561,6 +642,9 @@ export class MatterActionAttemptService {
       taskInput.sourceCatalog.forEach(add);
       previous?.state.problemWork?.evidence.forEach(add);
       const readRefs = new Set([...taskInput.initiallyDeliveredRefs, ...(previous?.state.problemWork?.readSourceRefs ?? [])]);
+      for (const event of events.filter(item => item.kind === 'MATTER_REGISTERED_SOURCES_READ')) {
+        for (const item of event.evidence as AssessmentEvidence[]) { add(item); readRefs.add(item.evidenceRef); }
+      }
       for (const event of events.filter(item => item.kind === 'MATTER_SOURCE_PAGES_READ')) {
         const reading = event.reading as DocumentSourceReading;
         for (const page of reading.pages) if (page.evidence) { add(page.evidence); readRefs.add(page.evidence.evidenceRef); }
@@ -576,7 +660,8 @@ export class MatterActionAttemptService {
       await executor.database.update(actionAttempt).set({
         reviewActivityJson: sql`(COALESCE(${actionAttempt.reviewActivityJson}::jsonb, '[]'::jsonb) || ${canonicalJson([receipt])}::jsonb)::text`,
       }).where(eq(actionAttempt.attemptId, row.attemptId));
-      return { workRevisionRef: saved.revision.matterWorkRevisionId, workRevision: saved.revision.workingRevision, replayed: saved.replayed };
+      return { workRevisionRef: saved.revision.matterWorkRevisionId, workRevision: saved.revision.workingRevision,
+        roundCompletion: saved.revision.state.problemWork?.roundCompletion, replayed: saved.replayed };
     });
   }
 

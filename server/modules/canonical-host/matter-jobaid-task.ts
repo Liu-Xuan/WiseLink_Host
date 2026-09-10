@@ -49,7 +49,9 @@ export function buildMatterJobAidTask(input: {
       title: input.title,
       focus: input.previous?.state.focus ?? null,
       trigger: structuredClone(input.trigger),
-      availableDocuments: [...new Set(input.inputs.map((binding) => binding.documentVersionId))].map((documentVersionId) => ({
+      availableDocuments: [...new Set([...input.inputs.map((binding) => binding.documentVersionId),
+        ...(prior?.evidence ?? []).flatMap(item => item.kind === 'DOCUMENT_PASSAGE' ? [item.documentVersionId] : []),
+      ])].map((documentVersionId) => ({
         documentVersionId,
         inputIds: input.inputs.filter((binding) => binding.documentVersionId === documentVersionId).map((binding) => binding.inputId),
         readingScope: 'NOT_READ_THIS_ATTEMPT' as const,

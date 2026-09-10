@@ -968,6 +968,28 @@ test(
         (await owner.runtime(() => service.read(claimInput))).taskInputHash,
         reserved.task.inputHash,
       );
+      const automatic = await owner.runtime(() => service.nextForRuntime(scope));
+      assert.equal(automatic.next.status, 'QUEUED');
+      const nextScope = { ...claimInput, attemptRef: automatic.next.attemptRef };
+      const nextRow = await owner.runtime(() => service.read(nextScope));
+      const nextTask = JSON.parse(nextRow.taskEnvelopeJson);
+      assert.equal(nextTask.trigger.kind, 'SOURCE_CHANGE');
+      assert.equal(nextTask.subject.matterRevisionId, changed.materials.matterRevisionId);
+      assert.equal(nextTask.workingBasis.priorWorkRef, saved.revision.matterWorkRevisionId);
+      assert(nextTask.workingBasis.inputs.some(input => input.documentVersionId === fixtures.sb.documentVersionId));
+      assert.equal((await owner.runtime(() => service.nextForRuntime(scope))).next.attemptRef, automatic.next.attemptRef);
+      await owner.runtime(() => service.cancel({ ...nextScope, reason: 'Bounded automatic-dispatch test complete' }));
+      const stopped = await owner.runtime(() => service.nextForRuntime(scope));
+      assert.equal(stopped.next.attemptRef, automatic.next.attemptRef);
+      assert.equal(stopped.next.status, 'CANCELLED', 'a later tick cannot manufacture a replacement request after cancellation');
+      await owner.workingService.applyWorkingUpdate(scope.matterId, { ...command,
+        requestId: 'MANUAL-WORK-AFTER-AUTO-CANCEL', basedOnMatterRevisionId: changed.materials.matterRevisionId,
+        expectedWorkingRevision: saved.revision.workingRevision,
+        nextFocus: { ...command.nextFocus, question: '保留工作进展，不重置已取消的来源请求。' } }, owner.actor);
+      assert.equal((await owner.runtime(() => service.nextForRuntime(scope))).next.attemptRef, automatic.next.attemptRef,
+        'working progress alone cannot start a replacement model run for unchanged sources');
+
+
     } finally {
       if (owner) await owner.release();
       await sql.end();
@@ -2073,7 +2095,7 @@ async function assertMatterLeaseLifecycle(sql, owner, matterId) {
   );
   await assertMatterCommitRecovery(sql, owner, service, input);
   await assertSaveBeforeFinish(sql, owner, service, input);
-  await assertRawMatterJobAidSave(owner, service, input);
+  await assertRawMatterJobAidSave(sql, owner, service, input);
 }
 
 async function assertRealMatterAttemptSave(sql, owner, matterId) {
@@ -3048,7 +3070,7 @@ async function assertSaveBeforeFinish(sql, owner, service, baseInput) {
   );
 }
 
-async function assertRawMatterJobAidSave(owner, service, baseInput) {
+async function assertRawMatterJobAidSave(sql, owner, service, baseInput) {
   const { modelInput: _modelInput, sourceRefs: _sourceRefs, ...request } = baseInput;
   const previous = await owner.working.loadCurrent(request);
   assert.ok(previous.state.problemWork);
@@ -3058,6 +3080,12 @@ async function assertRawMatterJobAidSave(owner, service, baseInput) {
     attemptRef: reserved.task.operationRef, principalId: 'hosted-test' };
   const claim = await owner.runtime(() => service.claim(scope));
   const fence = { ...scope, leaseToken: claim.leaseToken, leaseGeneration: claim.leaseGeneration };
+  const method = reserved.task.modelInput.sourceCatalog.find(item => item.kind === 'METHOD_CLAUSE');
+  const methodRead = await owner.runtime(() => service.readRegisteredSources({ ...fence,
+    sourceRefs: [method.evidenceRef], purpose: '读取实际登记的方法条款' }));
+  assert.deepEqual(methodRead.evidence, [method]);
+  await assert.rejects(owner.runtime(() => service.readRegisteredSources({ ...fence,
+    sourceRefs: ['method-not-registered'], purpose: '拒绝伪造来源' })), /SOURCE_NOT_REGISTERED/u);
   const documentVersionId = reserved.task.workingBasis.inputs[0].documentVersionId;
   const sourceRefId = `DOCUMENT_VERSION:${documentVersionId}:page:1`;
   const text = 'Raw save PostgreSQL fixture: a reported normal inspection is bounded to that inspection.';
@@ -3091,4 +3119,25 @@ async function assertRawMatterJobAidSave(owner, service, baseInput) {
   assert.equal(finished.status, 'SUCCEEDED');
   assert.equal(finished.workRevisionRef, second.workRevisionRef);
   assert.equal((await owner.runtime(() => service.saveJobAidWork(saveInput))).workRevisionRef, first.workRevisionRef);
+  const versionedInput = reserved.task.workingBasis.inputs.find(input => input.workItemId !== null);
+  assert.ok(versionedInput);
+  const [beforeAdvance] = await sql`SELECT revision FROM work_item WHERE work_item_id = ${versionedInput.workItemId}`;
+  let previousAutomaticRef = null;
+  try {
+    for (let step = 1; step <= 2; step += 1) {
+      await sql`UPDATE work_item SET revision = ${beforeAdvance.revision + step} WHERE work_item_id = ${versionedInput.workItemId}`;
+      const changedSource = await owner.runtime(() => service.nextForRuntime(scope));
+      assert.notEqual(changedSource.next.attemptRef, previousAutomaticRef,
+        'each new source version within the same Matter revision needs a distinct automatic request');
+      const nextScope = { ...scope, attemptRef: changedSource.next.attemptRef };
+      const nextRow = await owner.runtime(() => service.read(nextScope));
+      assert.equal(nextRow.matterRevisionId, reserved.task.subject.matterRevisionId);
+      await owner.runtime(() => service.cancel({ ...nextScope, reason: 'Source-version dispatch verified' }));
+      assert.equal((await owner.runtime(() => service.nextForRuntime(scope))).next.attemptRef, changedSource.next.attemptRef);
+      previousAutomaticRef = changedSource.next.attemptRef;
+    }
+  } finally {
+    await sql`UPDATE work_item SET revision = ${beforeAdvance.revision} WHERE work_item_id = ${versionedInput.workItemId}`;
+  }
+
 }

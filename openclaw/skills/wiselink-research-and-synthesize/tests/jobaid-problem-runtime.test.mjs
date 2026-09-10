@@ -605,3 +605,15 @@ test('overlapping source batches cannot silently replace different source conten
     evidence: [{ evidenceRef: 'same-page', excerpt: `changed ${++calls}` }],
   })), /JOBAID_SOURCE_READ_FAILED:INCONSISTENT_EVIDENCE/);
 });
+
+test('Matter uses the same model loop and must save this attempt before finishing prior completed work', async () => {
+  const input = { ...modelInput(), schemaVersion: 'wiselink.matter-jobaid-task.v2',
+    subject: { kind: 'ENGINEERING_MATTER', matterId: 'MAT-one' }, availableDocuments: [{ documentVersionId: 'DV-one' }],
+    expectedWorkRevision: 1, previousWork: { workRevisionRef: 'MWR-prior', workRevision: 1, content: completed } };
+  const f = fixture([{ action: 'FINISH' }, { action: 'SAVE_WORK', work: completed }, { action: 'FINISH' }]);
+  const result = await invokeHostedJobAidProblemModel({ operation: 'ASSESS_MATTER', modelInput: input }, f.options, f.dependencies);
+  assert.equal(f.saves.length, 1);
+  assert.equal(f.calls.length, 3);
+  assert.equal(result.output.workRevisionRef, 'JAWR-2');
+  assert.match(f.calls[0].messages[0].content, /DOCUMENT_VERSION/);
+});

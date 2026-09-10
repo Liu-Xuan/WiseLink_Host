@@ -2,7 +2,7 @@ import { registerMatterAttemptMcpTools } from '../../server/modules/canonical-ho
 
 function fixture(allowed = true, tool = 'matter_action_attempt') {
   const registerTool = jest.fn();
-  const attempts = { saveJobAidWork: jest.fn().mockResolvedValue({ workRevisionRef: 'MWR-one' }), finishJobAid: jest.fn().mockResolvedValue({ status: 'SUCCEEDED' }), reserveJobAid: jest.fn().mockResolvedValue({ task: { operationRef: 'AQ-new' }, row: { status: 'QUEUED' }, created: true }), claim: jest.fn().mockResolvedValue({ status: 'RUNNING' }),
+  const attempts = { nextForRuntime: jest.fn().mockResolvedValue({ matterId: 'MAT-one', next: null }), saveJobAidWork: jest.fn().mockResolvedValue({ workRevisionRef: 'MWR-one' }), finishJobAid: jest.fn().mockResolvedValue({ status: 'SUCCEEDED' }), reserveJobAid: jest.fn().mockResolvedValue({ task: { operationRef: 'AQ-new' }, row: { status: 'QUEUED' }, created: true }), claim: jest.fn().mockResolvedValue({ status: 'RUNNING' }),
     read: jest.fn().mockResolvedValue({ status: 'RUNNING', errorCode: null, deadlineAt: null,
       leaseToken: 'private-token', taskEnvelopeJson: 'private-task' }),
     heartbeat: jest.fn(), cancel: jest.fn().mockResolvedValue({ status: 'CANCELLED' }),
@@ -22,6 +22,13 @@ function fixture(allowed = true, tool = 'matter_action_attempt') {
 const request = { operation: 'CLAIM', matterId: 'MAT-one', attemptRef: 'AQ-one' };
 
 describe('Matter MCP existing attempt lifecycle', () => {
+  it('polls and creates automatic work only through the exact Host Matter scope', async () => {
+    const f = fixture(true, 'next_matter_assessment');
+    await f.call({ matterId: 'MAT-one' });
+    expect(f.attempts.nextForRuntime).toHaveBeenCalledWith(f.scope);
+    expect(() => f.call({ matterId: 'MAT-one', actorUserId: 'forged' })).toThrow();
+  });
+
   it('creates a Host-built JobAid request with exact CAS and no caller model context', async () => {
     const f = fixture(true, 'begin_matter_assessment');
     const input = { matterId: 'MAT-one', expectedMatterRevisionId: 'MR-one', expectedMatterRevision: 2,

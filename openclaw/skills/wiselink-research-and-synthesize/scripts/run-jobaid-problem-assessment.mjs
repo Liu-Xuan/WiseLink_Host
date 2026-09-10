@@ -19,6 +19,7 @@ import {
 import { requestHostedGateway } from './request-hosted-gateway.mjs';
 
 export const JOBAID_PROBLEM_TASK_SCHEMA = 'wiselink.jobaid-problem-task.v2';
+export const MATTER_JOBAID_TASK_SCHEMA = 'wiselink.matter-jobaid-task.v2';
 const FUNCTION = 'return_wiselink_assessment_step';
 const { work: _workShape, ...stepProperties } = JOBAID_STEP_SHAPE.properties;
 const transportStepShape = {
@@ -64,10 +65,12 @@ import { JOBAID_PROBLEM_GUIDANCE as GUIDE } from './jobaid-problem-guidance.mjs'
 export function validateJobAidProblemInput(input) {
   if (
     !input ||
-    input.schemaVersion !== JOBAID_PROBLEM_TASK_SCHEMA ||
-    !['INITIAL_PROBLEM_ASSESSMENT', 'OVERALL_CONSISTENCY'].includes(
+    ![JOBAID_PROBLEM_TASK_SCHEMA, MATTER_JOBAID_TASK_SCHEMA].includes(input.schemaVersion) ||
+    (input.schemaVersion === MATTER_JOBAID_TASK_SCHEMA
+      ? input.subject?.kind !== 'ENGINEERING_MATTER' || !input.subject.matterId || !Array.isArray(input.availableDocuments)
+      : !['INITIAL_PROBLEM_ASSESSMENT', 'OVERALL_CONSISTENCY'].includes(
       input.purpose,
-    ) ||
+    )) ||
     !input.methodBinding?.packRef ||
     !Array.isArray(input.availableSources) ||
     !Array.isArray(input.deliveredEvidence) ||
@@ -152,9 +155,11 @@ export async function invokeHostedJobAidProblemModel(
   dependencies = {},
 ) {
   validateJobAidProblemInput(modelInput);
+  if ((modelInput.schemaVersion === MATTER_JOBAID_TASK_SCHEMA) !== (operation === 'ASSESS_MATTER'))
+    throw new Error('JOBAID_PROBLEM_OPERATION_MISMATCH');
   assertHostedModelGatewayReady(options);
   if (
-    !['EVALUATE_JOBAID', 'SYNTHESIZE_OVERALL'].includes(operation) ||
+    !['EVALUATE_JOBAID', 'SYNTHESIZE_OVERALL', 'ASSESS_MATTER'].includes(operation) ||
     typeof options.readAssessmentSources !== 'function' ||
     typeof options.saveAssessmentWork !== 'function' ||
     typeof options.readAssessmentWork !== 'function' ||
@@ -163,13 +168,14 @@ export async function invokeHostedJobAidProblemModel(
     throw new Error('JOBAID_PROBLEM_RUNTIME_CAPABILITY_REQUIRED');
   const startedAt = Date.now();
   const timeoutMs = options.timeoutMs ?? 30 * 60_000;
-  const systemMessage = { role: 'system', content: GUIDE };
+  const systemMessage = { role: 'system', content: GUIDE + (modelInput.schemaVersion === MATTER_JOBAID_TASK_SCHEMA
+    ? '\n本任务主体是工程事项。availableDocuments 只是版本目录；通过 READ_SOURCES 请求 DOCUMENT_VERSION:<documentVersionId>:page:<物理页码>，先读第 1 页取得页数，再按需读后续页。仅文本层可读，扫描和图表不得声称已核实。结合完整前次工作修正问题；每个新任务必须保存本轮工作后才可 FINISH。' : '') };
   let messages = [
     systemMessage,
     { role: 'user', content: JSON.stringify(projectJobAidModelInput(modelInput)) },
   ];
   let expectedWorkRevision = modelInput.expectedWorkRevision;
-  let saved = modelInput.previousWork
+  let saved = modelInput.previousWork?.content && (modelInput.schemaVersion !== MATTER_JOBAID_TASK_SCHEMA || options.resumeSavedWork)
     ? {
         workRevisionRef: modelInput.previousWork.workRevisionRef,
         workRevision: modelInput.previousWork.workRevision,
