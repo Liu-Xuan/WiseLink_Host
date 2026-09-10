@@ -6,6 +6,12 @@ const object = (properties) => ({ type: 'object', properties });
 const choice = (...values) => ({ type: 'string', enum: values });
 const nullable = (schema) => ({ ...schema, nullable: true });
 const classification = (...labels) => nullable(object({ label: choice(...labels), reason: text, basisRefs: texts }));
+const premise = object({ evidenceRef: text,
+  role: choice('SUPPORTS', 'LIMITS', 'CONTEXT', 'CONFLICTS'),
+  explanation: text, limitation: nullable(text) });
+const premises = list(premise);
+const envelope = (item) => ({ type: 'object', additionalProperties: false,
+  required: ['item'], properties: { item } });
 
 // Function tools consume JSON Schema, not OpenAPI's nullable extension. The
 // native validator rejected legitimate null limitations as short strings.
@@ -18,11 +24,15 @@ export function jobAidFunctionSchema(shape) {
   const schema = Object.fromEntries(Object.entries(rest).map(([key, value]) => [key, jobAidFunctionSchema(value)]));
   // The native validator runs before decodeJobAidValue. Admit exactly the
   // lossless array envelope already understood there, with identical item and
-  // cardinality constraints. Singletons and malformed envelopes stay invalid.
-  const transport = schema.type === 'array' ? { anyOf: [schema, {
-    type: 'object', additionalProperties: false, required: ['item'],
-    properties: { item: schema },
-  }] } : schema;
+  // cardinality constraints. Turn 26 also returned complete premises as one
+  // item object or a double array envelope. Admit only those observed forms,
+  // without inventing a missing limitation or broadening other collections.
+  const transport = schema.type === 'array' ? { anyOf: [schema, envelope(schema),
+    ...(shape === premises ? [
+      envelope({ ...schema.items, required: Object.keys(premise.properties) }),
+      envelope(envelope(schema)),
+    ] : []),
+  ] } : schema;
   return allowsNull ? { anyOf: [transport, { type: 'null' }] } : transport;
 }
 
@@ -37,9 +47,7 @@ export const JOBAID_WORK_UPDATE_SHAPE = object({
     issueKey: text, question: text, understanding: text,
     statements: list(object({
       claimKey: text, text, basis: choice('SOURCE_FACT', 'CONDITIONAL_INFERENCE'),
-      premises: list(object({ evidenceRef: text,
-        role: choice('SUPPORTS', 'LIMITS', 'CONTEXT', 'CONFLICTS'),
-        explanation: text, limitation: nullable(text) })),
+      premises,
     })),
     riskScenarios: list(object({ scenario: text, conditions: texts,
       method: choice('JA_AC_R01'),
@@ -133,13 +141,20 @@ export const JOBAID_STEP_SHAPE = {
 };
 
 // The native function channel represents some declared arrays as {item:[...]}.
-// Decode only that exact transport wrapper. Preserve all content and unknown
-// fields; malformed wrappers remain unchanged for the existing validators.
+// Decode that exact wrapper plus the two observed premise-only forms above.
+// Preserve all content and unknown fields; malformed wrappers remain unchanged
+// for the existing validators.
 export function decodeJobAidValue(input, shape) {
+  const isEnvelope = (value) => value && !Array.isArray(value) && typeof value === 'object' &&
+    Object.keys(value).length === 1 && Object.hasOwn(value, 'item');
   function decode(value, schema) {
     if (schema.type === 'array') {
-      const items = value && !Array.isArray(value) && typeof value === 'object' &&
-        Object.keys(value).length === 1 && Array.isArray(value.item) ? value.item : value;
+      let items = isEnvelope(value) && Array.isArray(value.item) ? value.item : value;
+      if (schema === premises && isEnvelope(value)) {
+        if (isEnvelope(value.item) && Array.isArray(value.item.item)) items = value.item.item;
+        else if (value.item && !Array.isArray(value.item) && typeof value.item === 'object' &&
+          Object.keys(premise.properties).every((key) => Object.hasOwn(value.item, key))) items = [value.item];
+      }
       return Array.isArray(items) ? items.map((item) => decode(item, schema.items)) : items;
     }
     if (schema.type === 'object' && value && !Array.isArray(value) && typeof value === 'object') {
