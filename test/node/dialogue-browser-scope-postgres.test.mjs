@@ -15,6 +15,9 @@ const {
 const { drizzle } = require('drizzle-orm/postgres-js');
 const { sql } = require('drizzle-orm');
 const {
+  SessionResolver,
+} = require('../../server/modules/identity/session-resolver.service.ts');
+const {
   DialogueBrowserScope,
 } = require('../../server/modules/canonical-host/dialogue-browser-scope.service.ts');
 const {
@@ -46,21 +49,45 @@ test(
       const working = new EngineeringMatterWorkingRepository(db, middleware, {
         roleSchema: 'wiselink_dialogue_browser_test',
       });
-      const sessions = {
-        async resolve(request) {
-          if (request.headers.cookie === 'expired') return null;
-          return {
-            actor: {
-              canonicalSubject: { id: request.headers.cookie },
-              tenantId: 'tenant-A',
-              applicationScopeId: 'app_17bzc551rsg',
-            },
-          };
-        },
+      const noop = async () => {
+        assert.fail('wrong expected actor entered scope');
       };
-      const scope = new DialogueBrowserScope(sessions, middleware);
+      let sessionReads = 0;
+      const sessions = new SessionResolver(
+        {
+          async validate(token) {
+            sessionReads += 1;
+            if (token === 'expired') return null;
+            const [identityRole] = await db.execute(
+              sql`SELECT current_user AS role`,
+            );
+            if (
+              identityRole.role ===
+              'service_role_wiselink_dialogue_browser_test'
+            )
+              return null;
+            return {
+              sessionId: `session-${token}`,
+              revision: 1,
+              expiresAt: new Date(Date.now() + 60000),
+              identity: {
+                miaodaUserId: token,
+                tenantId: 'tenant-A',
+                verifiedAt: new Date().toISOString(),
+                feishuOpenId: `open-${token}`,
+              },
+            };
+          },
+        },
+        {
+          applicationScopeId: 'app_17bzc551rsg',
+          sessionEnvironment: 'runtime',
+        },
+        middleware,
+      );
+      const scope = new DialogueBrowserScope(sessions);
       const request = (id) => ({
-        headers: { cookie: id },
+        headers: { cookie: `wl_session=${id}` },
         body: { actorId: 'forged' },
         userContext: {
           userId: id,
@@ -98,8 +125,31 @@ test(
               /RUNTIME_AUTHORIZATION_UNAVAILABLE/,
             );
             await scope.run(req, async () => {
+              assert.equal(
+                (await sessions.resolve(req)).actor.canonicalSubject.id,
+                actorId,
+              );
+              assert.equal(
+                await sessions.resolve({ ...req }),
+                null,
+                'verified identity never crosses the HTTP request boundary',
+              );
               await new Promise((resolve) =>
                 setTimeout(resolve, actorId === 'actor-A' ? 10 : 1),
+              );
+              await sessions.withVerifiedBrowserSql(async () => {
+                assert.deepEqual(await read(), {
+                  role: 'authenticated_wiselink_dialogue_browser_test',
+                  actor: actorId,
+                });
+              });
+              assert.deepEqual(await read(), {
+                role: 'service_role_wiselink_dialogue_browser_test',
+                actor: actorId,
+              });
+              assert.throws(
+                () => sessions.withVerifiedServiceSql(noop, 'other-actor'),
+                /DIALOGUE_BROWSER_IDENTITY_MISMATCH/,
               );
               await working.withActorTransaction(
                 actorId,
@@ -124,19 +174,32 @@ test(
           });
         }),
       );
+      assert.equal(
+        sessionReads,
+        4,
+        'two original validations plus two different-request probes; nested callers reuse the verified identity',
+      );
+      assert.throws(
+        () => sessions.withVerifiedServiceSql(noop),
+        /OFFICIAL_OAUTH_SESSION_REQUIRED/,
+      );
+      assert.throws(
+        () => sessions.withVerifiedBrowserSql(noop),
+        /OFFICIAL_OAUTH_SESSION_REQUIRED/,
+      );
       const noRun = () => {
         assert.fail('unauthorized scope executed');
       };
       await assert.rejects(
         scope.run(
-          { ...request('actor-A'), headers: { cookie: 'expired' } },
+          { ...request('actor-A'), headers: { cookie: 'wl_session=expired' } },
           noRun,
         ),
         /OFFICIAL_OAUTH_SESSION_REQUIRED/,
       );
       await assert.rejects(
         scope.run(
-          { ...request('actor-A'), headers: { cookie: 'actor-B' } },
+          { ...request('actor-A'), headers: { cookie: 'wl_session=actor-B' } },
           noRun,
         ),
         /DIALOGUE_BROWSER_IDENTITY_MISMATCH/,

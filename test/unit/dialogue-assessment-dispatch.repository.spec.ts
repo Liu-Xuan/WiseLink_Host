@@ -56,9 +56,14 @@ function harness() {
     withActorTransaction: jest.fn(async (_actor, run) => run({ database })),
   };
   const outside = { insert: jest.fn(() => ({ values })) };
+  const sessions = {
+    withVerifiedServiceSql: jest.fn(async (run) => run()),
+    withVerifiedBrowserSql: jest.fn(async (run) => run()),
+  };
   const repository = new ReviewConversationRepository(
     outside as never,
     actors as never,
+    sessions as never,
   );
   const load = jest.spyOn(
     repository as unknown as { loadTurnByRequest: () => Promise<unknown> },
@@ -68,7 +73,16 @@ function harness() {
     .mockResolvedValueOnce(null)
     .mockResolvedValueOnce(null)
     .mockResolvedValue(original);
-  return { repository, database, actors, outside, values, load, queries };
+  return {
+    repository,
+    database,
+    actors,
+    sessions,
+    outside,
+    values,
+    load,
+    queries,
+  };
 }
 describe('dialogue assessment atomic dispatch', () => {
   it('locks owner-bound request and work item and inserts inside the actor transaction', async () => {
@@ -80,6 +94,11 @@ describe('dialogue assessment atomic dispatch', () => {
       'actor',
       expect.any(Function),
     );
+    expect(h.sessions.withVerifiedServiceSql).toHaveBeenCalledWith(
+      expect.any(Function),
+      'actor',
+    );
+    expect(h.sessions.withVerifiedBrowserSql).toHaveBeenCalledTimes(1);
     expect(h.queries[0].sql).toContain('FOR UPDATE');
     expect(h.queries[0].params).toEqual([
       requestRef,
@@ -153,6 +172,17 @@ describe('dialogue assessment atomic dispatch', () => {
     ).rejects.toThrow('DIALOGUE_ASSESSMENT_BINDING_CHANGED');
     expect(other.database.insert).not.toHaveBeenCalled();
   });
+  it('does not enter the transaction when verified service scope is unavailable', async () => {
+    const h = harness();
+    h.sessions.withVerifiedServiceSql.mockRejectedValue(
+      new Error('IDENTITY_SESSION_REQUIRED'),
+    );
+    await expect(h.repository.appendTextTurn(input as never)).rejects.toThrow(
+      'IDENTITY_SESSION_REQUIRED',
+    );
+    expect(h.actors.withActorTransaction).not.toHaveBeenCalled();
+    expect(h.database.insert).not.toHaveBeenCalled();
+  });
   it('keeps ordinary review dispatch on its existing path', async () => {
     const h = harness();
     h.load.mockReset().mockResolvedValueOnce(null).mockResolvedValue(original);
@@ -161,6 +191,8 @@ describe('dialogue assessment atomic dispatch', () => {
       requestId: 'ordinary',
     } as never);
     expect(h.outside.insert).toHaveBeenCalledTimes(1);
+    expect(h.sessions.withVerifiedServiceSql).not.toHaveBeenCalled();
+    expect(h.sessions.withVerifiedBrowserSql).not.toHaveBeenCalled();
     expect(h.actors.withActorTransaction).not.toHaveBeenCalled();
   });
 });

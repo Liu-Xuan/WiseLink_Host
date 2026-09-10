@@ -11,6 +11,12 @@ process.env.TS_NODE_COMPILER_OPTIONS = JSON.stringify({
 const require = createRequire(import.meta.url);
 require('ts-node/register/transpile-only');
 require('tsconfig-paths/register');
+const {
+  SqlExecutionContextMiddleware,
+} = require('@lark-apaas/fullstack-nestjs-core');
+const {
+  EngineeringMatterWorkingRepository,
+} = require('../../server/modules/canonical-host/engineering-matter-working.repository.ts');
 const { drizzle } = require('drizzle-orm/postgres-js');
 const { sql } = require('drizzle-orm');
 const { getTableConfig } = require('drizzle-orm/pg-core');
@@ -28,15 +34,23 @@ function deferred() {
 }
 
 // Exercises the production guard and INSERT against real PostgreSQL locks in an
-// isolated schema. Full Host RLS/Review triggers belong to the integration suite.
+// isolated schema with service-only request access and authenticated-only turn
+// INSERT. Full Host Review triggers belong to the integration suite.
 test(
   'dialogue dispatch serializes real PostgreSQL working and request races',
   { skip: !url },
   async (t) => {
+    assert.ok(['localhost', '127.0.0.1'].includes(new URL(url).hostname));
     const admin = postgres(url, { max: 1, onnotice() {} });
     const schema = `dialogue_dispatch_${randomUUID().replaceAll('-', '')}`;
+    const roleSchema = `dd_${randomUUID().replaceAll('-', '')}`;
+    const serviceRole = `service_role_${roleSchema}`;
+    const browserRole = `authenticated_${roleSchema}`;
     let pool;
     try {
+      await admin.unsafe(
+        `CREATE ROLE ${serviceRole} NOLOGIN; CREATE ROLE ${browserRole} NOLOGIN`,
+      );
       await admin.unsafe(`CREATE SCHEMA ${schema}`);
       pool = postgres(url, {
         max: 6,
@@ -59,6 +73,44 @@ test(
       await pool.unsafe(
         `CREATE TABLE review_turn (${columns}, UNIQUE(review_conversation_id,request_id))`,
       );
+      await pool.unsafe(`
+        GRANT USAGE ON SCHEMA ${schema} TO ${serviceRole},${browserRole};
+        GRANT SELECT,UPDATE ON dialogue_assessment_request,work_item,assessment_work_revision TO ${serviceRole};
+        GRANT SELECT,INSERT ON review_turn TO ${serviceRole},${browserRole};
+        ALTER TABLE dialogue_assessment_request ENABLE ROW LEVEL SECURITY;
+        CREATE POLICY request_read ON dialogue_assessment_request FOR SELECT TO ${serviceRole}
+          USING (actor_id=current_setting('app.user_id',true));
+        CREATE POLICY request_lock ON dialogue_assessment_request FOR UPDATE TO ${serviceRole}
+          USING (actor_id=current_setting('app.user_id',true));
+        ALTER TABLE review_turn ENABLE ROW LEVEL SECURITY;
+        CREATE POLICY turn_read ON review_turn FOR SELECT TO ${serviceRole},${browserRole}
+          USING (actor_id=current_setting('app.user_id',true));
+        CREATE POLICY turn_insert ON review_turn FOR INSERT TO ${browserRole}
+          WITH CHECK (actor_id=current_setting('app.user_id',true));
+      `);
+      const middleware = new SqlExecutionContextMiddleware({ roleSchema });
+      const roleScope = (isSystemAccount, operation) =>
+        new Promise((resolve, reject) => {
+          middleware.use(
+            { userContext: { userId: 'actor', roles: [], isSystemAccount } },
+            {},
+            () => {
+              void Promise.resolve().then(operation).then(resolve, reject);
+            },
+          );
+        });
+      // Session authentication is covered by the browser-scope suite. Here the
+      // scope port drives the real SDK and both PostgreSQL roles on every query.
+      const sessions = {
+        withVerifiedServiceSql: (operation, actor) => {
+          if (actor !== undefined) assert.equal(actor, 'actor');
+          return roleScope(true, operation);
+        },
+        withVerifiedBrowserSql: (operation) => roleScope(false, operation),
+      };
+      const working = new EngineeringMatterWorkingRepository(db, middleware, {
+        roleSchema,
+      });
       const input = {
         conversation: {
           reviewConversationId: 'RC-A',
@@ -87,39 +139,53 @@ test(
       const actors = {
         withActorTransaction: async (actor, run) => {
           assert.equal(actor, 'actor');
-          return db.transaction(async (tx) => {
-            const database = new Proxy(tx, {
-              get(target, key) {
-                if (key === 'execute')
-                  return (q) => {
-                    if (
-                      q.queryChunks.some((c) =>
-                        c?.value?.some?.(
-                          (v) =>
-                            typeof v === 'string' &&
-                            v.includes('SELECT revision FROM work_item'),
-                        ),
+          return working.withActorTransaction(
+            actor,
+            async ({ database: tx }) => {
+              const database = new Proxy(tx, {
+                get(target, key) {
+                  if (key === 'execute')
+                    return (q) => {
+                      if (
+                        q.queryChunks.some((c) =>
+                          c?.value?.some?.(
+                            (v) =>
+                              typeof v === 'string' &&
+                              v.includes('SELECT revision FROM work_item'),
+                          ),
+                        )
                       )
-                    )
-                      onWorkLock();
-                    return target.execute(q);
-                  };
-                if (key === 'insert')
-                  return (table) => ({
-                    values: async (values) => {
-                      await onInsert();
-                      return target.insert(table).values(values);
-                    },
-                  });
-                const value = target[key];
-                return typeof value === 'function' ? value.bind(target) : value;
-              },
-            });
-            return run({ database });
-          });
+                        onWorkLock();
+                      return target.execute(q);
+                    };
+                  if (key === 'insert')
+                    return (table) => ({
+                      values: async (values) => {
+                        const [sqlIdentity] = await target.execute(
+                          sql`SELECT current_user AS role,current_setting('app.user_id',true) AS actor`,
+                        );
+                        assert.deepEqual(sqlIdentity, {
+                          role: browserRole,
+                          actor: 'actor',
+                        });
+                        await onInsert();
+                        return target.insert(table).values(values);
+                      },
+                    });
+                  const value = target[key];
+                  return typeof value === 'function'
+                    ? value.bind(target)
+                    : value;
+                },
+              });
+              return run({ database });
+            },
+          );
         },
       };
-      const repo = new ReviewConversationRepository(db, actors);
+      const repo = new ReviewConversationRepository(db, actors, sessions);
+      const dispatch = () =>
+        sessions.withVerifiedBrowserSql(() => repo.appendTextTurn(input));
       // Only the unrelated engineer-input projection is replaced; the production
       // binding reads, base reads, locks and actual ReviewTurn INSERT all run.
       repo.loadTurnByRequest = async (
@@ -142,6 +208,26 @@ test(
         };
       };
       await t.test(
+        'service cannot insert ReviewTurn and browser cannot read private dispatch requests',
+        async () => {
+          await reset();
+          await assert.rejects(
+            sessions.withVerifiedServiceSql(() =>
+              db.execute(
+                sql`INSERT INTO review_turn (review_turn_id,actor_id) VALUES ('forbidden','actor')`,
+              ),
+            ),
+            (error) => error.code === '42501' || error.cause?.code === '42501',
+          );
+          await assert.rejects(
+            sessions.withVerifiedBrowserSql(() =>
+              db.execute(sql`SELECT * FROM dialogue_assessment_request`),
+            ),
+            (error) => error.code === '42501' || error.cause?.code === '42501',
+          );
+        },
+      );
+      await t.test(
         'working commit wins: first dispatch rejects its frozen old base',
         async () => {
           await reset();
@@ -156,9 +242,9 @@ test(
             await release.promise;
           });
           await locked.promise;
-          const dispatch = repo.appendTextTurn(input);
+          const pendingDispatch = dispatch();
           const rejected = assert.rejects(
-            dispatch,
+            pendingDispatch,
             /DIALOGUE_ASSESSMENT_BASE_CHANGED/,
           );
           await reached.promise;
@@ -173,10 +259,7 @@ test(
         async () => {
           await reset();
           onWorkLock = () => {};
-          const results = await Promise.all([
-            repo.appendTextTurn(input),
-            repo.appendTextTurn(input),
-          ]);
+          const results = await Promise.all([dispatch(), dispatch()]);
           assert.equal(
             results[0].turn.reviewTurnId,
             results[1].turn.reviewTurnId,
@@ -186,7 +269,7 @@ test(
             true,
           ]);
           await pool`INSERT INTO assessment_work_revision VALUES ('tenant','WI-A','work-5',5)`;
-          const replay = await repo.appendTextTurn(input);
+          const replay = await dispatch();
           assert.equal(replay.turn.reviewTurnId, results[0].turn.reviewTurnId);
           assert.equal(replay.replayed, true);
           assert.equal((await pool`SELECT * FROM review_turn`).length, 1);
@@ -202,7 +285,7 @@ test(
             inserting.resolve();
             await release.promise;
           };
-          const dispatch = repo.appendTextTurn(input);
+          const pendingDispatch = dispatch();
           await inserting.promise;
           // NOWAIT checks the real competing transaction cannot change this base.
           await assert.rejects(
@@ -212,7 +295,7 @@ test(
             (error) => error.code === '55P03',
           );
           release.resolve();
-          await dispatch;
+          await pendingDispatch;
           onInsert = async () => {};
           assert.equal((await pool`SELECT * FROM review_turn`).length, 1);
         },
@@ -220,6 +303,7 @@ test(
     } finally {
       if (pool) await pool.end();
       await admin.unsafe(`DROP SCHEMA IF EXISTS ${schema} CASCADE`);
+      await admin.unsafe(`DROP ROLE IF EXISTS ${serviceRole},${browserRole}`);
       await admin.end();
     }
   },

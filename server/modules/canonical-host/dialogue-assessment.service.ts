@@ -119,9 +119,8 @@ export class DialogueAssessmentService {
       ].join('\n\n');
       if (userMessage.length > 20_000)
         throw new BadRequestException('DIALOGUE_ASSESSMENT_INPUT_TOO_LARGE');
-      const conversation = await this.reviews.createOrResume(
-        input.workItemId,
-        httpRequest,
+      const conversation = await this.sessions.withVerifiedBrowserSql(() =>
+        this.reviews.createOrResume(input.workItemId, httpRequest),
       );
       stored = await this.assessments.create(
         scope,
@@ -149,18 +148,21 @@ export class DialogueAssessmentService {
         replayed: true,
       };
     }
-    const result = await this.reviews.appendTextTurn(
-      input.workItemId,
-      stored.review_conversation_id,
-      {
-        requestId: `dialogue-${stored.request_ref}`,
-        userMessage: stored.user_message,
-        purpose: 'UPDATE_ASSESSMENT',
-        includedDiscussionTurnIds: [],
-        expectedInputRevision: input.expectedWorkItemRevision,
-        executionMode: 'AUTOMATIC',
-      },
-      httpRequest,
+    const dispatchRequest = stored;
+    const result = await this.sessions.withVerifiedBrowserSql(() =>
+      this.reviews.appendTextTurn(
+        input.workItemId,
+        dispatchRequest.review_conversation_id,
+        {
+          requestId: `dialogue-${dispatchRequest.request_ref}`,
+          userMessage: dispatchRequest.user_message,
+          purpose: 'UPDATE_ASSESSMENT',
+          includedDiscussionTurnIds: [],
+          expectedInputRevision: input.expectedWorkItemRevision,
+          executionMode: 'AUTOMATIC',
+        },
+        httpRequest,
+      ),
     );
     await this.assessments.bind(scope, stored, result.turn.reviewTurnId);
     return {

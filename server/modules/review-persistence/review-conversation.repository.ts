@@ -39,6 +39,7 @@ import {
   workItem,
 } from '../../database/schema';
 import { REVIEW_ACTIVE_EXECUTION_STATUSES } from '../action-attempt/review-attempt-dispatch.service';
+import { SessionResolver } from '../identity/session-resolver.service';
 import { EngineeringMatterWorkingRepository } from '../canonical-host/engineering-matter-working.repository';
 import { parseExecutionModel } from '../model-settings/canonical-execution-model';
 import {
@@ -117,6 +118,7 @@ export class ReviewConversationRepository {
   constructor(
     @Inject(DRIZZLE_DATABASE) private readonly db: PostgresJsDatabase,
     private readonly actors?: EngineeringMatterWorkingRepository,
+    private readonly sessions?: SessionResolver,
   ) {}
 
   async createOrResume(input: {
@@ -1091,91 +1093,99 @@ export class ReviewConversationRepository {
           !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/iu.test(
             requestRef,
           ) ||
-          !this.actors
+          !this.actors ||
+          !this.sessions
         )
           throw reviewPersistenceConflict(
             'DIALOGUE_ASSESSMENT_BINDING_CHANGED',
           );
-        const replay = await this.actors.withActorTransaction(
-          input.conversation.actorId,
-          async ({ database }) => {
-            // Serialize the same immutable request before looking for a turn.
-            // The actor-scoped transaction retains the dialogue table's RLS.
-            const [request] = await database.execute<{
-              request_json: string;
-              user_message: string;
-            }>(sql`SELECT request_json,user_message FROM dialogue_assessment_request
+        const actors = this.actors;
+        const sessions = this.sessions;
+        const replay = await sessions.withVerifiedServiceSql(
+          () =>
+            actors.withActorTransaction(
+              input.conversation.actorId,
+              async ({ database }) => {
+                // Serialize the same immutable request before looking for a turn.
+                // The actor-scoped transaction retains the dialogue table's RLS.
+                const [request] = await database.execute<{
+                  request_json: string;
+                  user_message: string;
+                }>(sql`SELECT request_json,user_message FROM dialogue_assessment_request
               WHERE request_ref=${requestRef}::uuid
               AND tenant_id=${input.conversation.tenantId}
               AND actor_id=${input.conversation.actorId}
               AND work_item_id=${input.conversation.workItemId}
               AND review_conversation_id=${input.conversation.reviewConversationId}
               FOR UPDATE`);
-            if (!request)
-              throw reviewPersistenceConflict(
-                'DIALOGUE_ASSESSMENT_BINDING_CHANGED',
-              );
-            const frozen = JSON.parse(request.request_json) as {
-              expectedWorkItemRevision: number;
-              expectedWorkingRef: string | null;
-            };
-            if (
-              request.user_message !== input.userMessage ||
-              frozen.expectedWorkItemRevision !== input.expectedInputRevision ||
-              input.purpose !== 'UPDATE_ASSESSMENT' ||
-              input.executionRequested !== true ||
-              (input.includedDiscussionTurnIds?.length ?? 0) !== 0 ||
-              (input.attachmentBindings?.length ?? 0) !== 0 ||
-              input.reviewScope != null ||
-              input.selectedEvaluationItemId != null
-            )
-              throw reviewPersistenceConflict(
-                'DIALOGUE_ASSESSMENT_BINDING_CHANGED',
-              );
-            const original = await this.loadTurnByRequest(
-              input.conversation.reviewConversationId,
-              input.requestId,
-              database,
-            );
-            if (original) {
-              assertIdempotentReplay(
-                original,
-                input.userMessage,
-                input.attachmentBindings ?? [],
-                input.selectedEvaluationItemId ?? null,
-                input.executionRequested === true,
-                input.requestedModel,
-                input.reviewScope,
-                input,
-              );
-              return original;
-            }
-            // Working commits lock this same work_item row before inserting the
-            // next assessment_work_revision, including the first working version.
-            const [work] = await database.execute<{ revision: number }>(sql`
+                if (!request)
+                  throw reviewPersistenceConflict(
+                    'DIALOGUE_ASSESSMENT_BINDING_CHANGED',
+                  );
+                const frozen = JSON.parse(request.request_json) as {
+                  expectedWorkItemRevision: number;
+                  expectedWorkingRef: string | null;
+                };
+                if (
+                  request.user_message !== input.userMessage ||
+                  frozen.expectedWorkItemRevision !==
+                    input.expectedInputRevision ||
+                  input.purpose !== 'UPDATE_ASSESSMENT' ||
+                  input.executionRequested !== true ||
+                  (input.includedDiscussionTurnIds?.length ?? 0) !== 0 ||
+                  (input.attachmentBindings?.length ?? 0) !== 0 ||
+                  input.reviewScope != null ||
+                  input.selectedEvaluationItemId != null
+                )
+                  throw reviewPersistenceConflict(
+                    'DIALOGUE_ASSESSMENT_BINDING_CHANGED',
+                  );
+                const original = await this.loadTurnByRequest(
+                  input.conversation.reviewConversationId,
+                  input.requestId,
+                  database,
+                );
+                if (original) {
+                  assertIdempotentReplay(
+                    original,
+                    input.userMessage,
+                    input.attachmentBindings ?? [],
+                    input.selectedEvaluationItemId ?? null,
+                    input.executionRequested === true,
+                    input.requestedModel,
+                    input.reviewScope,
+                    input,
+                  );
+                  return original;
+                }
+                // Working commits lock this same work_item row before inserting the
+                // next assessment_work_revision, including the first working version.
+                const [work] = await database.execute<{ revision: number }>(sql`
               SELECT revision FROM work_item
               WHERE tenant_id=${input.conversation.tenantId}
               AND work_item_id=${input.conversation.workItemId} FOR UPDATE`);
-            const [working] = await database.execute<{
-              assessment_work_revision_id: string;
-            }>(sql`
+                const [working] = await database.execute<{
+                  assessment_work_revision_id: string;
+                }>(sql`
               SELECT assessment_work_revision_id FROM assessment_work_revision
               WHERE tenant_id=${input.conversation.tenantId}
               AND work_item_id=${input.conversation.workItemId}
               ORDER BY work_revision DESC LIMIT 1`);
-            if (
-              !work ||
-              input.currentRevision !== frozen.expectedWorkItemRevision ||
-              work.revision !== frozen.expectedWorkItemRevision ||
-              (working?.assessment_work_revision_id ?? null) !==
-                frozen.expectedWorkingRef
-            )
-              throw reviewPersistenceConflict(
-                'DIALOGUE_ASSESSMENT_BASE_CHANGED',
-              );
-            await insert(database);
-            return null;
-          },
+                if (
+                  !work ||
+                  input.currentRevision !== frozen.expectedWorkItemRevision ||
+                  work.revision !== frozen.expectedWorkItemRevision ||
+                  (working?.assessment_work_revision_id ?? null) !==
+                    frozen.expectedWorkingRef
+                )
+                  throw reviewPersistenceConflict(
+                    'DIALOGUE_ASSESSMENT_BASE_CHANGED',
+                  );
+                await sessions.withVerifiedBrowserSql(() => insert(database));
+                return null;
+              },
+            ),
+          input.conversation.actorId,
         );
         if (replay) return { turn: replay, replayed: true };
       } else {
