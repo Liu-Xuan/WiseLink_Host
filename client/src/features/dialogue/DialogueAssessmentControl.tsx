@@ -17,10 +17,7 @@ import {
 } from '@client/src/components/ui/select';
 import type { DialogueWorkItemOption } from './DialogueContributionPicker';
 import type { usePrivateDialogue } from './usePrivateDialogue';
-import {
-  dialogueAssessmentSelectionValid,
-  defaultDialogueAssessmentContributions,
-} from './dialogue-assessment-selection';
+import { defaultDialogueAssessmentContributions } from './dialogue-assessment-selection';
 import { dialogueAssessmentOperation } from './dialogue-assessment-operation';
 import { dialogueFocusOptions } from './dialogue-focus';
 
@@ -77,13 +74,12 @@ export const DialogueAssessmentControl: FC<DialogueAssessmentControlProps> = ({
     null,
   );
   const candidates = thread.contributions.filter(
-    (item) => item.workItemId === target && item.status === 'ACTIVE',
+    (item) =>
+      item.workItemId === target &&
+      item.status === 'ACTIVE' &&
+      !item.consumedWorkingRef,
   );
-  const selectionValid = dialogueAssessmentSelectionValid(
-    chosen,
-    thread.contributions,
-    target,
-  );
+  const selectionValid = chosen.length > 0;
   const readCurrent = (workItemId: string = target): void => {
     if (!workItemId || disabled) return;
     let result: DialogueWorkingContext | null = null;
@@ -116,7 +112,8 @@ export const DialogueAssessmentControl: FC<DialogueAssessmentControlProps> = ({
       workItemId: target,
       expectedWorkItemRevision: context.workItemRevision,
       expectedWorkingRef: context.workingRef,
-      contributions: chosen,
+      contributions: [],
+      collectionMode: 'ALL_PENDING',
       userMessage:
         instruction.trim() ||
         '请结合本次汇集的补充内容，核对当前资料并更新工作判断，说明判断变化、依据和仍待确认的事项。',
@@ -227,11 +224,6 @@ export const DialogueAssessmentControl: FC<DialogueAssessmentControlProps> = ({
           />
           {hasDraft && <p>对话输入框中的未发送草稿不会进入本次更新。</p>}
           {error && <p>请先重新读取当前工作版本，核对后再提交。</p>}
-          {!!chosen.length && !selectionValid && (
-            <p role="alert">
-              补充数量超过单次更新上限（20 条），本次未提交，也未截断内容。
-            </p>
-          )}
           <Button
             disabled={
               disabled ||

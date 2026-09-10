@@ -23,12 +23,20 @@ export interface AssessmentClaimPremise {
   limitation: string | null;
 }
 
+export interface DialogueEvidenceSource {
+  requestRef: string;
+  contributionRef: string;
+  revision: number;
+  contextWorkItemIds: string[];
+}
+
 /** Host-issued premises keep their original carrier identity and version. */
 export type AssessmentEvidence = {
   evidenceRef: string;
   title: string;
   versionLabel: string | null;
   excerpt: string;
+  dialogueSource?: DialogueEvidenceSource;
 } & (
   | {
       kind: 'DOCUMENT_PASSAGE';

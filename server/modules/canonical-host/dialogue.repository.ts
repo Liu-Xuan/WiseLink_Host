@@ -58,6 +58,7 @@ export interface DialogueContributionRow extends Record<string, unknown> {
   status: 'ACTIVE' | 'WITHDRAWN';
   supersedes_ref: string | null;
   used_by_json: string;
+  consumed_working_ref?: string | null;
   selection_json: string;
   request_key: string;
   withdraw_request_key: string | null;
@@ -164,7 +165,7 @@ export class DialogueRepository {
         ${beforeRevision === undefined ? sql`` : sql`AND m.thread_revision < ${beforeRevision}`}
         ORDER BY m.thread_revision DESC LIMIT 41`);
       const contributions =
-        await db.execute<DialogueContributionRow>(sql`SELECT * FROM discussion_contribution
+        await db.execute<DialogueContributionRow>(sql`SELECT c.*, ${consumedWorkingRef()} AS consumed_working_ref FROM discussion_contribution c
         WHERE thread_ref=${threadRef}::uuid AND tenant_id=${scope.tenantId} AND actor_id=${scope.actorId} ORDER BY _created_at,contribution_ref`);
       const page = messages.slice(0, 40);
       return {
@@ -182,7 +183,7 @@ export class DialogueRepository {
   ): Promise<DialogueContributionRow[]> {
     if (!workItemIds.length) return [];
     return this.transaction(scope, (db) =>
-      db.execute<DialogueContributionRow>(sql`SELECT * FROM discussion_contribution
+      db.execute<DialogueContributionRow>(sql`SELECT c.*, ${consumedWorkingRef()} AS consumed_working_ref FROM discussion_contribution c
       WHERE tenant_id=${scope.tenantId} AND actor_id=${scope.actorId} AND status='ACTIVE'
       AND work_item_id IN (${sql.join(
         workItemIds.map((id) => sql`${id}`),
@@ -405,4 +406,28 @@ export class DialogueRepository {
     if (!message) dialogueNotFound();
     return message;
   }
+}
+
+/** A request binding alone is not consumption: require its completed turn and
+ * an actual saved work revision, for this exact contribution revision. */
+function consumedWorkingRef() {
+  return sql`(SELECT w.assessment_work_revision_id
+    FROM dialogue_assessment_request r
+    JOIN review_turn t ON t.review_turn_id=r.review_turn_id
+      AND t.tenant_id=r.tenant_id AND t.actor_id=r.actor_id
+      AND t.work_item_id=r.work_item_id
+      AND t.review_conversation_id=r.review_conversation_id
+      AND t.request_id='dialogue-' || r.request_ref::text
+    JOIN assessment_work_revision w ON w.action_attempt_id=t.action_attempt_id
+      AND w.tenant_id=t.tenant_id AND w.work_item_id=t.work_item_id
+      AND w.created_by_user_id=t.actor_id
+    WHERE r.tenant_id=c.tenant_id AND r.actor_id=c.actor_id
+      AND r.work_item_id=c.work_item_id
+      AND t.assistant_completed_at IS NOT NULL AND t.assistant_response IS NOT NULL
+      AND (COALESCE(r.request_json::jsonb->>'collectionMode','') <> 'ALL_PENDING'
+        OR w.content_json::jsonb->'readSourceRefs' @> jsonb_build_array(
+          'dialogue-contribution:' || r.request_ref::text || ':' || c.contribution_ref::text || ':' || c.revision::text))
+      AND r.input_json::jsonb->'contributions' @> jsonb_build_array(
+        jsonb_build_object('contributionRef',c.contribution_ref::text,'revision',c.revision))
+    ORDER BY w.work_revision DESC LIMIT 1)`;
 }

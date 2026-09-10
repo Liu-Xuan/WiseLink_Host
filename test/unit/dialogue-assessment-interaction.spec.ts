@@ -90,6 +90,56 @@ describe('explicit dialogue assessment submission', () => {
     );
     return { service, sessions, dialogues, context, assessments, reviews };
   }
+  it('collects 21 pending contributions without truncation or expanding the explicit selection limit', async () => {
+    const h = harness();
+    const available = Array.from({ length: 21 }, (_, index) => ({
+      contribution_ref: `22222222-2222-4222-8222-${String(index).padStart(12, '0')}`,
+      revision: 1,
+      message_ref: messageRef,
+      selected_text: '补充原文'.repeat(500),
+      source_part: 'USER',
+      kind: 'CORRECTION',
+    }));
+    h.dialogues.relevantContributions.mockResolvedValue([
+      ...available,
+      {
+        ...available[0],
+        contribution_ref: contributionRef,
+        consumed_working_ref: 'JAWR-saved',
+      },
+    ] as never);
+    await h.service.request(
+      threadRef,
+      { ...input, contributions: [], collectionMode: 'ALL_PENDING' },
+      request,
+    );
+    const snapshot = h.assessments.create.mock.calls[0][3];
+    expect(snapshot.contributions).toHaveLength(21);
+    expect(snapshot.contributions[20].selectedText).toBe(
+      available[20].selected_text,
+    );
+    expect(snapshot.contextWorkItemIds).toEqual(['WI-A', 'WI-B']);
+    expect(h.reviews.appendTextTurn.mock.calls[0][2].userMessage).toContain(
+      '21',
+    );
+    expect(
+      h.reviews.appendTextTurn.mock.calls[0][2].userMessage.length,
+    ).toBeLessThan(20000);
+    await expect(
+      h.service.request(
+        threadRef,
+        {
+          ...input,
+          contributions: available.map((item) => ({
+            contributionRef: item.contribution_ref,
+            expectedRevision: 1,
+          })),
+        },
+        request,
+      ),
+    ).rejects.toThrow('DIALOGUE_CONTRIBUTION_SELECTION_INVALID');
+  });
+
   it('submits raw selected words with their preceding question and provenance to the actual review port', async () => {
     const h = harness();
     const result = await h.service.request(threadRef, input, request);

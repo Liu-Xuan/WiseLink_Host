@@ -103,7 +103,11 @@ export class DialogueContextService {
               .flatMap((issue) => issue.openQuestions.map((q) => q.question))
               .slice(0, 12) ?? [],
           pendingContributions: contributions
-            .filter((row) => row.work_item_id === grant.workItemId)
+            .filter(
+              (row) =>
+                row.work_item_id === grant.workItemId &&
+                !row.consumed_working_ref,
+            )
             .map((row) => ({
               contributionRef: row.contribution_ref,
               kind: row.kind,

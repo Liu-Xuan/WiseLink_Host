@@ -415,5 +415,6 @@ function contributionModel(
     audience: 'PRIVATE',
     createdAt: new Date(row._created_at).toISOString(),
     usedBy: JSON.parse(row.used_by_json),
+    consumedWorkingRef: row.consumed_working_ref ?? null,
   };
 }

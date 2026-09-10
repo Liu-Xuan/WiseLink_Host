@@ -99,6 +99,20 @@ describe('private dialogue text and read state', () => {
     expect(
       defaultDialogueAssessmentContributions(
         [
+          ...Array.from({ length: 25 }, (_, index) => ({
+            ...contribution,
+            contributionRef: `old-${index}`,
+            consumedWorkingRef: `JAWR-${index}`,
+          })),
+          contribution,
+        ],
+        'target',
+      ),
+    ).toEqual(chosen);
+
+    expect(
+      defaultDialogueAssessmentContributions(
+        [
           {
             ...contribution,
             usedBy: [
@@ -114,6 +128,11 @@ describe('private dialogue text and read state', () => {
             contributionRef: 'correction',
             kind: 'CORRECTION',
             revision: 3,
+          },
+          {
+            ...contribution,
+            contributionRef: 'consumed',
+            consumedWorkingRef: 'JAWR-saved',
           },
           {
             ...contribution,

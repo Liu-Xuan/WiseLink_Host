@@ -1,3 +1,7 @@
+import {
+  DialogueAssessmentRepository,
+  type DialogueAssessmentSnapshot,
+} from './dialogue-assessment.repository';
 import type { AssessmentEvidence } from '@shared/assessment-reading.interface';
 import { isJobAidProblemProjection } from '@shared/jobaid-problem-assessment.interface';
 import { CanonicalJobAidProblemService } from './canonical-jobaid-problem.service';
@@ -157,6 +161,8 @@ export class CanonicalHostOpenClawReviewService {
     private readonly matterWorkingRepository?: EngineeringMatterWorkingRepository,
     @Optional() private readonly jobAid?: CanonicalJobAidProblemService,
     @Optional() private readonly aily?: ReviewAilyService,
+    @Optional()
+    private readonly dialogueAssessments?: DialogueAssessmentRepository,
   ) {}
 
   async pending(workItemId: string): Promise<PendingReviewTurnResponse> {
@@ -313,7 +319,9 @@ export class CanonicalHostOpenClawReviewService {
     await this.dispatch.recordEvidenceActivity(attempt.row, {
       kind: 'CONTEXT_PREPARED',
       sourceRefIds: [],
-      sourceCatalogCount: attempt.contract.resourceRefs.length,
+      sourceCatalogCount:
+        attempt.contract.jobAidContext?.sourceCatalog.length ??
+        attempt.contract.resourceRefs.length,
     });
     return {
       schemaVersion: 'wiselink.3_1.review_turn_context.v1.c2',
@@ -351,15 +359,24 @@ export class CanonicalHostOpenClawReviewService {
     );
     const selected = sourceRefIds.map((sourceRefId) => {
       const resource = allowlist.get(sourceRefId);
-      if (!resource) throw reviewSourceRefNotAllowed();
-      return structuredClone(resource.value);
+      if (resource) return structuredClone(resource.value);
+      const contribution = attempt.contract.jobAidContext?.sourceCatalog.find(
+        (item) => item.evidenceRef === sourceRefId && item.dialogueSource,
+      );
+      if (!contribution) throw reviewSourceRefNotAllowed();
+      return {
+        ...overallModelEvidenceRegistry([contribution])[0],
+        sourceRefId,
+      };
     });
     // This records actual allowlisted resolution from the current task's
     // verified bytes, not another file download or a model-read assertion.
     await this.dispatch.recordEvidenceActivity(attempt.row, {
       kind: 'SOURCE_REFS_RESOLVED',
       sourceRefIds: [...sourceRefIds],
-      sourceCatalogCount: attempt.contract.resourceRefs.length,
+      sourceCatalogCount:
+        attempt.contract.jobAidContext?.sourceCatalog.length ??
+        attempt.contract.resourceRefs.length,
     });
     return {
       schemaVersion: 'wiselink.3_1.review_source_refs.v1.c2',
@@ -1098,6 +1115,23 @@ export class CanonicalHostOpenClawReviewService {
         this.jobAid?.enabledForNewTasks())
     )
       return this.buildJobAidTaskContract(binding, workItem);
+    if (binding.turn.requestId.startsWith('dialogue-')) {
+      if (!this.dialogueAssessments)
+        throw reviewConflict('DIALOGUE_ASSESSMENT_RUNTIME_UNAVAILABLE');
+      const request = await this.dialogueAssessments.findForTurn(
+        {
+          tenantId: binding.conversation.tenantId,
+          actorId: binding.conversation.actorId,
+        },
+        workItem.workItemId,
+        binding.turn.reviewTurnId,
+      );
+      if (
+        request &&
+        JSON.parse(request.request_json).collectionMode === 'ALL_PENDING'
+      )
+        throw reviewConflict('DIALOGUE_COLLECTION_REQUIRES_JOBAID');
+    }
     const readScope: UnifiedArtifactReadScope = new UnifiedArtifactReadScope(
       this.artifactStore,
     );
@@ -1366,6 +1400,44 @@ export class CanonicalHostOpenClawReviewService {
           artifactSha256: attachment.parsedArtifact.sha256,
           locator: '本次更新选中的讨论附件已解析页面',
         });
+      }
+    }
+    if (binding.turn.requestId.startsWith('dialogue-')) {
+      if (!this.dialogueAssessments)
+        throw reviewConflict('DIALOGUE_ASSESSMENT_RUNTIME_UNAVAILABLE');
+      const request = await this.dialogueAssessments.findForTurn(
+        {
+          tenantId: binding.conversation.tenantId,
+          actorId: binding.conversation.actorId,
+        },
+        workItem.workItemId,
+        binding.turn.reviewTurnId,
+      );
+      if (!request) throw reviewNotFound();
+      const command = JSON.parse(request.request_json);
+      if (command.collectionMode === 'ALL_PENDING') {
+        const snapshot = JSON.parse(
+          request.input_json,
+        ) as DialogueAssessmentSnapshot;
+        for (const contribution of snapshot.contributions)
+          evidence.push({
+            kind: 'ENGINEER_STATEMENT',
+            origin: 'REVIEW_CONVERSATION',
+            evidenceRef: `dialogue-contribution:${request.request_ref}:${contribution.contributionRef}:${contribution.revision}`,
+            title: `对话补充 · ${contribution.sourcePart === 'ASSISTANT' ? '模型候选' : contribution.origin === 'FEISHU_EXCERPT' ? '用户提交摘录' : '用户陈述'} · ${contribution.kind}`,
+            versionLabel: `贡献修订 ${contribution.revision}`,
+            excerpt: JSON.stringify(contribution),
+            reviewConversationId: binding.conversation.reviewConversationId,
+            reviewTurnId: binding.turn.reviewTurnId,
+            engineerSuppliedInputId: binding.turn.engineerSuppliedInputId,
+            recordedAt: binding.turn.createdAt.toISOString(),
+            dialogueSource: {
+              requestRef: request.request_ref,
+              contributionRef: contribution.contributionRef,
+              revision: contribution.revision,
+              contextWorkItemIds: snapshot.contextWorkItemIds,
+            },
+          });
       }
     }
     const jobAidContext = await this.jobAid.prepareReview({
