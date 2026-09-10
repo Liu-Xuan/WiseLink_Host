@@ -10,8 +10,12 @@ const CHANNEL_TOKEN = 'wsk_4pPoq3JOZhcjgo35HjFOd7';
 /** Native Aily owns its editor, messages, history, attachments and login. */
 export default function ContextualDialogue({
   document,
+  documentRevision,
+  discussionScope,
 }: {
   document: DialogueWorkItemOption;
+  documentRevision?: string;
+  discussionScope: '文档' | '事项';
 }) {
   const rootRef = useRef<HTMLDivElement>(null);
   const [error, setError] = useState('');
@@ -28,7 +32,23 @@ export default function ContextualDialogue({
     let disposed = false;
     let instance: AgentSDKInstance | undefined;
     setError('');
-    void initAgentChat(mount, { channelToken: CHANNEL_TOKEN })
+    void initAgentChat(mount, {
+      channelToken: CHANNEL_TOKEN,
+      customParams: {
+        documentLabel: {
+          value: document.label,
+          desc: '当前主资料名称或编号，仅用于讨论定位，不作为权限或正式证据。',
+        },
+        documentRevision: {
+          value: documentRevision ?? '未提供版本标签',
+          desc: '当前资料版本；未提供时不得推断版本。',
+        },
+        discussionScope: {
+          value: discussionScope,
+          desc: '当前页面的文档或事项类型。',
+        },
+      },
+    })
       .then(async (next) => {
         if (disposed) await next.destroy();
         else instance = next;
@@ -42,7 +62,13 @@ export default function ContextualDialogue({
       mount.remove();
       if (instance) void instance.destroy();
     };
-  }, [document.workItemId, attempt]);
+  }, [
+    document.workItemId,
+    document.label,
+    documentRevision,
+    discussionScope,
+    attempt,
+  ]);
 
   return (
     <div className="space-y-2">
@@ -63,8 +89,9 @@ export default function ContextualDialogue({
         </div>
       )}
       <p className="text-xs text-muted-foreground">
-        当前页面资料尚未自动传入
-        Aily；可在聊天中说明资料名称。讨论不会自动更新评估。
+        讨论资料：{document.label}
+        {documentRevision ? ` · ${documentRevision}` : ''}
+        。讨论不会自动更新评估。
       </p>
     </div>
   );

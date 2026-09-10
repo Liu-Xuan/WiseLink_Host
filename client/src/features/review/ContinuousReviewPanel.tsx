@@ -394,6 +394,8 @@ export default function ContinuousReviewPanel({
       {!readFailed && (
         <ContextualDialogue
           key={`${workItemId}:${matterId}`}
+          documentRevision={materials?.primary.versionLabel}
+          discussionScope={matterId ? '事项' : '文档'}
           document={{
             workItemId,
             label: materials?.primary.title ?? '当前资料',
