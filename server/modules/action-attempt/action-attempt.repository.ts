@@ -28,6 +28,7 @@ import { canonicalJson } from './action-attempt-envelope';
 import { INITIAL_ANALYSIS_REQUEST_SCHEMA } from './initial-analysis-request';
 import type {
   OpenClawResultEnvelope,
+  AnyOpenClawResultEnvelope,
   OpenClawTaskEnvelope,
 } from './action-attempt-envelope.types';
 import type {
@@ -737,7 +738,7 @@ export class ActionAttemptRepository {
     attemptId: string;
     leaseToken: string;
     leaseGeneration: number;
-    result: OpenClawResultEnvelope;
+    result: AnyOpenClawResultEnvelope;
     now: Date;
     recoveryLeaseMs: number;
   }): Promise<ActionAttemptRow | null> {
@@ -784,7 +785,7 @@ export class ActionAttemptRepository {
     now: Date;
     leaseToken?: string;
     leaseGeneration?: number;
-    result?: OpenClawResultEnvelope;
+    result?: AnyOpenClawResultEnvelope;
     projectionApplied?: boolean;
     errorCode?: string;
     errorMessage?: string;

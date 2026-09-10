@@ -56,6 +56,9 @@ const {
   CANONICAL_INITIAL_MODEL_REF,
   taskModelSelection,
 } = require('../../server/modules/model-settings/canonical-model-catalog.ts');
+const {
+  sealMatterResultEnvelope,
+} = require('../../server/modules/action-attempt/action-attempt-envelope.ts');
 const databaseUrl = process.env.ENGINEERING_MATTER_TEST_DATABASE_URL;
 const FTD_WORK_ITEM_ID = 'WI-DM-FTD-FD88DCB9CF64CF3B';
 const SB_WORK_ITEM_ID = 'WI-LOCAL-737-34-3830-ASSESSMENT';
@@ -1850,6 +1853,7 @@ async function assertMatterLeaseLifecycle(sql, owner, matterId) {
     (await owner.runtime(() => service.read(retryInput))).status,
     'TIMED_OUT',
   );
+  await assertMatterCommitRecovery(sql, owner, service, input);
 }
 
 async function assertRealMatterAttemptSave(sql, owner, matterId) {
@@ -2380,4 +2384,235 @@ async function assertMatterHistory(sql) {
       { revision_no: 3, linked_work_item_count: 3 },
     ],
   );
+}
+
+async function assertMatterCommitRecovery(sql, owner, service, baseInput) {
+  const reserved = await owner.runtime(() =>
+    service.reserve({ ...baseInput, idempotencyKey: 'matter-durable-commit' }),
+  );
+  const scope = {
+    tenantId: baseInput.tenantId,
+    matterId: baseInput.matterId,
+    actorUserId: baseInput.actorUserId,
+  };
+  const claimInput = {
+    ...scope,
+    attemptRef: reserved.task.operationRef,
+    principalId: 'hosted-test',
+  };
+  const lease = await owner.runtime(() => service.claim(claimInput));
+  const fence = {
+    ...claimInput,
+    leaseToken: lease.leaseToken,
+    leaseGeneration: lease.leaseGeneration,
+  };
+  const result = matterResult(lease.task);
+  await assert.rejects(
+    owner.runtime(() =>
+      service.prepareCommit({ ...fence, leaseGeneration: 99, result }),
+    ),
+    /LEASE_FENCE_REJECTED/u,
+  );
+  const prepared = await owner.runtime(() =>
+    service.prepareCommit({ ...fence, result }),
+  );
+  assert.equal(prepared.row.status, 'COMMITTING');
+  assert.equal(prepared.recovery, false);
+  assert.equal(
+    (await owner.runtime(() => service.prepareCommit({ ...fence, result })))
+      .recovery,
+    true,
+  );
+  const { contentHash: _hash, ...body } = result;
+  await assert.rejects(
+    owner.runtime(() =>
+      service.prepareCommit({
+        ...fence,
+        result: sealMatterResultEnvelope({
+          ...body,
+          modelOutput: '{"different":true}',
+        }),
+      }),
+    ),
+    /REPLAY_MISMATCH/u,
+  );
+  const recovery = await owner.runtime(() => service.claim(claimInput));
+  assert.equal(recovery.status, 'COMMITTING');
+  assert.deepEqual(recovery.recoveryResult, result);
+  await assert.rejects(
+    owner.runtime(() =>
+      service.claim({ ...claimInput, principalId: 'other-principal' }),
+    ),
+    /LEASE_OWNER_MISMATCH/u,
+  );
+  await assert.rejects(
+    owner.runtime(() => service.cancel({ ...claimInput, reason: 'too late' })),
+    /CANCEL_TOO_LATE/u,
+  );
+  await assert.rejects(
+    owner.runtime(() => service.finish(fence)),
+    /WORK_NOT_SAVED/u,
+  );
+  await sql`UPDATE action_attempt SET lease_expires_at = now() - interval '1 minute', deadline_at = now() - interval '1 minute'
+    WHERE attempt_id = ${prepared.row.attemptId}`;
+  assert.equal(
+    (await owner.runtime(() => service.claim(claimInput))).status,
+    'COMMITTING',
+  );
+  const basis = await owner.workingService.resolveWorkingBasis(
+    scope.matterId,
+    owner.actor,
+  );
+  const command = {
+    requestId: prepared.row.triggerRequestId,
+    expectedWorkingRevision: prepared.task.baseRevision,
+    basedOnMatterRevisionId: prepared.task.subject.matterRevisionId,
+    updateKind: 'CORRECTION',
+    changeSummary: '隔离测试：持久结果恢复保存。',
+    nextFocus: {
+      ...basis.working.state.focus,
+      question: '核对候选持久化后的读取。',
+    },
+    claimDelta: null,
+    openQuestionDelta: null,
+    reviewConditionDelta: null,
+    nextSubstantiveResult: null,
+    substantiveInputs: [],
+    coverageUpdates: [],
+  };
+  const saved = await owner.runtime(() =>
+    owner.working.withActorTransaction(scope.actorUserId, (executor) =>
+      executor.appendWorkingRevision({
+        ...scope,
+        command,
+        currentInputs: basis.currentInputs,
+        source: {
+          kind: 'ENGINEERING_MATTER',
+          actionAttemptId: prepared.row.attemptId,
+          reviewTurnId: null,
+        },
+      }),
+    ),
+  );
+  const finished = await owner.runtime(() => service.finish(fence));
+  assert.equal(finished.row.status, 'SUCCEEDED');
+  assert.equal(finished.row.projectionApplied, false);
+  assert.equal(finished.row.leaseSlot, null);
+  assert.equal(
+    finished.work.matterWorkRevisionId,
+    saved.revision.matterWorkRevisionId,
+  );
+  const replay = await owner.runtime(() => service.finish(fence));
+  assert.equal(replay.recovered, true);
+  assert.equal(
+    replay.work.matterWorkRevisionId,
+    finished.work.matterWorkRevisionId,
+  );
+  assert.equal(
+    (await owner.runtime(() => service.prepareCommit({ ...fence, result }))).row
+      .status,
+    'SUCCEEDED',
+  );
+  for (const status of ['WAITING_INPUT', 'FAILED']) {
+    const next = await owner.runtime(() =>
+      service.reserve({
+        ...baseInput,
+        expectedWorkingRevision: finished.work.workingRevision,
+        idempotencyKey: `matter-terminal-${status}`,
+      }),
+    );
+    const nextScope = { ...claimInput, attemptRef: next.task.operationRef };
+    const claimed = await owner.runtime(() => service.claim(nextScope));
+    const terminal = await owner.runtime(() =>
+      service.prepareCommit({
+        ...nextScope,
+        leaseToken: claimed.leaseToken,
+        leaseGeneration: claimed.leaseGeneration,
+        result: matterResult(claimed.task, status),
+      }),
+    );
+    assert.equal(terminal.row.status, status);
+    assert.equal(terminal.row.leaseSlot, null);
+    assert.equal(
+      (await owner.working.loadCurrent(scope)).workingRevision,
+      finished.work.workingRevision,
+    );
+  }
+  const racing = await owner.runtime(() =>
+    service.reserve({
+      ...baseInput,
+      expectedWorkingRevision: finished.work.workingRevision,
+      idempotencyKey: 'matter-working-cas-race',
+    }),
+  );
+  const racingScope = { ...claimInput, attemptRef: racing.task.operationRef };
+  const racingLease = await owner.runtime(() => service.claim(racingScope));
+  await owner.workingService.applyWorkingUpdate(
+    scope.matterId,
+    {
+      ...command,
+      requestId: 'REQ-MANUAL-WORK-BEFORE-MATTER-COMMIT',
+      expectedWorkingRevision: finished.work.workingRevision,
+      nextFocus: {
+        ...command.nextFocus,
+        question: '用户更新后的事项关注范围。',
+      },
+    },
+    owner.actor,
+  );
+  await assert.rejects(
+    owner.runtime(() =>
+      service.prepareCommit({
+        ...racingScope,
+        leaseToken: racingLease.leaseToken,
+        leaseGeneration: racingLease.leaseGeneration,
+        result: matterResult(racingLease.task),
+      }),
+    ),
+    /MATTER_WORKING_REVISION_CHANGED_BEFORE_COMMIT/u,
+  );
+  assert.equal(
+    (await owner.runtime(() => service.read(racingScope))).status,
+    'CONFLICT',
+  );
+  assert.equal(
+    (await owner.working.loadCurrent(scope)).workingRevision,
+    finished.work.workingRevision + 1,
+  );
+}
+
+function matterResult(task, status = 'SUCCEEDED') {
+  return sealMatterResultEnvelope({
+    schemaVersion: 'wiselink.3_1.openclaw_result_envelope.v2',
+    actionAttemptId: task.actionAttemptId,
+    operationRef: task.operationRef,
+    taskType: task.taskType,
+    subject: task.subject,
+    baseRevision: task.baseRevision,
+    status,
+    businessOutcome:
+      status === 'SUCCEEDED'
+        ? 'CANDIDATE_READY'
+        : status === 'WAITING_INPUT'
+          ? 'WAITING_INPUT'
+          : 'NOT_PRODUCED',
+    candidateStatus: status === 'WAITING_INPUT' ? 'WAITING_INPUT' : null,
+    modelOutput: status === 'SUCCEEDED' ? '{"isolatedCandidate":true}' : null,
+    outputArtifactRefs: [],
+    sourceRefs: task.sourceRefs,
+    factsConsidered: [],
+    missingInputs:
+      status === 'WAITING_INPUT'
+        ? [{ code: 'MISSING_RECORD', message: '缺少对象记录。' }]
+        : [],
+    conflicts: [],
+    warnings: [],
+    modelVersion: 'isolated-fixture',
+    promptVersion: 'isolated-fixture',
+    skillVersion: 'isolated-fixture',
+    toolVersions: {},
+    runMetrics: { durationMs: 1, inputUnits: 1, outputUnits: 1 },
+    errorCode: status === 'FAILED' ? 'FIXTURE_FAILED' : null,
+    errorDetail: status === 'FAILED' ? 'isolated failure' : null,
+  });
 }

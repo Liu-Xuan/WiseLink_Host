@@ -1,7 +1,11 @@
 import { randomUUID } from 'node:crypto';
 import { Injectable } from '@nestjs/common';
 import { and, desc, eq, inArray } from 'drizzle-orm';
-import { actionAttempt, engineeringMatter } from '../../database/schema';
+import {
+  actionAttempt,
+  engineeringMatter,
+  engineeringMatterWorkRevision,
+} from '../../database/schema';
 import {
   ActionAttemptRepository,
   isLeaseSlotConflict,
@@ -9,14 +13,17 @@ import {
 import {
   canonicalJson,
   parseMatterTaskEnvelope,
+  parseMatterResultEnvelope,
   sealMatterTaskEnvelope,
 } from '../action-attempt/action-attempt-envelope';
 import type {
   EngineeringMatterAttemptTrigger,
   OpenClawMatterTaskEnvelope,
+  OpenClawMatterResultEnvelope,
 } from '../action-attempt/action-attempt-envelope.types';
 import {
   ACTION_ATTEMPT_DEFAULT_DEADLINE_MS,
+  ACTION_ATTEMPT_COMMIT_RECOVERY_MS,
   ACTION_ATTEMPT_LEASE_MS,
   ACTION_ATTEMPT_MAX_PARALLEL,
   ACTION_ATTEMPT_REQUEST_ORIGIN,
@@ -216,6 +223,11 @@ export class MatterActionAttemptService {
     const outcome = await this.authorized(input, async (executor, queue) => {
       let row = await scopedRow(queue, input, input.attemptRef);
       const now = new Date();
+      if (row.status === 'COMMITTING') {
+        if (row.leaseOwner !== input.principalId)
+          throw failure('ACTION_ATTEMPT_LEASE_OWNER_MISMATCH');
+        return recoveryClaim(row);
+      }
       if (
         row.status === 'RUNNING' &&
         row.leaseExpiresAt &&
@@ -342,6 +354,181 @@ export class MatterActionAttemptService {
     });
   }
 
+  /** Durable cutoff. Result replay is checked before any candidate is written. */
+  async prepareCommit(
+    input: MatterAttemptScope &
+      ActionAttemptFence & { principalId: string; result: unknown },
+  ) {
+    const outcome = await this.authorized(input, async (executor, queue) => {
+      let row = await scopedRow(queue, input, input.attemptRef);
+      const task = checkedTask(row);
+      const result = parseMatterResultEnvelope({ task, value: input.result });
+      if (
+        row.status === 'COMMITTING' ||
+        ['SUCCEEDED', 'FAILED', 'WAITING_INPUT'].includes(row.status)
+      ) {
+        const stored = checkedResult(row);
+        if (stored.contentHash !== result.contentHash)
+          throw failure('RESULT_ENVELOPE_REPLAY_MISMATCH');
+        if (row.status === 'COMMITTING') assertLease(row, input);
+        return { row, task, result: stored, recovery: true };
+      }
+      if (row.status !== 'RUNNING')
+        throw failure(`ACTION_ATTEMPT_${row.status}`);
+      assertLease(row, input);
+      const now = new Date();
+      if (row.deadlineAt && row.deadlineAt <= now) {
+        if (
+          !(await queue.finishTerminal({
+            attemptId: row.attemptId,
+            fromStatus: 'RUNNING',
+            status: 'TIMED_OUT',
+            terminalReason: 'ACTION_ATTEMPT_DEADLINE_EXCEEDED',
+            leaseToken: input.leaseToken,
+            leaseGeneration: input.leaseGeneration,
+            now,
+          }))
+        )
+          throw failure('ACTION_ATTEMPT_TIMEOUT_FENCE_REJECTED');
+        return { error: 'ACTION_ATTEMPT_TIMED_OUT' };
+      }
+      if (!row.leaseExpiresAt || row.leaseExpiresAt <= now) {
+        await queue.recoverExpiredRunning({ attemptId: row.attemptId, now });
+        return { error: 'ACTION_ATTEMPT_LEASE_EXPIRED' };
+      }
+      if (row.cancelRequestedAt) throw failure('ACTION_ATTEMPT_CANCELLED');
+      if (result.status !== 'SUCCEEDED') {
+        if (
+          !(await queue.finishTerminal({
+            attemptId: row.attemptId,
+            fromStatus: 'RUNNING',
+            status:
+              result.status === 'WAITING_INPUT' ? 'WAITING_INPUT' : 'FAILED',
+            terminalReason: result.errorCode ?? 'HOST_RESOLVED_INPUT_REQUIRED',
+            result,
+            leaseToken: input.leaseToken,
+            leaseGeneration: input.leaseGeneration,
+            now,
+          }))
+        )
+          throw failure('ACTION_ATTEMPT_TERMINALIZATION_LOST');
+        return {
+          row: await scopedRow(queue, input, input.attemptRef),
+          task,
+          result,
+          recovery: false,
+        };
+      }
+      // Serialize the work-version check against every Matter working append.
+      await executor.database
+        .select({ id: engineeringMatter.matterId })
+        .from(engineeringMatter)
+        .where(
+          and(
+            eq(engineeringMatter.tenantId, input.tenantId),
+            eq(engineeringMatter.matterId, input.matterId),
+          ),
+        )
+        .limit(1)
+        .for('update');
+      const current = await executor.loadCurrent(input);
+      if ((current?.workingRevision ?? 0) !== row.baseRevision) {
+        if (
+          !(await queue.finishTerminal({
+            attemptId: row.attemptId,
+            fromStatus: 'RUNNING',
+            status: 'CONFLICT',
+            terminalReason: 'MATTER_WORKING_REVISION_CHANGED_BEFORE_COMMIT',
+            result,
+            leaseToken: input.leaseToken,
+            leaseGeneration: input.leaseGeneration,
+            now,
+          }))
+        )
+          throw failure('ACTION_ATTEMPT_TERMINALIZATION_LOST');
+        return { error: 'MATTER_WORKING_REVISION_CHANGED_BEFORE_COMMIT' };
+      }
+      if (
+        !(await queue.markCommitting({
+          attemptId: row.attemptId,
+          leaseToken: input.leaseToken,
+          leaseGeneration: input.leaseGeneration,
+          result,
+          now,
+          recoveryLeaseMs: ACTION_ATTEMPT_COMMIT_RECOVERY_MS,
+        }))
+      )
+        throw failure('ACTION_ATTEMPT_COMMIT_CUTOFF_LOST');
+      row = await scopedRow(queue, input, input.attemptRef);
+      return { row, task, result: checkedResult(row), recovery: false };
+    });
+    if ('error' in outcome) throw failure(outcome.error);
+    return outcome;
+  }
+
+  /** Finish only after the exact candidate work is durably present and authorized. */
+  finish(
+    input: MatterAttemptScope & ActionAttemptFence & { principalId: string },
+  ) {
+    return this.authorized(input, async (executor, queue) => {
+      let row = await scopedRow(queue, input, input.attemptRef);
+      if (!['COMMITTING', 'SUCCEEDED'].includes(row.status))
+        throw failure('ACTION_ATTEMPT_NOT_COMMITTING');
+      if (row.status === 'COMMITTING') assertLease(row, input);
+      const result = checkedResult(row);
+      if (result.status !== 'SUCCEEDED')
+        throw failure('ACTION_ATTEMPT_RESULT_NOT_CANDIDATE');
+      const [stored] = await executor.database
+        .select()
+        .from(engineeringMatterWorkRevision)
+        .where(
+          and(
+            eq(engineeringMatterWorkRevision.tenantId, input.tenantId),
+            eq(engineeringMatterWorkRevision.matterId, input.matterId),
+            eq(engineeringMatterWorkRevision.actionAttemptId, row.attemptId),
+          ),
+        )
+        .limit(1);
+      if (!stored) throw failure('MATTER_ATTEMPT_WORK_NOT_SAVED');
+      if (
+        stored.reviewTurnId !== null ||
+        stored.createdByUserId !== input.actorUserId ||
+        stored.workingRevision !== row.baseRevision! + 1 ||
+        stored.basedOnMatterRevisionId !== row.matterRevisionId ||
+        stored.requestId !== row.triggerRequestId
+      )
+        throw failure('MATTER_ATTEMPT_SAVED_WORK_MISMATCH');
+      const work = await this.working.readByRef(
+        {
+          tenantId: input.tenantId,
+          matterId: input.matterId,
+          workRef: stored.matterWorkRevisionId,
+        },
+        executor.database,
+      );
+      if (!work) throw failure('MATTER_ATTEMPT_WORK_NOT_SAVED');
+      const recovered = row.status === 'SUCCEEDED';
+      if (!recovered) {
+        if (
+          !(await queue.finishTerminal({
+            attemptId: row.attemptId,
+            fromStatus: 'COMMITTING',
+            status: 'SUCCEEDED',
+            terminalReason: 'MATTER_WORK_CANDIDATE_PERSISTED',
+            result,
+            projectionApplied: false,
+            leaseToken: input.leaseToken,
+            leaseGeneration: input.leaseGeneration,
+            now: new Date(),
+          }))
+        )
+          throw failure('ACTION_ATTEMPT_TERMINALIZATION_LOST');
+        row = await scopedRow(queue, input, input.attemptRef);
+      }
+      return { row, work, recovered };
+    });
+  }
+
   private authorized<T>(
     scope: MatterAttemptScope,
     operation: (
@@ -415,6 +602,42 @@ function runningClaim(row: MatterActionAttemptRow) {
     leaseGeneration: row.leaseGeneration,
     leaseExpiresAt: row.leaseExpiresAt.toISOString(),
     task: checkedTask(row),
+  };
+}
+
+function checkedResult(
+  row: MatterActionAttemptRow,
+): OpenClawMatterResultEnvelope {
+  if (!row.resultEnvelopeJson) throw failure('RESULT_ENVELOPE_MISSING');
+  const result = parseMatterResultEnvelope({
+    task: checkedTask(row),
+    value: JSON.parse(row.resultEnvelopeJson),
+  });
+  if (result.contentHash !== row.resultContentHash)
+    throw failure('RESULT_ENVELOPE_ROW_HASH_MISMATCH');
+  if (
+    row.cancelRequestedAt &&
+    (!row.commitStartedAt || row.cancelRequestedAt <= row.commitStartedAt)
+  )
+    throw failure('ACTION_ATTEMPT_CANCELLED_BEFORE_COMMIT');
+  return result;
+}
+
+function recoveryClaim(row: MatterActionAttemptRow) {
+  if (
+    !row.leaseToken ||
+    !row.leaseExpiresAt ||
+    row.executorSessionKey !== `g2-action-attempt:${row.operationRef}`
+  )
+    throw failure('ACTION_ATTEMPT_COMMIT_RECOVERY_READBACK_INVALID');
+  return {
+    attemptRef: row.operationRef!,
+    status: 'COMMITTING' as const,
+    leaseToken: row.leaseToken,
+    leaseGeneration: row.leaseGeneration,
+    leaseExpiresAt: row.leaseExpiresAt.toISOString(),
+    task: checkedTask(row),
+    recoveryResult: checkedResult(row),
   };
 }
 
