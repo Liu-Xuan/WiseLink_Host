@@ -54,5 +54,17 @@ describe('DriveSourceScanService', () => {
     });
     expect(result.candidates[0]?.identity).toBe('operations:file:file-3:v1');
     expect(result.candidates[0]?.providerVersionId).toBe('v1');
+    expect(result.changes[0]?.change).toBe('NEW');
+  });
+
+  it('classifies changes against an explicitly supplied prior candidate snapshot', async () => {
+    const checkpoints = { forTenant: () => ({ load: async () => null, save: async () => undefined }) };
+    const service = new DriveSourceScanService(checkpoints as never);
+    const previous = [{ sourceKey: 'operations', providerObjectId: 'file-4', providerVersionId: 'v1', entryType: 'file', name: '日报.pdf', path: '日报.pdf', modifiedTime: null, identity: 'operations:file:file-4:v1' }];
+    const result = await service.scanCandidates({
+      tenantId: 'tenant-4', sourceKey: 'operations', previousCandidates: previous,
+      fetcher: { list: async () => ({ files: [{ token: 'file-4', type: 'file', name: '日报.pdf', version_id: 'v2' }], hasMore: false }) },
+    });
+    expect(result.changes).toEqual([expect.objectContaining({ providerObjectId: 'file-4', change: 'CHANGED' })]);
   });
 });

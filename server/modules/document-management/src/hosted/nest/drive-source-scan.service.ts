@@ -3,7 +3,7 @@ import { driveSourceScanRoots, WISELINK_DRIVE_SOURCES } from '../wiselink-drive-
 import { runDriveFolderScan } from '../drive-folder-scan-coordinator';
 import type { DrivePage, DriveFolderScanResult } from '../drive-folder-scanner';
 import { DriveScanCheckpointRepository } from './drive-scan-checkpoint.repository';
-import { toDriveSourceCandidates, type DriveSourceCandidate } from '../drive-source-candidate';
+import { classifyDriveSourceCandidates, toDriveSourceCandidates, type DriveSourceCandidate, type DriveSourceCandidateChange } from '../drive-source-candidate';
 
 export interface AuthorizedDrivePageFetcher {
   list(folderToken: string, pageToken?: string): Promise<DrivePage>;
@@ -12,6 +12,8 @@ export interface AuthorizedDrivePageFetcher {
 export interface DriveSourceScanCandidates {
   scan: DriveFolderScanResult;
   candidates: DriveSourceCandidate[];
+  /** Identity changes only; callers must persist/accept them explicitly. */
+  changes: DriveSourceCandidateChange[];
 }
 
 /** Host-owned source scan entry point. Credentials and scheduling stay outside this service. */
@@ -44,10 +46,12 @@ export class DriveSourceScanService {
     tenantId: string;
     sourceKey: string;
     fetcher: AuthorizedDrivePageFetcher;
+    previousCandidates?: readonly DriveSourceCandidate[];
     maxPages?: number;
     maxEntries?: number;
   }): Promise<DriveSourceScanCandidates> {
     const scan = await this.scan(input);
-    return { scan, candidates: toDriveSourceCandidates(input.sourceKey, scan.entries) };
+    const candidates = toDriveSourceCandidates(input.sourceKey, scan.entries);
+    return { scan, candidates, changes: classifyDriveSourceCandidates(input.previousCandidates ?? [], candidates) };
   }
 }
