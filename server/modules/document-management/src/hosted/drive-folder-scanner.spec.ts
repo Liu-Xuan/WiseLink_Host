@@ -9,14 +9,16 @@ describe('scanDriveFolders', () => {
   });
 
   it('stops at the entry bound even when one page contains more entries', async () => {
+    const checkpoints: unknown[] = [];
     const result = await scanDriveFolders([{ folderToken: 'root', path: 'root', depth: 0 }], async () => ({
       files: [
         { token: 'file-1', type: 'file', name: '一.pdf' },
         { token: 'file-2', type: 'file', name: '二.pdf' },
       ], hasMore: false,
-    }), { maxEntries: 1 });
+    }), { maxEntries: 1, onPage: continuation => { checkpoints.push(continuation); } });
     expect(result.entries).toHaveLength(1);
     expect(result.continuation).toEqual([{ folderToken: 'root', path: 'root', depth: 0, entryOffset: 1 }]);
+    expect(checkpoints).toEqual([[{ folderToken: 'root', path: 'root', depth: 0, entryOffset: 1 }]]);
     const resumed = await scanDriveFolders(result.continuation, async () => ({
       files: [
         { token: 'file-1', type: 'file', name: '一.pdf' },
