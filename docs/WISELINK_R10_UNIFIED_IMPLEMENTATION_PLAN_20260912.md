@@ -35,6 +35,7 @@ Worker 现有 `tasks/:taskId` 与 `tasks/:taskId/result` 接口已接入 Host �
 检索服务增加 `WL_ENGINEERING_SEARCH_PROJECTION=1` 受控切换；开启后先查投影，再按精确 revision 回读完整工作和 ACL，未开启仍使用现有路径，避免迁移未发布时静默断链。
 投影写入现在优先复用 WorkItem/Matter 保存事务的数据库句柄，保留平台设置的 tenant/actor RLS 上下文；无事务句柄的重建任务才开启独立事务。相关保存与 continuation 测试共 36 项通过。
 本轮审查修正事项投影的身份映射：`owner_id` 继续保存创建者用于 ACL，`parent_context_ref` 保存真实 `matterId`，投影命中回读事项工作时不再把创建者误当事项 ID。新增隔离测试覆盖该边界；类型检查及 3 项投影/迁移测试通过。数据库迁移仍未执行，待有效开发库连接。
+随后修正候选覆盖边界：事项成员的现有 `authorizedMatter`/输入授权不能由投影的创建者列预筛掉。0039 的 RLS 现在只限定当前租户，查询只返回投影身份元数据，命中正文仍必须逐项通过现有完整工作读取和 ACL；迁移未执行前不启用投影开关。
 
 **W4 共享目录和变化。** 首批接技术资料目录 Q6uSfDwcDlBrUldWvZccoje8nXf 与每日运行目录 Oy1vfy8nslGZeUdBBkoczv0Fnxh，其余目录、SB、AD、会议和问题表复用同一配置机制。后台使用真实获准应用/委托身份。扫描采用递归分页、可恢复 frontier/游标和周期对账，事件只作加速；文件、期次、报道和原生记录分别建模，同名、token 或字节相同不能替代业务身份。
 
