@@ -37,7 +37,10 @@ export class MineruHostedRuntime {
         const code = runtimeErrorCode(error);
         this.readiness = { ...this.readiness, state: code === 'MINERU_RUNTIME_NOT_CONFIGURED' ? 'NOT_CONFIGURED' : 'FAILED', stage: null, errorCode: code };
         this.configuration = undefined;
-        this.logger.error(`MinerU environment preparation failed: ${code}`);
+        const failure = error as NodeJS.ErrnoException;
+        this.logger.error(`MinerU environment preparation failed: ${code}; ${JSON.stringify({
+          code: failure.code, syscall: failure.syscall, path: failure.path,
+        })}`);
       }).finally(() => { this.preparation = undefined; });
     }
     return { ...this.readiness };
