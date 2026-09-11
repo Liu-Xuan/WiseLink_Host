@@ -88,6 +88,11 @@ export default function EngineeringIssueSearch({
       {results?.hits.length === 0 ? (
         <p>未找到可供当前账户阅读的匹配问题。</p>
       ) : null}
+      {results?.limitations.map((limitation) => (
+        <p key={limitation} className="text-xs text-muted-foreground">
+          检索范围：{limitation}
+        </p>
+      ))}
       {results?.hits.map((hit) => (
         <div
           key={`${hit.subjectId}:${hit.workRef}:${hit.issueKey}`}
@@ -121,7 +126,8 @@ export default function EngineeringIssueSearch({
           </Button>
           <p className="text-xs text-muted-foreground">
             {hit.subjectKind === 'WORK_ITEM' ? '文档任务' : '工程事项'} ·
-            工作修订 {hit.workRevision} · 候选认识
+            工作修订 {hit.workRevision} · 候选认识 · 命中 {hit.reason === 'EXACT_IDENTIFIER' ? '精确标识' : '全文'} ·
+            范围 {hit.matchedRange} · 根来源 {hit.rootRefs.length} 项
           </p>
         </div>
       ))}
