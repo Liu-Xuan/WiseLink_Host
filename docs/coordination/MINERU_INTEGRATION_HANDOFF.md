@@ -4,6 +4,8 @@
 
 本文件下方的历史交接仍保留当时的排障过程和实现证据；当前实施以 R10 统一架构为准：Host 不再启动本地 MinerU Python/runner，解析计算由同级独立应用 `wiselink-mineru-worker` 承担。Host 只负责已授权原件读取、`parseRun` 状态、远端任务幂等/恢复、产物长度与 SHA-256 校验、FileService 持久化、逐项读回和事务/CAS 发布。
 
+2026-09-12 只读路由核验：Worker 健康入口 `/openapi/mineru-worker/health` 可达，但未携带服务间 Bearer token 时返回 HTTP 403 `missing or invalid Authorization header`；带 `/api` 的相似路径返回妙搭 HTML，不是 Worker API。该结果只证明路由存在和鉴权边界生效，不证明 runtime READY、CLI 成功、产物发布或业务阅读可用。
+
 当前 Worker `sprint/default` 已推送 `ec6a027`、`978c4de`。`/openapi/mineru-worker/*` 在包含妙搭 `CLIENT_BASE_PATH` 的路径下已实际启用 `WL_MINERU_WORKER_API_KEY` Bearer 校验：缺 key 返回 401，正确 key 的 health 返回 200。Host 与 Worker 使用同一服务间 token；它只保护传输边界，不代替文档/租户/actor 授权。
 
 真实运行核验仍未完成：Worker `runtime/prepare` 返回 `MINERU_RUNTIME_PREPARATION_FAILED`，`totalFiles=56`、`verifiedFiles=0`。本机直接运行离线安装脚本返回 `MINERU_OFFLINE_PLATFORM_UNSUPPORTED`，因为本机不是 Worker 要求的 Linux x86_64 / CPython 3.10；不能用本机路径、旧 Host 临时目录或旧 Host runtime 证据填补生产配置。恢复条件是在线 Worker 取得其应用 FileService 的 56 个 runtime 文件并在目标 Linux 环境达到 READY，随后用 `document_version_b83523c2b5ba26a2b1753641` 做真实 FTD parseRun，分别验收产物发布和 Reader 阅读。
