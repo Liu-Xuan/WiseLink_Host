@@ -137,11 +137,12 @@ export class DocumentParsingHostedService {
       const code = safeErrorCode(error);
       this.logger.error(`Document parse ${run.parseRunId} failed: ${code}`);
       if (error instanceof MineruExecutionError) {
-        // Keep terminal exception diagnostics, not document content or stdout.
-        const exceptions = error.stderr.split('\n')
-          .filter(line => /^[A-Za-z][\w.]*Error:/.test(line))
-          .map(line => line.replace(/https?:\/\/\S+/g, '[URL]').slice(0, 1000)).slice(-4);
-        this.logger.error(`MinerU process ${run.parseRunId}: ${JSON.stringify({ exit: error.message, exceptions })}`);
+        // MinerU's Click CLI reports task failures over multiple stderr lines;
+        // Python-exception-only filtering loses the actual task failure reason.
+        // Keep a bounded diagnostic tail in Host logs, never model output/stdout.
+        const stderr = error.stderr.replace(/\u001b\[[0-9;]*m/g, '')
+          .replace(/https?:\/\/\S+/g, '[URL]').slice(-6000);
+        this.logger.error(`MinerU process ${run.parseRunId}: ${JSON.stringify({ exit: error.message, stderr })}`);
       }
       try {
         await this.repository.fail(scope, run.parseRunId, { errorCode: code,
