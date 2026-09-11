@@ -1,6 +1,13 @@
 import { scanDriveFolders } from './drive-folder-scanner';
 
 describe('scanDriveFolders', () => {
+  it('rejects non-positive scan bounds before fetching', async () => {
+    const fetchPage = jest.fn();
+    await expect(scanDriveFolders([{ folderToken: 'root', path: 'root', depth: 0 }], fetchPage, { maxPages: 0 }))
+      .rejects.toThrow('DRIVE_SCAN_OPTIONS_INVALID');
+    expect(fetchPage).not.toHaveBeenCalled();
+  });
+
   it('stops at the entry bound even when one page contains more entries', async () => {
     const result = await scanDriveFolders([{ folderToken: 'root', path: 'root', depth: 0 }], async () => ({
       files: [

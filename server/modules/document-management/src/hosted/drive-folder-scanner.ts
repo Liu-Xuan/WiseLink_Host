@@ -49,6 +49,8 @@ export async function scanDriveFolders(
   const maxPages = options.maxPages ?? 100;
   const maxEntries = options.maxEntries ?? 10_000;
   const maxRetries = options.maxMissingPageTokenRetries ?? 3;
+  if (![maxPages, maxEntries, maxRetries].every(value => Number.isSafeInteger(value) && value > 0))
+    throw new Error('DRIVE_SCAN_OPTIONS_INVALID');
   const queue = roots.map(root => ({ ...root }));
   const entries: Array<DriveEntry & { path: string; depth: number }> = [];
   const continuation: DriveFolderScanState[] = [];
