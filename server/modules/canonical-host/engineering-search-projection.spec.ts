@@ -1,4 +1,10 @@
-import { buildWorkSearchProjection } from './engineering-search-projection';
+import { buildWorkSearchProjection, projectionOwnerToSubjectKind } from './engineering-search-projection';
+
+it('maps persisted projection owners to the public search subject kinds', () => {
+  expect(projectionOwnerToSubjectKind('USER')).toBe('WORK_ITEM');
+  expect(projectionOwnerToSubjectKind('MATTER')).toBe('ENGINEERING_MATTER');
+  expect(projectionOwnerToSubjectKind('SOURCE')).toBeNull();
+});
 
 describe('buildWorkSearchProjection', () => {
   it('keeps issue locators and exact revision while producing rebuildable text', () => {

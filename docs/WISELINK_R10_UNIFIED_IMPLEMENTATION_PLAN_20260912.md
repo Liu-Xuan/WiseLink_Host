@@ -39,7 +39,7 @@ Worker 现有 `tasks/:taskId` 与 `tasks/:taskId/result` 接口已接入 Host �
 本轮审查修正事项投影的身份映射：`owner_id` 继续保存创建者用于 ACL，`parent_context_ref` 保存真实 `matterId`，投影命中回读事项工作时不再把创建者误当事项 ID。新增隔离测试覆盖该边界；类型检查及 3 项投影/迁移测试通过。数据库迁移仍未执行，待有效开发库连接。
 随后修正候选覆盖边界：事项成员的现有 `authorizedMatter`/输入授权不能由投影的创建者列预筛掉。0039 的 RLS 现在只限定当前租户，查询只返回投影身份元数据，命中正文仍必须逐项通过现有完整工作读取和 ACL；迁移未执行前不启用投影开关。
 
-检索返回协议已补齐 `kind`、`matchedRange`、`reason`、`rootRefs` 和 `limitations`。当前已接通的消费者只返回 `WORK` 问题工作；命中理由区分精确问题标识和全文，正文仍需按精确 revision 与现有 ACL 展开，不能把命中元数据当作授权或全量统计。投影路径目前保留明确的全文限制说明，尚未接入来源语义段和原生记录类型。
+检索返回协议已补齐 `kind`、`matchedRange`、`reason`、`rootRefs` 和 `limitations`。当前已接通的消费者只返回 `WORK` 问题工作；命中理由区分精确问题标识和全文，正文仍需按精确 revision 与现有 ACL 展开，不能把命中元数据当作授权或全量统计。投影路径将持久化 `USER/MATTER` owner 映射为公开的 `WORK_ITEM/ENGINEERING_MATTER` subject kind，避免投影写入语义与读取协议不一致；仍尚未接入来源语义段和原生记录类型。
 
 投影搜索现在也根据 `identifiers` 命中分支返回 `EXACT_IDENTIFIER`，其余返回 `FULL_TEXT`；两条路径都继续按精确 revision 和现有 ACL 回读正文。
 

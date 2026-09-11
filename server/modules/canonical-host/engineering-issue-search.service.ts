@@ -21,6 +21,7 @@ import { isHostedCanonicalFinalUserActor } from '../work-item/miaoda-hosted-cano
 import { jobAidReadingResult } from './jobaid-problem-work';
 import { collectIssueEvidenceUses } from '@shared/jobaid-evidence-uses';
 import { prepareEngineeringSearchQuery } from './engineering-search-text';
+import { projectionOwnerToSubjectKind } from './engineering-search-projection';
 
 type IssueIdentity = Pick<
   EngineeringIssueSearchHit,
@@ -144,8 +145,8 @@ export class EngineeringIssueSearchService {
     const workReads = new Map<string, Promise<SavedIssueWork>>();
     for (const row of rows) {
       const match = row.entryId.match(/^(.*):issue:(.*)$/);
-      if (!match || !['WORK_ITEM', 'ENGINEERING_MATTER'].includes(row.ownerKind)) continue;
-      const subjectKind = row.ownerKind as IssueIdentity['subjectKind'];
+      const subjectKind = projectionOwnerToSubjectKind(row.ownerKind);
+      if (!match || !subjectKind) continue;
       const subjectId = row.parentContextRef || row.ownerId;
       const key = JSON.stringify([subjectKind, subjectId, row.exactRevisionRef]);
       let work = workReads.get(key);

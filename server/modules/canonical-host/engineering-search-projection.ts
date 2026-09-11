@@ -17,6 +17,12 @@ export interface EngineeringSearchProjectionEntry {
   search: EngineeringSearchText;
 }
 
+export function projectionOwnerToSubjectKind(ownerKind: string): 'WORK_ITEM' | 'ENGINEERING_MATTER' | null {
+  if (ownerKind === 'USER') return 'WORK_ITEM';
+  if (ownerKind === 'MATTER') return 'ENGINEERING_MATTER';
+  return null;
+}
+
 /** Builds only derived rows; callers persist them after a successful work CAS. */
 export function buildWorkSearchProjection(input: {
   ownerKind: 'USER' | 'MATTER'; ownerId: string; subjectId?: string; exactRevisionRef: string;
