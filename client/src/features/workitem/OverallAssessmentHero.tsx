@@ -40,7 +40,7 @@ function SourceBoundStatement({
       <p className="wl-engineering-statement-text">{statement.text}</p>
       <div className="wl-engineering-statement-meta">
         <span className="wl-statement-basis" data-basis={statement.basis}>
-          {statement.basis === 'SOURCE_FACT' ? '来源事实' : '条件性推断'}
+          {statement.basis === 'SOURCE_FACT' ? '来源陈述' : '条件性推断'}
         </span>
         {statement.sourceRefIds.map((sourceRefId: string, index: number) => (
           <button

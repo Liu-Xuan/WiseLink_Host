@@ -36,7 +36,7 @@ const AssessmentReadingBrief: FC<AssessmentReadingBriefProps> = ({
         {claim.text}
       </p>
       <div className="flex flex-wrap items-center gap-3 text-xs text-muted-foreground">
-        <span>{claim.basis === 'SOURCE_FACT' ? '来源事实' : '条件性推断'}</span>
+        <span>{claim.basis === 'SOURCE_FACT' ? '来源陈述' : '条件性推断'}</span>
         <Button
           variant="ghost"
           size="sm"

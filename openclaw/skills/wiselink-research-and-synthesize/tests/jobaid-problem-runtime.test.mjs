@@ -200,11 +200,136 @@ const completed = {
   understanding: 'The source condition remains; reliability is unqueried.',
 };
 
+test('a completed text-only correction resumes from its durable response and preserves the rejected work', () => persisted(async checkpoint => {
+  const input = modelInput();
+  input.availableSources = [{ ref: 'engineer:1', kind: 'ENGINEER_STATEMENT' }];
+  const invalid = { ...completed, issues: [{ issueKey: 'maintenance', riskScenarios: [{
+    scenario: 'Conditional maintenance disruption', conditions: ['Engineering hypothesis'],
+    likelihood: { label: '不大可能', reason: 'Unverified statement', basisRefs: ['engineer:1'] },
+    limitations: ['No business likelihood evidence'],
+  }] }] };
+  const corrected = structuredClone(invalid);
+  corrected.issues[0].riskScenarios[0].likelihood = null;
+  const f = fixture([{ action: 'SAVE_WORK', work: invalid }, { action: 'SAVE_WORK', work: corrected }, { action: 'FINISH' }],
+    { assessmentCheckpoint: checkpoint });
+  const save = f.options.saveAssessmentWork;
+  let saves = 0;
+  f.options.saveAssessmentWork = async args => {
+    if (++saves === 1) throw Object.assign(new Error('Rejected'), { hostErrorCode: 'JOBAID_LIKELIHOOD_BUSINESS_EVIDENCE_REQUIRED' });
+    return save(args);
+  };
+  const gateway = f.dependencies.requestGateway;
+  let generations = 0;
+  f.dependencies.requestGateway = async (url, request) => {
+    if (++generations !== 2) return gateway(url, request);
+    f.calls.push(JSON.parse(request.body));
+    return new Response(JSON.stringify({ choices: [{ finish_reason: 'stop', message: { role: 'assistant',
+      content: 'A completed explanation without the required function.' } }] }), { status: 200 });
+  };
+  let interrupted = false;
+  f.options.observeCandidateRejection = async event => {
+    if (event.code === 'JOBAID_MODEL_OUTPUT_FUNCTION_REQUIRED' && !interrupted) {
+      interrupted = true; throw new Error('Simulated process interruption');
+    }
+  };
+  await assert.rejects(f.run(input), /Simulated process interruption/);
+  const recorded = await checkpoint.readOptional('assessment-round-2.result');
+  await f.run(input);
+  assert.deepEqual(await checkpoint.readOptional('assessment-round-2.result'), recorded);
+  assert.equal(generations, 4, 'completed text-only response is reused, not generated again');
+  assert.equal(saves, 2, 'the original rejected SAVE is not repeated');
+  assert.equal(f.reads.length, 0);
+  const rejection = JSON.parse(f.calls[1].messages.at(-1).content);
+  assert.equal(rejection.fieldErrors[0].path, 'work.issues[0].riskScenarios[0].likelihood');
+  assert.deepEqual(rejection.fieldErrors[0].sourceKinds, ['ENGINEER_STATEMENT']);
+  assert.match(rejection.instruction, /null.*preserve the scenario/);
+  const correctionMessages = f.calls[2].messages;
+  assert.equal(JSON.parse(correctionMessages.at(-1).content).errorCode, 'JOBAID_MODEL_OUTPUT_FUNCTION_REQUIRED');
+  assert.equal(JSON.parse(correctionMessages.at(-1).content).priorRejection.fieldErrors[0].path,
+    'work.issues[0].riskScenarios[0].likelihood');
+  assert.ok(correctionMessages.some(message => message.role === 'tool' && message.content.includes('JOBAID_LIKELIHOOD_BUSINESS_EVIDENCE_REQUIRED')));
+  assert.equal(JSON.stringify(correctionMessages).includes('A completed explanation without'), false);
+  assert.deepEqual(f.saves[0] && JSON.parse(f.saves[0].workJson), corrected);
+}));
+
+test('text-only protocol corrections are bounded and truncated or foreign calls are not repaired', async () => {
+  for (const mode of ['text', 'truncated', 'foreign-call']) {
+    const f = fixture([]); let calls = 0;
+    f.dependencies.requestGateway = async () => {
+      calls++;
+      return new Response(JSON.stringify({ choices: [{ finish_reason: mode === 'truncated' ? 'length' : 'stop',
+        message: { role: 'assistant', content: 'Unusable output', ...(mode === 'foreign-call' ? {
+          tool_calls: [{ id: 'unapproved', type: 'function', function: { name: 'other_tool', arguments: '{}' } }],
+        } : {}) } }] }), { status: 200 });
+    };
+    await assert.rejects(f.run(), /JOBAID_MODEL_OUTPUT_FUNCTION_INVALID/);
+    assert.equal(calls, mode === 'text' ? 3 : 1);
+    assert.equal(f.saves.length, 0);
+  }
+});
+
 async function persisted(run) {
   const directory = await mkdtemp(join(tmpdir(), 'jobaid-round-recovery-'));
   try { await run(await createCheckpointStore(directory)); }
   finally { await rm(directory, { recursive: true, force: true }); }
 }
+
+test('Matter counts durable model execution while keeping the Host deadline across maintenance downtime', () => persisted(async checkpoint => {
+  const input = { ...modelInput(), schemaVersion: 'wiselink.matter-jobaid-task.v2',
+    subject: { kind: 'ENGINEERING_MATTER', matterId: 'MAT-budget' }, availableDocuments: [{ documentVersionId: 'DV-budget' }] };
+  const f = fixture([{ action: 'READ_SOURCES', sourceRefs: ['source:dv:sr1'], purpose: 'read', context: 'PAGE' },
+    { action: 'FINISH', work: completed }], { assessmentCheckpoint: checkpoint,
+    taskDeadline: new Date(Date.now() + 10 * 60_000).toISOString() });
+  const read = f.options.readAssessmentSources;
+  let first = true;
+  f.options.readAssessmentSources = async args => {
+    if (first) { first = false; throw new Error('HOST_SOURCE_TIMEOUT'); }
+    return read(args);
+  };
+  const run = () => invokeHostedJobAidProblemModel({ operation: 'ASSESS_MATTER', modelInput: input }, f.options, f.dependencies);
+  await assert.rejects(run(), /HOST_SOURCE_TIMEOUT/);
+  const enabled = await checkpoint.readOptional('assessment-enabled');
+  enabled.startedAt = Date.now() - 40 * 60_000;
+  await checkpoint.write('assessment-enabled', enabled);
+  const start = await checkpoint.readOptional('assessment-round-1.started');
+  const result = await checkpoint.readOptional('assessment-round-1.result');
+  start.startedAt = new Date(enabled.startedAt).toISOString();
+  result.finishedAt = new Date(enabled.startedAt + 5_000).toISOString();
+  await checkpoint.write('assessment-round-1.started', start);
+  await checkpoint.write('assessment-round-1.result', result);
+  await run();
+  assert.equal(f.calls.length, 2, 'the already-completed first model call is not repeated');
+  assert.equal(f.saves.length, 1);
+  assert.deepEqual(await checkpoint.readOptional('assessment-enabled'), enabled, 'the original start time is never rewritten');
+  assert.deepEqual(await checkpoint.readOptional('assessment-round-1.result'), result);
+}));
+
+test('Matter still stops at consumed model budget or the absolute Host deadline', async () => {
+  for (const mode of ['model-time', 'host-deadline', 'invalid-time']) await persisted(async checkpoint => {
+    const input = { ...modelInput(), schemaVersion: 'wiselink.matter-jobaid-task.v2',
+      subject: { kind: 'ENGINEERING_MATTER', matterId: 'MAT-budget' }, availableDocuments: [{ documentVersionId: 'DV-budget' }] };
+    const f = fixture([{ action: 'READ_SOURCES', sourceRefs: ['source:dv:sr1'], purpose: 'read', context: 'PAGE' }],
+      { assessmentCheckpoint: checkpoint, taskDeadline: new Date(Date.now() + 10 * 60_000).toISOString() });
+    let first = true;
+    const read = f.options.readAssessmentSources;
+    f.options.readAssessmentSources = async args => {
+      if (first) { first = false; throw new Error('HOST_SOURCE_TIMEOUT'); }
+      return read(args);
+    };
+    const run = () => invokeHostedJobAidProblemModel({ operation: 'ASSESS_MATTER', modelInput: input }, f.options, f.dependencies);
+    await assert.rejects(run(), /HOST_SOURCE_TIMEOUT/);
+    const start = await checkpoint.readOptional('assessment-round-1.started');
+    const result = await checkpoint.readOptional('assessment-round-1.result');
+    start.startedAt = new Date(Date.now() - 40 * 60_000).toISOString();
+    result.finishedAt = mode === 'invalid-time' ? 'invalid' : new Date(Date.now() - 9 * 60_000).toISOString();
+    await checkpoint.write('assessment-round-1.started', start);
+    await checkpoint.write('assessment-round-1.result', result);
+    if (mode === 'host-deadline') f.options.taskDeadline = new Date(Date.now() - 1).toISOString();
+    await assert.rejects(run(), mode === 'invalid-time' ? /JOBAID_CHECKPOINT_EXECUTION_TIME_INVALID/ : /JOBAID_MODEL_BUDGET_EXHAUSTED/);
+    assert.equal(f.calls.length, 1);
+    assert.equal(f.saves.length, 0);
+  });
+});
 
 test('a failed source read resumes the exact model response without another generation', () => persisted(async checkpoint => {
   const f = fixture([

@@ -356,7 +356,7 @@ export function quicklookMarkdown(
       content.lead,
       '',
       ...content.claims.flatMap((claim) => [
-        `### ${claim.basis === 'SOURCE_FACT' ? '来源事实' : '条件性推断'}`,
+        `### ${claim.basis === 'SOURCE_FACT' ? '来源陈述' : '条件性推断'}`,
         '',
         claim.text,
         '',

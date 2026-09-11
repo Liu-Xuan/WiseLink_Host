@@ -12,6 +12,7 @@ export interface AssessmentReadingContent {
 export interface AssessmentReadingClaim {
   claimId: string;
   text: string;
+  /** Model classification: SOURCE_FACT reports a source statement, not Host verification. */
   basis: 'SOURCE_FACT' | 'CONDITIONAL_INFERENCE';
   premises: AssessmentClaimPremise[];
 }

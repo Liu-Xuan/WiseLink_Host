@@ -24,7 +24,7 @@ export const jobAidTreatmentLabels: Record<
 const measureLabels = {
   PROPOSED: '提出的措施',
   REPORTED_IMPLEMENTED: '来源报告已实施',
-  VERIFIED_EFFECTIVE: '有依据验证有效',
+  VERIFIED_EFFECTIVE: '评估认为有效',
 };
 const classificationLabels = {
   SAE_EVENT_CATEGORY: 'SAE 事件分类',
