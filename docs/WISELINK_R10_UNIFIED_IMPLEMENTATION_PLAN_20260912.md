@@ -26,6 +26,8 @@ WiseLink 使用妙搭 NestJS Host、PostgreSQL/Drizzle、FileService、React/Rea
 
 2026-09-12 实施进度：现有问题候选查询已改为参数化 PostgreSQL `to_tsvector('simple')`/`plainto_tsquery`，并保留规范化文号、件号、软件版本的精确匹配；命中后仍逐项调用现有完整工作读取和 actor/tenant ACL。独立持久化 projection 表、GIN 迁移、来源语义段和原生记录消费者尚未完成，当前不宣称全量检索。
 
+已补充 `engineering_search_projection` 的 Drizzle 结构和 0039 迁移：保存租户、owner、精确 revision、entry/locator、原文、分词文本和索引版本，数据库生成加权 `search_vector` 并建立 GIN/标识索引；RLS 只允许当前租户 owner 读取。该投影仍需接入工作保存后的重建流程并完成 Hosted 数据库迁移，不能单凭文件存在宣称已上线。
+
 **W4 共享目录和变化。** 首批接技术资料目录 Q6uSfDwcDlBrUldWvZccoje8nXf 与每日运行目录 Oy1vfy8nslGZeUdBBkoczv0Fnxh，其余目录、SB、AD、会议和问题表复用同一配置机制。后台使用真实获准应用/委托身份。扫描采用递归分页、可恢复 frontier/游标和周期对账，事件只作加速；文件、期次、报道和原生记录分别建模，同名、token 或字节相同不能替代业务身份。
 
 2026-09-12 平台只读核验：六个用户提供的链接均解析为 `folder`。当前用户身份可以列举全部六个根目录；“工程分析报告”首层已返回 200 项且 `has_more=true`，证明必须保存分页游标，“运行信息”首层返回 42 个文件，“TFU/ISI/FTD/FTAR”返回 4 个子目录，“安全生产会工程部汇报材料”返回 4 个子目录，“LE例行报告汇总-综合 安全 可靠性”返回 3 个子目录，“与空客团队月度技术例会”返回 3 个子目录、2 个文件和 1 个在线表格。以 bot 身份读取首个目录返回 Feishu `1061004 permission_denied`；因此后台监控目前不能借用用户会话，必须先给 Host 使用的应用/委托身份授予这些共享目录的读取权限，再做递归扫描和真实增量验收。该核验未修改任何文件夹或权限。
