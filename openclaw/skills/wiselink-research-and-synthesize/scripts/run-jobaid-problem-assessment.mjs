@@ -363,7 +363,23 @@ export async function invokeHostedJobAidProblemModel(
     );
     // The native profile can have tools. An outer candidate function does not
     // prove generation-only execution; an ambiguous 408/timeout is not retried.
-    if (!response.ok) throw new Error(`JOBAID_GATEWAY_HTTP_${response.status}${gatewayFailure === 'UNCLASSIFIED' ? '' : ':' + gatewayFailure}`);
+    if (!response.ok) {
+      const error = new Error(`JOBAID_GATEWAY_HTTP_${response.status}${gatewayFailure === 'UNCLASSIFIED' ? '' : ':' + gatewayFailure}`);
+      // The gateway explicitly reports an ended, incomplete invocation. This
+      // is a failed result, unlike a transport timeout with an unknown outcome.
+      if (response.status === 400 && gatewayFailure === 'INCOMPLETE_TERMINAL_RESPONSE') {
+        error.terminalAssessmentFailure = {
+          errorCode: 'JOBAID_INCOMPLETE_TERMINAL_RESPONSE',
+          provenance: {
+            modelVersion: `configured-route:${options.executionModel?.modelRef ?? options.configuredModelVersion}`,
+            promptVersion: 'wiselink-jobaid-problem@v2', skillVersion: WISELINK_SKILL_VERSION,
+            toolVersions: { [WISELINK_HOST_MCP_NAME]: WISELINK_HOST_MCP_VERSION, 'jobaid-problem-protocol': '2' },
+            runMetrics: { durationMs: Date.now() - startedAt, inputUnits, outputUnits },
+          },
+        };
+      }
+      throw error;
+    }
     if (shape.hasAnalysis || payload.choices?.length !== 1)
       throw new Error('JOBAID_MODEL_OUTPUT_CHANNEL_INVALID');
     const choice = payload.choices[0];
