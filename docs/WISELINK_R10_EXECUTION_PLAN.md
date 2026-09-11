@@ -2,7 +2,7 @@
 
 > **2026-09-12 主控修订：** 当前交付依据为 [统一架构实施计划](WISELINK_R10_UNIFIED_IMPLEMENTATION_PLAN_20260912.md)。W0—W5 是实施顺序，不是通过文档、安装或单次候选即可关闭的 gate；独立 MinerU Worker 负责解析计算，Host 保留授权、parseRun、FileService、事务/CAS 和正式采用边界。以下历史记录保留发生时点，不能覆盖新的架构边界或作为当前完成证明。
 
-> **W4 当前增量（2026-09-12）：** 六个共享 Drive 根目录已登记，Host 已具备按租户 `sourceKey` 执行递归分页、逐页 checkpoint 和恢复的服务入口；checkpoint 表迁移草案为 0040，生产构建与定向测试通过。真实核验显示用户身份可读而 bot 身份对六个根目录均返回 Feishu `1061004 permission_denied`，因此应用/委托 Drive 授权、0040 迁移、平台定时触发和真实增量工作仍未完成，不能借用户会话代替后台监控。
+> **W4 当前增量（2026-09-12）：** 六个共享 Drive 根目录已登记，Host 已具备按租户 `sourceKey` 执行递归分页、逐页 checkpoint 和恢复的服务入口；候选身份快照已独立持久化，完整扫描才替换旧快照，迁移草案为 0040/0041，生产构建与定向测试通过。真实核验显示用户身份可读而 bot 身份对六个根目录均返回 Feishu `1061004 permission_denied`，因此应用/委托 Drive 授权、0040/0041 迁移、平台定时触发和真实增量工作仍未完成，不能借用户会话代替后台监控。
 
 > **2026-09-12 W3/W4 后续增量：** 检索响应已补齐 `kind`、`matchedRange`、`reason`、`rootRefs` 和 `limitations`，事项页面展示命中方式、范围及根来源数量；当前仍只消费已授权的 `WORK` 问题工作，不宣称来源语义段/原生记录或全量统计。共享 Drive 候选变化已接入扫描服务返回 `NEW/CHANGED/UNCHANGED`，重复对象/版本不会被分类为新变化；候选仍未自动写入 DocumentVersion/family 或触发分析。
 
