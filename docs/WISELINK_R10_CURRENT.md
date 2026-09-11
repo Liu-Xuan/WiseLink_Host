@@ -8,7 +8,7 @@
 
 2026-09-12 主控修订依据为 [统一架构实施计划](WISELINK_R10_UNIFIED_IMPLEMENTATION_PLAN_20260912.md)。该计划将 2026-09-11 确定稿转换为 W0—W5 交付顺序，并吸收独立 MinerU Worker、完整依据收集和授权检索投影的实际边界。Worker 就绪、解析成功、标题增强、产物发布和业务阅读分别验收；已有本地或 Host 解析成功证据不替代独立 Worker 的业务 parseRun 发布。
 
-2026-09-12 最新代码增量：EngineeringIssueSearchService 的搜索协议已返回命中类型、范围、命中理由、根来源和限制，事项页面同步展示这些边界；仍只返回已保存的 `WORK` 问题，正文按精确 revision 和现有 ACL 展开，不代表全量统计。投影搜索会先取有限候选再按授权展开，`hasMore` 只由第 51 个可读命中决定，不把无权行计入提示。检索投影失败可由调用方注入授权读取后逐项恢复，Host 已提供受登录/对象入口保护的受控 rebuild 端点；投影迁移与 Drizzle schema 已对齐 `search_vector` 生成列及 GIN/范围索引，SOURCE/RECORD 投影与自动调度尚未接通。共享 Drive 扫描服务已返回候选变化 `NEW/CHANGED/UNCHANGED`，仍未自动受理来源或派发分析。真实后台来源权限尚未完成。
+2026-09-12 最新代码增量：EngineeringIssueSearchService 的搜索协议已返回命中类型、范围、命中理由、根来源和限制，事项页面同步展示这些边界；仍只返回已保存的 `WORK` 问题，正文按精确 revision 和现有 ACL 展开，不代表全量统计。投影搜索会先取有限候选再按授权展开，`hasMore` 只由第 51 个可读命中决定，不把无权行计入提示。检索投影失败可由调用方注入授权读取后逐项恢复，Host 已提供受登录/对象入口保护的受控 rebuild 端点；投影迁移与 Drizzle schema 已对齐 `search_vector` 生成列及 GIN/范围索引，并提供只接受已授权 Reader 内容的 SOURCE/RECORD 写入原语，但查询消费者仍只展开 WORK，不能宣称来源检索已接通。共享 Drive 扫描服务已返回候选变化 `NEW/CHANGED/UNCHANGED`，仍未自动受理来源或派发分析。真实后台来源权限尚未完成。
 
 W0 协议收敛已移除 Matter JobAid 新任务对 `previousWork.legacySummary` 的生成和消费；旧摘要状态及已发旧 v2 保存任务均明确失败并保留历史，不通过默认补字段继续运行。统一工作协议仍要求完整 `problemWork`、实际来源和 CAS。
 
