@@ -22,4 +22,26 @@ describe('DriveSourceScanService', () => {
     expect(result.entries.map(entry => entry.name)).toEqual(['日报.pdf']);
     expect(checkpoints.has('operations')).toBe(true);
   });
+
+  it('resumes the same source from its saved continuation', async () => {
+    let checkpoint: string | null = null;
+    const calls: Array<[string, string | undefined]> = [];
+    const service = new DriveSourceScanService({
+      forTenant: () => ({
+        load: async () => checkpoint,
+        save: async (_key: string, value: string) => { checkpoint = value; },
+      }),
+    } as never);
+    const fetcher = { list: jest.fn(async (folder: string, token?: string) => {
+      calls.push([folder, token]);
+      return token ? { files: [{ token: 'file-2', type: 'file', name: '第二页.pdf' }], hasMore: false } :
+        { files: [{ token: 'file-1', type: 'file', name: '第一页.pdf' }], hasMore: true, nextPageToken: 'p2' };
+    }) };
+    await service.scan({ tenantId: 'tenant-2', sourceKey: 'operations', fetcher, maxPages: 1 });
+    await service.scan({ tenantId: 'tenant-2', sourceKey: 'operations', fetcher, maxPages: 1 });
+    expect(calls).toEqual([
+      ['Oy1vfy8nslGZeUdBBkoczv0Fnxh', undefined],
+      ['Oy1vfy8nslGZeUdBBkoczv0Fnxh', 'p2'],
+    ]);
+  });
 });
