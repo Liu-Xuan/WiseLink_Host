@@ -1,4 +1,4 @@
-import { driveSourceScanRoots, WISELINK_DRIVE_SOURCES } from './wiselink-drive-source-config';
+import { driveSourceScanRoots, WISELINK_DRIVE_SOURCES, WISELINK_UNCONNECTED_SOURCE_FAMILIES } from './wiselink-drive-source-config';
 
 describe('WiseLink Drive source registry', () => {
   it('keeps the six supplied roots as independent source identities', () => {
@@ -12,5 +12,10 @@ describe('WiseLink Drive source registry', () => {
       expect.objectContaining({ folderToken: 'Q6uSfDwcDlBrUldWvZccoje8nXf', depth: 0 }),
       expect.objectContaining({ folderToken: 'Oy1vfy8nslGZeUdBBkoczv0Fnxh', depth: 0 }),
     ]));
+  });
+
+  it('keeps SB and AD visible as unconnected source families instead of fake roots', () => {
+    expect(WISELINK_UNCONNECTED_SOURCE_FAMILIES).toEqual(['SB', 'AD']);
+    expect(WISELINK_DRIVE_SOURCES.some(source => source.displayName === 'SB' || source.displayName === 'AD')).toBe(false);
   });
 });

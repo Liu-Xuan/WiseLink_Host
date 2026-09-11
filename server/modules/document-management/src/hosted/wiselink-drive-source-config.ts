@@ -2,6 +2,9 @@ import type { DriveFolderScanState } from './drive-folder-scanner';
 
 export type WiseLinkDriveSourceKind = 'TECHNICAL_LIBRARY' | 'ENGINEERING_REPORTS' | 'SAFETY_REPORTS' | 'LE_REPORTS' | 'OPERATIONS' | 'CUSTOMER_TECHNICAL_MEETINGS';
 
+/** Families explicitly known to be needed but without a registered root yet. */
+export const WISELINK_UNCONNECTED_SOURCE_FAMILIES = ['SB', 'AD'] as const;
+
 export interface WiseLinkDriveSourceDefinition {
   sourceKey: string;
   kind: WiseLinkDriveSourceKind;
