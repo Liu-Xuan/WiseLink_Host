@@ -22,6 +22,10 @@ Host 发布 `7684130324396133334` 完成，提交为 `3750c50e4318cc296c067c2b8d
 
 c83 补齐消费者失败收尾：只有网关明确返回 HTTP 400 / incomplete terminal response 时，经现有授权和 lease 的 FINISH 入口记录 FAILED；未知传输错误仍保持原有保护。失败结果先持久化，丢失回执后只读回相同结果，不再次生成；已有工作及候选检查点保留。使用量仅记录已回报部分并明确说明末轮缺失，不推断 token 上限。282 项 Skill 测试、4 组实际 PostgreSQL 检查通过；这项运行时修订须安装 c83 后才生效。
 
+通过应用内终端读取原检查点后，已确认首个拒绝为 `JOBAID_ISSUE_PARTITION_DUPLICATE`：第一轮提供完整 5 个问题，`claim_sl_787_46_034_b_independent_change` 又列在 unchangedIssueKeys。第二轮 HTTP 200 / tool_calls，但 workJson 在位置 10137 缺少冒号；第三轮才是网关 HTTP 400。原状态为 round 3 / saved null，前次工作是 legacySummary，尚无 problemWork 内容。
+
+c84 允许完整提交的问题与 unchangedIssueKeys 冗余登记，以已验证的完整内容为准，不修改工程判断；未提供的问题仍从前次完整工作保留。重复的完整问题、更新与删除冲突、保留与删除冲突以及不存在的纯保留引用仍拒绝。12 项相关 Jest 测试通过，包含 legacy 工作迁移和实际新内容不被旧内容覆盖。c84 包同时包含尚未安装的 c83 失败收尾修订。
+
 ## 尚待完成的交互
 
 旧 DialogueAssessmentControl 要求先选原话保存贡献，再汇集补充发起更新。实际事项页面嵌入的是 ContextualDialogue 原生 Aily 聊天；当前所用 Agent SDK 只返回 destroy，没有暴露消息读取或发送回调。现有初始化只传资料名称、版本和讨论范围，尚未接通真实事项身份与工作版本。仅修改旧控件或更名不能视为完成新交互。

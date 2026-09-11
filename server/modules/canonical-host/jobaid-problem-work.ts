@@ -344,12 +344,17 @@ export function materializeJobAidWork(
     },
   );
   const changedKeys = updates.map((issue) => issue.issueKey);
+  const updated = new Set(changedKeys);
+  // Full supplied issue content is authoritative for this local update.
+  // An optional unchanged index may redundantly name that same issue, even
+  // during migration from legacy work with no problemWork collection yet.
+  const retainedKeys = unchanged.filter((key) => !updated.has(key));
   distinct(
-    [...changedKeys, ...unchanged, ...retirements.map((item) => item.issueKey)],
+    [...changedKeys, ...retainedKeys, ...retirements.map((item) => item.issueKey)],
     'ISSUE_PARTITION',
   );
   for (const issueKey of [
-    ...unchanged,
+    ...retainedKeys,
     ...retirements.map((item) => item.issueKey),
   ])
     if (!prior.has(issueKey)) fail('UNKNOWN_PRIOR_ISSUE');
