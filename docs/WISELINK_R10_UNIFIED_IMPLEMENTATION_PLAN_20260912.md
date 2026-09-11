@@ -24,7 +24,7 @@ Worker 现有 `tasks/:taskId` 与 `tasks/:taskId/result` 接口已接入 Host �
 本轮运行核验：Worker 带 `CLIENT_BASE_PATH=/app/app_17bzc551rsg` 启动后，无 key 请求返回 401，正确 Bearer key 的 health 返回 200；调用 `runtime/prepare` 后状态由 `PREPARING/FILES` 进入 `FAILED`，错误码 `MINERU_RUNTIME_PREPARATION_FAILED`，`totalFiles=56`、`verifiedFiles=0`。这是 Worker runtime 包/部署环境未就绪的真实阻塞，Host 解析闭环代码和鉴权已验证，但不能据此宣称 FTD parseRun 成功。
 本机直接运行同一离线安装脚本返回 `MINERU_OFFLINE_PLATFORM_UNSUPPORTED`（当前 macOS/本机架构不满足 Worker 要求的 Linux x86_64 CPython 3.10）；因此不能用本机结果替代 Linux Worker 部署验收，也不修改离线 runtime 包绕过检查。
 
-**W1 完整工作依据。** 共用 collectEvidenceUses 按类型收集主张、风险、措施、分类、方法/要求、依赖和前提引用，保留位置与作用。阅读不等于分析；已读但未用于工作的材料记录 READ_ONLY 或部分核查。保存事务同时写完整工作、依据使用、输入处置、影响范围和 CAS；请求结果不确定时按原 request 回读。
+**W1 完整工作依据。** 共用 collectEvidenceUses 按类型收集主张、风险、措施、分类、方法/要求、依赖和前提引用，保留位置与作用。阅读不等于分析；已读但未用于工作的材料记录 `READ_ONLY`，只比较本轮范围且确认没有实质变化的材料记录 `NO_MATERIAL_CHANGE`，部分核查仍保留未覆盖范围。保存事务同时写完整工作、依据使用、输入处置、影响范围和 CAS；当已有工作完全没有实质变化时，只保存本轮 coverage，不生成新的 substantive result 或 problemWork；请求结果不确定时按原 request 回读。
 
 **W2 统一上下文和 Reader。** WORK_ITEM 与 ENGINEERING_MATTER 共用来源、target/asOf、适用性、方法版本、变化和精确旧工作装配，Overall 读取指定修订。Reader 保留段落、警告、列表、表格、脚注、跨页条件、图像状态和原生记录 selector；未读、未找到、无权限、未接通和部分结果分开呈现。
 
