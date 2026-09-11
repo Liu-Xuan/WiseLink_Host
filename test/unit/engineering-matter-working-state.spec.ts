@@ -380,6 +380,39 @@ describe('Engineering Matter working state materializer', () => {
       ],
     );
   });
+
+  it('keeps a read-only input pending until a later substantive disposition', () => {
+    const firstResult = readingResult(
+      1,
+      [claim('CLAIM-A', 'Finding.', 'E-A')],
+      [evidence('E-A', 'WI-A', 'DV-A')],
+    );
+    const first = materializeEngineeringMatterWorkingState({
+      matterId: MATTER_ID,
+      current: null,
+      command: initialCommand(firstResult, [inputA]),
+    }).state;
+    const next = materializeEngineeringMatterWorkingState({
+      matterId: MATTER_ID,
+      current: first,
+      command: {
+        ...commandBase(1, 'MATERIAL_INCORPORATION', 'Read bounded range.'),
+        nextFocus: null,
+        claimDelta: null,
+        openQuestionDelta: null,
+        reviewConditionDelta: null,
+        nextSubstantiveResult: null,
+        substantiveInputs: [],
+        coverageUpdates: [coverage(inputB, 'READ_ONLY', ['SRC-B-12'], 'one page')],
+      },
+    }).state;
+    expect(engineeringMatterPendingInputs(next, [inputB])).toEqual([{
+      inputId: inputB.inputId,
+      current: inputB,
+      covered: inputB,
+      reasons: ['READ_NOT_PROCESSED'],
+    }]);
+  });
 });
 
 function initialCommand(
