@@ -166,7 +166,7 @@ export async function invokeHostedJobAidProblemModel(
     !options.sessionDiscriminator
   )
     throw new Error('JOBAID_PROBLEM_RUNTIME_CAPABILITY_REQUIRED');
-  const startedAt = Date.now();
+  let startedAt = Date.now();
   const timeoutMs = options.timeoutMs ?? 30 * 60_000;
   const systemMessage = { role: 'system', content: GUIDE + (modelInput.schemaVersion === MATTER_JOBAID_TASK_SCHEMA
     ? '\n本任务主体是工程事项。availableDocuments 只是版本目录；通过 READ_SOURCES 请求 DOCUMENT_VERSION:<documentVersionId>:page:<物理页码>，先读第 1 页取得页数，再按需读后续页。仅文本层可读，扫描和图表不得声称已核实。结合完整前次工作修正问题；每个新任务必须保存本轮工作后才可 FINISH。' : '') };
@@ -185,8 +185,32 @@ export async function invokeHostedJobAidProblemModel(
   let corrections = 0;
   let inputUnits = 0;
   let outputUnits = 0;
+  const checkpoint = options.assessmentCheckpoint;
+  if (checkpoint) {
+    const binding = { operation, modelInput, sessionDiscriminator: options.sessionDiscriminator,
+      executionModel: options.executionModel ?? null };
+    const existing = await checkpoint.readOptional('assessment-enabled');
+    if (existing && !isDeepStrictEqual(existing.binding, binding)) throw new Error('JOBAID_CHECKPOINT_BINDING_MISMATCH');
+    if (existing) startedAt = existing.startedAt;
+    else await checkpoint.writeOnce('assessment-enabled', { version: 1, binding, startedAt });
+  }
+  let round = 1;
+  const restored = await checkpoint?.readOptional('assessment-state');
+  if (restored) {
+    ({ round, messages, expectedWorkRevision, saved, corrections, inputUnits, outputUnits } = restored);
+  } else await checkpoint?.write('assessment-state', { round, messages,
+    expectedWorkRevision, saved, corrections, inputUnits, outputUnits });
+  const requestKey = async (kind) => {
+    const key = `assessment-${round}-${kind}`;
+    let value = await checkpoint?.readOptional(key);
+    if (!value) {
+      value = { requestId: `JA-${kind}-${randomUUID()}` };
+      await checkpoint?.writeOnce(key, value);
+    }
+    return value.requestId;
+  };
   const save = async (work) => {
-    const requestId = `JA-save-${randomUUID()}`;
+    const requestId = await requestKey('save');
     const args = {
       requestId,
       expectedWorkRevision,
@@ -194,7 +218,11 @@ export async function invokeHostedJobAidProblemModel(
     };
     let result;
     try {
-      result = await options.saveAssessmentWork(args);
+      const readback = checkpoint ? await options.readAssessmentWork({ requestId }) : null;
+      if (readback?.revision) {
+        if (readback.revision.requestId !== requestId) throw new Error('JOBAID_WORK_SAVE_READBACK_INVALID');
+        result = { ...readback.revision, roundCompletion: readback.revision.content.roundCompletion };
+      } else result = await options.saveAssessmentWork(args);
     } catch (error) {
       // Unknown save response: read the same request first. Never change its
       // request ID or regenerate an already-persisted analysis to recover it.
@@ -220,55 +248,66 @@ export async function invokeHostedJobAidProblemModel(
     saved = result;
     return result;
   };
-  for (let round = 1; round <= 64; round += 1) {
+  for (; round <= 64; round += 1) {
     await options.heartbeat?.();
     const remainingMs = timeoutMs - (Date.now() - startedAt);
     if (remainingMs <= 0) throw new Error('JOBAID_MODEL_BUDGET_EXHAUSTED');
     inputUnits += Buffer.byteLength(JSON.stringify(messages));
     const requestedModel = `openclaw/${WISELINK_PROFILE_REF}`;
-    const response = await (
-      dependencies.requestGateway ?? requestHostedGateway
-    )(new URL('/v1/chat/completions', options.gatewayUrl), {
-      method: 'POST',
-      headers: {
-        accept: 'application/json',
-        'content-type': 'application/json',
-        authorization: `Bearer ${options.gatewayToken}`,
-        ...executionModelHeaders(options),
-      },
-      body: JSON.stringify({
-        model: requestedModel,
-        user: `initial:${options.sessionDiscriminator}`,
-        messages,
-        tools: [
-          {
-            type: 'function',
-            function: {
-              name: FUNCTION,
-              description:
-                'Return one source-read, substantive-work-save, or finish intent. The deterministic Host caller executes it.',
-              parameters: {
-                type: 'object',
-                additionalProperties: false,
-                required: ['step'],
-                properties: { step: jobAidFunctionSchema(transportStepShape) },
+    const performRequest = async () => {
+      if (round === 1 && options.recoveredInitialResponse) return options.recoveredInitialResponse;
+      const response = await (
+        dependencies.requestGateway ?? requestHostedGateway
+      )(new URL('/v1/chat/completions', options.gatewayUrl), {
+        method: 'POST',
+        headers: {
+          accept: 'application/json',
+          'content-type': 'application/json',
+          authorization: `Bearer ${options.gatewayToken}`,
+          ...executionModelHeaders(options),
+        },
+        body: JSON.stringify({
+          model: requestedModel,
+          user: `initial:${options.sessionDiscriminator}`,
+          messages,
+          tools: [
+            {
+              type: 'function',
+              function: {
+                name: FUNCTION,
+                description:
+                  'Return one source-read, substantive-work-save, or finish intent. The deterministic Host caller executes it.',
+                parameters: {
+                  type: 'object',
+                  additionalProperties: false,
+                  required: ['step'],
+                  properties: { step: jobAidFunctionSchema(transportStepShape) },
+                },
               },
             },
-          },
-        ],
-        tool_choice: 'auto',
-        parallel_tool_calls: false,
-        n: 1,
-        stream: false,
-        ...(options.executionModel?.modelRef === 'miaoda/minimax-m3'
-          ? { max_completion_tokens: M3_MAX_COMPLETION_TOKENS }
-          : {}),
-      }),
-      signal: AbortSignal.timeout(Math.min(remainingMs, 15 * 60_000)),
-    });
-    const raw = await response.text();
-    if (Buffer.byteLength(raw) > 4 * 1024 * 1024)
-      throw new Error('JOBAID_MODEL_RESPONSE_TOO_LARGE');
+          ],
+          tool_choice: 'auto',
+          parallel_tool_calls: false,
+          n: 1,
+          stream: false,
+          ...(options.executionModel?.modelRef === 'miaoda/minimax-m3'
+            ? { max_completion_tokens: M3_MAX_COMPLETION_TOKENS }
+            : {}),
+        }),
+        signal: AbortSignal.timeout(Math.min(remainingMs, 15 * 60_000)),
+      });
+      const raw = await response.text();
+      if (Buffer.byteLength(raw) > 4 * 1024 * 1024)
+        throw new Error('JOBAID_MODEL_RESPONSE_TOO_LARGE');
+      return { raw, status: response.status, ok: response.ok };
+    };
+    // Persist a complete response before executing its read/save intent. A lost
+    // response remains unknown; a failed Host read can reuse this exact result.
+    const response = checkpoint ? await checkpoint.remoteStep({
+      step: `assessment-round-${round}`, args: { operation, messages, executionModel: options.executionModel ?? null,
+        sessionDiscriminator: options.sessionDiscriminator }, ambiguousCommit: false, perform: performRequest,
+    }) : await performRequest();
+    const { raw } = response;
     let payload;
     try {
       payload = JSON.parse(raw);
@@ -344,11 +383,11 @@ export async function invokeHostedJobAidProblemModel(
         if (!modelInput.knowledgeAccess?.available || !options.queryAssessmentKnowledge) {
           receipt = { status: 'UNAVAILABLE', error: modelInput.knowledgeAccess?.reason ?? 'NOT_CONNECTED', evidence: [], candidateOnly: true, originalDocumentsVerified: false };
         } else {
-          const requestKey = `JA-query-${randomUUID()}`;
-          try { receipt = await options.queryAssessmentKnowledge({ requestKey, query: step.query }); }
+          const queryRequestKey = await requestKey('query');
+          try { receipt = await options.queryAssessmentKnowledge({ requestKey: queryRequestKey, query: step.query }); }
           catch {
             // A transport failure cannot authorize replaying the upstream query.
-            receipt = await options.queryAssessmentKnowledge({ requestKey });
+            receipt = await options.queryAssessmentKnowledge({ requestKey: queryRequestKey });
           }
           while (receipt?.status === 'RUNNING') {
             if (!receipt.queryRef) throw new Error('JOBAID_KNOWLEDGE_RECEIPT_INVALID');
@@ -445,6 +484,8 @@ export async function invokeHostedJobAidProblemModel(
         content: JSON.stringify(receipt),
       },
     ];
+    await checkpoint?.write('assessment-state', { round: round + 1, messages,
+      expectedWorkRevision, saved, corrections, inputUnits, outputUnits });
   }
   throw new Error('JOBAID_MODEL_BUDGET_EXHAUSTED');
 }

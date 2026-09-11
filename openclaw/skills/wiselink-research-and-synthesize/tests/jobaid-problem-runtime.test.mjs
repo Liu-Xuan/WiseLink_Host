@@ -1,5 +1,9 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
+import { mkdtemp, rm } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import { createCheckpointStore } from '../scripts/run-hosted-review-turn.mjs';
 import { invokeHostedJobAidProblemModel, projectJobAidModelInput } from '../scripts/run-jobaid-problem-assessment.mjs';
 
 test('source transport removes repeated identifiers without losing distinct sources, provenance or text', () => {
@@ -195,6 +199,64 @@ const completed = {
   roundCompletion: 'COMPLETE_WITH_OPEN_QUESTIONS',
   understanding: 'The source condition remains; reliability is unqueried.',
 };
+
+async function persisted(run) {
+  const directory = await mkdtemp(join(tmpdir(), 'jobaid-round-recovery-'));
+  try { await run(await createCheckpointStore(directory)); }
+  finally { await rm(directory, { recursive: true, force: true }); }
+}
+
+test('a failed source read resumes the exact model response without another generation', () => persisted(async checkpoint => {
+  const f = fixture([
+    { action: 'READ_SOURCES', sourceRefs: ['source:dv:sr1'], purpose: 'read', context: 'PAGE' },
+    { action: 'SAVE_WORK', work: completed }, { action: 'FINISH' },
+  ], { assessmentCheckpoint: checkpoint });
+  const read = f.options.readAssessmentSources;
+  let attempts = 0;
+  f.options.readAssessmentSources = async input => {
+    if (++attempts === 1) throw new Error('HOST_SOURCE_TIMEOUT');
+    return read(input);
+  };
+  await assert.rejects(f.run(), /HOST_SOURCE_TIMEOUT/);
+  assert.equal(f.calls.length, 1);
+  assert.equal((await f.run()).output.workRevisionRef, 'JAWR-1');
+  assert.equal(f.calls.length, 3);
+  assert.equal(attempts, 2);
+  assert.equal(f.saves.length, 1);
+}));
+
+test('unknown model response stays fenced across process reentry', () => persisted(async checkpoint => {
+  const f = fixture([new Error('response lost')], { assessmentCheckpoint: checkpoint });
+  await assert.rejects(f.run(), /response lost/);
+  await assert.rejects(f.run(), /OUTCOME_UNKNOWN/);
+  assert.equal(f.calls.length, 1);
+}));
+
+test('saved work with a lost response and failed readback is recovered by the same request', () => persisted(async checkpoint => {
+  const f = fixture([{ action: 'SAVE_WORK', work: completed }, { action: 'FINISH' }], { assessmentCheckpoint: checkpoint });
+  const save = f.options.saveAssessmentWork;
+  const read = f.options.readAssessmentWork;
+  let loseRead = false;
+  f.options.saveAssessmentWork = async input => {
+    await save(input); loseRead = true; throw new Error('save response lost');
+  };
+  f.options.readAssessmentWork = async input => {
+    if (loseRead) { loseRead = false; throw new Error('readback unavailable'); }
+    return read(input);
+  };
+  await assert.rejects(f.run(), /readback unavailable/);
+  assert.equal((await f.run()).output.workRevisionRef, 'JAWR-1');
+  assert.equal(f.saves.length, 1);
+  assert.equal(f.calls.length, 2);
+}));
+
+test('checkpoint cannot resume another model input or session', () => persisted(async checkpoint => {
+  const f = fixture([new Error('response lost')], { assessmentCheckpoint: checkpoint });
+  await assert.rejects(f.run(), /response lost/);
+  f.options.sessionDiscriminator = 'different-attempt';
+  await assert.rejects(f.run(), /CHECKPOINT_BINDING_MISMATCH/);
+  assert.equal(f.calls.length, 1);
+}));
 
 test('reads a real source, saves completed reasoning and finishes with only its saved identity', async () => {
   const f = fixture([
