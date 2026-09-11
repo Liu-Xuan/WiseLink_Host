@@ -609,3 +609,15 @@ it('persists engineer-supported judgments, risk and reported measures while reta
   expect(() => materializeJobAidWork({ ...update(), issues: [change] },
     { ...context, readSourceRefs: [document.evidenceRef] })).toThrow('JOBAID_SOURCE_NOT_DELIVERED');
 });
+
+
+it('derives missing dependency index entries from validated citations without changing the judgment', () => {
+  const change = issue('a');
+  change.sourceDependencies = [];
+  const content = materializeJobAidWork(update([change]), context);
+  expect(content.issues[0].sourceDependencies).toEqual([document.evidenceRef]);
+  expect(content.issues[0].statements[0]).toMatchObject({ text: change.statements[0].text,
+    basis: change.statements[0].basis, premises: change.statements[0].premises });
+  change.statements[0].premises[0].evidenceRef = 'source:foreign';
+  expect(() => materializeJobAidWork(update([change]), context)).toThrow('JOBAID_SOURCE_NOT_DELIVERED');
+});

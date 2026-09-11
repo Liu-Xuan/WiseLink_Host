@@ -293,8 +293,9 @@ export function materializeJobAidWork(
         };
       });
       const sourceDependencies = refs(
-        issue.sourceDependencies,
+        issue.sourceDependencies ?? [],
         'ISSUE_DEPENDENCIES',
+        true,
       );
       const premiseRefs = refs(issue.premiseRefs ?? [], 'ISSUE_PREMISES', true);
       const usedRefs = new Set([
@@ -313,9 +314,11 @@ export function materializeJobAidWork(
           ...item.basisRefs,
         ]),
       ]);
+      // Citation fields above have already passed the same delivered-source
+      // checks. Complete this redundant index without rewriting model claims.
       for (const ref of usedRefs)
         if (!sourceDependencies.includes(ref) && !premiseRefs.includes(ref))
-          fail(`ISSUE_DEPENDENCY_MISSING:${ref}`);
+          sourceDependencies.push(ref);
       return {
         issueKey,
         issueRef,
