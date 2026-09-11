@@ -79,4 +79,15 @@ export class EngineeringSearchProjectionWriter {
       set: { lastError: message.slice(0, 2000), attempts: sql`${engineeringSearchProjectionPending.attempts} + 1` },
     });
   }
+
+  async listPending(tenantId: string, limit = 100): Promise<Array<{
+    tenantId: string; revisionRef: string; ownerKind: 'USER' | 'MATTER'; ownerId: string; subjectId: string | null; lastError: string; attempts: number;
+  }>> {
+    if (!tenantId || !Number.isSafeInteger(limit) || limit < 1 || limit > 1000) throw new Error('ENGINEERING_SEARCH_PENDING_QUERY_INVALID');
+    const rows = await this.db.select().from(engineeringSearchProjectionPending)
+      .where(eq(engineeringSearchProjectionPending.tenantId, tenantId)).limit(limit);
+    return rows.map(row => ({ tenantId: row.tenantId, revisionRef: row.exactRevisionRef,
+      ownerKind: row.ownerKind as 'USER' | 'MATTER', ownerId: row.ownerId, subjectId: row.subjectId,
+      lastError: row.lastError, attempts: row.attempts }));
+  }
 }
