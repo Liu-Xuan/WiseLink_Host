@@ -1,5 +1,5 @@
 import type { EngineeringMatterWorkingRevisionCommand, EngineeringMatterWorkingInputBinding } from '@shared/matter-working.interface';
-import { buildMatterJobAidTask, MATTER_JOBAID_TASK_SCHEMA } from './matter-jobaid-task';
+import { addMatterDeliveredEvidence, buildMatterJobAidTask, MATTER_JOBAID_TASK_SCHEMA } from './matter-jobaid-task';
 import { materializeMatterJobAidCommand } from './matter-jobaid-save';
 import { engineeringMatterPendingInputs } from './engineering-matter-working-state';
 import type { AssessmentEvidence } from '@shared/assessment-reading.interface';
@@ -62,6 +62,7 @@ export interface ReserveMatterAttempt extends MatterAttemptScope {
 
 export type ReserveMatterJobAidAttempt = Omit<ReserveMatterAttempt, 'modelInput' | 'sourceRefs'> & {
   expectedInputs?: EngineeringMatterWorkingInputBinding[];
+  recoveryAttemptRef?: string;
 };
 
 /** Subject adapter for the existing durable queue, lease slots and cancellation. */
@@ -177,7 +178,9 @@ export class MatterActionAttemptService {
           ('modelInput' in input
             ? canonicalJson(task.modelInput) !== canonicalJson(input.modelInput) ||
               canonicalJson(task.sourceRefs) !== canonicalJson(input.sourceRefs)
-            : task.modelInput.schemaVersion !== MATTER_JOBAID_TASK_SCHEMA)
+            : task.modelInput.schemaVersion !== MATTER_JOBAID_TASK_SCHEMA ||
+              ((task.modelInput as ReturnType<typeof buildMatterJobAidTask>).recovery?.attemptRef ?? null) !==
+                (input.recoveryAttemptRef ?? null))
         )
           throw failure('ACTION_ATTEMPT_IDEMPOTENCY_REPLAY_MISMATCH');
         return { row, task, created: false };
@@ -189,6 +192,29 @@ export class MatterActionAttemptService {
         (current?.workingRevision ?? 0) !== input.expectedWorkingRevision
       )
         throw failure('ACTION_ATTEMPT_RESERVATION_BINDING_CHANGED');
+      let recoveryRow: MatterActionAttemptRow | null = null;
+      let recoveryTask: OpenClawMatterTaskEnvelope | null = null;
+      if ('recoveryAttemptRef' in input && input.recoveryAttemptRef) {
+        recoveryRow = await this.scopedRow(executor, queue, input, input.recoveryAttemptRef);
+        if (recoveryRow.status === 'RUNNING' && recoveryRow.deadlineAt && recoveryRow.deadlineAt <= new Date()) {
+          await queue.finishTerminal({ attemptId: recoveryRow.attemptId, fromStatus: 'RUNNING', status: 'TIMED_OUT',
+            terminalReason: 'ACTION_ATTEMPT_DEADLINE_EXCEEDED', leaseToken: recoveryRow.leaseToken ?? undefined,
+            leaseGeneration: recoveryRow.leaseGeneration, now: new Date() });
+          recoveryRow = await this.scopedRow(executor, queue, input, input.recoveryAttemptRef);
+        }
+        if (recoveryRow.status === 'RUNNING' && recoveryRow.leaseExpiresAt && recoveryRow.leaseExpiresAt <= new Date()) {
+          await queue.recoverExpiredRunning({ attemptId: recoveryRow.attemptId, now: new Date() });
+          recoveryRow = await this.scopedRow(executor, queue, input, input.recoveryAttemptRef);
+        }
+        if (!['FAILED', 'TIMED_OUT'].includes(recoveryRow.status)) throw failure('MATTER_RECOVERY_REQUIRES_FAILED_ATTEMPT');
+        recoveryTask = checkedTask(recoveryRow);
+        if (!recoveryTask.executionModel || recoveryTask.modelInput.schemaVersion !== MATTER_JOBAID_TASK_SCHEMA ||
+            recoveryTask.modelInput.actorUserId !== input.actorUserId ||
+            recoveryTask.subject.matterRevisionId !== matter.currentMatterRevisionId ||
+            recoveryTask.baseRevision !== (current?.workingRevision ?? 0) ||
+            recoveryTask.workingBasis.priorWorkRef !== (current?.matterWorkRevisionId ?? null))
+          throw failure('MATTER_RECOVERY_BASIS_CHANGED');
+      }
       const [active] = await executor.database
         .select({ id: actionAttempt.attemptId })
         .from(actionAttempt)
@@ -219,6 +245,8 @@ export class MatterActionAttemptService {
         .limit(1);
       const now = new Date();
       const authorizedInputs = (await executor.authorizeRuntimeInputs(input)).currentInputs;
+      if (recoveryTask && canonicalJson(recoveryTask.workingBasis.inputs) !== canonicalJson(authorizedInputs))
+        throw failure('MATTER_RECOVERY_BASIS_CHANGED');
       if ('expectedInputs' in input && input.expectedInputs !== undefined &&
         canonicalJson(authorizedInputs) !== canonicalJson(input.expectedInputs))
         throw failure('ACTION_ATTEMPT_RESERVATION_BINDING_CHANGED');
@@ -227,6 +255,21 @@ export class MatterActionAttemptService {
         actorUserId: input.actorUserId, title: matter.title,
         inputs: authorizedInputs, trigger: input.trigger, previous: current,
       });
+      if (recoveryTask && recoveryRow) {
+        const jobAid = modelInput as ReturnType<typeof buildMatterJobAidTask>;
+        jobAid.recovery = { attemptRef: recoveryTask.operationRef, inputHash: recoveryTask.inputHash };
+        const reads: AssessmentEvidence[] = [];
+        for (const event of JSON.parse(recoveryRow.reviewActivityJson ?? '[]')) {
+          if (event.kind === 'MATTER_REGISTERED_SOURCES_READ') reads.push(...event.evidence);
+          if (event.kind === 'MATTER_SOURCE_PAGES_READ') {
+            const reading = event.reading as DocumentSourceReading;
+            if (!jobAid.modelInput.availableDocuments.some(item => item.documentVersionId === reading.documentVersionId))
+              throw failure('MATTER_RECOVERY_BASIS_CHANGED');
+            reads.push(...reading.pages.flatMap(page => page.evidence ? [page.evidence] : []));
+          }
+        }
+        addMatterDeliveredEvidence(jobAid, reads);
+      }
       const task = parseMatterTaskEnvelope(
         canonicalJson(
           sealMatterTaskEnvelope({
@@ -252,7 +295,7 @@ export class MatterActionAttemptService {
             allowedConnectors: [],
             hostResolvedMissingInputs: [],
             modelInput: structuredClone(modelInput),
-            executionModel: await this.models.captureForNewTask(
+            executionModel: recoveryTask?.executionModel ?? await this.models.captureForNewTask(
               input.tenantId,
               now,
               executor.database,

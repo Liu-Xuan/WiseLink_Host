@@ -49,3 +49,9 @@ Host 同批三次工具请求于 08:30:12 收束，耗时约 284348、155249、2
 进一步核对确认：旧工作修订 5 尚无 problemWork，完整的旧阅读结果及 12 条证据通过 sealed task 的 previousWork.legacySummary 发给模型，但 builder 的 sourceCatalog/initiallyDeliveredRefs 和 SAVE_WORK 的 registry/readRefs 均遗漏了它们。新原文的两条 DOCUMENT_VERSION 引用则都有实际读取回执，静态 invocation 中的 NOT_READ_THIS_ATTEMPT 不能表示后续执行状态。
 
 修复同时覆盖新任务与已发出的旧 v2 任务：新 builder 登记实际发送的 legacySummary 证据；旧任务保存仅补用其原始封存输入内已交付的 legacySummary.evidence，保留工程师陈述等原来源性质，不把未交付来源自动视为已读。真实 PostgreSQL 测试重建旧工作结构及旧版遗漏目录的任务，仍拒绝未读的新页，读取后正常保存、回读、重放和完成；4 组流程、服务端类型检查和生产构建通过。原超时请求与候选响应保留，跨请求恢复仍需正常入口和明确绑定验证。
+
+## 失败候选的有界续接实现
+
+原 SOURCE_CHANGE 任务已生成完整候选，但保存因旧工作证据注册缺失被拒，原任务期限随后到期。新增既有 begin 接口的 recoveryAttemptRef：Host 在事务内核对原 actor、Matter/工作修订、精确旧工作和当前授权输入；仅 FAILED/TIMED_OUT 可续接，并保留旧任务历史及期限。新任务继承原捕获模型和实际来源读取回执。Skill c79 验证原检查点绑定后，以新任务的正常保存入口提交原始完整候选，再续接完成步骤。
+
+本地真实 PostgreSQL 流程覆盖超时转终态、不同新 attempt、原期限不变、实际已读来源复用、正常保存和完成、取消拒绝、幂等及工作基础变化拒绝；MCP 参数与消费者候选复用测试通过。此处记录的是实现与本地验证，真实业务保存和完成尚待发布后验收。

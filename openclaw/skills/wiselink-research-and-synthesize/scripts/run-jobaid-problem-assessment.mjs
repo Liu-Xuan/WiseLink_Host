@@ -174,6 +174,7 @@ export async function invokeHostedJobAidProblemModel(
     systemMessage,
     { role: 'user', content: JSON.stringify(projectJobAidModelInput(modelInput)) },
   ];
+  const initialContextMessage = messages[1];
   let expectedWorkRevision = modelInput.expectedWorkRevision;
   let saved = modelInput.previousWork?.content && (modelInput.schemaVersion !== MATTER_JOBAID_TASK_SCHEMA || options.resumeSavedWork)
     ? {
@@ -465,6 +466,10 @@ export async function invokeHostedJobAidProblemModel(
         instruction:
           'Correct only the rejected step or substantive work using the original evidence. Existing saved work remains available; never invent sources or turn failure into completion.',
         ...workShapeCorrection(code, submittedWork),
+        ...(code === 'JOBAID_SOURCE_NOT_DELIVERED' && error.hostRejectedSourceRef ? {
+          sourceRef: error.hostRejectedSourceRef,
+          instruction: 'The Host rejected this exact source reference from your candidate. Read it through READ_SOURCES if it belongs to the authorized catalog or document range. If unavailable, preserve the limitation and revise the unsupported assertion. Do not guess another identifier, silently drop supported analysis, or treat the failed save as completed.',
+        } : {}),
       };
       await options.observeCandidateRejection?.({
         correctionNo: corrections,
@@ -476,6 +481,7 @@ export async function invokeHostedJobAidProblemModel(
     // copy of the context and earlier source bodies in that history.
     messages = [
       systemMessage,
+      ...(round === 1 && options.recoveredInitialContext ? [initialContextMessage] : []),
       { role: 'assistant', content: null, tool_calls: [call] },
       {
         role: 'tool',

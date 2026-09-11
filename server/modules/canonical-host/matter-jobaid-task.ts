@@ -41,6 +41,7 @@ export function buildMatterJobAidTask(input: {
   };
   return {
     schemaVersion: MATTER_JOBAID_TASK_SCHEMA,
+    recovery: null as { attemptRef: string; inputHash: string } | null,
     actorUserId: input.actorUserId,
     sourceCatalog,
     initiallyDeliveredRefs,
@@ -83,4 +84,19 @@ export function buildMatterJobAidTask(input: {
       ],
     },
   };
+}
+
+/** Reuse only Host-persisted reads of the same authorized versions. */
+export function addMatterDeliveredEvidence(task: ReturnType<typeof buildMatterJobAidTask>, evidence: AssessmentEvidence[]) {
+  const registry = new Map(task.sourceCatalog.map(item => [item.evidenceRef, item]));
+  for (const item of evidence) {
+    const prior = registry.get(item.evidenceRef);
+    if (prior && canonicalJson(prior) !== canonicalJson(item)) throw new Error('MATTER_SOURCE_READ_IDENTITY_CHANGED');
+    registry.set(item.evidenceRef, structuredClone(item));
+  }
+  task.sourceCatalog = [...registry.values()];
+  task.initiallyDeliveredRefs = [...new Set([...task.initiallyDeliveredRefs, ...evidence.map(item => item.evidenceRef)])];
+  task.modelInput.availableSources = task.sourceCatalog.map(item => ({ ref: item.evidenceRef, kind: item.kind,
+    title: item.title, versionLabel: item.versionLabel, locator: 'locator' in item ? item.locator : null }));
+  task.modelInput.deliveredEvidence = overallModelEvidenceRegistry(task.sourceCatalog.filter(item => task.initiallyDeliveredRefs.includes(item.evidenceRef)));
 }
