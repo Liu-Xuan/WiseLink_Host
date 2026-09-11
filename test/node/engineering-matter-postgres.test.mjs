@@ -2977,7 +2977,14 @@ async function assertSaveBeforeFinish(sql, owner, service, baseInput) {
     pageCount: 1, extractionScope: 'NATIVE_TEXT_LAYER', pages: [page] };
   let readerCalls = 0;
   const readInput = { ...fence, documentVersionId, pageStart: 1, purpose: '测试精确来源阅读回执' };
-  const reader = async () => { readerCalls += 1; return structuredClone(reading); };
+  const reader = async () => {
+    readerCalls += 1;
+    // Real readers use the shared database too. On this one-connection pool,
+    // both a read and a heartbeat must complete while source reading is active.
+    await owner.database.execute(drizzleSql`SELECT 1`);
+    await owner.runtime(() => service.heartbeat(fence));
+    return structuredClone(reading);
+  };
   await assert.rejects(owner.runtime(() => service.readSourcePages({ ...readInput, leaseGeneration: 99 }, reader)), /LEASE_FENCE_REJECTED/u);
   await assert.rejects(owner.runtime(() => service.readSourcePages({ ...readInput, documentVersionId: 'DV-NOT-IN-TASK' }, reader)), /SOURCE_NOT_REGISTERED/u);
   assert.equal(readerCalls, 0);
@@ -2989,6 +2996,16 @@ async function assertSaveBeforeFinish(sql, owner, service, baseInput) {
     return reading;
   })), /SOURCE_READ_FENCE_REJECTED/u);
   await sql`UPDATE action_attempt SET lease_expires_at = ${new Date(firstLease.leaseExpiresAt)} WHERE attempt_id = ${reserved.row.attemptId}`;
+  const sourceWorkItemId = reserved.task.workingBasis.inputs[0].workItemId;
+  const [sourceOwner] = await sql`SELECT requested_by_user_id FROM work_item WHERE work_item_id = ${sourceWorkItemId}`;
+  try {
+    await assert.rejects(owner.runtime(() => service.readSourcePages(readInput, async () => {
+      await sql`UPDATE work_item SET requested_by_user_id = 'actor-B' WHERE work_item_id = ${sourceWorkItemId}`;
+      return reading;
+    })), /ENGINEERING_MATTER_RUNTIME_AUTHORIZATION_UNAVAILABLE/u);
+  } finally {
+    await sql`UPDATE work_item SET requested_by_user_id = ${sourceOwner.requested_by_user_id} WHERE work_item_id = ${sourceWorkItemId}`;
+  }
   const [readback] = await sql`SELECT review_activity_json FROM action_attempt WHERE attempt_id = ${reserved.row.attemptId}`;
   const sourceEvents = JSON.parse(readback.review_activity_json).filter(event => event.kind === 'MATTER_SOURCE_PAGES_READ');
   assert.equal(sourceEvents.length, 1);
