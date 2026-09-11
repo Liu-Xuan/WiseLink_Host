@@ -1,4 +1,4 @@
-import { Controller, Get, Post, Query, Req, UseGuards } from '@nestjs/common';
+import { BadRequestException, Controller, Get, Post, Query, Req, UseGuards } from '@nestjs/common';
 import { NeedLogin } from '@lark-apaas/fullstack-nestjs-core';
 import type { Request } from 'express';
 import type { EngineeringIssueSearchHit } from '@shared/engineering-issue-search.interface';
@@ -35,7 +35,7 @@ export class EngineeringIssueSearchController {
   rebuildProjection(@Query('limit') limit: string | undefined, @Req() request: Request) {
     const parsed = limit === undefined ? undefined : Number(limit);
     if (parsed !== undefined && (!Number.isSafeInteger(parsed) || parsed < 1 || parsed > 100)) {
-      throw new Error('ENGINEERING_SEARCH_REBUILD_LIMIT_INVALID');
+      throw new BadRequestException('ENGINEERING_SEARCH_REBUILD_LIMIT_INVALID');
     }
     return this.issues.rebuildProjection(parsed, hostActor(request));
   }
