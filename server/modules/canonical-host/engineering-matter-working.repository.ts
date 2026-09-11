@@ -552,6 +552,8 @@ export class EngineeringMatterWorkingRepository {
     if (materialized.state.problemWork) {
       void this.searchProjection.indexMatterRevision({ tenantId: stored.tenantId, ownerId: stored.createdByUserId, subjectId: stored.matterId,
         revisionRef: stored.matterWorkRevisionId, content: materialized.state.problemWork, database: executor }).catch(error => {
+        void this.searchProjection.markPending({ tenantId: stored.tenantId, ownerKind: 'MATTER', ownerId: stored.createdByUserId,
+          subjectId: stored.matterId, revisionRef: stored.matterWorkRevisionId, error }).catch(markError => this.logger.error(`Engineering search projection pending marker failed: ${markError instanceof Error ? markError.message : String(markError)}`));
         this.logger.error(`Engineering search projection rebuild pending for ${stored.matterWorkRevisionId}: ${error instanceof Error ? error.message : 'UNKNOWN_ERROR'}`);
       });
     }
