@@ -444,10 +444,27 @@ describe('JobAid problem work keeps method semantics, delivery and incremental s
     ).toThrow('JOBAID_RETIRE_REASON_INVALID');
     expect(() =>
       materializeJobAidWork(
-        { ...update([issue('a')]), unchangedIssueKeys: ['a', 'b'] },
+        { ...update([issue('a')]), retiredIssues: [{ issueKey: 'a', reason: '退役' }] },
         { ...context, previous: first },
       ),
     ).toThrow('JOBAID_ISSUE_PARTITION_DUPLICATE');
+  });
+
+  test('a redundant unchanged index preserves the supplied full issue, including legacy migration', () => {
+    const proposal = { ...update(), unchangedIssueKeys: ['b'] };
+    const migrated = materializeJobAidWork(proposal, context);
+    expect(migrated.issues).toHaveLength(2);
+    expect(migrated.issues[1].understanding).toBe(document.excerpt);
+    const next = materializeJobAidWork({ ...proposal, issues: [issue('b', '新的条件性认识')] },
+      { ...context, previous: migrated });
+    expect(next.issues[1].understanding).toBe('新的条件性认识');
+    expect(next.issues[0]).toEqual(migrated.issues[0]);
+    expect(() => materializeJobAidWork({ ...proposal, unchangedIssueKeys: ['missing'] }, context))
+      .toThrow('JOBAID_UNKNOWN_PRIOR_ISSUE');
+    expect(() => materializeJobAidWork({ ...proposal, issues: [issue('a'), issue('a')] }, context))
+      .toThrow('JOBAID_ISSUE_PARTITION_DUPLICATE');
+    expect(() => materializeJobAidWork({ ...proposal, retiredIssues: [{ issueKey: 'b', reason: '退役' }] },
+      { ...context, previous: migrated })).toThrow('JOBAID_ISSUE_PARTITION_DUPLICATE');
   });
 
   test('rejects unregistered or unread premises while retaining attributed method statements', () => {
