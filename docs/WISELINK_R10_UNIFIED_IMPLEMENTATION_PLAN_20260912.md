@@ -41,6 +41,8 @@ Worker 现有 `tasks/:taskId` 与 `tasks/:taskId/result` 接口已接入 Host �
 
 检索返回协议已补齐 `kind`、`matchedRange`、`reason`、`rootRefs` 和 `limitations`。当前已接通的消费者只返回 `WORK` 问题工作；命中理由区分精确问题标识和全文，正文仍需按精确 revision 与现有 ACL 展开，不能把命中元数据当作授权或全量统计。投影路径目前保留明确的全文限制说明，尚未接入来源语义段和原生记录类型。
 
+投影搜索现在也根据 `identifiers` 命中分支返回 `EXACT_IDENTIFIER`，其余返回 `FULL_TEXT`；两条路径都继续按精确 revision 和现有 ACL 回读正文。
+
 事项检索界面已展示检索限制、命中方式、命中范围和根来源数量；用户可据此判断结果边界，再展开确切工作版本。界面没有把搜索候选自动加入当前事项。
 
 **W4 共享目录和变化。** 首批接技术资料目录 Q6uSfDwcDlBrUldWvZccoje8nXf 与每日运行目录 Oy1vfy8nslGZeUdBBkoczv0Fnxh，其余目录、SB、AD、会议和问题表复用同一配置机制。后台使用真实获准应用/委托身份。扫描采用递归分页、可恢复 frontier/游标和周期对账，事件只作加速；文件、期次、报道和原生记录分别建模，同名、token 或字节相同不能替代业务身份。

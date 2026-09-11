@@ -130,9 +130,11 @@ export class EngineeringIssueSearchService {
 
   private async searchProjection(prepared: ReturnType<typeof prepareEngineeringSearchQuery>, actor: CanonicalHostActor): Promise<EngineeringIssueSearchResponse> {
     const rows = await this.db.execute<{
-      entryId: string; ownerKind: string; ownerId: string; exactRevisionRef: string; parentContextRef: string | null; title: string;
+      entryId: string; ownerKind: string; ownerId: string; exactRevisionRef: string; parentContextRef: string | null; title: string; matchReason: 'FULL_TEXT' | 'EXACT_IDENTIFIER';
     }>(sql`SELECT entry_id AS "entryId", owner_kind AS "ownerKind", owner_id AS "ownerId",
-      exact_revision_ref AS "exactRevisionRef", parent_context_ref AS "parentContextRef", title
+      exact_revision_ref AS "exactRevisionRef", parent_context_ref AS "parentContextRef", title,
+      CASE WHEN identifiers && ${prepared.exactIdentifierCandidates}::text[]
+        THEN 'EXACT_IDENTIFIER' ELSE 'FULL_TEXT' END AS "matchReason"
       FROM engineering_search_projection
       WHERE tenant_id = ${actor.tenantId}
         AND (search_vector @@ plainto_tsquery('simple', ${prepared.tokenizedText})
@@ -149,7 +151,7 @@ export class EngineeringIssueSearchService {
       let work = workReads.get(key);
       if (!work) { work = this.loadWork({ subjectKind, subjectId, workRef: row.exactRevisionRef, issueKey: match[2] }, actor); workReads.set(key, work); }
       try {
-        hits.push((this.issueFromWork({ subjectKind, subjectId, workRef: row.exactRevisionRef, issueKey: match[2], matchReason: 'FULL_TEXT' }, await work)).identity);
+        hits.push((this.issueFromWork({ subjectKind, subjectId, workRef: row.exactRevisionRef, issueKey: match[2], matchReason: row.matchReason }, await work)).identity);
       } catch (error) { if (!isAccessUnavailable(error)) throw error; }
       if (hits.length >= 50) break;
     }
