@@ -12,7 +12,9 @@ export interface AuthorizedDrivePageFetcher {
 export interface DriveSourceScanCandidates {
   scan: DriveFolderScanResult;
   candidates: DriveSourceCandidate[];
-  /** Identity changes only; callers must persist/accept them explicitly. */
+  /** True only when the complete configured frontier was scanned without blockers. */
+  complete: boolean;
+  /** Identity changes are emitted only from a complete scan. */
   changes: DriveSourceCandidateChange[];
 }
 
@@ -59,6 +61,7 @@ export class DriveSourceScanService {
     if (scan.continuation.length === 0 && scan.blockers.length === 0 && checkpointStore.saveCandidates) {
       await checkpointStore.saveCandidates(input.sourceKey, encodeDriveSourceCandidates(candidates));
     }
-    return { scan, candidates, changes: classifyDriveSourceCandidates(previousCandidates, candidates) };
+    const complete = scan.continuation.length === 0 && scan.blockers.length === 0;
+    return { scan, candidates, complete, changes: complete ? classifyDriveSourceCandidates(previousCandidates, candidates) : [] };
   }
 }

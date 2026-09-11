@@ -54,6 +54,7 @@ describe('DriveSourceScanService', () => {
     });
     expect(result.candidates[0]?.identity).toBe('operations:file:file-3:v1');
     expect(result.candidates[0]?.providerVersionId).toBe('v1');
+    expect(result.complete).toBe(true);
     expect(result.changes[0]?.change).toBe('NEW');
   });
 
@@ -66,6 +67,7 @@ describe('DriveSourceScanService', () => {
       fetcher: { list: async () => ({ files: [{ token: 'file-4', type: 'file', name: '日报.pdf', version_id: 'v2' }], hasMore: false }) },
     });
     expect(result.changes).toEqual([expect.objectContaining({ providerObjectId: 'file-4', change: 'CHANGED' })]);
+    expect(result.complete).toBe(true);
   });
 
   it('loads and commits the durable candidate snapshot only after a complete scan', async () => {
@@ -85,7 +87,8 @@ describe('DriveSourceScanService', () => {
     const second = await service.scanCandidates({ tenantId: 'tenant-5', sourceKey: 'operations', fetcher: {
       list: async () => ({ files: [{ token: 'file-5', type: 'file', name: '日报.pdf', version_id: 'v2' }], hasMore: true, nextPageToken: 'later' }),
     }, maxPages: 1 });
-    expect(second.changes[0]?.change).toBe('CHANGED');
+    expect(second.complete).toBe(false);
+    expect(second.changes).toEqual([]);
     expect(snapshot).toContain('"v1"');
   });
 });
