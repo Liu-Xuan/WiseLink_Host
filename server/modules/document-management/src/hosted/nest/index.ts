@@ -19,3 +19,4 @@ export {
   type AuthorizedDrivePageFetcher,
 } from './drive-source-scan.service';
 export { DriveScanCheckpointRepository } from './drive-scan-checkpoint.repository';
+export { toDriveSourceCandidates, type DriveSourceCandidate } from '../drive-source-candidate';
