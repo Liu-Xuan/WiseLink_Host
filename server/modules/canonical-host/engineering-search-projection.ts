@@ -38,9 +38,9 @@ export function buildWorkSearchProjection(input: {
 export class EngineeringSearchProjectionWriter {
   constructor(@Inject(DRIZZLE_DATABASE) private readonly db: PostgresJsDatabase) {}
 
-  async indexJobAidRevision(input: { tenantId: string; ownerId: string; revisionRef: string; content: JobAidProblemWorkContent }) {
+  async indexJobAidRevision(input: { tenantId: string; ownerId: string; revisionRef: string; content: JobAidProblemWorkContent; database?: PostgresJsDatabase }) {
     const rows = buildWorkSearchProjection({ ownerKind: 'USER', ownerId: input.ownerId, exactRevisionRef: input.revisionRef, content: input.content });
-    await this.db.transaction(async tx => {
+    const write = async (tx: PostgresJsDatabase) => {
       await tx.delete(engineeringSearchProjection).where(and(eq(engineeringSearchProjection.tenantId, input.tenantId), eq(engineeringSearchProjection.exactRevisionRef, input.revisionRef)));
       if (rows.length === 0) return;
       await tx.insert(engineeringSearchProjection).values(rows.map(row => ({
@@ -49,10 +49,12 @@ export class EngineeringSearchProjectionWriter {
         parentContextRef: row.parentContextRef, title: row.title, identifiers: row.search.identifiers,
         originalOrWorkText: row.search.originalText, tokenizedText: row.search.tokenizedText, indexedVersion: 1,
       })));
-    });
+    };
+    if (input.database) await write(input.database);
+    else await this.db.transaction(write);
   }
 
-  async indexMatterRevision(input: { tenantId: string; ownerId: string; revisionRef: string; content: JobAidProblemWorkContent }) {
+  async indexMatterRevision(input: { tenantId: string; ownerId: string; revisionRef: string; content: JobAidProblemWorkContent; database?: PostgresJsDatabase }) {
     return this.indexJobAidRevision(input);
   }
 }

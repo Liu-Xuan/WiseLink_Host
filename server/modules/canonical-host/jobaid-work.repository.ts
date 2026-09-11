@@ -355,7 +355,7 @@ export class JobAidWorkRepository {
         .returning();
       if (!saved) throw new Error('JOBAID_WORK_SAVE_READBACK_MISSING');
       void this.searchProjection.indexJobAidRevision({ tenantId: saved.tenantId, ownerId: saved.createdByUserId,
-        revisionRef: saved.assessmentWorkRevisionId, content: input.content }).catch(error => {
+        revisionRef: saved.assessmentWorkRevisionId, content: input.content, database }).catch(error => {
         this.logger.error(`Engineering search projection rebuild pending for ${saved.assessmentWorkRevisionId}: ${error instanceof Error ? error.message : 'UNKNOWN_ERROR'}`);
       });
       return { revision: project(saved), replayed: false };
