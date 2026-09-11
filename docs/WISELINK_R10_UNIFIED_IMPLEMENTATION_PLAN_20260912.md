@@ -17,6 +17,7 @@ WiseLink 使用妙搭 NestJS Host、PostgreSQL/Drizzle、FileService、React/Rea
 **W0 协议和运行边界。** 核对真实 controller、ActionAttempt、模型输入/保存、Reader、前端和 Worker 传输适配器；停用 Host 本地 MinerU 自动恢复/本地派生进程，保留远端任务状态和 parseRun。清理仅限明确属于 WiseLink 的测试数据，先停止派发和在途任务；不删除共享目录原件、其他应用、平台共享表或凭据。
 
 2026-09-12 实施进度：Host `DocumentParsingHostedService` 已移除本地 MinerU runtime/runner 派发，改经 `MineruRemoteWorkerClient` 发送已授权原件；未配置远端凭据会返回明确的 `MINERU_REMOTE_WORKER_NOT_CONFIGURED`。仅收到 Worker 排队回执时不会进入 stage/publish，而会记录 `MINERU_REMOTE_WORKER_ARTIFACT_TRANSFER_PENDING`，等待后续带有可核验产物描述符的传输协议。该改动已通过服务端、客户端类型检查及既有 18 项定向测试；Worker 真实产物回传、Host FileService 读回和 parseRun 发布仍未验收。
+Worker 现有 `tasks/:taskId` 与 `tasks/:taskId/result` 接口已接入 Host 客户端并增加任务/产物响应校验；Host 侧仍需完成签名产物下载、重新写入 Host FileService、逐项读回及 parseRun CAS 发布，当前不把 Worker 自有 bucket 直接当作 Host 来源。
 
 **W1 完整工作依据。** 共用 collectEvidenceUses 按类型收集主张、风险、措施、分类、方法/要求、依赖和前提引用，保留位置与作用。阅读不等于分析；已读但未用于工作的材料记录 READ_ONLY 或部分核查。保存事务同时写完整工作、依据使用、输入处置、影响范围和 CAS；请求结果不确定时按原 request 回读。
 
