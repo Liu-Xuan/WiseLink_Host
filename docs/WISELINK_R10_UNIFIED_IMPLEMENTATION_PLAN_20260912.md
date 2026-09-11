@@ -16,6 +16,8 @@ WiseLink 使用妙搭 NestJS Host、PostgreSQL/Drizzle、FileService、React/Rea
 
 **W0 协议和运行边界。** 核对真实 controller、ActionAttempt、模型输入/保存、Reader、前端和 Worker 传输适配器；停用 Host 本地 MinerU 自动恢复/本地派生进程，保留远端任务状态和 parseRun。清理仅限明确属于 WiseLink 的测试数据，先停止派发和在途任务；不删除共享目录原件、其他应用、平台共享表或凭据。
 
+2026-09-12 W0 收敛：Matter JobAid 新任务只接受带完整 `problemWork` 的前次工作，不再生成或消费 `previousWork.legacySummary`。只有旧摘要的历史状态明确返回 `JOBAID_PREVIOUS_WORK_INCOMPLETE`；已发出的旧 v2 保存任务明确返回 `MATTER_JOBAID_LEGACY_WORK_UNSUPPORTED`，避免用兼容补字段继续运行。历史记录保留，未执行数据删除或回填。
+
 2026-09-12 实施进度：Host `DocumentParsingHostedService` 已移除本地 MinerU runtime/runner 派发，改经 `MineruRemoteWorkerClient` 发送已授权原件；未配置远端凭据会返回明确的 `MINERU_REMOTE_WORKER_NOT_CONFIGURED`。仅收到 Worker 排队回执时不会进入 stage/publish，而会记录 `MINERU_REMOTE_WORKER_ARTIFACT_TRANSFER_PENDING`，等待后续带有可核验产物描述符的传输协议。该改动已通过服务端、客户端类型检查及既有 18 项定向测试；Worker 真实产物回传、Host FileService 读回和 parseRun 发布仍未验收。
 Worker 现有 `tasks/:taskId` 与 `tasks/:taskId/result` 接口已接入 Host 客户端并增加任务/产物响应校验；Host 侧仍需完成签名产物下载、重新写入 Host FileService、逐项读回及 parseRun CAS 发布，当前不把 Worker 自有 bucket 直接当作 Host 来源。
 2026-09-12 进一步完成代码接线：Host 按 `PRUN-*` 派生幂等 `MW-*` taskId，轮询 Worker 到终态，校验每个签名产物的 URL、长度和 SHA-256，将受控结果转换为现有 MineruParseResult，再复用 Host `MineruArtifactStore`、逐项读回和 parseRun stage/publish CAS。服务端类型检查、生产构建及远程 Worker wiring 测试通过；Worker `sprint/default` 已推送提交 `ec6a027`、`978c4de`，并在带妙搭路径前缀的 `/openapi/mineru-worker/*` 入口实际启用 `WL_MINERU_WORKER_API_KEY` Bearer 校验（缺 key 默认拒绝），Host 继续使用同一 token；密钥不入库。真实 FTD parseRun 仍待带用户会话的业务验收。

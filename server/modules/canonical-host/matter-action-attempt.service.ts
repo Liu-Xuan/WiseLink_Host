@@ -690,13 +690,10 @@ export class MatterActionAttemptService {
         registry.set(evidence.evidenceRef, evidence);
       };
       taskInput.sourceCatalog.forEach(add);
-      // Older sealed v2 tasks delivered legacySummary with its complete evidence,
-      // but omitted those same refs from sourceCatalog/initiallyDeliveredRefs.
-      // Accept only that actual task-bound delivery, preserving each source kind.
-      const legacyEvidence = taskInput.modelInput.previousWork?.legacySummary?.evidence ?? [];
-      legacyEvidence.forEach(add);
+      if (taskInput.modelInput.previousWork && 'legacySummary' in taskInput.modelInput.previousWork)
+        throw failure('MATTER_JOBAID_LEGACY_WORK_UNSUPPORTED', 409);
       previous?.state.problemWork?.evidence.forEach(add);
-      const readRefs = new Set([...taskInput.initiallyDeliveredRefs, ...legacyEvidence.map(item => item.evidenceRef),
+      const readRefs = new Set([...taskInput.initiallyDeliveredRefs,
         ...(previous?.state.problemWork?.readSourceRefs ?? [])]);
       for (const event of events.filter(item => item.kind === 'MATTER_REGISTERED_SOURCES_READ')) {
         for (const item of event.evidence as AssessmentEvidence[]) { add(item); readRefs.add(item.evidenceRef); }
@@ -708,7 +705,8 @@ export class MatterActionAttemptService {
       const command = materializeMatterJobAidCommand({ matterId: input.matterId, matterRevisionId: task.subject.matterRevisionId,
         attemptRef: input.attemptRef, requestId: input.requestId, expectedWorkRevision: input.expectedWorkRevision,
         previous, inputs: task.workingBasis.inputs, proposal, evidence: [...registry.values()], readSourceRefs: [...readRefs],
-        capabilities: taskInput.modelInput.capabilities, history: taskInput.modelInput.historyReview });
+        capabilities: taskInput.modelInput.capabilities, history: taskInput.modelInput.historyReview,
+        methodBinding: taskInput.modelInput.methodBinding });
       const saved = await executor.appendWorkingRevision({ tenantId: input.tenantId, matterId: input.matterId,
         actorUserId: input.actorUserId, command, currentInputs: task.workingBasis.inputs, source });
       const receipt = { kind: 'MATTER_JOBAID_WORK_SAVED', requestId: input.requestId,

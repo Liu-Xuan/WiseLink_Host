@@ -20,9 +20,10 @@ export function buildMatterJobAidTask(input: {
   previous: EngineeringMatterWorkingRevisionReadModel | null;
 }) {
   const prior = input.previous?.state.problemWork ?? null;
-  const legacyEvidence = prior ? [] : input.previous?.state.substantiveResult?.evidence ?? [];
+  if (input.previous && !prior)
+    throw new Error('JOBAID_PREVIOUS_WORK_INCOMPLETE');
   const registry = new Map<string, AssessmentEvidence>();
-  for (const evidence of [...JOBAID_METHOD_EVIDENCE, ...(prior?.evidence ?? []), ...legacyEvidence]) {
+  for (const evidence of [...JOBAID_METHOD_EVIDENCE, ...(prior?.evidence ?? [])]) {
     const existing = registry.get(evidence.evidenceRef);
     if (existing && canonicalJson(existing) !== canonicalJson(evidence))
       throw new Error('JOBAID_PRIOR_SOURCE_CHANGED');
@@ -30,7 +31,7 @@ export function buildMatterJobAidTask(input: {
   }
   const sourceCatalog = [...registry.values()];
   const initiallyDeliveredRefs = [...new Set([...JOBAID_CORE_METHOD_REFS, ...(prior?.readSourceRefs ?? []),
-    ...legacyEvidence.map(item => item.evidenceRef)])];
+  ])];
   if (initiallyDeliveredRefs.some((ref) => !registry.has(ref))) throw new Error('JOBAID_PRIOR_SOURCE_MISSING');
   const historyReview: JobAidProblemWorkContent['historyReview'] = {
     required: input.previous !== null,
@@ -53,7 +54,7 @@ export function buildMatterJobAidTask(input: {
       focus: input.previous?.state.focus ?? null,
       trigger: structuredClone(input.trigger),
       availableDocuments: [...new Set([...input.inputs.map((binding) => binding.documentVersionId),
-        ...[...(prior?.evidence ?? []), ...legacyEvidence].flatMap(item => item.kind === 'DOCUMENT_PASSAGE' ? [item.documentVersionId] : []),
+        ...(prior?.evidence ?? []).flatMap(item => item.kind === 'DOCUMENT_PASSAGE' ? [item.documentVersionId] : []),
       ])].map((documentVersionId) => ({
         documentVersionId,
         inputIds: input.inputs.filter((binding) => binding.documentVersionId === documentVersionId).map((binding) => binding.inputId),
@@ -66,7 +67,6 @@ export function buildMatterJobAidTask(input: {
         workRevisionRef: input.previous.matterWorkRevisionId,
         workRevision: input.previous.workingRevision,
         content: prior ? jobAidProblemModelWorkContent(prior) : null,
-        legacySummary: prior ? null : input.previous.state.substantiveResult,
         openQuestions: structuredClone(input.previous.state.openQuestions),
         reviewConditions: structuredClone(input.previous.state.reviewConditions),
       } : null,
