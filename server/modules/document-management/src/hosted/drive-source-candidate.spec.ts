@@ -27,4 +27,10 @@ describe('toDriveSourceCandidates', () => {
     expect(classifyDriveSourceCandidates(previous, current).map(item => item.change)).toEqual(['UNCHANGED', 'NEW']);
     expect(classifyDriveSourceCandidates(previous, [current[0]!, { ...current[0]!, providerVersionId: 'v2' }]).map(item => item.change)).toEqual(['UNCHANGED', 'CHANGED']);
   });
+
+  it('does not merge equal provider tokens from different registered sources', () => {
+    const previous = toDriveSourceCandidates('operations', [{ token: 'same', type: 'file', name: '日报.pdf', path: '日报.pdf', version_id: 'v1' }]);
+    const current = toDriveSourceCandidates('technical-library', [{ token: 'same', type: 'file', name: '手册.pdf', path: '手册.pdf', version_id: 'v1' }]);
+    expect(classifyDriveSourceCandidates(previous, current)[0]?.change).toBe('NEW');
+  });
 });

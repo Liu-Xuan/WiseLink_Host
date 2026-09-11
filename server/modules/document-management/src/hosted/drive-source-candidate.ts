@@ -50,9 +50,11 @@ export function classifyDriveSourceCandidates(
   previous: readonly DriveSourceCandidate[],
   current: readonly DriveSourceCandidate[],
 ): DriveSourceCandidateChange[] {
-  const prior = new Map(previous.map(candidate => [candidate.providerObjectId, candidate]));
+  // Scope provider object IDs by source. Different shared roots can expose the
+  // same token; they remain distinct business identities here.
+  const prior = new Map(previous.map(candidate => [`${candidate.sourceKey}:${candidate.providerObjectId}`, candidate]));
   return current.map(candidate => {
-    const before = prior.get(candidate.providerObjectId);
+    const before = prior.get(`${candidate.sourceKey}:${candidate.providerObjectId}`);
     return { ...candidate, change: !before ? 'NEW' : before.providerVersionId === candidate.providerVersionId ? 'UNCHANGED' : 'CHANGED' };
   });
 }
