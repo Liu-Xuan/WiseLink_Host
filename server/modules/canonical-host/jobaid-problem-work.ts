@@ -142,17 +142,9 @@ export function materializeJobAidWork(
           },
         );
         if (premises.length === 0) fail('STATEMENT_PREMISES_EMPTY');
-        if (
-          basis === 'SOURCE_FACT' &&
-          !premises.some(
-            (p) =>
-              p.role === 'SUPPORTS' &&
-              ['DOCUMENT_PASSAGE', 'HOST_FACT'].includes(
-                registry.get(p.evidenceRef)!.kind,
-              ),
-          )
-        )
-          fail('SOURCE_FACT_REQUIRES_DIRECT_SOURCE');
+        // A model-authored source statement is a candidate interpretation, not
+        // verification. Preserve the actual evidence carrier; its kind alone
+        // cannot establish or disprove whether it supports this statement.
         return {
           claimId: `${issueRef}:claim:${claimKey}`,
           text: text(statement.text, 'STATEMENT_TEXT'),
@@ -175,14 +167,6 @@ export function materializeJobAidWork(
           if (rawProposal == null) return null;
           const proposal = object(rawProposal, label);
           const basisRefs = refs(proposal.basisRefs, `${label}_BASIS`);
-          if (
-            !basisRefs.some((ref) =>
-              ['DOCUMENT_PASSAGE', 'HOST_FACT'].includes(
-                registry.get(ref)!.kind,
-              ),
-            )
-          )
-            fail(`${label}_BUSINESS_EVIDENCE_REQUIRED`);
           return {
             label: text(proposal.label, `${label}_LABEL`),
             reason: text(proposal.reason, `${label}_REASON`),
@@ -203,12 +187,6 @@ export function materializeJobAidWork(
           if (severity?.label !== '严重' && severity?.label !== '灾难')
             fail('IMPORTANT_EVENT_SEVERITY');
           const basisRefs = refs(event.basisRefs, 'IMPORTANT_EVENT_BASIS');
-          if (
-            !basisRefs.some(
-              (ref) => registry.get(ref)!.kind === 'DOCUMENT_PASSAGE',
-            )
-          )
-            fail('IMPORTANT_EVENT_SOURCE_REQUIRED');
           importantEvent = {
             event: eventName,
             basisRefs,
@@ -243,15 +221,6 @@ export function materializeJobAidWork(
             ['PROPOSED', 'REPORTED_IMPLEMENTED', 'VERIFIED_EFFECTIVE'] as const,
             'MEASURE_STATUS',
           );
-          if (
-            status !== 'PROPOSED' &&
-            !basisRefs.some((ref) =>
-              ['DOCUMENT_PASSAGE', 'HOST_FACT'].includes(
-                registry.get(ref)!.kind,
-              ),
-            )
-          )
-            fail('MEASURE_STATUS_EVIDENCE_REQUIRED');
           return {
             text: text(measure.text, 'MEASURE_TEXT'),
             addresses: text(measure.addresses, 'MEASURE_ADDRESSES'),
@@ -422,13 +391,6 @@ export function materializeJobAidWork(
     )
   )
     fail('OPEN_QUESTIONS_REQUIRE_QUALIFIED_COMPLETION');
-  if (
-    roundCompletion !== 'IN_PROGRESS' &&
-    !context.evidence.some(
-      (item) => item.kind === 'DOCUMENT_PASSAGE' && read.has(item.evidenceRef),
-    )
-  )
-    fail('BUSINESS_SOURCE_NOT_READ');
   const unchangedExplanation = text(
     value.unchangedExplanation,
     'UNCHANGED_EXPLANATION',

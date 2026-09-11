@@ -444,7 +444,7 @@ describe('JobAid problem work keeps method semantics, delivery and incremental s
     ).toThrow('JOBAID_ISSUE_PARTITION_DUPLICATE');
   });
 
-  test('rejects unregistered or unread premises and method-only source-fact claims', () => {
+  test('rejects unregistered or unread premises while retaining attributed method statements', () => {
     expect(() =>
       materializeJobAidWork(update(), {
         ...context,
@@ -459,9 +459,8 @@ describe('JobAid problem work keeps method semantics, delivery and incremental s
     const methodOnly = issue('a');
     methodOnly.statements[0].premises[0].evidenceRef = 'method:scope';
     methodOnly.sourceDependencies = ['method:scope'];
-    expect(() => materializeJobAidWork(update([methodOnly]), context)).toThrow(
-      'JOBAID_SOURCE_FACT_REQUIRES_DIRECT_SOURCE',
-    );
+    expect(materializeJobAidWork(update([methodOnly]), context).issues[0].statements[0])
+      .toMatchObject({ basis: 'SOURCE_FACT', premises: [{ evidenceRef: 'method:scope' }] });
     expect(() =>
       materializeJobAidWork(
         { ...update(), roundCompletion: 'COMPLETE' },
@@ -501,7 +500,7 @@ describe('JobAid problem work keeps method semantics, delivery and incremental s
   });
 });
 
-it('does not promote an Aily query answer to verified source fact', () => {
+it('saves an attributed query statement without promoting its evidence or candidate status', () => {
   const query: AssessmentEvidence = {
     evidenceRef: document.evidenceRef,
     kind: 'QUERY_RECEIPT',
@@ -519,12 +518,18 @@ it('does not promote an Aily query answer to verified source fact', () => {
       originalDocumentsVerified: false,
     },
   };
-  expect(() =>
-    materializeJobAidWork(update(), {
-      ...context,
-      evidence: [query, engineer, ...JOBAID_METHOD_EVIDENCE],
-    }),
-  ).toThrow('JOBAID_SOURCE_FACT_REQUIRES_DIRECT_SOURCE');
+  const content = materializeJobAidWork(update(), {
+    ...context,
+    evidence: [query, engineer, ...JOBAID_METHOD_EVIDENCE],
+  });
+  const reading = jobAidReadingResult({
+    workRevisionRef: 'JAWR-1', workRevision: 1, previousWorkRevisionRef: null,
+    requestId: 'save-1', actionAttemptId: 'ATT-1', basedOnWorkItemRevision: 1, workItemId: 'WI-test',
+    documentVersionId: 'dv', createdAt: '2026-09-11T00:00:00.000Z', content,
+  });
+  expect(reading.candidateOnly).toBe(true);
+  expect(reading.evidence.find(item => item.evidenceRef === query.evidenceRef)).toEqual(query);
+  expect(reading.content.claims[0].basis).toBe('SOURCE_FACT');
 });
 
 it('saves a new statement inside an existing issue while preserving full issue reading order', () => {
@@ -572,4 +577,35 @@ it('saves a new statement inside an existing issue while preserving full issue r
   forged.nextProblemWork!.evidence.find(item => item.evidenceRef === document.evidenceRef)!.excerpt = '伪造旧版内容';
   expect(() => materializeEngineeringMatterWorkingState({ matterId: base.matterId, current: thirdState, command: forged })).toThrow();
 
+});
+
+
+it('persists engineer-supported judgments, risk and reported measures while retaining source provenance', () => {
+  const change = {
+    ...issue('a', '根据现场报告评估，若报告属实则存在通讯中断风险。'),
+    sourceDependencies: [engineer.evidenceRef],
+    statements: [{ ...issue('a').statements[0], text: '工程师报告现场出现通讯中断。',
+      premises: [{ evidenceRef: engineer.evidenceRef, role: 'SUPPORTS',
+        explanation: '现场报告支持本轮条件性评估。', limitation: '尚未核对原始记录。' }] }],
+    riskScenarios: [{ scenario: '通讯中断', conditions: ['现场报告属实'], method: 'JA_AC_R01',
+      severity: { label: '严重', reason: '按报告的功能丧失评估。', basisRefs: [engineer.evidenceRef] },
+      likelihood: { label: '不大可能', reason: '依据现场报告作定性判断，待记录核对。', basisRefs: [engineer.evidenceRef] },
+      importantEvent: { event: '通讯中断', reason: '按现场报告评估情景。', basisRefs: [engineer.evidenceRef] },
+      limitations: ['未取得连续监测记录'], controlComparison: '需要比较后续监测结果。' }],
+    measures: [{ text: '完成检查', addresses: '核查通讯状态', limitations: ['效果待核对'],
+      status: 'REPORTED_IMPLEMENTED', basisRefs: [engineer.evidenceRef] }],
+  };
+  const first = materializeJobAidWork({ ...update(), issues: [change] }, context);
+  expect(first.issues[0].riskScenarios[0]).toMatchObject({ score: 49, riskGrade: 4 });
+  expect(first.issues[0].measures[0].status).toBe('REPORTED_IMPLEMENTED');
+  const next = materializeJobAidWork({ ...update(), issues: [], unchangedIssueKeys: ['a'] },
+    { ...context, previous: first });
+  expect(next.issues).toEqual(first.issues);
+  const reading = jobAidReadingResult({ workRevisionRef: 'JAWR-2', workRevision: 2, previousWorkRevisionRef: 'JAWR-1',
+    requestId: 'save-2', actionAttemptId: 'ATT-1', basedOnWorkItemRevision: 1,
+    workItemId: 'WI-test', documentVersionId: 'dv', createdAt: '2026-09-11T00:00:00.000Z', content: next });
+  expect(reading.candidateOnly).toBe(true);
+  expect(reading.evidence.find(item => item.evidenceRef === engineer.evidenceRef)).toEqual(engineer);
+  expect(() => materializeJobAidWork({ ...update(), issues: [change] },
+    { ...context, readSourceRefs: [document.evidenceRef] })).toThrow('JOBAID_SOURCE_NOT_DELIVERED');
 });

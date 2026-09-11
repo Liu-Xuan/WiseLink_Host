@@ -1039,7 +1039,7 @@ export default function DocumentParsingPage() {
                       <strong>{statement.text}</strong>
                       <span>
                         {statement.basis === 'SOURCE_FACT'
-                          ? '来源事实'
+                          ? '来源陈述'
                           : '条件性推断'}
                       </span>
                       {statement.sourceRefIds.length ? (

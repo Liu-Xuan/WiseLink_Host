@@ -133,7 +133,7 @@ const ClaimEvidenceDialog: FC<ClaimEvidenceDialogProps> = ({
               {data.claim.text}
             </blockquote>
             <p className="text-xs text-muted-foreground">
-              {data.claim.basis === 'SOURCE_FACT' ? '来源事实' : '条件性推断'}·{' '}
+              {data.claim.basis === 'SOURCE_FACT' ? '来源陈述' : '条件性推断'}·{' '}
               {data.claim.premises.length} 项前提
             </p>
             {data.claim.premises.length === 0 ? (
