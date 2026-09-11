@@ -345,6 +345,24 @@ export async function invokeHostedJobAidProblemModel(
     const choice = payload.choices[0];
     const message = choice?.message;
     const call = message?.tool_calls?.[0];
+    // A completed text-only answer is known, unlike an interrupted generation.
+    // Keep its durable result and request a separate, bounded protocol correction.
+    if (choice.finish_reason === 'stop' && message?.role === 'assistant' &&
+        typeof message.content === 'string' && message.content.trim() &&
+        (message.tool_calls == null || (Array.isArray(message.tool_calls) && message.tool_calls.length === 0)) &&
+        message.function_call == null && corrections < 2) {
+      outputUnits += Buffer.byteLength(message.content);
+      corrections += 1;
+      messages = [...messages, { role: 'user', content: JSON.stringify({
+        accepted: false, errorCode: 'JOBAID_MODEL_OUTPUT_FUNCTION_REQUIRED', expectedWorkRevision,
+        instruction: `Your completed text-only response did not submit any step. Return exactly one ${FUNCTION} function call. Continue the existing investigation and correct the prior rejected work using its evidence and receipt; do not restart the assessment or treat prose as saved work.`,
+        ...priorRejectedRatingCorrection(messages, modelInput),
+      }) }];
+      await options.observeCandidateRejection?.({ correctionNo: corrections, code: 'JOBAID_MODEL_OUTPUT_FUNCTION_REQUIRED' });
+      await checkpoint?.write('assessment-state', { round: round + 1, messages,
+        expectedWorkRevision, saved, corrections, inputUnits, outputUnits });
+      continue;
+    }
     if (
       !isFunctionResponseContentSupported(message?.content) ||
       message?.tool_calls?.length !== 1 ||
@@ -465,7 +483,7 @@ export async function invokeHostedJobAidProblemModel(
         expectedWorkRevision,
         instruction:
           'Correct only the rejected step or substantive work using the original evidence. Existing saved work remains available; never invent sources or turn failure into completion.',
-        ...workShapeCorrection(code, submittedWork),
+        ...workShapeCorrection(code, submittedWork, modelInput),
         ...(code === 'JOBAID_SOURCE_NOT_DELIVERED' && error.hostRejectedSourceRef ? {
           sourceRef: error.hostRejectedSourceRef,
           instruction: 'The Host rejected this exact source reference from your candidate. Read it through READ_SOURCES if it belongs to the authorized catalog or document range. If unavailable, preserve the limitation and revise the unsupported assertion. Do not guess another identifier, silently drop supported analysis, or treat the failed save as completed.',
@@ -498,8 +516,34 @@ export async function invokeHostedJobAidProblemModel(
 
 // Explain the existing Host rejection using types/positions only. The original
 // work is still submitted unchanged and only the Host can accept a revision.
-function workShapeCorrection(code, work) {
+function priorRejectedRatingCorrection(messages, modelInput) {
+  const receiptMessage = messages.findLast(message => message.role === 'tool');
+  const priorCall = messages.findLast(message => message.role === 'assistant' && message.tool_calls?.length === 1)?.tool_calls[0];
+  if (!receiptMessage || priorCall?.function?.name !== FUNCTION) return {};
+  const receipt = parseStrictJsonObject(receiptMessage.content);
+  if (receipt.accepted !== false || !/^JOBAID_(SEVERITY|LIKELIHOOD)_BUSINESS_EVIDENCE_REQUIRED$/.test(receipt.errorCode)) return {};
+  const step = parseStrictJsonObject(priorCall.function.arguments).step;
+  if (typeof step?.workJson !== 'string') return {};
+  return { priorRejection: { errorCode: receipt.errorCode,
+    ...workShapeCorrection(receipt.errorCode, parseJobAidWorkJson(step.workJson), modelInput) } };
+}
+
+function workShapeCorrection(code, work, modelInput) {
   if (!work) return {};
+  const rating = /^JOBAID_(SEVERITY|LIKELIHOOD)_BUSINESS_EVIDENCE_REQUIRED$/.exec(code)?.[1]?.toLowerCase();
+  if (rating) {
+    const kinds = new Map((modelInput.availableSources ?? []).map(source => [source.ref, source.kind]));
+    const fieldErrors = [];
+    for (const [i, issue] of (work.issues ?? []).entries()) for (const [j, risk] of (issue.riskScenarios ?? []).entries()) {
+      const proposal = risk[rating];
+      if (proposal && Array.isArray(proposal.basisRefs) && proposal.basisRefs.every(ref =>
+        kinds.has(ref) && !['DOCUMENT_PASSAGE', 'HOST_FACT'].includes(kinds.get(ref))))
+        fieldErrors.push({ path: `work.issues[${i}].riskScenarios[${j}].${rating}`, expected: 'business evidence or null',
+          received: 'rating supported only by non-business sources', basisRefs: proposal.basisRefs,
+          sourceKinds: proposal.basisRefs.map(ref => kinds.get(ref)) });
+    }
+    return { fieldErrors, instruction: `The Host rejected a ${rating} rating without business evidence. Engineer statements, method rules and historical candidates alone cannot establish this rating. Use an actually supporting DOCUMENT_PASSAGE or HOST_FACT only if available; otherwise set the unsupported ${rating} to null and preserve the scenario, conditions, evidence, limitation and open question. Never guess a rating or attach an unrelated citation to pass validation. Preserve all other justified work. The Host will validate the revised work.` };
+  }
   const fieldErrors = [...jobAidWorkTypeErrors(work),
     ...(code === 'JOBAID_ISSUE_DEPENDENCY_MISSING' ? jobAidWorkDependencyErrors(work) : []),
   ];

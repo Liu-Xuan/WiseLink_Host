@@ -200,6 +200,74 @@ const completed = {
   understanding: 'The source condition remains; reliability is unqueried.',
 };
 
+test('a completed text-only correction resumes from its durable response and preserves the rejected work', () => persisted(async checkpoint => {
+  const input = modelInput();
+  input.availableSources = [{ ref: 'engineer:1', kind: 'ENGINEER_STATEMENT' }];
+  const invalid = { ...completed, issues: [{ issueKey: 'maintenance', riskScenarios: [{
+    scenario: 'Conditional maintenance disruption', conditions: ['Engineering hypothesis'],
+    likelihood: { label: '不大可能', reason: 'Unverified statement', basisRefs: ['engineer:1'] },
+    limitations: ['No business likelihood evidence'],
+  }] }] };
+  const corrected = structuredClone(invalid);
+  corrected.issues[0].riskScenarios[0].likelihood = null;
+  const f = fixture([{ action: 'SAVE_WORK', work: invalid }, { action: 'SAVE_WORK', work: corrected }, { action: 'FINISH' }],
+    { assessmentCheckpoint: checkpoint });
+  const save = f.options.saveAssessmentWork;
+  let saves = 0;
+  f.options.saveAssessmentWork = async args => {
+    if (++saves === 1) throw Object.assign(new Error('Rejected'), { hostErrorCode: 'JOBAID_LIKELIHOOD_BUSINESS_EVIDENCE_REQUIRED' });
+    return save(args);
+  };
+  const gateway = f.dependencies.requestGateway;
+  let generations = 0;
+  f.dependencies.requestGateway = async (url, request) => {
+    if (++generations !== 2) return gateway(url, request);
+    f.calls.push(JSON.parse(request.body));
+    return new Response(JSON.stringify({ choices: [{ finish_reason: 'stop', message: { role: 'assistant',
+      content: 'A completed explanation without the required function.' } }] }), { status: 200 });
+  };
+  let interrupted = false;
+  f.options.observeCandidateRejection = async event => {
+    if (event.code === 'JOBAID_MODEL_OUTPUT_FUNCTION_REQUIRED' && !interrupted) {
+      interrupted = true; throw new Error('Simulated process interruption');
+    }
+  };
+  await assert.rejects(f.run(input), /Simulated process interruption/);
+  const recorded = await checkpoint.readOptional('assessment-round-2.result');
+  await f.run(input);
+  assert.deepEqual(await checkpoint.readOptional('assessment-round-2.result'), recorded);
+  assert.equal(generations, 4, 'completed text-only response is reused, not generated again');
+  assert.equal(saves, 2, 'the original rejected SAVE is not repeated');
+  assert.equal(f.reads.length, 0);
+  const rejection = JSON.parse(f.calls[1].messages.at(-1).content);
+  assert.equal(rejection.fieldErrors[0].path, 'work.issues[0].riskScenarios[0].likelihood');
+  assert.deepEqual(rejection.fieldErrors[0].sourceKinds, ['ENGINEER_STATEMENT']);
+  assert.match(rejection.instruction, /null.*preserve the scenario/);
+  const correctionMessages = f.calls[2].messages;
+  assert.equal(JSON.parse(correctionMessages.at(-1).content).errorCode, 'JOBAID_MODEL_OUTPUT_FUNCTION_REQUIRED');
+  assert.equal(JSON.parse(correctionMessages.at(-1).content).priorRejection.fieldErrors[0].path,
+    'work.issues[0].riskScenarios[0].likelihood');
+  assert.ok(correctionMessages.some(message => message.role === 'tool' && message.content.includes('JOBAID_LIKELIHOOD_BUSINESS_EVIDENCE_REQUIRED')));
+  assert.equal(JSON.stringify(correctionMessages).includes('A completed explanation without'), false);
+  assert.deepEqual(f.saves[0] && JSON.parse(f.saves[0].workJson), corrected);
+}));
+
+test('text-only protocol corrections are bounded and truncated or foreign calls are not repaired', async () => {
+  for (const mode of ['text', 'truncated', 'foreign-call']) {
+    const f = fixture([]); let calls = 0;
+    f.dependencies.requestGateway = async () => {
+      calls++;
+      return new Response(JSON.stringify({ choices: [{ finish_reason: mode === 'truncated' ? 'length' : 'stop',
+        message: { role: 'assistant', content: 'Unusable output', ...(mode === 'foreign-call' ? {
+          tool_calls: [{ id: 'unapproved', type: 'function', function: { name: 'other_tool', arguments: '{}' } }],
+        } : {}) } }] }), { status: 200 });
+    };
+    await assert.rejects(f.run(), /JOBAID_MODEL_OUTPUT_FUNCTION_INVALID/);
+    assert.equal(calls, mode === 'text' ? 3 : 1);
+    assert.equal(f.saves.length, 0);
+  }
+});
+
 async function persisted(run) {
   const directory = await mkdtemp(join(tmpdir(), 'jobaid-round-recovery-'));
   try { await run(await createCheckpointStore(directory)); }
