@@ -1,6 +1,6 @@
 import { createHash } from 'node:crypto';
 import { createReadStream } from 'node:fs';
-import { lstat, mkdir, open, readFile, realpath, rename, rm, writeFile } from 'node:fs/promises';
+import { lstat, mkdir, open, readFile, realpath, rename, rm, truncate, writeFile } from 'node:fs/promises';
 import { dirname, isAbsolute, join, relative, resolve } from 'node:path';
 import type { FileService } from '@lark-apaas/fullstack-nestjs-core';
 import { withFileReadTransportRetry } from '../../unified-reader/file-service-read-transport';
@@ -101,17 +101,17 @@ export class MineruModelCache {
       } else {
         const staging = `${destination}.assembling`;
         const chunk = `${destination}.chunk`;
-        await removeStaging(staging);
+        const nextPart = await verifiedPartial(staging, file);
         await removeStaging(chunk);
         try {
-          const target = await open(staging, 'wx', 0o600);
+          const target = await open(staging, 'a', 0o600);
           try {
-            for (const part of file.parts) {
+            for (const part of file.parts.slice(nextPart)) {
               await this.downloadPart(part, chunk);
               for await (const data of createReadStream(chunk)) await target.writeFile(data);
+              await target.sync();
               await rm(chunk);
             }
-            await target.sync();
           } finally {
             await target.close();
           }
@@ -119,7 +119,8 @@ export class MineruModelCache {
           await rename(staging, destination);
         } finally {
           await removeStaging(chunk);
-          await removeStaging(staging);
+          // Retain only a reconstructible local prefix. A later attempt checks
+          // every complete part against the same manifest before appending.
         }
       }
       input.onProgress?.(file.relativePath);
@@ -195,4 +196,22 @@ async function verifyFile(path: string, bytes: number, expected: string) {
   const hash = createHash('sha256');
   for await (const data of createReadStream(path)) hash.update(data);
   if (hash.digest('hex') !== expected) throw new Error('MINERU_MODEL_CACHE_MISMATCH');
+}
+
+async function verifiedPartial(path: string, file: MineruDeploymentFile): Promise<number> {
+  if (!(await exists(path))) return 0;
+  const stat = await lstat(path);
+  if (!stat.isFile() || stat.size > file.bytes) throw new Error('MINERU_MODEL_CACHE_MISMATCH');
+  for (let index = 0; index < file.parts.length; index += 1) {
+    const part = file.parts[index];
+    if (stat.size < part.offset + part.bytes) {
+      // An interrupted append is never accepted as a verified part.
+      if (stat.size > part.offset) await truncate(path, part.offset);
+      return index;
+    }
+    const hash = createHash('sha256');
+    for await (const data of createReadStream(path, { start: part.offset, end: part.offset + part.bytes - 1 })) hash.update(data);
+    if (hash.digest('hex') !== part.sha256) throw new Error('MINERU_MODEL_CACHE_MISMATCH');
+  }
+  return file.parts.length;
 }
