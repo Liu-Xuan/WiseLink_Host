@@ -1,5 +1,25 @@
 # 给主控：MinerU 实际接线与联合测试交接
 
+## 2026-09-12 主控事实校正（覆盖旧的“Host 内运行时”执行建议）
+
+本文件下方的历史交接仍保留当时的排障过程和实现证据；当前实施以 R10 统一架构为准：Host 不再启动本地 MinerU Python/runner，解析计算由同级独立应用 `wiselink-mineru-worker` 承担。Host 只负责已授权原件读取、`parseRun` 状态、远端任务幂等/恢复、产物长度与 SHA-256 校验、FileService 持久化、逐项读回和事务/CAS 发布。
+
+当前 Worker `sprint/default` 已推送 `ec6a027`、`978c4de`。`/openapi/mineru-worker/*` 在包含妙搭 `CLIENT_BASE_PATH` 的路径下已实际启用 `WL_MINERU_WORKER_API_KEY` Bearer 校验：缺 key 返回 401，正确 key 的 health 返回 200。Host 与 Worker 使用同一服务间 token；它只保护传输边界，不代替文档/租户/actor 授权。
+
+真实运行核验仍未完成：Worker `runtime/prepare` 返回 `MINERU_RUNTIME_PREPARATION_FAILED`，`totalFiles=56`、`verifiedFiles=0`。本机直接运行离线安装脚本返回 `MINERU_OFFLINE_PLATFORM_UNSUPPORTED`，因为本机不是 Worker 要求的 Linux x86_64 / CPython 3.10；不能用本机路径、旧 Host 临时目录或旧 Host runtime 证据填补生产配置。恢复条件是在线 Worker 取得其应用 FileService 的 56 个 runtime 文件并在目标 Linux 环境达到 READY，随后用 `document_version_b83523c2b5ba26a2b1753641` 做真实 FTD parseRun，分别验收产物发布和 Reader 阅读。
+
+共享来源监控同样按 Host 统一架构推进：六个用户提供的 Drive 根目录已登记于 `server/modules/document-management/src/hosted/wiselink-drive-source-config.ts`，扫描器支持递归分页和断点 roots；应用 bot 当前仍对首目录返回 `1061004 permission_denied`，因此不能把个人 CLI 会话读到的目录清单写成后台监控已接通。SB、AD 和其他目录继续通过同一注册表扩展，待应用/委托身份授权后再进行真实增量扫描。
+
+## 2026-09-11 最新决定：迁移到独立妙搭 Worker
+
+- 用户随后明确：不再把精力放在资源是否足够的验证上；没有其他服务器，先用现有条件继续。用户另提出搭载 OpenClaw 的容器平台，正在确认管理入口，以判断是否可新建专用 MinerU 容器。配额检查到此结束，不把等待升配作为后续实现的前置条件；未经确认不改动现有 OpenClaw 服务。
+- 用户已明确选择独立 worker／服务，并指定妙搭平台优先；无法在现有应用配置独立计算资源时，允许新建应用。此决定取代继续在 Host 内启动 Python 重解析的实施方式，完整 FTD／翻译／SL／SB 验收目标不变。
+- 管理页“监控 → 服务器情况 → 修改”实际显示 Host 为 **0.5C1G、实例 0–10**；1C／2C／4C 和 2G 内存选项均禁用。只查看后取消，未修改 Host 规格。此前生产内存分钟指标最高约 90%，但仍无 OOM 终止记录，不能单凭指标认定原失败原因。
+- 已创建独立 full_stack 应用 **WiseLink MinerU Worker**，`app_17dxczv906a`；源码位于同级 `wiselink-mineru-worker`，仅向它自己的妙搭 `origin/sprint/default` 推送。新应用管理页实测同样为 **0.5C1G**，1C／2C／4C 和 2G 档位禁用。新应用实现了与 Host 的应用分离，但单实例容量限制仍待平台开放更高配额或提供其他独立运行环境；未尝试绕过禁用配置。
+- 资源诊断接口和页面已发布：提交 `9d71ac1a1ac8c1da40a11790debaa64ce0624a6c`，release `7684282056742996964` 返回 `finished` 且提交匹配。线上地址为 https://hv5zjf4j8yb.feishuapp.com/app/app_17dxczv906a 。浏览器实际读取 cgroup 配额 **0.5 核 / 1024.0 MiB**，当次容器内存 **344.9 MiB**、Node RSS **180.2 MiB**。资源读取 3 项测试、前后端类型检查和生产构建通过；当前解析器明确为未配置，没有向新应用发送真实 PDF，也没有宣称解析成功。已向用户询问升配或已有服务器的后续运行环境。
+- 分工继续：解析会话负责 Worker 运行包及 Host 传输适配器；主控负责停用 Host 自动恢复／本地 spawn、接入远端任务状态与恢复、FileService 持久化及 CAS 发布。Host 保留来源和用户授权、官方 LLM 标题增强与正式采用，不把平台 API Key 当成业务授权的替代。
+- 最新 Host 技术版本为 `e58375c82`（release `7684272668489157591` 已 finished）。第二次 FTD 真实解析 `PRUN-29da20b0-66af-4695-a5d8-2b5b3bc90f3a` 失败于 MinerU 进程退出码 1，0 个已核验产物，LLM 标题增强尚无 `APPLIED` 证据。已停止发起新的 Host 重解析。
+
 ## 2026-09-11 最新实测与运行接线
 
 - 用户最新批次要求：翻译按当前官方 Hosted 模型的可用输出 token 额度尽量合批，计入上下文/JSON 开销及必要余量；减少调用批数，自然段/整表只是对齐单位。存储的 96 MB 分片由 CLI 100 MB 单文件上限决定，不属于模型输出分批。现有独立翻译批次函数仍由调用方提供字符预算，实际模型额度与执行端接线由主控完成，尚未声称接线已完成。重试后已成功向主控会话送达要求，待执行端接线。独立分批函数已取消章节强制拆批，小章节按预算合并并保留标题上下文；输出预算导致拆批及跨章对齐测试通过。
