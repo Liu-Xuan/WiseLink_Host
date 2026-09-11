@@ -27,7 +27,21 @@ export async function consumeHostedMatter(options, dependencies) {
   const recoveredResult = Boolean(result);
   if (!result && claim.status === 'COMMITTING') throw new Error('MATTER_RECOVERY_RESULT_MISSING');
   if (!result) {
-    const modelInput = structuredClone(task.modelInput.modelInput);
+    let nativeRecovery = await checkpoint.readOptional('assessment-native-recovery');
+    const legacyStarted = await checkpoint.readOptional('model.started');
+    if (legacyStarted && !await checkpoint.readOptional('model.result') && !await checkpoint.readOptional('assessment-enabled')) {
+      if (legacyStarted.argsHash !== canonicalSha256({ inputHash: task.inputHash })) throw new Error('MATTER_CHECKPOINT_BINDING_MISMATCH');
+      if (!nativeRecovery && dependencies.recoverNativeMatterResponse && !claim.savedWork) {
+        nativeRecovery = await dependencies.recoverNativeMatterResponse({ ...target, inputHash: task.inputHash,
+          executionModel: task.executionModel, startedAt: legacyStarted.startedAt });
+        if (nativeRecovery?.attemptRef !== target.attemptRef || nativeRecovery.inputHash !== task.inputHash)
+          throw new Error('MATTER_NATIVE_RECOVERY_BINDING_MISMATCH');
+        await checkpoint.writeOnce('assessment-native-recovery', nativeRecovery);
+      }
+    }
+    if (nativeRecovery && (nativeRecovery.attemptRef !== target.attemptRef || nativeRecovery.inputHash !== task.inputHash))
+      throw new Error('MATTER_NATIVE_RECOVERY_BINDING_MISMATCH');
+    let modelInput = structuredClone(task.modelInput.modelInput);
     if (claim.savedWork) {
       if (claim.savedWork.matterId !== target.matterId || claim.savedWork.source?.actionAttemptId !== task.actionAttemptId ||
         !claim.savedWork.state?.problemWork) throw new Error('MATTER_SAVED_WORK_BINDING_MISMATCH');
@@ -35,10 +49,22 @@ export async function consumeHostedMatter(options, dependencies) {
       modelInput.previousWork = { workRevisionRef: claim.savedWork.matterWorkRevisionId, workRevision: claim.savedWork.workingRevision,
         content: modelWork(claim.savedWork.state.problemWork) };
     }
-    const execution = await checkpoint.remoteStep({ step: 'model', args: { inputHash: task.inputHash }, ambiguousCommit: false,
-      perform: () => withLeaseHeartbeat(() => dependencies.invokeMatterModel({ operation: 'ASSESS_MATTER', modelInput }, {
-        executionModel: task.executionModel, sessionDiscriminator: `${target.attemptRef}:${claim.leaseGeneration}`,
-        resumeSavedWork: Boolean(claim.savedWork),
+    let invocation = await checkpoint.readOptional('assessment-invocation');
+    if (!invocation) {
+      invocation = { modelInput, sessionDiscriminator: nativeRecovery?.sessionDiscriminator ?? `${target.attemptRef}:${claim.leaseGeneration}`,
+        resumeSavedWork: Boolean(claim.savedWork) };
+      await checkpoint.writeOnce('assessment-invocation', invocation);
+    }
+    modelInput = invocation.modelInput;
+    const perform = () => withLeaseHeartbeat(() => dependencies.invokeMatterModel({ operation: 'ASSESS_MATTER', modelInput }, {
+        executionModel: task.executionModel, sessionDiscriminator: invocation.sessionDiscriminator,
+        resumeSavedWork: invocation.resumeSavedWork,
+        assessmentCheckpoint: checkpoint,
+        recoveredInitialResponse: nativeRecovery?.response,
+        observeModelOutput: async (shape, round) => {
+          const key = `assessment-round-${round}-output-shape`;
+          if (!await checkpoint.readOptional(key)) await checkpoint.writeOnce(key, shape);
+        },
         heartbeat: () => call('HEARTBEAT'),
         readAssessmentSources: (intent) => readMatterAssessmentSources(intent, {
           sourceCatalog: task.modelInput.sourceCatalog,
@@ -53,7 +79,13 @@ export async function consumeHostedMatter(options, dependencies) {
           return { revision: { requestId, workRevisionRef: revision.matterWorkRevisionId, workRevision: revision.workingRevision,
             content: revision.state.problemWork } };
         },
-      }), () => call('HEARTBEAT')) });
+      }), () => call('HEARTBEAT'));
+    // Legacy whole-model unknowns remain fenced. Only the runner that actually
+    // installed per-round persistence can resume its own recorded invocation.
+    const execution = await checkpoint.readOptional('assessment-execution') ??
+      (nativeRecovery || await checkpoint.readOptional('assessment-enabled') ? await perform() :
+        await checkpoint.remoteStep({ step: 'model', args: { inputHash: task.inputHash }, ambiguousCommit: false, perform }));
+    if (!await checkpoint.readOptional('assessment-execution')) await checkpoint.writeOnce('assessment-execution', execution);
     validateRuntimeProvenance(execution.provenance);
     const envelope = { schemaVersion: 'wiselink.3_1.openclaw_result_envelope.v2', taskType: task.taskType,
       subject: task.subject, actionAttemptId: task.actionAttemptId, operationRef: task.operationRef, baseRevision: task.baseRevision,

@@ -4,6 +4,8 @@ import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { consumeHostedMatter } from '../scripts/consume-hosted-matter.mjs';
+import { invokeHostedJobAidProblemModel } from '../scripts/run-jobaid-problem-assessment.mjs';
+import { createCheckpointStore } from '../scripts/run-hosted-review-turn.mjs';
 import { WISELINK_SKILL_VERSION, WISELINK_HOST_MCP_NAME, WISELINK_HOST_MCP_VERSION } from '../scripts/validate-payload.mjs';
 
 async function fixture(run) {
@@ -69,6 +71,64 @@ test('an ambiguous model request is never repeated on the next native tick', () 
   await assert.rejects(consumeHostedMatter({ matterId: 'MAT-one', checkpointRoot }, dependencies), /unknown model outcome/);
   await assert.rejects(consumeHostedMatter({ matterId: 'MAT-one', checkpointRoot }, dependencies), /MODEL_OUTCOME_UNKNOWN/);
   assert.equal(calls, 1);
+}));
+
+for (const recoverLegacy of [false, true]) test(`Matter resumes a failed page read after lease renewal (legacy=${recoverLegacy})`, () => fixture(async checkpointRoot => {
+  const boundTask = structuredClone(task);
+  Object.assign(boundTask.executionModel, { displayName: 'Synthetic', providerKind: 'BUILT_IN', settingsRevision: 1,
+    selectedAt: '2026-09-11T00:00:00.000Z' });
+  Object.assign(boundTask.modelInput.modelInput, {
+    subject: task.subject, methodBinding: { packRef: 'synthetic-method' }, availableSources: [], deliveredEvidence: [],
+  });
+  const steps = [
+    { action: 'READ_SOURCES', sourceRefs: ['DOCUMENT_VERSION:DV-one:page:1'], context: 'PAGE', purpose: 'read' },
+    { action: 'SAVE_WORK', workJson: JSON.stringify({ roundCompletion: 'COMPLETE' }) },
+    { action: 'FINISH' },
+  ];
+  const users = []; let reads = 0; let saves = 0; let generation = 1;
+  const dependencies = {
+    callTool: async (name, input) => {
+      if (name === 'next_matter_assessment') return { matterId: 'MAT-one', next: { attemptRef: 'AQ-one', status: 'RUNNING' } };
+      if (input.operation === 'CLAIM') return { task: boundTask, attemptRef: 'AQ-one', status: 'RUNNING', leaseToken: `lease-${generation}`, leaseGeneration: generation };
+      if (input.operation === 'READ_SAVED_WORK') return null;
+      assert.equal(input.leaseGeneration, generation);
+      if (input.operation === 'HEARTBEAT') return {};
+      if (input.operation === 'READ_SOURCES') {
+        if (++reads === 1) throw new Error('SOURCE_TRANSPORT_FAILED');
+        return sourceReading(input);
+      }
+      if (input.operation === 'SAVE_WORK') { saves++; return { workRevisionRef: 'MWR-one', workRevision: 1, roundCompletion: 'COMPLETE' }; }
+      if (input.operation === 'FINISH') return { attemptRef: 'AQ-one', status: 'SUCCEEDED', workRevisionRef: 'MWR-one' };
+      assert.fail(input.operation);
+    },
+    invokeMatterModel: (input, hooks) => invokeHostedJobAidProblemModel(input, {
+      gatewayChatCompletionsEnabled: true, gatewayUrl: 'http://127.0.0.1:1', gatewayToken: 'synthetic', ...hooks,
+      registeredModelRefs: ['miaoda/minimax-m3'],
+    }, { requestGateway: async (_url, request) => {
+      users.push(JSON.parse(request.body).user);
+      return new Response(JSON.stringify({ model: 'synthetic', choices: [{ finish_reason: 'tool_calls', message: {
+        role: 'assistant', content: null, tool_calls: [{ id: `call-${users.length}`, type: 'function', function: {
+          name: 'return_wiselink_assessment_step', arguments: JSON.stringify({ step: steps.shift() }),
+        } }],
+      } }] }));
+    } }),
+  };
+  const options = { matterId: 'MAT-one', checkpointRoot };
+  if (recoverLegacy) {
+    const checkpoint = await createCheckpointStore(join(checkpointRoot, 'matter', 'MAT-one', 'AQ-one'));
+    await assert.rejects(checkpoint.remoteStep({ step: 'model', args: { inputHash: task.inputHash }, ambiguousCommit: false,
+      perform: async () => { throw new Error('legacy source failure'); } }), /legacy source failure/);
+    const step = steps.shift();
+    dependencies.recoverNativeMatterResponse = async binding => ({ ...binding, sessionDiscriminator: 'AQ-one:1',
+      response: { status: 200, ok: true, raw: JSON.stringify({ model: 'synthetic', choices: [{ finish_reason: 'tool_calls',
+        message: { role: 'assistant', content: null, tool_calls: [{ id: 'original-native-call', type: 'function',
+          function: { name: 'return_wiselink_assessment_step', arguments: JSON.stringify({ step }) } }] } }] }) } });
+  }
+  await assert.rejects(consumeHostedMatter(options, dependencies), /SOURCE_TRANSPORT_FAILED/);
+  generation = 2;
+  assert.equal((await consumeHostedMatter(options, dependencies)).status, 'MATTER_WORK_SAVED');
+  assert.deepEqual(users, Array(recoverLegacy ? 2 : 3).fill('initial:AQ-one:1'));
+  assert.equal(reads, 2); assert.equal(saves, 1);
 }));
 
 test('idle or terminal requests never claim or invoke a model', async () => {

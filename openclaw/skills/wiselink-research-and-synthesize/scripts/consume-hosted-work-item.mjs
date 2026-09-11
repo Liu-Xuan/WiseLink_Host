@@ -8,6 +8,7 @@ import { pathToFileURL } from 'node:url';
 
 import { consumePendingReviewTurn } from './consume-hosted-review-turn.mjs';
 import { consumeHostedMatter } from './consume-hosted-matter.mjs';
+import { recoverNativeMatterResponse } from './recover-native-matter-response.mjs';
 import { invokeHostedJobAidProblemModel } from './run-jobaid-problem-assessment.mjs';
 import { invokeHostedInitialModel } from './invoke-hosted-initial-model.mjs';
 import { INITIAL_ANALYSIS_OPERATIONS, parseConfigurationEvidenceReevaluationStatus, runInitialAnalysis } from './orchestrate-host-mcp.mjs';
@@ -283,7 +284,7 @@ function assertSingleConsumerSubject({ workItemId, matterId }) {
 
 async function main(argv, env) {
   if (argv.includes('--help')) {
-    process.stdout.write('Usage: node consume-hosted-work-item.mjs [--work-item-id WI-...] [--matter-id MAT-...] [--applicability-context-ref REF] [--checkpoint-root PATH] [--openclaw-config PATH]\nOne native job per authorized subject. Choose exactly one WorkItem or Matter; independent jobs use native cron concurrency.\n');
+    process.stdout.write('Usage: node consume-hosted-work-item.mjs [--work-item-id WI-...] [--matter-id MAT-...] [--applicability-context-ref REF] [--checkpoint-root PATH] [--openclaw-config PATH] [--native-session-store PATH]\nOne native job per authorized subject. Choose exactly one WorkItem or Matter; independent jobs use native cron concurrency.\n');
     return;
   }
   const workItemId = option(argv, '--work-item-id');
@@ -300,6 +301,9 @@ async function main(argv, env) {
       checkpointRoot: option(argv, '--checkpoint-root') ?? join(homedir(), '.openclaw', 'wiselink-work-item-runs'),
     }, {
       callTool: connection.callTool,
+      ...(option(argv, '--native-session-store') ? { recoverNativeMatterResponse: input => recoverNativeMatterResponse({
+        ...input, storePath: option(argv, '--native-session-store'),
+      }) } : {}),
       invokeInitialModel: (input, hooks) => invokeHostedInitialModel(input, { ...runtime, ...hooks }),
       invokeReviewModel: (input, hooks) => invokeHostedReviewModel(input, { ...runtime, ...hooks }),
       invokeMatterModel: (input, hooks) => invokeHostedJobAidProblemModel(input, { ...runtime, ...hooks }),
