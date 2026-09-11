@@ -32,6 +32,7 @@ export function decodeDriveFolderScanCheckpoint(value: string): DriveFolderScanC
       !Array.isArray(parsed.roots) || !Array.isArray(parsed.continuation)) {
     throw new Error('DRIVE_SCAN_CHECKPOINT_INVALID');
   }
+  if (parsed.blockers !== undefined && !Array.isArray(parsed.blockers)) throw new Error('DRIVE_SCAN_CHECKPOINT_INVALID');
   return {
     version: 1,
     roots: parsed.roots.map(readState),

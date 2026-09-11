@@ -12,5 +12,7 @@ describe('drive scan checkpoints', () => {
   it('rejects malformed or unsafe checkpoint states', () => {
     expect(() => decodeDriveFolderScanCheckpoint('{"version":1,"roots":[],"continuation":[{"folderToken":"x","path":"","depth":0}],"updatedAt":"x"}')).toThrow('DRIVE_SCAN_CHECKPOINT_INVALID');
     expect(() => decodeDriveFolderScanCheckpoint('not-json')).toThrow('DRIVE_SCAN_CHECKPOINT_INVALID');
+    expect(() => decodeDriveFolderScanCheckpoint('{"version":1,"roots":[],"continuation":[],"updatedAt":"x","blockers":{}}')).toThrow('DRIVE_SCAN_CHECKPOINT_INVALID');
+    expect(() => decodeDriveFolderScanCheckpoint('{"version":1,"roots":[],"continuation":[],"updatedAt":"x","blockers":[{"folderToken":""}]}')).toThrow('DRIVE_SCAN_CHECKPOINT_INVALID');
   });
 });
