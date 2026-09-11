@@ -29,7 +29,7 @@ CREATE INDEX idx_engineering_search_projection_owner_revision ON engineering_sea
 CREATE INDEX idx_engineering_search_projection_identifiers ON engineering_search_projection USING GIN (identifiers);
 ALTER TABLE engineering_search_projection ENABLE ROW LEVEL SECURITY;
 CREATE POLICY engineering_search_projection_select ON engineering_search_projection FOR SELECT TO authenticated, service_role USING (
-  tenant_id = current_setting('app.tenant_id', true) AND owner_id = current_setting('app.user_id', true)
+  tenant_id = current_setting('app.tenant_id', true)
 );
 CREATE POLICY engineering_search_projection_write ON engineering_search_projection FOR ALL TO service_role USING (
   tenant_id = current_setting('app.tenant_id', true)

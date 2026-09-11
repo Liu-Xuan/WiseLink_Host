@@ -8,5 +8,6 @@ describe('engineering search projection migration contract', () => {
     expect(sql).toContain('USING GIN (search_vector)');
     expect(sql).toContain('ALTER TABLE engineering_search_projection ENABLE ROW LEVEL SECURITY');
     expect(sql).toContain('current_setting(\'app.tenant_id\', true)');
+    expect(sql).not.toContain("owner_id = current_setting('app.user_id', true)");
   });
 });

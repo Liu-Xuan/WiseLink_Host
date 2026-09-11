@@ -129,7 +129,6 @@ export class EngineeringIssueSearchService {
       exact_revision_ref AS "exactRevisionRef", parent_context_ref AS "parentContextRef", title
       FROM engineering_search_projection
       WHERE tenant_id = ${actor.tenantId}
-        AND owner_id = ${actor.userId}
         AND (search_vector @@ plainto_tsquery('simple', ${prepared.tokenizedText})
           OR identifiers && ${prepared.exactIdentifierCandidates}::text[])
       ORDER BY entry_id LIMIT 51`);
