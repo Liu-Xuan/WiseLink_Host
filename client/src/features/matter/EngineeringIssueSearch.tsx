@@ -126,7 +126,8 @@ export default function EngineeringIssueSearch({
           </Button>
           <p className="text-xs text-muted-foreground">
             {hit.subjectKind === 'WORK_ITEM' ? '文档任务' : '工程事项'} ·
-            工作修订 {hit.workRevision} · 候选认识 · 命中 {hit.reason === 'EXACT_IDENTIFIER' ? '精确标识' : '全文'} ·
+            工作修订 {hit.workRevision} · {hit.kind === 'WORK' ? '问题工作' : hit.kind === 'SOURCE' ? '来源片段' : '原生记录'} ·
+            候选认识 · 命中 {hit.reason === 'EXACT_IDENTIFIER' ? '精确标识' : '全文'} ·
             范围 {hit.matchedRange} · 根来源 {hit.rootRefs.length} 项
           </p>
         </div>
