@@ -36,6 +36,7 @@ interface ParsedContentUnit {
   unitId: string;
   kind: string;
   text: string;
+  reading?: UnifiedReaderQueryResult['reading'];
   sourceRefIds: string[];
   sourceLocators: UnifiedReaderSourceLocator[];
 }
@@ -301,6 +302,7 @@ export class Frozen2CandidateReaderService {
         ),
         kind: requiredText(unit.kind, `contentUnits[${index}].kind`, 100),
         text: extractText(unit),
+        ...readingSemantics(unit),
         sourceRefIds: refs,
         sourceLocators: refs.map((sourceRefId) => sourceRefById.get(sourceRefId)!).map(cloneLocator),
       };
@@ -318,6 +320,7 @@ export class Frozen2CandidateReaderService {
           unitId: unit.unitId,
           kind: unit.kind,
           text: unit.text,
+          ...(unit.reading ? { reading: { ...unit.reading } } : {}),
           sourceRefIds: [...unit.sourceRefIds],
           sourceLocators: unit.sourceLocators?.map(cloneLocator),
         });
@@ -325,6 +328,19 @@ export class Frozen2CandidateReaderService {
     });
     return results.slice(0, 50);
   }
+}
+
+function readingSemantics(
+  unit: Record<string, unknown>,
+): Pick<UnifiedReaderQueryResult, 'reading'> {
+  if (unit.kind === 'paragraph') return { reading: { kind: 'paragraph' } };
+  if (unit.kind !== 'heading') return {};
+  const payload = recordValue(unit.payload, 'contentUnit.payload');
+  const level = payload.level;
+  if (typeof level !== 'number' || !Number.isSafeInteger(level) || level < 1) {
+    throw new Error('PACKAGE_SEMANTIC_VALIDATION_FAILED:HEADING_LEVEL');
+  }
+  return { reading: { kind: 'heading', level } };
 }
 
 function structuredUnit(value: unknown, index: number): TranslationStructuredSourceUnit {

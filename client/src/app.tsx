@@ -6,6 +6,7 @@ import Layout from './components/Layout';
 import WorkItemOverviewPage from './features/workitem/WorkItemOverviewPage';
 import EngineeringMatterPage from './features/matter/EngineeringMatterPage';
 import DocumentParsingPage from './pages/DocumentParsingPage/DocumentParsingPage';
+import DocumentVersionReadingPage from './pages/DocumentParsingPage/DocumentVersionReadingPage';
 import WorkspaceHomePage from './pages/WorkspaceHomePage/WorkspaceHomePage';
 import NotFound from './pages/NotFound/NotFound';
 import RuntimeProbePage from './pages/RuntimeProbePage/RuntimeProbePage';
@@ -36,6 +37,7 @@ const RoutesComponent = () => {
         <Route path="dialogues" element={<DialoguePage />} />
         <Route path="dialogues/:threadRef" element={<DialoguePage />} />
         <Route path="library" element={<WorkspaceHomePage />} />
+        <Route path="document-versions/:documentVersionId" element={<DocumentVersionReadingPage />} />
         <Route path="matters/:matterId" element={<EngineeringMatterPage />} />
         <Route
           path="work-items/:workItemId"

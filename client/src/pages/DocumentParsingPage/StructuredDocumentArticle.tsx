@@ -14,27 +14,11 @@ interface StructuredDocumentArticleProps {
   ) => void;
 }
 
-/** Layout groups only: preserve every original text and source anchor. */
+/** Preserve producer paragraph boundaries; page equality does not imply a paragraph. */
 export function structuredReadingGroups(
   units: CanonicalStructuredContentUnit[],
 ): CanonicalStructuredContentUnit[][] {
-  const groups: CanonicalStructuredContentUnit[][] = [];
-  for (const unit of units) {
-    const previous = groups.at(-1)?.at(-1);
-    const samePage =
-      previous?.sourceLocators[0]?.pageStart ===
-      unit.sourceLocators[0]?.pageStart;
-    if (
-      previous?.displayKind === 'body' &&
-      unit.displayKind === 'body' &&
-      samePage
-    ) {
-      groups[groups.length - 1].push(unit);
-    } else {
-      groups.push([unit]);
-    }
-  }
-  return groups;
+  return units.map((unit) => [unit]);
 }
 
 export function StructuredDocumentArticle({
@@ -54,11 +38,21 @@ export function StructuredDocumentArticle({
       >
         {structuredReadingGroups(units).map((group) => {
           const first = group[0];
-          const Tag = first.displayKind === 'section' ? 'h3' : 'p';
+          const level =
+            first.reading?.kind === 'heading' ? first.reading.level : 3;
+          const Tag =
+            first.displayKind === 'section'
+              ? (['h1', 'h2', 'h3', 'h4', 'h5', 'h6'] as const)[
+                  Math.min(level, 6) - 1
+                ]
+              : 'p';
           return (
             <Tag
               key={first.ordinal}
               className={`structured-document-${first.displayKind}`}
+              aria-level={
+                first.displayKind === 'section' && level > 6 ? level : undefined
+              }
             >
               {group.map((unit, index) => (
                 <span key={unit.ordinal}>

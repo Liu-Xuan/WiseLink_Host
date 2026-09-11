@@ -1,0 +1,10 @@
+.document-version-reading { max-width: 1480px; margin: 0 auto; padding: 24px; }
+.document-version-reading > header { margin-bottom: 20px; }
+.document-version-reading h1 { margin: 12px 0; font-size: 1.4rem; overflow-wrap: anywhere; }
+.document-reading-actions { display: flex; align-items: center; flex-wrap: wrap; gap: 12px; }
+.document-version-reading [role="alert"] { color: hsl(var(--destructive)); margin-top: 12px; }
+.document-version-reading [role="status"], .document-reading-version { margin: 12px 0; color: hsl(var(--muted-foreground)); }
+.document-parsed-image { display: inline-block; min-width: 120px; min-height: 48px; max-width: 100%; }
+.document-parsed-image img { display: block; max-width: 100%; height: auto; }
+.document-reading-source { position: sticky; bottom: 12px; display: flex; align-items: center; flex-wrap: wrap; gap: 12px; padding: 16px; background: hsl(var(--background)); border: 1px solid hsl(var(--border)); border-radius: 8px; box-shadow: 0 4px 18px #0002; }
+@media (max-width: 640px) { .document-version-reading { padding: 12px; } .document-version-reading h1 { font-size: 1.15rem; } }

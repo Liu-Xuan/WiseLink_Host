@@ -10,7 +10,7 @@ const enabled = process.env.WL_DM_LIBRARY_LOCAL_PG === '1';
   () => {
     const client = postgres({
       host: '127.0.0.1',
-      port: 55439,
+      port: Number(process.env.WL_DM_LIBRARY_PG_PORT ?? 55439),
       database: 'postgres',
       max: 1,
     });
@@ -28,6 +28,7 @@ const enabled = process.env.WL_DM_LIBRARY_LOCAL_PG === '1';
       create temporary table dm_publication_family (family_id text,canonical_document_number text,document_family text,issuer_authority text,created_at timestamptz,updated_at timestamptz,canonical_identity_key text,current_document_version_id text);
       create temporary table dm_document_version (document_version_id text,document_id text,family_id text,source_artifact_id text,business_revision text,revision_date text,source_generated_date text,original_filename text,byte_length int,committed_at timestamptz);
       create temporary table dm_document_version_metadata (document_version_id text,extracted_metadata jsonb,metadata_revision integer not null default 1,unique(document_version_id,metadata_revision));
+      create temporary table dm_document_parse_run (tenant_id text,document_version_id text,status text,parse_revision integer);
       create temporary table dm_acquisition (document_version_id text,source_artifact_id text,acquired_by text,status text,idempotency_key text);`);
       for (const id of [
         'a',
@@ -48,6 +49,16 @@ const enabled = process.env.WL_DM_LIBRARY_LOCAL_PG === '1';
     afterAll(async () => {
       await client.end();
     });
+    it('attaches parse status to the existing version without a WorkItem or a cross-tenant parse', async () => {
+      await client`insert into dm_document_parse_run values ('t1','a','PUBLISHED',1),('t1','a','FAILED',2),('t2','a','PUBLISHED',99)`;
+      try {
+        const [result] = await listOwnedLibraryFamilies(db as never, { ...scope, limit: 10 });
+        const version = result.rows.find(row => row.familyId === 'a')!.versions[0];
+        expect(version.readerWorkItemId).toBe('');
+        expect(version.parsing).toEqual({ status: 'FAILED', latestRevision: 2, publishedRevision: 1 });
+        expect(result.rows.filter(row => row.familyId === 'a')).toHaveLength(1);
+      } finally { await client`delete from dm_document_parse_run`; }
+    });
     it('reads acquisition-only versions, paginates and counts without exposing reused-source outsiders', async () => {
       const [first] = await listOwnedLibraryFamilies(db as never, scope);
       expect(first.totalCount).toBe(2);
@@ -59,6 +70,7 @@ const enabled = process.env.WL_DM_LIBRARY_LOCAL_PG === '1';
         ),
       ).toBe(true);
       expect(first.rows[0].versions[0].metadataRevision).toBeNull();
+      expect(first.rows[0].versions[0].parsing).toBeNull();
       expect(first.rows[1].versions[0].metadataRevision).toBe(1);
       expect(first.familyCounts).toEqual({ SB: 2 });
       expect(first.ataCounts).toEqual({ '34': 1, __UNKNOWN__: 1 });

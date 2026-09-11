@@ -9,6 +9,9 @@ import { DocumentManagementHostedController } from './document-management-hosted
 import { DocumentManagementHostedService } from './document-management-hosted.service';
 import { MiaodaHostedDocumentCatalog } from './miaoda-hosted-document-catalog';
 import { DOCUMENT_MANAGEMENT_INGEST_AUTHORIZER } from './document-management-hosted.tokens';
+import { DocumentParsingHostedController } from './document-parsing-hosted.controller';
+import { DocumentParsingHostedService } from './document-parsing-hosted.service';
+import { DocumentParsingRepository } from './document-parsing.repository';
 
 export interface DocumentManagementHostedModuleOptions {
   imports?: ModuleMetadata['imports'];
@@ -33,13 +36,15 @@ export class DocumentManagementHostedModule {
     return {
       module: DocumentManagementHostedModule,
       imports: options.imports ?? [],
-      controllers: [DocumentManagementHostedController],
+      controllers: [DocumentManagementHostedController, DocumentParsingHostedController],
       providers: [
         provider,
         MiaodaHostedDocumentCatalog,
         DocumentManagementHostedService,
+        DocumentParsingRepository,
+        DocumentParsingHostedService,
       ],
-      exports: [DocumentManagementHostedService],
+      exports: [DocumentManagementHostedService, DocumentParsingHostedService],
     };
   }
 }

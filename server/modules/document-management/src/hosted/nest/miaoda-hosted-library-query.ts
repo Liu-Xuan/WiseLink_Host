@@ -11,6 +11,7 @@ import {
   workItem,
 } from '@server/database/schema';
 import { tenantFamilyIdentityPrefix } from './miaoda-hosted-document-catalog';
+import { dmDocumentParseRun } from '@server/database/document-parsing.schema';
 
 export interface OwnedLibraryFamilyQuery {
   tenantId: string;
@@ -72,6 +73,15 @@ export function listOwnedLibraryFamilies(
         originalFilename: dmDocumentVersion.originalFilename,
         extractedMetadata: dmDocumentVersionMetadata.extractedMetadata,
         metadataRevision: dmDocumentVersionMetadata.metadataRevision,
+        parsing: sql<CanonicalLibraryDocumentVersionSummary['parsing']>`(
+          select jsonb_build_object('status', p.status, 'latestRevision', p.parse_revision,
+            'publishedRevision', (select max(published.parse_revision) from ${dmDocumentParseRun} published
+              where published.tenant_id = ${input.tenantId} and published.document_version_id = ${dmDocumentVersion.documentVersionId}
+                and published.status = 'PUBLISHED'))
+          from ${dmDocumentParseRun} p
+          where p.tenant_id = ${input.tenantId} and p.document_version_id = ${dmDocumentVersion.documentVersionId}
+          order by p.parse_revision desc limit 1
+        )`.as('parsing'),
         byteLength: dmDocumentVersion.byteLength,
         committedAt: dmDocumentVersion.committedAt,
         selectedVersionIsCurrent:
@@ -173,6 +183,7 @@ export function listOwnedLibraryFamilies(
       'originalFilename', ${versions.originalFilename},
       'extractedMetadata', ${versions.extractedMetadata},
       'metadataRevision', ${versions.metadataRevision},
+      'parsing', ${versions.parsing},
       'byteLength', ${versions.byteLength},
       'committedAt', ${versions.committedAt},
       'selectedVersionIsCurrent', ${versions.selectedVersionIsCurrent},

@@ -405,6 +405,8 @@ export interface UnifiedReaderQueryResult {
   unitId: string;
   kind: string;
   text: string;
+  /** Explicit package block semantics, preserved independently of plain text. */
+  reading?: { kind: 'heading'; level: number } | { kind: 'paragraph' };
   sourceRefIds: string[];
   /** Frozen.2 source locator details when the package provides them. */
   sourceLocators?: UnifiedReaderSourceLocator[];
@@ -524,6 +526,8 @@ export interface CanonicalStructuredContentUnit {
   sectionTitle: string | null;
   /** Browser-safe engineering text or an honest typed summary, never raw JSON. */
   displayText: string;
+  /** Present when the package supplies a real block boundary/heading level. */
+  reading?: UnifiedReaderQueryResult['reading'];
   sourceRefIds: string[];
   sourceLocators: CanonicalStructuredContentSourceLocator[];
 }
@@ -2927,6 +2931,7 @@ export interface DocumentMetadataReextractResponse extends DocumentMetadataReadR
 }
 
 export interface CanonicalLibraryDocumentVersionSummary {
+  parsing?: { status: import('./document-parsing.interface').DocumentParseStatus; latestRevision: number; publishedRevision: number | null } | null;
   metadataRevision?: number | null;
   extractedMetadata?: DocumentExtractedMetadata | null;
   documentVersionId: string;
@@ -2937,7 +2942,7 @@ export interface CanonicalLibraryDocumentVersionSummary {
   byteLength: number;
   committedAt: string;
   selectedVersionIsCurrent: boolean;
-  /** Existing authorized task used only to route to this version's reader. */
+  /** Existing authorized task available for the version's engineering assessment. */
   readerWorkItemId: string;
   workItemCount: number;
 }
