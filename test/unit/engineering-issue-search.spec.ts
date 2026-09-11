@@ -137,6 +137,15 @@ describe('authorized engineering issue search and exact expansion', () => {
     const h = setup();
     const found = await h.service.search('工具', actor);
     expect(found.hits).toHaveLength(1);
+    expect(found.limitations).toEqual([
+      '仅返回当前已保存且经授权展开的问题工作；结果不代表全量统计。',
+    ]);
+    expect(found.hits[0]).toMatchObject({
+      kind: 'WORK',
+      matchedRange: `issue:${h.identity.issueKey}`,
+      reason: 'FULL_TEXT',
+      rootRefs: expect.any(Array),
+    });
     expect(found.hits[0]).not.toHaveProperty('issue');
     expect(found.hits[0]).not.toHaveProperty('reading');
     expect(h.jobAid.readBrowserRevision).toHaveBeenCalledWith(

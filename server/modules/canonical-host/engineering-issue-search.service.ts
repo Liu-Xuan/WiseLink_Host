@@ -25,7 +25,7 @@ import { prepareEngineeringSearchQuery } from './engineering-search-text';
 type IssueIdentity = Pick<
   EngineeringIssueSearchHit,
   'subjectKind' | 'subjectId' | 'workRef' | 'issueKey'
->;
+> & { matchReason?: 'FULL_TEXT' | 'EXACT_IDENTIFIER' };
 type SavedIssueWork =
   | Awaited<ReturnType<CanonicalJobAidProblemService['readBrowserRevision']>>
   | Awaited<ReturnType<EngineeringMatterWorkingService['readWorkingRevision']>>;
@@ -79,7 +79,9 @@ export class EngineeringIssueSearchService {
       )
       SELECT kind AS "subjectKind", subject_id AS "subjectId", work_ref AS "workRef",
         revision AS "workRevision", issue ->> 'issueKey' AS "issueKey",
-        issue ->> 'question' AS question, issue -> 'sourceDependencies' AS "sourceRefs"
+        issue ->> 'question' AS question, issue -> 'sourceDependencies' AS "sourceRefs",
+        CASE WHEN upper(issue ->> 'issueKey') = ANY(${prepared.exactIdentifierCandidates}::text[])
+          THEN 'EXACT_IDENTIFIER' ELSE 'FULL_TEXT' END AS "matchReason"
       FROM works CROSS JOIN LATERAL jsonb_array_elements(content -> 'issues') issue
       WHERE (
         to_tsvector('simple', issue::text) @@ plainto_tsquery('simple', ${prepared.tokenizedText})
@@ -119,7 +121,11 @@ export class EngineeringIssueSearchService {
       cursor = candidates[candidates.length - 1];
     }
     // Even pagination hints derive only from authorized hits.
-    return { hits: hits.slice(0, 50), hasMore: hits.length > 50 };
+    return {
+      hits: hits.slice(0, 50),
+      hasMore: hits.length > 50,
+      limitations: ['仅返回当前已保存且经授权展开的问题工作；结果不代表全量统计。'],
+    };
   }
 
   private async searchProjection(prepared: ReturnType<typeof prepareEngineeringSearchQuery>, actor: CanonicalHostActor): Promise<EngineeringIssueSearchResponse> {
@@ -143,11 +149,15 @@ export class EngineeringIssueSearchService {
       let work = workReads.get(key);
       if (!work) { work = this.loadWork({ subjectKind, subjectId, workRef: row.exactRevisionRef, issueKey: match[2] }, actor); workReads.set(key, work); }
       try {
-        hits.push((this.issueFromWork({ subjectKind, subjectId, workRef: row.exactRevisionRef, issueKey: match[2] }, await work)).identity);
+        hits.push((this.issueFromWork({ subjectKind, subjectId, workRef: row.exactRevisionRef, issueKey: match[2], matchReason: 'FULL_TEXT' }, await work)).identity);
       } catch (error) { if (!isAccessUnavailable(error)) throw error; }
       if (hits.length >= 50) break;
     }
-    return { hits, hasMore: rows.length > 50 };
+    return {
+      hits,
+      hasMore: rows.length > 50,
+      limitations: ['投影命中只提供问题工作身份，正文仍按当前授权逐项读取。'],
+    };
   }
 
   async read(
@@ -209,6 +219,10 @@ export class EngineeringIssueSearchService {
             : revision.workingRevision,
         question: issue.question,
         sourceRefs: [...new Set(collectIssueEvidenceUses(issue).map(use => use.evidenceRef))],
+        kind: 'WORK',
+        matchedRange: `issue:${issue.issueKey}`,
+        reason: identity.matchReason ?? 'FULL_TEXT',
+        rootRefs: [...new Set(collectIssueEvidenceUses(issue).map(use => use.evidenceRef))],
       },
       issue,
       reading: { ...reading, evidence: content.evidence },
