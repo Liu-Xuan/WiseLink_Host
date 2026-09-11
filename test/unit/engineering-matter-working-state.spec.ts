@@ -11,6 +11,7 @@ import type {
 import {
   engineeringMatterPendingInputs,
   materializeEngineeringMatterWorkingState,
+  parseEngineeringMatterWorkingState,
 } from '../../server/modules/canonical-host/engineering-matter-working-state';
 
 const MATTER_ID = 'MAT-1';
@@ -18,6 +19,43 @@ const inputA = binding('WI-A', 4, 'DV-A', 'RESULT-A', 3);
 const inputB = binding('WI-B', 7, 'DV-B', 'RESULT-B', 2);
 
 describe('Engineering Matter working state materializer', () => {
+  const methodEvidence: AssessmentEvidence = {
+    evidenceRef: 'METHOD-1', kind: 'METHOD_CLAUSE', title: 'Risk assessment method',
+    versionLabel: null, excerpt: 'Separate the scenario from the likelihood rating.',
+    packRef: 'PACK-1', methodRef: 'risk-rating', sourceIdentity: 'controlled-method',
+    locator: 'section 3', sourceVersionStatus: 'VERSION_UNCONFIRMED',
+  };
+
+  it.each(['CONFIRMED', 'VERSION_UNCONFIRMED'] as const)(
+    'saves and reads back method premises with their original %s version status',
+    sourceVersionStatus => {
+      const source = { ...methodEvidence, sourceVersionStatus };
+      const result = readingResult(1, [claim('METHOD-CLAIM', 'Apply the method with its stated limits.', source.evidenceRef)], [source]);
+      const saved = materializeEngineeringMatterWorkingState({
+        matterId: MATTER_ID, current: null, command: initialCommand(result, []),
+      }).state;
+      const readback = parseEngineeringMatterWorkingState(JSON.stringify(saved), MATTER_ID);
+      expect(readback.substantiveResult?.evidence).toEqual([source]);
+      expect(readback.substantiveResult?.candidateOnly).toBe(true);
+    },
+  );
+
+  it.each([
+    ['packRef', '', 'METHOD_PACK_REQUIRED'],
+    ['methodRef', '', 'METHOD_REF_REQUIRED'],
+    ['sourceIdentity', '', 'SOURCE_IDENTITY_REQUIRED'],
+    ['locator', '', 'LOCATOR_REQUIRED'],
+    ['sourceVersionStatus', 'UNKNOWN', 'METHOD_VERSION_INVALID'],
+    ['kind', 'UNRECOGNIZED', 'KIND_INVALID'],
+  ])('rejects invalid method evidence %s before publishing work', (field, value, code) => {
+    const result = readingResult(1, [claim('METHOD-CLAIM', 'Method premise.', methodEvidence.evidenceRef)], [methodEvidence]);
+    const command = JSON.parse(JSON.stringify(initialCommand(result, [])));
+    command.nextSubstantiveResult.evidence[0][field] = value;
+    expect(() => materializeEngineeringMatterWorkingState({
+      matterId: MATTER_ID, current: null, command,
+    })).toThrow(`ENGINEERING_MATTER_WORKING_EVIDENCE_${code}`);
+  });
+
   it('creates a Matter-scoped AssessmentReadingResult from stable claim ids', () => {
     const claimA = claim('CLAIM-A', 'The modification applies.', 'E-A');
     const result = readingResult(

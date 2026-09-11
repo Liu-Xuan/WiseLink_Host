@@ -862,6 +862,15 @@ function validateEvidence(value: unknown): asserts value is AssessmentEvidence {
         fail('ENGINEERING_MATTER_WORKING_EVIDENCE_COVERAGE_INVALID');
       }
       break;
+    case 'METHOD_CLAUSE':
+      requiredText(value.packRef, 'ENGINEERING_MATTER_WORKING_EVIDENCE_METHOD_PACK_REQUIRED');
+      requiredText(value.methodRef, 'ENGINEERING_MATTER_WORKING_EVIDENCE_METHOD_REF_REQUIRED');
+      requiredText(value.sourceIdentity, 'ENGINEERING_MATTER_WORKING_EVIDENCE_SOURCE_IDENTITY_REQUIRED');
+      requiredText(value.locator, 'ENGINEERING_MATTER_WORKING_EVIDENCE_LOCATOR_REQUIRED');
+      if (value.sourceVersionStatus !== 'CONFIRMED' && value.sourceVersionStatus !== 'VERSION_UNCONFIRMED') {
+        fail('ENGINEERING_MATTER_WORKING_EVIDENCE_METHOD_VERSION_INVALID');
+      }
+      break;
     case 'PRIOR_RESULT':
       requiredText(
         value.resultRef,
