@@ -65,7 +65,7 @@ Host 已新增 `DriveSourceScanService` 作为来源扫描业务入口：按登�
 Hosted Document Management 公共入口已导出 `DriveSourceScanService`、`AuthorizedDrivePageFetcher` 和 `DriveScanCheckpointRepository`，后续平台原生触发器可通过模块公开接口接入，不需依赖内部文件路径；全量类型检查和服务测试再次通过。
 Host 来源服务测试新增两次扫描恢复场景：首批仅处理第一页并保存 `next_page_token`，下一次同租户同来源直接从该 token 请求第二页，未从根目录重扫；服务端类型检查通过。该证据仍使用替身 checkpoint/fetcher，未替代真实平台运行。
 扫描结果现可转换为仅含来源身份的 `DriveSourceCandidate`（sourceKey、provider object/version、类型、路径、修改时间）；文件夹被排除，候选不会自动进入分析。该映射及测试用于后续真实来源登记，仍不替代平台授权和业务受理。
-`DriveSourceScanService.scanCandidates` 已将扫描结果与身份候选作为 Host 公开服务结果返回；服务测试覆盖候选生成、版本标识和“不自动受理”边界，共 4 项通过。真实候选写入 DocumentVersion/family 或触发分析仍未接通。
+`DriveSourceScanService.scanCandidates` 已将扫描结果与身份候选作为 Host 公开服务结果返回；结果明确 `complete`，仅完整扫描输出 `NEW/CHANGED/UNCHANGED`，部分分页或权限阻断只保留诊断候选并返回空变化，避免误受理。服务测试覆盖候选生成、版本标识和“不自动受理”边界。真实候选写入 DocumentVersion/family 或触发分析仍未接通。
 
 候选变化分类已补充为 `NEW`、`CHANGED`、`UNCHANGED`：同一 provider object/version 的重复投递和分页重扫标记为 `UNCHANGED`，仅 provider version 变化标记为 `CHANGED`，新对象标记为 `NEW`。该分类只表达来源身份变化，尚未接入 DocumentVersion/family 受理或自动分析触发；当前验证仍是替身服务测试，不代表真实飞书后台监控已运行。
 
