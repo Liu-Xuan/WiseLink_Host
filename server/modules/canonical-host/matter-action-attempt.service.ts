@@ -469,12 +469,12 @@ export class MatterActionAttemptService {
     });
   }
 
-  readSourcePages(input: MatterAttemptScope & ActionAttemptFence & {
+  async readSourcePages(input: MatterAttemptScope & ActionAttemptFence & {
     principalId: string; documentVersionId: string; pageStart: number; pageEnd?: number; purpose: string;
   }, reader: (documentVersionId: string, range: { pageStart: number; pageEnd: number }) => Promise<DocumentSourceReading>) {
     const range = documentSourcePageRange({ pageStart: input.pageStart, pageEnd: input.pageEnd });
     if (!input.purpose.trim() || input.purpose.length > 4000) throw failure('JOBAID_SOURCE_PURPOSE_REQUIRED', 400);
-    return this.authorized(input, async (executor, queue) => {
+    const initial = await this.authorized(input, async (executor, queue) => {
       const initial = await this.scopedRow(executor, queue, input, input.attemptRef);
       const task = checkedTask(initial);
       assertRunningSourceLease(initial, input);
@@ -486,15 +486,21 @@ export class MatterActionAttemptService {
           !(task.workingBasis.inputs.some((binding) => binding.documentVersionId === input.documentVersionId) ||
             priorEvidence.some((item) => item.kind === 'DOCUMENT_PASSAGE' && item.documentVersionId === input.documentVersionId)))
         throw failure('JOBAID_SOURCE_NOT_REGISTERED', 404);
-      const reading = await reader(input.documentVersionId, range);
-      if (reading.documentVersionId !== input.documentVersionId || reading.extractionScope !== 'NATIVE_TEXT_LAYER' ||
+      return initial;
+    });
+    // The document reader performs its own authorized database and file reads.
+    // Release the transaction first so those reads and lease heartbeats can run
+    // on a bounded connection pool; recheck authorization and the fence below.
+    const reading = await reader(input.documentVersionId, range);
+    if (reading.documentVersionId !== input.documentVersionId || reading.extractionScope !== 'NATIVE_TEXT_LAYER' ||
         reading.pages.length !== range.pageEnd - range.pageStart + 1 || reading.pages.some((page, index) =>
           page.page !== range.pageStart + index || page.sourceRefId !== `DOCUMENT_VERSION:${input.documentVersionId}:page:${page.page}` ||
           Boolean(page.text) !== (page.evidence !== null) ||
           (page.evidence !== null && (page.evidence.documentVersionId !== input.documentVersionId ||
             page.evidence.workItemId !== null || page.evidence.sourceRefId !== page.sourceRefId ||
             page.evidence.evidenceRef !== page.sourceRefId || page.evidence.excerpt !== page.text))))
-        throw failure('MATTER_SOURCE_READ_BINDING_MISMATCH');
+      throw failure('MATTER_SOURCE_READ_BINDING_MISMATCH');
+    return this.authorized(input, async (executor, queue) => {
       await executor.database.select({ id: actionAttempt.attemptId }).from(actionAttempt)
         .where(eq(actionAttempt.attemptId, initial.attemptId)).for('update');
       const current = await this.scopedRow(executor, queue, input, input.attemptRef);
