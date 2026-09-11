@@ -96,4 +96,43 @@ export class EngineeringSearchProjectionWriter {
       ownerKind: row.ownerKind as 'USER' | 'MATTER', ownerId: row.ownerId, subjectId: row.subjectId,
       lastError: row.lastError, attempts: row.attempts }));
   }
+
+  /**
+   * Rebuilds derived rows from the authoritative saved revision. The loader is
+   * supplied by the caller so this class never bypasses the existing reader,
+   * tenant or actor authorization boundary. A failed item remains pending and
+   * is processed independently from later items.
+   */
+  async rebuildPending(input: {
+    tenantId: string;
+    limit?: number;
+    load: (pending: {
+      revisionRef: string;
+      ownerKind: 'USER' | 'MATTER';
+      ownerId: string;
+      subjectId: string | null;
+    }) => Promise<JobAidProblemWorkContent>;
+  }): Promise<{ attempted: number; rebuilt: number; failed: number }> {
+    const pending = await this.listPending(input.tenantId, input.limit);
+    let rebuilt = 0;
+    let failed = 0;
+    for (const item of pending) {
+      try {
+        const content = await input.load(item);
+        if (item.ownerKind === 'USER') {
+          await this.indexJobAidRevision({ tenantId: input.tenantId, ownerId: item.ownerId, revisionRef: item.revisionRef, content });
+        } else if (item.subjectId) {
+          await this.indexMatterRevision({ tenantId: input.tenantId, ownerId: item.ownerId, subjectId: item.subjectId, revisionRef: item.revisionRef, content });
+        } else {
+          throw new Error('ENGINEERING_SEARCH_PENDING_SUBJECT_MISSING');
+        }
+        rebuilt += 1;
+      } catch (error: unknown) {
+        failed += 1;
+        await this.markPending({ tenantId: input.tenantId, ownerKind: item.ownerKind, ownerId: item.ownerId,
+          subjectId: item.subjectId ?? undefined, revisionRef: item.revisionRef, error });
+      }
+    }
+    return { attempted: pending.length, rebuilt, failed };
+  }
 }
