@@ -2,7 +2,7 @@ import { Inject, Injectable, Logger } from '@nestjs/common';
 import { CapabilityService, FileService } from '@lark-apaas/fullstack-nestjs-core';
 import type { DocumentParsedReading, DocumentParsingStatus, DocumentParseRunSummary, StartDocumentParseRequest } from '@shared/document-parsing.interface';
 import { MineruArtifactStore, MineruPersistenceError, type MineruStoredArtifact } from '../../../../professional-input/mineru/mineru-artifact-store';
-import { MineruRunner } from '../../../../professional-input/mineru/mineru-runner';
+import { MineruExecutionError, MineruRunner } from '../../../../professional-input/mineru/mineru-runner';
 import { MineruHostedRuntime } from '../../../../professional-input/mineru/mineru-hosted-runtime';
 import { miaodaMineruTitleCall } from '../../../../professional-input/mineru/mineru-title-enhancer';
 import { buildMineruReadingProjection } from '../../../../professional-input/mineru/mineru-reading-projection';
@@ -136,6 +136,13 @@ export class DocumentParsingHostedService {
     } catch (error) {
       const code = safeErrorCode(error);
       this.logger.error(`Document parse ${run.parseRunId} failed: ${code}`);
+      if (error instanceof MineruExecutionError) {
+        // Keep terminal exception diagnostics, not document content or stdout.
+        const exceptions = error.stderr.split('\n')
+          .filter(line => /^[A-Za-z][\w.]*Error:/.test(line))
+          .map(line => line.replace(/https?:\/\/\S+/g, '[URL]').slice(0, 1000)).slice(-4);
+        this.logger.error(`MinerU process ${run.parseRunId}: ${JSON.stringify({ exit: error.message, exceptions })}`);
+      }
       try {
         await this.repository.fail(scope, run.parseRunId, { errorCode: code,
           ...(error instanceof MineruPersistenceError ? { progress: error.progress, pendingObject: error.pendingObject } : {}),
@@ -178,5 +185,6 @@ function startInput(value: unknown): StartDocumentParseRequest {
 }
 function safeErrorCode(error: unknown) {
   const value = error instanceof Error ? error.message : '';
+  if (error instanceof MineruExecutionError && /^MINERU_PROCESS_FAILED:/.test(value)) return 'MINERU_PROCESS_FAILED';
   return /^[A-Z][A-Z0-9_]{1,159}$/.test(value) ? value : 'DOCUMENT_PARSE_FAILED';
 }
