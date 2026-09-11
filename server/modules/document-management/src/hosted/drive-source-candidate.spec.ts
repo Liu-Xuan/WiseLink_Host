@@ -33,4 +33,10 @@ describe('toDriveSourceCandidates', () => {
     const current = toDriveSourceCandidates('technical-library', [{ token: 'same', type: 'file', name: '手册.pdf', path: '手册.pdf', version_id: 'v1' }]);
     expect(classifyDriveSourceCandidates(previous, current)[0]?.change).toBe('NEW');
   });
+
+  it('uses modified time when the provider has no version identifier', () => {
+    const previous = toDriveSourceCandidates('operations', [{ token: 'same', type: 'file', name: '日报.pdf', path: '日报.pdf', modifiedTime: '2026-09-12T00:00:00Z' }]);
+    const current = toDriveSourceCandidates('operations', [{ token: 'same', type: 'file', name: '日报.pdf', path: '日报.pdf', modifiedTime: '2026-09-13T00:00:00Z' }]);
+    expect(classifyDriveSourceCandidates(previous, current)[0]?.change).toBe('CHANGED');
+  });
 });
