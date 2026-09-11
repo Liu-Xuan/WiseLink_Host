@@ -37,9 +37,13 @@ export class MineruHostedRuntime {
         const code = runtimeErrorCode(error);
         this.readiness = { ...this.readiness, state: code === 'MINERU_RUNTIME_NOT_CONFIGURED' ? 'NOT_CONFIGURED' : 'FAILED', stage: null, errorCode: code };
         this.configuration = undefined;
-        const failure = error as NodeJS.ErrnoException;
+        const failure = error as NodeJS.ErrnoException & { stderr?: string };
         this.logger.error(`MinerU environment preparation failed: ${code}; ${JSON.stringify({
           code: failure.code, syscall: failure.syscall, path: failure.path,
+          // The bootstrap handles deployment packages only. Keep Python's
+          // terminal exception lines, excluding command text and environment.
+          dependencyErrors: typeof failure.stderr === 'string' ? failure.stderr.split('\n')
+            .filter(line => /^[A-Za-z]+Error:/.test(line)).map(line => line.slice(0, 1000)).slice(-4) : undefined,
         })}`);
       }).finally(() => { this.preparation = undefined; });
     }
