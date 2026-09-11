@@ -1,13 +1,14 @@
 import { Inject, Injectable, Logger } from '@nestjs/common';
 import { FileService } from '@lark-apaas/fullstack-nestjs-core';
 import type { DocumentParsedReading, DocumentParsingStatus, DocumentParseRunSummary, StartDocumentParseRequest } from '@shared/document-parsing.interface';
-import { MineruArtifactStore, MineruPersistenceError, type MineruStoredArtifact } from '../../../../professional-input/mineru/mineru-artifact-store';
+import { MineruArtifactStore, MineruPersistenceError, type MineruParseResult, type MineruStoredArtifact } from '../../../../professional-input/mineru/mineru-artifact-store';
+import { readMineruArtifacts, safeMineruAssetPath } from '../../../../professional-input/mineru/mineru-artifacts';
 import { buildMineruReadingProjection } from '../../../../professional-input/mineru/mineru-reading-projection';
 import { MiaodaFileServiceArtifactStore } from '../miaodaFileServiceArtifactStore.js';
 import { MiaodaHostedDocumentCatalog } from './miaoda-hosted-document-catalog';
 import { DOCUMENT_MANAGEMENT_INGEST_AUTHORIZER, type DocumentManagementIngestAuthorizer } from './document-management-hosted.tokens';
 import { DocumentParsingRepository, documentParseError, type DocumentParseRow, type DocumentParseScope } from './document-parsing.repository';
-import { MineruRemoteWorkerClient } from './mineru-remote-worker.client';
+import { MineruRemoteWorkerClient, type MineruRemoteArtifact, type MineruRemoteTaskReceipt } from './mineru-remote-worker.client';
 
 type ReadScope = { actorUserId: string; tenantId: string; roles: string[] };
 
@@ -51,6 +52,7 @@ export class DocumentParsingHostedService {
     const existing = await this.repository.readRequest(scope, input.requestId);
     if (existing) {
       if (existing.expectedPublishedRevision !== input.expectedPublishedRevision) throw documentParseError('DOCUMENT_PARSE_REQUEST_CONFLICT');
+      if ((existing.status === 'RUNNING' || existing.status === 'STAGING') && this.remoteWorker.configured()) this.launch(existing, context);
       return summary(existing);
     }
     if (!this.remoteWorker.configured()) throw documentParseError('MINERU_REMOTE_WORKER_NOT_CONFIGURED', 503);
@@ -60,11 +62,15 @@ export class DocumentParsingHostedService {
     });
     if (reservation.created) {
       // The durable run is returned immediately; closing the browser does not abandon the work.
-      // Replays observe that same row and never launch another process.
-      const execution = this.execute(reservation.row, context).finally(() => this.running.delete(reservation.row.parseRunId));
-      this.running.set(reservation.row.parseRunId, execution);
+      this.launch(reservation.row, context);
     }
     return summary(reservation.row);
+  }
+
+  private launch(row: DocumentParseRow, context: ReadScope) {
+    if (this.running.has(row.parseRunId)) return;
+    const execution = this.execute(row, context).finally(() => this.running.delete(row.parseRunId));
+    this.running.set(row.parseRunId, execution);
   }
 
   async read(documentVersionId: string, parseRunId: string | undefined, context: ReadScope): Promise<DocumentParsedReading> {
@@ -116,10 +122,24 @@ export class DocumentParsingHostedService {
           original.providerObjectId !== source.source.providerObjectId || original.providerVersionId !== source.source.providerVersionId) {
         throw documentParseError('DOCUMENT_PARSE_ORIGINAL_MISMATCH');
       }
-      const receipt = await this.remoteWorker.submit(original.bytes);
-      if (receipt.sourceSha256 !== run.sourceBinding.pdfSha256 || receipt.sourceByteLength !== run.sourceBinding.byteLength)
+      const taskId = this.remoteWorker.taskIdForParseRun(run.parseRunId);
+      const remote = await this.remoteWorker.run(original.bytes, taskId, run.deadlineAt);
+      if (remote.task.sourceSha256 !== run.sourceBinding.pdfSha256 || remote.task.sourceByteLength !== run.sourceBinding.byteLength)
         throw documentParseError('MINERU_REMOTE_WORKER_SOURCE_MISMATCH');
-      throw documentParseError('MINERU_REMOTE_WORKER_ARTIFACT_TRANSFER_PENDING');
+      const result = remoteResult(remote.task, remote.artifacts);
+      if (run.status === 'RUNNING') await this.repository.stage(scope, run.parseRunId);
+      else if (run.status !== 'STAGING') throw documentParseError('DOCUMENT_PARSE_STATE_CHANGED');
+      const progress: MineruStoredArtifact[] = [];
+      const saved = await this.store.persist({
+        scope: storageScope(run),
+        result,
+        documentVersion: run.sourceBinding,
+        onProgress: async artifact => {
+          progress.push({ ...artifact });
+          await this.repository.progress(scope, run.parseRunId, progress);
+        },
+      });
+      await this.repository.publish(scope, run.parseRunId, saved.manifestArtifact);
     } catch (error) {
       const code = safeErrorCode(error);
       this.logger.error(`Document parse ${run.parseRunId} failed: ${code}`);
@@ -167,4 +187,67 @@ function safeErrorCode(error: unknown) {
   const value = error instanceof Error ? error.message : '';
   if (/^MINERU_PROCESS_FAILED:/.test(value)) return 'MINERU_PROCESS_FAILED';
   return /^[A-Z][A-Z0-9_]{1,159}$/.test(value) ? value : 'DOCUMENT_PARSE_FAILED';
+}
+
+function remoteResult(task: MineruRemoteTaskReceipt, artifacts: MineruRemoteArtifact[]): MineruParseResult {
+  const expected: Record<string, { path: string; mediaType: string }> = {
+    RAW_MARKDOWN: { path: 'raw/document.md', mediaType: 'text/markdown' },
+    RAW_CONTENT_LIST_V2: { path: 'raw/content-list-v2.json', mediaType: 'application/json' },
+    RAW_MIDDLE: { path: 'raw/middle.json', mediaType: 'application/json' },
+    READING_MARKDOWN: { path: 'reading/document.md', mediaType: 'text/markdown' },
+    READING_CONTENT_LIST_V2: { path: 'reading/content-list-v2.json', mediaType: 'application/json' },
+    READING_MIDDLE: { path: 'reading/middle.json', mediaType: 'application/json' },
+  };
+  const byRole = new Map<string, MineruRemoteArtifact>();
+  for (const artifact of artifacts) {
+    if (artifact.role === 'IMAGE') {
+      safeMineruAssetPath(artifact.relativePath);
+      if (!['image/png', 'image/jpeg', 'image/webp'].includes(artifact.mediaType)) throw new Error('MINERU_REMOTE_WORKER_ARTIFACT_INVALID');
+    } else {
+      const rule = expected[artifact.role];
+      if (!rule || rule.path !== artifact.relativePath || rule.mediaType !== artifact.mediaType || byRole.has(artifact.role))
+        throw new Error('MINERU_REMOTE_WORKER_ARTIFACT_INVALID');
+    }
+    const key = `${artifact.role}:${artifact.relativePath}`;
+    if (byRole.has(key)) throw new Error('MINERU_REMOTE_WORKER_ARTIFACT_INVALID');
+    byRole.set(key, artifact);
+  }
+  const get = (role: string) => {
+    const rule = expected[role];
+    const artifact = byRole.get(`${role}:${rule.path}`);
+    if (!artifact) throw new Error('MINERU_REMOTE_WORKER_ARTIFACT_MISSING');
+    return artifact.bytes;
+  };
+  const parseJson = (bytes: Uint8Array) => {
+    try { return JSON.parse(Buffer.from(bytes).toString('utf8')) as unknown; }
+    catch { throw new Error('MINERU_REMOTE_WORKER_ARTIFACT_JSON_INVALID'); }
+  };
+  const contentListV2 = parseJson(get('READING_CONTENT_LIST_V2'));
+  const middle = parseJson(get('READING_MIDDLE'));
+  const assets = artifacts.filter(artifact => artifact.role === 'IMAGE').map(artifact => ({
+    path: safeMineruAssetPath(artifact.relativePath),
+    mediaType: artifact.mediaType as 'image/png' | 'image/jpeg' | 'image/webp',
+    sha256: artifact.sha256,
+    bytes: artifact.bytes,
+  }));
+  const document = readMineruArtifacts({
+    markdown: Buffer.from(get('READING_MARKDOWN')).toString('utf8'),
+    contentListV2,
+    middle,
+    assetPaths: assets.map(asset => asset.path),
+  });
+  return {
+    document,
+    assets,
+    contentListV2,
+    middle,
+    rawArtifacts: {
+      markdown: Buffer.from(get('RAW_MARKDOWN')).toString('utf8'),
+      contentListV2: parseJson(get('RAW_CONTENT_LIST_V2')),
+      middle: parseJson(get('RAW_MIDDLE')),
+    },
+    titleEnhancement: { status: 'DISABLED' },
+    sourceSha256: task.sourceSha256,
+    sourceByteLength: task.sourceByteLength,
+  };
 }
