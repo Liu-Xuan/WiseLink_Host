@@ -69,7 +69,7 @@ Host 来源服务测试新增两次扫描恢复场景：首批仅处理第一页
 
 候选变化分类已补充为 `NEW`、`CHANGED`、`UNCHANGED`：同一 provider object/version 的重复投递和分页重扫标记为 `UNCHANGED`，仅 provider version 变化标记为 `CHANGED`，新对象标记为 `NEW`。该分类只表达来源身份变化，尚未接入 DocumentVersion/family 受理或自动分析触发；当前验证仍是替身服务测试，不代表真实飞书后台监控已运行。
 
-`DriveSourceScanService.scanCandidates` 现在可接收调用方保存的上一候选快照，并在同一响应中返回 `changes`；未提供快照时全部当前候选为 `NEW`。服务仍不持久化候选、不自动受理或派发分析，快照保存与 `DocumentVersion/family` 受理必须由后续授权事务消费者完成。
+`DriveSourceScanService.scanCandidates` 现在可读取并在完整扫描后持久化租户范围的候选身份快照，并在同一响应中返回 `changes`；未提供上一快照时全部当前候选为 `NEW`。部分扫描不会替换旧快照，也不会返回变化。候选仍不自动受理或派发分析；写入 `DocumentVersion/family` 必须由后续授权事务消费者完成。
 数据库增量核验：通过妙搭 `lark-cli` 用户身份通道在开发环境执行并提交 0040/0041；在线核验确认 checkpoint 表、候选快照列、唯一索引和 RLS 均存在，当前 checkpoint/候选快照均为 0 行。应用 bot 尚未获得 Drive 目录权限，因此尚无真实扫描写入。`.env.local` 直连仍返回 `28P01`，不作为线上连接凭据。
 已新增 `wiselink-drive-source-config.ts`，将用户提供的六个根目录登记为独立来源定义，并统一声明应用/委托身份读取要求；扫描根状态由配置转换，不把用户会话写入来源身份。SB、AD 当前以显式“未接通来源族”保留在配置状态中，不伪造 folder token 或扫描结果；取得实际根目录和应用身份授权后，再按同一注册表扩展，当前仍未启动真实定时扫描。
 
