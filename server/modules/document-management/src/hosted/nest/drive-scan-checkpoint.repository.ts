@@ -26,7 +26,7 @@ export class DriveScanCheckpointRepository {
 
   private async saveForTenant(tenantId: string, sourceKey: string, checkpoint: string): Promise<void> {
     await this.db.insert(wiselinkDriveScanCheckpoint).values({
-      id: `${tenantId}:${sourceKey}`, tenantId, sourceKey, checkpointJson: checkpoint, checkpointVersion: 1,
+      tenantId, sourceKey, checkpointJson: checkpoint, checkpointVersion: 1,
     }).onConflictDoUpdate({
       target: [wiselinkDriveScanCheckpoint.tenantId, wiselinkDriveScanCheckpoint.sourceKey],
       set: { checkpointJson: checkpoint, checkpointVersion: 1 },

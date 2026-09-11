@@ -1,6 +1,6 @@
 BEGIN;
 CREATE TABLE wiselink_drive_scan_checkpoint (
-  id varchar(160) PRIMARY KEY,
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
   tenant_id varchar(128) NOT NULL,
   source_key varchar(128) NOT NULL,
   checkpoint_json text NOT NULL,

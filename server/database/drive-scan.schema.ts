@@ -1,8 +1,8 @@
-import { integer, pgTable, text, uniqueIndex, varchar } from 'drizzle-orm/pg-core';
+import { integer, pgTable, text, uniqueIndex, uuid, varchar } from 'drizzle-orm/pg-core';
 
 /** Host-owned resumable source scan state; file contents and credentials stay elsewhere. */
 export const wiselinkDriveScanCheckpoint = pgTable('wiselink_drive_scan_checkpoint', {
-  id: varchar('id', { length: 160 }).primaryKey(),
+  id: uuid('id').primaryKey().defaultRandom(),
   tenantId: varchar('tenant_id', { length: 128 }).notNull(),
   sourceKey: varchar('source_key', { length: 128 }).notNull(),
   checkpointJson: text('checkpoint_json').notNull(),
