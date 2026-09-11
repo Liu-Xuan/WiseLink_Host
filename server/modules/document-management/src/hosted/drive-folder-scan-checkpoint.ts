@@ -52,7 +52,9 @@ function readBlocker(value: unknown): { folderToken: string; pageToken?: string;
 function normalizeState(state: DriveFolderScanState): DriveFolderScanState {
   if (!state.folderToken || !state.path || !Number.isInteger(state.depth) || state.depth < 0)
     throw new Error('DRIVE_SCAN_CHECKPOINT_INVALID');
-  return { folderToken: state.folderToken, path: state.path, depth: state.depth, ...(state.pageToken ? { pageToken: state.pageToken } : {}) };
+  if (state.entryOffset !== undefined && (!Number.isSafeInteger(state.entryOffset) || state.entryOffset < 0))
+    throw new Error('DRIVE_SCAN_CHECKPOINT_INVALID');
+  return { folderToken: state.folderToken, path: state.path, depth: state.depth, ...(state.pageToken ? { pageToken: state.pageToken } : {}), ...(state.entryOffset ? { entryOffset: state.entryOffset } : {}) };
 }
 
 function readState(value: unknown): DriveFolderScanState {
@@ -60,8 +62,11 @@ function readState(value: unknown): DriveFolderScanState {
       !Number.isInteger(value.depth) || Number(value.depth) < 0 ||
       (value.pageToken !== undefined && typeof value.pageToken !== 'string'))
     throw new Error('DRIVE_SCAN_CHECKPOINT_INVALID');
+  if (value.entryOffset !== undefined && (!Number.isSafeInteger(value.entryOffset) || Number(value.entryOffset) < 0))
+    throw new Error('DRIVE_SCAN_CHECKPOINT_INVALID');
   const pageToken = typeof value.pageToken === 'string' && value.pageToken ? value.pageToken : undefined;
-  return { folderToken: value.folderToken, path: value.path, depth: Number(value.depth), ...(pageToken ? { pageToken } : {}) };
+  const entryOffset = Number(value.entryOffset);
+  return { folderToken: value.folderToken, path: value.path, depth: Number(value.depth), ...(pageToken ? { pageToken } : {}), ...(entryOffset ? { entryOffset } : {}) };
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {

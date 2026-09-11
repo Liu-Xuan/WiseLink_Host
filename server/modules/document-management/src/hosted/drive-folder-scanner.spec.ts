@@ -9,7 +9,14 @@ describe('scanDriveFolders', () => {
       ], hasMore: false,
     }), { maxEntries: 1 });
     expect(result.entries).toHaveLength(1);
-    expect(result.continuation).toEqual([{ folderToken: 'root', path: 'root', depth: 0 }]);
+    expect(result.continuation).toEqual([{ folderToken: 'root', path: 'root', depth: 0, entryOffset: 1 }]);
+    const resumed = await scanDriveFolders(result.continuation, async () => ({
+      files: [
+        { token: 'file-1', type: 'file', name: '一.pdf' },
+        { token: 'file-2', type: 'file', name: '二.pdf' },
+      ], hasMore: false,
+    }), { maxEntries: 1 });
+    expect(resumed.entries.map(entry => entry.token)).toEqual(['file-2']);
   });
 
   it('blocks a provider that repeats a page token instead of claiming completion', async () => {

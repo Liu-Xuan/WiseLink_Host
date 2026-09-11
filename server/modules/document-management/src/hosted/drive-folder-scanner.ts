@@ -18,6 +18,7 @@ export interface DriveFolderScanState {
   path: string;
   depth: number;
   pageToken?: string;
+  entryOffset?: number;
 }
 
 export interface DriveFolderScanResult {
@@ -58,10 +59,11 @@ export async function scanDriveFolders(
   while (queue.length > 0) {
     const folder = queue.shift()!;
     let pageToken = folder.pageToken;
+    let entryOffset = folder.entryOffset ?? 0;
     let missingTokenRetries = 0;
     while (true) {
       if (pages >= maxPages || entries.length >= maxEntries) {
-        continuation.push({ ...folder, ...(pageToken ? { pageToken } : {}) });
+        continuation.push({ ...folder, ...(pageToken ? { pageToken } : {}), ...(entryOffset ? { entryOffset } : {}) });
         break;
       }
       const pageKey = `${folder.folderToken}:${pageToken ?? 'first'}`;
@@ -81,9 +83,10 @@ export async function scanDriveFolders(
       }
       pages += 1;
       visitedPages.push(pageKey);
-      for (const entry of page.files) {
+      for (let pageIndex = entryOffset; pageIndex < page.files.length; pageIndex += 1) {
+        const entry = page.files[pageIndex]!;
         if (entries.length >= maxEntries) {
-          continuation.push({ ...folder, ...(pageToken ? { pageToken } : {}) }, ...queue);
+          continuation.push({ ...folder, ...(pageToken ? { pageToken } : {}), entryOffset: pageIndex }, ...queue);
           return { entries, continuation, visitedPages, blockers };
         }
         const key = `${entry.type}:${entry.token}`;
@@ -94,11 +97,12 @@ export async function scanDriveFolders(
         if (entry.type === 'folder') queue.push({ folderToken: entry.token, path, depth: folder.depth + 1 });
       }
       if (!page.hasMore) {
+        entryOffset = 0;
         await options.onPage?.([...queue]);
         break;
       }
       if (page.nextPageToken) {
-        pageToken = page.nextPageToken; missingTokenRetries = 0;
+        pageToken = page.nextPageToken; entryOffset = 0; missingTokenRetries = 0;
         await options.onPage?.([{ ...folder, pageToken }, ...queue]);
         continue;
       }
