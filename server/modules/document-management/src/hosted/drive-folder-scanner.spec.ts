@@ -1,0 +1,21 @@
+import { scanDriveFolders } from './drive-folder-scanner';
+
+describe('scanDriveFolders', () => {
+  it('keeps folder pagination independent and resumes child folders', async () => {
+    const calls: string[] = [];
+    const result = await scanDriveFolders([{ folderToken: 'root', path: 'root', depth: 0 }], async (folder, token) => {
+      calls.push(`${folder}:${token ?? 'first'}`);
+      if (folder === 'root' && !token) return { files: [{ token: 'child', type: 'folder', name: 'child' }], hasMore: true, nextPageToken: 'r2' };
+      if (folder === 'root' && token === 'r2') return { files: [{ token: 'a', type: 'file', name: 'a.pdf' }], hasMore: false };
+      return { files: [{ token: 'b', type: 'file', name: 'b.pdf' }], hasMore: false };
+    });
+    expect(calls).toEqual(['root:first', 'root:r2', 'child:first']);
+    expect(result.entries.map(entry => entry.path)).toEqual(['root/child', 'root/a.pdf', 'root/child/b.pdf']);
+    expect(result.blockers).toEqual([]);
+  });
+
+  it('records a pagination blocker instead of looping forever', async () => {
+    const result = await scanDriveFolders([{ folderToken: 'root', path: '', depth: 0 }], async () => ({ files: [], hasMore: true }), { maxMissingPageTokenRetries: 3 });
+    expect(result.blockers).toEqual([{ folderToken: 'root', code: 'DRIVE_PAGE_TOKEN_MISSING' }]);
+  });
+});
