@@ -96,16 +96,28 @@ export async function consumeHostedMatter(options, dependencies) {
       }), () => call('HEARTBEAT'));
     // Legacy whole-model unknowns remain fenced. Only the runner that actually
     // installed per-round persistence can resume its own recorded invocation.
-    const execution = await checkpoint.readOptional('assessment-execution') ??
-      (nativeRecovery || await checkpoint.readOptional('assessment-enabled') ? await perform() :
-        await checkpoint.remoteStep({ step: 'model', args: { inputHash: task.inputHash }, ambiguousCommit: false, perform }));
+    let execution = await checkpoint.readOptional('assessment-execution');
+    if (!execution) {
+      try {
+        execution = nativeRecovery || await checkpoint.readOptional('assessment-enabled') ? await perform() :
+          await checkpoint.remoteStep({ step: 'model', args: { inputHash: task.inputHash }, ambiguousCommit: false, perform });
+      } catch (error) {
+        const failure = error?.terminalAssessmentFailure;
+        if (failure?.errorCode !== 'JOBAID_INCOMPLETE_TERMINAL_RESPONSE') throw error;
+        validateRuntimeProvenance(failure.provenance);
+        execution = { failureCode: failure.errorCode, provenance: failure.provenance };
+      }
+    }
     if (!await checkpoint.readOptional('assessment-execution')) await checkpoint.writeOnce('assessment-execution', execution);
     validateRuntimeProvenance(execution.provenance);
     const envelope = { schemaVersion: 'wiselink.3_1.openclaw_result_envelope.v2', taskType: task.taskType,
       subject: task.subject, actionAttemptId: task.actionAttemptId, operationRef: task.operationRef, baseRevision: task.baseRevision,
-      status: 'SUCCEEDED', businessOutcome: 'CANDIDATE_READY', candidateStatus: null, modelOutput: JSON.stringify(execution.output),
-      outputArtifactRefs: [], sourceRefs: task.sourceRefs, factsConsidered: [], missingInputs: [], conflicts: [], warnings: [],
-      ...execution.provenance, errorCode: null, errorDetail: null };
+      status: execution.failureCode ? 'FAILED' : 'SUCCEEDED',
+      businessOutcome: execution.failureCode ? 'NOT_PRODUCED' : 'CANDIDATE_READY', candidateStatus: null,
+      modelOutput: execution.failureCode ? null : JSON.stringify(execution.output),
+      outputArtifactRefs: [], sourceRefs: task.sourceRefs, factsConsidered: [], missingInputs: [], conflicts: [],
+      warnings: execution.failureCode ? ['Usage totals include only reported usage; the terminal response did not report its usage. Existing saved work and candidate checkpoints are retained.'] : [],
+      ...execution.provenance, errorCode: execution.failureCode ?? null, errorDetail: null };
     result = { ...envelope, contentHash: canonicalSha256(envelope) };
     await checkpoint.writeOnce('finish-result', result);
   }
@@ -118,11 +130,17 @@ export async function consumeHostedMatter(options, dependencies) {
     const status = await dependencies.callTool('matter_action_attempt', { ...target, operation: 'STATUS' });
     if (status.attemptRef !== target.attemptRef ||
       (status.resultContentHash && status.resultContentHash !== result.contentHash)) throw new Error('MATTER_RESULT_BINDING_MISMATCH');
-    if (status.status === 'SUCCEEDED' && status.resultContentHash === result.contentHash)
-      return { status: 'MATTER_WORK_SAVED', ...target, workRevisionRef: JSON.parse(result.modelOutput).workRevisionRef, candidateOnly: true };
+    if (status.status === result.status && status.resultContentHash === result.contentHash)
+      return result.status === 'FAILED'
+        ? { status: 'MATTER_ASSESSMENT_FAILED', ...target, errorCode: result.errorCode }
+        : { status: 'MATTER_WORK_SAVED', ...target, workRevisionRef: JSON.parse(result.modelOutput).workRevisionRef, candidateOnly: true };
     if (!['RUNNING', 'COMMITTING'].includes(status.status)) throw new Error('MATTER_FINISH_RECOVERY_REQUIRES_ATTENTION');
   }
   const finished = await call('FINISH', { result });
+  if (result.status === 'FAILED') {
+    if (finished.status !== 'FAILED' || finished.attemptRef !== target.attemptRef) throw new Error('MATTER_FINISH_READBACK_MISMATCH');
+    return { status: 'MATTER_ASSESSMENT_FAILED', ...target, errorCode: result.errorCode };
+  }
   if (finished.status !== 'SUCCEEDED' || finished.attemptRef !== target.attemptRef ||
     finished.workRevisionRef !== JSON.parse(result.modelOutput).workRevisionRef) throw new Error('MATTER_FINISH_READBACK_MISMATCH');
   return { status: 'MATTER_WORK_SAVED', ...target, workRevisionRef: finished.workRevisionRef, candidateOnly: true };

@@ -419,14 +419,20 @@ describe('JobAid problem work keeps method semantics, delivery and incremental s
     expect(reading.content.lead).toBe(third.understanding);
   });
 
-  test('requires a complete explicit prior-issue partition, including any retirement reason', () => {
+  test('retains untouched issues by default and requires explicit, unambiguous retirement', () => {
     const first = materializeJobAidWork(update(), context);
-    expect(() =>
-      materializeJobAidWork(update([issue('a')]), {
-        ...context,
-        previous: first,
-      }),
-    ).toThrow('JOBAID_PRIOR_ISSUE_OMITTED:b');
+    const revised = materializeJobAidWork(update([issue('a', '修订后的认识')]), {
+      ...context,
+      previous: first,
+    });
+    expect(revised.issues.find((item) => item.issueKey === 'b')).toEqual(first.issues[1]);
+    expect(revised.issues[0].understanding).toBe('修订后的认识');
+    expect(first.issues[0].understanding).toBe(document.excerpt);
+    const retired = materializeJobAidWork({
+      ...update([issue('a')]),
+      retiredIssues: [{ issueKey: 'b', reason: '已明确并入问题 a。' }],
+    }, { ...context, previous: first });
+    expect(retired.issues.map((item) => item.issueKey)).toEqual(['a']);
     expect(() =>
       materializeJobAidWork(
         {

@@ -353,15 +353,8 @@ export function materializeJobAidWork(
     ...retirements.map((item) => item.issueKey),
   ])
     if (!prior.has(issueKey)) fail('UNKNOWN_PRIOR_ISSUE');
-  for (const issueKey of prior.keys())
-    if (
-      ![
-        ...changedKeys,
-        ...unchanged,
-        ...retirements.map((item) => item.issueKey),
-      ].includes(issueKey)
-    )
-      fail(`PRIOR_ISSUE_OMITTED:${issueKey}`);
+  // This is a local update: the cloned prior work retains every untouched
+  // issue. Only an explicit retirement removes one; omission is not deletion.
   for (const item of retirements) prior.delete(item.issueKey);
   for (const item of updates) prior.set(item.issueKey, item);
   const issues = [...prior.values()];

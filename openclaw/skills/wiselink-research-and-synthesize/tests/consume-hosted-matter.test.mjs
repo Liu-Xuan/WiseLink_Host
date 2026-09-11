@@ -205,3 +205,52 @@ test('Matter reads at most four ranges at once and settles them before reporting
   await checked;
   assert.equal(calls.length, 4, 'later ranges are not started after a failed batch');
 });
+
+test('a confirmed incomplete response reports failure once and recovers a lost failure receipt without another generation', () => fixture(async checkpointRoot => {
+  const boundTask = structuredClone(task);
+  Object.assign(boundTask.executionModel, { displayName: 'Synthetic', providerKind: 'BUILT_IN', settingsRevision: 1,
+    selectedAt: '2026-09-11T00:00:00.000Z' });
+  Object.assign(boundTask.modelInput.modelInput, {
+    subject: task.subject, methodBinding: { packRef: 'synthetic-method' }, availableSources: [], deliveredEvidence: [],
+  });
+  let modelCalls = 0; let finishes = 0; let saved = 0; let committed;
+  const dependencies = {
+    callTool: async (name, input) => {
+      if (name === 'next_matter_assessment') return { matterId: 'MAT-one', next: { attemptRef: 'AQ-one', status: 'RUNNING' } };
+      if (input.operation === 'CLAIM') return { task: boundTask, status: 'RUNNING', attemptRef: 'AQ-one', leaseToken: 'lease', leaseGeneration: 1 };
+      if (input.operation === 'HEARTBEAT') return {};
+      if (input.operation === 'SAVE_WORK') { saved++; return { workRevisionRef: 'MWR-one', workRevision: 1, roundCompletion: 'COMPLETE' }; }
+      if (input.operation === 'READ_SAVED_WORK') return null;
+      if (input.operation === 'STATUS') return { attemptRef: 'AQ-one', status: 'FAILED', resultContentHash: committed.contentHash };
+      if (input.operation === 'FINISH') {
+        finishes++;
+        committed = input.result;
+        assert.equal(committed.status, 'FAILED');
+        assert.equal(committed.modelOutput, null);
+        assert.equal(committed.errorCode, 'JOBAID_INCOMPLETE_TERMINAL_RESPONSE');
+        assert.equal(JSON.stringify(committed).includes('private-diagnostic'), false);
+        throw new Error('failure receipt lost');
+      }
+      assert.fail(input.operation);
+    },
+    invokeMatterModel: (input, hooks) => invokeHostedJobAidProblemModel(input, {
+      gatewayChatCompletionsEnabled: true, gatewayUrl: 'http://127.0.0.1:1', gatewayToken: 'synthetic', ...hooks,
+      registeredModelRefs: ['miaoda/minimax-m3'],
+    }, { requestGateway: async () => {
+      if (++modelCalls === 1) return new Response(JSON.stringify({ model: 'synthetic', choices: [{ finish_reason: 'tool_calls',
+        message: { role: 'assistant', content: null, tool_calls: [{ id: 'save-call', type: 'function', function: {
+          name: 'return_wiselink_assessment_step', arguments: JSON.stringify({ step: { action: 'SAVE_WORK', workJson: '{"roundCompletion":"COMPLETE"}' } }),
+        } }] } }] }));
+      return new Response(JSON.stringify({ error: { message: 'miaoda/minimax-m3 ended with an incomplete terminal response',
+        code: 'incomplete_result', detail: 'private-diagnostic' } }), { status: 400 });
+    } }),
+  };
+  const options = { matterId: 'MAT-one', checkpointRoot };
+  await assert.rejects(consumeHostedMatter(options, dependencies), /failure receipt lost/);
+  assert.equal((await consumeHostedMatter(options, dependencies)).status, 'MATTER_ASSESSMENT_FAILED');
+  assert.equal(modelCalls, 2);
+  assert.equal(finishes, 1);
+  assert.equal(saved, 1);
+  const checkpoint = await createCheckpointStore(join(checkpointRoot, 'matter', 'MAT-one', 'AQ-one'));
+  assert.equal((await checkpoint.readOptional('assessment-state')).saved.workRevisionRef, 'MWR-one');
+}));
