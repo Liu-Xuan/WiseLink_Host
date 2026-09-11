@@ -22,6 +22,7 @@ import { jobAidReadingResult } from './jobaid-problem-work';
 import { collectIssueEvidenceUses } from '@shared/jobaid-evidence-uses';
 import { prepareEngineeringSearchQuery } from './engineering-search-text';
 import { projectionOwnerToSubjectKind } from './engineering-search-projection';
+import { EngineeringSearchProjectionWriter } from './engineering-search-projection';
 
 type IssueIdentity = Pick<
   EngineeringIssueSearchHit,
@@ -37,7 +38,31 @@ export class EngineeringIssueSearchService {
     @Inject(DRIZZLE_DATABASE) private readonly db: PostgresJsDatabase,
     private readonly jobAid: CanonicalJobAidProblemService,
     private readonly matters: EngineeringMatterWorkingService,
+    private readonly projectionWriter?: EngineeringSearchProjectionWriter,
   ) {}
+
+  /** Rebuilds derived search rows through the same actor-scoped readers as search/read. */
+  async rebuildProjection(limit: number | undefined, actor: CanonicalHostActor): Promise<{
+    attempted: number; rebuilt: number; failed: number;
+  }> {
+    this.requireActor(actor);
+    if (!this.projectionWriter) throw new Error('ENGINEERING_SEARCH_PROJECTION_WRITER_UNAVAILABLE');
+    return this.projectionWriter.rebuildPending({
+      tenantId: actor.tenantId,
+      limit,
+      load: async pending => {
+        if (pending.ownerKind === 'USER') {
+          const revision = await this.jobAid.readBrowserRevision(pending.ownerId, pending.revisionRef, actor);
+          if (!('content' in revision) || !revision.content) throw new NotFoundException('ENGINEERING_SEARCH_WORK_CONTENT_MISSING');
+          return revision.content;
+        }
+        if (!pending.subjectId) throw new BadRequestException('ENGINEERING_SEARCH_PENDING_SUBJECT_MISSING');
+        const revision = await this.matters.readWorkingRevision(pending.subjectId, pending.revisionRef, actor);
+        if (!revision.state.problemWork) throw new NotFoundException('ENGINEERING_SEARCH_WORK_CONTENT_MISSING');
+        return revision.state.problemWork;
+      },
+    });
+  }
 
   async search(
     query: string,
