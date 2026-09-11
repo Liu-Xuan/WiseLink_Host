@@ -26,7 +26,7 @@ Worker 现有 `tasks/:taskId` 与 `tasks/:taskId/result` 接口已接入 Host �
 
 **W1 完整工作依据。** 共用 collectEvidenceUses 按类型收集主张、风险、措施、分类、方法/要求、依赖和前提引用，保留位置与作用。阅读不等于分析；已读但未用于工作的材料记录 `READ_ONLY`，只比较本轮范围且确认没有实质变化的材料记录 `NO_MATERIAL_CHANGE`，部分核查仍保留未覆盖范围。保存事务同时写完整工作、依据使用、输入处置、影响范围和 CAS；当已有工作完全没有实质变化时，只保存本轮 coverage，不生成新的 substantive result 或 problemWork；请求结果不确定时按原 request 回读。
 
-**W2 统一上下文和 Reader。** WORK_ITEM 与 ENGINEERING_MATTER 共用来源、target/asOf、适用性、方法版本、变化和精确旧工作装配，Overall 读取指定修订。Reader 保留段落、警告、列表、表格、脚注、跨页条件、图像状态和原生记录 selector；未读、未找到、无权限、未接通和部分结果分开呈现。
+**W2 统一上下文和 Reader。** WORK_ITEM 与 ENGINEERING_MATTER 共用来源、target/asOf、适用性、方法版本、变化和精确旧工作装配，Overall 读取指定修订。事项新任务使用当前登记方法包，恢复/Review 从精确 `problemWork.methodBinding` 取快照，不以进程默认常量覆盖历史版本。Reader 保留段落、警告、列表、表格、脚注、跨页条件、图像状态和原生记录 selector；未读、未找到、无权限、未接通和部分结果分开呈现。
 
 **W3 授权检索投影。** 复用 EngineeringIssueSearchService 精确读取和 ACL，建立可重建的语义段、原生记录和完整问题投影及 GIN 索引，保留 tenant、owner、精确 revision、locator、上下文、原文和索引版本。中文使用 Intl.Segmenter 词级分词和 PostgreSQL simple 配置；文号、件号、软件版本走精确匹配。查询参数化，结果带精确引用、命中理由、根来源、hasMore 和限制；全文命中不等于权限或适用性。
 

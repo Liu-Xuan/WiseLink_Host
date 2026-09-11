@@ -22,6 +22,7 @@ export function buildMatterJobAidTask(input: {
   const prior = input.previous?.state.problemWork ?? null;
   if (input.previous && !prior)
     throw new Error('JOBAID_PREVIOUS_WORK_INCOMPLETE');
+  const methodBinding = prior?.methodBinding ?? JOBAID_METHOD_BINDING;
   const registry = new Map<string, AssessmentEvidence>();
   for (const evidence of [...JOBAID_METHOD_EVIDENCE, ...(prior?.evidence ?? [])]) {
     const existing = registry.get(evidence.evidenceRef);
@@ -49,7 +50,7 @@ export function buildMatterJobAidTask(input: {
     modelInput: {
       schemaVersion: MATTER_JOBAID_TASK_SCHEMA,
       subject: { kind: 'ENGINEERING_MATTER' as const, matterId: input.matterId, matterRevisionId: input.matterRevisionId },
-      methodBinding: structuredClone(JOBAID_METHOD_BINDING),
+      methodBinding: structuredClone(methodBinding),
       title: input.title,
       focus: input.previous?.state.focus ?? null,
       trigger: structuredClone(input.trigger),
