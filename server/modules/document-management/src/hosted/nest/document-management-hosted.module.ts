@@ -13,6 +13,7 @@ import { DocumentParsingHostedController } from './document-parsing-hosted.contr
 import { DocumentParsingHostedService } from './document-parsing-hosted.service';
 import { MineruRemoteWorkerClient } from './mineru-remote-worker.client';
 import { DocumentParsingRepository } from './document-parsing.repository';
+import { DriveScanCheckpointRepository } from './drive-scan-checkpoint.repository';
 
 export interface DocumentManagementHostedModuleOptions {
   imports?: ModuleMetadata['imports'];
@@ -45,6 +46,7 @@ export class DocumentManagementHostedModule {
         DocumentParsingRepository,
         DocumentParsingHostedService,
         MineruRemoteWorkerClient,
+        DriveScanCheckpointRepository,
       ],
       exports: [DocumentManagementHostedService, DocumentParsingHostedService],
     };
