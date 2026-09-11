@@ -1,4 +1,4 @@
-import { toDriveSourceCandidates } from './drive-source-candidate';
+import { classifyDriveSourceCandidates, toDriveSourceCandidates } from './drive-source-candidate';
 
 describe('toDriveSourceCandidates', () => {
   it('keeps provider identity and excludes folders without triggering analysis', () => {
@@ -10,5 +10,15 @@ describe('toDriveSourceCandidates', () => {
       sourceKey: 'operations', providerObjectId: 'file', providerVersionId: 'v3', entryType: 'file',
       name: '日报.pdf', path: '运行信息/日报.pdf', modifiedTime: '2026-09-12T00:00:00Z', identity: 'operations:file:file:v3',
     }]);
+  });
+
+  it('treats repeated delivery as unchanged and a provider version change as changed', () => {
+    const previous = toDriveSourceCandidates('operations', [{ token: 'same', type: 'file', name: '日报.pdf', path: '日报.pdf', version_id: 'v1' }]);
+    const current = toDriveSourceCandidates('operations', [
+      { token: 'same', type: 'file', name: '日报.pdf', path: '日报.pdf', version_id: 'v1' },
+      { token: 'new', type: 'file', name: '新增.pdf', path: '新增.pdf', version_id: 'v1' },
+    ]);
+    expect(classifyDriveSourceCandidates(previous, current).map(item => item.change)).toEqual(['UNCHANGED', 'NEW']);
+    expect(classifyDriveSourceCandidates(previous, [current[0]!, { ...current[0]!, providerVersionId: 'v2' }]).map(item => item.change)).toEqual(['UNCHANGED', 'CHANGED']);
   });
 });

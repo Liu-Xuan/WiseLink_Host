@@ -20,4 +20,4 @@ export {
   type DriveSourceScanCandidates,
 } from './drive-source-scan.service';
 export { DriveScanCheckpointRepository } from './drive-scan-checkpoint.repository';
-export { toDriveSourceCandidates, type DriveSourceCandidate } from '../drive-source-candidate';
+export { classifyDriveSourceCandidates, toDriveSourceCandidates, type DriveSourceCandidate, type DriveSourceCandidateChange } from '../drive-source-candidate';
