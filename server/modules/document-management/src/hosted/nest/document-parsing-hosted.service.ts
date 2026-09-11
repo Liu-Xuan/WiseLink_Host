@@ -1,15 +1,13 @@
 import { Inject, Injectable, Logger } from '@nestjs/common';
-import { CapabilityService, FileService } from '@lark-apaas/fullstack-nestjs-core';
+import { FileService } from '@lark-apaas/fullstack-nestjs-core';
 import type { DocumentParsedReading, DocumentParsingStatus, DocumentParseRunSummary, StartDocumentParseRequest } from '@shared/document-parsing.interface';
 import { MineruArtifactStore, MineruPersistenceError, type MineruStoredArtifact } from '../../../../professional-input/mineru/mineru-artifact-store';
-import { MineruExecutionError, MineruRunner } from '../../../../professional-input/mineru/mineru-runner';
-import { MineruHostedRuntime } from '../../../../professional-input/mineru/mineru-hosted-runtime';
-import { miaodaMineruTitleCall } from '../../../../professional-input/mineru/mineru-title-enhancer';
 import { buildMineruReadingProjection } from '../../../../professional-input/mineru/mineru-reading-projection';
 import { MiaodaFileServiceArtifactStore } from '../miaodaFileServiceArtifactStore.js';
 import { MiaodaHostedDocumentCatalog } from './miaoda-hosted-document-catalog';
 import { DOCUMENT_MANAGEMENT_INGEST_AUTHORIZER, type DocumentManagementIngestAuthorizer } from './document-management-hosted.tokens';
 import { DocumentParsingRepository, documentParseError, type DocumentParseRow, type DocumentParseScope } from './document-parsing.repository';
+import { MineruRemoteWorkerClient } from './mineru-remote-worker.client';
 
 type ReadScope = { actorUserId: string; tenantId: string; roles: string[] };
 
@@ -20,26 +18,25 @@ export class DocumentParsingHostedService {
   private readonly logger = new Logger(DocumentParsingHostedService.name);
   private readonly store: MineruArtifactStore;
   private readonly originals: MiaodaFileServiceArtifactStore;
-  private readonly runtime: MineruHostedRuntime;
-  private runner: MineruRunner | null = null;
   private readonly running = new Map<string, Promise<void>>();
 
   constructor(
     files: FileService,
     private readonly catalog: MiaodaHostedDocumentCatalog,
     private readonly repository: DocumentParsingRepository,
-    private readonly capabilities: CapabilityService,
+    private readonly remoteWorker: MineruRemoteWorkerClient,
     @Inject(DOCUMENT_MANAGEMENT_INGEST_AUTHORIZER) private readonly authorizer: DocumentManagementIngestAuthorizer,
   ) {
     this.store = new MineruArtifactStore(files);
     this.originals = new MiaodaFileServiceArtifactStore(files);
-    this.runtime = new MineruHostedRuntime(files);
   }
 
   async status(documentVersionId: string, context: ReadScope): Promise<DocumentParsingStatus> {
     const source = await this.authorizedSource(documentVersionId, context);
     const state = await this.repository.current({ ...context, documentVersionId });
-    const runtime = this.runtime.observe();
+    const runtime = { state: this.remoteWorker.configured() ? 'READY' as const : 'NOT_CONFIGURED' as const,
+      stage: null, verifiedFiles: 0, totalFiles: 0,
+      errorCode: this.remoteWorker.configured() ? null : 'MINERU_REMOTE_WORKER_NOT_CONFIGURED' };
     return { documentVersionId, originalFilename: source.version.originalFilename,
       latestRun: state.latest ? summary(state.latest) : null,
       publishedRun: state.published ? summary(state.published) : null,
@@ -56,7 +53,7 @@ export class DocumentParsingHostedService {
       if (existing.expectedPublishedRevision !== input.expectedPublishedRevision) throw documentParseError('DOCUMENT_PARSE_REQUEST_CONFLICT');
       return summary(existing);
     }
-    if (this.runtime.observe().state !== 'READY') throw documentParseError('DOCUMENT_PARSE_RUNTIME_UNAVAILABLE', 503);
+    if (!this.remoteWorker.configured()) throw documentParseError('MINERU_REMOTE_WORKER_NOT_CONFIGURED', 503);
     const reservation = await this.repository.reserve(scope, { ...input, bucketId: source.source.bucketId,
       sourceBinding: { documentVersionId, documentId: source.version.documentId, familyId: source.version.familyId,
         sourceArtifactId: source.version.sourceArtifactId, pdfSha256: source.version.pdfSha256, byteLength: source.version.byteLength },
@@ -119,31 +116,13 @@ export class DocumentParsingHostedService {
           original.providerObjectId !== source.source.providerObjectId || original.providerVersionId !== source.source.providerVersionId) {
         throw documentParseError('DOCUMENT_PARSE_ORIGINAL_MISMATCH');
       }
-      this.runner ??= new MineruRunner({ ...this.runtime.options(),
-        titleCall: miaodaMineruTitleCall(this.capabilities) });
-      const result = await this.runner.parse(original.bytes);
-      await this.assertRead(run.documentVersionId, context);
-      await this.repository.stage(scope, run.parseRunId);
-      const progress = new Map<string, MineruStoredArtifact>();
-      const saved = await this.store.persist({ scope: storageScope(run), documentVersion: run.sourceBinding, result,
-        onProgress: async artifact => {
-          progress.set(artifact.relativePath, artifact);
-          await this.repository.progress(scope, run.parseRunId, [...progress.values()]);
-        },
-      });
-      await this.assertRead(run.documentVersionId, context);
-      await this.repository.publish(scope, run.parseRunId, saved.manifestArtifact);
+      const receipt = await this.remoteWorker.submit(original.bytes);
+      if (receipt.sourceSha256 !== run.sourceBinding.pdfSha256 || receipt.sourceByteLength !== run.sourceBinding.byteLength)
+        throw documentParseError('MINERU_REMOTE_WORKER_SOURCE_MISMATCH');
+      throw documentParseError('MINERU_REMOTE_WORKER_ARTIFACT_TRANSFER_PENDING');
     } catch (error) {
       const code = safeErrorCode(error);
       this.logger.error(`Document parse ${run.parseRunId} failed: ${code}`);
-      if (error instanceof MineruExecutionError) {
-        // MinerU's Click CLI reports task failures over multiple stderr lines;
-        // Python-exception-only filtering loses the actual task failure reason.
-        // Keep a bounded diagnostic tail in Host logs, never model output/stdout.
-        const stderr = error.stderr.replace(/\u001b\[[0-9;]*m/g, '')
-          .replace(/https?:\/\/\S+/g, '[URL]').slice(-6000);
-        this.logger.error(`MinerU process ${run.parseRunId}: ${JSON.stringify({ exit: error.message, stderr })}`);
-      }
       try {
         await this.repository.fail(scope, run.parseRunId, { errorCode: code,
           ...(error instanceof MineruPersistenceError ? { progress: error.progress, pendingObject: error.pendingObject } : {}),
@@ -186,6 +165,6 @@ function startInput(value: unknown): StartDocumentParseRequest {
 }
 function safeErrorCode(error: unknown) {
   const value = error instanceof Error ? error.message : '';
-  if (error instanceof MineruExecutionError && /^MINERU_PROCESS_FAILED:/.test(value)) return 'MINERU_PROCESS_FAILED';
+  if (/^MINERU_PROCESS_FAILED:/.test(value)) return 'MINERU_PROCESS_FAILED';
   return /^[A-Z][A-Z0-9_]{1,159}$/.test(value) ? value : 'DOCUMENT_PARSE_FAILED';
 }

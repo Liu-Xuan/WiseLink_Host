@@ -11,6 +11,7 @@ import { MiaodaHostedDocumentCatalog } from './miaoda-hosted-document-catalog';
 import { DOCUMENT_MANAGEMENT_INGEST_AUTHORIZER } from './document-management-hosted.tokens';
 import { DocumentParsingHostedController } from './document-parsing-hosted.controller';
 import { DocumentParsingHostedService } from './document-parsing-hosted.service';
+import { MineruRemoteWorkerClient } from './mineru-remote-worker.client';
 import { DocumentParsingRepository } from './document-parsing.repository';
 
 export interface DocumentManagementHostedModuleOptions {
@@ -43,6 +44,7 @@ export class DocumentManagementHostedModule {
         DocumentManagementHostedService,
         DocumentParsingRepository,
         DocumentParsingHostedService,
+        MineruRemoteWorkerClient,
       ],
       exports: [DocumentManagementHostedService, DocumentParsingHostedService],
     };
