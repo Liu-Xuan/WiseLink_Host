@@ -32,7 +32,7 @@ Worker 现有 `tasks/:taskId` 与 `tasks/:taskId/result` 接口已接入 Host �
 工作投影失败现可按 tenant/精确 revision 批量恢复：授权读取由调用方注入，单项失败继续留在 pending，不能以重建结果替代原始记录。
 Canonical Host 现提供受登录和对象入口保护的 `POST /api/canonical-host/engineering-issues/projection/rebuild` 受控恢复入口；limit 仅允许 1–100，恢复仍沿用当前 actor/tenant 精确读取，不新增队列或执行器。
 
-2026-09-12 实施进度：现有问题候选查询已改为参数化 PostgreSQL `to_tsvector('simple')`/`plainto_tsquery`，并保留规范化文号、件号、软件版本的精确匹配；命中后仍逐项调用现有完整工作读取和 actor/tenant ACL。独立持久化 projection 表及其 `search_vector` 生成列、GIN/租户范围/标识符索引已在迁移和 Drizzle schema 对齐；来源语义段和原生记录消费者尚未接入，当前不宣称全量检索。
+2026-09-12 实施进度：现有问题候选查询已改为参数化 PostgreSQL `to_tsvector('simple')`/`plainto_tsquery`，并保留规范化文号、件号、软件版本的精确匹配；命中后仍逐项调用现有完整工作读取和 actor/tenant ACL。独立持久化 projection 表及其 `search_vector` 生成列、GIN/租户范围/标识符索引已在迁移和 Drizzle schema 对齐；已增加只接受调用方已授权 Reader 文本的 SOURCE/RECORD 投影写入原语，但尚未接入真实来源消费者，当前不宣称全量检索。
 
 已补充 `engineering_search_projection` 的 Drizzle 结构和 0039 迁移：保存租户、owner、精确 revision、entry/locator、原文、分词文本和索引版本，数据库生成加权 `search_vector` 并建立 GIN/标识索引；RLS 只允许当前租户 owner 读取。WorkItem 与 EngineeringMatter 成功保存后都会异步重建对应问题投影；若重建失败，新增 0042 的租户/精确 revision 待重建标识，成功重建后删除，正文保存不回滚。`listPending` 提供租户范围的精确待重建清单，供后续原生任务/触发器恢复；开发数据库已执行并核验 0039/0042，Hosted 真实索引查询和恢复任务仍待运行验收。
 投影搜索为授权展开预留最多 101 个候选，`hasMore` 只由实际可读的第 51 个命中决定，不能由被拒绝投影行制造分页提示。

@@ -10,11 +10,42 @@ export interface EngineeringSearchProjectionEntry {
   ownerKind: 'USER' | 'MATTER' | 'SOURCE';
   ownerId: string;
   exactRevisionRef: string;
-  entryKind: 'WORK';
+  entryKind: 'SOURCE' | 'RECORD' | 'WORK';
   locatorRef: string;
   parentContextRef: string | null;
   title: string;
   search: EngineeringSearchText;
+}
+
+export interface AuthorizedSearchProjectionEntryInput {
+  /** Caller must have already performed the normal tenant/actor source read. */
+  entryId: string;
+  ownerKind: 'SOURCE';
+  ownerId: string;
+  exactRevisionRef: string;
+  entryKind: 'SOURCE' | 'RECORD';
+  locatorRef: string;
+  parentContextRef?: string | null;
+  title?: string;
+  originalText: string;
+  identifiers?: readonly string[];
+}
+
+/** Builds derived SOURCE/RECORD rows from an already-authorized Reader result. */
+export function buildAuthorizedSourceSearchProjection(
+  entries: readonly AuthorizedSearchProjectionEntryInput[],
+): EngineeringSearchProjectionEntry[] {
+  return entries.map((entry) => ({
+    entryId: entry.entryId,
+    ownerKind: entry.ownerKind,
+    ownerId: entry.ownerId,
+    exactRevisionRef: entry.exactRevisionRef,
+    entryKind: entry.entryKind,
+    locatorRef: entry.locatorRef,
+    parentContextRef: entry.parentContextRef ?? null,
+    title: entry.title ?? '',
+    search: buildEngineeringSearchText(entry.originalText, entry.identifiers ?? []),
+  }));
 }
 
 export function projectionOwnerToSubjectKind(ownerKind: string): 'WORK_ITEM' | 'ENGINEERING_MATTER' | null {
@@ -71,6 +102,36 @@ export class EngineeringSearchProjectionWriter {
         originalOrWorkText: row.search.originalText, tokenizedText: row.search.tokenizedText, indexedVersion: 1,
       })));
       await tx.delete(engineeringSearchProjectionPending).where(and(eq(engineeringSearchProjectionPending.tenantId, input.tenantId), eq(engineeringSearchProjectionPending.exactRevisionRef, input.revisionRef)));
+    };
+    if (input.database) await write(input.database); else await this.db.transaction(write);
+  }
+
+  /** Persists rows only after the caller's existing Reader/ACL has authorized them. */
+  async indexAuthorizedSourceEntries(input: {
+    tenantId: string;
+    entries: readonly AuthorizedSearchProjectionEntryInput[];
+    database?: PostgresJsDatabase;
+  }): Promise<void> {
+    const rows = buildAuthorizedSourceSearchProjection(input.entries);
+    const write = async (tx: PostgresJsDatabase) => {
+      const revisions = [...new Set(rows.map((row) => row.exactRevisionRef))];
+      for (const revision of revisions) {
+        await tx.delete(engineeringSearchProjection).where(and(
+          eq(engineeringSearchProjection.tenantId, input.tenantId),
+          eq(engineeringSearchProjection.ownerKind, 'SOURCE'),
+          eq(engineeringSearchProjection.exactRevisionRef, revision),
+        ));
+      }
+      if (rows.length > 0) {
+        await tx.insert(engineeringSearchProjection).values(rows.map((row) => ({
+          entryId: row.entryId, tenantId: input.tenantId, ownerKind: row.ownerKind,
+          ownerId: row.ownerId, exactRevisionRef: row.exactRevisionRef,
+          entryKind: row.entryKind, locatorRef: row.locatorRef,
+          parentContextRef: row.parentContextRef, title: row.title,
+          identifiers: row.search.identifiers, originalOrWorkText: row.search.originalText,
+          tokenizedText: row.search.tokenizedText, indexedVersion: 1,
+        })));
+      }
     };
     if (input.database) await write(input.database); else await this.db.transaction(write);
   }

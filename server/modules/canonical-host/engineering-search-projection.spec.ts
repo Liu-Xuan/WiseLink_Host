@@ -1,9 +1,20 @@
-import { buildWorkSearchProjection, EngineeringSearchProjectionWriter, projectionOwnerToSubjectKind } from './engineering-search-projection';
+import { buildAuthorizedSourceSearchProjection, buildWorkSearchProjection, EngineeringSearchProjectionWriter, projectionOwnerToSubjectKind } from './engineering-search-projection';
 
 it('maps persisted projection owners to the public search subject kinds', () => {
   expect(projectionOwnerToSubjectKind('USER')).toBe('WORK_ITEM');
   expect(projectionOwnerToSubjectKind('MATTER')).toBe('ENGINEERING_MATTER');
   expect(projectionOwnerToSubjectKind('SOURCE')).toBeNull();
+});
+
+it('builds SOURCE and RECORD rows only from caller-supplied authorized text', () => {
+  const rows = buildAuthorizedSourceSearchProjection([
+    { entryId: 'src:r1:u1', ownerKind: 'SOURCE', ownerId: 'src-1', exactRevisionRef: 'rev-1', entryKind: 'SOURCE', locatorRef: 'unit:u1', title: '章节', originalText: '液压系统 脚注 条件', identifiers: ['SB 123'] },
+    { entryId: 'src:r1:record-7', ownerKind: 'SOURCE', ownerId: 'src-1', exactRevisionRef: 'rev-1', entryKind: 'RECORD', locatorRef: 'record:7', originalText: '原生记录条件', parentContextRef: 'table-1' },
+  ]);
+  expect(rows).toHaveLength(2);
+  expect(rows[0]).toMatchObject({ entryKind: 'SOURCE', ownerKind: 'SOURCE', locatorRef: 'unit:u1', parentContextRef: null });
+  expect(rows[0]?.search.identifiers).toEqual(['SB 123']);
+  expect(rows[1]).toMatchObject({ entryKind: 'RECORD', parentContextRef: 'table-1' });
 });
 
 describe('buildWorkSearchProjection', () => {
