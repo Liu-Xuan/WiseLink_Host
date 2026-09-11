@@ -51,6 +51,7 @@ const {
 } = require('../../server/modules/canonical-host/engineering-matter-working-state.ts');
 
 const { jobAidProblemModelWorkContent } = require('../../server/modules/canonical-host/jobaid-problem-task.ts');
+const { buildMatterJobAidTask } = require('../../server/modules/canonical-host/matter-jobaid-task.ts');
 const {
   MatterActionAttemptService,
 } = require('../../server/modules/canonical-host/matter-action-attempt.service.ts');
@@ -3146,7 +3147,28 @@ async function assertRawMatterJobAidSave(sql, owner, service, baseInput) {
   const { modelInput: _modelInput, sourceRefs: _sourceRefs, ...request } = baseInput;
   const previous = await owner.working.loadCurrent(request);
   assert.ok(previous.state.problemWork);
-  const reserved = await owner.runtime(() => service.reserveJobAid({ ...request,
+  // Seed the real pre-problemWork representation in this isolated test DB.
+  const legacyState = structuredClone(previous.state);
+  delete legacyState.problemWork;
+  await sql`UPDATE engineering_matter_work_revision SET state_json = ${JSON.stringify(legacyState)}
+    WHERE matter_work_revision_id = ${previous.matterWorkRevisionId}`;
+  const legacy = await owner.working.loadCurrent(request);
+  const basis = await owner.workingService.resolveWorkingBasis(request.matterId, owner.actor);
+  const currentTask = buildMatterJobAidTask({ matterId: request.matterId, matterRevisionId: request.expectedMatterRevisionId,
+    actorUserId: request.actorUserId, title: 'Legacy source delivery fixture', inputs: basis.currentInputs,
+    trigger: request.trigger, previous: legacy });
+  const legacyRefs = legacy.state.substantiveResult.evidence.map(item => item.evidenceRef);
+  assert.ok(legacyRefs.length);
+  for (const ref of legacyRefs) {
+    assert.ok(currentTask.sourceCatalog.some(item => item.evidenceRef === ref));
+    assert.ok(currentTask.initiallyDeliveredRefs.includes(ref));
+  }
+  // Reproduce the already-issued task: evidence was in legacySummary, while
+  // catalog/delivery lists omitted it. Recovery must use the sealed actual body.
+  const oldTask = structuredClone(currentTask);
+  oldTask.sourceCatalog = oldTask.sourceCatalog.filter(item => !legacyRefs.includes(item.evidenceRef));
+  oldTask.initiallyDeliveredRefs = oldTask.initiallyDeliveredRefs.filter(ref => !legacyRefs.includes(ref));
+  const reserved = await owner.runtime(() => service.reserve({ ...request, modelInput: oldTask, sourceRefs: [],
     idempotencyKey: 'raw-matter-jobaid', expectedWorkingRevision: previous.workingRevision }));
   const scope = { tenantId: request.tenantId, matterId: request.matterId, actorUserId: request.actorUserId,
     attemptRef: reserved.task.operationRef, principalId: 'hosted-test' };

@@ -647,8 +647,14 @@ export class MatterActionAttemptService {
         registry.set(evidence.evidenceRef, evidence);
       };
       taskInput.sourceCatalog.forEach(add);
+      // Older sealed v2 tasks delivered legacySummary with its complete evidence,
+      // but omitted those same refs from sourceCatalog/initiallyDeliveredRefs.
+      // Accept only that actual task-bound delivery, preserving each source kind.
+      const legacyEvidence = taskInput.modelInput.previousWork?.legacySummary?.evidence ?? [];
+      legacyEvidence.forEach(add);
       previous?.state.problemWork?.evidence.forEach(add);
-      const readRefs = new Set([...taskInput.initiallyDeliveredRefs, ...(previous?.state.problemWork?.readSourceRefs ?? [])]);
+      const readRefs = new Set([...taskInput.initiallyDeliveredRefs, ...legacyEvidence.map(item => item.evidenceRef),
+        ...(previous?.state.problemWork?.readSourceRefs ?? [])]);
       for (const event of events.filter(item => item.kind === 'MATTER_REGISTERED_SOURCES_READ')) {
         for (const item of event.evidence as AssessmentEvidence[]) { add(item); readRefs.add(item.evidenceRef); }
       }

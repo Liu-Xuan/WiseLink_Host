@@ -20,15 +20,17 @@ export function buildMatterJobAidTask(input: {
   previous: EngineeringMatterWorkingRevisionReadModel | null;
 }) {
   const prior = input.previous?.state.problemWork ?? null;
+  const legacyEvidence = prior ? [] : input.previous?.state.substantiveResult?.evidence ?? [];
   const registry = new Map<string, AssessmentEvidence>();
-  for (const evidence of [...JOBAID_METHOD_EVIDENCE, ...(prior?.evidence ?? [])]) {
+  for (const evidence of [...JOBAID_METHOD_EVIDENCE, ...(prior?.evidence ?? []), ...legacyEvidence]) {
     const existing = registry.get(evidence.evidenceRef);
     if (existing && canonicalJson(existing) !== canonicalJson(evidence))
       throw new Error('JOBAID_PRIOR_SOURCE_CHANGED');
     registry.set(evidence.evidenceRef, structuredClone(evidence));
   }
   const sourceCatalog = [...registry.values()];
-  const initiallyDeliveredRefs = [...new Set([...JOBAID_CORE_METHOD_REFS, ...(prior?.readSourceRefs ?? [])])];
+  const initiallyDeliveredRefs = [...new Set([...JOBAID_CORE_METHOD_REFS, ...(prior?.readSourceRefs ?? []),
+    ...legacyEvidence.map(item => item.evidenceRef)])];
   if (initiallyDeliveredRefs.some((ref) => !registry.has(ref))) throw new Error('JOBAID_PRIOR_SOURCE_MISSING');
   const historyReview: JobAidProblemWorkContent['historyReview'] = {
     required: input.previous !== null,
@@ -50,7 +52,7 @@ export function buildMatterJobAidTask(input: {
       focus: input.previous?.state.focus ?? null,
       trigger: structuredClone(input.trigger),
       availableDocuments: [...new Set([...input.inputs.map((binding) => binding.documentVersionId),
-        ...(prior?.evidence ?? []).flatMap(item => item.kind === 'DOCUMENT_PASSAGE' ? [item.documentVersionId] : []),
+        ...[...(prior?.evidence ?? []), ...legacyEvidence].flatMap(item => item.kind === 'DOCUMENT_PASSAGE' ? [item.documentVersionId] : []),
       ])].map((documentVersionId) => ({
         documentVersionId,
         inputIds: input.inputs.filter((binding) => binding.documentVersionId === documentVersionId).map((binding) => binding.inputId),
