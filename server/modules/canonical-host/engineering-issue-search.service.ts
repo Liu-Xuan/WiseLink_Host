@@ -47,6 +47,9 @@ export class EngineeringIssueSearchService {
     if (!search || search.length > 200)
       throw new BadRequestException('ENGINEERING_ISSUE_QUERY_INVALID');
     const prepared = prepareEngineeringSearchQuery(search);
+    if (process.env.WL_ENGINEERING_SEARCH_PROJECTION === '1') {
+      return this.searchProjection(prepared, actor);
+    }
     const hits: EngineeringIssueSearchHit[] = [];
     const workReads = new Map<string, Promise<SavedIssueWork>>();
     let cursor: IssueIdentity | undefined;
@@ -117,6 +120,34 @@ export class EngineeringIssueSearchService {
     }
     // Even pagination hints derive only from authorized hits.
     return { hits: hits.slice(0, 50), hasMore: hits.length > 50 };
+  }
+
+  private async searchProjection(prepared: ReturnType<typeof prepareEngineeringSearchQuery>, actor: CanonicalHostActor): Promise<EngineeringIssueSearchResponse> {
+    const rows = await this.db.execute<{
+      entryId: string; ownerKind: string; ownerId: string; exactRevisionRef: string; title: string;
+    }>(sql`SELECT entry_id AS "entryId", owner_kind AS "ownerKind", owner_id AS "ownerId",
+      exact_revision_ref AS "exactRevisionRef", title
+      FROM engineering_search_projection
+      WHERE tenant_id = ${actor.tenantId}
+        AND owner_id = ${actor.userId}
+        AND (search_vector @@ plainto_tsquery('simple', ${prepared.tokenizedText})
+          OR identifiers && ${prepared.exactIdentifierCandidates}::text[])
+      ORDER BY entry_id LIMIT 51`);
+    const hits: EngineeringIssueSearchHit[] = [];
+    const workReads = new Map<string, Promise<SavedIssueWork>>();
+    for (const row of rows) {
+      const match = row.entryId.match(/^(.*):issue:(.*)$/);
+      if (!match || !['WORK_ITEM', 'ENGINEERING_MATTER'].includes(row.ownerKind)) continue;
+      const subjectKind = row.ownerKind as IssueIdentity['subjectKind'];
+      const key = JSON.stringify([subjectKind, row.ownerId, row.exactRevisionRef]);
+      let work = workReads.get(key);
+      if (!work) { work = this.loadWork({ subjectKind, subjectId: row.ownerId, workRef: row.exactRevisionRef, issueKey: match[2] }, actor); workReads.set(key, work); }
+      try {
+        hits.push((this.issueFromWork({ subjectKind, subjectId: row.ownerId, workRef: row.exactRevisionRef, issueKey: match[2] }, await work)).identity);
+      } catch (error) { if (!isAccessUnavailable(error)) throw error; }
+      if (hits.length >= 50) break;
+    }
+    return { hits, hasMore: rows.length > 50 };
   }
 
   async read(
