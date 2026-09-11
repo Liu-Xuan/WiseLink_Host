@@ -274,6 +274,63 @@ async function persisted(run) {
   finally { await rm(directory, { recursive: true, force: true }); }
 }
 
+test('Matter counts durable model execution while keeping the Host deadline across maintenance downtime', () => persisted(async checkpoint => {
+  const input = { ...modelInput(), schemaVersion: 'wiselink.matter-jobaid-task.v2',
+    subject: { kind: 'ENGINEERING_MATTER', matterId: 'MAT-budget' }, availableDocuments: [{ documentVersionId: 'DV-budget' }] };
+  const f = fixture([{ action: 'READ_SOURCES', sourceRefs: ['source:dv:sr1'], purpose: 'read', context: 'PAGE' },
+    { action: 'FINISH', work: completed }], { assessmentCheckpoint: checkpoint,
+    taskDeadline: new Date(Date.now() + 10 * 60_000).toISOString() });
+  const read = f.options.readAssessmentSources;
+  let first = true;
+  f.options.readAssessmentSources = async args => {
+    if (first) { first = false; throw new Error('HOST_SOURCE_TIMEOUT'); }
+    return read(args);
+  };
+  const run = () => invokeHostedJobAidProblemModel({ operation: 'ASSESS_MATTER', modelInput: input }, f.options, f.dependencies);
+  await assert.rejects(run(), /HOST_SOURCE_TIMEOUT/);
+  const enabled = await checkpoint.readOptional('assessment-enabled');
+  enabled.startedAt = Date.now() - 40 * 60_000;
+  await checkpoint.write('assessment-enabled', enabled);
+  const start = await checkpoint.readOptional('assessment-round-1.started');
+  const result = await checkpoint.readOptional('assessment-round-1.result');
+  start.startedAt = new Date(enabled.startedAt).toISOString();
+  result.finishedAt = new Date(enabled.startedAt + 5_000).toISOString();
+  await checkpoint.write('assessment-round-1.started', start);
+  await checkpoint.write('assessment-round-1.result', result);
+  await run();
+  assert.equal(f.calls.length, 2, 'the already-completed first model call is not repeated');
+  assert.equal(f.saves.length, 1);
+  assert.deepEqual(await checkpoint.readOptional('assessment-enabled'), enabled, 'the original start time is never rewritten');
+  assert.deepEqual(await checkpoint.readOptional('assessment-round-1.result'), result);
+}));
+
+test('Matter still stops at consumed model budget or the absolute Host deadline', async () => {
+  for (const mode of ['model-time', 'host-deadline', 'invalid-time']) await persisted(async checkpoint => {
+    const input = { ...modelInput(), schemaVersion: 'wiselink.matter-jobaid-task.v2',
+      subject: { kind: 'ENGINEERING_MATTER', matterId: 'MAT-budget' }, availableDocuments: [{ documentVersionId: 'DV-budget' }] };
+    const f = fixture([{ action: 'READ_SOURCES', sourceRefs: ['source:dv:sr1'], purpose: 'read', context: 'PAGE' }],
+      { assessmentCheckpoint: checkpoint, taskDeadline: new Date(Date.now() + 10 * 60_000).toISOString() });
+    let first = true;
+    const read = f.options.readAssessmentSources;
+    f.options.readAssessmentSources = async args => {
+      if (first) { first = false; throw new Error('HOST_SOURCE_TIMEOUT'); }
+      return read(args);
+    };
+    const run = () => invokeHostedJobAidProblemModel({ operation: 'ASSESS_MATTER', modelInput: input }, f.options, f.dependencies);
+    await assert.rejects(run(), /HOST_SOURCE_TIMEOUT/);
+    const start = await checkpoint.readOptional('assessment-round-1.started');
+    const result = await checkpoint.readOptional('assessment-round-1.result');
+    start.startedAt = new Date(Date.now() - 40 * 60_000).toISOString();
+    result.finishedAt = mode === 'invalid-time' ? 'invalid' : new Date(Date.now() - 9 * 60_000).toISOString();
+    await checkpoint.write('assessment-round-1.started', start);
+    await checkpoint.write('assessment-round-1.result', result);
+    if (mode === 'host-deadline') f.options.taskDeadline = new Date(Date.now() - 1).toISOString();
+    await assert.rejects(run(), mode === 'invalid-time' ? /JOBAID_CHECKPOINT_EXECUTION_TIME_INVALID/ : /JOBAID_MODEL_BUDGET_EXHAUSTED/);
+    assert.equal(f.calls.length, 1);
+    assert.equal(f.saves.length, 0);
+  });
+});
+
 test('a failed source read resumes the exact model response without another generation', () => persisted(async checkpoint => {
   const f = fixture([
     { action: 'READ_SOURCES', sourceRefs: ['source:dv:sr1'], purpose: 'read', context: 'PAGE' },

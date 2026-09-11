@@ -12,7 +12,7 @@ description: Orchestrate the single official hosted WiseLink engineering profile
 - hosted app：`app_17c3zn24kv2`
 - logical profile：`wiselink-engineering`
 - model policy：`official-hosted-profile-config`（任务可绑定已登记的内置或用户授权自定义模型；仍经唯一官方 Hosted profile/Gateway）
-- Skill：`wiselink-research-and-synthesize@r09.c80`
+- Skill：`wiselink-research-and-synthesize@r09.c81`
 - Skill compatibility：`wiselink-research-and-synthesize@r09`（历史任务最低接受 `r09.c10`，翻译 v2 必须为 `r09.c44` 或更新兼容包）
 - Host MCP：`wiselink-openclaw-engineering-assessment@1.2.0`（保留既有工具，新增语义翻译工作与 JobAid 来源/工作工具）
 - Host 集成提交：以本次发布包清单记录的实际提交为准
@@ -558,7 +558,7 @@ Interactive Review 的复杂 ResultEnvelope 必须由 `sealResultEnvelope` 生�
 当前 validator 强制：
 
 - `modelVersion` 优先取响应中可读实际模型；绑定任务未回报实际模型时使用 `configured-route:<modelRef>`，旧无绑定任务使用无 fallback 的 configured endpoint。后两者只证明路由，不代表已暴露下游具体模型，也不做具体版本等值判断
-- `skillVersion=wiselink-research-and-synthesize@r09.c80`
+- `skillVersion=wiselink-research-and-synthesize@r09.c81`
 - `toolVersions.wiselink-openclaw-engineering-assessment=1.2.0`
 - `promptVersion` 非空并来自当前运行
 - task/result exact binding、SourceRef allowlist 和 canonical hash 一致
@@ -601,3 +601,9 @@ node --test tests/validation.test.mjs
 仅对 HTTP 成功、单一 assistant、finish_reason=stop、无函数调用且无 analysis 通道的完整纯文本响应，使用原轮次检查点记录结果并进入下一纠正轮；不把纯文本当作工作保存。协议纠正与业务纠正共用原两次连续纠正限额、64 轮和总时间预算。截断、未知提交、网关失败、多调用或非预期工具保持停止。恢复重用已完成响应，不重新生成同一轮。
 
 Host 拒绝 severity/likelihood 的业务依据时，反馈具体风险字段及原引用的来源性质。工程师陈述、方法规则、历史候选不能单独建立评级；没有实际支持的原文或受控事实时，模型应将该评级留为 null，保留风险情景、前提、限制和待核实问题。不得替换成无关引文或删除有依据的内容。
+
+### c81：Matter 执行预算与绝对截止时间
+
+有 Host 封存 deadline 和检查点的 Matter，30 分钟模型预算按各轮 started/result 的实际执行时间累计，维护停机和轮次间等待不计作模型执行；原 startedAt、响应、轮次和纠正计数保持。Host 绝对 deadline 仍限制整个任务，单次请求仍不超过剩余模型预算、剩余 Host 时间和原请求上限。缺失或异常完成时间拒绝恢复，未知响应保持不重放。WorkItem 原计时路径保持。
+
+同一已授权执行 principal 可以由现有 CLAIM 正常读回尚有效的自有租约；消费者已退出且零在途时，无需人为等待该租约耗尽。此行为不跳过 Host 的身份、取消、期限或版本校验。

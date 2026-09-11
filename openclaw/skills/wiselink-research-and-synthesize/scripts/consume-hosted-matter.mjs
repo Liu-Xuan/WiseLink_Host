@@ -70,6 +70,7 @@ export async function consumeHostedMatter(options, dependencies) {
     modelInput = invocation.modelInput;
     const perform = () => withLeaseHeartbeat(() => dependencies.invokeMatterModel({ operation: 'ASSESS_MATTER', modelInput }, {
         executionModel: task.executionModel, sessionDiscriminator: invocation.sessionDiscriminator,
+        taskDeadline: task.deadline,
         resumeSavedWork: invocation.resumeSavedWork,
         assessmentCheckpoint: checkpoint,
         recoveredInitialResponse: candidateRecovery?.response ?? nativeRecovery?.response,

@@ -201,6 +201,28 @@ export async function invokeHostedJobAidProblemModel(
     ({ round, messages, expectedWorkRevision, saved, corrections, inputUnits, outputUnits } = restored);
   } else await checkpoint?.write('assessment-state', { round, messages,
     expectedWorkRevision, saved, corrections, inputUnits, outputUnits });
+  const taskDeadlineMs = options.taskDeadline === undefined ? Infinity : Date.parse(options.taskDeadline);
+  if (Number.isNaN(taskDeadlineMs)) throw new Error('JOBAID_TASK_DEADLINE_INVALID');
+  // Matter already has an absolute Host deadline. Its model budget measures
+  // actual recorded execution, not maintenance downtime between completed rounds.
+  const activeModelBudget = operation === 'ASSESS_MATTER' && checkpoint && Number.isFinite(taskDeadlineMs);
+  let modelExecutionMs = 0;
+  const accountedRounds = new Set();
+  const accountRound = async number => {
+    if (!activeModelBudget || accountedRounds.has(number)) return;
+    const result = await checkpoint.readOptional(`assessment-round-${number}.result`);
+    if (!result) return;
+    const start = await checkpoint.readOptional(`assessment-round-${number}.started`);
+    const startMs = Date.parse(start?.startedAt);
+    const endMs = Date.parse(result.finishedAt);
+    if (!Number.isFinite(startMs) || !Number.isFinite(endMs) || endMs < startMs)
+      throw new Error('JOBAID_CHECKPOINT_EXECUTION_TIME_INVALID');
+    modelExecutionMs += endMs - startMs;
+    accountedRounds.add(number);
+  };
+  if (activeModelBudget) for (let number = 1; number <= round; number++) await accountRound(number);
+  const remainingBudgetMs = () => Math.min(taskDeadlineMs - Date.now(),
+    timeoutMs - (activeModelBudget ? modelExecutionMs : Date.now() - startedAt));
   const requestKey = async (kind) => {
     const key = `assessment-${round}-${kind}`;
     let value = await checkpoint?.readOptional(key);
@@ -251,8 +273,9 @@ export async function invokeHostedJobAidProblemModel(
   };
   for (; round <= 64; round += 1) {
     await options.heartbeat?.();
-    const remainingMs = timeoutMs - (Date.now() - startedAt);
-    if (remainingMs <= 0) throw new Error('JOBAID_MODEL_BUDGET_EXHAUSTED');
+    const remainingMs = remainingBudgetMs();
+    if (Date.now() >= taskDeadlineMs || (remainingMs <= 0 && !accountedRounds.has(round)))
+      throw new Error('JOBAID_MODEL_BUDGET_EXHAUSTED');
     inputUnits += Buffer.byteLength(JSON.stringify(messages));
     const requestedModel = `openclaw/${WISELINK_PROFILE_REF}`;
     const performRequest = async () => {
@@ -308,6 +331,7 @@ export async function invokeHostedJobAidProblemModel(
       step: `assessment-round-${round}`, args: { operation, messages, executionModel: options.executionModel ?? null,
         sessionDiscriminator: options.sessionDiscriminator }, ambiguousCommit: false, perform: performRequest,
     }) : await performRequest();
+    await accountRound(round);
     const { raw } = response;
     let payload;
     try {
@@ -410,7 +434,7 @@ export async function invokeHostedJobAidProblemModel(
           }
           while (receipt?.status === 'RUNNING') {
             if (!receipt.queryRef) throw new Error('JOBAID_KNOWLEDGE_RECEIPT_INVALID');
-            if (Date.now() - startedAt >= timeoutMs) throw new Error('JOBAID_MODEL_BUDGET_EXHAUSTED');
+            if (remainingBudgetMs() <= 0) throw new Error('JOBAID_MODEL_BUDGET_EXHAUSTED');
             await options.heartbeat?.();
             await (dependencies.sleep ?? (ms => new Promise(resolve => setTimeout(resolve, ms))))(3000);
             receipt = await options.queryAssessmentKnowledge({ queryRef: receipt.queryRef });

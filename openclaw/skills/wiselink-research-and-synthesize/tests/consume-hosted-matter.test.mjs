@@ -13,6 +13,7 @@ async function fixture(run) {
   try { await run(checkpointRoot); } finally { await rm(checkpointRoot, { recursive: true, force: true }); }
 }
 const task = { schemaVersion: 'wiselink.3_1.openclaw_task_envelope.v2', taskType: 'OPENCLAW_MATTER_ASSESSMENT',
+  deadline: '2099-01-01T00:00:00.000Z',
   actionAttemptId: 'ATT-one', operationRef: 'AQ-one', subject: { kind: 'ENGINEERING_MATTER', matterId: 'MAT-one' },
   baseRevision: 0, sourceRefs: [], inputHash: 'host-task-binding', executionModel: { modelRef: 'miaoda/minimax-m3' },
   modelInput: { schemaVersion: 'wiselink.matter-jobaid-task.v2', sourceCatalog: [], modelInput: {
