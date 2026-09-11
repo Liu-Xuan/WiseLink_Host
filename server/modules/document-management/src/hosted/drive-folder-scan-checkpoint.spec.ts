@@ -3,7 +3,7 @@ import { decodeDriveFolderScanCheckpoint, encodeDriveFolderScanCheckpoint } from
 describe('drive scan checkpoints', () => {
   it('round trips resumable frontier without credentials or entries', () => {
     const roots = [{ folderToken: 'root', path: '技术资料', depth: 0 }];
-    const continuation = [{ folderToken: 'child', path: '技术资料/FTD', depth: 1, pageToken: 'next-2' }];
+    const continuation = [{ folderToken: 'child', path: '技术资料/FTD', depth: 1, pageToken: 'next-2', entryOffset: 3 }];
     expect(decodeDriveFolderScanCheckpoint(encodeDriveFolderScanCheckpoint(roots, continuation, '2026-09-12T00:00:00.000Z'))).toEqual({
       version: 1, roots, continuation, updatedAt: '2026-09-12T00:00:00.000Z',
     });

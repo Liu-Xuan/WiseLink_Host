@@ -53,7 +53,7 @@ Canonical Host 现提供受登录和对象入口保护的 `POST /api/canonical-h
 
 2026-09-12 平台只读核验：六个用户提供的链接均解析为 `folder`。当前用户身份可以列举全部六个根目录；“工程分析报告”首层已返回 200 项且 `has_more=true`，证明必须保存分页游标，“运行信息”首层返回 42 个文件，“TFU/ISI/FTD/FTAR”返回 4 个子目录，“安全生产会工程部汇报材料”返回 4 个子目录，“LE例行报告汇总-综合 安全 可靠性”返回 3 个子目录，“与空客团队月度技术例会”返回 3 个子目录、2 个文件和 1 个在线表格。以 bot 身份读取首个目录返回 Feishu `1061004 permission_denied`；因此后台监控目前不能借用用户会话，必须先给 Host 使用的应用/委托身份授予这些共享目录的读取权限，再做递归扫描和真实增量验收。该核验未修改任何文件夹或权限。
 
-扫描核心已实现为可注入的 `scanDriveFolders`：每个目录独立维护游标，按 `type:token` 去重，递归加入子目录 frontier，达到批次限制返回 continuation，缺失分页 token 或供应方重复分页 token 均记录 blocker；候选身份快照与 frontier 分开保存，只有无 continuation 且无 blocker 的完整扫描才替换快照，避免中断扫描把旧版本误判为未发现。尚未绑定平台凭据或定时任务。
+扫描核心已实现为可注入的 `scanDriveFolders`：每个目录独立维护游标，按 `type:token` 去重，递归加入子目录 frontier，达到批次限制返回 continuation；单页超过条目上限时保存页内 `entryOffset`，恢复从同一页继续。缺失分页 token 或供应方重复分页 token 均记录 blocker；候选身份快照与 frontier 分开保存，只有无 continuation 且无 blocker 的完整扫描才替换快照，避免中断扫描把旧版本误判为未发现。尚未绑定平台凭据或定时任务。
 已补充版本化 `DriveFolderScanCheckpoint` 编解码，断点只保存根目录、递归 frontier、分页 token 和更新时间，不保存用户凭据或文件正文；非法/不完整状态明确拒绝。它为事务内保存和进程退出后的恢复提供了稳定数据边界，但当前仍未接入 Host 持久化表、应用身份凭据或原生定时触发，因此不能宣称后台自动扫描已运行。
 扫描器现支持 `onPage` 逐页回调，并新增 `runDriveFolderScan` 协调器：按 `sourceKey` 读取上一断点、以授权 fetcher 执行有界扫描、每页保存 continuation，结束时再次保存最终 frontier。权限拒绝（403/1061004）会把 `DRIVE_AUTHORIZATION_DENIED` blocker 与原 frontier 一起写入现有 checkpoint，重启后仍可呈现并在授权恢复后重试；成功扫描会清除旧 blocker。网络或未知错误仍抛出，不能伪装为空目录。该协调器已用内存 checkpoint store 验证恢复形状；真实 Host 数据库表、平台 Drive fetcher 和定时入口仍未接通。
 已增加 Host 侧 `wiselink_drive_scan_checkpoint` Drizzle 定义、RLS 迁移草案（0040）及按租户封装的 `DriveScanCheckpointRepository`，用于承载上述 checkpoint；该表只存扫描状态，不保存凭据或文件内容。迁移尚未执行，Repository 尚未被定时任务调用，仍需有效开发库连接、应用/委托 Drive 权限和平台触发器后再做真实增量验收。
