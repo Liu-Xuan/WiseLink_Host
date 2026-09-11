@@ -2,6 +2,8 @@
 
 > **2026-09-12 主控修订：** 当前交付依据为 [统一架构实施计划](WISELINK_R10_UNIFIED_IMPLEMENTATION_PLAN_20260912.md)。W0—W5 是实施顺序，不是通过文档、安装或单次候选即可关闭的 gate；独立 MinerU Worker 负责解析计算，Host 保留授权、parseRun、FileService、事务/CAS 和正式采用边界。以下历史记录保留发生时点，不能覆盖新的架构边界或作为当前完成证明。
 
+> **W4 当前增量（2026-09-12）：** 六个共享 Drive 根目录已登记，Host 已具备按租户 `sourceKey` 执行递归分页、逐页 checkpoint 和恢复的服务入口；checkpoint 表迁移草案为 0040，生产构建与定向测试通过。真实核验显示用户身份可读而 bot 身份对六个根目录均返回 Feishu `1061004 permission_denied`，因此应用/委托 Drive 授权、0040 迁移、平台定时触发和真实增量工作仍未完成，不能借用户会话代替后台监控。
+
 **最新 Worker 运行证据（2026-09-12）：** Worker `sprint/default` 已推送 `978c4de`，带妙搭 `CLIENT_BASE_PATH` 的 OpenAPI 路径已实测无 key 返回 401、正确 Bearer key 的 health 返回 200。`runtime/prepare` 实测进入 `MINERU_RUNTIME_PREPARATION_FAILED`（56 个文件、0 个核验）；本机离线脚本进一步返回 `MINERU_OFFLINE_PLATFORM_UNSUPPORTED`，因为本机不是 Worker 要求的 Linux x86_64/CPython 3.10。Host 远端解析闭环代码已通过类型、构建和定向测试，但 FTD parseRun 仍没有真实成功证据。
 
 ## 2026 年 9 月 10 日：资料库事项阅读与机队分类
