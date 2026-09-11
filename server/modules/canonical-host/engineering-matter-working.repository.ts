@@ -550,7 +550,7 @@ export class EngineeringMatterWorkingRepository {
       .returning();
     if (!stored) throw workingPersistenceError();
     if (materialized.state.problemWork) {
-      void this.searchProjection.indexMatterRevision({ tenantId: stored.tenantId, ownerId: stored.createdByUserId,
+      void this.searchProjection.indexMatterRevision({ tenantId: stored.tenantId, ownerId: stored.createdByUserId, subjectId: stored.matterId,
         revisionRef: stored.matterWorkRevisionId, content: materialized.state.problemWork, database: executor }).catch(error => {
         this.logger.error(`Engineering search projection rebuild pending for ${stored.matterWorkRevisionId}: ${error instanceof Error ? error.message : 'UNKNOWN_ERROR'}`);
       });

@@ -124,9 +124,9 @@ export class EngineeringIssueSearchService {
 
   private async searchProjection(prepared: ReturnType<typeof prepareEngineeringSearchQuery>, actor: CanonicalHostActor): Promise<EngineeringIssueSearchResponse> {
     const rows = await this.db.execute<{
-      entryId: string; ownerKind: string; ownerId: string; exactRevisionRef: string; title: string;
+      entryId: string; ownerKind: string; ownerId: string; exactRevisionRef: string; parentContextRef: string | null; title: string;
     }>(sql`SELECT entry_id AS "entryId", owner_kind AS "ownerKind", owner_id AS "ownerId",
-      exact_revision_ref AS "exactRevisionRef", title
+      exact_revision_ref AS "exactRevisionRef", parent_context_ref AS "parentContextRef", title
       FROM engineering_search_projection
       WHERE tenant_id = ${actor.tenantId}
         AND owner_id = ${actor.userId}
@@ -139,11 +139,12 @@ export class EngineeringIssueSearchService {
       const match = row.entryId.match(/^(.*):issue:(.*)$/);
       if (!match || !['WORK_ITEM', 'ENGINEERING_MATTER'].includes(row.ownerKind)) continue;
       const subjectKind = row.ownerKind as IssueIdentity['subjectKind'];
-      const key = JSON.stringify([subjectKind, row.ownerId, row.exactRevisionRef]);
+      const subjectId = row.parentContextRef || row.ownerId;
+      const key = JSON.stringify([subjectKind, subjectId, row.exactRevisionRef]);
       let work = workReads.get(key);
-      if (!work) { work = this.loadWork({ subjectKind, subjectId: row.ownerId, workRef: row.exactRevisionRef, issueKey: match[2] }, actor); workReads.set(key, work); }
+      if (!work) { work = this.loadWork({ subjectKind, subjectId, workRef: row.exactRevisionRef, issueKey: match[2] }, actor); workReads.set(key, work); }
       try {
-        hits.push((this.issueFromWork({ subjectKind, subjectId: row.ownerId, workRef: row.exactRevisionRef, issueKey: match[2] }, await work)).identity);
+        hits.push((this.issueFromWork({ subjectKind, subjectId, workRef: row.exactRevisionRef, issueKey: match[2] }, await work)).identity);
       } catch (error) { if (!isAccessUnavailable(error)) throw error; }
       if (hits.length >= 50) break;
     }
