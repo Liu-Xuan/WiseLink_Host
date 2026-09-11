@@ -33,7 +33,7 @@ Worker 现有 `tasks/:taskId` 与 `tasks/:taskId/result` 接口已接入 Host �
 2026-09-12 实施进度：现有问题候选查询已改为参数化 PostgreSQL `to_tsvector('simple')`/`plainto_tsquery`，并保留规范化文号、件号、软件版本的精确匹配；命中后仍逐项调用现有完整工作读取和 actor/tenant ACL。独立持久化 projection 表、GIN 迁移、来源语义段和原生记录消费者尚未完成，当前不宣称全量检索。
 
 已补充 `engineering_search_projection` 的 Drizzle 结构和 0039 迁移：保存租户、owner、精确 revision、entry/locator、原文、分词文本和索引版本，数据库生成加权 `search_vector` 并建立 GIN/标识索引；RLS 只允许当前租户 owner 读取。WorkItem 与 EngineeringMatter 成功保存后都会异步重建对应问题投影；若重建失败，新增 0042 的租户/精确 revision 待重建标识，成功重建后删除，正文保存不回滚。`listPending` 提供租户范围的精确待重建清单，供后续原生任务/触发器恢复；Hosted 数据库迁移和真实索引查询仍待运行验收。
-本轮只读开发库核验未能建立连接，返回 `28000 connection verification failed ... expired or invalid connection`；未执行迁移、未修改数据库。故当前不能把 0039 已在线执行或真实中文/英文/标识检索写成完成证据，恢复条件是取得有效的开发库连接后再做迁移与索引查询核验。
+本轮通过妙搭 `lark-cli` 用户身份通道取得有效开发库连接并实际执行 0039；随后执行 0042 待重建表。在线核验确认表、GIN/唯一索引、生成 `search_vector` 列和 RLS 均存在；三张新增表当前均为 0 行，尚无真实工作投影或待重建记录。`.env.local` 直连仍返回 PostgreSQL `28P01`，不能以本地连接替代 Hosted 通道。
 检索服务增加 `WL_ENGINEERING_SEARCH_PROJECTION=1` 受控切换；开启后先查投影，再按精确 revision 回读完整工作和 ACL，未开启仍使用现有路径，避免迁移未发布时静默断链。
 投影写入现在优先复用 WorkItem/Matter 保存事务的数据库句柄，保留平台设置的 tenant/actor RLS 上下文；无事务句柄的重建任务才开启独立事务。相关保存与 continuation 测试共 36 项通过。
 本轮审查修正事项投影的身份映射：`owner_id` 继续保存创建者用于 ACL，`parent_context_ref` 保存真实 `matterId`，投影命中回读事项工作时不再把创建者误当事项 ID。新增隔离测试覆盖该边界；类型检查及 3 项投影/迁移测试通过。数据库迁移仍未执行，待有效开发库连接。
@@ -66,7 +66,7 @@ Host 来源服务测试新增两次扫描恢复场景：首批仅处理第一页
 候选变化分类已补充为 `NEW`、`CHANGED`、`UNCHANGED`：同一 provider object/version 的重复投递和分页重扫标记为 `UNCHANGED`，仅 provider version 变化标记为 `CHANGED`，新对象标记为 `NEW`。该分类只表达来源身份变化，尚未接入 DocumentVersion/family 受理或自动分析触发；当前验证仍是替身服务测试，不代表真实飞书后台监控已运行。
 
 `DriveSourceScanService.scanCandidates` 现在可接收调用方保存的上一候选快照，并在同一响应中返回 `changes`；未提供快照时全部当前候选为 `NEW`。服务仍不持久化候选、不自动受理或派发分析，快照保存与 `DocumentVersion/family` 受理必须由后续授权事务消费者完成。
-数据库只读复核仍失败：使用当前 `.env.local` 的开发连接返回 PostgreSQL `28000`，提示 `expired or invalid connection link, please re-obtain`。本轮未执行 0039/0040 迁移、未写入 checkpoint 或检索投影；恢复条件是取得新的有效开发库连接后再做真实 RLS、GIN 和租户隔离验收。
+数据库增量核验：通过妙搭 `lark-cli` 用户身份通道在开发环境执行并提交 0040/0041；在线核验确认 checkpoint 表、候选快照列、唯一索引和 RLS 均存在，当前 checkpoint/候选快照均为 0 行。应用 bot 尚未获得 Drive 目录权限，因此尚无真实扫描写入。`.env.local` 直连仍返回 `28P01`，不作为线上连接凭据。
 已新增 `wiselink-drive-source-config.ts`，将用户提供的六个根目录登记为独立来源定义，并统一声明应用/委托身份读取要求；扫描根状态由配置转换，不把用户会话写入来源身份。SB、AD 及后续目录继续通过同一注册表扩展，当前仍未取得应用身份读取授权或启动真实定时扫描。
 
 **W5 跨事项复用和用户接续。** Wiki、动态记录和关系图读取同一工作与来源关系。B 可复用 A 的完整论点和根来源，但比较自身目标事实、条件和受众，不继承 A 的适用性或构型结论。Aily 只读取 Host 保存且当前授权可见的工作；普通对话不自动正式采用。
