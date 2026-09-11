@@ -65,7 +65,11 @@ export async function scanDriveFolders(
         break;
       }
       const pageKey = `${folder.folderToken}:${pageToken ?? 'first'}`;
-      if (visitedPages.includes(pageKey) && missingTokenRetries === 0) break;
+      if (visitedPages.includes(pageKey) && missingTokenRetries === 0) {
+        blockers.push({ folderToken: folder.folderToken, ...(pageToken ? { pageToken } : {}), code: 'DRIVE_PAGE_TOKEN_REPEATED' });
+        continuation.push({ ...folder, ...(pageToken ? { pageToken } : {}) }, ...queue);
+        return { entries, continuation, visitedPages, blockers };
+      }
       let page: DrivePage;
       try {
         page = await fetchPage(folder.folderToken, pageToken);

@@ -1,6 +1,13 @@
 import { scanDriveFolders } from './drive-folder-scanner';
 
 describe('scanDriveFolders', () => {
+  it('blocks a provider that repeats a page token instead of claiming completion', async () => {
+    const result = await scanDriveFolders([{ folderToken: 'root', path: 'root', depth: 0 }], async () => ({
+      files: [{ token: 'file-1', type: 'file', name: '第一页.pdf' }], hasMore: true, nextPageToken: 'same',
+    }));
+    expect(result.blockers).toEqual([{ folderToken: 'root', pageToken: 'same', code: 'DRIVE_PAGE_TOKEN_REPEATED' }]);
+    expect(result.continuation).toEqual([{ folderToken: 'root', pageToken: 'same', path: 'root', depth: 0 }]);
+  });
   it('keeps folder pagination independent and resumes child folders', async () => {
     const calls: string[] = [];
     const result = await scanDriveFolders([{ folderToken: 'root', path: 'root', depth: 0 }], async (folder, token) => {
