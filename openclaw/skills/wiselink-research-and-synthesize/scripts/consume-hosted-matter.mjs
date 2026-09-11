@@ -1,6 +1,7 @@
 import { join } from 'node:path';
 import { canonicalSha256, validateRuntimeProvenance } from './validate-payload.mjs';
 import { createCheckpointStore } from './run-hosted-review-turn.mjs';
+import { readMatterRecoveryCandidate } from './read-matter-recovery-candidate.mjs';
 
 /** Called by a subject-scoped native job; lifecycle and leases remain Host-owned. */
 export async function consumeHostedMatter(options, dependencies) {
@@ -27,6 +28,17 @@ export async function consumeHostedMatter(options, dependencies) {
   const recoveredResult = Boolean(result);
   if (!result && claim.status === 'COMMITTING') throw new Error('MATTER_RECOVERY_RESULT_MISSING');
   if (!result) {
+    const recovery = task.modelInput.recovery;
+    let candidateRecovery = await checkpoint.readOptional('assessment-candidate-recovery');
+    if (recovery) {
+      if (!candidateRecovery) {
+        candidateRecovery = await readMatterRecoveryCandidate({ checkpointRoot: options.checkpointRoot,
+          matterId: target.matterId, recovery, executionModel: task.executionModel });
+        await checkpoint.writeOnce('assessment-candidate-recovery', candidateRecovery);
+      }
+      if (candidateRecovery.attemptRef !== recovery.attemptRef || candidateRecovery.inputHash !== recovery.inputHash)
+        throw new Error('MATTER_RECOVERY_CHECKPOINT_BINDING_MISMATCH');
+    } else if (candidateRecovery) throw new Error('MATTER_RECOVERY_CHECKPOINT_BINDING_MISMATCH');
     let nativeRecovery = await checkpoint.readOptional('assessment-native-recovery');
     const legacyStarted = await checkpoint.readOptional('model.started');
     if (legacyStarted && !await checkpoint.readOptional('model.result') && !await checkpoint.readOptional('assessment-enabled')) {
@@ -60,7 +72,8 @@ export async function consumeHostedMatter(options, dependencies) {
         executionModel: task.executionModel, sessionDiscriminator: invocation.sessionDiscriminator,
         resumeSavedWork: invocation.resumeSavedWork,
         assessmentCheckpoint: checkpoint,
-        recoveredInitialResponse: nativeRecovery?.response,
+        recoveredInitialResponse: candidateRecovery?.response ?? nativeRecovery?.response,
+        recoveredInitialContext: Boolean(candidateRecovery),
         observeModelOutput: async (shape, round) => {
           const key = `assessment-round-${round}-output-shape`;
           if (!await checkpoint.readOptional(key)) await checkpoint.writeOnce(key, shape);

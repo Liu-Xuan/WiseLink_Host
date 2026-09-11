@@ -12,7 +12,7 @@ description: Orchestrate the single official hosted WiseLink engineering profile
 - hosted app：`app_17c3zn24kv2`
 - logical profile：`wiselink-engineering`
 - model policy：`official-hosted-profile-config`（任务可绑定已登记的内置或用户授权自定义模型；仍经唯一官方 Hosted profile/Gateway）
-- Skill：`wiselink-research-and-synthesize@r09.c78`
+- Skill：`wiselink-research-and-synthesize@r09.c79`
 - Skill compatibility：`wiselink-research-and-synthesize@r09`（历史任务最低接受 `r09.c10`，翻译 v2 必须为 `r09.c44` 或更新兼容包）
 - Host MCP：`wiselink-openclaw-engineering-assessment@1.2.0`（保留既有工具，新增语义翻译工作与 JobAid 来源/工作工具）
 - Host 集成提交：以本次发布包清单记录的实际提交为准
@@ -558,7 +558,7 @@ Interactive Review 的复杂 ResultEnvelope 必须由 `sealResultEnvelope` 生�
 当前 validator 强制：
 
 - `modelVersion` 优先取响应中可读实际模型；绑定任务未回报实际模型时使用 `configured-route:<modelRef>`，旧无绑定任务使用无 fallback 的 configured endpoint。后两者只证明路由，不代表已暴露下游具体模型，也不做具体版本等值判断
-- `skillVersion=wiselink-research-and-synthesize@r09.c78`
+- `skillVersion=wiselink-research-and-synthesize@r09.c79`
 - `toolVersions.wiselink-openclaw-engineering-assessment=1.2.0`
 - `promptVersion` 非空并来自当前运行
 - task/result exact binding、SourceRef allowlist 和 canonical hash 一致
@@ -589,3 +589,9 @@ node --test tests/validation.test.mjs
 `consume-hosted-matter` 在执行读/存意图前保存完整模型响应，保存实际发送消息及原生会话身份；新租约只替换 Host 调用凭据。同一次 SAVE_WORK 使用原请求号先回读，未知生成结果仍停止。恢复保持原 64 轮与时间预算，旧完整 FINISH 回写仍使用原内容。
 
 旧版仅有 `model.started` 的 Matter 可配置 `--native-session-store <官方 sessions.json 路径>`：只从同一 attempt 的唯一会话消息本体取回 READ_SOURCES，交叉核对模型、成功终态、responseId、工具参数两种表示及成功工具回执；拒绝歧义、截断、未知结果和保存/完成意图。该入口记录取证来源，通过普通 Reader 重新验证当前权限，不允许手写诊断摘要冒充原始结果。未配置或核对失败时仍停止，不重新生成。
+
+### c79：失败后的精确候选续接
+
+已失败或超时的 Matter 可通过既有 `begin_matter_assessment` 的 `recoveryAttemptRef` 请求新 attempt。Host 重新核验 actor、Matter 修订、工作修订、精确旧工作与输入版本；只复用旧任务捕获的模型和 Host 持久化的实际来源读取回执。取消或仍有效运行的任务不能恢复，旧期限和历史不改写。
+
+消费者只从 Host 指定的旧 attempt 检查点读取完整成功的 SAVE_WORK/FINISH 模型响应，核对 inputHash、模型、消息和响应参数绑定。旧候选通过新 attempt 的正常 SAVE_WORK 校验与 CAS 保存，再由官方模型会话续接；不会把本地候选当作已经保存的工程工作。缺失、未知或绑定不符即停止，不重新生成旧候选。Host 拒绝来源时只反馈候选中已经存在的精确 sourceRef，不能猜测引用或删除有依据的分析来绕过校验。

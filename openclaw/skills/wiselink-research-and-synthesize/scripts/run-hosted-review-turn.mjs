@@ -998,10 +998,10 @@ export function validateHostToolMetadata(value) {
 
 async function callJsonTool(client, name, args) {
   const result = await client.callTool({ name, arguments: args });
-  return readHostMcpJsonResult(result, name);
+  return readHostMcpJsonResult(result, name, args);
 }
 
-export function readHostMcpJsonResult(result, name) {
+export function readHostMcpJsonResult(result, name, args) {
   const textBlocks = Array.isArray(result?.content)
     ? result.content.filter((item) => item?.type === 'text')
     : [];
@@ -1014,6 +1014,17 @@ export function readHostMcpJsonResult(result, name) {
     error.hostErrorCode = hostErrorCode;
     error.hostToolName = /^[a-z]+(?:_[a-z]+)*$/u.test(name) && name.length <= 80 ? name : null;
     error.receivedHostToolError = result?.isError === true;
+    if (hostErrorCode === 'JOBAID_SOURCE_NOT_DELIVERED' && name === 'matter_action_attempt' && args?.operation === 'SAVE_WORK') {
+      const ref = textBlocks[0].text.match(/^(?:Error:\s*)?JOBAID_SOURCE_NOT_DELIVERED:([^\s]{1,512})$/u)?.[1];
+      // Return only an identifier already present in this model's submitted
+      // candidate. Never expose arbitrary Host exception text or other IDs.
+      if (ref) {
+        try {
+          const contains = value => value === ref || (value && typeof value === 'object' && Object.values(value).some(contains));
+          if (contains(JSON.parse(args.workJson))) error.hostRejectedSourceRef = ref;
+        } catch { /* Invalid candidate JSON retains only the safe error code. */ }
+      }
+    }
     throw error;
   }
   try {

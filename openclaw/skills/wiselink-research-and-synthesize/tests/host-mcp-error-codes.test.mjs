@@ -3,6 +3,19 @@ import test from 'node:test';
 import { readHostMcpJsonResult } from '../scripts/run-hosted-review-turn.mjs';
 import { errorCode } from '../scripts/consume-hosted-work-item.mjs';
 
+test('source rejection identifies only a reference already present in the submitted work', () => {
+  const ref = 'DOCUMENT_VERSION:DV-one:page:1';
+  const args = { operation: 'SAVE_WORK', workJson: JSON.stringify({ premises: [{ evidenceRef: ref }] }) };
+  for (const rejected of [ref, 'private-unrelated-value']) {
+    assert.throws(() => readHostMcpJsonResult({ isError: true, content: [{ type: 'text',
+      text: `Error: JOBAID_SOURCE_NOT_DELIVERED:${rejected}` }] }, 'matter_action_attempt', args), error => {
+      assert.equal(error.hostRejectedSourceRef, rejected === ref ? ref : undefined);
+      assert.equal(error.message.includes(rejected), false);
+      return true;
+    });
+  }
+});
+
 test('the observed Matter scope rejection retains both the call site and safe cause in cron diagnostics', () => {
   for (const text of ['Canonical API-key service scope is unavailable.',
     'Error: Canonical API-key service scope is unavailable.', 'CANONICAL_SERVICE_SCOPE_UNAVAILABLE']) {

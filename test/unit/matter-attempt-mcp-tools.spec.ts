@@ -39,6 +39,11 @@ describe('Matter MCP existing attempt lifecycle', () => {
       expectedWorkingRevision: 3, idempotencyKey: 'matter:MAT-one:request-one',
       trigger: { kind: 'USER_REQUEST', requestId: 'request-one', instruction: '复核新增资料' } });
     expect(() => f.call({ ...input, modelInput: { forged: true } })).toThrow();
+    await f.call({ ...input, recoveryAttemptRef: 'AQ-failed' });
+    expect(f.attempts.reserveJobAid).toHaveBeenLastCalledWith(expect.objectContaining({
+      recoveryAttemptRef: 'AQ-failed', actorUserId: 'host-actor', tenantId: 'host-tenant',
+    }));
+    expect(() => f.call({ ...input, recoveryAttemptRef: 'AQ-failed', recoveryCandidate: '{}' })).toThrow();
   });
 
   it('reads physical sources through the fenced Matter service using Host actor scope', async () => {

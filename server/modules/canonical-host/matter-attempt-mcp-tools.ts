@@ -31,6 +31,7 @@ export function registerMatterAttemptMcpTools(server: McpServer, attempts: Matte
       expectedMatterRevision: z.number().int().positive(),
       expectedWorkingRevision: z.number().int().nonnegative(),
       requestId: z.string().trim().min(1).max(96), instruction: z.string().trim().min(1).max(4000),
+      recoveryAttemptRef: target.attemptRef.optional(),
     }).strict(),
     annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: false },
   }, async (input) => {
@@ -41,6 +42,7 @@ export function registerMatterAttemptMcpTools(server: McpServer, attempts: Matte
     const result = await attempts.reserveJobAid({ tenantId: scope.tenantId, actorUserId: scope.actorUserId,
       matterId: scope.matterId, expectedMatterRevisionId: input.expectedMatterRevisionId,
       expectedMatterRevision: input.expectedMatterRevision, expectedWorkingRevision: input.expectedWorkingRevision,
+      ...(input.recoveryAttemptRef ? { recoveryAttemptRef: input.recoveryAttemptRef } : {}),
       idempotencyKey: `matter:${scope.matterId}:${input.requestId}`,
       trigger: { kind: 'USER_REQUEST', requestId: input.requestId, instruction: input.instruction } });
     return textResult({ attemptRef: result.task.operationRef, status: result.row.status, created: result.created });

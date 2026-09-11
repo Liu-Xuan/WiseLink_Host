@@ -2152,6 +2152,62 @@ async function assertMatterLeaseLifecycle(sql, owner, matterId) {
   await assertMatterCommitRecovery(sql, owner, service, input);
   await assertSaveBeforeFinish(sql, owner, service, input);
   await assertRawMatterJobAidSave(sql, owner, service, input);
+  await assertMatterSuccessorRecovery(sql, owner, service, input);
+}
+
+async function assertMatterSuccessorRecovery(sql, owner, service, baseInput) {
+  const { modelInput: _modelInput, sourceRefs: _sourceRefs, ...request } = baseInput;
+  const current = await owner.working.loadCurrent(request);
+  const reserve = { ...request, expectedWorkingRevision: current.workingRevision,
+    trigger: { kind: 'USER_REQUEST', requestId: 'recover-fixture', instruction: '恢复相同范围的未保存候选。' } };
+  const cancelled = await owner.runtime(() => service.reserveJobAid({ ...reserve, idempotencyKey: 'recovery-cancelled' }));
+  const scope = { tenantId: request.tenantId, matterId: request.matterId, actorUserId: request.actorUserId,
+    principalId: 'hosted-test', attemptRef: cancelled.task.operationRef };
+  await owner.runtime(() => service.cancel({ ...scope, reason: 'explicit fixture cancellation' }));
+  await assert.rejects(owner.runtime(() => service.reserveJobAid({ ...reserve, idempotencyKey: 'cannot-recover-cancelled',
+    recoveryAttemptRef: cancelled.task.operationRef })), /RECOVERY_REQUIRES_FAILED_ATTEMPT/u);
+  assert.equal((await owner.runtime(() => service.read(scope))).status, 'CANCELLED');
+
+  const original = await owner.runtime(() => service.reserveJobAid({ ...reserve, idempotencyKey: 'recovery-original' }));
+  const oldScope = { ...scope, attemptRef: original.task.operationRef };
+  const claim = await owner.runtime(() => service.claim(oldScope));
+  const documentVersionId = original.task.workingBasis.inputs[0].documentVersionId;
+  const ref = `DOCUMENT_VERSION:${documentVersionId}:page:2`;
+  const evidence = { kind: 'DOCUMENT_PASSAGE', documentVersionId, workItemId: null, evidenceRef: ref, sourceRefId: ref,
+    title: 'Recovery read fixture', versionLabel: null, locator: 'PDF page 2', excerpt: 'The same source condition remains bounded.' };
+  await owner.runtime(() => service.readSourcePages({ ...oldScope, leaseToken: claim.leaseToken, leaseGeneration: claim.leaseGeneration,
+    documentVersionId, pageStart: 2, purpose: 'actual original attempt reading' }, async () => ({ documentVersionId,
+      sourceSha256: 'a'.repeat(64), sourceByteLength: 123, pageCount: 2, extractionScope: 'NATIVE_TEXT_LAYER',
+      pages: [{ page: 2, sourceRefId: ref, text: evidence.excerpt, textLayerStatus: 'PRESENT', visualContentVerified: false, evidence }] })));
+  await sql`UPDATE action_attempt SET deadline_at = now() - interval '1 minute' WHERE attempt_id = ${original.row.attemptId}`;
+  const [expired] = await sql`SELECT deadline_at FROM action_attempt WHERE attempt_id = ${original.row.attemptId}`;
+  const recoveryRequest = { ...reserve, idempotencyKey: 'recovery-successor', recoveryAttemptRef: original.task.operationRef };
+  const successor = await owner.runtime(() => service.reserveJobAid(recoveryRequest));
+  assert.notEqual(successor.task.operationRef, original.task.operationRef);
+  assert.deepEqual(successor.task.modelInput.recovery, { attemptRef: original.task.operationRef, inputHash: original.task.inputHash });
+  assert.deepEqual(successor.task.executionModel, original.task.executionModel);
+  assert.ok(successor.task.modelInput.initiallyDeliveredRefs.includes(ref));
+  assert.deepEqual(successor.task.modelInput.sourceCatalog.find(item => item.evidenceRef === ref), evidence);
+  const old = await owner.runtime(() => service.read(oldScope));
+  assert.equal(old.status, 'TIMED_OUT');
+  assert.equal(old.deadlineAt.toISOString(), new Date(expired.deadline_at).toISOString());
+  assert.equal((await owner.runtime(() => service.reserveJobAid(recoveryRequest))).created, false);
+  await assert.rejects(owner.runtime(() => service.reserveJobAid({ ...recoveryRequest,
+    recoveryAttemptRef: cancelled.task.operationRef })), /IDEMPOTENCY_REPLAY_MISMATCH/u);
+
+  const newScope = { ...scope, attemptRef: successor.task.operationRef };
+  const newClaim = await owner.runtime(() => service.claim(newScope));
+  const fence = { ...newScope, leaseToken: newClaim.leaseToken, leaseGeneration: newClaim.leaseGeneration };
+  const work = jobAidProblemModelWorkContent(current.state.problemWork);
+  work.issues[0].statements[0].premises[0].evidenceRef = ref;
+  work.issues[0].sourceDependencies.push(ref); work.issues[0].premiseRefs.push(ref);
+  const saved = await owner.runtime(() => service.saveJobAidWork({ ...fence, requestId: 'recovered-candidate-save',
+    expectedWorkRevision: current.workingRevision, workJson: JSON.stringify(work) }));
+  const { contentHash: _hash, ...body } = matterResult(newClaim.task);
+  body.modelOutput = JSON.stringify({ workRevisionRef: saved.workRevisionRef });
+  assert.equal((await owner.runtime(() => service.finishJobAid({ ...fence, result: sealMatterResultEnvelope(body) }))).status, 'SUCCEEDED');
+  await assert.rejects(owner.runtime(() => service.reserveJobAid({ ...recoveryRequest, idempotencyKey: 'stale-recovery',
+    expectedWorkingRevision: saved.workRevision })), /RECOVERY_BASIS_CHANGED/u);
 }
 
 async function assertRealMatterAttemptSave(sql, owner, matterId) {
