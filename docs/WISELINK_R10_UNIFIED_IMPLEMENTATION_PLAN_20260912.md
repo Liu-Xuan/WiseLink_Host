@@ -30,6 +30,7 @@ Worker 现有 `tasks/:taskId` 与 `tasks/:taskId/result` 接口已接入 Host �
 
 **W3 授权检索投影。** 复用 EngineeringIssueSearchService 精确读取和 ACL，建立可重建的语义段、原生记录和完整问题投影及 GIN 索引，保留 tenant、owner、精确 revision、locator、上下文、原文和索引版本。中文使用 Intl.Segmenter 词级分词和 PostgreSQL simple 配置；文号、件号、软件版本走精确匹配。查询参数化，结果带精确引用、命中理由、根来源、hasMore 和限制；全文命中不等于权限或适用性。
 工作投影失败现可按 tenant/精确 revision 批量恢复：授权读取由调用方注入，单项失败继续留在 pending，不能以重建结果替代原始记录。
+Canonical Host 现提供受登录和对象入口保护的 `POST /api/canonical-host/engineering-issues/projection/rebuild` 受控恢复入口；limit 仅允许 1–100，恢复仍沿用当前 actor/tenant 精确读取，不新增队列或执行器。
 
 2026-09-12 实施进度：现有问题候选查询已改为参数化 PostgreSQL `to_tsvector('simple')`/`plainto_tsquery`，并保留规范化文号、件号、软件版本的精确匹配；命中后仍逐项调用现有完整工作读取和 actor/tenant ACL。独立持久化 projection 表、GIN 迁移、来源语义段和原生记录消费者尚未完成，当前不宣称全量检索。
 
