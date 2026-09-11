@@ -1,0 +1,95 @@
+import assert from 'node:assert/strict';
+import { createRequire } from 'node:module';
+import { readFile } from 'node:fs/promises';
+import test from 'node:test';
+import postgres from 'postgres';
+
+process.env.TS_NODE_COMPILER_OPTIONS = JSON.stringify({ module: 'CommonJS', moduleResolution: 'node' });
+process.env.TS_NODE_PROJECT = 'tsconfig.node.json';
+const require = createRequire(import.meta.url);
+require('ts-node/register/transpile-only');
+require('tsconfig-paths/register');
+const { drizzle } = require('drizzle-orm/postgres-js');
+const { DocumentParsingRepository } = require('../../server/modules/document-management/src/hosted/nest/document-parsing.repository.ts');
+const url = process.env.DOCUMENT_PARSING_TEST_DATABASE_URL;
+
+test('document parse publication preserves immutable source, readback, replay, CAS and actor isolation', { skip: !url }, async () => {
+  const target = new URL(url);
+  assert.ok(['127.0.0.1', 'localhost', '[::1]'].includes(target.hostname));
+  assert.equal(target.pathname, '/wiselink_document_parse_test');
+  const db = postgres(url, { max: 1, onnotice() {} });
+  const actor = postgres(url, { max: 1, onnotice() {} });
+  const concurrentActor = postgres(url, { max: 1, onnotice() {} });
+  const other = postgres(url, { max: 1, onnotice() {} });
+  try {
+    await db.unsafe('DROP SCHEMA public CASCADE; CREATE SCHEMA public');
+    await db.unsafe(`
+      DO $$ BEGIN
+        IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'authenticated') THEN CREATE ROLE authenticated NOLOGIN; END IF;
+        IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'service_role') THEN CREATE ROLE service_role NOLOGIN; END IF;
+      END $$;
+      CREATE TYPE user_profile AS (user_id text);
+      CREATE TABLE dm_document_version (
+        document_version_id varchar(96) PRIMARY KEY, document_id varchar(96) NOT NULL,
+        family_id varchar(96) NOT NULL, source_artifact_id varchar(96) NOT NULL,
+        pdf_sha256 varchar(64) NOT NULL, byte_length bigint NOT NULL
+      );
+      CREATE FUNCTION engineering_matter_document_owned_by_actor(t varchar, v varchar) RETURNS boolean LANGUAGE sql STABLE AS $$
+        SELECT t = 'TENANT-1' AND v = 'DV-1' AND current_setting('app.user_id', true) = 'ACTOR-1';
+      $$;
+      GRANT USAGE ON SCHEMA public TO authenticated, service_role;
+      GRANT SELECT, UPDATE ON dm_document_version TO authenticated, service_role;
+    `);
+    await db.unsafe(await readFile(new URL('../../migrations/0038_document_parse_run.sql', import.meta.url), 'utf8'));
+    await db.unsafe('GRANT SELECT, INSERT, UPDATE ON dm_document_parse_run TO authenticated, service_role');
+    await db`INSERT INTO dm_document_version VALUES ('DV-1', 'DOC-1', 'FAM-1', 'ART-1', ${'a'.repeat(64)}, 123)`;
+    await actor.unsafe("SET ROLE authenticated; SELECT set_config('app.user_id', 'ACTOR-1', false)");
+    await concurrentActor.unsafe("SET ROLE authenticated; SELECT set_config('app.user_id', 'ACTOR-1', false)");
+    await other.unsafe("SET ROLE authenticated; SELECT set_config('app.user_id', 'ACTOR-2', false)");
+    const repo = new DocumentParsingRepository(drizzle(actor));
+    const otherRepo = new DocumentParsingRepository(drizzle(other));
+    const scope = { tenantId: 'TENANT-1', actorUserId: 'ACTOR-1', documentVersionId: 'DV-1' };
+    const input = { requestId: 'REQUEST-1', expectedPublishedRevision: 0, bucketId: 'BUCKET-1',
+      sourceBinding: { documentVersionId: 'DV-1', documentId: 'DOC-1', familyId: 'FAM-1', sourceArtifactId: 'ART-1', pdfSha256: 'a'.repeat(64), byteLength: 123 } };
+    const reservations = await Promise.all([repo.reserve(scope, input), new DocumentParsingRepository(drizzle(concurrentActor)).reserve(scope, input)]);
+    assert.equal(reservations.filter(item => item.created).length, 1);
+    const run = reservations[0].row;
+    assert.equal(reservations[1].row.parseRunId, run.parseRunId);
+    await assert.rejects(repo.reserve(scope, { ...input, expectedPublishedRevision: 1 }), /DOCUMENT_PARSE_REQUEST_CONFLICT/);
+    await assert.rejects(repo.reserve(scope, { ...input, requestId: 'REQUEST-OTHER' }), /DOCUMENT_PARSE_ALREADY_RUNNING/);
+    assert.equal(await otherRepo.read({ ...scope, actorUserId: 'ACTOR-2' }, run.parseRunId), null);
+    assert.equal(await repo.read({ ...scope, tenantId: 'TENANT-2' }, run.parseRunId), null);
+
+    const manifest = { role: 'MANIFEST', relativePath: 'manifest.json', bucketId: 'BUCKET-1',
+      filePath: `wiselink/parsed/DV-1/${run.parseRunId}/manifest.json`, providerObjectId: 'FILE-1',
+      mediaType: 'application/json', byteLength: 321, sha256: 'b'.repeat(64), readback: 'VERIFIED' };
+    await repo.stage(scope, run.parseRunId);
+    await repo.progress(scope, run.parseRunId, [{ ...manifest, readback: 'UPLOADED' }]);
+    await assert.rejects(repo.publish(scope, run.parseRunId, manifest), /DOCUMENT_PARSE_READBACK_REQUIRED/);
+    assert.equal((await repo.read(scope, run.parseRunId)).status, 'STAGING');
+    await repo.progress(scope, run.parseRunId, [manifest]);
+    const published = await repo.publish(scope, run.parseRunId, manifest);
+    assert.equal(published.status, 'PUBLISHED');
+    assert.deepEqual((await repo.current(scope)).published.manifestArtifact, manifest);
+    await assert.rejects(actor`UPDATE dm_document_parse_run SET error_code = 'overwrite' WHERE parse_run_id = ${run.parseRunId}`, /DOCUMENT_PARSE_TERMINAL_IMMUTABLE/);
+    await assert.rejects(repo.reserve(scope, { ...input, requestId: 'REQUEST-2' }), /DOCUMENT_PARSE_REVISION_CONFLICT/);
+
+    const next = await repo.reserve(scope, { ...input, requestId: 'REQUEST-2', expectedPublishedRevision: 1 });
+    await repo.stage(scope, next.row.parseRunId);
+    const partial = { ...manifest, role: 'READING_MARKDOWN', relativePath: 'document.md', readback: 'UPLOADED' };
+    const pendingObject = { bucketId: 'BUCKET-1', filePath: `wiselink/parsed/DV-1/${next.row.parseRunId}/document.md` };
+    await repo.fail(scope, next.row.parseRunId, { errorCode: 'MINERU_ARTIFACT_PERSIST_FAILED', progress: [partial], pendingObject });
+    const failed = await repo.readRequest(scope, 'REQUEST-2');
+    assert.equal(failed.status, 'FAILED');
+    assert.deepEqual(failed.pendingObject, pendingObject);
+    assert.deepEqual(failed.artifactProgress, [partial]);
+    assert.equal((await repo.current(scope)).published.parseRunId, run.parseRunId);
+    assert.equal((await repo.reserve(scope, { ...input, requestId: 'REQUEST-2', expectedPublishedRevision: 1 })).created, false);
+    await assert.rejects(repo.reserve(scope, { ...input, requestId: 'REQUEST-3', expectedPublishedRevision: 1,
+      sourceBinding: { ...input.sourceBinding, pdfSha256: 'c'.repeat(64) } }), /DOCUMENT_PARSE_SOURCE_CHANGED/);
+    await assert.rejects(otherRepo.reserve({ ...scope, actorUserId: 'ACTOR-2' }, { ...input, requestId: 'FOREIGN' }),
+      error => error.cause?.code === '42501' && /row-level security/i.test(error.cause.message));
+  } finally {
+    await Promise.all([actor.end(), concurrentActor.end(), other.end(), db.end()]);
+  }
+});

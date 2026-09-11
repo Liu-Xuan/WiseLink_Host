@@ -19,7 +19,7 @@ import {
 } from '../../../../work-item/production-miaoda-browser-ingress';
 import { DocumentManagementHostedService } from './document-management-hosted.service';
 
-function contextFromRequest(request: Request) {
+export function contextFromRequest(request: Request) {
   const user = request.userContext;
   if (!user?.userId || user.tenantId === undefined || user.tenantId === null) {
     throw Object.assign(

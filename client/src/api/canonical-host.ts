@@ -1,6 +1,7 @@
 import type { JobAidWorkingReadModel } from '@shared/jobaid-problem-assessment.interface';
 import type { EngineeringIssueRead, EngineeringIssueSearchHit, EngineeringIssueSearchResponse } from '@shared/engineering-issue-search.interface';
 import type { CanonicalLibraryFleetCatalog } from '@shared/library-fleet.interface';
+import type { DocumentParsedReading, DocumentParsingStatus, DocumentParseRunSummary, StartDocumentParseRequest } from '@shared/document-parsing.interface';
 import type {
   AppendReviewTextTurnRequest,
   AppendReviewTextTurnResponse,
@@ -492,7 +493,7 @@ async function readCanonicalLibrary<T>(input: {
   params?: CanonicalLibraryTasksRequest | DocumentMetadataReadQuery;
   signal?: AbortSignal;
   method?: 'GET' | 'POST';
-  data?: DocumentUploadRequest | DocumentHistoricalImportRequest | DocumentMetadataReextractRequest;
+  data?: DocumentUploadRequest | DocumentHistoricalImportRequest | DocumentMetadataReextractRequest | StartDocumentParseRequest;
 }): Promise<T> {
   const requestGeneration = clientSessionGeneration;
   try {
@@ -592,6 +593,47 @@ export async function readDocumentVersionOriginal(
     if (!signal?.aborted) logCanonicalRequestFailure('读取文档版本原件失败', reason);
     throw normalizedDirectObjectError(reason, generation);
   }
+}
+
+export async function readDocumentParsingStatus(documentVersionId: string, signal?: AbortSignal) {
+  const generation = clientSessionGeneration;
+  const result = await readCanonicalLibrary<DocumentParsingStatus>({ url: `/api/document-management/document-versions/${encodeURIComponent(documentVersionId)}/parsing`, signal });
+  if (signal?.aborted || generation !== clientSessionGeneration || result.documentVersionId !== documentVersionId) throw new Error('DOCUMENT_PARSE_STATUS_OBSOLETE');
+  return result;
+}
+
+export function startDocumentParsing(documentVersionId: string, input: StartDocumentParseRequest) {
+  return readCanonicalLibrary<DocumentParseRunSummary>({ url: `/api/document-management/document-versions/${encodeURIComponent(documentVersionId)}/parse-runs`, method: 'POST', data: input });
+}
+
+export async function readParsedDocument(documentVersionId: string, parseRunId: string, signal?: AbortSignal) {
+  const generation = clientSessionGeneration;
+  const result = await readCanonicalLibrary<DocumentParsedReading>({
+    url: `/api/document-management/document-versions/${encodeURIComponent(documentVersionId)}/reading?parseRunId=${encodeURIComponent(parseRunId)}`, signal,
+  });
+  if (signal?.aborted || generation !== clientSessionGeneration) throw new Error('DOCUMENT_PARSE_READING_OBSOLETE');
+  if (result.documentVersionId !== documentVersionId || result.parseRunId !== parseRunId ||
+      result.projection.documentVersionId !== documentVersionId || result.projection.parseRunId !== parseRunId) throw new Error('DOCUMENT_PARSE_READING_MISMATCH');
+  return result;
+}
+
+export async function readDocumentParseImage(documentVersionId: string, parseRunId: string, path: string, signal?: AbortSignal): Promise<Blob> {
+  const generation = clientSessionGeneration;
+  try {
+    const response = await axiosForBackend<ArrayBuffer>({
+      url: `/api/document-management/document-versions/${encodeURIComponent(documentVersionId)}/parse-runs/${encodeURIComponent(parseRunId)}/asset?path=${encodeURIComponent(path)}`,
+      method: 'GET', responseType: 'arraybuffer', signal,
+    });
+    if (response.status === 401) throw clientLoginRequired('SESSION_REQUIRED', generation);
+    if (response.status === 403 || response.status === 404) throw canonicalObjectNotFound();
+    if (response.status < 200 || response.status >= 300) throw backendResponseError(null, 'DOCUMENT_PARSE_IMAGE_READ_FAILED', response.status);
+    if (signal?.aborted || generation !== clientSessionGeneration) throw new Error('DOCUMENT_PARSE_IMAGE_READ_OBSOLETE');
+    const type = String(response.headers?.['content-type'] ?? '').split(';')[0].trim().toLowerCase();
+    if (!(response.data instanceof ArrayBuffer) || !response.data.byteLength || !['image/png', 'image/jpeg', 'image/webp'].includes(type)) {
+      throw new Error('DOCUMENT_PARSE_IMAGE_INVALID');
+    }
+    return new Blob([response.data], { type });
+  } catch (error) { throw normalizedDirectObjectError(error, generation); }
 }
 
 export type DocumentMetadataReadReceipt = DocumentMetadataReadResponse;

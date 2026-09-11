@@ -1,0 +1,157 @@
+.mineru-reading-workspace {
+  display: grid;
+  grid-template-columns: minmax(180px, 240px) minmax(0, 1fr);
+  min-height: 320px;
+  height: 100%;
+  overflow: hidden;
+}
+.mineru-reading-outline {
+  overflow: auto;
+  padding: 16px 8px;
+  border-inline-end: 1px solid var(--border, #dfe4eb);
+}
+.mineru-reading-workspace nav {
+  display: grid;
+  gap: 3px;
+  margin-top: 12px;
+}
+.mineru-reading-workspace nav button {
+  text-align: start;
+  padding: 8px 12px;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  font-size: 13px;
+  line-height: 1.5;
+  cursor: pointer;
+  overflow-wrap: anywhere;
+}
+.mineru-reading-workspace nav button:hover,
+.mineru-reading-workspace nav button[aria-current] {
+  background: #eaf1fb;
+  color: #185caa;
+}
+.mineru-reading-body {
+  overflow: auto;
+  min-width: 0;
+}
+.mineru-reading-article {
+  max-width: 900px;
+  margin: auto;
+  padding: 32px 40px 80px;
+  font-size: 15px;
+  line-height: 1.85;
+  overflow-wrap: anywhere;
+}
+.mineru-reading-article :is(h1, h2, h3, h4, h5, h6) {
+  scroll-margin-top: 24px;
+  font-weight: 600;
+  line-height: 1.4;
+  margin: 1.8em 0 0.7em;
+}
+.mineru-reading-article h1 {
+  font-size: 1.7em;
+}
+.mineru-reading-article h2 {
+  font-size: 1.4em;
+}
+.mineru-reading-article h3 {
+  font-size: 1.2em;
+}
+.mineru-reading-article :is(h4, h5, h6) {
+  font-size: 1.05em;
+}
+.mineru-reading-article p {
+  margin: 0 0 1em;
+  font-weight: 400;
+}
+.mineru-reading-article img {
+  display: block;
+  max-width: 100%;
+  height: auto;
+  margin: 20px auto;
+}
+.mineru-reading-article table {
+  display: block;
+  width: 100%;
+  overflow-x: auto;
+  border-collapse: collapse;
+  margin: 20px 0;
+}
+.mineru-reading-article :is(td, th) {
+  border: 1px solid #dfe4eb;
+  padding: 8px 12px;
+  vertical-align: top;
+}
+.mineru-reading-article th {
+  background: #f3f5f8;
+}
+.mineru-reading-article pre {
+  overflow-x: auto;
+  white-space: pre;
+}
+.mineru-image-unavailable {
+  display: block;
+  border: 1px dashed #bd8d36;
+  padding: 12px;
+}
+.mineru-reading-mobile-outline {
+  display: none;
+}
+@media (max-width: 760px) {
+  .mineru-reading-workspace {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .mineru-reading-outline {
+    display: none;
+  }
+  .mineru-reading-mobile-outline {
+    display: block;
+    padding: 16px;
+    border-bottom: 1px solid #dfe4eb;
+  }
+  .mineru-reading-article {
+    padding: 16px 20px 48px;
+  }
+}
+.mineru-reading-article [data-mineru-source-id] {
+  cursor: pointer;
+}
+.mineru-reading-article [data-mineru-source-id]:focus {
+  outline: 2px solid #92b8ee;
+  outline-offset: 4px;
+}
+.mineru-reading-notes {
+  border-top: 1px solid #dfe4eb;
+  margin-top: 32px;
+  padding-top: 20px;
+}
+.mineru-source-actions {
+  position: sticky;
+  bottom: 0;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 20px;
+  border-top: 1px solid #dfe4eb;
+  background: #fff;
+  font-size: 13px;
+}
+.mineru-source-actions button {
+  border: 1px solid #b8ccec;
+  border-radius: 6px;
+  padding: 5px 12px;
+  color: #185caa;
+  background: #edf4ff;
+  cursor: pointer;
+}
+.mineru-source-actions button:disabled {
+  color: #737b88;
+  cursor: default;
+}
+.mineru-source-actions small {
+  color: #667084;
+}

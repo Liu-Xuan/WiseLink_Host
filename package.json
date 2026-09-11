@@ -9,6 +9,7 @@
     "customToaster": true
   },
   "actionPlugins": {
+    "@official-plugins/ai-text-to-json": "1.0.26",
     "@official-plugins/feishu-bitable": "1.0.22"
   },
   "scripts": {
@@ -64,6 +65,7 @@
     "dev:local": "node ./scripts/dev-local.js"
   },
   "dependencies": {
+    "parse5": "7.3.0",
     "@lark-apaas/aily-web-sdk": "0.0.12",
     "@lark-apaas/fullstack-nestjs-core": "^1.1.57",
     "@lark-apaas/nestjs-common": "^0.1.9",

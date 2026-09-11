@@ -32,7 +32,41 @@ function unit(
 }
 
 describe('continuous structured document reading', () => {
-  it('joins adjacent body runs without losing text, source anchors or boundaries', () => {
+  it('preserves explicit paragraph boundaries and the package heading hierarchy', () => {
+    const units = [
+      {
+        ...unit(1, 'section', 'Scope'),
+        reading: { kind: 'heading' as const, level: 1 },
+      },
+      {
+        ...unit(2, 'body', 'First paragraph.'),
+        reading: { kind: 'paragraph' as const },
+      },
+      {
+        ...unit(3, 'body', 'Separate paragraph.'),
+        reading: { kind: 'paragraph' as const },
+      },
+      {
+        ...unit(4, 'section', 'Applicability'),
+        reading: { kind: 'heading' as const, level: 2 },
+      },
+    ];
+    expect(structuredReadingGroups(units).map((group) => group.length)).toEqual(
+      [1, 1, 1, 1],
+    );
+    const html = renderToStaticMarkup(
+      createElement(StructuredDocumentArticle, {
+        units,
+        requestedSourceRef: 'source-3',
+        onLocateSourceRef: jest.fn(),
+      }),
+    );
+    expect(html).toContain('<h1');
+    expect(html).toContain('<h2');
+    expect(html.match(/<p\b/g)).toHaveLength(2);
+    expect(html).toContain('structured-unit-3');
+  });
+  it('never joins separate units merely because they are on the same page', () => {
     const units = [
       unit(1, 'section', 'Scope'),
       unit(2, 'body', 'Only for upper'),
@@ -45,7 +79,7 @@ describe('continuous structured document reading', () => {
       structuredReadingGroups(units).map((group) =>
         group.map((item) => item.ordinal),
       ),
-    ).toEqual([[1], [2, 3], [4], [5]]);
+    ).toEqual([[1], [2], [3], [4], [5]]);
     const html = renderToStaticMarkup(
       createElement(StructuredDocumentArticle, {
         units,

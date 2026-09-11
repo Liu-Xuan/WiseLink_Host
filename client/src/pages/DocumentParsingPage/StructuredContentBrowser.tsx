@@ -338,9 +338,24 @@ function OutlineList({
           href={`#structured-unit-${unit.ordinal}`}
           key={unit.ordinal}
           title={unit.sectionTitle ?? undefined}
+          style={{
+            paddingInlineStart: `${12 + ((unit.reading?.kind === 'heading' ? Math.min(unit.reading.level, 6) : 1) - 1) * 14}px`,
+          }}
+          onClick={(event) => {
+            event.preventDefault();
+            const target =
+              event.currentTarget
+                .closest(
+                  '.structured-browser-layout, .structured-content-browser',
+                )
+                ?.querySelector<HTMLElement>(
+                  `#structured-unit-${unit.ordinal}`,
+                ) ?? document.getElementById(`structured-unit-${unit.ordinal}`);
+            target?.scrollIntoView({ block: 'start', behavior: 'smooth' });
+            target?.focus({ preventScroll: true });
+          }}
         >
           <span>{unit.sectionTitle}</span>
-          <small>{unit.ordinal}</small>
         </a>
       ))}
     </nav>

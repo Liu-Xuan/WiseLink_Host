@@ -27,6 +27,7 @@ export function projectCanonicalStructuredContentUnit(
     outlineKind: semantics.outlineKind,
     sectionTitle: semantics.sectionTitle,
     displayText: semantics.displayText,
+    ...(unit.reading ? { reading: { ...unit.reading } } : {}),
     sourceRefIds: [...unit.sourceRefIds],
     sourceLocators: (unit.sourceLocators ?? []).map((locator) =>
       projectCanonicalStructuredContentLocator(locator),
@@ -45,6 +46,7 @@ export function projectCanonicalBrowserQueryResult(
     unitId: unit.unitId,
     kind: unit.kind,
     text: projected.displayText,
+    ...(projected.reading ? { reading: { ...projected.reading } } : {}),
     sourceRefIds: [...unit.sourceRefIds],
     sourceLocators: projected.sourceLocators.map((locator) => ({
       ...locator,

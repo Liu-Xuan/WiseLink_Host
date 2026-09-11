@@ -1,6 +1,5 @@
 import type { ReactNode } from 'react';
 import { Link } from 'react-router-dom';
-import { DocumentOriginalPreview } from './DocumentOriginalPreview';
 import type { CanonicalLibraryDocumentVersionSummary } from '@shared/api.interface';
 
 export function DocumentVersionLink({
@@ -10,21 +9,11 @@ export function DocumentVersionLink({
   version: CanonicalLibraryDocumentVersionSummary;
   children: ReactNode;
 }) {
-  if (version.readerWorkItemId) {
-    return (
-      <Link
-        to={`/work-items/${encodeURIComponent(version.readerWorkItemId)}/documents?node=reader&tab=reader`}
-      >
-        {children}
-      </Link>
-    );
-  }
   return (
-    <div className="library-version-original">
-      <div className="library-version-label">{children}</div>
-      <DocumentOriginalPreview key={version.documentVersionId} documentVersionId={version.documentVersionId}>
-        打开 {version.originalFilename} 原件（新标签页）
-      </DocumentOriginalPreview>
-    </div>
+    <Link to={`/document-versions/${encodeURIComponent(version.documentVersionId)}`}>
+      {children}
+      <small>{version.parsing?.status === 'PUBLISHED' ? '解析可读' :
+        version.parsing?.status === 'FAILED' ? '解析未完成' : version.parsing ? '解析处理中' : '查看原件与解析'}</small>
+    </Link>
   );
 }
