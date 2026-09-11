@@ -109,7 +109,10 @@ export async function scanDriveFolders(
 
 function isDriveAuthorizationDenied(error: unknown): boolean {
   if (!error || typeof error !== 'object') return false;
-  const value = error as { status?: unknown; statusCode?: unknown; code?: unknown; message?: unknown };
-  return value.status === 403 || value.statusCode === 403 || value.code === 1061004 ||
-    (typeof value.message === 'string' && /permission_denied|lacks permission|forbidden/i.test(value.message));
+  const value = error as { status?: unknown; statusCode?: unknown; code?: unknown; message?: unknown; response?: unknown };
+  const response = value.response && typeof value.response === 'object' ? value.response as { status?: unknown; data?: unknown } : undefined;
+  const data = response?.data && typeof response.data === 'object' ? response.data as { code?: unknown; message?: unknown } : undefined;
+  const messages = [value.message, data?.message].filter((item): item is string => typeof item === 'string');
+  return value.status === 403 || value.statusCode === 403 || response?.status === 403 || value.code === 1061004 || data?.code === 1061004 ||
+    messages.some(message => /permission_denied|lacks permission|forbidden/i.test(message));
 }

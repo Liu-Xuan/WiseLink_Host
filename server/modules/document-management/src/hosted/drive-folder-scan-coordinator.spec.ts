@@ -24,6 +24,8 @@ describe('runDriveFolderScan', () => {
     [{ statusCode: 403 }, 'statusCode'],
     [{ code: 1061004 }, 'Feishu code'],
     [{ message: 'permission_denied' }, 'message'],
+    [{ response: { status: 403 } }, 'nested HTTP status'],
+    [{ response: { data: { code: 1061004 } } }, 'nested Feishu code'],
   ])('returns a durable authorization blocker for %s (%s)', async (error, _label) => {
     const saved: string[] = [];
     const result = await runDriveFolderScan({
