@@ -17,6 +17,7 @@ export { UnconfiguredDocumentManagementIngestAuthorizer } from './unconfigured-d
 export {
   DriveSourceScanService,
   type AuthorizedDrivePageFetcher,
+  type DriveSourceScanCandidates,
 } from './drive-source-scan.service';
 export { DriveScanCheckpointRepository } from './drive-scan-checkpoint.repository';
 export { toDriveSourceCandidates, type DriveSourceCandidate } from '../drive-source-candidate';

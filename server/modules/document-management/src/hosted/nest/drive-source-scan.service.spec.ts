@@ -44,4 +44,15 @@ describe('DriveSourceScanService', () => {
       ['Oy1vfy8nslGZeUdBBkoczv0Fnxh', 'p2'],
     ]);
   });
+
+  it('returns identity candidates without converting them into accepted documents', async () => {
+    const checkpoints = { forTenant: () => ({ load: async () => null, save: async () => undefined }) };
+    const service = new DriveSourceScanService(checkpoints as never);
+    const result = await service.scanCandidates({
+      tenantId: 'tenant-3', sourceKey: 'operations',
+      fetcher: { list: async () => ({ files: [{ token: 'file-3', type: 'file', name: '日报.pdf', version_id: 'v1' }], hasMore: false }) },
+    });
+    expect(result.candidates[0]?.identity).toBe('operations:file:file-3:v1');
+    expect(result.candidates[0]?.providerVersionId).toBe('v1');
+  });
 });

@@ -3,9 +3,15 @@ import { driveSourceScanRoots, WISELINK_DRIVE_SOURCES } from '../wiselink-drive-
 import { runDriveFolderScan } from '../drive-folder-scan-coordinator';
 import type { DrivePage, DriveFolderScanResult } from '../drive-folder-scanner';
 import { DriveScanCheckpointRepository } from './drive-scan-checkpoint.repository';
+import { toDriveSourceCandidates, type DriveSourceCandidate } from '../drive-source-candidate';
 
 export interface AuthorizedDrivePageFetcher {
   list(folderToken: string, pageToken?: string): Promise<DrivePage>;
+}
+
+export interface DriveSourceScanCandidates {
+  scan: DriveFolderScanResult;
+  candidates: DriveSourceCandidate[];
 }
 
 /** Host-owned source scan entry point. Credentials and scheduling stay outside this service. */
@@ -32,5 +38,16 @@ export class DriveSourceScanService {
       maxPages: input.maxPages,
       maxEntries: input.maxEntries,
     });
+  }
+
+  async scanCandidates(input: {
+    tenantId: string;
+    sourceKey: string;
+    fetcher: AuthorizedDrivePageFetcher;
+    maxPages?: number;
+    maxEntries?: number;
+  }): Promise<DriveSourceScanCandidates> {
+    const scan = await this.scan(input);
+    return { scan, candidates: toDriveSourceCandidates(input.sourceKey, scan.entries) };
   }
 }
