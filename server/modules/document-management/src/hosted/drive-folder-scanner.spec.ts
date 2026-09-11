@@ -1,6 +1,17 @@
 import { scanDriveFolders } from './drive-folder-scanner';
 
 describe('scanDriveFolders', () => {
+  it('stops at the entry bound even when one page contains more entries', async () => {
+    const result = await scanDriveFolders([{ folderToken: 'root', path: 'root', depth: 0 }], async () => ({
+      files: [
+        { token: 'file-1', type: 'file', name: '一.pdf' },
+        { token: 'file-2', type: 'file', name: '二.pdf' },
+      ], hasMore: false,
+    }), { maxEntries: 1 });
+    expect(result.entries).toHaveLength(1);
+    expect(result.continuation).toEqual([{ folderToken: 'root', path: 'root', depth: 0 }]);
+  });
+
   it('blocks a provider that repeats a page token instead of claiming completion', async () => {
     const result = await scanDriveFolders([{ folderToken: 'root', path: 'root', depth: 0 }], async () => ({
       files: [{ token: 'file-1', type: 'file', name: '第一页.pdf' }], hasMore: true, nextPageToken: 'same',

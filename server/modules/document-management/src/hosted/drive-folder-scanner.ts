@@ -82,6 +82,10 @@ export async function scanDriveFolders(
       pages += 1;
       visitedPages.push(pageKey);
       for (const entry of page.files) {
+        if (entries.length >= maxEntries) {
+          continuation.push({ ...folder, ...(pageToken ? { pageToken } : {}) }, ...queue);
+          return { entries, continuation, visitedPages, blockers };
+        }
         const key = `${entry.type}:${entry.token}`;
         if (seen.has(key)) continue;
         seen.add(key);
