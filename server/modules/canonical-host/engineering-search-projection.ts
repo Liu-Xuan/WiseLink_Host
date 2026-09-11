@@ -35,7 +35,24 @@ export interface AuthorizedSearchProjectionEntryInput {
 export function buildAuthorizedSourceSearchProjection(
   entries: readonly AuthorizedSearchProjectionEntryInput[],
 ): EngineeringSearchProjectionEntry[] {
-  return entries.map((entry) => ({
+  const seen = new Set<string>();
+  return entries.map((entry) => {
+    for (const [name, value] of Object.entries({
+      entryId: entry.entryId, ownerId: entry.ownerId,
+      exactRevisionRef: entry.exactRevisionRef, locatorRef: entry.locatorRef,
+      originalText: entry.originalText,
+    })) {
+      if (typeof value !== 'string' || value.trim() === '' || value.length > 255) {
+        throw new Error(`ENGINEERING_SEARCH_SOURCE_${name.toUpperCase()}_INVALID`);
+      }
+    }
+    if (entry.entryId.length > 160) throw new Error('ENGINEERING_SEARCH_SOURCE_ENTRY_ID_INVALID');
+    if (seen.has(entry.entryId)) throw new Error('ENGINEERING_SEARCH_SOURCE_ENTRY_DUPLICATE');
+    seen.add(entry.entryId);
+    if (entry.entryKind !== 'SOURCE' && entry.entryKind !== 'RECORD') {
+      throw new Error('ENGINEERING_SEARCH_SOURCE_ENTRY_KIND_INVALID');
+    }
+    return {
     entryId: entry.entryId,
     ownerKind: entry.ownerKind,
     ownerId: entry.ownerId,
@@ -45,7 +62,8 @@ export function buildAuthorizedSourceSearchProjection(
     parentContextRef: entry.parentContextRef ?? null,
     title: entry.title ?? '',
     search: buildEngineeringSearchText(entry.originalText, entry.identifiers ?? []),
-  }));
+    };
+  });
 }
 
 export function projectionOwnerToSubjectKind(ownerKind: string): 'WORK_ITEM' | 'ENGINEERING_MATTER' | null {

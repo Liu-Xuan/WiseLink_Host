@@ -17,6 +17,16 @@ it('builds SOURCE and RECORD rows only from caller-supplied authorized text', ()
   expect(rows[1]).toMatchObject({ entryKind: 'RECORD', parentContextRef: 'table-1' });
 });
 
+it('rejects malformed or duplicate authorized source entries before persistence', () => {
+  expect(() => buildAuthorizedSourceSearchProjection([
+    { entryId: '', ownerKind: 'SOURCE', ownerId: 'src', exactRevisionRef: 'rev', entryKind: 'SOURCE', locatorRef: 'unit', originalText: '正文' },
+  ])).toThrow('ENGINEERING_SEARCH_SOURCE_ENTRYID_INVALID');
+  expect(() => buildAuthorizedSourceSearchProjection([
+    { entryId: 'same', ownerKind: 'SOURCE', ownerId: 'src', exactRevisionRef: 'rev', entryKind: 'SOURCE', locatorRef: 'a', originalText: '正文' },
+    { entryId: 'same', ownerKind: 'SOURCE', ownerId: 'src', exactRevisionRef: 'rev', entryKind: 'RECORD', locatorRef: 'b', originalText: '正文' },
+  ])).toThrow('ENGINEERING_SEARCH_SOURCE_ENTRY_DUPLICATE');
+});
+
 describe('buildWorkSearchProjection', () => {
   it('keeps issue locators and exact revision while producing rebuildable text', () => {
     const rows = buildWorkSearchProjection({ ownerKind: 'USER', ownerId: 'u1', exactRevisionRef: 'wr-1', content: {
