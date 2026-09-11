@@ -16,7 +16,7 @@ import {
   WISELINK_PROFILE_REF,
   WISELINK_SKILL_VERSION,
 } from './validate-payload.mjs';
-import { requestHostedGateway } from './request-hosted-gateway.mjs';
+import { classifyHostedGatewayFailure, requestHostedGateway } from './request-hosted-gateway.mjs';
 
 export const JOBAID_PROBLEM_TASK_SCHEMA = 'wiselink.jobaid-problem-task.v2';
 export const MATTER_JOBAID_TASK_SCHEMA = 'wiselink.matter-jobaid-task.v2';
@@ -282,6 +282,7 @@ export async function invokeHostedJobAidProblemModel(
       payload,
       expectedFunctionNames: [FUNCTION],
     });
+    const gatewayFailure = response.ok ? null : classifyHostedGatewayFailure(payload);
     await options.observeModelOutput?.(
       {
         operation,
@@ -292,12 +293,13 @@ export async function invokeHostedJobAidProblemModel(
         outputTokens: payload?.usage?.completion_tokens ?? null,
         responseBytes: Buffer.byteLength(raw),
         outputChannel: shape.outputChannel,
+        ...(gatewayFailure ? { gatewayFailure } : {}),
       },
       round,
     );
     // The native profile can have tools. An outer candidate function does not
     // prove generation-only execution; an ambiguous 408/timeout is not retried.
-    if (!response.ok) throw new Error(`JOBAID_GATEWAY_HTTP_${response.status}`);
+    if (!response.ok) throw new Error(`JOBAID_GATEWAY_HTTP_${response.status}${gatewayFailure === 'UNCLASSIFIED' ? '' : ':' + gatewayFailure}`);
     if (shape.hasAnalysis || payload.choices?.length !== 1)
       throw new Error('JOBAID_MODEL_OUTPUT_CHANNEL_INVALID');
     const choice = payload.choices[0];

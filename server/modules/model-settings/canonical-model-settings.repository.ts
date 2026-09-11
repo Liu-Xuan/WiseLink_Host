@@ -32,8 +32,11 @@ export class CanonicalModelSettingsRepository {
     @Inject(DRIZZLE_DATABASE) private readonly db: PostgresJsDatabase,
   ) {}
 
-  async read(tenantId: string): Promise<StoredCanonicalModelSetting | null> {
-    const [row] = await this.db
+  async read(
+    tenantId: string,
+    executor: PostgresJsDatabase = this.db,
+  ): Promise<StoredCanonicalModelSetting | null> {
+    const [row] = await executor
       .select(selection)
       .from(canonicalModelSetting)
       .where(eq(canonicalModelSetting.tenantId, tenantId))

@@ -254,7 +254,15 @@ function initialComplete(value) {
     value.stages.jobAid.status === 'SUCCEEDED' && value.stages.overall.status === 'SUCCEEDED';
 }
 
-function errorCode(error) {
+export function errorCode(error) {
+  // Preserve the actual internal call site in cron output. The generic code
+  // filter below deliberately rejects lowercase prose and used to erase it.
+  if (error?.receivedHostToolError === true && typeof error.hostToolName === 'string' &&
+      /^[a-z]+(?:_[a-z]+)*$/u.test(error.hostToolName) && error.hostToolName.length <= 80) {
+    const hostCode = typeof error.hostErrorCode === 'string' && /^[A-Z][A-Z0-9_]{0,159}$/u.test(error.hostErrorCode)
+      ? error.hostErrorCode : null;
+    return `REVIEW_HOST_MCP_TOOL_FAILED:${error.hostToolName}${hostCode ? ':' + hostCode : ''}`;
+  }
   const text = String(error?.hostErrorCode ?? error?.code ?? error?.message ?? 'HOSTED_INITIAL_FAILED');
   return /^[A-Z][A-Z0-9_:.-]{0,199}$/u.test(text)
     ? text : text.match(/^[A-Z][A-Z0-9_]{0,119}/u)?.[0] ?? 'HOSTED_INITIAL_FAILED';

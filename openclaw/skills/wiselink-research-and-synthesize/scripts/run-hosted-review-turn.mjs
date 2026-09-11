@@ -1012,6 +1012,7 @@ export function readHostMcpJsonResult(result, name) {
       ? safeHostErrorCode(textBlocks[0].text) : null;
     const error = new Error(`REVIEW_HOST_MCP_TOOL_FAILED:${name}${hostErrorCode ? ':' + hostErrorCode : ''}`);
     error.hostErrorCode = hostErrorCode;
+    error.hostToolName = /^[a-z]+(?:_[a-z]+)*$/u.test(name) && name.length <= 80 ? name : null;
     error.receivedHostToolError = result?.isError === true;
     throw error;
   }
@@ -1024,7 +1025,12 @@ export function readHostMcpJsonResult(result, name) {
 
 function safeHostErrorCode(value) {
   if (typeof value !== 'string') return null;
-  const code = value.match(/^(?:Error:\s*)?((?:AILY|REVIEW|ACTION_ATTEMPT|OPENCLAW|ENGINEERING_MATTER|OVERALL|JOBAID|DYNAMIC_EVALUATION|CONFIGURATION_REEVALUATION|TRANSLATION|COMMON_CONTEXT|PACKAGE_ARTIFACT|SOURCE_CONTEXT|SOURCE_PAGE)_[A-Z0-9_]+)(?=:|$)/u)?.[1];
+  // The MCP SDK serializes Error.message rather than the Host's .code.
+  // Map this exact observed Host message; never retain arbitrary error prose.
+  if (value === 'Canonical API-key service scope is unavailable.' ||
+      value === 'Error: Canonical API-key service scope is unavailable.')
+    return 'CANONICAL_SERVICE_SCOPE_UNAVAILABLE';
+  const code = value.match(/^(?:Error:\s*)?((?:CANONICAL|AILY|REVIEW|ACTION_ATTEMPT|OPENCLAW|ENGINEERING_MATTER|OVERALL|JOBAID|DYNAMIC_EVALUATION|CONFIGURATION_REEVALUATION|TRANSLATION|COMMON_CONTEXT|PACKAGE_ARTIFACT|SOURCE_CONTEXT|SOURCE_PAGE)_[A-Z0-9_]+)(?=:|$)/u)?.[1];
   return code && code.length <= 160 ? code : null;
 }
 

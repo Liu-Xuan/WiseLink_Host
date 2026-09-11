@@ -55,6 +55,12 @@ const {
   MatterActionAttemptService,
 } = require('../../server/modules/canonical-host/matter-action-attempt.service.ts');
 const {
+  CanonicalModelSettingsService,
+} = require('../../server/modules/model-settings/canonical-model-settings.service.ts');
+const {
+  CanonicalModelSettingsRepository,
+} = require('../../server/modules/model-settings/canonical-model-settings.repository.ts');
+const {
   CANONICAL_INITIAL_MODEL_REF,
   taskModelSelection,
 } = require('../../server/modules/model-settings/canonical-model-catalog.ts');
@@ -824,10 +830,14 @@ test(
         scope.matterId,
         owner.actor,
       );
-      const service = new MatterActionAttemptService(owner.working, {
-        captureForNewTask: async (_tenant, now) =>
-          taskModelSelection(CANONICAL_INITIAL_MODEL_REF, now),
-      });
+      // Use the real model repository on the actor's one-connection pool.
+      // Reserving work must not wait for a second connection while holding its transaction.
+      const service = new MatterActionAttemptService(
+        owner.working,
+        new CanonicalModelSettingsService(
+          new CanonicalModelSettingsRepository(owner.database),
+        ),
+      );
       const reserved = await owner.runtime(() =>
         service.reserve({
           ...scope,
@@ -1017,6 +1027,8 @@ async function resetDatabase(sql) {
     END $$
   `);
   await sql.unsafe('CREATE TYPE user_profile AS (user_id text)');
+  await applyMigration(sql, 'server/database/canonical-model-setting.ddl.sql');
+  await sql.unsafe('GRANT SELECT ON canonical_model_setting TO service_role');
   await sql.unsafe(`
     CREATE TABLE identity_subject_mapping (
       id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -2007,10 +2019,12 @@ async function assertWorkingRevisionFlow(
 }
 
 async function assertMatterLeaseLifecycle(sql, owner, matterId) {
-  const service = new MatterActionAttemptService(owner.working, {
-    captureForNewTask: async (_tenant, now) =>
-      taskModelSelection(CANONICAL_INITIAL_MODEL_REF, now),
-  });
+  const service = new MatterActionAttemptService(
+    owner.working,
+    new CanonicalModelSettingsService(
+      new CanonicalModelSettingsRepository(owner.database),
+    ),
+  );
   const scope = { tenantId: 'tenant-A', actorUserId: 'actor-A', matterId };
   const basis = await owner.workingService.resolveWorkingBasis(
     matterId,

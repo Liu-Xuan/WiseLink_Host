@@ -9,6 +9,20 @@ const NONDISPATCH_NETWORK_CODES = new Set([
   'ECONNREFUSED', 'ENOTFOUND', 'EAI_AGAIN', 'EHOSTUNREACH', 'ENETUNREACH',
 ]);
 
+/** Only fixed native failure categories leave this boundary, never upstream
+ * error text, model-generated content, provider identities or credentials.
+ * Classification is diagnostic only and does not make a request retryable.
+ */
+export function classifyHostedGatewayFailure(payload) {
+  const message = payload?.error?.message;
+  if (typeof message !== 'string') return 'UNCLASSIFIED';
+  if (/^[^\r\n]{1,200} ended with an incomplete terminal response\.?$/u.test(message))
+    return 'INCOMPLETE_TERMINAL_RESPONSE';
+  if (message === 'tool_choice=required was not satisfied by the agent response')
+    return 'TOOL_CHOICE_NOT_SATISFIED';
+  return 'UNCLASSIFIED';
+}
+
 /** Two short retries across this turn, within its original operation deadline.
  * Only explicit transient HTTP responses or failures before connecting qualify.
  * Lost responses/timeouts are ambiguous and are never replayed here.

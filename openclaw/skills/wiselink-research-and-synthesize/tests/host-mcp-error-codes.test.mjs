@@ -1,6 +1,27 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { readHostMcpJsonResult } from '../scripts/run-hosted-review-turn.mjs';
+import { errorCode } from '../scripts/consume-hosted-work-item.mjs';
+
+test('the observed Matter scope rejection retains both the call site and safe cause in cron diagnostics', () => {
+  for (const text of ['Canonical API-key service scope is unavailable.',
+    'Error: Canonical API-key service scope is unavailable.', 'CANONICAL_SERVICE_SCOPE_UNAVAILABLE']) {
+    assert.throws(() => readHostMcpJsonResult({ isError: true, content: [{ type: 'text', text }] },
+      'next_matter_assessment'), (error) => {
+      assert.equal(errorCode(error), 'REVIEW_HOST_MCP_TOOL_FAILED:next_matter_assessment:CANONICAL_SERVICE_SCOPE_UNAVAILABLE');
+      return true;
+    });
+  }
+  const privateText = 'Canonical API-key service scope is unavailable. token=fixture-private-token';
+  assert.throws(() => readHostMcpJsonResult({ isError: true, content: [{ type: 'text', text: privateText }] },
+    'next_matter_assessment'), (error) => {
+    assert.equal(errorCode(error), 'REVIEW_HOST_MCP_TOOL_FAILED:next_matter_assessment');
+    assert.equal(JSON.stringify(error).includes('fixture-private-token'), false);
+    return true;
+  });
+  assert.equal(errorCode(new Error('REVIEW_HOST_MCP_TOOL_FAILED:private-url?token=fixture-private-token')),
+    'REVIEW_HOST_MCP_TOOL_FAILED');
+});
 
 test('retains initial-analysis Host error codes while filtering error bodies and unstructured messages', () => {
   const toolName = 'begin_dynamic_evaluation';

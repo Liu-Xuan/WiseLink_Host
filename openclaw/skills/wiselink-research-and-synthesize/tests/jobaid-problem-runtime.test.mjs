@@ -58,6 +58,34 @@ function modelInput() {
     ],
   };
 }
+
+test('native gateway failures retain only fixed categories and do not replay ambiguous model execution', async () => {
+  for (const [message, category, suffix] of [
+    ['dli/gpt-5.6-sol ended with an incomplete terminal response', 'INCOMPLETE_TERMINAL_RESPONSE', ':INCOMPLETE_TERMINAL_RESPONSE'],
+    ['tool_choice=required was not satisfied by the agent response', 'TOOL_CHOICE_NOT_SATISFIED', ':TOOL_CHOICE_NOT_SATISFIED'],
+    ['private response body with fixture-private-token', 'UNCLASSIFIED', ''],
+  ]) {
+    const shapes = [];
+    const f = fixture([], { observeModelOutput: async (shape) => shapes.push(shape) });
+    let calls = 0;
+    f.dependencies.requestGateway = async () => {
+      calls++;
+      return new Response(JSON.stringify({ error: { message, type: 'invalid_request_error',
+        code: 'fixture-private-token' } }), { status: 400 });
+    };
+    await assert.rejects(invokeHostedJobAidProblemModel({ operation: 'EVALUATE_JOBAID', modelInput: modelInput() },
+      f.options, f.dependencies), (error) => {
+      assert.equal(error.message, `JOBAID_GATEWAY_HTTP_400${suffix}`);
+      return true;
+    });
+    assert.equal(calls, 1);
+    assert.equal(f.saves.length, 0);
+    assert.equal(shapes.length, 1);
+    assert.equal(shapes[0].gatewayFailure, category);
+    assert.equal(JSON.stringify(shapes).includes('fixture-private-token'), false);
+    assert.equal(JSON.stringify(shapes).includes(message), false);
+  }
+});
 function fixture(steps, overrides = {}) {
   const calls = [];
   const saves = [];
