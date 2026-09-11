@@ -1,6 +1,6 @@
 import { randomUUID } from 'node:crypto';
 
-import { Inject, Injectable } from '@nestjs/common';
+import { Inject, Injectable, Logger } from '@nestjs/common';
 import {
   DATAPAAS_CONFIG,
   DRIZZLE_DATABASE,
@@ -35,6 +35,7 @@ import {
 import type { OpenClawMatterTaskEnvelope } from '../action-attempt/action-attempt-envelope.types';
 import { loadMaterials } from './engineering-matter.repository';
 import { materialInputBindings } from './matter-material';
+import { EngineeringSearchProjectionWriter } from './engineering-search-projection';
 import {
   assertEngineeringMatterWorkingBindingsCurrent,
   engineeringMatterWorkingChangeFromCommand,
@@ -87,11 +88,13 @@ export interface EngineeringMatterRuntimeAuthorization {
 @Injectable()
 // eslint-disable-next-line @darraghor/nestjs-typed/injectable-should-be-provided -- W1 registers/exports this in EngineeringMatterModule.
 export class EngineeringMatterWorkingRepository {
+  private readonly logger = new Logger(EngineeringMatterWorkingRepository.name);
   constructor(
     @Inject(DRIZZLE_DATABASE) private readonly db: PostgresJsDatabase,
     private readonly sqlContext: SqlExecutionContextMiddleware,
     @Inject(DATAPAAS_CONFIG)
     private readonly databaseConfig: Pick<DataPaasConfig, 'roleSchema'>,
+    private readonly searchProjection: EngineeringSearchProjectionWriter,
   ) {}
 
   async withTransaction<T>(
@@ -546,6 +549,12 @@ export class EngineeringMatterWorkingRepository {
       .values(row)
       .returning();
     if (!stored) throw workingPersistenceError();
+    if (materialized.state.problemWork) {
+      void this.searchProjection.indexMatterRevision({ tenantId: stored.tenantId, ownerId: stored.createdByUserId,
+        revisionRef: stored.matterWorkRevisionId, content: materialized.state.problemWork }).catch(error => {
+        this.logger.error(`Engineering search projection rebuild pending for ${stored.matterWorkRevisionId}: ${error instanceof Error ? error.message : 'UNKNOWN_ERROR'}`);
+      });
+    }
     return {
       revision: await authorizedReadModel(stored, executor),
       replayed: false,

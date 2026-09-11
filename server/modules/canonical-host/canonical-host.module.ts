@@ -53,6 +53,7 @@ import { CanonicalHostOpenClawReviewService } from './canonical-host-openclaw-re
 import { CanonicalHostCommonContextService } from './canonical-host-common-context.service';
 import { CanonicalJobAidProblemService } from './canonical-jobaid-problem.service';
 import { JobAidWorkRepository } from './jobaid-work.repository';
+import { EngineeringSearchProjectionWriter } from './engineering-search-projection';
 import { CanonicalHostReviewActionController } from './canonical-host-review-action.controller';
 import { CanonicalHostReviewActionService } from './canonical-host-review-action.service';
 import { HostOwnedV1TranslationRuleSetPrivateProvider } from './canonical-translation-rule-set-v1.private';
@@ -517,6 +518,7 @@ export class CanonicalHostModule {
         EngineeringIssueSearchService,
         CanonicalJobAidProblemService,
         JobAidWorkRepository,
+        EngineeringSearchProjectionWriter,
         CanonicalHostReviewActionService,
         HostOwnedV1TranslationRuleSetPrivateProvider,
         HostNativeDocumentFamilyPdfProducerAdapter,

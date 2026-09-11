@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto';
-import { Inject, Injectable } from '@nestjs/common';
+import { Inject, Injectable, Logger } from '@nestjs/common';
 import {
   DRIZZLE_DATABASE,
   type PostgresJsDatabase,
@@ -19,6 +19,7 @@ import { canonicalJson } from '../action-attempt/action-attempt-envelope';
 import type { ActionAttemptRow } from '../action-attempt/action-attempt.types';
 import { EngineeringMatterWorkingRepository } from './engineering-matter-working.repository';
 import type { JobAidSourceBinding } from './jobaid-problem-task';
+import { EngineeringSearchProjectionWriter } from './engineering-search-projection';
 
 export interface JobAidWorkFence {
   principalId: string;
@@ -58,9 +59,11 @@ export function assertJobAidWorkFence(
 
 @Injectable()
 export class JobAidWorkRepository {
+  private readonly logger = new Logger(JobAidWorkRepository.name);
   constructor(
     @Inject(DRIZZLE_DATABASE) private readonly db: PostgresJsDatabase,
     private readonly actorTransactions: EngineeringMatterWorkingRepository,
+    private readonly searchProjection: EngineeringSearchProjectionWriter,
   ) {}
 
   /** The caller supplies the actor resolved from the Host owner/task binding. */
@@ -351,6 +354,10 @@ export class JobAidWorkRepository {
         })
         .returning();
       if (!saved) throw new Error('JOBAID_WORK_SAVE_READBACK_MISSING');
+      void this.searchProjection.indexJobAidRevision({ tenantId: saved.tenantId, ownerId: saved.createdByUserId,
+        revisionRef: saved.assessmentWorkRevisionId, content: input.content }).catch(error => {
+        this.logger.error(`Engineering search projection rebuild pending for ${saved.assessmentWorkRevisionId}: ${error instanceof Error ? error.message : 'UNKNOWN_ERROR'}`);
+      });
       return { revision: project(saved), replayed: false };
     };
     return executor
