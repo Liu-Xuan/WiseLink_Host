@@ -53,7 +53,7 @@ Worker 现有 `tasks/:taskId` 与 `tasks/:taskId/result` 接口已接入 Host �
 
 扫描核心已实现为可注入的 `scanDriveFolders`：每个目录独立维护游标，按 `type:token` 去重，递归加入子目录 frontier，达到批次限制返回 continuation，缺失分页 token 记录 blocker；候选身份快照与 frontier 分开保存，只有无 continuation 且无 blocker 的完整扫描才替换快照，避免中断扫描把旧版本误判为未发现。尚未绑定平台凭据或定时任务。
 已补充版本化 `DriveFolderScanCheckpoint` 编解码，断点只保存根目录、递归 frontier、分页 token 和更新时间，不保存用户凭据或文件正文；非法/不完整状态明确拒绝。它为事务内保存和进程退出后的恢复提供了稳定数据边界，但当前仍未接入 Host 持久化表、应用身份凭据或原生定时触发，因此不能宣称后台自动扫描已运行。
-扫描器现支持 `onPage` 逐页回调，并新增 `runDriveFolderScan` 协调器：按 `sourceKey` 读取上一断点、以授权 fetcher 执行有界扫描、每页保存 continuation，结束时再次保存最终 frontier。权限拒绝（403/1061004）会返回 `DRIVE_AUTHORIZATION_DENIED` blocker 并保留原 frontier，等待授权恢复后可重试；网络或未知错误仍抛出，不能伪装为空目录。该协调器已用内存 checkpoint store 验证恢复形状；真实 Host 数据库表、平台 Drive fetcher 和定时入口仍未接通。
+扫描器现支持 `onPage` 逐页回调，并新增 `runDriveFolderScan` 协调器：按 `sourceKey` 读取上一断点、以授权 fetcher 执行有界扫描、每页保存 continuation，结束时再次保存最终 frontier。权限拒绝（403/1061004）会把 `DRIVE_AUTHORIZATION_DENIED` blocker 与原 frontier 一起写入现有 checkpoint，重启后仍可呈现并在授权恢复后重试；成功扫描会清除旧 blocker。网络或未知错误仍抛出，不能伪装为空目录。该协调器已用内存 checkpoint store 验证恢复形状；真实 Host 数据库表、平台 Drive fetcher 和定时入口仍未接通。
 已增加 Host 侧 `wiselink_drive_scan_checkpoint` Drizzle 定义、RLS 迁移草案（0040）及按租户封装的 `DriveScanCheckpointRepository`，用于承载上述 checkpoint；该表只存扫描状态，不保存凭据或文件内容。迁移尚未执行，Repository 尚未被定时任务调用，仍需有效开发库连接、应用/委托 Drive 权限和平台触发器后再做真实增量验收。
 2026-09-12 再次核验六个根目录：`--as user` 均可读，且首层均返回 `has_more=true` 与独立 `next_page_token`；`--as bot` 六个目录均返回 Feishu `1061004 permission_denied`。因此用户会话可见性没有转化为后台监控授权，当前不能把这些目录接入自动扫描，也不能借用户 token 运行。
 Host 已新增 `DriveSourceScanService` 作为来源扫描业务入口：按登记的 `sourceKey` 和租户绑定 checkpoint，调用外部注入的授权分页 fetcher；未知来源在调用 fetcher 前拒绝。服务不创建用户会话、不内置定时器，便于后续接入获准的应用/委托身份和平台原生触发器。当前仍未形成真实来源文件登记或增量工作，因此不宣称监控运行。

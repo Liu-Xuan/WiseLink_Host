@@ -40,7 +40,7 @@ EXPLICIT_PREVIEW 和旧 RelatedContextSnapshot v1 保留只读预览及 included
 
 当前缺口：共同上下文的 knowledgeRetrieval 仍为 NOT_CONNECTED，初始任务的 allowedConnectors 与 selectedDiscoveryRefs 为空，消费者尚未形成按任务需要的外部查询闭环。Aily 私人聊天可用不等于初始分析检索已接通。下一增量要把授权获得的外部资料和交互补充信息实际接入共同上下文及 JobAid/Overall/显式更新的消费者。BACKGROUND_ONLY / REFERENCE_ONLY 可支持理解与候选推断，不自动证明机队适用性、实施或批准。
 
-共享 Drive 来源状态：六个用户提供的根目录已登记，SB/AD 作为已知但尚未取得根目录的未接通来源族显式保留，未伪造 token 或空扫描结果。Host 已具备按租户和 `sourceKey` 的递归扫描、逐页 checkpoint、候选身份快照与恢复入口；完整扫描才更新候选快照，避免部分分页把旧来源误判为消失。候选比较按 `sourceKey + providerObjectId` 隔离，不同根目录的同 token 不会互相覆盖；供应方无版本号时使用 `modifiedTime` 判断变化，两个变化标识都缺失时保守标为需复核的变化，不宣称内容未变。权限拒绝会作为可恢复 blocker 持久呈现并保留扫描 frontier，未知网络错误不会被当作空目录。开发数据库已实际执行 0040/0041 并核验表、唯一索引和 RLS；当前 checkpoint/候选快照均为 0 行。2026-09-12 03:52（日志 `2026091203522874B2ECC434DC2C349E18`）以 bot 读取首个目录仍返回 Feishu `1061004 permission_denied`，因此后台监控和自动增量尚未接通，不能借用户会话代替应用授权。
+共享 Drive 来源状态：六个用户提供的根目录已登记，SB/AD 作为已知但尚未取得根目录的未接通来源族显式保留，未伪造 token 或空扫描结果。Host 已具备按租户和 `sourceKey` 的递归扫描、逐页 checkpoint、候选身份快照与恢复入口；权限 blocker 与 frontier 一起持久化，成功重试后清除；完整扫描才更新候选快照，避免部分分页把旧来源误判为消失。候选比较按 `sourceKey + providerObjectId` 隔离，不同根目录的同 token 不会互相覆盖；供应方无版本号时使用 `modifiedTime` 判断变化，两个变化标识都缺失时保守标为需复核的变化，不宣称内容未变。未知网络错误不会被当作空目录。开发数据库已实际执行 0040/0041 并核验表、唯一索引和 RLS；当前 checkpoint/候选快照均为 0 行。2026-09-12 03:52（日志 `2026091203522874B2ECC434DC2C349E18`）以 bot 读取首个目录仍返回 Feishu `1061004 permission_denied`，因此后台监控和自动增量尚未接通，不能借用户会话代替应用授权。
 
 会改变受控适用性事实、构型或正式采用状态的材料仍由现有 Host 入口处理。缺少关键事实时说明具体影响，保留 UNKNOWN；缺少可选背景不阻断其余分析。读取失败、未接通和未加载必须可见，不能伪装成功。
 

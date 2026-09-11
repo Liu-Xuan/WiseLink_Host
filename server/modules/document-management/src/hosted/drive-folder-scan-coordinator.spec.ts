@@ -35,7 +35,8 @@ describe('runDriveFolderScan', () => {
     expect(result.entries).toEqual([]);
     expect(result.continuation).toEqual([{ folderToken: 'restricted', path: 'restricted', depth: 0 }]);
     expect(result.blockers).toEqual([{ folderToken: 'restricted', code: 'DRIVE_AUTHORIZATION_DENIED' }]);
-    expect(saved).toEqual([]);
+    expect(saved).toHaveLength(1);
+    expect(JSON.parse(saved[0]!).blockers).toEqual([{ folderToken: 'restricted', code: 'DRIVE_AUTHORIZATION_DENIED' }]);
   });
 
   it('keeps the saved frontier when authorization is denied after resuming', async () => {
@@ -53,7 +54,8 @@ describe('runDriveFolderScan', () => {
       checkpoints: { load: async () => checkpoint, save: async (_key, value) => { saved.push(value); } },
     });
     expect(result.continuation).toEqual([{ folderToken: 'child', path: 'root/child', depth: 1, pageToken: 'p2' }]);
-    expect(saved).toEqual([]);
+    expect(saved).toHaveLength(1);
+    expect(JSON.parse(saved[0]!).continuation).toEqual([{ folderToken: 'child', path: 'root/child', depth: 1, pageToken: 'p2' }]);
   });
 
   it('rejects unknown fetch failures instead of treating them as empty', async () => {

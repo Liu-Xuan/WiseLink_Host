@@ -37,9 +37,11 @@ export async function runDriveFolderScan(input: {
     if (!isDriveAuthorizationDenied(error)) throw error;
     // Keep the exact prior frontier. A permission blocker must be visible and
     // retryable after access is granted, without pretending the folder is empty.
+    const blocker = { folderToken: start[0]?.folderToken ?? input.roots[0]?.folderToken ?? 'unknown', code: 'DRIVE_AUTHORIZATION_DENIED' } as const;
+    await input.checkpoints.save(input.sourceKey, encodeDriveFolderScanCheckpoint(roots, start, new Date().toISOString(), [blocker]));
     return {
       entries: [], continuation: start, visitedPages: [],
-      blockers: [{ folderToken: start[0]?.folderToken ?? input.roots[0]?.folderToken ?? 'unknown', code: 'DRIVE_AUTHORIZATION_DENIED' }],
+      blockers: [blocker],
     };
   }
   await persist(result.continuation);
