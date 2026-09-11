@@ -33,13 +33,14 @@ describe('MinerU runner process boundary (fixture executable)', () => {
     await script(`
       const fs = require('node:fs'); const path = require('node:path');
       if (process.argv[process.argv.indexOf('-b') + 1] !== 'pipeline' || process.env.MINERU_MODEL_SOURCE !== 'local') process.exit(2);
+      if (process.env.LD_LIBRARY_PATH.split(':')[0] !== ${JSON.stringify(join(root, 'system-libs'))}) process.exit(3);
       const output = process.argv[process.argv.indexOf('-o') + 1];
       fs.mkdirSync(output, { recursive: true });
       fs.writeFileSync(path.join(output, 'document.md'), 'First paragraph.\\n\\nSecond paragraph.');
       fs.writeFileSync(path.join(output, 'document_middle.json'), JSON.stringify({_backend:'pipeline',_version_name:'3.4.5',pdf_info:[{page_idx:0,page_size:[612,792]}]}));
       fs.writeFileSync(path.join(output, 'document_content_list_v2.json'), JSON.stringify([[{type:'paragraph',bbox:[1,1,100,100],content:{paragraph_content:[{type:'text',content:'First paragraph.'}]}},{type:'paragraph',bbox:[1,110,100,200],content:{paragraph_content:[{type:'text',content:'Second paragraph.'}]}}]]));
     `);
-    const runner = new MineruRunner({ executable, configPath });
+    const runner = new MineruRunner({ executable, configPath, libraryPath: join(root, 'system-libs') });
     const pending = runner.parse(pdf);
     await expect(runner.parse(pdf)).rejects.toThrow('MINERU_BUSY');
     const result = await pending;

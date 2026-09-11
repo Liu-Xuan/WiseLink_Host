@@ -55,9 +55,10 @@ def main():
     source_group.add_argument('--models-root', type=Path)
     source_group.add_argument('--wheelhouse-archive', type=Path)
     source_group.add_argument('--python-archive', type=Path)
+    source_group.add_argument('--system-libs-archive', type=Path)
     parser.add_argument('--work-dir', type=Path, required=True)
     args = parser.parse_args()
-    deployment_archive = args.wheelhouse_archive or args.python_archive
+    deployment_archive = args.wheelhouse_archive or args.python_archive or args.system_libs_archive
     root = args.models_root.resolve(strict=True) if args.models_root else deployment_archive.resolve(strict=True).parent
     work = args.work_dir.resolve()
     work.mkdir(parents=True, exist_ok=True)
@@ -78,7 +79,7 @@ def main():
         entries.append({**entry, 'relativePath': str(relative), 'sourcePath': str(path)})
     if deployment_archive:
         archive = deployment_archive.resolve(strict=True)
-        expected_name = 'wheelhouse.tar' if args.wheelhouse_archive else 'python.tar.gz'
+        expected_name = 'wheelhouse.tar' if args.wheelhouse_archive else 'python.tar.gz' if args.python_archive else 'system-libs.tar'
         if archive.name != expected_name:
             raise ValueError(f'Expected the prepared {expected_name} deployment archive')
         entries.append({'relativePath': f'runtime/{expected_name}', 'sourcePath': str(archive),

@@ -13,6 +13,8 @@ export interface MineruRuntimeOptions {
   /** Fixed deployment executable and verified model config; never request data. */
   executable: string;
   configPath: string;
+  /** Verified, isolated Linux support libraries from the deployment archive. */
+  libraryPath?: string;
   timeoutMs?: number;
   titleCall?: MineruTitleCall;
 }
@@ -43,6 +45,7 @@ export class MineruRunner {
     if (
       !isAbsolute(executable) ||
       !isAbsolute(configPath) ||
+      (this.options.libraryPath !== undefined && (!isAbsolute(this.options.libraryPath) || this.options.libraryPath.includes(':'))) ||
       !Number.isSafeInteger(timeoutMs) ||
       timeoutMs < 1 ||
       timeoutMs > 30 * 60 * 1000
@@ -68,6 +71,7 @@ export class MineruRunner {
         ['-p', input, '-o', output, '-b', 'pipeline'],
         timeoutMs,
         configPath,
+        this.options.libraryPath,
       );
       const candidates: string[] = [];
       async function locate(path: string, depth: number) {
@@ -112,6 +116,7 @@ function execute(
   args: string[],
   timeoutMs: number,
   configPath: string,
+  libraryPath?: string,
 ): Promise<void> {
   return new Promise((resolve, reject) => {
     const grouped = process.platform !== 'win32';
@@ -120,6 +125,7 @@ function execute(
       stdio: ['ignore', 'pipe', 'pipe'],
       env: {
         ...process.env,
+        ...(libraryPath ? { LD_LIBRARY_PATH: [libraryPath, process.env.LD_LIBRARY_PATH].filter(Boolean).join(':') } : {}),
         MINERU_TOOLS_CONFIG_JSON: configPath,
         MINERU_MODEL_SOURCE: 'local',
         CUDA_VISIBLE_DEVICES: '',

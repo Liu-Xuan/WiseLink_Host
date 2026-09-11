@@ -41,7 +41,7 @@ export function readMineruModelStorageManifest(input: unknown): MineruModelStora
   let bytes = 0;
   for (const file of manifest.files) {
     if (!file || typeof file.relativePath !== 'string' ||
-        (!/^(pipeline|vlm)\/[A-Za-z0-9_./-]+$/.test(file.relativePath) && !['runtime/wheelhouse.tar', 'runtime/python.tar.gz'].includes(file.relativePath)) ||
+        (!/^(pipeline|vlm)\/[A-Za-z0-9_./-]+$/.test(file.relativePath) && !['runtime/wheelhouse.tar', 'runtime/python.tar.gz', 'runtime/system-libs.tar'].includes(file.relativePath)) ||
         file.relativePath.split('/').some(part => !part || part === '.' || part === '..') || paths.has(file.relativePath) ||
         !Number.isSafeInteger(file.bytes) || file.bytes < 1 || !sha256Pattern.test(file.sha256) ||
         !Array.isArray(file.parts) || !file.parts.length || file.parts.length > 100) throw new Error('MINERU_MODEL_MANIFEST_INVALID');

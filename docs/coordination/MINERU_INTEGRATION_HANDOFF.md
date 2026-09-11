@@ -2,6 +2,9 @@
 
 ## 2026-09-11 最新实测与运行接线
 
+- 后续线上恢复两次完成 55/55 文件核验，导入失败已精确定位为 `ImportError: libGL.so.1: cannot open shared object file`，不是文件丢失。`c73a29243` 诊断版 release `7684244800049499076` 已完成。当前补齐 Debian 官方 12 个动态库，4,915,200 bytes，SHA-256 `40bf0b2ff459dae5875b088bc9fbacb037c60b361fab37b55750ebd901c4bb3f`，FileService `/1876038215082196.tar` 上传/读回一致，部署清单增为 56 个文件。恢复到独立目录，仅为 MinerU 子进程设置库路径；Host Linux 实测 OpenCV/Torch/MinerU pipeline 导入成功。生产补库版待发布验证。原件通过 Host 读取成功，浏览器打开 blob PDF 被浏览器安全策略阻止，尚未验证原件页面显示。
+- 技术发布已完成：`fa0a9e191` 首次集成，`875f3f747` 增加环境文件系统诊断，`6df73524a` 接入现有 FileService 只读传输重试；最新 release `7684239443822447890` 返回 `finished` 且提交号匹配。全部仅向妙搭 `origin` 当前开发分支非强制推送。新 `dm_document_parse_run` 及其约束/RLS/触发器共 23 项 dev→online 迁移已发布。
+- 线上 FTD 阅读入口已实际鉴权并读到正确原件名。首次恢复因 online `WL_MINERU_HOME` 指向开发目录而 EACCES，已修正线上配置并重发，随后真实恢复进入 FileService 下载，已核验 1 个文件；后续分片 metadata GET 的 `fetch failed` 导致停止。对应只读重试修复测试 4/4 通过，最新技术发布完成，但浏览器控制连接连续超时，尚未触发修复版恢复验收。不能据此宣称线上环境 READY 或业务 parseRun 成功。
 - 全量 53 个模型文件、Linux x64 CPython 3.10.21 和 91 个离线 wheel 的归档已存入本应用 FileService，55 个部署文件、103 个分片、5,354,598,354 bytes 均逐片上传读回校验。永久定位清单为 `server/runtime-assets/mineru/runtime-files.json`，不含签名 URL。Host 全量恢复实测为 `RESTORED files=55 reused=49`、退出码 0。
 - Host 用便携 Python 从离线 wheel 创建全新环境，实际导入与运行检查通过：MinerU 3.4.5、Torch 2.14.0+cpu、torchvision 0.29.0+cpu，`pip check` 无缺失。开发缓存根为 `/home/gem/workspace/wiselink-mineru/3.4.5`，已配置 dev `WL_MINERU_HOME`；生产缺省使用可重建的临时缓存，持久真源是 FileService。
 - 真实联测版本 ID 校正为 `document_version_b83523c2b5ba26a2b1753641`，文件 `787-FTD-45-25001_Doc_05082026.pdf`，59,093 bytes，SHA-256 `6fb69a7d270766176331f3035f32ae580d1a4a0affd37c426941a4c299aff10d`。此前 camelCase ID 是交接笔误。Host CPU pipeline 实际完成 2/2 页、退出码 0。

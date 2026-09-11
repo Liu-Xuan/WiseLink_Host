@@ -20,7 +20,7 @@ export class MineruHostedRuntime {
   private readonly logger = new Logger(MineruHostedRuntime.name);
   private preparation: Promise<void> | undefined;
   private lastAttemptAt = 0;
-  private configuration: { executable: string; configPath: string } | undefined;
+  private configuration: { executable: string; configPath: string; libraryPath: string } | undefined;
   private readiness: MineruRuntimeReadiness = {
     state: 'NOT_CONFIGURED', stage: null, verifiedFiles: 0, totalFiles: 0, errorCode: null,
   };
@@ -50,7 +50,7 @@ export class MineruHostedRuntime {
     return { ...this.readiness };
   }
 
-  options(): { executable: string; configPath: string } {
+  options(): { executable: string; configPath: string; libraryPath: string } {
     if (this.readiness.state !== 'READY' || !this.configuration) throw new Error('MINERU_RUNTIME_NOT_READY');
     return { ...this.configuration };
   }
@@ -67,7 +67,8 @@ export class MineruHostedRuntime {
     if (manifest.files.filter(file => file.relativePath.startsWith('pipeline/')).length !== 40 ||
         manifest.files.filter(file => file.relativePath.startsWith('vlm/')).length !== 13 ||
         manifest.files.filter(file => file.relativePath === 'runtime/wheelhouse.tar').length !== 1 ||
-        manifest.files.filter(file => file.relativePath === 'runtime/python.tar.gz').length !== 1 || manifest.files.length !== 55) {
+        manifest.files.filter(file => file.relativePath === 'runtime/python.tar.gz').length !== 1 ||
+        manifest.files.filter(file => file.relativePath === 'runtime/system-libs.tar').length !== 1 || manifest.files.length !== 56) {
       throw new Error('MINERU_RUNTIME_DEPLOYMENT_INCOMPLETE');
     }
     this.readiness.totalFiles = manifest.files.length;
@@ -87,10 +88,18 @@ export class MineruHostedRuntime {
     const bootstrap = JSON.parse(bootstrapOutput.trim().split('\n').at(-1) ?? '{}');
     const python = join(home, 'python/bin/python3.10');
     if (bootstrap.status !== 'READY' || bootstrap.executable !== python) throw new Error('MINERU_RUNTIME_PYTHON_INVALID');
+    const libraryPath = join(home, 'system-libs/lib');
+    const { stdout: libraryOutput } = await execute(python, [join(assets, 'restore-system-libs.py'),
+      '--root', join(home, 'system-libs'), '--archive', join(root, 'runtime/system-libs.tar')], {
+      timeout: 60_000, maxBuffer: 1024 * 1024,
+    });
+    const libraries = JSON.parse(libraryOutput.trim());
+    if (libraries.status !== 'READY' || libraries.libraryPath !== libraryPath) throw new Error('MINERU_SYSTEM_LIBS_CACHE_INVALID');
     const { stdout } = await execute(python, [join(assets, 'install-offline-runtime.py'),
       '--root', home, '--wheelhouse', join(home, 'wheelhouse'), '--archive', join(root, 'runtime/wheelhouse.tar')], {
       timeout: 15 * 60_000, maxBuffer: 1024 * 1024,
-      env: { ...process.env, MINERU_TOOLS_CONFIG_JSON: configPath, MINERU_MODEL_SOURCE: 'local', CUDA_VISIBLE_DEVICES: '' },
+      env: { ...process.env, LD_LIBRARY_PATH: [libraryPath, process.env.LD_LIBRARY_PATH].filter(Boolean).join(':'),
+        MINERU_TOOLS_CONFIG_JSON: configPath, MINERU_MODEL_SOURCE: 'local', CUDA_VISIBLE_DEVICES: '' },
     });
     const lastLine = stdout.trim().split('\n').at(-1);
     const inspection = JSON.parse(lastLine ?? '{}');
@@ -99,7 +108,7 @@ export class MineruHostedRuntime {
       throw new Error('MINERU_RUNTIME_INSPECTION_FAILED');
     }
     await Promise.all([access(executable, constants.X_OK), access(configPath, constants.R_OK)]);
-    this.configuration = { executable, configPath };
+    this.configuration = { executable, configPath, libraryPath };
     this.readiness = { ...this.readiness, state: 'READY', stage: null, errorCode: null };
     this.logger.log(`MinerU 3.4.5 CPU environment ready; ${manifest.files.length} deployment files verified.`);
   }

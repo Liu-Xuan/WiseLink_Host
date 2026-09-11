@@ -70,7 +70,7 @@ def validate_manifest(value):
         path = PurePosixPath(relative) if isinstance(relative, str) else None
         valid_root = path is not None and (
             (len(path.parts) >= 2 and path.parts[0] in ('pipeline', 'vlm'))
-            or relative in ('runtime/wheelhouse.tar', 'runtime/python.tar.gz')
+            or relative in ('runtime/wheelhouse.tar', 'runtime/python.tar.gz', 'runtime/system-libs.tar')
         )
         if (not valid_root or path.is_absolute() or any(part in ('', '.', '..') for part in path.parts)
                 or '\\' in relative or relative in seen):
