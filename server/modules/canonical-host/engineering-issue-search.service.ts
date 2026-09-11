@@ -155,31 +155,42 @@ export class EngineeringIssueSearchService {
   }
 
   private async searchProjection(prepared: ReturnType<typeof prepareEngineeringSearchQuery>, actor: CanonicalHostActor): Promise<EngineeringIssueSearchResponse> {
-    const rows = await this.db.execute<{
-      entryId: string; ownerKind: string; ownerId: string; exactRevisionRef: string; parentContextRef: string | null; title: string; matchReason: 'FULL_TEXT' | 'EXACT_IDENTIFIER';
-    }>(sql`SELECT entry_id AS "entryId", owner_kind AS "ownerKind", owner_id AS "ownerId",
-      exact_revision_ref AS "exactRevisionRef", parent_context_ref AS "parentContextRef", title,
-      CASE WHEN identifiers && ${prepared.exactIdentifierCandidates}::text[]
-        THEN 'EXACT_IDENTIFIER' ELSE 'FULL_TEXT' END AS "matchReason"
-      FROM engineering_search_projection
-      WHERE tenant_id = ${actor.tenantId}
-        AND (search_vector @@ plainto_tsquery('simple', ${prepared.tokenizedText})
-          OR identifiers && ${prepared.exactIdentifierCandidates}::text[])
-      ORDER BY entry_id LIMIT 101`);
+    type ProjectionRow = {
+      entryId: string; ownerKind: string; ownerId: string; exactRevisionRef: string;
+      parentContextRef: string | null; title: string;
+      matchReason: 'FULL_TEXT' | 'EXACT_IDENTIFIER';
+    };
     const hits: EngineeringIssueSearchHit[] = [];
     const workReads = new Map<string, Promise<SavedIssueWork>>();
-    for (const row of rows) {
-      const match = row.entryId.match(/^(.*):issue:(.*)$/);
-      const subjectKind = projectionOwnerToSubjectKind(row.ownerKind);
-      if (!match || !subjectKind) continue;
-      const subjectId = row.parentContextRef || row.ownerId;
-      const key = JSON.stringify([subjectKind, subjectId, row.exactRevisionRef]);
-      let work = workReads.get(key);
-      if (!work) { work = this.loadWork({ subjectKind, subjectId, workRef: row.exactRevisionRef, issueKey: match[2] }, actor); workReads.set(key, work); }
-      try {
-        hits.push((this.issueFromWork({ subjectKind, subjectId, workRef: row.exactRevisionRef, issueKey: match[2], matchReason: row.matchReason }, await work)).identity);
-      } catch (error) { if (!isAccessUnavailable(error)) throw error; }
-      if (hits.length >= 51) break;
+    let cursor: string | undefined;
+    let exhausted = false;
+    while (hits.length < 51 && !exhausted) {
+      const rows = await this.db.execute<ProjectionRow>(sql`SELECT entry_id AS "entryId", owner_kind AS "ownerKind", owner_id AS "ownerId",
+        exact_revision_ref AS "exactRevisionRef", parent_context_ref AS "parentContextRef", title,
+        CASE WHEN identifiers && ${prepared.exactIdentifierCandidates}::text[]
+          THEN 'EXACT_IDENTIFIER' ELSE 'FULL_TEXT' END AS "matchReason"
+        FROM engineering_search_projection
+        WHERE tenant_id = ${actor.tenantId}
+          AND (search_vector @@ plainto_tsquery('simple', ${prepared.tokenizedText})
+            OR identifiers && ${prepared.exactIdentifierCandidates}::text[])
+          ${cursor ? sql`AND entry_id > ${cursor}` : sql``}
+        ORDER BY entry_id LIMIT 101`);
+      exhausted = rows.length < 101;
+      for (const row of rows) {
+        const match = row.entryId.match(/^(.*):issue:(.*)$/);
+        const subjectKind = projectionOwnerToSubjectKind(row.ownerKind);
+        if (!match || !subjectKind) continue;
+        const subjectId = row.parentContextRef || row.ownerId;
+        const key = JSON.stringify([subjectKind, subjectId, row.exactRevisionRef]);
+        let work = workReads.get(key);
+        if (!work) { work = this.loadWork({ subjectKind, subjectId, workRef: row.exactRevisionRef, issueKey: match[2] }, actor); workReads.set(key, work); }
+        try {
+          hits.push((this.issueFromWork({ subjectKind, subjectId, workRef: row.exactRevisionRef, issueKey: match[2], matchReason: row.matchReason }, await work)).identity);
+        } catch (error) { if (!isAccessUnavailable(error)) throw error; }
+        if (hits.length >= 51) break;
+      }
+      if (rows.length > 0) cursor = rows[rows.length - 1]!.entryId;
+      else exhausted = true;
     }
     return {
       hits: hits.slice(0, 50),
