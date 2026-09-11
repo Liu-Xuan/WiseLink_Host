@@ -66,7 +66,15 @@ export async function scanDriveFolders(
       }
       const pageKey = `${folder.folderToken}:${pageToken ?? 'first'}`;
       if (visitedPages.includes(pageKey) && missingTokenRetries === 0) break;
-      const page = await fetchPage(folder.folderToken, pageToken);
+      let page: DrivePage;
+      try {
+        page = await fetchPage(folder.folderToken, pageToken);
+      } catch (error: unknown) {
+        if (!isDriveAuthorizationDenied(error)) throw error;
+        blockers.push({ folderToken: folder.folderToken, ...(pageToken ? { pageToken } : {}), code: 'DRIVE_AUTHORIZATION_DENIED' });
+        continuation.push({ ...folder, ...(pageToken ? { pageToken } : {}) }, ...queue);
+        return { entries, continuation, visitedPages, blockers };
+      }
       pages += 1;
       visitedPages.push(pageKey);
       for (const entry of page.files) {
@@ -97,4 +105,11 @@ export async function scanDriveFolders(
   }
   continuation.push(...queue);
   return { entries, continuation, visitedPages, blockers };
+}
+
+function isDriveAuthorizationDenied(error: unknown): boolean {
+  if (!error || typeof error !== 'object') return false;
+  const value = error as { status?: unknown; statusCode?: unknown; code?: unknown; message?: unknown };
+  return value.status === 403 || value.statusCode === 403 || value.code === 1061004 ||
+    (typeof value.message === 'string' && /permission_denied|lacks permission|forbidden/i.test(value.message));
 }

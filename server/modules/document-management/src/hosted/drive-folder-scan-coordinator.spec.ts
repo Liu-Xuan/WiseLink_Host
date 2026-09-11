@@ -66,4 +66,19 @@ describe('runDriveFolderScan', () => {
       checkpoints: { load: async () => null, save: async () => undefined },
     })).rejects.toThrow('network unavailable');
   });
+
+  it('persists the actual denied child folder and page token', async () => {
+    const saved: string[] = [];
+    const result = await runDriveFolderScan({
+      sourceKey: 'technical-library',
+      roots: [{ folderToken: 'root', path: 'root', depth: 0 }],
+      fetchPage: async (folderToken, pageToken) => folderToken === 'root'
+        ? { files: [{ token: 'child', type: 'folder', name: 'child' }], hasMore: false }
+        : (() => { throw { statusCode: 403 }; })(),
+      checkpoints: { load: async () => null, save: async (_key, value) => { saved.push(value); } },
+    });
+    expect(result.blockers).toEqual([{ folderToken: 'child', code: 'DRIVE_AUTHORIZATION_DENIED' }]);
+    expect(result.continuation[0]).toEqual({ folderToken: 'child', path: 'root/child', depth: 1 });
+    expect(JSON.parse(saved.at(-1)!).blockers).toEqual([{ folderToken: 'child', code: 'DRIVE_AUTHORIZATION_DENIED' }]);
+  });
 });
