@@ -32,7 +32,7 @@ Worker 现有 `tasks/:taskId` 与 `tasks/:taskId/result` 接口已接入 Host �
 工作投影失败现可按 tenant/精确 revision 批量恢复：授权读取由调用方注入，单项失败继续留在 pending，不能以重建结果替代原始记录。
 Canonical Host 现提供受登录和对象入口保护的 `POST /api/canonical-host/engineering-issues/projection/rebuild` 受控恢复入口；limit 仅允许 1–100，恢复仍沿用当前 actor/tenant 精确读取，不新增队列或执行器。
 
-2026-09-12 实施进度：现有问题候选查询已改为参数化 PostgreSQL `to_tsvector('simple')`/`plainto_tsquery`，并保留规范化文号、件号、软件版本的精确匹配；命中后仍逐项调用现有完整工作读取和 actor/tenant ACL。独立持久化 projection 表、GIN 迁移、来源语义段和原生记录消费者尚未完成，当前不宣称全量检索。
+2026-09-12 实施进度：现有问题候选查询已改为参数化 PostgreSQL `to_tsvector('simple')`/`plainto_tsquery`，并保留规范化文号、件号、软件版本的精确匹配；命中后仍逐项调用现有完整工作读取和 actor/tenant ACL。独立持久化 projection 表及其 `search_vector` 生成列、GIN/租户范围/标识符索引已在迁移和 Drizzle schema 对齐；来源语义段和原生记录消费者尚未接入，当前不宣称全量检索。
 
 已补充 `engineering_search_projection` 的 Drizzle 结构和 0039 迁移：保存租户、owner、精确 revision、entry/locator、原文、分词文本和索引版本，数据库生成加权 `search_vector` 并建立 GIN/标识索引；RLS 只允许当前租户 owner 读取。WorkItem 与 EngineeringMatter 成功保存后都会异步重建对应问题投影；若重建失败，新增 0042 的租户/精确 revision 待重建标识，成功重建后删除，正文保存不回滚。`listPending` 提供租户范围的精确待重建清单，供后续原生任务/触发器恢复；Hosted 数据库迁移和真实索引查询仍待运行验收。
 投影搜索为授权展开预留最多 101 个候选，`hasMore` 只由实际可读的第 51 个命中决定，不能由被拒绝投影行制造分页提示。
@@ -56,7 +56,7 @@ Canonical Host 现提供受登录和对象入口保护的 `POST /api/canonical-h
 扫描核心已实现为可注入的 `scanDriveFolders`：每个目录独立维护游标，按 `type:token` 去重，递归加入子目录 frontier，达到批次限制返回 continuation；单页超过条目上限时保存页内 `entryOffset`，恢复从同一页继续。缺失分页 token 或供应方重复分页 token 均记录 blocker；候选身份快照与 frontier 分开保存，只有无 continuation 且无 blocker 的完整扫描才替换快照，避免中断扫描把旧版本误判为未发现。尚未绑定平台凭据或定时任务。
 已补充版本化 `DriveFolderScanCheckpoint` 编解码，断点只保存根目录、递归 frontier、分页 token 和更新时间，不保存用户凭据或文件正文；非法/不完整状态明确拒绝。它为事务内保存和进程退出后的恢复提供了稳定数据边界，但当前仍未接入 Host 持久化表、应用身份凭据或原生定时触发，因此不能宣称后台自动扫描已运行。
 扫描器现支持 `onPage` 逐页回调，并新增 `runDriveFolderScan` 协调器：按 `sourceKey` 读取上一断点、以授权 fetcher 执行有界扫描、每页保存 continuation，结束时再次保存最终 frontier。权限拒绝（403/1061004）会把 `DRIVE_AUTHORIZATION_DENIED` blocker 与原 frontier 一起写入现有 checkpoint，重启后仍可呈现并在授权恢复后重试；成功扫描会清除旧 blocker。网络或未知错误仍抛出，不能伪装为空目录。该协调器已用内存 checkpoint store 验证恢复形状；真实 Host 数据库表、平台 Drive fetcher 和定时入口仍未接通。
-已增加 Host 侧 `wiselink_drive_scan_checkpoint` Drizzle 定义、RLS 迁移草案（0040）及按租户封装的 `DriveScanCheckpointRepository`，用于承载上述 checkpoint；该表只存扫描状态，不保存凭据或文件内容。迁移尚未执行，Repository 尚未被定时任务调用，仍需有效开发库连接、应用/委托 Drive 权限和平台触发器后再做真实增量验收。
+已增加 Host 侧 `wiselink_drive_scan_checkpoint` Drizzle 定义、RLS 迁移（0040）及按租户封装的 `DriveScanCheckpointRepository`，用于承载上述 checkpoint；该表只存扫描状态，不保存凭据或文件内容。开发数据库已执行并核验 0040/0041，Repository 尚未接入平台定时任务，仍需应用/委托 Drive 权限和平台触发器后再做真实增量验收。
 2026-09-12 再次核验六个根目录：`--as user` 均可读，且首层均返回 `has_more=true` 与独立 `next_page_token`；`--as bot` 六个目录均返回 Feishu `1061004 permission_denied`。因此用户会话可见性没有转化为后台监控授权，当前不能把这些目录接入自动扫描，也不能借用户 token 运行。
 Host 已新增 `DriveSourceScanService` 作为来源扫描业务入口：按登记的 `sourceKey` 和租户绑定 checkpoint，调用外部注入的授权分页 fetcher；未知来源在调用 fetcher 前拒绝。服务不创建用户会话、不内置定时器，便于后续接入获准的应用/委托身份和平台原生触发器。当前仍未形成真实来源文件登记或增量工作，因此不宣称监控运行。
 服务级测试已覆盖登记来源的真实调用形状（operations 根目录 token、租户 checkpoint、文件条目返回）及未知来源 fail-closed；测试使用内存替身，不能替代飞书应用身份、数据库迁移或 Hosted 定时任务验收。
