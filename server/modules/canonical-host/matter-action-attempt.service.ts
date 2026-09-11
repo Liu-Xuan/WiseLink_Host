@@ -255,6 +255,7 @@ export class MatterActionAttemptService {
             executionModel: await this.models.captureForNewTask(
               input.tenantId,
               now,
+              executor.database,
             ),
             deadline: new Date(
               now.getTime() + ACTION_ATTEMPT_DEFAULT_DEADLINE_MS,

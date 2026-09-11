@@ -1,4 +1,5 @@
 import { Injectable } from '@nestjs/common';
+import type { PostgresJsDatabase } from '@lark-apaas/fullstack-nestjs-core';
 import type {
   CanonicalExecutionModelSelection,
   CanonicalModelSettingsReadModel,
@@ -99,10 +100,11 @@ export class CanonicalModelSettingsService {
   async captureForNewTask(
     tenantId: string,
     selectedAt: Date,
+    executor?: PostgresJsDatabase,
   ): Promise<CanonicalExecutionModelSelection> {
     if (!tenantId.trim())
       throw canonicalModelError('MODEL_SETTINGS_TENANT_REQUIRED', 400);
-    const saved = await this.repository.read(tenantId);
+    const saved = await this.repository.read(tenantId, executor);
     const modelRef = saved?.modelRef ?? CANONICAL_INITIAL_MODEL_REF;
     const option = CANONICAL_REGISTERED_MODELS.find(
       (model) => model.modelRef === modelRef && model.available,
