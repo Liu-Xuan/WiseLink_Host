@@ -26,11 +26,29 @@ export async function runDriveFolderScan(input: {
     input.sourceKey,
     encodeDriveFolderScanCheckpoint(roots, continuation),
   );
-  const result = await scanDriveFolders(start, input.fetchPage, {
-    maxPages: input.maxPages,
-    maxEntries: input.maxEntries,
-    onPage: persist,
-  });
+  let result: DriveFolderScanResult;
+  try {
+    result = await scanDriveFolders(start, input.fetchPage, {
+      maxPages: input.maxPages,
+      maxEntries: input.maxEntries,
+      onPage: persist,
+    });
+  } catch (error: unknown) {
+    if (!isDriveAuthorizationDenied(error)) throw error;
+    // Keep the exact prior frontier. A permission blocker must be visible and
+    // retryable after access is granted, without pretending the folder is empty.
+    return {
+      entries: [], continuation: start, visitedPages: [],
+      blockers: [{ folderToken: start[0]?.folderToken ?? input.roots[0]?.folderToken ?? 'unknown', code: 'DRIVE_AUTHORIZATION_DENIED' }],
+    };
+  }
   await persist(result.continuation);
   return result;
+}
+
+function isDriveAuthorizationDenied(error: unknown): boolean {
+  if (!error || typeof error !== 'object') return false;
+  const value = error as { status?: unknown; statusCode?: unknown; code?: unknown; message?: unknown };
+  return value.status === 403 || value.statusCode === 403 || value.code === 1061004 ||
+    (typeof value.message === 'string' && /permission_denied|lacks permission|forbidden/i.test(value.message));
 }
