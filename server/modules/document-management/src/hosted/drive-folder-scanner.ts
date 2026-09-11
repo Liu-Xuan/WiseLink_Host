@@ -31,6 +31,8 @@ export interface DriveFolderScanOptions {
   maxPages?: number;
   maxEntries?: number;
   maxMissingPageTokenRetries?: number;
+  /** Called after each fetched page so the caller can durably checkpoint the frontier. */
+  onPage?: (continuation: DriveFolderScanState[]) => Promise<void> | void;
 }
 
 /**
@@ -75,13 +77,22 @@ export async function scanDriveFolders(
         entries.push({ ...entry, path, depth: folder.depth });
         if (entry.type === 'folder') queue.push({ folderToken: entry.token, path, depth: folder.depth + 1 });
       }
-      if (!page.hasMore) break;
-      if (page.nextPageToken) { pageToken = page.nextPageToken; missingTokenRetries = 0; continue; }
+      if (!page.hasMore) {
+        await options.onPage?.([...queue]);
+        break;
+      }
+      if (page.nextPageToken) {
+        pageToken = page.nextPageToken; missingTokenRetries = 0;
+        await options.onPage?.([{ ...folder, pageToken }, ...queue]);
+        continue;
+      }
       missingTokenRetries += 1;
       if (missingTokenRetries >= maxRetries) {
         blockers.push({ folderToken: folder.folderToken, ...(pageToken ? { pageToken } : {}), code: 'DRIVE_PAGE_TOKEN_MISSING' });
+        await options.onPage?.([{ ...folder, ...(pageToken ? { pageToken } : {}) }, ...queue]);
         break;
       }
+      await options.onPage?.([{ ...folder, ...(pageToken ? { pageToken } : {}) }, ...queue]);
     }
   }
   continuation.push(...queue);
