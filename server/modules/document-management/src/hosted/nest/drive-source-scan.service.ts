@@ -3,7 +3,7 @@ import { driveSourceScanRoots, WISELINK_DRIVE_SOURCES } from '../wiselink-drive-
 import { runDriveFolderScan } from '../drive-folder-scan-coordinator';
 import type { DrivePage, DriveFolderScanResult } from '../drive-folder-scanner';
 import { DriveScanCheckpointRepository } from './drive-scan-checkpoint.repository';
-import { classifyDriveSourceCandidates, toDriveSourceCandidates, type DriveSourceCandidate, type DriveSourceCandidateChange } from '../drive-source-candidate';
+import { classifyDriveSourceCandidates, decodeDriveSourceCandidates, encodeDriveSourceCandidates, toDriveSourceCandidates, type DriveSourceCandidate, type DriveSourceCandidateChange } from '../drive-source-candidate';
 
 export interface AuthorizedDrivePageFetcher {
   list(folderToken: string, pageToken?: string): Promise<DrivePage>;
@@ -52,6 +52,13 @@ export class DriveSourceScanService {
   }): Promise<DriveSourceScanCandidates> {
     const scan = await this.scan(input);
     const candidates = toDriveSourceCandidates(input.sourceKey, scan.entries);
-    return { scan, candidates, changes: classifyDriveSourceCandidates(input.previousCandidates ?? [], candidates) };
+    const checkpointStore = this.checkpoints.forTenant(input.tenantId);
+    const previousCandidates = input.previousCandidates ?? (checkpointStore.loadCandidates ?
+      await checkpointStore.loadCandidates(input.sourceKey).then(value => value ? decodeDriveSourceCandidates(value) : []) : []);
+    // A partial or blocked scan must not replace the last complete identity snapshot.
+    if (scan.continuation.length === 0 && scan.blockers.length === 0 && checkpointStore.saveCandidates) {
+      await checkpointStore.saveCandidates(input.sourceKey, encodeDriveSourceCandidates(candidates));
+    }
+    return { scan, candidates, changes: classifyDriveSourceCandidates(previousCandidates, candidates) };
   }
 }

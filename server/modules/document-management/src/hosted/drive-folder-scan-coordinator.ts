@@ -4,6 +4,9 @@ import { scanDriveFolders, type DriveFolderScanResult, type DriveFolderScanState
 export interface DriveFolderScanCheckpointStore {
   load(sourceKey: string): Promise<string | null>;
   save(sourceKey: string, checkpoint: string): Promise<void>;
+  /** Optional durable identity snapshot; kept separate from scan frontier state. */
+  loadCandidates?(sourceKey: string): Promise<string | null>;
+  saveCandidates?(sourceKey: string, candidates: string): Promise<void>;
 }
 
 /** Runs one bounded scan using only an injected authorized fetcher and durable checkpoint store. */

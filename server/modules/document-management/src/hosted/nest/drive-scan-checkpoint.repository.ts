@@ -13,6 +13,8 @@ export class DriveScanCheckpointRepository {
     return {
       load: sourceKey => this.loadForTenant(tenantId, sourceKey),
       save: (sourceKey, checkpoint) => this.saveForTenant(tenantId, sourceKey, checkpoint),
+      loadCandidates: sourceKey => this.loadCandidatesForTenant(tenantId, sourceKey),
+      saveCandidates: (sourceKey, candidates) => this.saveCandidatesForTenant(tenantId, sourceKey, candidates),
     };
   }
 
@@ -31,5 +33,19 @@ export class DriveScanCheckpointRepository {
       target: [wiselinkDriveScanCheckpoint.tenantId, wiselinkDriveScanCheckpoint.sourceKey],
       set: { checkpointJson: checkpoint, checkpointVersion: 1 },
     });
+  }
+
+  private async loadCandidatesForTenant(tenantId: string, sourceKey: string): Promise<string | null> {
+    const [row] = await this.db.select({ candidates: wiselinkDriveScanCheckpoint.candidateSnapshotJson })
+      .from(wiselinkDriveScanCheckpoint)
+      .where(and(eq(wiselinkDriveScanCheckpoint.tenantId, tenantId), eq(wiselinkDriveScanCheckpoint.sourceKey, sourceKey)))
+      .limit(1);
+    return row?.candidates ?? null;
+  }
+
+  private async saveCandidatesForTenant(tenantId: string, sourceKey: string, candidates: string): Promise<void> {
+    await this.db.update(wiselinkDriveScanCheckpoint)
+      .set({ candidateSnapshotJson: candidates })
+      .where(and(eq(wiselinkDriveScanCheckpoint.tenantId, tenantId), eq(wiselinkDriveScanCheckpoint.sourceKey, sourceKey)));
   }
 }

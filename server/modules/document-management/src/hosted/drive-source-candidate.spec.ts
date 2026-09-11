@@ -1,4 +1,10 @@
-import { classifyDriveSourceCandidates, toDriveSourceCandidates } from './drive-source-candidate';
+import { classifyDriveSourceCandidates, decodeDriveSourceCandidates, encodeDriveSourceCandidates, toDriveSourceCandidates } from './drive-source-candidate';
+
+it('round trips candidate identity snapshots and rejects malformed state', () => {
+  const candidates = toDriveSourceCandidates('operations', [{ token: 'same', type: 'file', name: '日报.pdf', path: '日报.pdf', version_id: 'v1' }]);
+  expect(decodeDriveSourceCandidates(encodeDriveSourceCandidates(candidates))).toEqual(candidates);
+  expect(() => decodeDriveSourceCandidates('{"bad":true}')).toThrow('DRIVE_CANDIDATE_SNAPSHOT_INVALID');
+});
 
 describe('toDriveSourceCandidates', () => {
   it('keeps provider identity and excludes folders without triggering analysis', () => {
