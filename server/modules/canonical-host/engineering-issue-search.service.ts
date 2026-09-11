@@ -165,7 +165,7 @@ export class EngineeringIssueSearchService {
       WHERE tenant_id = ${actor.tenantId}
         AND (search_vector @@ plainto_tsquery('simple', ${prepared.tokenizedText})
           OR identifiers && ${prepared.exactIdentifierCandidates}::text[])
-      ORDER BY entry_id LIMIT 51`);
+      ORDER BY entry_id LIMIT 101`);
     const hits: EngineeringIssueSearchHit[] = [];
     const workReads = new Map<string, Promise<SavedIssueWork>>();
     for (const row of rows) {
@@ -179,11 +179,13 @@ export class EngineeringIssueSearchService {
       try {
         hits.push((this.issueFromWork({ subjectKind, subjectId, workRef: row.exactRevisionRef, issueKey: match[2], matchReason: row.matchReason }, await work)).identity);
       } catch (error) { if (!isAccessUnavailable(error)) throw error; }
-      if (hits.length >= 50) break;
+      if (hits.length >= 51) break;
     }
     return {
-      hits,
-      hasMore: rows.length > 50,
+      hits: hits.slice(0, 50),
+      // Pagination is based on authorized, fully expanded work identities;
+      // denied projection rows must not create a false "more" signal.
+      hasMore: hits.length > 50,
       limitations: ['投影命中只提供问题工作身份，正文仍按当前授权逐项读取。'],
     };
   }
