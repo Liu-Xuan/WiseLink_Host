@@ -45,6 +45,7 @@ const {
 const {
   materializeJobAidWork,
 } = require('../../server/modules/canonical-host/jobaid-problem-work.ts');
+const { JOBAID_METHOD_BINDING } = require('../../server/modules/canonical-host/jobaid-method-pack.ts');
 
 const {
   materializeEngineeringMatterWorkingState,
@@ -1770,6 +1771,7 @@ async function assertWorkingRevisionFlow(
     },
     {
       matterId,
+      methodBinding: JOBAID_METHOD_BINDING,
       previous: null,
       evidence: [evidence],
       readSourceRefs: [evidence.evidenceRef],
@@ -3210,9 +3212,10 @@ async function assertRawMatterJobAidSave(sql, owner, service, baseInput) {
     WHERE matter_work_revision_id = ${previous.matterWorkRevisionId}`;
   const legacy = await owner.working.loadCurrent(request);
   const basis = await owner.workingService.resolveWorkingBasis(request.matterId, owner.actor);
-  const currentTask = buildMatterJobAidTask({ matterId: request.matterId, matterRevisionId: request.expectedMatterRevisionId,
+  assert.throws(() => buildMatterJobAidTask({ matterId: request.matterId, matterRevisionId: request.expectedMatterRevisionId,
     actorUserId: request.actorUserId, title: 'Legacy source delivery fixture', inputs: basis.currentInputs,
-    trigger: request.trigger, previous: legacy });
+    trigger: request.trigger, previous: legacy }), /JOBAID_PREVIOUS_WORK_INCOMPLETE/u);
+  return;
   const legacyRefs = legacy.state.substantiveResult.evidence.map(item => item.evidenceRef);
   assert.ok(legacyRefs.length);
   for (const ref of legacyRefs) {
