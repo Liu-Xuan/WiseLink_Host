@@ -39,4 +39,10 @@ describe('toDriveSourceCandidates', () => {
     const current = toDriveSourceCandidates('operations', [{ token: 'same', type: 'file', name: '日报.pdf', path: '日报.pdf', modifiedTime: '2026-09-13T00:00:00Z' }]);
     expect(classifyDriveSourceCandidates(previous, current)[0]?.change).toBe('CHANGED');
   });
+
+  it('does not claim unchanged when neither version nor modified time is available', () => {
+    const previous = toDriveSourceCandidates('operations', [{ token: 'same', type: 'file', name: '日报.pdf', path: '日报.pdf' }]);
+    const current = toDriveSourceCandidates('operations', [{ token: 'same', type: 'file', name: '日报.pdf', path: '日报.pdf' }]);
+    expect(classifyDriveSourceCandidates(previous, current)[0]?.change).toBe('CHANGED');
+  });
 });

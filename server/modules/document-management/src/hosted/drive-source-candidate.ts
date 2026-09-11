@@ -55,9 +55,13 @@ export function classifyDriveSourceCandidates(
   const prior = new Map(previous.map(candidate => [`${candidate.sourceKey}:${candidate.providerObjectId}`, candidate]));
   return current.map(candidate => {
     const before = prior.get(`${candidate.sourceKey}:${candidate.providerObjectId}`);
-    const unchanged = before && (before.providerVersionId !== null || candidate.providerVersionId !== null)
+    const hasVersionSignal = before?.providerVersionId !== null && before?.providerVersionId !== undefined
+      || candidate.providerVersionId !== null && candidate.providerVersionId !== undefined;
+    const hasModifiedSignal = before?.modifiedTime !== null && before?.modifiedTime !== undefined
+      || candidate.modifiedTime !== null && candidate.modifiedTime !== undefined;
+    const unchanged = before && (hasVersionSignal
       ? before.providerVersionId === candidate.providerVersionId
-      : before?.modifiedTime === candidate.modifiedTime;
+      : hasModifiedSignal ? before.modifiedTime === candidate.modifiedTime : false);
     return { ...candidate, change: !before ? 'NEW' : unchanged ? 'UNCHANGED' : 'CHANGED' };
   });
 }
