@@ -39,8 +39,8 @@ Canonical Host 现提供受登录和对象入口保护的 `POST /api/canonical-h
 本轮通过妙搭 `lark-cli` 用户身份通道取得有效开发库连接并实际执行 0039；随后执行 0042 待重建表。在线核验确认表、GIN/唯一索引、生成 `search_vector` 列和 RLS 均存在；三张新增表当前均为 0 行，尚无真实工作投影或待重建记录。`.env.local` 直连仍返回 PostgreSQL `28P01`，不能以本地连接替代 Hosted 通道。
 检索服务增加 `WL_ENGINEERING_SEARCH_PROJECTION=1` 受控切换；开启后先查投影，再按精确 revision 回读完整工作和 ACL，未开启仍使用现有路径，避免迁移未发布时静默断链。
 投影写入现在优先复用 WorkItem/Matter 保存事务的数据库句柄，保留平台设置的 tenant/actor RLS 上下文；无事务句柄的重建任务才开启独立事务。相关保存与 continuation 测试共 36 项通过。
-本轮审查修正事项投影的身份映射：`owner_id` 继续保存创建者用于 ACL，`parent_context_ref` 保存真实 `matterId`，投影命中回读事项工作时不再把创建者误当事项 ID。新增隔离测试覆盖该边界；类型检查及 3 项投影/迁移测试通过。数据库迁移仍未执行，待有效开发库连接。
-随后修正候选覆盖边界：事项成员的现有 `authorizedMatter`/输入授权不能由投影的创建者列预筛掉。0039 的 RLS 现在只限定当前租户，查询只返回投影身份元数据，命中正文仍必须逐项通过现有完整工作读取和 ACL；迁移未执行前不启用投影开关。
+历史审查曾修正事项投影的身份映射：`owner_id` 继续保存创建者用于 ACL，`parent_context_ref` 保存真实 `matterId`，投影命中回读事项工作时不再把创建者误当事项 ID。新增隔离测试覆盖该边界；类型检查及 3 项投影/迁移测试通过。随后已通过妙搭 Hosted 通道执行并核验数据库迁移；当前仍不启用投影开关，直到真实工作投影和授权展开完成运行验收。
+随后修正候选覆盖边界：事项成员的现有 `authorizedMatter`/输入授权不能由投影的创建者列预筛掉。0039 的 RLS 现在只限定当前租户，查询只返回投影身份元数据，命中正文仍必须逐项通过现有完整工作读取和 ACL；在真实工作投影和授权展开验收前不启用投影开关。
 
 检索返回协议已补齐 `kind`、`matchedRange`、`reason`、`rootRefs` 和 `limitations`。当前已接通的消费者只返回 `WORK` 问题工作；命中理由区分精确问题标识和全文，正文仍需按精确 revision 与现有 ACL 展开，不能把命中元数据当作授权或全量统计。投影路径将持久化 `USER/MATTER` owner 映射为公开的 `WORK_ITEM/ENGINEERING_MATTER` subject kind，避免投影写入语义与读取协议不一致；仍尚未接入来源语义段和原生记录类型。
 
