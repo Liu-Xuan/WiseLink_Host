@@ -1,5 +1,5 @@
 import { createHash } from 'node:crypto';
-import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
+import { appendFile, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import type { FileService } from '@lark-apaas/fullstack-nestjs-core';
@@ -98,5 +98,28 @@ describe('MinerU deployment model cache', () => {
     const gap = structuredClone(input.manifest);
     gap.files[0].parts[1].offset += 1;
     expect(() => readMineruModelStorageManifest(gap)).toThrow('MINERU_MODEL_MANIFEST_INVALID');
+  });
+
+  it('resumes verified parts after a storage interruption and removes an incomplete append', async () => {
+    const input = fixture();
+    const originalDownload = input.download.getMockImplementation()!;
+    input.download.mockImplementation((path: string) => path === '/object-1.bin'
+      ? { asStream: async () => { throw Object.assign(new Error('storage unavailable'), { status: 503 }); } }
+      : originalDownload(path));
+    await expect(new MineruModelCache(input.files).prepare({ root, manifest: input.manifest })).rejects.toMatchObject({ status: 503 });
+    const destination = join(root, input.manifest.files[0].relativePath);
+    await expect(readFile(destination)).rejects.toMatchObject({ code: 'ENOENT' });
+    const prefix = input.bytes.subarray(0, input.manifest.files[0].parts[0].bytes);
+    expect(await readFile(destination + '.assembling')).toEqual(prefix);
+    await writeFile(destination + '.assembling', Buffer.alloc(prefix.length));
+    input.download.mockClear();
+    await expect(new MineruModelCache(input.files).prepare({ root, manifest: input.manifest })).rejects.toThrow('MINERU_MODEL_CACHE_MISMATCH');
+    expect(input.download).not.toHaveBeenCalled();
+    await writeFile(destination + '.assembling', prefix);
+    await appendFile(destination + '.assembling', 'interrupted');
+    input.download.mockReset().mockImplementation(originalDownload);
+    await new MineruModelCache(input.files).prepare({ root, manifest: input.manifest });
+    expect(input.download.mock.calls.map(args => args[0])).toEqual(['/object-1.bin']);
+    expect(await readFile(destination)).toEqual(input.bytes);
   });
 });
