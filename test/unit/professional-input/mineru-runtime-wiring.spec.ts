@@ -1,7 +1,5 @@
 import { DocumentParsingHostedService } from '../../../server/modules/document-management/src/hosted/nest/document-parsing-hosted.service';
-import { MineruHostedRuntime } from '../../../server/modules/professional-input/mineru/mineru-hosted-runtime';
-
-describe('MinerU authorized runtime preparation', () => {
+describe('MinerU remote worker wiring', () => {
   afterEach(() => jest.restoreAllMocks());
 
   function setup(allowed: boolean) {
@@ -17,30 +15,26 @@ describe('MinerU authorized runtime preparation', () => {
     }) };
     const repository = { current: jest.fn(async () => ({ latest: null, published: null })),
       readRequest: jest.fn(async () => null), reserve: jest.fn() };
-    const observe = jest.spyOn(MineruHostedRuntime.prototype, 'observe').mockImplementation(() => {
-      events.push('prepare');
-      return { state: 'PREPARING', stage: 'FILES', verifiedFiles: 4, totalFiles: 55, errorCode: null };
-    });
-    const service = new DocumentParsingHostedService(files as never, catalog as never, repository as never, {} as never, authorizer as never);
-    return { service, events, files, repository, observe };
+    const remoteWorker = { configured: jest.fn(() => false) };
+    const service = new DocumentParsingHostedService(files as never, catalog as never, repository as never, remoteWorker as never, authorizer as never);
+    return { service, events, files, repository, remoteWorker };
   }
   const context = { actorUserId: 'actor', tenantId: 'tenant', roles: [] };
 
   it('does not start a deployment download when document access is denied', async () => {
-    const { service, observe, files, events } = setup(false);
+    const { service, files, events } = setup(false);
     await expect(service.status('version', context)).rejects.toThrow('READ_DENIED');
     expect(events).toEqual(['authorize']);
-    expect(observe).not.toHaveBeenCalled();
     expect(files.from).not.toHaveBeenCalled();
   });
 
-  it('returns preparation progress after authorization and does not reserve a parse until ready', async () => {
+  it('reports a clear configuration state and does not reserve a parse until credentials exist', async () => {
     const { service, events, repository } = setup(true);
     const result = await service.status('version', context);
-    expect(events).toEqual(['authorize', 'source', 'prepare']);
-    expect(result).toMatchObject({ runtimeAvailable: false, runtime: { state: 'PREPARING', verifiedFiles: 4, totalFiles: 55 } });
+    expect(events).toEqual(['authorize', 'source']);
+    expect(result).toMatchObject({ runtimeAvailable: false, runtime: { state: 'NOT_CONFIGURED', errorCode: 'MINERU_REMOTE_WORKER_NOT_CONFIGURED' } });
     await expect(service.start('version', { requestId: 'runtime-check-1', expectedPublishedRevision: 0 }, context))
-      .rejects.toMatchObject({ code: 'DOCUMENT_PARSE_RUNTIME_UNAVAILABLE' });
+      .rejects.toMatchObject({ code: 'MINERU_REMOTE_WORKER_NOT_CONFIGURED' });
     expect(repository.reserve).not.toHaveBeenCalled();
   });
 });

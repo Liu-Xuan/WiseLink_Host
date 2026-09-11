@@ -83,6 +83,8 @@ export class MineruRemoteWorkerClient {
     const value = await this.request<MineruRemoteTaskResult>(`/openapi/mineru-worker/tasks/${encodeURIComponent(taskId)}/result`, { timeoutMs: 30_000 });
     if (!value || !isTask(value.task) || value.task.taskId !== taskId || !Array.isArray(value.artifacts) || value.artifacts.some(item => !isArtifactLink(item)))
       throw new Error('MINERU_REMOTE_WORKER_RESULT_INVALID');
+    if (value.artifacts.length > 1028 || value.artifacts.reduce((total, item) => total + item.byteLength, 0) > 256 * 1024 * 1024)
+      throw new Error('MINERU_REMOTE_WORKER_RESULT_TOO_LARGE');
     return value;
   }
 
