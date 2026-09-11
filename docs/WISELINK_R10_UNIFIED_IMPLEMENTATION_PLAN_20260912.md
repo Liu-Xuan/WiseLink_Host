@@ -51,6 +51,7 @@ Host 已新增 `DriveSourceScanService` 作为来源扫描业务入口：按登�
 生产服务构建已通过并收录新增扫描 schema、Repository 与模块注册；构建只证明代码产物可编译，不代表 0040 已执行或后台扫描已运行。
 受影响范围综合验证：Drive 扫描器、checkpoint 编解码、扫描协调器、Host 来源服务和 0040 迁移契约共 5 个测试套件、8 项测试通过；服务端与客户端类型检查均通过。
 Hosted Document Management 公共入口已导出 `DriveSourceScanService`、`AuthorizedDrivePageFetcher` 和 `DriveScanCheckpointRepository`，后续平台原生触发器可通过模块公开接口接入，不需依赖内部文件路径；全量类型检查和服务测试再次通过。
+数据库只读复核仍失败：使用当前 `.env.local` 的开发连接返回 PostgreSQL `28000`，提示 `expired or invalid connection link, please re-obtain`。本轮未执行 0039/0040 迁移、未写入 checkpoint 或检索投影；恢复条件是取得新的有效开发库连接后再做真实 RLS、GIN 和租户隔离验收。
 已新增 `wiselink-drive-source-config.ts`，将用户提供的六个根目录登记为独立来源定义，并统一声明应用/委托身份读取要求；扫描根状态由配置转换，不把用户会话写入来源身份。SB、AD 及后续目录继续通过同一注册表扩展，当前仍未取得应用身份读取授权或启动真实定时扫描。
 
 **W5 跨事项复用和用户接续。** Wiki、动态记录和关系图读取同一工作与来源关系。B 可复用 A 的完整论点和根来源，但比较自身目标事实、条件和受众，不继承 A 的适用性或构型结论。Aily 只读取 Host 保存且当前授权可见的工作；普通对话不自动正式采用。
