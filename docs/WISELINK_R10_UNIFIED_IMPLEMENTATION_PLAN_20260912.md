@@ -46,6 +46,8 @@ Worker 现有 `tasks/:taskId` 与 `tasks/:taskId/result` 接口已接入 Host �
 
 **W5 跨事项复用和用户接续。** Wiki、动态记录和关系图读取同一工作与来源关系。B 可复用 A 的完整论点和根来源，但比较自身目标事实、条件和受众，不继承 A 的适用性或构型结论。Aily 只读取 Host 保存且当前授权可见的工作；普通对话不自动正式采用。
 
+2026-09-12 阅读链路核对：`DocumentVersionReadingPage` 只读取指定 `documentVersionId` 的已发布 `parseRunId`，并将该精确 run 传给 `readParsedDocument`、图片资源读取和原文定位；Host 端图片接口再次执行文档读取授权、发布状态和已核验 IMAGE 描述符检查，未授权或非发布产物返回明确错误。`MineruMarkdownReader` 使用完整 Markdown、表格/列表/脚注与 `MineruReadingProjection` 绑定来源，无法唯一绑定时保留“部分内容尚无精确定位”，不伪造页码。事项快览和目录读取 `working.current` 及 `currentWorkingRevision`，并明确待覆盖输入、实际核查范围和“关联不代表已读取”。客户端类型检查已通过；尚未完成一次带真实用户会话的 Hosted 页面验收，Wiki 图谱与 Aily 的真实回流仍待运行证据。
+
 ## 验收顺序
 
 第一批完成 W0/W1/W2 和最小原文阅读/检索消费者；第二批完成 W3/W4 两个真实后台来源及一次无需聊天的增量接续；第三批完成 W5 跨事项复用、Aily 新工作回读、矩阵和通知。每批按风险运行类型检查、定向单测、必要 PostgreSQL 事务/索引测试和真实页面到 Hosted 流程。
