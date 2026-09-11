@@ -73,6 +73,19 @@ describe('MinerU deployment model cache', () => {
     expect(await readFile(join(root, input.manifest.files[0].relativePath))).toEqual(input.bytes);
   });
 
+  it('retries a transient storage read but never retries a permission response', async () => {
+    const input = fixture();
+    input.download.mockImplementationOnce(() => ({ asStream: async () => { throw new TypeError('fetch failed'); } }));
+    await new MineruModelCache(input.files).prepare({ root, manifest: input.manifest });
+    expect(await readFile(join(root, input.manifest.files[0].relativePath))).toEqual(input.bytes);
+    expect(input.download).toHaveBeenCalledTimes(3);
+    await rm(root, { recursive: true });
+    input.download.mockClear();
+    input.download.mockImplementationOnce(() => ({ asStream: async () => { throw Object.assign(new Error('fetch failed'), { status: 403 }); } }));
+    await expect(new MineruModelCache(input.files).prepare({ root, manifest: input.manifest })).rejects.toMatchObject({ status: 403 });
+    expect(input.download).toHaveBeenCalledTimes(1);
+  });
+
   it('rejects changed local files and malformed deployment paths instead of calling the model provider', async () => {
     const input = fixture();
     await new MineruModelCache(input.files).prepare({ root, manifest: input.manifest });

@@ -3,6 +3,7 @@ import { createReadStream } from 'node:fs';
 import { lstat, mkdir, open, readFile, realpath, rename, rm, writeFile } from 'node:fs/promises';
 import { dirname, isAbsolute, join, relative, resolve } from 'node:path';
 import type { FileService } from '@lark-apaas/fullstack-nestjs-core';
+import { withFileReadTransportRetry } from '../../unified-reader/file-service-read-transport';
 
 export interface MineruDeploymentPart {
   offset: number;
@@ -140,6 +141,13 @@ export class MineruModelCache {
   }
 
   private async downloadPart(part: MineruDeploymentPart, path: string) {
+    await withFileReadTransportRetry(async () => {
+      await removeStaging(path);
+      await this.downloadPartOnce(part, path);
+    });
+  }
+
+  private async downloadPartOnce(part: MineruDeploymentPart, path: string) {
     const downloaded = await this.files.from(part.bucketId).download(part.filePath).asStream();
     if (!downloaded.metadata || downloaded.metadata.bucketID !== part.bucketId ||
         downloaded.metadata.filePath.replace(/^\//, '') !== part.filePath.slice(1) ||
@@ -164,7 +172,7 @@ export class MineruModelCache {
       if (bytes !== part.bytes || hash.digest('hex') !== part.sha256) throw new Error('MINERU_MODEL_OBJECT_MISMATCH');
       await output.sync();
     } finally {
-      await reader.cancel();
+      await reader.cancel().catch(() => undefined);
       await output.close();
     }
   }
