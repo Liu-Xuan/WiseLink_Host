@@ -19,6 +19,8 @@ import { CanonicalJobAidProblemService } from './canonical-jobaid-problem.servic
 import { EngineeringMatterWorkingService } from './engineering-matter-working.service';
 import { isHostedCanonicalFinalUserActor } from '../work-item/miaoda-hosted-canonical-object-access.adapter';
 import { jobAidReadingResult } from './jobaid-problem-work';
+import { collectIssueEvidenceUses } from '@shared/jobaid-evidence-uses';
+import { prepareEngineeringSearchQuery } from './engineering-search-text';
 
 type IssueIdentity = Pick<
   EngineeringIssueSearchHit,
@@ -44,6 +46,7 @@ export class EngineeringIssueSearchService {
     const search = typeof query === 'string' ? query.trim() : '';
     if (!search || search.length > 200)
       throw new BadRequestException('ENGINEERING_ISSUE_QUERY_INVALID');
+    const prepared = prepareEngineeringSearchQuery(search);
     const hits: EngineeringIssueSearchHit[] = [];
     const workReads = new Map<string, Promise<SavedIssueWork>>();
     let cursor: IssueIdentity | undefined;
@@ -75,7 +78,10 @@ export class EngineeringIssueSearchService {
         revision AS "workRevision", issue ->> 'issueKey' AS "issueKey",
         issue ->> 'question' AS question, issue -> 'sourceDependencies' AS "sourceRefs"
       FROM works CROSS JOIN LATERAL jsonb_array_elements(content -> 'issues') issue
-      WHERE strpos(lower(issue::text), lower(${search})) > 0
+      WHERE (
+        to_tsvector('simple', issue::text) @@ plainto_tsquery('simple', ${prepared.tokenizedText})
+        OR upper(issue ->> 'issueKey') = ANY(${prepared.exactIdentifierCandidates}::text[])
+      )
         ${
           cursor
             ? sql`AND (kind, subject_id, work_ref, issue ->> 'issueKey') >
@@ -171,7 +177,7 @@ export class EngineeringIssueSearchService {
             ? revision.workRevision
             : revision.workingRevision,
         question: issue.question,
-        sourceRefs: issue.sourceDependencies,
+        sourceRefs: [...new Set(collectIssueEvidenceUses(issue).map(use => use.evidenceRef))],
       },
       issue,
       reading: { ...reading, evidence: content.evidence },

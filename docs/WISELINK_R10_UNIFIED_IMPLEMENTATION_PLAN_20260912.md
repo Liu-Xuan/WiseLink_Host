@@ -24,6 +24,8 @@ WiseLink 使用妙搭 NestJS Host、PostgreSQL/Drizzle、FileService、React/Rea
 
 **W3 授权检索投影。** 复用 EngineeringIssueSearchService 精确读取和 ACL，建立可重建的语义段、原生记录和完整问题投影及 GIN 索引，保留 tenant、owner、精确 revision、locator、上下文、原文和索引版本。中文使用 Intl.Segmenter 词级分词和 PostgreSQL simple 配置；文号、件号、软件版本走精确匹配。查询参数化，结果带精确引用、命中理由、根来源、hasMore 和限制；全文命中不等于权限或适用性。
 
+2026-09-12 实施进度：现有问题候选查询已改为参数化 PostgreSQL `to_tsvector('simple')`/`plainto_tsquery`，并保留规范化文号、件号、软件版本的精确匹配；命中后仍逐项调用现有完整工作读取和 actor/tenant ACL。独立持久化 projection 表、GIN 迁移、来源语义段和原生记录消费者尚未完成，当前不宣称全量检索。
+
 **W4 共享目录和变化。** 首批接技术资料目录 Q6uSfDwcDlBrUldWvZccoje8nXf 与每日运行目录 Oy1vfy8nslGZeUdBBkoczv0Fnxh，其余目录、SB、AD、会议和问题表复用同一配置机制。后台使用真实获准应用/委托身份。扫描采用递归分页、可恢复 frontier/游标和周期对账，事件只作加速；文件、期次、报道和原生记录分别建模，同名、token 或字节相同不能替代业务身份。
 
 **W5 跨事项复用和用户接续。** Wiki、动态记录和关系图读取同一工作与来源关系。B 可复用 A 的完整论点和根来源，但比较自身目标事实、条件和受众，不继承 A 的适用性或构型结论。Aily 只读取 Host 保存且当前授权可见的工作；普通对话不自动正式采用。
