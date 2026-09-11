@@ -227,7 +227,9 @@ export function buildMineruTranslationBatches(
   ): MineruTranslationModelInput => {
     const context = {
       ...options.context,
-      chapter: units[0]?.headingPath[0] || options.context?.chapter,
+      chapter:
+        [...new Set(units.map((unit) => unit.headingPath[0]).filter(Boolean))]
+          .join(' / ') || options.context?.chapter,
     };
     return {
       ...(Object.values(context).some(Boolean) ? { context } : {}),
@@ -264,7 +266,7 @@ export function buildMineruTranslationBatches(
     if (unit.mode !== 'TRANSLATE' || !unit.value) continue;
     if (
       current.length &&
-      (unit.chapterKey !== current[0].chapterKey || !fits([...current, unit]))
+      !fits([...current, unit])
     )
       flush();
     if (!fits([unit])) {

@@ -184,6 +184,27 @@ describe('MinerU translation input and Host alignment', () => {
       'LITERAL_CHANGED',
     );
   });
+  it('packs small chapters together and splits only when the output budget requires it', () => {
+    const plan = buildMineruTranslationPlan(document(), identity);
+    const first = plan.units.find((unit) => unit.mode === 'TRANSLATE')!;
+    plan.units = ['Scope', 'Applicability', 'Procedure'].map((heading, index) => ({
+      ...first,
+      key: `unit-${index}`,
+      chapterKey: `chapter-${index}`,
+      headingPath: [heading],
+      value: { kind: 'text' as const, text: 'Translate this complete paragraph.' },
+    }));
+    const merged = buildMineruTranslationBatches(plan, budgets);
+    expect(merged.batches).toHaveLength(1);
+    expect(merged.batches[0].input.context?.chapter).toBe('Scope / Applicability / Procedure');
+    expect(merged.batches[0].alignment.map((entry) => entry.unitKey)).toEqual(['unit-0', 'unit-1', 'unit-2']);
+    const limited = buildMineruTranslationBatches(plan, {
+      ...budgets,
+      maxOutputCharacters: 150,
+    });
+    expect(limited.batches).toHaveLength(3);
+    expect(limited.oversizedUnitKeys).toEqual([]);
+  });
   it('reports oversized atomic units instead of chopping paragraphs to satisfy a small model budget', () => {
     const doc = document();
     doc.blocks[1].content.paragraph_content = text(
