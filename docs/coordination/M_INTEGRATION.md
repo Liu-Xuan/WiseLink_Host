@@ -335,3 +335,9 @@ Host 只接受与该候选状态、fragmentId 和原因吻合的 interpretation_
 既有 resolveCurrent/readCurrentOwnerValidated/readCurrentSelectionValidated 已支持该投影：提交前正常读取并比较原文，发布后恢复只复核保存绑定与当前选择，不增加 FileService 调用。授权失败不 CAS，原文版本变化不静默改写当前输入，重复生产相同输入不增加修订。58 项生产者/既有提交服务测试及前后端类型检查通过。
 
 当前 begin_applicability_evaluation 仍未切换到新生产方法；实际新原文任务、候选条件发现/作用范围与提交结果的 v3 接线必须完成后再切换。此段是迁移进展，尚非运行入口完成，也未发布；旧任务继续使用现有 frozen.2 绑定路径。下一步修改任务/候选及其 native 消费者，以真实原文 catalog 和候选引句建立 Host 来源/作用范围，而非把所有原文单元预标为 source_asserted 条件。
+
+## 原文适用性 v3 任务构建（2026-09-13，迁移中）
+
+任务构建已消费上一节 v2 原文输入，经生产者重新核对确切来源和 tenant 后构造 applicability_task.v3。任务 sourcePackage=null，originalInput 保存实际 binding/manifest、完整结构单元/表格、原定位及 coverage；sourceExpressions 为空，表示尚待发现条件，不把单元虚构成已声明适用性。保留真实受控 Aircraft/Fleet 和现有 AST 词汇；不用中文或旧包补充工程来源。幂等键绑定原文与受控输入，沿用原有有限长度键哈希，不伪造 packageSha256。
+
+79 项生产者/契约/服务测试通过，包括实际 begin 构建 v3、无旧包读取、完整 coverage 和真实来源引用；前后端类型检查通过。任务版本恢复识别 v3，来源模式不一致直接拒绝。新生产方法尚未在普通新请求入口启用：下一步仍须实现 v3 native 条件发现及 Host 候选引句/作用范围、结果投影与恢复校验，再整体切换。未发布、未调用模型，不将任务构建测试当作适用性求值完成证明。

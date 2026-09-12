@@ -1,3 +1,4 @@
+import { originalFixture } from './document-parsing/fixtures/document-original.fixture';
 import { createHash } from 'node:crypto';
 
 import type {
@@ -37,6 +38,27 @@ import {
 } from '../../server/modules/canonical-host/configuration-evidence/configuration-evidence-reevaluation.state';
 
 describe('CanonicalHostOpenClawApplicabilityService', () => {
+  it('builds v3 from exact original units and coverage without a synthetic package or pre-asserted conditions', async () => {
+    const h=applicabilityHarness(); const original=originalFixture();
+    const current=h.readCurrent(); original.binding={...original.binding,documentVersionId:current.source.documentVersionId,
+      sourceArtifactId:current.source.sourceArtifactId,sourceSha256:current.source.sourceFileSha256,sourceByteLength:current.source.sourceByteLength};
+    const source={binding:original.binding,artifact:{ref:'document-original://DV-1/PR-TEST-2',sha256:'c'.repeat(64),byteLength:100,mediaType:'application/json' as const}};
+    h.mutateCurrent(item => {
+      item.package=null; item.translation=null;
+      Object.assign(item.applicabilityInput!,{schemaVersion:'wiselink.3_1.applicability_input_projection.v2',
+        sourcePackageId:null,sourcePackageContentHash:null,sourcePackageArtifactSha256:null,
+        targetBindingHash:source.artifact.sha256,originalSource:source});
+    });
+    h.applicabilityInputs.readOriginalTaskSource.mockResolvedValue(original);
+    const began=await h.begin();
+    expect(began.modelInput).toMatchObject({schemaVersion:'wiselink.3_1.applicability_task.v3',sourcePackage:null,
+      sourceExpressions:[],bilingualBinding:null,bilingualSourceUnits:[],originalInput:{...source,coverage:original.coverage,source:original.source}});
+    expect(began.task.sourceRefs).toEqual([{ref:source.artifact.ref,sha256:source.artifact.sha256}]);
+    expect((began.modelInput.sourceContext as unknown[]).length).toBe(original.source.units.length);
+    expect(h.artifactStore.readActualBytes).not.toHaveBeenCalled();
+    expect(h.applicabilityInputs.readOriginalTaskSource).toHaveBeenCalledWith(expect.objectContaining({package:null}),'tenant-1',source);
+  });
+
   it('builds and commits v2 from verified English without waiting for Chinese translation', async () => {
     const previous = process.env.WL_JOBAID_PROBLEM_V2_ENABLED;
     process.env.WL_JOBAID_PROBLEM_V2_ENABLED = '1';
@@ -1977,6 +1999,7 @@ function applicabilityHarness(
     })),
   };
   const applicabilityInputs = {
+    readOriginalTaskSource:jest.fn(async () => originalFixture()),
     produceAuthorized: jest.fn(async () => {
       const reevaluation = activeConfigurationEvidenceReevaluation(current);
       if (reevaluation && !reevaluation.stagedBundle.applicabilityInput) {

@@ -1,3 +1,5 @@
+import type { CanonicalApplicabilityInputProjection } from '@shared/api.interface';
+import type { DocumentOriginalResult } from '@shared/document-original.interface';
 import type { ApplicabilityAstNode } from '../assessment-workbench/applicability-fleet/applicabilityKleeneEngine';
 import {
   getRegistry,
@@ -12,6 +14,7 @@ export const APPLICABILITY_TASK_SCHEMA_VERSION =
   'wiselink.3_1.applicability_task.v1' as const;
 export const APPLICABILITY_TASK_V2_SCHEMA_VERSION =
   'wiselink.3_1.applicability_task.v2' as const;
+export const APPLICABILITY_TASK_V3_SCHEMA_VERSION = 'wiselink.3_1.applicability_task.v3' as const;
 export const APPLICABILITY_CANDIDATE_SCHEMA_VERSION =
   'wiselink.3_1.applicability_candidate.v1' as const;
 export const APPLICABILITY_ARTIFACT_SCHEMA_VERSION =
@@ -58,7 +61,8 @@ export interface ApplicabilityTaskBilingualSourceUnit {
 export interface ApplicabilityTaskContract {
   schemaVersion:
     | typeof APPLICABILITY_TASK_SCHEMA_VERSION
-    | typeof APPLICABILITY_TASK_V2_SCHEMA_VERSION;
+    | typeof APPLICABILITY_TASK_V2_SCHEMA_VERSION
+    | typeof APPLICABILITY_TASK_V3_SCHEMA_VERSION;
   operation: 'EXTRACT_APPLICABILITY';
   applicabilityContextRef: string;
   inputRevision: number;
@@ -69,7 +73,10 @@ export interface ApplicabilityTaskContract {
     applicabilityRetryNo: number;
   } | null;
   documentVersionRef: string;
-  sourcePackage: { packageId: string; contentHash: string };
+  sourcePackage: { packageId: string; contentHash: string } | null;
+  /** v3 carries original units as a discovery catalog, not pre-asserted conditions. */
+  originalInput?: NonNullable<CanonicalApplicabilityInputProjection['originalSource']> &
+    Pick<DocumentOriginalResult, 'coverage' | 'source' | 'locations'>;
   bilingualBinding: {
     actionAttemptId: string;
     artifactSha256: string;
@@ -490,7 +497,7 @@ function parseScalarAssertValue(
 
 function parseSourcePackage(
   value: unknown,
-): ApplicabilityTaskContract['sourcePackage'] {
+): NonNullable<ApplicabilityTaskContract['sourcePackage']> {
   const item = record(value, 'APPLICABILITY_SOURCE_PACKAGE_INVALID');
   exactKeys(item, ['packageId', 'contentHash']);
   return {

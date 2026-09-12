@@ -264,6 +264,14 @@ export class CanonicalHostApplicabilityInputProducer {
     return { workItem, applicabilityInput: derived };
   }
 
+  async readOriginalTaskSource(workItem: CanonicalWorkItemProjection, tenantId: string,
+    expected: NonNullable<CanonicalApplicabilityInputProjection['originalSource']>) {
+    const source = await this.readSourceBinding(workItem, tenantId, true);
+    if (!source.original || canonicalSha256(source.originalSource) !== canonicalSha256(expected))
+      throw new Error('APPLICABILITY_ORIGINAL_BINDING_CHANGED');
+    return source.original;
+  }
+
   private async readSourceBinding(workItem: CanonicalWorkItemProjection, tenantId: string,
     useOriginal = selectedApplicabilityInput(workItem)?.schemaVersion === 'wiselink.3_1.applicability_input_projection.v2') {
     if (useOriginal) {
@@ -285,7 +293,7 @@ export class CanonicalHostApplicabilityInputProducer {
       const originalSource: NonNullable<CanonicalApplicabilityInputProjection['originalSource']> = {binding,
         artifact:{ref:`document-original://${encodeURIComponent(binding.documentVersionId)}/${encodeURIComponent(binding.parseRunId)}`,
           sha256:artifact.sha256,byteLength:artifact.byteLength,mediaType:'application/json'}};
-      return {targetBindingHash:artifact.sha256,originalSource};
+      return {targetBindingHash:artifact.sha256,originalSource,original:loaded.original};
     }
     const sourceUnits = await this.reader.readAllSourceUnits({
       artifact: workItem.package!.artifact,
@@ -300,7 +308,7 @@ export class CanonicalHostApplicabilityInputProducer {
     const bytes = await this.artifactStore.readActualBytes(
       workItem.package!.artifact,
     );
-    return {...readFrozenApplicabilitySourceBinding({bytes,workItem,sourceUnits}), originalSource:undefined};
+    return {...readFrozenApplicabilitySourceBinding({bytes,workItem,sourceUnits}), originalSource:undefined,original:undefined};
   }
 
   private async requiredParsedWorkItem(

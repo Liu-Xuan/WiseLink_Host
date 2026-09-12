@@ -53,6 +53,7 @@ import {
   APPLICABILITY_ARTIFACT_V2_SCHEMA_VERSION,
   APPLICABILITY_TASK_SCHEMA_VERSION,
   APPLICABILITY_TASK_V2_SCHEMA_VERSION,
+  APPLICABILITY_TASK_V3_SCHEMA_VERSION,
   applicabilityRuntimePolicy,
   applicabilityAstVocabulary,
   parseApplicabilityCandidate,
@@ -222,6 +223,7 @@ export class CanonicalHostOpenClawApplicabilityService {
       workItem,
       applicabilityInput,
       frozenVersion,
+      scope.tenantId,
     );
     const claim = await this.attempts.reserveAndClaim({
       workItemId: workItem.workItemId,
@@ -432,6 +434,7 @@ export class CanonicalHostOpenClawApplicabilityService {
       workItem,
       applicabilityInput,
       applicabilityTaskVersion(task),
+      row.tenantId,
     );
     assertTaskBuildMatches(rebuilt, task);
     if (result.status === 'WAITING_INPUT') {
@@ -1272,28 +1275,29 @@ export class CanonicalHostOpenClawApplicabilityService {
   private async buildTaskContract(
     workItem: CanonicalWorkItemProjection,
     applicabilityInput: CanonicalApplicabilityInputProjection,
-    schemaVersion: ApplicabilityTaskContract['schemaVersion'] = process.env
+    schemaVersion: ApplicabilityTaskContract['schemaVersion'] = applicabilityInput.originalSource
+      ? APPLICABILITY_TASK_V3_SCHEMA_VERSION : process.env
       .WL_JOBAID_PROBLEM_V2_ENABLED === '1'
       ? APPLICABILITY_TASK_V2_SCHEMA_VERSION
       : APPLICABILITY_TASK_SCHEMA_VERSION,
+    originalTenantId?: string,
   ): Promise<ApplicabilityTaskBuild> {
-    const sourceUnits = await this.reader.readAllSourceUnits({
-      artifact: workItem.package!.artifact,
-      packageId: workItem.package!.packageId,
-    });
-    if (
-      sourceUnits.length !== workItem.package!.contentUnitCount ||
-      sourceUnits.length === 0
-    ) {
+    const originalMode = schemaVersion === APPLICABILITY_TASK_V3_SCHEMA_VERSION;
+    if (originalMode !== !!applicabilityInput.originalSource)
+      throw new Error('APPLICABILITY_TASK_SOURCE_MODE_MISMATCH');
+    if (originalMode && !originalTenantId) throw new Error('APPLICABILITY_ORIGINAL_TENANT_REQUIRED');
+    const original = originalMode ? await this.applicabilityInputs.readOriginalTaskSource(workItem,
+      originalTenantId!, applicabilityInput.originalSource!) : null;
+    const sourceUnits: UnifiedReaderQueryResult[] = original ? original.source.units.map(unit => ({
+      unitId:unit.unitId,kind:unit.kind,text:JSON.stringify(unit.payload),sourceRefIds:[...unit.sourceRefIds],
+    })) : await this.reader.readAllSourceUnits({artifact:workItem.package!.artifact,packageId:workItem.package!.packageId});
+    if (!sourceUnits.length || (!original && sourceUnits.length !== workItem.package!.contentUnitCount))
       throw new Error('APPLICABILITY_SOURCE_UNIT_COUNT_MISMATCH');
-    }
-    const packageBytes = await this.artifactStore.readActualBytes(
-      workItem.package!.artifact,
-    );
-    const sourceBinding = readFrozenApplicabilitySourceBinding({
-      bytes: packageBytes,
-      workItem,
-      sourceUnits,
+    const sourceBinding = original ? {
+      targetBindingHash:applicabilityInput.originalSource!.artifact.sha256,
+      sourceExpressions:[],deterministicFragments:[],
+    } : readFrozenApplicabilitySourceBinding({
+      bytes:await this.artifactStore.readActualBytes(workItem.package!.artifact),workItem,sourceUnits,
     });
     if (
       sourceBinding.targetBindingHash !== applicabilityInput.targetBindingHash
@@ -1302,7 +1306,7 @@ export class CanonicalHostOpenClawApplicabilityService {
     }
     const sourceExpressions = sourceBinding.sourceExpressions;
 
-    const englishInput = schemaVersion === APPLICABILITY_TASK_V2_SCHEMA_VERSION;
+    const englishInput = schemaVersion !== APPLICABILITY_TASK_SCHEMA_VERSION;
     // A completed Chinese translation is not a prerequisite for extracting English effectivity.
     // v2 intentionally leaves legacy bilingual units empty; semantic blocks never masquerade as units.
     const bilingual = englishInput
@@ -1312,7 +1316,7 @@ export class CanonicalHostOpenClawApplicabilityService {
       throw new Error('CURRENT_BILINGUAL_TRANSLATION_REQUIRED');
     }
     const relevantRefIds = new Set(
-      sourceExpressions.flatMap((expression) => expression.sourceRefIds),
+      original ? sourceUnits.flatMap(unit => unit.sourceRefIds) : sourceExpressions.flatMap((expression) => expression.sourceRefIds),
     );
     const bilingualUnits = selectBilingualUnits(
       bilingual?.units ?? [],
@@ -1423,10 +1427,12 @@ export class CanonicalHostOpenClawApplicabilityService {
           }
         : null,
       documentVersionRef: workItem.source.documentVersionId,
-      sourcePackage: {
+      sourcePackage: original ? null : {
         packageId: workItem.package!.packageId,
         contentHash: workItem.package!.contentHash,
       },
+      ...(original ? {originalInput:{...structuredClone(applicabilityInput.originalSource!),
+        source:structuredClone(original.source),coverage:structuredClone(original.coverage),locations:structuredClone(original.locations)}} : {}),
       bilingualBinding: bilingual
         ? {
             actionAttemptId: workItem.translation!.actionAttemptId,
@@ -1495,8 +1501,8 @@ export class CanonicalHostOpenClawApplicabilityService {
     };
     const sourceRefs = [
       {
-        ref: workItem.package!.artifact.ref,
-        sha256: workItem.package!.artifact.sha256,
+        ref: original ? applicabilityInput.originalSource!.artifact.ref : workItem.package!.artifact.ref,
+        sha256: original ? applicabilityInput.originalSource!.artifact.sha256 : workItem.package!.artifact.sha256,
       },
       ...(bilingual
         ? [
@@ -2122,7 +2128,8 @@ function applicabilityTaskVersion(
   const schema = task.modelInput.schemaVersion;
   if (
     schema !== APPLICABILITY_TASK_SCHEMA_VERSION &&
-    schema !== APPLICABILITY_TASK_V2_SCHEMA_VERSION
+    schema !== APPLICABILITY_TASK_V2_SCHEMA_VERSION &&
+    schema !== APPLICABILITY_TASK_V3_SCHEMA_VERSION
   )
     throw conflict('APPLICABILITY_TASK_VERSION_UNSUPPORTED');
   return schema;
@@ -2144,6 +2151,7 @@ function requiredApplicabilityTask(
     ![
       APPLICABILITY_TASK_SCHEMA_VERSION,
       APPLICABILITY_TASK_V2_SCHEMA_VERSION,
+      APPLICABILITY_TASK_V3_SCHEMA_VERSION,
     ].includes(
       task.modelInput
         .schemaVersion as ApplicabilityTaskContract['schemaVersion'],
@@ -2328,6 +2336,11 @@ function applicabilityIdempotencyKey(input: {
   applicabilityInput: CanonicalApplicabilityInputProjection;
   requestId: string;
 }): string {
+  if (input.applicabilityInput.originalSource) return `openclaw-v3:applicability:${canonicalSha256({
+    workItemId:input.workItem.workItemId,revision:input.workItem.revision,
+    originalSource:input.applicabilityInput.originalSource,
+    applicabilityBindingRevision:input.applicabilityInput.bindingRevision,requestId:input.requestId,
+  })}`;
   // action_attempt.idempotency_key is varchar(255); hashing this exact,
   // versioned binding prevents valid opaque refs from overflowing that DB
   // type while preserving deterministic replay identity.
@@ -2429,8 +2442,8 @@ function assertApplicabilityNotCurrent(
     current?.status === 'CANDIDATE_ONLY' &&
     current.currentness === 'CURRENT' &&
     current.documentVersionId === workItem.source.documentVersionId &&
-    current.sourcePackageId === workItem.package!.packageId &&
-    current.sourcePackageContentHash === workItem.package!.contentHash &&
+    current.sourcePackageId === input.sourcePackageId &&
+    current.sourcePackageContentHash === input.sourcePackageContentHash &&
     applicabilityProjectionSourceMatches(current, workItem) &&
     current.applicabilityContextRef === input.applicabilityContextRef &&
     current.applicabilityBindingRevision === input.bindingRevision &&
