@@ -34,6 +34,10 @@ Worker 现有 `tasks/:taskId` 与 `tasks/:taskId/result` 接口已接入 Host �
 
 **W1 完整工作依据。** 共用 collectEvidenceUses 按类型收集主张、风险、措施、分类、方法/要求、依赖和前提引用，保留位置与作用。阅读不等于分析；已读但未用于工作的材料记录 `READ_ONLY`，只比较本轮范围且确认没有实质变化的材料记录 `NO_MATERIAL_CHANGE`，部分核查仍保留未覆盖范围。保存事务同时写完整工作、依据使用、输入处置、影响范围和 CAS；当已有工作完全没有实质变化时，只保存本轮 coverage，不生成新的 substantive result 或 problemWork；请求结果不确定时按原 request 回读。
 
+**新原文适用性接线（2026-09-13 实码核对后的实施边界）。** 当前 `CanonicalHostApplicabilityInputProducer` 的受控目标选择、提交前复核，以及 `CanonicalHostOpenClawApplicabilityService.buildTaskContract` 都读取 frozen.2；既有输入/候选投影及任务、结果声明也强制包含 package 身份。因此不能只把正文替换为 parseRun，或用 parseRun 冒充 packageId。后续同批修改这两个真实消费者和其来源类型：新任务显式绑定 DocumentOriginalBinding 与已验证原文产物，旧已发任务继续按其确切来源恢复；新无 package 文档不构造 frozen 兼容包。
+
+条件提取使用原文及真实单元/定位目录，不能把所有段落预标为 source_asserted 条件，也不能把机型提及直接映射为全篇适用性。沿现有 EXTRACT_APPLICABILITY 模型调用返回候选条件、原文引句/SourceRef 与候选作用范围；Host 按已读取的源目录核实引用、解析目标关联，并用受控目标/asOf/Fleet 与现有 Kleene 引擎求值。范围不明确、决定性未读或条件无法可靠映射时保持 UNKNOWN/WAITING_INPUT；普通无影响内容继续可用于 JobAid。提交前同时复核原文版本、目标选择和原有 CAS，不能因重建输入而静默替换在途任务。后继必须用已发布原文版本形成的持久幂等请求，不用浏览器轮询补造请求，不重放失败历史。此段是下一实现约束，尚未证明上述迁移已完成；当前已完成的仅是 WorkItem 原文变化状态识别。
+
 **W2 统一上下文和 Reader。** WORK_ITEM 与 ENGINEERING_MATTER 共用来源、target/asOf、适用性、方法版本、变化和精确旧工作装配，Overall 读取指定修订。事项新任务使用当前登记方法包，恢复/Review 从精确 `problemWork.methodBinding` 取快照，不以进程默认常量覆盖历史版本。Reader 保留段落、警告、列表、表格、脚注、跨页条件、图像状态和原生记录 selector；未读、未找到、无权限、未接通和部分结果分开呈现。
 
 **W3 授权检索投影。** 复用 EngineeringIssueSearchService 精确读取和 ACL，建立可重建的语义段、原生记录和完整问题投影及 GIN 索引，保留 tenant、owner、精确 revision、locator、上下文、原文和索引版本。中文使用 Intl.Segmenter 词级分词和 PostgreSQL simple 配置；文号、件号、软件版本走精确匹配。查询参数化，结果带精确引用、命中理由、根来源、hasMore 和限制；全文命中不等于权限或适用性。

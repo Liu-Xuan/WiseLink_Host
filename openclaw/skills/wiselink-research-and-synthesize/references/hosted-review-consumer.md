@@ -118,3 +118,15 @@ Matter 使用相同官方 Hosted profile 和 JobAid 模型循环，按物理页�
 原生消费者的错误摘要保留实际 Host 工具名及可识别的固定错误码。MCP 把 `Error.message` 转成文本时，已知的服务范围不可用文案映射为 `CANONICAL_SERVICE_SCOPE_UNAVAILABLE`；其他任意错误正文不进入日志。环境变量读回只证明配置已保存，需以运行实例的受限调用结果确认生效。
 
 JobAid 的失败输出形态只记录固定网关分类（例如 `INCOMPLETE_TERMINAL_RESPONSE`），不保存上游错误正文或私有推理。该分类只用于诊断，不赋予重试权限、不证明上游 HTTP body 为空；原生 SSE 文本计数也不能代替完整事件形态。已保存候选、未知提交与已终止请求继续使用原恢复规则。
+
+## c85 独立文档消费与工程原文
+
+正常文档受理已经登记 parseRun 后，既有确定性消费者可使用唯一文档主体：
+
+```text
+node <installed-skill-path>/scripts/consume-hosted-work-item.mjs --document-version-id <authorized-document-version-id>
+```
+
+该参数与 WorkItem/Matter 主体互斥。Host 必须已配置获准文档、真实 actor/tenant 和官方服务主体；不能造 WorkItem 或借用其他材料授权。消费者先 STATUS，再按 Host 保存的确切 parseRun 执行有界 STEP；发布后原文 INDEX 和独立中文消费分别保存结果。中文或索引一支失败不抹去另一支已保存成果。关闭浏览器不负责下一步唤醒，运行必须来自真实配置的云端消费者。
+
+工程任务读取 Host 绑定的原文 parseRun/SourceRef，保留 coverage 与未读范围；文件中文不进入工程证据。READ_ORIGINAL 的实际读回才建立本轮读取回执，旧引用不能证明本轮比较。原文事件与到期复看由 Host 的持久条件和任务有效性决定，不由消费者制造时间条件、清理历史请求或反复重启失败任务。

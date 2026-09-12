@@ -386,7 +386,7 @@ test(
           original.source.units=[original.source.units[0]]; original.source.units[0].payload={text:document.excerpt};
           await sql`INSERT INTO dm_document_version(document_version_id) VALUES ('dv-job')`;
           await sql`INSERT INTO dm_document_parse_run(parse_run_id,document_version_id,tenant_id,actor_user_id,request_id,parse_revision,expected_published_revision,status,bucket_id,source_binding,manifest_artifact,deadline_at,completed_at)
-            VALUES ('PR-TEST-2','dv-job',${scope.tenantId},${scope.actorUserId},'original-fixture',2,1,'PUBLISHED','fixture',${JSON.stringify(original.binding)}::jsonb,
+            VALUES ('PR-TEST-2','dv-job',${scope.tenantId},${scope.actorUserId},'original-fixture',2,1,'PUBLISHED','fixture',${JSON.stringify({documentVersionId:'dv-job',documentId:'doc-job',familyId:'family-job',sourceArtifactId:original.binding.sourceArtifactId,pdfSha256:original.binding.sourceSha256,byteLength:original.binding.sourceByteLength})}::jsonb,
               ${JSON.stringify({role:'MANIFEST',readback:'VERIFIED',relativePath:'original/manifest.json',sha256:'b'.repeat(64),byteLength:100})}::jsonb,now()+interval '1 minute',now())`;
           let sourceReads = 0;
           const service = new CanonicalJobAidProblemService(

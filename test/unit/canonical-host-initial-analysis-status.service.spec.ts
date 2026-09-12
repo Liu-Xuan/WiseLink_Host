@@ -1,3 +1,4 @@
+import { originalFixture } from './document-parsing/fixtures/document-original.fixture';
 import type {
   CanonicalApplicabilityCandidateProjection,
   CanonicalApplicabilityInputProjection,
@@ -33,6 +34,36 @@ const HASH = `sha256:${'a'.repeat(64)}`;
 const OTHER_HASH = `sha256:${'b'.repeat(64)}`;
 
 describe('CanonicalHost initial-analysis status projection', () => {
+  it.each([false,true])('compares exact authorized original revisions; content change=%s', async (contentChanged) => {
+    const savedMode=process.env.WL_JOBAID_PROBLEM_V2_ENABLED;
+    process.env.WL_JOBAID_PROBLEM_V2_ENABLED='1';
+    try {
+      const source={...parsedWorkItem(),integratedAssessment:integratedAssessment()};
+      const previous=originalFixture(), current=originalFixture();
+      current.binding.parseRunId='PR-TEST-3'; current.binding.parseRevision=3;
+      if (contentChanged) current.source.units[0].payload={text:'Do not use method M under any condition.'};
+      const results=[[{id:'PR-TEST-3'}],[{parseRunId:'PR-TEST-2'}],[{actor:'owner-test'}]];
+      const limit=jest.fn().mockImplementation(async () => results.shift());
+      const chain={where:jest.fn(),orderBy:jest.fn(),limit};
+      chain.where.mockReturnValue(chain); chain.orderBy.mockReturnValue(chain);
+      const withActorScope=jest.fn(async (_actor,operation) => operation());
+      const readDocumentOriginal=jest.fn(async (_dv,run) => ({original:run==='PR-TEST-2'?previous:current}));
+      const service=new CanonicalHostInitialAnalysisStatusService({
+        execute:async () => [{service:false}],select:() => ({from:() => chain}),
+        selectDistinctOn:() => ({from:() => ({where:() => ({orderBy:async () => []})})}),
+      } as never,{} as never,{withActorScope} as never,{readDocumentOriginal} as never);
+      const value=await service.project({workItem:source,tenantId:'tenant-test'});
+      expect(readDocumentOriginal.mock.calls.map(call => call[1])).toEqual(['PR-TEST-2','PR-TEST-3']);
+      expect(withActorScope).toHaveBeenCalledWith('owner-test',expect.any(Function));
+      expect(value.stages.jobAid.status).toBe(contentChanged?'CONFLICT':'SUCCEEDED');
+      expect(value.stages.overall.status).toBe(contentChanged?'CONFLICT':'SUCCEEDED');
+      expect(results).toEqual([]);
+    } finally {
+      if (savedMode===undefined) delete process.env.WL_JOBAID_PROBLEM_V2_ENABLED;
+      else process.env.WL_JOBAID_PROBLEM_V2_ENABLED=savedMode;
+    }
+  });
+
   it('reconciles an orphaned RUNNING deadline before projecting progress without generating a successor', async () => {
     const workItem = parsedWorkItem();
     const row = { ...attempt('OPENCLAW_DYNAMIC_EVALUATION', 'RUNNING'),
@@ -688,6 +719,18 @@ describe('CanonicalHost initial-analysis status projection', () => {
         overall: { status: 'SUCCEEDED' },
       },
     });
+    const changed = projectCanonicalHostInitialAnalysisStatus(complete, [], {
+      englishAssessmentEnabled: true, originalPublished: true, originalImpactPending: true,
+    });
+    expect(changed.status).not.toBe('SUCCEEDED');
+    expect(changed.nextOperation).toBeNull();
+    for (const key of ['applicability','jobAid','overall'] as const) {
+      expect(changed.stages[key]).toMatchObject({status:'CONFLICT',terminalCode:'DOCUMENT_ORIGINAL_IMPACT_REVIEW_REQUIRED'});
+    }
+    expect(changed.stages.translation.status).toBe('SUCCEEDED');
+    expect(projectCanonicalHostInitialAnalysisStatus(complete, [], {
+      englishAssessmentEnabled:true,originalPublished:true,originalImpactPending:false,
+    }).status).toBe('SUCCEEDED');
     const originalOnly = { ...complete, translation: undefined, applicability: undefined, applicabilityInput: undefined };
     for (const translations of [[], [attempt('OPENCLAW_TRANSLATE','FAILED')]]) {
       const status = projectCanonicalHostInitialAnalysisStatus(originalOnly,translations,{englishAssessmentEnabled:true});
