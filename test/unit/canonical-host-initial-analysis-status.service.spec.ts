@@ -34,15 +34,26 @@ const HASH = `sha256:${'a'.repeat(64)}`;
 const OTHER_HASH = `sha256:${'b'.repeat(64)}`;
 
 describe('CanonicalHost initial-analysis status projection', () => {
-  it.each([false,true])('compares exact authorized original revisions; content change=%s', async (contentChanged) => {
+  it.each([
+    {contentChanged:false, jobAidRun:'PR-TEST-2', overallRun:'PR-TEST-2', jobAid:'SUCCEEDED', overall:'SUCCEEDED'},
+    {contentChanged:true, jobAidRun:'PR-TEST-2', overallRun:'PR-TEST-2', jobAid:'CONFLICT', overall:'CONFLICT'},
+    {contentChanged:true, jobAidRun:'PR-TEST-3', overallRun:'PR-TEST-2', jobAid:'SUCCEEDED', overall:'CONFLICT'},
+    {contentChanged:true, jobAidRun:'PR-TEST-2', overallRun:'PR-TEST-3', jobAid:'CONFLICT', overall:'CONFLICT'},
+    {contentChanged:true, jobAidRun:'PR-TEST-3', overallRun:'PR-TEST-3', jobAid:'SUCCEEDED', overall:'SUCCEEDED'},
+    {contentChanged:true, jobAidRun:null, overallRun:'PR-TEST-3', jobAid:'CONFLICT', overall:'CONFLICT'},
+  ])('keeps each saved stage bound to its own original: %j', async (example) => {
     const savedMode=process.env.WL_JOBAID_PROBLEM_V2_ENABLED;
     process.env.WL_JOBAID_PROBLEM_V2_ENABLED='1';
     try {
       const source={...parsedWorkItem(),integratedAssessment:integratedAssessment()};
       const previous=originalFixture(), current=originalFixture();
       current.binding.parseRunId='PR-TEST-3'; current.binding.parseRevision=3;
-      if (contentChanged) current.source.units[0].payload={text:'Do not use method M under any condition.'};
-      const results=[[{id:'PR-TEST-3'}],[{parseRunId:'PR-TEST-2'}],[{actor:'owner-test'}]];
+      if (example.contentChanged) current.source.units[0].payload={text:'Do not use method M under any condition.'};
+      const needsReader=example.jobAidRun==='PR-TEST-2' || example.overallRun==='PR-TEST-2';
+      const results: unknown[][]=[[{id:'PR-TEST-3'}], [
+        {attemptId:'attempt-job-aid',parseRunId:example.jobAidRun},
+        {attemptId:'attempt-overall',parseRunId:example.overallRun},
+      ], ...(needsReader ? [[{actor:'owner-test'}]] : [])];
       const limit=jest.fn().mockImplementation(async () => results.shift());
       const chain={where:jest.fn(),orderBy:jest.fn(),limit};
       chain.where.mockReturnValue(chain); chain.orderBy.mockReturnValue(chain);
@@ -53,10 +64,11 @@ describe('CanonicalHost initial-analysis status projection', () => {
         selectDistinctOn:() => ({from:() => ({where:() => ({orderBy:async () => []})})}),
       } as never,{} as never,{withActorScope} as never,{readDocumentOriginal} as never);
       const value=await service.project({workItem:source,tenantId:'tenant-test'});
-      expect(readDocumentOriginal.mock.calls.map(call => call[1])).toEqual(['PR-TEST-2','PR-TEST-3']);
-      expect(withActorScope).toHaveBeenCalledWith('owner-test',expect.any(Function));
-      expect(value.stages.jobAid.status).toBe(contentChanged?'CONFLICT':'SUCCEEDED');
-      expect(value.stages.overall.status).toBe(contentChanged?'CONFLICT':'SUCCEEDED');
+      // Distinct old revisions are read once, regardless of the stage count.
+      expect(readDocumentOriginal.mock.calls.map(call => call[1])).toEqual(needsReader ? ['PR-TEST-3','PR-TEST-2'] : []);
+      if (needsReader) expect(withActorScope).toHaveBeenCalledWith('owner-test',expect.any(Function));
+      expect(value.stages.jobAid.status).toBe(example.jobAid);
+      expect(value.stages.overall.status).toBe(example.overall);
       expect(results).toEqual([]);
     } finally {
       if (savedMode===undefined) delete process.env.WL_JOBAID_PROBLEM_V2_ENABLED;

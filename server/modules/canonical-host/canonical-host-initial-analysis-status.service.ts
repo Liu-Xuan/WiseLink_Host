@@ -45,6 +45,9 @@ const INITIAL_ANALYSIS_ACTION_TYPES = [
   'OPENCLAW_OVERALL_SYNTHESIS',
 ] as const;
 
+const ORIGINAL_ENGINEERING_STAGES = ['applicability', 'jobAid', 'overall'] as const;
+type OriginalEngineeringStage = (typeof ORIGINAL_ENGINEERING_STAGES)[number];
+
 type InitialAnalysisActionType = (typeof INITIAL_ANALYSIS_ACTION_TYPES)[number];
 
 export interface CanonicalInitialAnalysisAttemptObservation {
@@ -147,26 +150,49 @@ export class CanonicalHostInitialAnalysisStatusService {
       row.errorCode = current.errorCode;
       row.cancelReason = current.cancelReason;
     }
-    let originalImpactPending = false;
-    const base = input.workItem.integratedAssessment?.baseRules;
-    if (published?.[0] && base) {
-      const [basis] = await this.db.select({
+    const originalImpactStages: Partial<Record<OriginalEngineeringStage, boolean>> = {};
+    const execution = activeConfigurationEvidenceReevaluation(input.workItem)
+      ? configurationEvidenceShadow(input.workItem) : input.workItem;
+    const savedAttempts = {
+      applicability: execution.applicability?.actionAttemptId,
+      jobAid: execution.integratedAssessment?.baseRules.actionAttemptId,
+      overall: execution.integratedAssessment?.overallSynthesis?.actionAttemptId,
+    };
+    const savedIds = Object.values(savedAttempts).filter((id): id is string => !!id);
+    if (published?.[0] && savedIds.length) {
+      const bases = await this.db.select({
+        attemptId: actionAttempt.attemptId,
         parseRunId: sql<string | null>`${actionAttempt.taskEnvelopeJson} #>> '{modelInput,modelInput,documentOverview,original,binding,parseRunId}'`,
-      }).from(actionAttempt).where(and(eq(actionAttempt.tenantId,input.tenantId),
-        eq(actionAttempt.workItemId,input.workItem.workItemId),eq(actionAttempt.attemptId,base.actionAttemptId))).limit(1);
-      if (!basis?.parseRunId) originalImpactPending = true;
-      else if (basis.parseRunId !== published[0].id) {
+      }).from(actionAttempt).where(and(eq(actionAttempt.tenantId, input.tenantId),
+        eq(actionAttempt.workItemId, input.workItem.workItemId),
+        eq(actionAttempt.documentVersionId, input.workItem.source.documentVersionId),
+        inArray(actionAttempt.attemptId, savedIds))).limit(savedIds.length);
+      const changedByRun = new Map<string, boolean>([[published[0].id, false]]);
+      const differentRuns = [...new Set(bases.map(basis => basis.parseRunId)
+        .filter((id): id is string => !!id && id !== published[0].id))];
+      if (differentRuns.length) {
         if (!this.originalWork || !this.originalReader) throw new Error('ORIGINAL_STATUS_RUNTIME_UNAVAILABLE');
-        const [owner] = await this.db.select({actor:workItem.requestedByUserId}).from(workItem)
-          .where(and(eq(workItem.workItemId,input.workItem.workItemId),eq(workItem.tenantId,input.tenantId))).limit(1);
+        const [owner] = await this.db.select({actor: workItem.requestedByUserId}).from(workItem)
+          .where(and(eq(workItem.workItemId, input.workItem.workItemId), eq(workItem.tenantId, input.tenantId))).limit(1);
         if (!owner?.actor) throw new Error('JOBAID_SOURCE_AUTHORIZATION_CHANGED');
-        const scope={tenantId:input.tenantId,actorUserId:owner.actor,roles:[] as string[]};
-        originalImpactPending=await this.originalWork.withActorScope(owner.actor,async () => {
-          const previous=await this.originalReader!.readDocumentOriginal(input.workItem.source.documentVersionId,basis.parseRunId!,scope);
-          const current=await this.originalReader!.readDocumentOriginal(input.workItem.source.documentVersionId,published[0].id,scope);
-          return compareDocumentOriginal(previous.original,current.original).kind !== 'LOCATOR_ONLY';
+        const scope = {tenantId: input.tenantId, actorUserId: owner.actor, roles: [] as string[]};
+        await this.originalWork.withActorScope(owner.actor, async () => {
+          const current = await this.originalReader!.readDocumentOriginal(input.workItem.source.documentVersionId, published[0].id, scope);
+          for (const runId of differentRuns) {
+            const previous = await this.originalReader!.readDocumentOriginal(input.workItem.source.documentVersionId, runId, scope);
+            changedByRun.set(runId, compareDocumentOriginal(previous.original, current.original).kind !== 'LOCATOR_ONLY');
+          }
         });
       }
+      for (const stage of ORIGINAL_ENGINEERING_STAGES) {
+        const attemptId = savedAttempts[stage];
+        if (!attemptId) continue;
+        const basis = bases.find(row => row.attemptId === attemptId);
+        originalImpactStages[stage] = !basis?.parseRunId || changedByRun.get(basis.parseRunId) !== false;
+      }
+      // Overall also depends on the retained JobAid result, even if its own
+      // task happened to read a newer original.
+      if (originalImpactStages.jobAid) originalImpactStages.overall = true;
     }
     return projectCanonicalHostInitialAnalysisStatus(
       input.workItem,
@@ -184,7 +210,7 @@ export class CanonicalHostInitialAnalysisStatusService {
       })),
       {
         originalPublished,
-        originalImpactPending,
+        originalImpactStages,
         englishAssessmentEnabled:
           process.env.WL_JOBAID_PROBLEM_V2_ENABLED === '1',
       },
@@ -345,7 +371,7 @@ export function initialAnalysisTerminalCode(row: {
 export function projectCanonicalHostInitialAnalysisStatus(
   workItem: CanonicalWorkItemProjection,
   attempts: readonly CanonicalInitialAnalysisAttemptObservation[],
-  options: { englishAssessmentEnabled?: boolean; originalPublished?: boolean; originalImpactPending?: boolean } = {},
+  options: { englishAssessmentEnabled?: boolean; originalPublished?: boolean; originalImpactPending?: boolean; originalImpactStages?: Partial<Record<OriginalEngineeringStage, boolean>> } = {},
 ): AilyInitialAnalysisStatus {
   const attemptByAction = latestAttemptsByAction(attempts);
   const parsedPackageReady = options.originalPublished ?? isParsedPackageReady(workItem);
@@ -396,11 +422,11 @@ export function projectCanonicalHostInitialAnalysisStatus(
             ),
       }
     : pendingStages();
-  if (options.originalImpactPending) {
+  if (options.originalImpactPending || options.originalImpactStages) {
     // Retain the exact historical candidate, but do not report it as assessed
     // against corrected source content. Active successors keep their own state.
-    for (const key of ['applicability','jobAid','overall'] as const) {
-      if (stages[key].status === 'SUCCEEDED') stages[key]={...stages[key],status:'CONFLICT',
+    for (const key of ORIGINAL_ENGINEERING_STAGES) {
+      if ((options.originalImpactPending || options.originalImpactStages?.[key]) && stages[key].status === 'SUCCEEDED') stages[key]={...stages[key],status:'CONFLICT',
         terminalCode:'DOCUMENT_ORIGINAL_IMPACT_REVIEW_REQUIRED'};
     }
   }

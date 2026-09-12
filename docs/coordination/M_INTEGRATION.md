@@ -289,3 +289,9 @@ Skill c85 源提交 `58653b973f43f18c0ce345239547fc2e2a9f115c` 已推送妙搭 o
 后续发布读回：Host release `7684747758318423336` finished，实际提交 `b2890cad040d8066f41c6c7ebb003b4d4423388b`，error_logs 为空。包含上述字段修复及上一节原文修订状态增量，取代上一节“尚未发布”状态；不代表已完成自动续评或 H1/H2。
 
 回归夹具进一步改为调用真实 DocumentParsingHostedService.start()，捕获 reserve 的 sourceBinding 后写入实际 PostgreSQL 已发布运行，再通过初评状态消费者验证；FileService 若被 reservation 调用则直接测试失败。测试显式使用 server tsconfig，12 项全部通过、无跳过。解析结果发布仍由夹具模拟，此项证明入口/消费者字段契约及数据库读取，不证明官方插件执行。
+
+## 各评估阶段独立原文基准（2026-09-13，本地增量）
+
+继续接线时发现仅按 baseRules 的原文基准投影所有阶段，不能独立表示旧 Overall 或旧适用性。本轮改为按当前执行投影（含活动配置重评的 shadow）各自保存的 ActionAttempt 读取精确原文绑定，查询限定 tenant、WorkItem、DocumentVersion 和保存 attempt IDs。分别比较适用性、JobAid、Overall；Overall 还继承其 JobAid 原文过时状态。缺少原文绑定不能作为已评证明，运行中后继与失败历史不自动重放。
+
+同一旧 parseRun 去重读取，新旧 run 相同无需下载原文；纯定位变化保持结果。35 项状态测试覆盖新 JobAid/旧 Overall、旧 JobAid/新 Overall、相同原文、缺少绑定及纯定位变化，12 项真实 PostgreSQL 测试、server types 通过。该检查为持久后继接入提供真实阶段状态，尚未创建自动续评请求；本节代码尚未发布。
