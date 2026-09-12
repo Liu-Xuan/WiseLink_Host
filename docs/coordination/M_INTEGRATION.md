@@ -377,3 +377,9 @@ JobAid 实际 buildInput 以正常 Reader 本次读取的确切原文 binding �
 实际检查发现 action_attempt.reserve 原先只对 openclaw-v2 键获取 WorkItem 行锁，原文适用性 openclaw-v3 和既有适用性键未进入该分支。现对 OPENCLAW_APPLICABILITY_EVALUATION 统一获取同一 WorkItem 锁，在锁内查精确幂等、重新核对 DV/revision、排除其他活动适用性任务再预留。适用性只排除同类活动任务，不新增等待翻译完成的条件；原有 openclaw-v2 JobAid/Overall 活动检查保持不变。
 
 真实 PostgreSQL/RLS 12 项测试通过，其中新增在真实 lifecycle.buildModelInput 期间改变 WI 修订后拒绝预留、同请求双并发只建一条、另一请求不越过活动适用性任务的断言；服务端类型检查通过。此变更补齐输入迁移需依赖的预留锁，尚未实现输入 CAS 的活动任务保护或切换普通 begin，不宣称整个迁移已原子化。本批未发布。
+
+## 输入迁移 CAS 与任务预留互斥（2026-09-13，入口迁移准备）
+
+输入生产者的实际 compareAndSet 已传入服务端租户作用域的 applicabilityInputGuard。MiaodaWorkItemRepository 在同一事务内锁 WorkItem、核对 tenant/DV/revision、检查 QUEUED/RUNNING/RETRY_SCHEDULED/COMMITTING 适用性任务后才更新输入投影；锁与上一节适用性预留共用。保护仅用于 syncPrimaryAttempt=false 的输入更新，不改写或取消已有任务，也不影响其他普通 CAS。
+
+真实 PostgreSQL 测试新增活动任务阻止输入 CAS 和 CAS/新任务预留双并发互斥断言，12 项通过；60 项输入生产/提交恢复测试及服务端类型检查通过。两条并发路径不可能同时基于同一修订成功。普通 begin 尚未切换：下一步在新输入生产之前读取旧任务幂等绑定，确定沿用旧版本还是迁移原文输入。本批未发布。

@@ -685,13 +685,40 @@ export class MiaodaWorkItemRepository {
     expectedRevision: number;
     next: Omit<CanonicalWorkItemProjection, 'revision'>;
     syncPrimaryAttempt?: boolean;
+    applicabilityInputGuard?: { tenantId: string };
   }): Promise<CanonicalWorkItemProjection> {
+    if (input.applicabilityInputGuard) {
+      if (!input.applicabilityInputGuard.tenantId.trim() || input.syncPrimaryAttempt !== false)
+        throw new Error('APPLICABILITY_INPUT_CAS_GUARD_INVALID');
+      const tenantId=input.applicabilityInputGuard.tenantId;
+      return this.db.transaction(async transaction => {
+        const [owner]=await transaction.select({revision:workItem.revision,documentVersionId:workItem.documentVersionId})
+          .from(workItem).where(and(eq(workItem.workItemId,input.workItemId),eq(workItem.tenantId,tenantId)))
+          .limit(1).for('update');
+        if (!owner || owner.revision!==input.expectedRevision || owner.documentVersionId!==input.next.source.documentVersionId)
+          throw new Error('WORK_ITEM_CAS_CONFLICT');
+        const [active]=await transaction.select({id:actionAttempt.attemptId}).from(actionAttempt).where(and(
+          eq(actionAttempt.tenantId,tenantId),eq(actionAttempt.workItemId,input.workItemId),
+          eq(actionAttempt.actionType,'OPENCLAW_APPLICABILITY_EVALUATION'),
+          inArray(actionAttempt.status,['QUEUED','RUNNING','RETRY_SCHEDULED','COMMITTING']),
+        )).limit(1);
+        if (active) throw new Error('APPLICABILITY_INPUT_ACTIVE_ATTEMPT');
+        return this.persistProjectionCas(input,transaction);
+      });
+    }
+    return this.persistProjectionCas(input,this.db);
+  }
+
+  private async persistProjectionCas(
+    input: Parameters<MiaodaWorkItemRepository['compareAndSet']>[0],
+    db: Pick<PostgresJsDatabase,'update'>,
+  ): Promise<CanonicalWorkItemProjection> {
     const next: CanonicalWorkItemProjection = {
       ...input.next,
       revision: input.expectedRevision + 1,
     };
     const now = new Date();
-    const updated = await this.db
+    const updated = await db
       .update(workItem)
       .set({
         projectionJson: JSON.stringify(next),

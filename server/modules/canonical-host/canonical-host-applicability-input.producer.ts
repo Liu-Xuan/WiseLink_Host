@@ -155,6 +155,7 @@ export class CanonicalHostApplicabilityInputProducer {
       workItemId: workItem.workItemId,
       expectedRevision: workItem.revision,
       syncPrimaryAttempt: false,
+      applicabilityInputGuard: {tenantId:scope.tenantId},
       next: {
         ...withoutRevision(next),
       },

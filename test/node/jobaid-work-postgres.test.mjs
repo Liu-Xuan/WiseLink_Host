@@ -654,6 +654,20 @@ test(
           assert.equal(applicabilityReservations[0].row.attemptId,applicabilityReservations[1].row.attemptId);
           await assert.rejects(hosted(()=>lifecycle.reserve({...applicabilityReservation,
             idempotencyKey:'openclaw-v3:applicability:other-request'})),/active attempt/i);
+          const guardedInputCas=()=>hosted(()=>workItems.compareAndSet({workItemId:automatic.workItemId,
+            expectedRevision:1,syncPrimaryAttempt:false,applicabilityInputGuard:{tenantId:scope.tenantId},
+            next:automatic}));
+          await assert.rejects(guardedInputCas(),/APPLICABILITY_INPUT_ACTIVE_ATTEMPT/);
+          assert.equal((await sql`SELECT revision FROM work_item WHERE work_item_id=${automatic.workItemId}`)[0].revision,1);
+          await sql`UPDATE action_attempt SET status='FAILED',terminal_reason='SYNTHETIC_FAILURE'
+            WHERE attempt_id=${applicabilityReservations[0].row.attemptId}`;
+          const inputRace=await Promise.allSettled([guardedInputCas(),hosted(()=>lifecycle.reserve({
+            ...applicabilityReservation,idempotencyKey:'openclaw-v3:applicability:cas-race',
+          }))]);
+          assert.equal(inputRace.filter(value=>value.status==='fulfilled').length,1,
+            'input CAS and a new applicability reservation cannot both win the same revision');
+          const loser=inputRace.find(value=>value.status==='rejected');
+          assert.match(String(loser.reason),/APPLICABILITY_INPUT_ACTIVE_ATTEMPT|ACTION_ATTEMPT_(?:WORK_ITEM_BINDING_CHANGED|RESERVATION_BINDING_CHANGED)/);
           const changed = structuredClone(initial);
           changed.package.artifact.sha256 = 'b'.repeat(64);
           await sql`UPDATE work_item SET projection_json = ${JSON.stringify(changed)} WHERE work_item_id = ${initial.workItemId}`;
