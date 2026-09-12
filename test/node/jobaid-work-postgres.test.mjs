@@ -374,7 +374,8 @@ test(
           const queued = initialProjection('WI-job-queued');
           queued.package = null;
           const queuedDenied = initialProjection('WI-job-queued-denied');
-          for (const candidate of [initial, denied, queued, queuedDenied]) {
+          const automatic = initialProjection('WI-job-original-successor');
+          for (const candidate of [initial, denied, queued, queuedDenied, automatic]) {
             await sql`INSERT INTO work_item (work_item_id,tenant_id,requested_by_user_id,revision,document_version_id,projection_json)
               VALUES (${candidate.workItemId},${scope.tenantId},${scope.actorUserId},1,'dv-job',${JSON.stringify(candidate)})`;
           }
@@ -616,6 +617,20 @@ test(
           } finally {
             await sql`UPDATE identity_subject_mapping SET status = 'ACTIVE' WHERE miaoda_user_id = ${scope.actorUserId}`;
           }
+          const automaticScope = {tenantId:scope.tenantId,workItemId:automatic.workItemId,
+            principalId:fence.principalId,appId:'app-test',authorizationFingerprint:'original-successor-test'};
+          const reserveOriginal = () => hosted(() => service.enqueueOriginalContinuation(automatic, automaticScope,
+            'INITIAL_PROBLEM_ASSESSMENT', {parseRunId:'PR-TEST-2',parseRevision:2}));
+          const successors = await Promise.all([reserveOriginal(),reserveOriginal()]);
+          assert.equal(successors[0].attemptRef,successors[1].attemptRef);
+          assert.equal(successors.filter(item => item.created).length,1);
+          assert.equal(successors[0].requestId,'original-2');
+          await sql`UPDATE action_attempt SET status='FAILED',terminal_reason='SYNTHETIC_FAILURE'
+            WHERE operation_ref=${successors[0].attemptRef}`;
+          const failedSuccessor = await reserveOriginal();
+          assert.equal(failedSuccessor.status,'FAILED');
+          assert.equal(failedSuccessor.created,false);
+          assert.equal((await sql`SELECT attempt_id FROM action_attempt WHERE work_item_id=${automatic.workItemId}`).length,1);
           const changed = structuredClone(initial);
           changed.package.artifact.sha256 = 'b'.repeat(64);
           await sql`UPDATE work_item SET projection_json = ${JSON.stringify(changed)} WHERE work_item_id = ${initial.workItemId}`;

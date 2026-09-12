@@ -86,7 +86,7 @@ export class JobAidWorkRepository {
   ) {
     const owned = await this.loadOwnedSourceBinding({...input,kind:'SOURCE_FILE'}, database);
     if (!owned || owned.documentVersionId !== input.documentVersionId) throw new Error('JOBAID_SOURCE_AUTHORIZATION_CHANGED');
-    const [run] = await database.select({ parseRunId: dmDocumentParseRun.parseRunId }).from(dmDocumentParseRun)
+    const [run] = await database.select({ parseRunId: dmDocumentParseRun.parseRunId, parseRevision: dmDocumentParseRun.parseRevision }).from(dmDocumentParseRun)
       .where(and(eq(dmDocumentParseRun.tenantId,input.tenantId),eq(dmDocumentParseRun.documentVersionId,input.documentVersionId),
         eq(dmDocumentParseRun.status,'PUBLISHED'))).orderBy(desc(dmDocumentParseRun.parseRevision)).limit(1);
     if (!run) throw new Error('DOCUMENT_ORIGINAL_NOT_PUBLISHED');

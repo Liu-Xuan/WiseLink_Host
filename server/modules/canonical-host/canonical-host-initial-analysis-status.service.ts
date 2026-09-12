@@ -86,6 +86,7 @@ export class CanonicalHostInitialAnalysisStatusService {
   async project(input: {
     workItem: CanonicalWorkItemProjection;
     tenantId: string;
+    expectedOriginalParseRunId?: string;
   }): Promise<AilyInitialAnalysisStatus> {
     const originalMode=process.env.WL_JOBAID_PROBLEM_V2_ENABLED === '1';
     const readPublished=() => this.db.select({id:dmDocumentParseRun.parseRunId}).from(dmDocumentParseRun)
@@ -106,6 +107,8 @@ export class CanonicalHostInitialAnalysisStatusService {
         published=await this.originalWork.withActorScope(owner.actor,readPublished);
       } else published=await readPublished();
     }
+    if (input.expectedOriginalParseRunId && published?.[0]?.id !== input.expectedOriginalParseRunId)
+      throw new Error('JOBAID_ORIGINAL_REQUEST_CHANGED');
     const originalPublished=published === null ? undefined : published.length>0;
     if (!(originalPublished ?? isParsedPackageReady(input.workItem))) {
       return projectCanonicalHostInitialAnalysisStatus(input.workItem, [],{originalPublished});
@@ -426,7 +429,9 @@ export function projectCanonicalHostInitialAnalysisStatus(
     // Retain the exact historical candidate, but do not report it as assessed
     // against corrected source content. Active successors keep their own state.
     for (const key of ORIGINAL_ENGINEERING_STAGES) {
-      if ((options.originalImpactPending || options.originalImpactStages?.[key]) && stages[key].status === 'SUCCEEDED') stages[key]={...stages[key],status:'CONFLICT',
+      if ((options.originalImpactPending || options.originalImpactStages?.[key]) &&
+        (stages[key].status === 'SUCCEEDED' || (key === 'overall' && stages[key].status === 'CONFLICT' &&
+          stages[key].terminalCode === 'OVERALL_PROJECTION_NOT_CURRENT'))) stages[key]={...stages[key],status:'CONFLICT',
         terminalCode:'DOCUMENT_ORIGINAL_IMPACT_REVIEW_REQUIRED'};
     }
   }

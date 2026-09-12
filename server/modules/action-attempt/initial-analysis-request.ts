@@ -11,7 +11,7 @@ const requestSchema = z.strictObject({
     'OPENCLAW_DYNAMIC_EVALUATION',
     'OPENCLAW_OVERALL_SYNTHESIS',
   ]),
-  requestId: z.string().uuid(),
+  requestId: z.union([z.string().uuid(), z.string().regex(/^original-[1-9][0-9]{0,15}$/)]),
   originalParseRunId: z.string().min(1).max(200).optional(),
   retranslateBlockIds: z
     .array(z.string().min(1).max(200))
@@ -30,6 +30,8 @@ export function buildInitialAnalysisRequestInput(
     ...input,
     schemaVersion: INITIAL_ANALYSIS_REQUEST_SCHEMA,
   });
+  if (request.requestId.startsWith('original-') && !request.originalParseRunId)
+    throw new Error('ACTION_ATTEMPT_INITIAL_REQUEST_ORIGINAL_SCOPE_INVALID');
   if (request.originalParseRunId && request.taskType === 'OPENCLAW_TRANSLATE')
     throw new Error('ACTION_ATTEMPT_INITIAL_REQUEST_ORIGINAL_SCOPE_INVALID');
   if (

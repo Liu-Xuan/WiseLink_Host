@@ -76,6 +76,16 @@ describe('CanonicalHost initial-analysis status projection', () => {
     }
   });
 
+  it('keeps original impact actionable after the new JobAid makes the retained Overall stale', () => {
+    const source = {...parsedWorkItem(), integratedAssessment:integratedAssessment()};
+    source.integratedAssessment.baseRules.revision += 1;
+    const value = projectCanonicalHostInitialAnalysisStatus(source, [], {
+      englishAssessmentEnabled:true,originalPublished:true,originalImpactStages:{overall:true},
+    });
+    expect(value.stages.jobAid.status).toBe('SUCCEEDED');
+    expect(value.stages.overall).toMatchObject({status:'CONFLICT',terminalCode:'DOCUMENT_ORIGINAL_IMPACT_REVIEW_REQUIRED'});
+  });
+
   it('reconciles an orphaned RUNNING deadline before projecting progress without generating a successor', async () => {
     const workItem = parsedWorkItem();
     const row = { ...attempt('OPENCLAW_DYNAMIC_EVALUATION', 'RUNNING'),
