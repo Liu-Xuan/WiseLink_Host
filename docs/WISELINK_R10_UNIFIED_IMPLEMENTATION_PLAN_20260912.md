@@ -65,25 +65,15 @@ Canonical Host 现提供受登录和对象入口保护的 `POST /api/canonical-h
 
 2026-09-12 平台只读核验：六个用户提供的链接均解析为 `folder`。当前用户身份可以列举全部六个根目录；“工程分析报告”首层已返回 200 项且 `has_more=true`，证明必须保存分页游标，“运行信息”首层返回 42 个文件，“TFU/ISI/FTD/FTAR”返回 4 个子目录，“安全生产会工程部汇报材料”返回 4 个子目录，“LE例行报告汇总-综合 安全 可靠性”返回 3 个子目录，“与空客团队月度技术例会”返回 3 个子目录、2 个文件和 1 个在线表格。以 bot 身份读取首个目录返回 Feishu `1061004 permission_denied`；因此后台监控目前不能借用用户会话，必须先给 Host 使用的应用/委托身份授予这些共享目录的读取权限，再做递归扫描和真实增量验收。该核验未修改任何文件夹或权限。
 
-扫描核心已实现为可注入的 `scanDriveFolders`：每个目录独立维护游标，按 `type:token` 去重，递归加入子目录 frontier，达到批次限制返回 continuation；单页超过条目上限时保存页内 `entryOffset`，恢复从同一页继续。缺失分页 token 或供应方重复分页 token 均记录 blocker；候选身份快照与 frontier 分开保存，只有无 continuation 且无 blocker 的完整扫描才替换快照，避免中断扫描把旧版本误判为未发现。尚未绑定平台凭据或定时任务。
-已补充版本化 `DriveFolderScanCheckpoint` 编解码，断点只保存根目录、递归 frontier、分页 token 和更新时间，不保存用户凭据或文件正文；非法/不完整状态明确拒绝。它为事务内保存和进程退出后的恢复提供了稳定数据边界；已接入 Host 持久化表和租户仓储，但应用身份凭据及原生定时触发仍未接通，因此不能宣称后台自动扫描已运行。
-扫描器现支持 `onPage` 逐页回调，并新增 `runDriveFolderScan` 协调器：按 `sourceKey` 读取上一断点、以授权 fetcher 执行有界扫描、每页保存 continuation，结束时再次保存最终 frontier。权限拒绝（403/1061004）会把 `DRIVE_AUTHORIZATION_DENIED` blocker 与原 frontier 一起写入现有 checkpoint，重启后仍可呈现并在授权恢复后重试；成功扫描会清除旧 blocker。网络或未知错误仍抛出，不能伪装为空目录。该协调器已用内存 checkpoint store 验证恢复形状；真实 Host 数据库表、平台 Drive fetcher 和定时入口仍未接通。
-已增加 Host 侧 `wiselink_drive_scan_checkpoint` Drizzle 定义、RLS 迁移（0040）及按租户封装的 `DriveScanCheckpointRepository`，用于承载上述 checkpoint；该表只存扫描状态，不保存凭据或文件内容。开发数据库已执行并核验 0040/0041，Repository 尚未接入平台定时任务，仍需应用/委托 Drive 权限和平台触发器后再做真实增量验收。
-2026-09-12 再次核验六个根目录：`--as user` 均可读，且首层均返回 `has_more=true` 与独立 `next_page_token`；`--as bot` 六个目录均返回 Feishu `1061004 permission_denied`。因此用户会话可见性没有转化为后台监控授权，当前不能把这些目录接入自动扫描，也不能借用户 token 运行。
-Host 已新增 `DriveSourceScanService` 作为来源扫描业务入口：按登记的 `sourceKey` 和租户绑定 checkpoint，调用外部注入的授权分页 fetcher；未知来源在调用 fetcher 前拒绝。服务不创建用户会话、不内置定时器，便于后续接入获准的应用/委托身份和平台原生触发器。当前仍未形成真实来源文件登记或增量工作，因此不宣称监控运行。
-服务级测试已覆盖登记来源的真实调用形状（operations 根目录 token、租户 checkpoint、文件条目返回）及未知来源 fail-closed；测试使用内存替身，不能替代飞书应用身份、数据库迁移或 Hosted 定时任务验收。
-生产服务构建已通过并收录新增扫描 schema、Repository 与模块注册；构建只证明代码产物可编译，不代表 0040 已执行或后台扫描已运行。
-受影响范围综合验证：Drive 扫描器、checkpoint 编解码、扫描协调器、Host 来源服务和 0040 迁移契约共 5 个测试套件、8 项测试通过；服务端与客户端类型检查均通过。
-Hosted Document Management 公共入口已导出 `DriveSourceScanService`、`AuthorizedDrivePageFetcher` 和 `DriveScanCheckpointRepository`，后续平台原生触发器可通过模块公开接口接入，不需依赖内部文件路径；全量类型检查和服务测试再次通过。
-Host 来源服务测试新增两次扫描恢复场景：首批仅处理第一页并保存 `next_page_token`，下一次同租户同来源直接从该 token 请求第二页，未从根目录重扫；服务端类型检查通过。该证据仍使用替身 checkpoint/fetcher，未替代真实平台运行。
-扫描结果现可转换为仅含来源身份的 `DriveSourceCandidate`（sourceKey、provider object/version、类型、路径、修改时间）；文件夹被排除，候选不会自动进入分析。该映射及测试用于后续真实来源登记，仍不替代平台授权和业务受理。
-`DriveSourceScanService.scanCandidates` 已将扫描结果与身份候选作为 Host 公开服务结果返回；结果明确 `complete`，仅完整扫描输出 `NEW/CHANGED/UNCHANGED`，部分分页或权限阻断只保留诊断候选并返回空变化，避免误受理。服务测试覆盖候选生成、版本标识和“不自动受理”边界。真实候选写入 DocumentVersion/family 或触发分析仍未接通。
+扫描核心 `scanDriveFolders` 与 `runDriveFolderScan` 已实现递归 frontier、独立分页游标、页内 `entryOffset` 和有界恢复。缺失或重复分页 token 会记录 blocker；权限拒绝（403/1061004）保留断点并记录 `DRIVE_AUTHORIZATION_DENIED`，网络或未知错误直接抛出。扫描不完整不代表已观察到的新增或变化无效，也不能据此推断未出现的旧对象已删除。
 
-候选变化分类已补充为 `NEW`、`CHANGED`、`UNCHANGED`：同一 provider object/version 的重复投递和分页重扫标记为 `UNCHANGED`，仅 provider version 变化标记为 `CHANGED`，新对象标记为 `NEW`。该分类只表达来源身份变化，尚未接入 DocumentVersion/family 受理或自动分析触发；当前验证仍是替身服务测试，不代表真实飞书后台监控已运行。
+F6 的逐页持久化已接入 `DriveScanCheckpointRepository`：同一租户、来源的 checkpoint CAS、已观察对象快照和 pending 受理意图在同一数据库事务内保存。对象按 `sourceKey + providerObjectId` 合并，不以当前批次替换全量快照；本页写入失败时游标和对象一起回滚，重启从原页恢复。`DriveSourceScanService.scanCandidates` 即使 `complete=false` 也返回本批已观察对象的 `NEW/CHANGED/UNCHANGED`，并返回跨批保留的 `pendingCandidates`。`complete` 仅表示配置的 frontier 已扫完且没有 blocker，不能当作正向增量进入后续处理的前置条件。
 
-`DriveSourceScanService.scanCandidates` 现在可读取并在完整扫描后持久化租户范围的候选身份快照，并在同一响应中返回 `changes`；未提供上一快照时全部当前候选为 `NEW`。部分扫描不会替换旧快照，也不会返回变化。候选仍不自动受理或派发分析；写入 `DocumentVersion/family` 必须由后续授权事务消费者完成。
-数据库增量核验：通过妙搭 `lark-cli` 用户身份通道在开发环境执行并提交 0040/0041；在线核验确认 checkpoint 表、候选快照列、唯一索引和 RLS 均存在，当前 checkpoint/候选快照均为 0 行。应用 bot 尚未获得 Drive 目录权限，因此尚无真实扫描写入。`.env.local` 直连仍返回 `28P01`，不作为线上连接凭据。
-已新增 `wiselink-drive-source-config.ts`，将用户提供的六个根目录登记为独立来源定义，并统一声明应用/委托身份读取要求；扫描根状态由配置转换，不把用户会话写入来源身份。SB、AD 当前以显式“未接通来源族”保留在配置状态中，不伪造 folder token 或扫描结果；取得实际根目录和应用身份授权后，再按同一注册表扩展，当前仍未启动真实定时扫描。
+变化分类同时比较 provider version 与名称、路径、类型、修改时间；相同版本号下的元数据变化仍为 `CHANGED`，版本号和修改时间都缺失时保守要求复核。此分类只生成来源受理意图，不直接认定工程内容变化。数据库 schema、0040/0041/0046/0051 迁移及服务注册已存在；本地 PostgreSQL 测试覆盖 A 页提交、B 页写入失败回滚、从 B 恢复至 C、旧 checkpoint 冲突拒绝，以及 service_role 与 authenticated 的 RLS 边界。测试中的构造身份和分页 fetcher 不证明真实 Drive 授权或线上扫描成功。
+
+`wiselink-drive-source-config.ts` 已登记六个共享根，`DriveSourceScanService` 拒绝未登记来源并仅接受外部注入的授权分页 fetcher。2026-09-12 六根复核中，用户 CLI 均可读并返回独立分页 token，bot 均返回 `1061004 permission_denied`；该记录只证明当时可见性，不授予后台访问权。SB、AD 仍以显式未接通来源族保留，不能伪造根目录。
+
+W4 尚未闭环：真实获准的应用/委托 Drive fetcher、下载到普通资料受理的事务消费者、pending 成功确认和平台原生定时入口仍需接通并实测。现有 pending 持久化不能替代 DocumentVersion/family 登记或自动分析；当前不能宣称后台监控已运行。上游授权未恢复时，继续独立验证普通资料上传、原文解析、中文阅读和工程处理，不以共享目录权限阻塞普通文档流程。
 
 **W5 跨事项复用和用户接续。** Wiki、动态记录和关系图读取同一工作与来源关系。B 可复用 A 的完整论点和根来源，但比较自身目标事实、条件和受众，不继承 A 的适用性或构型结论。Aily 只读取 Host 保存且当前授权可见的工作；普通对话不自动正式采用。
 
