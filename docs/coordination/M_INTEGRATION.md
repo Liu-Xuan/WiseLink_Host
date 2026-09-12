@@ -263,3 +263,13 @@ db-env-diff 实际返回 engineering_search_projection、pending 和 drive_scan_
 线上只读查询：parseRun 为 2 个 FAILED、无活动解析；活动 ActionAttempt 为 Overall 2 RUNNING、1 QUEUED，均无未到期租约。未重写这些历史任务、未取消或重放。迁移保留 WORK_ITEM 的已有约束语义。Hosted 诊断队列未因此新增请求。技术发布、实际插件运行及 H1/H2 必须分别记账。
 
 0052 实际平台修订：初版 ALTER POLICY … TO 虽返回 COMMIT，但 dev→online 回读仍仅 authenticated，不能记作边界修复完成。已改为单事务 DROP/CREATE 三条同名 restrictive policy，原谓词不变，明确两个平台角色；重跑独立文档 PG 测试通过，dev 返回实际 DDL/COMMIT。后续以平台差异的角色集合读回为准。
+
+## c85 私有包与单文档 scope 准备（2026-09-13）
+
+Host release `7684739961284201424` 返回 finished / `928924c074abc0b93b0f053b00cbbc371846b4a5` / 错误列表空，发布后 dev→online 差异为 0。真实已登录页面打开独立文档原文页并通过正常 FileService 路径读出原件；历史 MINERU_PROCESS_FAILED 保留，未发新解析。
+
+单文档 scope 已在现有 Host online 环境设置文档、actor、最后启用开关三个变量，并回读确认；owner 来自现有 WI，正式身份映射 ACTIVE，现有 tenant/principal/API-key 模式未改。CLI SQL 没有 app.user_id 上下文，直接调用授权函数返回 false，不能拿 CLI 管理查询代替真实 Host 服务调用成功；真实调用仍待验证。
+
+Skill c85 源提交 `58653b973f43f18c0ce345239547fc2e2a9f115c` 已推送妙搭 origin，兼容线 r09 未变。私有应用存储 ZIP `/1876158435627129.zip`，manifest `/1876156861653124.json`；ZIP 已下载回读，371535 字节、SHA-256 `18b0ac0be3934d8a07a518151bdc30df35c0d57c4d4b3b6aa05137aefe386bdb` 与本地 manifest 相同。包内自测通过，不代表 Hosted 已安装。未生成或记录签名分享 URL。
+
+工程 Hosted 原诊断句柄仍 active=true、streaming=false、queued_count=3，旧 latest_turn cancelled 不作为队列终止证明；未重启或追加诊断。apps +get 明确不支持该 Hosted 应用类型（40002），不能从这个管理 API 取得运行环境。继续寻找官方可用管理入口，保留原句柄。
