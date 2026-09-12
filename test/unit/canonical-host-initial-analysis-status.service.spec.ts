@@ -781,6 +781,10 @@ describe('CanonicalHost initial-analysis status projection', () => {
     expect(projectCanonicalHostInitialAnalysisStatus(pending,[],options)).toMatchObject({nextOperation:'EXTRACT_APPLICABILITY',stages:{applicability:{status:'PENDING'}}});
     expect(projectCanonicalHostInitialAnalysisStatus(workItem,[],options).stages.applicability.status)
       .toBe(status==='CANDIDATE_ONLY'?'SUCCEEDED':'WAITING_INPUT');
+    const historical=structuredClone(workItem.applicability);
+    expect(projectCanonicalHostInitialAnalysisStatus(workItem,[],{...options,originalImpactStages:{applicability:true}}).stages.applicability)
+      .toMatchObject({status:'CONFLICT',terminalCode:'DOCUMENT_ORIGINAL_IMPACT_REVIEW_REQUIRED'});
+    expect(workItem.applicability).toEqual(historical);
     workItem.applicabilityInput.originalSource!.binding.parseRunId='changed';
     expect(projectCanonicalHostInitialAnalysisStatus(workItem,[],options).stages.applicability.status).toBe('CONFLICT');
   });

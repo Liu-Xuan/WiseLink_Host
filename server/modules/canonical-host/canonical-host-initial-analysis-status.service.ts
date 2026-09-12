@@ -442,7 +442,8 @@ export function projectCanonicalHostInitialAnalysisStatus(
     // against corrected source content. Active successors keep their own state.
     for (const key of ORIGINAL_ENGINEERING_STAGES) {
       if ((options.originalImpactPending || options.originalImpactStages?.[key]) &&
-        (stages[key].status === 'SUCCEEDED' || (key === 'overall' && stages[key].status === 'CONFLICT' &&
+        (stages[key].status === 'SUCCEEDED' ||
+          (key === 'applicability' && stages[key].status === 'WAITING_INPUT' && execution.applicability?.status === 'WAITING_INPUT') || (key === 'overall' && stages[key].status === 'CONFLICT' &&
           stages[key].terminalCode === 'OVERALL_PROJECTION_NOT_CURRENT'))) stages[key]={...stages[key],status:'CONFLICT',
         terminalCode:'DOCUMENT_ORIGINAL_IMPACT_REVIEW_REQUIRED'};
     }

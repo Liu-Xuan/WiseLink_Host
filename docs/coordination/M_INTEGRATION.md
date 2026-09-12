@@ -397,3 +397,17 @@ begin_applicability_evaluation 现在先读取授权后的只读 admission snaps
 对于已有真实原文发布、尚无 applicabilityInput 的 WI，状态服务现调用输入生产者的只读 admission discovery：读取已配置 opaque context，经原有 BEGIN_APPLICABILITY 服务授权精确核对 tenant/WI，再通过生产受控选择端口读取 Host 目标/Fleet。成功后返回 context 并将原先 APPLICABILITY_SELECTION_REQUIRED 推进为 PENDING/EXTRACT_APPLICABILITY，由 native 原有 begin 流程生产真实输入；不把所有源单元预声明成条件。
 
 发现过程不读文件正文、不写 CAS、不创建目标或业务结论。未配置/未授权/已知受控目标不可用以具体 terminalCode 保留 WAITING_INPUT，未知运行错误继续抛出，不静默降级。45 项生产者与状态测试、服务端类型检查通过，覆盖只读/跨租户拒绝和首次入口状态。真实环境是否已配置对应 context 与 Fleet 仍需运行核验；原文变化后的自动重新评估及 H1/H2 继续推进。本批未发布。
+
+## 真实运行核对（2026-09-13，首次入口接线后）
+
+官方 Hosted conversation_4ky0f6r24fz90 新鲜读回 is_active=true、is_streaming=false、queued_count=3；latest_turn 仍为旧 cancelled，不代表会话结束。未新建/重启/追加消息。P 的“解析”任务新鲜读回仍 inProgress，未发送被阻止的跨任务交接。
+
+线上环境只读核对：WL_JOBAID_PROBLEM_V2_ENABLED=1；适用性 context APCTX-R09-777-4-7f4e2db6c8a941c1b763a0f5、目标 B-1266、asOf 2026-06-05，服务 WorkItem 仍 WI-d09b7acc-2221-4e51-addd-e040ce3c68f4。它不是 FTD 样例 WI-990d6e76-78d4-440a-a419-1b2e37b94ac9，不将既有 777 配置推定为 FTD 的授权目标。两项 WI 的线上 revision 均为 3、status=CANDIDATE_READBACK_VERIFIED；按这两项 WI 查询 QUEUED/RUNNING/RETRY_SCHEDULED/COMMITTING 返回空集。
+
+最新 Host release 仍 7684755212175903949/finished，确切 commit_id=b0ff1f51025dacf3429bc07e21972f1b053cf253。之后的原文适用性改动未上线，c87 未安装。以上只是新鲜状态/配置证据，不证明原文插件 H1 或真实工程 H2 成功。需继续完成变化重评与配套交付，再按各自来源/目标授权推进运行；未修改环境或业务数据。
+
+## UNKNOWN 结果的原文变化失效（2026-09-13）
+
+修复状态投影仅将 SUCCEEDED 结果标记原文影响、遗漏已持久化 WAITING_INPUT/UNKNOWN 适用性结果的分支。现在已保存 UNKNOWN 在逐阶段原文比较确认影响后同样成为 DOCUMENT_ORIGINAL_IMPACT_REVIEW_REQUIRED，保留历史 candidate 原值，不修改为 TRUE/FALSE。不把尚无输入的配置等待视为旧结果，也不覆盖 BUSY 活动后继。
+
+38 项状态测试通过，新增 CANDIDATE_ONLY/WAITING_INPUT 两种原文结果在影响标志下均进入重评冲突且历史不变的断言。现有 compareDocumentOriginal 已将 coverage 变化区分于 LOCATOR_ONLY；本批修复消费该影响的状态分支。自动预留/消费适用性后继仍需继续接通，未发布。
