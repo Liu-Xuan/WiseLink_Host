@@ -1,6 +1,36 @@
 import { runDriveFolderScan } from './drive-folder-scan-coordinator';
 
 describe('runDriveFolderScan', () => {
+  it('does not carry an earlier page offset into the next page across restarts', async () => {
+    let checkpoint: string | null = null;
+    const observed = new Set<string>();
+    const calls: string[] = [];
+    const input = {
+      sourceKey: 'technical-library',
+      roots: [{ folderToken: 'root', path: 'root', depth: 0 }],
+      fetchPage: async (_folder: string, token?: string) => {
+        calls.push(token ?? 'first');
+        return { files: (token ? ['C', 'D'] : ['A', 'B']).map(id => ({
+          token: id, type: 'file', name: `${id}.pdf`, version_id: 'v1',
+        })), hasMore: !token, nextPageToken: token ? null : 'second' };
+      },
+      checkpoints: {
+        load: async () => checkpoint,
+        savePage: async (_source: string, value: string, candidates: Array<{ providerObjectId: string }>) => {
+          checkpoint = value;
+          candidates.forEach(candidate => observed.add(candidate.providerObjectId));
+        },
+      },
+    };
+    await runDriveFolderScan({ ...input, maxEntries: 1 });
+    expect(JSON.parse(checkpoint!).continuation[0].entryOffset).toBe(1);
+    await runDriveFolderScan({ ...input, maxPages: 1 });
+    const finished = await runDriveFolderScan(input);
+    expect(calls).toEqual(['first', 'first', 'second']);
+    expect([...observed]).toEqual(['A', 'B', 'C', 'D']);
+    expect(finished.continuation).toEqual([]);
+  });
+
   it('loads and saves a durable continuation per source', async () => {
     let checkpoint: string | null = null;
     const saved: string[] = [];

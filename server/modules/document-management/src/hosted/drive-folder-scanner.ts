@@ -62,16 +62,21 @@ export async function scanDriveFolders(
     const folder = queue.shift()!;
     let pageToken = folder.pageToken;
     let entryOffset = folder.entryOffset ?? 0;
+    // Page offsets belong to the current page, never to the original resumed folder state.
+    const position = (offset = entryOffset): DriveFolderScanState => ({
+      folderToken: folder.folderToken, path: folder.path, depth: folder.depth,
+      ...(pageToken ? { pageToken } : {}), ...(offset ? { entryOffset: offset } : {}),
+    });
     let missingTokenRetries = 0;
     while (true) {
       if (pages >= maxPages || entries.length >= maxEntries) {
-        continuation.push({ ...folder, ...(pageToken ? { pageToken } : {}), ...(entryOffset ? { entryOffset } : {}) });
+        continuation.push(position());
         break;
       }
       const pageKey = `${folder.folderToken}:${pageToken ?? 'first'}`;
       if (visitedPages.includes(pageKey) && missingTokenRetries === 0) {
         blockers.push({ folderToken: folder.folderToken, ...(pageToken ? { pageToken } : {}), code: 'DRIVE_PAGE_TOKEN_REPEATED' });
-        continuation.push({ ...folder, ...(pageToken ? { pageToken } : {}) });
+        continuation.push(position());
         break;
       }
       let page: DrivePage;
@@ -80,7 +85,7 @@ export async function scanDriveFolders(
       } catch (error: unknown) {
         if (!isDriveAuthorizationDenied(error)) throw error;
         blockers.push({ folderToken: folder.folderToken, ...(pageToken ? { pageToken } : {}), code: 'DRIVE_AUTHORIZATION_DENIED' });
-        continuation.push({ ...folder, ...(pageToken ? { pageToken } : {}) });
+        continuation.push(position());
         break;
       }
       pages += 1;
@@ -88,7 +93,7 @@ export async function scanDriveFolders(
       for (let pageIndex = entryOffset; pageIndex < page.files.length; pageIndex += 1) {
         const entry = page.files[pageIndex]!;
         if (entries.length >= maxEntries) {
-          const next = { ...folder, ...(pageToken ? { pageToken } : {}), entryOffset: pageIndex };
+          const next = position(pageIndex);
           continuation.push(next, ...queue);
           await options.onPage?.(continuation, entries, blockers);
           return { entries, continuation, visitedPages, blockers };
@@ -107,17 +112,17 @@ export async function scanDriveFolders(
       }
       if (page.nextPageToken) {
         pageToken = page.nextPageToken; entryOffset = 0; missingTokenRetries = 0;
-        await options.onPage?.([...continuation, { ...folder, pageToken }, ...queue], entries, blockers);
+        await options.onPage?.([...continuation, position(), ...queue], entries, blockers);
         continue;
       }
       missingTokenRetries += 1;
       if (missingTokenRetries >= maxRetries) {
         blockers.push({ folderToken: folder.folderToken, ...(pageToken ? { pageToken } : {}), code: 'DRIVE_PAGE_TOKEN_MISSING' });
-        continuation.push({ ...folder, ...(pageToken ? { pageToken } : {}) });
+        continuation.push(position());
         await options.onPage?.([...continuation, ...queue], entries, blockers);
         break;
       }
-      await options.onPage?.([...continuation, { ...folder, ...(pageToken ? { pageToken } : {}) }, ...queue], entries, blockers);
+      await options.onPage?.([...continuation, position(), ...queue], entries, blockers);
     }
   }
   continuation.push(...queue);
