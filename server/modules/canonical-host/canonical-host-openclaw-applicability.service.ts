@@ -52,6 +52,7 @@ import { readFrozenApplicabilitySourceBinding } from './canonical-host-applicabi
 import {
   APPLICABILITY_ARTIFACT_SCHEMA_VERSION,
   APPLICABILITY_ARTIFACT_V2_SCHEMA_VERSION,
+  APPLICABILITY_ARTIFACT_V3_SCHEMA_VERSION,
   APPLICABILITY_TASK_SCHEMA_VERSION,
   APPLICABILITY_TASK_V2_SCHEMA_VERSION,
   APPLICABILITY_TASK_V3_SCHEMA_VERSION,
@@ -115,13 +116,15 @@ interface ConfigurationEvidenceApplicabilityCasOwner {
 interface ApplicabilityCandidateArtifact {
   schemaVersion:
     | typeof APPLICABILITY_ARTIFACT_SCHEMA_VERSION
-    | typeof APPLICABILITY_ARTIFACT_V2_SCHEMA_VERSION;
+    | typeof APPLICABILITY_ARTIFACT_V2_SCHEMA_VERSION
+    | typeof APPLICABILITY_ARTIFACT_V3_SCHEMA_VERSION;
   candidateOnly: true;
   source: {
     documentId: string;
     documentVersionId: string;
-    packageId: string;
-    packageContentHash: string;
+    packageId: string | null;
+    packageContentHash: string | null;
+    originalSource?: NonNullable<CanonicalApplicabilityInputProjection['originalSource']>;
     translationActionAttemptId: string | null;
     sourceReadingMode?: 'VERIFIED_ENGLISH';
     applicabilityContextRef: string;
@@ -1268,6 +1271,7 @@ export class CanonicalHostOpenClawApplicabilityService {
       workItem,
       applicabilityInput,
       applicabilityTaskVersion(task),
+      row.tenantId,
     );
     assertTaskBuildMatches(rebuilt, task);
     return { workItem, applicabilityInput, rebuilt };
@@ -2108,13 +2112,14 @@ function assertRecoveredProjectionBinding(
     projection.inputRevision !== task.inputRevision ||
     projection.documentId !== workItem.source.documentId ||
     projection.documentVersionId !== task.documentVersionId ||
-    projection.sourcePackageId !== workItem.package!.packageId ||
-    projection.sourcePackageContentHash !== workItem.package!.contentHash ||
+    projection.sourcePackageId !== applicabilityInput.sourcePackageId ||
+    projection.sourcePackageContentHash !== applicabilityInput.sourcePackageContentHash ||
     !applicabilityProjectionSourceMatches(projection, workItem) ||
-    (projection.schemaVersion ===
-      'wiselink.3_1.applicability_candidate_projection.v2') !==
-      (applicabilityTaskVersion(task) ===
-        APPLICABILITY_TASK_V2_SCHEMA_VERSION) ||
+    projection.schemaVersion !== (applicabilityTaskVersion(task) === APPLICABILITY_TASK_V3_SCHEMA_VERSION
+      ? 'wiselink.3_1.applicability_candidate_projection.v3'
+      : applicabilityTaskVersion(task) === APPLICABILITY_TASK_V2_SCHEMA_VERSION
+        ? 'wiselink.3_1.applicability_candidate_projection.v2'
+        : 'wiselink.3_1.applicability_candidate_projection.v1') ||
     projection.applicabilityContextRef !==
       applicabilityInput.applicabilityContextRef ||
     projection.applicabilityBindingRevision !==
@@ -2192,18 +2197,22 @@ function buildApplicabilityArtifact(input: {
   evaluation: ApplicabilityEvaluation;
   result: OpenClawResultEnvelope;
 }): ApplicabilityCandidateArtifact {
-  const english =
-    input.task.schemaVersion === APPLICABILITY_TASK_V2_SCHEMA_VERSION;
+  const original = input.task.schemaVersion === APPLICABILITY_TASK_V3_SCHEMA_VERSION;
+  const english = original || input.task.schemaVersion === APPLICABILITY_TASK_V2_SCHEMA_VERSION;
+  const targetBindings = original
+    ? [...bindOriginalApplicabilityCandidate(input.candidate,input.task).targetBindings.values()].flat()
+    : input.task.sourceExpressions;
   return {
-    schemaVersion: english
+    schemaVersion: original ? APPLICABILITY_ARTIFACT_V3_SCHEMA_VERSION : english
       ? APPLICABILITY_ARTIFACT_V2_SCHEMA_VERSION
       : APPLICABILITY_ARTIFACT_SCHEMA_VERSION,
     candidateOnly: true,
     source: {
       documentId: input.workItem.source.documentId,
       documentVersionId: input.workItem.source.documentVersionId,
-      packageId: input.workItem.package!.packageId,
-      packageContentHash: input.workItem.package!.contentHash,
+      packageId: original ? null : input.workItem.package!.packageId,
+      packageContentHash: original ? null : input.workItem.package!.contentHash,
+      ...(original ? {originalSource: structuredClone(input.applicabilityInput.originalSource!)} : {}),
       translationActionAttemptId: english
         ? null
         : input.workItem.translation!.actionAttemptId,
@@ -2213,7 +2222,7 @@ function buildApplicabilityArtifact(input: {
       targetBindingHash: input.applicabilityInput.targetBindingHash,
     },
     candidate: structuredClone(input.candidate),
-    hostTargetBindings: input.task.sourceExpressions.map((expression) => ({
+    hostTargetBindings: targetBindings.map((expression) => ({
       expressionId: expression.expressionId,
       assignmentId: expression.assignmentId,
       targetKind: expression.targetKind,
@@ -2255,17 +2264,26 @@ function applicabilityProjection(input: {
     ),
   ).size;
   return {
-    ...(input.artifactValue.schemaVersion ===
+    ...(input.artifactValue.schemaVersion === APPLICABILITY_ARTIFACT_V3_SCHEMA_VERSION
+      ? {schemaVersion: 'wiselink.3_1.applicability_candidate_projection.v3' as const,
+          sourcePackageId: null, sourcePackageContentHash: null,
+          originalSource: structuredClone(input.artifactValue.source.originalSource!),
+          translationActionAttemptId: null, sourceReadingMode: 'VERIFIED_ENGLISH' as const}
+      : input.artifactValue.schemaVersion ===
     APPLICABILITY_ARTIFACT_V2_SCHEMA_VERSION
       ? {
           schemaVersion:
             'wiselink.3_1.applicability_candidate_projection.v2' as const,
+          sourcePackageId: input.workItem.package!.packageId,
+          sourcePackageContentHash: input.workItem.package!.contentHash,
           translationActionAttemptId: null,
           sourceReadingMode: 'VERIFIED_ENGLISH' as const,
         }
       : {
           schemaVersion:
             'wiselink.3_1.applicability_candidate_projection.v1' as const,
+          sourcePackageId: input.workItem.package!.packageId,
+          sourcePackageContentHash: input.workItem.package!.contentHash,
           translationActionAttemptId: requiredText(
             input.artifactValue.source.translationActionAttemptId,
             'APPLICABILITY_TRANSLATION_BINDING_REQUIRED',
@@ -2282,8 +2300,6 @@ function applicabilityProjection(input: {
     inputRevision: input.attempt.inputRevision!,
     documentId: input.workItem.source.documentId,
     documentVersionId: input.workItem.source.documentVersionId,
-    sourcePackageId: input.workItem.package!.packageId,
-    sourcePackageContentHash: input.workItem.package!.contentHash,
     applicabilityContextRef: input.applicabilityInput.applicabilityContextRef,
     applicabilityBindingRevision: input.applicabilityInput.bindingRevision,
     aircraftNumber: input.applicabilityInput.aircraftNumber,
@@ -2464,6 +2480,16 @@ function applicabilityProjectionSourceMatches(
   projection: CanonicalApplicabilityCandidateProjection,
   workItem: CanonicalWorkItemProjection,
 ): boolean {
+  if (projection.schemaVersion === 'wiselink.3_1.applicability_candidate_projection.v3') {
+    const original = workItem.applicabilityInput?.originalSource;
+    return !!original && projection.sourceReadingMode === 'VERIFIED_ENGLISH' &&
+      projection.translationActionAttemptId === null && projection.sourcePackageId === null &&
+      projection.sourcePackageContentHash === null && canonicalJson(projection.originalSource) === canonicalJson(original) &&
+      original.binding.documentVersionId === workItem.source.documentVersionId &&
+      original.binding.sourceArtifactId === workItem.source.sourceArtifactId &&
+      original.binding.sourceSha256 === workItem.source.sourceFileSha256 &&
+      original.binding.sourceByteLength === workItem.source.sourceByteLength;
+  }
   return projection.schemaVersion ===
     'wiselink.3_1.applicability_candidate_projection.v2'
     ? projection.sourceReadingMode === 'VERIFIED_ENGLISH' &&

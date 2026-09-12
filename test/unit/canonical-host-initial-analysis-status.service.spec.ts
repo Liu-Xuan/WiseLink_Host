@@ -761,6 +761,27 @@ describe('CanonicalHost initial-analysis status projection', () => {
       expect(status.stages.translation.status).toBe(translations.length ? 'FAILED' : 'PENDING');
     }
   });
+  it.each(['CANDIDATE_ONLY','WAITING_INPUT'] as const)('reads original v3 %s without an old package and detects binding drift', status => {
+    const workItem=translatedWorkItem(parsedWorkItem());
+    const input=applicabilityInput(workItem);
+    const legacy=applicabilityCandidate(workItem,input,status);
+    const original=originalFixture();
+    original.binding={...original.binding,documentVersionId:workItem.source.documentVersionId,
+      sourceArtifactId:workItem.source.sourceArtifactId,sourceSha256:workItem.source.sourceFileSha256,
+      sourceByteLength:workItem.source.sourceByteLength};
+    const originalSource={binding:original.binding,artifact:{ref:'document-original://fixture/parse',sha256:'c'.repeat(64),byteLength:100,mediaType:'application/json' as const}};
+    workItem.applicabilityInput={...input,schemaVersion:'wiselink.3_1.applicability_input_projection.v2',
+      sourcePackageId:null,sourcePackageContentHash:null,sourcePackageArtifactSha256:null,originalSource};
+    workItem.applicability={...legacy,schemaVersion:'wiselink.3_1.applicability_candidate_projection.v3',
+      sourcePackageId:null,sourcePackageContentHash:null,translationActionAttemptId:null,
+      sourceReadingMode:'VERIFIED_ENGLISH',originalSource:structuredClone(originalSource)};
+    workItem.package=null; workItem.translation=null;
+    const options={englishAssessmentEnabled:true,originalPublished:true};
+    expect(projectCanonicalHostInitialAnalysisStatus(workItem,[],options).stages.applicability.status)
+      .toBe(status==='CANDIDATE_ONLY'?'SUCCEEDED':'WAITING_INPUT');
+    workItem.applicabilityInput.originalSource!.binding.parseRunId='changed';
+    expect(projectCanonicalHostInitialAnalysisStatus(workItem,[],options).stages.applicability.status).toBe('CONFLICT');
+  });
   it('uses verified original publication for readiness without certifying missing effectivity mapping', () => {
     const source=parsedWorkItem();
     expect(projectCanonicalHostInitialAnalysisStatus(source,[],{englishAssessmentEnabled:true,originalPublished:false}))

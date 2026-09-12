@@ -353,3 +353,9 @@ Host 已接受仅供原文任务 v3 使用的候选 v2：确切原文绑定、�
 现有官方 Hosted 初始模型适配器已按 applicability_task.v3 选择完整原文条件发现提示词，返回 AST candidate v2；既有任务继续使用 v1。native 校验 exact 原文 binding/manifest 与 sourceContext、一单元一阅读结论、真实 payload 引句、来源及候选目标 ID，拒绝伪造或遗漏。Aircraft/Fleet/runtime 与 originalBinding 从 Host 输入回填，模型不能提供控制字段；输出 applicability_candidate.v2 可由上一批 Host 契约接收。未读单元、解释失败与空条件集原样保留给 Host UNKNOWN 判定，不补造 true AST。
 
 201 项 native 验证测试通过，包含实际模型适配器分支及候选组装、旧契约回归；Skill 发布检查通过。测试使用构造数据和注入响应，未调用真实模型。c87 源码与说明已更新但尚未打包/安装；普通入口仍未切换，结果投影、提交恢复及真实 H1/H2 待继续完成。上一已发布 c86 不代表具备此次能力。
+
+## 原文适用性结果持久化与恢复（2026-09-13，迁移中）
+
+Host artifact/projection v3 保存实际 originalSource binding/manifest，旧 package 字段为 null；产物保存经过 Host 结构校验的逐目标绑定。提交前重建补齐真实 row.tenantId，修复此前只验证 begin 未覆盖的原文租户传递遗漏。APPLICABLE 与 UNKNOWN 均完成实际 service 提交、产物 readback、CAS 和幂等 replay；更改原文输入后拒绝旧结果恢复且不再 CAS。旧 v1/v2 结果继续按原任务版本与来源校验。
+
+状态投影已识别 v3 原文来源，逐阶段原文比较读取 applicability_task.v3 的实际 originalInput 路径；旧 JobAid/Overall 路径保留。112 项契约、提交恢复、状态测试及前后端类型检查通过，未据此声称线上业务完成。普通入口尚未切换；下游工程/相关上下文对原文适用性结果的消费、源变化重新触发及真实 H1/H2 仍需验证和接通。未发布。

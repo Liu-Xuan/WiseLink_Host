@@ -38,8 +38,14 @@ import {
 } from '../../server/modules/canonical-host/configuration-evidence/configuration-evidence-reevaluation.state';
 
 describe('CanonicalHostOpenClawApplicabilityService', () => {
-  it('builds v3 from exact original units and coverage without a synthetic package or pre-asserted conditions', async () => {
+  it.each(['UNKNOWN','APPLICABLE'] as const)('builds, commits and replays original v3 %s without a synthetic package', async (decision) => {
     const h=applicabilityHarness(); const original=originalFixture();
+    if (decision === 'APPLICABLE') {
+      const base=original.source.units[0];
+      original.source.units=[{...base,unitId:'heading',kind:'heading',order:0,payload:{text:'Effectivity',level:1}},
+        {...base,order:1,payload:{text:'Applicable to Boeing 737-8 airplanes.'}}];
+      original.coverage.unresolvedRanges=[];
+    }
     const current=h.readCurrent(); original.binding={...original.binding,documentVersionId:current.source.documentVersionId,
       sourceArtifactId:current.source.sourceArtifactId,sourceSha256:current.source.sourceFileSha256,sourceByteLength:current.source.sourceByteLength};
     const source={binding:original.binding,artifact:{ref:'document-original://DV-1/PR-TEST-2',sha256:'c'.repeat(64),byteLength:100,mediaType:'application/json' as const}};
@@ -57,6 +63,26 @@ describe('CanonicalHostOpenClawApplicabilityService', () => {
     expect((began.modelInput.sourceContext as unknown[]).length).toBe(original.source.units.length);
     expect(h.artifactStore.readActualBytes).not.toHaveBeenCalled();
     expect(h.applicabilityInputs.readOriginalTaskSource).toHaveBeenCalledWith(expect.objectContaining({package:null}),'tenant-1',source);
+    const candidate=candidateFor(began);
+    Object.assign(candidate,{schemaVersion:'wiselink.3_1.applicability_candidate.v2',originalBinding:original.binding,
+      unitDispositions:original.source.units.map(unit=>({unitId:unit.unitId,
+        disposition:decision==='APPLICABLE' && unit.unitId==='u1'?'CONDITIONS':'NO_CONDITION',
+        conditionIds:decision==='APPLICABLE' && unit.unitId==='u1'?['EXP-1']:[]})),
+      expressions:decision==='APPLICABLE'?[{...candidate.expressions[0],sourceRefIds:original.source.units[1].sourceRefIds,
+        original:{quote:{unitId:'u1',text:'Applicable to Boeing 737-8 airplanes.'},
+          scope:{kind:'document',headingUnitId:'heading',targetUnitIds:[]}}}]:[]});
+    const result=h.resultFor(candidate);
+    const committed=await h.service.commit(began.attemptRef,began.leaseToken,began.leaseGeneration,result);
+    expect(committed).toMatchObject({applicability:{schemaVersion:'wiselink.3_1.applicability_candidate_projection.v3',
+      originalSource:source,sourcePackageId:null,sourcePackageContentHash:null,translationActionAttemptId:null,
+      decision,currentness:'CURRENT',status:decision==='UNKNOWN'?'WAITING_INPUT':'CANDIDATE_ONLY'}});
+    const replay=await h.service.commit(began.attemptRef,began.leaseToken,began.leaseGeneration,result);
+    expect(replay).toEqual(committed);
+    expect(h.registrar.compareAndSet).toHaveBeenCalledTimes(1);
+    h.mutateCurrent(item=>{item.applicabilityInput!.originalSource!.binding.parseRunId='changed-original';});
+    await expect(h.service.commit(began.attemptRef,began.leaseToken,began.leaseGeneration,result)).rejects.toThrow();
+    expect(h.registrar.compareAndSet).toHaveBeenCalledTimes(1);
+
   });
 
   it('builds and commits v2 from verified English without waiting for Chinese translation', async () => {

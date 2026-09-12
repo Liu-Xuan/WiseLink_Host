@@ -1342,8 +1342,6 @@ interface CanonicalApplicabilityCandidateProjectionFields {
   inputRevision: number;
   documentId: string;
   documentVersionId: string;
-  sourcePackageId: string;
-  sourcePackageContentHash: string;
   applicabilityContextRef: string;
   applicabilityBindingRevision: string;
   aircraftNumber: string;
@@ -1367,11 +1365,23 @@ export type CanonicalApplicabilityCandidateProjection =
     (
       | {
           schemaVersion: 'wiselink.3_1.applicability_candidate_projection.v1';
+          sourcePackageId: string;
+          sourcePackageContentHash: string;
           translationActionAttemptId: string;
           sourceReadingMode?: 'BILINGUAL';
         }
       | {
           schemaVersion: 'wiselink.3_1.applicability_candidate_projection.v2';
+          sourcePackageId: string;
+          sourcePackageContentHash: string;
+          translationActionAttemptId: null;
+          sourceReadingMode: 'VERIFIED_ENGLISH';
+        }
+      | {
+          schemaVersion: 'wiselink.3_1.applicability_candidate_projection.v3';
+          sourcePackageId: null;
+          sourcePackageContentHash: null;
+          originalSource: NonNullable<CanonicalApplicabilityInputProjection['originalSource']>;
           translationActionAttemptId: null;
           sourceReadingMode: 'VERIFIED_ENGLISH';
         }

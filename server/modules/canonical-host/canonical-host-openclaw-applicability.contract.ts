@@ -21,6 +21,7 @@ export const APPLICABILITY_CANDIDATE_SCHEMA_VERSION =
 export const APPLICABILITY_ORIGINAL_CANDIDATE_SCHEMA_VERSION = 'wiselink.3_1.applicability_candidate.v2' as const;
 export const APPLICABILITY_ARTIFACT_SCHEMA_VERSION =
   'wiselink.3_1.applicability_candidate_artifact.v1' as const;
+export const APPLICABILITY_ARTIFACT_V3_SCHEMA_VERSION = 'wiselink.3_1.applicability_candidate_artifact.v3';
 export const APPLICABILITY_ARTIFACT_V2_SCHEMA_VERSION =
   'wiselink.3_1.applicability_candidate_artifact.v2' as const;
 export const APPLICABILITY_MCP_SERVER_NAME =

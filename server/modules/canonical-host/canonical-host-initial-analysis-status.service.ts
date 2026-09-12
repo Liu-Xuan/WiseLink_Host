@@ -1,3 +1,4 @@
+import { canonicalJson } from '../action-attempt/action-attempt-envelope';
 import { Inject, Injectable, Optional } from '@nestjs/common';
 import { JobAidWorkRepository } from './jobaid-work.repository';
 import { UnifiedReaderService } from '../unified-reader/unified-reader.service';
@@ -165,7 +166,7 @@ export class CanonicalHostInitialAnalysisStatusService {
     if (published?.[0] && savedIds.length) {
       const bases = await this.db.select({
         attemptId: actionAttempt.attemptId,
-        parseRunId: sql<string | null>`${actionAttempt.taskEnvelopeJson} #>> '{modelInput,modelInput,documentOverview,original,binding,parseRunId}'`,
+        parseRunId: sql<string | null>`case when ${actionAttempt.taskEnvelopeJson} #>> '{modelInput,schemaVersion}' = 'wiselink.3_1.applicability_task.v3' then ${actionAttempt.taskEnvelopeJson} #>> '{modelInput,originalInput,binding,parseRunId}' else ${actionAttempt.taskEnvelopeJson} #>> '{modelInput,modelInput,documentOverview,original,binding,parseRunId}' end`,
       }).from(actionAttempt).where(and(eq(actionAttempt.tenantId, input.tenantId),
         eq(actionAttempt.workItemId, input.workItem.workItemId),
         eq(actionAttempt.documentVersionId, input.workItem.source.documentVersionId),
@@ -556,24 +557,31 @@ function applicabilityProjectionObservation(
   const applicability = workItem.applicability;
   if (!applicability) return absentProjection();
   const applicabilityInput = workItem.applicabilityInput;
+  const original = applicabilityInput?.originalSource;
+  const sourceCurrent = applicability.schemaVersion === 'wiselink.3_1.applicability_candidate_projection.v3'
+    ? !!original && applicabilityInput?.sourcePackageId === null && applicabilityInput.sourcePackageContentHash === null &&
+      applicability.sourcePackageId === null && applicability.sourcePackageContentHash === null &&
+      canonicalJson(applicability.originalSource) === canonicalJson(original) &&
+      original.binding.documentVersionId === workItem.source.documentVersionId &&
+      original.binding.sourceArtifactId === workItem.source.sourceArtifactId &&
+      original.binding.sourceSha256 === workItem.source.sourceFileSha256 &&
+      original.binding.sourceByteLength === workItem.source.sourceByteLength &&
+      applicability.sourceReadingMode === 'VERIFIED_ENGLISH' && applicability.translationActionAttemptId === null
+    : applicabilityInput?.sourcePackageId === workItem.package?.packageId &&
+      applicabilityInput?.sourcePackageContentHash === workItem.package?.contentHash &&
+      applicability.sourcePackageId === workItem.package?.packageId &&
+      applicability.sourcePackageContentHash === workItem.package?.contentHash &&
+      (applicability.schemaVersion === 'wiselink.3_1.applicability_candidate_projection.v2'
+        ? applicability.sourceReadingMode === 'VERIFIED_ENGLISH' && applicability.translationActionAttemptId === null
+        : applicability.translationActionAttemptId === workItem.translation?.actionAttemptId);
   const current =
     applicabilityInput?.currentness === 'CURRENT' &&
     applicabilityInput.workItemId === workItem.workItemId &&
     applicabilityInput.documentVersionId ===
       workItem.source.documentVersionId &&
-    applicabilityInput.sourcePackageId === workItem.package?.packageId &&
-    applicabilityInput.sourcePackageContentHash ===
-      workItem.package?.contentHash &&
+    sourceCurrent &&
     applicability.currentness === 'CURRENT' &&
     applicability.documentVersionId === workItem.source.documentVersionId &&
-    applicability.sourcePackageId === workItem.package?.packageId &&
-    applicability.sourcePackageContentHash === workItem.package?.contentHash &&
-    (applicability.schemaVersion ===
-    'wiselink.3_1.applicability_candidate_projection.v2'
-      ? applicability.sourceReadingMode === 'VERIFIED_ENGLISH' &&
-        applicability.translationActionAttemptId === null
-      : applicability.translationActionAttemptId ===
-        workItem.translation?.actionAttemptId) &&
     applicability.applicabilityContextRef ===
       applicabilityInput?.applicabilityContextRef &&
     applicability.applicabilityBindingRevision ===
