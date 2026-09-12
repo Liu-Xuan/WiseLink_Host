@@ -1,5 +1,7 @@
 import { Inject, Injectable, Optional } from '@nestjs/common';
 import { JobAidWorkRepository } from './jobaid-work.repository';
+import { UnifiedReaderService } from '../unified-reader/unified-reader.service';
+import { compareDocumentOriginal } from '../document-management/src/hosted/nest/document-original-change';
 import {
   DRIZZLE_DATABASE,
   type PostgresJsDatabase,
@@ -75,6 +77,7 @@ export class CanonicalHostInitialAnalysisStatusService {
     @Inject(DRIZZLE_DATABASE) private readonly db: PostgresJsDatabase,
     private readonly attempts: ActionAttemptLifecycleService,
     @Optional() private readonly originalWork?: JobAidWorkRepository,
+    @Optional() private readonly originalReader?: UnifiedReaderService,
   ) {}
 
   async project(input: {
@@ -87,7 +90,8 @@ export class CanonicalHostInitialAnalysisStatusService {
         eq(dmDocumentParseRun.status,'PUBLISHED'),sql`${dmDocumentParseRun.manifestArtifact}->>'relativePath' = 'original/manifest.json'`,
         sql`${dmDocumentParseRun.sourceBinding}->>'sourceArtifactId' = ${input.workItem.source.sourceArtifactId}`,
         sql`${dmDocumentParseRun.sourceBinding}->>'sourceSha256' = ${input.workItem.source.sourceFileSha256}`,
-        sql`${dmDocumentParseRun.sourceBinding}->>'sourceByteLength' = ${String(input.workItem.source.sourceByteLength)}`)).limit(1);
+        sql`${dmDocumentParseRun.sourceBinding}->>'sourceByteLength' = ${String(input.workItem.source.sourceByteLength)}`))
+      .orderBy(desc(dmDocumentParseRun.parseRevision)).limit(1);
     let published: Array<{id:string}> | null=null;
     if (originalMode) {
       const [role]=await this.db.execute<{service:boolean}>(sql`SELECT starts_with(current_user::text,'service_role_') AS service`);
@@ -143,6 +147,27 @@ export class CanonicalHostInitialAnalysisStatusService {
       row.errorCode = current.errorCode;
       row.cancelReason = current.cancelReason;
     }
+    let originalImpactPending = false;
+    const base = input.workItem.integratedAssessment?.baseRules;
+    if (published?.[0] && base) {
+      const [basis] = await this.db.select({
+        parseRunId: sql<string | null>`${actionAttempt.taskEnvelopeJson} #>> '{modelInput,modelInput,documentOverview,original,binding,parseRunId}'`,
+      }).from(actionAttempt).where(and(eq(actionAttempt.tenantId,input.tenantId),
+        eq(actionAttempt.workItemId,input.workItem.workItemId),eq(actionAttempt.attemptId,base.actionAttemptId))).limit(1);
+      if (!basis?.parseRunId) originalImpactPending = true;
+      else if (basis.parseRunId !== published[0].id) {
+        if (!this.originalWork || !this.originalReader) throw new Error('ORIGINAL_STATUS_RUNTIME_UNAVAILABLE');
+        const [owner] = await this.db.select({actor:workItem.requestedByUserId}).from(workItem)
+          .where(and(eq(workItem.workItemId,input.workItem.workItemId),eq(workItem.tenantId,input.tenantId))).limit(1);
+        if (!owner?.actor) throw new Error('JOBAID_SOURCE_AUTHORIZATION_CHANGED');
+        const scope={tenantId:input.tenantId,actorUserId:owner.actor,roles:[] as string[]};
+        originalImpactPending=await this.originalWork.withActorScope(owner.actor,async () => {
+          const previous=await this.originalReader!.readDocumentOriginal(input.workItem.source.documentVersionId,basis.parseRunId!,scope);
+          const current=await this.originalReader!.readDocumentOriginal(input.workItem.source.documentVersionId,published[0].id,scope);
+          return compareDocumentOriginal(previous.original,current.original).kind !== 'LOCATOR_ONLY';
+        });
+      }
+    }
     return projectCanonicalHostInitialAnalysisStatus(
       input.workItem,
       rows.map((row) => ({
@@ -159,6 +184,7 @@ export class CanonicalHostInitialAnalysisStatusService {
       })),
       {
         originalPublished,
+        originalImpactPending,
         englishAssessmentEnabled:
           process.env.WL_JOBAID_PROBLEM_V2_ENABLED === '1',
       },
@@ -319,7 +345,7 @@ export function initialAnalysisTerminalCode(row: {
 export function projectCanonicalHostInitialAnalysisStatus(
   workItem: CanonicalWorkItemProjection,
   attempts: readonly CanonicalInitialAnalysisAttemptObservation[],
-  options: { englishAssessmentEnabled?: boolean; originalPublished?: boolean } = {},
+  options: { englishAssessmentEnabled?: boolean; originalPublished?: boolean; originalImpactPending?: boolean } = {},
 ): AilyInitialAnalysisStatus {
   const attemptByAction = latestAttemptsByAction(attempts);
   const parsedPackageReady = options.originalPublished ?? isParsedPackageReady(workItem);
@@ -370,6 +396,14 @@ export function projectCanonicalHostInitialAnalysisStatus(
             ),
       }
     : pendingStages();
+  if (options.originalImpactPending) {
+    // Retain the exact historical candidate, but do not report it as assessed
+    // against corrected source content. Active successors keep their own state.
+    for (const key of ['applicability','jobAid','overall'] as const) {
+      if (stages[key].status === 'SUCCEEDED') stages[key]={...stages[key],status:'CONFLICT',
+        terminalCode:'DOCUMENT_ORIGINAL_IMPACT_REVIEW_REQUIRED'};
+    }
+  }
   if (options.originalPublished && !workItem.package && stages.applicability.status === 'PENDING')
     stages.applicability={...stages.applicability,status:'WAITING_INPUT',terminalCode:'ORIGINAL_APPLICABILITY_MAPPING_REQUIRED'};
   const progression = parsedPackageReady

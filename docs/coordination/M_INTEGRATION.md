@@ -273,3 +273,11 @@ Host release `7684739961284201424` 返回 finished / `928924c074abc0b93b0f053b00
 Skill c85 源提交 `58653b973f43f18c0ce345239547fc2e2a9f115c` 已推送妙搭 origin，兼容线 r09 未变。私有应用存储 ZIP `/1876158435627129.zip`，manifest `/1876156861653124.json`；ZIP 已下载回读，371535 字节、SHA-256 `18b0ac0be3934d8a07a518151bdc30df35c0d57c4d4b3b6aa05137aefe386bdb` 与本地 manifest 相同。包内自测通过，不代表 Hosted 已安装。未生成或记录签名分享 URL。
 
 工程 Hosted 原诊断句柄仍 active=true、streaming=false、queued_count=3，旧 latest_turn cancelled 不作为队列终止证明；未重启或追加诊断。apps +get 明确不支持该 Hosted 应用类型（40002），不能从这个管理 API 取得运行环境。继续寻找官方可用管理入口，保留原句柄。
+
+## 独立 WorkItem 原文修订状态边界（2026-09-13，本地增量）
+
+实际缺口：initial-analysis status 只检查存在已发布原文，未与保存评估的任务原文绑定比较；P 的 change 信息保存在不可变 bundle，而 loadPublished 公共返回不含 change。本轮不修改 P 文件，复用正常 Reader 读取确切旧/新原文及既有 compareDocumentOriginal。在有旧评估且原文 parseRun 不同时才读取二者；相同 parseRun 不增加原文件下载。查询最新发布显式按 parseRevision 降序。
+
+纯定位/内容覆盖相同保留原状态；正文或覆盖变化、旧评估缺少原文绑定时，已完成的适用性/JobAid/Overall 状态显示 DOCUMENT_ORIGINAL_IMPACT_REVIEW_REQUIRED，保留历史结果和正在运行的后继，不标记新原文已评。真实 Reader 读取失败继续报错，不降级成可评/无影响。翻译状态不因工程状态变化被改写。
+
+31 项状态测试（包含 exact old/new Reader 调用、纯定位、内容变化）、真实模块装配、12 项 JobAid PostgreSQL 测试与 server types/ESLint 通过。PG 测试仍只覆盖已有身份/事务/状态入口，不宣称新增变化的自动续评已通过。剩余仍是：将真实内容变化接入持久续评、从新原文提取适用性候选并由 Host 映射/求值、真实 Hosted 安装消费、F6 正式来源权限和 H1/H2。此增量尚未发布。
