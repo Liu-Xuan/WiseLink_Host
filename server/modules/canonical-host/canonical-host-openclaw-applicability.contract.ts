@@ -158,8 +158,8 @@ export interface ApplicabilityRuntimePolicy {
 export interface ApplicabilityCandidateExpression {
   expressionId: string;
   sourceRefIds: string[];
-  extractionStatus: 'extracted';
-  expressionAst: ApplicabilityAstNode;
+  extractionStatus: 'extracted' | 'extraction_failed' | 'not_supported';
+  expressionAst: ApplicabilityAstNode | null;
 }
 
 export interface ApplicabilityCandidateContract {
@@ -322,9 +322,10 @@ function parseCandidateExpression(
     'extractionStatus',
     'expressionAst',
   ]);
-  if (expression.extractionStatus !== 'extracted') {
+  if (!['extracted','extraction_failed','not_supported'].includes(String(expression.extractionStatus)))
     fail('APPLICABILITY_EXPRESSION_STATUS_INVALID');
-  }
+  if (expression.extractionStatus !== 'extracted' && expression.expressionAst !== null)
+    fail('APPLICABILITY_UNRESOLVED_EXPRESSION_AST_INVALID');
   return {
     expressionId: text(
       expression.expressionId,
@@ -334,8 +335,8 @@ function parseCandidateExpression(
       expression.sourceRefIds,
       'APPLICABILITY_EXPRESSION_SOURCE_REFS_INVALID',
     ),
-    extractionStatus: 'extracted',
-    expressionAst: parseAst(expression.expressionAst),
+    extractionStatus: expression.extractionStatus as ApplicabilityCandidateExpression['extractionStatus'],
+    expressionAst: expression.extractionStatus === 'extracted' ? parseAst(expression.expressionAst) : null,
   };
 }
 

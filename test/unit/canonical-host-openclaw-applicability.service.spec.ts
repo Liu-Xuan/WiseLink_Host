@@ -273,6 +273,16 @@ describe('CanonicalHostOpenClawApplicabilityService', () => {
     });
   });
 
+  it.each(['extraction_failed','not_supported'])('saves source %s as UNKNOWN without deciding Fleet applicability', async extractionStatus => {
+    const harness=applicabilityHarness(); const begin=await harness.begin(); const candidate=candidateFor(begin);
+    candidate.expressions[0].extractionStatus=extractionStatus;
+    candidate.expressions[0].expressionAst=null as never;
+    const committed=await harness.service.commit(begin.attemptRef,begin.leaseToken,begin.leaseGeneration,harness.resultFor(candidate));
+    expect(committed).toMatchObject({status:'WAITING_INPUT',applicability:{decision:'UNKNOWN',kleeneResult:'unknown',pass:false}});
+    expect(harness.attempts.finishProjectionWaitingInput).toHaveBeenCalledTimes(1);
+    expect(harness.attempts.finishProjectionSuccess).not.toHaveBeenCalled();
+  });
+
   it('uses UNKNOWN only for a Host-missing controlled fact and terminalizes WAITING_INPUT', async () => {
     const harness = applicabilityHarness();
     const begin = await harness.begin();

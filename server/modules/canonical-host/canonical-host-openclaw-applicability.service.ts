@@ -524,7 +524,7 @@ export class CanonicalHostOpenClawApplicabilityService {
         rebuilt.contract,
         rebuilt.fleetSource,
       );
-      assertOnlyHostFactUnknown(evaluation);
+      assertSupportedApplicabilityUnknown(evaluation, candidate);
       if (
         evaluation.status === 'WAITING_INPUT' &&
         activeConfigurationEvidenceReevaluation(workItem)
@@ -581,7 +581,7 @@ export class CanonicalHostOpenClawApplicabilityService {
         rebuilt.contract,
         rebuilt.fleetSource,
       );
-      assertOnlyHostFactUnknown(evaluation);
+      assertSupportedApplicabilityUnknown(evaluation, candidate);
       artifactValue = buildApplicabilityArtifact({
         workItem,
         applicabilityInput,
@@ -888,7 +888,7 @@ export class CanonicalHostOpenClawApplicabilityService {
       frozenContract,
       rebuilt.fleetSource,
     );
-    assertOnlyHostFactUnknown(evaluation);
+    assertSupportedApplicabilityUnknown(evaluation, candidate);
     if (evaluation.status !== 'WAITING_INPUT') return null;
     const prepared = await this.prepareCommit(input);
     await this.recordConfigurationEvidenceApplicabilityOwnedTerminal({
@@ -1724,7 +1724,8 @@ function evaluateCandidate(
       decision: 'UNKNOWN',
       kleeneResult: UNKNOWN,
       pass: false,
-      blockingUnknowns: trace.blockingUnknowns,
+      blockingUnknowns: trace.blockingUnknowns.map(unknown => unknown.kind === 'interpretation_unknown'
+        ? {...unknown,strategy:'READ_ORIGINAL_SOURCE'} : unknown),
       fleetResolution: resolution,
     };
   }
@@ -1738,7 +1739,7 @@ function evaluateCandidate(
   };
 }
 
-function assertOnlyHostFactUnknown(evaluation: ApplicabilityEvaluation): void {
+function assertSupportedApplicabilityUnknown(evaluation: ApplicabilityEvaluation, candidate: ApplicabilityCandidateContract): void {
   if (evaluation.kleeneResult !== UNKNOWN) return;
   if (
     evaluation.blockingUnknowns.length === 0 ||
@@ -1748,7 +1749,10 @@ function assertOnlyHostFactUnknown(evaluation: ApplicabilityEvaluation): void {
           'fact_unknown',
           'missing_fleet_fact',
           'conflicting_fleet_fact',
-        ].includes(unknown.kind),
+        ].includes(unknown.kind) && !(unknown.kind === 'interpretation_unknown' &&
+          ['extraction_failed','not_supported'].includes(String(unknown.reason)) &&
+          candidate.expressions.some(expression => expression.expressionId === unknown.fragmentId &&
+            expression.extractionStatus === unknown.reason && expression.expressionAst === null)),
     )
   ) {
     throw new Error('APPLICABILITY_INTERPRETATION_UNKNOWN_REJECTED');

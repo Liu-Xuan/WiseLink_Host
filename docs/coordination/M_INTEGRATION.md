@@ -319,3 +319,11 @@ Skill c85 源提交 `58653b973f43f18c0ce345239547fc2e2a9f115c` 已推送妙搭 o
 实际 Hosted begin、浏览器续评选项和续评受理三处残留 SB-only 条件。本轮让新原文问题分析接收非 SB 文档的真实分类（含 FTD/SL/AMM），不将其改写或确认成 SB；继续由 CanonicalJobAidProblemService 检查原件、发布原文、真实 owner 和当前来源。旧逐项规则引擎保留确认 SB 与 parsed package 边界，不因开关或既有任务而回落为非 SB 的旧规则评估；SB 自身的已有确认逻辑保留。
 
 124 项入口/续评/状态/原文问题测试通过，12 项实际 PostgreSQL 测试使用 FTD 初评及无 package 续评记录，验证同一身份、请求、来源与恢复边界；server types 通过。此增量尚未发布，不作为线上 FTD 模型评估成功证明。原文适用性提取/范围映射、官方 Hosted 安装消费、F6 正式来源接通及 H1/H2 仍未完成。
+
+## 适用性来源解释未知的真实提交路径（2026-09-13，本地增量）
+
+迁移检查确认当前候选契约只能表示 extracted，提交后还拒绝一切非 Fleet 事实未知；这会把原文无法可靠解释逼成错误，而不是明确 UNKNOWN。本轮沿实际 native AST 候选→Host 候选解析→Kleene→候选持久化路径允许 extraction_failed/not_supported 且 AST 必须为 null。条件 ID 与 SourceRef 仍须逐项等于 Host 已绑定来源，非法属性/操作符、伪造引用、失败状态夹带 true/false AST 继续拒绝，不接受 no_rule_found 擦除既有条件。
+
+Host 只接受与该候选状态、fragmentId 和原因吻合的 interpretation_unknown，保存 WAITING_INPUT/UNKNOWN/pass=false。跟进策略标记 READ_ORIGINAL_SOURCE，不继承引擎旧 grill_me 标签来强制人工逐条确认。72 项 Host 契约/提交服务测试、191 项 native 载荷测试、server types 和 c87 版本声明检查通过。
+
+这修正的是已经接线的来源解释未知提交语义；任务输入/受控选择仍未从 frozen.2 迁移到独立原文，不声称新原文条件发现、作用范围绑定已实现。c87 源码增量尚未打包、安装或发布，已验证私有交付包仍为上一节 c86。

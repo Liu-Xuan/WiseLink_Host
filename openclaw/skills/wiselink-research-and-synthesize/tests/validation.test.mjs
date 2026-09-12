@@ -1374,7 +1374,7 @@ test('requires 26 MCP capabilities, six review tools, and hosted provenance', ()
   assert.ok(HOST_MCP_TOOLS.includes('commit_applicability_candidate'));
   assert.equal(
     WISELINK_SKILL_VERSION,
-    'wiselink-research-and-synthesize@r09.c86',
+    'wiselink-research-and-synthesize@r09.c87',
   );
   assert.equal(
     WISELINK_SKILL_COMPATIBILITY_REF,
@@ -7565,3 +7565,22 @@ test('JobAid reference rejection returns exact paths and requires a fresh valida
   assert.equal(result.output.answer, '重新核对');
   assert.deepEqual(work, before);
 });
+
+
+for (const extractionStatus of ['extraction_failed','not_supported']) {
+  test(`preserves source ${extractionStatus} through the native applicability candidate`, async () => {
+    const input=await readJson(APPLICABILITY_TASK_FIXTURE_URL);
+    const output=await readJson(APPLICABILITY_AST_FIXTURE_URL);
+    output.expressions[0].extractionStatus=extractionStatus;
+    output.expressions[0].expressionAst=null;
+    assert.doesNotThrow(() => validatePayload('applicability-pair',{input,output}));
+    const candidate=buildApplicabilityCandidate(input,output);
+    assert.equal(candidate.expressions[0].extractionStatus,extractionStatus);
+    assert.equal(candidate.expressions[0].expressionAst,null);
+    output.expressions[0].sourceRefIds=['invented'];
+    assert.throws(() => validatePayload('applicability-pair',{input,output}),/SOURCE_BINDING_MISMATCH/);
+    output.expressions[0].sourceRefIds=input.sourceExpressions[0].sourceRefIds;
+    output.expressions[0].expressionAst={type:'literal',value:true};
+    assert.throws(() => validatePayload('applicability-pair',{input,output}),/UNRESOLVED_EXPRESSION_AST_INVALID/);
+  });
+}

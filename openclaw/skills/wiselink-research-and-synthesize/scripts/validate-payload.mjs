@@ -5,7 +5,7 @@ import { readFile } from 'node:fs/promises';
 import { pathToFileURL } from 'node:url';
 
 export const WISELINK_SKILL_VERSION =
-  'wiselink-research-and-synthesize@r09.c86';
+  'wiselink-research-and-synthesize@r09.c87';
 export const WISELINK_SKILL_COMPATIBILITY_REF =
   'wiselink-research-and-synthesize@r09';
 export const WISELINK_HOST_MCP_NAME =
@@ -2489,11 +2489,10 @@ export function validateApplicabilityAstCandidate(output, input) {
       expression.sourceRefIds,
       'APPLICABILITY_AST_SOURCE_REFS_INVALID',
     );
-    equal(
-      expression.extractionStatus,
-      'extracted',
-      'APPLICABILITY_AST_EXTRACTION_STATUS_INVALID',
-    );
+    if (!['extracted','extraction_failed','not_supported'].includes(expression.extractionStatus))
+      fail('APPLICABILITY_AST_EXTRACTION_STATUS_INVALID');
+    if (expression.extractionStatus !== 'extracted' && expression.expressionAst !== null)
+      fail('APPLICABILITY_UNRESOLVED_EXPRESSION_AST_INVALID');
     const expectedExpression = expected?.get(expression.expressionId);
     if (
       expected &&
@@ -2503,7 +2502,7 @@ export function validateApplicabilityAstCandidate(output, input) {
     ) {
       fail('APPLICABILITY_AST_SOURCE_BINDING_MISMATCH');
     }
-    validateApplicabilityAstNode(
+    if (expression.extractionStatus === 'extracted') validateApplicabilityAstNode(
       expression.expressionAst,
       input?.astVocabulary ?? null,
     );
