@@ -47,7 +47,11 @@ Thumbs.db
 # Temporary folders
 tmp/
 temp/
+tmp.related-context.*/
 .playwright-cli/
+
+# Local generated PDF/parsing scratch (other output/ handoff folders stay tracked)
+output/pdf/
 
 # Lock files (keep package-lock.json for consistent installs)
 yarn.lock
@@ -56,6 +60,8 @@ pnpm-lock.yaml
 # Cache files
 .eslintcache
 *.tsbuildinfo
+__pycache__/
+*.pyc
 
 # swc wasm
 .swc
