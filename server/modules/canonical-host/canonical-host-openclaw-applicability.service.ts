@@ -1,3 +1,4 @@
+import { bindOriginalApplicabilityCandidate } from './original-applicability-candidate';
 import { Inject, Injectable } from '@nestjs/common';
 
 import type {
@@ -1699,25 +1700,30 @@ function evaluateCandidate(
       fleetResolution: resolution,
     };
   }
-  const hostExpressionById = new Map(
+  const originalBinding=task.schemaVersion===APPLICABILITY_TASK_V3_SCHEMA_VERSION
+    ? bindOriginalApplicabilityCandidate(candidate,task) : null;
+  if (originalBinding?.unknowns.length) return {status:'WAITING_INPUT',decision:'UNKNOWN',kleeneResult:UNKNOWN,
+    pass:false,blockingUnknowns:originalBinding.unknowns,fleetResolution:resolution};
+  const hostExpressionById = originalBinding?.bindings ?? new Map(
     task.sourceExpressions.map((expression) => [
       expression.expressionId,
       expression,
     ]),
   );
-  const fragments: ApplicabilityFragment[] = candidate.expressions.map(
+  const fragments: ApplicabilityFragment[] = candidate.expressions.flatMap(
     (expression) => {
       const hostExpression = hostExpressionById.get(expression.expressionId);
       if (!hostExpression) {
         throw new Error('APPLICABILITY_HOST_TARGET_BINDING_MISSING');
       }
-      return {
+      const targets = originalBinding?.targetBindings.get(expression.expressionId) ?? [hostExpression];
+      return targets.map(target => ({
         ruleFragmentId: expression.expressionId,
         extractionStatus: expression.extractionStatus,
-        applicabilityLevel: hostExpression.applicabilityLevel,
-        contentRef: hostExpression.contentRef,
+        applicabilityLevel: target.applicabilityLevel,
+        contentRef: target.contentRef,
         expressionAst: expression.expressionAst,
-      };
+      }));
     },
   );
   const trace = evaluateApplicabilityFragmentSetWithTrace(
@@ -1751,7 +1757,7 @@ function assertSupportedApplicabilityUnknown(evaluation: ApplicabilityEvaluation
     evaluation.blockingUnknowns.length === 0 ||
     evaluation.blockingUnknowns.some(
       (unknown) =>
-        ![
+        !(candidate.schemaVersion === 'wiselink.3_1.applicability_candidate.v2' && unknown.kind === 'original_scope_unknown') && ![
           'fact_unknown',
           'missing_fleet_fact',
           'conflicting_fleet_fact',

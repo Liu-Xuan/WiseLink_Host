@@ -1,3 +1,4 @@
+import { bindOriginalApplicabilityCandidate, originalBindingSchema, originalConditionSchema, originalDispositionSchema, type OriginalConditionEvidence, type OriginalUnitDisposition } from './original-applicability-candidate';
 import type { CanonicalApplicabilityInputProjection } from '@shared/api.interface';
 import type { DocumentOriginalResult } from '@shared/document-original.interface';
 import type { ApplicabilityAstNode } from '../assessment-workbench/applicability-fleet/applicabilityKleeneEngine';
@@ -17,6 +18,7 @@ export const APPLICABILITY_TASK_V2_SCHEMA_VERSION =
 export const APPLICABILITY_TASK_V3_SCHEMA_VERSION = 'wiselink.3_1.applicability_task.v3' as const;
 export const APPLICABILITY_CANDIDATE_SCHEMA_VERSION =
   'wiselink.3_1.applicability_candidate.v1' as const;
+export const APPLICABILITY_ORIGINAL_CANDIDATE_SCHEMA_VERSION = 'wiselink.3_1.applicability_candidate.v2' as const;
 export const APPLICABILITY_ARTIFACT_SCHEMA_VERSION =
   'wiselink.3_1.applicability_candidate_artifact.v1' as const;
 export const APPLICABILITY_ARTIFACT_V2_SCHEMA_VERSION =
@@ -167,15 +169,18 @@ export interface ApplicabilityCandidateExpression {
   sourceRefIds: string[];
   extractionStatus: 'extracted' | 'extraction_failed' | 'not_supported';
   expressionAst: ApplicabilityAstNode | null;
+  original?: OriginalConditionEvidence;
 }
 
 export interface ApplicabilityCandidateContract {
-  schemaVersion: typeof APPLICABILITY_CANDIDATE_SCHEMA_VERSION;
+  schemaVersion: typeof APPLICABILITY_CANDIDATE_SCHEMA_VERSION | typeof APPLICABILITY_ORIGINAL_CANDIDATE_SCHEMA_VERSION;
+  originalBinding?: NonNullable<ApplicabilityTaskContract['originalInput']>['binding'];
+  unitDispositions?: OriginalUnitDisposition[];
   operation: 'EXTRACT_APPLICABILITY';
   candidateStatus: 'CANDIDATE';
   inputRevision: number;
   documentVersionRef: string;
-  sourcePackage: { packageId: string; contentHash: string };
+  sourcePackage: { packageId: string; contentHash: string } | null;
   bilingualBinding: ApplicabilityTaskContract['bilingualBinding'];
   aircraft: ApplicabilityTaskContract['aircraft'];
   fleetBinding: ApplicabilityTaskContract['fleetBinding'];
@@ -234,6 +239,7 @@ export function parseApplicabilityCandidate(
   value: unknown,
 ): ApplicabilityCandidateContract {
   const candidate = record(value, 'APPLICABILITY_CANDIDATE_INVALID');
+  const originalMode=candidate.schemaVersion===APPLICABILITY_ORIGINAL_CANDIDATE_SCHEMA_VERSION;
   exactKeys(candidate, [
     'schemaVersion',
     'operation',
@@ -247,9 +253,10 @@ export function parseApplicabilityCandidate(
     'expressions',
     'runtime',
     'authority',
+    ...(originalMode ? ['originalBinding','unitDispositions'] : []),
   ]);
   if (
-    candidate.schemaVersion !== APPLICABILITY_CANDIDATE_SCHEMA_VERSION ||
+    (!originalMode && candidate.schemaVersion !== APPLICABILITY_CANDIDATE_SCHEMA_VERSION) ||
     candidate.operation !== 'EXTRACT_APPLICABILITY' ||
     candidate.candidateStatus !== 'CANDIDATE' ||
     !Number.isSafeInteger(candidate.inputRevision) ||
@@ -258,7 +265,9 @@ export function parseApplicabilityCandidate(
     fail('APPLICABILITY_CANDIDATE_BINDING_INVALID');
   }
   const parsed: ApplicabilityCandidateContract = {
-    schemaVersion: APPLICABILITY_CANDIDATE_SCHEMA_VERSION,
+    schemaVersion: originalMode ? APPLICABILITY_ORIGINAL_CANDIDATE_SCHEMA_VERSION : APPLICABILITY_CANDIDATE_SCHEMA_VERSION,
+    ...(originalMode ? {originalBinding:originalBindingSchema.parse(candidate.originalBinding),
+      unitDispositions:array(candidate.unitDispositions,'APPLICABILITY_ORIGINAL_DISPOSITIONS_INVALID').map(item => originalDispositionSchema.parse(item))} : {}),
     operation: 'EXTRACT_APPLICABILITY',
     candidateStatus: 'CANDIDATE',
     inputRevision: Number(candidate.inputRevision),
@@ -266,18 +275,18 @@ export function parseApplicabilityCandidate(
       candidate.documentVersionRef,
       'APPLICABILITY_DOCUMENT_VERSION_REQUIRED',
     ),
-    sourcePackage: parseSourcePackage(candidate.sourcePackage),
+    sourcePackage: originalMode ? null : parseSourcePackage(candidate.sourcePackage),
     bilingualBinding: parseBilingualBinding(candidate.bilingualBinding),
     aircraft: parseAircraft(candidate.aircraft),
     fleetBinding: parseFleetBinding(candidate.fleetBinding),
     expressions: array(
       candidate.expressions,
       'APPLICABILITY_EXPRESSIONS_INVALID',
-    ).map(parseCandidateExpression),
+    ).map(value => parseCandidateExpression(value,originalMode)),
     runtime: parseRuntime(candidate.runtime),
     authority: parseAuthority(candidate.authority),
   };
-  if (parsed.expressions.length === 0 || parsed.expressions.length > 200) {
+  if ((originalMode && candidate.sourcePackage!==null) || (!originalMode && parsed.expressions.length === 0) || parsed.expressions.length > 200) {
     fail('APPLICABILITY_EXPRESSIONS_INVALID');
   }
   return parsed;
@@ -301,10 +310,17 @@ export function validateApplicabilityCandidateBinding(
     stable(candidate.aircraft) !== stable(task.aircraft) ||
     stable(candidate.fleetBinding) !== stable(task.fleetBinding) ||
     stable(candidate.runtime) !== stable(task.runtimePolicy) ||
-    candidate.expressions.length !== task.sourceExpressions.length
+    (task.schemaVersion !== APPLICABILITY_TASK_V3_SCHEMA_VERSION && candidate.expressions.length !== task.sourceExpressions.length)
   ) {
     fail('APPLICABILITY_CANDIDATE_TASK_BINDING_MISMATCH');
   }
+  if (task.schemaVersion === APPLICABILITY_TASK_V3_SCHEMA_VERSION) {
+    if (candidate.schemaVersion !== APPLICABILITY_ORIGINAL_CANDIDATE_SCHEMA_VERSION)
+      fail('APPLICABILITY_ORIGINAL_CANDIDATE_REQUIRED');
+    bindOriginalApplicabilityCandidate(candidate,task);
+    return;
+  }
+  if (candidate.schemaVersion !== APPLICABILITY_CANDIDATE_SCHEMA_VERSION) fail('APPLICABILITY_CANDIDATE_TASK_BINDING_MISMATCH');
   const seen = new Set<string>();
   for (const expression of candidate.expressions) {
     const expected = expectedExpressions.get(expression.expressionId);
@@ -321,6 +337,7 @@ export function validateApplicabilityCandidateBinding(
 
 function parseCandidateExpression(
   value: unknown,
+  originalMode = false,
 ): ApplicabilityCandidateExpression {
   const expression = record(value, 'APPLICABILITY_EXPRESSION_INVALID');
   exactKeys(expression, [
@@ -328,12 +345,14 @@ function parseCandidateExpression(
     'sourceRefIds',
     'extractionStatus',
     'expressionAst',
+    ...(originalMode ? ['original'] : []),
   ]);
   if (!['extracted','extraction_failed','not_supported'].includes(String(expression.extractionStatus)))
     fail('APPLICABILITY_EXPRESSION_STATUS_INVALID');
   if (expression.extractionStatus !== 'extracted' && expression.expressionAst !== null)
     fail('APPLICABILITY_UNRESOLVED_EXPRESSION_AST_INVALID');
   return {
+    ...(originalMode ? {original:originalConditionSchema.parse(expression.original)} : {}),
     expressionId: text(
       expression.expressionId,
       'APPLICABILITY_EXPRESSION_ID_REQUIRED',
