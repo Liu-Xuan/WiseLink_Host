@@ -359,3 +359,9 @@ Host 已接受仅供原文任务 v3 使用的候选 v2：确切原文绑定、�
 Host artifact/projection v3 保存实际 originalSource binding/manifest，旧 package 字段为 null；产物保存经过 Host 结构校验的逐目标绑定。提交前重建补齐真实 row.tenantId，修复此前只验证 begin 未覆盖的原文租户传递遗漏。APPLICABLE 与 UNKNOWN 均完成实际 service 提交、产物 readback、CAS 和幂等 replay；更改原文输入后拒绝旧结果恢复且不再 CAS。旧 v1/v2 结果继续按原任务版本与来源校验。
 
 状态投影已识别 v3 原文来源，逐阶段原文比较读取 applicability_task.v3 的实际 originalInput 路径；旧 JobAid/Overall 路径保留。112 项契约、提交恢复、状态测试及前后端类型检查通过，未据此声称线上业务完成。普通入口尚未切换；下游工程/相关上下文对原文适用性结果的消费、源变化重新触发及真实 H1/H2 仍需验证和接通。未发布。
+
+## 原文适用性下游消费（2026-09-13，迁移中）
+
+相关上下文已支持无旧包的 v2 原文评估目标及 v3 适用性结果，仍只复用相关文档自己的当前结果。复用须匹配该文档来源、受控选择、Fleet 修订及结果三值一致性，不把主文档的适用性复制给相关文档。原文比较 helper 只比较已提供的绑定，不声称查询最新发布或完成授权。
+
+JobAid 实际 buildInput 以正常 Reader 本次读取的确切原文 binding 复核 v3 结果；来源或 Fleet 修订变化时传入 hostApplicability=null，保留存储的历史结果。新 Overall 保存时同样只采用与其确切任务原文匹配的 v3 decision，否则 UNKNOWN。42 项相关上下文/JobAid 任务及既有续接测试与前后端类型检查通过，含真实 begin 构建三种来源/Fleet 情形。普通入口尚未切换；旧包 Overall processor 仍保留原任务路径，源变化重触发、受控目标配置及全流程 H1/H2 还需接通和验证。本批未发布。

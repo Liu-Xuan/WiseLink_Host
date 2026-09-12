@@ -80,6 +80,32 @@ describe('JobAid continuation requests', () => {
       .toThrow('ACTION_ATTEMPT_INITIAL_REQUEST_ORIGINAL_CHANGED');
   });
 
+  it.each(['same','different-original','different-fleet'] as const)('passes only matching original applicability into the actual JobAid task: %s',async mode=>{
+    const h=harness(); const current=h.current();
+    const original=(await h.originalReader.readDocumentOriginal()).original;
+    const originalSource={binding:original.binding,artifact:{ref:'document-original://fixture/parse',sha256:'b'.repeat(64),byteLength:100,mediaType:'application/json'}};
+    current.applicabilityInput={schemaVersion:'wiselink.3_1.applicability_input_projection.v2',currentness:'CURRENT',
+      workItemId:current.workItemId,documentVersionId:current.source.documentVersionId,sourcePackageId:null,
+      sourcePackageContentHash:null,sourcePackageArtifactSha256:null,originalSource,
+      applicabilityContextRef:'context',bindingRevision:'binding',aircraftNumber:'B-TEST',assessmentAsOf:'2026-09-09',
+      fleetMasterData:{sourceSnapshotId:'fleet',sourceRevisionKey:'rev',authorityRevision:'authority'}} as CanonicalWorkItemProjection['applicabilityInput'];
+    current.applicability={schemaVersion:'wiselink.3_1.applicability_candidate_projection.v3',currentness:'CURRENT',staleReason:null,
+      documentId:current.source.documentId,documentVersionId:current.source.documentVersionId,sourcePackageId:null,
+      sourcePackageContentHash:null,translationActionAttemptId:null,sourceReadingMode:'VERIFIED_ENGLISH',originalSource:structuredClone(originalSource),
+      applicabilityContextRef:'context',applicabilityBindingRevision:'binding',aircraftNumber:'B-TEST',assessmentAsOf:'2026-09-09',
+      fleetSourceSnapshotId:'fleet',fleetSourceRevisionKey:'rev',fleetAuthorityRevision:'authority',
+      status:'CANDIDATE_ONLY',decision:'APPLICABLE',kleeneResult:true,pass:true,blockingUnknownCount:0,sourceExpressionCount:1} as CanonicalWorkItemProjection['applicability'];
+    if(mode==='different-original') {
+      current.applicabilityInput!.originalSource!.binding.parseRunId='previous';
+      (current.applicability as Extract<NonNullable<typeof current.applicability>,{schemaVersion:'wiselink.3_1.applicability_candidate_projection.v3'}>).originalSource.binding.parseRunId='previous';
+    }
+    if(mode==='different-fleet') current.applicabilityInput!.fleetMasterData.sourceRevisionKey='new';
+    const started=await h.service.begin(current,scope,'INITIAL_PROBLEM_ASSESSMENT');
+    const result=parseJobAidProblemTask(started.task).modelInput.hostApplicability;
+    if(mode==='same') expect(result).toMatchObject({decision:'APPLICABLE',pass:true});
+    else expect(result).toBeNull();
+    expect(current.applicability!.decision).toBe('APPLICABLE');
+  });
   it('claims a source-file-bound original task without a legacy package', async () => {
     const h=harness(); h.current().package=null; h.current().classification.normalizedFamily='FTD';
     const started=await h.service.begin(h.current(),scope,'INITIAL_PROBLEM_ASSESSMENT');
