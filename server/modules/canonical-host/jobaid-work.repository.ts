@@ -1,4 +1,5 @@
 import { randomUUID } from 'node:crypto';
+import { dmDocumentParseRun } from '../../database/document-parsing.schema';
 import { Inject, Injectable } from '@nestjs/common';
 import {
   DRIZZLE_DATABASE,
@@ -19,6 +20,7 @@ import { canonicalJson } from '../action-attempt/action-attempt-envelope';
 import type { ActionAttemptRow } from '../action-attempt/action-attempt.types';
 import { EngineeringMatterWorkingRepository } from './engineering-matter-working.repository';
 import type { JobAidSourceBinding } from './jobaid-problem-task';
+import { EngineeringSearchProjectionWriter } from './engineering-search-projection';
 
 export interface JobAidWorkFence {
   principalId: string;
@@ -61,7 +63,24 @@ export class JobAidWorkRepository {
   constructor(
     @Inject(DRIZZLE_DATABASE) private readonly db: PostgresJsDatabase,
     private readonly actorTransactions: EngineeringMatterWorkingRepository,
+    private readonly searchProjection: EngineeringSearchProjectionWriter,
   ) {}
+
+  async withActorScope<T>(actorUserId: string, operation: () => Promise<T>): Promise<T> {
+    return this.actorTransactions.withActorScope(actorUserId, operation);
+  }
+
+  async publishedOriginalBinding(input: { tenantId: string; actorUserId: string; workItemId: string; documentVersionId: string }) {
+    return this.withActorTransaction(input.actorUserId, async database => {
+      const owned = await this.loadOwnedSourceBinding({...input,kind:'SOURCE_FILE'}, database);
+      if (!owned || owned.documentVersionId !== input.documentVersionId) throw new Error('JOBAID_SOURCE_AUTHORIZATION_CHANGED');
+      const [run] = await database.select({ parseRunId: dmDocumentParseRun.parseRunId }).from(dmDocumentParseRun)
+        .where(and(eq(dmDocumentParseRun.tenantId,input.tenantId),eq(dmDocumentParseRun.documentVersionId,input.documentVersionId),
+          eq(dmDocumentParseRun.status,'PUBLISHED'))).orderBy(desc(dmDocumentParseRun.parseRevision)).limit(1);
+      if (!run) throw new Error('DOCUMENT_ORIGINAL_NOT_PUBLISHED');
+      return run;
+    });
+  }
 
   /** The caller supplies the actor resolved from the Host owner/task binding. */
   async withActorTransaction<T>(
@@ -75,7 +94,7 @@ export class JobAidWorkRepository {
   }
 
   async loadOwnedSourceBinding(
-    input: { tenantId: string; workItemId: string; actorUserId: string },
+    input: { tenantId: string; workItemId: string; actorUserId: string; kind?: 'SOURCE_FILE' },
     database: PostgresJsDatabase,
   ): Promise<JobAidSourceBinding | null> {
     const [row] = await database
@@ -95,7 +114,14 @@ export class JobAidWorkRepository {
     if (!row?.projectionJson) return null;
     const projection = JSON.parse(row.projectionJson) as {
       package?: { artifact?: { ref?: unknown; sha256?: unknown } };
+      source?: {sourceArtifactId?: string;sourceFileSha256?: string};
     };
+    if (input.kind === 'SOURCE_FILE') {
+      const source=projection.source;
+      if (!source?.sourceArtifactId || !/^[a-f0-9]{64}$/u.test(source.sourceFileSha256 ?? '')) return null;
+      return {kind:'SOURCE_FILE',workItemId:input.workItemId,documentVersionId:row.documentVersionId,
+        artifactRef:source.sourceArtifactId,artifactSha256:source.sourceFileSha256!};
+    }
     const artifact = projection.package?.artifact;
     if (
       typeof artifact?.ref !== 'string' ||
@@ -351,6 +377,9 @@ export class JobAidWorkRepository {
         })
         .returning();
       if (!saved) throw new Error('JOBAID_WORK_SAVE_READBACK_MISSING');
+      await this.searchProjection.enqueuePending({ tenantId: saved.tenantId, ownerKind: 'USER',
+        ownerId: saved.createdByUserId, subjectId: saved.workItemId,
+        revisionRef: saved.assessmentWorkRevisionId, database });
       return { revision: project(saved), replayed: false };
     };
     return executor
@@ -457,8 +486,11 @@ export class JobAidWorkRepository {
         throw new Error('JOBAID_SOURCE_AUTHORIZATION_CHANGED');
       const projection = JSON.parse(row.projectionJson) as {
         package?: { artifact?: { sha256?: string } };
+        source?: {sourceArtifactId?: string;sourceFileSha256?: string};
       };
-      if (projection.package?.artifact?.sha256 !== binding.artifactSha256)
+      if (binding.kind === 'SOURCE_FILE'
+        ? projection.source?.sourceArtifactId !== binding.artifactRef || projection.source?.sourceFileSha256 !== binding.artifactSha256
+        : projection.package?.artifact?.sha256 !== binding.artifactSha256)
         throw new Error('JOBAID_SOURCE_VERSION_CHANGED');
       if (row.workItemId === attempt.workItemId) primary = row;
     }

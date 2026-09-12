@@ -12,6 +12,17 @@ import {
 } from '../../server/modules/action-attempt/action-attempt-envelope';
 
 describe('OpenClaw ActionAttempt envelopes', () => {
+  it('seals an exact original input and rejects injected or invalid binding fields', () => {
+    const { inputHash: _oldHash, ...base } = matterTaskEnvelope();
+    const input = { kind: 'DOCUMENT_VERSION' as const, inputId: 'material-test', familyId: 'FAM', documentVersionId: 'DV',
+      workItemId: null, workItemRevision: null, resultRef: null, resultRevision: null,
+      original: { parseRunId: 'PR-2', parseRevision: 2 } };
+    const body = { ...base, workingBasis: { ...base.workingBasis, inputs: [input] } };
+    expect(parseMatterTaskEnvelope(canonicalJson(sealMatterTaskEnvelope(body))).workingBasis.inputs[0].original).toEqual(input.original);
+    for (const original of [{ parseRunId: 'PR-2', parseRevision: 0 }, { ...input.original, authorized: true }]) {
+      expect(() => parseMatterTaskEnvelope(canonicalJson(sealMatterTaskEnvelope({ ...body, workingBasis: { ...body.workingBasis, inputs: [{ ...input, original }] } })))).toThrow('WORKING_BASIS_INVALID');
+    }
+  });
   it('round-trips an immutable task and rejects a changed model input', () => {
     const task = taskEnvelope();
     expect(parseTaskEnvelope(canonicalJson(task))).toEqual(task);

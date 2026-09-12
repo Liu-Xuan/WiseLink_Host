@@ -14,3 +14,10 @@ export {
 } from './document-management-hosted.tokens';
 export { MiaodaExternalDiscoveryCandidateStore } from './miaoda-external-discovery-candidate.store';
 export { UnconfiguredDocumentManagementIngestAuthorizer } from './unconfigured-document-management-ingest-authorizer';
+export {
+  DriveSourceScanService,
+  type AuthorizedDrivePageFetcher,
+  type DriveSourceScanCandidates,
+} from './drive-source-scan.service';
+export { DriveScanCheckpointRepository } from './drive-scan-checkpoint.repository';
+export { classifyDriveSourceCandidates, toDriveSourceCandidates, type DriveSourceCandidate, type DriveSourceCandidateChange } from '../drive-source-candidate';

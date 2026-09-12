@@ -69,3 +69,13 @@ c80 增加已知完成纯文本响应的有界格式纠正，复用已记录响�
 c80 官方安装 46/46 文件一致、279 项测试通过。一次续接 `manual:efc2b938-2bab-4f6d-ab8d-14ca3de9fa70:1789098100468:3` 于 11:41:40 接受，领取 generation 2 后约 4 秒因 `JOBAID_MODEL_BUDGET_EXHAUSTED` 退出，未调用新模型或保存新工作。原因是原 30 分钟 wall-clock 计时把 11:06:57 之后的停机维护全部计入；Host 任务截止仍为 12:03:38。主控等待完整租约并非必要：现有 CLAIM 已允许同一 principal 读回自有有效租约。
 
 c81 对有封存 deadline 的 Matter 改为按原检查点中每轮实际模型执行时间累计 30 分钟预算，保持 Host 整体截止、原始时间记录、模型、输入、轮次和纠正计数。WorkItem 路径不变。测试覆盖维护后复用旧响应、模型累计耗尽、Host 绝对截止和异常时间记录；真实后续保存仍待核验。
+
+## c84 恢复与完整工作保存成功
+
+2026-09-11，c84 Host `a34e30b019d2c3e0d58b922c72f2616118ad7182` 发布完成；官方 Skill 安装回执为 46 文件一致、282 项测试通过，维护后两个原任务配置和启用状态已恢复。旧 `AQ-e2ea7ad905dd4078ad38426c0818a4f4` 与 `AQ-050ee334467a4ee9a9bb71b30888e7ec` 经 Host STATUS 均确认为 TIMED_OUT，未保存结果。
+
+正常 begin 以固定请求号 `wl-v5-c84-recover-aq050-20260911` 复用后者候选，Host 核对事项第 3 版/工作第 5 版后登记 `AQ-88acaa9551064134a7911c66702f1e1e`。原定时任务因累计失败退避，主控在无活跃消费者的读回证据下，通过官方 cron run 单次运行原 job。首轮复用的完整候选通过前面的校验，但事项工作状态旧 validator 不接受已存在于 AssessmentEvidence 的 METHOD_CLAUSE，退出 `ENGINEERING_MATTER_WORKING_EVIDENCE_KIND_INVALID`，没有新保存。
+
+Host 修复 `764cecbdaa4c8ccfc5ec7a2dfb86f661db6234e1` 为方法条款补齐 packRef/methodRef/sourceIdentity/locator 及 CONFIRMED、VERSION_UNCONFIRMED 的校验。20 项相关测试、服务端类型和构建通过；只推送飞书 origin。发布 `7684161160085949387` 返回 finished、精确提交一致、error_logs 为空。未修改旧来源性质、模型或 Skill；再次通过官方原 job 续接同一 AQ 和保存请求号。
+
+14:35:12 保存完成。Host STATUS 读回 SUCCEEDED；精确 READ_SAVED_WORK 请求 `JA-save-3782eeae-ad94-41a4-8862-a2dad4077c8e` 读回 `MWREV-efe27e0f-e008-4ca2-b94d-20203ea30620`、工作修订 6、5 个完整问题、COMPLETE_WITH_OPEN_QUESTIONS。完整工作保留 METHOD_CLAUSE、DOCUMENT_PASSAGE、ENGINEER_STATEMENT 三类来源。此为真实来源变化请求经有界恢复后的保存和完成证据，包含维护期间的官方手动调度；不把它表述为从最初触发到完成全程无人干预，也不构成正式采用或放行。MinerU 持久化/新阅读/精简翻译尚在独立接线，不能由此推定已完成。

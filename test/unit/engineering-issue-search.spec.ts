@@ -70,6 +70,18 @@ function setup() {
 }
 
 describe('authorized engineering issue search and exact expansion', () => {
+  it('rebuilds pending rows through the actor-scoped exact revision reader', async () => {
+    const h = setup();
+    const projection = { rebuildPending: jest.fn().mockImplementation(async ({ load }: { load: (item: { ownerKind: 'USER'; revisionRef: string; ownerId: string; subjectId: string }) => Promise<unknown> }) => {
+      const content = await load({ ownerKind: 'USER', revisionRef: h.saved.workRevisionRef, ownerId: actor.userId, subjectId: h.saved.workItemId });
+      expect(content).toBe(h.saved.content);
+      return { attempted: 1, rebuilt: 1, failed: 0 };
+    }) };
+    const service = new EngineeringIssueSearchService(h.db as never, h.jobAid as never, h.matters as never, projection as never);
+    await expect(service.rebuildProjection(10, actor)).resolves.toEqual({ attempted: 1, rebuilt: 1, failed: 0 });
+    expect(h.jobAid.readBrowserRevision).toHaveBeenCalledWith(h.saved.workItemId, h.saved.workRevisionRef, actor);
+  });
+
   it('loads each matching work once within a search, but reauthorizes the next request', async () => {
     const h = setup();
     h.saved.content.issues.push({
@@ -137,6 +149,15 @@ describe('authorized engineering issue search and exact expansion', () => {
     const h = setup();
     const found = await h.service.search('工具', actor);
     expect(found.hits).toHaveLength(1);
+    expect(found.limitations).toEqual([
+      '仅返回当前已保存且经授权展开的问题工作；结果不代表全量统计。',
+    ]);
+    expect(found.hits[0]).toMatchObject({
+      kind: 'WORK',
+      matchedRange: `issue:${h.identity.issueKey}`,
+      reason: 'FULL_TEXT',
+      rootRefs: expect.any(Array),
+    });
     expect(found.hits[0]).not.toHaveProperty('issue');
     expect(found.hits[0]).not.toHaveProperty('reading');
     expect(h.jobAid.readBrowserRevision).toHaveBeenCalledWith(

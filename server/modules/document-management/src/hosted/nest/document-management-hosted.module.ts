@@ -11,7 +11,12 @@ import { MiaodaHostedDocumentCatalog } from './miaoda-hosted-document-catalog';
 import { DOCUMENT_MANAGEMENT_INGEST_AUTHORIZER } from './document-management-hosted.tokens';
 import { DocumentParsingHostedController } from './document-parsing-hosted.controller';
 import { DocumentParsingHostedService } from './document-parsing-hosted.service';
+import { MineruRemoteWorkerClient } from './mineru-remote-worker.client';
+import { DocumentOfficialPluginService } from './document-official-plugin.service';
+import { DocumentStepLeaseRepository } from './document-step-lease.repository';
 import { DocumentParsingRepository } from './document-parsing.repository';
+import { DriveScanCheckpointRepository } from './drive-scan-checkpoint.repository';
+import { DriveSourceScanService } from './drive-source-scan.service';
 
 export interface DocumentManagementHostedModuleOptions {
   imports?: ModuleMetadata['imports'];
@@ -42,9 +47,14 @@ export class DocumentManagementHostedModule {
         MiaodaHostedDocumentCatalog,
         DocumentManagementHostedService,
         DocumentParsingRepository,
+        DocumentStepLeaseRepository,
+        DocumentOfficialPluginService,
         DocumentParsingHostedService,
+        MineruRemoteWorkerClient,
+        DriveScanCheckpointRepository,
+        DriveSourceScanService,
       ],
-      exports: [DocumentManagementHostedService, DocumentParsingHostedService],
+      exports: [DocumentOfficialPluginService, DocumentStepLeaseRepository, DocumentManagementHostedService, DocumentParsingHostedService, DriveSourceScanService],
     };
   }
 }

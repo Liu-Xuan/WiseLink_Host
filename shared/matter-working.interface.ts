@@ -17,6 +17,7 @@ export interface EngineeringMatterWorkingFocus {
 
 /** Exact Host-owned input identity observed for one Matter working revision. */
 export interface EngineeringMatterWorkItemInputBinding {
+  original?: EngineeringMatterOriginalInputBinding;
   /** Stable within the Matter. The first increment uses the WorkItem id. */
   inputId: string;
   workItemId: string;
@@ -27,6 +28,7 @@ export interface EngineeringMatterWorkItemInputBinding {
 }
 
 export interface EngineeringMatterDocumentInputBinding {
+  original?: EngineeringMatterOriginalInputBinding;
   kind: 'DOCUMENT_VERSION';
   inputId: string;
   familyId: string;
@@ -37,6 +39,11 @@ export interface EngineeringMatterDocumentInputBinding {
   resultRevision: null;
 }
 
+export interface EngineeringMatterOriginalInputBinding {
+  parseRunId: string;
+  parseRevision: number;
+}
+
 export type EngineeringMatterWorkingInputBinding =
   | EngineeringMatterWorkItemInputBinding
   | EngineeringMatterDocumentInputBinding;
@@ -45,11 +52,13 @@ export interface EngineeringMatterWorkingTextItem {
   itemId: string;
   text: string;
   basisRefs: string[];
+  /** Evaluated only for saved reviewConditions, never inferred from prose. */
+  when?: { kind: 'DUE_AT'; at: string } | { kind: 'ORIGINAL_CHANGED'; inputId: string; afterParseRunId: string | null };
 }
 
 export interface EngineeringMatterWorkingCoverage {
   binding: EngineeringMatterWorkingInputBinding;
-  contribution: 'SUBSTANTIVE' | 'NO_MATERIAL_CHANGE';
+  contribution: 'SUBSTANTIVE' | 'NO_MATERIAL_CHANGE' | 'READ_ONLY';
   /** Exact source keys that the Host observed being read for this update. */
   checkedSourceRefIds: string[];
   /** Human-readable bounded scope; never implies full-document coverage. */
@@ -143,8 +152,10 @@ export interface EngineeringMatterWorkingRevisionReadModel {
 
 export type EngineeringMatterPendingInputReason =
   | 'NOT_COVERED'
+  | 'READ_NOT_PROCESSED'
   | 'WORK_ITEM_REVISION_CHANGED'
   | 'DOCUMENT_VERSION_CHANGED'
+  | 'DOCUMENT_ORIGINAL_CHANGED'
   | 'RESULT_CHANGED';
 
 export interface EngineeringMatterPendingInput {

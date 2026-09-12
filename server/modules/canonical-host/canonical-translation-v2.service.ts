@@ -517,6 +517,25 @@ export class CanonicalTranslationV2Service {
         )
       )
         throw new Error('TRANSLATION_REQUESTED_BLOCK_NOT_REPLACED');
+      return this.assembleSavedState(fence, state);
+    }
+    throw new Error('TRANSLATION_WORKSPACE_COMMAND_INVALID');
+  }
+
+  async assembleOfficial(fence: TranslationWorkspaceFence, assertAuthorized: () => Promise<void>) {
+    const guard = async () => { await assertAuthorized(); await this.workspaces.assertOfficialExecution(fence); };
+    await guard();
+    const { workspace, revisions } = await this.workspaces.readSnapshot(fence);
+    const result = await this.assembleSavedState(fence, {
+      workspace, reading: buildTranslationWorkspaceReadingV2(workspace, revisions),
+    }, guard);
+    await assertAuthorized();
+    return result;
+  }
+
+  private async assembleSavedState(fence: TranslationWorkspaceFence,
+    state: { workspace: TranslationWorkspaceV2; reading: TranslationWorkspaceReadingV2 },
+    beforeSave: () => Promise<void> = async () => undefined) {
       if (
         state.workspace.generationRequests.some(
           (request) => request.status === 'REGISTERED',
@@ -551,6 +570,7 @@ export class CanonicalTranslationV2Service {
       const stored = await this.artifacts.persistAndReadback(bytes);
       if (!Buffer.from(stored.bytes).equals(Buffer.from(bytes)))
         throw new Error('TRANSLATION_FINAL_ARTIFACT_READBACK_MISMATCH');
+      await beforeSave();
       // Artifact I/O occurs before the short manifest CAS transaction.
       const saved = await this.workspaces.saveFinalArtifact({
         ...fence,
@@ -558,8 +578,6 @@ export class CanonicalTranslationV2Service {
         manifest,
       });
       return finalResult(saved, state.reading);
-    }
-    throw new Error('TRANSLATION_WORKSPACE_COMMAND_INVALID');
   }
 
   async readCurrent(

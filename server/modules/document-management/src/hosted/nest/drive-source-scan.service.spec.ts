@@ -1,0 +1,108 @@
+import { DriveSourceScanService } from './drive-source-scan.service';
+
+describe('DriveSourceScanService', () => {
+  it('returns earlier unacknowledged objects alongside the current partial scan', async () => {
+    const pending = [{ sourceKey: 'operations', providerObjectId: 'earlier', providerVersionId: 'v1',
+      entryType: 'file', name: 'A.pdf', path: 'A.pdf', modifiedTime: null, identity: 'operations:file:earlier:v1' }];
+    const listPendingCandidates = jest.fn(async () => pending);
+    const service = new DriveSourceScanService({ listPendingCandidates,
+      forTenant: () => ({ load: async () => null, savePage: async () => undefined }),
+    } as never);
+    const result = await service.scanCandidates({ tenantId: 'tenant', sourceKey: 'operations', maxPages: 1,
+      fetcher: { list: async () => ({ files: [{ token: 'current', type: 'file', name: 'B.pdf' }], hasMore: true, nextPageToken: 'C' }) } });
+    expect(result.complete).toBe(false);
+    expect(result.candidates[0].providerObjectId).toBe('current');
+    expect(result.pendingCandidates).toEqual(pending);
+    expect(listPendingCandidates).toHaveBeenCalledWith('tenant','operations');
+  });
+  it('rejects unknown sources before invoking an authorized fetcher', async () => {
+    const service = new DriveSourceScanService({ forTenant: () => { throw new Error('must not load'); } } as never);
+    const fetcher = { list: jest.fn() };
+    await expect(service.scan({ tenantId: 'tenant', sourceKey: 'unknown', fetcher })).rejects.toThrow('DRIVE_SOURCE_NOT_REGISTERED');
+    expect(fetcher.list).not.toHaveBeenCalled();
+  });
+
+  it('runs a registered source through the tenant checkpoint store', async () => {
+    const checkpoints = new Map<string, string>();
+    const forTenant = jest.fn(() => ({
+      load: async (key: string) => checkpoints.get(key) ?? null,
+      savePage: async (key: string, value: string) => { checkpoints.set(key, value); },
+    }));
+    const service = new DriveSourceScanService({ forTenant } as never);
+    const fetcher = { list: jest.fn(async () => ({ files: [{ token: 'file-1', type: 'file', name: '日报.pdf' }], hasMore: false })) };
+    const result = await service.scan({ tenantId: 'tenant-1', sourceKey: 'operations', fetcher, maxPages: 1 });
+    expect(fetcher.list).toHaveBeenCalledWith('Oy1vfy8nslGZeUdBBkoczv0Fnxh', undefined);
+    expect(forTenant).toHaveBeenCalledWith('tenant-1');
+    expect(result.entries.map(entry => entry.name)).toEqual(['日报.pdf']);
+    expect(checkpoints.has('operations')).toBe(true);
+  });
+
+  it('resumes the same source from its saved continuation', async () => {
+    let checkpoint: string | null = null;
+    const calls: Array<[string, string | undefined]> = [];
+    const service = new DriveSourceScanService({
+      forTenant: () => ({
+        load: async () => checkpoint,
+        savePage: async (_key: string, value: string) => { checkpoint = value; },
+      }),
+    } as never);
+    const fetcher = { list: jest.fn(async (folder: string, token?: string) => {
+      calls.push([folder, token]);
+      return token ? { files: [{ token: 'file-2', type: 'file', name: '第二页.pdf' }], hasMore: false } :
+        { files: [{ token: 'file-1', type: 'file', name: '第一页.pdf' }], hasMore: true, nextPageToken: 'p2' };
+    }) };
+    await service.scan({ tenantId: 'tenant-2', sourceKey: 'operations', fetcher, maxPages: 1 });
+    await service.scan({ tenantId: 'tenant-2', sourceKey: 'operations', fetcher, maxPages: 1 });
+    expect(calls).toEqual([
+      ['Oy1vfy8nslGZeUdBBkoczv0Fnxh', undefined],
+      ['Oy1vfy8nslGZeUdBBkoczv0Fnxh', 'p2'],
+    ]);
+  });
+
+  it('returns identity candidates without converting them into accepted documents', async () => {
+    const checkpoints = { listPendingCandidates: async () => [], forTenant: () => ({ load: async () => null, savePage: async () => undefined }) };
+    const service = new DriveSourceScanService(checkpoints as never);
+    const result = await service.scanCandidates({
+      tenantId: 'tenant-3', sourceKey: 'operations',
+      fetcher: { list: async () => ({ files: [{ token: 'file-3', type: 'file', name: '日报.pdf', version_id: 'v1' }], hasMore: false }) },
+    });
+    expect(result.candidates[0]?.identity).toBe('operations:file:file-3:v1');
+    expect(result.candidates[0]?.providerVersionId).toBe('v1');
+    expect(result.complete).toBe(true);
+    expect(result.changes[0]?.change).toBe('NEW');
+  });
+
+  it('classifies changes against an explicitly supplied prior candidate snapshot', async () => {
+    const checkpoints = { listPendingCandidates: async () => [], forTenant: () => ({ load: async () => null, savePage: async () => undefined }) };
+    const service = new DriveSourceScanService(checkpoints as never);
+    const previous = [{ sourceKey: 'operations', providerObjectId: 'file-4', providerVersionId: 'v1', entryType: 'file', name: '日报.pdf', path: '日报.pdf', modifiedTime: null, identity: 'operations:file:file-4:v1' }];
+    const result = await service.scanCandidates({
+      tenantId: 'tenant-4', sourceKey: 'operations', previousCandidates: previous,
+      fetcher: { list: async () => ({ files: [{ token: 'file-4', type: 'file', name: '日报.pdf', version_id: 'v2' }], hasMore: false }) },
+    });
+    expect(result.changes).toEqual([expect.objectContaining({ providerObjectId: 'file-4', change: 'CHANGED' })]);
+    expect(result.complete).toBe(true);
+  });
+
+  it('persists observed positive candidates even before full traversal completes', async () => {
+    let snapshot: string | null = null;
+    const store = {
+      load: async () => null,
+      savePage: async (_key: string, _checkpoint: string, candidates: unknown[]) => { snapshot = JSON.stringify(candidates); },
+      loadCandidates: async () => snapshot,
+      saveCandidates: async (_key: string, value: string) => { snapshot = value; },
+    };
+    const service = new DriveSourceScanService({ forTenant: () => store, listPendingCandidates: async () => JSON.parse(snapshot ?? '[]') } as never);
+    const first = await service.scanCandidates({ tenantId: 'tenant-5', sourceKey: 'operations', fetcher: {
+      list: async () => ({ files: [{ token: 'file-5', type: 'file', name: '日报.pdf', version_id: 'v1' }], hasMore: false }),
+    } });
+    expect(first.changes[0]?.change).toBe('NEW');
+    expect(snapshot).toContain('file-5');
+    const second = await service.scanCandidates({ tenantId: 'tenant-5', sourceKey: 'operations', fetcher: {
+      list: async () => ({ files: [{ token: 'file-5', type: 'file', name: '日报.pdf', version_id: 'v2' }], hasMore: true, nextPageToken: 'later' }),
+    }, maxPages: 1 });
+    expect(second.complete).toBe(false);
+    expect(second.changes).toEqual([expect.objectContaining({ providerObjectId: 'file-5', change: 'CHANGED' })]);
+    expect(snapshot).toContain('"v2"');
+  });
+});

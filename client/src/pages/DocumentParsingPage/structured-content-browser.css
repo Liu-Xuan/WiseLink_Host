@@ -74,10 +74,7 @@
 }
 
 .structured-browser-outline {
-  position: sticky;
-  top: 0;
-  max-height: 55vh;
-  overflow: auto;
+  overflow: visible;
   padding: 12px 8px;
   color: var(--wl-muted);
   font-size: 12px;
@@ -296,7 +293,11 @@
   .structured-browser-layout {
     max-height: 72vh;
   }
-  .structured-document-source button {
+  .structured-document-source button,
+  .structured-browser button,
+  .structured-browser input,
+  .structured-browser summary,
+  .structured-browser a {
     min-height: var(--wl-touch-target);
   }
 }

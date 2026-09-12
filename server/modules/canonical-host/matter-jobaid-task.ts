@@ -20,9 +20,11 @@ export function buildMatterJobAidTask(input: {
   previous: EngineeringMatterWorkingRevisionReadModel | null;
 }) {
   const prior = input.previous?.state.problemWork ?? null;
-  const legacyEvidence = prior ? [] : input.previous?.state.substantiveResult?.evidence ?? [];
+  if (input.previous && !prior)
+    throw new Error('JOBAID_PREVIOUS_WORK_INCOMPLETE');
+  const methodBinding = prior?.methodBinding ?? JOBAID_METHOD_BINDING;
   const registry = new Map<string, AssessmentEvidence>();
-  for (const evidence of [...JOBAID_METHOD_EVIDENCE, ...(prior?.evidence ?? []), ...legacyEvidence]) {
+  for (const evidence of [...JOBAID_METHOD_EVIDENCE, ...(prior?.evidence ?? [])]) {
     const existing = registry.get(evidence.evidenceRef);
     if (existing && canonicalJson(existing) !== canonicalJson(evidence))
       throw new Error('JOBAID_PRIOR_SOURCE_CHANGED');
@@ -30,7 +32,7 @@ export function buildMatterJobAidTask(input: {
   }
   const sourceCatalog = [...registry.values()];
   const initiallyDeliveredRefs = [...new Set([...JOBAID_CORE_METHOD_REFS, ...(prior?.readSourceRefs ?? []),
-    ...legacyEvidence.map(item => item.evidenceRef)])];
+  ])];
   if (initiallyDeliveredRefs.some((ref) => !registry.has(ref))) throw new Error('JOBAID_PRIOR_SOURCE_MISSING');
   const historyReview: JobAidProblemWorkContent['historyReview'] = {
     required: input.previous !== null,
@@ -48,14 +50,16 @@ export function buildMatterJobAidTask(input: {
     modelInput: {
       schemaVersion: MATTER_JOBAID_TASK_SCHEMA,
       subject: { kind: 'ENGINEERING_MATTER' as const, matterId: input.matterId, matterRevisionId: input.matterRevisionId },
-      methodBinding: structuredClone(JOBAID_METHOD_BINDING),
+      methodBinding: structuredClone(methodBinding),
       title: input.title,
       focus: input.previous?.state.focus ?? null,
       trigger: structuredClone(input.trigger),
       availableDocuments: [...new Set([...input.inputs.map((binding) => binding.documentVersionId),
-        ...[...(prior?.evidence ?? []), ...legacyEvidence].flatMap(item => item.kind === 'DOCUMENT_PASSAGE' ? [item.documentVersionId] : []),
+        ...(prior?.evidence ?? []).flatMap(item => item.kind === 'DOCUMENT_PASSAGE' ? [item.documentVersionId] : []),
       ])].map((documentVersionId) => ({
         documentVersionId,
+        originalReadRef: `DOCUMENT_VERSION:${documentVersionId}:original:0`,
+        boundOriginal: input.inputs.find(binding => binding.documentVersionId === documentVersionId)?.original ?? null,
         inputIds: input.inputs.filter((binding) => binding.documentVersionId === documentVersionId).map((binding) => binding.inputId),
         readingScope: 'NOT_READ_THIS_ATTEMPT' as const,
       })),
@@ -66,7 +70,6 @@ export function buildMatterJobAidTask(input: {
         workRevisionRef: input.previous.matterWorkRevisionId,
         workRevision: input.previous.workingRevision,
         content: prior ? jobAidProblemModelWorkContent(prior) : null,
-        legacySummary: prior ? null : input.previous.state.substantiveResult,
         openQuestions: structuredClone(input.previous.state.openQuestions),
         reviewConditions: structuredClone(input.previous.state.reviewConditions),
       } : null,
@@ -74,7 +77,7 @@ export function buildMatterJobAidTask(input: {
       historyReview,
       capabilities: [
         { capability: 'registered_source_reading', status: 'AVAILABLE' as const,
-          impact: '可按任务封存版本读取 PDF 文本层；图像和扫描内容未声明已核实，目录中的文档不等于已读正文。' },
+          impact: '优先用originalReadRef读取boundOriginal绑定的已发布修订；历史任务未捕获绑定时Host在首次读取确定版本。按返回nextOffset继续，原文修订变化只表示需要核查影响，不预设工程结论变化。PDF页文本层仍可独立读取；目录不代表已读，coverage限制须保留。' },
         { capability: 'fleet_configuration', status: 'NOT_CONNECTED' as const,
           impact: '未取得当前对象的受控装机、执行或构型查询。' },
         { capability: 'reliability_history', status: 'NOT_CONNECTED' as const,

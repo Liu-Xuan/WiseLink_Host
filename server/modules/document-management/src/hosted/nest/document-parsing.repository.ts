@@ -1,3 +1,5 @@
+import { DocumentStepLeaseRepository, type DocumentStepFence } from './document-step-lease.repository';
+import { registerPublishedDocumentOriginal } from './document-original-pending';
 import { randomUUID } from 'node:crypto';
 import { Inject, Injectable } from '@nestjs/common';
 import { DRIZZLE_DATABASE, type PostgresJsDatabase } from '@lark-apaas/fullstack-nestjs-core';
@@ -27,7 +29,7 @@ export function documentParseError(code: string, statusCode = 409) {
 // Registered by DocumentManagementHostedModule.register().
 // eslint-disable-next-line @darraghor/nestjs-typed/injectable-should-be-provided
 export class DocumentParsingRepository {
-  constructor(@Inject(DRIZZLE_DATABASE) private readonly db: PostgresJsDatabase) {}
+  constructor(@Inject(DRIZZLE_DATABASE) private readonly db: PostgresJsDatabase, private readonly leases: DocumentStepLeaseRepository) {}
 
   async current(scope: DocumentParseScope) {
     const rows = await this.db.select().from(dmDocumentParseRun).where(scoped(scope))
@@ -76,23 +78,33 @@ export class DocumentParsingRepository {
     });
   }
 
-  async stage(scope: DocumentParseScope, parseRunId: string) {
-    const [row] = await this.db.update(dmDocumentParseRun).set({ status: 'STAGING' })
+  async stage(scope: DocumentParseScope, parseRunId: string, fence: DocumentStepFence) {
+    return this.db.transaction(async tx => {
+    assertFenceRun(parseRunId, fence);
+    await this.leases.assertValid(tx, scope, fence);
+    const [row] = await tx.update(dmDocumentParseRun).set({ status: 'STAGING' })
       .where(and(owned(scope, parseRunId), eq(dmDocumentParseRun.status, 'RUNNING'))).returning();
     if (!row) throw documentParseError('DOCUMENT_PARSE_STATE_CHANGED');
     return row;
+    });
   }
 
-  async progress(scope: DocumentParseScope, parseRunId: string, artifacts: MineruStoredArtifact[]) {
-    const [row] = await this.db.update(dmDocumentParseRun).set({ artifactProgress: structuredClone(artifacts) })
+  async progress(scope: DocumentParseScope, parseRunId: string, artifacts: MineruStoredArtifact[], fence: DocumentStepFence) {
+    return this.db.transaction(async tx => {
+    assertFenceRun(parseRunId, fence);
+    await this.leases.assertValid(tx, scope, fence);
+    const [row] = await tx.update(dmDocumentParseRun).set({ artifactProgress: structuredClone(artifacts) })
       .where(and(owned(scope, parseRunId), eq(dmDocumentParseRun.status, 'STAGING'))).returning();
     if (!row) throw documentParseError('DOCUMENT_PARSE_STATE_CHANGED');
+    });
   }
 
-  async publish(scope: DocumentParseScope, parseRunId: string, manifestArtifact: MineruStoredArtifact) {
+  async publish(scope: DocumentParseScope, parseRunId: string, manifestArtifact: MineruStoredArtifact, fence: DocumentStepFence) {
     return this.db.transaction(async tx => {
       const [version] = await tx.select(sourceColumns).from(dmDocumentVersion)
         .where(eq(dmDocumentVersion.documentVersionId, scope.documentVersionId)).for('update');
+      assertFenceRun(parseRunId, fence);
+      await this.leases.assertValid(tx, scope, fence);
       const [run] = await tx.select().from(dmDocumentParseRun).where(owned(scope, parseRunId)).for('update');
       if (!run || run.status !== 'STAGING') throw documentParseError('DOCUMENT_PARSE_STATE_CHANGED');
       if (run.deadlineAt.getTime() <= Date.now()) throw documentParseError('DOCUMENT_PARSE_DEADLINE_EXCEEDED');
@@ -108,17 +120,30 @@ export class DocumentParsingRepository {
       if ((published?.parseRevision ?? 0) !== run.expectedPublishedRevision) throw documentParseError('DOCUMENT_PARSE_REVISION_CONFLICT');
       const [result] = await tx.update(dmDocumentParseRun).set({ status: 'PUBLISHED', manifestArtifact,
         pendingObject: null, errorCode: null, completedAt: new Date() }).where(owned(scope, parseRunId)).returning();
+      if (!result) throw documentParseError('DOCUMENT_PARSE_PUBLICATION_FAILED', 500);
+      await registerPublishedDocumentOriginal(tx, result);
       return result;
     });
   }
 
   async fail(scope: DocumentParseScope, parseRunId: string, input: {
     errorCode: string; progress?: MineruStoredArtifact[]; pendingObject?: { bucketId: string; filePath: string } | null;
-  }) {
-    await this.db.update(dmDocumentParseRun).set({ status: 'FAILED', errorCode: input.errorCode,
+  }, fence: DocumentStepFence) {
+    return this.db.transaction(async tx => {
+    assertFenceRun(parseRunId, fence);
+    await this.leases.assertValid(tx, scope, fence);
+    await tx.update(dmDocumentParseRun).set({ status: 'FAILED', errorCode: input.errorCode,
       ...(input.progress ? { artifactProgress: structuredClone(input.progress) } : {}),
       ...(input.pendingObject !== undefined ? { pendingObject: input.pendingObject } : {}), completedAt: new Date(),
     }).where(and(owned(scope, parseRunId), inArray(dmDocumentParseRun.status, [...ACTIVE])));
+    });
+  }
+
+  async recordStepFailure(scope: DocumentParseScope, fence: DocumentStepFence, errorCode: string) {
+    return this.db.transaction(async tx => {
+      await this.leases.assertValid(tx, scope, fence);
+      await tx.update(dmDocumentParseRun).set({ errorCode }).where(owned(scope, fence.parseRunId));
+    });
   }
 }
 
@@ -132,4 +157,8 @@ function sameSource(version: Pick<typeof dmDocumentVersion.$inferSelect, keyof t
   return version.documentVersionId === source.documentVersionId && version.documentId === source.documentId &&
     version.familyId === source.familyId && version.sourceArtifactId === source.sourceArtifactId &&
     version.pdfSha256 === source.pdfSha256 && version.byteLength === source.byteLength;
+}
+
+function assertFenceRun(parseRunId: string, fence: DocumentStepFence) {
+  if (!fence || fence.parseRunId !== parseRunId) throw documentParseError('DOCUMENT_STEP_LEASE_REJECTED');
 }

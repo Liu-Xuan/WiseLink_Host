@@ -8,6 +8,29 @@ import { invokeHostedJobAidProblemModel } from '../scripts/run-jobaid-problem-as
 import { createCheckpointStore } from '../scripts/run-hosted-review-turn.mjs';
 import { WISELINK_SKILL_VERSION, WISELINK_HOST_MCP_NAME, WISELINK_HOST_MCP_VERSION } from '../scripts/validate-payload.mjs';
 
+test('Matter reads published original with exact evidence and returns its continuation', async () => {
+  const { readMatterAssessmentSources } = await import('../scripts/consume-hosted-matter.mjs');
+  const context = { sourceCatalog: [], availableDocuments: [{ documentVersionId: 'DV-one' }] };
+  const intent = { sourceRefs: ['DOCUMENT_VERSION:DV-one:original:0'], purpose: 'read original', context: 'PAGE' };
+  const evidence = [{ kind: 'DOCUMENT_PASSAGE', workItemId: null, documentVersionId: 'DV-one',
+    evidenceRef: 'DOCUMENT_ORIGINAL:DV-one:PR-one:SR-one', sourceRefId: 'SR-one', excerpt: 'Unless X, do not use M.' }];
+  const response = { documentVersionId: 'DV-one', binding: { documentVersionId: 'DV-one', parseRunId: 'PR-one' },
+    offset: 0, units: [{ unitId: 'u1' }], evidence, sourceRefs: evidence.map(item => item.evidenceRef),
+    coverage: { unresolvedRanges: [{ reason: 'UNREAD' }] }, nextOffset: 20 };
+  const result = await readMatterAssessmentSources(intent, context, async (operation, input) => {
+    assert.equal(operation, 'READ_ORIGINAL');
+    assert.deepEqual(input, { documentVersionId: 'DV-one', offset: 0, limit: 20, purpose: intent.purpose });
+    return response;
+  });
+  assert.deepEqual(result.evidence, evidence);
+  assert.equal(result.documents[0].nextReadRef, 'DOCUMENT_VERSION:DV-one:original:20');
+  assert.deepEqual(result.documents[0].coverage, response.coverage);
+  await assert.rejects(readMatterAssessmentSources(intent, context, async () => ({ ...response,
+    binding: { ...response.binding, documentVersionId: 'DV-other' } })), /MATTER_SOURCE_READ_BINDING_MISMATCH/);
+  await assert.rejects(readMatterAssessmentSources({ ...intent, sourceRefs: ['DOCUMENT_VERSION:DV-other:original:0'] },
+    context, async () => { throw new Error('must not call'); }), /JOBAID_SOURCE_NOT_REGISTERED/);
+});
+
 async function fixture(run) {
   const checkpointRoot = await mkdtemp(join(tmpdir(), 'matter-consumer-'));
   try { await run(checkpointRoot); } finally { await rm(checkpointRoot, { recursive: true, force: true }); }

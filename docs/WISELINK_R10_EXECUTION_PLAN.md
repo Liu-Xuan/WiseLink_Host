@@ -1,5 +1,24 @@
 # WiseLink R10 当前执行计划
 
+> **2026-09-13 主控接管执行：** 当前路线及 H0/H1/H2 顺序以 [统一实施计划](WISELINK_R10_UNIFIED_IMPLEMENTATION_PLAN_20260912.md) 为准：Host 官方插件＋PDF.js、Translation V2 独立中文阅读；MinerU 恢复退出本批关键路径。M 负责 F1—F6、授权与持久云端消费、最终集成；P 负责文档专属实现，协作见 [M 集成记录](coordination/M_INTEGRATION.md)。以下为历史运行记录，保留失败事实；旧 Worker 路线、扫描完整前置和事务内异步索引不是当前目标。
+
+> **W4 当前增量（2026-09-12）：** 六个共享 Drive 根目录已登记，Host 已具备按租户 `sourceKey` 执行递归分页、逐页 checkpoint 和恢复的服务入口；候选身份快照已独立持久化，完整扫描才替换旧快照。权限拒绝会在实际子目录处记录 `DRIVE_AUTHORIZATION_DENIED` 及当前 page token，与剩余 frontier 一起持久化，重启后可继续定位并重试；重复分页 token 也会记录 `DRIVE_PAGE_TOKEN_REPEATED` blocker，禁止把漏项扫描当完成；单页超过批次上限时保存页内 `entryOffset`，恢复不会重复或漏读条目。非法 blocker 状态明确拒绝。开发数据库已实际执行 0040/0041，在线核验表、唯一索引和 RLS 均存在，当前 checkpoint/候选快照均为 0 行。真实核验显示用户身份可读而 bot 身份对首个目录仍返回 Feishu `1061004 permission_denied`，因此应用/委托 Drive 授权、平台定时触发和真实增量工作仍未完成，不能借用户会话代替后台监控。
+
+> **2026-09-12 W3/W4 后续增量：** 检索响应已补齐 `kind`、`matchedRange`、`reason`、`rootRefs` 和 `limitations`，事项页面展示命中方式、范围及根来源数量；当前仍只消费已授权的 `WORK` 问题工作，不宣称来源语义段/原生记录或全量统计。共享 Drive 候选变化已接入扫描服务返回 `NEW/CHANGED/UNCHANGED`，重复对象/版本不会被分类为新变化；只有 `complete=true` 的完整扫描才输出变化，分页未完成或权限阻断时返回 `complete=false` 且变化为空，避免部分目录误触发受理或分析。候选仍未自动写入 DocumentVersion/family 或触发分析。权限拒绝会返回 `DRIVE_AUTHORIZATION_DENIED` blocker 并保留 checkpoint frontier，等待应用/委托身份获权后继续；普通网络错误继续失败，不能误报空目录。检索投影重建失败现在写入 0042 待重建表并可按租户列出，新增受调用方授权读取的逐项恢复入口和受登录/对象入口保护的 `POST /api/canonical-host/engineering-issues/projection/rebuild`；单项失败继续留在 pending。已提供只接受授权 Reader 文本的 SOURCE/RECORD 写入原语，但来源语义段/原生记录查询消费者、自动恢复调度仍未接通。
+> **2026-09-12 W3/W4 后续增量：** 检索响应已补齐 `kind`、`matchedRange`、`reason`、`rootRefs` 和 `limitations`，事项页面展示命中方式、范围及根来源数量；当前仍只消费已授权的 `WORK` 问题工作，不宣称来源语义段/原生记录或全量统计。共享 Drive 候选变化已接入扫描服务返回 `NEW/CHANGED/UNCHANGED`，重复对象/版本不会被分类为新变化；候选仍未自动写入 DocumentVersion/family 或触发分析。检索投影重建失败现在写入 0042 待重建表并可按租户列出，成功重建后清除；开发库已执行 0039/0042 并通过在线 schema/RLS 核验，但三张新增表当前均为 0 行，恢复任务尚未在线运行。在线 SQL 进一步验证了采用 Intl.Segmenter 词级分词后的中文 `脚注 条件`、英文 `condition risk` 全文匹配及文号精确匹配；未将未分词的连续中文直接命中当作证据。
+
+**最新 Worker 运行证据（2026-09-12）：** Worker `sprint/default` 已推送 `978c4de`，带妙搭 `CLIENT_BASE_PATH` 的 OpenAPI 路径已实测无 key 返回 401、正确 Bearer key 的 health 返回 200。`runtime/prepare` 实测进入 `MINERU_RUNTIME_PREPARATION_FAILED`（56 个文件、0 个核验）；本机离线脚本进一步返回 `MINERU_OFFLINE_PLATFORM_UNSUPPORTED`，因为本机不是 Worker 要求的 Linux x86_64/CPython 3.10。Host 远端解析闭环代码已通过类型、构建和定向测试，但 FTD parseRun 仍没有真实成功证据。
+
+## 2026 年 9 月 10 日：资料库事项阅读与机队分类
+
+资料库默认事项视图、保存结果快览与文档列表已集成。新增当前租户有效机队目录，依据 canonical head/snapshot 与 ACTIVE 生效日期读取实际父子机型字段；父机型筛选包含有效子机型，未知或非本机队资料仍可从全部资料访问。分类仅表示文档提及，不代表适用性。目录缺失、有效快照无可分类机型、读取失败分别呈现；失败保留服务端异常日志，筛选游标绑定快照版本。未新增数据库结构或业务写入。
+
+相关服务、前端和隔离 PostgreSQL 共 31 项定向测试通过，前后端类型、ESLint、Stylelint 与构建通过。提交 `8b8a56069d19202efccb8c59893411e3ae101818` 仅推送飞书 origin，Host release `7683741270502902962` 于 11:24:17 finished，提交号一致且 error_logs 为空；并行 Guided Atlas 改动未纳入。
+
+前端真实登录只读验收已确认默认 1 个工程事项、工作修订 5 的保存判断和前提、2 份背景原文、后续关注及复看条件，全部 9 份文档可访问；777-FTD-31-21002 的当前与两份历史版本可见，历史 PDF 原件读取成功，深色桌面布局正常。实施与故障信息仍明确未核实。验收发现实际机队字段 B787-9 与文档元数据 787-9 漏匹配，修订为前后端共用的明确 Boeing 型号 B 前缀别名规则；机队主键和父子关系不改、不推断其他厂商代码。别名修复 25 项相关测试及完整提交检查通过，提交 `eaa12070ed06d7b57adeebe1af950934e2174326` 仅推送 origin，release `7683745843543968715` 于 11:41:24 finished、提交一致、error_logs 为空。
+
+修复后独立真实验收通过：B787-9 子级返回 2 份（SB、SL），机型优先分类树 B787 → B787-9 均为 2 份；切父级清除子级限制后仍为 2 份，联合 SL 筛选为 1 份，再选 ATA 4611 保持 1 份，URL 与树共同保留筛选条件。单次父级请求连接失败时页面明确报错，正常重试后恢复，没有静默变成空目录。空机队、租户隔离及分页异常采用已通过的隔离 PostgreSQL、单元检查与代码审阅证据，未在线上造数据；本轮范围完成，不扩大到尚未接入的实施或故障事实。
+
 ## 2026 年 9 月 10 日：自由讨论、显式更新与 Aily 接入
 
 本次把 CHAT 与 UPDATE_ASSESSMENT 接入同一持久 ReviewConversation。普通发送仅生成讨论回答；“更新评估”先预览并选中已回复讨论，再冻结输入版本、事项范围和讨论 ID。Host 在提交前禁止 CHAT 携带工作增量、正式动作或重算响应；事项聊天保持完整的多文档授权与实际来源读取。前端保留已有可确认候选，并以实际工作更新回执刷新评估。
@@ -27,6 +46,10 @@ c68 改进证据引用纠正反馈：沿用原来的精确登记检查，提供�
 10:05 Aily 最小权限接入：用户先确认接入及用户身份读取权限，Host 配置随 `6e97e4a52` / release `7683695167439735736` 生效；开发者后台只新增用户身份 read，随后按用户“尽量免审”的要求取消未保存的 1.0.5 发布页，未提交管理员审核。read 虽显示待发布、可调试，09:11 正常 OAuth 仍返回 20027。云文档已由获授权子智能体更新并读回至 revision 2231，历史保留。
 
 用户要求继续后，改为复用已经开通的用户身份 `aily:agent_chat:write`：Host POST `stream:true` 后在原 query 记录保存公开答复，调用方只轮询本地记录，不再 GET Aily；OAuth 仅申请 write。实际 CLI 用户身份连通性对话 `7683720367274019812` 返回 start / message_delta / done Completed；编译后的解析器完整解析该真实响应。后台流最多5分钟，断流与无法确认完成均保留已收文本并标记 UNKNOWN，Host 中断遗留的运行记录6分钟后可由读取确认未知；同一请求键不再次发起。只保留 content，不保存推理或工具事件；旧身份、租户、attempt/session 绑定及候选边界保留。38项相关检查、服务端类型、定向 lint 与生产构建通过；此处为发布前实现证据，尚不代表 WiseLink OAuth 和真实业务检索闭环完成。
+
+10:40 后续实证与目标调整：428ad2d0a 的 release 7683722441504345037 已 finished，正常 OAuth 仅申请 write 并成功返回资料库。M3 CHAT Turn24 / ATT-12da8aaf-6990-494c-a9a0-57f72ed7aa71 于10:25:48取消，未登记 Aily query。只读诊断7683728016426585335已完成：模型正确返回唯一 query_wiselink_aily 调用，context.aily.available=true；驱动尝试 query_review_aily 后异常，未取得业务结果。原始异常未被旧非提交 checkpoint 保存，不能区分 MCP 传输与 Host 登记前拒绝；不是模型未生成工具调用，也不能算 Aily 远端检索成功。失败保留，不重放。
+
+用户随后明确目标分工：Aily 持续负责 Host／飞书双入口自由对话，OpenClaw 负责初始分析及用户明确发起的重新分析；Host 统一保存事项、原始讨论、材料和版本。重新分析读取选中讨论与材料及基线，不能只靠 Aily 总结转述；结果回供 Aily。当前仅完成流式传输与 OAuth，直接对话路由、跨渠道会话关联、可信身份及同步尚未实现。云文档已更新至 revision2242，现行与目标分开记录。
 
 更新日期：2026-09-10。依据：[R10 云文档](https://hv5zjf4j8yb.feishu.cn/docx/MA3fdjEycoISjHxptAqcsyxvn9b) 与 [当前正文镜像](WISELINK_R10_CURRENT.md)。当前运行证据以本页顶部 9 月 10 日记录为准；云文档及正文镜像已按用户要求同步至 revision 2231；后续实证仍分别记录，避免逐次排障回写。9 月 6 日发布复核与数据库/存储续查见 [存储异常记录](WL31_HOSTED_STORAGE_INCIDENT_20260905.md)，此前功能发布和页面证据见 [交接与响应记录](WL31_R10_CONTEXT_HANDOFF_PERFORMANCE.md)，视觉交付见 [Satin 运行记录](WL31_R10_SATIN_HOSTED_ROLLOUT_20260905.md)。
 

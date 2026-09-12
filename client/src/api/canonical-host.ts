@@ -1,4 +1,5 @@
 import type { JobAidWorkingReadModel } from '@shared/jobaid-problem-assessment.interface';
+import type { DocumentTranslationReadingResponse } from '@shared/document-translation-reading.interface';
 import type { EngineeringIssueRead, EngineeringIssueSearchHit, EngineeringIssueSearchResponse } from '@shared/engineering-issue-search.interface';
 import type { CanonicalLibraryFleetCatalog } from '@shared/library-fleet.interface';
 import type { DocumentParsedReading, DocumentParsingStatus, DocumentParseRunSummary, StartDocumentParseRequest } from '@shared/document-parsing.interface';
@@ -606,6 +607,18 @@ export function startDocumentParsing(documentVersionId: string, input: StartDocu
   return readCanonicalLibrary<DocumentParseRunSummary>({ url: `/api/document-management/document-versions/${encodeURIComponent(documentVersionId)}/parse-runs`, method: 'POST', data: input });
 }
 
+export async function readDocumentTranslationReading(documentVersionId: string, parseRunId: string, signal?: AbortSignal): Promise<DocumentTranslationReadingResponse> {
+  const generation = clientSessionGeneration;
+  const result = await readCanonicalLibrary<DocumentTranslationReadingResponse>({
+    url: `/api/document-management/document-versions/${encodeURIComponent(documentVersionId)}/translation-reading?${new URLSearchParams({ parseRunId })}`,
+    signal,
+  });
+  if (signal?.aborted || generation !== clientSessionGeneration) throw new Error('DOCUMENT_TRANSLATION_READING_OBSOLETE');
+  if (result.documentVersionId !== documentVersionId || result.parseRunId !== parseRunId)
+    throw new Error('DOCUMENT_TRANSLATION_READING_BINDING_MISMATCH');
+  return result;
+}
+
 export async function readParsedDocument(documentVersionId: string, parseRunId: string, signal?: AbortSignal) {
   const generation = clientSessionGeneration;
   const result = await readCanonicalLibrary<DocumentParsedReading>({
@@ -833,10 +846,17 @@ export function readJobAidAssessmentWork(
   });
 }
 
-export function searchEngineeringIssues(search: string): Promise<EngineeringIssueSearchResponse> {
+export function searchEngineeringIssues(search: string, scope: 'CURRENT' | 'HISTORY' = 'CURRENT'): Promise<EngineeringIssueSearchResponse> {
   return reviewConversationRequest<EngineeringIssueSearchResponse>({
-    url: `/api/canonical-host/engineering-issues?${new URLSearchParams({ search })}`,
+    url: `/api/canonical-host/engineering-issues?${new URLSearchParams({ search, scope })}`,
     method: 'GET', operation: '查找已保存的问题',
+  });
+}
+
+export function searchDocumentSources(search: string, scope: 'CURRENT' | 'HISTORY' = 'CURRENT') {
+  return reviewConversationRequest<import('@shared/document-source-search.interface').DocumentSourceSearchResponse>({
+    url: `/api/canonical-host/engineering-issues/sources?${new URLSearchParams({ search, scope })}`,
+    method: 'GET', operation: '查找已发布原文',
   });
 }
 

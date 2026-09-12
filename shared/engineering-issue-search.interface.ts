@@ -9,11 +9,17 @@ export interface EngineeringIssueSearchHit {
   issueKey: string;
   question: string;
   sourceRefs: string[];
+  /** Narrow protocol metadata; it does not grant access to the source body. */
+  kind: 'SOURCE' | 'RECORD' | 'WORK';
+  matchedRange: string;
+  reason: string;
+  rootRefs: string[];
 }
 
 export interface EngineeringIssueSearchResponse {
   hits: EngineeringIssueSearchHit[];
   hasMore: boolean;
+  limitations: string[];
 }
 
 export interface EngineeringIssueRead {

@@ -9,7 +9,9 @@
     "customToaster": true
   },
   "actionPlugins": {
+    "@official-plugins/ai-doc-parser": "1.0.16",
     "@official-plugins/ai-text-to-json": "1.0.26",
+    "@official-plugins/ai-translate": "1.0.11",
     "@official-plugins/feishu-bitable": "1.0.22"
   },
   "scripts": {

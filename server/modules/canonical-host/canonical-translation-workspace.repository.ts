@@ -1,10 +1,14 @@
+import { planOriginalTranslationReuse } from './canonical-translation-v2-reuse';
+import { dmDocumentParseRun } from '../../database/document-parsing.schema';
+import { parseDocumentTranslationTaskEnvelope } from '../action-attempt/document-translation-task-envelope';
+import type { TranslationOfficialPluginProducerV2 } from '@shared/canonical-translation-v2.interface';
 import { randomUUID } from 'node:crypto';
 import { Inject, Injectable } from '@nestjs/common';
 import {
   DRIZZLE_DATABASE,
   type PostgresJsDatabase,
 } from '@lark-apaas/fullstack-nestjs-core';
-import { and, asc, desc, eq, sql } from 'drizzle-orm';
+import { and, asc, desc, eq, isNull, sql } from 'drizzle-orm';
 import { z } from 'zod/v4';
 import type { UnifiedPackageArtifactDescriptor } from '@shared/api.interface';
 import type {
@@ -20,6 +24,7 @@ import type {
 } from '@shared/canonical-translation-v2.interface';
 import {
   actionAttempt,
+  dmDocumentVersion,
   translationBlockRevision,
   translationWorkspace,
   workItem,
@@ -77,7 +82,8 @@ type SnapshotBlockRow = Pick<BlockRow, keyof typeof blockSnapshotColumns>;
 
 export interface TranslationWorkspaceScope {
   tenantId: string;
-  workItemId: string;
+  workItemId: string | null;
+  documentVersionId?: string;
   workspaceId: string;
 }
 
@@ -98,6 +104,14 @@ export interface TranslationActualModelExecution {
   generatedAt: string | null;
 }
 
+export interface TranslationActualPluginExecution {
+  producer: TranslationOfficialPluginProducerV2;
+  promptVersion: string;
+  providerRequestId: string | null;
+  usage: { inputTokens: number | null; outputTokens: number | null };
+  generatedAt: string | null;
+}
+
 /** All mutations follow fresh Host authorization and use the existing DB and lease. */
 @Injectable()
 export class CanonicalTranslationWorkspaceRepository {
@@ -107,10 +121,13 @@ export class CanonicalTranslationWorkspaceRepository {
 
   async prepare(input: {
     tenantId: string;
-    workItemId: string;
+    workItemId: string | null;
+  documentVersionId?: string;
     plan: TranslationSourcePlanV2;
   }): Promise<TranslationWorkspaceV2> {
     const plan = translationSourcePlanSchemaV2.parse(input.plan);
+    if (input.workItemId === null && input.documentVersionId !== plan.source.documentVersionId)
+      throw new Error('TRANSLATION_DOCUMENT_SCOPE_INVALID');
     return this.db.transaction(async (transaction) => {
       await assertCurrentSource(
         transaction,
@@ -124,6 +141,7 @@ export class CanonicalTranslationWorkspaceRepository {
           workspaceId: `TW-${randomUUID()}`,
           tenantId: input.tenantId,
           workItemId: input.workItemId,
+          subjectKind: input.workItemId === null ? 'DOCUMENT_VERSION' : 'WORK_ITEM',
           documentVersionId: plan.source.documentVersionId,
           packageId: plan.source.packageId,
           parsedArtifactRef: plan.source.parsedArtifact.ref,
@@ -134,22 +152,14 @@ export class CanonicalTranslationWorkspaceRepository {
           sourcePlanJson: canonicalJson(plan),
           methodVersion: TRANSLATION_V2_METHOD_VERSION,
         })
-        .onConflictDoNothing({
-          target: [
-            translationWorkspace.tenantId,
-            translationWorkspace.workItemId,
-            translationWorkspace.documentVersionId,
-            translationWorkspace.parsedArtifactSha256,
-            translationWorkspace.targetLocale,
-          ],
-        });
+        .onConflictDoNothing();
       const [row] = await transaction
         .select()
         .from(translationWorkspace)
         .where(
           and(
             eq(translationWorkspace.tenantId, input.tenantId),
-            eq(translationWorkspace.workItemId, input.workItemId),
+            workspaceSubject(input),
             eq(
               translationWorkspace.documentVersionId,
               plan.source.documentVersionId,
@@ -183,7 +193,7 @@ export class CanonicalTranslationWorkspaceRepository {
 
   async readForSource(input: {
     tenantId: string;
-    workItemId: string;
+    workItemId: string | null;
     documentVersionId: string;
     parsedArtifactRef: string;
     parsedArtifactSha256: string;
@@ -194,7 +204,7 @@ export class CanonicalTranslationWorkspaceRepository {
       .where(
         and(
           eq(translationWorkspace.tenantId, input.tenantId),
-          eq(translationWorkspace.workItemId, input.workItemId),
+          workspaceSubject(input),
           eq(translationWorkspace.documentVersionId, input.documentVersionId),
           eq(translationWorkspace.parsedArtifactRef, input.parsedArtifactRef),
           eq(
@@ -264,7 +274,8 @@ export class CanonicalTranslationWorkspaceRepository {
 
   async readSemanticScope(input: {
     tenantId: string;
-    workItemId: string;
+    workItemId: string | null;
+  documentVersionId?: string;
     blockRevisionId: string;
   }) {
     const [row] = await this.db
@@ -273,7 +284,7 @@ export class CanonicalTranslationWorkspaceRepository {
       .where(
         and(
           eq(translationBlockRevision.tenantId, input.tenantId),
-          eq(translationBlockRevision.workItemId, input.workItemId),
+          input.workItemId === null ? isNull(translationBlockRevision.workItemId) : eq(translationBlockRevision.workItemId, input.workItemId),
           eq(translationBlockRevision.blockRevisionId, input.blockRevisionId),
         ),
       )
@@ -323,8 +334,9 @@ export class CanonicalTranslationWorkspaceRepository {
         workspace.plan,
       );
       assertTaskWorkspace(attempt, workspace);
-      if (row.activeAttemptId === attempt.attemptId) return workspace;
-      if (row.activeAttemptId) {
+      if (row.activeAttemptId === attempt.attemptId && !workspace.generationRequests.some(request =>
+          request.status === 'REGISTERED' && request.leaseGeneration !== input.leaseGeneration)) return workspace;
+      if (row.activeAttemptId && row.activeAttemptId !== attempt.attemptId) {
         const [previous] = await transaction
           .select({ status: actionAttempt.status })
           .from(actionAttempt)
@@ -332,7 +344,7 @@ export class CanonicalTranslationWorkspaceRepository {
             and(
               eq(actionAttempt.attemptId, row.activeAttemptId),
               eq(actionAttempt.tenantId, input.tenantId),
-              eq(actionAttempt.workItemId, input.workItemId),
+              attemptSubject(input),
             ),
           )
           .limit(1);
@@ -342,7 +354,7 @@ export class CanonicalTranslationWorkspaceRepository {
       const requests = workspace.generationRequests.map(
         (request): TranslationGenerationRequestV2 =>
           request.status === 'REGISTERED' &&
-          request.attemptId !== attempt.attemptId
+          (request.attemptId !== attempt.attemptId || request.leaseGeneration !== input.leaseGeneration)
             ? {
                 ...request,
                 status: 'SUPERSEDED',
@@ -374,6 +386,7 @@ export class CanonicalTranslationWorkspaceRepository {
       checkTargets?: TranslationGenerationRequestV2['checkTargets'];
     },
   ): Promise<TranslationGenerationRequestV2> {
+    if (input.purpose === 'REUSE') throw new Error('TRANSLATION_REUSE_HOST_ONLY');
     return this.withFencedWorkspace(
       input,
       async (transaction, attempt, workspace) => {
@@ -572,6 +585,7 @@ export class CanonicalTranslationWorkspaceRepository {
       candidate: TranslationBlockCandidateV2;
     },
   ): Promise<TranslationBlockRevisionV2> {
+    if (input.workItemId === null) throw new Error('TRANSLATION_DOCUMENT_ENGINEER_EDIT_NOT_SUPPORTED');
     const candidate = translationCandidateSchemaV2.parse(input.candidate);
     return this.db.transaction(async (transaction) => {
       // Match model lock order (attempt, workspace, source); editing is available
@@ -585,7 +599,7 @@ export class CanonicalTranslationWorkspaceRepository {
             and(
               eq(actionAttempt.attemptId, before.activeAttemptId),
               eq(actionAttempt.tenantId, input.tenantId),
-              eq(actionAttempt.workItemId, input.workItemId),
+              attemptSubject(input),
             ),
           )
           .limit(1)
@@ -752,11 +766,26 @@ export class CanonicalTranslationWorkspaceRepository {
     });
   }
 
+  async assertOfficialExecution(input: TranslationWorkspaceFence): Promise<void> {
+    await this.withFencedWorkspace(input, async (_transaction, attempt) => {
+      const task = translationTask(attempt);
+      if (task.modelInput.documentProducer !== 'OFFICIAL_PLUGIN')
+        throw new Error('TRANSLATION_OFFICIAL_PLUGIN_BINDING_INVALID');
+    });
+  }
+
+  async officialPluginProvenance(input: TranslationWorkspaceFence & {
+    generationRequestRef: string; actualExecution: TranslationActualPluginExecution;
+  }): Promise<TranslationBlockProvenanceV2> {
+    return this.withFencedWorkspace(input, (_transaction, attempt, workspace) =>
+      Promise.resolve(modelProvenance(attempt, requiredGeneration(workspace, input.generationRequestRef, attempt), input.actualExecution)));
+  }
+
   async saveCandidates(
     input: TranslationWorkspaceFence & {
       generationRequestRef: string;
       candidates: TranslationBlockCandidateV2[];
-      actualExecution: TranslationActualModelExecution;
+      actualExecution: TranslationActualModelExecution | TranslationActualPluginExecution;
     },
   ): Promise<TranslationBlockRevisionV2[]> {
     return this.withFencedWorkspace(
@@ -1068,7 +1097,10 @@ export class CanonicalTranslationWorkspaceRepository {
         !['REGISTERED', 'SAVED'].includes(checkRequest.status)
       )
         throw new Error('TRANSLATION_SEMANTIC_CHECK_REQUEST_INVALID');
-      const actual = modelProvenance(attempt, checkRequest, {
+      const actual = modelProvenance(attempt, checkRequest, review.producer ? {
+        producer: review.producer, promptVersion: review.promptVersion ?? '',
+        providerRequestId: review.providerRequestId, usage: review.usage, generatedAt: null,
+      } : {
         modelRef: review.executionModel?.modelRef ?? '',
         modelVersion: review.modelVersion ?? '',
         skillVersion: review.skillVersion ?? '',
@@ -1142,6 +1174,52 @@ export class CanonicalTranslationWorkspaceRepository {
       .where(workspaceScope(input));
     workspace.rowVersion += 1;
     return blockFromRow(updated);
+  }
+
+  async reusePreviousOriginal(input: TranslationWorkspaceFence): Promise<string[]> {
+    if (input.workItemId !== null) return [];
+    return this.withFencedWorkspace(input, async (transaction, attempt, workspace) => {
+      if (workspace.generationRequests.length) return [];
+      const [existing] = await transaction.select({ id: translationBlockRevision.blockRevisionId })
+        .from(translationBlockRevision).where(blockScope(input)).limit(1);
+      if (existing) return [];
+      const rows = await transaction.select().from(translationWorkspace).where(and(
+        workspaceSubject(input), eq(translationWorkspace.tenantId, input.tenantId),
+        sql`${translationWorkspace.workspaceId} <> ${workspace.workspaceId}`,
+        sql`(${translationWorkspace.sourcePlanJson}::jsonb #>> '{source,originalBinding,parseRevision}')::integer < ${workspace.plan.source.originalBinding!.parseRevision}`,
+      )).orderBy(sql`(${translationWorkspace.sourcePlanJson}::jsonb #>> '{source,originalBinding,parseRevision}')::integer DESC`)
+        .limit(1).for('share');
+      if (!rows[0]) return [];
+      const previous = workspaceFromRow(rows[0]);
+      const saved = await transaction.select().from(translationBlockRevision).where(and(
+        blockScope({ ...input, workspaceId: previous.workspaceId }), eq(translationBlockRevision.selectedForReading, true),
+      )).for('share');
+      const reuse = planOriginalTranslationReuse(previous, workspace, saved.map(blockFromRow));
+      const requests: TranslationGenerationRequestV2[] = [];
+      for (const entry of reuse) {
+        const generationRequestRef = `TR-${randomUUID()}`;
+        const now = new Date();
+        const provenance = translationProvenanceSchemaV2.parse({ ...entry.previous.provenance, generationRequestRef,
+          reusedFrom: { workspaceId: previous.workspaceId, blockRevisionId: entry.previous.blockRevisionId,
+            generationRequestRef: entry.previous.provenance.generationRequestRef, parseRunId: previous.plan.source.originalBinding!.parseRunId,
+            importedByAttemptId: attempt.attemptId, importedAt: now.toISOString() } });
+        const check = translationCheckSchemaV2.parse(entry.previous.check);
+        await transaction.insert(translationBlockRevision).values({ blockRevisionId: `TB-${randomUUID()}`,
+          tenantId: input.tenantId, workItemId: null, workspaceId: workspace.workspaceId, blockId: entry.candidate.blockId,
+          planRevision: workspace.plan.planRevision, contentRevision: 1, generationRequestRef,
+          originAttemptId: provenance.originAttemptId, authorKind: provenance.authorKind, authorUserId: provenance.authorUserId,
+          candidateJson: canonicalJson(translationCandidateSchemaV2.parse(entry.candidate)),
+          dependenciesJson: canonicalJson(entry.dependencies), provenanceJson: canonicalJson(provenance),
+          generatedAt: parseOptionalDate(entry.previous.generatedAt), checkStatus: 'CHECKED', checkJson: canonicalJson(check),
+          checkedAt: parseOptionalDate(entry.previous.checkedAt), selectedForReading: true });
+        requests.push({ generationRequestRef, clientRequestId: `reuse:${entry.previous.blockRevisionId}`,
+          attemptId: attempt.attemptId, leaseGeneration: attempt.leaseGeneration, blockIds: [entry.candidate.blockId],
+          dependencies: entry.dependencies, purpose: 'REUSE', targetBlockRevisionId: entry.previous.blockRevisionId,
+          status: 'SAVED', registeredAt: now.toISOString(), finishedAt: now.toISOString(), error: null });
+      }
+      if (requests.length) await saveRequests(transaction, input, workspace, requests);
+      return reuse.map(entry => entry.candidate.blockId);
+    });
   }
 
   async saveFinalArtifact(
@@ -1240,8 +1318,30 @@ export class CanonicalTranslationWorkspaceRepository {
 function modelProvenance(
   attempt: AttemptRow,
   request: TranslationGenerationRequestV2,
-  actual: TranslationActualModelExecution,
+  actual: TranslationActualModelExecution | TranslationActualPluginExecution,
 ): TranslationBlockProvenanceV2 {
+  if ('producer' in actual) {
+    const task = translationTask(attempt);
+    const configured: Record<string, [string, string]> = {
+      'wl-document-translate': ['1.0.11', 'translate'],
+      'wl-document-structured-translate': ['1.0.26', 'textToJson'],
+      'wl-document-translation-check': ['1.0.26', 'textToJson'],
+    };
+    const expected = configured[actual.producer.instanceId];
+    const check = request.purpose === 'CHECK' || request.purpose === 'CHECK_BATCH';
+    if (task.modelInput.documentProducer !== 'OFFICIAL_PLUGIN' || !expected ||
+        actual.producer.kind !== 'OFFICIAL_PLUGIN' || actual.producer.pluginVersion !== expected[0] ||
+        actual.producer.actionKey !== expected[1] || actual.producer.concreteModel !== null ||
+        actual.promptVersion !== 'wiselink-document-translation@1' ||
+        check !== (actual.producer.instanceId === 'wl-document-translation-check'))
+      throw new Error('TRANSLATION_OFFICIAL_PLUGIN_BINDING_INVALID');
+    return translationProvenanceSchemaV2.parse({
+      authorKind: 'MODEL', authorUserId: attempt.actorUserId, executionModel: null,
+      modelVersion: null, skillVersion: null, promptVersion: actual.promptVersion,
+      generationRequestRef: request.generationRequestRef, originAttemptId: attempt.attemptId,
+      providerRequestId: actual.providerRequestId, usage: actual.usage, producer: actual.producer,
+    });
+  }
   const executionModel = parseExecutionModel(
     JSON.parse(attempt.executionModelJson ?? 'null'),
   );
@@ -1281,10 +1381,30 @@ function modelProvenance(
   });
 }
 
+function translationTask(attempt: AttemptRow) {
+  return attempt.subjectKind === 'DOCUMENT_VERSION'
+    ? parseDocumentTranslationTaskEnvelope(attempt.taskEnvelopeJson ?? '')
+    : parseTaskEnvelope(attempt.taskEnvelopeJson ?? '');
+}
+
+function workspaceSubject(input: { workItemId: string | null; documentVersionId?: string }) {
+  if (input.workItemId !== null) return eq(translationWorkspace.workItemId, input.workItemId);
+  if (!input.documentVersionId) throw new Error('TRANSLATION_DOCUMENT_SCOPE_REQUIRED');
+  return and(isNull(translationWorkspace.workItemId), eq(translationWorkspace.subjectKind, 'DOCUMENT_VERSION'),
+    eq(translationWorkspace.documentVersionId, input.documentVersionId));
+}
+
+function attemptSubject(input: { workItemId: string | null; documentVersionId?: string }) {
+  if (input.workItemId !== null) return eq(actionAttempt.workItemId, input.workItemId);
+  if (!input.documentVersionId) throw new Error('TRANSLATION_DOCUMENT_SCOPE_REQUIRED');
+  return and(isNull(actionAttempt.workItemId), eq(actionAttempt.subjectKind, 'DOCUMENT_VERSION'),
+    eq(actionAttempt.documentVersionId, input.documentVersionId), isNull(actionAttempt.matterId), isNull(actionAttempt.matterRevisionId));
+}
+
 function workspaceScope(input: TranslationWorkspaceScope) {
   return and(
     eq(translationWorkspace.tenantId, input.tenantId),
-    eq(translationWorkspace.workItemId, input.workItemId),
+    workspaceSubject(input),
     eq(translationWorkspace.workspaceId, input.workspaceId),
   );
 }
@@ -1292,7 +1412,7 @@ function workspaceScope(input: TranslationWorkspaceScope) {
 function blockScope(input: TranslationWorkspaceScope) {
   return and(
     eq(translationBlockRevision.tenantId, input.tenantId),
-    eq(translationBlockRevision.workItemId, input.workItemId),
+    input.workItemId === null ? isNull(translationBlockRevision.workItemId) : eq(translationBlockRevision.workItemId, input.workItemId),
     eq(translationBlockRevision.workspaceId, input.workspaceId),
   );
 }
@@ -1315,9 +1435,36 @@ async function requiredWorkspace(
 async function assertCurrentSource(
   database: Database,
   tenantId: string,
-  workItemId: string,
+  workItemId: string | null,
   plan: TranslationSourcePlanV2,
 ): Promise<void> {
+  if (workItemId === null) {
+    const binding = plan.source.originalBinding;
+    // Publish locks this same immutable DV row exclusively before changing the
+    // current parseRun. Hold a shared lock through this short candidate write.
+    const [version] = await database.select({ sourceArtifactId: dmDocumentVersion.sourceArtifactId,
+      sha256: dmDocumentVersion.pdfSha256, byteLength: dmDocumentVersion.byteLength })
+      .from(dmDocumentVersion).where(eq(dmDocumentVersion.documentVersionId, plan.source.documentVersionId)).limit(1).for('share');
+    const [run] = await database.select().from(dmDocumentParseRun).where(and(
+      eq(dmDocumentParseRun.tenantId, tenantId),
+      eq(dmDocumentParseRun.documentVersionId, plan.source.documentVersionId),
+      eq(dmDocumentParseRun.status, 'PUBLISHED'),
+    )).orderBy(desc(dmDocumentParseRun.parseRevision)).limit(1).for('share');
+    const artifact = run?.manifestArtifact;
+    if (!binding || !version || version.sourceArtifactId !== binding.sourceArtifactId ||
+      version.sha256 !== binding.sourceSha256 || version.byteLength !== binding.sourceByteLength ||
+      !run || binding.documentVersionId !== plan.source.documentVersionId ||
+      binding.parseRunId !== run.parseRunId || binding.parseRevision !== run.parseRevision ||
+      binding.sourceArtifactId !== run.sourceBinding.sourceArtifactId ||
+      binding.sourceSha256 !== run.sourceBinding.pdfSha256 || binding.sourceByteLength !== run.sourceBinding.byteLength ||
+      plan.source.packageId !== run.parseRunId || !artifact || artifact.readback !== 'VERIFIED' ||
+      artifact.relativePath !== 'original/manifest.json' ||
+      plan.source.parsedArtifact.ref !== `document-original://${encodeURIComponent(run.documentVersionId)}/${encodeURIComponent(run.parseRunId)}` ||
+      plan.source.parsedArtifact.sha256 !== artifact.sha256 ||
+      plan.source.parsedArtifact.byteLength !== artifact.byteLength || plan.source.parsedArtifact.mediaType !== artifact.mediaType)
+      throw new Error('TRANSLATION_WORKSPACE_SOURCE_CHANGED');
+    return;
+  }
   const [source] = await database
     .select({
       documentVersionId: workItem.documentVersionId,
@@ -1353,7 +1500,7 @@ async function assertFence(
       and(
         eq(actionAttempt.operationRef, input.attemptRef),
         eq(actionAttempt.tenantId, input.tenantId),
-        eq(actionAttempt.workItemId, input.workItemId),
+        attemptSubject(input),
       ),
     )
     .limit(1)
@@ -1361,7 +1508,7 @@ async function assertFence(
   const now = new Date();
   if (
     !row ||
-    row.actionType !== 'OPENCLAW_TRANSLATE' ||
+    row.actionType !== (input.workItemId === null ? 'DOCUMENT_TRANSLATE' : 'OPENCLAW_TRANSLATE') ||
     row.status !== 'RUNNING' ||
     row.cancelRequestedAt !== null ||
     row.leaseOwner !== input.principalId ||
@@ -1381,13 +1528,17 @@ function assertTaskWorkspace(
   attempt: AttemptRow,
   workspace: TranslationWorkspaceV2,
 ): void {
-  const task = parseTaskEnvelope(attempt.taskEnvelopeJson ?? '');
+  const task = translationTask(attempt);
   if (
     task.actionAttemptId !== attempt.attemptId ||
     task.operationRef !== attempt.operationRef ||
     task.tenantId !== workspace.tenantId ||
-    task.workItemId !== workspace.workItemId ||
-    task.taskType !== 'OPENCLAW_TRANSLATE' ||
+    (workspace.workItemId === null
+      ? attempt.subjectKind !== 'DOCUMENT_VERSION' || attempt.producerRunId !== workspace.plan.source.originalBinding?.parseRunId ||
+        !('parseRunId' in task) || task.parseRunId !== workspace.plan.source.originalBinding?.parseRunId ||
+        task.parseRevision !== workspace.plan.source.originalBinding?.parseRevision || task.workspaceId !== workspace.workspaceId ||
+        canonicalJson(task.modelInput.source) !== canonicalJson(workspace.plan.source)
+      : !('workItemId' in task) || task.workItemId !== workspace.workItemId || task.taskType !== 'OPENCLAW_TRANSLATE') ||
     task.documentVersionId !== workspace.plan.source.documentVersionId ||
     task.inputHash !== attempt.taskInputHash ||
     task.modelInput.schemaVersion !== TRANSLATION_V2_TASK_SCHEMA ||
@@ -1471,6 +1622,7 @@ function workspaceFromRow(row: WorkspaceRow): TranslationWorkspaceV2 {
     workspaceId: row.workspaceId,
     tenantId: row.tenantId,
     workItemId: row.workItemId,
+    subjectKind: row.workItemId === null ? 'DOCUMENT_VERSION' : 'WORK_ITEM',
     rowVersion: row.rowVersion,
     methodVersion: row.methodVersion,
     activeAttemptId: row.activeAttemptId,

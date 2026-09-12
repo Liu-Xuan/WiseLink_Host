@@ -1,0 +1,11 @@
+{
+  "scope": "isolated fixtures",
+  "checks": [
+    "Native fullscreen enter/exit",
+    "1600px light/dark native graphs",
+    "390px shared review and player",
+    "Closing active guide restores theme and retains background draft"
+  ],
+  "errors": [],
+  "writes": 0
+}

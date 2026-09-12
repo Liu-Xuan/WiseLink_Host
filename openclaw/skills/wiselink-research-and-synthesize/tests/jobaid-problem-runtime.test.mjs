@@ -6,6 +6,20 @@ import { join } from 'node:path';
 import { createCheckpointStore } from '../scripts/run-hosted-review-turn.mjs';
 import { invokeHostedJobAidProblemModel, projectJobAidModelInput } from '../scripts/run-jobaid-problem-assessment.mjs';
 
+test('explicit revisit conditions preserve both discriminated forms without leaking unknown values', async () => {
+  const { JOBAID_WORK_UPDATE_SHAPE, decodeJobAidValue, jobAidWorkTypeErrors } = await import('../scripts/jobaid-work-shape.mjs');
+  const work = { reviewConditionDelta: { upserts: [
+    { itemId: 'due', text: 'Revisit', basisRefs: [], when: { kind: 'DUE_AT', at: '2026-09-14T00:00:00Z' } },
+    { itemId: 'original', text: 'Compare original', basisRefs: [], when: { kind: 'ORIGINAL_CHANGED', inputId: 'input-1', afterParseRunId: null } },
+  ], retirements: [], explicitlyUnchangedItemIds: [] } };
+  assert.deepEqual(decodeJobAidValue(work, JOBAID_WORK_UPDATE_SHAPE), work);
+  assert.deepEqual(jobAidWorkTypeErrors(work), []);
+  work.reviewConditionDelta.upserts[0].when = { kind: 'private-unknown-value' };
+  const errors = jobAidWorkTypeErrors(work);
+  assert.equal(errors[0].path, 'work.reviewConditionDelta.upserts[0].when');
+  assert.ok(!JSON.stringify(errors).includes('private-unknown-value'));
+});
+
 test('source transport removes repeated identifiers without losing distinct sources, provenance or text', () => {
   const input = modelInput();
   input.availableSources = Array.from({ length: 446 }, (_, index) => ({

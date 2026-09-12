@@ -355,7 +355,7 @@ export const translationBlockRevision = pgTable("translation_block_revision", {
   id: uuid("id").primaryKey().defaultRandom(),
   blockRevisionId: varchar("block_revision_id", { length: 96 }).notNull().unique(),
   tenantId: varchar("tenant_id", { length: 128 }).notNull(),
-  workItemId: varchar("work_item_id", { length: 96 }).notNull(),
+  workItemId: varchar("work_item_id", { length: 96 }),
   workspaceId: varchar("workspace_id", { length: 96 }).notNull(),
   blockId: varchar("block_id", { length: 96 }).notNull(),
   planRevision: integer("plan_revision").notNull(),
@@ -384,6 +384,9 @@ export const translationBlockRevision = pgTable("translation_block_revision", {
   updatedBy: userProfile("_updated_by").default(sql`CASE WHEN nullif(current_setting('app.user_id', true), '') IS NULL THEN NULL ELSE concat('(', current_setting('app.user_id', true), ')')::user_profile END`),
 }, (table) => [
   uniqueIndex("translation_block_revision_block_revision_id_key").on(table.blockRevisionId),
+  foreignKey({ columns: [table.tenantId, table.workspaceId],
+    foreignColumns: [translationWorkspace.tenantId, translationWorkspace.workspaceId],
+    name: "fk_translation_block_workspace_tenant" }),
   uniqueIndex("uk_translation_block_content_revision").on(table.workspaceId, table.blockId, table.contentRevision),
   uniqueIndex("uk_translation_block_generation").on(table.workspaceId, table.generationRequestRef, table.blockId),
   uniqueIndex("uk_translation_block_selected").on(table.workspaceId, table.blockId).where(sql`${table.selectedForReading}`),
@@ -404,7 +407,8 @@ export const translationWorkspace = pgTable("translation_workspace", {
   id: uuid("id").primaryKey().defaultRandom(),
   workspaceId: varchar("workspace_id", { length: 96 }).notNull().unique(),
   tenantId: varchar("tenant_id", { length: 128 }).notNull(),
-  workItemId: varchar("work_item_id", { length: 96 }).notNull(),
+  workItemId: varchar("work_item_id", { length: 96 }),
+  subjectKind: varchar("subject_kind", { length: 32 }).notNull().default('WORK_ITEM'),
   documentVersionId: varchar("document_version_id", { length: 96 }).notNull(),
   packageId: text("package_id").notNull(),
   parsedArtifactRef: text("parsed_artifact_ref").notNull(),
@@ -429,6 +433,9 @@ export const translationWorkspace = pgTable("translation_workspace", {
   updatedBy: userProfile("_updated_by").default(sql`CASE WHEN nullif(current_setting('app.user_id', true), '') IS NULL THEN NULL ELSE concat('(', current_setting('app.user_id', true), ')')::user_profile END`),
 }, (table) => [
   uniqueIndex("translation_workspace_workspace_id_key").on(table.workspaceId),
+  uniqueIndex("uk_translation_workspace_tenant_id").on(table.tenantId, table.workspaceId),
+  uniqueIndex("uk_translation_workspace_document_source").on(table.tenantId, table.documentVersionId,
+    table.parsedArtifactSha256, table.targetLocale).where(sql`${table.workItemId} IS NULL`),
   uniqueIndex("uk_translation_workspace_scope").on(table.tenantId, table.workItemId, table.workspaceId),
   uniqueIndex("uk_translation_workspace_source").on(table.tenantId, table.workItemId, table.documentVersionId, table.parsedArtifactSha256, table.targetLocale),
   foreignKey({
@@ -1006,8 +1013,8 @@ export const engineeringMatter = pgTable("engineering_matter", {
   index("idx_engineering_matter_owner").on(table.tenantId, table.createdByUserId, table.updatedAt),
   uniqueIndex("uk_engineering_matter_default_family").on(table.tenantId, table.createdByUserId, table.defaultFamilyId),
   foreignKey({
-    columns: [table.currentMatterRevisionId, table.matterId, table.tenantId],
-    foreignColumns: [engineeringMatterRevision.matterId, engineeringMatterRevision.matterRevisionId, engineeringMatterRevision.tenantId],
+    columns: [table.tenantId, table.matterId, table.currentMatterRevisionId],
+    foreignColumns: [engineeringMatterRevision.tenantId, engineeringMatterRevision.matterId, engineeringMatterRevision.matterRevisionId],
     name: "fk_engineering_matter_current_revision",
   }),
   foreignKey({
@@ -1551,6 +1558,8 @@ export const actionAttempt = pgTable("action_attempt", {
   updatedBy: userProfile("_updated_by"),
 }, (table) => [
   uniqueIndex("uk_action_attempt_business_id").on(table.attemptId),
+  uniqueIndex("uk_action_attempt_document_number").on(table.tenantId, table.documentVersionId, table.actionType, table.attemptNo).where(sql`${table.subjectKind} = 'DOCUMENT_VERSION'`),
+  uniqueIndex("uk_action_attempt_active_document_task").on(table.tenantId, table.documentVersionId, table.actionType).where(sql`${table.subjectKind} = 'DOCUMENT_VERSION' AND ${table.status} IN ('QUEUED', 'RUNNING', 'RETRY_SCHEDULED', 'COMMITTING')`),
   uniqueIndex("uk_action_attempt_matter_number").on(table.tenantId, table.matterId, table.actionType, table.attemptNo).where(sql`${table.subjectKind} = 'ENGINEERING_MATTER'`),
   uniqueIndex("uk_action_attempt_active_matter_task").on(table.tenantId, table.matterId, table.actionType).where(sql`${table.subjectKind} = 'ENGINEERING_MATTER' AND ${table.status} IN ('QUEUED', 'RUNNING', 'RETRY_SCHEDULED', 'COMMITTING')`),
   foreignKey({

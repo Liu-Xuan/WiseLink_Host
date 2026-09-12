@@ -127,6 +127,7 @@ export class CanonicalHostOpenClawDynamicEvaluationService {
     const authoritative = await this.requiredSbWorkItem(
       workItemId,
       scope.tenantId,
+      requestId !== undefined || this.problemAssessment?.enabledForNewTasks() === true,
     );
     if (requestId !== undefined) {
       if (!this.problemAssessment)
@@ -167,6 +168,8 @@ export class CanonicalHostOpenClawDynamicEvaluationService {
           'INITIAL_PROBLEM_ASSESSMENT',
         );
     }
+    if (workItem.phase !== 'CANDIDATE_READBACK_VERIFIED' || !workItem.package)
+      throw new Error('DYNAMIC_EVALUATION_PARSED_PACKAGE_NOT_READY');
     const permissionSnapshotVersion = servicePermissionSnapshot(
       workItem,
       scope,
@@ -765,12 +768,13 @@ export class CanonicalHostOpenClawDynamicEvaluationService {
   private async requiredSbWorkItem(
     workItemId: string,
     tenantId: string,
+    allowOriginal = false,
   ): Promise<CanonicalWorkItemProjection> {
     const workItem = await this.registrar.getTenantScopedByWorkItemId({
       workItemId,
       tenantId,
     });
-    if (workItem.phase !== 'CANDIDATE_READBACK_VERIFIED' || !workItem.package) {
+    if (!allowOriginal && (workItem.phase !== 'CANDIDATE_READBACK_VERIFIED' || !workItem.package)) {
       throw new Error('DYNAMIC_EVALUATION_PARSED_PACKAGE_NOT_READY');
     }
     if (workItem.classification.normalizedFamily !== 'SB') {

@@ -37,6 +37,9 @@ import { Global, Module } from '@nestjs/common';
 import {
   DRIZZLE_DATABASE,
   FileService,
+  CapabilityService,
+  SqlExecutionContextMiddleware,
+  DATAPAAS_CONFIG,
 } from '@lark-apaas/fullstack-nestjs-core';
 import { Test } from '@nestjs/testing';
 
@@ -55,8 +58,11 @@ const fakeFileService = {
   providers: [
     { provide: DRIZZLE_DATABASE, useValue: {} },
     { provide: FileService, useValue: fakeFileService },
+    { provide: CapabilityService, useValue: {} },
+    { provide: SqlExecutionContextMiddleware, useValue: {} },
+    { provide: DATAPAAS_CONFIG, useValue: {roleSchema:'test'} },
   ],
-  exports: [DRIZZLE_DATABASE, FileService],
+  exports: [DRIZZLE_DATABASE, FileService, CapabilityService, SqlExecutionContextMiddleware, DATAPAAS_CONFIG],
 })
 class HostedPlatformTestModule {}
 

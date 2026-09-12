@@ -403,11 +403,18 @@ function assertMatterWorkingBasis(value: unknown, baseRevision: number): void {
     if (ids.has(id)) fail(code);
     ids.add(id);
     requiredText(item.documentVersionId, code);
+    if (item.original !== undefined) {
+      if (!isRecord(item.original)) fail(code);
+      assertExactKeys(item.original, ['parseRunId','parseRevision'], code);
+      if (!/^[A-Za-z0-9_-]{1,96}$/.test(requiredText(item.original.parseRunId, code)) ||
+          !Number.isSafeInteger(item.original.parseRevision) || Number(item.original.parseRevision) < 1) fail(code);
+    }
     if (item.kind === 'DOCUMENT_VERSION') {
       assertExactKeys(
         item,
         [
           'kind',
+          ...(item.original !== undefined ? ['original'] : []),
           'inputId',
           'familyId',
           'documentVersionId',
@@ -432,6 +439,7 @@ function assertMatterWorkingBasis(value: unknown, baseRevision: number): void {
         [
           'inputId',
           'workItemId',
+          ...(item.original !== undefined ? ['original'] : []),
           'workItemRevision',
           'documentVersionId',
           'resultRef',

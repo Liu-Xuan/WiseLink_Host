@@ -10,6 +10,8 @@ import {
 } from '@lark-apaas/fullstack-nestjs-core';
 import type { Request, Response } from 'express';
 import { and, asc, desc, eq, isNull, or, sql } from 'drizzle-orm';
+import { bindMatterOriginalInputs } from './matter-original-input-bindings';
+import { dmDocumentParseRun } from '../../database/document-parsing.schema';
 
 import type {
   EngineeringMatterWorkingCommitResult,
@@ -35,6 +37,7 @@ import {
 import type { OpenClawMatterTaskEnvelope } from '../action-attempt/action-attempt-envelope.types';
 import { loadMaterials } from './engineering-matter.repository';
 import { materialInputBindings } from './matter-material';
+import { EngineeringSearchProjectionWriter } from './engineering-search-projection';
 import {
   assertEngineeringMatterWorkingBindingsCurrent,
   engineeringMatterWorkingChangeFromCommand,
@@ -92,6 +95,7 @@ export class EngineeringMatterWorkingRepository {
     private readonly sqlContext: SqlExecutionContextMiddleware,
     @Inject(DATAPAAS_CONFIG)
     private readonly databaseConfig: Pick<DataPaasConfig, 'roleSchema'>,
+    private readonly searchProjection: EngineeringSearchProjectionWriter,
   ) {}
 
   async withTransaction<T>(
@@ -107,10 +111,15 @@ export class EngineeringMatterWorkingRepository {
   /** Bind the verified Host actor for every query of this Hosted transaction. */
   async withActorTransaction<T>(
     actorUserId: string,
-    operation: (
-      executor: EngineeringMatterWorkingTransactionExecutor,
-    ) => Promise<T>,
+    operation: (executor: EngineeringMatterWorkingTransactionExecutor) => Promise<T>,
   ): Promise<T> {
+    return this.withActorScope(actorUserId, () => this.db.transaction(
+      transaction => operation(this.executor(transaction as PostgresJsDatabase)),
+    ));
+  }
+
+  /** Keeps verified SQL identity across external calls without holding a transaction. */
+  async withActorScope<T>(actorUserId: string, operation: () => Promise<T>): Promise<T> {
     // The official SDK re-applies its SQL context before EVERY query, including
     // queries inside a pinned transaction. A standalone set_config is reset by
     // that next query. Use its injected middleware to scope the existing
@@ -140,11 +149,7 @@ export class EngineeringMatterWorkingRepository {
         } as Request,
         {} as Response,
         () => {
-          void this.db
-            .transaction(async (transaction) =>
-              operation(this.executor(transaction as PostgresJsDatabase)),
-            )
-            .then(resolve, reject);
+          void Promise.resolve().then(operation).then(resolve, reject);
         },
       );
     });
@@ -162,6 +167,10 @@ export class EngineeringMatterWorkingRepository {
       appendWorkingRevision: (input) =>
         this.appendWorkingRevision(input, database),
     };
+  }
+
+  bindOriginalInputs(tenantId: string, inputs: EngineeringMatterWorkingInputBinding[]) {
+    return bindMatterOriginalInputs(this.db, tenantId, inputs);
   }
 
   async loadCurrent(
@@ -410,13 +419,22 @@ export class EngineeringMatterWorkingRepository {
       throw workingInputConflict();
     for (const frozen of input.basis.inputs) {
       const current = byId.get(frozen.inputId);
+      const { original: _frozenOriginal, ...frozenIdentity } = frozen;
+      const { original: _currentOriginal, ...currentIdentity } = current ?? {};
       if (
         !current ||
         frozen.workItemId !== current.workItemId ||
         (frozen.workItemId === null &&
-          canonicalJson(frozen) !== canonicalJson(current))
+          canonicalJson(frozenIdentity) !== canonicalJson(currentIdentity))
       )
         throw workingInputConflict();
+      if (frozen.original) {
+        const [original] = await executor.select({ id: dmDocumentParseRun.parseRunId }).from(dmDocumentParseRun)
+          .where(and(eq(dmDocumentParseRun.tenantId,input.tenantId),eq(dmDocumentParseRun.documentVersionId,frozen.documentVersionId),
+            eq(dmDocumentParseRun.parseRunId,frozen.original.parseRunId),eq(dmDocumentParseRun.parseRevision,frozen.original.parseRevision),
+            eq(dmDocumentParseRun.status,'PUBLISHED'),sql`${dmDocumentParseRun.manifestArtifact}->>'relativePath' = 'original/manifest.json'`)).limit(1);
+        if (!original) throw workingInputConflict();
+      }
     }
     await assertOwnedSources(
       executor,
@@ -516,6 +534,15 @@ export class EngineeringMatterWorkingRepository {
     if (currentRevision !== input.command.expectedWorkingRevision) {
       throw workingCasConflict();
     }
+    for (const condition of input.command.reviewConditionDelta?.upserts ?? []) {
+      const when = condition.when;
+      if (when?.kind !== 'ORIGINAL_CHANGED') continue;
+      const prior = current?.state.reviewConditions.find(item => item.itemId === condition.itemId)?.when;
+      if (prior?.kind === 'ORIGINAL_CHANGED' && prior.inputId === when.inputId && prior.afterParseRunId === when.afterParseRunId) continue;
+      const binding = currentInputs.find(item => item.inputId === when.inputId);
+      if (!binding || (binding.original?.parseRunId ?? null) !== when.afterParseRunId)
+        throw new Error('MATTER_REVISIT_SOURCE_BINDING_INVALID');
+    }
     const materialized = materializeEngineeringMatterWorkingState({
       matterId: input.matterId,
       current: current?.state ?? null,
@@ -546,6 +573,11 @@ export class EngineeringMatterWorkingRepository {
       .values(row)
       .returning();
     if (!stored) throw workingPersistenceError();
+    if (materialized.state.problemWork) {
+      await this.searchProjection.enqueuePending({ tenantId: stored.tenantId, ownerKind: 'MATTER',
+        ownerId: stored.createdByUserId, subjectId: stored.matterId,
+        revisionRef: stored.matterWorkRevisionId, database: executor });
+    }
     return {
       revision: await authorizedReadModel(stored, executor),
       replayed: false,
@@ -794,7 +826,7 @@ async function loadCurrentInputBindings(
   ) {
     throw runtimeAuthorizationUnavailable();
   }
-  return [
+  return bindMatterOriginalInputs(executor, input.tenantId, [
     ...rows.map((row) =>
       engineeringMatterInputBinding({
         workItemId: row.workItemId,
@@ -804,7 +836,7 @@ async function loadCurrentInputBindings(
       }),
     ),
     ...materialInputBindings(materials),
-  ];
+  ]);
 }
 
 function assessmentResultIdentity(

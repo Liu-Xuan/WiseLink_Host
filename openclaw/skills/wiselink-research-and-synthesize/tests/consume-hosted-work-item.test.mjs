@@ -201,6 +201,15 @@ test('applicability WAITING_INPUT permits later candidates and completed initial
     consumeReview: async (value) => { assert.equal(value.workItemId, 'WI-new'); return { status: 'CANDIDATE_SAVED' }; },
   });
   assert.equal(reviewed.status, 'CANDIDATE_SAVED');
+  for (const translationStatus of ['PENDING','FAILED','CONFLICT']) {
+    const independent = await consumeHostedWorkItem(input, {
+      callTool:async () => status({status:'WAITING_INPUT',nextOperation:null,
+        stages:{...complete,translation:{status:translationStatus}}}),
+      runInitial:async () => {throw new Error('Engineering completion must not dispatch legacy translation');},
+      consumeReview:async () => ({status:'CANDIDATE_SAVED'}),
+    });
+    assert.equal(independent.status,'CANDIDATE_SAVED');
+  }
 });
 
 test('pre-commit failure cancels once; unknown final commit never cancels or replays', async (t) => {

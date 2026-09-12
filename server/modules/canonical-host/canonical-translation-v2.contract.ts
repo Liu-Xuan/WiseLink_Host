@@ -75,6 +75,8 @@ export const translationSourcePlanSchemaV2 = z.strictObject({
     documentVersionId: id,
     packageId: text,
     parsedArtifact: artifact,
+    originalBinding: z.strictObject({ documentVersionId: id, parseRunId: id, parseRevision: positive,
+      sourceArtifactId: id, sourceSha256: z.string().regex(/^[0-9a-f]{64}$/), sourceByteLength: positive }).optional(),
   }),
   anchors: z.array(
     z.strictObject({
@@ -186,9 +188,17 @@ export const translationDependenciesSchemaV2: z.ZodType<TranslationBlockDependen
     contextAnchorIds: z.array(id),
     methodVersion: text,
   });
+export const translationOfficialPluginProducerSchemaV2 = z.strictObject({
+  kind: z.literal('OFFICIAL_PLUGIN'), instanceId: text, pluginVersion: text,
+  actionKey: text, concreteModel: text.nullable(),
+}).transform(value => ({ ...value, concreteModel: value.concreteModel ?? null }));
+
 export const translationProvenanceSchemaV2: z.ZodType<TranslationBlockProvenanceV2> =
   z
     .strictObject({
+      producer: translationOfficialPluginProducerSchemaV2.optional(),
+      reusedFrom: z.strictObject({ workspaceId: id, blockRevisionId: id, generationRequestRef: id,
+        parseRunId: id, importedByAttemptId: id, importedAt: timestamp }).optional(),
       authorKind: z.enum(['MODEL', 'ENGINEER']),
       authorUserId: text,
       executionModel: z
@@ -245,7 +255,7 @@ export const translationGenerationSchemaV2: z.ZodType<TranslationGenerationReque
       leaseGeneration: positive,
       blockIds: z.array(id).min(1),
       dependencies: translationDependenciesSchemaV2,
-      purpose: z.enum(['GENERATE', 'CORRECT', 'CHECK', 'CHECK_BATCH']),
+      purpose: z.enum(['GENERATE', 'CORRECT', 'CHECK', 'CHECK_BATCH', 'REUSE']),
       targetBlockRevisionId: id.nullable(),
       checkTargets: z
         .array(
@@ -276,6 +286,9 @@ export const translationGenerationSchemaV2: z.ZodType<TranslationGenerationReque
         })
         .nullable(),
     })
+    .refine(value => value.purpose !== 'REUSE' ||
+      (value.status === 'SAVED' && value.targetBlockRevisionId !== null && value.finishedAt !== null && value.error === null),
+      'TRANSLATION_REUSE_STATE_INVALID')
     .transform((value) => ({
       ...value,
       targetBlockRevisionId: value.targetBlockRevisionId ?? null,

@@ -40,12 +40,18 @@ module.exports = tseslint.config(
   // Server configuration
   {
     files: ['server/**/*.{ts,tsx}', 'shared/**/*.{ts,tsx}'],
+    rules: {
+      '@darraghor/nestjs-typed/injectable-should-be-provided': ['error', {
+        src: ['./server/**/*.ts'],
+        filterFromPaths: ['dist', 'node_modules', '.test.', '.spec.'],
+      }],
+    },
     extends: [
       ...eslintPresetsOfSimple.server,
     ],
     languageOptions: {
       parserOptions: {
-        project: './tsconfig.node.json',
+        project: ['./tsconfig.node.json', './tsconfig.jest.json'],
       }
     },
     settings: {

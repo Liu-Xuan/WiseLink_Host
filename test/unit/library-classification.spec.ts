@@ -69,7 +69,7 @@ describe('library category hierarchy', () => {
     expect(html).toContain('仅覆盖已加载');
     expect(html).toContain('历史版本');
     expect(html).toContain(
-      '/work-items/WI-OLD/documents?node=reader&amp;tab=reader',
+      '/document-versions/DV-first-1',
     );
     expect(html).toContain('is-selected');
   });
@@ -118,16 +118,16 @@ describe('library category hierarchy', () => {
       ),
     );
     expect(html).toContain(
-      'data-document-version-id="DV/exact-old"',
+      'href="/document-versions/DV%2Fexact-old"',
     );
     expect(html).not.toContain('/work-items//');
     expect(html).not.toContain('/original');
-    expect(html).toContain('读取原件以预览');
+    expect(html).toContain('查看原件与解析');
     expect(html).toContain('<strong>R1</strong>');
     expect(html).toContain('<span>历史版本</span>');
     expect(html).toContain('old.pdf');
     expect(html).toContain('测试原文标题');
-    expect(html).toContain('library-version-label');
+    expect(html).toContain('aria-label="SB-without-task 版本"');
     expect(html).toContain('共 7 份');
     expect(html).toContain('非适用性');
     expect(html).toContain('可能来自历史版本');

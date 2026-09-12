@@ -8,7 +8,7 @@ import type {
 } from '../review-persistence/review-conversation.repository';
 import type { PersistedMatterReviewScope } from '../review-persistence/review-business-scope';
 import type { FrozenReviewSourceRef } from './canonical-host-openclaw-review.contract';
-import { JOBAID_METHOD_EVIDENCE } from './jobaid-method-pack';
+import { JOBAID_METHOD_BINDING, JOBAID_METHOD_EVIDENCE } from './jobaid-method-pack';
 import type { EngineeringMatterWorkingBasis } from './engineering-matter-working.service';
 import {
   engineeringMatterPendingInputs,
@@ -54,6 +54,9 @@ export function buildMatterReviewContext(input: {
 } {
   assertMatterReviewBasis(input.scope, input.basis);
   const prior = input.basis.working?.state.substantiveResult ?? null;
+  // A resumed Matter review must carry the method snapshot from the exact
+  // saved work revision; the process default is only for a first review.
+  const methodBinding = input.basis.working?.state.problemWork?.methodBinding ?? JOBAID_METHOD_BINDING;
   const evidence = new Map(
     (
       input.basis.working?.state.problemWork?.evidence ??
@@ -208,6 +211,7 @@ export function buildMatterReviewContext(input: {
   });
   return {
     frozen: {
+      methodBinding: structuredClone(methodBinding),
       scope: structuredClone(input.scope),
       title: input.basis.snapshot.title,
       workingState: structuredClone(input.basis.working?.state ?? null),
@@ -216,6 +220,7 @@ export function buildMatterReviewContext(input: {
     },
     model: {
       problemWorkSchema: 'wiselink.jobaid-problem-work.v2',
+      methodBinding: structuredClone(methodBinding),
       title: input.basis.snapshot.title,
       workingRevision: input.scope.expectedWorkingRevision,
       targetClaimId: input.scope.targetClaimId,

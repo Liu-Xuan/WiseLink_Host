@@ -13,6 +13,8 @@ import type {
 } from '@shared/matter-working.interface';
 import { canonicalJson } from '../action-attempt/action-attempt-envelope';
 import { materializeJobAidWork } from './jobaid-problem-work';
+import { isJobAidMethodBinding } from './jobaid-method-pack';
+import type { JobAidMethodBinding } from '@shared/jobaid-problem-assessment.interface';
 import { isReviewRuntimeActivity } from '../action-attempt/review-evidence-activity';
 import {
   parsePersistedMatterReviewScope,
@@ -29,6 +31,7 @@ import {
 
 /** Complete Host bindings are sealed with the task and never become model input. */
 export interface FrozenMatterReviewContext {
+  methodBinding: JobAidMethodBinding;
   scope: PersistedMatterReviewScope;
   title: string;
   workingState: EngineeringMatterWorkingState | null;
@@ -69,11 +72,13 @@ export function parseFrozenMatterReviewContext(
   const context = object(value, 'REVIEW_MATTER_CONTEXT_INVALID');
   exact(context, [
     'scope',
+    'methodBinding',
     'title',
     'workingState',
     'readingEvidence',
     'evidenceSources',
   ]);
+  if (!isJobAidMethodBinding(context.methodBinding)) fail('REVIEW_MATTER_METHOD_BINDING_INVALID');
   const scope = parsePersistedMatterReviewScope(context.scope);
   if (!scope) fail('REVIEW_MATTER_SCOPE_REQUIRED');
   const readingEvidence = readStoredOverallEvidence(context.readingEvidence);
@@ -101,6 +106,7 @@ export function parseFrozenMatterReviewContext(
   );
   return {
     scope,
+    methodBinding: structuredClone(context.methodBinding),
     title: text(context.title),
     workingState:
       context.workingState === null
@@ -227,6 +233,7 @@ export function matterWorkingCommand(input: {
   const nextProblemWork = proposal.problemWork
     ? materializeJobAidWork(proposal.problemWork, {
         matterId: context.scope.matterId,
+        methodBinding: context.methodBinding,
         previous: context.workingState?.problemWork ?? null,
         evidence: [...evidence.values()],
         readSourceRefs: [

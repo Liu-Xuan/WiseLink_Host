@@ -1,6 +1,7 @@
 import { sql } from 'drizzle-orm';
 import { integer, jsonb, pgTable, text, uniqueIndex, uuid, varchar } from 'drizzle-orm/pg-core';
 import type { DocumentParseStatus } from '@shared/document-parsing.interface';
+import type { DocumentOriginalArtifact } from '@shared/document-original.interface';
 import type { MineruDocumentVersionBinding, MineruStoredArtifact } from '../modules/professional-input/mineru/mineru-artifact-store';
 import { customTimestamptz, dmDocumentVersion } from './schema';
 
@@ -17,9 +18,14 @@ export const dmDocumentParseRun = pgTable('dm_document_parse_run', {
   status: varchar('status', { length: 32 }).$type<DocumentParseStatus>().notNull(),
   bucketId: varchar('bucket_id', { length: 255 }).notNull(),
   sourceBinding: jsonb('source_binding').$type<MineruDocumentVersionBinding>().notNull(),
-  artifactProgress: jsonb('artifact_progress').$type<MineruStoredArtifact[]>().notNull().default([]),
+  artifactProgress: jsonb('artifact_progress').$type<Array<DocumentOriginalArtifact | MineruStoredArtifact>>().notNull().default([]),
   pendingObject: jsonb('pending_object').$type<{ bucketId: string; filePath: string } | null>(),
-  manifestArtifact: jsonb('manifest_artifact').$type<MineruStoredArtifact | null>(),
+  manifestArtifact: jsonb('manifest_artifact').$type<DocumentOriginalArtifact | MineruStoredArtifact | null>(),
+  leaseOwner: varchar('lease_owner', { length: 160 }),
+  leaseToken: varchar('lease_token', { length: 96 }),
+  leaseGeneration: integer('lease_generation').notNull().default(0),
+  leaseExpiresAt: customTimestamptz('lease_expires_at', { precision: 3 }),
+  cancelRequestedAt: customTimestamptz('cancel_requested_at', { precision: 3 }),
   errorCode: varchar('error_code', { length: 160 }),
   errorMessage: text('error_message'),
   startedAt: customTimestamptz('started_at', { precision: 3 }).notNull().default(sql`CURRENT_TIMESTAMP`),

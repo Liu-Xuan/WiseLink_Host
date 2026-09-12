@@ -14,6 +14,7 @@ import { UnconfiguredU0Frozen2FailureAdapter } from './unconfigured-u0-frozen2-f
 import { UnconfiguredImmutableAcceptanceReceiptOwnerAdapter } from './unconfigured-immutable-acceptance-receipt-owner.adapter';
 import {
   AEO_SPECIALIST_READER,
+  DOCUMENT_ORIGINAL_READER,
   AEO_SPECIALIST_READER_PORT,
   IMMUTABLE_ACCEPTANCE_RECEIPT_OWNER,
   U0_FULL_PACKAGE_VALIDATOR,
@@ -30,6 +31,7 @@ import type { UnifiedReaderHostBindingState } from './unified-reader.types';
 
 export interface UnifiedReaderModuleOptions {
   imports?: ModuleMetadata['imports'];
+  originalReaderProvider?: Provider;
   artifactStoreProvider?: Provider;
   fullU0ValidatorProvider?: Provider;
   immutableAcceptanceReceiptOwnerProvider?: Provider;
@@ -67,6 +69,10 @@ export function createAeoSpecialistReaderBridgeProvider(): Provider {
 })
 export class UnifiedReaderModule {
   static forRoot(options: UnifiedReaderModuleOptions = {}): DynamicModule {
+    if (options.originalReaderProvider &&
+        (typeof options.originalReaderProvider !== 'object' || !('provide' in options.originalReaderProvider) ||
+         options.originalReaderProvider.provide !== DOCUMENT_ORIGINAL_READER))
+      throw new Error('DOCUMENT_ORIGINAL_READER_PROVIDER_INVALID');
     const artifactStoreProvider = resolvePortProvider(
       options.artifactStoreProvider,
       UNIFIED_ARTIFACT_STORE,
@@ -119,6 +125,7 @@ export class UnifiedReaderModule {
       module: UnifiedReaderModule,
       imports: options.imports ?? [],
       providers: [
+        ...(options.originalReaderProvider ? [options.originalReaderProvider] : []),
         artifactStoreProvider,
         fullU0ValidatorProvider,
         immutableAcceptanceReceiptOwnerProvider,

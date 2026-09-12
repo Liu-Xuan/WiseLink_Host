@@ -32,6 +32,14 @@ it('returns to the same task view only for the matching OAuth flow', () => {
   );
 });
 
+it('restores the exact historical document and source selection after login', () => {
+  const target='/document-versions/DV%2Fexact?parseRunId=PR-2&sourceRef=SR%3Aold#original';
+  const saved=storage();
+  expect(rememberOauthReturnPath(target,'document-state',saved)).toBe(true);
+  expect(readOauthReturnPath('other-state',saved)).toBeNull();
+  expect(readOauthReturnPath('document-state',saved)).toBe(target);
+});
+
 it.each([
   'https://outside.example/work-items/WI-example',
   '//outside.example/work-items/WI-example',

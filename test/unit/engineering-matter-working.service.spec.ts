@@ -123,6 +123,7 @@ function serviceWith(
   const working =
     overrides.working ??
     ({ loadCurrent: jest.fn().mockResolvedValue(null) } as const);
+  Object.assign(working, { bindOriginalInputs: jest.fn(async (_tenant, inputs) => inputs) });
   const workItems =
     overrides.workItems ??
     ({

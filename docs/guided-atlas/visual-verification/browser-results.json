@@ -1,0 +1,44 @@
+{
+  "checks": [
+    "Host adapter fixture: exact R3, occurrence and same saved candidate",
+    "Host exit restores exact selection and source after fresh read",
+    "从文件到机队技术全貌: 13 scenes ready",
+    "完成一次工程事项评估与复核: 16 scenes ready",
+    "系统怎样形成并更新评估意见: 12 scenes ready",
+    "Rapid jump: last selected scene wins",
+    "Pause freezes remaining dwell",
+    "Exit restores example view and unsent note",
+    "Exit restores raw classification filter",
+    "Hidden page pauses",
+    "Missing target stops playback",
+    "Domain scope keeps unknown records until explicitly excluded",
+    "Keyboard changes scenes; Escape restores theme without closing workspace",
+    "Reopen retains atlas view independently of underlying draft",
+    "Compatible rendering and reduced-motion preferences",
+    "390px layout and caption controls",
+    "Close keeps underlying page mounted and draft intact"
+  ],
+  "errors": [],
+  "calls": [
+    {
+      "method": "GET",
+      "url": "http://127.0.0.1:5187/app/app_17bzc551rsg/api/canonical-host/library/documents?limit=20"
+    },
+    {
+      "method": "GET",
+      "url": "http://127.0.0.1:5187/app/app_17bzc551rsg/api/canonical-host/work-items/WI-SB/quicklook"
+    },
+    {
+      "method": "GET",
+      "url": "http://127.0.0.1:5187/app/app_17bzc551rsg/api/canonical-host/work-items/WI-SB/related-context/explicit-preview?expectedRevision=5"
+    },
+    {
+      "method": "GET",
+      "url": "http://127.0.0.1:5187/app/app_17bzc551rsg/api/canonical-host/work-items/WI-SB/quicklook"
+    },
+    {
+      "method": "GET",
+      "url": "http://127.0.0.1:5187/app/app_17bzc551rsg/api/canonical-host/work-items/WI-SB/related-context/explicit-preview?expectedRevision=5"
+    }
+  ]
+}

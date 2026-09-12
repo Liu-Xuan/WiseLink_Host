@@ -42,7 +42,9 @@ describe('Hosted platform OAuth correction', () => {
     ]);
     expect(routes).toContain('path="client/oauth/callback"');
     expect(page).toContain('window.history.replaceState');
-    expect(page).not.toMatch(/localStorage|sessionStorage|logger|console[.]/u);
+    expect(page).not.toMatch(/localStorage|logger|console[.]|\.setItem\(/u);
+    expect(page).toContain('rememberOauthReturnPath(');
+    expect(page).toContain('clearOauthReturnPath(returnStorage)');
   });
 
   it('does not add protocol parameters to application logs', async () => {

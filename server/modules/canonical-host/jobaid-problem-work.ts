@@ -9,7 +9,8 @@ import {
   type JobAidProblemWorkContent,
   type JobAidRiskScenario,
 } from '@shared/jobaid-problem-assessment.interface';
-import { JOBAID_METHOD_BINDING } from './jobaid-method-pack';
+import { isJobAidMethodBinding } from './jobaid-method-pack';
+import { collectIssueEvidenceUses } from '@shared/jobaid-evidence-uses';
 
 const severityValues = new Map([
   ['轻微', 3],
@@ -59,6 +60,7 @@ export type JobAidWorkValidationContext = (
   | { workItemId: string; matterId?: never }
   | { matterId: string; workItemId?: never }
 ) & {
+  methodBinding: JobAidProblemWorkContent['methodBinding'];
   previous: JobAidProblemWorkContent | null;
   evidence: AssessmentEvidence[];
   readSourceRefs: string[];
@@ -72,6 +74,7 @@ export function materializeJobAidWork(
   context: JobAidWorkValidationContext,
 ): JobAidProblemWorkContent {
   const value = object(raw, 'WORK');
+  if (!isJobAidMethodBinding(context.methodBinding)) fail('METHOD_BINDING_INVALID');
   const subjectId = text(context.matterId ?? context.workItemId, 'SUBJECT');
   if (context.matterId !== undefined && context.workItemId !== undefined)
     fail('SUBJECT_AMBIGUOUS');
@@ -298,22 +301,9 @@ export function materializeJobAidWork(
         true,
       );
       const premiseRefs = refs(issue.premiseRefs ?? [], 'ISSUE_PREMISES', true);
-      const usedRefs = new Set([
-        ...statements.flatMap((item) =>
-          item.premises.map((p) => p.evidenceRef),
-        ),
-        ...riskScenarios.flatMap((item) => [
-          ...(item.severity?.basisRefs ?? []),
-          ...(item.likelihood?.basisRefs ?? []),
-          ...(item.importantEvent?.basisRefs ?? []),
-        ]),
-        ...measures.flatMap((item) => item.basisRefs),
-        ...otherClassifications.flatMap((item) => item.basisRefs),
-        ...requirementHandling.flatMap((item) => [
-          item.methodRef,
-          ...item.basisRefs,
-        ]),
-      ]);
+      const usedRefs = new Set(collectIssueEvidenceUses({ issueKey, statements, riskScenarios,
+        measures, otherClassifications, requirementHandling, sourceDependencies, premiseRefs,
+      }).map(use => use.evidenceRef));
       // Citation fields above have already passed the same delivered-source
       // checks. Complete this redundant index without rewriting model claims.
       for (const ref of usedRefs)
@@ -365,7 +355,7 @@ export function materializeJobAidWork(
   const issues = [...prior.values()];
   if (issues.length === 0) fail('SUBSTANTIVE_WORK_REQUIRED');
   for (const issue of issues)
-    for (const ref of [...issue.sourceDependencies, ...issue.premiseRefs])
+    for (const { evidenceRef: ref } of collectIssueEvidenceUses(issue))
       if (!registry.has(ref))
         fail(`RETAINED_SOURCE_NO_LONGER_AUTHORIZED:${ref}`);
   const decisiveIssueKeys = strings(value.decisiveIssueKeys, 'DECISIVE_ISSUES');
@@ -407,7 +397,7 @@ export function materializeJobAidWork(
     completionReason: text(value.completionReason, 'COMPLETION_REASON'),
     changeSummary: text(value.changeSummary, 'CHANGE_SUMMARY'),
     unchangedExplanation,
-    methodBinding: structuredClone(JOBAID_METHOD_BINDING),
+    methodBinding: structuredClone(context.methodBinding),
     evidence: structuredClone(
       context.evidence.filter((item) => read.has(item.evidenceRef)),
     ),

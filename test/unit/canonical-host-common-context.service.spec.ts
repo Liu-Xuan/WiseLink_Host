@@ -243,6 +243,14 @@ describe('shared pre-evaluation context', () => {
       service.buildForWorkItem(workItem, 'tenant-one', '2026-09-05T06:00:00Z'),
     ).rejects.toBe(identityFailure);
     expect(conversations.loadCurrent).toHaveBeenCalledTimes(1);
+    conversations.hasActiveOfficialActorMapping.mockResolvedValue(true);
+    artifactStore.persistAndReadback.mockResolvedValue({artifact:{ref:'private://snapshot'}});
+    reader.readAllSourceUnits.mockClear();
+    reader.readAllSourceUnits.mockRejectedValue(new Error('LEGACY_PACKAGE_MUST_NOT_BE_READ'));
+    const original = await service.buildForWorkItemWithEvidence(workItem,'tenant-one','2026-09-05T06:00:00Z',
+      undefined,undefined,[{unitId:'original-heading',kind:'heading',text:'Published original section',sourceRefIds:['ORIGINAL-SR']}]);
+    expect(original.common.documentReading.sections).toEqual([{title:'Published original section',sourceRefIds:['ORIGINAL-SR']}]);
+    expect(reader.readAllSourceUnits).not.toHaveBeenCalled();
   });
 
   it('isolates a failed related document while preserving authorized readable evidence and its failure reason', async () => {

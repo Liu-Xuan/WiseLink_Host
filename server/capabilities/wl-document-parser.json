@@ -1,0 +1,20 @@
+{
+  "id": "wl-document-parser",
+  "pluginKey": "@official-plugins/ai-doc-parser",
+  "pluginVersion": "1.0.16",
+  "name": "文档原文解析",
+  "description": "Host 绑定原件的组织候选；不代表工程结论。",
+  "paramsSchema": {
+    "fileUrl": {
+      "type": "array",
+      "format": "plugin-file-url",
+      "items": {
+        "type": "string"
+      },
+      "description": "Host 授权并即时取得的单个原件地址"
+    }
+  },
+  "formValue": {
+    "fileUrl": "{{input.fileUrl}}"
+  }
+}

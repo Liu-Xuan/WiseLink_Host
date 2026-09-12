@@ -1,52 +1,59 @@
+import { compareDocumentOriginal, type DocumentOriginalChange } from './document-original-change';
 import { Inject, Injectable, Logger } from '@nestjs/common';
-import { CapabilityService, FileService } from '@lark-apaas/fullstack-nestjs-core';
+import { FileService } from '@lark-apaas/fullstack-nestjs-core';
 import type { DocumentParsedReading, DocumentParsingStatus, DocumentParseRunSummary, StartDocumentParseRequest } from '@shared/document-parsing.interface';
-import { MineruArtifactStore, MineruPersistenceError, type MineruStoredArtifact } from '../../../../professional-input/mineru/mineru-artifact-store';
-import { MineruExecutionError, MineruRunner } from '../../../../professional-input/mineru/mineru-runner';
-import { MineruHostedRuntime } from '../../../../professional-input/mineru/mineru-hosted-runtime';
-import { miaodaMineruTitleCall } from '../../../../professional-input/mineru/mineru-title-enhancer';
+import type { DocumentOriginalArtifact, DocumentOriginalBinding, DocumentOriginalStepResult } from '@shared/document-original.interface';
+import { MineruArtifactStore } from '../../../../professional-input/mineru/mineru-artifact-store';
 import { buildMineruReadingProjection } from '../../../../professional-input/mineru/mineru-reading-projection';
 import { MiaodaFileServiceArtifactStore } from '../miaodaFileServiceArtifactStore.js';
 import { MiaodaHostedDocumentCatalog } from './miaoda-hosted-document-catalog';
 import { DOCUMENT_MANAGEMENT_INGEST_AUTHORIZER, type DocumentManagementIngestAuthorizer } from './document-management-hosted.tokens';
-import { DocumentParsingRepository, documentParseError, type DocumentParseRow, type DocumentParseScope } from './document-parsing.repository';
+import { DocumentParsingRepository, documentParseError, type DocumentParseRow } from './document-parsing.repository';
+import { DocumentStepLeaseRepository, type DocumentStepFence } from './document-step-lease.repository';
+import { DocumentOfficialPluginService } from './document-official-plugin.service';
+import { DocumentOriginalStore, type DocumentOriginalBundle } from './document-original-store';
+import { extractDocumentPdfPages, type DocumentPdfExtraction } from './document-original-pdf';
+import { composeDocumentOriginal } from './document-original-compose';
+import { documentOriginalStructuredSource } from './document-original-adapter';
 
 type ReadScope = { actorUserId: string; tenantId: string; roles: string[] };
+const PAGE_GROUP_SIZE = 8;
 
 @Injectable()
 // Registered by DocumentManagementHostedModule.register().
 // eslint-disable-next-line @darraghor/nestjs-typed/injectable-should-be-provided
 export class DocumentParsingHostedService {
   private readonly logger = new Logger(DocumentParsingHostedService.name);
-  private readonly store: MineruArtifactStore;
+  private readonly store: DocumentOriginalStore;
+  private readonly legacyStore: MineruArtifactStore;
   private readonly originals: MiaodaFileServiceArtifactStore;
-  private readonly runtime: MineruHostedRuntime;
-  private runner: MineruRunner | null = null;
-  private readonly running = new Map<string, Promise<void>>();
-
   constructor(
-    files: FileService,
+    private readonly files: FileService,
     private readonly catalog: MiaodaHostedDocumentCatalog,
     private readonly repository: DocumentParsingRepository,
-    private readonly capabilities: CapabilityService,
+    private readonly plugins: DocumentOfficialPluginService,
+    private readonly leases: DocumentStepLeaseRepository,
     @Inject(DOCUMENT_MANAGEMENT_INGEST_AUTHORIZER) private readonly authorizer: DocumentManagementIngestAuthorizer,
   ) {
-    this.store = new MineruArtifactStore(files);
+    this.store = new DocumentOriginalStore(files);
+    this.legacyStore = new MineruArtifactStore(files);
     this.originals = new MiaodaFileServiceArtifactStore(files);
-    this.runtime = new MineruHostedRuntime(files);
   }
 
   async status(documentVersionId: string, context: ReadScope): Promise<DocumentParsingStatus> {
     const source = await this.authorizedSource(documentVersionId, context);
     const state = await this.repository.current({ ...context, documentVersionId });
-    const runtime = this.runtime.observe();
+    const configured = this.plugins.configured();
+    const officialPublished = state.published?.manifestArtifact?.relativePath === 'original/manifest.json';
     return { documentVersionId, originalFilename: source.version.originalFilename,
-      latestRun: state.latest ? summary(state.latest) : null,
-      publishedRun: state.published ? summary(state.published) : null,
-      runtimeAvailable: runtime.state === 'READY', runtime,
-    };
+      latestRun: state.latest ? summary(state.latest) : null, publishedRun: state.published ? summary(state.published) : null,
+      runtimeAvailable: configured, runtime: { state: !configured ? 'NOT_CONFIGURED' : state.latest?.errorCode ? 'FAILED' :
+        officialPublished ? 'CALL_SUCCEEDED' : 'CONFIGURED_UNVERIFIED',
+        errorCode: !configured ? 'DOCUMENT_PLUGIN_NOT_CONFIGURED' : state.latest?.errorCode ?? null,
+        lastCompletedAt: officialPublished ? state.published!.completedAt?.toISOString() ?? null : null } };
   }
 
+  /** Reservation only. M's registered durable consumer owns claiming and continuation. */
   async start(documentVersionId: string, request: unknown, context: ReadScope): Promise<DocumentParseRunSummary> {
     const input = startInput(request);
     const source = await this.authorizedSource(documentVersionId, context);
@@ -56,108 +63,155 @@ export class DocumentParsingHostedService {
       if (existing.expectedPublishedRevision !== input.expectedPublishedRevision) throw documentParseError('DOCUMENT_PARSE_REQUEST_CONFLICT');
       return summary(existing);
     }
-    if (this.runtime.observe().state !== 'READY') throw documentParseError('DOCUMENT_PARSE_RUNTIME_UNAVAILABLE', 503);
+    if (!this.plugins.configured()) throw documentParseError('DOCUMENT_PLUGIN_NOT_CONFIGURED', 503);
     const reservation = await this.repository.reserve(scope, { ...input, bucketId: source.source.bucketId,
       sourceBinding: { documentVersionId, documentId: source.version.documentId, familyId: source.version.familyId,
-        sourceArtifactId: source.version.sourceArtifactId, pdfSha256: source.version.pdfSha256, byteLength: source.version.byteLength },
-    });
-    if (reservation.created) {
-      // The durable run is returned immediately; closing the browser does not abandon the work.
-      // Replays observe that same row and never launch another process.
-      const execution = this.execute(reservation.row, context).finally(() => this.running.delete(reservation.row.parseRunId));
-      this.running.set(reservation.row.parseRunId, execution);
-    }
+        sourceArtifactId: source.version.sourceArtifactId, pdfSha256: source.version.pdfSha256, byteLength: source.version.byteLength } });
     return summary(reservation.row);
   }
 
-  async read(documentVersionId: string, parseRunId: string | undefined, context: ReadScope): Promise<DocumentParsedReading> {
-    const { run, loaded, source } = await this.loadPublished(documentVersionId, parseRunId, context);
-    const assets = Object.fromEntries(Object.keys(loaded.images).map(path => [path,
-      `/api/document-management/document-versions/${encodeURIComponent(documentVersionId)}/parse-runs/${encodeURIComponent(run.parseRunId)}/asset?path=${encodeURIComponent(path)}`]));
-    return { documentVersionId, parseRunId: run.parseRunId, parseRevision: run.parseRevision,
-      originalFilename: source.version.originalFilename, parser: loaded.manifest.parser, titleEnhancement: loaded.manifest.titleEnhancement,
-      markdown: loaded.document.markdown, assets,
-      projection: buildMineruReadingProjection(loaded.document, { documentVersionId, parseRunId: run.parseRunId }),
+  async executeStep(parseRunId: string, context: ReadScope & { documentVersionId: string }, fence: DocumentStepFence): Promise<DocumentOriginalStepResult> {
+    if (fence.parseRunId !== parseRunId) throw documentParseError('DOCUMENT_STEP_LEASE_REJECTED');
+    const scope = { ...context };
+    await this.leases.check(scope, fence);
+    const run = await this.repository.read(scope, parseRunId);
+    if (!run) throw documentParseError('DOCUMENT_PARSE_NOT_FOUND', 404);
+    const assertActive = async () => { await this.assertRead(run.documentVersionId, context); await this.leases.check(scope, fence); };
+    const binding = originalBinding(run);
+    const storage = storageScope(run);
+    const progress = [...run.artifactProgress];
+    const record = async (artifact: DocumentOriginalArtifact) => {
+      await assertActive();
+      const index = progress.findIndex(item => item.relativePath === artifact.relativePath);
+      if (index < 0) progress.push(artifact); else progress[index] = artifact;
+      await this.repository.progress(scope, parseRunId, progress, fence);
     };
-  }
-
-  async asset(documentVersionId: string, parseRunId: string, path: unknown, context: ReadScope) {
-    if (typeof path !== 'string') throw documentParseError('DOCUMENT_PARSE_ASSET_NOT_FOUND', 404);
-    await this.authorizedSource(documentVersionId, context);
-    const run = await this.repository.read({ ...context, documentVersionId }, parseRunId);
-    if (!run || run.status !== 'PUBLISHED' || !run.manifestArtifact) throw documentParseError('DOCUMENT_PARSE_NOT_PUBLISHED', 404);
-    // Published descriptors are immutable and were verified before the publication CAS.
-    // Fetching one image does not reload the complete Markdown and layout bundle.
-    const matches = run.artifactProgress.filter(item => item.role === 'IMAGE' && item.relativePath === path && item.readback === 'VERIFIED');
-    const descriptor = matches.length === 1 ? matches[0] : null;
-    if (!descriptor) throw documentParseError('DOCUMENT_PARSE_ASSET_NOT_FOUND', 404);
-    const bytes = await this.store.read(storageScope(run), descriptor);
-    await this.assertRead(documentVersionId, context);
-    return { bytes, mediaType: descriptor.mediaType };
-  }
-
-  /** Translation and assessment consumers use this exact published version; no parser rerun or temporary files. */
-  async loadPublished(documentVersionId: string, parseRunId: string | undefined, context: ReadScope) {
-    const source = await this.authorizedSource(documentVersionId, context);
-    const scope = { ...context, documentVersionId };
-    const run = parseRunId ? await this.repository.read(scope, parseRunId) : (await this.repository.current(scope)).published;
-    if (!run || run.status !== 'PUBLISHED' || !run.manifestArtifact) throw documentParseError('DOCUMENT_PARSE_NOT_PUBLISHED', 404);
-    const binding = { documentVersionId, documentId: source.version.documentId, familyId: source.version.familyId,
-      sourceArtifactId: source.version.sourceArtifactId, pdfSha256: source.version.pdfSha256, byteLength: source.version.byteLength };
-    const loaded = await this.store.loadReading({ scope: storageScope(run), documentVersion: binding, manifestArtifact: run.manifestArtifact });
-    await this.assertRead(documentVersionId, context);
-    return { run, loaded, source };
-  }
-
-  private async execute(run: DocumentParseRow, context: ReadScope) {
-    const scope: DocumentParseScope = { ...context, documentVersionId: run.documentVersionId };
     try {
+      if (run.status === 'RUNNING') await this.repository.stage(scope, parseRunId, fence);
+      const completed = await this.store.recover(storage, 'MANIFEST');
+      if (completed) {
+        const bundle = await this.store.load(storage, completed.artifact, binding);
+        const change = bundle.change ?? await this.originalChange(run, bundle.original, context);
+        await record(completed.artifact);
+        await assertActive();
+        await this.repository.publish(scope, parseRunId, completed.artifact, fence);
+        return stepResult(run, bundle.original.coverage, 'PUBLISHED', change);
+      }
       const source = await this.authorizedSource(run.documentVersionId, context);
       const original = await this.originals.readSelection({ bucketId: source.source.bucketId, filePath: source.source.filePath });
       if (!original.readbackVerified || original.sha256 !== run.sourceBinding.pdfSha256 || original.byteLength !== run.sourceBinding.byteLength ||
           original.sha256 !== source.source.sha256 || original.byteLength !== source.source.byteLength ||
-          original.providerObjectId !== source.source.providerObjectId || original.providerVersionId !== source.source.providerVersionId) {
+          original.providerObjectId !== source.source.providerObjectId || original.providerVersionId !== source.source.providerVersionId)
         throw documentParseError('DOCUMENT_PARSE_ORIGINAL_MISMATCH');
+      let raw = await this.store.recover(storage, 'RAW_MARKDOWN');
+      if (!raw) {
+        const parsed = await this.plugins.parseOriginal({ assertActive,
+          originalUrl: async () => this.files.from(source.source.bucketId).createSignedUrl(source.source.filePath, 600) });
+        const bytes = Buffer.from(parsed.markdown);
+        raw = { bytes, artifact: await this.store.save(storage, 'RAW_MARKDOWN', bytes, record) };
+      } else await record(raw.artifact);
+      const pageArtifacts: DocumentOriginalArtifact[] = [];
+      const pages: DocumentPdfExtraction['pages'] = [];
+      let pageCount: number | null = null;
+      let pageStart = 0;
+      for (;;) {
+        const path = `original/pages-${pageStart}.json`;
+        const recovered = await this.store.recover(storage, 'MANIFEST', path);
+        if (!recovered) break;
+        const chunk: DocumentPdfExtraction = JSON.parse(Buffer.from(recovered.bytes).toString('utf8'));
+        assertPageChunk(chunk, pageStart, pageCount);
+        await record(recovered.artifact); pageArtifacts.push(recovered.artifact);
+        pages.push(...chunk.pages); pageCount = chunk.pageCount; pageStart += chunk.pages.length;
+        if (pageStart >= pageCount) break;
       }
-      this.runner ??= new MineruRunner({ ...this.runtime.options(),
-        titleCall: miaodaMineruTitleCall(this.capabilities) });
-      const result = await this.runner.parse(original.bytes);
-      await this.assertRead(run.documentVersionId, context);
-      await this.repository.stage(scope, run.parseRunId);
-      const progress = new Map<string, MineruStoredArtifact>();
-      const saved = await this.store.persist({ scope: storageScope(run), documentVersion: run.sourceBinding, result,
-        onProgress: async artifact => {
-          progress.set(artifact.relativePath, artifact);
-          await this.repository.progress(scope, run.parseRunId, [...progress.values()]);
-        },
-      });
-      await this.assertRead(run.documentVersionId, context);
-      await this.repository.publish(scope, run.parseRunId, saved.manifestArtifact);
+      if (pageCount === null || pageStart < pageCount) {
+        const chunk = await extractDocumentPdfPages({ bytes: original.bytes, pageStart, pageCount: PAGE_GROUP_SIZE, assertActive });
+        assertPageChunk(chunk, pageStart, pageCount);
+        const artifact = await this.store.save(storage, 'MANIFEST', Buffer.from(JSON.stringify(chunk)), record, `original/pages-${pageStart}.json`);
+        pages.push(...chunk.pages); pageArtifacts.push(artifact); pageCount = chunk.pageCount; pageStart += chunk.pages.length;
+      }
+      const markdown = Buffer.from(raw.bytes).toString('utf8');
+      const result = composeDocumentOriginal({ binding, extraction: { pageCount, pages }, markdown,
+        producer: { kind: 'OFFICIAL_PLUGIN_HYBRID', instanceId: 'wl-document-parser', pluginVersion: '1.0.16',
+          actionKey: 'parseDocToMarkdown', concreteModel: null, extractedAt: null } });
+      if (pageStart < pageCount) return stepResult(run, result.coverage, 'STAGING');
+      documentOriginalStructuredSource(result, binding);
+      const change = await this.originalChange(run, result, context);
+      const bundle: DocumentOriginalBundle = { change, schemaVersion: 'wiselink.document.bundle.v1', original: result,
+        rawPdfArtifacts: pageArtifacts, rawMarkdown: raw.artifact };
+      const manifest = await this.store.save(storage, 'MANIFEST', Buffer.from(JSON.stringify(bundle)), record);
+      await this.store.load(storage, manifest, binding);
+      await assertActive();
+      await this.repository.publish(scope, parseRunId, manifest, fence);
+      return stepResult(run, result.coverage, 'PUBLISHED', change);
     } catch (error) {
       const code = safeErrorCode(error);
-      this.logger.error(`Document parse ${run.parseRunId} failed: ${code}`);
-      if (error instanceof MineruExecutionError) {
-        // MinerU's Click CLI reports task failures over multiple stderr lines;
-        // Python-exception-only filtering loses the actual task failure reason.
-        // Keep a bounded diagnostic tail in Host logs, never model output/stdout.
-        const stderr = error.stderr.replace(/\u001b\[[0-9;]*m/g, '')
-          .replace(/https?:\/\/\S+/g, '[URL]').slice(-6000);
-        this.logger.error(`MinerU process ${run.parseRunId}: ${JSON.stringify({ exit: error.message, stderr })}`);
-      }
-      try {
-        await this.repository.fail(scope, run.parseRunId, { errorCode: code,
-          ...(error instanceof MineruPersistenceError ? { progress: error.progress, pendingObject: error.pendingObject } : {}),
-        });
-      } catch {
-        this.logger.error(`Document parse ${run.parseRunId} failure could not be recorded; its persisted deadline and request remain available for recovery.`);
-      }
+      try { await this.repository.recordStepFailure(scope, fence, code); }
+      catch { this.logger.error(`Document step ${parseRunId} failure record rejected; durable lease/deadline remains authoritative.`); }
+      throw error;
     }
   }
 
+  async read(documentVersionId: string, parseRunId: string | undefined, context: ReadScope): Promise<DocumentParsedReading> {
+    const source = await this.authorizedSource(documentVersionId, context);
+    const run = await this.publishedRun(documentVersionId, parseRunId, context);
+    if (run.manifestArtifact!.relativePath === 'original/manifest.json') {
+      const artifact = originalArtifact(run.manifestArtifact!);
+      const bundle = await this.store.load(storageScope(run), artifact, originalBinding(run));
+      await this.assertRead(documentVersionId, context);
+      return { documentVersionId, parseRunId: run.parseRunId, parseRevision: run.parseRevision,
+        originalFilename: source.version.originalFilename, parser: { name: 'OfficialPluginHybrid', version: bundle.original.producer.pluginVersion, backend: 'Host' },
+        titleEnhancement: { status: 'DISABLED' }, markdown: bundle.original.markdown, assets: {}, original: bundle.original,
+        projection: { documentVersionId, parseRunId: run.parseRunId, sources: [], notes: [], issues: [] } };
+    }
+    // Historical published MinerU artifacts remain readable; no new MinerU producer.
+    const loaded = await this.legacyStore.loadReading({ scope: storageScope(run), documentVersion: run.sourceBinding, manifestArtifact: run.manifestArtifact! });
+    await this.assertRead(documentVersionId, context);
+    return { documentVersionId, parseRunId: run.parseRunId, parseRevision: run.parseRevision,
+      originalFilename: source.version.originalFilename, parser: loaded.manifest.parser, titleEnhancement: loaded.manifest.titleEnhancement,
+      markdown: loaded.document.markdown, assets: Object.fromEntries(Object.keys(loaded.images).map(path => [path,
+        `/api/document-management/document-versions/${encodeURIComponent(documentVersionId)}/parse-runs/${encodeURIComponent(run.parseRunId)}/asset?path=${encodeURIComponent(path)}`])),
+      projection: buildMineruReadingProjection(loaded.document, { documentVersionId, parseRunId: run.parseRunId }) };
+  }
+
+  async loadPublished(documentVersionId: string, parseRunId: string, context: ReadScope) {
+    await this.authorizedSource(documentVersionId, context);
+    const run = await this.publishedRun(documentVersionId, parseRunId, context);
+    const loaded = await this.store.load(storageScope(run), originalArtifact(run.manifestArtifact!), originalBinding(run));
+    await this.assertRead(documentVersionId, context);
+    return { run, original: loaded.original, structuredSource: documentOriginalStructuredSource(loaded.original, originalBinding(run)) };
+  }
+
+  async asset(documentVersionId: string, parseRunId: string, path: unknown, context: ReadScope) {
+    await this.authorizedSource(documentVersionId, context);
+    const run = await this.publishedRun(documentVersionId, parseRunId, context);
+    const matches = run.artifactProgress.filter(item => item.role === 'IMAGE' && item.relativePath === path && item.readback === 'VERIFIED');
+    if (matches.length !== 1) throw documentParseError('DOCUMENT_PARSE_ASSET_NOT_FOUND', 404);
+    const bytes = await this.legacyStore.read(storageScope(run), matches[0]);
+    await this.assertRead(documentVersionId, context);
+    return { bytes, mediaType: matches[0].mediaType };
+  }
+  private async originalChange(run: DocumentParseRow, original: DocumentOriginalBundle['original'], context: ReadScope) {
+    if (run.expectedPublishedRevision === 0) return compareDocumentOriginal(null, original);
+    const previous = (await this.repository.current({ ...context, documentVersionId: run.documentVersionId })).published;
+    if (!previous || previous.parseRevision !== run.expectedPublishedRevision) throw documentParseError('DOCUMENT_PARSE_REVISION_CONFLICT');
+    if (previous.manifestArtifact?.relativePath !== 'original/manifest.json') return {
+      ...compareDocumentOriginal(null, original), kind: 'IMPACT_UNRESOLVED' as const, previousParseRunId: previous.parseRunId,
+    };
+    const loaded = await this.store.load(storageScope(previous), originalArtifact(previous.manifestArtifact), originalBinding(previous));
+    await this.assertRead(run.documentVersionId, context);
+    return compareDocumentOriginal(loaded.original, original);
+  }
+
+  private async publishedRun(documentVersionId: string, parseRunId: string | undefined, context: ReadScope) {
+    const scope = { ...context, documentVersionId };
+    const run = parseRunId ? await this.repository.read(scope, parseRunId) : (await this.repository.current(scope)).published;
+    if (!run || run.status !== 'PUBLISHED' || !run.manifestArtifact) throw documentParseError('DOCUMENT_PARSE_NOT_PUBLISHED', 404);
+    return run;
+  }
   private async assertRead(documentVersionId: string, context: ReadScope) {
     await this.authorizer.assertCanRead({ ...context, action: 'DOCUMENT_READ', documentVersionId });
   }
-
   private async authorizedSource(documentVersionId: string, context: ReadScope) {
     await this.assertRead(documentVersionId, context);
     const source = await this.catalog.readMetadataSource(documentVersionId, context.tenantId);
@@ -165,7 +219,6 @@ export class DocumentParsingHostedService {
     return source;
   }
 }
-
 function summary(row: DocumentParseRow): DocumentParseRunSummary {
   return { parseRunId: row.parseRunId, documentVersionId: row.documentVersionId, parseRevision: row.parseRevision,
     status: row.status, verifiedArtifacts: row.artifactProgress.filter(item => item.readback === 'VERIFIED').length,
@@ -186,6 +239,28 @@ function startInput(value: unknown): StartDocumentParseRequest {
 }
 function safeErrorCode(error: unknown) {
   const value = error instanceof Error ? error.message : '';
-  if (error instanceof MineruExecutionError && /^MINERU_PROCESS_FAILED:/.test(value)) return 'MINERU_PROCESS_FAILED';
+  if (/^MINERU_PROCESS_FAILED:/.test(value)) return 'MINERU_PROCESS_FAILED';
   return /^[A-Z][A-Z0-9_]{1,159}$/.test(value) ? value : 'DOCUMENT_PARSE_FAILED';
+}
+
+function originalBinding(run: DocumentParseRow): DocumentOriginalBinding {
+  return { documentVersionId: run.documentVersionId, parseRunId: run.parseRunId, parseRevision: run.parseRevision,
+    sourceArtifactId: run.sourceBinding.sourceArtifactId, sourceSha256: run.sourceBinding.pdfSha256, sourceByteLength: run.sourceBinding.byteLength };
+}
+function originalArtifact(artifact: NonNullable<DocumentParseRow['manifestArtifact']>): DocumentOriginalArtifact {
+  if (!['MANIFEST', 'RAW_MARKDOWN'].includes(artifact.role)) throw documentParseError('DOCUMENT_ORIGINAL_DESCRIPTOR_INVALID');
+  return { ...artifact, role: artifact.role === 'MANIFEST' ? 'MANIFEST' : 'RAW_MARKDOWN' };
+}
+function assertPageChunk(chunk: DocumentPdfExtraction, start: number, expectedCount: number | null) {
+  if (!Number.isSafeInteger(chunk.pageCount) || chunk.pageCount < 1 ||
+      (expectedCount !== null && chunk.pageCount !== expectedCount) || !Array.isArray(chunk.pages) ||
+      chunk.pages.length < 1 || chunk.pages.length > PAGE_GROUP_SIZE ||
+      chunk.pages.some((page, index) => page.pageIndex !== start + index || page.pageIndex >= chunk.pageCount || typeof page.text !== 'string'))
+    throw documentParseError('DOCUMENT_ORIGINAL_PAGE_CHECKPOINT_INVALID');
+}
+function stepResult(run: DocumentParseRow, coverage: DocumentOriginalStepResult['coverage'], status: DocumentOriginalStepResult['status'], change?: DocumentOriginalChange): DocumentOriginalStepResult {
+  return { parseRunId: run.parseRunId, parseRevision: run.parseRevision, status, coverage,
+    changedUnitIds: change?.changedUnitIds ?? [], changedSourceRefIds: change?.changedSourceRefIds ?? [],
+    previousParseRunId: change?.previousParseRunId ?? null,
+    changeKind: change?.kind ?? (run.expectedPublishedRevision === 0 ? 'INITIAL' : 'IMPACT_UNRESOLVED') };
 }

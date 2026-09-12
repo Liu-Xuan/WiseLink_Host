@@ -688,6 +688,24 @@ describe('CanonicalHost initial-analysis status projection', () => {
         overall: { status: 'SUCCEEDED' },
       },
     });
+    const originalOnly = { ...complete, translation: undefined, applicability: undefined, applicabilityInput: undefined };
+    for (const translations of [[], [attempt('OPENCLAW_TRANSLATE','FAILED')]]) {
+      const status = projectCanonicalHostInitialAnalysisStatus(originalOnly,translations,{englishAssessmentEnabled:true});
+      expect(status).toMatchObject({status:'WAITING_INPUT',nextOperation:null,
+        stages:{applicability:{status:'WAITING_INPUT'},jobAid:{status:'SUCCEEDED'},overall:{status:'SUCCEEDED'}}});
+      expect(status.stages.translation.status).toBe(translations.length ? 'FAILED' : 'PENDING');
+    }
+  });
+  it('uses verified original publication for readiness without certifying missing effectivity mapping', () => {
+    const source=parsedWorkItem();
+    expect(projectCanonicalHostInitialAnalysisStatus(source,[],{englishAssessmentEnabled:true,originalPublished:false}))
+      .toMatchObject({status:'NOT_READY',nextOperation:null});
+    const withoutPackage={...source,package:null};
+    expect(projectCanonicalHostInitialAnalysisStatus(withoutPackage,[],{englishAssessmentEnabled:true,originalPublished:true}))
+      .toMatchObject({status:'WAITING_INPUT',nextOperation:'EVALUATE_JOBAID',stages:{applicability:{status:'WAITING_INPUT'}}});
+    withoutPackage.applicabilityInput=applicabilityInput(source);
+    expect(projectCanonicalHostInitialAnalysisStatus(withoutPackage,[],{englishAssessmentEnabled:true,originalPublished:true}))
+      .toMatchObject({stages:{applicability:{status:'WAITING_INPUT',terminalCode:'ORIGINAL_APPLICABILITY_MAPPING_REQUIRED'}}});
   });
 });
 

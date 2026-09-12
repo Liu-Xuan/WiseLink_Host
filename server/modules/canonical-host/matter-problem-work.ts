@@ -14,6 +14,7 @@ export function validateMatterProblemWork(
     jobAidProblemModelWorkContent(content),
     {
       matterId,
+      methodBinding: content.methodBinding,
       previous: null,
       evidence: content.evidence,
       readSourceRefs: content.readSourceRefs,

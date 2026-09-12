@@ -2,7 +2,7 @@
 
 > 所有类型均从 `@lark-apaas/fullstack-nestjs-core` 导入。
 >
-> **ID 字段语义**（哪个用于飞书 API、哪个禁用、employee_id/open_department_id/open_chat_id 含义）见 [`contacts-service`](../../contacts-service/SKILL.md) skill。下表 `larkUserID`/`larkDepartmentID` 为纯数字内部 ID（禁用），飞书 API 用 `employeeID`/`openDepartmentID`/`openChatID`。
+> **ID 字段语义**（哪个用于飞书 API、哪个禁用、employee_id/open_department_id/open_chat_id 含义）按实际 SDK 字段及目标 API 的 ID 类型核实；用户 ID 转换见 [user-identity](../../user-identity/SKILL.md)。下表 `larkUserID`/`larkDepartmentID` 为纯数字内部 ID（禁用），飞书 API 用 `employeeID`/`openDepartmentID`/`openChatID`。
 
 ```typescript
 // ===================== 通用 =====================
