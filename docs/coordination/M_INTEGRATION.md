@@ -285,3 +285,7 @@ Skill c85 源提交 `58653b973f43f18c0ce345239547fc2e2a9f115c` 已推送妙搭 o
 ## 原文受理 JSON 与初评查询错配修复（2026-09-13）
 
 跨消费者核对发现实际 start() 持久化 source_binding 使用 pdfSha256/byteLength，而 M 的初评状态查询误用 DocumentOriginalBinding 的 sourceSha256/sourceByteLength；会把已发布原文判为 NOT_READY。原 PG 夹具直接保存 original.binding，掩盖了这个错误。先把夹具改为真实受理格式，PG 实际复现 nextOperation=null 而非 EVALUATE_JOBAID；再修正查询两个 JSON key，12 项真实 PG 测试和 31 项状态测试、server types 通过。没有改历史行或增加兼容字段回退；start() 与原文产物各自保留真实字段语义。
+
+后续发布读回：Host release `7684747758318423336` finished，实际提交 `b2890cad040d8066f41c6c7ebb003b4d4423388b`，error_logs 为空。包含上述字段修复及上一节原文修订状态增量，取代上一节“尚未发布”状态；不代表已完成自动续评或 H1/H2。
+
+回归夹具进一步改为调用真实 DocumentParsingHostedService.start()，捕获 reserve 的 sourceBinding 后写入实际 PostgreSQL 已发布运行，再通过初评状态消费者验证；FileService 若被 reservation 调用则直接测试失败。测试显式使用 server tsconfig，12 项全部通过、无跳过。解析结果发布仍由夹具模拟，此项证明入口/消费者字段契约及数据库读取，不证明官方插件执行。
