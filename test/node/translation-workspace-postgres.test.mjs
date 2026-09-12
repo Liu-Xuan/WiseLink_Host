@@ -763,6 +763,15 @@ test('independent DocumentVersion translates with no WorkItem and rejects stale 
       CREATE OR REPLACE FUNCTION engineering_matter_all_links_owned_by_actor(t varchar, m varchar) RETURNS boolean LANGUAGE sql STABLE AS $$ SELECT false $$;
       CREATE POLICY action_attempt_matter_subject_boundary ON action_attempt AS RESTRICTIVE FOR ALL TO PUBLIC USING (true);`);
     await sql.unsafe(await readFile(new URL('../../migrations/0048_document_translation_attempt_subject.sql', import.meta.url), 'utf8'));
+    await sql.unsafe(await readFile(new URL('../../migrations/0052_document_subject_explicit_platform_roles.sql', import.meta.url), 'utf8'));
+    const documentPolicies = await sql`SELECT policyname, roles, permissive FROM pg_policies
+      WHERE schemaname='public' AND policyname IN ('translation_workspace_document_boundary',
+        'translation_block_document_boundary','action_attempt_document_subject_boundary')`;
+    assert.equal(documentPolicies.length, 3);
+    for (const policy of documentPolicies) {
+      assert.equal(policy.permissive, 'RESTRICTIVE');
+      assert.deepEqual([...policy.roles].sort(), ['authenticated', 'service_role']);
+    }
     const repository = new CanonicalTranslationWorkspaceRepository(drizzle(sql));
     const plan = fixturePlan();
     plan.source.packageId = 'parse-document-test';

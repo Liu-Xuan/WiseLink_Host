@@ -253,3 +253,11 @@ JobAid begin、enqueueContinuation和enqueueOverall移除package非空前置，�
 最近发布 `7684334373449239540` 失败于远端缺失 `jobaid-evidence-uses` 和 `engineering-search-text` 导致 TS2307；这两个文件当前已被 Git 跟踪，本地构建已通过。前一成功发布为 `7684272668489157591`。两次 release-get 的 commit_id 均返回 `e58375c82a97d348e6ad24492c56870bf370cab7`，仅记录平台回读，不推断两次产物相同。
 
 db-env-diff 实际返回 engineering_search_projection、pending 和 drive_scan_checkpoint 等待发布结构，仍含旧 app.tenant_id 策略；0043–0051 本地修订尚未应用云端。必须先核对 dev 的确切结构并落实必要迁移，再发布，不能把本地 PG 通过当作云端已经迁移。Hosted 原诊断会话仍 is_active=true、latest_turn=cancelled、queued_count=3；未追加聊天、未重放或运行业务。当前只完成交付准备，H1/H2 仍待真实执行。
+
+## 云端开发迁移与发布准备（2026-09-13）
+
+集成提交 `ac6cdd8cc` 已通过原有 pre-commit（ESLint、Stylelint、前后端 types）并以单一非强制 refspec 推送妙搭 origin 同名开发分支；未推送 GitHub。云端 dev 表结构实读证明 0043–0051 尚未应用，随后将这九个迁移合并为单事务，经 dry-run 后执行并返回 COMMIT 成功，无业务数据清理。
+
+平台 dev→online 差异暴露 TO PUBLIC 被转换为仅 authenticated 的行为。新增 0052 显式指定 authenticated/service_role，用于三个新文档 restrictive policy；隔离 PG 的独立文档翻译测试验证三条策略角色集合与拒绝错误主体/旧来源的流程，1 项通过。0052 已在 dev 单事务应用。发布前再次读回平台差异核对实际角色，不能依赖原始 SQL 中 PUBLIC 的假设。
+
+线上只读查询：parseRun 为 2 个 FAILED、无活动解析；活动 ActionAttempt 为 Overall 2 RUNNING、1 QUEUED，均无未到期租约。未重写这些历史任务、未取消或重放。迁移保留 WORK_ITEM 的已有约束语义。Hosted 诊断队列未因此新增请求。技术发布、实际插件运行及 H1/H2 必须分别记账。
