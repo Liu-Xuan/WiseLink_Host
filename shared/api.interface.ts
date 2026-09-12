@@ -1,3 +1,4 @@
+import type { DocumentOriginalBinding } from './document-original.interface';
 import type {
   AssessmentReadingResult,
   AssessmentReadingSummary,
@@ -1299,14 +1300,16 @@ export interface CanonicalApplicabilitySelectionReadModel {
  * resolved by service authorization before the WorkItem is fresh-read.
  */
 export interface CanonicalApplicabilityInputProjection {
-  schemaVersion: 'wiselink.3_1.applicability_input_projection.v1';
+  schemaVersion: 'wiselink.3_1.applicability_input_projection.v1' | 'wiselink.3_1.applicability_input_projection.v2';
   applicabilityContextRef: string;
   /** Host-derived exact WorkItem/DocumentVersion/package binding. */
   workItemId: string;
   documentVersionId: string;
-  sourcePackageId: string;
-  sourcePackageContentHash: string;
-  sourcePackageArtifactSha256: string;
+  sourcePackageId: string | null;
+  sourcePackageContentHash: string | null;
+  sourcePackageArtifactSha256: string | null;
+  /** v2 binds the real original and its verified manifest, never a synthetic package. */
+  originalSource?: { binding: DocumentOriginalBinding; artifact: Pick<UnifiedPackageArtifactDescriptor, 'ref' | 'sha256' | 'byteLength' | 'mediaType'> };
   /** Canonical hash of frozen.2 sourceExpressions + assignments.target. */
   targetBindingHash: string;
   /** Revision of the server-private controlled aircraft/Fleet selection. */

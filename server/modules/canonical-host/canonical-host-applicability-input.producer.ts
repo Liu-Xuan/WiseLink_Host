@@ -1,4 +1,6 @@
-import { Inject, Injectable } from '@nestjs/common';
+import { JobAidWorkRepository } from './jobaid-work.repository';
+import { MiaodaWorkItemRepository } from '../work-item/miaoda-work-item.repository';
+import { Inject, Injectable, Optional } from '@nestjs/common';
 
 import type {
   CanonicalApplicabilityInputProjection,
@@ -83,6 +85,8 @@ export class CanonicalHostApplicabilityInputProducer {
     private readonly serviceScope: CanonicalServiceScopeAuthorizationPort,
     @Inject(CANONICAL_APPLICABILITY_CONTROLLED_SELECTION)
     private readonly controlledSelection: CanonicalApplicabilityControlledSelectionPort,
+    @Optional() private readonly originalWork?: JobAidWorkRepository,
+    @Optional() private readonly workItems?: MiaodaWorkItemRepository,
   ) {}
 
   async produce(
@@ -104,19 +108,29 @@ export class CanonicalHostApplicabilityInputProducer {
   async produceAuthorized(
     scope: CanonicalVerifiedApplicabilityContextScope,
   ): Promise<CanonicalWorkItemProjection> {
-    const workItem = await this.requiredParsedWorkItem(scope);
+    return this.produceBoundInput(scope);
+  }
+
+  /** New-original task admission calls this explicit producer, after service authorization. */
+  async produceOriginalAuthorized(scope: CanonicalVerifiedApplicabilityContextScope): Promise<CanonicalWorkItemProjection> {
+    return this.produceBoundInput(scope, true);
+  }
+
+  private async produceBoundInput(scope: CanonicalVerifiedApplicabilityContextScope, original?: boolean) {
+    const workItem = await this.requiredParsedWorkItem(scope, original);
     const selection = await this.controlledSelection.readCurrent({
       tenantId: scope.tenantId,
       workItemId: workItem.workItemId,
       documentVersionId: workItem.source.documentVersionId,
       applicabilityContextRef: scope.applicabilityContextRef,
     });
-    const sourceBinding = await this.readSourceBinding(workItem);
+    const sourceBinding = await this.readSourceBinding(workItem, scope.tenantId, original);
     const projection = deriveProjection({
       workItem,
       applicabilityContextRef: scope.applicabilityContextRef,
       selection,
       targetBindingHash: sourceBinding.targetBindingHash,
+      originalSource: sourceBinding.originalSource,
     });
     const reevaluation = activeConfigurationEvidenceReevaluation(workItem);
     const currentInput = reevaluation
@@ -155,11 +169,12 @@ export class CanonicalHostApplicabilityInputProducer {
     applicabilityInput: CanonicalApplicabilityInputProjection;
   }> {
     const workItem = await this.requiredParsedWorkItem(scope);
-    const sourceBinding = await this.readSourceBinding(workItem);
+    const sourceBinding = await this.readSourceBinding(workItem, scope.tenantId);
     const applicabilityInput = requiredApplicabilityInput({
       workItem,
       applicabilityContextRef: scope.applicabilityContextRef,
       targetBindingHash: sourceBinding.targetBindingHash,
+      originalSource: sourceBinding.originalSource,
     });
     return { workItem, applicabilityInput };
   }
@@ -185,17 +200,19 @@ export class CanonicalHostApplicabilityInputProducer {
       documentVersionId: workItem.source.documentVersionId,
       applicabilityContextRef: scope.applicabilityContextRef,
     });
-    const sourceBinding = await this.readSourceBinding(workItem);
+    const sourceBinding = await this.readSourceBinding(workItem, scope.tenantId);
     const persisted = requiredApplicabilityInput({
       workItem,
       applicabilityContextRef: scope.applicabilityContextRef,
       targetBindingHash: sourceBinding.targetBindingHash,
+      originalSource: sourceBinding.originalSource,
     });
     const derived = deriveProjection({
       workItem,
       applicabilityContextRef: scope.applicabilityContextRef,
       selection,
       targetBindingHash: sourceBinding.targetBindingHash,
+      originalSource: sourceBinding.originalSource,
     });
     if (canonicalSha256(persisted) !== canonicalSha256(derived)) {
       throw controlledSelectionDrift();
@@ -226,6 +243,7 @@ export class CanonicalHostApplicabilityInputProducer {
       workItem,
       applicabilityContextRef: scope.applicabilityContextRef,
       targetBindingHash,
+      originalSource: selectedApplicabilityInput(workItem)?.originalSource,
     });
     const selection = await this.controlledSelection.readCurrent({
       tenantId: scope.tenantId,
@@ -238,6 +256,7 @@ export class CanonicalHostApplicabilityInputProducer {
       applicabilityContextRef: scope.applicabilityContextRef,
       selection,
       targetBindingHash,
+      originalSource: selectedApplicabilityInput(workItem)?.originalSource,
     });
     if (canonicalSha256(persisted) !== canonicalSha256(derived)) {
       throw controlledSelectionDrift();
@@ -245,7 +264,29 @@ export class CanonicalHostApplicabilityInputProducer {
     return { workItem, applicabilityInput: derived };
   }
 
-  private async readSourceBinding(workItem: CanonicalWorkItemProjection) {
+  private async readSourceBinding(workItem: CanonicalWorkItemProjection, tenantId: string,
+    useOriginal = selectedApplicabilityInput(workItem)?.schemaVersion === 'wiselink.3_1.applicability_input_projection.v2') {
+    if (useOriginal) {
+      if (!this.originalWork || !this.workItems) throw new Error('APPLICABILITY_ORIGINAL_RUNTIME_UNAVAILABLE');
+      const owner = await this.workItems.loadTenantScopedProjection(workItem.workItemId, tenantId);
+      if (!owner || owner.row.documentVersionId !== workItem.source.documentVersionId)
+        throw new Error('APPLICABILITY_ORIGINAL_OWNER_CHANGED');
+      const actorUserId = owner.row.requestedByUserId;
+      const bound = await this.originalWork.publishedOriginalBinding({tenantId,actorUserId,
+        workItemId:workItem.workItemId,documentVersionId:workItem.source.documentVersionId});
+      const loaded = await this.originalWork.withActorScope(actorUserId, () => this.reader.readDocumentOriginal(
+        workItem.source.documentVersionId,bound.parseRunId,{tenantId,actorUserId,roles:[]}));
+      const binding = loaded.original.binding;
+      const artifact = loaded.run.manifestArtifact;
+      if (binding.documentVersionId !== workItem.source.documentVersionId || binding.parseRunId !== bound.parseRunId ||
+        binding.sourceArtifactId !== workItem.source.sourceArtifactId || binding.sourceSha256 !== workItem.source.sourceFileSha256 ||
+        binding.sourceByteLength !== workItem.source.sourceByteLength || !artifact || artifact.readback !== 'VERIFIED' ||
+        artifact.relativePath !== 'original/manifest.json' || artifact.mediaType !== 'application/json') throw new Error('APPLICABILITY_ORIGINAL_BINDING_CHANGED');
+      const originalSource: NonNullable<CanonicalApplicabilityInputProjection['originalSource']> = {binding,
+        artifact:{ref:`document-original://${encodeURIComponent(binding.documentVersionId)}/${encodeURIComponent(binding.parseRunId)}`,
+          sha256:artifact.sha256,byteLength:artifact.byteLength,mediaType:'application/json'}};
+      return {targetBindingHash:artifact.sha256,originalSource};
+    }
     const sourceUnits = await this.reader.readAllSourceUnits({
       artifact: workItem.package!.artifact,
       packageId: workItem.package!.packageId,
@@ -259,11 +300,7 @@ export class CanonicalHostApplicabilityInputProducer {
     const bytes = await this.artifactStore.readActualBytes(
       workItem.package!.artifact,
     );
-    return readFrozenApplicabilitySourceBinding({
-      bytes,
-      workItem,
-      sourceUnits,
-    });
+    return {...readFrozenApplicabilitySourceBinding({bytes,workItem,sourceUnits}), originalSource:undefined};
   }
 
   private async requiredParsedWorkItem(
@@ -271,11 +308,13 @@ export class CanonicalHostApplicabilityInputProducer {
       CanonicalVerifiedApplicabilityContextScope,
       'tenantId' | 'workItemId'
     >,
+    allowOriginal = false,
   ): Promise<CanonicalWorkItemProjection> {
     const workItem = await this.registrar.getTenantScopedByWorkItemId({
       workItemId: scope.workItemId,
       tenantId: scope.tenantId,
     });
+    if (allowOriginal || selectedApplicabilityInput(workItem)?.schemaVersion === 'wiselink.3_1.applicability_input_projection.v2') return workItem;
     if (
       workItem.phase !== 'CANDIDATE_READBACK_VERIFIED' ||
       !workItem.package ||
@@ -293,6 +332,7 @@ function deriveProjection(input: {
   applicabilityContextRef: string;
   selection: CanonicalApplicabilityControlledSelection;
   targetBindingHash: string;
+  originalSource?: CanonicalApplicabilityInputProjection['originalSource'];
 }): CanonicalApplicabilityInputProjection {
   const selection = input.selection;
   if (
@@ -313,13 +353,14 @@ function deriveProjection(input: {
     selection.assessmentAsOf,
   );
   const base = {
-    schemaVersion: 'wiselink.3_1.applicability_input_projection.v1' as const,
+    schemaVersion: input.originalSource ? 'wiselink.3_1.applicability_input_projection.v2' as const : 'wiselink.3_1.applicability_input_projection.v1' as const,
+    ...(input.originalSource ? {originalSource:structuredClone(input.originalSource)} : {}),
     applicabilityContextRef: input.applicabilityContextRef,
     workItemId: input.workItem.workItemId,
     documentVersionId: input.workItem.source.documentVersionId,
-    sourcePackageId: input.workItem.package!.packageId,
-    sourcePackageContentHash: input.workItem.package!.contentHash,
-    sourcePackageArtifactSha256: input.workItem.package!.artifact.sha256,
+    sourcePackageId: input.originalSource ? null : input.workItem.package!.packageId,
+    sourcePackageContentHash: input.originalSource ? null : input.workItem.package!.contentHash,
+    sourcePackageArtifactSha256: input.originalSource ? null : input.workItem.package!.artifact.sha256,
     targetBindingHash: input.targetBindingHash,
     selectionRevision: selection.selectionRevision,
     currentness: 'CURRENT' as const,
@@ -337,18 +378,24 @@ function requiredApplicabilityInput(input: {
   workItem: CanonicalWorkItemProjection;
   applicabilityContextRef: string;
   targetBindingHash: string;
+  originalSource?: CanonicalApplicabilityInputProjection['originalSource'];
 }): CanonicalApplicabilityInputProjection {
   const value = selectedApplicabilityInput(input.workItem);
   if (
     !value ||
-    value.schemaVersion !== 'wiselink.3_1.applicability_input_projection.v1' ||
+    value.schemaVersion !== (input.originalSource ? 'wiselink.3_1.applicability_input_projection.v2' : 'wiselink.3_1.applicability_input_projection.v1') ||
     value.applicabilityContextRef !== input.applicabilityContextRef ||
     value.workItemId !== input.workItem.workItemId ||
     value.documentVersionId !== input.workItem.source.documentVersionId ||
-    value.sourcePackageId !== input.workItem.package!.packageId ||
-    value.sourcePackageContentHash !== input.workItem.package!.contentHash ||
+    value.sourcePackageId !== (input.originalSource ? null : input.workItem.package!.packageId) ||
+    value.sourcePackageContentHash !== (input.originalSource ? null : input.workItem.package!.contentHash) ||
     value.sourcePackageArtifactSha256 !==
-      input.workItem.package!.artifact.sha256 ||
+      (input.originalSource ? null : input.workItem.package!.artifact.sha256) ||
+    canonicalSha256(value.originalSource ?? null) !== canonicalSha256(input.originalSource ?? null) ||
+    (input.originalSource !== undefined && (input.originalSource.binding.documentVersionId !== input.workItem.source.documentVersionId ||
+      input.originalSource.binding.sourceArtifactId !== input.workItem.source.sourceArtifactId ||
+      input.originalSource.binding.sourceSha256 !== input.workItem.source.sourceFileSha256 ||
+      input.originalSource.binding.sourceByteLength !== input.workItem.source.sourceByteLength)) ||
     value.targetBindingHash !== input.targetBindingHash ||
     !value.selectionRevision.trim() ||
     !value.bindingRevision.trim() ||

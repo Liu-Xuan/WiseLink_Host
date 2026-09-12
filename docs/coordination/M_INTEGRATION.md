@@ -327,3 +327,11 @@ Skill c85 源提交 `58653b973f43f18c0ce345239547fc2e2a9f115c` 已推送妙搭 o
 Host 只接受与该候选状态、fragmentId 和原因吻合的 interpretation_unknown，保存 WAITING_INPUT/UNKNOWN/pass=false。跟进策略标记 READ_ORIGINAL_SOURCE，不继承引擎旧 grill_me 标签来强制人工逐条确认。72 项 Host 契约/提交服务测试、191 项 native 载荷测试、server types 和 c87 版本声明检查通过。
 
 这修正的是已经接线的来源解释未知提交语义；任务输入/受控选择仍未从 frozen.2 迁移到独立原文，不声称新原文条件发现、作用范围绑定已实现。c87 源码增量尚未打包、安装或发布，已验证私有交付包仍为上一节 c86。
+
+## 原文适用性输入生产与复核（2026-09-13，迁移中）
+
+新增 CanonicalHostApplicabilityInputProducer.produceOriginalAuthorized，复用受控 Fleet/目标选择和原有 CAS，按真实 WorkItem owner 通过正常 Reader 读取确切已发布原文。输入投影 v2 保存 DocumentOriginalBinding 及已验证 manifest 的真实 document-original 引用；三个旧 package 字段为 null，不补造包或 Candidate storeRole。原有 targetBindingHash 在此模式采用实际 manifest SHA，未新增全局哈希机制。
+
+既有 resolveCurrent/readCurrentOwnerValidated/readCurrentSelectionValidated 已支持该投影：提交前正常读取并比较原文，发布后恢复只复核保存绑定与当前选择，不增加 FileService 调用。授权失败不 CAS，原文版本变化不静默改写当前输入，重复生产相同输入不增加修订。58 项生产者/既有提交服务测试及前后端类型检查通过。
+
+当前 begin_applicability_evaluation 仍未切换到新生产方法；实际新原文任务、候选条件发现/作用范围与提交结果的 v3 接线必须完成后再切换。此段是迁移进展，尚非运行入口完成，也未发布；旧任务继续使用现有 frozen.2 绑定路径。下一步修改任务/候选及其 native 消费者，以真实原文 catalog 和候选引句建立 Host 来源/作用范围，而非把所有原文单元预标为 source_asserted 条件。

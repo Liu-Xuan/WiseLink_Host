@@ -1,3 +1,4 @@
+import { originalFixture } from './document-parsing/fixtures/document-original.fixture';
 import { createHash } from 'node:crypto';
 
 import type {
@@ -11,6 +12,37 @@ import {
 import { createConfigurationEvidenceReevaluation } from '../../server/modules/canonical-host/configuration-evidence/configuration-evidence-reevaluation.state';
 
 describe('CanonicalHostApplicabilityInputProducer', () => {
+  it('persists original provenance without a package and revalidates selection without file reads after publication', async () => {
+    const h=producerHarness({original:true});
+    const scope=await h.serviceScope.authorizeOpenClawApplicabilityContext({applicabilityContextRef:'APCTX-OPAQUE-1',requestId:'request-original'});
+    const produced=await h.producer.produceOriginalAuthorized(scope);
+    expect(produced.applicabilityInput).toMatchObject({schemaVersion:'wiselink.3_1.applicability_input_projection.v2',
+      sourcePackageId:null,sourcePackageContentHash:null,sourcePackageArtifactSha256:null,
+      originalSource:{binding:h.original.binding,artifact:{ref:'document-original://DV-1/PR-2',sha256:'c'.repeat(64)}},
+      aircraftNumber:'B-1234'});
+    expect(h.originalWork.withActorScope).toHaveBeenCalledWith('owner-original',expect.any(Function));
+    expect(h.reader.readDocumentOriginal).toHaveBeenCalledWith('DV-1','PR-2',{tenantId:'tenant-1',actorUserId:'owner-original',roles:[]});
+    expect(h.artifactStore.readActualBytes).not.toHaveBeenCalled();
+    expect(h.reader.readAllSourceUnits).not.toHaveBeenCalled();
+    expect((await h.producer.readCurrentOwnerValidated(scope)).applicabilityInput).toEqual(produced.applicabilityInput);
+    const reads=h.reader.readDocumentOriginal.mock.calls.length;
+    expect((await h.producer.readCurrentSelectionValidated(scope)).applicabilityInput).toEqual(produced.applicabilityInput);
+    expect(h.reader.readDocumentOriginal).toHaveBeenCalledTimes(reads);
+    await h.producer.produceOriginalAuthorized(scope);
+    expect(h.registrar.compareAndSet).toHaveBeenCalledTimes(1);
+    h.original.binding.parseRunId='PR-3'; h.original.binding.parseRevision=3;
+    await expect(h.producer.readCurrentOwnerValidated(scope)).rejects.toThrow();
+    expect(h.registrar.compareAndSet).toHaveBeenCalledTimes(1);
+  });
+
+  it('does not persist an original input when normal Reader authorization fails', async () => {
+    const h=producerHarness({original:true});
+    h.reader.readDocumentOriginal.mockRejectedValue(new Error('SOURCE_ACCESS_REVOKED'));
+    const scope=await h.serviceScope.authorizeOpenClawApplicabilityContext({applicabilityContextRef:'APCTX-OPAQUE-1',requestId:'request-original'});
+    await expect(h.producer.produceOriginalAuthorized(scope)).rejects.toThrow('SOURCE_ACCESS_REVOKED');
+    expect(h.registrar.compareAndSet).not.toHaveBeenCalled();
+  });
+
   it('authorizes an opaque context, minimizes controlled Fleet, and CAS-writes projection_json shape', async () => {
     const harness = producerHarness();
     const produced = await harness.producer.produce(
@@ -175,7 +207,7 @@ describe('CanonicalHostApplicabilityInputProducer', () => {
   });
 });
 
-function producerHarness(options: { p0b?: boolean } = {}) {
+function producerHarness(options: { p0b?: boolean; original?: boolean } = {}) {
   const packageBytes = new TextEncoder().encode(
     JSON.stringify({
       sourceRefs: [{ sourceRefId: 'SRC-1' }],
@@ -208,6 +240,9 @@ function producerHarness(options: { p0b?: boolean } = {}) {
   );
   const packageArtifact = artifact('package.json', packageBytes);
   let current = workItem(packageArtifact);
+  if (options.original) current.package=null;
+  const original=originalFixture(); original.binding={documentVersionId:current.source.documentVersionId,parseRunId:'PR-2',
+    parseRevision:2,sourceArtifactId:current.source.sourceArtifactId,sourceSha256:current.source.sourceFileSha256,sourceByteLength:current.source.sourceByteLength};
   if (options.p0b) {
     Object.assign(current, servingProjectionSentinels(), {
       configurationEvidenceCurrent: {
@@ -253,6 +288,8 @@ function producerHarness(options: { p0b?: boolean } = {}) {
     readActualBytes: jest.fn(async () => packageBytes.slice()),
   };
   const reader = {
+    readDocumentOriginal:jest.fn(async () => ({original:structuredClone(original),run:{parseRunId:original.binding.parseRunId,manifestArtifact:{
+      relativePath:'original/manifest.json',readback:'VERIFIED',sha256:'c'.repeat(64),byteLength:100,mediaType:'application/json'}}})),
     readAllSourceUnits: jest.fn(async () => [
       {
         unitId: 'UNIT-1',
@@ -279,18 +316,23 @@ function producerHarness(options: { p0b?: boolean } = {}) {
   const controlledSelectionPort = {
     readCurrent: jest.fn(async () => structuredClone(selection)),
   };
+  const originalWork={publishedOriginalBinding:jest.fn(async () => ({parseRunId:original.binding.parseRunId})),
+    withActorScope:jest.fn(async (_actor,operation) => operation())};
+  const workItems={loadTenantScopedProjection:jest.fn(async () => ({row:{documentVersionId:current.source.documentVersionId,requestedByUserId:'owner-original'}}))};
   const producer = new CanonicalHostApplicabilityInputProducer(
     registrar as never,
     artifactStore as never,
     reader as never,
     serviceScope as never,
     controlledSelectionPort,
+    originalWork as never,
+    workItems as never,
   );
   return {
     producer,
     registrar,
     selection,
-    packageArtifact,
+    packageArtifact,original,originalWork,reader,artifactStore,serviceScope,
     readCurrent: () => structuredClone(current),
   };
 }
