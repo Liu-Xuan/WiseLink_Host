@@ -12,6 +12,21 @@ import {
 import { createConfigurationEvidenceReevaluation } from '../../server/modules/canonical-host/configuration-evidence/configuration-evidence-reevaluation.state';
 
 describe('CanonicalHostApplicabilityInputProducer', () => {
+  it('discovers only its authorized configured original target without reading files or persisting input',async()=>{
+    const saved=process.env.WL_OPENCLAW_APPLICABILITY_CONTEXT_REF;
+    process.env.WL_OPENCLAW_APPLICABILITY_CONTEXT_REF='APCTX-OPAQUE-1';
+    try {
+      const h=producerHarness({original:true});
+      const input={tenantId:'tenant-1',workItemId:'WI-APP-1',documentVersionId:'DV-1'};
+      await expect(h.producer.readOriginalAdmissionContext(input)).resolves.toEqual({contextRef:'APCTX-OPAQUE-1',reason:null});
+      expect(h.registrar.compareAndSet).not.toHaveBeenCalled();
+      expect(h.reader.readDocumentOriginal).not.toHaveBeenCalled();
+      await expect(h.producer.readOriginalAdmissionContext({...input,tenantId:'other'})).resolves.toEqual({contextRef:null,reason:'APPLICABILITY_CONTEXT_NOT_AUTHORIZED'});
+      delete process.env.WL_OPENCLAW_APPLICABILITY_CONTEXT_REF;
+      await expect(h.producer.readOriginalAdmissionContext(input)).resolves.toEqual({contextRef:null,reason:'APPLICABILITY_CONTEXT_NOT_CONFIGURED'});
+    } finally {if(saved===undefined) delete process.env.WL_OPENCLAW_APPLICABILITY_CONTEXT_REF;else process.env.WL_OPENCLAW_APPLICABILITY_CONTEXT_REF=saved;}
+  });
+
   it('persists original provenance without a package and revalidates selection without file reads after publication', async () => {
     const h=producerHarness({original:true});
     const scope=await h.serviceScope.authorizeOpenClawApplicabilityContext({applicabilityContextRef:'APCTX-OPAQUE-1',requestId:'request-original'});

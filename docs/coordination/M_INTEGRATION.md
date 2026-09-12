@@ -391,3 +391,9 @@ begin_applicability_evaluation 现在先读取授权后的只读 admission snaps
 61 项生产/提交测试通过，新增“先查旧键→新原文生产→查 v3 键→构建 v3”顺序和旧 v1 任务不迁移断言；38 项状态测试通过，已具备有效原文输入但尚未求值时可推进 EXTRACT_APPLICABILITY，不再要求 frozen.2 映射。服务端类型检查通过。测试中的生产者替身负责构造服务测试输入，生产者本身另有真实方法测试；未宣称已跑线上模型。
 
 普通 begin 已接新原文路径，但实际 INITIAL_ANALYSIS 对尚无 applicabilityInput 的原文 WI 仍需配置/发现授权 opaque context 与 Host 受控目标，当前保留 WAITING_INPUT 而非虚构目标；原文变化自动重新触发与完整真实 H1/H2 继续实施。本批未发布、c87 未安装。
+
+## 首次原文适用性入口发现（2026-09-13）
+
+对于已有真实原文发布、尚无 applicabilityInput 的 WI，状态服务现调用输入生产者的只读 admission discovery：读取已配置 opaque context，经原有 BEGIN_APPLICABILITY 服务授权精确核对 tenant/WI，再通过生产受控选择端口读取 Host 目标/Fleet。成功后返回 context 并将原先 APPLICABILITY_SELECTION_REQUIRED 推进为 PENDING/EXTRACT_APPLICABILITY，由 native 原有 begin 流程生产真实输入；不把所有源单元预声明成条件。
+
+发现过程不读文件正文、不写 CAS、不创建目标或业务结论。未配置/未授权/已知受控目标不可用以具体 terminalCode 保留 WAITING_INPUT，未知运行错误继续抛出，不静默降级。45 项生产者与状态测试、服务端类型检查通过，覆盖只读/跨租户拒绝和首次入口状态。真实环境是否已配置对应 context 与 Fleet 仍需运行核验；原文变化后的自动重新评估及 H1/H2 继续推进。本批未发布。

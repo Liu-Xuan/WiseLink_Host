@@ -112,6 +112,30 @@ export class CanonicalHostApplicabilityInputProducer {
     return this.produceBoundInput(scope);
   }
 
+  /** Discover only a configured, authorized Host target; never persists an input. */
+  async readOriginalAdmissionContext(input: {workItemId:string;tenantId:string;documentVersionId:string}) {
+    const ref=process.env.WL_OPENCLAW_APPLICABILITY_CONTEXT_REF?.trim();
+    if (!ref) return {contextRef:null,reason:'APPLICABILITY_CONTEXT_NOT_CONFIGURED'};
+    try {
+      const scope=await this.serviceScope.authorizeOpenClawApplicabilityContext({operation:'BEGIN_APPLICABILITY',
+        applicabilityContextRef:ref,requestId:'initial-applicability-discovery'});
+      assertScope(scope,ref,'initial-applicability-discovery');
+      if (scope.workItemId!==input.workItemId || scope.tenantId!==input.tenantId)
+        return {contextRef:null,reason:'APPLICABILITY_CONTEXT_NOT_AUTHORIZED'};
+      const {workItem}=await this.readAdmissionSnapshot(scope);
+      if (workItem.source.documentVersionId!==input.documentVersionId)
+        return {contextRef:null,reason:'APPLICABILITY_SOURCE_CHANGED'};
+      await this.controlledSelection.readCurrent({...input,applicabilityContextRef:ref,sourceMode:'ORIGINAL'});
+      return {contextRef:ref,reason:null};
+    } catch (error) {
+      const code=(error as {code?:unknown})?.code;
+      if (typeof code==='string' && (code.startsWith('APPLICABILITY_') ||
+        ['CANONICAL_WORK_ITEM_NOT_FOUND','CANONICAL_SERVICE_SCOPE_UNAVAILABLE'].includes(code)))
+        return {contextRef:null,reason:code};
+      throw error;
+    }
+  }
+
   /** Read-only admission snapshot, before any input migration or source I/O. */
   async readAdmissionSnapshot(scope: CanonicalVerifiedApplicabilityContextScope) {
     const workItem=await this.requiredParsedWorkItem(scope,true);

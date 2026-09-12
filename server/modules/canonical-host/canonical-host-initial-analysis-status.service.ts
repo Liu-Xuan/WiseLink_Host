@@ -1,3 +1,4 @@
+import { CanonicalHostApplicabilityInputProducer } from './canonical-host-applicability-input.producer';
 import { originalApplicabilityInputMatches } from './original-applicability-currentness';
 import { canonicalJson } from '../action-attempt/action-attempt-envelope';
 import { Inject, Injectable, Optional } from '@nestjs/common';
@@ -83,6 +84,7 @@ export class CanonicalHostInitialAnalysisStatusService {
     private readonly attempts: ActionAttemptLifecycleService,
     @Optional() private readonly originalWork?: JobAidWorkRepository,
     @Optional() private readonly originalReader?: UnifiedReaderService,
+    @Optional() private readonly applicabilityInputs?: CanonicalHostApplicabilityInputProducer,
   ) {}
 
   async project(input: {
@@ -199,6 +201,9 @@ export class CanonicalHostInitialAnalysisStatusService {
       // task happened to read a newer original.
       if (originalImpactStages.jobAid) originalImpactStages.overall = true;
     }
+    const originalAdmission = originalMode && originalPublished && !execution.applicabilityInput && this.applicabilityInputs
+      ? await this.applicabilityInputs.readOriginalAdmissionContext({workItemId:input.workItem.workItemId,
+          tenantId:input.tenantId,documentVersionId:input.workItem.source.documentVersionId}) : undefined;
     return projectCanonicalHostInitialAnalysisStatus(
       input.workItem,
       rows.map((row) => ({
@@ -216,6 +221,7 @@ export class CanonicalHostInitialAnalysisStatusService {
       {
         originalPublished,
         originalImpactStages,
+        originalAdmission,
         englishAssessmentEnabled:
           process.env.WL_JOBAID_PROBLEM_V2_ENABLED === '1',
       },
@@ -376,7 +382,7 @@ export function initialAnalysisTerminalCode(row: {
 export function projectCanonicalHostInitialAnalysisStatus(
   workItem: CanonicalWorkItemProjection,
   attempts: readonly CanonicalInitialAnalysisAttemptObservation[],
-  options: { englishAssessmentEnabled?: boolean; originalPublished?: boolean; originalImpactPending?: boolean; originalImpactStages?: Partial<Record<OriginalEngineeringStage, boolean>> } = {},
+  options: { originalAdmission?: {contextRef:string|null;reason:string|null}; englishAssessmentEnabled?: boolean; originalPublished?: boolean; originalImpactPending?: boolean; originalImpactStages?: Partial<Record<OriginalEngineeringStage, boolean>> } = {},
 ): AilyInitialAnalysisStatus {
   const attemptByAction = latestAttemptsByAction(attempts);
   const parsedPackageReady = options.originalPublished ?? isParsedPackageReady(workItem);
@@ -427,6 +433,10 @@ export function projectCanonicalHostInitialAnalysisStatus(
             ),
       }
     : pendingStages();
+  if (options.originalAdmission && stages.applicability.terminalCode==='APPLICABILITY_SELECTION_REQUIRED') {
+    stages.applicability=options.originalAdmission.contextRef ? pendingStage() :
+      {...stages.applicability,terminalCode:options.originalAdmission.reason ?? 'APPLICABILITY_SELECTION_REQUIRED'};
+  }
   if (options.originalImpactPending || options.originalImpactStages) {
     // Retain the exact historical candidate, but do not report it as assessed
     // against corrected source content. Active successors keep their own state.
@@ -437,8 +447,8 @@ export function projectCanonicalHostInitialAnalysisStatus(
         terminalCode:'DOCUMENT_ORIGINAL_IMPACT_REVIEW_REQUIRED'};
     }
   }
-  if (options.originalPublished && !workItem.package && !originalApplicabilityInputMatches(execution) && stages.applicability.status === 'PENDING')
-    stages.applicability={...stages.applicability,status:'WAITING_INPUT',terminalCode:'ORIGINAL_APPLICABILITY_MAPPING_REQUIRED'};
+  if (options.originalPublished && !workItem.package && !originalApplicabilityInputMatches(execution) && !options.originalAdmission?.contextRef && stages.applicability.status === 'PENDING')
+    stages.applicability={...stages.applicability,status:'WAITING_INPUT',terminalCode:options.originalAdmission?.reason ?? 'ORIGINAL_APPLICABILITY_MAPPING_REQUIRED'};
   const progression = parsedPackageReady
     ? deriveProgression(
         stages,
@@ -452,7 +462,7 @@ export function projectCanonicalHostInitialAnalysisStatus(
     applicabilityContextRef: reevaluation
       ? (reevaluation.stagedBundle.applicabilityInput
           ?.applicabilityContextRef ?? null)
-      : applicabilityContextRef(workItem),
+      : applicabilityContextRef(workItem) ?? options.originalAdmission?.contextRef ?? null,
     status: progression.status,
     nextOperation: progression.nextOperation,
     stages,

@@ -789,6 +789,10 @@ describe('CanonicalHost initial-analysis status projection', () => {
     expect(projectCanonicalHostInitialAnalysisStatus(source,[],{englishAssessmentEnabled:true,originalPublished:false}))
       .toMatchObject({status:'NOT_READY',nextOperation:null});
     const withoutPackage={...source,package:null};
+    expect(projectCanonicalHostInitialAnalysisStatus(withoutPackage,[],{englishAssessmentEnabled:true,originalPublished:true,originalAdmission:{contextRef:'authorized-context',reason:null}}))
+      .toMatchObject({applicabilityContextRef:'authorized-context',nextOperation:'EXTRACT_APPLICABILITY',stages:{applicability:{status:'PENDING'}}});
+    expect(projectCanonicalHostInitialAnalysisStatus(withoutPackage,[],{englishAssessmentEnabled:true,originalPublished:true,originalAdmission:{contextRef:null,reason:'APPLICABILITY_HOST_TARGET_NOT_CONFIGURED'}}))
+      .toMatchObject({applicabilityContextRef:null,stages:{applicability:{status:'WAITING_INPUT',terminalCode:'APPLICABILITY_HOST_TARGET_NOT_CONFIGURED'}}});
     expect(projectCanonicalHostInitialAnalysisStatus(withoutPackage,[],{englishAssessmentEnabled:true,originalPublished:true}))
       .toMatchObject({status:'WAITING_INPUT',nextOperation:'EVALUATE_JOBAID',stages:{applicability:{status:'WAITING_INPUT'}}});
     withoutPackage.applicabilityInput=applicabilityInput(source);
