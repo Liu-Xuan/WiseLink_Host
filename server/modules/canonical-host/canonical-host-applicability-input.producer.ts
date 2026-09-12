@@ -143,11 +143,11 @@ export class CanonicalHostApplicabilityInputProducer {
   }
 
   /** New-original task admission calls this explicit producer, after service authorization. */
-  async produceOriginalAuthorized(scope: CanonicalVerifiedApplicabilityContextScope): Promise<CanonicalWorkItemProjection> {
-    return this.produceBoundInput(scope, true);
+  async produceOriginalAuthorized(scope: CanonicalVerifiedApplicabilityContextScope, expected?:{parseRunId:string;parseRevision:number}): Promise<CanonicalWorkItemProjection> {
+    return this.produceBoundInput(scope, true,expected);
   }
 
-  private async produceBoundInput(scope: CanonicalVerifiedApplicabilityContextScope, original?: boolean) {
+  private async produceBoundInput(scope: CanonicalVerifiedApplicabilityContextScope, original?: boolean, expected?:{parseRunId:string;parseRevision:number}) {
     const workItem = await this.requiredParsedWorkItem(scope, original);
     const selection = await this.controlledSelection.readCurrent({
       tenantId: scope.tenantId,
@@ -157,6 +157,8 @@ export class CanonicalHostApplicabilityInputProducer {
       ...((original || selectedApplicabilityInput(workItem)?.originalSource) ? {sourceMode:'ORIGINAL' as const} : {}),
     });
     const sourceBinding = await this.readSourceBinding(workItem, scope.tenantId, original);
+    if (expected && (sourceBinding.originalSource?.binding.parseRunId!==expected.parseRunId ||
+      sourceBinding.originalSource?.binding.parseRevision!==expected.parseRevision)) throw new Error('APPLICABILITY_ORIGINAL_REQUEST_CHANGED');
     const projection = deriveProjection({
       workItem,
       applicabilityContextRef: scope.applicabilityContextRef,

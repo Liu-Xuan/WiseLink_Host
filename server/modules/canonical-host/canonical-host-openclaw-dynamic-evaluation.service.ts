@@ -1,3 +1,4 @@
+import { CanonicalHostOpenClawApplicabilityService } from './canonical-host-openclaw-applicability.service';
 import { CanonicalHostInitialAnalysisStatusService, canContinueInitialStage } from './canonical-host-initial-analysis-status.service';
 import { Inject, Injectable, Optional } from '@nestjs/common';
 import {
@@ -115,6 +116,7 @@ export class CanonicalHostOpenClawDynamicEvaluationService {
     @Optional()
     private readonly problemAssessment?: CanonicalJobAidProblemService,
     @Optional() private readonly initialStatus?: CanonicalHostInitialAnalysisStatusService,
+    @Optional() private readonly originalApplicability?: CanonicalHostOpenClawApplicabilityService,
   ) {}
 
   async nextOriginalAssessment(workItemId: string) {
@@ -133,8 +135,12 @@ export class CanonicalHostOpenClawDynamicEvaluationService {
       return {status:'BUSY'};
     const changed = (stage: typeof status.stages.jobAid) => stage.status === 'CONFLICT' &&
       stage.terminalCode === 'DOCUMENT_ORIGINAL_IMPACT_REVIEW_REQUIRED';
-    if (changed(status.stages.applicability))
-      return {status:'WAITING_INPUT',reason:'ORIGINAL_APPLICABILITY_MAPPING_REQUIRED'};
+    if (changed(status.stages.applicability)) {
+      if (!this.originalApplicability || !status.applicabilityContextRef)
+        return {status:'WAITING_INPUT',reason:'APPLICABILITY_CONTEXT_NOT_CONFIGURED'};
+      return this.originalApplicability.enqueueOriginal(status.applicabilityContextRef,{
+        tenantId:scope.tenantId,workItemId,principalId:scope.principalId,...original});
+    }
     const operation = changed(status.stages.jobAid) ? 'EVALUATE_JOBAID' :
       changed(status.stages.overall) ? 'SYNTHESIZE_OVERALL' : null;
     if (!operation) return {status:'IDLE'};

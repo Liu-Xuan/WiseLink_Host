@@ -50,6 +50,13 @@ describe('CanonicalHostApplicabilityInputProducer', () => {
     expect(h.registrar.compareAndSet).toHaveBeenCalledTimes(1);
   });
 
+  it('rejects a changed original continuation before input CAS',async()=>{
+    const h=producerHarness({original:true});
+    const scope=await h.serviceScope.authorizeOpenClawApplicabilityContext({applicabilityContextRef:'APCTX-OPAQUE-1',requestId:'original-2'});
+    await expect(h.producer.produceOriginalAuthorized(scope,{parseRunId:'different',parseRevision:2})).rejects.toThrow('APPLICABILITY_ORIGINAL_REQUEST_CHANGED');
+    expect(h.registrar.compareAndSet).not.toHaveBeenCalled();
+  });
+
   it('does not persist an original input when normal Reader authorization fails', async () => {
     const h=producerHarness({original:true});
     h.reader.readDocumentOriginal.mockRejectedValue(new Error('SOURCE_ACCESS_REVOKED'));

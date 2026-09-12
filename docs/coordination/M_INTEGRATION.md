@@ -411,3 +411,11 @@ begin_applicability_evaluation 现在先读取授权后的只读 admission snaps
 修复状态投影仅将 SUCCEEDED 结果标记原文影响、遗漏已持久化 WAITING_INPUT/UNKNOWN 适用性结果的分支。现在已保存 UNKNOWN 在逐阶段原文比较确认影响后同样成为 DOCUMENT_ORIGINAL_IMPACT_REVIEW_REQUIRED，保留历史 candidate 原值，不修改为 TRUE/FALSE。不把尚无输入的配置等待视为旧结果，也不覆盖 BUSY 活动后继。
 
 38 项状态测试通过，新增 CANDIDATE_ONLY/WAITING_INPUT 两种原文结果在影响标志下均进入重评冲突且历史不变的断言。现有 compareDocumentOriginal 已将 coverage 变化区分于 LOCATOR_ONLY；本批修复消费该影响的状态分支。自动预留/消费适用性后继仍需继续接通，未发布。
+
+## 原文适用性后继队列接通（2026-09-13）
+
+next_original_assessment 在已确认适用性原文影响时，现优先调用 applicability.enqueueOriginal；该入口重新执行原有 BEGIN_APPLICABILITY 授权，精确比对 tenant/WI/principal 和 parseRun/revision。共享 prepareAdmission 与普通 begin，原文版本不符在输入 CAS 前拒绝；后继仅 reserve 为 QUEUED，不抢先 claim 或调用模型，复用既有事务锁和活动任务保护。
+
+后继使用 original-<parseRevision> 请求 ID，原有有限长度幂等哈希保留，键中只补充可读请求段供状态投影恢复。状态读回该请求后，native 既有 next_original_assessment→get_parse_status→runInitial 和每请求 checkpoint 路径可领取 EXTRACT_APPLICABILITY；不另建消费者或绕过工具提交。缺少 context 仍明确等待。
+
+72 项预留/提交/输入生产/后继测试、17 项 native 消费测试及服务端类型检查通过，含不 claim 的队列预留、精确原文和身份传递、源变更在 CAS 前拒绝，以及 native 领取适用性后继。原文与数据库并发边界沿用已通过的真实 PG 验证，本批测试没有触发线上模型；c87 配套交付、真实 H1/H2 仍待完成。本批未发布。

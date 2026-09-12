@@ -56,6 +56,14 @@ describe('CanonicalHostOpenClawApplicabilityService', () => {
         targetBindingHash:source.artifact.sha256,originalSource:source});
     });
     h.applicabilityInputs.readOriginalTaskSource.mockResolvedValue(original);
+    const reserve=jest.fn(async (input:any)=>({row:{status:'QUEUED',operationRef:'queued-original'},created:true}));
+    Object.assign(h.attempts,{reserve});
+    const queued=await h.service.enqueueOriginal('APCTX-OPAQUE-1',{tenantId:'tenant-1',workItemId:current.workItemId,
+      principalId:'service:openclaw-main',parseRunId:original.binding.parseRunId,parseRevision:original.binding.parseRevision});
+    expect(queued).toMatchObject({status:'QUEUED',requestId:`original-${original.binding.parseRevision}`});
+    expect(reserve.mock.calls[0][0].idempotencyKey).toMatch(/^openclaw-v3:applicability:original-2:[a-f0-9]{64}$/);
+    expect(await reserve.mock.calls[0][0].buildModelInput({})).toMatchObject({originalInput:{binding:original.binding}});
+    expect(h.attempts.reserveAndClaim).not.toHaveBeenCalled();
     const began=await h.begin();
     expect(began.modelInput).toMatchObject({schemaVersion:'wiselink.3_1.applicability_task.v3',sourcePackage:null,
       sourceExpressions:[],bilingualBinding:null,bilingualSourceUnits:[],originalInput:{...source,coverage:original.coverage,source:original.source}});

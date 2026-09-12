@@ -195,6 +195,31 @@ export class CanonicalHostOpenClawApplicabilityService {
     applicabilityContextRef: string,
     requestId: string,
   ): Promise<BeginApplicabilityEvaluationResult> {
+    const prepared=await this.prepareAdmission(applicabilityContextRef,requestId);
+    const claim=await this.attempts.reserveAndClaim({...prepared.reservation,leaseOwner:prepared.scope.principalId});
+    return {
+      attemptRef: claim.attemptRef,
+      status: claim.status,
+      leaseToken: claim.leaseToken,
+      leaseGeneration: claim.leaseGeneration,
+      leaseExpiresAt: claim.leaseExpiresAt,
+      task: structuredClone(claim.task),
+      ...(claim.status === 'COMMITTING'
+        ? { recoveryResult: structuredClone(claim.recoveryResult) }
+        : {}),
+      modelInput: structuredClone(claim.task.modelInput),
+    };
+  }
+
+  async enqueueOriginal(applicabilityContextRef:string, expected:{tenantId:string;workItemId:string;principalId:string;parseRunId:string;parseRevision:number}) {
+    const requestId=`original-${expected.parseRevision}`;
+    const prepared=await this.prepareAdmission(applicabilityContextRef,requestId,expected);
+    const reserved=await this.attempts.reserve(prepared.reservation);
+    return {status:reserved.row.status,attemptRef:reserved.row.operationRef,requestId,created:reserved.created};
+  }
+
+  private async prepareAdmission(applicabilityContextRef:string,requestId:string,
+    expected?:{tenantId:string;workItemId:string;principalId:string;parseRunId:string;parseRevision:number}) {
     const scope = await this.serviceScope.authorizeOpenClawApplicabilityContext(
       {
         operation: 'BEGIN_APPLICABILITY',
@@ -203,6 +228,8 @@ export class CanonicalHostOpenClawApplicabilityService {
       },
     );
     assertApplicabilityContextScope(scope, applicabilityContextRef, requestId);
+    if (expected && (scope.tenantId!==expected.tenantId || scope.workItemId!==expected.workItemId || scope.principalId!==expected.principalId))
+      throw conflict('APPLICABILITY_ORIGINAL_SCOPE_CHANGED');
     await this.retryTerminalConfigurationEvidenceApplicability(scope);
     const admission=await this.applicabilityInputs.readAdmissionSnapshot(scope);
     const priorKey=admission.applicabilityInput && (admission.applicabilityInput.originalSource || admission.workItem.package)
@@ -213,11 +240,13 @@ export class CanonicalHostOpenClawApplicabilityService {
       idempotencyKey:priorKey}) : null;
     if (!prior) {
       if (process.env.WL_JOBAID_PROBLEM_V2_ENABLED==='1' || admission.applicabilityInput?.originalSource)
-        await this.applicabilityInputs.produceOriginalAuthorized(scope);
+        await this.applicabilityInputs.produceOriginalAuthorized(scope,expected);
       else await this.applicabilityInputs.produceAuthorized(scope);
     }
     const { workItem, applicabilityInput } =
       await this.applicabilityInputs.readCurrentOwnerValidated(scope);
+    if (expected && (applicabilityInput.originalSource?.binding.parseRunId!==expected.parseRunId ||
+      applicabilityInput.originalSource?.binding.parseRevision!==expected.parseRevision)) throw conflict('APPLICABILITY_ORIGINAL_REQUEST_CHANGED');
     assertApplicabilityNotCurrent(workItem, applicabilityInput);
     const currentKey=applicabilityIdempotencyKey({workItem,applicabilityInput,requestId});
     if (prior && priorKey!==currentKey) throw conflict('APPLICABILITY_ADMISSION_BINDING_CHANGED');
@@ -238,12 +267,11 @@ export class CanonicalHostOpenClawApplicabilityService {
       frozenVersion,
       scope.tenantId,
     );
-    const claim = await this.attempts.reserveAndClaim({
+    return {scope,reservation:{
       workItemId: workItem.workItemId,
-      taskType: 'OPENCLAW_APPLICABILITY_EVALUATION',
+      taskType: 'OPENCLAW_APPLICABILITY_EVALUATION' as const,
       actorUserId: OPENCLAW_SERVICE_USER_ID,
       tenantId: scope.tenantId,
-      leaseOwner: scope.principalId,
       documentVersionId: workItem.source.documentVersionId,
       inputRevision: workItem.revision,
       baseRevision: workItem.revision,
@@ -260,19 +288,7 @@ export class CanonicalHostOpenClawApplicabilityService {
           string,
           unknown
         >,
-    });
-    return {
-      attemptRef: claim.attemptRef,
-      status: claim.status,
-      leaseToken: claim.leaseToken,
-      leaseGeneration: claim.leaseGeneration,
-      leaseExpiresAt: claim.leaseExpiresAt,
-      task: structuredClone(claim.task),
-      ...(claim.status === 'COMMITTING'
-        ? { recoveryResult: structuredClone(claim.recoveryResult) }
-        : {}),
-      modelInput: structuredClone(claim.task.modelInput),
-    };
+    }};
   }
 
   private async retryTerminalConfigurationEvidenceApplicability(
@@ -2367,7 +2383,7 @@ function applicabilityIdempotencyKey(input: {
   applicabilityInput: CanonicalApplicabilityInputProjection;
   requestId: string;
 }): string {
-  if (input.applicabilityInput.originalSource) return `openclaw-v3:applicability:${canonicalSha256({
+  if (input.applicabilityInput.originalSource) return `openclaw-v3:applicability:${input.requestId===`original-${input.applicabilityInput.originalSource.binding.parseRevision}` ? `${input.requestId}:` : ''}${canonicalSha256({
     workItemId:input.workItem.workItemId,revision:input.workItem.revision,
     originalSource:input.applicabilityInput.originalSource,
     applicabilityBindingRevision:input.applicabilityInput.bindingRevision,requestId:input.requestId,

@@ -765,6 +765,10 @@ function continuationRequestId(
   row: { actionType: string; idempotencyKey: string | null },
   item: CanonicalWorkItemProjection,
 ): string | null {
+  if (row.actionType==='OPENCLAW_APPLICABILITY_EVALUATION') {
+    const match=/^openclaw-v3:applicability:(original-[1-9][0-9]{0,15}):[a-f0-9]{64}$/.exec(row.idempotencyKey ?? '');
+    return match?.[1] ?? null;
+  }
   const kind = {
     OPENCLAW_TRANSLATE: 'translate',
     OPENCLAW_DYNAMIC_EVALUATION: 'dynamic',
