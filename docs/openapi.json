@@ -445,6 +445,8 @@
       "post": {
         "operationId": "handleOpenClawMcp",
         "summary": "OpenClaw 专用 ActionAttempt 队列与候选评估 MCP 入口",
+        "x-wiselink-document-work": {"tool":"document_work","actions":["STATUS","STEP","CANCEL","INDEX"],"indexing":"INDEX每次最多20个原文单元，正常来源授权后同事务保存索引与进度，索引完成同事务确认pending；事项消费者按持久已发布原文修订与已保存coverage比较变化并幂等登记后继任务","originalReader":"read_document_original：确切parseRun的完整原文单元分页，附真实manifest ref/hash、定位和覆盖限制，正常来源授权每次重验","scope":"独立精确 documentVersionId/tenant/actor 配置授权；不继承 WorkItem/Matter 范围","execution":"Host 持久领取现有 parseRun，租约不进入模型；有界插件步骤在事务外执行，保存和发布事务内检查租约；状态读取不触发运行"},
+        "x-wiselink-document-translation": {"tool":"document_translation","actions":["START","STATUS","STEP","CANCEL"],"subject":"真实DocumentVersion与parseRun；不创建WorkItem","execution":"复用Translation V2和ActionAttempt，官方插件每次一个持久步骤，原生文档consumer按STATUS推进；失败保留恢复状态"},
         "x-wiselink-common-context": {
           "location": "JobAid / Overall modelInput.commonContext；Review modelInput.context.commonContext",
           "behavior": "评估前复用主文件章节、当前身份可见的关联背景片段与普通讨论，存入现有 Task 输入。关联资料仍是 BACKGROUND_ONLY；施工引用默认只入目录。最近 12 个历史回合按顺序传入并报告省略数，旧 revision 的工作回答单独标记，不冒充正式采用。RAG 尚未连接时明确 NOT_CONNECTED。",

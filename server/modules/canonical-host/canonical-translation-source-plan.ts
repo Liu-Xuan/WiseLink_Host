@@ -63,8 +63,9 @@ export function buildTranslationSourcePlan(input: {
     let organization: TranslationSemanticBlockV2['organization'] =
       'ORIGINAL_UNIT';
     if (first.kind === 'paragraph') {
-      // A context region may contain more than one paragraph. The model can
-      // return natural paragraphs, each pointing to all of its actual anchors.
+      // Preserve unfinished sentences across extraction fragments, but do not
+      // turn a whole section into an unbounded block. This is a scheduling
+      // target at a sentence boundary, never a character-level text cut.
       for (
         let nextIndex = index + 1;
         nextIndex < units.length;
@@ -79,6 +80,12 @@ export function buildTranslationSourcePlan(input: {
           next.payload.role !== first.payload.role
         )
           break;
+        const accumulated = group.flatMap(unit => anchorsByUnit.get(unit.unitId) ?? []);
+        const lastText = accumulated.at(-1)?.sourceText.trim() ?? '';
+        const nextText = (anchorsByUnit.get(next.unitId) ?? [])[0]?.sourceText.trim() ?? '';
+        if (accumulated.reduce((total, anchor) => total + anchor.sourceText.length, 0) >= 6000 &&
+            /[.!?]["')\]]?$/.test(lastText) &&
+            !/^(unless|except|provided|whereas|otherwise)\b/i.test(nextText)) break;
         group.push(next);
       }
       if (group.length > 1) organization = 'ADJACENT_PROSE_CONTEXT';

@@ -9,7 +9,7 @@ describe('runDriveFolderScan', () => {
       roots: [{ folderToken: 'root', path: 'root', depth: 0 }],
       maxPages: 1,
       fetchPage: async () => ({ files: [{ token: 'child', type: 'folder', name: 'child' }], hasMore: true, nextPageToken: 'next' }),
-      checkpoints: { load: async () => checkpoint, save: async (_key, value) => { checkpoint = value; saved.push(value); } },
+      checkpoints: { load: async () => checkpoint, savePage: async (_key, value) => { checkpoint = value; saved.push(value); } },
     });
     expect(result.continuation).toEqual([
       { folderToken: 'root', path: 'root', depth: 0, pageToken: 'next' },
@@ -32,7 +32,7 @@ describe('runDriveFolderScan', () => {
       sourceKey: 'restricted-library',
       roots: [{ folderToken: 'restricted', path: 'restricted', depth: 0 }],
       fetchPage: async () => { throw error; },
-      checkpoints: { load: async () => null, save: async (_key, value) => { saved.push(value); } },
+      checkpoints: { load: async () => null, savePage: async (_key, value) => { saved.push(value); } },
     });
     expect(result.entries).toEqual([]);
     expect(result.continuation).toEqual([{ folderToken: 'restricted', path: 'restricted', depth: 0 }]);
@@ -53,7 +53,7 @@ describe('runDriveFolderScan', () => {
       sourceKey: 'technical-library',
       roots: [{ folderToken: 'root', path: 'root', depth: 0 }],
       fetchPage: async () => { throw { code: 1061004 }; },
-      checkpoints: { load: async () => checkpoint, save: async (_key, value) => { saved.push(value); } },
+      checkpoints: { load: async () => checkpoint, savePage: async (_key, value) => { saved.push(value); } },
     });
     expect(result.continuation).toEqual([{ folderToken: 'child', path: 'root/child', depth: 1, pageToken: 'p2' }]);
     expect(saved).toHaveLength(1);
@@ -65,7 +65,7 @@ describe('runDriveFolderScan', () => {
       sourceKey: 'technical-library',
       roots: [{ folderToken: 'root', path: 'root', depth: 0 }],
       fetchPage: async () => { throw new Error('network unavailable'); },
-      checkpoints: { load: async () => null, save: async () => undefined },
+      checkpoints: { load: async () => null, savePage: async () => undefined },
     })).rejects.toThrow('network unavailable');
   });
 
@@ -77,7 +77,7 @@ describe('runDriveFolderScan', () => {
       fetchPage: async (folderToken, pageToken) => folderToken === 'root'
         ? { files: [{ token: 'child', type: 'folder', name: 'child' }], hasMore: false }
         : (() => { throw { statusCode: 403 }; })(),
-      checkpoints: { load: async () => null, save: async (_key, value) => { saved.push(value); } },
+      checkpoints: { load: async () => null, savePage: async (_key, value) => { saved.push(value); } },
     });
     expect(result.blockers).toEqual([{ folderToken: 'child', code: 'DRIVE_AUTHORIZATION_DENIED' }]);
     expect(result.continuation[0]).toEqual({ folderToken: 'child', path: 'root/child', depth: 1 });

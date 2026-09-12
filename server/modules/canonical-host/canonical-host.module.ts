@@ -32,6 +32,7 @@ import { CanonicalHostOverallRegenerationService } from './canonical-host-overal
 import { CanonicalHostOpenClawTranslationService } from './canonical-host-openclaw-translation.service';
 import { CanonicalTranslationWorkspaceRepository } from './canonical-translation-workspace.repository';
 import { CanonicalTranslationV2Service } from './canonical-translation-v2.service';
+import { CanonicalTranslationV2PluginService } from './canonical-translation-v2-plugin.service';
 import { CanonicalTranslationRevisionService } from './canonical-translation-revision.service';
 import { CanonicalTranslationRevisionController } from './canonical-translation-revision.controller';
 import { CanonicalInitialAnalysisContinuationController } from './canonical-initial-analysis-continuation.controller';
@@ -53,6 +54,12 @@ import { CanonicalHostOpenClawReviewService } from './canonical-host-openclaw-re
 import { CanonicalHostCommonContextService } from './canonical-host-common-context.service';
 import { CanonicalJobAidProblemService } from './canonical-jobaid-problem.service';
 import { JobAidWorkRepository } from './jobaid-work.repository';
+import { DocumentWorkRuntimeService } from './document-work-runtime.service';
+import { DocumentSourceProjectionService } from './document-source-projection.service';
+import { DocumentSourceSearchService } from './document-source-search.service';
+import { DocumentTranslationRuntimeService } from './document-translation-runtime.service';
+import { DocumentTranslationReadingController } from './document-translation-reading.controller';
+import { DocumentTranslationAttemptRepository } from '../action-attempt/document-translation-attempt.repository';
 import { EngineeringSearchProjectionWriter } from './engineering-search-projection';
 import { CanonicalHostReviewActionController } from './canonical-host-review-action.controller';
 import { CanonicalHostReviewActionService } from './canonical-host-review-action.service';
@@ -440,6 +447,7 @@ export class CanonicalHostModule {
         ...(options.imports ?? []),
       ],
       controllers: [
+        DocumentTranslationReadingController,
         DialogueController,
         EngineeringIssueSearchController,
         CanonicalHostController,
@@ -495,6 +503,7 @@ export class CanonicalHostModule {
         CanonicalHostOpenClawTranslationService,
         CanonicalTranslationWorkspaceRepository,
         CanonicalTranslationV2Service,
+        CanonicalTranslationV2PluginService,
         CanonicalTranslationRevisionService,
         CanonicalInitialAnalysisContinuationService,
         CanonicalTranslationKnowledgeProductService,
@@ -519,6 +528,11 @@ export class CanonicalHostModule {
         CanonicalJobAidProblemService,
         JobAidWorkRepository,
         EngineeringSearchProjectionWriter,
+        DocumentWorkRuntimeService,
+        DocumentSourceProjectionService,
+        DocumentSourceSearchService,
+        DocumentTranslationRuntimeService,
+        DocumentTranslationAttemptRepository,
         CanonicalHostReviewActionService,
         HostOwnedV1TranslationRuleSetPrivateProvider,
         HostNativeDocumentFamilyPdfProducerAdapter,

@@ -22,6 +22,7 @@ const MATTER_PENDING_REASON_LABELS: Record<
   READ_NOT_PROCESSED: '已读片段，尚未保存分析或比较处置',
   WORK_ITEM_REVISION_CHANGED: '成员任务已更新',
   DOCUMENT_VERSION_CHANGED: '文档版本已变化',
+  DOCUMENT_ORIGINAL_CHANGED: '原文解析修订已变化',
   RESULT_CHANGED: '成员评估结果已更新',
 };
 
@@ -102,12 +103,15 @@ const MatterWorkingDetails: FC<MatterWorkingDetailsProps> = ({
             <ul className="space-y-2 text-sm leading-7">
               {working.current.state.reviewConditions.map(
                 (item: EngineeringMatterWorkingTextItem) => (
-                  <li key={item.itemId}>{item.text}</li>
+                  <li key={item.itemId}>{item.text}
+                    {item.when?.kind === 'DUE_AT' ? <span className="block text-xs text-muted-foreground">复看时间：{item.when.at}</span> : null}
+                    {item.when?.kind === 'ORIGINAL_CHANGED' ? <span className="block text-xs text-muted-foreground">指定输入的原文修订变化时复看</span> : null}
+                  </li>
                 ),
               )}
             </ul>
             <p className="text-xs text-muted-foreground">
-              这里只保存复看条件，不表示已配置持续监测。
+              后台消费者运行时检查明确时间和原文变化；纯文字条件仍需人工判断。触发复看不代表工程结论已经变化。
             </p>
           </section>
         ) : null}

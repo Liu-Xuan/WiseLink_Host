@@ -590,14 +590,16 @@ function afterQueryResult(query, operation) {
 
 async function reset(sql) {
   await sql.unsafe(`DROP TABLE IF EXISTS translation_knowledge_governance_event, translation_knowledge_import_request_item, translation_knowledge_source_ref,
-    translation_knowledge_candidate, translation_block_revision, translation_workspace, action_attempt, work_item, identity_subject_mapping CASCADE;
+    translation_knowledge_candidate, translation_block_revision, translation_workspace, action_attempt, work_item, identity_subject_mapping, dm_document_parse_run, dm_document_version CASCADE;
+    DROP FUNCTION IF EXISTS translation_block_guard_subject() CASCADE;
+    DROP FUNCTION IF EXISTS dm_guard_parse_run() CASCADE;
     DO $$ BEGIN IF NOT EXISTS (SELECT 1 FROM pg_type WHERE typname='user_profile') THEN CREATE TYPE user_profile AS (user_id text); END IF; END $$;
     DO $$ BEGIN IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname='service_role') THEN CREATE ROLE service_role; END IF;
       IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname='authenticated') THEN CREATE ROLE authenticated; END IF;
       IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname='authenticated_translation_snapshot_test') THEN CREATE ROLE authenticated_translation_snapshot_test; END IF; END $$;
     GRANT authenticated TO authenticated_translation_snapshot_test;
     CREATE TABLE work_item (work_item_id varchar(96) UNIQUE NOT NULL, tenant_id varchar(128) NOT NULL, document_version_id varchar(96), package_id text,
-      package_artifact_ref text, package_artifact_sha256 varchar(64), requested_by_user_id varchar(255), revision integer, UNIQUE(tenant_id,work_item_id));
+      package_artifact_ref text, package_artifact_sha256 varchar(64), requested_by_user_id varchar(255), revision integer, initial_aily_session_id text, UNIQUE(tenant_id,work_item_id));
     CREATE TABLE identity_subject_mapping (miaoda_user_id text, miaoda_tenant_id text, expected_client_id text, status text);`);
   // Parent fixture shape follows the generated schema; assertions exercise the
   // actual new DDL, constraints, RLS and repository transactions below.
@@ -611,6 +613,17 @@ async function reset(sql) {
   } finally {
     await migrationConnection.release();
   }
+  await sql.unsafe(`CREATE TABLE dm_document_version (document_version_id varchar(96) PRIMARY KEY, source_artifact_id varchar(96), pdf_sha256 varchar(64), byte_length bigint);
+    CREATE OR REPLACE FUNCTION engineering_matter_actor_has_tenant(t varchar) RETURNS boolean LANGUAGE sql STABLE AS $$
+      SELECT t = 'tenant-test' AND current_setting('app.user_id', true) = 'engineer-test' $$;
+    CREATE OR REPLACE FUNCTION engineering_matter_document_owned_by_actor(t varchar, d varchar) RETURNS boolean LANGUAGE sql STABLE AS $$
+      SELECT t = 'tenant-test' AND d = 'dv-test' AND current_setting('app.user_id', true) = 'engineer-test' $$;`);
+  const documentMigration = await sql.reserve();
+  try {
+  await documentMigration.unsafe(await readFile(new URL('../../migrations/0038_document_parse_run.sql', import.meta.url), 'utf8'));
+  await documentMigration.unsafe(await readFile(new URL('../../migrations/0044_document_parse_step_lease.sql', import.meta.url), 'utf8'));
+  await documentMigration.unsafe(await readFile(new URL('../../migrations/0047_document_translation_workspace_subject.sql', import.meta.url), 'utf8'));
+  } finally { await documentMigration.release(); }
   await sql.unsafe('GRANT SELECT, INSERT, UPDATE ON ALL TABLES IN SCHEMA public TO service_role, authenticated');
 }
 function fixturePlan() {
@@ -640,3 +653,334 @@ async function seedAttempt(sql, workspace, suffix, modelRef, extraModelInput = {
       ${canonicalJson(task)}, ${task.inputHash}, ${task.idempotencyKey}, ${canonicalJson(executionModel)}, 'service-principal', ${leaseToken}, 1, ${deadline.toISOString()}, ${deadline.toISOString()}, ${now.toISOString()}, ${now.toISOString()})`;
   return { task, leaseToken };
 }
+
+test('official plugin V2 persists truthful provenance and resumes saved blocks through existing leases', { skip: !databaseUrl, concurrency: false }, async () => {
+  const url = new URL(databaseUrl);
+  assert.equal(url.hostname, '127.0.0.1');
+  assert.match(url.pathname, /^\/wiselink_translation_v2_test_[a-z0-9_]+$/u);
+  const sql = postgres(databaseUrl, { max: 1, onnotice() {} });
+  const { CanonicalTranslationV2PluginService } = require('../../server/modules/canonical-host/canonical-translation-v2-plugin.service.ts');
+  try {
+    await reset(sql);
+    const repository = new CanonicalTranslationWorkspaceRepository(drizzle(sql));
+    const fragmented = fixtureSource();
+    const originalBody = fragmented.units[1];
+    fragmented.units = [fragmented.units[0], ...['Do not replace', 'the unit unless', 'the indication remains after 5 seconds.'].map((text, i) => ({
+      ...structuredClone(originalBody), unitId: `sentence-${i}`, order: i + 1, continuityKey: 'one-sentence',
+      sourceRefIds: [`sentence-ref-${i}`], payload: { text, role: 'body' },
+    }))];
+    fragmented.sourceLocators = [fragmented.sourceLocators[0], ...[0, 1, 2].map(i => ({
+      ...fragmented.sourceLocators[1], sourceRefId: `sentence-ref-${i}`, pageStart: i + 2, pageEnd: i + 2,
+    }))];
+    const plan = buildTranslationSourcePlan({ ...fixturePlan().source, title: 'Fragmented sentence fixture', source: fragmented });
+    assert.equal(plan.blocks.length, 2);
+    await sql`INSERT INTO work_item VALUES ('WI-test', 'tenant-test', 'dv-test', 'pkg-test', ${plan.source.parsedArtifact.ref}, ${plan.source.parsedArtifact.sha256}, 'engineer-test', 1)`;
+    await sql`INSERT INTO identity_subject_mapping VALUES ('engineer-test', 'tenant-test', 'cli_aadde8b579f95bc9', 'ACTIVE')`;
+    const workspace = await repository.prepare({ tenantId: 'tenant-test', workItemId: 'WI-test', plan });
+    const legacy = await seedAttempt(sql, workspace, 'legacy-no-plugin', 'miaoda/minimax-m3');
+    const legacyFence = { workspaceId: workspace.workspaceId, tenantId: 'tenant-test', workItemId: 'WI-test', principalId: 'service-principal',
+      attemptRef: legacy.task.operationRef, leaseToken: legacy.leaseToken, leaseGeneration: 1 };
+    await repository.attachAttempt(legacyFence);
+    await assert.rejects(repository.assertOfficialExecution(legacyFence), /TRANSLATION_OFFICIAL_PLUGIN_BINDING_INVALID/u);
+    await sql`UPDATE action_attempt SET status='FAILED' WHERE attempt_id=${legacy.task.actionAttemptId}`;
+    const active = await seedAttempt(sql, workspace, 'official-plugin', 'miaoda/minimax-m3', { documentProducer: 'OFFICIAL_PLUGIN' });
+    const fence = { ...legacyFence, attemptRef: active.task.operationRef, leaseToken: active.leaseToken };
+    const calls = [];
+    let upstreamCalls = 0;
+    const { DocumentPluginOutputError } = require('../../server/modules/document-management/src/hosted/nest/document-official-plugin.service.ts');
+    const producer = (check = false) => ({ kind: 'OFFICIAL_PLUGIN', instanceId: check ? 'wl-document-translation-check' : 'wl-document-translate',
+      pluginVersion: check ? '1.0.26' : '1.0.11', actionKey: check ? 'textToJson' : 'translate', concreteModel: null });
+    const plugins = {
+      async translateProse(text, assertActive) { await assertActive();
+        if (++upstreamCalls === 1) throw new DocumentPluginOutputError('DOCUMENT_TRANSLATION_OUTPUT_INVALID');
+        calls.push(text); return {
+        translation: text.includes('unless') ? '除非指示在 5 秒后仍然存在，否则不要更换该组件。' : '构造测试说明', producer: producer() }; },
+      async checkTranslation(input, assertActive) { await assertActive(); return { review: { blockId: input.blockId, issues: [] }, producer: producer(true) }; },
+    };
+    const savedArtifacts = new Map();
+    const artifacts = { persistAndReadback: async bytes => {
+      const ref = 'artifact://synthetic/official-result'; savedArtifacts.set(ref, Buffer.from(bytes));
+      return { artifact: { storeRole: 'UnifiedArtifactStoreCandidate', ref, sha256: createHash('sha256').update(bytes).digest('hex'),
+        byteLength: bytes.length, mediaType: 'application/json' }, bytes };
+    } };
+    const v2 = new CanonicalTranslationV2Service(repository, {}, {}, artifacts, {});
+    const service = new CanonicalTranslationV2PluginService(repository, plugins, v2);
+    await assert.rejects(service.executeStep({ fence, requestId: 'malformed-output', assertAuthorized: async () => {} }), /DOCUMENT_TRANSLATION_OUTPUT_INVALID/);
+    const failedRequest = (await repository.readSnapshot(fence)).workspace.generationRequests[0];
+    assert.equal(failedRequest.status, 'FAILED');
+    assert.equal(failedRequest.error.origin, 'OUTPUT_CONTRACT');
+    assert.equal(failedRequest.error.outcome, 'KNOWN_FAILURE');
+    // Save succeeded but caller lost the response. A later step must inspect saved rows.
+    const actualSave = repository.saveCandidates.bind(repository);
+    let loseResponse = true;
+    repository.saveCandidates = async input => { const saved = await actualSave(input);
+      if (loseResponse) { loseResponse = false; throw new Error('SAVE_RESPONSE_LOST'); } return saved; };
+    await assert.rejects(service.executeStep({ fence, requestId: 'official-step-0', assertAuthorized: async () => {} }), /SAVE_RESPONSE_LOST/u);
+    let outcome;
+    for (let index = 1; index < 8; index++) {
+      outcome = await service.executeStep({ fence, requestId: `official-step-${index}`, assertAuthorized: async () => {} });
+      if (outcome.status === 'DONE') break;
+    }
+    assert.equal(outcome.status, 'DONE');
+    assert.equal(upstreamCalls, 3, 'known malformed result permits a new bounded request');
+    assert.equal(calls.length, 2);
+    assert.ok(outcome.result.artifact);
+    assert.ok(savedArtifacts.has(outcome.result.artifact.ref));
+    const snapshot = await repository.readSnapshot(fence);
+    const reading = buildTranslationWorkspaceReadingV2(snapshot.workspace, snapshot.revisions);
+    assert.equal(reading.completeness, 'COMPLETE');
+    for (const block of reading.blocks) {
+      assert.equal(block.selected.provenance.executionModel, null);
+      assert.equal(block.selected.provenance.modelVersion, null);
+      assert.equal(block.selected.provenance.skillVersion, null);
+      assert.equal(block.selected.provenance.producer.kind, 'OFFICIAL_PLUGIN');
+      assert.equal(block.selected.provenance.usage.inputTokens, null);
+    }
+    assert.equal(reading.blocks[1].selected.check.semanticReview.producer.instanceId, 'wl-document-translation-check');
+    assert.equal(reading.blocks[1].selected.candidate.elements.length, 1, 'one natural sentence is not split back into extraction fragments');
+    assert.equal(reading.blocks[1].selected.candidate.elements[0].anchorIds.length, 3, 'the single translated sentence retains all three source anchors');
+    assert.equal(calls[1], 'Do not replace\nthe unit unless\nthe indication remains after 5 seconds.');
+    await sql`UPDATE action_attempt SET cancel_requested_at=now() WHERE attempt_id=${active.task.actionAttemptId}`;
+    await assert.rejects(service.executeStep({ fence, requestId: 'cancelled', assertAuthorized: async () => {} }), /LEASE_FENCE_REJECTED/u);
+    assert.equal(calls.length, 2);
+  } finally { await sql.end({ timeout: 5 }); }
+});
+
+test('independent DocumentVersion translates with no WorkItem and rejects stale original or wrong subject', { skip: !databaseUrl, concurrency: false }, async () => {
+  const url = new URL(databaseUrl);
+  assert.equal(url.hostname, '127.0.0.1');
+  assert.match(url.pathname, /^\/wiselink_translation_v2_test_[a-z0-9_]+$/u);
+  const sql = postgres(databaseUrl, { max: 1, onnotice() {} });
+  const { CanonicalTranslationV2PluginService } = require('../../server/modules/canonical-host/canonical-translation-v2-plugin.service.ts');
+  try {
+    await reset(sql);
+    await sql.unsafe(`DROP FUNCTION IF EXISTS action_attempt_check_document_original() CASCADE;
+      DROP FUNCTION IF EXISTS action_attempt_preserve_document_subject() CASCADE;
+      DROP FUNCTION IF EXISTS document_translation_attempt_owned(varchar,varchar,varchar,varchar,integer) CASCADE;
+      ALTER TABLE action_attempt ADD CONSTRAINT ck_action_attempt_subject CHECK (true);
+      CREATE TABLE IF NOT EXISTS engineering_matter (tenant_id varchar, matter_id varchar, current_matter_revision_id varchar);
+      CREATE OR REPLACE FUNCTION engineering_matter_owned_by_actor(t varchar, m varchar) RETURNS boolean LANGUAGE sql STABLE AS $$ SELECT false $$;
+      CREATE OR REPLACE FUNCTION engineering_matter_all_links_owned_by_actor(t varchar, m varchar) RETURNS boolean LANGUAGE sql STABLE AS $$ SELECT false $$;
+      CREATE POLICY action_attempt_matter_subject_boundary ON action_attempt AS RESTRICTIVE FOR ALL TO PUBLIC USING (true);`);
+    await sql.unsafe(await readFile(new URL('../../migrations/0048_document_translation_attempt_subject.sql', import.meta.url), 'utf8'));
+    const repository = new CanonicalTranslationWorkspaceRepository(drizzle(sql));
+    const plan = fixturePlan();
+    plan.source.packageId = 'parse-document-test';
+    plan.source.parsedArtifact.ref = 'document-original://dv-test/parse-document-test';
+    plan.source.originalBinding = { documentVersionId: 'dv-test', parseRunId: 'parse-document-test', parseRevision: 1,
+      sourceArtifactId: 'pdf-test', sourceSha256: 'a'.repeat(64), sourceByteLength: 123 };
+    const binding = { documentVersionId: 'dv-test', sourceArtifactId: 'pdf-test', pdfSha256: 'a'.repeat(64), byteLength: 123 };
+    const manifest = { role: 'MANIFEST', relativePath: 'original/manifest.json', readback: 'VERIFIED',
+      sha256: plan.source.parsedArtifact.sha256, byteLength: 1, mediaType: 'application/json' };
+    await sql`INSERT INTO dm_document_version VALUES ('dv-test','pdf-test',${'a'.repeat(64)},123)`;
+    await sql`INSERT INTO dm_document_parse_run (parse_run_id,document_version_id,tenant_id,actor_user_id,request_id,
+      parse_revision,expected_published_revision,status,bucket_id,source_binding,manifest_artifact,deadline_at,completed_at)
+      VALUES ('parse-document-test','dv-test','tenant-test','engineer-test','request-doc',1,0,'PUBLISHED','test',${JSON.stringify(binding)}::jsonb,${JSON.stringify(manifest)}::jsonb,now()+interval '1 hour',now())`;
+    await sql.unsafe("SET ROLE service_role; SELECT set_config('app.user_id','engineer-test',false)");
+    const scope = { tenantId: 'tenant-test', workItemId: null, documentVersionId: 'dv-test' };
+    const workspace = await repository.prepare({ ...scope, plan });
+    assert.equal(workspace.workItemId, null);
+    assert.equal(workspace.subjectKind, 'DOCUMENT_VERSION');
+    assert.equal((await repository.prepare({ ...scope, plan })).workspaceId, workspace.workspaceId);
+    assert.equal((await sql`SELECT count(*)::int n FROM work_item`)[0].n, 0);
+    const { sealDocumentTranslationTaskEnvelope } = require('../../server/modules/action-attempt/document-translation-task-envelope.ts');
+    const deadline = new Date(Date.now() + 3600000).toISOString();
+    const task = sealDocumentTranslationTaskEnvelope({ schemaVersion: 'wiselink.document.translation_task.v1',
+      actionAttemptId: 'ATT-document', operationRef: 'AQ-document', tenantId: 'tenant-test', documentVersionId: 'dv-test',
+      parseRunId: 'parse-document-test', parseRevision: 1, workspaceId: workspace.workspaceId,
+      modelInput: { schemaVersion: 'wiselink.3_1.translation_task.v2', documentProducer: 'OFFICIAL_PLUGIN',
+        workspaceId: workspace.workspaceId, planRevision: 1, contextRevision: 1, methodVersion: workspace.methodVersion,
+        source: workspace.plan.source }, deadline, idempotencyKey: 'doc-translation-test' });
+    const active = { task, leaseToken: randomUUID() };
+    await sql`INSERT INTO action_attempt (id,attempt_id,operation_ref,subject_kind,document_version_id,producer_run_id,action_type,
+      status,actor_user_id,tenant_id,input_revision,task_envelope_json,task_input_hash,lease_owner,lease_token,lease_generation,lease_expires_at,deadline_at)
+      VALUES (${randomUUID()},${task.actionAttemptId},${task.operationRef},'DOCUMENT_VERSION','dv-test','parse-document-test','DOCUMENT_TRANSLATE',
+        'RUNNING','engineer-test','tenant-test',1,${canonicalJson(task)},${task.inputHash},'service-principal',${active.leaseToken},1,${deadline},${deadline})`;
+    const fence = { ...scope, workspaceId: workspace.workspaceId, attemptRef: task.operationRef, principalId: 'service-principal',
+      leaseToken: active.leaseToken, leaseGeneration: 1 };
+    await assert.rejects(repository.readSnapshot({ ...fence, documentVersionId: 'another-dv' }), /WORKSPACE_NOT_FOUND/);
+    await assert.rejects(repository.attachAttempt({ ...fence, documentVersionId: 'another-dv' }), /LEASE_FENCE_REJECTED/);
+    const calls = [];
+    const producer = (check = false) => ({ kind: 'OFFICIAL_PLUGIN', instanceId: check ? 'wl-document-translation-check' : 'wl-document-translate',
+      pluginVersion: check ? '1.0.26' : '1.0.11', actionKey: check ? 'textToJson' : 'translate', concreteModel: null });
+    const plugins = {
+      async translateProse(text, assertActive) { await assertActive(); calls.push(text); return {
+        translation: text.includes('unless') ? '除非指示在 5 秒后仍然存在，否则不要更换该组件。' : '构造测试说明', producer: producer() }; },
+      async checkTranslation(input, assertActive) { await assertActive(); return { review: { blockId: input.blockId, issues: [] }, producer: producer(true) }; },
+    };
+    const savedArtifacts = new Map();
+    const artifacts = { persistAndReadback: async bytes => {
+      const ref = 'artifact://synthetic/official-result'; savedArtifacts.set(ref, Buffer.from(bytes));
+      return { artifact: { storeRole: 'UnifiedArtifactStoreCandidate', ref, sha256: createHash('sha256').update(bytes).digest('hex'),
+        byteLength: bytes.length, mediaType: 'application/json' }, bytes };
+    } };
+    const v2 = new CanonicalTranslationV2Service(repository, {}, {}, artifacts, {});
+    const service = new CanonicalTranslationV2PluginService(repository, plugins, v2);
+    // Save succeeded but caller lost the response. A later step must inspect saved rows.
+    const actualSave = repository.saveCandidates.bind(repository);
+    let loseResponse = true;
+    repository.saveCandidates = async input => { const saved = await actualSave(input);
+      if (loseResponse) { loseResponse = false; throw new Error('SAVE_RESPONSE_LOST'); } return saved; };
+    await assert.rejects(service.executeStep({ fence, requestId: 'official-step-0', assertAuthorized: async () => {} }), /SAVE_RESPONSE_LOST/u);
+    let outcome;
+    for (let index = 1; index < 8; index++) {
+      outcome = await service.executeStep({ fence, requestId: `official-step-${index}`, assertAuthorized: async () => {} });
+      if (outcome.status === 'DONE') break;
+    }
+    assert.equal(outcome.status, 'DONE');
+    assert.equal(calls.length, 2);
+    assert.ok(outcome.result.artifact);
+    assert.ok(savedArtifacts.has(outcome.result.artifact.ref));
+    const snapshot = await repository.readSnapshot(fence);
+    const reading = buildTranslationWorkspaceReadingV2(snapshot.workspace, snapshot.revisions);
+    assert.equal(reading.completeness, 'COMPLETE');
+    for (const block of reading.blocks) {
+      assert.equal(block.selected.provenance.executionModel, null);
+      assert.equal(block.selected.provenance.modelVersion, null);
+      assert.equal(block.selected.provenance.skillVersion, null);
+      assert.equal(block.selected.provenance.producer.kind, 'OFFICIAL_PLUGIN');
+      assert.equal(block.selected.provenance.usage.inputTokens, null);
+    }
+    assert.equal(reading.blocks[1].selected.check.semanticReview.producer.instanceId, 'wl-document-translation-check');
+    await sql.unsafe("SELECT set_config('app.user_id','another-user',false)");
+    await assert.rejects(repository.readSnapshot(fence), /WORKSPACE_NOT_FOUND/);
+    await sql.unsafe("SELECT set_config('app.user_id','engineer-test',false)");
+    await assert.rejects(repository.assertOfficialExecution({ ...fence, leaseToken: 'stale-token' }), /LEASE_FENCE_REJECTED/);
+    await sql`INSERT INTO dm_document_parse_run (parse_run_id,document_version_id,tenant_id,actor_user_id,request_id,
+      parse_revision,expected_published_revision,status,bucket_id,source_binding,manifest_artifact,deadline_at,completed_at)
+      VALUES ('parse-document-test-2','dv-test','tenant-test','engineer-test','request-doc-2',2,1,'PUBLISHED','test',
+        ${JSON.stringify(binding)}::jsonb,${JSON.stringify({ ...manifest, sha256: 'f'.repeat(64) })}::jsonb,now()+interval '1 hour',now())`;
+    await assert.rejects(repository.assertOfficialExecution(fence), /WORKSPACE_SOURCE_CHANGED/);
+    assert.equal((await repository.readSnapshot(fence)).revisions.length, 2, 'historical original translation remains readable');
+    await sql`UPDATE action_attempt SET cancel_requested_at=now() WHERE attempt_id=${active.task.actionAttemptId}`;
+    await assert.rejects(service.executeStep({ fence, requestId: 'cancelled', assertAuthorized: async () => {} }), /LEASE_FENCE_REJECTED/u);
+    assert.equal(calls.length, 2);
+    await sql`UPDATE action_attempt SET status='CANCELLED' WHERE attempt_id=${active.task.actionAttemptId}`;
+    const nextPlan = structuredClone(plan);
+    nextPlan.source.packageId = 'parse-document-test-2';
+    nextPlan.source.parsedArtifact.ref = 'document-original://dv-test/parse-document-test-2';
+    nextPlan.source.parsedArtifact.sha256 = 'f'.repeat(64);
+    nextPlan.source.originalBinding.parseRunId = 'parse-document-test-2';
+    nextPlan.source.originalBinding.parseRevision = 2;
+    const nextWorkspace = await repository.prepare({ ...scope, plan: nextPlan });
+    const { inputHash: _oldHash, ...taskInput } = task;
+    const nextTask = sealDocumentTranslationTaskEnvelope({ ...taskInput, actionAttemptId: 'ATT-document-2', operationRef: 'AQ-document-2',
+      parseRunId: 'parse-document-test-2', parseRevision: 2, workspaceId: nextWorkspace.workspaceId,
+      modelInput: { ...task.modelInput, workspaceId: nextWorkspace.workspaceId, source: nextWorkspace.plan.source },
+      idempotencyKey: 'doc-translation-reuse' });
+    const nextToken = randomUUID();
+    await sql`INSERT INTO action_attempt (id,attempt_id,operation_ref,subject_kind,document_version_id,producer_run_id,action_type,
+      status,actor_user_id,tenant_id,input_revision,task_envelope_json,task_input_hash,lease_owner,lease_token,lease_generation,lease_expires_at,deadline_at)
+      VALUES (${randomUUID()},${nextTask.actionAttemptId},${nextTask.operationRef},'DOCUMENT_VERSION','dv-test','parse-document-test-2','DOCUMENT_TRANSLATE',
+        'RUNNING','engineer-test','tenant-test',2,${canonicalJson(nextTask)},${nextTask.inputHash},'service-principal',${nextToken},1,${deadline},${deadline})`;
+    const nextFence = { ...fence, workspaceId: nextWorkspace.workspaceId, attemptRef: nextTask.operationRef, leaseToken: nextToken };
+    const reused = await service.executeStep({ fence: nextFence, requestId: 'reuse-1', assertAuthorized: async () => {} });
+    assert.equal(reused.reused, true);
+    assert.equal(reused.blockIds.length, 2);
+    const afterReuse = await repository.readSnapshot(nextFence);
+    assert.equal(afterReuse.workspace.generationRequests.every(request => request.purpose === 'REUSE' && request.status === 'SAVED'), true);
+    assert.equal(afterReuse.revisions.every(revision => revision.provenance.reusedFrom?.parseRunId === 'parse-document-test'), true);
+    assert.deepEqual(afterReuse.revisions.map(revision => revision.candidate.elements.map(element => element.translatedText)),
+      snapshot.revisions.map(revision => revision.candidate.elements.map(element => element.translatedText)));
+    const assembledReuse = await service.executeStep({ fence: nextFence, requestId: 'reuse-2', assertAuthorized: async () => {} });
+    assert.equal(assembledReuse.status, 'DONE');
+    assert.equal(calls.length, 2, 'same content and context must not generate new translation');
+    assert.equal((await repository.readSnapshot(nextFence)).revisions.length, 2, 'reentry does not copy twice');
+
+  } finally { await sql.end({ timeout: 5 }); }
+});
+
+
+test('unknown plugin outcome keeps the same request pending and prevents blind regeneration', { skip: !databaseUrl, concurrency: false }, async () => {
+  const url = new URL(databaseUrl); assert.equal(url.hostname, '127.0.0.1');
+  assert.match(url.pathname, /^\/wiselink_translation_v2_test_[a-z0-9_]+$/u);
+  const sql = postgres(databaseUrl, { max: 1, onnotice() {} });
+  try {
+    await reset(sql);
+    const repository = new CanonicalTranslationWorkspaceRepository(drizzle(sql)), plan = fixturePlan();
+    await sql`INSERT INTO work_item VALUES ('WI-test','tenant-test','dv-test','pkg-test',${plan.source.parsedArtifact.ref},${plan.source.parsedArtifact.sha256},'engineer-test',1)`;
+    const workspace = await repository.prepare({ tenantId: 'tenant-test', workItemId: 'WI-test', plan });
+    const active = await seedAttempt(sql, workspace, 'unknown', 'miaoda/minimax-m3', { documentProducer: 'OFFICIAL_PLUGIN' });
+    const fence = { tenantId: 'tenant-test', workItemId: 'WI-test', workspaceId: workspace.workspaceId,
+      attemptRef: active.task.operationRef, principalId: 'service-principal', leaseToken: active.leaseToken, leaseGeneration: 1 };
+    let calls = 0;
+    const { CanonicalTranslationV2PluginService } = require('../../server/modules/canonical-host/canonical-translation-v2-plugin.service.ts');
+    const service = new CanonicalTranslationV2PluginService(repository, {
+      async translateProse() { calls++;
+        if (calls === 1) return { translation: '构造测试说明', producer: { kind: 'OFFICIAL_PLUGIN', instanceId: 'wl-document-translate', pluginVersion: '1.0.11', actionKey: 'translate', concreteModel: null } };
+        throw new Error('UPSTREAM_TIMEOUT'); },
+    }, null);
+    await service.executeStep({ fence, requestId: 'prefix', assertAuthorized: async () => {} });
+    await assert.rejects(service.executeStep({ fence, requestId: 'unknown-1', assertAuthorized: async () => {} }), /UPSTREAM_TIMEOUT/);
+    const state = await repository.readSnapshot(fence);
+    assert.equal(state.workspace.generationRequests[0].status, 'REGISTERED');
+    assert.equal(state.workspace.generationRequests[0].error.outcome, 'GENERATION_UNKNOWN');
+    const retry = await service.executeStep({ fence, requestId: 'unknown-2', assertAuthorized: async () => {} });
+    assert.equal(retry.status, 'NEEDS_RECOVERY'); assert.equal(calls, 2);
+    assert.equal((await repository.readSnapshot(fence)).revisions.length, 1);
+    const reading = buildTranslationWorkspaceReadingV2(state.workspace, state.revisions);
+    assert.equal(reading.blocks[0].readingStatus, 'READABLE');
+    assert.equal(reading.blocks[0].selected.candidate.elements[0].translatedText, '构造测试说明');
+  } finally { await sql.end({ timeout: 5 }); }
+});
+
+
+test('semantic object-value correction preserves the previous candidate and fixes only its block', { skip: !databaseUrl, concurrency: false }, async () => {
+  const url = new URL(databaseUrl); assert.equal(url.hostname, '127.0.0.1');
+  assert.match(url.pathname, /^\/wiselink_translation_v2_test_[a-z0-9_]+$/u);
+  const sql = postgres(databaseUrl, { max: 1, onnotice() {} });
+  try {
+    await reset(sql);
+    const source = fixtureSource();
+    source.units[1].payload.text = 'Valve A opens at 10 kPa and valve B opens at 20 kPa.';
+    const plan = buildTranslationSourcePlan({ ...fixturePlan().source, title: 'Synthetic correction', source });
+    const repository = new CanonicalTranslationWorkspaceRepository(drizzle(sql));
+    await sql`INSERT INTO work_item VALUES ('WI-test','tenant-test','dv-test','pkg-test',${plan.source.parsedArtifact.ref},${plan.source.parsedArtifact.sha256},'engineer-test',1)`;
+    const workspace = await repository.prepare({ tenantId: 'tenant-test', workItemId: 'WI-test', plan });
+    const active = await seedAttempt(sql, workspace, 'semantic-correction', 'miaoda/minimax-m3', { documentProducer: 'OFFICIAL_PLUGIN' });
+    const fence = { tenantId: 'tenant-test', workItemId: 'WI-test', workspaceId: workspace.workspaceId,
+      attemptRef: active.task.operationRef, principalId: 'service-principal', leaseToken: active.leaseToken, leaseGeneration: 1 };
+    const producer = check => ({ kind: 'OFFICIAL_PLUGIN', instanceId: check ? 'wl-document-translation-check' : 'wl-document-translate',
+      pluginVersion: check ? '1.0.26' : '1.0.11', actionKey: check ? 'textToJson' : 'translate', concreteModel: null });
+    const wrong = '阀门 A 在 20 kPa 时开启，阀门 B 在 10 kPa 时开启。';
+    const corrected = '阀门 A 在 10 kPa 时开启，阀门 B 在 20 kPa 时开启。';
+    let headingCalls = 0, correctionCalls = 0, sawBlocked = false;
+    const plugins = {
+      async translateProse(text, assertActive, context) {
+        await assertActive();
+        if (!text.includes('Valve')) { headingCalls++; return { translation: '构造测试说明', producer: producer(false) }; }
+        if (context.correctionIssues.length) {
+          correctionCalls++;
+          assert.equal(context.previousCandidate.elements[0].translatedText, wrong);
+          assert.equal(context.correctionIssues.some(issue => issue.code.includes('VALUE_OBJECT_BINDING')), true);
+          return { translation: corrected, producer: producer(false) };
+        }
+        return { translation: wrong, producer: producer(false) };
+      },
+      async checkTranslation(input, assertActive) {
+        await assertActive();
+        const issues = input.candidate.elements[0].translatedText === wrong
+          ? [{ code: 'VALUE_OBJECT_BINDING', severity: 'BLOCK', message: 'The numeric values are assigned to the wrong valves.', anchorIds: input.anchors.map(anchor => anchor.anchorId) }]
+          : [];
+        return { review: { blockId: input.blockId, issues }, producer: producer(true) };
+      },
+    };
+    const artifacts = { async persistAndReadback(bytes) { return { bytes, artifact: { storeRole: 'UnifiedArtifactStoreCandidate',
+      ref: 'artifact://synthetic/corrected', sha256: createHash('sha256').update(bytes).digest('hex'), byteLength: bytes.length, mediaType: 'application/json' } }; } };
+    const v2 = new CanonicalTranslationV2Service(repository, {}, {}, artifacts, {});
+    const { CanonicalTranslationV2PluginService } = require('../../server/modules/canonical-host/canonical-translation-v2-plugin.service.ts');
+    const service = new CanonicalTranslationV2PluginService(repository, plugins, v2);
+    let outcome;
+    for (let step = 0; step < 10; step++) {
+      outcome = await service.executeStep({ fence, requestId: `correct-${step}`, assertAuthorized: async () => {} });
+      const snapshot = await repository.readSnapshot(fence);
+      if (snapshot.revisions.some(revision => revision.check?.issues.some(issue => issue.code.includes('VALUE_OBJECT_BINDING')))) sawBlocked = true;
+      if (outcome.status === 'DONE') break;
+    }
+    assert.equal(outcome.status, 'DONE'); assert.equal(sawBlocked, true); assert.equal(correctionCalls, 1); assert.equal(headingCalls, 1);
+    const snapshot = await repository.readSnapshot(fence), body = snapshot.revisions.filter(revision => revision.blockId === plan.blocks[1].blockId);
+    assert.equal(body.length, 2);
+    assert.equal(body.find(revision => !revision.selectedForReading).candidate.elements[0].translatedText, wrong);
+    assert.equal(body.find(revision => revision.selectedForReading).candidate.elements[0].translatedText, corrected);
+  } finally { await sql.end({ timeout: 5 }); }
+});

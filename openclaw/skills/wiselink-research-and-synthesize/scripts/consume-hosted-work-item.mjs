@@ -47,6 +47,7 @@ const INITIAL_TOOLS = new Set([
  * Dependencies within a WorkItem and shared-work commits remain ordered. */
 export async function consumeHostedWorkItem(options, dependencies) {
   assertSingleConsumerSubject(options);
+  if (options.documentVersionId) return consumeHostedDocument(options, dependencies);
   if (options.matterId) return consumeHostedMatter(options, dependencies);
   let statusResult = await dependencies.callTool('get_parse_status', {
     workItemId: options.workItemId,
@@ -250,7 +251,6 @@ function readInitialStatus(value, workItemId) {
 
 function initialComplete(value) {
   return ['SUCCEEDED', 'WAITING_INPUT'].includes(value.status) && value.nextOperation === null &&
-    value.stages.translation.status === 'SUCCEEDED' &&
     ['SUCCEEDED', 'WAITING_INPUT'].includes(value.stages.applicability.status) &&
     value.stages.jobAid.status === 'SUCCEEDED' && value.stages.overall.status === 'SUCCEEDED';
 }
@@ -274,29 +274,89 @@ function option(argv, name) {
   return index < 0 ? undefined : argv[index + 1];
 }
 
-function assertSingleConsumerSubject({ workItemId, matterId }) {
+export async function consumeHostedDocument({ documentVersionId }, { callTool }) {
+  const state = await callTool('document_work', { action: 'STATUS', documentVersionId });
+  if (state?.documentVersionId !== documentVersionId) throw new Error('DOCUMENT_CONSUMER_SCOPE_MISMATCH');
+  const run = state.latestRun;
+  if (!run) return { status: 'IDLE', documentVersionId };
+  if (run.documentVersionId !== documentVersionId || !run.parseRunId) throw new Error('DOCUMENT_CONSUMER_RUN_MISMATCH');
+  if (run.status === 'PUBLISHED') {
+    const indexRun = state.nextSourceProjectionRunId ?? run.parseRunId;
+    if (typeof indexRun !== 'string' || !/^[A-Za-z0-9_-]{1,96}$/.test(indexRun)) throw new Error('DOCUMENT_SOURCE_PROJECTION_RUN_INVALID');
+    const outcomes = await Promise.allSettled([
+      callTool('document_work', { action: 'INDEX', documentVersionId, parseRunId: indexRun }),
+      advanceDocumentTranslation(documentVersionId, run, callTool),
+    ]);
+    const [projection, translation] = outcomes;
+    if (translation.status === 'rejected') throw translation.reason;
+    if (projection.status === 'rejected') return { ...translation.value, status: 'REQUIRES_ATTENTION',
+      sourceProjection: { status: 'FAILED', errorCode: 'DOCUMENT_SOURCE_PROJECTION_FAILED' } };
+    const indexed = projection.value;
+    if (indexed?.documentVersionId !== documentVersionId || indexed.parseRunId !== indexRun ||
+        !['INDEXED','PROGRESS','RETRY','NO_PENDING'].includes(indexed.status))
+      throw new Error('DOCUMENT_SOURCE_PROJECTION_RESULT_INVALID');
+    return { ...translation.value, sourceProjection: indexed };
+  }
+  if (run.errorCode || run.status === 'FAILED' || !state.runtimeAvailable || Date.parse(run.deadlineAt) <= Date.now()) {
+    return { status: 'REQUIRES_ATTENTION', documentVersionId, parseRunId: run.parseRunId,
+      errorCode: run.errorCode ?? 'DOCUMENT_STEP_UNAVAILABLE' };
+  }
+  if (!['RUNNING', 'STAGING'].includes(run.status) || !Number.isFinite(Date.parse(run.deadlineAt))) throw new Error('DOCUMENT_CONSUMER_STATUS_INVALID');
+  const result = await callTool('document_work', { action: 'STEP', documentVersionId, parseRunId: run.parseRunId });
+  if (result?.parseRunId !== run.parseRunId || !['BUSY', 'STAGING', 'PUBLISHED', 'FAILED'].includes(result.status)) {
+    throw new Error('DOCUMENT_CONSUMER_STEP_INVALID');
+  }
+  return { ...result, documentVersionId };
+}
+
+async function advanceDocumentTranslation(documentVersionId, run, callTool) {
+    const binding = { documentVersionId, parseRunId: run.parseRunId };
+    const translation = await callTool('document_translation', { action: 'STATUS', ...binding });
+    if (translation?.documentVersionId !== documentVersionId) throw new Error('DOCUMENT_TRANSLATION_SCOPE_MISMATCH');
+    if (translation.status === 'IDLE') {
+      const started = await callTool('document_translation', { action: 'START', ...binding, requestId: `translation-${run.parseRunId}` });
+      if (started?.documentVersionId !== documentVersionId || started.parseRunId !== run.parseRunId || !started.attemptRef)
+        throw new Error('DOCUMENT_TRANSLATION_START_MISMATCH');
+      return started;
+    }
+    if (translation.parseRunId !== run.parseRunId || !translation.attemptRef) throw new Error('DOCUMENT_TRANSLATION_RUN_MISMATCH');
+    if (translation.errorCode || ['FAILED','CANCELLED'].includes(translation.status))
+      return { ...translation, status: 'REQUIRES_ATTENTION' };
+    if (translation.status === 'SUCCEEDED') return { ...translation, status: 'DOCUMENT_READY' };
+    if (!['QUEUED','RUNNING','RETRY_SCHEDULED'].includes(translation.status)) throw new Error('DOCUMENT_TRANSLATION_STATUS_INVALID');
+    const result = await callTool('document_translation', { action: 'STEP', ...binding, attemptRef: translation.attemptRef });
+    if (result?.documentVersionId !== documentVersionId || result.parseRunId !== run.parseRunId ||
+        result.attemptRef !== translation.attemptRef) throw new Error('DOCUMENT_TRANSLATION_STEP_MISMATCH');
+    return result;
+}
+
+function assertSingleConsumerSubject({ workItemId, matterId, documentVersionId }) {
   const hasWorkItem = typeof workItemId === 'string' && Boolean(workItemId.trim());
   const hasMatter = typeof matterId === 'string' && Boolean(matterId.trim());
-  if (hasWorkItem === hasMatter) throw new Error('CONSUMER_SINGLE_SUBJECT_REQUIRED');
+  const hasDocument = typeof documentVersionId === 'string' && Boolean(documentVersionId.trim());
+  if ([hasWorkItem, hasMatter, hasDocument].filter(Boolean).length !== 1) throw new Error('CONSUMER_SINGLE_SUBJECT_REQUIRED');
   if ((hasWorkItem && !/^WI-\S+$/.test(workItemId)) ||
-      (hasMatter && !/^MAT-\S+$/.test(matterId))) throw new Error('CONSUMER_SUBJECT_INVALID');
+      (hasMatter && !/^MAT-\S+$/.test(matterId)) ||
+      (hasDocument && !/^[A-Za-z0-9_-]{1,96}$/u.test(documentVersionId))) throw new Error('CONSUMER_SUBJECT_INVALID');
 }
 
 async function main(argv, env) {
   if (argv.includes('--help')) {
-    process.stdout.write('Usage: node consume-hosted-work-item.mjs [--work-item-id WI-...] [--matter-id MAT-...] [--applicability-context-ref REF] [--checkpoint-root PATH] [--openclaw-config PATH] [--native-session-store PATH]\nOne native job per authorized subject. Choose exactly one WorkItem or Matter; independent jobs use native cron concurrency.\n');
+    process.stdout.write('Usage: node consume-hosted-work-item.mjs [--work-item-id WI-...] [--matter-id MAT-...] [--document-version-id DV] [--applicability-context-ref REF] [--checkpoint-root PATH] [--openclaw-config PATH] [--native-session-store PATH]\nOne native job per authorized subject. Choose exactly one WorkItem, Matter or DocumentVersion; independent jobs use native cron concurrency.\n');
     return;
   }
   const workItemId = option(argv, '--work-item-id');
   const matterId = option(argv, '--matter-id');
-  assertSingleConsumerSubject({ workItemId, matterId });
+  const documentVersionId = option(argv, '--document-version-id');
+  assertSingleConsumerSubject({ workItemId, matterId, documentVersionId });
   const runtime = await resolveRuntimeConfig(argv, env);
-  assertHostedModelGatewayReady(runtime);
+  if (!documentVersionId) assertHostedModelGatewayReady(runtime);
   const connection = await createHostMcpConnection(runtime);
   try {
     const result = await consumeHostedWorkItem({
       workItemId,
       matterId,
+      documentVersionId,
       applicabilityContextRef: option(argv, '--applicability-context-ref'),
       checkpointRoot: option(argv, '--checkpoint-root') ?? join(homedir(), '.openclaw', 'wiselink-work-item-runs'),
     }, {

@@ -5,7 +5,7 @@ function fixture(allowed = true, tool = 'matter_action_attempt') {
   const attempts = { nextForRuntime: jest.fn().mockResolvedValue({ matterId: 'MAT-one', next: null }), saveJobAidWork: jest.fn().mockResolvedValue({ workRevisionRef: 'MWR-one' }), finishJobAid: jest.fn().mockResolvedValue({ status: 'SUCCEEDED' }), reserveJobAid: jest.fn().mockResolvedValue({ task: { operationRef: 'AQ-new' }, row: { status: 'QUEUED' }, created: true }), claim: jest.fn().mockResolvedValue({ status: 'RUNNING' }),
     read: jest.fn().mockResolvedValue({ status: 'RUNNING', errorCode: null, deadlineAt: null,
       leaseToken: 'private-token', taskEnvelopeJson: 'private-task' }),
-    heartbeat: jest.fn(), cancel: jest.fn().mockResolvedValue({ status: 'CANCELLED' }),
+    heartbeat: jest.fn(), cancel: jest.fn().mockResolvedValue({ status: 'CANCELLED' }), readOriginal: jest.fn(),
     readSourcePages: jest.fn().mockImplementation((input, reader) => reader(input.documentVersionId, { pageStart: input.pageStart, pageEnd: input.pageStart })),
     readSavedWork: jest.fn().mockResolvedValue({ matterWorkRevisionId: 'MWR-exact' }) };
   const documents = { readDocumentSourcePagesForRuntime: jest.fn().mockResolvedValue({ pages: [] }) };
@@ -13,15 +13,26 @@ function fixture(allowed = true, tool = 'matter_action_attempt') {
     principalId: 'service:executor', matterId: 'MAT-one', attemptRef: 'AQ-one' };
   const authorizeOpenClawMatterAttempt = jest.fn().mockResolvedValue(scope);
   const authorizeOpenClawMatterRequest = jest.fn().mockResolvedValue(scope);
+  const originalReader = { readDocumentOriginal: jest.fn() };
   registerMatterAttemptMcpTools({ registerTool } as never, attempts as never,
-    allowed ? { authorizeOpenClawMatterAttempt, authorizeOpenClawMatterRequest } as never : {} as never, documents as never);
+    allowed ? { authorizeOpenClawMatterAttempt, authorizeOpenClawMatterRequest } as never : {} as never, documents as never, originalReader as never);
   const [name, definition, handler] = registerTool.mock.calls.find(([name]) => name === tool)!;
-  return { attempts, documents, scope, authorizeOpenClawMatterAttempt, name,
+  return { attempts, documents, originalReader, scope, authorizeOpenClawMatterAttempt, name,
     call: (input: unknown) => handler(definition.inputSchema.parse(input)) };
 }
 const request = { operation: 'CLAIM', matterId: 'MAT-one', attemptRef: 'AQ-one' };
 
 describe('Matter MCP existing attempt lifecycle', () => {
+  it('reads original only with exact Host actor and fence, rejecting caller-selected parse runs', async () => {
+    const f = fixture();
+    const input = { ...request, operation: 'READ_ORIGINAL', documentVersionId: 'DV-one', offset: 0,
+      limit: 20, purpose: '核对原文', leaseToken: 'f1111111-1111-4111-8111-111111111111', leaseGeneration: 1 };
+    await f.call(input);
+    expect(f.attempts.readOriginal).toHaveBeenCalledWith({ ...f.scope, documentVersionId: 'DV-one', offset: 0,
+      limit: 20, purpose: input.purpose, leaseToken: input.leaseToken, leaseGeneration: 1 }, f.originalReader);
+    expect(() => f.call({ ...input, parseRunId: 'forged' })).toThrow();
+    expect(() => f.call({ ...input, offset: -1 })).toThrow();
+  });
   it('polls and creates automatic work only through the exact Host Matter scope', async () => {
     const f = fixture(true, 'next_matter_assessment');
     await f.call({ matterId: 'MAT-one' });

@@ -51,8 +51,9 @@ export class EngineeringIssueSearchService {
       tenantId: actor.tenantId,
       limit,
       load: async pending => {
+        if (!pending.subjectId) throw new BadRequestException('ENGINEERING_SEARCH_PENDING_SUBJECT_MISSING');
         if (pending.ownerKind === 'USER') {
-          const revision = await this.jobAid.readBrowserRevision(pending.ownerId, pending.revisionRef, actor);
+          const revision = await this.jobAid.readBrowserRevision(pending.subjectId, pending.revisionRef, actor);
           if (!('content' in revision) || !revision.content) throw new NotFoundException('ENGINEERING_SEARCH_WORK_CONTENT_MISSING');
           return revision.content;
         }
@@ -67,14 +68,18 @@ export class EngineeringIssueSearchService {
   async search(
     query: string,
     actor: CanonicalHostActor,
+    scope: 'CURRENT' | 'HISTORY' = 'CURRENT',
   ): Promise<EngineeringIssueSearchResponse> {
     this.requireActor(actor);
+    if (!['CURRENT','HISTORY'].includes(scope)) throw new BadRequestException('ENGINEERING_ISSUE_SEARCH_SCOPE_INVALID');
+    const includeHistory = scope === 'HISTORY';
     const search = typeof query === 'string' ? query.trim() : '';
     if (!search || search.length > 200)
       throw new BadRequestException('ENGINEERING_ISSUE_QUERY_INVALID');
     const prepared = prepareEngineeringSearchQuery(search);
+    const exactIdentifiers = identifierArray(prepared.exactIdentifierCandidates);
     if (process.env.WL_ENGINEERING_SEARCH_PROJECTION === '1') {
-      return this.searchProjection(prepared, actor);
+      return this.searchProjection(prepared, actor, includeHistory);
     }
     const hits: EngineeringIssueSearchHit[] = [];
     const workReads = new Map<string, Promise<SavedIssueWork>>();
@@ -91,27 +96,28 @@ export class EngineeringIssueSearchService {
           w.content_json::jsonb AS content
         FROM assessment_work_revision w
         WHERE w.tenant_id = ${actor.tenantId} AND w.created_by_user_id = ${actor.userId}
-          AND NOT EXISTS (SELECT 1 FROM assessment_work_revision newer
+          AND (${includeHistory} OR NOT EXISTS (SELECT 1 FROM assessment_work_revision newer
             WHERE newer.tenant_id = w.tenant_id AND newer.work_item_id = w.work_item_id
-              AND newer.work_revision > w.work_revision)
+              AND newer.work_revision > w.work_revision))
         UNION ALL
         SELECT 'ENGINEERING_MATTER', w.matter_id, w.matter_work_revision_id,
           w.working_revision, w.state_json::jsonb -> 'problemWork'
         FROM engineering_matter_work_revision w
         WHERE w.tenant_id = ${actor.tenantId} AND w.created_by_user_id = ${actor.userId}
-          AND NOT EXISTS (SELECT 1 FROM engineering_matter_work_revision newer
+          AND (${includeHistory} OR NOT EXISTS (SELECT 1 FROM engineering_matter_work_revision newer
             WHERE newer.tenant_id = w.tenant_id AND newer.matter_id = w.matter_id
-              AND newer.working_revision > w.working_revision)
+              AND newer.working_revision > w.working_revision))
       )
       SELECT kind AS "subjectKind", subject_id AS "subjectId", work_ref AS "workRef",
         revision AS "workRevision", issue ->> 'issueKey' AS "issueKey",
         issue ->> 'question' AS question, issue -> 'sourceDependencies' AS "sourceRefs",
-        CASE WHEN upper(issue ->> 'issueKey') = ANY(${prepared.exactIdentifierCandidates}::text[])
+        CASE WHEN upper(issue ->> 'issueKey') = ANY(${exactIdentifiers})
           THEN 'EXACT_IDENTIFIER' ELSE 'FULL_TEXT' END AS "matchReason"
       FROM works CROSS JOIN LATERAL jsonb_array_elements(content -> 'issues') issue
       WHERE (
         to_tsvector('simple', issue::text) @@ plainto_tsquery('simple', ${prepared.tokenizedText})
-        OR upper(issue ->> 'issueKey') = ANY(${prepared.exactIdentifierCandidates}::text[])
+        OR position(lower(${search}) in lower(issue::text)) > 0
+        OR upper(issue ->> 'issueKey') = ANY(${exactIdentifiers})
       )
         ${
           cursor
@@ -150,16 +156,17 @@ export class EngineeringIssueSearchService {
     return {
       hits: hits.slice(0, 50),
       hasMore: hits.length > 50,
-      limitations: ['仅返回当前已保存且经授权展开的问题工作；结果不代表全量统计。'],
+      limitations: [includeHistory ? '包含历史已保存版本；历史内容不代表当前工作，每项仍按当前来源权限展开。' : '仅返回当前已保存且经授权展开的问题工作；结果不代表全量统计。'],
     };
   }
 
-  private async searchProjection(prepared: ReturnType<typeof prepareEngineeringSearchQuery>, actor: CanonicalHostActor): Promise<EngineeringIssueSearchResponse> {
+  private async searchProjection(prepared: ReturnType<typeof prepareEngineeringSearchQuery>, actor: CanonicalHostActor, includeHistory: boolean): Promise<EngineeringIssueSearchResponse> {
     type ProjectionRow = {
       entryId: string; ownerKind: string; ownerId: string; exactRevisionRef: string;
       parentContextRef: string | null; title: string;
       matchReason: 'FULL_TEXT' | 'EXACT_IDENTIFIER';
     };
+    const exactIdentifiers = identifierArray(prepared.exactIdentifierCandidates);
     const hits: EngineeringIssueSearchHit[] = [];
     const workReads = new Map<string, Promise<SavedIssueWork>>();
     let cursor: string | undefined;
@@ -167,12 +174,30 @@ export class EngineeringIssueSearchService {
     while (hits.length < 51 && !exhausted) {
       const rows = await this.db.execute<ProjectionRow>(sql`SELECT entry_id AS "entryId", owner_kind AS "ownerKind", owner_id AS "ownerId",
         exact_revision_ref AS "exactRevisionRef", parent_context_ref AS "parentContextRef", title,
-        CASE WHEN identifiers && ${prepared.exactIdentifierCandidates}::text[]
+        CASE WHEN identifiers && ${exactIdentifiers}
           THEN 'EXACT_IDENTIFIER' ELSE 'FULL_TEXT' END AS "matchReason"
         FROM engineering_search_projection
         WHERE tenant_id = ${actor.tenantId}
+          AND entry_kind = 'WORK'
+          AND ((owner_kind = 'USER' AND EXISTS (
+            SELECT 1 FROM assessment_work_revision w
+            WHERE w.tenant_id = engineering_search_projection.tenant_id
+              AND w.work_item_id = engineering_search_projection.parent_context_ref
+              AND w.assessment_work_revision_id = engineering_search_projection.exact_revision_ref
+              AND (${includeHistory} OR NOT EXISTS (SELECT 1 FROM assessment_work_revision newer
+                WHERE newer.tenant_id = w.tenant_id AND newer.work_item_id = w.work_item_id
+                  AND newer.work_revision > w.work_revision))
+          )) OR (owner_kind = 'MATTER' AND EXISTS (
+            SELECT 1 FROM engineering_matter_work_revision w
+            WHERE w.tenant_id = engineering_search_projection.tenant_id
+              AND w.matter_id = engineering_search_projection.parent_context_ref
+              AND w.matter_work_revision_id = engineering_search_projection.exact_revision_ref
+              AND (${includeHistory} OR NOT EXISTS (SELECT 1 FROM engineering_matter_work_revision newer
+                WHERE newer.tenant_id = w.tenant_id AND newer.matter_id = w.matter_id
+                  AND newer.working_revision > w.working_revision))
+          )))
           AND (search_vector @@ plainto_tsquery('simple', ${prepared.tokenizedText})
-            OR identifiers && ${prepared.exactIdentifierCandidates}::text[])
+            OR identifiers && ${exactIdentifiers})
           ${cursor ? sql`AND entry_id > ${cursor}` : sql``}
         ORDER BY entry_id LIMIT 101`);
       exhausted = rows.length < 101;
@@ -180,7 +205,8 @@ export class EngineeringIssueSearchService {
         const match = row.entryId.match(/^(.*):issue:(.*)$/);
         const subjectKind = projectionOwnerToSubjectKind(row.ownerKind);
         if (!match || !subjectKind) continue;
-        const subjectId = row.parentContextRef || row.ownerId;
+        if (!row.parentContextRef) throw new Error('ENGINEERING_SEARCH_PROJECTION_SUBJECT_MISSING');
+        const subjectId = row.parentContextRef;
         const key = JSON.stringify([subjectKind, subjectId, row.exactRevisionRef]);
         let work = workReads.get(key);
         if (!work) { work = this.loadWork({ subjectKind, subjectId, workRef: row.exactRevisionRef, issueKey: match[2] }, actor); workReads.set(key, work); }
@@ -197,7 +223,7 @@ export class EngineeringIssueSearchService {
       // Pagination is based on authorized, fully expanded work identities;
       // denied projection rows must not create a false "more" signal.
       hasMore: hits.length > 50,
-      limitations: ['投影命中只提供问题工作身份，正文仍按当前授权逐项读取。'],
+      limitations: [includeHistory ? '包含历史已保存版本；历史内容不代表当前工作，正文仍按当前授权逐项读取。' : '仅搜索当前已保存工作；投影命中后正文仍按当前授权逐项读取。'],
     };
   }
 
@@ -296,4 +322,8 @@ function isAccessUnavailable(error: unknown): boolean {
       error.message,
     )
   );
+}
+
+function identifierArray(values: readonly string[]) {
+  return sql`ARRAY[${sql.join(values.map(value => sql`${value}`), sql`, `)}]::text[]`;
 }

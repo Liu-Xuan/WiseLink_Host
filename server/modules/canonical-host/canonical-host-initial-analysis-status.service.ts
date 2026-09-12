@@ -1,9 +1,11 @@
-import { Inject, Injectable } from '@nestjs/common';
+import { Inject, Injectable, Optional } from '@nestjs/common';
+import { JobAidWorkRepository } from './jobaid-work.repository';
 import {
   DRIZZLE_DATABASE,
   type PostgresJsDatabase,
 } from '@lark-apaas/fullstack-nestjs-core';
-import { and, desc, eq, inArray } from 'drizzle-orm';
+import { and, desc, eq, inArray, sql } from 'drizzle-orm';
+import { dmDocumentParseRun } from '../../database/document-parsing.schema';
 
 import type {
   AilyInitialAnalysisOperation,
@@ -72,14 +74,34 @@ export class CanonicalHostInitialAnalysisStatusService {
   constructor(
     @Inject(DRIZZLE_DATABASE) private readonly db: PostgresJsDatabase,
     private readonly attempts: ActionAttemptLifecycleService,
+    @Optional() private readonly originalWork?: JobAidWorkRepository,
   ) {}
 
   async project(input: {
     workItem: CanonicalWorkItemProjection;
     tenantId: string;
   }): Promise<AilyInitialAnalysisStatus> {
-    if (!isParsedPackageReady(input.workItem)) {
-      return projectCanonicalHostInitialAnalysisStatus(input.workItem, []);
+    const originalMode=process.env.WL_JOBAID_PROBLEM_V2_ENABLED === '1';
+    const readPublished=() => this.db.select({id:dmDocumentParseRun.parseRunId}).from(dmDocumentParseRun)
+      .where(and(eq(dmDocumentParseRun.tenantId,input.tenantId),eq(dmDocumentParseRun.documentVersionId,input.workItem.source.documentVersionId),
+        eq(dmDocumentParseRun.status,'PUBLISHED'),sql`${dmDocumentParseRun.manifestArtifact}->>'relativePath' = 'original/manifest.json'`,
+        sql`${dmDocumentParseRun.sourceBinding}->>'sourceArtifactId' = ${input.workItem.source.sourceArtifactId}`,
+        sql`${dmDocumentParseRun.sourceBinding}->>'sourceSha256' = ${input.workItem.source.sourceFileSha256}`,
+        sql`${dmDocumentParseRun.sourceBinding}->>'sourceByteLength' = ${String(input.workItem.source.sourceByteLength)}`)).limit(1);
+    let published: Array<{id:string}> | null=null;
+    if (originalMode) {
+      const [role]=await this.db.execute<{service:boolean}>(sql`SELECT starts_with(current_user::text,'service_role_') AS service`);
+      if (role?.service) {
+        if (!this.originalWork) throw new Error('ORIGINAL_STATUS_RUNTIME_UNAVAILABLE');
+        const [owner]=await this.db.select({actor:workItem.requestedByUserId}).from(workItem)
+          .where(and(eq(workItem.workItemId,input.workItem.workItemId),eq(workItem.tenantId,input.tenantId))).limit(1);
+        if (!owner?.actor) throw new Error('JOBAID_SOURCE_AUTHORIZATION_CHANGED');
+        published=await this.originalWork.withActorScope(owner.actor,readPublished);
+      } else published=await readPublished();
+    }
+    const originalPublished=published === null ? undefined : published.length>0;
+    if (!(originalPublished ?? isParsedPackageReady(input.workItem))) {
+      return projectCanonicalHostInitialAnalysisStatus(input.workItem, [],{originalPublished});
     }
     const rows = await this.db
       .selectDistinctOn([actionAttempt.actionType], {
@@ -136,6 +158,7 @@ export class CanonicalHostInitialAnalysisStatusService {
           : {}),
       })),
       {
+        originalPublished,
         englishAssessmentEnabled:
           process.env.WL_JOBAID_PROBLEM_V2_ENABLED === '1',
       },
@@ -175,14 +198,14 @@ export class CanonicalHostInitialAnalysisStatusService {
         ),
     );
     const automatic =
-      isParsedPackageReady(input.workItem) &&
+      status.status !== 'NOT_READY' &&
       !active &&
       isOpenClawAutomaticReviewConfigured({
         tenantId: input.tenantId,
         workItemId: input.workItem.workItemId,
       });
     const canTranslate =
-      automatic && process.env.WL_TRANSLATION_V2_ENABLED === '1';
+      automatic && isParsedPackageReady(input.workItem) && process.env.WL_TRANSLATION_V2_ENABLED === '1';
     const continuationOperations: NonNullable<
       CanonicalInitialAnalysisReadModel['continuationOperations']
     > = [];
@@ -296,10 +319,10 @@ export function initialAnalysisTerminalCode(row: {
 export function projectCanonicalHostInitialAnalysisStatus(
   workItem: CanonicalWorkItemProjection,
   attempts: readonly CanonicalInitialAnalysisAttemptObservation[],
-  options: { englishAssessmentEnabled?: boolean } = {},
+  options: { englishAssessmentEnabled?: boolean; originalPublished?: boolean } = {},
 ): AilyInitialAnalysisStatus {
   const attemptByAction = latestAttemptsByAction(attempts);
-  const parsedPackageReady = isParsedPackageReady(workItem);
+  const parsedPackageReady = options.originalPublished ?? isParsedPackageReady(workItem);
   const reevaluation = parsedPackageReady
     ? activeConfigurationEvidenceReevaluation(workItem)
     : null;
@@ -347,6 +370,8 @@ export function projectCanonicalHostInitialAnalysisStatus(
             ),
       }
     : pendingStages();
+  if (options.originalPublished && !workItem.package && stages.applicability.status === 'PENDING')
+    stages.applicability={...stages.applicability,status:'WAITING_INPUT',terminalCode:'ORIGINAL_APPLICABILITY_MAPPING_REQUIRED'};
   const progression = parsedPackageReady
     ? deriveProgression(
         stages,
@@ -715,7 +740,8 @@ function deriveProgression(
     { stage: stages.applicability, operation: 'EXTRACT_APPLICABILITY' },
     { stage: stages.jobAid, operation: 'EVALUATE_JOBAID' },
     { stage: stages.overall, operation: 'SYNTHESIZE_OVERALL' },
-    ...(englishAssessmentEnabled
+    ...(englishAssessmentEnabled && (stages.translation.status === 'BUSY' ||
+      (stages.translation.status === 'PENDING' && !!stages.translation.requestId))
       ? [{ stage: stages.translation, operation: 'TRANSLATE' as const }]
       : []),
   ];
@@ -730,18 +756,8 @@ function deriveProgression(
   if (requested)
     return { status: 'REQUIRED', nextOperation: requested.operation };
   let hasNonBlockingMissingInput = false;
-  let deferredTranslationStatus: 'FAILED' | 'CONFLICT' | null = null;
   for (const item of ordered) {
     if (item.stage.status === 'SUCCEEDED') continue;
-    if (
-      englishAssessmentEnabled &&
-      item.operation === 'TRANSLATE' &&
-      ['FAILED', 'CONFLICT'].includes(item.stage.status)
-    ) {
-      deferredTranslationStatus =
-        item.stage.status === 'FAILED' ? 'FAILED' : 'CONFLICT';
-      continue;
-    }
     if (
       item.operation === 'EXTRACT_APPLICABILITY' &&
       item.stage.status === 'WAITING_INPUT' &&
@@ -759,9 +775,7 @@ function deriveProgression(
     return { status: item.stage.status, nextOperation: null };
   }
   return {
-    status:
-      deferredTranslationStatus ??
-      (hasNonBlockingMissingInput ? 'WAITING_INPUT' : 'SUCCEEDED'),
+    status: hasNonBlockingMissingInput ? 'WAITING_INPUT' : 'SUCCEEDED',
     nextOperation: null,
   };
 }

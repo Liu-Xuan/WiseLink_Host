@@ -30,7 +30,7 @@ const ATTEMPT_REF = 'AQ-DYNAMIC-REAL';
 const LEASE_TOKEN = '00000000-0000-4000-8000-000000000001';
 
 describe('CanonicalHostOpenClawDynamicEvaluationService', () => {
-  it('routes an explicit new request to JobAid v2 without consulting a legacy attempt or retrying the configuration stage', async () => {
+  it.each([true,false])('routes an explicit new request to JobAid v2 with legacy package=%s without retrying the configuration stage', async (withPackage) => {
     const problemAssessment = {
       begin: jest.fn(async () => ({ attemptRef: 'AQ-JOBAID-NEW' })),
       enabledForNewTasks: jest.fn(() => false),
@@ -50,6 +50,7 @@ describe('CanonicalHostOpenClawDynamicEvaluationService', () => {
     )
       throw new Error('TEST_REEVALUATION_V2_REQUIRED');
     const harness = createHarness(workItem, { problemAssessment });
+    if (!withPackage) workItem.package=null;
     const requestId = '00000000-0000-4000-8000-000000000010';
 
     await expect(

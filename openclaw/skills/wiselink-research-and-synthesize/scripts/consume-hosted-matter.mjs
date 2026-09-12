@@ -178,7 +178,15 @@ export async function readMatterAssessmentSources(intent, context, call) {
   const known = intent.sourceRefs.filter(ref => registered.has(ref));
   const pagesByDocument = new Map();
   // Validate the whole selection before starting any read, including the first registered batch.
+  const originalRequests = [];
   for (const ref of intent.sourceRefs.filter(ref => !registered.has(ref))) {
+    const original = context.availableDocuments.find(item => ref.startsWith(`DOCUMENT_VERSION:${item.documentVersionId}:original:`));
+    if (original) {
+      const offset = ref.slice(`DOCUMENT_VERSION:${original.documentVersionId}:original:`.length);
+      if (!/^(0|[1-9]\d*)$/.test(offset) || !Number.isSafeInteger(Number(offset))) throw new Error('JOBAID_SOURCE_NOT_REGISTERED');
+      originalRequests.push({operation:'READ_ORIGINAL',documentVersionId:original.documentVersionId,offset:Number(offset),limit:20});
+      continue;
+    }
     const document = context.availableDocuments.find(item => ref.startsWith(`DOCUMENT_VERSION:${item.documentVersionId}:page:`));
     const number = document ? ref.slice(`DOCUMENT_VERSION:${document.documentVersionId}:page:`.length) : '';
     if (!/^[1-9]\d*$/.test(number) || !Number.isSafeInteger(Number(number))) throw new Error('JOBAID_SOURCE_NOT_REGISTERED');
@@ -187,6 +195,7 @@ export async function readMatterAssessmentSources(intent, context, call) {
     pagesByDocument.set(document.documentVersionId, pages);
   }
   const requests = known.length ? [{ operation: 'READ_REGISTERED', sourceRefs: known }] : [];
+  requests.push(...originalRequests);
   for (const [documentVersionId, pages] of pagesByDocument) {
     pages.sort((a, b) => a - b);
     for (let index = 0; index < pages.length;) {
@@ -201,6 +210,16 @@ export async function readMatterAssessmentSources(intent, context, call) {
     const batch = requests.slice(offset, offset + 4);
     const results = await Promise.allSettled(batch.map(async ({ operation, ...input }) => {
       const read = await call(operation, { ...input, purpose: intent.purpose });
+      if (operation === 'READ_ORIGINAL') {
+        if (read.documentVersionId !== input.documentVersionId || read.binding?.documentVersionId !== input.documentVersionId ||
+            !read.binding?.parseRunId || read.offset !== input.offset || !Array.isArray(read.evidence) || !Array.isArray(read.units) ||
+            !Array.isArray(read.sourceRefs) || read.evidence.some(item => item.kind !== 'DOCUMENT_PASSAGE' || item.workItemId !== null ||
+              item.documentVersionId !== input.documentVersionId || !read.sourceRefs.includes(item.evidenceRef)))
+          throw new Error('MATTER_SOURCE_READ_BINDING_MISMATCH');
+        return { evidence:read.evidence,sourceRefs:read.sourceRefs,documents:[{documentVersionId:read.documentVersionId,
+          binding:read.binding,coverage:read.coverage,findings:read.findings,units:read.units,sourceLocators:read.sourceLocators,
+          nextReadRef:read.nextOffset === null ? null : `DOCUMENT_VERSION:${read.documentVersionId}:original:${read.nextOffset}`} ] };
+      }
       if (operation === 'READ_REGISTERED') {
         if (!Array.isArray(read.sourceRefs) || !Array.isArray(read.evidence) ||
             read.sourceRefs.length !== input.sourceRefs.length || input.sourceRefs.some(ref => !read.sourceRefs.includes(ref)))

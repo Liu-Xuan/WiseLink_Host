@@ -58,6 +58,8 @@ export function buildMatterJobAidTask(input: {
         ...(prior?.evidence ?? []).flatMap(item => item.kind === 'DOCUMENT_PASSAGE' ? [item.documentVersionId] : []),
       ])].map((documentVersionId) => ({
         documentVersionId,
+        originalReadRef: `DOCUMENT_VERSION:${documentVersionId}:original:0`,
+        boundOriginal: input.inputs.find(binding => binding.documentVersionId === documentVersionId)?.original ?? null,
         inputIds: input.inputs.filter((binding) => binding.documentVersionId === documentVersionId).map((binding) => binding.inputId),
         readingScope: 'NOT_READ_THIS_ATTEMPT' as const,
       })),
@@ -75,7 +77,7 @@ export function buildMatterJobAidTask(input: {
       historyReview,
       capabilities: [
         { capability: 'registered_source_reading', status: 'AVAILABLE' as const,
-          impact: '可按任务封存版本读取 PDF 文本层；图像和扫描内容未声明已核实，目录中的文档不等于已读正文。' },
+          impact: '优先用originalReadRef读取boundOriginal绑定的已发布修订；历史任务未捕获绑定时Host在首次读取确定版本。按返回nextOffset继续，原文修订变化只表示需要核查影响，不预设工程结论变化。PDF页文本层仍可独立读取；目录不代表已读，coverage限制须保留。' },
         { capability: 'fleet_configuration', status: 'NOT_CONNECTED' as const,
           impact: '未取得当前对象的受控装机、执行或构型查询。' },
         { capability: 'reliability_history', status: 'NOT_CONNECTED' as const,

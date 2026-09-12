@@ -1,3 +1,6 @@
+import { DocumentWorkRuntimeService } from './document-work-runtime.service';
+import { UnifiedReaderService } from '../unified-reader/unified-reader.service';
+import { DocumentTranslationRuntimeService } from './document-translation-runtime.service';
 import { Inject, Injectable, Logger, Optional } from '@nestjs/common';
 import { MatterActionAttemptService } from './matter-action-attempt.service';
 import { registerMatterAttemptMcpTools } from './matter-attempt-mcp-tools';
@@ -203,6 +206,9 @@ export class CanonicalHostOpenClawMcpService {
     private readonly problemAssessment: CanonicalJobAidProblemService,
     @Optional() private readonly matterAttempts?: MatterActionAttemptService,
     @Optional() private readonly matterDocuments?: DocumentManagementHostedService,
+    @Optional() private readonly documentWork?: DocumentWorkRuntimeService,
+    @Optional() private readonly documentTranslation?: DocumentTranslationRuntimeService,
+    @Optional() private readonly originalReader?: UnifiedReaderService,
   ) {
     const handler = createMcpHandler(() => this.createServer(), {
       legacy: 'stateless',
@@ -233,7 +239,37 @@ export class CanonicalHostOpenClawMcpService {
       this.vertical,
       this.serviceScope,
     );
-    if (this.matterAttempts) registerMatterAttemptMcpTools(server, this.matterAttempts, this.serviceScope, this.matterDocuments);
+    if (this.matterAttempts) registerMatterAttemptMcpTools(server, this.matterAttempts, this.serviceScope, this.matterDocuments, this.originalReader);
+    if (this.documentWork) server.registerTool('document_work', {
+      title: '推进已授权的文档原文步骤',
+      description: '确定性消费者使用。STATUS读取精确文档状态；STEP领取现有parseRun并执行一个有界原文步骤；CANCEL取消该run。身份与租约由Host持有，不调用工程模型。',
+      inputSchema: z.discriminatedUnion('action', [
+        z.strictObject({ action: z.literal('STATUS'), documentVersionId: z.string().trim().min(1).max(96) }),
+        z.strictObject({ action: z.enum(['STEP', 'CANCEL', 'INDEX']), documentVersionId: z.string().trim().min(1).max(96),
+          parseRunId: z.string().trim().min(1).max(96) }),
+      ]),
+    }, async input => textResult(await this.documentWork!.run(input)));
+
+    if (this.documentWork) server.registerTool('read_document_original', {
+      title: '读取确切版本原文',
+      description: '按documentVersionId和parseRunId重新校验来源授权，返回有界完整原文单元、真实定位和覆盖限制。用于工程输入；不是译文，也不代表本轮已评估全文。',
+      inputSchema: z.strictObject({ documentVersionId: z.string().trim().min(1).max(96),
+        parseRunId: z.string().trim().min(1).max(96), offset: z.number().int().min(0).optional(),
+        limit: z.number().int().min(1).max(50).optional() }),
+    }, async input => textResult(await this.documentWork!.readOriginal(input)));
+
+    if (this.documentTranslation) server.registerTool('document_translation', {
+      title: '推进独立文档中文阅读',
+      description: '以确切DV/parseRun为主体使用现有Translation V2和ActionAttempt，每次执行一个官方插件步骤；没有WorkItem或工程模型前置。',
+      inputSchema: z.discriminatedUnion('action', [
+        z.strictObject({ action: z.literal('START'), documentVersionId: z.string().min(1).max(96),
+          parseRunId: z.string().min(1).max(96), requestId: z.string().min(1).max(96) }),
+        z.strictObject({ action: z.literal('STATUS'), documentVersionId: z.string().min(1).max(96), parseRunId: z.string().min(1).max(96) }),
+        z.strictObject({ action: z.enum(['STEP','CANCEL']), documentVersionId: z.string().min(1).max(96),
+          parseRunId: z.string().min(1).max(96), attemptRef: z.string().min(1).max(128) }),
+      ]),
+    }, async input => textResult(await this.documentTranslation!.run(input)));
+
 
     server.registerTool(
       'begin_translation',

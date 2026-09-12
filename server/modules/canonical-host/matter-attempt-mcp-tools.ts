@@ -1,4 +1,5 @@
 import type { McpServer } from '@modelcontextprotocol/server';
+import type { UnifiedReaderService } from '../unified-reader/unified-reader.service';
 import { z } from 'zod/v4';
 import { canonicalServiceScopeUnavailable, type CanonicalServiceScopeAuthorizationPort } from './canonical-service-scope.authorization';
 import type { MatterActionAttemptService } from './matter-action-attempt.service';
@@ -10,7 +11,7 @@ const fence = { leaseToken: z.string().uuid(), leaseGeneration: z.number().int()
 
 /** Same durable attempt service and queue; caller cannot supply tenant, actor or principal. */
 export function registerMatterAttemptMcpTools(server: McpServer, attempts: MatterActionAttemptService,
-  authorization: CanonicalServiceScopeAuthorizationPort, documents?: DocumentManagementHostedService): void {
+  authorization: CanonicalServiceScopeAuthorizationPort, documents?: DocumentManagementHostedService, originalReader?: UnifiedReaderService): void {
   server.registerTool('next_matter_assessment', {
     title: '读取事项待执行评估',
     description: '由现有消费者观察来源变化并登记所需的持续评估；已存在的任务直接读回，不重复创建失败请求。',
@@ -65,6 +66,8 @@ export function registerMatterAttemptMcpTools(server: McpServer, attempts: Matte
         documentVersionId: z.string().trim().min(1).max(160), pageStart: z.number().int().positive(),
         pageEnd: z.number().int().positive().optional(), purpose: z.string().trim().min(1).max(4000),
       }).strict(),
+      z.object({...target,...fence,operation:z.literal('READ_ORIGINAL'),documentVersionId:z.string().min(1).max(96),
+        offset:z.number().int().nonnegative(),limit:z.number().int().min(1).max(20),purpose:z.string().trim().min(1).max(4000)}).strict(),
     ]),
     annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: false },
   }, async (input) => {
@@ -76,6 +79,11 @@ export function registerMatterAttemptMcpTools(server: McpServer, attempts: Matte
       scope.attemptRef !== input.attemptRef || !scope.actorUserId || !scope.tenantId || !scope.principalId)
       throw canonicalServiceScopeUnavailable();
     switch (input.operation) {
+      case 'READ_ORIGINAL': {
+        if (!originalReader) throw canonicalServiceScopeUnavailable();
+        return textResult(await attempts.readOriginal({...scope,leaseToken:input.leaseToken,leaseGeneration:input.leaseGeneration,
+          documentVersionId:input.documentVersionId,offset:input.offset,limit:input.limit,purpose:input.purpose},originalReader));
+      }
       case 'READ_REGISTERED': return textResult(await attempts.readRegisteredSources({ ...scope, leaseToken: input.leaseToken,
         leaseGeneration: input.leaseGeneration, sourceRefs: input.sourceRefs, purpose: input.purpose }));
       case 'SAVE_WORK': return textResult(await attempts.saveJobAidWork({ ...scope, leaseToken: input.leaseToken,

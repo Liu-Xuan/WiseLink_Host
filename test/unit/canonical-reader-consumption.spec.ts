@@ -77,7 +77,7 @@ describe('deriveTranslationConsumptionAxes (WL31 translation-reader candidate)',
       binding: binding(),
     });
     expect(result.status).toBe('BILINGUAL_READING_AID_AVAILABLE');
-    if (result.status === 'UNAVAILABLE') throw new Error('unreachable');
+    if (!('axes' in result)) throw new Error('Expected legacy translation axes');
     expect(result.axes.ownerSourceReaderConsumptionAllowed).toBe(true);
     expect(result.axes.bilingualTranslationConsumptionAllowed).toBe(true);
     expect(result.axes.failureReasons).toEqual([]);
@@ -94,7 +94,7 @@ describe('deriveTranslationConsumptionAxes (WL31 translation-reader candidate)',
       binding: binding(),
     });
     expect(result.status).toBe('SOURCE_CURRENT_TRANSLATION_PENDING');
-    if (result.status === 'UNAVAILABLE') throw new Error('unreachable');
+    if (!('axes' in result)) throw new Error('Expected legacy translation axes');
     expect(result.axes.ownerSourceReaderConsumptionAllowed).toBe(true);
     expect(result.axes.bilingualTranslationConsumptionAllowed).toBe(false);
     expect(result.axes.pendingTranslationUnitCount).toBe(6);
@@ -110,7 +110,7 @@ describe('deriveTranslationConsumptionAxes (WL31 translation-reader candidate)',
       binding: binding(),
     });
     expect(result.status).toBe('SOURCE_CURRENT_TRANSLATION_PENDING');
-    if (result.status === 'UNAVAILABLE') throw new Error('unreachable');
+    if (!('axes' in result)) throw new Error('Expected legacy translation axes');
     expect(result.axes.ownerSourceReaderConsumptionAllowed).toBe(true);
     expect(result.axes.bilingualTranslationConsumptionAllowed).toBe(false);
   });
@@ -174,7 +174,7 @@ describe('deriveTranslationConsumptionAxes (WL31 translation-reader candidate)',
       binding: binding(),
     });
     expect(result.status).toBe('TRANSLATION_GAP');
-    if (result.status === 'UNAVAILABLE') throw new Error('unreachable');
+    if (!('axes' in result)) throw new Error('Expected legacy translation axes');
     expect(result.axes.ownerSourceReaderConsumptionAllowed).toBe(false);
     expect(result.axes.bilingualTranslationConsumptionAllowed).toBe(false);
     expect(result.axes.failureReasons.length).toBeGreaterThan(0);
@@ -195,7 +195,7 @@ describe('deriveTranslationConsumptionAxes (WL31 translation-reader candidate)',
       binding: binding(),
     });
     expect(result.status).toBe('TRANSLATION_GAP');
-    if (result.status === 'UNAVAILABLE') throw new Error('unreachable');
+    if (!('axes' in result)) throw new Error('Expected legacy translation axes');
     expect(result.axes.failureReasons).toContain(
       'OWNER_LINEAGE_IDENTITY_MISMATCH',
     );
@@ -232,7 +232,7 @@ describe('deriveTranslationConsumptionAxes (WL31 translation-reader candidate)',
       binding: binding(),
     });
     expect(result.status).toBe('TRANSLATION_GAP');
-    if (result.status === 'UNAVAILABLE') throw new Error('unreachable');
+    if (!('axes' in result)) throw new Error('Expected legacy translation axes');
     expect(result.axes.ownerProductState).toBe('needs_inputs');
     expect(result.axes.ownerSourceReaderConsumptionAllowed).toBe(false);
     expect(result.axes.bilingualTranslationConsumptionAllowed).toBe(false);
@@ -246,7 +246,7 @@ describe('deriveTranslationConsumptionAxes (WL31 translation-reader candidate)',
           binding: binding(),
         });
         expect(result.status).toBe('TRANSLATION_GAP');
-        if (result.status === 'UNAVAILABLE') throw new Error('unreachable');
+        if (!('axes' in result)) throw new Error('Expected legacy translation axes');
         expect(result.axes.failureReasons).toContain(
           'OWNER_UNIT_ROWS_INCONSISTENT',
         );
@@ -270,7 +270,7 @@ describe('deriveTranslationConsumptionAxes (WL31 translation-reader candidate)',
           binding: binding(),
         });
         expect(result.status).toBe('TRANSLATION_GAP');
-        if (result.status === 'UNAVAILABLE') throw new Error('unreachable');
+        if (!('axes' in result)) throw new Error('Expected legacy translation axes');
         expect(result.axes.failureReasons).toContain(
           'OWNER_UNIT_ROWS_INCONSISTENT',
         );
@@ -292,7 +292,7 @@ describe('deriveTranslationConsumptionAxes (WL31 translation-reader candidate)',
           binding: binding(),
         });
         expect(result.status).toBe('TRANSLATION_GAP');
-        if (result.status === 'UNAVAILABLE') throw new Error('unreachable');
+        if (!('axes' in result)) throw new Error('Expected legacy translation axes');
         expect(result.axes.failureReasons).toContain(
           'OWNER_UNIT_ROWS_INCONSISTENT',
         );
@@ -310,7 +310,7 @@ describe('deriveTranslationConsumptionAxes (WL31 translation-reader candidate)',
         binding: binding(),
       });
       expect(result.status).toBe('BILINGUAL_READING_AID_AVAILABLE');
-      if (result.status === 'UNAVAILABLE') throw new Error('unreachable');
+      if (!('axes' in result)) throw new Error('Expected legacy translation axes');
       expect(result.axes.ownerSourceReaderConsumptionAllowed).toBe(true);
       expect(result.axes.bilingualTranslationConsumptionAllowed).toBe(true);
     });
@@ -331,7 +331,7 @@ describe('deriveTranslationConsumptionAxes (WL31 translation-reader candidate)',
           binding: binding(),
         });
         expect(result.status).toBe('TRANSLATION_GAP');
-        if (result.status === 'UNAVAILABLE') throw new Error('unreachable');
+        if (!('axes' in result)) throw new Error('Expected legacy translation axes');
         expect(result.axes.failureReasons).toContain(
           'OWNER_UNIT_ROWS_INCONSISTENT',
         );

@@ -7,6 +7,9 @@ const KEYS = [
   'WL_OPENCLAW_SERVICE_PRINCIPAL_ID',
   'WL_OPENCLAW_SERVICE_TENANT_ID',
   'WL_OPENCLAW_SERVICE_WORK_ITEM_ID',
+  'WL_OPENCLAW_DOCUMENT_SCOPE_ENABLED',
+  'WL_OPENCLAW_SERVICE_DOCUMENT_VERSION_ID',
+  'WL_OPENCLAW_SERVICE_DOCUMENT_ACTOR_ID',
   'WL_OPENCLAW_MATTER_SCOPE_ENABLED',
   'WL_OPENCLAW_SERVICE_MATTER_ID',
   'WL_OPENCLAW_SERVICE_MATTER_ACTOR_ID',
@@ -27,6 +30,24 @@ describe('ConfiguredDevelopmentCanonicalServiceScopeAuthorization', () => {
       if (value === undefined) delete process.env[key];
       else process.env[key] = value;
     }
+  });
+
+  it('authorizes one document independently without granting engineering WorkItem or Matter access', async () => {
+    for (const key of KEYS) delete process.env[key];
+    Object.assign(process.env, { WL_OPENCLAW_SERVICE_SCOPE_ENABLED: '1', WL_OPENCLAW_GATEWAY_AUTH_MODE: 'API_KEY',
+      WL_OPENCLAW_SERVICE_SCOPE_ENV: 'UAT', WL_OPENCLAW_SERVICE_PRINCIPAL_ID: 'service:document-consumer',
+      WL_OPENCLAW_SERVICE_TENANT_ID: 'tenant-test', WL_OPENCLAW_DOCUMENT_SCOPE_ENABLED: '1',
+      WL_OPENCLAW_SERVICE_DOCUMENT_VERSION_ID: 'DV-test', WL_OPENCLAW_SERVICE_DOCUMENT_ACTOR_ID: 'actor-test' });
+    const service = new ConfiguredDevelopmentCanonicalServiceScopeAuthorization();
+    await expect(service.assertTransport({ transport: 'OPENCLAW_MCP' })).resolves.toBeUndefined();
+    await expect(service.authorizeDocumentWork({ documentVersionId: 'DV-test' })).resolves.toMatchObject({
+      tenantId: 'tenant-test', actorUserId: 'actor-test', documentVersionId: 'DV-test' });
+    await expect(service.authorizeDocumentWork({ documentVersionId: 'DV-other' })).rejects.toMatchObject({ statusCode: 404 });
+    await expect(service.authorizeWorkItemRead({ transport: 'READONLY_MCP', operation: 'READ_STATUS', workItemId: 'WI-test' }))
+      .rejects.toMatchObject({ statusCode: 503 });
+    await expect(service.authorizeOpenClawMatterRequest({ matterId: 'MAT-test' })).rejects.toMatchObject({ statusCode: 503 });
+    delete process.env.WL_OPENCLAW_SERVICE_DOCUMENT_ACTOR_ID;
+    await expect(service.authorizeDocumentWork({ documentVersionId: 'DV-test' })).rejects.toMatchObject({ statusCode: 503 });
   });
 
   it('requires a separate exact Matter and actor scope; it never converts the WorkItem allowlist', async () => {

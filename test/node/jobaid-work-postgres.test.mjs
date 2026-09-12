@@ -18,6 +18,7 @@ const {
   SqlExecutionContextMiddleware,
 } = require('@lark-apaas/fullstack-nestjs-core');
 const { workItem, actionAttempt } = require('../../server/database/schema.ts');
+const { EngineeringSearchProjectionWriter } = require('../../server/modules/canonical-host/engineering-search-projection.ts');
 const {
   EngineeringMatterWorkingRepository,
 } = require('../../server/modules/canonical-host/engineering-matter-working.repository.ts');
@@ -61,6 +62,8 @@ const {
   JOBAID_METHOD_EVIDENCE,
 } = require('../../server/modules/canonical-host/jobaid-method-pack.ts');
 
+const { originalFixture } = require('../unit/document-parsing/fixtures/document-original.fixture.ts');
+const { CanonicalHostInitialAnalysisStatusService } = require('../../server/modules/canonical-host/canonical-host-initial-analysis-status.service.ts');
 const databaseUrl = process.env.JOBAID_WORK_TEST_DATABASE_URL;
 const scope = {
   tenantId: 'tenant-job',
@@ -177,10 +180,11 @@ test(
       const sqlContext = new SqlExecutionContextMiddleware({
         roleSchema: 'wiselink_jobaid_test',
       });
+      const projection = new EngineeringSearchProjectionWriter(db);
       const actors = new EngineeringMatterWorkingRepository(db, sqlContext, {
         roleSchema: 'wiselink_jobaid_test',
-      });
-      const repository = new JobAidWorkRepository(db, actors);
+      }, projection);
+      const repository = new JobAidWorkRepository(db, actors, projection);
       const reviews = new ReviewConversationRepository(db);
       const hosted = (callback) =>
         new Promise((resolve, reject) =>
@@ -367,6 +371,7 @@ test(
           const initial = initialProjection('WI-job-begin');
           const denied = initialProjection('WI-job-denied');
           const queued = initialProjection('WI-job-queued');
+          queued.package = null;
           const queuedDenied = initialProjection('WI-job-queued-denied');
           for (const candidate of [initial, denied, queued, queuedDenied]) {
             await sql`INSERT INTO work_item (work_item_id,tenant_id,requested_by_user_id,revision,document_version_id,projection_json)
@@ -377,6 +382,12 @@ test(
             fixedModelSettings(),
           );
           const workItems = new MiaodaWorkItemRepository(db);
+          const original = originalFixture(); original.binding.documentVersionId='dv-job';
+          original.source.units=[original.source.units[0]]; original.source.units[0].payload={text:document.excerpt};
+          await sql`INSERT INTO dm_document_version(document_version_id) VALUES ('dv-job')`;
+          await sql`INSERT INTO dm_document_parse_run(parse_run_id,document_version_id,tenant_id,actor_user_id,request_id,parse_revision,expected_published_revision,status,bucket_id,source_binding,manifest_artifact,deadline_at,completed_at)
+            VALUES ('PR-TEST-2','dv-job',${scope.tenantId},${scope.actorUserId},'original-fixture',2,1,'PUBLISHED','fixture',${JSON.stringify(original.binding)}::jsonb,
+              ${JSON.stringify({role:'MANIFEST',readback:'VERIFIED',relativePath:'original/manifest.json',sha256:'b'.repeat(64),byteLength:100})}::jsonb,now()+interval '1 minute',now())`;
           let sourceReads = 0;
           const service = new CanonicalJobAidProblemService(
             {
@@ -432,6 +443,12 @@ test(
               }),
             },
             repository,
+            undefined,
+            {readDocumentOriginal:async (_dv,runId) => {
+              assert.equal(_dv,'dv-job'); assert.equal(runId,'PR-TEST-2'); sourceReads+=1;
+              return {original,structuredSource:original.source,run:{...original.binding,
+                manifestArtifact:{relativePath:'original/manifest.json',readback:'VERIFIED',sha256:'b'.repeat(64),byteLength:100}}};
+            }},
           );
           const begin = (candidate, requestId) =>
             hosted(() =>
@@ -479,6 +496,14 @@ test(
               );
             });
           const queuedRequestId = 'f11c6fa2-1531-4dfb-9f4d-bd2bef4d26bf';
+          const statusService=new CanonicalHostInitialAnalysisStatusService(db,lifecycle,repository);
+          const entryScope={workItem:queued,tenantId:scope.tenantId};
+          const ready=await hosted(() => statusService.project(entryScope));
+          assert.equal(ready.nextOperation,'EVALUATE_JOBAID');
+          assert.equal(ready.stages.applicability.status,'WAITING_INPUT');
+          assert.equal((await browser(() => statusService.project(entryScope))).nextOperation,'EVALUATE_JOBAID');
+          const wrongFile=structuredClone(queued); wrongFile.source.sourceFileSha256='f'.repeat(64);
+          assert.equal((await hosted(() => statusService.project({...entryScope,workItem:wrongFile}))).status,'NOT_READY');
           const deniedRequestId = '60cae79e-364b-4e1b-a8ae-8cfbb7d04d5d';
           const beforeEnqueueReads = sourceReads;
           const receipt = await enqueue(queued, queuedRequestId);
@@ -513,7 +538,7 @@ test(
             parseJobAidProblemTask(prepared.task).actorUserId,
             scope.actorUserId,
           );
-          assert.equal(sourceReads, beforeEnqueueReads + 1);
+          assert.equal(sourceReads, beforeEnqueueReads + 2);
           const {
             modelInput: _pendingInput,
             inputHash: pendingHash,
@@ -529,7 +554,7 @@ test(
           const preparedReplay = await begin(queued, queuedRequestId);
           assert.equal(preparedReplay.attemptRef, receipt.attemptRef);
           assert.equal(preparedReplay.leaseToken, prepared.leaseToken);
-          assert.equal(sourceReads, beforeEnqueueReads + 1);
+          assert.equal(sourceReads, beforeEnqueueReads + 3);
           const deniedReceipt = await enqueue(queuedDenied, deniedRequestId);
 
           try {
@@ -573,6 +598,9 @@ test(
           const changed = structuredClone(initial);
           changed.package.artifact.sha256 = 'b'.repeat(64);
           await sql`UPDATE work_item SET projection_json = ${JSON.stringify(changed)} WHERE work_item_id = ${initial.workItemId}`;
+          assert.equal((await begin(initial)).attemptRef, first.attemptRef);
+          changed.source.sourceFileSha256 = 'c'.repeat(64);
+          await sql`UPDATE work_item SET projection_json = ${JSON.stringify(changed)} WHERE work_item_id = ${initial.workItemId}`;
           await assert.rejects(
             begin(initial),
             /JOBAID_SOURCE_VERSION_CHANGED/u,
@@ -600,6 +628,11 @@ test(
         content: materializeJobAidWork(raw, context),
       });
 
+      await sql.unsafe(`CREATE FUNCTION fail_test_projection() RETURNS trigger LANGUAGE plpgsql AS $$
+        BEGIN RAISE EXCEPTION 'TEST_PROJECTION_SQL_FAILURE'; END $$;
+        CREATE TRIGGER fail_test_projection BEFORE INSERT ON engineering_search_projection
+        FOR EACH ROW EXECUTE FUNCTION fail_test_projection();`);
+
       await t.test(
         'concurrent CAS admits one exact body; terminal response-loss readback preserves it',
         async () => {
@@ -611,6 +644,7 @@ test(
           assert.equal(
             concurrent.filter((result) => result.status === 'fulfilled').length,
             1,
+            concurrent.filter(result => result.status === 'rejected').map(result => String(result.reason?.cause ?? result.reason)).join('\n'),
           );
           assert.match(
             concurrent.find((result) => result.status === 'rejected').reason
@@ -641,6 +675,53 @@ test(
           );
         },
       );
+
+      await t.test('real projection SQL failure preserves committed body and exact pending, then rebuild recovers', async () => {
+        const before = (await sql`SELECT content_json FROM assessment_work_revision WHERE assessment_work_revision_id=${saved.workRevisionRef}`)[0].content_json;
+        const [pending] = await sql`SELECT * FROM engineering_search_projection_pending WHERE exact_revision_ref=${saved.workRevisionRef}`;
+        assert.equal(pending.subject_id, scope.workItemId);
+        assert.equal(pending.owner_id, scope.actorUserId);
+        assert.equal(pending.attempts, 0);
+        const rebuild = () => hosted(() => actors.withActorTransaction(scope.actorUserId, async () =>
+          projection.rebuildPending({ tenantId: scope.tenantId, load: async item => {
+            const work = await repository.readByRefForRuntime({ tenantId: scope.tenantId,
+              actorUserId: scope.actorUserId, workItemId: item.subjectId, workRevisionRef: item.revisionRef });
+            assert.ok(work);
+            return work.content;
+          } })));
+        assert.deepEqual(await rebuild(), { attempted: 1, rebuilt: 0, failed: 1 });
+        const [failed] = await sql`SELECT * FROM engineering_search_projection_pending WHERE exact_revision_ref=${saved.workRevisionRef}`;
+        assert.equal(failed.last_error, 'P0001');
+        assert.ok(!failed.last_error.includes('params:'));
+        assert.equal((await sql`SELECT content_json FROM assessment_work_revision WHERE assessment_work_revision_id=${saved.workRevisionRef}`)[0].content_json, before);
+        await sql.unsafe('DROP TRIGGER fail_test_projection ON engineering_search_projection');
+        assert.deepEqual(await rebuild(), { attempted: 1, rebuilt: 1, failed: 0 });
+        assert.equal((await sql`SELECT * FROM engineering_search_projection_pending`).length, 0);
+        const indexed = await sql`SELECT parent_context_ref, owner_id FROM engineering_search_projection`;
+        assert.ok(indexed.length > 0);
+        assert.ok(indexed.every(row => row.parent_context_ref === scope.workItemId && row.owner_id === scope.actorUserId));
+        assert.equal((await sql`SELECT content_json FROM assessment_work_revision WHERE assessment_work_revision_id=${saved.workRevisionRef}`)[0].content_json, before);
+      });
+
+      await t.test('authorized source batches retain earlier passages and reject identity collisions atomically', async () => {
+        const entry = key => ({ entryId: `source-batch:${key}`, ownerKind: 'SOURCE', ownerId: scope.actorUserId,
+          exactRevisionRef: 'parse-source-batch', entryKind: 'SOURCE', locatorRef: key,
+          parentContextRef: 'dv-job', originalText: `${key} original condition ${'long text '.repeat(40)}` });
+        const index = entries => hosted(() => actors.withActorScope(scope.actorUserId,
+          () => projection.indexAuthorizedSourceEntries({ tenantId: scope.tenantId, entries })));
+        await index([entry('A')]);
+        await index([entry('B')]);
+        await index([{ ...entry('A'), originalText: 'A corrected condition' }, entry('C')]);
+        const rows = await sql`SELECT locator_ref, original_or_work_text FROM engineering_search_projection
+          WHERE exact_revision_ref='parse-source-batch' ORDER BY locator_ref`;
+        assert.deepEqual(rows.map(row => row.locator_ref), ['A', 'B', 'C']);
+        assert.equal(rows[0].original_or_work_text, 'A corrected condition');
+        assert.equal(rows[1].original_or_work_text, entry('B').originalText);
+        await assert.rejects(index([entry('D'), { ...entry('A'), exactRevisionRef: 'another-parse' }]),
+          /ENGINEERING_SEARCH_SOURCE_IDENTITY_CONFLICT/);
+        assert.equal((await sql`SELECT * FROM engineering_search_projection WHERE entry_id='source-batch:D'`).length, 0);
+        await sql`DELETE FROM engineering_search_projection WHERE exact_revision_ref='parse-source-batch'`;
+      });
 
       await t.test(
         'actual Hosted actor scope hides work from another actor or tenant and rejects changed source',
@@ -1025,7 +1106,7 @@ test(
                         browserWorkItems,
                         new ReviewConversationRepository(browserDb),
                         {},
-                        new JobAidWorkRepository(browserDb, actors),
+                        new JobAidWorkRepository(browserDb, actors, projection),
                       );
                       return browserService.readBrowser(scope.workItemId, {
                         userId: scope.actorUserId,
@@ -1157,6 +1238,19 @@ async function reset(sql) {
         'utf8',
       ),
     );
+    await migration.unsafe(`CREATE TABLE dm_document_version(document_version_id varchar(96) PRIMARY KEY, family_id varchar, source_artifact_id varchar);
+      CREATE TABLE dm_publication_family(family_id varchar, canonical_identity_key text);
+      CREATE TABLE dm_acquisition(document_version_id varchar,source_artifact_id varchar,acquired_by varchar,status varchar,idempotency_key text);`);
+    const materialSql = await readFile(new URL('../../migrations/0032_engineering_matter_material.sql',import.meta.url),'utf8');
+    for (const name of ['engineering_matter_uri_component','engineering_matter_document_owned_by_actor']) {
+      const start=materialSql.indexOf(`CREATE OR REPLACE FUNCTION ${name}(`);
+      assert.ok(start>=0); const end=materialSql.indexOf('$$;',start)+3;
+      await migration.unsafe(materialSql.slice(start,end));
+    }
+    await migration.unsafe(await readFile(new URL('../../migrations/0038_document_parse_run.sql',import.meta.url),'utf8'));
+    for (const name of ['0039_engineering_search_projection.sql', '0042_engineering_search_projection_pending.sql', '0043_engineering_search_hosted_actor_scope.sql', '0050_document_source_projection_progress.sql']) {
+      await migration.unsafe(await readFile(new URL(`../../migrations/${name}`, import.meta.url), 'utf8'));
+    }
   } finally {
     migration.release();
   }
@@ -1216,7 +1310,7 @@ function initialProjection(workItemId) {
     revision: 1,
     phase: 'CANDIDATE_READBACK_VERIFIED',
     permissionSnapshotVersion: 'isolated-test',
-    source: { documentId: 'doc-job', documentVersionId: 'dv-job' },
+    source: { documentId: 'doc-job', documentVersionId: 'dv-job',sourceArtifactId:'ART-TEST',sourceFileSha256:hash,sourceByteLength:1234 },
     classification: { status: 'CONFIRMED', normalizedFamily: 'SB' },
     package: {
       packageId: `PKG-${workItemId}`,

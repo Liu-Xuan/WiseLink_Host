@@ -1,4 +1,6 @@
-import { Inject, Injectable } from '@nestjs/common';
+import { Inject, Injectable, Optional } from '@nestjs/common';
+import type { DocumentParsingHostedService } from '../document-management/src/hosted/nest/document-parsing-hosted.service';
+import { DOCUMENT_ORIGINAL_READER } from './unified-reader.constants';
 
 import type {
   UnifiedPackageArtifactDescriptor,
@@ -44,7 +46,15 @@ export class UnifiedReaderService {
     private readonly fullValidator: U0FullValidationService,
     @Inject(UNIFIED_READER_HOST_BINDING)
     private readonly hostBinding: UnifiedReaderHostBindingState,
+    @Optional() @Inject(DOCUMENT_ORIGINAL_READER)
+    private readonly originals?: Pick<DocumentParsingHostedService, 'loadPublished'>,
   ) {}
+
+  /** New originals use their own exact parse identity and normal source ACL. */
+  async readDocumentOriginal(...args: Parameters<DocumentParsingHostedService['loadPublished']>) {
+    if (!this.originals) throw new Error('DOCUMENT_ORIGINAL_READER_UNAVAILABLE');
+    return this.originals.loadPublished(...args);
+  }
 
   readiness(): UnifiedReaderReadinessResponse {
     return {

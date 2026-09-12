@@ -14,7 +14,7 @@ export function safeOauthReturnPath(value: unknown): string | null {
     const url = new URL(value, LOCAL_ORIGIN);
     if (
       url.origin !== LOCAL_ORIGIN ||
-      !/^\/(?:library|dialogues(?:\/[^/]+)?|work-items\/[^/]+(?:\/documents)?|matters\/[^/]+|settings\/models)$/u.test(
+      !/^\/(?:library|dialogues(?:\/[^/]+)?|work-items\/[^/]+(?:\/documents)?|document-versions\/[^/]+|matters\/[^/]+|settings\/models)$/u.test(
         url.pathname,
       )
     )

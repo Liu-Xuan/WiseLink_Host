@@ -72,8 +72,8 @@ function setup() {
 describe('authorized engineering issue search and exact expansion', () => {
   it('rebuilds pending rows through the actor-scoped exact revision reader', async () => {
     const h = setup();
-    const projection = { rebuildPending: jest.fn().mockImplementation(async ({ load }: { load: (item: { ownerKind: 'USER'; revisionRef: string; ownerId: string; subjectId: null }) => Promise<unknown> }) => {
-      const content = await load({ ownerKind: 'USER', revisionRef: h.saved.workRevisionRef, ownerId: h.saved.workItemId, subjectId: null });
+    const projection = { rebuildPending: jest.fn().mockImplementation(async ({ load }: { load: (item: { ownerKind: 'USER'; revisionRef: string; ownerId: string; subjectId: string }) => Promise<unknown> }) => {
+      const content = await load({ ownerKind: 'USER', revisionRef: h.saved.workRevisionRef, ownerId: actor.userId, subjectId: h.saved.workItemId });
       expect(content).toBe(h.saved.content);
       return { attempted: 1, rebuilt: 1, failed: 0 };
     }) };

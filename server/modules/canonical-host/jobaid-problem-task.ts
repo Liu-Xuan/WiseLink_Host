@@ -25,10 +25,17 @@ import { overallModelEvidenceRegistry } from './overall-assessment-reading';
 import { buildJobAidContextPackage } from './jobaid-context-package';
 
 export interface JobAidSourceBinding {
+  kind?: 'SOURCE_FILE';
   workItemId: string;
   documentVersionId: string;
   artifactSha256: string;
   artifactRef: string;
+}
+
+export function jobAidSourceFileReference(item: CanonicalWorkItemProjection) {
+  if (!item.source.sourceArtifactId || !/^[a-f0-9]{64}$/u.test(item.source.sourceFileSha256 ?? ''))
+    throw new Error('JOBAID_SOURCE_FILE_BINDING_INVALID');
+  return {ref:item.source.sourceArtifactId,sha256:item.source.sourceFileSha256};
 }
 
 export interface JobAidProblemModelInput extends Record<string, unknown> {
@@ -40,6 +47,9 @@ export interface JobAidProblemModelInput extends Record<string, unknown> {
   methodBinding: typeof JOBAID_METHOD_BINDING;
   documentOverview: CanonicalCommonAssessmentContext['primaryDocument'] & {
     sections: Array<{ title: string; sourceRefs: string[] }>;
+    original?: { binding: import('@shared/document-original.interface').DocumentOriginalBinding;
+      coverage: import('@shared/document-original.interface').DocumentOriginalCoverage;
+      findings: import('@shared/canonical-translation-v2.interface').TranslationStructuredSource['findings'] };
   };
   hostApplicability: Pick<
     NonNullable<CanonicalWorkItemProjection['applicability']>,
@@ -276,7 +286,9 @@ export function buildJobAidProblemTask(input: {
       : null,
   };
   const sectionRefs = new Map(
-    catalog
+    // Prior work may retain the same locator in an older parsing revision.
+    // The current overview must point to this task's current source catalog.
+    input.sourceCatalog.map(stableJobAidEvidence)
       .filter(
         (
           item,
@@ -356,6 +368,14 @@ export function buildJobAidProblemTask(input: {
 export function stableJobAidEvidence(
   item: AssessmentEvidence,
 ): AssessmentEvidence {
+  if (item.kind === 'DOCUMENT_PASSAGE' && item.evidenceRef.startsWith('DOCUMENT_ORIGINAL:')) {
+    const prefix = `DOCUMENT_ORIGINAL:${item.documentVersionId}:`;
+    const suffix = `:${item.sourceRefId}`;
+    if (!item.evidenceRef.startsWith(prefix) || !item.evidenceRef.endsWith(suffix) ||
+      !/^[A-Za-z0-9_-]{1,96}$/u.test(item.evidenceRef.slice(prefix.length, -suffix.length)))
+      throw new Error('JOBAID_ORIGINAL_SOURCE_BINDING_INVALID');
+    return structuredClone(item);
+  }
   return {
     ...structuredClone(item),
     evidenceRef:
@@ -383,10 +403,16 @@ export function expandJobAidSourceSelection(
     return item;
   });
   if (context === 'EXACT') return structuredClone(selected);
+  const pageKey = (item: Extract<AssessmentEvidence, { kind: 'DOCUMENT_PASSAGE' }>) => {
+    const original = stableJobAidEvidence(item);
+    const revision = original.evidenceRef.startsWith('DOCUMENT_ORIGINAL:')
+      ? original.evidenceRef.slice(0, -(item.sourceRefId.length + 1)) : 'legacy';
+    return `${item.documentVersionId}\0${revision}\0${item.locator}`;
+  };
   const pageKeys = new Set(
     selected
       .filter((item) => item.kind === 'DOCUMENT_PASSAGE')
-      .map((item) => `${item.documentVersionId}\0${item.locator}`),
+      .map(pageKey),
   );
   const refs = new Set(requested);
   return structuredClone(
@@ -394,7 +420,7 @@ export function expandJobAidSourceSelection(
       (item) =>
         refs.has(item.evidenceRef) ||
         (item.kind === 'DOCUMENT_PASSAGE' &&
-          pageKeys.has(`${item.documentVersionId}\0${item.locator}`)),
+          pageKeys.has(pageKey(item))),
     ),
   );
 }

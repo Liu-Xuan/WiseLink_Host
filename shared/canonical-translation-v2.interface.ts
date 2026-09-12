@@ -89,6 +89,7 @@ export interface TranslationSourcePlanV2 {
     documentVersionId: string;
     packageId: string;
     parsedArtifact: UnifiedPackageArtifactDescriptor;
+    originalBinding?: import('./document-original.interface').DocumentOriginalBinding;
   };
   anchors: TranslationSourceAnchorV2[];
   blocks: TranslationSemanticBlockV2[];
@@ -153,7 +154,7 @@ export interface TranslationGenerationRequestV2 {
   leaseGeneration: number;
   blockIds: string[];
   dependencies: TranslationBlockDependenciesV2;
-  purpose: 'GENERATE' | 'CORRECT' | 'CHECK' | 'CHECK_BATCH';
+  purpose: 'GENERATE' | 'CORRECT' | 'CHECK' | 'CHECK_BATCH' | 'REUSE';
   /** Exact candidate being corrected or reviewed; null for new generation. */
   targetBlockRevisionId: string | null;
   /** Host-captured immutable candidates and their check CAS versions. */
@@ -178,7 +179,19 @@ export interface TranslationGenerationRequestV2 {
   } | null;
 }
 
+export interface TranslationOfficialPluginProducerV2 {
+  kind: 'OFFICIAL_PLUGIN';
+  instanceId: string;
+  pluginVersion: string;
+  actionKey: string;
+  concreteModel: string | null;
+}
+
 export interface TranslationBlockProvenanceV2 {
+  /** Host copied the existing candidate after exact dependency comparison; no new generation. */
+  reusedFrom?: { workspaceId: string; blockRevisionId: string; generationRequestRef: string;
+    parseRunId: string; importedByAttemptId: string; importedAt: string };
+  producer?: TranslationOfficialPluginProducerV2;
   authorKind: 'MODEL' | 'ENGINEER';
   authorUserId: string;
   executionModel: CanonicalExecutionModelSelection | null;
@@ -219,7 +232,8 @@ export interface TranslationBlockRevisionV2 {
 export interface TranslationWorkspaceV2 {
   workspaceId: string;
   tenantId: string;
-  workItemId: string;
+  workItemId: string | null;
+  subjectKind?: 'WORK_ITEM' | 'DOCUMENT_VERSION';
   rowVersion: number;
   methodVersion: string;
   activeAttemptId: string | null;

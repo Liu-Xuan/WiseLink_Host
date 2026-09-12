@@ -25,6 +25,16 @@ const LEASE_TOKEN = '00000000-0000-4000-8000-000000000002';
 const BASE_SHA = 'a'.repeat(64);
 
 describe('CanonicalHostOpenClawOverallService', () => {
+  it('routes a saved JobAid projection without requiring a legacy parsed package', async () => {
+    const problemAssessment={begin:jest.fn(async () => ({attemptRef:'AQ-ORIGINAL-OVERALL'}))};
+    const h=createHarness({problemAssessment});
+    h.workItem.package=null;
+    Object.assign(h.workItem.integratedAssessment!.baseRules,{schemaVersion:'wiselink.jobaid-problem-result.v2'});
+    await expect(h.service.begin(WORK_ITEM_ID,[],'00000000-0000-4000-8000-000000000020'))
+      .resolves.toEqual({attemptRef:'AQ-ORIGINAL-OVERALL'});
+    expect(problemAssessment.begin).toHaveBeenCalled();
+    expect(h.attempts.reserveAndClaim).not.toHaveBeenCalled();
+  });
   it('routes an explicit request to JobAid v2 even when the existing base and Overall attempt are legacy', async () => {
     const problemAssessment = {
       begin: jest.fn(async () => ({ attemptRef: 'AQ-JOBAID-OVERALL-NEW' })),

@@ -35,6 +35,8 @@ export interface MineruRemoteArtifact extends MineruRemoteArtifactLink {
 
 /** Transport boundary for the separately deployed MinerU application. */
 @Injectable()
+// Registered by DocumentManagementHostedModule.register() in its dynamic providers array.
+// eslint-disable-next-line @darraghor/nestjs-typed/injectable-should-be-provided
 export class MineruRemoteWorkerClient {
   private readonly endpoint = (process.env.WL_MINERU_WORKER_URL ?? '').replace(/\/$/, '');
   private readonly token = process.env.WL_MINERU_WORKER_TOKEN ?? '';

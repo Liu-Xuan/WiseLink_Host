@@ -1,20 +1,29 @@
-import { BadRequestException, Controller, Get, Post, Query, Req, UseGuards } from '@nestjs/common';
+import { BadRequestException, Controller, Get, Header, Post, Query, Req, UseGuards } from '@nestjs/common';
 import { NeedLogin } from '@lark-apaas/fullstack-nestjs-core';
 import type { Request } from 'express';
 import type { EngineeringIssueSearchHit } from '@shared/engineering-issue-search.interface';
 import { ProductionMiaodaBrowserObjectIngressGuard } from '../work-item/production-miaoda-browser-ingress';
 import { hostActor } from './canonical-host-request-actor';
 import { EngineeringIssueSearchService } from './engineering-issue-search.service';
+import { DocumentSourceSearchService } from './document-source-search.service';
 
 @NeedLogin()
 @UseGuards(ProductionMiaodaBrowserObjectIngressGuard)
 @Controller('api/canonical-host/engineering-issues')
 export class EngineeringIssueSearchController {
-  constructor(private readonly issues: EngineeringIssueSearchService) {}
+  constructor(private readonly issues: EngineeringIssueSearchService, private readonly sources: DocumentSourceSearchService) {}
+
+  @Get('sources')
+  @Header('Cache-Control', 'private, no-store')
+  searchSources(@Query('search') search: string | undefined, @Req() request: Request,
+    @Query('scope') scope: 'CURRENT' | 'HISTORY' = 'CURRENT') {
+    return this.sources.search(search ?? '', hostActor(request), scope);
+  }
 
   @Get()
-  search(@Query('search') search: string | undefined, @Req() request: Request) {
-    return this.issues.search(search ?? '', hostActor(request));
+  search(@Query('search') search: string | undefined, @Req() request: Request,
+    @Query('scope') scope: 'CURRENT' | 'HISTORY' = 'CURRENT') {
+    return this.issues.search(search ?? '', hostActor(request), scope);
   }
 
   @Get('work')

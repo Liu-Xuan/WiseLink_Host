@@ -42,6 +42,15 @@ export const JOBAID_WORK_UPDATE_SHAPE = object({
   roundCompletion: choice('IN_PROGRESS', 'COMPLETE', 'COMPLETE_WITH_OPEN_QUESTIONS'),
   completionReason: text, changeSummary: text, unchangedExplanation: text,
   unchangedIssueKeys: texts,
+  inputDispositions: list(object({ inputId: text, contribution: choice('NO_MATERIAL_CHANGE', 'READ_ONLY'),
+    checkedEvidenceRefs: texts, checkedScope: text, reason: text })),
+  reviewConditionDelta: nullable(object({
+    upserts: list(object({ itemId: text, text, basisRefs: texts, when: { anyOf: [
+      object({ kind: choice('DUE_AT'), at: text }),
+      object({ kind: choice('ORIGINAL_CHANGED'), inputId: text, afterParseRunId: nullable(text) }),
+    ] } })),
+    retirements: list(object({ itemId: text, reason: text })), explicitlyUnchangedItemIds: texts,
+  })),
   retiredIssues: list(object({ issueKey: text, reason: text })),
   issues: list(object({
     issueKey: text, question: text, understanding: text,
@@ -78,6 +87,12 @@ export function jobAidWorkTypeErrors(work) {
   const errors = [];
   function visit(value, schema, path) {
     if (value === undefined || (schema.nullable && value === null)) return;
+    if (schema.anyOf) {
+      const branch = schema.anyOf.find(item => item.properties?.kind?.enum?.includes(value?.kind));
+      if (branch) visit(value, branch, path);
+      else errors.push({ path, expected: 'declared condition kind', received: typeof value });
+      return;
+    }
     const received = Array.isArray(value) ? 'array' : value === null ? 'null' : typeof value;
     const invalid = received !== schema.type ||
       (schema.type === 'string' && schema.minLength && !value.trim()) ||
@@ -148,6 +163,10 @@ export function decodeJobAidValue(input, shape) {
   const isEnvelope = (value) => value && !Array.isArray(value) && typeof value === 'object' &&
     Object.keys(value).length === 1 && Object.hasOwn(value, 'item');
   function decode(value, schema) {
+    if (schema.anyOf) {
+      const branch = schema.anyOf.find(item => item.properties?.kind?.enum?.includes(value?.kind));
+      return branch ? decode(value, branch) : value;
+    }
     if (schema.type === 'array') {
       let items = isEnvelope(value) && Array.isArray(value.item) ? value.item : value;
       if (schema === premises && isEnvelope(value)) {

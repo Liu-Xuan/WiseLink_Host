@@ -1,4 +1,4 @@
-import type { CanonicalWorkItemProjection } from '@shared/api.interface';
+import type { CanonicalWorkItemProjection, CanonicalLegacyBaseRuleCandidateProjection } from '@shared/api.interface';
 import { CanonicalHostEngineerReviewService } from '../../server/modules/canonical-host/canonical-host-engineer-review.service';
 import { CANONICAL_ACTIVE_JOB_AID_CRITERION_SET_ID } from '../../server/modules/canonical-host/canonical-job-aid-browser-rules';
 import {
@@ -459,8 +459,12 @@ function target() {
         if (state.workItem.revision !== input.expectedRevision) {
           throw new Error('WORK_ITEM_CAS_CONFLICT');
         }
+        const integrated=input.next.integratedAssessment;
+        if (!integrated || !('criterionSetId' in integrated.baseRules))
+          throw new Error('LEGACY_REVIEW_FIXTURE_EXPECTED');
         state.workItem = {
           ...input.next,
+          integratedAssessment:{...integrated,baseRules:integrated.baseRules},
           revision: input.expectedRevision + 1,
         };
         return state.workItem;
@@ -513,7 +517,7 @@ function engineerActor() {
   };
 }
 
-function workItem(): CanonicalWorkItemProjection {
+function workItem(): CanonicalWorkItemProjection & {integratedAssessment: NonNullable<CanonicalWorkItemProjection['integratedAssessment']> & {baseRules:CanonicalLegacyBaseRuleCandidateProjection}} {
   const artifact = (ref: string, sha256: string) => ({
     storeRole: 'UnifiedArtifactStoreCandidate' as const,
     ref,

@@ -753,8 +753,8 @@ export class CanonicalHostOpenClawOverallService {
       ? configurationEvidenceShadow(authoritative)
       : authoritative;
     if (
-      workItem.phase !== 'CANDIDATE_READBACK_VERIFIED' ||
-      !workItem.package ||
+      ((!isJobAidProblemProjection(workItem.integratedAssessment?.baseRules)) &&
+        (workItem.phase !== 'CANDIDATE_READBACK_VERIFIED' || !workItem.package)) ||
       !workItem.integratedAssessment?.baseRules ||
       !workItem.integratedAssessment.baseRules.sourceResultId.startsWith(
         'openclaw-dynamic://',

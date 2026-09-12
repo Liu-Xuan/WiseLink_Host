@@ -1,6 +1,6 @@
 # WiseLink R10 当前执行计划
 
-> **2026-09-12 主控修订：** 当前交付依据为 [统一架构实施计划](WISELINK_R10_UNIFIED_IMPLEMENTATION_PLAN_20260912.md)。W0—W5 是实施顺序，不是通过文档、安装或单次候选即可关闭的 gate；独立 MinerU Worker 负责解析计算，Host 保留授权、parseRun、FileService、事务/CAS 和正式采用边界。以下历史记录保留发生时点，不能覆盖新的架构边界或作为当前完成证明。
+> **2026-09-13 主控接管执行：** 当前路线及 H0/H1/H2 顺序以 [统一实施计划](WISELINK_R10_UNIFIED_IMPLEMENTATION_PLAN_20260912.md) 为准：Host 官方插件＋PDF.js、Translation V2 独立中文阅读；MinerU 恢复退出本批关键路径。M 负责 F1—F6、授权与持久云端消费、最终集成；P 负责文档专属实现，协作见 [M 集成记录](coordination/M_INTEGRATION.md)。以下为历史运行记录，保留失败事实；旧 Worker 路线、扫描完整前置和事务内异步索引不是当前目标。
 
 > **W4 当前增量（2026-09-12）：** 六个共享 Drive 根目录已登记，Host 已具备按租户 `sourceKey` 执行递归分页、逐页 checkpoint 和恢复的服务入口；候选身份快照已独立持久化，完整扫描才替换旧快照。权限拒绝会在实际子目录处记录 `DRIVE_AUTHORIZATION_DENIED` 及当前 page token，与剩余 frontier 一起持久化，重启后可继续定位并重试；重复分页 token 也会记录 `DRIVE_PAGE_TOKEN_REPEATED` blocker，禁止把漏项扫描当完成；单页超过批次上限时保存页内 `entryOffset`，恢复不会重复或漏读条目。非法 blocker 状态明确拒绝。开发数据库已实际执行 0040/0041，在线核验表、唯一索引和 RLS 均存在，当前 checkpoint/候选快照均为 0 行。真实核验显示用户身份可读而 bot 身份对首个目录仍返回 Feishu `1061004 permission_denied`，因此应用/委托 Drive 授权、平台定时触发和真实增量工作仍未完成，不能借用户会话代替后台监控。
 

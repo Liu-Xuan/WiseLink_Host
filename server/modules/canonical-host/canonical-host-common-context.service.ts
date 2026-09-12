@@ -7,6 +7,7 @@ import type {
   CanonicalRelatedContextSnapshotItem,
   CanonicalWorkItemProjection,
   ReviewScopeSelection,
+  UnifiedReaderQueryResult,
 } from '@shared/api.interface';
 import {
   ReviewConversationRepository,
@@ -105,6 +106,7 @@ export class CanonicalHostCommonContextService {
     asOf: string,
     readScope?: UnifiedArtifactReadScope,
     historySelection?: Omit<CommonContextHistorySelection, 'asOf'>,
+    originalUnits?: UnifiedReaderQueryResult[],
   ): Promise<{
     common: CanonicalCommonAssessmentContext;
     readingEvidence: AssessmentEvidence[];
@@ -130,6 +132,7 @@ export class CanonicalHostCommonContextService {
       },
       { ...historySelection, asOf },
       readScope,
+      originalUnits,
     );
   }
 
@@ -140,6 +143,7 @@ export class CanonicalHostCommonContextService {
     readScope: UnifiedArtifactReadScope = new UnifiedArtifactReadScope(
       this.artifactStore,
     ),
+    originalUnits?: UnifiedReaderQueryResult[],
   ): Promise<{
     common: CanonicalCommonAssessmentContext;
     related: ReviewRelatedContextBuild;
@@ -149,7 +153,7 @@ export class CanonicalHostCommonContextService {
     const actorMappingActive =
       await this.conversations.hasActiveOfficialActorMapping(scope);
     const [related, aggregate] = await Promise.all([
-      this.readRelatedContext(scope, workItem, actorMappingActive, readScope),
+      this.readRelatedContext(scope, workItem, actorMappingActive, readScope, originalUnits),
       actorMappingActive
         ? this.conversations.loadCurrent({
             ...scope,
@@ -227,8 +231,9 @@ export class CanonicalHostCommonContextService {
     workItem: CanonicalWorkItemProjection,
     actorMappingActive: boolean,
     readScope: UnifiedArtifactReadScope,
+    originalUnits?: UnifiedReaderQueryResult[],
   ): Promise<ReviewRelatedContextBuild> {
-    if (!this.reader || !workItem.package) {
+    if (!this.reader || (!workItem.package && !originalUnits)) {
       return unavailableReviewRelatedContext(
         'RELATED_CONTEXT_RUNTIME_NOT_CONFIGURED',
       );
@@ -237,7 +242,7 @@ export class CanonicalHostCommonContextService {
     let documentReadingStatus: ReviewRelatedContextBuild['documentReadingStatus'] =
       'UNAVAILABLE';
     try {
-      const allUnits = await this.reader.readAllSourceUnits({
+      const allUnits = originalUnits ?? await this.reader.readAllSourceUnits({
         artifact: workItem.package.artifact,
         packageId: workItem.package.packageId,
         documentVersionId: workItem.source.documentVersionId,
@@ -257,7 +262,7 @@ export class CanonicalHostCommonContextService {
         }));
       const candidates = deriveCanonicalReferenceMentionPreview(
         browserUnits,
-        workItem.package.documentIdentity?.documentCode,
+        workItem.package?.documentIdentity?.documentCode,
         allUnits,
       );
       const assessmentTarget = relatedContextAssessmentTarget(workItem);

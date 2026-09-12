@@ -32,6 +32,9 @@ const {
   EngineeringMatterWorkingService,
 } = require('../../server/modules/canonical-host/engineering-matter-working.service.ts');
 const { EngineeringIssueSearchService } = require('../../server/modules/canonical-host/engineering-issue-search.service.ts');
+const { EngineeringSearchProjectionWriter } = require('../../server/modules/canonical-host/engineering-search-projection.ts');
+const { DocumentSourceProjectionService } = require('../../server/modules/canonical-host/document-source-projection.service.ts');
+const { DocumentSourceSearchService } = require('../../server/modules/canonical-host/document-source-search.service.ts');
 const {
   MiaodaDocumentVersionSourceResolver,
 } = require('../../server/modules/work-item/miaoda-document-version-source.resolver.ts');
@@ -53,6 +56,7 @@ const {
 
 const { jobAidProblemModelWorkContent } = require('../../server/modules/canonical-host/jobaid-problem-task.ts');
 const { buildMatterJobAidTask } = require('../../server/modules/canonical-host/matter-jobaid-task.ts');
+const { originalFixture } = require('../unit/document-parsing/fixtures/document-original.fixture.ts');
 const {
   MatterActionAttemptService,
 } = require('../../server/modules/canonical-host/matter-action-attempt.service.ts');
@@ -533,7 +537,7 @@ test(
           [
             {
               inputId: FTD_WORK_ITEM_ID,
-              reasons: ['WORK_ITEM_REVISION_CHANGED'],
+              reasons: ['WORK_ITEM_REVISION_CHANGED', 'DOCUMENT_ORIGINAL_CHANGED'],
             },
           ],
         );
@@ -1140,6 +1144,15 @@ async function resetDatabase(sql) {
   }
   await sql.unsafe('CREATE UNIQUE INDEX work_item_tenant_identity ON work_item(tenant_id, work_item_id)');
   await applyMigration(sql, 'migrations/0026_assessment_work_revision.sql');
+  await applyMigration(sql, 'migrations/0038_document_parse_run.sql');
+  await applyMigration(sql, 'migrations/0044_document_parse_step_lease.sql');
+  await sql.unsafe('GRANT SELECT, UPDATE ON dm_document_parse_run TO authenticated, service_role');
+  await applyMigration(sql, 'migrations/0039_engineering_search_projection.sql');
+  await applyMigration(sql, 'migrations/0042_engineering_search_projection_pending.sql');
+  await applyMigration(sql, 'migrations/0043_engineering_search_hosted_actor_scope.sql');
+  await applyMigration(sql, 'migrations/0050_document_source_projection_progress.sql');
+  await applyMigration(sql, 'migrations/0049_engineering_work_pending_authorization.sql');
+  await sql.unsafe('GRANT SELECT, INSERT, UPDATE, DELETE ON engineering_search_projection, engineering_search_projection_pending TO authenticated, service_role');
   await sql.unsafe('GRANT SELECT ON assessment_work_revision TO authenticated, service_role');
   await sql.unsafe('ALTER TABLE action_attempt ENABLE ROW LEVEL SECURITY');
   // Emulate existing platform permissive policies: the new restrictive policy
@@ -1579,7 +1592,7 @@ async function reserveActorService(actorId, tenantId = 'tenant-A') {
     });
     const working = new EngineeringMatterWorkingRepository(db, sqlContext, {
       roleSchema: 'wiselink_r10_test',
-    });
+    }, new EngineeringSearchProjectionWriter(db));
     const workingService = new EngineeringMatterWorkingService(
       matters,
       working,
@@ -1860,6 +1873,19 @@ async function assertWorkingRevisionFlow(
     owner.working.readByRefForRuntime(exactInput),
   );
   assert.deepEqual(exact.state.problemWork, command.nextProblemWork);
+  const [pending] = await sql`SELECT owner_id, subject_id FROM engineering_search_projection_pending
+    WHERE exact_revision_ref = ${exact.matterWorkRevisionId}`;
+  assert.deepEqual(pending, { owner_id: owner.actor.userId, subject_id: matterId });
+  for (const [ownerId, subjectId, revisionRef] of [
+    ['actor-B', matterId, exact.matterWorkRevisionId],
+    [owner.actor.userId, 'MAT-forged', exact.matterWorkRevisionId],
+    [owner.actor.userId, matterId, 'MWR-not-saved'],
+  ]) {
+    await assert.rejects(owner.database.execute(drizzleSql`INSERT INTO engineering_search_projection_pending
+      (tenant_id, exact_revision_ref, owner_kind, owner_id, subject_id)
+      VALUES (${owner.actor.tenantId}, ${revisionRef}, 'MATTER', ${ownerId}, ${subjectId})`),
+    error => error?.cause?.code === '42501' || error?.code === '42501');
+  }
   const issues = new EngineeringIssueSearchService(owner.database, {
     readBrowserRevision: () => { throw new Error('Unexpected WorkItem result'); },
   }, owner.workingService);
@@ -1869,7 +1895,8 @@ async function assertWorkingRevisionFlow(
   assert.ok(hit, 'the SQL issue query must find the saved question');
   assert.equal(hit.workRef, exact.matterWorkRevisionId);
   assert.equal(hit.issueKey, exact.state.problemWork.issues[0].issueKey);
-  assert.deepEqual(Object.keys(hit).sort(), ['issueKey', 'question', 'sourceRefs', 'subjectId', 'subjectKind', 'workRef', 'workRevision'].sort());
+  assert.deepEqual(Object.keys(hit).sort(), ['issueKey', 'question', 'sourceRefs', 'subjectId', 'subjectKind', 'workRef', 'workRevision',
+    'kind', 'matchReason', 'matchedRange', 'reason', 'rootRefs'].sort());
   assert.deepEqual((await issues.read(hit, owner.actor)).issue, exact.state.problemWork.issues[0]);
   assert.deepEqual((await issues.search(question, actor('actor-B'))).hits, []);
   assert.deepEqual((await issues.search(question, actor('actor-A', 'tenant-B'))).hits, []);
@@ -2170,6 +2197,8 @@ async function assertMatterSuccessorRecovery(sql, owner, service, baseInput) {
     recoveryAttemptRef: cancelled.task.operationRef })), /RECOVERY_REQUIRES_FAILED_ATTEMPT/u);
   assert.equal((await owner.runtime(() => service.read(scope))).status, 'CANCELLED');
 
+  const pendingBasis = await owner.workingService.resolveWorkingBasis(request.matterId, owner.actor);
+  await seedMatterOriginalParse(sql, { ...scope, documentVersionId: pendingBasis.currentInputs[0].documentVersionId }, 2);
   const original = await owner.runtime(() => service.reserveJobAid({ ...reserve, idempotencyKey: 'recovery-original' }));
   const oldScope = { ...scope, attemptRef: original.task.operationRef };
   const claim = await owner.runtime(() => service.claim(oldScope));
@@ -2181,6 +2210,8 @@ async function assertMatterSuccessorRecovery(sql, owner, service, baseInput) {
     documentVersionId, pageStart: 2, purpose: 'actual original attempt reading' }, async () => ({ documentVersionId,
       sourceSha256: 'a'.repeat(64), sourceByteLength: 123, pageCount: 2, extractionScope: 'NATIVE_TEXT_LAYER',
       pages: [{ page: 2, sourceRefId: ref, text: evidence.excerpt, textLayerStatus: 'PRESENT', visualContentVerified: false, evidence }] })));
+  const originalReading = await assertBoundOriginalReceipt(sql, owner, service, original.row.attemptId,
+    { ...oldScope, leaseToken: claim.leaseToken, leaseGeneration: claim.leaseGeneration, documentVersionId });
   await sql`UPDATE action_attempt SET deadline_at = now() - interval '1 minute' WHERE attempt_id = ${original.row.attemptId}`;
   const [expired] = await sql`SELECT deadline_at FROM action_attempt WHERE attempt_id = ${original.row.attemptId}`;
   const recoveryRequest = { ...reserve, idempotencyKey: 'recovery-successor', recoveryAttemptRef: original.task.operationRef };
@@ -2190,6 +2221,9 @@ async function assertMatterSuccessorRecovery(sql, owner, service, baseInput) {
   assert.deepEqual(successor.task.executionModel, original.task.executionModel);
   assert.ok(successor.task.modelInput.initiallyDeliveredRefs.includes(ref));
   assert.deepEqual(successor.task.modelInput.sourceCatalog.find(item => item.evidenceRef === ref), evidence);
+  assert.ok(successor.task.modelInput.initiallyDeliveredRefs.includes(originalReading.evidence[0].evidenceRef));
+  const [restored] = await sql`SELECT review_activity_json FROM action_attempt WHERE attempt_id = ${successor.row.attemptId}`;
+  assert.equal(JSON.parse(restored.review_activity_json).find(event => event.kind === 'MATTER_ORIGINAL_BOUND').parseRunId, 'PR-TEST-2');
   const old = await owner.runtime(() => service.read(oldScope));
   assert.equal(old.status, 'TIMED_OUT');
   assert.equal(old.deadlineAt.toISOString(), new Date(expired.deadline_at).toISOString());
@@ -2200,9 +2234,24 @@ async function assertMatterSuccessorRecovery(sql, owner, service, baseInput) {
   const newScope = { ...scope, attemptRef: successor.task.operationRef };
   const newClaim = await owner.runtime(() => service.claim(newScope));
   const fence = { ...newScope, leaseToken: newClaim.leaseToken, leaseGeneration: newClaim.leaseGeneration };
+  assert.equal(newClaim.task.workingBasis.inputs[0].original.parseRunId, 'PR-TEST-2');
+  await seedMatterOriginalParse(sql, { ...scope, documentVersionId }, 3);
+  const changedBasis = await owner.workingService.readWorking(request.matterId, owner.actor);
+  assert.ok(changedBasis.pendingInputs.some(item => item.reasons.includes('DOCUMENT_ORIGINAL_CHANGED')));
+  const originalSource = originalFixture(); originalSource.binding.documentVersionId = documentVersionId;
+  const reader = { readDocumentOriginal: async (_dv, run) => {
+    assert.equal(run, 'PR-TEST-2');
+    return { original: originalSource, structuredSource: originalSource.source, run: { documentVersionId,
+      parseRunId:'PR-TEST-2',parseRevision:2,manifestArtifact:{relativePath:'original/manifest.json',readback:'VERIFIED',sha256:'b'.repeat(64),byteLength:100} } };
+  } };
+  assert.equal((await owner.runtime(() => service.readOriginal({ ...fence,documentVersionId,offset:0,limit:1,purpose:'frozen original after new publication' },reader))).binding.parseRunId,'PR-TEST-2');
+  const sourceSearch = new DocumentSourceSearchService(owner.database,reader);
+  assert.equal((await sourceSearch.search('12 kPa',owner.actor,'CURRENT')).hits.length,0);
+  assert.equal((await sourceSearch.search('12 kPa',owner.actor,'HISTORY')).hits.length,1);
   const work = jobAidProblemModelWorkContent(current.state.problemWork);
-  work.issues[0].statements[0].premises[0].evidenceRef = ref;
-  work.issues[0].sourceDependencies.push(ref); work.issues[0].premiseRefs.push(ref);
+  const frozenOriginalRef = originalReading.evidence[0].evidenceRef;
+  work.issues[0].statements[0].premises[0].evidenceRef = frozenOriginalRef;
+  work.issues[0].sourceDependencies.push(frozenOriginalRef); work.issues[0].premiseRefs.push(frozenOriginalRef);
   const saved = await owner.runtime(() => service.saveJobAidWork({ ...fence, requestId: 'recovered-candidate-save',
     expectedWorkRevision: current.workingRevision, workJson: JSON.stringify(work) }));
   const { contentHash: _hash, ...body } = matterResult(newClaim.task);
@@ -2210,6 +2259,143 @@ async function assertMatterSuccessorRecovery(sql, owner, service, baseInput) {
   assert.equal((await owner.runtime(() => service.finishJobAid({ ...fence, result: sealMatterResultEnvelope(body) }))).status, 'SUCCEEDED');
   await assert.rejects(owner.runtime(() => service.reserveJobAid({ ...recoveryRequest, idempotencyKey: 'stale-recovery',
     expectedWorkingRevision: saved.workRevision })), /RECOVERY_BASIS_CHANGED/u);
+  const next = await owner.runtime(() => service.nextForRuntime(scope));
+  assert.ok(next.next);
+  const nextScope = { ...scope, attemptRef: next.next.attemptRef };
+  const nextTask = JSON.parse((await owner.runtime(() => service.read(nextScope))).taskEnvelopeJson);
+  assert.equal(nextTask.workingBasis.inputs[0].original.parseRunId, 'PR-TEST-3');
+  assert.equal((await owner.runtime(() => service.nextForRuntime(scope))).next.attemptRef, next.next.attemptRef);
+  await owner.runtime(() => service.cancel({ ...nextScope, reason: 'Constructed original-change dispatch verified' }));
+  await assertMatterExplicitRevisits(sql, owner, service, scope, reserve, documentVersionId);
+}
+
+async function assertMatterExplicitRevisits(sql, owner, service, scope, reserve, documentVersionId) {
+  const current = await owner.working.loadCurrent(scope);
+  const task = await owner.runtime(() => service.reserveJobAid({ ...reserve,
+    expectedWorkingRevision: current.workingRevision,idempotencyKey:'save-explicit-revisits',
+    trigger:{kind:'USER_REQUEST',requestId:'save-explicit-revisits',instruction:'Constructed revisit conditions'} }));
+  const activeScope = {...scope,attemptRef:task.task.operationRef};
+  const claim = await owner.runtime(() => service.claim(activeScope));
+  const fence = {...activeScope,leaseToken:claim.leaseToken,leaseGeneration:claim.leaseGeneration};
+  const input = claim.task.workingBasis.inputs.find(item => item.documentVersionId === documentVersionId);
+  const work = jobAidProblemModelWorkContent(current.state.problemWork);
+  work.reviewConditionDelta = {upserts:[
+    {itemId:'explicit-due',text:'Recheck the bounded unresolved condition.',basisRefs:[],when:{kind:'DUE_AT',at:'2000-01-01T00:00:00Z'}},
+    {itemId:'explicit-original',text:'Compare the next published original.',basisRefs:[],when:{kind:'ORIGINAL_CHANGED',inputId:input.inputId,afterParseRunId:input.original.parseRunId}},
+  ],retirements:[],explicitlyUnchangedItemIds:[]};
+  const forged = structuredClone(work); forged.reviewConditionDelta.upserts[1].when.afterParseRunId='PR-forged';
+  await assert.rejects(owner.working.commit({tenantId:scope.tenantId,actorUserId:scope.actorUserId,
+    matterId:scope.matterId,currentInputs:claim.task.workingBasis.inputs,source:null,command:{
+      requestId:'browser-forged-revisit',expectedWorkingRevision:current.workingRevision,
+      basedOnMatterRevisionId:current.basedOnMatterRevisionId,updateKind:'CORRECTION',changeSummary:'Invalid source baseline fixture',
+      nextFocus:null,claimDelta:null,openQuestionDelta:null,reviewConditionDelta:forged.reviewConditionDelta,
+      nextSubstantiveResult:null,substantiveInputs:[],coverageUpdates:[],
+    }}),/MATTER_REVISIT_SOURCE_BINDING_INVALID/u);
+  await assert.rejects(owner.runtime(() => service.saveJobAidWork({...fence,requestId:'invalid-revisit',expectedWorkRevision:current.workingRevision,workJson:JSON.stringify(forged)})),/MATTER_REVISIT_SOURCE_BINDING_INVALID/u);
+  const saved = await owner.runtime(() => service.saveJobAidWork({...fence,requestId:'save-revisit',expectedWorkRevision:current.workingRevision,workJson:JSON.stringify(work)}));
+  const {contentHash:_hash,...body} = matterResult(claim.task); body.modelOutput=JSON.stringify({workRevisionRef:saved.workRevisionRef});
+  await owner.runtime(() => service.finishJobAid({...fence,result:sealMatterResultEnvelope(body)}));
+  const due = await owner.runtime(() => service.nextForRuntime(scope));
+  const dueScope = {...scope,attemptRef:due.next.attemptRef};
+  const dueTask = JSON.parse((await owner.runtime(() => service.read(dueScope))).taskEnvelopeJson);
+  assert.deepEqual(dueTask.trigger,{kind:'REVISIT',workRef:saved.workRevisionRef,conditionIds:['explicit-due']});
+  assert.equal((await owner.runtime(() => service.nextForRuntime(scope))).next.attemptRef,due.next.attemptRef);
+  await owner.runtime(() => service.cancel({...dueScope,reason:'Constructed due request examined'}));
+  assert.equal((await owner.runtime(() => service.nextForRuntime(scope))).next.attemptRef,due.next.attemptRef);
+  await seedMatterOriginalParse(sql,{...scope,documentVersionId},4);
+  const event = await owner.runtime(() => service.nextForRuntime(scope));
+  assert.notEqual(event.next.attemptRef,due.next.attemptRef);
+  const eventScope = {...scope,attemptRef:event.next.attemptRef};
+  const eventTask = JSON.parse((await owner.runtime(() => service.read(eventScope))).taskEnvelopeJson);
+  assert.equal(eventTask.trigger.kind,'REVISIT'); assert.deepEqual(eventTask.trigger.conditionIds,['explicit-original']);
+  assert.equal(eventTask.workingBasis.inputs.find(item => item.documentVersionId === documentVersionId).original.parseRunId,'PR-TEST-4');
+  await owner.runtime(() => service.cancel({...eventScope,reason:'Constructed original event examined'}));
+  const [count] = await sql`SELECT count(*)::int AS n FROM action_attempt WHERE matter_id=${scope.matterId} AND idempotency_key LIKE 'matter-revisit:%'`;
+  assert.equal(count.n,2);
+}
+
+async function seedMatterOriginalParse(sql, scope, revision) {
+  const original = originalFixture(); original.binding.documentVersionId = scope.documentVersionId;
+  original.binding.parseRunId = `PR-TEST-${revision}`; original.binding.parseRevision = revision;
+  await sql`INSERT INTO dm_document_parse_run
+    (parse_run_id,document_version_id,tenant_id,actor_user_id,request_id,parse_revision,
+      expected_published_revision,status,bucket_id,source_binding,manifest_artifact,deadline_at,completed_at)
+    VALUES (${original.binding.parseRunId},${scope.documentVersionId},${scope.tenantId},${scope.actorUserId},${`parse-test-${revision}`},
+      ${revision},${revision-1},'PUBLISHED','fixture',${sql.json(original.binding)},
+      ${sql.json({ relativePath:'original/manifest.json',readback:'VERIFIED',sha256:'b'.repeat(64),byteLength:100,role:'MANIFEST' })},now()+interval '1 minute',now())`;
+}
+
+// Constructed parse publication: real selection SQL, Matter leases and recovery,
+// not the separate document publisher or actual plugin/file authorization.
+async function assertBoundOriginalReceipt(sql, owner, service, attemptId, scope) {
+  const original = originalFixture();
+  original.binding.documentVersionId = scope.documentVersionId;
+  for (let index = 2; index < 26; index++) {
+    const ref = `SR-EXTRA-${index}`;
+    original.source.units.push({ ...original.source.units[0], unitId: `unit-extra-${index}`, order: index,
+      sourceRefIds: [ref], payload: { text: `Additional original condition ${index}.` } });
+    original.source.sourceLocators.push({ ...original.source.sourceLocators[0], sourceRefId: ref });
+  }
+  const loaded = { original, structuredSource: original.source, run: {
+    documentVersionId: scope.documentVersionId, parseRunId: original.binding.parseRunId, parseRevision: 2,
+    manifestArtifact: { relativePath: 'original/manifest.json', readback: 'VERIFIED', sha256: 'b'.repeat(64), byteLength: 100 },
+  } };
+  await sql`INSERT INTO engineering_search_projection_pending (tenant_id,exact_revision_ref,owner_kind,owner_id,subject_id,last_error)
+    VALUES (${scope.tenantId},'PR-TEST-2','SOURCE',${scope.actorUserId},${scope.documentVersionId},'')`;
+  const input = { ...scope, offset: 0, limit: 1, purpose: 'construct original receipt' };
+  const reader = { readDocumentOriginal: async (dv, run) => {
+    assert.equal(dv, scope.documentVersionId); assert.equal(run, original.binding.parseRunId);
+    await owner.database.execute(drizzleSql`SELECT 1`);
+    await owner.runtime(() => service.heartbeat(scope));
+    return structuredClone(loaded);
+  } };
+  await assert.rejects(owner.runtime(() => service.readOriginal({ ...input, leaseGeneration: 99 }, reader)), /LEASE_FENCE_REJECTED/u);
+  const reading = await owner.runtime(() => service.readOriginal(input, reader));
+  assert.equal(reading.evidence[0].excerpt, original.source.units[0].payload.text);
+  const projection = new DocumentSourceProjectionService(owner.database, reader, new EngineeringSearchProjectionWriter(owner.database));
+  const indexStep = () => owner.runtime(() => owner.working.withActorScope(scope.actorUserId,
+    () => projection.step({ ...scope, roles: [] }, 'PR-TEST-2')));
+  assert.equal(await owner.runtime(() => owner.working.withActorScope(scope.actorUserId,() => projection.nextPendingRun(scope))),'PR-TEST-2');
+  assert.equal((await indexStep()).status, 'PROGRESS');
+  await sql.unsafe(`CREATE FUNCTION reject_source_index_test() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN
+    IF NEW.entry_id = 'SRC:PR-TEST-2:25' THEN RAISE EXCEPTION 'CONSTRUCTED_INDEX_FAILURE'; END IF; RETURN NEW; END $$;
+    CREATE TRIGGER reject_source_index_test BEFORE INSERT ON engineering_search_projection FOR EACH ROW EXECUTE FUNCTION reject_source_index_test()`);
+  await assert.rejects(indexStep(), error => error?.cause?.code === 'P0001');
+  const [progress] = await sql`SELECT source_next_offset,last_error FROM engineering_search_projection_pending WHERE exact_revision_ref='PR-TEST-2'`;
+  assert.equal(progress.source_next_offset, 20); assert.equal(progress.last_error, 'P0001');
+  assert.equal((await sql`SELECT count(*)::int AS n FROM engineering_search_projection WHERE exact_revision_ref='PR-TEST-2'`)[0].n, 20);
+  await sql.unsafe('DROP TRIGGER reject_source_index_test ON engineering_search_projection');
+  assert.equal((await indexStep()).status, 'INDEXED');
+  assert.equal((await indexStep()).status, 'NO_PENDING');
+  assert.equal(await owner.runtime(() => owner.working.withActorScope(scope.actorUserId,() => projection.nextPendingRun(scope))),null);
+  assert.equal((await sql`SELECT count(*)::int AS n FROM engineering_search_projection WHERE exact_revision_ref='PR-TEST-2'`)[0].n, 26);
+  assert.equal((await sql`SELECT 1 FROM engineering_search_projection_pending WHERE exact_revision_ref='PR-TEST-2'`).length, 0);
+  const sources = new DocumentSourceSearchService(owner.database, reader);
+  const sourceMatches = await sources.search('12 kPa', owner.actor, 'CURRENT');
+  assert.equal(sourceMatches.hits.length, 1);
+  assert.equal(sourceMatches.hits[0].originalText, 'Pressure\n12 kPa\nOnly when X');
+  assert.equal(sourceMatches.hits[0].parseRunId, 'PR-TEST-2');
+  const identifierHits = await sources.search('A-12', owner.actor, 'CURRENT');
+  assert.equal(identifierHits.hits.length, 1);
+  assert.equal(identifierHits.hits[0].reason, 'EXACT_IDENTIFIER');
+  const deniedSources = new DocumentSourceSearchService(owner.database, { readDocumentOriginal: async () => {
+    throw Object.assign(new Error('fixture revoked source permission'), { statusCode: 403 });
+  } });
+  assert.equal((await deniedSources.search('12 kPa', owner.actor, 'CURRENT')).hits.length, 0);
+  assert.equal((await sources.search('12 kPa', actor('actor-A','tenant-B'), 'CURRENT')).hits.length, 0);
+  assert.equal((await owner.runtime(() => service.readOriginal({ ...input, offset: 1 }, reader))).binding.parseRunId, 'PR-TEST-2');
+  await assert.rejects(owner.runtime(() => service.readOriginal(input, { readDocumentOriginal: async () => {
+    const changed = structuredClone(loaded); changed.run.manifestArtifact.sha256 = 'c'.repeat(64); return changed;
+  } })), /SOURCE_READ_IDENTITY_CHANGED/u);
+  const [lease] = await sql`SELECT lease_expires_at FROM action_attempt WHERE attempt_id = ${attemptId}`;
+  await assert.rejects(owner.runtime(() => service.readOriginal(input, { readDocumentOriginal: async () => {
+    await sql`UPDATE action_attempt SET lease_expires_at = now() - interval '1 second' WHERE attempt_id = ${attemptId}`;
+    return loaded;
+  } })), /SOURCE_READ_FENCE_REJECTED/u);
+  await sql`UPDATE action_attempt SET lease_expires_at = ${lease.lease_expires_at} WHERE attempt_id = ${attemptId}`;
+  const [row] = await sql`SELECT review_activity_json FROM action_attempt WHERE attempt_id = ${attemptId}`;
+  assert.equal(JSON.parse(row.review_activity_json).filter(event => event.kind === 'MATTER_ORIGINAL_READ').length, 2);
+  return reading;
 }
 
 async function assertRealMatterAttemptSave(sql, owner, matterId) {
@@ -3215,19 +3401,9 @@ async function assertRawMatterJobAidSave(sql, owner, service, baseInput) {
   assert.throws(() => buildMatterJobAidTask({ matterId: request.matterId, matterRevisionId: request.expectedMatterRevisionId,
     actorUserId: request.actorUserId, title: 'Legacy source delivery fixture', inputs: basis.currentInputs,
     trigger: request.trigger, previous: legacy }), /JOBAID_PREVIOUS_WORK_INCOMPLETE/u);
-  return;
-  const legacyRefs = legacy.state.substantiveResult.evidence.map(item => item.evidenceRef);
-  assert.ok(legacyRefs.length);
-  for (const ref of legacyRefs) {
-    assert.ok(currentTask.sourceCatalog.some(item => item.evidenceRef === ref));
-    assert.ok(currentTask.initiallyDeliveredRefs.includes(ref));
-  }
-  // Reproduce the already-issued task: evidence was in legacySummary, while
-  // catalog/delivery lists omitted it. Recovery must use the sealed actual body.
-  const oldTask = structuredClone(currentTask);
-  oldTask.sourceCatalog = oldTask.sourceCatalog.filter(item => !legacyRefs.includes(item.evidenceRef));
-  oldTask.initiallyDeliveredRefs = oldTask.initiallyDeliveredRefs.filter(ref => !legacyRefs.includes(ref));
-  const reserved = await owner.runtime(() => service.reserve({ ...request, modelInput: oldTask, sourceRefs: [],
+  await sql`UPDATE engineering_matter_work_revision SET state_json = ${JSON.stringify(previous.state)}
+    WHERE matter_work_revision_id = ${previous.matterWorkRevisionId}`;
+  const reserved = await owner.runtime(() => service.reserveJobAid({ ...request,
     idempotencyKey: 'raw-matter-jobaid', expectedWorkingRevision: previous.workingRevision }));
   const scope = { tenantId: request.tenantId, matterId: request.matterId, actorUserId: request.actorUserId,
     attemptRef: reserved.task.operationRef, principalId: 'hosted-test' };

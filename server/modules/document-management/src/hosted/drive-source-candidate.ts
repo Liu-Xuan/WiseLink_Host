@@ -45,7 +45,7 @@ export function toDriveSourceCandidates(sourceKey: string, entries: readonly (Dr
     });
 }
 
-/** Compares provider identity/version only; a repeated event cannot trigger re-analysis. */
+/** Metadata changes request intake checks; they never establish engineering changes. */
 export function classifyDriveSourceCandidates(
   previous: readonly DriveSourceCandidate[],
   current: readonly DriveSourceCandidate[],
@@ -59,7 +59,9 @@ export function classifyDriveSourceCandidates(
       || candidate.providerVersionId !== null && candidate.providerVersionId !== undefined;
     const hasModifiedSignal = before?.modifiedTime !== null && before?.modifiedTime !== undefined
       || candidate.modifiedTime !== null && candidate.modifiedTime !== undefined;
-    const unchanged = before && (hasVersionSignal
+    const sameMetadata = before && before.entryType === candidate.entryType && before.name === candidate.name &&
+      before.path === candidate.path && before.modifiedTime === candidate.modifiedTime;
+    const unchanged = sameMetadata && (hasVersionSignal
       ? before.providerVersionId === candidate.providerVersionId
       : hasModifiedSignal ? before.modifiedTime === candidate.modifiedTime : false);
     return { ...candidate, change: !before ? 'NEW' : unchanged ? 'UNCHANGED' : 'CHANGED' };

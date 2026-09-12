@@ -7,6 +7,10 @@ export const CANONICAL_EXECUTOR_SERVICE_SCOPE_AUTHORIZATION = Symbol(
   'CANONICAL_EXECUTOR_SERVICE_SCOPE_AUTHORIZATION',
 );
 
+export interface CanonicalVerifiedDocumentWorkScope {
+  principalId: string; appId: string; tenantId: string; actorUserId: string; documentVersionId: string;
+}
+
 export interface CanonicalVerifiedServiceScope {
   principalId: string;
   appId: string;
@@ -30,7 +34,7 @@ export interface CanonicalVerifiedOpenClawAttemptScope extends CanonicalVerified
 }
 
 export interface CanonicalMatterAttemptAuthorization {
-  operation: 'CLAIM' | 'STATUS' | 'HEARTBEAT' | 'CANCEL' | 'READ_SAVED_WORK' | 'READ_SOURCES' | 'READ_REGISTERED' | 'SAVE_WORK' | 'FINISH';
+  operation: 'CLAIM' | 'STATUS' | 'HEARTBEAT' | 'CANCEL' | 'READ_SAVED_WORK' | 'READ_SOURCES' | 'READ_ORIGINAL' | 'READ_REGISTERED' | 'SAVE_WORK' | 'FINISH';
   matterId: string;
   attemptRef: string;
 }
@@ -50,6 +54,7 @@ export interface CanonicalVerifiedApplicabilityContextScope extends CanonicalVer
 }
 
 export interface CanonicalServiceScopeAuthorizationPort {
+  authorizeDocumentWork?(input: { documentVersionId: string }): Promise<CanonicalVerifiedDocumentWorkScope>;
   authorizeOpenClawMatterRequest?(input: { matterId: string }): Promise<Omit<CanonicalVerifiedMatterAttemptScope, 'attemptRef'>>;
   /** Older adapters have no Matter authority; consumers must fail closed. */
   authorizeOpenClawMatterAttempt?(input: CanonicalMatterAttemptAuthorization): Promise<CanonicalVerifiedMatterAttemptScope>;

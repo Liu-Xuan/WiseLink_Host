@@ -6,7 +6,7 @@ import {
   calculateJaAcRisk,
   materializeJobAidWork,
 } from '../../server/modules/canonical-host/jobaid-problem-work';
-import { expandJobAidSourceSelection } from '../../server/modules/canonical-host/jobaid-problem-task';
+import { expandJobAidSourceSelection, stableJobAidEvidence } from '../../server/modules/canonical-host/jobaid-problem-task';
 import { JOBAID_METHOD_BINDING, JOBAID_METHOD_EVIDENCE } from '../../server/modules/canonical-host/jobaid-method-pack';
 import { validateMatterProblemWork } from '../../server/modules/canonical-host/matter-problem-work';
 import {
@@ -113,6 +113,19 @@ function update(issues = [issue('a'), issue('b')]) {
 }
 
 describe('JobAid problem work keeps method semantics, delivery and incremental substance', () => {
+  it('preserves original revisions and expands pages within only the requested revision', () => {
+    const first = { ...document, evidenceRef: 'DOCUMENT_ORIGINAL:dv:PR-1:sr1' };
+    const second = { ...document, evidenceRef: 'DOCUMENT_ORIGINAL:dv:PR-2:sr1', excerpt: 'Corrected original condition.' };
+    const adjacent = { ...second, evidenceRef: 'DOCUMENT_ORIGINAL:dv:PR-2:sr2', sourceRefId: 'sr2' };
+    expect(stableJobAidEvidence(first)).toEqual(first);
+    expect(stableJobAidEvidence(second)).toEqual(second);
+    expect(expandJobAidSourceSelection([first, second, adjacent, document], [second.evidenceRef], 'PAGE'))
+      .toEqual([second, adjacent]);
+    expect(() => stableJobAidEvidence({ ...first, documentVersionId: 'another-document' }))
+      .toThrow('JOBAID_ORIGINAL_SOURCE_BINDING_INVALID');
+    expect(() => stableJobAidEvidence({ ...first, sourceRefId: 'another-source' }))
+      .toThrow('JOBAID_ORIGINAL_SOURCE_BINDING_INVALID');
+  });
   test('save and Matter readback retain the task method snapshot without a process-default fallback', () => {
     const methodBinding = { ...structuredClone(JOBAID_METHOD_BINDING), packRef: 'JA-SEALED-TEST', version: 'test.1' };
     const sealedEvidence = evidence.map(item => item.kind === 'METHOD_CLAUSE' ? { ...item, packRef: methodBinding.packRef } : item);
@@ -617,7 +630,7 @@ it('saves a new statement inside an existing issue while preserving full issue r
   expect(fourth.nextSubstantiveResult).toBeNull();
   expect(fourth.claimDelta).toBeNull();
   expect(fourth.substantiveInputs).toEqual([]);
-  expect(fourth.coverageUpdates[0]?.contribution).toBe('NO_MATERIAL_CHANGE');
+  expect(fourth.coverageUpdates[0]?.contribution).toBe('READ_ONLY');
   expect(() => materializeEngineeringMatterWorkingState({ matterId: base.matterId, current: thirdState, command: fourth })).not.toThrow();
   expect(fourth.nextProblemWork).toBeUndefined();
 
@@ -702,4 +715,59 @@ it('keeps risk-only and measure-only documents in actual Matter usage and exact 
   expect(() => materializeJobAidWork({ ...update(), issues: [], unchangedIssueKeys: ['a'] }, {
     ...context, previous: damagedIndex, evidence: evidence,
   })).toThrow('JOBAID_RETAINED_SOURCE_NO_LONGER_AUTHORIZED:risk-only');
+});
+
+it('persists pure retirement and top-level reading changes without rewriting unchanged issues', () => {
+  const base = { matterId: 'MAT-complete', matterRevisionId: 'MR-1', attemptRef: 'ATT-complete',
+    requestId: 'first', expectedWorkRevision: 0, previous: null, inputs: [{ inputId: 'WI-test',
+      workItemId: 'WI-test', workItemRevision: 1, documentVersionId: 'dv', resultRef: null, resultRevision: null }],
+    evidence, readSourceRefs: context.readSourceRefs, capabilities: [], history: context.history,
+    methodBinding: JOBAID_METHOD_BINDING };
+  const initial = materializeMatterJobAidCommand({ ...base, proposal: update() });
+  const state = materializeEngineeringMatterWorkingState({ matterId: base.matterId, current: null, command: initial }).state;
+  const previous: import('@shared/matter-working.interface').EngineeringMatterWorkingRevisionReadModel = {
+    matterWorkRevisionId: 'MWR-complete', matterId: base.matterId, workingRevision: 1,
+    basedOnMatterRevisionId: 'MR-1', updateKind: 'INITIAL_SYNTHESIS', changeSummary: initial.changeSummary,
+    substantiveResultRef: initial.nextSubstantiveResult!.resultRef, substantiveResultRevision: 1,
+    state, change: { changedBecause: null, addedClaimIds: [], replacedClaimIds: [], retiredClaims: [],
+      explicitlyUnchangedClaimIds: [], openQuestionDelta: null, reviewConditionDelta: null, coverageUpdates: [] },
+    source: null, createdAt: '2026-09-13T00:00:00Z',
+  };
+  const save = (proposal: ReturnType<typeof update>) => materializeMatterJobAidCommand({
+    ...base, previous, expectedWorkRevision: 1, requestId: 'next', proposal,
+  });
+  const retired = save({ ...update([]), unchangedIssueKeys: ['a'],
+    retiredIssues: [{ issueKey: 'b', reason: '合成问题已撤回。' }], changeSummary: '撤回合成问题 b。' });
+  expect(retired.nextProblemWork!.issues.map(item => item.issueKey)).toEqual(['a']);
+  expect(retired.nextProblemWork!.issues[0]).toEqual(state.problemWork!.issues[0]);
+  expect(retired.claimDelta!.retirements).toEqual([{ claimId: 'MAT-complete:issue:b:claim:condition', reason: '撤回合成问题 b。' }]);
+  const saved = materializeEngineeringMatterWorkingState({ matterId: base.matterId, current: state, command: retired }).state;
+  expect(saved.substantiveResult!.content.claims.map(item => item.claimId)).toEqual(['MAT-complete:issue:a:claim:condition']);
+  for (const patch of [
+    { headline: '新的标题' }, { listBrief: '新的简要认识' }, { understanding: '新的总体认识' },
+    { decisiveIssueKeys: ['b'] }, { completionReason: '明确本轮完成范围。' }, { roundCompletion: 'IN_PROGRESS' },
+  ]) {
+    expect(save({ ...update(), ...patch }).nextProblemWork).toMatchObject(patch);
+  }
+  expect(save({ ...update(), changeSummary: '仅更换本轮运行说明。' }).nextProblemWork).toBeUndefined();
+  const compared = { ...update(), inputDispositions: [{ inputId: 'WI-test', contribution: 'NO_MATERIAL_CHANGE',
+    checkedEvidenceRefs: [document.evidenceRef], checkedScope: 'page 1-1 的限制条件', reason: '本轮已比较所列条件，判断保持不变。' }] };
+  const unchanged = save(compared);
+  expect(unchanged.coverageUpdates[0]).toMatchObject({ contribution: 'NO_MATERIAL_CHANGE',
+    checkedSourceRefIds: ['sr1'], checkedScope: compared.inputDispositions[0].checkedScope,
+    reason: compared.inputDispositions[0].reason });
+  expect(() => save({ ...compared, inputDispositions: [{ ...compared.inputDispositions[0], checkedEvidenceRefs: ['unread'] }] } as typeof compared))
+    .toThrow('MATTER_INPUT_DISPOSITION_SOURCE_NOT_READ');
+  const historicalOnly = materializeMatterJobAidCommand({ ...base, previous, expectedWorkRevision: 1,
+    requestId: 'historical-only', proposal: update(), currentReadSourceRefs: [] });
+  expect(historicalOnly.coverageUpdates).toEqual([]);
+  const newerOriginal = { ...base, previous, expectedWorkRevision: 1,
+    requestId: 'newer-original', inputs: base.inputs.map(binding => ({ ...binding,
+      original: { parseRunId: 'PR-newer', parseRevision: 2 } })) };
+  // Delivery of earlier evidence preserves saved analysis but cannot certify a new original.
+  const oldEvidenceOnly = materializeMatterJobAidCommand({ ...newerOriginal, proposal: update() });
+  expect(oldEvidenceOnly.coverageUpdates).toEqual([]);
+  expect(() => materializeMatterJobAidCommand({ ...newerOriginal, proposal: compared }))
+    .toThrow('MATTER_INPUT_DISPOSITION_SOURCE_NOT_READ');
+
 });

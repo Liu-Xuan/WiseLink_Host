@@ -45,6 +45,7 @@ export const engineeringSearchProjectionPending = pgTable('engineering_search_pr
   subjectId: varchar('subject_id', { length: 255 }),
   lastError: text('last_error').notNull(),
   attempts: integer('attempts').notNull().default(1),
+  sourceNextOffset: integer('source_next_offset').notNull().default(0),
 }, table => [
   uniqueIndex('uk_engineering_search_projection_pending_revision').on(table.tenantId, table.exactRevisionRef),
 ]);

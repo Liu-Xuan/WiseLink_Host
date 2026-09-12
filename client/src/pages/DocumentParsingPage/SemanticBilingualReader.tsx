@@ -451,10 +451,13 @@ function SemanticWorkspaceReader({
                               )
                             : '待检查'}
                         </p>
+                        {block.selected.provenance.reusedFrom ? <p>复用此前译文：原文与实际使用的上下文未变化，未重新调用翻译。</p> : null}
                         <p>
                           {block.selected.provenance.authorKind === 'ENGINEER'
                             ? '工程师修订候选'
-                            : `执行模型：${block.selected.provenance.executionModel?.displayName ?? block.selected.provenance.modelVersion ?? '平台未报告'}`}
+                            : block.selected.provenance.producer?.kind === 'OFFICIAL_PLUGIN'
+                              ? '官方文档翻译 · 具体模型未报告'
+                              : `执行模型：${block.selected.provenance.executionModel?.displayName ?? block.selected.provenance.modelVersion ?? '平台未报告'}`}
                         </p>
                       </details>
                     ) : null}

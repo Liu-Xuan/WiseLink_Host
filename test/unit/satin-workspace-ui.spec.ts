@@ -66,13 +66,13 @@ describe('UI-N02 Silver / Carbon Satin workspace', () => {
     );
 
     expect(css).toMatch(
-      /\.structured-browser-units\s*\{[\s\S]*?background: var\(--wl-sheet\);/u,
+      /\.structured-browser-units\s*\{[\s\S]*?background: var\(--wl-sheet(?:, var\(--wl-surface-solid\))?\);/u,
     );
     expect(css).toMatch(
-      /\.structured-browser-unit\s*\{[\s\S]*?border-radius: 0;[\s\S]*?box-shadow: none;/u,
+      /\.structured-document-article\s*\{[\s\S]*?max-width: 76ch;[\s\S]*?line-height: 1\.85;/u,
     );
     expect(css).toContain(
-      ".structured-browser-unit[data-display-kind='section']",
+      '.structured-document-article :is(h1, h2, h3, h4, h5, h6)',
     );
   });
 });

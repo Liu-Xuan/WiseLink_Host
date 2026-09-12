@@ -58,11 +58,17 @@ export interface EngineeringSearchQuery {
   queryFunction: 'plainto_tsquery';
 }
 
+/** Exact spellings found in source text are lookup candidates, never resolved identities. */
+export function extractEngineeringSearchIdentifiers(text: string): string[] {
+  return Array.from(new Set(normalizeEngineeringSearchIdentifier(text)
+    .match(/(?<![A-Z0-9])[A-Z0-9]+(?:[-./_][A-Z0-9]+)+(?![A-Z0-9])/gu) ?? []));
+}
+
 export function prepareEngineeringSearchQuery(query: string): EngineeringSearchQuery {
   const normalized = normalizeEngineeringSearchIdentifier(query);
   // The whole query also supports identities with spaces. Compound identifiers retain punctuation,
   // especially hyphens and software version dots; full text alone cannot establish exact identity.
-  const compounds = normalized.match(/(?<![A-Z0-9])[A-Z0-9]+(?:[-./_][A-Z0-9]+)+(?![A-Z0-9])/gu) ?? [];
+  const compounds = extractEngineeringSearchIdentifiers(normalized);
   return {
     originalQuery: query,
     tokenizedText: tokenizeEngineeringSearchText(query),

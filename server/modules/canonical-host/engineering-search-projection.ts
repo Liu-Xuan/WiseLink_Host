@@ -1,7 +1,7 @@
 import type { JobAidProblemWorkContent } from '@shared/jobaid-problem-assessment.interface';
 import { Inject, Injectable } from '@nestjs/common';
 import { DRIZZLE_DATABASE, type PostgresJsDatabase } from '@lark-apaas/fullstack-nestjs-core';
-import { and, eq, sql } from 'drizzle-orm';
+import { and, eq, inArray, sql } from 'drizzle-orm';
 import { engineeringSearchProjection, engineeringSearchProjectionPending } from '../../database/engineering-search.schema';
 import { buildEngineeringSearchText, type EngineeringSearchText } from './engineering-search-text';
 
@@ -40,11 +40,13 @@ export function buildAuthorizedSourceSearchProjection(
     for (const [name, value] of Object.entries({
       entryId: entry.entryId, ownerId: entry.ownerId,
       exactRevisionRef: entry.exactRevisionRef, locatorRef: entry.locatorRef,
-      originalText: entry.originalText,
     })) {
       if (typeof value !== 'string' || value.trim() === '' || value.length > 255) {
         throw new Error(`ENGINEERING_SEARCH_SOURCE_${name.toUpperCase()}_INVALID`);
       }
+    }
+    if (typeof entry.originalText !== 'string' || entry.originalText.trim() === '') {
+      throw new Error('ENGINEERING_SEARCH_SOURCE_ORIGINALTEXT_INVALID');
     }
     if (entry.entryId.length > 160) throw new Error('ENGINEERING_SEARCH_SOURCE_ENTRY_ID_INVALID');
     if (seen.has(entry.entryId)) throw new Error('ENGINEERING_SEARCH_SOURCE_ENTRY_DUPLICATE');
@@ -74,27 +76,35 @@ export function projectionOwnerToSubjectKind(ownerKind: string): 'WORK_ITEM' | '
 
 /** Builds only derived rows; callers persist them after a successful work CAS. */
 export function buildWorkSearchProjection(input: {
-  ownerKind: 'USER' | 'MATTER'; ownerId: string; subjectId?: string; exactRevisionRef: string;
+  ownerKind: 'USER' | 'MATTER'; ownerId: string; subjectId: string; exactRevisionRef: string;
   content: JobAidProblemWorkContent;
 }): EngineeringSearchProjectionEntry[] {
   return input.content.issues.map((issue, index) => {
     const title = issue.issueKey || `issue-${index + 1}`;
-    const text = [issue.question, ...issue.statements.map(statement => statement.text ?? ''),
-      ...(issue.riskScenarios ?? []).map(item => `${item.scenario}\n${item.conditions.join(' ')}`),
-      ...(issue.measures ?? []).map(item => `${item.text}\n${item.addresses}`)].filter(Boolean).join('\n');
+    const text = [input.content.headline, input.content.listBrief, input.content.understanding,
+      input.content.completionReason, issue.question, issue.understanding,
+      ...issue.statements.map(statement => statement.text ?? ''),
+      ...(issue.riskScenarios ?? []).map(item => `${item.scenario}\n${item.conditions.join(' ')}\n${item.limitations.join(' ')}\n${item.controlComparison}`),
+      ...(issue.measures ?? []).map(item => `${item.text}\n${item.addresses}\n${item.limitations.join(' ')}`),
+      ...(issue.openQuestions ?? []).map(item => `${item.question}\n${item.affects}\n${item.nextEvidence}\n${item.reason}`),
+      ...(issue.requirementHandling ?? []).map(item => `${item.requirement}\n${item.conditions.join(' ')}\n${item.explanation}`),
+      ...(issue.otherClassifications ?? []).map(item => `${item.value}\n${item.reason}`),
+    ].filter(Boolean).join('\n');
     return { entryId: `${input.exactRevisionRef}:issue:${issue.issueKey || index + 1}`,
       ownerKind: input.ownerKind, ownerId: input.ownerId, exactRevisionRef: input.exactRevisionRef,
-      entryKind: 'WORK', locatorRef: `issues[${index}]`, parentContextRef: input.subjectId ?? input.ownerId, title,
+      entryKind: 'WORK', locatorRef: `issues[${index}]`, parentContextRef: input.subjectId, title,
       search: buildEngineeringSearchText(text, [issue.issueKey || title]) };
   });
 }
 
 @Injectable()
+// Registered in CanonicalHostModule.register dynamic providers.
+// eslint-disable-next-line @darraghor/nestjs-typed/injectable-should-be-provided
 export class EngineeringSearchProjectionWriter {
   constructor(@Inject(DRIZZLE_DATABASE) private readonly db: PostgresJsDatabase) {}
 
-  async indexJobAidRevision(input: { tenantId: string; ownerId: string; revisionRef: string; content: JobAidProblemWorkContent; database?: PostgresJsDatabase }) {
-    const rows = buildWorkSearchProjection({ ownerKind: 'USER', ownerId: input.ownerId, exactRevisionRef: input.revisionRef, content: input.content });
+  async indexJobAidRevision(input: { tenantId: string; ownerId: string; subjectId: string; revisionRef: string; content: JobAidProblemWorkContent; database?: PostgresJsDatabase }) {
+    const rows = buildWorkSearchProjection({ ownerKind: 'USER', ownerId: input.ownerId, subjectId: input.subjectId, exactRevisionRef: input.revisionRef, content: input.content });
     const write = async (tx: PostgresJsDatabase) => {
       await tx.delete(engineeringSearchProjection).where(and(eq(engineeringSearchProjection.tenantId, input.tenantId), eq(engineeringSearchProjection.exactRevisionRef, input.revisionRef)));
       if (rows.length > 0) await tx.insert(engineeringSearchProjection).values(rows.map(row => ({
@@ -132,30 +142,58 @@ export class EngineeringSearchProjectionWriter {
   }): Promise<void> {
     const rows = buildAuthorizedSourceSearchProjection(input.entries);
     const write = async (tx: PostgresJsDatabase) => {
-      const revisions = [...new Set(rows.map((row) => row.exactRevisionRef))];
-      for (const revision of revisions) {
-        await tx.delete(engineeringSearchProjection).where(and(
-          eq(engineeringSearchProjection.tenantId, input.tenantId),
-          eq(engineeringSearchProjection.ownerKind, 'SOURCE'),
-          eq(engineeringSearchProjection.exactRevisionRef, revision),
-        ));
-      }
       if (rows.length > 0) {
-        await tx.insert(engineeringSearchProjection).values(rows.map((row) => ({
+        // Readers deliver partial batches. Replacing a whole revision here
+        // loses previously read passages; update only the exact entry identity.
+        const written = await tx.insert(engineeringSearchProjection).values(rows.map((row) => ({
           entryId: row.entryId, tenantId: input.tenantId, ownerKind: row.ownerKind,
           ownerId: row.ownerId, exactRevisionRef: row.exactRevisionRef,
           entryKind: row.entryKind, locatorRef: row.locatorRef,
           parentContextRef: row.parentContextRef, title: row.title,
           identifiers: row.search.identifiers, originalOrWorkText: row.search.originalText,
           tokenizedText: row.search.tokenizedText, indexedVersion: 1,
-        })));
+        }))).onConflictDoUpdate({
+          target: [engineeringSearchProjection.tenantId, engineeringSearchProjection.entryId],
+          set: { title: sql`excluded.title`, identifiers: sql`excluded.identifiers`,
+            originalOrWorkText: sql`excluded.original_or_work_text`, tokenizedText: sql`excluded.tokenized_text`,
+            parentContextRef: sql`excluded.parent_context_ref`, indexedVersion: 1 },
+          setWhere: and(eq(engineeringSearchProjection.ownerKind, 'SOURCE'),
+            sql`${engineeringSearchProjection.ownerId} = excluded.owner_id`,
+            sql`${engineeringSearchProjection.exactRevisionRef} = excluded.exact_revision_ref`,
+            sql`${engineeringSearchProjection.locatorRef} = excluded.locator_ref`,
+            sql`${engineeringSearchProjection.entryKind} = excluded.entry_kind`),
+        }).returning({ entryId: engineeringSearchProjection.entryId });
+        if (written.length !== rows.length) throw new Error('ENGINEERING_SEARCH_SOURCE_IDENTITY_CONFLICT');
       }
     };
     if (input.database) await write(input.database); else await this.db.transaction(write);
   }
 
+  /** Called and awaited inside the authoritative work transaction; no index SQL here. */
+  async enqueuePending(input: { tenantId: string; ownerKind: 'USER' | 'MATTER'; ownerId: string;
+    subjectId: string; revisionRef: string; database: PostgresJsDatabase }): Promise<void> {
+    if (!input.subjectId) throw new Error('ENGINEERING_SEARCH_PENDING_SUBJECT_MISSING');
+    await input.database.insert(engineeringSearchProjectionPending).values({
+      tenantId: input.tenantId, exactRevisionRef: input.revisionRef, ownerKind: input.ownerKind,
+      ownerId: input.ownerId, subjectId: input.subjectId, lastError: '', attempts: 0,
+    }).onConflictDoNothing({
+      target: [engineeringSearchProjectionPending.tenantId, engineeringSearchProjectionPending.exactRevisionRef],
+    });
+  }
+
   async markPending(input: { tenantId: string; ownerKind: 'USER' | 'MATTER'; ownerId: string; subjectId?: string; revisionRef: string; error: unknown }): Promise<void> {
-    const message = input.error instanceof Error ? input.error.message : String(input.error);
+    // Drizzle's wrapper message includes SQL parameters (potentially full
+    // source text). Persist the underlying diagnostic code, never that body.
+    let cause: unknown = input.error;
+    let message = 'ENGINEERING_SEARCH_PROJECTION_FAILED';
+    for (let depth = 0; depth < 5 && cause instanceof Error; depth += 1) {
+      if ('code' in cause && typeof cause.code === 'string' && /^[A-Z0-9_:-]+$/u.test(cause.code)) {
+        message = cause.code;
+      } else if (/^[A-Z][A-Z0-9_:-]+$/u.test(cause.message)) {
+        message = cause.message;
+      }
+      cause = cause.cause;
+    }
     await this.db.insert(engineeringSearchProjectionPending).values({
       tenantId: input.tenantId, exactRevisionRef: input.revisionRef, ownerKind: input.ownerKind,
       ownerId: input.ownerId, subjectId: input.subjectId ?? null, lastError: message.slice(0, 2000), attempts: 1,
@@ -170,7 +208,8 @@ export class EngineeringSearchProjectionWriter {
   }>> {
     if (!tenantId || !Number.isSafeInteger(limit) || limit < 1 || limit > 1000) throw new Error('ENGINEERING_SEARCH_PENDING_QUERY_INVALID');
     const rows = await this.db.select().from(engineeringSearchProjectionPending)
-      .where(eq(engineeringSearchProjectionPending.tenantId, tenantId)).limit(limit);
+      .where(and(eq(engineeringSearchProjectionPending.tenantId, tenantId),
+        inArray(engineeringSearchProjectionPending.ownerKind, ['USER', 'MATTER']))).limit(limit);
     return rows.map(row => ({ tenantId: row.tenantId, revisionRef: row.exactRevisionRef,
       ownerKind: row.ownerKind as 'USER' | 'MATTER', ownerId: row.ownerId, subjectId: row.subjectId,
       lastError: row.lastError, attempts: row.attempts }));
@@ -198,8 +237,9 @@ export class EngineeringSearchProjectionWriter {
     for (const item of pending) {
       try {
         const content = await input.load(item);
+        if (!item.subjectId) throw new Error('ENGINEERING_SEARCH_PENDING_SUBJECT_MISSING');
         if (item.ownerKind === 'USER') {
-          await this.indexJobAidRevision({ tenantId: input.tenantId, ownerId: item.ownerId, revisionRef: item.revisionRef, content });
+          await this.indexJobAidRevision({ tenantId: input.tenantId, ownerId: item.ownerId, subjectId: item.subjectId, revisionRef: item.revisionRef, content });
         } else if (item.subjectId) {
           await this.indexMatterRevision({ tenantId: input.tenantId, ownerId: item.ownerId, subjectId: item.subjectId, revisionRef: item.revisionRef, content });
         } else {

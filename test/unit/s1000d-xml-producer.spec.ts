@@ -789,7 +789,7 @@ function validatePackageDiagnostic(bytes: Uint8Array): Record<string, unknown> {
     'value=json.load(sys.stdin)',
     'print(json.dumps(validate_package(value,contract_root=root,artifact="stdin",mode="strict").as_dict()))',
   ].join(';');
-  const result = spawnSync('python3', ['-c', code, CONTRACT_ROOT], {
+  const result = spawnSync(process.env.WL_TEST_U0_PYTHON?.trim() || 'python3', ['-c', code, CONTRACT_ROOT], {
     input: Buffer.from(bytes),
     encoding: 'utf8',
   });

@@ -29,7 +29,7 @@ it('rejects malformed or duplicate authorized source entries before persistence'
 
 describe('buildWorkSearchProjection', () => {
   it('keeps issue locators and exact revision while producing rebuildable text', () => {
-    const rows = buildWorkSearchProjection({ ownerKind: 'USER', ownerId: 'u1', exactRevisionRef: 'wr-1', content: {
+    const rows = buildWorkSearchProjection({ ownerKind: 'USER', ownerId: 'u1', subjectId: 'wi-1', exactRevisionRef: 'wr-1', content: {
       issues: [{ issueKey: 'ISSUE-1', question: '中文脚注条件', statements: [{ text: 'English condition' }], riskScenarios: [], measures: [] }],
     } as never });
     expect(rows[0]).toMatchObject({ entryId: 'wr-1:issue:ISSUE-1', locatorRef: 'issues[0]', exactRevisionRef: 'wr-1' });
@@ -49,7 +49,7 @@ describe('buildWorkSearchProjection', () => {
 it('rebuilds pending revisions independently and keeps failed items pending', async () => {
   const writer = Object.create(EngineeringSearchProjectionWriter.prototype) as EngineeringSearchProjectionWriter & Record<string, jest.Mock>;
   const pending = [
-    { tenantId: 't1', revisionRef: 'wr-1', ownerKind: 'USER' as const, ownerId: 'u1', subjectId: null, lastError: 'old', attempts: 1 },
+    { tenantId: 't1', revisionRef: 'wr-1', ownerKind: 'USER' as const, ownerId: 'u1', subjectId: 'wi-1', lastError: 'old', attempts: 1 },
     { tenantId: 't1', revisionRef: 'mw-1', ownerKind: 'MATTER' as const, ownerId: 'u2', subjectId: 'm1', lastError: 'old', attempts: 1 },
   ];
   writer.listPending = jest.fn().mockResolvedValue(pending);
@@ -63,4 +63,21 @@ it('rebuilds pending revisions independently and keeps failed items pending', as
   expect(result).toEqual({ attempted: 2, rebuilt: 1, failed: 1 });
   expect(writer.indexJobAidRevision).toHaveBeenCalledWith(expect.objectContaining({ revisionRef: 'wr-1' }));
   expect(writer.markPending).toHaveBeenCalledWith(expect.objectContaining({ revisionRef: 'mw-1' }));
+});
+
+it('preserves long original passages and indexes limitations and unanswered requirements', () => {
+  const originalText = 'Original condition must remain complete. '.repeat(100);
+  const source = buildAuthorizedSourceSearchProjection([{ entryId: 'long', ownerKind: 'SOURCE',
+    ownerId: 'source', exactRevisionRef: 'parse-2', entryKind: 'SOURCE', locatorRef: 'page:0', originalText }]);
+  expect(source[0].search.originalText).toBe(originalText);
+  const [work] = buildWorkSearchProjection({ ownerKind: 'MATTER', ownerId: 'creator', subjectId: 'matter',
+    exactRevisionRef: 'revision', content: { understanding: '总体认识', issues: [{ issueKey: 'i',
+      question: '问题', understanding: '问题理解', statements: [], riskScenarios: [],
+      measures: [{ text: '措施', addresses: '条件', limitations: ['局限性特征词'] }],
+      openQuestions: [{ question: '未知', affects: '影响', nextEvidence: '连续记录', reason: '待核原因' }],
+      requirementHandling: [{ requirement: '要求说明', conditions: ['要求条件'], explanation: '处置解释' }],
+    }] } as never });
+  for (const phrase of ['总体认识', '问题理解', '局限性特征词', '连续记录', '待核原因', '要求说明', '要求条件', '处置解释']) {
+    expect(work.search.originalText).toContain(phrase);
+  }
 });

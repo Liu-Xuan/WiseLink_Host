@@ -1,5 +1,5 @@
 import type { MineruReadingProjection } from './mineru-reading.interface';
-import type { MineruRuntimeReadiness } from './mineru-runtime.interface';
+import type { DocumentOriginalResult } from './document-original.interface';
 
 export type DocumentParseStatus = 'RUNNING' | 'STAGING' | 'PUBLISHED' | 'FAILED';
 
@@ -21,7 +21,8 @@ export interface DocumentParsingStatus {
   latestRun: DocumentParseRunSummary | null;
   publishedRun: DocumentParseRunSummary | null;
   runtimeAvailable: boolean;
-  runtime: MineruRuntimeReadiness;
+  runtime: { state: 'NOT_CONFIGURED' | 'CONFIGURED_UNVERIFIED' | 'CALL_SUCCEEDED' | 'FAILED';
+    errorCode: string | null; lastCompletedAt: string | null };
 }
 
 export interface StartDocumentParseRequest {
@@ -34,7 +35,8 @@ export interface DocumentParsedReading {
   parseRunId: string;
   parseRevision: number;
   originalFilename: string;
-  parser: { name: 'MinerU'; version: string; backend: string };
+  parser: { name: 'MinerU' | 'OfficialPluginHybrid'; version: string; backend: string };
+  original?: DocumentOriginalResult;
   titleEnhancement: { status: 'DISABLED' | 'NOT_APPLICABLE' | 'APPLIED' | 'FAILED'; code?: string };
   markdown: string;
   assets: Record<string, string>;

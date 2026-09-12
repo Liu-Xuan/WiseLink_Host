@@ -439,7 +439,7 @@ function makeCandidatePackage(sourceKind: 'pdf' | 'native_s1000d'): {
         kind: 'heading',
         unitHash: sha256Text(`heading-${sourceKind}`),
         sourceRefIds: [sourceRefId],
-        payload: { text: 'Procedure' },
+        payload: { text: 'Procedure', level: 1 },
       },
       {
         unitId: `unit-${sourceKind}-step`,

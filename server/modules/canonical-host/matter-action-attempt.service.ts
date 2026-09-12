@@ -7,6 +7,10 @@ import { randomUUID } from 'node:crypto';
 import { Injectable } from '@nestjs/common';
 import { and, desc, eq, inArray, sql } from 'drizzle-orm';
 import type { DocumentSourceReading } from '@shared/document-source-reading.interface';
+import { dmDocumentParseRun } from '../../database/document-parsing.schema';
+import { documentOriginalEngineeringReading, type DocumentOriginalEngineeringReading } from './document-original-engineering-reading';
+import { dueMatterRevisits } from './matter-revisit';
+import type { UnifiedReaderService } from '../unified-reader/unified-reader.service';
 import { documentSourcePageRange } from '../document-management/src/hosted/nest/document-source-reading';
 import {
   actionAttempt,
@@ -102,7 +106,24 @@ export class MatterActionAttemptService {
       const bindings = (await executor.authorizeRuntimeInputs(input)).currentInputs;
       const pending = engineeringMatterPendingInputs(current?.state ?? null, bindings);
       const compositionChanged = current && current.basedOnMatterRevisionId !== matter.currentMatterRevisionId;
-      if (!pending.length && !compositionChanged) return { next: null };
+      let failedRevisit: { attemptRef: string; status: string } | null = null;
+      if (current) for (const occurrence of dueMatterRevisits(current.state.reviewConditions, bindings, new Date())) {
+        // The same explicit schedule/event is one occurrence even after work is
+        // saved again. Editing prose does not rearm an overdue condition.
+        const idempotencyKey = `matter-revisit:${input.matterId}:${canonicalSha256(occurrence)}`;
+        const [existing] = await executor.database.select({ ref: actionAttempt.operationRef }).from(actionAttempt)
+          .where(and(eq(actionAttempt.tenantId,input.tenantId),eq(actionAttempt.idempotencyKey,idempotencyKey))).limit(1);
+        if (existing) {
+          const row = await this.scopedRow(executor,queue,input,existing.ref);
+          if (row.status !== 'SUCCEEDED') failedRevisit ??= { attemptRef: existing.ref, status: row.status };
+          continue;
+        }
+        return { reservation: { ...input,
+          trigger: { kind: 'REVISIT' as const, workRef: current.matterWorkRevisionId, conditionIds: [occurrence.conditionId] },
+          expectedMatterRevisionId: matter.currentMatterRevisionId, expectedMatterRevision: matter.currentRevisionNo,
+          expectedWorkingRevision: current.workingRevision, expectedInputs: bindings, idempotencyKey } };
+      }
+      if (!pending.length && !compositionChanged) return { next: failedRevisit };
       const trigger: EngineeringMatterAttemptTrigger = pending.length
         ? { kind: 'SOURCE_CHANGE', inputIds: pending.map(item => item.inputId) }
         : { kind: 'COMPOSITION_CHANGE', previousMatterRevisionId: current?.basedOnMatterRevisionId ?? null };
@@ -114,7 +135,7 @@ export class MatterActionAttemptService {
         .where(and(eq(actionAttempt.tenantId, input.tenantId), eq(actionAttempt.idempotencyKey, idempotencyKey))).limit(1);
       if (existing?.ref) {
         const row = await this.scopedRow(executor, queue, input, existing.ref);
-        return { next: { attemptRef: existing.ref, status: row.status } };
+        return { next: failedRevisit ?? { attemptRef: existing.ref, status: row.status } };
       }
       return { reservation: { ...input, trigger,
         expectedMatterRevisionId: matter.currentMatterRevisionId, expectedMatterRevision: matter.currentRevisionNo,
@@ -267,6 +288,12 @@ export class MatterActionAttemptService {
               throw failure('MATTER_RECOVERY_BASIS_CHANGED');
             reads.push(...reading.pages.flatMap(page => page.evidence ? [page.evidence] : []));
           }
+          if (event.kind === 'MATTER_ORIGINAL_READ') {
+            const reading = event.reading as DocumentOriginalEngineeringReading;
+            if (!jobAid.modelInput.availableDocuments.some(item => item.documentVersionId === reading.documentVersionId))
+              throw failure('MATTER_RECOVERY_BASIS_CHANGED');
+            reads.push(...reading.evidence);
+          }
         }
         addMatterDeliveredEvidence(jobAid, reads);
       }
@@ -327,6 +354,10 @@ export class MatterActionAttemptService {
         taskEnvelopeJson: canonicalJson(task),
         taskInputHash: task.inputHash,
         executionModelJson: canonicalJson(task.executionModel),
+        reviewActivityJson: recoveryRow ? canonicalJson(
+          (JSON.parse(recoveryRow.reviewActivityJson ?? '[]') as Array<Record<string, unknown>>)
+            .filter(event => event.kind === 'MATTER_ORIGINAL_BOUND' || event.kind === 'MATTER_ORIGINAL_READ'),
+        ) : '[]',
         idempotencyKey: task.idempotencyKey,
         nextAttemptAt: now,
         deadlineAt: new Date(task.deadline),
@@ -567,6 +598,68 @@ export class MatterActionAttemptService {
     });
   }
 
+  async readOriginal(input: MatterAttemptScope & ActionAttemptFence & {
+    principalId: string; documentVersionId: string; offset: number; limit: number; purpose: string;
+  }, reader: UnifiedReaderService) {
+    if (!input.purpose.trim() || input.purpose.length > 4000 || !Number.isSafeInteger(input.offset) || input.offset < 0 ||
+        !Number.isSafeInteger(input.limit) || input.limit < 1 || input.limit > 20) throw failure('DOCUMENT_ORIGINAL_RANGE_INVALID',400);
+    const binding = await this.authorized(input, async (executor, queue) => {
+      await executor.database.select({ id: actionAttempt.attemptId }).from(actionAttempt)
+        .where(eq(actionAttempt.operationRef,input.attemptRef)).for('update');
+      const row = await this.scopedRow(executor,queue,input,input.attemptRef);
+      assertRunningSourceLease(row,input);
+      const task = checkedTask(row);
+      const priorWork = task.workingBasis.priorWorkRef ? await this.working.readByRef({
+        tenantId: input.tenantId, matterId: input.matterId, workRef: task.workingBasis.priorWorkRef,
+      }, executor.database) : null;
+      const priorEvidence = priorWork?.state.problemWork?.evidence ?? priorWork?.state.substantiveResult?.evidence ?? [];
+      if (task.modelInput.schemaVersion !== MATTER_JOBAID_TASK_SCHEMA ||
+          !(task.workingBasis.inputs.some(item => item.documentVersionId === input.documentVersionId) ||
+            priorEvidence.some(item => item.kind === 'DOCUMENT_PASSAGE' && item.documentVersionId === input.documentVersionId)))
+        throw failure('JOBAID_SOURCE_NOT_REGISTERED',404);
+      const events = JSON.parse(row.reviewActivityJson ?? '[]') as Array<Record<string, unknown>>;
+      const existing = events.find(event => event.kind === 'MATTER_ORIGINAL_BOUND' && event.documentVersionId === input.documentVersionId);
+      const frozenOriginal = task.workingBasis.inputs.find(item => item.documentVersionId === input.documentVersionId)?.original;
+      if (existing) {
+        if (frozenOriginal && frozenOriginal.parseRunId !== existing.parseRunId) throw failure('MATTER_SOURCE_READ_BINDING_MISMATCH');
+        return { parseRunId: String(existing.parseRunId), taskInputHash: row.taskInputHash };
+      }
+      const [published] = await executor.database.select().from(dmDocumentParseRun)
+        .where(and(eq(dmDocumentParseRun.tenantId,input.tenantId),eq(dmDocumentParseRun.documentVersionId,input.documentVersionId),
+          eq(dmDocumentParseRun.status,'PUBLISHED'), ...(frozenOriginal ? [eq(dmDocumentParseRun.parseRunId,frozenOriginal.parseRunId),
+            eq(dmDocumentParseRun.parseRevision,frozenOriginal.parseRevision)] : []))).orderBy(desc(dmDocumentParseRun.parseRevision)).limit(1);
+      if (!published || published.manifestArtifact?.relativePath !== 'original/manifest.json')
+        throw failure('DOCUMENT_ORIGINAL_NOT_PUBLISHED',409);
+      await executor.database.update(actionAttempt).set({ reviewActivityJson: canonicalJson([...events,
+        { kind:'MATTER_ORIGINAL_BOUND',documentVersionId:input.documentVersionId,parseRunId:published.parseRunId }]) })
+        .where(eq(actionAttempt.attemptId,row.attemptId));
+      return { parseRunId:published.parseRunId,taskInputHash:row.taskInputHash };
+    });
+    const reading = await this.working.withActorScope(input.actorUserId, async () => documentOriginalEngineeringReading(
+      await reader.readDocumentOriginal(input.documentVersionId,binding.parseRunId,
+        {tenantId:input.tenantId,actorUserId:input.actorUserId,roles:[]}),input.offset,input.limit));
+    return this.authorized(input,async (executor,queue) => {
+      await executor.database.select({ id:actionAttempt.attemptId }).from(actionAttempt)
+        .where(eq(actionAttempt.operationRef,input.attemptRef)).for('update');
+      const row = await this.scopedRow(executor,queue,input,input.attemptRef);
+      assertRunningSourceLease(row,input);
+      if (row.taskInputHash !== binding.taskInputHash || reading.binding.parseRunId !== binding.parseRunId ||
+          reading.documentVersionId !== input.documentVersionId) throw failure('MATTER_SOURCE_READ_BINDING_MISMATCH');
+      const events = JSON.parse(row.reviewActivityJson ?? '[]') as Array<Record<string, unknown>>;
+      for (const event of events.filter(event => event.kind === 'MATTER_ORIGINAL_READ')) {
+        const prior = event.reading as DocumentOriginalEngineeringReading;
+        if (prior.documentVersionId !== reading.documentVersionId) continue;
+        if (prior.artifactSha256 !== reading.artifactSha256 || canonicalJson(prior.binding) !== canonicalJson(reading.binding) ||
+            prior.evidence.some(old => reading.evidence.some(now => now.evidenceRef === old.evidenceRef && canonicalJson(old) !== canonicalJson(now))))
+          throw failure('MATTER_SOURCE_READ_IDENTITY_CHANGED');
+      }
+      await executor.database.update(actionAttempt).set({ reviewActivityJson:canonicalJson([...events,
+        {kind:'MATTER_ORIGINAL_READ',purpose:input.purpose,observedAt:new Date().toISOString(),reading}]) })
+        .where(eq(actionAttempt.attemptId,row.attemptId));
+      return reading;
+    });
+  }
+
   cancel(input: MatterAttemptScope & { attemptRef: string; reason: string }) {
     return this.authorized(input, async (executor, queue) => {
       const row = await this.scopedRow(
@@ -702,9 +795,17 @@ export class MatterActionAttemptService {
         const reading = event.reading as DocumentSourceReading;
         for (const page of reading.pages) if (page.evidence) { add(page.evidence); readRefs.add(page.evidence.evidenceRef); }
       }
+      for (const event of events.filter(item => item.kind === 'MATTER_ORIGINAL_READ')) {
+        for (const item of (event.reading as DocumentOriginalEngineeringReading).evidence) { add(item); readRefs.add(item.evidenceRef); }
+      }
       const command = materializeMatterJobAidCommand({ matterId: input.matterId, matterRevisionId: task.subject.matterRevisionId,
         attemptRef: input.attemptRef, requestId: input.requestId, expectedWorkRevision: input.expectedWorkRevision,
-        previous, inputs: task.workingBasis.inputs, proposal, evidence: [...registry.values()], readSourceRefs: [...readRefs],
+        previous, inputs: task.workingBasis.inputs, proposal, evidence: [...registry.values()], readSourceRefs: [...readRefs], currentReadSourceRefs: [
+          ...taskInput.initiallyDeliveredRefs,
+          ...events.filter(item => item.kind === 'MATTER_ORIGINAL_READ').flatMap(item => (item.reading as DocumentOriginalEngineeringReading).sourceRefs),
+          ...events.filter(item => item.kind === 'MATTER_REGISTERED_SOURCES_READ').flatMap(item => (item.evidence as AssessmentEvidence[]).map(value => value.evidenceRef)),
+          ...events.filter(item => item.kind === 'MATTER_SOURCE_PAGES_READ').flatMap(item => (item.reading as DocumentSourceReading).pages.flatMap(page => page.evidence ? [page.evidence.evidenceRef] : [])),
+        ],
         capabilities: taskInput.modelInput.capabilities, history: taskInput.modelInput.historyReview,
         methodBinding: taskInput.modelInput.methodBinding });
       const saved = await executor.appendWorkingRevision({ tenantId: input.tenantId, matterId: input.matterId,

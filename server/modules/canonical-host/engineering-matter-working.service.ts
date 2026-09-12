@@ -273,7 +273,7 @@ export class EngineeringMatterWorkingService {
       if (attempt === 0) return this.authorizedMatter(matterId, actor, 1);
       throw workingReadConflict();
     }
-    return { snapshot, currentInputs };
+    return { snapshot, currentInputs: await this.working.bindOriginalInputs(actor.tenantId, currentInputs) };
   }
 
   private async requireInput(

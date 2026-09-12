@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
   searchEngineeringIssues,
+  searchDocumentSources,
   readEngineeringIssue,
 } from '@client/src/api/canonical-host';
 import { Button } from '@client/src/components/ui/button';
@@ -13,6 +14,7 @@ import type {
 } from '@shared/engineering-issue-search.interface';
 import MatterDocumentSourceDialog from './MatterDocumentSourceDialog';
 import { matterDocumentRoute } from './matter-navigation';
+import type { DocumentSourceSearchResponse } from '@shared/document-source-search.interface';
 import '@client/src/pages/DocumentParsingPage/jobaid-problem-workspace.css';
 
 export default function EngineeringIssueSearch({
@@ -22,10 +24,12 @@ export default function EngineeringIssueSearch({
 }) {
   const navigate = useNavigate();
   const [query, setQuery] = useState('');
+  const [scope, setScope] = useState<'CURRENT' | 'HISTORY'>('CURRENT');
   const [results, setResults] = useState<EngineeringIssueSearchResponse | null>(
     null,
   );
   const [selected, setSelected] = useState<EngineeringIssueRead | null>(null);
+  const [originals, setOriginals] = useState<DocumentSourceSearchResponse | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [source, setSource] = useState<{
@@ -44,10 +48,10 @@ export default function EngineeringIssueSearch({
       className="mt-6 space-y-4 rounded-xl border border-border p-4"
       aria-label="查找已有问题"
     >
-      <h2 className="text-lg font-semibold">查找已有问题</h2>
+      <h2 className="text-lg font-semibold">查找原文与已有问题</h2>
       <p className="text-sm text-muted-foreground">
-        按关键词查找有权阅读的已保存工作，展开后核对问题、前提和来源。每次最多展示
-        50 项，请用具体问题或条件检索。查找到的候选不会自动加入本事项。
+        按关键词查找有权阅读的已发布原文和已保存工作，展开后核对问题、前提和来源。
+        每类最多展示 50 项，查找到的候选不会自动加入本事项。
       </p>
       <form
         className="flex gap-2"
@@ -58,10 +62,11 @@ export default function EngineeringIssueSearch({
           setError(null);
           setSelected(null);
           setResults(null);
+          setOriginals(null);
           setSource(null);
-          void searchEngineeringIssues(query)
-            .then((value) => {
-              if (request === epoch.current) setResults(value);
+          void Promise.all([searchEngineeringIssues(query, scope), searchDocumentSources(query, scope)])
+            .then(([value, sources]) => {
+              if (request === epoch.current) { setResults(value); setOriginals(sources); }
             })
             .catch((cause: unknown) => {
               if (request === epoch.current)
@@ -82,6 +87,12 @@ export default function EngineeringIssueSearch({
         <Button type="submit" disabled={busy || !query.trim()}>
           查找
         </Button>
+        <select aria-label="检索版本范围" value={scope} disabled={busy}
+          onChange={event => { setScope(event.target.value as 'CURRENT' | 'HISTORY'); setResults(null); setOriginals(null); setSelected(null); }}
+          className="rounded-md border border-input bg-background px-2 text-sm">
+          <option value="CURRENT">当前版本</option>
+          <option value="HISTORY">包含历史</option>
+        </select>
       </form>
       {busy ? <p role="status">正在读取…</p> : null}
       {error ? <p role="alert">{error}</p> : null}
@@ -135,6 +146,16 @@ export default function EngineeringIssueSearch({
       {results?.hasMore ? (
         <p className="text-sm">匹配较多，请补充关键词缩小范围。</p>
       ) : null}
+      {originals?.limitations.map(limitation => <p key={limitation} className="text-xs text-muted-foreground">{limitation}</p>)}
+      {originals?.hits.map(hit => <details key={`${hit.parseRunId}:${hit.sourceRefId}`} className="rounded border border-border p-3">
+        <summary className="cursor-pointer">原文 · 解析修订 {hit.parseRevision} · {hit.documentVersionId}</summary>
+        <p className="mt-2 whitespace-pre-wrap text-sm">{hit.originalText}</p>
+        <p className="mt-2 text-xs text-muted-foreground">原文覆盖限制 {hit.coverage.unresolvedRanges.length} 项；命中不代表已完成评估。</p>
+        <Button variant="ghost" onClick={() => navigate(`/document-versions/${encodeURIComponent(hit.documentVersionId)}?${new URLSearchParams({ parseRunId: hit.parseRunId, sourceRef: hit.sourceRefId })}`)}>
+          阅读确切原文与来源
+        </Button>
+      </details>)}
+      {originals?.hasMore ? <p className="text-sm">原文匹配较多，请补充关键词。</p> : null}
       {selected ? (
         <div className="wl-jobaid-article rounded-xl border border-border p-4">
           <p className="mb-3 text-sm text-muted-foreground">

@@ -1,4 +1,6 @@
 import { InitialAssessmentKnowledgeService } from './initial-assessment-knowledge.service';
+import { UnifiedReaderService } from '../unified-reader/unified-reader.service';
+import { documentOriginalEngineeringReading, findDocumentOriginalEvidence } from './document-original-engineering-reading';
 import { Inject, Injectable, Optional } from '@nestjs/common';
 import type { PostgresJsDatabase } from '@lark-apaas/fullstack-nestjs-core';
 import type { AssessmentEvidence } from '@shared/assessment-reading.interface';
@@ -59,11 +61,11 @@ import {
 } from './canonical-service-scope.authorization';
 import { preflightCanonicalHostOpenClawResult } from './canonical-host-openclaw-runtime-policy';
 import {
-  buildOverallReadingEvidence,
   overallModelEvidenceRegistry,
 } from './overall-assessment-reading';
 import {
   buildJobAidProblemTask,
+  jobAidSourceFileReference,
   expandJobAidSourceSelection,
   isJobAidProblemTask,
   parseJobAidProblemTask,
@@ -121,6 +123,7 @@ export class CanonicalJobAidProblemService {
     private readonly common: CanonicalHostCommonContextService,
     private readonly work: JobAidWorkRepository,
     @Optional() private readonly knowledge?: InitialAssessmentKnowledgeService,
+    @Optional() private readonly originalReader?: UnifiedReaderService,
   ) {}
 
   /** Deployment first installs dual readers; only explicitly enabled NEW tasks use v2. */
@@ -158,8 +161,7 @@ export class CanonicalJobAidProblemService {
     );
     if (
       !loaded ||
-      loaded.row.documentVersionId !== workItem.source.documentVersionId ||
-      !workItem.package
+      loaded.row.documentVersionId !== workItem.source.documentVersionId
     )
       throw new Error('JOBAID_WORK_ITEM_BINDING_INVALID');
     const actorUserId = loaded.row.requestedByUserId;
@@ -199,10 +201,7 @@ export class CanonicalJobAidProblemService {
       baseRevision: workItem.revision,
       idempotencyKey,
       sourceRefs: [
-        {
-          ref: workItem.package.artifact.ref,
-          sha256: workItem.package.artifact.sha256,
-        },
+        jobAidSourceFileReference(workItem),
       ],
       allowedConnectors: loaded.row.initialAilySessionId
         ? ['feishu-aily-user']
@@ -284,8 +283,7 @@ export class CanonicalJobAidProblemService {
     );
     if (
       !loaded ||
-      loaded.row.documentVersionId !== execution.source.documentVersionId ||
-      !execution.package
+      loaded.row.documentVersionId !== execution.source.documentVersionId
     )
       throw new Error('JOBAID_WORK_ITEM_BINDING_INVALID');
     const reserved = await this.attempts.reserve({
@@ -298,10 +296,7 @@ export class CanonicalJobAidProblemService {
       baseRevision: execution.revision,
       idempotencyKey,
       sourceRefs: [
-        {
-          ref: execution.package.artifact.ref,
-          sha256: execution.package.artifact.sha256,
-        },
+        jobAidSourceFileReference(execution),
       ],
       allowedConnectors:
         authorizedKnowledgeSession || loaded.row.initialAilySessionId
@@ -390,7 +385,7 @@ export class CanonicalJobAidProblemService {
       workItem.workItemId,
       tenantId,
     );
-    if (!loaded || !workItem.package)
+    if (!loaded || loaded.row.documentVersionId !== workItem.source.documentVersionId)
       throw new Error('JOBAID_WORK_ITEM_BINDING_INVALID');
     const reserved = await this.attempts.reserve({
       workItemId: workItem.workItemId,
@@ -402,10 +397,7 @@ export class CanonicalJobAidProblemService {
       baseRevision: workItem.revision,
       idempotencyKey: problemIdempotencyKey(workItem, 'OVERALL_CONSISTENCY'),
       sourceRefs: [
-        {
-          ref: workItem.package.artifact.ref,
-          sha256: workItem.package.artifact.sha256,
-        },
+        jobAidSourceFileReference(workItem),
       ],
       allowedConnectors: loaded.row.initialAilySessionId
         ? ['feishu-aily-user']
@@ -444,14 +436,32 @@ export class CanonicalJobAidProblemService {
     },
   ): Promise<JobAidProblemTaskInput> {
     const readScope = new UnifiedArtifactReadScope(this.artifactStore);
-    const [packageBytes, common, history] = await Promise.all([
-      readScope.readActualBytes(workItem.package!.artifact),
+    if (!this.originalReader) throw new Error('DOCUMENT_ORIGINAL_READER_UNAVAILABLE');
+    await this.sourceBindings([],workItem,tenantId,actorUserId);
+    const bound = await this.work.publishedOriginalBinding({ tenantId, actorUserId, workItemId: workItem.workItemId,
+      documentVersionId: workItem.source.documentVersionId });
+    const original = await this.work.withActorScope(actorUserId, () => this.originalReader!.readDocumentOriginal(
+      workItem.source.documentVersionId,bound.parseRunId,{tenantId,actorUserId,roles:[]}));
+    if (original.original.binding.sourceArtifactId !== workItem.source.sourceArtifactId ||
+      original.original.binding.sourceSha256 !== workItem.source.sourceFileSha256 ||
+      original.original.binding.sourceByteLength !== workItem.source.sourceByteLength)
+      throw new Error('JOBAID_ORIGINAL_FILE_BINDING_MISMATCH');
+    const primaryByRef = new Map<string, AssessmentEvidence>();
+    for (let offset=0; offset<original.structuredSource.units.length; offset+=20)
+      for (const evidence of documentOriginalEngineeringReading(original,offset,20).evidence)
+        primaryByRef.set(evidence.evidenceRef,{...evidence,workItemId:workItem.workItemId});
+    if (!primaryByRef.size) throw new Error('DOCUMENT_ORIGINAL_NO_READABLE_EVIDENCE');
+    const originalUnits = original.structuredSource.units.map(unit => ({unitId:unit.unitId,kind:unit.kind,
+      text:JSON.stringify(unit.payload),sourceRefIds:[...unit.sourceRefIds],
+      sourceLocators:original.structuredSource.sourceLocators.filter(locator => unit.sourceRefIds.includes(locator.sourceRefId))}));
+    const [common, history] = await Promise.all([
       this.common.buildForWorkItemWithEvidence(
         workItem,
         tenantId,
         asOf,
         readScope,
         reviewSelection,
+        originalUnits,
       ),
       this.work.listHeadersForRuntime({
         tenantId: tenantId,
@@ -459,18 +469,7 @@ export class CanonicalJobAidProblemService {
         actorUserId,
       }),
     ]);
-    const primary = buildOverallReadingEvidence({
-      workItem,
-      packageBytes,
-      readScope,
-      engineerReviewContext: {
-        revision: null,
-        artifactSha256: null,
-        reviewCount: 0,
-        history: [],
-        effective: [],
-      },
-    });
+    const primary = [...primaryByRef.values()];
     const sourceCatalog = [
       ...primary,
       ...common.availableReadingEvidence,
@@ -529,6 +528,8 @@ export class CanonicalJobAidProblemService {
       expectedWorkRevision: history[0]?.workRevision ?? 0,
       priorAssessmentRefs: history.map((revision) => revision.workRevisionRef),
     });
+    taskInput.modelInput.documentOverview.original = { binding: original.original.binding,
+      coverage: original.original.coverage, findings: original.structuredSource.findings };
     if (purpose !== 'PROBLEM_REVIEW') {
       const loaded = await this.workItems.loadTenantScopedProjection(
         workItem.workItemId,
@@ -1331,7 +1332,7 @@ export class CanonicalJobAidProblemService {
       const bindings: JobAidSourceBinding[] = [];
       for (const workItemId of ids) {
         const binding = await this.work.loadOwnedSourceBinding(
-          { workItemId, tenantId, actorUserId },
+          { workItemId, tenantId, actorUserId,kind:'SOURCE_FILE' },
           database,
         );
         if (!binding) throw new Error('JOBAID_SOURCE_AUTHORIZATION_CHANGED');
@@ -1361,6 +1362,7 @@ export class CanonicalJobAidProblemService {
           const current = await this.work.loadOwnedSourceBinding(
             {
               workItemId: binding.workItemId,
+              kind:binding.kind,
               tenantId,
               actorUserId: input.actorUserId,
             },
@@ -1369,12 +1371,32 @@ export class CanonicalJobAidProblemService {
           if (
             !current ||
             current.documentVersionId !== binding.documentVersionId ||
-            current.artifactSha256 !== binding.artifactSha256
+            current.artifactSha256 !== binding.artifactSha256 || current.artifactRef !== binding.artifactRef
           )
             throw new Error('JOBAID_SOURCE_VERSION_CHANGED');
         }
       },
     );
+    const originals = evidence.filter((item): item is Extract<AssessmentEvidence,{kind:'DOCUMENT_PASSAGE'}> =>
+      item.kind === 'DOCUMENT_PASSAGE' && item.evidenceRef.startsWith('DOCUMENT_ORIGINAL:'));
+    if (originals.length) {
+      if (!this.originalReader) throw new Error('DOCUMENT_ORIGINAL_READER_UNAVAILABLE');
+      await this.work.withActorScope(input.actorUserId, async () => {
+        const loaded = new Map<string, Awaited<ReturnType<UnifiedReaderService['readDocumentOriginal']>>>();
+        for (const item of originals) {
+          const prefix = `DOCUMENT_ORIGINAL:${item.documentVersionId}:`;
+          const parseRunId = item.evidenceRef.slice(prefix.length,-(item.sourceRefId.length+1));
+          if (!item.evidenceRef.startsWith(prefix) || !item.evidenceRef.endsWith(`:${item.sourceRefId}`) ||
+            !/^[A-Za-z0-9_-]{1,96}$/u.test(parseRunId)) throw new Error('JOBAID_ORIGINAL_SOURCE_BINDING_INVALID');
+          const key = `${item.documentVersionId}:${parseRunId}`;
+          if (!loaded.has(key)) loaded.set(key,await this.originalReader!.readDocumentOriginal(item.documentVersionId,parseRunId,
+            {tenantId,actorUserId:input.actorUserId,roles:[]}));
+          const actual = {...findDocumentOriginalEvidence(loaded.get(key)!,item.sourceRefId),workItemId:item.workItemId};
+          if (canonicalJson(actual) !== canonicalJson(item)) throw new Error('JOBAID_ORIGINAL_SOURCE_CHANGED');
+        }
+      });
+    }
+
   }
 
   private async assertEvidenceOwned(
@@ -1448,7 +1470,7 @@ export class CanonicalJobAidProblemService {
     for (const [workItemId, documentVersionId] of bindings) {
       const owned = database
         ? await this.work.loadOwnedSourceBinding(
-            { workItemId, tenantId, actorUserId },
+        { workItemId, tenantId, actorUserId, kind:'SOURCE_FILE' },
             database,
           )
         : await this.workItems.loadAuthorizationBinding({

@@ -1,5 +1,5 @@
 import { DocumentParsingHostedService } from '../../../server/modules/document-management/src/hosted/nest/document-parsing-hosted.service';
-describe('MinerU remote worker wiring', () => {
+describe('Official document plugin wiring', () => {
   afterEach(() => jest.restoreAllMocks());
 
   function setup(allowed: boolean) {
@@ -15,9 +15,9 @@ describe('MinerU remote worker wiring', () => {
     }) };
     const repository = { current: jest.fn(async () => ({ latest: null, published: null })),
       readRequest: jest.fn(async () => null), reserve: jest.fn() };
-    const remoteWorker = { configured: jest.fn(() => false) };
-    const service = new DocumentParsingHostedService(files as never, catalog as never, repository as never, remoteWorker as never, authorizer as never);
-    return { service, events, files, repository, remoteWorker };
+    const plugins = { configured: jest.fn(() => false) };
+    const service = new DocumentParsingHostedService(files as never, catalog as never, repository as never, plugins as never, {} as never, authorizer as never);
+    return { service, events, files, repository, plugins };
   }
   const context = { actorUserId: 'actor', tenantId: 'tenant', roles: [] };
 
@@ -28,13 +28,13 @@ describe('MinerU remote worker wiring', () => {
     expect(files.from).not.toHaveBeenCalled();
   });
 
-  it('reports a clear configuration state and does not reserve a parse until credentials exist', async () => {
+  it('reports a clear configuration state and does not reserve a parse until the official plugin is configured', async () => {
     const { service, events, repository } = setup(true);
     const result = await service.status('version', context);
     expect(events).toEqual(['authorize', 'source']);
-    expect(result).toMatchObject({ runtimeAvailable: false, runtime: { state: 'NOT_CONFIGURED', errorCode: 'MINERU_REMOTE_WORKER_NOT_CONFIGURED' } });
+    expect(result).toMatchObject({ runtimeAvailable: false, runtime: { state: 'NOT_CONFIGURED', errorCode: 'DOCUMENT_PLUGIN_NOT_CONFIGURED' } });
     await expect(service.start('version', { requestId: 'runtime-check-1', expectedPublishedRevision: 0 }, context))
-      .rejects.toMatchObject({ code: 'MINERU_REMOTE_WORKER_NOT_CONFIGURED' });
+      .rejects.toMatchObject({ code: 'DOCUMENT_PLUGIN_NOT_CONFIGURED' });
     expect(repository.reserve).not.toHaveBeenCalled();
   });
 });

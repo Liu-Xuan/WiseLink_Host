@@ -1,6 +1,20 @@
 import { DriveSourceScanService } from './drive-source-scan.service';
 
 describe('DriveSourceScanService', () => {
+  it('returns earlier unacknowledged objects alongside the current partial scan', async () => {
+    const pending = [{ sourceKey: 'operations', providerObjectId: 'earlier', providerVersionId: 'v1',
+      entryType: 'file', name: 'A.pdf', path: 'A.pdf', modifiedTime: null, identity: 'operations:file:earlier:v1' }];
+    const listPendingCandidates = jest.fn(async () => pending);
+    const service = new DriveSourceScanService({ listPendingCandidates,
+      forTenant: () => ({ load: async () => null, savePage: async () => undefined }),
+    } as never);
+    const result = await service.scanCandidates({ tenantId: 'tenant', sourceKey: 'operations', maxPages: 1,
+      fetcher: { list: async () => ({ files: [{ token: 'current', type: 'file', name: 'B.pdf' }], hasMore: true, nextPageToken: 'C' }) } });
+    expect(result.complete).toBe(false);
+    expect(result.candidates[0].providerObjectId).toBe('current');
+    expect(result.pendingCandidates).toEqual(pending);
+    expect(listPendingCandidates).toHaveBeenCalledWith('tenant','operations');
+  });
   it('rejects unknown sources before invoking an authorized fetcher', async () => {
     const service = new DriveSourceScanService({ forTenant: () => { throw new Error('must not load'); } } as never);
     const fetcher = { list: jest.fn() };
@@ -12,7 +26,7 @@ describe('DriveSourceScanService', () => {
     const checkpoints = new Map<string, string>();
     const forTenant = jest.fn(() => ({
       load: async (key: string) => checkpoints.get(key) ?? null,
-      save: async (key: string, value: string) => { checkpoints.set(key, value); },
+      savePage: async (key: string, value: string) => { checkpoints.set(key, value); },
     }));
     const service = new DriveSourceScanService({ forTenant } as never);
     const fetcher = { list: jest.fn(async () => ({ files: [{ token: 'file-1', type: 'file', name: '日报.pdf' }], hasMore: false })) };
@@ -29,7 +43,7 @@ describe('DriveSourceScanService', () => {
     const service = new DriveSourceScanService({
       forTenant: () => ({
         load: async () => checkpoint,
-        save: async (_key: string, value: string) => { checkpoint = value; },
+        savePage: async (_key: string, value: string) => { checkpoint = value; },
       }),
     } as never);
     const fetcher = { list: jest.fn(async (folder: string, token?: string) => {
@@ -46,7 +60,7 @@ describe('DriveSourceScanService', () => {
   });
 
   it('returns identity candidates without converting them into accepted documents', async () => {
-    const checkpoints = { forTenant: () => ({ load: async () => null, save: async () => undefined }) };
+    const checkpoints = { listPendingCandidates: async () => [], forTenant: () => ({ load: async () => null, savePage: async () => undefined }) };
     const service = new DriveSourceScanService(checkpoints as never);
     const result = await service.scanCandidates({
       tenantId: 'tenant-3', sourceKey: 'operations',
@@ -59,7 +73,7 @@ describe('DriveSourceScanService', () => {
   });
 
   it('classifies changes against an explicitly supplied prior candidate snapshot', async () => {
-    const checkpoints = { forTenant: () => ({ load: async () => null, save: async () => undefined }) };
+    const checkpoints = { listPendingCandidates: async () => [], forTenant: () => ({ load: async () => null, savePage: async () => undefined }) };
     const service = new DriveSourceScanService(checkpoints as never);
     const previous = [{ sourceKey: 'operations', providerObjectId: 'file-4', providerVersionId: 'v1', entryType: 'file', name: '日报.pdf', path: '日报.pdf', modifiedTime: null, identity: 'operations:file:file-4:v1' }];
     const result = await service.scanCandidates({
@@ -70,15 +84,15 @@ describe('DriveSourceScanService', () => {
     expect(result.complete).toBe(true);
   });
 
-  it('loads and commits the durable candidate snapshot only after a complete scan', async () => {
+  it('persists observed positive candidates even before full traversal completes', async () => {
     let snapshot: string | null = null;
     const store = {
       load: async () => null,
-      save: async () => undefined,
+      savePage: async (_key: string, _checkpoint: string, candidates: unknown[]) => { snapshot = JSON.stringify(candidates); },
       loadCandidates: async () => snapshot,
       saveCandidates: async (_key: string, value: string) => { snapshot = value; },
     };
-    const service = new DriveSourceScanService({ forTenant: () => store } as never);
+    const service = new DriveSourceScanService({ forTenant: () => store, listPendingCandidates: async () => JSON.parse(snapshot ?? '[]') } as never);
     const first = await service.scanCandidates({ tenantId: 'tenant-5', sourceKey: 'operations', fetcher: {
       list: async () => ({ files: [{ token: 'file-5', type: 'file', name: '日报.pdf', version_id: 'v1' }], hasMore: false }),
     } });
@@ -88,7 +102,7 @@ describe('DriveSourceScanService', () => {
       list: async () => ({ files: [{ token: 'file-5', type: 'file', name: '日报.pdf', version_id: 'v2' }], hasMore: true, nextPageToken: 'later' }),
     }, maxPages: 1 });
     expect(second.complete).toBe(false);
-    expect(second.changes).toEqual([]);
-    expect(snapshot).toContain('"v1"');
+    expect(second.changes).toEqual([expect.objectContaining({ providerObjectId: 'file-5', change: 'CHANGED' })]);
+    expect(snapshot).toContain('"v2"');
   });
 });

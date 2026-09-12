@@ -1,4 +1,5 @@
 import type { CanonicalWorkItemProjection } from '@shared/api.interface';
+import { originalFixture } from './document-parsing/fixtures/document-original.fixture';
 import type { AssessmentEvidence } from '@shared/assessment-reading.interface';
 import {
   JOBAID_PROBLEM_RESULT_SCHEMA,
@@ -41,6 +42,53 @@ const scope = {
 };
 
 describe('JobAid continuation requests', () => {
+  it('requires published original input and rechecks exact original bytes on a resumed task', async () => {
+    const missing = harness();
+    missing.work.publishedOriginalBinding.mockRejectedValue(new Error('DOCUMENT_ORIGINAL_NOT_PUBLISHED'));
+    await expect(missing.service.begin(missing.current(),scope,'INITIAL_PROBLEM_ASSESSMENT'))
+      .rejects.toThrow('DOCUMENT_ORIGINAL_NOT_PUBLISHED');
+    expect(missing.artifactStore.readActualBytes).not.toHaveBeenCalled();
+    const h = harness();
+    const started = await h.service.begin(h.current(),scope,'INITIAL_PROBLEM_ASSESSMENT');
+    const frozen = structuredClone(started.task);
+    const changed = await h.originalReader.readDocumentOriginal();
+    changed.original.source.units[0].payload = {text:'Unexpected rewrite of a published original.'};
+    h.originalReader.readDocumentOriginal.mockResolvedValue(changed);
+    await expect(h.service.begin(h.current(),scope,'INITIAL_PROBLEM_ASSESSMENT'))
+      .rejects.toThrow('JOBAID_ORIGINAL_SOURCE_CHANGED');
+    expect(h.task(started.attemptRef)).toEqual(frozen);
+    h.originalReader.readDocumentOriginal.mockRejectedValue(new Error('SOURCE_ACCESS_REVOKED'));
+    await expect(h.service.begin(h.current(),scope,'INITIAL_PROBLEM_ASSESSMENT')).rejects.toThrow('SOURCE_ACCESS_REVOKED');
+  });
+  it('claims a source-file-bound original task without a legacy package', async () => {
+    const h=harness(); h.current().package=null;
+    const started=await h.service.begin(h.current(),scope,'INITIAL_PROBLEM_ASSESSMENT');
+    expect(started.task.sourceRefs).toEqual([{ref:'ART-TEST',sha256:'a'.repeat(64)}]);
+    expect(parseJobAidProblemTask(started.task).sourceBindings[0]).toMatchObject({kind:'SOURCE_FILE',artifactRef:'ART-TEST'});
+    expect(h.artifactStore.readActualBytes).not.toHaveBeenCalled();
+  });
+  it('keeps current original sections separate from retained historical parsing evidence', () => {
+    const workItem = projection();
+    const common = projectCommonAssessmentContext(workItem, {
+      context: { status: 'AVAILABLE' }, documentReadingStatus: 'AVAILABLE',
+      items: [], sections: [{ title: 'Original condition', sourceRefIds: ['SR-1'] }], resourceRefs: [],
+    }, []);
+    const current: AssessmentEvidence = { kind: 'DOCUMENT_PASSAGE', workItemId: workItem.workItemId,
+      documentVersionId: 'DV-JOBAID', evidenceRef: 'DOCUMENT_ORIGINAL:DV-JOBAID:PR-2:SR-1',
+      sourceRefId: 'SR-1', title: 'Original', versionLabel: 'PR-2', locator: 'page 1', excerpt: 'Corrected condition.' };
+    const prior = { ...current, evidenceRef: 'DOCUMENT_ORIGINAL:DV-JOBAID:PR-1:SR-1',
+      versionLabel: 'PR-1', excerpt: 'Earlier condition.' };
+    const previousWork = savedWork(); previousWork.content.evidence = [prior];
+    previousWork.content.readSourceRefs = [prior.evidenceRef];
+    const task = buildJobAidProblemTask({ workItem, actorUserId: OWNER, permissionSnapshotVersion: 'permission',
+      purpose: 'INITIAL_PROBLEM_ASSESSMENT', sourceCatalog: [current], sourceBindings: [], common,
+      previousWork, expectedWorkRevision: previousWork.workRevision, priorAssessmentRefs: [previousWork.workRevisionRef] });
+    expect(task.sourceCatalog).toEqual(expect.arrayContaining([current, prior]));
+    expect(task.modelInput.documentOverview.sections[0].sourceRefs).toEqual([current.evidenceRef]);
+    expect(task.initiallyDeliveredRefs).toContain(prior.evidenceRef);
+    expect(task.initiallyDeliveredRefs).not.toContain(current.evidenceRef);
+    expect(assertJobAidProblemTaskBinding(task)).toBe(task);
+  });
   it('recovers the sealed method version after a release and rejects an unbacked method binding', async () => {
     const h = harness();
     await h.enqueue(REQUEST_1);
@@ -298,7 +346,7 @@ describe('JobAid continuation requests', () => {
       'INITIAL_PROBLEM_ASSESSMENT',
     );
     expect(h.conversations.hasActiveOfficialActorMapping).toHaveBeenCalledTimes(
-      2,
+      3,
     );
     h.conversations.hasActiveOfficialActorMapping.mockResolvedValue(false);
 
@@ -309,9 +357,10 @@ describe('JobAid continuation requests', () => {
     expect(h.rows.size).toBe(1);
     expect(h.rows.get(first.attemptRef)?.status).toBe('RUNNING');
     expect(h.attempts.reserve).toHaveBeenCalledTimes(1);
-    expect(h.artifactStore.readActualBytes).toHaveBeenCalledTimes(1);
+    expect(h.artifactStore.readActualBytes).not.toHaveBeenCalled();
+    expect(h.work.publishedOriginalBinding).toHaveBeenCalledTimes(1);
     expect(h.conversations.hasActiveOfficialActorMapping).toHaveBeenCalledTimes(
-      3,
+      4,
     );
   });
 
@@ -486,7 +535,8 @@ describe('JobAid continuation requests', () => {
       );
       expect(h.current().integratedAssessment).toEqual(serving);
       expect(h.attempts.reserve).toHaveBeenCalledTimes(1);
-      expect(h.artifactStore.readActualBytes).toHaveBeenCalledTimes(1);
+      expect(h.artifactStore.readActualBytes).not.toHaveBeenCalled();
+    expect(h.work.publishedOriginalBinding).toHaveBeenCalledTimes(1);
       expect(h.task(queued.attemptRef).baseRevision).toBe(6);
       expect(
         parseJobAidProblemTask(h.task(queued.attemptRef)).modelInput
@@ -603,6 +653,8 @@ function harness(knowledge?: { binding: jest.Mock }, initialAilySessionId?: stri
   };
   const actorExecutor = { kind: 'host-owner-transaction' };
   const work = {
+    publishedOriginalBinding: jest.fn(async () => ({parseRunId:'PR-TEST-2'})),
+    withActorScope: jest.fn(async (_actor: string, operation: () => Promise<unknown>) => operation()),
     listForRuntime: jest.fn(async (): Promise<JobAidWorkRevision[]> => []),
     listHeadersForRuntime: jest.fn(async (input: unknown) =>
       (await work.listForRuntime(input as never)).map(
@@ -622,10 +674,11 @@ function harness(knowledge?: { binding: jest.Mock }, initialAilySessionId?: stri
       ) => operation(actorExecutor),
     ),
     loadOwnedSourceBinding: jest.fn(async () => ({
+      kind:'SOURCE_FILE',
       workItemId: current.workItemId,
       documentVersionId: current.source.documentVersionId,
-      artifactRef: current.package!.artifact.ref,
-      artifactSha256: current.package!.artifact.sha256,
+      artifactRef: current.source.sourceArtifactId,
+      artifactSha256: current.source.sourceFileSha256,
     })),
   };
   const conversations = {
@@ -704,6 +757,13 @@ function harness(knowledge?: { binding: jest.Mock }, initialAilySessionId?: stri
       };
     }),
   };
+  const originalReader = { readDocumentOriginal: jest.fn(async () => {
+      const original = originalFixture(); original.binding.documentVersionId=current.source.documentVersionId;
+      original.source.units = [original.source.units[0]];
+      original.source.units[0].payload = {text:ENGLISH};
+      return {original,structuredSource:original.source,run:{...original.binding,
+        manifestArtifact:{relativePath:'original/manifest.json',readback:'VERIFIED',sha256:'b'.repeat(64),byteLength:100}}};
+    }) };
   const service = new CanonicalJobAidProblemService(
     registrar as never,
     artifactStore as never,
@@ -731,9 +791,11 @@ function harness(knowledge?: { binding: jest.Mock }, initialAilySessionId?: stri
     } as never,
     work as never,
     knowledge as never,
+    originalReader as never,
   );
   return {
     service,
+    originalReader,
     rows,
     task,
     registrar,
@@ -777,7 +839,7 @@ function projection(): CanonicalWorkItemProjection {
       decisionHash: 'hash',
       permissionSnapshotVersion: 'permission-browser',
     },
-    source: { documentId: 'DOC-JOBAID', documentVersionId: 'DV-JOBAID' },
+    source: { documentId: 'DOC-JOBAID', documentVersionId: 'DV-JOBAID',sourceArtifactId:'ART-TEST',sourceFileSha256:'a'.repeat(64),sourceByteLength:1234 },
     classification: { status: 'CONFIRMED', normalizedFamily: 'SB' },
     package: {
       packageId: 'PKG-JOBAID',

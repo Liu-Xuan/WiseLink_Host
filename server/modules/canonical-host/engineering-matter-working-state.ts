@@ -1,3 +1,4 @@
+import { validateMatterRevisitWhen } from './matter-revisit';
 import type {
   AssessmentEvidence,
   AssessmentReadingClaim,
@@ -145,6 +146,7 @@ export function materializeEngineeringMatterWorkingState(input: {
       }
       const checked = coverageByInputId.get(binding.inputId)!;
       if (!checked.checkedSourceRefIds.includes(evidence.sourceRefId)) {
+        if (priorDocumentCovered(evidence)) continue;
         fail('ENGINEERING_MATTER_WORKING_DOCUMENT_EVIDENCE_NOT_CHECKED');
       }
     }
@@ -252,6 +254,8 @@ export function engineeringMatterPendingInputs(
       if (covered.documentVersionId !== binding.documentVersionId) {
         reasons.push('DOCUMENT_VERSION_CHANGED');
       }
+      if (covered.original?.parseRunId !== binding.original?.parseRunId ||
+          covered.original?.parseRevision !== binding.original?.parseRevision) reasons.push('DOCUMENT_ORIGINAL_CHANGED');
       if (
         covered.resultRef !== binding.resultRef ||
         covered.resultRevision !== binding.resultRevision
@@ -910,6 +914,7 @@ function validateTextItem(
   value: unknown,
 ): asserts value is EngineeringMatterWorkingTextItem {
   if (!isRecord(value)) fail('ENGINEERING_MATTER_WORKING_TEXT_ITEM_INVALID');
+  if (value.when !== undefined) validateMatterRevisitWhen(value.when);
   requiredText(
     value.itemId,
     'ENGINEERING_MATTER_WORKING_TEXT_ITEM_ID_REQUIRED',
@@ -972,6 +977,11 @@ function validateBinding(
 ): asserts value is EngineeringMatterWorkingInputBinding {
   if (!isRecord(value)) fail('ENGINEERING_MATTER_WORKING_INPUT_INVALID');
   requiredText(value.inputId, 'ENGINEERING_MATTER_WORKING_INPUT_ID_REQUIRED');
+  if (value.original !== undefined && (!isRecord(value.original) ||
+      typeof value.original.parseRunId !== 'string' || !/^[A-Za-z0-9_-]{1,96}$/.test(value.original.parseRunId) ||
+      !Number.isSafeInteger(value.original.parseRevision) || Number(value.original.parseRevision) < 1 ||
+      Object.keys(value.original).some(key => !['parseRunId','parseRevision'].includes(key))))
+    fail('ENGINEERING_MATTER_ORIGINAL_BINDING_INVALID');
   if (value.kind === 'DOCUMENT_VERSION') {
     requiredText(value.familyId, 'ENGINEERING_MATTER_WORKING_FAMILY_REQUIRED');
     requiredText(

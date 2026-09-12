@@ -25,7 +25,8 @@ import {
 } from './modules/canonical-host/canonical-host.constants';
 import { MiaodaApplicabilityControlledSelectionAdapter } from './modules/canonical-host/miaoda-applicability-controlled-selection.adapter';
 import { OrdinaryFailureValidationWriteAuthorizationAdapter } from './modules/canonical-host/ordinary-failure-validation-write-authorization.adapter';
-import { UNIFIED_ARTIFACT_STORE } from './modules/unified-reader/unified-reader.constants';
+import { DOCUMENT_ORIGINAL_READER, UNIFIED_ARTIFACT_STORE } from './modules/unified-reader/unified-reader.constants';
+import { DocumentParsingHostedService } from './modules/document-management/src/hosted/nest/document-parsing-hosted.service';
 import { MiaodaOrdinaryArtifactStoreAdapter } from './modules/unified-reader/miaoda-ordinary-artifact-store.adapter';
 import { createHostedU0FullPackageValidatorProvider } from './modules/unified-reader/hosted-u0-full-validator.provider';
 import { createHostedU0Frozen2FailureAdapterProvider } from './modules/unified-reader/hosted-u0-frozen2-failure-adapter.provider';
@@ -90,6 +91,8 @@ import { S1000dXmlStructuredPackageProducerAdapter } from './modules/s1000d-ingr
         useExisting: S1000dXmlStructuredPackageProducerAdapter,
       },
       unifiedReader: {
+        imports: [DocumentManagementRuntimeModule],
+        originalReaderProvider: { provide: DOCUMENT_ORIGINAL_READER, useExisting: DocumentParsingHostedService },
         artifactStoreProvider: {
           provide: UNIFIED_ARTIFACT_STORE,
           useExisting: MiaodaOrdinaryArtifactStoreAdapter,

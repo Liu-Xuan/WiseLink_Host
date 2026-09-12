@@ -19,6 +19,15 @@ const inputA = binding('WI-A', 4, 'DV-A', 'RESULT-A', 3);
 const inputB = binding('WI-B', 7, 'DV-B', 'RESULT-B', 2);
 
 describe('Engineering Matter working state materializer', () => {
+  it('marks original revisions pending without changing the saved coverage binding', () => {
+    const previous = { ...inputA, original: { parseRunId: 'PR-2', parseRevision: 2 } };
+    const current = { coverage: [coverage(previous, 'NO_MATERIAL_CHANGE', ['SR-2'], 'Read original revision 2')] } as Parameters<typeof engineeringMatterPendingInputs>[0];
+    expect(engineeringMatterPendingInputs(current, [previous])).toEqual([]);
+    const latest = { ...previous, original: { parseRunId: 'PR-3', parseRevision: 3 } };
+    expect(engineeringMatterPendingInputs(current, [latest])[0].reasons).toEqual(['DOCUMENT_ORIGINAL_CHANGED']);
+    expect(current!.coverage[0].binding.original).toEqual(previous.original);
+    expect(() => engineeringMatterPendingInputs(current, [{ ...latest, original: { parseRunId: 'PR-3', parseRevision: 0 } }])).toThrow('ORIGINAL_BINDING_INVALID');
+  });
   const methodEvidence: AssessmentEvidence = {
     evidenceRef: 'METHOD-1', kind: 'METHOD_CLAUSE', title: 'Risk assessment method',
     versionLabel: null, excerpt: 'Separate the scenario from the likelihood rating.',

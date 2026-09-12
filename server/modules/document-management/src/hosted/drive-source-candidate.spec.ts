@@ -34,6 +34,13 @@ describe('toDriveSourceCandidates', () => {
     expect(classifyDriveSourceCandidates(previous, current)[0]?.change).toBe('NEW');
   });
 
+  it('retains metadata changes for intake checks even when the provider repeats a version', () => {
+    const previous = toDriveSourceCandidates('operations', [{ token: 'same', type: 'file', name: '日报.pdf', path: '日报.pdf', version_id: 'v1' }]);
+    for (const change of [{ name: '更名.pdf' }, { path: '2026/日报.pdf' }, { entryType: 'docx' }, { modifiedTime: '2026-09-13T00:00:00Z' }]) {
+      expect(classifyDriveSourceCandidates(previous, [{ ...previous[0], ...change }])[0].change).toBe('CHANGED');
+    }
+  });
+
   it('uses modified time when the provider has no version identifier', () => {
     const previous = toDriveSourceCandidates('operations', [{ token: 'same', type: 'file', name: '日报.pdf', path: '日报.pdf', modifiedTime: '2026-09-12T00:00:00Z' }]);
     const current = toDriveSourceCandidates('operations', [{ token: 'same', type: 'file', name: '日报.pdf', path: '日报.pdf', modifiedTime: '2026-09-13T00:00:00Z' }]);

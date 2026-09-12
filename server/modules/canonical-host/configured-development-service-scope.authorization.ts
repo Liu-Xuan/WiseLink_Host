@@ -30,6 +30,13 @@ const CANONICAL_APP_ID = 'app_17bzc551rsg';
 // Supplied as the executor/service delegate through CanonicalHostModule.forRoot().
 // eslint-disable-next-line @darraghor/nestjs-typed/injectable-should-be-provided
 export class ConfiguredDevelopmentCanonicalServiceScopeAuthorization implements CanonicalServiceScopeAuthorizationPort {
+  async authorizeDocumentWork(input: { documentVersionId: string }) {
+    const config = requiredDocumentConfig();
+    if (input.documentVersionId !== config.documentVersionId) throw Object.assign(new Error('DOCUMENT_WORK_NOT_FOUND'), { statusCode: 404 });
+    return { principalId: config.principalId, appId: CANONICAL_APP_ID, tenantId: config.tenantId,
+      actorUserId: config.actorUserId, documentVersionId: config.documentVersionId };
+  }
+
   async authorizeWorkItemRead(input: {
     transport: 'OPENAPI_REST' | 'READONLY_MCP';
     operation: 'READ_STATUS' | 'QUERY_PARSED_PACKAGE' | 'READ_DEEP_LINK';
@@ -72,7 +79,8 @@ export class ConfiguredDevelopmentCanonicalServiceScopeAuthorization implements 
     transport: 'READONLY_MCP' | 'OPENCLAW_MCP';
   }): Promise<void> {
     if (input.transport === 'OPENCLAW_MCP' && !process.env.WL_OPENCLAW_SERVICE_WORK_ITEM_ID) {
-      requiredMatterConfig();
+      if (process.env.WL_OPENCLAW_SERVICE_MATTER_ID) requiredMatterConfig();
+      else requiredDocumentConfig();
     } else requiredConfig();
   }
 
@@ -234,6 +242,15 @@ function requiredConfig(): DevelopmentServiceScopeConfig {
     ...base,
     workItemId,
   };
+}
+
+function requiredDocumentConfig() {
+  const base = requiredBaseConfig();
+  const documentVersionId = process.env.WL_OPENCLAW_SERVICE_DOCUMENT_VERSION_ID;
+  const actorUserId = process.env.WL_OPENCLAW_SERVICE_DOCUMENT_ACTOR_ID;
+  if (process.env.WL_OPENCLAW_DOCUMENT_SCOPE_ENABLED !== '1' ||
+      !documentVersionId?.trim() || !actorUserId?.trim()) throw canonicalServiceScopeUnavailable();
+  return { ...base, documentVersionId, actorUserId };
 }
 
 function requiredMatterConfig() {

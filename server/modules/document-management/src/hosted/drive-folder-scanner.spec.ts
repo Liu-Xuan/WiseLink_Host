@@ -53,3 +53,16 @@ describe('scanDriveFolders', () => {
     expect(result.blockers).toEqual([{ folderToken: 'root', code: 'DRIVE_PAGE_TOKEN_MISSING' }]);
   });
 });
+
+it('keeps positive sibling results when one subtree is unauthorized', async () => {
+  const result = await scanDriveFolders([
+    { folderToken: 'denied', path: 'denied', depth: 0 },
+    { folderToken: 'readable', path: 'readable', depth: 0 },
+  ], async folder => {
+    if (folder === 'denied') throw { status: 403 };
+    return { files: [{ token: 'C', type: 'file', name: 'C.pdf' }], hasMore: false };
+  });
+  expect(result.entries.map(entry => entry.token)).toEqual(['C']);
+  expect(result.continuation).toEqual([{ folderToken: 'denied', path: 'denied', depth: 0 }]);
+  expect(result.blockers[0].code).toBe('DRIVE_AUTHORIZATION_DENIED');
+});
