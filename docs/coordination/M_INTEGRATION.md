@@ -281,3 +281,7 @@ Skill c85 源提交 `58653b973f43f18c0ce345239547fc2e2a9f115c` 已推送妙搭 o
 纯定位/内容覆盖相同保留原状态；正文或覆盖变化、旧评估缺少原文绑定时，已完成的适用性/JobAid/Overall 状态显示 DOCUMENT_ORIGINAL_IMPACT_REVIEW_REQUIRED，保留历史结果和正在运行的后继，不标记新原文已评。真实 Reader 读取失败继续报错，不降级成可评/无影响。翻译状态不因工程状态变化被改写。
 
 31 项状态测试（包含 exact old/new Reader 调用、纯定位、内容变化）、真实模块装配、12 项 JobAid PostgreSQL 测试与 server types/ESLint 通过。PG 测试仍只覆盖已有身份/事务/状态入口，不宣称新增变化的自动续评已通过。剩余仍是：将真实内容变化接入持久续评、从新原文提取适用性候选并由 Host 映射/求值、真实 Hosted 安装消费、F6 正式来源权限和 H1/H2。此增量尚未发布。
+
+## 原文受理 JSON 与初评查询错配修复（2026-09-13）
+
+跨消费者核对发现实际 start() 持久化 source_binding 使用 pdfSha256/byteLength，而 M 的初评状态查询误用 DocumentOriginalBinding 的 sourceSha256/sourceByteLength；会把已发布原文判为 NOT_READY。原 PG 夹具直接保存 original.binding，掩盖了这个错误。先把夹具改为真实受理格式，PG 实际复现 nextOperation=null 而非 EVALUATE_JOBAID；再修正查询两个 JSON key，12 项真实 PG 测试和 31 项状态测试、server types 通过。没有改历史行或增加兼容字段回退；start() 与原文产物各自保留真实字段语义。
