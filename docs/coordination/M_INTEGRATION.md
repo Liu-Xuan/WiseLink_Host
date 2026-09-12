@@ -261,3 +261,5 @@ db-env-diff 实际返回 engineering_search_projection、pending 和 drive_scan_
 平台 dev→online 差异暴露 TO PUBLIC 被转换为仅 authenticated 的行为。新增 0052 显式指定 authenticated/service_role，用于三个新文档 restrictive policy；隔离 PG 的独立文档翻译测试验证三条策略角色集合与拒绝错误主体/旧来源的流程，1 项通过。0052 已在 dev 单事务应用。发布前再次读回平台差异核对实际角色，不能依赖原始 SQL 中 PUBLIC 的假设。
 
 线上只读查询：parseRun 为 2 个 FAILED、无活动解析；活动 ActionAttempt 为 Overall 2 RUNNING、1 QUEUED，均无未到期租约。未重写这些历史任务、未取消或重放。迁移保留 WORK_ITEM 的已有约束语义。Hosted 诊断队列未因此新增请求。技术发布、实际插件运行及 H1/H2 必须分别记账。
+
+0052 实际平台修订：初版 ALTER POLICY … TO 虽返回 COMMIT，但 dev→online 回读仍仅 authenticated，不能记作边界修复完成。已改为单事务 DROP/CREATE 三条同名 restrictive policy，原谓词不变，明确两个平台角色；重跑独立文档 PG 测试通过，dev 返回实际 DDL/COMMIT。后续以平台差异的角色集合读回为准。
