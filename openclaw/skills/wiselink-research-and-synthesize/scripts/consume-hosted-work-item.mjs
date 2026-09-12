@@ -66,6 +66,14 @@ export async function consumeHostedWorkItem(options, dependencies) {
       return { ...review, initialStatus: initial.status, initialStages: initial.stages };
     }
   }
+  if (Object.values(initial.stages).some(stage => stage.status === 'CONFLICT' &&
+      stage.terminalCode === 'DOCUMENT_ORIGINAL_IMPACT_REVIEW_REQUIRED')) {
+    await dependencies.callTool('next_original_assessment', {workItemId:options.workItemId});
+    statusResult = await dependencies.callTool('get_parse_status', {workItemId:options.workItemId});
+    const next = readInitialStatus(statusResult, options.workItemId);
+    if (next.documentVersionId !== initial.documentVersionId) throw new Error('INITIAL_DOCUMENT_VERSION_DRIFT');
+    initial = next;
+  }
   const limit = options.maxInitialStages ?? INITIAL_ANALYSIS_OPERATIONS.length;
   if (!Number.isSafeInteger(limit) || limit < 1 || limit > INITIAL_ANALYSIS_OPERATIONS.length) throw new Error('INITIAL_STAGE_LIMIT_INVALID');
   const tickStartedAt = Date.now();

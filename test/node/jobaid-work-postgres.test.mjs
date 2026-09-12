@@ -4,6 +4,7 @@ import { createRequire } from 'node:module';
 import test from 'node:test';
 import postgres from 'postgres';
 
+process.env.TS_NODE_PROJECT = 'tsconfig.node.json';
 process.env.TS_NODE_COMPILER_OPTIONS = JSON.stringify({
   module: 'CommonJS',
   moduleResolution: 'node',
@@ -373,7 +374,8 @@ test(
           const queued = initialProjection('WI-job-queued');
           queued.package = null;
           const queuedDenied = initialProjection('WI-job-queued-denied');
-          for (const candidate of [initial, denied, queued, queuedDenied]) {
+          const automatic = initialProjection('WI-job-original-successor');
+          for (const candidate of [initial, denied, queued, queuedDenied, automatic]) {
             await sql`INSERT INTO work_item (work_item_id,tenant_id,requested_by_user_id,revision,document_version_id,projection_json)
               VALUES (${candidate.workItemId},${scope.tenantId},${scope.actorUserId},1,'dv-job',${JSON.stringify(candidate)})`;
           }
@@ -384,9 +386,28 @@ test(
           const workItems = new MiaodaWorkItemRepository(db);
           const original = originalFixture(); original.binding.documentVersionId='dv-job';
           original.source.units=[original.source.units[0]]; original.source.units[0].payload={text:document.excerpt};
+          // Feed the real reservation producer's payload into the isolated
+          // published fixture, rather than copying an original-result DTO.
+          const { DocumentParsingHostedService } = require('../../server/modules/document-management/src/hosted/nest/document-parsing-hosted.service.ts');
+          let reservedSourceBinding;
+          const parser = new DocumentParsingHostedService({ from: () => {
+            assert.fail('A parse reservation must not read or write files');
+          } }, {
+            readMetadataSource: async () => ({version:{documentId:'doc-job',familyId:'family-job',
+              sourceArtifactId:original.binding.sourceArtifactId,pdfSha256:original.binding.sourceSha256,
+              byteLength:original.binding.sourceByteLength},source:{bucketId:'fixture'}}),
+          }, {readRequest:async () => null,reserve:async (_scope,input) => {
+            reservedSourceBinding=input.sourceBinding;
+            return {row:{parseRunId:'PR-TEST-2',documentVersionId:'dv-job',parseRevision:2,status:'RUNNING',
+              artifactProgress:[],startedAt:new Date(),deadlineAt:new Date(),completedAt:null,errorCode:null}};
+          }}, {configured:() => true}, {}, {assertCanRead:async input => {
+            assert.equal(input.documentVersionId,'dv-job'); assert.equal(input.actorUserId,scope.actorUserId);
+          }});
+          await parser.start('dv-job',{requestId:'original-fixture',expectedPublishedRevision:1},scope);
+          assert.ok(reservedSourceBinding);
           await sql`INSERT INTO dm_document_version(document_version_id) VALUES ('dv-job')`;
           await sql`INSERT INTO dm_document_parse_run(parse_run_id,document_version_id,tenant_id,actor_user_id,request_id,parse_revision,expected_published_revision,status,bucket_id,source_binding,manifest_artifact,deadline_at,completed_at)
-            VALUES ('PR-TEST-2','dv-job',${scope.tenantId},${scope.actorUserId},'original-fixture',2,1,'PUBLISHED','fixture',${JSON.stringify({documentVersionId:'dv-job',documentId:'doc-job',familyId:'family-job',sourceArtifactId:original.binding.sourceArtifactId,pdfSha256:original.binding.sourceSha256,byteLength:original.binding.sourceByteLength})}::jsonb,
+            VALUES ('PR-TEST-2','dv-job',${scope.tenantId},${scope.actorUserId},'original-fixture',2,1,'PUBLISHED','fixture',${JSON.stringify(reservedSourceBinding)}::jsonb,
               ${JSON.stringify({role:'MANIFEST',readback:'VERIFIED',relativePath:'original/manifest.json',sha256:'b'.repeat(64),byteLength:100})}::jsonb,now()+interval '1 minute',now())`;
           let sourceReads = 0;
           const service = new CanonicalJobAidProblemService(
@@ -518,6 +539,7 @@ test(
             schemaVersion: INITIAL_ANALYSIS_REQUEST_SCHEMA,
             taskType: 'OPENCLAW_DYNAMIC_EVALUATION',
             requestId: queuedRequestId,
+            originalParseRunId: 'PR-TEST-2',
           });
           assert.equal(
             (
@@ -595,6 +617,20 @@ test(
           } finally {
             await sql`UPDATE identity_subject_mapping SET status = 'ACTIVE' WHERE miaoda_user_id = ${scope.actorUserId}`;
           }
+          const automaticScope = {tenantId:scope.tenantId,workItemId:automatic.workItemId,
+            principalId:fence.principalId,appId:'app-test',authorizationFingerprint:'original-successor-test'};
+          const reserveOriginal = () => hosted(() => service.enqueueOriginalContinuation(automatic, automaticScope,
+            'INITIAL_PROBLEM_ASSESSMENT', {parseRunId:'PR-TEST-2',parseRevision:2}));
+          const successors = await Promise.all([reserveOriginal(),reserveOriginal()]);
+          assert.equal(successors[0].attemptRef,successors[1].attemptRef);
+          assert.equal(successors.filter(item => item.created).length,1);
+          assert.equal(successors[0].requestId,'original-2');
+          await sql`UPDATE action_attempt SET status='FAILED',terminal_reason='SYNTHETIC_FAILURE'
+            WHERE operation_ref=${successors[0].attemptRef}`;
+          const failedSuccessor = await reserveOriginal();
+          assert.equal(failedSuccessor.status,'FAILED');
+          assert.equal(failedSuccessor.created,false);
+          assert.equal((await sql`SELECT attempt_id FROM action_attempt WHERE work_item_id=${automatic.workItemId}`).length,1);
           const changed = structuredClone(initial);
           changed.package.artifact.sha256 = 'b'.repeat(64);
           await sql`UPDATE work_item SET projection_json = ${JSON.stringify(changed)} WHERE work_item_id = ${initial.workItemId}`;

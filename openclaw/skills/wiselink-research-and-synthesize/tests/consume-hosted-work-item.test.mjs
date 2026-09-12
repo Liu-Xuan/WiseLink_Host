@@ -363,3 +363,25 @@ test('independent native job invocations progress while another subject is waiti
   finishWorkItemRead(status({ status: 'NOT_READY', nextOperation: null }));
   assert.equal((await workItem).status, 'NOT_READY');
 });
+
+
+test('an original impact asks Host for the durable successor and re-reads authoritative status', async t => {
+  const input = await options(t);
+  let queued=false, saved=false;
+  const calls=[];
+  const result=await consumeHostedWorkItem(input, {
+    callTool:async name => {
+      calls.push(name);
+      if (name==='get_pending_review_turn') return {next:null,busy:false};
+      if (name==='next_original_assessment') {queued=true;return {status:'QUEUED'};}
+      assert.equal(name,'get_parse_status');
+      return status({status:queued?'WAITING_INPUT':'CONFLICT',nextOperation:queued&&!saved?'EVALUATE_JOBAID':null,
+        stages:{translation:{status:'PENDING'},applicability:{status:'WAITING_INPUT'},
+          jobAid:saved?{status:'SUCCEEDED'}:queued?{status:'PENDING',requestId:'original-2'}:
+            {status:'CONFLICT',terminalCode:'DOCUMENT_ORIGINAL_IMPACT_REVIEW_REQUIRED'},overall:{status:'SUCCEEDED'}}});
+    },
+    runInitial:async run => {assert.equal(run.continuationRequestId,'original-2');saved=true;return {outcome:'CANDIDATE_READY'};},
+  });
+  assert.equal(result.status,'INITIAL_STAGE_SAVED');
+  assert.equal(calls.filter(name => name==='next_original_assessment').length,1);
+});

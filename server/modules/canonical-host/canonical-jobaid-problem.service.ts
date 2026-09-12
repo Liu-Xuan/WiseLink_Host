@@ -170,6 +170,7 @@ export class CanonicalJobAidProblemService {
         ? 'OPENCLAW_DYNAMIC_EVALUATION'
         : 'OPENCLAW_OVERALL_SYNTHESIS';
     const idempotencyKey = problemIdempotencyKey(workItem, purpose, requestId);
+    let originalParseRunId: string | undefined;
     if (requestId !== undefined) {
       const existing = await this.attempts.readRequest({
         tenantId: scope.tenantId,
@@ -180,6 +181,7 @@ export class CanonicalJobAidProblemService {
       });
       if (existing) {
         continuationReceipt(existing, purpose);
+        originalParseRunId = readInitialAnalysisRequestInput(parseTaskEnvelope(existing.taskEnvelopeJson))?.originalParseRunId;
         if (
           !['QUEUED', 'RUNNING', 'RETRY_SCHEDULED', 'COMMITTING'].includes(
             existing.status,
@@ -217,6 +219,9 @@ export class CanonicalJobAidProblemService {
           scope.authorizationFingerprint,
           purpose,
           identity.createdAt.toISOString(),
+          [],
+          undefined,
+          originalParseRunId,
         ),
     });
     const input = parseJobAidProblemTask(claim.task);
@@ -241,6 +246,42 @@ export class CanonicalJobAidProblemService {
     };
   }
 
+  async readOriginalContinuationBinding(workItem: CanonicalWorkItemProjection, scope: CanonicalVerifiedServiceScope) {
+    const loaded = await this.workItems.loadTenantScopedProjection(workItem.workItemId, scope.tenantId);
+    if (!loaded || loaded.row.documentVersionId !== workItem.source.documentVersionId)
+      throw new Error('JOBAID_WORK_ITEM_BINDING_INVALID');
+    return this.work.publishedOriginalBinding({tenantId:scope.tenantId,actorUserId:loaded.row.requestedByUserId,
+      workItemId:workItem.workItemId,documentVersionId:workItem.source.documentVersionId});
+  }
+
+  /** The caller has verified Hosted WorkItem authority and a changed original. */
+  async enqueueOriginalContinuation(
+    workItem: CanonicalWorkItemProjection,
+    scope: CanonicalVerifiedServiceScope,
+    purpose: 'INITIAL_PROBLEM_ASSESSMENT' | 'OVERALL_CONSISTENCY',
+    expectedOriginal: {parseRunId:string;parseRevision:number},
+  ) {
+    const loaded = await this.workItems.loadTenantScopedProjection(workItem.workItemId, scope.tenantId);
+    if (!loaded || loaded.row.documentVersionId !== workItem.source.documentVersionId)
+      throw new Error('JOBAID_WORK_ITEM_BINDING_INVALID');
+    const actorUserId = loaded.row.requestedByUserId;
+    return this.work.withActorScope(actorUserId, async () => {
+      const original = await this.work.publishedOriginalBindingForRequest({tenantId:scope.tenantId,
+        actorUserId,workItemId:workItem.workItemId,documentVersionId:workItem.source.documentVersionId});
+      if (original.parseRunId !== expectedOriginal.parseRunId || original.parseRevision !== expectedOriginal.parseRevision)
+        throw new Error('JOBAID_ORIGINAL_REQUEST_CHANGED');
+      if (!Number.isSafeInteger(original.parseRevision) || original.parseRevision < 1)
+        throw new Error('JOBAID_ORIGINAL_REVISION_INVALID');
+      // Existing uniqueness includes WorkItem, DocumentVersion and operation.
+      // A published parse revision supplies the durable request identity; a
+      // failed request is replayed as failed, never given a new random identity.
+      const requestId = `original-${original.parseRevision}`;
+      const receipt = await this.enqueueContinuation(workItem, scope.tenantId,
+        scope.authorizationFingerprint, requestId, purpose, undefined, original);
+      return {...receipt,requestId,parseRunId:original.parseRunId};
+    });
+  }
+
   /** Called after browser owner, permission and current-version checks. */
   async enqueueContinuation(
     workItem: CanonicalWorkItemProjection,
@@ -253,6 +294,7 @@ export class CanonicalJobAidProblemService {
       actorId: string;
       tenantId: string;
     },
+    expectedOriginal?: {parseRunId:string;parseRevision:number},
   ) {
     if (!permissionSnapshotVersion.trim())
       throw new Error('JOBAID_PERMISSION_SNAPSHOT_REQUIRED');
@@ -286,6 +328,12 @@ export class CanonicalJobAidProblemService {
       loaded.row.documentVersionId !== execution.source.documentVersionId
     )
       throw new Error('JOBAID_WORK_ITEM_BINDING_INVALID');
+    const original = await this.work.publishedOriginalBindingForRequest({
+      tenantId, actorUserId: loaded.row.requestedByUserId, workItemId: execution.workItemId,
+      documentVersionId: execution.source.documentVersionId,
+    });
+    if (expectedOriginal && (original.parseRunId !== expectedOriginal.parseRunId ||
+      original.parseRevision !== expectedOriginal.parseRevision)) throw new Error('JOBAID_ORIGINAL_REQUEST_CHANGED');
     const reserved = await this.attempts.reserve({
       workItemId: execution.workItemId,
       taskType,
@@ -309,7 +357,7 @@ export class CanonicalJobAidProblemService {
           : {}),
       },
       buildModelInput: async () =>
-        buildInitialAnalysisRequestInput({ taskType, requestId }),
+        buildInitialAnalysisRequestInput({ taskType, requestId, originalParseRunId: original.parseRunId }),
     });
     return {
       attemptRef: reserved.task.operationRef,
@@ -434,11 +482,12 @@ export class CanonicalJobAidProblemService {
       beforeTurnNo: number;
       includedDiscussionTurnIds: string[];
     },
+    originalParseRunId?: string,
   ): Promise<JobAidProblemTaskInput> {
     const readScope = new UnifiedArtifactReadScope(this.artifactStore);
     if (!this.originalReader) throw new Error('DOCUMENT_ORIGINAL_READER_UNAVAILABLE');
     await this.sourceBindings([],workItem,tenantId,actorUserId);
-    const bound = await this.work.publishedOriginalBinding({ tenantId, actorUserId, workItemId: workItem.workItemId,
+    const bound = originalParseRunId ? { parseRunId: originalParseRunId } : await this.work.publishedOriginalBinding({ tenantId, actorUserId, workItemId: workItem.workItemId,
       documentVersionId: workItem.source.documentVersionId });
     const original = await this.work.withActorScope(actorUserId, () => this.originalReader!.readDocumentOriginal(
       workItem.source.documentVersionId,bound.parseRunId,{tenantId,actorUserId,roles:[]}));

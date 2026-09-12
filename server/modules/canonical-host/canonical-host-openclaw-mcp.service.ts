@@ -422,6 +422,13 @@ export class CanonicalHostOpenClawMcpService {
         ),
     );
 
+    server.registerTool('next_original_assessment', {
+      title: '受理原文变化续评',
+      description: 'Host 检查已发布原文与保存评估，按确切解析版本幂等受理后继。保留在途任务、失败历史和正式采用边界。',
+      inputSchema: z.object({workItemId:mcpWorkItemId}).strict(),
+      annotations: beginAnnotations,
+    }, async ({workItemId}) => textResult(await this.dynamicEvaluation.nextOriginalAssessment(workItemId)));
+
     server.registerTool(
       'begin_dynamic_evaluation',
       {

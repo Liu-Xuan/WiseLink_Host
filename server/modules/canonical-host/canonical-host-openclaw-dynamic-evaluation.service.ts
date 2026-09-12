@@ -1,3 +1,4 @@
+import { CanonicalHostInitialAnalysisStatusService, canContinueInitialStage } from './canonical-host-initial-analysis-status.service';
 import { Inject, Injectable, Optional } from '@nestjs/common';
 import {
   CanonicalJobAidProblemService,
@@ -113,7 +114,41 @@ export class CanonicalHostOpenClawDynamicEvaluationService {
     private readonly commonContext: CanonicalHostCommonContextService,
     @Optional()
     private readonly problemAssessment?: CanonicalJobAidProblemService,
+    @Optional() private readonly initialStatus?: CanonicalHostInitialAnalysisStatusService,
   ) {}
+
+  async nextOriginalAssessment(workItemId: string) {
+    const scope = await this.serviceScope.authorizeOpenClawWorkItem({operation:'BEGIN_DYNAMIC',workItemId});
+    assertWorkItemScope(scope, workItemId);
+    if (!this.problemAssessment?.enabledForNewTasks() || !this.initialStatus)
+      throw new Error('JOBAID_ORIGINAL_CONTINUATION_UNAVAILABLE');
+    const workItem = await this.requiredSbWorkItem(workItemId, scope.tenantId, true);
+    if (activeConfigurationEvidenceReevaluation(workItem))
+      return {status:'WAITING_INPUT',reason:'CONFIGURATION_REEVALUATION_ACTIVE'};
+    const original = await this.problemAssessment.readOriginalContinuationBinding(workItem, scope);
+    const status = await this.initialStatus.project({workItem,tenantId:scope.tenantId,expectedOriginalParseRunId:original.parseRunId});
+    const stages = Object.values(status.stages);
+    if (status.status === 'NOT_READY' || stages.some(stage => stage.status === 'BUSY' ||
+      (stage.attemptStatus && ['QUEUED','RUNNING','RETRY_SCHEDULED','COMMITTING'].includes(stage.attemptStatus))))
+      return {status:'BUSY'};
+    const changed = (stage: typeof status.stages.jobAid) => stage.status === 'CONFLICT' &&
+      stage.terminalCode === 'DOCUMENT_ORIGINAL_IMPACT_REVIEW_REQUIRED';
+    if (changed(status.stages.applicability))
+      return {status:'WAITING_INPUT',reason:'ORIGINAL_APPLICABILITY_MAPPING_REQUIRED'};
+    const operation = changed(status.stages.jobAid) ? 'EVALUATE_JOBAID' :
+      changed(status.stages.overall) ? 'SYNTHESIZE_OVERALL' : null;
+    if (!operation) return {status:'IDLE'};
+    if (!canContinueInitialStage(status.stages, operation, true, workItem))
+      return {status:'WAITING_INPUT',reason:'PREREQUISITE_NOT_READY'};
+    if (operation === 'SYNTHESIZE_OVERALL') {
+      const overallScope = await this.serviceScope.authorizeOpenClawWorkItem({operation:'BEGIN_OVERALL',workItemId});
+      assertWorkItemScope(overallScope, workItemId);
+      if (overallScope.tenantId !== scope.tenantId || overallScope.principalId !== scope.principalId)
+        throw new Error('JOBAID_WORK_ITEM_BINDING_INVALID');
+    }
+    return this.problemAssessment.enqueueOriginalContinuation(workItem, scope,
+      operation === 'EVALUATE_JOBAID' ? 'INITIAL_PROBLEM_ASSESSMENT' : 'OVERALL_CONSISTENCY', original);
+  }
 
   async begin(
     workItemId: string,
