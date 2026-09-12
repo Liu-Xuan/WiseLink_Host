@@ -347,3 +347,9 @@ Host 只接受与该候选状态、fragmentId 和原因吻合的 interpretation_
 Host 已接受仅供原文任务 v3 使用的候选 v2：确切原文绑定、逐单元阅读结论、条件引句及范围提议。旧候选仍按原契约校验。Host 比较真实 payload text/caption（含表格嵌套文本），拒绝伪造/空白引句、错误来源、遗漏单元和错绑条件；不把空条件集解释成适用。范围只在实际标题层级和节边界内处理，缺失文档级 Effectivity/Applicability、跨节目标、未决单元及未读页保持 UNKNOWN。多个实际目标展开为各自的评估片段，不再错误使用引句单元作为所有目标。
 
 82 项相关契约/服务/新来源校验测试和服务端类型检查通过。本实现仅验证候选的来源及结构边界，不证明模型语义抽取正确；文档级识别目前限于顶层明确标题，其余结构保守 UNKNOWN。普通入口仍未切换，native v3 候选输出、结果投影/恢复及真实业务验证待继续接通；未发布，不据此宣称 H1/H2 完成。
+
+## native 原文条件发现与候选组装（2026-09-13，迁移中）
+
+现有官方 Hosted 初始模型适配器已按 applicability_task.v3 选择完整原文条件发现提示词，返回 AST candidate v2；既有任务继续使用 v1。native 校验 exact 原文 binding/manifest 与 sourceContext、一单元一阅读结论、真实 payload 引句、来源及候选目标 ID，拒绝伪造或遗漏。Aircraft/Fleet/runtime 与 originalBinding 从 Host 输入回填，模型不能提供控制字段；输出 applicability_candidate.v2 可由上一批 Host 契约接收。未读单元、解释失败与空条件集原样保留给 Host UNKNOWN 判定，不补造 true AST。
+
+201 项 native 验证测试通过，包含实际模型适配器分支及候选组装、旧契约回归；Skill 发布检查通过。测试使用构造数据和注入响应，未调用真实模型。c87 源码与说明已更新但尚未打包/安装；普通入口仍未切换，结果投影、提交恢复及真实 H1/H2 待继续完成。上一已发布 c86 不代表具备此次能力。

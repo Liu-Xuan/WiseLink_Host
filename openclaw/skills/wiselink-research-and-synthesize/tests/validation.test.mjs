@@ -7584,3 +7584,83 @@ for (const extractionStatus of ['extraction_failed','not_supported']) {
     assert.throws(() => validatePayload('applicability-pair',{input,output}),/UNRESOLVED_EXPRESSION_AST_INVALID/);
   });
 }
+
+async function originalApplicabilityPair() {
+  const input = await readJson(APPLICABILITY_TASK_FIXTURE_URL);
+  const legacyOutput = await readJson(APPLICABILITY_AST_FIXTURE_URL);
+  const units = [
+    {unitId:'heading',kind:'heading',payload:{text:'Effectivity',level:1},sourceRefIds:['ref-h']},
+    {unitId:'condition',kind:'paragraph',payload:{text:'Applicable to model B737-8.'},sourceRefIds:['ref-c']},
+    {unitId:'table',kind:'table',payload:{rows:[{cells:[{inlineContent:[{text:'Reference information'}]}]}]},sourceRefIds:['ref-t']},
+  ];
+  Object.assign(input, {schemaVersion:'wiselink.3_1.applicability_task.v3',sourcePackage:null,
+    bilingualBinding:null,bilingualSourceUnits:[],sourceExpressions:[],sourceReadingMode:'VERIFIED_ENGLISH',
+    sourceContext:units.map(unit=>({unitId:unit.unitId,kind:unit.kind,sourceText:JSON.stringify(unit.payload),sourceRefIds:unit.sourceRefIds})),
+    originalInput:{binding:{documentVersionId:input.documentVersionRef,parseRunId:'parse-1',parseRevision:1,
+      sourceArtifactId:'source-1',sourceSha256:'a'.repeat(64),sourceByteLength:100},
+      artifact:{ref:'document-original://fixture/parse-1',sha256:'b'.repeat(64),byteLength:200,mediaType:'application/json'},
+      source:{units},coverage:{unresolvedRanges:[]},locations:[]}});
+  const output={schemaVersion:'wiselink.3_1.applicability_ast_candidate.v2',
+    unitDispositions:units.map(unit=>({unitId:unit.unitId,disposition:unit.unitId==='condition'?'CONDITIONS':'NO_CONDITION',conditionIds:unit.unitId==='condition'?['condition-1']:[]})),
+    expressions:[{...legacyOutput.expressions[0],expressionId:'condition-1',sourceRefIds:['ref-c'],
+      original:{quote:{unitId:'condition',text:'Applicable to model B737-8.'},scope:{kind:'document',headingUnitId:'heading',targetUnitIds:[]}}}]};
+  return {input,output};
+}
+
+test('native v3 candidate preserves exact original and controlled Host bindings',async()=>{
+  const {input,output}=await originalApplicabilityPair();
+  assert.doesNotThrow(()=>validatePayload('applicability-pair',{input,output}));
+  const candidate=buildApplicabilityCandidate(input,output);
+  assert.equal(candidate.schemaVersion,'wiselink.3_1.applicability_candidate.v2');
+  assert.equal(candidate.sourcePackage,null);
+  assert.deepEqual(candidate.originalBinding,input.originalInput.binding);
+  assert.deepEqual(candidate.aircraft,input.aircraft);
+  assert.deepEqual(candidate.fleetBinding,input.fleetBinding);
+  assert.deepEqual(candidate.unitDispositions,output.unitDispositions);
+  output.expressions[0].original.quote.text='mutated';
+  assert.equal(candidate.expressions[0].original.quote.text,'Applicable to model B737-8.');
+});
+
+for (const change of ['quote','omission','target','legacy','controlled-fields','context','preasserted']) {
+  test(`native v3 rejects ${change}`,async()=>{
+    const {input,output}=await originalApplicabilityPair();
+    if(change==='quote') output.expressions[0].original.quote.text='Fabricated text';
+    if(change==='omission') output.unitDispositions.pop();
+    if(change==='target') output.expressions[0].original.scope.targetUnitIds=['invented'];
+    if(change==='legacy') output.schemaVersion='wiselink.3_1.applicability_ast_candidate.v1';
+    if(change==='controlled-fields') output.aircraft={aircraftNumber:'invented'};
+    if(change==='context') input.sourceContext[0].sourceText='different';
+    if(change==='preasserted') input.sourceExpressions=[{expressionId:'invented'}];
+    assert.throws(()=>validatePayload('applicability-pair',{input,output}));
+  });
+}
+
+test('native preserves no-condition and unresolved coverage for Host UNKNOWN evaluation',async()=>{
+  const {input,output}=await originalApplicabilityPair();
+  output.expressions=[];
+  output.unitDispositions.forEach(item=>{item.disposition='NO_CONDITION';item.conditionIds=[];});
+  output.unitDispositions[2].disposition='UNRESOLVED';
+  input.originalInput.coverage.unresolvedRanges=[{reason:'UNREAD',pageIndexes:[2],unitIds:['table'],message:'unread'}];
+  const candidate=buildApplicabilityCandidate(input,output);
+  assert.deepEqual(candidate.expressions,[]);
+  assert.equal(candidate.unitDispositions[2].disposition,'UNRESOLVED');
+});
+
+test('official model adapter chooses original discovery guidance and returns native v2 candidate',async()=>{
+  const {input,output}=await originalApplicabilityPair();
+  let calls=0;
+  const result=await invokeInitialWithTransport({operation:'EXTRACT_APPLICABILITY',modelInput:input},{
+    gatewayChatCompletionsEnabled:true,gatewayUrl:'https://official.invalid',gatewayToken:'fixture-only',
+    configuredModelVersion:'miaoda/minimax-m3',sessionDiscriminator:'original-fixture',
+    executionModel:modelSelection('miaoda/minimax-m3'),registeredModelRefs:['miaoda/minimax-m3'],
+  },{requestGateway:async(_url,init)=>{
+    calls++;
+    const request=JSON.parse(init.body);
+    assert.match(request.messages[0].content,/applicability_ast_candidate.v2/);
+    assert.match(request.messages[0].content,/sourceExpressions is deliberately empty/);
+    assert.deepEqual(JSON.parse(request.messages[1].content),input);
+    return Response.json({model:'actual-official-model',choices:[{message:{content:null,tool_calls:[{type:'function',function:{name:'return_wiselink_initial_candidate',arguments:JSON.stringify({candidate:output})}}]}}]});
+  }});
+  assert.equal(calls,1);
+  assert.deepEqual(result.output,output);
+});

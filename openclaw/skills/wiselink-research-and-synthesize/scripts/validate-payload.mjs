@@ -2308,7 +2308,8 @@ function validateDiscoveryProviderSummaries(value) {
 }
 
 export function validateApplicabilityModelInput(input) {
-  const englishInput = input?.schemaVersion === 'wiselink.3_1.applicability_task.v2';
+  const originalInput = input?.schemaVersion === 'wiselink.3_1.applicability_task.v3';
+  const englishInput = originalInput || input?.schemaVersion === 'wiselink.3_1.applicability_task.v2';
   exactKeys(
     input,
     [
@@ -2327,6 +2328,7 @@ export function validateApplicabilityModelInput(input) {
       'sourceExpressions',
       'bilingualSourceUnits',
       ...(englishInput ? ['sourceReadingMode', 'sourceContext'] : []),
+      ...(originalInput ? ['originalInput'] : []),
       'runtimePolicy',
       'authority',
     ],
@@ -2335,7 +2337,7 @@ export function validateApplicabilityModelInput(input) {
   );
   equal(
     input.schemaVersion,
-    englishInput ? 'wiselink.3_1.applicability_task.v2' : APPLICABILITY_TASK_SCHEMA,
+    originalInput ? 'wiselink.3_1.applicability_task.v3' : englishInput ? 'wiselink.3_1.applicability_task.v2' : APPLICABILITY_TASK_SCHEMA,
     'APPLICABILITY_TASK_SCHEMA_UNSUPPORTED',
   );
   equal(
@@ -2351,14 +2353,18 @@ export function validateApplicabilityModelInput(input) {
     'APPLICABILITY_INPUT_REVISION_INVALID',
   );
   nonEmpty(input.documentVersionRef, 'APPLICABILITY_DOCUMENT_VERSION_REQUIRED');
-  validateApplicabilitySourcePackage(input.sourcePackage);
+  if (originalInput) {
+    equal(input.sourcePackage, null, 'APPLICABILITY_ORIGINAL_PACKAGE_FORBIDDEN');
+    validateOriginalApplicabilityInput(input);
+  } else validateApplicabilitySourcePackage(input.sourcePackage);
   validateApplicabilityBilingualBinding(input.bilingualBinding);
   validateApplicabilityAircraft(input.aircraft);
   validateApplicabilityFleetBinding(input.fleetBinding);
   validateApplicabilityControlledAircraft(input.controlledAircraft);
   validateApplicabilityControlledFacts(input.controlledFacts);
   validateApplicabilityAstVocabulary(input.astVocabulary);
-  validateApplicabilitySourceExpressions(input.sourceExpressions);
+  if (originalInput) equal(canonicalJson(input.sourceExpressions), '[]', 'APPLICABILITY_ORIGINAL_PREASSERTED_CONDITIONS_FORBIDDEN');
+  else validateApplicabilitySourceExpressions(input.sourceExpressions);
   if (englishInput) {
     equal(input.sourceReadingMode, 'VERIFIED_ENGLISH', 'APPLICABILITY_SOURCE_READING_MODE_INVALID');
     equal(input.bilingualBinding, null, 'APPLICABILITY_V2_LEGACY_BILINGUAL_FORBIDDEN');
@@ -2440,20 +2446,110 @@ function validateApplicabilityConfigurationEvidenceReevaluation(value) {
   );
 }
 
+function validateOriginalApplicabilityInput(input) {
+  const original = input.originalInput;
+  exactKeys(original, ['binding', 'artifact', 'coverage', 'source', 'locations'], [], 'applicability original input');
+  exactKeys(original.binding, ['documentVersionId', 'parseRunId', 'parseRevision', 'sourceArtifactId', 'sourceSha256', 'sourceByteLength'], [], 'original binding');
+  const binding = original.binding;
+  for (const key of ['documentVersionId', 'parseRunId', 'sourceArtifactId']) nonEmpty(binding[key], 'APPLICABILITY_ORIGINAL_BINDING_INVALID');
+  equal(binding.documentVersionId, input.documentVersionRef, 'APPLICABILITY_ORIGINAL_DOCUMENT_MISMATCH');
+  integerInRange(binding.parseRevision, 1, Number.MAX_SAFE_INTEGER, 'APPLICABILITY_ORIGINAL_REVISION_INVALID');
+  integerInRange(binding.sourceByteLength, 1, Number.MAX_SAFE_INTEGER, 'APPLICABILITY_ORIGINAL_BYTES_INVALID');
+  match(binding.sourceSha256, BARE_SHA256, 'APPLICABILITY_ORIGINAL_SHA_INVALID');
+  exactKeys(original.artifact, ['ref', 'sha256', 'byteLength', 'mediaType'], [], 'original manifest');
+  nonEmpty(original.artifact.ref, 'APPLICABILITY_ORIGINAL_MANIFEST_REF_INVALID');
+  match(original.artifact.sha256, BARE_SHA256, 'APPLICABILITY_ORIGINAL_MANIFEST_SHA_INVALID');
+  integerInRange(original.artifact.byteLength, 1, Number.MAX_SAFE_INTEGER, 'APPLICABILITY_ORIGINAL_MANIFEST_BYTES_INVALID');
+  equal(original.artifact.mediaType, 'application/json', 'APPLICABILITY_ORIGINAL_MANIFEST_MEDIA_INVALID');
+  assertObject(original.coverage, 'original coverage');
+  array(original.coverage.unresolvedRanges, 'APPLICABILITY_ORIGINAL_COVERAGE_INVALID');
+  array(original.locations, 'APPLICABILITY_ORIGINAL_LOCATIONS_INVALID');
+  assertObject(original.source, 'original source');
+  array(original.source.units, 'APPLICABILITY_ORIGINAL_UNITS_INVALID');
+  const units = new Map();
+  for (const unit of original.source.units) {
+    nonEmpty(unit.unitId, 'APPLICABILITY_ORIGINAL_UNIT_ID_INVALID');
+    if (units.has(unit.unitId)) fail('APPLICABILITY_ORIGINAL_UNIT_DUPLICATE');
+    units.set(unit.unitId, unit);
+    nonEmpty(unit.kind, 'APPLICABILITY_ORIGINAL_UNIT_KIND_INVALID');
+    assertObject(unit.payload, 'original unit payload');
+    uniqueTextArray(unit.sourceRefIds, 'APPLICABILITY_ORIGINAL_SOURCE_REFS_INVALID');
+  }
+  array(input.sourceContext, 'APPLICABILITY_ORIGINAL_CONTEXT_INVALID');
+  if (input.sourceContext.length !== units.size || new Set(input.sourceContext.map(unit => unit.unitId)).size !== units.size)
+    fail('APPLICABILITY_ORIGINAL_CONTEXT_COVERAGE_INVALID');
+  for (const context of input.sourceContext) {
+    const unit = units.get(context.unitId);
+    if (!unit || context.kind !== unit.kind || canonicalJson(context.sourceRefIds) !== canonicalJson(unit.sourceRefIds) ||
+      context.sourceText !== JSON.stringify(unit.payload)) fail('APPLICABILITY_ORIGINAL_CONTEXT_BINDING_INVALID');
+  }
+}
+
+function originalPayloadText(value) {
+  if (Array.isArray(value)) return value.map(originalPayloadText).filter(Boolean).join('\n');
+  if (!value || typeof value !== 'object') return '';
+  return Object.entries(value).flatMap(([key, item]) => typeof item === 'string'
+    ? ['text', 'caption'].includes(key) ? [item] : [] : [originalPayloadText(item)]).filter(Boolean).join('\n');
+}
+
+// Native verifies source identity and proposal shape. Host alone resolves scope
+// and evaluates the AST against controlled Fleet facts.
+function validateOriginalApplicabilityEvidence(output, input) {
+  const units = input ? new Map(input.originalInput.source.units.map(unit => [unit.unitId, unit])) : null;
+  const expressions = new Map(output.expressions.map(expression => [expression.expressionId, expression]));
+  const normalize = text => text.replace(/\s+/gu, ' ').trim();
+  for (const expression of output.expressions) {
+    const original = expression.original;
+    exactKeys(original, ['quote', 'scope'], [], 'original condition');
+    exactKeys(original.quote, ['unitId', 'text'], [], 'original quote');
+    nonEmpty(original.quote.unitId, 'APPLICABILITY_ORIGINAL_QUOTE_UNIT_INVALID');
+    nonEmpty(original.quote.text, 'APPLICABILITY_ORIGINAL_QUOTE_INVALID');
+    if (original.quote.text.length > 20000) fail('APPLICABILITY_ORIGINAL_QUOTE_INVALID');
+    const unit = units?.get(original.quote.unitId);
+    if (units && (!unit || !normalize(originalPayloadText(unit.payload)).includes(normalize(original.quote.text)) ||
+      canonicalJson(expression.sourceRefIds) !== canonicalJson(unit.sourceRefIds))) fail('APPLICABILITY_ORIGINAL_QUOTE_BINDING_INVALID');
+    exactKeys(original.scope, ['kind', 'headingUnitId', 'targetUnitIds'], [], 'original scope proposal');
+    if (!['document', 'unit', 'unresolved'].includes(original.scope.kind)) fail('APPLICABILITY_ORIGINAL_SCOPE_INVALID');
+    nullableText(original.scope.headingUnitId, 'APPLICABILITY_ORIGINAL_HEADING_INVALID');
+    uniqueTextArray(original.scope.targetUnitIds, 'APPLICABILITY_ORIGINAL_TARGETS_INVALID');
+    if (original.scope.targetUnitIds.length > 200 || (units && (original.scope.targetUnitIds.some(id => !units.has(id)) ||
+      (original.scope.headingUnitId !== null && !units.has(original.scope.headingUnitId))))) fail('APPLICABILITY_ORIGINAL_TARGETS_INVALID');
+  }
+  array(output.unitDispositions, 'APPLICABILITY_ORIGINAL_DISPOSITIONS_INVALID');
+  const seen = new Set(); const accounted = new Set();
+  for (const item of output.unitDispositions) {
+    exactKeys(item, ['unitId', 'disposition', 'conditionIds'], [], 'original unit disposition');
+    nonEmpty(item.unitId, 'APPLICABILITY_ORIGINAL_DISPOSITION_UNIT_INVALID');
+    uniqueTextArray(item.conditionIds, 'APPLICABILITY_ORIGINAL_CONDITION_IDS_INVALID');
+    if (seen.has(item.unitId) || (units && !units.has(item.unitId)) ||
+      !['CONDITIONS', 'NO_CONDITION', 'UNRESOLVED'].includes(item.disposition) ||
+      ((item.disposition === 'CONDITIONS') !== (item.conditionIds.length > 0))) fail('APPLICABILITY_ORIGINAL_DISPOSITION_INVALID');
+    seen.add(item.unitId);
+    for (const id of item.conditionIds) {
+      if (!expressions.has(id) || accounted.has(id) || expressions.get(id).original.quote.unitId !== item.unitId)
+        fail('APPLICABILITY_ORIGINAL_DISPOSITION_BINDING_INVALID');
+      accounted.add(id);
+    }
+  }
+  if (accounted.size !== expressions.size || (units && seen.size !== units.size)) fail('APPLICABILITY_ORIGINAL_DISPOSITION_COVERAGE_INVALID');
+}
+
 export function validateApplicabilityAstCandidate(output, input) {
+  const originalMode = output?.schemaVersion === 'wiselink.3_1.applicability_ast_candidate.v2';
+  if (input && originalMode !== (input.schemaVersion === 'wiselink.3_1.applicability_task.v3')) fail('APPLICABILITY_AST_CANDIDATE_SCHEMA_UNSUPPORTED');
   exactKeys(
     output,
-    ['schemaVersion', 'expressions'],
+    ['schemaVersion', 'expressions', ...(originalMode ? ['unitDispositions'] : [])],
     [],
     'applicability AST candidate',
   );
   equal(
     output.schemaVersion,
-    APPLICABILITY_AST_CANDIDATE_SCHEMA,
+    originalMode ? 'wiselink.3_1.applicability_ast_candidate.v2' : APPLICABILITY_AST_CANDIDATE_SCHEMA,
     'APPLICABILITY_AST_CANDIDATE_SCHEMA_UNSUPPORTED',
   );
   array(output.expressions, 'APPLICABILITY_AST_EXPRESSIONS_INVALID');
-  const expected = input
+  const expected = input && !originalMode
     ? new Map(
         input.sourceExpressions.map((expression) => [
           expression.expressionId,
@@ -2462,7 +2558,7 @@ export function validateApplicabilityAstCandidate(output, input) {
       )
     : null;
   if (
-    output.expressions.length < 1 ||
+    (!originalMode && output.expressions.length < 1) ||
     output.expressions.length > 200 ||
     (expected && output.expressions.length !== expected.size)
   ) {
@@ -2473,7 +2569,7 @@ export function validateApplicabilityAstCandidate(output, input) {
     assertObject(expression, `applicability AST expression ${index}`);
     exactKeys(
       expression,
-      ['expressionId', 'sourceRefIds', 'extractionStatus', 'expressionAst'],
+      ['expressionId', 'sourceRefIds', 'extractionStatus', 'expressionAst', ...(originalMode ? ['original'] : [])],
       [],
       `applicability AST expression ${index}`,
     );
@@ -2507,6 +2603,7 @@ export function validateApplicabilityAstCandidate(output, input) {
       input?.astVocabulary ?? null,
     );
   });
+  if (originalMode) validateOriginalApplicabilityEvidence(output, input);
   return output;
 }
 
@@ -2514,7 +2611,9 @@ export function buildApplicabilityCandidate(input, astCandidate) {
   validateApplicabilityModelInput(input);
   validateApplicabilityAstCandidate(astCandidate, input);
   return {
-    schemaVersion: APPLICABILITY_CANDIDATE_SCHEMA,
+    schemaVersion: input.schemaVersion === 'wiselink.3_1.applicability_task.v3' ? 'wiselink.3_1.applicability_candidate.v2' : APPLICABILITY_CANDIDATE_SCHEMA,
+    ...(input.schemaVersion === 'wiselink.3_1.applicability_task.v3' ? {originalBinding: structuredClone(input.originalInput.binding),
+      unitDispositions: structuredClone(astCandidate.unitDispositions)} : {}),
     operation: 'EXTRACT_APPLICABILITY',
     candidateStatus: 'CANDIDATE',
     inputRevision: input.inputRevision,

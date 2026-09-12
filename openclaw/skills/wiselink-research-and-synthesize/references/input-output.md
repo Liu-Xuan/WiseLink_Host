@@ -232,6 +232,14 @@ WAITING_INPUT、`modelOutput=null`，missing 原样传播。
 该 WAITING_INPUT 只终结 applicability ActionAttempt；INITIAL_ANALYSIS 继续使用 Host 后续 begin 返回的受控输入运行
 Dynamic N/N、Job-Aid 与 overall，UNKNOWN 不得改写成 TRUE/FALSE。
 
+原文 `applicability_task.v3` 改用 `originalInput={binding,artifact,source,locations,coverage}`，保留完整原文；`sourcePackage=null`、`sourceExpressions=[]`，无中文前置。返回 `applicability_ast_candidate.v2`，顶层只有 `schemaVersion,unitDispositions,expressions`：
+
+- `unitDispositions[{unitId,disposition:CONDITIONS|NO_CONDITION|UNRESOLVED,conditionIds:[]}]` 精确覆盖每个实际原文单元；CONDITIONS 列出在该单元引述的所有候选条件 ID。
+- `expressions[{expressionId,sourceRefIds,extractionStatus,expressionAst,original:{quote:{unitId,text},scope:{kind:document|unit|unresolved,headingUnitId,targetUnitIds:[]}}}]` 使用真实文本引句、原文 ID 和实际来源引用。文档级范围引用明确顶层 Effectivity/Applicability 标题，单元级范围给出同节真实目标或引句单元自身；不能确定时为 unresolved。
+- 解释失败保留条件，状态为 extraction_failed/not_supported，AST 为 null；空条件集不会自动成为 TRUE。
+
+native 校验逐单元覆盖、引句及引用，回填确切 Host originalBinding、Aircraft/Fleet/runtime，组装 `applicability_candidate.v2`。Host 负责结构范围与最终求值，模型不创建受控事实、Host 绑定或采用决定。旧任务输出形状保持不变。
+
 ## Reader
 
 `query_parsed_package` 返回：
