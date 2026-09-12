@@ -1,49 +1,14 @@
 # 角色管理页面实施规格
 
-> **本规格为强制约束**，实现时必须逐项对照，严禁自由发挥布局和交互。
+> 本页是角色管理页面的参考规格。沿用用户已确认的设计和实际 SDK；具体布局按当前页面需求调整，权限、成员类型及操作语义保持完整。
 
 ---
 
-## 实现步骤清单
+## 实现与验证
 
-按以下顺序逐步实现，**禁止跳步或合并步骤**：
+按当前改动选择相关规格和 SDK 类型，不依赖 `think` 工具，不要求逐步输出文件清单或重复读取未变化的类型。新增页面时完成 Controller、DTO、API、路由与 UI 接线，局部修复只修改受影响部分。
 
-```
-Step 0: 制定实施计划（强制，禁止跳过）
-  ├─ 调用 `think` 工具，通读本规格全文
-  ├─ 输出结构化计划，列出每个 Step 要创建/修改的文件清单
-  └─ ⛔ 未输出计划就开始写代码 = 违规，必须先计划再编码
-
-Step 1: 编码前确认（闸门）
-  ├─ 确认 SDK 方法签名：读取 sdk-types.md，摘录 roles / members / search 的出入参
-  ├─ 确认搜索组件目录存在：client/src/components/business-ui/ 下包含 user-select、department-select、chat-select 目录
-  └─ 确认 Tag 胶囊组件存在：上述目录中分别包含 user-select-tag、department-select-tag、chat-select-tag 文件
-
-  ⛔ 以上任一不存在，停止实现并报告
-
-Step 2: 后端 Controller
-  ├─ 创建 server/modules/role-manager/role-manager.controller.ts（照抄 runtime-role-controller-spec.md 的模板）
-  ├─ 创建 server/modules/role-manager/role-manager.module.ts
-  └─ 在 app.module.ts 中注册（ViewModule 之前）
-
-Step 3: shared 类型定义 + 前端 API 层
-  ├─ 重读 sdk-types.md
-  ├─ 在 shared/api.interface.ts 中定义角色管理相关的请求/响应类型
-  │  （照抄 runtime-role-controller-spec.md § Shared 类型的模板）
-  └─ 在 client/src/api/index.ts 中添加角色管理 API 函数
-     （getRoles / createRole / updateRole / deleteRole / addRoleMembers / removeRoleMembers / searchMembers）
-
-Step 4: 前端页面
-  ├─ 创建 client/src/pages/RoleManagementPage/RoleManagementPage.tsx
-  ├─ 按本规格的「页面代码骨架」实现
-  └─ 在 app.tsx 中添加路由
-
-Step 5: 验证
-  ├─ 编译通过
-  └─ 逐项对照本规格的「实现检查表」
-```
-
----
+使用已有 user/department/chat 选择组件及其标签组件。目录缺失时先核实当前工程中的等价实现；若必需组件或 SDK 能力确实不可用，说明缺口，继续不依赖它的工作，不伪造 API 或忽略授权。验证本次涉及的成员类型与允许/拒绝行为。
 
 ## 页面结构
 
