@@ -365,3 +365,9 @@ Host artifact/projection v3 保存实际 originalSource binding/manifest，旧 p
 相关上下文已支持无旧包的 v2 原文评估目标及 v3 适用性结果，仍只复用相关文档自己的当前结果。复用须匹配该文档来源、受控选择、Fleet 修订及结果三值一致性，不把主文档的适用性复制给相关文档。原文比较 helper 只比较已提供的绑定，不声称查询最新发布或完成授权。
 
 JobAid 实际 buildInput 以正常 Reader 本次读取的确切原文 binding 复核 v3 结果；来源或 Fleet 修订变化时传入 hostApplicability=null，保留存储的历史结果。新 Overall 保存时同样只采用与其确切任务原文匹配的 v3 decision，否则 UNKNOWN。42 项相关上下文/JobAid 任务及既有续接测试与前后端类型检查通过，含真实 begin 构建三种来源/Fleet 情形。普通入口尚未切换；旧包 Overall processor 仍保留原任务路径，源变化重触发、受控目标配置及全流程 H1/H2 还需接通和验证。本批未发布。
+
+## 原文路径的受控目标端口（2026-09-13，入口迁移准备）
+
+发现生产 MiaodaApplicabilityControlledSelectionAdapter 在读取 Fleet 前仍强制 frozen.2 条件映射，导致原文输入生产虽实现、实际端口仍不可用。已由服务端私有 selection port 增加明确 ORIGINAL 模式；新原文生产及 v2 输入的提交/恢复读均传入该模式。原文发布及字节来源验证仍由输入生产者执行；端口继续核对 tenant/WorkItem/DV，只读取既有 Host 配置或保存的受控目标和 Fleet，不接受模型目标、不开放新的浏览器写入口。
+
+14 项目标适配器/生产者测试及服务端类型检查通过：无旧包时可读取已配置 Host 目标，缺少配置和错误 DV 仍拒绝，旧路径保留 frozen.2 检查。普通 begin 仍未切换：须先把既有任务幂等查询和活动任务保护放到输入迁移前，避免先 CAS 新输入而破坏已经发出的旧任务。本批未发布。

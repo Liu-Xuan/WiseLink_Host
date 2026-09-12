@@ -50,6 +50,7 @@ export interface CanonicalApplicabilityControlledSelectionPort {
     workItemId: string;
     documentVersionId: string;
     applicabilityContextRef: string;
+    sourceMode?: 'ORIGINAL';
   }): Promise<CanonicalApplicabilityControlledSelection>;
 }
 
@@ -123,6 +124,7 @@ export class CanonicalHostApplicabilityInputProducer {
       workItemId: workItem.workItemId,
       documentVersionId: workItem.source.documentVersionId,
       applicabilityContextRef: scope.applicabilityContextRef,
+      ...((original || selectedApplicabilityInput(workItem)?.originalSource) ? {sourceMode:'ORIGINAL' as const} : {}),
     });
     const sourceBinding = await this.readSourceBinding(workItem, scope.tenantId, original);
     const projection = deriveProjection({
@@ -199,6 +201,7 @@ export class CanonicalHostApplicabilityInputProducer {
       workItemId: workItem.workItemId,
       documentVersionId: workItem.source.documentVersionId,
       applicabilityContextRef: scope.applicabilityContextRef,
+      ...(selectedApplicabilityInput(workItem)?.originalSource ? {sourceMode:'ORIGINAL' as const} : {}),
     });
     const sourceBinding = await this.readSourceBinding(workItem, scope.tenantId);
     const persisted = requiredApplicabilityInput({
@@ -250,6 +253,7 @@ export class CanonicalHostApplicabilityInputProducer {
       workItemId: workItem.workItemId,
       documentVersionId: workItem.source.documentVersionId,
       applicabilityContextRef: scope.applicabilityContextRef,
+      ...(selectedApplicabilityInput(workItem)?.originalSource ? {sourceMode:'ORIGINAL' as const} : {}),
     });
     const derived = deriveProjection({
       workItem,
