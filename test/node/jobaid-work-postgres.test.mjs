@@ -370,9 +370,10 @@ test(
         'authenticated JobAid requests prepare only at Hosted begin and preserve actor authorization under actual RLS',
         async () => {
           const initial = initialProjection('WI-job-begin');
+          initial.classification.normalizedFamily='FTD';
           const denied = initialProjection('WI-job-denied');
           const queued = initialProjection('WI-job-queued');
-          queued.package = null;
+          queued.package = null; queued.classification.normalizedFamily='FTD';
           const queuedDenied = initialProjection('WI-job-queued-denied');
           const automatic = initialProjection('WI-job-original-successor');
           for (const candidate of [initial, denied, queued, queuedDenied, automatic]) {

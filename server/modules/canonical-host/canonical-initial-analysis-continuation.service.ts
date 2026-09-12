@@ -278,8 +278,8 @@ function assertContinuationPrerequisites(
   if (process.env.WL_JOBAID_PROBLEM_V2_ENABLED !== '1')
     throw continuationConflict('NEW_ASSESSMENT_DISABLED');
   if (
-    workItem.classification.status !== 'CONFIRMED' ||
-    workItem.classification.normalizedFamily !== 'SB'
+    workItem.classification.normalizedFamily === 'SB' &&
+    workItem.classification.status !== 'CONFIRMED'
   )
     throw continuationConflict('CONFIRMED_SB_REQUIRED');
   if (stageStatus === 'SUCCEEDED')

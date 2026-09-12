@@ -309,7 +309,7 @@ describe('CanonicalHost initial-analysis status projection', () => {
     );
   });
 
-  it('offers browser JobAid recovery only for a confirmed SB', async () => {
+  it('offers original JobAid recovery for non-SB documents while preserving SB confirmation', async () => {
     const workItem = translatedWorkItem(parsedWorkItem());
     const failed = [
       {
@@ -339,7 +339,7 @@ describe('CanonicalHost initial-analysis status projection', () => {
     };
     expect(
       (await browserStatus(otherFamily, failed)).continuationOperations,
-    ).toEqual([]);
+    ).toEqual(['EVALUATE_JOBAID']);
   });
 
   it('offers an explicitly queued successor without disguising the retained older candidate as its success', () => {

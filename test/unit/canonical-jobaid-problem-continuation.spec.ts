@@ -81,7 +81,7 @@ describe('JobAid continuation requests', () => {
   });
 
   it('claims a source-file-bound original task without a legacy package', async () => {
-    const h=harness(); h.current().package=null;
+    const h=harness(); h.current().package=null; h.current().classification.normalizedFamily='FTD';
     const started=await h.service.begin(h.current(),scope,'INITIAL_PROBLEM_ASSESSMENT');
     expect(started.task.sourceRefs).toEqual([{ref:'ART-TEST',sha256:'a'.repeat(64)}]);
     expect(parseJobAidProblemTask(started.task).sourceBindings[0]).toMatchObject({kind:'SOURCE_FILE',artifactRef:'ART-TEST'});

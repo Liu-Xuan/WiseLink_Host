@@ -275,8 +275,8 @@ export class CanonicalHostInitialAnalysisStatusService {
     if (
       automatic &&
       process.env.WL_JOBAID_PROBLEM_V2_ENABLED === '1' &&
-      input.workItem.classification.status === 'CONFIRMED' &&
-      input.workItem.classification.normalizedFamily === 'SB'
+      (input.workItem.classification.normalizedFamily !== 'SB' ||
+        input.workItem.classification.status === 'CONFIRMED')
     ) {
       if (
         ['FAILED', 'CONFLICT'].includes(status.stages.jobAid.status) &&

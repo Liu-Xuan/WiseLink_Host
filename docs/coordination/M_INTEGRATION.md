@@ -313,3 +313,9 @@ Skill c85 源提交 `58653b973f43f18c0ce345239547fc2e2a9f115c` 已推送妙搭 o
 本批技术发布读回：Host release `7684755212175903949` finished，提交 `b0ff1f51025dacf3429bc07e21972f1b053cf253`，error_logs 为空；包含前述各阶段原文基准、入队固定原文和自动后继入口。c86 的 205 项消费器/载荷测试及包内自测通过，私有 ZIP `/1876158131942419.zip`、manifest `/1876161709842555.json`；下载回读 372252 字节及 SHA-256 `492b34c34397d8b08eae4255deedc03969aedc0651a3407a15a6010fd5a9eab9` 匹配本地清单。该包尚未安装到官方 Hosted，旧 c85 上传记录不是 c86 安装证明。
 
 既有官方 Hosted 诊断句柄最新只读仍为 active=true、streaming=false、queued_count=3；latest_turn cancelled 为旧状态，未追加、重启或取消。当前技术发布不等于官方消费实际执行、插件实跑或 H1/H2 完成。
+
+## 非 SB 文档的原文工程入口（2026-09-13，本地增量）
+
+实际 Hosted begin、浏览器续评选项和续评受理三处残留 SB-only 条件。本轮让新原文问题分析接收非 SB 文档的真实分类（含 FTD/SL/AMM），不将其改写或确认成 SB；继续由 CanonicalJobAidProblemService 检查原件、发布原文、真实 owner 和当前来源。旧逐项规则引擎保留确认 SB 与 parsed package 边界，不因开关或既有任务而回落为非 SB 的旧规则评估；SB 自身的已有确认逻辑保留。
+
+124 项入口/续评/状态/原文问题测试通过，12 项实际 PostgreSQL 测试使用 FTD 初评及无 package 续评记录，验证同一身份、请求、来源与恢复边界；server types 通过。此增量尚未发布，不作为线上 FTD 模型评估成功证明。原文适用性提取/范围映射、官方 Hosted 安装消费、F6 正式来源接通及 H1/H2 仍未完成。
