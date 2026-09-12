@@ -49,7 +49,7 @@ export interface EngineeringMatterWorkingTextItem {
 
 export interface EngineeringMatterWorkingCoverage {
   binding: EngineeringMatterWorkingInputBinding;
-  contribution: 'SUBSTANTIVE' | 'NO_MATERIAL_CHANGE';
+  contribution: 'SUBSTANTIVE' | 'NO_MATERIAL_CHANGE' | 'READ_ONLY';
   /** Exact source keys that the Host observed being read for this update. */
   checkedSourceRefIds: string[];
   /** Human-readable bounded scope; never implies full-document coverage. */
@@ -143,6 +143,7 @@ export interface EngineeringMatterWorkingRevisionReadModel {
 
 export type EngineeringMatterPendingInputReason =
   | 'NOT_COVERED'
+  | 'READ_NOT_PROCESSED'
   | 'WORK_ITEM_REVISION_CHANGED'
   | 'DOCUMENT_VERSION_CHANGED'
   | 'RESULT_CHANGED';

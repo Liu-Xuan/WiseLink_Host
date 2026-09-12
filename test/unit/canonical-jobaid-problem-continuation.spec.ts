@@ -25,7 +25,7 @@ import {
   createConfigurationEvidenceReevaluation,
 } from '../../server/modules/canonical-host/configuration-evidence/configuration-evidence-reevaluation.state';
 import { JOBAID_METHOD_BINDING } from '../../server/modules/canonical-host/jobaid-method-pack';
-import { buildJobAidProblemTask, parseJobAidProblemTask } from '../../server/modules/canonical-host/jobaid-problem-task';
+import { assertJobAidProblemTaskBinding, buildJobAidProblemTask, parseJobAidProblemTask } from '../../server/modules/canonical-host/jobaid-problem-task';
 
 const REQUEST_1 = '00000000-0000-4000-8000-000000000101';
 const REQUEST_2 = '00000000-0000-4000-8000-000000000102';
@@ -41,6 +41,29 @@ const scope = {
 };
 
 describe('JobAid continuation requests', () => {
+  it('recovers the sealed method version after a release and rejects an unbacked method binding', async () => {
+    const h = harness();
+    await h.enqueue(REQUEST_1);
+    const begun = await h.service.begin(h.current(), scope, 'INITIAL_PROBLEM_ASSESSMENT', REQUEST_1);
+    const originalBinding = structuredClone(JOBAID_METHOD_BINDING);
+    try {
+      // Simulate a newer release while the old, valid task remains in flight.
+      JOBAID_METHOD_BINDING.packRef = 'JA-NEW-RELEASE';
+      JOBAID_METHOD_BINDING.version = '2.0';
+      const recovered = parseJobAidProblemTask(begun.task);
+      expect(recovered.modelInput.methodBinding).toEqual(originalBinding);
+      const unbacked = structuredClone(recovered);
+      unbacked.modelInput.methodBinding.packRef = 'UNREGISTERED-PACK';
+      expect(() => assertJobAidProblemTaskBinding(unbacked)).toThrow('JOBAID_TASK_METHOD_BINDING_INVALID');
+      const falselyConfirmed = structuredClone(recovered);
+      falselyConfirmed.modelInput.methodBinding.sources[0].status = 'CONFIRMED';
+      falselyConfirmed.modelInput.methodBinding.sources[0].documentVersionId = null;
+      expect(() => assertJobAidProblemTaskBinding(falselyConfirmed)).toThrow('JOBAID_TASK_BINDING_INVALID');
+    } finally {
+      Object.assign(JOBAID_METHOD_BINDING, originalBinding);
+    }
+  });
+
   it.each([false, true])(
     'binds Overall to its saved JobAid ref and rejects a newer unbound revision: %s',
     async (hasNewer) => {

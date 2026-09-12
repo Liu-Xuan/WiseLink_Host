@@ -27,6 +27,7 @@ const {
   materializeJobAidWork,
 } = require('../../server/modules/canonical-host/jobaid-problem-work.ts');
 const {
+  JOBAID_METHOD_BINDING,
   JOBAID_METHOD_EVIDENCE,
 } = require('../../server/modules/canonical-host/jobaid-method-pack.ts');
 const {
@@ -83,6 +84,7 @@ const workItem = {
   aeo: null,
 };
 const validation = {
+  methodBinding: JOBAID_METHOD_BINDING,
   workItemId: doc.workItemId,
   previous: null,
   evidence,

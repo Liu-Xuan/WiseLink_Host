@@ -1,4 +1,5 @@
 import { materializeMatterJobAidCommand } from '../../server/modules/canonical-host/matter-jobaid-save';
+import { collectEvidenceUses } from '@shared/jobaid-evidence-uses';
 import type { AssessmentEvidence } from '@shared/assessment-reading.interface';
 import { jobAidReadingResult } from '@shared/jobaid-problem-assessment.interface';
 import {
@@ -6,7 +7,7 @@ import {
   materializeJobAidWork,
 } from '../../server/modules/canonical-host/jobaid-problem-work';
 import { expandJobAidSourceSelection } from '../../server/modules/canonical-host/jobaid-problem-task';
-import { JOBAID_METHOD_EVIDENCE } from '../../server/modules/canonical-host/jobaid-method-pack';
+import { JOBAID_METHOD_BINDING, JOBAID_METHOD_EVIDENCE } from '../../server/modules/canonical-host/jobaid-method-pack';
 import { validateMatterProblemWork } from '../../server/modules/canonical-host/matter-problem-work';
 import {
   materializeEngineeringMatterWorkingState,
@@ -44,6 +45,7 @@ const engineer: AssessmentEvidence = {
 };
 const evidence = [document, engineer, ...JOBAID_METHOD_EVIDENCE];
 const context = {
+  methodBinding: JOBAID_METHOD_BINDING,
   workItemId: 'WI-test',
   previous: null,
   evidence,
@@ -111,8 +113,25 @@ function update(issues = [issue('a'), issue('b')]) {
 }
 
 describe('JobAid problem work keeps method semantics, delivery and incremental substance', () => {
+  test('save and Matter readback retain the task method snapshot without a process-default fallback', () => {
+    const methodBinding = { ...structuredClone(JOBAID_METHOD_BINDING), packRef: 'JA-SEALED-TEST', version: 'test.1' };
+    const sealedEvidence = evidence.map(item => item.kind === 'METHOD_CLAUSE' ? { ...item, packRef: methodBinding.packRef } : item);
+    const command = materializeMatterJobAidCommand({
+      matterId: 'MAT-method', matterRevisionId: 'MR-method', attemptRef: 'ATT-method', requestId: 'save-method',
+      expectedWorkRevision: 0, previous: null, inputs: [], proposal: update(),
+      evidence: sealedEvidence, readSourceRefs: context.readSourceRefs, capabilities: [], history: context.history,
+      methodBinding,
+    });
+    expect(command.nextProblemWork?.methodBinding).toEqual(methodBinding);
+    expect(() => validateMatterProblemWork(command.nextProblemWork!, 'MAT-method', command.nextSubstantiveResult!)).not.toThrow();
+    expect(command.nextProblemWork?.methodBinding).not.toEqual(JOBAID_METHOD_BINDING);
+    const { methodBinding: _removed, ...missingBinding } = context;
+    expect(() => materializeJobAidWork(update(), missingBinding as typeof context)).toThrow('JOBAID_METHOD_BINDING_INVALID');
+  });
+
   test('Matter full-work proposal uses actual reads and Host-derived claim identities instead of a second summary', () => {
     const frozen: FrozenMatterReviewContext = {
+      methodBinding: JOBAID_METHOD_BINDING,
       scope: {
         schemaVersion: 'wiselink.3_1.matter_review_scope.v1',
         kind: 'ENGINEERING_MATTER',
@@ -556,7 +575,7 @@ it('saves an attributed query statement without promoting its evidence or candid
 });
 
 it('saves a new statement inside an existing issue while preserving full issue reading order', () => {
-  const base = { matterId: 'MAT-order', matterRevisionId: 'MR-1', attemptRef: 'AQ-1',
+  const base = { methodBinding: JOBAID_METHOD_BINDING, matterId: 'MAT-order', matterRevisionId: 'MR-1', attemptRef: 'AQ-1',
     requestId: 'save-1', expectedWorkRevision: 0, previous: null,
     inputs: [{ inputId: 'WI-test', workItemId: 'WI-test', workItemRevision: 1, documentVersionId: 'dv', resultRef: null, resultRevision: null }],
     evidence, readSourceRefs: context.readSourceRefs, capabilities: context.capabilities, history: context.history };
@@ -595,10 +614,12 @@ it('saves a new statement inside an existing issue while preserving full issue r
   expect(thirdState.problemWork!.evidence.some(item => item.evidenceRef === document.evidenceRef)).toBe(true);
   const fourth = materializeMatterJobAidCommand({ ...newerBase, previous: { ...previousRevision, state: thirdState, workingRevision: 3 },
     requestId: 'save-after-new-version', expectedWorkRevision: 3, proposal });
+  expect(fourth.nextSubstantiveResult).toBeNull();
+  expect(fourth.claimDelta).toBeNull();
+  expect(fourth.substantiveInputs).toEqual([]);
+  expect(fourth.coverageUpdates[0]?.contribution).toBe('NO_MATERIAL_CHANGE');
   expect(() => materializeEngineeringMatterWorkingState({ matterId: base.matterId, current: thirdState, command: fourth })).not.toThrow();
-  const forged = structuredClone(fourth);
-  forged.nextProblemWork!.evidence.find(item => item.evidenceRef === document.evidenceRef)!.excerpt = '伪造旧版内容';
-  expect(() => materializeEngineeringMatterWorkingState({ matterId: base.matterId, current: thirdState, command: forged })).toThrow();
+  expect(fourth.nextProblemWork).toBeUndefined();
 
 });
 
@@ -643,4 +664,42 @@ it('derives missing dependency index entries from validated citations without ch
     basis: change.statements[0].basis, premises: change.statements[0].premises });
   change.statements[0].premises[0].evidenceRef = 'source:foreign';
   expect(() => materializeJobAidWork(update([change]), context)).toThrow('JOBAID_SOURCE_NOT_DELIVERED');
+});
+
+it('keeps risk-only and measure-only documents in actual Matter usage and exact reading evidence', () => {
+  const riskSource = { ...document, evidenceRef: 'risk-only', documentVersionId: 'risk-dv', sourceRefId: 'risk-page', workItemId: null };
+  const measureSource = { ...document, evidenceRef: 'measure-only', documentVersionId: 'measure-dv', sourceRefId: 'measure-page', workItemId: null };
+  const sources = [...evidence, riskSource, measureSource];
+  const proposed = {
+    ...issue('a'),
+    riskScenarios: [{ scenario: '合成风险', conditions: ['条件待核'], method: 'JA_AC_R01',
+      severity: { label: '严重', reason: '测试原文记载后果', basisRefs: [riskSource.evidenceRef] },
+      likelihood: null, importantEvent: null, limitations: ['频度未取得'], controlComparison: '措施只处理明确条件' }],
+    measures: [{ text: '合成措施', addresses: '对应条件', limitations: ['效果未核实'], status: 'PROPOSED', basisRefs: [measureSource.evidenceRef] }],
+  };
+  const inputs = [document, riskSource, measureSource].map(source => ({ kind: 'DOCUMENT_VERSION' as const,
+    inputId: source.documentVersionId, familyId: `family-${source.documentVersionId}`, documentVersionId: source.documentVersionId,
+    workItemId: null, workItemRevision: null, resultRef: null, resultRevision: null }));
+  // The statement's source binds to its real WorkItem; direct documents have no invented WorkItem.
+  const bindings = [{ inputId: 'dv', workItemId: 'WI-test', workItemRevision: 1, documentVersionId: 'dv', resultRef: null, resultRevision: null }, ...inputs.slice(1)];
+  const command = materializeMatterJobAidCommand({ matterId: 'MAT-evidence', matterRevisionId: 'MR-1', attemptRef: 'ATT-1',
+    requestId: 'save-evidence', expectedWorkRevision: 0, previous: null, inputs: bindings,
+    proposal: { ...update(), issues: [proposed] }, evidence: sources, readSourceRefs: sources.map(item => item.evidenceRef),
+    capabilities: [], history: context.history, methodBinding: JOBAID_METHOD_BINDING });
+  const saved = materializeEngineeringMatterWorkingState({ matterId: 'MAT-evidence', current: null, command });
+  expect(saved.state.substantiveInputs.map(item => item.documentVersionId)).toEqual(['dv', 'risk-dv', 'measure-dv']);
+  expect(saved.state.substantiveResult!.evidence.map(item => item.evidenceRef)).toEqual([document.evidenceRef, riskSource.evidenceRef, measureSource.evidenceRef]);
+  expect(saved.state.coverage.every(item => item.contribution === 'SUBSTANTIVE')).toBe(true);
+  const uses = collectEvidenceUses(saved.state.problemWork!);
+  expect(uses).toEqual(expect.arrayContaining([
+    expect.objectContaining({ evidenceRef: riskSource.evidenceRef, issueKey: 'a', role: 'SEVERITY', position: 'riskScenarios/0/severity/basisRefs/0' }),
+    expect.objectContaining({ evidenceRef: measureSource.evidenceRef, issueKey: 'a', role: 'MEASURE', position: 'measures/0/basisRefs/0' }),
+  ]));
+  const unread = { ...context, evidence: sources };
+  expect(() => materializeJobAidWork({ ...update(), issues: [proposed] }, unread)).toThrow('JOBAID_SOURCE_NOT_DELIVERED:risk-only');
+  const damagedIndex = structuredClone(saved.state.problemWork!);
+  damagedIndex.issues[0].sourceDependencies = [document.evidenceRef];
+  expect(() => materializeJobAidWork({ ...update(), issues: [], unchangedIssueKeys: ['a'] }, {
+    ...context, previous: damagedIndex, evidence: evidence,
+  })).toThrow('JOBAID_RETAINED_SOURCE_NO_LONGER_AUTHORIZED:risk-only');
 });

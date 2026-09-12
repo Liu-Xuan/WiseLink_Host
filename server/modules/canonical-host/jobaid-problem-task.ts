@@ -19,6 +19,7 @@ import {
   JOBAID_CORE_METHOD_REFS,
   JOBAID_METHOD_BINDING,
   JOBAID_METHOD_EVIDENCE,
+  isJobAidMethodBinding,
 } from './jobaid-method-pack';
 import { overallModelEvidenceRegistry } from './overall-assessment-reading';
 import { buildJobAidContextPackage } from './jobaid-context-package';
@@ -144,12 +145,16 @@ export function assertJobAidProblemTaskBinding(
     !input.actorUserId ||
     !input.modelInput ||
     input.modelInput.schemaVersion !== JOBAID_PROBLEM_TASK_SCHEMA ||
-    !input.modelInput.methodBinding ||
-    canonicalJson(input.modelInput.methodBinding) !==
-      canonicalJson(JOBAID_METHOD_BINDING)
+    !isJobAidMethodBinding(input.modelInput.methodBinding)
   )
     throw new Error('JOBAID_TASK_BINDING_INVALID');
   const refs = new Set(input.sourceCatalog.map((item) => item.evidenceRef));
+  // The envelope already seals this snapshot. Replays must validate that exact
+  // binding, not today's process constant; otherwise a release changes a task.
+  const boundMethods = input.sourceCatalog.filter(item => item.kind === 'METHOD_CLAUSE' &&
+    item.packRef === input.modelInput.methodBinding.packRef);
+  if (!boundMethods.length || !boundMethods.some(item => input.initiallyDeliveredRefs.includes(item.evidenceRef)))
+    throw new Error('JOBAID_TASK_METHOD_BINDING_INVALID');
   const expectedSources = input.sourceCatalog.map((item) => ({
     ref: item.evidenceRef,
     kind: item.kind,

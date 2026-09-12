@@ -19,6 +19,7 @@ const MATTER_PENDING_REASON_LABELS: Record<
   string
 > = {
   NOT_COVERED: '尚未纳入本轮核查',
+  READ_NOT_PROCESSED: '已读片段，尚未保存分析或比较处置',
   WORK_ITEM_REVISION_CHANGED: '成员任务已更新',
   DOCUMENT_VERSION_CHANGED: '文档版本已变化',
   RESULT_CHANGED: '成员评估结果已更新',
@@ -133,7 +134,9 @@ const MatterWorkingDetails: FC<MatterWorkingDetailsProps> = ({
                     <p>
                       {coverage.contribution === 'SUBSTANTIVE'
                         ? '对认识有实质贡献'
-                        : '核查后认识不变'}
+                        : coverage.contribution === 'NO_MATERIAL_CHANGE'
+                          ? '核查后认识不变'
+                          : '仅取得阅读片段，仍待核查'}
                       ：{coverage.reason}
                     </p>
                   </li>

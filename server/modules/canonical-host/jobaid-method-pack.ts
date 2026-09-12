@@ -1,6 +1,21 @@
 import type { AssessmentEvidence } from '@shared/assessment-reading.interface';
 import type { JobAidMethodBinding } from '@shared/jobaid-problem-assessment.interface';
 
+/** Validate a Host-persisted snapshot without substituting the running release's pack. */
+export function isJobAidMethodBinding(value: unknown): value is JobAidMethodBinding {
+  if (!value || typeof value !== 'object') return false;
+  const binding = value as Partial<JobAidMethodBinding>;
+  const nonempty = (text: unknown): text is string => typeof text === 'string' && text.trim().length > 0;
+  return nonempty(binding.packRef) && nonempty(binding.version) &&
+    binding.attachment5 === 'R00_CONTENT_REPORTED_R01_LINK_UNCONFIRMED' &&
+    Array.isArray(binding.sources) && binding.sources.length > 0 &&
+    binding.sources.every(source => source && nonempty(source.sourceIdentity) &&
+      nonempty(source.versionLabel) &&
+      (source.documentVersionId === null || nonempty(source.documentVersionId)) &&
+      (source.status === 'VERSION_UNCONFIRMED' ||
+        (source.status === 'CONFIRMED' && nonempty(source.documentVersionId))));
+}
+
 /** Static method material, independent of the legacy 150-criterion activation. */
 export const JOBAID_METHOD_BINDING: JobAidMethodBinding = {
   packRef: 'JA-PROBLEM-METHOD-20260909',

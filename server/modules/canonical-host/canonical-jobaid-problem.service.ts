@@ -618,6 +618,7 @@ export class CanonicalJobAidProblemService {
     actualReadRefs: Set<string>,
   ) {
     return materializeJobAidWork(proposal, {
+      methodBinding: task.modelInput.methodBinding,
       workItemId,
       previous: task.previousWork?.content ?? null,
       evidence: task.sourceCatalog,
@@ -828,6 +829,7 @@ export class CanonicalJobAidProblemService {
       ]),
     ];
     const content = materializeJobAidWork(command, {
+      methodBinding: taskInput.modelInput.methodBinding,
       workItemId: scope.workItemId,
       previous: previous?.content ?? null,
       evidence: [

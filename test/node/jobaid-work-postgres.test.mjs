@@ -57,6 +57,7 @@ const {
   materializeJobAidWork,
 } = require('../../server/modules/canonical-host/jobaid-problem-work.ts');
 const {
+  JOBAID_METHOD_BINDING,
   JOBAID_METHOD_EVIDENCE,
 } = require('../../server/modules/canonical-host/jobaid-method-pack.ts');
 
@@ -94,6 +95,7 @@ const document = {
 };
 const evidence = [document, ...JOBAID_METHOD_EVIDENCE];
 const context = {
+  methodBinding: JOBAID_METHOD_BINDING,
   workItemId: scope.workItemId,
   previous: null,
   evidence,

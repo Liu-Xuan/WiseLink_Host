@@ -233,17 +233,19 @@ export function engineeringMatterPendingInputs(
     (current?.coverage ?? []).map(
       (coverage: EngineeringMatterWorkingCoverage) => [
         coverage.binding.inputId,
-        coverage.binding,
+        coverage,
       ],
     ),
   );
   const pending: EngineeringMatterPendingInput[] = [];
   for (const binding of validated) {
-    const covered = coveredByInputId.get(binding.inputId) ?? null;
+    const checked = coveredByInputId.get(binding.inputId) ?? null;
+    const covered = checked?.binding ?? null;
     const reasons: EngineeringMatterPendingInputReason[] = [];
     if (!covered) {
       reasons.push('NOT_COVERED');
     } else {
+      if (checked?.contribution === 'READ_ONLY') reasons.push('READ_NOT_PROCESSED');
       if (covered.workItemRevision !== binding.workItemRevision) {
         reasons.push('WORK_ITEM_REVISION_CHANGED');
       }
@@ -929,7 +931,8 @@ function validateCoverage(
   validateBinding(value.binding as EngineeringMatterWorkingInputBinding);
   if (
     value.contribution !== 'SUBSTANTIVE' &&
-    value.contribution !== 'NO_MATERIAL_CHANGE'
+    value.contribution !== 'NO_MATERIAL_CHANGE' &&
+    value.contribution !== 'READ_ONLY'
   ) {
     fail('ENGINEERING_MATTER_WORKING_CONTRIBUTION_INVALID');
   }
