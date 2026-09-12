@@ -419,3 +419,9 @@ next_original_assessment 在已确认适用性原文影响时，现优先调用 
 后继使用 original-<parseRevision> 请求 ID，原有有限长度幂等哈希保留，键中只补充可读请求段供状态投影恢复。状态读回该请求后，native 既有 next_original_assessment→get_parse_status→runInitial 和每请求 checkpoint 路径可领取 EXTRACT_APPLICABILITY；不另建消费者或绕过工具提交。缺少 context 仍明确等待。
 
 72 项预留/提交/输入生产/后继测试、17 项 native 消费测试及服务端类型检查通过，含不 claim 的队列预留、精确原文和身份传递、源变更在 CAS 前拒绝，以及 native 领取适用性后继。原文与数据库并发边界沿用已通过的真实 PG 验证，本批测试没有触发线上模型；c87 配套交付、真实 H1/H2 仍待完成。本批未发布。
+
+## c87 私有交付准备（2026-09-13）
+
+干净提交 684446e4d68f50998c1a3e4b6bdf906fc746dec7 已生成 wiselink-research-and-synthesize@r09.c87，47 文件、377332 字节；打包器全部 native tests 与版本声明检查通过。SHA-256=fc64063ca3388238a2580947380ec4b0a237706e17a8b46602f1275c81f41a92。私有 Host ZIP=/1876162620589140.zip，manifest=/1876162620589156.json；从私有存储下载 c87-readback.zip 后实际字节长度/哈希与清单一致。
+
+本地目录 /private/tmp/wiselink-c87-package。代码已按单一显式引用非强制推送到飞书 origin/codex/wl31-r09-master-handoff-20260903（5f5df357a→684446e4d），未向 GitHub 推送。c87 尚未安装，不将文件上传视为运行交付；Host 线上仍为前次核实的 b0ff1f510，需配套安装/技术发布与真实原文调用验证。未新增或重启受阻 Hosted 会话。
