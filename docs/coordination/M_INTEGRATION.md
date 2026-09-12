@@ -309,3 +309,7 @@ Skill c85 源提交 `58653b973f43f18c0ce345239547fc2e2a9f115c` 已推送妙搭 o
 受理先捕获解析版本，状态比较核对同一 run，入队再次检查该版本。幂等 requestId 为 `original-<parseRevision>`，既有键同时限定 WorkItem、DocumentVersion、操作；复用 ActionAttempt 对 WorkItem 的行锁、版本校验和所有初评在途检查。真实 PG 并发受理只创建一个请求，失败后同一版本回读仍为原失败，不产生随机后继。每个请求保存确切原文，JobAid 更新后旧 Overall 的原文影响仍可继续受理。
 
 活动配置重评、在途任务、普通失败、适用性原文映射缺口不会被跳过。当前只接通符合既有受理边界的 JobAid/Overall 后继；原文适用性条件提取/Host 目标映射、非 SB 普通文档评估入口仍需完成，不能把该增量写成全流程闭环。81 项状态/受理/动态服务测试、12 项真实 PG 测试通过；c86 发布声明检查通过，云端安装与实际消费尚未完成。
+
+本批技术发布读回：Host release `7684755212175903949` finished，提交 `b0ff1f51025dacf3429bc07e21972f1b053cf253`，error_logs 为空；包含前述各阶段原文基准、入队固定原文和自动后继入口。c86 的 205 项消费器/载荷测试及包内自测通过，私有 ZIP `/1876158131942419.zip`、manifest `/1876161709842555.json`；下载回读 372252 字节及 SHA-256 `492b34c34397d8b08eae4255deedc03969aedc0651a3407a15a6010fd5a9eab9` 匹配本地清单。该包尚未安装到官方 Hosted，旧 c85 上传记录不是 c86 安装证明。
+
+既有官方 Hosted 诊断句柄最新只读仍为 active=true、streaming=false、queued_count=3；latest_turn cancelled 为旧状态，未追加、重启或取消。当前技术发布不等于官方消费实际执行、插件实跑或 H1/H2 完成。
