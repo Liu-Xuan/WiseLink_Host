@@ -371,3 +371,9 @@ JobAid 实际 buildInput 以正常 Reader 本次读取的确切原文 binding �
 发现生产 MiaodaApplicabilityControlledSelectionAdapter 在读取 Fleet 前仍强制 frozen.2 条件映射，导致原文输入生产虽实现、实际端口仍不可用。已由服务端私有 selection port 增加明确 ORIGINAL 模式；新原文生产及 v2 输入的提交/恢复读均传入该模式。原文发布及字节来源验证仍由输入生产者执行；端口继续核对 tenant/WorkItem/DV，只读取既有 Host 配置或保存的受控目标和 Fleet，不接受模型目标、不开放新的浏览器写入口。
 
 14 项目标适配器/生产者测试及服务端类型检查通过：无旧包时可读取已配置 Host 目标，缺少配置和错误 DV 仍拒绝，旧路径保留 frozen.2 检查。普通 begin 仍未切换：须先把既有任务幂等查询和活动任务保护放到输入迁移前，避免先 CAS 新输入而破坏已经发出的旧任务。本批未发布。
+
+## 适用性预留事务边界（2026-09-13，入口迁移准备）
+
+实际检查发现 action_attempt.reserve 原先只对 openclaw-v2 键获取 WorkItem 行锁，原文适用性 openclaw-v3 和既有适用性键未进入该分支。现对 OPENCLAW_APPLICABILITY_EVALUATION 统一获取同一 WorkItem 锁，在锁内查精确幂等、重新核对 DV/revision、排除其他活动适用性任务再预留。适用性只排除同类活动任务，不新增等待翻译完成的条件；原有 openclaw-v2 JobAid/Overall 活动检查保持不变。
+
+真实 PostgreSQL/RLS 12 项测试通过，其中新增在真实 lifecycle.buildModelInput 期间改变 WI 修订后拒绝预留、同请求双并发只建一条、另一请求不越过活动适用性任务的断言；服务端类型检查通过。此变更补齐输入迁移需依赖的预留锁，尚未实现输入 CAS 的活动任务保护或切换普通 begin，不宣称整个迁移已原子化。本批未发布。

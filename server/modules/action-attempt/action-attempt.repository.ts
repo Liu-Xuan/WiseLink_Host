@@ -251,8 +251,9 @@ export class ActionAttemptRepository {
     attempt: typeof actionAttempt.$inferInsert,
     knowledge?: ReserveActionAttemptInput['initialKnowledgeSession'],
   ): Promise<ActionAttemptReservation> {
-    if (attempt.idempotencyKey?.startsWith('openclaw-v2:')) {
-      // Serialize an explicit request against the ordinary WI row. The legacy
+    if (attempt.idempotencyKey?.startsWith('openclaw-v2:') ||
+      attempt.actionType === 'OPENCLAW_APPLICABILITY_EVALUATION') {
+      // Serialize explicit requests and applicability admission against the WI row. The legacy
       // partial unique index alone does not cover a response lost after commit.
       return this.db.transaction(async (transaction) => {
         const [owner] = await transaction
@@ -298,7 +299,8 @@ export class ActionAttemptRepository {
             and(
               eq(actionAttempt.workItemId, String(attempt.workItemId)),
               eq(actionAttempt.tenantId, String(attempt.tenantId)),
-              inArray(actionAttempt.actionType, [
+              inArray(actionAttempt.actionType, attempt.actionType === 'OPENCLAW_APPLICABILITY_EVALUATION'
+                ? ['OPENCLAW_APPLICABILITY_EVALUATION'] : [
                 'OPENCLAW_TRANSLATE',
                 'OPENCLAW_APPLICABILITY_EVALUATION',
                 'OPENCLAW_DYNAMIC_EVALUATION',
