@@ -777,6 +777,8 @@ describe('CanonicalHost initial-analysis status projection', () => {
       sourceReadingMode:'VERIFIED_ENGLISH',originalSource:structuredClone(originalSource)};
     workItem.package=null; workItem.translation=null;
     const options={englishAssessmentEnabled:true,originalPublished:true};
+    const pending={...workItem,applicability:undefined};
+    expect(projectCanonicalHostInitialAnalysisStatus(pending,[],options)).toMatchObject({nextOperation:'EXTRACT_APPLICABILITY',stages:{applicability:{status:'PENDING'}}});
     expect(projectCanonicalHostInitialAnalysisStatus(workItem,[],options).stages.applicability.status)
       .toBe(status==='CANDIDATE_ONLY'?'SUCCEEDED':'WAITING_INPUT');
     workItem.applicabilityInput.originalSource!.binding.parseRunId='changed';

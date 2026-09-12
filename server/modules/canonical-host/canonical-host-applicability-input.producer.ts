@@ -112,6 +112,12 @@ export class CanonicalHostApplicabilityInputProducer {
     return this.produceBoundInput(scope);
   }
 
+  /** Read-only admission snapshot, before any input migration or source I/O. */
+  async readAdmissionSnapshot(scope: CanonicalVerifiedApplicabilityContextScope) {
+    const workItem=await this.requiredParsedWorkItem(scope,true);
+    return {workItem,applicabilityInput:selectedApplicabilityInput(workItem) ?? null};
+  }
+
   /** New-original task admission calls this explicit producer, after service authorization. */
   async produceOriginalAuthorized(scope: CanonicalVerifiedApplicabilityContextScope): Promise<CanonicalWorkItemProjection> {
     return this.produceBoundInput(scope, true);

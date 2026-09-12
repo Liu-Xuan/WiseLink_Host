@@ -1,3 +1,4 @@
+import { originalApplicabilityInputMatches } from './original-applicability-currentness';
 import { canonicalJson } from '../action-attempt/action-attempt-envelope';
 import { Inject, Injectable, Optional } from '@nestjs/common';
 import { JobAidWorkRepository } from './jobaid-work.repository';
@@ -436,7 +437,7 @@ export function projectCanonicalHostInitialAnalysisStatus(
         terminalCode:'DOCUMENT_ORIGINAL_IMPACT_REVIEW_REQUIRED'};
     }
   }
-  if (options.originalPublished && !workItem.package && stages.applicability.status === 'PENDING')
+  if (options.originalPublished && !workItem.package && !originalApplicabilityInputMatches(execution) && stages.applicability.status === 'PENDING')
     stages.applicability={...stages.applicability,status:'WAITING_INPUT',terminalCode:'ORIGINAL_APPLICABILITY_MAPPING_REQUIRED'};
   const progression = parsedPackageReady
     ? deriveProgression(

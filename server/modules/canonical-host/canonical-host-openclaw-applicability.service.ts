@@ -204,21 +204,30 @@ export class CanonicalHostOpenClawApplicabilityService {
     );
     assertApplicabilityContextScope(scope, applicabilityContextRef, requestId);
     await this.retryTerminalConfigurationEvidenceApplicability(scope);
-    await this.applicabilityInputs.produceAuthorized(scope);
+    const admission=await this.applicabilityInputs.readAdmissionSnapshot(scope);
+    const priorKey=admission.applicabilityInput && (admission.applicabilityInput.originalSource || admission.workItem.package)
+      ? applicabilityIdempotencyKey({...admission,applicabilityInput:admission.applicabilityInput,requestId}) : null;
+    const prior=priorKey ? await this.attempts.readExactIdempotency({tenantId:scope.tenantId,
+      workItemId:admission.workItem.workItemId,taskType:'OPENCLAW_APPLICABILITY_EVALUATION',
+      baseRevision:admission.workItem.revision,documentVersionId:admission.workItem.source.documentVersionId,
+      idempotencyKey:priorKey}) : null;
+    if (!prior) {
+      if (process.env.WL_JOBAID_PROBLEM_V2_ENABLED==='1' || admission.applicabilityInput?.originalSource)
+        await this.applicabilityInputs.produceOriginalAuthorized(scope);
+      else await this.applicabilityInputs.produceAuthorized(scope);
+    }
     const { workItem, applicabilityInput } =
       await this.applicabilityInputs.readCurrentOwnerValidated(scope);
     assertApplicabilityNotCurrent(workItem, applicabilityInput);
-    const bound = await this.attempts.readExactIdempotency({
+    const currentKey=applicabilityIdempotencyKey({workItem,applicabilityInput,requestId});
+    if (prior && priorKey!==currentKey) throw conflict('APPLICABILITY_ADMISSION_BINDING_CHANGED');
+    const bound = prior ?? await this.attempts.readExactIdempotency({
       tenantId: scope.tenantId,
       workItemId: workItem.workItemId,
       taskType: 'OPENCLAW_APPLICABILITY_EVALUATION',
       baseRevision: workItem.revision,
       documentVersionId: workItem.source.documentVersionId,
-      idempotencyKey: applicabilityIdempotencyKey({
-        workItem,
-        applicabilityInput,
-        requestId,
-      }),
+      idempotencyKey: currentKey,
     });
     const frozenVersion = bound?.taskEnvelopeJson
       ? applicabilityTaskVersion(parseTaskEnvelope(bound.taskEnvelopeJson))

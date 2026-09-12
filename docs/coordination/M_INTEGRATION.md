@@ -383,3 +383,11 @@ JobAid 实际 buildInput 以正常 Reader 本次读取的确切原文 binding �
 输入生产者的实际 compareAndSet 已传入服务端租户作用域的 applicabilityInputGuard。MiaodaWorkItemRepository 在同一事务内锁 WorkItem、核对 tenant/DV/revision、检查 QUEUED/RUNNING/RETRY_SCHEDULED/COMMITTING 适用性任务后才更新输入投影；锁与上一节适用性预留共用。保护仅用于 syncPrimaryAttempt=false 的输入更新，不改写或取消已有任务，也不影响其他普通 CAS。
 
 真实 PostgreSQL 测试新增活动任务阻止输入 CAS 和 CAS/新任务预留双并发互斥断言，12 项通过；60 项输入生产/提交恢复测试及服务端类型检查通过。两条并发路径不可能同时基于同一修订成功。普通 begin 尚未切换：下一步在新输入生产之前读取旧任务幂等绑定，确定沿用旧版本还是迁移原文输入。本批未发布。
+
+## 普通 begin 的原文新请求接入（2026-09-13）
+
+begin_applicability_evaluation 现在先读取授权后的只读 admission snapshot，并用当前输入计算精确旧幂等键。找到已有任务时不调用输入生产/CAS，按其封存 schemaVersion 重建；找不到时，现有 WL_JOBAID_PROBLEM_V2_ENABLED=1 或已原文输入的新请求调用 produceOriginalAuthorized，普通未启用历史模式保留旧生产方法。原文生产失败不回退旧包。生产后重新读取 owner/受控输入，并查迁移后的幂等键，沿用前两批的 CAS/预留事务保护。
+
+61 项生产/提交测试通过，新增“先查旧键→新原文生产→查 v3 键→构建 v3”顺序和旧 v1 任务不迁移断言；38 项状态测试通过，已具备有效原文输入但尚未求值时可推进 EXTRACT_APPLICABILITY，不再要求 frozen.2 映射。服务端类型检查通过。测试中的生产者替身负责构造服务测试输入，生产者本身另有真实方法测试；未宣称已跑线上模型。
+
+普通 begin 已接新原文路径，但实际 INITIAL_ANALYSIS 对尚无 applicabilityInput 的原文 WI 仍需配置/发现授权 opaque context 与 Host 受控目标，当前保留 WAITING_INPUT 而非虚构目标；原文变化自动重新触发与完整真实 H1/H2 继续实施。本批未发布、c87 未安装。

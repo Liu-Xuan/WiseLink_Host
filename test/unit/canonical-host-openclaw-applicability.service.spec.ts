@@ -138,6 +138,33 @@ describe('CanonicalHostOpenClawApplicabilityService', () => {
     }
   });
 
+  it('looks up the old input before migrating a new request to original v3',async()=>{
+    const previous=process.env.WL_JOBAID_PROBLEM_V2_ENABLED;
+    process.env.WL_JOBAID_PROBLEM_V2_ENABLED='1';
+    try {
+      const h=applicabilityHarness(); const original=originalFixture(); const current=h.readCurrent();
+      original.binding={...original.binding,documentVersionId:current.source.documentVersionId,
+        sourceArtifactId:current.source.sourceArtifactId,sourceSha256:current.source.sourceFileSha256,sourceByteLength:current.source.sourceByteLength};
+      const source={binding:original.binding,artifact:{ref:'document-original://DV-1/PR-TEST-2',sha256:'c'.repeat(64),byteLength:100,mediaType:'application/json' as const}};
+      h.applicabilityInputs.readOriginalTaskSource.mockResolvedValue(original);
+      h.applicabilityInputs.produceOriginalAuthorized.mockImplementation(async()=>{
+        h.mutateCurrent(item=>{item.revision++;item.package=null;item.translation=null;
+          Object.assign(item.applicabilityInput!,{schemaVersion:'wiselink.3_1.applicability_input_projection.v2',
+            sourcePackageId:null,sourcePackageContentHash:null,sourcePackageArtifactSha256:null,
+            targetBindingHash:source.artifact.sha256,originalSource:source});});
+        return h.readCurrent();
+      });
+      const began=await h.begin();
+      expect(began.modelInput).toMatchObject({schemaVersion:'wiselink.3_1.applicability_task.v3',sourcePackage:null,originalInput:{binding:original.binding}});
+      expect(h.applicabilityInputs.produceAuthorized).not.toHaveBeenCalled();
+      expect(h.attempts.readExactIdempotency.mock.calls.map(call=>call[0].idempotencyKey)).toEqual([
+        expect.stringMatching(/^openclaw-v1:applicability:/),expect.stringMatching(/^openclaw-v3:applicability:/),
+      ]);
+      expect(h.attempts.readExactIdempotency.mock.invocationCallOrder[0]).toBeLessThan(h.applicabilityInputs.produceOriginalAuthorized.mock.invocationCallOrder[0]);
+      expect(h.artifactStore.readActualBytes).not.toHaveBeenCalled();
+    } finally { if(previous===undefined) delete process.env.WL_JOBAID_PROBLEM_V2_ENABLED; else process.env.WL_JOBAID_PROBLEM_V2_ENABLED=previous; }
+  });
+
   it('rebuilds an already sealed v1 task with its original bilingual binding after enabling v2', async () => {
     const previous = process.env.WL_JOBAID_PROBLEM_V2_ENABLED;
     delete process.env.WL_JOBAID_PROBLEM_V2_ENABLED;
@@ -156,6 +183,8 @@ describe('CanonicalHostOpenClawApplicabilityService', () => {
         first.modelInput.bilingualBinding,
       );
       expect(second.modelInput).not.toHaveProperty('sourceReadingMode');
+      expect(harness.applicabilityInputs.produceOriginalAuthorized).not.toHaveBeenCalled();
+      expect(harness.applicabilityInputs.produceAuthorized).toHaveBeenCalledTimes(1);
     } finally {
       if (previous === undefined)
         delete process.env.WL_JOBAID_PROBLEM_V2_ENABLED;
@@ -2024,9 +2053,7 @@ function applicabilityHarness(
       attemptRef,
     })),
   };
-  const applicabilityInputs = {
-    readOriginalTaskSource:jest.fn(async () => originalFixture()),
-    produceAuthorized: jest.fn(async () => {
+  const produceInput = jest.fn(async () => {
       const reevaluation = activeConfigurationEvidenceReevaluation(current);
       if (reevaluation && !reevaluation.stagedBundle.applicabilityInput) {
         const next = withStagedApplicabilityInput(current, ownerInput);
@@ -2036,7 +2063,12 @@ function applicabilityHarness(
         });
       }
       return structuredClone(current);
-    }),
+    });
+  const applicabilityInputs = {
+    readAdmissionSnapshot:jest.fn(async()=>({workItem:structuredClone(current),applicabilityInput:structuredClone(selectedInput(current) ?? null)})),
+    readOriginalTaskSource:jest.fn(async () => originalFixture()),
+    produceAuthorized: produceInput,
+    produceOriginalAuthorized: jest.fn(async () => produceInput()),
     resolveCurrent: jest.fn(async () => ({
       workItem: structuredClone(current),
       applicabilityInput: structuredClone(current.applicabilityInput!),
