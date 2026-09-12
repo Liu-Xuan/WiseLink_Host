@@ -538,6 +538,7 @@ test(
             schemaVersion: INITIAL_ANALYSIS_REQUEST_SCHEMA,
             taskType: 'OPENCLAW_DYNAMIC_EVALUATION',
             requestId: queuedRequestId,
+            originalParseRunId: 'PR-TEST-2',
           });
           assert.equal(
             (

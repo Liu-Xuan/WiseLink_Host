@@ -170,6 +170,7 @@ export class CanonicalJobAidProblemService {
         ? 'OPENCLAW_DYNAMIC_EVALUATION'
         : 'OPENCLAW_OVERALL_SYNTHESIS';
     const idempotencyKey = problemIdempotencyKey(workItem, purpose, requestId);
+    let originalParseRunId: string | undefined;
     if (requestId !== undefined) {
       const existing = await this.attempts.readRequest({
         tenantId: scope.tenantId,
@@ -180,6 +181,7 @@ export class CanonicalJobAidProblemService {
       });
       if (existing) {
         continuationReceipt(existing, purpose);
+        originalParseRunId = readInitialAnalysisRequestInput(parseTaskEnvelope(existing.taskEnvelopeJson))?.originalParseRunId;
         if (
           !['QUEUED', 'RUNNING', 'RETRY_SCHEDULED', 'COMMITTING'].includes(
             existing.status,
@@ -217,6 +219,9 @@ export class CanonicalJobAidProblemService {
           scope.authorizationFingerprint,
           purpose,
           identity.createdAt.toISOString(),
+          [],
+          undefined,
+          originalParseRunId,
         ),
     });
     const input = parseJobAidProblemTask(claim.task);
@@ -286,6 +291,10 @@ export class CanonicalJobAidProblemService {
       loaded.row.documentVersionId !== execution.source.documentVersionId
     )
       throw new Error('JOBAID_WORK_ITEM_BINDING_INVALID');
+    const original = await this.work.publishedOriginalBindingForRequest({
+      tenantId, actorUserId: loaded.row.requestedByUserId, workItemId: execution.workItemId,
+      documentVersionId: execution.source.documentVersionId,
+    });
     const reserved = await this.attempts.reserve({
       workItemId: execution.workItemId,
       taskType,
@@ -309,7 +318,7 @@ export class CanonicalJobAidProblemService {
           : {}),
       },
       buildModelInput: async () =>
-        buildInitialAnalysisRequestInput({ taskType, requestId }),
+        buildInitialAnalysisRequestInput({ taskType, requestId, originalParseRunId: original.parseRunId }),
     });
     return {
       attemptRef: reserved.task.operationRef,
@@ -434,11 +443,12 @@ export class CanonicalJobAidProblemService {
       beforeTurnNo: number;
       includedDiscussionTurnIds: string[];
     },
+    originalParseRunId?: string,
   ): Promise<JobAidProblemTaskInput> {
     const readScope = new UnifiedArtifactReadScope(this.artifactStore);
     if (!this.originalReader) throw new Error('DOCUMENT_ORIGINAL_READER_UNAVAILABLE');
     await this.sourceBindings([],workItem,tenantId,actorUserId);
-    const bound = await this.work.publishedOriginalBinding({ tenantId, actorUserId, workItemId: workItem.workItemId,
+    const bound = originalParseRunId ? { parseRunId: originalParseRunId } : await this.work.publishedOriginalBinding({ tenantId, actorUserId, workItemId: workItem.workItemId,
       documentVersionId: workItem.source.documentVersionId });
     const original = await this.work.withActorScope(actorUserId, () => this.originalReader!.readDocumentOriginal(
       workItem.source.documentVersionId,bound.parseRunId,{tenantId,actorUserId,roles:[]}));

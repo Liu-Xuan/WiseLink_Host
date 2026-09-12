@@ -295,3 +295,9 @@ Skill c85 源提交 `58653b973f43f18c0ce345239547fc2e2a9f115c` 已推送妙搭 o
 继续接线时发现仅按 baseRules 的原文基准投影所有阶段，不能独立表示旧 Overall 或旧适用性。本轮改为按当前执行投影（含活动配置重评的 shadow）各自保存的 ActionAttempt 读取精确原文绑定，查询限定 tenant、WorkItem、DocumentVersion 和保存 attempt IDs。分别比较适用性、JobAid、Overall；Overall 还继承其 JobAid 原文过时状态。缺少原文绑定不能作为已评证明，运行中后继与失败历史不自动重放。
 
 同一旧 parseRun 去重读取，新旧 run 相同无需下载原文；纯定位变化保持结果。35 项状态测试覆盖新 JobAid/旧 Overall、旧 JobAid/新 Overall、相同原文、缺少绑定及纯定位变化，12 项真实 PostgreSQL 测试、server types 通过。该检查为持久后继接入提供真实阶段状态，尚未创建自动续评请求；本节代码尚未发布。
+
+## 续评入队时保存确切原文（2026-09-13，本地增量）
+
+续评原先只存 requestId，首次 Hosted claim 才读取最新 parseRun，排队期间发布解析修订会静默改变请求输入。本轮在新 JobAid/Overall 初评请求中保存 originalParseRunId；Host 准备时读取确切 run，公共 ActionAttempt 准备校验也检查实际任务原文绑定相同。已准备任务、旧无该字段请求按原有恢复规则处理，不改写已有记录。
+
+真实 PG 发现浏览器入队不能调用 Hosted 专属 actor scope，已用独立的请求读取入口沿用当前浏览器 SQL 身份/RLS，并保留 owned WorkItem、tenant、DocumentVersion 核对；没有给浏览器服务角色或身份切换。45 项续评测试（含入队后出现新 parseRun、准备结果换版拒绝）、12 项真实 PostgreSQL 测试及 server types 通过。尚未创建自动原文变化后继，未发布本增量；下一接线仍需正常 Hosted 消费入口、基于确切发布版本的幂等受理及在途/失败保护。

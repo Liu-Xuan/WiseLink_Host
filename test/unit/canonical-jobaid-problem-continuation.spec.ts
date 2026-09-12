@@ -17,6 +17,7 @@ import type {
 } from '../../server/modules/action-attempt/action-attempt.types';
 import {
   INITIAL_ANALYSIS_REQUEST_SCHEMA,
+  assertPreparedInitialAnalysisInput,
   readInitialAnalysisRequestInput,
 } from '../../server/modules/action-attempt/initial-analysis-request';
 import { CanonicalJobAidProblemService } from '../../server/modules/canonical-host/canonical-jobaid-problem.service';
@@ -60,6 +61,25 @@ describe('JobAid continuation requests', () => {
     h.originalReader.readDocumentOriginal.mockRejectedValue(new Error('SOURCE_ACCESS_REVOKED'));
     await expect(h.service.begin(h.current(),scope,'INITIAL_PROBLEM_ASSESSMENT')).rejects.toThrow('SOURCE_ACCESS_REVOKED');
   });
+  it('prepares the reserved original even when a newer parse is published before claim', async () => {
+    const h = harness();
+    const queued = await h.enqueue(REQUEST_1);
+    const request = readInitialAnalysisRequestInput(h.task(queued.attemptRef))!;
+    expect(request.originalParseRunId).toBe('PR-TEST-2');
+    h.work.publishedOriginalBinding.mockResolvedValue({parseRunId:'PR-TEST-3'});
+    const begun = await h.service.begin(h.current(), scope, 'INITIAL_PROBLEM_ASSESSMENT', REQUEST_1);
+    expect(h.work.publishedOriginalBinding).not.toHaveBeenCalled();
+    expect(h.work.publishedOriginalBindingForRequest).toHaveBeenCalledTimes(1);
+    expect(h.originalReader.readDocumentOriginal).toHaveBeenCalledWith(
+      'DV-JOBAID', 'PR-TEST-2', expect.objectContaining({actorUserId:OWNER,tenantId:TENANT}));
+    expect(parseJobAidProblemTask(begun.task).modelInput.documentOverview.original).toMatchObject({binding:{parseRunId:'PR-TEST-2'}});
+    const substituted = structuredClone(begun.task.modelInput);
+    (substituted.modelInput as {documentOverview:{original:{binding:{parseRunId:string}}}})
+      .documentOverview.original.binding.parseRunId='PR-TEST-3';
+    expect(() => assertPreparedInitialAnalysisInput(request, substituted))
+      .toThrow('ACTION_ATTEMPT_INITIAL_REQUEST_ORIGINAL_CHANGED');
+  });
+
   it('claims a source-file-bound original task without a legacy package', async () => {
     const h=harness(); h.current().package=null;
     const started=await h.service.begin(h.current(),scope,'INITIAL_PROBLEM_ASSESSMENT');
@@ -218,7 +238,7 @@ describe('JobAid continuation requests', () => {
       taskType: 'OPENCLAW_TRANSLATE',
       idempotencyKey: reserved.idempotencyKey.replace(':dynamic:', ':translate:'),
       modelInput: { ...reserved.modelInput, taskType: 'OPENCLAW_TRANSLATE' },
-    })).toThrow('ACTION_ATTEMPT_INITIAL_REQUEST_BINDING_INVALID');
+    })).toThrow('ACTION_ATTEMPT_INITIAL_REQUEST_ORIGINAL_SCOPE_INVALID');
   });
 
   it('keeps initial user-session binding in the Host envelope and out of model input', async () => {
@@ -300,7 +320,7 @@ describe('JobAid continuation requests', () => {
     else process.env.WL_JOBAID_PROBLEM_V2_ENABLED = originalFlag;
   });
 
-  it('queues a browser request without reading runtime sources, history or actor transactions', async () => {
+  it('queues a browser request bound to the authorized published original without reading file bytes or history', async () => {
     const h = harness();
     const queued = await h.enqueue(REQUEST_1);
 
@@ -308,6 +328,7 @@ describe('JobAid continuation requests', () => {
       schemaVersion: INITIAL_ANALYSIS_REQUEST_SCHEMA,
       taskType: 'OPENCLAW_DYNAMIC_EVALUATION',
       requestId: REQUEST_1,
+      originalParseRunId: 'PR-TEST-2',
     });
     expect(h.artifactStore.readActualBytes).not.toHaveBeenCalled();
     expect(h.work.listForRuntime).not.toHaveBeenCalled();
@@ -536,7 +557,8 @@ describe('JobAid continuation requests', () => {
       expect(h.current().integratedAssessment).toEqual(serving);
       expect(h.attempts.reserve).toHaveBeenCalledTimes(1);
       expect(h.artifactStore.readActualBytes).not.toHaveBeenCalled();
-    expect(h.work.publishedOriginalBinding).toHaveBeenCalledTimes(1);
+      expect(h.work.publishedOriginalBindingForRequest).toHaveBeenCalledTimes(1);
+      expect(h.work.publishedOriginalBinding).not.toHaveBeenCalled();
       expect(h.task(queued.attemptRef).baseRevision).toBe(6);
       expect(
         parseJobAidProblemTask(h.task(queued.attemptRef)).modelInput
@@ -654,6 +676,7 @@ function harness(knowledge?: { binding: jest.Mock }, initialAilySessionId?: stri
   const actorExecutor = { kind: 'host-owner-transaction' };
   const work = {
     publishedOriginalBinding: jest.fn(async () => ({parseRunId:'PR-TEST-2'})),
+    publishedOriginalBindingForRequest: jest.fn(async () => ({parseRunId:'PR-TEST-2'})),
     withActorScope: jest.fn(async (_actor: string, operation: () => Promise<unknown>) => operation()),
     listForRuntime: jest.fn(async (): Promise<JobAidWorkRevision[]> => []),
     listHeadersForRuntime: jest.fn(async (input: unknown) =>
@@ -732,7 +755,8 @@ function harness(knowledge?: { binding: jest.Mock }, initialAilySessionId?: stri
       const reserved = existing
         ? { row: existing, task: task(existing.operationRef!) }
         : await attempts.reserve(input);
-      if (readInitialAnalysisRequestInput(reserved.task)) {
+      const pendingRequest = readInitialAnalysisRequestInput(reserved.task);
+      if (pendingRequest) {
         const { inputHash: _oldHash, ...pending } = reserved.task;
         reserved.task = sealTaskEnvelope({
           ...pending,
@@ -744,6 +768,7 @@ function harness(knowledge?: { binding: jest.Mock }, initialAilySessionId?: stri
             createdAt: new Date('2026-09-09T00:00:00.000Z'),
           }),
         });
+        assertPreparedInitialAnalysisInput(pendingRequest, reserved.task.modelInput);
         reserved.row.taskEnvelopeJson = canonicalJson(reserved.task);
       }
       reserved.row.status = 'RUNNING';

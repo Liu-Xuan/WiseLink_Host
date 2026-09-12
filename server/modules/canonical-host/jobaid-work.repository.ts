@@ -71,15 +71,26 @@ export class JobAidWorkRepository {
   }
 
   async publishedOriginalBinding(input: { tenantId: string; actorUserId: string; workItemId: string; documentVersionId: string }) {
-    return this.withActorTransaction(input.actorUserId, async database => {
-      const owned = await this.loadOwnedSourceBinding({...input,kind:'SOURCE_FILE'}, database);
-      if (!owned || owned.documentVersionId !== input.documentVersionId) throw new Error('JOBAID_SOURCE_AUTHORIZATION_CHANGED');
-      const [run] = await database.select({ parseRunId: dmDocumentParseRun.parseRunId }).from(dmDocumentParseRun)
-        .where(and(eq(dmDocumentParseRun.tenantId,input.tenantId),eq(dmDocumentParseRun.documentVersionId,input.documentVersionId),
-          eq(dmDocumentParseRun.status,'PUBLISHED'))).orderBy(desc(dmDocumentParseRun.parseRevision)).limit(1);
-      if (!run) throw new Error('DOCUMENT_ORIGINAL_NOT_PUBLISHED');
-      return run;
-    });
+    return this.withActorTransaction(input.actorUserId, database => this.readPublishedOriginalBinding(input, database));
+  }
+
+  /** Request admission uses the existing authenticated SQL identity and RLS.
+   * It must not attempt to enter the Hosted service actor scope. */
+  async publishedOriginalBindingForRequest(input: { tenantId: string; actorUserId: string; workItemId: string; documentVersionId: string }) {
+    return this.db.transaction(database => this.readPublishedOriginalBinding(input, database as PostgresJsDatabase));
+  }
+
+  private async readPublishedOriginalBinding(
+    input: { tenantId: string; actorUserId: string; workItemId: string; documentVersionId: string },
+    database: PostgresJsDatabase,
+  ) {
+    const owned = await this.loadOwnedSourceBinding({...input,kind:'SOURCE_FILE'}, database);
+    if (!owned || owned.documentVersionId !== input.documentVersionId) throw new Error('JOBAID_SOURCE_AUTHORIZATION_CHANGED');
+    const [run] = await database.select({ parseRunId: dmDocumentParseRun.parseRunId }).from(dmDocumentParseRun)
+      .where(and(eq(dmDocumentParseRun.tenantId,input.tenantId),eq(dmDocumentParseRun.documentVersionId,input.documentVersionId),
+        eq(dmDocumentParseRun.status,'PUBLISHED'))).orderBy(desc(dmDocumentParseRun.parseRevision)).limit(1);
+    if (!run) throw new Error('DOCUMENT_ORIGINAL_NOT_PUBLISHED');
+    return run;
   }
 
   /** The caller supplies the actor resolved from the Host owner/task binding. */

@@ -12,6 +12,7 @@ const requestSchema = z.strictObject({
     'OPENCLAW_OVERALL_SYNTHESIS',
   ]),
   requestId: z.string().uuid(),
+  originalParseRunId: z.string().min(1).max(200).optional(),
   retranslateBlockIds: z
     .array(z.string().min(1).max(200))
     .min(1)
@@ -29,6 +30,8 @@ export function buildInitialAnalysisRequestInput(
     ...input,
     schemaVersion: INITIAL_ANALYSIS_REQUEST_SCHEMA,
   });
+  if (request.originalParseRunId && request.taskType === 'OPENCLAW_TRANSLATE')
+    throw new Error('ACTION_ATTEMPT_INITIAL_REQUEST_ORIGINAL_SCOPE_INVALID');
   if (
     request.retranslateBlockIds &&
     (request.taskType !== 'OPENCLAW_TRANSLATE' ||
@@ -86,4 +89,10 @@ export function assertPreparedInitialAnalysisInput(
         JSON.stringify(request.retranslateBlockIds ?? []))
   )
     throw new Error('ACTION_ATTEMPT_INITIAL_REQUEST_PREPARED_SCOPE_INVALID');
+  if (request.originalParseRunId) {
+    const binding = z.object({ modelInput: z.object({ documentOverview: z.object({
+      original: z.object({ binding: z.object({ parseRunId: z.literal(request.originalParseRunId) }) }),
+    }) }) }).safeParse(modelInput);
+    if (!binding.success) throw new Error('ACTION_ATTEMPT_INITIAL_REQUEST_ORIGINAL_CHANGED');
+  }
 }
