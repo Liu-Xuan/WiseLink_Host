@@ -18,7 +18,8 @@ export function classifyHostedGatewayFailure(payload) {
   if (typeof message !== 'string') return 'UNCLASSIFIED';
   if (/^[^\r\n]{1,200} ended with an incomplete terminal response\.?$/u.test(message))
     return 'INCOMPLETE_TERMINAL_RESPONSE';
-  if (message === 'tool_choice=required was not satisfied by the agent response')
+  if (message === 'tool_choice=required was not satisfied by the agent response' ||
+      message === 'tool_choice required a return_wiselink_assessment_step tool call, but the agent did not produce one')
     return 'TOOL_CHOICE_NOT_SATISFIED';
   return 'UNCLASSIFIED';
 }

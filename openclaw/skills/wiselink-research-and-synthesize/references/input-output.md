@@ -86,7 +86,7 @@ runtimePolicy.modelPolicyRef = official-hosted-profile-config
 ResultEnvelope.modelVersion = 官方托管 profile/config 本轮选择后的非空、可读实际模型
 Task.skillPolicyRef = wiselink-research-and-synthesize@r09
 ApplicabilityTask.runtimePolicy.skillVersion = wiselink-research-and-synthesize@r09  # v1 历史字段名，语义为兼容线
-ResultEnvelope.skillVersion = wiselink-research-and-synthesize@r09.c92       # 实际安装包版本
+ResultEnvelope.skillVersion = wiselink-research-and-synthesize@r09.c93       # 实际安装包版本
 toolVersions.wiselink-openclaw-engineering-assessment = 1.2.0
 promptVersion = 当前实际运行非空版本
 ```
@@ -431,7 +431,7 @@ c39 在提交前以现有完整候选与实际来源校验检查 Matter 输出�
 最多两次纠正，共享原总时限，每次模型请求照常续租与重新授权。模型重新输出，驱动不改写或自动补齐候选。
 安全拒绝记录写入私有 `candidate-rejection-N.json`（modelRound/correctionNo/errorCode 与绑定摘要），不作业务
 结果或来源证明。未知错误、预算耗尽及租约失效停止；通过全部校验后仍只有一次 Host commit。
-CHAT/Matter 使用 `tool_choice=required`，JobAid c5 使用 `auto`；均为 `parallel_tool_calls=false`、`n=1`。每次响应只有一个 choice 和一个上述 function call，
+CHAT/Matter 使用 `tool_choice=required`，JobAid 使用指定 `return_wiselink_assessment_step` 的函数通道（仍由step选择READ/QUERY/SAVE/FINISH）；均为 `parallel_tool_calls=false`、`n=1`。每次响应只有一个 choice 和一个上述 function call，
 arguments 为 strict JSON object。assistant content 可为 null、空白或官方 Gateway 附带的纯文本说明；只有工具参数
 被消费，附带文本不解析、不进入候选/证据或驱动的后续 exchange。其它函数、多个调用、纯文本结果、非文本
 content、analysis/reasoning 与参数中的包裹文本仍拒绝。

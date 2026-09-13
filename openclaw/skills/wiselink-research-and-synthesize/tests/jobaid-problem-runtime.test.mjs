@@ -851,3 +851,37 @@ test('Matter uses the same model loop and must save this attempt before finishin
   assert.equal(result.output.workRevisionRef, 'JAWR-2');
   assert.match(f.calls[0].messages[0].content, /DOCUMENT_VERSION/);
 });
+
+
+test('the single structured channel still permits reading, saving and finishing', async () => {
+  const f = fixture([
+    { action: 'READ_SOURCES', sourceRefs: ['source:dv:sr1'], purpose: 'Check the condition', context: 'EXACT' },
+    { action: 'SAVE_WORK', work: completed },
+    { action: 'FINISH', work: completed },
+  ]);
+  await f.run();
+  assert.equal(f.reads.length, 1);
+  assert.ok(f.saves.length >= 1);
+  for (const request of f.calls) {
+    assert.deepEqual(request.tool_choice, { type: 'function', function: { name: 'return_wiselink_assessment_step' } });
+    assert.deepEqual(request.tools.map(tool => tool.function.name), ['return_wiselink_assessment_step']);
+    assert.equal(request.parallel_tool_calls, false);
+  }
+});
+
+
+test('the installed gateway named-tool failure settles as a known failed result without another model request', async () => {
+  const f = fixture([]); let requests = 0;
+  f.dependencies.requestGateway = async () => {
+    requests++;
+    return new Response(JSON.stringify({ error: { type: 'api_error',
+      message: 'tool_choice required a return_wiselink_assessment_step tool call, but the agent did not produce one' } }), { status: 502 });
+  };
+  await assert.rejects(f.run(), error => {
+    assert.equal(error.message, 'JOBAID_GATEWAY_HTTP_502:TOOL_CHOICE_NOT_SATISFIED');
+    assert.equal(error.terminalAssessmentFailure?.errorCode, 'JOBAID_INCOMPLETE_TERMINAL_RESPONSE');
+    return true;
+  });
+  assert.equal(requests, 1);
+  assert.equal(f.saves.length, 0);
+});

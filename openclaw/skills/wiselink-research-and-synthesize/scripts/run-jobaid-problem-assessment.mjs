@@ -166,6 +166,7 @@ export async function invokeHostedJobAidProblemModel(
     !options.sessionDiscriminator
   )
     throw new Error('JOBAID_PROBLEM_RUNTIME_CAPABILITY_REQUIRED');
+  const toolChoice = { type: 'function', function: { name: FUNCTION } };
   let startedAt = Date.now();
   const timeoutMs = options.timeoutMs ?? 30 * 60_000;
   const systemMessage = { role: 'system', content: GUIDE + (modelInput.schemaVersion === MATTER_JOBAID_TASK_SCHEMA
@@ -310,7 +311,7 @@ export async function invokeHostedJobAidProblemModel(
               },
             },
           ],
-          tool_choice: 'auto',
+          tool_choice: toolChoice,
           parallel_tool_calls: false,
           n: 1,
           stream: false,
@@ -351,6 +352,7 @@ export async function invokeHostedJobAidProblemModel(
       {
         operation,
         round,
+        requestedToolChoice: toolChoice,
         httpStatus: response.status,
         finishReason: payload?.choices?.[0]?.finish_reason ?? null,
         inputTokens: payload?.usage?.prompt_tokens ?? null,
@@ -367,7 +369,8 @@ export async function invokeHostedJobAidProblemModel(
       const error = new Error(`JOBAID_GATEWAY_HTTP_${response.status}${gatewayFailure === 'UNCLASSIFIED' ? '' : ':' + gatewayFailure}`);
       // The gateway explicitly reports an ended, incomplete invocation. This
       // is a failed result, unlike a transport timeout with an unknown outcome.
-      if (response.status === 400 && gatewayFailure === 'INCOMPLETE_TERMINAL_RESPONSE') {
+      if ((response.status === 400 && gatewayFailure === 'INCOMPLETE_TERMINAL_RESPONSE') ||
+          (response.status === 502 && gatewayFailure === 'TOOL_CHOICE_NOT_SATISFIED')) {
         error.terminalAssessmentFailure = {
           errorCode: 'JOBAID_INCOMPLETE_TERMINAL_RESPONSE',
           provenance: {
