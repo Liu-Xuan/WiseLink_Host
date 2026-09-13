@@ -2,7 +2,6 @@ import { jobAidWorkTypeErrors, jobAidWorkDependencyErrors, JOBAID_STEP_SHAPE, de
 import { randomUUID } from 'node:crypto';
 import { isDeepStrictEqual } from 'node:util';
 import {
-  M3_MAX_COMPLETION_TOKENS,
   actualModelVersion,
   assertHostedModelGatewayReady,
   executionModelHeaders,
@@ -22,7 +21,7 @@ export const JOBAID_PROBLEM_TASK_SCHEMA = 'wiselink.jobaid-problem-task.v2';
 export const MATTER_JOBAID_TASK_SCHEMA = 'wiselink.matter-jobaid-task.v2';
 const FUNCTION = 'return_wiselink_assessment_step';
 export const JOBAID_GENERATION_POLICY = Object.freeze({
-  version: 'bounded-issue-v1', requestMaxCompletionTokens: 16000,
+  version: 'continuous-issue-batches-v1', requestMaxCompletionTokens: 16000,
   payloadTargetTokens: [2000, 4000], maxScopeAdjustments: 2,
   basis: 'Application budget; 16000 is an observation on one Hosted M3 request, not a universal model limit.',
 });
@@ -51,7 +50,7 @@ const { work: _workShape, ...stepProperties } = JOBAID_STEP_SHAPE.properties;
 const transportStepShape = {
   ...JOBAID_STEP_SHAPE,
   properties: { ...stepProperties, workJson: { type: 'string', minLength: 2,
-    description: 'Bounded complete issue update encoded as JSON text. Unchanged issues are retained by Host; supplied issues replace whole issues. Preserve arrays and nulls.' } },
+    description: 'One complete batch of new or changed issues encoded as JSON text, plus only necessary summary changes. Unchanged issues are retained by Host; supplied issues replace whole issues. Preserve arrays and nulls.' } },
 };
 
 export function parseJobAidWorkJson(value) {
@@ -214,7 +213,7 @@ export async function invokeHostedJobAidProblemModel(
   let inputUnits = 0;
   let outputUnits = 0;
   const checkpoint = options.assessmentCheckpoint;
-  let generationPolicy = JOBAID_GENERATION_POLICY;
+  const generationPolicy = JOBAID_GENERATION_POLICY;
   let scopeAdjustments = 0;
   let sourceMetadata = [];
   if (checkpoint) {
@@ -224,7 +223,8 @@ export async function invokeHostedJobAidProblemModel(
     if (existing && !isDeepStrictEqual(existing.binding, binding)) throw new Error('JOBAID_CHECKPOINT_BINDING_MISMATCH');
     if (existing) {
       startedAt = existing.startedAt;
-      generationPolicy = existing.generationPolicy ?? null; // historical requests keep their recorded budget
+      if (!isDeepStrictEqual(existing.generationPolicy, generationPolicy))
+        throw new Error('JOBAID_CHECKPOINT_POLICY_CHANGED'); // use a normal successor; never reinterpret an old in-flight request
     } else await checkpoint.writeOnce('assessment-enabled', { version: 1, binding, startedAt, generationPolicy });
   }
   let round = 1;
@@ -328,10 +328,10 @@ export async function invokeHostedJobAidProblemModel(
         body: JSON.stringify({
           model: requestedModel,
           user: `initial:${options.sessionDiscriminator}`,
-          messages: generationPolicy ? messages.map(message => message.role !== 'system' ? message : ({ ...message, content: message.content + '\n' + JSON.stringify({
+          messages: messages.map(message => message.role !== 'system' ? message : ({ ...message, content: message.content + '\n' + JSON.stringify({
             generationPolicy, scopeAdjustment: scopeAdjustments, expectedWorkRevision, savedWork: saved,
-            focus: scopeAdjustments ? 'Narrow only the unfinished analysis to its smallest independently meaningful issue or comparison. Preserve all saved work and required source conditions; do not continue a truncated JSON string.' : 'Address the current trigger/sourceChanges with one complete meaningful issue update, then SAVE_WORK promptly. Do not rewrite unchanged issues. Continue necessary investigation and perform whole-work consistency before completion.',
-          }) })) : messages,
+            focus: scopeAdjustments ? 'Reduce the amount delivered in this unfinished batch while retaining the full engineering context. Choose one or several complete, meaningful issue updates; do not split conditions or reasoning fragments. Preserve saved work and do not continue a truncated JSON string.' : 'Keep the shared engineering context and investigate across relevant sections and sources. Choose the number of complete issues that can be delivered in this batch; save substantive results promptly without first exhausting every issue. After SAVE_WORK continue automatically in this same session. Do not rewrite unchanged issues or summary fields. Before completion check cross-issue consistency and save only necessary synthesis or corrections.',
+          }) })),
           tools: [
             {
               type: 'function',
@@ -353,7 +353,7 @@ export async function invokeHostedJobAidProblemModel(
           n: 1,
           stream: false,
           ...(options.executionModel?.modelRef === 'miaoda/minimax-m3'
-            ? { max_completion_tokens: generationPolicy?.requestMaxCompletionTokens ?? M3_MAX_COMPLETION_TOKENS }
+            ? { max_completion_tokens: generationPolicy.requestMaxCompletionTokens }
             : {}),
         }),
         signal: AbortSignal.timeout(Math.min(remainingMs, 15 * 60_000)),
@@ -367,7 +367,7 @@ export async function invokeHostedJobAidProblemModel(
     // response remains unknown; a failed Host read can reuse this exact result.
     const response = checkpoint ? await checkpoint.remoteStep({
       step: `assessment-round-${round}`, args: { operation, messages, executionModel: options.executionModel ?? null,
-        sessionDiscriminator: options.sessionDiscriminator, ...(generationPolicy ? { generationPolicy, scopeAdjustments } : {}) }, ambiguousCommit: false, perform: performRequest,
+        sessionDiscriminator: options.sessionDiscriminator, generationPolicy, scopeAdjustments }, ambiguousCommit: false, perform: performRequest,
     }) : await performRequest();
     await accountRound(round);
     const { raw } = response;
@@ -390,8 +390,8 @@ export async function invokeHostedJobAidProblemModel(
         operation,
         round,
         requestedToolChoice: toolChoice,
-        requestMaxCompletionTokens: options.executionModel?.modelRef === 'miaoda/minimax-m3' ? (generationPolicy?.requestMaxCompletionTokens ?? M3_MAX_COMPLETION_TOKENS) : null,
-        generationPolicyVersion: generationPolicy?.version ?? null,
+        requestMaxCompletionTokens: options.executionModel?.modelRef === 'miaoda/minimax-m3' ? (generationPolicy.requestMaxCompletionTokens) : null,
+        generationPolicyVersion: generationPolicy.version,
         scopeAdjustments,
         functionArgumentsBytes: typeof payload?.choices?.[0]?.message?.tool_calls?.[0]?.function?.arguments === 'string'
           ? Buffer.byteLength(payload.choices[0].message.tool_calls[0].function.arguments) : null,
@@ -427,7 +427,7 @@ export async function invokeHostedJobAidProblemModel(
     }
     // Only an explicit completion reason establishes truncation. Never infer
     // length from generic 502/tool-choice failures or repair partial arguments.
-    if (payload.choices?.length === 1 && payload.choices[0].finish_reason === 'length' && generationPolicy) {
+    if (payload.choices?.length === 1 && payload.choices[0].finish_reason === 'length') {
       if (scopeAdjustments >= generationPolicy.maxScopeAdjustments) {
         const error = new Error('JOBAID_MODEL_OUTPUT_LENGTH');
         error.terminalAssessmentFailure = {
@@ -635,7 +635,7 @@ export async function invokeHostedJobAidProblemModel(
         role: 'tool',
         tool_call_id: call.id,
         name: FUNCTION,
-        content: JSON.stringify(generationPolicy ? projectJobAidReadReceipt(receipt, sourceMetadata) : receipt),
+        content: JSON.stringify(projectJobAidReadReceipt(receipt, sourceMetadata)),
       },
     ];
     await checkpoint?.write('assessment-state', { round: round + 1, messages,

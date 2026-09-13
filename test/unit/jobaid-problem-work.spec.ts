@@ -113,6 +113,22 @@ function update(issues = [issue('a'), issue('b')]) {
 }
 
 describe('JobAid problem work keeps method semantics, delivery and incremental substance', () => {
+  it('materializes variable issue batches with sparse summary and keeps whole-issue replacement', () => {
+    const first = materializeJobAidWork({ ...update([issue('a'), issue('b')]), roundCompletion: 'IN_PROGRESS' }, context);
+    const batch = { schemaVersion: first.schemaVersion, roundCompletion: 'IN_PROGRESS', completionReason: '继续调查共同前提。', changeSummary: '加入问题C。', issues: [issue('c')] };
+    const second = materializeJobAidWork(batch, { ...context, previous: first });
+    expect(second.issues.map(item => item.issueKey)).toEqual(['a', 'b', 'c']);
+    expect(second.headline).toBe(first.headline);
+    expect(second.decisiveIssueKeys).toEqual(first.decisiveIssueKeys);
+    const final = materializeJobAidWork({ ...batch, issues: [], roundCompletion: 'COMPLETE_WITH_OPEN_QUESTIONS', understanding: '三个问题共同受未知条件限制。' }, { ...context, previous: second });
+    expect(final.issues).toEqual(second.issues);
+    expect(final.understanding).toBe('三个问题共同受未知条件限制。');
+    expect(() => materializeJobAidWork(batch, context)).toThrow();
+    expect(() => materializeJobAidWork({ ...batch, headline: null }, { ...context, previous: first })).toThrow('HEADLINE_INVALID');
+    expect(() => materializeJobAidWork({ ...batch, issues: [], retiredIssues: first.decisiveIssueKeys.map(issueKey => ({ issueKey, reason: '被取代' })) }, { ...context, previous: second })).toThrow('DECISIVE_ISSUES_INVALID');
+    expect(() => materializeJobAidWork({ ...batch, issues: [{ issueKey: 'a', understanding: '不完整替换' }] }, { ...context, previous: first })).toThrow();
+  });
+
   it('preserves original revisions and expands pages within only the requested revision', () => {
     const first = { ...document, evidenceRef: 'DOCUMENT_ORIGINAL:dv:PR-1:sr1' };
     const second = { ...document, evidenceRef: 'DOCUMENT_ORIGINAL:dv:PR-2:sr1', excerpt: 'Corrected original condition.' };

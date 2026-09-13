@@ -910,7 +910,7 @@ test('new requests bind bounded M3 policy; A survives length while only unfinish
   assert.equal(receipt.workRevisionRef, 'JAWR-1');
   assert.equal(receipt.content, undefined, 'saved full work is not echoed on every round');
   assert.equal((await checkpoint.readOptional('assessment-state')).scopeAdjustments, 1);
-  assert.equal((await checkpoint.readOptional('assessment-enabled')).generationPolicy.version, 'bounded-issue-v1');
+  assert.equal((await checkpoint.readOptional('assessment-enabled')).generationPolicy.version, 'continuous-issue-batches-v1');
   assert.ok(await checkpoint.readOptional('assessment-round-2.result'), 'partial response stays durable but never saved');
 }));
 
@@ -932,14 +932,14 @@ test('exact repeated source metadata is referenced; changed conditions and new s
   assert.deepEqual(projectJobAidReadReceipt(receipt, []).documents[0].semanticMap, receipt.documents[0].semanticMap);
 } );
 
-test('historical checkpoint retains its original request budget', () => persisted(async checkpoint => {
+test('superseded checkpoint cannot silently resume under a different generation policy', () => persisted(async checkpoint => {
   const f = fixture([new Error('lost')], { assessmentCheckpoint: checkpoint, registeredModelRefs: ['miaoda/minimax-m3'], executionModel: { modelRef: 'miaoda/minimax-m3', displayName: 'Synthetic M3', providerKind: 'BUILT_IN', settingsRevision: 1, selectedAt: '2026-09-13T00:00:00.000Z' } });
   await checkpoint.writeOnce('assessment-enabled', { version: 1, startedAt: Date.now(), binding: {
     operation: 'EVALUATE_JOBAID', modelInput: modelInput(), sessionDiscriminator: f.options.sessionDiscriminator,
     executionModel: f.options.executionModel,
   } });
-  await assert.rejects(f.run(), /lost/);
-  assert.equal(f.calls[0].max_completion_tokens, 524288);
+  await assert.rejects(f.run(), /JOBAID_CHECKPOINT_POLICY_CHANGED/);
+  assert.equal(f.calls.length, 0);
 }));
 
 test('Review requester does not retry either known missing-function signature as transient 502', async () => {
@@ -966,4 +966,22 @@ test('observed singleton sourceRefs envelope is lossless and does not coerce wor
   assert.ok(jobAidFunctionSchema(JOBAID_STEP_SHAPE).properties.sourceRefs.anyOf.some(s => s.properties?.item?.type === 'string'));
   const f = fixture([wrapped, { action: 'FINISH', work: completed }]);
   await f.run(); assert.deepEqual(f.reads[0].sourceRefs, [ref]);
+});
+
+ test('continuous session saves variable issue groups then synthesis without replaying initial context', async () => {
+  const first = { ...completed, roundCompletion: 'IN_PROGRESS', issues: [{ issueKey: 'a' }, { issueKey: 'b' }] };
+  const second = { schemaVersion: completed.schemaVersion, roundCompletion: 'IN_PROGRESS', completionReason: 'Continue', changeSummary: 'C', issues: [{ issueKey: 'c' }] };
+  const synthesis = { schemaVersion: completed.schemaVersion, roundCompletion: 'COMPLETE_WITH_OPEN_QUESTIONS', completionReason: 'Checked', changeSummary: 'Synthesis', understanding: 'Shared conditions remain unknown', issues: [] };
+  const f = fixture([{ action: 'SAVE_WORK', work: first }, { action: 'SAVE_WORK', work: second }, { action: 'SAVE_WORK', work: synthesis }, { action: 'FINISH' }]);
+  const result = await f.run();
+  assert.equal(result.output.workRevisionRef, 'JAWR-3');
+  assert.deepEqual(f.saves.map(item => JSON.parse(item.workJson)), [first, second, synthesis]);
+  assert.equal(new Set(f.calls.map(call => call.user)).size, 1);
+  assert.ok(f.calls[0].messages.some(message => message.role === 'user'));
+  assert.ok(f.calls.slice(1).every(call => !call.messages.some(message => message.role === 'user')));
+  for (let i = 1; i < f.calls.length; i++) {
+    const receipt = JSON.parse(f.calls[i].messages.at(-1).content);
+    assert.equal(receipt.workRevision, i);
+    assert.equal(receipt.content, undefined);
+  }
 });
