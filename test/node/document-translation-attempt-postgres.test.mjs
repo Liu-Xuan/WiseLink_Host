@@ -128,5 +128,37 @@ test('document attempts preserve published source identity and service-only acto
     Object.assign(stale.modelInput.source.originalBinding,{parseRunId:'parse',parseRevision:1});
     stale.modelInput.source.parsedArtifact.ref='document-original://DV/parse';
     await assert.rejects(use(repo => repo.reserve(scope, sealDocumentTranslationTaskEnvelope(stale), 'stale-request')), /RESERVATION_SOURCE_CHANGED/);
+    // Semantic revisions use the same exact published source and current actor boundary.
+    await db.unsafe(await readFile(new URL('../../migrations/0055_document_semantic_revision.sql', import.meta.url), 'utf8'));
+    await db.unsafe('GRANT SELECT,INSERT,UPDATE,DELETE ON dm_document_semantic_revision TO authenticated,service_role');
+    const { DocumentSemanticRevisionRepository } = require('../../server/modules/canonical-host/document-semantic-revision.repository.ts');
+    const { originalFixture } = require('../unit/document-parsing/fixtures/document-original.fixture.ts');
+    const { buildDocumentSemanticMap } = require('../../server/modules/document-management/src/hosted/nest/document-semantic-map.ts');
+    const { GENERIC_SEMANTIC_PROFILE } = require('../../server/modules/document-management/src/hosted/nest/document-semantic-profile.ts');
+    const original = originalFixture();
+    original.binding = source.originalBinding;
+    const map = buildDocumentSemanticMap({ original, semanticRevision: 1, profile: GENERIC_SEMANTIC_PROFILE });
+    const semantic = (role, actor, fn) => drizzle(db).transaction(async tx => {
+      await tx.execute(query.raw(`SET LOCAL ROLE ${role}`));
+      await tx.execute(query`SELECT set_config('app.user_id',${actor},true)`);
+      return fn(new DocumentSemanticRevisionRepository(tx));
+    });
+    const append = (repo, value=map, expected=0, sha='a'.repeat(64)) => repo.append(scope, original, value, expected, sha);
+    await assert.rejects(semantic('authenticated','actor',append), error => error.cause?.code === '42501');
+    await assert.rejects(semantic('service_role','other',append), error => error.cause?.code === '42501');
+    await assert.rejects(semantic('service_role','actor',repo => append(repo,map,0,'wrong')), /ORIGINAL_CHANGED/);
+    assert.deepEqual(await semantic('service_role','actor',append), map);
+    assert.deepEqual(await semantic('authenticated','actor',repo => repo.read(scope,'parse-new',1)), map);
+    assert.equal(await semantic('service_role','other',repo => repo.read(scope,'parse-new',1)), null);
+    await assert.rejects(semantic('service_role','actor',append), /REVISION_CONFLICT/);
+    const nextMap = { ...map, semanticRevision: 2 };
+    await semantic('service_role','actor',repo => append(repo,nextMap,1));
+    assert.deepEqual(await semantic('service_role','actor',repo => repo.read(scope,'parse-new',1)), map);
+    assert.deepEqual(await semantic('service_role','actor',repo => repo.read(scope,'parse-new')), nextMap);
+    // Even a later broad platform policy cannot allow native writes or mutate history.
+    await db.unsafe('CREATE POLICY constructed_broad_semantic_policy ON dm_document_semantic_revision FOR ALL TO authenticated,service_role USING(true) WITH CHECK(true)');
+    await assert.rejects(semantic('authenticated','actor',repo => append(repo,{...map,semanticRevision:3},2)), error => error.cause?.code === '42501');
+    await assert.rejects(asRole('service_role','actor',tx => tx`UPDATE dm_document_semantic_revision SET profile_ref='changed'`), /IMMUTABLE/);
+    await assert.rejects(asRole('service_role','actor',tx => tx`DELETE FROM dm_document_semantic_revision`), /IMMUTABLE/);
   } finally { await db.end(); }
 });

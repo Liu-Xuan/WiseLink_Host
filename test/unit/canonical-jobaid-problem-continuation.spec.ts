@@ -843,6 +843,7 @@ function harness(knowledge?: { binding: jest.Mock }, initialAilySessionId?: stri
     work as never,
     knowledge as never,
     originalReader as never,
+    { read: jest.fn().mockResolvedValue(null) } as never,
   );
   return {
     service,

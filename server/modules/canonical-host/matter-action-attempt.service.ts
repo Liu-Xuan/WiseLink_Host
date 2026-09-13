@@ -4,7 +4,8 @@ import { materializeMatterJobAidCommand } from './matter-jobaid-save';
 import { engineeringMatterPendingInputs } from './engineering-matter-working-state';
 import type { AssessmentEvidence } from '@shared/assessment-reading.interface';
 import { randomUUID } from 'node:crypto';
-import { Injectable } from '@nestjs/common';
+import { Injectable, Optional } from '@nestjs/common';
+import { DocumentSemanticService } from './document-semantic.service';
 import { and, desc, eq, inArray, sql } from 'drizzle-orm';
 import type { DocumentSourceReading } from '@shared/document-source-reading.interface';
 import { dmDocumentParseRun } from '../../database/document-parsing.schema';
@@ -75,6 +76,7 @@ export class MatterActionAttemptService {
   constructor(
     private readonly working: EngineeringMatterWorkingRepository,
     private readonly models: CanonicalModelSettingsService,
+    @Optional() private readonly semantics?: DocumentSemanticService,
   ) {}
 
   reserve(input: ReserveMatterAttempt) {
@@ -622,7 +624,8 @@ export class MatterActionAttemptService {
       const frozenOriginal = task.workingBasis.inputs.find(item => item.documentVersionId === input.documentVersionId)?.original;
       if (existing) {
         if (frozenOriginal && frozenOriginal.parseRunId !== existing.parseRunId) throw failure('MATTER_SOURCE_READ_BINDING_MISMATCH');
-        return { parseRunId: String(existing.parseRunId), taskInputHash: row.taskInputHash };
+        return { parseRunId: String(existing.parseRunId), taskInputHash: row.taskInputHash,
+          semantic: frozenOriginal?.semantic ?? null };
       }
       const [published] = await executor.database.select().from(dmDocumentParseRun)
         .where(and(eq(dmDocumentParseRun.tenantId,input.tenantId),eq(dmDocumentParseRun.documentVersionId,input.documentVersionId),
@@ -633,11 +636,19 @@ export class MatterActionAttemptService {
       await executor.database.update(actionAttempt).set({ reviewActivityJson: canonicalJson([...events,
         { kind:'MATTER_ORIGINAL_BOUND',documentVersionId:input.documentVersionId,parseRunId:published.parseRunId }]) })
         .where(eq(actionAttempt.attemptId,row.attemptId));
-      return { parseRunId:published.parseRunId,taskInputHash:row.taskInputHash };
+      return { parseRunId:published.parseRunId,taskInputHash:row.taskInputHash,
+        semantic: frozenOriginal?.semantic ?? null };
     });
-    const reading = await this.working.withActorScope(input.actorUserId, async () => documentOriginalEngineeringReading(
-      await reader.readDocumentOriginal(input.documentVersionId,binding.parseRunId,
-        {tenantId:input.tenantId,actorUserId:input.actorUserId,roles:[]}),input.offset,input.limit));
+    const reading = await this.working.withActorScope(input.actorUserId, async () => {
+      const scope = {tenantId:input.tenantId,actorUserId:input.actorUserId,documentVersionId:input.documentVersionId,roles:[]};
+      const loaded = await reader.readDocumentOriginal(input.documentVersionId,binding.parseRunId,scope);
+      if (binding.semantic && !this.semantics) throw failure('DOCUMENT_SEMANTIC_READER_UNAVAILABLE');
+      // Old running work remains unorganized; never attach a later latest map to its frozen input.
+      const map = binding.semantic ? await this.semantics!.read(scope,loaded,binding.semantic.revision) : null;
+      if (binding.semantic && map?.profileRef !== binding.semantic.profileRef)
+        throw failure('MATTER_SEMANTIC_BINDING_MISMATCH');
+      return documentOriginalEngineeringReading(loaded,input.offset,input.limit,map);
+    });
     return this.authorized(input,async (executor,queue) => {
       await executor.database.select({ id:actionAttempt.attemptId }).from(actionAttempt)
         .where(eq(actionAttempt.operationRef,input.attemptRef)).for('update');

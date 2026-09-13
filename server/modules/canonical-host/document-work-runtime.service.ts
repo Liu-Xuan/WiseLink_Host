@@ -5,6 +5,8 @@ import { UnifiedReaderService } from '../unified-reader/unified-reader.service';
 import { DocumentParsingHostedService } from '../document-management/src/hosted/nest/document-parsing-hosted.service';
 import { DocumentStepLeaseRepository } from '../document-management/src/hosted/nest/document-step-lease.repository';
 import { EngineeringMatterWorkingRepository } from './engineering-matter-working.repository';
+import { DocumentSemanticService } from './document-semantic.service';
+import { selectDocumentSemanticSection } from '../document-management/src/hosted/nest/document-semantic-map';
 import { CANONICAL_SERVICE_SCOPE_AUTHORIZATION, canonicalServiceScopeUnavailable,
   type CanonicalServiceScopeAuthorizationPort } from './canonical-service-scope.authorization';
 
@@ -19,10 +21,12 @@ export class DocumentWorkRuntimeService {
     private readonly leases: DocumentStepLeaseRepository,
     private readonly reader: UnifiedReaderService,
     private readonly sourceProjection: DocumentSourceProjectionService,
+    private readonly semantics: DocumentSemanticService,
   ) {}
 
   /** Bounded engineering input from one published original, never translation. */
-  async readOriginal(input: { documentVersionId: string; parseRunId: string; offset?: number; limit?: number }) {
+  async readOriginal(input: { documentVersionId: string; parseRunId: string; offset?: number; limit?: number;
+    semanticRevision?: number; sectionId?: string }) {
     if (!this.authorization.authorizeDocumentWork) throw canonicalServiceScopeUnavailable();
     const authorized = await this.authorization.authorizeDocumentWork({ documentVersionId: input.documentVersionId });
     const offset = input.offset ?? 0;
@@ -38,7 +42,14 @@ export class DocumentWorkRuntimeService {
           original.binding.documentVersionId !== scope.documentVersionId || !run.manifestArtifact ||
           run.manifestArtifact.relativePath !== 'original/manifest.json' || run.manifestArtifact.readback !== 'VERIFIED')
         throw new Error('DOCUMENT_ORIGINAL_EXACT_BINDING_MISMATCH');
-      const units = structuredSource.units.slice(offset, offset + limit);
+      if (input.sectionId && input.semanticRevision === undefined)
+        throw new Error('DOCUMENT_SEMANTIC_EXACT_REVISION_REQUIRED');
+      const semanticMap = await this.semantics.read(scope, loaded, input.semanticRevision);
+      const selection = input.sectionId && semanticMap
+        ? selectDocumentSemanticSection(original, semanticMap, input.sectionId) : null;
+      const selectedIds = selection ? new Set([...selection.unitIds, ...selection.contextUnitIds]) : null;
+      const available = selectedIds ? structuredSource.units.filter(unit => selectedIds.has(unit.unitId)) : structuredSource.units;
+      const units = available.slice(offset, offset + limit);
       // Keep unit-specific table/selector payloads intact; never truncate text.
       const refs = new Set<string>();
       const collectRefs = (value: unknown): void => {
@@ -51,15 +62,15 @@ export class DocumentWorkRuntimeService {
         }
       };
       units.forEach(collectRefs);
-      return { binding: original.binding,
+      return { binding: original.binding, semanticMap, selection,
         artifact: { ref: `document-original://${encodeURIComponent(scope.documentVersionId)}/${encodeURIComponent(run.parseRunId)}`,
           sha256: run.manifestArtifact.sha256, byteLength: run.manifestArtifact.byteLength,
           mediaType: run.manifestArtifact.mediaType },
         units, sourceLocators: structuredSource.sourceLocators.filter(locator => refs.has(locator.sourceRefId)),
         locations: original.locations.filter(location => refs.has(location.sourceRefId)),
         coverage: original.coverage, findings: structuredSource.findings, producer: original.producer,
-        totalUnits: structuredSource.units.length,
-        nextOffset: offset + units.length < structuredSource.units.length ? offset + units.length : null };
+        totalUnits: available.length,
+        nextOffset: offset + units.length < available.length ? offset + units.length : null };
     });
   }
 

@@ -1,6 +1,7 @@
 import { originalApplicabilityResultMatches } from './original-applicability-currentness';
 import { InitialAssessmentKnowledgeService } from './initial-assessment-knowledge.service';
 import { UnifiedReaderService } from '../unified-reader/unified-reader.service';
+import { DocumentSemanticService } from './document-semantic.service';
 import { documentOriginalEngineeringReading, findDocumentOriginalEvidence } from './document-original-engineering-reading';
 import { Inject, Injectable, Optional } from '@nestjs/common';
 import type { PostgresJsDatabase } from '@lark-apaas/fullstack-nestjs-core';
@@ -125,6 +126,7 @@ export class CanonicalJobAidProblemService {
     private readonly work: JobAidWorkRepository,
     @Optional() private readonly knowledge?: InitialAssessmentKnowledgeService,
     @Optional() private readonly originalReader?: UnifiedReaderService,
+    @Optional() private readonly semantics?: DocumentSemanticService,
   ) {}
 
   /** Deployment first installs dual readers; only explicitly enabled NEW tasks use v2. */
@@ -487,11 +489,14 @@ export class CanonicalJobAidProblemService {
   ): Promise<JobAidProblemTaskInput> {
     const readScope = new UnifiedArtifactReadScope(this.artifactStore);
     if (!this.originalReader) throw new Error('DOCUMENT_ORIGINAL_READER_UNAVAILABLE');
+    if (!this.semantics) throw new Error('DOCUMENT_SEMANTIC_READER_UNAVAILABLE');
     await this.sourceBindings([],workItem,tenantId,actorUserId);
     const bound = originalParseRunId ? { parseRunId: originalParseRunId } : await this.work.publishedOriginalBinding({ tenantId, actorUserId, workItemId: workItem.workItemId,
       documentVersionId: workItem.source.documentVersionId });
     const original = await this.work.withActorScope(actorUserId, () => this.originalReader!.readDocumentOriginal(
       workItem.source.documentVersionId,bound.parseRunId,{tenantId,actorUserId,roles:[]}));
+    const semanticMap = await this.work.withActorScope(actorUserId, () => this.semantics!.read(
+      {tenantId,actorUserId,documentVersionId:workItem.source.documentVersionId,roles:[]},original));
     if (original.original.binding.sourceArtifactId !== workItem.source.sourceArtifactId ||
       original.original.binding.sourceSha256 !== workItem.source.sourceFileSha256 ||
       original.original.binding.sourceByteLength !== workItem.source.sourceByteLength)
@@ -580,7 +585,7 @@ export class CanonicalJobAidProblemService {
       expectedWorkRevision: history[0]?.workRevision ?? 0,
       priorAssessmentRefs: history.map((revision) => revision.workRevisionRef),
     });
-    taskInput.modelInput.documentOverview.original = { binding: original.original.binding,
+    taskInput.modelInput.documentOverview.original = { binding: original.original.binding, semanticMap,
       coverage: original.original.coverage, findings: original.structuredSource.findings };
     if (purpose !== 'PROBLEM_REVIEW') {
       const loaded = await this.workItems.loadTenantScopedProjection(

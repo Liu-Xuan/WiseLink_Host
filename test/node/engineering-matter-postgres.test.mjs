@@ -1146,6 +1146,9 @@ async function resetDatabase(sql) {
   await applyMigration(sql, 'migrations/0026_assessment_work_revision.sql');
   await applyMigration(sql, 'migrations/0038_document_parse_run.sql');
   await applyMigration(sql, 'migrations/0044_document_parse_step_lease.sql');
+  await applyMigration(sql, 'migrations/0048_document_translation_attempt_subject.sql');
+  await applyMigration(sql, 'migrations/0055_document_semantic_revision.sql');
+  await sql.unsafe('GRANT SELECT,INSERT,UPDATE,DELETE ON dm_document_semantic_revision TO authenticated,service_role');
   await sql.unsafe('GRANT SELECT, UPDATE ON dm_document_parse_run TO authenticated, service_role');
   await applyMigration(sql, 'migrations/0039_engineering_search_projection.sql');
   await applyMigration(sql, 'migrations/0042_engineering_search_projection_pending.sql');
@@ -2352,7 +2355,7 @@ async function assertBoundOriginalReceipt(sql, owner, service, attemptId, scope)
   await assert.rejects(owner.runtime(() => service.readOriginal({ ...input, leaseGeneration: 99 }, reader)), /LEASE_FENCE_REJECTED/u);
   const reading = await owner.runtime(() => service.readOriginal(input, reader));
   assert.equal(reading.evidence[0].excerpt, original.source.units[0].payload.text);
-  const projection = new DocumentSourceProjectionService(owner.database, reader, new EngineeringSearchProjectionWriter(owner.database));
+  const projection = new DocumentSourceProjectionService(owner.database, reader, new EngineeringSearchProjectionWriter(owner.database), { ensure: async () => ({ semanticRevision: 1, profileRef: "generic.author-sections.v1" }) });
   const indexStep = () => owner.runtime(() => owner.working.withActorScope(scope.actorUserId,
     () => projection.step({ ...scope, roles: [] }, 'PR-TEST-2')));
   assert.equal(await owner.runtime(() => owner.working.withActorScope(scope.actorUserId,() => projection.nextPendingRun(scope))),'PR-TEST-2');

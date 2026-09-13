@@ -5,6 +5,7 @@ import { buildTranslationSourcePlan } from './canonical-translation-source-plan'
 /** Uses only persisted original fields; the planner extracts structure, not translations. */
 export function documentOriginalEngineeringReading(
   loaded: Awaited<ReturnType<DocumentParsingHostedService['loadPublished']>>, offset: number, limit: number,
+  semanticMap: import('@shared/document-semantic-map.interface').DocumentSemanticMap | null = null,
 ) {
   if (!Number.isSafeInteger(offset) || offset < 0 || !Number.isSafeInteger(limit) || limit < 1 || limit > 20)
     throw new Error('DOCUMENT_ORIGINAL_RANGE_INVALID');
@@ -35,6 +36,7 @@ export function documentOriginalEngineeringReading(
         pageStart: location.pageStart, normalizedPath: location.normalizedPath, xpath: location.xpath }) };
   });
   return { documentVersionId: run.documentVersionId, binding: original.binding, artifactSha256: artifact.sha256,
+    semanticMap,
     offset, units, evidence, sourceRefs: evidence.map(item => item.evidenceRef),
     sourceLocators: structuredSource.sourceLocators.filter(item => texts.has(item.sourceRefId)),
     coverage: original.coverage, findings: structuredSource.findings, producer: original.producer,
