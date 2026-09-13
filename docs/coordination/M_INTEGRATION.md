@@ -6,20 +6,20 @@
 
 | 项目 | 当前事实 / 下一动作 |
 | --- | --- |
-| Host / Skill | Host仍为5915860c1 / release7684897153136085952，无本轮业务代码变更故未重复发布。Skill c93（8c947e64e）已官方安装，ZIP381178B / SHA256 21b7ba4a4d321260956d54e78edf85ad7ff6a19eca223046f56e0681e1c4d6e7；正式目录47/47文件匹配。三个原生job在无活动运行时短暂暂停，安装后均恢复enabled=true，未强制run |
+| Host / Skill | Host仍为5915860c1 / release7684897153136085952。Skill c95（7cd0c10d5）已官方安装，47/47文件匹配，installed 314项通过；本批仅Skill修改，未重复发布Host。原三个job在安装窗口短暂停用后恢复，未强制run |
 | online RLS | 用户授权后完成dev诊断及恢复；正式0054差异仅旧名DROP+新名CREATE，官方迁移2项。online旧policy已不存在，新policy支持DOCUMENT_VERSION，独立文档/actor/tenant/原生禁写保留。旧策略阻塞已解除；正常START已实际QUEUED：DTQ-6eae3abb-fdad-4dbd-8649-72ef2faef3f4，workspace TW-f9b7e6dc-ded2-49ee-988f-3c78212fac3f，errorCode=null |
 | FTD rev6 | DV document_version_b83523c2b5ba26a2b1753641，parseRun PRUN-c537f5bb-cc97-4ce9-855e-ca8d53e15a31。c8/c88自然PUBLISHED，原件/manifest字节与SHA、2表/编号/条件/页脚实件核对保留，SOURCE41条、pending0。不能用此证明e9/c89或新语义补丁已运行 |
 | 语义持久结构 | 0055正式dev→online迁移16项，仅新表/约束/索引/RLS/不可变触发器。online读回RLS=true、4policy、1不可变trigger、1已验证FK。正常INDEX已保存rev6语义修订1，boeing.ftd.sections.v1、12章节。正常read_document_original确切读回，Final Action返回u28/u29及两个SourceRef；原文manifest SHA保持d8237d00…不变 |
 | 本批接线 | 已实现INDEX保存首个来源绑定语义修订、确切章节读取；Matter新任务输入固定semantic revision/profile，旧任务不附加latest。JobAid任务含原文语义map。真实PG发现并修复JSONB键顺序导致的假覆盖错误。Host/Skill已部署；c90还修复消费端丢map并拒绝语义修订漂移。实际工程保存待自然调度验收 |
-| 运行剩余 | c93新AQ-8bb65240af8f4166a761933ffd9ecce5前三轮按指定函数读取rev6/semantic1共41单元，第四轮原生stopReason=length/output16000，被网关覆盖为502 / TOOL_CHOICE_NOT_SATISFIED，正常FAILED，尚未到SAVE_WORK；工作仍修订9，无新FTD workRef。上一AQ-0f669失败保留。中文请求SUCCEEDED / REMAINING_LIMITATIONS，21块可读；b20经P定点核对为空格检查误报，修正补丁待集成/真实重查 |
+| 运行剩余 | c95后继[内部引用已脱敏]已正常FAILED：两轮READ_SOURCES成功，第三轮原生length/output16000被网关遮为502；未到SAVE，scopeAdjustments=0。线上最新仍工作修订9/[内部引用已脱敏]，无新FTD workRef。c94为sourceRefs包装校验失败，不能混同length；c93历史失败保留。中文21块及b20局部补丁范围不变 |
 | 验证与界限 | 新语义RLS/CAS/不可变/准确读回真实PG通过；Matter真实PG4组通过；章节/Reader/JobAid续接45项通过；server类型通过。原PDF每步读取与最终整包组装仍有成本；真实SB/H2、语义更正后的业务续接和首份新工程工作仍待完成；首批中文已保存并经Reader实际阅读，完整中文仍未完成 |
 
 
-### 2026-09-13 c94 已安装：有界生成待真实保存验收
+### 2026-09-13 c94/c95：有界生成与实际参数传输修复
 
 按用户新设计完成有界问题生成、简短SAVE回执、同会话同版本完全相同metadata去重；原文、units、SourceRef及变化限制保持。新增策略随assessment-enabled和每轮参数持久化；旧checkpoint缺策略时保留524288。可靠length不执行部分JSON，最多两次范围调整并计入既有总预算；耗尽走Matter既有FAILED收尾，已保存工作保留。Review同类函数缺失502不作瞬时HTTP重试。后继恢复读取同步识别策略参数，拒绝length载荷作为可恢复候选。
 
-提交a0a702c2c已同步双远端。本地JobAid 39项、Host物化17项通过；正式安装后Skill 313项通过，47/47文件与包一致。ZIP383985B，SHA256 aadd0a0614e3f2b987c1b39c2b1b0d04252665f46904192574dcfa68b4b84f19。仅Skill更新，Host无需重复发布。三个job无活动时通过官方CLI短暂停用，安装完成后已执行恢复；旧c93经官方MCP STATUS仍FAILED。c94正常后继AQ-406315736ae1499194121a2bf2aeb654已由原生调度运行。首轮HTTP502无函数，原生实际多次READ_SOURCES sourceRefs={item:单个引用}未通过工具schema，末次stop而非length；因此不得追认为16000截断。本轮未到Host读取/SAVE，scopeAdjustments=0，无新FTD workRef。c95定点允许sourceRefs单元素包装，无损转数组，其他字段/来源权限保持；314项Skill测试通过，待安装。
+提交a0a702c2c已同步双远端。本地JobAid 39项、Host物化17项通过；正式安装后Skill 313项通过，47/47文件与包一致。ZIP383985B，SHA256 aadd0a0614e3f2b987c1b39c2b1b0d04252665f46904192574dcfa68b4b84f19。仅Skill更新，Host无需重复发布。三个job无活动时通过官方CLI短暂停用，安装完成后已执行恢复；旧c93经官方MCP STATUS仍FAILED。c94正常后继[内部引用已脱敏]已由原生调度运行。首轮HTTP502无函数，原生实际多次READ_SOURCES sourceRefs={item:单个引用}未通过工具schema，末次stop而非length；因此不得追认为16000截断。本轮未到Host读取/SAVE，scopeAdjustments=0，无新FTD workRef。c95定点允许sourceRefs单元素包装，无损转数组，其他字段/来源权限保持；提交7cd0c10d5已双远端同步。官方安装后47/47文件匹配、314项测试通过；包384247B，SHA256 7e8a44c8208138feb97d38e031153aa70a495ddef092fe578e01d17692b50dc2。原三个job已执行恢复。c95正常后继[内部引用已脱敏]已QUEUED，requestId=[已脱敏]，基于事项修订3/工作修订9；正常调度实际两轮READ_SOURCES成功，报告completion2732/4390；第三轮2026-09-13T09:18:08.556Z原生length/output16000（input15692/cacheRead95292），仅公开准备保存说明，无workJson。sessionId=[已脱敏]。普通HTTP仍502且finishReason/usage为空，因此scopeAdjustments保持0，未猜测根因或重试。MCP STATUS已FAILED，online只读最新工作仍修订9/[内部引用已脱敏]。两个读取轮次同版metadataCount=1。未证明实际分次保存成功；仅本地/安装测试证明保存A后生成B失败保留A、原request丢回执可查回及最终空issues综合物化。
 
 ### 2026-09-13 c93 后续诊断：原生截断被网关函数错误覆盖
 
@@ -517,3 +517,9 @@ next_original_assessment 在已确认适用性原文影响时，现优先调用 
 - 原生doc job在Host688/c90组合下自然推进，初次数据库快照3块保存、2块selected_for_reading；现有DV Reader中英对照实际显示中文标题和“修订说明”，约6.8%可读，界面显示已保存371/5150原文字符。已保存量与可读覆盖率是不同指标。随后出现TRANSLATION_GENERATION_SUPERSEDED，旧块保留。P已接收真实generation/块修订记录定向修复；另外两处表格消费显示“原表结构暂无法显示”，不修改已发布原文，修现有payload适配。
 - Matter正常next准入尚未形成新任务，M定位第二层ActionAttempt严格信封未允许semantic字段，59c125b14已推origin并进入release7684893036418534372；发布完成待核对。追加真实Matter测试使用确切语义1建立任务、后继语义2与新parse3并存，旧任务继续按语义1读取并保存，4组PG通过；信封10项通过。早前688已修外层绑定验证与跨parse关联查询，不能拿它代替59c运行结果。
 - 目前没有创建额外消费者、强制cron run、删除失败记录或将用户侧只读会话用于代跑模型；三个原有job已恢复。正式采用仍由工程师确认。
+
+### c95 后续边界
+
+本批不再以解除16000作为编码前置；有界策略及Host增量消费已实现/安装。但实际生成仍未形成首个可执行工作增量。当前安装HTTP入口未见reasoning_effort/thinking/thinkLevel直接读取，不据此伪造任务级透传能力；未全局关闭推理、切模型、修改托管网关或把半个JSON保存。剩余是可靠停止原因进入实际消费者、任务级有效推理/输出行为的核对及首份实质工作，不能以本地测试代替。三个原生job均已恢复enabled=true；未保留暂停、未新增调度。
+
+本轮完整内部标识及读回材料保留于本机/private/tmp/wiselink-c95-internal-integration.md；公开增量不包含新增任务/会话/工作引用。
