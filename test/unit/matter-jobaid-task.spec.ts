@@ -1,6 +1,20 @@
 import { buildMatterJobAidTask } from '../../server/modules/canonical-host/matter-jobaid-task';
 
 describe('Matter JobAid task protocol', () => {
+  it('delivers the current source change and exact semantic binding independently of historical work', () => {
+    const binding = { inputId: 'WI-new', workItemId: 'WI-new', workItemRevision: 3,
+      documentVersionId: 'DV-new', resultRef: null, resultRevision: null,
+      original: { parseRunId: 'PRUN-6', parseRevision: 6, semantic: { revision: 1, profileRef: 'boeing.ftd.sections.v1' } } };
+    const task = buildMatterJobAidTask({ matterId: 'MAT-test', matterRevisionId: 'MR-1',
+      actorUserId: 'actor-1', title: 'Source update', inputs: [binding],
+      trigger: { kind: 'SOURCE_CHANGE', inputIds: ['WI-new'] }, previous: null });
+    expect(task.modelInput.sourceChanges).toEqual([{ inputId: 'WI-new', current: binding,
+      covered: null, reasons: ['NOT_COVERED'] }]);
+    expect(task.modelInput.availableDocuments[0].boundOriginal).toEqual(binding.original);
+    expect(task.modelInput.availableDocuments[0].readingScope).toBe('NOT_READ_THIS_ATTEMPT');
+    expect(task.modelInput.trigger).toEqual({ kind: 'SOURCE_CHANGE', inputIds: ['WI-new'] });
+  });
+
   it('rejects a previous revision that has only the retired summary shape', () => {
     expect(() => buildMatterJobAidTask({
       matterId: 'MAT-legacy',

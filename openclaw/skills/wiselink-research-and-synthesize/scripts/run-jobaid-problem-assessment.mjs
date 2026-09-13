@@ -169,7 +169,7 @@ export async function invokeHostedJobAidProblemModel(
   let startedAt = Date.now();
   const timeoutMs = options.timeoutMs ?? 30 * 60_000;
   const systemMessage = { role: 'system', content: GUIDE + (modelInput.schemaVersion === MATTER_JOBAID_TASK_SCHEMA
-    ? '\n本任务主体是工程事项。availableDocuments 只是版本目录；通过 READ_SOURCES 请求 DOCUMENT_VERSION:<documentVersionId>:page:<物理页码>，先读第 1 页取得页数，再按需读后续页。仅文本层可读，扫描和图表不得声称已核实。结合完整前次工作修正问题；每个新任务必须保存本轮工作后才可 FINISH。' : '') };
+    ? '\n本任务主体是工程事项。本轮工作由 trigger 和 sourceChanges 指定，previousWork 是历史认识，不得将其旧指令当作本轮请求。availableDocuments 只是版本目录；有 boundOriginal 时，通过 READ_SOURCES 请求该项 originalReadRef，按返回 nextOffset 继续读取 DOCUMENT_VERSION:<documentVersionId>:original:<offset>。读取结果中的 semanticMap 是固定版本的章节导航；应读取有关正文、条件及必要其他范围，目录和角色不等于证据或工程结论。没有 boundOriginal 时才先请求 DOCUMENT_VERSION:<documentVersionId>:page:1，再按需读取后续页。实际未读的图表与范围保留限制。结合完整前次工作处理本轮变化，保留不受影响的问题；每个新任务必须保存本轮工作后才可 FINISH。' : '') };
   let messages = [
     systemMessage,
     { role: 'user', content: JSON.stringify(projectJobAidModelInput(modelInput)) },
