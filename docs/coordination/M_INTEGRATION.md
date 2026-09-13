@@ -6,22 +6,24 @@
 
 | 项目 | 当前事实 / 下一动作 |
 | --- | --- |
-| Host / Skill | Host仍为5915860c1 / release7684897153136085952。Skill c95（7cd0c10d5）已官方安装，47/47文件匹配，installed 314项通过；本批仅Skill修改，未重复发布Host。原三个job在安装窗口短暂停用后恢复，未强制run |
+| Host / Skill | Host96d01a81d / release7684974107020594155已finished，Skill c96已官方安装，47/47文件匹配、installed315项通过。原三个job在安装窗口短暂停用后已恢复enabled/原payload/原schedule，未强制run |
 | online RLS | 用户授权后完成dev诊断及恢复；正式0054差异仅旧名DROP+新名CREATE，官方迁移2项。online旧policy已不存在，新policy支持DOCUMENT_VERSION，独立文档/actor/tenant/原生禁写保留。旧策略阻塞已解除；正常START已实际QUEUED：DTQ-6eae3abb-fdad-4dbd-8649-72ef2faef3f4，workspace TW-f9b7e6dc-ded2-49ee-988f-3c78212fac3f，errorCode=null |
 | FTD rev6 | DV document_version_b83523c2b5ba26a2b1753641，parseRun PRUN-c537f5bb-cc97-4ce9-855e-ca8d53e15a31。c8/c88自然PUBLISHED，原件/manifest字节与SHA、2表/编号/条件/页脚实件核对保留，SOURCE41条、pending0。不能用此证明e9/c89或新语义补丁已运行 |
 | 语义持久结构 | 0055正式dev→online迁移16项，仅新表/约束/索引/RLS/不可变触发器。online读回RLS=true、4policy、1不可变trigger、1已验证FK。正常INDEX已保存rev6语义修订1，boeing.ftd.sections.v1、12章节。正常read_document_original确切读回，Final Action返回u28/u29及两个SourceRef；原文manifest SHA保持d8237d00…不变 |
 | 本批接线 | 已实现INDEX保存首个来源绑定语义修订、确切章节读取；Matter新任务输入固定semantic revision/profile，旧任务不附加latest。JobAid任务含原文语义map。真实PG发现并修复JSONB键顺序导致的假覆盖错误。Host/Skill已部署；c90还修复消费端丢map并拒绝语义修订漂移。实际工程保存待自然调度验收 |
-| 运行剩余 | c95后继[内部引用已脱敏]已正常FAILED：两轮READ_SOURCES成功，第三轮原生length/output16000被网关遮为502；未到SAVE，scopeAdjustments=0。线上最新仍工作修订9/[内部引用已脱敏]，无新FTD workRef。c94为sourceRefs包装校验失败，不能混同length；c93历史失败保留。中文21块及b20局部补丁范围不变 |
+| 运行剩余 | c96正常后继AQ-002cd57f3b644a99960cde8244a1d50b已FAILED；两轮READ_SOURCES成功，第三次HTTP内部两次length/output16000，被网关遮为502。无SAVE，线上仍工作修订9，无新FTD workRef；已停止扩大拆分。中文21块及b20局部补丁范围不变 |
 | 验证与界限 | 新语义RLS/CAS/不可变/准确读回真实PG通过；Matter真实PG4组通过；章节/Reader/JobAid续接45项通过；server类型通过。原PDF每步读取与最终整包组装仍有成本；真实SB/H2、语义更正后的业务续接和首份新工程工作仍待完成；首批中文已保存并经Reader实际阅读，完整中文仍未完成 |
 
 
-### 2026-09-13 c96：连续会话与动态问题组（本地已验证，待部署）
+### 2026-09-13 c96：连续会话与动态问题组（已部署，真实后继失败已核验）
 
 按用户最新方案，限制单次交付量而非工程理解范围。同会话已有初始材料只发送一次、后续使用工具回执的路径保留，问题组数量由 Agent 选择，SAVE 后自动继续，最终只更新综合和必要纠正。Host 允许后续批次省略未变化 headline/listBrief/understanding/decisiveIssueKeys；仅省略时保留确切已有值，显式 null/空值继续校验，首次工作仍需完整主旨。轮次状态、完成说明和本批变化仍明确提交。同 issue 完整替换、权限/SourceRef/CAS/原 request 回读保留。
 
 删除 JobAid 旧 checkpoint 的 524288 兼容预算分支；策略不一致拒绝原地续跑，使用正常后继，不复活失败任务。当前策略 continuous-issue-batches-v1，请求16000、载荷软目标2000–4000；可靠length只减少本批交付，不要求最小化工程问题。未知502仍不猜测。
 
-本地：连续多批与最终综合/同会话不重发初始材料等41项；Host物化18项；Skill完整315项及server build通过。新测试覆盖两问题首批、第三问题后续、稀疏综合、无原工作拒绝、null拒绝、退役决定性问题须更新引用、不完整同issue替换拒绝。真实FTD多次保存与恢复尚未验收；当前部署仍Host5915860c1/Skillc95，工作修订9保持。未删除线上测试数据。
+本地：连续多批与最终综合/同会话不重发初始材料等41项；Host物化18项；Skill完整315项及server build通过。新测试覆盖两问题首批、第三问题后续、稀疏综合、无原工作拒绝、null拒绝、退役决定性问题须更新引用、不完整同issue替换拒绝。Luna已将96d01a81d同步双远端。Host release7684974107020594155 finished/errors=[]/commit一致。c96包385092B，SHA256 69bf580e33af451de0c164f6520930cf6bb0aae99ff8edae2a2ed0bdd5f56b2a，47文件；官方安装315项通过，三job完整恢复。用户明确批准本次及后续同类安装包短期链接操作。正常begin新后继AQ-002cd57f3b644a99960cde8244a1d50b / requestId rev6-continuous-batches-c96-20260913，基于事项3/工作9，created=true/QUEUED，由自然调度推进。真实后继：同一session af81f3b0-3d53-43ec-bd75-8435b7aeb9f9，前两轮HTTP200/tool_calls/READ_SOURCES，completion701/433；第三次HTTP调用内部两次原生length/output16000，UTC11:15:26.610及11:17:11.460。前者公开文字为空，后者只有准备保存说明，均无工具载荷；HTTP仍502。MCP STATUS确认FAILED/errorCode=null，deadline12:12:37.906Z；online工作仍9/MWREV-19bb8855-40ce-4017-a349-6b9c62debcd4，无新SAVE。三job最终enabled=true/runningAtMs=null。
+
+安装入口源码有max_completion_tokens映射，未直接出现reasoning_effort/thinking/thinkLevel；官方config get agents.defaults.thinkingDefault返回path not found。没有据此推断全部平台不支持，也没有猜参数、全局禁用推理或再拆问题。原生length被502覆盖及任务级有效配置仍需平台契约/实现证据；本机平台材料已追加本次精确复现，尚未发送/受理。真实多次保存、最终综合和保存后恢复仍未验收，未删除线上测试数据。
 
 ### 2026-09-13 c94/c95：有界生成与实际参数传输修复
 
