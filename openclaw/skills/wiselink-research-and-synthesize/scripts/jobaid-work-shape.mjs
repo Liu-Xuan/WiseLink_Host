@@ -2,6 +2,7 @@
 const text = { type: 'string', minLength: 1 };
 const list = (items) => ({ type: 'array', items });
 const texts = list(text);
+const sourceSelection = list(text); // only the observed READ sourceRefs singleton envelope
 const object = (properties) => ({ type: 'object', properties });
 const choice = (...values) => ({ type: 'string', enum: values });
 const nullable = (schema) => ({ ...schema, nullable: true });
@@ -28,6 +29,7 @@ export function jobAidFunctionSchema(shape) {
   // item object or a double array envelope. Admit only those observed forms,
   // without inventing a missing limitation or broadening other collections.
   const transport = schema.type === 'array' ? { anyOf: [schema, envelope(schema),
+    ...(shape === sourceSelection ? [envelope(schema.items)] : []),
     ...(shape === premises ? [
       envelope({ ...schema.items, required: Object.keys(premise.properties) }),
       envelope(envelope(schema)),
@@ -150,7 +152,7 @@ export const JOBAID_STEP_SHAPE = {
   type: 'object', additionalProperties: false, required: ['action'],
   properties: {
     action: choice('READ_SOURCES', 'QUERY_KNOWLEDGE', 'SAVE_WORK', 'FINISH'),
-    sourceRefs: texts, purpose: text, query: text, context: choice('PAGE', 'EXACT'),
+    sourceRefs: sourceSelection, purpose: text, query: text, context: choice('PAGE', 'EXACT'),
     work: JOBAID_WORK_UPDATE_SHAPE, continueReason: text, consistencyCheck: text,
   },
 };
@@ -169,6 +171,7 @@ export function decodeJobAidValue(input, shape) {
     }
     if (schema.type === 'array') {
       let items = isEnvelope(value) && Array.isArray(value.item) ? value.item : value;
+      if (schema === sourceSelection && isEnvelope(value) && typeof value.item === 'string') items = [value.item];
       if (schema === premises && isEnvelope(value)) {
         if (isEnvelope(value.item) && Array.isArray(value.item.item)) items = value.item.item;
         else if (value.item && !Array.isArray(value.item) && typeof value.item === 'object' &&

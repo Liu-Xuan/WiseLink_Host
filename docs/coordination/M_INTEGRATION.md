@@ -15,11 +15,11 @@
 | 验证与界限 | 新语义RLS/CAS/不可变/准确读回真实PG通过；Matter真实PG4组通过；章节/Reader/JobAid续接45项通过；server类型通过。原PDF每步读取与最终整包组装仍有成本；真实SB/H2、语义更正后的业务续接和首份新工程工作仍待完成；首批中文已保存并经Reader实际阅读，完整中文仍未完成 |
 
 
-### 2026-09-13 c94 本地实现（尚未安装）
+### 2026-09-13 c94 已安装：有界生成待真实保存验收
 
 按用户新设计完成有界问题生成、简短SAVE回执、同会话同版本完全相同metadata去重；原文、units、SourceRef及变化限制保持。新增策略随assessment-enabled和每轮参数持久化；旧checkpoint缺策略时保留524288。可靠length不执行部分JSON，最多两次范围调整并计入既有总预算；耗尽走Matter既有FAILED收尾，已保存工作保留。Review同类函数缺失502不作瞬时HTTP重试。后继恢复读取同步识别策略参数，拒绝length载荷作为可恢复候选。
 
-本地JobAid 38项和Host物化17项已通过，完整Skill检查312项通过（随后补充两种Review签名同类测试）。仅Skill更新，Host无需重复发布。尚无c94线上工作或新FTD workRef，安装及正常后继验收继续进行。
+提交a0a702c2c已同步双远端。本地JobAid 39项、Host物化17项通过；正式安装后Skill 313项通过，47/47文件与包一致。ZIP383985B，SHA256 aadd0a0614e3f2b987c1b39c2b1b0d04252665f46904192574dcfa68b4b84f19。仅Skill更新，Host无需重复发布。三个job无活动时通过官方CLI短暂停用，安装完成后已执行恢复；旧c93经官方MCP STATUS仍FAILED。c94正常后继AQ-406315736ae1499194121a2bf2aeb654已由原生调度运行。首轮HTTP502无函数，原生实际多次READ_SOURCES sourceRefs={item:单个引用}未通过工具schema，末次stop而非length；因此不得追认为16000截断。本轮未到Host读取/SAVE，scopeAdjustments=0，无新FTD workRef。c95定点允许sourceRefs单元素包装，无损转数组，其他字段/来源权限保持；314项Skill测试通过，待安装。
 
 ### 2026-09-13 c93 后续诊断：原生截断被网关函数错误覆盖
 

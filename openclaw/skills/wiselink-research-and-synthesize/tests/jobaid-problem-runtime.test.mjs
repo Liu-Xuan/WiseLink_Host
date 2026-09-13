@@ -954,3 +954,16 @@ test('Review requester does not retry either known missing-function signature as
     assert.equal(requests, 1);
   }
 });
+
+
+test('observed singleton sourceRefs envelope is lossless and does not coerce work fields or JSON strings', async () => {
+  const { decodeJobAidStep, jobAidFunctionSchema, JOBAID_STEP_SHAPE } = await import('../scripts/jobaid-work-shape.mjs');
+  const ref = 'DOCUMENT_VERSION:dv:original:0';
+  const wrapped = { action: 'READ_SOURCES', sourceRefs: { item: ref }, purpose: 'read', context: 'EXACT' };
+  assert.deepEqual(decodeJobAidStep(wrapped).sourceRefs, [ref]);
+  assert.deepEqual(decodeJobAidStep({ ...wrapped, sourceRefs: { item: ref, extra: true } }).sourceRefs, { item: ref, extra: true });
+  assert.deepEqual(decodeJobAidStep({ ...wrapped, sourceRefs: { item: '["ref"]' } }).sourceRefs, ['["ref"]']);
+  assert.ok(jobAidFunctionSchema(JOBAID_STEP_SHAPE).properties.sourceRefs.anyOf.some(s => s.properties?.item?.type === 'string'));
+  const f = fixture([wrapped, { action: 'FINISH', work: completed }]);
+  await f.run(); assert.deepEqual(f.reads[0].sourceRefs, [ref]);
+});
