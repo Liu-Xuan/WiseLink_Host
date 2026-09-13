@@ -54,6 +54,10 @@ export const INTERACTIVE_REVIEW_TOOLS = [
 ];
 
 export const HOST_MCP_TOOLS = [
+  'document_work',
+  'read_document_original',
+  'document_translation',
+  'next_original_assessment',
   'next_matter_assessment',
   'begin_matter_assessment',
   'matter_action_attempt',

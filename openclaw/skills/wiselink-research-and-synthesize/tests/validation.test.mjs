@@ -53,6 +53,7 @@ import {
   resolveConfiguredModelVersion,
   runHostedReviewTurn,
   summarizeHostedReviewModelOutputShape,
+  validateHostToolMetadata,
 } from '../scripts/run-hosted-review-turn.mjs';
 
 // Protocol tests explicitly inject their synthetic response transport. The
@@ -1367,14 +1368,14 @@ test('requires 26 MCP capabilities, six review tools, and hosted provenance', ()
     'get_action_attempt_status',
     'commit_review_turn_candidate',
   ]);
-  assert.equal(HOST_MCP_TOOLS.length, 29);
-  assert.equal(new Set(HOST_MCP_TOOLS).size, 29);
+  assert.equal(HOST_MCP_TOOLS.length, 33);
+  assert.equal(new Set(HOST_MCP_TOOLS).size, 33);
   for (const name of ['translation_workspace', 'read_assessment_sources', 'query_assessment_knowledge', 'save_assessment_work', 'read_assessment_work']) assert.ok(HOST_MCP_TOOLS.includes(name));
   assert.ok(HOST_MCP_TOOLS.includes('begin_applicability_evaluation'));
   assert.ok(HOST_MCP_TOOLS.includes('commit_applicability_candidate'));
   assert.equal(
     WISELINK_SKILL_VERSION,
-    'wiselink-research-and-synthesize@r09.c87',
+    'wiselink-research-and-synthesize@r09.c88',
   );
   assert.equal(
     WISELINK_SKILL_COMPATIBILITY_REF,
@@ -7663,4 +7664,23 @@ test('official model adapter chooses original discovery guidance and returns nat
   }});
   assert.equal(calls,1);
   assert.deepEqual(result.output,output);
+});
+
+// Names confirmed by the real Host tools/list at release 7684835221602864077.
+// Keep this observation independent of HOST_MCP_TOOLS, which omitted four tools in c87.
+test('accepts the deployed document tool surface while rejecting unknown tools and weakened commits', () => {
+  const names = 'document_work read_document_original document_translation next_original_assessment next_matter_assessment begin_matter_assessment matter_action_attempt query_review_aily get_parse_status query_parsed_package get_deep_link begin_translation commit_translation_candidate translation_workspace begin_applicability_evaluation commit_applicability_candidate begin_dynamic_evaluation commit_dynamic_evaluation_candidate read_assessment_sources query_assessment_knowledge save_assessment_work read_assessment_work record_oem_discovery_run begin_overall_synthesis resume_overall_synthesis commit_overall_candidate begin_review_turn get_review_turn_context read_source_refs get_action_attempt_status commit_review_turn_candidate heartbeat_action_attempt cancel_action_attempt get_pending_review_turn'.split(' ');
+  const commitFields = ['attemptRef', 'leaseGeneration', 'leaseToken', 'resultJson'];
+  const tools = names.map(name => ({ name, inputSchema: name === 'commit_review_turn_candidate' ? {
+    type: 'object', additionalProperties: false, required: commitFields,
+    properties: Object.fromEntries(commitFields.map(key => [key, {}])),
+  } : {} }));
+  assert.doesNotThrow(() => validateHostToolMetadata({ tools }));
+  for (const name of ['document_work', 'document_translation', 'read_document_original', 'next_original_assessment']) {
+    assert.throws(() => validateHostToolMetadata({ tools: tools.filter(tool => tool.name !== name) }), /REVIEW_HOST_MCP_EXACT20_MISMATCH/);
+  }
+  assert.throws(() => validateHostToolMetadata({ tools: [...tools, { name: 'unexpected_write' }] }), /REVIEW_HOST_MCP_EXACT20_MISMATCH/);
+  const weakened = structuredClone(tools);
+  weakened.find(tool => tool.name === 'commit_review_turn_candidate').inputSchema.additionalProperties = true;
+  assert.throws(() => validateHostToolMetadata({ tools: weakened }), /REVIEW_HOST_MCP_COMMIT_SCHEMA_MISMATCH/);
 });
