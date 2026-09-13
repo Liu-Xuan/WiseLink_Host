@@ -15,6 +15,14 @@
 | 验证与界限 | 新语义RLS/CAS/不可变/准确读回真实PG通过；Matter真实PG4组通过；章节/Reader/JobAid续接45项通过；server类型通过。原PDF每步读取与最终整包组装仍有成本；真实SB/H2、语义更正后的业务续接和首份新工程工作仍待完成；首批中文已保存并经Reader实际阅读，完整中文仍未完成 |
 
 
+### 2026-09-13 单会话参数入口核验（设置被拒，未生成）
+
+官方安装版支持 sessions.patch 的 thinkingLevel；原计划只对正常后继设置low，保持部署c96/模型/16000预算与工程方法。短暂停用事项job且确认无活动后，经正常begin建立 AQ-eea0568bfd344e64b747d4ad07bbab4c（requestId rev6-session-low-20260913，CAS事项3/工作9）。网关明确拒绝 `thinkingLevel "low" is not supported for miaoda/minimax-m3 (use off)`。未启动模型；新请求已正常CANCELLED，原事项job恢复enabled。未修改全局参数、未复活旧任务、无新SAVE。
+
+随后官方config get models.providers.miaoda.models读回当前定义：minimax-m3，reasoning=false、maxTokens=16000、contextWindow=256000。这与此前另一模型目录524288/1000000的观察不同；不反向改写历史请求事实。当前本地配置本身存在上限及推理能力禁用，不能继续将该现象全部归到不可见平台上限。安装版额外参数可按agents.list参数覆盖，但实际配置及网关config.get均无agents.list，未为试验新增/更改默认Agent路由。
+
+调度曾返回历史成功AQ-4ea1f8287e434772a85b4d74a791ebe1为REQUIRES_ATTENTION；正常STATUS确认SUCCEEDED、deadline06:55:37Z，早于c96失败，不能冒充新FTD工作。nextForRuntime现有同来源幂等键可返回历史终态，此处不是新的模型调用。
+
 ### 2026-09-13 生成路径诊断与本地修正（未部署、未重发业务）
 
 本次经官方 `openclaw logs` 取得关联日志，空响应重试已由推测转为确认：UTC 11:15:29.473，runId `chatcmpl_0339bc81-698e-4da4-b42e-cdb2a254dda5`、session `af81f3b0-3d53-43ec-bd75-8435b7aeb9f9`、provider `miaoda/minimax-m3`，记录 `empty response detected ... retrying 1/1 with visible-answer continuation`。安装版本 OpenClaw 2026.6.6 (8c802aa)，embedded-agent 的空响应重试上限固定为1；该次重复归属于托管内部，不是新工作批次。网关函数约束失败返回502时未携带原生停止原因/用量。
