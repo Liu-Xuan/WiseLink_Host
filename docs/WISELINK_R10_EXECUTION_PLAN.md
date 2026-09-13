@@ -71,7 +71,7 @@ c68 改进证据引用纠正反馈：沿用原来的精确登记检查，提供�
 
 主控交接：用户于 2026-09-07 指定 [WiseLink R10 项目主控（2026-09-07 接管）](codex://threads/01a079d1-918d-7af1-a283-75968ec294ea) 接替 [WiseLink R09 项目主控（接替旧主控）](codex://threads/01a06562-e90c-7340-9fd5-9a96cdd3073f)。新主控承接当前 R10 目标、已有业务授权和分工，并核对 [2026-09-06 接管任务](codex://threads/01a0726d-5e6e-7b70-b1b9-a7e84fd1d31b) 的存储调查结论。此次接管时本地 HEAD 为 `408de9f17`；工作区已有 AGENTS/技能整理及临时产物，独立保留。历史待办不覆盖当前执行顺序，最新推送边界见下一段。
 
-Git 当前边界：**2026-09-06 用户要求仅向妙搭 Host 的 `origin` 推送，停止一切主动 GitHub 推送；2026-09-07 接管再次重申避免越权。** 该要求取代 9 月 5 日的 GitHub `codex/*` 长期授权；旧凭据、refspec、成功记录和下文历史发布说明都不构成继续推送授权。每次明确指定 `origin` 和单一源/目标引用，非强制推送；不删除 GitHub 引用、不改写公开历史。现有 `core.hooksPath=.githooks` 下的 `pre-push` 同时校验 remote 名称及实际 URL，仅接受本项目已核实的飞书目标。见根 `AGENTS.md` 与 [边界纠正记录](WL31_GITHUB_SYNC_BOUNDARY_20260905.md)。
+Git 当前边界：**2026-09-13 用户明确允许妙搭 Host 的 `origin` 与公开 GitHub `github` 分别同步同一项目 `codex/*` 开发分支。** `origin` 仍是开发来源；每次必须分别明确 remote、精确同名源/目标引用并采用非强制快进。禁止自动 main、标签、其他分支、`--all`、`--mirror`、force、删除引用、改写历史、修改可见性或绕过认证和凭据/敏感数据检查。现有 `core.hooksPath=.githooks` 下的 `pre-push` 校验两个精确 remote/URL、单条同名 `codex/*` 更新、非删除和快进关系。见根 `AGENTS.md` 与 [边界纠正记录](WL31_GITHUB_SYNC_BOUNDARY_20260905.md)。
 
 ## 2026 年 9 月 9 日晚资料库实测与运行阻塞
 

@@ -13,10 +13,9 @@
 
 ## Git 同步边界
 
-- **2026-09-06 用户最新要求：不再主动向公开 GitHub 提交或推送，只向飞书 Host 的 `origin` 推送。** 本要求取代 2026-09-05 的 GitHub `codex/*` 长期推送授权；没有新的明确指示，不进行 GitHub 分支推送或 main 镜像同步。
-- `origin` 是妙搭开发远端，是当前唯一主动推送目标；`github` 指向公开的 `https://github.com/Liu-Xuan/WiseLink_Host.git`，仅保留用于历史或只读核对。现存 GitHub refspec、凭据、旧文档与历史成功记录均不构成继续推送的授权。
-- 本机默认推送目标设为 `origin`。实际推送仍明确指定 remote、单一源引用和目标引用，采用非强制方式；不使用 `--all`、`--mirror`、force 或绕过认证、数据安全措施。
-- 不主动删除 GitHub 引用、改写已发布历史或更改仓库可见性；这些动作须另行明确授权。真实分支分叉应正常核对，不能强制覆盖。
-- 停止 GitHub 推送不阻断已授权的本地开发、妙搭 `origin` 开发分支推送和 Host/Skill 技术发布。优先跑通业务流程，不为每次进展单独更新文档或推送。
+- **2026-09-13 用户最新要求：允许妙搭 Host 的 `origin` 与公开 GitHub `github` 分别同步同一开发分支。** 该要求替代 2026-09-06 的 origin-only 规则及旧的一次性 GitHub 限制；仅适用于明确指定的项目 `codex/*` 开发分支。
+- `origin` 仍是妙搭开发来源；`github` 指向 `https://github.com/Liu-Xuan/WiseLink_Host.git`。每次同步须分别明确 remote、精确同名源/目标 ref，采用普通非强制快进，并在两端分别核对实际 SHA。
+- 仅允许项目 `codex/*` 分支的单条同名更新；不自动推送 main、标签或其他分支，不使用 `--all`、`--mirror`、force，不删除引用、不改写已发布历史、不改仓库可见性，也不绕过认证或凭据/敏感数据检查。
+- `.githooks/pre-push` 同时校验 remote 名称及实际 URL、单条更新、同名 `codex/*` ref、非删除和快进关系；origin 与 github 的规则一致。同步前仍需检查新增提交是否包含不适合公开的数据。
 
 历史事实保留：`53c322371 → 73561af4d → 9597d8e53` 的早期推送不符合当时的 main-only 限制；2026-09-05 后续授权不追认这些操作。历史记录见 `docs/WL31_GITHUB_SYNC_BOUNDARY_20260905.md`；其中的旧授权说明不覆盖上述 2026-09-06 最新要求。

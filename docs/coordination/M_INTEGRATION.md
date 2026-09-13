@@ -11,15 +11,21 @@
 | FTD rev6 | DV document_version_b83523c2b5ba26a2b1753641，parseRun PRUN-c537f5bb-cc97-4ce9-855e-ca8d53e15a31。c8/c88自然PUBLISHED，原件/manifest字节与SHA、2表/编号/条件/页脚实件核对保留，SOURCE41条、pending0。不能用此证明e9/c89或新语义补丁已运行 |
 | 语义持久结构 | 0055正式dev→online迁移16项，仅新表/约束/索引/RLS/不可变触发器。online读回RLS=true、4policy、1不可变trigger、1已验证FK。正常INDEX已保存rev6语义修订1，boeing.ftd.sections.v1、12章节。正常read_document_original确切读回，Final Action返回u28/u29及两个SourceRef；原文manifest SHA保持d8237d00…不变 |
 | 本批接线 | 已实现INDEX保存首个来源绑定语义修订、确切章节读取；Matter新任务输入固定semantic revision/profile，旧任务不附加latest。JobAid任务含原文语义map。真实PG发现并修复JSONB键顺序导致的假覆盖错误。Host/Skill已部署；c90还修复消费端丢map并拒绝语义修订漂移。实际工程保存待自然调度验收 |
-| 运行剩余 | rev6中文正常START已QUEUED，deadline=2026-09-13T06:36:50.959Z；同现有消费者确定性requestId，不另起STEP。Matter MAT-26b208d0-1cc8-486e-a38f-7b9a99f74e7f 原有AQ-e6440b36c0984efd8153090fe654208b以JOBAID_INCOMPLETE_TERMINAL_RESPONSE失败，保留记录，新语义变化进入正常后继。旧WI-990d6e76-78d4-440a-a419-1b2e37b94ac9经当前Hosted入口NOT_FOUND，不借用旧777配置 |
+| 运行剩余 | 最新只读：AQ-0f66976d469840b29a457945cfa0949c 已 FAILED / JOBAID_INCOMPLETE_TERMINAL_RESPONSE，c92已按原生调度完成已知协议失败收尾，实际40个原文单元/semantic1读取保留，无新FTD工程workRef。中文恢复请求DTQ-735a6f5d-1da5-4875-8ddc-7b54a548e86b已SUCCEEDED / REMAINING_LIMITATIONS；22个不同译块、26条历史修订，21块选入已保存阅读产物，b20未选入：TABLE_CELL_MISSING检查认为Revision Number列对应缺失（包含原文空单元格）；需对原表/候选核对，不能直接认定是真漏译或检查误报 |
 | 验证与界限 | 新语义RLS/CAS/不可变/准确读回真实PG通过；Matter真实PG4组通过；章节/Reader/JobAid续接45项通过；server类型通过。原PDF每步读取与最终整包组装仍有成本；真实SB/H2、语义更正后的业务续接和首份新工程工作仍待完成；首批中文已保存并经Reader实际阅读，完整中文仍未完成 |
 
+
+### 2026-09-13 本次状态整理与 Git 双远端同步
+
+用户已明确将 GitHub 规则改为可与飞书同步推送。Luna负责持久规则/hook修订及本次同分支非强制推送；origin仍为妙搭开发来源，GitHub同名分支同步源码与交接记录，不自动main镜像、不修改可见性。技术发布独立于Git同步：当前Host仍5915860c1，Skill为c92。
+
+本次通过平台只读查询重新核对Host release7684897153136085952 finished/errors=[]、工程终态和中文产物。主要未完成项：新英文语义已被实际读取但模型未提交可保存工作；同一真实FTD已通过部分内容检查，复杂图示/更广版式、真实SB长文资源表现及H2变化影响/恢复验收仍未完成。后续按用户最新要求优先英文精度、结构和语义还原，再验证工程工作保存；中文保留同源对应阅读，不扩展翻译流程。
 
 ### 当前明确剩余：工程输出提交（2026-09-13）
 
 AQ-0f66976d469840b29a457945cfa0949c已通过正常原生消费者两次READ_ORIGINAL取得40单元，每次都携带rev6/semantic1和真实SourceRef。后三轮网关均HTTP200/finishReason=stop，实际没有保存函数；形态回执outputTokens均16000、responseBytes分别1011/743/606，不能据此断言具体模型资源根因。已用尽两次有界纠正，没有新工作保存，不将旧SB/SL工作修订9冒充新FTD成果。
 
-fa91c0904/c92修正已知协议失败的生命周期：三次已完整持久化的text-only响应仍不提交时，通过既有JOBAID_INCOMPLETE_TERMINAL_RESPONSE失败结果收尾，不让RUNNING反复恢复同一响应；截断/未知调用/超时仍不冒充确定终态。33项定向测试及完整打包检查通过。只更新Skill，Host仍5915860c1；当前任务交由正常调度读既有回执收尾，不手工STEP、不再发相同工程请求。c92安装后3个job均已恢复enabled；Matter既有退避nextRunAtMs=1789281782330，未强制run或清除退避。实际终态需其正常执行后读回。
+fa91c0904/c92修正已知协议失败的生命周期：三次已完整持久化的text-only响应仍不提交时，通过既有JOBAID_INCOMPLETE_TERMINAL_RESPONSE失败结果收尾，不让RUNNING反复恢复同一响应；截断/未知调用/超时仍不冒充确定终态。33项定向测试及完整打包检查通过。只更新Skill，Host仍5915860c1；当前任务交由正常调度读既有回执收尾，不手工STEP、不再发相同工程请求。c92安装后3个job均已恢复enabled；Matter既有退避nextRunAtMs=1789281782330，未强制run或清除退避。本次最新online读回已FAILED / JOBAID_INCOMPLETE_TERMINAL_RESPONSE，证明已通过正常消费完成终态收尾；不再作为在途等待。
 
 中文已在同一workspace持续至12个已保存块/11个可读块，Reader最近实读16%/829字符；这些只证明接续有效，不作为英文质量指标。英文实际工程消费已达到“真读取”，尚未达到“真保存”；后续优先解决此提交缺口，并按同一原件核对结构效果，不扩展翻译能力。
 
