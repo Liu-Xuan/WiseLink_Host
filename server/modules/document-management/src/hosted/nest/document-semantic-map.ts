@@ -51,6 +51,13 @@ export function buildDocumentSemanticMap(input: {
     }
   const sections: DocumentSemanticSection[] = [];
   const stack: Array<{ level: number; section: DocumentSemanticSection }> = [];
+  // Keep author ancestry separately: a profile's peer level is local to its enclosing issue,
+  // not an instruction to pop an author-supplied issue heading at that same numeric level.
+  const authorStack: Array<{
+    rawLevel: number;
+    level: number;
+    isRole: boolean;
+  }> = [];
   const unassignedUnitIds: string[] = [];
   const occurrences = new Map<string, number>();
   const ordered = [...original.source.units].sort((a, b) => a.order - b.order);
@@ -64,11 +71,25 @@ export function buildDocumentSemanticMap(input: {
       typeof unit.payload.text === 'string' ? unit.payload.text : '';
     const value = unit.payload.level;
     const rule = aliases.get(label(titleRaw));
-    const level =
-      rule?.headingLevel ??
-      (typeof value === 'number' && Number.isInteger(value) && value > 0
+    const rawLevel =
+      typeof value === 'number' && Number.isInteger(value) && value > 0
         ? value
-        : 1);
+        : 1;
+    while (
+      authorStack.length &&
+      authorStack[authorStack.length - 1].rawLevel >= rawLevel
+    )
+      authorStack.pop();
+    // Only author ancestors above the first recognized role define the issue scope.
+    // A styled statement inside Applicability/Interim Action cannot create a new issue scope.
+    const firstRole = authorStack.findIndex((entry) => entry.isRole);
+    const enclosing = (
+      firstRole < 0 ? authorStack : authorStack.slice(0, firstRole)
+    ).at(-1);
+    const level =
+      rule?.headingLevel === undefined
+        ? rawLevel
+        : Math.max(rule.headingLevel, (enclosing?.level ?? 0) + 1);
     while (stack.length && stack[stack.length - 1].level >= level) stack.pop();
     const parentSectionId = stack.at(-1)?.section.sectionId ?? null;
     const roleKey = rule?.roleKey ?? null;
@@ -90,6 +111,7 @@ export function buildDocumentSemanticMap(input: {
     };
     sections.push(section);
     stack.push({ level, section });
+    authorStack.push({ rawLevel, level, isRole: Boolean(rule) });
   }
   const byId = new Map(ordered.map((unit) => [unit.unitId, unit]));
   for (const section of sections) {

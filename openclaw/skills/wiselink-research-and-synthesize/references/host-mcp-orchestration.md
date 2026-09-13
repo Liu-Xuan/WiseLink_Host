@@ -264,7 +264,7 @@ candidate-only。它不增加附件上传、搜索、raw FileService 读取或 R
 
 `consume-hosted-work-item --document-version-id` 只在 Host 明确返回
 `DOCUMENT_TRANSLATION_ADMISSION_DENIED` 时保存中文 START 操作阻塞。已有 checkpoint
-按 Host endpoint / DV / recovery ID 隔离；不保存正文或凭据。返回
+按 Host endpoint / DV / parseRun / recovery ID 隔离；不保存正文或凭据。返回
 `REQUIRES_ATTENTION` 和原文索引结果，不报告文档已完成。新的原文步骤继续从 Host
 真实状态领取，未知工具/网络错误仍失败，不能凭错误文本推测是已确认拒绝。
 

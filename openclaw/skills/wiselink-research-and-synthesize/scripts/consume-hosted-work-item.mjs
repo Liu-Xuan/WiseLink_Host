@@ -319,10 +319,11 @@ export async function consumeHostedDocument({ documentVersionId }, { callTool, d
 
 // This checkpoint records an operation stop, not a Host task or a successful
 // translation. A new parse run can still advance through the branch above.
-async function advanceDocumentTranslationWithRecovery(documentVersionId, run, callTool, checkpoint) {
+async function advanceDocumentTranslationWithRecovery(documentVersionId, run, callTool, checkpointFactory) {
+  const checkpoint = await checkpointFactory?.(run.parseRunId);
   const blocked = await checkpoint?.readOptional('admission-blocked');
   if (blocked) {
-    if (blocked.documentVersionId !== documentVersionId || blocked.errorCode !== 'DOCUMENT_TRANSLATION_ADMISSION_DENIED')
+    if (blocked.documentVersionId !== documentVersionId || blocked.parseRunId !== run.parseRunId || blocked.operation !== 'START' || blocked.errorCode !== 'DOCUMENT_TRANSLATION_ADMISSION_DENIED')
       throw new Error('DOCUMENT_TRANSLATION_CHECKPOINT_INVALID');
     return { status: 'REQUIRES_ATTENTION', documentVersionId, parseRunId: run.parseRunId,
       translation: blocked };
@@ -386,8 +387,11 @@ async function main(argv, env) {
   if (!/^[A-Za-z0-9_-]{1,96}$/.test(recovery)) throw new Error('DOCUMENT_TRANSLATION_RECOVERY_INVALID');
   const checkpointRoot = option(argv, '--checkpoint-root') ?? join(homedir(), '.openclaw', 'wiselink-work-item-runs');
   const endpoint = new URL(runtime.hostMcpUrl);
-  const documentTranslationCheckpoint = documentVersionId ? await createCheckpointStore(join(checkpointRoot,
-    'document-translation', encodeURIComponent(endpoint.origin + endpoint.pathname), documentVersionId, recovery)) : undefined;
+  const documentTranslationCheckpoint = documentVersionId ? parseRunId => {
+    if (!/^[A-Za-z0-9_-]{1,96}$/.test(parseRunId)) throw new Error('DOCUMENT_TRANSLATION_RUN_INVALID');
+    return createCheckpointStore(join(checkpointRoot, 'document-translation',
+      encodeURIComponent(endpoint.origin + endpoint.pathname), documentVersionId, parseRunId, recovery));
+  } : undefined;
   const connection = await createHostMcpConnection(runtime);
   try {
     const result = await consumeHostedWorkItem({

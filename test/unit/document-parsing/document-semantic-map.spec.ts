@@ -271,4 +271,100 @@ describe('source-bound semantic organization (constructed boundary cases)', () =
       compareDocumentSemanticMaps(original, previous, next).affectedUnitIds,
     ).toEqual(['u2', 'u3']);
   });
+  it('keeps repeated FTD peer sections within separate level-2 issue scopes', () => {
+    const original = document([
+      ['Issue A', 2],
+      ['Background', 3],
+      ['A background.'],
+      ['Interim Action', 3],
+      ['A temporary.'],
+      ['Final Action', 4],
+      ['A final.'],
+      ['Issue B', 2],
+      ['Background', 3],
+      ['B background.'],
+      ['Interim Action', 3],
+      ['B temporary.'],
+      ['Final Action', 4],
+      ['B final.'],
+    ]);
+    const map = buildDocumentSemanticMap({
+      original,
+      semanticRevision: 1,
+      profile: BOEING_FTD_SEMANTIC_PROFILE,
+    });
+    for (const id of ['u1', 'u3', 'u5'])
+      expect(
+        map.sections.find((section) => section.headingUnitId === id)!
+          .parentSectionId,
+      ).toBe('section:u0');
+    for (const id of ['u8', 'u10', 'u12'])
+      expect(
+        map.sections.find((section) => section.headingUnitId === id)!
+          .parentSectionId,
+      ).toBe('section:u7');
+    const first = selectDocumentSemanticSection(original, map, 'section:u0');
+    const second = selectDocumentSemanticSection(original, map, 'section:u7');
+    expect(first.unitIds).toEqual(['u0', 'u1', 'u2', 'u3', 'u4', 'u5', 'u6']);
+    expect(second.unitIds).toEqual([
+      'u7',
+      'u8',
+      'u9',
+      'u10',
+      'u11',
+      'u12',
+      'u13',
+    ]);
+    const issue = map.sections.find(
+      (section) => section.headingUnitId === 'u0',
+    )!;
+    expect(issue.bodyUnitIds).toEqual([]);
+    expect(issue.contentState).toBe('CONTENT');
+    expect(
+      map.sections
+        .filter((section) => section.roleKey === 'ftd.final_action')
+        .map((section) => section.occurrence),
+    ).toEqual([1, 1]);
+  });
+  it('propagates removed ancestor conditions to every descendant body, while unrelated scope is unchanged', () => {
+    const original = document([
+      ['Scope A', 1],
+      ['Only when X.'],
+      ['Child A', 2],
+      ['Body A.'],
+      ['Nested', 3],
+      ['Nested body.'],
+      ['Child B', 2],
+      ['Body B.'],
+      ['Unrelated', 1],
+      ['Independent body.'],
+    ]);
+    const previous = buildDocumentSemanticMap({
+      original,
+      semanticRevision: 1,
+      profile: GENERIC_SEMANTIC_PROFILE,
+    });
+    const next = structuredClone(previous);
+    next.semanticRevision = 2;
+    next.sections[0].bodyUnitIds = [];
+    next.unassignedUnitIds.push('u1');
+    // Every fixture unit shares this exact page ref, so removing its member does not change the ref set.
+    const change = compareDocumentSemanticMaps(original, previous, next);
+    expect(change.affectedUnitIds).toEqual([
+      'u0',
+      'u1',
+      'u2',
+      'u3',
+      'u4',
+      'u5',
+      'u6',
+      'u7',
+    ]);
+    expect(change.affectedUnitIds).not.toContain('u9');
+    expect(next.sections[0].contentState).toBe('CONTENT');
+    expect(
+      selectDocumentSemanticSection(original, next, next.sections[0].sectionId)
+        .unitIds,
+    ).toContain('u5');
+  });
 });

@@ -25,6 +25,15 @@
 - 同一 schema `workspace_aadkpkjef3slu` 的最新 dev/online 读回再次证实 roles/cmd/RESTRICTIVE/WITH CHECK 一致，只有 matter policy USING 缺 DOCUMENT_VERSION；独立 document policy 两边保持。证据位于本机 /private/tmp/wiselink-policy-{dev,online}-20260913-current.json，未向平台外发。
 - P 已交付且M合入 /private/tmp/wl-document-P-semantic-map-20260913.patch，五文件；M集成server类型/相关lint通过。包含FTD平级栏目修复、完整成员/来源校验、范围选择、语义变化比较和V2上下文planner；真实rev6候选尚未保存。接口方向：从属 semanticRevision/profileRef、章节原题/角色/父级/成员/sourceRefs/显式空值与未知范围，M 负责集中持久化与真实消费者。云端终端随后自行恢复；已取得rev6自然PUBLISHED回执，不重启环境。
 
+### 0054正式迁移与本轮组合部署准备
+
+用户明确授权相关操作后，dev同义策略改名诊断返回准确两项diff（旧名DROP、新名CREATE），诊断结束已恢复并读回原名。随后正式登记0054，真实PG验证合法服务写入、原生/错误actor拒绝及旧策略不存在；正式diff再次只有同样两项，没有夹带其他schema。官方db-env-migrate实际应用2项，online读回旧名已不存在、新名 `action_attempt_matter_or_document_subject_boundary` 支持DOCUMENT_VERSION，独立文档和三项原生禁写策略保留。此前零差异阻塞已解除，不声称所有平台迁移问题普遍解决。
+
+待部署Skill c89将中文准入阻塞按Host endpoint/DV/parseRun/START及recovery ID隔离，避免旧修订永久阻断新原文；同run明确拒绝不重复START，运维修复后更换原job recovery ID接续，旧记录保留。记录在Host失败事务回滚后的独立消费端checkpoint保存，写入失败仍失败，不冒充成功。Host/Skill组合必须实际安装发布后另验收；rev6成功仍只证明c8/c88。
+
+P定点反馈已合入：FTD平级修复保留作者问题范围，两个Issue下同名栏目不串；祖先条件成员变化已覆盖后代正文比较，子树有内容时直接body空仍CONTENT。未新增视觉/helper或UI任务。语义持久化与实际工程接线仍由M负责，未因基础补丁通过而标完成。
+
+
 ## 历史：启动基线与早期交接
 
 角色与本批目标：M 按 2026-09-12 主控执行书负责 F1—F6、共同身份/调度、原文下游和 H0/H1/H2 集成；不等待 MinerU 恢复。

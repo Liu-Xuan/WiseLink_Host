@@ -59,7 +59,12 @@ test('document attempts preserve published source identity and service-only acto
     await db.unsafe(legacyPolicy.slice(0, legacyPolicy.indexOf('DROP POLICY engineering_matter_work_real_attempt_boundary')) + 'COMMIT;');
     await assert.rejects(asRole('service_role','actor',tx => insert(tx,'before-policy-fix')), /action_attempt_matter_subject_boundary/);
     await db.unsafe(await readFile(new URL('../../migrations/0053_document_attempt_matter_policy_recreate.sql', import.meta.url), 'utf8'));
-    const [policy] = await db`SELECT roles, permissive FROM pg_policies WHERE policyname='action_attempt_matter_subject_boundary'`;
+    await db.unsafe(await readFile(new URL('../../migrations/0054_document_attempt_policy_identity.sql', import.meta.url), 'utf8'));
+    const oldPolicies = await db`SELECT policyname FROM pg_policies WHERE policyname='action_attempt_matter_subject_boundary'`;
+    assert.equal(oldPolicies.length, 0);
+    const [policy] = await db`SELECT roles, permissive, cmd, with_check FROM pg_policies WHERE policyname='action_attempt_matter_or_document_subject_boundary'`;
+    assert.equal(policy.cmd, 'ALL');
+    assert.equal(policy.with_check, null);
     assert.equal(policy.permissive, 'RESTRICTIVE');
     assert.deepEqual([...policy.roles].sort(), ['authenticated', 'service_role']);
     await assert.rejects(asRole('authenticated','actor',tx => insert(tx,'native')), /row-level security/);

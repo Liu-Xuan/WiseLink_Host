@@ -98,7 +98,7 @@ test('confirmed admission denial persists an operation stop while new original a
         hostToolName: name, hostErrorCode: 'DOCUMENT_TRANSLATION_ADMISSION_DENIED' });
     };
     const tick = async () => consumeHostedWorkItem({ documentVersionId: 'DV-test' }, {
-      callTool, documentTranslationCheckpoint: await createCheckpointStore(directory),
+      callTool, documentTranslationCheckpoint: parseRunId => createCheckpointStore(join(directory, parseRunId)),
     });
     const first = await tick();
     assert.equal(first.status, 'REQUIRES_ATTENTION');
@@ -111,13 +111,13 @@ test('confirmed admission denial persists an operation stop while new original a
     current.latestRun.status = 'PUBLISHED';
     const newer = await tick();
     assert.equal(newer.parseRunId, 'PRUN-new');
-    assert.equal(newer.translation.parseRunId, 'PRUN-test');
+    assert.equal(newer.translation.parseRunId, 'PRUN-new');
     assert.equal(indexes, 3);
-    assert.equal(starts, 1);
+    assert.equal(starts, 2);
     // A distinct explicitly configured recovery record preserves the prior stop.
     await consumeHostedWorkItem({ documentVersionId: 'DV-test' }, { callTool,
-      documentTranslationCheckpoint: await createCheckpointStore(join(directory, 'repaired-policy')) });
-    assert.equal(starts, 2);
+      documentTranslationCheckpoint: parseRunId => createCheckpointStore(join(directory, parseRunId, 'repaired-policy')) });
+    assert.equal(starts, 3);
   } finally { await rm(directory, { recursive: true, force: true }); }
 });
 test('unknown translation errors remain errors even when the source index succeeds', async () => {
