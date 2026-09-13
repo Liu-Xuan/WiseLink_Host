@@ -21,12 +21,13 @@ export async function readMatterRecoveryCandidate({ checkpointRoot, matterId, re
   const response = await store.readOptional(`assessment-round-${state.round}.result`);
   if (!response) throw new Error('MATTER_RECOVERY_MODEL_RESULT_UNKNOWN');
   const args = { operation: enabled.binding.operation, messages: state.messages,
-    executionModel, sessionDiscriminator: invocation.sessionDiscriminator };
+    executionModel, sessionDiscriminator: invocation.sessionDiscriminator,
+    ...(enabled.generationPolicy ? { generationPolicy: enabled.generationPolicy, scopeAdjustments: state.scopeAdjustments ?? 0 } : {}) };
   if (response.argsHash !== canonicalSha256(args) || response.value?.ok !== true)
     throw new Error('MATTER_RECOVERY_RESPONSE_BINDING_MISMATCH');
   const payload = parseStrictJsonObject(response.value.raw);
   const call = payload.choices?.[0]?.message?.tool_calls?.[0];
-  if (payload.choices?.length !== 1 || payload.choices[0].message?.tool_calls?.length !== 1 ||
+  if (payload.choices?.length !== 1 || payload.choices[0].finish_reason !== 'tool_calls' || payload.choices[0].message?.tool_calls?.length !== 1 ||
       call?.function?.name !== 'return_wiselink_assessment_step') throw new Error('MATTER_RECOVERY_SAVE_RESPONSE_REQUIRED');
   const step = parseStrictJsonObject(call.function.arguments).step;
   if (!['SAVE_WORK', 'FINISH'].includes(step?.action) || typeof step.workJson !== 'string')

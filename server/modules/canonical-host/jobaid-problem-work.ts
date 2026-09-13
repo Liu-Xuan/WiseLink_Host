@@ -358,7 +358,11 @@ export function materializeJobAidWork(
     for (const { evidenceRef: ref } of collectIssueEvidenceUses(issue))
       if (!registry.has(ref))
         fail(`RETAINED_SOURCE_NO_LONGER_AUTHORIZED:${ref}`);
-  const decisiveIssueKeys = strings(value.decisiveIssueKeys, 'DECISIVE_ISSUES');
+  // Omission retains the exact saved summary, never an inferred new conclusion.
+  // Explicit null/empty values still pass through the normal validators.
+  const summary = (field: 'headline' | 'listBrief' | 'understanding' | 'decisiveIssueKeys') =>
+    value[field] === undefined ? context.previous?.[field] : value[field];
+  const decisiveIssueKeys = strings(summary('decisiveIssueKeys'), 'DECISIVE_ISSUES');
   if (
     decisiveIssueKeys.length === 0 ||
     decisiveIssueKeys.some((issueKey) => !prior.has(issueKey))
@@ -383,14 +387,16 @@ export function materializeJobAidWork(
   )
     fail('OPEN_QUESTIONS_REQUIRE_QUALIFIED_COMPLETION');
   const unchangedExplanation = text(
-    value.unchangedExplanation,
+    value.unchangedExplanation === undefined
+      ? '未提交的问题和总体字段按既有工作保留；保留不代表本批重新验证。'
+      : value.unchangedExplanation,
     'UNCHANGED_EXPLANATION',
   );
   return {
     schemaVersion: JOBAID_PROBLEM_WORK_SCHEMA,
-    headline: text(value.headline, 'HEADLINE'),
-    listBrief: text(value.listBrief, 'LIST_BRIEF'),
-    understanding: text(value.understanding, 'UNDERSTANDING'),
+    headline: text(summary('headline'), 'HEADLINE'),
+    listBrief: text(summary('listBrief'), 'LIST_BRIEF'),
+    understanding: text(summary('understanding'), 'UNDERSTANDING'),
     decisiveIssueKeys,
     issues,
     roundCompletion,

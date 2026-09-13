@@ -103,7 +103,7 @@ export async function consumeHostedMatter(options, dependencies) {
           await checkpoint.remoteStep({ step: 'model', args: { inputHash: task.inputHash }, ambiguousCommit: false, perform });
       } catch (error) {
         const failure = error?.terminalAssessmentFailure;
-        if (failure?.errorCode !== 'JOBAID_INCOMPLETE_TERMINAL_RESPONSE') throw error;
+        if (!['JOBAID_INCOMPLETE_TERMINAL_RESPONSE', 'JOBAID_MODEL_OUTPUT_LENGTH'].includes(failure?.errorCode)) throw error;
         validateRuntimeProvenance(failure.provenance);
         execution = { failureCode: failure.errorCode, provenance: failure.provenance };
       }
@@ -116,7 +116,7 @@ export async function consumeHostedMatter(options, dependencies) {
       businessOutcome: execution.failureCode ? 'NOT_PRODUCED' : 'CANDIDATE_READY', candidateStatus: null,
       modelOutput: execution.failureCode ? null : JSON.stringify(execution.output),
       outputArtifactRefs: [], sourceRefs: task.sourceRefs, factsConsidered: [], missingInputs: [], conflicts: [],
-      warnings: execution.failureCode ? ['Usage totals include only reported usage; the terminal response did not report its usage. Existing saved work and candidate checkpoints are retained.'] : [],
+      warnings: execution.failureCode ? ['Failure details and any reported usage remain in the recorded model response. Existing saved work and candidate checkpoints are retained.'] : [],
       ...execution.provenance, errorCode: execution.failureCode ?? null, errorDetail: null };
     result = { ...envelope, contentHash: canonicalSha256(envelope) };
     await checkpoint.writeOnce('finish-result', result);
