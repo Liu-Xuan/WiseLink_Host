@@ -2,17 +2,33 @@
 
 ## 当前运行窗口（2026-09-13，M 负责）
 
-按用户同日收尾意见推进部署、语义持久化和实际工程消费；前端改版继续暂缓。下表覆盖后续历史记录中的旧阻塞说法。
+按用户最新意见，以英文解析字面精度、章节/表格/条件语义及实际工程消费为主线；中文仅作同源匹配阅读辅助，不再以翻译完成率作为主验收。前端改版继续暂缓。下表覆盖后续历史记录中的旧阻塞说法。
 
 | 项目 | 当前事实 / 下一动作 |
 | --- | --- |
-| Host / Skill | Host e9f1843a8 已发布，release 7684876972112415682 finished、错误日志空。c89 已官方安装，ZIP 379824B/SHA256 25cf0490a9a230092f5a5be8950002701120b349dc6965aee0a105d058ebc4b2，正式目录47/47文件与校验ZIP逐字节匹配。三个原生job空闲暂停安装后均已恢复enabled；没有强制run |
-| online RLS | 用户授权后完成dev诊断及恢复；正式0054差异仅旧名DROP+新名CREATE，官方迁移2项。online旧policy已不存在，新policy支持DOCUMENT_VERSION，独立文档/actor/tenant/原生禁写保留。旧策略阻塞已解除；首个实际中文START尚待正常运行验证 |
+| Host / Skill | Host 5915860c1 已发布，release 7684897153136085952 finished、错误日志空（包含3f3826c72译块接续/表格修复）。c92 已官方安装，ZIP 380677B/SHA256 d09fed44a7f15099533bdc5260df6ed4f6fcaf2ca2320bac57255203c3ff0908，正式目录47/47文件与校验ZIP逐字节匹配。三个原生job安装窗口暂停且确认无活动运行；c92安装文件47/47与校验ZIP匹配（C92_MATCH 47）；c91已核对Host连接，三个原生job均已按原配置恢复enabled；没有强制run |
+| online RLS | 用户授权后完成dev诊断及恢复；正式0054差异仅旧名DROP+新名CREATE，官方迁移2项。online旧policy已不存在，新policy支持DOCUMENT_VERSION，独立文档/actor/tenant/原生禁写保留。旧策略阻塞已解除；正常START已实际QUEUED：DTQ-6eae3abb-fdad-4dbd-8649-72ef2faef3f4，workspace TW-f9b7e6dc-ded2-49ee-988f-3c78212fac3f，errorCode=null |
 | FTD rev6 | DV document_version_b83523c2b5ba26a2b1753641，parseRun PRUN-c537f5bb-cc97-4ce9-855e-ca8d53e15a31。c8/c88自然PUBLISHED，原件/manifest字节与SHA、2表/编号/条件/页脚实件核对保留，SOURCE41条、pending0。不能用此证明e9/c89或新语义补丁已运行 |
-| 语义持久结构 | 0055正式dev→online迁移16项，仅新表/约束/索引/RLS/不可变触发器。online读回RLS=true、4policy、1不可变trigger、1已验证FK。未直接插入业务map；待下列Host接线发布后走正常INDEX |
-| 本批接线 | 已实现INDEX保存首个来源绑定语义修订、确切章节读取；Matter新任务输入固定semantic revision/profile，旧任务不附加latest。JobAid任务含原文语义map。真实PG发现并修复JSONB键顺序导致的假覆盖错误。暂未部署这些新增接线，不能宣布实际工程工作已使用 |
-| 运行剩余 | rev6中文正常STATUS=IDLE。文档job仍保留早前42501退避，nextRunAtMs=1789277913277；尚未新START。Matter MAT-26b208d0-1cc8-486e-a38f-7b9a99f74e7f 原有AQ-e6440b36c0984efd8153090fe654208b失败待诊断。旧WI-990d6e76-78d4-440a-a419-1b2e37b94ac9经当前Hosted入口NOT_FOUND，不借用旧777配置 |
-| 验证与界限 | 新语义RLS/CAS/不可变/准确读回真实PG通过；Matter真实PG4组通过；章节/Reader/JobAid续接45项通过；server类型通过。原PDF每步读取与最终整包组装仍有成本；真实SB/H2、语义更正后的消费者续接、首份新工程工作、首个中文块仍待完成 |
+| 语义持久结构 | 0055正式dev→online迁移16项，仅新表/约束/索引/RLS/不可变触发器。online读回RLS=true、4policy、1不可变trigger、1已验证FK。正常INDEX已保存rev6语义修订1，boeing.ftd.sections.v1、12章节。正常read_document_original确切读回，Final Action返回u28/u29及两个SourceRef；原文manifest SHA保持d8237d00…不变 |
+| 本批接线 | 已实现INDEX保存首个来源绑定语义修订、确切章节读取；Matter新任务输入固定semantic revision/profile，旧任务不附加latest。JobAid任务含原文语义map。真实PG发现并修复JSONB键顺序导致的假覆盖错误。Host/Skill已部署；c90还修复消费端丢map并拒绝语义修订漂移。实际工程保存待自然调度验收 |
+| 运行剩余 | rev6中文正常START已QUEUED，deadline=2026-09-13T06:36:50.959Z；同现有消费者确定性requestId，不另起STEP。Matter MAT-26b208d0-1cc8-486e-a38f-7b9a99f74e7f 原有AQ-e6440b36c0984efd8153090fe654208b以JOBAID_INCOMPLETE_TERMINAL_RESPONSE失败，保留记录，新语义变化进入正常后继。旧WI-990d6e76-78d4-440a-a419-1b2e37b94ac9经当前Hosted入口NOT_FOUND，不借用旧777配置 |
+| 验证与界限 | 新语义RLS/CAS/不可变/准确读回真实PG通过；Matter真实PG4组通过；章节/Reader/JobAid续接45项通过；server类型通过。原PDF每步读取与最终整包组装仍有成本；真实SB/H2、语义更正后的业务续接和首份新工程工作仍待完成；首批中文已保存并经Reader实际阅读，完整中文仍未完成 |
+
+
+### 当前明确剩余：工程输出提交（2026-09-13）
+
+AQ-0f66976d469840b29a457945cfa0949c已通过正常原生消费者两次READ_ORIGINAL取得40单元，每次都携带rev6/semantic1和真实SourceRef。后三轮网关均HTTP200/finishReason=stop，实际没有保存函数；形态回执outputTokens均16000、responseBytes分别1011/743/606，不能据此断言具体模型资源根因。已用尽两次有界纠正，没有新工作保存，不将旧SB/SL工作修订9冒充新FTD成果。
+
+fa91c0904/c92修正已知协议失败的生命周期：三次已完整持久化的text-only响应仍不提交时，通过既有JOBAID_INCOMPLETE_TERMINAL_RESPONSE失败结果收尾，不让RUNNING反复恢复同一响应；截断/未知调用/超时仍不冒充确定终态。33项定向测试及完整打包检查通过。只更新Skill，Host仍5915860c1；当前任务交由正常调度读既有回执收尾，不手工STEP、不再发相同工程请求。c92安装后3个job均已恢复enabled；Matter既有退避nextRunAtMs=1789281782330，未强制run或清除退避。实际终态需其正常执行后读回。
+
+中文已在同一workspace持续至12个已保存块/11个可读块，Reader最近实读16%/829字符；这些只证明接续有效，不作为英文质量指标。英文实际工程消费已达到“真读取”，尚未达到“真保存”；后续优先解决此提交缺口，并按同一原件核对结构效果，不扩展翻译能力。
+
+### 本轮后续真实回执（2026-09-13 14:15 前后）
+
+- Host59c修复ActionAttempt durable envelope第二处semantic字段白名单；真实Matter PG在后续semantic2/parse3出现后仍读固定semantic1并保存，四组通过。正常next创建AQ-4ea1f8287e434772a85b4d74a791ebe1，DB输入固定rev6/semantic1。但该实际模型只读取旧SB/SL并保存MWREV-cdab3c87-48d6-41bc-8198-97cc27df7e23，后续任务SUCCEEDED、当前工作修订9；未读新FTD，不能冒充语义消费完成。
+- 由此发现实际Skill系统提示仍只引导page文本，历史纠正说明压过本轮来源变更。591/c91把既有pending差异送入sourceChanges，并明确trigger优先、boundOriginal使用originalReadRef及semanticMap、其他必要范围继续读。没有强迫工程结论或伪造读取。正常begin_matter_assessment另提交一次明确的新FTD工程消费请求（requestId rev6-semantic-engineering-consumption-20260913），已QUEUED：AQ-0f66976d469840b29a457945cfa0949c；自然运行DB回执已记录MATTER_ORIGINAL_READ，实际20单元与boeing.ftd.sections.v1语义修订1共同返回，实际工作保存待完成。
+- 中文原请求DTQ-6eae…已保存3块后因TRANSLATION_GENERATION_SUPERSEDED停住；P按真实CHECK lease9读取lease8已保存候选复现。3f3826c72只允许当前fence继续检查既有immutable候选；旧lease和旧generation新SAVE仍拒绝。M真实PG定向2项、Reader构造2项、前后端types通过。正式发布7684896096305908667 finished。
+- 正常START新恢复请求translation-rev6-generation-recovery-20260913成功：DTQ-735a6f5d-1da5-4875-8ddc-7b54a548e86b，原workspace TW-f9b7e6dc-ded2-49ee-988f-3c78212fac3f不变，deadline2026-09-13T07:07:47.787Z。自然执行后Reader实读7.4%，382/5150原文字符已保存，新增“目前暂无更新”“适用性”“所有787型飞机。”；双语表格实际正常显示，不再报原表结构不可显示。完整中文尚未完成；该workspace建于semantic1前，不能追认其使用新语义上下文。
 
 
 ### 历史：本轮较早本地实施（部署状态以顶部为准）
@@ -461,3 +477,9 @@ next_original_assessment 在已确认适用性原文影响时，现优先调用 
 干净提交 684446e4d68f50998c1a3e4b6bdf906fc746dec7 已生成 wiselink-research-and-synthesize@r09.c87，47 文件、377332 字节；打包器全部 native tests 与版本声明检查通过。SHA-256=fc64063ca3388238a2580947380ec4b0a237706e17a8b46602f1275c81f41a92。私有 Host ZIP=/1876162620589140.zip，manifest=/1876162620589156.json；从私有存储下载 c87-readback.zip 后实际字节长度/哈希与清单一致。
 
 本地目录 /private/tmp/wiselink-c87-package。代码已按单一显式引用非强制推送到飞书 origin/codex/wl31-r09-master-handoff-20260903（5f5df357a→684446e4d），未向 GitHub 推送。c87 尚未安装，不将文件上传视为运行交付；Host 线上仍为前次核实的 b0ff1f510，需配套安装/技术发布与真实原文调用验证。未新增或重启受阻 Hosted 会话。
+
+### 2026-09-13：真实语义读回与首批中文后的定点收尾
+
+- 原生doc job在Host688/c90组合下自然推进，初次数据库快照3块保存、2块selected_for_reading；现有DV Reader中英对照实际显示中文标题和“修订说明”，约6.8%可读，界面显示已保存371/5150原文字符。已保存量与可读覆盖率是不同指标。随后出现TRANSLATION_GENERATION_SUPERSEDED，旧块保留。P已接收真实generation/块修订记录定向修复；另外两处表格消费显示“原表结构暂无法显示”，不修改已发布原文，修现有payload适配。
+- Matter正常next准入尚未形成新任务，M定位第二层ActionAttempt严格信封未允许semantic字段，59c125b14已推origin并进入release7684893036418534372；发布完成待核对。追加真实Matter测试使用确切语义1建立任务、后继语义2与新parse3并存，旧任务继续按语义1读取并保存，4组PG通过；信封10项通过。早前688已修外层绑定验证与跨parse关联查询，不能拿它代替59c运行结果。
+- 目前没有创建额外消费者、强制cron run、删除失败记录或将用户侧只读会话用于代跑模型；三个原有job已恢复。正式采用仍由工程师确认。
