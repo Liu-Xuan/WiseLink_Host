@@ -2,20 +2,20 @@
 
 ## 当前运行窗口（2026-09-13，M 负责）
 
-按用户同日《状态评审与推进修订》继续既有 Host/c87 交付与 H1，不扩大外围实现，不重复索取已登记 FTD。以下表格为本次直接观察；其后各阶段条目是历史证据。
+按用户同日收尾意见推进部署、语义持久化和实际工程消费；前端改版继续暂缓。下表覆盖后续历史记录中的旧阻塞说法。
 
 | 项目 | 当前事实 / 下一动作 |
 | --- | --- |
-| 源码 | `de8ae2a7c` 已同步 origin：新增明确中文准入拒绝的操作隔离；c8版式/租约修复已上线。P语义映射本地合入，尚未完成持久与工程消费者接线 |
-| Host | 用户明确授权后，发布 `7684851163325778902` 已 finished，commit `c8fa55eb01ba02a0c25f4a994725420fc59ce811`，错误日志空；实际工作台新增入口已成功打开同一DV阅读页 |
-| Skill | 官方安装 c84→c87 后真实清单校验暴露四项遗漏；现已由官方 install 更新为 c88（来源 dfc0c5d7b），47/47 文件匹配、正式目录测试 305/305 通过，createHostMcpConnection 和 FTD document_work STATUS 成功。c88 ZIP `/1876180993072151.zip`、清单 `/1876180993074183.json`，378092 字节，SHA256 `7b88e46b5d49f4845763a7ed58e97764e3dccac019edd3f4517c6e9fc444f04b` |
-| 实际运行环境 | 已登录 `app_17c3zn24kv2` 管理页，现有云端终端可执行命令；两个原 job 在空闲核验后已原生暂停（原状态均 enabled）；最近错误为 `REVIEW_HOST_MCP_EXACT20_MISMATCH`。c87 实际 tools/list 确认 Host identity 1.2.0 正确、无缺失旧工具，但多出 document_work/read_document_original/document_translation/next_original_assessment；精确清单遗漏已修复，原两个 job 已调用正常 enable 恢复；独立文档 job `436ae83c-2c83-49de-aac9-31668075dd31` 绑定唯一 FTD DV，原生 60 秒 command 调度，未强制 run |
-| 复用样本 / 范围 | 787-FTD-45-25001；DV `document_version_b83523c2b5ba26a2b1753641`；WI `WI-990d6e76-78d4-440a-a419-1b2e37b94ac9`；tenant `63849986`、actor `1868301878396947`。本次刘轩正常页面已读到同一版本和原件登记；点击原件预览首次 HTTP 500，日志定位 FileService getFileMetadata 5001ms Request aborted；原页面重试成功取得 blob 原件；不借用旧 777 的适用性 context |
-| H1 / H2 | 历史rev4 PUBLISHED/2页/20单元及21索引保留。rev5逾期且0产物，12:13:23+08经正常Host CANCEL收尾为FAILED/DOCUMENT_PARSE_CANCELLED。正常Reader新请求rev6 `PRUN-c537f5bb-cc97-4ce9-855e-ca8d53e15a31` 已经原生job自然PUBLISHED，exit0，未再报终态lease错误。正式manifest 69343B/SHA `d8237d00dc59519dcf17f3014f918d3c894226ab2ffd2f02fab0b936afb21755` 匹配；41单元/2表，P核对同原件空列、日期、编号、条件和页脚通过；SOURCE索引实读41条/pending0。数量不作为语义质量评分。中文准入仍受旧online策略阻塞；新章节语义、工程候选及H2未完成 |
-| 当前动作 / 限制 | M处理0053：平台0048 ALTER POLICY未生效，线上谓词仍只含WORK_ITEM；dev现已单事务重建为0048原设计的WORK_ITEM/DOCUMENT_VERSION，其余事项谓词和独立文档RLS保持。真实PG先复现旧策略拒绝，再验证合法服务写入、原生禁写、错误actor拒绝；P租约收尾4项真实PG通过，M相关lint通过。dev读回已正确；用户明确授权online迁移后执行正式db-env-migrate返回0changes，online实读仍旧。本次Host发布已获用户明确授权并完成，但online策略仍旧；正式online DDL调用被平台以 forbid ddl/dcl operation in online env 拒绝，未应用任何语句，不能绕过。现有文档job退避随后自然清零，rev6正常自然执行成功；未强制run。开发库同义策略改名诊断被自动审批拒绝，未执行；已向用户请求该一次精确诊断授权，不换路径绕过。用户已明确授权本次向P持续交接诊断与修复委派，补丁已收。失败rev3已正常CANCEL收尾且保留1产物和原失败轨迹；不强制cron run、不做正式采用 |
+| Host / Skill | Host e9f1843a8 已发布，release 7684876972112415682 finished、错误日志空。c89 已官方安装，ZIP 379824B/SHA256 25cf0490a9a230092f5a5be8950002701120b349dc6965aee0a105d058ebc4b2，正式目录47/47文件与校验ZIP逐字节匹配。三个原生job空闲暂停安装后均已恢复enabled；没有强制run |
+| online RLS | 用户授权后完成dev诊断及恢复；正式0054差异仅旧名DROP+新名CREATE，官方迁移2项。online旧policy已不存在，新policy支持DOCUMENT_VERSION，独立文档/actor/tenant/原生禁写保留。旧策略阻塞已解除；首个实际中文START尚待正常运行验证 |
+| FTD rev6 | DV document_version_b83523c2b5ba26a2b1753641，parseRun PRUN-c537f5bb-cc97-4ce9-855e-ca8d53e15a31。c8/c88自然PUBLISHED，原件/manifest字节与SHA、2表/编号/条件/页脚实件核对保留，SOURCE41条、pending0。不能用此证明e9/c89或新语义补丁已运行 |
+| 语义持久结构 | 0055正式dev→online迁移16项，仅新表/约束/索引/RLS/不可变触发器。online读回RLS=true、4policy、1不可变trigger、1已验证FK。未直接插入业务map；待下列Host接线发布后走正常INDEX |
+| 本批接线 | 已实现INDEX保存首个来源绑定语义修订、确切章节读取；Matter新任务输入固定semantic revision/profile，旧任务不附加latest。JobAid任务含原文语义map。真实PG发现并修复JSONB键顺序导致的假覆盖错误。暂未部署这些新增接线，不能宣布实际工程工作已使用 |
+| 运行剩余 | rev6中文正常STATUS=IDLE。文档job仍保留早前42501退避，nextRunAtMs=1789277913277；尚未新START。Matter MAT-26b208d0-1cc8-486e-a38f-7b9a99f74e7f 原有AQ-e6440b36c0984efd8153090fe654208b失败待诊断。旧WI-990d6e76-78d4-440a-a419-1b2e37b94ac9经当前Hosted入口NOT_FOUND，不借用旧777配置 |
+| 验证与界限 | 新语义RLS/CAS/不可变/准确读回真实PG通过；Matter真实PG4组通过；章节/Reader/JobAid续接45项通过；server类型通过。原PDF每步读取与最终整包组装仍有成本；真实SB/H2、语义更正后的消费者续接、首份新工程工作、首个中文块仍待完成 |
 
 
-### 本轮本地实施（尚未部署）
+### 历史：本轮较早本地实施（部署状态以顶部为准）
 
 - P后续两文件增量已合入：按artifactProgress只读取末组并恢复确切下一路径，普通STAGING不再compose全前缀；发布时一次全组装。构造25页正常/上传回执丢失场景验证，原PDF每步读取与最终全量内存仍在，不称为计算卸载。
 

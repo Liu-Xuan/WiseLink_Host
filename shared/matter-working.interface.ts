@@ -42,6 +42,7 @@ export interface EngineeringMatterDocumentInputBinding {
 export interface EngineeringMatterOriginalInputBinding {
   parseRunId: string;
   parseRevision: number;
+  semantic?: { revision: number; profileRef: string } | null;
 }
 
 export type EngineeringMatterWorkingInputBinding =

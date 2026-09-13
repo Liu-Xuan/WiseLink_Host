@@ -287,15 +287,13 @@ export function assertDocumentSemanticMap(
     }
   }
   if (
-    JSON.stringify(map.organizationWarnings) !==
-    JSON.stringify(organizationWarnings(map.sections))
+    semanticJson(map.organizationWarnings) !== semanticJson(organizationWarnings(map.sections))
   )
     throw new Error('SEMANTIC_WARNINGS_CHANGED');
   if (claimed.size !== units.size)
     throw new Error('SEMANTIC_COVERAGE_INCOMPLETE');
   if (
-    JSON.stringify(map.unresolvedRanges) !==
-    JSON.stringify(original.coverage.unresolvedRanges)
+    semanticJson(map.unresolvedRanges) !== semanticJson(original.coverage.unresolvedRanges)
   )
     throw new Error('SEMANTIC_COVERAGE_CHANGED');
 }
@@ -468,4 +466,10 @@ export function compareDocumentSemanticMaps(
     .filter((unit) => before.get(unit.unitId) !== after.get(unit.unitId))
     .map((unit) => unit.unitId);
   return { changed: affectedUnitIds.length > 0, affectedUnitIds };
+}
+
+/** JSONB may reorder object keys; array order and every JSON value remain significant. */
+function semanticJson(value: unknown): string {
+  return JSON.stringify(value, (_key, item) => item && typeof item === 'object' && !Array.isArray(item)
+    ? Object.fromEntries(Object.keys(item).sort().map(key => [key, item[key]])) : item);
 }

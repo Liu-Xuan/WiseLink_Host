@@ -8,11 +8,15 @@ import { EngineeringMatterWorkingRepository } from './engineering-matter-working
 import { EngineeringMatterWorkingService } from './engineering-matter-working.service';
 import { EngineeringMatterDirectoryService } from './engineering-matter-directory.service';
 import { EngineeringSearchProjectionWriter } from './engineering-search-projection';
+import { DocumentSemanticService } from './document-semantic.service';
+import { DocumentSemanticRevisionRepository } from './document-semantic-revision.repository';
 
 /** Shared Matter storage and authorization without a Review/Host module cycle. */
 @Module({
   imports: [WorkItemRuntimeModule, CanonicalModelSettingsModule],
   providers: [
+    DocumentSemanticService,
+    DocumentSemanticRevisionRepository,
     EngineeringSearchProjectionWriter,
     MatterActionAttemptService,
     EngineeringMatterRepository,
@@ -22,6 +26,8 @@ import { EngineeringSearchProjectionWriter } from './engineering-search-projecti
     EngineeringMatterDirectoryService,
   ],
   exports: [
+    DocumentSemanticService,
+    DocumentSemanticRevisionRepository,
     MatterActionAttemptService,
     EngineeringMatterRepository,
     EngineeringMatterService,

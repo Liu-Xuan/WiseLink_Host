@@ -255,7 +255,8 @@ export class CanonicalHostOpenClawMcpService {
       description: '按documentVersionId和parseRunId重新校验来源授权，返回有界完整原文单元、真实定位和覆盖限制。用于工程输入；不是译文，也不代表本轮已评估全文。',
       inputSchema: z.strictObject({ documentVersionId: z.string().trim().min(1).max(96),
         parseRunId: z.string().trim().min(1).max(96), offset: z.number().int().min(0).optional(),
-        limit: z.number().int().min(1).max(50).optional() }),
+        limit: z.number().int().min(1).max(50).optional(),
+        semanticRevision: z.number().int().min(1).optional(), sectionId: z.string().min(1).max(160).optional() }),
     }, async input => textResult(await this.documentWork!.readOriginal(input)));
 
     if (this.documentTranslation) server.registerTool('document_translation', {

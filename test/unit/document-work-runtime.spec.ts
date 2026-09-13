@@ -1,4 +1,6 @@
 import { DocumentWorkRuntimeService } from '../../server/modules/canonical-host/document-work-runtime.service';
+import { buildDocumentSemanticMap } from '../../server/modules/document-management/src/hosted/nest/document-semantic-map';
+import { GENERIC_SEMANTIC_PROFILE } from '../../server/modules/document-management/src/hosted/nest/document-semantic-profile';
 import { originalFixture } from './document-parsing/fixtures/document-original.fixture';
 
 function fixture() {
@@ -15,8 +17,9 @@ function fixture() {
   const leases = { claim: jest.fn().mockResolvedValue(fence), renew: jest.fn().mockResolvedValue(true),
     release: jest.fn().mockResolvedValue(true), cancel: jest.fn().mockResolvedValue(true) };
   const reader = { readDocumentOriginal: parsing.loadPublished };
-  const service = new DocumentWorkRuntimeService(authorization as never, actors as never, parsing as never, leases as never, reader as never, {} as never);
-  return { service, authorization, actors, parsing, leases, fence };
+  const semantics = { read: jest.fn().mockResolvedValue(null) };
+  const service = new DocumentWorkRuntimeService(authorization as never, actors as never, parsing as never, leases as never, reader as never, {} as never, semantics as never);
+  return { service, authorization, actors, parsing, leases, fence, semantics };
 }
 
 describe('authorized document step runtime', () => {
@@ -40,6 +43,32 @@ describe('authorized document step runtime', () => {
     await expect(f.service.readOriginal({ documentVersionId: 'DV', parseRunId: 'run' }))
       .rejects.toThrow('DOCUMENT_ORIGINAL_EXACT_BINDING_MISMATCH');
     expect(f.parsing.executeStep).not.toHaveBeenCalled();
+  });
+
+  it('requires an exact semantic revision for chapter reads and keeps pagination inside its context', async () => {
+    const f = fixture();
+    const original = originalFixture();
+    Object.assign(original.binding, { documentVersionId: 'DV', parseRunId: 'run' });
+    original.source.units[0].kind = 'heading';
+    original.source.units[0].payload = { text: 'Conditions', level: 1 };
+    const map = buildDocumentSemanticMap({ original, semanticRevision: 2, profile: GENERIC_SEMANTIC_PROFILE });
+    const loaded = { original, structuredSource: original.source, run: { parseRunId: 'run',
+      manifestArtifact: { relativePath: 'original/manifest.json', readback: 'VERIFIED', sha256: 'a'.repeat(64), byteLength: 10 } } };
+    f.parsing.loadPublished.mockResolvedValue(loaded);
+    f.semantics.read.mockResolvedValue(map);
+    const input = { documentVersionId: 'DV', parseRunId: 'run', sectionId: map.sections[0].sectionId, limit: 1 };
+    await expect(f.service.readOriginal(input)).rejects.toThrow('DOCUMENT_SEMANTIC_EXACT_REVISION_REQUIRED');
+    expect(f.semantics.read).not.toHaveBeenCalled();
+    const first = await f.service.readOriginal({ ...input, semanticRevision: 2 });
+    expect(f.semantics.read).toHaveBeenCalledWith(expect.any(Object), loaded, 2);
+    expect(first.semanticMap?.semanticRevision).toBe(2);
+    expect(first.nextOffset).toBe(1);
+    const second = await f.service.readOriginal({ ...input, semanticRevision: 2, offset: 1 });
+    expect(second.units[0].unitId).toBe('u2');
+    expect(second.nextOffset).toBeNull();
+    expect(second.coverage).toEqual(original.coverage);
+    f.semantics.read.mockRejectedValueOnce(new Error('DOCUMENT_SEMANTIC_REVISION_NOT_FOUND'));
+    await expect(f.service.readOriginal({ ...input, semanticRevision: 99 })).rejects.toThrow('DOCUMENT_SEMANTIC_REVISION_NOT_FOUND');
   });
 
   it('rechecks source permission before leasing and rejects stale run identities', async () => {

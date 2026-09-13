@@ -7,13 +7,15 @@ import { UnifiedReaderService } from '../unified-reader/unified-reader.service';
 import { EngineeringSearchProjectionWriter } from './engineering-search-projection';
 import { documentOriginalEngineeringReading } from './document-original-engineering-reading';
 import { extractEngineeringSearchIdentifiers } from './engineering-search-text';
+import { DocumentSemanticService } from './document-semantic.service';
 
 @Injectable()
 // Registered by CanonicalHostModule.register.
 // eslint-disable-next-line @darraghor/nestjs-typed/injectable-should-be-provided
 export class DocumentSourceProjectionService {
   constructor(@Inject(DRIZZLE_DATABASE) private readonly db: PostgresJsDatabase,
-    private readonly reader: UnifiedReaderService, private readonly writer: EngineeringSearchProjectionWriter) {}
+    private readonly reader: UnifiedReaderService, private readonly writer: EngineeringSearchProjectionWriter,
+    private readonly semantics: DocumentSemanticService) {}
 
   async nextPendingRun(scope: { tenantId: string; actorUserId: string; documentVersionId: string }): Promise<string | null> {
     const [pending] = await this.db.select({ parseRunId: dmDocumentParseRun.parseRunId }).from(pendingTable)
@@ -32,8 +34,10 @@ export class DocumentSourceProjectionService {
       eq(pendingTable.exactRevisionRef, parseRunId));
     // Always use the normal Reader, including retries of an already indexed run.
     const loaded = await this.reader.readDocumentOriginal(scope.documentVersionId, parseRunId, scope);
+    const semanticMap = await this.semantics.ensure(scope, loaded);
     const [pending] = await this.db.select().from(pendingTable).where(identity).limit(1);
-    if (!pending) return { status: 'NO_PENDING' as const, documentVersionId: scope.documentVersionId, parseRunId };
+    if (!pending) return { status: 'NO_PENDING' as const, documentVersionId: scope.documentVersionId, parseRunId,
+      semanticRevision: semanticMap.semanticRevision, profileRef: semanticMap.profileRef };
     const reading = documentOriginalEngineeringReading(loaded, pending.sourceNextOffset, 20);
     if (reading.documentVersionId !== scope.documentVersionId || reading.binding.parseRunId !== parseRunId)
       throw new Error('DOCUMENT_SOURCE_PROJECTION_BINDING_MISMATCH');

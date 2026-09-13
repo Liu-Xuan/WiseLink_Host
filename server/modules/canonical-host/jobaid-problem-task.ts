@@ -48,6 +48,7 @@ export interface JobAidProblemModelInput extends Record<string, unknown> {
   documentOverview: CanonicalCommonAssessmentContext['primaryDocument'] & {
     sections: Array<{ title: string; sourceRefs: string[] }>;
     original?: { binding: import('@shared/document-original.interface').DocumentOriginalBinding;
+      semanticMap?: import('@shared/document-semantic-map.interface').DocumentSemanticMap | null;
       coverage: import('@shared/document-original.interface').DocumentOriginalCoverage;
       findings: import('@shared/canonical-translation-v2.interface').TranslationStructuredSource['findings'] };
   };
