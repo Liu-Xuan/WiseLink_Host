@@ -157,6 +157,7 @@ export type EngineeringMatterPendingInputReason =
   | 'WORK_ITEM_REVISION_CHANGED'
   | 'DOCUMENT_VERSION_CHANGED'
   | 'DOCUMENT_ORIGINAL_CHANGED'
+  | 'DOCUMENT_SEMANTIC_CHANGED'
   | 'RESULT_CHANGED';
 
 export interface EngineeringMatterPendingInput {

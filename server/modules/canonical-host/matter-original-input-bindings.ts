@@ -10,8 +10,8 @@ export async function bindMatterOriginalInputs(database: Pick<PostgresJsDatabase
   const rows = await database.select({ documentVersionId: dmDocumentParseRun.documentVersionId,
     parseRunId: dmDocumentParseRun.parseRunId, parseRevision: dmDocumentParseRun.parseRevision,
     semantic: sql<EngineeringMatterOriginalInputBinding['semantic']>`(SELECT jsonb_build_object('revision',s.semantic_revision,'profileRef',s.profile_ref)
-      FROM dm_document_semantic_revision s WHERE s.tenant_id=${dmDocumentParseRun.tenantId}
-        AND s.document_version_id=${dmDocumentParseRun.documentVersionId} AND s.parse_run_id=${dmDocumentParseRun.parseRunId}
+      FROM dm_document_semantic_revision s WHERE s.tenant_id="dm_document_parse_run"."tenant_id"
+        AND s.document_version_id="dm_document_parse_run"."document_version_id" AND s.parse_run_id="dm_document_parse_run"."parse_run_id"
       ORDER BY s.semantic_revision DESC LIMIT 1)` })
     .from(dmDocumentParseRun).where(and(eq(dmDocumentParseRun.tenantId,tenantId),
       inArray(dmDocumentParseRun.documentVersionId,[...new Set(inputs.map(item => item.documentVersionId))]),

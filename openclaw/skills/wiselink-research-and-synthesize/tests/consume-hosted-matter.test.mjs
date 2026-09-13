@@ -22,6 +22,16 @@ test('Matter reads published original with exact evidence and returns its contin
     assert.deepEqual(input, { documentVersionId: 'DV-one', offset: 0, limit: 20, purpose: intent.purpose });
     return response;
   });
+  const semanticMap = { semanticRevision: 1, profileRef: 'boeing.ftd.sections.v1', binding: response.binding,
+    sections: [{ sectionId: 'conditions', headingUnitId: 'u1', bodyUnitIds: ['u2'] }] };
+  const fixed = { ...context, availableDocuments: [{ documentVersionId: 'DV-one', boundOriginal: {
+    parseRunId: 'PR-one', semantic: { revision: 1, profileRef: semanticMap.profileRef } } }] };
+  const organized = await readMatterAssessmentSources(intent, fixed, async () => ({ ...response, semanticMap }));
+  assert.deepEqual(organized.documents[0].semanticMap, semanticMap);
+  await assert.rejects(readMatterAssessmentSources(intent, fixed, async () => ({ ...response,
+    semanticMap: { ...semanticMap, semanticRevision: 2 } })), /MATTER_SEMANTIC_BINDING_MISMATCH/);
+  await assert.rejects(readMatterAssessmentSources(intent, fixed, async () => response), /MATTER_SEMANTIC_BINDING_MISMATCH/);
+  await assert.rejects(readMatterAssessmentSources(intent, context, async () => ({ ...response, semanticMap })), /MATTER_SEMANTIC_BINDING_MISMATCH/);
   assert.deepEqual(result.evidence, evidence);
   assert.equal(result.documents[0].nextReadRef, 'DOCUMENT_VERSION:DV-one:original:20');
   assert.deepEqual(result.documents[0].coverage, response.coverage);
