@@ -277,12 +277,12 @@ test('text-only protocol corrections are bounded and truncated or foreign calls 
         } : {}) } }] }), { status: 200 });
     };
     await assert.rejects(f.run(), error => {
-      assert.match(error.message, /JOBAID_MODEL_OUTPUT_FUNCTION_INVALID/);
+      assert.match(error.message, mode === 'truncated' ? /JOBAID_MODEL_OUTPUT_LENGTH/ : /JOBAID_MODEL_OUTPUT_FUNCTION_INVALID/);
       assert.equal(error.terminalAssessmentFailure?.errorCode,
-        mode === 'text' ? 'JOBAID_INCOMPLETE_TERMINAL_RESPONSE' : undefined);
+        mode === 'text' ? 'JOBAID_INCOMPLETE_TERMINAL_RESPONSE' : mode === 'truncated' ? 'JOBAID_MODEL_OUTPUT_LENGTH' : undefined);
       return true;
     });
-    assert.equal(calls, mode === 'text' ? 3 : 1);
+    assert.equal(calls, mode === 'foreign-call' ? 1 : 3);
     assert.equal(f.saves.length, 0);
   }
 });
@@ -884,4 +884,73 @@ test('the installed gateway named-tool failure settles as a known failed result 
   });
   assert.equal(requests, 1);
   assert.equal(f.saves.length, 0);
+});
+
+test('new requests bind bounded M3 policy; A survives length while only unfinished B is generated', () => persisted(async checkpoint => {
+  const a = { ...completed, roundCompletion: 'IN_PROGRESS', issues: [{ issueKey: 'a', understanding: 'A condition and limitation' }] };
+  const b = { ...completed, issues: [{ issueKey: 'b', understanding: 'B comparison' }] };
+  const f = fixture([{ action: 'SAVE_WORK', work: a }, { action: 'SAVE_WORK', work: b }, { action: 'FINISH' }],
+    { assessmentCheckpoint: checkpoint, registeredModelRefs: ['miaoda/minimax-m3'], executionModel: { modelRef: 'miaoda/minimax-m3', displayName: 'Synthetic M3', providerKind: 'BUILT_IN', settingsRevision: 1, selectedAt: '2026-09-13T00:00:00.000Z' } });
+  const request = f.dependencies.requestGateway;
+  let n = 0;
+  f.dependencies.requestGateway = async (...args) => {
+    if (++n === 2) return new Response(JSON.stringify({ choices: [{ finish_reason: 'length', message: {
+      role: 'assistant', tool_calls: [{ id: 'partial', type: 'function', function: {
+        name: 'return_wiselink_assessment_step', arguments: '{"step":{"action":"SAVE_WORK","workJson":"' } }] } }],
+      usage: { completion_tokens: 16000 } }));
+    return request(...args);
+  };
+  const result = await f.run();
+  assert.equal(result.output.workRevisionRef, 'JAWR-2');
+  assert.equal(f.saves.length, 2);
+  assert.deepEqual(JSON.parse(f.saves[0].workJson), a);
+  assert.deepEqual(JSON.parse(f.saves[1].workJson), b);
+  assert.ok(f.calls.every(call => call.max_completion_tokens === 16000));
+  const receipt = JSON.parse(f.calls[1].messages.at(-1).content);
+  assert.equal(receipt.workRevisionRef, 'JAWR-1');
+  assert.equal(receipt.content, undefined, 'saved full work is not echoed on every round');
+  assert.equal((await checkpoint.readOptional('assessment-state')).scopeAdjustments, 1);
+  assert.equal((await checkpoint.readOptional('assessment-enabled')).generationPolicy.version, 'bounded-issue-v1');
+  assert.ok(await checkpoint.readOptional('assessment-round-2.result'), 'partial response stays durable but never saved');
+}));
+
+test('exact repeated source metadata is referenced; changed conditions and new sessions receive full metadata', async () => {
+  const { projectJobAidReadReceipt } = await import('../scripts/run-jobaid-problem-assessment.mjs');
+  const registry = [];
+  const receipt = { evidence: [{ excerpt: 'Full condition' }], documents: [{
+    binding: { parseRunId: 'p1', documentVersionId: 'dv' }, semanticMap: { semanticRevision: 1, profileRef: 'ftd' },
+    findings: ['Uninterpreted figure'], coverage: { pages: 2 }, units: [{ text: 'Do not remove unless X' }], sourceLocators: ['s1'],
+  }] };
+  const first = projectJobAidReadReceipt(receipt, registry);
+  const next = projectJobAidReadReceipt(receipt, registry);
+  assert.deepEqual(next.evidence, receipt.evidence);
+  assert.deepEqual(next.documents[0].units, receipt.documents[0].units);
+  assert.equal(next.documents[0].metadataRef, first.documents[0].metadataRef);
+  assert.equal(next.documents[0].semanticMap, undefined);
+  const changed = structuredClone(receipt); changed.documents[0].findings.push('New limitation');
+  assert.deepEqual(projectJobAidReadReceipt(changed, registry).documents[0].findings, changed.documents[0].findings);
+  assert.deepEqual(projectJobAidReadReceipt(receipt, []).documents[0].semanticMap, receipt.documents[0].semanticMap);
+} );
+
+test('historical checkpoint retains its original request budget', () => persisted(async checkpoint => {
+  const f = fixture([new Error('lost')], { assessmentCheckpoint: checkpoint, registeredModelRefs: ['miaoda/minimax-m3'], executionModel: { modelRef: 'miaoda/minimax-m3', displayName: 'Synthetic M3', providerKind: 'BUILT_IN', settingsRevision: 1, selectedAt: '2026-09-13T00:00:00.000Z' } });
+  await checkpoint.writeOnce('assessment-enabled', { version: 1, startedAt: Date.now(), binding: {
+    operation: 'EVALUATE_JOBAID', modelInput: modelInput(), sessionDiscriminator: f.options.sessionDiscriminator,
+    executionModel: f.options.executionModel,
+  } });
+  await assert.rejects(f.run(), /lost/);
+  assert.equal(f.calls[0].max_completion_tokens, 524288);
+}));
+
+test('Review requester does not retry either known missing-function signature as transient 502', async () => {
+  const { createHostedReviewRequester } = await import('../scripts/request-hosted-gateway.mjs');
+  for (const message of ['tool_choice=required was not satisfied by the agent response',
+    'tool_choice required a return_wiselink_assessment_step tool call, but the agent did not produce one']) {
+    let requests = 0;
+    const request = createHostedReviewRequester({ requestGateway: async () => {
+      requests++; return new Response(JSON.stringify({ error: { type: 'api_error', message } }), { status: 502 });
+    }, observeProgress: async () => {}, wait: async () => assert.fail('must not retry') });
+    await assert.rejects(request('http://localhost', { signal: new AbortController().signal }), /REVIEW_TOOL_CHOICE_NOT_SATISFIED/);
+    assert.equal(requests, 1);
+  }
 });

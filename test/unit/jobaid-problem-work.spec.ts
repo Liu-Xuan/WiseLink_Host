@@ -451,6 +451,16 @@ describe('JobAid problem work keeps method semantics, delivery and incremental s
     expect(reading.content.lead).toBe(third.understanding);
   });
 
+  test('materializes A then B and a final summary without re-emitting earlier issues', () => {
+    const first = materializeJobAidWork({ ...update([issue('a')]), roundCompletion: 'IN_PROGRESS' }, context);
+    const second = materializeJobAidWork({ ...update([issue('b')]), roundCompletion: 'IN_PROGRESS' }, { ...context, previous: first });
+    expect(second.issues.find(item => item.issueKey === 'a')).toEqual(first.issues[0]);
+    const final = materializeJobAidWork(update([]), { ...context, previous: second });
+    expect(final.issues).toEqual(second.issues);
+    expect(final.roundCompletion).toBe('COMPLETE_WITH_OPEN_QUESTIONS');
+    expect(() => materializeJobAidWork(update([]), context)).toThrow();
+  });
+
   test('retains untouched issues by default and requires explicit, unambiguous retirement', () => {
     const first = materializeJobAidWork(update(), context);
     const revised = materializeJobAidWork(update([issue('a', '修订后的认识')]), {

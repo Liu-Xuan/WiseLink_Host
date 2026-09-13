@@ -21,11 +21,37 @@ import { classifyHostedGatewayFailure, requestHostedGateway } from './request-ho
 export const JOBAID_PROBLEM_TASK_SCHEMA = 'wiselink.jobaid-problem-task.v2';
 export const MATTER_JOBAID_TASK_SCHEMA = 'wiselink.matter-jobaid-task.v2';
 const FUNCTION = 'return_wiselink_assessment_step';
+export const JOBAID_GENERATION_POLICY = Object.freeze({
+  version: 'bounded-issue-v1', requestMaxCompletionTokens: 16000,
+  payloadTargetTokens: [2000, 4000], maxScopeAdjustments: 2,
+  basis: 'Application budget; 16000 is an observation on one Hosted M3 request, not a universal model limit.',
+});
+
+// Drop only byte-equivalent repeated metadata within this exact native session.
+// Persist the registry with the messages; a new task/session starts with full data.
+export function projectJobAidReadReceipt(receipt, registry) {
+  if (!Array.isArray(receipt.documents)) return receipt;
+  return { ...receipt, documents: receipt.documents.map(document => {
+    if (!document.binding?.parseRunId) return document;
+    const metadata = { binding: document.binding, semanticMap: document.semanticMap,
+      findings: document.findings, coverage: document.coverage };
+    const prior = registry.findIndex(item => isDeepStrictEqual(item, metadata));
+    if (prior < 0) {
+      registry.push(metadata);
+      return { ...document, metadataRef: `original-context-${registry.length}` };
+    }
+    const { semanticMap, findings, coverage, ...range } = document;
+    return { ...range, metadataRef: `original-context-${prior + 1}`,
+      metadataStatus: 'UNCHANGED_IN_THIS_SESSION',
+      semanticBinding: semanticMap ? { semanticRevision: semanticMap.semanticRevision, profileRef: semanticMap.profileRef } : null };
+  }) };
+}
+
 const { work: _workShape, ...stepProperties } = JOBAID_STEP_SHAPE.properties;
 const transportStepShape = {
   ...JOBAID_STEP_SHAPE,
   properties: { ...stepProperties, workJson: { type: 'string', minLength: 2,
-    description: 'Complete work update encoded as JSON text. Preserve arrays, nulls and every original field.' } },
+    description: 'Bounded complete issue update encoded as JSON text. Unchanged issues are retained by Host; supplied issues replace whole issues. Preserve arrays and nulls.' } },
 };
 
 export function parseJobAidWorkJson(value) {
@@ -188,20 +214,27 @@ export async function invokeHostedJobAidProblemModel(
   let inputUnits = 0;
   let outputUnits = 0;
   const checkpoint = options.assessmentCheckpoint;
+  let generationPolicy = JOBAID_GENERATION_POLICY;
+  let scopeAdjustments = 0;
+  let sourceMetadata = [];
   if (checkpoint) {
     const binding = { operation, modelInput, sessionDiscriminator: options.sessionDiscriminator,
       executionModel: options.executionModel ?? null };
     const existing = await checkpoint.readOptional('assessment-enabled');
     if (existing && !isDeepStrictEqual(existing.binding, binding)) throw new Error('JOBAID_CHECKPOINT_BINDING_MISMATCH');
-    if (existing) startedAt = existing.startedAt;
-    else await checkpoint.writeOnce('assessment-enabled', { version: 1, binding, startedAt });
+    if (existing) {
+      startedAt = existing.startedAt;
+      generationPolicy = existing.generationPolicy ?? null; // historical requests keep their recorded budget
+    } else await checkpoint.writeOnce('assessment-enabled', { version: 1, binding, startedAt, generationPolicy });
   }
   let round = 1;
   const restored = await checkpoint?.readOptional('assessment-state');
   if (restored) {
     ({ round, messages, expectedWorkRevision, saved, corrections, inputUnits, outputUnits } = restored);
+    scopeAdjustments = restored.scopeAdjustments ?? 0;
+    sourceMetadata = restored.sourceMetadata ?? [];
   } else await checkpoint?.write('assessment-state', { round, messages,
-    expectedWorkRevision, saved, corrections, inputUnits, outputUnits });
+    expectedWorkRevision, saved, corrections, inputUnits, outputUnits, scopeAdjustments, sourceMetadata });
   const taskDeadlineMs = options.taskDeadline === undefined ? Infinity : Date.parse(options.taskDeadline);
   if (Number.isNaN(taskDeadlineMs)) throw new Error('JOBAID_TASK_DEADLINE_INVALID');
   // Matter already has an absolute Host deadline. Its model budget measures
@@ -269,8 +302,9 @@ export async function invokeHostedJobAidProblemModel(
     )
       throw new Error('JOBAID_WORK_SAVE_READBACK_INVALID');
     expectedWorkRevision = result.workRevision;
-    saved = result;
-    return result;
+    saved = { requestId, workRevisionRef: result.workRevisionRef, workRevision: result.workRevision,
+      roundCompletion: result.roundCompletion };
+    return saved;
   };
   for (; round <= 64; round += 1) {
     await options.heartbeat?.();
@@ -294,7 +328,10 @@ export async function invokeHostedJobAidProblemModel(
         body: JSON.stringify({
           model: requestedModel,
           user: `initial:${options.sessionDiscriminator}`,
-          messages,
+          messages: generationPolicy ? messages.map(message => message.role !== 'system' ? message : ({ ...message, content: message.content + '\n' + JSON.stringify({
+            generationPolicy, scopeAdjustment: scopeAdjustments, expectedWorkRevision, savedWork: saved,
+            focus: scopeAdjustments ? 'Narrow only the unfinished analysis to its smallest independently meaningful issue or comparison. Preserve all saved work and required source conditions; do not continue a truncated JSON string.' : 'Address the current trigger/sourceChanges with one complete meaningful issue update, then SAVE_WORK promptly. Do not rewrite unchanged issues. Continue necessary investigation and perform whole-work consistency before completion.',
+          }) })) : messages,
           tools: [
             {
               type: 'function',
@@ -316,7 +353,7 @@ export async function invokeHostedJobAidProblemModel(
           n: 1,
           stream: false,
           ...(options.executionModel?.modelRef === 'miaoda/minimax-m3'
-            ? { max_completion_tokens: M3_MAX_COMPLETION_TOKENS }
+            ? { max_completion_tokens: generationPolicy?.requestMaxCompletionTokens ?? M3_MAX_COMPLETION_TOKENS }
             : {}),
         }),
         signal: AbortSignal.timeout(Math.min(remainingMs, 15 * 60_000)),
@@ -330,7 +367,7 @@ export async function invokeHostedJobAidProblemModel(
     // response remains unknown; a failed Host read can reuse this exact result.
     const response = checkpoint ? await checkpoint.remoteStep({
       step: `assessment-round-${round}`, args: { operation, messages, executionModel: options.executionModel ?? null,
-        sessionDiscriminator: options.sessionDiscriminator }, ambiguousCommit: false, perform: performRequest,
+        sessionDiscriminator: options.sessionDiscriminator, ...(generationPolicy ? { generationPolicy, scopeAdjustments } : {}) }, ambiguousCommit: false, perform: performRequest,
     }) : await performRequest();
     await accountRound(round);
     const { raw } = response;
@@ -353,6 +390,11 @@ export async function invokeHostedJobAidProblemModel(
         operation,
         round,
         requestedToolChoice: toolChoice,
+        requestMaxCompletionTokens: options.executionModel?.modelRef === 'miaoda/minimax-m3' ? (generationPolicy?.requestMaxCompletionTokens ?? M3_MAX_COMPLETION_TOKENS) : null,
+        generationPolicyVersion: generationPolicy?.version ?? null,
+        scopeAdjustments,
+        functionArgumentsBytes: typeof payload?.choices?.[0]?.message?.tool_calls?.[0]?.function?.arguments === 'string'
+          ? Buffer.byteLength(payload.choices[0].message.tool_calls[0].function.arguments) : null,
         httpStatus: response.status,
         finishReason: payload?.choices?.[0]?.finish_reason ?? null,
         inputTokens: payload?.usage?.prompt_tokens ?? null,
@@ -383,6 +425,30 @@ export async function invokeHostedJobAidProblemModel(
       }
       throw error;
     }
+    // Only an explicit completion reason establishes truncation. Never infer
+    // length from generic 502/tool-choice failures or repair partial arguments.
+    if (payload.choices?.length === 1 && payload.choices[0].finish_reason === 'length' && generationPolicy) {
+      if (scopeAdjustments >= generationPolicy.maxScopeAdjustments) {
+        const error = new Error('JOBAID_MODEL_OUTPUT_LENGTH');
+        error.terminalAssessmentFailure = {
+          errorCode: 'JOBAID_MODEL_OUTPUT_LENGTH',
+          provenance: {
+            modelVersion: `configured-route:${options.executionModel?.modelRef ?? options.configuredModelVersion}`,
+            promptVersion: 'wiselink-jobaid-problem@v2', skillVersion: WISELINK_SKILL_VERSION,
+            toolVersions: { [WISELINK_HOST_MCP_NAME]: WISELINK_HOST_MCP_VERSION, 'jobaid-problem-protocol': '2' },
+            runMetrics: { durationMs: Date.now() - startedAt, inputUnits, outputUnits },
+          },
+        };
+        throw error;
+      }
+      scopeAdjustments += 1;
+      // Retain the latest source/save receipt. The native session holds earlier
+      // complete context; the incomplete output is never resubmitted as a tool.
+      await options.observeCandidateRejection?.({ correctionNo: scopeAdjustments, code: 'JOBAID_MODEL_OUTPUT_LENGTH' });
+      await checkpoint?.write('assessment-state', { round: round + 1, messages,
+        expectedWorkRevision, saved, corrections, inputUnits, outputUnits, scopeAdjustments, sourceMetadata });
+      continue;
+    }
     if (shape.hasAnalysis || payload.choices?.length !== 1)
       throw new Error('JOBAID_MODEL_OUTPUT_CHANNEL_INVALID');
     const choice = payload.choices[0];
@@ -403,7 +469,7 @@ export async function invokeHostedJobAidProblemModel(
       }) }];
       await options.observeCandidateRejection?.({ correctionNo: corrections, code: 'JOBAID_MODEL_OUTPUT_FUNCTION_REQUIRED' });
       await checkpoint?.write('assessment-state', { round: round + 1, messages,
-        expectedWorkRevision, saved, corrections, inputUnits, outputUnits });
+        expectedWorkRevision, saved, corrections, inputUnits, outputUnits, scopeAdjustments, sourceMetadata });
       continue;
     }
     if (choice.finish_reason === 'stop' && message?.role === 'assistant' &&
@@ -569,11 +635,11 @@ export async function invokeHostedJobAidProblemModel(
         role: 'tool',
         tool_call_id: call.id,
         name: FUNCTION,
-        content: JSON.stringify(receipt),
+        content: JSON.stringify(generationPolicy ? projectJobAidReadReceipt(receipt, sourceMetadata) : receipt),
       },
     ];
     await checkpoint?.write('assessment-state', { round: round + 1, messages,
-      expectedWorkRevision, saved, corrections, inputUnits, outputUnits });
+      expectedWorkRevision, saved, corrections, inputUnits, outputUnits, scopeAdjustments, sourceMetadata });
   }
   throw new Error('JOBAID_MODEL_BUDGET_EXHAUSTED');
 }

@@ -15,6 +15,12 @@
 | 验证与界限 | 新语义RLS/CAS/不可变/准确读回真实PG通过；Matter真实PG4组通过；章节/Reader/JobAid续接45项通过；server类型通过。原PDF每步读取与最终整包组装仍有成本；真实SB/H2、语义更正后的业务续接和首份新工程工作仍待完成；首批中文已保存并经Reader实际阅读，完整中文仍未完成 |
 
 
+### 2026-09-13 c94 本地实现（尚未安装）
+
+按用户新设计完成有界问题生成、简短SAVE回执、同会话同版本完全相同metadata去重；原文、units、SourceRef及变化限制保持。新增策略随assessment-enabled和每轮参数持久化；旧checkpoint缺策略时保留524288。可靠length不执行部分JSON，最多两次范围调整并计入既有总预算；耗尽走Matter既有FAILED收尾，已保存工作保留。Review同类函数缺失502不作瞬时HTTP重试。后继恢复读取同步识别策略参数，拒绝length载荷作为可恢复候选。
+
+本地JobAid 38项和Host物化17项已通过，完整Skill检查312项通过（随后补充两种Review签名同类测试）。仅Skill更新，Host无需重复发布。尚无c94线上工作或新FTD workRef，安装及正常后继验收继续进行。
+
 ### 2026-09-13 c93 后续诊断：原生截断被网关函数错误覆盖
 
 继续只读核查同一AQ-8bb65240，而非发起新业务。实际会话位于Hosted工程profile的sessions目录，sessionId为18c4daea-ad64-46ec-9809-78e622d75811；默认CLI只列main且sessionKey已小写化，先前默认列表无结果不代表记录不存在。

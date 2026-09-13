@@ -50,10 +50,9 @@ export function createHostedReviewRequester({ requestGateway = requestHostedGate
           response = { status: response.status, ok: response.ok, text: async () => body };
           let payload;
           try { payload = JSON.parse(body); } catch { /* Existing HTTP handling owns malformed bodies. */ }
-          if (payload?.error?.type === 'api_error' &&
-              payload.error.message === 'tool_choice=required was not satisfied by the agent response') {
-            throw new Error('REVIEW_TOOL_CHOICE_NOT_SATISFIED');
-          }
+          const failure = classifyHostedGatewayFailure(payload);
+          if (failure === 'TOOL_CHOICE_NOT_SATISFIED') throw new Error('REVIEW_TOOL_CHOICE_NOT_SATISFIED');
+          if (failure !== 'UNCLASSIFIED') return response;
         }
         retryCode = `REVIEW_GATEWAY_HTTP_${response.status}`;
       } catch (cause) {
