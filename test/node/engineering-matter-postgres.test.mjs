@@ -1203,6 +1203,9 @@ async function resetDatabase(sql) {
   await sql.unsafe(
     'GRANT SELECT ON dm_document_version, dm_publication_family TO service_role',
   );
+  await sql.unsafe(
+    'GRANT UPDATE ON dm_document_version TO service_role',
+  );
   await sql.unsafe('GRANT UPDATE ON dm_publication_family TO service_role');
   await sql.unsafe(
     'GRANT INSERT ON engineering_matter, engineering_matter_revision, engineering_matter_revision_work_item TO service_role',
@@ -2202,6 +2205,16 @@ async function assertMatterSuccessorRecovery(sql, owner, service, baseInput) {
 
   const pendingBasis = await owner.workingService.resolveWorkingBasis(request.matterId, owner.actor);
   await seedMatterOriginalParse(sql, { ...scope, documentVersionId: pendingBasis.currentInputs[0].documentVersionId }, 2);
+  const { DocumentSemanticService } = require('../../server/modules/canonical-host/document-semantic.service.ts');
+  const { DocumentSemanticRevisionRepository } = require('../../server/modules/canonical-host/document-semantic-revision.repository.ts');
+  const { buildDocumentSemanticMap } = require('../../server/modules/document-management/src/hosted/nest/document-semantic-map.ts');
+  const { GENERIC_SEMANTIC_PROFILE } = require('../../server/modules/document-management/src/hosted/nest/document-semantic-profile.ts');
+  const semanticOriginal = matterOriginalReceiptFixture(pendingBasis.currentInputs[0].documentVersionId);
+  const semanticMap = buildDocumentSemanticMap({original:semanticOriginal,semanticRevision:1,profile:GENERIC_SEMANTIC_PROFILE});
+  const semanticScope = {...scope,documentVersionId:semanticOriginal.binding.documentVersionId};
+  service.semantics = new DocumentSemanticService(owner.database,new DocumentSemanticRevisionRepository(owner.database));
+  await owner.runtime(() => owner.working.withActorScope(scope.actorUserId, () =>
+    new DocumentSemanticRevisionRepository(owner.database).append(semanticScope,semanticOriginal,semanticMap,0,'b'.repeat(64))));
   const original = await owner.runtime(() => service.reserveJobAid({ ...reserve, idempotencyKey: 'recovery-original' }));
   const oldScope = { ...scope, attemptRef: original.task.operationRef };
   const claim = await owner.runtime(() => service.claim(oldScope));
@@ -2238,16 +2251,20 @@ async function assertMatterSuccessorRecovery(sql, owner, service, baseInput) {
   const newClaim = await owner.runtime(() => service.claim(newScope));
   const fence = { ...newScope, leaseToken: newClaim.leaseToken, leaseGeneration: newClaim.leaseGeneration };
   assert.equal(newClaim.task.workingBasis.inputs[0].original.parseRunId, 'PR-TEST-2');
+  assert.equal(newClaim.task.workingBasis.inputs[0].original.semantic.revision,1);
+  await owner.runtime(() => owner.working.withActorScope(scope.actorUserId, () =>
+    new DocumentSemanticRevisionRepository(owner.database).append(semanticScope,semanticOriginal,{...semanticMap,semanticRevision:2},1,'b'.repeat(64))));
   await seedMatterOriginalParse(sql, { ...scope, documentVersionId }, 3);
   const changedBasis = await owner.workingService.readWorking(request.matterId, owner.actor);
   assert.ok(changedBasis.pendingInputs.some(item => item.reasons.includes('DOCUMENT_ORIGINAL_CHANGED')));
-  const originalSource = originalFixture(); originalSource.binding.documentVersionId = documentVersionId;
+  const originalSource = matterOriginalReceiptFixture(documentVersionId);
   const reader = { readDocumentOriginal: async (_dv, run) => {
     assert.equal(run, 'PR-TEST-2');
-    return { original: originalSource, structuredSource: originalSource.source, run: { documentVersionId,
+    return { original: originalSource, structuredSource: originalSource.source, run: { tenantId:scope.tenantId,documentVersionId,
       parseRunId:'PR-TEST-2',parseRevision:2,manifestArtifact:{relativePath:'original/manifest.json',readback:'VERIFIED',sha256:'b'.repeat(64),byteLength:100} } };
   } };
   assert.equal((await owner.runtime(() => service.readOriginal({ ...fence,documentVersionId,offset:0,limit:1,purpose:'frozen original after new publication' },reader))).binding.parseRunId,'PR-TEST-2');
+  assert.equal((await owner.runtime(() => service.readOriginal({...fence,documentVersionId,offset:0,limit:1,purpose:'fixed semantic context'},reader))).semanticMap.semanticRevision,1);
   const sourceSearch = new DocumentSourceSearchService(owner.database,reader);
   assert.equal((await sourceSearch.search('12 kPa',owner.actor,'CURRENT')).hits.length,0);
   assert.equal((await sourceSearch.search('12 kPa',owner.actor,'HISTORY')).hits.length,1);
@@ -2330,17 +2347,22 @@ async function seedMatterOriginalParse(sql, scope, revision) {
 
 // Constructed parse publication: real selection SQL, Matter leases and recovery,
 // not the separate document publisher or actual plugin/file authorization.
-async function assertBoundOriginalReceipt(sql, owner, service, attemptId, scope) {
+function matterOriginalReceiptFixture(documentVersionId) {
   const original = originalFixture();
-  original.binding.documentVersionId = scope.documentVersionId;
+  original.binding.documentVersionId = documentVersionId;
   for (let index = 2; index < 26; index++) {
     const ref = `SR-EXTRA-${index}`;
     original.source.units.push({ ...original.source.units[0], unitId: `unit-extra-${index}`, order: index,
       sourceRefIds: [ref], payload: { text: `Additional original condition ${index}.` } });
     original.source.sourceLocators.push({ ...original.source.sourceLocators[0], sourceRefId: ref });
   }
+  return original;
+}
+
+async function assertBoundOriginalReceipt(sql, owner, service, attemptId, scope) {
+  const original = matterOriginalReceiptFixture(scope.documentVersionId);
   const loaded = { original, structuredSource: original.source, run: {
-    documentVersionId: scope.documentVersionId, parseRunId: original.binding.parseRunId, parseRevision: 2,
+    tenantId: scope.tenantId, documentVersionId: scope.documentVersionId, parseRunId: original.binding.parseRunId, parseRevision: 2,
     manifestArtifact: { relativePath: 'original/manifest.json', readback: 'VERIFIED', sha256: 'b'.repeat(64), byteLength: 100 },
   } };
   await sql`INSERT INTO engineering_search_projection_pending (tenant_id,exact_revision_ref,owner_kind,owner_id,subject_id,last_error)
