@@ -61,8 +61,10 @@ export class DocumentStepLeaseRepository {
   }
 
   async release(scope: DocumentParseScope, fence: DocumentStepFence): Promise<void> {
+    // A step can publish/fail before its finally block; terminal rows are immutable.
     await this.db.update(dmDocumentParseRun).set({ leaseOwner: null, leaseToken: null, leaseExpiresAt: null })
-      .where(and(owned(scope, fence.parseRunId), fenced(fence)));
+      .where(and(owned(scope, fence.parseRunId), fenced(fence),
+        inArray(dmDocumentParseRun.status, ['RUNNING', 'STAGING'])));
   }
 
   /** Caller must use the normal document write authorization before cancellation. */

@@ -1,10 +1,11 @@
 import { readOriginalHtmlTable } from './document-original-html-table';
+import { originalPageLayout } from './document-original-layout';
 import type { DocumentOriginalBinding, DocumentOriginalResult } from '@shared/document-original.interface';
 import type { TranslationStructuredSourceUnit } from '@shared/canonical-translation-v2.interface';
 import type { DocumentPdfExtraction } from './document-original-pdf';
 import { matchOriginalText, normalizeOriginalWhitespace, readOriginalMarkdownTable } from './document-original-text';
 
-interface Candidate { kind: 'paragraph' | 'heading' | 'table'; text: string; payload: Record<string, unknown> }
+interface Candidate { kind: 'paragraph' | 'heading' | 'table'; text: string; payload: Record<string, unknown>; fallbackOnly?: boolean }
 
 /** Plugin organization is accepted only where it exactly agrees with the same PDF
  * text layer. Unmatched original ranges remain readable and specifically flagged.
@@ -15,24 +16,38 @@ export function composeDocumentOriginal(input: {
   markdown: string;
   producer: DocumentOriginalResult['producer'];
 }): DocumentOriginalResult {
-  const pages = [...input.extraction.pages].sort((a, b) => a.pageIndex - b.pageIndex);
+  const layouts = [...input.extraction.pages].sort((a, b) => a.pageIndex - b.pageIndex).map(originalPageLayout);
+  const pages = layouts.map(layout => layout.page);
   const unresolved: DocumentOriginalResult['coverage']['unresolvedRanges'] = [];
   const units: TranslationStructuredSourceUnit[] = [];
   const sourceLocators: DocumentOriginalResult['source']['sourceLocators'] = [];
   const locations: DocumentOriginalResult['locations'] = [];
   const spans: Array<{ pageIndex: number; start: number; end: number }> = [];
+  const lines: Array<{ text: string; start: number; end: number; pageIndex: number }> = [];
+  const breaks: number[] = [];
   let comparison = '';
   for (const page of pages) {
     if (comparison) comparison += ' ';
     const start = comparison.length;
+    breaks.push(start);
+    for (const line of layouts.find(layout => layout.page.pageIndex === page.pageIndex)!.lines) {
+      lines.push({ ...line, start: start + line.start, end: start + line.end, pageIndex: page.pageIndex });
+      if (line.breakBefore) breaks.push(start + line.start);
+    }
     comparison += normalizeOriginalWhitespace(page.text);
     spans.push({ pageIndex: page.pageIndex, start, end: comparison.length });
   }
   const organized: Array<{ start: number; end: number; candidate: Candidate }> = [];
   for (const candidate of markdownCandidates(input.markdown)) {
-    const match = matchOriginalText(candidate.text, pages);
+    const headingLines = candidate.kind === 'heading' ? lines.filter(line => line.text === normalizeOriginalWhitespace(candidate.text)) : [];
+    if (candidate.fallbackOnly && !headingLines.length) continue;
+    const match = headingLines.length ? {
+      status: headingLines.length === 1 ? 'UNIQUE' : 'AMBIGUOUS',
+      candidates: headingLines.map(line => ({ start: line.start, end: line.end, pageIndexes: [line.pageIndex] })),
+    } : matchOriginalText(candidate.text, pages);
     const found = match.candidates[0];
     if (match.status !== 'UNIQUE' || organized.some(range => range.start < found.end && range.end > found.start)) {
+      if (candidate.fallbackOnly) continue;
       unresolved.push({ pageIndexes: [...new Set(match.candidates.flatMap(item => item.pageIndexes))],
         unitIds: [], reason: 'TEXT_CONFLICT', message: match.status === 'AMBIGUOUS'
           ? '插件片段对应多处原文，未指定精确位置；保留 PDF 文本层供阅读。'
@@ -85,11 +100,18 @@ export function composeDocumentOriginal(input: {
     if (!candidate) unresolved.push({ pageIndexes, unitIds: [unitId], reason: 'STRUCTURE_UNCERTAIN',
       message: '此范围直接保留 PDF 文本层；插件未给出可验证的对应结构，原页仍为复核依据。' });
   };
+  const addFallback = (start: number, end: number) => {
+    let cursor = start;
+    for (const boundary of [...new Set(breaks)].filter(value => value > start && value < end).sort((a, b) => a - b)) {
+      add(cursor, boundary); cursor = boundary;
+    }
+    add(cursor, end);
+  };
   let cursor = 0;
   for (const range of organized.sort((a, b) => a.start - b.start)) {
-    add(cursor, range.start); add(range.start, range.end, range.candidate); cursor = range.end;
+    addFallback(cursor, range.start); add(range.start, range.end, range.candidate); cursor = range.end;
   }
-  add(cursor, comparison.length);
+  addFallback(cursor, comparison.length);
   for (let page = 0; page < input.extraction.pageCount; page++) {
     const extracted = pages.find(item => item.pageIndex === page);
     if (extracted && (extracted.imagePaintOperations === undefined || extracted.imagePaintOperations === null || extracted.imagePaintOperations > 0))
@@ -127,6 +149,11 @@ function markdownCandidates(markdown: string): Candidate[] {
       while (index < lines.length && lines[index].trim() && lines[index].includes('|')) group.push(lines[index++]);
       const table = readOriginalMarkdownTable(group);
       candidates.push({ kind: 'table', text: [table.header, ...table.rows].flat().join(' '), payload: { rawMarkdown: group.join('\n') } });
+      // A rejected pseudo-table can still contain an independently verifiable
+      // section title. Never adopt its incomplete body/cell arrangement.
+      const labels = table.header.filter(cell => cell.trim());
+      if (labels.length === 1) candidates.push({ kind: 'heading', text: labels[0],
+        payload: { text: labels[0], level: 2 }, fallbackOnly: true });
       continue;
     }
     const heading = /^(#{1,6})\s+(.+)$/.exec(lines[index]);
