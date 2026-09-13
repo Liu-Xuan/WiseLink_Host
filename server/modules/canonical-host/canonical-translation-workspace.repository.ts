@@ -1052,8 +1052,12 @@ export class CanonicalTranslationWorkspaceRepository {
       (entry) =>
         entry.generationRequestRef === revision.provenance.generationRequestRef,
     );
-    if (!request || request.status === 'SUPERSEDED')
-      throw new Error('TRANSLATION_GENERATION_SUPERSEDED');
+    // Superseding a dispatch revokes future saves, not immutable candidates already
+    // committed under its valid fence. The current fenced transaction and dependency
+    // checks above authorize reviewing that saved content under the new lease.
+    if (!request || !request.blockIds.includes(revision.blockId) ||
+        !['GENERATE', 'CORRECT', 'REUSE'].includes(request.purpose))
+      throw new Error('TRANSLATION_GENERATION_SOURCE_INVALID');
     const block = workspace.plan.blocks.find(
       (entry) => entry.blockId === row.blockId,
     )!;

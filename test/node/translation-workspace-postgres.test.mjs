@@ -993,3 +993,48 @@ test('semantic object-value correction preserves the previous candidate and fixe
     assert.equal(body.find(revision => revision.selectedForReading).candidate.elements[0].translatedText, corrected);
   } finally { await sql.end({ timeout: 5 }); }
 });
+
+// Constructed replay of the actual rev6 pattern: partial multi-block GENERATE, lease advance, then CHECK.
+test('saved block remains checkable after its partial generation is superseded by a new lease', { skip: !databaseUrl, concurrency: false }, async () => {
+  const url = new URL(databaseUrl); assert.equal(url.hostname, '127.0.0.1');
+  assert.match(url.pathname, /^\/wiselink_translation_v2_test_[a-z0-9_]+$/u);
+  const sql = postgres(databaseUrl, { max: 1, onnotice() {} });
+  try {
+    await reset(sql);
+    const repository = new CanonicalTranslationWorkspaceRepository(drizzle(sql)), plan = fixturePlan();
+    await sql`INSERT INTO work_item VALUES ('WI-test','tenant-test','dv-test','pkg-test',${plan.source.parsedArtifact.ref},${plan.source.parsedArtifact.sha256},'engineer-test',1)`;
+    const workspace = await repository.prepare({ tenantId: 'tenant-test', workItemId: 'WI-test', plan });
+    const active = await seedAttempt(sql, workspace, 'saved-old-generation', 'miaoda/minimax-m3', { documentProducer: 'OFFICIAL_PLUGIN' });
+    const oldFence = { tenantId: 'tenant-test', workItemId: 'WI-test', workspaceId: workspace.workspaceId,
+      attemptRef: active.task.operationRef, principalId: 'service-principal', leaseToken: active.leaseToken, leaseGeneration: 1 };
+    await repository.attachAttempt(oldFence);
+    const request = await repository.registerGeneration({ ...oldFence, clientRequestId: 'partial', blockIds: ['b1', 'b2'],
+      purpose: 'GENERATE', targetBlockRevisionId: null, dependencies: translationBatchDependenciesV2(workspace, ['b1', 'b2']) });
+    const producer = { kind: 'OFFICIAL_PLUGIN', instanceId: 'wl-document-translate', pluginVersion: '1.0.11', actionKey: 'translate', concreteModel: null };
+    const execution = { producer, promptVersion: 'wiselink-document-translation@1', providerRequestId: null, generatedAt: null, usage: { inputTokens: null, outputTokens: null } };
+    const candidate = { blockId: 'b2', elements: [{ elementId: 'e1', kind: 'paragraph', translatedText: '除非指示在 5 秒后仍然存在，否则不得更换组件。', anchorIds: ['a2'] }] };
+    const [saved] = await repository.saveCandidates({ ...oldFence, generationRequestRef: request.generationRequestRef, candidates: [candidate], actualExecution: execution });
+    await repository.checkAndSelect({ ...oldFence, blockRevisionId: saved.blockRevisionId, expectedRowVersion: saved.rowVersion,
+      check: checkTranslationBlockV2({ plan, candidate }) });
+    const newToken = randomUUID();
+    await sql`UPDATE action_attempt SET lease_generation=2, lease_token=${newToken} WHERE attempt_id=${active.task.actionAttemptId}`;
+    const fence = { ...oldFence, leaseToken: newToken, leaseGeneration: 2 };
+    await repository.attachAttempt(fence);
+    assert.equal((await repository.readSnapshot(fence)).workspace.generationRequests[0].status, 'SUPERSEDED');
+    let checks = 0;
+    const { CanonicalTranslationV2PluginService } = require('../../server/modules/canonical-host/canonical-translation-v2-plugin.service.ts');
+    const service = new CanonicalTranslationV2PluginService(repository, {
+      async checkTranslation(input, assertActive) { await assertActive(); checks++;
+        return { review: { blockId: input.blockId, issues: [] }, producer: { ...producer, instanceId: 'wl-document-translation-check', pluginVersion: '1.0.26', actionKey: 'textToJson' } }; },
+      async translateProse() { throw new Error('SAVED_BLOCK_MUST_NOT_BE_REGENERATED'); },
+    }, null);
+    const result = await service.executeStep({ fence, requestId: 'new-lease-check', assertAuthorized: async () => {} });
+    assert.equal(result.status, 'PROGRESSED'); assert.equal(checks, 1);
+    const state = await repository.readSnapshot(fence);
+    assert.equal(state.revisions.length, 1); assert.equal(state.revisions[0].selectedForReading, true);
+    assert.deepEqual(state.revisions[0].candidate, saved.candidate);
+    assert.equal(state.workspace.generationRequests[0].status, 'SUPERSEDED', 'old request is not revived');
+    await assert.rejects(repository.assertOfficialExecution(oldFence), /LEASE_FENCE_REJECTED/);
+    await assert.rejects(repository.saveCandidates({ ...fence, generationRequestRef: request.generationRequestRef, candidates: [candidate], actualExecution: execution }), /GENERATION/);
+  } finally { await sql.end({ timeout: 5 }); }
+});

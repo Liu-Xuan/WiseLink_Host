@@ -17,6 +17,37 @@ function numeric(value: unknown): number {
   return typeof value === 'number' && Number.isSafeInteger(value) ? value : -1;
 }
 
+/** Both native V2 and the official-parser original use explicit zero-based cell positions. */
+function cellStart(cell: Record<string, unknown>): number {
+  if (
+    cell.columnStart !== undefined &&
+    cell.columnIndex !== undefined &&
+    cell.columnStart !== cell.columnIndex
+  )
+    return -1;
+  return numeric(cell.columnStart ?? cell.columnIndex);
+}
+function sourceColumnCount(payload: Record<string, unknown>): number {
+  if (payload.columnCount !== undefined) return numeric(payload.columnCount);
+  if (payload.layout !== 'grid') return -1;
+  const cells = records(payload.rowGroups).flatMap((group) =>
+    records(group.value.rows).flatMap((row) => records(row.value.cells)),
+  );
+  if (
+    !cells.length ||
+    cells.some(
+      (cell) => cellStart(cell.value) < 0 || numeric(cell.value.colSpan) < 1,
+    )
+  )
+    return -1;
+  // Derive the extent from actual occupied columns, never from text or a guessed header row.
+  return cells.reduce(
+    (extent, cell) =>
+      Math.max(extent, cellStart(cell.value) + numeric(cell.value.colSpan)),
+    0,
+  );
+}
+
 /** Row, column, continuation and footnote ownership come only from source payload. */
 export function SemanticSourceGrid({
   payload,
@@ -33,7 +64,7 @@ export function SemanticSourceGrid({
   selectedAnchors: string[];
   onFocus: (ids: string[]) => void;
 }) {
-  const columnCount: number = numeric(payload.columnCount);
+  const columnCount: number = sourceColumnCount(payload);
   const groups = records(payload.rowGroups).sort(
     (a, b) => numeric(a.value.order) - numeric(b.value.order),
   );
@@ -53,9 +84,9 @@ export function SemanticSourceGrid({
       const cells: ReactNode[] = [];
       let cursor: number = 0;
       for (const cell of records(row.value.cells).sort(
-        (a, b) => numeric(a.value.columnStart) - numeric(b.value.columnStart),
+        (a, b) => cellStart(a.value) - cellStart(b.value),
       )) {
-        const start: number = numeric(cell.value.columnStart);
+        const start: number = cellStart(cell.value);
         const colSpan: number = numeric(cell.value.colSpan);
         const rowSpan: number = numeric(cell.value.rowSpan);
         if (
@@ -94,7 +125,9 @@ export function SemanticSourceGrid({
               .join('\n')
           : cellAnchors.map((anchor) => anchor.sourceText).join('\n');
         const Cell =
-          cell.value.role === 'header' || group.value.kind === 'thead'
+          cell.value.role === 'header' ||
+          cell.value.isHeader === true ||
+          group.value.kind === 'thead'
             ? 'th'
             : 'td';
         const column = records(payload.columns).find(
