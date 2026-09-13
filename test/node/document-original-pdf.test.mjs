@@ -1,12 +1,42 @@
 import assert from 'node:assert/strict';
 import { createRequire } from 'node:module';
 import test from 'node:test';
+import { mkdtempSync, mkdirSync, readFileSync, writeFileSync, cpSync, rmSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import { spawnSync } from 'node:child_process';
 const require = createRequire(import.meta.url);
 process.env.TS_NODE_COMPILER_OPTIONS = JSON.stringify({ module: 'CommonJS', moduleResolution: 'node' });
 require('ts-node/register/transpile-only'); require('tsconfig-paths/register');
 const { jsPDF } = require('jspdf');
 const { extractDocumentPdfPages } = require('../../server/modules/document-management/src/hosted/nest/document-original-pdf.ts');
 const { composeDocumentOriginal } = require('../../server/modules/document-management/src/hosted/nest/document-original-compose.ts');
+
+test('Hosted extraction loads the packaged runtime engine without project node_modules', () => {
+  const root = mkdtempSync(join(tmpdir(), 'wiselink-pdf-hosted-'));
+  try {
+    const modulePath = join(root, 'server/modules/document-management/src/hosted/nest/document-original-pdf.js');
+    mkdirSync(join(modulePath, '..'), { recursive: true });
+    const ts = require('typescript');
+    writeFileSync(modulePath, ts.transpileModule(readFileSync(new URL('../../server/modules/document-management/src/hosted/nest/document-original-pdf.ts', import.meta.url), 'utf8'),
+      { compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022 } }).outputText);
+    const engine = join(root, 'server/runtime-assets/professional-input/pdfjs-dist/legacy/build');
+    mkdirSync(engine, { recursive: true });
+    for (const file of ['pdf.mjs', 'pdf.worker.mjs']) cpSync(require.resolve(`pdfjs-dist/legacy/build/${file}`), join(engine, file));
+    const pdf = new jsPDF(); pdf.text('Hosted original survives dependency pruning.', 20, 20);
+    writeFileSync(join(root, 'input.pdf'), Buffer.from(pdf.output('arraybuffer')));
+    writeFileSync(join(root, 'check.cjs'), `
+      const { extractDocumentPdfPages } = require(${JSON.stringify(modulePath)});
+      extractDocumentPdfPages({ bytes: require('node:fs').readFileSync('./input.pdf'), pageStart: 0, pageCount: 1,
+        assertActive: async () => {} }).then(result => {
+          require('node:assert/strict').match(result.pages[0].text, /Hosted original survives dependency pruning/);
+        }).catch(error => { console.error(error); process.exitCode = 1; });
+    `);
+    const result = spawnSync(process.execPath, ['check.cjs'], { cwd: root, encoding: 'utf8', timeout: 30000,
+      env: { ...process.env, NODE_PATH: '', NODE_OPTIONS: '' } });
+    assert.equal(result.status, 0, result.stdout + result.stderr);
+  } finally { rmSync(root, { recursive: true, force: true }); }
+});
 
 test('actual PDF.js bounded extraction reports raster painting even when parser markdown has no image link', async () => {
   const pdf = new jsPDF(); pdf.text('A-12 limit -0.25', 20, 20);
