@@ -1,5 +1,6 @@
 import { FileSearch, Languages, LocateFixed, Search, X } from 'lucide-react';
 import { useId, type KeyboardEvent } from 'react';
+import { Link } from 'react-router-dom';
 
 import { Button } from '@client/src/components/ui/button';
 import { Input } from '@client/src/components/ui/input';
@@ -122,6 +123,13 @@ export function DocumentReaderWorkspace({
       <div className="parse-panel-label">
         <FileSearch aria-hidden="true" /> 文档阅读
       </div>
+      {data.workItem.source.documentVersionId && (
+        <p>
+          <Link to={`/document-versions/${encodeURIComponent(data.workItem.source.documentVersionId)}`}>
+            打开文档版本的原文与中英对照
+          </Link>
+        </p>
+      )}
       <div className="parse-reader-modes" role="tablist" aria-label="原文视图">
         {capabilities.map((capability: ReaderCapability) => {
           const Icon =
