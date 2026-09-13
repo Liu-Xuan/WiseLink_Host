@@ -200,6 +200,16 @@ export function buildTranslationSourcePlan(input: {
         block.contextBlockIds.push(parentBlock);
       parentId = parent.parentUnitId;
     }
+    // Source-bound semantic projection supplies real ancestor content, not rewritten model context.
+    for (const unitId of block.sourceUnitIds) {
+      const unit = byId.get(unitId)!;
+      if (unit.mapping.semanticContextUnitIds === undefined) continue;
+      for (const contextId of stringArray(unit.mapping.semanticContextUnitIds, 'mapping.semanticContextUnitIds')) {
+        const contextBlock = assigned.get(contextId);
+        if (!contextBlock) throw new Error('TRANSLATION_PLAN_SEMANTIC_CONTEXT_MISSING');
+        if (contextBlock !== block.blockId) block.contextBlockIds.push(contextBlock);
+      }
+    }
     block.contextBlockIds = [...new Set(block.contextBlockIds)];
   }
   const scopedConditions: TranslationSourcePlanV2['documentContext']['scopedConditions'] =
