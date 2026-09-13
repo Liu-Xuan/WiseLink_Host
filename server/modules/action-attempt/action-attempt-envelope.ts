@@ -405,9 +405,17 @@ function assertMatterWorkingBasis(value: unknown, baseRevision: number): void {
     requiredText(item.documentVersionId, code);
     if (item.original !== undefined) {
       if (!isRecord(item.original)) fail(code);
-      assertExactKeys(item.original, ['parseRunId','parseRevision'], code);
+      assertExactKeys(item.original, ['parseRunId','parseRevision',
+        ...(item.original.semantic !== undefined ? ['semantic'] : [])], code);
       if (!/^[A-Za-z0-9_-]{1,96}$/.test(requiredText(item.original.parseRunId, code)) ||
           !Number.isSafeInteger(item.original.parseRevision) || Number(item.original.parseRevision) < 1) fail(code);
+      if (item.original.semantic !== undefined && item.original.semantic !== null) {
+        const semantic = item.original.semantic;
+        if (!isRecord(semantic)) fail(code);
+        assertExactKeys(semantic,['revision','profileRef'],code);
+        if (!Number.isSafeInteger(semantic.revision) || Number(semantic.revision) < 1 ||
+          requiredText(semantic.profileRef,code).length > 160) fail(code);
+      }
     }
     if (item.kind === 'DOCUMENT_VERSION') {
       assertExactKeys(

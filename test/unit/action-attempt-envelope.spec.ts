@@ -18,6 +18,8 @@ describe('OpenClaw ActionAttempt envelopes', () => {
       workItemId: null, workItemRevision: null, resultRef: null, resultRevision: null,
       original: { parseRunId: 'PR-2', parseRevision: 2 } };
     const body = { ...base, workingBasis: { ...base.workingBasis, inputs: [input] } };
+    const organized = { ...input, original: { ...input.original, semantic: { revision: 1, profileRef: 'boeing.ftd.sections.v1' } } };
+    expect(parseMatterTaskEnvelope(canonicalJson(sealMatterTaskEnvelope({ ...base, workingBasis: { ...base.workingBasis, inputs: [organized] } }))).workingBasis.inputs[0]).toEqual(organized);
     expect(parseMatterTaskEnvelope(canonicalJson(sealMatterTaskEnvelope(body))).workingBasis.inputs[0].original).toEqual(input.original);
     for (const original of [{ parseRunId: 'PR-2', parseRevision: 0 }, { ...input.original, authorized: true }]) {
       expect(() => parseMatterTaskEnvelope(canonicalJson(sealMatterTaskEnvelope({ ...body, workingBasis: { ...body.workingBasis, inputs: [{ ...input, original }] } })))).toThrow('WORKING_BASIS_INVALID');
