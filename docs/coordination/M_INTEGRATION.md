@@ -17,6 +17,8 @@
 
 ### 本轮本地实施（尚未部署）
 
+- P后续两文件增量已合入：按artifactProgress只读取末组并恢复确切下一路径，普通STAGING不再compose全前缀；发布时一次全组装。构造25页正常/上传回执丢失场景验证，原PDF每步读取与最终全量内存仍在，不称为计算卸载。
+
 - M 将翻译 reserve 的明确 PostgreSQL 42501 转换为安全的 DOCUMENT_TRANSLATION_ADMISSION_DENIED，不暴露 SQL/参数，不将连接未知归为权限拒绝。云端 consumer 在已有 checkpoint 根下按 Host endpoint、DV 与显式 recovery ID 保存 START 阻塞；后继 tick 仍检查原文/索引，阻塞原始 parseRun 保留，新 parseRun 不被吞掉。正常原生 job 输出 REQUIRES_ATTENTION，不冒充 DOCUMENT_READY。
 - 修复准入后，通过原 job 官方 edit 设置新的 `--document-translation-recovery <ID>` 才恢复该操作；原阻塞记录不删、不自动改 epoch。它只控制消费端重试，不是 Host 任务、业务进度或授权真源；来源权限仍每次由 Host 验证。未知错误仍进入失败路径。
 - 验证：文档 consumer 8项、既有工作 consumer/安全错误20项、Host runtime4项通过，相关服务 ESLint 通过；未安装新 Skill/发布新 Host，不能声称线上退避已解除。

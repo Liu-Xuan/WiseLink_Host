@@ -1,12 +1,16 @@
 import { DocumentParsingHostedService } from '../../../server/modules/document-management/src/hosted/nest/document-parsing-hosted.service';
 import { MiaodaFileServiceArtifactStore } from '../../../server/modules/document-management/src/hosted/miaodaFileServiceArtifactStore.js';
+import * as composition from '../../../server/modules/document-management/src/hosted/nest/document-original-compose';
 import { extractDocumentPdfPages } from '../../../server/modules/document-management/src/hosted/nest/document-original-pdf';
 
 jest.mock('../../../server/modules/document-management/src/hosted/nest/document-original-pdf', () => ({ extractDocumentPdfPages: jest.fn() }));
 
 describe('bounded original execute and persisted Reader (isolated source and plugin)', () => {
+  beforeEach(() => jest.clearAllMocks());
   afterEach(() => jest.restoreAllMocks());
-  it('resumes the next page group, reads published original, and never repeats the saved parser call', async () => {
+  it.each([false, true])('resumes bounded groups and lost page upload receipt=%s without repeating parser or composing prefixes', async (loseReceipt) => {
+    const compose = jest.spyOn(composition, 'composeDocumentOriginal');
+    let receiptLost = false;
     const binding = { documentVersionId: 'DV', documentId: 'DOC', familyId: 'FAM', sourceArtifactId: 'ART', pdfSha256: 'a'.repeat(64), byteLength: 1 };
     const run = { parseRunId: 'PR', documentVersionId: 'DV', parseRevision: 1, status: 'RUNNING',
       sourceBinding: binding, bucketId: 'bucket', expectedPublishedRevision: 0, artifactProgress: [] as unknown[], manifestArtifact: null as unknown };
@@ -15,7 +19,7 @@ describe('bounded original execute and persisted Reader (isolated source and plu
       metadata: { contentLength: content.get(path)!.bytes.length, mimeType: content.get(path)!.mediaType } });
     const scoped = {
       getFileMetadata: async (path: string) => content.has(path) ? metadata(path) : null,
-      download: async (path: string) => ({ metadata: metadata(path), content: new Blob([Buffer.from(content.get(path)!.bytes)]) }),
+      download: jest.fn(async (path: string) => ({ metadata: metadata(path), content: new Blob([Buffer.from(content.get(path)!.bytes)]) })),
       upload: async (bytes: Uint8Array, options: { filePath: string; contentType: string }) => {
         if (content.has(options.filePath)) throw new Error('OVERWRITE');
         content.set(options.filePath, { bytes: new Uint8Array(bytes), mediaType: options.contentType }); return metadata(options.filePath);
@@ -27,13 +31,18 @@ describe('bounded original execute and persisted Reader (isolated source and plu
       providerObjectId: 'original-object', providerVersionId: 'original-version',
     } as never);
     const text = (index: number) => `Original statement on page ${index}.`;
-    const parser = jest.fn(async () => ({ markdown: Array.from({ length: 9 }, (_, index) => text(index)).join('\n\n') }));
-    jest.mocked(extractDocumentPdfPages).mockImplementation(async input => ({ pageCount: 9,
-      pages: Array.from({ length: Math.min(8, 9 - input.pageStart) }, (_, offset) => ({
+    const parser = jest.fn(async () => ({ markdown: Array.from({ length: 25 }, (_, index) => text(index)).join('\n\n') }));
+    jest.mocked(extractDocumentPdfPages).mockImplementation(async input => ({ pageCount: 25,
+      pages: Array.from({ length: Math.min(8, 25 - input.pageStart) }, (_, offset) => ({
         pageIndex: input.pageStart + offset, text: text(input.pageStart + offset), items: [], width: 600, height: 800, rotation: 0,
       })) }));
     const repository = { read: async () => ({ ...run }), stage: async () => { run.status = 'STAGING'; },
-      progress: async (_scope: unknown, _id: string, artifacts: unknown[]) => { run.artifactProgress = structuredClone(artifacts); },
+      progress: async (_scope: unknown, _id: string, artifacts: Array<{ relativePath: string; readback: string }>) => {
+        if (loseReceipt && !receiptLost && artifacts.some(item => item.relativePath === 'original/pages-0.json' && item.readback === 'UPLOADED')) {
+          receiptLost = true; throw new Error('CONSTRUCTED_PROGRESS_RECEIPT_LOST');
+        }
+        run.artifactProgress = structuredClone(artifacts);
+      },
       publish: jest.fn(async (_scope: unknown, _id: string, artifact: unknown) => { run.status = 'PUBLISHED'; run.manifestArtifact = artifact; }),
       recordStepFailure: jest.fn(),
     };
@@ -45,15 +54,25 @@ describe('bounded original execute and persisted Reader (isolated source and plu
       { assertCanRead: async () => undefined } as never);
     const scope = { documentVersionId: 'DV', actorUserId: 'actor', tenantId: 'tenant', roles: [] };
     const fence = { parseRunId: 'PR', leaseOwner: 'consumer', leaseToken: 'token', leaseGeneration: 1 };
+    if (loseReceipt) await expect(service.executeStep('PR', scope, fence)).rejects.toThrow('CONSTRUCTED_PROGRESS_RECEIPT_LOST');
     expect((await service.executeStep('PR', scope, fence)).status).toBe('STAGING');
+    expect((await service.executeStep('PR', scope, fence)).status).toBe('STAGING');
+    const priorReads = scoped.download.mock.calls.filter(([path]) => path.endsWith('/pages-0.json')).length;
+    const third = await service.executeStep('PR', scope, fence);
+    expect(third.status).toBe('STAGING');
+    expect(third.coverage.readPageIndexes).toHaveLength(24);
+    expect(third.coverage.unresolvedRanges.some(range => range.reason === 'UNREAD' && range.pageIndexes.includes(24))).toBe(true);
+    expect(scoped.download.mock.calls.filter(([path]) => path.endsWith('/pages-0.json'))).toHaveLength(priorReads);
+    expect(compose).not.toHaveBeenCalled();
     expect(repository.publish).not.toHaveBeenCalled();
     expect((await service.executeStep('PR', scope, fence)).status).toBe('PUBLISHED');
     expect(parser).toHaveBeenCalledTimes(1);
-    expect(jest.mocked(extractDocumentPdfPages).mock.calls.map(([input]) => input.pageStart)).toEqual([0, 8]);
+    expect(jest.mocked(extractDocumentPdfPages).mock.calls.map(([input]) => input.pageStart)).toEqual([0, 8, 16, 24]);
     const reading = await service.read('DV', 'PR', scope);
     expect(reading.parser.name).toBe('OfficialPluginHybrid');
-    expect(reading.original!.coverage.readPageIndexes).toHaveLength(9);
-    expect(reading.original!.source.units.map(unit => unit.payload.text)).toEqual(Array.from({ length: 9 }, (_, index) => text(index)));
-    expect(repository.recordStepFailure).not.toHaveBeenCalled();
+    expect(reading.original!.coverage.readPageIndexes).toHaveLength(25);
+    expect(reading.original!.source.units.map(unit => unit.payload.text)).toEqual(Array.from({ length: 25 }, (_, index) => text(index)));
+    expect(repository.recordStepFailure).toHaveBeenCalledTimes(loseReceipt ? 1 : 0);
+    expect(compose).toHaveBeenCalledTimes(1);
   });
 });
