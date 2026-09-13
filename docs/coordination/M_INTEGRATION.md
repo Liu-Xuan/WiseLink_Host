@@ -11,9 +11,21 @@
 | FTD rev6 | DV document_version_b83523c2b5ba26a2b1753641，parseRun PRUN-c537f5bb-cc97-4ce9-855e-ca8d53e15a31。c8/c88自然PUBLISHED，原件/manifest字节与SHA、2表/编号/条件/页脚实件核对保留，SOURCE41条、pending0。不能用此证明e9/c89或新语义补丁已运行 |
 | 语义持久结构 | 0055正式dev→online迁移16项，仅新表/约束/索引/RLS/不可变触发器。online读回RLS=true、4policy、1不可变trigger、1已验证FK。正常INDEX已保存rev6语义修订1，boeing.ftd.sections.v1、12章节。正常read_document_original确切读回，Final Action返回u28/u29及两个SourceRef；原文manifest SHA保持d8237d00…不变 |
 | 本批接线 | 已实现INDEX保存首个来源绑定语义修订、确切章节读取；Matter新任务输入固定semantic revision/profile，旧任务不附加latest。JobAid任务含原文语义map。真实PG发现并修复JSONB键顺序导致的假覆盖错误。Host/Skill已部署；c90还修复消费端丢map并拒绝语义修订漂移。实际工程保存待自然调度验收 |
-| 运行剩余 | c93新AQ-8bb65240af8f4166a761933ffd9ecce5前三轮按指定函数读取rev6/semantic1共41单元，第四轮网关502 / TOOL_CHOICE_NOT_SATISFIED，正常FAILED，尚未到SAVE_WORK；工作仍修订9，无新FTD workRef。上一AQ-0f669失败保留。中文请求SUCCEEDED / REMAINING_LIMITATIONS，21块可读；b20经P定点核对为空格检查误报，修正补丁待集成/真实重查 |
+| 运行剩余 | c93新AQ-8bb65240af8f4166a761933ffd9ecce5前三轮按指定函数读取rev6/semantic1共41单元，第四轮原生stopReason=length/output16000，被网关覆盖为502 / TOOL_CHOICE_NOT_SATISFIED，正常FAILED，尚未到SAVE_WORK；工作仍修订9，无新FTD workRef。上一AQ-0f669失败保留。中文请求SUCCEEDED / REMAINING_LIMITATIONS，21块可读；b20经P定点核对为空格检查误报，修正补丁待集成/真实重查 |
 | 验证与界限 | 新语义RLS/CAS/不可变/准确读回真实PG通过；Matter真实PG4组通过；章节/Reader/JobAid续接45项通过；server类型通过。原PDF每步读取与最终整包组装仍有成本；真实SB/H2、语义更正后的业务续接和首份新工程工作仍待完成；首批中文已保存并经Reader实际阅读，完整中文仍未完成 |
 
+
+### 2026-09-13 c93 后续诊断：原生截断被网关函数错误覆盖
+
+继续只读核查同一AQ-8bb65240，而非发起新业务。实际会话位于Hosted工程profile的sessions目录，sessionId为18c4daea-ad64-46ec-9809-78e622d75811；默认CLI只列main且sessionKey已小写化，先前默认列表无结果不代表记录不存在。
+
+原生最后assistant记录（2026-09-13T07:27:49.788Z）明确provider=miaoda、model=minimax-m3、stopReason=length、usage.output=16000，input=11985、cacheRead=121766。公开text仅为准备形成并保存工作的说明，没有SAVE载荷；不读取或输出thinking/analysis。trajectory同轮aborted/externalAbort/timedOut/idleTimedOut均false、compactionCount=0。故此次失败应进一步认定为原生生成截断，不再仅称完整返回但不合协议。网关先检查toolChoiceConstraint，未满足便502退出，因此没有把原生length和usage送回调用方。
+
+实际已安装网关入口将max_completion_tokens转streamParams.maxTokens；工程模型目录maxTokens=524288、contextWindow=1000000、compat.maxTokensField=max_tokens。这些代码/配置仍不能证明最后上游请求额度；16000限制实际落点尚未确认，不再次增大同一配置或把旧公开text手工写成工作。继续核对attempt-execution、embedded-agent和extra-params，均保留streamParams/maxTokens传递；已安装miaoda/miaoda-coding扩展的文本相关搜索未找到16000常量或额度覆盖（仅发现无关视觉32000）。全局M3模型配置只有alias，无专属params覆盖。以上为源码检查，不冒充本轮最终线上请求抓取。
+
+现有有界网关日志保留本轮上游请求关联，但没有最终token参数；下一项所需证据是该请求的有效max_tokens/max_completion_tokens及平台实际限额。平台核查材料已在本机/private/tmp/wiselink-c93-upstream-diagnostic.md整理，尚未发送，不称为平台已受理。本轮未修改Hosted配置、暂停job或发起后继请求。
+
+另已量化重复输入：最后仅读u41页脚时，响应仍有semanticMap约14813B、findings9864B、coverage6522B（按本机ensure_ascii=False JSON统计）。这是重复传输成本证据，尚不是本次输出截断的因果证明，不能通过删掉必要条件与来源来凑小输入。rev6/semantic1及工作修订9保持，不复活失败任务。
 
 ### 2026-09-13 c93：结构化返回通道与新 FTD 工程保存
 
