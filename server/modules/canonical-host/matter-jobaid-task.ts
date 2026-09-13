@@ -6,6 +6,7 @@ import { canonicalJson } from '../action-attempt/action-attempt-envelope';
 import { JOBAID_CORE_METHOD_REFS, JOBAID_METHOD_BINDING, JOBAID_METHOD_EVIDENCE } from './jobaid-method-pack';
 import { jobAidProblemModelWorkContent } from './jobaid-problem-task';
 import { overallModelEvidenceRegistry } from './overall-assessment-reading';
+import { engineeringMatterPendingInputs } from './engineering-matter-working-state';
 
 export const MATTER_JOBAID_TASK_SCHEMA = 'wiselink.matter-jobaid-task.v2' as const;
 
@@ -54,6 +55,7 @@ export function buildMatterJobAidTask(input: {
       title: input.title,
       focus: input.previous?.state.focus ?? null,
       trigger: structuredClone(input.trigger),
+      sourceChanges: engineeringMatterPendingInputs(input.previous?.state ?? null, input.inputs),
       availableDocuments: [...new Set([...input.inputs.map((binding) => binding.documentVersionId),
         ...(prior?.evidence ?? []).flatMap(item => item.kind === 'DOCUMENT_PASSAGE' ? [item.documentVersionId] : []),
       ])].map((documentVersionId) => ({
@@ -77,7 +79,7 @@ export function buildMatterJobAidTask(input: {
       historyReview,
       capabilities: [
         { capability: 'registered_source_reading', status: 'AVAILABLE' as const,
-          impact: '优先用originalReadRef读取boundOriginal绑定的已发布修订；历史任务未捕获绑定时Host在首次读取确定版本。按返回nextOffset继续，原文修订变化只表示需要核查影响，不预设工程结论变化。PDF页文本层仍可独立读取；目录不代表已读，coverage限制须保留。' },
+          impact: '本轮触发原因以trigger和sourceChanges为准，previousWork是历史认识，不是重复执行旧指令。来源或语义变化需核对所列新范围及条件，保留不受影响的既有问题。优先用originalReadRef读取boundOriginal绑定的已发布修订及其固定semantic revision；历史任务未捕获绑定时Host在首次读取确定版本。按返回nextOffset继续，原文修订变化只表示需要核查影响，不预设工程结论变化。PDF页文本层仍可独立读取；目录不代表已读，coverage限制须保留。' },
         { capability: 'fleet_configuration', status: 'NOT_CONNECTED' as const,
           impact: '未取得当前对象的受控装机、执行或构型查询。' },
         { capability: 'reliability_history', status: 'NOT_CONNECTED' as const,
