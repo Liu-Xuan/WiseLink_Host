@@ -1,3 +1,4 @@
+import { bindOriginalApplicabilityCandidate } from './original-applicability-candidate';
 import { Inject, Injectable } from '@nestjs/common';
 
 import type {
@@ -51,8 +52,10 @@ import { readFrozenApplicabilitySourceBinding } from './canonical-host-applicabi
 import {
   APPLICABILITY_ARTIFACT_SCHEMA_VERSION,
   APPLICABILITY_ARTIFACT_V2_SCHEMA_VERSION,
+  APPLICABILITY_ARTIFACT_V3_SCHEMA_VERSION,
   APPLICABILITY_TASK_SCHEMA_VERSION,
   APPLICABILITY_TASK_V2_SCHEMA_VERSION,
+  APPLICABILITY_TASK_V3_SCHEMA_VERSION,
   applicabilityRuntimePolicy,
   applicabilityAstVocabulary,
   parseApplicabilityCandidate,
@@ -113,13 +116,15 @@ interface ConfigurationEvidenceApplicabilityCasOwner {
 interface ApplicabilityCandidateArtifact {
   schemaVersion:
     | typeof APPLICABILITY_ARTIFACT_SCHEMA_VERSION
-    | typeof APPLICABILITY_ARTIFACT_V2_SCHEMA_VERSION;
+    | typeof APPLICABILITY_ARTIFACT_V2_SCHEMA_VERSION
+    | typeof APPLICABILITY_ARTIFACT_V3_SCHEMA_VERSION;
   candidateOnly: true;
   source: {
     documentId: string;
     documentVersionId: string;
-    packageId: string;
-    packageContentHash: string;
+    packageId: string | null;
+    packageContentHash: string | null;
+    originalSource?: NonNullable<CanonicalApplicabilityInputProjection['originalSource']>;
     translationActionAttemptId: string | null;
     sourceReadingMode?: 'VERIFIED_ENGLISH';
     applicabilityContextRef: string;
@@ -190,6 +195,31 @@ export class CanonicalHostOpenClawApplicabilityService {
     applicabilityContextRef: string,
     requestId: string,
   ): Promise<BeginApplicabilityEvaluationResult> {
+    const prepared=await this.prepareAdmission(applicabilityContextRef,requestId);
+    const claim=await this.attempts.reserveAndClaim({...prepared.reservation,leaseOwner:prepared.scope.principalId});
+    return {
+      attemptRef: claim.attemptRef,
+      status: claim.status,
+      leaseToken: claim.leaseToken,
+      leaseGeneration: claim.leaseGeneration,
+      leaseExpiresAt: claim.leaseExpiresAt,
+      task: structuredClone(claim.task),
+      ...(claim.status === 'COMMITTING'
+        ? { recoveryResult: structuredClone(claim.recoveryResult) }
+        : {}),
+      modelInput: structuredClone(claim.task.modelInput),
+    };
+  }
+
+  async enqueueOriginal(applicabilityContextRef:string, expected:{tenantId:string;workItemId:string;principalId:string;parseRunId:string;parseRevision:number}) {
+    const requestId=`original-${expected.parseRevision}`;
+    const prepared=await this.prepareAdmission(applicabilityContextRef,requestId,expected);
+    const reserved=await this.attempts.reserve(prepared.reservation);
+    return {status:reserved.row.status,attemptRef:reserved.row.operationRef,requestId,created:reserved.created};
+  }
+
+  private async prepareAdmission(applicabilityContextRef:string,requestId:string,
+    expected?:{tenantId:string;workItemId:string;principalId:string;parseRunId:string;parseRevision:number}) {
     const scope = await this.serviceScope.authorizeOpenClawApplicabilityContext(
       {
         operation: 'BEGIN_APPLICABILITY',
@@ -198,22 +228,35 @@ export class CanonicalHostOpenClawApplicabilityService {
       },
     );
     assertApplicabilityContextScope(scope, applicabilityContextRef, requestId);
+    if (expected && (scope.tenantId!==expected.tenantId || scope.workItemId!==expected.workItemId || scope.principalId!==expected.principalId))
+      throw conflict('APPLICABILITY_ORIGINAL_SCOPE_CHANGED');
     await this.retryTerminalConfigurationEvidenceApplicability(scope);
-    await this.applicabilityInputs.produceAuthorized(scope);
+    const admission=await this.applicabilityInputs.readAdmissionSnapshot(scope);
+    const priorKey=admission.applicabilityInput && (admission.applicabilityInput.originalSource || admission.workItem.package)
+      ? applicabilityIdempotencyKey({...admission,applicabilityInput:admission.applicabilityInput,requestId}) : null;
+    const prior=priorKey ? await this.attempts.readExactIdempotency({tenantId:scope.tenantId,
+      workItemId:admission.workItem.workItemId,taskType:'OPENCLAW_APPLICABILITY_EVALUATION',
+      baseRevision:admission.workItem.revision,documentVersionId:admission.workItem.source.documentVersionId,
+      idempotencyKey:priorKey}) : null;
+    if (!prior) {
+      if (process.env.WL_JOBAID_PROBLEM_V2_ENABLED==='1' || admission.applicabilityInput?.originalSource)
+        await this.applicabilityInputs.produceOriginalAuthorized(scope,expected);
+      else await this.applicabilityInputs.produceAuthorized(scope);
+    }
     const { workItem, applicabilityInput } =
       await this.applicabilityInputs.readCurrentOwnerValidated(scope);
+    if (expected && (applicabilityInput.originalSource?.binding.parseRunId!==expected.parseRunId ||
+      applicabilityInput.originalSource?.binding.parseRevision!==expected.parseRevision)) throw conflict('APPLICABILITY_ORIGINAL_REQUEST_CHANGED');
     assertApplicabilityNotCurrent(workItem, applicabilityInput);
-    const bound = await this.attempts.readExactIdempotency({
+    const currentKey=applicabilityIdempotencyKey({workItem,applicabilityInput,requestId});
+    if (prior && priorKey!==currentKey) throw conflict('APPLICABILITY_ADMISSION_BINDING_CHANGED');
+    const bound = prior ?? await this.attempts.readExactIdempotency({
       tenantId: scope.tenantId,
       workItemId: workItem.workItemId,
       taskType: 'OPENCLAW_APPLICABILITY_EVALUATION',
       baseRevision: workItem.revision,
       documentVersionId: workItem.source.documentVersionId,
-      idempotencyKey: applicabilityIdempotencyKey({
-        workItem,
-        applicabilityInput,
-        requestId,
-      }),
+      idempotencyKey: currentKey,
     });
     const frozenVersion = bound?.taskEnvelopeJson
       ? applicabilityTaskVersion(parseTaskEnvelope(bound.taskEnvelopeJson))
@@ -222,13 +265,13 @@ export class CanonicalHostOpenClawApplicabilityService {
       workItem,
       applicabilityInput,
       frozenVersion,
+      scope.tenantId,
     );
-    const claim = await this.attempts.reserveAndClaim({
+    return {scope,reservation:{
       workItemId: workItem.workItemId,
-      taskType: 'OPENCLAW_APPLICABILITY_EVALUATION',
+      taskType: 'OPENCLAW_APPLICABILITY_EVALUATION' as const,
       actorUserId: OPENCLAW_SERVICE_USER_ID,
       tenantId: scope.tenantId,
-      leaseOwner: scope.principalId,
       documentVersionId: workItem.source.documentVersionId,
       inputRevision: workItem.revision,
       baseRevision: workItem.revision,
@@ -245,19 +288,7 @@ export class CanonicalHostOpenClawApplicabilityService {
           string,
           unknown
         >,
-    });
-    return {
-      attemptRef: claim.attemptRef,
-      status: claim.status,
-      leaseToken: claim.leaseToken,
-      leaseGeneration: claim.leaseGeneration,
-      leaseExpiresAt: claim.leaseExpiresAt,
-      task: structuredClone(claim.task),
-      ...(claim.status === 'COMMITTING'
-        ? { recoveryResult: structuredClone(claim.recoveryResult) }
-        : {}),
-      modelInput: structuredClone(claim.task.modelInput),
-    };
+    }};
   }
 
   private async retryTerminalConfigurationEvidenceApplicability(
@@ -432,6 +463,7 @@ export class CanonicalHostOpenClawApplicabilityService {
       workItem,
       applicabilityInput,
       applicabilityTaskVersion(task),
+      row.tenantId,
     );
     assertTaskBuildMatches(rebuilt, task);
     if (result.status === 'WAITING_INPUT') {
@@ -524,7 +556,7 @@ export class CanonicalHostOpenClawApplicabilityService {
         rebuilt.contract,
         rebuilt.fleetSource,
       );
-      assertOnlyHostFactUnknown(evaluation);
+      assertSupportedApplicabilityUnknown(evaluation, candidate);
       if (
         evaluation.status === 'WAITING_INPUT' &&
         activeConfigurationEvidenceReevaluation(workItem)
@@ -581,7 +613,7 @@ export class CanonicalHostOpenClawApplicabilityService {
         rebuilt.contract,
         rebuilt.fleetSource,
       );
-      assertOnlyHostFactUnknown(evaluation);
+      assertSupportedApplicabilityUnknown(evaluation, candidate);
       artifactValue = buildApplicabilityArtifact({
         workItem,
         applicabilityInput,
@@ -888,7 +920,7 @@ export class CanonicalHostOpenClawApplicabilityService {
       frozenContract,
       rebuilt.fleetSource,
     );
-    assertOnlyHostFactUnknown(evaluation);
+    assertSupportedApplicabilityUnknown(evaluation, candidate);
     if (evaluation.status !== 'WAITING_INPUT') return null;
     const prepared = await this.prepareCommit(input);
     await this.recordConfigurationEvidenceApplicabilityOwnedTerminal({
@@ -1264,6 +1296,7 @@ export class CanonicalHostOpenClawApplicabilityService {
       workItem,
       applicabilityInput,
       applicabilityTaskVersion(task),
+      row.tenantId,
     );
     assertTaskBuildMatches(rebuilt, task);
     return { workItem, applicabilityInput, rebuilt };
@@ -1272,28 +1305,29 @@ export class CanonicalHostOpenClawApplicabilityService {
   private async buildTaskContract(
     workItem: CanonicalWorkItemProjection,
     applicabilityInput: CanonicalApplicabilityInputProjection,
-    schemaVersion: ApplicabilityTaskContract['schemaVersion'] = process.env
+    schemaVersion: ApplicabilityTaskContract['schemaVersion'] = applicabilityInput.originalSource
+      ? APPLICABILITY_TASK_V3_SCHEMA_VERSION : process.env
       .WL_JOBAID_PROBLEM_V2_ENABLED === '1'
       ? APPLICABILITY_TASK_V2_SCHEMA_VERSION
       : APPLICABILITY_TASK_SCHEMA_VERSION,
+    originalTenantId?: string,
   ): Promise<ApplicabilityTaskBuild> {
-    const sourceUnits = await this.reader.readAllSourceUnits({
-      artifact: workItem.package!.artifact,
-      packageId: workItem.package!.packageId,
-    });
-    if (
-      sourceUnits.length !== workItem.package!.contentUnitCount ||
-      sourceUnits.length === 0
-    ) {
+    const originalMode = schemaVersion === APPLICABILITY_TASK_V3_SCHEMA_VERSION;
+    if (originalMode !== !!applicabilityInput.originalSource)
+      throw new Error('APPLICABILITY_TASK_SOURCE_MODE_MISMATCH');
+    if (originalMode && !originalTenantId) throw new Error('APPLICABILITY_ORIGINAL_TENANT_REQUIRED');
+    const original = originalMode ? await this.applicabilityInputs.readOriginalTaskSource(workItem,
+      originalTenantId!, applicabilityInput.originalSource!) : null;
+    const sourceUnits: UnifiedReaderQueryResult[] = original ? original.source.units.map(unit => ({
+      unitId:unit.unitId,kind:unit.kind,text:JSON.stringify(unit.payload),sourceRefIds:[...unit.sourceRefIds],
+    })) : await this.reader.readAllSourceUnits({artifact:workItem.package!.artifact,packageId:workItem.package!.packageId});
+    if (!sourceUnits.length || (!original && sourceUnits.length !== workItem.package!.contentUnitCount))
       throw new Error('APPLICABILITY_SOURCE_UNIT_COUNT_MISMATCH');
-    }
-    const packageBytes = await this.artifactStore.readActualBytes(
-      workItem.package!.artifact,
-    );
-    const sourceBinding = readFrozenApplicabilitySourceBinding({
-      bytes: packageBytes,
-      workItem,
-      sourceUnits,
+    const sourceBinding = original ? {
+      targetBindingHash:applicabilityInput.originalSource!.artifact.sha256,
+      sourceExpressions:[],deterministicFragments:[],
+    } : readFrozenApplicabilitySourceBinding({
+      bytes:await this.artifactStore.readActualBytes(workItem.package!.artifact),workItem,sourceUnits,
     });
     if (
       sourceBinding.targetBindingHash !== applicabilityInput.targetBindingHash
@@ -1302,7 +1336,7 @@ export class CanonicalHostOpenClawApplicabilityService {
     }
     const sourceExpressions = sourceBinding.sourceExpressions;
 
-    const englishInput = schemaVersion === APPLICABILITY_TASK_V2_SCHEMA_VERSION;
+    const englishInput = schemaVersion !== APPLICABILITY_TASK_SCHEMA_VERSION;
     // A completed Chinese translation is not a prerequisite for extracting English effectivity.
     // v2 intentionally leaves legacy bilingual units empty; semantic blocks never masquerade as units.
     const bilingual = englishInput
@@ -1312,7 +1346,7 @@ export class CanonicalHostOpenClawApplicabilityService {
       throw new Error('CURRENT_BILINGUAL_TRANSLATION_REQUIRED');
     }
     const relevantRefIds = new Set(
-      sourceExpressions.flatMap((expression) => expression.sourceRefIds),
+      original ? sourceUnits.flatMap(unit => unit.sourceRefIds) : sourceExpressions.flatMap((expression) => expression.sourceRefIds),
     );
     const bilingualUnits = selectBilingualUnits(
       bilingual?.units ?? [],
@@ -1423,10 +1457,12 @@ export class CanonicalHostOpenClawApplicabilityService {
           }
         : null,
       documentVersionRef: workItem.source.documentVersionId,
-      sourcePackage: {
+      sourcePackage: original ? null : {
         packageId: workItem.package!.packageId,
         contentHash: workItem.package!.contentHash,
       },
+      ...(original ? {originalInput:{...structuredClone(applicabilityInput.originalSource!),
+        source:structuredClone(original.source),coverage:structuredClone(original.coverage),locations:structuredClone(original.locations)}} : {}),
       bilingualBinding: bilingual
         ? {
             actionAttemptId: workItem.translation!.actionAttemptId,
@@ -1495,8 +1531,8 @@ export class CanonicalHostOpenClawApplicabilityService {
     };
     const sourceRefs = [
       {
-        ref: workItem.package!.artifact.ref,
-        sha256: workItem.package!.artifact.sha256,
+        ref: original ? applicabilityInput.originalSource!.artifact.ref : workItem.package!.artifact.ref,
+        sha256: original ? applicabilityInput.originalSource!.artifact.sha256 : workItem.package!.artifact.sha256,
       },
       ...(bilingual
         ? [
@@ -1693,25 +1729,30 @@ function evaluateCandidate(
       fleetResolution: resolution,
     };
   }
-  const hostExpressionById = new Map(
+  const originalBinding=task.schemaVersion===APPLICABILITY_TASK_V3_SCHEMA_VERSION
+    ? bindOriginalApplicabilityCandidate(candidate,task) : null;
+  if (originalBinding?.unknowns.length) return {status:'WAITING_INPUT',decision:'UNKNOWN',kleeneResult:UNKNOWN,
+    pass:false,blockingUnknowns:originalBinding.unknowns,fleetResolution:resolution};
+  const hostExpressionById = originalBinding?.bindings ?? new Map(
     task.sourceExpressions.map((expression) => [
       expression.expressionId,
       expression,
     ]),
   );
-  const fragments: ApplicabilityFragment[] = candidate.expressions.map(
+  const fragments: ApplicabilityFragment[] = candidate.expressions.flatMap(
     (expression) => {
       const hostExpression = hostExpressionById.get(expression.expressionId);
       if (!hostExpression) {
         throw new Error('APPLICABILITY_HOST_TARGET_BINDING_MISSING');
       }
-      return {
+      const targets = originalBinding?.targetBindings.get(expression.expressionId) ?? [hostExpression];
+      return targets.map(target => ({
         ruleFragmentId: expression.expressionId,
         extractionStatus: expression.extractionStatus,
-        applicabilityLevel: hostExpression.applicabilityLevel,
-        contentRef: hostExpression.contentRef,
+        applicabilityLevel: target.applicabilityLevel,
+        contentRef: target.contentRef,
         expressionAst: expression.expressionAst,
-      };
+      }));
     },
   );
   const trace = evaluateApplicabilityFragmentSetWithTrace(
@@ -1724,7 +1765,8 @@ function evaluateCandidate(
       decision: 'UNKNOWN',
       kleeneResult: UNKNOWN,
       pass: false,
-      blockingUnknowns: trace.blockingUnknowns,
+      blockingUnknowns: trace.blockingUnknowns.map(unknown => unknown.kind === 'interpretation_unknown'
+        ? {...unknown,strategy:'READ_ORIGINAL_SOURCE'} : unknown),
       fleetResolution: resolution,
     };
   }
@@ -1738,17 +1780,20 @@ function evaluateCandidate(
   };
 }
 
-function assertOnlyHostFactUnknown(evaluation: ApplicabilityEvaluation): void {
+function assertSupportedApplicabilityUnknown(evaluation: ApplicabilityEvaluation, candidate: ApplicabilityCandidateContract): void {
   if (evaluation.kleeneResult !== UNKNOWN) return;
   if (
     evaluation.blockingUnknowns.length === 0 ||
     evaluation.blockingUnknowns.some(
       (unknown) =>
-        ![
+        !(candidate.schemaVersion === 'wiselink.3_1.applicability_candidate.v2' && unknown.kind === 'original_scope_unknown') && ![
           'fact_unknown',
           'missing_fleet_fact',
           'conflicting_fleet_fact',
-        ].includes(unknown.kind),
+        ].includes(unknown.kind) && !(unknown.kind === 'interpretation_unknown' &&
+          ['extraction_failed','not_supported'].includes(String(unknown.reason)) &&
+          candidate.expressions.some(expression => expression.expressionId === unknown.fragmentId &&
+            expression.extractionStatus === unknown.reason && expression.expressionAst === null)),
     )
   ) {
     throw new Error('APPLICABILITY_INTERPRETATION_UNKNOWN_REJECTED');
@@ -2092,13 +2137,14 @@ function assertRecoveredProjectionBinding(
     projection.inputRevision !== task.inputRevision ||
     projection.documentId !== workItem.source.documentId ||
     projection.documentVersionId !== task.documentVersionId ||
-    projection.sourcePackageId !== workItem.package!.packageId ||
-    projection.sourcePackageContentHash !== workItem.package!.contentHash ||
+    projection.sourcePackageId !== applicabilityInput.sourcePackageId ||
+    projection.sourcePackageContentHash !== applicabilityInput.sourcePackageContentHash ||
     !applicabilityProjectionSourceMatches(projection, workItem) ||
-    (projection.schemaVersion ===
-      'wiselink.3_1.applicability_candidate_projection.v2') !==
-      (applicabilityTaskVersion(task) ===
-        APPLICABILITY_TASK_V2_SCHEMA_VERSION) ||
+    projection.schemaVersion !== (applicabilityTaskVersion(task) === APPLICABILITY_TASK_V3_SCHEMA_VERSION
+      ? 'wiselink.3_1.applicability_candidate_projection.v3'
+      : applicabilityTaskVersion(task) === APPLICABILITY_TASK_V2_SCHEMA_VERSION
+        ? 'wiselink.3_1.applicability_candidate_projection.v2'
+        : 'wiselink.3_1.applicability_candidate_projection.v1') ||
     projection.applicabilityContextRef !==
       applicabilityInput.applicabilityContextRef ||
     projection.applicabilityBindingRevision !==
@@ -2118,7 +2164,8 @@ function applicabilityTaskVersion(
   const schema = task.modelInput.schemaVersion;
   if (
     schema !== APPLICABILITY_TASK_SCHEMA_VERSION &&
-    schema !== APPLICABILITY_TASK_V2_SCHEMA_VERSION
+    schema !== APPLICABILITY_TASK_V2_SCHEMA_VERSION &&
+    schema !== APPLICABILITY_TASK_V3_SCHEMA_VERSION
   )
     throw conflict('APPLICABILITY_TASK_VERSION_UNSUPPORTED');
   return schema;
@@ -2140,6 +2187,7 @@ function requiredApplicabilityTask(
     ![
       APPLICABILITY_TASK_SCHEMA_VERSION,
       APPLICABILITY_TASK_V2_SCHEMA_VERSION,
+      APPLICABILITY_TASK_V3_SCHEMA_VERSION,
     ].includes(
       task.modelInput
         .schemaVersion as ApplicabilityTaskContract['schemaVersion'],
@@ -2174,18 +2222,22 @@ function buildApplicabilityArtifact(input: {
   evaluation: ApplicabilityEvaluation;
   result: OpenClawResultEnvelope;
 }): ApplicabilityCandidateArtifact {
-  const english =
-    input.task.schemaVersion === APPLICABILITY_TASK_V2_SCHEMA_VERSION;
+  const original = input.task.schemaVersion === APPLICABILITY_TASK_V3_SCHEMA_VERSION;
+  const english = original || input.task.schemaVersion === APPLICABILITY_TASK_V2_SCHEMA_VERSION;
+  const targetBindings = original
+    ? [...bindOriginalApplicabilityCandidate(input.candidate,input.task).targetBindings.values()].flat()
+    : input.task.sourceExpressions;
   return {
-    schemaVersion: english
+    schemaVersion: original ? APPLICABILITY_ARTIFACT_V3_SCHEMA_VERSION : english
       ? APPLICABILITY_ARTIFACT_V2_SCHEMA_VERSION
       : APPLICABILITY_ARTIFACT_SCHEMA_VERSION,
     candidateOnly: true,
     source: {
       documentId: input.workItem.source.documentId,
       documentVersionId: input.workItem.source.documentVersionId,
-      packageId: input.workItem.package!.packageId,
-      packageContentHash: input.workItem.package!.contentHash,
+      packageId: original ? null : input.workItem.package!.packageId,
+      packageContentHash: original ? null : input.workItem.package!.contentHash,
+      ...(original ? {originalSource: structuredClone(input.applicabilityInput.originalSource!)} : {}),
       translationActionAttemptId: english
         ? null
         : input.workItem.translation!.actionAttemptId,
@@ -2195,7 +2247,7 @@ function buildApplicabilityArtifact(input: {
       targetBindingHash: input.applicabilityInput.targetBindingHash,
     },
     candidate: structuredClone(input.candidate),
-    hostTargetBindings: input.task.sourceExpressions.map((expression) => ({
+    hostTargetBindings: targetBindings.map((expression) => ({
       expressionId: expression.expressionId,
       assignmentId: expression.assignmentId,
       targetKind: expression.targetKind,
@@ -2237,17 +2289,26 @@ function applicabilityProjection(input: {
     ),
   ).size;
   return {
-    ...(input.artifactValue.schemaVersion ===
+    ...(input.artifactValue.schemaVersion === APPLICABILITY_ARTIFACT_V3_SCHEMA_VERSION
+      ? {schemaVersion: 'wiselink.3_1.applicability_candidate_projection.v3' as const,
+          sourcePackageId: null, sourcePackageContentHash: null,
+          originalSource: structuredClone(input.artifactValue.source.originalSource!),
+          translationActionAttemptId: null, sourceReadingMode: 'VERIFIED_ENGLISH' as const}
+      : input.artifactValue.schemaVersion ===
     APPLICABILITY_ARTIFACT_V2_SCHEMA_VERSION
       ? {
           schemaVersion:
             'wiselink.3_1.applicability_candidate_projection.v2' as const,
+          sourcePackageId: input.workItem.package!.packageId,
+          sourcePackageContentHash: input.workItem.package!.contentHash,
           translationActionAttemptId: null,
           sourceReadingMode: 'VERIFIED_ENGLISH' as const,
         }
       : {
           schemaVersion:
             'wiselink.3_1.applicability_candidate_projection.v1' as const,
+          sourcePackageId: input.workItem.package!.packageId,
+          sourcePackageContentHash: input.workItem.package!.contentHash,
           translationActionAttemptId: requiredText(
             input.artifactValue.source.translationActionAttemptId,
             'APPLICABILITY_TRANSLATION_BINDING_REQUIRED',
@@ -2264,8 +2325,6 @@ function applicabilityProjection(input: {
     inputRevision: input.attempt.inputRevision!,
     documentId: input.workItem.source.documentId,
     documentVersionId: input.workItem.source.documentVersionId,
-    sourcePackageId: input.workItem.package!.packageId,
-    sourcePackageContentHash: input.workItem.package!.contentHash,
     applicabilityContextRef: input.applicabilityInput.applicabilityContextRef,
     applicabilityBindingRevision: input.applicabilityInput.bindingRevision,
     aircraftNumber: input.applicabilityInput.aircraftNumber,
@@ -2324,6 +2383,11 @@ function applicabilityIdempotencyKey(input: {
   applicabilityInput: CanonicalApplicabilityInputProjection;
   requestId: string;
 }): string {
+  if (input.applicabilityInput.originalSource) return `openclaw-v3:applicability:${input.requestId===`original-${input.applicabilityInput.originalSource.binding.parseRevision}` ? `${input.requestId}:` : ''}${canonicalSha256({
+    workItemId:input.workItem.workItemId,revision:input.workItem.revision,
+    originalSource:input.applicabilityInput.originalSource,
+    applicabilityBindingRevision:input.applicabilityInput.bindingRevision,requestId:input.requestId,
+  })}`;
   // action_attempt.idempotency_key is varchar(255); hashing this exact,
   // versioned binding prevents valid opaque refs from overflowing that DB
   // type while preserving deterministic replay identity.
@@ -2425,8 +2489,8 @@ function assertApplicabilityNotCurrent(
     current?.status === 'CANDIDATE_ONLY' &&
     current.currentness === 'CURRENT' &&
     current.documentVersionId === workItem.source.documentVersionId &&
-    current.sourcePackageId === workItem.package!.packageId &&
-    current.sourcePackageContentHash === workItem.package!.contentHash &&
+    current.sourcePackageId === input.sourcePackageId &&
+    current.sourcePackageContentHash === input.sourcePackageContentHash &&
     applicabilityProjectionSourceMatches(current, workItem) &&
     current.applicabilityContextRef === input.applicabilityContextRef &&
     current.applicabilityBindingRevision === input.bindingRevision &&
@@ -2441,6 +2505,16 @@ function applicabilityProjectionSourceMatches(
   projection: CanonicalApplicabilityCandidateProjection,
   workItem: CanonicalWorkItemProjection,
 ): boolean {
+  if (projection.schemaVersion === 'wiselink.3_1.applicability_candidate_projection.v3') {
+    const original = workItem.applicabilityInput?.originalSource;
+    return !!original && projection.sourceReadingMode === 'VERIFIED_ENGLISH' &&
+      projection.translationActionAttemptId === null && projection.sourcePackageId === null &&
+      projection.sourcePackageContentHash === null && canonicalJson(projection.originalSource) === canonicalJson(original) &&
+      original.binding.documentVersionId === workItem.source.documentVersionId &&
+      original.binding.sourceArtifactId === workItem.source.sourceArtifactId &&
+      original.binding.sourceSha256 === workItem.source.sourceFileSha256 &&
+      original.binding.sourceByteLength === workItem.source.sourceByteLength;
+  }
   return projection.schemaVersion ===
     'wiselink.3_1.applicability_candidate_projection.v2'
     ? projection.sourceReadingMode === 'VERIFIED_ENGLISH' &&

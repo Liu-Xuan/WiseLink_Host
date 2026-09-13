@@ -39,6 +39,7 @@ export class MiaodaApplicabilityControlledSelectionAdapter implements CanonicalA
     workItemId: string;
     documentVersionId: string;
     applicabilityContextRef: string;
+    sourceMode?: 'ORIGINAL';
   }): Promise<CanonicalApplicabilityControlledSelection> {
     if (!input.applicabilityContextRef.trim()) {
       throw controlledSelectionUnavailable(
@@ -60,7 +61,9 @@ export class MiaodaApplicabilityControlledSelectionAdapter implements CanonicalA
         404,
       );
     }
-    assertFrozenApplicabilitySourceReady(workItem);
+    // Original admission/commit verifies the published source in the input producer.
+    // Selection still comes exclusively from this Host-owned Fleet/target port.
+    if (input.sourceMode !== 'ORIGINAL') assertFrozenApplicabilitySourceReady(workItem);
     const selection = optionalSelection(workItem);
     if (!selection) {
       return this.readConfiguredHostTarget(input, workItem);

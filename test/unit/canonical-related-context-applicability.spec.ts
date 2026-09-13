@@ -14,6 +14,25 @@ describe('canonical related-context target applicability', () => {
   primary.applicabilityInput = applicabilityInput(primary);
   const assessmentTarget = relatedContextAssessmentTarget(primary);
 
+  it.each(['APPLICABLE','NOT_APPLICABLE','UNKNOWN'] as const)('reuses an original related %s only with its own exact source and Fleet binding',decision=>{
+    const item=workItem('WI-RELATED','DV-RELATED','PKG-RELATED');
+    const input=applicabilityInput(item); const legacy=applicabilityResult(item,decision);
+    const originalSource={binding:{documentVersionId:item.source.documentVersionId,parseRunId:'parse-1',parseRevision:1,
+      sourceArtifactId:item.source.sourceArtifactId,sourceSha256:item.source.sourceFileSha256,sourceByteLength:item.source.sourceByteLength},
+      artifact:{ref:'document-original://fixture/parse-1',sha256:'a'.repeat(64),byteLength:100,mediaType:'application/json' as const}};
+    item.applicabilityInput={...input,schemaVersion:'wiselink.3_1.applicability_input_projection.v2',sourcePackageId:null,
+      sourcePackageContentHash:null,sourcePackageArtifactSha256:null,originalSource};
+    item.applicability={...legacy,schemaVersion:'wiselink.3_1.applicability_candidate_projection.v3',sourcePackageId:null,
+      sourcePackageContentHash:null,translationActionAttemptId:null,sourceReadingMode:'VERIFIED_ENGLISH',
+      applicabilityContextRef:input.applicabilityContextRef,originalSource:structuredClone(originalSource)};
+    item.package=null;
+    expect(relatedContextAssessmentTarget(item)).toEqual(assessmentTarget);
+    expect(resolveCanonicalRelatedTargetApplicability(assessmentTarget,item).targetApplicability).toBe(decision);
+    const changed=structuredClone(item); changed.applicabilityInput!.originalSource!.binding.parseRunId='new';
+    expect(resolveCanonicalRelatedTargetApplicability(assessmentTarget,changed).targetApplicability).toBe('NOT_EVALUATED');
+    item.applicabilityInput.fleetMasterData.sourceRevisionKey='new-fleet';
+    expect(resolveCanonicalRelatedTargetApplicability(assessmentTarget,item).targetApplicability).toBe('NOT_EVALUATED');
+  });
   it.each([
     ['APPLICABLE', 'APPLICABLE'],
     ['NOT_APPLICABLE', 'NOT_APPLICABLE'],

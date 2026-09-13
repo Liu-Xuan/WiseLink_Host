@@ -196,7 +196,7 @@ describe('canonical Host OpenClaw applicability contract', () => {
     }).toThrow(expected);
   });
 
-  it('rejects unsupported and extraction-failed shapes instead of converting them to UNKNOWN', () => {
+  it('rejects malformed ASTs and contradictory unresolved shapes', () => {
     const task = applicabilityTask();
     const unsupportedProperty = candidateFor(task);
     unsupportedProperty.expressions[0].expressionAst.property = 'invented';
@@ -207,8 +207,19 @@ describe('canonical Host OpenClaw applicability contract', () => {
     const failedExtraction = candidateFor(task);
     failedExtraction.expressions[0].extractionStatus = 'extraction_failed';
     expect(() => parseApplicabilityCandidate(failedExtraction)).toThrow(
-      'APPLICABILITY_EXPRESSION_STATUS_INVALID',
+      'APPLICABILITY_UNRESOLVED_EXPRESSION_AST_INVALID',
     );
+  });
+
+  it.each(['extraction_failed','not_supported'])('preserves explicit %s with the exact source binding', extractionStatus => {
+    const task=applicabilityTask(); const raw=candidateFor(task);
+    raw.expressions[0].extractionStatus=extractionStatus;
+    raw.expressions[0].expressionAst=null as never;
+    const candidate=parseApplicabilityCandidate(raw);
+    expect(() => validateApplicabilityCandidateBinding(candidate,task)).not.toThrow();
+    expect(candidate.expressions[0]).toMatchObject({extractionStatus,expressionAst:null});
+    candidate.expressions[0].sourceRefIds=['invented'];
+    expect(() => validateApplicabilityCandidateBinding(candidate,task)).toThrow();
   });
 
   it('rejects model-controlled applicabilityLevel/contentRef fields', () => {

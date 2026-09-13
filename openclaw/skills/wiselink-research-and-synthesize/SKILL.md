@@ -12,7 +12,7 @@ description: Orchestrate the single official hosted WiseLink engineering profile
 - hosted app：`app_17c3zn24kv2`
 - logical profile：`wiselink-engineering`
 - model policy：`official-hosted-profile-config`（任务可绑定已登记的内置或用户授权自定义模型；仍经唯一官方 Hosted profile/Gateway）
-- Skill：`wiselink-research-and-synthesize@r09.c86`
+- Skill：`wiselink-research-and-synthesize@r09.c87`
 - Skill compatibility：`wiselink-research-and-synthesize@r09`（历史任务最低接受 `r09.c10`，翻译 v2 必须为 `r09.c44` 或更新兼容包）
 - Host MCP：`wiselink-openclaw-engineering-assessment@1.2.0`（保留既有工具，新增语义翻译工作与 JobAid 来源/工作工具）
 - Host 集成提交：以本次发布包清单记录的实际提交为准
@@ -276,10 +276,9 @@ Host 返回 `wiselink.3_1.translation_task.v2` 时，运行 [语义块翻译工�
 - 适用性条件不限于飞机号或生产线号。只要词表已发布且 Host 提供 current 受控事实，可表达注册号/MSN/line/
   variable number、部件 P/N/S/N、设备号/FIN、软件 P/N/S/N/version、改装与修理状态；缺失 qualifier 对应事实时
   必须保持 UNKNOWN/WAITING_INPUT，不得从文档原文或常识补成 TRUE/FALSE。
-- 模型只返回 `applicability_ast_candidate.v1` 的 `expressionId + sourceRefIds + expressionAst`；不返回
-  `applicabilityLevel`、`contentRef`、飞机匹配结论或 current。
-- Skill 用 Host modelInput 组装专属 `applicability_candidate.v1`；Host 才负责 target level/contentRef、唯一
-  FleetMasterData、Kleene evaluator、ResultGate、实际字节 readback、CAS/current。
+- 原文任务 `applicability_task.v3` 使用 `originalInput` 完整原文单元、定位与 coverage，`sourcePackage=null`、`sourceExpressions=[]`。模型发现条件后返回 `applicability_ast_candidate.v2`：每个单元一条 `unitDispositions`，每条条件保留实际引句及原文单元/来源引用，并给出 `document/unit/unresolved` 范围提议；不要把所有段落视为适用性条件。文档级范围须有明确顶层 Effectivity/Applicability 标题，其余无法定位的范围保持 unresolved。缺失条件或未读内容不等于适用。
+- 既有 v1/v2 任务继续返回 `applicability_ast_candidate.v1`，保留预绑定的 `expressionId + sourceRefIds`。两条路径均使用 `extractionStatus + expressionAst`；解释失败采用 `extraction_failed/not_supported + null`，不以 `no_rule_found` 抹掉条件。
+- Skill 从 Host 输入回填 Aircraft/Fleet 与版本绑定，原文路径组装 `applicability_candidate.v2`，旧路径保留 v1。模型不输出飞机匹配结论或 current；Host 校验引句和实际目标、求解 FleetMasterData/Kleene，负责 ResultGate、实际字节 readback、CAS/current。
 - Applicability 必须走本 Skill 的 `runApplicabilityEvaluation` 编排，不得手工拼 ResultEnvelope；
   `factsConsidered` 只可由 `modelInput.controlledFacts[].factId` 派生。业务校验拒绝后停止，不得重提 commit；只有
   明确的传输响应丢失才按既有只读 status recovery 路径恢复。
@@ -558,7 +557,7 @@ Interactive Review 的复杂 ResultEnvelope 必须由 `sealResultEnvelope` 生�
 当前 validator 强制：
 
 - `modelVersion` 优先取响应中可读实际模型；绑定任务未回报实际模型时使用 `configured-route:<modelRef>`，旧无绑定任务使用无 fallback 的 configured endpoint。后两者只证明路由，不代表已暴露下游具体模型，也不做具体版本等值判断
-- `skillVersion=wiselink-research-and-synthesize@r09.c86`
+- `skillVersion=wiselink-research-and-synthesize@r09.c87`
 - `toolVersions.wiselink-openclaw-engineering-assessment=1.2.0`
 - `promptVersion` 非空并来自当前运行
 - task/result exact binding、SourceRef allowlist 和 canonical hash 一致

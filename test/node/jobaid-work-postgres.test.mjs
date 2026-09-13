@@ -370,9 +370,10 @@ test(
         'authenticated JobAid requests prepare only at Hosted begin and preserve actor authorization under actual RLS',
         async () => {
           const initial = initialProjection('WI-job-begin');
+          initial.classification.normalizedFamily='FTD';
           const denied = initialProjection('WI-job-denied');
           const queued = initialProjection('WI-job-queued');
-          queued.package = null;
+          queued.package = null; queued.classification.normalizedFamily='FTD';
           const queuedDenied = initialProjection('WI-job-queued-denied');
           const automatic = initialProjection('WI-job-original-successor');
           for (const candidate of [initial, denied, queued, queuedDenied, automatic]) {
@@ -631,6 +632,42 @@ test(
           assert.equal(failedSuccessor.status,'FAILED');
           assert.equal(failedSuccessor.created,false);
           assert.equal((await sql`SELECT attempt_id FROM action_attempt WHERE work_item_id=${automatic.workItemId}`).length,1);
+          // Real applicability admission must recheck the WI after model-input
+          // construction, and serialize identical reservations under that lock.
+          const applicabilityReservation = {
+            workItemId:automatic.workItemId,tenantId:scope.tenantId,actorUserId:scope.actorUserId,
+            taskType:'OPENCLAW_APPLICABILITY_EVALUATION',documentVersionId:'dv-job',inputRevision:1,baseRevision:1,
+            idempotencyKey:'openclaw-v3:applicability:constructed-race',allowedConnectors:[],
+            buildModelInput:async()=>({schemaVersion:'wiselink.3_1.applicability_task.v3'}),
+          };
+          await assert.rejects(hosted(()=>lifecycle.reserve({...applicabilityReservation,buildModelInput:async()=>{
+            await sql`UPDATE work_item SET revision=2 WHERE work_item_id=${automatic.workItemId}`;
+            return {schemaVersion:'wiselink.3_1.applicability_task.v3'};
+          }})),/ACTION_ATTEMPT_WORK_ITEM_BINDING_CHANGED/);
+          assert.equal((await sql`SELECT attempt_id FROM action_attempt WHERE work_item_id=${automatic.workItemId}
+            AND action_type='OPENCLAW_APPLICABILITY_EVALUATION'`).length,0);
+          await sql`UPDATE work_item SET revision=1 WHERE work_item_id=${automatic.workItemId}`;
+          const applicabilityReservations=await Promise.all([
+            hosted(()=>lifecycle.reserve(applicabilityReservation)),hosted(()=>lifecycle.reserve(applicabilityReservation)),
+          ]);
+          assert.equal(applicabilityReservations.filter(value=>value.created).length,1);
+          assert.equal(applicabilityReservations[0].row.attemptId,applicabilityReservations[1].row.attemptId);
+          await assert.rejects(hosted(()=>lifecycle.reserve({...applicabilityReservation,
+            idempotencyKey:'openclaw-v3:applicability:other-request'})),/active attempt/i);
+          const guardedInputCas=()=>hosted(()=>workItems.compareAndSet({workItemId:automatic.workItemId,
+            expectedRevision:1,syncPrimaryAttempt:false,applicabilityInputGuard:{tenantId:scope.tenantId},
+            next:automatic}));
+          await assert.rejects(guardedInputCas(),/APPLICABILITY_INPUT_ACTIVE_ATTEMPT/);
+          assert.equal((await sql`SELECT revision FROM work_item WHERE work_item_id=${automatic.workItemId}`)[0].revision,1);
+          await sql`UPDATE action_attempt SET status='FAILED',terminal_reason='SYNTHETIC_FAILURE'
+            WHERE attempt_id=${applicabilityReservations[0].row.attemptId}`;
+          const inputRace=await Promise.allSettled([guardedInputCas(),hosted(()=>lifecycle.reserve({
+            ...applicabilityReservation,idempotencyKey:'openclaw-v3:applicability:cas-race',
+          }))]);
+          assert.equal(inputRace.filter(value=>value.status==='fulfilled').length,1,
+            'input CAS and a new applicability reservation cannot both win the same revision');
+          const loser=inputRace.find(value=>value.status==='rejected');
+          assert.match(String(loser.reason),/APPLICABILITY_INPUT_ACTIVE_ATTEMPT|ACTION_ATTEMPT_(?:WORK_ITEM_BINDING_CHANGED|RESERVATION_BINDING_CHANGED)/);
           const changed = structuredClone(initial);
           changed.package.artifact.sha256 = 'b'.repeat(64);
           await sql`UPDATE work_item SET projection_json = ${JSON.stringify(changed)} WHERE work_item_id = ${initial.workItemId}`;

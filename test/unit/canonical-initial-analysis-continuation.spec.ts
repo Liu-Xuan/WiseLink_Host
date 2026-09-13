@@ -212,6 +212,14 @@ describe('owner-requested initial continuation', () => {
     },
   );
 
+  it('admits original FTD continuation without pretending its classification is confirmed SB', async () => {
+    const h=harness(); h.workItem.classification.normalizedFamily='FTD';
+    h.workItem.classification.status='CANDIDATE';
+    await h.send({...request,operation:'EVALUATE_JOBAID'});
+    expect(h.jobAid.enqueueContinuation).toHaveBeenCalled();
+    expect(h.workItem.classification).toMatchObject({normalizedFamily:'FTD',status:'CANDIDATE'});
+  });
+
   it('requires ready applicability and confirmed SB, while unstarted translation does not block source analysis', async () => {
     const h = harness();
     const jobAid = { ...request, operation: 'EVALUATE_JOBAID' };

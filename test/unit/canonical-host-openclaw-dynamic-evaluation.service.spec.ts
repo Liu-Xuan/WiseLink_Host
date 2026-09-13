@@ -96,6 +96,38 @@ describe('CanonicalHostOpenClawDynamicEvaluationService', () => {
     expect(harness.artifactStore.persistAndReadback).not.toHaveBeenCalled();
   });
 
+  it.each(['FTD','SL','AMM'])('routes %s original analysis without reclassifying it as SB', async family => {
+    const problemAssessment = {enabledForNewTasks:() => true,begin:jest.fn(async () => ({status:'RUNNING'}))};
+    const harness = createHarness(undefined, {problemAssessment});
+    harness.attempts.readExactIdempotency.mockResolvedValue(null);
+    harness.workItem.classification.normalizedFamily=family;
+    harness.workItem.classification.status='CANDIDATE';
+    harness.workItem.package=null;
+    const classification=structuredClone(harness.workItem.classification);
+    const result=await harness.service.begin(WORK_ITEM_ID);
+    expect(result.status).toBe('RUNNING');
+    expect(problemAssessment.begin).toHaveBeenCalledWith(harness.workItem,expect.any(Object),'INITIAL_PROBLEM_ASSESSMENT');
+    expect(harness.workItem.classification).toEqual(classification);
+    expect(harness.registrar.compareAndSet).not.toHaveBeenCalled();
+    expect(harness.processor.buildRequest).not.toHaveBeenCalled();
+  });
+
+  it('propagates missing authorized original instead of falling back to the SB processor', async () => {
+    const problemAssessment = {enabledForNewTasks:() => true,
+      begin:jest.fn(async () => {throw new Error('DOCUMENT_ORIGINAL_NOT_PUBLISHED');})};
+    const harness = createHarness(undefined, {problemAssessment});
+    harness.attempts.readExactIdempotency.mockResolvedValue(null);
+    harness.workItem.classification.normalizedFamily='FTD'; harness.workItem.package=null;
+    await expect(harness.service.begin(WORK_ITEM_ID)).rejects.toThrow('DOCUMENT_ORIGINAL_NOT_PUBLISHED');
+    expect(harness.processor.buildRequest).not.toHaveBeenCalled();
+  });
+
+  it('retains the SB-only boundary of the legacy rule engine', async () => {
+    const harness=createHarness(); harness.workItem.classification.normalizedFamily='FTD';
+    await expect(harness.service.begin(WORK_ITEM_ID)).rejects.toThrow('DYNAMIC_EVALUATION_REQUIRES_CONFIRMED_SB');
+    expect(harness.attempts.reserveAndClaim).not.toHaveBeenCalled();
+  });
+
   it('uses the durable queue claim and returns its exact fencing lease', async () => {
     const harness = createHarness();
     const begun = await harness.service.begin(WORK_ITEM_ID);

@@ -106,13 +106,25 @@ describe('production applicability controlled selection', () => {
     });
   });
 
-  it('freezes the Host-scoped target without requiring an engineer form submission', async () => {
+  it('requires a configured controlled target in original mode and retains legacy frozen-source checks',async()=>{
+    const h=selectionHarness(); h.current.package=null;
+    const provider=new MiaodaApplicabilityControlledSelectionAdapter(h.registrar as never,h.fleetRepository as never,h.configurationEvidence as never);
+    const input={tenantId:'tenant-1',workItemId:'WI-APP-1',documentVersionId:'DV-1',applicabilityContextRef:'APCTX-1'};
+    await expect(provider.readCurrent({...input,sourceMode:'ORIGINAL'})).rejects.toThrow('APPLICABILITY_HOST_TARGET_NOT_CONFIGURED');
+    expect(h.fleetRepository.readCurrentForAircraft).not.toHaveBeenCalled();
+    await expect(provider.readCurrent(input)).rejects.toThrow();
+    expect(h.fleetRepository.readCurrentForAircraft).not.toHaveBeenCalled();
+    await expect(provider.readCurrent({...input,documentVersionId:'OTHER',sourceMode:'ORIGINAL'})).rejects.toThrow('CANONICAL_WORK_ITEM_NOT_FOUND');
+  });
+
+  it.each([false,true])('freezes the Host target in original mode %s without an engineer form submission', async original => {
     const harness = selectionHarness();
     harness.current.package!.usagePolicy!.applicability = {
       sourceExpressionCount: 1,
       normalizedCandidateCount: 1,
       assignmentCount: 1,
     };
+    if (original) harness.current.package=null;
     process.env[targetAircraftEnv] = 'b-1234';
     process.env[targetAsOfEnv] = '2026-08-27';
     const provider = new MiaodaApplicabilityControlledSelectionAdapter(
@@ -127,6 +139,7 @@ describe('production applicability controlled selection', () => {
         workItemId: 'WI-APP-1',
         documentVersionId: 'DV-1',
         applicabilityContextRef: 'APCTX-1',
+        ...(original ? {sourceMode:'ORIGINAL' as const} : {}),
       }),
     ).resolves.toMatchObject({
       selectionRevision: expect.stringMatching(

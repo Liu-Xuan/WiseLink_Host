@@ -1,3 +1,6 @@
+import { CanonicalHostApplicabilityInputProducer } from './canonical-host-applicability-input.producer';
+import { originalApplicabilityInputMatches } from './original-applicability-currentness';
+import { canonicalJson } from '../action-attempt/action-attempt-envelope';
 import { Inject, Injectable, Optional } from '@nestjs/common';
 import { JobAidWorkRepository } from './jobaid-work.repository';
 import { UnifiedReaderService } from '../unified-reader/unified-reader.service';
@@ -81,6 +84,7 @@ export class CanonicalHostInitialAnalysisStatusService {
     private readonly attempts: ActionAttemptLifecycleService,
     @Optional() private readonly originalWork?: JobAidWorkRepository,
     @Optional() private readonly originalReader?: UnifiedReaderService,
+    @Optional() private readonly applicabilityInputs?: CanonicalHostApplicabilityInputProducer,
   ) {}
 
   async project(input: {
@@ -165,7 +169,7 @@ export class CanonicalHostInitialAnalysisStatusService {
     if (published?.[0] && savedIds.length) {
       const bases = await this.db.select({
         attemptId: actionAttempt.attemptId,
-        parseRunId: sql<string | null>`${actionAttempt.taskEnvelopeJson} #>> '{modelInput,modelInput,documentOverview,original,binding,parseRunId}'`,
+        parseRunId: sql<string | null>`case when ${actionAttempt.taskEnvelopeJson} #>> '{modelInput,schemaVersion}' = 'wiselink.3_1.applicability_task.v3' then ${actionAttempt.taskEnvelopeJson} #>> '{modelInput,originalInput,binding,parseRunId}' else ${actionAttempt.taskEnvelopeJson} #>> '{modelInput,modelInput,documentOverview,original,binding,parseRunId}' end`,
       }).from(actionAttempt).where(and(eq(actionAttempt.tenantId, input.tenantId),
         eq(actionAttempt.workItemId, input.workItem.workItemId),
         eq(actionAttempt.documentVersionId, input.workItem.source.documentVersionId),
@@ -197,6 +201,9 @@ export class CanonicalHostInitialAnalysisStatusService {
       // task happened to read a newer original.
       if (originalImpactStages.jobAid) originalImpactStages.overall = true;
     }
+    const originalAdmission = originalMode && originalPublished && !execution.applicabilityInput && this.applicabilityInputs
+      ? await this.applicabilityInputs.readOriginalAdmissionContext({workItemId:input.workItem.workItemId,
+          tenantId:input.tenantId,documentVersionId:input.workItem.source.documentVersionId}) : undefined;
     return projectCanonicalHostInitialAnalysisStatus(
       input.workItem,
       rows.map((row) => ({
@@ -214,6 +221,7 @@ export class CanonicalHostInitialAnalysisStatusService {
       {
         originalPublished,
         originalImpactStages,
+        originalAdmission,
         englishAssessmentEnabled:
           process.env.WL_JOBAID_PROBLEM_V2_ENABLED === '1',
       },
@@ -275,8 +283,8 @@ export class CanonicalHostInitialAnalysisStatusService {
     if (
       automatic &&
       process.env.WL_JOBAID_PROBLEM_V2_ENABLED === '1' &&
-      input.workItem.classification.status === 'CONFIRMED' &&
-      input.workItem.classification.normalizedFamily === 'SB'
+      (input.workItem.classification.normalizedFamily !== 'SB' ||
+        input.workItem.classification.status === 'CONFIRMED')
     ) {
       if (
         ['FAILED', 'CONFLICT'].includes(status.stages.jobAid.status) &&
@@ -374,7 +382,7 @@ export function initialAnalysisTerminalCode(row: {
 export function projectCanonicalHostInitialAnalysisStatus(
   workItem: CanonicalWorkItemProjection,
   attempts: readonly CanonicalInitialAnalysisAttemptObservation[],
-  options: { englishAssessmentEnabled?: boolean; originalPublished?: boolean; originalImpactPending?: boolean; originalImpactStages?: Partial<Record<OriginalEngineeringStage, boolean>> } = {},
+  options: { originalAdmission?: {contextRef:string|null;reason:string|null}; englishAssessmentEnabled?: boolean; originalPublished?: boolean; originalImpactPending?: boolean; originalImpactStages?: Partial<Record<OriginalEngineeringStage, boolean>> } = {},
 ): AilyInitialAnalysisStatus {
   const attemptByAction = latestAttemptsByAction(attempts);
   const parsedPackageReady = options.originalPublished ?? isParsedPackageReady(workItem);
@@ -425,18 +433,23 @@ export function projectCanonicalHostInitialAnalysisStatus(
             ),
       }
     : pendingStages();
+  if (options.originalAdmission && stages.applicability.terminalCode==='APPLICABILITY_SELECTION_REQUIRED') {
+    stages.applicability=options.originalAdmission.contextRef ? pendingStage() :
+      {...stages.applicability,terminalCode:options.originalAdmission.reason ?? 'APPLICABILITY_SELECTION_REQUIRED'};
+  }
   if (options.originalImpactPending || options.originalImpactStages) {
     // Retain the exact historical candidate, but do not report it as assessed
     // against corrected source content. Active successors keep their own state.
     for (const key of ORIGINAL_ENGINEERING_STAGES) {
       if ((options.originalImpactPending || options.originalImpactStages?.[key]) &&
-        (stages[key].status === 'SUCCEEDED' || (key === 'overall' && stages[key].status === 'CONFLICT' &&
+        (stages[key].status === 'SUCCEEDED' ||
+          (key === 'applicability' && stages[key].status === 'WAITING_INPUT' && execution.applicability?.status === 'WAITING_INPUT') || (key === 'overall' && stages[key].status === 'CONFLICT' &&
           stages[key].terminalCode === 'OVERALL_PROJECTION_NOT_CURRENT'))) stages[key]={...stages[key],status:'CONFLICT',
         terminalCode:'DOCUMENT_ORIGINAL_IMPACT_REVIEW_REQUIRED'};
     }
   }
-  if (options.originalPublished && !workItem.package && stages.applicability.status === 'PENDING')
-    stages.applicability={...stages.applicability,status:'WAITING_INPUT',terminalCode:'ORIGINAL_APPLICABILITY_MAPPING_REQUIRED'};
+  if (options.originalPublished && !workItem.package && !originalApplicabilityInputMatches(execution) && !options.originalAdmission?.contextRef && stages.applicability.status === 'PENDING')
+    stages.applicability={...stages.applicability,status:'WAITING_INPUT',terminalCode:options.originalAdmission?.reason ?? 'ORIGINAL_APPLICABILITY_MAPPING_REQUIRED'};
   const progression = parsedPackageReady
     ? deriveProgression(
         stages,
@@ -450,7 +463,7 @@ export function projectCanonicalHostInitialAnalysisStatus(
     applicabilityContextRef: reevaluation
       ? (reevaluation.stagedBundle.applicabilityInput
           ?.applicabilityContextRef ?? null)
-      : applicabilityContextRef(workItem),
+      : applicabilityContextRef(workItem) ?? options.originalAdmission?.contextRef ?? null,
     status: progression.status,
     nextOperation: progression.nextOperation,
     stages,
@@ -556,24 +569,31 @@ function applicabilityProjectionObservation(
   const applicability = workItem.applicability;
   if (!applicability) return absentProjection();
   const applicabilityInput = workItem.applicabilityInput;
+  const original = applicabilityInput?.originalSource;
+  const sourceCurrent = applicability.schemaVersion === 'wiselink.3_1.applicability_candidate_projection.v3'
+    ? !!original && applicabilityInput?.sourcePackageId === null && applicabilityInput.sourcePackageContentHash === null &&
+      applicability.sourcePackageId === null && applicability.sourcePackageContentHash === null &&
+      canonicalJson(applicability.originalSource) === canonicalJson(original) &&
+      original.binding.documentVersionId === workItem.source.documentVersionId &&
+      original.binding.sourceArtifactId === workItem.source.sourceArtifactId &&
+      original.binding.sourceSha256 === workItem.source.sourceFileSha256 &&
+      original.binding.sourceByteLength === workItem.source.sourceByteLength &&
+      applicability.sourceReadingMode === 'VERIFIED_ENGLISH' && applicability.translationActionAttemptId === null
+    : applicabilityInput?.sourcePackageId === workItem.package?.packageId &&
+      applicabilityInput?.sourcePackageContentHash === workItem.package?.contentHash &&
+      applicability.sourcePackageId === workItem.package?.packageId &&
+      applicability.sourcePackageContentHash === workItem.package?.contentHash &&
+      (applicability.schemaVersion === 'wiselink.3_1.applicability_candidate_projection.v2'
+        ? applicability.sourceReadingMode === 'VERIFIED_ENGLISH' && applicability.translationActionAttemptId === null
+        : applicability.translationActionAttemptId === workItem.translation?.actionAttemptId);
   const current =
     applicabilityInput?.currentness === 'CURRENT' &&
     applicabilityInput.workItemId === workItem.workItemId &&
     applicabilityInput.documentVersionId ===
       workItem.source.documentVersionId &&
-    applicabilityInput.sourcePackageId === workItem.package?.packageId &&
-    applicabilityInput.sourcePackageContentHash ===
-      workItem.package?.contentHash &&
+    sourceCurrent &&
     applicability.currentness === 'CURRENT' &&
     applicability.documentVersionId === workItem.source.documentVersionId &&
-    applicability.sourcePackageId === workItem.package?.packageId &&
-    applicability.sourcePackageContentHash === workItem.package?.contentHash &&
-    (applicability.schemaVersion ===
-    'wiselink.3_1.applicability_candidate_projection.v2'
-      ? applicability.sourceReadingMode === 'VERIFIED_ENGLISH' &&
-        applicability.translationActionAttemptId === null
-      : applicability.translationActionAttemptId ===
-        workItem.translation?.actionAttemptId) &&
     applicability.applicabilityContextRef ===
       applicabilityInput?.applicabilityContextRef &&
     applicability.applicabilityBindingRevision ===
@@ -745,6 +765,10 @@ function continuationRequestId(
   row: { actionType: string; idempotencyKey: string | null },
   item: CanonicalWorkItemProjection,
 ): string | null {
+  if (row.actionType==='OPENCLAW_APPLICABILITY_EVALUATION') {
+    const match=/^openclaw-v3:applicability:(original-[1-9][0-9]{0,15}):[a-f0-9]{64}$/.exec(row.idempotencyKey ?? '');
+    return match?.[1] ?? null;
+  }
   const kind = {
     OPENCLAW_TRANSLATE: 'translate',
     OPENCLAW_DYNAMIC_EVALUATION: 'dynamic',

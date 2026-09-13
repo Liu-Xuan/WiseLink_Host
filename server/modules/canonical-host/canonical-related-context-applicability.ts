@@ -1,3 +1,4 @@
+import { originalApplicabilityInputMatches, originalApplicabilityResultMatches } from './original-applicability-currentness';
 import type {
   CanonicalRelatedTargetApplicability,
   CanonicalWorkItemProjection,
@@ -23,12 +24,12 @@ export function relatedContextAssessmentTarget(
   const input = workItem.applicabilityInput;
   if (
     !input ||
-    !workItem.package ||
     input.currentness !== 'CURRENT' ||
     input.workItemId !== workItem.workItemId ||
     input.documentVersionId !== workItem.source.documentVersionId ||
-    input.sourcePackageId !== workItem.package.packageId ||
-    input.sourcePackageContentHash !== workItem.package.contentHash ||
+    (input.originalSource ? !originalApplicabilityInputMatches(workItem) :
+      (!workItem.package || input.sourcePackageId !== workItem.package.packageId ||
+        input.sourcePackageContentHash !== workItem.package.contentHash)) ||
     !input.fleetMasterData.sourceSnapshotId ||
     !input.fleetMasterData.sourceRevisionKey ||
     !input.fleetMasterData.authorityRevision
@@ -60,10 +61,10 @@ export function resolveCanonicalRelatedTargetApplicability(
   if (
     applicability.documentVersionId !==
       relatedWorkItem.source.documentVersionId ||
-    !relatedWorkItem.package ||
-    applicability.sourcePackageId !== relatedWorkItem.package.packageId ||
-    applicability.sourcePackageContentHash !==
-      relatedWorkItem.package.contentHash ||
+    (applicability.schemaVersion==='wiselink.3_1.applicability_candidate_projection.v3'
+      ? !originalApplicabilityResultMatches(relatedWorkItem)
+      : (!relatedWorkItem.package || applicability.sourcePackageId !== relatedWorkItem.package.packageId ||
+        applicability.sourcePackageContentHash !== relatedWorkItem.package.contentHash)) ||
     applicability.currentness !== 'CURRENT' ||
     applicability.status === 'STALE'
   ) {

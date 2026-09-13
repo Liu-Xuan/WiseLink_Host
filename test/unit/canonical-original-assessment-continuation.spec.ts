@@ -7,13 +7,14 @@ function harness(overrides: Record<string, unknown> = {}) {
   const workItem = {workItemId:scope.workItemId,revision:2,classification:{normalizedFamily:'SB',status:'CONFIRMED'}};
   const stages = {translation:{status:'PENDING'},applicability:{status:'WAITING_INPUT'},jobAid:impacted,overall:impacted,...overrides};
   const authorization = {authorizeOpenClawWorkItem:jest.fn(async () => scope)};
-  const project = jest.fn(async () => ({status:'CONFLICT',stages}));
+  const project = jest.fn(async () => ({status:'CONFLICT',stages,applicabilityContextRef:'context-original'}));
+  const applicability={enqueueOriginal:jest.fn(async()=>({status:'QUEUED',requestId:'original-2'}))};
   const problem = {enabledForNewTasks:() => true,readOriginalContinuationBinding:jest.fn(async () => original),
     enqueueOriginalContinuation:jest.fn(async () => ({status:'QUEUED',requestId:'original-2'}))};
   const service = new CanonicalHostOpenClawDynamicEvaluationService(
     {getTenantScopedByWorkItemId:async () => workItem} as never,{} as never,{} as never,{} as never,
-    {} as never,{} as never,{} as never,authorization as never,{} as never,{} as never,problem as never,{project} as never);
-  return {service,problem,authorization,project,workItem};
+    {} as never,{} as never,{} as never,authorization as never,{} as never,{} as never,problem as never,{project} as never,applicability as never);
+  return {service,problem,authorization,project,workItem,applicability};
 }
 
 describe('Hosted original assessment continuation admission', () => {
@@ -22,6 +23,13 @@ describe('Hosted original assessment continuation admission', () => {
     expect(await h.service.nextOriginalAssessment(scope.workItemId)).toMatchObject({status:'QUEUED'});
     expect(h.project).toHaveBeenCalledWith({workItem:h.workItem,tenantId:scope.tenantId,expectedOriginalParseRunId:original.parseRunId});
     expect(h.problem.enqueueOriginalContinuation).toHaveBeenCalledWith(h.workItem,scope,'INITIAL_PROBLEM_ASSESSMENT',original);
+  });
+  it('queues changed applicability first with the exact service identity and original',async()=>{
+    const h=harness({applicability:impacted});
+    expect(await h.service.nextOriginalAssessment(scope.workItemId)).toMatchObject({status:'QUEUED'});
+    expect(h.applicability.enqueueOriginal).toHaveBeenCalledWith('context-original',{
+      tenantId:scope.tenantId,workItemId:scope.workItemId,principalId:scope.principalId,...original});
+    expect(h.problem.enqueueOriginalContinuation).not.toHaveBeenCalled();
   });
   it('requires Overall authority before a separate Overall successor', async () => {
     const h=harness({jobAid:{status:'SUCCEEDED'}});

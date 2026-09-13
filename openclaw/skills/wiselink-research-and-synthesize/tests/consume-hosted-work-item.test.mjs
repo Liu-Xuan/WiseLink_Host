@@ -365,7 +365,7 @@ test('independent native job invocations progress while another subject is waiti
 });
 
 
-test('an original impact asks Host for the durable successor and re-reads authoritative status', async t => {
+for (const operation of ['EVALUATE_JOBAID','EXTRACT_APPLICABILITY']) test(`original ${operation} impact consumes the durable successor after authoritative readback`, async t => {
   const input = await options(t);
   let queued=false, saved=false;
   const calls=[];
@@ -375,10 +375,11 @@ test('an original impact asks Host for the durable successor and re-reads author
       if (name==='get_pending_review_turn') return {next:null,busy:false};
       if (name==='next_original_assessment') {queued=true;return {status:'QUEUED'};}
       assert.equal(name,'get_parse_status');
-      return status({status:queued?'WAITING_INPUT':'CONFLICT',nextOperation:queued&&!saved?'EVALUATE_JOBAID':null,
-        stages:{translation:{status:'PENDING'},applicability:{status:'WAITING_INPUT'},
-          jobAid:saved?{status:'SUCCEEDED'}:queued?{status:'PENDING',requestId:'original-2'}:
-            {status:'CONFLICT',terminalCode:'DOCUMENT_ORIGINAL_IMPACT_REVIEW_REQUIRED'},overall:{status:'SUCCEEDED'}}});
+      return status({status:queued?'WAITING_INPUT':'CONFLICT',nextOperation:queued&&!saved?operation:null,
+        stages:{translation:{status:'PENDING'},overall:{status:'SUCCEEDED'},
+          ...(operation==='EXTRACT_APPLICABILITY' ? {jobAid:{status:'SUCCEEDED'}} : {applicability:{status:'WAITING_INPUT'}}),
+          [operation==='EXTRACT_APPLICABILITY'?'applicability':'jobAid']:saved?{status:'SUCCEEDED'}:queued?{status:'PENDING',requestId:'original-2'}:
+            {status:'CONFLICT',terminalCode:'DOCUMENT_ORIGINAL_IMPACT_REVIEW_REQUIRED'}}});
     },
     runInitial:async run => {assert.equal(run.continuationRequestId,'original-2');saved=true;return {outcome:'CANDIDATE_READY'};},
   });

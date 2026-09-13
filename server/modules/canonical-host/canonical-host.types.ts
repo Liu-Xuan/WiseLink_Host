@@ -132,6 +132,7 @@ export interface CanonicalWorkItemRegistrarPort {
     expectedRevision: number;
     next: Omit<CanonicalWorkItemProjection, 'revision'>;
     syncPrimaryAttempt?: boolean;
+    applicabilityInputGuard?: { tenantId: string };
   }): Promise<CanonicalWorkItemProjection>;
   getExact(input: {
     workItemId: string;

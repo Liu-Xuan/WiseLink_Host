@@ -309,3 +309,119 @@ Skill c85 源提交 `58653b973f43f18c0ce345239547fc2e2a9f115c` 已推送妙搭 o
 受理先捕获解析版本，状态比较核对同一 run，入队再次检查该版本。幂等 requestId 为 `original-<parseRevision>`，既有键同时限定 WorkItem、DocumentVersion、操作；复用 ActionAttempt 对 WorkItem 的行锁、版本校验和所有初评在途检查。真实 PG 并发受理只创建一个请求，失败后同一版本回读仍为原失败，不产生随机后继。每个请求保存确切原文，JobAid 更新后旧 Overall 的原文影响仍可继续受理。
 
 活动配置重评、在途任务、普通失败、适用性原文映射缺口不会被跳过。当前只接通符合既有受理边界的 JobAid/Overall 后继；原文适用性条件提取/Host 目标映射、非 SB 普通文档评估入口仍需完成，不能把该增量写成全流程闭环。81 项状态/受理/动态服务测试、12 项真实 PG 测试通过；c86 发布声明检查通过，云端安装与实际消费尚未完成。
+
+本批技术发布读回：Host release `7684755212175903949` finished，提交 `b0ff1f51025dacf3429bc07e21972f1b053cf253`，error_logs 为空；包含前述各阶段原文基准、入队固定原文和自动后继入口。c86 的 205 项消费器/载荷测试及包内自测通过，私有 ZIP `/1876158131942419.zip`、manifest `/1876161709842555.json`；下载回读 372252 字节及 SHA-256 `492b34c34397d8b08eae4255deedc03969aedc0651a3407a15a6010fd5a9eab9` 匹配本地清单。该包尚未安装到官方 Hosted，旧 c85 上传记录不是 c86 安装证明。
+
+既有官方 Hosted 诊断句柄最新只读仍为 active=true、streaming=false、queued_count=3；latest_turn cancelled 为旧状态，未追加、重启或取消。当前技术发布不等于官方消费实际执行、插件实跑或 H1/H2 完成。
+
+## 非 SB 文档的原文工程入口（2026-09-13，本地增量）
+
+实际 Hosted begin、浏览器续评选项和续评受理三处残留 SB-only 条件。本轮让新原文问题分析接收非 SB 文档的真实分类（含 FTD/SL/AMM），不将其改写或确认成 SB；继续由 CanonicalJobAidProblemService 检查原件、发布原文、真实 owner 和当前来源。旧逐项规则引擎保留确认 SB 与 parsed package 边界，不因开关或既有任务而回落为非 SB 的旧规则评估；SB 自身的已有确认逻辑保留。
+
+124 项入口/续评/状态/原文问题测试通过，12 项实际 PostgreSQL 测试使用 FTD 初评及无 package 续评记录，验证同一身份、请求、来源与恢复边界；server types 通过。此增量尚未发布，不作为线上 FTD 模型评估成功证明。原文适用性提取/范围映射、官方 Hosted 安装消费、F6 正式来源接通及 H1/H2 仍未完成。
+
+## 适用性来源解释未知的真实提交路径（2026-09-13，本地增量）
+
+迁移检查确认当前候选契约只能表示 extracted，提交后还拒绝一切非 Fleet 事实未知；这会把原文无法可靠解释逼成错误，而不是明确 UNKNOWN。本轮沿实际 native AST 候选→Host 候选解析→Kleene→候选持久化路径允许 extraction_failed/not_supported 且 AST 必须为 null。条件 ID 与 SourceRef 仍须逐项等于 Host 已绑定来源，非法属性/操作符、伪造引用、失败状态夹带 true/false AST 继续拒绝，不接受 no_rule_found 擦除既有条件。
+
+Host 只接受与该候选状态、fragmentId 和原因吻合的 interpretation_unknown，保存 WAITING_INPUT/UNKNOWN/pass=false。跟进策略标记 READ_ORIGINAL_SOURCE，不继承引擎旧 grill_me 标签来强制人工逐条确认。72 项 Host 契约/提交服务测试、191 项 native 载荷测试、server types 和 c87 版本声明检查通过。
+
+这修正的是已经接线的来源解释未知提交语义；任务输入/受控选择仍未从 frozen.2 迁移到独立原文，不声称新原文条件发现、作用范围绑定已实现。c87 源码增量尚未打包、安装或发布，已验证私有交付包仍为上一节 c86。
+
+## 原文适用性输入生产与复核（2026-09-13，迁移中）
+
+新增 CanonicalHostApplicabilityInputProducer.produceOriginalAuthorized，复用受控 Fleet/目标选择和原有 CAS，按真实 WorkItem owner 通过正常 Reader 读取确切已发布原文。输入投影 v2 保存 DocumentOriginalBinding 及已验证 manifest 的真实 document-original 引用；三个旧 package 字段为 null，不补造包或 Candidate storeRole。原有 targetBindingHash 在此模式采用实际 manifest SHA，未新增全局哈希机制。
+
+既有 resolveCurrent/readCurrentOwnerValidated/readCurrentSelectionValidated 已支持该投影：提交前正常读取并比较原文，发布后恢复只复核保存绑定与当前选择，不增加 FileService 调用。授权失败不 CAS，原文版本变化不静默改写当前输入，重复生产相同输入不增加修订。58 项生产者/既有提交服务测试及前后端类型检查通过。
+
+当前 begin_applicability_evaluation 仍未切换到新生产方法；实际新原文任务、候选条件发现/作用范围与提交结果的 v3 接线必须完成后再切换。此段是迁移进展，尚非运行入口完成，也未发布；旧任务继续使用现有 frozen.2 绑定路径。下一步修改任务/候选及其 native 消费者，以真实原文 catalog 和候选引句建立 Host 来源/作用范围，而非把所有原文单元预标为 source_asserted 条件。
+
+## 原文适用性 v3 任务构建（2026-09-13，迁移中）
+
+任务构建已消费上一节 v2 原文输入，经生产者重新核对确切来源和 tenant 后构造 applicability_task.v3。任务 sourcePackage=null，originalInput 保存实际 binding/manifest、完整结构单元/表格、原定位及 coverage；sourceExpressions 为空，表示尚待发现条件，不把单元虚构成已声明适用性。保留真实受控 Aircraft/Fleet 和现有 AST 词汇；不用中文或旧包补充工程来源。幂等键绑定原文与受控输入，沿用原有有限长度键哈希，不伪造 packageSha256。
+
+79 项生产者/契约/服务测试通过，包括实际 begin 构建 v3、无旧包读取、完整 coverage 和真实来源引用；前后端类型检查通过。任务版本恢复识别 v3，来源模式不一致直接拒绝。新生产方法尚未在普通新请求入口启用：下一步仍须实现 v3 native 条件发现及 Host 候选引句/作用范围、结果投影与恢复校验，再整体切换。未发布、未调用模型，不将任务构建测试当作适用性求值完成证明。
+
+## 原文条件候选 v2 校验（2026-09-13，迁移中）
+
+Host 已接受仅供原文任务 v3 使用的候选 v2：确切原文绑定、逐单元阅读结论、条件引句及范围提议。旧候选仍按原契约校验。Host 比较真实 payload text/caption（含表格嵌套文本），拒绝伪造/空白引句、错误来源、遗漏单元和错绑条件；不把空条件集解释成适用。范围只在实际标题层级和节边界内处理，缺失文档级 Effectivity/Applicability、跨节目标、未决单元及未读页保持 UNKNOWN。多个实际目标展开为各自的评估片段，不再错误使用引句单元作为所有目标。
+
+82 项相关契约/服务/新来源校验测试和服务端类型检查通过。本实现仅验证候选的来源及结构边界，不证明模型语义抽取正确；文档级识别目前限于顶层明确标题，其余结构保守 UNKNOWN。普通入口仍未切换，native v3 候选输出、结果投影/恢复及真实业务验证待继续接通；未发布，不据此宣称 H1/H2 完成。
+
+## native 原文条件发现与候选组装（2026-09-13，迁移中）
+
+现有官方 Hosted 初始模型适配器已按 applicability_task.v3 选择完整原文条件发现提示词，返回 AST candidate v2；既有任务继续使用 v1。native 校验 exact 原文 binding/manifest 与 sourceContext、一单元一阅读结论、真实 payload 引句、来源及候选目标 ID，拒绝伪造或遗漏。Aircraft/Fleet/runtime 与 originalBinding 从 Host 输入回填，模型不能提供控制字段；输出 applicability_candidate.v2 可由上一批 Host 契约接收。未读单元、解释失败与空条件集原样保留给 Host UNKNOWN 判定，不补造 true AST。
+
+201 项 native 验证测试通过，包含实际模型适配器分支及候选组装、旧契约回归；Skill 发布检查通过。测试使用构造数据和注入响应，未调用真实模型。c87 源码与说明已更新但尚未打包/安装；普通入口仍未切换，结果投影、提交恢复及真实 H1/H2 待继续完成。上一已发布 c86 不代表具备此次能力。
+
+## 原文适用性结果持久化与恢复（2026-09-13，迁移中）
+
+Host artifact/projection v3 保存实际 originalSource binding/manifest，旧 package 字段为 null；产物保存经过 Host 结构校验的逐目标绑定。提交前重建补齐真实 row.tenantId，修复此前只验证 begin 未覆盖的原文租户传递遗漏。APPLICABLE 与 UNKNOWN 均完成实际 service 提交、产物 readback、CAS 和幂等 replay；更改原文输入后拒绝旧结果恢复且不再 CAS。旧 v1/v2 结果继续按原任务版本与来源校验。
+
+状态投影已识别 v3 原文来源，逐阶段原文比较读取 applicability_task.v3 的实际 originalInput 路径；旧 JobAid/Overall 路径保留。112 项契约、提交恢复、状态测试及前后端类型检查通过，未据此声称线上业务完成。普通入口尚未切换；下游工程/相关上下文对原文适用性结果的消费、源变化重新触发及真实 H1/H2 仍需验证和接通。未发布。
+
+## 原文适用性下游消费（2026-09-13，迁移中）
+
+相关上下文已支持无旧包的 v2 原文评估目标及 v3 适用性结果，仍只复用相关文档自己的当前结果。复用须匹配该文档来源、受控选择、Fleet 修订及结果三值一致性，不把主文档的适用性复制给相关文档。原文比较 helper 只比较已提供的绑定，不声称查询最新发布或完成授权。
+
+JobAid 实际 buildInput 以正常 Reader 本次读取的确切原文 binding 复核 v3 结果；来源或 Fleet 修订变化时传入 hostApplicability=null，保留存储的历史结果。新 Overall 保存时同样只采用与其确切任务原文匹配的 v3 decision，否则 UNKNOWN。42 项相关上下文/JobAid 任务及既有续接测试与前后端类型检查通过，含真实 begin 构建三种来源/Fleet 情形。普通入口尚未切换；旧包 Overall processor 仍保留原任务路径，源变化重触发、受控目标配置及全流程 H1/H2 还需接通和验证。本批未发布。
+
+## 原文路径的受控目标端口（2026-09-13，入口迁移准备）
+
+发现生产 MiaodaApplicabilityControlledSelectionAdapter 在读取 Fleet 前仍强制 frozen.2 条件映射，导致原文输入生产虽实现、实际端口仍不可用。已由服务端私有 selection port 增加明确 ORIGINAL 模式；新原文生产及 v2 输入的提交/恢复读均传入该模式。原文发布及字节来源验证仍由输入生产者执行；端口继续核对 tenant/WorkItem/DV，只读取既有 Host 配置或保存的受控目标和 Fleet，不接受模型目标、不开放新的浏览器写入口。
+
+14 项目标适配器/生产者测试及服务端类型检查通过：无旧包时可读取已配置 Host 目标，缺少配置和错误 DV 仍拒绝，旧路径保留 frozen.2 检查。普通 begin 仍未切换：须先把既有任务幂等查询和活动任务保护放到输入迁移前，避免先 CAS 新输入而破坏已经发出的旧任务。本批未发布。
+
+## 适用性预留事务边界（2026-09-13，入口迁移准备）
+
+实际检查发现 action_attempt.reserve 原先只对 openclaw-v2 键获取 WorkItem 行锁，原文适用性 openclaw-v3 和既有适用性键未进入该分支。现对 OPENCLAW_APPLICABILITY_EVALUATION 统一获取同一 WorkItem 锁，在锁内查精确幂等、重新核对 DV/revision、排除其他活动适用性任务再预留。适用性只排除同类活动任务，不新增等待翻译完成的条件；原有 openclaw-v2 JobAid/Overall 活动检查保持不变。
+
+真实 PostgreSQL/RLS 12 项测试通过，其中新增在真实 lifecycle.buildModelInput 期间改变 WI 修订后拒绝预留、同请求双并发只建一条、另一请求不越过活动适用性任务的断言；服务端类型检查通过。此变更补齐输入迁移需依赖的预留锁，尚未实现输入 CAS 的活动任务保护或切换普通 begin，不宣称整个迁移已原子化。本批未发布。
+
+## 输入迁移 CAS 与任务预留互斥（2026-09-13，入口迁移准备）
+
+输入生产者的实际 compareAndSet 已传入服务端租户作用域的 applicabilityInputGuard。MiaodaWorkItemRepository 在同一事务内锁 WorkItem、核对 tenant/DV/revision、检查 QUEUED/RUNNING/RETRY_SCHEDULED/COMMITTING 适用性任务后才更新输入投影；锁与上一节适用性预留共用。保护仅用于 syncPrimaryAttempt=false 的输入更新，不改写或取消已有任务，也不影响其他普通 CAS。
+
+真实 PostgreSQL 测试新增活动任务阻止输入 CAS 和 CAS/新任务预留双并发互斥断言，12 项通过；60 项输入生产/提交恢复测试及服务端类型检查通过。两条并发路径不可能同时基于同一修订成功。普通 begin 尚未切换：下一步在新输入生产之前读取旧任务幂等绑定，确定沿用旧版本还是迁移原文输入。本批未发布。
+
+## 普通 begin 的原文新请求接入（2026-09-13）
+
+begin_applicability_evaluation 现在先读取授权后的只读 admission snapshot，并用当前输入计算精确旧幂等键。找到已有任务时不调用输入生产/CAS，按其封存 schemaVersion 重建；找不到时，现有 WL_JOBAID_PROBLEM_V2_ENABLED=1 或已原文输入的新请求调用 produceOriginalAuthorized，普通未启用历史模式保留旧生产方法。原文生产失败不回退旧包。生产后重新读取 owner/受控输入，并查迁移后的幂等键，沿用前两批的 CAS/预留事务保护。
+
+61 项生产/提交测试通过，新增“先查旧键→新原文生产→查 v3 键→构建 v3”顺序和旧 v1 任务不迁移断言；38 项状态测试通过，已具备有效原文输入但尚未求值时可推进 EXTRACT_APPLICABILITY，不再要求 frozen.2 映射。服务端类型检查通过。测试中的生产者替身负责构造服务测试输入，生产者本身另有真实方法测试；未宣称已跑线上模型。
+
+普通 begin 已接新原文路径，但实际 INITIAL_ANALYSIS 对尚无 applicabilityInput 的原文 WI 仍需配置/发现授权 opaque context 与 Host 受控目标，当前保留 WAITING_INPUT 而非虚构目标；原文变化自动重新触发与完整真实 H1/H2 继续实施。本批未发布、c87 未安装。
+
+## 首次原文适用性入口发现（2026-09-13）
+
+对于已有真实原文发布、尚无 applicabilityInput 的 WI，状态服务现调用输入生产者的只读 admission discovery：读取已配置 opaque context，经原有 BEGIN_APPLICABILITY 服务授权精确核对 tenant/WI，再通过生产受控选择端口读取 Host 目标/Fleet。成功后返回 context 并将原先 APPLICABILITY_SELECTION_REQUIRED 推进为 PENDING/EXTRACT_APPLICABILITY，由 native 原有 begin 流程生产真实输入；不把所有源单元预声明成条件。
+
+发现过程不读文件正文、不写 CAS、不创建目标或业务结论。未配置/未授权/已知受控目标不可用以具体 terminalCode 保留 WAITING_INPUT，未知运行错误继续抛出，不静默降级。45 项生产者与状态测试、服务端类型检查通过，覆盖只读/跨租户拒绝和首次入口状态。真实环境是否已配置对应 context 与 Fleet 仍需运行核验；原文变化后的自动重新评估及 H1/H2 继续推进。本批未发布。
+
+## 真实运行核对（2026-09-13，首次入口接线后）
+
+官方 Hosted conversation_4ky0f6r24fz90 新鲜读回 is_active=true、is_streaming=false、queued_count=3；latest_turn 仍为旧 cancelled，不代表会话结束。未新建/重启/追加消息。P 的“解析”任务新鲜读回仍 inProgress，未发送被阻止的跨任务交接。
+
+线上环境只读核对：WL_JOBAID_PROBLEM_V2_ENABLED=1；适用性 context APCTX-R09-777-4-7f4e2db6c8a941c1b763a0f5、目标 B-1266、asOf 2026-06-05，服务 WorkItem 仍 WI-d09b7acc-2221-4e51-addd-e040ce3c68f4。它不是 FTD 样例 WI-990d6e76-78d4-440a-a419-1b2e37b94ac9，不将既有 777 配置推定为 FTD 的授权目标。两项 WI 的线上 revision 均为 3、status=CANDIDATE_READBACK_VERIFIED；按这两项 WI 查询 QUEUED/RUNNING/RETRY_SCHEDULED/COMMITTING 返回空集。
+
+最新 Host release 仍 7684755212175903949/finished，确切 commit_id=b0ff1f51025dacf3429bc07e21972f1b053cf253。之后的原文适用性改动未上线，c87 未安装。以上只是新鲜状态/配置证据，不证明原文插件 H1 或真实工程 H2 成功。需继续完成变化重评与配套交付，再按各自来源/目标授权推进运行；未修改环境或业务数据。
+
+## UNKNOWN 结果的原文变化失效（2026-09-13）
+
+修复状态投影仅将 SUCCEEDED 结果标记原文影响、遗漏已持久化 WAITING_INPUT/UNKNOWN 适用性结果的分支。现在已保存 UNKNOWN 在逐阶段原文比较确认影响后同样成为 DOCUMENT_ORIGINAL_IMPACT_REVIEW_REQUIRED，保留历史 candidate 原值，不修改为 TRUE/FALSE。不把尚无输入的配置等待视为旧结果，也不覆盖 BUSY 活动后继。
+
+38 项状态测试通过，新增 CANDIDATE_ONLY/WAITING_INPUT 两种原文结果在影响标志下均进入重评冲突且历史不变的断言。现有 compareDocumentOriginal 已将 coverage 变化区分于 LOCATOR_ONLY；本批修复消费该影响的状态分支。自动预留/消费适用性后继仍需继续接通，未发布。
+
+## 原文适用性后继队列接通（2026-09-13）
+
+next_original_assessment 在已确认适用性原文影响时，现优先调用 applicability.enqueueOriginal；该入口重新执行原有 BEGIN_APPLICABILITY 授权，精确比对 tenant/WI/principal 和 parseRun/revision。共享 prepareAdmission 与普通 begin，原文版本不符在输入 CAS 前拒绝；后继仅 reserve 为 QUEUED，不抢先 claim 或调用模型，复用既有事务锁和活动任务保护。
+
+后继使用 original-<parseRevision> 请求 ID，原有有限长度幂等哈希保留，键中只补充可读请求段供状态投影恢复。状态读回该请求后，native 既有 next_original_assessment→get_parse_status→runInitial 和每请求 checkpoint 路径可领取 EXTRACT_APPLICABILITY；不另建消费者或绕过工具提交。缺少 context 仍明确等待。
+
+72 项预留/提交/输入生产/后继测试、17 项 native 消费测试及服务端类型检查通过，含不 claim 的队列预留、精确原文和身份传递、源变更在 CAS 前拒绝，以及 native 领取适用性后继。原文与数据库并发边界沿用已通过的真实 PG 验证，本批测试没有触发线上模型；c87 配套交付、真实 H1/H2 仍待完成。本批未发布。
+
+## c87 私有交付准备（2026-09-13）
+
+干净提交 684446e4d68f50998c1a3e4b6bdf906fc746dec7 已生成 wiselink-research-and-synthesize@r09.c87，47 文件、377332 字节；打包器全部 native tests 与版本声明检查通过。SHA-256=fc64063ca3388238a2580947380ec4b0a237706e17a8b46602f1275c81f41a92。私有 Host ZIP=/1876162620589140.zip，manifest=/1876162620589156.json；从私有存储下载 c87-readback.zip 后实际字节长度/哈希与清单一致。
+
+本地目录 /private/tmp/wiselink-c87-package。代码已按单一显式引用非强制推送到飞书 origin/codex/wl31-r09-master-handoff-20260903（5f5df357a→684446e4d），未向 GitHub 推送。c87 尚未安装，不将文件上传视为运行交付；Host 线上仍为前次核实的 b0ff1f510，需配套安装/技术发布与真实原文调用验证。未新增或重启受阻 Hosted 会话。

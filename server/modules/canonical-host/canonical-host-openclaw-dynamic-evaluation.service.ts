@@ -1,3 +1,4 @@
+import { CanonicalHostOpenClawApplicabilityService } from './canonical-host-openclaw-applicability.service';
 import { CanonicalHostInitialAnalysisStatusService, canContinueInitialStage } from './canonical-host-initial-analysis-status.service';
 import { Inject, Injectable, Optional } from '@nestjs/common';
 import {
@@ -115,6 +116,7 @@ export class CanonicalHostOpenClawDynamicEvaluationService {
     @Optional()
     private readonly problemAssessment?: CanonicalJobAidProblemService,
     @Optional() private readonly initialStatus?: CanonicalHostInitialAnalysisStatusService,
+    @Optional() private readonly originalApplicability?: CanonicalHostOpenClawApplicabilityService,
   ) {}
 
   async nextOriginalAssessment(workItemId: string) {
@@ -122,7 +124,7 @@ export class CanonicalHostOpenClawDynamicEvaluationService {
     assertWorkItemScope(scope, workItemId);
     if (!this.problemAssessment?.enabledForNewTasks() || !this.initialStatus)
       throw new Error('JOBAID_ORIGINAL_CONTINUATION_UNAVAILABLE');
-    const workItem = await this.requiredSbWorkItem(workItemId, scope.tenantId, true);
+    const workItem = await this.requiredAssessmentWorkItem(workItemId, scope.tenantId, true);
     if (activeConfigurationEvidenceReevaluation(workItem))
       return {status:'WAITING_INPUT',reason:'CONFIGURATION_REEVALUATION_ACTIVE'};
     const original = await this.problemAssessment.readOriginalContinuationBinding(workItem, scope);
@@ -133,8 +135,12 @@ export class CanonicalHostOpenClawDynamicEvaluationService {
       return {status:'BUSY'};
     const changed = (stage: typeof status.stages.jobAid) => stage.status === 'CONFLICT' &&
       stage.terminalCode === 'DOCUMENT_ORIGINAL_IMPACT_REVIEW_REQUIRED';
-    if (changed(status.stages.applicability))
-      return {status:'WAITING_INPUT',reason:'ORIGINAL_APPLICABILITY_MAPPING_REQUIRED'};
+    if (changed(status.stages.applicability)) {
+      if (!this.originalApplicability || !status.applicabilityContextRef)
+        return {status:'WAITING_INPUT',reason:'APPLICABILITY_CONTEXT_NOT_CONFIGURED'};
+      return this.originalApplicability.enqueueOriginal(status.applicabilityContextRef,{
+        tenantId:scope.tenantId,workItemId,principalId:scope.principalId,...original});
+    }
     const operation = changed(status.stages.jobAid) ? 'EVALUATE_JOBAID' :
       changed(status.stages.overall) ? 'SYNTHESIZE_OVERALL' : null;
     if (!operation) return {status:'IDLE'};
@@ -159,7 +165,7 @@ export class CanonicalHostOpenClawDynamicEvaluationService {
       workItemId,
     });
     assertWorkItemScope(scope, workItemId);
-    const authoritative = await this.requiredSbWorkItem(
+    const authoritative = await this.requiredAssessmentWorkItem(
       workItemId,
       scope.tenantId,
       requestId !== undefined || this.problemAssessment?.enabledForNewTasks() === true,
@@ -203,6 +209,8 @@ export class CanonicalHostOpenClawDynamicEvaluationService {
           'INITIAL_PROBLEM_ASSESSMENT',
         );
     }
+    if (workItem.classification.normalizedFamily !== 'SB' || workItem.classification.status !== 'CONFIRMED')
+      throw new Error('DYNAMIC_EVALUATION_REQUIRES_CONFIRMED_SB');
     if (workItem.phase !== 'CANDIDATE_READBACK_VERIFIED' || !workItem.package)
       throw new Error('DYNAMIC_EVALUATION_PARSED_PACKAGE_NOT_READY');
     const permissionSnapshotVersion = servicePermissionSnapshot(
@@ -376,7 +384,7 @@ export class CanonicalHostOpenClawDynamicEvaluationService {
     if (prepared.row.actorUserId !== actor.userId) {
       throw new Error('DYNAMIC_EVALUATION_SERVICE_ACTOR_MISMATCH');
     }
-    const authoritative = await this.requiredSbWorkItem(
+    const authoritative = await this.requiredAssessmentWorkItem(
       prepared.row.workItemId,
       scope.tenantId,
     );
@@ -547,7 +555,7 @@ export class CanonicalHostOpenClawDynamicEvaluationService {
   ): Promise<
     CommitDynamicEvaluationResult | ActionAttemptTerminalProjection | null
   > {
-    const workItem = await this.requiredSbWorkItem(
+    const workItem = await this.requiredAssessmentWorkItem(
       prepared.row.workItemId,
       prepared.row.tenantId,
     );
@@ -654,7 +662,7 @@ export class CanonicalHostOpenClawDynamicEvaluationService {
         syncPrimaryAttempt: false,
         next: withoutRevision(retry),
       });
-      const fresh = await this.requiredSbWorkItem(updated.workItemId, tenantId);
+      const fresh = await this.requiredAssessmentWorkItem(updated.workItemId, tenantId);
       return this.executionWorkItem(fresh);
     }
     return this.executionWorkItem(authoritative);
@@ -800,7 +808,7 @@ export class CanonicalHostOpenClawDynamicEvaluationService {
     };
   }
 
-  private async requiredSbWorkItem(
+  private async requiredAssessmentWorkItem(
     workItemId: string,
     tenantId: string,
     allowOriginal = false,
@@ -812,6 +820,10 @@ export class CanonicalHostOpenClawDynamicEvaluationService {
     if (!allowOriginal && (workItem.phase !== 'CANDIDATE_READBACK_VERIFIED' || !workItem.package)) {
       throw new Error('DYNAMIC_EVALUATION_PARSED_PACKAGE_NOT_READY');
     }
+    // Problem-oriented original analysis accepts a document's actual family.
+    // Its service verifies published original bytes and source authorization;
+    // the old SB rule engine retains its separate classification boundary.
+    if (allowOriginal && workItem.classification.normalizedFamily !== 'SB') return workItem;
     if (workItem.classification.normalizedFamily !== 'SB') {
       throw new Error('DYNAMIC_EVALUATION_REQUIRES_CONFIRMED_SB');
     }

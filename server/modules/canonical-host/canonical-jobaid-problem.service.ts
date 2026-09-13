@@ -1,3 +1,4 @@
+import { originalApplicabilityResultMatches } from './original-applicability-currentness';
 import { InitialAssessmentKnowledgeService } from './initial-assessment-knowledge.service';
 import { UnifiedReaderService } from '../unified-reader/unified-reader.service';
 import { documentOriginalEngineeringReading, findDocumentOriginalEvidence } from './document-original-engineering-reading';
@@ -495,6 +496,8 @@ export class CanonicalJobAidProblemService {
       original.original.binding.sourceSha256 !== workItem.source.sourceFileSha256 ||
       original.original.binding.sourceByteLength !== workItem.source.sourceByteLength)
       throw new Error('JOBAID_ORIGINAL_FILE_BINDING_MISMATCH');
+    const assessmentWorkItem = workItem.applicability?.schemaVersion==='wiselink.3_1.applicability_candidate_projection.v3' &&
+      !originalApplicabilityResultMatches(workItem,original.original.binding) ? {...workItem,applicability:null} : workItem;
     const primaryByRef = new Map<string, AssessmentEvidence>();
     for (let offset=0; offset<original.structuredSource.units.length; offset+=20)
       for (const evidence of documentOriginalEngineeringReading(original,offset,20).evidence)
@@ -505,7 +508,7 @@ export class CanonicalJobAidProblemService {
       sourceLocators:original.structuredSource.sourceLocators.filter(locator => unit.sourceRefIds.includes(locator.sourceRefId))}));
     const [common, history] = await Promise.all([
       this.common.buildForWorkItemWithEvidence(
-        workItem,
+        assessmentWorkItem,
         tenantId,
         asOf,
         readScope,
@@ -566,7 +569,7 @@ export class CanonicalJobAidProblemService {
       actorUserId,
     );
     const taskInput = buildJobAidProblemTask({
-      workItem,
+      workItem: assessmentWorkItem,
       actorUserId,
       permissionSnapshotVersion: permissionSnapshotVersion,
       purpose,
@@ -1137,6 +1140,7 @@ export class CanonicalJobAidProblemService {
     const base = effective.integratedAssessment!.baseRules;
     if (!isJobAidProblemProjection(base))
       throw new Error('JOBAID_OVERALL_BASE_VERSION_INVALID');
+    const assessmentOriginal = parseJobAidProblemTask(prepared.task).modelInput.documentOverview.original?.binding;
     const reading = jobAidReadingResult(revision);
     const artifact = await this.artifactStore.persistAndReadback(
       new TextEncoder().encode(
@@ -1184,7 +1188,10 @@ export class CanonicalJobAidProblemService {
       missingInputs: revision.content.issues.flatMap((issue) =>
         issue.openQuestions.map((item) => item.question),
       ),
-      applicabilityStatus: effective.applicability?.decision ?? 'UNKNOWN',
+      applicabilityStatus: effective.applicability?.schemaVersion==='wiselink.3_1.applicability_candidate_projection.v3'
+        ? (assessmentOriginal && originalApplicabilityResultMatches(effective,assessmentOriginal)
+          ? effective.applicability.decision : 'UNKNOWN')
+        : effective.applicability?.decision ?? 'UNKNOWN',
       engineeringReviewRequired: true,
       providers: {},
       modelVersion: prepared.result.modelVersion,
