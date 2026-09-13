@@ -13,7 +13,7 @@ const { sql } = require('drizzle-orm');
 const { DocumentStepLeaseRepository } = require('../../server/modules/document-management/src/hosted/nest/document-step-lease.repository.ts');
 const url = process.env.DOCUMENT_STEP_TEST_DATABASE_URL;
 
-test('parseRun step lease survives process replacement and rejects stale, cancelled and foreign writes', { skip: !url }, async () => {
+test('parseRun step lease survives process replacement and rejects stale, cancelled and foreign writes', { skip: !url }, async t => {
   const target = new URL(url);
   assert.equal(target.hostname, '127.0.0.1');
   assert.equal(target.pathname, '/wiselink_document_step_test');
@@ -66,5 +66,40 @@ test('parseRun step lease survives process replacement and rejects stale, cancel
     const [row] = await admin`SELECT status,error_code FROM dm_document_parse_run WHERE parse_run_id='PRUN-STEP'`;
     assert.equal(row.status, 'FAILED');
     assert.equal(row.error_code, 'DOCUMENT_PARSE_CANCELLED');
+    await t.test('FAILED release does not write the immutable row', async () => {
+      const [before] = await admin`SELECT * FROM dm_document_parse_run WHERE parse_run_id='PRUN-STEP'`;
+      await asActor(repo => repo.release(scope, resumed));
+      const [after] = await admin`SELECT * FROM dm_document_parse_run WHERE parse_run_id='PRUN-STEP'`;
+      assert.deepEqual(after, before);
+      await assert.rejects(admin`UPDATE dm_document_parse_run SET lease_owner=NULL WHERE parse_run_id='PRUN-STEP'`, /DOCUMENT_PARSE_TERMINAL_IMMUTABLE/);
+    });
+    for (const [index, status] of ['RUNNING', 'STAGING'].entries()) {
+      await t.test(`${status} release clears the current fence, rejects old fences, and preserves publication`, async () => {
+        const run = `PRUN-RELEASE-${status}`;
+        await admin`INSERT INTO dm_document_parse_run(parse_run_id,document_version_id,tenant_id,actor_user_id,request_id,
+          parse_revision,expected_published_revision,status,bucket_id,source_binding,deadline_at)
+          VALUES (${run},'DV-STEP','TENANT-STEP','ACTOR-STEP',${run},${index + 2},0,${status},'BUCKET',
+            '{"documentVersionId":"DV-STEP"}',now()+interval '10 minutes')`;
+        const first = await asActor(repo => repo.claim(scope, run, 'release-process'));
+        assert.ok(first);
+        await asActor(repo => repo.release(scope, first));
+        const [cleared] = await admin`SELECT lease_owner,lease_token,lease_expires_at,lease_generation,status FROM dm_document_parse_run WHERE parse_run_id=${run}`;
+        assert.deepEqual(cleared, { lease_owner: null, lease_token: null, lease_expires_at: null,
+          lease_generation: first.leaseGeneration, status });
+        const next = await asActor(repo => repo.claim(scope, run, 'release-process'));
+        assert.equal(next.leaseGeneration, first.leaseGeneration + 1);
+        assert.notEqual(next.leaseToken, first.leaseToken);
+        await asActor(repo => repo.release(scope, first));
+        await asActor((repo, db) => repo.assertValid(db, scope, next));
+        await admin`UPDATE dm_document_parse_run SET status='PUBLISHED', completed_at=now(),
+          manifest_artifact='{"role":"MANIFEST","readback":"VERIFIED"}' WHERE parse_run_id=${run}`;
+        const [before] = await admin`SELECT * FROM dm_document_parse_run WHERE parse_run_id=${run}`;
+        await asActor(repo => repo.release(scope, next));
+        const [after] = await admin`SELECT * FROM dm_document_parse_run WHERE parse_run_id=${run}`;
+        assert.deepEqual(after, before);
+        await assert.rejects(admin`UPDATE dm_document_parse_run SET lease_owner=NULL WHERE parse_run_id=${run}`, /DOCUMENT_PARSE_TERMINAL_IMMUTABLE/);
+      });
+    }
+
   } finally { await actor.end(); await admin.end(); }
 });

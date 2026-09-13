@@ -53,7 +53,17 @@ test('document attempts preserve published source identity and service-only acto
       work_item_id: null, document_version_id: 'DV', producer_run_id: 'parse', input_revision: 1,
       action_type: 'DOCUMENT_TRANSLATE', attempt_no: 1, status: 'QUEUED', ...overrides,
     })}`;
+    // Reproduce Hosted retaining the 0037 policy after the unsupported 0048
+    // ALTER POLICY. The real document boundary is already present and retained.
+    const legacyPolicy = await readFile(new URL('../../migrations/0037_matter_restrictive_policy_runtime_roles.sql', import.meta.url), 'utf8');
+    await db.unsafe(legacyPolicy.slice(0, legacyPolicy.indexOf('DROP POLICY engineering_matter_work_real_attempt_boundary')) + 'COMMIT;');
+    await assert.rejects(asRole('service_role','actor',tx => insert(tx,'before-policy-fix')), /action_attempt_matter_subject_boundary/);
+    await db.unsafe(await readFile(new URL('../../migrations/0053_document_attempt_matter_policy_recreate.sql', import.meta.url), 'utf8'));
+    const [policy] = await db`SELECT roles, permissive FROM pg_policies WHERE policyname='action_attempt_matter_subject_boundary'`;
+    assert.equal(policy.permissive, 'RESTRICTIVE');
+    assert.deepEqual([...policy.roles].sort(), ['authenticated', 'service_role']);
     await assert.rejects(asRole('authenticated','actor',tx => insert(tx,'native')), /row-level security/);
+    await assert.rejects(asRole('service_role','other',tx => insert(tx,'wrong-actor')), /row-level security/);
     await asRole('service_role','actor',tx => insert(tx,'real'));
     await db`UPDATE action_attempt SET operation_ref='operation', deadline_at=now()+interval '10 minutes',
       lease_generation=0,claim_count=0 WHERE attempt_id='real'`;
