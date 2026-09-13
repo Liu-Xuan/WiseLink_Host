@@ -155,6 +155,30 @@ test('document attempts preserve published source identity and service-only acto
     await semantic('service_role','actor',repo => append(repo,nextMap,1));
     assert.deepEqual(await semantic('service_role','actor',repo => repo.read(scope,'parse-new',1)), map);
     assert.deepEqual(await semantic('service_role','actor',repo => repo.read(scope,'parse-new')), nextMap);
+    // Exercise the actual INDEX semantic service, including registered family lookup and retry readback.
+    const { DocumentSemanticService } = require('../../server/modules/canonical-host/document-semantic.service.ts');
+    await db.unsafe("ALTER TABLE dm_document_version ADD COLUMN family_id varchar; CREATE TABLE dm_publication_family(family_id varchar,document_family varchar,issuer_authority varchar); INSERT INTO dm_publication_family VALUES ('family','FTD','BOEING'); UPDATE dm_document_version SET family_id='family'; GRANT SELECT ON dm_publication_family TO service_role");
+    await db`INSERT INTO dm_document_parse_run SELECT tenant_id,document_version_id,'parse-service',4,status,manifest_artifact FROM dm_document_parse_run WHERE parse_run_id='parse-new'`;
+    const serviceOriginal = structuredClone(original);
+    Object.assign(serviceOriginal.binding,{parseRunId:'parse-service',parseRevision:4});
+    const loaded = { original:serviceOriginal, run: {tenantId:'tenant',parseRunId:'parse-service',manifestArtifact:{readback:'VERIFIED',sha256:'a'.repeat(64)}} };
+    const ensure = () => drizzle(db).transaction(async tx => {
+      await tx.execute(query`SET LOCAL ROLE service_role`);
+      await tx.execute(query`SELECT set_config('app.user_id','actor',true)`);
+      return new DocumentSemanticService(tx,new DocumentSemanticRevisionRepository(tx)).ensure({...scope,roles:[]},loaded);
+    });
+    const indexedMap = await ensure();
+    assert.equal(indexedMap.profileRef,'boeing.ftd.sections.v1');
+    assert.deepEqual(await ensure(),indexedMap);
+    const { bindMatterOriginalInputs } = require('../../server/modules/canonical-host/matter-original-input-bindings.ts');
+    const boundInputs = await drizzle(db).transaction(async tx => {
+      await tx.execute(query`SET LOCAL ROLE service_role`);
+      await tx.execute(query`SELECT set_config('app.user_id','actor',true)`);
+      return bindMatterOriginalInputs(tx,'tenant',[
+      {inputId:'document',kind:'DOCUMENT_VERSION',familyId:'family',documentVersionId:'DV',workItemId:null,workItemRevision:null,resultRef:null,resultRevision:null}
+    ]); });
+    assert.deepEqual(boundInputs[0].original,{parseRunId:'parse-service',parseRevision:4,semantic:{revision:1,profileRef:'boeing.ftd.sections.v1'}});
+
     // Even a later broad platform policy cannot allow native writes or mutate history.
     await db.unsafe('CREATE POLICY constructed_broad_semantic_policy ON dm_document_semantic_revision FOR ALL TO authenticated,service_role USING(true) WITH CHECK(true)');
     await assert.rejects(semantic('authenticated','actor',repo => append(repo,{...map,semanticRevision:3},2)), error => error.cause?.code === '42501');

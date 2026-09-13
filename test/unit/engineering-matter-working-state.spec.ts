@@ -19,6 +19,18 @@ const inputA = binding('WI-A', 4, 'DV-A', 'RESULT-A', 3);
 const inputB = binding('WI-B', 7, 'DV-B', 'RESULT-B', 2);
 
 describe('Engineering Matter working state materializer', () => {
+  it('preserves fixed semantic versions and marks new organization separately from PDF changes', () => {
+    const previous = { ...inputA, original: { parseRunId: 'PR-2', parseRevision: 2,
+      semantic: { revision: 1, profileRef: 'boeing.ftd.sections.v1' } } };
+    const current = { coverage: [coverage(previous, 'NO_MATERIAL_CHANGE', ['SR-2'], 'Read exact chapter context')] } as Parameters<typeof engineeringMatterPendingInputs>[0];
+    expect(engineeringMatterPendingInputs(current, [previous])).toEqual([]);
+    const latest = { ...previous, original: { ...previous.original, semantic: { ...previous.original.semantic, revision: 2 } } };
+    expect(engineeringMatterPendingInputs(current, [latest])[0].reasons).toEqual(['DOCUMENT_SEMANTIC_CHANGED']);
+    expect(current!.coverage[0].binding.original?.semantic?.revision).toBe(1);
+    expect(() => engineeringMatterPendingInputs(current, [{ ...latest, original: { ...latest.original,
+      semantic: { revision: 0, profileRef: 'invalid' } } }])).toThrow('SEMANTIC_BINDING_INVALID');
+  });
+
   it('marks original revisions pending without changing the saved coverage binding', () => {
     const previous = { ...inputA, original: { parseRunId: 'PR-2', parseRevision: 2 } };
     const current = { coverage: [coverage(previous, 'NO_MATERIAL_CHANGE', ['SR-2'], 'Read original revision 2')] } as Parameters<typeof engineeringMatterPendingInputs>[0];

@@ -256,6 +256,8 @@ export function engineeringMatterPendingInputs(
       }
       if (covered.original?.parseRunId !== binding.original?.parseRunId ||
           covered.original?.parseRevision !== binding.original?.parseRevision) reasons.push('DOCUMENT_ORIGINAL_CHANGED');
+      else if (canonicalJson(covered.original?.semantic ?? null) !== canonicalJson(binding.original?.semantic ?? null))
+        reasons.push('DOCUMENT_SEMANTIC_CHANGED');
       if (
         covered.resultRef !== binding.resultRef ||
         covered.resultRevision !== binding.resultRevision
@@ -980,8 +982,15 @@ function validateBinding(
   if (value.original !== undefined && (!isRecord(value.original) ||
       typeof value.original.parseRunId !== 'string' || !/^[A-Za-z0-9_-]{1,96}$/.test(value.original.parseRunId) ||
       !Number.isSafeInteger(value.original.parseRevision) || Number(value.original.parseRevision) < 1 ||
-      Object.keys(value.original).some(key => !['parseRunId','parseRevision'].includes(key))))
+      Object.keys(value.original).some(key => !['parseRunId','parseRevision','semantic'].includes(key))))
     fail('ENGINEERING_MATTER_ORIGINAL_BINDING_INVALID');
+  if (isRecord(value.original) && value.original.semantic !== undefined && value.original.semantic !== null) {
+    const semantic = value.original.semantic;
+    if (!isRecord(semantic) || !Number.isSafeInteger(semantic.revision) || Number(semantic.revision) < 1 ||
+      typeof semantic.profileRef !== 'string' || !semantic.profileRef.trim() || semantic.profileRef.length > 160 ||
+      Object.keys(semantic).some(key => !['revision','profileRef'].includes(key)))
+      fail('ENGINEERING_MATTER_SEMANTIC_BINDING_INVALID');
+  }
   if (value.kind === 'DOCUMENT_VERSION') {
     requiredText(value.familyId, 'ENGINEERING_MATTER_WORKING_FAMILY_REQUIRED');
     requiredText(

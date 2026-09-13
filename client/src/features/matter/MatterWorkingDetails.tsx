@@ -23,6 +23,7 @@ const MATTER_PENDING_REASON_LABELS: Record<
   WORK_ITEM_REVISION_CHANGED: '成员任务已更新',
   DOCUMENT_VERSION_CHANGED: '文档版本已变化',
   DOCUMENT_ORIGINAL_CHANGED: '原文解析修订已变化',
+  DOCUMENT_SEMANTIC_CHANGED: '原文章节语境已更新，待核对',
   RESULT_CHANGED: '成员评估结果已更新',
 };
 
