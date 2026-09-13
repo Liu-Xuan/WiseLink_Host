@@ -15,6 +15,14 @@
 | 验证与界限 | 新语义RLS/CAS/不可变/准确读回真实PG通过；Matter真实PG4组通过；章节/Reader/JobAid续接45项通过；server类型通过。原PDF每步读取与最终整包组装仍有成本；真实SB/H2、语义更正后的业务续接和首份新工程工作仍待完成；首批中文已保存并经Reader实际阅读，完整中文仍未完成 |
 
 
+### 2026-09-13 用户调整模型配置后的实测（当前有效状态）
+
+用户调整界面后，官方config读回M3 reasoning=true/maxTokens=1000000/contextWindow=1000000；gateway models.list（首次10秒超时，30秒只读重查成功）同样返回reasoning=true/contextWindow=1000000。此前false/16000/256000仅为调整前事实，不再代表当前。
+
+独立诊断会话7e7e1c23-8e66-40e6-b258-98fcba126078接受thinkingLevel=low；同一官方Hosted工程路由发出一次32768预算的纯构造算术请求。HTTP200/finish_reason=tool_calls，configuration_probe_result返回value703（37×19），prompt41478/completion93。原生会话确认provider=miaoda/model=minimax-m3/stopReason=toolUse，内容类型thinking+toolCall；仅检查类型与用量，不读取或展示内部推理正文。无工程资料读取、无Host SAVE、未创建工程业务请求。
+
+结论：界面设置已写入并影响运行态，Low从拒绝变为接受，实际M3函数通道成功。短请求不能证明真实生成超过16000或上下文承载100万；请求32768被接受也不等于上游最终有效预算已实测。WiseLink JobAid代码仍显式申请16000，界面上限变大不会自动提高其单次申请，后续业务验证须分别记录。
+
 ### 2026-09-13 单会话参数入口核验（设置被拒，未生成）
 
 官方安装版支持 sessions.patch 的 thinkingLevel；原计划只对正常后继设置low，保持部署c96/模型/16000预算与工程方法。短暂停用事项job且确认无活动后，经正常begin建立 AQ-eea0568bfd344e64b747d4ad07bbab4c（requestId rev6-session-low-20260913，CAS事项3/工作9）。网关明确拒绝 `thinkingLevel "low" is not supported for miaoda/minimax-m3 (use off)`。未启动模型；新请求已正常CANCELLED，原事项job恢复enabled。未修改全局参数、未复活旧任务、无新SAVE。
