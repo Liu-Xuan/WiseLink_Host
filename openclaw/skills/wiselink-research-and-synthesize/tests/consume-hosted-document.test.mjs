@@ -74,3 +74,61 @@ test('document identity cannot be combined with an engineering subject or drift 
   await assert.rejects(consumeHostedWorkItem({ documentVersionId: 'DV-test', workItemId: 'WI-test' }, {}), /CONSUMER_SINGLE_SUBJECT_REQUIRED/);
   await assert.rejects(consumeHostedWorkItem({ documentVersionId: 'DV-test' }, { callTool: async () => ({ ...state(), documentVersionId: 'DV-other' }) }), /DOCUMENT_CONSUMER_SCOPE_MISMATCH/);
 });
+
+test('confirmed admission denial persists an operation stop while new original and indexing can advance', async () => {
+  const { mkdtemp, rm } = await import('node:fs/promises');
+  const { tmpdir } = await import('node:os');
+  const { join } = await import('node:path');
+  const { createCheckpointStore } = await import('../scripts/run-hosted-review-turn.mjs');
+  const directory = await mkdtemp(join(tmpdir(), 'document-admission-'));
+  try {
+    const current = state(); current.latestRun.status = 'PUBLISHED';
+    let starts = 0;
+    let indexes = 0;
+    const callTool = async (name, args) => {
+      if (name === 'document_work') {
+        if (args.action === 'STATUS') return current;
+        if (args.action === 'STEP') return { parseRunId: current.latestRun.parseRunId, status: 'STAGING' };
+        indexes++;
+        return { documentVersionId: 'DV-test', parseRunId: args.parseRunId, status: 'INDEXED' };
+      }
+      if (args.action === 'STATUS') return { documentVersionId: 'DV-test', status: 'IDLE' };
+      starts++;
+      throw Object.assign(new Error('denied'), { receivedHostToolError: true,
+        hostToolName: name, hostErrorCode: 'DOCUMENT_TRANSLATION_ADMISSION_DENIED' });
+    };
+    const tick = async () => consumeHostedWorkItem({ documentVersionId: 'DV-test' }, {
+      callTool, documentTranslationCheckpoint: await createCheckpointStore(directory),
+    });
+    const first = await tick();
+    assert.equal(first.status, 'REQUIRES_ATTENTION');
+    assert.equal(first.translation.operation, 'START');
+    assert.equal(first.sourceProjection.status, 'INDEXED');
+    await tick(); // Fresh checkpoint handle models a new command process.
+    assert.equal(starts, 1);
+    current.latestRun.parseRunId = 'PRUN-new'; current.latestRun.status = 'STAGING';
+    assert.equal((await tick()).status, 'STAGING');
+    current.latestRun.status = 'PUBLISHED';
+    const newer = await tick();
+    assert.equal(newer.parseRunId, 'PRUN-new');
+    assert.equal(newer.translation.parseRunId, 'PRUN-test');
+    assert.equal(indexes, 3);
+    assert.equal(starts, 1);
+    // A distinct explicitly configured recovery record preserves the prior stop.
+    await consumeHostedWorkItem({ documentVersionId: 'DV-test' }, { callTool,
+      documentTranslationCheckpoint: await createCheckpointStore(join(directory, 'repaired-policy')) });
+    assert.equal(starts, 2);
+  } finally { await rm(directory, { recursive: true, force: true }); }
+});
+test('unknown translation errors remain errors even when the source index succeeds', async () => {
+  const current = state(); current.latestRun.status = 'PUBLISHED';
+  const unknown = Object.assign(new Error('connection lost'), { receivedHostToolError: true,
+    hostToolName: 'document_translation', hostErrorCode: null });
+  let indexed = false;
+  await assert.rejects(consumeHostedWorkItem({ documentVersionId: 'DV-test' }, { callTool: async (name, args) => {
+    if (name === 'document_work' && args.action === 'STATUS') return current;
+    if (name === 'document_work') { indexed = true; return { documentVersionId: 'DV-test', parseRunId: 'PRUN-test', status: 'INDEXED' }; }
+    throw unknown;
+  } }), error => error === unknown);
+  assert.equal(indexed, true);
+});

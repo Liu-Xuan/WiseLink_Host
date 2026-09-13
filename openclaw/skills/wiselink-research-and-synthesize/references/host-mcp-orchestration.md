@@ -258,3 +258,17 @@ resynthesis 在 R09 目标合同中存在，但 C3 没有对应 MCP 工具。因
 这不禁止读取 Host 已授权、已解析的 current-turn attachment。该窄路径仍属于现有 `READ_SOURCE_REFS`：
 `attachmentRefs ⊆ resourceRefs.sourceRefId`，模型只能通过 `read_source_refs` 获取 parsed value，并且输出保持
 candidate-only。它不增加附件上传、搜索、raw FileService 读取或 ReviewAction 直写能力。
+
+
+### 文档中文准入阻塞与原文继续
+
+`consume-hosted-work-item --document-version-id` 只在 Host 明确返回
+`DOCUMENT_TRANSLATION_ADMISSION_DENIED` 时保存中文 START 操作阻塞。已有 checkpoint
+按 Host endpoint / DV / recovery ID 隔离；不保存正文或凭据。返回
+`REQUIRES_ATTENTION` 和原文索引结果，不报告文档已完成。新的原文步骤继续从 Host
+真实状态领取，未知工具/网络错误仍失败，不能凭错误文本推测是已确认拒绝。
+
+运维先修复并读回 Host 准入条件，再用官方 cron edit 在同一 job 原参数后配置新的
+`--document-translation-recovery <ID>`。旧记录保留，下一次自然 tick 重新读 Host
+状态并使用原幂等请求；不清空历史、不强制 run、不新建调度。参数变化不替代
+Host actor/tenant/source 授权。没有明确恢复动作时不重复 START。

@@ -57,6 +57,17 @@ describe('independent document translation runtime', () => {
     expect(f.attempts.fail).toHaveBeenCalledTimes(1);
     expect(f.attempts.release).toHaveBeenCalledTimes(2);
   });
+  it('reports confirmed reservation permission denial without exposing SQL or classifying unknown outcomes', async () => {
+    const f = setup();
+    const denied = Object.assign(new Error('private SQL parameters'), { code: '42501' });
+    f.attempts.reserve.mockRejectedValueOnce(Object.assign(new Error('Drizzle query'), { cause: denied }));
+    await expect(f.service.run({ action: 'START', ...f.binding, requestId: 'denied' }))
+      .rejects.toThrow(/^DOCUMENT_TRANSLATION_ADMISSION_DENIED$/);
+    const unknown = new Error('CONNECTION_LOST');
+    f.attempts.reserve.mockRejectedValueOnce(unknown);
+    await expect(f.service.run({ action: 'START', ...f.binding, requestId: 'unknown' })).rejects.toBe(unknown);
+    expect(f.plugins.executeStep).not.toHaveBeenCalled();
+  });
   it('requires fresh source access even for status and never executes a mismatched attempt', async () => {
     const f = setup();
     await f.service.run({ action: 'START', ...f.binding, requestId: 'request' });

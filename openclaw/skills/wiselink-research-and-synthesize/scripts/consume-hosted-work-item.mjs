@@ -282,7 +282,7 @@ function option(argv, name) {
   return index < 0 ? undefined : argv[index + 1];
 }
 
-export async function consumeHostedDocument({ documentVersionId }, { callTool }) {
+export async function consumeHostedDocument({ documentVersionId }, { callTool, documentTranslationCheckpoint }) {
   const state = await callTool('document_work', { action: 'STATUS', documentVersionId });
   if (state?.documentVersionId !== documentVersionId) throw new Error('DOCUMENT_CONSUMER_SCOPE_MISMATCH');
   const run = state.latestRun;
@@ -293,7 +293,7 @@ export async function consumeHostedDocument({ documentVersionId }, { callTool })
     if (typeof indexRun !== 'string' || !/^[A-Za-z0-9_-]{1,96}$/.test(indexRun)) throw new Error('DOCUMENT_SOURCE_PROJECTION_RUN_INVALID');
     const outcomes = await Promise.allSettled([
       callTool('document_work', { action: 'INDEX', documentVersionId, parseRunId: indexRun }),
-      advanceDocumentTranslation(documentVersionId, run, callTool),
+      advanceDocumentTranslationWithRecovery(documentVersionId, run, callTool, documentTranslationCheckpoint),
     ]);
     const [projection, translation] = outcomes;
     if (translation.status === 'rejected') throw translation.reason;
@@ -315,6 +315,29 @@ export async function consumeHostedDocument({ documentVersionId }, { callTool })
     throw new Error('DOCUMENT_CONSUMER_STEP_INVALID');
   }
   return { ...result, documentVersionId };
+}
+
+// This checkpoint records an operation stop, not a Host task or a successful
+// translation. A new parse run can still advance through the branch above.
+async function advanceDocumentTranslationWithRecovery(documentVersionId, run, callTool, checkpoint) {
+  const blocked = await checkpoint?.readOptional('admission-blocked');
+  if (blocked) {
+    if (blocked.documentVersionId !== documentVersionId || blocked.errorCode !== 'DOCUMENT_TRANSLATION_ADMISSION_DENIED')
+      throw new Error('DOCUMENT_TRANSLATION_CHECKPOINT_INVALID');
+    return { status: 'REQUIRES_ATTENTION', documentVersionId, parseRunId: run.parseRunId,
+      translation: blocked };
+  }
+  try {
+    return await advanceDocumentTranslation(documentVersionId, run, callTool);
+  } catch (error) {
+    if (error?.receivedHostToolError !== true || error.hostToolName !== 'document_translation' ||
+        error.hostErrorCode !== 'DOCUMENT_TRANSLATION_ADMISSION_DENIED' || !checkpoint) throw error;
+    const stopped = { status: 'BLOCKED', operation: 'START', documentVersionId, parseRunId: run.parseRunId,
+      errorCode: error.hostErrorCode, observedAt: new Date().toISOString(),
+      recoveryAction: 'REPAIR_HOST_ADMISSION_THEN_SET_DOCUMENT_TRANSLATION_RECOVERY' };
+    await checkpoint.writeOnce('admission-blocked', stopped);
+    return { status: 'REQUIRES_ATTENTION', documentVersionId, parseRunId: run.parseRunId, translation: stopped };
+  }
 }
 
 async function advanceDocumentTranslation(documentVersionId, run, callTool) {
@@ -350,7 +373,7 @@ function assertSingleConsumerSubject({ workItemId, matterId, documentVersionId }
 
 async function main(argv, env) {
   if (argv.includes('--help')) {
-    process.stdout.write('Usage: node consume-hosted-work-item.mjs [--work-item-id WI-...] [--matter-id MAT-...] [--document-version-id DV] [--applicability-context-ref REF] [--checkpoint-root PATH] [--openclaw-config PATH] [--native-session-store PATH]\nOne native job per authorized subject. Choose exactly one WorkItem, Matter or DocumentVersion; independent jobs use native cron concurrency.\n');
+    process.stdout.write('Usage: node consume-hosted-work-item.mjs [--work-item-id WI-...] [--matter-id MAT-...] [--document-version-id DV] [--applicability-context-ref REF] [--checkpoint-root PATH] [--openclaw-config PATH] [--native-session-store PATH] [--document-translation-recovery ID]\nOne native job per authorized subject. Choose exactly one WorkItem, Matter or DocumentVersion; independent jobs use native cron concurrency.\n');
     return;
   }
   const workItemId = option(argv, '--work-item-id');
@@ -359,6 +382,12 @@ async function main(argv, env) {
   assertSingleConsumerSubject({ workItemId, matterId, documentVersionId });
   const runtime = await resolveRuntimeConfig(argv, env);
   if (!documentVersionId) assertHostedModelGatewayReady(runtime);
+  const recovery = option(argv, '--document-translation-recovery') ?? 'initial';
+  if (!/^[A-Za-z0-9_-]{1,96}$/.test(recovery)) throw new Error('DOCUMENT_TRANSLATION_RECOVERY_INVALID');
+  const checkpointRoot = option(argv, '--checkpoint-root') ?? join(homedir(), '.openclaw', 'wiselink-work-item-runs');
+  const endpoint = new URL(runtime.hostMcpUrl);
+  const documentTranslationCheckpoint = documentVersionId ? await createCheckpointStore(join(checkpointRoot,
+    'document-translation', encodeURIComponent(endpoint.origin + endpoint.pathname), documentVersionId, recovery)) : undefined;
   const connection = await createHostMcpConnection(runtime);
   try {
     const result = await consumeHostedWorkItem({
@@ -366,9 +395,10 @@ async function main(argv, env) {
       matterId,
       documentVersionId,
       applicabilityContextRef: option(argv, '--applicability-context-ref'),
-      checkpointRoot: option(argv, '--checkpoint-root') ?? join(homedir(), '.openclaw', 'wiselink-work-item-runs'),
+      checkpointRoot,
     }, {
       callTool: connection.callTool,
+      documentTranslationCheckpoint,
       ...(option(argv, '--native-session-store') ? { recoverNativeMatterResponse: input => recoverNativeMatterResponse({
         ...input, storePath: option(argv, '--native-session-store'),
       }) } : {}),
