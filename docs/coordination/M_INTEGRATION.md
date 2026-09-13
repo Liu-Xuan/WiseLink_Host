@@ -6,13 +6,14 @@
 
 | 项目 | 当前事实 / 下一动作 |
 | --- | --- |
-| 源码 | `8a41469df8fff52cdf6f4fc03c5e4d99f43b92fb`，origin 已同步；此后本次仅更新运行记录 |
+| 源码 | `dfc0c5d7bf3b1c96b32e0516db4efc5cae12a032` 已同步 origin（c88 精确工具清单修复）；本次追加 H1 部署资产加载修复 |
 | Host | 本次发布 `7684835221602864077` 已 finished，commit `8a41469df8fff52cdf6f4fc03c5e4d99f43b92fb`，错误日志空 |
-| Skill | 空闲窗口已由官方 install 更新 c84→c87；47 文件逐一匹配，安装目录测试 304/304 通过。随后真实 MCP 检查发现 c87 清单遗漏四个已发布工具，正在交付针对该反例的 c88；不是因无关 scanner 改动重打包 |
-| 实际运行环境 | 已登录 `app_17c3zn24kv2` 管理页，现有云端终端可执行命令；两个原 job 在空闲核验后已原生暂停（原状态均 enabled）；最近错误为 `REVIEW_HOST_MCP_EXACT20_MISMATCH`。c87 实际 tools/list 确认 Host identity 1.2.0 正确、无缺失旧工具，但多出 document_work/read_document_original/document_translation/next_original_assessment；精确清单未同步是具体故障，修复后再恢复原状态 |
-| 复用样本 / 范围 | 787-FTD-45-25001；DV `document_version_b83523c2b5ba26a2b1753641`；WI `WI-990d6e76-78d4-440a-a419-1b2e37b94ac9`；tenant `63849986`、actor `1868301878396947`。本次刘轩正常页面已读到同一版本和原件登记；点击原件预览返回 HTTP 500，正在查实际日志；不借用旧 777 的适用性 context |
-| H1 / H2 | 尚未执行本次新解析；无本次 request/parseRun/译块可交接。M 唯一发起，P 读取同一次结果；先完成安装与配套发布，再由正常入口复用 DV/原件发起合法新 run |
-| 当前动作 / 限制 | 在原生空闲窗口维护原两个 job，保留身份/参数/历史与原启用状态；不重放旧失败、不强制 cron run、不做正式采用。c84 与 Host 工具清单不匹配是具体故障，安装 c87 后核对实际清单 |
+| Skill | 官方安装 c84→c87 后真实清单校验暴露四项遗漏；现已由官方 install 更新为 c88（来源 dfc0c5d7b），47/47 文件匹配、正式目录测试 305/305 通过，createHostMcpConnection 和 FTD document_work STATUS 成功。c88 ZIP `/1876180993072151.zip`、清单 `/1876180993074183.json`，378092 字节，SHA256 `7b88e46b5d49f4845763a7ed58e97764e3dccac019edd3f4517c6e9fc444f04b` |
+| 实际运行环境 | 已登录 `app_17c3zn24kv2` 管理页，现有云端终端可执行命令；两个原 job 在空闲核验后已原生暂停（原状态均 enabled）；最近错误为 `REVIEW_HOST_MCP_EXACT20_MISMATCH`。c87 实际 tools/list 确认 Host identity 1.2.0 正确、无缺失旧工具，但多出 document_work/read_document_original/document_translation/next_original_assessment；精确清单遗漏已修复，原两个 job 已调用正常 enable 恢复；独立文档 job `436ae83c-2c83-49de-aac9-31668075dd31` 绑定唯一 FTD DV，原生 60 秒 command 调度，未强制 run |
+| 复用样本 / 范围 | 787-FTD-45-25001；DV `document_version_b83523c2b5ba26a2b1753641`；WI `WI-990d6e76-78d4-440a-a419-1b2e37b94ac9`；tenant `63849986`、actor `1868301878396947`。本次刘轩正常页面已读到同一版本和原件登记；点击原件预览首次 HTTP 500，日志定位 FileService getFileMetadata 5001ms Request aborted；原页面重试成功取得 blob 原件；不借用旧 777 的适用性 context |
+| H1 / H2 | 正常页面新建 `PRUN-de0c2960-4add-48ca-a913-be3a6a951fd2`，原文修订 3。云端 job 首次自然 STEP（02:20 UTC）8.4 秒后错误；当前 STAGING / verifiedArtifacts=1 / DOCUMENT_PARSE_FAILED，无 publishedRun。追踪 `78f941c246e1b3e653221b2c59aff4e8` 确认官方 parseDocToMarkdown 成功（5935ms），RAW_MARKDOWN 上传并读回成功；后续未生成页产物。旧 FAILED run 保留，未复活；中文及 H2 未完成 |
+| 当前动作 / 限制 | M 定位发布路径遗漏：新原文 PDF.js 只按 npm 包名导入，既有构建实际将固定版本引擎保存至 runtime-assets。隔离发布目录回归已复现旧代码 ERR_MODULE_NOT_FOUND；改为加载已有资产后 3 项真实 PDF 测试、server 类型及源文件 lint 通过，待发布并按正常入口新请求验证。保留失败记录、原件和唯一 job；不强制 run、不做正式采用。向 P 发送诊断被自动审批拒绝，已向用户请求明确目的任务授权，M 独立继续 |
+
 
 ## 历史：启动基线与早期交接
 

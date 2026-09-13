@@ -1,3 +1,8 @@
+import { existsSync } from 'node:fs';
+import { createRequire } from 'node:module';
+import { resolve } from 'node:path';
+import { pathToFileURL } from 'node:url';
+
 /** The actual PDF.js text layer, retained independently of plugin organization. */
 export interface DocumentPdfPage {
   pageIndex: number;
@@ -12,8 +17,20 @@ export interface DocumentPdfPage {
 export interface DocumentPdfExtraction { pageCount: number; pages: DocumentPdfPage[] }
 
 // Preserve native ESM loading in the Host's CommonJS build; no subprocess/Worker runtime.
-const importPdfjs = new Function('return import("pdfjs-dist/legacy/build/pdf.mjs")') as
-  () => Promise<typeof import('pdfjs-dist/legacy/build/pdf.mjs')>;
+const importPdfjs = new Function('url', 'return import(url)') as
+  (url: string) => Promise<typeof import('pdfjs-dist/legacy/build/pdf.mjs')>;
+
+async function loadPdfjs() {
+  try {
+    // sync-document-management-assets packages this pinned engine for Hosted,
+    // whose dependency pruning does not retain the dynamic npm import.
+    const hosted = resolve(__dirname, '../../../../../runtime-assets/professional-input/pdfjs-dist/legacy/build/pdf.mjs');
+    const entrypoint = existsSync(hosted) ? hosted : createRequire(__filename).resolve('pdfjs-dist/legacy/build/pdf.mjs');
+    return await importPdfjs(pathToFileURL(entrypoint).href);
+  } catch (cause) {
+    throw new Error('DOCUMENT_PDF_ENGINE_LOAD_FAILED', { cause });
+  }
+}
 
 /** One page at a time, with an explicit bounded page range for the durable consumer. */
 export async function extractDocumentPdfPages(input: {
@@ -26,7 +43,7 @@ export async function extractDocumentPdfPages(input: {
       !Number.isSafeInteger(input.pageCount) || input.pageCount < 1)
     throw new Error('DOCUMENT_PDF_INPUT_INVALID');
   await input.assertActive();
-  const pdfjs = await importPdfjs();
+  const pdfjs = await loadPdfjs();
   const task = pdfjs.getDocument({ data: new Uint8Array(input.bytes), isEvalSupported: false, useSystemFonts: true });
   try {
     const document = await task.promise;
