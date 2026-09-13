@@ -282,7 +282,7 @@ test('text-only protocol corrections are bounded and truncated or foreign calls 
         mode === 'text' ? 'JOBAID_INCOMPLETE_TERMINAL_RESPONSE' : mode === 'truncated' ? 'JOBAID_MODEL_OUTPUT_LENGTH' : undefined);
       return true;
     });
-    assert.equal(calls, mode === 'foreign-call' ? 1 : 3);
+    assert.equal(calls, mode === 'text' ? 3 : 1);
     assert.equal(f.saves.length, 0);
   }
 });
@@ -886,7 +886,7 @@ test('the installed gateway named-tool failure settles as a known failed result 
   assert.equal(f.saves.length, 0);
 });
 
-test('new requests bind bounded M3 policy; A survives length while only unfinished B is generated', () => persisted(async checkpoint => {
+test('new requests stop on explicit length without replay; saved A remains readable', () => persisted(async checkpoint => {
   const a = { ...completed, roundCompletion: 'IN_PROGRESS', issues: [{ issueKey: 'a', understanding: 'A condition and limitation' }] };
   const b = { ...completed, issues: [{ issueKey: 'b', understanding: 'B comparison' }] };
   const f = fixture([{ action: 'SAVE_WORK', work: a }, { action: 'SAVE_WORK', work: b }, { action: 'FINISH' }],
@@ -900,17 +900,17 @@ test('new requests bind bounded M3 policy; A survives length while only unfinish
       usage: { completion_tokens: 16000 } }));
     return request(...args);
   };
-  const result = await f.run();
-  assert.equal(result.output.workRevisionRef, 'JAWR-2');
-  assert.equal(f.saves.length, 2);
+  await assert.rejects(f.run(), error => {
+    assert.equal(error.terminalAssessmentFailure?.errorCode, 'JOBAID_MODEL_OUTPUT_LENGTH');
+    return true;
+  });
+  assert.equal(n, 2, 'no generation replay after explicit length');
+  assert.equal(f.saves.length, 1);
   assert.deepEqual(JSON.parse(f.saves[0].workJson), a);
-  assert.deepEqual(JSON.parse(f.saves[1].workJson), b);
+  assert.equal([...f.store.values()][0].workRevisionRef, 'JAWR-1');
   assert.ok(f.calls.every(call => call.max_completion_tokens === 16000));
-  const receipt = JSON.parse(f.calls[1].messages.at(-1).content);
-  assert.equal(receipt.workRevisionRef, 'JAWR-1');
-  assert.equal(receipt.content, undefined, 'saved full work is not echoed on every round');
-  assert.equal((await checkpoint.readOptional('assessment-state')).scopeAdjustments, 1);
-  assert.equal((await checkpoint.readOptional('assessment-enabled')).generationPolicy.version, 'continuous-issue-batches-v1');
+  assert.equal((await checkpoint.readOptional('assessment-state')).scopeAdjustments, 0);
+  assert.equal((await checkpoint.readOptional('assessment-enabled')).generationPolicy.version, 'continuous-issue-batches-v2');
   assert.ok(await checkpoint.readOptional('assessment-round-2.result'), 'partial response stays durable but never saved');
 }));
 
@@ -984,4 +984,33 @@ test('observed singleton sourceRefs envelope is lossless and does not coerce wor
     assert.equal(receipt.workRevision, i);
     assert.equal(receipt.content, undefined);
   }
+});
+
+for (const status of [200, 502]) {
+  test(`explicit completion length precedes HTTP ${status}; incomplete parameters never execute`, async () => {
+    const f = fixture([]);
+    let calls = 0;
+    f.dependencies.requestGateway = async () => {
+      calls++;
+      return new Response(JSON.stringify({ choices: [{ finish_reason: 'length', message: {
+        role: 'assistant', content: null, tool_calls: [{ type: 'function', function: {
+          name: 'return_wiselink_assessment_step', arguments: '{"step":' } }] }
+      }], usage: { completion_tokens: 16000 } }), { status });
+    };
+    await assert.rejects(f.run(), error => error.terminalAssessmentFailure?.errorCode === 'JOBAID_MODEL_OUTPUT_LENGTH');
+    assert.equal(calls, 1);
+    assert.equal(f.saves.length, 0);
+    assert.equal(f.reads.length, 0);
+  });
+}
+
+test('generic 502 without reliable completion reason is not classified as length', async () => {
+  const f = fixture([502]);
+  await assert.rejects(f.run(), error => {
+    assert.equal(error.message, 'JOBAID_GATEWAY_HTTP_502');
+    assert.equal(error.terminalAssessmentFailure, undefined);
+    return true;
+  });
+  assert.equal(f.calls.length, 1);
+  assert.equal(f.saves.length, 0);
 });

@@ -15,6 +15,14 @@
 | 验证与界限 | 新语义RLS/CAS/不可变/准确读回真实PG通过；Matter真实PG4组通过；章节/Reader/JobAid续接45项通过；server类型通过。原PDF每步读取与最终整包组装仍有成本；真实SB/H2、语义更正后的业务续接和首份新工程工作仍待完成；首批中文已保存并经Reader实际阅读，完整中文仍未完成 |
 
 
+### 2026-09-13 生成路径诊断与本地修正（未部署、未重发业务）
+
+本次经官方 `openclaw logs` 取得关联日志，空响应重试已由推测转为确认：UTC 11:15:29.473，runId `chatcmpl_0339bc81-698e-4da4-b42e-cdb2a254dda5`、session `af81f3b0-3d53-43ec-bd75-8435b7aeb9f9`、provider `miaoda/minimax-m3`，记录 `empty response detected ... retrying 1/1 with visible-answer continuation`。安装版本 OpenClaw 2026.6.6 (8c802aa)，embedded-agent 的空响应重试上限固定为1；该次重复归属于托管内部，不是新工作批次。网关函数约束失败返回502时未携带原生停止原因/用量。
+
+WiseLink 本地把同一 HTTP 响应中已有的单一 `choices[0].finish_reason=length` 判断移到 HTTP 错误之前；不解析部分函数、不用错误文本猜 length。当前生成策略 v2 禁止自动缩小范围重试（maxScopeAdjustments=0），连续上下文和正常 SAVE 后继续保持。尚无平台新增错误元数据合同，不虚构字段适配。44项定向测试通过，覆盖200/502明确length、无原因502、空文本有效函数以及A已保存后B截断不重放；未部署该修正。
+
+有效上游请求、原始响应到归一化记录的字段转换仍未闭合。c96申请16000，不作为硬上限证据；c93大额度另查。不更改RLS/解析/翻译/Host保存，不修改安装版打包JS，不重跑FTD。平台材料尚未发送，待提供支持收件人或工单入口；下一次真实后继以取得有效设置与返回契约为前提。
+
 ### 2026-09-13 c96：连续会话与动态问题组（已部署，真实后继失败已核验）
 
 按用户最新方案，限制单次交付量而非工程理解范围。同会话已有初始材料只发送一次、后续使用工具回执的路径保留，问题组数量由 Agent 选择，SAVE 后自动继续，最终只更新综合和必要纠正。Host 允许后续批次省略未变化 headline/listBrief/understanding/decisiveIssueKeys；仅省略时保留确切已有值，显式 null/空值继续校验，首次工作仍需完整主旨。轮次状态、完成说明和本批变化仍明确提交。同 issue 完整替换、权限/SourceRef/CAS/原 request 回读保留。
