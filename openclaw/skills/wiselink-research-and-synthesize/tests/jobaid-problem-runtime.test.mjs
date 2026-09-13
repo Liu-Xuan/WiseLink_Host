@@ -276,7 +276,12 @@ test('text-only protocol corrections are bounded and truncated or foreign calls 
           tool_calls: [{ id: 'unapproved', type: 'function', function: { name: 'other_tool', arguments: '{}' } }],
         } : {}) } }] }), { status: 200 });
     };
-    await assert.rejects(f.run(), /JOBAID_MODEL_OUTPUT_FUNCTION_INVALID/);
+    await assert.rejects(f.run(), error => {
+      assert.match(error.message, /JOBAID_MODEL_OUTPUT_FUNCTION_INVALID/);
+      assert.equal(error.terminalAssessmentFailure?.errorCode,
+        mode === 'text' ? 'JOBAID_INCOMPLETE_TERMINAL_RESPONSE' : undefined);
+      return true;
+    });
     assert.equal(calls, mode === 'text' ? 3 : 1);
     assert.equal(f.saves.length, 0);
   }

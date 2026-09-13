@@ -403,6 +403,27 @@ export async function invokeHostedJobAidProblemModel(
         expectedWorkRevision, saved, corrections, inputUnits, outputUnits });
       continue;
     }
+    if (choice.finish_reason === 'stop' && message?.role === 'assistant' &&
+        typeof message.content === 'string' && message.content.trim() &&
+        (message.tool_calls == null || (Array.isArray(message.tool_calls) && message.tool_calls.length === 0)) &&
+        message.function_call == null && corrections >= 2) {
+      const error = new Error('JOBAID_MODEL_OUTPUT_FUNCTION_INVALID');
+      // All responses are durably complete and the bounded corrections are exhausted.
+      // Reuse the existing failed-result lifecycle instead of leaving a live lease
+      // to replay the same rejected response indefinitely. No candidate is accepted.
+      error.terminalAssessmentFailure = {
+        errorCode: 'JOBAID_INCOMPLETE_TERMINAL_RESPONSE',
+        provenance: {
+          modelVersion: actualModelVersion(payload, choice, message,
+            options.executionModel ? `configured-route:${options.executionModel.modelRef}` : options.configuredModelVersion),
+          promptVersion: 'wiselink-jobaid-problem@v2', skillVersion: WISELINK_SKILL_VERSION,
+          toolVersions: { [WISELINK_HOST_MCP_NAME]: WISELINK_HOST_MCP_VERSION, 'jobaid-problem-protocol': '2' },
+          runMetrics: { durationMs: Date.now() - startedAt, inputUnits,
+            outputUnits: outputUnits + Buffer.byteLength(message.content) },
+        },
+      };
+      throw error;
+    }
     if (
       !isFunctionResponseContentSupported(message?.content) ||
       message?.tool_calls?.length !== 1 ||
