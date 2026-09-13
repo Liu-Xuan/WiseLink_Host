@@ -211,13 +211,22 @@ export async function readMatterAssessmentSources(intent, context, call) {
     const results = await Promise.allSettled(batch.map(async ({ operation, ...input }) => {
       const read = await call(operation, { ...input, purpose: intent.purpose });
       if (operation === 'READ_ORIGINAL') {
+        const expected = context.availableDocuments.find(item => item.documentVersionId === input.documentVersionId)?.boundOriginal;
+        if (expected?.parseRunId && read.binding?.parseRunId !== expected.parseRunId)
+          throw new Error('MATTER_SOURCE_READ_BINDING_MISMATCH');
+        if (expected?.semantic && (read.semanticMap?.semanticRevision !== expected.semantic.revision ||
+          read.semanticMap?.profileRef !== expected.semantic.profileRef ||
+          read.semanticMap?.binding?.parseRunId !== expected.parseRunId ||
+          read.semanticMap?.binding?.documentVersionId !== input.documentVersionId))
+          throw new Error('MATTER_SEMANTIC_BINDING_MISMATCH');
+        if (!expected?.semantic && read.semanticMap) throw new Error('MATTER_SEMANTIC_BINDING_MISMATCH');
         if (read.documentVersionId !== input.documentVersionId || read.binding?.documentVersionId !== input.documentVersionId ||
             !read.binding?.parseRunId || read.offset !== input.offset || !Array.isArray(read.evidence) || !Array.isArray(read.units) ||
             !Array.isArray(read.sourceRefs) || read.evidence.some(item => item.kind !== 'DOCUMENT_PASSAGE' || item.workItemId !== null ||
               item.documentVersionId !== input.documentVersionId || !read.sourceRefs.includes(item.evidenceRef)))
           throw new Error('MATTER_SOURCE_READ_BINDING_MISMATCH');
         return { evidence:read.evidence,sourceRefs:read.sourceRefs,documents:[{documentVersionId:read.documentVersionId,
-          binding:read.binding,coverage:read.coverage,findings:read.findings,units:read.units,sourceLocators:read.sourceLocators,
+          binding:read.binding,semanticMap:read.semanticMap ?? null,coverage:read.coverage,findings:read.findings,units:read.units,sourceLocators:read.sourceLocators,
           nextReadRef:read.nextOffset === null ? null : `DOCUMENT_VERSION:${read.documentVersionId}:original:${read.nextOffset}`} ] };
       }
       if (operation === 'READ_REGISTERED') {
