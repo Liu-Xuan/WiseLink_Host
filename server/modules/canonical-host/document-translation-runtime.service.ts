@@ -48,7 +48,14 @@ export class DocumentTranslationRuntimeService {
             source: { ...modelInput.source, originalBinding: original.original.binding } },
           deadline: new Date(Date.now() + 60 * 60_000).toISOString(),
           idempotencyKey: `document-translation:${scope.documentVersionId}:${input.requestId}` });
-        return summary(await this.attempts.reserve(scope, task, input.requestId));
+        try {
+          return summary(await this.attempts.reserve(scope, task, input.requestId));
+        } catch (error) {
+          // A confirmed DB permission rejection is distinct from an unknown
+          // reservation outcome. Never expose Drizzle SQL/parameters to callers.
+          if (isPermissionRejection(error)) throw new Error('DOCUMENT_TRANSLATION_ADMISSION_DENIED');
+          throw error;
+        }
       }
       if (input.action === 'STEP') await this.attempts.expire(scope);
       const row = await this.attempts.latest(scope);
@@ -91,4 +98,16 @@ function summary(row: NonNullable<Awaited<ReturnType<DocumentTranslationAttemptR
   const task = parseDocumentTranslationTaskEnvelope(row.taskEnvelopeJson ?? '');
   return { status: row.status, documentVersionId: row.documentVersionId, parseRunId: row.producerRunId,
     attemptRef: row.operationRef, workspaceId: task.workspaceId, errorCode: row.errorCode, deadline: row.deadlineAt?.toISOString() ?? null };
+}
+
+function isPermissionRejection(error: unknown): boolean {
+  const seen = new Set<unknown>();
+  let current = error;
+  while (current && typeof current === 'object' && !seen.has(current)) {
+    seen.add(current);
+    const value = current as { code?: unknown; cause?: unknown };
+    if (value.code === '42501') return true;
+    current = value.cause;
+  }
+  return false;
 }

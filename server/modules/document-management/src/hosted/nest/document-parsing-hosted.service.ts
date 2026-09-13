@@ -110,31 +110,61 @@ export class DocumentParsingHostedService {
         const bytes = Buffer.from(parsed.markdown);
         raw = { bytes, artifact: await this.store.save(storage, 'RAW_MARKDOWN', bytes, record) };
       } else await record(raw.artifact);
-      const pageArtifacts: DocumentOriginalArtifact[] = [];
-      const pages: DocumentPdfExtraction['pages'] = [];
+      // DB progress stores verified immutable descriptors. Normal continuation needs only
+      // the last page group, not every preceding group or a recomposed prefix.
+      const pageArtifacts = run.artifactProgress
+        .filter(item => item.readback === 'VERIFIED' && item.role === 'MANIFEST' && /^original\/pages-[0-9]+\.json$/.test(item.relativePath))
+        .map(originalArtifact)
+        .sort((a, b) => pageArtifactStart(a) - pageArtifactStart(b));
+      if (pageArtifacts.some((artifact, index) => pageArtifactStart(artifact) !== index * PAGE_GROUP_SIZE))
+        throw documentParseError('DOCUMENT_ORIGINAL_PAGE_CHECKPOINT_INVALID');
+      const currentPages = new Map<number, DocumentPdfExtraction>();
       let pageCount: number | null = null;
       let pageStart = 0;
-      for (;;) {
-        const path = `original/pages-${pageStart}.json`;
-        const recovered = await this.store.recover(storage, 'MANIFEST', path);
-        if (!recovered) break;
-        const chunk: DocumentPdfExtraction = JSON.parse(Buffer.from(recovered.bytes).toString('utf8'));
-        assertPageChunk(chunk, pageStart, pageCount);
-        await record(recovered.artifact); pageArtifacts.push(recovered.artifact);
-        pages.push(...chunk.pages); pageCount = chunk.pageCount; pageStart += chunk.pages.length;
-        if (pageStart >= pageCount) break;
+      const last = pageArtifacts.at(-1);
+      if (last) {
+        const start = pageArtifactStart(last);
+        const chunk: DocumentPdfExtraction = JSON.parse(Buffer.from(await this.store.read(storage, last)).toString('utf8'));
+        assertPageChunk(chunk, start, null);
+        currentPages.set(start, chunk); pageCount = chunk.pageCount; pageStart = start + chunk.pages.length;
       }
       if (pageCount === null || pageStart < pageCount) {
-        const chunk = await extractDocumentPdfPages({ bytes: original.bytes, pageStart, pageCount: PAGE_GROUP_SIZE, assertActive });
+        const path = `original/pages-${pageStart}.json`;
+        // Recover a lost upload/progress response at exactly the next path before extracting again.
+        const recovered = await this.store.recover(storage, 'MANIFEST', path);
+        const chunk: DocumentPdfExtraction = recovered
+          ? JSON.parse(Buffer.from(recovered.bytes).toString('utf8'))
+          : await extractDocumentPdfPages({ bytes: original.bytes, pageStart, pageCount: PAGE_GROUP_SIZE, assertActive });
         assertPageChunk(chunk, pageStart, pageCount);
-        const artifact = await this.store.save(storage, 'MANIFEST', Buffer.from(JSON.stringify(chunk)), record, `original/pages-${pageStart}.json`);
-        pages.push(...chunk.pages); pageArtifacts.push(artifact); pageCount = chunk.pageCount; pageStart += chunk.pages.length;
+        const artifact = recovered ? recovered.artifact
+          : await this.store.save(storage, 'MANIFEST', Buffer.from(JSON.stringify(chunk)), record, path);
+        if (recovered) await record(artifact);
+        currentPages.set(pageStart, chunk); pageArtifacts.push(artifact);
+        pageCount = chunk.pageCount; pageStart += chunk.pages.length;
+      }
+      if (pageStart < pageCount!) return stepResult(run, {
+        knownPageCount: pageCount,
+        readPageIndexes: Array.from({ length: pageStart }, (_, index) => index),
+        unresolvedRanges: [
+          { reason: 'UNREAD', unitIds: [], pageIndexes: Array.from({ length: pageCount! - pageStart }, (_, index) => pageStart + index),
+            message: 'These pages have not been extracted yet.' },
+          { reason: 'STRUCTURE_UNCERTAIN', unitIds: [], pageIndexes: Array.from({ length: pageStart }, (_, index) => index),
+            message: 'Page text is checkpointed; full document structure and figure coverage have not been assembled.' },
+        ],
+      }, 'STAGING');
+      // One final assembly reuses this tick's groups and loads each older group once.
+      const pages: DocumentPdfExtraction['pages'] = [];
+      for (const artifact of pageArtifacts) {
+        await assertActive();
+        const start = pageArtifactStart(artifact);
+        const chunk = currentPages.get(start) ?? JSON.parse(Buffer.from(await this.store.read(storage, artifact)).toString('utf8')) as DocumentPdfExtraction;
+        assertPageChunk(chunk, pages.length, pageCount);
+        pages.push(...chunk.pages);
       }
       const markdown = Buffer.from(raw.bytes).toString('utf8');
-      const result = composeDocumentOriginal({ binding, extraction: { pageCount, pages }, markdown,
+      const result = composeDocumentOriginal({ binding, extraction: { pageCount: pageCount!, pages }, markdown,
         producer: { kind: 'OFFICIAL_PLUGIN_HYBRID', instanceId: 'wl-document-parser', pluginVersion: '1.0.16',
           actionKey: 'parseDocToMarkdown', concreteModel: null, extractedAt: null } });
-      if (pageStart < pageCount) return stepResult(run, result.coverage, 'STAGING');
       documentOriginalStructuredSource(result, binding);
       const change = await this.originalChange(run, result, context);
       const bundle: DocumentOriginalBundle = { change, schemaVersion: 'wiselink.document.bundle.v1', original: result,
@@ -251,10 +281,16 @@ function originalArtifact(artifact: NonNullable<DocumentParseRow['manifestArtifa
   if (!['MANIFEST', 'RAW_MARKDOWN'].includes(artifact.role)) throw documentParseError('DOCUMENT_ORIGINAL_DESCRIPTOR_INVALID');
   return { ...artifact, role: artifact.role === 'MANIFEST' ? 'MANIFEST' : 'RAW_MARKDOWN' };
 }
+function pageArtifactStart(artifact: DocumentOriginalArtifact): number {
+  const match = /^original\/pages-([0-9]+)\.json$/.exec(artifact.relativePath);
+  const start = match ? Number(match[1]) : NaN;
+  if (!Number.isSafeInteger(start) || start < 0) throw documentParseError('DOCUMENT_ORIGINAL_PAGE_CHECKPOINT_INVALID');
+  return start;
+}
 function assertPageChunk(chunk: DocumentPdfExtraction, start: number, expectedCount: number | null) {
   if (!Number.isSafeInteger(chunk.pageCount) || chunk.pageCount < 1 ||
       (expectedCount !== null && chunk.pageCount !== expectedCount) || !Array.isArray(chunk.pages) ||
-      chunk.pages.length < 1 || chunk.pages.length > PAGE_GROUP_SIZE ||
+      chunk.pages.length < 1 || chunk.pages.length !== Math.min(PAGE_GROUP_SIZE, chunk.pageCount - start) ||
       chunk.pages.some((page, index) => page.pageIndex !== start + index || page.pageIndex >= chunk.pageCount || typeof page.text !== 'string'))
     throw documentParseError('DOCUMENT_ORIGINAL_PAGE_CHECKPOINT_INVALID');
 }

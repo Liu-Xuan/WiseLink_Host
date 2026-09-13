@@ -6,13 +6,32 @@
 
 | 项目 | 当前事实 / 下一动作 |
 | --- | --- |
-| 源码 | `95f056dd5` 已同步 origin：终态租约、0053策略及工作台同文档阅读入口；本地集成P真实版式结构修复，待Host发布授权 |
-| Host | 最新发布 `7684841796542925796` 已 finished，commit `895cadf0bf4cf071981f1a82c6b14e3ce2a9e278`，错误日志空；前一轮 8a 发布亦 finished |
+| 源码 | `de8ae2a7c` 已同步 origin：新增明确中文准入拒绝的操作隔离；c8版式/租约修复已上线。P语义映射本地合入，尚未完成持久与工程消费者接线 |
+| Host | 用户明确授权后，发布 `7684851163325778902` 已 finished，commit `c8fa55eb01ba02a0c25f4a994725420fc59ce811`，错误日志空；实际工作台新增入口已成功打开同一DV阅读页 |
 | Skill | 官方安装 c84→c87 后真实清单校验暴露四项遗漏；现已由官方 install 更新为 c88（来源 dfc0c5d7b），47/47 文件匹配、正式目录测试 305/305 通过，createHostMcpConnection 和 FTD document_work STATUS 成功。c88 ZIP `/1876180993072151.zip`、清单 `/1876180993074183.json`，378092 字节，SHA256 `7b88e46b5d49f4845763a7ed58e97764e3dccac019edd3f4517c6e9fc444f04b` |
 | 实际运行环境 | 已登录 `app_17c3zn24kv2` 管理页，现有云端终端可执行命令；两个原 job 在空闲核验后已原生暂停（原状态均 enabled）；最近错误为 `REVIEW_HOST_MCP_EXACT20_MISMATCH`。c87 实际 tools/list 确认 Host identity 1.2.0 正确、无缺失旧工具，但多出 document_work/read_document_original/document_translation/next_original_assessment；精确清单遗漏已修复，原两个 job 已调用正常 enable 恢复；独立文档 job `436ae83c-2c83-49de-aac9-31668075dd31` 绑定唯一 FTD DV，原生 60 秒 command 调度，未强制 run |
 | 复用样本 / 范围 | 787-FTD-45-25001；DV `document_version_b83523c2b5ba26a2b1753641`；WI `WI-990d6e76-78d4-440a-a419-1b2e37b94ac9`；tenant `63849986`、actor `1868301878396947`。本次刘轩正常页面已读到同一版本和原件登记；点击原件预览首次 HTTP 500，日志定位 FileService getFileMetadata 5001ms Request aborted；原页面重试成功取得 blob 原件；不借用旧 777 的适用性 context |
-| H1 / H2 | 修复后正常页面新建 `PRUN-0fdd051c-e17e-40fb-8b3f-848fcc537862`，原文修订4于02:37:28.994 UTC PUBLISHED，3产物校验通过，Reader实读2/2页、20个单元。结构对齐及图片未解释范围明确保留；未声称结构完整。发布后 release 租约触发 DOCUMENT_PARSE_TERMINAL_IMMUTABLE，未回滚原文，P补丁已集成。中文START被线上旧 action_attempt_matter_subject_boundary 拒绝，目前IDLE/0译块；同run SOURCE索引已保存21条、pending清空，证明与翻译独立。P实件QA确认提取词无丢失，但表格列/编号及页脚结构未通过，P结构补丁已集成：同PDF离线41units/2tables、编号回句首、章节恢复、页脚分离且不丢提取字符，未替换线上rev4。M集成真实PDF3项通过，相关lint通过；H2及工程候选未完成 |
-| 当前动作 / 限制 | M处理0053：平台0048 ALTER POLICY未生效，线上谓词仍只含WORK_ITEM；dev现已单事务重建为0048原设计的WORK_ITEM/DOCUMENT_VERSION，其余事项谓词和独立文档RLS保持。真实PG先复现旧策略拒绝，再验证合法服务写入、原生禁写、错误actor拒绝；P租约收尾4项真实PG通过，M相关lint通过。dev读回已正确；用户明确授权online迁移后执行正式db-env-migrate返回0changes，online实读仍旧。Host980a代码发布另被自动审批拒绝，已请求本次H1/H2已验证修复的精确Host发布授权，待回复；没有绕过拒绝。用户已明确授权本次向P持续交接诊断与修复委派，补丁已收。失败rev3已正常CANCEL收尾且保留1产物和原失败轨迹；不强制cron run、不做正式采用 |
+| H1 / H2 | 历史rev4 PUBLISHED/2页/20单元及21索引保留。rev5逾期且0产物，12:13:23+08经正常Host CANCEL收尾为FAILED/DOCUMENT_PARSE_CANCELLED。正常Reader新请求rev6 `PRUN-c537f5bb-cc97-4ce9-855e-ca8d53e15a31` 已经原生job自然PUBLISHED，exit0，未再报终态lease错误。正式manifest 69343B/SHA `d8237d00dc59519dcf17f3014f918d3c894226ab2ffd2f02fab0b936afb21755` 匹配；41单元/2表，P核对同原件空列、日期、编号、条件和页脚通过；SOURCE索引实读41条/pending0。数量不作为语义质量评分。中文准入仍受旧online策略阻塞；新章节语义、工程候选及H2未完成 |
+| 当前动作 / 限制 | M处理0053：平台0048 ALTER POLICY未生效，线上谓词仍只含WORK_ITEM；dev现已单事务重建为0048原设计的WORK_ITEM/DOCUMENT_VERSION，其余事项谓词和独立文档RLS保持。真实PG先复现旧策略拒绝，再验证合法服务写入、原生禁写、错误actor拒绝；P租约收尾4项真实PG通过，M相关lint通过。dev读回已正确；用户明确授权online迁移后执行正式db-env-migrate返回0changes，online实读仍旧。本次Host发布已获用户明确授权并完成，但online策略仍旧；正式online DDL调用被平台以 forbid ddl/dcl operation in online env 拒绝，未应用任何语句，不能绕过。现有文档job退避随后自然清零，rev6正常自然执行成功；未强制run。开发库同义策略改名诊断被自动审批拒绝，未执行；已向用户请求该一次精确诊断授权，不换路径绕过。用户已明确授权本次向P持续交接诊断与修复委派，补丁已收。失败rev3已正常CANCEL收尾且保留1产物和原失败轨迹；不强制cron run、不做正式采用 |
+
+
+### 本轮本地实施（尚未部署）
+
+- P后续两文件增量已合入：按artifactProgress只读取末组并恢复确切下一路径，普通STAGING不再compose全前缀；发布时一次全组装。构造25页正常/上传回执丢失场景验证，原PDF每步读取与最终全量内存仍在，不称为计算卸载。
+
+- M 将翻译 reserve 的明确 PostgreSQL 42501 转换为安全的 DOCUMENT_TRANSLATION_ADMISSION_DENIED，不暴露 SQL/参数，不将连接未知归为权限拒绝。云端 consumer 在已有 checkpoint 根下按 Host endpoint、DV 与显式 recovery ID 保存 START 阻塞；后继 tick 仍检查原文/索引，阻塞原始 parseRun 保留，新 parseRun 不被吞掉。正常原生 job 输出 REQUIRES_ATTENTION，不冒充 DOCUMENT_READY。
+- 修复准入后，通过原 job 官方 edit 设置新的 `--document-translation-recovery <ID>` 才恢复该操作；原阻塞记录不删、不自动改 epoch。它只控制消费端重试，不是 Host 任务、业务进度或授权真源；来源权限仍每次由 Host 验证。未知错误仍进入失败路径。
+- 验证：文档 consumer 8项、既有工作 consumer/安全错误20项、Host runtime4项通过，相关服务 ESLint 通过；未安装新 Skill/发布新 Host，不能声称线上退避已解除。
+- 同一 schema `workspace_aadkpkjef3slu` 的最新 dev/online 读回再次证实 roles/cmd/RESTRICTIVE/WITH CHECK 一致，只有 matter policy USING 缺 DOCUMENT_VERSION；独立 document policy 两边保持。证据位于本机 /private/tmp/wiselink-policy-{dev,online}-20260913-current.json，未向平台外发。
+- P 已交付且M合入 /private/tmp/wl-document-P-semantic-map-20260913.patch，五文件；M集成server类型/相关lint通过。包含FTD平级栏目修复、完整成员/来源校验、范围选择、语义变化比较和V2上下文planner；真实rev6候选尚未保存。接口方向：从属 semanticRevision/profileRef、章节原题/角色/父级/成员/sourceRefs/显式空值与未知范围，M 负责集中持久化与真实消费者。云端终端随后自行恢复；已取得rev6自然PUBLISHED回执，不重启环境。
+
+### 0054正式迁移与本轮组合部署准备
+
+用户明确授权相关操作后，dev同义策略改名诊断返回准确两项diff（旧名DROP、新名CREATE），诊断结束已恢复并读回原名。随后正式登记0054，真实PG验证合法服务写入、原生/错误actor拒绝及旧策略不存在；正式diff再次只有同样两项，没有夹带其他schema。官方db-env-migrate实际应用2项，online读回旧名已不存在、新名 `action_attempt_matter_or_document_subject_boundary` 支持DOCUMENT_VERSION，独立文档和三项原生禁写策略保留。此前零差异阻塞已解除，不声称所有平台迁移问题普遍解决。
+
+待部署Skill c89将中文准入阻塞按Host endpoint/DV/parseRun/START及recovery ID隔离，避免旧修订永久阻断新原文；同run明确拒绝不重复START，运维修复后更换原job recovery ID接续，旧记录保留。记录在Host失败事务回滚后的独立消费端checkpoint保存，写入失败仍失败，不冒充成功。Host/Skill组合必须实际安装发布后另验收；rev6成功仍只证明c8/c88。
+
+P定点反馈已合入：FTD平级修复保留作者问题范围，两个Issue下同名栏目不串；祖先条件成员变化已覆盖后代正文比较，子树有内容时直接body空仍CONTENT。未新增视觉/helper或UI任务。语义持久化与实际工程接线仍由M负责，未因基础补丁通过而标完成。
 
 
 ## 历史：启动基线与早期交接
