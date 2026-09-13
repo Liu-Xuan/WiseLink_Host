@@ -6,14 +6,24 @@
 
 | 项目 | 当前事实 / 下一动作 |
 | --- | --- |
-| Host / Skill | Host 5915860c1 已发布，release 7684897153136085952 finished、错误日志空（包含3f3826c72译块接续/表格修复）。c92 已官方安装，ZIP 380677B/SHA256 d09fed44a7f15099533bdc5260df6ed4f6fcaf2ca2320bac57255203c3ff0908，正式目录47/47文件与校验ZIP逐字节匹配。三个原生job安装窗口暂停且确认无活动运行；c92安装文件47/47与校验ZIP匹配（C92_MATCH 47）；c91已核对Host连接，三个原生job均已按原配置恢复enabled；没有强制run |
+| Host / Skill | Host仍为5915860c1 / release7684897153136085952，无本轮业务代码变更故未重复发布。Skill c93（8c947e64e）已官方安装，ZIP381178B / SHA256 21b7ba4a4d321260956d54e78edf85ad7ff6a19eca223046f56e0681e1c4d6e7；正式目录47/47文件匹配。三个原生job在无活动运行时短暂暂停，安装后均恢复enabled=true，未强制run |
 | online RLS | 用户授权后完成dev诊断及恢复；正式0054差异仅旧名DROP+新名CREATE，官方迁移2项。online旧policy已不存在，新policy支持DOCUMENT_VERSION，独立文档/actor/tenant/原生禁写保留。旧策略阻塞已解除；正常START已实际QUEUED：DTQ-6eae3abb-fdad-4dbd-8649-72ef2faef3f4，workspace TW-f9b7e6dc-ded2-49ee-988f-3c78212fac3f，errorCode=null |
 | FTD rev6 | DV document_version_b83523c2b5ba26a2b1753641，parseRun PRUN-c537f5bb-cc97-4ce9-855e-ca8d53e15a31。c8/c88自然PUBLISHED，原件/manifest字节与SHA、2表/编号/条件/页脚实件核对保留，SOURCE41条、pending0。不能用此证明e9/c89或新语义补丁已运行 |
 | 语义持久结构 | 0055正式dev→online迁移16项，仅新表/约束/索引/RLS/不可变触发器。online读回RLS=true、4policy、1不可变trigger、1已验证FK。正常INDEX已保存rev6语义修订1，boeing.ftd.sections.v1、12章节。正常read_document_original确切读回，Final Action返回u28/u29及两个SourceRef；原文manifest SHA保持d8237d00…不变 |
 | 本批接线 | 已实现INDEX保存首个来源绑定语义修订、确切章节读取；Matter新任务输入固定semantic revision/profile，旧任务不附加latest。JobAid任务含原文语义map。真实PG发现并修复JSONB键顺序导致的假覆盖错误。Host/Skill已部署；c90还修复消费端丢map并拒绝语义修订漂移。实际工程保存待自然调度验收 |
-| 运行剩余 | 最新只读：AQ-0f66976d469840b29a457945cfa0949c 已 FAILED / JOBAID_INCOMPLETE_TERMINAL_RESPONSE，c92已按原生调度完成已知协议失败收尾，实际40个原文单元/semantic1读取保留，无新FTD工程workRef。中文恢复请求DTQ-735a6f5d-1da5-4875-8ddc-7b54a548e86b已SUCCEEDED / REMAINING_LIMITATIONS；22个不同译块、26条历史修订，21块选入已保存阅读产物，b20未选入：TABLE_CELL_MISSING检查认为Revision Number列对应缺失（包含原文空单元格）；需对原表/候选核对，不能直接认定是真漏译或检查误报 |
+| 运行剩余 | c93新AQ-8bb65240af8f4166a761933ffd9ecce5前三轮按指定函数读取rev6/semantic1共41单元，第四轮网关502 / TOOL_CHOICE_NOT_SATISFIED，正常FAILED，尚未到SAVE_WORK；工作仍修订9，无新FTD workRef。上一AQ-0f669失败保留。中文请求SUCCEEDED / REMAINING_LIMITATIONS，21块可读；b20经P定点核对为空格检查误报，修正补丁待集成/真实重查 |
 | 验证与界限 | 新语义RLS/CAS/不可变/准确读回真实PG通过；Matter真实PG4组通过；章节/Reader/JobAid续接45项通过；server类型通过。原PDF每步读取与最终整包组装仍有成本；真实SB/H2、语义更正后的业务续接和首份新工程工作仍待完成；首批中文已保存并经Reader实际阅读，完整中文仍未完成 |
 
+
+### 2026-09-13 c93：结构化返回通道与新 FTD 工程保存
+
+用户最新优先级已写入执行计划：当前首要交付是有效取证后的普通工程工作保存与确切读回。8c947e64e已同名开发分支非强制推送origin及GitHub；只修改Skill，不据此重复Host发布。
+
+实际Hosted OpenClaw 2026.6.6安装源码确认：HTTP入口读取payload.tool_choice，指定函数会筛选工具、加入必须调用该函数的运行约束，并检查实际pendingToolCalls；未匹配时HTTP502明确错误。c93将JobAid请求从auto改为指定return_wiselink_assessment_step，仍由模型选择READ/QUERY/SAVE/FINISH；不增加纠正轮数、预算或模型路由。既有形态回执新增requestedToolChoice，精确的已知502无匹配函数错误走现有失败终态；未知传输和截断保持原边界。35项定向测试及完整Skill打包通过，保存回执丢失可查回、未保存不得结束均保留。
+
+新请求经正常begin_matter_assessment建立：AQ-8bb65240af8f4166a761933ffd9ecce5，requestId rev6-semantic-named-channel-20260913，基于Matter修订3和工作修订9；旧AQ-0f669仍FAILED不复活。正常调度前三轮均HTTP200/finishReason=tool_calls，实际回执带指定函数channel；Host保存的READ_ORIGINAL回执为20+20+1单元，offset0/20/40、最后nextOffset=null，每次semanticRevision1及同一profile。第四轮2026-09-13T07:27:52.670Z返回HTTP502 / TOOL_CHOICE_NOT_SATISFIED，原始响应明确未产生所要求的函数调用，142字节，无可用工作正文或token计数。未到SAVE_WORK。正常消费者已将任务收尾为FAILED，assessment-execution.failureCode=JOBAID_INCOMPLETE_TERMINAL_RESPONSE，配置路由miaoda/minimax-m3；online error_code列为null，不冒充该列持久化了此码。online工作仍修订9、SAVE回执0，无新FTD workRef。旧成果保持，未追加重试或新建第三次业务请求。
+
+P已对b20做局部实件诊断：rev6原表与source_plan一致，2行5列、空格/列位/跨度保留，8个非空anchors对应8个候选元素；旧检查把表头a57误当下方空格来源，本地确定性检查0BLOCK。检查传入sourceStructure及空格契约的最小补丁已交付，尚未集成发布或真实插件重查，原BLOCK不删、21块成果保留。证据为本机/private/tmp/wiselink-b20-P-QA.md；此支线不阻挡工程任务。
 
 ### 2026-09-13 本次状态整理与 Git 双远端同步
 
