@@ -1,5 +1,6 @@
 import { CanonicalModelSettingsModule } from '../model-settings/canonical-model-settings.module';
 import { MatterActionAttemptService } from './matter-action-attempt.service';
+import { EngineeringIssueCorrectionPluginService } from './engineering-issue-correction-plugin.service';
 import { Module } from '@nestjs/common';
 import { WorkItemRuntimeModule } from '../work-item/work-item-runtime.module';
 import { EngineeringMatterRepository } from './engineering-matter.repository';
@@ -15,6 +16,7 @@ import { DocumentSemanticRevisionRepository } from './document-semantic-revision
 @Module({
   imports: [WorkItemRuntimeModule, CanonicalModelSettingsModule],
   providers: [
+    EngineeringIssueCorrectionPluginService,
     DocumentSemanticService,
     DocumentSemanticRevisionRepository,
     EngineeringSearchProjectionWriter,

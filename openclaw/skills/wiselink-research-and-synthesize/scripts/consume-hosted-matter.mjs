@@ -24,6 +24,33 @@ export async function consumeHostedMatter(options, dependencies) {
   const storedBinding = await checkpoint.readOptional('binding');
   if (storedBinding && canonicalSha256(storedBinding) !== canonicalSha256(binding)) throw new Error('MATTER_CHECKPOINT_BINDING_MISMATCH');
   if (!storedBinding) await checkpoint.writeOnce('binding', binding);
+  if (task.modelInput.correction) {
+    if (task.modelInput.correction.kind !== 'ENGINEERING_ISSUE_CORRECTION' || task.executionModel)
+      throw new Error('MATTER_CORRECTION_EXECUTION_PURPOSE_MISMATCH');
+    const generationRequestId = `correction-generate:${task.operationRef}`;
+    const requestId = `correction-save:${task.operationRef}`;
+    let expectedWorkRef = claim.status === 'COMMITTING' && claim.recoveryResult?.modelOutput
+      ? JSON.parse(claim.recoveryResult.modelOutput).workRevisionRef : null;
+    if (claim.status !== 'COMMITTING') {
+      const generated = await withLeaseHeartbeat(() => call('GENERATE_ISSUE_CORRECTION', { requestId: generationRequestId }),
+        () => call('HEARTBEAT'));
+      if (generated.requestId !== generationRequestId || generated.persisted !== true ||
+          generated.producer?.kind !== 'OFFICIAL_PLUGIN' ||
+          generated.producer.instanceId !== 'wl-engineering-issue-correction')
+        throw new Error('MATTER_CORRECTION_RECEIPT_MISMATCH');
+      const saved = await call('SAVE_ISSUE_CORRECTION', { requestId, generationRequestId });
+      if (!saved.workRevisionRef || saved.workRevision !== task.baseRevision + 1)
+        throw new Error('MATTER_CORRECTION_SAVE_BINDING_MISMATCH');
+      expectedWorkRef = saved.workRevisionRef;
+    }
+    // Host owns both persisted generation and result provenance. Lost replies replay the same request.
+    const finished = await call('FINISH_ISSUE_CORRECTION', { requestId });
+    if (!expectedWorkRef || finished.attemptRef !== task.operationRef || finished.status !== 'SUCCEEDED' ||
+        finished.workRevisionRef !== expectedWorkRef)
+      throw new Error('MATTER_FINISH_READBACK_MISMATCH');
+    return { status: 'MATTER_ISSUE_CORRECTION_SAVED', ...target,
+      workRevisionRef: finished.workRevisionRef, candidateOnly: true, overallReviewPending: true };
+  }
   let result = claim.recoveryResult ?? await checkpoint.readOptional('finish-result');
   const recoveredResult = Boolean(result);
   if (!result && claim.status === 'COMMITTING') throw new Error('MATTER_RECOVERY_RESULT_MISSING');

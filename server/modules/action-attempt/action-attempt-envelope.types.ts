@@ -161,11 +161,16 @@ export interface OpenClawResultEnvelope {
 
 export interface OpenClawMatterResultEnvelope extends Omit<
   OpenClawResultEnvelope,
-  'schemaVersion' | 'taskType' | 'workItemId'
+  'schemaVersion' | 'taskType' | 'workItemId' | 'modelVersion' | 'skillVersion' | 'runMetrics'
 > {
   schemaVersion: 'wiselink.3_1.openclaw_result_envelope.v2';
   taskType: 'OPENCLAW_MATTER_ASSESSMENT';
   subject: EngineeringMatterAttemptSubject;
+  modelVersion: string | null;
+  skillVersion: string | null;
+  runMetrics: { durationMs: number; inputUnits: number | null; outputUnits: number | null };
+  producer?: { kind: 'OFFICIAL_PLUGIN'; instanceId: string; pluginVersion: string;
+    actionKey: 'textToJson'; concreteModel: null };
 }
 
 export type AnyOpenClawResultEnvelope =

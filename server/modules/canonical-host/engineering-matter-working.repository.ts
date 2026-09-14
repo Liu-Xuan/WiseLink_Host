@@ -934,6 +934,24 @@ async function authorizedReadModel(
     workItemIds,
     documentVersionIds,
   );
+  const corrections = await executor.select({ attemptRef: actionAttempt.operationRef, status: actionAttempt.status,
+    purpose: sql<{ issueKey: string; correctionReason: string }>`${actionAttempt.taskEnvelopeJson}::jsonb -> 'modelInput' -> 'correction'`,
+    resultJson: actionAttempt.resultEnvelopeJson,
+  }).from(actionAttempt).where(and(
+    eq(actionAttempt.tenantId, row.tenantId), eq(actionAttempt.matterId, row.matterId),
+    sql`${actionAttempt.taskEnvelopeJson}::jsonb -> 'modelInput' -> 'correction' ->> 'kind' = 'ENGINEERING_ISSUE_CORRECTION'`,
+    sql`${actionAttempt.taskEnvelopeJson}::jsonb -> 'modelInput' -> 'correction' ->> 'expectedWorkRef' = ${row.matterWorkRevisionId}`,
+  )).orderBy(asc(actionAttempt.createdAt));
+  if (corrections.length) revision.correctionNotices = corrections.map(item => {
+    if (!item.attemptRef || typeof item.purpose?.issueKey !== 'string' || typeof item.purpose?.correctionReason !== 'string')
+      throw new Error('ENGINEERING_CORRECTION_NOTICE_INVALID');
+    const result: unknown = item.resultJson ? JSON.parse(item.resultJson) : null;
+    const output: unknown = result && typeof result === 'object' && 'modelOutput' in result && typeof result.modelOutput === 'string'
+      ? JSON.parse(result.modelOutput) : null;
+    return { attemptRef: item.attemptRef, issueKey: item.purpose.issueKey, reason: item.purpose.correctionReason,
+      attemptStatus: item.status, correctedWorkRef: item.status === 'SUCCEEDED' && output && typeof output === 'object' &&
+        'workRevisionRef' in output && typeof output.workRevisionRef === 'string' ? output.workRevisionRef : null };
+  });
   return revision;
 }
 

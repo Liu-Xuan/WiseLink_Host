@@ -1,5 +1,6 @@
 import type { AssessmentReadingResult } from './assessment-reading.interface';
 import type { JobAidProblemIssue } from './jobaid-problem-assessment.interface';
+import type { EngineeringMatterCorrectionNotice } from './matter-working.interface';
 
 export interface EngineeringIssueSearchHit {
   subjectKind: 'WORK_ITEM' | 'ENGINEERING_MATTER';
@@ -14,6 +15,7 @@ export interface EngineeringIssueSearchHit {
   matchedRange: string;
   reason: string;
   rootRefs: string[];
+  correctionNotices?: EngineeringMatterCorrectionNotice[];
 }
 
 export interface EngineeringIssueSearchResponse {

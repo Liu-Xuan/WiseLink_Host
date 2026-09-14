@@ -10,6 +10,14 @@ import { engineeringMatterPendingInputs } from './engineering-matter-working-sta
 
 export const MATTER_JOBAID_TASK_SCHEMA = 'wiselink.matter-jobaid-task.v2' as const;
 
+export interface MatterIssueCorrectionPurpose {
+  kind: 'ENGINEERING_ISSUE_CORRECTION';
+  expectedWorkRef: string;
+  issueKey: string;
+  correctionReason: string;
+  evidenceRefs: string[];
+}
+
 /** Called under the reservation transaction after Host authorization and version CAS. */
 export function buildMatterJobAidTask(input: {
   matterId: string;
@@ -44,6 +52,7 @@ export function buildMatterJobAidTask(input: {
   };
   return {
     schemaVersion: MATTER_JOBAID_TASK_SCHEMA,
+    correction: null as MatterIssueCorrectionPurpose | null,
     recovery: null as { attemptRef: string; inputHash: string } | null,
     actorUserId: input.actorUserId,
     sourceCatalog,
@@ -53,6 +62,9 @@ export function buildMatterJobAidTask(input: {
       subject: { kind: 'ENGINEERING_MATTER' as const, matterId: input.matterId, matterRevisionId: input.matterRevisionId },
       methodBinding: structuredClone(methodBinding),
       title: input.title,
+      knownCorrections: (input.previous?.correctionNotices ?? []).map(notice => ({
+        issueKey: notice.issueKey, reason: notice.reason, correctedWorkRef: notice.correctedWorkRef,
+      })),
       focus: input.previous?.state.focus ?? null,
       trigger: structuredClone(input.trigger),
       sourceChanges: engineeringMatterPendingInputs(input.previous?.state ?? null, input.inputs),

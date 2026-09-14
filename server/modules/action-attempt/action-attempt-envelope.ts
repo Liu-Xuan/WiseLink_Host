@@ -268,6 +268,7 @@ export function parseMatterResultEnvelope(input: {
       'contentHash',
       'errorCode',
       'errorDetail',
+      ...('producer' in value ? ['producer'] : []),
     ],
     'RESULT_ENVELOPE_SCHEMA_INVALID',
   );
@@ -342,14 +343,27 @@ function assertResultFields(
   ).forEach(assertMissingInput);
   assertStringArray(result.conflicts, 'RESULT_ENVELOPE_CONFLICTS_INVALID');
   assertStringArray(result.warnings, 'RESULT_ENVELOPE_WARNINGS_INVALID');
-  requiredText(result.modelVersion, 'RESULT_ENVELOPE_MODEL_VERSION_REQUIRED');
+  const correction = task.schemaVersion === 'wiselink.3_1.openclaw_task_envelope.v2' &&
+    isRecord(task.modelInput.correction) && task.modelInput.correction.kind === 'ENGINEERING_ISSUE_CORRECTION';
+  if (correction) {
+    if (!('producer' in result) || !isRecord(result.producer)) fail('RESULT_OFFICIAL_PLUGIN_PRODUCER_REQUIRED');
+    const producer = result.producer;
+    assertExactKeys(producer, ['kind', 'instanceId', 'pluginVersion', 'actionKey', 'concreteModel'], 'RESULT_OFFICIAL_PLUGIN_PRODUCER_INVALID');
+    if (producer.kind !== 'OFFICIAL_PLUGIN' || producer.instanceId !== 'wl-engineering-issue-correction' ||
+        producer.pluginVersion !== '1.0.26' || producer.actionKey !== 'textToJson' || producer.concreteModel !== null ||
+        result.modelVersion !== null || result.skillVersion !== null)
+      fail('RESULT_OFFICIAL_PLUGIN_PRODUCER_INVALID');
+  } else {
+    if ('producer' in result) fail('RESULT_EXECUTION_PURPOSE_MISMATCH');
+    requiredText(result.modelVersion, 'RESULT_ENVELOPE_MODEL_VERSION_REQUIRED');
+    requiredText(result.skillVersion, 'RESULT_ENVELOPE_SKILL_VERSION_REQUIRED');
+  }
   requiredText(result.promptVersion, 'RESULT_ENVELOPE_PROMPT_VERSION_REQUIRED');
-  requiredText(result.skillVersion, 'RESULT_ENVELOPE_SKILL_VERSION_REQUIRED');
   assertStringRecord(
     result.toolVersions,
     'RESULT_ENVELOPE_TOOL_VERSIONS_INVALID',
   );
-  assertRunMetrics(result.runMetrics);
+  assertRunMetrics(result.runMetrics, correction);
   assertNullableText(result.errorCode, 'RESULT_ENVELOPE_ERROR_CODE_INVALID');
   assertNullableText(
     result.errorDetail,
@@ -643,14 +657,15 @@ function assertStringRecord(value: unknown, code: string): void {
   }
 }
 
-function assertRunMetrics(value: unknown): void {
+function assertRunMetrics(value: unknown, allowUnreportedUnits = false): void {
   if (!isRecord(value)) fail('RESULT_ENVELOPE_RUN_METRICS_INVALID');
   assertExactKeys(
     value,
     ['durationMs', 'inputUnits', 'outputUnits'],
     'RESULT_ENVELOPE_RUN_METRICS_INVALID',
   );
-  for (const item of Object.values(value)) {
+  for (const [key, item] of Object.entries(value)) {
+    if (allowUnreportedUnits && key !== 'durationMs' && item === null) continue;
     if (typeof item !== 'number' || !Number.isFinite(item) || item < 0) {
       fail('RESULT_ENVELOPE_RUN_METRICS_INVALID');
     }

@@ -196,10 +196,13 @@ describe('authorized engineering issue search and exact expansion', () => {
 
   it('uses the real Matter reader for a Matter work ref', async () => {
     const h = setup();
+    const notice = { attemptRef: 'AQ-correction', issueKey: h.identity.issueKey,
+      reason: '依赖尚未核实，不能据此认定确定无影响。', attemptStatus: 'FAILED', correctedWorkRef: null };
     h.matters.readWorkingRevision.mockResolvedValue({
       matterId: 'MAT-1',
       matterWorkRevisionId: 'MWR-1',
       workingRevision: 7,
+      correctionNotices: [notice, { ...notice, issueKey: 'unrelated-issue', reason: 'Other scope' }],
       state: {
         problemWork: h.saved.content,
         substantiveResult: {
@@ -217,6 +220,10 @@ describe('authorized engineering issue search and exact expansion', () => {
     h.db.execute.mockResolvedValue([identity]);
     const found = await h.service.search('工具', actor);
     expect(found.hits[0].workRevision).toBe(7);
+    expect(found.hits[0].correctionNotices).toEqual([notice]);
+    const expanded = await h.service.read(identity, actor);
+    expect(expanded.identity.correctionNotices).toEqual([notice]);
+    expect(expanded.issue.body).toBe(h.saved.content.issues[0].body);
     expect(h.matters.readWorkingRevision).toHaveBeenCalledWith(
       'MAT-1',
       'MWR-1',
