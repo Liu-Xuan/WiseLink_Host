@@ -1005,6 +1005,12 @@ test(
         nextFocus: { ...command.nextFocus, question: '保留工作进展，不重置已取消的来源请求。' } }, owner.actor);
       assert.equal((await owner.runtime(() => service.nextForRuntime(scope))).next.attemptRef, automatic.next.attemptRef,
         'working progress alone cannot start a replacement model run for unchanged sources');
+      await sql`UPDATE action_attempt SET status = 'SUCCEEDED' WHERE operation_ref = ${automatic.next.attemptRef}`;
+      const succeededReplay = await owner.runtime(() => service.nextForRuntime(scope));
+      assert.equal(succeededReplay.next, null, 'a successful automatic idempotency replay is idle, not attention');
+      const [automaticCount] = await sql`SELECT count(*)::int AS n FROM action_attempt
+        WHERE matter_id = ${scope.matterId} AND idempotency_key LIKE 'matter-auto:%'`;
+      assert.equal(automaticCount.n, 1, 'successful automatic replay does not create another attempt');
 
 
     } finally {
@@ -1730,28 +1736,21 @@ async function assertWorkingRevisionFlow(
   };
   command.nextProblemWork = materializeJobAidWork(
     {
-      schemaVersion: 'wiselink.jobaid-problem-work.v2',
-      headline: command.nextSubstantiveResult.content.headline,
-      listBrief: command.nextSubstantiveResult.content.listBrief,
-      understanding: command.nextSubstantiveResult.content.lead,
-      decisiveIssueKeys: ['source'],
+      schemaVersion: 'wiselink.jobaid-problem-work.v3',
+      overview: command.nextSubstantiveResult.content.lead,
       roundCompletion: 'COMPLETE_WITH_OPEN_QUESTIONS',
       completionReason: '完成本轮来源核查，实际措施状态待确认。',
       changeSummary: command.changeSummary,
       unchangedExplanation: '保留完整条件。',
+      unchangedIssueKeys: [],
+      retiredIssues: [],
+      inputDispositions: [],
+      reviewConditionDelta: { upserts: [], retirements: [], explicitlyUnchangedItemIds: [] },
       issues: [
         {
           issueKey: 'source',
           question: '源条件意味着什么？',
-          understanding: claim.text,
-          statements: [
-            {
-              claimKey: 'condition',
-              text: claim.text,
-              basis: claim.basis,
-              premises: claim.premises,
-            },
-          ],
+          body: `${claim.text} [[${evidence.evidenceRef}]]`,
           riskScenarios: [
             {
               scenario: '未确认条件下的风险',
@@ -1759,6 +1758,8 @@ async function assertWorkingRevisionFlow(
               method: 'JA_AC_R01',
               severity: null,
               likelihood: null,
+              score: null,
+              riskGrade: null,
               importantEvent: null,
               limitations: ['缺少对象数据'],
               controlComparison: '尚无法比较措施效果',
@@ -1783,8 +1784,6 @@ async function assertWorkingRevisionFlow(
             },
           ],
           requirementHandling: [],
-          sourceDependencies: [evidence.evidenceRef],
-          premiseRefs: [],
         },
       ],
     },
@@ -1803,6 +1802,13 @@ async function assertWorkingRevisionFlow(
         limitation: null,
       },
     },
+  );
+  command.nextProblemWork.historicalSourceSchema = 'wiselink.jobaid-problem-work.v2';
+  command.nextSubstantiveResult.content.headline = command.nextProblemWork.headline;
+  command.nextSubstantiveResult.content.listBrief = command.nextProblemWork.listBrief;
+  command.nextSubstantiveResult.content.lead = command.nextProblemWork.understanding;
+  command.nextSubstantiveResult.content.issueArticles = command.nextProblemWork.issues.map(
+    ({ issueKey, issueRef, question, body }) => ({ issueKey, issueRef, question, body }),
   );
   const uncoveredCommand = structuredClone(command);
   uncoveredCommand.nextProblemWork.evidence.push({

@@ -148,6 +148,7 @@ export class MatterActionAttemptService {
         .where(and(eq(actionAttempt.tenantId, input.tenantId), eq(actionAttempt.idempotencyKey, idempotencyKey))).limit(1);
       if (existing?.ref) {
         const row = await this.scopedRow(executor, queue, input, existing.ref);
+        if (row.status === 'SUCCEEDED') return { next: failedRevisit };
         return { next: failedRevisit ?? { attemptRef: existing.ref, status: row.status } };
       }
       return { reservation: { ...input, trigger,

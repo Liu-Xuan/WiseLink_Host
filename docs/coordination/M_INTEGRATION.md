@@ -1,14 +1,22 @@
 # M 主控集成交接
 
+## 2026-09-14 nextForRuntime 成功终态回放修复：本地待发布
+
+已接受本轮最小修复：自动幂等命中既有 `SUCCEEDED` attempt 时返回 idle（`next=null`），不再将成功终态映射为 `REQUIRES_ATTENTION`，也不创建新 attempt。定向子测试 `Matter commits frozen inputs while later material remains pending` 实际执行通过（1 pass/0 fail/0 skip）；为适配当前 v3 canonical 校验，测试 fixture 做了局部字段对齐。该修复仍是本地待发布候选，未计入线上 Host。
+
+线上基线仍为 Host `8b706172a97a83d837b869bec6ab4d8def24e519` / release `7685407198491872522`，Skill c103 未变，前端未改。AQ-84c70 因准备遗漏 `method:applicability` 未生成/保存，已按正常路径 `CANCELLED`；旧 AQ-5e58c5abe46a4420878d164cec4206a6 的 `RUNNING` 记录已更正为实际 `FAILED`，工作14保留。
+
+新的正常后继 `AQ-01ded20ff4f3451a888c273cc3771c93`（attempt `ATT-395fe166`，requestId `rev6-work14-official-consistency-fullrefs-20260914`，deadline 2026-09-15 00:28:45）正在一次恢复运行；此前 cron 15 分钟退避，当前无其他执行。该运行尚未产生新 workRef，不能与本地 idle 修复混称为已上线或已完成验收。
+
 ## 2026-09-14 更正契约候选：Host-only，前端发布边界已核对
 
 本批更正契约补丁已完成定向验证：插件单元 19 项、server typecheck、改动文件 lint 通过；隔离 PostgreSQL 目标场景 1 pass/0 skip，日志保存在私有临时目录。补丁仅涉及 Host 更正插件、上下文/回执映射与相关测试，未修改数据库/RLS、Skill 或前端。
 
 官方 release-list/get 只读仍为 Host `8b706172a97a83d837b869bec6ab4d8def24e519` / release `7685315995439729883`。相对该 Host 基线，当前候选在 `client`、`shared`、`package.json`、`package-lock.json` 无差异；本轮不合入 sprint、不发布。前端已有线上版本与开发中 `sprint/default` 的 49 项旧冲突属于独立集成边界，不阻止本 Host-only 候选按 M 的官方窗口发布，但发布前仍需保持前端 owner 的分支归属。
 
-## 2026-09-14 工作14一致性后继已受理，等待终态
+## 历史记录：2026-09-14 工作14一致性后继曾受理（已FAILED）
 
-针对 online 事项3/工作14的正常后继 `AQ-5e58c5abe46a4420878d164cec4206a6`（`rev6-work14-content-consistency-20260914`），预检确认无活动 Matter 请求后已 `created=true/QUEUED`，deadline 为 `23:38:28`。因 cron 此前连续 5 次 idle 错误且下一次仅剩约 5 分钟，按既有授权执行单次官方恢复 `manual:efc2b938-2bab-4f6d-ab8d-14ca3de9fa70:1789396876759:5`，已 accepted/enqueued；online 当前 `RUNNING/error=null`，未修改退避、未发起其他业务、尚无新 workRef。既有 wiselink heartbeat 仅回收本 AQ 终态。
+针对 online 事项3/工作14的正常后继 `AQ-5e58c5abe46a4420878d164cec4206a6`（`rev6-work14-content-consistency-20260914`），曾因 cron 退避执行单次恢复；后续实际 `FAILED`，工作14保留。该历史记录不代表当前运行状态。
 
 前端 `origin/sprint/default` 已成功取得最新 SHA `247cfee384a1d299bee00848ce93e5ce604dc12f`；相对旧 `2926a9cb` 仅有 26 个 client/e2e 文件变化（3977 additions/1039 deletions），未发现 server/shared/database/schema/API/package 变化，非 client 风险结论未改变。此前“新 SHA fetch 未取得”的记录属于网络失败时点，已由该只读 fetch 更新；旧 49 冲突结论仍仅适用于旧 `2926a9cb` 范围。
 
