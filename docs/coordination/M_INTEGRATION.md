@@ -1,10 +1,18 @@
 # M 主控集成交接
 
+## 2026-09-14 工作13/14 原生 session 回执已核实
+
+工作12一致性后继的固定原生 session 已完成核对：连续三轮按 `SAVE_WORK`、`FINISH`、`FINISH` 运行，第一轮和第三轮均有保存回执，工作13与工作14均已读回。此前“没有同一原生 session 回执”的限制已由本次证据更新，不再适用。
+
+内容边界仍保持：工作12→13仅目标 FTD 问题变化，13→14问题正文全部相等，仅总体字段与完成状态更新；requirement 标题的绝对表述、openQuestion 的一致性核对要求及 `understanding` 不完整仍待修正，不能宣称整体工程验收完成。报告 `output=27694` 与业务请求 `16000` 不等价，不据此扩展额度实验。当前 Host/Skill 仍为 `8b706172a97a83d837b869bec6ab4d8def24e519` / c103，idle 修复尚未部署。
+
+前端 `origin/sprint/default` 最新只读 SHA 为 `247cfee384a1d299bee00848ce93e5ce604dc12f`；本次 fetch 未取得该新对象，故旧的 49 冲突结论仅适用于已核对的 `2926a9cb`，不得外推到新 SHA。证据详见私有 `/private/tmp/wiselink-offload-20260914/M/WORK13_14_SESSION_EVIDENCE.md`。
+
 ## 2026-09-14 工作12一致性后继：工作13/14已保存，整体仍待核对
 
 此前受理的 `AQ-5402de7e4d054f3e895c58e52f512633`（attempt `ATT-f7fa86d0-6a5f-428a-be4a-285a32caac02`）已由正常 Hosted 调度完成：状态 `SUCCEEDED`、`errorCode=null`。同一 attempt 保存并读回工作13 `MWREV-38802de2-d9cb-4fa2-b4e0-51be49eafba5`（`IN_PROGRESS/CURRENT`）及工作14 `MWREV-356ec3e8-2c29-4872-9dab-4a6bb4887384`（`COMPLETE_WITH_OPEN_QUESTIONS/CURRENT`）。工作12→13仅目标 FTD 问题变化；13→14问题正文全部相等，仅总体字段与完成状态更新。
 
-更正已将目标 `requirementHandling` treatment 调整为 `CONDITIONS_UNCONFIRMED`，并明确未知不等于无影响或必须提高优先级。仍有未闭合问题：requirement 标题保留绝对表述，openQuestion 仍要求一致性核对，`understanding` 还偏向变更说明而非完整综合。因此本次证明正文更正与保存读回链成功，不宣称整体 H2 或工程综合验收完成；也没有同一原生 session 回执，不能仅凭同一 attempt 补作该证明。
+更正已将目标 `requirementHandling` treatment 调整为 `CONDITIONS_UNCONFIRMED`，并明确未知不等于无影响或必须提高优先级。仍有未闭合问题：requirement 标题保留绝对表述，openQuestion 仍要求一致性核对，`understanding` 还偏向变更说明而非完整综合。因此本次证明正文更正与保存读回链成功，不宣称整体 H2 或工程综合验收完成；当时尚未取得原生 session 回执的限制，已由顶部后续核验更新。
 
 本次受理前 online 事项3/工作12无变更、活动 attempt 为0；未执行额外 cron run、未发布 Host、未修改前端。原自动化已暂停。当前 Host/Skill 仍为 `8b706172a97a83d837b869bec6ab4d8def24e519` / c103；此前记录的 idle 修复仍未部署。证据保留在私有 `/private/tmp/wiselink-offload-20260914/M/`，不纳入仓库。
 
