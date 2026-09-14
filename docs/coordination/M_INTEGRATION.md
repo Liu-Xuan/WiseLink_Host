@@ -1,5 +1,11 @@
 # M 主控集成交接
 
+## 2026-09-14 工作12：正文更正链成功，整体综合仍待一致性核对
+
+19:40:19 单次获准的官方 operator cron run `manual:efc2b938-2bab-4f6d-ab8d-14ca3de9fa70:1789386019695:4` accepted/enqueued；未修改 schedule 或退避。后继 `AQ-8d7d6201397c4f7f832ef6a785c6283d` 已 `SUCCEEDED`、`errorCode=null`。正常 Matter 页面 HTTP 200 读回工作12 `MWREV-e7147367-025f-4d85-9fc3-9038530a1f92`（保存时间 `2026-09-14T11:41:43.980Z`）。
+
+工作11与工作12逐问题比较，五个问题中仅 `claim_ftd_787_45_25001_unrelated` 发生变化，其余四个问题 JSON 相等；更正正文明确未知依赖不能推导完全无影响或必须提高优先级。旧 `understanding` 和 `requirementHandling` 仍含绝对“无影响”表述，页面已标注相关判断与总体认识仍需一致性核对、现有综合尚未覆盖。因此本次仅接受正文更正保存链成功，不能认定整体工程验收完成。Host `8b706172a97a83d837b869bec6ab4d8def24e519` / release `7685315995439729883`、Skill c103 不变。
+
 ## 2026-09-14 c103：更正生成请求按任务 deadline 有界等待（已安装，业务更正待验收）
 
 本批仅调整 Skill 侧更正生成的请求边界：读取 Host 下发的任务 `deadline`，在调用 `GENERATE_ISSUE_CORRECTION` 前拒绝无效或已过期 deadline，并将有效剩余时间限制在现有 30 分钟范围内；通过 MCP SDK 第三参数只向该生成操作传递 timeout，其他 Host 操作继续使用默认请求选项。没有修改 Host、数据库、RLS、模型配置或业务数据，也没有触发新的业务任务。
