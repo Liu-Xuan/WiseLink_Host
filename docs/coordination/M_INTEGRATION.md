@@ -1,5 +1,13 @@
 # M 主控集成交接
 
+## 2026-09-14 c99 已安装，完整候选后继验收
+
+用户明确授权本轮相关操作后，c99 安装包通过原 Host 存储的 600 秒链接进入原 Hosted 应用；包大小 385769B、SHA256 03a7afdf238f829563e448de0a6a51c5481c96697c255b70655b52362220a833 一致。链接首次因存储应用与接收应用的授权对应被自动审批拒绝；补齐只读文件元数据和相同接收方证据后通过，随后一次网络 EOF，原操作有界重试成功。未改变接收方或时长。
+
+仅暂停三个明确既有 job，确认均 disabled、runningAtMs=null、活动消费者0后，经官方 skills install 更新；47文件匹配、installed320项全部通过。三个 job 的 enabled/schedule/payload/agentId/sessionTarget 已与安装前逐项比较一致，THREE_JOBS_RESTORED_EXACT。Host仍8cc425b，无业务源码变更，不重复发布。
+
+当前线上读回：c98 AQ-3c1ae0cba08a41c881311c7176bf9147 已于2026-09-14 10:00:57+08进入TIMED_OUT，并非本轮c99将其FAILED；工作仍9。既有 reserveJobAid 允许 FAILED/TIMED_OUT 的准确绑定恢复，完整候选保留。c99 后继已通过正常 begin 创建：AQ-94dd26cde9be4c01893e930023663780，requestId `rev6-complete-candidate-c99-20260914`，状态 QUEUED，正在验证字段更正、SAVE 和确切读回；尚不能宣称已有新workRef。
+
 ## 2026-09-14 c99 字段反馈及明确拒绝收尾（待安装）
 
 c98真实后继成功进入SOURCE_CONTEXT_ONLY，并取得完整函数载荷：round1 FINISH未保存被拒，round2 SAVE_WORK约39669B参数，round3再次SAVE。Host拒绝JOBAID_UNDECLARED_FIELD：顶层openQuestions/reviewConditions/workRevision不属于更新契约，round3仅去掉workRevision。未产生新workRef。c98反馈只报告泛化错误，类型诊断未枚举未知字段；更正耗尽后普通异常也未进入任务终态。
