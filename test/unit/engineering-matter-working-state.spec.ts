@@ -13,6 +13,9 @@ import {
   materializeEngineeringMatterWorkingState,
   parseEngineeringMatterWorkingState,
 } from '../../server/modules/canonical-host/engineering-matter-working-state';
+import { JOBAID_PROBLEM_WORK_SCHEMA } from '../../shared/jobaid-problem-assessment.interface';
+import { materializeJobAidWork } from '../../server/modules/canonical-host/jobaid-problem-work';
+import { JOBAID_METHOD_BINDING } from '../../server/modules/canonical-host/jobaid-method-pack';
 
 const MATTER_ID = 'MAT-1';
 const inputA = binding('WI-A', 4, 'DV-A', 'RESULT-A', 3);
@@ -433,6 +436,104 @@ describe('Engineering Matter working state materializer', () => {
       covered: inputB,
       reasons: ['READ_NOT_PROCESSED'],
     }]);
+  });
+
+  describe('historical v2 reading projection', () => {
+    const sourceEvidence = evidence('E-NEW', 'WI-A', 'DV-A');
+    const retainedEvidence = evidence('E-OLD', 'WI-A', 'DV-A');
+    const work = materializeJobAidWork({
+      schemaVersion: JOBAID_PROBLEM_WORK_SCHEMA,
+      issues: [{
+        issueKey: 'A',
+        question: '问题A',
+        body: `更换前提需原文支持。 [[${sourceEvidence.evidenceRef}]]`,
+      }],
+      roundCompletion: 'IN_PROGRESS',
+      completionReason: '当前认识已保存，继续核对适用前提。',
+      changeSummary: '保存本批有依据的认识。',
+    }, {
+      matterId: MATTER_ID,
+      methodBinding: JOBAID_METHOD_BINDING,
+      previous: null,
+      evidence: [retainedEvidence, sourceEvidence],
+      readSourceRefs: [retainedEvidence.evidenceRef, sourceEvidence.evidenceRef],
+      capabilities: [],
+      history: {
+        required: false,
+        priorAssessmentRefs: [],
+        engineeringDocumentRefs: [],
+        coverage: 'NOT_REQUIRED' as const,
+        limitation: null,
+      },
+    });
+    // Historical v2 shape: body is derived from understanding plus statements, never stored as text.
+    const v2Work = {
+      ...work,
+      schemaVersion: 'wiselink.jobaid-problem-work.v2',
+      understanding: '旧工作原有总认识。',
+      issues: [{
+        ...work.issues[0],
+        body: undefined,
+        understanding: '旧工作原有解释。',
+        statements: [{
+          claimId: 'old-claim',
+          text: '五秒前提尚未确认。',
+          premises: [{
+            role: 'LIMITS',
+            explanation: '这是更换前提。',
+            evidenceRef: sourceEvidence.evidenceRef,
+            limitation: '不能据此确认本机适用。',
+          }],
+        }],
+      }],
+    };
+    const oldResult = readingResult(1, [claim('CLAIM-A', 'Old finding.', 'E-OLD')], [retainedEvidence]);
+    const storedState = () => ({
+      schemaVersion: 'wiselink.3_1.engineering_matter_working_state.v1',
+      focus: { question: 'What is required?', targetRefs: ['aircraft'] },
+      substantiveResult: JSON.parse(JSON.stringify(oldResult)),
+      problemWork: JSON.parse(JSON.stringify(v2Work)),
+      openQuestions: [],
+      reviewConditions: [],
+      substantiveInputs: [inputA],
+      coverage: [coverage(inputA, 'SUBSTANTIVE', ['SRC-E-A'], 'initial source set')],
+    });
+
+    it('projects the same stored v2 problemWork citations into substantiveResult and preserves old result evidence', () => {
+      const parsed = parseEngineeringMatterWorkingState(JSON.stringify(storedState()), MATTER_ID);
+      expect(parsed.problemWork.historicalSourceSchema).toBe('wiselink.jobaid-problem-work.v2');
+      expect(parsed.problemWork.schemaVersion).toBe(JOBAID_PROBLEM_WORK_SCHEMA);
+      expect(parsed.substantiveResult.evidence).toEqual([retainedEvidence, sourceEvidence]);
+      expect(parsed.substantiveResult.content.claims).toEqual(oldResult.content.claims);
+      const article = parsed.substantiveResult.content.issueArticles[0];
+      expect(article.issueKey).toBe('A');
+      expect(article.body).toContain('旧工作原有解释。');
+      expect(article.body).toContain('五秒前提尚未确认。');
+      expect(article.body).toContain('不能据此确认本机适用。');
+      expect(article.body).toContain(`[[${sourceEvidence.evidenceRef}]]`);
+      expect(parsed.substantiveResult.content.headline).toBe(parsed.problemWork.headline);
+      expect(parsed.substantiveResult.content.listBrief).toBe(parsed.problemWork.listBrief);
+      expect(parsed.substantiveResult.content.lead).toBe(parsed.problemWork.understanding);
+      // Re-parsing the same stored JSON yields the identical projection without writes.
+      const again = parseEngineeringMatterWorkingState(JSON.stringify(storedState()), MATTER_ID);
+      expect(again).toEqual(parsed);
+    });
+
+    it('rejects v2 evidence that redefines a cited id with different content', () => {
+      const state = storedState();
+      state.substantiveResult.evidence.push({ ...sourceEvidence, excerpt: '另一段不同摘录。' });
+      expect(() =>
+          parseEngineeringMatterWorkingState(JSON.stringify(state), MATTER_ID),
+      ).toThrow('ENGINEERING_MATTER_WORKING_EVIDENCE_REF_CONFLICT');
+    });
+
+    it('rejects a projected body citing an id present in neither the result nor the problemWork evidence pool', () => {
+      const state = storedState();
+      state.problemWork.issues[0].statements[0].premises[0].evidenceRef = 'E-MISSING';
+      expect(() =>
+        parseEngineeringMatterWorkingState(JSON.stringify(state), MATTER_ID),
+      ).toThrow('JOBAID_SOURCE_NOT_DELIVERED:E-MISSING');
+    });
   });
 });
 

@@ -6,7 +6,7 @@
 
 工作11与工作12逐问题比较，五个问题中仅 `claim_ftd_787_45_25001_unrelated` 发生变化，其余四个问题 JSON 相等；更正正文明确未知依赖不能推导完全无影响或必须提高优先级。旧 `understanding` 和 `requirementHandling` 仍含绝对“无影响”表述，页面已标注相关判断与总体认识仍需一致性核对、现有综合尚未覆盖。因此本次仅接受正文更正保存链成功，不能认定整体工程验收完成。Host `8b706172a97a83d837b869bec6ab4d8def24e519` / release `7685315995439729883`、Skill c103 不变。
 
-## 2026-09-14 c103：更正生成请求按任务 deadline 有界等待（已安装，业务更正待验收）
+## 历史记录：2026-09-14 c103 安装窗口（已完成；业务更正结果见顶部工作12）
 
 本批仅调整 Skill 侧更正生成的请求边界：读取 Host 下发的任务 `deadline`，在调用 `GENERATE_ISSUE_CORRECTION` 前拒绝无效或已过期 deadline，并将有效剩余时间限制在现有 30 分钟范围内；通过 MCP SDK 第三参数只向该生成操作传递 timeout，其他 Host 操作继续使用默认请求选项。没有修改 Host、数据库、RLS、模型配置或业务数据，也没有触发新的业务任务。
 
@@ -20,7 +20,7 @@
 
 现场安装回执已确认：Hosted 当前仍为 Host commit `8b706172` / release `7685315995439729883`；c103 官方安装成功，48 个包文件一致，仅额外存在安装器生成的顶层 `.openclaw/source-origin.json`。三个既有 job 安装前已禁用且无活动消费者，安装后已恢复并与备份逐项一致。当前 Matter 页面仍可读工作11，既有矛盾待 M 按正常入口继续处理。
 
-随后已创建唯一正常后继 `AQ-8d7d6201397c4f7f832ef6a785c6283d`，requestId 为 `rev6-work11-official-correction-c103-20260914`，当前 `QUEUED`，绑定事项3/工作11，尚无新的 workRef。未强制 cron、未修改退避；该状态不代表工程更正完成。近期 Matter job 第10次失败及约19:47:27的自然 nextRunAt，trace 已收窄至旧自动请求/绑定 prior work 读取路径，具体根因仍未知，不能与独立 file metadata 失败混同。
+安装后、19:40 恢复前的历史状态：曾创建唯一正常后继 `AQ-8d7d6201397c4f7f832ef6a785c6283d`，requestId 为 `rev6-work11-official-correction-c103-20260914`，当时为 `QUEUED`，绑定事项3/工作11，尚无新的 workRef。未强制 cron、未修改退避；该历史状态不代表工程更正完成。近期 Matter job 第10次失败及约19:47:27的自然 nextRunAt，trace 已收窄至旧自动请求/绑定 prior work 读取路径，具体根因仍未知，不能与独立 file metadata 失败混同。后续工作12已在顶部记录。
 
 ## 2026-09-14 工作11有界更正后继仍在生成层停止（13:24）
 
