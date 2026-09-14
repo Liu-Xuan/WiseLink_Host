@@ -599,6 +599,18 @@ export async function invokeHostedJobAidProblemModel(
       corrections = 0;
     } catch (error) {
       const code = error?.hostErrorCode ?? error?.message ?? '';
+      if (corrections >= 2 && submittedWork && error?.hostErrorCode &&
+          /^JOBAID_[A-Z_]+(?::[A-Za-z0-9:_-]+)?$/u.test(code) &&
+          !/AUTHORIZATION|LEASE|REVISION_CONFLICT|VERSION_CHANGED|BUDGET|GATEWAY|READ_FAILED|ATTEMPT/.test(code)) {
+        // A complete candidate explicitly rejected by Host is known failure,
+        // not an unknown write to replay forever on every scheduler tick.
+        error.terminalAssessmentFailure = { errorCode: 'JOBAID_WORK_VALIDATION_FAILED', provenance: {
+          modelVersion: `configured-route:${options.executionModel?.modelRef ?? options.configuredModelVersion}`,
+          promptVersion: 'wiselink-jobaid-problem@v2', skillVersion: WISELINK_SKILL_VERSION,
+          toolVersions: { [WISELINK_HOST_MCP_NAME]: WISELINK_HOST_MCP_VERSION, 'jobaid-problem-protocol': '2' },
+          runMetrics: { durationMs: Date.now() - startedAt, inputUnits, outputUnits },
+        } };
+      }
       if (
         !/^JOBAID_[A-Z_]+(?::[A-Za-z0-9:_-]+)?$/u.test(code) ||
         /AUTHORIZATION|LEASE|REVISION_CONFLICT|VERSION_CHANGED|BUDGET|GATEWAY|READ_FAILED|ATTEMPT/.test(
@@ -681,6 +693,8 @@ function workShapeCorrection(code, work, modelInput) {
     fieldErrors,
     instruction:
       'Use exact delivered [[evidenceRef]] citations in body. Do not generate redundant dependency fields. Correct the reported field types using the original evidence and the work-update shape. conditions, limitations and basisRefs are arrays of strings; addresses is one non-empty string describing the problem or risk addressed. Preserve justified analysis and unknowns; do not invent content or remove substantive work merely to pass validation. The Host will validate the revised work.' +
+      (fieldErrors.some(error => error.received === 'undeclared field')
+        ? ' The reported undeclared fields are not accepted at those paths; allowedFields lists the current contract. Preserve their substantive meaning in the relevant issue body or declared field. openQuestions belongs to an issue; explicit scheduling changes use reviewConditionDelta, not a full reviewConditions list. Work revision is assigned by Host, not authored in workJson.' : '') +
       (code === 'JOBAID_MEASURE_ADDRESSES_INVALID'
         ? ' The rejected field is addresses; changing status does not repair it.'
         : ''),

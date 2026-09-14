@@ -211,7 +211,7 @@ function fixture(steps, overrides = {}) {
 const completed = {
   schemaVersion: 'wiselink.jobaid-problem-work.v3',
   roundCompletion: 'COMPLETE_WITH_OPEN_QUESTIONS',
-  understanding: 'The source condition remains; reliability is unqueried.',
+  overview: 'The source condition remains; reliability is unqueried.',
 };
 
 test('a completed text-only correction resumes from its durable response and preserves the rejected work', () => persisted(async checkpoint => {
@@ -423,8 +423,8 @@ test('reads a real source, saves completed reasoning and finishes with only its 
   assert.equal(result.output.workRevisionRef, 'JAWR-1');
   assert.equal(result.provenance.toolVersions['jobaid-problem-protocol'], '2');
   assert.equal(
-    JSON.parse(f.saves[0].workJson).understanding,
-    completed.understanding,
+    JSON.parse(f.saves[0].workJson).overview,
+    completed.overview,
   );
   assert.equal(
     f.calls[1].messages.some((message) => message.role === 'user'),
@@ -825,8 +825,8 @@ test('the installed gateway named-tool failure settles as a known failed result 
 });
 
 test('new requests stop on explicit length without replay; saved A remains readable', () => persisted(async checkpoint => {
-  const a = { ...completed, roundCompletion: 'IN_PROGRESS', issues: [{ issueKey: 'a', understanding: 'A condition and limitation' }] };
-  const b = { ...completed, issues: [{ issueKey: 'b', understanding: 'B comparison' }] };
+  const a = { ...completed, roundCompletion: 'IN_PROGRESS', issues: [{ issueKey: 'a', body: 'A condition and limitation [[E1]]' }] };
+  const b = { ...completed, issues: [{ issueKey: 'b', body: 'B comparison [[E1]]' }] };
   const f = fixture([{ action: 'SAVE_WORK', work: a }, { action: 'SAVE_WORK', work: b }, { action: 'FINISH' }],
     { assessmentCheckpoint: checkpoint, registeredModelRefs: ['miaoda/minimax-m3'], executionModel: { modelRef: 'miaoda/minimax-m3', displayName: 'Synthetic M3', providerKind: 'BUILT_IN', settingsRevision: 1, selectedAt: '2026-09-13T00:00:00.000Z' } });
   const request = f.dependencies.requestGateway;
@@ -909,7 +909,7 @@ test('observed singleton sourceRefs envelope is lossless and does not coerce wor
  test('continuous session saves variable issue groups then synthesis without replaying initial context', async () => {
   const first = { ...completed, roundCompletion: 'IN_PROGRESS', issues: [{ issueKey: 'a' }, { issueKey: 'b' }] };
   const second = { schemaVersion: completed.schemaVersion, roundCompletion: 'IN_PROGRESS', completionReason: 'Continue', changeSummary: 'C', issues: [{ issueKey: 'c' }] };
-  const synthesis = { schemaVersion: completed.schemaVersion, roundCompletion: 'COMPLETE_WITH_OPEN_QUESTIONS', completionReason: 'Checked', changeSummary: 'Synthesis', understanding: 'Shared conditions remain unknown', issues: [] };
+  const synthesis = { schemaVersion: completed.schemaVersion, roundCompletion: 'COMPLETE_WITH_OPEN_QUESTIONS', completionReason: 'Checked', changeSummary: 'Synthesis', overview: 'Shared conditions remain unknown', issues: [] };
   const f = fixture([{ action: 'SAVE_WORK', work: first }, { action: 'SAVE_WORK', work: second }, { action: 'SAVE_WORK', work: synthesis }, { action: 'FINISH' }]);
   const result = await f.run();
   assert.equal(result.output.workRevisionRef, 'JAWR-3');
@@ -951,4 +951,30 @@ test('generic 502 without reliable completion reason is not classified as length
   });
   assert.equal(f.calls.length, 1);
   assert.equal(f.saves.length, 0);
+});
+
+test('undeclared work fields report exact paths without deleting or rewriting candidate content', async () => {
+  const { jobAidWorkTypeErrors } = await import('../scripts/jobaid-work-shape.mjs');
+  const work = { schemaVersion: 'wiselink.jobaid-problem-work.v3', openQuestions: ['retain this uncertainty'],
+    reviewConditions: [], workRevision: 9, issues: [{ issueKey: 'one', question: 'Scope', body: 'Bounded [[E1]]', invented: 'retain meaning' }] };
+  const before = structuredClone(work);
+  const errors = jobAidWorkTypeErrors(work);
+  assert.deepEqual(errors.map(e => e.path), ['work.openQuestions', 'work.reviewConditions', 'work.workRevision', 'work.issues[0].invented']);
+  assert.ok(errors[0].allowedFields.includes('reviewConditionDelta'));
+  assert.ok(errors[3].allowedFields.includes('openQuestions'));
+  assert.deepEqual(work, before);
+});
+
+test('exhausted explicit Host work rejection is terminal; unknown save response is not', async () => {
+  const work = { ...completed, openQuestions: ['Keep this uncertainty'] };
+  const f = fixture(Array.from({ length: 3 }, () => ({ action: 'SAVE_WORK', work })));
+  f.options.saveAssessmentWork = async () => { throw Object.assign(new Error('Rejected'), { hostErrorCode: 'JOBAID_UNDECLARED_FIELD' }); };
+  await assert.rejects(f.run(), error => error.terminalAssessmentFailure?.errorCode === 'JOBAID_WORK_VALIDATION_FAILED');
+  assert.equal(f.calls.length, 3);
+  const feedback = JSON.parse(f.calls[1].messages.at(-1).content);
+  assert.equal(feedback.fieldErrors[0].path, 'work.openQuestions');
+  assert.match(feedback.instruction, /openQuestions belongs to an issue/);
+  const unknown = fixture([{ action: 'SAVE_WORK', work: completed }]);
+  unknown.options.saveAssessmentWork = async () => { throw new Error('SAVE_RESPONSE_UNKNOWN'); };
+  await assert.rejects(unknown.run(), error => error.message === 'SAVE_RESPONSE_UNKNOWN' && !error.terminalAssessmentFailure);
 });

@@ -1,8 +1,14 @@
 # M 主控集成交接
 
-## 2026-09-14 c98 已取证后继恢复（本地验证，待安装）
+## 2026-09-14 c99 字段反馈及明确拒绝收尾（待安装）
 
-在现有正常后继中增加 SOURCE_CONTEXT_ONLY：旧精确回执必须是已明确结束的函数通道失败，模型/输入/请求哈希一致；不重放错误或半成品，由 Host 已有 reserveJobAid 重新授权并复制实际读取证据，后继以当前完整工作与这些证据生成。完整候选仍走原恢复分支。一般502、响应未知、来源/模型/绑定变化不放宽。新后继保留正常SAVE、CAS及完成条件，旧任务不复活，不改模型预算。Skill c98 318项通过（含后继使用Host证据、正常保存和同会话FINISH、未知响应/绑定拒绝）；尚未安装及真实恢复。本次仅Skill改动，Host8cc425b不需重新发布。
+c98真实后继成功进入SOURCE_CONTEXT_ONLY，并取得完整函数载荷：round1 FINISH未保存被拒，round2 SAVE_WORK约39669B参数，round3再次SAVE。Host拒绝JOBAID_UNDECLARED_FIELD：顶层openQuestions/reviewConditions/workRevision不属于更新契约，round3仅去掉workRevision。未产生新workRef。c98反馈只报告泛化错误，类型诊断未枚举未知字段；更正耗尽后普通异常也未进入任务终态。
+
+c99精确返回未知字段路径及该层allowedFields，要求模型将实际未知/复看含义放回正确字段或正文，不由程序删字段或修补候选；达到原有更正上限且明确Host工作校验拒绝时，正常FINISH FAILED/JOBAID_WORK_VALIDATION_FAILED，未知SAVE响应仍不判终态。320项通过，未增加纠正次数、不改模型/额度/Host，待官方安装后先正常收尾旧在途，再按完整候选后继路径更正并保存。
+
+## 2026-09-14 c98 已取证后继恢复（已安装，正常后继运行中）
+
+在现有正常后继中增加 SOURCE_CONTEXT_ONLY：旧精确回执必须是已明确结束的函数通道失败，模型/输入/请求哈希一致；不重放错误或半成品，由 Host 已有 reserveJobAid 重新授权并复制实际读取证据，后继以当前完整工作与这些证据生成。完整候选仍走原恢复分支。一般502、响应未知、来源/模型/绑定变化不放宽。新后继保留正常SAVE、CAS及完成条件，旧任务不复活，不改模型预算。Skill c98 318项通过（含后继使用Host证据、正常保存和同会话FINISH、未知响应/绑定拒绝）；源码8453ea6c已同步两远端；c98官方安装47文件匹配、installed318项通过，原三job恢复。包384941B/SHA256 09ba4e488702b4660cbd7690332aff998ab6d0ebf951fab2733adf540c8c218b。本次仅Skill改动，Host8cc425b未重新发布。正常begin recoveryAttemptRef指向已FAILED c97任务，创建AQ-3c1ae0cba08a41c881311c7176bf9147，requestId rev6-source-context-c98-20260914，CAS事项3/工作9，created=true/QUEUED，自然调度实际选择SOURCE_CONTEXT_ONLY，输入含56条Host授权deliveredEvidence，未重放旧失败输出。首次等待来自原事项job此前next_matter_assessment四次失败后的既有退避；到期后已正常领取RUNNING。真实正文保存仍待回执。
 
 ## 2026-09-14 正文 v3 / c97 集成窗口（已部署，真实后继已失败且未保存）
 

@@ -92,8 +92,13 @@ export function jobAidWorkTypeErrors(work) {
       return;
     }
     if (schema.type === 'array') value.forEach((item, i) => visit(item, schema.items, `${path}[${i}]`));
-    if (schema.type === 'object') for (const [key, child] of Object.entries(schema.properties)) {
-      visit(value[key], child, `${path}.${key}`);
+    if (schema.type === 'object') {
+      if (schema.additionalProperties === false) for (const key of Object.keys(value)) {
+        if (!Object.hasOwn(schema.properties, key)) errors.push({ path: `${path}.${key}`,
+          expected: 'declared work-update field', received: 'undeclared field',
+          allowedFields: Object.keys(schema.properties) });
+      }
+      for (const [key, child] of Object.entries(schema.properties)) visit(value[key], child, `${path}.${key}`);
     }
   }
   visit(work, JOBAID_WORK_UPDATE_SHAPE, 'work');
