@@ -1020,7 +1020,9 @@ export function readHostMcpJsonResult(result, name, args) {
       // candidate. Never expose arbitrary Host exception text or other IDs.
       if (ref) {
         try {
-          const contains = value => value === ref || (value && typeof value === 'object' && Object.values(value).some(contains));
+          const contains = value => value === ref ||
+            (typeof value === 'string' && value.includes(`[[${ref}]]`)) ||
+            (value && typeof value === 'object' && Object.values(value).some(contains));
           if (contains(JSON.parse(args.workJson))) error.hostRejectedSourceRef = ref;
         } catch { /* Invalid candidate JSON retains only the safe error code. */ }
       }
