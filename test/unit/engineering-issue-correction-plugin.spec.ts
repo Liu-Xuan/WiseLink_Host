@@ -39,7 +39,7 @@ describe('engineering issue correction plugin (isolated provider doubles)', () =
   const assertActive = jest.fn(async () => undefined);
 
   it('delivers the validated body and changeSummary with OFFICIAL_PLUGIN provenance', async () => {
-    call.mockResolvedValue({ body: 'Corrected body [[EV1]].', changeSummary: 'Fixed torque unit.' });
+    call.mockResolvedValue({ requirementHandling: [], openQuestions: [], body: 'Corrected body [[EV1]].', changeSummary: 'Fixed torque unit.' });
     const result = await service.generate(makeContext(), assertActive);
     expect(result.body).toBe('Corrected body [[EV1]].');
     expect(result.changeSummary).toBe('Fixed torque unit.');
@@ -53,7 +53,7 @@ describe('engineering issue correction plugin (isolated provider doubles)', () =
   });
 
   it('sends only the explicit projection to the plugin, not runtime identities', async () => {
-    call.mockResolvedValue({ body: 'b [[EV1]]', changeSummary: 's' });
+    call.mockResolvedValue({ requirementHandling: [], openQuestions: [], body: 'b [[EV1]]', changeSummary: 's' });
     const context = { ...makeContext(), actor: 'runtime-actor-id', issueKey: 'ISS-9' } as never;
     await service.generate(context, assertActive);
     const payload = JSON.parse((call.mock.calls[0][1] as { correctionContextJson: string }).correctionContextJson);
@@ -67,10 +67,33 @@ describe('engineering issue correction plugin (isolated provider doubles)', () =
 
   it('keeps a long changeSummary beyond 1000 characters intact', async () => {
     const long = `x`.repeat(1200);
-    call.mockResolvedValue({ body: 'b [[EV1]]', changeSummary: long });
+    call.mockResolvedValue({ requirementHandling: [], openQuestions: [], body: 'b [[EV1]]', changeSummary: long });
     const result = await service.generate(makeContext(), assertActive);
     expect(result.changeSummary).toBe(long);
     expect(result.changeSummary.length).toBeGreaterThan(1000);
+  });
+
+  it('requires complete consistency collections and rejects references not delivered to this correction', async () => {
+    const context = { ...makeContext(), evidence: [...makeContext().evidence,
+      { ...makeContext().evidence[0], evidenceRef: 'METHOD1', kind: 'METHOD_CLAUSE' as const }] };
+    const requirement = { methodRef: 'METHOD1', requirement: 'Dependency must be checked',
+      conditions: ['Configuration unknown'], treatment: 'CONDITIONS_UNCONFIRMED',
+      basisRefs: ['EV1'], explanation: 'Unknown is not proof of no effect.' };
+    const question = { question: 'Which configuration?', affects: 'Applicability',
+      nextEvidence: 'Configuration record', reason: 'Not provided' };
+    call.mockResolvedValueOnce({ body: 'Conditional result [[EV1]]', changeSummary: 'Correct the assertion',
+      requirementHandling: [requirement], openQuestions: [question] });
+    const result = await service.generate(context, assertActive);
+    expect(result.requirementHandling).toEqual([requirement]);
+    expect(result.openQuestions).toEqual([question]);
+    call.mockResolvedValueOnce({ body: 'Conditional result [[EV1]]', changeSummary: 's',
+      requirementHandling: [{ ...requirement, basisRefs: ['EV-UNREAD'] }], openQuestions: [question] });
+    await expect(service.generate(context, assertActive)).rejects.toThrow('ENGINEERING_CORRECTION_SOURCE_NOT_DELIVERED');
+    call.mockResolvedValueOnce({ body: 'Conditional result [[EV1]]', changeSummary: 's' });
+    await expect(service.generate(context, assertActive)).rejects.toThrow('ENGINEERING_CORRECTION_OUTPUT_INVALID');
+    call.mockResolvedValueOnce({ body: 'Conditional result [[EV1]]', changeSummary: 's',
+      requirementHandling: [{ ...requirement, treatment: 'APPROVED' }], openQuestions: [] });
+    await expect(service.generate(context, assertActive)).rejects.toThrow('ENGINEERING_CORRECTION_OUTPUT_INVALID');
   });
 
   it('rejects an unconfigured or wrong-version plugin before any call', async () => {
@@ -108,7 +131,7 @@ describe('engineering issue correction plugin (isolated provider doubles)', () =
       { body: 'Stray ]] bracket [[EV1]]', changeSummary: 's' },
     ];
     for (const output of malformed) {
-      call.mockResolvedValueOnce(output);
+      call.mockResolvedValueOnce({ requirementHandling: [], openQuestions: [], ...output });
       await expect(service.generate(makeContext(), assertActive))
         .rejects.toThrow('ENGINEERING_CORRECTION_CITATION_MALFORMED');
     }
@@ -118,7 +141,7 @@ describe('engineering issue correction plugin (isolated provider doubles)', () =
       { body: 'No citation at all.', changeSummary: 's' },
     ];
     for (const output of notDelivered) {
-      call.mockResolvedValueOnce(output);
+      call.mockResolvedValueOnce({ requirementHandling: [], openQuestions: [], ...output });
       await expect(service.generate(makeContext(), assertActive))
         .rejects.toThrow('ENGINEERING_CORRECTION_SOURCE_NOT_DELIVERED');
     }
@@ -140,14 +163,14 @@ describe('engineering issue correction plugin (isolated provider doubles)', () =
   });
 
   it('propagates an assertActive failure before the call without invoking the plugin', async () => {
-    call.mockResolvedValue({ body: 'b [[EV1]]', changeSummary: 's' });
+    call.mockResolvedValue({ requirementHandling: [], openQuestions: [], body: 'b [[EV1]]', changeSummary: 's' });
     const failing = jest.fn(async () => { throw new Error('LEASE_LOST'); });
     await expect(service.generate(makeContext(), failing)).rejects.toThrow('LEASE_LOST');
     expect(call).not.toHaveBeenCalled();
   });
 
   it('propagates an assertActive failure after the call and returns no candidate', async () => {
-    call.mockResolvedValue({ body: 'b [[EV1]]', changeSummary: 's' });
+    call.mockResolvedValue({ requirementHandling: [], openQuestions: [], body: 'b [[EV1]]', changeSummary: 's' });
     let checks = 0;
     const failing = jest.fn(async () => { if (++checks === 2) throw new Error('LEASE_LOST'); });
     await expect(service.generate(makeContext(), failing)).rejects.toThrow('LEASE_LOST');

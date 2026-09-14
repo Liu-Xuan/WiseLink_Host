@@ -1,5 +1,11 @@
 # M 主控集成交接
 
+## 2026-09-14 更正契约候选：Host-only，前端发布边界已核对
+
+本批更正契约补丁已完成定向验证：插件单元 19 项、server typecheck、改动文件 lint 通过；隔离 PostgreSQL 目标场景 1 pass/0 skip，日志保存在私有临时目录。补丁仅涉及 Host 更正插件、上下文/回执映射与相关测试，未修改数据库/RLS、Skill 或前端。
+
+官方 release-list/get 只读仍为 Host `8b706172a97a83d837b869bec6ab4d8def24e519` / release `7685315995439729883`。相对该 Host 基线，当前候选在 `client`、`shared`、`package.json`、`package-lock.json` 无差异；本轮不合入 sprint、不发布。前端已有线上版本与开发中 `sprint/default` 的 49 项旧冲突属于独立集成边界，不阻止本 Host-only 候选按 M 的官方窗口发布，但发布前仍需保持前端 owner 的分支归属。
+
 ## 2026-09-14 工作14一致性后继已受理，等待终态
 
 针对 online 事项3/工作14的正常后继 `AQ-5e58c5abe46a4420878d164cec4206a6`（`rev6-work14-content-consistency-20260914`），预检确认无活动 Matter 请求后已 `created=true/QUEUED`，deadline 为 `23:38:28`。因 cron 此前连续 5 次 idle 错误且下一次仅剩约 5 分钟，按既有授权执行单次官方恢复 `manual:efc2b938-2bab-4f6d-ab8d-14ca3de9fa70:1789396876759:5`，已 accepted/enqueued；online 当前 `RUNNING/error=null`，未修改退避、未发起其他业务、尚无新 workRef。既有 wiselink heartbeat 仅回收本 AQ 终态。

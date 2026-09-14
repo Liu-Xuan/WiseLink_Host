@@ -845,7 +845,7 @@ export class MatterActionAttemptService {
         return item;
       });
       const context = buildEngineeringIssueCorrectionContext({ current, ...request, deliveredEvidence: evidence,
-        limitations: ['本操作仅更正指定问题正文；相关结构化判断和总体认识仍须核对，不代表正式采用。'] });
+        limitations: ['本操作更正指定问题正文、要求处理及未决问题；其他风险、措施、分类保持原值，受影响但无法在本操作修改的判断须保留明确未知。总体认识仍须核对，不代表正式采用。'] });
       await executor.database.update(actionAttempt).set({ reviewActivityJson: canonicalJson([...events, {
         kind: 'MATTER_ISSUE_CORRECTION_STARTED', requestId: input.requestId, request, context,
         observedAt: new Date().toISOString(),
@@ -1456,20 +1456,15 @@ function correctionProposalFromReceipts(started: Record<string, unknown>, comple
       const context = started.context as ReturnType<typeof buildEngineeringIssueCorrectionContext>;
       const result = completed.result as Awaited<ReturnType<EngineeringIssueCorrectionPluginService['generate']>>;
       const structured = structuredClone(context.structuredContext);
-      const hasStructuredJudgments = structured.riskScenarios.length || structured.measures.length ||
-        structured.otherClassifications.length || structured.requirementHandling.length;
-      // A body correction neither deletes previous structured work nor certifies it again.
-      if (hasStructuredJudgments) structured.openQuestions.push({
-        question: '本次正文更正是否影响本问题既有的风险、措施、分类或要求处理？',
-        affects: '本问题保留的结构化判断及据此形成的综合意见，尚未由本次正文更正重新确认。',
-        nextEvidence: '对照本次更正正文、原始依据和已有结构化判断，继续核对受影响内容。',
-        reason: request.correctionReason,
-      });
+      // Replace only the explicitly generated collections. Other judgments remain intact;
+      // a local correction cannot certify the overall work as current.
+      structured.requirementHandling = structuredClone(result.requirementHandling);
+      structured.openQuestions = structuredClone(result.openQuestions);
       const proposal = { schemaVersion: JOBAID_PROBLEM_WORK_SCHEMA,
         issues: [{ issueKey: request.issueKey, question: context.question, body: result.body,
           ...structured, riskScenarios: structured.riskScenarios.map(({ gradeMeaning: _meaning, ...risk }) => risk) }],
         roundCompletion: 'IN_PROGRESS',
-        completionReason: '指定问题正文已更正；相关判断与总体认识仍需完成一致性核对。',
+        completionReason: '指定问题正文、要求处理及未决问题已更正；其他关联判断与总体认识仍需完成一致性核对。',
         changeSummary: result.changeSummary,
       };
       return { expectedWorkRevision: request.expectedWorkRevision, workJson: canonicalJson(proposal) };

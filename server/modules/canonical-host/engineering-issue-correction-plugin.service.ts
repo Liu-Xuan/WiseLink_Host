@@ -17,9 +17,19 @@ export interface EngineeringIssueCorrectionContext {
   limitations: string[];
 }
 
+const nonblank = z.string().refine(value => value.trim().length > 0);
 const resultSchema = z.strictObject({
   body: z.string().refine(value => value.trim().length > 0),
   changeSummary: z.string().refine(value => value.trim().length > 0),
+  requirementHandling: z.array(z.strictObject({
+    methodRef: nonblank, requirement: nonblank, conditions: z.array(nonblank),
+    treatment: z.enum(['ADDRESSED', 'CONDITIONS_UNCONFIRMED', 'NOT_APPLICABLE_WITH_BASIS',
+      'LATER_BUSINESS_STAGE', 'NOT_YET_ADDRESSED']),
+    basisRefs: z.array(nonblank), explanation: nonblank,
+  })),
+  openQuestions: z.array(z.strictObject({
+    question: nonblank, affects: nonblank, nextEvidence: nonblank, reason: nonblank,
+  })),
 });
 const instanceId = 'wl-engineering-issue-correction';
 
@@ -51,7 +61,7 @@ export class EngineeringIssueCorrectionPluginService {
         new Set(supplied.evidence.map(item => item.evidenceRef)).size !== supplied.evidence.length)
       throw new Error('ENGINEERING_CORRECTION_CONTEXT_INVALID');
     await assertActive();
-    // Installed manifest + hydrated dedicated instance: textToJson, unary, body/changeSummary strings.
+    // The installed manifest supports String and Array fields with explicit item schemas.
     const raw = await this.capabilities.load(instanceId).call('textToJson', {
       correctionContextJson: JSON.stringify(supplied),
     });
@@ -63,8 +73,13 @@ export class EngineeringIssueCorrectionPluginService {
       throw new Error('ENGINEERING_CORRECTION_CITATION_MALFORMED');
     const refs = [...result.data.body.matchAll(/\[\[([^\[\]\r\n]+)\]\]/gu)].map(match => match[1]);
     const delivered = new Set(supplied.evidence.map(item => item.evidenceRef));
-    if (!refs.length || refs.some(ref => !delivered.has(ref)))
+    if (!refs.length || refs.some(ref => !delivered.has(ref)) ||
+        result.data.requirementHandling.some(item =>
+          !delivered.has(item.methodRef) || item.basisRefs.some(ref => !delivered.has(ref))))
       throw new Error('ENGINEERING_CORRECTION_SOURCE_NOT_DELIVERED');
+    if (result.data.requirementHandling.some(item =>
+      supplied.evidence.find(evidence => evidence.evidenceRef === item.methodRef)?.kind !== 'METHOD_CLAUSE'))
+      throw new Error('ENGINEERING_CORRECTION_METHOD_IDENTITY');
     return {
       ...result.data,
       producer: { kind: 'OFFICIAL_PLUGIN' as const, instanceId, pluginVersion: config.pluginVersion,
