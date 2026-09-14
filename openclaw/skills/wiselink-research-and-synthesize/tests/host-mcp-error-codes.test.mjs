@@ -16,6 +16,19 @@ test('source rejection identifies only a reference already present in the submit
   }
 });
 
+test('body-first rejected citations retain exact feedback without disclosing unrelated Host text', () => {
+  const ref = 'DOCUMENT_ORIGINAL:DV-one:PRUN-one:unit-32:p0';
+  for (const body of [`条件仍待核对。[[${ref}]]`, `普通文字提及 ${ref}`, `[[${ref}-other]]`]) {
+    const args = { operation: 'SAVE_WORK', workJson: JSON.stringify({ issues: [{ body }] }) };
+    assert.throws(() => readHostMcpJsonResult({ isError: true, content: [{ type: 'text',
+      text: `Error: JOBAID_SOURCE_NOT_DELIVERED:${ref}` }] }, 'matter_action_attempt', args), error => {
+      assert.equal(error.hostRejectedSourceRef, body === `条件仍待核对。[[${ref}]]` ? ref : undefined);
+      assert.equal(error.message.includes(ref), false);
+      return true;
+    });
+  }
+});
+
 test('the observed Matter scope rejection retains both the call site and safe cause in cron diagnostics', () => {
   for (const text of ['Canonical API-key service scope is unavailable.',
     'Error: Canonical API-key service scope is unavailable.', 'CANONICAL_SERVICE_SCOPE_UNAVAILABLE']) {

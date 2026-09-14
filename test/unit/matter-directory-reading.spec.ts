@@ -164,6 +164,19 @@ describe('real matter directory and saved list summaries', () => {
     expect(url.searchParams.get('panel')).toBe('review');
   });
 
+  it('opens the exact parsed original instead of falling back to the legacy page reader', () => {
+    const sourceRefId = 'PRUN-old:u22:p1';
+    const route = matterDocumentRoute('matter/a', {
+      workItemId: null, documentVersionId: 'DV-OLD', sourceRefId,
+      locator: JSON.stringify({ parseRunId: 'PRUN-old', sourceRefId, pageStart: 1 }),
+    });
+    const url = new URL(route, 'https://example.invalid');
+    expect(url.pathname).toBe('/document-versions/DV-OLD');
+    expect(url.searchParams.get('parseRunId')).toBe('PRUN-old');
+    expect(url.searchParams.get('sourceRef')).toBe(sourceRefId);
+    expect(url.searchParams.has('sourceDocument')).toBe(false);
+  });
+
   it('round trips the exact original member, document version and discussion panel using local routes', () => {
     const route = matterDocumentRoute(
       'matter/a',

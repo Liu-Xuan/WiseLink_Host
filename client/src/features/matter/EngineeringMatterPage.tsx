@@ -130,7 +130,7 @@ const MatterWorkspace: FC<MatterWorkspaceProps> = ({
     evidence: Pick<
       DocumentAssessmentEvidence,
       'workItemId' | 'documentVersionId'
-    > & { sourceRefId?: string },
+    > & { sourceRefId?: string; locator?: string },
   ): void {
     saveLocation();
     if (!evidence.workItemId) setClaimSelection(null);

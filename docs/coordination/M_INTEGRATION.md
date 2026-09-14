@@ -1,5 +1,13 @@
 # M 主控集成交接
 
+## 2026-09-14 rev6实际工程正文工作11已保存；定向内容和引用验收
+
+后继AQ-ccf484fd55cc4b2fa6c978e4335df615由自然调度运行，原文读取后首次SAVE因SOURCE_NOT_DELIVERED被拒；自动更正后按JA-save-47c18b20-330f-469a-8f2b-bc586e229e77保存工作11 / MWREV-80e00698-98ce-42c9-998a-5b073e2d960e，于12:27:26+08正常SUCCEEDED。已按原request读回并在现有页面读到正文及rev6引用。FTD段落现在包含触发条件、Scenario1/2恢复、预防建议、Final Action无固定日期、TBD里程碑；未变四个问题保留。这是实际工程消费，不再只是读取数量；仍是候选，不是正式采用。
+
+验收发现正文仍同时说工程依赖未确认和FTD绝不影响SB优先级，已通过正常后继进行局部一致性核对，禁止用厂家未收到报告推断零风险。首个FTD工作已落库，不因此认定全部内容质量通过。页面FTD待覆盖项已消失，其他材料仍有各自未覆盖范围。
+
+真实引用点击暴露旧Matter页码阅读器不支持parseRun来源，错误从第1页浏览。最小前端适配改为根据已保存locator中的parseRunId/sourceRefId进入现有精确DocumentVersion Reader，不猜页码、不切latest；6项目录/路由测试及client生产构建通过，部署待核对。另发现Skill仅识别独立引用字段，正文内[[ref]]的精确拒绝反馈被遗漏；已定向修复，4项错误边界测试通过，尚未安装，不用于证明本次自动更正。
+
 ## 2026-09-14 撤限后真实正文保存成功；FTD实质覆盖继续
 
 Host6995d8a / Skill c99，经既有Matter cron正常恢复（manual:efc2b938-2bab-4f6d-ab8d-14ca3de9fa70:1789359508786:2），复用round2完整载荷及原SAVE requestId JA-save-bb7f30aa-11e5-4a15-b748-76ec5be874ed。1316字符摘要未缩写、正文未截断，保存工作10：MWREV-3d93ee31-85c9-45ce-9544-6b3fe5237d9e。READ_SAVED_WORK按原request准确读回，现有事项页面显示工作10及正文。AQ-94dd26cde9be4c01893e930023663780于12:19:02+08正常SUCCEEDED，保存后自动第三轮FINISH。此次证明保存与回执恢复，不计为两次新增工作保存。

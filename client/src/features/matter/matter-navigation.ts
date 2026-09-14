@@ -13,9 +13,19 @@ export function matterDocumentRoute(
   evidence: Pick<
     DocumentAssessmentEvidence,
     'workItemId' | 'documentVersionId'
-  > & { sourceRefId?: string },
+  > & { sourceRefId?: string; locator?: string },
   returnPanel: 'brief' | 'review' | 'materials' = 'brief',
 ): string {
+  if (evidence.locator && evidence.sourceRefId) {
+    let locator: unknown;
+    try { locator = JSON.parse(evidence.locator); } catch { /* Legacy page locator. */ }
+    if (locator && typeof locator === 'object' && 'parseRunId' in locator &&
+      typeof locator.parseRunId === 'string' && locator.parseRunId.trim() &&
+      'sourceRefId' in locator && locator.sourceRefId === evidence.sourceRefId) {
+      const params = new URLSearchParams({ parseRunId: locator.parseRunId, sourceRef: evidence.sourceRefId });
+      return `/document-versions/${encodeURIComponent(evidence.documentVersionId)}?${params.toString()}`;
+    }
+  }
   if (!evidence.workItemId) {
     const params = new URLSearchParams({ sourceDocument: evidence.documentVersionId });
     if (evidence.sourceRefId) params.set('sourceRef', evidence.sourceRefId);
