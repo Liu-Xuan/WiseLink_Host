@@ -83,13 +83,15 @@ Task artifact allowlist 子集。
 
 ```text
 runtimePolicy.modelPolicyRef = official-hosted-profile-config
-ResultEnvelope.modelVersion = 官方托管 profile/config 本轮选择后的非空、可读实际模型
+ResultEnvelope.modelVersion = 普通 Hosted 分析的官方托管 profile/config 本轮选择后的非空、可读实际模型
 Task.skillPolicyRef = wiselink-research-and-synthesize@r09
 ApplicabilityTask.runtimePolicy.skillVersion = wiselink-research-and-synthesize@r09  # v1 历史字段名，语义为兼容线
-ResultEnvelope.skillVersion = wiselink-research-and-synthesize@r09.c102       # 实际安装包版本
+ResultEnvelope.skillVersion = wiselink-research-and-synthesize@r09.c102       # 仅普通 Hosted 分析的实际安装包版本
 toolVersions.wiselink-openclaw-engineering-assessment = 1.2.0
 promptVersion = 当前实际运行非空版本
 ```
+
+`ENGINEERING_ISSUE_CORRECTION` 使用 Host 记录的 `producer.kind=OFFICIAL_PLUGIN` 及专用实例身份；其 `modelVersion`、`skillVersion` 和未报告的 `inputUnits`/`outputUnits` 可为 `null`，`promptVersion` 取专用实例版本。不要把 c102 写成该插件的 Skill 产物。
 
 2026-09-06 读回的原生默认为 `miaoda/minimax-m3`，用户新增已登记路由为 `dli/gpt-5.6-sol`；
 此处是配置事实，不是生成健康保证。新任务按 Host executionModel 使用已登记模型，也不把 task policy ref
