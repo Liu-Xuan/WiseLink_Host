@@ -1,5 +1,15 @@
 # M 主控集成交接
 
+## 2026-09-14 工作11有界更正后继仍在生成层停止（13:24）
+
+补读上次AQ-bc2ed930c12240c68399e30fb9c85499的原生会话ab64f754-c2a4-4e0c-aeaa-c11fe4fb1e71，仅核对停止/用量/内容类型：04:36:43.785Z、04:38:23.953Z两条均length/output16000/contentTypes=[]。因此该次400现在已有原生预算耗尽证据；此前仅HTTP回执时保留未知的记录不反向改写。没有读取或保存原始推理正文。
+
+用户继续后，正常begin基于事项3/工作11建立AQ-49bc8763a4734c9e991150704aa1eaa1，requestId rev6-work11-bounded-correction-20260914，recoveryAttemptRef指向上述已FAILED请求。保留完整证据上下文，仅要求FTD问题与必要综合的一致性更正，明确不重抄原文和历史列表、不重发其他四个问题。原cron仍在next_matter_assessment失败退避且无活动，通过既有cron run单次领取（manual:efc2b938-2bab-4f6d-ab8d-14ca3de9fa70:1789363256865:3），实际SOURCE_CONTEXT_ONLY，未重放失败载荷。
+
+本次首轮仍HTTP400/incomplete_result/142B，HTTP无finishReason/usage。原生会话816fd6c9-f2ca-4cdb-b8fe-1fc38d2fe2a8于05:22:45.482Z、05:24:21.175Z均length/output16000/contentTypes=[]；对应输入计量input84429/cache1396及input41411/cache85808。两条原生生成不等于一份32000正文；申请16000用尽不证明所有入口统一硬上限。未到SAVE、未生成完整候选，13:24:22+08正常FAILED/JOBAID_INCOMPLETE_TERMINAL_RESPONSE，scopeAdjustments=0。online工作仍11/MWREV-80e00698-98ce-42c9-998a-5b073e2d960e，已保存内容未丢失。
+
+本轮不再原样重试、不扩额度、不改解析/翻译或权限，不宣布FTD判断矛盾已修复。后续需在能交付完整载荷的运行条件下继续该更正；现有工作和确切来源继续可读。Host仍2fc3190b、Skill仍c99；正文拒绝引用反馈补丁已在源码但尚未安装。空闲next_matter_assessment退避问题独立保留，未用放宽来源权限处理。
+
 ## 2026-09-14 rev6实际工程正文工作11已保存；定向内容和引用验收
 
 后继AQ-ccf484fd55cc4b2fa6c978e4335df615由自然调度运行，原文读取后首次SAVE因SOURCE_NOT_DELIVERED被拒；自动更正后按JA-save-47c18b20-330f-469a-8f2b-bc586e229e77保存工作11 / MWREV-80e00698-98ce-42c9-998a-5b073e2d960e，于12:27:26+08正常SUCCEEDED。已按原request读回并在现有页面读到正文及rev6引用。FTD段落现在包含触发条件、Scenario1/2恢复、预防建议、Final Action无固定日期、TBD里程碑；未变四个问题保留。这是实际工程消费，不再只是读取数量；仍是候选，不是正式采用。
