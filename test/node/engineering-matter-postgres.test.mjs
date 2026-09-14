@@ -3527,9 +3527,17 @@ test('targeted correction uses real PostgreSQL fences, durable generation and ex
         async () => ({ documentVersionId, sourceSha256: 'a'.repeat(64), sourceByteLength: 80, pageCount: 1,
           extractionScope: 'NATIVE_TEXT_LAYER', pages: [{ page: 1, sourceRefId: ref, text: evidence.excerpt,
             textLayerStatus: 'PRESENT', visualContentVerified: false, evidence }] })));
+      const method = initial.task.modelInput.sourceCatalog.find(item => item.kind === 'METHOD_CLAUSE');
+      assert.ok(method);
+      await owner.runtime(() => initialService.readRegisteredSources({ ...initialFence,
+        sourceRefs: [method.evidenceRef], purpose: 'Read the method supporting the correction fixture' }));
+      const oldRequirement = { methodRef: method.evidenceRef, requirement: 'Dependency has no effect',
+        conditions: [], treatment: 'ADDRESSED', basisRefs: [ref], explanation: 'Old assertion under review' };
       const proposal = { schemaVersion: 'wiselink.jobaid-problem-work.v3', overview: 'Synthetic initial understanding.',
-        roundCompletion: 'COMPLETE', completionReason: 'Fixture setup', changeSummary: 'Fixture setup',
-        issues: [{ issueKey: 'dependency', question: 'What follows from an unknown dependency?', body: `No effect. [[${ref}]]` },
+        roundCompletion: 'COMPLETE_WITH_OPEN_QUESTIONS', completionReason: 'Fixture setup', changeSummary: 'Fixture setup',
+        issues: [{ issueKey: 'dependency', question: 'What follows from an unknown dependency?', body: `No effect. [[${ref}]]`, requirementHandling: [oldRequirement],
+          openQuestions: [{ question: 'Check the old assertion', affects: 'Requirement',
+            nextEvidence: 'Review the available source', reason: 'Known contradiction' }] },
           { issueKey: 'retained', question: 'What is retained?', body: `Source requires confirmation. [[${ref}]]` }] };
       const seeded = await owner.runtime(() => initialService.saveJobAidWork({ ...initialFence, requestId: 'seed-save',
         expectedWorkRevision: 0, workJson: JSON.stringify(proposal) }));
@@ -3543,6 +3551,10 @@ test('targeted correction uses real PostgreSQL fences, durable generation and ex
       const paused = new Promise(resolve => { release = resolve; });
       let fence;
       const output = { body: `Unknown dependency does not establish no effect. [[${ref}]]`, changeSummary: 'Restore the missing condition.',
+        requirementHandling: [{ ...oldRequirement, requirement: 'Determine the dependency before concluding its effect',
+          conditions: ['Dependency is not confirmed'], treatment: 'CONDITIONS_UNCONFIRMED',
+          explanation: 'Unknown is not evidence of no effect' }], openQuestions: [{ question: 'Which dependency applies?', affects: 'Priority remains conditional.',
+          nextEvidence: 'Actual configuration.', reason: 'Dependency remains unknown.' }],
         producer: { kind: 'OFFICIAL_PLUGIN', instanceId: 'wl-engineering-issue-correction', pluginVersion: '1.0.26', actionKey: 'textToJson', concreteModel: null } };
       const plugin = { generate: async (_context, assertActive) => {
         callCount += 1; await assertActive();
@@ -3554,7 +3566,7 @@ test('targeted correction uses real PostgreSQL fences, durable generation and ex
       const service = new MatterActionAttemptService(owner.working, models, undefined, plugin);
       const otherService = new MatterActionAttemptService(second.working, models, undefined, plugin);
       const correction = { kind: 'ENGINEERING_ISSUE_CORRECTION', expectedWorkRef: seeded.workRevisionRef,
-        issueKey: 'dependency', correctionReason: 'Unknown dependency cannot prove no effect.', evidenceRefs: [ref] };
+        issueKey: 'dependency', correctionReason: 'Unknown dependency cannot prove no effect.', evidenceRefs: [ref, method.evidenceRef] };
       const reserved = await owner.runtime(() => service.reserveJobAid({ ...reserve, idempotencyKey: 'correct-once',
         expectedWorkingRevision: seeded.workRevision, correction }));
       assert.equal(reserved.task.executionModel, undefined);
@@ -3578,6 +3590,8 @@ test('targeted correction uses real PostgreSQL fences, durable generation and ex
       await assert.rejects(owner.runtime(() => service.saveIssueCorrection({ ...saveInput, requestId: 'different-save-id' })), /CAS_CONFLICT/);
       const read = await owner.runtime(() => service.readSavedWork({ ...target, requestId: 'save-once' }));
       assert.equal(read.state.problemWork.issues[0].body, output.body);
+      assert.deepEqual(read.state.problemWork.issues[0].requirementHandling, output.requirementHandling);
+      assert.deepEqual(read.state.problemWork.issues[0].openQuestions, output.openQuestions);
       assert.deepEqual(read.state.problemWork.issues[1], previous.state.problemWork.issues[1]);
       assert.equal(read.state.problemWork.overviewStatus, 'STALE');
       assert.equal(read.state.problemWork.roundCompletion, 'IN_PROGRESS');

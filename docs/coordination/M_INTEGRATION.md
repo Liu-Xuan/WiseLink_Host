@@ -1,12 +1,62 @@
 # M 主控集成交接
 
-## 2026-09-14 更正候选 c102：本地实现与验证，尚未部署
+## 2026-09-14 更正契约候选：Host-only，前端发布边界已核对
+
+本批更正契约补丁已完成定向验证：插件单元 19 项、server typecheck、改动文件 lint 通过；隔离 PostgreSQL 目标场景 1 pass/0 skip，日志保存在私有临时目录。补丁仅涉及 Host 更正插件、上下文/回执映射与相关测试，未修改数据库/RLS、Skill 或前端。
+
+官方 release-list/get 只读仍为 Host `8b706172a97a83d837b869bec6ab4d8def24e519` / release `7685315995439729883`。相对该 Host 基线，当前候选在 `client`、`shared`、`package.json`、`package-lock.json` 无差异；本轮不合入 sprint、不发布。前端已有线上版本与开发中 `sprint/default` 的 49 项旧冲突属于独立集成边界，不阻止本 Host-only 候选按 M 的官方窗口发布，但发布前仍需保持前端 owner 的分支归属。
+
+## 2026-09-14 工作14一致性后继已受理，等待终态
+
+针对 online 事项3/工作14的正常后继 `AQ-5e58c5abe46a4420878d164cec4206a6`（`rev6-work14-content-consistency-20260914`），预检确认无活动 Matter 请求后已 `created=true/QUEUED`，deadline 为 `23:38:28`。因 cron 此前连续 5 次 idle 错误且下一次仅剩约 5 分钟，按既有授权执行单次官方恢复 `manual:efc2b938-2bab-4f6d-ab8d-14ca3de9fa70:1789396876759:5`，已 accepted/enqueued；online 当前 `RUNNING/error=null`，未修改退避、未发起其他业务、尚无新 workRef。既有 wiselink heartbeat 仅回收本 AQ 终态。
+
+前端 `origin/sprint/default` 已成功取得最新 SHA `247cfee384a1d299bee00848ce93e5ce604dc12f`；相对旧 `2926a9cb` 仅有 26 个 client/e2e 文件变化（3977 additions/1039 deletions），未发现 server/shared/database/schema/API/package 变化，非 client 风险结论未改变。此前“新 SHA fetch 未取得”的记录属于网络失败时点，已由该只读 fetch 更新；旧 49 冲突结论仍仅适用于旧 `2926a9cb` 范围。
+
+## 2026-09-14 工作13/14 原生 session 回执已核实
+
+工作12一致性后继的固定原生 session 已完成核对：连续三轮按 `SAVE_WORK`、`FINISH`、`FINISH` 运行，第一轮和第三轮均有保存回执，工作13与工作14均已读回。此前“没有同一原生 session 回执”的限制已由本次证据更新，不再适用。
+
+内容边界仍保持：工作12→13仅目标 FTD 问题变化，13→14问题正文全部相等，仅总体字段与完成状态更新；requirement 标题的绝对表述、openQuestion 的一致性核对要求及 `understanding` 不完整仍待修正，不能宣称整体工程验收完成。报告 `output=27694` 与业务请求 `16000` 不等价，不据此扩展额度实验。当前 Host/Skill 仍为 `8b706172a97a83d837b869bec6ab4d8def24e519` / c103，idle 修复尚未部署。
+
+前端 `origin/sprint/default` 最新只读 SHA 为 `247cfee384a1d299bee00848ce93e5ce604dc12f`；本次 fetch 未取得该新对象，故旧的 49 冲突结论仅适用于已核对的 `2926a9cb`，不得外推到新 SHA。证据详见私有 `/private/tmp/wiselink-offload-20260914/M/WORK13_14_SESSION_EVIDENCE.md`。
+
+## 2026-09-14 工作12一致性后继：工作13/14已保存，整体仍待核对
+
+此前受理的 `AQ-5402de7e4d054f3e895c58e52f512633`（attempt `ATT-f7fa86d0-6a5f-428a-be4a-285a32caac02`）已由正常 Hosted 调度完成：状态 `SUCCEEDED`、`errorCode=null`。同一 attempt 保存并读回工作13 `MWREV-38802de2-d9cb-4fa2-b4e0-51be49eafba5`（`IN_PROGRESS/CURRENT`）及工作14 `MWREV-356ec3e8-2c29-4872-9dab-4a6bb4887384`（`COMPLETE_WITH_OPEN_QUESTIONS/CURRENT`）。工作12→13仅目标 FTD 问题变化；13→14问题正文全部相等，仅总体字段与完成状态更新。
+
+更正已将目标 `requirementHandling` treatment 调整为 `CONDITIONS_UNCONFIRMED`，并明确未知不等于无影响或必须提高优先级。仍有未闭合问题：requirement 标题保留绝对表述，openQuestion 仍要求一致性核对，`understanding` 还偏向变更说明而非完整综合。因此本次证明正文更正与保存读回链成功，不宣称整体 H2 或工程综合验收完成；当时尚未取得原生 session 回执的限制，已由顶部后续核验更新。
+
+本次受理前 online 事项3/工作12无变更、活动 attempt 为0；未执行额外 cron run、未发布 Host、未修改前端。原自动化已暂停。当前 Host/Skill 仍为 `8b706172a97a83d837b869bec6ab4d8def24e519` / c103；此前记录的 idle 修复仍未部署。证据保留在私有 `/private/tmp/wiselink-offload-20260914/M/`，不纳入仓库。
+
+## 2026-09-14 后端证据投影修复与前端并行集成限制
+
+提交 `ee094fb6d0cf8b8d09e15a57f1260683ea89f69b` 已接受为后端阅读投影修复候选：保留历史 `substantiveResult` 依据并合并 problemWork 依据，冲突引用拒绝；定向状态测试 23/23、server typecheck、两个改动文件 ESLint 与 diff check 已通过。该提交尚未部署，不能覆盖当前线上 Host/Skill 事实。
+
+妙搭前端正在独立 `origin/sprint/default`（当前只读核验 SHA `2926a9cb36bcf92d09ff219a3c6875b8fc76bf68`）进行重构，与 codex 共同祖先为 `77f2a56d4eacecd31e4a501630ee5fe3985fb25a`。隔离合入试算产生 49 个冲突，其中 43 个为 client，另有 package 与 3 个后端重叠文件；前端基线和 Host 后端不能整边覆盖。发布前需由双方 owner 接受准确前端/后端组合；本记录不表示前端已发布或本批修复已上线。
+
+schema 集成审查已确认：sprint 的 `schema.ts` 虽包含五个文档/搜索表声明，当前 Host 已将它们拆分在专用 schema 文件并由现有服务实际消费，不能整段覆盖。两项明确风险是 `uk_dm_parse_active` 在 sprint 版本为无条件唯一、会限制终态历史行；当前版本按 `RUNNING/STAGING` 使用部分唯一约束，必须保留。另一个是 sprint 将 `search_vector` 声明为普通 text，而当前 Host 使用生成的 PostgreSQL `tsvector` 加权列，搜索语义不等价。前端通过稳定 API 接入这些能力，不直接依赖表对象；后续以当前拆分 schema 为准，逐项对齐 API，不复制表或降低约束。
+
+## 2026-09-14 工作12：正文更正链成功，整体综合仍待一致性核对
+
+19:40:19 单次获准的官方 operator cron run `manual:efc2b938-2bab-4f6d-ab8d-14ca3de9fa70:1789386019695:4` accepted/enqueued；未修改 schedule 或退避。后继 `AQ-8d7d6201397c4f7f832ef6a785c6283d` 已 `SUCCEEDED`、`errorCode=null`。正常 Matter 页面 HTTP 200 读回工作12 `MWREV-e7147367-025f-4d85-9fc3-9038530a1f92`（保存时间 `2026-09-14T11:41:43.980Z`）。
+
+工作11与工作12逐问题比较，五个问题中仅 `claim_ftd_787_45_25001_unrelated` 发生变化，其余四个问题 JSON 相等；更正正文明确未知依赖不能推导完全无影响或必须提高优先级。旧 `understanding` 和 `requirementHandling` 仍含绝对“无影响”表述，页面已标注相关判断与总体认识仍需一致性核对、现有综合尚未覆盖。因此本次仅接受正文更正保存链成功，不能认定整体工程验收完成。Host `8b706172a97a83d837b869bec6ab4d8def24e519` / release `7685315995439729883`、Skill c103 不变。
+
+## 历史记录：2026-09-14 c103 安装窗口（已完成；业务更正结果见顶部工作12）
+
+本批仅调整 Skill 侧更正生成的请求边界：读取 Host 下发的任务 `deadline`，在调用 `GENERATE_ISSUE_CORRECTION` 前拒绝无效或已过期 deadline，并将有效剩余时间限制在现有 30 分钟范围内；通过 MCP SDK 第三参数只向该生成操作传递 timeout，其他 Host 操作继续使用默认请求选项。没有修改 Host、数据库、RLS、模型配置或业务数据，也没有触发新的业务任务。
+
+本地定向验证由 M 报告为更正测试 7 项、消费者测试 17 项通过；本提交只记录该验证结果，不重复全套测试。Skill 源码及版本声明从 c102 推进为 c103，c103 已按授权窗口官方安装。当前 Hosted 基线仍为 Host commit `8b706172a97a83d837b869bec6ab4d8def24e519` / release `7685315995439729883` 与已安装 c103；三个 job 安装前已暂停且无活动消费者，随后已逐项恢复。安装与恢复不等于业务更正验收。
+
+## 历史记录：2026-09-14 更正候选 c102
 
 本批围绕工作11的工程问题更正接线，新增 Host 的来源绑定上下文、官方插件生成、持久回执、SAVE/FINISH 与事项消费者分支；Skill 从 c101 原位推进为 c102，继续使用显式更正目的和同一事项 ActionAttempt。新增/修改内容均仍是技术候选，尚未发布 Host 或安装 Skill，不代表线上已具备这些入口。
 
 本地验证已完成：服务端 typecheck 退出0；目标真实 PostgreSQL 场景退出0（两连接并发下单次生成、事务外调用与心跳、SAVE/回放/CAS、目标问题替换及其他问题保留、定点更正任务 SUCCEEDED、完整工作仍 IN_PROGRESS/综合 STALE、插件失败后旧工作保留且不重生成、producer/model/usage 边界）；此前相关契约、读取、插件、消费者和 Matter 测试继续通过。测试使用合成插件与本地数据库，不是线上业务运行，也不代表 H1/H2 全部完成。
 
-线上仍以此前最后实测基准 Host 2fc3190b、Skill c99 和工作11为准；本批未重新核验线上状态。D 任务仍等待飞书登录，未验证回收结果；空闲 `next_matter_assessment` 的根因没有新证据。当前线上后继更正仍受生成层停止/失败记录限制，已保存工作保留。下一步由 M 选择发布窗口后，再单独执行包校验、Host 发布、Skill c102 安装及真实后继验收；本批不触发业务任务。
+现场安装回执已确认：Hosted 当前仍为 Host commit `8b706172` / release `7685315995439729883`；c103 官方安装成功，48 个包文件一致，仅额外存在安装器生成的顶层 `.openclaw/source-origin.json`。三个既有 job 安装前已禁用且无活动消费者，安装后已恢复并与备份逐项一致。当前 Matter 页面仍可读工作11，既有矛盾待 M 按正常入口继续处理。
+
+安装后、19:40 恢复前的历史状态：曾创建唯一正常后继 `AQ-8d7d6201397c4f7f832ef6a785c6283d`，requestId 为 `rev6-work11-official-correction-c103-20260914`，当时为 `QUEUED`，绑定事项3/工作11，尚无新的 workRef。未强制 cron、未修改退避；该历史状态不代表工程更正完成。近期 Matter job 第10次失败及约19:47:27的自然 nextRunAt，trace 已收窄至旧自动请求/绑定 prior work 读取路径，具体根因仍未知，不能与独立 file metadata 失败混同。后续工作12已在顶部记录。
 
 ## 2026-09-14 工作11有界更正后继仍在生成层停止（13:24）
 

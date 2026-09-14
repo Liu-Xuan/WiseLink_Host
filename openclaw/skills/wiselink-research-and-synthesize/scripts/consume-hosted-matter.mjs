@@ -18,7 +18,7 @@ export async function consumeHostedMatter(options, dependencies) {
     task.subject.matterId !== target.matterId || task.operationRef !== target.attemptRef || !task.inputHash ||
     task.modelInput?.schemaVersion !== 'wiselink.matter-jobaid-task.v2') throw new Error('MATTER_CLAIM_BINDING_MISMATCH');
   const fence = { ...target, leaseToken: claim.leaseToken, leaseGeneration: claim.leaseGeneration };
-  const call = (operation, input = {}) => dependencies.callTool('matter_action_attempt', { ...fence, operation, ...input });
+  const call = (operation, input = {}, requestOptions) => dependencies.callTool('matter_action_attempt', { ...fence, operation, ...input }, requestOptions);
   const checkpoint = await (dependencies.createCheckpoint ?? createCheckpointStore)(join(options.checkpointRoot, 'matter', encodeURIComponent(target.matterId), encodeURIComponent(target.attemptRef)));
   const binding = { ...target, inputHash: task.inputHash };
   const storedBinding = await checkpoint.readOptional('binding');
@@ -32,7 +32,12 @@ export async function consumeHostedMatter(options, dependencies) {
     let expectedWorkRef = claim.status === 'COMMITTING' && claim.recoveryResult?.modelOutput
       ? JSON.parse(claim.recoveryResult.modelOutput).workRevisionRef : null;
     if (claim.status !== 'COMMITTING') {
-      const generated = await withLeaseHeartbeat(() => call('GENERATE_ISSUE_CORRECTION', { requestId: generationRequestId }),
+      const remainingMs = Date.parse(task.deadline) - Date.now();
+      if (!Number.isFinite(remainingMs) || remainingMs <= 0)
+        throw new Error('MATTER_CORRECTION_DEADLINE_UNAVAILABLE');
+      // This request waits for the plugin; a lease heartbeat cannot extend the SDK's default 60s.
+      const requestOptions = { timeout: Math.min(remainingMs, 30 * 60_000) };
+      const generated = await withLeaseHeartbeat(() => call('GENERATE_ISSUE_CORRECTION', { requestId: generationRequestId }, requestOptions),
         () => call('HEARTBEAT'));
       if (generated.requestId !== generationRequestId || generated.persisted !== true ||
           generated.producer?.kind !== 'OFFICIAL_PLUGIN' ||

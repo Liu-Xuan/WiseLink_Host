@@ -211,6 +211,24 @@ export function parseEngineeringMatterWorkingState(
     const work = readHistoricalJobAidWork(parsed.problemWork, { matterId });
     parsed.problemWork = work;
     if (isRecord(parsed.substantiveResult) && isRecord(parsed.substantiveResult.content)) {
+      // The historical reading now contains the problem articles too. Preserve
+      // both saved evidence pools; a repeated identity must retain its meaning.
+      if (!Array.isArray(parsed.substantiveResult.evidence))
+        fail('ENGINEERING_MATTER_WORKING_EVIDENCE_INVALID');
+      parsed.substantiveResult.evidence.forEach(validateEvidence);
+      const evidence = uniqueMap(
+        parsed.substantiveResult.evidence as AssessmentEvidence[],
+        'evidenceRef',
+        'EVIDENCE_REF_DUPLICATE',
+      );
+      for (const entry of work.evidence) {
+        validateEvidence(entry);
+        const previous = evidence.get(entry.evidenceRef);
+        if (previous && canonicalJson(previous) !== canonicalJson(entry))
+          fail('ENGINEERING_MATTER_WORKING_EVIDENCE_REF_CONFLICT');
+        evidence.set(entry.evidenceRef, entry);
+      }
+      parsed.substantiveResult.evidence = [...evidence.values()];
       Object.assign(parsed.substantiveResult.content, { headline: work.headline, listBrief: work.listBrief, lead: work.understanding,
         issueArticles: work.issues.map(({ issueKey, issueRef, question, body }) => ({ issueKey, issueRef, question, body })) });
     }

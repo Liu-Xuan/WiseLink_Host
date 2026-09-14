@@ -37,7 +37,8 @@ export function buildEngineeringIssueCorrectionContext(input: {
       locator: 'locator' in item ? item.locator : null,
     })),
     relatedUnderstanding: work.overviewStatus === 'NOT_AVAILABLE' ? null : work.understanding,
-    // Structured statements are context to be checked, not silently re-certified by a body update.
+    // Requirements and open questions may be replaced by the explicit correction result.
+    // Other judgments remain context, not silently re-certified by a body update.
     structuredContext: {
       riskScenarios: structuredClone(issue.riskScenarios), measures: structuredClone(issue.measures),
       otherClassifications: structuredClone(issue.otherClassifications),
