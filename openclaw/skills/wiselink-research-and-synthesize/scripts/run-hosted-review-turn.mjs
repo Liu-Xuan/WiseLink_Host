@@ -960,7 +960,7 @@ export async function createHostMcpConnection(options) {
   const tools = await client.listTools();
   validateHostToolMetadata(tools);
   return {
-    callTool: async (name, args) => callJsonTool(client, name, args),
+    callTool: async (name, args, requestOptions) => callJsonTool(client, name, args, requestOptions),
     hasTool: (name) => tools.tools.some((tool) => tool.name === name),
     close: async () => client.close(),
   };
@@ -996,8 +996,15 @@ export function validateHostToolMetadata(value) {
   }
 }
 
-async function callJsonTool(client, name, args) {
-  const result = await client.callTool({ name, arguments: args });
+export async function callJsonTool(client, name, args, requestOptions) {
+  if (requestOptions !== undefined && (name !== 'matter_action_attempt' ||
+      args?.operation !== 'GENERATE_ISSUE_CORRECTION' ||
+      !Number.isFinite(requestOptions.timeout) || requestOptions.timeout <= 0 ||
+      requestOptions.timeout > 30 * 60_000 || Object.keys(requestOptions).some(key => key !== 'timeout')))
+    throw new Error('REVIEW_HOST_MCP_REQUEST_OPTIONS_INVALID');
+  const result = requestOptions === undefined
+    ? await client.callTool({ name, arguments: args })
+    : await client.callTool({ name, arguments: args }, undefined, requestOptions);
   return readHostMcpJsonResult(result, name, args);
 }
 

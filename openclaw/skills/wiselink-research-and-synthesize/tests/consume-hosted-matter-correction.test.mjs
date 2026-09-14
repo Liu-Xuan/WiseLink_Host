@@ -1,11 +1,12 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
+import { callJsonTool } from '../scripts/run-hosted-review-turn.mjs';
 import { consumeHostedMatter } from '../scripts/consume-hosted-matter.mjs';
 
 function fixture() {
   const task = { schemaVersion: 'wiselink.3_1.openclaw_task_envelope.v2', taskType: 'OPENCLAW_MATTER_ASSESSMENT',
     actionAttemptId: 'ATT-c', operationRef: 'AQ-c', subject: { kind: 'ENGINEERING_MATTER', matterId: 'MAT-c' },
-    baseRevision: 11, inputHash: 'bound-input', modelInput: { schemaVersion: 'wiselink.matter-jobaid-task.v2',
+    deadline: '2099-01-01T00:00:00.000Z', baseRevision: 11, inputHash: 'bound-input', modelInput: { schemaVersion: 'wiselink.matter-jobaid-task.v2',
       correction: { kind: 'ENGINEERING_ISSUE_CORRECTION' } } };
   const calls = []; const checkpoints = new Map();
   let mode = 'RUNNING'; let failSave = false; let failGeneration = false; let badFinish = false;
@@ -13,7 +14,10 @@ function fixture() {
     createCheckpoint: async () => ({ readOptional: async key => checkpoints.get(key),
       writeOnce: async (key, value) => { assert.equal(checkpoints.has(key), false); checkpoints.set(key, value); } }),
     invokeMatterModel: async () => assert.fail('Correction must not invoke the Hosted investigation model'),
-    callTool: async (name, input) => {
+    callTool: async (name, input, requestOptions) => {
+      if (input.operation === 'GENERATE_ISSUE_CORRECTION') {
+        assert.ok(requestOptions.timeout > 0 && requestOptions.timeout <= 30 * 60_000);
+      } else assert.equal(requestOptions, undefined);
       if (name === 'next_matter_assessment') return { matterId: 'MAT-c', next: { attemptRef: 'AQ-c', status: mode } };
       calls.push(input);
       if (input.operation === 'CLAIM') return { attemptRef: 'AQ-c', status: mode, task, leaseToken: 'lease', leaseGeneration: 1,
@@ -69,4 +73,24 @@ test('wrong execution route and a different finished work are rejected', async (
   await assert.rejects(route.run(), /EXECUTION_PURPOSE_MISMATCH/);
   assert.deepEqual(route.calls.map(call => call.operation), ['CLAIM']);
   const finish = fixture(); finish.wrongFinish(); await assert.rejects(finish.run(), /FINISH_READBACK_MISMATCH/);
+});
+
+ test('expired or missing correction deadline prevents generation', async () => {
+  for (const deadline of [undefined, 'invalid', '2000-01-01T00:00:00Z']) {
+    const h = fixture(); h.task.deadline = deadline;
+    await assert.rejects(h.run(), /DEADLINE_UNAVAILABLE/);
+    assert.deepEqual(h.calls.map(call => call.operation), ['CLAIM']);
+  }
+});
+
+test('SDK receives correction timeout in third argument; other operations keep defaults', async () => {
+  const seen = [];
+  const client = { callTool: async (...args) => { seen.push(args); return { content: [{ type: 'text', text: '{"ok":true}' }] }; } };
+  await callJsonTool(client, 'matter_action_attempt', { operation: 'GENERATE_ISSUE_CORRECTION' }, { timeout: 120000 });
+  assert.deepEqual(seen[0].slice(1), [undefined, { timeout: 120000 }]);
+  await callJsonTool(client, 'matter_action_attempt', { operation: 'HEARTBEAT' });
+  assert.equal(seen[1].length, 1);
+  await assert.rejects(callJsonTool(client, 'matter_action_attempt', { operation: 'HEARTBEAT' }, { timeout: 120000 }), /OPTIONS_INVALID/);
+  const lost = { callTool: async () => { throw new Error('MCP request timed out'); } };
+  await assert.rejects(callJsonTool(lost, 'matter_action_attempt', { operation: 'GENERATE_ISSUE_CORRECTION' }, { timeout: 120000 }), /timed out/);
 });
