@@ -1,12 +1,46 @@
 # M 主控集成交接
 
-## 2026-09-14 正文 v3 / c97 集成窗口（尚未部署）
+## 2026-09-14 用户决定取消摘要长度上限（c101）
+
+用户明确要求“不需要限制”，替代上一节c100精简至1000字符方案。撤销尚未部署的c100上限与缩写反馈；Host正文物化、事项资料接口/Repository和Skill契约均取消摘要字符上限，仅保留非空。0056迁移将事项修订及工作修订两个摘要CHECK改为非空，dev→online审查仅6条成对约束变更，正式migrated/changes_applied=6；online精确读回两者均CHECK(length(btrim(change_summary))>0)、convalidated=true。无数据删除、权限或RLS变更。321 Skill测试、8正文物化测试及server build通过。已安装c99本身没有摘要长度上限，c100未发布/未安装，不应再使用其安装包。Host其余入口同步发布待完成。
+
+## 2026-09-14 c99 实际保存失败已定位；c100 定向修复
+
+c99正常后继 AQ-94dd26cde9be4c01893e930023663780 已QUEUED；原Matter cron存在next_matter_assessment连续7次错误退避。本轮在用户相关操作授权内，通过官方cron run对该既有任务执行一次（不改schedule），runId manual:efc2b938-2bab-4f6d-ab8d-14ca3de9fa70:1789357533773:1。实际进入RUNNING、COMPLETE_CANDIDATE，精确反馈旧候选顶层openQuestions/reviewConditions。round2返回HTTP200/tool_calls、37295B函数参数，报告input91297/output11555。此轮是实际新更正；round1为旧完整候选复用，不计为新生成。
+
+实际SAVE requestId JA-save-bb7f30aa-11e5-4a15-b748-76ec5be874ed，trace c85765bff037ecba41c52e26bb22b184。数据库INSERT拒绝 ck_engineering_matter_work_revision_summary（change_summary去空白长度1—1000；c99 round2候选去空白后实际1316字符）；程序先前未表达该上限，故未作为明确JOBAID字段错误反馈。按原request两次查回null，工作仍9，无新workRef。相邻文档调度manifest元数据fetch failed不作为此次SAVE根因。旧c98终态不改；当前c99保存没有被伪造成功。
+
+c100将既有数据库摘要上限原位对齐到Host物化校验、模型字段shape与精确反馈，按Unicode字符计数；仅要求精简变更摘要，不截断正文，不放宽数据库约束，不新增迁移或增加更正次数。Skill321项与Host正文物化8项通过，构建/发布安装待完成。本次修复按code-fix、coding-guide执行。
+
+## 2026-09-14 c99 已安装，完整候选后继验收
+
+用户明确授权本轮相关操作后，c99 安装包通过原 Host 存储的 600 秒链接进入原 Hosted 应用；包大小 385769B、SHA256 03a7afdf238f829563e448de0a6a51c5481c96697c255b70655b52362220a833 一致。链接首次因存储应用与接收应用的授权对应被自动审批拒绝；补齐只读文件元数据和相同接收方证据后通过，随后一次网络 EOF，原操作有界重试成功。未改变接收方或时长。
+
+仅暂停三个明确既有 job，确认均 disabled、runningAtMs=null、活动消费者0后，经官方 skills install 更新；47文件匹配、installed320项全部通过。三个 job 的 enabled/schedule/payload/agentId/sessionTarget 已与安装前逐项比较一致，THREE_JOBS_RESTORED_EXACT。Host仍8cc425b，无业务源码变更，不重复发布。
+
+当前线上读回：c98 AQ-3c1ae0cba08a41c881311c7176bf9147 已于2026-09-14 10:00:57+08进入TIMED_OUT，并非本轮c99将其FAILED；工作仍9。既有 reserveJobAid 允许 FAILED/TIMED_OUT 的准确绑定恢复，完整候选保留。c99 后继已通过正常 begin 创建：AQ-94dd26cde9be4c01893e930023663780，requestId `rev6-complete-candidate-c99-20260914`，状态 QUEUED，正在验证字段更正、SAVE 和确切读回；尚不能宣称已有新workRef。
+
+## 2026-09-14 c99 字段反馈及明确拒绝收尾（待安装）
+
+c98真实后继成功进入SOURCE_CONTEXT_ONLY，并取得完整函数载荷：round1 FINISH未保存被拒，round2 SAVE_WORK约39669B参数，round3再次SAVE。Host拒绝JOBAID_UNDECLARED_FIELD：顶层openQuestions/reviewConditions/workRevision不属于更新契约，round3仅去掉workRevision。未产生新workRef。c98反馈只报告泛化错误，类型诊断未枚举未知字段；更正耗尽后普通异常也未进入任务终态。
+
+c99精确返回未知字段路径及该层allowedFields，要求模型将实际未知/复看含义放回正确字段或正文，不由程序删字段或修补候选；达到原有更正上限且明确Host工作校验拒绝时，正常FINISH FAILED/JOBAID_WORK_VALIDATION_FAILED，未知SAVE响应仍不判终态。320项通过，未增加纠正次数、不改模型/额度/Host，待官方安装后先正常收尾旧在途，再按完整候选后继路径更正并保存。 c99源码5f32ae8c已双远端同步，包385769B/SHA256 03a7afdf238f829563e448de0a6a51c5481c96697c255b70655b52362220a833已生成上传。自动审批拒绝按快照暂停任务，认为可能无差别禁用未授权任务；未执行该暂停、未安装c99，已请求仅三项既有任务的升级窗口暂停/原样恢复授权，不换方式绕过。实际安装仍c98/Host8cc425b。
+
+## 2026-09-14 c98 已取证后继恢复（已安装，正常后继运行中）
+
+在现有正常后继中增加 SOURCE_CONTEXT_ONLY：旧精确回执必须是已明确结束的函数通道失败，模型/输入/请求哈希一致；不重放错误或半成品，由 Host 已有 reserveJobAid 重新授权并复制实际读取证据，后继以当前完整工作与这些证据生成。完整候选仍走原恢复分支。一般502、响应未知、来源/模型/绑定变化不放宽。新后继保留正常SAVE、CAS及完成条件，旧任务不复活，不改模型预算。Skill c98 318项通过（含后继使用Host证据、正常保存和同会话FINISH、未知响应/绑定拒绝）；源码8453ea6c已同步两远端；c98官方安装47文件匹配、installed318项通过，原三job恢复。包384941B/SHA256 09ba4e488702b4660cbd7690332aff998ab6d0ebf951fab2733adf540c8c218b。本次仅Skill改动，Host8cc425b未重新发布。正常begin recoveryAttemptRef指向已FAILED c97任务，创建AQ-3c1ae0cba08a41c881311c7176bf9147，requestId rev6-source-context-c98-20260914，CAS事项3/工作9，created=true/QUEUED，自然调度实际选择SOURCE_CONTEXT_ONLY，输入含56条Host授权deliveredEvidence，未重放旧失败输出。首次等待来自原事项job此前next_matter_assessment四次失败后的既有退避；到期后已正常领取RUNNING。真实正文保存仍待回执。
+
+## 2026-09-14 正文 v3 / c97 集成窗口（已部署，真实后继已失败且未保存）
 
 本批将问题正文直接作为工作保存：`issueKey/question/body` 与确切正文引用，专业结构按用途提供；未变问题保留、同问题完整替换，综合 CURRENT/STALE/NOT_AVAILABLE 分开。Host SAVE、Review、Reader、搜索和恢复消费者已改用正文；不再生成假的旧 statement。历史 v2 仅只读投影并标注，线上工作修订9的5个问题、14条原主张已用新读取代码验证，旧工作引用与数据库记录保持。
 
 本地证据：Host/Client production build 通过；Skill 316 项通过；正文/历史/搜索14项、读取UI相关16项（含重叠）、现有Matter消费者/工作状态25项及JobAid续接29项通过；隔离真实PostgreSQL12项通过，覆盖CAS、回执丢失回读、索引失败后恢复、actor/tenant与来源权限、取消迟到写入及Review原子保存。测试是构造/本地验证，不代表新的线上工程认识。Review相关检查额外发现并修复正文覆盖仍遍历 statements、body@位置被错误过滤的问题。
 
-部署阻塞：当前妙搭网页重新连接后转扫码登录，已请求恢复登录。尚未暂停任何job、尚未发布Host、尚未安装c97；技术线上仍以此前Host96d01a81d/Skill c96的回执为准。未改模型配置、未重跑原文/中文、未新建FTD业务请求，无新FTD workRef。登录恢复后先读回在途和原job配置，在空闲窗口协调Host/Skill更新，再正常begin后继并观察实际SAVE/读回。不得让Host新契约与c96消费者混用。
+部署证据：用户恢复登录后，三个既有 job 的原配置已保存在 Hosted 临时文件；官方暂停并确认 runningAtMs 均为空、无活动消费者后，发布 Host `8cc425b23457f0c1b39ff4f3c57564b8ddfe7175`，release `7685179634351295687` 最终 finished / errors=[] / commit 一致。publishing 中间回执曾显示旧96d，不作最终版本。c97包382955B、SHA256 `1e73b71decf6a665038b0cfaa5b297eb2ca3f634a6622342cfb95f0abe1ca682`，经用户已授权600秒链接进入原Hosted、下载校验后官方安装；47文件全部匹配，installed316项通过，Host MCP身份及工具合同验证成功。三个job已恢复原enabled/schedule/payload/agentId/sessionTarget，无强制run。
+
+正常 begin 后继 `AQ-4ccad3195a404a1db23c0bdeda1ba8c4`，requestId `rev6-body-first-c97-20260914`，CAS事项3/工作9，created=true / QUEUED，由自然调度处理。保持rev6/semantic1，不复活旧任务、不改模型配置、不重跑原件或中文。本次最终 FAILED，工作仍9/MWREV-19bb8855-40ce-4017-a349-6b9c62debcd4，无新FTD workRef，技术部署不能代替真实保存验收。
+
+本次运行：自然调度实际使用c97/continuous-body-batches-v3，前两轮HTTP200/tool_calls，实际两次MATTER_ORIGINAL_READ；第三轮HTTP502/TOOL_CHOICE_NOT_SATISFIED，142B错误回执，无完整函数参数，未到SAVE。原生会话 `fe217ed7-7864-4a91-8197-ec3f5abd5dfe` 最后一条2026-09-14T00:33:12.266Z为 stopReason=error、content=[]、报告用量0，errorCode=`RateLimitExceeded.EndpointTPMExceeded`、errorType=rate_limit_exceeded、errorMessage“系统开小差了，请稍后重试”；已确认端点TPM限流，本次未观察到length，不归因16000截断。0仅为错误记录中的报告值，不证明上游无消耗。适配器记录JOBAID_INCOMPLETE_TERMINAL_RESPONSE，online error_code为null。保持旧任务终态，不重复发起相同生成、不改额度、不修补部分JSON。恢复前核对发现：Host会复制已授权实际读取证据，但Skill `readMatterRecoveryCandidate` 要求旧回执ok且完整SAVE_WORK/FINISH载荷，当前错误回执不满足；因此尚未创建恢复请求。下一修复应在现有后继中区分可重用完整候选与仅已取证的失败，仍拒绝未知保存结果及绑定/模型/来源变化，不引入新调度器。
 
 后续未完成：首份FTD正文、同会话连续保存及最终综合；跨事项Hosted检索/准确旧工作引用/双向使用与来源更正完整消费尚未接通。本批正文索引和页面可读只解决其基础，不作为跨事项知识复用验收。
 

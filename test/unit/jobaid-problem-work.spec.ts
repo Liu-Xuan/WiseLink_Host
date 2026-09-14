@@ -128,3 +128,11 @@ test('normal Matter command materializes, validates and reads the same body with
       'JOBAID_RISK_CLASSIFICATION_INVALID',
     );
   });
+
+
+test('long change summaries preserve content and still reject blank input', () => {
+  const summary='完整变更说明𠮷'.repeat(1000);
+  const accepted=materializeJobAidWork(update([issue('A')],{changeSummary:summary}),context);
+  expect(accepted.changeSummary).toBe(summary);
+  expect(()=>materializeJobAidWork(update([issue('A')],{changeSummary:'  '}),context)).toThrow('JOBAID_CHANGE_SUMMARY_INVALID');
+});

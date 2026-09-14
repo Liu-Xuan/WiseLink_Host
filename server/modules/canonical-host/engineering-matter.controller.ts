@@ -111,7 +111,6 @@ export class EngineeringMatterController {
         changeSummary: requiredText(
           value.changeSummary,
           'CHANGE_SUMMARY',
-          1000,
         ),
         upserts: value.upserts.map(parseMatterMaterial),
       },
@@ -176,7 +175,6 @@ function linkBody(body: unknown): LinkEngineeringMatterWorkItemRequest {
           changeSummary: requiredText(
             value.changeSummary,
             'CHANGE_SUMMARY',
-            1000,
           ),
         }),
   };
@@ -218,13 +216,13 @@ function strictBody(
 function requiredText(
   value: unknown,
   field: string,
-  maxLength: number,
+  maxLength?: number,
 ): string {
   if (typeof value !== 'string' || value.trim() === '') {
     throw badRequest(`ENGINEERING_MATTER_${field}_REQUIRED`);
   }
   const normalized = value.trim();
-  if (normalized.length > maxLength) {
+  if (maxLength !== undefined && normalized.length > maxLength) {
     throw badRequest(`ENGINEERING_MATTER_${field}_TOO_LONG`);
   }
   return normalized;
