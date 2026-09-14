@@ -1,5 +1,11 @@
 # M 主控集成交接
 
+## 2026-09-14 工作14一致性后继已受理，等待终态
+
+针对 online 事项3/工作14的正常后继 `AQ-5e58c5abe46a4420878d164cec4206a6`（`rev6-work14-content-consistency-20260914`），预检确认无活动 Matter 请求后已 `created=true/QUEUED`，deadline 为 `23:38:28`。因 cron 此前连续 5 次 idle 错误且下一次仅剩约 5 分钟，按既有授权执行单次官方恢复 `manual:efc2b938-2bab-4f6d-ab8d-14ca3de9fa70:1789396876759:5`，已 accepted/enqueued；online 当前 `RUNNING/error=null`，未修改退避、未发起其他业务、尚无新 workRef。既有 wiselink heartbeat 仅回收本 AQ 终态。
+
+前端 `origin/sprint/default` 已成功取得最新 SHA `247cfee384a1d299bee00848ce93e5ce604dc12f`；相对旧 `2926a9cb` 仅有 26 个 client/e2e 文件变化（3977 additions/1039 deletions），未发现 server/shared/database/schema/API/package 变化，非 client 风险结论未改变。此前“新 SHA fetch 未取得”的记录属于网络失败时点，已由该只读 fetch 更新；旧 49 冲突结论仍仅适用于旧 `2926a9cb` 范围。
+
 ## 2026-09-14 工作13/14 原生 session 回执已核实
 
 工作12一致性后继的固定原生 session 已完成核对：连续三轮按 `SAVE_WORK`、`FINISH`、`FINISH` 运行，第一轮和第三轮均有保存回执，工作13与工作14均已读回。此前“没有同一原生 session 回执”的限制已由本次证据更新，不再适用。
