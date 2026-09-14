@@ -1,5 +1,11 @@
 # M 主控集成交接
 
+## 2026-09-14 更正受理前来源完整性复核：本地待同步
+
+本轮在更正任务进入可运行状态前复核目标问题的完整来源集合：缺少已登记的 `method:applicability` 时立即拒绝，未创建 `action_attempt`、未调用生成；合法完整请求的保存与回放链保持通过。定向 PostgreSQL 子测试 `targeted correction uses real PostgreSQL fences, durable generation and exact work replay` 1 pass/0 skip，server typecheck 退出0，diff check 通过。
+
+该修复仅涉及 Host `matter-action-attempt.service.ts` 与对应 PostgreSQL 测试，尚未发布；当前线上 Host 仍为 `8b706172a97a83d837b869bec6ab4d8def24e519` / release `7685407198491872522`、Skill c103。它用于避免领取后因漏引用进入 RUNNING 重试，不改变来源权限、解析、额度或正式采用边界。网络同步仍受本机代理 `127.0.0.1:7897` 阻塞。
+
 ## 2026-09-14 工作15已保存；内容综合仍未闭合
 
 新的正常后继已 `SUCCEEDED` 并保存工作15 `MWREV-850e2caa-3f39-4602-9993-587f3959c502`；其他四个问题保持相同，过程性 `openQuestions` 已清理。requirement 标题仍保留绝对表述，`changeSummary` 仍误称本轮才修改 treatment，因此 M 不接受内容完成，整体一致性仍待后续更正。

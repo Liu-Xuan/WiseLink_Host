@@ -296,6 +296,19 @@ export class MatterActionAttemptService {
         if (current?.matterWorkRevisionId !== correction.expectedWorkRef ||
             !current.state.problemWork?.issues.some(issue => issue.issueKey === correction.issueKey))
           throw failure('ENGINEERING_CORRECTION_WORK_BINDING_CHANGED');
+        // This dedicated consumer generates immediately after CLAIM. Reject an
+        // incomplete source selection before creating a durable runnable task.
+        const jobAid = modelInput as ReturnType<typeof buildMatterJobAidTask>;
+        const delivered = new Map(jobAid.sourceCatalog
+          .filter(item => jobAid.initiallyDeliveredRefs.includes(item.evidenceRef))
+          .map(item => [item.evidenceRef, item]));
+        buildEngineeringIssueCorrectionContext({ current, ...correction,
+          expectedWorkRevision: input.expectedWorkingRevision,
+          deliveredEvidence: correction.evidenceRefs.map(ref => {
+            const evidence = delivered.get(ref);
+            if (!evidence) throw failure('ENGINEERING_CORRECTION_SOURCE_NOT_DELIVERED');
+            return evidence;
+          }), limitations: [] });
         (modelInput as ReturnType<typeof buildMatterJobAidTask>).correction = structuredClone(correction);
       }
       if (recoveryTask && recoveryRow) {

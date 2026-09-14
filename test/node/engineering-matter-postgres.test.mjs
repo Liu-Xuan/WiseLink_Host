@@ -3573,6 +3573,13 @@ test('targeted correction uses real PostgreSQL fences, durable generation and ex
       const otherService = new MatterActionAttemptService(second.working, models, undefined, plugin);
       const correction = { kind: 'ENGINEERING_ISSUE_CORRECTION', expectedWorkRef: seeded.workRevisionRef,
         issueKey: 'dependency', correctionReason: 'Unknown dependency cannot prove no effect.', evidenceRefs: [ref, method.evidenceRef] };
+      await assert.rejects(owner.runtime(() => service.reserveJobAid({ ...reserve,
+        idempotencyKey: 'correction-missing-method', expectedWorkingRevision: seeded.workRevision,
+        correction: { ...correction, evidenceRefs: [ref] } })), /ENGINEERING_CORRECTION_TARGET_SOURCE_MISSING/);
+      const [rejectedReservation] = await sql`SELECT count(*)::int AS n FROM action_attempt
+        WHERE idempotency_key = 'correction-missing-method'`;
+      assert.equal(rejectedReservation.n, 0, 'incomplete correction cannot leave a queued or running attempt');
+      assert.equal(callCount, 0, 'source validation happens before generation');
       const reserved = await owner.runtime(() => service.reserveJobAid({ ...reserve, idempotencyKey: 'correct-once',
         expectedWorkingRevision: seeded.workRevision, correction }));
       assert.equal(reserved.task.executionModel, undefined);
