@@ -136,6 +136,14 @@ export interface EngineeringMatterWorkingRevisionChange {
   coverageUpdates: EngineeringMatterWorkingCoverage[];
 }
 
+export interface EngineeringMatterCorrectionNotice {
+  attemptRef: string;
+  issueKey: string;
+  reason: string;
+  attemptStatus: string;
+  correctedWorkRef: string | null;
+}
+
 export interface EngineeringMatterWorkingRevisionReadModel {
   matterWorkRevisionId: string;
   matterId: string;
@@ -149,6 +157,8 @@ export interface EngineeringMatterWorkingRevisionReadModel {
   change: EngineeringMatterWorkingRevisionChange;
   source: EngineeringMatterWorkingRevisionSource | null;
   createdAt: string;
+  /** Live review notices for this exact historical work; not part of its immutable content. */
+  correctionNotices?: EngineeringMatterCorrectionNotice[];
 }
 
 export type EngineeringMatterPendingInputReason =

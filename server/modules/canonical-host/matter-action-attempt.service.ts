@@ -1,8 +1,11 @@
 import type { EngineeringMatterWorkingRevisionCommand, EngineeringMatterWorkingInputBinding } from '@shared/matter-working.interface';
-import { addMatterDeliveredEvidence, buildMatterJobAidTask, MATTER_JOBAID_TASK_SCHEMA } from './matter-jobaid-task';
+import { addMatterDeliveredEvidence, buildMatterJobAidTask, MATTER_JOBAID_TASK_SCHEMA, type MatterIssueCorrectionPurpose } from './matter-jobaid-task';
 import { materializeMatterJobAidCommand } from './matter-jobaid-save';
+import { buildEngineeringIssueCorrectionContext } from './engineering-issue-correction-context';
+import { EngineeringIssueCorrectionPluginService } from './engineering-issue-correction-plugin.service';
 import { engineeringMatterPendingInputs } from './engineering-matter-working-state';
 import type { AssessmentEvidence } from '@shared/assessment-reading.interface';
+import { JOBAID_PROBLEM_WORK_SCHEMA } from '@shared/jobaid-problem-assessment.interface';
 import { randomUUID } from 'node:crypto';
 import { Injectable, Optional } from '@nestjs/common';
 import { DocumentSemanticService } from './document-semantic.service';
@@ -68,6 +71,7 @@ export interface ReserveMatterAttempt extends MatterAttemptScope {
 export type ReserveMatterJobAidAttempt = Omit<ReserveMatterAttempt, 'modelInput' | 'sourceRefs'> & {
   expectedInputs?: EngineeringMatterWorkingInputBinding[];
   recoveryAttemptRef?: string;
+  correction?: MatterIssueCorrectionPurpose;
 };
 
 /** Subject adapter for the existing durable queue, lease slots and cancellation. */
@@ -77,6 +81,7 @@ export class MatterActionAttemptService {
     private readonly working: EngineeringMatterWorkingRepository,
     private readonly models: CanonicalModelSettingsService,
     @Optional() private readonly semantics?: DocumentSemanticService,
+    @Optional() private readonly issueCorrection?: EngineeringIssueCorrectionPluginService,
   ) {}
 
   reserve(input: ReserveMatterAttempt) {
@@ -87,6 +92,12 @@ export class MatterActionAttemptService {
   reserveJobAid(input: ReserveMatterJobAidAttempt) {
     if ('modelInput' in input || 'sourceRefs' in input)
       throw failure('MATTER_JOBAID_HOST_CONTEXT_REQUIRED', 400);
+    if (input.correction && (input.recoveryAttemptRef || input.correction.kind !== 'ENGINEERING_ISSUE_CORRECTION' ||
+        !input.correction.expectedWorkRef.trim() || !input.correction.issueKey.trim() ||
+        !input.correction.correctionReason.trim() || !input.correction.evidenceRefs.length ||
+        input.correction.evidenceRefs.some(ref => !ref.trim()) ||
+        new Set(input.correction.evidenceRefs).size !== input.correction.evidenceRefs.length))
+      throw failure('ENGINEERING_CORRECTION_REQUEST_INVALID', 400);
     return this.reserveInternal(input);
   }
 
@@ -202,6 +213,7 @@ export class MatterActionAttemptService {
             ? canonicalJson(task.modelInput) !== canonicalJson(input.modelInput) ||
               canonicalJson(task.sourceRefs) !== canonicalJson(input.sourceRefs)
             : task.modelInput.schemaVersion !== MATTER_JOBAID_TASK_SCHEMA ||
+              canonicalJson((task.modelInput as ReturnType<typeof buildMatterJobAidTask>).correction ?? null) !== canonicalJson(input.correction ?? null) ||
               ((task.modelInput as ReturnType<typeof buildMatterJobAidTask>).recovery?.attemptRef ?? null) !==
                 (input.recoveryAttemptRef ?? null))
         )
@@ -278,6 +290,13 @@ export class MatterActionAttemptService {
         actorUserId: input.actorUserId, title: matter.title,
         inputs: authorizedInputs, trigger: input.trigger, previous: current,
       });
+      const correction = 'correction' in input ? input.correction : undefined;
+      if (correction) {
+        if (current?.matterWorkRevisionId !== correction.expectedWorkRef ||
+            !current.state.problemWork?.issues.some(issue => issue.issueKey === correction.issueKey))
+          throw failure('ENGINEERING_CORRECTION_WORK_BINDING_CHANGED');
+        (modelInput as ReturnType<typeof buildMatterJobAidTask>).correction = structuredClone(correction);
+      }
       if (recoveryTask && recoveryRow) {
         const jobAid = modelInput as ReturnType<typeof buildMatterJobAidTask>;
         jobAid.recovery = { attemptRef: recoveryTask.operationRef, inputHash: recoveryTask.inputHash };
@@ -324,11 +343,11 @@ export class MatterActionAttemptService {
             allowedConnectors: [],
             hostResolvedMissingInputs: [],
             modelInput: structuredClone(modelInput),
-            executionModel: recoveryTask?.executionModel ?? await this.models.captureForNewTask(
+            ...(!correction ? { executionModel: recoveryTask?.executionModel ?? await this.models.captureForNewTask(
               input.tenantId,
               now,
               executor.database,
-            ),
+            ) } : {}),
             deadline: new Date(
               now.getTime() + ACTION_ATTEMPT_DEFAULT_DEADLINE_MS,
             ).toISOString(),
@@ -355,7 +374,7 @@ export class MatterActionAttemptService {
         baseRevision: task.baseRevision,
         taskEnvelopeJson: canonicalJson(task),
         taskInputHash: task.inputHash,
-        executionModelJson: canonicalJson(task.executionModel),
+        executionModelJson: canonicalJson(task.executionModel ?? null),
         reviewActivityJson: recoveryRow ? canonicalJson(
           (JSON.parse(recoveryRow.reviewActivityJson ?? '[]') as Array<Record<string, unknown>>)
             .filter(event => event.kind === 'MATTER_ORIGINAL_BOUND' || event.kind === 'MATTER_ORIGINAL_READ'),
@@ -758,6 +777,137 @@ export class MatterActionAttemptService {
     });
   }
 
+  /** Explicit targeted generation, never an automatic fallback from a failed Hosted call. */
+  async executeIssueCorrection(input: MatterAttemptScope & ActionAttemptFence & { principalId: string; requestId: string }) {
+    const row = await this.read(input);
+    const task = checkedTask(row);
+    const purpose = (task.modelInput as ReturnType<typeof buildMatterJobAidTask>).correction;
+    if (!purpose) throw failure('ENGINEERING_CORRECTION_PURPOSE_MISMATCH');
+    const generated = await this.generateIssueCorrection({ ...input, ...purpose, expectedWorkRevision: task.baseRevision });
+    return { requestId: generated.requestId, producer: generated.producer, replayed: generated.replayed, persisted: true };
+  }
+
+  async generateIssueCorrection(input: MatterAttemptScope & ActionAttemptFence & {
+    principalId: string; requestId: string; expectedWorkRef: string; expectedWorkRevision: number;
+    issueKey: string; correctionReason: string; evidenceRefs: string[];
+  }) {
+    if (!this.issueCorrection) throw failure('ENGINEERING_CORRECTION_PLUGIN_NOT_CONFIGURED');
+    if (!input.requestId.trim() || input.requestId.length > 255 || !input.correctionReason.trim() ||
+        !input.issueKey.trim() || !input.evidenceRefs.length ||
+        new Set(input.evidenceRefs).size !== input.evidenceRefs.length)
+      throw failure('ENGINEERING_CORRECTION_REQUEST_INVALID', 400);
+    const request = { purpose: 'ENGINEERING_ISSUE_CORRECTION', requestId: input.requestId,
+      expectedWorkRef: input.expectedWorkRef, expectedWorkRevision: input.expectedWorkRevision,
+      issueKey: input.issueKey, correctionReason: input.correctionReason, evidenceRefs: input.evidenceRefs };
+    type Generated = Awaited<ReturnType<EngineeringIssueCorrectionPluginService['generate']>>;
+    const prepared = await this.authorized(input, async (executor, queue) => {
+      await executor.database.select({ id: actionAttempt.attemptId }).from(actionAttempt)
+        .where(eq(actionAttempt.operationRef, input.attemptRef)).for('update');
+      const row = await this.scopedRow(executor, queue, input, input.attemptRef);
+      const task = checkedTask(row);
+      if (task.modelInput.schemaVersion !== MATTER_JOBAID_TASK_SCHEMA) throw failure('MATTER_JOBAID_TASK_REQUIRED');
+      const events: Array<Record<string, unknown>> = JSON.parse(row.reviewActivityJson ?? '[]');
+      const purpose = (task.modelInput as ReturnType<typeof buildMatterJobAidTask>).correction;
+      if (!purpose || purpose.expectedWorkRef !== input.expectedWorkRef || purpose.issueKey !== input.issueKey ||
+          purpose.correctionReason !== input.correctionReason || canonicalJson(purpose.evidenceRefs) !== canonicalJson(input.evidenceRefs) ||
+          task.baseRevision !== input.expectedWorkRevision)
+        throw failure('ENGINEERING_CORRECTION_PURPOSE_MISMATCH');
+      const started = events.find(event => event.kind === 'MATTER_ISSUE_CORRECTION_STARTED' && event.requestId === input.requestId);
+      if (started) {
+        if (canonicalJson(started.request) !== canonicalJson(request)) throw failure('ENGINEERING_CORRECTION_REPLAY_MISMATCH');
+        const completed = events.find(event => event.kind === 'MATTER_ISSUE_CORRECTION_GENERATED' && event.requestId === input.requestId);
+        if (!completed) throw failure('ENGINEERING_CORRECTION_RESULT_UNCONFIRMED');
+        return { result: completed.result as Generated, context: null };
+      }
+      if (events.some(event => event.kind === 'MATTER_ISSUE_CORRECTION_STARTED'))
+        throw failure('ENGINEERING_CORRECTION_REQUEST_ALREADY_STARTED');
+      assertRunningSourceLease(row, input);
+      const current = await executor.loadCurrent(input);
+      if (!current) throw failure('ENGINEERING_CORRECTION_CURRENT_BODY_REQUIRED');
+      const taskInput = task.modelInput as ReturnType<typeof buildMatterJobAidTask>;
+      const registry = new Map<string, AssessmentEvidence>();
+      const add = (item: AssessmentEvidence) => {
+        const prior = registry.get(item.evidenceRef);
+        if (prior && canonicalJson(prior) !== canonicalJson(item)) throw failure('MATTER_SOURCE_READ_IDENTITY_CHANGED');
+        registry.set(item.evidenceRef, item);
+      };
+      // Only actual delivery is eligible. A catalog entry alone is not evidence read by this task.
+      taskInput.sourceCatalog.filter(item => taskInput.initiallyDeliveredRefs.includes(item.evidenceRef)).forEach(add);
+      for (const event of events) {
+        if (event.kind === 'MATTER_REGISTERED_SOURCES_READ') (event.evidence as AssessmentEvidence[]).forEach(add);
+        if (event.kind === 'MATTER_ORIGINAL_READ') (event.reading as DocumentOriginalEngineeringReading).evidence.forEach(add);
+        if (event.kind === 'MATTER_SOURCE_PAGES_READ')
+          (event.reading as DocumentSourceReading).pages.forEach(page => { if (page.evidence) add(page.evidence); });
+      }
+      const evidence = input.evidenceRefs.map(ref => {
+        const item = registry.get(ref);
+        if (!item) throw failure('ENGINEERING_CORRECTION_SOURCE_NOT_DELIVERED');
+        return item;
+      });
+      const context = buildEngineeringIssueCorrectionContext({ current, ...request, deliveredEvidence: evidence,
+        limitations: ['本操作仅更正指定问题正文；相关结构化判断和总体认识仍须核对，不代表正式采用。'] });
+      await executor.database.update(actionAttempt).set({ reviewActivityJson: canonicalJson([...events, {
+        kind: 'MATTER_ISSUE_CORRECTION_STARTED', requestId: input.requestId, request, context,
+        observedAt: new Date().toISOString(),
+      }]) }).where(eq(actionAttempt.attemptId, row.attemptId));
+      return { result: null, context };
+    });
+    if (prepared.result) return { ...prepared.result, requestId: input.requestId, replayed: true };
+    const assertActive = () => this.authorized(input, async (executor, queue) => {
+      const row = await this.scopedRow(executor, queue, input, input.attemptRef);
+      assertRunningSourceLease(row, input);
+      const current = await executor.loadCurrent(input);
+      if (current?.matterWorkRevisionId !== input.expectedWorkRef || current.workingRevision !== input.expectedWorkRevision)
+        throw failure('ENGINEERING_CORRECTION_WORK_BINDING_CHANGED');
+    });
+    // Outside the transaction. An uncertain response leaves STARTED, never a permission to regenerate.
+    let result: Generated;
+    try {
+      result = await this.issueCorrection.generate(prepared.context!, assertActive);
+    } catch (error) {
+      // Only the invocation owner terminalizes its ended call. Concurrent observers of STARTED
+      // fail above and cannot cancel a generation that is still running.
+      const reason = error instanceof Error && /^ENGINEERING_CORRECTION_[A-Z_]+$/.test(error.message)
+        ? error.message : 'ENGINEERING_CORRECTION_GENERATION_UNCONFIRMED';
+      await this.authorized(input, async (executor, queue) => {
+        const row = await this.scopedRow(executor, queue, input, input.attemptRef);
+        assertRunningSourceLease(row, input);
+        if (!await queue.finishTerminal({ attemptId: row.attemptId, fromStatus: 'RUNNING', status: 'FAILED',
+          terminalReason: reason, leaseToken: input.leaseToken, leaseGeneration: input.leaseGeneration, now: new Date() }))
+          throw failure('ENGINEERING_CORRECTION_TERMINALIZATION_LOST');
+      });
+      throw error;
+    }
+    await this.authorized(input, async (executor, queue) => {
+      await executor.database.select({ id: actionAttempt.attemptId }).from(actionAttempt)
+        .where(eq(actionAttempt.operationRef, input.attemptRef)).for('update');
+      const row = await this.scopedRow(executor, queue, input, input.attemptRef);
+      assertRunningSourceLease(row, input);
+      await executor.database.update(actionAttempt).set({
+        reviewActivityJson: sql`(COALESCE(${actionAttempt.reviewActivityJson}::jsonb, '[]'::jsonb) || ${canonicalJson([{
+          kind: 'MATTER_ISSUE_CORRECTION_GENERATED', requestId: input.requestId, result, observedAt: new Date().toISOString(),
+        }])}::jsonb)::text`,
+      }).where(eq(actionAttempt.attemptId, row.attemptId));
+    });
+    return { ...result, requestId: input.requestId, replayed: false };
+  }
+
+  /** The caller selects a persisted generation; it cannot replace it with hand-written work. */
+  async saveIssueCorrection(input: MatterAttemptScope & ActionAttemptFence & {
+    principalId: string; requestId: string; generationRequestId: string;
+  }) {
+    const savedInput = await this.authorized(input, async (executor, queue) => {
+      const row = await this.scopedRow(executor, queue, input, input.attemptRef);
+      const events: Array<Record<string, unknown>> = JSON.parse(row.reviewActivityJson ?? '[]');
+      const started = events.find(event => event.kind === 'MATTER_ISSUE_CORRECTION_STARTED' && event.requestId === input.generationRequestId);
+      const completed = events.find(event => event.kind === 'MATTER_ISSUE_CORRECTION_GENERATED' && event.requestId === input.generationRequestId);
+      if (!started || !completed) throw failure('ENGINEERING_CORRECTION_GENERATION_REQUIRED');
+      return correctionProposalFromReceipts(started, completed);
+    });
+    // Reuses the exact same authorization, lease, CAS, materialization, pending index and replay transaction.
+    return this.saveJobAidWork({ ...input, ...savedInput });
+  }
+
   saveJobAidWork(input: MatterAttemptScope & ActionAttemptFence & {
     principalId: string; requestId: string; expectedWorkRevision: number; workJson: string;
   }) {
@@ -775,6 +925,15 @@ export class MatterActionAttemptService {
       const taskInput = task.modelInput as ReturnType<typeof buildMatterJobAidTask>;
       const source = { kind: 'ENGINEERING_MATTER' as const, actionAttemptId: row.attemptId, reviewTurnId: null };
       const events: Array<Record<string, unknown>> = JSON.parse(row.reviewActivityJson ?? '[]');
+      if (taskInput.correction) {
+        const started = events.find(event => event.kind === 'MATTER_ISSUE_CORRECTION_STARTED');
+        const completed = events.find(event => event.kind === 'MATTER_ISSUE_CORRECTION_GENERATED');
+        if (!started || !completed || started.requestId !== completed.requestId)
+          throw failure('ENGINEERING_CORRECTION_GENERATION_REQUIRED');
+        const expected = correctionProposalFromReceipts(started, completed);
+        if (expected.expectedWorkRevision !== input.expectedWorkRevision || expected.workJson !== canonicalJson(proposal))
+          throw failure('ENGINEERING_CORRECTION_SAVE_MISMATCH');
+      }
       const replay = events.find(event => event.kind === 'MATTER_JOBAID_WORK_SAVED' && event.requestId === input.requestId);
       if (replay) {
         if (replay.expectedWorkRevision !== input.expectedWorkRevision || canonicalJson(replay.proposal) !== canonicalJson(proposal))
@@ -859,6 +1018,41 @@ export class MatterActionAttemptService {
   }
 
   /** Durable cutoff. Result replay is checked before any candidate is written. */
+  async finishIssueCorrection(input: MatterAttemptScope & ActionAttemptFence & { principalId: string; requestId: string }) {
+    const result = await this.authorized(input, async (executor, queue) => {
+      const row = await this.scopedRow(executor, queue, input, input.attemptRef);
+      const task = checkedTask(row);
+      if (!(task.modelInput as ReturnType<typeof buildMatterJobAidTask>).correction)
+        throw failure('ENGINEERING_CORRECTION_PURPOSE_MISMATCH');
+      const events: Array<Record<string, unknown>> = JSON.parse(row.reviewActivityJson ?? '[]');
+      const generated = events.find(event => event.kind === 'MATTER_ISSUE_CORRECTION_GENERATED');
+      const started = events.find(event => event.kind === 'MATTER_ISSUE_CORRECTION_STARTED');
+      const saved = events.find(event => event.kind === 'MATTER_JOBAID_WORK_SAVED' && event.requestId === input.requestId);
+      if (!generated || !started || !saved) throw failure('ENGINEERING_CORRECTION_SAVED_RECEIPT_REQUIRED');
+      if (row.resultEnvelopeJson) {
+        const stored = checkedResult(row);
+        if (finishWorkRef(stored) !== saved.workRevisionRef) throw failure('ENGINEERING_CORRECTION_SAVE_MISMATCH');
+        return stored;
+      }
+      const output = generated.result as Awaited<ReturnType<EngineeringIssueCorrectionPluginService['generate']>>;
+      const envelope: Omit<OpenClawMatterResultEnvelope, 'contentHash'> = {
+        schemaVersion: 'wiselink.3_1.openclaw_result_envelope.v2', taskType: task.taskType,
+        subject: task.subject, actionAttemptId: task.actionAttemptId, operationRef: task.operationRef,
+        baseRevision: task.baseRevision, status: 'SUCCEEDED', businessOutcome: 'CANDIDATE_READY', candidateStatus: null,
+        modelOutput: canonicalJson({ workRevisionRef: saved.workRevisionRef }),
+        outputArtifactRefs: [], sourceRefs: task.sourceRefs, factsConsidered: [], missingInputs: [], conflicts: [],
+        warnings: ['指定问题正文更正已保存；整体工作仍需继续核对，未构成正式采用。'],
+        modelVersion: null, skillVersion: null, producer: output.producer,
+        promptVersion: 'wl-engineering-issue-correction.v1',
+        toolVersions: { [output.producer.instanceId]: output.producer.pluginVersion },
+        runMetrics: { durationMs: Date.parse(String(generated.observedAt)) - Date.parse(String(started.observedAt)),
+          inputUnits: null, outputUnits: null }, errorCode: null, errorDetail: null,
+      };
+      return { ...envelope, contentHash: canonicalSha256(envelope) };
+    });
+    return this.finishJobAid({ ...input, result });
+  }
+
   async finishJobAid(input: MatterAttemptScope & ActionAttemptFence & { principalId: string; result: unknown }) {
     if (input.result && typeof input.result === 'object' && 'status' in input.result && input.result.status === 'SUCCEEDED') {
       const output: unknown = 'modelOutput' in input.result && typeof input.result.modelOutput === 'string'
@@ -961,7 +1155,8 @@ export class MatterActionAttemptService {
         targetWorkRef &&
         (!savedByThisAttempt ||
           !current?.state.problemWork ||
-          current.state.problemWork.roundCompletion === 'IN_PROGRESS')
+          (current.state.problemWork.roundCompletion === 'IN_PROGRESS' &&
+            !(task.modelInput as ReturnType<typeof buildMatterJobAidTask>).correction))
       )
         throw failure('JOBAID_FINISH_EXACT_COMPLETED_WORK_REQUIRED');
       if (
@@ -1254,4 +1449,28 @@ function assertRunningSourceLease(row: MatterActionAttemptRow, input: ActionAtte
   if (row.status !== 'RUNNING' || !row.leaseExpiresAt || row.leaseExpiresAt <= now ||
     !row.deadlineAt || row.deadlineAt <= now || row.cancelRequestedAt)
     throw failure('MATTER_SOURCE_READ_FENCE_REJECTED');
+}
+
+function correctionProposalFromReceipts(started: Record<string, unknown>, completed: Record<string, unknown>) {
+      const request = started.request as { expectedWorkRevision: number; issueKey: string; correctionReason: string };
+      const context = started.context as ReturnType<typeof buildEngineeringIssueCorrectionContext>;
+      const result = completed.result as Awaited<ReturnType<EngineeringIssueCorrectionPluginService['generate']>>;
+      const structured = structuredClone(context.structuredContext);
+      const hasStructuredJudgments = structured.riskScenarios.length || structured.measures.length ||
+        structured.otherClassifications.length || structured.requirementHandling.length;
+      // A body correction neither deletes previous structured work nor certifies it again.
+      if (hasStructuredJudgments) structured.openQuestions.push({
+        question: '本次正文更正是否影响本问题既有的风险、措施、分类或要求处理？',
+        affects: '本问题保留的结构化判断及据此形成的综合意见，尚未由本次正文更正重新确认。',
+        nextEvidence: '对照本次更正正文、原始依据和已有结构化判断，继续核对受影响内容。',
+        reason: request.correctionReason,
+      });
+      const proposal = { schemaVersion: JOBAID_PROBLEM_WORK_SCHEMA,
+        issues: [{ issueKey: request.issueKey, question: context.question, body: result.body,
+          ...structured, riskScenarios: structured.riskScenarios.map(({ gradeMeaning: _meaning, ...risk }) => risk) }],
+        roundCompletion: 'IN_PROGRESS',
+        completionReason: '指定问题正文已更正；相关判断与总体认识仍需完成一致性核对。',
+        changeSummary: result.changeSummary,
+      };
+      return { expectedWorkRevision: request.expectedWorkRevision, workJson: canonicalJson(proposal) };
 }

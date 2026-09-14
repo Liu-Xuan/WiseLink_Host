@@ -33,6 +33,10 @@ export function registerMatterAttemptMcpTools(server: McpServer, attempts: Matte
       expectedWorkingRevision: z.number().int().nonnegative(),
       requestId: z.string().trim().min(1).max(96), instruction: z.string().trim().min(1).max(4000),
       recoveryAttemptRef: target.attemptRef.optional(),
+      correction: z.object({ kind: z.literal('ENGINEERING_ISSUE_CORRECTION'),
+        expectedWorkRef: z.string().trim().min(1).max(200), issueKey: z.string().trim().min(1).max(255),
+        correctionReason: z.string().trim().min(1), evidenceRefs: z.array(z.string().trim().min(1)).min(1),
+      }).strict().optional(),
     }).strict(),
     annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: false },
   }, async (input) => {
@@ -44,6 +48,7 @@ export function registerMatterAttemptMcpTools(server: McpServer, attempts: Matte
       matterId: scope.matterId, expectedMatterRevisionId: input.expectedMatterRevisionId,
       expectedMatterRevision: input.expectedMatterRevision, expectedWorkingRevision: input.expectedWorkingRevision,
       ...(input.recoveryAttemptRef ? { recoveryAttemptRef: input.recoveryAttemptRef } : {}),
+      ...(input.correction ? { correction: input.correction } : {}),
       idempotencyKey: `matter:${scope.matterId}:${input.requestId}`,
       trigger: { kind: 'USER_REQUEST', requestId: input.requestId, instruction: input.instruction } });
     return textResult({ attemptRef: result.task.operationRef, status: result.row.status, created: result.created });
@@ -60,6 +65,10 @@ export function registerMatterAttemptMcpTools(server: McpServer, attempts: Matte
       z.object({ ...target, ...fence, operation: z.literal('SAVE_WORK'), requestId: z.string().trim().min(1).max(255),
         expectedWorkRevision: z.number().int().nonnegative(), workJson: z.string().min(2).max(1_000_000) }).strict(),
       z.object({ ...target, ...fence, operation: z.literal('FINISH'), result: z.record(z.string(), z.unknown()) }).strict(),
+      z.object({ ...target, ...fence, operation: z.literal('GENERATE_ISSUE_CORRECTION'), requestId: z.string().trim().min(1).max(255) }).strict(),
+      z.object({ ...target, ...fence, operation: z.literal('SAVE_ISSUE_CORRECTION'), requestId: z.string().trim().min(1).max(255),
+        generationRequestId: z.string().trim().min(1).max(255) }).strict(),
+      z.object({ ...target, ...fence, operation: z.literal('FINISH_ISSUE_CORRECTION'), requestId: z.string().trim().min(1).max(255) }).strict(),
       z.object({ ...target, ...fence, operation: z.literal('READ_REGISTERED'), sourceRefs: z.array(z.string().min(1).max(512)).min(1).max(96),
         purpose: z.string().trim().min(1).max(4000) }).strict(),
       z.object({ ...target, ...fence, operation: z.literal('READ_SOURCES'),
@@ -79,6 +88,13 @@ export function registerMatterAttemptMcpTools(server: McpServer, attempts: Matte
       scope.attemptRef !== input.attemptRef || !scope.actorUserId || !scope.tenantId || !scope.principalId)
       throw canonicalServiceScopeUnavailable();
     switch (input.operation) {
+      case 'GENERATE_ISSUE_CORRECTION': return textResult(await attempts.executeIssueCorrection({ ...scope,
+        leaseToken: input.leaseToken, leaseGeneration: input.leaseGeneration, requestId: input.requestId }));
+      case 'SAVE_ISSUE_CORRECTION': return textResult(await attempts.saveIssueCorrection({ ...scope,
+        leaseToken: input.leaseToken, leaseGeneration: input.leaseGeneration, requestId: input.requestId,
+        generationRequestId: input.generationRequestId }));
+      case 'FINISH_ISSUE_CORRECTION': return textResult(await attempts.finishIssueCorrection({ ...scope,
+        leaseToken: input.leaseToken, leaseGeneration: input.leaseGeneration, requestId: input.requestId }));
       case 'READ_ORIGINAL': {
         if (!originalReader) throw canonicalServiceScopeUnavailable();
         return textResult(await attempts.readOriginal({...scope,leaseToken:input.leaseToken,leaseGeneration:input.leaseGeneration,

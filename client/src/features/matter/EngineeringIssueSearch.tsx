@@ -141,6 +141,9 @@ export default function EngineeringIssueSearch({
             候选认识 · 命中 {hit.reason === 'EXACT_IDENTIFIER' ? '精确标识' : '全文'} ·
             范围 {hit.matchedRange} · 根来源 {hit.rootRefs.length} 项
           </p>
+          {hit.correctionNotices?.map(notice => <p key={notice.attemptRef} role="note" className="text-sm">
+            {notice.correctedWorkRef ? '所引旧工作已有后继更正：' : '所引工作存在待核更正：'}{notice.reason}
+          </p>)}
         </div>
       ))}
       {results?.hasMore ? (

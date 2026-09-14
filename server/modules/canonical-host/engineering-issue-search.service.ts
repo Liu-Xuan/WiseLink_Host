@@ -290,6 +290,8 @@ export class EngineeringIssueSearchService {
         matchedRange: `issue:${issue.issueKey}`,
         reason: identity.matchReason ?? 'FULL_TEXT',
         rootRefs: [...new Set(collectIssueEvidenceUses(issue).map(use => use.evidenceRef))],
+        ...('correctionNotices' in revision && revision.correctionNotices?.some(item => item.issueKey === issue.issueKey)
+          ? { correctionNotices: revision.correctionNotices.filter(item => item.issueKey === issue.issueKey) } : {}),
       },
       issue,
       reading: { ...reading, evidence: content.evidence },

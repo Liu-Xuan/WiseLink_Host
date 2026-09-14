@@ -3495,3 +3495,117 @@ async function assertRawMatterJobAidSave(sql, owner, service, baseInput) {
   }
 
 }
+
+test('targeted correction uses real PostgreSQL fences, durable generation and exact work replay',
+  { skip: !databaseUrl, concurrency: false, timeout: 60000 }, async () => {
+    assertSafeIsolatedDatabase(databaseUrl);
+    const sql = postgres(databaseUrl, { max: 8, onnotice() {} });
+    const connections = [];
+    try {
+      await resetDatabase(sql);
+      await seedRealDocumentWorkItems(sql, await loadRealDocumentFixtures());
+      const owner = await reserveActorService('actor-A'); connections.push(owner);
+      const second = await reserveActorService('actor-A'); connections.push(second);
+      const created = await owner.service.create({ requestId: 'correction-fixture', title: 'Synthetic correction fixture',
+        primaryWorkItemId: FTD_WORK_ITEM_ID }, owner.actor);
+      const scope = { tenantId: 'tenant-A', actorUserId: 'actor-A', matterId: created.matter.matterId };
+      const basis = await owner.workingService.resolveWorkingBasis(scope.matterId, owner.actor);
+      const models = new CanonicalModelSettingsService(new CanonicalModelSettingsRepository(owner.database));
+      const initialService = new MatterActionAttemptService(owner.working, models);
+      const reserve = { ...scope, expectedMatterRevisionId: basis.snapshot.currentMatterRevisionId,
+        expectedMatterRevision: basis.snapshot.currentRevisionNo, expectedWorkingRevision: 0,
+        idempotencyKey: 'correction-initial', trigger: { kind: 'USER_REQUEST', requestId: 'fixture', instruction: 'Synthetic fixture' } };
+      const initial = await owner.runtime(() => initialService.reserveJobAid(reserve));
+      const initialScope = { ...scope, attemptRef: initial.task.operationRef, principalId: 'hosted-test' };
+      const lease = await owner.runtime(() => initialService.claim(initialScope));
+      const initialFence = { ...initialScope, leaseToken: lease.leaseToken, leaseGeneration: lease.leaseGeneration };
+      const documentVersionId = initial.task.workingBasis.inputs[0].documentVersionId;
+      const ref = `DOCUMENT_VERSION:${documentVersionId}:page:1`;
+      const evidence = { kind: 'DOCUMENT_PASSAGE', documentVersionId, workItemId: null, evidenceRef: ref, sourceRefId: ref,
+        title: 'Synthetic source', versionLabel: null, locator: 'Page 1', excerpt: 'Applicability requires a confirmed dependency.' };
+      await owner.runtime(() => initialService.readSourcePages({ ...initialFence, documentVersionId, pageStart: 1, purpose: 'Test source' },
+        async () => ({ documentVersionId, sourceSha256: 'a'.repeat(64), sourceByteLength: 80, pageCount: 1,
+          extractionScope: 'NATIVE_TEXT_LAYER', pages: [{ page: 1, sourceRefId: ref, text: evidence.excerpt,
+            textLayerStatus: 'PRESENT', visualContentVerified: false, evidence }] })));
+      const proposal = { schemaVersion: 'wiselink.jobaid-problem-work.v3', overview: 'Synthetic initial understanding.',
+        roundCompletion: 'COMPLETE', completionReason: 'Fixture setup', changeSummary: 'Fixture setup',
+        issues: [{ issueKey: 'dependency', question: 'What follows from an unknown dependency?', body: `No effect. [[${ref}]]` },
+          { issueKey: 'retained', question: 'What is retained?', body: `Source requires confirmation. [[${ref}]]` }] };
+      const seeded = await owner.runtime(() => initialService.saveJobAidWork({ ...initialFence, requestId: 'seed-save',
+        expectedWorkRevision: 0, workJson: JSON.stringify(proposal) }));
+      const { contentHash: _oldHash, ...initialResult } = matterResult(initial.task);
+      initialResult.modelOutput = JSON.stringify({ workRevisionRef: seeded.workRevisionRef });
+      await owner.runtime(() => initialService.finishJobAid({ ...initialFence, result: sealMatterResultEnvelope(initialResult) }));
+      const previous = await owner.working.loadCurrent(scope);
+      let callCount = 0; let entered;
+      const started = new Promise(resolve => { entered = resolve; });
+      let release;
+      const paused = new Promise(resolve => { release = resolve; });
+      let fence;
+      const output = { body: `Unknown dependency does not establish no effect. [[${ref}]]`, changeSummary: 'Restore the missing condition.',
+        producer: { kind: 'OFFICIAL_PLUGIN', instanceId: 'wl-engineering-issue-correction', pluginVersion: '1.0.26', actionKey: 'textToJson', concreteModel: null } };
+      const plugin = { generate: async (_context, assertActive) => {
+        callCount += 1; await assertActive();
+        // The owner has a single connection. These complete only if generation is outside its transaction.
+        await owner.database.execute(drizzleSql`SELECT 1`);
+        await owner.runtime(() => service.heartbeat(fence));
+        entered(); await paused; await assertActive(); return output;
+      } };
+      const service = new MatterActionAttemptService(owner.working, models, undefined, plugin);
+      const otherService = new MatterActionAttemptService(second.working, models, undefined, plugin);
+      const correction = { kind: 'ENGINEERING_ISSUE_CORRECTION', expectedWorkRef: seeded.workRevisionRef,
+        issueKey: 'dependency', correctionReason: 'Unknown dependency cannot prove no effect.', evidenceRefs: [ref] };
+      const reserved = await owner.runtime(() => service.reserveJobAid({ ...reserve, idempotencyKey: 'correct-once',
+        expectedWorkingRevision: seeded.workRevision, correction }));
+      assert.equal(reserved.task.executionModel, undefined);
+      const target = { ...scope, attemptRef: reserved.task.operationRef, principalId: 'hosted-test' };
+      const claim = await owner.runtime(() => service.claim(target));
+      fence = { ...target, leaseToken: claim.leaseToken, leaseGeneration: claim.leaseGeneration };
+      const generation = { ...fence, requestId: 'generate-once' };
+      const first = owner.runtime(() => service.executeIssueCorrection(generation));
+      await started;
+      await assert.rejects(second.runtime(() => otherService.executeIssueCorrection(generation)), /RESULT_UNCONFIRMED/);
+      assert.equal(callCount, 1); release();
+      assert.equal((await first).persisted, true);
+      assert.equal((await owner.runtime(() => service.executeIssueCorrection(generation))).replayed, true);
+      const oldRead = await owner.working.readByRef({ ...scope, workRef: seeded.workRevisionRef });
+      assert.equal(oldRead.correctionNotices[0].reason, correction.correctionReason);
+      const saveInput = { ...fence, requestId: 'save-once', generationRequestId: 'generate-once' };
+      const saved = await owner.runtime(() => service.saveIssueCorrection(saveInput));
+      const replay = await owner.runtime(() => service.saveIssueCorrection(saveInput));
+      assert.equal(replay.workRevisionRef, saved.workRevisionRef);
+      assert.equal(replay.replayed, true);
+      await assert.rejects(owner.runtime(() => service.saveIssueCorrection({ ...saveInput, requestId: 'different-save-id' })), /CAS_CONFLICT/);
+      const read = await owner.runtime(() => service.readSavedWork({ ...target, requestId: 'save-once' }));
+      assert.equal(read.state.problemWork.issues[0].body, output.body);
+      assert.deepEqual(read.state.problemWork.issues[1], previous.state.problemWork.issues[1]);
+      assert.equal(read.state.problemWork.overviewStatus, 'STALE');
+      assert.equal(read.state.problemWork.roundCompletion, 'IN_PROGRESS');
+      const finished = await owner.runtime(() => service.finishIssueCorrection({ ...fence, requestId: 'save-once' }));
+      assert.equal(finished.status, 'SUCCEEDED'); assert.equal(finished.workRevisionRef, saved.workRevisionRef);
+      const historical = await owner.working.readByRef({ ...scope, workRef: seeded.workRevisionRef });
+      assert.equal(historical.correctionNotices[0].correctedWorkRef, saved.workRevisionRef);
+      assert.equal(historical.state.problemWork.issues[0].body, proposal.issues[0].body);
+      assert.equal(callCount, 1);
+      const finishedRow = await owner.runtime(() => service.read(target));
+      const receipt = JSON.parse(finishedRow.resultEnvelopeJson);
+      assert.equal(receipt.modelVersion, null); assert.equal(receipt.skillVersion, null);
+      assert.equal(receipt.runMetrics.inputUnits, null); assert.equal(receipt.producer.instanceId, output.producer.instanceId);
+      let failedCalls = 0;
+      const broken = new MatterActionAttemptService(owner.working, models, undefined, { generate: async () => {
+        failedCalls += 1; throw new Error('transport outcome not confirmed');
+      } });
+      const failedTask = await owner.runtime(() => broken.reserveJobAid({ ...reserve, idempotencyKey: 'correction-failure',
+        expectedWorkingRevision: saved.workRevision, correction: { ...correction, expectedWorkRef: saved.workRevisionRef } }));
+      const failedScope = { ...scope, attemptRef: failedTask.task.operationRef, principalId: 'hosted-test' };
+      const failedLease = await owner.runtime(() => broken.claim(failedScope));
+      const failedInput = { ...failedScope, leaseToken: failedLease.leaseToken, leaseGeneration: failedLease.leaseGeneration,
+        requestId: 'failed-generation' };
+      await assert.rejects(owner.runtime(() => broken.executeIssueCorrection(failedInput)), /transport outcome/);
+      assert.equal((await owner.runtime(() => broken.read(failedScope))).status, 'FAILED');
+      await assert.rejects(owner.runtime(() => broken.executeIssueCorrection(failedInput)), /RESULT_UNCONFIRMED/);
+      assert.equal(failedCalls, 1);
+      assert.equal((await owner.working.loadCurrent(scope)).matterWorkRevisionId, saved.workRevisionRef);
+
+    } finally { for (const connection of connections) await connection.release(); await sql.end({ timeout: 5 }); }
+  });

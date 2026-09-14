@@ -1,12 +1,32 @@
 # M 主控集成交接
 
+## 2026-09-14 更正候选 c102：本地实现与验证，尚未部署
+
+本批围绕工作11的工程问题更正接线，新增 Host 的来源绑定上下文、官方插件生成、持久回执、SAVE/FINISH 与事项消费者分支；Skill 从 c101 原位推进为 c102，继续使用显式更正目的和同一事项 ActionAttempt。新增/修改内容均仍是技术候选，尚未发布 Host 或安装 Skill，不代表线上已具备这些入口。
+
+本地验证已完成：服务端 typecheck 退出0；目标真实 PostgreSQL 场景退出0（两连接并发下单次生成、事务外调用与心跳、SAVE/回放/CAS、目标问题替换及其他问题保留、定点更正任务 SUCCEEDED、完整工作仍 IN_PROGRESS/综合 STALE、插件失败后旧工作保留且不重生成、producer/model/usage 边界）；此前相关契约、读取、插件、消费者和 Matter 测试继续通过。测试使用合成插件与本地数据库，不是线上业务运行，也不代表 H1/H2 全部完成。
+
+线上仍以此前最后实测基准 Host 2fc3190b、Skill c99 和工作11为准；本批未重新核验线上状态。D 任务仍等待飞书登录，未验证回收结果；空闲 `next_matter_assessment` 的根因没有新证据。当前线上后继更正仍受生成层停止/失败记录限制，已保存工作保留。下一步由 M 选择发布窗口后，再单独执行包校验、Host 发布、Skill c102 安装及真实后继验收；本批不触发业务任务。
+
+## 2026-09-14 工作11有界更正后继仍在生成层停止（13:24）
+
+补读上次AQ-bc2ed930c12240c68399e30fb9c85499的原生会话ab64f754-c2a4-4e0c-aeaa-c11fe4fb1e71，仅核对停止/用量/内容类型：04:36:43.785Z、04:38:23.953Z两条均length/output16000/contentTypes=[]。因此该次400现在已有原生预算耗尽证据；此前仅HTTP回执时保留未知的记录不反向改写。没有读取或保存原始推理正文。
+
+用户继续后，正常begin基于事项3/工作11建立AQ-49bc8763a4734c9e991150704aa1eaa1，requestId rev6-work11-bounded-correction-20260914，recoveryAttemptRef指向上述已FAILED请求。保留完整证据上下文，仅要求FTD问题与必要综合的一致性更正，明确不重抄原文和历史列表、不重发其他四个问题。原cron仍在next_matter_assessment失败退避且无活动，通过既有cron run单次领取（manual:efc2b938-2bab-4f6d-ab8d-14ca3de9fa70:1789363256865:3），实际SOURCE_CONTEXT_ONLY，未重放失败载荷。
+
+本次首轮仍HTTP400/incomplete_result/142B，HTTP无finishReason/usage。原生会话816fd6c9-f2ca-4cdb-b8fe-1fc38d2fe2a8于05:22:45.482Z、05:24:21.175Z均length/output16000/contentTypes=[]；对应输入计量input84429/cache1396及input41411/cache85808。两条原生生成不等于一份32000正文；申请16000用尽不证明所有入口统一硬上限。未到SAVE、未生成完整候选，13:24:22+08正常FAILED/JOBAID_INCOMPLETE_TERMINAL_RESPONSE，scopeAdjustments=0。online工作仍11/MWREV-80e00698-98ce-42c9-998a-5b073e2d960e，已保存内容未丢失。
+
+本轮不再原样重试、不扩额度、不改解析/翻译或权限，不宣布FTD判断矛盾已修复。后续需在能交付完整载荷的运行条件下继续该更正；现有工作和确切来源继续可读。Host仍2fc3190b、Skill仍c99；正文拒绝引用反馈补丁已在源码但尚未安装。空闲next_matter_assessment退避问题独立保留，未用放宽来源权限处理。
+
 ## 2026-09-14 rev6实际工程正文工作11已保存；定向内容和引用验收
 
 后继AQ-ccf484fd55cc4b2fa6c978e4335df615由自然调度运行，原文读取后首次SAVE因SOURCE_NOT_DELIVERED被拒；自动更正后按JA-save-47c18b20-330f-469a-8f2b-bc586e229e77保存工作11 / MWREV-80e00698-98ce-42c9-998a-5b073e2d960e，于12:27:26+08正常SUCCEEDED。已按原request读回并在现有页面读到正文及rev6引用。FTD段落现在包含触发条件、Scenario1/2恢复、预防建议、Final Action无固定日期、TBD里程碑；未变四个问题保留。这是实际工程消费，不再只是读取数量；仍是候选，不是正式采用。
 
 验收发现正文仍同时说工程依赖未确认和FTD绝不影响SB优先级，已通过正常后继进行局部一致性核对，禁止用厂家未收到报告推断零风险。首个FTD工作已落库，不因此认定全部内容质量通过。页面FTD待覆盖项已消失，其他材料仍有各自未覆盖范围。
 
-真实引用点击暴露旧Matter页码阅读器不支持parseRun来源，错误从第1页浏览。最小前端适配改为根据已保存locator中的parseRunId/sourceRefId进入现有精确DocumentVersion Reader，不猜页码、不切latest；6项目录/路由测试及client生产构建通过，部署待核对。另发现Skill仅识别独立引用字段，正文内[[ref]]的精确拒绝反馈被遗漏；已定向修复，4项错误边界测试通过，尚未安装，不用于证明本次自动更正。
+真实引用点击暴露旧Matter页码阅读器不支持parseRun来源，错误从第1页浏览。最小前端适配改为根据已保存locator中的parseRunId/sourceRefId进入现有精确DocumentVersion Reader，不猜页码、不切latest；6项目录/路由测试及client生产构建通过。Host2fc3190b已发布，release7685244300590975936 finished/errors=[]/commit匹配；线上从工作11点击来源，实际进入rev6/u6:p0的确切URL并加载原文，不再进入旧页码弹窗。另发现Skill仅识别独立引用字段，正文内[[ref]]的精确拒绝反馈被遗漏；已定向修复，4项错误边界测试通过，尚未安装，不用于证明本次自动更正。
+
+工作11内容一致性后继：AQ-bc2ed930c12240c68399e30fb9c85499，requestId rev6-work11-consistency-correction-20260914，CAS事项3/工作11。自然运行后于12:38:25+08正常FAILED；首轮HTTP400、142B、无完整函数参数，finishReason/inputTokens/outputTokens均未提供，JOBAID_INCOMPLETE_TERMINAL_RESPONSE，scopeAdjustments=0。申请16000不是本次截断证据。未到SAVE，工作11完整保留；正文中“工程依赖未确认”与绝对优先级结论并存的问题仍待有界更正，不宣称质量全部通过，不立即原样重试。
 
 ## 2026-09-14 撤限后真实正文保存成功；FTD实质覆盖继续
 

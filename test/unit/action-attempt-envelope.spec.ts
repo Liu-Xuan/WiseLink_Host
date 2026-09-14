@@ -118,6 +118,33 @@ describe('OpenClaw ActionAttempt envelopes', () => {
 });
 
 describe('Matter ActionAttempt envelopes', () => {
+  it('records official-plugin provenance without inventing model, Skill or token measurements', () => {
+    const { inputHash: _inputHash, ...base } = matterTaskEnvelope();
+    const task = sealMatterTaskEnvelope({ ...base, modelInput: { correction: { kind: 'ENGINEERING_ISSUE_CORRECTION' } } });
+    const { workItemId: _wi, contentHash: _hash, ...legacy } = resultEnvelope(taskEnvelope());
+    const body = { ...legacy, schemaVersion: 'wiselink.3_1.openclaw_result_envelope.v2' as const,
+      taskType: 'OPENCLAW_MATTER_ASSESSMENT' as const, subject: task.subject, baseRevision: task.baseRevision,
+      modelVersion: null, skillVersion: null,
+      producer: { kind: 'OFFICIAL_PLUGIN' as const, instanceId: 'wl-engineering-issue-correction',
+        pluginVersion: '1.0.26', actionKey: 'textToJson' as const, concreteModel: null },
+      runMetrics: { durationMs: 123, inputUnits: null, outputUnits: null } };
+    const result = sealMatterResultEnvelope(body);
+    expect(parseMatterResultEnvelope({ task, value: result })).toEqual(result);
+    for (const patch of [{ modelVersion: 'M3' }, { skillVersion: 'c101' },
+      { producer: { ...body.producer, instanceId: 'another-instance' } },
+      { producer: { ...body.producer, concreteModel: 'guessed-model' } }]) {
+      expect(() => parseMatterResultEnvelope({ task, value: { ...result, ...patch } }))
+        .toThrow('RESULT_OFFICIAL_PLUGIN_PRODUCER_INVALID');
+    }
+    const { producer: _producer, ...missingProducer } = result;
+    expect(() => parseMatterResultEnvelope({ task, value: missingProducer }))
+      .toThrow('RESULT_OFFICIAL_PLUGIN_PRODUCER_REQUIRED');
+    expect(() => parseMatterResultEnvelope({ task: matterTaskEnvelope(), value: result }))
+      .toThrow('RESULT_EXECUTION_PURPOSE_MISMATCH');
+    expect(() => parseMatterResultEnvelope({ task, value: { ...result,
+      runMetrics: { ...result.runMetrics, durationMs: null } } })).toThrow('RESULT_ENVELOPE_RUN_METRICS_INVALID');
+  });
+
   it('binds a real Matter without a WorkItem, document identity or ReviewTurn', () => {
     const task = matterTaskEnvelope();
     expect(parseMatterTaskEnvelope(canonicalJson(task))).toEqual(task);

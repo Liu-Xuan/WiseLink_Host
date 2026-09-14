@@ -30,6 +30,12 @@ export default function MatterProblemWork({
           <summary className="cursor-pointer font-medium">
             {issue.question}
           </summary>
+          {revision?.correctionNotices?.filter(notice => notice.issueKey === issue.issueKey).map(notice => (
+            <p key={notice.attemptRef} role="note" className="mt-3 text-sm leading-7">
+              {notice.correctedWorkRef ? '此版本已有后继更正；当前展示仍为原版本。' : '本问题已登记待核更正，以下内容尚未完成更正。'}
+              {' '}{notice.reason}
+            </p>
+          ))}
           <div className="wl-jobaid-article mt-4">
             <JobAidIssueArticle
               issue={issue}

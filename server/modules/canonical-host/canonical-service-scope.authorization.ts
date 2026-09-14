@@ -34,7 +34,8 @@ export interface CanonicalVerifiedOpenClawAttemptScope extends CanonicalVerified
 }
 
 export interface CanonicalMatterAttemptAuthorization {
-  operation: 'CLAIM' | 'STATUS' | 'HEARTBEAT' | 'CANCEL' | 'READ_SAVED_WORK' | 'READ_SOURCES' | 'READ_ORIGINAL' | 'READ_REGISTERED' | 'SAVE_WORK' | 'FINISH';
+  operation: 'CLAIM' | 'STATUS' | 'HEARTBEAT' | 'CANCEL' | 'READ_SAVED_WORK' | 'READ_SOURCES' | 'READ_ORIGINAL' | 'READ_REGISTERED' | 'SAVE_WORK' | 'FINISH' |
+    'GENERATE_ISSUE_CORRECTION' | 'SAVE_ISSUE_CORRECTION' | 'FINISH_ISSUE_CORRECTION';
   matterId: string;
   attemptRef: string;
 }
