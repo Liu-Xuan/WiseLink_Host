@@ -222,7 +222,6 @@ export class EngineeringMatterRepository {
       command.expectedMatterRevision < 1 ||
       typeof command.changeSummary !== 'string' ||
       !command.changeSummary.trim() ||
-      command.changeSummary.length > 1000 ||
       !Array.isArray(command.upserts) ||
       command.upserts.length < 1 ||
       command.upserts.length > 96

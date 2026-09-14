@@ -345,7 +345,7 @@ export function materializeJobAidWork(
     issues,
     roundCompletion,
     completionReason: text(value.completionReason, 'COMPLETION_REASON'),
-    changeSummary: text(value.changeSummary, 'CHANGE_SUMMARY', 1000),
+    changeSummary: text(value.changeSummary, 'CHANGE_SUMMARY'),
     unchangedExplanation,
     methodBinding: structuredClone(context.methodBinding),
     evidence: structuredClone(
@@ -377,12 +377,9 @@ function object(value: unknown, name: string): Record<string, unknown> {
   if (fields[name]) exact(result, fields[name]);
   return result;
 }
-function text(value: unknown, name: string, maxLength?: number): string {
+function text(value: unknown, name: string): string {
   if (typeof value !== 'string' || !value.trim()) fail(`${name}_INVALID`);
-  const result = value.trim();
-  // PostgreSQL length counts Unicode characters, not UTF-16 code units.
-  if (maxLength !== undefined && Array.from(result).length > maxLength) fail(`${name}_TOO_LONG`);
-  return result;
+  return value.trim();
 }
 function array(value: unknown, name: string): unknown[] {
   if (!Array.isArray(value)) fail(`${name}_INVALID`);

@@ -1,5 +1,9 @@
 # M 主控集成交接
 
+## 2026-09-14 用户决定取消摘要长度上限（c101）
+
+用户明确要求“不需要限制”，替代上一节c100精简至1000字符方案。撤销尚未部署的c100上限与缩写反馈；Host正文物化、事项资料接口/Repository和Skill契约均取消摘要字符上限，仅保留非空。0056迁移将事项修订及工作修订两个摘要CHECK改为非空，dev→online审查仅6条成对约束变更，正式migrated/changes_applied=6；online精确读回两者均CHECK(length(btrim(change_summary))>0)、convalidated=true。无数据删除、权限或RLS变更。321 Skill测试、8正文物化测试及server build通过。已安装c99本身没有摘要长度上限，c100未发布/未安装，不应再使用其安装包。Host其余入口同步发布待完成。
+
 ## 2026-09-14 c99 实际保存失败已定位；c100 定向修复
 
 c99正常后继 AQ-94dd26cde9be4c01893e930023663780 已QUEUED；原Matter cron存在next_matter_assessment连续7次错误退避。本轮在用户相关操作授权内，通过官方cron run对该既有任务执行一次（不改schedule），runId manual:efc2b938-2bab-4f6d-ab8d-14ca3de9fa70:1789357533773:1。实际进入RUNNING、COMPLETE_CANDIDATE，精确反馈旧候选顶层openQuestions/reviewConditions。round2返回HTTP200/tool_calls、37295B函数参数，报告input91297/output11555。此轮是实际新更正；round1为旧完整候选复用，不计为新生成。

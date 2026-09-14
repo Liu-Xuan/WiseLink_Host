@@ -980,17 +980,12 @@ test('exhausted explicit Host work rejection is terminal; unknown save response 
 });
 
 
-test('overlong change summary receives exact bounded feedback without truncating work', async () => {
-  const { jobAidWorkTypeErrors, JOBAID_WORK_UPDATE_SHAPE } = await import('../scripts/jobaid-work-shape.mjs');
-  assert.equal(JOBAID_WORK_UPDATE_SHAPE.properties.changeSummary.maxLength,1000);
-  assert.deepEqual(jobAidWorkTypeErrors({changeSummary:'𠮷'.repeat(1000)}),[]);
-  const work={...completed,changeSummary:'中'.repeat(1001)};
-  const f=fixture([{action:'SAVE_WORK',work},{action:'SAVE_WORK',work:completed},{action:'FINISH'}]);
-  let count=0; const save=f.options.saveAssessmentWork;
-  f.options.saveAssessmentWork=async (...args)=>{ if(count++===0) throw Object.assign(new Error('Rejected'),{hostErrorCode:'JOBAID_CHANGE_SUMMARY_TOO_LONG'}); return save(...args); };
+test('long change summary has no artificial limit and reaches SAVE unchanged', async () => {
+  const { jobAidWorkTypeErrors, JOBAID_WORK_UPDATE_SHAPE }=await import('../scripts/jobaid-work-shape.mjs');
+  const work={...completed,changeSummary:'完整变更说明𠮷'.repeat(1000)};
+  assert.equal(JOBAID_WORK_UPDATE_SHAPE.properties.changeSummary.maxLength,undefined);
+  assert.deepEqual(jobAidWorkTypeErrors(work),[]);
+  const f=fixture([{action:'SAVE_WORK',work},{action:'FINISH'}]);
   await f.run();
-  const feedback=JSON.parse(f.calls[1].messages.at(-1).content);
-  assert.equal(feedback.fieldErrors[0].actualLength,1001);
-  assert.match(feedback.instruction,/Shorten only changeSummary/);
-  assert.equal(work.changeSummary.length,1001);
+  assert.equal(JSON.parse(f.saves[0].workJson).changeSummary,work.changeSummary);
 });

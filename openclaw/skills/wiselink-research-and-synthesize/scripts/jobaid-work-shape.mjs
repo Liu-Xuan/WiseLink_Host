@@ -34,7 +34,7 @@ export const JOBAID_WORK_UPDATE_SHAPE = object({
   schemaVersion: choice('wiselink.jobaid-problem-work.v3'),
   overview: text,
   roundCompletion: choice('IN_PROGRESS', 'COMPLETE', 'COMPLETE_WITH_OPEN_QUESTIONS'),
-  completionReason: text, changeSummary: { ...text, maxLength: 1000 }, unchangedExplanation: text,
+  completionReason: text, changeSummary: text, unchangedExplanation: text,
   unchangedIssueKeys: texts,
   inputDispositions: list(object({ inputId: text, contribution: choice('NO_MATERIAL_CHANGE', 'READ_ONLY'),
     checkedEvidenceRefs: texts, checkedScope: text, reason: text })),
@@ -91,9 +91,6 @@ export function jobAidWorkTypeErrors(work) {
         schema.minLength ? 'non-empty string' : schema.type, received });
       return;
     }
-    if (schema.type === 'string' && schema.maxLength && Array.from(value.trim()).length > schema.maxLength)
-      errors.push({ path, expected: `at most ${schema.maxLength} characters`, received: 'string too long',
-        maxLength: schema.maxLength, actualLength: Array.from(value.trim()).length });
     if (schema.type === 'array') value.forEach((item, i) => visit(item, schema.items, `${path}[${i}]`));
     if (schema.type === 'object') {
       if (schema.additionalProperties === false) for (const key of Object.keys(value)) {
