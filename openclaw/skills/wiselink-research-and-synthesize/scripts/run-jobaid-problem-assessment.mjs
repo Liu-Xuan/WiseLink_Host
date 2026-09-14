@@ -695,6 +695,8 @@ function workShapeCorrection(code, work, modelInput) {
       'Use exact delivered [[evidenceRef]] citations in body. Do not generate redundant dependency fields. Correct the reported field types using the original evidence and the work-update shape. conditions, limitations and basisRefs are arrays of strings; addresses is one non-empty string describing the problem or risk addressed. Preserve justified analysis and unknowns; do not invent content or remove substantive work merely to pass validation. The Host will validate the revised work.' +
       (fieldErrors.some(error => error.received === 'undeclared field')
         ? ' The reported undeclared fields are not accepted at those paths; allowedFields lists the current contract. Preserve their substantive meaning in the relevant issue body or declared field. openQuestions belongs to an issue; explicit scheduling changes use reviewConditionDelta, not a full reviewConditions list. Work revision is assigned by Host, not authored in workJson.' : '') +
+      (code === 'JOBAID_CHANGE_SUMMARY_TOO_LONG'
+        ? ' Shorten only changeSummary to at most 1000 characters. It is a concise change note, not the engineering report; preserve substantive analysis, conditions and citations in issue bodies.' : '') +
       (code === 'JOBAID_MEASURE_ADDRESSES_INVALID'
         ? ' The rejected field is addresses; changing status does not repair it.'
         : ''),

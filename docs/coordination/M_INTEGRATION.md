@@ -1,5 +1,13 @@
 # M 主控集成交接
 
+## 2026-09-14 c99 实际保存失败已定位；c100 定向修复
+
+c99正常后继 AQ-94dd26cde9be4c01893e930023663780 已QUEUED；原Matter cron存在next_matter_assessment连续7次错误退避。本轮在用户相关操作授权内，通过官方cron run对该既有任务执行一次（不改schedule），runId manual:efc2b938-2bab-4f6d-ab8d-14ca3de9fa70:1789357533773:1。实际进入RUNNING、COMPLETE_CANDIDATE，精确反馈旧候选顶层openQuestions/reviewConditions。round2返回HTTP200/tool_calls、37295B函数参数，报告input91297/output11555。此轮是实际新更正；round1为旧完整候选复用，不计为新生成。
+
+实际SAVE requestId JA-save-bb7f30aa-11e5-4a15-b748-76ec5be874ed，trace c85765bff037ecba41c52e26bb22b184。数据库INSERT拒绝 ck_engineering_matter_work_revision_summary（change_summary去空白长度1—1000；c99 round2候选去空白后实际1316字符）；程序先前未表达该上限，故未作为明确JOBAID字段错误反馈。按原request两次查回null，工作仍9，无新workRef。相邻文档调度manifest元数据fetch failed不作为此次SAVE根因。旧c98终态不改；当前c99保存没有被伪造成功。
+
+c100将既有数据库摘要上限原位对齐到Host物化校验、模型字段shape与精确反馈，按Unicode字符计数；仅要求精简变更摘要，不截断正文，不放宽数据库约束，不新增迁移或增加更正次数。Skill321项与Host正文物化8项通过，构建/发布安装待完成。本次修复按code-fix、coding-guide执行。
+
 ## 2026-09-14 c99 已安装，完整候选后继验收
 
 用户明确授权本轮相关操作后，c99 安装包通过原 Host 存储的 600 秒链接进入原 Hosted 应用；包大小 385769B、SHA256 03a7afdf238f829563e448de0a6a51c5481c96697c255b70655b52362220a833 一致。链接首次因存储应用与接收应用的授权对应被自动审批拒绝；补齐只读文件元数据和相同接收方证据后通过，随后一次网络 EOF，原操作有界重试成功。未改变接收方或时长。
