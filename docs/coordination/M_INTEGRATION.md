@@ -1,5 +1,13 @@
 # M 主控集成交接
 
+## 2026-09-14 撤限后真实正文保存成功；FTD实质覆盖继续
+
+Host6995d8a / Skill c99，经既有Matter cron正常恢复（manual:efc2b938-2bab-4f6d-ab8d-14ca3de9fa70:1789359508786:2），复用round2完整载荷及原SAVE requestId JA-save-bb7f30aa-11e5-4a15-b748-76ec5be874ed。1316字符摘要未缩写、正文未截断，保存工作10：MWREV-3d93ee31-85c9-45ce-9544-6b3fe5237d9e。READ_SAVED_WORK按原request准确读回，现有事项页面显示工作10及正文。AQ-94dd26cde9be4c01893e930023663780于12:19:02+08正常SUCCEEDED，保存后自动第三轮FINISH。此次证明保存与回执恢复，不计为两次新增工作保存。
+
+内容核对：工作10主要完成历史SB/SL/Win7候选更正，FTD问题未引用rev6实际原文；页面仍正确显示FTD“已读片段，尚未保存分析或比较处置”。摘要数据库阻塞已关闭，但不能以work10冒充首份新FTD实质分析。未改变正式采用状态。
+
+正常后继AQ-ccf484fd55cc4b2fa6c978e4335df615（requestId rev6-substantive-work10-followup-20260914），CAS事项3/工作10，明确处理rev6/semantic1的FTD问题、措施条件及限制；历史第14轮指令不是本轮请求。要求使用正常读取的确切引用、完整更正FTD问题、保留其他有效工作，正常SAVE。初始QUEUED，后续真实回执待核对；不重解析、不重翻译、不改模型额度。
+
 ## 2026-09-14 用户决定取消摘要长度上限（c101）
 
 用户明确要求“不需要限制”，替代上一节c100精简至1000字符方案。撤销尚未部署的c100上限与缩写反馈；Host正文物化、事项资料接口/Repository和Skill契约均取消摘要字符上限，仅保留非空。0056迁移将事项修订及工作修订两个摘要CHECK改为非空，dev→online审查仅6条成对约束变更，正式migrated/changes_applied=6；online精确读回两者均CHECK(length(btrim(change_summary))>0)、convalidated=true。无数据删除、权限或RLS变更。321 Skill测试、8正文物化测试及server build通过。已安装c99本身没有摘要长度上限，c100未发布/未安装，不应再使用其安装包。Host发布已完成：release7685237857560497122 finished/errors=[]/commit6995d8a3349c0d70ec33833882b2ad57aa23ba19；线上摘要CHECK已仅非空且validated。当前Skill仍c99，无需为本条撤限重复安装c101。
