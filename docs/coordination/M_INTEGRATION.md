@@ -1,5 +1,13 @@
 # M 主控集成交接
 
+## 2026-09-14 后端证据投影修复与前端并行集成限制
+
+提交 `ee094fb6d0cf8b8d09e15a57f1260683ea89f69b` 已接受为后端阅读投影修复候选：保留历史 `substantiveResult` 依据并合并 problemWork 依据，冲突引用拒绝；定向状态测试 23/23、server typecheck、两个改动文件 ESLint 与 diff check 已通过。该提交尚未部署，不能覆盖当前线上 Host/Skill 事实。
+
+妙搭前端正在独立 `origin/sprint/default`（当前只读核验 SHA `2926a9cb36bcf92d09ff219a3c6875b8fc76bf68`）进行重构，与 codex 共同祖先为 `77f2a56d4eacecd31e4a501630ee5fe3985fb25a`。隔离合入试算产生 49 个冲突，其中 43 个为 client，另有 package 与 3 个后端重叠文件；前端基线和 Host 后端不能整边覆盖。发布前需由双方 owner 接受准确前端/后端组合；本记录不表示前端已发布或本批修复已上线。
+
+schema 集成审查已确认：sprint 的 `schema.ts` 虽包含五个文档/搜索表声明，当前 Host 已将它们拆分在专用 schema 文件并由现有服务实际消费，不能整段覆盖。两项明确风险是 `uk_dm_parse_active` 在 sprint 版本为无条件唯一、会限制终态历史行；当前版本按 `RUNNING/STAGING` 使用部分唯一约束，必须保留。另一个是 sprint 将 `search_vector` 声明为普通 text，而当前 Host 使用生成的 PostgreSQL `tsvector` 加权列，搜索语义不等价。前端通过稳定 API 接入这些能力，不直接依赖表对象；后续以当前拆分 schema 为准，逐项对齐 API，不复制表或降低约束。
+
 ## 2026-09-14 工作12：正文更正链成功，整体综合仍待一致性核对
 
 19:40:19 单次获准的官方 operator cron run `manual:efc2b938-2bab-4f6d-ab8d-14ca3de9fa70:1789386019695:4` accepted/enqueued；未修改 schedule 或退避。后继 `AQ-8d7d6201397c4f7f832ef6a785c6283d` 已 `SUCCEEDED`、`errorCode=null`。正常 Matter 页面 HTTP 200 读回工作12 `MWREV-e7147367-025f-4d85-9fc3-9038530a1f92`（保存时间 `2026-09-14T11:41:43.980Z`）。
