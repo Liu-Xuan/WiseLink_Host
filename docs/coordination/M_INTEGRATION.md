@@ -1,12 +1,16 @@
 # M 主控集成交接
 
-## 2026-09-14 正文 v3 / c97 集成窗口（尚未部署）
+## 2026-09-14 正文 v3 / c97 集成窗口（已部署，真实后继已失败且未保存）
 
 本批将问题正文直接作为工作保存：`issueKey/question/body` 与确切正文引用，专业结构按用途提供；未变问题保留、同问题完整替换，综合 CURRENT/STALE/NOT_AVAILABLE 分开。Host SAVE、Review、Reader、搜索和恢复消费者已改用正文；不再生成假的旧 statement。历史 v2 仅只读投影并标注，线上工作修订9的5个问题、14条原主张已用新读取代码验证，旧工作引用与数据库记录保持。
 
 本地证据：Host/Client production build 通过；Skill 316 项通过；正文/历史/搜索14项、读取UI相关16项（含重叠）、现有Matter消费者/工作状态25项及JobAid续接29项通过；隔离真实PostgreSQL12项通过，覆盖CAS、回执丢失回读、索引失败后恢复、actor/tenant与来源权限、取消迟到写入及Review原子保存。测试是构造/本地验证，不代表新的线上工程认识。Review相关检查额外发现并修复正文覆盖仍遍历 statements、body@位置被错误过滤的问题。
 
-部署阻塞：当前妙搭网页重新连接后转扫码登录，已请求恢复登录。尚未暂停任何job、尚未发布Host、尚未安装c97；技术线上仍以此前Host96d01a81d/Skill c96的回执为准。未改模型配置、未重跑原文/中文、未新建FTD业务请求，无新FTD workRef。登录恢复后先读回在途和原job配置，在空闲窗口协调Host/Skill更新，再正常begin后继并观察实际SAVE/读回。不得让Host新契约与c96消费者混用。
+部署证据：用户恢复登录后，三个既有 job 的原配置已保存在 Hosted 临时文件；官方暂停并确认 runningAtMs 均为空、无活动消费者后，发布 Host `8cc425b23457f0c1b39ff4f3c57564b8ddfe7175`，release `7685179634351295687` 最终 finished / errors=[] / commit 一致。publishing 中间回执曾显示旧96d，不作最终版本。c97包382955B、SHA256 `1e73b71decf6a665038b0cfaa5b297eb2ca3f634a6622342cfb95f0abe1ca682`，经用户已授权600秒链接进入原Hosted、下载校验后官方安装；47文件全部匹配，installed316项通过，Host MCP身份及工具合同验证成功。三个job已恢复原enabled/schedule/payload/agentId/sessionTarget，无强制run。
+
+正常 begin 后继 `AQ-4ccad3195a404a1db23c0bdeda1ba8c4`，requestId `rev6-body-first-c97-20260914`，CAS事项3/工作9，created=true / QUEUED，由自然调度处理。保持rev6/semantic1，不复活旧任务、不改模型配置、不重跑原件或中文。本次最终 FAILED，工作仍9/MWREV-19bb8855-40ce-4017-a349-6b9c62debcd4，无新FTD workRef，技术部署不能代替真实保存验收。
+
+本次运行：自然调度实际使用c97/continuous-body-batches-v3，前两轮HTTP200/tool_calls，实际两次MATTER_ORIGINAL_READ；第三轮HTTP502/TOOL_CHOICE_NOT_SATISFIED，142B错误回执，无完整函数参数，未到SAVE。原生会话 `fe217ed7-7864-4a91-8197-ec3f5abd5dfe` 最后一条2026-09-14T00:33:12.266Z为 stopReason=error、content=[]、报告用量0，errorCode=`RateLimitExceeded.EndpointTPMExceeded`、errorType=rate_limit_exceeded、errorMessage“系统开小差了，请稍后重试”；已确认端点TPM限流，本次未观察到length，不归因16000截断。0仅为错误记录中的报告值，不证明上游无消耗。适配器记录JOBAID_INCOMPLETE_TERMINAL_RESPONSE，online error_code为null。保持旧任务终态，不重复发起相同生成、不改额度、不修补部分JSON。恢复前核对发现：Host会复制已授权实际读取证据，但Skill `readMatterRecoveryCandidate` 要求旧回执ok且完整SAVE_WORK/FINISH载荷，当前错误回执不满足；因此尚未创建恢复请求。下一修复应在现有后继中区分可重用完整候选与仅已取证的失败，仍拒绝未知保存结果及绑定/模型/来源变化，不引入新调度器。
 
 后续未完成：首份FTD正文、同会话连续保存及最终综合；跨事项Hosted检索/准确旧工作引用/双向使用与来源更正完整消费尚未接通。本批正文索引和页面可读只解决其基础，不作为跨事项知识复用验收。
 
