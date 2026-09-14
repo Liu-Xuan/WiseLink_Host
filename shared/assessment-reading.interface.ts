@@ -5,6 +5,8 @@ export interface AssessmentReadingContent {
   listBrief: string;
   lead: string;
   claims: AssessmentReadingClaim[];
+  /** Direct saved problem bodies; these are not fabricated atomic claims. */
+  issueArticles?: Array<{ issueKey: string; issueRef: string; question: string; body: string }>;
   /** Claims whose conditions, negations or conflicts must remain visible. */
   decisiveClaimIds: string[];
 }

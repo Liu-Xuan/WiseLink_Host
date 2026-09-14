@@ -5,7 +5,7 @@ import { readFile } from 'node:fs/promises';
 import { pathToFileURL } from 'node:url';
 
 export const WISELINK_SKILL_VERSION =
-  'wiselink-research-and-synthesize@r09.c96';
+  'wiselink-research-and-synthesize@r09.c97';
 export const WISELINK_SKILL_COMPATIBILITY_REF =
   'wiselink-research-and-synthesize@r09';
 export const WISELINK_HOST_MCP_NAME =
@@ -4680,6 +4680,7 @@ function validateMatterWorkingDelta(task, value) {
   const context = task.matterContext;
   const current = context.workingState;
   let nextClaims = null;
+  let nextBodyRefs = null;
   if (value.nextFocus !== null) validateMatterFocus(value.nextFocus);
   if ((value.claimDelta === null) !== (value.readingPresentation === null)) fail('REVIEW_MATTER_PRESENTATION_DELTA_REQUIRED');
   if (current === null && (value.updateKind !== 'INITIAL_SYNTHESIS' || value.nextFocus === null || (value.claimDelta === null && value.problemWork === undefined))) {
@@ -4714,7 +4715,7 @@ function validateMatterWorkingDelta(task, value) {
     const issues = new Map((current?.problemWork?.issues ?? []).map((issue) => [issue.issueKey, issue]));
     for (const retired of value.problemWork.retiredIssues ?? []) issues.delete(retired.issueKey);
     for (const issue of value.problemWork.issues) issues.set(issue.issueKey, issue);
-    nextClaims = [...issues.values()].flatMap((issue) => issue.statements);
+    nextBodyRefs = jobAidDeltaEvidenceRefs({ issues: [...issues.values()] });
   }
   for (const [key, priorKey] of [['openQuestionDelta', 'openQuestions'], ['reviewConditionDelta', 'reviewConditions']]) {
     const delta = value[key];
@@ -4734,8 +4735,8 @@ function validateMatterWorkingDelta(task, value) {
   const sourceBindings = new Map(context.evidenceSources.map((item) => [item.sourceRefId, item]));
   const sourcesByEvidence = new Map(context.evidenceSources.map((item) => [item.evidenceRef, item]));
   const evidence = matterReviewEvidence(context);
-  const usedEvidenceRefs = new Set(nextClaims?.flatMap((claim) => claim.premises.map((premise) => premise.evidenceRef)) ?? []);
-  const nextEvidence = nextClaims === null ? null : [...evidence.values()].filter((item) => usedEvidenceRefs.has(item.evidenceRef));
+  const usedEvidenceRefs = new Set(nextBodyRefs ?? nextClaims?.flatMap((claim) => claim.premises.map((premise) => premise.evidenceRef)) ?? []);
+  const nextEvidence = nextClaims === null && nextBodyRefs === null ? null : [...evidence.values()].filter((item) => usedEvidenceRefs.has(item.evidenceRef));
   const resultEvidence = nextEvidence ?? current?.substantiveResult?.evidence ?? [];
   const coverageByInputId = new Map((current?.coverage ?? []).map((item) => [item.binding.inputId, item]));
   const covered = new Set();
@@ -4807,10 +4808,8 @@ function jobAidDeltaEvidenceEntries(delta) {
   const refs = (path, values) => (values ?? []).forEach((ref, index) => add(`${path}[${index}]`, ref));
   (delta?.issues ?? []).forEach((issue, index) => {
     const path = `jobAidWorkingDelta.issues[${index}]`;
-    refs(`${path}.sourceDependencies`, issue.sourceDependencies);
-    refs(`${path}.premiseRefs`, issue.premiseRefs);
-    (issue.statements ?? []).forEach((claim, ci) => (claim.premises ?? []).forEach((premise, pi) =>
-      add(`${path}.statements[${ci}].premises[${pi}].evidenceRef`, premise.evidenceRef)));
+    if (typeof issue.body === 'string') for (const match of issue.body.matchAll(/\[\[([^\[\]\r\n]+)\]\]/gu))
+      add(`${path}.body@${match.index}`, match[1]);
     (issue.riskScenarios ?? []).forEach((risk, ri) => {
       for (const key of ['severity', 'likelihood', 'importantEvent'])
         refs(`${path}.riskScenarios[${ri}].${key}.basisRefs`, risk[key]?.basisRefs);
@@ -4857,8 +4856,8 @@ function validateJobAidReviewDelta(task, delta) {
 
 function validateJobAidWorkDelta(delta, previousContent, sourceCatalog) {
   assertObject(delta, 'REVIEW_JOBAID_DELTA_INVALID');
-  equal(delta.schemaVersion, 'wiselink.jobaid-problem-work.v2', 'REVIEW_JOBAID_WORK_SCHEMA_INVALID');
-  for (const key of ['headline', 'listBrief', 'understanding', 'completionReason', 'changeSummary', 'unchangedExplanation']) nonEmpty(delta[key], `REVIEW_JOBAID_${key.toUpperCase()}_REQUIRED`);
+  equal(delta.schemaVersion, 'wiselink.jobaid-problem-work.v3', 'REVIEW_JOBAID_WORK_SCHEMA_INVALID');
+  for (const key of ['completionReason', 'changeSummary']) nonEmpty(delta[key], `REVIEW_JOBAID_${key.toUpperCase()}_REQUIRED`);
   array(delta.issues, 'REVIEW_JOBAID_ISSUES_REQUIRED');
   // Match Host's existing omission semantics, without normalizing a supplied
   // malformed collection or inferring which prior issues remain unchanged.
@@ -4869,7 +4868,7 @@ function validateJobAidWorkDelta(delta, previousContent, sourceCatalog) {
   const prior = previousContent?.issues.map((issue) => issue.issueKey) ?? [];
   const keys = [...delta.issues.map((issue) => issue.issueKey), ...unchanged, ...retired.map((issue) => issue.issueKey)];
   uniqueTextArray(keys, 'REVIEW_JOBAID_ISSUE_PARTITION_INVALID');
-  if (prior.some((key) => !keys.includes(key)) || [...unchanged, ...retired.map((issue) => issue.issueKey)].some((key) => !prior.includes(key))) fail('REVIEW_JOBAID_PRIOR_ISSUE_OMITTED');
+  if ([...unchanged, ...retired.map((issue) => issue.issueKey)].some((key) => !prior.includes(key))) fail('REVIEW_JOBAID_PRIOR_ISSUE_OMITTED');
   const allowed = new Set(sourceCatalog.map((item) => item.evidenceRef));
   const invalid = jobAidDeltaEvidenceEntries(delta).filter((entry) => !allowed.has(entry.evidenceRef));
   if (invalid.length) {

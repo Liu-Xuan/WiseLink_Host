@@ -209,7 +209,7 @@ function fixture(steps, overrides = {}) {
   };
 }
 const completed = {
-  schemaVersion: 'wiselink.jobaid-problem-work.v2',
+  schemaVersion: 'wiselink.jobaid-problem-work.v3',
   roundCompletion: 'COMPLETE_WITH_OPEN_QUESTIONS',
   understanding: 'The source condition remains; reliability is unqueried.',
 };
@@ -629,47 +629,11 @@ test('an invalid important-event placeholder reaches Host unchanged and correcti
   assert.deepEqual([...f.store.values()][0].content, corrected);
 });
 
-test('Host dependency rejection identifies omitted method reference and preserves corrected work', async () => {
-  const invalid = { ...completed, issues: [{ sourceDependencies: ['source:1'], premiseRefs: [],
-    requirementHandling: [{ methodRef: 'method:synthetic-sensitive', basisRefs: [] }] }] };
-  const corrected = structuredClone(invalid);
-  corrected.issues[0].sourceDependencies.push('method:synthetic-sensitive');
-  const f = fixture([{ action: 'SAVE_WORK', work: invalid }, { action: 'SAVE_WORK', work: corrected }, { action: 'FINISH' }]);
-  const observations = [];
-  f.options.observeCandidateRejection = async (value) => observations.push(value);
-  const save = f.options.saveAssessmentWork;
-  let attempts = 0;
-  f.options.saveAssessmentWork = async (input) => {
-    if (++attempts === 1) {
-      assert.deepEqual(JSON.parse(input.workJson), invalid);
-      throw Object.assign(new Error('REVIEW_HOST_MCP_TOOL_FAILED'), { hostErrorCode: 'JOBAID_ISSUE_DEPENDENCY_MISSING' });
-    }
-    return save(input);
-  };
-  await f.run();
-  const receipt = JSON.parse(f.calls[1].messages.at(-1).content);
-  assert.deepEqual(receipt.fieldErrors, [{ path: 'work.issues[0].requirementHandling[0].methodRef',
-    expected: 'reference included in work.issues[0].sourceDependencies or work.issues[0].premiseRefs', received: 'undeclared reference' }]);
-  assert.equal(JSON.stringify(receipt).includes('synthetic-sensitive'), false);
-  assert.deepEqual(observations[0].fieldErrors, receipt.fieldErrors);
-  assert.equal(JSON.stringify(observations).includes('synthetic-sensitive'), false);
-  assert.deepEqual([...f.store.values()][0].content, corrected);
-  assert.equal(f.store.size, 1);
-});
-
-test('dependency diagnostics cover every Host citation location and stay within each issue', async () => {
-  const { jobAidWorkDependencyErrors } = await import('../scripts/jobaid-work-shape.mjs');
-  const issue = { sourceDependencies: [], premiseRefs: [],
-    statements: [{ premises: [{ evidenceRef: 'ref' }] }],
-    riskScenarios: [{ severity: { basisRefs: ['ref'] }, likelihood: { basisRefs: ['ref'] }, importantEvent: { basisRefs: ['ref'] } }],
-    measures: [{ basisRefs: ['ref'] }], otherClassifications: [{ basisRefs: ['ref'] }],
-    requirementHandling: [{ methodRef: 'ref', basisRefs: ['ref'] }],
-  };
-  const work = { issues: [issue, { sourceDependencies: ['ref'] }] };
-  assert.equal(jobAidWorkDependencyErrors(work).length, 8);
-  issue.premiseRefs = [' ref '];
-  assert.deepEqual(jobAidWorkDependencyErrors(work), []);
-  assert.deepEqual(issue.sourceDependencies, []);
+test('current shallow shape has body and no generated dependency or statement fields', async () => {
+  const { JOBAID_WORK_UPDATE_SHAPE } = await import('../scripts/jobaid-work-shape.mjs');
+  const fields = JOBAID_WORK_UPDATE_SHAPE.properties.issues.items.properties;
+  assert.equal(fields.body.type, 'string');
+  for (const removed of ['statements', 'understanding', 'sourceDependencies', 'premiseRefs']) assert.equal(fields[removed], undefined);
 });
 
 test('typed Overall finish preserves quotes and line breaks with one JSON encoding and no resave', async () => {
@@ -714,32 +678,6 @@ test('native array schema preserves cardinality and item constraints in the exac
     assert.deepEqual(decodeJobAidValue(invalid, shape), invalid);
   }
   assert.deepEqual(jobAidFunctionSchema(shape), schema);
-});
-
-test('Turn 26 premise envelopes decode losslessly without filling absent fields or dropping unknown content', async () => {
-  const { JOBAID_WORK_UPDATE_SHAPE, jobAidFunctionSchema, decodeJobAidValue } = await import('../scripts/jobaid-work-shape.mjs');
-  const shape = JOBAID_WORK_UPDATE_SHAPE.properties.issues.items.properties.statements.items.properties.premises;
-  const item = { evidenceRef: 'source:exact:ref', role: 'SUPPORTS', explanation: '原文 "quote"\n条件', limitation: null };
-  const schema = jobAidFunctionSchema(shape);
-  assert.deepEqual(schema.anyOf[2].properties.item.required, ['evidenceRef', 'role', 'explanation', 'limitation']);
-  assert.deepEqual(schema.anyOf[3].properties.item.properties.item, schema.anyOf[0]);
-  for (const wrapped of [{ item }, { item: { item: [item, { ...item, role: 'LIMITS' }] } }]) {
-    const before = structuredClone(wrapped);
-    const work = { issues: [{ statements: [{ premises: wrapped }] }], sourceRefs: { item: ['unknown:keep'] } };
-    const decoded = decodeJobAidValue(work, JOBAID_WORK_UPDATE_SHAPE);
-    assert.deepEqual(decoded.issues[0].statements[0].premises,
-      Array.isArray(wrapped.item.item) ? wrapped.item.item : [item]);
-    assert.deepEqual(decoded.sourceRefs, { item: ['unknown:keep'] });
-    assert.deepEqual(wrapped, before);
-  }
-  const { limitation, ...incomplete } = item;
-  for (const invalid of [{}, { item: {} }, { item: incomplete }, { item, extra: true },
-    { item: { item: [item], extra: true } }, { item: { item: { item: [item] } } }]) {
-    assert.deepEqual(decodeJobAidValue(invalid, shape), invalid);
-  }
-  const unknown = { ...item, unexpected: 'preserve for Host rejection' };
-  assert.deepEqual(decodeJobAidValue({ item: unknown }, shape), [unknown]);
-  assert.deepEqual(decodeJobAidValue({ item }, JOBAID_WORK_UPDATE_SHAPE.properties.retiredIssues), { item });
 });
 
 test('knowledge dispatch is one-shot; unknown response reads the same request and preserves provenance', async () => {
@@ -910,7 +848,7 @@ test('new requests stop on explicit length without replay; saved A remains reada
   assert.equal([...f.store.values()][0].workRevisionRef, 'JAWR-1');
   assert.ok(f.calls.every(call => call.max_completion_tokens === 16000));
   assert.equal((await checkpoint.readOptional('assessment-state')).scopeAdjustments, 0);
-  assert.equal((await checkpoint.readOptional('assessment-enabled')).generationPolicy.version, 'continuous-issue-batches-v2');
+  assert.equal((await checkpoint.readOptional('assessment-enabled')).generationPolicy.version, 'continuous-body-batches-v3');
   assert.ok(await checkpoint.readOptional('assessment-round-2.result'), 'partial response stays durable but never saved');
 }));
 

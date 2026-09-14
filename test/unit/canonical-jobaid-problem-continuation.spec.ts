@@ -465,7 +465,7 @@ describe('JobAid continuation requests', () => {
     expect(input.previousWork).toEqual(previous);
     expect(input.modelInput.previousWork).toMatchObject({
       workRevisionRef: previous.workRevisionRef,
-      content: { understanding: previous.content.understanding },
+      content: { overview: previous.content.understanding },
     });
     expect(input.modelInput.expectedWorkRevision).toBe(previous.workRevision);
     expect(
@@ -923,6 +923,7 @@ function savedWork(): JobAidWorkRevision {
     createdAt: '2026-09-08T00:00:00.000Z',
     content: {
       schemaVersion: JOBAID_PROBLEM_WORK_SCHEMA,
+      overviewStatus: 'CURRENT',
       headline: '单次正常检查不能排除间歇故障',
       listBrief: '继续核查持续状态。',
       understanding: `已保存的完整认识及条件：${ENGLISH}`,

@@ -1,6 +1,5 @@
 import type {
   AssessmentEvidence,
-  AssessmentReadingClaim,
   AssessmentReadingResult,
 } from '@shared/assessment-reading.interface';
 import {
@@ -62,6 +61,8 @@ export type JobAidWorkValidationContext = (
 ) & {
   methodBinding: JobAidProblemWorkContent['methodBinding'];
   previous: JobAidProblemWorkContent | null;
+  /** Used only when validating an already persisted revision. */
+  persistedOverviewStatus?: JobAidProblemWorkContent['overviewStatus'];
   evidence: AssessmentEvidence[];
   readSourceRefs: string[];
   capabilities: JobAidProblemWorkContent['capabilities'];
@@ -74,6 +75,7 @@ export function materializeJobAidWork(
   context: JobAidWorkValidationContext,
 ): JobAidProblemWorkContent {
   const value = object(raw, 'WORK');
+  exact(value, ['schemaVersion', 'issues', 'overview', 'roundCompletion', 'completionReason', 'changeSummary', 'unchangedExplanation', 'unchangedIssueKeys', 'retiredIssues', 'inputDispositions', 'reviewConditionDelta']);
   if (!isJobAidMethodBinding(context.methodBinding)) fail('METHOD_BINDING_INVALID');
   const subjectId = text(context.matterId ?? context.workItemId, 'SUBJECT');
   if (context.matterId !== undefined && context.workItemId !== undefined)
@@ -114,52 +116,12 @@ export function materializeJobAidWork(
       const issueKey = key(issue.issueKey);
       const issueRef =
         prior.get(issueKey)?.issueRef ?? `${subjectId}:issue:${issueKey}`;
-      const statements: AssessmentReadingClaim[] = array(
-        issue.statements,
-        'STATEMENTS',
-      ).map((rawStatement) => {
-        const statement = object(rawStatement, 'STATEMENT');
-        const claimKey = key(statement.claimKey);
-        const basis = choice(
-          statement.basis,
-          ['SOURCE_FACT', 'CONDITIONAL_INFERENCE'] as const,
-          'STATEMENT_BASIS',
-        );
-        const premises = array(statement.premises, 'PREMISES').map(
-          (rawPremise) => {
-            const premise = object(rawPremise, 'PREMISE');
-            const evidenceRef = refs([premise.evidenceRef], 'PREMISE_REF')[0];
-            return {
-              evidenceRef,
-              role: choice(
-                premise.role,
-                ['SUPPORTS', 'LIMITS', 'CONTEXT', 'CONFLICTS'] as const,
-                'PREMISE_ROLE',
-              ),
-              explanation: text(premise.explanation, 'PREMISE_EXPLANATION'),
-              limitation:
-                premise.limitation == null
-                  ? null
-                  : text(premise.limitation, 'PREMISE_LIMITATION'),
-            };
-          },
-        );
-        if (premises.length === 0) fail('STATEMENT_PREMISES_EMPTY');
-        // A model-authored source statement is a candidate interpretation, not
-        // verification. Preserve the actual evidence carrier; its kind alone
-        // cannot establish or disprove whether it supports this statement.
-        return {
-          claimId: `${issueRef}:claim:${claimKey}`,
-          text: text(statement.text, 'STATEMENT_TEXT'),
-          basis,
-          premises,
-        };
-      });
-      if (statements.length === 0) fail('ISSUE_STATEMENTS_EMPTY');
-      distinct(
-        statements.map((item) => item.claimId),
-        'CLAIM_ID',
-      );
+      exact(issue, ['issueKey', 'question', 'body', 'riskScenarios', 'measures', 'otherClassifications', 'openQuestions', 'requirementHandling']);
+      const body = text(issue.body, 'ISSUE_BODY');
+      const citations = [...body.matchAll(/\[\[([^\[\]\r\n]+)\]\]/gu)].map(match => match[1]);
+      if (!citations.length) fail('BODY_CITATIONS_REQUIRED');
+      refs([...new Set(citations)], 'BODY_CITATIONS');
+      if (body.replace(/\[\[([^\[\]\r\n]+)\]\]/gu, '').includes('[[') || body.replace(/\[\[([^\[\]\r\n]+)\]\]/gu, '').includes(']]')) fail('BODY_CITATION_MALFORMED');
       const riskScenarios = array(
         issue.riskScenarios ?? [],
         'RISK_SCENARIOS',
@@ -295,26 +257,17 @@ export function materializeJobAidWork(
           explanation: text(requirement.explanation, 'REQUIREMENT_EXPLANATION'),
         };
       });
-      const sourceDependencies = refs(
-        issue.sourceDependencies ?? [],
-        'ISSUE_DEPENDENCIES',
-        true,
-      );
-      const premiseRefs = refs(issue.premiseRefs ?? [], 'ISSUE_PREMISES', true);
-      const usedRefs = new Set(collectIssueEvidenceUses({ issueKey, statements, riskScenarios,
+      const sourceDependencies: string[] = [];
+      const premiseRefs: string[] = [];
+      const usedRefs = new Set(collectIssueEvidenceUses({ issueKey, body, riskScenarios,
         measures, otherClassifications, requirementHandling, sourceDependencies, premiseRefs,
       }).map(use => use.evidenceRef));
-      // Citation fields above have already passed the same delivered-source
-      // checks. Complete this redundant index without rewriting model claims.
-      for (const ref of usedRefs)
-        if (!sourceDependencies.includes(ref) && !premiseRefs.includes(ref))
-          sourceDependencies.push(ref);
+      sourceDependencies.push(...usedRefs);
       return {
         issueKey,
         issueRef,
         question: text(issue.question, 'ISSUE_QUESTION'),
-        understanding: text(issue.understanding, 'ISSUE_UNDERSTANDING'),
-        statements,
+        body,
         riskScenarios,
         measures,
         otherClassifications,
@@ -322,14 +275,7 @@ export function materializeJobAidWork(
         requirementHandling,
         sourceDependencies,
         premiseRefs,
-        ...(issue.legacyCriterionRefs === undefined
-          ? {}
-          : {
-              legacyCriterionRefs: strings(
-                issue.legacyCriterionRefs,
-                'LEGACY_REFS',
-              ),
-            }),
+
       };
     },
   );
@@ -360,14 +306,9 @@ export function materializeJobAidWork(
         fail(`RETAINED_SOURCE_NO_LONGER_AUTHORIZED:${ref}`);
   // Omission retains the exact saved summary, never an inferred new conclusion.
   // Explicit null/empty values still pass through the normal validators.
-  const summary = (field: 'headline' | 'listBrief' | 'understanding' | 'decisiveIssueKeys') =>
-    value[field] === undefined ? context.previous?.[field] : value[field];
-  const decisiveIssueKeys = strings(summary('decisiveIssueKeys'), 'DECISIVE_ISSUES');
-  if (
-    decisiveIssueKeys.length === 0 ||
-    decisiveIssueKeys.some((issueKey) => !prior.has(issueKey))
-  )
-    fail('DECISIVE_ISSUES_INVALID');
+  const overview = value.overview === undefined ? context.previous?.understanding : text(value.overview, 'OVERVIEW');
+  const headline = issues[0].question;
+  const decisiveIssueKeys = issues.map(issue => issue.issueKey);
   const roundCompletion = choice(
     value.roundCompletion,
     ['IN_PROGRESS', 'COMPLETE', 'COMPLETE_WITH_OPEN_QUESTIONS'] as const,
@@ -394,10 +335,13 @@ export function materializeJobAidWork(
   );
   return {
     schemaVersion: JOBAID_PROBLEM_WORK_SCHEMA,
-    headline: text(summary('headline'), 'HEADLINE'),
-    listBrief: text(summary('listBrief'), 'LIST_BRIEF'),
-    understanding: text(summary('understanding'), 'UNDERSTANDING'),
+    headline,
+    listBrief: headline,
+    understanding: overview ?? '问题正文已保存；综合认识尚未形成。',
     decisiveIssueKeys,
+    overviewStatus: context.persistedOverviewStatus ?? (value.overview !== undefined ? 'CURRENT' :
+      context.previous?.overviewStatus && context.previous.overviewStatus !== 'NOT_AVAILABLE' ?
+        (changedKeys.length || retirements.length ? 'STALE' : context.previous.overviewStatus) : 'NOT_AVAILABLE'),
     issues,
     roundCompletion,
     completionReason: text(value.completionReason, 'COMPLETION_REASON'),
@@ -419,7 +363,19 @@ function fail(code: string): never {
 function object(value: unknown, name: string): Record<string, unknown> {
   if (!value || typeof value !== 'object' || Array.isArray(value))
     fail(`${name}_INVALID`);
-  return value as Record<string, unknown>;
+  const result = value as Record<string, unknown>;
+  const fields: Record<string, string[]> = {
+    RETIRED_ISSUE: ['issueKey', 'reason'],
+    RISK: ['scenario', 'conditions', 'method', 'severity', 'likelihood', 'importantEvent', 'limitations', 'controlComparison', 'score', 'riskGrade'],
+    SEVERITY: ['label', 'reason', 'basisRefs'], LIKELIHOOD: ['label', 'reason', 'basisRefs'],
+    IMPORTANT_EVENT: ['event', 'basisRefs', 'reason'],
+    MEASURE: ['text', 'addresses', 'limitations', 'status', 'basisRefs'],
+    OTHER_CLASSIFICATION: ['method', 'value', 'reason', 'basisRefs'],
+    OPEN_QUESTION: ['question', 'affects', 'nextEvidence', 'reason'],
+    REQUIREMENT: ['methodRef', 'requirement', 'conditions', 'treatment', 'basisRefs', 'explanation'],
+  };
+  if (fields[name]) exact(result, fields[name]);
+  return result;
 }
 function text(value: unknown, name: string): string {
   if (typeof value !== 'string' || !value.trim()) fail(`${name}_INVALID`);
@@ -453,3 +409,7 @@ function choice<T extends string>(
 }
 
 export { jobAidReadingResult } from '@shared/jobaid-problem-assessment.interface';
+
+function exact(value: Record<string, unknown>, allowed: string[]): void {
+  for (const name of Object.keys(value)) if (!allowed.includes(name)) fail(`UNDECLARED_FIELD:${name}`);
+}

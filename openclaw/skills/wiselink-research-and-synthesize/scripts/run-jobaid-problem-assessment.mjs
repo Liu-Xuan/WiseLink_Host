@@ -1,4 +1,4 @@
-import { jobAidWorkTypeErrors, jobAidWorkDependencyErrors, JOBAID_STEP_SHAPE, decodeJobAidStep, jobAidFunctionSchema } from './jobaid-work-shape.mjs';
+import { jobAidWorkTypeErrors, JOBAID_STEP_SHAPE, decodeJobAidStep, jobAidFunctionSchema } from './jobaid-work-shape.mjs';
 import { randomUUID } from 'node:crypto';
 import { isDeepStrictEqual } from 'node:util';
 import {
@@ -21,7 +21,7 @@ export const JOBAID_PROBLEM_TASK_SCHEMA = 'wiselink.jobaid-problem-task.v2';
 export const MATTER_JOBAID_TASK_SCHEMA = 'wiselink.matter-jobaid-task.v2';
 const FUNCTION = 'return_wiselink_assessment_step';
 export const JOBAID_GENERATION_POLICY = Object.freeze({
-  version: 'continuous-issue-batches-v2', requestMaxCompletionTokens: 16000,
+  version: 'continuous-body-batches-v3', requestMaxCompletionTokens: 16000,
   payloadTargetTokens: [2000, 4000], maxScopeAdjustments: 0,
   basis: 'Application budget; 16000 is an observation on one Hosted M3 request, not a universal model limit.',
 });
@@ -674,14 +674,12 @@ function workShapeCorrection(code, work, modelInput) {
     }
     return { fieldErrors, instruction: `The Host rejected a ${rating} rating without business evidence. Engineer statements, method rules and historical candidates alone cannot establish this rating. Use an actually supporting DOCUMENT_PASSAGE or HOST_FACT only if available; otherwise set the unsupported ${rating} to null and preserve the scenario, conditions, evidence, limitation and open question. Never guess a rating or attach an unrelated citation to pass validation. Preserve all other justified work. The Host will validate the revised work.` };
   }
-  const fieldErrors = [...jobAidWorkTypeErrors(work),
-    ...(code === 'JOBAID_ISSUE_DEPENDENCY_MISSING' ? jobAidWorkDependencyErrors(work) : []),
-  ];
+  const fieldErrors = jobAidWorkTypeErrors(work);
   if (!fieldErrors.length) return {};
   return {
     fieldErrors,
     instruction:
-      'Reconcile every reported citation with the same issue sourceDependencies or premiseRefs; include the exact already-used evidenceRef, including requirementHandling.methodRef. Do not remove supported statements to hide a missing dependency. Correct the reported field types using the original evidence and the work-update shape. conditions, limitations and basisRefs are arrays of strings; addresses is one non-empty string describing the problem or risk addressed. Preserve justified analysis and unknowns; do not invent content or remove substantive work merely to pass validation. The Host will validate the revised work.' +
+      'Use exact delivered [[evidenceRef]] citations in body. Do not generate redundant dependency fields. Correct the reported field types using the original evidence and the work-update shape. conditions, limitations and basisRefs are arrays of strings; addresses is one non-empty string describing the problem or risk addressed. Preserve justified analysis and unknowns; do not invent content or remove substantive work merely to pass validation. The Host will validate the revised work.' +
       (code === 'JOBAID_MEASURE_ADDRESSES_INVALID'
         ? ' The rejected field is addresses; changing status does not repair it.'
         : ''),

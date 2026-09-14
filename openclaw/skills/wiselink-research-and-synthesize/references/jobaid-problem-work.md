@@ -1,6 +1,6 @@
 # JobAid 问题工作协议
 
-本协议适用于 `wiselink.jobaid-problem-task.v2` 与 Review c5。先发布双读 Host/Skill，再由 Host 的 `WL_JOBAID_PROBLEM_V2_ENABLED=1` 为新任务选择本协议。既有 TaskEnvelope 的版本与身份保持不变。
+本协议适用于 `wiselink.jobaid-problem-task.v2` 与 Review c5。Host 与 Skill c97 在同一暂停派发窗口切换，当前新写入只接受 work.v3 正文。已有 `WL_JOBAID_PROBLEM_V2_ENABLED=1` 是问题任务入口开关，不是工作正文版本。既有 TaskEnvelope 的版本与身份保持不变。
 
 ## 完整认识与来源
 
@@ -8,9 +8,11 @@
 
 围绕真实问题保存完整判断、支持/限制/冲突前提、风险情景、措施价值、其他分类、未决问题与相关原文义务。没有固定问题数、准则行数、每行字节预算；短摘要和详细正文来自同一工作版本，不能靠裁剪删掉条件、否定、紧迫性或重要未决项。
 
-模型给出稳定 `issueKey` 与 `claimKey`；Host 保存完整身份。未涉及的前次问题由 Host 完整保留，普通新证据只提交受影响的问题；`unchangedIssueKeys` 可为空。删除必须在 `retiredIssues` 中明确给出问题及理由。完整提交的问题优先于重复的 `unchangedIssueKeys` 登记；更新与删除、保留与删除不能冲突。
+模型只交付 `schemaVersion: wiselink.jobaid-problem-work.v3`、`issues: [{issueKey, question, body}]`、`roundCompletion`、`completionReason` 和 `changeSummary`。正文是直接保存的工程答案，在有关句群使用 `[[确切 evidenceRef]]`。Host 解析实际使用范围；引用存在不表示程序已证明支持关系。正文必须区分来源陈述、推断、条件和未知，不生成旧 statements/premises 或重复来源登记。
 
-候选保存不按来源类型判定工程判断是否成立。`SOURCE_FACT` 保留兼容字段名，表示模型归纳的来源陈述，不表示 Host 已核实；工程师报告、查询回答和历史工作可支持注明条件和局限的判断及定性风险评级。LLM 负责判断支持关系、条件与反证，Host 保留引用真实身份、实际交付、权限、版本和事务检查。普通保存不改变受控事实或执行正式业务动作。
+未涉及的问题由 Host 保留；相同 issueKey 完整替换正文与可选专业记录，不隐含保留旧风险等级。`retiredIssues` 明确删除及理由。可选 `overview` 只用于本批真正形成或核对的综合；未提供时，已有综合可能标为 STALE，不谎称覆盖新问题。没有实质问题不得建立空工作。风险、复看和方法条款等确有程序用途的记录按需提供。
+
+旧 v2 工作仅通过历史读取入口投影原有文字和确切来源，保持旧 workRef/revision 并标注历史身份；不写回旧记录、不作为新 FTD 成果，也不接收 v2 模型输出。页面、检索和后继分析读取同一正文，不建临时草稿或格式转换 Agent。
 
 ## 风险与方法版本
 
@@ -23,7 +25,7 @@ JA-AC 的严重性是 3/5/7/10，可能性是 10/7/5/3；Host 计算其乘积及
 ## 保存和最终提交
 
 - `read_assessment_sources`：携带已有 attempt lease、注册引用、读取目的和 EXACT/PAGE，Host fresh-authorize 后返回实际正文并持久记录已读范围。
-- `save_assessment_work`：驱动提供 requestId、expectedWorkRevision 与完整 workJson；Host 验证来源、前次问题分区、actor/tenant、当前版本、lease/cancel 和 CAS，在既有 ActionAttempt 下追加不可变工作版本。
+- `save_assessment_work`：驱动提供 requestId、expectedWorkRevision 与本批 workJson；Host 验证来源、问题身份、actor/tenant、当前版本、lease/cancel 和 CAS，在既有 ActionAttempt 下追加不可变工作版本。
 - `read_assessment_work`：读当前保存正文，或按原 requestId 恢复一次响应丢失。不得把没有保存的模型文字当作已完成工作。
 
 `IN_PROGRESS` 是分析中的实质工作；`COMPLETE_WITH_OPEN_QUESTIONS` 表示本轮完成且保留业务未知；`COMPLETE` 不允许仍有必须保留的待确认或未处理事项。模型超时、取消和提交失败是技术状态，不自动改变工作完成含义。

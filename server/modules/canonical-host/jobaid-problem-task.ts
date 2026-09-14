@@ -85,33 +85,18 @@ export interface JobAidProblemModelInput extends Record<string, unknown> {
   knowledgeAccess?: import("@shared/jobaid-problem-assessment.interface").JobAidKnowledgeAccess;
 }
 
-export type JobAidProblemModelWorkContent = Omit<
-  JobAidProblemWorkContent,
-  'evidence' | 'issues'
-> & {
-  issues: Array<
-    Omit<JobAidProblemIssue, 'issueRef' | 'statements'> & {
-      statements: Array<
-        Omit<AssessmentReadingClaim, 'claimId'> & { claimKey: string }
-      >;
-    }
-  >;
+export type JobAidProblemModelWorkContent = Pick<JobAidProblemWorkContent,
+  'schemaVersion' | 'roundCompletion' | 'completionReason' | 'changeSummary' | 'unchangedExplanation'> & {
+  overview: string;
+  issues: Array<Omit<JobAidProblemIssue, 'issueRef' | 'sourceDependencies' | 'premiseRefs' | 'legacyCriterionRefs' | 'riskScenarios'> & { riskScenarios: Array<Omit<JobAidProblemIssue['riskScenarios'][number], 'gradeMeaning'>> }>;
 };
 
-/** Business keys preserve continuity without exposing Host WorkItem/claim IDs. */
-export function jobAidProblemModelWorkContent(
-  content: JobAidProblemWorkContent,
-): JobAidProblemModelWorkContent {
-  const { evidence: _evidence, issues, ...rest } = structuredClone(content);
+export function jobAidProblemModelWorkContent(content: JobAidProblemWorkContent): JobAidProblemModelWorkContent {
   return {
-    ...rest,
-    issues: issues.map(({ issueRef: _issueRef, statements, ...issue }) => ({
-      ...issue,
-      statements: statements.map(({ claimId, ...claim }) => ({
-        ...claim,
-        claimKey: claimId.slice(claimId.lastIndexOf(':claim:') + 7),
-      })),
-    })),
+    schemaVersion: content.schemaVersion, overview: content.understanding,
+    roundCompletion: content.roundCompletion, completionReason: content.completionReason,
+    changeSummary: content.changeSummary, unchangedExplanation: content.unchangedExplanation,
+    issues: content.issues.map(({ issueRef: _ref, sourceDependencies: _deps, premiseRefs: _premises, legacyCriterionRefs: _legacy, ...issue }) => ({ ...structuredClone(issue), riskScenarios: issue.riskScenarios.map(({ gradeMeaning: _meaning, ...risk }) => structuredClone(risk)) })),
   };
 }
 

@@ -1,3 +1,4 @@
+import { readHistoricalJobAidWork } from './jobaid-historical-reading';
 import { validateMatterRevisitWhen } from './matter-revisit';
 import type {
   AssessmentEvidence,
@@ -205,6 +206,14 @@ export function parseEngineeringMatterWorkingState(
     parsed = JSON.parse(value) as unknown;
   } catch {
     fail('ENGINEERING_MATTER_WORKING_STATE_JSON_INVALID');
+  }
+  if (isRecord(parsed) && isRecord(parsed.problemWork) && parsed.problemWork.schemaVersion === 'wiselink.jobaid-problem-work.v2') {
+    const work = readHistoricalJobAidWork(parsed.problemWork, { matterId });
+    parsed.problemWork = work;
+    if (isRecord(parsed.substantiveResult) && isRecord(parsed.substantiveResult.content)) {
+      Object.assign(parsed.substantiveResult.content, { headline: work.headline, listBrief: work.listBrief, lead: work.understanding,
+        issueArticles: work.issues.map(({ issueKey, issueRef, question, body }) => ({ issueKey, issueRef, question, body })) });
+    }
   }
   validateState(parsed, matterId);
   return parsed;
@@ -704,6 +713,19 @@ function validateReadingResult(
     'evidenceRef',
     'EVIDENCE_REF_DUPLICATE',
   );
+  if (value.content.issueArticles !== undefined) {
+    if (!Array.isArray(value.content.issueArticles)) fail('ENGINEERING_BODY_INVALID');
+    const keys = new Set<string>();
+    for (const article of value.content.issueArticles) {
+      if (!isRecord(article)) fail('ENGINEERING_BODY_INVALID');
+      for (const field of ['issueKey', 'issueRef', 'question', 'body']) requiredText(article[field], 'ENGINEERING_BODY_INVALID');
+      const key = article.issueKey as string;
+      if (keys.has(key)) fail('ENGINEERING_BODY_DUPLICATE');
+      keys.add(key);
+      for (const match of (article.body as string).matchAll(/\[\[([^\[\]\r\n]+)\]\]/gu))
+        if (!evidence.has(match[1])) fail('ENGINEERING_BODY_SOURCE_MISSING');
+    }
+  }
   for (const claim of claims.values()) {
     for (const premise of claim.premises) {
       if (!evidence.has(premise.evidenceRef)) {

@@ -3,14 +3,10 @@ const text = { type: 'string', minLength: 1 };
 const list = (items) => ({ type: 'array', items });
 const texts = list(text);
 const sourceSelection = list(text); // only the observed READ sourceRefs singleton envelope
-const object = (properties) => ({ type: 'object', properties });
+const object = (properties) => ({ type: 'object', additionalProperties: false, properties });
 const choice = (...values) => ({ type: 'string', enum: values });
 const nullable = (schema) => ({ ...schema, nullable: true });
 const classification = (...labels) => nullable(object({ label: choice(...labels), reason: text, basisRefs: texts }));
-const premise = object({ evidenceRef: text,
-  role: choice('SUPPORTS', 'LIMITS', 'CONTEXT', 'CONFLICTS'),
-  explanation: text, limitation: nullable(text) });
-const premises = list(premise);
 const envelope = (item) => ({ type: 'object', additionalProperties: false,
   required: ['item'], properties: { item } });
 
@@ -30,17 +26,13 @@ export function jobAidFunctionSchema(shape) {
   // without inventing a missing limitation or broadening other collections.
   const transport = schema.type === 'array' ? { anyOf: [schema, envelope(schema),
     ...(shape === sourceSelection ? [envelope(schema.items)] : []),
-    ...(shape === premises ? [
-      envelope({ ...schema.items, required: Object.keys(premise.properties) }),
-      envelope(envelope(schema)),
-    ] : []),
   ] } : schema;
   return allowsNull ? { anyOf: [transport, { type: 'null' }] } : transport;
 }
 
 export const JOBAID_WORK_UPDATE_SHAPE = object({
-  schemaVersion: choice('wiselink.jobaid-problem-work.v2'),
-  headline: text, listBrief: text, understanding: text, decisiveIssueKeys: texts,
+  schemaVersion: choice('wiselink.jobaid-problem-work.v3'),
+  overview: text,
   roundCompletion: choice('IN_PROGRESS', 'COMPLETE', 'COMPLETE_WITH_OPEN_QUESTIONS'),
   completionReason: text, changeSummary: text, unchangedExplanation: text,
   unchangedIssueKeys: texts,
@@ -55,11 +47,7 @@ export const JOBAID_WORK_UPDATE_SHAPE = object({
   })),
   retiredIssues: list(object({ issueKey: text, reason: text })),
   issues: list(object({
-    issueKey: text, question: text, understanding: text,
-    statements: list(object({
-      claimKey: text, text, basis: choice('SOURCE_FACT', 'CONDITIONAL_INFERENCE'),
-      premises,
-    })),
+    issueKey: text, question: text, body: text,
     riskScenarios: list(object({ scenario: text, conditions: texts,
       method: choice('JA_AC_R01'),
       severity: classification('轻微', '重要', '严重', '灾难'),
@@ -78,7 +66,6 @@ export const JOBAID_WORK_UPDATE_SHAPE = object({
     requirementHandling: list(object({ methodRef: text, requirement: text, conditions: texts,
       treatment: choice('ADDRESSED', 'CONDITIONS_UNCONFIRMED', 'NOT_APPLICABLE_WITH_BASIS', 'LATER_BUSINESS_STAGE', 'NOT_YET_ADDRESSED'),
       basisRefs: texts, explanation: text })),
-    sourceDependencies: texts, premiseRefs: texts, legacyCriterionRefs: texts,
   })),
 });
 
@@ -116,38 +103,6 @@ export function jobAidWorkTypeErrors(work) {
 // Explain an existing Host dependency rejection; never insert references or
 // synthesize an evidence registry. Paths reveal where the model must reconcile
 // its own citations with the issue's declared dependencies.
-export function jobAidWorkDependencyErrors(work) {
-  const errors = [];
-  if (!Array.isArray(work?.issues)) return errors;
-  work.issues.forEach((issue, issueIndex) => {
-    const root = `work.issues[${issueIndex}]`;
-    const declared = new Set([
-      ...(Array.isArray(issue?.sourceDependencies) ? issue.sourceDependencies : []),
-      ...(Array.isArray(issue?.premiseRefs) ? issue.premiseRefs : []),
-    ].filter((ref) => typeof ref === 'string').map((ref) => ref.trim()));
-    const check = (ref, path) => {
-      if (typeof ref === 'string' && !declared.has(ref.trim())) errors.push({
-        path, expected: `reference included in ${root}.sourceDependencies or ${root}.premiseRefs`,
-        received: 'undeclared reference',
-      });
-    };
-    const each = (items, visit) => { if (Array.isArray(items)) items.forEach(visit); };
-    const basis = (value, path) => each(value?.basisRefs, (ref, i) => check(ref, `${path}.basisRefs[${i}]`));
-    each(issue?.statements, (statement, i) => each(statement?.premises, (premise, j) =>
-      check(premise?.evidenceRef, `${root}.statements[${i}].premises[${j}].evidenceRef`)));
-    each(issue?.riskScenarios, (risk, i) => {
-      for (const field of ['severity', 'likelihood', 'importantEvent']) basis(risk?.[field], `${root}.riskScenarios[${i}].${field}`);
-    });
-    for (const field of ['measures', 'otherClassifications', 'requirementHandling']) {
-      each(issue?.[field], (item, i) => {
-        basis(item, `${root}.${field}[${i}]`);
-        if (field === 'requirementHandling') check(item?.methodRef, `${root}.${field}[${i}].methodRef`);
-      });
-    }
-  });
-  return errors;
-}
-
 export const JOBAID_STEP_SHAPE = {
   type: 'object', additionalProperties: false, required: ['action'],
   properties: {
@@ -172,11 +127,6 @@ export function decodeJobAidValue(input, shape) {
     if (schema.type === 'array') {
       let items = isEnvelope(value) && Array.isArray(value.item) ? value.item : value;
       if (schema === sourceSelection && isEnvelope(value) && typeof value.item === 'string') items = [value.item];
-      if (schema === premises && isEnvelope(value)) {
-        if (isEnvelope(value.item) && Array.isArray(value.item.item)) items = value.item.item;
-        else if (value.item && !Array.isArray(value.item) && typeof value.item === 'object' &&
-          Object.keys(premise.properties).every((key) => Object.hasOwn(value.item, key))) items = [value.item];
-      }
       return Array.isArray(items) ? items.map((item) => decode(item, schema.items)) : items;
     }
     if (schema.type === 'object' && value && !Array.isArray(value) && typeof value === 'object') {

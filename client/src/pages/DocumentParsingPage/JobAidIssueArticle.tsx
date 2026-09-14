@@ -1,6 +1,6 @@
 import type { ReactNode } from 'react';
 import AssessmentEvidenceContext from '@client/src/features/matter/AssessmentEvidenceContext';
-import SavedAssessmentReading from '@client/src/features/matter/SavedAssessmentReading';
+import EngineeringIssueBody from '@client/src/features/matter/EngineeringIssueBody';
 import type { DocumentAssessmentEvidence } from '@client/src/features/matter/assessment-reading';
 import type {
   AssessmentEvidence,
@@ -115,19 +115,7 @@ export function JobAidIssueArticle({
   return (
     <>
       <h3>{issue.question}</h3>
-      <p>{issue.understanding}</p>
-      {issue.statements.length ? (
-        <SavedAssessmentReading
-          result={{
-            ...reading,
-            content: { ...reading.content, claims: issue.statements },
-          }}
-          depth="full"
-          presentation="claims"
-          locationSuffix={issue.issueKey}
-          onLocateDocument={onLocateDocument}
-        />
-      ) : null}
+      <EngineeringIssueBody body={issue.body} evidence={reading.evidence} onLocateDocument={onLocateDocument} />
       {issue.riskScenarios.map((risk, index) => (
         <section key={index} className="wl-jobaid-risk">
           <h4>风险情景：{risk.scenario}</h4>

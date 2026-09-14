@@ -1375,7 +1375,7 @@ test('requires 26 MCP capabilities, six review tools, and hosted provenance', ()
   assert.ok(HOST_MCP_TOOLS.includes('commit_applicability_candidate'));
   assert.equal(
     WISELINK_SKILL_VERSION,
-    'wiselink-research-and-synthesize@r09.c96',
+    'wiselink-research-and-synthesize@r09.c97',
   );
   assert.equal(
     WISELINK_SKILL_COMPATIBILITY_REF,
@@ -3209,10 +3209,10 @@ test('official initial model adapter selects the Overall v2 contract and sends t
 test('Matter Review accepts full issue work and keeps read coverage and registered evidence boundaries', async () => {
   const { reviewTask, delta } = await matterReviewFixture(1);
   const work = {
-    schemaVersion: 'wiselink.jobaid-problem-work.v2', headline: '完整问题工作', listBrief: '保留条件',
+    schemaVersion: 'wiselink.jobaid-problem-work.v3', headline: '完整问题工作', listBrief: '保留条件',
     understanding: '保留三个独立条件', completionReason: '本轮完成，构型待核查', changeSummary: '形成完整问题',
     unchangedExplanation: '首次保存', roundCompletion: 'COMPLETE_WITH_OPEN_QUESTIONS', decisiveIssueKeys: ['scope'],
-    issues: [{ issueKey: 'scope', statements: delta.claimDelta.additions.map(({ claimId, ...claim }) => ({ ...claim, claimKey: claimId })) }],
+    issues: [{ issueKey: 'scope', question: '哪些条件仍未核实？', body: delta.claimDelta.additions.map(claim => `${claim.text} ${claim.premises.map(p => `[[${p.evidenceRef}]]`).join(' ')}`).join('\n\n') }],
   };
   const fullDelta = { ...delta, claimDelta: null, readingPresentation: null, problemWork: work };
   validateReviewCandidate(reviewTask, matterReviewCandidate(reviewTask, fullDelta));
@@ -3220,7 +3220,7 @@ test('Matter Review accepts full issue work and keeps read coverage and register
     claimDelta: delta.claimDelta, readingPresentation: delta.readingPresentation,
   })), /REVIEW_MATTER_PROBLEM_DUPLICATE_READING/u);
   const invalid = structuredClone(fullDelta);
-  invalid.problemWork.issues[0].statements[0].premises[0].evidenceRef = 'not-authorized';
+  invalid.problemWork.issues[0].body += ' [[not-authorized]]';
   assert.throws(() => validateReviewCandidate(reviewTask, matterReviewCandidate(reviewTask, invalid)), /REVIEW_JOBAID_EVIDENCE_NOT_REGISTERED/u);
   const wrongScope = structuredClone(fullDelta);
   wrongScope.coverageUpdates[0].inputRef = 'matter-input:3';
@@ -6985,7 +6985,7 @@ test('JobAid review uses a typed candidate and preserves quoted text, nulls, loc
     responseType: 'RESYNTHESIS_RESULT', answer: '条件“Windows 10”\n路径 C:\\test',
     sourceRefs: [], missingInputs: [], candidateEvidenceRefs: [], reviewActionDraft: null,
     affectedItemIds: [], warnings: [],
-    jobAidWorkingDelta: { schemaVersion: 'wiselink.jobaid-problem-work.v2',
+    jobAidWorkingDelta: { schemaVersion: 'wiselink.jobaid-problem-work.v3',
       issues: [{ issueKey: 'ref1', riskScenarios: [{ conditions: ['未核查'], likelihood: null }],
         unknownField: { item: ['preserve'] } }], unchangedIssueKeys: ['app1'] },
   };
@@ -7215,7 +7215,7 @@ test('flat JobAid wire refuses misplaced fields and the former wrapper without m
 
 test('JobAid derives only an omitted reply label and never replaces explicit invalid metadata or engineering work', async () => {
   const base = { answer: '待核对的候选', sourceRefs: [], missingInputs: [], candidateEvidenceRefs: [], warnings: [] };
-  const work = { schemaVersion: 'wiselink.jobaid-problem-work.v2', issues: [{ issueKey: 'unchanged-engineering-content' }] };
+  const work = { schemaVersion: 'wiselink.jobaid-problem-work.v3', issues: [{ issueKey: 'unchanged-engineering-content' }] };
   for (const [extra, expected] of [[{}, 'ANSWER'], [{ jobAidWorkingDelta: null }, 'ANSWER'],
     [{ jobAidWorkingDelta: work }, 'RESYNTHESIS_RESULT'], [{ responseType: 'CLARIFYING_QUESTION' }, 'CLARIFYING_QUESTION']]) {
     const authored = { ...base, ...extra };
@@ -7409,10 +7409,10 @@ test('JobAid omitted collections propose no entries while supplied malformed val
   }
 });
 
-test('omitted JobAid retirement lists preserve prior-issue partition checks', async () => {
+test('omitted JobAid retirement lists retain prior issues and reject malformed explicit lists', async () => {
   const { task, candidate } = await emptyJobAidReviewFixture();
   task.jobAidContext.previousWork.content.issues = [{ issueKey: 'issue-1' }];
-  const delta = { schemaVersion: 'wiselink.jobaid-problem-work.v2', headline: '当前认识', listBrief: '概览',
+  const delta = { schemaVersion: 'wiselink.jobaid-problem-work.v3', headline: '当前认识', listBrief: '概览',
     understanding: '保留原认识', completionReason: '仍待核对', changeSummary: '无新增工作', unchangedExplanation: '原问题保留',
     issues: [], unchangedIssueKeys: ['issue-1'] };
   const validate = (work) => validateReviewCandidate(task, { ...candidate, jobAidWorkingDelta: work });
@@ -7421,7 +7421,7 @@ test('omitted JobAid retirement lists preserve prior-issue partition checks', as
   assert.throws(() => validate({ ...delta, unchangedIssueKeys: null }), /REVIEW_JOBAID_UNCHANGED_INVALID/u);
   const omitted = { ...delta };
   delete omitted.unchangedIssueKeys;
-  assert.throws(() => validate(omitted), /REVIEW_JOBAID_PRIOR_ISSUE_OMITTED/u);
+  assert.doesNotThrow(() => validate(omitted));
   assert.doesNotThrow(() => validate({ ...omitted, issues: [{ issueKey: 'issue-1' }] }));
 });
 
@@ -7429,7 +7429,7 @@ test('explicit assessment update rejects prose-only success and accepts a correc
   const { task, candidate } = await emptyJobAidReviewFixture();
   task.context.purpose = 'UPDATE_ASSESSMENT';
   assert.throws(() => validateReviewCandidate(task, candidate), /REVIEW_UPDATE_WORKING_DELTA_REQUIRED/u);
-  const work = { schemaVersion: 'wiselink.jobaid-problem-work.v2', headline: '待核对', listBrief: '已保存问题',
+  const work = { schemaVersion: 'wiselink.jobaid-problem-work.v3', headline: '待核对', listBrief: '已保存问题',
     understanding: '未取得发生率，保留未知', completionReason: '待受控资料', changeSummary: '修正无依据的可能性判断',
     issues: [], unchangedIssueKeys: [], unchangedExplanation: '当前没有已保存问题需要保留' };
   let requests = 0;
@@ -7504,26 +7504,25 @@ test('citation feedback never fetches out-of-scope sources or treats incomplete 
 
 test('JobAid invalid evidence feedback identifies every validated field without repairing values', async () => {
   const { task, candidate } = await emptyJobAidReviewFixture();
-  const issue = { issueKey: 'one', sourceDependencies: ['bad-1'], premiseRefs: ['bad-2'],
-    statements: [{ premises: [{ evidenceRef: 'bad-3' }] }],
+  const issue = { issueKey: 'one', question: '来源诊断', body: '[[bad-1]] [[bad-2]] [[bad-3]]',
     riskScenarios: [{ severity: { basisRefs: ['bad-4'] }, likelihood: { basisRefs: ['bad-5'] }, importantEvent: { basisRefs: ['bad-6'] } }],
     measures: [{ basisRefs: ['bad-7'] }], otherClassifications: [{ basisRefs: ['bad-8'] }],
     requirementHandling: [{ methodRef: 'bad-9', basisRefs: ['bad-10'] }] };
-  const delta = { schemaVersion: 'wiselink.jobaid-problem-work.v2', headline: '待核', listBrief: '待核',
+  const delta = { schemaVersion: 'wiselink.jobaid-problem-work.v3', headline: '待核', listBrief: '待核',
     understanding: '保留未知', completionReason: '待证据', changeSummary: '纠正风险', unchangedExplanation: '保留其余', issues: [issue] };
   const before = structuredClone(delta);
   assert.throws(() => validateReviewCandidate(task, { ...candidate, jobAidWorkingDelta: delta }), (error) => {
     assert.equal(error.message, 'REVIEW_JOBAID_EVIDENCE_NOT_REGISTERED');
     assert.equal(error.invalidEvidenceRefCount, 10);
     assert.deepEqual(error.invalidEvidenceRefs.map((entry) => entry.evidenceRef), Array.from({ length: 10 }, (_, i) => `bad-${i + 1}`));
-    assert.equal(error.invalidEvidenceRefs[2].path, 'jobAidWorkingDelta.issues[0].statements[0].premises[0].evidenceRef');
+    assert.equal(error.invalidEvidenceRefs[2].path, 'jobAidWorkingDelta.issues[0].body@20');
     assert.equal(error.invalidEvidenceRefs[8].path, 'jobAidWorkingDelta.issues[0].requirementHandling[0].methodRef');
     return true;
   });
   assert.deepEqual(delta, before);
-  delta.issues[0].sourceDependencies = Array.from({ length: 40 }, (_, i) => `bad-${i}`);
+  delta.issues[0].body = Array.from({ length: 40 }, (_, i) => `[[bad-${i}]]`).join(' ');
   assert.throws(() => validateReviewCandidate(task, { ...candidate, jobAidWorkingDelta: delta }), (error) => {
-    assert.equal(error.invalidEvidenceRefCount, 49);
+    assert.equal(error.invalidEvidenceRefCount, 47);
     assert.equal(error.invalidEvidenceRefs.length, 32);
     return true;
   });
@@ -7536,9 +7535,9 @@ test('JobAid reference rejection returns exact paths and requires a fresh valida
   task.jobAidContext.sourceCatalog = [evidence];
   task.jobAidContext.initiallyDeliveredRefs = [evidence.evidenceRef];
   task.jobAidContext.modelInput.deliveredEvidence = [evidence];
-  const work = { schemaVersion: 'wiselink.jobaid-problem-work.v2', headline: '当前认识', listBrief: '待核',
+  const work = { schemaVersion: 'wiselink.jobaid-problem-work.v3', headline: '当前认识', listBrief: '待核',
     understanding: '风险可能性未知', completionReason: '待证据', changeSummary: '撤回无依据概率', unchangedExplanation: '保留其他',
-    issues: [{ issueKey: 'one', statements: [{ premises: [{ evidenceRef: 'method:scoope' }] }] }] };
+    issues: [{ issueKey: 'one', question: '方法限制', body: '[[method:scoope]]' }] };
   const before = structuredClone(work);
   let requests = 0;
   let validations = 0;
@@ -7551,13 +7550,13 @@ test('JobAid reference rejection returns exact paths and requires a fresh valida
       const feedback = JSON.parse(JSON.parse(init.body).messages.at(-1).content);
       assert.equal(feedback.candidateAccepted, false);
       assert.deepEqual(feedback.evidenceReferenceFeedback.invalidReferences, [{
-        path: 'jobAidWorkingDelta.issues[0].statements[0].premises[0].evidenceRef', evidenceRef: 'method:scoope' }]);
+        path: 'jobAidWorkingDelta.issues[0].body@0', evidenceRef: 'method:scoope' }]);
       assert.equal(feedback.evidenceReferenceFeedback.invalidReferenceCount, 1);
       assert.deepEqual(feedback.availableEvidenceRefs, ['method:scope']);
       assert.deepEqual(feedback.evidenceReferenceFeedback.readEvidenceRefs, []);
     }
     const authored = structuredClone(work);
-    if (requests === 2) authored.issues[0].statements[0].premises[0].evidenceRef = 'method:scope';
+    if (requests === 2) authored.issues[0].body = '[[method:scope]]';
     return Response.json({ choices: [{ message: { content: null, tool_calls: [{ id: `evidence-${requests}`, type: 'function',
       function: { name: 'return_wiselink_review_candidate', arguments: JSON.stringify({ answer: requests === 1 ? '未保存' : '重新核对', jobAidWorkingDelta: authored }) } }] } }] });
   } });

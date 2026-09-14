@@ -147,9 +147,12 @@ export async function consumeHostedMatter(options, dependencies) {
 }
 
 function modelWork(content) {
-  const { evidence: _evidence, issues, ...rest } = structuredClone(content);
-  return { ...rest, issues: issues.map(({ issueRef: _issueRef, statements, ...issue }) => ({ ...issue,
-    statements: statements.map(({ claimId, ...claim }) => ({ ...claim, claimKey: claimId.slice(claimId.lastIndexOf(':claim:') + 7) })) })) };
+  if (content.schemaVersion !== 'wiselink.jobaid-problem-work.v3') throw new Error('MATTER_WORK_SCHEMA_REQUIRES_COORDINATED_UPGRADE');
+  return { schemaVersion: content.schemaVersion, overview: content.understanding,
+    roundCompletion: content.roundCompletion, completionReason: content.completionReason,
+    changeSummary: content.changeSummary, unchangedExplanation: content.unchangedExplanation,
+    issues: content.issues.map(({ issueRef, sourceDependencies, premiseRefs, legacyCriterionRefs, ...issue }) => ({
+      ...issue, riskScenarios: issue.riskScenarios.map(({ gradeMeaning, ...risk }) => risk) })) };
 }
 
 async function withLeaseHeartbeat(invoke, heartbeat) {

@@ -12,7 +12,7 @@ description: Orchestrate the single official hosted WiseLink engineering profile
 - hosted app：`app_17c3zn24kv2`
 - logical profile：`wiselink-engineering`
 - model policy：`official-hosted-profile-config`（任务可绑定已登记的内置或用户授权自定义模型；仍经唯一官方 Hosted profile/Gateway）
-- Skill：`wiselink-research-and-synthesize@r09.c96`
+- Skill：`wiselink-research-and-synthesize@r09.c97`
 - Skill compatibility：`wiselink-research-and-synthesize@r09`（历史任务最低接受 `r09.c10`，翻译 v2 必须为 `r09.c44` 或更新兼容包）
 - Host MCP：`wiselink-openclaw-engineering-assessment@1.2.0`（保留既有工具，新增语义翻译工作与 JobAid 来源/工作工具）
 - Host 集成提交：以本次发布包清单记录的实际提交为准
@@ -50,7 +50,7 @@ Host 新任务若为 `wiselink.jobaid-problem-task.v2`，执行问题分析协�
 
 `wiselink.3_1.applicability_task.v2` 的 `sourceReadingMode=VERIFIED_ENGLISH` 使用实际英文 SourceExpressions/SourceContext，`bilingualBinding=null`、`bilingualSourceUnits=[]`。保持原 AST、Host Fleet 匹配与 UNKNOWN 边界。旧 v1 继续检查其原译文绑定。
 
-`wiselink.3_1.review_turn_task.v1.c5` 的模型上下文是 `context.problemAssessment`。新候选 c5 通过 `jobAidWorkingDelta` 表达受影响问题，显式保留或说明撤回其他问题；普通解释用 null。Host 在同一事务保存问题工作和 Review 回答，不执行正式 ReviewAction。详细协议见 [JobAid 问题工作](references/jobaid-problem-work.md)。
+`wiselink.3_1.review_turn_task.v1.c5` 的模型上下文是 `context.problemAssessment`。新候选 c5 通过 `jobAidWorkingDelta` 表达受影响问题，未涉及问题由 Host 保留，撤回问题须说明理由；普通解释用 null。Host 在同一事务保存问题工作和 Review 回答，不执行正式 ReviewAction。详细协议见 [JobAid 问题工作](references/jobaid-problem-work.md)。
 
 ## 不变边界
 
@@ -98,7 +98,7 @@ Host 新任务若为 `wiselink.jobaid-problem-task.v2`，执行问题分析协�
 
 c35 曾针对 M3 JobAid 的 `length/incomplete_result` 失败申请 32000 输出额度。c38 按用户后续要求统一
 将明确选择 M3 的初始分析和 Review 请求设为官方最大 524288，并配套更新同一 M3 条目的 maxTokens。
-旧 Dynamic 任务仍返回全部 N 项并通过原校验；问题工作 v2 按上文独立协议执行。
+旧 Dynamic 任务仍返回全部 N 项并通过原校验；问题工作 v3 正文按上文独立协议执行。
 
 Host 可在 JobAid / Overall 输入的 `commonContext`，以及 Review 的 `context.commonContext` 中提供评估前
 共同背景：主文件身份与章节目录、关联资料作用与实际读取片段、此前普通讨论及工作回答。旧任务没有该字段时仍按原输入执行。
@@ -557,7 +557,7 @@ Interactive Review 的复杂 ResultEnvelope 必须由 `sealResultEnvelope` 生�
 当前 validator 强制：
 
 - `modelVersion` 优先取响应中可读实际模型；绑定任务未回报实际模型时使用 `configured-route:<modelRef>`，旧无绑定任务使用无 fallback 的 configured endpoint。后两者只证明路由，不代表已暴露下游具体模型，也不做具体版本等值判断
-- `skillVersion=wiselink-research-and-synthesize@r09.c96`
+- `skillVersion=wiselink-research-and-synthesize@r09.c97`
 - `toolVersions.wiselink-openclaw-engineering-assessment=1.2.0`
 - `promptVersion` 非空并来自当前运行
 - task/result exact binding、SourceRef allowlist 和 canonical hash 一致

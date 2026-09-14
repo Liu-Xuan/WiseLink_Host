@@ -115,11 +115,8 @@ const context = {
 };
 function proposal(text = document.excerpt) {
   return {
-    schemaVersion: 'wiselink.jobaid-problem-work.v2',
-    headline: '仍需持续状态证据',
-    listBrief: '单次正常检查不能排除间歇状态。',
-    understanding: text,
-    decisiveIssueKeys: ['condition'],
+    schemaVersion: 'wiselink.jobaid-problem-work.v3',
+    overview: text,
     roundCompletion: 'COMPLETE_WITH_OPEN_QUESTIONS',
     completionReason: '本轮来源分析完成；缺失证据明确保留。',
     changeSummary: '更新条件理解。',
@@ -128,22 +125,7 @@ function proposal(text = document.excerpt) {
       {
         issueKey: 'condition',
         question: '更换条件是否成立？',
-        understanding: text,
-        statements: [
-          {
-            claimKey: 'source-condition',
-            text,
-            basis: 'SOURCE_FACT',
-            premises: [
-              {
-                evidenceRef: document.evidenceRef,
-                role: 'SUPPORTS',
-                explanation: '保留持续 5 秒的原文条件。',
-                limitation: null,
-              },
-            ],
-          },
-        ],
+        body: `${text} [[${document.evidenceRef}]]`,
         riskScenarios: [],
         measures: [],
         otherClassifications: [],
@@ -156,8 +138,6 @@ function proposal(text = document.excerpt) {
           },
         ],
         requirementHandling: [],
-        sourceDependencies: [document.evidenceRef],
-        premiseRefs: [],
       },
     ],
     unchangedIssueKeys: [],
@@ -471,6 +451,7 @@ test(
               return {original,structuredSource:original.source,run:{...original.binding,
                 manifestArtifact:{relativePath:'original/manifest.json',readback:'VERIFIED',sha256:'b'.repeat(64),byteLength:100}}};
             }},
+            { read: async () => null },
           );
           const begin = (candidate, requestId) =>
             hosted(() =>
@@ -1060,12 +1041,12 @@ test(
               saved.workRevisionRef,
             );
             assert.equal(
-              first.update.revision.content.issues[0].statements[0].claimId,
-              saved.content.issues[0].statements[0].claimId,
+              first.update.revision.content.issues[0].issueRef,
+              saved.content.issues[0].issueRef,
             );
             assert.equal(
-              first.update.revision.content.issues[0].statements[0].text,
-              raw.issues[0].statements[0].text,
+              first.update.revision.content.issues[0].body,
+              raw.issues[0].body,
             );
             saved = first.update.revision;
             await sql`UPDATE action_attempt SET status = 'SUCCEEDED' WHERE attempt_id = ${attemptId}`;
