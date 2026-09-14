@@ -4,21 +4,21 @@
 
 本轮在更正任务进入可运行状态前复核目标问题的完整来源集合：缺少已登记的 `method:applicability` 时立即拒绝，未创建 `action_attempt`、未调用生成；合法完整请求的保存与回放链保持通过。定向 PostgreSQL 子测试 `targeted correction uses real PostgreSQL fences, durable generation and exact work replay` 1 pass/0 skip，server typecheck 退出0，diff check 通过。
 
-该修复仅涉及 Host `matter-action-attempt.service.ts` 与对应 PostgreSQL 测试，尚未发布；当前线上 Host 仍为 `8b706172a97a83d837b869bec6ab4d8def24e519` / release `7685407198491872522`、Skill c103。它用于避免领取后因漏引用进入 RUNNING 重试，不改变来源权限、解析、额度或正式采用边界。网络同步仍受本机代理 `127.0.0.1:7897` 阻塞。
+该修复仅涉及 Host `matter-action-attempt.service.ts` 与对应 PostgreSQL 测试，尚未发布；当前线上 Host 为 `81ad5e47633758a85ceb1c9220e7263604b15222` / release `7685407198491872522`、Skill c103。它用于避免领取后因漏引用进入 RUNNING 重试，不改变来源权限、解析、额度或正式采用边界。网络同步仍受本机代理 `127.0.0.1:7897` 阻塞。
 
 ## 2026-09-14 工作15已保存；内容综合仍未闭合
 
 新的正常后继已 `SUCCEEDED` 并保存工作15 `MWREV-850e2caa-3f39-4602-9993-587f3959c502`；其他四个问题保持相同，过程性 `openQuestions` 已清理。requirement 标题仍保留绝对表述，`changeSummary` 仍误称本轮才修改 treatment，因此 M 不接受内容完成，整体一致性仍待后续更正。
 
-当前运行基线仍为 Host `8b706172a97a83d837b869bec6ab4d8def24e519` / release `7685407198491872522`、Skill c103。新的正常后继 `AQ-01ded20ff4f3451a888c273cc3771c93`（attempt `ATT-395fe166`，requestId `rev6-work14-official-consistency-fullrefs-20260914`）为本次恢复运行；本地 nextForRuntime idle 修复尚未发布，不能混称为线上已生效。前端仍由妙搭独立重构，本分支未改前端。
+当前运行基线为 Host `81ad5e47633758a85ceb1c9220e7263604b15222` / release `7685407198491872522`、Skill c103。新的正常后继 `AQ-01ded20ff4f3451a888c273cc3771c93`（attempt `ATT-395fe166`，requestId `rev6-work14-official-consistency-fullrefs-20260914`）为本次恢复运行；本地 nextForRuntime idle 修复尚未发布，不能混称为线上已生效。前端仍由妙搭独立重构，本分支未改前端。
 
 ## 2026-09-14 nextForRuntime 成功终态回放修复：本地待发布
 
 已接受本轮最小修复：自动幂等命中既有 `SUCCEEDED` attempt 时返回 idle（`next=null`），不再将成功终态映射为 `REQUIRES_ATTENTION`，也不创建新 attempt。定向子测试 `Matter commits frozen inputs while later material remains pending` 实际执行通过（1 pass/0 fail/0 skip）；为适配当前 v3 canonical 校验，测试 fixture 做了局部字段对齐。该修复仍是本地待发布候选，未计入线上 Host。
 
-线上基线仍为 Host `8b706172a97a83d837b869bec6ab4d8def24e519` / release `7685407198491872522`，Skill c103 未变，前端未改。AQ-84c70 因准备遗漏 `method:applicability` 未生成/保存，已按正常路径 `CANCELLED`；旧 AQ-5e58c5abe46a4420878d164cec4206a6 的 `RUNNING` 记录已更正为实际 `FAILED`，工作14保留。
+线上基线为 Host `81ad5e47633758a85ceb1c9220e7263604b15222` / release `7685407198491872522`，Skill c103 未变，前端未改。AQ-84c70 因准备遗漏 `method:applicability` 未生成/保存，已按正常路径 `CANCELLED`；旧 AQ-5e58c5abe46a4420878d164cec4206a6 的 `RUNNING` 记录已更正为实际 `FAILED`，工作14保留。
 
-新的正常后继 `AQ-01ded20ff4f3451a888c273cc3771c93`（attempt `ATT-395fe166`，requestId `rev6-work14-official-consistency-fullrefs-20260914`，deadline 2026-09-15 00:28:45）正在一次恢复运行；此前 cron 15 分钟退避，当前无其他执行。该运行尚未产生新 workRef，不能与本地 idle 修复混称为已上线或已完成验收。
+历史记录：新的正常后继 `AQ-01ded20ff4f3451a888c273cc3771c93`（attempt `ATT-395fe166`，requestId `rev6-work14-official-consistency-fullrefs-20260914`，deadline 2026-09-15 00:28:45）已完成并形成工作15；此前“正在恢复/尚无新 workRef”仅适用于受理时点，已由顶部工作15结果取代。
 
 ## 2026-09-14 更正契约候选：Host-only，前端发布边界已核对
 
