@@ -74,7 +74,8 @@ export async function consumeHostedMatter(options, dependencies) {
         resumeSavedWork: invocation.resumeSavedWork,
         assessmentCheckpoint: checkpoint,
         recoveredInitialResponse: candidateRecovery?.response ?? nativeRecovery?.response,
-        recoveredInitialContext: Boolean(candidateRecovery),
+        recoveredInitialContext: Boolean(candidateRecovery?.response),
+        recoveredSourceContext: candidateRecovery?.mode === 'SOURCE_CONTEXT_ONLY',
         observeModelOutput: async (shape, round) => {
           const key = `assessment-round-${round}-output-shape`;
           if (!await checkpoint.readOptional(key)) await checkpoint.writeOnce(key, shape);
