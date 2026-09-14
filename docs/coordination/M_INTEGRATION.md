@@ -4,7 +4,7 @@
 
 c98真实后继成功进入SOURCE_CONTEXT_ONLY，并取得完整函数载荷：round1 FINISH未保存被拒，round2 SAVE_WORK约39669B参数，round3再次SAVE。Host拒绝JOBAID_UNDECLARED_FIELD：顶层openQuestions/reviewConditions/workRevision不属于更新契约，round3仅去掉workRevision。未产生新workRef。c98反馈只报告泛化错误，类型诊断未枚举未知字段；更正耗尽后普通异常也未进入任务终态。
 
-c99精确返回未知字段路径及该层allowedFields，要求模型将实际未知/复看含义放回正确字段或正文，不由程序删字段或修补候选；达到原有更正上限且明确Host工作校验拒绝时，正常FINISH FAILED/JOBAID_WORK_VALIDATION_FAILED，未知SAVE响应仍不判终态。320项通过，未增加纠正次数、不改模型/额度/Host，待官方安装后先正常收尾旧在途，再按完整候选后继路径更正并保存。
+c99精确返回未知字段路径及该层allowedFields，要求模型将实际未知/复看含义放回正确字段或正文，不由程序删字段或修补候选；达到原有更正上限且明确Host工作校验拒绝时，正常FINISH FAILED/JOBAID_WORK_VALIDATION_FAILED，未知SAVE响应仍不判终态。320项通过，未增加纠正次数、不改模型/额度/Host，待官方安装后先正常收尾旧在途，再按完整候选后继路径更正并保存。 c99源码5f32ae8c已双远端同步，包385769B/SHA256 03a7afdf238f829563e448de0a6a51c5481c96697c255b70655b52362220a833已生成上传。自动审批拒绝按快照暂停任务，认为可能无差别禁用未授权任务；未执行该暂停、未安装c99，已请求仅三项既有任务的升级窗口暂停/原样恢复授权，不换方式绕过。实际安装仍c98/Host8cc425b。
 
 ## 2026-09-14 c98 已取证后继恢复（已安装，正常后继运行中）
 
