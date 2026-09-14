@@ -1,4 +1,4 @@
-import { jobAidWorkTypeErrors, jobAidWorkDependencyErrors, JOBAID_STEP_SHAPE, decodeJobAidStep, jobAidFunctionSchema } from './jobaid-work-shape.mjs';
+import { jobAidWorkTypeErrors, JOBAID_STEP_SHAPE, decodeJobAidStep, jobAidFunctionSchema } from './jobaid-work-shape.mjs';
 import { randomUUID } from 'node:crypto';
 import { isDeepStrictEqual } from 'node:util';
 import {
@@ -21,8 +21,8 @@ export const JOBAID_PROBLEM_TASK_SCHEMA = 'wiselink.jobaid-problem-task.v2';
 export const MATTER_JOBAID_TASK_SCHEMA = 'wiselink.matter-jobaid-task.v2';
 const FUNCTION = 'return_wiselink_assessment_step';
 export const JOBAID_GENERATION_POLICY = Object.freeze({
-  version: 'continuous-issue-batches-v1', requestMaxCompletionTokens: 16000,
-  payloadTargetTokens: [2000, 4000], maxScopeAdjustments: 2,
+  version: 'continuous-body-batches-v3', requestMaxCompletionTokens: 16000,
+  payloadTargetTokens: [2000, 4000], maxScopeAdjustments: 0,
   basis: 'Application budget; 16000 is an observation on one Hosted M3 request, not a universal model limit.',
 });
 
@@ -405,26 +405,6 @@ export async function invokeHostedJobAidProblemModel(
       },
       round,
     );
-    // The native profile can have tools. An outer candidate function does not
-    // prove generation-only execution; an ambiguous 408/timeout is not retried.
-    if (!response.ok) {
-      const error = new Error(`JOBAID_GATEWAY_HTTP_${response.status}${gatewayFailure === 'UNCLASSIFIED' ? '' : ':' + gatewayFailure}`);
-      // The gateway explicitly reports an ended, incomplete invocation. This
-      // is a failed result, unlike a transport timeout with an unknown outcome.
-      if ((response.status === 400 && gatewayFailure === 'INCOMPLETE_TERMINAL_RESPONSE') ||
-          (response.status === 502 && gatewayFailure === 'TOOL_CHOICE_NOT_SATISFIED')) {
-        error.terminalAssessmentFailure = {
-          errorCode: 'JOBAID_INCOMPLETE_TERMINAL_RESPONSE',
-          provenance: {
-            modelVersion: `configured-route:${options.executionModel?.modelRef ?? options.configuredModelVersion}`,
-            promptVersion: 'wiselink-jobaid-problem@v2', skillVersion: WISELINK_SKILL_VERSION,
-            toolVersions: { [WISELINK_HOST_MCP_NAME]: WISELINK_HOST_MCP_VERSION, 'jobaid-problem-protocol': '2' },
-            runMetrics: { durationMs: Date.now() - startedAt, inputUnits, outputUnits },
-          },
-        };
-      }
-      throw error;
-    }
     // Only an explicit completion reason establishes truncation. Never infer
     // length from generic 502/tool-choice failures or repair partial arguments.
     if (payload.choices?.length === 1 && payload.choices[0].finish_reason === 'length') {
@@ -448,6 +428,26 @@ export async function invokeHostedJobAidProblemModel(
       await checkpoint?.write('assessment-state', { round: round + 1, messages,
         expectedWorkRevision, saved, corrections, inputUnits, outputUnits, scopeAdjustments, sourceMetadata });
       continue;
+    }
+    // The native profile can have tools. An outer candidate function does not
+    // prove generation-only execution; an ambiguous 408/timeout is not retried.
+    if (!response.ok) {
+      const error = new Error(`JOBAID_GATEWAY_HTTP_${response.status}${gatewayFailure === 'UNCLASSIFIED' ? '' : ':' + gatewayFailure}`);
+      // The gateway explicitly reports an ended, incomplete invocation. This
+      // is a failed result, unlike a transport timeout with an unknown outcome.
+      if ((response.status === 400 && gatewayFailure === 'INCOMPLETE_TERMINAL_RESPONSE') ||
+          (response.status === 502 && gatewayFailure === 'TOOL_CHOICE_NOT_SATISFIED')) {
+        error.terminalAssessmentFailure = {
+          errorCode: 'JOBAID_INCOMPLETE_TERMINAL_RESPONSE',
+          provenance: {
+            modelVersion: `configured-route:${options.executionModel?.modelRef ?? options.configuredModelVersion}`,
+            promptVersion: 'wiselink-jobaid-problem@v2', skillVersion: WISELINK_SKILL_VERSION,
+            toolVersions: { [WISELINK_HOST_MCP_NAME]: WISELINK_HOST_MCP_VERSION, 'jobaid-problem-protocol': '2' },
+            runMetrics: { durationMs: Date.now() - startedAt, inputUnits, outputUnits },
+          },
+        };
+      }
+      throw error;
     }
     if (shape.hasAnalysis || payload.choices?.length !== 1)
       throw new Error('JOBAID_MODEL_OUTPUT_CHANNEL_INVALID');
@@ -674,14 +674,12 @@ function workShapeCorrection(code, work, modelInput) {
     }
     return { fieldErrors, instruction: `The Host rejected a ${rating} rating without business evidence. Engineer statements, method rules and historical candidates alone cannot establish this rating. Use an actually supporting DOCUMENT_PASSAGE or HOST_FACT only if available; otherwise set the unsupported ${rating} to null and preserve the scenario, conditions, evidence, limitation and open question. Never guess a rating or attach an unrelated citation to pass validation. Preserve all other justified work. The Host will validate the revised work.` };
   }
-  const fieldErrors = [...jobAidWorkTypeErrors(work),
-    ...(code === 'JOBAID_ISSUE_DEPENDENCY_MISSING' ? jobAidWorkDependencyErrors(work) : []),
-  ];
+  const fieldErrors = jobAidWorkTypeErrors(work);
   if (!fieldErrors.length) return {};
   return {
     fieldErrors,
     instruction:
-      'Reconcile every reported citation with the same issue sourceDependencies or premiseRefs; include the exact already-used evidenceRef, including requirementHandling.methodRef. Do not remove supported statements to hide a missing dependency. Correct the reported field types using the original evidence and the work-update shape. conditions, limitations and basisRefs are arrays of strings; addresses is one non-empty string describing the problem or risk addressed. Preserve justified analysis and unknowns; do not invent content or remove substantive work merely to pass validation. The Host will validate the revised work.' +
+      'Use exact delivered [[evidenceRef]] citations in body. Do not generate redundant dependency fields. Correct the reported field types using the original evidence and the work-update shape. conditions, limitations and basisRefs are arrays of strings; addresses is one non-empty string describing the problem or risk addressed. Preserve justified analysis and unknowns; do not invent content or remove substantive work merely to pass validation. The Host will validate the revised work.' +
       (code === 'JOBAID_MEASURE_ADDRESSES_INVALID'
         ? ' The rejected field is addresses; changing status does not repair it.'
         : ''),

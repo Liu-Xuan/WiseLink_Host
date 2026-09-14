@@ -1,6 +1,5 @@
 import type {
   AssessmentEvidence,
-  AssessmentReadingClaim,
   AssessmentReadingResult,
 } from './assessment-reading.interface';
 import type {
@@ -9,7 +8,7 @@ import type {
 } from './api.interface';
 
 export const JOBAID_PROBLEM_WORK_SCHEMA =
-  'wiselink.jobaid-problem-work.v2' as const;
+  'wiselink.jobaid-problem-work.v3' as const;
 export const JOBAID_PROBLEM_TASK_SCHEMA =
   'wiselink.jobaid-problem-task.v2' as const;
 export const JOBAID_PROBLEM_RESULT_SCHEMA =
@@ -118,8 +117,8 @@ export interface JobAidProblemIssue {
   issueKey: string;
   issueRef: string;
   question: string;
-  understanding: string;
-  statements: AssessmentReadingClaim[];
+  /** Complete candidate explanation with exact [[evidenceRef]] citations. */
+  body: string;
   riskScenarios: JobAidRiskScenario[];
   measures: Array<{
     text: string;
@@ -151,11 +150,14 @@ export interface JobAidProblemIssue {
 }
 
 export interface JobAidProblemWorkContent {
+  /** Historical read projection only; never a model-writable field. */
+  historicalSourceSchema?: 'wiselink.jobaid-problem-work.v2';
   schemaVersion: typeof JOBAID_PROBLEM_WORK_SCHEMA;
   headline: string;
   listBrief: string;
   understanding: string;
   decisiveIssueKeys: string[];
+  overviewStatus: 'NOT_AVAILABLE' | 'CURRENT' | 'STALE';
   issues: JobAidProblemIssue[];
   roundCompletion: 'IN_PROGRESS' | 'COMPLETE' | 'COMPLETE_WITH_OPEN_QUESTIONS';
   completionReason: string;
@@ -255,12 +257,9 @@ export function jobAidReadingResult(
       headline: revision.content.headline,
       listBrief: revision.content.listBrief,
       lead: revision.content.understanding,
-      claims: revision.content.issues.flatMap((item) => item.statements),
-      decisiveClaimIds: revision.content.issues
-        .filter((item) =>
-          revision.content.decisiveIssueKeys.includes(item.issueKey),
-        )
-        .flatMap((item) => item.statements.map((claim) => claim.claimId)),
+      claims: [],
+      decisiveClaimIds: [],
+      issueArticles: revision.content.issues.map(({ issueKey, issueRef, question, body }) => ({ issueKey, issueRef, question, body })),
     },
     evidence: structuredClone(revision.content.evidence),
     candidateOnly: true,

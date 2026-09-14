@@ -1,3 +1,4 @@
+import { readHistoricalJobAidWork } from './jobaid-historical-reading';
 import { randomUUID } from 'node:crypto';
 import { dmDocumentParseRun } from '../../database/document-parsing.schema';
 import { Inject, Injectable } from '@nestjs/common';
@@ -513,9 +514,9 @@ export class JobAidWorkRepository {
 function project(
   row: typeof assessmentWorkRevision.$inferSelect,
 ): JobAidWorkRevision {
-  const content = JSON.parse(row.contentJson) as JobAidProblemWorkContent;
+  const content = readHistoricalJobAidWork(JSON.parse(row.contentJson), { workItemId: row.workItemId });
   if (
-    content.schemaVersion !== 'wiselink.jobaid-problem-work.v2' ||
+    content.schemaVersion !== 'wiselink.jobaid-problem-work.v3' ||
     !Array.isArray(content.issues)
   )
     throw new Error('JOBAID_STORED_WORK_INVALID');

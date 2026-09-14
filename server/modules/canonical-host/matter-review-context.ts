@@ -219,7 +219,7 @@ export function buildMatterReviewContext(input: {
       evidenceSources,
     },
     model: {
-      problemWorkSchema: 'wiselink.jobaid-problem-work.v2',
+      problemWorkSchema: 'wiselink.jobaid-problem-work.v3',
       methodBinding: structuredClone(methodBinding),
       title: input.basis.snapshot.title,
       workingRevision: input.scope.expectedWorkingRevision,

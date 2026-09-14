@@ -82,8 +82,7 @@ export function buildWorkSearchProjection(input: {
   return input.content.issues.map((issue, index) => {
     const title = issue.issueKey || `issue-${index + 1}`;
     const text = [input.content.headline, input.content.listBrief, input.content.understanding,
-      input.content.completionReason, issue.question, issue.understanding,
-      ...issue.statements.map(statement => statement.text ?? ''),
+      input.content.completionReason, issue.question, issue.body,
       ...(issue.riskScenarios ?? []).map(item => `${item.scenario}\n${item.conditions.join(' ')}\n${item.limitations.join(' ')}\n${item.controlComparison}`),
       ...(issue.measures ?? []).map(item => `${item.text}\n${item.addresses}\n${item.limitations.join(' ')}`),
       ...(issue.openQuestions ?? []).map(item => `${item.question}\n${item.affects}\n${item.nextEvidence}\n${item.reason}`),

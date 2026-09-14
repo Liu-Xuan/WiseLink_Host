@@ -5,21 +5,20 @@ export interface EvidenceUse {
   issueKey: string;
   /** Exact position in this immutable work revision, not a source locator. */
   position: string;
-  role: 'STATEMENT' | 'SEVERITY' | 'LIKELIHOOD' | 'IMPORTANT_EVENT' | 'MEASURE' | 'CLASSIFICATION' | 'METHOD' | 'REQUIREMENT' | 'DEPENDENCY' | 'PREMISE';
+  role: 'BODY' | 'STATEMENT' | 'SEVERITY' | 'LIKELIHOOD' | 'IMPORTANT_EVENT' | 'MEASURE' | 'CLASSIFICATION' | 'METHOD' | 'REQUIREMENT' | 'DEPENDENCY' | 'PREMISE';
 }
 
 /** Traverse only typed evidence fields. Text and future unknown fields are never references. */
 export function collectIssueEvidenceUses(issue: Pick<JobAidProblemIssue,
-  'issueKey' | 'statements' | 'riskScenarios' | 'measures' | 'otherClassifications' | 'requirementHandling' | 'sourceDependencies' | 'premiseRefs'
+  'issueKey' | 'body' | 'riskScenarios' | 'measures' | 'otherClassifications' | 'requirementHandling' | 'sourceDependencies' | 'premiseRefs'
 >): EvidenceUse[] {
   const uses: EvidenceUse[] = [];
   const add = (refs: string[], position: string, role: EvidenceUse['role']) => {
     refs.forEach((evidenceRef, index) => uses.push({ evidenceRef, issueKey: issue.issueKey, position: `${position}/${index}`, role }));
   };
-  issue.statements.forEach((claim, index) => claim.premises.forEach((premise, premiseIndex) => {
-    uses.push({ evidenceRef: premise.evidenceRef, issueKey: issue.issueKey,
-      position: `statements/${index}/premises/${premiseIndex}`, role: 'STATEMENT' });
-  }));
+  for (const match of issue.body.matchAll(/\[\[([^\[\]\r\n]+)\]\]/gu)) {
+    uses.push({ evidenceRef: match[1], issueKey: issue.issueKey, position: `body/${match.index}`, role: 'BODY' });
+  }
   issue.riskScenarios.forEach((risk, index) => {
     add(risk.severity?.basisRefs ?? [], `riskScenarios/${index}/severity/basisRefs`, 'SEVERITY');
     add(risk.likelihood?.basisRefs ?? [], `riskScenarios/${index}/likelihood/basisRefs`, 'LIKELIHOOD');

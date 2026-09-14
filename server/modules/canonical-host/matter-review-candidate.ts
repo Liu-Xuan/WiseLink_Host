@@ -1,5 +1,6 @@
 import type {
   AssessmentEvidence,
+  AssessmentReadingClaim,
   AssessmentReadingContent,
   AssessmentReadingResult,
 } from '@shared/assessment-reading.interface';
@@ -266,7 +267,7 @@ export function matterWorkingCommand(input: {
     const priorClaims = new Map(
       (prior?.content.claims ?? []).map((claim) => [claim.claimId, claim]),
     );
-    const claims = nextProblemWork.issues.flatMap((issue) => issue.statements);
+    const claims: AssessmentReadingClaim[] = [];
     const nextIds = new Set(claims.map((claim) => claim.claimId));
     proposal = {
       ...proposal,
@@ -297,11 +298,7 @@ export function matterWorkingCommand(input: {
         headline: nextProblemWork.headline,
         listBrief: nextProblemWork.listBrief,
         lead: nextProblemWork.understanding,
-        decisiveClaimIds: nextProblemWork.issues
-          .filter((issue) =>
-            nextProblemWork.decisiveIssueKeys.includes(issue.issueKey),
-          )
-          .flatMap((issue) => issue.statements.map((claim) => claim.claimId)),
+        issueArticles: nextProblemWork.issues.map(({ issueKey, issueRef, question, body }) => ({ issueKey, issueRef, question, body })), decisiveClaimIds: [],
       },
     };
   }
@@ -332,8 +329,11 @@ export function matterWorkingCommand(input: {
       ...additions,
     ];
     const presentation = object(proposal.readingPresentation);
-    exact(presentation, ['headline', 'listBrief', 'lead', 'decisiveClaimIds']);
-    const content = validateOverallAssessmentReading(
+    exact(presentation, ['headline', 'listBrief', 'lead', 'decisiveClaimIds', ...(nextProblemWork ? ['issueArticles'] : [])]);
+    const content = nextProblemWork ? { schemaVersion: 'wiselink.3_1.assessment_reading.v1' as const,
+      headline: nextProblemWork.headline, listBrief: nextProblemWork.listBrief, lead: nextProblemWork.understanding,
+      claims: [], decisiveClaimIds: [], issueArticles: nextProblemWork.issues.map(({issueKey,issueRef,question,body}) => ({issueKey,issueRef,question,body}))
+    } : validateOverallAssessmentReading(
       {
         schemaVersion: 'wiselink.3_1.overall_engineering_summary.v2',
         ...presentation,
@@ -361,6 +361,7 @@ export function matterWorkingCommand(input: {
         claim.premises.map((premise) => premise.evidenceRef),
       ),
     );
+    if (nextProblemWork) for (const ref of nextProblemWork.issues.flatMap(issue => issue.sourceDependencies)) used.add(ref);
     nextSubstantiveResult = {
       resultRef: `MRESULT-${input.attemptRef}`,
       resultRevision: (prior?.resultRevision ?? 0) + 1,

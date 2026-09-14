@@ -192,11 +192,11 @@ export function jobAidReadingFixture(): JobAidWorkingReadModel {
       documentVersionId: 'document-test',
       createdAt: '2026-09-09T00:00:00Z',
       content: {
-        schemaVersion: 'wiselink.jobaid-problem-work.v2',
+        schemaVersion: 'wiselink.jobaid-problem-work.v3',
         headline: '应先核实构型，再评估措施可行性',
         listBrief: '构型尚未核实；当前不是实施决定。',
         understanding: '当前依据支持继续分析，不能推定措施已经实施。',
-        decisiveIssueKeys: ['issue-test'],
+        decisiveIssueKeys: ['issue-test'], overviewStatus: 'CURRENT',
         roundCompletion: 'IN_PROGRESS',
         completionReason: '还需核对构型与历史记录。',
         changeSummary: '补充了适用条件。',
@@ -219,22 +219,7 @@ export function jobAidReadingFixture(): JobAidWorkingReadModel {
             issueKey: 'issue-test',
             issueRef: 'issue-ref-test',
             question: '措施是否对当前构型有效？',
-            understanding: '仅当构型匹配时才有判断基础。',
-            statements: [
-              {
-                claimId: 'claim-test',
-                text: '尚未确认构型，不得认定必须实施。',
-                basis: 'CONDITIONAL_INFERENCE',
-                premises: [
-                  {
-                    evidenceRef: 'evidence-test',
-                    role: 'LIMITS',
-                    explanation: '原文明确限定构型。',
-                    limitation: '尚未查证当前设备。',
-                  },
-                ],
-              },
-            ],
+            body: '仅当构型匹配时才有判断基础。尚未确认构型，不得认定必须实施。 [[evidence-test]]',
             riskScenarios: [
               {
                 scenario: '使用不匹配的措施后发生失效',

@@ -1,27 +1,70 @@
 # M 主控集成交接
 
+## 2026-09-14 正文 v3 / c97 集成窗口（尚未部署）
+
+本批将问题正文直接作为工作保存：`issueKey/question/body` 与确切正文引用，专业结构按用途提供；未变问题保留、同问题完整替换，综合 CURRENT/STALE/NOT_AVAILABLE 分开。Host SAVE、Review、Reader、搜索和恢复消费者已改用正文；不再生成假的旧 statement。历史 v2 仅只读投影并标注，线上工作修订9的5个问题、14条原主张已用新读取代码验证，旧工作引用与数据库记录保持。
+
+本地证据：Host/Client production build 通过；Skill 316 项通过；正文/历史/搜索14项、读取UI相关16项（含重叠）、现有Matter消费者/工作状态25项及JobAid续接29项通过；隔离真实PostgreSQL12项通过，覆盖CAS、回执丢失回读、索引失败后恢复、actor/tenant与来源权限、取消迟到写入及Review原子保存。测试是构造/本地验证，不代表新的线上工程认识。Review相关检查额外发现并修复正文覆盖仍遍历 statements、body@位置被错误过滤的问题。
+
+部署阻塞：当前妙搭网页重新连接后转扫码登录，已请求恢复登录。尚未暂停任何job、尚未发布Host、尚未安装c97；技术线上仍以此前Host96d01a81d/Skill c96的回执为准。未改模型配置、未重跑原文/中文、未新建FTD业务请求，无新FTD workRef。登录恢复后先读回在途和原job配置，在空闲窗口协调Host/Skill更新，再正常begin后继并观察实际SAVE/读回。不得让Host新契约与c96消费者混用。
+
+后续未完成：首份FTD正文、同会话连续保存及最终综合；跨事项Hosted检索/准确旧工作引用/双向使用与来源更正完整消费尚未接通。本批正文索引和页面可读只解决其基础，不作为跨事项知识复用验收。
+
+
 ## 当前运行窗口（2026-09-13，M 负责）
 
 按用户最新意见，以英文解析字面精度、章节/表格/条件语义及实际工程消费为主线；中文仅作同源匹配阅读辅助，不再以翻译完成率作为主验收。前端改版继续暂缓。下表覆盖后续历史记录中的旧阻塞说法。
 
 | 项目 | 当前事实 / 下一动作 |
 | --- | --- |
-| Host / Skill | Host仍为5915860c1 / release7684897153136085952。Skill c95（7cd0c10d5）已官方安装，47/47文件匹配，installed 314项通过；本批仅Skill修改，未重复发布Host。原三个job在安装窗口短暂停用后恢复，未强制run |
+| Host / Skill | Host96d01a81d / release7684974107020594155已finished，Skill c96已官方安装，47/47文件匹配、installed315项通过。原三个job在安装窗口短暂停用后已恢复enabled/原payload/原schedule，未强制run |
 | online RLS | 用户授权后完成dev诊断及恢复；正式0054差异仅旧名DROP+新名CREATE，官方迁移2项。online旧policy已不存在，新policy支持DOCUMENT_VERSION，独立文档/actor/tenant/原生禁写保留。旧策略阻塞已解除；正常START已实际QUEUED：DTQ-6eae3abb-fdad-4dbd-8649-72ef2faef3f4，workspace TW-f9b7e6dc-ded2-49ee-988f-3c78212fac3f，errorCode=null |
 | FTD rev6 | DV document_version_b83523c2b5ba26a2b1753641，parseRun PRUN-c537f5bb-cc97-4ce9-855e-ca8d53e15a31。c8/c88自然PUBLISHED，原件/manifest字节与SHA、2表/编号/条件/页脚实件核对保留，SOURCE41条、pending0。不能用此证明e9/c89或新语义补丁已运行 |
 | 语义持久结构 | 0055正式dev→online迁移16项，仅新表/约束/索引/RLS/不可变触发器。online读回RLS=true、4policy、1不可变trigger、1已验证FK。正常INDEX已保存rev6语义修订1，boeing.ftd.sections.v1、12章节。正常read_document_original确切读回，Final Action返回u28/u29及两个SourceRef；原文manifest SHA保持d8237d00…不变 |
 | 本批接线 | 已实现INDEX保存首个来源绑定语义修订、确切章节读取；Matter新任务输入固定semantic revision/profile，旧任务不附加latest。JobAid任务含原文语义map。真实PG发现并修复JSONB键顺序导致的假覆盖错误。Host/Skill已部署；c90还修复消费端丢map并拒绝语义修订漂移。实际工程保存待自然调度验收 |
-| 运行剩余 | c95后继[内部引用已脱敏]已正常FAILED：两轮READ_SOURCES成功，第三轮原生length/output16000被网关遮为502；未到SAVE，scopeAdjustments=0。线上最新仍工作修订9/[内部引用已脱敏]，无新FTD workRef。c94为sourceRefs包装校验失败，不能混同length；c93历史失败保留。中文21块及b20局部补丁范围不变 |
+| 运行剩余 | c96正常后继AQ-002cd57f3b644a99960cde8244a1d50b已FAILED；两轮READ_SOURCES成功，第三次HTTP内部两次length/output16000，被网关遮为502。无SAVE，线上仍工作修订9，无新FTD workRef；已停止扩大拆分。中文21块及b20局部补丁范围不变 |
 | 验证与界限 | 新语义RLS/CAS/不可变/准确读回真实PG通过；Matter真实PG4组通过；章节/Reader/JobAid续接45项通过；server类型通过。原PDF每步读取与最终整包组装仍有成本；真实SB/H2、语义更正后的业务续接和首份新工程工作仍待完成；首批中文已保存并经Reader实际阅读，完整中文仍未完成 |
 
 
-### 2026-09-13 c96：连续会话与动态问题组（本地已验证，待部署）
+### 2026-09-13 实际容量测试（覆盖此前短探针的能力界限）
+
+同一官方Hosted M3路由、独立诊断会话、thinkingLevel=low、纯构造数据：382372输入token的六处随机值与六项条件判断全部正确；893180输入token请求成功，但随机值仅2/6、条件4/6，内容未通过。长输出申请65536，三次原生生成各length/output16000，HTTP400且无完整函数载荷。配置修改不是完全无效，但不能认定百万可靠上下文或高生成上限已实现。
+
+工程Agent目录models.json仍保留false/16000/256000，与官方config及网关目录不同；实际输入超过256000，因此不能只凭该文件认定唯一根因。本轮不改配置/部署、不读业务来源、不SAVE、不创建工程业务请求。测试方法、会话、用量和限制见 [实际容量报告](M_MODEL_CAPACITY_TEST_20260913.md)。首份新FTD工作仍未产生，下一步回到实际工程交付，避免继续扩大压力测试。
+
+### 2026-09-13 用户调整模型配置后的实测（当前有效状态）
+
+用户调整界面后，官方config读回M3 reasoning=true/maxTokens=1000000/contextWindow=1000000；gateway models.list（首次10秒超时，30秒只读重查成功）同样返回reasoning=true/contextWindow=1000000。此前false/16000/256000仅为调整前事实，不再代表当前。
+
+独立诊断会话7e7e1c23-8e66-40e6-b258-98fcba126078接受thinkingLevel=low；同一官方Hosted工程路由发出一次32768预算的纯构造算术请求。HTTP200/finish_reason=tool_calls，configuration_probe_result返回value703（37×19），prompt41478/completion93。原生会话确认provider=miaoda/model=minimax-m3/stopReason=toolUse，内容类型thinking+toolCall；仅检查类型与用量，不读取或展示内部推理正文。无工程资料读取、无Host SAVE、未创建工程业务请求。
+
+结论：界面设置已写入并影响运行态，Low从拒绝变为接受，实际M3函数通道成功。短请求不能证明真实生成超过16000或上下文承载100万；请求32768被接受也不等于上游最终有效预算已实测。WiseLink JobAid代码仍显式申请16000，界面上限变大不会自动提高其单次申请，后续业务验证须分别记录。
+
+### 2026-09-13 单会话参数入口核验（设置被拒，未生成）
+
+官方安装版支持 sessions.patch 的 thinkingLevel；原计划只对正常后继设置low，保持部署c96/模型/16000预算与工程方法。短暂停用事项job且确认无活动后，经正常begin建立 AQ-eea0568bfd344e64b747d4ad07bbab4c（requestId rev6-session-low-20260913，CAS事项3/工作9）。网关明确拒绝 `thinkingLevel "low" is not supported for miaoda/minimax-m3 (use off)`。未启动模型；新请求已正常CANCELLED，原事项job恢复enabled。未修改全局参数、未复活旧任务、无新SAVE。
+
+随后官方config get models.providers.miaoda.models读回当前定义：minimax-m3，reasoning=false、maxTokens=16000、contextWindow=256000。这与此前另一模型目录524288/1000000的观察不同；不反向改写历史请求事实。当前本地配置本身存在上限及推理能力禁用，不能继续将该现象全部归到不可见平台上限。安装版额外参数可按agents.list参数覆盖，但实际配置及网关config.get均无agents.list，未为试验新增/更改默认Agent路由。
+
+调度曾返回历史成功AQ-4ea1f8287e434772a85b4d74a791ebe1为REQUIRES_ATTENTION；正常STATUS确认SUCCEEDED、deadline06:55:37Z，早于c96失败，不能冒充新FTD工作。nextForRuntime现有同来源幂等键可返回历史终态，此处不是新的模型调用。
+
+### 2026-09-13 生成路径诊断与本地修正（未部署、未重发业务）
+
+本次经官方 `openclaw logs` 取得关联日志，空响应重试已由推测转为确认：UTC 11:15:29.473，runId `chatcmpl_0339bc81-698e-4da4-b42e-cdb2a254dda5`、session `af81f3b0-3d53-43ec-bd75-8435b7aeb9f9`、provider `miaoda/minimax-m3`，记录 `empty response detected ... retrying 1/1 with visible-answer continuation`。安装版本 OpenClaw 2026.6.6 (8c802aa)，embedded-agent 的空响应重试上限固定为1；该次重复归属于托管内部，不是新工作批次。网关函数约束失败返回502时未携带原生停止原因/用量。
+
+WiseLink 本地把同一 HTTP 响应中已有的单一 `choices[0].finish_reason=length` 判断移到 HTTP 错误之前；不解析部分函数、不用错误文本猜 length。当前生成策略 v2 禁止自动缩小范围重试（maxScopeAdjustments=0），连续上下文和正常 SAVE 后继续保持。尚无平台新增错误元数据合同，不虚构字段适配。44项定向测试通过，覆盖200/502明确length、无原因502、空文本有效函数以及A已保存后B截断不重放；未部署该修正。
+
+有效上游请求、原始响应到归一化记录的字段转换仍未闭合。c96申请16000，不作为硬上限证据；c93大额度另查。不更改RLS/解析/翻译/Host保存，不修改安装版打包JS，不重跑FTD。取消平台支持入口和支持契约作为前置条件；仅核对安装代码中可确认、可控制的路径，未知上游信息如实保留。后续依据本地证据选择单变量验证。
+
+### 2026-09-13 c96：连续会话与动态问题组（已部署，真实后继失败已核验）
 
 按用户最新方案，限制单次交付量而非工程理解范围。同会话已有初始材料只发送一次、后续使用工具回执的路径保留，问题组数量由 Agent 选择，SAVE 后自动继续，最终只更新综合和必要纠正。Host 允许后续批次省略未变化 headline/listBrief/understanding/decisiveIssueKeys；仅省略时保留确切已有值，显式 null/空值继续校验，首次工作仍需完整主旨。轮次状态、完成说明和本批变化仍明确提交。同 issue 完整替换、权限/SourceRef/CAS/原 request 回读保留。
 
 删除 JobAid 旧 checkpoint 的 524288 兼容预算分支；策略不一致拒绝原地续跑，使用正常后继，不复活失败任务。当前策略 continuous-issue-batches-v1，请求16000、载荷软目标2000–4000；可靠length只减少本批交付，不要求最小化工程问题。未知502仍不猜测。
 
-本地：连续多批与最终综合/同会话不重发初始材料等41项；Host物化18项；Skill完整315项及server build通过。新测试覆盖两问题首批、第三问题后续、稀疏综合、无原工作拒绝、null拒绝、退役决定性问题须更新引用、不完整同issue替换拒绝。真实FTD多次保存与恢复尚未验收；当前部署仍Host5915860c1/Skillc95，工作修订9保持。未删除线上测试数据。
+本地：连续多批与最终综合/同会话不重发初始材料等41项；Host物化18项；Skill完整315项及server build通过。新测试覆盖两问题首批、第三问题后续、稀疏综合、无原工作拒绝、null拒绝、退役决定性问题须更新引用、不完整同issue替换拒绝。Luna已将96d01a81d同步双远端。Host release7684974107020594155 finished/errors=[]/commit一致。c96包385092B，SHA256 69bf580e33af451de0c164f6520930cf6bb0aae99ff8edae2a2ed0bdd5f56b2a，47文件；官方安装315项通过，三job完整恢复。用户明确批准本次及后续同类安装包短期链接操作。正常begin新后继AQ-002cd57f3b644a99960cde8244a1d50b / requestId rev6-continuous-batches-c96-20260913，基于事项3/工作9，created=true/QUEUED，由自然调度推进。真实后继：同一session af81f3b0-3d53-43ec-bd75-8435b7aeb9f9，前两轮HTTP200/tool_calls/READ_SOURCES，completion701/433；第三次HTTP调用内部两次原生length/output16000，UTC11:15:26.610及11:17:11.460。前者公开文字为空，后者只有准备保存说明，均无工具载荷；HTTP仍502。MCP STATUS确认FAILED/errorCode=null，deadline12:12:37.906Z；online工作仍9/MWREV-19bb8855-40ce-4017-a349-6b9c62debcd4，无新SAVE。三job最终enabled=true/runningAtMs=null。
+
+安装入口源码有max_completion_tokens映射，未直接出现reasoning_effort/thinking/thinkLevel；官方config get agents.defaults.thinkingDefault返回path not found。没有据此推断全部平台不支持，也没有猜参数、全局禁用推理或再拆问题。原生length被502覆盖及任务级有效配置仍需平台契约/实现证据；本机平台材料已追加本次精确复现，尚未发送/受理。真实多次保存、最终综合和保存后恢复仍未验收，未删除线上测试数据。
 
 ### 2026-09-13 c94/c95：有界生成与实际参数传输修复
 

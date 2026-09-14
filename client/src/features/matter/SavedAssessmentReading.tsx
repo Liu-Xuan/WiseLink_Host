@@ -1,3 +1,4 @@
+import EngineeringIssueBody from './EngineeringIssueBody';
 import { useCallback, useRef, useState, type FC } from 'react';
 import { getCanonicalHostClientSessionGeneration } from '@client/src/api/canonical-host';
 import { useWorkbenchPanelActive } from '@client/src/features/workbench/RetainedWorkbenchPanel';
@@ -85,6 +86,10 @@ const SavedReadingLocation: FC<
           setSelection(selected);
         }}
       />
+      {depth === 'full' && result.content.issueArticles?.map(issue => <section key={issue.issueRef} id={issue.issueKey} className="my-4">
+        <h3>{issue.question}</h3>
+        <EngineeringIssueBody body={issue.body} evidence={result.evidence} onLocateDocument={onLocateDocument} />
+      </section>)}
       <ClaimEvidenceDialog
         selection={panelActive ? selection : null}
         readClaim={readClaim}

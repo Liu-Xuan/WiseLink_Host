@@ -1,5 +1,5 @@
 import { z } from 'zod/v4';
-import type { AssessmentEvidence } from '@shared/assessment-reading.interface';
+import type { AssessmentEvidence, AssessmentReadingClaim } from '@shared/assessment-reading.interface';
 import type { EngineeringMatterWorkingInputBinding, EngineeringMatterWorkingRevisionCommand, EngineeringMatterWorkingRevisionReadModel, EngineeringMatterWorkingTextItemDelta } from '@shared/matter-working.interface';
 import type { JobAidProblemWorkContent } from '@shared/jobaid-problem-assessment.interface';
 import { canonicalJson } from '../action-attempt/action-attempt-envelope';
@@ -36,7 +36,7 @@ export function materializeMatterJobAidCommand(input: {
     previous: previous?.problemWork ?? null, evidence: input.evidence, methodBinding: input.methodBinding,
     readSourceRefs: input.readSourceRefs, capabilities: input.capabilities, history: input.history });
   const priorClaims = new Map((previous?.substantiveResult?.content.claims ?? []).map(item => [item.claimId, item]));
-  const claims = work.issues.flatMap(issue => issue.statements);
+  const claims: AssessmentReadingClaim[] = [];
   const claimIds = new Set(claims.map(item => item.claimId));
   const usedRefs = new Set(collectEvidenceUses(work).map(item => item.evidenceRef));
   const evidence = work.evidence.filter(item => usedRefs.has(item.evidenceRef));
@@ -77,7 +77,7 @@ export function materializeMatterJobAidCommand(input: {
   const readingContent = (content: JobAidProblemWorkContent | undefined) => content ? {
     headline: content.headline, listBrief: content.listBrief,
     understanding: content.understanding, decisiveIssueKeys: content.decisiveIssueKeys,
-    issues: content.issues, roundCompletion: content.roundCompletion,
+    overviewStatus: content.overviewStatus, issues: content.issues, roundCompletion: content.roundCompletion,
     completionReason: content.completionReason, methodBinding: content.methodBinding,
   } : null;
   const hasSubstantiveChange = canonicalJson(readingContent(previous?.problemWork)) !==
@@ -121,7 +121,7 @@ export function materializeMatterJobAidCommand(input: {
       scope: { kind: 'ENGINEERING_MATTER', matterId: input.matterId }, candidateOnly: true,
       content: { schemaVersion: 'wiselink.3_1.assessment_reading.v1', headline: work.headline,
         listBrief: work.listBrief, lead: work.understanding, claims,
-        decisiveClaimIds: work.issues.filter(issue => work.decisiveIssueKeys.includes(issue.issueKey)).flatMap(issue => issue.statements.map(item => item.claimId)) },
+        issueArticles: work.issues.map(({ issueKey, issueRef, question, body }) => ({ issueKey, issueRef, question, body })), decisiveClaimIds: [] },
       evidence,
     } : null,
     substantiveInputs: hasSubstantiveChange ? substantiveInputs : [],

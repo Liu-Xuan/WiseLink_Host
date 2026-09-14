@@ -1,4 +1,4 @@
-import type { AssessmentReadingResult } from '@shared/assessment-reading.interface';
+import type { AssessmentReadingResult, AssessmentReadingClaim } from '@shared/assessment-reading.interface';
 import type { JobAidProblemWorkContent } from '@shared/jobaid-problem-assessment.interface';
 import { canonicalJson } from '../action-attempt/action-attempt-envelope';
 import { jobAidProblemModelWorkContent } from './jobaid-problem-task';
@@ -10,33 +10,36 @@ export function validateMatterProblemWork(
   matterId: string,
   result: AssessmentReadingResult | null,
 ): void {
+  if (!['NOT_AVAILABLE', 'CURRENT', 'STALE'].includes(content.overviewStatus)) fail('ENGINEERING_OVERVIEW_STATUS_INVALID');
   const reconstructed = materializeJobAidWork(
     jobAidProblemModelWorkContent(content),
     {
       matterId,
       methodBinding: content.methodBinding,
       previous: null,
+      persistedOverviewStatus: content.overviewStatus,
       evidence: content.evidence,
       readSourceRefs: content.readSourceRefs,
       capabilities: content.capabilities,
       history: content.historyReview,
     },
   );
-  if (canonicalJson(reconstructed) !== canonicalJson(content))
+  const { historicalSourceSchema, ...currentContent } = content;
+  if (historicalSourceSchema !== undefined && historicalSourceSchema !== 'wiselink.jobaid-problem-work.v2') fail('ENGINEERING_HISTORICAL_SCHEMA_INVALID');
+  if (canonicalJson(reconstructed) !== canonicalJson(currentContent))
     fail('ENGINEERING_MATTER_PROBLEM_WORK_INVALID');
-  const claims = content.issues.flatMap((issue) => issue.statements);
-  const decisive = content.issues
-    .filter((issue) => content.decisiveIssueKeys.includes(issue.issueKey))
-    .flatMap((issue) => issue.statements.map((claim) => claim.claimId));
+  const claims: AssessmentReadingClaim[] = [];
+  const decisive: string[] = [];
   if (
     !result ||
+    canonicalJson(result.content.issueArticles) !== canonicalJson(content.issues.map(({ issueKey, issueRef, question, body }) => ({ issueKey, issueRef, question, body }))) ||
     result.scope.kind !== 'ENGINEERING_MATTER' ||
     result.scope.matterId !== matterId ||
     result.content.headline !== content.headline ||
     result.content.listBrief !== content.listBrief ||
     result.content.lead !== content.understanding ||
-    canonicalJson(result.content.claims) !== canonicalJson(claims) ||
-    canonicalJson(result.content.decisiveClaimIds) !== canonicalJson(decisive)
+    (!historicalSourceSchema && (canonicalJson(result.content.claims) !== canonicalJson(claims) ||
+    canonicalJson(result.content.decisiveClaimIds) !== canonicalJson(decisive)))
   )
     fail('ENGINEERING_MATTER_PROBLEM_READING_MISMATCH');
   const evidence = new Map(
