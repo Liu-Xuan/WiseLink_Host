@@ -1,6 +1,18 @@
 # M 主控集成交接
 
-## 2026-09-15 两版FTD原文执行准备，新增范围尚未启用
+## 2026-09-15 两份777原文已发布，首次中文自然推进；新事项后台范围已获授权
+
+浏览器连接与正常用户登录已恢复。M先用同一已配置Hosted连接调用两个精确DV的 `document_work STATUS`，均正常返回无旧parseRun，证实三项文档范围已在运行实例生效。随后按用户授权各创建一个官方原生command cron：旧快照 `8a3f02cf-7432-45a9-9c0b-328bcfc8e3f1`，新快照 `5c430aac-b355-4ec2-8ff1-73d7b9e10673`。两者沿用原文档任务的消费者、cwd、3600秒单次期限和每分钟计划，仅DV不同；原三个任务的enabled、schedule、payload、agentId、sessionTarget逐项读回不变。
+
+两份parseRun均由正常业务页面“解析文档”首次受理，随后由各自cron自然执行：旧版 `PRUN-1af7733a-28c8-4daf-a954-037af4c96c5f` 于05:54:51Z发布，新版 `PRUN-131965dd-0239-4050-ab55-01c63f5aca4e` 于05:55:17Z发布。两个正常Reader均显示原文5/5页、解析修订1、OfficialPluginHybrid 1.0.16；不能唯一对齐的插件结构片段已明确列出限制并保留PDF文本层，没有假称结构完全验证。后续INDEX已到NO_PENDING、semanticRevision=1。首次中文分别为 `DTQ-a47b8225-2605-4ca3-a5c1-3a504fc6e486` / `DTQ-e56aa45f-724a-4a9b-a234-baa39a2d2de8`，最新观察均RUNNING、PROGRESSED、无错误，已保存部分段落；尚未声称完整中文交付。
+
+当前产品原文再次读回LastRevised为2025-07-28与2026-02-04，修订说明分别涉及Status/Milestones/Operator Action和Status/Milestones；正文中认证状态与计划日期确有变化。来源生成日期仍是独立快照标识，不据此声称今天最新有效、已实施或正式采用。此次正常原文回执补齐了此前P/M已完成的PDF比对证据。
+
+M从该family既有 `WI-e0a261ee-51e8-4257-a696-e10959e44b93` 正常建立 `MAT-d9e6c294-f368-42e4-9a1b-b46c6170be02`（777-FTD-31-21002 工程事项），只有一项旧版主要来源与pending输入、暂无工作结论。B页面正常搜索FTD已找到A的工作修订16与确切问题范围；完整跨事项候选保存仍未完成。用户随后明确回复“同意新增该事项范围和任务”，授权沿用现有actor/tenant和官方模型读取本事项材料及当前可见工程工作、比较两份快照、生成保存候选，并保留原B787与全部既有任务；不含正式采用、审批或放行。
+
+本地新增可选 `WL_OPENCLAW_SERVICE_MATTER_IDS` 严格非空JSON完整ID列表，显式列表替代旧单值，非法或重复配置不回退；每次请求返回实际命中的Matter、保留同一actor/tenant及既有RLS/lease/CAS检查，不继承文档或WorkItem范围。29项scope测试、14项Matter MCP/接线测试和server typecheck通过，Luna独立审阅无安全问题。该Matter列表支持目前尚未发布、未设置线上列表、未创建新Matter cron；下一步仅实施已获批两个精确Matter的范围和新任务，Skill仍c105无需重装。
+
+## 2026-09-15 两版FTD文档范围已授权配置并发布，原文任务尚待建立
 
 官方 Host 开发页可以到达，但当前要求飞书扫码登录；已向用户请求扫码。发布回执的线上URL经普通未认证HTTP检查返回404，不将其误报为整个Host不可达。页面解析接口只创建预约，后台 `document_work` 才执行原文步骤，因此未在没有可用消费者权限的情况下先创建预约。
 
@@ -8,7 +20,9 @@
 
 准备的实际范围为原787 FTD `document_version_b83523c2b5ba26a2b1753641` 加两份777 FTD快照 `document_version_6b998c1544aa06b5f20b2be0`（导出2025-09-26）及 `document_version_78c6d0adb612265f85e1d338`（导出2026-05-27）。设置完整列表将保留原文档，使用原文档actor/tenant，不改原三个job；新增每份777 FTD各一个精确DV文档任务。现有消费者首次发布原文后会走INDEX和首次辅助中文，已可用结果按原状态复用。具体版本的parseRun仍须由正式用户经正常页面受理。
 
-验证：服务范围及接线21项、原文/中文runtime9项、server typecheck及diff check通过。代码尚未发布；以上新增真实文档工具范围及任务尚未授权启用，没有修改线上scope或创建parseRun。
+验证：服务范围及接线21项、原文/中文runtime9项、server typecheck及diff check通过。用户随后明确回复“同意新增这两份文档范围和任务”，覆盖以上两份既有快照的原文解析、读取、首次辅助中文和各一个精确版本原生文档任务。经官方CLI设置ONLINE环境的三项完整列表并精确读回，原DEV身份环境、actor/tenant及原单值均保留。此授权持续有效，无须重复确认。
+
+Host release `7685632496361770231` 已由官方CLI读回 `finished`、无错误日志，实际提交 `318440c53abc8ec246e2f3de94aa24adb2bd2402`，与本次实现一致；该提交已分别在origin/github同名开发分支核对。Skill仍为c105，本次无需重装。发布完成后的Hosted终端浏览器连接先无响应，随后浏览器清单读取失败；本轮只尝试读取cron新增帮助，未执行任何新增命令。因此两个新原生任务、正常MCP新范围回读以及两个parseRun均尚未完成；原三个任务未修改。恢复Hosted连接后先核对当前任务列表，再建立两个精确DV任务；解析预约继续通过已登录正常产品入口受理。技术发布完成不代表原文/中文真实运行已经完成。
 
 ## 2026-09-15 c105 与 Host 输入状态修复已发布
 
