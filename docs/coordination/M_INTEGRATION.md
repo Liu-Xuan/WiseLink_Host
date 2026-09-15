@@ -1,5 +1,15 @@
 # M 主控集成交接
 
+## 2026-09-15 c104 与 Host 协同切换完成
+
+Host release `7685608780734729182` 已 `finished`，官方读回精确提交 `18353c2d0d0b4f796b575929d8bca9677d127e47`。同一 Hosted 安装目录已由官方 `openclaw skills install <verified-root> --as wiselink-research-and-synthesize --force` 单次从 c103 更新为 c104；包 source commit 仍为 `cb30964e3f5030d563ce87524f195bb78ef096f0`，不因后续操作员文档提交重打包。
+
+ZIP 390044 字节、SHA `9fe0bc55ffb0aca82f64eaba7c3f45feea818b415f8f77c8220aaafb60c4a8be`；Hosted 校验与安装后逐文件比较均为 48/48 匹配，仅安装器增加 `.openclaw/source-origin.json`。安装目录测试 331 pass、0 fail、0 skip；官方 skills list/info/check 均退出 0，Ready、Visible to model、Available as command 均为真，实际版本仅 c104。47 个 DOS ZIP 条目仍如实报告缺少 Unix mode，不将其计为模式校验成功。
+
+三个共用 Skill 的原生任务均在完整配置快照和零消费者进程确认后暂停；安装及 Host 发布完成后均恢复原 enabled=true。schedule、完整 payload、agentId、sessionTarget 与窗口前逐项一致。恢复后的自然 tick 均为 scheduler ok：文档任务 `DOCUMENT_READY` 且 errorCode=null，Matter `IDLE`，原 WorkItem `NOT_READY`、nextOperation=null、completedStages=[]。这证明本次安装、发布、调度恢复和 Matter idle 运行路径；不等于 WorkItem 初评或新的工程更正已完成。
+
+本次实际执行者为 M 的官方 CLI / Hosted 终端，Luna 核对阶段回执。CodeM 已实际读取操作员 Skill 并完成包验证，其后计划仍引用旧隔离基线，未作为部署执行依据，也未冒称 CodeM 在运行安装。页面“系统启动失败”经用户授权整页刷新恢复；凭据脚本上传被自动审批拒绝后，改用该应用文件管理直接上传同一 ZIP、manifest 和无凭据校验器，未转交签名凭据。未新建业务请求、手工 cron run 或重做有效原件中文。
+
 ## 2026-09-15 操作员 Skill 已持久化并完成只读使用验证
 
 最终操作员 Skill 已保存到 `operator-skills/wiselink-hosted-operations/`，包含 `SKILL.md`、`scripts/verify-package.py` 和 `tests/test_verify_package.py`。旧豆包原件已确认删除；本目录是基于当前 Publish Lite 与实际 CLI/Hosted 入口重建的操作员 Skill，不是旧文件恢复。CodeM 通过显式读取 Skill 后，对现成 c104 ZIP/manifest 完成只读验证：`verified=true`、版本 `wiselink-research-and-synthesize@r09.c104`、48 files、archive SHA `9fe0bc55ffb0aca82f64eaba7c3f45feea818b415f8f77c8220aaafb60c4a8be`、source commit `cb30964e3f5030d563ce87524f195bb78ef096f0`；47 个 DOS ZIP 条目没有可读 Unix mode，已如实标记，不扩展为模式验证通过。

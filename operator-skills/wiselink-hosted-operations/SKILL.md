@@ -21,7 +21,7 @@ CodeM 可由任务提示显式读取本文件并按它执行；目录存在不�
 
 ## 本地准备
 
-读取当前仓库 `openclaw/skills/wiselink-research-and-synthesize/references/hosted-uat-runbook.md` 的 Publish Lite 段和 `scripts/package-wiselink-openclaw-skill.mjs`。使用当前内容，不把旧 c 修订当成现行版本。
+读取当前仓库 `openclaw/skills/wiselink-research-and-synthesize/references/hosted-uat-runbook.md` 的 Publish Lite 段和 `scripts/package-wiselink-openclaw-skill.mjs`。使用任务指定的 canonical 仓库绝对路径；CodeM 隔离工作区未同步时，不把其中的旧 runbook 或未接受脚本当成现行依据。
 
 确认接受的改动已提交并同步到明确的同名 `codex/*` 分支。Git 由任务指定 owner 处理，不推 main/sprint、其他 ref 或强制覆盖。不合入未经接受的前端分支。
 
@@ -53,7 +53,7 @@ lark-cli apps +release-get --app-id <Host app> --release-id <原release_id> --as
 
 ## Skill 安装与恢复
 
-沿当前官方 `apps +file-upload` /下载能力传输 ZIP 和 manifest 到指定私有存储；先查本机 CLI 帮助核实路径与输出契约，不记录签名 URL。Hosted 下载后使用接受的 SHA 和同一校验器再次验证，解压到本次新临时目录；校验通过才执行：
+沿当前官方 `apps +file-upload` /下载能力传输 ZIP 和 manifest 到指定私有存储；先查本机 CLI 帮助核实路径与输出契约，不记录签名 URL。若下载凭据转交受到限制，可通过该应用 Hosted 文件管理的“上传”入口直接传输同一 ZIP、manifest 和无凭据校验器，不改共享范围、不发送含凭据的脚本。记录实际使用的传输入口。Hosted 收到文件后使用接受的 SHA 和同一校验器再次验证，解压到本次新临时目录；校验通过才执行：
 
 ```bash
 openclaw skills install <已验证根目录> --as wiselink-research-and-synthesize --force
