@@ -1,5 +1,11 @@
 # M 主控集成交接
 
+## 2026-09-16 T2 与引用修正发布及线上交互
+
+8710aff7cb1190d1ee6497e7a67d605e216619a7 已分别普通快进同步 origin/github 同名开发分支并核对远端SHA。Host发布7685899993270570254已finished，完成态commit与源码一致。线上 `/dev-preview/graph` 正常渲染；主控实际打开2025-Q4来源示意并返回，URL与选中声明均保留Q4，截图确认关系图节点/连线/高亮显示正常。此处仅验收隔离交互，不代表真实来源读取或活动关联合同已交付。
+
+发布后，以仍为工作8、事项修订2、无在途为基础，正常MCP受理新请求wl-work8-overview-citations-20260916，AQ-45bda7aa04624fcb89d64d766affcba5由原cron于23:13:43.362Z领取。沿用同一准确来源与更正目的，新Host明确引用规则；旧AQ-6bc及AQ-350不重放。23:14:55.977Z正常结束SUCCEEDED，事件为STARTED→GENERATED→MATTER_JOBAID_WORK_SAVED，保存工作9（MWREV-8a870911-3c66-42e3-9ec4-939f9ce0b8ae）。主控比较工作8/9：六个问题逐字段完全相同、完成状态相同，综合CURRENT；其他参考统一为15项，FAA LN1825不再断言仅该架次完成，删除无实质变化的轮次叙述，三处完整引用均为本次交付的确切原文。完成说明同步更正。真实页面精确workRef读取显示工作9与对应overviewSourceWork，后续保存链接准确；未作正式采用。
+
 ## 2026-09-16 综合生成引用失败与 T2 选择性集成
 
 新 AQ-6bc32de118ce4891a4bc22e8baa9397e 于22:55:00.163Z终止FAILED，terminalReason=ENGINEERING_CORRECTION_SOURCE_NOT_DELIVERED，仅STARTED、无GENERATED/SAVE。官方插件日志确认textToJson正常返回（40,022ms），输出日志本身被平台截断，无法据此恢复完整候选。旧错误码同时覆盖零引用与引用未交付来源，不能断言具体是哪一种。实际封存输入的综合/完成说明没有引用，问题正文有46个引用，其中43个不在本次3段已交付来源内。输入已说明问题是待核对认识；本次进一步明确仅evidence中的完整引用可用，并须在更正事实旁提供引用。Host保持来源集合校验，将零引用单独记为CITATION_REQUIRED，未增加重试或放行。26项单测、服务端类型、定向ESLint通过；旧失败不重放。
