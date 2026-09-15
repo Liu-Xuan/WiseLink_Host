@@ -1,3 +1,5 @@
+import { documentOriginalReadingCoverage } from '../document-management/src/hosted/nest/document-original-adapter';
+import { semanticTranslationSource } from '../document-management/src/hosted/nest/document-semantic-map';
 import type { AssessmentEvidence } from '@shared/assessment-reading.interface';
 import type { DocumentParsingHostedService } from '../document-management/src/hosted/nest/document-parsing-hosted.service';
 import { buildTranslationSourcePlan } from './canonical-translation-source-plan';
@@ -9,7 +11,8 @@ export function documentOriginalEngineeringReading(
 ) {
   if (!Number.isSafeInteger(offset) || offset < 0 || !Number.isSafeInteger(limit) || limit < 1 || limit > 20)
     throw new Error('DOCUMENT_ORIGINAL_RANGE_INVALID');
-  const { original, structuredSource, run } = loaded;
+  const { original, run } = loaded;
+  const structuredSource = semanticMap ? semanticTranslationSource(original, semanticMap) : loaded.structuredSource;
   const artifact = run.manifestArtifact;
   if (!artifact || artifact.readback !== 'VERIFIED' || artifact.relativePath !== 'original/manifest.json' ||
       run.parseRunId !== original.binding.parseRunId || run.documentVersionId !== original.binding.documentVersionId)
@@ -19,6 +22,8 @@ export function documentOriginalEngineeringReading(
       sha256: artifact.sha256, byteLength: artifact.byteLength, mediaType: 'application/json' }, title: '', source: structuredSource });
   const units = structuredSource.units.slice(offset, offset + limit);
   const ids = new Set(units.map(unit => unit.unitId));
+  const selectedFindingIds = new Set(plan.blocks.filter(block => block.sourceUnitIds.some(id => ids.has(id)))
+    .flatMap(block => block.sourceIssues.map(issue => issue.sourceFindingId).filter(Boolean)));
   const selectedRefs = new Set(plan.anchors.filter(anchor => ids.has(anchor.sourceUnitId)).flatMap(anchor => anchor.sourceRefIds));
   const texts = new Map<string, string[]>();
   // A locator may cover several units. Its evidence stays identical across pagination.
@@ -36,10 +41,11 @@ export function documentOriginalEngineeringReading(
         pageStart: location.pageStart, normalizedPath: location.normalizedPath, xpath: location.xpath }) };
   });
   return { documentVersionId: run.documentVersionId, binding: original.binding, artifactSha256: artifact.sha256,
-    semanticMap,
+    semanticMap: semanticMap ? { ...semanticMap, unresolvedRanges: documentOriginalReadingCoverage(original).unresolvedRanges } : null,
     offset, units, evidence, sourceRefs: evidence.map(item => item.evidenceRef),
     sourceLocators: structuredSource.sourceLocators.filter(item => texts.has(item.sourceRefId)),
-    coverage: original.coverage, findings: structuredSource.findings, producer: original.producer,
+    coverage: documentOriginalReadingCoverage(original),
+    findings: structuredSource.findings.filter(finding => selectedFindingIds.has(String(finding.findingId))), producer: original.producer,
     nextOffset: offset + units.length < structuredSource.units.length ? offset + units.length : null };
 }
 export type DocumentOriginalEngineeringReading = ReturnType<typeof documentOriginalEngineeringReading>;

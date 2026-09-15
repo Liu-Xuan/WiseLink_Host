@@ -101,6 +101,7 @@ const semanticReview = z.strictObject({
       origin: true,
       blockIds: true,
       sourceFindingId: true,
+      readingImpact: true,
     }),
   ),
 });

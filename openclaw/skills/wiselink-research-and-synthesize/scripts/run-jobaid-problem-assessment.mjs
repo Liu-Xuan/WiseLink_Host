@@ -620,16 +620,18 @@ export async function invokeHostedJobAidProblemModel(
       )
         throw error;
       corrections += 1;
+      const shapeCorrection = workShapeCorrection(code, submittedWork, modelInput);
       receipt = {
         accepted: false,
         errorCode: code,
         expectedWorkRevision,
         instruction:
           'Correct only the rejected step or substantive work using the original evidence. Existing saved work remains available; never invent sources or turn failure into completion.',
-        ...workShapeCorrection(code, submittedWork, modelInput),
+        ...shapeCorrection,
         ...(code === 'JOBAID_SOURCE_NOT_DELIVERED' && error.hostRejectedSourceRef ? {
           sourceRef: error.hostRejectedSourceRef,
-          instruction: 'The Host rejected this exact source reference from your candidate. Read it through READ_SOURCES if it belongs to the authorized catalog or document range. If unavailable, preserve the limitation and revise the unsupported assertion. Do not guess another identifier, silently drop supported analysis, or treat the failed save as completed.',
+          instruction: 'The Host rejected this exact source reference from your candidate. Read it through READ_SOURCES if it belongs to the authorized catalog or document range. If unavailable, preserve the limitation and revise the unsupported assertion. Do not guess another identifier, silently drop supported analysis, or treat the failed save as completed.' +
+            (shapeCorrection.instruction ? ` ${shapeCorrection.instruction}` : ''),
         } : {}),
       };
       await options.observeCandidateRejection?.({

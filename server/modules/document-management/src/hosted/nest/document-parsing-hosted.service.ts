@@ -14,7 +14,7 @@ import { DocumentOfficialPluginService } from './document-official-plugin.servic
 import { DocumentOriginalStore, type DocumentOriginalBundle } from './document-original-store';
 import { extractDocumentPdfPages, type DocumentPdfExtraction } from './document-original-pdf';
 import { composeDocumentOriginal } from './document-original-compose';
-import { documentOriginalStructuredSource } from './document-original-adapter';
+import { documentOriginalStructuredSource, documentOriginalReadingCoverage } from './document-original-adapter';
 
 type ReadScope = { actorUserId: string; tenantId: string; roles: string[] };
 const PAGE_GROUP_SIZE = 8;
@@ -103,7 +103,26 @@ export class DocumentParsingHostedService {
           original.sha256 !== source.source.sha256 || original.byteLength !== source.source.byteLength ||
           original.providerObjectId !== source.source.providerObjectId || original.providerVersionId !== source.source.providerVersionId)
         throw documentParseError('DOCUMENT_PARSE_ORIGINAL_MISMATCH');
+      // A derived parse revision may reuse verified inputs from the same immutable PDF.
+      // Descriptors are copied into this run's namespace; no previous history is overwritten.
+      let reusable: { bundle: DocumentOriginalBundle; scope: ReturnType<typeof storageScope> } | null = null;
+      if (run.expectedPublishedRevision > 0) {
+        const previous = (await this.repository.current(scope)).published;
+        if (previous && previous.parseRunId !== run.parseRunId && previous.parseRevision === run.expectedPublishedRevision &&
+            previous.manifestArtifact?.relativePath === 'original/manifest.json' &&
+            previous.sourceBinding.sourceArtifactId === run.sourceBinding.sourceArtifactId &&
+            previous.sourceBinding.pdfSha256 === run.sourceBinding.pdfSha256 &&
+            previous.sourceBinding.byteLength === run.sourceBinding.byteLength) {
+          const priorScope = storageScope(previous);
+          reusable = { scope: priorScope, bundle: await this.store.load(priorScope,
+            originalArtifact(previous.manifestArtifact), originalBinding(previous)) };
+        }
+      }
       let raw = await this.store.recover(storage, 'RAW_MARKDOWN');
+      if (!raw && reusable) {
+        const bytes = new Uint8Array(await this.store.read(reusable.scope, reusable.bundle.rawMarkdown));
+        raw = { bytes, artifact: await this.store.save(storage, 'RAW_MARKDOWN', bytes, record) };
+      }
       if (!raw) {
         const parsed = await this.plugins.parseOriginal({ assertActive,
           originalUrl: async () => this.files.from(source.source.bucketId).createSignedUrl(source.source.filePath, 600) });
@@ -131,7 +150,12 @@ export class DocumentParsingHostedService {
       if (pageCount === null || pageStart < pageCount) {
         const path = `original/pages-${pageStart}.json`;
         // Recover a lost upload/progress response at exactly the next path before extracting again.
-        const recovered = await this.store.recover(storage, 'MANIFEST', path);
+        let recovered = await this.store.recover(storage, 'MANIFEST', path);
+        const reusablePage = reusable?.bundle.rawPdfArtifacts.find(item => item.relativePath === path);
+        if (!recovered && reusable && reusablePage) {
+          const bytes = new Uint8Array(await this.store.read(reusable.scope, reusablePage));
+          recovered = { bytes, artifact: await this.store.save(storage, 'MANIFEST', bytes, record, path) };
+        }
         const chunk: DocumentPdfExtraction = recovered
           ? JSON.parse(Buffer.from(recovered.bytes).toString('utf8'))
           : await extractDocumentPdfPages({ bytes: original.bytes, pageStart, pageCount: PAGE_GROUP_SIZE, assertActive });
@@ -191,7 +215,7 @@ export class DocumentParsingHostedService {
       await this.assertRead(documentVersionId, context);
       return { documentVersionId, parseRunId: run.parseRunId, parseRevision: run.parseRevision,
         originalFilename: source.version.originalFilename, parser: { name: 'OfficialPluginHybrid', version: bundle.original.producer.pluginVersion, backend: 'Host' },
-        titleEnhancement: { status: 'DISABLED' }, markdown: bundle.original.markdown, assets: {}, original: bundle.original,
+        titleEnhancement: { status: 'DISABLED' }, markdown: bundle.original.markdown, assets: {}, original: { ...bundle.original, coverage: documentOriginalReadingCoverage(bundle.original) },
         projection: { documentVersionId, parseRunId: run.parseRunId, sources: [], notes: [], issues: [] } };
     }
     // Historical published MinerU artifacts remain readable; no new MinerU producer.

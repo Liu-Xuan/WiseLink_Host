@@ -1,3 +1,4 @@
+import { TRANSLATION_V2_CHECK_VERSION } from '../../../server/modules/canonical-host/canonical-translation-v2-quality';
 import { buildTranslationSourcePlan } from '../../../server/modules/canonical-host/canonical-translation-source-plan';
 import { translationBatchDependenciesV2 } from '../../../server/modules/canonical-host/canonical-translation-v2-batch';
 import { planOriginalTranslationReuse } from '../../../server/modules/canonical-host/canonical-translation-v2-reuse';
@@ -30,7 +31,7 @@ function revisions(old: TranslationWorkspaceV2): TranslationBlockRevisionV2[] {
       promptVersion: null, generationRequestRef: `G-${block.blockId}`, originAttemptId: 'ATT-1', providerRequestId: null,
       usage: { inputTokens: null, outputTokens: null } },
     generatedAt: null, savedAt: '2026-09-13T00:00:00Z', checkedAt: '2026-09-13T00:00:00Z', selectedForReading: true,
-    check: { schemaVersion: 'wiselink.3_1.translation_block_check.v2', checkVersion: 'semantic-block-check@2.0', issues: [], semanticCheck: 'NOT_REQUIRED', semanticReview: null } }));
+    check: { schemaVersion: 'wiselink.3_1.translation_block_check.v2', checkVersion: TRANSLATION_V2_CHECK_VERSION, issues: [], semanticCheck: 'NOT_REQUIRED', semanticReview: null } }));
 }
 test('locator-only parse changes reuse saved text and remap anchors to the new original', () => {
   const old = workspace(1), next = workspace(2); expect(old.plan.blocks).toHaveLength(6);

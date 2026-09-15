@@ -25,6 +25,8 @@ export interface TranslationStructuredSource {
   sourceLocators: UnifiedReaderSourceLocator[];
   findings: Record<string, unknown>[];
   references: Record<string, unknown>[];
+  /** Set only by a verified source profile, never inferred from a filename. */
+  dateOrder?: 'MDY' | 'DMY';
 }
 
 export type TranslationIssueSeverity = 'BLOCK' | 'REVIEW' | 'NOTE';
@@ -37,6 +39,7 @@ export interface TranslationIssueV2 {
   blockIds: string[];
   anchorIds: string[];
   sourceFindingId?: string;
+  readingImpact?: 'DIAGNOSTIC' | 'LIMITATION';
 }
 
 export interface TranslationSourceAnchorV2 {
@@ -91,6 +94,8 @@ export interface TranslationSourcePlanV2 {
     parsedArtifact: UnifiedPackageArtifactDescriptor;
     originalBinding?: import('./document-original.interface').DocumentOriginalBinding;
   };
+  /** Original findings retained once for diagnostics; not model context or per-block defects. */
+  sourceFindings?: Record<string, unknown>[];
   anchors: TranslationSourceAnchorV2[];
   blocks: TranslationSemanticBlockV2[];
   inventory: Array<{
@@ -106,6 +111,7 @@ export interface TranslationSourcePlanV2 {
   documentContext: {
     revision: number;
     title: string;
+    dateOrder?: 'MDY' | 'DMY';
     outline: Array<{ blockId: string; anchorIds: string[]; level: number }>;
     /** Exact source quotations with anchors. No unverified model summary. */
     scopedConditions: Array<{

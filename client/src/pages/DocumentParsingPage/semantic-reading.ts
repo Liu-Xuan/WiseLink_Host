@@ -12,7 +12,7 @@ export const semanticReadingStatusLabels = {
   MISSING: '待生成',
   PENDING_CHECK: '已保存，待检查',
   READABLE: '可读候选',
-  BLOCKED: '需处理',
+  BLOCKED: '中文暂不可用',
 } as const;
 
 export const translationIssueOriginLabels: Record<
@@ -45,7 +45,7 @@ export function semanticSourceLinks(anchors: TranslationSourceAnchorV2[]) {
         ref,
         label:
           locator?.pageStart != null
-            ? `第 ${locator.pageStart}${locator.pageEnd != null && locator.pageEnd !== locator.pageStart ? '–' + locator.pageEnd : ''} 页`
+            ? `第 ${locator.pageStart + (locator.kind === 'PDF_PAGE' ? 1 : 0)}${locator.pageEnd != null && locator.pageEnd !== locator.pageStart ? '–' + (locator.pageEnd + (locator.kind === 'PDF_PAGE' ? 1 : 0)) : ''} 页`
             : `来源 ${links.size + 1}（无精确页码）`,
       });
     }
@@ -90,7 +90,7 @@ export function semanticReadingText(
     `双语阅读候选 · ${status.scope}`,
     `文件版本：${reading.source.documentVersionId}`,
     `工作区：${reading.workspaceId} · 读取版本 ${reading.rowVersion}`,
-    `可读原文范围 ${reading.coverage.readableSourceCharacters}/${reading.coverage.registeredSourceCharacters} 字符；未覆盖来源单元 ${reading.coverage.unresolvedSourceUnitCount}。`,
+    `中文可读覆盖的原文范围 ${reading.coverage.readableSourceCharacters}/${reading.coverage.registeredSourceCharacters} 字符；未覆盖来源单元 ${reading.coverage.unresolvedSourceUnitCount}。`,
     status.delivery,
     '包含完整语义段落 / 表格组及其条件和缺项；仅供阅读参考，不构成正式采用。',
     '',
@@ -110,7 +110,7 @@ export function semanticReadingText(
     );
     if (block.selected) {
       lines.push(
-        `语义范围：${block.source.blockId} · 正文版本 ${block.selected.contentRevision} · ${block.selected.blockRevisionId}`,
+        `语义范围：${block.source.blockId} · 译文修订 ${block.selected.contentRevision} · ${block.selected.blockRevisionId}`,
       );
       lines.push(
         '译文：',
@@ -124,7 +124,7 @@ export function semanticReadingText(
       ...anchors.map((anchor) => anchor.sourceText),
     );
     lines.push(
-      ...block.issues.map(
+      ...semanticReadingIssues(block).map(
         (issue) =>
           `${translationIssueOriginLabels[issue.origin]} · ${issue.severity}：${issue.message}`,
       ),
@@ -141,4 +141,44 @@ export function semanticReadingText(
       : ['无未覆盖语义范围。']),
   );
   return lines.join('\n');
+}
+
+/** Engineering projection also supports already-saved workspaces; raw checks remain server diagnostics. */
+export function semanticReadingIssues(block: SemanticReadingBlock): TranslationIssueV2[] {
+  const messages: Record<string, string> = {
+    PROTECTED_VALUE_CHANGED: '本段中文的数值、日期或标识尚未与原文一致，请以原文为准。',
+    DATE_FIELD_RELATION_CHANGED: '本段中文的日期归属尚未与原文一致，请以原文为准。',
+    FIGURE_TEXT_COVERAGE_UNVERIFIED: '图内文字或关系尚未读取，可查看对应原图。',
+    SOURCE_STRUCTURE_PRESERVED_AS_TEXT: '此处版式关系尚未可靠重建，可查看对应原页。',
+    SOURCE_MAPPING_REQUIRES_REVIEW: '此处来源对应关系尚不完整，可查看对应原页。',
+    SOURCE_TEXT_UNAVAILABLE: '此范围尚无可供翻译的原文字，请查看原页。',
+  };
+  const seen = new Set<string>();
+  return block.issues.flatMap(issue => {
+    if (issue.origin === 'SOURCE' && issue.readingImpact !== 'LIMITATION' && (['TEXT_CONFLICT', 'FIGURE_UNINTERPRETED'].includes(issue.code) ||
+      (issue.code === 'STRUCTURE_UNCERTAIN' && !['table', 'preserved_source'].includes(block.source.kind)))) return [];
+    const message = messages[issue.code] ?? (issue.origin === 'OUTPUT_CONTRACT' || issue.origin === 'SERVICE'
+      ? '本段中文尚未通过必要检查，可继续阅读对应原文。'
+      : issue.message.includes('{') || /JSON|anchorId|blockId|请.*恢复遗漏/.test(issue.message)
+        ? '本段中文尚未与对应原文一致，请以原文为准。' : issue.message);
+    const key = `${issue.origin}:${message}`;
+    if (seen.has(key)) return [];
+    seen.add(key);
+    return [{ ...issue, message }];
+  });
+}
+
+export function semanticReadingExport(reading: TranslationWorkspaceReadingV2) {
+  return {
+    schemaVersion: 'wiselink.3_1.bilingual_reading_export.v2',
+    candidateOnly: true, scope: reading.completeness, workspaceId: reading.workspaceId,
+    rowVersion: reading.rowVersion, source: reading.source, coverage: reading.coverage, anchors: reading.anchors,
+    blocks: reading.blocks.map(block => ({
+      source: { ...block.source, sourceIssues: semanticReadingIssues({ ...block, issues: block.source.sourceIssues }) },
+      readingStatus: block.readingStatus, issues: semanticReadingIssues(block),
+      selected: block.selected ? { contentRevision: block.selected.contentRevision,
+        blockRevisionId: block.selected.blockRevisionId, candidate: block.selected.candidate } : null,
+    })),
+    readingText: semanticReadingText(reading),
+  };
 }

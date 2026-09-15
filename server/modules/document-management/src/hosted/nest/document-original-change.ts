@@ -1,4 +1,5 @@
 import type { DocumentOriginalResult, DocumentOriginalStepResult } from '@shared/document-original.interface';
+import { documentOriginalRangeReadingImpact } from './document-original-adapter';
 import { canonicalJson } from '../../../../unified-reader/unified-reader.utils';
 
 export interface DocumentOriginalChange {
@@ -22,7 +23,7 @@ export function compareDocumentOriginal(previous: DocumentOriginalResult | null,
   }));
   const old = signatures(previous), current = signatures(next);
   const coverage = (result: DocumentOriginalResult) => ({ ...result.coverage,
-    unresolvedRanges: result.coverage.unresolvedRanges.map(({ unitIds: _ids, ...range }) => range) });
+    unresolvedRanges: result.coverage.unresolvedRanges.filter(range => documentOriginalRangeReadingImpact(result, range) === 'LIMITATION').map(({ unitIds: _ids, ...range }) => range) });
   const sameContent = canonicalJson(old) === canonicalJson(current);
   const sameCoverage = canonicalJson(coverage(previous)) === canonicalJson(coverage(next));
   if (sameContent && sameCoverage) return { kind: 'LOCATOR_ONLY', previousParseRunId: previous.binding.parseRunId,
@@ -54,6 +55,7 @@ function contentValue(value: unknown, runId: string): unknown {
   if (Array.isArray(value)) return value.map(item => contentValue(item, runId));
   if (!value || typeof value !== 'object') return value;
   return Object.fromEntries(Object.entries(value).filter(([key, item]) =>
-    key !== 'sourceRefIds' && !(['rowId', 'cellId'].includes(key) && typeof item === 'string' && item.startsWith(`${runId}:`)))
+    key !== 'sourceRefIds' && key !== 'columnStarts' &&
+    !(key === 'continuityKey' && typeof item === 'string' && item.startsWith('source-table:')) && !(['rowId', 'cellId'].includes(key) && typeof item === 'string' && item.startsWith(`${runId}:`)))
     .map(([key, item]) => [key, contentValue(item, runId)]));
 }

@@ -546,6 +546,43 @@ test('a Host addresses rejection identifies the wrong field and preserves the wo
   assert.deepEqual([...f.store.values()][0].content, corrected);
 });
 
+test('source rejection retains field repair guidance and the declared object properties', async () => {
+  const invalid = { ...completed, issues: [{ openQuestions: ['synthetic private question'] }] };
+  const corrected = { ...completed, issues: [{ openQuestions: [{
+    question: 'Which source remains unavailable?', affects: 'The unresolved comparison.',
+    nextEvidence: 'The authorized source document.', reason: 'The source has not been read.',
+  }] }] };
+  const rejected = 'evidenceRef:DOCUMENT_ORIGINAL:document_version_example:PRUN-example:u22:p0';
+  const f = fixture([
+    { action: 'SAVE_WORK', work: invalid },
+    { action: 'SAVE_WORK', work: corrected },
+    { action: 'FINISH' },
+  ]);
+  const save = f.options.saveAssessmentWork;
+  let attempts = 0;
+  f.options.saveAssessmentWork = async input => {
+    if (++attempts === 1) {
+      assert.deepEqual(JSON.parse(input.workJson), invalid);
+      throw Object.assign(new Error('REVIEW_HOST_MCP_TOOL_FAILED:save_assessment_work'), {
+        hostErrorCode: 'JOBAID_SOURCE_NOT_DELIVERED', hostRejectedSourceRef: rejected,
+      });
+    }
+    return save(input);
+  };
+  await f.run();
+  const receipt = JSON.parse(f.calls[1].messages.at(-1).content);
+  assert.equal(receipt.sourceRef, rejected);
+  assert.match(receipt.instruction, /Read it through READ_SOURCES/u);
+  assert.match(receipt.instruction, /Correct the reported field types/u);
+  assert.deepEqual(receipt.fieldErrors, [{
+    path: 'work.issues[0].openQuestions[0]', expected: 'object', received: 'string',
+    expectedProperties: Object.fromEntries(['question', 'affects', 'nextEvidence', 'reason']
+      .map(key => [key, { type: 'string', minLength: 1 }])),
+  }]);
+  assert.equal(JSON.stringify(receipt).includes('synthetic private question'), false);
+  assert.deepEqual([...f.store.values()][0].content, corrected);
+});
+
 test('Host risk rejection reports all supplied shape errors and saves corrected candidate unchanged', async () => {
   const invalid = { ...completed, issues: [{
     riskScenarios: [{ conditions: 'synthetic sensitive condition', severity: null, likelihood: null }],

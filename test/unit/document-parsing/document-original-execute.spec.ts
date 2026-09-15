@@ -36,7 +36,7 @@ describe('bounded original execute and persisted Reader (isolated source and plu
       pages: Array.from({ length: Math.min(8, 25 - input.pageStart) }, (_, offset) => ({
         pageIndex: input.pageStart + offset, text: text(input.pageStart + offset), items: [], width: 600, height: 800, rotation: 0,
       })) }));
-    const repository = { read: async () => ({ ...run }), stage: async () => { run.status = 'STAGING'; },
+    const repository = { current: jest.fn(async () => ({ published: null as typeof run | null })), read: async () => ({ ...run }), stage: async () => { run.status = 'STAGING'; },
       progress: async (_scope: unknown, _id: string, artifacts: Array<{ relativePath: string; readback: string }>) => {
         if (loseReceipt && !receiptLost && artifacts.some(item => item.relativePath === 'original/pages-0.json' && item.readback === 'UPLOADED')) {
           receiptLost = true; throw new Error('CONSTRUCTED_PROGRESS_RECEIPT_LOST');
@@ -74,5 +74,17 @@ describe('bounded original execute and persisted Reader (isolated source and plu
     expect(reading.original!.source.units.map(unit => unit.payload.text)).toEqual(Array.from({ length: 25 }, (_, index) => text(index)));
     expect(repository.recordStepFailure).toHaveBeenCalledTimes(loseReceipt ? 1 : 0);
     expect(compose).toHaveBeenCalledTimes(1);
+    const previous = structuredClone(run);
+    const oldManifest = Buffer.from(content.get('wiselink/parsed/DV/PR/original/manifest.json')!.bytes);
+    repository.current.mockResolvedValue({ published: previous });
+    Object.assign(run, { parseRunId: 'PR2', parseRevision: 2, expectedPublishedRevision: 1,
+      status: 'RUNNING', artifactProgress: [], manifestArtifact: null });
+    const nextFence = { ...fence, parseRunId: 'PR2' };
+    for (let index = 0; index < 4; index++) await service.executeStep('PR2', scope, nextFence);
+    expect(run.status).toBe('PUBLISHED');
+    expect(parser).toHaveBeenCalledTimes(1);
+    expect(extractDocumentPdfPages).toHaveBeenCalledTimes(4);
+    expect(Buffer.from(content.get('wiselink/parsed/DV/PR/original/manifest.json')!.bytes)).toEqual(oldManifest);
+    expect(content.has('wiselink/parsed/DV/PR2/raw/document.md')).toBe(true);
   });
 });

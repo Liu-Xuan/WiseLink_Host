@@ -1,3 +1,4 @@
+import { documentOriginalStructuredSource } from './document-original-adapter';
 import type { DocumentOriginalResult } from '../../../../../../shared/document-original.interface';
 import type { TranslationStructuredSource } from '../../../../../../shared/canonical-translation-v2.interface';
 import type {
@@ -62,6 +63,7 @@ export function buildDocumentSemanticMap(input: {
   const occurrences = new Map<string, number>();
   const ordered = [...original.source.units].sort((a, b) => a.order - b.order);
   for (const unit of ordered) {
+    if (unit.mapping.pageFurniture === true) { unassignedUnitIds.push(unit.unitId); continue; }
     if (unit.kind !== 'heading') {
       const current = stack.at(-1)?.section;
       (current ? current.bodyUnitIds : unassignedUnitIds).push(unit.unitId);
@@ -374,7 +376,8 @@ export function semanticTranslationSource(
   map: DocumentSemanticMap,
 ): TranslationStructuredSource {
   assertDocumentSemanticMap(map, original);
-  const result = structuredClone(original.source);
+  const result = documentOriginalStructuredSource(original, original.binding);
+  if (map.profileRef === 'boeing.ftd.sections.v1') result.dateOrder = 'MDY';
   const byId = new Map(result.units.map((unit) => [unit.unitId, unit]));
   const sections = new Map(
     map.sections.map((section) => [section.sectionId, section]),

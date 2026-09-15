@@ -375,12 +375,10 @@ const MatterWorkspace: FC<MatterWorkspaceProps> = ({
             />
             <MatterMembers
               members={data.matter.catalog.entries}
-              onOpenMember={(member: EngineeringMatterCatalogEntry) =>
-                openDocument({
-                  workItemId: member.workItemId,
-                  documentVersionId: member.document.documentVersionId,
-                })
-              }
+              onOpenMember={(member: EngineeringMatterCatalogEntry) => {
+                saveLocation();
+                navigate(`/document-versions/${encodeURIComponent(member.document.documentVersionId)}`);
+              }}
             />
           </div>
           <aside className="wl-side-panel">

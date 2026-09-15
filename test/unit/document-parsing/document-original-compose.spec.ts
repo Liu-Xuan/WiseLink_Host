@@ -20,13 +20,13 @@ describe('hybrid original composition (constructed extraction)', () => {
     const result = compose('Read first.\nVerified paragraph.\nKeep this exception.', 'Verified paragraph.');
     expect(result.source.units.map(unit => unit.payload.text)).toEqual(['Read first.', 'Verified paragraph.', 'Keep this exception.']);
   });
-  it('keeps all extra table columns and passes the existing V2 planner', () => {
+  it('preserves every word but does not accept table columns without layout evidence', () => {
     const result = compose('Key Value A 12 Extra', '| Key | Value |\n| --- | --- |\n| A | 12 | Extra |');
     const plan = buildTranslationSourcePlan({ documentVersionId: result.binding.documentVersionId,
       packageId: result.binding.parseRunId, title: 'Test table',
       source: documentOriginalStructuredSource(result, result.binding),
       parsedArtifact: { storeRole: 'UnifiedArtifactStoreCandidate', ref: 'fixture', sha256: 'b'.repeat(64), byteLength: 1, mediaType: 'application/json' } });
-    expect(plan.anchors.map(anchor => anchor.sourceText)).toEqual(['Key', 'Value', 'A', '12', 'Extra']);
+    expect(plan.anchors.map(anchor => anchor.sourceText)).toEqual(['Key Value A 12 Extra']);
     expect(result.coverage.unresolvedRanges.some(range => range.reason === 'STRUCTURE_UNCERTAIN')).toBe(true);
   });
   it('reports a failed image inspection separately while preserving extracted text', () => {

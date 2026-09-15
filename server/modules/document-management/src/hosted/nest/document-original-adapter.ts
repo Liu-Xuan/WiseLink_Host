@@ -50,8 +50,30 @@ export function documentOriginalStructuredSource(
   }
   source.findings.push(...result.coverage.unresolvedRanges.map((range, index) => ({
     findingId: `${result.binding.parseRunId}:coverage:${index}`,
-    code: range.reason, severity: 'REVIEW', message: range.message,
+    code: range.reason, severity: range.reason === 'UNREAD' ? 'error' : 'warning', message: range.message,
+    // Candidate alignment and image-paint observations do not establish unreadable text.
+    readingImpact: documentOriginalRangeReadingImpact(result, range),
+    blocking: range.reason === 'UNREAD',
     affectedUnitIds: [...range.unitIds], sourceRefIds: [], pageIndexes: [...range.pageIndexes],
   })));
   return source;
+}
+
+/** Normal reading carries actual limitations; immutable coverage retains diagnostics for authorized inspection. */
+export function documentOriginalReadingCoverage(result: DocumentOriginalResult) {
+  const projected = documentOriginalStructuredSource(result, result.binding);
+  const limitationIds = new Set(projected.findings.filter(finding => finding.readingImpact === 'LIMITATION')
+    .map(finding => String(finding.findingId)));
+  return { ...structuredClone(result.coverage), unresolvedRanges: result.coverage.unresolvedRanges.filter((_range, index) =>
+    limitationIds.has(`${result.binding.parseRunId}:coverage:${index}`)).map(range => ({ ...structuredClone(range),
+      message: range.reason === 'UNREAD' ? '本页尚无可读文字，请查看原页。' : '此处表格关系尚未可靠重建，请查看原页。',
+    })) };
+}
+
+/** Shared meaning of a saved range; diagnostics remain available in the saved artifact. */
+export function documentOriginalRangeReadingImpact(result: DocumentOriginalResult,
+  range: DocumentOriginalResult['coverage']['unresolvedRanges'][number]): 'LIMITATION' | 'DIAGNOSTIC' {
+  return range.readingImpact ?? (range.reason === 'UNREAD' || (range.reason === 'STRUCTURE_UNCERTAIN' &&
+    range.unitIds.some(id => result.source.units.some(unit => unit.unitId === id &&
+      ['table', 'preserved_source'].includes(unit.kind)))) ? 'LIMITATION' : 'DIAGNOSTIC');
 }

@@ -109,4 +109,14 @@ describe('Matter MCP existing attempt lifecycle', () => {
     expect(f.attempts.readSavedWork).toHaveBeenCalledWith({ ...f.scope, requestId: 'save-first' });
     expect(f.attempts.claim).not.toHaveBeenCalled();
   });
+  it('reports the recorded terminal failure when the separate error column is empty', async () => {
+    const f = fixture();
+    f.attempts.read.mockResolvedValue({ status: 'FAILED', errorCode: null,
+      terminalReason: 'JOBAID_WORK_VALIDATION_FAILED', deadlineAt: null,
+      leaseToken: 'private-token', taskEnvelopeJson: 'private-task' } as never);
+    const result = await f.call({ ...request, operation: 'STATUS' });
+    expect(JSON.stringify(result)).toContain('JOBAID_WORK_VALIDATION_FAILED');
+    expect(JSON.stringify(result)).not.toMatch(/private-token|private-task|leaseToken|taskEnvelopeJson/);
+    expect(f.attempts.claim).not.toHaveBeenCalled();
+  });
 });

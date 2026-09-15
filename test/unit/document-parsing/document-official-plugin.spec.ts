@@ -69,4 +69,25 @@ describe('official document adapter (isolated provider doubles)', () => {
     expect(JSON.stringify(entries)).not.toContain('PRIVATE_');
   });
 
+  it('keeps reference context out of target IDs and still rejects wrong block/anchor scope', async () => {
+    const check = { blockId: 'b1', anchors: [{ anchorId: 'a1', sourceText: 'Target 12.' }],
+      candidate: { blockId: 'b1' }, context: { anchors: [{ anchorId: 'context-a9', sourceText: 'Only for class X.' }],
+        blocks: [{ blockId: 'context-b9', sourceIssues: [{ message: 'PRIVATE_DIAGNOSTIC' }] }] } };
+    call.mockResolvedValue({ blockId: 'b1', issues: [] });
+    await service.checkTranslation(check, async () => undefined);
+    const sent = JSON.parse(call.mock.calls[0][1].checkJson);
+    expect(sent.reviewScope.allowedAnchorIds).toEqual(['a1']);
+    expect(JSON.stringify(sent.context)).toContain('Only for class X.');
+    expect(JSON.stringify(sent.context)).not.toContain('context-a9');
+    expect(JSON.stringify(sent.context)).not.toContain('PRIVATE_DIAGNOSTIC');
+    for (const output of [{ blockId: 'b9', issues: [] }, { blockId: 'b1', issues: [
+      { code: 'BAD', severity: 'BLOCK', message: 'PRIVATE_BAD_RESPONSE', anchorIds: ['context-a9'] },
+    ] }]) {
+      call.mockResolvedValue(output);
+      await expect(service.checkTranslation(check, async () => undefined)).rejects.toThrow('DOCUMENT_TRANSLATION_CHECK_SCOPE_INVALID');
+    }
+    expect(JSON.stringify((Logger.prototype.warn as jest.Mock).mock.calls)).not.toContain('PRIVATE_BAD_RESPONSE');
+    expect(check.context.anchors[0].anchorId).toBe('context-a9');
+  });
+
 });

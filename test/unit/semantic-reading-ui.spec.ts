@@ -40,10 +40,10 @@ describe('semantic document reading', () => {
       html.split('仅适用于上支架，不得用于下支架；应先核实构型。'),
     ).toHaveLength(2);
     expect(html).toContain('连续中文阅读');
-    expect(html).toContain('10% 已登记文字可读');
-    expect(html).toContain('已保存 800 / 1,000 个原文字符');
+    expect(html).toContain('10% 的原文已有可读中文');
+    expect(html).toContain('已保存中文覆盖 800 / 1,000 个原文字符');
     expect(html).toContain('译文已保存，检查完成后在此接续');
-    expect(html).toContain('此处待生成，已完成的段落可继续阅读');
+    expect(html).toContain('本段中文尚未生成，可继续阅读对应原文');
     expect(
       semanticSourceLinks(reading.anchors).map((link) => link.label),
     ).toEqual(['第 3 页', '第 3 页', '第 4 页']);
@@ -83,8 +83,8 @@ describe('semantic document reading', () => {
         onSourceRefSelect: jest.fn(),
       }),
     );
-    expect(html).toContain('正文版本 2');
-    expect(html).toContain('此完整语义范围暂不可读');
+    expect(html).not.toContain('正文版本');
+    expect(html).toContain('本段中文暂不可用，可继续阅读对应原文');
     expect(html).toContain('执行服务');
     expect(html).toContain('不得用于下支架');
   });
@@ -219,4 +219,23 @@ describe('semantic document reading', () => {
       semanticSourceLinks([sourceAnchor('no-page', 'Text', null)])[0].label,
     ).toContain('无精确页码');
   });
+});
+
+it('keeps genuine limitations in reading/copy while excluding internal diagnostics and saved raw differences', () => {
+  const reading = semanticReadingFixture();
+  reading.blocks[0].issues = [
+    { code: 'TEXT_CONFLICT', origin: 'SOURCE', severity: 'REVIEW', message: 'UNIQUE_MATCH_INTERNAL', blockIds: [], anchorIds: [] },
+    { code: 'PROTECTED_VALUE_CHANGED', origin: 'TRANSLATION', severity: 'BLOCK', message: 'JSON {"missing":[12]} 请恢复遗漏值', blockIds: [], anchorIds: [] },
+    { code: 'STRUCTURE_UNCERTAIN', readingImpact: 'LIMITATION', origin: 'SOURCE', severity: 'REVIEW', message: '表内一个标识尚无法辨认。', blockIds: [], anchorIds: [] },
+  ];
+  const html = renderToStaticMarkup(createElement(SemanticBilingualReader, {
+    translation: { status: 'SEMANTIC_READING_AID_AVAILABLE', reading }, onSourceRefSelect: jest.fn(),
+  }));
+  for (const output of [html, semanticReadingText(reading)]) {
+    expect(output).not.toContain('UNIQUE_MATCH_INTERNAL');
+    expect(output).not.toContain('请恢复遗漏值');
+    expect(output).not.toContain('JSON');
+    expect(output).toContain('表内一个标识尚无法辨认');
+    expect(output).toContain('数值、日期或标识尚未与原文一致');
+  }
 });

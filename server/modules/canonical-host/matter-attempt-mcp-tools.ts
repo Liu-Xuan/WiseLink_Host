@@ -125,7 +125,7 @@ export function registerMatterAttemptMcpTools(server: McpServer, attempts: Matte
       case 'STATUS': {
         const row = await attempts.read(scope);
         return textResult({ attemptRef: scope.attemptRef, matterId: scope.matterId,
-          status: row.status, errorCode: row.errorCode,
+          status: row.status, errorCode: row.errorCode ?? (row.status === 'FAILED' ? row.terminalReason : null),
           resultContentHash: row.resultContentHash,
           deadline: row.deadlineAt?.toISOString() ?? null });
       }

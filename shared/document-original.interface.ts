@@ -19,6 +19,8 @@ export interface DocumentOriginalCoverage {
     unitIds: string[];
     reason: 'UNREAD' | 'TEXT_CONFLICT' | 'STRUCTURE_UNCERTAIN' | 'FIGURE_UNINTERPRETED';
     message: string;
+    /** Reading consequence, separate from retained extraction diagnostics. */
+    readingImpact?: 'DIAGNOSTIC' | 'LIMITATION';
   }>;
 }
 

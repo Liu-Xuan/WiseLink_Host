@@ -6,6 +6,7 @@ import type {
   TranslationWorkspaceReadingV2,
   TranslationWorkspaceV2,
 } from '@shared/canonical-translation-v2.interface';
+import { TRANSLATION_V2_CHECK_VERSION } from './canonical-translation-v2-quality';
 import { CANONICAL_TRANSLATION_RULE_SET_V1 } from './canonical-translation-rule-set-v1.private';
 
 export type TranslationNextWorkV2 =
@@ -88,7 +89,8 @@ export function nextTranslationWorkV2(
       )
       .sort((a, b) => b.contentRevision - a.contentRevision)[0];
     if (!latest) continue;
-    if (!latest.check) return { kind: 'LOCAL_CHECK', revision: latest };
+    if (!latest.check || (latest.check.semanticReview === null && latest.check.checkVersion !== TRANSLATION_V2_CHECK_VERSION))
+      return { kind: 'LOCAL_CHECK', revision: latest };
     const blocked = latest.check.issues.some(
       (issue) => issue.severity === 'BLOCK',
     );

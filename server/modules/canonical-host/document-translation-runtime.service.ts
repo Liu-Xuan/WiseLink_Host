@@ -1,3 +1,4 @@
+import { DocumentSemanticService } from './document-semantic.service';
 import { Inject, Injectable } from '@nestjs/common';
 import { randomUUID } from 'node:crypto';
 import { DocumentTranslationAttemptRepository, type DocumentTranslationScope } from '../action-attempt/document-translation-attempt.repository';
@@ -14,7 +15,7 @@ import { CANONICAL_SERVICE_SCOPE_AUTHORIZATION, canonicalServiceScopeUnavailable
 export class DocumentTranslationRuntimeService {
   constructor(@Inject(CANONICAL_SERVICE_SCOPE_AUTHORIZATION) private readonly authorization: CanonicalServiceScopeAuthorizationPort,
     private readonly actors: EngineeringMatterWorkingRepository, private readonly reader: UnifiedReaderService,
-    private readonly plugins: CanonicalTranslationV2PluginService, private readonly attempts: DocumentTranslationAttemptRepository) {}
+    private readonly plugins: CanonicalTranslationV2PluginService, private readonly attempts: DocumentTranslationAttemptRepository, private readonly semantics: DocumentSemanticService) {}
 
   async run(input: { action: 'START' | 'STATUS' | 'STEP' | 'CANCEL'; documentVersionId: string;
     parseRunId: string; requestId?: string; attemptRef?: string }) {
@@ -36,7 +37,9 @@ export class DocumentTranslationRuntimeService {
         const artifact = original.run.manifestArtifact;
         if (!artifact || artifact.relativePath !== 'original/manifest.json' || artifact.readback !== 'VERIFIED')
           throw new Error('DOCUMENT_ORIGINAL_MANIFEST_REQUIRED');
-        const workspace = await this.plugins.prepareOriginal({ tenantId: scope.tenantId, original: original.original,
+        const semanticMap = await this.semantics.read({ ...scope, roles: [] }, original);
+        if (!semanticMap) throw new Error('DOCUMENT_SEMANTIC_NOT_READY');
+        const workspace = await this.plugins.prepareOriginal({ tenantId: scope.tenantId, original: original.original, semanticMap,
           artifact: { storeRole: 'UnifiedArtifactStoreCandidate', ref: `document-original://${encodeURIComponent(scope.documentVersionId)}/${encodeURIComponent(input.parseRunId)}`,
             sha256: artifact.sha256, byteLength: artifact.byteLength, mediaType: 'application/json' }, assertAuthorized });
         const modelInput = this.plugins.taskInput(workspace);

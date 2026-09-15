@@ -43,3 +43,17 @@ describe('engineering original evidence', () => {
     expect(() => documentOriginalEngineeringReading(loaded, 0, 1)).toThrow('BINDING_INVALID');
   });
 });
+
+it('returns only source findings bound to the selected original range, keeping diagnostics out of engineering input', () => {
+  const loaded = fixture();
+  loaded.structuredSource.findings = [
+    { findingId: 'diagnostic', code: 'TEXT_CONFLICT', message: 'internal diagnostic', severity: 'warning',
+      readingImpact: 'DIAGNOSTIC', affectedUnitIds: ['u1'], sourceRefIds: [] },
+    { findingId: 'unlocated', code: 'UNKNOWN', message: 'no specific location', severity: 'warning',
+      affectedUnitIds: [], sourceRefIds: [] },
+    { findingId: 'local', code: 'STRUCTURE_UNCERTAIN', message: 'local table limit', severity: 'warning',
+      readingImpact: 'LIMITATION', affectedUnitIds: ['u2'], sourceRefIds: [] },
+  ];
+  expect(documentOriginalEngineeringReading(loaded, 0, 1).findings).toEqual([]);
+  expect(documentOriginalEngineeringReading(loaded, 1, 1).findings.map(finding => finding.findingId)).toEqual(['local']);
+});
