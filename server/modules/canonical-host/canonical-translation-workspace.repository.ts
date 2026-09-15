@@ -1207,15 +1207,18 @@ export class CanonicalTranslationWorkspaceRepository {
           reusedFrom: { workspaceId: previous.workspaceId, blockRevisionId: entry.previous.blockRevisionId,
             generationRequestRef: entry.previous.provenance.generationRequestRef, parseRunId: previous.plan.source.originalBinding!.parseRunId,
             importedByAttemptId: attempt.attemptId, importedAt: now.toISOString() } });
-        const check = translationCheckSchemaV2.parse(entry.previous.check);
+        // A known earlier checker may supply saved text, never current approval.
+        // The normal scheduler checks this exact migrated candidate before selecting it.
+        const check = entry.requiresRecheck ? null : translationCheckSchemaV2.parse(entry.previous.check);
         await transaction.insert(translationBlockRevision).values({ blockRevisionId: `TB-${randomUUID()}`,
           tenantId: input.tenantId, workItemId: null, workspaceId: workspace.workspaceId, blockId: entry.candidate.blockId,
           planRevision: workspace.plan.planRevision, contentRevision: 1, generationRequestRef,
           originAttemptId: provenance.originAttemptId, authorKind: provenance.authorKind, authorUserId: provenance.authorUserId,
           candidateJson: canonicalJson(translationCandidateSchemaV2.parse(entry.candidate)),
           dependenciesJson: canonicalJson(entry.dependencies), provenanceJson: canonicalJson(provenance),
-          generatedAt: parseOptionalDate(entry.previous.generatedAt), checkStatus: 'CHECKED', checkJson: canonicalJson(check),
-          checkedAt: parseOptionalDate(entry.previous.checkedAt), selectedForReading: true });
+          generatedAt: parseOptionalDate(entry.previous.generatedAt), checkStatus: check ? 'CHECKED' : 'PENDING',
+          checkJson: check ? canonicalJson(check) : null,
+          checkedAt: check ? parseOptionalDate(entry.previous.checkedAt) : null, selectedForReading: check !== null });
         requests.push({ generationRequestRef, clientRequestId: `reuse:${entry.previous.blockRevisionId}`,
           attemptId: attempt.attemptId, leaseGeneration: attempt.leaseGeneration, blockIds: [entry.candidate.blockId],
           dependencies: entry.dependencies, purpose: 'REUSE', targetBlockRevisionId: entry.previous.blockRevisionId,
