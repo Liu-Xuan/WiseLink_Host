@@ -81,6 +81,25 @@ describe('Matter MCP existing attempt lifecycle', () => {
     expect(() => f.call({ ...input, recoveryAttemptRef: 'AQ-failed', recoveryCandidate: '{}' })).toThrow();
   });
 
+  it('forwards a bounded overview correction and rejects malformed or oversized input', async () => {
+    const f = fixture(true, 'begin_matter_assessment');
+    const overviewCorrection = {
+      kind: 'ENGINEERING_OVERVIEW_CORRECTION',
+      expectedWorkRef: 'MWREV-current',
+      correctionReason: '核对总体认识中的两处误读',
+      evidenceRefs: ['DOCUMENT_PASSAGE:DV-1:page:1'],
+    } as const;
+    const input = { matterId: 'MAT-one', expectedMatterRevisionId: 'MR-one', expectedMatterRevision: 2,
+      expectedWorkingRevision: 3, requestId: 'overview-correction', instruction: '核对总体认识', overviewCorrection };
+    await f.call(input);
+    expect(f.attempts.reserveJobAid).toHaveBeenCalledWith(expect.objectContaining({ overviewCorrection }));
+
+    expect(() => f.call({ ...input, overviewCorrection: { ...overviewCorrection, correctionReason: '' } })).toThrow();
+    expect(() => f.call({ ...input, overviewCorrection: { ...overviewCorrection, evidenceRefs: [] } })).toThrow();
+    expect(() => f.call({ ...input, overviewCorrection: { ...overviewCorrection, evidenceRefs: Array.from({ length: 97 }, (_, index) => `E-${index}`) } })).toThrow();
+    expect(() => f.call({ ...input, overviewCorrection: { ...overviewCorrection, unknown: true } })).toThrow();
+  });
+
   it('reads physical sources through the fenced Matter service using Host actor scope', async () => {
     const f = fixture();
     await f.call({ ...request, operation: 'READ_SOURCES', documentVersionId: 'DV-one', pageStart: 2,

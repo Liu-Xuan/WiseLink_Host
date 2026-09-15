@@ -41,6 +41,11 @@ export function registerMatterAttemptMcpTools(server: McpServer, attempts: Matte
         expectedWorkRef: z.string().trim().min(1).max(200), issueKey: z.string().trim().min(1).max(255),
         correctionReason: z.string().trim().min(1), evidenceRefs: z.array(z.string().trim().min(1)).min(1),
       }).strict().optional(),
+      overviewCorrection: z.object({ kind: z.literal('ENGINEERING_OVERVIEW_CORRECTION'),
+        expectedWorkRef: z.string().trim().min(1).max(200),
+        correctionReason: z.string().trim().min(1).max(4000),
+        evidenceRefs: z.array(z.string().trim().min(1).max(512)).min(1).max(96),
+      }).strict().optional(),
     }).strict(),
     annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: false },
   }, async (input) => {
@@ -54,6 +59,7 @@ export function registerMatterAttemptMcpTools(server: McpServer, attempts: Matte
       expectedMatterRevision: input.expectedMatterRevision, expectedWorkingRevision: input.expectedWorkingRevision,
       ...(input.recoveryAttemptRef ? { recoveryAttemptRef: input.recoveryAttemptRef } : {}),
       ...(input.correction ? { correction: input.correction } : {}),
+      ...(input.overviewCorrection ? { overviewCorrection: input.overviewCorrection } : {}),
       ...(input.referenceWorks ? { referenceWorks: input.referenceWorks } : {}),
       idempotencyKey: `matter:${scope.matterId}:${input.requestId}`,
       trigger: { kind: 'USER_REQUEST', requestId: input.requestId, instruction: input.instruction } });
