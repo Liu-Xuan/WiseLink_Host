@@ -8,9 +8,11 @@ import '@client/src/pages/DocumentParsingPage/jobaid-problem-workspace.css';
 export default function MatterProblemWork({
   revision,
   onLocateDocument,
+  showReferenceNotices = true,
 }: {
   revision: EngineeringMatterWorkingRevisionReadModel | null;
   onLocateDocument: (evidence: DocumentAssessmentEvidence) => void;
+  showReferenceNotices?: boolean;
 }) {
   const work = revision?.state.problemWork;
   const reading = revision?.state.substantiveResult;
@@ -21,13 +23,32 @@ export default function MatterProblemWork({
       aria-label="已保存的问题分析"
     >
       <h2 className="text-lg font-semibold">问题分析</h2>
-      {work.historicalSourceSchema ? <p>历史工作按原内容展开；这不是本轮新生成的分析。</p> : null}
+      {work.historicalSourceSchema ? (
+        <p>历史工作按原内容展开；这不是本轮新生成的分析。</p>
+      ) : null}
       <p className="text-sm leading-7">{work.completionReason}</p>
-      {work.overviewStatus !== 'CURRENT' ? <p>{work.overviewStatus === 'STALE' ? '现有综合尚未覆盖本次问题更新。' : '问题正文可读；综合尚未形成。'}</p> : null}
+      {work.overviewStatus !== 'CURRENT' ? (
+        <p>
+          {work.overviewStatus === 'STALE'
+            ? '现有综合尚未覆盖本次问题更新。'
+            : '问题正文可读；综合尚未形成。'}
+        </p>
+      ) : null}
       <OverviewCorrectionNotices
         matterId={revision.matterId}
         notices={revision.overviewCorrectionNotices}
       />
+      {revision.correctionNotices?.map((notice) => (
+        <p key={notice.attemptRef} role="note" className="text-sm leading-7">
+          问题 {notice.issueKey}：
+          {notice.unchanged
+            ? '已完成比较并保留原认识。'
+            : notice.correctedWorkRef
+              ? '此版本已有后继更正；当前展示仍为原版本。'
+              : '已登记待核更正，尚未取得更正后的保存结果。'}{' '}
+          {notice.reason}
+        </p>
+      ))}
       {work.issues.map((issue) => (
         <details
           key={issue.issueRef}
@@ -36,14 +57,14 @@ export default function MatterProblemWork({
           <summary className="cursor-pointer font-medium">
             {issue.question}
           </summary>
-          {revision?.correctionNotices?.filter(notice => notice.issueKey === issue.issueKey).map(notice => (
-            <p key={notice.attemptRef} role="note" className="mt-3 text-sm leading-7">
-              {notice.correctedWorkRef ? '此版本已有后继更正；当前展示仍为原版本。' : '本问题已登记待核更正，以下内容尚未完成更正。'}
-              {' '}{notice.reason}
-            </p>
-          ))}
           <div className="wl-jobaid-article mt-4">
-            <ReferenceWorkNotices notices={revision?.referenceWorkNotices?.filter(notice => notice.affectedIssueKeys.includes(issue.issueKey))} />
+            {showReferenceNotices ? (
+              <ReferenceWorkNotices
+                notices={revision?.referenceWorkNotices?.filter((notice) =>
+                  notice.affectedIssueKeys.includes(issue.issueKey),
+                )}
+              />
+            ) : null}
             <JobAidIssueArticle
               issue={issue}
               reading={{ ...reading, evidence: work.evidence }}

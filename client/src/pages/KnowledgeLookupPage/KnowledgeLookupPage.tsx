@@ -3,7 +3,6 @@ import { useNavigate, useSearchParams } from 'react-router-dom';
 import type {
   CanonicalEntryQueryResponse,
   CanonicalLibraryIndexReadResponse,
-  CanonicalLibraryIndexNode,
   UnifiedReaderQueryResult,
 } from '@shared/api.interface';
 import {
@@ -28,13 +27,10 @@ import {
 } from '@client/src/components/ui/select';
 
 import './knowledge-lookup.css';
-
-interface DocumentVersionOption {
-  versionId: string;
-  label: string;
-  detail: string;
-  isCurrent: boolean;
-}
+import {
+  buildVersionOptions,
+  type DocumentVersionOption,
+} from './version-options';
 
 interface QueryPhase {
   searching: boolean;
@@ -59,41 +55,6 @@ function errorCodeOf(error: unknown): string {
     if (error.message.trim()) return error.message;
   }
   return 'READ_FAILED';
-}
-
-function buildVersionOptions(
-  index: CanonicalLibraryIndexReadResponse,
-): DocumentVersionOption[] {
-  const currentDocumentVersionId: string =
-    index.currentness.currentDocumentVersionId ?? '';
-  const options: DocumentVersionOption[] = [];
-  const seen: Set<string> = new Set<string>();
-
-  const versionNodes: CanonicalLibraryIndexNode[] =
-    index.libraryIndex.nodes.filter(
-      (node: CanonicalLibraryIndexNode): boolean =>
-        node.kind === 'DOCUMENT_VERSION' && node.id.trim() !== '',
-    );
-  for (const node of versionNodes) {
-    seen.add(node.id);
-    options.push({
-      versionId: node.id,
-      label: node.label || node.id,
-      detail: node.detail,
-      isCurrent: node.id === currentDocumentVersionId,
-    });
-  }
-
-  const selectedVersionId: string = index.document.documentVersionId;
-  if (selectedVersionId && !seen.has(selectedVersionId)) {
-    options.unshift({
-      versionId: selectedVersionId,
-      label: index.document.documentCode || selectedVersionId,
-      detail: index.document.businessRevision,
-      isCurrent: selectedVersionId === currentDocumentVersionId,
-    });
-  }
-  return options;
 }
 
 function primarySourceRef(result: UnifiedReaderQueryResult): string {

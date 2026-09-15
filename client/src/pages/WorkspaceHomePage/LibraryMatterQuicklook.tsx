@@ -4,7 +4,13 @@ import { Link, useNavigate } from 'react-router-dom';
 import { Button } from '@client/src/components/ui/button';
 import useEngineeringMatter from '@client/src/features/matter/useEngineeringMatter';
 import SavedAssessmentReading from '@client/src/features/matter/SavedAssessmentReading';
-import { matterOverviewRoute } from '@client/src/features/matter/matter-navigation';
+import {
+  matterDocumentRoute,
+  matterOverviewRoute,
+} from '@client/src/features/matter/matter-navigation';
+import MatterProblemWork from '@client/src/features/matter/MatterProblemWork';
+import OverviewCorrectionNotices from '@client/src/features/matter/OverviewCorrectionNotices';
+import ReferenceWorkNotices from '@client/src/features/matter/ReferenceWorkNotices';
 import type { DocumentAssessmentEvidence } from '@client/src/features/matter/assessment-reading';
 import type { EngineeringMatterWorkspaceRead } from '@client/src/api/engineering-matter';
 
@@ -16,6 +22,9 @@ export function LibraryMatterQuicklookContent({
   const navigate = useNavigate();
   const current = data.working.current;
   const result = current?.state.substantiveResult;
+  const problemWork = current?.state.problemWork;
+  const locateDocument = (source: DocumentAssessmentEvidence) =>
+    navigate(matterDocumentRoute(data.matter.matterId, source));
   return (
     <>
       <header className="atlas-library-inspector-title">
@@ -25,19 +34,39 @@ export function LibraryMatterQuicklookContent({
         <p>{current?.state.focus.question || '当前问题描述尚未单独保存。'}</p>
       </header>
       <section className="atlas-library-reading-block">
-        <h3>当前认识 · 我方候选意见</h3>
-        {result ? (
-          <SavedAssessmentReading
-            result={result}
-            onLocateDocument={(source: DocumentAssessmentEvidence) =>
-              navigate(
-                `/work-items/${encodeURIComponent(source.workItemId)}/documents?${new URLSearchParams({ node: 'reader', tab: 'reader', documentVersionId: source.documentVersionId, sourceRef: source.sourceRefId }).toString()}`,
-              )
-            }
+        <h3>已保存工作 · 我方候选意见</h3>
+        {problemWork ? (
+          <>
+            <p>问题分析已保存；保存不代表综合已覆盖或已正式采用。</p>
+            <MatterProblemWork
+              revision={current}
+              onLocateDocument={locateDocument}
+              showReferenceNotices={false}
+            />
+          </>
+        ) : null}
+        {!problemWork ? (
+          <OverviewCorrectionNotices
+            matterId={data.matter.matterId}
+            notices={current?.overviewCorrectionNotices}
           />
-        ) : (
-          <p>尚未形成已保存的事项综合认识。成员文档的意见不代替全事项结论。</p>
-        )}
+        ) : null}
+        <ReferenceWorkNotices notices={current?.referenceWorkNotices} />
+        {result && problemWork?.overviewStatus !== 'NOT_AVAILABLE' ? (
+          <>
+            <h4>
+              {problemWork?.overviewStatus === 'STALE'
+                ? '已保存意见 · 尚未覆盖当前问题更新'
+                : '已保存意见及其范围'}
+            </h4>
+            <SavedAssessmentReading
+              result={result}
+              onLocateDocument={locateDocument}
+            />
+          </>
+        ) : !result ? (
+          <p>尚未取得已保存的事项阅读结果。成员文档的意见不代替全事项结论。</p>
+        ) : null}
       </section>
       <section className="atlas-library-reading-block">
         <h3>背景资料</h3>
