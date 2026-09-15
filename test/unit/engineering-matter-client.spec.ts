@@ -229,6 +229,23 @@ describe('engineering matter browser API bindings', () => {
     expect(request.mock.calls[1][0].url).toBe(
       '/api/canonical-host/engineering-matters/M%2F1/materials',
     );
+    for (const mismatch of [
+      { documentVersionId: 'DV-OTHER' },
+      { familyId: 'F-OTHER' },
+    ]) {
+      request.mockResolvedValueOnce({
+        status: 200,
+        data: {
+          materials: {
+            ...materials,
+            materials: [{ ...input.upserts[0], ...mismatch }],
+          },
+        },
+      });
+      await expect(
+        reviseEngineeringMatterMaterials('M/1', input),
+      ).rejects.toMatchObject({ statusCode: 403 });
+    }
     request.mockResolvedValueOnce({
       status: 200,
       data: { materials: { ...materials, matterRevision: 4 } },

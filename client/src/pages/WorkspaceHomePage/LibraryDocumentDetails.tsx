@@ -3,6 +3,7 @@ import type { CanonicalLibraryDocumentSummary } from '@shared/api.interface';
 import { Button } from '@client/src/components/ui/button';
 import { DocumentVersionLink } from './DocumentVersionLink';
 import { LibraryMetadata } from './LibraryMetadata';
+import LinkDocumentMatterMaterial from '@client/src/features/matter/LinkDocumentMatterMaterial';
 import {
   byteLabel,
   documentLabel,
@@ -14,12 +15,14 @@ interface LibraryDocumentDetailsProps {
   document: CanonicalLibraryDocumentSummary | null;
   onRefresh: () => void;
   onViewTasks: (familyId: string) => void;
+  linkMatterId?: string;
 }
 
 export function LibraryDocumentDetails({
   document,
   onRefresh,
   onViewTasks,
+  linkMatterId,
 }: LibraryDocumentDetailsProps) {
   return (
     <aside
@@ -54,6 +57,13 @@ export function LibraryDocumentDetails({
           <p className="library-quicklook-note">
             版本状态以文档管理模块的登记为准。重复评估关联已有文档版本。
           </p>
+          {linkMatterId ? (
+            <LinkDocumentMatterMaterial
+              key={`${linkMatterId}:${document.familyId}`}
+              matterId={linkMatterId}
+              document={document}
+            />
+          ) : null}
           <ol className="library-version-list" aria-label="文档版本历史">
             {document.versions.map((version) => (
               <li key={version.documentVersionId}>

@@ -24,12 +24,14 @@ export default function EditMatterMaterial({
   material,
   disabled,
   onSaved,
+  actionLabel = '调整材料关系',
 }: {
   matterId: string;
   revision: number;
   material: MatterMaterialLink;
   disabled: boolean;
   onSaved: () => Promise<void>;
+  actionLabel?: string;
 }) {
   const { authenticationRequired } = useCurrentUserSession();
   const [open, setOpen] = useState(false);
@@ -99,12 +101,12 @@ export default function EditMatterMaterial({
           size="sm"
           disabled={disabled || authenticationRequired}
         >
-          调整材料关系
+          {actionLabel}
         </Button>
       </DialogTrigger>
       <DialogContent>
         <DialogHeader>
-          <DialogTitle>调整材料关系</DialogTitle>
+          <DialogTitle>{actionLabel}</DialogTitle>
           <DialogDescription>
             说明这份材料参与当前问题的范围和作用。排除后保留原关系及历史，已有评估仍显示其实际覆盖范围。
           </DialogDescription>

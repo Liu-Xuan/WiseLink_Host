@@ -354,7 +354,7 @@ const MatterWorkspace: FC<MatterWorkspaceProps> = ({
             onClick={() => {
               saveLocation();
               navigate(
-                `/library?${new URLSearchParams({ mode: 'tasks', linkMatterId: matterId }).toString()}`,
+                `/library?${new URLSearchParams({ mode: 'document', linkMatterId: matterId }).toString()}`,
               );
             }}
           >
