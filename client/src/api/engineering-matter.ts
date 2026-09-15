@@ -173,6 +173,10 @@ export async function reviseEngineeringMatterMaterials(
           (actual) =>
             actual.materialId === expected.materialId &&
             actual.kind === expected.kind &&
+            (expected.kind === 'EXPECTED' ||
+              (actual.kind !== 'EXPECTED' &&
+                actual.documentVersionId === expected.documentVersionId &&
+                actual.familyId === expected.familyId)) &&
             actual.disposition === expected.disposition &&
             actual.scope === expected.scope &&
             actual.contribution === expected.contribution &&

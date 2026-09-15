@@ -640,6 +640,7 @@ export default function WorkspaceHomePage() {
               {treeMode === 'document' ? (
                 <LibraryDocumentDetails
                   key={`${sessionGeneration}:${familyId}`}
+                  linkMatterId={linkMatterId}
                   document={
                     selectedDocument?.kind === 'DOCUMENT'
                       ? selectedDocument
