@@ -1,5 +1,15 @@
 # M 主控集成交接
 
+## 2026-09-15 两版FTD原文执行准备，新增范围尚未启用
+
+官方 Host 开发页可以到达，但当前要求飞书扫码登录；已向用户请求扫码。发布回执的线上URL经普通未认证HTTP检查返回404，不将其误报为整个Host不可达。页面解析接口只创建预约，后台 `document_work` 才执行原文步骤，因此未在没有可用消费者权限的情况下先创建预约。
+
+本地最小实现新增 `WL_OPENCLAW_SERVICE_DOCUMENT_VERSION_IDS`：可选JSON非空数组，显式提供时替代原单值，仅允许列出的完整版本ID，统一使用原配置actor/tenant。非法或重复列表报配置不可用，不静默退回单值；未提供时保留原单文档行为。每次原文/中文工具调用仍经过服务范围和既有来源权限复核，STEP保留lease与事务边界；不会从文档列表取得Matter或WorkItem权限。这只是DEV/UAT的明确对象范围，不代表第四批正式后台委托身份已经实现。
+
+准备的实际范围为原787 FTD `document_version_b83523c2b5ba26a2b1753641` 加两份777 FTD快照 `document_version_6b998c1544aa06b5f20b2be0`（导出2025-09-26）及 `document_version_78c6d0adb612265f85e1d338`（导出2026-05-27）。设置完整列表将保留原文档，使用原文档actor/tenant，不改原三个job；新增每份777 FTD各一个精确DV文档任务。现有消费者首次发布原文后会走INDEX和首次辅助中文，已可用结果按原状态复用。具体版本的parseRun仍须由正式用户经正常页面受理。
+
+验证：服务范围及接线21项、原文/中文runtime9项、server typecheck及diff check通过。代码尚未发布；以上新增真实文档工具范围及任务尚未授权启用，没有修改线上scope或创建parseRun。
+
 ## 2026-09-15 c105 与 Host 输入状态修复已发布
 
 Host release `7685625262247840716` 已 `finished`，精确提交 `83db3f56f044357cee6752132f6fe2070180dbdf`。本批补齐新任务及保存恢复的 `previousWork.overviewStatus`，明确旧综合为 STALE 时，即使问题正文无需更改，仍应核对并保存新综合。Host 定向27项、消费者11项和服务端类型检查通过。

@@ -9,6 +9,7 @@ const KEYS = [
   'WL_OPENCLAW_SERVICE_WORK_ITEM_ID',
   'WL_OPENCLAW_DOCUMENT_SCOPE_ENABLED',
   'WL_OPENCLAW_SERVICE_DOCUMENT_VERSION_ID',
+  'WL_OPENCLAW_SERVICE_DOCUMENT_VERSION_IDS',
   'WL_OPENCLAW_SERVICE_DOCUMENT_ACTOR_ID',
   'WL_OPENCLAW_MATTER_SCOPE_ENABLED',
   'WL_OPENCLAW_SERVICE_MATTER_ID',
@@ -71,6 +72,42 @@ describe('ConfiguredDevelopmentCanonicalServiceScopeAuthorization', () => {
     process.env.WL_OPENCLAW_SERVICE_SCOPE_ENV = 'PROD';
     await expect(service.authorizeOpenClawMatterAttempt(request)).rejects.toMatchObject({ statusCode: 503 });
   });
+
+  it('authorizes only explicitly listed document versions under the same actor and reflects removal immediately', async () => {
+    for (const key of KEYS) delete process.env[key];
+    Object.assign(process.env, { WL_OPENCLAW_SERVICE_SCOPE_ENABLED: '1', WL_OPENCLAW_GATEWAY_AUTH_MODE: 'API_KEY',
+      WL_OPENCLAW_SERVICE_SCOPE_ENV: 'UAT', WL_OPENCLAW_SERVICE_PRINCIPAL_ID: 'service:document-consumer',
+      WL_OPENCLAW_SERVICE_TENANT_ID: 'tenant-test', WL_OPENCLAW_DOCUMENT_SCOPE_ENABLED: '1',
+      WL_OPENCLAW_SERVICE_DOCUMENT_VERSION_ID: 'DV-legacy', WL_OPENCLAW_SERVICE_DOCUMENT_ACTOR_ID: 'actor-test',
+      WL_OPENCLAW_SERVICE_DOCUMENT_VERSION_IDS: JSON.stringify(['DV-old', 'DV-new']) });
+    const service = new ConfiguredDevelopmentCanonicalServiceScopeAuthorization();
+    for (const documentVersionId of ['DV-old', 'DV-new']) {
+      await expect(service.authorizeDocumentWork({ documentVersionId })).resolves.toMatchObject({
+        tenantId: 'tenant-test', actorUserId: 'actor-test', documentVersionId });
+    }
+    for (const documentVersionId of ['DV-other', 'DV-legacy', 'DV-old ']) {
+      await expect(service.authorizeDocumentWork({ documentVersionId })).rejects.toMatchObject({ statusCode: 404 });
+    }
+    process.env.WL_OPENCLAW_SERVICE_DOCUMENT_VERSION_IDS = JSON.stringify(['DV-new']);
+    await expect(service.authorizeDocumentWork({ documentVersionId: 'DV-old' })).rejects.toMatchObject({ statusCode: 404 });
+    await expect(service.authorizeOpenClawMatterRequest({ matterId: 'MAT-test' })).rejects.toMatchObject({ statusCode: 503 });
+    await expect(service.authorizeWorkItemRead({ transport: 'READONLY_MCP', operation: 'READ_STATUS', workItemId: 'WI-test' }))
+      .rejects.toMatchObject({ statusCode: 503 });
+    delete process.env.WL_OPENCLAW_SERVICE_DOCUMENT_ACTOR_ID;
+    await expect(service.authorizeDocumentWork({ documentVersionId: 'DV-new' })).rejects.toMatchObject({ statusCode: 503 });
+  });
+
+  it.each(['', 'not-json', '{}', '[]', '[null]', '["*"]', '[" DV-old"]', '["DV-old","DV-old"]'])
+    ('rejects invalid explicit document configuration %s without falling back to the legacy version', async configured => {
+      for (const key of KEYS) delete process.env[key];
+      Object.assign(process.env, { WL_OPENCLAW_SERVICE_SCOPE_ENABLED: '1', WL_OPENCLAW_GATEWAY_AUTH_MODE: 'API_KEY',
+        WL_OPENCLAW_SERVICE_SCOPE_ENV: 'UAT', WL_OPENCLAW_SERVICE_PRINCIPAL_ID: 'service:document-consumer',
+        WL_OPENCLAW_SERVICE_TENANT_ID: 'tenant-test', WL_OPENCLAW_DOCUMENT_SCOPE_ENABLED: '1',
+        WL_OPENCLAW_SERVICE_DOCUMENT_VERSION_ID: 'DV-legacy', WL_OPENCLAW_SERVICE_DOCUMENT_ACTOR_ID: 'actor-test',
+        WL_OPENCLAW_SERVICE_DOCUMENT_VERSION_IDS: configured });
+      await expect(new ConfiguredDevelopmentCanonicalServiceScopeAuthorization().authorizeDocumentWork({ documentVersionId: 'DV-legacy' }))
+        .rejects.toMatchObject({ code: 'CANONICAL_SERVICE_SCOPE_UNAVAILABLE', statusCode: 503 });
+    });
 
   it('fails closed when explicit gateway and DEV scope configuration is absent', async () => {
     for (const key of KEYS) delete process.env[key];

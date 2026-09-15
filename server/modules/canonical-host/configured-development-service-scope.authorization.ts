@@ -25,6 +25,8 @@ const CANONICAL_APP_ID = 'app_17bzc551rsg';
  * DocumentVersion and one UUID run token; ordinary OpenClaw calls remain
  * bound to one exact WorkItem. Matter operations separately require an enabled
  * exact Matter/actor binding and never inherit the WorkItem allowlist.
+ * Document work uses an explicit version allowlist under one configured actor;
+ * every operation still rechecks that actor's ordinary source permission.
  */
 @Injectable()
 // Supplied as the executor/service delegate through CanonicalHostModule.forRoot().
@@ -32,9 +34,9 @@ const CANONICAL_APP_ID = 'app_17bzc551rsg';
 export class ConfiguredDevelopmentCanonicalServiceScopeAuthorization implements CanonicalServiceScopeAuthorizationPort {
   async authorizeDocumentWork(input: { documentVersionId: string }) {
     const config = requiredDocumentConfig();
-    if (input.documentVersionId !== config.documentVersionId) throw Object.assign(new Error('DOCUMENT_WORK_NOT_FOUND'), { statusCode: 404 });
+    if (!config.documentVersionIds.includes(input.documentVersionId)) throw Object.assign(new Error('DOCUMENT_WORK_NOT_FOUND'), { statusCode: 404 });
     return { principalId: config.principalId, appId: CANONICAL_APP_ID, tenantId: config.tenantId,
-      actorUserId: config.actorUserId, documentVersionId: config.documentVersionId };
+      actorUserId: config.actorUserId, documentVersionId: input.documentVersionId };
   }
 
   async authorizeWorkItemRead(input: {
@@ -249,8 +251,21 @@ function requiredDocumentConfig() {
   const documentVersionId = process.env.WL_OPENCLAW_SERVICE_DOCUMENT_VERSION_ID;
   const actorUserId = process.env.WL_OPENCLAW_SERVICE_DOCUMENT_ACTOR_ID;
   if (process.env.WL_OPENCLAW_DOCUMENT_SCOPE_ENABLED !== '1' ||
-      !documentVersionId?.trim() || !actorUserId?.trim()) throw canonicalServiceScopeUnavailable();
-  return { ...base, documentVersionId, actorUserId };
+      !actorUserId?.trim()) throw canonicalServiceScopeUnavailable();
+  const configuredVersions = process.env.WL_OPENCLAW_SERVICE_DOCUMENT_VERSION_IDS;
+  if (configuredVersions === undefined) {
+    if (!documentVersionId?.trim()) throw canonicalServiceScopeUnavailable();
+    return { ...base, documentVersionIds: [documentVersionId], actorUserId };
+  }
+  // An explicit list replaces the single-version setting. Invalid configuration
+  // must not silently fall back to a different authorization scope.
+  let versions: unknown;
+  try { versions = JSON.parse(configuredVersions); }
+  catch { throw canonicalServiceScopeUnavailable(); }
+  if (!Array.isArray(versions) || !versions.length || !versions.every((version): version is string =>
+    typeof version === 'string' && version.length <= 96 && /^[A-Za-z0-9][A-Za-z0-9_-]*$/u.test(version)) ||
+    new Set(versions).size !== versions.length) throw canonicalServiceScopeUnavailable();
+  return { ...base, documentVersionIds: versions, actorUserId };
 }
 
 function requiredMatterConfig() {
