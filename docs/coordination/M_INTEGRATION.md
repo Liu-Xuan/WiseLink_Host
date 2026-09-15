@@ -1,5 +1,17 @@
 # M 主控集成交接
 
+## 2026-09-15 工作16更正已保存，后继综合失败及输入缺口修复
+
+本次从 Host online 持久工作与正常 Hosted MCP `READ_SAVED_WORK` 读回同一工作15后，M与Luna核对了要求标题与条件解释的矛盾、三个结构化开放问题与旧综合“四项”的差异，以及历史轮次说明。正常 `begin_matter_assessment` 以工作15、事项修订3及28条完整目标引用受理 `AQ-add317d43ab142e79ed593ed31546411`；原 Matter cron 自然领取，专用官方更正插件完成生成，Host 正常保存及结束为 `SUCCEEDED`。
+
+工作16为 `MWREV-75632e5d-e5f4-4cd2-8ace-a254f99f5874`。M核对持久 GENERATED 与保存结果：目标正文、要求处理、未决问题三组字段完全相同，其他四个问题完全保留。要求标题已由绝对结论改为待核对的关联判断，正文明确参考不修订SB受控要求、不从未换版推出事项安排绝不变化、不把普通引用或构型能力未连接自动变为整个SB判断的强制前置。真实条件未知仍保留；未形成正式采用或执行决定。Host差异摘要为“目标问题实际更新：正文、要求处理、未决问题。”
+
+正常产品回读工作16仍为 `overviewStatus=STALE`，旧综合未被冒充为已覆盖。本次随后以精确工作16受理综合核对 `AQ-7a13e67cefb446a98b48870cf6e5056f`，原调度自然运行后以 `JOBAID_INCOMPLETE_TERMINAL_RESPONSE` 失败，未执行 SAVE_WORK，工作16保留。原生 session 显示两次 assistant 消息均无正文或工具调用，第二次 stopReason=length、output=16000；网关返回 HTTP 400 incomplete_result。此次不属于成功综合，也不重放半截响应。
+
+失败输入另外暴露可修复的传递缺口：持久工作为 STALE，但 `previousWork` 只有旧正文。现已在 Host 两条任务构建路径和消费者 savedWork 恢复路径补传 `overviewStatus`，并明确 STALE 综合即使问题正文不变也须检查并保存新的 overview。局部输入修复不等于已解决托管模型截断。定向 Host 测试27项、消费者测试11项及服务端类型检查通过；上述修改尚未发布。
+
+旧 WorkItem `WI-d09b7acc…` 的 `NOT_READY` 已定位：其对应文档版本有历史解析包，但没有 `dm_document_parse_run` 原件记录，当前原件模式因此不就绪。该旧任务状态不阻断本次事项的正常更正领取；未为清除状态重做有效资料。Host仍为下述 `18353c2d…`、Skill c104，本段没有新的技术发布。
+
 ## 2026-09-15 c104 与 Host 协同切换完成
 
 Host release `7685608780734729182` 已 `finished`，官方读回精确提交 `18353c2d0d0b4f796b575929d8bca9677d127e47`。同一 Hosted 安装目录已由官方 `openclaw skills install <verified-root> --as wiselink-research-and-synthesize --force` 单次从 c103 更新为 c104；包 source commit 仍为 `cb30964e3f5030d563ce87524f195bb78ef096f0`，不因后续操作员文档提交重打包。
