@@ -82,9 +82,16 @@ export function materializeMatterJobAidCommand(input: {
   } : null;
   const hasSubstantiveChange = canonicalJson(readingContent(previous?.problemWork)) !==
     canonicalJson(readingContent(work));
+  const unchangedIssues = canonicalJson(previous?.problemWork?.issues ?? null) === canonicalJson(work.issues);
+  // An overview update keeps the saved analysis of an unchanged exact input.
+  // It cannot certify a new source version or override an explicit disposition.
+  const retainedCoverageFor = (binding: EngineeringMatterWorkingInputBinding) => {
+    if (!unchangedIssues || byInput.has(binding.inputId) || !documents.some(item => matchesReadBinding(item, binding))) return undefined;
+    return previous?.coverage.find(item => item.contribution === 'SUBSTANTIVE' &&
+      canonicalJson(item.binding) === canonicalJson(binding));
+  };
   const contributionFor = (binding: EngineeringMatterWorkingInputBinding) => {
-    const refs = new Set(documents.filter(item => item.documentVersionId === binding.documentVersionId &&
-      (item.workItemId === null || item.workItemId === binding.workItemId)).map(item => item.evidenceRef));
+    const refs = new Set(documents.filter(item => matchesReadBinding(item, binding)).map(item => item.evidenceRef));
     const usedByChangedIssue = work.issues.some(issue => substantiveIssueKeys.has(issue.issueKey) &&
       usesByIssue.get(issue.issueKey)?.some(use => refs.has(use.evidenceRef)));
     if (usedByChangedIssue) {
@@ -92,21 +99,27 @@ export function materializeMatterJobAidCommand(input: {
       return 'SUBSTANTIVE' as const;
     }
     if (byInput.get(binding.inputId)?.contribution === 'NO_MATERIAL_CHANGE') return 'NO_MATERIAL_CHANGE' as const;
+    if (retainedCoverageFor(binding)) return 'SUBSTANTIVE' as const;
     return 'READ_ONLY' as const;
   };
-  const coverageUpdates = input.inputs.filter(binding => readDocuments.some(item => matchesReadBinding(item,binding))).map(binding => ({
+  const coverageUpdates = input.inputs.filter(binding => readDocuments.some(item => matchesReadBinding(item,binding))).map(binding => {
+    const retained = retainedCoverageFor(binding);
+    const readScope = [...new Set(readDocuments.filter(item => matchesReadBinding(item,binding)).map(item => item.locator))].join('；');
+    const additionalScope = retained ? [...new Set(readDocuments.filter(item => matchesReadBinding(item, binding) &&
+      !retained.checkedSourceRefIds.includes(item.sourceRefId)).map(item => item.locator))].join('；') : '';
+    return {
     binding: structuredClone(binding), contribution: contributionFor(binding),
-    checkedSourceRefIds: [...new Set(readDocuments.filter(item => matchesReadBinding(item,binding) &&
-      (!byInput.has(binding.inputId) || byInput.get(binding.inputId)!.checkedEvidenceRefs.includes(item.evidenceRef))).map(item => item.sourceRefId))],
-    checkedScope: byInput.get(binding.inputId)?.checkedScope ?? [...new Set(readDocuments.filter(item => matchesReadBinding(item,binding)).map(item => item.locator))].join('；'),
-    reason: contributionFor(binding) === 'SUBSTANTIVE' ? work.changeSummary : contributionFor(binding) === 'NO_MATERIAL_CHANGE' ? byInput.get(binding.inputId)!.reason : '已读取列明片段，但本轮未保存这些输入的分析或比较处置；其余范围仍待核查。',
-  }));
+    checkedSourceRefIds: [...new Set([...(retained?.checkedSourceRefIds ?? []), ...readDocuments.filter(item => matchesReadBinding(item,binding) &&
+      (!byInput.has(binding.inputId) || byInput.get(binding.inputId)!.checkedEvidenceRefs.includes(item.evidenceRef))).map(item => item.sourceRefId)])],
+    checkedScope: byInput.get(binding.inputId)?.checkedScope ?? (retained ? retained.checkedScope + (additionalScope ? `；另读取但未新增分析：${additionalScope}` : '') : readScope),
+    reason: retained?.reason ?? (contributionFor(binding) === 'SUBSTANTIVE' ? work.changeSummary : contributionFor(binding) === 'NO_MATERIAL_CHANGE' ? byInput.get(binding.inputId)!.reason : '已读取列明片段，但本轮未保存这些输入的分析或比较处置；其余范围仍待核查。'),
+  }; });
   const substantiveInputs = input.inputs.filter(binding => coverageUpdates.some(item => item.binding.inputId === binding.inputId && item.contribution === 'SUBSTANTIVE'));
   return {
     requestId: input.requestId, expectedWorkingRevision: input.expectedWorkRevision,
     basedOnMatterRevisionId: input.matterRevisionId,
     updateKind: previous ? 'CORRECTION' : 'INITIAL_SYNTHESIS', changeSummary: work.changeSummary,
-    nextFocus: previous ? null : { question: work.understanding, targetRefs: [] },
+    nextFocus: previous ? null : { question: work.issues[0]?.question ?? work.headline, targetRefs: [] },
     claimDelta: hasSubstantiveChange ? {
       changedBecause: work.changeSummary,
       additions: claims.filter(item => !priorClaims.has(item.claimId)),
