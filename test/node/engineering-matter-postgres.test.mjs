@@ -7,6 +7,7 @@ import test from 'node:test';
 
 import postgres from 'postgres';
 
+process.env.TS_NODE_PROJECT = resolve('tsconfig.node.json');
 process.env.TS_NODE_COMPILER_OPTIONS = JSON.stringify({
   module: 'CommonJS',
   moduleResolution: 'node',
@@ -56,6 +57,7 @@ const {
 
 const { jobAidProblemModelWorkContent } = require('../../server/modules/canonical-host/jobaid-problem-task.ts');
 const { buildMatterJobAidTask } = require('../../server/modules/canonical-host/matter-jobaid-task.ts');
+const { readMatterDocumentIdentities } = require('../../server/modules/canonical-host/matter-document-identity.ts');
 const { originalFixture } = require('../unit/document-parsing/fixtures/document-original.fixture.ts');
 const {
   MatterActionAttemptService,
@@ -1207,7 +1209,7 @@ async function resetDatabase(sql) {
   );
   // Isolated equivalents of the platform's existing table privileges and
   await sql.unsafe(
-    'GRANT SELECT ON dm_document_version, dm_publication_family TO service_role',
+    'GRANT SELECT ON dm_document_version, dm_publication_family, dm_currentness_decision TO service_role',
   );
   await sql.unsafe(
     'GRANT UPDATE ON dm_document_version TO service_role',
@@ -3510,6 +3512,7 @@ test('targeted correction uses real PostgreSQL fences, durable generation and ex
     try {
       await resetDatabase(sql);
       await seedRealDocumentWorkItems(sql, await loadRealDocumentFixtures());
+      await sql`UPDATE dm_publication_family SET canonical_identity_key = 'tenant:tenant-A:family:' || canonical_identity_key`;
       const owner = await reserveActorService('actor-A'); connections.push(owner);
       const second = await reserveActorService('actor-A'); connections.push(second);
       const created = await owner.service.create({ requestId: 'correction-fixture', title: 'Synthetic correction fixture',
@@ -3526,6 +3529,16 @@ test('targeted correction uses real PostgreSQL fences, durable generation and ex
       const lease = await owner.runtime(() => initialService.claim(initialScope));
       const initialFence = { ...initialScope, leaseToken: lease.leaseToken, leaseGeneration: lease.leaseGeneration };
       const documentVersionId = initial.task.workingBasis.inputs[0].documentVersionId;
+      const [catalogIdentity] = await readMatterDocumentIdentities(owner.database, scope.tenantId, [documentVersionId]);
+      assert.equal(catalogIdentity.catalogStatus, 'REGISTERED');
+      assert.equal(catalogIdentity.documentVersionId, documentVersionId);
+      assert.equal(catalogIdentity.catalogCurrentVersionId, documentVersionId);
+      assert.equal(typeof catalogIdentity.decidedAt, 'string');
+      assert.ok(catalogIdentity.businessRevision);
+      assert.match(catalogIdentity.limitation, /未核实发布方最新有效状态/);
+      const [otherTenantIdentity] = await readMatterDocumentIdentities(owner.database, 'tenant-B', [documentVersionId]);
+      assert.equal(otherTenantIdentity.catalogStatus, 'NOT_AVAILABLE');
+      assert.equal(otherTenantIdentity.documentNumber, undefined);
       const ref = `DOCUMENT_VERSION:${documentVersionId}:page:1`;
       const evidence = { kind: 'DOCUMENT_PASSAGE', documentVersionId, workItemId: null, evidenceRef: ref, sourceRefId: ref,
         title: 'Synthetic source', versionLabel: null, locator: 'Page 1', excerpt: 'Applicability requires a confirmed dependency.' };
@@ -3564,6 +3577,8 @@ test('targeted correction uses real PostgreSQL fences, durable generation and ex
         producer: { kind: 'OFFICIAL_PLUGIN', instanceId: 'wl-engineering-issue-correction', pluginVersion: '1.0.26', actionKey: 'textToJson', concreteModel: null } };
       const plugin = { generate: async (_context, assertActive) => {
         callCount += 1; await assertActive();
+        assert.ok(_context.limitations.some(item => item.includes(catalogIdentity.businessRevision) &&
+          item.includes(catalogIdentity.documentNumber) && item.includes('本次来源目录身份核对')));
         // The owner has a single connection. These complete only if generation is outside its transaction.
         await owner.database.execute(drizzleSql`SELECT 1`);
         await owner.runtime(() => service.heartbeat(fence));
@@ -3588,7 +3603,7 @@ test('targeted correction uses real PostgreSQL fences, durable generation and ex
       fence = { ...target, leaseToken: claim.leaseToken, leaseGeneration: claim.leaseGeneration };
       const generation = { ...fence, requestId: 'generate-once' };
       const first = owner.runtime(() => service.executeIssueCorrection(generation));
-      await started;
+      await Promise.race([started, first]);
       await assert.rejects(second.runtime(() => otherService.executeIssueCorrection(generation)), /RESULT_UNCONFIRMED/);
       assert.equal(callCount, 1); release();
       assert.equal((await first).persisted, true);
@@ -3648,6 +3663,17 @@ test('targeted correction uses real PostgreSQL fences, durable generation and ex
       assert.equal(unchangedNotice.unchanged, true);
       assert.equal(unchangedNotice.correctedWorkRef, null);
       assert.equal(unchangedRead.state.problemWork.overviewStatus, read.state.problemWork.overviewStatus);
+      const continuationContext = buildMatterJobAidTask({ matterId: scope.matterId,
+        matterRevisionId: basis.snapshot.currentMatterRevisionId, actorUserId: scope.actorUserId,
+        title: 'Continue after comparison', inputs: unchangedTask.task.workingBasis.inputs,
+        trigger: { kind: 'USER_REQUEST', requestId: 'after-comparison', instruction: 'Continue remaining work' },
+        previous: unchangedRead });
+      {
+        const notice = continuationContext.modelInput.knownCorrections.find(item => item.issueKey === 'dependency');
+        assert.equal(notice.attemptStatus, 'SUCCEEDED');
+        assert.equal(notice.unchanged, true);
+        assert.equal(notice.correctedWorkRef, null);
+      }
       const [noNewWork] = await sql`SELECT count(*)::int AS n FROM engineering_matter_work_revision
         WHERE action_attempt_id = ${unchangedTask.task.actionAttemptId}`;
       assert.equal(noNewWork.n, 0, 'an unchanged correction records its receipt without creating a work revision');

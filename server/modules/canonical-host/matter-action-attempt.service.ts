@@ -4,6 +4,7 @@ import { materializeMatterJobAidCommand } from './matter-jobaid-save';
 import { buildEngineeringIssueCorrectionContext, summarizeEngineeringIssueCorrection } from './engineering-issue-correction-context';
 import { EngineeringIssueCorrectionPluginService } from './engineering-issue-correction-plugin.service';
 import { engineeringMatterPendingInputs } from './engineering-matter-working-state';
+import { readMatterDocumentIdentities } from './matter-document-identity';
 import type { AssessmentEvidence } from '@shared/assessment-reading.interface';
 import { JOBAID_PROBLEM_WORK_SCHEMA } from '@shared/jobaid-problem-assessment.interface';
 import { randomUUID } from 'node:crypto';
@@ -697,10 +698,12 @@ export class MatterActionAttemptService {
             prior.evidence.some(old => reading.evidence.some(now => now.evidenceRef === old.evidenceRef && canonicalJson(old) !== canonicalJson(now))))
           throw failure('MATTER_SOURCE_READ_IDENTITY_CHANGED');
       }
+      const [documentIdentity] = await readMatterDocumentIdentities(executor.database, input.tenantId, [input.documentVersionId]);
+      const delivered = { ...reading, documentIdentity };
       await executor.database.update(actionAttempt).set({ reviewActivityJson:canonicalJson([...events,
-        {kind:'MATTER_ORIGINAL_READ',purpose:input.purpose,observedAt:new Date().toISOString(),reading}]) })
+        {kind:'MATTER_ORIGINAL_READ',purpose:input.purpose,observedAt:new Date().toISOString(),reading:delivered}]) })
         .where(eq(actionAttempt.attemptId,row.attemptId));
-      return reading;
+      return delivered;
     });
   }
 
@@ -858,8 +861,11 @@ export class MatterActionAttemptService {
         if (!item) throw failure('ENGINEERING_CORRECTION_SOURCE_NOT_DELIVERED');
         return item;
       });
+      const identities = await readMatterDocumentIdentities(executor.database, input.tenantId,
+        evidence.flatMap(item => 'documentVersionId' in item ? [item.documentVersionId] : []));
       const context = buildEngineeringIssueCorrectionContext({ current, ...request, deliveredEvidence: evidence,
-        limitations: ['本操作更正指定问题正文、要求处理及未决问题；其他风险、措施、分类保持原值，受影响但无法在本操作修改的判断须保留明确未知。总体认识仍须核对，不代表正式采用。'] });
+        limitations: ['本操作更正指定问题正文、要求处理及未决问题；其他风险、措施、分类保持原值，受影响但无法在本操作修改的判断须保留明确未知。总体认识仍须核对，不代表正式采用。',
+          ...identities.map(identity => `本次来源目录身份核对：${canonicalJson(identity)}`)] });
       await executor.database.update(actionAttempt).set({ reviewActivityJson: canonicalJson([...events, {
         kind: 'MATTER_ISSUE_CORRECTION_STARTED', requestId: input.requestId, request, context,
         observedAt: new Date().toISOString(),
