@@ -15,6 +15,8 @@ import type {
   AssessmentReadingClaim,
   AssessmentReadingResult,
 } from '@shared/assessment-reading.interface';
+import type { EngineeringMatterWorkingRevisionReadModel } from '@shared/matter-working.interface';
+import { getEngineeringMatterWorkingRevision } from '@client/src/api/engineering-matter';
 
 import AssessmentReadingBrief from './AssessmentReadingBrief';
 import ClaimEvidenceDialog from './ClaimEvidenceDialog';
@@ -36,6 +38,7 @@ import {
 import { readReadingLocation, type ReadingLocation } from './reading-location';
 import useEngineeringMatter from './useEngineeringMatter';
 import useReadingLocation from './useReadingLocation';
+import { selectMatterWorkRevision } from './matter-work-selection';
 
 import '@client/src/features/workitem/workitem-overview.css';
 
@@ -84,19 +87,36 @@ const MatterWorkspace: FC<MatterWorkspaceProps> = ({
     initialLocation?.discussionClaimId ?? null,
   );
   const [navigationError, setNavigationError] = useState<string | null>(null);
+  const requestedWorkRef: string = searchParams.get('workRef')?.trim() ?? '';
+  const [requestedRevision, setRequestedRevision] =
+    useState<EngineeringMatterWorkingRevisionReadModel | null>(null);
+  const [requestedRevisionLoading, setRequestedRevisionLoading] =
+    useState<boolean>(false);
+  const [requestedRevisionError, setRequestedRevisionError] =
+    useState<string | null>(null);
   const triggerRef = useRef<HTMLButtonElement | null>(null);
+  const currentRevision: EngineeringMatterWorkingRevisionReadModel | null =
+    data?.working.current ?? null;
+  const displayedRevision: EngineeringMatterWorkingRevisionReadModel | null =
+    selectMatterWorkRevision(
+      requestedWorkRef,
+      currentRevision,
+      requestedRevision,
+    );
   const result: AssessmentReadingResult | null =
-    data?.working.current?.state.substantiveResult ?? null;
+    displayedRevision?.state.substantiveResult ?? null;
   const discussionClaim: AssessmentReadingClaim | undefined =
     result?.content.claims.find(
       (claim: AssessmentReadingClaim) => claim.claimId === discussionClaimId,
     );
   const panel: 'brief' | 'review' | 'materials' =
-    searchParams.get('panel') === 'review'
-      ? 'review'
-      : searchParams.get('panel') === 'materials'
-        ? 'materials'
-        : 'brief';
+    requestedWorkRef
+      ? 'brief'
+      : searchParams.get('panel') === 'review'
+        ? 'review'
+        : searchParams.get('panel') === 'materials'
+          ? 'materials'
+          : 'brief';
   const saveLocation: () => void = useReadingLocation(
     scopeKey,
     sessionGeneration,
@@ -115,9 +135,50 @@ const MatterWorkspace: FC<MatterWorkspaceProps> = ({
 
   useEffect(() => {
     publishCurrentObject(
-      data ? buildMatterObjectContext(data.matter, data.working) : null,
+      !requestedWorkRef && data
+        ? buildMatterObjectContext(data.matter, data.working)
+        : null,
     );
-  }, [data, publishCurrentObject]);
+  }, [data, publishCurrentObject, requestedWorkRef]);
+
+  useEffect(() => {
+    setRequestedRevision(null);
+    setRequestedRevisionError(null);
+    if (
+      !requestedWorkRef ||
+      !matterId ||
+      authenticationRequired ||
+      currentRevision?.matterWorkRevisionId === requestedWorkRef
+    ) {
+      setRequestedRevisionLoading(false);
+      return;
+    }
+    const controller = new AbortController();
+    setRequestedRevisionLoading(true);
+    void getEngineeringMatterWorkingRevision(
+      matterId,
+      requestedWorkRef,
+      controller.signal,
+    )
+      .then((revision) => {
+        if (!controller.signal.aborted) setRequestedRevision(revision);
+      })
+      .catch((cause: unknown) => {
+        if (controller.signal.aborted) return;
+        setRequestedRevisionError(
+          cause instanceof Error ? cause.message : '指定工作修订读取失败。',
+        );
+      })
+      .finally(() => {
+        if (!controller.signal.aborted) setRequestedRevisionLoading(false);
+      });
+    return () => controller.abort();
+  }, [
+    authenticationRequired,
+    currentRevision?.matterWorkRevisionId,
+    matterId,
+    requestedWorkRef,
+  ]);
 
   function setPanel(value: string): void {
     const params: URLSearchParams = new URLSearchParams(searchParams);
@@ -228,6 +289,20 @@ const MatterWorkspace: FC<MatterWorkspaceProps> = ({
           {navigationError}
         </p>
       ) : null}
+      {requestedWorkRef ? (
+        <p
+          role={requestedRevisionError ? 'alert' : 'status'}
+          className="wl-projection-refresh"
+        >
+          {requestedRevisionLoading
+            ? '正在读取指定的已保存工作…'
+            : requestedRevisionError
+              ? requestedRevisionError
+              : displayedRevision
+                ? `正在阅读已保存工作修订 ${displayedRevision.workingRevision}；这是指定版本，不会替换为最新工作。`
+                : '尚未取得指定工作修订。'}
+        </p>
+      ) : null}
       <nav className="flex flex-wrap gap-2" aria-label="事项阅读层次">
         <Button
           variant={panel === 'brief' ? 'default' : 'outline'}
@@ -239,6 +314,7 @@ const MatterWorkspace: FC<MatterWorkspaceProps> = ({
         <Button
           variant={panel === 'review' ? 'default' : 'outline'}
           aria-pressed={panel === 'review'}
+          disabled={Boolean(requestedWorkRef)}
           onClick={() => setPanel('review')}
         >
           继续核对与讨论
@@ -246,15 +322,36 @@ const MatterWorkspace: FC<MatterWorkspaceProps> = ({
         <Button
           variant={panel === 'materials' ? 'default' : 'outline'}
           aria-pressed={panel === 'materials'}
+          disabled={Boolean(requestedWorkRef)}
           onClick={() => setPanel('materials')}
         >
           关联资料
         </Button>
+        {requestedWorkRef ? (
+          <Button
+            variant="outline"
+            onClick={() => {
+              const params = new URLSearchParams(searchParams);
+              params.delete('workRef');
+              params.delete('panel');
+              setSearchParams(params);
+            }}
+          >
+            返回当前工作
+          </Button>
+        ) : null}
       </nav>
       <RetainedWorkbenchPanel active={panel === 'brief'}>
         <div className="grid gap-6 xl:grid-cols-[minmax(0,1fr)_20rem]">
           <div className="wl-overall-hero wl-glass-content">
-            {result ? (
+            {requestedWorkRef && !displayedRevision ? (
+              <div className="space-y-4">
+                <h2 className="text-xl font-semibold">指定工作尚未读回</h2>
+                <p className="text-sm leading-7">
+                  页面不会用当前工作替代所请求的历史版本。
+                </p>
+              </div>
+            ) : result ? (
               <AssessmentReadingBrief
                 result={result}
                 onOpenClaim={(
@@ -278,15 +375,34 @@ const MatterWorkspace: FC<MatterWorkspaceProps> = ({
               </div>
             )}
             <MatterProblemWork
-              revision={data.working.current}
+              revision={displayedRevision}
               onLocateDocument={openDocument}
             />
           </div>
           <aside className="wl-side-panel">
-            <MatterWorkingDetails
-              working={data.working}
-              members={data.matter.catalog.entries}
-            />
+            {requestedWorkRef ? (
+              <section className="space-y-3 text-sm leading-7">
+                <h2 className="text-base font-semibold">指定工作版本</h2>
+                {displayedRevision ? (
+                  <>
+                    <p>工作修订 {displayedRevision.workingRevision}</p>
+                    <p>{displayedRevision.changeSummary}</p>
+                    <p className="text-muted-foreground">
+                      基于事项修订 {displayedRevision.basedOnMatterRevisionId}
+                    </p>
+                  </>
+                ) : (
+                  <p className="text-muted-foreground">
+                    尚未读回指定工作，不展示当前工作状态作为替代。
+                  </p>
+                )}
+              </section>
+            ) : (
+              <MatterWorkingDetails
+                working={data.working}
+                members={data.matter.catalog.entries}
+              />
+            )}
           </aside>
         </div>
       </RetainedWorkbenchPanel>

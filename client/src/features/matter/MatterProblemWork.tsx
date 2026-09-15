@@ -2,6 +2,7 @@ import type { EngineeringMatterWorkingRevisionReadModel } from '@shared/matter-w
 import { JobAidIssueArticle } from '@client/src/pages/DocumentParsingPage/JobAidIssueArticle';
 import type { DocumentAssessmentEvidence } from './assessment-reading';
 import ReferenceWorkNotices from './ReferenceWorkNotices';
+import OverviewCorrectionNotices from './OverviewCorrectionNotices';
 import '@client/src/pages/DocumentParsingPage/jobaid-problem-workspace.css';
 
 export default function MatterProblemWork({
@@ -23,6 +24,10 @@ export default function MatterProblemWork({
       {work.historicalSourceSchema ? <p>历史工作按原内容展开；这不是本轮新生成的分析。</p> : null}
       <p className="text-sm leading-7">{work.completionReason}</p>
       {work.overviewStatus !== 'CURRENT' ? <p>{work.overviewStatus === 'STALE' ? '现有综合尚未覆盖本次问题更新。' : '问题正文可读；综合尚未形成。'}</p> : null}
+      <OverviewCorrectionNotices
+        matterId={revision.matterId}
+        notices={revision.overviewCorrectionNotices}
+      />
       {work.issues.map((issue) => (
         <details
           key={issue.issueRef}

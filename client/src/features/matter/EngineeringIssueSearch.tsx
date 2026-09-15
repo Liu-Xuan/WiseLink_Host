@@ -20,6 +20,7 @@ import type {
 } from '@shared/engineering-issue-search.interface';
 import MatterDocumentSourceDialog from './MatterDocumentSourceDialog';
 import ReferenceWorkNotices from './ReferenceWorkNotices';
+import OverviewCorrectionNotices from './OverviewCorrectionNotices';
 import { matterDocumentRoute } from './matter-navigation';
 import type { DocumentSourceSearchResponse } from '@shared/document-source-search.interface';
 import '@client/src/pages/DocumentParsingPage/jobaid-problem-workspace.css';
@@ -198,6 +199,12 @@ export default function EngineeringIssueSearch({
           {hit.correctionNotices?.map(notice => <p key={notice.attemptRef} role="note" className="text-sm">
             {notice.correctedWorkRef ? '所引旧工作已有后继更正：' : '所引工作存在待核更正：'}{notice.reason}
           </p>)}
+          {hit.subjectKind === 'ENGINEERING_MATTER' ? (
+            <OverviewCorrectionNotices
+              matterId={hit.subjectId}
+              notices={hit.overviewCorrectionNotices}
+            />
+          ) : null}
           <ReferenceWorkNotices notices={hit.referenceWorkNotices} />
         </div>
       ))}
@@ -228,6 +235,13 @@ export default function EngineeringIssueSearch({
           {selected.identity.correctionNotices?.map(notice => <p key={notice.attemptRef} role="note" className="mb-3 text-sm">
             {notice.correctedWorkRef ? '此版本已有后继更正：' : '此版本存在待核更正：'}{notice.reason}
           </p>)}
+          {selected.identity.subjectKind === 'ENGINEERING_MATTER' ? (
+            <OverviewCorrectionNotices
+              matterId={selected.identity.subjectId}
+              notices={selected.identity.overviewCorrectionNotices}
+              className="mb-3"
+            />
+          ) : null}
           <ReferenceWorkNotices notices={selected.identity.referenceWorkNotices} />
           {selected.identity.subjectKind === 'ENGINEERING_MATTER' && selected.identity.subjectId !== matterId ? (
             <div className="mb-4 space-y-2 rounded border border-border p-3">

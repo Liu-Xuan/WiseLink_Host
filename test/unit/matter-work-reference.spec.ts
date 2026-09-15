@@ -3,7 +3,12 @@ import { createElement } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { MemoryRouter } from 'react-router-dom';
 import ReferenceWorkNotices from '../../client/src/features/matter/ReferenceWorkNotices';
-import type { EngineeringMatterWorkingRevisionReadModel } from '@shared/matter-working.interface';
+import OverviewCorrectionNotices from '../../client/src/features/matter/OverviewCorrectionNotices';
+import type {
+  EngineeringMatterOverviewCorrectionNotice,
+  EngineeringMatterReferenceWorkNotice,
+  EngineeringMatterWorkingRevisionReadModel,
+} from '@shared/matter-working.interface';
 import { assessmentEvidenceRoots } from '@shared/assessment-evidence-roots';
 import { buildMatterWorkReference } from '../../server/modules/canonical-host/matter-work-reference';
 import { materializeJobAidWork } from '../../server/modules/canonical-host/jobaid-problem-work';
@@ -50,6 +55,114 @@ test('live source notices keep exact old and corrected routes distinct, includin
     { notices: [{ ...notice, correctionNotices: [{ ...notice.correctionNotices[0], unchanged: true, correctedWorkRef: null }] }] })));
   expect(unchanged).toContain('已完成比较并保留原认识');
   expect(unchanged).not.toContain('尚未取得更正后的保存结果');
+});
+
+test('overview correction notices distinguish unsaved, failed, and saved follow-up work with exact links', () => {
+  const notices: EngineeringMatterOverviewCorrectionNotice[] = [
+    {
+      attemptRef: 'AQ-QUEUED',
+      targetWorkRef: 'MWREV-ORIGINAL-1',
+      reason: '核对综合中的已知限制。',
+      attemptStatus: 'QUEUED',
+      savedWorkRef: null,
+      savedWorkingRevision: null,
+    },
+    {
+      attemptRef: 'AQ-FAILED-EMPTY',
+      targetWorkRef: 'MWREV-ORIGINAL-2',
+      reason: '重新核对来源范围。',
+      attemptStatus: 'FAILED',
+      savedWorkRef: null,
+      savedWorkingRevision: null,
+    },
+    {
+      attemptRef: 'AQ-FAILED-SAVED',
+      targetWorkRef: 'MWREV-HISTORICAL',
+      reason: '核对旧综合与新增事实。',
+      attemptStatus: 'FAILED',
+      savedWorkRef: 'MWREV-FOLLOW-UP',
+      savedWorkingRevision: 7,
+    },
+    {
+      attemptRef: 'AQ-RUNNING',
+      targetWorkRef: 'MWREV-RUNNING',
+      reason: '继续核对运行中的请求。',
+      attemptStatus: 'RUNNING',
+      savedWorkRef: null,
+      savedWorkingRevision: null,
+    },
+    {
+      attemptRef: 'AQ-SUCCEEDED-EMPTY',
+      targetWorkRef: 'MWREV-SUCCEEDED',
+      reason: '核对没有保存输出的完成请求。',
+      attemptStatus: 'SUCCEEDED',
+      savedWorkRef: null,
+      savedWorkingRevision: null,
+    },
+    {
+      attemptRef: 'AQ-CANCELLED',
+      targetWorkRef: 'MWREV-CANCELLED',
+      reason: '核对已取消请求。',
+      attemptStatus: 'CANCELLED',
+      savedWorkRef: null,
+      savedWorkingRevision: null,
+    },
+  ];
+  const html = renderToStaticMarkup(
+    createElement(
+      MemoryRouter,
+      {},
+      createElement(OverviewCorrectionNotices, {
+        matterId: 'MAT-A',
+        notices,
+      }),
+    ),
+  );
+  expect(html).toContain('请求状态：已排队');
+  expect(html).toContain('请求状态：未完成');
+  expect(html).toContain('请求状态：处理中');
+  expect(html).toContain('请求状态：已完成');
+  expect(html).toContain('请求状态：已取消');
+  expect(html).toContain('尚未读到保存后的后续工作');
+  expect(html).toContain('已保存后续工作');
+  expect(html).toContain('workRef=MWREV-HISTORICAL');
+  expect(html).toContain('workRef=MWREV-FOLLOW-UP');
+  expect(html).toContain('保存不等于错误已消除或已正式采用');
+});
+
+test('a source notice remains visible when only overview correction exists and overview is current', () => {
+  const notice: EngineeringMatterReferenceWorkNotice = {
+    sourceWork: {
+      subjectKind: 'ENGINEERING_MATTER',
+      subjectId: 'MAT-SOURCE',
+      workRef: 'MWREV-SOURCE',
+      issueKey: 'source-condition',
+    },
+    evidenceRef: 'PRIOR-SOURCE',
+    affectedIssueKeys: ['target-condition'],
+    overviewStatus: 'CURRENT',
+    correctionNotices: [],
+    overviewCorrectionNotices: [
+      {
+        attemptRef: 'AQ-SOURCE',
+        targetWorkRef: 'MWREV-SOURCE-OLD',
+        reason: '核对来源综合。',
+        attemptStatus: 'QUEUED',
+        savedWorkRef: null,
+        savedWorkingRevision: null,
+      },
+    ],
+  };
+  const html = renderToStaticMarkup(
+    createElement(
+      MemoryRouter,
+      {},
+      createElement(ReferenceWorkNotices, { notices: [notice] }),
+    ),
+  );
+  expect(html).toContain('综合核对请求记录');
+  expect(html).toContain('workRef=MWREV-SOURCE-OLD');
+  expect(html).toContain('sourceWorkRef=MWREV-SOURCE');
 });
 
 test('builds full saved analysis from the exact identity and retains only its actual root sources', () => {
