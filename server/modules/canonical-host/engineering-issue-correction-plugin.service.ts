@@ -2,7 +2,7 @@ import { Injectable } from '@nestjs/common';
 import { CapabilityService } from '@lark-apaas/fullstack-nestjs-core';
 import { z } from 'zod/v4';
 import type { AssessmentEvidence } from '@shared/assessment-reading.interface';
-import type { JobAidProblemIssue } from '@shared/jobaid-problem-assessment.interface';
+import type { JobAidProblemIssue, JobAidProblemWorkContent } from '@shared/jobaid-problem-assessment.interface';
 
 /** Only Host-selected business material crosses the plugin boundary. */
 export interface EngineeringIssueCorrectionContext {
@@ -14,6 +14,16 @@ export interface EngineeringIssueCorrectionContext {
   relatedUnderstanding: string | null;
   structuredContext: Pick<JobAidProblemIssue,
     'riskScenarios' | 'measures' | 'otherClassifications' | 'openQuestions' | 'requirementHandling'>;
+  limitations: string[];
+}
+
+export interface EngineeringOverviewCorrectionContext {
+  overview: string;
+  completionReason: string;
+  roundCompletion: JobAidProblemWorkContent['roundCompletion'];
+  correctionReason: string;
+  issues: Array<Pick<JobAidProblemIssue, 'question' | 'body' | 'riskScenarios' | 'measures' | 'otherClassifications' | 'requirementHandling' | 'openQuestions'>>;
+  evidence: EngineeringIssueCorrectionContext['evidence'];
   limitations: string[];
 }
 
@@ -37,6 +47,44 @@ const instanceId = 'wl-engineering-issue-correction';
 @Injectable()
 export class EngineeringIssueCorrectionPluginService {
   constructor(private readonly capabilities: CapabilityService) {}
+
+  /** Same installed official action, with a separate, bounded overview output contract. */
+  async generateOverview(context: EngineeringOverviewCorrectionContext, assertActive: () => Promise<void>) {
+    const overviewInstanceId = 'wl-engineering-overview-correction';
+    const config = this.capabilities.getCapability(overviewInstanceId);
+    if (config?.pluginKey !== '@official-plugins/ai-text-to-json' || config.pluginVersion !== '1.0.26')
+      throw new Error('ENGINEERING_CORRECTION_PLUGIN_NOT_CONFIGURED');
+    const supplied: EngineeringOverviewCorrectionContext = {
+      overview: context.overview, completionReason: context.completionReason, roundCompletion: context.roundCompletion,
+      correctionReason: context.correctionReason,
+      issues: context.issues.map(issue => ({ question: issue.question, body: issue.body,
+        riskScenarios: structuredClone(issue.riskScenarios), measures: structuredClone(issue.measures),
+        otherClassifications: structuredClone(issue.otherClassifications),
+        requirementHandling: structuredClone(issue.requirementHandling), openQuestions: structuredClone(issue.openQuestions) })),
+      evidence: context.evidence.map(item => ({ evidenceRef: item.evidenceRef, text: item.text,
+        kind: item.kind, title: item.title, versionLabel: item.versionLabel, locator: item.locator })),
+      limitations: [...context.limitations],
+    };
+    if (!supplied.overview.trim() || !supplied.correctionReason.trim() || !supplied.issues.length ||
+        !supplied.evidence.length || supplied.evidence.some(item => !item.evidenceRef.trim() || !item.text.trim()) ||
+        new Set(supplied.evidence.map(item => item.evidenceRef)).size !== supplied.evidence.length)
+      throw new Error('ENGINEERING_CORRECTION_CONTEXT_INVALID');
+    await assertActive();
+    const raw = await this.capabilities.load(overviewInstanceId).call('textToJson', {
+      correctionContextJson: JSON.stringify(supplied),
+    });
+    await assertActive();
+    const result = z.strictObject({ overview: nonblank, completionReason: nonblank, changeSummary: nonblank }).safeParse(raw);
+    if (!result.success) throw new Error('ENGINEERING_CORRECTION_OUTPUT_INVALID');
+    const body = result.data.overview + '\n' + result.data.completionReason;
+    const stripped = body.replace(/\[\[([^\[\]\r\n]+)\]\]/gu, '');
+    if (stripped.includes('[[') || stripped.includes(']]')) throw new Error('ENGINEERING_CORRECTION_CITATION_MALFORMED');
+    const refs = [...body.matchAll(/\[\[([^\[\]\r\n]+)\]\]/gu)].map(match => match[1]);
+    const delivered = new Set(supplied.evidence.map(item => item.evidenceRef));
+    if (!refs.length || refs.some(ref => !delivered.has(ref))) throw new Error('ENGINEERING_CORRECTION_SOURCE_NOT_DELIVERED');
+    return { ...result.data, producer: { kind: 'OFFICIAL_PLUGIN' as const, instanceId: overviewInstanceId,
+      pluginVersion: config.pluginVersion, actionKey: 'textToJson' as const, concreteModel: null } };
+  }
 
   async generate(context: EngineeringIssueCorrectionContext, assertActive: () => Promise<void>) {
     const config = this.capabilities.getCapability(instanceId);

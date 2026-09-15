@@ -118,14 +118,17 @@ describe('OpenClaw ActionAttempt envelopes', () => {
 });
 
 describe('Matter ActionAttempt envelopes', () => {
-  it('records official-plugin provenance without inventing model, Skill or token measurements', () => {
+  it.each([
+    ['ENGINEERING_ISSUE_CORRECTION', 'wl-engineering-issue-correction'],
+    ['ENGINEERING_OVERVIEW_CORRECTION', 'wl-engineering-overview-correction'],
+  ])('records %s official-plugin provenance without inventing model, Skill or token measurements', (kind, instanceId) => {
     const { inputHash: _inputHash, ...base } = matterTaskEnvelope();
-    const task = sealMatterTaskEnvelope({ ...base, modelInput: { correction: { kind: 'ENGINEERING_ISSUE_CORRECTION' } } });
+    const task = sealMatterTaskEnvelope({ ...base, modelInput: { correction: { kind } } });
     const { workItemId: _wi, contentHash: _hash, ...legacy } = resultEnvelope(taskEnvelope());
     const body = { ...legacy, schemaVersion: 'wiselink.3_1.openclaw_result_envelope.v2' as const,
       taskType: 'OPENCLAW_MATTER_ASSESSMENT' as const, subject: task.subject, baseRevision: task.baseRevision,
       modelVersion: null, skillVersion: null,
-      producer: { kind: 'OFFICIAL_PLUGIN' as const, instanceId: 'wl-engineering-issue-correction',
+      producer: { kind: 'OFFICIAL_PLUGIN' as const, instanceId,
         pluginVersion: '1.0.26', actionKey: 'textToJson' as const, concreteModel: null },
       runMetrics: { durationMs: 123, inputUnits: null, outputUnits: null } };
     const result = sealMatterResultEnvelope(body);

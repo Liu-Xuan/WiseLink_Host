@@ -3,11 +3,11 @@ import test from 'node:test';
 import { callJsonTool } from '../scripts/run-hosted-review-turn.mjs';
 import { consumeHostedMatter } from '../scripts/consume-hosted-matter.mjs';
 
-function fixture() {
+function fixture(overview = false) {
   const task = { schemaVersion: 'wiselink.3_1.openclaw_task_envelope.v2', taskType: 'OPENCLAW_MATTER_ASSESSMENT',
     actionAttemptId: 'ATT-c', operationRef: 'AQ-c', subject: { kind: 'ENGINEERING_MATTER', matterId: 'MAT-c' },
     deadline: '2099-01-01T00:00:00.000Z', baseRevision: 11, inputHash: 'bound-input', modelInput: { schemaVersion: 'wiselink.matter-jobaid-task.v2',
-      correction: { kind: 'ENGINEERING_ISSUE_CORRECTION', expectedWorkRef: 'MWR-BASE' } } };
+      correction: { kind: overview ? 'ENGINEERING_OVERVIEW_CORRECTION' : 'ENGINEERING_ISSUE_CORRECTION', expectedWorkRef: 'MWR-BASE' } } };
   const calls = []; const checkpoints = new Map();
   let mode = 'RUNNING'; let failSave = false; let failGeneration = false; let badFinish = false; let unchanged = false;
   const dependencies = {
@@ -25,7 +25,7 @@ function fixture() {
       if (input.operation === 'GENERATE_ISSUE_CORRECTION') {
         if (failGeneration) throw new Error('ENGINEERING_CORRECTION_RESULT_UNCONFIRMED');
         return { requestId: input.requestId, persisted: true,
-          producer: { kind: 'OFFICIAL_PLUGIN', instanceId: 'wl-engineering-issue-correction' } };
+          producer: { kind: 'OFFICIAL_PLUGIN', instanceId: overview ? 'wl-engineering-overview-correction' : 'wl-engineering-issue-correction' } };
       }
       if (input.operation === 'SAVE_ISSUE_CORRECTION') {
         if (failSave) { failSave = false; throw new Error('save reply lost'); }
@@ -47,6 +47,17 @@ test('explicit correction uses persisted Host generation and save, not Hosted mo
   assert.deepEqual(h.calls.map(call => call.operation), ['CLAIM', 'GENERATE_ISSUE_CORRECTION', 'SAVE_ISSUE_CORRECTION', 'FINISH_ISSUE_CORRECTION']);
   assert.equal(result.workRevisionRef, 'MWR-12'); assert.equal(result.overallReviewPending, true);
   assert.equal(result.candidateOnly, true);
+});
+
+test('explicit overview correction uses its own plugin receipt and resumes the same save identity', async () => {
+  const h = fixture(true); h.loseSave(); await assert.rejects(h.run(), /save reply lost/);
+  const result = await h.run();
+  assert.equal(result.status, 'MATTER_OVERVIEW_CORRECTION_SAVED');
+  assert.equal(result.workRevisionRef, 'MWR-12');
+  const saves = h.calls.filter(call => call.operation === 'SAVE_ISSUE_CORRECTION');
+  assert.equal(saves.length, 2); assert.equal(saves[0].requestId, saves[1].requestId);
+  const unchanged = fixture(true); unchanged.markUnchanged();
+  assert.equal((await unchanged.run()).status, 'MATTER_OVERVIEW_CORRECTION_UNCHANGED');
 });
 
 test('unchanged correction finishes against the base work without advancing revision', async () => {

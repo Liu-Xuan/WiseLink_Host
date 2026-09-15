@@ -25,7 +25,8 @@ export async function consumeHostedMatter(options, dependencies) {
   if (storedBinding && canonicalSha256(storedBinding) !== canonicalSha256(binding)) throw new Error('MATTER_CHECKPOINT_BINDING_MISMATCH');
   if (!storedBinding) await checkpoint.writeOnce('binding', binding);
   if (task.modelInput.correction) {
-    if (task.modelInput.correction.kind !== 'ENGINEERING_ISSUE_CORRECTION' || task.executionModel)
+    const overviewCorrection = task.modelInput.correction.kind === 'ENGINEERING_OVERVIEW_CORRECTION';
+    if ((!overviewCorrection && task.modelInput.correction.kind !== 'ENGINEERING_ISSUE_CORRECTION') || task.executionModel)
       throw new Error('MATTER_CORRECTION_EXECUTION_PURPOSE_MISMATCH');
     const generationRequestId = `correction-generate:${task.operationRef}`;
     const requestId = `correction-save:${task.operationRef}`;
@@ -41,7 +42,7 @@ export async function consumeHostedMatter(options, dependencies) {
         () => call('HEARTBEAT'));
       if (generated.requestId !== generationRequestId || generated.persisted !== true ||
           generated.producer?.kind !== 'OFFICIAL_PLUGIN' ||
-          generated.producer.instanceId !== 'wl-engineering-issue-correction')
+          generated.producer.instanceId !== (overviewCorrection ? 'wl-engineering-overview-correction' : 'wl-engineering-issue-correction'))
         throw new Error('MATTER_CORRECTION_RECEIPT_MISMATCH');
       const saved = await call('SAVE_ISSUE_CORRECTION', { requestId, generationRequestId });
       if (!saved.workRevisionRef || saved.workRevision !== task.baseRevision + (saved.unchanged === true ? 0 : 1) ||
@@ -54,7 +55,8 @@ export async function consumeHostedMatter(options, dependencies) {
     if (!expectedWorkRef || finished.attemptRef !== task.operationRef || finished.status !== 'SUCCEEDED' ||
         finished.workRevisionRef !== expectedWorkRef)
       throw new Error('MATTER_FINISH_READBACK_MISMATCH');
-    return { status: finished.unchanged === true ? 'MATTER_ISSUE_CORRECTION_UNCHANGED' : 'MATTER_ISSUE_CORRECTION_SAVED', ...target,
+    const statusPrefix = overviewCorrection ? 'MATTER_OVERVIEW_CORRECTION' : 'MATTER_ISSUE_CORRECTION';
+    return { status: `${statusPrefix}_${finished.unchanged === true ? 'UNCHANGED' : 'SAVED'}`, ...target,
       workRevisionRef: finished.workRevisionRef, candidateOnly: true, overallReviewPending: true };
   }
   let result = claim.recoveryResult ?? await checkpoint.readOptional('finish-result');

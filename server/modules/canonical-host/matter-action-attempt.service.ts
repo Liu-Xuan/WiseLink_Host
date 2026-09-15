@@ -1,7 +1,7 @@
 import type { EngineeringMatterWorkingRevisionCommand, EngineeringMatterWorkingInputBinding } from '@shared/matter-working.interface';
 import { addMatterDeliveredEvidence, buildMatterJobAidTask, MATTER_JOBAID_TASK_SCHEMA, type MatterIssueCorrectionPurpose, type MatterOverviewCorrectionPurpose } from './matter-jobaid-task';
 import { materializeMatterJobAidCommand } from './matter-jobaid-save';
-import { buildEngineeringIssueCorrectionContext, summarizeEngineeringIssueCorrection } from './engineering-issue-correction-context';
+import { buildEngineeringIssueCorrectionContext, buildEngineeringOverviewCorrectionContext, summarizeEngineeringIssueCorrection } from './engineering-issue-correction-context';
 import { EngineeringIssueCorrectionPluginService } from './engineering-issue-correction-plugin.service';
 import { buildMatterWorkReference, type MatterWorkReferenceRequest } from './matter-work-reference';
 import type { CanonicalHostActor } from './canonical-host.types';
@@ -245,7 +245,9 @@ export class MatterActionAttemptService {
             ? canonicalJson(task.modelInput) !== canonicalJson(input.modelInput) ||
               canonicalJson(task.sourceRefs) !== canonicalJson(input.sourceRefs)
             : task.modelInput.schemaVersion !== MATTER_JOBAID_TASK_SCHEMA ||
-              canonicalJson((task.modelInput as ReturnType<typeof buildMatterJobAidTask>).correction ?? null) !== canonicalJson(input.correction ?? null) ||
+              canonicalJson((task.modelInput as ReturnType<typeof buildMatterJobAidTask>).correction ?? null) !==
+                canonicalJson((task.modelInput as ReturnType<typeof buildMatterJobAidTask>).correction?.kind === 'ENGINEERING_OVERVIEW_CORRECTION'
+                  ? input.overviewCorrection ?? null : input.correction ?? null) ||
               ((!input.recoveryAttemptRef || input.overviewCorrection !== undefined) &&
                 canonicalJson((task.modelInput as ReturnType<typeof buildMatterJobAidTask>).overviewCorrection ?? null) !== canonicalJson(input.overviewCorrection ?? null)) ||
               ((!input.recoveryAttemptRef || input.referenceWorks !== undefined) &&
@@ -362,6 +364,15 @@ export class MatterActionAttemptService {
           throw failure('ENGINEERING_OVERVIEW_CORRECTION_SOURCE_NOT_DELIVERED');
         jobAid.overviewCorrection = structuredClone(overviewCorrection);
         jobAid.modelInput.overviewCorrection = structuredClone(overviewCorrection);
+        // New explicit overview corrections use the bounded official plugin. A sealed
+        // legacy investigation/recovery keeps its original execution route.
+        if (!recoveryTask) {
+          buildEngineeringOverviewCorrectionContext({ current, ...overviewCorrection,
+            expectedWorkRevision: input.expectedWorkingRevision,
+            deliveredEvidence: overviewCorrection.evidenceRefs.map(ref => jobAid.sourceCatalog.find(item => item.evidenceRef === ref)!),
+            limitations: [] });
+          jobAid.correction = structuredClone(overviewCorrection);
+        }
       }
       if (correction) {
         if (current?.matterWorkRevisionId !== correction.expectedWorkRef ||
@@ -428,7 +439,7 @@ export class MatterActionAttemptService {
             allowedConnectors: [],
             hostResolvedMissingInputs: [],
             modelInput: structuredClone(modelInput),
-            ...(!correction ? { executionModel: recoveryTask?.executionModel ?? await this.models.captureForNewTask(
+            ...(!(modelInput as ReturnType<typeof buildMatterJobAidTask>).correction ? { executionModel: recoveryTask?.executionModel ?? await this.models.captureForNewTask(
               input.tenantId,
               now,
               executor.database,
@@ -880,17 +891,18 @@ export class MatterActionAttemptService {
 
   async generateIssueCorrection(input: MatterAttemptScope & ActionAttemptFence & {
     principalId: string; requestId: string; expectedWorkRef: string; expectedWorkRevision: number;
-    issueKey: string; correctionReason: string; evidenceRefs: string[];
+    kind?: 'ENGINEERING_ISSUE_CORRECTION' | 'ENGINEERING_OVERVIEW_CORRECTION';
+    issueKey?: string; correctionReason: string; evidenceRefs: string[];
   }) {
     if (!this.issueCorrection) throw failure('ENGINEERING_CORRECTION_PLUGIN_NOT_CONFIGURED');
     if (!input.requestId.trim() || input.requestId.length > 255 || !input.correctionReason.trim() ||
-        !input.issueKey.trim() || !input.evidenceRefs.length ||
+        ((input.kind ?? 'ENGINEERING_ISSUE_CORRECTION') === 'ENGINEERING_ISSUE_CORRECTION' && !input.issueKey?.trim()) || !input.evidenceRefs.length ||
         new Set(input.evidenceRefs).size !== input.evidenceRefs.length)
       throw failure('ENGINEERING_CORRECTION_REQUEST_INVALID', 400);
-    const request = { purpose: 'ENGINEERING_ISSUE_CORRECTION', requestId: input.requestId,
+    const request = { purpose: input.kind ?? 'ENGINEERING_ISSUE_CORRECTION', requestId: input.requestId,
       expectedWorkRef: input.expectedWorkRef, expectedWorkRevision: input.expectedWorkRevision,
       issueKey: input.issueKey, correctionReason: input.correctionReason, evidenceRefs: input.evidenceRefs };
-    type Generated = Awaited<ReturnType<EngineeringIssueCorrectionPluginService['generate']>>;
+    type Generated = Awaited<ReturnType<EngineeringIssueCorrectionPluginService['generate'] | EngineeringIssueCorrectionPluginService['generateOverview']>>;
     const prepared = await this.authorized(input, async (executor, queue) => {
       await executor.database.select({ id: actionAttempt.attemptId }).from(actionAttempt)
         .where(eq(actionAttempt.operationRef, input.attemptRef)).for('update');
@@ -899,7 +911,8 @@ export class MatterActionAttemptService {
       if (task.modelInput.schemaVersion !== MATTER_JOBAID_TASK_SCHEMA) throw failure('MATTER_JOBAID_TASK_REQUIRED');
       const events: Array<Record<string, unknown>> = JSON.parse(row.reviewActivityJson ?? '[]');
       const purpose = (task.modelInput as ReturnType<typeof buildMatterJobAidTask>).correction;
-      if (!purpose || purpose.expectedWorkRef !== input.expectedWorkRef || purpose.issueKey !== input.issueKey ||
+      if (!purpose || purpose.kind !== request.purpose || purpose.expectedWorkRef !== input.expectedWorkRef ||
+          (purpose.kind === 'ENGINEERING_ISSUE_CORRECTION' && purpose.issueKey !== input.issueKey) ||
           purpose.correctionReason !== input.correctionReason || canonicalJson(purpose.evidenceRefs) !== canonicalJson(input.evidenceRefs) ||
           task.baseRevision !== input.expectedWorkRevision)
         throw failure('ENGINEERING_CORRECTION_PURPOSE_MISMATCH');
@@ -937,9 +950,11 @@ export class MatterActionAttemptService {
       });
       const identities = await readMatterDocumentIdentities(executor.database, input.tenantId,
         evidence.flatMap(item => 'documentVersionId' in item ? [item.documentVersionId] : []));
-      const context = buildEngineeringIssueCorrectionContext({ current, ...request, deliveredEvidence: evidence,
-        limitations: ['本操作更正指定问题正文、要求处理及未决问题；其他风险、措施、分类保持原值，受影响但无法在本操作修改的判断须保留明确未知。总体认识仍须核对，不代表正式采用。',
-          ...identities.map(identity => `本次来源目录身份核对：${canonicalJson(identity)}`)] });
+      const limitations = identities.map(identity => `本次来源目录身份核对：${canonicalJson(identity)}`);
+      const context = purpose.kind === 'ENGINEERING_OVERVIEW_CORRECTION'
+        ? buildEngineeringOverviewCorrectionContext({ current, ...request, deliveredEvidence: evidence, limitations })
+        : buildEngineeringIssueCorrectionContext({ current, ...request, issueKey: purpose.issueKey, deliveredEvidence: evidence,
+          limitations: ['本操作更正指定问题正文、要求处理及未决问题；其他风险、措施、分类保持原值，受影响但无法在本操作修改的判断须保留明确未知。总体认识仍须核对，不代表正式采用。', ...limitations] });
       await executor.database.update(actionAttempt).set({ reviewActivityJson: canonicalJson([...events, {
         kind: 'MATTER_ISSUE_CORRECTION_STARTED', requestId: input.requestId, request, context,
         observedAt: new Date().toISOString(),
@@ -957,7 +972,9 @@ export class MatterActionAttemptService {
     // Outside the transaction. An uncertain response leaves STARTED, never a permission to regenerate.
     let result: Generated;
     try {
-      result = await this.issueCorrection.generate(prepared.context!, assertActive);
+      result = 'overview' in prepared.context!
+        ? await this.issueCorrection.generateOverview(prepared.context!, assertActive)
+        : await this.issueCorrection.generate(prepared.context!, assertActive);
     } catch (error) {
       // Only the invocation owner terminalizes its ended call. Concurrent observers of STARTED
       // fail above and cannot cancel a generation that is still running.
@@ -998,11 +1015,7 @@ export class MatterActionAttemptService {
       const started = events.find(event => event.kind === 'MATTER_ISSUE_CORRECTION_STARTED' && event.requestId === input.generationRequestId);
       const completed = events.find(event => event.kind === 'MATTER_ISSUE_CORRECTION_GENERATED' && event.requestId === input.generationRequestId);
       if (!started || !completed) throw failure('ENGINEERING_CORRECTION_GENERATION_REQUIRED');
-      const context = started.context as ReturnType<typeof buildEngineeringIssueCorrectionContext>;
-      const generated = completed.result as Awaited<ReturnType<EngineeringIssueCorrectionPluginService['generate']>>;
-      if (context.body === generated.body &&
-          canonicalJson(context.structuredContext.requirementHandling) === canonicalJson(generated.requirementHandling) &&
-          canonicalJson(context.structuredContext.openQuestions) === canonicalJson(generated.openQuestions)) {
+      if (correctionReceiptUnchanged(started, completed)) {
         const request = started.request as { expectedWorkRef: string; expectedWorkRevision: number };
         const prior = events.find(event => event.kind === 'MATTER_CORRECTION_UNCHANGED' && event.requestId === input.requestId);
         if (prior && prior.generationRequestId !== input.generationRequestId)
@@ -1160,22 +1173,23 @@ export class MatterActionAttemptService {
         return stored;
       }
       const output = generated.result as Awaited<ReturnType<EngineeringIssueCorrectionPluginService['generate']>>;
+      const overviewCorrection = (task.modelInput as ReturnType<typeof buildMatterJobAidTask>).correction?.kind === 'ENGINEERING_OVERVIEW_CORRECTION';
       const envelope: Omit<OpenClawMatterResultEnvelope, 'contentHash'> = {
         schemaVersion: 'wiselink.3_1.openclaw_result_envelope.v2', taskType: task.taskType,
         subject: task.subject, actionAttemptId: task.actionAttemptId, operationRef: task.operationRef,
         baseRevision: task.baseRevision, status: 'SUCCEEDED', businessOutcome: 'CANDIDATE_READY', candidateStatus: null,
         modelOutput: canonicalJson({ workRevisionRef: saved.workRevisionRef }),
         outputArtifactRefs: [], sourceRefs: task.sourceRefs, factsConsidered: [], missingInputs: [], conflicts: [],
-        warnings: ['指定问题正文更正已保存；整体工作仍需继续核对，未构成正式采用。'],
+        warnings: [overviewCorrection ? '指定综合及完成说明的候选更正已保存；问题工作未改写，未构成正式采用。' : '指定问题正文更正已保存；整体工作仍需继续核对，未构成正式采用。'],
         modelVersion: null, skillVersion: null, producer: output.producer,
-        promptVersion: 'wl-engineering-issue-correction.v1',
+        promptVersion: overviewCorrection ? 'wl-engineering-overview-correction.v1' : 'wl-engineering-issue-correction.v1',
         toolVersions: { [output.producer.instanceId]: output.producer.pluginVersion },
         runMetrics: { durationMs: Date.parse(String(generated.observedAt)) - Date.parse(String(started.observedAt)),
           inputUnits: null, outputUnits: null }, errorCode: null, errorDetail: null,
       };
       if (saved.kind === 'MATTER_CORRECTION_UNCHANGED') {
         envelope.modelOutput = canonicalJson({ workRevisionRef: saved.workRevisionRef, unchanged: true });
-        envelope.warnings = ['本次核对没有改变目标问题；保留原工作及原综合覆盖状态，未形成新工作或正式采用。'];
+        envelope.warnings = [overviewCorrection ? '本次核对没有改变综合及完成说明；保留原工作及覆盖状态，未形成新工作或正式采用。' : '本次核对没有改变目标问题；保留原工作及原综合覆盖状态，未形成新工作或正式采用。'];
         const sealed = parseMatterResultEnvelope({ task, value: { ...envelope, contentHash: canonicalSha256(envelope) } });
         if (row.status !== 'SUCCEEDED') {
           assertRunningSourceLease(row, input);
@@ -1635,6 +1649,16 @@ function assertRunningSourceLease(row: MatterActionAttemptRow, input: ActionAtte
 }
 
 function correctionProposalFromReceipts(started: Record<string, unknown>, completed: Record<string, unknown>) {
+      if ((started.request as { purpose?: string }).purpose === 'ENGINEERING_OVERVIEW_CORRECTION') {
+        const request = started.request as { expectedWorkRevision: number };
+        const context = started.context as ReturnType<typeof buildEngineeringOverviewCorrectionContext>;
+        const result = completed.result as Awaited<ReturnType<EngineeringIssueCorrectionPluginService['generateOverview']>>;
+        return { expectedWorkRevision: request.expectedWorkRevision, workJson: canonicalJson({
+          schemaVersion: JOBAID_PROBLEM_WORK_SCHEMA, issues: [], overview: result.overview,
+          roundCompletion: context.roundCompletion, completionReason: result.completionReason,
+          changeSummary: result.changeSummary,
+        }) };
+      }
       const request = started.request as { expectedWorkRevision: number; issueKey: string; correctionReason: string };
       const context = started.context as ReturnType<typeof buildEngineeringIssueCorrectionContext>;
       const result = completed.result as Awaited<ReturnType<EngineeringIssueCorrectionPluginService['generate']>>;
@@ -1651,4 +1675,17 @@ function correctionProposalFromReceipts(started: Record<string, unknown>, comple
         changeSummary: summarizeEngineeringIssueCorrection(context, result),
       };
       return { expectedWorkRevision: request.expectedWorkRevision, workJson: canonicalJson(proposal) };
+}
+
+function correctionReceiptUnchanged(started: Record<string, unknown>, completed: Record<string, unknown>): boolean {
+  if ((started.request as { purpose?: string }).purpose === 'ENGINEERING_OVERVIEW_CORRECTION') {
+    const context = started.context as ReturnType<typeof buildEngineeringOverviewCorrectionContext>;
+    const generated = completed.result as Awaited<ReturnType<EngineeringIssueCorrectionPluginService['generateOverview']>>;
+    return context.overview === generated.overview && context.completionReason === generated.completionReason;
+  }
+  const context = started.context as ReturnType<typeof buildEngineeringIssueCorrectionContext>;
+  const generated = completed.result as Awaited<ReturnType<EngineeringIssueCorrectionPluginService['generate']>>;
+  return context.body === generated.body &&
+    canonicalJson(context.structuredContext.requirementHandling) === canonicalJson(generated.requirementHandling) &&
+    canonicalJson(context.structuredContext.openQuestions) === canonicalJson(generated.openQuestions);
 }

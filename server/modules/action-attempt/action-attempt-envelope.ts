@@ -344,12 +344,15 @@ function assertResultFields(
   assertStringArray(result.conflicts, 'RESULT_ENVELOPE_CONFLICTS_INVALID');
   assertStringArray(result.warnings, 'RESULT_ENVELOPE_WARNINGS_INVALID');
   const correction = task.schemaVersion === 'wiselink.3_1.openclaw_task_envelope.v2' &&
-    isRecord(task.modelInput.correction) && task.modelInput.correction.kind === 'ENGINEERING_ISSUE_CORRECTION';
+    isRecord(task.modelInput.correction) &&
+    ['ENGINEERING_ISSUE_CORRECTION', 'ENGINEERING_OVERVIEW_CORRECTION'].includes(String(task.modelInput.correction.kind));
   if (correction) {
     if (!('producer' in result) || !isRecord(result.producer)) fail('RESULT_OFFICIAL_PLUGIN_PRODUCER_REQUIRED');
     const producer = result.producer;
     assertExactKeys(producer, ['kind', 'instanceId', 'pluginVersion', 'actionKey', 'concreteModel'], 'RESULT_OFFICIAL_PLUGIN_PRODUCER_INVALID');
-    if (producer.kind !== 'OFFICIAL_PLUGIN' || producer.instanceId !== 'wl-engineering-issue-correction' ||
+    const instanceId = isRecord(task.modelInput.correction) && task.modelInput.correction.kind === 'ENGINEERING_OVERVIEW_CORRECTION'
+      ? 'wl-engineering-overview-correction' : 'wl-engineering-issue-correction';
+    if (producer.kind !== 'OFFICIAL_PLUGIN' || producer.instanceId !== instanceId ||
         producer.pluginVersion !== '1.0.26' || producer.actionKey !== 'textToJson' || producer.concreteModel !== null ||
         result.modelVersion !== null || result.skillVersion !== null)
       fail('RESULT_OFFICIAL_PLUGIN_PRODUCER_INVALID');

@@ -60,7 +60,7 @@ export function buildMatterJobAidTask(input: {
   };
   return {
     schemaVersion: MATTER_JOBAID_TASK_SCHEMA,
-    correction: null as MatterIssueCorrectionPurpose | null,
+    correction: null as MatterIssueCorrectionPurpose | MatterOverviewCorrectionPurpose | null,
     overviewCorrection: null as MatterOverviewCorrectionPurpose | null,
     referenceWorks: [] as MatterWorkReferenceRequest[],
     recovery: null as { attemptRef: string; inputHash: string } | null,

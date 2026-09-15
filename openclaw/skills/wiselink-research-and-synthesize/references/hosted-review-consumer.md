@@ -137,3 +137,9 @@ node <installed-skill-path>/scripts/consume-hosted-work-item.mjs --document-vers
 c86 的 WorkItem 消费器仅在 Host 阶段返回 `DOCUMENT_ORIGINAL_IMPACT_REVIEW_REQUIRED` 时调用 `next_original_assessment`，随后重新读取正常状态并消费 Host 已受理的请求。Host 按确切 parseRevision 使用稳定请求身份 `original-<revision>`，同一操作的并发受理、响应丢失和失败回读沿用 ActionAttempt 的 WorkItem 行锁与幂等约束。模型不决定是否重新评估或制造新请求身份。
 
 纯定位变化不产生后继。在途初评、活动配置重评、普通失败和仍需适用性原文映射的状态保持原有边界。每个后继仍须读取授权的确切原文并保存候选；这一入口不表示适用性新原文提取、正式采用或云端安装已完成。
+
+## c109 显式总览更正
+
+新任务的 `modelInput.correction.kind=ENGINEERING_OVERVIEW_CORRECTION` 使用 Host 已配置的官方 `wl-engineering-overview-correction` 实例。消费者沿用生成收据、保存及结束协议，只传已封存请求标识；不调用普通 Hosted 调研模型。Host 提供确切当前工作、问题限制和已交付来源，只接受综合、对应完成说明及变更说明，不修改问题或完成状态。无变化保留原工作和覆盖状态；保存响应丢失只恢复原请求，不重复生成。
+
+已有仅含 `overviewCorrection` 的普通 Hosted 任务及其恢复仍保留原执行路线，不能将失败请求自动改道为插件更正。发布新 Host 前先将消费者更新至 c109，并核对当前无在途业务；旧失败请求不因此重新入队。生成与保存仅形成候选，不代表工程准确性或正式采用已获确认。

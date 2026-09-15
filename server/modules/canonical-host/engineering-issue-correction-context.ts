@@ -2,7 +2,35 @@ import { canonicalJson } from '../action-attempt/action-attempt-envelope';
 import type { AssessmentEvidence } from '@shared/assessment-reading.interface';
 import type { EngineeringMatterWorkingRevisionReadModel } from '@shared/matter-working.interface';
 import { collectIssueEvidenceUses } from '@shared/jobaid-evidence-uses';
-import type { EngineeringIssueCorrectionContext } from './engineering-issue-correction-plugin.service';
+import type { EngineeringIssueCorrectionContext, EngineeringOverviewCorrectionContext } from './engineering-issue-correction-plugin.service';
+
+/** Saved issues are comparison context; only the delivered evidence is a source for this correction. */
+export function buildEngineeringOverviewCorrectionContext(input: {
+  current: EngineeringMatterWorkingRevisionReadModel; expectedWorkRef: string; expectedWorkRevision: number;
+  correctionReason: string; deliveredEvidence: AssessmentEvidence[]; limitations: string[];
+}): EngineeringOverviewCorrectionContext {
+  if (input.current.matterWorkRevisionId !== input.expectedWorkRef || input.current.workingRevision !== input.expectedWorkRevision)
+    throw new Error('ENGINEERING_CORRECTION_WORK_BINDING_CHANGED');
+  const work = input.current.state.problemWork;
+  if (!work || work.historicalSourceSchema || work.overviewStatus === 'NOT_AVAILABLE' || !work.understanding.trim())
+    throw new Error('ENGINEERING_CORRECTION_CURRENT_BODY_REQUIRED');
+  const refs = new Set(input.deliveredEvidence.map(item => item.evidenceRef));
+  if (refs.size !== input.deliveredEvidence.length) throw new Error('ENGINEERING_CORRECTION_DUPLICATE_EVIDENCE');
+  const cited = [...`${work.understanding}\n${work.completionReason}`.matchAll(/\[\[([^\[\]\r\n]+)\]\]/gu)].map(match => match[1]);
+  if (cited.some(ref => !refs.has(ref))) throw new Error('ENGINEERING_CORRECTION_TARGET_SOURCE_MISSING');
+  return { overview: work.understanding, completionReason: work.completionReason, roundCompletion: work.roundCompletion,
+    correctionReason: input.correctionReason,
+    issues: work.issues.map(issue => ({ question: issue.question, body: issue.body,
+      riskScenarios: structuredClone(issue.riskScenarios), measures: structuredClone(issue.measures),
+      otherClassifications: structuredClone(issue.otherClassifications),
+      requirementHandling: structuredClone(issue.requirementHandling), openQuestions: structuredClone(issue.openQuestions) })),
+    evidence: input.deliveredEvidence.map(item => ({ evidenceRef: item.evidenceRef, text: item.excerpt,
+      kind: item.kind, title: item.title, versionLabel: item.versionLabel, locator: 'locator' in item ? item.locator : null })),
+    limitations: [...input.limitations,
+      '问题正文是已保存的待核对认识，不是本次重新验证的原文；本操作只修订综合和对应完成说明，不修改问题或正式决定。',
+      ...(work.overviewStatus === 'STALE' ? ['当前综合尚未覆盖最新问题工作，须核对其关联及限制。'] : [])],
+  };
+}
 
 /** Call only after reauthorizing the work and the exact Reader receipts under the attempt scope. */
 export function buildEngineeringIssueCorrectionContext(input: {
