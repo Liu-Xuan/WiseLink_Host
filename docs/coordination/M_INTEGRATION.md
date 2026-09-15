@@ -1,5 +1,15 @@
 # M 主控集成交接
 
+## 2026-09-16 首轮网关重启中断已定位并正常收尾
+
+上一条运行记录中的“仍在生成”已被原生运行历史纠正：777 job 的首个运行于 `2026-09-15T16:09:35.069Z` 开始，28.896 秒后明确报 `cron: job interrupted by gateway restart`。随后三次正常调度均因 `REVIEW_ASSESSMENT-ROUND-1_OUTCOME_UNKNOWN` 退出，没有再次生成；Host 的 RUNNING 及后续领取心跳不能证明模型调用仍存活。原生会话没有助手输出或完成事件，检查点只有首轮 started，没有 result，也没有新保存工作。尚无证据说明网关为何重启，不归因于模型、输入长度或身份授权。
+
+M 经正常 Host MCP STATUS 再确认无结果，随后以明确中断理由 CANCEL 原 AQ `AQ-9e52b732c3f54a56919d6d5c62180a68`，实际读回 CANCELLED；保留工作8、原请求及原生证据。没有改 checkpoint、租约或 deadline，也没有重放未知生成。后继需沿正常受理创建准确工作8基线的新请求，不能把原请求写成已成功或恢复了不存在的输出。
+
+已确认两个原 Matter job enabled 且无在途，开始发布已接受的纯前端资料标识修复：release `7685801309664693231`，目标提交 `573454e689ea3754f7f20a7fd646e84e22b1f425`。发布现已 finished，error_logs为空，线上读到“本页资料为：777-FTD-31-21002”及旧聊天范围提示。未安装 Skill。
+
+随后正常受理一次后继 `wl-work8-overview-after-gateway-restart-20260916`，AQ `AQ-3506768ac9aa42f5832a635978a737da`、ATT `ATT-dec0fc1b-6998-4dea-b294-92763393c5e6`，仍使用工作8及原三个证据引用；没有宣称恢复原调用结果。原job因旧错误退避一小时，读回后继QUEUED、零在途后，M通过官方 cron run 唤醒原job一次，回执 `manual:355f0161-15c1-45c4-9060-0336f1bfaf5f:1789490689865:1` enqueued=true。未改调度配置；这次算手动恢复，不算自然领取证明。后续仅观察该运行并验收保存正文。
+
 ## 2026-09-16 保存摘要与身份入口已发布
 
 官方 release `7685792528452390154` 已 finished，精确提交 `218de67b335f221ba146d29563f31fc3da404e24`，error_logs为空；origin/github 同名开发分支均读回此 SHA。发布前两个原 Matter job 均空闲，完整配置备份后经原生入口暂停；完成后恢复 enabled=true，除 state/updatedAtMs 外逐字段相同，无遗留暂停。Skill c108 保持，未重装。
