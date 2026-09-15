@@ -57,6 +57,8 @@ describe('engineering issue correction plugin (isolated provider doubles)', () =
     expect(JSON.stringify(supplied)).not.toContain('private-actor');
     expect(JSON.stringify(supplied)).not.toContain('private-issue-key');
     expect(assertActive).toHaveBeenCalledTimes(2);
+    call.mockResolvedValueOnce({ overview: 'Uncited correction.', completionReason: 'Unknown.', changeSummary: 's' });
+    await expect(service.generateOverview(context, assertActive)).rejects.toThrow('ENGINEERING_CORRECTION_CITATION_REQUIRED');
     call.mockResolvedValueOnce({ overview: 'Bad [[UNREAD]].', completionReason: 'Unknown.', changeSummary: 's' });
     await expect(service.generateOverview(context, assertActive)).rejects.toThrow('ENGINEERING_CORRECTION_SOURCE_NOT_DELIVERED');
     call.mockResolvedValueOnce({ overview: 'Good [[EV1]].', completionReason: 'Unknown.', changeSummary: 's', roundCompletion: 'COMPLETE' });

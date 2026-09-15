@@ -14,6 +14,8 @@ import './relation-graph.css';
 export interface RelationGraphCanvasProps {
   elements: ElementDefinition[];
   onNodeOpen: (node: RelationGraphNodeData) => void;
+  /** 隔离样本复用：外部指定高亮节点；不传时行为不变。 */
+  selectedNodeId?: string;
 }
 
 type GraphNodeShape =
@@ -89,6 +91,14 @@ function buildStylesheet(): StylesheetStyle[] {
       selector: 'node:active',
       style: { 'overlay-opacity': 0.08 },
     },
+    {
+      selector: 'node.sample-highlight',
+      style: {
+        'border-width': 4,
+        'border-color': ink,
+        'overlay-opacity': 0.14,
+      },
+    },
   ];
   (Object.keys(KIND_VISUALS) as CanonicalLibraryIndexNodeKind[]).forEach(
     (kind: CanonicalLibraryIndexNodeKind): void => {
@@ -111,16 +121,27 @@ function applyStylesheet(instance: Core): void {
   instance.style().clear().fromJson(buildStylesheet()).update();
 }
 
+function applySelection(instance: Core, nodeId: string | undefined): void {
+  instance.nodes().removeClass('sample-highlight');
+  if (nodeId === undefined) return;
+  const target = instance.$id(nodeId);
+  if (target.empty()) return;
+  target.addClass('sample-highlight');
+}
+
 /** 纯 props 驱动的 cytoscape 关系图容器：elements 外部传入，
  *  节点 click 通过 onNodeOpen 回传；主题切换（--wl-* 令牌）自动重着色。 */
 export default function RelationGraphCanvas({
   elements,
   onNodeOpen,
+  selectedNodeId,
 }: RelationGraphCanvasProps) {
   const containerRef = useRef<HTMLDivElement | null>(null);
   const instanceRef = useRef<Core | null>(null);
   const onNodeOpenRef = useRef<(node: RelationGraphNodeData) => void>(onNodeOpen);
   onNodeOpenRef.current = onNodeOpen;
+  const selectedNodeIdRef = useRef<string | undefined>(selectedNodeId);
+  selectedNodeIdRef.current = selectedNodeId;
 
   useEffect(() => {
     const container: HTMLDivElement | null = containerRef.current;
@@ -167,8 +188,15 @@ export default function RelationGraphCanvas({
         idealEdgeLength: () => 110,
       }).run();
       instance.fit(undefined, 48);
+      applySelection(instance, selectedNodeIdRef.current);
     }
   }, [elements]);
+
+  useEffect(() => {
+    const instance: Core | null = instanceRef.current;
+    if (!instance) return;
+    applySelection(instance, selectedNodeId);
+  }, [selectedNodeId]);
 
   return <div ref={containerRef} className="rg-canvas" aria-label="对象关系图谱" />;
 }

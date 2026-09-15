@@ -29,6 +29,10 @@ import './relation-graph.css';
 export interface RelationGraphPageProps {
   /** 隔离样本复用：注入投影时跳过 fetch（供 /dev-preview 等场景）。 */
   injectedProjection?: CanonicalLibraryIndexReadResponse;
+  /** 隔离样本复用：传入时节点点击改走该回调，不执行生产深链导航。 */
+  onNodeSelect?: (node: RelationGraphNodeData) => void;
+  /** 隔离样本复用：外部指定高亮节点。 */
+  highlightedNodeId?: string;
 }
 
 type LibraryStatus = 'IDLE' | 'LOADING' | 'READY' | 'NOT_FOUND' | 'BLOCKED';
@@ -47,6 +51,8 @@ const KIND_DOT_CLASS: Record<CanonicalLibraryIndexNodeKind, string> = {
 
 export default function RelationGraphPage({
   injectedProjection,
+  onNodeSelect,
+  highlightedNodeId,
 }: RelationGraphPageProps) {
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
@@ -119,6 +125,10 @@ export default function RelationGraphPage({
   }, [elements]);
 
   function handleNodeOpen(node: RelationGraphNodeData): void {
+    if (onNodeSelect) {
+      onNodeSelect(node);
+      return;
+    }
     const link: string | null = buildNodeDeepLink(effectiveWorkItemId, node);
     if (!link) return;
     navigate(link);
@@ -197,7 +207,11 @@ export default function RelationGraphPage({
     }
     return (
       <section className="rg-canvas-shell">
-        <RelationGraphCanvas elements={elements} onNodeOpen={handleNodeOpen} />
+        <RelationGraphCanvas
+          elements={elements}
+          onNodeOpen={handleNodeOpen}
+          selectedNodeId={highlightedNodeId}
+        />
         {legendKinds.length > 0 ? (
           <div className="rg-legend">
             {legendKinds.map((kind: CanonicalLibraryIndexNodeKind) => (
