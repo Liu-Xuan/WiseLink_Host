@@ -259,6 +259,18 @@ export class CanonicalHostOpenClawMcpService {
         semanticRevision: z.number().int().min(1).optional(), sectionId: z.string().min(1).max(160).optional() }),
     }, async input => textResult(await this.documentWork!.readOriginal(input)));
 
+    if (this.documentWork) server.registerTool('read_document_revision', {
+      title: '读取同一文件两版原文及文本比较',
+      description: '分别授权并读取两个明确的同 family DV/parseRun/semanticRevision。返回各版本自身修订说明、所选角色及父级条件、未比范围和文本比较。不能据此确认最新/相邻版次、工程影响或新版评估覆盖。',
+      inputSchema: z.strictObject({
+        before: z.strictObject({ documentVersionId: z.string().regex(/^[A-Za-z0-9_-]{1,96}$/),
+          parseRunId: z.string().regex(/^[A-Za-z0-9_-]{1,96}$/), semanticRevision: z.number().int().min(1) }),
+        after: z.strictObject({ documentVersionId: z.string().regex(/^[A-Za-z0-9_-]{1,96}$/),
+          parseRunId: z.string().regex(/^[A-Za-z0-9_-]{1,96}$/), semanticRevision: z.number().int().min(1) }),
+        roleKey: z.string().regex(/^[A-Za-z0-9_.-]{1,120}$/),
+      }),
+    }, async input => textResult(await this.documentWork!.readRevision(input)));
+
     if (this.documentTranslation) server.registerTool('document_translation', {
       title: '推进独立文档中文阅读',
       description: '以确切DV/parseRun为主体使用现有Translation V2和ActionAttempt，每次执行一个官方插件步骤；没有WorkItem或工程模型前置。',

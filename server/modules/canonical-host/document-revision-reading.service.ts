@@ -1,6 +1,5 @@
 import { Injectable } from '@nestjs/common';
 import type { DocumentRevisionReadingIdentity, DocumentRevisionReadingRequest } from '@shared/document-revision-reading.interface';
-import type { HostedRequestContext } from '../document-management/src/hosted/nest/document-management-hosted.service';
 import { UnifiedReaderService } from '../unified-reader/unified-reader.service';
 import { DocumentParsingHostedService } from '../document-management/src/hosted/nest/document-parsing-hosted.service';
 import { EngineeringMatterWorkingRepository } from './engineering-matter-working.repository';
@@ -14,7 +13,7 @@ export class DocumentRevisionReadingService {
   constructor(private readonly reader: UnifiedReaderService, private readonly semantics: DocumentSemanticService,
     private readonly actors: EngineeringMatterWorkingRepository, private readonly parsing: DocumentParsingHostedService) {}
 
-  async read(input: DocumentRevisionReadingRequest, context: HostedRequestContext) {
+  async read(input: DocumentRevisionReadingRequest, context: { tenantId: string; actorUserId: string; roles: string[] }) {
     for (const identity of [input.before, input.after]) {
       if (![identity.documentVersionId, identity.parseRunId].every(value => typeof value === 'string' && /^[A-Za-z0-9_-]{1,96}$/.test(value)) ||
         !Number.isSafeInteger(identity.semanticRevision) || identity.semanticRevision < 1)

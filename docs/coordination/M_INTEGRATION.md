@@ -1,5 +1,9 @@
 # M 主控集成交接
 
+## 2026-09-16 换版读取接入工程消费者（本地已验证，未发布）
+
+在已双远端同步的 a69260e3c 基础上，同一 DocumentRevisionReadingService 接入既有 DocumentWorkRuntimeService 和只读 MCP `read_document_revision`。MCP 对 before/after 分别执行 authorizeDocumentWork，要求实际 tenant/actor 一致及授权 DV 精确匹配，再走统一服务的原文、语义和返回前权限复查。HTTP 与工程读取共用实现；没有第二套比较器、模型调用或业务保存。三组 15 项定向测试、服务端类型和接线 ESLint 通过，含双授权身份不一致拒绝；原客户端类型已通过。
+
 ## 2026-09-16 同 family 两端原文读取（本地已验证，未发布）
 
 新增共享换版读取合同、纯比较器和 Host Service，接入现有受登录保护的文档 Controller 与客户端读取函数。before/after 都要求准确 DV、parseRun、semanticRevision；分别读取原文及已保存语义，校验同 family 不同 DV，并在返回前再次核验两端权限。GET 不生成语义、不调模型、不选择当前正式版、不写评估覆盖。返回两端各自的出版者修订说明、所选角色及父级条件、未选单元和原始覆盖限制；不把旧版自身说明误作本次两端的 diff。

@@ -75,3 +75,6 @@ M 新增 `readDocumentRevisionReading` 客户端函数与共享 `DocumentRevisio
 F 可在换版视图调用该函数：两侧 `publisherRevisionDescriptions` 保留各版本自身说明和原文定位；空数组仅表示未定位到支持的说明角色。`selectedSections` 包含该角色实际内容及父级条件，`sections` 可供选择，`unselectedUnitIds` 表示本次未比较范围。`systemComparison` 仅比较标题、段落及父级条件的空白归一化文本；表格、重复或缺失角色、结构/文字限制返回 `NOT_COMPARED` 与原因。`TEXT_EQUAL` 不表示工程影响不变；图示限制继续保留在 `coverage`。各来源链接使用各自 binding 和 SourceRef，不能共用 after 身份。
 
 `publicationRelationship=NOT_VERIFIED` 明确没有证明最新、相邻或完整修订跨度；`assessmentCoverage=NOT_RECORDED_BY_THIS_READ` 明确尚未记录新版评估。正式身份/有效性仍由现有准确目录读取与本轮工作给出，不能由本接口的 DV/parseRun/semanticRevision 推导。本增量只交付读取合同、后端路由和客户端函数；生产视图接入、线上两端读取与完整换版业务验收仍待完成。
+
+
+同一读取服务也由既有工程 MCP `read_document_revision` 消费，输入为共享请求的 `before/after/roleKey`，不复制 HTTP 逻辑。MCP 分别取得两端实际来源授权，要求同一 tenant/actor，再执行统一读取。该入口仍为只读，不创建评估任务或覆盖记录。
