@@ -66,3 +66,12 @@ T1/V1 可在各自文件内用同组件隔离样例推进，不等整个大 goal
 F1a 先覆盖“有问题无综合、旧综合未覆盖新工作、更正请求与保存事实分离、独立 DV 来源、伪版本 ID”实际风险。随后验证文档行→独立 Reader 与 Matter 问题→精确来源→原工作两条路径。T1 再验证 Q3→Q4→TBD、未提、跨版缺口、条件期限和参考跨文件边界。最终以同一版本的一条跨页流程验收，样例和真实结果分列。
 
 本说明未新增模型请求、解析或业务保存，也没有将既有综合疑点或跨事项比较的失败宣布解决。它们继续按 M 集成记录的准确状态推进。
+
+
+## 2026-09-16 换版两端读取增量（本地实现，待发布联调）
+
+M 新增 `readDocumentRevisionReading` 客户端函数与共享 `DocumentRevisionReadingRequest/Response`，走现有文档路径 `GET /api/document-management/document-versions/:documentVersionId/revision-reading`。路径 ID 是 after，查询需提供 after 的 `parseRunId/semanticRevision`、before 的 `beforeDocumentVersionId/beforeParseRunId/beforeSemanticRevision` 和 `roleKey`。两端均须精确版本；Host 分别校验 ACL，并限制为同 family 不同 DV。不会建立新事项、选择有效版、重新解析或记录评估覆盖。
+
+F 可在换版视图调用该函数：两侧 `publisherRevisionDescriptions` 保留各版本自身说明和原文定位；空数组仅表示未定位到支持的说明角色。`selectedSections` 包含该角色实际内容及父级条件，`sections` 可供选择，`unselectedUnitIds` 表示本次未比较范围。`systemComparison` 仅比较标题、段落及父级条件的空白归一化文本；表格、重复或缺失角色、结构/文字限制返回 `NOT_COMPARED` 与原因。`TEXT_EQUAL` 不表示工程影响不变；图示限制继续保留在 `coverage`。各来源链接使用各自 binding 和 SourceRef，不能共用 after 身份。
+
+`publicationRelationship=NOT_VERIFIED` 明确没有证明最新、相邻或完整修订跨度；`assessmentCoverage=NOT_RECORDED_BY_THIS_READ` 明确尚未记录新版评估。正式身份/有效性仍由现有准确目录读取与本轮工作给出，不能由本接口的 DV/parseRun/semanticRevision 推导。本增量只交付读取合同、后端路由和客户端函数；生产视图接入、线上两端读取与完整换版业务验收仍待完成。

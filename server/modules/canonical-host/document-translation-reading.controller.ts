@@ -8,6 +8,7 @@ import { DocumentParsingHostedService } from '../document-management/src/hosted/
 import { UnifiedReaderService } from '../unified-reader/unified-reader.service';
 import { CanonicalTranslationWorkspaceRepository } from './canonical-translation-workspace.repository';
 import { buildTranslationWorkspaceReadingV2 } from './canonical-translation-v2-quality';
+import { DocumentRevisionReadingService } from './document-revision-reading.service';
 import { DocumentTranslationAttemptRepository } from '../action-attempt/document-translation-attempt.repository';
 
 @NeedLogin()
@@ -17,7 +18,22 @@ import { DocumentTranslationAttemptRepository } from '../action-attempt/document
 // eslint-disable-next-line @darraghor/nestjs-typed/injectable-should-be-provided
 export class DocumentTranslationReadingController {
   constructor(private readonly reader: UnifiedReaderService, private readonly workspaces: CanonicalTranslationWorkspaceRepository,
-    private readonly parsing: DocumentParsingHostedService, private readonly attempts: DocumentTranslationAttemptRepository) {}
+    private readonly parsing: DocumentParsingHostedService, private readonly attempts: DocumentTranslationAttemptRepository,
+    private readonly revisions: DocumentRevisionReadingService) {}
+
+  @Get('revision-reading')
+  @Header('Cache-Control', 'private, no-store')
+  async readRevision(@Param('documentVersionId') documentVersionId: string,
+    @Query('parseRunId') parseRunId: string, @Query('semanticRevision') semanticRevision: string,
+    @Query('beforeDocumentVersionId') beforeDocumentVersionId: string,
+    @Query('beforeParseRunId') beforeParseRunId: string, @Query('beforeSemanticRevision') beforeSemanticRevision: string,
+    @Query('roleKey') roleKey: string, @Req() request: Request) {
+    if (![semanticRevision, beforeSemanticRevision].every(value => typeof value === 'string' && /^[1-9][0-9]*$/.test(value)))
+      throw new BadRequestException('DOCUMENT_REVISION_IDENTITY_INVALID');
+    return this.revisions.read({ before: { documentVersionId: beforeDocumentVersionId, parseRunId: beforeParseRunId,
+      semanticRevision: Number(beforeSemanticRevision) },
+      after: { documentVersionId, parseRunId, semanticRevision: Number(semanticRevision) }, roleKey }, contextFromRequest(request));
+  }
 
   @Get('translation-reading')
   @Header('Cache-Control', 'private, no-store')

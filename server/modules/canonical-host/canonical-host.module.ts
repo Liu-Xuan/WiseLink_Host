@@ -58,6 +58,7 @@ import { DocumentWorkRuntimeService } from './document-work-runtime.service';
 import { DocumentSourceProjectionService } from './document-source-projection.service';
 import { DocumentSourceSearchService } from './document-source-search.service';
 import { DocumentTranslationRuntimeService } from './document-translation-runtime.service';
+import { DocumentRevisionReadingService } from './document-revision-reading.service';
 import { DocumentTranslationReadingController } from './document-translation-reading.controller';
 import { DocumentTranslationAttemptRepository } from '../action-attempt/document-translation-attempt.repository';
 import { EngineeringSearchProjectionWriter } from './engineering-search-projection';
@@ -530,6 +531,7 @@ export class CanonicalHostModule {
         EngineeringSearchProjectionWriter,
         DocumentWorkRuntimeService,
         DocumentSourceProjectionService,
+        DocumentRevisionReadingService,
         DocumentSourceSearchService,
         DocumentTranslationRuntimeService,
         DocumentTranslationAttemptRepository,

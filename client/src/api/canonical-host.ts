@@ -1,3 +1,4 @@
+import type { DocumentRevisionReadingRequest, DocumentRevisionReadingResponse } from '@shared/document-revision-reading.interface';
 import type { JobAidWorkingReadModel } from '@shared/jobaid-problem-assessment.interface';
 import type { DocumentTranslationReadingResponse } from '@shared/document-translation-reading.interface';
 import type { EngineeringIssueRead, EngineeringIssueSearchHit, EngineeringIssueSearchResponse,
@@ -606,6 +607,23 @@ export async function readDocumentParsingStatus(documentVersionId: string, signa
 
 export function startDocumentParsing(documentVersionId: string, input: StartDocumentParseRequest) {
   return readCanonicalLibrary<DocumentParseRunSummary>({ url: `/api/document-management/document-versions/${encodeURIComponent(documentVersionId)}/parse-runs`, method: 'POST', data: input });
+}
+
+export async function readDocumentRevisionReading(input: DocumentRevisionReadingRequest, signal?: AbortSignal): Promise<DocumentRevisionReadingResponse> {
+  const generation = clientSessionGeneration;
+  const query = new URLSearchParams({ parseRunId: input.after.parseRunId, semanticRevision: String(input.after.semanticRevision),
+    beforeDocumentVersionId: input.before.documentVersionId, beforeParseRunId: input.before.parseRunId,
+    beforeSemanticRevision: String(input.before.semanticRevision), roleKey: input.roleKey });
+  const result = await readCanonicalLibrary<DocumentRevisionReadingResponse>({
+    url: `/api/document-management/document-versions/${encodeURIComponent(input.after.documentVersionId)}/revision-reading?${query}`, signal });
+  if (signal?.aborted || generation !== clientSessionGeneration) throw new Error('DOCUMENT_REVISION_READING_OBSOLETE');
+  for (const side of ['before', 'after'] as const) {
+    if (result[side].binding.documentVersionId !== input[side].documentVersionId ||
+      result[side].binding.parseRunId !== input[side].parseRunId || result[side].semanticRevision !== input[side].semanticRevision)
+      throw new Error('DOCUMENT_REVISION_READING_BINDING_MISMATCH');
+  }
+  if (result.systemComparison.roleKey !== input.roleKey) throw new Error('DOCUMENT_REVISION_READING_ROLE_MISMATCH');
+  return result;
 }
 
 export async function readDocumentTranslationReading(documentVersionId: string, parseRunId: string, signal?: AbortSignal): Promise<DocumentTranslationReadingResponse> {
