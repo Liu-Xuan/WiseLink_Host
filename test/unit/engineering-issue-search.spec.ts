@@ -70,6 +70,14 @@ function setup() {
 }
 
 describe('authorized engineering issue search and exact expansion', () => {
+  it('returns saved overview coverage with exact expansion', async () => {
+    const h = setup();
+    h.saved.content.overviewStatus = 'STALE';
+    const expanded = await h.service.read(h.identity, actor);
+    expect(expanded.identity.overviewStatus).toBe('STALE');
+    expect(expanded.identity.workRef).toBe(h.saved.workRevisionRef);
+  });
+
   it('rebuilds pending rows through the actor-scoped exact revision reader', async () => {
     const h = setup();
     const projection = { rebuildPending: jest.fn().mockImplementation(async ({ load }: { load: (item: { ownerKind: 'USER'; revisionRef: string; ownerId: string; subjectId: string }) => Promise<unknown> }) => {
@@ -196,6 +204,7 @@ describe('authorized engineering issue search and exact expansion', () => {
 
   it('uses the real Matter reader for a Matter work ref', async () => {
     const h = setup();
+    h.saved.content.overviewStatus = 'STALE';
     const notice = { attemptRef: 'AQ-correction', issueKey: h.identity.issueKey,
       reason: '依赖尚未核实，不能据此认定确定无影响。', attemptStatus: 'FAILED', correctedWorkRef: null };
     h.matters.readWorkingRevision.mockResolvedValue({
@@ -220,6 +229,7 @@ describe('authorized engineering issue search and exact expansion', () => {
     h.db.execute.mockResolvedValue([identity]);
     const found = await h.service.search('工具', actor);
     expect(found.hits[0].workRevision).toBe(7);
+    expect(found.hits[0].overviewStatus).toBe('STALE');
     expect(found.hits[0].correctionNotices).toEqual([notice]);
     const expanded = await h.service.read(identity, actor);
     expect(expanded.identity.correctionNotices).toEqual([notice]);

@@ -1,5 +1,19 @@
 # M 主控集成交接
 
+## 2026-09-15 无变化更正：本地实现与验证完成，待发布
+
+Host 对持久生成的正文、要求处理与未决问题做实际比较：全部相同时记录无变化回执并正常结束任务，保留原工作引用、版本及综合覆盖状态，不创建新工作。保存和结束继续验证租约与当前版本，重复请求读取同一结果。历史工作读取将其显示为 unchanged，不虚构 correctedWorkRef；Hosted 消费者已接入该结果。变更摘要仍由实际字段差异生成，原模型理由保留在生成事件中。
+
+最新验证：更正与知识读取单测 32 pass；消费者 9 pass；隔离 PostgreSQL 定向保存/回放测试 1 pass、0 fail、0 skip，含无变化成功、重复保存/结束、错误租约拒绝、历史通知及零新增工作断言。日志位于私有临时目录，测试实例已停止。浏览器连接仍返回 nodeRepl.fetch request failed；本段不代表线上发布、自然调度或工程内容已验收。
+
+## 2026-09-15 接续9月16日设计稿：持久生成证据核对与本地修法
+
+本轮通过官方CLI只读核对工作15的持久STARTED/GENERATED记录：原始生成body与requirementHandling均等于输入，只有openQuestions改变；模型changeSummary却声称修改了treatment。保存后的三组字段均与GENERATED一致，overviewStatus为STALE。因此本次没有保存遗漏的证据，不据此扩大更正schema，也不认定引用即强制工程依赖。源文件现行性和页面实际展示尚待核对，不从解析rev6推厂家版次。
+
+本地已将全文现行文档与实际插件/Skill指导统一为有效依据、参考与事项认识边界。新增Host实际字段差异摘要，模型原始理由继续留在GENERATED记录；更正上下文明确附带综合STALE时不得继承为当前已核实结论。22项更正单测通过，服务端类型检查通过（摘要修法后）；隔离PG初次因55439未启动失败；随后在独立55449新实例执行同一保存/回放用例，1 pass/0 fail/0 skip，实例已停止。知识检索与精确展开现已返回保存的overviewStatus，避免附带旧综合没有覆盖标识；对应10项测试及最新服务端类型检查通过。页面呈现与线上接口尚未验证。未发布、未创建新的工程工作。旧临时文件缺失不代表持久生成产物丢失。
+
+CodeM C0因ACP_TIMEOUT及未完成的执行权限请求未取得报告；主控已以官方只读查询接续，不等待CodeM恢复。前端继续独立重构。前次origin同步f0504d05d已核验；下方旧“本地待同步/代理阻塞”保留当时记录，不代表本次同步状态。Git由Luna按接受范围处理。
+
 ## 2026-09-14 更正受理前来源完整性复核：本地待同步
 
 本轮在更正任务进入可运行状态前复核目标问题的完整来源集合：缺少已登记的 `method:applicability` 时立即拒绝，未创建 `action_attempt`、未调用生成；合法完整请求的保存与回放链保持通过。定向 PostgreSQL 子测试 `targeted correction uses real PostgreSQL fences, durable generation and exact work replay` 1 pass/0 skip，server typecheck 退出0，diff check 通过。

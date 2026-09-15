@@ -1,7 +1,7 @@
 import type { EngineeringMatterWorkingRevisionCommand, EngineeringMatterWorkingInputBinding } from '@shared/matter-working.interface';
 import { addMatterDeliveredEvidence, buildMatterJobAidTask, MATTER_JOBAID_TASK_SCHEMA, type MatterIssueCorrectionPurpose } from './matter-jobaid-task';
 import { materializeMatterJobAidCommand } from './matter-jobaid-save';
-import { buildEngineeringIssueCorrectionContext } from './engineering-issue-correction-context';
+import { buildEngineeringIssueCorrectionContext, summarizeEngineeringIssueCorrection } from './engineering-issue-correction-context';
 import { EngineeringIssueCorrectionPluginService } from './engineering-issue-correction-plugin.service';
 import { engineeringMatterPendingInputs } from './engineering-matter-working-state';
 import type { AssessmentEvidence } from '@shared/assessment-reading.interface';
@@ -911,13 +911,39 @@ export class MatterActionAttemptService {
     principalId: string; requestId: string; generationRequestId: string;
   }) {
     const savedInput = await this.authorized(input, async (executor, queue) => {
+      await executor.database.select({ id: actionAttempt.attemptId }).from(actionAttempt)
+        .where(eq(actionAttempt.operationRef, input.attemptRef)).for('update');
       const row = await this.scopedRow(executor, queue, input, input.attemptRef);
       const events: Array<Record<string, unknown>> = JSON.parse(row.reviewActivityJson ?? '[]');
       const started = events.find(event => event.kind === 'MATTER_ISSUE_CORRECTION_STARTED' && event.requestId === input.generationRequestId);
       const completed = events.find(event => event.kind === 'MATTER_ISSUE_CORRECTION_GENERATED' && event.requestId === input.generationRequestId);
       if (!started || !completed) throw failure('ENGINEERING_CORRECTION_GENERATION_REQUIRED');
+      const context = started.context as ReturnType<typeof buildEngineeringIssueCorrectionContext>;
+      const generated = completed.result as Awaited<ReturnType<EngineeringIssueCorrectionPluginService['generate']>>;
+      if (context.body === generated.body &&
+          canonicalJson(context.structuredContext.requirementHandling) === canonicalJson(generated.requirementHandling) &&
+          canonicalJson(context.structuredContext.openQuestions) === canonicalJson(generated.openQuestions)) {
+        const request = started.request as { expectedWorkRef: string; expectedWorkRevision: number };
+        const prior = events.find(event => event.kind === 'MATTER_CORRECTION_UNCHANGED' && event.requestId === input.requestId);
+        if (prior && prior.generationRequestId !== input.generationRequestId)
+          throw failure('ENGINEERING_CORRECTION_REPLAY_MISMATCH');
+        if (!prior) {
+          assertRunningSourceLease(row, input);
+          const current = await executor.loadCurrent(input);
+          if (current?.matterWorkRevisionId !== request.expectedWorkRef || current.workingRevision !== request.expectedWorkRevision)
+            throw failure('ENGINEERING_MATTER_WORKING_CAS_CONFLICT');
+          await executor.database.update(actionAttempt).set({ reviewActivityJson: canonicalJson([...events, {
+            kind: 'MATTER_CORRECTION_UNCHANGED', requestId: input.requestId,
+            generationRequestId: input.generationRequestId, workRevisionRef: request.expectedWorkRef,
+            workRevision: request.expectedWorkRevision, observedAt: new Date().toISOString(),
+          }]) }).where(eq(actionAttempt.attemptId, row.attemptId));
+        }
+        return { unchanged: true as const, workRevisionRef: request.expectedWorkRef,
+          workRevision: request.expectedWorkRevision, replayed: Boolean(prior) };
+      }
       return correctionProposalFromReceipts(started, completed);
     });
+    if ('unchanged' in savedInput) return savedInput;
     // Reuses the exact same authorization, lease, CAS, materialization, pending index and replay transaction.
     return this.saveJobAidWork({ ...input, ...savedInput });
   }
@@ -1041,9 +1067,9 @@ export class MatterActionAttemptService {
       const events: Array<Record<string, unknown>> = JSON.parse(row.reviewActivityJson ?? '[]');
       const generated = events.find(event => event.kind === 'MATTER_ISSUE_CORRECTION_GENERATED');
       const started = events.find(event => event.kind === 'MATTER_ISSUE_CORRECTION_STARTED');
-      const saved = events.find(event => event.kind === 'MATTER_JOBAID_WORK_SAVED' && event.requestId === input.requestId);
+      const saved = events.find(event => ['MATTER_JOBAID_WORK_SAVED', 'MATTER_CORRECTION_UNCHANGED'].includes(String(event.kind)) && event.requestId === input.requestId);
       if (!generated || !started || !saved) throw failure('ENGINEERING_CORRECTION_SAVED_RECEIPT_REQUIRED');
-      if (row.resultEnvelopeJson) {
+      if (row.resultEnvelopeJson && saved.kind !== 'MATTER_CORRECTION_UNCHANGED') {
         const stored = checkedResult(row);
         if (finishWorkRef(stored) !== saved.workRevisionRef) throw failure('ENGINEERING_CORRECTION_SAVE_MISMATCH');
         return stored;
@@ -1062,8 +1088,28 @@ export class MatterActionAttemptService {
         runMetrics: { durationMs: Date.parse(String(generated.observedAt)) - Date.parse(String(started.observedAt)),
           inputUnits: null, outputUnits: null }, errorCode: null, errorDetail: null,
       };
+      if (saved.kind === 'MATTER_CORRECTION_UNCHANGED') {
+        envelope.modelOutput = canonicalJson({ workRevisionRef: saved.workRevisionRef, unchanged: true });
+        envelope.warnings = ['本次核对没有改变目标问题；保留原工作及原综合覆盖状态，未形成新工作或正式采用。'];
+        const sealed = parseMatterResultEnvelope({ task, value: { ...envelope, contentHash: canonicalSha256(envelope) } });
+        if (row.status !== 'SUCCEEDED') {
+          assertRunningSourceLease(row, input);
+          await executor.database.select({ id: engineeringMatter.matterId }).from(engineeringMatter)
+            .where(and(eq(engineeringMatter.tenantId, input.tenantId), eq(engineeringMatter.matterId, input.matterId))).for('update');
+          const current = await executor.loadCurrent(input);
+          if (current?.matterWorkRevisionId !== saved.workRevisionRef || current.workingRevision !== saved.workRevision)
+            throw failure('ENGINEERING_MATTER_WORKING_CAS_CONFLICT');
+          if (!await queue.finishTerminal({ attemptId: row.attemptId, fromStatus: 'RUNNING', status: 'SUCCEEDED',
+            terminalReason: 'MATTER_CORRECTION_NO_CHANGE', result: sealed, projectionApplied: false,
+            leaseToken: input.leaseToken, leaseGeneration: input.leaseGeneration, now: new Date() }))
+            throw failure('ACTION_ATTEMPT_TERMINALIZATION_LOST');
+        } else if (checkedResult(row).contentHash !== sealed.contentHash) throw failure('RESULT_ENVELOPE_REPLAY_MISMATCH');
+        return { unchanged: true as const, attemptRef: input.attemptRef, status: 'SUCCEEDED' as const,
+          workRevisionRef: String(saved.workRevisionRef), workRevision: Number(saved.workRevision) };
+      }
       return { ...envelope, contentHash: canonicalSha256(envelope) };
     });
+    if ('unchanged' in result) return result;
     return this.finishJobAid({ ...input, result });
   }
 
@@ -1479,7 +1525,7 @@ function correctionProposalFromReceipts(started: Record<string, unknown>, comple
           ...structured, riskScenarios: structured.riskScenarios.map(({ gradeMeaning: _meaning, ...risk }) => risk) }],
         roundCompletion: 'IN_PROGRESS',
         completionReason: '指定问题正文、要求处理及未决问题已更正；其他关联判断与总体认识仍需完成一致性核对。',
-        changeSummary: result.changeSummary,
+        changeSummary: summarizeEngineeringIssueCorrection(context, result),
       };
       return { expectedWorkRevision: request.expectedWorkRevision, workJson: canonicalJson(proposal) };
 }

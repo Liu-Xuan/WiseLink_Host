@@ -287,6 +287,7 @@ export class EngineeringIssueSearchService {
         question: issue.question,
         sourceRefs: [...new Set(collectIssueEvidenceUses(issue).map(use => use.evidenceRef))],
         kind: 'WORK',
+        overviewStatus: content.overviewStatus,
         matchedRange: `issue:${issue.issueKey}`,
         reason: identity.matchReason ?? 'FULL_TEXT',
         rootRefs: [...new Set(collectIssueEvidenceUses(issue).map(use => use.evidenceRef))],

@@ -3618,6 +3618,34 @@ test('targeted correction uses real PostgreSQL fences, durable generation and ex
       const receipt = JSON.parse(finishedRow.resultEnvelopeJson);
       assert.equal(receipt.modelVersion, null); assert.equal(receipt.skillVersion, null);
       assert.equal(receipt.runMetrics.inputUnits, null); assert.equal(receipt.producer.instanceId, output.producer.instanceId);
+      const unchangedService = new MatterActionAttemptService(owner.working, models, undefined,
+        { generate: async (_context, assertActive) => { await assertActive(); return output; } });
+      const unchangedTask = await owner.runtime(() => unchangedService.reserveJobAid({ ...reserve,
+        idempotencyKey: 'correction-unchanged', expectedWorkingRevision: saved.workRevision,
+        correction: { ...correction, expectedWorkRef: saved.workRevisionRef } }));
+      const unchangedScope = { ...scope, attemptRef: unchangedTask.task.operationRef, principalId: 'hosted-test' };
+      const unchangedClaim = await owner.runtime(() => unchangedService.claim(unchangedScope));
+      const unchangedFence = { ...unchangedScope, leaseToken: unchangedClaim.leaseToken, leaseGeneration: unchangedClaim.leaseGeneration };
+      await owner.runtime(() => unchangedService.executeIssueCorrection({ ...unchangedFence, requestId: 'unchanged-generate' }));
+      const unchangedSave = { ...unchangedFence, requestId: 'unchanged-save', generationRequestId: 'unchanged-generate' };
+      await assert.rejects(owner.runtime(() => unchangedService.saveIssueCorrection({ ...unchangedSave,
+        leaseGeneration: unchangedFence.leaseGeneration + 1 })), /LEASE/);
+      const unchangedReceipt = await owner.runtime(() => unchangedService.saveIssueCorrection(unchangedSave));
+      assert.equal(unchangedReceipt.unchanged, true);
+      assert.equal(unchangedReceipt.workRevisionRef, saved.workRevisionRef);
+      assert.equal((await owner.runtime(() => unchangedService.saveIssueCorrection(unchangedSave))).replayed, true);
+      const unchangedFinish = { ...unchangedFence, requestId: 'unchanged-save' };
+      assert.equal((await owner.runtime(() => unchangedService.finishIssueCorrection(unchangedFinish))).status, 'SUCCEEDED');
+      assert.equal((await owner.runtime(() => unchangedService.finishIssueCorrection(unchangedFinish))).unchanged, true);
+      assert.equal((await owner.working.loadCurrent(scope)).matterWorkRevisionId, saved.workRevisionRef);
+      const unchangedRead = await owner.working.readByRef({ ...scope, workRef: saved.workRevisionRef });
+      const unchangedNotice = unchangedRead.correctionNotices.find(item => item.attemptRef === unchangedTask.task.operationRef);
+      assert.equal(unchangedNotice.unchanged, true);
+      assert.equal(unchangedNotice.correctedWorkRef, null);
+      assert.equal(unchangedRead.state.problemWork.overviewStatus, read.state.problemWork.overviewStatus);
+      const [noNewWork] = await sql`SELECT count(*)::int AS n FROM engineering_matter_work_revision
+        WHERE action_attempt_id = ${unchangedTask.task.actionAttemptId}`;
+      assert.equal(noNewWork.n, 0, 'an unchanged correction records its receipt without creating a work revision');
       let failedCalls = 0;
       const broken = new MatterActionAttemptService(owner.working, models, undefined, { generate: async () => {
         failedCalls += 1; throw new Error('transport outcome not confirmed');
