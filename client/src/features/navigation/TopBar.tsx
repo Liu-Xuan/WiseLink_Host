@@ -8,26 +8,33 @@ import {
   useCurrentObjectContext,
 } from '@client/src/app/providers/CurrentObjectContextProvider';
 import {
+  deriveShellRouteContext,
   deriveBreadcrumbs,
   shortId,
-  workItemIdFromPath,
   type ShellCrumb,
+  type ShellRouteContext,
 } from './shell-utils';
 
 interface TopBarProps {
   pathname: string;
+  search: string;
   mobileNavOpen: boolean;
   onToggleMobile: () => void;
 }
 
 const TopBar: React.FC<TopBarProps> = ({
   pathname,
+  search,
   mobileNavOpen,
   onToggleMobile,
 }) => {
   const { currentObject } = useCurrentObjectContext();
-  const workItemId: string = workItemIdFromPath(pathname);
-  const crumbs: ShellCrumb[] = deriveBreadcrumbs(pathname, workItemId);
+  const routeContext: ShellRouteContext = deriveShellRouteContext(
+    pathname,
+    search,
+  );
+  const { workItemId, matterId, documentVersionId, workRef } = routeContext;
+  const crumbs: ShellCrumb[] = deriveBreadcrumbs(pathname, search);
 
   return (
     <header className="wl-topbar wl-glass-nav" role="banner">
@@ -67,7 +74,11 @@ const TopBar: React.FC<TopBarProps> = ({
         </ol>
       </nav>
 
-      {currentObject ? (
+      {workRef ? (
+        <span className="wl-topbar-item" title={workRef}>
+          历史工作 · {shortId(workRef)}
+        </span>
+      ) : currentObject ? (
         <span
           className="wl-topbar-item"
           title={`${currentObjectKindLabel(currentObject.kind)} · ${currentObject.displayCode} · ${currentObject.title}`}
@@ -83,6 +94,14 @@ const TopBar: React.FC<TopBarProps> = ({
         >
           {shortId(workItemId)}
         </NavLink>
+      ) : matterId ? (
+        <span className="wl-topbar-item" title={matterId}>
+          工程事项 · {shortId(matterId)}
+        </span>
+      ) : documentVersionId ? (
+        <span className="wl-topbar-item" title={documentVersionId}>
+          文档版本 · {shortId(documentVersionId)}
+        </span>
       ) : (
         <span className="wl-topbar-item is-empty">尚未选择事项</span>
       )}

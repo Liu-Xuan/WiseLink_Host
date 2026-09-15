@@ -18,6 +18,7 @@ import {
   useWlTheme,
   type WlVisualMode,
 } from '@client/src/app/providers/ThemeProvider';
+import { useCurrentObjectContext } from '@client/src/app/providers/CurrentObjectContextProvider';
 import { Image } from '@client/src/components/ui/image';
 import {
   Dialog,
@@ -26,7 +27,13 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@client/src/components/ui/dialog';
-import { shortId, workItemIdFromPath } from './shell-utils';
+import {
+  buildShellObjectLinks,
+  deriveShellRouteContext,
+  shortId,
+  type ShellObjectLink,
+  type ShellRouteContext,
+} from './shell-utils';
 
 interface SidebarProps {
   mobileOpen: boolean;
@@ -66,8 +73,12 @@ const SECONDARY_NAV: Array<{
 
 const Sidebar: React.FC<SidebarProps> = ({ mobileOpen, onMobileClose }) => {
   const location = useLocation();
-  const workItemId: string = workItemIdFromPath(location.pathname);
-  const encoded: string = encodeURIComponent(workItemId);
+  const routeContext: ShellRouteContext = deriveShellRouteContext(
+    location.pathname,
+    location.search,
+  );
+  const { workItemId, matterId, documentVersionId, workRef } = routeContext;
+  const { currentObject } = useCurrentObjectContext();
   const { theme, toggleTheme, visualMode, setVisualMode } = useWlTheme();
   const [settingsOpen, setSettingsOpen] = useState<boolean>(false);
   const [helpOpen, setHelpOpen] = useState<boolean>(false);
@@ -77,31 +88,23 @@ const Sidebar: React.FC<SidebarProps> = ({ mobileOpen, onMobileClose }) => {
       (option: { value: WlVisualMode }) => option.value === visualMode,
     )?.hint ?? '';
 
-  const objectLinks: Array<{ to: string; label: string }> = workItemId
-    ? [
-        { to: `/work-items/${encoded}`, label: '事项综述' },
-        {
-          to: `/work-items/${encoded}/documents?node=assessment&tab=assessment`,
-          label: '问题分析',
-        },
-        {
-          to: `/work-items/${encoded}/documents?node=reader&tab=source`,
-          label: '相关资料',
-        },
-        {
-          to: `/work-items/${encoded}/documents?node=review&tab=review`,
-          label: '复核与交流',
-        },
-        {
-          to: `/work-items/${encoded}/documents?node=overall&tab=overall`,
-          label: '变化与历史',
-        },
-        {
-          to: `/work-items/${encoded}/documents?node=document`,
-          label: '版本附件',
-        },
-      ]
-    : [];
+  const objectLinks: ShellObjectLink[] = buildShellObjectLinks(routeContext);
+  const hasRouteObject: boolean = Boolean(
+    workItemId || matterId || documentVersionId,
+  );
+  const objectHeading: string = matterId
+    ? workRef
+      ? '历史工作'
+      : '当前工程事项'
+    : documentVersionId
+      ? '文档版本'
+      : '当前事项';
+  const routeObjectId: string =
+    workRef || matterId || documentVersionId || workItemId;
+  const objectLabel: string =
+    !workRef && currentObject
+      ? currentObject.displayCode
+      : shortId(routeObjectId);
 
   const globalNavTarget = (target: string): string => {
     if (!workItemId || (target !== '/knowledge' && target !== '/graph')) {
@@ -156,19 +159,28 @@ const Sidebar: React.FC<SidebarProps> = ({ mobileOpen, onMobileClose }) => {
         </nav>
 
         <div className="wl-sidebar-object">
-          <h3>当前事项</h3>
-          {workItemId ? (
+          <h3>{objectHeading}</h3>
+          {hasRouteObject ? (
             <>
-              <div className="wl-sidebar-object-title" title={workItemId}>
-                {shortId(workItemId)}
+              <div className="wl-sidebar-object-title" title={routeObjectId}>
+                {objectLabel}
               </div>
-              <nav className="wl-sidebar-object-nav" aria-label="当前事项导航">
-                {objectLinks.map((link: { to: string; label: string }) => (
-                  <NavLink key={link.label} to={link.to}>
-                    {link.label}
-                  </NavLink>
-                ))}
-              </nav>
+              {objectLinks.length ? (
+                <nav
+                  className="wl-sidebar-object-nav"
+                  aria-label={matterId ? '工程事项导航' : '当前事项导航'}
+                >
+                  {objectLinks.map((link: ShellObjectLink) => (
+                    <NavLink key={link.label} to={link.to}>
+                      {link.label}
+                    </NavLink>
+                  ))}
+                </nav>
+              ) : (
+                <p className="wl-sidebar-object-empty">
+                  当前为独立文档版本阅读，可返回资料库选择事项或其他文档。
+                </p>
+              )}
             </>
           ) : (
             <p className="wl-sidebar-object-empty">
