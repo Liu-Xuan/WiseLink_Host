@@ -1,5 +1,15 @@
 # M 主控集成交接
 
+## 2026-09-15 c105 与 Host 输入状态修复已发布
+
+Host release `7685625262247840716` 已 `finished`，精确提交 `83db3f56f044357cee6752132f6fe2070180dbdf`。本批补齐新任务及保存恢复的 `previousWork.overviewStatus`，明确旧综合为 STALE 时，即使问题正文无需更改，仍应核对并保存新综合。Host 定向27项、消费者11项和服务端类型检查通过。
+
+c105 经官方同名安装更新：ZIP 390488字节、SHA256 `8591f2afc8d93eb7ca8420cf7d268097aecfba613e4a0b1b3d9f985d02dcc843`、来源同一提交，48/48安装文件与清单匹配，仅多出官方安装器元数据。安装目录332项测试通过、0失败、0跳过；官方 skills info/check 均退出0，Ready、Visible to model、Available as command 均为真。验证脚本曾有一次换行转义错误，修正后检查通过，未重复安装。
+
+维护窗口先确认原三个任务无在途并保存完整配置，官方暂停后安装；完成后恢复原 enabled，schedule、payload、agentId、sessionTarget 逐项一致。原失败综合 `AQ-7a13e67cefb446a98b48870cf6e5056f` 经正常 Host STATUS 确认为 FAILED。随后以精确工作16、事项修订3及固定新 requestId 正常受理 `AQ-567130c431ee418883fc9c32767b7e3d`，初始QUEUED，由原调度自然执行。恢复后首次自然运行分别返回 Matter IDLE、WorkItem NOT_READY、Document DOCUMENT_READY，均为 scheduler ok。新综合请求已自然领取，实际 assessment-invocation 读回 previousWork.overviewStatus=STALE、workRevision=16；新综合随后再次失败：HTTP400、JOBAID_INCOMPLETE_TERMINAL_RESPONSE，round1、saved=null，FINISH正常记录FAILED；原调度已无在途，未产生新工作。输入修复已线上证实，但没有解决托管不完整终态，不原样继续重试。
+
+正式换版下一步的实时只读核验：`document_version_6b998c1544aa06b5f20b2be0` 与 `document_version_78c6d0adb612265f85e1d338` 同属 `family_4aa6b72b084efa83410651ad`，均 COMMITTED_IMMUTABLE；canonicalRevisionIdentity 分别为 GENERATED:2025-09-26、GENERATED:2026-05-27，businessRevision/revisionDate 均空，两个版本均没有 dm_document_parse_run。P/M已完成原PDF的修订说明和全文实际对比，但尚未形成产品原文读取回执与正式版本工作覆盖。Host产品线上URL本轮浏览器打开返回 ERR_CONNECTION_CLOSED；不能由开发侧SQL读取替代正常业务actor授权。跨事项搜索/精确展开代码与已有测试可复用，真实B→A→B保存尚缺。
+
 ## 2026-09-15 工作16更正已保存，后继综合失败及输入缺口修复
 
 本次从 Host online 持久工作与正常 Hosted MCP `READ_SAVED_WORK` 读回同一工作15后，M与Luna核对了要求标题与条件解释的矛盾、三个结构化开放问题与旧综合“四项”的差异，以及历史轮次说明。正常 `begin_matter_assessment` 以工作15、事项修订3及28条完整目标引用受理 `AQ-add317d43ab142e79ed593ed31546411`；原 Matter cron 自然领取，专用官方更正插件完成生成，Host 正常保存及结束为 `SUCCEEDED`。
