@@ -1,5 +1,11 @@
 # M 主控集成交接
 
+## 2026-09-15 操作员 Skill 已持久化并完成只读使用验证
+
+最终操作员 Skill 已保存到 `operator-skills/wiselink-hosted-operations/`，包含 `SKILL.md`、`scripts/verify-package.py` 和 `tests/test_verify_package.py`。旧豆包原件已确认删除；本目录是基于当前 Publish Lite 与实际 CLI/Hosted 入口重建的操作员 Skill，不是旧文件恢复。CodeM 通过显式读取 Skill 后，对现成 c104 ZIP/manifest 完成只读验证：`verified=true`、版本 `wiselink-research-and-synthesize@r09.c104`、48 files、archive SHA `9fe0bc55ffb0aca82f64eaba7c3f45feea818b415f8f77c8220aaafb60c4a8be`、source commit `cb30964e3f5030d563ce87524f195bb78ef096f0`；47 个 DOS ZIP 条目没有可读 Unix mode，已如实标记，不扩展为模式验证通过。
+
+本次只做本地 Skill 读取与包校验，未执行 Hosted 发布、安装、job 启停或业务请求。Skill 目录尚未作为妙搭线上安装结果宣称；实际容器控制入口和后续 c104 配套切换仍需在获准 Hosted 窗口中由具备可读回命令回执的执行者完成。
+
 ## 2026-09-15 CodeM 操作员技能接续：原件与入口已定位
 
 用户已告知Hosted登录恢复，并要求CodeM适配此前豆包生成的部署/测试操作技能。豆包原任务的交付附件现明确显示SKILL.md已删除；不能将产品工程分析Skill当成该操作技能原件，也不能把旧脚本的bash语法检查记作执行验证。按交付记录和现有Publish Lite重建，保留CLI能力识别、任务完整配置备份/恢复、指定分支发布、包完整性和安装读回；旧30b安装wrapper未被后续部署采用，不直接继承为已验证路径。
