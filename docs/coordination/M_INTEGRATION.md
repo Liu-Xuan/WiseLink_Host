@@ -1,8 +1,12 @@
 # M 主控集成交接
 
+## 2026-09-16 MCP 清单兼容修正
+
+准备真实调用时核对已安装 c109，发现消费者严格校验工具名清单，因此新增 read_document_revision 会造成连接拒绝。已将比较移入既有 read_document_original 的可选 compareWith/roleKey 模式，旧单端调用不变；两端模式要求准确 semanticRevision，拒绝分页或 sectionId 混入。未放宽客户端清单校验、未改安装 Skill。实际 Host MCP 注册经本地 HTTP transport 与 c109 validateHostToolMetadata 联合验证：34 工具清单匹配，单端和两端调用各自正确分发，三类混合/缺失选择拒绝；服务端构建及类型检查通过。此前 57ff 技术发布已完成；需随本修复再次发布，才能恢复该消费者兼容性。当前浏览器 Hosted 登录过期，真实 MCP 读回等待用户扫码；此处不声称线上业务验收。
+
 ## 2026-09-16 换版读取接入工程消费者（本地已验证，未发布）
 
-在已双远端同步的 a69260e3c 基础上，同一 DocumentRevisionReadingService 接入既有 DocumentWorkRuntimeService 和只读 MCP `read_document_revision`。MCP 对 before/after 分别执行 authorizeDocumentWork，要求实际 tenant/actor 一致及授权 DV 精确匹配，再走统一服务的原文、语义和返回前权限复查。HTTP 与工程读取共用实现；没有第二套比较器、模型调用或业务保存。三组 15 项定向测试、服务端类型和接线 ESLint 通过，含双授权身份不一致拒绝；原客户端类型已通过。
+在已双远端同步的 a69260e3c 基础上，同一 DocumentRevisionReadingService 接入既有 DocumentWorkRuntimeService 和既有只读 MCP `read_document_original` 的 `compareWith` 模式。MCP 对 before/after 分别执行 authorizeDocumentWork，要求实际 tenant/actor 一致及授权 DV 精确匹配，再走统一服务的原文、语义和返回前权限复查。HTTP 与工程读取共用实现；没有第二套比较器、模型调用或业务保存。三组 15 项定向测试、服务端类型和接线 ESLint 通过，含双授权身份不一致拒绝；原客户端类型已通过。
 
 ## 2026-09-16 同 family 两端原文读取（本地已验证，未发布）
 
