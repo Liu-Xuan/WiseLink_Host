@@ -32,18 +32,8 @@ export function matterDocumentRoute(
   returnWorkRef = '',
 ): string {
   const returnParams = matterReadingReturnParams(matterId, evidence.documentVersionId, returnPanel, returnWorkRef);
-  if (evidence.locator && evidence.sourceRefId) {
-    let locator: unknown;
-    try { locator = JSON.parse(evidence.locator); } catch { /* Legacy page locator. */ }
-    if (locator && typeof locator === 'object' && 'parseRunId' in locator &&
-      typeof locator.parseRunId === 'string' && locator.parseRunId.trim() &&
-      'sourceRefId' in locator && locator.sourceRefId === evidence.sourceRefId) {
-      const params = new URLSearchParams(returnParams);
-      params.set('parseRunId', locator.parseRunId);
-      params.set('sourceRef', evidence.sourceRefId);
-      return `/document-versions/${encodeURIComponent(evidence.documentVersionId)}?${params.toString()}`;
-    }
-  }
+  const exactRoute = exactDocumentSourceRoute(evidence);
+  if (exactRoute) return `${exactRoute}&${returnParams}`;
   if (!evidence.workItemId) {
     const params = new URLSearchParams({ sourceDocument: evidence.documentVersionId });
     if (evidence.sourceRefId) params.set('sourceRef', evidence.sourceRefId);
@@ -52,15 +42,30 @@ export function matterDocumentRoute(
     return `${matterOverviewRoute(matterId)}?${params.toString()}`;
   }
   const params: URLSearchParams = new URLSearchParams({
-    node: 'reader',
-    tab: 'reader',
-    readerMode: 'structured',
+    node: 'reader', tab: 'reader', readerMode: 'structured',
     documentVersionId: evidence.documentVersionId,
-    returnMatterId: matterId,
   });
   if (evidence.sourceRefId) params.set('sourceRef', evidence.sourceRefId);
   returnParams.forEach((value, key) => params.set(key, value));
   return `/work-items/${encodeURIComponent(evidence.workItemId)}/documents?${params.toString()}`;
+}
+
+export function exactDocumentSourceRoute(
+  evidence: { documentVersionId: string; sourceRefId?: string; locator?: string },
+): string | null {
+  if (evidence.locator && evidence.sourceRefId) {
+    let locator: unknown;
+    try { locator = JSON.parse(evidence.locator); } catch { /* Legacy page locator. */ }
+    if (locator && typeof locator === 'object' && 'parseRunId' in locator &&
+      typeof locator.parseRunId === 'string' && locator.parseRunId.trim() &&
+      'sourceRefId' in locator && locator.sourceRefId === evidence.sourceRefId) {
+      const params = new URLSearchParams();
+      params.set('parseRunId', locator.parseRunId);
+      params.set('sourceRef', evidence.sourceRefId);
+      return `/document-versions/${encodeURIComponent(evidence.documentVersionId)}?${params.toString()}`;
+    }
+  }
+  return null;
 }
 
 export function buildMatterObjectContext(
