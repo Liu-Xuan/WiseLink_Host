@@ -153,7 +153,8 @@ export function reviewOperationErrorPresentation(
   if (code === 'OFFICIAL_OAUTH_SESSION_REQUIRED') {
     return {
       title: '需要连接飞书身份',
-      message: '工程身份连接缺失或已过期。连接后返回本事项继续复核。',
+      message:
+        'Host 产品的飞书 OAuth 身份连接缺失或已过期。登录妙搭控制页不代表此连接已恢复；请完成身份连接后返回本事项重新读取。',
       code,
       retryable: null,
       operatorAction: null,

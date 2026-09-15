@@ -23,6 +23,7 @@ import type {
 } from '@shared/api.interface';
 
 import ReviewConversationTurn from './ReviewConversationTurn';
+import ReviewAccessUnavailable from './ReviewAccessUnavailable';
 import AssessmentUpdateControl from './AssessmentUpdateControl';
 import useReviewDraft from './useReviewDraft';
 import useReviewWorkingRefresh from './useReviewWorkingRefresh';
@@ -373,16 +374,11 @@ export default function ContinuousReviewPanel({
 
   if (accessUnavailable) {
     return (
-      <section className="continuous-review" aria-label="持续工程复核">
-        <p role="alert">当前复核记录不可访问，已清除页面中的讨论与补充材料。</p>
-        <Button
-          type="button"
-          disabled={refreshing}
-          onClick={() => void readCurrent()}
-        >
-          {refreshing ? '正在读取…' : '重新读取'}
-        </Button>
-      </section>
+      <ReviewAccessUnavailable
+        error={error}
+        refreshing={refreshing}
+        onReload={() => void readCurrent()}
+      />
     );
   }
 
