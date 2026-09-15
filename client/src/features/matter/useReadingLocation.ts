@@ -11,16 +11,37 @@ export default function useReadingLocation(
   session: number,
   ready: boolean,
   selection: Omit<ReadingLocation, 'scrollY'>,
-): () => void {
+): (targetScopeKey?: string) => void {
   const restoredRef = useRef<boolean>(false);
   const savedBeforeLeaveRef = useRef<boolean>(false);
+  const readyRef = useRef(ready);
+  readyRef.current = ready;
   const selectionRef = useRef<Omit<ReadingLocation, 'scrollY'>>(selection);
   selectionRef.current = selection;
+  useLayoutEffect(() => {
+    restoredRef.current = false;
+    savedBeforeLeaveRef.current = false;
+  }, [scopeKey, session]);
   useLayoutEffect(() => {
     if (!ready || restoredRef.current) return;
     restoredRef.current = true;
     const saved: ReadingLocation | null = readReadingLocation(scopeKey);
     if (saved) {
+      document
+        .querySelectorAll<HTMLDetailsElement>('details[data-issue-ref]')
+        .forEach((element) => {
+          element.open =
+            saved.expandedIssueRefs?.includes(element.dataset.issueRef ?? '') ??
+            false;
+        });
+      document
+        .querySelectorAll<HTMLDetailsElement>('details[data-reading-key]')
+        .forEach((element) => {
+          element.open =
+            saved.expandedDirectoryKeys?.includes(
+              element.dataset.readingKey ?? '',
+            ) ?? element.open;
+        });
       const trigger: HTMLButtonElement | undefined = Array.from(
         document.querySelectorAll<HTMLButtonElement>('[data-claim-trigger]'),
       ).find(
@@ -37,22 +58,50 @@ export default function useReadingLocation(
   }, [ready, scopeKey]);
   useLayoutEffect(
     () => () => {
-      if (!savedBeforeLeaveRef.current && restoredRef.current) {
+      if (
+        readyRef.current &&
+        !savedBeforeLeaveRef.current &&
+        restoredRef.current
+      ) {
         saveReadingLocation(
           scopeKey,
-          { ...selectionRef.current, scrollY: window.scrollY },
+          captureReadingLocation(selectionRef.current),
           session,
         );
       }
     },
     [scopeKey, session],
   );
-  return (): void => {
+  return (targetScopeKey = scopeKey): void => {
+    if (!readyRef.current) return;
     savedBeforeLeaveRef.current = true;
     saveReadingLocation(
-      scopeKey,
-      { ...selectionRef.current, scrollY: window.scrollY },
+      targetScopeKey,
+      captureReadingLocation(selectionRef.current),
       session,
     );
+  };
+}
+
+export function captureReadingLocation(
+  selection: Omit<ReadingLocation, 'scrollY'>,
+): ReadingLocation {
+  return {
+    ...selection,
+    scrollY: window.scrollY,
+    expandedIssueRefs: Array.from(
+      document.querySelectorAll<HTMLDetailsElement>(
+        'details[data-issue-ref][open]',
+      ),
+    )
+      .map((element) => element.dataset.issueRef!)
+      .filter(Boolean),
+    expandedDirectoryKeys: Array.from(
+      document.querySelectorAll<HTMLDetailsElement>(
+        'details[data-reading-key][open]',
+      ),
+    )
+      .map((element) => element.dataset.readingKey!)
+      .filter(Boolean),
   };
 }

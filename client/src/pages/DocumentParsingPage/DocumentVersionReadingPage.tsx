@@ -12,12 +12,14 @@ import { MineruMarkdownReader } from './MineruMarkdownReader';
 import { DocumentParsedImage } from './DocumentParsedImage';
 import { DocumentOriginalPreview } from '../WorkspaceHomePage/DocumentOriginalPreview';
 import './document-version-reading.css';
+import { readingReturnTarget } from '@client/src/features/matter/reading-return';
 
 export default function DocumentVersionReadingPage() {
   const { documentVersionId = '' } = useParams();
   const [searchParams] = useSearchParams();
   const requestedRun = searchParams.get('parseRunId') || null;
   const requestedSource = searchParams.get('sourceRef') || null;
+  const returnTarget = readingReturnTarget(searchParams, documentVersionId);
   const navigationIdentity = JSON.stringify([documentVersionId, requestedRun, requestedSource]);
   const [status, setStatus] = useState<DocumentParsingStatus | null>(null);
   const [readingNavigation, setReadingNavigation] = useState<string | null>(null);
@@ -152,7 +154,7 @@ export default function DocumentVersionReadingPage() {
 
   return <main className="document-version-reading">
     <header>
-      <Link to="/library">返回文档库</Link>
+      <Link to={returnTarget?.route ?? '/library?mode=document'}>{returnTarget?.label ?? '返回文档库'}</Link>
       <h1>{currentStatus?.originalFilename ?? '文档阅读'}</h1>
       <div className="document-reading-actions">
         <Button onClick={() => { void start(); }} disabled={!currentStatus?.runtimeAvailable || busy || sending}>

@@ -52,6 +52,7 @@ export default function MatterProblemWork({
       {work.issues.map((issue) => (
         <details
           key={issue.issueRef}
+          data-issue-ref={issue.issueRef}
           className="rounded-xl border border-border p-4"
         >
           <summary className="cursor-pointer font-medium">

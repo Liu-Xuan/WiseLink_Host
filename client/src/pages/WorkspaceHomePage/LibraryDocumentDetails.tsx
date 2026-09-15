@@ -16,6 +16,7 @@ interface LibraryDocumentDetailsProps {
   onRefresh: () => void;
   onViewTasks: (familyId: string) => void;
   linkMatterId?: string;
+  selectionPending?: boolean;
 }
 
 export function LibraryDocumentDetails({
@@ -23,6 +24,7 @@ export function LibraryDocumentDetails({
   onRefresh,
   onViewTasks,
   linkMatterId,
+  selectionPending = false,
 }: LibraryDocumentDetailsProps) {
   return (
     <aside
@@ -40,8 +42,8 @@ export function LibraryDocumentDetails({
       {!document ? (
         <div className="library-quicklook-empty" role="status">
           <FileSearch2 aria-hidden="true" />
-          <strong>选择工程文档查看版本</strong>
-          <p>同一文档的版本集中在这里，评估记录可在最近任务中查看。</p>
+          <strong>{selectionPending ? '原选择尚未在当前读取范围内加载' : '选择工程文档查看版本'}</strong>
+          <p>{selectionPending ? '已保留原文档选择。可加载更多目录或核对筛选与访问范围；未出现在本次读取中不代表资料不存在，也不会自动改选首行。' : '同一文档的版本集中在这里，评估记录可在最近任务中查看。'}</p>
         </div>
       ) : (
         <div className="library-quicklook-scroll">
@@ -106,7 +108,7 @@ export function LibraryDocumentDetails({
                     <dd>{version.workItemCount} 个任务</dd>
                   </div>
                 </dl>
-                <DocumentVersionLink version={version}>
+                <DocumentVersionLink version={version} familyId={document.familyId}>
                   打开原文 <ArrowRight aria-hidden="true" />
                 </DocumentVersionLink>
                 <LibraryMetadata version={version} onRefresh={onRefresh} />

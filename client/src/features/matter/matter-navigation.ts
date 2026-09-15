@@ -4,6 +4,7 @@ import type { EngineeringMatterWorkingReadModel } from '@shared/matter-working.i
 
 import type { DocumentAssessmentEvidence } from './assessment-reading';
 import type { AssessmentSourceWork } from '@shared/assessment-reading.interface';
+import { matterReadingReturnParams } from './reading-return';
 
 export function matterReferencedWorkRoute(source: AssessmentSourceWork): string {
   return `${matterOverviewRoute(source.subjectId)}?${new URLSearchParams({ panel: 'materials',
@@ -28,14 +29,18 @@ export function matterDocumentRoute(
     'workItemId' | 'documentVersionId'
   > & { sourceRefId?: string; locator?: string },
   returnPanel: 'brief' | 'review' | 'materials' = 'brief',
+  returnWorkRef = '',
 ): string {
+  const returnParams = matterReadingReturnParams(matterId, evidence.documentVersionId, returnPanel, returnWorkRef);
   if (evidence.locator && evidence.sourceRefId) {
     let locator: unknown;
     try { locator = JSON.parse(evidence.locator); } catch { /* Legacy page locator. */ }
     if (locator && typeof locator === 'object' && 'parseRunId' in locator &&
       typeof locator.parseRunId === 'string' && locator.parseRunId.trim() &&
       'sourceRefId' in locator && locator.sourceRefId === evidence.sourceRefId) {
-      const params = new URLSearchParams({ parseRunId: locator.parseRunId, sourceRef: evidence.sourceRefId });
+      const params = new URLSearchParams(returnParams);
+      params.set('parseRunId', locator.parseRunId);
+      params.set('sourceRef', evidence.sourceRefId);
       return `/document-versions/${encodeURIComponent(evidence.documentVersionId)}?${params.toString()}`;
     }
   }
@@ -43,6 +48,7 @@ export function matterDocumentRoute(
     const params = new URLSearchParams({ sourceDocument: evidence.documentVersionId });
     if (evidence.sourceRefId) params.set('sourceRef', evidence.sourceRefId);
     if (returnPanel !== 'brief') params.set('panel', returnPanel);
+    if (returnWorkRef) params.set('workRef', returnWorkRef);
     return `${matterOverviewRoute(matterId)}?${params.toString()}`;
   }
   const params: URLSearchParams = new URLSearchParams({
@@ -53,7 +59,7 @@ export function matterDocumentRoute(
     returnMatterId: matterId,
   });
   if (evidence.sourceRefId) params.set('sourceRef', evidence.sourceRefId);
-  if (returnPanel !== 'brief') params.set('returnMatterPanel', returnPanel);
+  returnParams.forEach((value, key) => params.set(key, value));
   return `/work-items/${encodeURIComponent(evidence.workItemId)}/documents?${params.toString()}`;
 }
 

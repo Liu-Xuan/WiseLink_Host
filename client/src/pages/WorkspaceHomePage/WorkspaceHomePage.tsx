@@ -62,6 +62,8 @@ import './workspace-home.css';
 import './library-hierarchy.css';
 import './library-atlas.css';
 import { useLibraryFleetCatalog } from './useLibraryFleetCatalog';
+import useReadingLocation from '@client/src/features/matter/useReadingLocation';
+import { libraryReadingScope } from '@client/src/features/matter/reading-return';
 
 export default function WorkspaceHomePage() {
   const { authenticationRequired, sessionGeneration } = useCurrentUserSession();
@@ -105,6 +107,9 @@ export default function WorkspaceHomePage() {
     treeMode !== 'matter',
     catalogFilters,
   );
+  useReadingLocation(libraryReadingScope(searchParams), sessionGeneration,
+    treeMode === 'document' && !authenticationRequired && !directory.loading && !directory.error,
+    { claim: null, focusClaimId: null, discussionClaimId: null });
   const fleet = useLibraryFleetCatalog(
     sessionGeneration,
     treeMode === 'document' && !authenticationRequired,
@@ -533,6 +538,12 @@ export default function WorkspaceHomePage() {
                     treeMode === 'tasks' ? deepLinkedWorkItemId : familyId
                   }
                   quicklookLoading={quicklook.loading}
+                  presentation={{ grouping: searchParams.get('grouping') === 'ata' ? 'ata' : searchParams.get('grouping') === 'aircraft' ? 'aircraft' : 'category', view: searchParams.get('catalogView') === 'tree' ? 'tree' : 'list' }}
+                  onPresentationChange={({ grouping, view }) => {
+                    const params = new URLSearchParams(searchParams);
+                    params.set('grouping', grouping); params.set('catalogView', view);
+                    setSearchParams(params);
+                  }}
                   selectedReadingResult={data?.result?.readingResult}
                   onSearchTextChange={setSearchText}
                   onSearch={handleSearch}
@@ -641,6 +652,7 @@ export default function WorkspaceHomePage() {
                 <LibraryDocumentDetails
                   key={`${sessionGeneration}:${familyId}`}
                   linkMatterId={linkMatterId}
+                  selectionPending={Boolean(familyId && !selectedDocument)}
                   document={
                     selectedDocument?.kind === 'DOCUMENT'
                       ? selectedDocument

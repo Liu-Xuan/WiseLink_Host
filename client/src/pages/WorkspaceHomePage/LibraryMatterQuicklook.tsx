@@ -24,7 +24,7 @@ export function LibraryMatterQuicklookContent({
   const result = current?.state.substantiveResult;
   const problemWork = current?.state.problemWork;
   const locateDocument = (source: DocumentAssessmentEvidence) =>
-    navigate(matterDocumentRoute(data.matter.matterId, source));
+    navigate(matterDocumentRoute(data.matter.matterId, source, 'brief', current?.matterWorkRevisionId));
   return (
     <>
       <header className="atlas-library-inspector-title">
