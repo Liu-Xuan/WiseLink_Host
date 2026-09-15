@@ -43,6 +43,7 @@ function LayoutChrome() {
       <div className="wiselink-app-main">
         <TopBar
           pathname={location.pathname}
+          search={location.search}
           mobileNavOpen={mobileNavOpen}
           onToggleMobile={() => setMobileNavOpen((open) => !open)}
         />
