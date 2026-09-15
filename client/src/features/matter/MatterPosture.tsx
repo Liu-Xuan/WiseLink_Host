@@ -3,6 +3,7 @@ import type { EngineeringMatterWorkspaceRead } from '@client/src/api/engineering
 import { matterWorkRoute } from './matter-navigation';
 import { matterReadingReturnParams } from './reading-return';
 import OverviewCorrectionNotices from './OverviewCorrectionNotices';
+import OverviewSourceWork from './OverviewSourceWork';
 import ReferenceWorkNotices from './ReferenceWorkNotices';
 import './matter-posture.css';
 
@@ -94,9 +95,10 @@ export default function MatterPosture({
             <p>已保存部分分析；其余工作尚未完成。</p>
           ) : null}
           <p className="matter-posture-coverage">{postureCoverage(data)}</p>
+          {current && (work || result) ? <OverviewSourceWork matterId={matter.matterId} source={current.overviewSourceWork} overviewStatus={work?.overviewStatus} /> : null}
           {current ? (
             <p className="matter-posture-note">
-              综合所基于的确切工作引用及普通生成运行状态尚未返回；不由覆盖状态推断生成失败。
+              普通生成运行状态尚未核实；不由综合覆盖状态推断生成失败。
             </p>
           ) : null}
           {decisiveIssues.length ? (

@@ -84,6 +84,21 @@ function renderQuicklook(data: ReturnType<typeof libraryMatterFixture>) {
 }
 
 describe('Guided Atlas library uses saved business reading', () => {
+  it('shares exact overview provenance through problem reading and legacy summary quicklooks', () => {
+    const data = problemFixture('STALE');
+    data.working.current!.overviewSourceWork = { workRef: 'actual-save-1', workingRevision: 1 };
+    let html = renderQuicklook(data);
+    expect(html).toContain('workRef=actual-save-1');
+    expect(html).toContain('现有综合尚未覆盖本次问题更新');
+    expect(html.match(/当前保留综合最后明确保存于/gu)).toHaveLength(1);
+    delete data.working.current!.state.problemWork;
+    html = renderQuicklook(data);
+    expect(html).toContain('workRef=actual-save-1');
+    expect(html.match(/当前保留综合最后明确保存于/gu)).toHaveLength(1);
+    const unavailable = problemFixture('NOT_AVAILABLE');
+    unavailable.working.current!.overviewSourceWork = data.working.current!.overviewSourceWork;
+    expect(renderQuicklook(unavailable)).not.toContain('workRef=actual-save-1');
+  });
   it('renders the saved row and all decisive limitations without asserting implementation', () => {
     const rows = libraryMatterRows();
     const html = renderToStaticMarkup(

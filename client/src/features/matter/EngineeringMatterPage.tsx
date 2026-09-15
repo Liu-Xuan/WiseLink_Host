@@ -24,6 +24,7 @@ import MatterMembers from './MatterMembers';
 import MatterMaterials from './MatterMaterials';
 import MatterWorkingDetails from './MatterWorkingDetails';
 import MatterProblemWork from './MatterProblemWork';
+import OverviewSourceWork from './OverviewSourceWork';
 import EngineeringIssueSearch from './EngineeringIssueSearch';
 import MatterDocumentSourceDialog from './MatterDocumentSourceDialog';
 import {
@@ -384,6 +385,7 @@ const MatterWorkspace: FC<MatterWorkspaceProps> = ({
                 </Button>
               </div>
             )}
+            {displayedRevision && result && !displayedRevision.state.problemWork ? <OverviewSourceWork matterId={matterId} source={displayedRevision.overviewSourceWork} /> : null}
             <MatterProblemWork
               revision={displayedRevision}
               onLocateDocument={openDocument}

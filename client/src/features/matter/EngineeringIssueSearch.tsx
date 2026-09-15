@@ -22,6 +22,7 @@ import type {
 import MatterDocumentSourceDialog from './MatterDocumentSourceDialog';
 import ReferenceWorkNotices from './ReferenceWorkNotices';
 import OverviewCorrectionNotices from './OverviewCorrectionNotices';
+import OverviewSourceWork from './OverviewSourceWork';
 import { exactDocumentSourceRoute, matterDocumentRoute } from './matter-navigation';
 import type { DocumentSourceSearchResponse } from '@shared/document-source-search.interface';
 import '@client/src/pages/DocumentParsingPage/jobaid-problem-workspace.css';
@@ -217,6 +218,10 @@ export default function EngineeringIssueSearch({
             候选认识 · 命中 {hit.reason === 'EXACT_IDENTIFIER' ? '精确标识' : '全文'} ·
             范围 {hit.matchedRange} · 根来源 {hit.rootRefs.length} 项
           </p>
+          {hit.subjectKind === 'ENGINEERING_MATTER' ? <>
+            {hit.overviewStatus === 'STALE' ? <p className="text-sm">此工作保留的综合尚未覆盖本次问题更新。</p> : null}
+            <OverviewSourceWork matterId={hit.subjectId} source={hit.overviewSourceWork} overviewStatus={hit.overviewStatus} />
+          </> : null}
           {hit.correctionNotices?.map(notice => <p key={notice.attemptRef} role="note" className="text-sm">
             {notice.unchanged ? '已完成比较并保留原认识：' : notice.correctedWorkRef ? '所引旧工作已有后继更正：' : '所引工作存在待核更正：'}{notice.reason}
           </p>)}
@@ -258,6 +263,7 @@ export default function EngineeringIssueSearch({
           </p> : selected.identity.overviewStatus === 'NOT_AVAILABLE' ? <p role="note" className="mb-3 text-sm">
             此工作的问题正文可读；综合认识尚未形成。
           </p> : null}
+          {selected.identity.subjectKind === 'ENGINEERING_MATTER' ? <OverviewSourceWork matterId={selected.identity.subjectId} source={selected.identity.overviewSourceWork} overviewStatus={selected.identity.overviewStatus} /> : null}
           {selected.identity.correctionNotices?.map(notice => <p key={notice.attemptRef} role="note" className="mb-3 text-sm">
             {notice.unchanged ? '已完成比较并保留原认识：' : notice.correctedWorkRef ? '此版本已有后继更正：' : '此版本存在待核更正：'}{notice.reason}
           </p>)}
