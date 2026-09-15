@@ -1060,6 +1060,11 @@ export class MatterActionAttemptService {
   /** Durable cutoff. Result replay is checked before any candidate is written. */
   async finishIssueCorrection(input: MatterAttemptScope & ActionAttemptFence & { principalId: string; requestId: string }) {
     const result = await this.authorized(input, async (executor, queue) => {
+      // Serialize concurrent finishes with saves before observing terminal state.
+      await executor.database.select({ id: engineeringMatter.matterId }).from(engineeringMatter)
+        .where(and(eq(engineeringMatter.tenantId, input.tenantId), eq(engineeringMatter.matterId, input.matterId))).for('update');
+      await executor.database.select({ id: actionAttempt.attemptId }).from(actionAttempt)
+        .where(eq(actionAttempt.operationRef, input.attemptRef)).for('update');
       const row = await this.scopedRow(executor, queue, input, input.attemptRef);
       const task = checkedTask(row);
       if (!(task.modelInput as ReturnType<typeof buildMatterJobAidTask>).correction)
@@ -1094,8 +1099,6 @@ export class MatterActionAttemptService {
         const sealed = parseMatterResultEnvelope({ task, value: { ...envelope, contentHash: canonicalSha256(envelope) } });
         if (row.status !== 'SUCCEEDED') {
           assertRunningSourceLease(row, input);
-          await executor.database.select({ id: engineeringMatter.matterId }).from(engineeringMatter)
-            .where(and(eq(engineeringMatter.tenantId, input.tenantId), eq(engineeringMatter.matterId, input.matterId))).for('update');
           const current = await executor.loadCurrent(input);
           if (current?.matterWorkRevisionId !== saved.workRevisionRef || current.workingRevision !== saved.workRevision)
             throw failure('ENGINEERING_MATTER_WORKING_CAS_CONFLICT');

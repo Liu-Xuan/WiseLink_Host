@@ -6,6 +6,8 @@ Host 对持久生成的正文、要求处理与未决问题做实际比较：全
 
 最新验证：更正与知识读取单测 32 pass；消费者 9 pass；隔离 PostgreSQL 定向保存/回放测试 1 pass、0 fail、0 skip，含无变化成功、重复保存/结束、错误租约拒绝、历史通知及零新增工作断言。日志位于私有临时目录，测试实例已停止。浏览器连接仍返回 nodeRepl.fetch request failed；本段不代表线上发布、自然调度或工程内容已验收。
 
+本批已提交并同步双远端至 2e1dce9dd；随后补齐结束操作的 matter→attempt 行锁顺序，双连接同时 FINISH 均正常成功回放，定向 PG 1 pass/0 skip，服务端类型检查通过。官方 CLI 最新核对线上仍为 81ad5e476 / release 7685407198491872522。Chrome 原生控制可用，但 Hosted 管理页转飞书扫码登录并显示429，已请求恢复登录。Host与Skill的无变化结果合同需协调切换，未独立部署新Host。
+
 ## 2026-09-15 接续9月16日设计稿：持久生成证据核对与本地修法
 
 本轮通过官方CLI只读核对工作15的持久STARTED/GENERATED记录：原始生成body与requirementHandling均等于输入，只有openQuestions改变；模型changeSummary却声称修改了treatment。保存后的三组字段均与GENERATED一致，overviewStatus为STALE。因此本次没有保存遗漏的证据，不据此扩大更正schema，也不认定引用即强制工程依赖。源文件现行性和页面实际展示尚待核对，不从解析rev6推厂家版次。

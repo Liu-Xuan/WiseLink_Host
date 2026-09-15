@@ -3635,7 +3635,12 @@ test('targeted correction uses real PostgreSQL fences, durable generation and ex
       assert.equal(unchangedReceipt.workRevisionRef, saved.workRevisionRef);
       assert.equal((await owner.runtime(() => unchangedService.saveIssueCorrection(unchangedSave))).replayed, true);
       const unchangedFinish = { ...unchangedFence, requestId: 'unchanged-save' };
-      assert.equal((await owner.runtime(() => unchangedService.finishIssueCorrection(unchangedFinish))).status, 'SUCCEEDED');
+      const secondUnchangedService = new MatterActionAttemptService(second.working, models);
+      const concurrentFinishes = await Promise.all([
+        owner.runtime(() => unchangedService.finishIssueCorrection(unchangedFinish)),
+        second.runtime(() => secondUnchangedService.finishIssueCorrection(unchangedFinish)),
+      ]);
+      assert.ok(concurrentFinishes.every(result => result.status === 'SUCCEEDED' && result.unchanged === true));
       assert.equal((await owner.runtime(() => unchangedService.finishIssueCorrection(unchangedFinish))).unchanged, true);
       assert.equal((await owner.working.loadCurrent(scope)).matterWorkRevisionId, saved.workRevisionRef);
       const unchangedRead = await owner.working.readByRef({ ...scope, workRef: saved.workRevisionRef });
