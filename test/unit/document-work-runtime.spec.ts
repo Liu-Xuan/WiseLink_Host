@@ -19,12 +19,29 @@ function fixture() {
     release: jest.fn().mockResolvedValue(true), cancel: jest.fn().mockResolvedValue(true) };
   const reader = { readDocumentOriginal: parsing.loadPublished };
   const semantics = { read: jest.fn().mockResolvedValue(null) };
-  const service = new DocumentWorkRuntimeService(authorization as never, actors as never, parsing as never, leases as never, reader as never, {} as never, semantics as never);
-  return { service, authorization, actors, parsing, leases, fence, semantics };
+  const revisions = { read: jest.fn().mockResolvedValue({}) };
+  const service = new DocumentWorkRuntimeService(authorization as never, actors as never, parsing as never, leases as never, reader as never, {} as never, semantics as never, revisions as never);
+  return { service, authorization, actors, parsing, leases, fence, semantics, revisions };
 }
 
 describe('authorized document step runtime', () => {
   afterEach(() => jest.useRealTimers());
+
+  it('authorizes both revision sources under one actual actor before delegating the read', async () => {
+    const f = fixture();
+    const input = { before: { documentVersionId: 'old', parseRunId: 'old-run', semanticRevision: 1 },
+      after: { documentVersionId: 'new', parseRunId: 'new-run', semanticRevision: 2 }, roleKey: 'ftd.status' };
+    f.authorization.authorizeDocumentWork.mockImplementation(async ({ documentVersionId }) => ({
+      tenantId: 'tenant', actorUserId: 'actor', documentVersionId }));
+    await f.service.readRevision(input);
+    expect(f.authorization.authorizeDocumentWork.mock.calls.map(call => call[0])).toEqual([
+      { documentVersionId: 'old' }, { documentVersionId: 'new' }]);
+    expect(f.revisions.read).toHaveBeenCalledWith(input, { tenantId: 'tenant', actorUserId: 'actor', roles: [] });
+    f.authorization.authorizeDocumentWork.mockImplementation(async ({ documentVersionId }) => ({
+      tenantId: 'tenant', actorUserId: documentVersionId, documentVersionId }));
+    await expect(f.service.readRevision(input)).rejects.toThrow('AUTHORIZATION_SCOPE_MISMATCH');
+    expect(f.revisions.read).toHaveBeenCalledTimes(1);
+  });
 
   it('reads exact published original units with coverage and refuses identity drift', async () => {
     const f = fixture();

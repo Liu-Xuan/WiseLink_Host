@@ -1,5 +1,23 @@
 # M 主控集成交接
 
+## 2026-09-16 换版读取接入工程消费者（本地已验证，未发布）
+
+在已双远端同步的 a69260e3c 基础上，同一 DocumentRevisionReadingService 接入既有 DocumentWorkRuntimeService 和只读 MCP `read_document_revision`。MCP 对 before/after 分别执行 authorizeDocumentWork，要求实际 tenant/actor 一致及授权 DV 精确匹配，再走统一服务的原文、语义和返回前权限复查。HTTP 与工程读取共用实现；没有第二套比较器、模型调用或业务保存。三组 15 项定向测试、服务端类型和接线 ESLint 通过，含双授权身份不一致拒绝；原客户端类型已通过。
+
+## 2026-09-16 同 family 两端原文读取（本地已验证，未发布）
+
+新增共享换版读取合同、纯比较器和 Host Service，接入现有受登录保护的文档 Controller 与客户端读取函数。before/after 都要求准确 DV、parseRun、semanticRevision；分别读取原文及已保存语义，校验同 family 不同 DV，并在返回前再次核验两端权限。GET 不生成语义、不调模型、不选择当前正式版、不写评估覆盖。返回两端各自的出版者修订说明、所选角色及父级条件、未选单元和原始覆盖限制；不把旧版自身说明误作本次两端的 diff。
+
+系统比较只处理所选纯文本及父级条件的空白归一化相等性。表格、角色缺失/重复、结构歧义和相关未读文字保持 NOT_COMPARED。全局图示未解读限制继续返回，不伪装图文完整相同，也不禁止已有明确范围的纯文本比较。厂家最新、相邻版次、修订跨度和正式采用没有由本接口证明；本次读取不产生新版评估覆盖。
+
+基于已下载真实两版原文、本地派生语义图的算法核对与 P 的逐页文本核对一致：修订说明/Status/Milestones 文本不同；Applicability/Description/Interim/Final Action/Operator Action 所比文本相同；参考表保留结构，系统不作纯文本相等判断。该核对不是线上接口读回，也不是已保存语义版本验收。8 项定向测试、两端类型检查、定向 ESLint 通过；Luna 只读审阅未发现注册、准确绑定、权限或本批公开内容阻塞。生产换版视图接入、Host 发布后真实读取及完整换版业务验收仍未完成，F 接线参数已补在前端对齐文档。
+
+## 2026-09-16 T2 与引用修正发布及线上交互
+
+8710aff7cb1190d1ee6497e7a67d605e216619a7 已分别普通快进同步 origin/github 同名开发分支并核对远端SHA。Host发布7685899993270570254已finished，完成态commit与源码一致。线上 `/dev-preview/graph` 正常渲染；主控实际打开2025-Q4来源示意并返回，URL与选中声明均保留Q4，截图确认关系图节点/连线/高亮显示正常。此处仅验收隔离交互，不代表真实来源读取或活动关联合同已交付。
+
+发布后，以仍为工作8、事项修订2、无在途为基础，正常MCP受理新请求wl-work8-overview-citations-20260916，AQ-45bda7aa04624fcb89d64d766affcba5由原cron于23:13:43.362Z领取。沿用同一准确来源与更正目的，新Host明确引用规则；旧AQ-6bc及AQ-350不重放。23:14:55.977Z正常结束SUCCEEDED，事件为STARTED→GENERATED→MATTER_JOBAID_WORK_SAVED，保存工作9（MWREV-8a870911-3c66-42e3-9ec4-939f9ce0b8ae）。主控比较工作8/9：六个问题逐字段完全相同、完成状态相同，综合CURRENT；其他参考统一为15项，FAA LN1825不再断言仅该架次完成，删除无实质变化的轮次叙述，三处完整引用均为本次交付的确切原文。完成说明同步更正。真实页面精确workRef读取显示工作9与对应overviewSourceWork，后续保存链接准确；未作正式采用。
+
 ## 2026-09-16 综合生成引用失败与 T2 选择性集成
 
 新 AQ-6bc32de118ce4891a4bc22e8baa9397e 于22:55:00.163Z终止FAILED，terminalReason=ENGINEERING_CORRECTION_SOURCE_NOT_DELIVERED，仅STARTED、无GENERATED/SAVE。官方插件日志确认textToJson正常返回（40,022ms），输出日志本身被平台截断，无法据此恢复完整候选。旧错误码同时覆盖零引用与引用未交付来源，不能断言具体是哪一种。实际封存输入的综合/完成说明没有引用，问题正文有46个引用，其中43个不在本次3段已交付来源内。输入已说明问题是待核对认识；本次进一步明确仅evidence中的完整引用可用，并须在更正事实旁提供引用。Host保持来源集合校验，将零引用单独记为CITATION_REQUIRED，未增加重试或放行。26项单测、服务端类型、定向ESLint通过；旧失败不重放。

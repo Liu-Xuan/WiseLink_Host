@@ -1,3 +1,5 @@
+import type { DocumentRevisionReadingRequest } from '@shared/document-revision-reading.interface';
+import { DocumentRevisionReadingService } from './document-revision-reading.service';
 import { Inject, Injectable } from '@nestjs/common';
 import { randomUUID } from 'node:crypto';
 import { DocumentSourceProjectionService } from './document-source-projection.service';
@@ -23,7 +25,18 @@ export class DocumentWorkRuntimeService {
     private readonly reader: UnifiedReaderService,
     private readonly sourceProjection: DocumentSourceProjectionService,
     private readonly semantics: DocumentSemanticService,
+    private readonly revisions: DocumentRevisionReadingService,
   ) {}
+
+  async readRevision(input: DocumentRevisionReadingRequest) {
+    if (!this.authorization.authorizeDocumentWork) throw canonicalServiceScopeUnavailable();
+    const before = await this.authorization.authorizeDocumentWork({ documentVersionId: input.before.documentVersionId });
+    const after = await this.authorization.authorizeDocumentWork({ documentVersionId: input.after.documentVersionId });
+    if (before.documentVersionId !== input.before.documentVersionId || after.documentVersionId !== input.after.documentVersionId ||
+      before.tenantId !== after.tenantId || before.actorUserId !== after.actorUserId)
+      throw new Error('DOCUMENT_REVISION_AUTHORIZATION_SCOPE_MISMATCH');
+    return this.revisions.read(input, { tenantId: before.tenantId, actorUserId: before.actorUserId, roles: [] });
+  }
 
   /** Bounded engineering input from one published original, never translation. */
   async readOriginal(input: { documentVersionId: string; parseRunId: string; offset?: number; limit?: number;

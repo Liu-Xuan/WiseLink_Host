@@ -6,7 +6,7 @@ function setup() {
   const workspaces = { readForSource: jest.fn().mockResolvedValue(null), readSnapshot: jest.fn() };
   const parsing = { status: jest.fn().mockResolvedValue({}) };
   const attempts = { latest: jest.fn().mockResolvedValue({ producerRunId: 'other', status: 'RUNNING' }) };
-  const controller = new DocumentTranslationReadingController(reader as never, workspaces as never, parsing as never, attempts as never);
+  const controller = new DocumentTranslationReadingController(reader as never, workspaces as never, parsing as never, attempts as never, {} as never);
   const request = { userContext: { userId: 'actor', tenantId: 'tenant', roles: [] } } as never;
   return { reader, workspaces, parsing, attempts, controller, request };
 }
