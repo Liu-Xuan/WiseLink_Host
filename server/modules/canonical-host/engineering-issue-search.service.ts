@@ -3,6 +3,7 @@ import {
   Inject,
   Injectable,
   NotFoundException,
+  Optional,
 } from '@nestjs/common';
 import {
   DRIZZLE_DATABASE,
@@ -13,13 +14,19 @@ import type {
   EngineeringIssueRead,
   EngineeringIssueSearchHit,
   EngineeringIssueSearchResponse,
+  EngineeringIssueReferenceReceipt,
 } from '@shared/engineering-issue-search.interface';
+import { z } from 'zod/v4';
+import { MatterActionAttemptService } from './matter-action-attempt.service';
+import { CANONICAL_SERVICE_SCOPE_AUTHORIZATION, canonicalServiceScopeUnavailable,
+  type CanonicalServiceScopeAuthorizationPort } from './canonical-service-scope.authorization';
 import type { CanonicalHostActor } from './canonical-host.types';
 import { CanonicalJobAidProblemService } from './canonical-jobaid-problem.service';
 import { EngineeringMatterWorkingService } from './engineering-matter-working.service';
 import { isHostedCanonicalFinalUserActor } from '../work-item/miaoda-hosted-canonical-object-access.adapter';
 import { jobAidReadingResult } from './jobaid-problem-work';
 import { collectIssueEvidenceUses } from '@shared/jobaid-evidence-uses';
+import { assessmentEvidenceRoots } from '@shared/assessment-evidence-roots';
 import { prepareEngineeringSearchQuery } from './engineering-search-text';
 import { projectionOwnerToSubjectKind } from './engineering-search-projection';
 import { EngineeringSearchProjectionWriter } from './engineering-search-projection';
@@ -39,7 +46,45 @@ export class EngineeringIssueSearchService {
     private readonly jobAid: CanonicalJobAidProblemService,
     private readonly matters: EngineeringMatterWorkingService,
     private readonly projectionWriter?: EngineeringSearchProjectionWriter,
+    @Optional() private readonly attempts?: MatterActionAttemptService,
+    @Optional() @Inject(CANONICAL_SERVICE_SCOPE_AUTHORIZATION)
+    private readonly serviceAuthorization?: CanonicalServiceScopeAuthorizationPort,
   ) {}
+
+  async reference(input: unknown, actor: CanonicalHostActor): Promise<EngineeringIssueReferenceReceipt> {
+    this.requireActor(actor);
+    const id = z.string().trim().min(1).max(255);
+    const parsed = z.object({ targetMatterId: id, expectedMatterRevisionId: id,
+      expectedMatterRevision: z.number().int().positive(), expectedWorkingRevision: z.number().int().nonnegative(),
+      requestId: z.string().trim().min(1).max(96), purpose: z.string().trim().min(1).max(3000),
+      source: z.object({ subjectKind: z.literal('ENGINEERING_MATTER'), subjectId: id, workRef: id, issueKey: id }).strict(),
+    }).strict().safeParse(input);
+    if (!parsed.success) throw new BadRequestException('MATTER_REFERENCE_REQUEST_INVALID');
+    const request = parsed.data;
+    if (request.targetMatterId === request.source.subjectId) throw new BadRequestException('MATTER_REFERENCE_REQUEST_INVALID');
+    if (!this.attempts || !this.serviceAuthorization?.authorizeOpenClawMatterRequest) throw canonicalServiceScopeUnavailable();
+    await this.matters.readWorking(request.targetMatterId, actor);
+    await this.read(request.source, actor);
+    const target = await this.serviceAuthorization.authorizeOpenClawMatterRequest({ matterId: request.targetMatterId });
+    if (target.appId !== actor.appId || target.tenantId !== actor.tenantId || target.actorUserId !== actor.userId ||
+        target.matterId !== request.targetMatterId || !target.principalId) throw canonicalServiceScopeUnavailable();
+    const authorizeReferenceMatter = async (matterId: string) => {
+      const source = await this.serviceAuthorization!.authorizeOpenClawMatterRequest!({ matterId });
+      if (source.appId !== target.appId || source.tenantId !== target.tenantId || source.actorUserId !== target.actorUserId ||
+          source.principalId !== target.principalId || source.matterId !== matterId) throw canonicalServiceScopeUnavailable();
+    };
+    const result = await this.attempts.reserveJobAidForBrowser({ tenantId: actor.tenantId, actorUserId: actor.userId,
+      matterId: request.targetMatterId, authorizeReferenceMatter, expectedMatterRevisionId: request.expectedMatterRevisionId,
+      expectedMatterRevision: request.expectedMatterRevision, expectedWorkingRevision: request.expectedWorkingRevision,
+      idempotencyKey: `matter:${request.targetMatterId}:${request.requestId}`,
+      trigger: { kind: 'USER_REQUEST', requestId: request.requestId,
+        instruction: `将本次指定的旧工作作为候选参考，核对完整问题、适用条件和根来源，与本事项有效工程文件及实际对象比较后保存本事项认识。不能继承另一事项的构型、概率、评分或实施批准状态。用途：${request.purpose}` },
+      referenceWorks: [{ matterId: request.source.subjectId, workRef: request.source.workRef,
+        issueKey: request.source.issueKey, purpose: request.purpose }],
+    }, actor);
+    return { targetMatterId: request.targetMatterId, source: request.source,
+      attemptRef: result.task.operationRef, status: result.row.status, created: result.created };
+  }
 
   /** Rebuilds derived search rows through the same actor-scoped readers as search/read. */
   async rebuildProjection(limit: number | undefined, actor: CanonicalHostActor): Promise<{
@@ -290,7 +335,7 @@ export class EngineeringIssueSearchService {
         overviewStatus: content.overviewStatus,
         matchedRange: `issue:${issue.issueKey}`,
         reason: identity.matchReason ?? 'FULL_TEXT',
-        rootRefs: [...new Set(collectIssueEvidenceUses(issue).map(use => use.evidenceRef))],
+        rootRefs: assessmentEvidenceRoots(collectIssueEvidenceUses(issue).map(use => use.evidenceRef), content.evidence).rootRefs,
         ...('correctionNotices' in revision && revision.correctionNotices?.some(item => item.issueKey === issue.issueKey)
           ? { correctionNotices: revision.correctionNotices.filter(item => item.issueKey === issue.issueKey) } : {}),
       },

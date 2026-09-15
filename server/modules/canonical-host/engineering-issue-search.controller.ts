@@ -1,4 +1,4 @@
-import { BadRequestException, Controller, Get, Header, Post, Query, Req, UseGuards } from '@nestjs/common';
+import { BadRequestException, Body, Controller, Get, Header, Post, Query, Req, UseGuards } from '@nestjs/common';
 import { NeedLogin } from '@lark-apaas/fullstack-nestjs-core';
 import type { Request } from 'express';
 import type { EngineeringIssueSearchHit } from '@shared/engineering-issue-search.interface';
@@ -12,6 +12,11 @@ import { DocumentSourceSearchService } from './document-source-search.service';
 @Controller('api/canonical-host/engineering-issues')
 export class EngineeringIssueSearchController {
   constructor(private readonly issues: EngineeringIssueSearchService, private readonly sources: DocumentSourceSearchService) {}
+
+  @Post('references')
+  reference(@Body() input: unknown, @Req() request: Request) {
+    return this.issues.reference(input, hostActor(request));
+  }
 
   @Get('sources')
   @Header('Cache-Control', 'private, no-store')

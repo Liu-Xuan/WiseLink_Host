@@ -80,6 +80,142 @@ const FTD_WORK_ITEM_ID = 'WI-DM-FTD-FD88DCB9CF64CF3B';
 const SB_WORK_ITEM_ID = 'WI-LOCAL-737-34-3830-ASSESSMENT';
 const REQUEST_REUSE_WORK_ITEM_ID = 'WI-DM-FTD-FD88DCB9CF64CF3B-RERUN';
 
+test('cross Matter references save exact lineage and reauthorize scopes and roots after revocation',
+  { skip: !databaseUrl, concurrency: false, timeout: 60000 }, async () => {
+    assertSafeIsolatedDatabase(databaseUrl);
+    const sql = postgres(databaseUrl, { max: 8, onnotice() {} });
+    let owner;
+    try {
+      await resetDatabase(sql);
+      await seedRealDocumentWorkItems(sql, await loadRealDocumentFixtures());
+      await sql`UPDATE dm_publication_family SET canonical_identity_key = 'tenant:tenant-A:family:' || canonical_identity_key`;
+      owner = await reserveActorService('actor-A');
+      const a = await owner.service.create({ requestId: 'reference-A', title: 'Synthetic reference A', primaryWorkItemId: FTD_WORK_ITEM_ID }, owner.actor);
+      const b = await owner.service.create({ requestId: 'reference-B', title: 'Synthetic reference B', primaryWorkItemId: SB_WORK_ITEM_ID }, owner.actor);
+      const allowed = new Set([a.matter.matterId, b.matter.matterId]);
+      const authorizeReferenceMatter = async id => { if (!allowed.has(id)) throw new Error('TEST_SERVICE_SCOPE_REVOKED'); };
+      const service = new MatterActionAttemptService(owner.working,
+        new CanonicalModelSettingsService(new CanonicalModelSettingsRepository(owner.database)));
+      const requestFor = async (matterId, id, referenceWorks) => {
+        const basis = await owner.workingService.resolveWorkingBasis(matterId, owner.actor);
+        return { tenantId: 'tenant-A', actorUserId: 'actor-A', matterId, authorizeReferenceMatter,
+          expectedMatterRevisionId: basis.snapshot.currentMatterRevisionId, expectedMatterRevision: basis.snapshot.currentRevisionNo,
+          expectedWorkingRevision: basis.working?.workingRevision ?? 0, idempotencyKey: id,
+          trigger: { kind: 'USER_REQUEST', requestId: id, instruction: 'Synthetic comparison; do not inherit target facts.' },
+          ...(referenceWorks ? { referenceWorks } : {}) };
+      };
+      const start = async request => {
+        const reserved = await owner.runtime(() => service.reserveJobAid(request));
+        const target = { tenantId: 'tenant-A', actorUserId: 'actor-A', matterId: request.matterId,
+          attemptRef: reserved.task.operationRef, principalId: 'hosted-test', authorizeReferenceMatter };
+        return { reserved, target };
+      };
+      const claim = async target => {
+        const lease = await owner.runtime(() => service.claim(target));
+        return { ...target, leaseToken: lease.leaseToken, leaseGeneration: lease.leaseGeneration };
+      };
+      const save = async (fence, task, body, id) => {
+        const candidate = { schemaVersion: 'wiselink.jobaid-problem-work.v3', issues: [{ issueKey: 'conditions',
+          question: 'Synthetic target-specific conditions', body }], roundCompletion: 'COMPLETE_WITH_OPEN_QUESTIONS',
+          completionReason: 'No target configuration records supplied.', changeSummary: 'Compare conditions without inheriting target facts.' };
+        const saved = await owner.runtime(() => service.saveJobAidWork({ ...fence, requestId: id,
+          expectedWorkRevision: task.baseRevision, workJson: JSON.stringify(candidate) }));
+        const { contentHash: _hash, ...result } = matterResult(task);
+        result.modelOutput = JSON.stringify({ workRevisionRef: saved.workRevisionRef });
+        await owner.runtime(() => service.finishJobAid({ ...fence, result: sealMatterResultEnvelope(result) }));
+        return saved;
+      };
+      const first = await start(await requestFor(a.matter.matterId, 'reference-initial-A'));
+      const fenceA = await claim(first.target);
+      const documentVersionId = first.reserved.task.workingBasis.inputs[0].documentVersionId;
+      const rootRef = `DOCUMENT_VERSION:${documentVersionId}:page:1`;
+      const original = { kind: 'DOCUMENT_PASSAGE', documentVersionId, workItemId: null, evidenceRef: rootRef,
+        sourceRefId: rootRef, title: 'Synthetic original condition', versionLabel: null, locator: 'Page 1',
+        excerpt: 'The source requires checking the target configuration.' };
+      await owner.runtime(() => service.readSourcePages({ ...fenceA, documentVersionId, pageStart: 1, purpose: 'Synthetic original' },
+        async () => ({ documentVersionId, sourceSha256: 'a'.repeat(64), sourceByteLength: 80, pageCount: 1,
+          extractionScope: 'NATIVE_TEXT_LAYER', pages: [{ page: 1, sourceRefId: rootRef, text: original.excerpt,
+            textLayerStatus: 'PRESENT', visualContentVerified: false, evidence: original }] })));
+      const savedA = await save(fenceA, first.reserved.task, `A has an unverified target condition. [[${rootRef}]]`, 'save-A');
+      const referenceA = { matterId: a.matter.matterId, workRef: savedA.workRevisionRef, issueKey: 'conditions', purpose: 'Compare A with B' };
+      const requestB = await requestFor(b.matter.matterId, 'reference-import-B', [referenceA]);
+      const browserReferences = new EngineeringIssueSearchService(owner.database, {}, owner.workingService, undefined, service, {
+        authorizeOpenClawMatterRequest: async ({ matterId }) => {
+          await authorizeReferenceMatter(matterId);
+          return { appId: 'app_17bzc551rsg', tenantId: 'tenant-A', actorUserId: 'actor-A', principalId: 'hosted-test', matterId };
+        },
+      });
+      const browserCommand = { targetMatterId: b.matter.matterId, expectedMatterRevisionId: requestB.expectedMatterRevisionId,
+        expectedMatterRevision: requestB.expectedMatterRevision, expectedWorkingRevision: 0, requestId: 'browser-reference-B',
+        purpose: referenceA.purpose, source: { subjectKind: 'ENGINEERING_MATTER', subjectId: a.matter.matterId,
+          workRef: savedA.workRevisionRef, issueKey: 'conditions' } };
+      await assert.rejects(browserReferences.reference({ ...browserCommand, actorUserId: 'forged' }, owner.actor), /REQUEST_INVALID/u);
+      await sql`INSERT INTO canonical_model_setting (tenant_id, revision, model_ref, changed_by_user_id)
+        VALUES ('tenant-A', 3, ${CANONICAL_INITIAL_MODEL_REF}, 'actor-A'),
+          ('tenant-other', 8, ${CANONICAL_INITIAL_MODEL_REF}, 'actor-other')`;
+      const nativeModels = new CanonicalModelSettingsRepository(owner.database);
+      assert.equal((await nativeModels.read('tenant-A')).revision, 3);
+      assert.equal(await nativeModels.read('tenant-other'), null);
+      await sql`UPDATE identity_subject_mapping SET status = 'REVOKED' WHERE miaoda_user_id = 'actor-A'`;
+      assert.equal(await nativeModels.read('tenant-A'), null);
+      await sql`UPDATE identity_subject_mapping SET status = 'ACTIVE', expected_client_id = 'untrusted-client' WHERE miaoda_user_id = 'actor-A'`;
+      assert.equal(await nativeModels.read('tenant-A'), null);
+      await sql`UPDATE identity_subject_mapping SET expected_client_id = 'cli_aadde8b579f95bc9' WHERE miaoda_user_id = 'actor-A'`;
+      await sql.begin(async tx => {
+        await tx`SELECT set_config('app.user_id', '', true)`;
+        assert.equal((await tx`SELECT engineering_matter_actor_has_tenant('tenant-A') AS allowed`)[0].allowed, false);
+      });
+      await assert.rejects(owner.database.execute(drizzleSql`UPDATE canonical_model_setting SET revision = 4 WHERE tenant_id = 'tenant-A'`), error => error.cause?.code === '42501');
+      const browserReceipt = await browserReferences.reference(browserCommand, owner.actor);
+      const replay = await browserReferences.reference(browserCommand, owner.actor);
+      assert.equal(replay.attemptRef, browserReceipt.attemptRef);
+      assert.equal(replay.created, false);
+      const secondTarget = { tenantId: 'tenant-A', actorUserId: 'actor-A', matterId: b.matter.matterId,
+        attemptRef: browserReceipt.attemptRef, principalId: 'hosted-test', authorizeReferenceMatter };
+      const secondRow = await owner.runtime(() => service.read(secondTarget));
+      let second = { target: secondTarget, reserved: { row: secondRow, task: JSON.parse(secondRow.taskEnvelopeJson) } };
+      assert.equal(second.reserved.task.executionModel.settingsRevision, 3);
+      const priorA = second.reserved.task.modelInput.sourceCatalog.find(item => item.kind === 'PRIOR_RESULT');
+      assert.deepEqual(priorA.originalEvidenceRefs, [rootRef]);
+      assert.equal(second.reserved.task.modelInput.modelInput.referenceWorks[0].evidenceRef, priorA.evidenceRef);
+      allowed.delete(a.matter.matterId);
+      await assert.rejects(owner.runtime(() => service.claim(second.target)), /TEST_SERVICE_SCOPE_REVOKED/u);
+      allowed.add(a.matter.matterId);
+      await sql`UPDATE action_attempt SET status = 'FAILED' WHERE operation_ref = ${second.target.attemptRef}`;
+      const recoveryRequest = { ...await requestFor(b.matter.matterId, 'reference-recover-B'), recoveryAttemptRef: second.target.attemptRef };
+      second = await start(recoveryRequest);
+      assert.deepEqual(second.reserved.task.modelInput.referenceWorks, [referenceA]);
+      assert.equal(second.reserved.task.modelInput.sourceCatalog.find(item => item.kind === 'PRIOR_RESULT').evidenceRef, priorA.evidenceRef);
+      assert.equal((await start(recoveryRequest)).reserved.created, false);
+      const fenceB = await claim(second.target);
+      const savedB = await save(fenceB, second.reserved.task,
+        `CrossReferenceProbe: A provides an investigation method; B still needs its own configuration evidence. [[${priorA.evidenceRef}]]`, 'save-B');
+      const readB = await owner.workingService.readWorkingRevision(b.matter.matterId, savedB.workRevisionRef, owner.actor);
+      assert.deepEqual(readB.state.problemWork.evidence.find(item => item.kind === 'PRIOR_RESULT').sourceWork,
+        { subjectKind: 'ENGINEERING_MATTER', subjectId: a.matter.matterId, workRef: savedA.workRevisionRef, issueKey: 'conditions' });
+      assert.ok(readB.state.problemWork.evidence.some(item => item.evidenceRef === rootRef));
+      assert.deepEqual(readB.state.substantiveInputs, []);
+      assert.deepEqual(readB.state.problemWork.issues[0].riskScenarios, []);
+      const search = new EngineeringIssueSearchService(owner.database, {}, owner.workingService);
+      assert.deepEqual((await search.search('CrossReferenceProbe', owner.actor)).hits[0].rootRefs, [rootRef]);
+      await sql`UPDATE engineering_matter SET created_by_user_id = 'actor-B' WHERE matter_id = ${a.matter.matterId}`;
+      await assert.rejects(owner.workingService.readWorkingRevision(b.matter.matterId, savedB.workRevisionRef, owner.actor), /AUTHORIZATION/u);
+      assert.equal((await search.search('CrossReferenceProbe', owner.actor)).hits.length, 0);
+      await sql`UPDATE engineering_matter SET created_by_user_id = 'actor-A' WHERE matter_id = ${a.matter.matterId}`;
+      const back = await start(await requestFor(a.matter.matterId, 'reference-back-A', [{ matterId: b.matter.matterId,
+        workRef: savedB.workRevisionRef, issueKey: 'conditions', purpose: 'Check what B actually compared' }]));
+      const priorB = back.reserved.task.modelInput.sourceCatalog.find(item => item.kind === 'PRIOR_RESULT' && item.sourceWork.subjectId === b.matter.matterId);
+      assert.deepEqual(priorB.originalEvidenceRefs, [rootRef], 'A -> B -> A retains one original root');
+      const last = await save(await claim(back.target), back.reserved.task,
+        `A checks B's comparison while retaining its original uncertainty. [[${priorB.evidenceRef}]]`, 'save-A2');
+      assert.equal(last.workRevision, 2);
+      assert.equal((await owner.workingService.readWorkingRevision(b.matter.matterId, savedB.workRevisionRef, owner.actor))
+        .state.problemWork.evidence.find(item => item.kind === 'PRIOR_RESULT').resultRef, savedA.workRevisionRef);
+      await sql`UPDATE work_item SET requested_by_user_id = 'actor-B' WHERE work_item_id = ${FTD_WORK_ITEM_ID}`;
+      await assert.rejects(owner.workingService.readWorkingRevision(b.matter.matterId, savedB.workRevisionRef, owner.actor), /AUTHORIZATION/u);
+    } finally { if (owner) await owner.release(); await sql.end({ timeout: 5 }); }
+  });
+
 test(
   'v5 direct family materials preserve scope, expectations, replay and full-source authorization',
   { skip: !databaseUrl, concurrency: false },
@@ -1156,6 +1292,8 @@ async function resetDatabase(sql) {
   await applyMigration(sql, 'migrations/0044_document_parse_step_lease.sql');
   await applyMigration(sql, 'migrations/0048_document_translation_attempt_subject.sql');
   await applyMigration(sql, 'migrations/0055_document_semantic_revision.sql');
+  await applyMigration(sql, 'migrations/0057_model_setting_authenticated_tenant_read.sql');
+  await sql.unsafe('GRANT SELECT ON canonical_model_setting TO authenticated');
   await sql.unsafe('GRANT SELECT,INSERT,UPDATE,DELETE ON dm_document_semantic_revision TO authenticated,service_role');
   await sql.unsafe('GRANT SELECT, UPDATE ON dm_document_parse_run TO authenticated, service_role');
   await applyMigration(sql, 'migrations/0039_engineering_search_projection.sql');
@@ -1291,9 +1429,8 @@ async function assertHostedCandidateRls(sql, owner, matterId) {
   command.nextSubstantiveResult.resultRevision = 2;
   command.nextSubstantiveResult.content.claims[0].text =
     'The corrected condition remains candidate-only.';
-  command.nextProblemWork.issues[0].statements = structuredClone(
-    command.nextSubstantiveResult.content.claims,
-  );
+  command.nextProblemWork.issues[0].body = `The corrected condition remains candidate-only. [[${command.nextProblemWork.issues[0].sourceDependencies[0]}]]`;
+  command.nextSubstantiveResult.content.issueArticles[0].body = command.nextProblemWork.issues[0].body;
   command.nextProblemWork.changeSummary = command.changeSummary;
   command.claimDelta = {
     changedBecause: 'The engineer corrected the test premise.',
@@ -1390,7 +1527,7 @@ async function assertHostedCandidateRls(sql, owner, matterId) {
     WHERE matter_id = ${matterId} AND working_revision = 1`;
   const oldIssue = await issueSearch.read({ ...hit, workRef: older.matter_work_revision_id }, owner.actor);
   assert.equal(oldIssue.identity.workRevision, 1);
-  assert.notEqual(oldIssue.issue.statements[0].text, result.revision.state.problemWork.issues[0].statements[0].text);
+  assert.notEqual(oldIssue.issue.body, result.revision.state.problemWork.issues[0].body);
   const replay = await commit();
   assert.equal(replay.replayed, true);
   assert.equal(
@@ -1909,8 +2046,9 @@ async function assertWorkingRevisionFlow(
   assert.ok(hit, 'the SQL issue query must find the saved question');
   assert.equal(hit.workRef, exact.matterWorkRevisionId);
   assert.equal(hit.issueKey, exact.state.problemWork.issues[0].issueKey);
+  assert.equal(hit.overviewStatus, exact.state.problemWork.overviewStatus);
   assert.deepEqual(Object.keys(hit).sort(), ['issueKey', 'question', 'sourceRefs', 'subjectId', 'subjectKind', 'workRef', 'workRevision',
-    'kind', 'matchReason', 'matchedRange', 'reason', 'rootRefs'].sort());
+    'kind', 'matchReason', 'matchedRange', 'reason', 'rootRefs', 'overviewStatus'].sort());
   assert.deepEqual((await issues.read(hit, owner.actor)).issue, exact.state.problemWork.issues[0]);
   assert.deepEqual((await issues.search(question, actor('actor-B'))).hits, []);
   assert.deepEqual((await issues.search(question, actor('actor-A', 'tenant-B'))).hits, []);
@@ -2278,8 +2416,7 @@ async function assertMatterSuccessorRecovery(sql, owner, service, baseInput) {
   assert.equal((await sourceSearch.search('12 kPa',owner.actor,'HISTORY')).hits.length,1);
   const work = jobAidProblemModelWorkContent(current.state.problemWork);
   const frozenOriginalRef = originalReading.evidence[0].evidenceRef;
-  work.issues[0].statements[0].premises[0].evidenceRef = frozenOriginalRef;
-  work.issues[0].sourceDependencies.push(frozenOriginalRef); work.issues[0].premiseRefs.push(frozenOriginalRef);
+  work.issues[0].body += ` Frozen original condition remains unverified. [[${frozenOriginalRef}]]`;
   const saved = await owner.runtime(() => service.saveJobAidWork({ ...fence, requestId: 'recovered-candidate-save',
     expectedWorkRevision: current.workingRevision, workJson: JSON.stringify(work) }));
   const { contentHash: _hash, ...body } = matterResult(newClaim.task);
@@ -2363,6 +2500,7 @@ function matterOriginalReceiptFixture(documentVersionId) {
     original.source.units.push({ ...original.source.units[0], unitId: `unit-extra-${index}`, order: index,
       sourceRefIds: [ref], payload: { text: `Additional original condition ${index}.` } });
     original.source.sourceLocators.push({ ...original.source.sourceLocators[0], sourceRefId: ref });
+    original.locations.push({ ...structuredClone(original.locations[0]), sourceRefId: ref });
   }
   return original;
 }
@@ -3457,18 +3595,18 @@ async function assertRawMatterJobAidSave(sql, owner, service, baseInput) {
         title: 'Raw save fixture', versionLabel: null, locator: 'PDF 第 1 页（文本层）', excerpt: text } }] };
   const work = jobAidProblemModelWorkContent(previous.state.problemWork);
   work.changeSummary = '按实际阅读的来源保存完整工作。';
-  work.issues[0].statements[0].premises[0].evidenceRef = sourceRefId;
-  work.issues[0].sourceDependencies.push(sourceRefId);
-  work.issues[0].premiseRefs.push(sourceRefId);
+  work.issues[0].body += ` The inspection is bounded to the inspected object. [[${sourceRefId}]]`;
   const saveInput = { ...fence, requestId: 'RAW-SAVE-ONE', expectedWorkRevision: previous.workingRevision, workJson: JSON.stringify(work) };
   await assert.rejects(owner.runtime(() => service.saveJobAidWork(saveInput)), /SOURCE_NOT_DELIVERED/u);
   await owner.runtime(() => service.readSourcePages({ ...fence, documentVersionId, pageStart: 1, purpose: '测试来源' }, async () => reading));
   const first = await owner.runtime(() => service.saveJobAidWork(saveInput));
   const saved = await owner.runtime(() => service.readSavedWork({ ...scope, requestId: saveInput.requestId }));
   assert.equal(saved.matterWorkRevisionId, first.workRevisionRef);
-  assert.equal(saved.state.problemWork.issues[0].statements[0].premises[0].evidenceRef, sourceRefId);
+  assert.equal(saved.state.problemWork.issues[0].body, work.issues[0].body);
+  assert.ok(saved.state.problemWork.issues[0].sourceDependencies.includes(sourceRefId));
   const secondInput = { ...saveInput, requestId: 'RAW-SAVE-TWO', expectedWorkRevision: first.workRevision,
-    workJson: JSON.stringify({ ...work, headline: '第二份完整候选工作', changeSummary: '补充完整认识。' }) };
+    workJson: JSON.stringify({ ...work, changeSummary: '补充完整认识。',
+      issues: work.issues.map((issue, index) => index === 0 ? { ...issue, body: `${issue.body} 对象状态仍待核实。` } : issue) }) };
   const second = await owner.runtime(() => service.saveJobAidWork(secondInput));
   const replay = await owner.runtime(() => service.saveJobAidWork(saveInput));
   assert.equal(replay.workRevisionRef, first.workRevisionRef);

@@ -7,6 +7,7 @@ import { JOBAID_CORE_METHOD_REFS, JOBAID_METHOD_BINDING, JOBAID_METHOD_EVIDENCE 
 import { jobAidProblemModelWorkContent } from './jobaid-problem-task';
 import { overallModelEvidenceRegistry } from './overall-assessment-reading';
 import { engineeringMatterPendingInputs } from './engineering-matter-working-state';
+import type { MatterWorkReferenceRequest } from './matter-work-reference';
 
 export const MATTER_JOBAID_TASK_SCHEMA = 'wiselink.matter-jobaid-task.v2' as const;
 
@@ -53,6 +54,7 @@ export function buildMatterJobAidTask(input: {
   return {
     schemaVersion: MATTER_JOBAID_TASK_SCHEMA,
     correction: null as MatterIssueCorrectionPurpose | null,
+    referenceWorks: [] as MatterWorkReferenceRequest[],
     recovery: null as { attemptRef: string; inputHash: string } | null,
     actorUserId: input.actorUserId,
     sourceCatalog,
@@ -91,6 +93,7 @@ export function buildMatterJobAidTask(input: {
       } : null,
       expectedWorkRevision: input.previous?.workingRevision ?? 0,
       historyReview,
+      referenceWorks: [] as Array<MatterWorkReferenceRequest & { evidenceRef: string; correctionNotices: NonNullable<EngineeringMatterWorkingRevisionReadModel['correctionNotices']> }>,
       capabilities: [
         { capability: 'registered_source_reading', status: 'AVAILABLE' as const,
           impact: '本轮触发原因以trigger和sourceChanges为准，previousWork是历史认识，不是重复执行旧指令。来源或语义变化需核对所列新范围及条件，保留不受影响的既有问题。优先用originalReadRef读取boundOriginal绑定的已发布修订及其固定semantic revision；历史任务未捕获绑定时Host在首次读取确定版本。按返回nextOffset继续，原文修订变化只表示需要核查影响，不预设工程结论变化。PDF页文本层仍可独立读取；目录不代表已读，coverage限制须保留。' },

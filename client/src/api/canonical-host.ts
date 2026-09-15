@@ -1,6 +1,7 @@
 import type { JobAidWorkingReadModel } from '@shared/jobaid-problem-assessment.interface';
 import type { DocumentTranslationReadingResponse } from '@shared/document-translation-reading.interface';
-import type { EngineeringIssueRead, EngineeringIssueSearchHit, EngineeringIssueSearchResponse } from '@shared/engineering-issue-search.interface';
+import type { EngineeringIssueRead, EngineeringIssueSearchHit, EngineeringIssueSearchResponse,
+  EngineeringIssueReferenceRequest, EngineeringIssueReferenceReceipt } from '@shared/engineering-issue-search.interface';
 import type { CanonicalLibraryFleetCatalog } from '@shared/library-fleet.interface';
 import type { DocumentParsedReading, DocumentParsingStatus, DocumentParseRunSummary, StartDocumentParseRequest } from '@shared/document-parsing.interface';
 import type {
@@ -860,7 +861,7 @@ export function searchDocumentSources(search: string, scope: 'CURRENT' | 'HISTOR
   });
 }
 
-export async function readEngineeringIssue(hit: EngineeringIssueSearchHit): Promise<EngineeringIssueRead> {
+export async function readEngineeringIssue(hit: Pick<EngineeringIssueSearchHit, 'subjectKind' | 'subjectId' | 'workRef' | 'issueKey'>): Promise<EngineeringIssueRead> {
   const { subjectKind, subjectId, workRef, issueKey } = hit;
   const read = await reviewConversationRequest<EngineeringIssueRead>({
     url: `/api/canonical-host/engineering-issues/work?${new URLSearchParams({ subjectKind, subjectId, workRef, issueKey })}`,
@@ -870,6 +871,18 @@ export async function readEngineeringIssue(hit: EngineeringIssueSearchHit): Prom
     read.identity.workRef !== workRef || read.identity.issueKey !== issueKey)
     throw new Error('问题读回的范围或工作版本不一致，请重新查找。');
   return read;
+}
+
+export async function referenceEngineeringIssue(input: EngineeringIssueReferenceRequest): Promise<EngineeringIssueReferenceReceipt> {
+  const receipt = await reviewConversationRequest<EngineeringIssueReferenceReceipt>({
+    url: '/api/canonical-host/engineering-issues/references', method: 'POST', data: input,
+    operation: '将旧工作交给本事项比较',
+  });
+  if (receipt.targetMatterId !== input.targetMatterId || receipt.source.subjectKind !== input.source.subjectKind ||
+      receipt.source.subjectId !== input.source.subjectId || receipt.source.workRef !== input.source.workRef ||
+      receipt.source.issueKey !== input.source.issueKey || !receipt.attemptRef)
+    throw new Error('引用请求的事项或工作版本读回不一致，请重读同一请求。');
+  return receipt;
 }
 
 export async function getDocumentParsingPage(
@@ -1363,6 +1376,7 @@ async function reviewConversationRequest<T>(input: {
     | Record<string, never>
     | { reviewScope: ReviewScopeSelection }
     | AppendReviewTextTurnRequest
+    | EngineeringIssueReferenceRequest
     | ConfirmReviewActionDraftRequest;
   operation: string;
 }): Promise<T> {

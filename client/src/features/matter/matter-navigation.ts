@@ -3,6 +3,12 @@ import type { EngineeringMatterReadModel } from '@shared/api.interface';
 import type { EngineeringMatterWorkingReadModel } from '@shared/matter-working.interface';
 
 import type { DocumentAssessmentEvidence } from './assessment-reading';
+import type { AssessmentSourceWork } from '@shared/assessment-reading.interface';
+
+export function matterReferencedWorkRoute(source: AssessmentSourceWork): string {
+  return `${matterOverviewRoute(source.subjectId)}?${new URLSearchParams({ panel: 'materials',
+    sourceWorkRef: source.workRef, sourceIssueKey: source.issueKey })}`;
+}
 
 export function matterOverviewRoute(matterId: string): string {
   return `/matters/${encodeURIComponent(matterId)}`;

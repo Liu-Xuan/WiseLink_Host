@@ -6,6 +6,7 @@ import { canonicalJson } from '../action-attempt/action-attempt-envelope';
 import { materializeJobAidWork } from './jobaid-problem-work';
 import { collectEvidenceUses, collectIssueEvidenceUses } from '@shared/jobaid-evidence-uses';
 import { matterReviewConditionDelta } from './matter-revisit';
+import { assessmentEvidenceRoots } from '@shared/assessment-evidence-roots';
 
 /** All context comes from the sealed task, saved prior work and Host read receipts. */
 export function materializeMatterJobAidCommand(input: {
@@ -39,7 +40,8 @@ export function materializeMatterJobAidCommand(input: {
   const claims: AssessmentReadingClaim[] = [];
   const claimIds = new Set(claims.map(item => item.claimId));
   const usedRefs = new Set(collectEvidenceUses(work).map(item => item.evidenceRef));
-  const evidence = work.evidence.filter(item => usedRefs.has(item.evidenceRef));
+  const referencedRoots = new Set(assessmentEvidenceRoots([...usedRefs], work.evidence).rootRefs);
+  const evidence = work.evidence.filter(item => usedRefs.has(item.evidenceRef) || referencedRoots.has(item.evidenceRef));
   const documents = evidence.filter(item => item.kind === 'DOCUMENT_PASSAGE');
   const currentRead = new Set(input.currentReadSourceRefs ?? input.readSourceRefs);
   const readDocuments = work.evidence.filter(item => item.kind === 'DOCUMENT_PASSAGE').filter(item => currentRead.has(item.evidenceRef));
@@ -49,8 +51,10 @@ export function materializeMatterJobAidCommand(input: {
   // Runtime receipts retain all delivery. The saved work retains prior evidence,
   // actual claims and reading of its bound inputs, without certifying older delivery as new coverage.
   work.evidence = work.evidence.filter(item => item.kind !== 'DOCUMENT_PASSAGE' || usedRefs.has(item.evidenceRef) ||
+    referencedRoots.has(item.evidenceRef) ||
     input.inputs.some(binding => matchesReadBinding(item, binding)) ||
     previous?.problemWork?.evidence.some(prior => canonicalJson(prior) === canonicalJson(item)));
+  work.evidence = work.evidence.filter(item => item.kind !== 'PRIOR_RESULT' || !item.sourceWork || usedRefs.has(item.evidenceRef));
   const retainedRefs = new Set(work.evidence.map(item => item.evidenceRef));
   work.readSourceRefs = work.readSourceRefs.filter(ref => retainedRefs.has(ref));
   const dispositions = z.object({ inputDispositions: z.array(z.strictObject({
