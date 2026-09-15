@@ -1,16 +1,20 @@
 # M 主控集成交接
 
-## 2026-09-15 两份777原文已发布，首次中文自然推进；新事项后台范围已获授权
+## 2026-09-15 777 原文及事项任务已建立，真实失败转入定向修复
 
-浏览器连接与正常用户登录已恢复。M先用同一已配置Hosted连接调用两个精确DV的 `document_work STATUS`，均正常返回无旧parseRun，证实三项文档范围已在运行实例生效。随后按用户授权各创建一个官方原生command cron：旧快照 `8a3f02cf-7432-45a9-9c0b-328bcfc8e3f1`，新快照 `5c430aac-b355-4ec2-8ff1-73d7b9e10673`。两者沿用原文档任务的消费者、cwd、3600秒单次期限和每分钟计划，仅DV不同；原三个任务的enabled、schedule、payload、agentId、sessionTarget逐项读回不变。
+两份777 FTD均经正常产品入口首次预约、原生文档任务自然完成原文：旧 `document_version_6b998c1544aa06b5f20b2be0` / `PRUN-1af7733a-28c8-4daf-a954-037af4c96c5f`，新 `document_version_78c6d0adb612265f85e1d338` / `PRUN-131965dd-0239-4050-ab55-01c63f5aca4e`；均PUBLISHED、解析修订1、5页，INDEX为NO_PENDING、semanticRevision1。已取得文本不代表结构质量已验收：本次777存在伪表、跨页组织和诊断扩散反例，不能由旧787样本的成功替代。
 
-两份parseRun均由正常业务页面“解析文档”首次受理，随后由各自cron自然执行：旧版 `PRUN-1af7733a-28c8-4daf-a954-037af4c96c5f` 于05:54:51Z发布，新版 `PRUN-131965dd-0239-4050-ab55-01c63f5aca4e` 于05:55:17Z发布。两个正常Reader均显示原文5/5页、解析修订1、OfficialPluginHybrid 1.0.16；不能唯一对齐的插件结构片段已明确列出限制并保留PDF文本层，没有假称结构完全验证。后续INDEX已到NO_PENDING、semanticRevision=1。首次中文分别为 `DTQ-a47b8225-2605-4ca3-a5c1-3a504fc6e486` / `DTQ-e56aa45f-724a-4a9b-a234-baa39a2d2de8`，最新观察均RUNNING、PROGRESSED、无错误，已保存部分段落；尚未声称完整中文交付。
+两个文档任务为 `8a3f02cf-7432-45a9-9c0b-328bcfc8e3f1` / `5c430aac-b355-4ec2-8ff1-73d7b9e10673`。首次中文 `DTQ-a47b8225-2605-4ca3-a5c1-3a504fc6e486` / `DTQ-e56aa45f-724a-4a9b-a234-baa39a2d2de8` 均已转REQUIRES_ATTENTION，错误为 `DOCUMENT_TRANSLATION_CHECK_SCOPE_INVALID`。代码中该错误表示检查插件返回的blockId或anchorId不属于当前输入，不是后台授权失败，也不能仅据此归因日期格式。保留已保存译块，未盲目重翻或延长额度；原文仍可正常读取。
 
-当前产品原文再次读回LastRevised为2025-07-28与2026-02-04，修订说明分别涉及Status/Milestones/Operator Action和Status/Milestones；正文中认证状态与计划日期确有变化。来源生成日期仍是独立快照标识，不据此声称今天最新有效、已实施或正式采用。此次正常原文回执补齐了此前P/M已完成的PDF比对证据。
+用户已明确批准新777事项范围与任务。可选严格Matter列表支持在提交 `bb43b5ddd551b5b242ed6dee375d2f76bb339043` 实现，scope/MCP接线43项和server typecheck通过；origin/github同名开发分支分别核验。环境列表只含原B787与新 `MAT-d9e6c294-f368-42e4-9a1b-b46c6170be02`，精确读回且旧单值、actor/tenant保留。Host release `7685642481807691048` 已finished、实际为该提交、无发布错误。
 
-M从该family既有 `WI-e0a261ee-51e8-4257-a696-e10959e44b93` 正常建立 `MAT-d9e6c294-f368-42e4-9a1b-b46c6170be02`（777-FTD-31-21002 工程事项），只有一项旧版主要来源与pending输入、暂无工作结论。B页面正常搜索FTD已找到A的工作修订16与确切问题范围；完整跨事项候选保存仍未完成。用户随后明确回复“同意新增该事项范围和任务”，授权沿用现有actor/tenant和官方模型读取本事项材料及当前可见工程工作、比较两份快照、生成保存候选，并保留原B787与全部既有任务；不含正式采用、审批或放行。
+正常创建新事项原生任务 `355f0161-15c1-45c4-9060-0336f1bfaf5f`，沿用原Matter消费者、native session store、cwd、每分钟计划和3600秒单次期限。创建前去重；原五个任务的enabled、schedule、payload、agentId、sessionTarget逐项确认不变。首次自然评估 `AQ-5c2ed8ff8a9d4c488f2a35042b1e2b86` 正常读取旧FTD的original偏移0/20/40，最终 `JOBAID_WORK_VALIDATION_FAILED`，未保存工作。三次候选分别暴露多余title、openQuestions类型错误和未交付的u22:p0引用；末次仍猜错openQuestions结构。没有重新受理同一失败。
 
-本地新增可选 `WL_OPENCLAW_SERVICE_MATTER_IDS` 严格非空JSON完整ID列表，显式列表替代旧单值，非法或重复配置不回退；每次请求返回实际命中的Matter、保留同一actor/tenant及既有RLS/lease/CAS检查，不继承文档或WorkItem范围。29项scope测试、14项Matter MCP/接线测试和server typecheck通过，Luna独立审阅无安全问题。该Matter列表支持目前尚未发布、未设置线上列表、未创建新Matter cron；下一步仅实施已获批两个精确Matter的范围和新任务，Skill仍c105无需重装。
+M定向修复纠错反馈：保留来源拒绝与字段类型两段说明，错误对象附当前合同的expectedProperties，不替模型改写内容、补引用或增加纠错次数。候选版本c106的46项runtime测试、206项版本/协议/错误码检查及发布源一致性检查通过，Luna只读审阅无阻塞问题；当前仅源码准备，Hosted仍c105。Host STATUS另补读取已存terminalReason，避免FAILED但errorCode空掩盖具体原因，12项MCP测试通过；尚未部署该小修。
+
+用户最新要求由一个Astra子会话执行《解析质量与工程阅读修订执行书》。已接管原文结构、诊断范围、日期校验、Reader与复制和真实消费者，保持独立前端最小改动边界。通过正常授权存储读取旧777保存的manifest、PDF.js items及插件Markdown，核对bytes/SHA；另经产品版本页正常下载原PDF并确认与manifest相同SHA，供同一反例视觉核对。Astra实现及真实验收仍在进行，未宣称完成或发布。
+
+本family快照生成日期与LastRevised（2025-07-28、2026-02-04）分别记录，尚不代表今天最新有效或正式采用。新事项仍只有旧版主要来源；后续新快照加入、同family变化、准确综合及跨事项候选保存待完成。A的工作16正常可被B精确搜索与展开，但STALE综合后继仍失败，未重试未改变的输入。
 
 ## 2026-09-15 两版FTD文档范围已授权配置并发布，原文任务尚待建立
 

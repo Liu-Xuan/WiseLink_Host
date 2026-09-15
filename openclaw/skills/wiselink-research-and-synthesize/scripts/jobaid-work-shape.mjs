@@ -88,7 +88,8 @@ export function jobAidWorkTypeErrors(work) {
       (schema.enum && !schema.enum.includes(value));
     if (invalid) {
       errors.push({ path, expected: schema.enum ? `one of ${schema.enum.join(' | ')}` :
-        schema.minLength ? 'non-empty string' : schema.type, received });
+        schema.minLength ? 'non-empty string' : schema.type, received,
+        ...(schema.type === 'object' ? { expectedProperties: schema.properties } : {}) });
       return;
     }
     if (schema.type === 'array') value.forEach((item, i) => visit(item, schema.items, `${path}[${i}]`));
