@@ -35,7 +35,8 @@ import {
   buildMatterObjectContext,
   matterDocumentRoute,
 } from './matter-navigation';
-import { readReadingLocation, type ReadingLocation } from './reading-location';
+import { readReadingLocation, clearReadingLocation, matterReadingScope, type ReadingLocation } from './reading-location';
+import { matterReadingReturnParams } from './reading-return';
 import useEngineeringMatter from './useEngineeringMatter';
 import useReadingLocation from './useReadingLocation';
 import { selectMatterWorkRevision } from './matter-work-selection';
@@ -44,10 +45,12 @@ import '@client/src/features/workitem/workitem-overview.css';
 
 export default function EngineeringMatterPage() {
   const { matterId = '' } = useParams<{ matterId: string }>();
+  const [params] = useSearchParams();
+  const workRef = params.get('workRef')?.trim() ?? '';
   const { sessionGeneration, authenticationRequired } = useCurrentUserSession();
   return (
     <MatterWorkspace
-      key={`${sessionGeneration}:${matterId}`}
+      key={JSON.stringify([sessionGeneration, matterId, workRef])}
       matterId={matterId}
       sessionGeneration={sessionGeneration}
       authenticationRequired={authenticationRequired}
@@ -74,7 +77,8 @@ const MatterWorkspace: FC<MatterWorkspaceProps> = ({
     sessionGeneration,
     authenticationRequired,
   );
-  const scopeKey: string = `matter:${matterId}`;
+  const requestedWorkRef: string = searchParams.get('workRef')?.trim() ?? '';
+  const scopeKey: string = matterReadingScope(matterId, requestedWorkRef);
   const [initialLocation] = useState<ReadingLocation | null>(() =>
     readReadingLocation(scopeKey),
   );
@@ -87,7 +91,6 @@ const MatterWorkspace: FC<MatterWorkspaceProps> = ({
     initialLocation?.discussionClaimId ?? null,
   );
   const [navigationError, setNavigationError] = useState<string | null>(null);
-  const requestedWorkRef: string = searchParams.get('workRef')?.trim() ?? '';
   const [requestedRevision, setRequestedRevision] =
     useState<EngineeringMatterWorkingRevisionReadModel | null>(null);
   const [requestedRevisionLoading, setRequestedRevisionLoading] =
@@ -117,10 +120,10 @@ const MatterWorkspace: FC<MatterWorkspaceProps> = ({
         : searchParams.get('panel') === 'materials'
           ? 'materials'
           : 'brief';
-  const saveLocation: () => void = useReadingLocation(
+  const saveLocation = useReadingLocation(
     scopeKey,
     sessionGeneration,
-    Boolean(data),
+    Boolean(data && displayedRevision),
     { claim: claimSelection, focusClaimId, discussionClaimId },
   );
   const readClaim = useCallback(
@@ -165,6 +168,10 @@ const MatterWorkspace: FC<MatterWorkspaceProps> = ({
       })
       .catch((cause: unknown) => {
         if (controller.signal.aborted) return;
+        if (cause && typeof cause === 'object' && 'statusCode' in cause && [401, 403, 404].includes(Number(cause.statusCode))) {
+          clearReadingLocation(scopeKey);
+          setClaimSelection(null); setFocusClaimId(null); setDiscussionClaimId(null);
+        }
         setRequestedRevisionError(
           cause instanceof Error ? cause.message : '指定工作修订读取失败。',
         );
@@ -178,6 +185,7 @@ const MatterWorkspace: FC<MatterWorkspaceProps> = ({
     currentRevision?.matterWorkRevisionId,
     matterId,
     requestedWorkRef,
+    scopeKey,
   ]);
 
   function setPanel(value: string): void {
@@ -193,9 +201,10 @@ const MatterWorkspace: FC<MatterWorkspaceProps> = ({
       'workItemId' | 'documentVersionId'
     > & { sourceRefId?: string; locator?: string },
   ): void {
-    saveLocation();
+    const workRef = displayedRevision?.matterWorkRevisionId ?? requestedWorkRef;
+    saveLocation(matterReadingScope(matterId, workRef));
     if (!evidence.workItemId) setClaimSelection(null);
-    navigate(matterDocumentRoute(matterId, evidence, panel));
+    navigate(matterDocumentRoute(matterId, evidence, panel, workRef));
   }
 
   function locateReviewSource(sourceRef: string): void {
@@ -492,8 +501,10 @@ const MatterWorkspace: FC<MatterWorkspaceProps> = ({
             <MatterMembers
               members={data.matter.catalog.entries}
               onOpenMember={(member: EngineeringMatterCatalogEntry) => {
-                saveLocation();
-                navigate(`/document-versions/${encodeURIComponent(member.document.documentVersionId)}`);
+                const workRef = displayedRevision?.matterWorkRevisionId ?? requestedWorkRef;
+                saveLocation(matterReadingScope(matterId, workRef));
+                const params = matterReadingReturnParams(matterId, member.document.documentVersionId, panel, workRef);
+                navigate(`/document-versions/${encodeURIComponent(member.document.documentVersionId)}?${params}`);
               }}
             />
           </div>

@@ -10,6 +10,8 @@ export interface ReadingLocation {
   claim: AssessmentClaimSelection | null;
   focusClaimId: string | null;
   discussionClaimId: string | null;
+  expandedIssueRefs?: string[];
+  expandedDirectoryKeys?: string[];
 }
 
 // Navigation metadata only; saved business content and authority never enter this map.
@@ -31,4 +33,17 @@ export function saveReadingLocation(
 
 export function clearReadingLocation(scopeKey: string): void {
   readingLocations.delete(scopeKey);
+}
+
+export function matterReadingScope(matterId: string, workRef = ''): string {
+  const base = `matter:${encodeURIComponent(matterId)}`;
+  return workRef ? `${base}:work:${encodeURIComponent(workRef)}` : base;
+}
+
+export function clearMatterReadingLocations(matterId: string): void {
+  const base = matterReadingScope(matterId);
+  for (const key of readingLocations.keys()) {
+    if (key === base || key.startsWith(`${base}:work:`))
+      readingLocations.delete(key);
+  }
 }

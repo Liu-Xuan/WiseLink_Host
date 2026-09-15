@@ -1,6 +1,7 @@
 import { createElement } from 'react';
 jest.mock('@client/src/api/canonical-host', () => ({
   getCanonicalHostClientSessionGeneration: () => 1,
+  subscribeCanonicalHostClientSession: () => () => undefined,
 }));
 import { renderToStaticMarkup } from 'react-dom/server';
 import { StaticRouter } from 'react-router-dom/server';

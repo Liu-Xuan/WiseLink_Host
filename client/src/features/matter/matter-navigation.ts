@@ -4,6 +4,7 @@ import type { EngineeringMatterWorkingReadModel } from '@shared/matter-working.i
 
 import type { DocumentAssessmentEvidence } from './assessment-reading';
 import type { AssessmentSourceWork } from '@shared/assessment-reading.interface';
+import { matterReadingReturnParams } from './reading-return';
 
 export function matterReferencedWorkRoute(source: AssessmentSourceWork): string {
   return `${matterOverviewRoute(source.subjectId)}?${new URLSearchParams({ panel: 'materials',
@@ -28,33 +29,43 @@ export function matterDocumentRoute(
     'workItemId' | 'documentVersionId'
   > & { sourceRefId?: string; locator?: string },
   returnPanel: 'brief' | 'review' | 'materials' = 'brief',
+  returnWorkRef = '',
 ): string {
+  const returnParams = matterReadingReturnParams(matterId, evidence.documentVersionId, returnPanel, returnWorkRef);
+  const exactRoute = exactDocumentSourceRoute(evidence);
+  if (exactRoute) return `${exactRoute}&${returnParams}`;
+  if (!evidence.workItemId) {
+    const params = new URLSearchParams({ sourceDocument: evidence.documentVersionId });
+    if (evidence.sourceRefId) params.set('sourceRef', evidence.sourceRefId);
+    if (returnPanel !== 'brief') params.set('panel', returnPanel);
+    if (returnWorkRef) params.set('workRef', returnWorkRef);
+    return `${matterOverviewRoute(matterId)}?${params.toString()}`;
+  }
+  const params: URLSearchParams = new URLSearchParams({
+    node: 'reader', tab: 'reader', readerMode: 'structured',
+    documentVersionId: evidence.documentVersionId,
+  });
+  if (evidence.sourceRefId) params.set('sourceRef', evidence.sourceRefId);
+  returnParams.forEach((value, key) => params.set(key, value));
+  return `/work-items/${encodeURIComponent(evidence.workItemId)}/documents?${params.toString()}`;
+}
+
+export function exactDocumentSourceRoute(
+  evidence: { documentVersionId: string; sourceRefId?: string; locator?: string },
+): string | null {
   if (evidence.locator && evidence.sourceRefId) {
     let locator: unknown;
     try { locator = JSON.parse(evidence.locator); } catch { /* Legacy page locator. */ }
     if (locator && typeof locator === 'object' && 'parseRunId' in locator &&
       typeof locator.parseRunId === 'string' && locator.parseRunId.trim() &&
       'sourceRefId' in locator && locator.sourceRefId === evidence.sourceRefId) {
-      const params = new URLSearchParams({ parseRunId: locator.parseRunId, sourceRef: evidence.sourceRefId });
+      const params = new URLSearchParams();
+      params.set('parseRunId', locator.parseRunId);
+      params.set('sourceRef', evidence.sourceRefId);
       return `/document-versions/${encodeURIComponent(evidence.documentVersionId)}?${params.toString()}`;
     }
   }
-  if (!evidence.workItemId) {
-    const params = new URLSearchParams({ sourceDocument: evidence.documentVersionId });
-    if (evidence.sourceRefId) params.set('sourceRef', evidence.sourceRefId);
-    if (returnPanel !== 'brief') params.set('panel', returnPanel);
-    return `${matterOverviewRoute(matterId)}?${params.toString()}`;
-  }
-  const params: URLSearchParams = new URLSearchParams({
-    node: 'reader',
-    tab: 'reader',
-    readerMode: 'structured',
-    documentVersionId: evidence.documentVersionId,
-    returnMatterId: matterId,
-  });
-  if (evidence.sourceRefId) params.set('sourceRef', evidence.sourceRefId);
-  if (returnPanel !== 'brief') params.set('returnMatterPanel', returnPanel);
-  return `/work-items/${encodeURIComponent(evidence.workItemId)}/documents?${params.toString()}`;
+  return null;
 }
 
 export function buildMatterObjectContext(

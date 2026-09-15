@@ -6,6 +6,7 @@ import {
   readEngineeringIssue,
   referenceEngineeringIssue,
   readEngineeringIssueReferenceStatus,
+  subscribeCanonicalHostClientSession,
 } from '@client/src/api/canonical-host';
 import { getEngineeringMatterWorkspace } from '@client/src/api/engineering-matter';
 import { Button } from '@client/src/components/ui/button';
@@ -21,20 +22,24 @@ import type {
 import MatterDocumentSourceDialog from './MatterDocumentSourceDialog';
 import ReferenceWorkNotices from './ReferenceWorkNotices';
 import OverviewCorrectionNotices from './OverviewCorrectionNotices';
-import { matterDocumentRoute } from './matter-navigation';
+import { exactDocumentSourceRoute, matterDocumentRoute } from './matter-navigation';
 import type { DocumentSourceSearchResponse } from '@shared/document-source-search.interface';
 import '@client/src/pages/DocumentParsingPage/jobaid-problem-workspace.css';
 
+type EngineeringIssueSearchProps =
+  | { readOnly: true; matterId?: never }
+  | { readOnly?: false; matterId: string };
+
 export default function EngineeringIssueSearch({
-  matterId,
-}: {
-  matterId: string;
-}) {
+  matterId = '',
+  readOnly: requestedReadOnly = false,
+}: EngineeringIssueSearchProps) {
+  const readOnly = requestedReadOnly || !matterId;
   const navigate = useNavigate();
   const [params, setParams] = useSearchParams();
-  const referenceAttemptRef = params.get('referenceAttemptRef');
-  const sourceWorkRef = params.get('sourceWorkRef');
-  const sourceIssueKey = params.get('sourceIssueKey');
+  const referenceAttemptRef = readOnly ? null : params.get('referenceAttemptRef');
+  const sourceWorkRef = readOnly ? null : params.get('sourceWorkRef');
+  const sourceIssueKey = readOnly ? null : params.get('sourceIssueKey');
   const [query, setQuery] = useState('');
   const [scope, setScope] = useState<'CURRENT' | 'HISTORY'>('CURRENT');
   const [results, setResults] = useState<EngineeringIssueSearchResponse | null>(
@@ -56,6 +61,17 @@ export default function EngineeringIssueSearch({
     sourceRef: string | null;
   } | null>(null);
   const epoch = useRef(0);
+  useEffect(() => {
+    const clear = () => {
+      epoch.current += 1; statusEpoch.current += 1;
+      setQuery(''); setResults(null); setOriginals(null); setSelected(null); setSource(null);
+      setError(null); setBusy(false); setPurpose(''); setReferenceReceipt(null); setReferenceStatus(null);
+      setReferenceBusy(false); setReferenceStatusBusy(false); pendingReference.current = null;
+    };
+    clear();
+    const unsubscribe = subscribeCanonicalHostClientSession(clear);
+    return () => { epoch.current += 1; statusEpoch.current += 1; unsubscribe(); };
+  }, [matterId, readOnly]);
   useEffect(() => {
     const generation = ++statusEpoch.current;
     setReferenceStatus(null);
@@ -89,12 +105,13 @@ export default function EngineeringIssueSearch({
   return (
     <section
       className="mt-6 space-y-4 rounded-xl border border-border p-4"
-      aria-label="查找已有问题"
+      aria-label={readOnly ? '只读工程知识检索' : '查找已有问题'}
     >
       <h2 className="text-lg font-semibold">查找原文与已有问题</h2>
       <p className="text-sm text-muted-foreground">
         按关键词查找有权阅读的已发布原文和已保存工作，展开后核对问题、前提和来源。
-        每类最多展示 50 项，查找到的候选不会自动加入本事项。
+        每类最多展示 50 项，查找到的候选不会自动加入事项。
+        {readOnly ? ' 此入口只读，不登记引用比较、不启动模型。范围是当前账户获准读取的资料，不依赖先选事项。' : ''}
       </p>
       <form
         className="flex gap-2"
@@ -131,7 +148,7 @@ export default function EngineeringIssueSearch({
           查找
         </Button>
         <select aria-label="检索版本范围" value={scope} disabled={busy}
-          onChange={event => { setScope(event.target.value as 'CURRENT' | 'HISTORY'); setResults(null); setOriginals(null); setSelected(null); }}
+          onChange={event => { epoch.current += 1; setScope(event.target.value as 'CURRENT' | 'HISTORY'); setResults(null); setOriginals(null); setSelected(null); setSource(null); }}
           className="rounded-md border border-input bg-background px-2 text-sm">
           <option value="CURRENT">当前版本</option>
           <option value="HISTORY">包含历史</option>
@@ -151,6 +168,8 @@ export default function EngineeringIssueSearch({
       </div> : null}
       {busy ? <p role="status">正在读取…</p> : null}
       {error ? <p role="alert">{error}</p> : null}
+      <section aria-label="工程工作检索结果" className="space-y-3">
+      <h3>已保存工程工作</h3>
       {results?.hits.length === 0 ? (
         <p>未找到可供当前账户阅读的匹配问题。</p>
       ) : null}
@@ -178,10 +197,12 @@ export default function EngineeringIssueSearch({
                   if (request === epoch.current) setSelected(value);
                 })
                 .catch((cause: unknown) => {
-                  if (request === epoch.current)
+                  if (request === epoch.current) {
+                    setResults(null); setOriginals(null); setSource(null);
                     setError(
                       cause instanceof Error ? cause.message : '展开未完成',
                     );
+                  }
                 })
                 .finally(() => {
                   if (request === epoch.current) setBusy(false);
@@ -197,7 +218,7 @@ export default function EngineeringIssueSearch({
             范围 {hit.matchedRange} · 根来源 {hit.rootRefs.length} 项
           </p>
           {hit.correctionNotices?.map(notice => <p key={notice.attemptRef} role="note" className="text-sm">
-            {notice.correctedWorkRef ? '所引旧工作已有后继更正：' : '所引工作存在待核更正：'}{notice.reason}
+            {notice.unchanged ? '已完成比较并保留原认识：' : notice.correctedWorkRef ? '所引旧工作已有后继更正：' : '所引工作存在待核更正：'}{notice.reason}
           </p>)}
           {hit.subjectKind === 'ENGINEERING_MATTER' ? (
             <OverviewCorrectionNotices
@@ -211,6 +232,10 @@ export default function EngineeringIssueSearch({
       {results?.hasMore ? (
         <p className="text-sm">匹配较多，请补充关键词缩小范围。</p>
       ) : null}
+      </section>
+      <section aria-label="原文检索结果" className="space-y-3">
+      <h3>已发布原文</h3>
+      {originals?.hits.length === 0 ? <p>未找到可供当前账户阅读的匹配原文。</p> : null}
       {originals?.limitations.map(limitation => <p key={limitation} className="text-xs text-muted-foreground">{limitation}</p>)}
       {originals?.hits.map(hit => <details key={`${hit.parseRunId}:${hit.sourceRefId}`} className="rounded border border-border p-3">
         <summary className="cursor-pointer">原文 · 解析修订 {hit.parseRevision} · {hit.documentVersionId}</summary>
@@ -221,6 +246,7 @@ export default function EngineeringIssueSearch({
         </Button>
       </details>)}
       {originals?.hasMore ? <p className="text-sm">原文匹配较多，请补充关键词。</p> : null}
+      </section>
       {selected ? (
         <div className="wl-jobaid-article rounded-xl border border-border p-4">
           <p className="mb-3 text-sm text-muted-foreground">
@@ -233,7 +259,7 @@ export default function EngineeringIssueSearch({
             此工作的问题正文可读；综合认识尚未形成。
           </p> : null}
           {selected.identity.correctionNotices?.map(notice => <p key={notice.attemptRef} role="note" className="mb-3 text-sm">
-            {notice.correctedWorkRef ? '此版本已有后继更正：' : '此版本存在待核更正：'}{notice.reason}
+            {notice.unchanged ? '已完成比较并保留原认识：' : notice.correctedWorkRef ? '此版本已有后继更正：' : '此版本存在待核更正：'}{notice.reason}
           </p>)}
           {selected.identity.subjectKind === 'ENGINEERING_MATTER' ? (
             <OverviewCorrectionNotices
@@ -243,7 +269,7 @@ export default function EngineeringIssueSearch({
             />
           ) : null}
           <ReferenceWorkNotices notices={selected.identity.referenceWorkNotices} />
-          {selected.identity.subjectKind === 'ENGINEERING_MATTER' && selected.identity.subjectId !== matterId ? (
+          {!readOnly && selected.identity.subjectKind === 'ENGINEERING_MATTER' && selected.identity.subjectId !== matterId ? (
             <div className="mb-4 space-y-2 rounded border border-border p-3">
               <p className="text-sm">将此工作交给本事项比较。保存本事项自己的条件判断，并保留所引工作和根来源。</p>
               <Input aria-label="引用比较用途" placeholder="说明要比较的条件或调查问题" maxLength={3000}
@@ -288,13 +314,20 @@ export default function EngineeringIssueSearch({
             issue={selected.issue}
             reading={selected.reading}
             onLocateDocument={(evidence) => {
-              if (!evidence.workItemId)
+              const exactRoute = exactDocumentSourceRoute(evidence);
+              if (exactRoute && !readOnly) navigate(matterDocumentRoute(matterId, evidence, 'materials'));
+              else if (exactRoute && selected.identity.subjectKind === 'ENGINEERING_MATTER') navigate(matterDocumentRoute(selected.identity.subjectId, evidence, 'brief', selected.identity.workRef));
+              else if (exactRoute) navigate(exactRoute);
+              else if (!evidence.workItemId)
                 setSource({
                   documentVersionId: evidence.documentVersionId,
                   sourceRef: evidence.sourceRefId ?? null,
                 });
-              else
+              else if (!readOnly)
                 navigate(matterDocumentRoute(matterId, evidence, 'materials'));
+              else if (selected.identity.subjectKind === 'ENGINEERING_MATTER')
+                navigate(matterDocumentRoute(selected.identity.subjectId, evidence, 'brief', selected.identity.workRef));
+              else navigate(`/work-items/${encodeURIComponent(evidence.workItemId)}/documents?${new URLSearchParams({ node: 'reader', tab: 'reader', documentVersionId: evidence.documentVersionId, sourceRef: evidence.sourceRefId, returnWorkItemId: selected.identity.subjectId })}`);
             }}
           />
         </div>

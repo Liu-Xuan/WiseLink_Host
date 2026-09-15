@@ -51,6 +51,7 @@ export function LibraryHierarchy({
         {items.map((document) => (
           <li key={document.familyId}>
             <details
+              data-reading-key={`family:${document.familyId}`}
               className={document.familyId === selectedId ? 'is-selected' : ''}
             >
               <summary>
@@ -77,7 +78,7 @@ export function LibraryHierarchy({
               >
                 {document.versions.map((version) => (
                   <li key={version.documentVersionId}>
-                    <DocumentVersionLink version={version}>
+                    <DocumentVersionLink version={version} familyId={document.familyId}>
                       <strong>{libraryVersionLabel(version)}</strong>
                       <span>
                         {version.selectedVersionIsCurrent
@@ -114,6 +115,7 @@ export function LibraryHierarchy({
           .filter(([, value]) => Boolean(value))
           .map(([key, value]) => `${key === 'normalizedFamily' ? '类别' : key === 'ata' ? 'ATA' : key === 'fleetFamily' ? '父机型' : key === 'fleetModel' ? '子机型' : '机型'} ${value === '__UNKNOWN__' ? '未分类' : value}`).join(' / ');
         return <details key={`${group.dimension}:${group.key}`} open={depth === 0 || Boolean(filters[facet])}
+          data-reading-key={`group:${JSON.stringify(group.pathFilters)}`}
           data-facet={facet} data-facet-value={group.key}>
           <summary>
             <span className="library-branch-label"><small>{labelFor(group.dimension)}</small><strong>{group.label}</strong></span>

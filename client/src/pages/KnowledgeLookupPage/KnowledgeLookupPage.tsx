@@ -3,7 +3,6 @@ import { useNavigate, useSearchParams } from 'react-router-dom';
 import type {
   CanonicalEntryQueryResponse,
   CanonicalLibraryIndexReadResponse,
-  CanonicalLibraryIndexNode,
   UnifiedReaderQueryResult,
 } from '@shared/api.interface';
 import {
@@ -28,13 +27,12 @@ import {
 } from '@client/src/components/ui/select';
 
 import './knowledge-lookup.css';
-
-interface DocumentVersionOption {
-  versionId: string;
-  label: string;
-  detail: string;
-  isCurrent: boolean;
-}
+import EngineeringIssueSearch from '@client/src/features/matter/EngineeringIssueSearch';
+import { useCurrentUserSession } from '@client/src/app/providers/CurrentUserSessionProvider';
+import {
+  buildVersionOptions,
+  type DocumentVersionOption,
+} from './version-options';
 
 interface QueryPhase {
   searching: boolean;
@@ -61,41 +59,6 @@ function errorCodeOf(error: unknown): string {
   return 'READ_FAILED';
 }
 
-function buildVersionOptions(
-  index: CanonicalLibraryIndexReadResponse,
-): DocumentVersionOption[] {
-  const currentDocumentVersionId: string =
-    index.currentness.currentDocumentVersionId ?? '';
-  const options: DocumentVersionOption[] = [];
-  const seen: Set<string> = new Set<string>();
-
-  const versionNodes: CanonicalLibraryIndexNode[] =
-    index.libraryIndex.nodes.filter(
-      (node: CanonicalLibraryIndexNode): boolean =>
-        node.kind === 'DOCUMENT_VERSION' && node.id.trim() !== '',
-    );
-  for (const node of versionNodes) {
-    seen.add(node.id);
-    options.push({
-      versionId: node.id,
-      label: node.label || node.id,
-      detail: node.detail,
-      isCurrent: node.id === currentDocumentVersionId,
-    });
-  }
-
-  const selectedVersionId: string = index.document.documentVersionId;
-  if (selectedVersionId && !seen.has(selectedVersionId)) {
-    options.unshift({
-      versionId: selectedVersionId,
-      label: index.document.documentCode || selectedVersionId,
-      detail: index.document.businessRevision,
-      isCurrent: selectedVersionId === currentDocumentVersionId,
-    });
-  }
-  return options;
-}
-
 function primarySourceRef(result: UnifiedReaderQueryResult): string {
   const firstRef: string | undefined = result.sourceRefIds[0];
   if (firstRef) return firstRef;
@@ -109,6 +72,23 @@ function summarize(text: string): string {
 }
 
 export default function KnowledgeLookupPage() {
+  const { sessionGeneration, authenticationRequired } = useCurrentUserSession();
+  const [showUnits, setShowUnits] = useState(false);
+  return <main className="knowledge-lookup" aria-label="工程知识">
+    <header className="knowledge-lookup-header"><h1 className="knowledge-lookup-title">工程知识</h1>
+      <p>原文与已保存工程工作分别检索，问题全文与来源保持准确版本。</p>
+    </header>
+    {authenticationRequired ? <p role="alert">请先登录，再读取当前账户有权查看的工程知识。</p> : <>
+      <EngineeringIssueSearch key={`search:${sessionGeneration}`} readOnly />
+      <details className="mt-6 rounded-xl border border-border p-4" onToggle={event => setShowUnits(event.currentTarget.open)}>
+        <summary>按文档任务与准确版本查询解析单元</summary>
+        {showUnits ? <ParsedUnitLookup key={`units:${sessionGeneration}`} /> : null}
+      </details>
+    </>}
+  </main>;
+}
+
+function ParsedUnitLookup() {
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
 
@@ -273,7 +253,7 @@ export default function KnowledgeLookupPage() {
       return (
         <div className="knowledge-lookup">
           <header className="knowledge-lookup-header">
-            <h1 className="knowledge-lookup-title">工程知识</h1>
+            <h2 className="knowledge-lookup-title">解析单元查询</h2>
           </header>
           <div className="knowledge-lookup-blocked">
             <p className="knowledge-lookup-blocked-title">事项范围读取受阻</p>
@@ -290,14 +270,14 @@ export default function KnowledgeLookupPage() {
     return (
       <div className="knowledge-lookup">
         <header className="knowledge-lookup-header">
-          <h1 className="knowledge-lookup-title">工程知识</h1>
+          <h2 className="knowledge-lookup-title">解析单元查询</h2>
           <p className="knowledge-lookup-subtitle">
-            基于当前事项的已解析单元进行知识查阅
+            仅查询所选文档任务与准确版本的解析单元
           </p>
         </header>
         <div className="knowledge-lookup-empty" data-ai-section-type="card-menu">
           <p className="knowledge-lookup-empty-text">
-            工程知识按事项范围组织。请先在资料库选择事项。
+            此子查询需要文档任务。可先在资料库选择任务；上方原文与工程工作检索不受此限制。
           </p>
           <Button data-ai-section-type="button" onClick={goToLibrary}>
             去资料库
@@ -310,9 +290,9 @@ export default function KnowledgeLookupPage() {
   return (
     <div className="knowledge-lookup">
       <header className="knowledge-lookup-header">
-        <h1 className="knowledge-lookup-title">工程知识</h1>
+        <h2 className="knowledge-lookup-title">解析单元查询</h2>
         <p className="knowledge-lookup-subtitle">
-          基于当前事项的已解析单元进行知识查阅
+          仅查询所选文档任务与准确版本的解析单元
         </p>
       </header>
 

@@ -49,6 +49,8 @@ interface LibraryDocumentDirectoryProps {
   filters?: LibraryCatalogFilters;
   fleet?: LibraryFleetRead;
   onFilterChange?: (filters: LibraryCatalogFilters) => void;
+  presentation?: { grouping: LibraryGrouping; view: 'list' | 'tree' };
+  onPresentationChange?: (value: { grouping: LibraryGrouping; view: 'list' | 'tree' }) => void;
 }
 
 export function LibraryDocumentDirectory({
@@ -67,9 +69,15 @@ export function LibraryDocumentDirectory({
   filters = {},
   fleet,
   onFilterChange,
+  presentation,
+  onPresentationChange,
 }: LibraryDocumentDirectoryProps) {
-  const [grouping, setGrouping] = useState<LibraryGrouping>('category');
-  const [catalogView, setCatalogView] = useState<'list' | 'tree'>('list');
+  const [localGrouping, setLocalGrouping] = useState<LibraryGrouping>('category');
+  const [localView, setLocalView] = useState<'list' | 'tree'>('list');
+  const grouping = presentation?.grouping ?? localGrouping;
+  const catalogView = presentation?.view ?? localView;
+  const setGrouping = (value: LibraryGrouping) => onPresentationChange ? onPresentationChange({ grouping: value, view: catalogView }) : setLocalGrouping(value);
+  const setCatalogView = (value: 'list' | 'tree') => onPresentationChange ? onPresentationChange({ grouping, view: value }) : setLocalView(value);
   const taskMode = mode === 'tasks';
   const filtered = Boolean(search || Object.values(filters).some(Boolean));
   const label = taskMode ? '评估任务' : '工程文档';

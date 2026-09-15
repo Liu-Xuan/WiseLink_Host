@@ -7,7 +7,7 @@ import {
 } from '@client/src/api/engineering-matter';
 import { getCanonicalHostClientSessionGeneration } from '@client/src/api/canonical-host';
 import { writeReviewDraft } from '@client/src/features/review/review-draft-store';
-import { clearReadingLocation } from './reading-location';
+import { clearMatterReadingLocations } from './reading-location';
 
 interface MatterReadState {
   matterId: string;
@@ -62,7 +62,7 @@ export default function useEngineeringMatter(
         error?.statusCode === 404;
       if (revoked) {
         writeReviewDraft(`matter:${matterId}`, '', sessionGeneration);
-        clearReadingLocation(`matter:${matterId}`);
+        clearMatterReadingLocations(matterId);
       }
       setState((previous: MatterReadState | null) => ({
         ...(revoked ? empty : (previous ?? empty)),
