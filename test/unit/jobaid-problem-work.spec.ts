@@ -4,7 +4,8 @@ import { collectEvidenceUses } from '@shared/jobaid-evidence-uses';
 import { materializeJobAidWork, calculateJaAcRisk } from '../../server/modules/canonical-host/jobaid-problem-work';
 import { JOBAID_METHOD_BINDING } from '../../server/modules/canonical-host/jobaid-method-pack';
 import { materializeMatterJobAidCommand } from '../../server/modules/canonical-host/matter-jobaid-save';
-import { materializeEngineeringMatterWorkingState, parseEngineeringMatterWorkingState } from '../../server/modules/canonical-host/engineering-matter-working-state';
+import { engineeringMatterPendingInputs, engineeringMatterWorkingChangeFromCommand, materializeEngineeringMatterWorkingState, parseEngineeringMatterWorkingState } from '../../server/modules/canonical-host/engineering-matter-working-state';
+import type { EngineeringMatterWorkingRevisionReadModel } from '@shared/matter-working.interface';
 import { buildWorkSearchProjection } from '../../server/modules/canonical-host/engineering-search-projection';
 import { readHistoricalJobAidWork } from '../../server/modules/canonical-host/jobaid-historical-reading';
 const source: AssessmentEvidence = { evidenceRef:'DOCUMENT_ORIGINAL:dv:pr1:u1', kind:'DOCUMENT_PASSAGE', workItemId:null,
@@ -84,11 +85,39 @@ test('normal Matter command materializes, validates and reads the same body with
   // No synthetic DB writes: use the actual command and state validators.
   const command=materializeMatterJobAidCommand(input);
   const {state}=materializeEngineeringMatterWorkingState({matterId:'MAT-test',current:null,command});
+  expect(state.focus.question).toBe('问题A');
   expect(parseEngineeringMatterWorkingState(JSON.stringify(state),'MAT-test').problemWork?.issues[0].body).toBe(issue('A').body);
   expect(state.substantiveResult?.content.issueArticles?.[0].body).toBe(issue('A').body);
   expect(state.substantiveResult?.evidence[0]).toEqual(source);
   const tampered=structuredClone(state);tampered.substantiveResult!.content.issueArticles![0].body='偷偷改写';
   expect(()=>parseEngineeringMatterWorkingState(JSON.stringify(tampered),'MAT-test')).toThrow('PROBLEM_READING_MISMATCH');
+  const previous: EngineeringMatterWorkingRevisionReadModel={matterWorkRevisionId:'MW1',matterId:input.matterId,
+    workingRevision:1,basedOnMatterRevisionId:'MR1',updateKind:command.updateKind,changeSummary:command.changeSummary,
+    substantiveResultRef:state.substantiveResult!.resultRef,substantiveResultRevision:1,state,
+    change:engineeringMatterWorkingChangeFromCommand(command),source:null,createdAt:'2026-09-15T00:00:00Z'};
+  const extraSource={...source,evidenceRef:'DOCUMENT_ORIGINAL:dv:pr1:u2',sourceRefId:'u2',locator:'page 2'};
+  const overviewInput={...input,previous,expectedWorkRevision:1,requestId:'save2',attemptRef:'AQ2',
+    proposal:update([],{overview:'综合：五秒前提尚待核查。'}),evidence:[source,extraSource],
+    readSourceRefs:[source.evidenceRef,extraSource.evidenceRef],currentReadSourceRefs:[extraSource.evidenceRef]};
+  const overviewCommand=materializeMatterJobAidCommand(overviewInput);
+  const overviewState=materializeEngineeringMatterWorkingState({matterId:input.matterId,current:state,command:overviewCommand}).state;
+  expect(overviewState.problemWork?.issues).toEqual(state.problemWork?.issues);
+  expect(overviewState.problemWork?.overviewStatus).toBe('CURRENT');
+  expect(overviewState.coverage[0]).toMatchObject({contribution:'SUBSTANTIVE',checkedSourceRefIds:['u1','u2'],reason:state.coverage[0].reason});
+  expect(overviewState.coverage[0].checkedScope).toContain('另读取但未新增分析：page 2');
+  expect(engineeringMatterPendingInputs(overviewState,input.inputs)).toEqual([]);
+  const explicit=materializeMatterJobAidCommand({...overviewInput,proposal:update([],{overview:'综合：仍需核查。',inputDispositions:[{
+    inputId:'I1',contribution:'READ_ONLY',checkedEvidenceRefs:[extraSource.evidenceRef],checkedScope:'page 2',reason:'仅阅读'}]})});
+  expect(explicit.coverageUpdates[0].contribution).toBe('READ_ONLY');
+  for(const changedOriginal of [ {...input.inputs[0].original,semantic:{revision:2,profileRef:'ftd'}},
+    {...input.inputs[0].original,parseRunId:'pr2',parseRevision:2} ]) {
+    const nextSource={...extraSource,evidenceRef:`DOCUMENT_ORIGINAL:dv:${changedOriginal.parseRunId}:u2`};
+    const changed=materializeMatterJobAidCommand({...overviewInput,inputs:[{...input.inputs[0],original:changedOriginal}],
+      evidence:[source,nextSource],readSourceRefs:[source.evidenceRef,nextSource.evidenceRef],currentReadSourceRefs:[nextSource.evidenceRef]});
+    expect(changed.coverageUpdates[0].contribution).toBe('READ_ONLY');
+    const changedState=materializeEngineeringMatterWorkingState({matterId:input.matterId,current:state,command:changed}).state;
+    expect(engineeringMatterPendingInputs(changedState,[{...input.inputs[0],original:changedOriginal}])[0].reasons).toContain('READ_NOT_PROCESSED');
+  }
 });
 
   test('calculates the sixteen original matrix cells, with five grades and no other matrix substitution', () => {
