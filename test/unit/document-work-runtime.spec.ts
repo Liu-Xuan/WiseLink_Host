@@ -1,3 +1,4 @@
+import { documentOriginalReadingCoverage, documentOriginalStructuredSource } from '../../server/modules/document-management/src/hosted/nest/document-original-adapter';
 import { DocumentWorkRuntimeService } from '../../server/modules/canonical-host/document-work-runtime.service';
 import { buildDocumentSemanticMap } from '../../server/modules/document-management/src/hosted/nest/document-semantic-map';
 import { GENERIC_SEMANTIC_PROFILE } from '../../server/modules/document-management/src/hosted/nest/document-semantic-profile';
@@ -36,7 +37,7 @@ describe('authorized document step runtime', () => {
     f.parsing.loadPublished.mockResolvedValue(loaded);
     const result = await f.service.readOriginal({ documentVersionId: 'DV', parseRunId: 'run', limit: 1 });
     expect(result.units).toEqual(original.source.units.slice(0, 1));
-    expect(result.coverage).toEqual(original.coverage);
+    expect(result.coverage).toEqual(documentOriginalReadingCoverage(original));
     expect(result.artifact).toEqual({ ref: 'document-original://DV/run', sha256: 'a'.repeat(64), byteLength: 1234, mediaType: 'application/json' });
     expect(f.parsing.loadPublished).toHaveBeenCalledWith('DV', 'run', expect.objectContaining({ actorUserId: 'actor', tenantId: 'tenant' }));
     original.binding.parseRunId = 'new-run';
@@ -66,9 +67,33 @@ describe('authorized document step runtime', () => {
     const second = await f.service.readOriginal({ ...input, semanticRevision: 2, offset: 1 });
     expect(second.units[0].unitId).toBe('u2');
     expect(second.nextOffset).toBeNull();
-    expect(second.coverage).toEqual(original.coverage);
+    expect(second.coverage).toEqual(documentOriginalReadingCoverage(original));
     f.semantics.read.mockRejectedValueOnce(new Error('DOCUMENT_SEMANTIC_REVISION_NOT_FOUND'));
     await expect(f.service.readOriginal({ ...input, semanticRevision: 99 })).rejects.toThrow('DOCUMENT_SEMANTIC_REVISION_NOT_FOUND');
+  });
+
+  it('projects actual reading limitations without treating parser diagnostics as unread content', async () => {
+    const f = fixture();
+    const original = originalFixture();
+    Object.assign(original.binding, { documentVersionId: 'DV', parseRunId: 'run' });
+    original.coverage.unresolvedRanges.push({ pageIndexes: [0], unitIds: ['u1'], reason: 'STRUCTURE_UNCERTAIN',
+      readingImpact: 'DIAGNOSTIC', message: 'Candidate alignment observation; text remains readable.' });
+    const map = buildDocumentSemanticMap({ original, semanticRevision: 2, profile: GENERIC_SEMANTIC_PROFILE });
+    const loaded = { original, structuredSource: documentOriginalStructuredSource(original, original.binding),
+      run: { parseRunId: 'run', manifestArtifact: { relativePath: 'original/manifest.json', readback: 'VERIFIED',
+        sha256: 'a'.repeat(64), byteLength: 10 } } };
+    const before = structuredClone(original);
+    f.parsing.loadPublished.mockResolvedValue(loaded);
+    f.semantics.read.mockResolvedValue(map);
+    const reading = await f.service.readOriginal({ documentVersionId: 'DV', parseRunId: 'run' });
+    expect(reading.units).toEqual(original.source.units);
+    expect(reading.coverage.unresolvedRanges).toHaveLength(2);
+    expect(reading.coverage.unresolvedRanges.map(range => range.reason)).toEqual(['STRUCTURE_UNCERTAIN', 'UNREAD']);
+    expect(reading.semanticMap?.unresolvedRanges).toEqual(reading.coverage.unresolvedRanges);
+    expect(reading.findings.every(finding => finding.readingImpact === 'LIMITATION')).toBe(true);
+    expect(JSON.stringify({ coverage: reading.coverage, findings: reading.findings })).not.toContain('Candidate alignment');
+    expect(original).toEqual(before);
+    expect(f.parsing.executeStep).not.toHaveBeenCalled();
   });
 
   it('rechecks source permission before leasing and rejects stale run identities', async () => {

@@ -39,6 +39,30 @@ describe('engineering issue correction plugin (isolated provider doubles)', () =
   });
   const assertActive = jest.fn(async () => undefined);
 
+  it('corrects only the overview and completion explanation through its bounded official instance', async () => {
+    const source = makeContext();
+    const context = { overview: 'Old overview [[EV1]].', completionReason: 'Open question remains.',
+      roundCompletion: 'COMPLETE_WITH_OPEN_QUESTIONS' as const, correctionReason: source.correctionReason,
+      issues: [{ question: source.question, body: source.body, ...source.structuredContext,
+        issueKey: 'private-issue-key' }], evidence: source.evidence, limitations: source.limitations,
+      actorUserId: 'private-actor' };
+    call.mockResolvedValue({ overview: 'Bounded overview [[EV1]].', completionReason: 'Still conditional.', changeSummary: 'Fix scope.' });
+    const result = await service.generateOverview(context, assertActive);
+    expect(load).toHaveBeenCalledWith('wl-engineering-overview-correction');
+    expect(result.producer.instanceId).toBe('wl-engineering-overview-correction');
+    expect(result.overview).toBe('Bounded overview [[EV1]].');
+    const supplied = JSON.parse(call.mock.calls[0][1].correctionContextJson);
+    expect(supplied.overview).toBe(context.overview);
+    expect(supplied.issues[0].body).toBe(source.body);
+    expect(JSON.stringify(supplied)).not.toContain('private-actor');
+    expect(JSON.stringify(supplied)).not.toContain('private-issue-key');
+    expect(assertActive).toHaveBeenCalledTimes(2);
+    call.mockResolvedValueOnce({ overview: 'Bad [[UNREAD]].', completionReason: 'Unknown.', changeSummary: 's' });
+    await expect(service.generateOverview(context, assertActive)).rejects.toThrow('ENGINEERING_CORRECTION_SOURCE_NOT_DELIVERED');
+    call.mockResolvedValueOnce({ overview: 'Good [[EV1]].', completionReason: 'Unknown.', changeSummary: 's', roundCompletion: 'COMPLETE' });
+    await expect(service.generateOverview(context, assertActive)).rejects.toThrow('ENGINEERING_CORRECTION_OUTPUT_INVALID');
+  });
+
   it('delivers the validated body and changeSummary with OFFICIAL_PLUGIN provenance', async () => {
     call.mockResolvedValue({ requirementHandling: [], openQuestions: [], body: 'Corrected body [[EV1]].', changeSummary: 'Fixed torque unit.' });
     const result = await service.generate(makeContext(), assertActive);

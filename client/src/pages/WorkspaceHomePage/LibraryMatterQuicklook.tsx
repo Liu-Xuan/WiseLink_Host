@@ -10,6 +10,7 @@ import {
 } from '@client/src/features/matter/matter-navigation';
 import MatterProblemWork from '@client/src/features/matter/MatterProblemWork';
 import OverviewCorrectionNotices from '@client/src/features/matter/OverviewCorrectionNotices';
+import OverviewSourceWork from '@client/src/features/matter/OverviewSourceWork';
 import ReferenceWorkNotices from '@client/src/features/matter/ReferenceWorkNotices';
 import type { DocumentAssessmentEvidence } from '@client/src/features/matter/assessment-reading';
 import type { EngineeringMatterWorkspaceRead } from '@client/src/api/engineering-matter';
@@ -44,6 +45,9 @@ export function LibraryMatterQuicklookContent({
               showReferenceNotices={false}
             />
           </>
+        ) : null}
+        {!problemWork ? (
+          <OverviewSourceWork matterId={data.matter.matterId} source={current?.overviewSourceWork} overviewStatus={result ? undefined : 'NOT_AVAILABLE'} />
         ) : null}
         {!problemWork ? (
           <OverviewCorrectionNotices
@@ -136,6 +140,7 @@ export function LibraryMatterQuicklookContent({
         )}
       </section>
       <div className="atlas-library-inspector-actions">
+        <Button asChild><Link to={`/matters/${encodeURIComponent(data.matter.matterId)}/posture`}>工程态势</Link></Button>
         <Button asChild>
           <Link to={matterOverviewRoute(data.matter.matterId)}>
             进入事项简报 <ArrowRight aria-hidden="true" />

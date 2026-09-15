@@ -60,7 +60,7 @@ export function buildMatterJobAidTask(input: {
   };
   return {
     schemaVersion: MATTER_JOBAID_TASK_SCHEMA,
-    correction: null as MatterIssueCorrectionPurpose | null,
+    correction: null as MatterIssueCorrectionPurpose | MatterOverviewCorrectionPurpose | null,
     overviewCorrection: null as MatterOverviewCorrectionPurpose | null,
     referenceWorks: [] as MatterWorkReferenceRequest[],
     recovery: null as { attemptRef: string; inputHash: string } | null,
@@ -77,6 +77,7 @@ export function buildMatterJobAidTask(input: {
         attemptStatus: notice.attemptStatus, unchanged: notice.unchanged === true,
       })),
       knownOverviewCorrections: structuredClone(input.previous?.overviewCorrectionNotices ?? []),
+      overviewSourceWork: structuredClone(input.previous?.overviewSourceWork ?? null),
       overviewCorrection: null as MatterOverviewCorrectionPurpose | null,
       focus: input.previous?.state.focus ?? null,
       trigger: structuredClone(input.trigger),

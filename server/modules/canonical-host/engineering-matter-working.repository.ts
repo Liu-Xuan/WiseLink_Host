@@ -939,6 +939,43 @@ async function authorizedReadModel(
     workItemIds,
     documentVersionIds,
   );
+  // Resolve the last explicit saved overview, using the same authorized history.
+  // A status flag or matching save time cannot identify the work that supplied it.
+  // Never reach backward across a different/absent overview merely because older
+  // prose happens to match again; historical rows without receipts stay unknown.
+  revision.overviewSourceWork = null;
+  if (revision.state.problemWork && revision.state.problemWork.overviewStatus !== 'NOT_AVAILABLE') {
+    const overview = revision.state.problemWork.understanding;
+    const [origin] = await executor.execute<{ workRef: string; workingRevision: number; submittedOverview: string }>(sql`
+      SELECT w.matter_work_revision_id AS "workRef", w.working_revision AS "workingRevision",
+        receipt -> 'proposal' ->> 'overview' AS "submittedOverview"
+      FROM engineering_matter_work_revision w
+      JOIN action_attempt a ON a.attempt_id = w.action_attempt_id
+        AND a.tenant_id = w.tenant_id AND a.matter_id = w.matter_id
+      CROSS JOIN LATERAL jsonb_array_elements(COALESCE(a.review_activity_json::jsonb, '[]'::jsonb)) receipt
+      WHERE w.tenant_id = ${row.tenantId} AND w.matter_id = ${row.matterId}
+        AND w.created_by_user_id = ${row.createdByUserId}
+        AND w.working_revision <= ${row.workingRevision}
+        AND w.state_json::jsonb -> 'problemWork' ->> 'understanding' = ${overview}
+        AND receipt ->> 'kind' = 'MATTER_JOBAID_WORK_SAVED'
+        AND receipt ->> 'workRevisionRef' = w.matter_work_revision_id
+        AND receipt ->> 'requestId' = w.request_id
+        AND receipt -> 'expectedWorkRevision' = to_jsonb(w.working_revision - 1)
+        AND jsonb_typeof(receipt -> 'proposal' -> 'overview') = 'string'
+        AND NOT EXISTS (
+          SELECT 1 FROM engineering_matter_work_revision later
+          WHERE later.tenant_id = w.tenant_id AND later.matter_id = w.matter_id
+            AND later.working_revision > w.working_revision AND later.working_revision <= ${row.workingRevision}
+            AND (later.state_json::jsonb -> 'problemWork' ->> 'understanding' IS DISTINCT FROM ${overview}
+              OR later.state_json::jsonb -> 'problemWork' ->> 'overviewStatus' = 'NOT_AVAILABLE')
+        )
+      ORDER BY w.working_revision DESC LIMIT 1
+    `);
+    if (origin) {
+      if (origin.submittedOverview.trim() !== overview) throw workingPersistenceError();
+      revision.overviewSourceWork = { workRef: origin.workRef, workingRevision: origin.workingRevision };
+    }
+  }
   // A saved B explanation does not keep A readable after A or its original inputs are revoked.
   // Walk exact immutable work identities, not the latest analysis or a detached excerpt.
   const checkedReferences = new Map<string, string>();

@@ -3,6 +3,7 @@ import { JobAidIssueArticle } from '@client/src/pages/DocumentParsingPage/JobAid
 import type { DocumentAssessmentEvidence } from './assessment-reading';
 import ReferenceWorkNotices from './ReferenceWorkNotices';
 import OverviewCorrectionNotices from './OverviewCorrectionNotices';
+import OverviewSourceWork from './OverviewSourceWork';
 import '@client/src/pages/DocumentParsingPage/jobaid-problem-workspace.css';
 
 export default function MatterProblemWork({
@@ -34,6 +35,7 @@ export default function MatterProblemWork({
             : '问题正文可读；综合尚未形成。'}
         </p>
       ) : null}
+      <OverviewSourceWork matterId={revision.matterId} source={revision.overviewSourceWork} overviewStatus={work.overviewStatus} />
       <OverviewCorrectionNotices
         matterId={revision.matterId}
         notices={revision.overviewCorrectionNotices}
