@@ -63,7 +63,8 @@ export class EngineeringIssueCorrectionPluginService {
         requirementHandling: structuredClone(issue.requirementHandling), openQuestions: structuredClone(issue.openQuestions) })),
       evidence: context.evidence.map(item => ({ evidenceRef: item.evidenceRef, text: item.text,
         kind: item.kind, title: item.title, versionLabel: item.versionLabel, locator: item.locator })),
-      limitations: [...context.limitations],
+      limitations: [...context.limitations,
+        '本次可引用来源仅限 evidence 数组中的 evidenceRef。overview 或 completionReason 必须在实际更正的事实旁至少使用一个完整 [[evidenceRef]]，逐字复制标识，不缩写、不用标题或文件编号替代。issues 中的旧引用若未出现在 evidence 中，仅为历史待核对认识的定位，不能作为本次已交付来源引用或宣称重新核实。'],
     };
     if (!supplied.overview.trim() || !supplied.correctionReason.trim() || !supplied.issues.length ||
         !supplied.evidence.length || supplied.evidence.some(item => !item.evidenceRef.trim() || !item.text.trim()) ||
@@ -81,7 +82,8 @@ export class EngineeringIssueCorrectionPluginService {
     if (stripped.includes('[[') || stripped.includes(']]')) throw new Error('ENGINEERING_CORRECTION_CITATION_MALFORMED');
     const refs = [...body.matchAll(/\[\[([^\[\]\r\n]+)\]\]/gu)].map(match => match[1]);
     const delivered = new Set(supplied.evidence.map(item => item.evidenceRef));
-    if (!refs.length || refs.some(ref => !delivered.has(ref))) throw new Error('ENGINEERING_CORRECTION_SOURCE_NOT_DELIVERED');
+    if (!refs.length) throw new Error('ENGINEERING_CORRECTION_CITATION_REQUIRED');
+    if (refs.some(ref => !delivered.has(ref))) throw new Error('ENGINEERING_CORRECTION_SOURCE_NOT_DELIVERED');
     return { ...result.data, producer: { kind: 'OFFICIAL_PLUGIN' as const, instanceId: overviewInstanceId,
       pluginVersion: config.pluginVersion, actionKey: 'textToJson' as const, concreteModel: null } };
   }

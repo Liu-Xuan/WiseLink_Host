@@ -111,6 +111,33 @@ test('normal Matter command materializes, validates and reads the same body with
   const explicit=materializeMatterJobAidCommand({...overviewInput,proposal:update([],{overview:'综合：仍需核查。',inputDispositions:[{
     inputId:'I1',contribution:'READ_ONLY',checkedEvidenceRefs:[extraSource.evidenceRef],checkedScope:'page 2',reason:'仅阅读'}]})});
   expect(explicit.coverageUpdates[0].contribution).toBe('READ_ONLY');
+  // Constructed formal R2: compare and cover the new version without rebinding the R1 finding.
+  const revisedBinding={...input.inputs[0],documentVersionId:'dv-r2',
+    original:{parseRunId:'pr-r2',parseRevision:1,semantic:{revision:1,profileRef:'ftd'}}};
+  const revisedSource={...source,documentVersionId:'dv-r2',evidenceRef:'DOCUMENT_ORIGINAL:dv-r2:pr-r2:u1',
+    versionLabel:'CONSTRUCTED R2',title:'Synthetic FTD R2'};
+  const revisedInput={...input,previous,expectedWorkRevision:1,matterRevisionId:'MR2',requestId:'save-r2',attemptRef:'AQ-r2',
+    inputs:[revisedBinding],evidence:[source,revisedSource],readSourceRefs:[source.evidenceRef,revisedSource.evidenceRef],
+    currentReadSourceRefs:[revisedSource.evidenceRef],proposal:update([],{inputDispositions:[{
+      inputId:'I1',contribution:'NO_MATERIAL_CHANGE',checkedEvidenceRefs:[revisedSource.evidenceRef],
+      checkedScope:'Constructed R2 page 1; only the five-second condition compared',reason:'The compared condition is unchanged; remaining R2 pages have not been assessed.'}]})};
+  expect(()=>materializeMatterJobAidCommand({...revisedInput,currentReadSourceRefs:[source.evidenceRef]}))
+    .toThrow('MATTER_INPUT_DISPOSITION_SOURCE_NOT_READ');
+  const revisedCommand=materializeMatterJobAidCommand(revisedInput);
+  const revised=materializeEngineeringMatterWorkingState({matterId:input.matterId,current:state,command:revisedCommand});
+  expect(revised.coverageChanged).toBe(true);
+  expect(revised.resultChanged).toBe(false);
+  expect(revised.state.problemWork).toEqual(state.problemWork);
+  expect(revised.state.substantiveResult).toBe(state.substantiveResult);
+  expect(revised.state.coverage[0]).toMatchObject({binding:revisedBinding,contribution:'NO_MATERIAL_CHANGE',checkedSourceRefIds:['u1']});
+  expect(revised.state.coverage[0].reason).toContain('remaining R2 pages have not been assessed');
+  expect(engineeringMatterPendingInputs(revised.state,[revisedBinding])).toEqual([]);
+  expect(parseEngineeringMatterWorkingState(JSON.stringify(revised.state),input.matterId).problemWork?.evidence)
+    .toEqual(state.problemWork?.evidence);
+  expect(state.coverage[0].binding.documentVersionId).toBe('dv');
+  const thirdBinding={...revisedBinding,documentVersionId:'dv-r3',original:{...revisedBinding.original,parseRunId:'pr-r3'}};
+  expect(engineeringMatterPendingInputs(revised.state,[thirdBinding])[0]).toMatchObject({
+    covered:revisedBinding,current:thirdBinding,reasons:expect.arrayContaining(['DOCUMENT_VERSION_CHANGED'])});
   for(const changedOriginal of [ {...input.inputs[0].original,semantic:{revision:2,profileRef:'ftd'}},
     {...input.inputs[0].original,parseRunId:'pr2',parseRevision:2} ]) {
     const nextSource={...extraSource,evidenceRef:`DOCUMENT_ORIGINAL:dv:${changedOriginal.parseRunId}:u2`};

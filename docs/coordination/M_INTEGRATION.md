@@ -1,5 +1,35 @@
 # M 主控集成交接
 
+## 2026-09-16 综合生成引用失败与 T2 选择性集成
+
+新 AQ-6bc32de118ce4891a4bc22e8baa9397e 于22:55:00.163Z终止FAILED，terminalReason=ENGINEERING_CORRECTION_SOURCE_NOT_DELIVERED，仅STARTED、无GENERATED/SAVE。官方插件日志确认textToJson正常返回（40,022ms），输出日志本身被平台截断，无法据此恢复完整候选。旧错误码同时覆盖零引用与引用未交付来源，不能断言具体是哪一种。实际封存输入的综合/完成说明没有引用，问题正文有46个引用，其中43个不在本次3段已交付来源内。输入已说明问题是待核对认识；本次进一步明确仅evidence中的完整引用可用，并须在更正事实旁提供引用。Host保持来源集合校验，将零引用单独记为CITATION_REQUIRED，未增加重试或放行。26项单测、服务端类型、定向ESLint通过；旧失败不重放。
+
+前端9fb的7个client文件及必要chronology-samples依赖已选择性集成，排除服务端schema/浅转换和平台升级。修复条目+声明URL恢复、图节点保留具体声明、隔离来源示意准确返回；不以假ID调用真实Reader，也不写生产readingReturnTarget。500飞行小时条件标为TARGET。3项React DOM/MemoryRouter交互测试、client类型和定向ESLint通过；主控补充JSDOM 26.1.0为锁定开发依赖，避免测试依赖临时NODE_PATH而在正常安装后失败。主控审阅完成，本地浏览器访问被ERR_BLOCKED_BY_CLIENT拦截，视觉验收仍待完成。T2真实来源/关系合同和T1活动声明生产仍未完成；样例不冒充业务验收。
+
+## 2026-09-16 Host 获授权发布完成，新综合更正已领取
+
+用户明确授权后，原Host发布7685891700875627460已finished，实际commit为8fb9cd7d7f86c41501e5506c3e795166e90bf73f，与origin待发布分支一致。发布中的旧commit字段不作完成依据；完成后才确认新版本。真实页面新读模型显示当前保留综合最后明确保存于工作8，并跳转准确MWREV。只读核对当前事项修订2、工作8、零在途后，经已安装c109与现有MCP正常begin登记wl-work8-overview-plugin-20260916；未重放旧失败AQ、未直接写工作或改动模型配置。新AQ-6bc32de118ce4891a4bc22e8baa9397e / ATT-ceccabe0-ff1b-444d-b1c5-9bcddb03abad于2026-09-15T22:54:14.628Z被原调度领取，首个事件MATTER_ISSUE_CORRECTION_STARTED，当前RUNNING。三段已交付原文与工作8已重新核对；尚不声称生成或保存完成。
+
+用户转交的前端9fb472c074d069de2d2520dfae5bbc9c208ffb87已取得。其所在分支已被平台升级至636f72afc7381697f975625c2f5697e9cc02fd3c，M授权保留现有历史以同名普通快进转交到妙搭origin，实际远端已核对。云端注入的双URL中凭据URL被原钩子拒绝、清洁URL通过原钩子并更新；未跳过钩子或移动分支指针。代码接受独立于转交：不接受该提交中schema再生成、服务端浅类型转换或后继平台升级，仅审阅指定前端和必要依赖。原样例缺少具体声明选择与实际返回入口，且会以假ID进入真实API读取；medium子任务正在作有界修复，M负责后续浏览器核验。
+
+## 2026-09-16 c109 自然运行读回与 T1 实际接线核对
+
+Hosted终端连接中断后，页面自动重连失败；按提示重新加载窗口后恢复原应用访问。2026-09-15T18:30:42.203815Z官方cron只读返回六项原job全部enabled=true、lastStatus=ok、consecutiveErrors=0、runningAtMs=null，nextRun正常推进。未重新安装、启停调度、强制run或创建业务。这证明安装后的原调度实际执行正常，不证明未发布Host的新idle/来源边界已生效，也不把cron ok解释成新工程内容保存成功。
+
+P按medium完成有界只读核对；M同时核对当前服务实现。正式解析产物与DocumentSemanticMap目前只有来源绑定、章节/角色、单元及覆盖；milestones是章节，CanonicalTimelineProjection仍是技术事件。没有可直接复用的已保存活动/预计声明或跨版本活动身份。现有DocumentSourceProjectionService.step有授权原文读取与纯结构ensure，DocumentSemanticRevisionRepository有原文绑定/CAS修订存储；但ensure已存在即返回，不能靠修改builder宣称旧产物自动升级，更不能在普通索引重试或GET中偷偷增加模型抽取。后续T1需显式、有回执的生产/补产入口与窄声明合同，再接真实消费者；保留原文字面、section/unit/SourceRef、时间含义和精度、已读范围及身份关联依据，季度/TBD/后版未提均不能补成推断事实。当前仍未完成T1生产与持久化，HTML样例不作真实证据；P本轮未取得可复查的真实同活动版本链。
+
+## 2026-09-16 换版处理指导接入实际任务（本地，未发布）
+
+补充隔离验证：实际 JobAid 保存命令→工作状态校验→序列化读取串联构造R1/R2/R3。旧版读取记录不能满足新版NO_MATERIAL_CHANGE处置；新版实际读取和明确比较后保存新版绑定与有限覆盖，旧正文、旧SourceRef及结果保持不变；第三版仍产生新的pending。原状态未被修改。`jobaid-problem-work.spec.ts` 9项通过，其中扩展了现有完整保存场景；不证明厂家修订说明读取质量或真实两版评估完成。
+
+继续核对第二批发现：现有 `sourceChanges.covered/current` 已携带前后来源绑定，同family材料延续也已有隔离PG场景；不能重复认定这两项缺失。但实际 Matter JobAid 输入尚未明确本版修订说明→新版完整条件→历史评估影响→新版覆盖的处理顺序。已在既有来源阅读指导中补齐，并要求通过实际读取的目录身份辨别正式版次，不把documentVersionId、parseRun或semantic变化直接认定为厂家换版；参考更新不能改写另一文件条款，结论不变仍须记录新版比较与覆盖，旧SourceRef不能直接换绑。两项现有任务协议测试与定向ESLint通过。该增量尚未提交、未纳入待确认的8fb9cd7d7发布；真实两版材料、跨版本声明/活动及业务比较验收仍未完成。
+
+## 2026-09-16 c109 安装完成，原调度恢复，Host 发布待确认
+
+c109 已通过官方 `openclaw skills install` 更新唯一同名 Skill；安装后48个文件与 manifest 的字节数及 SHA256 全部一致，消费者10项测试通过。安装前保存六项原生调度完整配置，在无在途消费者时暂停；Host 发布受阻后已逐项恢复原启用状态。终端返回 `WL_C109_RESTORED_VERIFIED 6 enabled 6`，配置比对仅排除运行状态和更新时间，其余与安装前备份完全一致。未强制 cron run、创建业务请求或重放 AQ-350。
+
+拟发布源码为 `8fb9cd7d7f86c41501e5506c3e795166e90bf73f`，origin/github 同名开发分支已分别核对一致。自动审批拒绝 Host `release-create`，理由是未识别到本次 Host 应用发布授权；命令没有执行，线上仍为此前版本。已向用户请求该准确提交到既有 Host 应用的发布与读取验证授权。c109 安装成功不代表 Host 修复或真实综合内容已经线上验收。
+
 ## 2026-09-16 登录已恢复，准备 c109 与 Host 协同发布
 
 用户扫码恢复登录后，原Hosted终端于2026-09-15T17:46:53Z返回新时钟。原两个Matter job均enabled=true、runningAtMs=null，最近lastStatus=ok；未重启系统或唤醒业务。准确原回执 `assessment-round-1.result.json` 现已读到：AQ-350于16:48:01.594Z取得HTTP400、142字节，error.type=invalid_request_error、code=incomplete_result，message为“miaoda/minimax-m3 ended with an incomplete terminal response”，choices为空。该证据确认Gateway错误，不证明长度截断或底层为何没有完整终态；没有可恢复候选，不重复生成该请求。
