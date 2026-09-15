@@ -136,6 +136,7 @@ export function LibraryMatterQuicklookContent({
         )}
       </section>
       <div className="atlas-library-inspector-actions">
+        <Button asChild><Link to={`/matters/${encodeURIComponent(data.matter.matterId)}/posture`}>工程态势</Link></Button>
         <Button asChild>
           <Link to={matterOverviewRoute(data.matter.matterId)}>
             进入事项简报 <ArrowRight aria-hidden="true" />

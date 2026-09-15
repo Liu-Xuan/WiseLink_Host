@@ -5,6 +5,7 @@ import DialoguePage from './pages/DialoguePage';
 import Layout from './components/Layout';
 import WorkItemOverviewPage from './features/workitem/WorkItemOverviewPage';
 import EngineeringMatterPage from './features/matter/EngineeringMatterPage';
+import MatterPosturePage from './features/matter/MatterPosturePage';
 import DocumentParsingPage from './pages/DocumentParsingPage/DocumentParsingPage';
 import DocumentVersionReadingPage from './pages/DocumentParsingPage/DocumentVersionReadingPage';
 import WorkspaceHomePage from './pages/WorkspaceHomePage/WorkspaceHomePage';
@@ -41,6 +42,7 @@ const RoutesComponent = () => {
         <Route path="library" element={<WorkspaceHomePage />} />
         <Route path="document-versions/:documentVersionId" element={<DocumentVersionReadingPage />} />
         <Route path="matters/:matterId" element={<EngineeringMatterPage />} />
+        <Route path="matters/:matterId/posture" element={<MatterPosturePage />} />
         <Route
           path="work-items/:workItemId"
           element={<WorkItemOverviewPage />}

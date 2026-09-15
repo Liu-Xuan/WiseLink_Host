@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState, type FC } from 'react';
-import { useNavigate, useParams, useSearchParams } from 'react-router-dom';
+import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import { ArrowLeft, RefreshCw } from 'lucide-react';
 
 import { useCurrentUserSession } from '@client/src/app/providers/CurrentUserSessionProvider';
@@ -313,6 +313,7 @@ const MatterWorkspace: FC<MatterWorkspaceProps> = ({
         </p>
       ) : null}
       <nav className="flex flex-wrap gap-2" aria-label="事项阅读层次">
+        {!requestedWorkRef ? <Button asChild variant="outline"><Link to={`/matters/${encodeURIComponent(matterId)}/posture`}>工程态势</Link></Button> : null}
         <Button
           variant={panel === 'brief' ? 'default' : 'outline'}
           aria-pressed={panel === 'brief'}
