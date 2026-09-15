@@ -1,3 +1,4 @@
+import { canonicalJson } from '../action-attempt/action-attempt-envelope';
 import type { AssessmentEvidence } from '@shared/assessment-reading.interface';
 import type { EngineeringMatterWorkingRevisionReadModel } from '@shared/matter-working.interface';
 import { collectIssueEvidenceUses } from '@shared/jobaid-evidence-uses';
@@ -44,6 +45,24 @@ export function buildEngineeringIssueCorrectionContext(input: {
       otherClassifications: structuredClone(issue.otherClassifications),
       openQuestions: structuredClone(issue.openQuestions), requirementHandling: structuredClone(issue.requirementHandling),
     },
-    limitations: [...input.limitations],
+    limitations: [...input.limitations,
+      ...(work.overviewStatus === 'STALE'
+        ? ['附带总体认识为旧综合，尚未覆盖当前问题工作；只供比较，不能当作已核实结论或要求本次与之保持一致。'] : []),
+    ],
   };
+}
+
+/** Describe persisted field differences; the producer's explanation remains in its original receipt. */
+export function summarizeEngineeringIssueCorrection(
+  context: EngineeringIssueCorrectionContext,
+  result: Pick<EngineeringIssueCorrectionContext, 'body'> &
+    Pick<EngineeringIssueCorrectionContext['structuredContext'], 'requirementHandling' | 'openQuestions'>,
+): string {
+  const changes: string[] = [];
+  if (context.body !== result.body) changes.push('正文');
+  if (canonicalJson(context.structuredContext.requirementHandling) !== canonicalJson(result.requirementHandling))
+    changes.push('要求处理');
+  if (canonicalJson(context.structuredContext.openQuestions) !== canonicalJson(result.openQuestions))
+    changes.push('未决问题');
+  return changes.length ? `目标问题实际更新：${changes.join('、')}。` : '目标问题的正文、要求处理及未决问题无变化。';
 }

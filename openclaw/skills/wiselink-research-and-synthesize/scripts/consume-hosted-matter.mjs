@@ -44,7 +44,8 @@ export async function consumeHostedMatter(options, dependencies) {
           generated.producer.instanceId !== 'wl-engineering-issue-correction')
         throw new Error('MATTER_CORRECTION_RECEIPT_MISMATCH');
       const saved = await call('SAVE_ISSUE_CORRECTION', { requestId, generationRequestId });
-      if (!saved.workRevisionRef || saved.workRevision !== task.baseRevision + 1)
+      if (!saved.workRevisionRef || saved.workRevision !== task.baseRevision + (saved.unchanged === true ? 0 : 1) ||
+          (saved.unchanged === true && saved.workRevisionRef !== task.modelInput.correction.expectedWorkRef))
         throw new Error('MATTER_CORRECTION_SAVE_BINDING_MISMATCH');
       expectedWorkRef = saved.workRevisionRef;
     }
@@ -53,7 +54,7 @@ export async function consumeHostedMatter(options, dependencies) {
     if (!expectedWorkRef || finished.attemptRef !== task.operationRef || finished.status !== 'SUCCEEDED' ||
         finished.workRevisionRef !== expectedWorkRef)
       throw new Error('MATTER_FINISH_READBACK_MISMATCH');
-    return { status: 'MATTER_ISSUE_CORRECTION_SAVED', ...target,
+    return { status: finished.unchanged === true ? 'MATTER_ISSUE_CORRECTION_UNCHANGED' : 'MATTER_ISSUE_CORRECTION_SAVED', ...target,
       workRevisionRef: finished.workRevisionRef, candidateOnly: true, overallReviewPending: true };
   }
   let result = claim.recoveryResult ?? await checkpoint.readOptional('finish-result');

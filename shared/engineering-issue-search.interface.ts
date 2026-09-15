@@ -16,6 +16,8 @@ export interface EngineeringIssueSearchHit {
   reason: string;
   rootRefs: string[];
   correctionNotices?: EngineeringMatterCorrectionNotice[];
+  /** Coverage of the overview attached to this exact saved work, not publisher currentness. */
+  overviewStatus?: 'NOT_AVAILABLE' | 'CURRENT' | 'STALE';
 }
 
 export interface EngineeringIssueSearchResponse {

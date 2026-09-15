@@ -1,14 +1,76 @@
 # M 主控集成交接
 
+## 2026-09-15 操作员 Skill 已持久化并完成只读使用验证
+
+最终操作员 Skill 已保存到 `operator-skills/wiselink-hosted-operations/`，包含 `SKILL.md`、`scripts/verify-package.py` 和 `tests/test_verify_package.py`。旧豆包原件已确认删除；本目录是基于当前 Publish Lite 与实际 CLI/Hosted 入口重建的操作员 Skill，不是旧文件恢复。CodeM 通过显式读取 Skill 后，对现成 c104 ZIP/manifest 完成只读验证：`verified=true`、版本 `wiselink-research-and-synthesize@r09.c104`、48 files、archive SHA `9fe0bc55ffb0aca82f64eaba7c3f45feea818b415f8f77c8220aaafb60c4a8be`、source commit `cb30964e3f5030d563ce87524f195bb78ef096f0`；47 个 DOS ZIP 条目没有可读 Unix mode，已如实标记，不扩展为模式验证通过。
+
+本次只做本地 Skill 读取与包校验，未执行 Hosted 发布、安装、job 启停或业务请求。Skill 目录尚未作为妙搭线上安装结果宣称；实际容器控制入口和后续 c104 配套切换仍需在获准 Hosted 窗口中由具备可读回命令回执的执行者完成。
+
+## 2026-09-15 CodeM 操作员技能接续：原件与入口已定位
+
+用户已告知Hosted登录恢复，并要求CodeM适配此前豆包生成的部署/测试操作技能。豆包原任务的交付附件现明确显示SKILL.md已删除；不能将产品工程分析Skill当成该操作技能原件，也不能把旧脚本的bash语法检查记作执行验证。按交付记录和现有Publish Lite重建，保留CLI能力识别、任务完整配置备份/恢复、指定分支发布、包完整性和安装读回；旧30b安装wrapper未被后续部署采用，不直接继承为已验证路径。
+
+Luna已通过既有机制替换失效CodeM会话并完成一次实际能力核对；操作员Skill重建稿已生成于隔离工作区，但其后续纠偏任务因ACP超时未形成完整回执，不能将该稿视为已接受版本。隔离工作区仍是旧基线，产品版本声明须先对齐当前接受范围；本次仅推进canonical当前分支的c104机械声明。官方CLI最新发布列表仍为release 7685407198491872522；本批尚未执行线上暂停、安装或发布。M的浏览器provider连接仍报错，不能据此否定用户已恢复登录；后续由具备实际控制入口的获准执行者完成Host/Skill配套切换。
+
+## 2026-09-15 两个真实FTD快照：原件与本地比较已完成
+
+P已取得并核验两份原PDF；M重新核对SHA并阅读全部5页，完成章节文字比较和全页视觉核对。原件缺失不再是本次比较的阻塞。页脚导出日期与正文Last Revised Date确实不同，不能将GENERATED日期称为厂家修订日期；现行目录未被改写。
+
+本地比较已区分发布方修订说明、实际变化、未变章节及分页移动，详细来源、页定位和候选影响分析保留在私有报告中。该成果不代表Host已形成新版阅读回执、工作覆盖或综合，也未验证厂家此刻最新有效性。线上精确绑定已确认工作15使用的是另一组来源，没有引用本次比较快照；不据此触发工作15更正。本报告仅作为同family真实换版比较样本。未新解析、翻译、上传、业务保存或部署；Hosted登录仍未恢复。
+
+## 2026-09-15 来源目录身份与后继更正状态：本地接线完成
+
+原文读取回执和更正上下文现从既有目录取得准确文号、businessRevision、源生成日期、生命周期、当前选择及其决定时间；仍明确未核实发布方最新有效状态，空版次不由parseRun或日期补造。读取保留已有事项/actor授权并按tenant family前缀过滤，不更改原文Evidence身份；更正上下文随STARTED持久保存。后继任务同时收到更正attemptStatus与unchanged，区分已完成的无变化核对和未处理请求。
+
+线上只读发现FTD 777-FTD-31-21002有三个不可变目录版本，源生成日期分别为2025-07-04、2025-09-26、2026-05-27；当前目录选择为2026-05-27。其business_revision/revision_date均为空，身份由实际PDF前三页确认并登记为GENERATED日期，不能转述成厂家Rxx修订标签。三个版本均没有dm_document_parse_run记录，真实两版本正文比较尚未完成，也未发起新解析。线上service_role已有dm_currentness_decision的SELECT权限，未作生产授权变更。
+
+本地定向PG验证1 pass/0 fail/0 skip，包含真实数据库目录投影进入更正输入、另一租户不返回目录信息、后继无变化状态及原保存/并发回放；server typecheck和diff check通过。测试初次发现服务端别名配置与隔离角色缺少该表SELECT，已对齐服务端tsconfig和已核实的既有平台只读权限；等待生成的测试在前置失败时会直接报错，不再悬挂。隔离PG已停止。尚未发布；Hosted管理页面仍需登录恢复。
+
+## 2026-09-15 无变化更正：本地实现与验证完成，待发布
+
+Host 对持久生成的正文、要求处理与未决问题做实际比较：全部相同时记录无变化回执并正常结束任务，保留原工作引用、版本及综合覆盖状态，不创建新工作。保存和结束继续验证租约与当前版本，重复请求读取同一结果。历史工作读取将其显示为 unchanged，不虚构 correctedWorkRef；Hosted 消费者已接入该结果。变更摘要仍由实际字段差异生成，原模型理由保留在生成事件中。
+
+最新验证：更正与知识读取单测 32 pass；消费者 9 pass；隔离 PostgreSQL 定向保存/回放测试 1 pass、0 fail、0 skip，含无变化成功、重复保存/结束、错误租约拒绝、历史通知及零新增工作断言。日志位于私有临时目录，测试实例已停止。浏览器连接仍返回 nodeRepl.fetch request failed；本段不代表线上发布、自然调度或工程内容已验收。
+
+本批已提交并同步双远端至 2e1dce9dd；随后补齐结束操作的 matter→attempt 行锁顺序，双连接同时 FINISH 均正常成功回放，定向 PG 1 pass/0 skip，服务端类型检查通过。官方 CLI 最新核对线上仍为 81ad5e476 / release 7685407198491872522。Chrome 原生控制可用，但 Hosted 管理页转飞书扫码登录并显示429，已请求恢复登录。Host与Skill的无变化结果合同需协调切换，未独立部署新Host。
+
+## 2026-09-15 接续9月16日设计稿：持久生成证据核对与本地修法
+
+本轮通过官方CLI只读核对工作15的持久STARTED/GENERATED记录：原始生成body与requirementHandling均等于输入，只有openQuestions改变；模型changeSummary却声称修改了treatment。保存后的三组字段均与GENERATED一致，overviewStatus为STALE。因此本次没有保存遗漏的证据，不据此扩大更正schema，也不认定引用即强制工程依赖。源文件现行性和页面实际展示尚待核对，不从解析rev6推厂家版次。
+
+本地已将全文现行文档与实际插件/Skill指导统一为有效依据、参考与事项认识边界。新增Host实际字段差异摘要，模型原始理由继续留在GENERATED记录；更正上下文明确附带综合STALE时不得继承为当前已核实结论。22项更正单测通过，服务端类型检查通过（摘要修法后）；隔离PG初次因55439未启动失败；随后在独立55449新实例执行同一保存/回放用例，1 pass/0 fail/0 skip，实例已停止。知识检索与精确展开现已返回保存的overviewStatus，避免附带旧综合没有覆盖标识；对应10项测试及最新服务端类型检查通过。页面呈现与线上接口尚未验证。未发布、未创建新的工程工作。旧临时文件缺失不代表持久生成产物丢失。
+
+CodeM C0因ACP_TIMEOUT及未完成的执行权限请求未取得报告；主控已以官方只读查询接续，不等待CodeM恢复。前端继续独立重构。前次origin同步f0504d05d已核验；下方旧“本地待同步/代理阻塞”保留当时记录，不代表本次同步状态。Git由Luna按接受范围处理。
+
+## 2026-09-14 更正受理前来源完整性复核：本地待同步
+
+本轮在更正任务进入可运行状态前复核目标问题的完整来源集合：缺少已登记的 `method:applicability` 时立即拒绝，未创建 `action_attempt`、未调用生成；合法完整请求的保存与回放链保持通过。定向 PostgreSQL 子测试 `targeted correction uses real PostgreSQL fences, durable generation and exact work replay` 1 pass/0 skip，server typecheck 退出0，diff check 通过。
+
+该修复仅涉及 Host `matter-action-attempt.service.ts` 与对应 PostgreSQL 测试，尚未发布；当前线上 Host 为 `81ad5e47633758a85ceb1c9220e7263604b15222` / release `7685407198491872522`、Skill c103。它用于避免领取后因漏引用进入 RUNNING 重试，不改变来源权限、解析、额度或正式采用边界。网络同步仍受本机代理 `127.0.0.1:7897` 阻塞。
+
+## 2026-09-14 工作15已保存；内容综合仍未闭合
+
+新的正常后继已 `SUCCEEDED` 并保存工作15 `MWREV-850e2caa-3f39-4602-9993-587f3959c502`；其他四个问题保持相同，过程性 `openQuestions` 已清理。requirement 标题仍保留绝对表述，`changeSummary` 仍误称本轮才修改 treatment，因此 M 不接受内容完成，整体一致性仍待后续更正。
+
+当前运行基线为 Host `81ad5e47633758a85ceb1c9220e7263604b15222` / release `7685407198491872522`、Skill c103。新的正常后继 `AQ-01ded20ff4f3451a888c273cc3771c93`（attempt `ATT-395fe166`，requestId `rev6-work14-official-consistency-fullrefs-20260914`）为本次恢复运行；本地 nextForRuntime idle 修复尚未发布，不能混称为线上已生效。前端仍由妙搭独立重构，本分支未改前端。
+
+## 2026-09-14 nextForRuntime 成功终态回放修复：本地待发布
+
+已接受本轮最小修复：自动幂等命中既有 `SUCCEEDED` attempt 时返回 idle（`next=null`），不再将成功终态映射为 `REQUIRES_ATTENTION`，也不创建新 attempt。定向子测试 `Matter commits frozen inputs while later material remains pending` 实际执行通过（1 pass/0 fail/0 skip）；为适配当前 v3 canonical 校验，测试 fixture 做了局部字段对齐。该修复仍是本地待发布候选，未计入线上 Host。
+
+线上基线为 Host `81ad5e47633758a85ceb1c9220e7263604b15222` / release `7685407198491872522`，Skill c103 未变，前端未改。AQ-84c70 因准备遗漏 `method:applicability` 未生成/保存，已按正常路径 `CANCELLED`；旧 AQ-5e58c5abe46a4420878d164cec4206a6 的 `RUNNING` 记录已更正为实际 `FAILED`，工作14保留。
+
+历史记录：新的正常后继 `AQ-01ded20ff4f3451a888c273cc3771c93`（attempt `ATT-395fe166`，requestId `rev6-work14-official-consistency-fullrefs-20260914`，deadline 2026-09-15 00:28:45）已完成并形成工作15；此前“正在恢复/尚无新 workRef”仅适用于受理时点，已由顶部工作15结果取代。
+
 ## 2026-09-14 更正契约候选：Host-only，前端发布边界已核对
 
 本批更正契约补丁已完成定向验证：插件单元 19 项、server typecheck、改动文件 lint 通过；隔离 PostgreSQL 目标场景 1 pass/0 skip，日志保存在私有临时目录。补丁仅涉及 Host 更正插件、上下文/回执映射与相关测试，未修改数据库/RLS、Skill 或前端。
 
 官方 release-list/get 只读仍为 Host `8b706172a97a83d837b869bec6ab4d8def24e519` / release `7685315995439729883`。相对该 Host 基线，当前候选在 `client`、`shared`、`package.json`、`package-lock.json` 无差异；本轮不合入 sprint、不发布。前端已有线上版本与开发中 `sprint/default` 的 49 项旧冲突属于独立集成边界，不阻止本 Host-only 候选按 M 的官方窗口发布，但发布前仍需保持前端 owner 的分支归属。
 
-## 2026-09-14 工作14一致性后继已受理，等待终态
+## 历史记录：2026-09-14 工作14一致性后继曾受理（已FAILED）
 
-针对 online 事项3/工作14的正常后继 `AQ-5e58c5abe46a4420878d164cec4206a6`（`rev6-work14-content-consistency-20260914`），预检确认无活动 Matter 请求后已 `created=true/QUEUED`，deadline 为 `23:38:28`。因 cron 此前连续 5 次 idle 错误且下一次仅剩约 5 分钟，按既有授权执行单次官方恢复 `manual:efc2b938-2bab-4f6d-ab8d-14ca3de9fa70:1789396876759:5`，已 accepted/enqueued；online 当前 `RUNNING/error=null`，未修改退避、未发起其他业务、尚无新 workRef。既有 wiselink heartbeat 仅回收本 AQ 终态。
+针对 online 事项3/工作14的正常后继 `AQ-5e58c5abe46a4420878d164cec4206a6`（`rev6-work14-content-consistency-20260914`），曾因 cron 退避执行单次恢复；后续实际 `FAILED`，工作14保留。该历史记录不代表当前运行状态。
 
 前端 `origin/sprint/default` 已成功取得最新 SHA `247cfee384a1d299bee00848ce93e5ce604dc12f`；相对旧 `2926a9cb` 仅有 26 个 client/e2e 文件变化（3977 additions/1039 deletions），未发现 server/shared/database/schema/API/package 变化，非 client 风险结论未改变。此前“新 SHA fetch 未取得”的记录属于网络失败时点，已由该只读 fetch 更新；旧 49 冲突结论仍仅适用于旧 `2926a9cb` 范围。
 

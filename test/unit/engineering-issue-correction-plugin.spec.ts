@@ -2,7 +2,7 @@ import { CapabilityService } from '@lark-apaas/fullstack-nestjs-core';
 import { Test } from '@nestjs/testing';
 import type { AssessmentEvidence } from '@shared/assessment-reading.interface';
 import { EngineeringIssueCorrectionPluginService } from '../../server/modules/canonical-host/engineering-issue-correction-plugin.service';
-import { buildEngineeringIssueCorrectionContext } from '../../server/modules/canonical-host/engineering-issue-correction-context';
+import { buildEngineeringIssueCorrectionContext, summarizeEngineeringIssueCorrection } from '../../server/modules/canonical-host/engineering-issue-correction-context';
 
 const INSTANCE_ID = 'wl-engineering-issue-correction';
 
@@ -258,6 +258,13 @@ describe('buildEngineeringIssueCorrectionContext (host assembly)', () => {
     expect(context.limitations).toEqual(['limit one']);
   });
 
+  it('labels stale overview context instead of asking the correction to inherit it as current', () => {
+    const context = buildEngineeringIssueCorrectionContext({
+      current: makeRevision({ overviewStatus: 'STALE' }), ...baseInput });
+    expect(context.relatedUnderstanding).not.toBeNull();
+    expect(context.limitations).toContain('附带总体认识为旧综合，尚未覆盖当前问题工作；只供比较，不能当作已核实结论或要求本次与之保持一致。');
+  });
+
   it('nulls relatedUnderstanding when the overview is not available', () => {
     const context = buildEngineeringIssueCorrectionContext({
       current: makeRevision({ overviewStatus: 'NOT_AVAILABLE' }), ...baseInput });
@@ -324,5 +331,24 @@ describe('buildEngineeringIssueCorrectionContext (host assembly)', () => {
       expect((error as Error).message).toBe('ENGINEERING_CORRECTION_TARGET_SOURCE_MISSING');
       expect((error as Error).message).not.toContain(PRIVATE_OTHER_BODY);
     }
+  });
+});
+
+
+describe('Host correction difference summary', () => {
+  it('does not turn a producer claim into an actual change', () => {
+    const context = makeContext();
+    const result = { body: context.body, ...structuredClone(context.structuredContext),
+      changeSummary: 'Changed treatment to CONDITIONS_UNCONFIRMED.' };
+    expect(summarizeEngineeringIssueCorrection(context, result)).toBe('目标问题的正文、要求处理及未决问题无变化。');
+    result.body = 'Corrected interpretation [[EV1]].';
+    expect(summarizeEngineeringIssueCorrection(context, result)).toBe('目标问题实际更新：正文。');
+  });
+  it('records removal of a resolved or unsupported question without claiming other fields changed', () => {
+    const context = makeContext();
+    context.structuredContext.openQuestions = [{ question: 'dependency?', affects: 'scope', nextEvidence: 'source', reason: 'check' }];
+    expect(summarizeEngineeringIssueCorrection(context, { body: context.body,
+      requirementHandling: context.structuredContext.requirementHandling, openQuestions: [] }))
+      .toBe('目标问题实际更新：未决问题。');
   });
 });

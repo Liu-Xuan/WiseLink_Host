@@ -7,9 +7,9 @@ function fixture() {
   const task = { schemaVersion: 'wiselink.3_1.openclaw_task_envelope.v2', taskType: 'OPENCLAW_MATTER_ASSESSMENT',
     actionAttemptId: 'ATT-c', operationRef: 'AQ-c', subject: { kind: 'ENGINEERING_MATTER', matterId: 'MAT-c' },
     deadline: '2099-01-01T00:00:00.000Z', baseRevision: 11, inputHash: 'bound-input', modelInput: { schemaVersion: 'wiselink.matter-jobaid-task.v2',
-      correction: { kind: 'ENGINEERING_ISSUE_CORRECTION' } } };
+      correction: { kind: 'ENGINEERING_ISSUE_CORRECTION', expectedWorkRef: 'MWR-BASE' } } };
   const calls = []; const checkpoints = new Map();
-  let mode = 'RUNNING'; let failSave = false; let failGeneration = false; let badFinish = false;
+  let mode = 'RUNNING'; let failSave = false; let failGeneration = false; let badFinish = false; let unchanged = false;
   const dependencies = {
     createCheckpoint: async () => ({ readOptional: async key => checkpoints.get(key),
       writeOnce: async (key, value) => { assert.equal(checkpoints.has(key), false); checkpoints.set(key, value); } }),
@@ -29,16 +29,17 @@ function fixture() {
       }
       if (input.operation === 'SAVE_ISSUE_CORRECTION') {
         if (failSave) { failSave = false; throw new Error('save reply lost'); }
-        return { workRevisionRef: 'MWR-12', workRevision: 12 };
+        return { workRevisionRef: unchanged ? 'MWR-BASE' : 'MWR-12', workRevision: unchanged ? 11 : 12, unchanged };
       }
       if (input.operation === 'FINISH_ISSUE_CORRECTION') return { attemptRef: 'AQ-c', status: 'SUCCEEDED',
-        workRevisionRef: badFinish ? 'MWR-other' : 'MWR-12' };
+        workRevisionRef: badFinish ? 'MWR-other' : (unchanged ? 'MWR-BASE' : 'MWR-12'), unchanged };
       assert.fail(`Unexpected operation ${input.operation}`);
     },
   };
   return { task, calls, run: () => consumeHostedMatter({ matterId: 'MAT-c', checkpointRoot: '/unused' }, dependencies),
     setMode: value => { mode = value; }, loseSave: () => { failSave = true; },
-    blockGeneration: () => { failGeneration = true; }, wrongFinish: () => { badFinish = true; } };
+    blockGeneration: () => { failGeneration = true; }, wrongFinish: () => { badFinish = true; },
+    markUnchanged: () => { unchanged = true; } };
 }
 
 test('explicit correction uses persisted Host generation and save, not Hosted model execution', async () => {
@@ -46,6 +47,19 @@ test('explicit correction uses persisted Host generation and save, not Hosted mo
   assert.deepEqual(h.calls.map(call => call.operation), ['CLAIM', 'GENERATE_ISSUE_CORRECTION', 'SAVE_ISSUE_CORRECTION', 'FINISH_ISSUE_CORRECTION']);
   assert.equal(result.workRevisionRef, 'MWR-12'); assert.equal(result.overallReviewPending, true);
   assert.equal(result.candidateOnly, true);
+});
+
+test('unchanged correction finishes against the base work without advancing revision', async () => {
+  const h = fixture(); h.markUnchanged(); const result = await h.run();
+  assert.deepEqual(h.calls.map(call => call.operation), ['CLAIM', 'GENERATE_ISSUE_CORRECTION', 'SAVE_ISSUE_CORRECTION', 'FINISH_ISSUE_CORRECTION']);
+  assert.equal(result.status, 'MATTER_ISSUE_CORRECTION_UNCHANGED');
+  assert.equal(result.workRevisionRef, 'MWR-BASE');
+  assert.equal(result.overallReviewPending, true);
+});
+
+test('unchanged correction rejects a finish reference different from the base work', async () => {
+  const h = fixture(); h.markUnchanged(); h.wrongFinish();
+  await assert.rejects(h.run(), /FINISH_READBACK_MISMATCH/);
 });
 
 test('a lost SAVE reply resumes through the same Host generation and save request identities', async () => {

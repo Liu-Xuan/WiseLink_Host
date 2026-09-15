@@ -137,6 +137,8 @@ export interface EngineeringMatterWorkingRevisionChange {
 }
 
 export interface EngineeringMatterCorrectionNotice {
+  /** A completed comparison retained the same work; it did not create a corrected revision. */
+  unchanged?: boolean;
   attemptRef: string;
   issueKey: string;
   reason: string;

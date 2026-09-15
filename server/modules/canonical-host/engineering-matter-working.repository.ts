@@ -948,8 +948,10 @@ async function authorizedReadModel(
     const result: unknown = item.resultJson ? JSON.parse(item.resultJson) : null;
     const output: unknown = result && typeof result === 'object' && 'modelOutput' in result && typeof result.modelOutput === 'string'
       ? JSON.parse(result.modelOutput) : null;
+    const unchanged = item.status === 'SUCCEEDED' && Boolean(output && typeof output === 'object' && 'unchanged' in output && output.unchanged === true);
     return { attemptRef: item.attemptRef, issueKey: item.purpose.issueKey, reason: item.purpose.correctionReason,
-      attemptStatus: item.status, correctedWorkRef: item.status === 'SUCCEEDED' && output && typeof output === 'object' &&
+      ...(unchanged ? { unchanged: true } : {}),
+      attemptStatus: item.status, correctedWorkRef: !unchanged && item.status === 'SUCCEEDED' && output && typeof output === 'object' &&
         'workRevisionRef' in output && typeof output.workRevisionRef === 'string' ? output.workRevisionRef : null };
   });
   return revision;

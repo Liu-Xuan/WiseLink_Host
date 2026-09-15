@@ -64,6 +64,7 @@ export function buildMatterJobAidTask(input: {
       title: input.title,
       knownCorrections: (input.previous?.correctionNotices ?? []).map(notice => ({
         issueKey: notice.issueKey, reason: notice.reason, correctedWorkRef: notice.correctedWorkRef,
+        attemptStatus: notice.attemptStatus, unchanged: notice.unchanged === true,
       })),
       focus: input.previous?.state.focus ?? null,
       trigger: structuredClone(input.trigger),

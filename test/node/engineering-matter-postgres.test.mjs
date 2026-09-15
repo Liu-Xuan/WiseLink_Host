@@ -7,6 +7,7 @@ import test from 'node:test';
 
 import postgres from 'postgres';
 
+process.env.TS_NODE_PROJECT = resolve('tsconfig.node.json');
 process.env.TS_NODE_COMPILER_OPTIONS = JSON.stringify({
   module: 'CommonJS',
   moduleResolution: 'node',
@@ -56,6 +57,7 @@ const {
 
 const { jobAidProblemModelWorkContent } = require('../../server/modules/canonical-host/jobaid-problem-task.ts');
 const { buildMatterJobAidTask } = require('../../server/modules/canonical-host/matter-jobaid-task.ts');
+const { readMatterDocumentIdentities } = require('../../server/modules/canonical-host/matter-document-identity.ts');
 const { originalFixture } = require('../unit/document-parsing/fixtures/document-original.fixture.ts');
 const {
   MatterActionAttemptService,
@@ -1005,6 +1007,12 @@ test(
         nextFocus: { ...command.nextFocus, question: '保留工作进展，不重置已取消的来源请求。' } }, owner.actor);
       assert.equal((await owner.runtime(() => service.nextForRuntime(scope))).next.attemptRef, automatic.next.attemptRef,
         'working progress alone cannot start a replacement model run for unchanged sources');
+      await sql`UPDATE action_attempt SET status = 'SUCCEEDED' WHERE operation_ref = ${automatic.next.attemptRef}`;
+      const succeededReplay = await owner.runtime(() => service.nextForRuntime(scope));
+      assert.equal(succeededReplay.next, null, 'a successful automatic idempotency replay is idle, not attention');
+      const [automaticCount] = await sql`SELECT count(*)::int AS n FROM action_attempt
+        WHERE matter_id = ${scope.matterId} AND idempotency_key LIKE 'matter-auto:%'`;
+      assert.equal(automaticCount.n, 1, 'successful automatic replay does not create another attempt');
 
 
     } finally {
@@ -1201,7 +1209,7 @@ async function resetDatabase(sql) {
   );
   // Isolated equivalents of the platform's existing table privileges and
   await sql.unsafe(
-    'GRANT SELECT ON dm_document_version, dm_publication_family TO service_role',
+    'GRANT SELECT ON dm_document_version, dm_publication_family, dm_currentness_decision TO service_role',
   );
   await sql.unsafe(
     'GRANT UPDATE ON dm_document_version TO service_role',
@@ -1730,28 +1738,21 @@ async function assertWorkingRevisionFlow(
   };
   command.nextProblemWork = materializeJobAidWork(
     {
-      schemaVersion: 'wiselink.jobaid-problem-work.v2',
-      headline: command.nextSubstantiveResult.content.headline,
-      listBrief: command.nextSubstantiveResult.content.listBrief,
-      understanding: command.nextSubstantiveResult.content.lead,
-      decisiveIssueKeys: ['source'],
+      schemaVersion: 'wiselink.jobaid-problem-work.v3',
+      overview: command.nextSubstantiveResult.content.lead,
       roundCompletion: 'COMPLETE_WITH_OPEN_QUESTIONS',
       completionReason: '完成本轮来源核查，实际措施状态待确认。',
       changeSummary: command.changeSummary,
       unchangedExplanation: '保留完整条件。',
+      unchangedIssueKeys: [],
+      retiredIssues: [],
+      inputDispositions: [],
+      reviewConditionDelta: { upserts: [], retirements: [], explicitlyUnchangedItemIds: [] },
       issues: [
         {
           issueKey: 'source',
           question: '源条件意味着什么？',
-          understanding: claim.text,
-          statements: [
-            {
-              claimKey: 'condition',
-              text: claim.text,
-              basis: claim.basis,
-              premises: claim.premises,
-            },
-          ],
+          body: `${claim.text} [[${evidence.evidenceRef}]]`,
           riskScenarios: [
             {
               scenario: '未确认条件下的风险',
@@ -1759,6 +1760,8 @@ async function assertWorkingRevisionFlow(
               method: 'JA_AC_R01',
               severity: null,
               likelihood: null,
+              score: null,
+              riskGrade: null,
               importantEvent: null,
               limitations: ['缺少对象数据'],
               controlComparison: '尚无法比较措施效果',
@@ -1783,8 +1786,6 @@ async function assertWorkingRevisionFlow(
             },
           ],
           requirementHandling: [],
-          sourceDependencies: [evidence.evidenceRef],
-          premiseRefs: [],
         },
       ],
     },
@@ -1803,6 +1804,13 @@ async function assertWorkingRevisionFlow(
         limitation: null,
       },
     },
+  );
+  command.nextProblemWork.historicalSourceSchema = 'wiselink.jobaid-problem-work.v2';
+  command.nextSubstantiveResult.content.headline = command.nextProblemWork.headline;
+  command.nextSubstantiveResult.content.listBrief = command.nextProblemWork.listBrief;
+  command.nextSubstantiveResult.content.lead = command.nextProblemWork.understanding;
+  command.nextSubstantiveResult.content.issueArticles = command.nextProblemWork.issues.map(
+    ({ issueKey, issueRef, question, body }) => ({ issueKey, issueRef, question, body }),
   );
   const uncoveredCommand = structuredClone(command);
   uncoveredCommand.nextProblemWork.evidence.push({
@@ -3504,6 +3512,7 @@ test('targeted correction uses real PostgreSQL fences, durable generation and ex
     try {
       await resetDatabase(sql);
       await seedRealDocumentWorkItems(sql, await loadRealDocumentFixtures());
+      await sql`UPDATE dm_publication_family SET canonical_identity_key = 'tenant:tenant-A:family:' || canonical_identity_key`;
       const owner = await reserveActorService('actor-A'); connections.push(owner);
       const second = await reserveActorService('actor-A'); connections.push(second);
       const created = await owner.service.create({ requestId: 'correction-fixture', title: 'Synthetic correction fixture',
@@ -3520,6 +3529,16 @@ test('targeted correction uses real PostgreSQL fences, durable generation and ex
       const lease = await owner.runtime(() => initialService.claim(initialScope));
       const initialFence = { ...initialScope, leaseToken: lease.leaseToken, leaseGeneration: lease.leaseGeneration };
       const documentVersionId = initial.task.workingBasis.inputs[0].documentVersionId;
+      const [catalogIdentity] = await readMatterDocumentIdentities(owner.database, scope.tenantId, [documentVersionId]);
+      assert.equal(catalogIdentity.catalogStatus, 'REGISTERED');
+      assert.equal(catalogIdentity.documentVersionId, documentVersionId);
+      assert.equal(catalogIdentity.catalogCurrentVersionId, documentVersionId);
+      assert.equal(typeof catalogIdentity.decidedAt, 'string');
+      assert.ok(catalogIdentity.businessRevision);
+      assert.match(catalogIdentity.limitation, /未核实发布方最新有效状态/);
+      const [otherTenantIdentity] = await readMatterDocumentIdentities(owner.database, 'tenant-B', [documentVersionId]);
+      assert.equal(otherTenantIdentity.catalogStatus, 'NOT_AVAILABLE');
+      assert.equal(otherTenantIdentity.documentNumber, undefined);
       const ref = `DOCUMENT_VERSION:${documentVersionId}:page:1`;
       const evidence = { kind: 'DOCUMENT_PASSAGE', documentVersionId, workItemId: null, evidenceRef: ref, sourceRefId: ref,
         title: 'Synthetic source', versionLabel: null, locator: 'Page 1', excerpt: 'Applicability requires a confirmed dependency.' };
@@ -3558,6 +3577,8 @@ test('targeted correction uses real PostgreSQL fences, durable generation and ex
         producer: { kind: 'OFFICIAL_PLUGIN', instanceId: 'wl-engineering-issue-correction', pluginVersion: '1.0.26', actionKey: 'textToJson', concreteModel: null } };
       const plugin = { generate: async (_context, assertActive) => {
         callCount += 1; await assertActive();
+        assert.ok(_context.limitations.some(item => item.includes(catalogIdentity.businessRevision) &&
+          item.includes(catalogIdentity.documentNumber) && item.includes('本次来源目录身份核对')));
         // The owner has a single connection. These complete only if generation is outside its transaction.
         await owner.database.execute(drizzleSql`SELECT 1`);
         await owner.runtime(() => service.heartbeat(fence));
@@ -3567,6 +3588,13 @@ test('targeted correction uses real PostgreSQL fences, durable generation and ex
       const otherService = new MatterActionAttemptService(second.working, models, undefined, plugin);
       const correction = { kind: 'ENGINEERING_ISSUE_CORRECTION', expectedWorkRef: seeded.workRevisionRef,
         issueKey: 'dependency', correctionReason: 'Unknown dependency cannot prove no effect.', evidenceRefs: [ref, method.evidenceRef] };
+      await assert.rejects(owner.runtime(() => service.reserveJobAid({ ...reserve,
+        idempotencyKey: 'correction-missing-method', expectedWorkingRevision: seeded.workRevision,
+        correction: { ...correction, evidenceRefs: [ref] } })), /ENGINEERING_CORRECTION_TARGET_SOURCE_MISSING/);
+      const [rejectedReservation] = await sql`SELECT count(*)::int AS n FROM action_attempt
+        WHERE idempotency_key = 'correction-missing-method'`;
+      assert.equal(rejectedReservation.n, 0, 'incomplete correction cannot leave a queued or running attempt');
+      assert.equal(callCount, 0, 'source validation happens before generation');
       const reserved = await owner.runtime(() => service.reserveJobAid({ ...reserve, idempotencyKey: 'correct-once',
         expectedWorkingRevision: seeded.workRevision, correction }));
       assert.equal(reserved.task.executionModel, undefined);
@@ -3575,7 +3603,7 @@ test('targeted correction uses real PostgreSQL fences, durable generation and ex
       fence = { ...target, leaseToken: claim.leaseToken, leaseGeneration: claim.leaseGeneration };
       const generation = { ...fence, requestId: 'generate-once' };
       const first = owner.runtime(() => service.executeIssueCorrection(generation));
-      await started;
+      await Promise.race([started, first]);
       await assert.rejects(second.runtime(() => otherService.executeIssueCorrection(generation)), /RESULT_UNCONFIRMED/);
       assert.equal(callCount, 1); release();
       assert.equal((await first).persisted, true);
@@ -3605,6 +3633,50 @@ test('targeted correction uses real PostgreSQL fences, durable generation and ex
       const receipt = JSON.parse(finishedRow.resultEnvelopeJson);
       assert.equal(receipt.modelVersion, null); assert.equal(receipt.skillVersion, null);
       assert.equal(receipt.runMetrics.inputUnits, null); assert.equal(receipt.producer.instanceId, output.producer.instanceId);
+      const unchangedService = new MatterActionAttemptService(owner.working, models, undefined,
+        { generate: async (_context, assertActive) => { await assertActive(); return output; } });
+      const unchangedTask = await owner.runtime(() => unchangedService.reserveJobAid({ ...reserve,
+        idempotencyKey: 'correction-unchanged', expectedWorkingRevision: saved.workRevision,
+        correction: { ...correction, expectedWorkRef: saved.workRevisionRef } }));
+      const unchangedScope = { ...scope, attemptRef: unchangedTask.task.operationRef, principalId: 'hosted-test' };
+      const unchangedClaim = await owner.runtime(() => unchangedService.claim(unchangedScope));
+      const unchangedFence = { ...unchangedScope, leaseToken: unchangedClaim.leaseToken, leaseGeneration: unchangedClaim.leaseGeneration };
+      await owner.runtime(() => unchangedService.executeIssueCorrection({ ...unchangedFence, requestId: 'unchanged-generate' }));
+      const unchangedSave = { ...unchangedFence, requestId: 'unchanged-save', generationRequestId: 'unchanged-generate' };
+      await assert.rejects(owner.runtime(() => unchangedService.saveIssueCorrection({ ...unchangedSave,
+        leaseGeneration: unchangedFence.leaseGeneration + 1 })), /LEASE/);
+      const unchangedReceipt = await owner.runtime(() => unchangedService.saveIssueCorrection(unchangedSave));
+      assert.equal(unchangedReceipt.unchanged, true);
+      assert.equal(unchangedReceipt.workRevisionRef, saved.workRevisionRef);
+      assert.equal((await owner.runtime(() => unchangedService.saveIssueCorrection(unchangedSave))).replayed, true);
+      const unchangedFinish = { ...unchangedFence, requestId: 'unchanged-save' };
+      const secondUnchangedService = new MatterActionAttemptService(second.working, models);
+      const concurrentFinishes = await Promise.all([
+        owner.runtime(() => unchangedService.finishIssueCorrection(unchangedFinish)),
+        second.runtime(() => secondUnchangedService.finishIssueCorrection(unchangedFinish)),
+      ]);
+      assert.ok(concurrentFinishes.every(result => result.status === 'SUCCEEDED' && result.unchanged === true));
+      assert.equal((await owner.runtime(() => unchangedService.finishIssueCorrection(unchangedFinish))).unchanged, true);
+      assert.equal((await owner.working.loadCurrent(scope)).matterWorkRevisionId, saved.workRevisionRef);
+      const unchangedRead = await owner.working.readByRef({ ...scope, workRef: saved.workRevisionRef });
+      const unchangedNotice = unchangedRead.correctionNotices.find(item => item.attemptRef === unchangedTask.task.operationRef);
+      assert.equal(unchangedNotice.unchanged, true);
+      assert.equal(unchangedNotice.correctedWorkRef, null);
+      assert.equal(unchangedRead.state.problemWork.overviewStatus, read.state.problemWork.overviewStatus);
+      const continuationContext = buildMatterJobAidTask({ matterId: scope.matterId,
+        matterRevisionId: basis.snapshot.currentMatterRevisionId, actorUserId: scope.actorUserId,
+        title: 'Continue after comparison', inputs: unchangedTask.task.workingBasis.inputs,
+        trigger: { kind: 'USER_REQUEST', requestId: 'after-comparison', instruction: 'Continue remaining work' },
+        previous: unchangedRead });
+      {
+        const notice = continuationContext.modelInput.knownCorrections.find(item => item.issueKey === 'dependency');
+        assert.equal(notice.attemptStatus, 'SUCCEEDED');
+        assert.equal(notice.unchanged, true);
+        assert.equal(notice.correctedWorkRef, null);
+      }
+      const [noNewWork] = await sql`SELECT count(*)::int AS n FROM engineering_matter_work_revision
+        WHERE action_attempt_id = ${unchangedTask.task.actionAttemptId}`;
+      assert.equal(noNewWork.n, 0, 'an unchanged correction records its receipt without creating a work revision');
       let failedCalls = 0;
       const broken = new MatterActionAttemptService(owner.working, models, undefined, { generate: async () => {
         failedCalls += 1; throw new Error('transport outcome not confirmed');
