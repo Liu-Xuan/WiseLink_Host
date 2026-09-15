@@ -449,6 +449,11 @@ const MatterWorkspace: FC<MatterWorkspaceProps> = ({
                   : {}),
               }}
               discussionClaimText={discussionClaim?.text}
+              discussionMaterial={{
+                title: primary.document.documentCode,
+                documentVersionId: primary.document.documentVersionId,
+                versionLabel: primary.document.businessRevision,
+              }}
               selectedEvaluationItemId={null}
               confirmationReceipt={null}
               onConfirmationReceipt={() => undefined}

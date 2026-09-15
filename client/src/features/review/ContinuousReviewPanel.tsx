@@ -24,6 +24,7 @@ import type {
 
 import ReviewConversationTurn from './ReviewConversationTurn';
 import ReviewAccessUnavailable from './ReviewAccessUnavailable';
+import type { ReviewPrimaryMaterial } from './review-materials';
 import AssessmentUpdateControl from './AssessmentUpdateControl';
 import useReviewDraft from './useReviewDraft';
 import useReviewWorkingRefresh from './useReviewWorkingRefresh';
@@ -60,6 +61,7 @@ interface ContinuousReviewPanelProps {
   draftScopeKey?: string;
   reviewScope?: AppendMatterReviewScope;
   discussionClaimText?: string;
+  discussionMaterial?: ReviewPrimaryMaterial;
   onWorkingRefresh?: () => Promise<void>;
   workItemRevision: number;
   workItemRefreshing?: boolean;
@@ -77,6 +79,7 @@ export default function ContinuousReviewPanel({
   draftScopeKey = `work-item:${workItemId}`,
   reviewScope,
   discussionClaimText,
+  discussionMaterial,
   onWorkingRefresh,
   workItemRevision,
   workItemRefreshing = false,
@@ -90,6 +93,7 @@ export default function ContinuousReviewPanel({
 }: ContinuousReviewPanelProps) {
   const panelActive: boolean = useWorkbenchPanelActive();
   const matterId: string = reviewScope?.matterId ?? '';
+  const dialogueMaterial = discussionMaterial ?? materials?.primary;
   const conversationScope: ReviewScopeSelection | undefined = useMemo(
     () => (matterId ? { kind: 'ENGINEERING_MATTER', matterId } : undefined),
     [matterId],
@@ -390,12 +394,12 @@ export default function ContinuousReviewPanel({
       {!readFailed && (
         <ContextualDialogue
           key={`${workItemId}:${matterId}`}
-          documentRevision={materials?.primary.versionLabel}
+          documentRevision={dialogueMaterial?.versionLabel}
           discussionScope={matterId ? '事项' : '文档'}
           document={{
             workItemId,
-            label: materials?.primary.title ?? '当前资料',
-            documentVersionId: materials?.primary.documentVersionId,
+            label: dialogueMaterial?.title ?? '资料名称未提供',
+            documentVersionId: dialogueMaterial?.documentVersionId,
           }}
         />
       )}
