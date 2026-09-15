@@ -1,6 +1,7 @@
 import type { EngineeringMatterWorkingRevisionReadModel } from '@shared/matter-working.interface';
 import { JobAidIssueArticle } from '@client/src/pages/DocumentParsingPage/JobAidIssueArticle';
 import type { DocumentAssessmentEvidence } from './assessment-reading';
+import ReferenceWorkNotices from './ReferenceWorkNotices';
 import '@client/src/pages/DocumentParsingPage/jobaid-problem-workspace.css';
 
 export default function MatterProblemWork({
@@ -37,6 +38,7 @@ export default function MatterProblemWork({
             </p>
           ))}
           <div className="wl-jobaid-article mt-4">
+            <ReferenceWorkNotices notices={revision?.referenceWorkNotices?.filter(notice => notice.affectedIssueKeys.includes(issue.issueKey))} />
             <JobAidIssueArticle
               issue={issue}
               reading={{ ...reading, evidence: work.evidence }}

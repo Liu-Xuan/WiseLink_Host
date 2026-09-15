@@ -2,6 +2,7 @@ import type {
   AssessmentEvidence,
   AssessmentReadingClaim,
   AssessmentReadingResult,
+  AssessmentSourceWork,
 } from './assessment-reading.interface';
 import type { JobAidProblemWorkContent } from './jobaid-problem-assessment.interface';
 
@@ -146,6 +147,15 @@ export interface EngineeringMatterCorrectionNotice {
   correctedWorkRef: string | null;
 }
 
+/** Live context for an exact work actually used by this saved revision. */
+export interface EngineeringMatterReferenceWorkNotice {
+  sourceWork: AssessmentSourceWork;
+  evidenceRef: string;
+  affectedIssueKeys: string[];
+  overviewStatus: JobAidProblemWorkContent['overviewStatus'];
+  correctionNotices: EngineeringMatterCorrectionNotice[];
+}
+
 export interface EngineeringMatterWorkingRevisionReadModel {
   matterWorkRevisionId: string;
   matterId: string;
@@ -161,6 +171,7 @@ export interface EngineeringMatterWorkingRevisionReadModel {
   createdAt: string;
   /** Live review notices for this exact historical work; not part of its immutable content. */
   correctionNotices?: EngineeringMatterCorrectionNotice[];
+  referenceWorkNotices?: EngineeringMatterReferenceWorkNotice[];
 }
 
 export type EngineeringMatterPendingInputReason =

@@ -170,6 +170,8 @@ test('cross Matter references save exact lineage and reauthorize scopes and root
       const replay = await browserReferences.reference(browserCommand, owner.actor);
       assert.equal(replay.attemptRef, browserReceipt.attemptRef);
       assert.equal(replay.created, false);
+      assert.equal((await browserReferences.referenceStatus(b.matter.matterId, browserReceipt.attemptRef, owner.actor)).status, 'QUEUED');
+      await assert.rejects(browserReferences.referenceStatus(a.matter.matterId, browserReceipt.attemptRef, owner.actor), /NOT_FOUND/u);
       const secondTarget = { tenantId: 'tenant-A', actorUserId: 'actor-A', matterId: b.matter.matterId,
         attemptRef: browserReceipt.attemptRef, principalId: 'hosted-test', authorizeReferenceMatter };
       const secondRow = await owner.runtime(() => service.read(secondTarget));
@@ -180,8 +182,11 @@ test('cross Matter references save exact lineage and reauthorize scopes and root
       assert.equal(second.reserved.task.modelInput.modelInput.referenceWorks[0].evidenceRef, priorA.evidenceRef);
       allowed.delete(a.matter.matterId);
       await assert.rejects(owner.runtime(() => service.claim(second.target)), /TEST_SERVICE_SCOPE_REVOKED/u);
+      await assert.rejects(browserReferences.referenceStatus(b.matter.matterId, browserReceipt.attemptRef, owner.actor), /TEST_SERVICE_SCOPE_REVOKED/u);
       allowed.add(a.matter.matterId);
-      await sql`UPDATE action_attempt SET status = 'FAILED' WHERE operation_ref = ${second.target.attemptRef}`;
+      await sql`UPDATE action_attempt SET status = 'FAILED', terminal_reason = 'JOBAID_INCOMPLETE_TERMINAL_RESPONSE' WHERE operation_ref = ${second.target.attemptRef}`;
+      assert.deepEqual(await browserReferences.referenceStatus(b.matter.matterId, browserReceipt.attemptRef, owner.actor),
+        { targetMatterId: b.matter.matterId, attemptRef: browserReceipt.attemptRef, status: 'FAILED', errorCode: 'JOBAID_INCOMPLETE_TERMINAL_RESPONSE' });
       const recoveryRequest = { ...await requestFor(b.matter.matterId, 'reference-recover-B'), recoveryAttemptRef: second.target.attemptRef };
       second = await start(recoveryRequest);
       assert.deepEqual(second.reserved.task.modelInput.referenceWorks, [referenceA]);
@@ -196,8 +201,30 @@ test('cross Matter references save exact lineage and reauthorize scopes and root
       assert.ok(readB.state.problemWork.evidence.some(item => item.evidenceRef === rootRef));
       assert.deepEqual(readB.state.substantiveInputs, []);
       assert.deepEqual(readB.state.problemWork.issues[0].riskScenarios, []);
+      const forgedReferenceState = structuredClone(readB.state);
+      for (const registry of [forgedReferenceState.problemWork.evidence, forgedReferenceState.substantiveResult.evidence]) {
+        registry.find(item => item.kind === 'PRIOR_RESULT').excerpt = 'A supposedly confirmed the target configuration.';
+      }
+      await sql`UPDATE engineering_matter_work_revision SET state_json = ${JSON.stringify(forgedReferenceState)} WHERE matter_work_revision_id = ${savedB.workRevisionRef}`;
+      await assert.rejects(owner.workingService.readWorkingRevision(b.matter.matterId, savedB.workRevisionRef, owner.actor), /WORKING_PERSISTENCE_INVALID/u);
+      await sql`UPDATE engineering_matter_work_revision SET state_json = ${JSON.stringify(readB.state)} WHERE matter_work_revision_id = ${savedB.workRevisionRef}`;
       const search = new EngineeringIssueSearchService(owner.database, {}, owner.workingService);
       assert.deepEqual((await search.search('CrossReferenceProbe', owner.actor)).hits[0].rootRefs, [rootRef]);
+      const sourceCorrection = await start({ ...await requestFor(a.matter.matterId, 'reference-source-correction'),
+        correction: { kind: 'ENGINEERING_ISSUE_CORRECTION', expectedWorkRef: savedA.workRevisionRef,
+          issueKey: 'conditions', correctionReason: 'The original condition needs rechecking.', evidenceRefs: [rootRef] } });
+      const noticed = await owner.workingService.readWorkingRevision(b.matter.matterId, savedB.workRevisionRef, owner.actor);
+      assert.deepEqual(noticed.state, readB.state, 'live notices do not rewrite the saved B work');
+      assert.deepEqual(noticed.referenceWorkNotices[0].affectedIssueKeys, ['conditions']);
+      assert.equal(noticed.referenceWorkNotices[0].sourceWork.workRef, savedA.workRevisionRef);
+      assert.equal(noticed.referenceWorkNotices[0].correctionNotices[0].attemptRef, sourceCorrection.target.attemptRef);
+      assert.equal((await search.search('CrossReferenceProbe', owner.actor)).hits[0].referenceWorkNotices[0]
+        .correctionNotices[0].attemptRef, sourceCorrection.target.attemptRef);
+      const continuedB = await start(await requestFor(b.matter.matterId, 'reference-notice-retained-B'));
+      assert.equal(continuedB.reserved.task.modelInput.modelInput.referenceWorks[0].correctionNotices[0].attemptRef,
+        sourceCorrection.target.attemptRef, 'a later B request receives new notices without re-importing A');
+      await owner.runtime(() => service.cancel({ ...continuedB.target, reason: 'Retained source notice verified in isolated test' }));
+      await owner.runtime(() => service.cancel({ ...sourceCorrection.target, reason: 'Source notice verified in isolated test' }));
       await sql`UPDATE engineering_matter SET created_by_user_id = 'actor-B' WHERE matter_id = ${a.matter.matterId}`;
       await assert.rejects(owner.workingService.readWorkingRevision(b.matter.matterId, savedB.workRevisionRef, owner.actor), /AUTHORIZATION/u);
       assert.equal((await search.search('CrossReferenceProbe', owner.actor)).hits.length, 0);

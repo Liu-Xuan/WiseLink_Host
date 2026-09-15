@@ -18,6 +18,12 @@ export class EngineeringIssueSearchController {
     return this.issues.reference(input, hostActor(request));
   }
 
+  @Get('references/status')
+  @Header('Cache-Control', 'private, no-store')
+  referenceStatus(@Query('matterId') matterId: string, @Query('attemptRef') attemptRef: string, @Req() request: Request) {
+    return this.issues.referenceStatus(matterId, attemptRef, hostActor(request));
+  }
+
   @Get('sources')
   @Header('Cache-Control', 'private, no-store')
   searchSources(@Query('search') search: string | undefined, @Req() request: Request,

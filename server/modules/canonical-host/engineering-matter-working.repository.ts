@@ -12,6 +12,7 @@ import type { Request, Response } from 'express';
 import { and, asc, desc, eq, isNull, or, sql } from 'drizzle-orm';
 import { bindMatterOriginalInputs } from './matter-original-input-bindings';
 import { buildMatterWorkReference } from './matter-work-reference';
+import { collectIssueEvidenceUses } from '@shared/jobaid-evidence-uses';
 import { dmDocumentParseRun } from '../../database/document-parsing.schema';
 
 import type {
@@ -940,12 +941,15 @@ async function authorizedReadModel(
   );
   // A saved B explanation does not keep A readable after A or its original inputs are revoked.
   // Walk exact immutable work identities, not the latest analysis or a detached excerpt.
-  const checkedReferences = new Set<string>();
+  const checkedReferences = new Map<string, string>();
   for (const item of evidence) {
     if (item.kind !== 'PRIOR_RESULT' || !item.sourceWork) continue;
     const ref = item.sourceWork;
     const referenceKey = canonicalJson(ref);
-    if (checkedReferences.has(referenceKey)) continue;
+    if (checkedReferences.has(referenceKey)) {
+      if (checkedReferences.get(referenceKey) !== canonicalJson(item)) throw workingPersistenceError();
+      continue;
+    }
     const [sourceMatter] = await executor.select({ currentMatterRevisionId: engineeringMatter.currentMatterRevisionId })
       .from(engineeringMatter).where(and(eq(engineeringMatter.tenantId, row.tenantId),
         eq(engineeringMatter.matterId, ref.subjectId), eq(engineeringMatter.createdByUserId, row.createdByUserId))).limit(1);
@@ -964,14 +968,21 @@ async function authorizedReadModel(
     const verified = buildMatterWorkReference({ matterId: ref.subjectId, workRef: ref.workRef,
       issueKey: ref.issueKey, purpose: 'Verify saved lineage' }, sourceRevision);
     const expected = verified[0]!;
-    if (expected.kind !== 'PRIOR_RESULT' || canonicalJson(expected.originalEvidenceRefs) !== canonicalJson(item.originalEvidenceRefs))
+    if (expected.kind !== 'PRIOR_RESULT' || canonicalJson(expected) !== canonicalJson(item))
       throw workingPersistenceError();
     for (const rootRef of expected.originalEvidenceRefs) {
       const original = verified.find(value => value.evidenceRef === rootRef);
       const retained = evidence.find(value => value.evidenceRef === rootRef);
       if (!original || !retained || canonicalJson(original) !== canonicalJson(retained)) throw workingPersistenceError();
     }
-    checkedReferences.add(referenceKey);
+    const affectedIssueKeys = (revision.state.problemWork?.issues ?? []).filter(issue =>
+      collectIssueEvidenceUses(issue).some(use => use.evidenceRef === item.evidenceRef)).map(issue => issue.issueKey);
+    if (affectedIssueKeys.length) {
+      (revision.referenceWorkNotices ??= []).push({ sourceWork: structuredClone(ref), evidenceRef: item.evidenceRef,
+        affectedIssueKeys, overviewStatus: sourceRevision.state.problemWork.overviewStatus,
+        correctionNotices: structuredClone(sourceRevision.correctionNotices?.filter(notice => notice.issueKey === ref.issueKey) ?? []) });
+    }
+    checkedReferences.set(referenceKey, canonicalJson(expected));
   }
   const corrections = await executor.select({ attemptRef: actionAttempt.operationRef, status: actionAttempt.status,
     purpose: sql<{ issueKey: string; correctionReason: string }>`${actionAttempt.taskEnvelopeJson}::jsonb -> 'modelInput' -> 'correction'`,

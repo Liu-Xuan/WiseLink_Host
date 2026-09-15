@@ -1,4 +1,8 @@
 import type { AssessmentEvidence } from '@shared/assessment-reading.interface';
+import { createElement } from 'react';
+import { renderToStaticMarkup } from 'react-dom/server';
+import { MemoryRouter } from 'react-router-dom';
+import ReferenceWorkNotices from '../../client/src/features/matter/ReferenceWorkNotices';
 import type { EngineeringMatterWorkingRevisionReadModel } from '@shared/matter-working.interface';
 import { assessmentEvidenceRoots } from '@shared/assessment-evidence-roots';
 import { buildMatterWorkReference } from '../../server/modules/canonical-host/matter-work-reference';
@@ -31,6 +35,22 @@ function sourceWork(): EngineeringMatterWorkingRevisionReadModel {
       explicitlyUnchangedClaimIds: [], openQuestionDelta: null, reviewConditionDelta: null, coverageUpdates: [] } };
 }
 const request = { matterId: 'MAT-A', workRef: 'MWREV-A1', issueKey: 'condition', purpose: 'Compare conditions with B.' };
+
+test('live source notices keep exact old and corrected routes distinct, including an unchanged comparison', () => {
+  const notice = { sourceWork: { subjectKind: 'ENGINEERING_MATTER' as const, subjectId: 'MAT-A', workRef: 'MWREV-A1', issueKey: 'condition' },
+    evidenceRef: 'PRIOR-A', affectedIssueKeys: ['B-condition'], overviewStatus: 'STALE' as const,
+    correctionNotices: [{ attemptRef: 'AQ-A2', issueKey: 'condition', reason: 'Check the original condition.',
+      attemptStatus: 'SUCCEEDED', correctedWorkRef: 'MWREV-A2' }] };
+  const render = (value: typeof notice) => renderToStaticMarkup(createElement(MemoryRouter, {}, createElement(ReferenceWorkNotices, { notices: [value] })));
+  const html = render(notice);
+  expect(html).toContain('其综合尚未覆盖');
+  expect(html).toContain('sourceWorkRef=MWREV-A1');
+  expect(html).toContain('sourceWorkRef=MWREV-A2');
+  const unchanged = renderToStaticMarkup(createElement(MemoryRouter, {}, createElement(ReferenceWorkNotices,
+    { notices: [{ ...notice, correctionNotices: [{ ...notice.correctionNotices[0], unchanged: true, correctedWorkRef: null }] }] })));
+  expect(unchanged).toContain('已完成比较并保留原认识');
+  expect(unchanged).not.toContain('尚未取得更正后的保存结果');
+});
 
 test('builds full saved analysis from the exact identity and retains only its actual root sources', () => {
   const revision = sourceWork();

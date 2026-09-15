@@ -5,6 +5,7 @@ import {
   searchDocumentSources,
   readEngineeringIssue,
   referenceEngineeringIssue,
+  readEngineeringIssueReferenceStatus,
 } from '@client/src/api/canonical-host';
 import { getEngineeringMatterWorkspace } from '@client/src/api/engineering-matter';
 import { Button } from '@client/src/components/ui/button';
@@ -15,8 +16,10 @@ import type {
   EngineeringIssueSearchResponse,
   EngineeringIssueReferenceRequest,
   EngineeringIssueReferenceReceipt,
+  EngineeringIssueReferenceStatus,
 } from '@shared/engineering-issue-search.interface';
 import MatterDocumentSourceDialog from './MatterDocumentSourceDialog';
+import ReferenceWorkNotices from './ReferenceWorkNotices';
 import { matterDocumentRoute } from './matter-navigation';
 import type { DocumentSourceSearchResponse } from '@shared/document-source-search.interface';
 import '@client/src/pages/DocumentParsingPage/jobaid-problem-workspace.css';
@@ -27,7 +30,8 @@ export default function EngineeringIssueSearch({
   matterId: string;
 }) {
   const navigate = useNavigate();
-  const [params] = useSearchParams();
+  const [params, setParams] = useSearchParams();
+  const referenceAttemptRef = params.get('referenceAttemptRef');
   const sourceWorkRef = params.get('sourceWorkRef');
   const sourceIssueKey = params.get('sourceIssueKey');
   const [query, setQuery] = useState('');
@@ -42,12 +46,27 @@ export default function EngineeringIssueSearch({
   const [purpose, setPurpose] = useState('');
   const [referenceBusy, setReferenceBusy] = useState(false);
   const [referenceReceipt, setReferenceReceipt] = useState<EngineeringIssueReferenceReceipt | null>(null);
+  const [referenceStatus, setReferenceStatus] = useState<EngineeringIssueReferenceStatus | null>(null);
+  const [referenceStatusBusy, setReferenceStatusBusy] = useState(false);
+  const statusEpoch = useRef(0);
   const pendingReference = useRef<EngineeringIssueReferenceRequest | null>(null);
   const [source, setSource] = useState<{
     documentVersionId: string;
     sourceRef: string | null;
   } | null>(null);
   const epoch = useRef(0);
+  useEffect(() => {
+    const generation = ++statusEpoch.current;
+    setReferenceStatus(null);
+    if (!referenceAttemptRef) { setReferenceStatusBusy(false); return; }
+    setReferenceStatusBusy(true);
+    void readEngineeringIssueReferenceStatus(matterId, referenceAttemptRef).then(value => {
+      if (generation === statusEpoch.current) setReferenceStatus(value);
+    }).catch((cause: unknown) => {
+      if (generation === statusEpoch.current) setError(cause instanceof Error ? cause.message : '处理状态读取失败');
+    }).finally(() => { if (generation === statusEpoch.current) setReferenceStatusBusy(false); });
+    return () => { statusEpoch.current += 1; };
+  }, [matterId, referenceAttemptRef]);
   useEffect(() => {
     if (!sourceWorkRef || !sourceIssueKey) return;
     const request = ++epoch.current;
@@ -117,6 +136,18 @@ export default function EngineeringIssueSearch({
           <option value="HISTORY">包含历史</option>
         </select>
       </form>
+      {referenceAttemptRef ? <div className="space-y-2 rounded border border-border p-3" aria-label="引用比较处理状态">
+        <p role="status">{referenceStatus ? referenceStatusText(referenceStatus) : '尚未取得此引用请求的处理状态。'}</p>
+        <Button variant="outline" size="sm" disabled={referenceStatusBusy} onClick={() => {
+          const generation = ++statusEpoch.current;
+          setReferenceStatusBusy(true); setError(null);
+          void readEngineeringIssueReferenceStatus(matterId, referenceAttemptRef).then(value => {
+            if (generation === statusEpoch.current) setReferenceStatus(value);
+          }).catch((cause: unknown) => {
+            if (generation === statusEpoch.current) setError(cause instanceof Error ? cause.message : '处理状态读取失败');
+          }).finally(() => { if (generation === statusEpoch.current) setReferenceStatusBusy(false); });
+        }}>{referenceStatusBusy ? '正在读取状态…' : '读取最新处理状态'}</Button>
+      </div> : null}
       {busy ? <p role="status">正在读取…</p> : null}
       {error ? <p role="alert">{error}</p> : null}
       {results?.hits.length === 0 ? (
@@ -167,6 +198,7 @@ export default function EngineeringIssueSearch({
           {hit.correctionNotices?.map(notice => <p key={notice.attemptRef} role="note" className="text-sm">
             {notice.correctedWorkRef ? '所引旧工作已有后继更正：' : '所引工作存在待核更正：'}{notice.reason}
           </p>)}
+          <ReferenceWorkNotices notices={hit.referenceWorkNotices} />
         </div>
       ))}
       {results?.hasMore ? (
@@ -196,6 +228,7 @@ export default function EngineeringIssueSearch({
           {selected.identity.correctionNotices?.map(notice => <p key={notice.attemptRef} role="note" className="mb-3 text-sm">
             {notice.correctedWorkRef ? '此版本已有后继更正：' : '此版本存在待核更正：'}{notice.reason}
           </p>)}
+          <ReferenceWorkNotices notices={selected.identity.referenceWorkNotices} />
           {selected.identity.subjectKind === 'ENGINEERING_MATTER' && selected.identity.subjectId !== matterId ? (
             <div className="mb-4 space-y-2 rounded border border-border p-3">
               <p className="text-sm">将此工作交给本事项比较。保存本事项自己的条件判断，并保留所引工作和根来源。</p>
@@ -221,7 +254,10 @@ export default function EngineeringIssueSearch({
                       pendingReference.current = request;
                     }
                     const receipt = await referenceEngineeringIssue(request);
-                    if (generation === epoch.current) setReferenceReceipt(receipt);
+                    if (generation === epoch.current) {
+                      setReferenceReceipt(receipt);
+                      setParams(current => { const next = new URLSearchParams(current); next.set('referenceAttemptRef', receipt.attemptRef); return next; }, { replace: true });
+                    }
                   })().catch((cause: unknown) => {
                     if (generation === epoch.current) setError(cause instanceof Error ? cause.message : '引用请求未取得回执，可重读同一请求。');
                   }).finally(() => setReferenceBusy(false));
@@ -230,7 +266,7 @@ export default function EngineeringIssueSearch({
               </Button>
               {referenceReceipt && referenceReceipt.source.workRef === selected.identity.workRef &&
                 referenceReceipt.source.issueKey === selected.identity.issueKey ? <p role="status" className="text-sm">
-                  引用比较请求已登记，状态 {referenceReceipt.status}；由本事项原调度继续处理，尚不代表已形成新认识。
+                  引用比较请求已登记；最新处理结果见上方状态，保存工作仍需核对。
                 </p> : null}
             </div>
           ) : null}
@@ -258,4 +294,15 @@ export default function EngineeringIssueSearch({
       ) : null}
     </section>
   );
+}
+
+function referenceStatusText(status: EngineeringIssueReferenceStatus): string {
+  if (status.status === 'SUCCEEDED') return '本次引用比较处理已完成，请重新读取事项核对保存结果。候选认识不代表正式采用。';
+  if (status.status === 'FAILED') return status.errorCode === 'JOBAID_INCOMPLETE_TERMINAL_RESPONSE'
+    ? '本次处理失败：模型没有返回完整结果。已保存工作仍可阅读。'
+    : '本次引用比较处理失败。请重新读取事项核对已有保存结果。';
+  if (status.status === 'CANCELLED') return '本次请求已取消，已保存工作仍可阅读。';
+  if (status.status === 'TIMED_OUT') return '本次处理已超时，请重新读取事项核对已有保存结果。';
+  if (status.status === 'RUNNING' || status.status === 'COMMITTING') return '最近读取时仍在处理，尚不能按此状态确认新的保存结果。';
+  return '引用请求已登记，最近读取时仍在等待处理。';
 }
