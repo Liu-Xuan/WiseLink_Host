@@ -27,7 +27,7 @@ function setup() {
     cancel: jest.fn(), finish: jest.fn(), fail: jest.fn(), expire: jest.fn(),
   };
   const service = new DocumentTranslationRuntimeService(authorization as never, actors as never, reader as never,
-    plugins as never, attempts as never);
+    plugins as never, attempts as never, { read: jest.fn().mockResolvedValue({ profileRef: 'generic.author-sections.v1' }) } as never);
   return { service, reader, plugins, attempts, binding: { documentVersionId, parseRunId } };
 }
 

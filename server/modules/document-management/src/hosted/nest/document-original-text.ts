@@ -84,3 +84,14 @@ function splitMarkdownRow(line: string): string[] {
   cells.push(cell.trim());
   return cells;
 }
+
+/** Syntax-only comparison view. Never strip numeric list markers or engineering punctuation. */
+export function originalMarkdownText(value: string): string {
+  return value.replace(/<br\s*\/?\s*>/gi, '\n')
+    .replace(/\[([^\]]+)\]\([^\n)]*\)/g, '$1')
+    .replace(/(\*\*|__)(?=\S)(.+?\S|\S)\1/g, '$2')
+    .replace(/(?<!\w)(\*|_)(?=\S)(.+?\S|\S)\1(?!\w)/g, '$2')
+    .replace(/`([^`]+)`/g, '$1')
+    .replace(/\\([\\`*_{}\[\]()#+.!|>])/g, '$1')
+    .replace(/&amp;/g, '&').replace(/&lt;/g, '<').replace(/&gt;/g, '>');
+}

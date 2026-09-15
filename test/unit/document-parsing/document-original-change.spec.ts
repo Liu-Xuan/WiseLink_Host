@@ -28,3 +28,10 @@ it('does not label a new unread range as a geometry-only improvement', () => {
   next.coverage.unresolvedRanges.push({ pageIndexes: [1], unitIds: [], reason: 'UNREAD', message: 'Unread range.' });
   expect(compareDocumentOriginal(previous, next).kind).toBe('IMPACT_UNRESOLVED');
 });
+
+it('does not request new content for diagnostic-only range changes', () => {
+  const { previous, next } = pair();
+  next.coverage.unresolvedRanges.push({ pageIndexes: [0], unitIds: [], reason: 'TEXT_CONFLICT',
+    readingImpact: 'DIAGNOSTIC', message: 'Candidate organization rejected; source remains readable.' });
+  expect(compareDocumentOriginal(previous, next).kind).toBe('LOCATOR_ONLY');
+});

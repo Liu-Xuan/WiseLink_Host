@@ -7,6 +7,7 @@ import type {
   TranslationStructuredSource,
   TranslationStructuredSourceUnit,
 } from '@shared/canonical-translation-v2.interface';
+import { translationSourcePlanSchemaV2 } from '../../server/modules/canonical-host/canonical-translation-v2.contract';
 import { buildTranslationSourcePlan } from '../../server/modules/canonical-host/canonical-translation-source-plan';
 import { checkTranslationBlockV2, tableCellKey } from '../../server/modules/canonical-host/canonical-translation-v2-quality';
 import { Frozen2CandidateReaderService } from '../../server/modules/unified-reader/frozen2-candidate-reader.service';
@@ -403,4 +404,23 @@ describe('translation v2 complete semantic source plan', () => {
       result.anchors.every((anchor) => anchor.sourceRefIds.length > 0),
     ).toBe(true);
   });
+});
+
+it('keeps document diagnostics once and restricts a page finding to that physical page', () => {
+  const input = source([unit('h1', 'heading', { text: 'First', level: 1 }, 0),
+    unit('h2', 'heading', { text: 'Second', level: 1 }, 1)]);
+  input.findings = [
+    { findingId: 'diagnostic', code: 'TEXT_CONFLICT', severity: 'warning', message: 'internal comparison', affectedUnitIds: [], sourceRefIds: [], readingImpact: 'DIAGNOSTIC' },
+    { findingId: 'page', code: 'LOCAL_UNKNOWN', severity: 'warning', message: 'local text unreadable', affectedUnitIds: [], sourceRefIds: [], pageIndexes: [2] },
+    { findingId: 'document', code: 'UNLOCATED', severity: 'warning', message: 'not located', affectedUnitIds: [], sourceRefIds: [] },
+  ];
+  input.dateOrder = 'MDY';
+  input.findings[1].readingImpact = 'LIMITATION';
+  const result = plan(input);
+  expect(translationSourcePlanSchemaV2.parse(result)).toEqual(result);
+  expect(result.blocks[1].sourceIssues[0].readingImpact).toBe('LIMITATION');
+  expect(result.blocks[0].sourceIssues).toEqual([]);
+  expect(result.blocks[1].sourceIssues.map(issue => issue.sourceFindingId)).toEqual(['page']);
+  expect(result.sourceFindings).toHaveLength(3);
+  expect(JSON.stringify(result.documentContext)).not.toContain('internal comparison');
 });

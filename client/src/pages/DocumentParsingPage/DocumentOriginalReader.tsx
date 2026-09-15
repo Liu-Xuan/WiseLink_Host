@@ -37,6 +37,6 @@ function OriginalTable({ payload }: { payload: Record<string, unknown> }) {
   }> }> }>;
   return <div style={{ overflowX: 'auto' }}><table>{typeof payload.caption === 'string' && payload.caption ? <caption>{payload.caption}</caption> : null}<tbody>{groups.flatMap(group => group.rows).map(row =>
     <tr key={row.rowId}>{row.cells.map(cell => { const Cell = cell.isHeader ? 'th' : 'td'; return <Cell key={cell.cellId} rowSpan={cell.rowSpan} colSpan={cell.colSpan}>
-      {cell.inlineContent.map(item => item.text).join('')}
+      {cell.inlineContent.map(item => item.text).join(' ')}
     </Cell>; })}</tr>)}</tbody></table></div>;
 }

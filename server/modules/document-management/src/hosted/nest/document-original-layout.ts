@@ -1,7 +1,11 @@
 import type { DocumentPdfPage } from './document-original-pdf';
 import { normalizeOriginalWhitespace } from './document-original-text';
 
-export interface OriginalLayoutLine { text: string; start: number; end: number; breakBefore: boolean }
+export interface OriginalLayoutLine { text: string; start: number; end: number; breakBefore: boolean;
+  itemIndexes: number[]; x: number; y: number; width: number; height: number;
+  /** Physical gaps between runs, not inferred semantic columns. */
+  runs: Array<{ text: string; x: number; endX: number }>;
+}
 
 /** A comparison view only. Raw PDF items remain immutable in the saved sidecar.
  * Unsupported rotations or incomplete geometry retain the original extraction. */
@@ -28,20 +32,28 @@ export function originalPageLayout(page: DocumentPdfPage): { page: DocumentPdfPa
   const lines = rows.map((row, index) => {
     row.items.sort((a, b) => a.transform[4] - b.transform[4]);
     let line = '';
+    const runs: OriginalLayoutLine['runs'] = [];
     row.items.forEach((item, itemIndex) => {
       const previous = row.items[itemIndex - 1];
       const gap = previous ? item.transform[4] - previous.transform[4] - previous.width : 0;
       // Only a physically touching hyphenated token is joined. Never erase a
       // spaced minus sign, arbitrary whitespace, or column gap to force a match.
       const joined = previous && /[\p{L}\p{N}]-$/u.test(previous.text) && /^[\p{L}\p{N}]/u.test(item.text) && Math.abs(gap) <= 0.3;
-      line += (itemIndex && !joined ? ' ' : '') + item.text;
+      const separator = itemIndex && !joined ? ' ' : '';
+      line += separator + item.text;
+      const run = runs.at(-1);
+      if (run && gap <= Math.max(row.size * 1.6, 8)) {
+        run.text += separator + item.text; run.endX = item.transform[4] + item.width;
+      } else runs.push({ text: item.text, x: item.transform[4], endX: item.transform[4] + item.width });
     });
     line = normalizeOriginalWhitespace(line);
     if (text) text += ' ';
     const start = text.length;
     text += line;
     const previous = rows[index - 1];
-    return { text: line, start, end: text.length, breakBefore: !previous ||
+    return { text: line, start, end: text.length, itemIndexes: row.items.map(item => page.items.indexOf(item)),
+      x: row.items[0].transform[4], y: row.y, width: Math.max(...row.items.map(item => item.transform[4] + item.width)) - row.items[0].transform[4],
+      height: row.size, runs: runs.map(run => ({ ...run, text: normalizeOriginalWhitespace(run.text) })), breakBefore: !previous ||
       band(row.y) !== band(previous.y) || previous.y - row.y > Math.max(previous.size, row.size) * 1.65 ||
       /^\d+[.)]\s/u.test(line) };
   });

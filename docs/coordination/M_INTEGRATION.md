@@ -10,7 +10,7 @@
 
 正常创建新事项原生任务 `355f0161-15c1-45c4-9060-0336f1bfaf5f`，沿用原Matter消费者、native session store、cwd、每分钟计划和3600秒单次期限。创建前去重；原五个任务的enabled、schedule、payload、agentId、sessionTarget逐项确认不变。首次自然评估 `AQ-5c2ed8ff8a9d4c488f2a35042b1e2b86` 正常读取旧FTD的original偏移0/20/40，最终 `JOBAID_WORK_VALIDATION_FAILED`，未保存工作。三次候选分别暴露多余title、openQuestions类型错误和未交付的u22:p0引用；末次仍猜错openQuestions结构。没有重新受理同一失败。
 
-M定向修复纠错反馈：保留来源拒绝与字段类型两段说明，错误对象附当前合同的expectedProperties，不替模型改写内容、补引用或增加纠错次数。候选版本c106的46项runtime测试、206项版本/协议/错误码检查及发布源一致性检查通过，Luna只读审阅无阻塞问题；当前仅源码准备，Hosted仍c105。Host STATUS另补读取已存terminalReason，避免FAILED但errorCode空掩盖具体原因，12项MCP测试通过；尚未部署该小修。
+M定向修复纠错反馈：保留来源拒绝与字段类型两段说明，错误对象附当前合同的expectedProperties，不替模型改写内容、补引用或增加纠错次数。候选版本c106的46项runtime测试、206项版本/协议/错误码检查及发布源一致性检查通过，Luna只读审阅无阻塞问题。提交 `127d21e28cb85b4424a7e926553d655beb281f1d` 已在origin/github同名开发分支核验；c106已通过官方安装器覆盖唯一同名Skill，托管下载390923字节与48文件摘要一致，安装后333项测试通过、官方list/info/check成功。仅在零在途时短暂暂停原六个任务，已恢复全部原启用及配置，当前调度状态均ok；未重试失败业务。Host STATUS另补读取已存terminalReason，避免FAILED但errorCode空掩盖具体原因，12项MCP测试通过；尚未部署该小修。
 
 用户最新要求由一个Astra子会话执行《解析质量与工程阅读修订执行书》。已接管原文结构、诊断范围、日期校验、Reader与复制和真实消费者，保持独立前端最小改动边界。通过正常授权存储读取旧777保存的manifest、PDF.js items及插件Markdown，核对bytes/SHA；另经产品版本页正常下载原PDF并确认与manifest相同SHA，供同一反例视觉核对。Astra实现及真实验收仍在进行，未宣称完成或发布。
 

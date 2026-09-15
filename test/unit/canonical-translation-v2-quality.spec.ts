@@ -486,3 +486,20 @@ describe('translation v2 quality and actual reading coverage', () => {
     ).toBe('PARTIAL');
   });
 });
+
+it('normalizes confirmed source date conventions without double-counting date digits or permitting field swaps', () => {
+  const sourcePlan = plan(['Originated Date: 06/10/2021\nLast Revised Date: 07/28/2025']);
+  sourcePlan.documentContext.dateOrder = 'MDY';
+  const issues = (text: string) => checkTranslationBlockV2({ plan: sourcePlan, candidate: candidate(sourcePlan, text) }).issues;
+  expect(issues('原始日期：2021-6-10\n最后修订日期：2025年7月28日')).toEqual([]);
+  expect(issues('原始日期：2025-7-28\n最后修订日期：2021-6-10')).toEqual(expect.arrayContaining([
+    expect.objectContaining({ code: 'DATE_FIELD_RELATION_CHANGED' }),
+  ]));
+  delete sourcePlan.documentContext.dateOrder;
+  expect(issues('原始日期：2021-6-10\n最后修订日期：2025-7-28')).toEqual(expect.arrayContaining([
+    expect.objectContaining({ code: 'PROTECTED_VALUE_CHANGED' }),
+  ]));
+  const signed = plan(['Limit -0.25; version V18 and part AB-12.']);
+  expect(checkTranslationBlockV2({ plan: signed, candidate: candidate(signed, '限制 0.25；版本 V18 和件号 AB-12。') }).issues)
+    .toEqual(expect.arrayContaining([expect.objectContaining({ code: 'PROTECTED_VALUE_CHANGED' })]));
+});

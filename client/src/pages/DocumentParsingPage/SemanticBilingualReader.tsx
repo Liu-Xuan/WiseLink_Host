@@ -15,6 +15,8 @@ import {
   semanticReadingCoverage,
   semanticReadingStatusLabels,
   semanticReadingText,
+  semanticReadingIssues,
+  semanticReadingExport,
   semanticSourceLinks,
   translationIssueOriginLabels,
   type SemanticReadingMode,
@@ -88,7 +90,7 @@ function SemanticWorkspaceReader({
   const percentLabel: string =
     view.readablePercent === null
       ? '尚无可计算文字范围'
-      : `${Math.floor(view.readablePercent * 10) / 10}% 已登记文字可读`;
+      : `${Math.floor(view.readablePercent * 10) / 10}% 的原文已有可读中文`;
 
   function focusBlock(blockId: string, ids: string[], scroll = false): void {
     setFocusedBlock(blockId);
@@ -112,20 +114,7 @@ function SemanticWorkspaceReader({
     const blob: Blob = new Blob(
       [
         JSON.stringify(
-          {
-            schemaVersion: 'wiselink.3_1.bilingual_reading_export.v2',
-            exportedAt: new Date().toISOString(),
-            candidateOnly: true,
-            scope: reading.completeness,
-            workspaceId: reading.workspaceId,
-            rowVersion: reading.rowVersion,
-            source: reading.source,
-            coverage: reading.coverage,
-            anchors: reading.anchors,
-            blocks: reading.blocks,
-            finalCandidate: reading.finalCandidate,
-            readingText: semanticReadingText(reading),
-          },
+          { ...semanticReadingExport(reading), exportedAt: new Date().toISOString() },
           null,
           2,
         ),
@@ -152,11 +141,11 @@ function SemanticWorkspaceReader({
             <progress
               max={100}
               value={view.readablePercent}
-              aria-label="已登记原文字符的可读覆盖率"
+              aria-label="中文可读覆盖率（按已登记原文字符计）"
             />
           ) : null}
           <p>
-            已保存{' '}
+            已保存中文覆盖{' '}
             {reading.coverage.savedSourceCharacters.toLocaleString('zh-CN')} /{' '}
             {reading.coverage.registeredSourceCharacters.toLocaleString(
               'zh-CN',
@@ -324,9 +313,9 @@ function SemanticWorkspaceReader({
                     </div>
                   ) : null}
                 </div>
-                {block.issues.length ? (
+                {semanticReadingIssues(block).length ? (
                   <ul className="wl-bilingual-issues">
-                    {block.issues.map((issue, index) => (
+                    {semanticReadingIssues(block).map((issue, index) => (
                       <li
                         key={`${issue.code}-${index}`}
                         data-severity={issue.severity}
@@ -334,9 +323,9 @@ function SemanticWorkspaceReader({
                         <strong>
                           {translationIssueOriginLabels[issue.origin]} ·{' '}
                           {issue.severity === 'BLOCK'
-                            ? '需处理'
+                            ? '阅读限制'
                             : issue.severity === 'REVIEW'
-                              ? '待复核'
+                              ? '说明'
                               : '提示'}
                           ：
                         </strong>
@@ -360,9 +349,9 @@ function SemanticWorkspaceReader({
                   >
                     查看来源与修订
                   </button>
-                  {block.selected ? (
+                  {block.selected && isFocused ? (
                     <span>
-                      正文版本 {block.selected.contentRevision}
+                      译文修订 {block.selected.contentRevision}
                       {block.selected.provenance.authorKind === 'ENGINEER'
                         ? ' · 人工修订候选'
                         : ''}

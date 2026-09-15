@@ -87,8 +87,8 @@ export function SemanticBlockContent({
         {block.readingStatus === 'PENDING_CHECK'
           ? '译文已保存，检查完成后在此接续。'
           : block.readingStatus === 'BLOCKED'
-            ? '此完整语义范围暂不可读；需处理原因见下方。'
-            : '此处待生成，已完成的段落可继续阅读。'}
+            ? '本段中文暂不可用，可继续阅读对应原文。'
+            : '本段中文尚未生成，可继续阅读对应原文。'}
       </p>
     );
   }

@@ -1,3 +1,4 @@
+import { documentOriginalReadingCoverage } from '../document-management/src/hosted/nest/document-original-adapter';
 import { BadRequestException, Inject, Injectable } from '@nestjs/common';
 import { DRIZZLE_DATABASE, type PostgresJsDatabase } from '@lark-apaas/fullstack-nestjs-core';
 import { sql } from 'drizzle-orm';
@@ -55,7 +56,7 @@ export class DocumentSourceSearchService {
             parseRevision: original.run.parseRevision, sourceRefId: evidence.sourceRefId, evidenceRef: evidence.evidenceRef,
             originalText: evidence.excerpt, matchedRange: evidence.locator ?? evidence.sourceRefId, reason: candidate.reason,
             rootRefs: [`DOCUMENT_VERSION:${candidate.documentVersionId}`, `DOCUMENT_ORIGINAL:${candidate.documentVersionId}:${candidate.parseRunId}`],
-            coverage: original.original.coverage });
+            coverage: documentOriginalReadingCoverage(original.original) });
           if (hits.length === 51) break;
         } catch (error) {
           const status = error && typeof error === 'object' ? ('getStatus' in error && typeof error.getStatus === 'function'

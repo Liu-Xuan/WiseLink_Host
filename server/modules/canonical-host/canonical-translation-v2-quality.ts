@@ -13,7 +13,7 @@ import type {
 } from '@shared/canonical-translation-v2.interface';
 import { canonicalJson } from '../action-attempt/action-attempt-envelope';
 
-export const TRANSLATION_V2_CHECK_VERSION = 'semantic-block-check@2.0';
+export const TRANSLATION_V2_CHECK_VERSION = 'semantic-block-check@2.1';
 
 export interface TranslationSemanticReviewV2 {
   blockId: string;
@@ -112,11 +112,16 @@ export function checkTranslationBlockV2(input: {
       .map((element) => element.translatedText)
       .join('\n');
     const scope = group.anchors.map((anchor) => anchor.anchorId);
-    const originalValues = protectedValues(sourceText);
+    const dateOrder = plan.documentContext.dateOrder;
+    const originalValues = protectedValues(sourceText, dateOrder);
     const wrappedValues = protectedValues(
-      joinWrappedSourceIdentifiers(sourceText),
+      joinWrappedSourceIdentifiers(sourceText), dateOrder,
     );
-    const translatedValues = protectedValues(translatedText);
+    const translatedValues = protectedValues(translatedText, dateOrder);
+    const sourceDateFields = datedFields(sourceText, dateOrder);
+    const translatedDateFields = datedFields(translatedText, dateOrder);
+    if (sourceDateFields.length && canonicalJson(sourceDateFields) !== canonicalJson(translatedDateFields))
+      add('DATE_FIELD_RELATION_CHANGED', '日期与原始日期、修订日期或计划日期字段的对应关系不一致。', scope);
     if (
       canonicalJson(originalValues) !== canonicalJson(translatedValues) &&
       canonicalJson(wrappedValues) !== canonicalJson(translatedValues)
@@ -305,7 +310,7 @@ function calendarDate(year: string, month: number, day: string): string | null {
     ? `${year}-${month}-${Number(day)}`
     : null;
 }
-function normalizedDates(value: string): { text: string; dates: string[] } {
+function normalizedDates(value: string, dateOrder?: 'MDY' | 'DMY'): { text: string; dates: string[] } {
   const dates: string[] = [];
   const replace = (
     original: string,
@@ -333,15 +338,40 @@ function normalizedDates(value: string): { text: string; dates: string[] } {
       new RegExp(`\\b(\\d{1,2})\\s+${names},?\\s+(\\d{4})\\b`, 'giu'),
       (all, day, month, year) => replace(all, year, monthNumber(month), day),
     )
-    .replace(/\b(\d{4})-(\d{2})-(\d{2})\b/gu, (all, year, month, day) =>
+    .replace(/\b(\d{4})-(\d{1,2})-(\d{1,2})\b/gu, (all, year, month, day) =>
       replace(all, year, Number(month), day),
     )
+    .replace(/(?<![\w/.-])(\d{1,2})\/(\d{1,2})\/(\d{4})(?![\w/.-])/gu, (all, first, second, year) => {
+      const order = dateOrder ?? (Number(first) > 12 ? 'DMY' : Number(second) > 12 ? 'MDY' : null);
+      if (!order) { dates.push(`AMBIGUOUS:${first}/${second}/${year}`); return ' '; }
+      return replace(all, year, Number(order === 'MDY' ? first : second), order === 'MDY' ? second : first);
+    })
     .replace(
       /(\d{4})\s*年\s*(\d{1,2})\s*月\s*(\d{1,2})\s*日/gu,
       (all, year, month, day) => replace(all, year, Number(month), day),
     );
   return { text, dates: dates.sort() };
 }
+
+/** Field names travel with their dates; equal multisets cannot permit a field swap. */
+function datedFields(value: string, dateOrder?: 'MDY' | 'DMY'): string[] {
+  const aliases: Array<[string, string]> = [
+    ['originated', 'Originated(?: Date)?|原始日期|发起日期|初始日期|起始日期'],
+    ['revised', 'Last Revised(?: Date)?|最后修订日期|最近修订日期|上次修订日期'],
+    ['created', 'Created(?: On| Date)?|创建日期|创建于'],
+    ['completion', 'Estimated Completion(?: Date)?|预计完成日期|预估完成日期'],
+    ['next_update', 'Next Update(?: Date)?|下次更新日期|下一次更新日期'],
+  ];
+  const matches = aliases.flatMap(([key, pattern]) => [...value.matchAll(new RegExp(pattern, 'giu'))]
+    .map(match => ({ key, start: match.index!, end: match.index! + match[0].length })))
+    .sort((a, b) => a.start - b.start);
+  return matches.flatMap((field, index) => {
+    const dates = normalizedDates(value.slice(field.end, matches[index + 1]?.start ?? value.length), dateOrder).dates;
+    // A grid header sequence must first be bound to cells by the source layout.
+    return dates.length === 1 ? [`${field.key}:${dates[0]}`] : [];
+  }).sort();
+}
+
 /** Compare a PDF line-wrapped identifier without changing stored source text.
  * Only join an existing trailing hyphen to the next line's leading numeric
  * segment. The first-column case retains all intervening columns verbatim.
@@ -364,8 +394,8 @@ function joinWrappedSourceIdentifiers(value: string): string {
       '$1$3$2',
     );
 }
-function protectedValues(value: string) {
-  const normalized = normalizedDates(value);
+function protectedValues(value: string, dateOrder?: 'MDY' | 'DMY') {
+  const normalized = normalizedDates(value, dateOrder);
   // Preserve literal identifiers, including O/0 and punctuation; never infer an
   // OCR correction. Ordinary unambiguous quantities allow leading-zero format.
   const identifiers = [
@@ -375,7 +405,8 @@ function protectedValues(value: string) {
   ]
     .map((match) => match[0])
     .sort();
-  const numbers = [...normalized.text.matchAll(/\d+(?:\.\d+)?/gu)]
+  const numericText = normalized.text.replace(/\b(?=[A-Za-z0-9./-]*[A-Za-z])(?=[A-Za-z0-9./-]*\d)[A-Za-z0-9]+(?:[-./][A-Za-z0-9]+)*\b/gu, ' ');
+  const numbers = [...numericText.matchAll(/[+-]?\d+(?:\.\d+)?/gu)]
     .map((match) => String(Number(match[0])))
     .sort();
   return { dates: normalized.dates, identifiers, numbers };

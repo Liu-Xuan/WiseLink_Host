@@ -84,15 +84,24 @@ export class DocumentOfficialPluginService {
     assertActive: () => Promise<void>) {
     const snapshot = structuredClone(check);
     await assertActive();
-    const raw = await this.call('wl-document-translation-check', 'textToJson', { checkJson: JSON.stringify(snapshot) });
+    const raw = await this.call('wl-document-translation-check', 'textToJson', { checkJson: JSON.stringify({
+      ...snapshot, context: translationReviewContext(snapshot.context),
+      reviewScope: { blockId: snapshot.blockId, allowedAnchorIds: snapshot.anchors.map(anchor => anchor.anchorId),
+        contextIsReferenceOnly: true },
+    }) });
     await assertActive();
     const result = output(z.strictObject({ blockId: z.string().min(1), issues: z.array(z.strictObject({
       code: z.string().min(1), severity: z.enum(['BLOCK', 'REVIEW', 'NOTE']), message: z.string().min(1),
       anchorIds: z.array(z.string().min(1)).min(1),
     })) }), raw, 'DOCUMENT_TRANSLATION_CHECK_OUTPUT_INVALID');
-    if (result.blockId !== snapshot.blockId || result.issues.some(issue =>
-      issue.anchorIds.some(id => !snapshot.anchors.some(anchor => anchor.anchorId === id))))
+    const unknownAnchors = result.issues.flatMap(issue => issue.anchorIds)
+      .filter(id => !snapshot.anchors.some(anchor => anchor.anchorId === id));
+    if (result.blockId !== snapshot.blockId || unknownAnchors.length) {
+      this.logger.warn({ event: 'DOCUMENT_TRANSLATION_CHECK_SCOPE_INVALID', blockIdMismatch: result.blockId !== snapshot.blockId,
+        issueCount: result.issues.length, unknownAnchorCount: new Set(unknownAnchors).size,
+        allowedAnchorCount: snapshot.anchors.length });
       throw new DocumentPluginOutputError('DOCUMENT_TRANSLATION_CHECK_SCOPE_INVALID');
+    }
     return { review: result, producer: producer('wl-document-translation-check', '1.0.26', 'textToJson') };
   }
 
@@ -116,4 +125,14 @@ export class DocumentOfficialPluginService {
 
 function producer(instanceId: string, pluginVersion: string, actionKey: string): DocumentPluginProducer {
   return { kind: 'OFFICIAL_PLUGIN', instanceId, pluginVersion, actionKey, concreteModel: null };
+}
+
+/** Context remains verbatim evidence, but its identifiers are not target anchors for this check. */
+function translationReviewContext(value: unknown): unknown {
+  if (Array.isArray(value)) return value.map(translationReviewContext);
+  if (!value || typeof value !== 'object') return value;
+  return Object.fromEntries(Object.entries(value).filter(([key]) =>
+    !['blockId', 'anchorId', 'anchorIds', 'sourceUnitId', 'sourceUnitIds', 'sourceRefIds', 'sourceIssues',
+      'contextBlockIds', 'requiredTogetherBlockIds', 'conditionAnchorIds', 'definitionAnchorIds', 'sourceFindingId'].includes(key))
+    .map(([key, item]) => [key, translationReviewContext(item)]));
 }

@@ -165,6 +165,14 @@ export default function EngineeringIssueSearch({
             已保存工作修订 {selected.identity.workRevision}
             ；此处始终读取搜索命中的确切版本。
           </p>
+          {selected.identity.overviewStatus === 'STALE' ? <p role="note" className="mb-3 text-sm">
+            此工作的问题正文可读；综合认识尚未覆盖本次问题更新。
+          </p> : selected.identity.overviewStatus === 'NOT_AVAILABLE' ? <p role="note" className="mb-3 text-sm">
+            此工作的问题正文可读；综合认识尚未形成。
+          </p> : null}
+          {selected.identity.correctionNotices?.map(notice => <p key={notice.attemptRef} role="note" className="mb-3 text-sm">
+            {notice.correctedWorkRef ? '此版本已有后继更正：' : '此版本存在待核更正：'}{notice.reason}
+          </p>)}
           <JobAidIssueArticle
             issue={selected.issue}
             reading={selected.reading}

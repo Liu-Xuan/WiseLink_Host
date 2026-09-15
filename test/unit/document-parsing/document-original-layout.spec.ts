@@ -27,12 +27,12 @@ describe('original comparison layout (synthetic coordinate evidence)', () => {
       item('Use a disabled option only when allowed.', 55, 600), item('1.', 40, 600),
       item('Do not repeat the invalid request.', 55, 570), item('2.', 40, 570),
       item('All combined requests are not affected. Only single requests fail.', 40, 540),
-      item('Status', 40, 160), item('Confidential footer.', 40, 75), item('1 of 2', 270, 40),
-      item('SYNTHETIC HEADER', 190, 765),
+      item('Status', 40, 160), item('Copyright Synthetic.', 40, 75), item('1 of 2', 270, 40),
+      item('FLEET TEAM DIGEST', 190, 765),
     ]);
     const second = page([item('No field reports received.', 40, 680), item('Interim Action', 40, 650),
-      item('Avoid disabled options.', 40, 630), item('Confidential footer.', 40, 75),
-      item('SYNTHETIC HEADER', 190, 765)], 1);
+      item('Avoid disabled options.', 40, 630), item('Copyright Synthetic.', 40, 75),
+      item('FLEET TEAM DIGEST', 190, 765)], 1);
     const before = structuredClone([first, second]);
     const result = compose([first, second], '| Background | |\n| --- | --- |\n| There | two cases. |\n\n### Status\n\n| Interim Action | |\n| --- | --- |\n| Avoid | options. |');
     const output = texts(result);
@@ -43,10 +43,10 @@ describe('original comparison layout (synthetic coordinate evidence)', () => {
     expect(result.source.units.filter(unit => unit.kind === 'heading').map(unit => unit.payload.text))
       .toEqual(['Background', 'Status', 'Interim Action']);
     expect(result.source.units.some(unit => unit.kind === 'table')).toBe(false);
-    expect(result.source.units.every(unit => unit.sourceRefIds.length === 1)).toBe(true);
+    expect(result.source.units.find(unit => unit.payload.text === 'Copyright Synthetic.')?.sourceRefIds).toHaveLength(2);
     expect([first, second]).toEqual(before);
     const chars = (value: string) => [...value.replace(/\s/gu, '')].sort().join('');
-    expect(chars(output.join(''))).toBe(chars(before.map(value => value.text).join('')));
+    expect(chars(result.source.units.map(unit => String(unit.payload.text).repeat(unit.sourceRefIds.length)).join(''))).toBe(chars(before.map(value => value.text).join('')));
   });
 
   it('restores verified columns and genuine blank cells using touching identifier fragments', () => {
@@ -67,8 +67,11 @@ describe('original comparison layout (synthetic coordinate evidence)', () => {
       item('XY-', 40, 630, 15), item('987', 70, 630), item('- 0.25', 200, 630)]);
     expect(originalPageLayout(p).page.text).toContain('XY- 987 - 0.25');
     const result = compose([p], '| Code | Value |\n| --- | --- |\n| XY-987 | -0.25 |');
-    expect(result.source.units.some(unit => unit.kind === 'table')).toBe(false);
-    expect(result.coverage.unresolvedRanges.some(range => range.reason === 'TEXT_CONFLICT')).toBe(true);
+    const table = result.source.units.find(unit => unit.kind === 'table')!;
+    expect(JSON.stringify(table.payload)).toContain('XY- 987');
+    expect(JSON.stringify(table.payload)).toContain('- 0.25');
+    expect(JSON.stringify(table.payload)).not.toContain('XY-987');
+    expect(result.coverage.unresolvedRanges.some(range => ['TEXT_CONFLICT', 'STRUCTURE_UNCERTAIN'].includes(range.reason))).toBe(true);
   });
 
   it('matches a whole heading line instead of an occurrence inside another title', () => {
@@ -93,4 +96,60 @@ describe('original comparison layout (synthetic coordinate evidence)', () => {
     expect(result.source.units.map(unit => unit.kind)).toEqual(['paragraph']);
     expect(texts(result)).toEqual([p.text]);
   });
+});
+
+it('rejects a word-identical pseudo table while keeping native prose and its source geometry', () => {
+  const p = page([item('Final Action', 40, 650), item('Implement one option.', 40, 630),
+    item('1. Keep the existing condition.', 40, 610)]);
+  const result = compose([p], '| Final | Action |\n| --- | --- |\n| Implement | one option. |\n| 1. | Keep the existing condition. |');
+  expect(result.source.units.some(unit => unit.kind === 'table')).toBe(false);
+  expect(texts(result).join(' ')).toContain('Implement one option. 1. Keep the existing condition.');
+  expect(result.locations.every(location => location.precision === 'TEXT_ITEM')).toBe(true);
+});
+
+it('uses unique neighbors to disambiguate repeated author headings without choosing the first occurrence', () => {
+  const result = compose([page([item('Alpha paragraph.', 40, 690), item('Repeated', 40, 670), item('Beta paragraph.', 40, 650),
+    item('Gamma paragraph.', 40, 600), item('Repeated', 40, 580), item('Delta paragraph.', 40, 560)])],
+  'Gamma paragraph.\n\n## Repeated\n\nDelta paragraph.');
+  const heading = result.source.units.find(unit => unit.kind === 'heading');
+  expect(heading?.mapping.comparisonStart).toBeGreaterThan(50);
+  expect(texts(result).join(' ')).toContain('Alpha paragraph. Repeated Beta paragraph.');
+});
+
+it('retains repeated technical warnings and conditions at page edges in their original body scope', () => {
+  const warning = 'WARNING: Do not proceed unless the valve is closed.';
+  const result = compose([page([item('First body.', 40, 650), item(warning, 40, 75), item('FLEET TEAM DIGEST', 190, 765)]),
+    page([item('Second body.', 40, 650), item(warning, 40, 75), item('FLEET TEAM DIGEST', 190, 765)], 1)], '');
+  const warnings = result.source.units.filter(unit => unit.payload.text === warning);
+  expect(warnings).toHaveLength(2);
+  expect(warnings.every(unit => unit.mapping.pageFurniture !== true)).toBe(true);
+  expect(result.source.units.findIndex(unit => unit.unitId === warnings[0].unitId))
+    .toBeLessThan(result.source.units.findIndex(unit => unit.payload.text === 'Second body.'));
+  expect(result.source.units.find(unit => unit.payload.text === 'FLEET TEAM DIGEST')?.sourceRefIds).toHaveLength(2);
+});
+
+it('does not hide an unreconstructed real table just because source lines exist', () => {
+  const result = compose([page([item('Column A', 40, 650), item('Column B', 200, 650),
+    item('Value with uncertain column crossing', 40, 630, 210), item('other', 200, 630)])],
+    '| Column A | Column B |\n| --- | --- |\n| Value with uncertain column crossing | other |');
+  expect(result.source.units.some(unit => unit.kind === 'table')).toBe(false);
+  expect(result.coverage.unresolvedRanges).toEqual(expect.arrayContaining([
+    expect.objectContaining({ reason: 'STRUCTURE_UNCERTAIN', readingImpact: 'LIMITATION', pageIndexes: [0] }),
+  ]));
+});
+
+it('joins a page-edge cell only with an exact same-column full-cell witness and retains both source references', () => {
+  const result = compose([page([item('Type', 40, 650), item('Code', 220, 650),
+    item('Technical Notice', 40, 630), item('AB-1', 220, 630),
+    item('Technical', 40, 600), item('AB-2', 220, 600)]),
+    page([item('Notice', 40, 700), item('Technical Notice', 40, 670), item('AB-3', 220, 670)], 1)],
+    '| Type | Code |\n| --- | --- |\n| Technical Notice | AB-1 |\n| Technical | AB-2 |\n\n| Notice | |\n| --- | --- |\n| Technical Notice | AB-3 |');
+  const tables = result.source.units.filter(unit => unit.kind === 'table');
+  expect(tables).toHaveLength(1);
+  const groups = tables[0].payload.rowGroups as Array<{ rows: Array<{ cells: Array<{ inlineContent: Array<{ text: string; sourceRefIds: string[] }> }> }> }>;
+  expect(groups[0].rows).toHaveLength(4);
+  const continued = groups[0].rows[2].cells[0].inlineContent;
+  expect(continued.map(item => item.text).join(' ')).toBe('Technical Notice');
+  expect(new Set(continued.flatMap(item => item.sourceRefIds)).size).toBe(2);
+  expect(result.coverage.unresolvedRanges.filter(range => range.readingImpact === 'LIMITATION')).toEqual([]);
 });

@@ -67,10 +67,12 @@ export const translationIssueSchemaV2 = z.strictObject({
   blockIds: z.array(id),
   anchorIds: z.array(id),
   sourceFindingId: id.optional(),
+  readingImpact: z.enum(['DIAGNOSTIC', 'LIMITATION']).optional(),
 });
 export const translationSourcePlanSchemaV2 = z.strictObject({
   schemaVersion: z.literal('wiselink.3_1.translation_source_plan.v2'),
   planRevision: positive,
+  sourceFindings: z.array(record).optional(),
   source: z.strictObject({
     documentVersionId: id,
     packageId: text,
@@ -140,6 +142,7 @@ export const translationSourcePlanSchemaV2 = z.strictObject({
     .min(1),
   documentContext: z.strictObject({
     revision: positive,
+    dateOrder: z.enum(['MDY', 'DMY']).optional(),
     title: text,
     outline: z.array(
       z.strictObject({

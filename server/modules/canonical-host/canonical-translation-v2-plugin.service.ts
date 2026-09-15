@@ -1,3 +1,5 @@
+import { semanticTranslationSource } from '../document-management/src/hosted/nest/document-semantic-map';
+import type { DocumentSemanticMap } from '@shared/document-semantic-map.interface';
 import { CanonicalTranslationV2Service } from './canonical-translation-v2.service';
 import { Injectable } from '@nestjs/common';
 import type { UnifiedPackageArtifactDescriptor } from '@shared/api.interface';
@@ -19,9 +21,10 @@ export class CanonicalTranslationV2PluginService {
     private readonly plugins: DocumentOfficialPluginService, private readonly v2: CanonicalTranslationV2Service) {}
 
   async prepareOriginal(input: { tenantId: string; workItemId?: string | null; original: DocumentOriginalResult;
-    artifact: UnifiedPackageArtifactDescriptor; assertAuthorized: () => Promise<void> }) {
+    semanticMap?: DocumentSemanticMap; artifact: UnifiedPackageArtifactDescriptor; assertAuthorized: () => Promise<void> }) {
     await input.assertAuthorized();
-    const source = documentOriginalStructuredSource(input.original, input.original.binding);
+    const source = input.semanticMap ? semanticTranslationSource(input.original, input.semanticMap)
+      : documentOriginalStructuredSource(input.original, input.original.binding);
     const plan = buildTranslationSourcePlan({ documentVersionId: input.original.binding.documentVersionId,
       packageId: input.original.binding.parseRunId, parsedArtifact: input.artifact, source,
       title: String(source.units.find(unit => unit.kind === 'heading')?.payload.text ?? '') });

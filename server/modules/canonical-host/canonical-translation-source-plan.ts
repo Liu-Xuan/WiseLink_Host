@@ -245,6 +245,7 @@ export function buildTranslationSourcePlan(input: {
       severity: TranslationIssueV2['severity'],
       message: string,
       sourceFindingId?: string,
+      readingImpact?: TranslationIssueV2['readingImpact'],
     ): void => {
       block.sourceIssues.push({
         code,
@@ -254,9 +255,11 @@ export function buildTranslationSourcePlan(input: {
         blockIds: [block.blockId],
         anchorIds: [...block.anchorIds],
         ...(sourceFindingId ? { sourceFindingId } : {}),
+        ...(readingImpact ? { readingImpact } : {}),
       });
     };
     for (const finding of input.source.findings) {
+      if (finding.readingImpact === 'DIAGNOSTIC') continue;
       const affectedUnits = stringArray(
         finding.affectedUnitIds,
         'finding.affectedUnitIds',
@@ -268,17 +271,24 @@ export function buildTranslationSourcePlan(input: {
       if (
         affectedUnits.some((id) => block.sourceUnitIds.includes(id)) ||
         affectedRefs.some((id) => sourceRefIds.has(id)) ||
-        (affectedUnits.length === 0 && affectedRefs.length === 0)
+        (affectedUnits.length === 0 && affectedRefs.length === 0 &&
+          Array.isArray(finding.pageIndexes) && finding.pageIndexes.some(page =>
+            typeof page === 'number' && group.some(unit => unit.sourceRefIds.some(id => {
+              const locator = locators.get(id);
+              return locator?.pageStart != null && page >= locator.pageStart &&
+                page <= (locator.pageEnd ?? locator.pageStart);
+            }))))
       ) {
         issue(
           String(finding.code),
           finding.blocking === true
             ? 'BLOCK'
-            : finding.severity === 'info'
+            : String(finding.severity).toLowerCase() === 'info'
               ? 'NOTE'
               : 'REVIEW',
           String(finding.message),
           String(finding.findingId),
+          finding.readingImpact === 'LIMITATION' ? 'LIMITATION' : undefined,
         );
       }
     }
@@ -336,6 +346,7 @@ export function buildTranslationSourcePlan(input: {
       packageId: input.packageId,
       parsedArtifact: structuredClone(input.parsedArtifact),
     },
+    sourceFindings: structuredClone(input.source.findings),
     anchors,
     blocks,
     inventory: units.map((unit) => {
@@ -361,6 +372,7 @@ export function buildTranslationSourcePlan(input: {
     documentContext: {
       revision: 1,
       title: input.title,
+      ...(input.source.dateOrder ? { dateOrder: input.source.dateOrder } : {}),
       outline,
       scopedConditions,
       references: structuredClone(input.source.references),
