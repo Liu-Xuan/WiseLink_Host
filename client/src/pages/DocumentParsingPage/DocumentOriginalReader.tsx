@@ -1,4 +1,5 @@
 import type { DocumentOriginalResult } from '@shared/document-original.interface';
+import { originalReadingGroups } from './original-reading';
 import { DocumentOriginalPreview } from '../WorkspaceHomePage/DocumentOriginalPreview';
 
 /** Uses saved source units and explicit page precision; never invents highlight boxes. */
@@ -15,13 +16,17 @@ export function DocumentOriginalReader({ original }: { original: DocumentOrigina
         </span>)}
       </li>)}
     </ul>}
-    {original.source.units.map(unit => {
-      const pageIndexes = [...new Set(original.locations.filter(location => unit.sourceRefIds.includes(location.sourceRefId))
+    {originalReadingGroups(original).map(group => {
+      const unit = group[0];
+      const refs = group.flatMap(member => member.sourceRefIds);
+      const pageIndexes = [...new Set(original.locations.filter(location => refs.includes(location.sourceRefId))
         .map(location => location.pageIndex).filter((page): page is number => page !== null))];
       return <article key={unit.unitId} id={unit.unitId}>
         {unit.kind === 'table' ? <OriginalTable payload={unit.payload} /> : unit.kind === 'heading'
           ? <h3>{String(unit.payload.text ?? '')}</h3>
-          : <p style={{ whiteSpace: 'pre-wrap' }}>{String(unit.payload.text ?? '')}</p>}
+          : <p style={{ whiteSpace: 'pre-wrap' }}>{group.map((member, index) => <span key={member.unitId} id={index ? member.unitId : undefined}>
+            {index ? ' ' : ''}{String(member.payload.text ?? '')}
+          </span>)}</p>}
         <nav aria-label="此段原件位置">{pageIndexes.map(page =>
           <DocumentOriginalPreview key={page} documentVersionId={original.binding.documentVersionId} page={page + 1}>
             原件第 {page + 1} 页（页级定位）

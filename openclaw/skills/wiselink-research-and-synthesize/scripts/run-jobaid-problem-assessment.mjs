@@ -599,12 +599,13 @@ export async function invokeHostedJobAidProblemModel(
       corrections = 0;
     } catch (error) {
       const code = error?.hostErrorCode ?? error?.message ?? '';
-      if (corrections >= 2 && submittedWork && error?.hostErrorCode &&
+      const invalidWorkJson = code === 'JOBAID_WORK_JSON_INVALID' && !submittedWork;
+      if (corrections >= 2 && (invalidWorkJson || (submittedWork && error?.hostErrorCode &&
           /^JOBAID_[A-Z_]+(?::[A-Za-z0-9:_-]+)?$/u.test(code) &&
-          !/AUTHORIZATION|LEASE|REVISION_CONFLICT|VERSION_CHANGED|BUDGET|GATEWAY|READ_FAILED|ATTEMPT/.test(code)) {
-        // A complete candidate explicitly rejected by Host is known failure,
-        // not an unknown write to replay forever on every scheduler tick.
-        error.terminalAssessmentFailure = { errorCode: 'JOBAID_WORK_VALIDATION_FAILED', provenance: {
+          !/AUTHORIZATION|LEASE|REVISION_CONFLICT|VERSION_CHANGED|BUDGET|GATEWAY|READ_FAILED|ATTEMPT/.test(code)))) {
+        // Invalid JSON never reaches SAVE. Together with explicit Host rejection,
+        // this is a known exhausted failure, not an ambiguous write to replay.
+        error.terminalAssessmentFailure = { errorCode: invalidWorkJson ? 'JOBAID_WORK_JSON_INVALID' : 'JOBAID_WORK_VALIDATION_FAILED', provenance: {
           modelVersion: `configured-route:${options.executionModel?.modelRef ?? options.configuredModelVersion}`,
           promptVersion: 'wiselink-jobaid-problem@v2', skillVersion: WISELINK_SKILL_VERSION,
           toolVersions: { [WISELINK_HOST_MCP_NAME]: WISELINK_HOST_MCP_VERSION, 'jobaid-problem-protocol': '2' },
