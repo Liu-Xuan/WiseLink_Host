@@ -1,5 +1,11 @@
 # M 主控集成交接
 
+## 2026-09-16 登录已恢复，准备 c109 与 Host 协同发布
+
+用户扫码恢复登录后，原Hosted终端于2026-09-15T17:46:53Z返回新时钟。原两个Matter job均enabled=true、runningAtMs=null，最近lastStatus=ok；未重启系统或唤醒业务。准确原回执 `assessment-round-1.result.json` 现已读到：AQ-350于16:48:01.594Z取得HTTP400、142字节，error.type=invalid_request_error、code=incomplete_result，message为“miaoda/minimax-m3 ended with an incomplete terminal response”，choices为空。该证据确认Gateway错误，不证明长度截断或底层为何没有完整终态；没有可恢复候选，不重复生成该请求。
+
+准确综合来源前端已接受66aff31cc（F原1561fd84b，父40797136d），工作/历史、快览、态势和Matter知识命中/展开使用同一overviewSourceWork；缺失未知，NOT_AVAILABLE不显示，保留STALE说明。M集成后14项测试及前端类型通过，F四套27项及检查通过。源读取限制修复d8d179d90同步待发布。c109包及清单已上传原Hosted应用存储，尚未安装；计划核对空闲后暂停原调度、原位安装并校验、发布Host，然后恢复原调度及配置，不新建业务测试代替发布验证。
+
 ## 2026-09-16 综合来源工作读取与 Hosted 登录恢复
 
 当前准确工作读取新增 `overviewSourceWork`，直接使用同事项、同租户和所有者的持久 SAVE 收据及确切工作行，记录当前保留综合最后一次明确保存所在的 workRef/workingRevision。历史读取不取未来综合，也不越过不同正文回捞恰好同文的旧记录；缺少收据返回null。它是保存来源，不代表已批准或当前生成状态。问题更正后的STALE工作保留原综合来源，新综合保存切换至新来源。知识搜索/精读及后续Matter输入传递同一引用；不增加数据库表、模型生成或自动回填旧记录。
