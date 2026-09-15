@@ -329,7 +329,8 @@ export class MatterActionAttemptService {
           const revision = await this.authorizedReference(executor, input, reference);
           const evidence = buildMatterWorkReference(reference, revision);
           addMatterDeliveredEvidence(jobAid, evidence);
-          jobAid.modelInput.referenceWorks.push({ ...reference, evidenceRef: evidence[0]!.evidenceRef,
+          jobAid.modelInput.referenceWorks = jobAid.modelInput.referenceWorks.filter(item => item.evidenceRef !== evidence[0]!.evidenceRef);
+          jobAid.modelInput.referenceWorks.push({ ...reference, evidenceRef: evidence[0]!.evidenceRef, overviewStatus: revision.state.problemWork!.overviewStatus,
             correctionNotices: structuredClone(revision.correctionNotices?.filter(notice => notice.issueKey === reference.issueKey) ?? []) });
         }
       }
@@ -457,6 +458,10 @@ export class MatterActionAttemptService {
     return this.authorized(input, (executor, queue) =>
       this.scopedRow(executor, queue, input, input.attemptRef),
     );
+  }
+
+  readForBrowser(input: MatterAttemptScope & { attemptRef: string }, actor: CanonicalHostActor) {
+    return this.authorized(input, (executor, queue) => this.scopedRow(executor, queue, input, input.attemptRef), actor);
   }
 
   async claim(

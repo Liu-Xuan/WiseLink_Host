@@ -1,7 +1,7 @@
 import type { JobAidWorkingReadModel } from '@shared/jobaid-problem-assessment.interface';
 import type { DocumentTranslationReadingResponse } from '@shared/document-translation-reading.interface';
 import type { EngineeringIssueRead, EngineeringIssueSearchHit, EngineeringIssueSearchResponse,
-  EngineeringIssueReferenceRequest, EngineeringIssueReferenceReceipt } from '@shared/engineering-issue-search.interface';
+  EngineeringIssueReferenceRequest, EngineeringIssueReferenceReceipt, EngineeringIssueReferenceStatus } from '@shared/engineering-issue-search.interface';
 import type { CanonicalLibraryFleetCatalog } from '@shared/library-fleet.interface';
 import type { DocumentParsedReading, DocumentParsingStatus, DocumentParseRunSummary, StartDocumentParseRequest } from '@shared/document-parsing.interface';
 import type {
@@ -883,6 +883,16 @@ export async function referenceEngineeringIssue(input: EngineeringIssueReference
       receipt.source.issueKey !== input.source.issueKey || !receipt.attemptRef)
     throw new Error('引用请求的事项或工作版本读回不一致，请重读同一请求。');
   return receipt;
+}
+
+export async function readEngineeringIssueReferenceStatus(targetMatterId: string, attemptRef: string): Promise<EngineeringIssueReferenceStatus> {
+  const status = await reviewConversationRequest<EngineeringIssueReferenceStatus>({
+    url: `/api/canonical-host/engineering-issues/references/status?${new URLSearchParams({ matterId: targetMatterId, attemptRef })}`,
+    method: 'GET', operation: '读取引用比较处理状态',
+  });
+  if (status.targetMatterId !== targetMatterId || status.attemptRef !== attemptRef)
+    throw new Error('处理状态的事项或请求读回不一致，请重新读取。');
+  return status;
 }
 
 export async function getDocumentParsingPage(

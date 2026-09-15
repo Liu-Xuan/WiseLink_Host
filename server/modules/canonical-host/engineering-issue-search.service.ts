@@ -15,6 +15,7 @@ import type {
   EngineeringIssueSearchHit,
   EngineeringIssueSearchResponse,
   EngineeringIssueReferenceReceipt,
+  EngineeringIssueReferenceStatus,
 } from '@shared/engineering-issue-search.interface';
 import { z } from 'zod/v4';
 import { MatterActionAttemptService } from './matter-action-attempt.service';
@@ -65,16 +66,9 @@ export class EngineeringIssueSearchService {
     if (!this.attempts || !this.serviceAuthorization?.authorizeOpenClawMatterRequest) throw canonicalServiceScopeUnavailable();
     await this.matters.readWorking(request.targetMatterId, actor);
     await this.read(request.source, actor);
-    const target = await this.serviceAuthorization.authorizeOpenClawMatterRequest({ matterId: request.targetMatterId });
-    if (target.appId !== actor.appId || target.tenantId !== actor.tenantId || target.actorUserId !== actor.userId ||
-        target.matterId !== request.targetMatterId || !target.principalId) throw canonicalServiceScopeUnavailable();
-    const authorizeReferenceMatter = async (matterId: string) => {
-      const source = await this.serviceAuthorization!.authorizeOpenClawMatterRequest!({ matterId });
-      if (source.appId !== target.appId || source.tenantId !== target.tenantId || source.actorUserId !== target.actorUserId ||
-          source.principalId !== target.principalId || source.matterId !== matterId) throw canonicalServiceScopeUnavailable();
-    };
-    const result = await this.attempts.reserveJobAidForBrowser({ tenantId: actor.tenantId, actorUserId: actor.userId,
-      matterId: request.targetMatterId, authorizeReferenceMatter, expectedMatterRevisionId: request.expectedMatterRevisionId,
+    const scope = await this.referenceScope(request.targetMatterId, actor);
+    const result = await this.attempts.reserveJobAidForBrowser({ ...scope,
+      expectedMatterRevisionId: request.expectedMatterRevisionId,
       expectedMatterRevision: request.expectedMatterRevision, expectedWorkingRevision: request.expectedWorkingRevision,
       idempotencyKey: `matter:${request.targetMatterId}:${request.requestId}`,
       trigger: { kind: 'USER_REQUEST', requestId: request.requestId,
@@ -84,6 +78,34 @@ export class EngineeringIssueSearchService {
     }, actor);
     return { targetMatterId: request.targetMatterId, source: request.source,
       attemptRef: result.task.operationRef, status: result.row.status, created: result.created };
+  }
+
+  async referenceStatus(matterId: string, attemptRef: string, actor: CanonicalHostActor): Promise<EngineeringIssueReferenceStatus> {
+    this.requireActor(actor);
+    if (typeof matterId !== 'string' || !matterId.trim() || matterId.length > 255 ||
+        typeof attemptRef !== 'string' || !attemptRef.trim() || attemptRef.length > 255)
+      throw new BadRequestException('MATTER_REFERENCE_REQUEST_INVALID');
+    if (!this.attempts) throw canonicalServiceScopeUnavailable();
+    await this.matters.readWorking(matterId, actor);
+    const scope = await this.referenceScope(matterId, actor);
+    const row = await this.attempts.readForBrowser({ ...scope, attemptRef }, actor);
+    const task = JSON.parse(row.taskEnvelopeJson ?? '{}');
+    if (!Array.isArray(task.modelInput?.referenceWorks) || !task.modelInput.referenceWorks.length)
+      throw new NotFoundException('MATTER_REFERENCE_REQUEST_NOT_FOUND');
+    return { targetMatterId: matterId, attemptRef, status: row.status, errorCode: row.terminalReason ?? null };
+  }
+
+  private async referenceScope(matterId: string, actor: CanonicalHostActor) {
+    if (!this.serviceAuthorization?.authorizeOpenClawMatterRequest) throw canonicalServiceScopeUnavailable();
+    const target = await this.serviceAuthorization.authorizeOpenClawMatterRequest({ matterId });
+    if (target.appId !== actor.appId || target.tenantId !== actor.tenantId || target.actorUserId !== actor.userId ||
+        target.matterId !== matterId || !target.principalId) throw canonicalServiceScopeUnavailable();
+    const authorizeReferenceMatter = async (matterId: string) => {
+      const source = await this.serviceAuthorization!.authorizeOpenClawMatterRequest!({ matterId });
+      if (source.appId !== target.appId || source.tenantId !== target.tenantId || source.actorUserId !== target.actorUserId ||
+          source.principalId !== target.principalId || source.matterId !== matterId) throw canonicalServiceScopeUnavailable();
+    };
+    return { tenantId: actor.tenantId, actorUserId: actor.userId, matterId, authorizeReferenceMatter };
   }
 
   /** Rebuilds derived search rows through the same actor-scoped readers as search/read. */
@@ -338,6 +360,8 @@ export class EngineeringIssueSearchService {
         rootRefs: assessmentEvidenceRoots(collectIssueEvidenceUses(issue).map(use => use.evidenceRef), content.evidence).rootRefs,
         ...('correctionNotices' in revision && revision.correctionNotices?.some(item => item.issueKey === issue.issueKey)
           ? { correctionNotices: revision.correctionNotices.filter(item => item.issueKey === issue.issueKey) } : {}),
+        ...('referenceWorkNotices' in revision && revision.referenceWorkNotices?.some(item => item.affectedIssueKeys.includes(issue.issueKey))
+          ? { referenceWorkNotices: revision.referenceWorkNotices.filter(item => item.affectedIssueKeys.includes(issue.issueKey)) } : {}),
       },
       issue,
       reading: { ...reading, evidence: content.evidence },
