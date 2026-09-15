@@ -252,24 +252,25 @@ export class CanonicalHostOpenClawMcpService {
 
     if (this.documentWork) server.registerTool('read_document_original', {
       title: '读取确切版本原文',
-      description: '按documentVersionId和parseRunId重新校验来源授权，返回有界完整原文单元、真实定位和覆盖限制。用于工程输入；不是译文，也不代表本轮已评估全文。',
+      description: '按documentVersionId和parseRunId重新校验来源授权，返回有界完整原文单元、真实定位和覆盖限制。提供compareWith、semanticRevision和roleKey时读取同family两版说明及所选文本比较；该模式不接受分页或sectionId。读取不代表已评估全文、版本相邻或正式采用。',
       inputSchema: z.strictObject({ documentVersionId: z.string().trim().min(1).max(96),
         parseRunId: z.string().trim().min(1).max(96), offset: z.number().int().min(0).optional(),
         limit: z.number().int().min(1).max(50).optional(),
-        semanticRevision: z.number().int().min(1).optional(), sectionId: z.string().min(1).max(160).optional() }),
-    }, async input => textResult(await this.documentWork!.readOriginal(input)));
-
-    if (this.documentWork) server.registerTool('read_document_revision', {
-      title: '读取同一文件两版原文及文本比较',
-      description: '分别授权并读取两个明确的同 family DV/parseRun/semanticRevision。返回各版本自身修订说明、所选角色及父级条件、未比范围和文本比较。不能据此确认最新/相邻版次、工程影响或新版评估覆盖。',
-      inputSchema: z.strictObject({
-        before: z.strictObject({ documentVersionId: z.string().regex(/^[A-Za-z0-9_-]{1,96}$/),
-          parseRunId: z.string().regex(/^[A-Za-z0-9_-]{1,96}$/), semanticRevision: z.number().int().min(1) }),
-        after: z.strictObject({ documentVersionId: z.string().regex(/^[A-Za-z0-9_-]{1,96}$/),
-          parseRunId: z.string().regex(/^[A-Za-z0-9_-]{1,96}$/), semanticRevision: z.number().int().min(1) }),
-        roleKey: z.string().regex(/^[A-Za-z0-9_.-]{1,120}$/),
-      }),
-    }, async input => textResult(await this.documentWork!.readRevision(input)));
+        semanticRevision: z.number().int().min(1).optional(), sectionId: z.string().min(1).max(160).optional(),
+        compareWith: z.strictObject({ documentVersionId: z.string().regex(/^[A-Za-z0-9_-]{1,96}$/),
+          parseRunId: z.string().regex(/^[A-Za-z0-9_-]{1,96}$/), semanticRevision: z.number().int().min(1) }).optional(),
+        roleKey: z.string().regex(/^[A-Za-z0-9_.-]{1,120}$/).optional() }),
+    }, async input => {
+      if (input.compareWith) {
+        if (input.semanticRevision === undefined || !input.roleKey || input.sectionId !== undefined ||
+          input.offset !== undefined || input.limit !== undefined) throw new Error('DOCUMENT_REVISION_READING_SELECTION_INVALID');
+        return textResult(await this.documentWork!.readRevision({ before: input.compareWith,
+          after: { documentVersionId: input.documentVersionId, parseRunId: input.parseRunId, semanticRevision: input.semanticRevision },
+          roleKey: input.roleKey }));
+      }
+      if (input.roleKey !== undefined) throw new Error('DOCUMENT_REVISION_READING_SELECTION_INVALID');
+      return textResult(await this.documentWork!.readOriginal(input));
+    });
 
     if (this.documentTranslation) server.registerTool('document_translation', {
       title: '推进独立文档中文阅读',
