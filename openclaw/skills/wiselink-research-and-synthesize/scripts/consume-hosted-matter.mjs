@@ -138,7 +138,7 @@ export async function consumeHostedMatter(options, dependencies) {
           await checkpoint.remoteStep({ step: 'model', args: { inputHash: task.inputHash }, ambiguousCommit: false, perform });
       } catch (error) {
         const failure = error?.terminalAssessmentFailure;
-        if (!['JOBAID_INCOMPLETE_TERMINAL_RESPONSE', 'JOBAID_MODEL_OUTPUT_LENGTH', 'JOBAID_WORK_VALIDATION_FAILED'].includes(failure?.errorCode)) throw error;
+        if (!['JOBAID_INCOMPLETE_TERMINAL_RESPONSE', 'JOBAID_MODEL_OUTPUT_LENGTH', 'JOBAID_WORK_VALIDATION_FAILED', 'JOBAID_WORK_JSON_INVALID'].includes(failure?.errorCode)) throw error;
         validateRuntimeProvenance(failure.provenance);
         execution = { failureCode: failure.errorCode, provenance: failure.provenance };
       }

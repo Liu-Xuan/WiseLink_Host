@@ -1017,6 +1017,15 @@ test('exhausted explicit Host work rejection is terminal; unknown save response 
 });
 
 
+test('exhausted malformed nested work JSON is terminal without a save or extra model call', async () => {
+  const f = fixture(Array.from({ length: 3 }, () => ({ action: 'SAVE_WORK', workJson: '{"issues":[' })));
+  await assert.rejects(f.run(), error => error.message === 'JOBAID_WORK_JSON_INVALID' &&
+    error.terminalAssessmentFailure?.errorCode === 'JOBAID_WORK_JSON_INVALID');
+  assert.equal(f.calls.length, 3);
+  assert.equal(f.saves.length, 0);
+  assert.equal(JSON.parse(f.calls[1].messages.at(-1).content).errorCode, 'JOBAID_WORK_JSON_INVALID');
+});
+
 test('long change summary has no artificial limit and reaches SAVE unchanged', async () => {
   const { jobAidWorkTypeErrors, JOBAID_WORK_UPDATE_SHAPE }=await import('../scripts/jobaid-work-shape.mjs');
   const work={...completed,changeSummary:'完整变更说明𠮷'.repeat(1000)};

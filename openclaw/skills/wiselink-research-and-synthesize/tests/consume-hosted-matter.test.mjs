@@ -264,7 +264,8 @@ test('Matter reads at most four ranges at once and settles them before reporting
   assert.equal(calls.length, 4, 'later ranges are not started after a failed batch');
 });
 
-test('a confirmed incomplete response reports failure once and recovers a lost failure receipt without another generation', () => fixture(async checkpointRoot => {
+for (const failureCode of ['JOBAID_INCOMPLETE_TERMINAL_RESPONSE', 'JOBAID_WORK_JSON_INVALID'])
+test(`${failureCode} reports failure once and recovers a lost failure receipt without another generation`, () => fixture(async checkpointRoot => {
   const boundTask = structuredClone(task);
   Object.assign(boundTask.executionModel, { displayName: 'Synthetic', providerKind: 'BUILT_IN', settingsRevision: 1,
     selectedAt: '2026-09-11T00:00:00.000Z' });
@@ -285,7 +286,7 @@ test('a confirmed incomplete response reports failure once and recovers a lost f
         committed = input.result;
         assert.equal(committed.status, 'FAILED');
         assert.equal(committed.modelOutput, null);
-        assert.equal(committed.errorCode, 'JOBAID_INCOMPLETE_TERMINAL_RESPONSE');
+        assert.equal(committed.errorCode, failureCode);
         assert.equal(JSON.stringify(committed).includes('private-diagnostic'), false);
         throw new Error('failure receipt lost');
       }
@@ -299,6 +300,10 @@ test('a confirmed incomplete response reports failure once and recovers a lost f
         message: { role: 'assistant', content: null, tool_calls: [{ id: 'save-call', type: 'function', function: {
           name: 'return_wiselink_assessment_step', arguments: JSON.stringify({ step: { action: 'SAVE_WORK', workJson: '{"roundCompletion":"COMPLETE"}' } }),
         } }] } }] }));
+      if (failureCode === 'JOBAID_WORK_JSON_INVALID') return new Response(JSON.stringify({ model: 'synthetic', choices: [{ finish_reason: 'tool_calls',
+        message: { role: 'assistant', content: null, tool_calls: [{ id: `invalid-${modelCalls}`, type: 'function', function: {
+          name: 'return_wiselink_assessment_step', arguments: JSON.stringify({ step: { action: 'SAVE_WORK', workJson: '{"issues":[' } }),
+        } }] } }] }));
       return new Response(JSON.stringify({ error: { message: 'miaoda/minimax-m3 ended with an incomplete terminal response',
         code: 'incomplete_result', detail: 'private-diagnostic' } }), { status: 400 });
     } }),
@@ -306,7 +311,7 @@ test('a confirmed incomplete response reports failure once and recovers a lost f
   const options = { matterId: 'MAT-one', checkpointRoot };
   await assert.rejects(consumeHostedMatter(options, dependencies), /failure receipt lost/);
   assert.equal((await consumeHostedMatter(options, dependencies)).status, 'MATTER_ASSESSMENT_FAILED');
-  assert.equal(modelCalls, 2);
+  assert.equal(modelCalls, failureCode === 'JOBAID_WORK_JSON_INVALID' ? 4 : 2);
   assert.equal(finishes, 1);
   assert.equal(saved, 1);
   const checkpoint = await createCheckpointStore(join(checkpointRoot, 'matter', 'MAT-one', 'AQ-one'));
