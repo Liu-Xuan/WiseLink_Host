@@ -78,3 +78,6 @@ F 可在换版视图调用该函数：两侧 `publisherRevisionDescriptions` 保
 
 
 同一读取服务也由既有工程 MCP `read_document_original` 消费，after 使用原工具的 `documentVersionId/parseRunId/semanticRevision`，before 放入 `compareWith`，同时指定 `roleKey`；该模式不接受分页或 `sectionId`，不复制 HTTP 逻辑。MCP 分别取得两端实际来源授权，要求同一 tenant/actor，再执行统一读取。该入口仍为只读，不创建评估任务或覆盖记录。
+
+
+本轮读取实现已随 e5cdf5b96b 的 Host 技术发布完成。两端已保存语义修订已由官方只读查询核对；登录恢复后的真实 HTTP/MCP 调用和前端生产视图仍待联调，不能用技术发布或本地比较结果代替业务验收。
