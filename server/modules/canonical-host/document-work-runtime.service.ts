@@ -6,6 +6,7 @@ import { DocumentParsingHostedService } from '../document-management/src/hosted/
 import { DocumentStepLeaseRepository } from '../document-management/src/hosted/nest/document-step-lease.repository';
 import { EngineeringMatterWorkingRepository } from './engineering-matter-working.repository';
 import { DocumentSemanticService } from './document-semantic.service';
+import { documentOriginalReadingCoverage } from '../document-management/src/hosted/nest/document-original-adapter';
 import { selectDocumentSemanticSection } from '../document-management/src/hosted/nest/document-semantic-map';
 import { CANONICAL_SERVICE_SCOPE_AUTHORIZATION, canonicalServiceScopeUnavailable,
   type CanonicalServiceScopeAuthorizationPort } from './canonical-service-scope.authorization';
@@ -62,13 +63,16 @@ export class DocumentWorkRuntimeService {
         }
       };
       units.forEach(collectRefs);
-      return { binding: original.binding, semanticMap, selection,
+      const coverage = documentOriginalReadingCoverage(original);
+      return { binding: original.binding,
+        semanticMap: semanticMap ? { ...semanticMap, unresolvedRanges: coverage.unresolvedRanges } : null, selection,
         artifact: { ref: `document-original://${encodeURIComponent(scope.documentVersionId)}/${encodeURIComponent(run.parseRunId)}`,
           sha256: run.manifestArtifact.sha256, byteLength: run.manifestArtifact.byteLength,
           mediaType: run.manifestArtifact.mediaType },
         units, sourceLocators: structuredSource.sourceLocators.filter(locator => refs.has(locator.sourceRefId)),
         locations: original.locations.filter(location => refs.has(location.sourceRefId)),
-        coverage: original.coverage, findings: structuredSource.findings, producer: original.producer,
+        coverage, findings: structuredSource.findings.filter(finding => finding.readingImpact !== 'DIAGNOSTIC'),
+        producer: original.producer,
         totalUnits: available.length,
         nextOffset: offset + units.length < available.length ? offset + units.length : null };
     });
