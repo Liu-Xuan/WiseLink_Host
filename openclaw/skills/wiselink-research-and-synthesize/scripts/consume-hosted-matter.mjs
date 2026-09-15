@@ -92,6 +92,7 @@ export async function consumeHostedMatter(options, dependencies) {
         !claim.savedWork.state?.problemWork) throw new Error('MATTER_SAVED_WORK_BINDING_MISMATCH');
       modelInput.expectedWorkRevision = claim.savedWork.workingRevision;
       modelInput.previousWork = { workRevisionRef: claim.savedWork.matterWorkRevisionId, workRevision: claim.savedWork.workingRevision,
+        overviewStatus: claim.savedWork.state.problemWork.overviewStatus,
         content: modelWork(claim.savedWork.state.problemWork) };
     }
     let invocation = await checkpoint.readOptional('assessment-invocation');

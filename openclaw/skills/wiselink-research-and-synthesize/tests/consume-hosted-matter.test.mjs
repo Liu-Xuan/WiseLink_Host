@@ -96,6 +96,31 @@ test('the existing Matter branch reads pages, saves work and finishes once; unkn
   assert.equal(operations.filter(item => item === 'SAVE_WORK').length, 1);
 }));
 
+test('resuming saved Matter work carries its stale overview status and exact revision', () => fixture(async checkpointRoot => {
+  const savedWork = { matterId: 'MAT-one', matterWorkRevisionId: 'MWR-saved', workingRevision: 1,
+    source: { actionAttemptId: 'ATT-one' }, state: { problemWork: {
+      schemaVersion: 'wiselink.jobaid-problem-work.v3', overviewStatus: 'STALE',
+      understanding: 'Old overview', issues: [], roundCompletion: 'IN_PROGRESS',
+    } } };
+  const result = await consumeHostedMatter({ matterId: 'MAT-one', checkpointRoot }, {
+    callTool: async (name, input) => {
+      if (name === 'next_matter_assessment') return { matterId: 'MAT-one', next: { attemptRef: 'AQ-one', status: 'RUNNING' } };
+      if (input.operation === 'CLAIM') return { task, savedWork, status: 'RUNNING', attemptRef: 'AQ-one', leaseToken: 'lease', leaseGeneration: 1 };
+      if (input.operation === 'FINISH') return { attemptRef: 'AQ-one', status: 'SUCCEEDED', workRevisionRef: 'MWR-saved' };
+      assert.fail(input.operation);
+    },
+    invokeMatterModel: async ({ modelInput }, hooks) => {
+      assert.equal(hooks.resumeSavedWork, true);
+      assert.equal(modelInput.expectedWorkRevision, 1);
+      assert.equal(modelInput.previousWork.workRevisionRef, 'MWR-saved');
+      assert.equal(modelInput.previousWork.overviewStatus, 'STALE');
+      assert.equal(modelInput.previousWork.content.overviewStatus, undefined);
+      return { output: { workRevisionRef: 'MWR-saved' }, provenance };
+    },
+  });
+  assert.equal(result.status, 'MATTER_WORK_SAVED');
+}));
+
 test('an ambiguous model request is never repeated on the next native tick', () => fixture(async checkpointRoot => {
   let calls = 0;
   const dependencies = { callTool: async name => name === 'next_matter_assessment'

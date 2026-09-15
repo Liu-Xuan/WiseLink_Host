@@ -73,6 +73,7 @@ export interface JobAidProblemModelInput extends Record<string, unknown> {
   previousWork: {
     workRevisionRef: string;
     workRevision: number;
+    overviewStatus?: JobAidProblemWorkContent['overviewStatus'];
     content: JobAidProblemModelWorkContent;
   } | null;
   expectedWorkRevision: number;
@@ -333,6 +334,7 @@ export function buildJobAidProblemTask(input: {
         ? {
             workRevisionRef: previousWork.workRevisionRef,
             workRevision: previousWork.workRevision,
+            overviewStatus: previousWork.content.overviewStatus,
             content: jobAidProblemModelWorkContent(previousWork.content),
           }
         : null,

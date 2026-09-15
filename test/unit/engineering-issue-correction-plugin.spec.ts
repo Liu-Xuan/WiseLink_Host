@@ -2,6 +2,7 @@ import { CapabilityService } from '@lark-apaas/fullstack-nestjs-core';
 import { Test } from '@nestjs/testing';
 import type { AssessmentEvidence } from '@shared/assessment-reading.interface';
 import { EngineeringIssueCorrectionPluginService } from '../../server/modules/canonical-host/engineering-issue-correction-plugin.service';
+import { buildMatterJobAidTask } from '../../server/modules/canonical-host/matter-jobaid-task';
 import { buildEngineeringIssueCorrectionContext, summarizeEngineeringIssueCorrection } from '../../server/modules/canonical-host/engineering-issue-correction-context';
 
 const INSTANCE_ID = 'wl-engineering-issue-correction';
@@ -242,6 +243,17 @@ describe('buildEngineeringIssueCorrectionContext (host assembly)', () => {
     deliveredEvidence: [evDocument, evStatement],
     limitations: ['limit one'],
   };
+
+  it.each(['CURRENT', 'STALE', 'NOT_AVAILABLE'] as const)('passes %s overview status with the exact prior work into the next Matter task', overviewStatus => {
+    const previous = makeRevision({ overviewStatus });
+    const task = buildMatterJobAidTask({ matterId: previous.matterId, matterRevisionId: 'matter-rev-2',
+      actorUserId: 'actor-1', title: 'Recompute overview', inputs: [], previous,
+      trigger: { kind: 'USER_REQUEST', requestId: 'request-1', instruction: '更新综合' } });
+    expect(task.modelInput.previousWork).toMatchObject({ workRevisionRef: previous.matterWorkRevisionId,
+      workRevision: previous.workingRevision, overviewStatus });
+    expect(task.modelInput.previousWork?.content).toHaveProperty('overview');
+    expect(task.modelInput.previousWork?.content).not.toHaveProperty('overviewStatus');
+  });
 
   it('assembles the context from the bound work revision and delivered evidence', () => {
     const context = buildEngineeringIssueCorrectionContext({ current: makeRevision(), ...baseInput });

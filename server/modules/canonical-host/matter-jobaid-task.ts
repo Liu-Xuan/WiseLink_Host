@@ -84,6 +84,7 @@ export function buildMatterJobAidTask(input: {
       previousWork: input.previous ? {
         workRevisionRef: input.previous.matterWorkRevisionId,
         workRevision: input.previous.workingRevision,
+        overviewStatus: prior?.overviewStatus ?? 'NOT_AVAILABLE',
         content: prior ? jobAidProblemModelWorkContent(prior) : null,
         openQuestions: structuredClone(input.previous.state.openQuestions),
         reviewConditions: structuredClone(input.previous.state.reviewConditions),
