@@ -103,6 +103,8 @@ test('normal Matter command materializes, validates and reads the same body with
   const overviewState=materializeEngineeringMatterWorkingState({matterId:input.matterId,current:state,command:overviewCommand}).state;
   expect(overviewState.problemWork?.issues).toEqual(state.problemWork?.issues);
   expect(overviewState.problemWork?.overviewStatus).toBe('CURRENT');
+  expect(overviewCommand.changeSummary).toContain('综合正文');
+  expect(overviewCommand.changeSummary).not.toContain('更新 1 个问题');
   expect(overviewState.coverage[0]).toMatchObject({contribution:'SUBSTANTIVE',checkedSourceRefIds:['u1','u2'],reason:state.coverage[0].reason});
   expect(overviewState.coverage[0].checkedScope).toContain('另读取但未新增分析：page 2');
   expect(engineeringMatterPendingInputs(overviewState,input.inputs)).toEqual([]);
@@ -118,6 +120,38 @@ test('normal Matter command materializes, validates and reads the same body with
     const changedState=materializeEngineeringMatterWorkingState({matterId:input.matterId,current:state,command:changed}).state;
     expect(engineeringMatterPendingInputs(changedState,[{...input.inputs[0],original:changedOriginal}])[0].reasons).toContain('READ_NOT_PROCESSED');
   }
+});
+
+test('Matter save summary reports actual differences even when the producer claims no change',()=>{
+  const input={matterId:'MAT-test',matterRevisionId:'MR1',attemptRef:'AQ1',requestId:'save1',expectedWorkRevision:0,previous:null,
+    inputs:[{kind:'DOCUMENT_VERSION' as const,inputId:'I1',familyId:'F1',workItemId:null,workItemRevision:null,resultRef:null,resultRevision:null,documentVersionId:'dv',original:{parseRunId:'pr1',parseRevision:1,semantic:{revision:1,profileRef:'ftd'}}}],
+    proposal:update([issue('A'),issue('B')],{overview:'原综合。'}),
+    evidence:context.evidence,readSourceRefs:context.readSourceRefs,capabilities:[],history:context.history,methodBinding:context.methodBinding};
+  const initial=materializeMatterJobAidCommand(input);
+  const {state}=materializeEngineeringMatterWorkingState({matterId:input.matterId,current:null,command:initial});
+  const previous: EngineeringMatterWorkingRevisionReadModel={matterWorkRevisionId:'MW1',matterId:input.matterId,
+    workingRevision:1,basedOnMatterRevisionId:'MR1',updateKind:initial.updateKind,changeSummary:initial.changeSummary,
+    substantiveResultRef:state.substantiveResult!.resultRef,substantiveResultRevision:1,state,
+    change:engineeringMatterWorkingChangeFromCommand(initial),source:null,createdAt:'2026-09-15T00:00:00Z'};
+  const noChangeClaim='逐项核对一致，没有实质变化。';
+  const appended=materializeMatterJobAidCommand({...input,previous,expectedWorkRevision:1,
+    proposal:update([],{overview:'原综合。\n本轮核对没有变化。',changeSummary:noChangeClaim})});
+  const appendedState=materializeEngineeringMatterWorkingState({matterId:input.matterId,current:state,command:appended}).state;
+  expect(appended.changeSummary).toBe('字段变化：综合正文。');
+  expect(appended.claimDelta?.changedBecause).toBe(noChangeClaim);
+  expect(appendedState.problemWork?.changeSummary).toBe(noChangeClaim);
+  expect(appendedState.problemWork?.issues).toEqual(state.problemWork?.issues);
+  const retired=materializeMatterJobAidCommand({...input,previous,expectedWorkRevision:1,
+    proposal:update([],{retiredIssues:[{issueKey:'B',reason:'重复范围已撤回。'}],changeSummary:noChangeClaim})});
+  expect(retired.changeSummary).toContain('撤回 1 个问题');
+  expect(retired.changeSummary).not.toContain('更新 1 个问题');
+  expect(materializeEngineeringMatterWorkingState({matterId:input.matterId,current:state,command:retired})
+    .state.problemWork?.issues.map(item=>item.issueKey)).toEqual(['A']);
+  const unchanged=materializeMatterJobAidCommand({...input,previous,expectedWorkRevision:1,
+    proposal:update([],{changeSummary:'已经更正全部问题。'})});
+  expect(unchanged.changeSummary).toBe('本轮没有字段变化。');
+  expect(unchanged.nextProblemWork).toBeUndefined();
+  expect(unchanged.nextSubstantiveResult).toBeNull();
 });
 
   test('calculates the sixteen original matrix cells, with five grades and no other matrix substitution', () => {
