@@ -1,5 +1,17 @@
 # M 主控集成交接
 
+## 2026-09-15 本批收口，前端集成可开始
+
+接受的业务基线为 `eb9979f2e28585a899deb8798befa9bb25044e17`，origin/github 的 `codex/wl31-r09-master-handoff-20260903` 已分别核对同一 SHA。官方 Host release `7685722535677381591` finished，实际 commit 精确匹配、error_logs 为空。本节后续提交仅更新交接事实，业务代码保持该基线；无需再次发布文档提交。
+
+线上原生页面已读取上一节真实引用请求的终态，显示“本次处理失败：模型没有返回完整结果。已保存工作仍可阅读。”，工作修订仍为7；本次仅 GET 核验，未新建比较请求。两个原有事项任务已恢复 enabled=true，发布窗口前后全配置除 state/updatedAtMs 外完全一致。c108 未重装，无未完成发布或遗留暂停。
+
+跨事项 PG 流程、伪造引用正文拒绝、原生状态同事项与撤权检查、实时更正提示及 SSR、相关工作/搜索/MCP 单测、两端类型检查和生产构建均通过。无未提交业务改动；原有8项本机敏感诊断未跟踪资料不属于交付，未纳入公开同步。
+
+M 本轮在此结束。可开始前端集成：从接受基线及本交接文档提交建立独立 `codex/miaoda-frontend-integration-20260915` worktree，选择性迁入前端增量。M 冻结 `server/**`、`shared/**`、`client/src/**`、`migrations/**`、`package.json`、lockfile 与 `tsconfig*`，集成窗口仅允许协调文档事实更新；保留当前身份/租户、来源、事务/CAS、精确引用和状态回读接口。
+
+未完成业务另列后继：真实跨事项比较未产生候选；777工作7综合两处已知误读尚未纠正；长SB仅完成原件只读核验，新增处理范围尚待用户授权。大 Goal 未完成，不作为本次前端集成的等待条件。
+
 ## 2026-09-15 跨事项准确引用已发布，真实页面请求已登记
 
 提交 `0ce31ec82c0dc7152912a8fdbc0cdd4d9abea515` 已在 origin/github 同名开发分支分别核验。官方 Host release `7685714384761621700` finished，commit 精确一致、error_logs 为空；c108 未重装。0057 经官方 CLI 在 dev 事务应用并读回，发布后 online 只读查询确认相同 SELECT/tenant mapping 策略。发布前两个事项任务无在途时短暂停用，发布后均恢复 enabled=true，除 state/updatedAtMs 外全配置逐字段相等。
