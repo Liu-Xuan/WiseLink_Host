@@ -245,7 +245,7 @@ export default function MatterPosture({
             </>
           ) : null}
           <p className="matter-posture-note">
-            文件修订说明、实际比较跨度与工程时间声明尚未接入本视图。
+            当前记录仅说明工作变化；文件修订内容、比较范围与工程事件时间仍需另行核对。
           </p>
         </section>
 
@@ -328,7 +328,7 @@ export default function MatterPosture({
         />
         <ReferenceWorkNotices notices={current?.referenceWorkNotices} />
         <p className="matter-posture-note">
-          请求结果与工作保存分开阅读。当前仅选中事项；全局聚合、工程时间轴及实施/运行记录未在本批完成。
+          核对请求的结果与已保存工作分别列示。
         </p>
       </section>
     </div>
