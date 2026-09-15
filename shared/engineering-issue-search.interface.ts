@@ -1,6 +1,6 @@
 import type { AssessmentReadingResult } from './assessment-reading.interface';
 import type { JobAidProblemIssue } from './jobaid-problem-assessment.interface';
-import type { EngineeringMatterCorrectionNotice, EngineeringMatterReferenceWorkNotice } from './matter-working.interface';
+import type { EngineeringMatterCorrectionNotice, EngineeringMatterOverviewCorrectionNotice, EngineeringMatterReferenceWorkNotice } from './matter-working.interface';
 
 export interface EngineeringIssueSearchHit {
   subjectKind: 'WORK_ITEM' | 'ENGINEERING_MATTER';
@@ -16,6 +16,7 @@ export interface EngineeringIssueSearchHit {
   reason: string;
   rootRefs: string[];
   correctionNotices?: EngineeringMatterCorrectionNotice[];
+  overviewCorrectionNotices?: EngineeringMatterOverviewCorrectionNotice[];
   referenceWorkNotices?: EngineeringMatterReferenceWorkNotice[];
   /** Coverage of the overview attached to this exact saved work, not publisher currentness. */
   overviewStatus?: 'NOT_AVAILABLE' | 'CURRENT' | 'STALE';

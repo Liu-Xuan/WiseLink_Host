@@ -9,7 +9,10 @@ import type {
   LinkEngineeringMatterWorkItemRequest,
   LinkEngineeringMatterWorkItemResponse,
 } from '@shared/api.interface';
-import type { EngineeringMatterWorkingReadModel } from '@shared/matter-working.interface';
+import type {
+  EngineeringMatterWorkingReadModel,
+  EngineeringMatterWorkingRevisionReadModel,
+} from '@shared/matter-working.interface';
 import type {
   MatterMaterialsReadModel,
   ReviseMatterMaterialsRequest,
@@ -109,6 +112,27 @@ export function getEngineeringMatterWorking(
     undefined,
     signal,
   );
+}
+
+export async function getEngineeringMatterWorkingRevision(
+  matterId: string,
+  workRef: string,
+  signal?: AbortSignal,
+): Promise<EngineeringMatterWorkingRevisionReadModel> {
+  const revision: EngineeringMatterWorkingRevisionReadModel =
+    await requestEngineeringMatter(
+      `${matterPath(matterId)}/working/${encodeURIComponent(workRef)}`,
+      'GET',
+      undefined,
+      signal,
+    );
+  if (
+    revision.matterId !== matterId ||
+    revision.matterWorkRevisionId !== workRef
+  ) {
+    throw invalidMatterReadback();
+  }
+  return revision;
 }
 
 export async function createEngineeringMatter(

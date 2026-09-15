@@ -114,10 +114,10 @@ test('cross Matter references save exact lineage and reauthorize scopes and root
         const lease = await owner.runtime(() => service.claim(target));
         return { ...target, leaseToken: lease.leaseToken, leaseGeneration: lease.leaseGeneration };
       };
-      const save = async (fence, task, body, id) => {
+      const save = async (fence, task, body, id, extra = {}) => {
         const candidate = { schemaVersion: 'wiselink.jobaid-problem-work.v3', issues: [{ issueKey: 'conditions',
           question: 'Synthetic target-specific conditions', body }], roundCompletion: 'COMPLETE_WITH_OPEN_QUESTIONS',
-          completionReason: 'No target configuration records supplied.', changeSummary: 'Compare conditions without inheriting target facts.' };
+          completionReason: 'No target configuration records supplied.', changeSummary: 'Compare conditions without inheriting target facts.', ...extra };
         const saved = await owner.runtime(() => service.saveJobAidWork({ ...fence, requestId: id,
           expectedWorkRevision: task.baseRevision, workJson: JSON.stringify(candidate) }));
         const { contentHash: _hash, ...result } = matterResult(task);
@@ -136,7 +136,8 @@ test('cross Matter references save exact lineage and reauthorize scopes and root
         async () => ({ documentVersionId, sourceSha256: 'a'.repeat(64), sourceByteLength: 80, pageCount: 1,
           extractionScope: 'NATIVE_TEXT_LAYER', pages: [{ page: 1, sourceRefId: rootRef, text: original.excerpt,
             textLayerStatus: 'PRESENT', visualContentVerified: false, evidence: original }] })));
-      const savedA = await save(fenceA, first.reserved.task, `A has an unverified target condition. [[${rootRef}]]`, 'save-A');
+      const savedA = await save(fenceA, first.reserved.task, `A has an unverified target condition. [[${rootRef}]]`, 'save-A',
+        { overview: `Synthetic overview with a condition requiring review. [[${rootRef}]]` });
       const referenceA = { matterId: a.matter.matterId, workRef: savedA.workRevisionRef, issueKey: 'conditions', purpose: 'Compare A with B' };
       const requestB = await requestFor(b.matter.matterId, 'reference-import-B', [referenceA]);
       const browserReferences = new EngineeringIssueSearchService(owner.database, {}, owner.workingService, undefined, service, {
@@ -225,6 +226,66 @@ test('cross Matter references save exact lineage and reauthorize scopes and root
         sourceCorrection.target.attemptRef, 'a later B request receives new notices without re-importing A');
       await owner.runtime(() => service.cancel({ ...continuedB.target, reason: 'Retained source notice verified in isolated test' }));
       await owner.runtime(() => service.cancel({ ...sourceCorrection.target, reason: 'Source notice verified in isolated test' }));
+      const overviewPurpose = { kind: 'ENGINEERING_OVERVIEW_CORRECTION', expectedWorkRef: savedA.workRevisionRef,
+        correctionReason: 'Recheck the scope of the synthetic overview; do not infer target facts.', evidenceRefs: [rootRef] };
+      const overviewRequest = { ...await requestFor(a.matter.matterId, 'overview-review-A'), overviewCorrection: overviewPurpose };
+      await assert.rejects(start({ ...overviewRequest, overviewCorrection: { ...overviewPurpose, expectedWorkRef: savedB.workRevisionRef } }),
+        /OVERVIEW_CORRECTION_WORK_BINDING_CHANGED/u);
+      await assert.rejects(start({ ...overviewRequest, overviewCorrection: { ...overviewPurpose, evidenceRefs: ['NOT_DELIVERED'] } }),
+        /OVERVIEW_CORRECTION_SOURCE_NOT_DELIVERED/u);
+      const overviewReview = await start(overviewRequest);
+      assert.deepEqual(overviewReview.reserved.task.modelInput.modelInput.overviewCorrection, overviewPurpose);
+      assert.ok(overviewReview.reserved.task.executionModel, 'overview review uses the existing normal consumer');
+      assert.equal((await start(overviewRequest)).reserved.created, false);
+      await assert.rejects(start({ ...overviewRequest, overviewCorrection: { ...overviewPurpose, correctionReason: 'Different request' } }),
+        /IDEMPOTENCY_REPLAY_MISMATCH/u);
+      const reviewBefore = await owner.workingService.readWorkingRevision(a.matter.matterId, savedA.workRevisionRef, owner.actor);
+      assert.deepEqual(reviewBefore.overviewCorrectionNotices, [{ attemptRef: overviewReview.target.attemptRef,
+        targetWorkRef: savedA.workRevisionRef, reason: overviewPurpose.correctionReason, attemptStatus: 'QUEUED',
+        savedWorkRef: null, savedWorkingRevision: null }]);
+      const referencedOverview = await owner.workingService.readWorkingRevision(b.matter.matterId, savedB.workRevisionRef, owner.actor);
+      assert.deepEqual(referencedOverview.state, readB.state);
+      assert.equal(referencedOverview.referenceWorkNotices[0].overviewCorrectionNotices[0].attemptRef, overviewReview.target.attemptRef);
+      assert.equal((await search.search('CrossReferenceProbe', owner.actor)).hits[0].referenceWorkNotices[0]
+        .overviewCorrectionNotices[0].attemptRef, overviewReview.target.attemptRef);
+      const nextBWithOverviewNotice = await start(await requestFor(b.matter.matterId, 'reference-overview-notice-B'));
+      assert.equal(nextBWithOverviewNotice.reserved.task.modelInput.modelInput.referenceWorks[0]
+        .overviewCorrectionNotices[0].attemptRef, overviewReview.target.attemptRef);
+      await owner.runtime(() => service.cancel({ ...nextBWithOverviewNotice.target, reason: 'Overview reference input verified in isolated test' }));
+      const overviewFailureFence = await claim(overviewReview.target);
+      await owner.runtime(() => service.finishJobAid({ ...overviewFailureFence, result: matterResult(overviewReview.reserved.task, 'FAILED') }));
+      const failedReview = await owner.workingService.readWorkingRevision(a.matter.matterId, savedA.workRevisionRef, owner.actor);
+      assert.deepEqual(failedReview.state, reviewBefore.state, 'a failed review does not rewrite the overview');
+      assert.equal(failedReview.overviewCorrectionNotices[0].attemptStatus, 'FAILED');
+      assert.equal(failedReview.overviewCorrectionNotices[0].savedWorkRef, null);
+      const overviewRecoveryRequest = { ...await requestFor(a.matter.matterId, 'overview-review-recover-A'),
+        recoveryAttemptRef: overviewReview.target.attemptRef };
+      await assert.rejects(start({ ...overviewRecoveryRequest, overviewCorrection: { ...overviewPurpose, correctionReason: 'Changed recovery scope' } }),
+        /RECOVERY_BASIS_CHANGED/u);
+      const overviewRecovery = await start(overviewRecoveryRequest);
+      assert.deepEqual(overviewRecovery.reserved.task.modelInput.overviewCorrection, overviewPurpose);
+      assert.equal(overviewRecovery.reserved.task.modelInput.modelInput.knownOverviewCorrections[0].attemptStatus, 'FAILED');
+      assert.equal((await start(overviewRecoveryRequest)).reserved.created, false);
+      const overviewFence = await claim(overviewRecovery.target);
+      const overviewSaved = await owner.runtime(() => service.saveJobAidWork({ ...overviewFence, requestId: 'save-overview-before-failure',
+        expectedWorkRevision: 1, workJson: JSON.stringify({ schemaVersion: 'wiselink.jobaid-problem-work.v3', issues: [],
+          overview: `The reviewed synthetic overview preserves the target-specific limitation. [[${rootRef}]]`,
+          roundCompletion: 'COMPLETE_WITH_OPEN_QUESTIONS', completionReason: 'Target facts remain unverified.',
+          changeSummary: 'Revise the synthetic overview without changing problem bodies.' }) }));
+      await owner.runtime(() => service.finishJobAid({ ...overviewFence, result: matterResult(overviewRecovery.reserved.task, 'FAILED') }));
+      const currentAfterReview = await owner.workingService.readWorkingRevision(a.matter.matterId, overviewSaved.workRevisionRef, owner.actor);
+      assert.deepEqual(currentAfterReview.state.problemWork.issues, reviewBefore.state.problemWork.issues);
+      const savedNotice = currentAfterReview.overviewCorrectionNotices.find(notice => notice.attemptRef === overviewRecovery.target.attemptRef);
+      assert.equal(savedNotice.attemptStatus, 'FAILED');
+      assert.equal(savedNotice.savedWorkRef, overviewSaved.workRevisionRef, 'persisted output remains visible after a later failure');
+      assert.equal(savedNotice.savedWorkingRevision, 2);
+      const nextOverview = await start({ ...await requestFor(a.matter.matterId, 'overview-review-newer-A'),
+        overviewCorrection: { ...overviewPurpose, expectedWorkRef: overviewSaved.workRevisionRef } });
+      const exactOldA = await owner.workingService.readWorkingRevision(a.matter.matterId, savedA.workRevisionRef, owner.actor);
+      assert.ok(exactOldA.overviewCorrectionNotices.every(notice => notice.targetWorkRef === savedA.workRevisionRef),
+        'historical reading does not attach review requests targeting newer work');
+      assert.equal(nextOverview.reserved.task.modelInput.modelInput.knownOverviewCorrections.length, 2);
+      await owner.runtime(() => service.cancel({ ...nextOverview.target, reason: 'Exact overview scope verified in isolated test' }));
       await sql`UPDATE engineering_matter SET created_by_user_id = 'actor-B' WHERE matter_id = ${a.matter.matterId}`;
       await assert.rejects(owner.workingService.readWorkingRevision(b.matter.matterId, savedB.workRevisionRef, owner.actor), /AUTHORIZATION/u);
       assert.equal((await search.search('CrossReferenceProbe', owner.actor)).hits.length, 0);
@@ -235,7 +296,16 @@ test('cross Matter references save exact lineage and reauthorize scopes and root
       assert.deepEqual(priorB.originalEvidenceRefs, [rootRef], 'A -> B -> A retains one original root');
       const last = await save(await claim(back.target), back.reserved.task,
         `A checks B's comparison while retaining its original uncertainty. [[${priorB.evidenceRef}]]`, 'save-A2');
-      assert.equal(last.workRevision, 2);
+      assert.equal(last.workRevision, 3);
+      const laterA = await owner.workingService.readWorkingRevision(a.matter.matterId, last.workRevisionRef, owner.actor);
+      assert.equal(laterA.overviewCorrectionNotices.length, 3, 'an unrelated later save does not erase explicit prior review requests');
+      assert.equal(laterA.overviewCorrectionNotices.find(notice => notice.attemptRef === overviewRecovery.target.attemptRef)
+        .savedWorkRef, overviewSaved.workRevisionRef);
+      const ordinaryFailure = await start(await requestFor(a.matter.matterId, 'ordinary-failure-is-not-overview-review'));
+      const ordinaryFailureFence = await claim(ordinaryFailure.target);
+      await owner.runtime(() => service.finishJobAid({ ...ordinaryFailureFence, result: matterResult(ordinaryFailure.reserved.task, 'FAILED') }));
+      assert.deepEqual((await owner.workingService.readWorkingRevision(a.matter.matterId, last.workRevisionRef, owner.actor))
+        .overviewCorrectionNotices, laterA.overviewCorrectionNotices, 'an ordinary failed generation is not a content-correction notice');
       assert.equal((await owner.workingService.readWorkingRevision(b.matter.matterId, savedB.workRevisionRef, owner.actor))
         .state.problemWork.evidence.find(item => item.kind === 'PRIOR_RESULT').resultRef, savedA.workRevisionRef);
       await sql`UPDATE work_item SET requested_by_user_id = 'actor-B' WHERE work_item_id = ${FTD_WORK_ITEM_ID}`;

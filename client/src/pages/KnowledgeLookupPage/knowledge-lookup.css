@@ -1,0 +1,225 @@
+/* ============================================================
+ * WiseLink 3.1 · 工程知识查阅页（/knowledge）
+ * 全部使用 --wl-* 设计令牌，正文 14-16px
+ * ============================================================ */
+
+.knowledge-lookup {
+  display: flex;
+  flex-direction: column;
+  gap: var(--wl-space-5);
+  padding: var(--wl-space-6);
+  max-width: 880px;
+  margin: 0 auto;
+  font-family: var(--wl-font);
+  color: var(--wl-ink);
+}
+
+.knowledge-lookup-header {
+  display: flex;
+  flex-direction: column;
+  gap: var(--wl-space-1);
+}
+
+.knowledge-lookup-title {
+  margin: 0;
+  font-size: 22px;
+  font-weight: 600;
+  letter-spacing: 0.2px;
+}
+
+.knowledge-lookup-subtitle {
+  margin: 0;
+  font-size: 14px;
+  color: var(--wl-muted);
+}
+
+/* 状态提示（加载 / 未选版本 / 无匹配 / 无版本） */
+.knowledge-lookup-status {
+  padding: var(--wl-space-8) var(--wl-space-6);
+  border-radius: var(--wl-radius-panel);
+  background: var(--wl-glass-content);
+  border: 1px solid var(--wl-border);
+  box-shadow: var(--wl-shadow-1);
+  backdrop-filter: blur(var(--wl-blur-panel));
+  font-size: 15px;
+  color: var(--wl-muted);
+  text-align: center;
+}
+
+/* 无事项引导空态 */
+.knowledge-lookup-empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--wl-space-4);
+  padding: var(--wl-space-8) var(--wl-space-6);
+  border-radius: var(--wl-radius-panel);
+  background: var(--wl-glass-content);
+  border: 1px solid var(--wl-border);
+  box-shadow: var(--wl-shadow-1);
+  backdrop-filter: blur(var(--wl-blur-panel));
+  text-align: center;
+}
+
+.knowledge-lookup-empty-text {
+  margin: 0;
+  font-size: 16px;
+  color: var(--wl-ink);
+}
+
+/* 受阻状态卡 */
+.knowledge-lookup-blocked {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--wl-space-2);
+  padding: var(--wl-space-8) var(--wl-space-6);
+  border-radius: var(--wl-radius-panel);
+  background: var(--wl-red-soft);
+  border: 1px solid var(--wl-border-strong);
+  backdrop-filter: blur(var(--wl-blur-panel));
+  text-align: center;
+}
+
+.knowledge-lookup-blocked-title {
+  margin: 0;
+  font-size: 16px;
+  font-weight: 600;
+  color: var(--wl-red);
+}
+
+.knowledge-lookup-blocked-detail {
+  margin: 0;
+  font-size: 14px;
+  color: var(--wl-muted);
+}
+
+.knowledge-lookup-blocked-code {
+  padding: var(--wl-space-1) var(--wl-space-3);
+  border-radius: var(--wl-radius-sm);
+  background: var(--wl-surface-solid);
+  border: 1px solid var(--wl-border);
+  font-family: var(--wl-mono);
+  font-size: 13px;
+  color: var(--wl-ink);
+  word-break: break-all;
+}
+
+/* 版本选择 */
+.knowledge-lookup-controls {
+  display: flex;
+  flex-direction: column;
+  gap: var(--wl-space-2);
+}
+
+.knowledge-lookup-field-label {
+  font-size: 14px;
+  font-weight: 500;
+  color: var(--wl-muted);
+}
+
+.knowledge-lookup-version-select {
+  max-width: 420px;
+}
+
+/* 搜索区 */
+.knowledge-lookup-search {
+  display: flex;
+  align-items: center;
+  gap: var(--wl-space-3);
+  flex-wrap: wrap;
+}
+
+.knowledge-lookup-search-input {
+  flex: 1 1 280px;
+  font-size: 15px;
+}
+
+/* 结果列表 */
+.knowledge-lookup-results {
+  display: flex;
+  flex-direction: column;
+  gap: var(--wl-space-3);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.knowledge-lookup-result-card {
+  display: flex;
+  flex-direction: column;
+  gap: var(--wl-space-2);
+  width: 100%;
+  padding: var(--wl-space-4) var(--wl-space-5);
+  border-radius: var(--wl-radius-panel);
+  background: var(--wl-glass-content);
+  border: 1px solid var(--wl-border);
+  box-shadow: var(--wl-shadow-1);
+  backdrop-filter: blur(var(--wl-blur-panel));
+  text-align: left;
+  font-family: var(--wl-font);
+  cursor: pointer;
+  transition:
+    border-color var(--wl-motion-fast) ease,
+    box-shadow var(--wl-motion-fast) ease,
+    transform var(--wl-motion-fast) ease;
+}
+
+.knowledge-lookup-result-card:hover {
+  border-color: var(--wl-border-strong);
+  box-shadow: var(--wl-shadow-2);
+  transform: translateY(-1px);
+}
+
+.knowledge-lookup-result-card:focus-visible {
+  outline: none;
+  box-shadow: var(--wl-shadow-focus);
+}
+
+.knowledge-lookup-result-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--wl-space-3);
+  flex-wrap: wrap;
+}
+
+.knowledge-lookup-result-title {
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--wl-ink);
+  word-break: break-all;
+}
+
+.knowledge-lookup-result-kind {
+  padding: 2px var(--wl-space-2);
+  border-radius: var(--wl-radius-sm);
+  background: var(--wl-accent-soft);
+  font-size: 12px;
+  color: var(--wl-accent);
+  white-space: nowrap;
+}
+
+.knowledge-lookup-result-summary {
+  margin: 0;
+  font-size: 14px;
+  line-height: 1.6;
+  color: var(--wl-ink);
+  overflow-wrap: break-word;
+}
+
+.knowledge-lookup-result-source {
+  font-size: 13px;
+  color: var(--wl-faint);
+  word-break: break-all;
+}
+
+@media (max-width: 640px) {
+  .knowledge-lookup {
+    padding: var(--wl-space-4);
+  }
+
+  .knowledge-lookup-version-select {
+    max-width: none;
+  }
+}

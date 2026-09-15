@@ -1,343 +1,373 @@
 /* ============================================================
- * WiseLink 3.1 · App Shell (Spec R01 §5 / §7 AppShell)
- * 单一玻璃 App Chrome（G1）+ 环境背景（wl-environment）。
+ * WiseLink App Shell — 侧栏导航 + 紧凑顶栏（Spec R02）
+ * 左侧一套全局导航；顶部仅面包屑与当前对象；设置集中左下。
  * ============================================================ */
 
 .wiselink-app-shell {
-  --wl-sheet-shadow: 0 2px 8px color-mix(in srgb, var(--wl-g3-shadow) 50%, transparent);
-
+  display: grid;
+  grid-template-columns: 260px minmax(0, 1fr);
   min-height: 100vh;
   font-family: var(--wl-font);
   color: var(--wl-ink);
 }
 
-/* One continuous frame owns the outer edge. Navigation and header are parts of it,
- * not separate floating glass objects; content keeps its own quiet paper surface. */
-.wiselink-app-shell::before {
-  position: fixed;
-  z-index: 0;
-  inset: 8px;
-  border: 1px solid var(--wl-material-edge);
-  border-radius: 24px;
-  background: var(--wl-frame-solid);
-  box-shadow: 0 3px 12px color-mix(in srgb, var(--wl-g1-shadow) 50%, transparent);
-  pointer-events: none;
-  content: '';
-}
-
-/* 工作台的 Header 与可用高度只有 AppShell 一个 owner。
- * Header block 同时包含玻璃顶栏与它下方的呼吸空间；页面不得再补 offset。 */
-.wiselink-app-shell.is-workbench-route {
-  --wl-app-safe-block-start: env(safe-area-inset-top, 0px);
-  --wl-app-header-block-size: 78px;
-  --wl-workspace-block-size: calc(
-    100dvh - var(--wl-app-safe-block-start) - var(--wl-app-header-block-size)
-  );
-
-  display: grid;
-  box-sizing: border-box;
-  height: 100dvh;
-  min-height: 0;
-  padding-block-start: var(--wl-app-safe-block-start);
-  grid-template-rows:
-    var(--wl-app-header-block-size)
-    minmax(0, var(--wl-workspace-block-size));
-  overflow: hidden;
-}
-
-.wiselink-app-chrome {
-  position: sticky;
-  z-index: var(--wl-z-header);
-  top: 10px;
-  display: grid;
-  margin: 12px 12px 0 112px;
-  border-radius: var(--wl-radius-md);
-}
-
-.wiselink-app-header {
-  display: grid;
-  min-height: 64px;
-  grid-template-columns: minmax(0, 1fr) auto;
-  align-items: center;
-  gap: 14px;
-  padding: 8px 20px;
-  border: 0;
-  border-radius: inherit;
-  background: transparent;
-  box-shadow: none;
-  backdrop-filter: none;
-  -webkit-backdrop-filter: none;
-}
-
-.wiselink-brand-image {
-  display: block;
-  width: 100%;
-  height: 100%;
-  object-fit: contain;
-  background: transparent;
-}
-
-.wiselink-app-context svg {
-  width: 15px;
-  height: 15px;
-  flex: 0 0 15px;
-}
-
-.wiselink-object-context {
-  display: grid;
-  min-width: 0;
-  gap: 4px;
-}
-
-.wiselink-object-context-main,
-.wiselink-object-context-sub {
+.wiselink-app-main {
   display: flex;
   min-width: 0;
+  flex-direction: column;
+}
+
+.wiselink-app-body {
+  min-width: 0;
+  flex: 1;
+  padding: 12px 20px 32px;
+}
+
+/* ---------- 侧栏 ---------- */
+
+.wl-sidebar {
+  position: sticky;
+  top: 0;
+  z-index: 45;
+  display: flex;
+  min-height: 100vh;
+  flex-direction: column;
+  gap: 14px;
+  padding: 16px 12px;
+}
+
+.wl-sidebar-brand {
+  display: flex;
   align-items: center;
-  gap: 7px;
+  gap: 10px;
+  padding: 4px 8px;
+}
+
+.wl-sidebar-brand-text {
+  display: grid;
+  min-width: 0;
+  gap: 2px;
+}
+
+.wl-sidebar-brand-text strong {
   overflow: hidden;
+  font-size: 15px;
+  font-weight: 750;
+  text-overflow: ellipsis;
   white-space: nowrap;
 }
 
-.wiselink-object-page-label {
-  color: var(--wl-muted);
-  font-size: var(--wl-text-caption);
-  font-weight: 680;
-}
-
-.wiselink-object-context-main strong {
-  flex: 0 0 auto;
+.wl-sidebar-brand-text small {
   overflow: hidden;
-  max-width: 210px;
-  color: var(--wl-ink);
-  font-size: 14px;
-  font-weight: 600;
-  letter-spacing: -0.01em;
+  color: var(--wl-muted);
+  font-family: var(--wl-mono);
+  font-size: 9px;
+  letter-spacing: 0.08em;
   text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
-.wiselink-object-kind {
-  display: inline-flex;
-  min-height: 22px;
+.wl-sidebar-close {
+  display: none;
+  margin-left: auto;
+}
+
+.wiselink-app-mark {
+  display: grid;
+  width: 34px;
+  height: 34px;
+  flex: 0 0 34px;
+  place-items: center;
+  border-radius: 12px;
+  overflow: hidden;
+  background: var(--wl-surface-solid);
+  box-shadow: var(--wl-shadow-1);
+}
+
+.wiselink-app-mark img {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.wl-sidebar-nav,
+.wl-sidebar-secondary {
+  display: grid;
+  gap: 2px;
+}
+
+.wl-sidebar-secondary {
+  border-top: 1px solid var(--wl-border);
+  padding-top: 10px;
+}
+
+.wl-sidebar-nav a,
+.wl-sidebar-secondary a {
+  display: flex;
+  min-height: 38px;
   align-items: center;
-  padding: 0 7px;
-  border: 1px solid color-mix(in srgb, var(--wl-accent) 18%, transparent);
-  border-radius: 999px;
+  gap: 9px;
+  padding: 0 12px;
+  border: 1px solid transparent;
+  border-radius: var(--wl-radius-sm);
+  color: var(--wl-muted);
+  font-size: 13px;
+  font-weight: 600;
+  text-decoration: none;
+  transition:
+    color var(--wl-motion-fast) ease,
+    background-color var(--wl-motion-fast) ease;
+}
+
+.wl-sidebar-secondary a {
+  min-height: 34px;
+  font-size: 12px;
+}
+
+.wl-sidebar-nav a:hover,
+.wl-sidebar-secondary a:hover {
+  color: var(--wl-ink);
+  background: var(--wl-glass-content);
+}
+
+.wl-sidebar-nav a.active,
+.wl-sidebar-secondary a.active {
   color: var(--wl-accent);
   background: var(--wl-accent-soft);
-  font-size: var(--wl-text-caption);
-  font-weight: 720;
+  border-color: var(--wl-border-strong);
 }
 
-.wiselink-object-kind.is-matter {
-  color: var(--wl-purple);
-  border-color: color-mix(in srgb, var(--wl-purple) 22%, transparent);
-  background: color-mix(in srgb, var(--wl-purple) 10%, transparent);
+.wl-sidebar-nav svg,
+.wl-sidebar-secondary svg {
+  width: 16px;
+  height: 16px;
+  flex: 0 0 16px;
 }
 
-.wiselink-object-title {
-  min-width: 0;
+/* ---------- 当前对象分组 ---------- */
+
+.wl-sidebar-object {
+  display: grid;
+  gap: 6px;
+  border-top: 1px solid var(--wl-border);
+  padding-top: 12px;
+}
+
+.wl-sidebar-object > h3 {
+  padding: 0 12px;
+  color: var(--wl-faint);
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+}
+
+.wl-sidebar-object-title {
   overflow: hidden;
-  color: var(--wl-ink);
-  font-size: var(--wl-text-body-sm);
-  font-weight: 660;
-  text-overflow: ellipsis;
-}
-
-.wiselink-object-context-sub {
+  padding: 0 12px;
   color: var(--wl-muted);
-  font-size: var(--wl-text-caption);
-  font-weight: 560;
-}
-
-.wiselink-object-context-sub span {
-  overflow: hidden;
+  font-family: var(--wl-mono);
+  font-size: 10px;
   text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
-.wiselink-object-context-sub i {
-  width: 3px;
-  height: 3px;
-  flex: 0 0 3px;
-  border-radius: 50%;
-  background: var(--wl-faint);
+.wl-sidebar-object-nav {
+  display: grid;
+  gap: 1px;
 }
 
-.wiselink-app-context {
+.wl-sidebar-object-nav a {
   display: flex;
-  min-width: 0;
-  justify-content: flex-end;
+  min-height: 32px;
   align-items: center;
   gap: 8px;
-}
-
-.wiselink-header-icon-action {
-  display: grid;
-  width: var(--wl-control-size);
-  height: var(--wl-control-size);
-  flex: 0 0 var(--wl-control-size);
-  place-items: center;
-  border: 1px solid var(--wl-border);
-  border-radius: var(--wl-radius-md);
-  color: var(--wl-ink);
-  background: var(--wl-glass-soft);
-  text-decoration: none;
-}
-
-.wiselink-header-icon-action:hover,
-.wiselink-header-icon-action:focus-visible {
-  color: var(--wl-accent);
-  background: var(--wl-accent-soft);
-}
-
-.wiselink-account-control,
-.wiselink-account-state {
-  min-height: 34px;
-  border: 1px solid var(--wl-border);
-  border-radius: var(--wl-radius-md);
-  color: var(--wl-ink);
-  background: var(--wl-glass-soft);
-  box-shadow: inset 0 1px 0
-    color-mix(in srgb, var(--wl-g3-highlight) 42%, transparent);
-}
-
-.wiselink-account-control {
-  display: flex;
-  min-width: 0;
-  align-items: center;
-  gap: 2px;
-  padding: 3px 4px 3px 5px;
-}
-
-.wiselink-account-display {
-  min-width: 0;
-  flex-wrap: nowrap;
-}
-
-.wiselink-account-display > div,
-.wiselink-account-display > div > div {
-  min-width: 0;
-}
-
-.wiselink-account-display > div > div {
-  max-width: 130px;
-  background: transparent;
-}
-
-.wiselink-account-menu-trigger {
-  display: grid;
-  width: 26px;
-  height: 26px;
-  flex: 0 0 26px;
-  padding: 0;
-  place-items: center;
-  border: 0;
-  border-radius: 10px;
+  padding: 0 12px;
+  border-radius: var(--wl-radius-sm);
   color: var(--wl-muted);
-  background: transparent;
+  font-size: 12px;
+  text-decoration: none;
+  transition:
+    color var(--wl-motion-fast) ease,
+    background-color var(--wl-motion-fast) ease;
+}
+
+.wl-sidebar-object-nav a:hover {
+  color: var(--wl-ink);
+  background: var(--wl-glass-content);
+}
+
+.wl-sidebar-object-empty {
+  padding: 0 12px;
+  color: var(--wl-faint);
+  font-size: 12px;
+  line-height: 1.7;
+}
+
+/* ---------- 侧栏底部设置 ---------- */
+
+.wl-sidebar-footer {
+  display: grid;
+  gap: 4px;
+  margin-top: auto;
+  border-top: 1px solid var(--wl-border);
+  padding-top: 12px;
+}
+
+.wl-sidebar-footer button {
+  display: flex;
+  min-height: 34px;
+  align-items: center;
+  gap: 8px;
+  padding: 0 12px;
+  border: none;
+  border-radius: var(--wl-radius-sm);
+  background: none;
+  color: var(--wl-muted);
+  font-size: 12px;
+  text-align: left;
   cursor: pointer;
   transition:
     color var(--wl-motion-fast) ease,
     background-color var(--wl-motion-fast) ease;
 }
 
-.wiselink-account-menu-trigger:hover,
-.wiselink-account-menu-trigger[data-state='open'] {
-  color: var(--wl-accent);
-  background: var(--wl-accent-soft);
-}
-
-.wiselink-account-menu-trigger svg {
-  width: 14px;
-  height: 14px;
-}
-
-.wiselink-account-menu {
-  min-width: 188px;
-  border-color: var(--wl-border);
-  border-radius: var(--wl-radius-md);
+.wl-sidebar-footer button:hover {
   color: var(--wl-ink);
-  background: var(--wl-surface-solid);
-  box-shadow: 0 16px 38px var(--wl-g3-shadow);
+  background: var(--wl-glass-content);
 }
 
-.wiselink-account-state {
-  display: inline-flex;
+.wl-sidebar-footer svg {
+  width: 15px;
+  height: 15px;
+  flex: 0 0 15px;
+}
+
+/* ---------- 顶栏（紧凑栏） ---------- */
+
+.wl-topbar {
+  position: sticky;
+  top: 12px;
+  z-index: 40;
+  display: flex;
+  min-height: 48px;
   align-items: center;
-  gap: 6px;
-  padding: 0 10px;
-  font-family: var(--wl-font);
-  font-size: 11px;
-  font-weight: 650;
-  white-space: nowrap;
+  gap: 12px;
+  margin: 12px 16px 0;
+  padding: 0 16px;
+  border-radius: var(--wl-radius-xl);
+  box-shadow: var(--wl-shadow-1);
 }
 
-button.wiselink-account-state {
+.wl-topbar-toggle {
+  display: none;
+  width: 38px;
+  height: 38px;
+  flex: 0 0 38px;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid var(--wl-border);
+  border-radius: var(--wl-radius-sm);
+  background: var(--wl-glass-soft);
+  color: var(--wl-ink);
   cursor: pointer;
 }
 
-.wiselink-account-state.is-action:hover {
+.wl-topbar-toggle svg {
+  width: 18px;
+  height: 18px;
+}
+
+.wiselink-breadcrumb {
+  display: flex;
+  min-width: 0;
+  flex: 1;
+  align-items: center;
+  min-height: 34px;
+}
+
+.wiselink-breadcrumb ol {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 2px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.wiselink-breadcrumb-item {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 12px;
+}
+
+.wiselink-breadcrumb-item a {
+  color: var(--wl-muted);
+  text-decoration: none;
+  font-weight: 550;
+}
+
+.wiselink-breadcrumb-item a:hover {
   color: var(--wl-accent);
-  border-color: color-mix(in srgb, var(--wl-accent) 28%, var(--wl-border));
+}
+
+.wiselink-breadcrumb-item span {
+  color: var(--wl-ink);
+  font-weight: 650;
+}
+
+.wiselink-breadcrumb-sep {
+  color: var(--wl-faint);
+  font-weight: 400;
+}
+
+.wl-topbar-item {
+  display: inline-flex;
+  min-width: 0;
+  max-width: 220px;
+  min-height: 28px;
+  padding: 0 10px;
+  align-items: center;
+  border: 1px solid var(--wl-border);
+  border-radius: var(--wl-radius-sm);
+  color: var(--wl-muted);
+  background: var(--wl-glass-soft);
+  font-family: var(--wl-mono);
+  font-size: 10px;
+  text-decoration: none;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  transition:
+    color var(--wl-motion-fast) ease,
+    background-color var(--wl-motion-fast) ease;
+}
+
+.wl-topbar-actions {
+  display: inline-flex;
+  flex: 0 0 auto;
+  align-items: center;
+  gap: 8px;
+}
+
+.wl-topbar-item span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.wl-topbar-item:hover {
+  color: var(--wl-accent);
   background: var(--wl-accent-soft);
 }
 
-.wiselink-account-state.is-warning {
-  color: var(--wl-amber);
-}
-
-.wiselink-account-state svg:last-child:not(:first-child) {
-  width: 12px;
-  height: 12px;
+.wl-topbar-item.is-empty {
+  cursor: default;
   color: var(--wl-faint);
 }
 
-.wiselink-app-body {
-  position: relative;
-  z-index: var(--wl-z-content);
-  min-height: calc(100vh - 98px);
-  padding: 10px 12px 32px 112px;
-}
-
-.wiselink-app-shell.is-workbench-route .wiselink-app-body {
-  height: var(--wl-workspace-block-size);
-  min-height: 0;
-  overflow: hidden;
-  padding-bottom: 0;
-}
-
-.wiselink-app-shell.is-workbench-route .wiselink-app-chrome {
-  position: relative;
-  top: auto;
-  align-self: center;
-  min-height: 64px;
-  margin-block: 0;
-}
-
-/* Reader 中全局头栏改为稳定 G3；G1 采样预算留给 Dock 与工作台 Tabs。 */
-.wiselink-app-shell.is-workbench-route .wiselink-app-chrome {
-  border-color: var(--wl-border);
-  background: var(--wl-glass-content);
-  box-shadow: inset 0 1px 0 var(--wl-material-edge);
-  backdrop-filter: none;
-  -webkit-backdrop-filter: none;
-}
-
-/* 沉浸模式只移除全局外壳；工作台内部工具栏仍在 workspace 轨道内。 */
-body[data-wl-immersive='true'] .wiselink-app-shell.is-workbench-route {
-  --wl-app-header-block-size: 0px;
-}
-
-body[data-wl-immersive='true'] .wiselink-app-chrome,
-body[data-wl-immersive='true'] .wl-dock {
-  display: none;
-}
-
-body[data-wl-immersive='true']
-  .wiselink-app-shell.is-workbench-route
-  .wiselink-app-body {
-  padding: 0;
-}
+/* ---------- 通用 ---------- */
 
 .wiselink-skip-link {
   position: absolute;
@@ -369,175 +399,173 @@ select:focus-visible {
   outline-offset: 2px;
 }
 
-/* UI-N02 · 中性 Satin 应用框架 */
-.wiselink-app-chrome {
-  margin-left: 104px;
+/* ---------- 设置对话框 ---------- */
+
+.wiselink-settings-group {
+  display: grid;
+  gap: 14px;
 }
 
-/* The object bar belongs to the shared frame in every visual mode. */
-.wiselink-app-chrome.wl-glass-nav,
-html[data-wl-visual-mode] .wiselink-app-chrome.wl-glass-nav {
-  border: 0;
-  border-bottom: 1px solid var(--wl-border);
-  border-radius: 0;
-  background: var(--wl-frame-solid);
-  box-shadow: none;
-  -webkit-backdrop-filter: none;
-  backdrop-filter: none;
+.wiselink-settings-row {
+  display: grid;
+  gap: 8px;
 }
 
-.wiselink-app-shell.is-workbench-route .wiselink-app-chrome.wl-glass-nav {
-  background: var(--wl-frame-solid);
-  -webkit-backdrop-filter: none;
-  backdrop-filter: none;
+.wiselink-settings-row > h3 {
+  color: var(--wl-muted);
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.05em;
 }
 
-.wiselink-header-icon-action,
-.wiselink-account-control,
-.wiselink-account-state {
-  border-color: var(--wl-border);
-  background: var(--wl-sheet-muted);
-  box-shadow: none;
+.wiselink-settings-row p {
+  color: var(--wl-muted);
+  font-size: 12px;
+  line-height: 1.7;
 }
 
-body[data-wl-immersive='true'] .wiselink-app-shell::before {
-  display: none;
+.wiselink-settings-row a {
+  color: var(--wl-accent);
+  text-decoration: none;
+  font-weight: 600;
 }
 
-.wiselink-object-kind,
-.wiselink-object-kind.is-matter {
+.wiselink-settings-segment {
+  display: flex;
+  gap: 4px;
+  padding: 3px;
+  border: 1px solid var(--wl-border);
+  border-radius: 11px;
+  background: var(--wl-glass-soft);
+}
+
+.wiselink-settings-segment button {
+  flex: 1;
+  min-height: 32px;
+  padding: 6px 10px;
+  border: none;
+  border-radius: 8px;
+  background: none;
+  color: var(--wl-muted);
+  font-size: 12px;
+  white-space: nowrap;
+}
+
+.wiselink-settings-segment button:hover {
+  background: var(--wl-glass-content);
+}
+
+.wiselink-settings-segment button[aria-pressed='true'] {
+  background: var(--wl-surface-solid);
   color: var(--wl-ink);
-  border-color: var(--wl-border-strong);
-  background: var(--wl-selected);
+  font-weight: 600;
+  box-shadow: var(--wl-shadow-1);
 }
 
-.wiselink-header-icon-action:hover,
-.wiselink-header-icon-action:focus-visible,
-.wiselink-account-menu-trigger:hover,
-.wiselink-account-menu-trigger[data-state='open'],
-.wiselink-account-state.is-action:hover {
-  color: var(--wl-ink);
-  border-color: var(--wl-border-strong);
-  background: var(--wl-selected);
+/* ---------- 响应式 ---------- */
+
+@media (max-width: 1200px) {
+  .wiselink-app-shell {
+    grid-template-columns: 220px minmax(0, 1fr);
+  }
 }
 
-.wiselink-app-body {
-  padding-left: 104px;
-}
-
-html[data-wl-theme='dark'] .wiselink-app-chrome {
-  border-color: var(--wl-border);
-}
-
-@media (max-width: 920px) {
-  .wiselink-app-shell.is-workbench-route .wl-dock {
-    display: none;
+@media (max-width: 980px) {
+  .wiselink-app-shell {
+    grid-template-columns: minmax(0, 1fr);
   }
 
-  .wiselink-app-chrome {
-    margin-left: 12px;
+  .wl-sidebar {
+    position: fixed;
+    top: 0;
+    bottom: 0;
+    left: 0;
+    z-index: 60;
+    width: 280px;
+    overflow-y: auto;
+    transform: translateX(-104%);
+    transition: transform var(--wl-motion) ease;
+    background: var(--wl-surface-solid);
   }
 
-  .wiselink-app-header {
-    grid-template-columns: minmax(0, 1fr) auto;
+  .wl-sidebar.is-open {
+    transform: translateX(0);
+    box-shadow: var(--wl-shadow-2);
+  }
+
+  .wl-sidebar-close {
+    display: inline-flex;
+    width: 32px;
+    height: 32px;
+    flex: 0 0 32px;
+    align-items: center;
+    justify-content: center;
+    border: 1px solid var(--wl-border);
+    border-radius: var(--wl-radius-sm);
+    background: var(--wl-glass-soft);
+    color: var(--wl-ink);
+    cursor: pointer;
+  }
+
+  .wl-topbar-toggle {
+    display: inline-flex;
   }
 
   .wiselink-app-body {
-    padding-left: 12px;
-  }
-
-  .wiselink-app-shell:not(.is-workbench-route) .wiselink-app-body {
-    padding-bottom: var(--wl-floating-dock-clearance);
-  }
-
-  .wiselink-object-page-label,
-  .wiselink-object-context-sub {
-    display: none;
+    padding: 12px 14px 28px;
   }
 }
 
-@media (max-width: 720px) {
-  .wiselink-app-shell::before {
-    inset: 0;
-    border: 0;
-    border-radius: 0;
-    box-shadow: none;
-  }
-
-  .wiselink-app-shell.is-workbench-route {
-    --wl-app-header-block-size: 0px;
-  }
-
-  .wiselink-account-menu-trigger {
-    width: var(--wl-touch-target);
-    height: var(--wl-touch-target);
-    flex-basis: var(--wl-touch-target);
-  }
-
-  .wiselink-app-chrome {
-    position: sticky;
-    top: 6px;
+@media (max-width: 680px) {
+  .wl-topbar {
     margin: 8px 10px 0;
+    padding: 0 12px;
+    gap: 8px;
   }
 
-  .wiselink-app-header {
-    display: grid;
-    min-height: 64px;
-    grid-template-columns: minmax(0, 1fr) auto;
-    gap: 10px;
-    padding: 8px 12px;
+  .wiselink-breadcrumb-item {
+    font-size: 11px;
   }
 
-  .wiselink-app-context {
-    display: flex;
-  }
-
-  .wiselink-object-context {
-    padding-left: 0;
-    border-left: 0;
-  }
-
-  .wiselink-object-context-main strong {
-    max-width: 34vw;
-    font-size: 12px;
-  }
-
-  .wiselink-object-title {
-    max-width: 30vw;
-    font-size: var(--wl-text-caption);
+  .wl-topbar-item {
+    max-width: 130px;
   }
 
   .wiselink-app-body {
-    min-height: calc(100vh - 120px);
-    padding: 8px 10px var(--wl-floating-dock-clearance);
-  }
-
-  .wiselink-app-shell.is-workbench-route .wiselink-app-body {
-    height: var(--wl-workspace-block-size);
-    min-height: 0;
-    padding: 0 10px;
-  }
-
-  .wiselink-app-shell.is-workbench-route .wiselink-app-chrome {
-    display: none;
+    padding: 10px 10px 24px;
   }
 }
 
 @media (max-width: 390px) {
-  .wiselink-app-header {
-    padding: 8px 10px;
+  .wiselink-breadcrumb-item {
+    font-size: 10px;
   }
 
-  .wiselink-account-display > div > div {
-    max-width: 30px;
-    padding-right: 2px;
-  }
-
-  .wiselink-account-display [data-slot='avatar'] + span {
+  .wl-topbar-item {
     display: none;
   }
+}
 
-  .wiselink-account-state > span {
-    display: none;
+/* ---------- 效果三档（data-effects：default / ultra / compatible） ---------- */
+
+html[data-effects='compatible'] .wl-glass-nav,
+html[data-effects='compatible'] .wl-glass-panel,
+html[data-effects='compatible'] .wl-glass-content {
+  background: var(--wl-surface-solid);
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
+}
+
+html[data-effects='ultra'] .wl-glass-nav {
+  box-shadow: var(--wl-shadow-2);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
   }
 }

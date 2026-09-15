@@ -360,6 +360,8 @@ export class EngineeringIssueSearchService {
         rootRefs: assessmentEvidenceRoots(collectIssueEvidenceUses(issue).map(use => use.evidenceRef), content.evidence).rootRefs,
         ...('correctionNotices' in revision && revision.correctionNotices?.some(item => item.issueKey === issue.issueKey)
           ? { correctionNotices: revision.correctionNotices.filter(item => item.issueKey === issue.issueKey) } : {}),
+        ...('overviewCorrectionNotices' in revision && revision.overviewCorrectionNotices?.length
+          ? { overviewCorrectionNotices: revision.overviewCorrectionNotices } : {}),
         ...('referenceWorkNotices' in revision && revision.referenceWorkNotices?.some(item => item.affectedIssueKeys.includes(issue.issueKey))
           ? { referenceWorkNotices: revision.referenceWorkNotices.filter(item => item.affectedIssueKeys.includes(issue.issueKey)) } : {}),
       },

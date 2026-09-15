@@ -147,6 +147,17 @@ export interface EngineeringMatterCorrectionNotice {
   correctedWorkRef: string | null;
 }
 
+/** An explicit review request about an exact saved overview, not an accuracy verdict. */
+export interface EngineeringMatterOverviewCorrectionNotice {
+  attemptRef: string;
+  targetWorkRef: string;
+  reason: string;
+  attemptStatus: string;
+  /** Actual persisted output; even a later failed attempt may have saved useful work. */
+  savedWorkRef: string | null;
+  savedWorkingRevision: number | null;
+}
+
 /** Live context for an exact work actually used by this saved revision. */
 export interface EngineeringMatterReferenceWorkNotice {
   sourceWork: AssessmentSourceWork;
@@ -154,6 +165,7 @@ export interface EngineeringMatterReferenceWorkNotice {
   affectedIssueKeys: string[];
   overviewStatus: JobAidProblemWorkContent['overviewStatus'];
   correctionNotices: EngineeringMatterCorrectionNotice[];
+  overviewCorrectionNotices?: EngineeringMatterOverviewCorrectionNotice[];
 }
 
 export interface EngineeringMatterWorkingRevisionReadModel {
@@ -171,6 +183,7 @@ export interface EngineeringMatterWorkingRevisionReadModel {
   createdAt: string;
   /** Live review notices for this exact historical work; not part of its immutable content. */
   correctionNotices?: EngineeringMatterCorrectionNotice[];
+  overviewCorrectionNotices?: EngineeringMatterOverviewCorrectionNotice[];
   referenceWorkNotices?: EngineeringMatterReferenceWorkNotice[];
 }
 

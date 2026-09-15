@@ -9,7 +9,7 @@ import {
   type PostgresJsDatabase,
 } from '@lark-apaas/fullstack-nestjs-core';
 import type { Request, Response } from 'express';
-import { and, asc, desc, eq, isNull, or, sql } from 'drizzle-orm';
+import { and, asc, desc, eq, inArray, isNull, lte, or, sql } from 'drizzle-orm';
 import { bindMatterOriginalInputs } from './matter-original-input-bindings';
 import { buildMatterWorkReference } from './matter-work-reference';
 import { collectIssueEvidenceUses } from '@shared/jobaid-evidence-uses';
@@ -980,7 +980,8 @@ async function authorizedReadModel(
     if (affectedIssueKeys.length) {
       (revision.referenceWorkNotices ??= []).push({ sourceWork: structuredClone(ref), evidenceRef: item.evidenceRef,
         affectedIssueKeys, overviewStatus: sourceRevision.state.problemWork.overviewStatus,
-        correctionNotices: structuredClone(sourceRevision.correctionNotices?.filter(notice => notice.issueKey === ref.issueKey) ?? []) });
+        correctionNotices: structuredClone(sourceRevision.correctionNotices?.filter(notice => notice.issueKey === ref.issueKey) ?? []),
+        overviewCorrectionNotices: structuredClone(sourceRevision.overviewCorrectionNotices ?? []) });
     }
     checkedReferences.set(referenceKey, canonicalJson(expected));
   }
@@ -1004,6 +1005,38 @@ async function authorizedReadModel(
       attemptStatus: item.status, correctedWorkRef: !unchanged && item.status === 'SUCCEEDED' && output && typeof output === 'object' &&
         'workRevisionRef' in output && typeof output.workRevisionRef === 'string' ? output.workRevisionRef : null };
   });
+  // These are the owner's explicit review requests, not extracted old source text.
+  // Retain their target identity across later work so an unrelated save cannot
+  // silently erase a known review. Historical reads exclude requests about newer work.
+  const overviewCorrections = await executor.select({ id: actionAttempt.attemptId,
+    attemptRef: actionAttempt.operationRef, status: actionAttempt.status,
+    purpose: sql<{ expectedWorkRef: string; correctionReason: string }>`
+      ${actionAttempt.taskEnvelopeJson}::jsonb -> 'modelInput' -> 'overviewCorrection'`,
+  }).from(actionAttempt).where(and(
+    eq(actionAttempt.tenantId, row.tenantId), eq(actionAttempt.matterId, row.matterId),
+    sql`${actionAttempt.taskEnvelopeJson}::jsonb -> 'modelInput' -> 'overviewCorrection' ->> 'kind' = 'ENGINEERING_OVERVIEW_CORRECTION'`,
+    inArray(sql<string>`${actionAttempt.taskEnvelopeJson}::jsonb -> 'modelInput' -> 'overviewCorrection' ->> 'expectedWorkRef'`,
+      executor.select({ ref: engineeringMatterWorkRevision.matterWorkRevisionId }).from(engineeringMatterWorkRevision).where(and(
+        eq(engineeringMatterWorkRevision.tenantId, row.tenantId), eq(engineeringMatterWorkRevision.matterId, row.matterId),
+        eq(engineeringMatterWorkRevision.createdByUserId, row.createdByUserId),
+        lte(engineeringMatterWorkRevision.workingRevision, row.workingRevision),
+      ))),
+  )).orderBy(asc(actionAttempt.createdAt));
+  for (const item of overviewCorrections) {
+    if (!item.attemptRef || typeof item.purpose?.expectedWorkRef !== 'string' ||
+        typeof item.purpose?.correctionReason !== 'string' || !item.purpose.correctionReason.trim())
+      throw new Error('ENGINEERING_OVERVIEW_CORRECTION_NOTICE_INVALID');
+    // A FINISH status alone does not prove a save; use the original persisted source binding.
+    const [saved] = await executor.select({ ref: engineeringMatterWorkRevision.matterWorkRevisionId,
+      revision: engineeringMatterWorkRevision.workingRevision }).from(engineeringMatterWorkRevision).where(and(
+        eq(engineeringMatterWorkRevision.tenantId, row.tenantId), eq(engineeringMatterWorkRevision.matterId, row.matterId),
+        eq(engineeringMatterWorkRevision.createdByUserId, row.createdByUserId),
+        eq(engineeringMatterWorkRevision.actionAttemptId, item.id),
+      )).orderBy(desc(engineeringMatterWorkRevision.workingRevision)).limit(1);
+    (revision.overviewCorrectionNotices ??= []).push({ attemptRef: item.attemptRef,
+      targetWorkRef: item.purpose.expectedWorkRef, reason: item.purpose.correctionReason,
+      attemptStatus: item.status, savedWorkRef: saved?.ref ?? null, savedWorkingRevision: saved?.revision ?? null });
+  }
   return revision;
 }
 

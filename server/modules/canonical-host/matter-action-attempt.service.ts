@@ -1,5 +1,5 @@
 import type { EngineeringMatterWorkingRevisionCommand, EngineeringMatterWorkingInputBinding } from '@shared/matter-working.interface';
-import { addMatterDeliveredEvidence, buildMatterJobAidTask, MATTER_JOBAID_TASK_SCHEMA, type MatterIssueCorrectionPurpose } from './matter-jobaid-task';
+import { addMatterDeliveredEvidence, buildMatterJobAidTask, MATTER_JOBAID_TASK_SCHEMA, type MatterIssueCorrectionPurpose, type MatterOverviewCorrectionPurpose } from './matter-jobaid-task';
 import { materializeMatterJobAidCommand } from './matter-jobaid-save';
 import { buildEngineeringIssueCorrectionContext, summarizeEngineeringIssueCorrection } from './engineering-issue-correction-context';
 import { EngineeringIssueCorrectionPluginService } from './engineering-issue-correction-plugin.service';
@@ -78,6 +78,7 @@ export type ReserveMatterJobAidAttempt = Omit<ReserveMatterAttempt, 'modelInput'
   expectedInputs?: EngineeringMatterWorkingInputBinding[];
   recoveryAttemptRef?: string;
   correction?: MatterIssueCorrectionPurpose;
+  overviewCorrection?: MatterOverviewCorrectionPurpose;
   referenceWorks?: MatterWorkReferenceRequest[];
 };
 
@@ -116,6 +117,13 @@ export class MatterActionAttemptService {
         input.correction.evidenceRefs.some(ref => !ref.trim()) ||
         new Set(input.correction.evidenceRefs).size !== input.correction.evidenceRefs.length))
       throw failure('ENGINEERING_CORRECTION_REQUEST_INVALID', 400);
+    if (input.overviewCorrection && (input.correction || input.overviewCorrection.kind !== 'ENGINEERING_OVERVIEW_CORRECTION' ||
+        !input.overviewCorrection.expectedWorkRef.trim() || input.overviewCorrection.expectedWorkRef.length > 200 ||
+        !input.overviewCorrection.correctionReason.trim() || input.overviewCorrection.correctionReason.length > 4000 ||
+        !input.overviewCorrection.evidenceRefs.length || input.overviewCorrection.evidenceRefs.length > 96 ||
+        input.overviewCorrection.evidenceRefs.some(ref => !ref.trim() || ref.length > 512) ||
+        new Set(input.overviewCorrection.evidenceRefs).size !== input.overviewCorrection.evidenceRefs.length))
+      throw failure('ENGINEERING_OVERVIEW_CORRECTION_REQUEST_INVALID', 400);
     if (input.referenceWorks && (input.referenceWorks.length > 8 ||
         input.referenceWorks.some(ref => ref.matterId === input.matterId ||
           [ref.matterId, ref.workRef, ref.issueKey, ref.purpose].some(value => typeof value !== 'string' || !value.trim()) ||
@@ -238,6 +246,8 @@ export class MatterActionAttemptService {
               canonicalJson(task.sourceRefs) !== canonicalJson(input.sourceRefs)
             : task.modelInput.schemaVersion !== MATTER_JOBAID_TASK_SCHEMA ||
               canonicalJson((task.modelInput as ReturnType<typeof buildMatterJobAidTask>).correction ?? null) !== canonicalJson(input.correction ?? null) ||
+              ((!input.recoveryAttemptRef || input.overviewCorrection !== undefined) &&
+                canonicalJson((task.modelInput as ReturnType<typeof buildMatterJobAidTask>).overviewCorrection ?? null) !== canonicalJson(input.overviewCorrection ?? null)) ||
               ((!input.recoveryAttemptRef || input.referenceWorks !== undefined) &&
                 canonicalJson((task.modelInput as ReturnType<typeof buildMatterJobAidTask>).referenceWorks ?? []) !== canonicalJson(input.referenceWorks ?? [])) ||
               ((task.modelInput as ReturnType<typeof buildMatterJobAidTask>).recovery?.attemptRef ?? null) !==
@@ -317,6 +327,11 @@ export class MatterActionAttemptService {
         inputs: authorizedInputs, trigger: input.trigger, previous: current,
       });
       const correction = 'correction' in input ? input.correction : undefined;
+      const recoveredOverviewCorrection = (recoveryTask?.modelInput as ReturnType<typeof buildMatterJobAidTask> | undefined)?.overviewCorrection ?? null;
+      if (recoveryTask && 'overviewCorrection' in input && input.overviewCorrection !== undefined &&
+          canonicalJson(input.overviewCorrection) !== canonicalJson(recoveredOverviewCorrection))
+        throw failure('MATTER_RECOVERY_BASIS_CHANGED');
+      const overviewCorrection = recoveryTask ? recoveredOverviewCorrection : ('overviewCorrection' in input ? input.overviewCorrection : undefined);
       const recoveredReferences = (recoveryTask?.modelInput as ReturnType<typeof buildMatterJobAidTask> | undefined)?.referenceWorks ?? [];
       if (recoveryTask && 'referenceWorks' in input && input.referenceWorks !== undefined &&
           canonicalJson(input.referenceWorks) !== canonicalJson(recoveredReferences))
@@ -331,12 +346,23 @@ export class MatterActionAttemptService {
           addMatterDeliveredEvidence(jobAid, evidence);
           jobAid.modelInput.referenceWorks = jobAid.modelInput.referenceWorks.filter(item => item.evidenceRef !== evidence[0]!.evidenceRef);
           jobAid.modelInput.referenceWorks.push({ ...reference, evidenceRef: evidence[0]!.evidenceRef, overviewStatus: revision.state.problemWork!.overviewStatus,
-            correctionNotices: structuredClone(revision.correctionNotices?.filter(notice => notice.issueKey === reference.issueKey) ?? []) });
+            correctionNotices: structuredClone(revision.correctionNotices?.filter(notice => notice.issueKey === reference.issueKey) ?? []),
+            overviewCorrectionNotices: structuredClone(revision.overviewCorrectionNotices ?? []) });
         }
       }
       // Retained references are reauthorized too; a new B request cannot launder A's revoked scope.
       await this.authorizeReferenceEvidence(executor, input,
         (modelInput as ReturnType<typeof buildMatterJobAidTask>).sourceCatalog ?? []);
+      if (overviewCorrection) {
+        if (current?.matterWorkRevisionId !== overviewCorrection.expectedWorkRef ||
+            !current.state.problemWork?.understanding.trim() || current.state.problemWork.overviewStatus === 'NOT_AVAILABLE')
+          throw failure('ENGINEERING_OVERVIEW_CORRECTION_WORK_BINDING_CHANGED');
+        const jobAid = modelInput as ReturnType<typeof buildMatterJobAidTask>;
+        if (overviewCorrection.evidenceRefs.some(ref => !jobAid.initiallyDeliveredRefs.includes(ref)))
+          throw failure('ENGINEERING_OVERVIEW_CORRECTION_SOURCE_NOT_DELIVERED');
+        jobAid.overviewCorrection = structuredClone(overviewCorrection);
+        jobAid.modelInput.overviewCorrection = structuredClone(overviewCorrection);
+      }
       if (correction) {
         if (current?.matterWorkRevisionId !== correction.expectedWorkRef ||
             !current.state.problemWork?.issues.some(issue => issue.issueKey === correction.issueKey))

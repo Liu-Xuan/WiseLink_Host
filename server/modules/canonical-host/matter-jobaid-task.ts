@@ -19,6 +19,13 @@ export interface MatterIssueCorrectionPurpose {
   evidenceRefs: string[];
 }
 
+export interface MatterOverviewCorrectionPurpose {
+  kind: 'ENGINEERING_OVERVIEW_CORRECTION';
+  expectedWorkRef: string;
+  correctionReason: string;
+  evidenceRefs: string[];
+}
+
 /** Called under the reservation transaction after Host authorization and version CAS. */
 export function buildMatterJobAidTask(input: {
   matterId: string;
@@ -54,6 +61,7 @@ export function buildMatterJobAidTask(input: {
   return {
     schemaVersion: MATTER_JOBAID_TASK_SCHEMA,
     correction: null as MatterIssueCorrectionPurpose | null,
+    overviewCorrection: null as MatterOverviewCorrectionPurpose | null,
     referenceWorks: [] as MatterWorkReferenceRequest[],
     recovery: null as { attemptRef: string; inputHash: string } | null,
     actorUserId: input.actorUserId,
@@ -68,6 +76,8 @@ export function buildMatterJobAidTask(input: {
         issueKey: notice.issueKey, reason: notice.reason, correctedWorkRef: notice.correctedWorkRef,
         attemptStatus: notice.attemptStatus, unchanged: notice.unchanged === true,
       })),
+      knownOverviewCorrections: structuredClone(input.previous?.overviewCorrectionNotices ?? []),
+      overviewCorrection: null as MatterOverviewCorrectionPurpose | null,
       focus: input.previous?.state.focus ?? null,
       trigger: structuredClone(input.trigger),
       sourceChanges: engineeringMatterPendingInputs(input.previous?.state ?? null, input.inputs),
@@ -97,7 +107,8 @@ export function buildMatterJobAidTask(input: {
         matterId: notice.sourceWork.subjectId, workRef: notice.sourceWork.workRef, issueKey: notice.sourceWork.issueKey,
         purpose: '本事项既有工作实际引用的候选参考；本轮仍需按当前用途核对。', evidenceRef: notice.evidenceRef,
         overviewStatus: notice.overviewStatus, correctionNotices: structuredClone(notice.correctionNotices),
-      })) as Array<MatterWorkReferenceRequest & { evidenceRef: string; overviewStatus: JobAidProblemWorkContent['overviewStatus']; correctionNotices: NonNullable<EngineeringMatterWorkingRevisionReadModel['correctionNotices']> }>,
+        overviewCorrectionNotices: structuredClone(notice.overviewCorrectionNotices ?? []),
+      })) as Array<MatterWorkReferenceRequest & { evidenceRef: string; overviewStatus: JobAidProblemWorkContent['overviewStatus']; correctionNotices: NonNullable<EngineeringMatterWorkingRevisionReadModel['correctionNotices']>; overviewCorrectionNotices: NonNullable<EngineeringMatterWorkingRevisionReadModel['overviewCorrectionNotices']> }>,
       capabilities: [
         { capability: 'registered_source_reading', status: 'AVAILABLE' as const,
           impact: '本轮触发原因以trigger和sourceChanges为准，previousWork是历史认识，不是重复执行旧指令。来源或语义变化需核对所列新范围及条件，保留不受影响的既有问题。优先用originalReadRef读取boundOriginal绑定的已发布修订及其固定semantic revision；历史任务未捕获绑定时Host在首次读取确定版本。按返回nextOffset继续，原文修订变化只表示需要核查影响，不预设工程结论变化。PDF页文本层仍可独立读取；目录不代表已读，coverage限制须保留。' },

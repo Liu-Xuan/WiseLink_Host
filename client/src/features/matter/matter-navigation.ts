@@ -14,6 +14,13 @@ export function matterOverviewRoute(matterId: string): string {
   return `/matters/${encodeURIComponent(matterId)}`;
 }
 
+export function matterWorkRoute(matterId: string, workRef: string): string {
+  return `${matterOverviewRoute(matterId)}?${new URLSearchParams({
+    panel: 'brief',
+    workRef,
+  })}`;
+}
+
 export function matterDocumentRoute(
   matterId: string,
   evidence: Pick<
