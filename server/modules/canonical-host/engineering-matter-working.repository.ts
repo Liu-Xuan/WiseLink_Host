@@ -11,6 +11,7 @@ import {
 import type { Request, Response } from 'express';
 import { and, asc, desc, eq, isNull, or, sql } from 'drizzle-orm';
 import { bindMatterOriginalInputs } from './matter-original-input-bindings';
+import { buildMatterWorkReference } from './matter-work-reference';
 import { dmDocumentParseRun } from '../../database/document-parsing.schema';
 
 import type {
@@ -906,7 +907,10 @@ function assertCommandBindingsCurrent(
 async function authorizedReadModel(
   row: WorkRevisionRow,
   executor: EngineeringMatterWorkingDatabaseExecutor,
+  ancestors: Set<string> = new Set(),
 ): Promise<EngineeringMatterWorkingRevisionReadModel> {
+  if (ancestors.has(row.matterWorkRevisionId)) throw workingPersistenceError();
+  const ancestry = new Set(ancestors).add(row.matterWorkRevisionId);
   const revision = readModel(row);
   const bindings = [
     ...revision.state.substantiveInputs,
@@ -934,6 +938,41 @@ async function authorizedReadModel(
     workItemIds,
     documentVersionIds,
   );
+  // A saved B explanation does not keep A readable after A or its original inputs are revoked.
+  // Walk exact immutable work identities, not the latest analysis or a detached excerpt.
+  const checkedReferences = new Set<string>();
+  for (const item of evidence) {
+    if (item.kind !== 'PRIOR_RESULT' || !item.sourceWork) continue;
+    const ref = item.sourceWork;
+    const referenceKey = canonicalJson(ref);
+    if (checkedReferences.has(referenceKey)) continue;
+    const [sourceMatter] = await executor.select({ currentMatterRevisionId: engineeringMatter.currentMatterRevisionId })
+      .from(engineeringMatter).where(and(eq(engineeringMatter.tenantId, row.tenantId),
+        eq(engineeringMatter.matterId, ref.subjectId), eq(engineeringMatter.createdByUserId, row.createdByUserId))).limit(1);
+    if (!sourceMatter) throw runtimeAuthorizationUnavailable();
+    await assertAllLinksOwned(executor, row.tenantId, sourceMatter.currentMatterRevisionId);
+    const [source] = await executor.select().from(engineeringMatterWorkRevision).where(and(
+      eq(engineeringMatterWorkRevision.tenantId, row.tenantId), eq(engineeringMatterWorkRevision.matterId, ref.subjectId),
+      eq(engineeringMatterWorkRevision.matterWorkRevisionId, ref.workRef),
+      eq(engineeringMatterWorkRevision.createdByUserId, row.createdByUserId))).limit(1);
+    if (!source || source.workingRevision !== item.resultRevision || item.resultRef !== ref.workRef)
+      throw runtimeAuthorizationUnavailable();
+    await assertAllLinksOwned(executor, row.tenantId, source.basedOnMatterRevisionId);
+    const sourceRevision = await authorizedReadModel(source, executor, ancestry);
+    if (!sourceRevision.state.problemWork?.issues.some(issue => issue.issueKey === ref.issueKey))
+      throw runtimeAuthorizationUnavailable();
+    const verified = buildMatterWorkReference({ matterId: ref.subjectId, workRef: ref.workRef,
+      issueKey: ref.issueKey, purpose: 'Verify saved lineage' }, sourceRevision);
+    const expected = verified[0]!;
+    if (expected.kind !== 'PRIOR_RESULT' || canonicalJson(expected.originalEvidenceRefs) !== canonicalJson(item.originalEvidenceRefs))
+      throw workingPersistenceError();
+    for (const rootRef of expected.originalEvidenceRefs) {
+      const original = verified.find(value => value.evidenceRef === rootRef);
+      const retained = evidence.find(value => value.evidenceRef === rootRef);
+      if (!original || !retained || canonicalJson(original) !== canonicalJson(retained)) throw workingPersistenceError();
+    }
+    checkedReferences.add(referenceKey);
+  }
   const corrections = await executor.select({ attemptRef: actionAttempt.operationRef, status: actionAttempt.status,
     purpose: sql<{ issueKey: string; correctionReason: string }>`${actionAttempt.taskEnvelopeJson}::jsonb -> 'modelInput' -> 'correction'`,
     resultJson: actionAttempt.resultEnvelopeJson,

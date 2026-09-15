@@ -1,16 +1,20 @@
 import { useEffect, useRef, useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 import {
   searchEngineeringIssues,
   searchDocumentSources,
   readEngineeringIssue,
+  referenceEngineeringIssue,
 } from '@client/src/api/canonical-host';
+import { getEngineeringMatterWorkspace } from '@client/src/api/engineering-matter';
 import { Button } from '@client/src/components/ui/button';
 import { Input } from '@client/src/components/ui/input';
 import { JobAidIssueArticle } from '@client/src/pages/DocumentParsingPage/JobAidIssueArticle';
 import type {
   EngineeringIssueRead,
   EngineeringIssueSearchResponse,
+  EngineeringIssueReferenceRequest,
+  EngineeringIssueReferenceReceipt,
 } from '@shared/engineering-issue-search.interface';
 import MatterDocumentSourceDialog from './MatterDocumentSourceDialog';
 import { matterDocumentRoute } from './matter-navigation';
@@ -23,6 +27,9 @@ export default function EngineeringIssueSearch({
   matterId: string;
 }) {
   const navigate = useNavigate();
+  const [params] = useSearchParams();
+  const sourceWorkRef = params.get('sourceWorkRef');
+  const sourceIssueKey = params.get('sourceIssueKey');
   const [query, setQuery] = useState('');
   const [scope, setScope] = useState<'CURRENT' | 'HISTORY'>('CURRENT');
   const [results, setResults] = useState<EngineeringIssueSearchResponse | null>(
@@ -32,11 +39,27 @@ export default function EngineeringIssueSearch({
   const [originals, setOriginals] = useState<DocumentSourceSearchResponse | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [purpose, setPurpose] = useState('');
+  const [referenceBusy, setReferenceBusy] = useState(false);
+  const [referenceReceipt, setReferenceReceipt] = useState<EngineeringIssueReferenceReceipt | null>(null);
+  const pendingReference = useRef<EngineeringIssueReferenceRequest | null>(null);
   const [source, setSource] = useState<{
     documentVersionId: string;
     sourceRef: string | null;
   } | null>(null);
   const epoch = useRef(0);
+  useEffect(() => {
+    if (!sourceWorkRef || !sourceIssueKey) return;
+    const request = ++epoch.current;
+    setBusy(true); setError(null); setSelected(null); setSource(null);
+    void readEngineeringIssue({ subjectKind: 'ENGINEERING_MATTER', subjectId: matterId,
+      workRef: sourceWorkRef, issueKey: sourceIssueKey }).then(value => {
+      if (request === epoch.current) setSelected(value);
+    }).catch((cause: unknown) => {
+      if (request === epoch.current) setError(cause instanceof Error ? cause.message : '所引工作读取失败');
+    }).finally(() => { if (request === epoch.current) setBusy(false); });
+    return () => { epoch.current += 1; };
+  }, [matterId, sourceWorkRef, sourceIssueKey]);
   useEffect(
     () => () => {
       epoch.current += 1;
@@ -163,7 +186,7 @@ export default function EngineeringIssueSearch({
         <div className="wl-jobaid-article rounded-xl border border-border p-4">
           <p className="mb-3 text-sm text-muted-foreground">
             已保存工作修订 {selected.identity.workRevision}
-            ；此处始终读取搜索命中的确切版本。
+            ；此处始终读取所引用的确切版本。
           </p>
           {selected.identity.overviewStatus === 'STALE' ? <p role="note" className="mb-3 text-sm">
             此工作的问题正文可读；综合认识尚未覆盖本次问题更新。
@@ -173,6 +196,44 @@ export default function EngineeringIssueSearch({
           {selected.identity.correctionNotices?.map(notice => <p key={notice.attemptRef} role="note" className="mb-3 text-sm">
             {notice.correctedWorkRef ? '此版本已有后继更正：' : '此版本存在待核更正：'}{notice.reason}
           </p>)}
+          {selected.identity.subjectKind === 'ENGINEERING_MATTER' && selected.identity.subjectId !== matterId ? (
+            <div className="mb-4 space-y-2 rounded border border-border p-3">
+              <p className="text-sm">将此工作交给本事项比较。保存本事项自己的条件判断，并保留所引工作和根来源。</p>
+              <Input aria-label="引用比较用途" placeholder="说明要比较的条件或调查问题" maxLength={3000}
+                value={purpose} disabled={referenceBusy} onChange={event => setPurpose(event.target.value)} />
+              <Button disabled={busy || referenceBusy || !purpose.trim() || Boolean(referenceReceipt &&
+                referenceReceipt.source.workRef === selected.identity.workRef && referenceReceipt.source.issueKey === selected.identity.issueKey)}
+                onClick={() => {
+                  const generation = ++epoch.current;
+                  const identity = selected.identity;
+                  setReferenceBusy(true); setError(null);
+                  void (async () => {
+                    let request = pendingReference.current;
+                    if (!request || request.targetMatterId !== matterId || request.source.subjectId !== identity.subjectId ||
+                        request.source.workRef !== identity.workRef || request.source.issueKey !== identity.issueKey || request.purpose !== purpose.trim()) {
+                      const current = await getEngineeringMatterWorkspace(matterId);
+                      if (generation !== epoch.current) return;
+                      request = { targetMatterId: matterId, expectedMatterRevisionId: current.working.currentMatterRevisionId,
+                        expectedMatterRevision: current.matter.currentRevision.revisionNo,
+                        expectedWorkingRevision: current.working.currentWorkingRevision, requestId: `reference-${crypto.randomUUID()}`,
+                        purpose: purpose.trim(), source: { subjectKind: 'ENGINEERING_MATTER', subjectId: identity.subjectId,
+                          workRef: identity.workRef, issueKey: identity.issueKey } };
+                      pendingReference.current = request;
+                    }
+                    const receipt = await referenceEngineeringIssue(request);
+                    if (generation === epoch.current) setReferenceReceipt(receipt);
+                  })().catch((cause: unknown) => {
+                    if (generation === epoch.current) setError(cause instanceof Error ? cause.message : '引用请求未取得回执，可重读同一请求。');
+                  }).finally(() => setReferenceBusy(false));
+                }}>
+                {referenceBusy ? '正在登记…' : '引用并比较本事项'}
+              </Button>
+              {referenceReceipt && referenceReceipt.source.workRef === selected.identity.workRef &&
+                referenceReceipt.source.issueKey === selected.identity.issueKey ? <p role="status" className="text-sm">
+                  引用比较请求已登记，状态 {referenceReceipt.status}；由本事项原调度继续处理，尚不代表已形成新认识。
+                </p> : null}
+            </div>
+          ) : null}
           <JobAidIssueArticle
             issue={selected.issue}
             reading={selected.reading}

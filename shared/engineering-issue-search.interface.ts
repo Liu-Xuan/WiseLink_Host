@@ -31,3 +31,21 @@ export interface EngineeringIssueRead {
   issue: JobAidProblemIssue;
   reading: AssessmentReadingResult;
 }
+
+export interface EngineeringIssueReferenceRequest {
+  targetMatterId: string;
+  expectedMatterRevisionId: string;
+  expectedMatterRevision: number;
+  expectedWorkingRevision: number;
+  requestId: string;
+  source: { subjectKind: 'ENGINEERING_MATTER'; subjectId: string; workRef: string; issueKey: string };
+  purpose: string;
+}
+
+export interface EngineeringIssueReferenceReceipt {
+  targetMatterId: string;
+  source: EngineeringIssueReferenceRequest['source'];
+  attemptRef: string;
+  status: string;
+  created: boolean;
+}

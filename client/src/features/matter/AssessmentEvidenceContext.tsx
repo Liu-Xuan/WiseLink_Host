@@ -1,9 +1,11 @@
 import type { FC } from 'react';
+import { Link } from 'react-router-dom';
 
 import { Button } from '@client/src/components/ui/button';
 import type { AssessmentEvidence } from '@shared/assessment-reading.interface';
 
 import type { DocumentAssessmentEvidence } from './assessment-reading';
+import { matterReferencedWorkRoute } from './matter-navigation';
 
 interface AssessmentEvidenceContextProps {
   evidence: AssessmentEvidence;
@@ -30,9 +32,13 @@ const AssessmentEvidenceContext: FC<AssessmentEvidenceContextProps> = ({
       {evidence.versionLabel ? <span>{evidence.versionLabel}</span> : null}
     </div>
     <h4 className="break-words text-sm font-medium">{evidence.title}</h4>
-    <blockquote className="whitespace-pre-wrap break-words border-l-2 border-border pl-3 text-sm leading-7">
+    {evidence.kind === 'PRIOR_RESULT' && evidence.sourceWork ? (
+      <Link to={matterReferencedWorkRoute(evidence.sourceWork)} className="text-sm underline">
+        阅读所引工作修订 {evidence.resultRevision} 的完整问题、条件和来源
+      </Link>
+    ) : <blockquote className="whitespace-pre-wrap break-words border-l-2 border-border pl-3 text-sm leading-7">
       {evidence.excerpt || '该前提未附正文摘录。'}
-    </blockquote>
+    </blockquote>}
     {evidence.kind === 'DOCUMENT_PASSAGE' ? (
       <div className="flex flex-wrap items-center gap-3">
         <span className="break-words text-xs text-muted-foreground">

@@ -33,6 +33,14 @@ export interface DialogueEvidenceSource {
   contextWorkItemIds: string[];
 }
 
+/** Exact saved analysis identity; this is not a document or an adoption decision. */
+export interface AssessmentSourceWork {
+  subjectKind: 'ENGINEERING_MATTER';
+  subjectId: string;
+  workRef: string;
+  issueKey: string;
+}
+
 /** Host-issued premises keep their original carrier identity and version. */
 export type AssessmentEvidence = {
   evidenceRef: string;
@@ -94,6 +102,7 @@ export type AssessmentEvidence = {
       resultRevision: number;
       /** A previous candidate is context, not a new independent source fact. */
       originalEvidenceRefs: string[];
+      sourceWork?: AssessmentSourceWork;
     }
   | {
       kind: 'ENGINEER_ATTACHMENT';

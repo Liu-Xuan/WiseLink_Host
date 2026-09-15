@@ -1,3 +1,4 @@
+import { parseAssessmentSourceWork } from '@shared/assessment-evidence-roots';
 import type {
   AssessmentEvidence,
   AssessmentClaimPremise,
@@ -15,6 +16,8 @@ export type OverallAssessmentReadingSummary = Omit<
 > & { schemaVersion: 'wiselink.3_1.overall_engineering_summary.v2' };
 
 export interface OverallModelEvidence {
+  sourceWork?: Extract<AssessmentEvidence, { kind: 'PRIOR_RESULT' }>['sourceWork'];
+  originalEvidenceRefs?: string[];
   queryProvenance?: Extract<
     AssessmentEvidence,
     { kind: 'QUERY_RECEIPT' }
@@ -37,6 +40,8 @@ export function overallModelEvidenceRegistry(
     versionLabel: item.versionLabel,
     excerpt: item.excerpt,
     locator: 'locator' in item ? item.locator : null,
+    ...(item.kind === 'PRIOR_RESULT' ? { originalEvidenceRefs: [...item.originalEvidenceRefs],
+      ...(item.sourceWork ? { sourceWork: structuredClone(item.sourceWork) } : {}) } : {}),
     ...(item.kind === 'QUERY_RECEIPT' && item.queryProvenance
       ? { queryProvenance: structuredClone(item.queryProvenance) }
       : {}),
@@ -124,7 +129,7 @@ export function readStoredOverallEvidence(
           return {
             ...common,
             kind: item.kind,
-            workItemId: text(
+            workItemId: item.workItemId === null ? null : text(
               item.workItemId,
               'OVERALL_EVIDENCE_WORK_ITEM_INVALID',
             ),
@@ -259,6 +264,7 @@ export function readStoredOverallEvidence(
           return {
             ...common,
             kind: item.kind,
+            ...(item.sourceWork !== undefined ? { sourceWork: parseAssessmentSourceWork(item.sourceWork) } : {}),
             resultRef: text(
               item.resultRef,
               'OVERALL_EVIDENCE_RESULT_REF_INVALID',

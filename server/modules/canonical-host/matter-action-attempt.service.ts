@@ -3,6 +3,9 @@ import { addMatterDeliveredEvidence, buildMatterJobAidTask, MATTER_JOBAID_TASK_S
 import { materializeMatterJobAidCommand } from './matter-jobaid-save';
 import { buildEngineeringIssueCorrectionContext, summarizeEngineeringIssueCorrection } from './engineering-issue-correction-context';
 import { EngineeringIssueCorrectionPluginService } from './engineering-issue-correction-plugin.service';
+import { buildMatterWorkReference, type MatterWorkReferenceRequest } from './matter-work-reference';
+import type { CanonicalHostActor } from './canonical-host.types';
+import { isHostedCanonicalFinalUserActor } from '../work-item/miaoda-hosted-canonical-object-access.adapter';
 import { engineeringMatterPendingInputs } from './engineering-matter-working-state';
 import { readMatterDocumentIdentities } from './matter-document-identity';
 import type { AssessmentEvidence } from '@shared/assessment-reading.interface';
@@ -57,6 +60,8 @@ export interface MatterAttemptScope {
   tenantId: string;
   matterId: string;
   actorUserId: string;
+  /** Supplied by the authenticated transport, never by request JSON or a model. */
+  authorizeReferenceMatter?: (matterId: string) => Promise<void>;
 }
 
 export interface ReserveMatterAttempt extends MatterAttemptScope {
@@ -73,6 +78,7 @@ export type ReserveMatterJobAidAttempt = Omit<ReserveMatterAttempt, 'modelInput'
   expectedInputs?: EngineeringMatterWorkingInputBinding[];
   recoveryAttemptRef?: string;
   correction?: MatterIssueCorrectionPurpose;
+  referenceWorks?: MatterWorkReferenceRequest[];
 };
 
 /** Subject adapter for the existing durable queue, lease slots and cancellation. */
@@ -91,6 +97,17 @@ export class MatterActionAttemptService {
 
   /** Host builds the entire JobAid context; callers supply only the request and CAS. */
   reserveJobAid(input: ReserveMatterJobAidAttempt) {
+    this.validateJobAidRequest(input);
+    return this.reserveInternal(input);
+  }
+
+  /** Native browser ingress retains its authenticated SQL context; it never impersonates the Hosted actor. */
+  reserveJobAidForBrowser(input: ReserveMatterJobAidAttempt, actor: CanonicalHostActor) {
+    this.validateJobAidRequest(input);
+    return this.reserveInternal(input, actor);
+  }
+
+  private validateJobAidRequest(input: ReserveMatterJobAidAttempt) {
     if ('modelInput' in input || 'sourceRefs' in input)
       throw failure('MATTER_JOBAID_HOST_CONTEXT_REQUIRED', 400);
     if (input.correction && (input.recoveryAttemptRef || input.correction.kind !== 'ENGINEERING_ISSUE_CORRECTION' ||
@@ -99,7 +116,12 @@ export class MatterActionAttemptService {
         input.correction.evidenceRefs.some(ref => !ref.trim()) ||
         new Set(input.correction.evidenceRefs).size !== input.correction.evidenceRefs.length))
       throw failure('ENGINEERING_CORRECTION_REQUEST_INVALID', 400);
-    return this.reserveInternal(input);
+    if (input.referenceWorks && (input.referenceWorks.length > 8 ||
+        input.referenceWorks.some(ref => ref.matterId === input.matterId ||
+          [ref.matterId, ref.workRef, ref.issueKey, ref.purpose].some(value => typeof value !== 'string' || !value.trim()) ||
+          ref.purpose.length > 4000 || [ref.matterId, ref.workRef, ref.issueKey].some(value => value.length > 255)) ||
+        new Set(input.referenceWorks.map(ref => canonicalJson([ref.matterId,ref.workRef,ref.issueKey]))).size !== input.referenceWorks.length))
+      throw failure('MATTER_REFERENCE_REQUEST_INVALID', 400);
   }
 
   /** One existing consumer tick observes source changes; the Host decides whether work is needed. */
@@ -165,7 +187,7 @@ export class MatterActionAttemptService {
     return { matterId: input.matterId, next: { attemptRef: reserved.task.operationRef, status: reserved.row.status } };
   }
 
-  private reserveInternal(input: ReserveMatterAttempt | ReserveMatterJobAidAttempt): Promise<{
+  private reserveInternal(input: ReserveMatterAttempt | ReserveMatterJobAidAttempt, nativeActor?: CanonicalHostActor): Promise<{
     row: MatterActionAttemptRow;
     task: OpenClawMatterTaskEnvelope;
     created: boolean;
@@ -216,6 +238,8 @@ export class MatterActionAttemptService {
               canonicalJson(task.sourceRefs) !== canonicalJson(input.sourceRefs)
             : task.modelInput.schemaVersion !== MATTER_JOBAID_TASK_SCHEMA ||
               canonicalJson((task.modelInput as ReturnType<typeof buildMatterJobAidTask>).correction ?? null) !== canonicalJson(input.correction ?? null) ||
+              ((!input.recoveryAttemptRef || input.referenceWorks !== undefined) &&
+                canonicalJson((task.modelInput as ReturnType<typeof buildMatterJobAidTask>).referenceWorks ?? []) !== canonicalJson(input.referenceWorks ?? [])) ||
               ((task.modelInput as ReturnType<typeof buildMatterJobAidTask>).recovery?.attemptRef ?? null) !==
                 (input.recoveryAttemptRef ?? null))
         )
@@ -293,6 +317,25 @@ export class MatterActionAttemptService {
         inputs: authorizedInputs, trigger: input.trigger, previous: current,
       });
       const correction = 'correction' in input ? input.correction : undefined;
+      const recoveredReferences = (recoveryTask?.modelInput as ReturnType<typeof buildMatterJobAidTask> | undefined)?.referenceWorks ?? [];
+      if (recoveryTask && 'referenceWorks' in input && input.referenceWorks !== undefined &&
+          canonicalJson(input.referenceWorks) !== canonicalJson(recoveredReferences))
+        throw failure('MATTER_RECOVERY_BASIS_CHANGED');
+      const referenceWorks = recoveryTask ? recoveredReferences : ('referenceWorks' in input ? input.referenceWorks ?? [] : []);
+      if (referenceWorks.length) {
+        const jobAid = modelInput as ReturnType<typeof buildMatterJobAidTask>;
+        jobAid.referenceWorks = structuredClone(referenceWorks);
+        for (const reference of referenceWorks) {
+          const revision = await this.authorizedReference(executor, input, reference);
+          const evidence = buildMatterWorkReference(reference, revision);
+          addMatterDeliveredEvidence(jobAid, evidence);
+          jobAid.modelInput.referenceWorks.push({ ...reference, evidenceRef: evidence[0]!.evidenceRef,
+            correctionNotices: structuredClone(revision.correctionNotices?.filter(notice => notice.issueKey === reference.issueKey) ?? []) });
+        }
+      }
+      // Retained references are reauthorized too; a new B request cannot launder A's revoked scope.
+      await this.authorizeReferenceEvidence(executor, input,
+        (modelInput as ReturnType<typeof buildMatterJobAidTask>).sourceCatalog ?? []);
       if (correction) {
         if (current?.matterWorkRevisionId !== correction.expectedWorkRef ||
             !current.state.problemWork?.issues.some(issue => issue.issueKey === correction.issueKey))
@@ -405,7 +448,7 @@ export class MatterActionAttemptService {
         task,
         created: true,
       };
-    });
+    }, nativeActor);
   }
 
   read(
@@ -1397,7 +1440,40 @@ export class MatterActionAttemptService {
       },
       executor.database,
     );
+    await this.authorizeReferenceEvidence(executor, scope,
+      (task.modelInput as ReturnType<typeof buildMatterJobAidTask>).sourceCatalog ?? []);
     return row;
+  }
+
+  private async authorizedReference(executor: EngineeringMatterWorkingTransactionExecutor,
+    scope: MatterAttemptScope, reference: Pick<MatterWorkReferenceRequest, 'matterId' | 'workRef' | 'issueKey'>) {
+    if (!scope.authorizeReferenceMatter) throw failure('MATTER_REFERENCE_SERVICE_SCOPE_UNAVAILABLE', 403);
+    await scope.authorizeReferenceMatter(reference.matterId);
+    const input = { tenantId: scope.tenantId, actorUserId: scope.actorUserId, matterId: reference.matterId };
+    await executor.authorizeRuntimeInputs(input);
+    const revision = await this.working.readByRef({ ...input, workRef: reference.workRef }, executor.database);
+    if (!revision || !revision.state.problemWork?.issues.some(issue => issue.issueKey === reference.issueKey))
+      throw failure('MATTER_REFERENCE_WORK_NOT_FOUND', 404);
+    await executor.authorizeRuntimeInputs({ ...input, basedOnMatterRevisionId: revision.basedOnMatterRevisionId });
+    return revision;
+  }
+
+  private async authorizeReferenceEvidence(executor: EngineeringMatterWorkingTransactionExecutor,
+    scope: MatterAttemptScope, evidence: AssessmentEvidence[]) {
+    const checked = new Set<string>();
+    const pending = [...evidence];
+    for (const item of pending) {
+      if (item.kind !== 'PRIOR_RESULT' || !item.sourceWork) continue;
+      const ref = item.sourceWork;
+      const key = canonicalJson(ref);
+      if (checked.has(key)) continue;
+      checked.add(key);
+      const revision = await this.authorizedReference(executor, scope,
+        { matterId: ref.subjectId, workRef: ref.workRef, issueKey: ref.issueKey });
+      if (revision.workingRevision !== item.resultRevision || ref.workRef !== item.resultRef)
+        throw failure('MATTER_REFERENCE_WORK_BINDING_CHANGED');
+      pending.push(...(revision.state.problemWork?.evidence ?? []).filter(source => source.kind === 'PRIOR_RESULT' && source.sourceWork));
+    }
   }
 
   private authorized<T>(
@@ -1406,17 +1482,24 @@ export class MatterActionAttemptService {
       executor: EngineeringMatterWorkingTransactionExecutor,
       queue: ActionAttemptRepository,
     ) => Promise<T>,
+    nativeActor?: CanonicalHostActor,
   ): Promise<T> {
-    return this.working.withActorTransaction(
-      scope.actorUserId,
-      async (executor) => {
+    const run = async (executor: EngineeringMatterWorkingTransactionExecutor) => {
         await executor.authorizeRuntimeInputs(scope);
         return operation(
           executor,
           new ActionAttemptRepository(executor.database),
         );
-      },
-    );
+    };
+    if (nativeActor) {
+      const identity = nativeActor.objectAccessActor;
+      if (!identity || !isHostedCanonicalFinalUserActor(identity) || nativeActor.appId !== 'app_17bzc551rsg' ||
+          identity.tenantId !== scope.tenantId || nativeActor.tenantId !== scope.tenantId ||
+          identity.canonicalSubject.id !== scope.actorUserId || nativeActor.userId !== scope.actorUserId)
+        throw failure('CANONICAL_IDENTITY_HANDOFF_UNAVAILABLE', 403);
+      return this.working.withTransaction(run);
+    }
+    return this.working.withActorTransaction(scope.actorUserId, run);
   }
 }
 

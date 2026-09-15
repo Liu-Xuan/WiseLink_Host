@@ -22,7 +22,7 @@ export function registerMatterAttemptMcpTools(server: McpServer, attempts: Matte
     const scope = await authorization.authorizeOpenClawMatterRequest(input);
     if (scope.appId !== 'app_17bzc551rsg' || scope.matterId !== input.matterId || !scope.actorUserId || !scope.tenantId)
       throw canonicalServiceScopeUnavailable();
-    return textResult(await attempts.nextForRuntime(scope));
+    return textResult(await attempts.nextForRuntime(referenceAuthorizedScope(scope, authorization)));
   });
   server.registerTool('begin_matter_assessment', {
     title: '申请事项持续评估',
@@ -33,6 +33,10 @@ export function registerMatterAttemptMcpTools(server: McpServer, attempts: Matte
       expectedWorkingRevision: z.number().int().nonnegative(),
       requestId: z.string().trim().min(1).max(96), instruction: z.string().trim().min(1).max(4000),
       recoveryAttemptRef: target.attemptRef.optional(),
+      referenceWorks: z.array(z.object({ matterId: target.matterId,
+        workRef: z.string().trim().min(1).max(255), issueKey: z.string().trim().min(1).max(255),
+        purpose: z.string().trim().min(1).max(4000),
+      }).strict()).min(1).max(8).optional(),
       correction: z.object({ kind: z.literal('ENGINEERING_ISSUE_CORRECTION'),
         expectedWorkRef: z.string().trim().min(1).max(200), issueKey: z.string().trim().min(1).max(255),
         correctionReason: z.string().trim().min(1), evidenceRefs: z.array(z.string().trim().min(1)).min(1),
@@ -45,10 +49,12 @@ export function registerMatterAttemptMcpTools(server: McpServer, attempts: Matte
     if (scope.appId !== 'app_17bzc551rsg' || scope.matterId !== input.matterId ||
       !scope.actorUserId || !scope.tenantId || !scope.principalId) throw canonicalServiceScopeUnavailable();
     const result = await attempts.reserveJobAid({ tenantId: scope.tenantId, actorUserId: scope.actorUserId,
+      authorizeReferenceMatter: referenceAuthorizedScope(scope, authorization).authorizeReferenceMatter,
       matterId: scope.matterId, expectedMatterRevisionId: input.expectedMatterRevisionId,
       expectedMatterRevision: input.expectedMatterRevision, expectedWorkingRevision: input.expectedWorkingRevision,
       ...(input.recoveryAttemptRef ? { recoveryAttemptRef: input.recoveryAttemptRef } : {}),
       ...(input.correction ? { correction: input.correction } : {}),
+      ...(input.referenceWorks ? { referenceWorks: input.referenceWorks } : {}),
       idempotencyKey: `matter:${scope.matterId}:${input.requestId}`,
       trigger: { kind: 'USER_REQUEST', requestId: input.requestId, instruction: input.instruction } });
     return textResult({ attemptRef: result.task.operationRef, status: result.row.status, created: result.created });
@@ -81,9 +87,9 @@ export function registerMatterAttemptMcpTools(server: McpServer, attempts: Matte
     annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: false },
   }, async (input) => {
     if (!authorization.authorizeOpenClawMatterAttempt) throw canonicalServiceScopeUnavailable();
-    const scope = await authorization.authorizeOpenClawMatterAttempt({
+    const scope = referenceAuthorizedScope(await authorization.authorizeOpenClawMatterAttempt({
       matterId: input.matterId, attemptRef: input.attemptRef, operation: input.operation,
-    });
+    }), authorization);
     if (scope.appId !== 'app_17bzc551rsg' || scope.matterId !== input.matterId ||
       scope.attemptRef !== input.attemptRef || !scope.actorUserId || !scope.tenantId || !scope.principalId)
       throw canonicalServiceScopeUnavailable();
@@ -131,4 +137,16 @@ export function registerMatterAttemptMcpTools(server: McpServer, attempts: Matte
       }
     }
   });
+}
+
+function referenceAuthorizedScope<T extends { appId: string; tenantId: string; actorUserId: string; principalId: string }>(
+  scope: T, authorization: CanonicalServiceScopeAuthorizationPort,
+): T & { authorizeReferenceMatter: (matterId: string) => Promise<void> } {
+  return { ...scope, authorizeReferenceMatter: async matterId => {
+    if (!authorization.authorizeOpenClawMatterRequest) throw canonicalServiceScopeUnavailable();
+    const source = await authorization.authorizeOpenClawMatterRequest({ matterId });
+    if (source.appId !== scope.appId || source.tenantId !== scope.tenantId ||
+        source.actorUserId !== scope.actorUserId || source.principalId !== scope.principalId || source.matterId !== matterId)
+      throw canonicalServiceScopeUnavailable();
+  } };
 }

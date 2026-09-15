@@ -1,3 +1,4 @@
+import { parseAssessmentSourceWork } from '@shared/assessment-evidence-roots';
 import { readHistoricalJobAidWork } from './jobaid-historical-reading';
 import { validateMatterRevisitWhen } from './matter-revisit';
 import type {
@@ -134,8 +135,13 @@ export function materializeEngineeringMatterWorkingState(input: {
         fail('ENGINEERING_MATTER_WORKING_SUBSTANTIVE_INPUT_NOT_COVERED');
       }
     }
+    const referencedRoots = new Set(input.command.nextSubstantiveResult.evidence.flatMap(item =>
+      item.kind === 'PRIOR_RESULT' && item.sourceWork ? item.originalEvidenceRefs : []));
     for (const evidence of input.command.nextSubstantiveResult.evidence) {
       if (evidence.kind !== 'DOCUMENT_PASSAGE') continue;
+      // These are the roots of an exact saved-work reference, not B's member coverage.
+      // The repository verifies the named work, lineage and fresh source access in the commit transaction.
+      if (referencedRoots.has(evidence.evidenceRef)) continue;
       const binding = substantiveInputs.find(
         (candidate) =>
           (evidence.workItemId === null || candidate.workItemId === evidence.workItemId) &&
@@ -154,8 +160,11 @@ export function materializeEngineeringMatterWorkingState(input: {
   }
 
   // Full work retains material beyond the short reader, including risk and measure evidence.
+  const referencedWorkRoots = new Set((input.command.nextProblemWork?.evidence ?? []).flatMap(item =>
+    item.kind === 'PRIOR_RESULT' && item.sourceWork ? item.originalEvidenceRefs : []));
   for (const evidence of input.command.nextProblemWork?.evidence ?? []) {
     if (evidence.kind !== 'DOCUMENT_PASSAGE') continue;
+    if (referencedWorkRoots.has(evidence.evidenceRef)) continue;
     const covered = coverage.find(
       (item) =>
         (evidence.workItemId === null || item.binding.workItemId === evidence.workItemId) &&
@@ -920,6 +929,7 @@ function validateEvidence(value: unknown): asserts value is AssessmentEvidence {
       }
       break;
     case 'PRIOR_RESULT':
+      if (value.sourceWork !== undefined) parseAssessmentSourceWork(value.sourceWork);
       requiredText(
         value.resultRef,
         'ENGINEERING_MATTER_WORKING_EVIDENCE_RESULT_REF_REQUIRED',

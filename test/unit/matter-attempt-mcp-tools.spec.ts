@@ -17,18 +17,42 @@ function fixture(allowed = true, tool = 'matter_action_attempt') {
   registerMatterAttemptMcpTools({ registerTool } as never, attempts as never,
     allowed ? { authorizeOpenClawMatterAttempt, authorizeOpenClawMatterRequest } as never : {} as never, documents as never, originalReader as never);
   const [name, definition, handler] = registerTool.mock.calls.find(([name]) => name === tool)!;
-  return { attempts, documents, originalReader, scope, authorizeOpenClawMatterAttempt, name,
+  return { attempts, documents, originalReader, scope, expectedScope: { ...scope, authorizeReferenceMatter: expect.any(Function) }, authorizeOpenClawMatterAttempt, authorizeOpenClawMatterRequest, name,
     call: (input: unknown) => handler(definition.inputSchema.parse(input)) };
 }
 const request = { operation: 'CLAIM', matterId: 'MAT-one', attemptRef: 'AQ-one' };
 
 describe('Matter MCP existing attempt lifecycle', () => {
+  it('requires the same principal, tenant and actor for a referenced Matter on every use', async () => {
+    const f = fixture();
+    await f.call(request);
+    const sourceAuthorization = f.attempts.claim.mock.calls[0][0].authorizeReferenceMatter;
+    f.authorizeOpenClawMatterRequest.mockResolvedValue({ ...f.scope, matterId: 'MAT-source' });
+    await expect(sourceAuthorization('MAT-source')).resolves.toBeUndefined();
+    for (const changed of [{ tenantId: 'other-tenant' }, { actorUserId: 'other-actor' },
+      { principalId: 'other-principal' }, { matterId: 'MAT-other' }]) {
+      f.authorizeOpenClawMatterRequest.mockResolvedValue({ ...f.scope, matterId: 'MAT-source', ...changed });
+      await expect(sourceAuthorization('MAT-source')).rejects.toMatchObject({ statusCode: 503 });
+    }
+    f.authorizeOpenClawMatterRequest.mockRejectedValue(Object.assign(new Error('ACTION_ATTEMPT_NOT_FOUND'), { statusCode: 404 }));
+    await expect(sourceAuthorization('MAT-source')).rejects.toMatchObject({ statusCode: 404 });
+  });
+  it('accepts only reference identities and purpose, never caller-supplied A content or authorization', async () => {
+    const f = fixture(true, 'begin_matter_assessment');
+    const input = { matterId: 'MAT-one', expectedMatterRevisionId: 'MR-one', expectedMatterRevision: 2,
+      expectedWorkingRevision: 3, requestId: 'reference-one', instruction: 'Compare the source conditions',
+      referenceWorks: [{ matterId: 'MAT-source', workRef: 'MWREV-source', issueKey: 'conditions', purpose: 'Compare with this matter' }] };
+    await f.call(input);
+    expect(f.attempts.reserveJobAid).toHaveBeenCalledWith(expect.objectContaining({ referenceWorks: input.referenceWorks }));
+    expect(() => f.call({ ...input, referenceWorks: [{ ...input.referenceWorks[0], body: 'forged source' }] })).toThrow();
+    expect(() => f.call({ ...input, authorizeReferenceMatter: true })).toThrow();
+  });
   it('reads original only with exact Host actor and fence, rejecting caller-selected parse runs', async () => {
     const f = fixture();
     const input = { ...request, operation: 'READ_ORIGINAL', documentVersionId: 'DV-one', offset: 0,
       limit: 20, purpose: '核对原文', leaseToken: 'f1111111-1111-4111-8111-111111111111', leaseGeneration: 1 };
     await f.call(input);
-    expect(f.attempts.readOriginal).toHaveBeenCalledWith({ ...f.scope, documentVersionId: 'DV-one', offset: 0,
+    expect(f.attempts.readOriginal).toHaveBeenCalledWith({ ...f.expectedScope, documentVersionId: 'DV-one', offset: 0,
       limit: 20, purpose: input.purpose, leaseToken: input.leaseToken, leaseGeneration: 1 }, f.originalReader);
     expect(() => f.call({ ...input, parseRunId: 'forged' })).toThrow();
     expect(() => f.call({ ...input, offset: -1 })).toThrow();
@@ -36,7 +60,7 @@ describe('Matter MCP existing attempt lifecycle', () => {
   it('polls and creates automatic work only through the exact Host Matter scope', async () => {
     const f = fixture(true, 'next_matter_assessment');
     await f.call({ matterId: 'MAT-one' });
-    expect(f.attempts.nextForRuntime).toHaveBeenCalledWith(f.scope);
+    expect(f.attempts.nextForRuntime).toHaveBeenCalledWith(f.expectedScope);
     expect(() => f.call({ matterId: 'MAT-one', actorUserId: 'forged' })).toThrow();
   });
 
@@ -45,7 +69,7 @@ describe('Matter MCP existing attempt lifecycle', () => {
     const input = { matterId: 'MAT-one', expectedMatterRevisionId: 'MR-one', expectedMatterRevision: 2,
       expectedWorkingRevision: 3, requestId: 'request-one', instruction: '复核新增资料' };
     await f.call(input);
-    expect(f.attempts.reserveJobAid).toHaveBeenCalledWith({ tenantId: 'host-tenant', actorUserId: 'host-actor',
+    expect(f.attempts.reserveJobAid).toHaveBeenCalledWith({ tenantId: 'host-tenant', actorUserId: 'host-actor', authorizeReferenceMatter: expect.any(Function),
       matterId: 'MAT-one', expectedMatterRevisionId: 'MR-one', expectedMatterRevision: 2,
       expectedWorkingRevision: 3, idempotencyKey: 'matter:MAT-one:request-one',
       trigger: { kind: 'USER_REQUEST', requestId: 'request-one', instruction: '复核新增资料' } });
@@ -61,24 +85,24 @@ describe('Matter MCP existing attempt lifecycle', () => {
     const f = fixture();
     await f.call({ ...request, operation: 'READ_SOURCES', documentVersionId: 'DV-one', pageStart: 2,
       purpose: '核对前提', leaseToken: 'f1111111-1111-4111-8111-111111111111', leaseGeneration: 1 });
-    expect(f.documents.readDocumentSourcePagesForRuntime).toHaveBeenCalledWith('DV-one', { pageStart: 2, pageEnd: 2 }, f.scope);
+    expect(f.documents.readDocumentSourcePagesForRuntime).toHaveBeenCalledWith('DV-one', { pageStart: 2, pageEnd: 2 }, f.expectedScope);
   });
 
   it('dispatches raw work and exact finish through the Host-authorized Matter processor', async () => {
     const f = fixture();
     const fence = { leaseToken: 'f1111111-1111-4111-8111-111111111111', leaseGeneration: 1 };
     await f.call({ ...request, ...fence, operation: 'SAVE_WORK', requestId: 'save-one', expectedWorkRevision: 0, workJson: '{}' });
-    expect(f.attempts.saveJobAidWork).toHaveBeenCalledWith({ ...f.scope, ...fence, requestId: 'save-one', expectedWorkRevision: 0, workJson: '{}' });
+    expect(f.attempts.saveJobAidWork).toHaveBeenCalledWith({ ...f.expectedScope, ...fence, requestId: 'save-one', expectedWorkRevision: 0, workJson: '{}' });
     const result = { status: 'SUCCEEDED', modelOutput: JSON.stringify({ workRevisionRef: 'MWR-one' }) };
     await f.call({ ...request, ...fence, operation: 'FINISH', result });
-    expect(f.attempts.finishJobAid).toHaveBeenCalledWith({ ...f.scope, ...fence, result });
+    expect(f.attempts.finishJobAid).toHaveBeenCalledWith({ ...f.expectedScope, ...fence, result });
   });
 
   it('passes only Host-authorized identity to the real Matter service', async () => {
     const f = fixture();
     expect(f.name).toBe('matter_action_attempt');
     await f.call(request);
-    expect(f.attempts.claim).toHaveBeenCalledWith(f.scope);
+    expect(f.attempts.claim).toHaveBeenCalledWith(f.expectedScope);
   });
   it('rejects injected identity fields and fences before dispatch', () => {
     const f = fixture();
@@ -106,7 +130,7 @@ describe('Matter MCP existing attempt lifecycle', () => {
   it('reads the exact save request without claiming or creating another attempt', async () => {
     const f = fixture();
     await f.call({ ...request, operation: 'READ_SAVED_WORK', requestId: 'save-first' });
-    expect(f.attempts.readSavedWork).toHaveBeenCalledWith({ ...f.scope, requestId: 'save-first' });
+    expect(f.attempts.readSavedWork).toHaveBeenCalledWith({ ...f.expectedScope, requestId: 'save-first' });
     expect(f.attempts.claim).not.toHaveBeenCalled();
   });
   it('reports the recorded terminal failure when the separate error column is empty', async () => {
