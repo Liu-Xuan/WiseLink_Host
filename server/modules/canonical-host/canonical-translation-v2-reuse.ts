@@ -7,6 +7,7 @@ export interface TranslationOriginalReuse {
   previous: TranslationBlockRevisionV2;
   candidate: TranslationBlockCandidateV2;
   dependencies: TranslationBlockDependenciesV2;
+  requiresRecheck: boolean;
 }
 
 /** Reuse actual saved text only when every delivered source/context dependency
@@ -45,7 +46,7 @@ export function planOriginalTranslationReuse(previous: TranslationWorkspaceV2, n
     const value = workspace.plan.documentContext;
     const anchors = (values: string[]) => translate ? ids(values, anchorMap) : values;
     const blocks = (values: string[]) => translate ? ids(values, blockMap) : values;
-    return { title: value.title, references: value.references,
+    return { title: value.title, references: value.references, dateOrder: value.dateOrder ?? null,
       outline: value.outline.map(entry => ({ ...entry, blockId: blocks([entry.blockId])[0], anchorIds: anchors(entry.anchorIds) })),
       scopedConditions: value.scopedConditions.map(entry => ({ advisoryBlockId: blocks([entry.advisoryBlockId])[0],
         targetBlockIds: blocks(entry.targetBlockIds), anchorIds: anchors(entry.anchorIds) })),
@@ -53,7 +54,8 @@ export function planOriginalTranslationReuse(previous: TranslationWorkspaceV2, n
   };
   if (canonicalJson(context(previous, true)) !== canonicalJson(context(next, false))) return [];
   const selected = revisions.filter(revision => revision.selectedForReading && revision.check && !revision.check.issues.length &&
-    revision.check.semanticCheck !== 'PENDING' && revision.check.checkVersion === TRANSLATION_V2_CHECK_VERSION && revision.planRevision === previous.plan.planRevision &&
+    revision.check.semanticCheck !== 'PENDING' &&
+    [TRANSLATION_V2_CHECK_VERSION, 'semantic-block-check@2.0'].includes(revision.check.checkVersion) && revision.planRevision === previous.plan.planRevision &&
     revision.dependencies.contextRevision === previous.plan.documentContext.revision && revision.dependencies.methodVersion === previous.methodVersion);
   return selected.flatMap(revision => {
     const oldBlock = previous.plan.blocks.find(block => block.blockId === revision.blockId);
@@ -70,7 +72,7 @@ export function planOriginalTranslationReuse(previous: TranslationWorkspaceV2, n
     const newOrder = next.plan.anchors.filter(anchor => mapped.includes(anchor.anchorId)).map(anchor => anchor.anchorId);
     if (canonicalJson(oldOrder) !== canonicalJson(newOrder)) return [];
     if (revision.candidate.elements.some(element => element.anchorIds.some(id => !anchorMap.has(id)))) return [];
-    return [{ previous: revision, candidate: { blockId: block.blockId, elements: revision.candidate.elements.map((element, index) => ({
+    return [{ previous: revision, requiresRecheck: revision.check!.checkVersion !== TRANSLATION_V2_CHECK_VERSION, candidate: { blockId: block.blockId, elements: revision.candidate.elements.map((element, index) => ({
       ...element, elementId: `${block.blockId}:reuse:${index}`, anchorIds: element.anchorIds.map(id => anchorMap.get(id)!),
     })) }, dependencies: { ...required, contextAnchorIds: mapped.filter(id => !required.sourceAnchorIds.includes(id)) } }];
   });
