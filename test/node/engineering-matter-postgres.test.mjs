@@ -2155,8 +2155,9 @@ async function assertWorkingRevisionFlow(
   assert.equal(hit.workRef, exact.matterWorkRevisionId);
   assert.equal(hit.issueKey, exact.state.problemWork.issues[0].issueKey);
   assert.equal(hit.overviewStatus, exact.state.problemWork.overviewStatus);
+  assert.deepEqual(hit.overviewSourceWork, exact.overviewSourceWork);
   assert.deepEqual(Object.keys(hit).sort(), ['issueKey', 'question', 'sourceRefs', 'subjectId', 'subjectKind', 'workRef', 'workRevision',
-    'kind', 'matchReason', 'matchedRange', 'reason', 'rootRefs', 'overviewStatus'].sort());
+    'kind', 'matchReason', 'matchedRange', 'reason', 'rootRefs', 'overviewStatus', 'overviewSourceWork'].sort());
   assert.deepEqual((await issues.read(hit, owner.actor)).issue, exact.state.problemWork.issues[0]);
   assert.deepEqual((await issues.search(question, actor('actor-B'))).hits, []);
   assert.deepEqual((await issues.search(question, actor('actor-A', 'tenant-B'))).hits, []);
@@ -3810,6 +3811,7 @@ test('targeted correction uses real PostgreSQL fences, durable generation and ex
       initialResult.modelOutput = JSON.stringify({ workRevisionRef: seeded.workRevisionRef });
       await owner.runtime(() => initialService.finishJobAid({ ...initialFence, result: sealMatterResultEnvelope(initialResult) }));
       const previous = await owner.working.loadCurrent(scope);
+      assert.deepEqual(previous.overviewSourceWork, { workRef: seeded.workRevisionRef, workingRevision: seeded.workRevision });
       let callCount = 0; let entered;
       const started = new Promise(resolve => { entered = resolve; });
       let release;
@@ -3976,6 +3978,9 @@ test('targeted correction uses real PostgreSQL fences, durable generation and ex
       assert.equal(overviewRead.state.problemWork.roundCompletion, read.state.problemWork.roundCompletion);
       assert.deepEqual(overviewRead.state.problemWork.issues, read.state.problemWork.issues);
       assert.equal(overviewRead.state.problemWork.overviewStatus, 'CURRENT');
+      assert.deepEqual(overviewRead.overviewSourceWork, { workRef: overviewSaved.workRevisionRef, workingRevision: overviewSaved.workRevision });
+      assert.deepEqual(read.overviewSourceWork, { workRef: seeded.workRevisionRef, workingRevision: seeded.workRevision });
+      assert.deepEqual(continuationContext.modelInput.overviewSourceWork, read.overviewSourceWork);
       assert.equal((await owner.runtime(() => overviewService.finishIssueCorrection({ ...overviewFence, requestId: 'overview-save' }))).status, 'SUCCEEDED');
       const overviewRow = await owner.runtime(() => overviewService.read(overviewScope));
       assert.equal(JSON.parse(overviewRow.resultEnvelopeJson).producer.instanceId, 'wl-engineering-overview-correction');
@@ -4007,6 +4012,15 @@ test('targeted correction uses real PostgreSQL fences, durable generation and ex
         WHERE action_attempt_id = ${unchangedOverviewTask.task.actionAttemptId}`;
       assert.equal(overviewNoNewWork.n, 0);
       assert.equal((await owner.working.loadCurrent(scope)).matterWorkRevisionId, overviewSaved.workRevisionRef);
+      // An immutable old work never resolves to a later overview with similar content.
+      assert.deepEqual((await owner.working.readByRef({ ...scope, workRef: saved.workRevisionRef })).overviewSourceWork,
+        { workRef: seeded.workRevisionRef, workingRevision: seeded.workRevision });
+      // With no durable save receipt, do not fabricate provenance from CURRENT.
+      const [savedOverviewEvents] = await sql`SELECT review_activity_json FROM action_attempt WHERE attempt_id = ${overviewTask.task.actionAttemptId}`;
+      await sql`UPDATE action_attempt SET review_activity_json = '[]' WHERE attempt_id = ${overviewTask.task.actionAttemptId}`;
+      assert.equal((await owner.working.loadCurrent(scope)).overviewSourceWork, null);
+      await sql`UPDATE action_attempt SET review_activity_json = ${savedOverviewEvents.review_activity_json} WHERE attempt_id = ${overviewTask.task.actionAttemptId}`;
+
 
     } finally { for (const connection of connections) await connection.release(); await sql.end({ timeout: 5 }); }
   });

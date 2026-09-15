@@ -213,6 +213,7 @@ describe('authorized engineering issue search and exact expansion', () => {
       matterId: 'MAT-1',
       matterWorkRevisionId: 'MWR-1',
       workingRevision: 7,
+      overviewSourceWork: { workRef: 'MWR-overview-4', workingRevision: 4 },
       correctionNotices: [notice, { ...notice, issueKey: 'unrelated-issue', reason: 'Other scope' }],
       overviewCorrectionNotices: [overviewNotice],
       state: {
@@ -233,11 +234,13 @@ describe('authorized engineering issue search and exact expansion', () => {
     const found = await h.service.search('工具', actor);
     expect(found.hits[0].workRevision).toBe(7);
     expect(found.hits[0].overviewStatus).toBe('STALE');
+    expect(found.hits[0].overviewSourceWork).toEqual({ workRef: 'MWR-overview-4', workingRevision: 4 });
     expect(found.hits[0].correctionNotices).toEqual([notice]);
     expect(found.hits[0].overviewCorrectionNotices).toEqual([overviewNotice]);
     const expanded = await h.service.read(identity, actor);
     expect(expanded.identity.correctionNotices).toEqual([notice]);
     expect(expanded.identity.overviewCorrectionNotices).toEqual([overviewNotice]);
+    expect(expanded.identity.overviewSourceWork).toEqual(found.hits[0].overviewSourceWork);
     expect(expanded.issue.body).toBe(h.saved.content.issues[0].body);
     expect(h.matters.readWorkingRevision).toHaveBeenCalledWith(
       'MAT-1',

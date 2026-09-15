@@ -77,6 +77,7 @@ export function buildMatterJobAidTask(input: {
         attemptStatus: notice.attemptStatus, unchanged: notice.unchanged === true,
       })),
       knownOverviewCorrections: structuredClone(input.previous?.overviewCorrectionNotices ?? []),
+      overviewSourceWork: structuredClone(input.previous?.overviewSourceWork ?? null),
       overviewCorrection: null as MatterOverviewCorrectionPurpose | null,
       focus: input.previous?.state.focus ?? null,
       trigger: structuredClone(input.trigger),

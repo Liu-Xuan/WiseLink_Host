@@ -168,6 +168,14 @@ export interface EngineeringMatterReferenceWorkNotice {
   overviewCorrectionNotices?: EngineeringMatterOverviewCorrectionNotice[];
 }
 
+/** Exact work where the currently retained overview was explicitly saved.
+ * This is provenance from a durable save receipt, not an engineering approval.
+ */
+export interface EngineeringMatterOverviewSourceWork {
+  workRef: string;
+  workingRevision: number;
+}
+
 export interface EngineeringMatterWorkingRevisionReadModel {
   matterWorkRevisionId: string;
   matterId: string;
@@ -184,6 +192,8 @@ export interface EngineeringMatterWorkingRevisionReadModel {
   /** Live review notices for this exact historical work; not part of its immutable content. */
   correctionNotices?: EngineeringMatterCorrectionNotice[];
   overviewCorrectionNotices?: EngineeringMatterOverviewCorrectionNotice[];
+  /** Null/absent means that no exact saved overview provenance has been verified. */
+  overviewSourceWork?: EngineeringMatterOverviewSourceWork | null;
   referenceWorkNotices?: EngineeringMatterReferenceWorkNotice[];
 }
 
