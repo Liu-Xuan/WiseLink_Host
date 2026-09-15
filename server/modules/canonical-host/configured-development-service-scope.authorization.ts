@@ -24,7 +24,7 @@ const CANONICAL_APP_ID = 'app_17bzc551rsg';
  * optional creation scope is separately bound to one exact current
  * DocumentVersion and one UUID run token; ordinary OpenClaw calls remain
  * bound to one exact WorkItem. Matter operations separately require an enabled
- * exact Matter/actor binding and never inherit the WorkItem allowlist.
+ * exact Matter allowlist/actor binding and never inherit the WorkItem allowlist.
  * Document work uses an explicit version allowlist under one configured actor;
  * every operation still rechecks that actor's ordinary source permission.
  */
@@ -81,7 +81,7 @@ export class ConfiguredDevelopmentCanonicalServiceScopeAuthorization implements 
     transport: 'READONLY_MCP' | 'OPENCLAW_MCP';
   }): Promise<void> {
     if (input.transport === 'OPENCLAW_MCP' && !process.env.WL_OPENCLAW_SERVICE_WORK_ITEM_ID) {
-      if (process.env.WL_OPENCLAW_SERVICE_MATTER_ID) requiredMatterConfig();
+      if (process.env.WL_OPENCLAW_SERVICE_MATTER_ID || process.env.WL_OPENCLAW_SERVICE_MATTER_IDS !== undefined) requiredMatterConfig();
       else requiredDocumentConfig();
     } else requiredConfig();
   }
@@ -94,12 +94,12 @@ export class ConfiguredDevelopmentCanonicalServiceScopeAuthorization implements 
 
   async authorizeOpenClawMatterRequest(input: { matterId: string }): Promise<Omit<CanonicalVerifiedMatterAttemptScope, 'attemptRef'>> {
     const config = requiredMatterConfig();
-    if (input.matterId !== config.matterId) {
+    if (!config.matterIds.includes(input.matterId)) {
       throw Object.assign(new Error('ACTION_ATTEMPT_NOT_FOUND'), { code: 'ACTION_ATTEMPT_NOT_FOUND', statusCode: 404 });
     }
     return { principalId: config.principalId, appId: CANONICAL_APP_ID,
       tenantId: config.tenantId, actorUserId: config.actorUserId,
-      matterId: config.matterId };
+      matterId: input.matterId };
   }
 
   async authorizeOpenClawWorkItem(input: {
@@ -273,8 +273,21 @@ function requiredMatterConfig() {
   const matterId = process.env.WL_OPENCLAW_SERVICE_MATTER_ID;
   const actorUserId = process.env.WL_OPENCLAW_SERVICE_MATTER_ACTOR_ID;
   if (process.env.WL_OPENCLAW_MATTER_SCOPE_ENABLED !== '1' ||
-      !matterId?.startsWith('MAT-') || !actorUserId?.trim()) throw canonicalServiceScopeUnavailable();
-  return { ...base, matterId, actorUserId };
+      !actorUserId?.trim()) throw canonicalServiceScopeUnavailable();
+  const configuredMatters = process.env.WL_OPENCLAW_SERVICE_MATTER_IDS;
+  if (configuredMatters === undefined) {
+    if (!matterId?.startsWith('MAT-')) throw canonicalServiceScopeUnavailable();
+    return { ...base, matterIds: [matterId], actorUserId };
+  }
+  // Like document scopes, an explicit list replaces the legacy single object.
+  // It never grants a tenant-wide scope or permits fallback on invalid input.
+  let matters: unknown;
+  try { matters = JSON.parse(configuredMatters); }
+  catch { throw canonicalServiceScopeUnavailable(); }
+  if (!Array.isArray(matters) || !matters.length || !matters.every((matter): matter is string =>
+    typeof matter === 'string' && matter.length <= 96 && /^MAT-[A-Za-z0-9_-]+$/u.test(matter)) ||
+    new Set(matters).size !== matters.length) throw canonicalServiceScopeUnavailable();
+  return { ...base, matterIds: matters, actorUserId };
 }
 
 function requiredDevelopmentCreateConfig(): DevelopmentCreateScopeConfig {

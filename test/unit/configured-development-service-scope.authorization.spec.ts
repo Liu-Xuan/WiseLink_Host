@@ -13,6 +13,7 @@ const KEYS = [
   'WL_OPENCLAW_SERVICE_DOCUMENT_ACTOR_ID',
   'WL_OPENCLAW_MATTER_SCOPE_ENABLED',
   'WL_OPENCLAW_SERVICE_MATTER_ID',
+  'WL_OPENCLAW_SERVICE_MATTER_IDS',
   'WL_OPENCLAW_SERVICE_MATTER_ACTOR_ID',
   'WL_OPENCLAW_APPLICABILITY_CONTEXT_REF',
   'WL_OPENCLAW_DEVELOPMENT_CREATE_ENABLED',
@@ -72,6 +73,48 @@ describe('ConfiguredDevelopmentCanonicalServiceScopeAuthorization', () => {
     process.env.WL_OPENCLAW_SERVICE_SCOPE_ENV = 'PROD';
     await expect(service.authorizeOpenClawMatterAttempt(request)).rejects.toMatchObject({ statusCode: 503 });
   });
+
+  it('binds each listed Matter to the requested object and observes removal without granting other object scopes', async () => {
+    for (const key of KEYS) delete process.env[key];
+    Object.assign(process.env, { WL_OPENCLAW_SERVICE_SCOPE_ENABLED: '1', WL_OPENCLAW_GATEWAY_AUTH_MODE: 'API_KEY',
+      WL_OPENCLAW_SERVICE_SCOPE_ENV: 'UAT', WL_OPENCLAW_SERVICE_PRINCIPAL_ID: 'service:matter-consumer',
+      WL_OPENCLAW_SERVICE_TENANT_ID: 'tenant-test', WL_OPENCLAW_MATTER_SCOPE_ENABLED: '1',
+      WL_OPENCLAW_SERVICE_MATTER_ID: 'MAT-legacy', WL_OPENCLAW_SERVICE_MATTER_ACTOR_ID: 'actor-test',
+      WL_OPENCLAW_SERVICE_MATTER_IDS: JSON.stringify(['MAT-first', 'MAT-second']) });
+    const service = new ConfiguredDevelopmentCanonicalServiceScopeAuthorization();
+    for (const matterId of ['MAT-first', 'MAT-second']) {
+      await expect(service.authorizeOpenClawMatterAttempt({ operation: 'CLAIM', matterId, attemptRef: 'AQ-one' }))
+        .resolves.toMatchObject({ tenantId: 'tenant-test', actorUserId: 'actor-test', matterId, attemptRef: 'AQ-one' });
+    }
+    for (const matterId of ['MAT-other', 'MAT-legacy', 'MAT-first ']) {
+      await expect(service.authorizeOpenClawMatterRequest({ matterId })).rejects.toMatchObject({ statusCode: 404 });
+    }
+    delete process.env.WL_OPENCLAW_SERVICE_MATTER_ID;
+    await expect(service.assertTransport({ transport: 'OPENCLAW_MCP' })).resolves.toBeUndefined();
+    process.env.WL_OPENCLAW_SERVICE_MATTER_IDS = JSON.stringify(['MAT-second']);
+    await expect(service.authorizeOpenClawMatterAttempt({ operation: 'CLAIM', matterId: 'MAT-first', attemptRef: 'AQ-one' }))
+      .rejects.toMatchObject({ statusCode: 404 });
+    await expect(service.authorizeDocumentWork({ documentVersionId: 'DV-test' })).rejects.toMatchObject({ statusCode: 503 });
+    await expect(service.authorizeWorkItemRead({ transport: 'READONLY_MCP', operation: 'READ_STATUS', workItemId: 'WI-test' }))
+      .rejects.toMatchObject({ statusCode: 503 });
+    delete process.env.WL_OPENCLAW_SERVICE_MATTER_ACTOR_ID;
+    await expect(service.authorizeOpenClawMatterRequest({ matterId: 'MAT-second' })).rejects.toMatchObject({ statusCode: 503 });
+  });
+
+  it.each(['', 'not-json', '{}', '[]', '[null]', '["*"]', '["MAT-"]', '[" MAT-one"]', '["WI-one"]', '["MAT-one","MAT-one"]'])
+    ('rejects invalid explicit Matter configuration %s instead of authorizing the legacy binding', async configured => {
+      for (const key of KEYS) delete process.env[key];
+      Object.assign(process.env, { WL_OPENCLAW_SERVICE_SCOPE_ENABLED: '1', WL_OPENCLAW_GATEWAY_AUTH_MODE: 'API_KEY',
+        WL_OPENCLAW_SERVICE_SCOPE_ENV: 'UAT', WL_OPENCLAW_SERVICE_PRINCIPAL_ID: 'service:matter-consumer',
+        WL_OPENCLAW_SERVICE_TENANT_ID: 'tenant-test', WL_OPENCLAW_MATTER_SCOPE_ENABLED: '1',
+        WL_OPENCLAW_SERVICE_MATTER_ID: 'MAT-legacy', WL_OPENCLAW_SERVICE_MATTER_ACTOR_ID: 'actor-test',
+        WL_OPENCLAW_SERVICE_MATTER_IDS: configured });
+      const service = new ConfiguredDevelopmentCanonicalServiceScopeAuthorization();
+      await expect(service.authorizeOpenClawMatterRequest({ matterId: 'MAT-legacy' }))
+        .rejects.toMatchObject({ code: 'CANONICAL_SERVICE_SCOPE_UNAVAILABLE', statusCode: 503 });
+      await expect(service.assertTransport({ transport: 'OPENCLAW_MCP' }))
+        .rejects.toMatchObject({ code: 'CANONICAL_SERVICE_SCOPE_UNAVAILABLE', statusCode: 503 });
+    });
 
   it('authorizes only explicitly listed document versions under the same actor and reflects removal immediately', async () => {
     for (const key of KEYS) delete process.env[key];
