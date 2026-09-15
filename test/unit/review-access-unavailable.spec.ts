@@ -41,7 +41,7 @@ describe('protected review access recovery', () => {
   it('shows the existing Host OAuth entry with the exact current return context', () => {
     const html = render('OFFICIAL_OAUTH_SESSION_REQUIRED', 401);
     expect(html).toContain('需要连接飞书身份');
-    expect(html).toContain('登录妙搭控制页不代表此连接已恢复');
+    expect(html).toContain('本应用的飞书身份连接缺失或已过期');
     expect(html).toContain('恢复飞书身份连接');
     expect(html).toContain(
       '/client/oauth/callback?returnTo=%2Fmatters%2FMAT-1%3FworkRef%3DMW7%26panel%3Dreview%23discussion',

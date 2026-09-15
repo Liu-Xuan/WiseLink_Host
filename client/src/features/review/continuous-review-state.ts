@@ -154,7 +154,7 @@ export function reviewOperationErrorPresentation(
     return {
       title: '需要连接飞书身份',
       message:
-        'Host 产品的飞书 OAuth 身份连接缺失或已过期。登录妙搭控制页不代表此连接已恢复；请完成身份连接后返回本事项重新读取。',
+        '本应用的飞书身份连接缺失或已过期。请重新连接后返回本事项读取。',
       code,
       retryable: null,
       operatorAction: null,

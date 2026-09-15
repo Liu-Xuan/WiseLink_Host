@@ -119,10 +119,38 @@ export function materializeMatterJobAidCommand(input: {
     reason: retained?.reason ?? (contributionFor(binding) === 'SUBSTANTIVE' ? work.changeSummary : contributionFor(binding) === 'NO_MATERIAL_CHANGE' ? byInput.get(binding.inputId)!.reason : '已读取列明片段，但本轮未保存这些输入的分析或比较处置；其余范围仍待核查。'),
   }; });
   const substantiveInputs = input.inputs.filter(binding => coverageUpdates.some(item => item.binding.inputId === binding.inputId && item.contribution === 'SUBSTANTIVE'));
+  // Describe persisted field differences, not the producer's assessment of
+  // whether its answer is new or correct. Keep that explanation in changedBecause.
+  const changedFields: string[] = [];
+  const fieldLabels = {
+    headline: '标题', listBrief: '列表简报', understanding: '综合正文',
+    decisiveIssueKeys: '重点问题', overviewStatus: '综合状态',
+    roundCompletion: '本轮完成状态', completionReason: '完成说明', methodBinding: '方法绑定',
+  } satisfies Partial<Record<keyof JobAidProblemWorkContent, string>>;
+  for (const [field, label] of Object.entries(fieldLabels)) {
+    const key = field as keyof typeof fieldLabels;
+    if (canonicalJson(previous?.problemWork?.[key] ?? null) !== canonicalJson(work[key])) changedFields.push(label);
+  }
+  const addedIssues = work.issues.filter(issue => !previousIssues.has(issue.issueKey)).length;
+  const updatedIssues = work.issues.filter(issue => previousIssues.has(issue.issueKey) && substantiveIssueKeys.has(issue.issueKey)).length;
+  const retiredIssues = [...previousIssues.keys()].filter(key => !usesByIssue.has(key)).length;
+  if (addedIssues) changedFields.push(`新增 ${addedIssues} 个问题`);
+  if (updatedIssues) changedFields.push(`更新 ${updatedIssues} 个问题`);
+  if (retiredIssues) changedFields.push(`撤回 ${retiredIssues} 个问题`);
+  if (!unchangedIssues && !addedIssues && !updatedIssues && !retiredIssues) changedFields.push('问题顺序');
+  if (hasSubstantiveChange && (canonicalJson(previous?.problemWork?.evidence ?? []) !== canonicalJson(work.evidence) ||
+    canonicalJson(previous?.problemWork?.readSourceRefs ?? []) !== canonicalJson(work.readSourceRefs))) changedFields.push('证据与读取记录');
+  if (priorClaims.size && hasSubstantiveChange) changedFields.push('旧论点撤回');
+  const coverageChanges = coverageUpdates.filter(item => canonicalJson(previous?.coverage.find(prior =>
+    prior.binding.inputId === item.binding.inputId) ?? null) !== canonicalJson(item)).length;
+  if (coverageChanges) changedFields.push(`${coverageChanges} 项输入覆盖记录`);
+  if (conditionDelta && (conditionDelta.retirements.length || conditionDelta.upserts.some(item =>
+    canonicalJson(previous?.reviewConditions.find(prior => prior.itemId === item.itemId) ?? null) !== canonicalJson(item)))) changedFields.push('复核条件');
   return {
     requestId: input.requestId, expectedWorkingRevision: input.expectedWorkRevision,
     basedOnMatterRevisionId: input.matterRevisionId,
-    updateKind: previous ? 'CORRECTION' : 'INITIAL_SYNTHESIS', changeSummary: work.changeSummary,
+    updateKind: previous ? 'CORRECTION' : 'INITIAL_SYNTHESIS',
+    changeSummary: changedFields.length ? `字段变化：${changedFields.join('；')}。` : '本轮没有字段变化。',
     nextFocus: previous ? null : { question: work.issues[0]?.question ?? work.headline, targetRefs: [] },
     claimDelta: hasSubstantiveChange ? {
       changedBecause: work.changeSummary,
