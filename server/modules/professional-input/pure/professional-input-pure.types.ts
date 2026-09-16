@@ -136,9 +136,15 @@ export type SourceUnitKind =
   | 'source_metadata'
   | 'text_block'
   | 'list_item'
-  | 'residual_text';
+  | 'residual_text'
+  | 'figure_region';
 
-export type SourceUnitSemantic = 'metadata' | 'heading' | 'text' | 'reference';
+export type SourceUnitSemantic =
+  | 'metadata'
+  | 'heading'
+  | 'text'
+  | 'reference'
+  | 'figure';
 
 /** PDF-anchored source reference (frozen.2 pdfSourceRef shape). */
 export interface PdfSourceRefValue {

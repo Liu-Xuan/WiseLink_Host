@@ -123,7 +123,8 @@ export function buildStructuredParsePackage(input: {
       return;
     }
     const isHeading = unit.expectedSemantic === 'heading';
-    const kind = isHeading ? 'heading' : 'paragraph';
+    const isFigure = unit.expectedSemantic === 'figure';
+    const kind = isFigure ? 'figure' : isHeading ? 'heading' : 'paragraph';
     const unitId = techpubEntityId(
       'unit',
       sha256Hex(
@@ -151,15 +152,31 @@ export function buildStructuredParsePackage(input: {
         confidence: 'deterministic',
         findingIds: [],
       },
-      payload: isHeading
+      payload: isFigure
         ? {
-            text: unit.text,
-            level: (headingCount += 1),
+            figureId: techpubEntityId(
+              'figure',
+              sha256Hex(
+                jcsCanonicalize({
+                  namespace: 'techpub-pdf-figure-id-v1',
+                  sourcePackageId,
+                  continuityKey: unit.continuityKey,
+                }),
+              ),
+            ),
+            ...(unit.text ? { caption: unit.text } : {}),
+            assetIds: [],
+            referenceIds: [],
           }
-        : {
-            text: unit.text,
-            role: 'body',
-          },
+        : isHeading
+          ? {
+              text: unit.text,
+              level: (headingCount += 1),
+            }
+          : {
+              text: unit.text,
+              role: 'body',
+            },
     };
     const unitHash = `sha256:${sha256Hex(
       jcsCanonicalize(contentUnitWithoutHash),

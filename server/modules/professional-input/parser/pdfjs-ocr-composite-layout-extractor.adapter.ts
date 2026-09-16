@@ -78,12 +78,27 @@ export class PdfjsOcrCompositeLayoutExtractor implements PdfLayoutExtractorPort 
       (target): target is PdfOcrTargetFailure => target.status === 'FAILED',
     );
     if (failures.length > 0) {
-      throwCompositeFailure(layout, result.providerId, failures);
+      const targetsById = new Map(
+        targets.map((target: PdfOcrTarget) => [target.targetId, target]),
+      );
+      const allLowConfidenceFigureRegions = failures.every(
+        (failure: PdfOcrTargetFailure): boolean =>
+          failure.reason === 'OCR_LOW_CONFIDENCE' &&
+          targetsById.get(failure.targetId)?.scope === 'RASTER_REGION',
+      );
+      // Large line-art figures often contain sparse labels mixed with drawing
+      // strokes. Low-confidence OCR must not become authoritative body text.
+      // Keep those figures as source-bound regions for the package builder;
+      // every other OCR failure (including an empty text-layer page) remains
+      // fail-closed.
+      if (!allLowConfidenceFigureRegions) {
+        throwCompositeFailure(layout, result.providerId, failures);
+      }
     }
     const successes = result.targets.filter(
       (target): target is PdfOcrTargetSuccess => target.status === 'EXTRACTED',
     );
-    if (successes.length !== targets.length) {
+    if (successes.length + failures.length !== targets.length) {
       throwCompositeFailure(layout, result.providerId, [
         {
           targetId: 'provider-result',
@@ -94,6 +109,8 @@ export class PdfjsOcrCompositeLayoutExtractor implements PdfLayoutExtractorPort 
         },
       ]);
     }
+
+    if (successes.length === 0) return layout;
 
     const merged = mergeOcrRuns(layout, successes);
     if (merged.conflicts.length > 0) {
