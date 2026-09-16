@@ -14,6 +14,7 @@ export function projectAuthorizedSituation(
   items: EngineeringMatterDirectoryResponse['items'],
   availability: TrinityAvailability,
   focus: EngineeringMatterWorkspaceRead | null = null,
+  directoryExhausted = false,
 ): AuthorizedTrinityProjection {
   const readable = availability === 'complete' || availability === 'partial';
   const matters: TrinityMatter[] = readable ? [...new Map(items.map((row) => [row.matterId, row])).values()].map((row) => ({
@@ -69,7 +70,13 @@ export function projectAuthorizedSituation(
       meta: { name: '当前授权工程事项', asOf: '', origin: 'AUTHORIZED_SCOPE', currentHostVerified: false },
       // Current APIs do not provide complete lifecycle/knowledge/event coverage, even on the final directory page.
       availability: readable ? 'partial' : availability,
-      coverage: { matters: readable ? 'partial' : availability, knowledge: 'partial', events: 'partial' },
+      coverage: {
+        matterTotal: readable && directoryExhausted ? 'complete' : readable ? 'partial' : availability,
+        matters: readable ? 'partial' : availability,
+        lifecycle: 'partial',
+        knowledge: 'partial',
+        events: 'partial',
+      },
       stages: TRINITY_STAGE_META, knowledgeStages: TRINITY_KNOWLEDGE_STAGE_META,
       matters, events: [], knowledge,
     },

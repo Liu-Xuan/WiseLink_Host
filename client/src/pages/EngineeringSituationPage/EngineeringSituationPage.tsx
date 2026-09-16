@@ -29,7 +29,13 @@ export default function EngineeringSituationPage() {
   const availability = authenticationRequired ? 'denied' : matterId
     ? focus.error ? 'failed' : focus.loading ? 'loading' : 'complete'
     : directory.error ? 'failed' : directory.loading ? 'loading' : 'complete';
-  const projection = useMemo(() => projectAuthorizedSituation(directory.items, availability, matterId ? focus.data : null), [directory.items, availability, matterId, focus.data]);
+  const directoryExhausted = !directory.loading && directory.nextCursor === null;
+  const projection = useMemo(() => projectAuthorizedSituation(
+    directory.items,
+    availability,
+    matterId ? focus.data : null,
+    directoryExhausted,
+  ), [directory.items, availability, matterId, focus.data, directoryExhausted]);
   const data = projection.data;
   const stage = params.get('stage') || '';
   const knowledgeStage = params.get('knowledgeStage') || '';

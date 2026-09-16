@@ -5,6 +5,7 @@ import {
   attentionItems,
   scopeKnowledge,
   completeCoverage,
+  completeLifecycleCoverage,
 } from './trinity-model';
 import type {
   TrinityKnowledgeItem,
@@ -49,7 +50,7 @@ export default function TrinityStagePanel({
         <section>
           <div className="row">
             <h3>当前关联事项</h3>
-            <Badge variant="outline">{scope && completeCoverage(data, 'matters') ? `${matters.length} 项` : '—'}</Badge>
+            <Badge variant="outline">{scope && completeLifecycleCoverage(data) ? `${matters.length} 项` : '—'}</Badge>
           </div>
           {scope && matters.length > 0 ? (
             <div className="matter-list">

@@ -135,6 +135,22 @@ export function completeCoverage(data: TrinitySituationData | null, field: 'matt
     && (data.coverage?.[field] ?? 'complete') === 'complete';
 }
 
+export function completeMatterTotal(data: TrinitySituationData | null): boolean {
+  if (!data || ['loading', 'failed', 'denied'].includes(data.availability ?? 'complete')) return false;
+  if (data.coverage?.matterTotal !== undefined)
+    return data.coverage.matterTotal === 'complete';
+  return (data.availability ?? 'complete') === 'complete'
+    && (data.coverage?.matters ?? 'complete') === 'complete';
+}
+
+export function completeLifecycleCoverage(data: TrinitySituationData | null): boolean {
+  if (!data || ['loading', 'failed', 'denied'].includes(data.availability ?? 'complete')) return false;
+  if (data.coverage?.lifecycle !== undefined)
+    return data.coverage.lifecycle === 'complete';
+  return (data.availability ?? 'complete') === 'complete'
+    && (data.coverage?.matters ?? 'complete') === 'complete';
+}
+
 export function scopeMatters(
   data: TrinitySituationData,
   level: 'macro' | 'focus',
@@ -200,7 +216,7 @@ export function situationMetrics(
   data: TrinitySituationData | null,
   scope: TrinityMatter[] | null,
 ): TrinitySituationMetrics {
-  if (!data || !scope || !completeCoverage(data, 'matters')) {
+  if (!data || !scope) {
     return {
       visibleMatters: null,
       attention: null,
@@ -209,12 +225,15 @@ export function situationMetrics(
     };
   }
   const knowledgeList = scopeKnowledge(data, scope);
+  const matterTotalKnown = completeMatterTotal(data);
   return {
-    visibleMatters: scope.length,
-    attention: scope.filter((m: TrinityMatter) => m.attention).length,
+    visibleMatters: matterTotalKnown ? scope.length : null,
+    attention: matterTotalKnown
+      ? scope.filter((m: TrinityMatter) => m.attention).length : null,
     knowledgeWorks: completeCoverage(data, 'knowledge') ? knowledgeList.length : null,
-    effectWatch: scope.filter((m: TrinityMatter) =>
-      m.activeStages.includes('verify')).length,
+    effectWatch: completeLifecycleCoverage(data)
+      ? scope.filter((m: TrinityMatter) => m.activeStages.includes('verify')).length
+      : null,
   };
 }
 
