@@ -249,10 +249,25 @@ describe('PdfjsOcrCompositeLayoutExtractor', () => {
       kind: 'figure',
       sourceRefIds: figureSourceUnit?.sourceRefIds,
       payload: {
-        assetIds: [],
+        assetIds: [expect.stringMatching(/^urn:techpub:asset:/u)],
         referenceIds: [],
       },
     });
+    expect(pipeline.pkg.assets).toEqual([
+      expect.objectContaining({
+        logicalType: 'pdf_figure_region',
+        authority: 'parser_normalized',
+        sourceRefIds: figureSourceUnit?.sourceRefIds,
+        renditions: [
+          expect.objectContaining({
+            role: 'source_original',
+            mediaType: 'application/pdf',
+            sha256: layout.sourceSha256,
+            sourceRefIds: figureSourceUnit?.sourceRefIds,
+          }),
+        ],
+      }),
+    ]);
     expect(pipeline.pkg.result).toMatchObject({
       status: 'complete',
       contentPreserved: true,
