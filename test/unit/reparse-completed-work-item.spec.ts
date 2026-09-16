@@ -43,6 +43,21 @@ describe('completed WorkItem explicit reparse client semantics', () => {
     ).toBe('RETRY_FAILED_PARSE');
   });
 
+  it('retries the same WorkItem after a package contract fix is deployed', () => {
+    expect(
+      availableParseAction(
+        true,
+        projection({
+          phase: 'FAILED',
+          package: null,
+          failure: {
+            failureCode: 'PACKAGE_SEMANTIC_VALIDATION_FAILED',
+          } as never,
+        }),
+      ),
+    ).toBe('RETRY_FAILED_PARSE');
+  });
+
   it('retries the same WorkItem after a transient failure-report write failure', () => {
     expect(
       availableParseAction(
