@@ -18,6 +18,7 @@ import RelationGraphPage from './pages/RelationGraphPage/RelationGraphPage';
 import KnowledgeLookupPage from './pages/KnowledgeLookupPage/KnowledgeLookupPage';
 
 import GraphRelationPreviewPage from './pages/GraphRelationPreviewPage/GraphRelationPreviewPage';
+import EngineeringChronologyPreviewPage from './pages/EngineeringChronologyPreviewPage/EngineeringChronologyPreviewPage';
 
 const LibraryIndexRedirect = () => {
   const location = useLocation();
@@ -38,6 +39,7 @@ const RoutesComponent = () => {
   return (
     <Routes>
       <Route path="dev-preview/graph" element={<GraphRelationPreviewPage />} />
+      <Route path="dev-preview/chronology" element={<EngineeringChronologyPreviewPage />} />
       <Route element={<Layout />}>
         <Route index element={<LibraryIndexRedirect />} />
         <Route path="dialogues" element={<DialoguePage />} />
