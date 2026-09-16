@@ -1335,3 +1335,11 @@ FTD revision 12 还精确引用 SB revision 16 的问题 `claim_maintenance_disr
 定向 Jest 2 个 suite、12 项通过；client typecheck、受影响源码 ESLint/stylelint、client production build、完整 precommit 与 diff check 通过。1600×1000、DPR 1、reduced-motion 的固定视口读回确认 Q3/Q4 为范围线，2026-09-16 为点，TBD 只在未定区，选中声明与右侧检查器仍准确联动。该截图使用隔离构造候选验证生产组件，不是线上业务或视觉验收；线上发布后仍需在登录环境核对真实候选。
 
 前端提交 `4df464ee182ad398c8a426fcbbd9ecf8b60c61d0`（父提交 `93fe29a5921e052e924e8fbcb651ef26c76f8c49`）只包含时间轴 TSX、CSS、对应测试和本集成记录，已普通非强制同步 origin/github 同名开发分支且两端 SHA 一致。release `7686233982300048312` 已 `finished`，精确 `commit_id=4df464ee182ad398c8a426fcbbd9ecf8b60c61d0`，`error_logs=[]`。发布后再次尝试外部浏览器控制，仍在获取浏览器清单时 30 秒超时并重置；因此发布事实成立，已登录线上页面的可见读回仍待 macOS 解锁后补做。
+
+## 2026-09-17：Trinity F3 保存关系图结构对齐
+
+现行生产合同尚未提供事项级、技术域或全景关系，也没有跨版本活动身份。本轮没有复制静态样例中的事项、工作、技术主题或同活动预计历史，而是在已有 `DocumentActivityReading` 的准确范围内，将图谱重排为 Trinity 的画布工具栏、关系画布、节点图例和右侧选中对象检查器。当前唯一启用范围是“保存候选”；“工程事项／技术领域／全景”明确禁用并说明合同缺口。
+
+图中关系仍只有可验证的 `声明 → 逐条引文 → 来源锚点 → SourceRef`，并分别显示“引用／定位／来源”边类型。右侧检查器读取同一声明的时间原词、状态、限制和精确 DocumentVersion/ParseRun，返回时间轴时保留同一 statement/anchor；锚点选择读取实际 source unit、payload path 和 SourceRef。图形底部同时给出节点与关系数量，并明确距离、布局和连通性不推断跨版本事件、归属、风险或因果。
+
+图谱与时间轴定向 Jest 2 个 suite、14 项通过；client typecheck、受影响 TS/TSX ESLint 和 CSS stylelint 通过。1600×1000 与 390×844、DPR 1、reduced-motion 的固定视口渲染确认桌面为左画布右检查器，手机按画布、图例、检查器纵向排列；选中的 `ST-TBD/A-TBD` 在图节点、引文卡和检查器中保持一致。以上仍是隔离构造候选的生产组件验证，不冒充真实线上业务或跨版本关系验收。
