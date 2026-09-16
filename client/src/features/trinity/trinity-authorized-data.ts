@@ -9,6 +9,14 @@ export interface AuthorizedTrinityProjection {
   knowledgeTargets: Record<string, string>;
 }
 
+function directoryAttention(
+  result: EngineeringMatterDirectoryResponse['items'][number]['result'],
+): boolean | null {
+  if (result?.roundCompletion === 'COMPLETE_WITH_OPEN_QUESTIONS') return true;
+  if (result?.roundCompletion === 'COMPLETE') return false;
+  return null;
+}
+
 /** Directory reads contain saved summaries, not fleet identity, events, or lifecycle status. */
 export function projectAuthorizedSituation(
   items: EngineeringMatterDirectoryResponse['items'],
@@ -23,11 +31,11 @@ export function projectAuthorizedSituation(
     title: row.title,
     fleet: '机型范围未核实',
     ata: '未核实',
-    tag: row.result?.roundCompletion === 'COMPLETE_WITH_OPEN_QUESTIONS' ? '待核' : '已保存',
+    tag: directoryAttention(row.result) === true ? '待核' : '已保存',
     status: row.result ? '已保存综合；最新工作覆盖需展开核对' : '尚未取得可读综合',
     brief: row.result?.listBrief || '请进入事项核对已保存工作和关联资料。',
     next: '展开已保存工作，核对条件、来源与综合覆盖。',
-    attention: row.result?.roundCompletion === 'COMPLETE_WITH_OPEN_QUESTIONS',
+    attention: directoryAttention(row.result),
     // A saved assessment is evidence of associated analysis, never a completion status.
     activeStages: row.result ? ['assess'] : [],
   })) : [];

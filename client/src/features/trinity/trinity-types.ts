@@ -24,7 +24,8 @@ export interface TrinityMatter {
   status: string;
   brief: string;
   next: string;
-  attention: boolean;
+  /** Null when the directory row does not expose enough saved-work detail to classify attention. */
+  attention: boolean | null;
   activeStages: string[];
 }
 

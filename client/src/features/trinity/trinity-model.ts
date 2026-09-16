@@ -226,9 +226,12 @@ export function situationMetrics(
   }
   const knowledgeList = scopeKnowledge(data, scope);
   const matterTotalKnown = completeMatterTotal(data);
+  const attentionKnown = matterTotalKnown && scope.every(
+    (matter: TrinityMatter) => matter.attention !== null,
+  );
   return {
     visibleMatters: matterTotalKnown ? scope.length : null,
-    attention: matterTotalKnown
+    attention: attentionKnown
       ? scope.filter((m: TrinityMatter) => m.attention).length : null,
     knowledgeWorks: completeCoverage(data, 'knowledge') ? knowledgeList.length : null,
     effectWatch: completeLifecycleCoverage(data)
