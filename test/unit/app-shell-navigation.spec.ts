@@ -53,6 +53,9 @@ test('registered shell routes have concrete breadcrumbs instead of a not-found l
     ['/external-discovery', ''],
     ['/knowledge', ''],
     ['/graph', ''],
+    ['/situation', ''],
+    ['/timeline', '?documentVersionId=DV-1'],
+    ['/activity-graph', '?documentVersionId=DV-1'],
   ];
   for (const [pathname, search = ''] of routes) {
     expect(deriveBreadcrumbs(pathname, search).map((item) => item.label)).not.toContain(

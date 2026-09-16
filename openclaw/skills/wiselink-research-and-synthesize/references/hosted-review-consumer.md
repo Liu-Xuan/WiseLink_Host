@@ -143,3 +143,7 @@ c86 的 WorkItem 消费器仅在 Host 阶段返回 `DOCUMENT_ORIGINAL_IMPACT_REV
 新任务的 `modelInput.correction.kind=ENGINEERING_OVERVIEW_CORRECTION` 使用 Host 已配置的官方 `wl-engineering-overview-correction` 实例。消费者沿用生成收据、保存及结束协议，只传已封存请求标识；不调用普通 Hosted 调研模型。Host 提供确切当前工作、问题限制和已交付来源，只接受综合、对应完成说明及变更说明，不修改问题或完成状态。无变化保留原工作和覆盖状态；保存响应丢失只恢复原请求，不重复生成。
 
 已有仅含 `overviewCorrection` 的普通 Hosted 任务及其恢复仍保留原执行路线，不能将失败请求自动改道为插件更正。发布新 Host 前先将消费者更新至 c109，并核对当前无在途业务；旧失败请求不因此重新入队。生成与保存仅形成候选，不代表工程准确性或正式采用已获确认。
+
+## document-activity 离线消费
+
+Host `documentActivityActionSchemas` 的文档活动 run 由确定性库消费者 `scripts/consume-hosted-document-activity.mjs` 处理：由现有官方 Hosted 驱动注入 `invokeModel`（同一执行器约定，不新增模型/profile）后调用 `consumeHostedDocumentActivity`。全部请求统一走唯一 Host 工具 `document_work`；STATUS 优先，`nextActivityRunRef` 为 null 或已持久 result 时零模型；仅消费显式 BEGIN 产生的已有 run，消费者绝不自动 BEGIN，`runRef:null` 不得用于 ACTIVITY_STATUS。CLAIM 只用真实返回 fence（允许 null，null 不得继续）。SAVE 回执丢失只查 `STATUS.result`，禁止重生成，未确认保持待恢复而非 FAIL/假成功。操作合同见 [document-activity 工作协议](document-activity-work.md)。

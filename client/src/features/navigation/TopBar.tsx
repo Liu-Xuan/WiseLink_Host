@@ -37,7 +37,7 @@ const TopBar: React.FC<TopBarProps> = ({
   const crumbs: ShellCrumb[] = deriveBreadcrumbs(pathname, search);
 
   return (
-    <header className="wl-topbar wl-glass-nav" role="banner">
+    <header className="wl-topbar" role="banner">
       <button
         type="button"
         className="wl-topbar-toggle"
@@ -102,9 +102,7 @@ const TopBar: React.FC<TopBarProps> = ({
         <span className="wl-topbar-item" title={documentVersionId}>
           文档版本 · {shortId(documentVersionId)}
         </span>
-      ) : (
-        <span className="wl-topbar-item is-empty">尚未选择事项</span>
-      )}
+      ) : null}
       <div className="wl-topbar-actions">
         <AtlasLauncher />
         <CurrentUserControl />

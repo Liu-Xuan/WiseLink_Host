@@ -287,11 +287,14 @@ export function completeActivityPins(
 export function activityReadingReturnParams(
   activityQuery: string,
   documentVersionId: string,
+  view: 'activities' | 'timeline' | 'graph' = 'activities',
 ): URLSearchParams {
-  return new URLSearchParams({
+  const params = new URLSearchParams({
     returnDocumentVersionId: documentVersionId,
     returnActivityQuery: activityQuery,
   });
+  if (view !== 'activities') params.set('returnActivityView', view);
+  return params;
 }
 
 export function matterReadingReturnParams(
@@ -331,9 +334,11 @@ export function readingReturnTarget(
       'returnDocumentVersionId',
       'returnRevisionSide',
       'returnActivityQuery',
+      'returnActivityView',
     ].some((key) => params.getAll(key).length > 1)
   )
     return null;
+  if (params.has('returnActivityView') && !params.has('returnActivityQuery')) return null;
   const binding = identifier(params.get('returnDocumentVersionId'));
   if (
     params.has('returnDocumentVersionId') &&
@@ -398,6 +403,7 @@ export function readingReturnTarget(
     const nested = new URLSearchParams(activityQuery);
     if (
       nested.has('returnActivityQuery') ||
+      nested.has('returnActivityView') ||
       nested.has('returnRevisionQuery') ||
       nested.has('returnMatterId') ||
       nested.has('returnLibraryWorkItemId') ||
@@ -407,7 +413,16 @@ export function readingReturnTarget(
     const pins = completeActivityIdentity(nested);
     if (!pins) return null;
     if (requestedRun && pins.parseRunId !== requestedRun) return null;
+    const view = params.get('returnActivityView');
+    if (view !== null && view !== 'timeline' && view !== 'graph') return null;
     const query = activityReadingParams(nested);
+    if (view) {
+      query.set('documentVersionId', binding);
+      return {
+        route: `${view === 'timeline' ? '/timeline' : '/activity-graph'}?${query.toString()}`,
+        label: view === 'timeline' ? '返回工程时间轴' : '返回声明关系图',
+      };
+    }
     return {
       route: `/document-versions/${encodeURIComponent(binding)}/activities?${query.toString()}`,
       label: '返回活动阅读',

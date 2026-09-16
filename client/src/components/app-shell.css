@@ -1,46 +1,94 @@
 /* ============================================================
- * WiseLink App Shell — 侧栏导航 + 紧凑顶栏（Spec R02）
+ * WiseLink Trinity 1.0 — reference tokens.css / styles.css geometry.
  * 左侧一套全局导航；顶部仅面包屑与当前对象；设置集中左下。
  * ============================================================ */
 
 .wiselink-app-shell {
+  --wl-shell-sidebar: 202px;
+  --wl-shell-page-pad: 24px;
+  --wl-shell-topbar: 58px;
+  --wl-shell-bg: #edeeef;
+  --wl-shell-ink: #27292c;
+  --wl-shell-dim: #555b62;
+  --wl-shell-muted: #737a82;
+  --wl-shell-line: #dcdee0;
+  --wl-shell-hover: #ebedef;
+  --wl-shell-active: #e0e3e6;
+  --wl-shell-inverse: #f9f9f7;
+  --wl-shell-inverse-bg: #303439;
+  --wl-shell-glass: rgb(249 249 249 / 76%);
+  --wl-shell-edge: rgb(255 255 255 / 85%);
+  --wl-shell-shadow:
+    0 8px 26px rgb(30 35 40 / 6%), 0 1px 3px rgb(30 35 40 / 4%);
+  --wl-shell-blur: 22px;
   display: grid;
-  grid-template-columns: 260px minmax(0, 1fr);
-  min-height: 100vh;
-  font-family: var(--wl-font);
-  color: var(--wl-ink);
+  grid-template-columns: var(--wl-shell-sidebar) minmax(0, 1fr);
+  height: 100dvh;
+  min-height: 0;
+  overflow: hidden;
+  font-family:
+    -apple-system, BlinkMacSystemFont, 'Segoe UI', 'PingFang SC',
+    'Microsoft YaHei', sans-serif;
+  color: var(--wl-shell-ink);
+}
+
+.wiselink-app-shell.wl-environment {
+  background: var(--wl-shell-bg);
+}
+
+html[data-wl-theme='dark'] .wiselink-app-shell {
+  --wl-shell-bg: #121314;
+  --wl-shell-ink: #eceeed;
+  --wl-shell-dim: #bac0c3;
+  --wl-shell-muted: #989fa4;
+  --wl-shell-line: #34373b;
+  --wl-shell-hover: #2b2e31;
+  --wl-shell-active: #3a3e42;
+  --wl-shell-inverse: #24272a;
+  --wl-shell-inverse-bg: #eeefed;
+  --wl-shell-glass: rgb(35 37 40 / 83%);
+  --wl-shell-edge: rgb(240 243 242 / 10%);
+  --wl-shell-shadow: 0 12px 32px rgb(0 0 0 / 12%), 0 1px 2px rgb(0 0 0 / 24%);
 }
 
 .wiselink-app-main {
   display: flex;
   min-width: 0;
+  min-height: 0;
   flex-direction: column;
 }
 
 .wiselink-app-body {
   min-width: 0;
+  min-height: 0;
   flex: 1;
-  padding: 12px 20px 32px;
+  overflow: auto;
+  padding: 9px var(--wl-shell-page-pad) 24px;
 }
 
 /* ---------- 侧栏 ---------- */
 
 .wl-sidebar {
-  position: sticky;
-  top: 0;
   z-index: 45;
   display: flex;
-  min-height: 100vh;
+  min-height: 0;
   flex-direction: column;
-  gap: 14px;
-  padding: 16px 12px;
+  margin: 14px 0 14px 14px;
+  padding: 24px 14px 15px;
+  border: 1px solid var(--wl-shell-edge);
+  border-radius: 24px;
+  background: var(--wl-shell-glass);
+  box-shadow: var(--wl-shell-shadow);
+  backdrop-filter: blur(var(--wl-shell-blur));
+  -webkit-backdrop-filter: blur(var(--wl-shell-blur));
+  overflow-y: auto;
 }
 
 .wl-sidebar-brand {
   display: flex;
   align-items: center;
   gap: 10px;
-  padding: 4px 8px;
+  margin: 0 7px 33px;
 }
 
 .wl-sidebar-brand-text {
@@ -51,8 +99,9 @@
 
 .wl-sidebar-brand-text strong {
   overflow: hidden;
-  font-size: 15px;
-  font-weight: 750;
+  font-size: 17px;
+  font-weight: 650;
+  letter-spacing: -0.035em;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
@@ -60,9 +109,7 @@
 .wl-sidebar-brand-text small {
   overflow: hidden;
   color: var(--wl-muted);
-  font-family: var(--wl-mono);
   font-size: 9px;
-  letter-spacing: 0.08em;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
@@ -74,46 +121,51 @@
 
 .wiselink-app-mark {
   display: grid;
-  width: 34px;
-  height: 34px;
-  flex: 0 0 34px;
+  width: 33px;
+  height: 33px;
+  flex: 0 0 33px;
   place-items: center;
   border-radius: 12px;
   overflow: hidden;
-  background: var(--wl-surface-solid);
-  box-shadow: var(--wl-shadow-1);
+  background: var(--wl-shell-inverse-bg);
+  color: var(--wl-shell-inverse);
+  box-shadow: inset 0 1px 0 rgb(255 255 255 / 23%);
 }
 
-.wiselink-app-mark img {
+.wiselink-app-mark svg {
   display: block;
-  width: 100%;
-  height: 100%;
-  object-fit: cover;
+  width: 21px;
+  height: 21px;
 }
 
 .wl-sidebar-nav,
 .wl-sidebar-secondary {
   display: grid;
-  gap: 2px;
+  gap: 5px;
+}
+
+.wl-sidebar-group-label {
+  margin: 10px 10px 7px;
+  color: var(--wl-shell-muted);
+  font-size: 10px;
 }
 
 .wl-sidebar-secondary {
-  border-top: 1px solid var(--wl-border);
-  padding-top: 10px;
+  margin-top: 10px;
 }
 
 .wl-sidebar-nav a,
 .wl-sidebar-secondary a {
   display: flex;
-  min-height: 38px;
+  min-height: 42px;
   align-items: center;
-  gap: 9px;
-  padding: 0 12px;
-  border: 1px solid transparent;
-  border-radius: var(--wl-radius-sm);
-  color: var(--wl-muted);
+  gap: 10px;
+  padding: 11px 12px;
+  border-radius: 11px;
+  color: var(--wl-shell-dim);
   font-size: 13px;
-  font-weight: 600;
+  font-weight: 400;
+  line-height: 1.5;
   text-decoration: none;
   transition:
     color var(--wl-motion-fast) ease,
@@ -128,21 +180,21 @@
 .wl-sidebar-nav a:hover,
 .wl-sidebar-secondary a:hover {
   color: var(--wl-ink);
-  background: var(--wl-glass-content);
+  background: var(--wl-shell-hover);
 }
 
 .wl-sidebar-nav a.active,
 .wl-sidebar-secondary a.active {
-  color: var(--wl-accent);
-  background: var(--wl-accent-soft);
-  border-color: var(--wl-border-strong);
+  color: var(--wl-shell-ink);
+  background: var(--wl-shell-active);
+  font-weight: 550;
 }
 
 .wl-sidebar-nav svg,
 .wl-sidebar-secondary svg {
-  width: 16px;
-  height: 16px;
-  flex: 0 0 16px;
+  width: 17px;
+  height: 17px;
+  flex: 0 0 17px;
 }
 
 /* ---------- 当前对象分组 ---------- */
@@ -150,8 +202,9 @@
 .wl-sidebar-object {
   display: grid;
   gap: 6px;
-  border-top: 1px solid var(--wl-border);
-  padding-top: 12px;
+  border-top: 1px solid var(--wl-shell-line);
+  margin-top: 22px;
+  padding-top: 15px;
 }
 
 .wl-sidebar-object > h3 {
@@ -210,8 +263,7 @@
   display: grid;
   gap: 4px;
   margin-top: auto;
-  border-top: 1px solid var(--wl-border);
-  padding-top: 12px;
+  padding-top: 15px;
 }
 
 .wl-sidebar-footer button {
@@ -224,7 +276,7 @@
   border-radius: var(--wl-radius-sm);
   background: none;
   color: var(--wl-muted);
-  font-size: 12px;
+  font-size: 11px;
   text-align: left;
   cursor: pointer;
   transition:
@@ -246,17 +298,14 @@
 /* ---------- 顶栏（紧凑栏） ---------- */
 
 .wl-topbar {
-  position: sticky;
-  top: 12px;
   z-index: 40;
   display: flex;
-  min-height: 48px;
+  height: var(--wl-shell-topbar);
+  flex-shrink: 0;
   align-items: center;
-  gap: 12px;
-  margin: 12px 16px 0;
-  padding: 0 16px;
-  border-radius: var(--wl-radius-xl);
-  box-shadow: var(--wl-shadow-1);
+  gap: 10px;
+  margin: 10px 0 0;
+  padding: 0 var(--wl-shell-page-pad);
 }
 
 .wl-topbar-toggle {
@@ -300,7 +349,7 @@
   display: inline-flex;
   align-items: center;
   gap: 4px;
-  font-size: 12px;
+  font-size: 11px;
 }
 
 .wiselink-breadcrumb-item a {
@@ -315,7 +364,7 @@
 
 .wiselink-breadcrumb-item span {
   color: var(--wl-ink);
-  font-weight: 650;
+  font-weight: 500;
 }
 
 .wiselink-breadcrumb-sep {
@@ -464,85 +513,138 @@ select:focus-visible {
 
 /* ---------- 响应式 ---------- */
 
-@media (max-width: 1200px) {
+@media (max-width: 1439px) {
   .wiselink-app-shell {
-    grid-template-columns: 220px minmax(0, 1fr);
+    --wl-shell-sidebar: 188px;
+    --wl-shell-page-pad: 20px;
+  }
+  .wl-sidebar {
+    padding-left: 11px;
+    padding-right: 11px;
+  }
+  .wl-sidebar-brand {
+    margin-left: 5px;
   }
 }
 
-@media (max-width: 980px) {
+@media (max-width: 1199px) {
   .wiselink-app-shell {
+    --wl-shell-sidebar: 176px;
+    --wl-shell-page-pad: 18px;
+  }
+}
+
+@media (min-width: 640px) and (max-width: 899px) {
+  .wiselink-app-shell {
+    --wl-shell-sidebar: 70px;
+    --wl-shell-page-pad: 16px;
+  }
+  .wl-sidebar {
+    margin-left: 9px;
+    padding: 18px 7px;
+    align-items: center;
+    border-radius: 21px;
+  }
+  .wl-sidebar-brand {
+    margin: 3px 0 23px;
+  }
+  .wl-sidebar-brand-text,
+  .wl-sidebar-group-label,
+  .wl-sidebar-nav a span,
+  .wl-sidebar-secondary a span,
+  .wl-sidebar-footer button span,
+  .wl-sidebar-object {
+    display: none;
+  }
+  .wl-sidebar-nav {
+    gap: 8px;
+  }
+  .wl-sidebar-nav a,
+  .wl-sidebar-secondary a,
+  .wl-sidebar-footer button {
+    width: 43px;
+    padding: 11px;
+    justify-content: center;
+  }
+  .wl-sidebar-footer {
+    width: 43px;
+  }
+}
+
+@media (max-width: 639px) {
+  .wiselink-app-shell {
+    --wl-shell-sidebar: 0px;
+    --wl-shell-page-pad: 14px;
+    --wl-shell-topbar: 49px;
     grid-template-columns: minmax(0, 1fr);
   }
-
   .wl-sidebar {
-    position: fixed;
-    top: 0;
-    bottom: 0;
-    left: 0;
-    z-index: 60;
-    width: 280px;
-    overflow-y: auto;
-    transform: translateX(-104%);
-    transition: transform var(--wl-motion) ease;
-    background: var(--wl-surface-solid);
+    display: none;
   }
-
   .wl-sidebar.is-open {
-    transform: translateX(0);
-    box-shadow: var(--wl-shadow-2);
+    position: fixed;
+    inset: 8px auto 8px 10px;
+    z-index: 60;
+    display: flex;
+    width: 205px;
+    margin: 0;
+    padding: 18px 11px 15px;
+    background: var(--wl-shell-glass);
+    box-shadow: 0 0 0 100vw rgb(0 0 0 / 33%);
   }
-
+  .wl-sidebar-brand {
+    margin: 8px 0 22px;
+    gap: 7px;
+  }
+  .wl-sidebar-brand-text strong {
+    font-size: 15px;
+  }
   .wl-sidebar-close {
     display: inline-flex;
-    width: 32px;
-    height: 32px;
-    flex: 0 0 32px;
+    width: 25px;
+    height: 30px;
+    flex: 0 0 25px;
     align-items: center;
     justify-content: center;
-    border: 1px solid var(--wl-border);
-    border-radius: var(--wl-radius-sm);
-    background: var(--wl-glass-soft);
-    color: var(--wl-ink);
-    cursor: pointer;
+    border: 1px solid var(--wl-shell-line);
+    border-radius: 8px;
+    background: transparent;
+    color: var(--wl-shell-ink);
   }
-
+  .wl-sidebar-close svg {
+    width: 16px;
+    height: 16px;
+  }
   .wl-topbar-toggle {
     display: inline-flex;
   }
-
-  .wiselink-app-body {
-    padding: 12px 14px 28px;
-  }
-}
-
-@media (max-width: 680px) {
   .wl-topbar {
-    margin: 8px 10px 0;
-    padding: 0 12px;
-    gap: 8px;
+    margin: 4px 0 0;
+    gap: 6px;
   }
-
-  .wiselink-breadcrumb-item {
-    font-size: 11px;
-  }
-
-  .wl-topbar-item {
-    max-width: 130px;
-  }
-
-  .wiselink-app-body {
-    padding: 10px 10px 24px;
-  }
-}
-
-@media (max-width: 390px) {
   .wiselink-breadcrumb-item {
     font-size: 10px;
   }
-
   .wl-topbar-item {
     display: none;
+  }
+  .wiselink-app-body {
+    padding-top: 12px;
+  }
+}
+
+html[data-wl-visual-mode='ultra'] .wiselink-app-shell {
+  --wl-shell-blur: 30px;
+}
+html[data-wl-visual-mode='compatible'] .wl-sidebar,
+html[data-wl-transparency='reduced'] .wl-sidebar {
+  background: var(--wl-frame-solid);
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
+}
+@supports not (backdrop-filter: blur(2px)) {
+  .wl-sidebar {
+    background: var(--wl-frame-solid);
   }
 }
 

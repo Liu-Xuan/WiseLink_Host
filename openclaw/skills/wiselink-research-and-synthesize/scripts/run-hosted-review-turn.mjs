@@ -941,7 +941,7 @@ export async function createHostMcpConnection(options) {
     requiredUrl(options.hostMcpUrl, 'REVIEW_HOST_MCP_URL_REQUIRED'),
   );
   const headers = isRecord(options.headers) ? options.headers : {};
-  const { Client, StreamableHTTPClientTransport } = await loadMcpSdk();
+  const { Client, StreamableHTTPClientTransport, toolCallOptionsPosition } = await loadMcpSdk();
   const client = new Client({
     name: 'wiselink-hosted-review-driver',
     version: '1.0.0',
@@ -960,7 +960,7 @@ export async function createHostMcpConnection(options) {
   const tools = await client.listTools();
   validateHostToolMetadata(tools);
   return {
-    callTool: async (name, args, requestOptions) => callJsonTool(client, name, args, requestOptions),
+    callTool: async (name, args, requestOptions) => callJsonTool(client, name, args, requestOptions, toolCallOptionsPosition),
     hasTool: (name) => tools.tools.some((tool) => tool.name === name),
     close: async () => client.close(),
   };
@@ -996,15 +996,25 @@ export function validateHostToolMetadata(value) {
   }
 }
 
-export async function callJsonTool(client, name, args, requestOptions) {
-  if (requestOptions !== undefined && (name !== 'matter_action_attempt' ||
-      args?.operation !== 'GENERATE_ISSUE_CORRECTION' ||
-      !Number.isFinite(requestOptions.timeout) || requestOptions.timeout <= 0 ||
-      requestOptions.timeout > 30 * 60_000 || Object.keys(requestOptions).some(key => key !== 'timeout')))
+export async function callJsonTool(client, name, args, requestOptions, optionsPosition = 3) {
+  if (optionsPosition !== 2 && optionsPosition !== 3)
+    throw new Error('REVIEW_HOST_MCP_SDK_OPTIONS_POSITION_INVALID');
+  const correctionOptions = name === 'matter_action_attempt' &&
+    args?.operation === 'GENERATE_ISSUE_CORRECTION' &&
+    Number.isFinite(requestOptions?.timeout) && requestOptions.timeout > 0 &&
+    requestOptions.timeout <= 30 * 60_000 && Object.keys(requestOptions).every(key => key === 'timeout');
+  const activityOptions = name === 'document_work' &&
+    ['ACTIVITY_STATUS', 'ACTIVITY_CLAIM', 'ACTIVITY_READ', 'ACTIVITY_HEARTBEAT', 'ACTIVITY_SAVE', 'ACTIVITY_FAIL'].includes(args?.action) &&
+    requestOptions?.signal instanceof AbortSignal &&
+    Number.isSafeInteger(requestOptions.timeout) && requestOptions.timeout > 0 && requestOptions.timeout <= 120_000 &&
+    Object.keys(requestOptions).every(key => key === 'timeout' || key === 'signal');
+  if (requestOptions !== undefined && !correctionOptions && !activityOptions)
     throw new Error('REVIEW_HOST_MCP_REQUEST_OPTIONS_INVALID');
   const result = requestOptions === undefined
     ? await client.callTool({ name, arguments: args })
-    : await client.callTool({ name, arguments: args }, undefined, requestOptions);
+    : optionsPosition === 2
+      ? await client.callTool({ name, arguments: args }, requestOptions)
+      : await client.callTool({ name, arguments: args }, undefined, requestOptions);
   return readHostMcpJsonResult(result, name, args);
 }
 
@@ -1847,7 +1857,8 @@ function assertCheckpointHash(value, argsHash, step) {
 async function loadMcpSdk() {
   try {
     const module = await import('@modelcontextprotocol/client');
-    if (module.Client && module.StreamableHTTPClientTransport) return module;
+    if (module.Client && module.StreamableHTTPClientTransport)
+      return { ...module, toolCallOptionsPosition: 2 };
   } catch {
     // Official Hosted OpenClaw installs the v1 SDK under its global package.
   }
@@ -1868,6 +1879,7 @@ async function loadMcpSdk() {
           Client: client.Client,
           StreamableHTTPClientTransport:
             transport.StreamableHTTPClientTransport,
+          toolCallOptionsPosition: 3,
         };
       }
     } catch {

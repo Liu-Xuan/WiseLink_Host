@@ -5,7 +5,8 @@ import DialoguePage from './pages/DialoguePage';
 import Layout from './components/Layout';
 import WorkItemOverviewPage from './features/workitem/WorkItemOverviewPage';
 import EngineeringMatterPage from './features/matter/EngineeringMatterPage';
-import MatterPosturePage from './features/matter/MatterPosturePage';
+import EngineeringSituationPage from './pages/EngineeringSituationPage/EngineeringSituationPage';
+import EngineeringTimelinePage from './pages/EngineeringTimelinePage/EngineeringTimelinePage';
 import DocumentParsingPage from './pages/DocumentParsingPage/DocumentParsingPage';
 import DocumentVersionReadingPage from './pages/DocumentParsingPage/DocumentVersionReadingPage';
 import DocumentRevisionReadingPage from './pages/DocumentParsingPage/DocumentRevisionReadingPage';
@@ -51,7 +52,7 @@ const RoutesComponent = () => {
         <Route path="document-versions/:documentVersionId/activities" element={<DocumentActivityReadingPage />} />
         <Route path="document-versions/:documentVersionId" element={<DocumentVersionReadingPage />} />
         <Route path="matters/:matterId" element={<EngineeringMatterPage />} />
-        <Route path="matters/:matterId/posture" element={<MatterPosturePage />} />
+        <Route path="matters/:matterId/posture" element={<EngineeringSituationPage />} />
         <Route
           path="work-items/:workItemId"
           element={<WorkItemOverviewPage />}
@@ -59,6 +60,9 @@ const RoutesComponent = () => {
         <Route path="runtime-probe" element={<RuntimeProbePage />} />
         <Route path="settings/models" element={<ModelSettingsPage />} />
         <Route path="external-discovery" element={<ExternalDiscoveryPage />} />
+        <Route path="situation" element={<EngineeringSituationPage />} />
+        <Route path="timeline" element={<EngineeringTimelinePage />} />
+        <Route path="activity-graph" element={<EngineeringTimelinePage view="graph" />} />
         <Route path="graph" element={<RelationGraphPage />} />
         <Route path="knowledge" element={<KnowledgeLookupPage />} />
         <Route

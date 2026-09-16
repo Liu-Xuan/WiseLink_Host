@@ -11,6 +11,8 @@ import { consumeHostedMatter } from './consume-hosted-matter.mjs';
 import { recoverNativeMatterResponse } from './recover-native-matter-response.mjs';
 import { invokeHostedJobAidProblemModel } from './run-jobaid-problem-assessment.mjs';
 import { invokeHostedInitialModel } from './invoke-hosted-initial-model.mjs';
+import { invokeHostedDocumentActivityModel } from './invoke-hosted-document-activity-model.mjs';
+import { consumeHostedDocumentActivity } from './consume-hosted-document-activity.mjs';
 import { INITIAL_ANALYSIS_OPERATIONS, parseConfigurationEvidenceReevaluationStatus, runInitialAnalysis } from './orchestrate-host-mcp.mjs';
 import {
   assertHostedModelGatewayReady,
@@ -282,9 +284,22 @@ function option(argv, name) {
   return index < 0 ? undefined : argv[index + 1];
 }
 
-export async function consumeHostedDocument({ documentVersionId }, { callTool, documentTranslationCheckpoint }) {
+export async function consumeHostedDocument(
+  { documentVersionId, activityRunRef, leaseOwner },
+  { callTool, documentTranslationCheckpoint, activityCheckpoint, invokeActivityModel }) {
   const state = await callTool('document_work', { action: 'STATUS', documentVersionId });
   if (state?.documentVersionId !== documentVersionId) throw new Error('DOCUMENT_CONSUMER_SCOPE_MISMATCH');
+  // An already-accepted activity run is consumed first: state.nextActivityRunRef
+  // is the only discovery of a run an explicit ACTIVITY_BEGIN created, and an
+  // explicit recovery ref addresses that old run directly. The consumer never
+  // generates work and never sends ACTIVITY_BEGIN; a null discovery with no
+  // parse run stays idle with zero model calls.
+  const runRef = activityRunRef ?? state.nextActivityRunRef ?? null;
+  if (runRef) {
+    return consumeHostedDocumentActivity(
+      { documentVersionId, runRef, leaseOwner },
+      { callTool, invokeModel: invokeActivityModel, checkpointFactory: activityCheckpoint });
+  }
   const run = state.latestRun;
   if (!run) return { status: 'IDLE', documentVersionId };
   if (run.documentVersionId !== documentVersionId || !run.parseRunId) throw new Error('DOCUMENT_CONSUMER_RUN_MISMATCH');
@@ -374,7 +389,7 @@ function assertSingleConsumerSubject({ workItemId, matterId, documentVersionId }
 
 async function main(argv, env) {
   if (argv.includes('--help')) {
-    process.stdout.write('Usage: node consume-hosted-work-item.mjs [--work-item-id WI-...] [--matter-id MAT-...] [--document-version-id DV] [--applicability-context-ref REF] [--checkpoint-root PATH] [--openclaw-config PATH] [--native-session-store PATH] [--document-translation-recovery ID]\nOne native job per authorized subject. Choose exactly one WorkItem, Matter or DocumentVersion; independent jobs use native cron concurrency.\n');
+    process.stdout.write('Usage: node consume-hosted-work-item.mjs [--work-item-id WI-...] [--matter-id MAT-...] [--document-version-id DV] [--applicability-context-ref REF] [--checkpoint-root PATH] [--openclaw-config PATH] [--native-session-store PATH] [--document-translation-recovery ID] [--activity-run-ref ID] [--lease-owner ID]\nOne native job per authorized subject. Choose exactly one WorkItem, Matter or DocumentVersion; independent jobs use native cron concurrency.\n');
     return;
   }
   const workItemId = option(argv, '--work-item-id');
@@ -382,7 +397,11 @@ async function main(argv, env) {
   const documentVersionId = option(argv, '--document-version-id');
   assertSingleConsumerSubject({ workItemId, matterId, documentVersionId });
   const runtime = await resolveRuntimeConfig(argv, env);
-  if (!documentVersionId) assertHostedModelGatewayReady(runtime);
+  assertHostedModelGatewayReady(runtime);
+  const activityRunRef = option(argv, '--activity-run-ref');
+  if (activityRunRef !== undefined && !/^[A-Za-z0-9_-]{1,96}$/u.test(activityRunRef))
+    throw new Error('ACTIVITY_RUN_REF_INVALID');
+  const leaseOwner = option(argv, '--lease-owner') ?? `openclaw:${runtime.agentId}`;
   const recovery = option(argv, '--document-translation-recovery') ?? 'initial';
   if (!/^[A-Za-z0-9_-]{1,96}$/.test(recovery)) throw new Error('DOCUMENT_TRANSLATION_RECOVERY_INVALID');
   const checkpointRoot = option(argv, '--checkpoint-root') ?? join(homedir(), '.openclaw', 'wiselink-work-item-runs');
@@ -392,6 +411,13 @@ async function main(argv, env) {
     return createCheckpointStore(join(checkpointRoot, 'document-translation',
       encodeURIComponent(endpoint.origin + endpoint.pathname), documentVersionId, parseRunId, recovery));
   } : undefined;
+  // Activity checkpoints live under endpoint (origin+path, never the token) +
+  // documentVersionId + runRef; every file 0600 inside a 0700 root.
+  const activityCheckpoint = documentVersionId ? ({ runRef }) => {
+    if (!/^[A-Za-z0-9_-]{1,96}$/u.test(runRef)) throw new Error('ACTIVITY_RUN_REF_INVALID');
+    return createCheckpointStore(join(checkpointRoot, 'document-activity',
+      encodeURIComponent(endpoint.origin + endpoint.pathname), documentVersionId, runRef));
+  } : undefined;
   const connection = await createHostMcpConnection(runtime);
   try {
     const result = await consumeHostedWorkItem({
@@ -400,9 +426,13 @@ async function main(argv, env) {
       documentVersionId,
       applicabilityContextRef: option(argv, '--applicability-context-ref'),
       checkpointRoot,
+      activityRunRef,
+      leaseOwner,
     }, {
       callTool: connection.callTool,
       documentTranslationCheckpoint,
+      activityCheckpoint,
+      invokeActivityModel: (input, hooks) => invokeHostedDocumentActivityModel(input, { ...runtime, ...hooks }),
       ...(option(argv, '--native-session-store') ? { recoverNativeMatterResponse: input => recoverNativeMatterResponse({
         ...input, storePath: option(argv, '--native-session-store'),
       }) } : {}),
