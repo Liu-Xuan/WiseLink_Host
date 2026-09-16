@@ -43,6 +43,22 @@ describe('completed WorkItem explicit reparse client semantics', () => {
     ).toBe('RETRY_FAILED_PARSE');
   });
 
+  it('retries the same WorkItem after a transient failure-report write failure', () => {
+    expect(
+      availableParseAction(
+        true,
+        projection({
+          phase: 'RECORDING_FAILED',
+          package: null,
+          recordingFailure: {
+            failureCode: 'FAILURE_REPORT_RECORDING_FAILED',
+            originalFailureCode: 'PDF_OCR_REQUIRED_UNSUPPORTED',
+          } as never,
+        }),
+      ),
+    ).toBe('RETRY_FAILED_PARSE');
+  });
+
   it('accepts a new Attempt only when the response and fresh readback keep the same WorkItem and DV', () => {
     const run = runResponse();
     const readback = readbackResponse();

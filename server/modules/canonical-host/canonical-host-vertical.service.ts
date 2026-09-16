@@ -1219,14 +1219,40 @@ export class CanonicalHostVerticalService {
     running: CanonicalWorkItemProjection,
     produced: Extract<CanonicalPdfProducerResult, { kind: 'FAILURE_SIGNAL' }>,
   ): Promise<CanonicalPdfVerticalRunResponse> {
-    const frozen = await this.failureRecording.record({
-      request,
-      error: new Error(produced.failureCode),
-      failureParameters: produced.parameters,
-      permissionSnapshotVersion: running.permissionSnapshotVersion,
-      executionRoute: produced.executionRoute,
-      packageAttempt: null,
-    });
+    let frozen: Awaited<ReturnType<CanonicalFailureRecordingService['record']>>;
+    try {
+      frozen = await this.failureRecording.record({
+        request,
+        error: new Error(produced.failureCode),
+        failureParameters: produced.parameters,
+        permissionSnapshotVersion: running.permissionSnapshotVersion,
+        executionRoute: produced.executionRoute,
+        packageAttempt: null,
+      });
+    } catch (recordError) {
+      const recordingCode: string = stableCauseCode(recordError);
+      if (!recordingCode.startsWith('ARTIFACT_STORE_')) throw recordError;
+      await this.registrar.compareAndSet({
+        workItemId: request.workItemId,
+        expectedRevision: running.revision,
+        next: {
+          ...withoutRevision(running),
+          phase: 'RECORDING_FAILED',
+          package: running.package,
+          failure: null,
+          recordingFailure: {
+            failureCode: 'FAILURE_REPORT_RECORDING_FAILED',
+            originalFailureCode: produced.failureCode,
+            message: `FailureReport recording failed: ${recordingCode}`,
+          },
+        },
+      });
+      const recordingFailed = await this.freshRead(request);
+      return failedResponse(
+        recordingFailed,
+        this.entryFacade.status(recordingFailed),
+      );
+    }
     let failed = await this.registrar.compareAndSet({
       workItemId: request.workItemId,
       expectedRevision: running.revision,

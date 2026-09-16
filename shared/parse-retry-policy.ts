@@ -1,6 +1,7 @@
 export const RETRYABLE_PARSE_FAILURE_CODES = [
   'SOURCE_BINDING_FAILED',
   'PDF_OCR_REQUIRED_UNSUPPORTED',
+  'FAILURE_REPORT_RECORDING_FAILED',
 ] as const;
 
 export type RetryableParseFailureCode =

@@ -294,8 +294,15 @@ export class MiaodaWorkItemRepository {
       }
 
       if (
-        projection?.phase !== 'FAILED' ||
-        !isRetryableParseFailureCode(projection.failure?.failureCode)
+        !projection ||
+        !(
+          (projection.phase === 'FAILED' &&
+            isRetryableParseFailureCode(projection.failure?.failureCode)) ||
+          (projection.phase === 'RECORDING_FAILED' &&
+            isRetryableParseFailureCode(
+              projection.recordingFailure?.failureCode,
+            ))
+        )
       ) {
         return null;
       }

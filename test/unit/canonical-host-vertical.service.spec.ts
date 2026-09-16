@@ -692,6 +692,58 @@ describe('CanonicalHostVerticalService', () => {
     ).rejects.toThrow('WORK_ITEM_QUERY_NOT_READY:FAILED');
   });
 
+  it('records a terminal recovery state when a producer FailureReport cannot be uploaded', async () => {
+    const request = await realRequest();
+    const store = new InMemoryArtifactStore();
+    jest
+      .spyOn(store, 'persistAndReadback')
+      .mockRejectedValue(new Error('ARTIFACT_STORE_UPLOAD_FAILED:fetch failed'));
+    const service = new CanonicalHostVerticalService(
+      new InMemoryRegistrar(),
+      {
+        producePdf: jest.fn().mockResolvedValue({
+          kind: 'FAILURE_SIGNAL',
+          failureCode: 'PDF_OCR_REQUIRED_UNSUPPORTED',
+          message: 'OCR is required.',
+          executionRoute: 'test-ocr-failure-report',
+        }),
+      },
+      authorization(),
+      permissionSnapshots(),
+      store,
+      new UnifiedReaderService(
+        store,
+        new Frozen2CandidateReaderService(),
+        fullValidator(),
+        {
+          mode: 'HOST_CONFIGURED',
+          artifactStoreConfigured: true,
+          fullU0ValidatorConfigured: true,
+          immutableAcceptanceReceiptOwnerConfigured: false,
+          aeoSpecialistReaderConfigured: false,
+          authority: 'COMPOSITION_STATE_NOT_ACTIVATION_NOT_WRITE_AUTHORIZATION',
+        },
+      ),
+      entryFacade(),
+      failureReports(store, fullValidator()),
+      null,
+    );
+
+    await expect(service.runPdf(request, TEST_ACTOR)).resolves.toMatchObject({
+      status: 'RECORDING_FAILED',
+      workItem: {
+        phase: 'RECORDING_FAILED',
+        failure: null,
+        recordingFailure: {
+          failureCode: 'FAILURE_REPORT_RECORDING_FAILED',
+          originalFailureCode: 'PDF_OCR_REQUIRED_UNSUPPORTED',
+          message:
+            'FailureReport recording failed: ARTIFACT_STORE_UPLOAD_FAILED',
+        },
+      },
+    });
+  });
+
   it('stops before ArtifactStore I/O when validation-write receipt is absent', async () => {
     const request = await realRequest();
     const store = new InMemoryArtifactStore();
