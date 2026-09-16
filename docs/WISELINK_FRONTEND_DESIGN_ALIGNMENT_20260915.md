@@ -89,3 +89,11 @@ F 可在改版视图调用该函数：两侧 `publisherRevisionDescriptions` 保
 真实浏览器 HTTP 联调已定位一处入口错误：裸地址导航先被平台 CSRF 拒绝；按现有客户端规则携带同源 CSRF 头后，请求到达 Host，返回 `ENGINEERING_MATTER_RUNTIME_AUTHORIZATION_UNAVAILABLE`。原因是共用读取服务无条件进入仅供 Hosted SQL 身份使用的 `withActorScope`。本地修复将 HTTP 路由接入 `readForBrowser`，沿用已经过登录及对象入口 guard 的请求身份与 RLS；MCP 继续使用原 Hosted scope。两端原文授权、准确语义修订、同 family 检查及返回前来源回查仍共用。三套十七项定向测试及 server 类型检查通过；此修复待技术发布和相同浏览器请求复测，不将 MCP 成功视为 HTTP 已通过。
 
 该 HTTP 修复已随 `8295cd20b0a22b387ecf8b3bbd964a2ebd87db3e` 发布完成（release `7685928474716589252`）。原正式登录浏览器按客户端 CSRF 规则复测返回 HTTP 200：Status 为 TEXT_DIFFERENT、Final Action 为 TEXT_EQUAL；准确两端绑定与各自修订说明核验通过。现已补齐真实 HTTP/MCP 读取证据，生产视图接入仍待完成，不能把只读结果解释为正式版次关系或新版工程评估覆盖。
+
+## 已保存语义索引的浏览器接入（本地实现，待发布）
+
+生产比较不能硬编码 `semanticRevision=1`。M 补充 `readDocumentSemanticReading({ documentVersionId, parseRunId, semanticRevision? }, signal?)`，沿用平台请求客户端，对应同一 DV 下的 `GET semantic-reading`。必须指定准确已发布 parseRun；可先从既有 `readDocumentParsingStatus` 的 `publishedRun` 获取，不使用可能仍在运行的 `latestRun`。省略 semanticRevision 时只读取该 parseRun 最新已保存修订；返回实际修订后，将其与 DV/parseRun 一同锁入比较选择，后续可传入准确修订读取。
+
+响应是 `familyId`、准确 `binding`、原文 `coverage` 和 `semanticMap`。后者为 null 表示尚无已保存语义，不能显示为空正文或自动生成；非空保留实际 `semanticRevision/profileRef/sections`、未归类单元及组织/覆盖限制。GET 复用授权 Reader 与 `DocumentSemanticService.read`，不调用 ensure、不改写状态；浏览器沿用原请求身份和 RLS，读取后再次核对源权限。客户端保留 Abort、身份代次及准确绑定检查。
+
+首批生产入口可从目录中已经取得的 family 行选择两端 DV，再分别读取解析状态和语义索引。目录目前没有精确 familyId 查询过滤，不能以文件类别或文号搜索冒充同 family 身份；独立 Reader 深链自动找其他版本不是本入口已交付能力。角色按两端 sections 的非空 roleKey 并集呈现，各端缺失或重复必须可见，不以交集隐藏缺口。随后调用既有 readDocumentRevisionReading，仍不推导正式版本顺序或工程覆盖。F 由 Luna 对接，展示组件先消费既有真实响应合同，目录/路由接线在此读取入口发布核对后继续。

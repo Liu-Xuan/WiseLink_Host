@@ -6,13 +6,24 @@ function setup() {
   const workspaces = { readForSource: jest.fn().mockResolvedValue(null), readSnapshot: jest.fn() };
   const parsing = { status: jest.fn().mockResolvedValue({}) };
   const attempts = { latest: jest.fn().mockResolvedValue({ producerRunId: 'other', status: 'RUNNING' }) };
-  const revisions = { readForBrowser: jest.fn().mockResolvedValue({ familyId: 'family' }) };
+  const revisions = { readForBrowser: jest.fn().mockResolvedValue({ familyId: 'family' }),
+    readSemanticForBrowser: jest.fn().mockResolvedValue({ semanticMap: null }) };
   const controller = new DocumentTranslationReadingController(reader as never, workspaces as never, parsing as never, attempts as never, revisions as never);
   const request = { userContext: { userId: 'actor', tenantId: 'tenant', roles: [] } } as never;
   return { reader, workspaces, parsing, attempts, revisions, controller, request };
 }
 
 describe('independent document browser reading', () => {
+  it('discovers saved semantics without guessing a revision and permits a pinned revision', async () => {
+    const f = setup();
+    await expect(f.controller.readSemantic('DV', 'parse', undefined, f.request)).resolves.toEqual({ semanticMap: null });
+    expect(f.revisions.readSemanticForBrowser).toHaveBeenLastCalledWith({ documentVersionId: 'DV', parseRunId: 'parse' },
+      expect.objectContaining({ tenantId: 'tenant', actorUserId: 'actor' }));
+    await f.controller.readSemantic('DV', 'parse', '3', f.request);
+    expect(f.revisions.readSemanticForBrowser).toHaveBeenLastCalledWith({ documentVersionId: 'DV', parseRunId: 'parse', semanticRevision: 3 }, expect.anything());
+    await expect(f.controller.readSemantic('DV', 'parse', '0', f.request)).rejects.toThrow('IDENTITY_INVALID');
+    expect(f.revisions.readSemanticForBrowser).toHaveBeenCalledTimes(2);
+  });
   it('routes revision reading through the authenticated browser context without Hosted actor rebinding', async () => {
     const f = setup();
     await expect(f.controller.readRevision('new', 'parse-new', '1', 'old', 'parse-old', '2', 'ftd.status', f.request))

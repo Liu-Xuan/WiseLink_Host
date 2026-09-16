@@ -1,4 +1,5 @@
 import type { DocumentRevisionReadingRequest, DocumentRevisionReadingResponse } from '@shared/document-revision-reading.interface';
+import type { DocumentSemanticReadingRequest, DocumentSemanticReadingResponse } from '@shared/document-semantic-map.interface';
 import type { JobAidWorkingReadModel } from '@shared/jobaid-problem-assessment.interface';
 import type { DocumentTranslationReadingResponse } from '@shared/document-translation-reading.interface';
 import type { EngineeringIssueRead, EngineeringIssueSearchHit, EngineeringIssueSearchResponse,
@@ -607,6 +608,22 @@ export async function readDocumentParsingStatus(documentVersionId: string, signa
 
 export function startDocumentParsing(documentVersionId: string, input: StartDocumentParseRequest) {
   return readCanonicalLibrary<DocumentParseRunSummary>({ url: `/api/document-management/document-versions/${encodeURIComponent(documentVersionId)}/parse-runs`, method: 'POST', data: input });
+}
+
+export async function readDocumentSemanticReading(input: DocumentSemanticReadingRequest, signal?: AbortSignal): Promise<DocumentSemanticReadingResponse> {
+  const generation = clientSessionGeneration;
+  const query = new URLSearchParams({ parseRunId: input.parseRunId });
+  if (input.semanticRevision !== undefined) query.set('semanticRevision', String(input.semanticRevision));
+  const result = await readCanonicalLibrary<DocumentSemanticReadingResponse>({
+    url: `/api/document-management/document-versions/${encodeURIComponent(input.documentVersionId)}/semantic-reading?${query}`, signal });
+  if (signal?.aborted || generation !== clientSessionGeneration) throw new Error('DOCUMENT_SEMANTIC_READING_OBSOLETE');
+  if (result.binding.documentVersionId !== input.documentVersionId || result.binding.parseRunId !== input.parseRunId ||
+    (result.semanticMap !== null && (result.semanticMap.binding.documentVersionId !== input.documentVersionId ||
+      result.semanticMap.binding.parseRunId !== input.parseRunId || !Number.isSafeInteger(result.semanticMap.semanticRevision) ||
+      result.semanticMap.semanticRevision < 1)) ||
+    (input.semanticRevision !== undefined && result.semanticMap?.semanticRevision !== input.semanticRevision))
+    throw new Error('DOCUMENT_SEMANTIC_READING_BINDING_MISMATCH');
+  return result;
 }
 
 export async function readDocumentRevisionReading(input: DocumentRevisionReadingRequest, signal?: AbortSignal): Promise<DocumentRevisionReadingResponse> {

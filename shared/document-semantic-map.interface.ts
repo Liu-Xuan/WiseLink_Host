@@ -3,6 +3,21 @@ import type {
   DocumentOriginalCoverage,
 } from './document-original.interface';
 
+/** Discover only saved organization of an exact published original; never produce it on GET. */
+export interface DocumentSemanticReadingRequest {
+  documentVersionId: string;
+  parseRunId: string;
+  semanticRevision?: number;
+}
+
+export interface DocumentSemanticReadingResponse {
+  familyId: string;
+  binding: DocumentOriginalBinding;
+  coverage: DocumentOriginalCoverage;
+  /** Null means no saved semantic revision, not empty original content. */
+  semanticMap: DocumentSemanticMap | null;
+}
+
 /** An organization of an immutable original, never a second source or an engineering conclusion. */
 export interface DocumentSemanticMap {
   schemaVersion: 'wiselink.document.semantic-map.v1';
