@@ -197,10 +197,14 @@ export function composeDocumentOriginal(input: {
       const reconstructed = locatedInGrid || regionLines.length > 0 && regionLines.every(coveredByGrid);
       const narrative = (hasSourceHeading || enclosingHeading && header && header.width > pages.find(page => page.pageIndex === header.pageIndex)!.width / 2) && regionLines.length > 1 &&
         regionLines.every(line => line.runs.length === 1 || coveredByGrid(line));
+      const unlocated = regionLines.length === 0 && match.candidates.length === 0;
       if (!reconstructed || !found && !locatedInGrid) unresolved.push({
         pageIndexes: [...new Set(regionLines.length ? regionLines.map(line => line.pageIndex) : match.candidates.flatMap(item => item.pageIndexes))], unitIds: [],
-        reason: narrative || reconstructed ? 'TEXT_CONFLICT' : 'STRUCTURE_UNCERTAIN', readingImpact: narrative || reconstructed ? 'DIAGNOSTIC' : 'LIMITATION',
-        message: narrative || reconstructed ? '候选列关系与原文连续正文不符，按有定位的原文标题和正文组织。' : '此处结构尚未可靠重建，请查看原页。',
+        reason: narrative || reconstructed || unlocated ? 'TEXT_CONFLICT' : 'STRUCTURE_UNCERTAIN',
+        readingImpact: narrative || reconstructed || unlocated ? 'DIAGNOSTIC' : 'LIMITATION',
+        message: unlocated ? '插件表格与 PDF 文本层不能对齐；未采用其结构建议。'
+          : narrative || reconstructed ? '候选列关系与原文连续正文不符，按有定位的原文标题和正文组织。'
+            : '此处结构尚未可靠重建，请查看原页。',
       });
       continue;
     }

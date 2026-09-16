@@ -29,6 +29,14 @@ describe('hybrid original composition (constructed extraction)', () => {
     expect(plan.anchors.map(anchor => anchor.sourceText)).toEqual(['Key Value A 12 Extra']);
     expect(result.coverage.unresolvedRanges.some(range => range.reason === 'STRUCTURE_UNCERTAIN')).toBe(true);
   });
+  it('does not report an unlocated plugin table as a source reading limitation', () => {
+    const result = compose('The PDF text remains fully readable.', '| Proposed | Grid |\n| --- | --- |\n| absent | here |');
+    expect(result.source.units.map(unit => unit.payload.text)).toEqual(['The PDF text remains fully readable.']);
+    expect(result.coverage.unresolvedRanges).toEqual([
+      expect.objectContaining({ reason: 'TEXT_CONFLICT', readingImpact: 'DIAGNOSTIC', pageIndexes: [], unitIds: [] }),
+    ]);
+    expect(result.coverage.unresolvedRanges.some(range => range.readingImpact === 'LIMITATION')).toBe(false);
+  });
   it('reports a failed image inspection separately while preserving extracted text', () => {
     const fixture = originalFixture();
     const result = composeDocumentOriginal({ binding: fixture.binding, producer: fixture.producer, markdown: 'Readable text.',

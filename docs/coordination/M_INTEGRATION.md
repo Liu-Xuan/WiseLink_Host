@@ -1385,3 +1385,11 @@ FTD revision 12 还精确引用 SB revision 16 的问题 `claim_maintenance_disr
 定向 Jest 2 个 suite、10 项、client typecheck、受影响源码 ESLint/CSS stylelint、client production build、完整 precommit 与 diff check 通过。本轮未取得可用的登录态外部浏览器状态，仍不声明线上视觉验收。
 
 前端提交 `4083820648a179c46cfe0998ce8670e2e510bf4a`（父提交 `81fa8c40b6a56578838244911e53d19cb458ca98`）只包含共享知识检索的只读目录呈现、知识页结构与样式、定向测试和本记录，origin/github 同名开发分支已回读相同 SHA。release `7686254565267917769` 已 `finished`，精确 `commit_id=4083820648a179c46cfe0998ce8670e2e510bf4a`，`error_logs=[]`。该部署不补齐当前不存在的全量知识目录、责任字段或治理统计，也不替代登录态线上可见页面核对。
+
+## 2026-09-17：真实长 SB 空定位结构限制更正
+
+从已发布运行 `PRUN-b64c2778-5401-4403-89a5-92fb69a53543` 只读下载原 manifest、三份分页文本层和原始插件 Markdown 后逐项核对。线上 26 项 `STRUCTURE_UNCERTAIN` 中有 17 项同时没有 `pageIndexes` 和 `unitIds`；这些记录来自无法与 PDF 文本层对齐、也没有标题区域可定位的插件表格建议，不能称为“此处结构尚未可靠重建”，更不能作为原文阅读限制。
+
+最小修法只调整该空定位分支：仍拒绝插件表格结构，保留 PDF 文本层，并以 `TEXT_CONFLICT/DIAGNOSTIC` 记录“未采用其结构建议”。凡能由文本匹配或标题区域定位的结构不确定仍保持 `STRUCTURE_UNCERTAIN/LIMITATION`，HTML/Markdown 表格本身的行宽问题与跨页首行关系也不变。新增构造回归测试证明无定位插件表格不产生阅读限制；原有布局测试继续证明有定位而未重建的真实表格仍是限制。
+
+使用上述已发布只读产物在本地按当前实现重组，仍得到 366 个阅读单元和 406 个 source location；限制从 26 项收敛为 9 项且每项至少有页或单元定位，另有 49 项 `TEXT_CONFLICT` 诊断和 2 项图示未解释。该重组没有改写线上产物、没有重跑解析或中文，也不等同于线上验收；待提交、双远端同步及后端发布后，仅对新解析生效，现有已发布 manifest 保持不可变。
