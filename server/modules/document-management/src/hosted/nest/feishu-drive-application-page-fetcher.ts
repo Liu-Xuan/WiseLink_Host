@@ -24,8 +24,7 @@ export class FeishuDriveApplicationPageFetcher
   implements AuthorizedDrivePageFetcher
 {
   private cachedToken: CachedTenantToken | null = null;
-
-  constructor(private readonly fetchImpl: FetchLike = globalThis.fetch) {}
+  private readonly fetchImpl: FetchLike = globalThis.fetch;
 
   async list(folderToken: string, pageToken?: string): Promise<DrivePage> {
     if (!folderToken) throw new Error('DRIVE_FOLDER_TOKEN_REQUIRED');

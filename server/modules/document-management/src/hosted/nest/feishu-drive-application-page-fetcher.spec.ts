@@ -1,8 +1,10 @@
 import { FeishuDriveApplicationPageFetcher } from './feishu-drive-application-page-fetcher';
+import { Test } from '@nestjs/testing';
 
 describe('FeishuDriveApplicationPageFetcher', () => {
   const originalId = process.env.FEISHU_OAUTH_CLIENT_ID;
   const originalSecret = process.env.FEISHU_OAUTH_CLIENT_SECRET;
+  const originalFetch = globalThis.fetch;
 
   beforeEach(() => {
     process.env.FEISHU_OAUTH_CLIENT_ID = 'cli_product';
@@ -12,6 +14,17 @@ describe('FeishuDriveApplicationPageFetcher', () => {
   afterAll(() => {
     restore('FEISHU_OAUTH_CLIENT_ID', originalId);
     restore('FEISHU_OAUTH_CLIENT_SECRET', originalSecret);
+    globalThis.fetch = originalFetch;
+  });
+
+  it('can be constructed by Nest without treating fetch as a dependency', async () => {
+    const module = await Test.createTestingModule({
+      providers: [FeishuDriveApplicationPageFetcher],
+    }).compile();
+    expect(module.get(FeishuDriveApplicationPageFetcher)).toBeInstanceOf(
+      FeishuDriveApplicationPageFetcher,
+    );
+    await module.close();
   });
 
   it('uses one cached application token and normalizes Drive pages', async () => {
@@ -41,7 +54,8 @@ describe('FeishuDriveApplicationPageFetcher', () => {
       .mockResolvedValueOnce(
         jsonResponse({ code: 0, data: { files: [], has_more: false } }),
       );
-    const fetcher = new FeishuDriveApplicationPageFetcher(fetchImpl);
+    globalThis.fetch = fetchImpl;
+    const fetcher = new FeishuDriveApplicationPageFetcher();
 
     await expect(fetcher.list('folder')).resolves.toEqual({
       files: [
@@ -75,7 +89,8 @@ describe('FeishuDriveApplicationPageFetcher', () => {
       .mockResolvedValueOnce(
         jsonResponse({ code: 1061004, msg: 'permission_denied' }, 403),
       );
-    const fetcher = new FeishuDriveApplicationPageFetcher(fetchImpl);
+    globalThis.fetch = fetchImpl;
+    const fetcher = new FeishuDriveApplicationPageFetcher();
 
     await expect(fetcher.list('folder')).rejects.toMatchObject({
       status: 403,
@@ -87,7 +102,8 @@ describe('FeishuDriveApplicationPageFetcher', () => {
   it('fails closed before networking without product credentials', async () => {
     delete process.env.FEISHU_OAUTH_CLIENT_SECRET;
     const fetchImpl = jest.fn();
-    const fetcher = new FeishuDriveApplicationPageFetcher(fetchImpl);
+    globalThis.fetch = fetchImpl;
+    const fetcher = new FeishuDriveApplicationPageFetcher();
     await expect(fetcher.list('folder')).rejects.toThrow(
       'DRIVE_APPLICATION_IDENTITY_NOT_CONFIGURED',
     );
