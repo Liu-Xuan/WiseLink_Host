@@ -4,11 +4,11 @@
 
 ## 当前结论
 
-M 与妙搭 F 已分别核对实际代码，业务含义和推进次序一致；工程时间轴、换版比较和工程态势的完整读取合同及功能尚未交付。因此“理解已对齐”不能写成“前后端已完整实现”。
+M 与妙搭 F 已分别核对实际代码，业务含义和推进次序一致；工程时间轴、改版比较和工程态势的完整读取合同及功能尚未交付。因此“理解已对齐”不能写成“前后端已完整实现”。
 
 当前产品发布提交为 `573454e689ea3754f7f20a7fd646e84e22b1f425`，包含 F1 三批阅读、复核身份恢复入口、实际保存摘要及讨论主资料身份修复；官方 release `7685801309664693231` 已完成。真实阅读验收见 [M 集成记录](coordination/M_INTEGRATION.md)。附件所述旧分支、解析等待、旧工作号及历史类型错误不替代此接受点，也不要求重做已验收导航。
 
-本轮静态浏览已确认：六区环形态势围绕工程认识；时间轴区分业务与信息时间；同一活动保留 Q3→Q4→TBD 来源历史；时间条目进入图谱后仍保留所选声明；换版页区分说明、正文比较和影响。这些是独立 HTML 设计证据，尚非生产 React 同组件或真实读取证据。样例中的相邻版比较也不证明跨版 R1→R3 覆盖完整。
+本轮静态浏览已确认：六区环形态势围绕工程认识；时间轴区分业务与信息时间；同一活动保留 Q3→Q4→TBD 来源历史；时间条目进入图谱后仍保留所选声明；改版页区分说明、正文比较和影响。这些是独立 HTML 设计证据，尚非生产 React 同组件或真实读取证据。样例中的相邻版比较也不证明跨版 R1→R3 覆盖完整。
 
 ## 已统一的产品含义
 
@@ -28,7 +28,7 @@ M 与妙搭 F 已分别核对实际代码，业务含义和推进次序一致；
 | --- | --- | --- |
 | Matter quicklook | `useEngineeringMatter` 已读工作与综合；资料库快览主要消费 `substantiveResult` | F 先复用已有问题正文、更正及覆盖组件；修准确来源跳转。未来全局态势的轻量摘要/聚合归 M，不把完整 workspace GET 当全局聚合 |
 | exact work + overview | 已有准确 workRef 读取、历史只读、问题正文、overviewStatus 及更正通知 | F 补齐消费者差异；M 核实综合覆盖的既有等价绑定。无法证实的覆盖或普通生成状态显示未知，不猜字段或时间关系 |
-| document original + comparison | 独立 DV Reader、准确 parseRun/SourceRef、语义章节及原文比较能力已有 | Reader 不重建；换版页尚未接统一读取。M/P 核对两端身份、说明自身跨度、实际比较与未比范围、有效性及影响记录，不能把解析纠正比较直接称厂家换版 |
+| document original + comparison | 独立 DV Reader、准确 parseRun/SourceRef、语义章节及原文比较能力已有 | Reader 不重建；改版页尚未接统一读取。M/P 核对两端身份、说明自身跨度、实际比较与未比范围、有效性及影响记录，不能把解析纠正比较直接称厂家改版 |
 | engineering chronology | `CanonicalTimelineProjection` 的生产者拼装工作修订、绑定、解析/读取等技术状态，许多 occurredAt 为空 | 保留技术历史用途。`DocumentSemanticMap` 目前只有章节/角色/来源定位，milestones 角色不是已保存活动/预计声明。M/P 从真实源绑定产物补窄读取语义，F 不以日期正则或另一次模型抽取填充 |
 | authorized relations | 当前关系页消费 LibraryIndex 的 parentId 层级及文档/WorkItem 视角 | 不能宣称完整工程图。M 提供实际关系与来源范围；F 实现共享选择及返回上下文，未加载与不存在分开 |
 
@@ -45,7 +45,7 @@ M 与妙搭 F 已分别核对实际代码，业务含义和推进次序一致；
 | F0 接受基线 | M 集成，F 维护已接受导航与 Provider | 沿用已通过导航证据；不恢复旧整页覆盖、WorkItem-only Reader 或另一套主题/HTTP 客户端 |
 | F1a 当前窄修复 | F：LibraryMatterQuicklook、KnowledgeLookup 及必要既有组件和定向测试；不改 server/shared | 快览读已保存问题，综合/更正/覆盖不混淆；来源能进入准确 DV；版本列表不含结构节点伪 ID |
 | F1b 阅读闭环 | F：现有 Reader、阅读位置和只读搜索消费者，逐文件移交 | 文档行与问题来源两条入口准确读取、返回原工作/位置；保留身份失效清理、迟到请求保护；工程工作与原文搜索均可阅读 |
-| T1 最小工程语义及换版 | M 主写共享合同/读取，P 主写源语义/定位，F 主写视图 | 可核对的源绑定活动/声明、当前选择、时间精度、比较跨度与覆盖；没有真实结果时明确未完成 |
+| T1 最小工程语义及改版 | M 主写共享合同/读取，P 主写源语义/定位，F 主写视图 | 可核对的源绑定活动/声明、当前选择、时间精度、比较跨度与覆盖；没有真实结果时明确未完成 |
 | V1 工程态势 | F 视图，M 轻量摘要/授权聚合 | 选中 Matter 先有准确工程内容；全局只显示真实可得范围与覆盖，不造数、不隐去关键缺口 |
 | T2 图谱联动 | F 交互，M 真实关系读取 | 同文件多时间条目仍能准确往返；USED 有实际使用主体及来源版；计划、发布、执行、效果不互代 |
 
@@ -68,13 +68,13 @@ F1a 先覆盖“有问题无综合、旧综合未覆盖新工作、更正请求�
 本说明未新增模型请求、解析或业务保存，也没有将既有综合疑点或跨事项比较的失败宣布解决。它们继续按 M 集成记录的准确状态推进。
 
 
-## 2026-09-16 换版两端读取增量（本地实现，待发布联调）
+## 2026-09-16 改版两端读取增量（本地实现，待发布联调）
 
 M 新增 `readDocumentRevisionReading` 客户端函数与共享 `DocumentRevisionReadingRequest/Response`，走现有文档路径 `GET /api/document-management/document-versions/:documentVersionId/revision-reading`。路径 ID 是 after，查询需提供 after 的 `parseRunId/semanticRevision`、before 的 `beforeDocumentVersionId/beforeParseRunId/beforeSemanticRevision` 和 `roleKey`。两端均须精确版本；Host 分别校验 ACL，并限制为同 family 不同 DV。不会建立新事项、选择有效版、重新解析或记录评估覆盖。
 
-F 可在换版视图调用该函数：两侧 `publisherRevisionDescriptions` 保留各版本自身说明和原文定位；空数组仅表示未定位到支持的说明角色。`selectedSections` 包含该角色实际内容及父级条件，`sections` 可供选择，`unselectedUnitIds` 表示本次未比较范围。`systemComparison` 仅比较标题、段落及父级条件的空白归一化文本；表格、重复或缺失角色、结构/文字限制返回 `NOT_COMPARED` 与原因。`TEXT_EQUAL` 不表示工程影响不变；图示限制继续保留在 `coverage`。各来源链接使用各自 binding 和 SourceRef，不能共用 after 身份。
+F 可在改版视图调用该函数：两侧 `publisherRevisionDescriptions` 保留各版本自身说明和原文定位；空数组仅表示未定位到支持的说明角色。`selectedSections` 包含该角色实际内容及父级条件，`sections` 可供选择，`unselectedUnitIds` 表示本次未比较范围。`systemComparison` 仅比较标题、段落及父级条件的空白归一化文本；表格、重复或缺失角色、结构/文字限制返回 `NOT_COMPARED` 与原因。`TEXT_EQUAL` 不表示工程影响不变；图示限制继续保留在 `coverage`。各来源链接使用各自 binding 和 SourceRef，不能共用 after 身份。
 
-`publicationRelationship=NOT_VERIFIED` 明确没有证明最新、相邻或完整修订跨度；`assessmentCoverage=NOT_RECORDED_BY_THIS_READ` 明确尚未记录新版评估。正式身份/有效性仍由现有准确目录读取与本轮工作给出，不能由本接口的 DV/parseRun/semanticRevision 推导。本增量只交付读取合同、后端路由和客户端函数；生产视图接入、线上两端读取与完整换版业务验收仍待完成。
+`publicationRelationship=NOT_VERIFIED` 明确没有证明最新、相邻或完整修订跨度；`assessmentCoverage=NOT_RECORDED_BY_THIS_READ` 明确尚未记录新版评估。正式身份/有效性仍由现有准确目录读取与本轮工作给出，不能由本接口的 DV/parseRun/semanticRevision 推导。本增量只交付读取合同、后端路由和客户端函数；生产视图接入、线上两端读取与完整改版业务验收仍待完成。
 
 
 同一读取服务也由既有工程 MCP `read_document_original` 消费，after 使用原工具的 `documentVersionId/parseRunId/semanticRevision`，before 放入 `compareWith`，同时指定 `roleKey`；该模式不接受分页或 `sectionId`，不复制 HTTP 逻辑。MCP 分别取得两端实际来源授权，要求同一 tenant/actor，再执行统一读取。该入口仍为只读，不创建评估任务或覆盖记录。
@@ -84,7 +84,7 @@ F 可在换版视图调用该函数：两侧 `publisherRevisionDescriptions` 保
 
 2026-09-16 登录恢复后，M 已通过正式安装的 c109 `createHostMcpConnection` 执行真实 MCP 两端读取：`ftd.status` 返回 `TEXT_DIFFERENT`，`ftd.final_action` 返回 `TEXT_EQUAL`，`ftd.reference_categories` 返回 `NOT_COMPARED / NON_PLAIN_TEXT_CONTENT`。三次调用均校验两端精确 DV、parseRun 与 semanticRevision=1；各端各保留一组厂家修订说明，并分别返回未选择单元。连接及既有工具清单兼容检查通过。本轮只读，不触发模型、重解析或工作保存。
 
-上述证据补齐真实 MCP 读取，仍不证明正式版本次序、完整换版跨度或评估覆盖；返回值继续为 `publicationRelationship=NOT_VERIFIED`、`assessmentCoverage=NOT_RECORDED_BY_THIS_READ`。HTTP 浏览器身份读取、生产视图接入与完整换版业务验收仍待完成。T1 隔离样例不得将本次文本比较结果映射为工程影响不变。
+上述证据补齐真实 MCP 读取，仍不证明正式版本次序、完整改版跨度或评估覆盖；返回值继续为 `publicationRelationship=NOT_VERIFIED`、`assessmentCoverage=NOT_RECORDED_BY_THIS_READ`。HTTP 浏览器身份读取、生产视图接入与完整改版业务验收仍待完成。T1 隔离样例不得将本次文本比较结果映射为工程影响不变。
 
 真实浏览器 HTTP 联调已定位一处入口错误：裸地址导航先被平台 CSRF 拒绝；按现有客户端规则携带同源 CSRF 头后，请求到达 Host，返回 `ENGINEERING_MATTER_RUNTIME_AUTHORIZATION_UNAVAILABLE`。原因是共用读取服务无条件进入仅供 Hosted SQL 身份使用的 `withActorScope`。本地修复将 HTTP 路由接入 `readForBrowser`，沿用已经过登录及对象入口 guard 的请求身份与 RLS；MCP 继续使用原 Hosted scope。两端原文授权、准确语义修订、同 family 检查及返回前来源回查仍共用。三套十七项定向测试及 server 类型检查通过；此修复待技术发布和相同浏览器请求复测，不将 MCP 成功视为 HTTP 已通过。
 

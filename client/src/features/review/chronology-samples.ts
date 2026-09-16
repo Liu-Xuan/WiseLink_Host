@@ -196,7 +196,7 @@ export const CHRONOLOGY_SAMPLE_ACTIVITIES: ChronologyActivitySample[] = [
   },
   {
     activityKey: 'act:formal-revision-target',
-    label: '服务通告 SB-2026-114 合规目标（同 family 正式换版）',
+    label: '服务通告 SB-2026-114 合规目标（同 family 正式改版）',
     claims: [
       {
         claimKind: 'TARGET',
@@ -210,7 +210,7 @@ export const CHRONOLOGY_SAMPLE_ACTIVITIES: ChronologyActivitySample[] = [
       },
     ],
     selectedClaimIndex: 0,
-    note: '正式换版比较要求同一 family 的不同 DV；对应下方换版比较样例。',
+    note: '正式改版比较要求同一 family 的不同 DV；对应下方改版比较样例。',
   },
 ];
 
