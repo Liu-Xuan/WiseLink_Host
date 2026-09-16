@@ -1363,3 +1363,5 @@ FTD revision 12 还精确引用 SB revision 16 的问题 `claim_maintenance_disr
 当前原文合同能够提供作者标题和页级来源，但没有独立的“业务主题目录”，所以该标签明确禁用并说明未取得，不由英文标题或文本相似度猜测。中英对照继续读取已保存翻译及其缺项、版本与来源；本轮没有触发中文生成，也没有把译文提升为根证据。解析、刷新和独立原件入口收进“文档处理”折叠区，固定解析版本、读取覆盖与限制仍直接可见。
 
 1600×1000 与 390×844、DPR 1、reduced-motion 的固定视口使用隔离构造的准确 DocumentVersion/ParseRun/SourceRef 响应和构造 PDF，只验证生产 React 布局、作者目录、双栏、页切换和响应式结构；不作为线上原件、中文或视觉验收。桌面实际为左目录、中央连续原文和右侧受控 PDF，手机默认只显示原文并提供“查看原件”切换；分隔条支持指针及左右方向键，目录和全屏均有键盘可用入口。
+
+前端提交 `57da93d0f2f7bf2935ec2c06d945ff7571d17ab9`（父提交 `0b33532bbc3db281a5b23699389812cada75a783`）只包含独立精读页面、原文阅读器、受控原件预览、专用工作台、样式、定向测试和本记录，origin/github 同名开发分支已回读相同 SHA。定向 Jest 2 个 suite、16 项、client typecheck、受影响源码 ESLint/CSS stylelint、client production build、完整 precommit 与 diff check 通过。release `7686244726098037741` 已 `finished`，精确 `commit_id=57da93d0f2f7bf2935ec2c06d945ff7571d17ab9`，`error_logs=[]`。该技术发布不替代登录态线上真实原件、译文和返回位置核对。
