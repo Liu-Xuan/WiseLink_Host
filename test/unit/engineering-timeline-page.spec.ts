@@ -36,6 +36,32 @@ describe('engineering timeline view', () => {
     expect(html).toContain('从资料库选择准确版本');
     expect(html).toContain('不默认使用示例或其他版本');
   });
+
+  it('draws a quarter as a range and keeps TBD outside the calendar map', () => {
+    const binding = {
+      documentVersionId: 'DV1', parseRunId: 'PR1', parseRevision: 1,
+      sourceArtifactId: 'SA1', sourceSha256: 'a'.repeat(64), sourceByteLength: 1,
+    };
+    const candidate = {
+      schemaVersion: 'wiselink.document.activity-candidate.v1', candidateOnly: true,
+      sourceBinding: { original: binding, semanticRevision: 1 },
+      readCoverage: { status: 'DELIVERED_RANGES_ONLY', selection: { sectionIds: [] }, deliveredRanges: [], sourceCoverage: { knownPageCount: 0, readPageIndexes: [], unresolvedRanges: [] } },
+      sourceAnchors: [], runRef: 'run', candidateRevision: 1,
+      producer: { skillVersion: 's', modelVersion: 'm' }, savedAt: '2026-09-16',
+      statements: [
+        { statementId: 'Q', statementKey: 'q', label: '季度预计', quotes: [], time: { role: 'TARGET', precision: 'QUARTER', expression: 'CALENDAR', raw: '2026 Q4', quoteIndex: 0 }, statusRaw: null, limitations: [] },
+        { statementId: 'T', statementKey: 't', label: '时间待定', quotes: [], time: { role: 'UNKNOWN', precision: 'UNKNOWN', expression: 'TBD', raw: 'TBD', quoteIndex: 0 }, statusRaw: null, limitations: [] },
+      ],
+    } as any;
+    const html = renderToStaticMarkup(createElement(DocumentActivityTimelineView, {
+      reading: { familyId: 'F1', binding, candidate }, selectedStatementId: 'T',
+      onSelectStatement: jest.fn(), onOpenReading: jest.fn(),
+    }));
+    const map = html.match(/<svg[\s\S]*?<\/svg>/u)?.[0] ?? '';
+    expect(map).toContain('activity-map-range');
+    expect(map).not.toContain('TBD');
+    expect(html).toContain('日期未定／尚无可计算时间');
+  });
 });
 
 describe('engineering timeline page gates', () => {
