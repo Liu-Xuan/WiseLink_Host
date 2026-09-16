@@ -12,7 +12,7 @@ description: Orchestrate the single official hosted WiseLink engineering profile
 - hosted app：`app_17c3zn24kv2`
 - logical profile：`wiselink-engineering`
 - model policy：`official-hosted-profile-config`（任务可绑定已登记的内置或用户授权自定义模型；仍经唯一官方 Hosted profile/Gateway）
-- Skill：`wiselink-research-and-synthesize@r09.c109`
+- Skill：`wiselink-research-and-synthesize@r09.c110`
 - Skill compatibility：`wiselink-research-and-synthesize@r09`（历史任务最低接受 `r09.c10`，翻译 v2 必须为 `r09.c44` 或更新兼容包）
 - Host MCP：`wiselink-openclaw-engineering-assessment@1.2.0`（保留既有工具，新增语义翻译工作与 JobAid 来源/工作工具）
 - Host 集成提交：以本次发布包清单记录的实际提交为准
@@ -557,7 +557,7 @@ Interactive Review 的复杂 ResultEnvelope 必须由 `sealResultEnvelope` 生�
 当前 validator 强制：
 
 - `modelVersion` 优先取响应中可读实际模型；绑定任务未回报实际模型时使用 `configured-route:<modelRef>`，旧无绑定任务使用无 fallback 的 configured endpoint。后两者只证明路由，不代表已暴露下游具体模型，也不做具体版本等值判断
-- `skillVersion=wiselink-research-and-synthesize@r09.c109`
+- `skillVersion=wiselink-research-and-synthesize@r09.c110`
 - `toolVersions.wiselink-openclaw-engineering-assessment=1.2.0`
 - `promptVersion` 非空并来自当前运行
 - task/result exact binding、SourceRef allowlist 和 canonical hash 一致
@@ -612,3 +612,5 @@ Host 拒绝 severity/likelihood 的业务依据时，反馈具体风险字段及
 文档处理默认由 Host 官方插件有界执行；使用原有确定性消费者的 `--document-version-id` 模式，按 [消费入口](references/hosted-review-consumer.md) 接入真实授权与持久恢复。不要创建假的工程 WorkItem 或把插件生产者伪装为工程模型。工程输入只消费确切原文及其覆盖范围，中文独立可读；原文发布、中文完成与工程候选保存分别判断。事项 READ_ORIGINAL、稀疏 inputDispositions 和显式复看条件服从 Host 已绑定来源及任务有效性，模型不能凭旧引用宣称已读或无影响。
 
 已明确结束且无完整载荷的失败，正常后继可使用 Host 重新授权保留的已读证据继续生成；一般 HTTP 错误、响应未知或不完整候选不作为可重放工作。后继不复活旧任务、不改原模型和来源绑定，不自动将函数缺失解释为 TPM 或 length。
+
+Host documentActivityAction 的文档活动消费由 `scripts/consume-hosted-document-activity.mjs` 的确定性消费者执行：STATUS 优先、null/pending 或已存 result 零模型、仅消费显式 BEGIN 产生的已有 run，消费者不得自动 BEGIN；SAVE 回执丢失只查 `STATUS.result`，禁止重生成。合同见 [document-activity 工作协议](references/document-activity-work.md)。
