@@ -46,7 +46,7 @@ describe('canonical Host production client boundary', () => {
     expect(intake).toContain('sourceByteLength');
     expect(home).toContain('HostedDevelopmentIntake');
     expect(home).toContain('retryDevelopmentWorkItem');
-    expect(reparse).toContain("failureCode === 'SOURCE_BINDING_FAILED'");
+    expect(reparse).toContain('isRetryableParseFailureCode');
     expect(reparse).toContain("projection.phase === 'PARSE_REQUESTED'");
     expect(reparse).toContain(
       "projection.phase === 'CANDIDATE_READBACK_VERIFIED'",

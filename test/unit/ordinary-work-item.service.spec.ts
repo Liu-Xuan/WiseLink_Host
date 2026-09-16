@@ -737,7 +737,7 @@ describe('OrdinaryWorkItemService run identity', () => {
       row: { workItemId: 'WI-NEW-SB' },
       projection: {
         phase: 'FAILED',
-        failure: { failureCode: 'SOURCE_BINDING_FAILED' },
+        failure: { failureCode: 'PDF_OCR_REQUIRED_UNSUPPORTED' },
       },
     });
     targetValue.repository.reopenRetryableParseFailure.mockResolvedValue({

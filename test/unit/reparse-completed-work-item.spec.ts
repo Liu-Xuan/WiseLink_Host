@@ -28,6 +28,21 @@ describe('completed WorkItem explicit reparse client semantics', () => {
     ).toBeNull();
   });
 
+  it('retries the same WorkItem after the required OCR runtime is deployed', () => {
+    expect(
+      availableParseAction(
+        true,
+        projection({
+          phase: 'FAILED',
+          package: null,
+          failure: {
+            failureCode: 'PDF_OCR_REQUIRED_UNSUPPORTED',
+          } as never,
+        }),
+      ),
+    ).toBe('RETRY_FAILED_PARSE');
+  });
+
   it('accepts a new Attempt only when the response and fresh readback keep the same WorkItem and DV', () => {
     const run = runResponse();
     const readback = readbackResponse();
