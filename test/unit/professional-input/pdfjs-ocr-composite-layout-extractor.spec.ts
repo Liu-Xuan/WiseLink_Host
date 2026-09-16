@@ -197,6 +197,69 @@ describe('PdfjsOcrCompositeLayoutExtractor', () => {
     },
   );
 
+  it('preserves a low-confidence raster diagram as a source-bound figure', () => {
+    const layout = nativeLayout('VISUAL_TEXT_UNVERIFIED');
+    const provider = providerWith((input) => ({
+      sourceSha256: input.layout.sourceSha256,
+      sourceByteLength: input.layout.sourceByteLength,
+      pageCount: input.layout.pageCount,
+      providerId: 'test-host-ocr',
+      targets: input.targets.map((target) => ({
+        targetId: target.targetId,
+        page: target.page,
+        status: 'FAILED' as const,
+        reason: 'OCR_LOW_CONFIDENCE' as const,
+        diagnostic: 'OCR_LOW_CONFIDENCE:diagram-line-art',
+      })),
+    }));
+
+    const preserved = compositeFor(layout, provider).extractLayout(BYTES);
+    expect(preserved).toBe(layout);
+
+    const pipeline = runProfessionalInputPipelineFromLayout(preserved, {
+      artifact: {
+        artifactRef: 'artifact://CanonicalArtifactStore/diagram.pdf',
+        normalizedPath: 'diagram.pdf',
+      },
+      document: {
+        documentCode: 'DIAGRAM-001',
+        documentType: 'service_bulletin',
+        language: 'en-US',
+      },
+      lineage: {
+        generatedAt: '2026-09-16T00:00:00.000Z',
+        producerName: 'pdfjs-ocr-composite-test',
+        producerVersion: 'test',
+      },
+    });
+
+    const figureSourceUnit = pipeline.unitSet.units.find(
+      (unit) => unit.kind === 'figure_region',
+    );
+    expect(figureSourceUnit).toMatchObject({
+      expectedSemantic: 'figure',
+      continuityKey: 'page-1-material-visual',
+    });
+    expect(figureSourceUnit?.sourceRefIds).toHaveLength(1);
+    expect(
+      (pipeline.pkg.contentUnits as Array<Record<string, unknown>>).find(
+        (unit) => unit.kind === 'figure',
+      ),
+    ).toMatchObject({
+      kind: 'figure',
+      sourceRefIds: figureSourceUnit?.sourceRefIds,
+      payload: {
+        assetIds: [],
+        referenceIds: [],
+      },
+    });
+    expect(pipeline.pkg.result).toMatchObject({
+      status: 'complete',
+      contentPreserved: true,
+      structuredCoverageComplete: true,
+    });
+  });
+
   it('fails closed when OCR conflicts with overlapping native text', () => {
     const layout = nativeLayout('VISUAL_TEXT_UNVERIFIED');
     const provider = providerWith((input) => ({

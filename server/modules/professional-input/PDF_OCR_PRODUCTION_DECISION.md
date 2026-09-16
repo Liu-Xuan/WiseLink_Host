@@ -127,8 +127,12 @@ actual PDF bytes
 
 The renderer, Tesseract executable/runtime, and required language assets must
 be part of the Miaoda deployment contract rather than discovered from the
-developer machine. Any missing asset, page OCR failure, empty OCR result, or
-unmapped bbox remains `PDF_OCR_REQUIRED_UNSUPPORTED`/fail-closed.
+developer machine. Any missing asset, empty text-layer page OCR failure, empty
+OCR result, or unmapped bbox remains `PDF_OCR_REQUIRED_UNSUPPORTED`/fail-closed.
+A material raster region on a page that already has native text is retained as
+a source-bound `figure` when its OCR is review-only low-confidence; uncertain
+tokens are not promoted into body text, and the figure resolves back to the
+original PDF page.
 
 Actual-byte acceptance at the pinned runtime materialized the two-page CAAC
 scan, the rotated Chinese Operation Tip, and AD2020 pages 47-53 (including p48:
@@ -137,10 +141,13 @@ the frozen.2 strict U0 validator and Unified Reader; Reader returned p48 RVSM
 text with page 48, quote, and granular bbox. Digital FTD and FAA AD produced
 zero OCR pages and byte-identical packages versus the native extractor.
 
-TCI p1, 737 p7/p21, Boeing SL p9, Boeing MT p2, Airbus AOT p4/27-28/37-38/42,
-and Airbus Concession p5 remained explicitly fail-closed under the same pinned
-runtime because required targets were empty or below confidence. These are
-observed outcomes, not silent fallback or claims of document completion.
+TCI p1, Boeing SL p9, Boeing MT p2, Airbus AOT p4/27-28/37-38/42, and Airbus
+Concession p5 remained explicitly fail-closed under the original acceptance
+run because required targets were empty or below confidence. The 737 p7/p21
+line-art regions are now retained as page-bound figures when their OCR remains
+below confidence; this does not turn the rejected OCR tokens into source text.
+These are observed outcomes, not silent fallback or claims that visual labels
+were recognized as authoritative text.
 
 ## Non-claims
 

@@ -389,7 +389,12 @@ describeRealSb(
         byteLength: EXPECTED_SOURCE_BYTE_LENGTH,
       });
       expect(pkg.sourceRefs).toHaveLength(600);
-      expect(pkg.contentUnits).toHaveLength(599);
+      expect(pkg.contentUnits).toHaveLength(601);
+      expect(
+        pkg.contentUnits.filter(
+          (unit) => (unit as { kind?: string }).kind === 'figure',
+        ),
+      ).toHaveLength(2);
       const wholePageRefs = pkg.sourceRefs.filter(
         (ref) =>
           ref.pageStart === ref.pageEnd &&
@@ -599,7 +604,7 @@ describeRealSb(
         assessmentInput.upstreamBinding.unifiedParsedPackage.currentness,
       ).toBe('current');
       expect(assessmentInput.publicPackageObservation).toMatchObject({
-        contentUnitCount: 599,
+        contentUnitCount: 601,
         sourceRefCount: 600,
       });
       expect(

@@ -164,6 +164,45 @@ export function buildSourceUnitSet(
     order += 1;
   }
 
+  // A material raster region whose OCR is review-only remains useful as a
+  // figure when it is bound to the original PDF page. Do not turn uncertain
+  // diagram labels into source text. The figure unit gives downstream readers
+  // an explicit, clickable source object while preserving the original bytes.
+  for (const diagnostic of layout.pageTextLayerDiagnostics) {
+    if (diagnostic.status !== 'VISUAL_TEXT_UNVERIFIED') continue;
+    const pageRef = sourceRefs.find(
+      (ref) =>
+        ref.pageStart === diagnostic.page &&
+        ref.pageEnd === diagnostic.page &&
+        ref.bbox.join(',') === '0,0,1000000,1000000',
+    );
+    if (!pageRef) {
+      throw new ProfessionalInputPureError(
+        'SOURCE_UNIT_SET_VISUAL_PAGE_REF_MISSING',
+        `Material visual content on page ${diagnostic.page} has no page source reference.`,
+      );
+    }
+    const caption = lines
+      .filter((line) => line.page === diagnostic.page)
+      .map((line) => line.text.trim())
+      .find((text) => /^figure\b/iu.test(text));
+    units.push(
+      buildUnit({
+        artifactId,
+        sourcePackageId,
+        kind: 'figure_region',
+        semantic: 'figure',
+        order,
+        page: diagnostic.page,
+        bbox: fullPageBbox(layout, diagnostic.page),
+        text: caption ?? '',
+        sourceRefIds: [pageRef.sourceRefId],
+        continuityKey: `page-${diagnostic.page}-material-visual`,
+      }),
+    );
+    order += 1;
+  }
+
   const memberHash = sourceUnitSetMemberHash(units, sourceRefs);
   const setHash = `sha256:${memberHash}`;
   return {
