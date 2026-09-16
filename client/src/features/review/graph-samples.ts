@@ -92,7 +92,7 @@ export const GRAPH_RELATION_SAMPLE_PROJECTION: CanonicalLibraryIndexReadResponse
           id: 'dv-sample-b',
           parentId: 'doc-sample-graph-a',
           kind: 'DOCUMENT_VERSION',
-          label: 'SB-A（R2 换版）',
+          label: 'SB-A（R2 改版）',
           detail: '目标 2025-Q4',
           state: 'SAMPLE',
           targetNode: 'reader',
@@ -165,7 +165,7 @@ export const GRAPH_RELATION_SAMPLE_PROJECTION: CanonicalLibraryIndexReadResponse
 export const GRAPH_RELATION_SAMPLE_ENTRIES: GraphRelationSampleEntry[] = [
   {
     entryKey: 'entry:sb-a-revision-history',
-    label: 'SB-A 换版历史（同文件多时间条目）',
+    label: 'SB-A 改版历史（同文件多时间条目）',
     nodeId: 'doc-sample-graph-a',
     scenarioNote:
       '同一文件保留稳定身份与各来源声明；新版未提不等于取消，晚收到旧事件不等于新发生。',
@@ -187,7 +187,7 @@ export const GRAPH_RELATION_SAMPLE_ENTRIES: GraphRelationSampleEntry[] = [
         sourceRef: {
           documentVersionId: 'dv-sample-b',
           locator: 'sec-4.2',
-          sourceLabel: '厂家服务通告 A（R2 换版）',
+          sourceLabel: '厂家服务通告 A（R2 改版）',
         },
       },
       {
@@ -204,9 +204,9 @@ export const GRAPH_RELATION_SAMPLE_ENTRIES: GraphRelationSampleEntry[] = [
     relations: [
       {
         relationKey: 'rel:sb-a-r1-r2-revision',
-        label: 'R1 → R2 换版',
+        label: 'R1 → R2 改版',
         status: 'REAL_CONTRACT_PENDING',
-        note: '换版关系的真实读取合同待主控交付；计划、发布、执行、效果不互代。',
+        note: '改版关系的真实读取合同待主控交付；计划、发布、执行、效果不互代。',
       },
     ],
   },
@@ -250,7 +250,7 @@ export const GRAPH_RELATION_SAMPLE_ENTRIES: GraphRelationSampleEntry[] = [
         sourceRef: {
           documentVersionId: 'dv-sample-b',
           locator: 'sec-4.2',
-          sourceLabel: '厂家服务通告 A（R2 换版）',
+          sourceLabel: '厂家服务通告 A（R2 改版）',
         },
       },
     ],

@@ -113,7 +113,7 @@ export function buildMatterJobAidTask(input: {
       capabilities: [
         { capability: 'registered_source_reading', status: 'AVAILABLE' as const,
           impact: '本轮触发原因以trigger和sourceChanges为准，previousWork是历史认识，不是重复执行旧指令。来源或语义变化需核对所列新范围及条件，保留不受影响的既有问题。优先用originalReadRef读取boundOriginal绑定的已发布修订及其固定semantic revision；历史任务未捕获绑定时Host在首次读取确定版本。按返回nextOffset继续，原文修订变化只表示需要核查影响，不预设工程结论变化。PDF页文本层仍可独立读取；目录不代表已读，coverage限制须保留。' +
-            '来源变化先比较sourceChanges中的covered与current，再用实际读取返回的documentIdentity核对具体family、正式版次与目录选择；documentVersionId变化本身不证明厂家正式换版，parseRun或semantic revision变化也不是正式换版。确认同family正式换版后，依次读取本版Revision Description/Transmittal等发布方修订说明及其准确SourceRef、新版正文和完整条件，再对照previousWork中的历史评估与工程文件关联；系统文本diff不能冒充发布方说明。没有说明、现行性未核实或关键正文不可读时明确缺口，不能默认不变。普通参考更新只按实际内容调整事项认识，不能改写另一文件条款。即使工程结论不变，也须记录新版实际读取范围、比较和覆盖；不得把旧SourceRef直接替换为新版引用。未影响内容保留，综合须说明所依据准确工作和未覆盖变化。以上说明处理方法，不代表已取得两份正式版本或已完成比较。' },
+            '来源变化先比较sourceChanges中的covered与current，再用实际读取返回的documentIdentity核对具体family、正式版次与目录选择；documentVersionId变化本身不证明厂家正式改版，parseRun或semantic revision变化也不是正式改版。确认同family正式改版后，依次读取本版Revision Description/Transmittal等发布方修订说明及其准确SourceRef、新版正文和完整条件，再对照previousWork中的历史评估与工程文件关联；系统文本diff不能冒充发布方说明。没有说明、现行性未核实或关键正文不可读时明确缺口，不能默认不变。普通参考更新只按实际内容调整事项认识，不能改写另一文件条款。即使工程结论不变，也须记录新版实际读取范围、比较和覆盖；不得把旧SourceRef直接替换为新版引用。未影响内容保留，综合须说明所依据准确工作和未覆盖变化。以上说明处理方法，不代表已取得两份正式版本或已完成比较。' },
         { capability: 'fleet_configuration', status: 'NOT_CONNECTED' as const,
           impact: '未取得当前对象的受控装机、执行或构型查询。' },
         { capability: 'reliability_history', status: 'NOT_CONNECTED' as const,

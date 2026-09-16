@@ -91,13 +91,13 @@ export default function ChronologyRevisionCompareView({
       <CardHeader>
         <CardTitle className="flex items-center gap-2 text-base">
           <GitCompareArrows className="size-4" />
-          换版比较（同 family 正式换版，隔离样例）
+          改版比较（同 family 正式改版，隔离样例）
         </CardTitle>
       </CardHeader>
       <CardContent className="space-y-4">
         {compares.length === 0 ? (
           <p className="text-sm text-muted-foreground">
-            暂无换版比较样例；两端 revision-reading 已交付（技术发布），生产视图未接入，完整活动历史与正式版本关系仍缺。
+            暂无改版比较样例；两端 revision-reading 已交付（技术发布），生产视图未接入，完整活动历史与正式版本关系仍缺。
           </p>
         ) : (
           <>

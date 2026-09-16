@@ -40,7 +40,7 @@ export default function EngineeringChronologyPreviewPage() {
           工程历程视图（隔离样例）
         </h1>
         <p className="text-sm text-muted-foreground">
-          技术过程时间线保留原用途；活动/声明与换版比较以样例演示。两端
+          技术过程时间线保留原用途；活动/声明与改版比较以样例演示。两端
           revision-reading 已交付，生产视图未接入；完整活动历史与正式版本关系仍缺。
         </p>
       </header>

@@ -4,37 +4,39 @@
 
 经 Astra 审阅，M 从前端 `b2de672f6226f08d6b515923df2436c0f7970ab6`（父 `7b176d8e531bc9d201a769a8a5d21aa4dff14301`）选择取入 T1 的四个组件/样例文件及一份定向测试卷，恢复 `/dev-preview/chronology` 路由。没有整分支覆盖，T2、server、平台升级及会话计划均未纳入。已交付读取的说明、比较目标文案、空数据和无效 URL 清理均已修正；M 将 case1 的通用免责声明断言与 case4 的 TEXT_EQUAL 逐字说明分开，避免测试描述与默认样例不一致。
 
-F 实际完成双端类型及六条定向浏览器验证（含三个空数据 fixture）；M 集成后的客户端类型与受影响 ESLint 通过。该批是同组件隔离样例，生产视图与真实业务仍未接入；集成代码尚待发布。用户指定 Luna 负责原前端构建会话操作与阶段结果回传，M/Astra 负责审查、选择性集成和下一批计划，避免多个执行者并控同一会话。
+F 实际完成双端类型及六条定向浏览器验证（含三个空数据 fixture）；M 集成后的客户端类型与受影响 ESLint 通过。集成提交 `7df22f4f0709ebb9a2612db814a635b00785d502` 已双远端同步，Host 发布 `7685932065007291328` finished 且最终 SHA 一致。该批是同组件隔离样例，生产视图与真实业务仍未接入。用户指定 Luna 负责原前端构建会话操作与阶段结果回传，M/Astra 负责审查、选择性集成和下一批计划，避免多个执行者并控同一会话。
 
-## 2026-09-16 换版 HTTP 身份修复与真实读取
+按用户最新术语要求，主控已统一改用“改版”：14 份源码、文档和测试说明共替换82处中文术语，英文 API/类型标识保持兼容。逐文件核对仅作对应文字替换，JSON 解析与 diffcheck 通过，不因术语修改重跑业务或模型。前端后续方案同样采用新术语。
+
+## 2026-09-16 改版 HTTP 身份修复与真实读取
 
 Host 发布 `7685928474716589252` 已 finished，最终提交为 `8295cd20b0a22b387ecf8b3bbd964a2ebd87db3e`，origin/github 同名开发分支已核对一致。真实浏览器请求原先因共用服务误入 Hosted 专用 SQL actor scope 返回 404；HTTP 已改用经原登录/对象 guard 的浏览器请求身份及 RLS，MCP 仍保留 Hosted actor scope。两端来源授权、精确绑定、同 family 与返回前回查未变。三套17项测试、server 类型及定向 ESLint 通过。
 
 正式登录浏览器按现有客户端 CSRF 规则发起只读请求，发布后 `ftd.status` 返回 HTTP 200 / TEXT_DIFFERENT，`ftd.final_action` 返回 HTTP 200 / TEXT_EQUAL；后者逐项确认两端 DV、parseRun、semanticRevision=1 和原件 SHA/字节数，各端修订说明均为一组。首次发布后调试观察超时，浏览器资源记录确认该请求已经 200；随后完整读取内容，不将观察超时记为业务失败。没有改动页面内容或身份设置。
 
-正式安装 c109 的真实 MCP 三次调用也已通过：Status 不同、Final Action 文本一致、Reference Categories 为 NOT_COMPARED / NON_PLAIN_TEXT_CONTENT。此轮仅验证读取，未新增模型请求、重解析或工作保存。HTTP/MCP 均保留 NOT_VERIFIED 的正式版次关系和 NOT_RECORDED_BY_THIS_READ 的评估覆盖。生产换版视图、完整活动/声明历史及完整换版业务验收仍未完成；T1 修订由 Astra 对接原前端会话，尚未集成。
+正式安装 c109 的真实 MCP 三次调用也已通过：Status 不同、Final Action 文本一致、Reference Categories 为 NOT_COMPARED / NON_PLAIN_TEXT_CONTENT。此轮仅验证读取，未新增模型请求、重解析或工作保存。HTTP/MCP 均保留 NOT_VERIFIED 的正式版次关系和 NOT_RECORDED_BY_THIS_READ 的评估覆盖。生产改版视图、完整活动/声明历史及完整改版业务验收仍未完成；T1 修订由 Astra 对接原前端会话，尚未集成。
 
-## 2026-09-16 换版读取修复版技术发布完成
+## 2026-09-16 改版读取修复版技术发布完成
 
 Host 修复版发布已 finished，完成态精确提交 e5cdf5b96b78d2208ac28c6d0d5912051f3f9851，与 origin/github 同名开发分支一致；新增独立工具名已撤回，使用既有 read_document_original 的 compareWith 模式，未修改已安装 c109 或工具清单校验。
 
-官方 online 只读 SELECT 已取得两端精确 parseRun 的已保存 semanticRevision 1，绑定 manifest SHA 与此前下载原文一致；两份保存结构与此前本地派生结构逐字段一致，代入新比较器后各角色比较结果一致。该证据确认当前真实持久数据，仍不是线上 HTTP/MCP 调用验收。Hosted 浏览器刷新后进入飞书扫码登录页，已请用户在原标签登录，未新建/重放评估、未启动旧排队开发消息。待恢复登录后做同一只读调用验证；前端生产换版视图、T1/T2 完整真实流程及后续业务目标仍未完成。
+官方 online 只读 SELECT 已取得两端精确 parseRun 的已保存 semanticRevision 1，绑定 manifest SHA 与此前下载原文一致；两份保存结构与此前本地派生结构逐字段一致，代入新比较器后各角色比较结果一致。该证据确认当前真实持久数据，仍不是线上 HTTP/MCP 调用验收。Hosted 浏览器刷新后进入飞书扫码登录页，已请用户在原标签登录，未新建/重放评估、未启动旧排队开发消息。待恢复登录后做同一只读调用验证；前端生产改版视图、T1/T2 完整真实流程及后续业务目标仍未完成。
 
 ## 2026-09-16 MCP 清单兼容修正
 
 准备真实调用时核对已安装 c109，发现消费者严格校验工具名清单，因此新增 read_document_revision 会造成连接拒绝。已将比较移入既有 read_document_original 的可选 compareWith/roleKey 模式，旧单端调用不变；两端模式要求准确 semanticRevision，拒绝分页或 sectionId 混入。未放宽客户端清单校验、未改安装 Skill。实际 Host MCP 注册经本地 HTTP transport 与 c109 validateHostToolMetadata 联合验证：34 工具清单匹配，单端和两端调用各自正确分发，三类混合/缺失选择拒绝；服务端构建及类型检查通过。此前 57ff 技术发布已完成；需随本修复再次发布，才能恢复该消费者兼容性。当前浏览器 Hosted 登录过期，真实 MCP 读回等待用户扫码；此处不声称线上业务验收。
 
-## 2026-09-16 换版读取接入工程消费者（本地已验证，未发布）
+## 2026-09-16 改版读取接入工程消费者（本地已验证，未发布）
 
 在已双远端同步的 a69260e3c 基础上，同一 DocumentRevisionReadingService 接入既有 DocumentWorkRuntimeService 和既有只读 MCP `read_document_original` 的 `compareWith` 模式。MCP 对 before/after 分别执行 authorizeDocumentWork，要求实际 tenant/actor 一致及授权 DV 精确匹配，再走统一服务的原文、语义和返回前权限复查。HTTP 与工程读取共用实现；没有第二套比较器、模型调用或业务保存。三组 15 项定向测试、服务端类型和接线 ESLint 通过，含双授权身份不一致拒绝；原客户端类型已通过。
 
 ## 2026-09-16 同 family 两端原文读取（本地已验证，未发布）
 
-新增共享换版读取合同、纯比较器和 Host Service，接入现有受登录保护的文档 Controller 与客户端读取函数。before/after 都要求准确 DV、parseRun、semanticRevision；分别读取原文及已保存语义，校验同 family 不同 DV，并在返回前再次核验两端权限。GET 不生成语义、不调模型、不选择当前正式版、不写评估覆盖。返回两端各自的出版者修订说明、所选角色及父级条件、未选单元和原始覆盖限制；不把旧版自身说明误作本次两端的 diff。
+新增共享改版读取合同、纯比较器和 Host Service，接入现有受登录保护的文档 Controller 与客户端读取函数。before/after 都要求准确 DV、parseRun、semanticRevision；分别读取原文及已保存语义，校验同 family 不同 DV，并在返回前再次核验两端权限。GET 不生成语义、不调模型、不选择当前正式版、不写评估覆盖。返回两端各自的出版者修订说明、所选角色及父级条件、未选单元和原始覆盖限制；不把旧版自身说明误作本次两端的 diff。
 
 系统比较只处理所选纯文本及父级条件的空白归一化相等性。表格、角色缺失/重复、结构歧义和相关未读文字保持 NOT_COMPARED。全局图示未解读限制继续返回，不伪装图文完整相同，也不禁止已有明确范围的纯文本比较。厂家最新、相邻版次、修订跨度和正式采用没有由本接口证明；本次读取不产生新版评估覆盖。
 
-基于已下载真实两版原文、本地派生语义图的算法核对与 P 的逐页文本核对一致：修订说明/Status/Milestones 文本不同；Applicability/Description/Interim/Final Action/Operator Action 所比文本相同；参考表保留结构，系统不作纯文本相等判断。该核对不是线上接口读回，也不是已保存语义版本验收。8 项定向测试、两端类型检查、定向 ESLint 通过；Luna 只读审阅未发现注册、准确绑定、权限或本批公开内容阻塞。生产换版视图接入、Host 发布后真实读取及完整换版业务验收仍未完成，F 接线参数已补在前端对齐文档。
+基于已下载真实两版原文、本地派生语义图的算法核对与 P 的逐页文本核对一致：修订说明/Status/Milestones 文本不同；Applicability/Description/Interim/Final Action/Operator Action 所比文本相同；参考表保留结构，系统不作纯文本相等判断。该核对不是线上接口读回，也不是已保存语义版本验收。8 项定向测试、两端类型检查、定向 ESLint 通过；Luna 只读审阅未发现注册、准确绑定、权限或本批公开内容阻塞。生产改版视图接入、Host 发布后真实读取及完整改版业务验收仍未完成，F 接线参数已补在前端对齐文档。
 
 ## 2026-09-16 T2 与引用修正发布及线上交互
 
@@ -60,11 +62,11 @@ Hosted终端连接中断后，页面自动重连失败；按提示重新加载�
 
 P按medium完成有界只读核对；M同时核对当前服务实现。正式解析产物与DocumentSemanticMap目前只有来源绑定、章节/角色、单元及覆盖；milestones是章节，CanonicalTimelineProjection仍是技术事件。没有可直接复用的已保存活动/预计声明或跨版本活动身份。现有DocumentSourceProjectionService.step有授权原文读取与纯结构ensure，DocumentSemanticRevisionRepository有原文绑定/CAS修订存储；但ensure已存在即返回，不能靠修改builder宣称旧产物自动升级，更不能在普通索引重试或GET中偷偷增加模型抽取。后续T1需显式、有回执的生产/补产入口与窄声明合同，再接真实消费者；保留原文字面、section/unit/SourceRef、时间含义和精度、已读范围及身份关联依据，季度/TBD/后版未提均不能补成推断事实。当前仍未完成T1生产与持久化，HTML样例不作真实证据；P本轮未取得可复查的真实同活动版本链。
 
-## 2026-09-16 换版处理指导接入实际任务（本地，未发布）
+## 2026-09-16 改版处理指导接入实际任务（本地，未发布）
 
 补充隔离验证：实际 JobAid 保存命令→工作状态校验→序列化读取串联构造R1/R2/R3。旧版读取记录不能满足新版NO_MATERIAL_CHANGE处置；新版实际读取和明确比较后保存新版绑定与有限覆盖，旧正文、旧SourceRef及结果保持不变；第三版仍产生新的pending。原状态未被修改。`jobaid-problem-work.spec.ts` 9项通过，其中扩展了现有完整保存场景；不证明厂家修订说明读取质量或真实两版评估完成。
 
-继续核对第二批发现：现有 `sourceChanges.covered/current` 已携带前后来源绑定，同family材料延续也已有隔离PG场景；不能重复认定这两项缺失。但实际 Matter JobAid 输入尚未明确本版修订说明→新版完整条件→历史评估影响→新版覆盖的处理顺序。已在既有来源阅读指导中补齐，并要求通过实际读取的目录身份辨别正式版次，不把documentVersionId、parseRun或semantic变化直接认定为厂家换版；参考更新不能改写另一文件条款，结论不变仍须记录新版比较与覆盖，旧SourceRef不能直接换绑。两项现有任务协议测试与定向ESLint通过。该增量尚未提交、未纳入待确认的8fb9cd7d7发布；真实两版材料、跨版本声明/活动及业务比较验收仍未完成。
+继续核对第二批发现：现有 `sourceChanges.covered/current` 已携带前后来源绑定，同family材料延续也已有隔离PG场景；不能重复认定这两项缺失。但实际 Matter JobAid 输入尚未明确本版修订说明→新版完整条件→历史评估影响→新版覆盖的处理顺序。已在既有来源阅读指导中补齐，并要求通过实际读取的目录身份辨别正式版次，不把documentVersionId、parseRun或semantic变化直接认定为厂家改版；参考更新不能改写另一文件条款，结论不变仍须记录新版比较与覆盖，旧SourceRef不能直接换绑。两项现有任务协议测试与定向ESLint通过。该增量尚未提交、未纳入待确认的8fb9cd7d7发布；真实两版材料、跨版本声明/活动及业务比较验收仍未完成。
 
 ## 2026-09-16 c109 安装完成，原调度恢复，Host 发布待确认
 
@@ -168,7 +170,7 @@ F 回传四套二十项定向测试、完整 lint（含双端类型检查）、�
 
 ## 2026-09-15 最新前端设计对齐与 F1a 继续
 
-M 与原妙搭 F 任务分别核对用户十份设计附件及接受产品代码 `067494c`，共同确认：业务理解已对齐，工程时间轴、换版比较、工程态势和跨图条目联动的完整合同及功能尚未交付。M 已实际查看静态态势、时间轴、换版及时间条目进入图谱的声明上下文；仅算独立样例证据，不是生产 React 或真实数据验收。
+M 与原妙搭 F 任务分别核对用户十份设计附件及接受产品代码 `067494c`，共同确认：业务理解已对齐，工程时间轴、改版比较、工程态势和跨图条目联动的完整合同及功能尚未交付。M 已实际查看静态态势、时间轴、改版及时间条目进入图谱的声明上下文；仅算独立样例证据，不是生产 React 或真实数据验收。
 
 [设计对齐说明](../WISELINK_FRONTEND_DESIGN_ALIGNMENT_20260915.md)已接入现行执行计划，保留 F0→前端 F1→T1/V1→T2 次序与共享文件单写者。代码核实技术 Timeline 不能充作工程历程；现有语义 map 仅承载章节与来源，尚无稳定活动/预计声明读取。问题工作的 substantiveResult 是阅读投影，其存在不证明综合已形成；输入 coverage 也不等价综合基于哪份历史工作。
 
@@ -232,7 +234,7 @@ M 本轮在此结束。可开始前端集成：从接受基线及本交接文档
 
 本批收口还要求整条 PRIOR_RESULT 与 Host 从确切 A 工作构建的引用完全相等，拒绝根来源未变但摘录被伪造的情况；隔离 PG 反例通过。后续补丁两端 typecheck、生产构建、来源/搜索/MCP 单测、旧/更正精确链接与 unchanged 提示的 SSR 验证通过。
 
-前端集成无需等待整个大 Goal。当前批次接受提交后，M 在集成窗口冻结 `server/**`、`shared/**`、`client/src/**`、`migrations/**`、`package.json`、lockfile 与 `tsconfig*`；仅更新协调文档的部署/验收事实。前端在独立 integration worktree 按接受 SHA 选择性迁入视觉增量，保留本批引用、权限、状态和来源合同。工程 chronology、Matter/global overview、文件换版比较读模型和图谱后端增量均另排后继批次，不与本窗口共同文件双写。
+前端集成无需等待整个大 Goal。当前批次接受提交后，M 在集成窗口冻结 `server/**`、`shared/**`、`client/src/**`、`migrations/**`、`package.json`、lockfile 与 `tsconfig*`；仅更新协调文档的部署/验收事实。前端在独立 integration worktree 按接受 SHA 选择性迁入视觉增量，保留本批引用、权限、状态和来源合同。工程 chronology、Matter/global overview、文件改版比较读模型和图谱后端增量均另排后继批次，不与本窗口共同文件双写。
 
 新增浏览器“引用并比较本事项”及 MCP 可选 referenceWorks：Host 按当前 actor/tenant/service scope 读取 A 的确切工作和完整问题，向 B 交付候选、用途、综合覆盖状态、已知更正及根来源。B 只保存实际使用的引用；不继承 A 的构型、实施状态、概率或风险等级，不把引用摘要当作独立来源。历史链接直达所引工作，原文定位保留。每次领取/读取/保存及检索均重新校验来源权限；引用未首次保存就失败的请求，正常恢复保留同一来源和用途。
 
@@ -256,7 +258,7 @@ Host release `7685693975533718722` 已由官方接口读回 finished，精确提
 
 专用更正请求 `AQ-e7d6043de8ee485dbb914c212ea4c1ea` 已由原355自然消费者完成，正常保存工作3 `MWREV-11e45f18-c6b1-473a-9ce7-232dbfece8a4` 并FINISH为SUCCEEDED。保存正文区分旧版已有Final GADSS追加改动与合并FAA/EASA SB背景，以及新版新增监管审查迭代、政府停摆、FAA批准和EASA协调；明确不能用已过的May 2026目标安排当前改装，也不能将LN1825 completed扩大为全部飞机实施。旧综合标为STALE。参考表16条含本文自身，不能称为16份未读其他文件；已通过同一专用入口受理计数更正 `AQ-04f9fd2a7f6444c78218eb28b7f2f1a8`，结果待核。其他受影响问题及综合仍需保持一致，未作正式采用。
 
-实际工作2暴露两个Host读取/物化缺口：初始focus保存了“综合尚未形成”的占位文字，形成综合后页头仍显示占位；overview-only保存将同准确输入既有分析降为READ_ONLY。最小修复改页头使用已存问题headline、首次focus使用真实问题；仅在问题完整保留、仍引用同binding来源且无显式处置时继承旧SUBSTANTIVE，新增读取单独标为未新增分析，来源/语义换版或显式处置不继承。真实materializer回归8项、工作状态回归23项及两端类型检查通过；Luna已审阅，尚待提交发布。本次只改Host，不重装未变化c108 Skill。
+实际工作2暴露两个Host读取/物化缺口：初始focus保存了“综合尚未形成”的占位文字，形成综合后页头仍显示占位；overview-only保存将同准确输入既有分析降为READ_ONLY。最小修复改页头使用已存问题headline、首次focus使用真实问题；仅在问题完整保留、仍引用同binding来源且无显式处置时继承旧SUBSTANTIVE，新增读取单独标为未新增分析，来源/语义改版或显式处置不继承。真实materializer回归8项、工作状态回归23项及两端类型检查通过；Luna已审阅，尚待提交发布。本次只改Host，不重装未变化c108 Skill。
 
 ## 2026-09-15 派生原文发布与耗尽候选准确收尾
 
@@ -308,13 +310,13 @@ c105 经官方同名安装更新：ZIP 390488字节、SHA256 `8591f2afc8d93eb7ca
 
 维护窗口先确认原三个任务无在途并保存完整配置，官方暂停后安装；完成后恢复原 enabled，schedule、payload、agentId、sessionTarget 逐项一致。原失败综合 `AQ-7a13e67cefb446a98b48870cf6e5056f` 经正常 Host STATUS 确认为 FAILED。随后以精确工作16、事项修订3及固定新 requestId 正常受理 `AQ-567130c431ee418883fc9c32767b7e3d`，初始QUEUED，由原调度自然执行。恢复后首次自然运行分别返回 Matter IDLE、WorkItem NOT_READY、Document DOCUMENT_READY，均为 scheduler ok。新综合请求已自然领取，实际 assessment-invocation 读回 previousWork.overviewStatus=STALE、workRevision=16；新综合随后再次失败：HTTP400、JOBAID_INCOMPLETE_TERMINAL_RESPONSE，round1、saved=null，FINISH正常记录FAILED；原调度已无在途，未产生新工作。输入修复已线上证实，但没有解决托管不完整终态，不原样继续重试。
 
-正式换版下一步的实时只读核验：`document_version_6b998c1544aa06b5f20b2be0` 与 `document_version_78c6d0adb612265f85e1d338` 同属 `family_4aa6b72b084efa83410651ad`，均 COMMITTED_IMMUTABLE；canonicalRevisionIdentity 分别为 GENERATED:2025-09-26、GENERATED:2026-05-27，businessRevision/revisionDate 均空，两个版本均没有 dm_document_parse_run。P/M已完成原PDF的修订说明和全文实际对比，但尚未形成产品原文读取回执与正式版本工作覆盖。Host产品线上URL本轮浏览器打开返回 ERR_CONNECTION_CLOSED；不能由开发侧SQL读取替代正常业务actor授权。跨事项搜索/精确展开代码与已有测试可复用，真实B→A→B保存尚缺。
+正式改版下一步的实时只读核验：`document_version_6b998c1544aa06b5f20b2be0` 与 `document_version_78c6d0adb612265f85e1d338` 同属 `family_4aa6b72b084efa83410651ad`，均 COMMITTED_IMMUTABLE；canonicalRevisionIdentity 分别为 GENERATED:2025-09-26、GENERATED:2026-05-27，businessRevision/revisionDate 均空，两个版本均没有 dm_document_parse_run。P/M已完成原PDF的修订说明和全文实际对比，但尚未形成产品原文读取回执与正式版本工作覆盖。Host产品线上URL本轮浏览器打开返回 ERR_CONNECTION_CLOSED；不能由开发侧SQL读取替代正常业务actor授权。跨事项搜索/精确展开代码与已有测试可复用，真实B→A→B保存尚缺。
 
 ## 2026-09-15 工作16更正已保存，后继综合失败及输入缺口修复
 
 本次从 Host online 持久工作与正常 Hosted MCP `READ_SAVED_WORK` 读回同一工作15后，M与Luna核对了要求标题与条件解释的矛盾、三个结构化开放问题与旧综合“四项”的差异，以及历史轮次说明。正常 `begin_matter_assessment` 以工作15、事项修订3及28条完整目标引用受理 `AQ-add317d43ab142e79ed593ed31546411`；原 Matter cron 自然领取，专用官方更正插件完成生成，Host 正常保存及结束为 `SUCCEEDED`。
 
-工作16为 `MWREV-75632e5d-e5f4-4cd2-8ace-a254f99f5874`。M核对持久 GENERATED 与保存结果：目标正文、要求处理、未决问题三组字段完全相同，其他四个问题完全保留。要求标题已由绝对结论改为待核对的关联判断，正文明确参考不修订SB受控要求、不从未换版推出事项安排绝不变化、不把普通引用或构型能力未连接自动变为整个SB判断的强制前置。真实条件未知仍保留；未形成正式采用或执行决定。Host差异摘要为“目标问题实际更新：正文、要求处理、未决问题。”
+工作16为 `MWREV-75632e5d-e5f4-4cd2-8ace-a254f99f5874`。M核对持久 GENERATED 与保存结果：目标正文、要求处理、未决问题三组字段完全相同，其他四个问题完全保留。要求标题已由绝对结论改为待核对的关联判断，正文明确参考不修订SB受控要求、不从未改版推出事项安排绝不变化、不把普通引用或构型能力未连接自动变为整个SB判断的强制前置。真实条件未知仍保留；未形成正式采用或执行决定。Host差异摘要为“目标问题实际更新：正文、要求处理、未决问题。”
 
 正常产品回读工作16仍为 `overviewStatus=STALE`，旧综合未被冒充为已覆盖。本次随后以精确工作16受理综合核对 `AQ-7a13e67cefb446a98b48870cf6e5056f`，原调度自然运行后以 `JOBAID_INCOMPLETE_TERMINAL_RESPONSE` 失败，未执行 SAVE_WORK，工作16保留。原生 session 显示两次 assistant 消息均无正文或工具调用，第二次 stopReason=length、output=16000；网关返回 HTTP 400 incomplete_result。此次不属于成功综合，也不重放半截响应。
 
@@ -348,7 +350,7 @@ Luna已通过既有机制替换失效CodeM会话并完成一次实际能力核�
 
 P已取得并核验两份原PDF；M重新核对SHA并阅读全部5页，完成章节文字比较和全页视觉核对。原件缺失不再是本次比较的阻塞。页脚导出日期与正文Last Revised Date确实不同，不能将GENERATED日期称为厂家修订日期；现行目录未被改写。
 
-本地比较已区分发布方修订说明、实际变化、未变章节及分页移动，详细来源、页定位和候选影响分析保留在私有报告中。该成果不代表Host已形成新版阅读回执、工作覆盖或综合，也未验证厂家此刻最新有效性。线上精确绑定已确认工作15使用的是另一组来源，没有引用本次比较快照；不据此触发工作15更正。本报告仅作为同family真实换版比较样本。未新解析、翻译、上传、业务保存或部署；Hosted登录仍未恢复。
+本地比较已区分发布方修订说明、实际变化、未变章节及分页移动，详细来源、页定位和候选影响分析保留在私有报告中。该成果不代表Host已形成新版阅读回执、工作覆盖或综合，也未验证厂家此刻最新有效性。线上精确绑定已确认工作15使用的是另一组来源，没有引用本次比较快照；不据此触发工作15更正。本报告仅作为同family真实改版比较样本。未新解析、翻译、上传、业务保存或部署；Hosted登录仍未恢复。
 
 ## 2026-09-15 来源目录身份与后继更正状态：本地接线完成
 
@@ -951,7 +953,7 @@ Skill c85 源提交 `58653b973f43f18c0ce345239547fc2e2a9f115c` 已推送妙搭 o
 
 续评原先只存 requestId，首次 Hosted claim 才读取最新 parseRun，排队期间发布解析修订会静默改变请求输入。本轮在新 JobAid/Overall 初评请求中保存 originalParseRunId；Host 准备时读取确切 run，公共 ActionAttempt 准备校验也检查实际任务原文绑定相同。已准备任务、旧无该字段请求按原有恢复规则处理，不改写已有记录。
 
-真实 PG 发现浏览器入队不能调用 Hosted 专属 actor scope，已用独立的请求读取入口沿用当前浏览器 SQL 身份/RLS，并保留 owned WorkItem、tenant、DocumentVersion 核对；没有给浏览器服务角色或身份切换。45 项续评测试（含入队后出现新 parseRun、准备结果换版拒绝）、12 项真实 PostgreSQL 测试及 server types 通过。尚未创建自动原文变化后继，未发布本增量；下一接线仍需正常 Hosted 消费入口、基于确切发布版本的幂等受理及在途/失败保护。
+真实 PG 发现浏览器入队不能调用 Hosted 专属 actor scope，已用独立的请求读取入口沿用当前浏览器 SQL 身份/RLS，并保留 owned WorkItem、tenant、DocumentVersion 核对；没有给浏览器服务角色或身份切换。45 项续评测试（含入队后出现新 parseRun、准备结果改版拒绝）、12 项真实 PostgreSQL 测试及 server types 通过。尚未创建自动原文变化后继，未发布本增量；下一接线仍需正常 Hosted 消费入口、基于确切发布版本的幂等受理及在途/失败保护。
 
 ## Hosted 原文变化后继受理（2026-09-13，本地增量）
 

@@ -111,7 +111,7 @@ Schema 摘录卡（实际 manifest + `plugin-hydrate.js`）：
 
 官方插件适配对已完成返回的schema/ID/scope错误抛出明确DocumentPluginOutputError，仅暴露稳定错误码，不把原始返回内容放进错误消息。V2执行器先读回实际保存状态；已有块或已SAVED请求仍按已存事实处理。尚未保存且属于该明确输出错误的请求登记OUTPUT_CONTRACT / KNOWN_FAILURE / FAILED；网络超时及其他结果未知仍为GENERATION_UNKNOWN / REGISTERED，下一步返回NEEDS_RECOVERY而不盲目重发。
 
-6项插件单测与23项真实PostgreSQL测试通过，新增验证坏格式结果允许后续有界请求、未知超时第二次进入调用计数仍为1；已有保存响应丢失、取消、无WI、原文换版和复用路径保持通过。server类型检查通过。测试使用隔离55440与构造插件响应，仍不作为真实插件H1运行证据。
+6项插件单测与23项真实PostgreSQL测试通过，新增验证坏格式结果允许后续有界请求、未知超时第二次进入调用计数仍为1；已有保存响应丢失、取消、无WI、原文改版和复用路径保持通过。server类型检查通过。测试使用隔离55440与构造插件响应，仍不作为真实插件H1运行证据。
 
 ## PDF图片覆盖范围（2026-09-13）
 
