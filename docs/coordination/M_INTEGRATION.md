@@ -1403,3 +1403,5 @@ FTD revision 12 还精确引用 SB revision 16 的问题 `claim_maintenance_disr
 生产节点点击由“立即跳走”改为先在右侧 306px 检查器选中，显示对象类型、稳定标识、保存状态、确切 DocumentVersion 和当前投影说明；只有真实 `getLibraryIndex` 读取路径才显示“打开准确对象”，并沿既有 `buildNodeDeepLink` 进入对应 Host 工作台。隔离预览继续调用外部 `onNodeSelect`，显式标为“查看样例对象”，不把构造 ID 带入生产路由；没有回调的注入投影也不提供生产深链。窄屏及中等宽度按画布、图例、检查器顺序纵向排列，避免全局侧栏后剩余空间挤压画布。
 
 定向图谱与活动图测试 2 个 suite、9 项通过，其中新增覆盖四尺度、未接通态不发网络请求、隔离样例不外跳，以及真实读取后的生产节点选择和显式深链；client typecheck、受影响源码 ESLint/CSS stylelint、client production build、完整 precommit 与 diff check 通过。固定视口本地预览因妙搭 `AppContainer` 缺平台注入未挂载 React，故不记录视觉通过；登录态线上视觉仍需外部浏览器解锁后核对。
+
+实现提交 `789bf2a9500a60586a071e9de324c8350f104641`（父提交 `e9a796130d83d5e536c2e1d36cca77ca1ce5cc5c`）仅含上述关系图谱 4 个实现/测试文件与本记录，origin/github 同名开发分支均回读该 SHA。Host release `7686267875095301052` 已 `finished`，精确 `commit_id=789bf2a9500a60586a071e9de324c8350f104641`，`error_logs=[]`。这证明代码已技术发布；未执行登录态生产视觉验收，也未据图布局生成工程关系或结论。
