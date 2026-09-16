@@ -3,10 +3,11 @@ import type {
   CanonicalOrdinaryWorkItemRunResponse,
   CanonicalWorkItemProjection,
 } from '@shared/api.interface';
+import { isRetryableParseFailureCode } from '@shared/parse-retry-policy';
 
 export type ParseAction =
   | 'RESUME_PENDING'
-  | 'RETRY_SOURCE_BINDING'
+  | 'RETRY_FAILED_PARSE'
   | 'REPARSE_COMPLETED';
 
 export interface ReparseExpectedIdentity {
@@ -22,9 +23,9 @@ export function availableParseAction(
   if (projection.phase === 'PARSE_REQUESTED') return 'RESUME_PENDING';
   if (
     projection.phase === 'FAILED' &&
-    projection.failure?.failureCode === 'SOURCE_BINDING_FAILED'
+    isRetryableParseFailureCode(projection.failure?.failureCode)
   ) {
-    return 'RETRY_SOURCE_BINDING';
+    return 'RETRY_FAILED_PARSE';
   }
   if (
     projection.phase === 'CANDIDATE_READBACK_VERIFIED' &&

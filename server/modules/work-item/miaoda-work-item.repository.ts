@@ -12,6 +12,7 @@ import type {
   CanonicalWorkItemProjection,
   CanonicalExecutionModelSelection,
 } from '@shared/api.interface';
+import { isRetryableParseFailureCode } from '@shared/parse-retry-policy';
 import { actionAttempt, workItem } from '../../database/schema';
 import { readStoredExecutionModel } from '../model-settings/canonical-execution-model';
 import { canonicalModelError } from '../model-settings/canonical-model-catalog';
@@ -294,7 +295,7 @@ export class MiaodaWorkItemRepository {
 
       if (
         projection?.phase !== 'FAILED' ||
-        projection.failure?.failureCode !== 'SOURCE_BINDING_FAILED'
+        !isRetryableParseFailureCode(projection.failure?.failureCode)
       ) {
         return null;
       }

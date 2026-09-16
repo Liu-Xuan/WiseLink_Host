@@ -12,6 +12,7 @@ import type {
   CanonicalS1000dOrdinaryRunResponse,
   CanonicalS1000dVerticalRunRequest,
 } from '@shared/api.interface';
+import { isRetryableParseFailureCode } from '@shared/parse-retry-policy';
 import { CanonicalHostVerticalService } from '../canonical-host/canonical-host-vertical.service';
 import { CANONICAL_DEVELOPMENT_ROLE_ID } from '../canonical-host/canonical-host.constants';
 import type {
@@ -327,7 +328,7 @@ export class OrdinaryWorkItemService {
     );
     const retryableFailure =
       fresh?.projection?.phase === 'FAILED' &&
-      fresh.projection.failure?.failureCode === 'SOURCE_BINDING_FAILED';
+      isRetryableParseFailureCode(fresh.projection.failure?.failureCode);
     const resumableRetry = fresh?.projection?.phase === 'PARSE_REQUESTED';
     const explicitReparse =
       fresh?.projection?.phase === 'CANDIDATE_READBACK_VERIFIED' &&
@@ -463,7 +464,9 @@ export class OrdinaryWorkItemService {
       );
       if (
         retryState?.projection?.phase === 'FAILED' &&
-        retryState.projection.failure?.failureCode === 'SOURCE_BINDING_FAILED'
+        isRetryableParseFailureCode(
+          retryState.projection.failure?.failureCode,
+        )
       ) {
         retryAuthorization = await this.vertical.authorizeExistingWorkItem({
           actor,
