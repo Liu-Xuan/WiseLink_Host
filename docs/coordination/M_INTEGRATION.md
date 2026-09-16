@@ -1355,3 +1355,11 @@ FTD revision 12 还精确引用 SB revision 16 的问题 `claim_maintenance_disr
 1600×1000 与 390×844、DPR 1、reduced-motion 的固定视口渲染使用隔离构造的同 family R02/R03 响应，仅验证生产 React 组件、响应式结构和差异边界；没有调用线上保存、评估或正式采用，也不证明当前线上材料已经具备正式版次。当前真实 family 仍缺 `business_revision` 与 `revision_date`，所以正式换版验收保持未完成，后续仍需取得并登记发布方正式版本依据。
 
 前端提交 `5b66a65ac6c3a15ff41d621acc7b453204a4f487`（父提交 `b0ce025acb32e107d0c2bd0a56b15c98cdc03d0e`）只包含换版阅读页面、视图、两端面板、专用样式、两项定向测试和本记录，origin/github 同名开发分支已回读相同 SHA。定向 Jest 3 个 suite、14 项、client typecheck、受影响源码 ESLint/CSS stylelint、client production build、完整 precommit 与 diff check 通过。release `7686242020415458277` 已 `finished`，精确 `commit_id=5b66a65ac6c3a15ff41d621acc7b453204a4f487`，`error_logs=[]`。该发布事实不替代登录态线上可见页面核对，也不改变正式版本依据尚缺的边界。
+
+## 2026-09-17：Trinity F3 独立文档精读结构对齐
+
+现行 `/document-versions/:documentVersionId` 保持独立按 DocumentVersion 进入、可固定 `parseRunId` 和 `sourceRef`、无需先建立 Matter/WorkItem 的读取语义。本轮把已发布 `DocumentOriginalResult` 组织为 Trinity 的 198px 作者目录、三种阅读模式、可调原文／原件双栏、全屏、准确返回和手机单阅读面；原文内页级 SourceRef 可直接切换同一 DocumentVersion 的 PDF 页。PDF 继续通过既有授权读取接口按需获取并在内嵌阅读面显示，没有持久化 blob URL 或改用公开链接。
+
+当前原文合同能够提供作者标题和页级来源，但没有独立的“业务主题目录”，所以该标签明确禁用并说明未取得，不由英文标题或文本相似度猜测。中英对照继续读取已保存翻译及其缺项、版本与来源；本轮没有触发中文生成，也没有把译文提升为根证据。解析、刷新和独立原件入口收进“文档处理”折叠区，固定解析版本、读取覆盖与限制仍直接可见。
+
+1600×1000 与 390×844、DPR 1、reduced-motion 的固定视口使用隔离构造的准确 DocumentVersion/ParseRun/SourceRef 响应和构造 PDF，只验证生产 React 布局、作者目录、双栏、页切换和响应式结构；不作为线上原件、中文或视觉验收。桌面实际为左目录、中央连续原文和右侧受控 PDF，手机默认只显示原文并提供“查看原件”切换；分隔条支持指针及左右方向键，目录和全屏均有键盘可用入口。

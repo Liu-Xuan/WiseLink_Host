@@ -6,17 +6,15 @@ import {
   subscribeCanonicalHostClientSession,
 } from '@client/src/api/canonical-host';
 
-export function DocumentOriginalPreview({
-  documentVersionId, children, page,
-}: { documentVersionId: string; children: ReactNode; page?: number }) {
+function useDocumentOriginalUrl(documentVersionId: string) {
   const [preview, setPreview] = useState<{url: string; documentVersionId: string; generation: number} | null>(null);
-  const url = preview?.documentVersionId === documentVersionId &&
-    preview.generation === getCanonicalHostClientSessionGeneration() ? preview.url : null;
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const objectUrl = useRef<string | null>(null);
   const controller = useRef<AbortController | null>(null);
   const mounted = useRef(false);
+  const url = preview?.documentVersionId === documentVersionId &&
+    preview.generation === getCanonicalHostClientSessionGeneration() ? preview.url : null;
 
   useEffect(() => {
     mounted.current = true;
@@ -60,6 +58,13 @@ export function DocumentOriginalPreview({
       if (current()) { controller.current = null; setBusy(false); }
     }
   }
+  return { url, busy, error, prepare };
+}
+
+export function DocumentOriginalPreview({
+  documentVersionId, children, page,
+}: { documentVersionId: string; children: ReactNode; page?: number }) {
+  const { url, busy, error, prepare } = useDocumentOriginalUrl(documentVersionId);
 
   return (
     <span className="library-original-preview" data-document-version-id={documentVersionId}>
@@ -72,4 +77,22 @@ export function DocumentOriginalPreview({
       {error ? <span role="alert">{error}</span> : null}
     </span>
   );
+}
+
+export function DocumentOriginalInlinePreview({ documentVersionId, page = 1 }: { documentVersionId: string; page?: number }) {
+  const { url, busy, error, prepare } = useDocumentOriginalUrl(documentVersionId);
+  return <section className="document-original-inline" aria-label="PDF 原件">
+    {url ? <>
+      <div className="document-original-inline-label">受控原件 · 第 {page} 页</div>
+      <iframe title={`PDF 原件第 ${page} 页`} src={`${url}#page=${page}&view=FitH`} />
+      <a href={`${url}#page=${page}`} target="_blank" rel="noopener noreferrer">在新标签页打开第 {page} 页</a>
+    </> : <div className="document-original-inline-empty">
+      <strong>原件按需读取</strong>
+      <p>读取后在此显示同一 DocumentVersion 的 PDF；未取得原件时不生成替代页面。</p>
+      <Button type="button" variant="outline" disabled={busy} onClick={() => { void prepare(); }}>
+        {busy ? '正在读取原件…' : '读取受控原件'}
+      </Button>
+      {error ? <p role="alert">{error}</p> : null}
+    </div>}
+  </section>;
 }
