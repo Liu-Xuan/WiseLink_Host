@@ -43,6 +43,7 @@ import useReadingLocation from './useReadingLocation';
 import { selectMatterWorkRevision } from './matter-work-selection';
 
 import '@client/src/features/workitem/workitem-overview.css';
+import './matter-wiki.css';
 
 export default function EngineeringMatterPage() {
   const { matterId = '' } = useParams<{ matterId: string }>();
@@ -262,8 +263,8 @@ const MatterWorkspace: FC<MatterWorkspaceProps> = ({
   const primary: EngineeringMatterCatalogEntry | undefined =
     primaryMembers.length === 1 ? primaryMembers[0] : undefined;
   return (
-    <main className="wl-overview-page" aria-label="工程事项阅读与讨论">
-      <header className="flex flex-wrap items-center justify-between gap-4">
+    <main className="wl-overview-page matter-wiki-page" aria-label="工程事项阅读与讨论">
+      <header className="matter-wiki-head flex flex-wrap items-center justify-between gap-4">
         <div className="space-y-1">
           <p className="text-xs text-muted-foreground">
             工程事项 ·{' '}
@@ -313,7 +314,7 @@ const MatterWorkspace: FC<MatterWorkspaceProps> = ({
                 : '尚未取得指定工作修订。'}
         </p>
       ) : null}
-      <nav className="flex flex-wrap gap-2" aria-label="事项阅读层次">
+      <nav className="matter-wiki-tabs flex flex-wrap gap-2" aria-label="事项阅读层次">
         {!requestedWorkRef ? <Button asChild variant="outline"><Link to={`/matters/${encodeURIComponent(matterId)}/posture`}>工程态势</Link></Button> : null}
         <Button
           variant={panel === 'brief' ? 'default' : 'outline'}
@@ -353,8 +354,8 @@ const MatterWorkspace: FC<MatterWorkspaceProps> = ({
         ) : null}
       </nav>
       <RetainedWorkbenchPanel active={panel === 'brief'}>
-        <div className="grid gap-6 xl:grid-cols-[minmax(0,1fr)_20rem]">
-          <div className="wl-overall-hero wl-glass-content">
+        <div className="matter-wiki-layout">
+          <article className="wl-overall-hero wl-glass-content matter-wiki-article">
             {requestedWorkRef && !displayedRevision ? (
               <div className="space-y-4">
                 <h2 className="text-xl font-semibold">指定工作尚未读回</h2>
@@ -390,8 +391,8 @@ const MatterWorkspace: FC<MatterWorkspaceProps> = ({
               revision={displayedRevision}
               onLocateDocument={openDocument}
             />
-          </div>
-          <aside className="wl-side-panel">
+          </article>
+          <aside className="wl-side-panel matter-wiki-inspector">
             {requestedWorkRef ? (
               <section className="space-y-3 text-sm leading-7">
                 <h2 className="text-base font-semibold">指定工作版本</h2>
@@ -497,8 +498,8 @@ const MatterWorkspace: FC<MatterWorkspaceProps> = ({
             新关联材料先进入待核查，不会自动替换已有认识。
           </span>
         </div>
-        <div className="grid gap-6 xl:grid-cols-[minmax(0,1fr)_20rem]">
-          <div className="wl-overall-hero wl-glass-content">
+        <div className="matter-wiki-layout matter-wiki-materials">
+          <div className="wl-overall-hero wl-glass-content matter-wiki-article">
             <MatterMaterials
               materials={data.matter.materials ?? []}
               matterId={matterId}
@@ -516,7 +517,7 @@ const MatterWorkspace: FC<MatterWorkspaceProps> = ({
               }}
             />
           </div>
-          <aside className="wl-side-panel">
+          <aside className="wl-side-panel matter-wiki-inspector">
             <MatterWorkingDetails
               working={data.working}
               members={data.matter.catalog.entries}
