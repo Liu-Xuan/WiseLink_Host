@@ -3,9 +3,15 @@ import { originalReadingGroups } from './original-reading';
 import { DocumentOriginalPreview } from '../WorkspaceHomePage/DocumentOriginalPreview';
 
 /** Uses saved source units and explicit page precision; never invents highlight boxes. */
-export function DocumentOriginalReader({ original }: { original: DocumentOriginalResult }) {
+export function DocumentOriginalReader({
+  original,
+  onPageSelect,
+}: {
+  original: DocumentOriginalResult;
+  onPageSelect?: (page: number) => void;
+}) {
   const { coverage } = original;
-  return <section aria-label="已保存原文">
+  return <section className="document-original-reader" aria-label="已保存原文">
     <p role="status">已读取 {coverage.readPageIndexes.length}{coverage.knownPageCount === null ? '' : ` / ${coverage.knownPageCount}`} 页文本。
       {coverage.unresolvedRanges.length > 0 ? '以下范围仍有限制。' : '文本范围已清点；不代表工程结论已采用。'}</p>
     {coverage.unresolvedRanges.length > 0 && <ul aria-label="原文覆盖与定位限制">
@@ -27,7 +33,8 @@ export function DocumentOriginalReader({ original }: { original: DocumentOrigina
           : <p style={{ whiteSpace: 'pre-wrap' }}>{group.map((member, index) => <span key={member.unitId} id={index ? member.unitId : undefined}>
             {index ? ' ' : ''}{String(member.payload.text ?? '')}
           </span>)}</p>}
-        <nav aria-label="此段原件位置">{pageIndexes.map(page =>
+        <nav aria-label="此段原件位置">{pageIndexes.map(page => onPageSelect ?
+          <button type="button" key={page} onClick={() => onPageSelect(page + 1)}>原件第 {page + 1} 页（页级定位）</button> :
           <DocumentOriginalPreview key={page} documentVersionId={original.binding.documentVersionId} page={page + 1}>
             原件第 {page + 1} 页（页级定位）
           </DocumentOriginalPreview>)}</nav>
