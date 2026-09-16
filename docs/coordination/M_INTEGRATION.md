@@ -1345,3 +1345,11 @@ FTD revision 12 还精确引用 SB revision 16 的问题 `claim_maintenance_disr
 图谱与时间轴定向 Jest 2 个 suite、14 项通过；client typecheck、受影响 TS/TSX ESLint 和 CSS stylelint 通过。1600×1000 与 390×844、DPR 1、reduced-motion 的固定视口渲染确认桌面为左画布右检查器，手机按画布、图例、检查器纵向排列；选中的 `ST-TBD/A-TBD` 在图节点、引文卡和检查器中保持一致。以上仍是隔离构造候选的生产组件验证，不冒充真实线上业务或跨版本关系验收。
 
 前端提交 `74f2e0ca8e5be449e8ca9b2534dffb259d123a42`（父提交 `df6236f74776914480d9c3e67b069a930fcb9419`）仅包含图谱组件、模型、样式、定向测试和本记录，origin/github 同名开发分支已回读相同 SHA。release `7686234968155425724` 已 `finished`，精确 `commit_id=74f2e0ca8e5be449e8ca9b2534dffb259d123a42`，`error_logs=[]`。发布完成证明代码已部署，不替代仍待解锁后执行的登录态线上可见页面核对。
+
+## 2026-09-17：Trinity F3 文件自身换版阅读结构对齐
+
+现行 `/document-revisions` 页面继续只比较 URL 固定的 before/after DocumentVersion、ParseRun、semantic revision 和 role，不重新解释两端身份。本轮将页面结构对齐 2026-09-16 Trinity 的“本版修订说明与对应原文差异／每份文件保留自身有效依据／两端原文并排／已比较的未变范围”，同时保留现有确定性比较实现、角色审计和逐端准确来源链接。
+
+页面继续显示 `publicationRelationship=NOT_VERIFIED` 与 `assessmentCoverage=NOT_RECORDED_BY_THIS_READ`，不把文本不同写成发布方正式换版、覆盖采用或工程影响。`TEXT_EQUAL` 时只声明已选角色的纯文本与父级上下文相同，明确排除未选择内容、表格、图示和工程含义；其他结果则明确没有独立确认的未变段落范围，不能把局部比较扩大为“其余未变”。桌面将 before/after 两端并排，移动端按同一顺序折叠为单列；角色选择收敛为紧凑分段控件。
+
+1600×1000 与 390×844、DPR 1、reduced-motion 的固定视口渲染使用隔离构造的同 family R02/R03 响应，仅验证生产 React 组件、响应式结构和差异边界；没有调用线上保存、评估或正式采用，也不证明当前线上材料已经具备正式版次。当前真实 family 仍缺 `business_revision` 与 `revision_date`，所以正式换版验收保持未完成，后续仍需取得并登记发布方正式版本依据。

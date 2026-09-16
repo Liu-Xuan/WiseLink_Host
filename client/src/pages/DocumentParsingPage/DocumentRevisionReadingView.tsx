@@ -95,10 +95,12 @@ export default function DocumentRevisionReadingView({
     reading.before.sections,
   );
   return (
-    <div className="space-y-4">
-      <Card>
+    <div className="document-revision-reading" data-testid="document-revision-reading">
+      <div className="revision-reading-overview">
+      <Card className="revision-comparison-card">
         <CardHeader>
-          <CardTitle className="text-base">系统文本比较</CardTitle>
+          <p className="revision-kicker">实际比较范围 · {comparison.roleKey}</p>
+          <CardTitle className="text-base">本版修订说明与对应原文差异</CardTitle>
         </CardHeader>
         <CardContent className="space-y-3">
           <div className="flex flex-wrap items-center gap-2">
@@ -144,11 +146,12 @@ export default function DocumentRevisionReadingView({
           </div>
         </CardContent>
       </Card>
-      <Card>
+      <Card className="revision-boundary-card">
         <CardHeader>
-          <CardTitle className="text-base">本端点不推导的结论</CardTitle>
+          <p className="revision-kicker">换版与工作覆盖</p>
+          <CardTitle className="text-base">每份文件保留自身有效依据</CardTitle>
         </CardHeader>
-        <CardContent className="space-y-2 text-sm">
+        <CardContent className="revision-boundary-content space-y-2 text-sm">
           <p className="text-muted-foreground">
             <Badge variant="outline" className="mr-2">
               {reading.publicationRelationship}
@@ -161,9 +164,11 @@ export default function DocumentRevisionReadingView({
             </Badge>
             评估覆盖：本次读取未记录。本端点不记录、不推导新版评估覆盖。
           </p>
+          <p className="revision-boundary-note">相关资料可帮助理解，但不会静默改写另一份工程文件、事项认识或我方决定。</p>
         </CardContent>
       </Card>
-      <div className="grid gap-4 lg:grid-cols-2">
+      </div>
+      <div className="revision-reading-pair">
         <DocumentRevisionReadingSidePanel
           sideLabel="基线端（before）"
           side={reading.before}
@@ -175,7 +180,11 @@ export default function DocumentRevisionReadingView({
           returnParamsFor={returnParamsFor}
         />
       </div>
-      <p className="text-xs text-muted-foreground">
+      <section className="revision-unchanged-boundary">
+        <h3>已比较的未变范围</h3>
+        {comparison.status === 'TEXT_EQUAL' ? <p>所选角色按当前纯文本与父级条件口径一致；该结论不覆盖未选择单元、表格、图示或工程含义。</p> : <p>当前读取没有返回可独立确认的未变段落范围；不能把局部比较扩大为“其余内容均未变”。</p>}
+      </section>
+      <p className="revision-reading-footnote">
         本视图为只读展示：改版比较仅反映两端所选角色的纯文本关系；来源链接使用各端自身
         binding 构造，基线端与比较目标端身份不互用。工程影响与评估须另行人工核对。
       </p>
