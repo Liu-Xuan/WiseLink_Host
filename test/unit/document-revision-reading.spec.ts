@@ -20,6 +20,30 @@ function compare(before: ReturnType<typeof document>, after: ReturnType<typeof d
 }
 
 describe('exact revision pair reading (isolated fixtures)', () => {
+  it('discovers saved browser semantics without creating them and rechecks access before returning', async () => {
+    const source = document('old', 'One');
+    const map = { ...source.map(), semanticRevision: 3 };
+    const reader = { readDocumentOriginal: jest.fn().mockResolvedValue({ original: source.original,
+      run: { sourceBinding: { familyId: 'family' } } }) };
+    const semantics = { read: jest.fn().mockResolvedValue(map), ensure: jest.fn() };
+    const actors = { withActorScope: jest.fn().mockRejectedValue(new Error('HOSTED_SCOPE_UNAVAILABLE')) };
+    const parsing = { status: jest.fn().mockResolvedValue({}) };
+    const service = new DocumentRevisionReadingService(reader as never, semantics as never, actors as never, parsing as never);
+    const input = { documentVersionId: 'old', parseRunId: 'parse-old' };
+    const context = { tenantId: 'tenant', actorUserId: 'actor', roles: [] };
+    await expect(service.readSemanticForBrowser(input, context)).resolves.toMatchObject({ familyId: 'family',
+      binding: source.original.binding, semanticMap: { semanticRevision: 3 } });
+    expect(semantics.read).toHaveBeenLastCalledWith({ ...context, documentVersionId: 'old' }, expect.anything(), undefined);
+    await service.readSemanticForBrowser({ ...input, semanticRevision: 3 }, context);
+    expect(semantics.read).toHaveBeenLastCalledWith({ ...context, documentVersionId: 'old' }, expect.anything(), 3);
+    semantics.read.mockResolvedValue(null);
+    await expect(service.readSemanticForBrowser(input, context)).resolves.toHaveProperty('semanticMap', null);
+    await expect(service.readSemanticForBrowser({ ...input, semanticRevision: 3 }, context)).rejects.toThrow('REVISION_NOT_FOUND');
+    parsing.status.mockRejectedValue(new Error('SOURCE_DENIED'));
+    await expect(service.readSemanticForBrowser(input, context)).rejects.toThrow('SOURCE_DENIED');
+    expect(semantics.ensure).not.toHaveBeenCalled();
+    expect(actors.withActorScope).not.toHaveBeenCalled();
+  });
   it('separates each publisher notice and normalizes whitespace without substituting new references', () => {
     const before = document('old', 'Pending review.');
     const after = document('new', 'Pending  review.');

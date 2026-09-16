@@ -21,6 +21,17 @@ export class DocumentTranslationReadingController {
     private readonly parsing: DocumentParsingHostedService, private readonly attempts: DocumentTranslationAttemptRepository,
     private readonly revisions: DocumentRevisionReadingService) {}
 
+  @Get('semantic-reading')
+  @Header('Cache-Control', 'private, no-store')
+  async readSemantic(@Param('documentVersionId') documentVersionId: string,
+    @Query('parseRunId') parseRunId: string, @Query('semanticRevision') semanticRevision: string | undefined,
+    @Req() request: Request) {
+    if (semanticRevision !== undefined && (typeof semanticRevision !== 'string' || !/^[1-9][0-9]*$/.test(semanticRevision)))
+      throw new BadRequestException('DOCUMENT_SEMANTIC_IDENTITY_INVALID');
+    return this.revisions.readSemanticForBrowser({ documentVersionId, parseRunId,
+      ...(semanticRevision === undefined ? {} : { semanticRevision: Number(semanticRevision) }) }, contextFromRequest(request));
+  }
+
   @Get('revision-reading')
   @Header('Cache-Control', 'private, no-store')
   async readRevision(@Param('documentVersionId') documentVersionId: string,

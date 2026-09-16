@@ -37,6 +37,7 @@ import {
   readDocumentVersionMetadata,
   reextractDocumentVersionMetadata,
   readDocumentVersionOriginal,
+  readDocumentSemanticReading,
   uploadLibraryDocument,
   confirmLibraryHistoricalImport,
   refreshLibraryHistoricalImport,
@@ -60,6 +61,25 @@ import { logger } from '@lark-apaas/client-toolkit/logger';
 import { libraryMetadata } from './fixtures/canonical-library';
 
 describe('canonical host assessment client', () => {
+  it('discovers a saved semantic revision without assuming revision 1 and preserves the absent state', async () => {
+    const binding = { documentVersionId: 'DV', parseRunId: 'parse' };
+    request.mockResolvedValue({ status: 200, data: { binding, semanticMap: { binding, semanticRevision: 3 } } });
+    await expect(readDocumentSemanticReading({ documentVersionId: 'DV', parseRunId: 'parse' }))
+      .resolves.toHaveProperty('semanticMap.semanticRevision', 3);
+    expect(request).toHaveBeenCalledWith(expect.objectContaining({
+      url: '/api/document-management/document-versions/DV/semantic-reading?parseRunId=parse', method: 'GET' }));
+    request.mockResolvedValue({ status: 200, data: { binding, semanticMap: null } });
+    await expect(readDocumentSemanticReading({ documentVersionId: 'DV', parseRunId: 'parse' })).resolves.toHaveProperty('semanticMap', null);
+    await expect(readDocumentSemanticReading({ documentVersionId: 'DV', parseRunId: 'parse', semanticRevision: 3 })).rejects.toThrow('BINDING_MISMATCH');
+  });
+
+  it('rejects a mismatched or obsolete semantic discovery result', async () => {
+    request.mockResolvedValue({ status: 200, data: { binding: { documentVersionId: 'other', parseRunId: 'parse' }, semanticMap: null } });
+    await expect(readDocumentSemanticReading({ documentVersionId: 'DV', parseRunId: 'parse' })).rejects.toThrow('BINDING_MISMATCH');
+    request.mockImplementation(async () => { invalidateCanonicalHostClientSession();
+      return { status: 200, data: { binding: { documentVersionId: 'DV', parseRunId: 'parse' }, semanticMap: null } }; });
+    await expect(readDocumentSemanticReading({ documentVersionId: 'DV', parseRunId: 'parse' })).rejects.toThrow('OBSOLETE');
+  });
   const pdfBytes = new TextEncoder().encode('%PDF-1.7\nsynthetic PDF\n%%EOF').buffer;
   it('reads the exact taskless original through authenticated platform Axios as binary', async () => {
     request.mockResolvedValue({ status: 200, headers: { 'content-type': 'application/pdf' }, data: pdfBytes });

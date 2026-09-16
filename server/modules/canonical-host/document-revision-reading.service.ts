@@ -1,5 +1,6 @@
 import { Injectable } from '@nestjs/common';
 import type { DocumentRevisionReadingIdentity, DocumentRevisionReadingRequest } from '@shared/document-revision-reading.interface';
+import type { DocumentSemanticReadingRequest, DocumentSemanticReadingResponse } from '@shared/document-semantic-map.interface';
 import { UnifiedReaderService } from '../unified-reader/unified-reader.service';
 import { DocumentParsingHostedService } from '../document-management/src/hosted/nest/document-parsing-hosted.service';
 import { EngineeringMatterWorkingRepository } from './engineering-matter-working.repository';
@@ -20,6 +21,23 @@ export class DocumentRevisionReadingService {
   /** The guarded browser request already carries its authenticated SQL/RLS identity. */
   async readForBrowser(input: DocumentRevisionReadingRequest, context: { tenantId: string; actorUserId: string; roles: string[] }) {
     return this.readAuthorized(input, context);
+  }
+
+  async readSemanticForBrowser(input: DocumentSemanticReadingRequest,
+    context: { tenantId: string; actorUserId: string; roles: string[] }): Promise<DocumentSemanticReadingResponse> {
+    if (![input.documentVersionId, input.parseRunId].every(value => typeof value === 'string' && /^[A-Za-z0-9_-]{1,96}$/.test(value)) ||
+      (input.semanticRevision !== undefined && (!Number.isSafeInteger(input.semanticRevision) || input.semanticRevision < 1)))
+      throw new Error('DOCUMENT_SEMANTIC_IDENTITY_INVALID');
+    const loaded = await this.reader.readDocumentOriginal(input.documentVersionId, input.parseRunId, context);
+    if (loaded.original.binding.documentVersionId !== input.documentVersionId || loaded.original.binding.parseRunId !== input.parseRunId)
+      throw new Error('DOCUMENT_REVISION_BINDING_MISMATCH');
+    const familyId = loaded.run.sourceBinding.familyId;
+    if (!familyId) throw new Error('DOCUMENT_SEMANTIC_FAMILY_NOT_FOUND');
+    const semanticMap = await this.semantics.read({ ...context, documentVersionId: input.documentVersionId }, loaded, input.semanticRevision);
+    if (input.semanticRevision !== undefined && semanticMap?.semanticRevision !== input.semanticRevision)
+      throw new Error('DOCUMENT_SEMANTIC_REVISION_NOT_FOUND');
+    await this.parsing.status(input.documentVersionId, context);
+    return { familyId, binding: loaded.original.binding, coverage: loaded.original.coverage, semanticMap };
   }
 
   private async readAuthorized(input: DocumentRevisionReadingRequest, context: { tenantId: string; actorUserId: string; roles: string[] }) {
