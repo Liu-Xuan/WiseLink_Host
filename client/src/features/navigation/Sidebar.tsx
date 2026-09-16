@@ -1,6 +1,8 @@
 import { useState } from 'react';
 import {
   BookMarked,
+  Compass,
+  Clock3,
   FileSearch2,
   LibraryBig,
   Layers,
@@ -57,6 +59,8 @@ const GLOBAL_NAV: Array<{
   end?: boolean;
 }> = [
   { to: '/library', label: '资料库', icon: LibraryBig },
+  { to: '/situation', label: '工程态势', icon: Compass },
+  { to: '/timeline', label: '工程时间轴', icon: Clock3 },
   { to: '/knowledge', label: '工程知识', icon: BookMarked },
   { to: '/graph', label: '关系图谱', icon: Share2 },
 ];
