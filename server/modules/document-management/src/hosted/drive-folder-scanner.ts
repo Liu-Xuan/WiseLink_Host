@@ -135,6 +135,8 @@ function isDriveAuthorizationDenied(error: unknown): boolean {
   const response = value.response && typeof value.response === 'object' ? value.response as { status?: unknown; data?: unknown } : undefined;
   const data = response?.data && typeof response.data === 'object' ? response.data as { code?: unknown; message?: unknown } : undefined;
   const messages = [value.message, data?.message].filter((item): item is string => typeof item === 'string');
-  return value.status === 403 || value.statusCode === 403 || response?.status === 403 || value.code === 1061004 || data?.code === 1061004 ||
-    messages.some(message => /permission_denied|lacks permission|forbidden/i.test(message));
+  return value.status === 403 || value.statusCode === 403 || response?.status === 403 ||
+    value.code === 1061004 || data?.code === 1061004 ||
+    value.code === 99991672 || data?.code === 99991672 ||
+    messages.some(message => /permission_denied|lacks permission|forbidden|missing scope/i.test(message));
 }
