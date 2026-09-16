@@ -1372,4 +1372,6 @@ FTD revision 12 还精确引用 SB revision 16 的问题 `claim_maintenance_disr
 
 文章区保留已保存候选、决定性条件、其余判断、精确依据入口和问题工作；右侧继续显示当前或指定历史工作修订及其基于事项修订。导航保持工程态势、事项简报、继续核对与讨论、关联资料四个层次，历史工作继续禁用不能准确复现的讨论和资料操作。正文与检查器不再使用大面积动态玻璃，功能导航仍可使用适度模糊材质。
 
-定向 Jest 3 个 suite、12 项、client typecheck、受影响源码 ESLint/CSS stylelint、client production build、完整 precommit 与 diff check 通过。固定视口脚本在独立生产预览中因妙搭 `__platform__` 模板变量未注入而未挂载 React，故没有把该次尝试记录为视觉通过；发布后仍需在登录态真实运行环境核对桌面与手机页面。代码提交、双远端同步和 release 事实将在完成后补记。
+定向 Jest 3 个 suite、12 项、client typecheck、受影响源码 ESLint/CSS stylelint、client production build、完整 precommit 与 diff check 通过。固定视口脚本在独立生产预览中因妙搭 `__platform__` 模板变量未注入而未挂载 React，故没有把该次尝试记录为视觉通过；发布后仍需在登录态真实运行环境核对桌面与手机页面。
+
+前端提交 `732a734e2623c49337c6cd75847328087c04ab84`（父提交 `9fd1bf99d671c64ca0cc5b6d433781a48a7a880b`）只包含事项 Wiki 页面、专用样式、定向测试和本记录，origin/github 同名开发分支已回读相同 SHA。release `7686252831901207530` 已 `finished`，精确 `commit_id=732a734e2623c49337c6cd75847328087c04ab84`，`error_logs=[]`。发布后外部浏览器状态读取仍因 macOS 锁屏超时并重置，故没有把技术发布冒充登录态线上可见验收。
