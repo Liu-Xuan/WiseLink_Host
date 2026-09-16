@@ -83,8 +83,9 @@ export async function scanDriveFolders(
       try {
         page = await fetchPage(folder.folderToken, pageToken);
       } catch (error: unknown) {
-        if (!isDriveAuthorizationDenied(error)) throw error;
-        blockers.push({ folderToken: folder.folderToken, ...(pageToken ? { pageToken } : {}), code: 'DRIVE_AUTHORIZATION_DENIED' });
+        const blockerCode = driveAuthorizationBlockerCode(error);
+        if (!blockerCode) throw error;
+        blockers.push({ folderToken: folder.folderToken, ...(pageToken ? { pageToken } : {}), code: blockerCode });
         continuation.push(position());
         break;
       }
@@ -129,14 +130,17 @@ export async function scanDriveFolders(
   return { entries, continuation, visitedPages, blockers };
 }
 
-function isDriveAuthorizationDenied(error: unknown): boolean {
-  if (!error || typeof error !== 'object') return false;
+function driveAuthorizationBlockerCode(error: unknown): string | null {
+  if (!error || typeof error !== 'object') return null;
   const value = error as { status?: unknown; statusCode?: unknown; code?: unknown; message?: unknown; response?: unknown };
   const response = value.response && typeof value.response === 'object' ? value.response as { status?: unknown; data?: unknown } : undefined;
   const data = response?.data && typeof response.data === 'object' ? response.data as { code?: unknown; message?: unknown } : undefined;
   const messages = [value.message, data?.message].filter((item): item is string => typeof item === 'string');
-  return value.status === 403 || value.statusCode === 403 || response?.status === 403 ||
+  if (value.code === 99991672 || data?.code === 99991672 ||
+    messages.some(message => /missing scope/i.test(message))) return 'DRIVE_SCOPE_MISSING';
+  if (value.status === 403 || value.statusCode === 403 || response?.status === 403 ||
     value.code === 1061004 || data?.code === 1061004 ||
-    value.code === 99991672 || data?.code === 99991672 ||
-    messages.some(message => /permission_denied|lacks permission|forbidden|missing scope/i.test(message));
+    messages.some(message => /permission_denied|lacks permission|forbidden/i.test(message)))
+    return 'DRIVE_AUTHORIZATION_DENIED';
+  return null;
 }

@@ -23,7 +23,7 @@ test('scan page objects, pending intake and cursor commit together and resume A/
     await sql.unsafe('DROP SCHEMA public CASCADE; CREATE SCHEMA public');
     await sql.unsafe(`CREATE FUNCTION engineering_matter_actor_has_tenant(candidate text) RETURNS boolean LANGUAGE sql STABLE AS $$
       SELECT candidate = 'test-tenant' AND current_setting('app.user_id',true) = 'test-actor' $$;`);
-    for (const name of ['0040_wiselink_drive_scan_checkpoint.sql','0041_wiselink_drive_candidate_snapshot.sql','0046_drive_scan_pending_candidates.sql','0051_drive_scan_hosted_scope.sql']) {
+    for (const name of ['0040_wiselink_drive_scan_checkpoint.sql','0041_wiselink_drive_candidate_snapshot.sql','0046_drive_scan_pending_candidates.sql','0051_drive_scan_hosted_scope.sql','0059_drive_scan_automation_tenant_scope.sql']) {
       await sql.unsafe(await readFile(new URL(`../../migrations/${name}`, import.meta.url), 'utf8'));
     }
     await sql.unsafe('GRANT USAGE ON SCHEMA public TO authenticated,service_role; GRANT SELECT,INSERT,UPDATE,DELETE ON wiselink_drive_scan_checkpoint TO authenticated,service_role');
@@ -65,7 +65,7 @@ test('scan page objects, pending intake and cursor commit together and resume A/
     assert.equal((await inRole('service_role','test-actor', repo => repo.listPendingCandidates('test-tenant','source'))).length,3);
     await inRole('service_role','test-actor', repo => repo.forTenant('test-tenant').savePage('source',row.checkpoint_json,[],row.checkpoint_json));
     assert.deepEqual(await inRole('authenticated','test-actor', repo => repo.listPendingCandidates('test-tenant','source')),[]);
-    assert.deepEqual(await inRole('service_role','other-actor', repo => repo.listPendingCandidates('test-tenant','source')),[]);
+    assert.equal((await inRole('service_role','other-actor', repo => repo.listPendingCandidates('test-tenant','source'))).length,3);
     assert.deepEqual(await inRole('service_role','test-actor', repo => repo.listPendingCandidates('other-tenant','source')),[]);
     await assert.rejects(inRole('authenticated','test-actor', repo => repo.forTenant('test-tenant').savePage('source',row.checkpoint_json,[],row.checkpoint_json)),
       error => error?.cause?.code === '42501');

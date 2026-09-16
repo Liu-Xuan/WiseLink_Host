@@ -53,9 +53,7 @@ describe('runDriveFolderScan', () => {
     [{ status: 403 }, 'HTTP status'],
     [{ statusCode: 403 }, 'statusCode'],
     [{ code: 1061004 }, 'Feishu code'],
-    [{ code: 99991672 }, 'Feishu missing-scope code'],
     [{ message: 'permission_denied' }, 'message'],
-    [{ message: 'missing scope: drive:drive.metadata:readonly' }, 'scope message'],
     [{ response: { status: 403 } }, 'nested HTTP status'],
     [{ response: { data: { code: 1061004 } } }, 'nested Feishu code'],
   ])('returns a durable authorization blocker for %s (%s)', async (error, _label) => {
@@ -71,6 +69,21 @@ describe('runDriveFolderScan', () => {
     expect(result.blockers).toEqual([{ folderToken: 'restricted', code: 'DRIVE_AUTHORIZATION_DENIED' }]);
     expect(saved).toHaveLength(1);
     expect(JSON.parse(saved[0]!).blockers).toEqual([{ folderToken: 'restricted', code: 'DRIVE_AUTHORIZATION_DENIED' }]);
+  });
+
+  it.each([
+    [{ code: 99991672 }, 'Feishu missing-scope code'],
+    [{ message: 'missing scope: drive:drive.metadata:readonly' }, 'scope message'],
+  ])('keeps missing application scope distinct for %s (%s)', async (error, _label) => {
+    const saved: string[] = [];
+    const result = await runDriveFolderScan({
+      sourceKey: 'restricted-library',
+      roots: [{ folderToken: 'restricted', path: 'restricted', depth: 0 }],
+      fetchPage: async () => { throw error; },
+      checkpoints: { load: async () => null, savePage: async (_key, value) => { saved.push(value); } },
+    });
+    expect(result.blockers).toEqual([{ folderToken: 'restricted', code: 'DRIVE_SCOPE_MISSING' }]);
+    expect(JSON.parse(saved[0]!).blockers).toEqual([{ folderToken: 'restricted', code: 'DRIVE_SCOPE_MISSING' }]);
   });
 
   it('keeps the saved frontier when authorization is denied after resuming', async () => {
