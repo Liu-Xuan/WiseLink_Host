@@ -28,14 +28,16 @@ import type { DocumentSourceSearchResponse } from '@shared/document-source-searc
 import '@client/src/pages/DocumentParsingPage/jobaid-problem-workspace.css';
 
 type EngineeringIssueSearchProps =
-  | { readOnly: true; matterId?: never }
-  | { readOnly?: false; matterId: string };
+  | { readOnly: true; matterId?: never; presentation?: 'search' | 'catalog' }
+  | { readOnly?: false; matterId: string; presentation?: 'search' };
 
 export default function EngineeringIssueSearch({
   matterId = '',
   readOnly: requestedReadOnly = false,
+  presentation = 'search',
 }: EngineeringIssueSearchProps) {
   const readOnly = requestedReadOnly || !matterId;
+  const catalog = readOnly && presentation === 'catalog';
   const navigate = useNavigate();
   const [params, setParams] = useSearchParams();
   const referenceAttemptRef = readOnly ? null : params.get('referenceAttemptRef');
@@ -105,10 +107,10 @@ export default function EngineeringIssueSearch({
   );
   return (
     <section
-      className="mt-6 space-y-4 rounded-xl border border-border p-4"
+      className={`mt-6 space-y-4 rounded-xl border border-border p-4${catalog ? ' knowledge-catalog' : ''}`}
       aria-label={readOnly ? '只读工程知识检索' : '查找已有问题'}
     >
-      <h2 className="text-lg font-semibold">查找原文与已有问题</h2>
+      <h2 className="text-lg font-semibold">{catalog ? '统一知识查阅' : '查找原文与已有问题'}</h2>
       <p className="text-sm text-muted-foreground">
         按关键词查找有权阅读的已发布原文和已保存工作，展开后核对问题、前提和来源。
         每类最多展示 50 项，查找到的候选不会自动加入事项。
@@ -169,6 +171,8 @@ export default function EngineeringIssueSearch({
       </div> : null}
       {busy ? <p role="status">正在读取…</p> : null}
       {error ? <p role="alert">{error}</p> : null}
+      <div className={catalog ? 'knowledge-catalog-layout' : undefined}>
+      <div className={catalog ? 'knowledge-catalog-results' : undefined}>
       <section aria-label="工程工作检索结果" className="space-y-3">
       <h3>已保存工程工作</h3>
       {results?.hits.length === 0 ? (
@@ -182,7 +186,7 @@ export default function EngineeringIssueSearch({
       {results?.hits.map((hit) => (
         <div
           key={`${hit.subjectId}:${hit.workRef}:${hit.issueKey}`}
-          className="border-b border-border pb-3"
+          className={`border-b border-border pb-3${catalog ? ' knowledge-catalog-row' : ''}`}
         >
           <Button
             variant="ghost"
@@ -252,8 +256,9 @@ export default function EngineeringIssueSearch({
       </details>)}
       {originals?.hasMore ? <p className="text-sm">原文匹配较多，请补充关键词。</p> : null}
       </section>
+      </div>
       {selected ? (
-        <div className="wl-jobaid-article rounded-xl border border-border p-4">
+        <aside className="wl-jobaid-article rounded-xl border border-border p-4 knowledge-catalog-inspector">
           <p className="mb-3 text-sm text-muted-foreground">
             已保存工作修订 {selected.identity.workRevision}
             ；此处始终读取所引用的确切版本。
@@ -336,8 +341,14 @@ export default function EngineeringIssueSearch({
               else navigate(`/work-items/${encodeURIComponent(evidence.workItemId)}/documents?${new URLSearchParams({ node: 'reader', tab: 'reader', documentVersionId: evidence.documentVersionId, sourceRef: evidence.sourceRefId, returnWorkItemId: selected.identity.subjectId })}`);
             }}
           />
-        </div>
+        </aside>
+      ) : catalog ? (
+        <aside className="knowledge-catalog-inspector knowledge-catalog-inspector-empty">
+          <strong>知识详情</strong>
+          <p>输入关键词后选择一项已保存工作，在此核对形成范围、当前性和根来源。</p>
+        </aside>
       ) : null}
+      </div>
       {source ? (
         <MatterDocumentSourceDialog
           key={`${source.documentVersionId}:${source.sourceRef}`}

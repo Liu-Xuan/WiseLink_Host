@@ -8,10 +8,84 @@
   flex-direction: column;
   gap: var(--wl-space-5);
   padding: var(--wl-space-6);
-  max-width: 880px;
+  width: min(100%, 1380px);
+  max-width: none;
   margin: 0 auto;
   font-family: var(--wl-font);
   color: var(--wl-ink);
+}
+
+.knowledge-scope-strip {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.knowledge-scope-strip article {
+  display: grid;
+  gap: 8px;
+  min-height: 92px;
+  padding: 18px 20px;
+  border: 1px solid var(--wl-border);
+  border-radius: 16px;
+  background: var(--wl-surface-solid);
+}
+
+.knowledge-scope-strip strong { font-size: 16px; }
+.knowledge-scope-strip span { color: var(--wl-muted); font-size: 13px; }
+
+.knowledge-catalog {
+  padding: 0;
+  overflow: hidden;
+  border-radius: 18px;
+  background: var(--wl-surface-solid);
+}
+
+.knowledge-catalog > h2,
+.knowledge-catalog > p,
+.knowledge-catalog > form {
+  margin-inline: 20px;
+}
+
+.knowledge-catalog > h2 { margin-top: 20px; }
+
+.knowledge-catalog-layout {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 308px;
+  align-items: start;
+  border-top: 1px solid var(--wl-border);
+}
+
+.knowledge-catalog-results { min-width: 0; }
+
+.knowledge-catalog-results > section {
+  padding: 18px 20px;
+}
+
+.knowledge-catalog-results > section + section {
+  border-top: 1px solid var(--wl-border);
+}
+
+.knowledge-catalog-row {
+  padding: 14px 0;
+}
+
+.knowledge-catalog-inspector {
+  position: sticky;
+  top: 68px;
+  min-height: 280px;
+  margin: 0;
+  border-width: 0 0 0 1px;
+  border-radius: 0;
+  background: var(--wl-sheet-muted);
+}
+
+.knowledge-catalog-inspector-empty {
+  display: grid;
+  align-content: start;
+  gap: 12px;
+  padding: 24px 20px;
+  color: var(--wl-muted);
 }
 
 .knowledge-lookup-header {
@@ -221,5 +295,15 @@
 
   .knowledge-lookup-version-select {
     max-width: none;
+  }
+
+  .knowledge-scope-strip,
+  .knowledge-catalog-layout {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .knowledge-catalog-inspector {
+    position: static;
+    border-width: 1px 0 0;
   }
 }
