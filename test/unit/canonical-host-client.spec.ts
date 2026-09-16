@@ -38,6 +38,7 @@ import {
   reextractDocumentVersionMetadata,
   readDocumentVersionOriginal,
   readDocumentSemanticReading,
+  readDocumentActivityReading,
   uploadLibraryDocument,
   confirmLibraryHistoricalImport,
   refreshLibraryHistoricalImport,
@@ -61,6 +62,21 @@ import { logger } from '@lark-apaas/client-toolkit/logger';
 import { libraryMetadata } from './fixtures/canonical-library';
 
 describe('canonical host assessment client', () => {
+  it('reads saved source activity candidates at an exact revision and preserves missing results', async () => {
+    const binding = { documentVersionId: 'DV', parseRunId: 'parse' };
+    const candidate = { sourceBinding: { original: binding }, candidateRevision: 3, candidateOnly: true };
+    request.mockResolvedValue({ status: 200, data: { familyId: 'family', binding, candidate } });
+    await expect(readDocumentActivityReading({ documentVersionId: 'DV', parseRunId: 'parse', candidateRevision: 3 }))
+      .resolves.toHaveProperty('candidate.candidateRevision', 3);
+    expect(request).toHaveBeenCalledWith(expect.objectContaining({
+      url: '/api/document-management/document-versions/DV/activity-reading?parseRunId=parse&candidateRevision=3', method: 'GET' }));
+    await expect(readDocumentActivityReading({ documentVersionId: 'DV', parseRunId: 'parse', candidateRevision: 2 })).rejects.toThrow('BINDING_MISMATCH');
+    request.mockResolvedValue({ status: 200, data: { familyId: 'family', binding, candidate: null } });
+    await expect(readDocumentActivityReading({ documentVersionId: 'DV', parseRunId: 'parse', candidateRevision: 9 })).resolves.toHaveProperty('candidate', null);
+    request.mockImplementation(async () => { invalidateCanonicalHostClientSession(); return { status: 200, data: { binding, candidate } }; });
+    await expect(readDocumentActivityReading({ documentVersionId: 'DV', parseRunId: 'parse' })).rejects.toThrow('OBSOLETE');
+  });
+
   it('discovers a saved semantic revision without assuming revision 1 and preserves the absent state', async () => {
     const binding = { documentVersionId: 'DV', parseRunId: 'parse' };
     request.mockResolvedValue({ status: 200, data: { binding, semanticMap: { binding, semanticRevision: 3 } } });
