@@ -17,6 +17,8 @@ import { DocumentStepLeaseRepository } from './document-step-lease.repository';
 import { DocumentParsingRepository } from './document-parsing.repository';
 import { DriveScanCheckpointRepository } from './drive-scan-checkpoint.repository';
 import { DriveSourceScanService } from './drive-source-scan.service';
+import { DriveSourceScanAutomation } from './drive-source-scan.automation';
+import { FeishuDriveApplicationPageFetcher } from './feishu-drive-application-page-fetcher';
 
 export interface DocumentManagementHostedModuleOptions {
   imports?: ModuleMetadata['imports'];
@@ -53,6 +55,8 @@ export class DocumentManagementHostedModule {
         MineruRemoteWorkerClient,
         DriveScanCheckpointRepository,
         DriveSourceScanService,
+        FeishuDriveApplicationPageFetcher,
+        DriveSourceScanAutomation,
       ],
       exports: [DocumentOfficialPluginService, DocumentStepLeaseRepository, DocumentManagementHostedService, DocumentParsingHostedService, DriveSourceScanService],
     };

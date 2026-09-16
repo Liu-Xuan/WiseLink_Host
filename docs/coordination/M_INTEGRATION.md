@@ -1,5 +1,94 @@
 # M 主控集成交接
 
+## 2026-09-16 跨事项恢复审计发布与工作12闭合
+
+Host补齐精确attempt的只读审计投影：STATUS在原事项/actor及每个参考事项重新授权后，只返回封存的matter revision、base working revision、prior work、trigger、输入、实际交付模型的referenceWorks及其更正通知、保存回执；不返回lease、executionModel、完整任务或模型载荷。Astra两轮发现并关闭继承参考遗漏及旧任务缺referenceWorks兼容；25项单测、server type、源码eslint/diffcheck通过，隔离PG全套6/6通过，含显式/继承引用、问题/Overall通知、撤权拒绝、失败恢复、保存回执及合法历史封存。提交61caffd00cc78b45790d38eaf4f19a6c030a04da（父3b1d462669d7b3b422a53d1259ee636de65d72e6）精确4文件，正常hook及origin/github同名分支SHA一致；release7686084654881278914最终finished并绑定该提交。发布中一度回读旧SHA，终态已纠正，不将中间态当发布完成。app17c是OpenClaw操作目标，不支持代码release；Host发布面仍为full-stack app17b。
+
+新STATUS准确恢复旧失败跨事项attempt AQ-888ff6f88f984fe797293601dcb96d06：目标事项revision MREV-4cfb4204-2859-4408-8fe4-f6224af10e4f/2、base work7、prior MWREV-c31bd0fa…，两份同family输入为旧document_version_6b998…/PRUN-ea9543…与新document_version_78c6…/PRUN-9e7cd…；唯一参考为787事项MAT-26b208d0…工作16 MWREV-75632e5d…的问题claim_maintenance_disruption_risk_under_win7_hypothesis。该旧attempt无保存回执，未猜测丢失save request。
+
+基于当前work9而非旧work7创建正常后继AQ-0522420dcaeb43aba7a1320f45d82c0d，明确只比较787方法/条件与777自身ONS、BP V17C和已过期目标，不继承对象事实、评级或结论。自然消费者保存work10 MWREV-7273b6f0-df4e-4796-bf48-fce9d2d2cc37/revision10后以JOBAID_INCOMPLETE_TERMINAL_RESPONSE失败；精确保存回执JA-save-aa18ccee-1b2c-4acf-b995-c47e684c1db8可读，证明保存后失败仍可恢复。work10六问题及Overall CURRENT，但跨事项只在文字上下文出现，未持久MATTER_WORK证据，M不接受交叉引用闭合。一次正常全工作后继AQ-ae9a6b…同错误且零保存，未原样继续重试。
+
+随后改用已存在的有界入口。问题更正AQ-a9d0cdf9ea914292bda4a102e2046fb5成功，只改FTD-V18-CROSS-REFERENCES，形成work11 MWREV-95c19b85-e48e-4d2e-ae1c-1a1f00d43e7e/revision11；保留三条777 References原文并新增准确PRIOR_RESULT `MATTER_WORK:MAT-26b208d0-1cc8-486e-a38f-7b9a99f74e7f:MWREV-75632e5d-e5f4-4cd2-8ace-a254f99f5874:claim_maintenance_disruption_risk_under_win7_hypothesis`，正文邻接引用且明确来源Overview STALE未采纳；其他五问题逐字段未变，Host正确将旧Overview标STALE。
+
+首次Overview更正因没有交付旧Overview已引用的完整三条来源而在创建attempt前拒绝，无operationRef和业务副作用；在线trace edaacb7de4086efac412ed0e2c5a017d及本地合同确认这是来源准入而非CAS/权限失败，未放宽校验。按现有Overview精确引用u102:p3、u111:p4、u79:p2及新增MATTER_WORK来源重新受理AQ-c79e0e4bae6e428cbc760ff472dcfd7a并SUCCEEDED，形成work12 MWREV-2ac8099c-04f1-4149-9ccb-6f40120a3b68/revision12。Overview CURRENT，覆盖六问题；787段落邻接准确MATTER_WORK来源并保留STALE/不继承边界；六问题与work11逐字段相同，180条evidence含唯一PRIOR_RESULT。线上WL_ENGINEERING_SEARCH_PROJECTION未设置，知识搜索当前使用授权后的工作表直读而非projection；只读SQL按同一current-work数据源精确命中work12/FTD-V18-CROSS-REFERENCES/CURRENT及三条目标原文+MATTER_WORK来源，空projection表不是索引丢失。
+
+外部 Chrome 控制接通后完成该只读页面验收。先以错误 `MAT-26b… + work12` 组合进入 Wiki，页面准确拒绝并明确不以当前工作替代指定历史版本；线上只读 SQL 随后确认 work12 实际属于 `MAT-d9e6c294-f368-42e4-9a1b-b46c6170be02`。正确 URL 精确读回完整工作修订12、CURRENT Overall、六个问题、11项根来源及邻接的 787 `MATTER_WORK` 引用，明确该引用 Overview STALE 且不继承事实、适用性、评级或决定；浏览器刷新后 URL、workRef 和指定版本提示保持不变。生产 `/knowledge` 以 `Win7` 只读查询同时返回 787 工作16和 777 工作12，分别显示 STALE/CURRENT 覆盖状态、精确问题键与根来源；展开 work12 显示“始终读取所引用的确切版本”及完整 15 项未读参考限制。再按同一代码路由进入 `MAT-26b…?panel=materials&sourceWorkRef=MWREV-75632e5d…&sourceIssueKey=claim_maintenance_disruption_risk_under_win7_hypothesis`，准确读回工作16、Win7测试前提、likelihood=null、NOT_CONNECTED可靠性限制及候选/非正式决定边界；刷新后精确三元身份和正文保持。全程未登记引用比较、未启动模型、未保存或正式采用；这组证据闭合 Wiki/知识页读取与刷新返程，不扩大为后台来源已接通。
+
+## 2026-09-16 c110 正式安装、Trinity 真实读取及精确返程接通
+
+前端Trinity提交3b1d462669d7b3b422a53d1259ee636de65d72e6（父b37ee95f9）已由正常hook提交，origin/github同名codex分支均普通快进并核验同SHA；29文件精确范围，未纳入本文件、私有诊断、根zip或dist。release7686068790493301966已finished，commit_id=3b1d46266，online_url仍为既有17b应用。正式登录线上已读取真实候选：时间轴完整显示10条资料/厂家声明，其余三泳道明确为未接入而非0；从DAS-8f6c4005…进入图谱保留同一statementId，选择引文后准确增加anchor=a73，返回时间轴仍保持同一声明/锚点；再进入原文页定位u75文本“Root Cause Established: N/ A”，返回链接仍携带原candidate/run/parse/DV及timeline视图。该验收证明当前保存候选的时间轴—图谱—原文身份与返程闭合，不扩大为完整三视图业务验收或正式工程结论。
+
+唯一后端Luna回执：c110官方安装turn7686052484787342305 completed/queue0，FileService /1876477642411050.zip与425945字节及SHA一致；53/53文件字节一致，仅额外.source-origin元数据；Ready/model-visible/command-available均true、missingRequirements=0。六cron disable/install/enable后完整配置drift0且后续lastRunStatus ok。报告workspace/wiselink-uat/r09c110-install-report.json。后继只读turn7686060105113013467 completed/queue0：新版777FTD document_version_78c6d0adb612265f85e1d338 当前published PRUN-9e7cd784-92bb-478d-b34f-ae56fd53e087/parseRevision2/semantic1；初始nextActivityRunRef=null。准确section:u73 Milestones，u73 heading+u74-u83，PDF页2。
+
+随后按M接受范围恰好一次ACTIVITY_BEGIN及一次官方Hosted模型调用（miaoda/minimax-m3）：run DAR-32c3dfc2-8d68-49c0-9a80-84d69466eead，selection仅上述u73章节，读取u73-u83共11 units/11 anchors，a71-a81均PDF第2页且unresolvedRanges空；保存SAVED/candidateRevision1/candidateOnly=true，10条statement，errorCode=null。未重复BEGIN、未重跑模型、未换run、未FAIL，也未触发翻译、Overall、正式采用或扩额。最终只读turn7686066953119550413确认两次STATUS/READ整包一致，SHA256 0d9cb5b3a44c166cc2a1ed5105f4b0be0835e8a74725c93497a6675fd800e837；10/10 quote用真实sourceText区间校验通过，time.raw与对应quote一致，11/11 SourceRef可解析至u73-u83/PDF第2页。脱敏文本比较曾给quoteChecks假阴性，已由真实区间校验排除。该结果是候选与来源完整性证明，不是正式工程结论。
+
+M已修F1真实可读与完整范围隔离，并完成参考CSS字阶/几何/材料修订。实际同组件+隔离fixture在同一浏览器标签、DPR1对照：1600主要框架及ringcard 1011×677.4844一致；1440 pagehead x226 y77 w1175 h67.35156、ringcard x226 y322.85156 w851 h609.57031均与静态参考相等；390深色实际scrollWidth390无横溢，主要内容视觉边界约1px差。手机core、导航、列表和双环替代布局已修。共享壳账号/当前路由为隔离mock，不把它当生产验收。之前rawCDP缩放截图无效不作为证据，已clear。
+
+生产态势页已在正式登录会话读取并截图：宏观页显示八业务环、六知识环及中心工程智能体；目录仅取得2个事项时，总体/条件/知识/效果指标保持“—”并说明范围不完整，只有分析与评估显示已取得2项关联。切换聚焦事项进入MAT-d9e6c294-f368-42e4-9a1b-b46c6170be02准确URL，事项标题和问题来自真实保存工作，分析与评估仅显示1项；机型/ATA/复用范围仍保留未核实。该结果证明已发布态势组件与真实读取的范围边界，不代表生命周期后段业务已接入。
+
+同family正式换版只读turn7686070351278050252已terminal/queue0。OLD document_version_6b998c1544aa06b5f20b2be0当前published PRUN-ea9543e4-1c2c-4f21-b989-963ca71e875b/parseRevision2/semantic1，NEW document_version_78c6d0adb612265f85e1d338当前published PRUN-9e7cd784-92bb-478d-b34f-ae56fd53e087/parseRevision2/semantic1；同profile、同family，nextActivityRunRef均null。ftd.revision_description为TEXT_DIFFERENT：标题相同、说明正文从“Update Status, Milestones, and Operator Action Sections.”变为“Update Status and Milestones Sections”；ftd.milestones前6行相同、后5行变化，生产纳入行扩展且三条SB与Parts Available状态/时间文字变化。两端均5页全读，所选SourceRef在PDF page2；覆盖诊断OLD20/NEW21保留为TEXT_CONFLICT/FIGURE_UNINTERPRETED。双向compareWith镜像一致，publicationRelationship仍NOT_VERIFIED、assessmentCoverage仍NOT_RECORDED_BY_THIS_READ。线上/document-revisions以两端DV自动固定上述parse/semantic，实际显示发布方改版说明差异、各端准确原文链接和同样的未验证/未覆盖边界。全程无模型、BEGIN、SAVE、Overall或正式采用。
+
+后继事项准入采用只读而未先生成。最小STATUS turn7686075928338549967确认next_matter_assessment.next=null，当前无待办、在途、排队或恢复中的Matter评估；最新attempt仍为已成功的AQ-45bda7aa04624fcb89d64d766affcba5。空闲STATUS不返回current work/input字段，READ_SAVED_WORK必须使用当次SAVE_WORK的JA-save requestId；触发级wl-work8-overview-citations-20260916精确读取返回null。进一步只限该attempt读取checkpoint、结果与两份官方日志，实际JA-save requestId已不在可用证据中且日志零命中，因此没有猜测或重放。既有线上工作9/MWREV-8a870911-3c66-42e3-9ec4-939f9ce0b8ae及其准确页面读回继续有效，但本轮不能仅靠空闲STATUS重新证明其current inputs/coverage/referenceWorkNotices。因为新版DV此前已作为该事项成员触发真实评估并形成后继工作链，且当前无pending，本轮不为补证强造另一版工程工作；后续参考变化需用可追溯新输入或正式保存入口另行验证。
+
+F2 projectAuthorizedSituation adapter读取真实directory与focus working：仅保存分析可证明assess关联，不推断正式/实施/效果；完整范围未知维持partial，复用数量未知；精确workRevision进入同一保存正文，6测试通过。EngineeringSituationPage保留身份、CurrentObject、分页、实际INCLUDED非EXPECTED来源选择。Astra接受F1/F2。M注册/situation与matter/posture新版页面，Sidebar新增态势/时间轴。
+
+M重写EngineeringTimelinePage，严格DV/parse/run/candidate及session身份栅栏，旧响应不得跨session覆盖；statement/anchor只作同一候选选择，不重读或卸载图谱。日期原词保留不伪造坐标，四业务类中仅材料有本DTO记录，其余未知。/timeline与/activity-graph共享准确读取及返回；目录上下文只放嵌套returnActivityQuery，避免顶层互斥冲突。10项实际mounted测试覆盖session延迟、URL选择、S2/A2双视图往返、同候选零重读及目录返程。图谱节点按DV/parse/run/revision隔离，共享anchor/SourceRef去重但逐quote关系不丢，SourceRef不清空选择，可读明细只显示保存的statement→quote→anchor→SourceRef；headless Cytoscape实际加载验证无ID碰撞。Astra最终接受该代码范围，客户端类型、受影响源码eslint和CSS stylelint通过。时间轴/图谱完整参考视觉及生产真实候选页面验收尚未完成，不能称Trinity整体完成。
+
+## 2026-09-16 c110 接受与 F1 覆盖隔离修订
+
+后端SDK最后差异已修：实际@modelcontextprotocol/client v2采用callTool第二参数，官方fallback v1采用第三参数，由loadMcpSdk确切分支传递，不猜function.length。实际Host MCP HTTP互通追加150ms HB/25ms signal中断回归，明确收到FIXTURE_ABORT；同一options携带75ms timeout，但此断言单独证明signal，不冒称已触发timeout。互通1/1和四消费/模型套件85/85通过，Astra最终定向复审无必须修项。
+
+c110正式提交b37ee95f99e98c50ac29560fd5edeb93af0f4c41（父6a448dda），精确Skill15文件+Host互通1文件，正常hook及双远端同名SHA核对。官方包/private/tmp/wl-c110-accepted/wiselink-research-and-synthesize-r09.c110.zip，425945字节，SHA256 ae4298ac98d3b1f60184ee1d0f9e6bb23030d16281e4d409c45ca644223118bd；53文件，打包内置完整Skill测试passed；manifest SHA256 6f7f093f7c58c5fefcbd4ae310a9e03e0cdf3ef99b9a9d0b6d3d18a4d4882ca0。已交唯一后端Luna按官方路径安装并保护六cron原配置，先核对quiet，再安装逐文件比对；尚未收到安装回执，不得声称已安装或启动真实活动候选。
+
+前端R1仍被独立复审发现data旧focus泄露与独立knowledge/events coverage未执行，M已修可读/完整范围helper、独立数据过滤、partial总数未知、focus拒绝后清内容/候选、高亮及真实来源标签；42项定向测试通过。原Luna继续仅10文件视觉修订。实际同组件本地预览已改用生产index.css/postcss；预览补工具包@/inspector.dev.css确切路径alias（仅临时配置，不修改生产）。M同浏览器1600x1000对照原静态页：固定壳、306右栏、1000/610环几何一致；关注6项应3项，面板730高vs677参考，旧tokens控件边界/圆角/阴影/字阶仍不符。正在按参考精修，尚未视觉接受/注册生产Trinity路由。浏览器临时DPR/viewport需结束前恢复；backend操作原标签不由M并控。
+
+
+## 2026-09-16 Trinity 框架与后端 B 独立修订
+
+共享壳6文件提交6a448dda6c004c74de0d006cd18b43d7bb8c7c12（父a3680828）正常hook与双远端同名SHA一致，尚未发布。按Trinity框架202px/58px/24px、四档响应式断点和中性主题材料调整；真实内容区独立滚动，useReadingLocation对应恢复/捕获同一容器。client类型、源码eslint、CSS stylelint通过，4项导航及2项实际挂载滚动回归通过；本机CUA隔离实际Layout/Sidebar/TopBar确认1600/1440几何、390无横溢及导航开关，不冒充整页或生产验收。隔离预览/private/tmp/wl-trinity-shell-preview，127.0.0.1:4179；最后server session40943。初始Vite未捕获工作树事件导致品牌旧图，重启后已读回最新SVG/背景#303439；后续采用polling。
+
+F1十文件现成包trinity-source-handoff-aad3937b.tar.gz已取回（21122字节，SHA256 2c02d185807acb36cfac10bdc1a83592ac08bd830609e6fbcb2e34153ded2f8c，cloudbase aad3937b）。原F1因单轮调用上限提前结束，后继仅导出现成代码；最后交接turn7686043387812318136 completed/queue0。Astra确认双环几何/受控组件主干可复用，但需补未知数据仍保留框架及availability、精确token、资料库目标、来源标签和去重。已明确由原前端Luna在本canonical仓仅修10文件，M独占共享壳；不新cloud开发、不扩额，测试改现有JSDOM方式；尚未接受或提交F1。
+
+后端完整8文件增量130043字节/SHA256 dc0fe56b8c2778c2c0171b677c78cc71ad515da573f55a3c199ba7a3db188cb7已核验重建。Astra初审58项原测试通过但5反例证明unknown-model伪成功、期限/HTTP timeout失效、model.result落盘失败误FAIL、READ绑定不足和空声明schema冲突。M已选择性取入canonical openclaw源码并修订，85项定向测试通过，含未知恢复/ENOSPC/挂起heartbeat/过期deadline/请求timeout/schema/MCP选项。独立复审发现实际MCP v2 callTool(params,options)与Hosted v1三参数差异仍需修，不接受安装。新增test/node/document-activity-consumer-interop.test.mjs实际Host来源选择/runtime+SDK MCP/HTTP+gateway HTTP+磁盘checkpoint互通通过，精确12 kPa表格引用、覆盖诊断保留、恢复零第二模型；repository为内存fixture，不称DB或生产验收。后端改动未提交/未安装，17c保持c109运行，未触发真实ACTIVITY_BEGIN。
+
+## 2026-09-16 活动阅读发布与真实空态验证
+
+F2接线实读定位：directory合同shared/api.interface.ts:3097仅分页items/nextCursor，无global total或生命周期；现有useMatterDirectory以matterId去重，但跨页不构成原子全局快照。宏观不得将已加载数改名总体或用updatedAt制造业务事件流量。working合同shared/matter-working.interface.ts中的current包含准确工作修订、createdAt、problemWork、coverage、overviewSourceWork和referenceWorkNotices；可链接已保存工作及核查事项，不能从DONE/保存/正文推断正式颁发、实施或效果。KnowledgeLookupPage当前复用EngineeringIssueSearch，SavedAssessmentReading直接读取AssessmentReadingResult，下一接线应保留同一工作/问题/来源身份，不另建Wiki生成链。这是代码定位，未实施F2。
+
+活动阅读10文件正式提交42758156b9a1c692399a0abab8a796ebffeaf0c5（父916b16b28040afed0002ed8780513990a8c3b2df），正常hook及origin/github同名快进核对通过；发布7686034475856678114最终finished且commit一致。随后4份Trinity对齐文档提交aaf353ffb68a11f7e48d3885ce5e0da715dd92e1并双端核验。
+
+真实登录页面从787-FTD-45-25001_Doc_05082026.pdf进入活动阅读，文档document_version_b83523c2b5ba26a2b1753641与解析PRUN-c537f5bb-cc97-4ce9-855e-ca8d53e15a31绑定保留，正确显示未保存候选；没有启动模型、解析或翻译。缺少runRef的candidateRevision=1查询被拒绝，但线上暴露重复错误卡。M补effect入口早返回，6种非法查询的实际React挂载均断言只出现1个alert且零读取，22项交互测试与Page ESLint通过。2文件正常提交a3680828bf12846cedf49d12332d59ac1e715578（父aaf353ffb），双远端精确同名SHA核对；发布7686038372461104411最终finished且commit一致。线上重载同一非法查询，getByRole(alert)只返回一条准确拒绝提示；恢复有效parseRun查询后，未保存候选空态及family/parse绑定保持正确。
+
+当前仅验证真实入口、空态与非法绑定；真实保存候选往返仍待后端A+B完整材料审查、正式安装及授权运行，Trinity视觉仍待F1结果，不以这些检查冒充完成。
+
+## 2026-09-16 活动阅读本地集成与 Trinity F1 派发
+
+M 已核验并 fetch 前端修复包 aad3937b（父8cdf5098，8040字节，SHA256 d3b87ffebc8c946d52c82ad82bd6d20f2e19365d20260400f3d4d33c08bd58ea），按八文件范围选择性取入。Astra复审确认候选成对参数、实际点击声明/锚点的精确返回和全部锚点展示；M补同时显示页码与unitIds、覆盖诊断使用中性文案，并注册/document-versions/:documentVersionId/activities生产路由。64项定向测试、客户端类型、受影响源码ESLint通过；测试文件受现有lint忽略，不声称测试lint通过。Git协调员准备正常提交与双远端同名同步；尚未发布，不将本地测试算真实往返验收。
+
+Trinity F0已实读当前壳/态势与新设计，确认旧Matter中心认识卡需要职责重构。原17b唯一Luna已收到F1同组件视觉纵切范围与19文件材料包，2670392字节/SHA256 cec65d9251a47d602c7ce57da837e047478363525693dae93f0e7dac6169cfc2，含完整规范、原型、两CSS、几何/状态及6关键截图。共享路由/全局壳/Provider/API由M协调，F只新增展示组件及隔离fixture，实际受理与视觉验证仍待阶段回执。后端17c同一隔离B turn7686018873015798771继续由唯一Luna跟踪，不重复派发、不动c109运行目录。
+
+## 2026-09-16 后端运行目录隔离与 c109 恢复完成
+
+M 在已登录的原 17c 终端确认六项启用任务均调用开发所用的已安装 Skill 路径，目录内已有 A/B 修改；未执行安装命令不能作为没有运行影响的证据。完整 54 文件开发快照与六项原配置已保存在私有 `tmp/wl-activity-runtime-recovery-ao2p7_xa`。暂停原六项任务后，全部状态无在途且消费者进程为空，再通过官方 `skills install --force` 恢复 c109。恢复包 392025 字节、SHA256 `c105c257d672f3660729644df67e5405d862a1c316788737167f445b3b47d2c9`；48 文件逐字节一致，仅有安装器元数据，336 项 Skill 测试通过。
+
+六项任务已全部恢复原 enabled=true，命令、完整 payload、调度和其他配置逐字段一致；比较排除了更新时间与实际运行状态。一次差异为备份时的 status=running 后变为 ok，已确认是运行状态而非配置变化。保留的开发成果已复制到同一私有临时目录下的 `development-work`，后继仅在此隔离副本实现，安装目录不得作为开发工作区。未触发新业务、模型生成或重做中文。原开发 turn 已 cancelled；登录恢复后已在原会话界面撤销两条过时审计消息，官方读回 queue=0、cancelled。恢复完成不等于后继活动消费者准入。
+
+前端八文件 bundle 已本地取回并核验，Astra 独立审查发现半套候选 pin、来源点击返程选择、未引用锚点遗漏和范围明细缺失四组问题，已交原会话 turn `7686002403955215290` 窄修，尚未纳入 Host 或发布。
+
+## 2026-09-16 活动阅读 T1 云端阶段交付
+
+前端原会话提交 `8cdf5098f77a2d94d9e73fbb32290c16cf153f89`，父提交 `916b16b28040afed0002ed8780513990a8c3b2df`，范围为活动阅读 Page/View/入口参数 helper、原文页和返回参数，以及三份定向测试，共八文件。云端正常 precommit、51项定向测试、client 类型及 lint 通过；依赖清单的意外变化已恢复，最后修正轮 `7685998191481179336` 已完成且队列归零。27104字节增量 bundle 已在云端通过验证，尚未取回本地。传输动作首次遭自动审批拒绝，补充当前协作授权与同一原会话、八文件增量范围后复核已获批准，交接 turn `7685999307493100481` 已受理且队列为零；包 SHA256 为 `eb7e7b83be0d6f020b25df42c0bc9fcf54e7115c3e27d4ec17c5e08fa2b6b340`，正在取回。本地选择性集成、独立审查、路由注册、发布和真实往返均尚未完成。
+
+## 2026-09-16 后端运行目录待核实
+
+准备后继 Skill 安装时发现，A/B 开发目录与历史 c109 安装目录同为 `/home/gem/workspace/agent/workspace/skills/wiselink-research-and-synthesize`；历史六项原生 cron 调用其中消费者。虽然未执行后继安装命令，不能据此认定这些修改没有影响运行。B 生成 turn `7685987918099925994` 已官方停止为 cancelled；路径解析、当前 cron 命令与在途运行尚待现场核对，尚未完成隔离备份或 c109 恢复。唯一后端操作员正在检查原会话 UI，以消费两条已知审计指令；不得继续 B 或追加重复指令。后继开发须使用与运行目录分离的工作副本。M 提供的原开发路径未充分区分运行目录，后续结果以现场核对为准。
+
+## 2026-09-16 改版入口正式发布与真实往返
+
+Host 提交 `916b16b28040afed0002ed8780513990a8c3b2df`（父 `7c86becb`）正常 precommit 通过，精确十文件，origin/github 同名开发分支均核对相同 SHA；发布 `7685984083713919980` finished，最终提交一致。真实登录页面从目录选择 777-FTD-31-21002 的 2025-09-26 与 2026-05-27 版本，发现并固定两端 parseRun 和 semanticRevision=1；修订说明比较为 TEXT_DIFFERENT，旧版原文 u9:p0 打开后返回同一组固定版本、同角色及 before 来源侧。切换 ftd.milestones 保持版本参数，原始日期/状态完整显示，返回目录保留 family 选择。修订说明请求约4秒，里程碑请求约75秒后 HTTP200并完成显示；未重试生成或启动解析。另发现新路由面包屑缺名称，已本地补映射，随下一前端集成发布。
+
+后端 A 最终三份增量已取回，29 项目标测试通过；Astra 接受严格 STATUS/CLAIM/SAVE 回执与完整来源绑定、SAVE未知恢复、明确旧run恢复和非负UTF16坐标。M实际Host runtime互通以构造模型proposal保存真实fixture表格quote通过，属于离线互通，不是正式模型运行。已交 B 真实官方transport、持久checkpoint与全程心跳接线；T1已保存活动候选阅读同步开发。尚未安装后继Skill或执行真实ACTIVITY_BEGIN。
+
 ## 2026-09-16 改版生产入口本地准入与消费者合同复审
 
 前端入口 `01cf6c13f7a9b321f5697b55a573185db60376b8` 及修复 `57888579961ddcbf185144187d0af8d7285d90bc` 已核验取回，按七文件范围选择性集成；未整合云端历史或平台无关修改。非法/重复版本参数先拒绝，来源返回要求两端完整版本参数，角色选择持续可见，进入比较前保存目录位置。M 补充发现结果与当前 URL 身份绑定、按版本/角色/会话隐藏旧结果、隔离迟到请求及独立加载态，并注册 `/document-revisions`。Astra 复审通过；31项入口测试和4项真实组件异步交互测试通过，client 类型及定向 lint 通过。云端修复提交使用了 no-verify，正式本地集成必须走正常 hook。当前尚待本地提交、同步、发布及真实页面往返验证。
@@ -1132,3 +1221,87 @@ next_original_assessment 在已确认适用性原文影响时，现优先调用 
 本批不再以解除16000作为编码前置；有界策略及Host增量消费已实现/安装。但实际生成仍未形成首个可执行工作增量。当前安装HTTP入口未见reasoning_effort/thinking/thinkLevel直接读取，不据此伪造任务级透传能力；未全局关闭推理、切模型、修改托管网关或把半个JSON保存。剩余是可靠停止原因进入实际消费者、任务级有效推理/输出行为的核对及首份实质工作，不能以本地测试代替。三个原生job均已恢复enabled=true；未保留暂停、未新增调度。
 
 本轮完整内部标识及读回材料保留于本机/private/tmp/wiselink-c95-internal-integration.md；公开增量不包含新增任务/会话/工作引用。
+
+
+## 2026-09-16 登录恢复后的队列清理与前端修复交接
+
+后端原会话登录已恢复；M 在原 UI 展开 AI 开发面板，使用每条待执行消息的撤销按钮撤销两条过时审计指令，未点击继续执行。随后官方 session-get 精确回读 queued_count=0、latest_turn.status=cancelled、turn_id=null；界面短暂“工作中”不作为在途证据。c109 的已核验恢复及六项原任务配置保持此前证据，本次没有再次安装、运行 consumer、cron run 或 BEGIN。
+
+前端 Luna 报告四项修复完成：提交 aad3937b9cd1d08535aa5cfef8fcf7ff1598b466，父提交 8cdf5098f77a2d94d9e73fbb32290c16cf153f89；7 文件均在授权 8 文件范围，DocumentVersionReadingPage.tsx 未改。报告 64/64 定向测试、client typecheck、定向 ESLint、build:client 和正常 precommit 通过。以上尚待 M 取回实际对象及 Astra 复审，未集成、推送或发布。
+
+云端另有超范围 document-management-hosted.service.ts 修复，不能随工作树或后续 HEAD 合并。交接明确限定上述前端精确提交相对其父提交的最小 Git bundle，排除附加 server 改动。该交接被自动审批以私有源码跨环境传输为由拒绝，尚无本地修复 bundle；需用户对此指定提交/原妙搭会话到本机 /tmp 的具体取回授权。未绕过拒绝或改走另一传输渠道。
+
+
+## 2026-09-16 用户代码跨环境传输持续授权
+
+用户明确回复：“授权所有代码跨环境传输，以及后续的相关授权”。该授权解除此前前端 aad3937b 最小 bundle 从原妙搭会话取回本机 /tmp 的传输阻塞，并持续适用于本项目后续相关代码跨环境交接、审查与同步，无须对同范围代码传输重复确认。已通知前端唯一 Luna 操作员继续原精确提交取回。代码传输授权不自动接受超范围实现；仍按准确提交、父提交、文件范围选择性审查和集成，保留原双远端同名 codex/* 非强制同步以及身份、来源和正式采用边界。
+
+## 2026-09-16 真实长 SB、旧测试数据处置与 OCR 图示边界
+
+用户明确旧版 599 单元中文及现有测试数据可抛弃，不要求兼容，优先系统稳定、简洁与效率。后续不再以旧 599 单元形状约束新包，也不重跑该旧中文成果。精确删除了一条已被旧发布卡在 PARSING 的测试 WorkItem 及其两条 attempt；保留实际 DocumentVersion、Document、SourceArtifact、family 和原 PDF。旧无租户 family key 与当前 tenant-scoped family 并存，暂不对复杂旧链做宽泛删除。
+
+真实 737-34-3830 Original Issue 已登记为 `document_version_ca86dbb2e9ec250e3aa66283`，实际源 SHA-256 `add32c7d4192d35c59162f15eb57f08247427135d5912438501ec9267fa4d41a`、1,060,204 字节、22 页。OCR 运行时默认打包提交 `26fb96916`、同 WorkItem 重试提交 `c84823dec`、失败报告存储中断终态化提交 `2418ea741` 均已分别发布；最新 Host release `7686123622041455589` 精确对应 `2418ea741ba6e3068efcb22953e1d85d8e1f8740`。
+
+新建 WorkItem `WI-9eef1ca3-33fa-4e2d-9d99-a56d8d16d60d` 已正常终态 FAILED，而非卡在 PARSING。失败报告实际写入并严格读回，证明失败记录链修复生效。失败参数显示部署内 OCR provider 已运行，p7/p21 两张约 56.733% 页面面积的线描图均为 `OCR_LOW_CONFIDENCE`；不是运行时缺失。页面实际核对显示图示含 FMC/E5-2 位置及替换关系，不能把绘图噪声 OCR 冒充正文。
+
+当前最小修法将仅限已有 native text 页面的低置信 raster region 保留为 source-bound `figure`，引用原 PDF 页级 SourceRef；拒绝的 OCR token 不进入正文。空白扫描页、语言/运行时、空结果、冲突与几何错误继续失败关闭。旧 599 预期改为真实 SB 新结构 601 content units（新增 p7/p21 两个 figure）；针对性 15 项测试、前后端类型检查和 precommit 通过，真实文件本地用例因未设置 env 明确 skip，不作为验收。待同名分支提交/双远端同步、技术发布后，在同一 DocumentVersion 上重试并以 Hosted frozen.2 严格校验及实际包读回接受。
+
+后台来源仍未接通：`technical-library` 与 `operations` 均为 `UNKNOWN/NO_AUTHORIZED_DRIVE_FETCH_CHANNEL`，无 cursor/receipt；不制造 adapter 或 receipt。Luna 的隔离 dry-run 只证明本地分页协议，不是正式来源接入。
+
+后续实际提交与发布已完成：`ea6bb7d27` 保留两处低置信线描图为 source-bound figure，release `7686129416049478614`；第一次线上重试到达 frozen.2 语义校验并以 `PACKAGE_SEMANTIC_VALIDATION_FAILED` 正常失败。定位为 figure 未绑定资产后，`1df8c4fc2` 为每个 figure 建立 `pdf_figure_region` 资产及指向原 PDF 的 `source_original` rendition，release `7686133223253167085`；`a99f4fa13` 将该语义校验失败纳入修复后可重试策略，release `7686135667398773730` 已 finished，精确 commit `a99f4fa138b48a2be134be42fa2c56c85cab47ab`，error_logs 为空。三项提交均已同步 origin/github 同名 `codex/wl31-r09-master-handoff-20260903`，远端 SHA 一致。
+
+发布后的同一 WorkItem 仍为 revision 6/FAILED，线上日志没有收到新的重试请求；多次浏览器控制在请求送达前超时，不能把工具超时冒充重试。旧 22:08 的 409 明确发生在 retry-policy 发布前。当前不通过 SQL 改状态，也不轮换/启用已停用开发 OpenAPI Key；后者按 lark-apps 技能属于需显式确认的高风险密钥操作。恢复条件是已登录页面能实际发出一次 retry，或用户明确授权临时轮换并启用精确 scoped 的 `wiselink-s1-development-acceptance` Key，调用后立即停用。成功后继续以 Hosted 包严格读回核对 601 units、600 SourceRefs、p7/p21 两个 figure 及两项 source_original 资产绑定。
+
+外部 Chrome 控制随后已实际接通：精确导航到线上固定版本 `/document-versions/document_version_ca86dbb2e9ec250e3aa66283`，辅助功能树读回文件名 `737-34-3830 Original.pdf`、按钮“解析文档”及“尚无已发布的解析内容”，证明登录、版本身份和入口均正确。WorkItem 数据库仍为 revision 6/FAILED/`PACKAGE_SEMANTIC_VALIDATION_FAILED`，没有新 POST。点击“解析文档”被自动审批以“此前仅只读授权、线上解析会产生处理副作用”为由拒绝；未改用 API、SQL 或密钥绕过。恢复条件收敛为用户明确授权对该固定版本发起一次线上解析；该授权不包含重跑旧 599 中文。
+
+等待该明确授权期间，已用实际原 PDF 路径运行 `host-native-real-737-sb.spec.ts`，1/1 通过（约 4.6 秒）：真实字节 SHA/长度、pdfjs→SPP→U0 frozen.2→Unified Reader 全链成立，严格读回 601 content units、600 SourceRefs、两项 figure、22 页全页来源及禁止自动采用策略。本地结果不替代 Hosted 包读回；线上重试成功后仍须检查两项 figure 的资产与 `source_original` rendition 实际持久化。
+
+用户随后明确“授权线上解析”。外部 Chrome 在同一固定版本上经键盘激活实际发出 `POST .../parse-runs`，HTTP 202，requestId `parse-e2ec8c85-1107-42b7-8d5a-2c81b002b254`，新运行 `PRUN-b2709813-d9a7-4fec-ae73-f67aec95bc5b`、parseRevision 1，deadline 01:30:04。页面读回“正在解析…”，证明预约成功；旧 revision 6 WorkItem 没有被误当新结果。多次线上数据库读回该运行保持 `RUNNING`、artifactProgress=0、leaseOwner=null、leaseGeneration=0、无 errorCode，证明尚无消费者领取，不是已有 STEP 正在执行。
+
+后台妙搭智能体的“去对话”尝试连接 OpenClaw 后返回，未发送运行指令。随后通过外部 Chrome 准确打开 Hosted 终端；终端停在旧 `Display all 1242 possibilities?` 自动补全询问。拟运行已安装 `consume-hosted-work-item.mjs --document-version-id document_version_ca86dbb2e9ec250e3aa66283`，只在每次 STEP 后 fresh-read，PUBLISHED 后停止以避免进入翻译分支。但自动审批将 RUNNING 预约误判为同一步骤正在执行，以重复处理风险拒绝提交；命令未进入终端，线上状态仍为零租约/零产物。终端输入的进一步回车也被审批拒绝；没有绕过。恢复条件为用户在获知该具体风险后，再明确允许对上述现有 parseRun 由 Hosted 消费者执行逐步 STEP；每步仍由 Host lease/CAS 保护，发布即停，不启动翻译、评估、中文或正式采用。
+
+## 2026-09-17：真实长 SB 线上解析发布与来源索引
+
+用户明确授权线上解析后，沿用固定 `DocumentVersion document_version_ca86dbb2e9ec250e3aa66283` 和 `WorkItem WI-9eef1ca3-33fa-4e2d-9d99-a56d8d16d60d`。旧 parse revision 1 `PRUN-b2709813-d9a7-4fec-ae73-f67aec95bc5b` 已按实际过期状态原子终态化为 `FAILED/DOCUMENT_PARSE_INTERRUPTED`；没有沿用其零产物 RUNNING 状态。新 parse revision 2 为 `PRUN-b64c2778-5401-4403-89a5-92fb69a53543`。
+
+新运行最初未被 Hosted 消费者接受，具体原因为 `WL_OPENCLAW_SERVICE_DOCUMENT_VERSION_IDS` 缺少当前精确 DV。保留原 3 个 ID，仅追加当前 DV 后发布后端/OpenClaw 应用；release `7686195813340646329` 已 finished，精确 commit `a99f4fa138b48a2be134be42fa2c56c85cab47ab`。随后由 Hosted 消费者按 Host lease/CAS 逐步推进，解析于 `2026-09-17T02:14:41.182+08:00` 进入 `PUBLISHED`，`error_code=null`。
+
+线上持久化 5 个产物且逐项 `readback=VERIFIED`：`raw/document.md` 37,806 字节、`original/pages-0.json` 59,595 字节、`original/pages-8.json` 126,794 字节、`original/pages-16.json` 55,193 字节，以及 `original/manifest.json` 538,069 字节；主 manifest SHA-256 为 `a549c85780fa1f5e13dc6316cb6e1c1c56be52f0cbf9ace22dbbc2561f40a5cf`。发布绑定保持真实源文件 SHA-256 `add32c7d4192d35c59162f15eb57f08247427135d5912438501ec9267fa4d41a`、1,060,204 字节和 22 页。
+
+使用正式 `read_document_original` 对发布物分页读取，22 页均可读。当前线上 `wiselink.document.original.v1` 的准确形状为 366 个阅读单元、406 个互异 SourceRef/locator，其中 344 个 paragraph、19 个 heading、3 个 table；普通工程读取保留 26 项 `STRUCTURE_UNCERTAIN` 限制。该合同由 `composeDocumentOriginal` 按物理文本范围组织、去除页眉页脚等重复项并连接连续表格，图示覆盖以诊断记录表达。因此此前本地 U0 `ProfessionalInput` 对同一 PDF 的 601 content units、600 SourceRefs、2 个 figure 是另一层测试包合同，不能写成这次线上发布物的读回结果，也不再作为旧中文数据的兼容目标。
+
+来源投影通过 `document_work INDEX` 每批 20 条推进，终态返回 `INDEXED`；后续返回 `NO_PENDING`。线上数据库复核 `engineering_search_projection` 为 406 行、406 个互异 locator，`engineering_search_projection_pending` 为 0。索引是可重建派生状态，不改变原文发布物或工程结论。
+
+本轮在 `PUBLISHED` 后没有再次调用会同时推进翻译的 Hosted consumer。线上 `action_attempt` 按该 DV、`DOCUMENT_TRANSLATE` 和当前 producer run 精确查询为 0，证明没有启动旧 599/601 单元中文重跑。未运行事项评估、未生成或采用工程结论，也未把本地 U0 测试冒充线上验收。尚需后续在获准范围内处理 26 项结构限制、后台来源和真实长 SB 的进一步阅读/评估；这些不影响本轮解析发布与来源索引已经完成的事实。
+
+## 2026-09-17：工程态势总数与生命周期覆盖口径分离上线
+
+前端提交 `f9ba7bd22111dcc0c9c4f8c6b05e30b358ccdba5` 将目录是否已穷尽的 `matterTotal` 覆盖与生命周期分布的 `lifecycle` 覆盖分开。当前授权目录已穷尽时可以显示去重事项总数；各阶段分布、知识工作和效果观察仍按各自未完整取得的事实显示部分范围或破折号，不再用一个 coverage 标志把已知总数一并隐藏，也不因目录完整而虚构完整生命周期、知识或效果结论。49 项定向测试、client typecheck、受影响源码 ESLint 和 client build 通过；提交已非强制同步到 origin/github 同名开发分支。
+
+前端 release `7686202075360807894` 已 `finished`，精确 `commit_id=f9ba7bd22111dcc0c9c4f8c6b05e30b358ccdba5`，`error_logs=[]`。外部 Chrome 刷新生产 `/situation` 后读回：`可见工程事项=2`、`有条件需继续核对=0`、`已有知识工作=—`、`有关效果观察=—`；“分析与评估”为“已取得 2 项关联 · 部分范围”，其他阶段保持“阶段关联尚未完整取得”，页脚明确“本次目录已取得 2 个事项；生命周期分布、全量知识和业务时间记录尚未完整接入”。其中 0 是当前目录投影结果，尚未据此生成工程判断；后续需核对该关注指标的来源字段语义。
+
+继续核对确认上述 `0` 仍过度确定：目录 `result.roundCompletion` 为可选字段，当前事项缺失该分类不能等同“没有待核条件”。最小后继提交 `48ee03054f5bb6cd03bb3429af78dfb7c310f777` 将事项关注分类改为 `boolean | null`；只有目录已穷尽且每项都明确分类时才计算关注数量，`COMPLETE` 可得 false、`COMPLETE_WITH_OPEN_QUESTIONS` 可得 true，缺失或不足以判定时保持未知。51 项定向测试、client typecheck、受影响源码 ESLint 和 client build 通过；正常 precommit 与 diff check 通过，origin/github 同名开发分支均回读该 SHA。
+
+前端 release `7686203693624118217` 已 `finished`，精确 `commit_id=48ee03054f5bb6cd03bb3429af78dfb7c310f777`，`error_logs=[]`。外部 Chrome 再次刷新生产 `/situation` 并等待授权目录加载后读回：`可见工程事项=2`，`有条件需继续核对=—`，`已有知识工作=—`，`有关效果观察=—`；“分析与评估”仍准确保留“已取得 2 项关联 · 部分范围”。这完成了已知目录总数与未知关注/生命周期/知识/效果口径的分离，未制造零值或工程结论。
+
+## 2026-09-17：真实同 family 两端读取与正式版本边界复核
+
+线上当前只有一个多版本 family：`family_4aa6b72b084efa83410651ad`，共有 3 个 `COMMITTED_IMMUTABLE` DocumentVersion；family 为 `ACTIVE`、`current_generation=2`，当前指向 `document_version_78c6d0adb612265f85e1d338`。三份登记的 canonical identity 分别是 `GENERATED:2025-09-26`、`GENERATED:2025-07-04`、`GENERATED:2026-05-27`，但 `business_revision` 与 `revision_date` 均为空。因此它们证明同 family 版本登记和当前指针，不足以单独证明发布方正式修订顺序或正式采用关系。
+
+选取已有已发布语义的两端：before `document_version_6b998c1544aa06b5f20b2be0` / `PRUN-ea9543e4-1c2c-4f21-b989-963ca71e875b` / semantic 1，after `document_version_78c6d0adb612265f85e1d338` / `PRUN-9e7cd784-92bb-478d-b34f-ae56fd53e087` / semantic 1。两端 parse revision 2 均为 `PUBLISHED`，profile 均为 `boeing.ftd.sections.v1`。线上日志 `LOG7686073295054900212`、trace `07d138a935b96d0047c147dc37b478a0` 记录生产 `/revision-reading` 精确请求 HTTP 200、无 error；请求 identity、role `ftd.milestones` 与以上两端一致。
+
+从线上私有存储下载两端 manifest 后，SHA-256 分别严格等于数据库记录 `1c0fdc7800d9a5ee6bb699bb2e261b3bbad2c25e3134a36283c241f8b35b2b8a` 和 `7e94474dfc5ef5a2be50636da2a1616a17f5b3c95753acd1a16ec2501d201375`。两端均 5/5 页可读、91 单元、120 locator；分别保留 20/21 项读取限制。语义图中两端各有唯一 `ftd.revision_description`（标题加正文 2 单元）和唯一 `ftd.milestones`（标题、正文及父级条件共 11 单元、11 locator）。用当前生产确定性实现对这些真实线上对象重放：两种 role 均为 `TEXT_DIFFERENT`、reasons 为空；两端文本摘要哈希分别为 revision description `26de7623…` / `537f5ab9…`，milestones `e43afa82…` / `0e876059…`。结果继续明确 `publicationRelationship=NOT_VERIFIED`、`assessmentCoverage=NOT_RECORDED_BY_THIS_READ`，不将系统文本差异写成工程影响、版本相邻或覆盖完成。
+
+定向 revision reading、页面交互和入口测试 43 项通过，client/server typecheck 通过。外部 Chrome 在本轮导航时因 macOS 已锁屏而未取得新的可见页面读回；没有把锁屏当作接口失败。解锁后仍需补同一 URL 的当前可见页面核对。更重要的是，当前材料缺少发布方正式 revision 标识，故“正式换版验收”保持未完成；需要取得并登记真实正式版次/修订说明来源后，才能继续历史评估影响、新版覆盖与必要 Overall，而不能用 GENERATED 日期或当前指针代替。
+
+## 2026-09-17：当前工作、Overall 来源与跨事项引用线上复核
+
+线上当前两个事项均有可追溯工作。SB 事项 `MAT-26b208d0-1cc8-486e-a38f-7b9a99f74e7f` 当前为 `MWREV-75632e5d-e5f4-4cd2-8ace-a254f99f5874` / working revision 16，问题工作已连续从 revision 14 经两次成功更正保存至 15、16；另一个取消尝试没有保存工作。revision 16 的 `overviewStatus=STALE`，保留 Overall 的确切保存来源是 `MWREV-356ec3e8-2c29-4872-9dab-4a6bb4887384` / revision 14，保存回执内 submitted overview 与当前保留正文严格相同。系统没有把问题正文更正静默写进旧 Overall，也没有因文本仍保留而猜测来源。
+
+FTD 事项 `MAT-d9e6c294-f368-42e4-9a1b-b46c6170be02` 当前为 `MWREV-2ac8099c-04f1-4149-9ccb-6f40120a3b68` / revision 12，`overviewStatus=CURRENT`；其 Overall 的确切保存来源就是 revision 12，保存回执匹配。历史问题更正和 Overall 核对请求分别保留成功、失败、取消状态；只有确实由对应 attempt 保存的工作才出现 saved work identity。界面现有 `OverviewSourceWork`、`OverviewCorrectionNotices`、`ReferenceWorkNotices` 及检索命中/展开均读取这些字段，明确区分保存、生成运行和正式采用。
+
+FTD revision 12 还精确引用 SB revision 16 的问题 `claim_maintenance_disruption_risk_under_win7_hypothesis`。`PRIOR_RESULT` 保存 source matter、source work、issue key 和 result revision 16，并声明 8 个根来源；线上逐项比较显示 8/8 在源工作中存在、8/8 在引用方中保留、8/8 JSON 完全相同，缺失/替换为 0。源 SB 的 Overall 仍为 `STALE`，引用读模型会随该问题结果携带来源工作状态及通知，不把连通关系提升为归属、批准或工程结论。
+
+线上没有配置 `WL_ENGINEERING_SEARCH_PROJECTION`，所以当前用户检索走获授权的权威保存工作读取；`engineering_search_projection_pending` 的存量待重建行不构成当前检索空窗。派生投影仍可经受 actor scope 与正常 guard 保护的 `/engineering-issues/projection/rebuild` 重建，但本轮没有绕过浏览器身份直接写数据库，也没有把派生待办解释为业务数据丢失。
+
+`overview-source-work`、`engineering-issue-search`、`library-atlas-reading`、`matter-work-reference` 四组定向测试共 31 项通过。既有真实 PostgreSQL 测试已覆盖带回执来源、连续更正后 `STALE`、历史版本读取、检索命中与展开 identity 一致以及跨事项根来源授权变化。此次线上复核未发现需要代码修补的缺口，因此没有为制造提交而改动实现；下一步仍是解锁后补可见页面读回，并在取得真实正式版次依据后推进正式换版影响与必要 Overall。

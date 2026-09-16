@@ -53,7 +53,9 @@ describe('runDriveFolderScan', () => {
     [{ status: 403 }, 'HTTP status'],
     [{ statusCode: 403 }, 'statusCode'],
     [{ code: 1061004 }, 'Feishu code'],
+    [{ code: 99991672 }, 'Feishu missing-scope code'],
     [{ message: 'permission_denied' }, 'message'],
+    [{ message: 'missing scope: drive:drive.metadata:readonly' }, 'scope message'],
     [{ response: { status: 403 } }, 'nested HTTP status'],
     [{ response: { data: { code: 1061004 } } }, 'nested Feishu code'],
   ])('returns a durable authorization blocker for %s (%s)', async (error, _label) => {
