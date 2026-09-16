@@ -12,7 +12,7 @@ import { MineruMarkdownReader } from './MineruMarkdownReader';
 import { DocumentParsedImage } from './DocumentParsedImage';
 import { DocumentOriginalPreview } from '../WorkspaceHomePage/DocumentOriginalPreview';
 import './document-version-reading.css';
-import { readingReturnTarget } from '@client/src/features/matter/reading-return';
+import { libraryReadingParams, readingReturnTarget } from '@client/src/features/matter/reading-return';
 
 export default function DocumentVersionReadingPage() {
   const { documentVersionId = '' } = useParams();
@@ -132,6 +132,15 @@ export default function DocumentVersionReadingPage() {
   const latest = currentStatus?.latestRun;
   const expired = latest ? Date.parse(latest.deadlineAt) <= Date.now() : false;
   const busy = Boolean(latest && ['RUNNING', 'STAGING'].includes(latest.status) && !expired);
+  // The activity entry is only available when the original reading exists for this exact
+  // version and parse run; it pins the same parse run instead of the latest one.
+  const activityEntryRoute = currentReading?.original ? (() => {
+    const query = new URLSearchParams({ parseRunId: currentReading.parseRunId });
+    const libraryQuery = searchParams.get('returnLibraryQuery');
+    if (libraryQuery)
+      query.set('returnLibraryQuery', libraryReadingParams(new URLSearchParams(libraryQuery)).toString());
+    return `/document-versions/${encodeURIComponent(documentVersionId)}/activities?${query.toString()}`;
+  })() : null;
 
   async function start() {
     if (!currentStatus || sending) return;
@@ -188,6 +197,7 @@ export default function DocumentVersionReadingPage() {
       {currentReading.original && <nav aria-label="阅读内容">
         <Button variant={view === 'original' ? 'default' : 'outline'} aria-pressed={view === 'original'} onClick={() => { setView('original'); setTranslationPage(null); }}>原文</Button>
         <Button variant={view === 'bilingual' ? 'default' : 'outline'} aria-pressed={view === 'bilingual'} onClick={() => setView('bilingual')}>中英对照</Button>
+        {activityEntryRoute ? <Button asChild variant="outline"><Link to={activityEntryRoute}>活动阅读</Link></Button> : null}
       </nav>}
       {view === 'bilingual' && currentReading.original ? <section aria-label="已保存中文阅读">
         {translationError && <p role="alert">{translationError}</p>}
