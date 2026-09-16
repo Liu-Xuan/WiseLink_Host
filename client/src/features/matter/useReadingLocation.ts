@@ -53,7 +53,12 @@ export default function useReadingLocation(
         if (details) details.open = true;
         trigger.focus({ preventScroll: true });
       }
-      window.scrollTo({ top: saved.scrollY, behavior: 'instant' });
+      const scrollContainer = document.querySelector<HTMLElement>(
+        '[data-reading-scroll-container]',
+      );
+      if (scrollContainer)
+        scrollContainer.scrollTo({ top: saved.scrollY, behavior: 'instant' });
+      else window.scrollTo({ top: saved.scrollY, behavior: 'instant' });
     }
   }, [ready, scopeKey]);
   useLayoutEffect(
@@ -88,7 +93,9 @@ export function captureReadingLocation(
 ): ReadingLocation {
   return {
     ...selection,
-    scrollY: window.scrollY,
+    scrollY:
+      document.querySelector<HTMLElement>('[data-reading-scroll-container]')
+        ?.scrollTop ?? window.scrollY,
     expandedIssueRefs: Array.from(
       document.querySelectorAll<HTMLDetailsElement>(
         'details[data-issue-ref][open]',

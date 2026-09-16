@@ -1,25 +1,21 @@
 import { useState } from 'react';
 import {
   BookMarked,
-  FileClock,
   FileSearch2,
-  History,
   LibraryBig,
+  Layers,
   LifeBuoy,
-  MessagesSquare,
   Palette,
   Share2,
   X,
 } from 'lucide-react';
 import { NavLink, useLocation } from 'react-router-dom';
 
-import appIconUrl from '@client/src/assets/wiselink-app-icon.svg';
 import {
   useWlTheme,
   type WlVisualMode,
 } from '@client/src/app/providers/ThemeProvider';
 import { useCurrentObjectContext } from '@client/src/app/providers/CurrentObjectContextProvider';
-import { Image } from '@client/src/components/ui/image';
 import {
   Dialog,
   DialogContent,
@@ -117,16 +113,16 @@ const Sidebar: React.FC<SidebarProps> = ({ mobileOpen, onMobileClose }) => {
     <>
       <aside
         id="wl-sidebar"
-        className={`wl-sidebar wl-glass-panel${mobileOpen ? ' is-open' : ''}`}
+        className={`wl-sidebar${mobileOpen ? ' is-open' : ''}`}
         aria-label="WiseLink 全局导航"
       >
         <div className="wl-sidebar-brand">
           <span className="wiselink-app-mark" aria-hidden="true">
-            <Image src={appIconUrl} alt="" />
+            <Layers />
           </span>
           <span className="wl-sidebar-brand-text">
             <strong>WiseLink</strong>
-            <small>工程资料智能分析</small>
+            <small>工程与知识协同</small>
           </span>
           <button
             type="button"
@@ -139,6 +135,7 @@ const Sidebar: React.FC<SidebarProps> = ({ mobileOpen, onMobileClose }) => {
         </div>
 
         <nav className="wl-sidebar-nav" aria-label="全局入口">
+          <small className="wl-sidebar-group-label">工程空间</small>
           {GLOBAL_NAV.map(
             (item: {
               to: string;
@@ -150,45 +147,40 @@ const Sidebar: React.FC<SidebarProps> = ({ mobileOpen, onMobileClose }) => {
                 key={item.to}
                 end={item.end}
                 to={globalNavTarget(item.to)}
+                aria-label={item.label}
+                title={item.label}
               >
                 <item.icon aria-hidden="true" />
-                {item.label}
+                <span>{item.label}</span>
               </NavLink>
             ),
           )}
         </nav>
 
-        <div className="wl-sidebar-object">
-          <h3>{objectHeading}</h3>
-          {hasRouteObject ? (
-            <>
-              <div className="wl-sidebar-object-title" title={routeObjectId}>
-                {objectLabel}
-              </div>
-              {objectLinks.length ? (
-                <nav
-                  className="wl-sidebar-object-nav"
-                  aria-label={matterId ? '工程事项导航' : '当前事项导航'}
-                >
-                  {objectLinks.map((link: ShellObjectLink) => (
-                    <NavLink key={link.label} to={link.to}>
-                      {link.label}
-                    </NavLink>
-                  ))}
-                </nav>
-              ) : (
-                <p className="wl-sidebar-object-empty">
-                  当前为独立文档版本阅读，可返回资料库选择事项或其他文档。
-                </p>
-              )}
-            </>
-          ) : (
-            <p className="wl-sidebar-object-empty">
-              尚未选择事项。请从资料库进入一个工程事项，这里会显示它的
-              Wiki、问题、资料、复核与历史。
-            </p>
-          )}
-        </div>
+        {hasRouteObject ? (
+          <div className="wl-sidebar-object">
+            <h3>{objectHeading}</h3>
+            <div className="wl-sidebar-object-title" title={routeObjectId}>
+              {objectLabel}
+            </div>
+            {objectLinks.length ? (
+              <nav
+                className="wl-sidebar-object-nav"
+                aria-label={matterId ? '工程事项导航' : '当前事项导航'}
+              >
+                {objectLinks.map((link: ShellObjectLink) => (
+                  <NavLink key={link.label} to={link.to}>
+                    {link.label}
+                  </NavLink>
+                ))}
+              </nav>
+            ) : (
+              <p className="wl-sidebar-object-empty">
+                当前为独立文档版本阅读，可返回资料库选择事项或其他文档。
+              </p>
+            )}
+          </div>
+        ) : null}
 
         <nav className="wl-sidebar-secondary" aria-label="次级入口">
           {SECONDARY_NAV.map(
@@ -197,9 +189,14 @@ const Sidebar: React.FC<SidebarProps> = ({ mobileOpen, onMobileClose }) => {
               label: string;
               icon: React.ComponentType<React.SVGProps<SVGSVGElement>>;
             }) => (
-              <NavLink key={item.to} to={item.to}>
+              <NavLink
+                key={item.to}
+                to={item.to}
+                aria-label={item.label}
+                title={item.label}
+              >
                 <item.icon aria-hidden="true" />
-                {item.label}
+                <span>{item.label}</span>
               </NavLink>
             ),
           )}
@@ -210,15 +207,19 @@ const Sidebar: React.FC<SidebarProps> = ({ mobileOpen, onMobileClose }) => {
             type="button"
             onClick={() => setSettingsOpen(true)}
             aria-haspopup="dialog"
+            aria-label="显示与效果"
+            title="显示与效果"
           >
-            <Palette aria-hidden="true" /> 显示与效果
+            <Palette aria-hidden="true" /> <span>显示与效果</span>
           </button>
           <button
             type="button"
             onClick={() => setHelpOpen(true)}
             aria-haspopup="dialog"
+            aria-label="演示与帮助"
+            title="演示与帮助"
           >
-            <LifeBuoy aria-hidden="true" /> 演示与帮助
+            <LifeBuoy aria-hidden="true" /> <span>演示与帮助</span>
           </button>
         </div>
       </aside>
@@ -272,10 +273,7 @@ const Sidebar: React.FC<SidebarProps> = ({ mobileOpen, onMobileClose }) => {
                 aria-label="效果档位"
               >
                 {EFFECT_OPTIONS.map(
-                  (option: {
-                    value: WlVisualMode;
-                    label: string;
-                  }) => (
+                  (option: { value: WlVisualMode; label: string }) => (
                     <button
                       key={option.value}
                       type="button"
