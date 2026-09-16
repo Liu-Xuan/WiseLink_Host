@@ -34,11 +34,11 @@ export function buildActivityGraphElements(
     const id = String(element.data.id);
     if (!nodeIds.has(id)) { nodeIds.add(id); elements.push(element); }
   };
-  const pushEdge = (source: string, target: string, kind: string): void => {
+  const pushEdge = (source: string, target: string, kind: string, label: string): void => {
     const id = JSON.stringify([source, target, kind]);
     if (!edgeIds.has(id)) {
       edgeIds.add(id);
-      elements.push({ data: { id, source, target, kind } });
+      elements.push({ data: { id, source, target, kind, label } });
     }
   };
   candidate.statements.forEach((statement) => {
@@ -48,16 +48,16 @@ export function buildActivityGraphElements(
       const quoteIdentity = JSON.stringify([statement.statementId, quote.anchorId, quote.start, quote.end, quoteIndex]);
       const quoteId = activityGraphNodeId(reading, 'quote', quoteIdentity);
       pushNode({ data: { id: quoteId, kind: 'quote', label: quote.text, statementId: statement.statementId, anchorId: quote.anchorId } });
-      pushEdge(statementId, quoteId, 'statement-quote');
+      pushEdge(statementId, quoteId, 'statement-quote', '引用');
       const anchor = candidate.sourceAnchors.find((item) => item.anchorId === quote.anchorId);
       if (!anchor) return;
       const anchorId = activityGraphNodeId(reading, 'anchor', anchor.anchorId);
       pushNode({ data: { id: anchorId, kind: 'anchor', label: anchor.anchorId, anchorId: anchor.anchorId } });
-      pushEdge(quoteId, anchorId, 'quote-anchor');
+      pushEdge(quoteId, anchorId, 'quote-anchor', '定位');
       [...new Set(anchor.sourceRefIds)].forEach((sourceRefId) => {
         const sourceId = activityGraphNodeId(reading, 'sourceRef', sourceRefId);
         pushNode({ data: { id: sourceId, kind: 'sourceRef', label: sourceRefId, sourceRefId } });
-        pushEdge(anchorId, sourceId, 'anchor-sourceRef');
+        pushEdge(anchorId, sourceId, 'anchor-sourceRef', '来源');
       });
     });
   });

@@ -36,6 +36,9 @@ describe('document activity graph model', () => {
     expect(graph.edges('[kind="statement-quote"]')).toHaveLength(2);
     expect(graph.edges('[kind="quote-anchor"]')).toHaveLength(2);
     expect(graph.edges('[kind="anchor-sourceRef"]')).toHaveLength(1);
+    expect(graph.edges('[kind="statement-quote"]').first().data('label')).toBe('引用');
+    expect(graph.edges('[kind="quote-anchor"]').first().data('label')).toBe('定位');
+    expect(graph.edges('[kind="anchor-sourceRef"]').first().data('label')).toBe('来源');
     graph.destroy();
   });
 });
