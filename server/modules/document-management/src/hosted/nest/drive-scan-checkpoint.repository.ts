@@ -1,6 +1,6 @@
 import { Inject, Injectable } from '@nestjs/common';
 import { DRIZZLE_DATABASE, type PostgresJsDatabase } from '@lark-apaas/fullstack-nestjs-core';
-import { and, eq } from 'drizzle-orm';
+import { and, eq, sql } from 'drizzle-orm';
 import { wiselinkDriveScanCheckpoint } from '../../../../../database/drive-scan.schema';
 import { classifyDriveSourceCandidates, decodeDriveSourceCandidates, encodeDriveSourceCandidates, type DriveSourceCandidate } from '../drive-source-candidate';
 import type { DriveFolderScanCheckpointStore } from '../drive-folder-scan-coordinator';
@@ -22,23 +22,30 @@ export class DriveScanCheckpointRepository {
 
   async listPendingCandidates(tenantId: string, sourceKey: string): Promise<DriveSourceCandidate[]> {
     if (!tenantId || !sourceKey) throw new Error('DRIVE_SCAN_SCOPE_REQUIRED');
-    const [row] = await this.db.select({ pending: wiselinkDriveScanCheckpoint.pendingCandidatesJson })
-      .from(wiselinkDriveScanCheckpoint)
-      .where(and(eq(wiselinkDriveScanCheckpoint.tenantId, tenantId), eq(wiselinkDriveScanCheckpoint.sourceKey, sourceKey))).limit(1);
-    return row ? decodeDriveSourceCandidates(row.pending) : [];
+    return this.db.transaction(async tx => {
+      await tx.execute(sql`SELECT set_config('app.tenant_id',${tenantId},true)`);
+      const [row] = await tx.select({ pending: wiselinkDriveScanCheckpoint.pendingCandidatesJson })
+        .from(wiselinkDriveScanCheckpoint)
+        .where(and(eq(wiselinkDriveScanCheckpoint.tenantId, tenantId), eq(wiselinkDriveScanCheckpoint.sourceKey, sourceKey))).limit(1);
+      return row ? decodeDriveSourceCandidates(row.pending) : [];
+    });
   }
 
   private async loadForTenant(tenantId: string, sourceKey: string): Promise<string | null> {
-    const [row] = await this.db.select({ checkpoint: wiselinkDriveScanCheckpoint.checkpointJson })
-      .from(wiselinkDriveScanCheckpoint)
-      .where(and(eq(wiselinkDriveScanCheckpoint.tenantId, tenantId), eq(wiselinkDriveScanCheckpoint.sourceKey, sourceKey)))
-      .limit(1);
-    return row?.checkpoint ?? null;
+    return this.db.transaction(async tx => {
+      await tx.execute(sql`SELECT set_config('app.tenant_id',${tenantId},true)`);
+      const [row] = await tx.select({ checkpoint: wiselinkDriveScanCheckpoint.checkpointJson })
+        .from(wiselinkDriveScanCheckpoint)
+        .where(and(eq(wiselinkDriveScanCheckpoint.tenantId, tenantId), eq(wiselinkDriveScanCheckpoint.sourceKey, sourceKey)))
+        .limit(1);
+      return row?.checkpoint ?? null;
+    });
   }
 
   private async savePage(tenantId: string, sourceKey: string, checkpoint: string,
     candidates: DriveSourceCandidate[], expected: string | null): Promise<void> {
     await this.db.transaction(async tx => {
+      await tx.execute(sql`SELECT set_config('app.tenant_id',${tenantId},true)`);
       const created = await tx.insert(wiselinkDriveScanCheckpoint).values({
         tenantId, sourceKey, checkpointJson: checkpoint, checkpointVersion: 1,
       }).onConflictDoNothing({ target: [wiselinkDriveScanCheckpoint.tenantId, wiselinkDriveScanCheckpoint.sourceKey] })
@@ -66,11 +73,14 @@ export class DriveScanCheckpointRepository {
   }
 
   private async loadCandidatesForTenant(tenantId: string, sourceKey: string): Promise<string | null> {
-    const [row] = await this.db.select({ candidates: wiselinkDriveScanCheckpoint.candidateSnapshotJson })
-      .from(wiselinkDriveScanCheckpoint)
-      .where(and(eq(wiselinkDriveScanCheckpoint.tenantId, tenantId), eq(wiselinkDriveScanCheckpoint.sourceKey, sourceKey)))
-      .limit(1);
-    return row?.candidates ?? null;
+    return this.db.transaction(async tx => {
+      await tx.execute(sql`SELECT set_config('app.tenant_id',${tenantId},true)`);
+      const [row] = await tx.select({ candidates: wiselinkDriveScanCheckpoint.candidateSnapshotJson })
+        .from(wiselinkDriveScanCheckpoint)
+        .where(and(eq(wiselinkDriveScanCheckpoint.tenantId, tenantId), eq(wiselinkDriveScanCheckpoint.sourceKey, sourceKey)))
+        .limit(1);
+      return row?.candidates ?? null;
+    });
   }
 
 }
