@@ -1343,3 +1343,5 @@ FTD revision 12 还精确引用 SB revision 16 的问题 `claim_maintenance_disr
 图中关系仍只有可验证的 `声明 → 逐条引文 → 来源锚点 → SourceRef`，并分别显示“引用／定位／来源”边类型。右侧检查器读取同一声明的时间原词、状态、限制和精确 DocumentVersion/ParseRun，返回时间轴时保留同一 statement/anchor；锚点选择读取实际 source unit、payload path 和 SourceRef。图形底部同时给出节点与关系数量，并明确距离、布局和连通性不推断跨版本事件、归属、风险或因果。
 
 图谱与时间轴定向 Jest 2 个 suite、14 项通过；client typecheck、受影响 TS/TSX ESLint 和 CSS stylelint 通过。1600×1000 与 390×844、DPR 1、reduced-motion 的固定视口渲染确认桌面为左画布右检查器，手机按画布、图例、检查器纵向排列；选中的 `ST-TBD/A-TBD` 在图节点、引文卡和检查器中保持一致。以上仍是隔离构造候选的生产组件验证，不冒充真实线上业务或跨版本关系验收。
+
+前端提交 `74f2e0ca8e5be449e8ca9b2534dffb259d123a42`（父提交 `df6236f74776914480d9c3e67b069a930fcb9419`）仅包含图谱组件、模型、样式、定向测试和本记录，origin/github 同名开发分支已回读相同 SHA。release `7686234968155425724` 已 `finished`，精确 `commit_id=74f2e0ca8e5be449e8ca9b2534dffb259d123a42`，`error_logs=[]`。发布完成证明代码已部署，不替代仍待解锁后执行的登录态线上可见页面核对。
