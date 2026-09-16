@@ -1382,4 +1382,6 @@ FTD revision 12 还精确引用 SB revision 16 的问题 `claim_maintenance_disr
 
 当前 Host 没有授权范围内的完整知识目录或可证明穷尽的治理统计，因此没有复制静态样例中的 6／1／11 数量，也没有为视觉填充构造知识行。顶部只陈述读取口径；真实列表在用户提交关键词、Host 返回获授权的保存工作或原文后出现。当前／历史由显式范围切换控制，命中、相似或连通不自动建立归属、复用或正式采用。
 
-定向 Jest 2 个 suite、10 项、client typecheck、受影响源码 ESLint/CSS stylelint、client production build、完整 precommit 与 diff check 通过。本轮未取得可用的登录态外部浏览器状态，仍不声明线上视觉验收；待精确提交、双远端同步和 release 后补记部署事实。
+定向 Jest 2 个 suite、10 项、client typecheck、受影响源码 ESLint/CSS stylelint、client production build、完整 precommit 与 diff check 通过。本轮未取得可用的登录态外部浏览器状态，仍不声明线上视觉验收。
+
+前端提交 `4083820648a179c46cfe0998ce8670e2e510bf4a`（父提交 `81fa8c40b6a56578838244911e53d19cb458ca98`）只包含共享知识检索的只读目录呈现、知识页结构与样式、定向测试和本记录，origin/github 同名开发分支已回读相同 SHA。release `7686254565267917769` 已 `finished`，精确 `commit_id=4083820648a179c46cfe0998ce8670e2e510bf4a`，`error_logs=[]`。该部署不补齐当前不存在的全量知识目录、责任字段或治理统计，也不替代登录态线上可见页面核对。
