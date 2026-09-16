@@ -1305,3 +1305,15 @@ FTD revision 12 还精确引用 SB revision 16 的问题 `claim_maintenance_disr
 线上没有配置 `WL_ENGINEERING_SEARCH_PROJECTION`，所以当前用户检索走获授权的权威保存工作读取；`engineering_search_projection_pending` 的存量待重建行不构成当前检索空窗。派生投影仍可经受 actor scope 与正常 guard 保护的 `/engineering-issues/projection/rebuild` 重建，但本轮没有绕过浏览器身份直接写数据库，也没有把派生待办解释为业务数据丢失。
 
 `overview-source-work`、`engineering-issue-search`、`library-atlas-reading`、`matter-work-reference` 四组定向测试共 31 项通过。既有真实 PostgreSQL 测试已覆盖带回执来源、连续更正后 `STALE`、历史版本读取、检索命中与展开 identity 一致以及跨事项根来源授权变化。此次线上复核未发现需要代码修补的缺口，因此没有为制造提交而改动实现；下一步仍是解锁后补可见页面读回，并在取得真实正式版次依据后推进正式换版影响与必要 Overall。
+
+## 2026-09-17：后台 Drive 来源正式应用身份与持久阻塞上线
+
+首批范围仍严格限定已登记的 `technical-library` 与 `operations`。用户身份读取两根目录成功；原 lark-cli bot 属于另一应用 `cli_aadf4264f3391bd1`，不能作为 WiseLink 后台身份。已用目录所有者身份把 WiseLink 产品应用 `cli_aadde8b579f95bc9` 以 `appid/view` 精确加入两个根目录，未授予编辑权限、未开放公开链接。线上 OAuth 会话聚合显示 5 个活动会话均没有仍有效的委托令牌；现有会话只保存短期 Aily grant 且不保存 refresh token，因此没有复制个人/浏览器凭据或把 Aily token 改作 Drive token。
+
+提交 `6a08d73dd9c69fc4e1b518f0b55bee276d57a6d6` 增加产品应用 tenant token fetcher、正式 Drive files 分页、`wiselinkDriveSourceScan` automation 及权限错误持久化；提交 `067150180c520ee670dcad1689550c06f106653e` 修正 Fetcher 的 Nest 构造方式并增加真实 TestingModule 装配测试。第一次候选 release 暴露该线上 DI 缺陷且未上线；修复后 release `7686215072277089232` 已 finished，精确 commit 为 `067150180c520ee670dcad1689550c06f106653e`。
+
+第一次真实 cron 于 03:36 触发，产品应用已能取得 tenant token，Drive 读取被拒；同时 checkpoint 写入被旧 policy 的 end-user actor 条件拒绝。触发器立即停用。提交 `c9bd5a9f270e192a355f6b7721fa8cfa5f135581` 将 service-role 每个 checkpoint 事务显式绑定 `app.tenant_id`，RLS 只允许该事务租户，不引入 `USING (true)`；并将飞书 `99991672`/missing scope 精确记录为 `DRIVE_SCOPE_MISSING`，与目录权限拒绝分开。dev→online schema diff 只有删除旧 policy、创建 tenant-bound policy 两项，正式 migrate 返回 `changes_applied=2`；release `7686218760584661980` 已 finished，精确 commit 为 `c9bd5a9f270e192a355f6b7721fa8cfa5f135581`。
+
+第二次真实 cron 于 03:49 完成且没有 ERROR 日志。线上准确保存两行 checkpoint：两项来源均 `complete=false`、`observed=0`、`pending=0`、`continuation=1`，blocker 均为 `DRIVE_SCOPE_MISSING`；对应 trace `9d254099ce2be6f1481ba850d5f58ada`，日志 `LOG7686222712889576628` 与 `LOG7686222712889756852`。这证明产品应用正式身份、调度、tenant-scoped 持久续接和准确失败分类已上线；不证明来源内容已经取得。触发器随后恢复 `0 */2 * * *` / `Asia/Shanghai` 并保持 disabled。恢复条件是飞书开放平台为 `cli_aadde8b579f95bc9` 开通 `drive:drive.metadata:readonly` 后再启用一次真实验证；外部 Chrome 仍因 macOS 锁屏超时，无法在本轮完成该控制台动作。`search:bot` 也未授权给另一 CLI 应用，未扩大其 scope 来旁路查找产品 bot。
+
+定向扫描、错误分类、automation、Nest 装配及 migration 测试通过；完整 precommit 和 server production build 通过。隔离 PostgreSQL 用例因本机 Docker 未运行而明确 skip，已用线上两次真实 cron、policy diff/migrate 和 checkpoint 读回覆盖本轮实际风险。未启动文件下载、资料受理、DocumentVersion 创建、解析、中文、评估或正式采用。
