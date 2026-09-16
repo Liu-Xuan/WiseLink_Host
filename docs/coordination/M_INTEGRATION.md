@@ -1305,3 +1305,31 @@ FTD revision 12 还精确引用 SB revision 16 的问题 `claim_maintenance_disr
 线上没有配置 `WL_ENGINEERING_SEARCH_PROJECTION`，所以当前用户检索走获授权的权威保存工作读取；`engineering_search_projection_pending` 的存量待重建行不构成当前检索空窗。派生投影仍可经受 actor scope 与正常 guard 保护的 `/engineering-issues/projection/rebuild` 重建，但本轮没有绕过浏览器身份直接写数据库，也没有把派生待办解释为业务数据丢失。
 
 `overview-source-work`、`engineering-issue-search`、`library-atlas-reading`、`matter-work-reference` 四组定向测试共 31 项通过。既有真实 PostgreSQL 测试已覆盖带回执来源、连续更正后 `STALE`、历史版本读取、检索命中与展开 identity 一致以及跨事项根来源授权变化。此次线上复核未发现需要代码修补的缺口，因此没有为制造提交而改动实现；下一步仍是解锁后补可见页面读回，并在取得真实正式版次依据后推进正式换版影响与必要 Overall。
+
+## 2026-09-17：后台 Drive 来源正式应用身份与持久阻塞上线
+
+首批范围仍严格限定已登记的 `technical-library` 与 `operations`。用户身份读取两根目录成功；原 lark-cli bot 属于另一应用 `cli_aadf4264f3391bd1`，不能作为 WiseLink 后台身份。已用目录所有者身份把 WiseLink 产品应用 `cli_aadde8b579f95bc9` 以 `appid/view` 精确加入两个根目录，未授予编辑权限、未开放公开链接。线上 OAuth 会话聚合显示 5 个活动会话均没有仍有效的委托令牌；现有会话只保存短期 Aily grant 且不保存 refresh token，因此没有复制个人/浏览器凭据或把 Aily token 改作 Drive token。
+
+提交 `6a08d73dd9c69fc4e1b518f0b55bee276d57a6d6` 增加产品应用 tenant token fetcher、正式 Drive files 分页、`wiselinkDriveSourceScan` automation 及权限错误持久化；提交 `067150180c520ee670dcad1689550c06f106653e` 修正 Fetcher 的 Nest 构造方式并增加真实 TestingModule 装配测试。第一次候选 release 暴露该线上 DI 缺陷且未上线；修复后 release `7686215072277089232` 已 finished，精确 commit 为 `067150180c520ee670dcad1689550c06f106653e`。
+
+第一次真实 cron 于 03:36 触发，产品应用已能取得 tenant token，Drive 读取被拒；同时 checkpoint 写入被旧 policy 的 end-user actor 条件拒绝。触发器立即停用。提交 `c9bd5a9f270e192a355f6b7721fa8cfa5f135581` 将 service-role 每个 checkpoint 事务显式绑定 `app.tenant_id`，RLS 只允许该事务租户，不引入 `USING (true)`；并将飞书 `99991672`/missing scope 精确记录为 `DRIVE_SCOPE_MISSING`，与目录权限拒绝分开。dev→online schema diff 只有删除旧 policy、创建 tenant-bound policy 两项，正式 migrate 返回 `changes_applied=2`；release `7686218760584661980` 已 finished，精确 commit 为 `c9bd5a9f270e192a355f6b7721fa8cfa5f135581`。
+
+第二次真实 cron 于 03:49 完成且没有 ERROR 日志。线上准确保存两行 checkpoint：两项来源均 `complete=false`、`observed=0`、`pending=0`、`continuation=1`，blocker 均为 `DRIVE_SCOPE_MISSING`；对应 trace `9d254099ce2be6f1481ba850d5f58ada`，日志 `LOG7686222712889576628` 与 `LOG7686222712889756852`。这证明产品应用正式身份、调度、tenant-scoped 持久续接和准确失败分类已上线；不证明来源内容已经取得。触发器随后恢复 `0 */2 * * *` / `Asia/Shanghai` 并保持 disabled。恢复条件是飞书开放平台为 `cli_aadde8b579f95bc9` 开通 `drive:drive.metadata:readonly` 后再启用一次真实验证；外部 Chrome 仍因 macOS 锁屏超时，无法在本轮完成该控制台动作。`search:bot` 也未授权给另一 CLI 应用，未扩大其 scope 来旁路查找产品 bot。
+
+定向扫描、错误分类、automation、Nest 装配及 migration 测试通过；完整 precommit 和 server production build 通过。隔离 PostgreSQL 用例因本机 Docker 未运行而明确 skip，已用线上两次真实 cron、policy diff/migrate 和 checkpoint 读回覆盖本轮实际风险。未启动文件下载、资料受理、DocumentVersion 创建、解析、中文、评估或正式采用。
+
+## 2026-09-17：Trinity F1 固定视口 React 几何复核
+
+使用现行 React 路由 `/situation`、当前共享外壳与明确隔离构造的事项目录响应，在 Chromium、DPR 1、`prefers-reduced-motion=reduce` 下分别按 1600×1000 与 390×844 渲染；没有把静态 HTML 放入 iframe，也没有调用生产业务、模型或保存接口。1600px 读回中指标区为 `x=226, y=220.34, width=1350, height=86`，参考为 `226, 220.34, 1350, 87`；双环卡片宽度均为 1026，当前组件高度 686.63、参考 688.63。环板、八个业务节点、六个知识节点、中心智能体和右侧关注栏均由生产组件实际渲染。
+
+390px 读回确认桌面环板隐藏，移动中心卡与 2 列八阶段卡生效；指标区 `x=14, width=362`，双环卡 `x=14, width=362`，与参考结构一致。当前真实投影只能证明目录总数，生命周期、知识和效果仍为部分范围，所以页面准确增加一行“当前仅取得部分范围”说明，使环卡相对完整 fixture 参考下移约 32px；未为追求截图位置而隐藏未知范围。主内容几何、阅读层级与响应式结构本轮未发现需要修改的差异；材质像素验收仍需在已登录线上同环境完成，以上只算本地生产组件复核。
+
+外部浏览器控制再次因 macOS 锁屏在状态读取前超时；当前 lark-cli 用户令牌刷新也受锁定钥匙串影响。只读查询显示应用目录 OpenAPI 不接受当前 user access token，未发现可替代开发者控制台的正式 scope 写接口。`wiselinkDriveSourceScan` 保持 disabled，cron 仍为 `0 */2 * * *` / `Asia/Shanghai`；未尝试以另一应用、个人 token 或扩大权限旁路。解锁后下一动作仍是为产品应用精确启用 `drive:drive.metadata:readonly`，随后单次真实扫描读回两个根目录，再按结果决定是否保持正式定时任务启用。
+
+## 2026-09-17：Trinity F3 工程时间轴结构对齐
+
+现行 React `/timeline` 原先把四类记录排成四列卡片，和 2026-09-16 Trinity 设计中“上方四泳道时间坐标、下方事件列表、右侧同一事件检查器”的职责不一致。本轮只改时间轴组件与样式：保留准确 DocumentVersion、ParseRun、候选 revision、声明、锚点和图谱跳转；上方改为四泳道横向时间图，下方保持可读事件列表，右侧继续核对原词、时间性质、限制和准确来源。
+
+日期表达按保存合同保真：`DAY` 画为日期点，`QUARTER` 画为带端点的季度范围，不伪装成季度中某日；`TBD`、相对时间和无可靠坐标的声明不进入日期图，统一进入“日期未定／尚无可计算时间”。“信息取得”因当前合同没有系统取得时间而禁用并说明原因。当前候选也没有跨版本活动身份，页面明确不把相似标题自动拼成同一活动的预计历史；因此构造样例中的 Q3、Q4、TBD 只证明显示边界，不构成真实同活动版本关系。
+
+定向 Jest 2 个 suite、12 项通过；client typecheck、受影响源码 ESLint/stylelint、client production build、完整 precommit 与 diff check 通过。1600×1000、DPR 1、reduced-motion 的固定视口读回确认 Q3/Q4 为范围线，2026-09-16 为点，TBD 只在未定区，选中声明与右侧检查器仍准确联动。该截图使用隔离构造候选验证生产组件，不是线上业务或视觉验收；线上发布后仍需在登录环境核对真实候选。
