@@ -56,11 +56,12 @@ uses the actual page operator geometry and text-layer overlap described above.
 - The bound layout provider is `PdfjsOcrCompositeLayoutExtractor`, which wraps
   the existing `PdfjsDistLayoutExtractor` and a private
   `TesseractTsvPdfOcrAdapter`. It is not another parser seam.
-- The production build always copies pinned `pdfjs-dist`. OCR deployments must
-  explicitly supply `WL31_PDF_OCR_RUNTIME_ROOT`; the build copies that complete
-  runtime into Host assets only after validating its Linux/x64 ELF dependency
-  and ABI closure, target, renderer, engine, and `eng`/`chi_sim` assets. An
-  omitted runtime is observable and fail-closed when OCR is required.
+- The production build always copies pinned `pdfjs-dist` and the repository-owned
+  OCR runtime. `WL31_PDF_OCR_RUNTIME_ROOT` may select another complete pinned
+  runtime, but omission uses the committed runtime instead of publishing a
+  manifest-only package. The build validates Linux/x64 ELF dependency and ABI
+  closure, target, renderer, engine, and `eng`/`chi_sim` assets before copying;
+  an invalid runtime stops the build.
 - `CapabilityService` is available as a general plugin invocation surface. The
   current app declares only `@official-plugins/feishu-bitable`; it has no
   `ai-doc-parser` package or capability instance. The official document-parser
@@ -80,8 +81,9 @@ uses the actual page operator geometry and text-layer overlap described above.
 ## Deployment requirement
 
 The Host-owned runtime source is committed under
-`server/runtime-assets/professional-input/ocr-runtime`; deployments still opt
-in explicitly with `WL31_PDF_OCR_RUNTIME_ROOT`. Its v2 manifest targets
+`server/runtime-assets/professional-input/ocr-runtime` and is the default
+deployment input. `WL31_PDF_OCR_RUNTIME_ROOT` remains an explicit override for
+another complete pinned runtime. Its v2 manifest targets
 Linux/x64 with a bundled glibc loader and requires Poppler `pdftoppm` 25.03.0,
 Tesseract 5.5.0, `tessdata_fast` revision 4.1.0, and languages `eng` plus
 `chi_sim`. Before returning `READY`, deployment validates every bundled ELF,
