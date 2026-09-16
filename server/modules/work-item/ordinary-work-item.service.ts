@@ -327,8 +327,12 @@ export class OrdinaryWorkItemService {
       actor.tenantId,
     );
     const retryableFailure =
-      fresh?.projection?.phase === 'FAILED' &&
-      isRetryableParseFailureCode(fresh.projection.failure?.failureCode);
+      (fresh?.projection?.phase === 'FAILED' &&
+        isRetryableParseFailureCode(fresh.projection.failure?.failureCode)) ||
+      (fresh?.projection?.phase === 'RECORDING_FAILED' &&
+        isRetryableParseFailureCode(
+          fresh.projection.recordingFailure?.failureCode,
+        ));
     const resumableRetry = fresh?.projection?.phase === 'PARSE_REQUESTED';
     const explicitReparse =
       fresh?.projection?.phase === 'CANDIDATE_READBACK_VERIFIED' &&
@@ -463,10 +467,14 @@ export class OrdinaryWorkItemService {
         actor.tenantId,
       );
       if (
-        retryState?.projection?.phase === 'FAILED' &&
-        isRetryableParseFailureCode(
-          retryState.projection.failure?.failureCode,
-        )
+        (retryState?.projection?.phase === 'FAILED' &&
+          isRetryableParseFailureCode(
+            retryState.projection.failure?.failureCode,
+          )) ||
+        (retryState?.projection?.phase === 'RECORDING_FAILED' &&
+          isRetryableParseFailureCode(
+            retryState.projection.recordingFailure?.failureCode,
+          ))
       ) {
         retryAuthorization = await this.vertical.authorizeExistingWorkItem({
           actor,

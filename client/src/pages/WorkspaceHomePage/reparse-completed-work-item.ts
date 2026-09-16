@@ -22,8 +22,10 @@ export function availableParseAction(
   if (!developmentIntakeAvailable || projection === null) return null;
   if (projection.phase === 'PARSE_REQUESTED') return 'RESUME_PENDING';
   if (
-    projection.phase === 'FAILED' &&
-    isRetryableParseFailureCode(projection.failure?.failureCode)
+    (projection.phase === 'FAILED' &&
+      isRetryableParseFailureCode(projection.failure?.failureCode)) ||
+    (projection.phase === 'RECORDING_FAILED' &&
+      isRetryableParseFailureCode(projection.recordingFailure?.failureCode))
   ) {
     return 'RETRY_FAILED_PARSE';
   }
