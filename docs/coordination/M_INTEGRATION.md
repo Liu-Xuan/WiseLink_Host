@@ -1317,3 +1317,11 @@ FTD revision 12 还精确引用 SB revision 16 的问题 `claim_maintenance_disr
 第二次真实 cron 于 03:49 完成且没有 ERROR 日志。线上准确保存两行 checkpoint：两项来源均 `complete=false`、`observed=0`、`pending=0`、`continuation=1`，blocker 均为 `DRIVE_SCOPE_MISSING`；对应 trace `9d254099ce2be6f1481ba850d5f58ada`，日志 `LOG7686222712889576628` 与 `LOG7686222712889756852`。这证明产品应用正式身份、调度、tenant-scoped 持久续接和准确失败分类已上线；不证明来源内容已经取得。触发器随后恢复 `0 */2 * * *` / `Asia/Shanghai` 并保持 disabled。恢复条件是飞书开放平台为 `cli_aadde8b579f95bc9` 开通 `drive:drive.metadata:readonly` 后再启用一次真实验证；外部 Chrome 仍因 macOS 锁屏超时，无法在本轮完成该控制台动作。`search:bot` 也未授权给另一 CLI 应用，未扩大其 scope 来旁路查找产品 bot。
 
 定向扫描、错误分类、automation、Nest 装配及 migration 测试通过；完整 precommit 和 server production build 通过。隔离 PostgreSQL 用例因本机 Docker 未运行而明确 skip，已用线上两次真实 cron、policy diff/migrate 和 checkpoint 读回覆盖本轮实际风险。未启动文件下载、资料受理、DocumentVersion 创建、解析、中文、评估或正式采用。
+
+## 2026-09-17：Trinity F1 固定视口 React 几何复核
+
+使用现行 React 路由 `/situation`、当前共享外壳与明确隔离构造的事项目录响应，在 Chromium、DPR 1、`prefers-reduced-motion=reduce` 下分别按 1600×1000 与 390×844 渲染；没有把静态 HTML 放入 iframe，也没有调用生产业务、模型或保存接口。1600px 读回中指标区为 `x=226, y=220.34, width=1350, height=86`，参考为 `226, 220.34, 1350, 87`；双环卡片宽度均为 1026，当前组件高度 686.63、参考 688.63。环板、八个业务节点、六个知识节点、中心智能体和右侧关注栏均由生产组件实际渲染。
+
+390px 读回确认桌面环板隐藏，移动中心卡与 2 列八阶段卡生效；指标区 `x=14, width=362`，双环卡 `x=14, width=362`，与参考结构一致。当前真实投影只能证明目录总数，生命周期、知识和效果仍为部分范围，所以页面准确增加一行“当前仅取得部分范围”说明，使环卡相对完整 fixture 参考下移约 32px；未为追求截图位置而隐藏未知范围。主内容几何、阅读层级与响应式结构本轮未发现需要修改的差异；材质像素验收仍需在已登录线上同环境完成，以上只算本地生产组件复核。
+
+外部浏览器控制再次因 macOS 锁屏在状态读取前超时；当前 lark-cli 用户令牌刷新也受锁定钥匙串影响。只读查询显示应用目录 OpenAPI 不接受当前 user access token，未发现可替代开发者控制台的正式 scope 写接口。`wiselinkDriveSourceScan` 保持 disabled，cron 仍为 `0 */2 * * *` / `Asia/Shanghai`；未尝试以另一应用、个人 token 或扩大权限旁路。解锁后下一动作仍是为产品应用精确启用 `drive:drive.metadata:readonly`，随后单次真实扫描读回两个根目录，再按结果决定是否保持正式定时任务启用。
