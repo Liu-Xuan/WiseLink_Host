@@ -1,5 +1,19 @@
 # M 主控集成交接
 
+## 2026-09-16 T1 样例接受与前端操作员交接
+
+经 Astra 审阅，M 从前端 `b2de672f6226f08d6b515923df2436c0f7970ab6`（父 `7b176d8e531bc9d201a769a8a5d21aa4dff14301`）选择取入 T1 的四个组件/样例文件及一份定向测试卷，恢复 `/dev-preview/chronology` 路由。没有整分支覆盖，T2、server、平台升级及会话计划均未纳入。已交付读取的说明、比较目标文案、空数据和无效 URL 清理均已修正；M 将 case1 的通用免责声明断言与 case4 的 TEXT_EQUAL 逐字说明分开，避免测试描述与默认样例不一致。
+
+F 实际完成双端类型及六条定向浏览器验证（含三个空数据 fixture）；M 集成后的客户端类型与受影响 ESLint 通过。该批是同组件隔离样例，生产视图与真实业务仍未接入；集成代码尚待发布。用户指定 Luna 负责原前端构建会话操作与阶段结果回传，M/Astra 负责审查、选择性集成和下一批计划，避免多个执行者并控同一会话。
+
+## 2026-09-16 换版 HTTP 身份修复与真实读取
+
+Host 发布 `7685928474716589252` 已 finished，最终提交为 `8295cd20b0a22b387ecf8b3bbd964a2ebd87db3e`，origin/github 同名开发分支已核对一致。真实浏览器请求原先因共用服务误入 Hosted 专用 SQL actor scope 返回 404；HTTP 已改用经原登录/对象 guard 的浏览器请求身份及 RLS，MCP 仍保留 Hosted actor scope。两端来源授权、精确绑定、同 family 与返回前回查未变。三套17项测试、server 类型及定向 ESLint 通过。
+
+正式登录浏览器按现有客户端 CSRF 规则发起只读请求，发布后 `ftd.status` 返回 HTTP 200 / TEXT_DIFFERENT，`ftd.final_action` 返回 HTTP 200 / TEXT_EQUAL；后者逐项确认两端 DV、parseRun、semanticRevision=1 和原件 SHA/字节数，各端修订说明均为一组。首次发布后调试观察超时，浏览器资源记录确认该请求已经 200；随后完整读取内容，不将观察超时记为业务失败。没有改动页面内容或身份设置。
+
+正式安装 c109 的真实 MCP 三次调用也已通过：Status 不同、Final Action 文本一致、Reference Categories 为 NOT_COMPARED / NON_PLAIN_TEXT_CONTENT。此轮仅验证读取，未新增模型请求、重解析或工作保存。HTTP/MCP 均保留 NOT_VERIFIED 的正式版次关系和 NOT_RECORDED_BY_THIS_READ 的评估覆盖。生产换版视图、完整活动/声明历史及完整换版业务验收仍未完成；T1 修订由 Astra 对接原前端会话，尚未集成。
+
 ## 2026-09-16 换版读取修复版技术发布完成
 
 Host 修复版发布已 finished，完成态精确提交 e5cdf5b96b78d2208ac28c6d0d5912051f3f9851，与 origin/github 同名开发分支一致；新增独立工具名已撤回，使用既有 read_document_original 的 compareWith 模式，未修改已安装 c109 或工具清单校验。

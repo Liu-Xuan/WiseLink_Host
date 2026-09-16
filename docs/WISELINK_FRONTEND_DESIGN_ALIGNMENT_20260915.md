@@ -87,3 +87,5 @@ F 可在换版视图调用该函数：两侧 `publisherRevisionDescriptions` 保
 上述证据补齐真实 MCP 读取，仍不证明正式版本次序、完整换版跨度或评估覆盖；返回值继续为 `publicationRelationship=NOT_VERIFIED`、`assessmentCoverage=NOT_RECORDED_BY_THIS_READ`。HTTP 浏览器身份读取、生产视图接入与完整换版业务验收仍待完成。T1 隔离样例不得将本次文本比较结果映射为工程影响不变。
 
 真实浏览器 HTTP 联调已定位一处入口错误：裸地址导航先被平台 CSRF 拒绝；按现有客户端规则携带同源 CSRF 头后，请求到达 Host，返回 `ENGINEERING_MATTER_RUNTIME_AUTHORIZATION_UNAVAILABLE`。原因是共用读取服务无条件进入仅供 Hosted SQL 身份使用的 `withActorScope`。本地修复将 HTTP 路由接入 `readForBrowser`，沿用已经过登录及对象入口 guard 的请求身份与 RLS；MCP 继续使用原 Hosted scope。两端原文授权、准确语义修订、同 family 检查及返回前来源回查仍共用。三套十七项定向测试及 server 类型检查通过；此修复待技术发布和相同浏览器请求复测，不将 MCP 成功视为 HTTP 已通过。
+
+该 HTTP 修复已随 `8295cd20b0a22b387ecf8b3bbd964a2ebd87db3e` 发布完成（release `7685928474716589252`）。原正式登录浏览器按客户端 CSRF 规则复测返回 HTTP 200：Status 为 TEXT_DIFFERENT、Final Action 为 TEXT_EQUAL；准确两端绑定与各自修订说明核验通过。现已补齐真实 HTTP/MCP 读取证据，生产视图接入仍待完成，不能把只读结果解释为正式版次关系或新版工程评估覆盖。
