@@ -84,6 +84,10 @@ export default function DocumentActivityReadingPage() {
       setReading(null);
       setError(null);
       setUnreadable(null);
+      if (entryBlocker) {
+        setLoading(false);
+        return;
+      }
       if (!documentVersionId) {
         if (!current()) return;
         setError('缺少文档版本，无法进行活动阅读。');
