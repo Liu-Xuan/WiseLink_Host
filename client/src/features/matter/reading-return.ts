@@ -191,6 +191,109 @@ export function revisionReadingReturnParams(
   });
 }
 
+const ACTIVITY_TEXT_KEYS = ['parseRunId', 'runRef', 'statementId', 'anchor'] as const;
+
+export interface ActivityPinSet {
+  parseRunId: string;
+  candidateRevision: number;
+  runRef: string;
+  statementId: string;
+}
+
+/** Normalized activity-reading identity; only exact Host pins plus the controlled library return context survive. Illegal or duplicated pins are dropped, never repaired. */
+export function activityReadingParams(params: URLSearchParams): URLSearchParams {
+  const result = new URLSearchParams();
+  for (const key of ACTIVITY_TEXT_KEYS) {
+    const value = singleToken(params, key);
+    if (value) result.set(key, value);
+  }
+  const candidateRevision = singleSemanticToken(params, 'candidateRevision');
+  if (candidateRevision) result.set('candidateRevision', candidateRevision);
+  const returnLibraryQuery = params.getAll('returnLibraryQuery');
+  if (returnLibraryQuery.length === 1 && returnLibraryQuery[0]) {
+    const normalized = libraryReadingParams(
+      new URLSearchParams(returnLibraryQuery[0]),
+    ).toString();
+    if (normalized) result.set('returnLibraryQuery', normalized);
+  }
+  result.sort();
+  return result;
+}
+
+/**
+ * Return identity for an activity reading entry: the document version comes from the
+ * route, and parseRunId, candidateRevision and runRef must all be present and legal.
+ * statementId and anchor are optional; any explicit bad, duplicated or empty value
+ * rejects the whole selection instead of being silently dropped.
+ */
+export function completeActivityIdentity(
+  params: URLSearchParams,
+): ActivityIdentityPins | null {
+  const parseRunId = revisionTextPin(params, 'parseRunId');
+  const candidateRevision = revisionSemanticPin(params, 'candidateRevision');
+  const runRef = revisionTextPin(params, 'runRef');
+  const statementId = revisionTextPin(params, 'statementId');
+  const anchor = revisionTextPin(params, 'anchor');
+  const libraryQuery = revisionTextPin(params, 'returnLibraryQuery');
+  if (
+    parseRunId.state !== 'ok' ||
+    candidateRevision.state !== 'ok' ||
+    runRef.state !== 'ok' ||
+    (statementId.state !== 'ok' && statementId.state !== 'absent') ||
+    (anchor.state !== 'ok' && anchor.state !== 'absent') ||
+    (libraryQuery.state !== 'ok' && libraryQuery.state !== 'absent')
+  )
+    return null;
+  return {
+    parseRunId: parseRunId.value,
+    candidateRevision: candidateRevision.value,
+    runRef: runRef.value,
+    statementId: statementId.state === 'ok' ? statementId.value : null,
+    anchor: anchor.state === 'ok' ? anchor.value : null,
+  };
+}
+
+export interface ActivityIdentityPins {
+  parseRunId: string;
+  candidateRevision: number;
+  runRef: string;
+  statementId: string | null;
+  anchor: string | null;
+}
+
+/** The four exact pins of an activity reading entry (selections are optional there). */
+export function completeActivityPins(
+  params: URLSearchParams,
+): ActivityPinSet | null {
+  const parseRunId = revisionTextPin(params, 'parseRunId');
+  const candidateRevision = revisionSemanticPin(params, 'candidateRevision');
+  const runRef = revisionTextPin(params, 'runRef');
+  const statementId = revisionTextPin(params, 'statementId');
+  if (
+    parseRunId.state !== 'ok' ||
+    candidateRevision.state !== 'ok' ||
+    runRef.state !== 'ok' ||
+    statementId.state !== 'ok'
+  )
+    return null;
+  return {
+    parseRunId: parseRunId.value,
+    candidateRevision: candidateRevision.value,
+    runRef: runRef.value,
+    statementId: statementId.value,
+  };
+}
+
+export function activityReadingReturnParams(
+  activityQuery: string,
+  documentVersionId: string,
+): URLSearchParams {
+  return new URLSearchParams({
+    returnDocumentVersionId: documentVersionId,
+    returnActivityQuery: activityQuery,
+  });
+}
+
 export function matterReadingReturnParams(
   matterId: string,
   documentVersionId: string,
@@ -216,6 +319,7 @@ export function readingReturnTarget(
     'returnMatterId',
     'returnLibraryQuery',
     'returnRevisionQuery',
+    'returnActivityQuery',
     'returnLibraryWorkItemId',
     'returnWorkItemId',
   ];
@@ -226,6 +330,7 @@ export function readingReturnTarget(
       'returnMatterWorkRef',
       'returnDocumentVersionId',
       'returnRevisionSide',
+      'returnActivityQuery',
     ].some((key) => params.getAll(key).length > 1)
   )
     return null;
@@ -285,6 +390,27 @@ export function readingReturnTarget(
     return {
       route: `/document-revisions?${query.toString()}`,
       label: '返回改版比较',
+    };
+  }
+  if (params.has('returnActivityQuery')) {
+    const activityQuery = params.get('returnActivityQuery');
+    if (!binding || !activityQuery || activityQuery.length > 4096) return null;
+    const nested = new URLSearchParams(activityQuery);
+    if (
+      nested.has('returnActivityQuery') ||
+      nested.has('returnRevisionQuery') ||
+      nested.has('returnMatterId') ||
+      nested.has('returnLibraryWorkItemId') ||
+      nested.has('returnWorkItemId')
+    )
+      return null;
+    const pins = completeActivityIdentity(nested);
+    if (!pins) return null;
+    if (requestedRun && pins.parseRunId !== requestedRun) return null;
+    const query = activityReadingParams(nested);
+    return {
+      route: `/document-versions/${encodeURIComponent(binding)}/activities?${query.toString()}`,
+      label: '返回活动阅读',
     };
   }
   const libraryWorkItemId = identifier(params.get('returnLibraryWorkItemId'));

@@ -135,6 +135,7 @@ export function deriveBreadcrumbs(
   }
 
   const pageLabels: Record<string, string> = {
+    '/document-revisions': '改版比较',
     '/knowledge': '工程知识',
     '/graph': '关系图谱',
     '/external-discovery': '补充资料',
