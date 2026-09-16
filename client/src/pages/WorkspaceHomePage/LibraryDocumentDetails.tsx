@@ -1,6 +1,16 @@
 import { ArrowRight, FileSearch2, History } from 'lucide-react';
+import { useEffect, useState } from 'react';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 import type { CanonicalLibraryDocumentSummary } from '@shared/api.interface';
 import { Button } from '@client/src/components/ui/button';
+import { getCanonicalHostClientSessionGeneration } from '@client/src/api/canonical-host';
+import { saveReadingLocation } from '@client/src/features/matter/reading-location';
+import {
+  libraryReadingParams,
+  libraryReadingScope,
+  revisionReadingParams,
+} from '@client/src/features/matter/reading-return';
+import { captureReadingLocation } from '@client/src/features/matter/useReadingLocation';
 import { DocumentVersionLink } from './DocumentVersionLink';
 import { LibraryMetadata } from './LibraryMetadata';
 import LinkDocumentMatterMaterial from '@client/src/features/matter/LinkDocumentMatterMaterial';
@@ -26,6 +36,51 @@ export function LibraryDocumentDetails({
   linkMatterId,
   selectionPending = false,
 }: LibraryDocumentDetailsProps) {
+  const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
+  const [baseline, setBaseline] = useState('');
+  const [compare, setCompare] = useState('');
+  const [revisionNote, setRevisionNote] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!document) {
+      setBaseline('');
+      setCompare('');
+      setRevisionNote(null);
+      return;
+    }
+    setBaseline(document.versions[0]?.documentVersionId ?? '');
+    setCompare(document.versions[1]?.documentVersionId ?? '');
+    setRevisionNote(null);
+  }, [document]);
+
+  const openRevisionComparison = () => {
+    if (!document) return;
+    if (baseline === compare) {
+      setRevisionNote('请选择两个不同的版本。');
+      return;
+    }
+    setRevisionNote(null);
+    const query = new URLSearchParams({ before: baseline, after: compare });
+    const familyId = document.familyId.trim();
+    const libraryContext = new URLSearchParams(searchParams);
+    if (familyId) libraryContext.set('familyId', familyId);
+    query.set(
+      'returnLibraryQuery',
+      libraryReadingParams(libraryContext).toString(),
+    );
+    saveReadingLocation(
+      libraryReadingScope(libraryContext),
+      captureReadingLocation({
+        claim: null,
+        focusClaimId: null,
+        discussionClaimId: null,
+      }),
+      getCanonicalHostClientSessionGeneration(),
+    );
+    navigate(`/document-revisions?${revisionReadingParams(query).toString()}`);
+  };
+
   return (
     <aside
       className="library-quicklook-panel"
@@ -66,6 +121,61 @@ export function LibraryDocumentDetails({
               document={document}
             />
           ) : null}
+          <div className="library-revision-picker">
+            <p className="library-revision-picker-note">
+              选择两个不同的版本进行只读改版比较。「基线端」与「比较目标端」只表示本次比较的两端，不代表厂家先后、正式采用或最新。
+            </p>
+            <div className="library-revision-picker-fields">
+              <label>
+                基线端
+                <select
+                  value={baseline}
+                  onChange={(event) => setBaseline(event.target.value)}
+                >
+                  {document.versions.map((version) => (
+                    <option
+                      key={version.documentVersionId}
+                      value={version.documentVersionId}
+                    >
+                      {libraryVersionLabel(version)}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <label>
+                比较目标端
+                <select
+                  value={compare}
+                  onChange={(event) => setCompare(event.target.value)}
+                >
+                  {document.versions.map((version) => (
+                    <option
+                      key={version.documentVersionId}
+                      value={version.documentVersionId}
+                    >
+                      {libraryVersionLabel(version)}
+                    </option>
+                  ))}
+                </select>
+              </label>
+            </div>
+            {revisionNote ? (
+              <p className="library-revision-picker-error" role="alert">
+                {revisionNote}
+              </p>
+            ) : null}
+            {document.versions.length < 2 ? (
+              <p className="library-revision-picker-single">
+                该文档只有一个可见版本，暂无法进行改版比较。
+              </p>
+            ) : (
+              <div className="library-quicklook-actions">
+                <Button type="button" onClick={openRevisionComparison}>
+                  进入改版比较 <ArrowRight aria-hidden="true" />
+                </Button>
+              </div>
+            )}
+          </div>
           <ol className="library-version-list" aria-label="文档版本历史">
             {document.versions.map((version) => (
               <li key={version.documentVersionId}>

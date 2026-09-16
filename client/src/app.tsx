@@ -8,6 +8,7 @@ import EngineeringMatterPage from './features/matter/EngineeringMatterPage';
 import MatterPosturePage from './features/matter/MatterPosturePage';
 import DocumentParsingPage from './pages/DocumentParsingPage/DocumentParsingPage';
 import DocumentVersionReadingPage from './pages/DocumentParsingPage/DocumentVersionReadingPage';
+import DocumentRevisionReadingPage from './pages/DocumentParsingPage/DocumentRevisionReadingPage';
 import WorkspaceHomePage from './pages/WorkspaceHomePage/WorkspaceHomePage';
 import NotFound from './pages/NotFound/NotFound';
 import RuntimeProbePage from './pages/RuntimeProbePage/RuntimeProbePage';
@@ -45,6 +46,7 @@ const RoutesComponent = () => {
         <Route path="dialogues" element={<DialoguePage />} />
         <Route path="dialogues/:threadRef" element={<DialoguePage />} />
         <Route path="library" element={<WorkspaceHomePage />} />
+        <Route path="document-revisions" element={<DocumentRevisionReadingPage />} />
         <Route path="document-versions/:documentVersionId" element={<DocumentVersionReadingPage />} />
         <Route path="matters/:matterId" element={<EngineeringMatterPage />} />
         <Route path="matters/:matterId/posture" element={<MatterPosturePage />} />

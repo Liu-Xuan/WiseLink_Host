@@ -19,7 +19,11 @@ export default function DocumentVersionReadingPage() {
   const [searchParams] = useSearchParams();
   const requestedRun = searchParams.get('parseRunId') || null;
   const requestedSource = searchParams.get('sourceRef') || null;
-  const returnTarget = readingReturnTarget(searchParams, documentVersionId);
+  const returnTarget = readingReturnTarget(
+    searchParams,
+    documentVersionId,
+    requestedRun,
+  );
   const navigationIdentity = JSON.stringify([documentVersionId, requestedRun, requestedSource]);
   const [status, setStatus] = useState<DocumentParsingStatus | null>(null);
   const [readingNavigation, setReadingNavigation] = useState<string | null>(null);
