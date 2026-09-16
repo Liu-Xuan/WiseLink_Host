@@ -1395,3 +1395,11 @@ FTD revision 12 还精确引用 SB revision 16 的问题 `claim_maintenance_disr
 使用上述已发布只读产物在本地按当前实现重组，仍得到 366 个阅读单元和 406 个 source location；限制从 26 项收敛为 9 项且每项至少有页或单元定位，另有 49 项 `TEXT_CONFLICT` 诊断和 2 项图示未解释。该重组没有改写线上产物、没有重跑解析或中文，也不等同于线上验收；现有已发布 manifest 保持不可变。
 
 提交 `52b43396300f38943eeecde3a609913e426bdc88`（父提交 `4099b257267d0ee2a292dd0aae74e98c5af5548b`）仅含生成逻辑、对应回归测试和本记录，正常 precommit、2 个定向 suite 共 16 项、server typecheck、受影响源码 ESLint 与 diff check 通过；origin/github 同名开发分支均回读该 SHA。Host release `7686259511887776730` 已 `finished`，精确 `commit_id=52b43396300f38943eeecde3a609913e426bdc88`，`error_logs=[]`。该发布只影响后续解析；没有重跑当前长 SB，因此当前线上不可变 manifest 仍准确保留原 26 项，直到有独立业务需要的新解析运行产生新版本。
+
+## 2026-09-17：Trinity F2/F3 全局关系图谱观察尺度与检查器闭合
+
+全局 `/graph` 的真实读取仍来自当前 WorkItem 的 `CanonicalLibraryIndexReadResponse`，没有复制离线样例对象或把 activity graph 的声明关系混入 LibraryIndex。本轮补齐 Trinity 规定的四种观察尺度：工程文档、工程事项、技术领域和全景；前两项继续渲染 Host 已保存投影，后两项因真实合同未接通而进入明确 `NOT_CONNECTED` 面板，不显示伪造节点。节点数与边数分别按当前模式的实际投影计算，边界文字明确父子投影、布局、距离和连通性不证明归属、因果、风险或正式采用。
+
+生产节点点击由“立即跳走”改为先在右侧 306px 检查器选中，显示对象类型、稳定标识、保存状态、确切 DocumentVersion 和当前投影说明；只有真实 `getLibraryIndex` 读取路径才显示“打开准确对象”，并沿既有 `buildNodeDeepLink` 进入对应 Host 工作台。隔离预览继续调用外部 `onNodeSelect`，显式标为“查看样例对象”，不把构造 ID 带入生产路由；没有回调的注入投影也不提供生产深链。窄屏及中等宽度按画布、图例、检查器顺序纵向排列，避免全局侧栏后剩余空间挤压画布。
+
+定向图谱与活动图测试 2 个 suite、9 项通过，其中新增覆盖四尺度、未接通态不发网络请求、隔离样例不外跳，以及真实读取后的生产节点选择和显式深链；client typecheck、受影响源码 ESLint/CSS stylelint、client production build、完整 precommit 与 diff check 通过。固定视口本地预览因妙搭 `AppContainer` 缺平台注入未挂载 React，故不记录视觉通过；登录态线上视觉仍需外部浏览器解锁后核对。

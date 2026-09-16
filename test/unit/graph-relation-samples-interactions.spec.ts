@@ -2,7 +2,8 @@ import { act, createElement } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 import { createMemoryRouter, RouterProvider } from 'react-router-dom';
 import GraphRelationPreviewPage from '../../client/src/pages/GraphRelationPreviewPage/GraphRelationPreviewPage';
-import { GRAPH_RELATION_SAMPLE_ENTRIES } from '../../client/src/features/review/graph-samples';
+import RelationGraphPage from '../../client/src/pages/RelationGraphPage/RelationGraphPage';
+import { GRAPH_RELATION_SAMPLE_ENTRIES, GRAPH_RELATION_SAMPLE_PROJECTION } from '../../client/src/features/review/graph-samples';
 import { claimKey } from '../../client/src/features/review/GraphRelationSamplesView';
 import { getLibraryIndex } from '@client/src/api/canonical-host';
 import type { RelationGraphCanvasProps } from '../../client/src/pages/RelationGraphPage/RelationGraphCanvas';
@@ -33,7 +34,11 @@ jest.mock(
         'button',
         {
           onClick: () =>
-            props.onNodeOpen({ id: 'doc-sample-graph-a' } as Parameters<
+            props.onNodeOpen({
+              id: 'doc-sample-graph-a', kind: 'DOCUMENT', label: 'SB-A 厂家服务通告',
+              detail: '同一文件，多时间条目保留稳定身份', state: 'SAMPLE', sourceRef: '',
+              documentVersionId: 'dv-sample-b',
+            } as Parameters<
               RelationGraphCanvasProps['onNodeOpen']
             >[0]),
         },
@@ -66,6 +71,20 @@ async function mount(url = '/dev-preview/graph') {
         path: '/dev-preview/graph',
         element: createElement(GraphRelationPreviewPage),
       },
+    ],
+    { initialEntries: [url] },
+  );
+  root = createRoot(container);
+  await act(async () => root.render(createElement(RouterProvider, { router })));
+}
+async function mountProduction(url = '/graph?workItemId=wi-sample-graph-a') {
+  (getLibraryIndex as jest.Mock).mockResolvedValue(
+    GRAPH_RELATION_SAMPLE_PROJECTION,
+  );
+  router = createMemoryRouter(
+    [
+      { path: '/graph', element: createElement(RelationGraphPage) },
+      { path: '*', element: createElement('div', null, '目标页面') },
     ],
     { initialEntries: [url] },
   );
@@ -198,4 +217,39 @@ it('retains the source-only entry and its declaration through isolated source re
   );
   expect(getLibraryIndex).not.toHaveBeenCalled();
   expect(network).not.toHaveBeenCalled();
+});
+
+it('shows all four Trinity graph scales and keeps unavailable real scopes explicit', async () => {
+  await mount();
+  expect(button('工程文档')).toBeTruthy();
+  expect(button('工程事项')).toBeTruthy();
+  expect(button('技术领域')).toBeTruthy();
+  expect(button('全景')).toBeTruthy();
+  await click('技术领域');
+  expect(container.textContent).toContain('「技术领域」模式尚未接通');
+  expect(container.textContent).toContain('不展示任何');
+  expect(container.textContent).toContain('伪造节点');
+  expect(getLibraryIndex).not.toHaveBeenCalled();
+  expect(network).not.toHaveBeenCalled();
+});
+
+it('keeps the explicit sample-object action inside the isolated preview', async () => {
+  await mount();
+  await click('点击同文件图节点');
+  await click('查看样例对象');
+  expect(router.state.location.pathname).toBe('/dev-preview/graph');
+  expect(getLibraryIndex).not.toHaveBeenCalled();
+  expect(network).not.toHaveBeenCalled();
+});
+
+it('selects a production graph node before an explicit deep-link navigation', async () => {
+  await mountProduction();
+  expect(getLibraryIndex).toHaveBeenCalledWith('wi-sample-graph-a');
+  expect(container.querySelector('[aria-label="当前关系对象"]')?.textContent).toContain('SB-A 厂家服务通告');
+  await click('点击同文件图节点');
+  expect(router.state.location.pathname).toBe('/graph');
+  expect(container.querySelector('[aria-label="当前关系对象"]')?.textContent).toContain('doc-sample-graph-a');
+  await click('打开准确对象');
+  expect(router.state.location.pathname).toBe('/work-items/wi-sample-graph-a/documents');
+  expect(params().get('documentVersionId')).toBe('dv-sample-b');
 });

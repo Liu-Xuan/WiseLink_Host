@@ -42,6 +42,13 @@
   max-width: 520px;
 }
 
+.rg-description {
+  margin: 0;
+  color: var(--wl-muted);
+  font-size: 13px;
+  line-height: 1.7;
+}
+
 .rg-controls {
   display: flex;
   flex-wrap: wrap;
@@ -57,6 +64,13 @@
   backdrop-filter: blur(var(--wl-blur-panel));
   box-shadow: var(--wl-shadow-1);
   overflow: hidden;
+}
+
+.rg-workspace {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 306px;
+  gap: var(--wl-space-5);
+  align-items: stretch;
 }
 
 .rg-canvas {
@@ -132,6 +146,67 @@
   color: var(--wl-muted);
 }
 
+.rg-legend strong {
+  margin-left: auto;
+  font-size: 11px;
+  font-weight: 550;
+  color: var(--wl-faint);
+}
+
+.rg-inspector {
+  min-width: 0;
+  border: 1px solid var(--wl-border);
+  border-radius: var(--wl-radius-panel);
+  background: var(--wl-glass-content);
+  box-shadow: var(--wl-shadow-1);
+  padding: var(--wl-space-5);
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: var(--wl-space-4);
+}
+
+.rg-inspector-eyebrow {
+  color: var(--wl-muted);
+  font-size: 10px;
+  font-weight: 650;
+  letter-spacing: .08em;
+  text-transform: uppercase;
+}
+
+.rg-inspector h2 {
+  margin: 0;
+  font-size: 18px;
+  line-height: 1.45;
+}
+
+.rg-inspector-lead,
+.rg-inspector-note,
+.rg-inspector-boundary {
+  margin: 0;
+  color: var(--wl-muted);
+  font-size: 12px;
+  line-height: 1.75;
+}
+
+.rg-inspector dl {
+  width: 100%;
+  margin: 0;
+  display: grid;
+  grid-template-columns: 74px minmax(0, 1fr);
+  gap: var(--wl-space-2) var(--wl-space-3);
+  font-size: 12px;
+}
+
+.rg-inspector dt { color: var(--wl-muted); }
+.rg-inspector dd { margin: 0; overflow-wrap: anywhere; }
+
+.rg-inspector-boundary {
+  margin-top: auto;
+  border-top: 1px solid var(--wl-border);
+  padding-top: var(--wl-space-4);
+}
+
 .rg-dot {
   width: 10px;
   height: 10px;
@@ -153,6 +228,16 @@
   display: flex;
   align-items: center;
   gap: var(--wl-space-2);
+}
+
+@media (max-width: 1100px) {
+  .rg-workspace {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .rg-inspector {
+    min-height: 0;
+  }
 }
 
 @media (max-width: 800px) {

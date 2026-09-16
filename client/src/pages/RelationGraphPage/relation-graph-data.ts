@@ -14,8 +14,10 @@ export interface RelationGraphModeOption {
 }
 
 export const RELATION_GRAPH_MODES: RelationGraphModeOption[] = [
-  { value: 'document', label: '文档', connected: true },
-  { value: 'workItem', label: '事项', connected: true },
+  { value: 'document', label: '工程文档', connected: true },
+  { value: 'workItem', label: '工程事项', connected: true },
+  { value: 'domain', label: '技术领域', connected: false },
+  { value: 'panorama', label: '全景', connected: false },
 ];
 
 export interface RelationGraphNodeData {
