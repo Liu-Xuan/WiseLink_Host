@@ -1365,3 +1365,11 @@ FTD revision 12 还精确引用 SB revision 16 的问题 `claim_maintenance_disr
 1600×1000 与 390×844、DPR 1、reduced-motion 的固定视口使用隔离构造的准确 DocumentVersion/ParseRun/SourceRef 响应和构造 PDF，只验证生产 React 布局、作者目录、双栏、页切换和响应式结构；不作为线上原件、中文或视觉验收。桌面实际为左目录、中央连续原文和右侧受控 PDF，手机默认只显示原文并提供“查看原件”切换；分隔条支持指针及左右方向键，目录和全屏均有键盘可用入口。
 
 前端提交 `57da93d0f2f7bf2935ec2c06d945ff7571d17ab9`（父提交 `0b33532bbc3db281a5b23699389812cada75a783`）只包含独立精读页面、原文阅读器、受控原件预览、专用工作台、样式、定向测试和本记录，origin/github 同名开发分支已回读相同 SHA。定向 Jest 2 个 suite、16 项、client typecheck、受影响源码 ESLint/CSS stylelint、client production build、完整 precommit 与 diff check 通过。release `7686244726098037741` 已 `finished`，精确 `commit_id=57da93d0f2f7bf2935ec2c06d945ff7571d17ab9`，`error_logs=[]`。该技术发布不替代登录态线上真实原件、译文和返回位置核对。
+
+## 2026-09-17：Trinity F3 事项 Wiki 阅读结构对齐
+
+现行 `/matters/:matterId` 已经以确切保存工作作为事项正文，历史 `workRef` 不会被当前工作替换，`MatterProblemWork`、`OverviewSourceWork`、纠正通知和参考变化通知也已分别表达问题工作、Overall 保存来源及当前性。本轮没有再生成一份 Wiki 正文，也没有改变保存、来源、跨事项引用或正式采用语义；只把“事项简报”调整为稳定实底的连贯文章与右侧工作／证据检查器，材料页沿用同一主从布局，窄屏收为单列。
+
+文章区保留已保存候选、决定性条件、其余判断、精确依据入口和问题工作；右侧继续显示当前或指定历史工作修订及其基于事项修订。导航保持工程态势、事项简报、继续核对与讨论、关联资料四个层次，历史工作继续禁用不能准确复现的讨论和资料操作。正文与检查器不再使用大面积动态玻璃，功能导航仍可使用适度模糊材质。
+
+定向 Jest 3 个 suite、12 项、client typecheck、受影响源码 ESLint/CSS stylelint、client production build、完整 precommit 与 diff check 通过。固定视口脚本在独立生产预览中因妙搭 `__platform__` 模板变量未注入而未挂载 React，故没有把该次尝试记录为视觉通过；发布后仍需在登录态真实运行环境核对桌面与手机页面。代码提交、双远端同步和 release 事实将在完成后补记。
