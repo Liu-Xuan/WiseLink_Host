@@ -37,7 +37,21 @@ describe('authorized Trinity projection', () => {
   it('does not infer analysis or formal execution from a saved work number alone', () => {
     const { data } = projectAuthorizedSituation([{...row, result: null}], 'complete');
     expect(data.matters[0].activeStages).toEqual([]);
+    expect(data.matters[0].attention).toBeNull();
+  });
+  it('does not turn a missing completion classification into an exact zero attention count', () => {
+    const { data } = projectAuthorizedSituation([
+      {...row, result: {...row.result!, roundCompletion: undefined}},
+    ], 'complete', null, true);
+    expect(data.matters[0].attention).toBeNull();
+    expect(situationMetrics(data, data.matters).attention).toBeNull();
+  });
+  it('shows an exact zero only when every exhausted directory row is classified complete', () => {
+    const { data } = projectAuthorizedSituation([
+      {...row, result: {...row.result!, roundCompletion: 'COMPLETE'}},
+    ], 'complete', null, true);
     expect(data.matters[0].attention).toBe(false);
+    expect(situationMetrics(data, data.matters).attention).toBe(0);
   });
   it.each(['denied', 'failed', 'loading'] as const)('removes prior content for %s', (status) => {
     const projection = projectAuthorizedSituation([row], status, libraryMatterFixture());
