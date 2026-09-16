@@ -42,6 +42,155 @@ export function libraryDocumentReadingRoute(
   return `/document-versions/${encodeURIComponent(documentVersionId)}?${query}`;
 }
 
+const REVISION_SIDE_KEYS = ['before', 'after', 'roleKey'] as const;
+const REVISION_RUN_KEYS = ['beforeParseRun', 'afterParseRun'] as const;
+const REVISION_SEMANTIC_KEYS = [
+  'beforeSemanticRevision',
+  'afterSemanticRevision',
+] as const;
+
+/** Positive safe integer; rejects signs, decimals, non-digits, zero and values above Number.MAX_SAFE_INTEGER. No fixed-width truncation. */
+export function parsePositiveSafeInteger(raw: string): number | null {
+  if (!/^\d+$/u.test(raw)) return null;
+  if (raw.length > 16) return null;
+  const value = Number(raw);
+  return Number.isSafeInteger(value) && value > 0 ? value : null;
+}
+
+export type RevisionTextPin =
+  | { state: 'absent' | 'duplicate' | 'empty' | 'invalid' }
+  | { state: 'ok'; value: string };
+
+export type RevisionSemanticPin =
+  | { state: 'absent' | 'duplicate' | 'empty' | 'invalid' }
+  | { state: 'ok'; value: number };
+
+/** One identity text field; distinguishes unspecified, duplicate, empty and illegal. */
+export function revisionTextPin(
+  params: URLSearchParams,
+  key: string,
+): RevisionTextPin {
+  const all = params.getAll(key);
+  if (all.length === 0) return { state: 'absent' };
+  if (all.length > 1) return { state: 'duplicate' };
+  const raw = all[0].trim();
+  if (raw === '') return { state: 'empty' };
+  const value = identifier(all[0]);
+  return value ? { state: 'ok', value } : { state: 'invalid' };
+}
+
+/** One semantic-revision field; a legal value is a positive safe integer. */
+export function revisionSemanticPin(
+  params: URLSearchParams,
+  key: string,
+): RevisionSemanticPin {
+  const all = params.getAll(key);
+  if (all.length === 0) return { state: 'absent' };
+  if (all.length > 1) return { state: 'duplicate' };
+  const raw = all[0].trim();
+  if (raw === '') return { state: 'empty' };
+  const value = parsePositiveSafeInteger(raw);
+  return value === null ? { state: 'invalid' } : { state: 'ok', value };
+}
+
+function singleToken(params: URLSearchParams, key: string): string | null {
+  const pin = revisionTextPin(params, key);
+  return pin.state === 'ok' ? pin.value : null;
+}
+
+function singleSemanticToken(
+  params: URLSearchParams,
+  key: string,
+): string | null {
+  const pin = revisionSemanticPin(params, key);
+  return pin.state === 'ok' ? String(pin.value) : null;
+}
+
+/** Normalized revision-comparison identity; only exact Host identities, never arbitrary URLs. Duplicate or illegal pins are dropped, never repaired. */
+export function revisionReadingParams(params: URLSearchParams): URLSearchParams {
+  const result = new URLSearchParams();
+  for (const key of REVISION_SIDE_KEYS) {
+    const value = singleToken(params, key);
+    if (value) result.set(key, value);
+  }
+  const focusSide = params.getAll('focusSide');
+  if (
+    focusSide.length === 1 &&
+    (focusSide[0] === 'before' || focusSide[0] === 'after')
+  )
+    result.set('focusSide', focusSide[0]);
+  for (const key of REVISION_RUN_KEYS) {
+    const value = singleToken(params, key);
+    if (value) result.set(key, value);
+  }
+  for (const key of REVISION_SEMANTIC_KEYS) {
+    const value = singleSemanticToken(params, key);
+    if (value) result.set(key, value);
+  }
+  const returnLibraryQuery = params.getAll('returnLibraryQuery');
+  if (returnLibraryQuery.length === 1 && returnLibraryQuery[0]) {
+    const normalized = libraryReadingParams(
+      new URLSearchParams(returnLibraryQuery[0]),
+    ).toString();
+    if (normalized) result.set('returnLibraryQuery', normalized);
+  }
+  result.sort();
+  return result;
+}
+
+export interface RevisionPinTriple {
+  dv: string;
+  run: string;
+  semanticRevision: number;
+}
+
+/** Both ends fully pinned, legal and distinct; null when any pin is absent, empty, illegal, duplicated or the ends collide. */
+export function completeRevisionPins(
+  params: URLSearchParams,
+): { before: RevisionPinTriple; after: RevisionPinTriple } | null {
+  const beforeDv = revisionTextPin(params, 'before');
+  const afterDv = revisionTextPin(params, 'after');
+  const beforeRun = revisionTextPin(params, 'beforeParseRun');
+  const afterRun = revisionTextPin(params, 'afterParseRun');
+  const beforeSem = revisionSemanticPin(params, 'beforeSemanticRevision');
+  const afterSem = revisionSemanticPin(params, 'afterSemanticRevision');
+  if (
+    beforeDv.state !== 'ok' ||
+    afterDv.state !== 'ok' ||
+    beforeRun.state !== 'ok' ||
+    afterRun.state !== 'ok' ||
+    beforeSem.state !== 'ok' ||
+    afterSem.state !== 'ok'
+  )
+    return null;
+  if (beforeDv.value === afterDv.value) return null;
+  if (beforeRun.value === afterRun.value) return null;
+  return {
+    before: {
+      dv: beforeDv.value,
+      run: beforeRun.value,
+      semanticRevision: beforeSem.value,
+    },
+    after: {
+      dv: afterDv.value,
+      run: afterRun.value,
+      semanticRevision: afterSem.value,
+    },
+  };
+}
+
+export function revisionReadingReturnParams(
+  revisionQuery: string,
+  side: 'before' | 'after',
+  documentVersionId: string,
+): URLSearchParams {
+  return new URLSearchParams({
+    returnDocumentVersionId: documentVersionId,
+    returnRevisionQuery: revisionQuery,
+    returnRevisionSide: side,
+  });
+}
+
 export function matterReadingReturnParams(
   matterId: string,
   documentVersionId: string,
@@ -61,18 +210,23 @@ export function matterReadingReturnParams(
 export function readingReturnTarget(
   params: URLSearchParams,
   documentVersionId?: string,
+  requestedRun?: string | null,
 ): { route: string; label: string } | null {
   const keys = [
     'returnMatterId',
     'returnLibraryQuery',
+    'returnRevisionQuery',
     'returnLibraryWorkItemId',
     'returnWorkItemId',
   ];
   if (keys.filter((key) => params.has(key)).length > 1) return null;
   if (
-    [...keys, 'returnMatterWorkRef', 'returnDocumentVersionId'].some(
-      (key) => params.getAll(key).length > 1,
-    )
+    [
+      ...keys,
+      'returnMatterWorkRef',
+      'returnDocumentVersionId',
+      'returnRevisionSide',
+    ].some((key) => params.getAll(key).length > 1)
   )
     return null;
   const binding = identifier(params.get('returnDocumentVersionId'));
@@ -112,6 +266,25 @@ export function readingReturnTarget(
     return {
       route: `/library?${libraryReadingParams(new URLSearchParams(params.get('returnLibraryQuery')!))}`,
       label: '返回原文档目录',
+    };
+  }
+  if (params.has('returnRevisionQuery')) {
+    const side = params.get('returnRevisionSide');
+    const revisionQuery = params.get('returnRevisionQuery');
+    if (!binding || !revisionQuery || revisionQuery.length > 4096) return null;
+    if (side !== 'before' && side !== 'after') return null;
+    const nested = new URLSearchParams(revisionQuery);
+    const pins = completeRevisionPins(nested);
+    if (!pins) return null;
+    if (nested.getAll('roleKey').length > 1) return null;
+    const sidePin = side === 'before' ? pins.before : pins.after;
+    if (sidePin.dv !== binding) return null;
+    if (requestedRun && sidePin.run !== requestedRun) return null;
+    const query = revisionReadingParams(nested);
+    query.set('focusSide', side);
+    return {
+      route: `/document-revisions?${query.toString()}`,
+      label: '返回改版比较',
     };
   }
   const libraryWorkItemId = identifier(params.get('returnLibraryWorkItemId'));
