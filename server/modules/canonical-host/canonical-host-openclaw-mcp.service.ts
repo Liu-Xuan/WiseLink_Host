@@ -37,6 +37,7 @@ import {
   textResult,
 } from './canonical-host-readonly-mcp-tools';
 import { CanonicalHostVerticalService } from './canonical-host-vertical.service';
+import { DocumentActivityRuntimeService, documentActivityActionSchemas } from './document-activity-runtime.service';
 import {
   CANONICAL_SERVICE_SCOPE_AUTHORIZATION,
   type CanonicalServiceScopeAuthorizationPort,
@@ -209,6 +210,7 @@ export class CanonicalHostOpenClawMcpService {
     @Optional() private readonly documentWork?: DocumentWorkRuntimeService,
     @Optional() private readonly documentTranslation?: DocumentTranslationRuntimeService,
     @Optional() private readonly originalReader?: UnifiedReaderService,
+    @Optional() private readonly documentActivity?: DocumentActivityRuntimeService,
   ) {
     const handler = createMcpHandler(() => this.createServer(), {
       legacy: 'stateless',
@@ -242,13 +244,19 @@ export class CanonicalHostOpenClawMcpService {
     if (this.matterAttempts) registerMatterAttemptMcpTools(server, this.matterAttempts, this.serviceScope, this.matterDocuments, this.originalReader);
     if (this.documentWork) server.registerTool('document_work', {
       title: '推进已授权的文档原文步骤',
-      description: '确定性消费者使用。STATUS读取精确文档状态；STEP领取现有parseRun并执行一个有界原文步骤；CANCEL取消该run。身份与租约由Host持有，不调用工程模型。',
+      description: 'STATUS读取精确文档状态及已明确受理的活动候选请求；STEP推进原文解析，INDEX只组织原文。ACTIVITY_BEGIN显式受理独立来源声明候选，CLAIM/READ/HEARTBEAT/SAVE/FAIL/CANCEL管理其读取与保存；模型由获授权Hosted生产者调用，Host保留准确来源、租约和版本校验。候选不是正式采用。',
       inputSchema: z.discriminatedUnion('action', [
         z.strictObject({ action: z.literal('STATUS'), documentVersionId: z.string().trim().min(1).max(96) }),
         z.strictObject({ action: z.enum(['STEP', 'CANCEL', 'INDEX']), documentVersionId: z.string().trim().min(1).max(96),
           parseRunId: z.string().trim().min(1).max(96) }),
+        ...documentActivityActionSchemas,
       ]),
-    }, async input => textResult(await this.documentWork!.run(input)));
+    }, async input => {
+      if (input.action === 'STATUS' || input.action === 'STEP' || input.action === 'CANCEL' || input.action === 'INDEX')
+        return textResult(await this.documentWork!.run(input));
+      if (!this.documentActivity) throw new Error('DOCUMENT_ACTIVITY_RUNTIME_UNAVAILABLE');
+      return textResult(await this.documentActivity.run(input));
+    });
 
     if (this.documentWork) server.registerTool('read_document_original', {
       title: '读取确切版本原文',

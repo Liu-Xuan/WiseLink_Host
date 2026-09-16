@@ -1,5 +1,6 @@
 import type { DocumentRevisionReadingRequest, DocumentRevisionReadingResponse } from '@shared/document-revision-reading.interface';
 import type { DocumentSemanticReadingRequest, DocumentSemanticReadingResponse } from '@shared/document-semantic-map.interface';
+import type { DocumentActivityReadingRequest, DocumentActivityReadingResponse } from '@shared/document-activity.interface';
 import type { JobAidWorkingReadModel } from '@shared/jobaid-problem-assessment.interface';
 import type { DocumentTranslationReadingResponse } from '@shared/document-translation-reading.interface';
 import type { EngineeringIssueRead, EngineeringIssueSearchHit, EngineeringIssueSearchResponse,
@@ -608,6 +609,22 @@ export async function readDocumentParsingStatus(documentVersionId: string, signa
 
 export function startDocumentParsing(documentVersionId: string, input: StartDocumentParseRequest) {
   return readCanonicalLibrary<DocumentParseRunSummary>({ url: `/api/document-management/document-versions/${encodeURIComponent(documentVersionId)}/parse-runs`, method: 'POST', data: input });
+}
+
+export async function readDocumentActivityReading(input: DocumentActivityReadingRequest, signal?: AbortSignal): Promise<DocumentActivityReadingResponse> {
+  const generation = clientSessionGeneration;
+  const query = new URLSearchParams({ parseRunId: input.parseRunId });
+  if (input.candidateRevision !== undefined) query.set('candidateRevision', String(input.candidateRevision));
+  const result = await readCanonicalLibrary<DocumentActivityReadingResponse>({
+    url: `/api/document-management/document-versions/${encodeURIComponent(input.documentVersionId)}/activity-reading?${query}`, signal });
+  if (signal?.aborted || generation !== clientSessionGeneration) throw new Error('DOCUMENT_ACTIVITY_READING_OBSOLETE');
+  if (result.binding.documentVersionId !== input.documentVersionId || result.binding.parseRunId !== input.parseRunId ||
+    (result.candidate !== null && (result.candidate.sourceBinding.original.documentVersionId !== input.documentVersionId ||
+      result.candidate.sourceBinding.original.parseRunId !== input.parseRunId || result.candidate.candidateOnly !== true ||
+      !Number.isSafeInteger(result.candidate.candidateRevision) || result.candidate.candidateRevision < 1 ||
+      (input.candidateRevision !== undefined && result.candidate.candidateRevision !== input.candidateRevision))))
+    throw new Error('DOCUMENT_ACTIVITY_READING_BINDING_MISMATCH');
+  return result;
 }
 
 export async function readDocumentSemanticReading(input: DocumentSemanticReadingRequest, signal?: AbortSignal): Promise<DocumentSemanticReadingResponse> {

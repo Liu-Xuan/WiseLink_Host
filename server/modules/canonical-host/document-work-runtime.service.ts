@@ -1,6 +1,7 @@
 import type { DocumentRevisionReadingRequest } from '@shared/document-revision-reading.interface';
 import { DocumentRevisionReadingService } from './document-revision-reading.service';
-import { Inject, Injectable } from '@nestjs/common';
+import { Inject, Injectable, Optional } from '@nestjs/common';
+import { DocumentActivityRunRepository } from './document-activity-run.repository';
 import { randomUUID } from 'node:crypto';
 import { DocumentSourceProjectionService } from './document-source-projection.service';
 import { UnifiedReaderService } from '../unified-reader/unified-reader.service';
@@ -26,6 +27,7 @@ export class DocumentWorkRuntimeService {
     private readonly sourceProjection: DocumentSourceProjectionService,
     private readonly semantics: DocumentSemanticService,
     private readonly revisions: DocumentRevisionReadingService,
+    @Optional() private readonly activityRuns?: DocumentActivityRunRepository,
   ) {}
 
   async readRevision(input: DocumentRevisionReadingRequest) {
@@ -100,6 +102,7 @@ export class DocumentWorkRuntimeService {
       // Re-read normal source permission for every operation, including cancel.
       const state = await this.parsing.status(scope.documentVersionId, scope);
       if (input.action === 'STATUS') return { ...state,
+        nextActivityRunRef: this.activityRuns ? await this.activityRuns.nextPending(scope) : null,
         nextSourceProjectionRunId: state.latestRun?.status === 'PUBLISHED' ? await this.sourceProjection.nextPendingRun(scope) : null };
       if (input.action === 'INDEX') {
         if (!input.parseRunId) throw new Error('DOCUMENT_ORIGINAL_RUN_REQUIRED');
