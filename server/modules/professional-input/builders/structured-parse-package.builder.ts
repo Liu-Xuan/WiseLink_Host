@@ -115,6 +115,7 @@ export function buildStructuredParsePackage(input: {
   );
 
   const contentUnits: Array<Record<string, unknown>> = [];
+  const assets: Array<Record<string, unknown>> = [];
   let headingCount = 0;
   let contentOrder = 0;
   unitSet.units.forEach((unit) => {
@@ -125,6 +126,30 @@ export function buildStructuredParsePackage(input: {
     const isHeading = unit.expectedSemantic === 'heading';
     const isFigure = unit.expectedSemantic === 'figure';
     const kind = isFigure ? 'figure' : isHeading ? 'heading' : 'paragraph';
+    const figureId = isFigure
+      ? techpubEntityId(
+          'figure',
+          sha256Hex(
+            jcsCanonicalize({
+              namespace: 'techpub-pdf-figure-id-v1',
+              sourcePackageId,
+              continuityKey: unit.continuityKey,
+            }),
+          ),
+        )
+      : null;
+    const figureAssetId = isFigure
+      ? techpubEntityId(
+          'asset',
+          sha256Hex(
+            jcsCanonicalize({
+              namespace: 'techpub-pdf-figure-asset-id-v1',
+              sourcePackageId,
+              continuityKey: unit.continuityKey,
+            }),
+          ),
+        )
+      : null;
     const unitId = techpubEntityId(
       'unit',
       sha256Hex(
@@ -154,18 +179,9 @@ export function buildStructuredParsePackage(input: {
       },
       payload: isFigure
         ? {
-            figureId: techpubEntityId(
-              'figure',
-              sha256Hex(
-                jcsCanonicalize({
-                  namespace: 'techpub-pdf-figure-id-v1',
-                  sourcePackageId,
-                  continuityKey: unit.continuityKey,
-                }),
-              ),
-            ),
+            figureId,
             ...(unit.text ? { caption: unit.text } : {}),
-            assetIds: [],
+            assetIds: [figureAssetId],
             referenceIds: [],
           }
         : isHeading
@@ -191,6 +207,33 @@ export function buildStructuredParsePackage(input: {
         ),
       ),
     });
+    if (isFigure && figureAssetId) {
+      assets.push({
+        assetId: figureAssetId,
+        logicalType: 'pdf_figure_region',
+        authority: 'parser_normalized',
+        sourceRefIds: [...unit.sourceRefIds],
+        renditions: [
+          {
+            renditionId: techpubEntityId(
+              'rendition',
+              sha256Hex(
+                jcsCanonicalize({
+                  namespace: 'techpub-pdf-figure-rendition-id-v1',
+                  figureAssetId,
+                  artifactId,
+                }),
+              ),
+            ),
+            role: 'source_original',
+            artifactId,
+            mediaType: 'application/pdf',
+            sha256: layout.sourceSha256,
+            sourceRefIds: [...unit.sourceRefIds],
+          },
+        ],
+      });
+    }
     contentOrder += 1;
   });
   if (contentUnits.length === 0) {
@@ -446,7 +489,7 @@ export function buildStructuredParsePackage(input: {
     sourceSegments,
     contentUnits,
     references: [],
-    assets: [],
+    assets,
     applicability,
     coverage,
     findings: [],
