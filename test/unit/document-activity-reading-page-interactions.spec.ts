@@ -179,6 +179,7 @@ describe('entry gate renders without any request', () => {
       expect(mockStatus).not.toHaveBeenCalled();
       expect(mockActivity).not.toHaveBeenCalled();
       expect(container.textContent).not.toContain('正在读取');
+      expect(container.querySelectorAll('[role="alert"]')).toHaveLength(1);
     },
   );
 });
