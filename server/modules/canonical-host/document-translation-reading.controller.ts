@@ -30,7 +30,7 @@ export class DocumentTranslationReadingController {
     @Query('roleKey') roleKey: string, @Req() request: Request) {
     if (![semanticRevision, beforeSemanticRevision].every(value => typeof value === 'string' && /^[1-9][0-9]*$/.test(value)))
       throw new BadRequestException('DOCUMENT_REVISION_IDENTITY_INVALID');
-    return this.revisions.read({ before: { documentVersionId: beforeDocumentVersionId, parseRunId: beforeParseRunId,
+    return this.revisions.readForBrowser({ before: { documentVersionId: beforeDocumentVersionId, parseRunId: beforeParseRunId,
       semanticRevision: Number(beforeSemanticRevision) },
       after: { documentVersionId, parseRunId, semanticRevision: Number(semanticRevision) }, roleKey }, contextFromRequest(request));
   }

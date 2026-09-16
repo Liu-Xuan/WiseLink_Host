@@ -62,25 +62,27 @@ describe('exact revision pair reading (isolated fixtures)', () => {
     after.original.binding.parseRunId = 'another-parser';
     expect(() => compare(before, after)).toThrow('DISTINCT_VERSIONS_REQUIRED');
   });
-  it('authorizes both originals, reads exact semantics, and fails if either access is revoked before return', async () => {
+  it.each(['read', 'readForBrowser'] as const)('%s authorizes both originals and rejects revoked access or different families', async (method) => {
     const before = document('old', 'One'), after = document('new', 'Two');
     const reader = { readDocumentOriginal: jest.fn(async (id: string) => ({
       original: id === 'old' ? before.original : after.original, run: { sourceBinding: { familyId: 'family' } } })) };
     const semantics = { read: jest.fn(async (scope: { documentVersionId: string }) => scope.documentVersionId === 'old' ? before.map() : after.map()) };
     const actors = { withActorScope: jest.fn(async (_actor, fn) => fn()) };
+    if (method === 'readForBrowser') actors.withActorScope.mockRejectedValue(new Error('HOSTED_SCOPE_UNAVAILABLE'));
     const parsing = { status: jest.fn().mockResolvedValue({}) };
     const service = new DocumentRevisionReadingService(reader as never, semantics as never, actors as never, parsing as never);
     const input = { before: { documentVersionId: 'old', parseRunId: 'parse-old', semanticRevision: 1 },
       after: { documentVersionId: 'new', parseRunId: 'parse-new', semanticRevision: 1 }, roleKey: 'ftd.status' };
     const context = { tenantId: 'tenant', actorUserId: 'actor', roles: [], appId: 'app', env: 'development' };
-    await expect(service.read(input, context)).resolves.toHaveProperty('familyId', 'family');
+    await expect(service[method](input, context)).resolves.toHaveProperty('familyId', 'family');
+    expect(actors.withActorScope).toHaveBeenCalledTimes(method === 'read' ? 1 : 0);
     expect(reader.readDocumentOriginal.mock.calls.map(call => call[0])).toEqual(['old', 'new']);
     expect(semantics.read).toHaveBeenNthCalledWith(2, expect.objectContaining({ documentVersionId: 'new' }), expect.anything(), 1);
     parsing.status.mockImplementation(async (id: string) => { if (id === 'old') throw new Error('SOURCE_DENIED'); return {}; });
-    await expect(service.read(input, context)).rejects.toThrow('SOURCE_DENIED');
+    await expect(service[method](input, context)).rejects.toThrow('SOURCE_DENIED');
     parsing.status.mockResolvedValue({});
     reader.readDocumentOriginal.mockImplementation(async id => ({ original: id === 'old' ? before.original : after.original,
       run: { sourceBinding: { familyId: id === 'old' ? 'family' : 'different' } } }));
-    await expect(service.read(input, context)).rejects.toThrow('SAME_FAMILY_REQUIRED');
+    await expect(service[method](input, context)).rejects.toThrow('SAME_FAMILY_REQUIRED');
   });
 });

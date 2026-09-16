@@ -1,5 +1,11 @@
 # M 主控集成交接
 
+## 2026-09-16 换版读取修复版技术发布完成
+
+Host 修复版发布已 finished，完成态精确提交 e5cdf5b96b78d2208ac28c6d0d5912051f3f9851，与 origin/github 同名开发分支一致；新增独立工具名已撤回，使用既有 read_document_original 的 compareWith 模式，未修改已安装 c109 或工具清单校验。
+
+官方 online 只读 SELECT 已取得两端精确 parseRun 的已保存 semanticRevision 1，绑定 manifest SHA 与此前下载原文一致；两份保存结构与此前本地派生结构逐字段一致，代入新比较器后各角色比较结果一致。该证据确认当前真实持久数据，仍不是线上 HTTP/MCP 调用验收。Hosted 浏览器刷新后进入飞书扫码登录页，已请用户在原标签登录，未新建/重放评估、未启动旧排队开发消息。待恢复登录后做同一只读调用验证；前端生产换版视图、T1/T2 完整真实流程及后续业务目标仍未完成。
+
 ## 2026-09-16 MCP 清单兼容修正
 
 准备真实调用时核对已安装 c109，发现消费者严格校验工具名清单，因此新增 read_document_revision 会造成连接拒绝。已将比较移入既有 read_document_original 的可选 compareWith/roleKey 模式，旧单端调用不变；两端模式要求准确 semanticRevision，拒绝分页或 sectionId 混入。未放宽客户端清单校验、未改安装 Skill。实际 Host MCP 注册经本地 HTTP transport 与 c109 validateHostToolMetadata 联合验证：34 工具清单匹配，单端和两端调用各自正确分发，三类混合/缺失选择拒绝；服务端构建及类型检查通过。此前 57ff 技术发布已完成；需随本修复再次发布，才能恢复该消费者兼容性。当前浏览器 Hosted 登录过期，真实 MCP 读回等待用户扫码；此处不声称线上业务验收。
