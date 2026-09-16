@@ -1375,3 +1375,11 @@ FTD revision 12 还精确引用 SB revision 16 的问题 `claim_maintenance_disr
 定向 Jest 3 个 suite、12 项、client typecheck、受影响源码 ESLint/CSS stylelint、client production build、完整 precommit 与 diff check 通过。固定视口脚本在独立生产预览中因妙搭 `__platform__` 模板变量未注入而未挂载 React，故没有把该次尝试记录为视觉通过；发布后仍需在登录态真实运行环境核对桌面与手机页面。
 
 前端提交 `732a734e2623c49337c6cd75847328087c04ab84`（父提交 `9fd1bf99d671c64ca0cc5b6d433781a48a7a880b`）只包含事项 Wiki 页面、专用样式、定向测试和本记录，origin/github 同名开发分支已回读相同 SHA。release `7686252831901207530` 已 `finished`，精确 `commit_id=732a734e2623c49337c6cd75847328087c04ab84`，`error_logs=[]`。发布后外部浏览器状态读取仍因 macOS 锁屏超时并重置，故没有把技术发布冒充登录态线上可见验收。
+
+## 2026-09-17：Trinity F2 统一知识读取结构对齐
+
+现行 `/knowledge` 继续复用 `EngineeringIssueSearch`，同时检索有权读取的已保存工程工作和已发布原文；展开工作继续读取确切 `workRef`，保留 Overall 保存来源、更正通知、参考变化、根来源和准确原文入口。本轮为只读知识入口增加“统一知识查阅”主表与右侧详情检查器，窄屏收为单列；Matter 内部的引用比较搜索仍保持原布局和写入边界。
+
+当前 Host 没有授权范围内的完整知识目录或可证明穷尽的治理统计，因此没有复制静态样例中的 6／1／11 数量，也没有为视觉填充构造知识行。顶部只陈述读取口径；真实列表在用户提交关键词、Host 返回获授权的保存工作或原文后出现。当前／历史由显式范围切换控制，命中、相似或连通不自动建立归属、复用或正式采用。
+
+定向 Jest 2 个 suite、10 项、client typecheck、受影响源码 ESLint/CSS stylelint、client production build、完整 precommit 与 diff check 通过。本轮未取得可用的登录态外部浏览器状态，仍不声明线上视觉验收；待精确提交、双远端同步和 release 后补记部署事实。

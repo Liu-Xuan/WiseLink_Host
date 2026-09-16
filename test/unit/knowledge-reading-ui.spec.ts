@@ -21,6 +21,10 @@ jest.mock('../../client/src/pages/KnowledgeLookupPage/knowledge-lookup.css', () 
 test('knowledge mounts the shared read-only search without requiring a selected Matter or querying units first', () => {
   const html = renderToStaticMarkup(createElement(StaticRouter, { location: '/knowledge?referenceAttemptRef=must-not-run' }, createElement(KnowledgeLookupPage)));
   expect(html).toContain('只读工程知识检索');
+  expect(html).toContain('knowledge-catalog');
+  expect(html).toContain('知识读取口径');
+  expect(html).toContain('当前与历史范围明确切换');
+  expect(html).toContain('知识详情');
   expect(html).toContain('工程工作检索结果');
   expect(html).toContain('原文检索结果');
   expect(html).toContain('按文档任务与准确版本查询解析单元');

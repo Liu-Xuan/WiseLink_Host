@@ -76,10 +76,15 @@ export default function KnowledgeLookupPage() {
   const [showUnits, setShowUnits] = useState(false);
   return <main className="knowledge-lookup" aria-label="工程知识">
     <header className="knowledge-lookup-header"><h1 className="knowledge-lookup-title">工程知识</h1>
-      <p>原文与已保存工程工作分别检索，问题全文与来源保持准确版本。</p>
+      <p>在业务中形成，在复用中核对，在变化后更新。</p>
     </header>
     {authenticationRequired ? <p role="alert">请先登录，再读取当前账户有权查看的工程知识。</p> : <>
-      <EngineeringIssueSearch key={`search:${sessionGeneration}`} readOnly />
+      <section className="knowledge-scope-strip" aria-label="知识读取口径">
+        <article><strong>已保存工程工作</strong><span>当前与历史范围明确切换</span></article>
+        <article><strong>需要复看</strong><span>按保存的更正与当前性通知显示</span></article>
+        <article><strong>来源与复用</strong><span>保留确切工作、版本和 SourceRef</span></article>
+      </section>
+      <EngineeringIssueSearch key={`search:${sessionGeneration}`} readOnly presentation="catalog" />
       <details className="mt-6 rounded-xl border border-border p-4" onToggle={event => setShowUnits(event.currentTarget.open)}>
         <summary>按文档任务与准确版本查询解析单元</summary>
         {showUnits ? <ParsedUnitLookup key={`units:${sessionGeneration}`} /> : null}
