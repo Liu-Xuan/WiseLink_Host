@@ -32,6 +32,7 @@ import {
   type RevisionSideQuery,
 } from './document-revision-entry';
 import DocumentRevisionReadingView from './DocumentRevisionReadingView';
+import './document-revision-reading.css';
 
 interface ResolvedPin {
   documentVersionId: string;
@@ -326,16 +327,16 @@ export default function DocumentRevisionReadingPage() {
     entry.ok && resolvedPins?.pinsIdentity === pinsIdentity;
 
   return (
-    <main className="mx-auto max-w-5xl space-y-4 p-4">
-      <header className="space-y-2">
+    <main className="revision-reading-page">
+      <header className="revision-reading-page-head">
         <Link
           to={libraryReturnRoute}
           className="text-sm text-muted-foreground hover:underline"
         >
           变更选择并返回目录
         </Link>
-        <h1 className="text-lg font-semibold">改版比较阅读</h1>
-        <p className="text-xs text-muted-foreground">
+        <h1>文件自身换版</h1>
+        <p>
           只读比较两个版本所选角色的纯文本。基线端与比较目标端只表示本次比较的两端，不代表厂家先后、正式采用，也不代表最新或完整修订跨度。
         </p>
         {focusSide === 'before' || focusSide === 'after' ? (
@@ -379,32 +380,17 @@ export default function DocumentRevisionReadingPage() {
       ) : null}
 
       {showRoleSelector ? (
-        <Card>
-          <CardHeader>
-            <CardTitle className="text-base">选择要比较的内容角色</CardTitle>
-          </CardHeader>
-          <CardContent className="space-y-3">
-            <p className="text-sm text-muted-foreground">
-              改版比较按内容角色逐角色进行。以下为两端语义组织中存在角色标注的并集；重复或缺失的角色会保留，并由比较结果显示为未产生比较。切换角色会沿用当前两端的固定版本绑定重新读取，不会重新解析或改用最新版本。
-            </p>
+        <section className="revision-role-selector" aria-label="选择要比较的内容角色">
+          <div className="revision-role-buttons">
             {roleOptions.length === 0 ? (
               <p role="status" className="text-sm text-muted-foreground">两端语义组织中没有可比较的内容角色。</p>
             ) : null}
-            <div className="flex flex-wrap gap-2">
-              {roleOptions.map((role) => (
-                <Button
-                  key={role}
-                  type="button"
-                  variant={role === roleKey ? 'default' : 'outline'}
-                  aria-pressed={role === roleKey}
-                  onClick={() => selectRole(role)}
-                >
-                  {role}
-                </Button>
-              ))}
-            </div>
-          </CardContent>
-        </Card>
+            {roleOptions.map((role) => (
+              <Button key={role} type="button" variant={role === roleKey ? 'default' : 'outline'} aria-pressed={role === roleKey} onClick={() => selectRole(role)}>{role}</Button>
+            ))}
+          </div>
+          <p>按内容角色逐项比较；切换角色沿用当前两端的固定版本绑定，不重新解析，也不改用其他版本。</p>
+        </section>
       ) : null}
 
       {loading && !hasBlocker && !reading ? (
@@ -414,7 +400,7 @@ export default function DocumentRevisionReadingPage() {
       ) : null}
 
       {reading ? (
-        <div className="space-y-2">
+        <div className="revision-reading-result">
           {roleKey ? (
             <p className="text-xs text-muted-foreground">
               <Badge variant="outline" className="mr-2">

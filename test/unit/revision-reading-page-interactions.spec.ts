@@ -18,6 +18,7 @@ jest.mock('@client/src/pages/DocumentParsingPage/DocumentRevisionReadingView', (
   default: ({ reading }: { reading: { marker: string } }) =>
     createElement('div', { 'data-reading': reading.marker }, reading.marker),
 }));
+jest.mock('../../client/src/pages/DocumentParsingPage/document-revision-reading.css', () => ({}));
 jest.mock('@client/src/components/ui/badge', () => ({ Badge: 'span' }));
 jest.mock('@client/src/components/ui/card', () => ({ Card: 'section', CardContent: 'div', CardHeader: 'header', CardTitle: 'h2' }));
 jest.mock('@client/src/components/ui/button', () => ({

@@ -243,8 +243,8 @@ export default function DocumentRevisionReadingSidePanel({
   returnParamsFor,
 }: DocumentRevisionReadingSidePanelProps) {
   return (
-    <Card>
-      <CardHeader>
+    <Card className="revision-reading-side">
+      <CardHeader className="revision-side-head">
         <CardTitle className="text-base">{sideLabel}</CardTitle>
         <p className="text-xs text-muted-foreground">
           DV {side.binding.documentVersionId} · parseRun {side.binding.parseRunId} ·
@@ -252,7 +252,7 @@ export default function DocumentRevisionReadingSidePanel({
           profile {side.profileRef}
         </p>
       </CardHeader>
-      <CardContent className="space-y-4">
+      <CardContent className="revision-side-content space-y-4">
         <section className="space-y-2">
           <h3 className="text-sm font-medium text-foreground">厂家改版说明</h3>
           {side.publisherRevisionDescriptions.length === 0 ? (
