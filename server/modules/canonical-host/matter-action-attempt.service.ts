@@ -497,6 +497,57 @@ export class MatterActionAttemptService {
     );
   }
 
+  /**
+   * Read the immutable execution basis needed to audit or recover one exact
+   * attempt.  This deliberately projects identities and save receipts only;
+   * leases, the execution model and the model payload remain private.  The
+   * scoped row read re-authorizes every referenced work before any reference
+   * identity is returned, so revocation still closes this view.
+   */
+  readStatus(input: MatterAttemptScope & { attemptRef: string }) {
+    return this.authorized(input, async (executor, queue) => {
+      const row = await this.scopedRow(executor, queue, input, input.attemptRef);
+      const task = checkedTask(row);
+      const jobAid = task.modelInput as ReturnType<typeof buildMatterJobAidTask>;
+      const events = JSON.parse(row.reviewActivityJson ?? '[]') as Array<Record<string, unknown>>;
+      const savedWorkReceipts = events.flatMap((event) => {
+        if (
+          event.kind !== 'MATTER_JOBAID_WORK_SAVED' ||
+          typeof event.requestId !== 'string' ||
+          typeof event.workRevisionRef !== 'string' ||
+          !Number.isSafeInteger(event.expectedWorkRevision)
+        ) return [];
+        return [{
+          requestId: event.requestId,
+          expectedWorkRevision: event.expectedWorkRevision as number,
+          workRevisionRef: event.workRevisionRef,
+        }];
+      });
+      return {
+        row,
+        audit: {
+          matterRevisionId: task.subject.matterRevisionId,
+          matterRevision: task.inputRevision,
+          baseWorkingRevision: task.baseRevision,
+          trigger: structuredClone(task.trigger),
+          priorWorkRef: task.workingBasis.priorWorkRef,
+          inputs: structuredClone(task.workingBasis.inputs),
+          referenceWorks: (jobAid.modelInput.referenceWorks ?? []).map((reference) => ({
+              matterId: reference.matterId,
+              workRef: reference.workRef,
+              issueKey: reference.issueKey,
+              purpose: reference.purpose,
+              evidenceRef: reference.evidenceRef,
+              overviewStatus: reference.overviewStatus,
+              correctionNotices: structuredClone(reference.correctionNotices),
+              overviewCorrectionNotices: structuredClone(reference.overviewCorrectionNotices),
+            })),
+          savedWorkReceipts,
+        },
+      };
+    });
+  }
+
   readForBrowser(input: MatterAttemptScope & { attemptRef: string }, actor: CanonicalHostActor) {
     return this.authorized(input, (executor, queue) => this.scopedRow(executor, queue, input, input.attemptRef), actor);
   }

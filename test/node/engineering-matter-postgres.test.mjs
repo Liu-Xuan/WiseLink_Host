@@ -73,6 +73,7 @@ const {
   taskModelSelection,
 } = require('../../server/modules/model-settings/canonical-model-catalog.ts');
 const {
+  sealMatterTaskEnvelope,
   sealMatterResultEnvelope,
 } = require('../../server/modules/action-attempt/action-attempt-envelope.ts');
 const databaseUrl = process.env.ENGINEERING_MATTER_TEST_DATABASE_URL;
@@ -181,7 +182,17 @@ test('cross Matter references save exact lineage and reauthorize scopes and root
       const priorA = second.reserved.task.modelInput.sourceCatalog.find(item => item.kind === 'PRIOR_RESULT');
       assert.deepEqual(priorA.originalEvidenceRefs, [rootRef]);
       assert.equal(second.reserved.task.modelInput.modelInput.referenceWorks[0].evidenceRef, priorA.evidenceRef);
+      const secondStatus = await owner.runtime(() => service.readStatus(secondTarget));
+      assert.equal(secondStatus.audit.matterRevisionId, requestB.expectedMatterRevisionId);
+      assert.equal(secondStatus.audit.matterRevision, requestB.expectedMatterRevision);
+      assert.equal(secondStatus.audit.baseWorkingRevision, 0);
+      assert.equal(secondStatus.audit.priorWorkRef, null);
+      assert.deepEqual(secondStatus.audit.inputs, second.reserved.task.workingBasis.inputs);
+      assert.deepEqual(secondStatus.audit.referenceWorks, [{ ...referenceA,
+        evidenceRef: priorA.evidenceRef, overviewStatus: 'CURRENT', correctionNotices: [], overviewCorrectionNotices: [] }]);
+      assert.deepEqual(secondStatus.audit.savedWorkReceipts, []);
       allowed.delete(a.matter.matterId);
+      await assert.rejects(owner.runtime(() => service.readStatus(secondTarget)), /TEST_SERVICE_SCOPE_REVOKED/u);
       await assert.rejects(owner.runtime(() => service.claim(second.target)), /TEST_SERVICE_SCOPE_REVOKED/u);
       await assert.rejects(browserReferences.referenceStatus(b.matter.matterId, browserReceipt.attemptRef, owner.actor), /TEST_SERVICE_SCOPE_REVOKED/u);
       allowed.add(a.matter.matterId);
@@ -196,6 +207,9 @@ test('cross Matter references save exact lineage and reauthorize scopes and root
       const fenceB = await claim(second.target);
       const savedB = await save(fenceB, second.reserved.task,
         `CrossReferenceProbe: A provides an investigation method; B still needs its own configuration evidence. [[${priorA.evidenceRef}]]`, 'save-B');
+      const recoveredStatus = await owner.runtime(() => service.readStatus(second.target));
+      assert.deepEqual(recoveredStatus.audit.savedWorkReceipts, [{ requestId: 'save-B',
+        expectedWorkRevision: second.reserved.task.baseRevision, workRevisionRef: savedB.workRevisionRef }]);
       const readB = await owner.workingService.readWorkingRevision(b.matter.matterId, savedB.workRevisionRef, owner.actor);
       assert.deepEqual(readB.state.problemWork.evidence.find(item => item.kind === 'PRIOR_RESULT').sourceWork,
         { subjectKind: 'ENGINEERING_MATTER', subjectId: a.matter.matterId, workRef: savedA.workRevisionRef, issueKey: 'conditions' });
@@ -224,6 +238,21 @@ test('cross Matter references save exact lineage and reauthorize scopes and root
       const continuedB = await start(await requestFor(b.matter.matterId, 'reference-notice-retained-B'));
       assert.equal(continuedB.reserved.task.modelInput.modelInput.referenceWorks[0].correctionNotices[0].attemptRef,
         sourceCorrection.target.attemptRef, 'a later B request receives new notices without re-importing A');
+      const continuedStatus = await owner.runtime(() => service.readStatus(continuedB.target));
+      assert.equal(continuedStatus.audit.referenceWorks[0].workRef, savedA.workRevisionRef);
+      assert.equal(continuedStatus.audit.referenceWorks[0].correctionNotices[0].attemptRef,
+        sourceCorrection.target.attemptRef, 'status preserves the inherited reference notice delivered to this attempt');
+      allowed.delete(a.matter.matterId);
+      await assert.rejects(owner.runtime(() => service.readStatus(continuedB.target)), /TEST_SERVICE_SCOPE_REVOKED/u);
+      allowed.add(a.matter.matterId);
+      const { inputHash: _continuedHash, ...legacyStatusFields } = structuredClone(continuedB.reserved.task);
+      delete legacyStatusFields.modelInput.modelInput.referenceWorks;
+      const legacyStatusTask = sealMatterTaskEnvelope(legacyStatusFields);
+      await sql`UPDATE action_attempt SET task_envelope_json = ${JSON.stringify(legacyStatusTask)},
+        task_input_hash = ${legacyStatusTask.inputHash}
+        WHERE operation_ref = ${continuedB.target.attemptRef}`;
+      assert.deepEqual((await owner.runtime(() => service.readStatus(continuedB.target))).audit.referenceWorks, [],
+        'STATUS remains readable for a sealed historical task that predates referenceWorks');
       await owner.runtime(() => service.cancel({ ...continuedB.target, reason: 'Retained source notice verified in isolated test' }));
       await owner.runtime(() => service.cancel({ ...sourceCorrection.target, reason: 'Source notice verified in isolated test' }));
       const overviewPurpose = { kind: 'ENGINEERING_OVERVIEW_CORRECTION', expectedWorkRef: savedA.workRevisionRef,
@@ -262,6 +291,9 @@ test('cross Matter references save exact lineage and reauthorize scopes and root
       const nextBWithOverviewNotice = await start(await requestFor(b.matter.matterId, 'reference-overview-notice-B'));
       assert.equal(nextBWithOverviewNotice.reserved.task.modelInput.modelInput.referenceWorks[0]
         .overviewCorrectionNotices.find(notice => notice.attemptRef === overviewReview.target.attemptRef)?.attemptRef, overviewReview.target.attemptRef);
+      const nextBStatus = await owner.runtime(() => service.readStatus(nextBWithOverviewNotice.target));
+      assert.equal(nextBStatus.audit.referenceWorks[0].overviewCorrectionNotices
+        .find(notice => notice.attemptRef === overviewReview.target.attemptRef)?.attemptRef, overviewReview.target.attemptRef);
       await owner.runtime(() => service.cancel({ ...nextBWithOverviewNotice.target, reason: 'Overview reference input verified in isolated test' }));
       const overviewFailureFence = await claim(overviewReview.target);
       await owner.runtime(() => service.finishJobAid({ ...overviewFailureFence, result: matterResult(overviewReview.reserved.task, 'FAILED') }));

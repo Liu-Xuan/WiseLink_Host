@@ -5,6 +5,17 @@ function fixture(allowed = true, tool = 'matter_action_attempt') {
   const attempts = { nextForRuntime: jest.fn().mockResolvedValue({ matterId: 'MAT-one', next: null }), saveJobAidWork: jest.fn().mockResolvedValue({ workRevisionRef: 'MWR-one' }), finishJobAid: jest.fn().mockResolvedValue({ status: 'SUCCEEDED' }), reserveJobAid: jest.fn().mockResolvedValue({ task: { operationRef: 'AQ-new' }, row: { status: 'QUEUED' }, created: true }), claim: jest.fn().mockResolvedValue({ status: 'RUNNING' }),
     read: jest.fn().mockResolvedValue({ status: 'RUNNING', errorCode: null, deadlineAt: null,
       leaseToken: 'private-token', taskEnvelopeJson: 'private-task' }),
+    readStatus: jest.fn().mockResolvedValue({ row: { status: 'RUNNING', errorCode: null, deadlineAt: null,
+      leaseToken: 'private-token', taskEnvelopeJson: 'private-task' }, audit: {
+      matterRevisionId: 'MR-one', matterRevision: 2, baseWorkingRevision: 3,
+      trigger: { kind: 'USER_REQUEST', requestId: 'request-one', instruction: 'Compare exact work' },
+      priorWorkRef: 'MWREV-prior', inputs: [{ kind: 'DOCUMENT_VERSION', inputId: 'I-one', familyId: 'F-one',
+        documentVersionId: 'DV-one', workItemId: null, workItemRevision: null, resultRef: null, resultRevision: null }],
+      referenceWorks: [{ matterId: 'MAT-source', workRef: 'MWREV-source', issueKey: 'conditions',
+        purpose: 'Compare conditions', evidenceRef: 'PRIOR_RESULT:source', overviewStatus: 'STALE',
+        correctionNotices: [{ attemptRef: 'AQ-correction' }], overviewCorrectionNotices: [] }],
+      savedWorkReceipts: [{ requestId: 'JA-save-one', expectedWorkRevision: 3, workRevisionRef: 'MWREV-four' }],
+    } }),
     heartbeat: jest.fn(), cancel: jest.fn().mockResolvedValue({ status: 'CANCELLED' }), readOriginal: jest.fn(),
     readSourcePages: jest.fn().mockImplementation((input, reader) => reader(input.documentVersionId, { pageStart: input.pageStart, pageEnd: input.pageStart })),
     readSavedWork: jest.fn().mockResolvedValue({ matterWorkRevisionId: 'MWR-exact' }) };
@@ -145,6 +156,9 @@ describe('Matter MCP existing attempt lifecycle', () => {
     const result = await f.call({ ...request, operation: 'STATUS' });
     expect(JSON.stringify(result)).not.toMatch(/private-token|private-task|leaseToken|taskEnvelopeJson/);
     expect(JSON.stringify(result)).toContain('RUNNING');
+    expect(JSON.stringify(result)).toContain('MWREV-source');
+    expect(JSON.stringify(result)).toContain('JA-save-one');
+    expect(JSON.stringify(result)).toContain('AQ-correction');
   });
   it('reads the exact save request without claiming or creating another attempt', async () => {
     const f = fixture();
@@ -154,9 +168,13 @@ describe('Matter MCP existing attempt lifecycle', () => {
   });
   it('reports the recorded terminal failure when the separate error column is empty', async () => {
     const f = fixture();
-    f.attempts.read.mockResolvedValue({ status: 'FAILED', errorCode: null,
+    f.attempts.readStatus.mockResolvedValue({ row: { status: 'FAILED', errorCode: null,
       terminalReason: 'JOBAID_WORK_VALIDATION_FAILED', deadlineAt: null,
-      leaseToken: 'private-token', taskEnvelopeJson: 'private-task' } as never);
+      leaseToken: 'private-token', taskEnvelopeJson: 'private-task' }, audit: {
+      matterRevisionId: 'MR-one', matterRevision: 2, baseWorkingRevision: 3,
+      trigger: { kind: 'SOURCE_CHANGE', inputIds: ['I-one'] }, priorWorkRef: null,
+      inputs: [], referenceWorks: [], savedWorkReceipts: [],
+    } } as never);
     const result = await f.call({ ...request, operation: 'STATUS' });
     expect(JSON.stringify(result)).toContain('JOBAID_WORK_VALIDATION_FAILED');
     expect(JSON.stringify(result)).not.toMatch(/private-token|private-task|leaseToken|taskEnvelopeJson/);
