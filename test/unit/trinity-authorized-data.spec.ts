@@ -1,4 +1,5 @@
 import { projectAuthorizedSituation } from '../../client/src/features/trinity/trinity-authorized-data';
+import { situationMetrics, stageLabel } from '../../client/src/features/trinity/trinity-model';
 import { libraryMatterFixture } from './fixtures/library-matter';
 import type { EngineeringMatterDirectoryResponse } from '@shared/api.interface';
 
@@ -19,6 +20,19 @@ describe('authorized Trinity projection', () => {
     expect(data.events).toEqual([]);
     expect(data.meta.asOf).toBe('');
     expect(data.knowledge).toEqual([]);
+  });
+  it('separates an exhausted matter total from incomplete lifecycle coverage', () => {
+    const { data } = projectAuthorizedSituation([row, row], 'complete', null, true);
+    expect(data.coverage?.matterTotal).toBe('complete');
+    expect(data.coverage?.lifecycle).toBe('partial');
+    expect(situationMetrics(data, data.matters)).toEqual({
+      visibleMatters: 1,
+      attention: 1,
+      knowledgeWorks: null,
+      effectWatch: null,
+    });
+    expect(stageLabel(data.matters, 'macro', 'assess', false, false))
+      .toBe('已取得 1 项关联 · 部分范围');
   });
   it('does not infer analysis or formal execution from a saved work number alone', () => {
     const { data } = projectAuthorizedSituation([{...row, result: null}], 'complete');

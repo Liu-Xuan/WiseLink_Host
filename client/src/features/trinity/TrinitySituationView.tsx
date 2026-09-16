@@ -18,6 +18,8 @@ import {
   formatAsof,
   readableCoverage,
   completeCoverage,
+  completeLifecycleCoverage,
+  completeMatterTotal,
   recentEvents,
   recentKnowledge,
   scopeMatters,
@@ -119,7 +121,7 @@ export default function TrinitySituationView({
     stageLabel(
       scope, level, stageId,
       focusMatter?.activeStages.includes(stageId) ?? false,
-      completeCoverage(data, 'matters'),
+      completeLifecycleCoverage(data),
     );
 
   return (
@@ -197,7 +199,7 @@ export default function TrinitySituationView({
           <div className="metric">
             <b>{metricText(metrics.visibleMatters)}</b>
             <span>可见工程事项</span>
-            <small>{completeCoverage(data, 'matters') ? '去重后的当前范围' : '当前范围尚未完整取得'}</small>
+            <small>{completeMatterTotal(data) ? '去重后的当前范围' : '当前范围尚未完整取得'}</small>
           </div>
           <div className="metric">
             <b className="warm-number">{metricText(metrics.attention)}</b>
@@ -295,7 +297,7 @@ export default function TrinitySituationView({
                   ))}
                 </div>
               ) : (
-                <p className="tiny muted">{completeCoverage(data, 'matters') && completeCoverage(data, 'events') ? '当前范围暂无已取得的进展记录' : '进展记录尚未完整取得'}</p>
+                <p className="tiny muted">{completeMatterTotal(data) && completeCoverage(data, 'events') ? '当前范围暂无已取得的进展记录' : '进展记录尚未完整取得'}</p>
               )}
             </section>
             <section className="card bottom-card">

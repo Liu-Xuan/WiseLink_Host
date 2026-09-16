@@ -57,7 +57,11 @@ export interface TrinitySampleMeta {
 export type TrinityAvailability = 'loading' | 'failed' | 'denied' | 'partial' | 'complete';
 
 export interface TrinityCoverage {
+  /** Whether the authorized matter directory has been exhausted and de-duplicated. */
+  matterTotal?: TrinityAvailability;
   matters?: TrinityAvailability;
+  /** Whether lifecycle associations are complete for every matter in scope. */
+  lifecycle?: TrinityAvailability;
   events?: TrinityAvailability;
   knowledge?: TrinityAvailability;
 }
