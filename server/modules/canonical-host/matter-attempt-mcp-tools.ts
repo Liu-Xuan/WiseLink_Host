@@ -135,11 +135,13 @@ export function registerMatterAttemptMcpTools(server: McpServer, attempts: Matte
       }
       case 'READ_SAVED_WORK': return textResult(await attempts.readSavedWork({ ...scope, requestId: input.requestId }));
       case 'STATUS': {
-        const row = await attempts.read(scope);
+        const { row, audit } = await attempts.readStatus(scope);
         return textResult({ attemptRef: scope.attemptRef, matterId: scope.matterId,
           status: row.status, errorCode: row.errorCode ?? (row.status === 'FAILED' ? row.terminalReason : null),
           resultContentHash: row.resultContentHash,
-          deadline: row.deadlineAt?.toISOString() ?? null });
+          deadline: row.deadlineAt?.toISOString() ?? null,
+          task: audit,
+        });
       }
     }
   });
