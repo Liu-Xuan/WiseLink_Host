@@ -41,7 +41,11 @@ const PREFLIGHT_TIMEOUT_MS = 30_000;
 const LANGUAGE_FAILURE =
   /Failed loading language|Error opening data file|Could not initialize tesseract/iu;
 
-export async function copyPinnedPdfOcrRuntime({ source, target }) {
+export async function copyPinnedPdfOcrRuntime({
+  source,
+  target,
+  allowCrossPlatformCopy = false,
+}) {
   // deleteOutDir is false. Clear a prior successful runtime before validating
   // a newly supplied source so a failed deployment input cannot leave stale
   // OCR assets available for accidental packaging.
@@ -71,13 +75,26 @@ export async function copyPinnedPdfOcrRuntime({ source, target }) {
     assertContained(targetParentReal, targetReal, 'TARGET_ROOT');
     await assertTreeContained(targetReal, targetReal, 'TARGET');
     const targetRuntime = await resolveRuntimeAssets(targetReal, 'TARGET');
-    await runBilingualPreflight(targetRuntime);
+    const targetPlatform =
+      process.platform === OCR_RUNTIME_PLATFORM &&
+      process.arch === OCR_RUNTIME_ARCH;
+    if (targetPlatform) {
+      await runBilingualPreflight(targetRuntime);
+    } else if (!allowCrossPlatformCopy) {
+      throw new Error(
+        process.platform !== OCR_RUNTIME_PLATFORM
+          ? 'OCR_RUNTIME_TARGET_PLATFORM_MISMATCH'
+          : 'OCR_RUNTIME_TARGET_ARCH_MISMATCH',
+      );
+    }
     return {
       source: sourceReal,
       target: targetReal,
       sourceAssets: sourceRuntime.realpaths,
       targetAssets: targetRuntime.realpaths,
-      preflightStatus: 'READY',
+      preflightStatus: targetPlatform
+        ? 'READY'
+        : 'STATIC_VALIDATION_ONLY_NON_TARGET_BUILD',
     };
   } catch (error) {
     await rm(target, { recursive: true, force: true });

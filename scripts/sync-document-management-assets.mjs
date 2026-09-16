@@ -68,35 +68,30 @@ await mkdir(resolve(pdfjsTarget, '..'), { recursive: true });
 await cp(pdfjsSource, pdfjsTarget, { recursive: true, force: true });
 
 // The OCR executables and language data are deployment assets, not npm
-// dependencies. A deployment that enables scanned-page materialization must
-// supply one complete pinned runtime directory explicitly; an omitted runtime
-// remains observable at Host startup and fails closed only when OCR is needed.
-const ocrRuntimeSource = process.env.WL31_PDF_OCR_RUNTIME_ROOT?.trim();
+// dependencies. The repository-owned Linux/x64 runtime is the production
+// default so a remote branch build cannot silently publish a manifest-only
+// package. Deployments may still select another complete pinned runtime, but
+// every source is validated before it is copied into the Host artifact.
+const configuredOcrRuntimeSource =
+  process.env.WL31_PDF_OCR_RUNTIME_ROOT?.trim();
 const ocrRuntimeTarget = resolve(
   root,
   'dist/server/runtime-assets/professional-input/ocr-runtime',
 );
-const ocrRuntimeManifestSource = resolve(
+const repositoryOcrRuntimeSource = resolve(
   root,
   'server/runtime-assets/professional-input/ocr-runtime',
 );
-let copiedOcrRuntime = null;
-if (ocrRuntimeSource) {
-  copiedOcrRuntime = await copyPinnedPdfOcrRuntime({
-    source: ocrRuntimeSource,
-    target: ocrRuntimeTarget,
-  });
-} else {
-  // deleteOutDir is intentionally false for this app. Remove any runtime left
-  // by an earlier enabled build so an unset deployment input can never inherit
-  // stale executables or tessdata and masquerade as configured.
-  await rm(ocrRuntimeTarget, { recursive: true, force: true });
-  await mkdir(ocrRuntimeTarget, { recursive: true });
-  await copyFile(
-    resolve(ocrRuntimeManifestSource, 'manifest.json'),
-    resolve(ocrRuntimeTarget, 'manifest.json'),
-  );
-}
+const ocrRuntimeSource =
+  configuredOcrRuntimeSource || repositoryOcrRuntimeSource;
+const copiedOcrRuntime = await copyPinnedPdfOcrRuntime({
+  source: ocrRuntimeSource,
+  target: ocrRuntimeTarget,
+  // macOS developer builds still package the exact Linux runtime after the
+  // full manifest/ELF/ABI closure check. Hosted Linux/x64 builds additionally
+  // execute the renderer and bilingual OCR probe and must return READY.
+  allowCrossPlatformCopy: true,
+});
 
 process.stdout.write(
   `${JSON.stringify({
@@ -112,10 +107,14 @@ process.stdout.write(
       target: pdfjsTarget,
     },
     copiedOcrRuntime,
-    ocrRuntimeDeploymentStatus: copiedOcrRuntime
-      ? 'PINNED_RUNTIME_READY'
-      : 'NOT_SUPPLIED_FAIL_CLOSED_WHEN_REQUIRED',
-    copiedForHostedRuntime: copiedOcrRuntime?.preflightStatus === 'READY',
+    ocrRuntimeDeploymentStatus:
+      copiedOcrRuntime.preflightStatus === 'READY'
+        ? 'PINNED_RUNTIME_READY'
+        : 'PINNED_RUNTIME_STATICALLY_VALIDATED_NON_TARGET_BUILD',
+    ocrRuntimeSourceSelection: configuredOcrRuntimeSource
+      ? 'CONFIGURED_OVERRIDE'
+      : 'REPOSITORY_PINNED_DEFAULT',
+    copiedForHostedRuntime: copiedOcrRuntime.preflightStatus === 'READY',
     onlineMutationPerformed: false,
   })}\n`,
 );
