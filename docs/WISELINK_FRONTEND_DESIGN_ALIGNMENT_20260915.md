@@ -81,3 +81,9 @@ F 可在换版视图调用该函数：两侧 `publisherRevisionDescriptions` 保
 
 
 本轮读取实现已随 e5cdf5b96b 的 Host 技术发布完成。两端已保存语义修订已由官方只读查询核对；登录恢复后的真实 HTTP/MCP 调用和前端生产视图仍待联调，不能用技术发布或本地比较结果代替业务验收。
+
+2026-09-16 登录恢复后，M 已通过正式安装的 c109 `createHostMcpConnection` 执行真实 MCP 两端读取：`ftd.status` 返回 `TEXT_DIFFERENT`，`ftd.final_action` 返回 `TEXT_EQUAL`，`ftd.reference_categories` 返回 `NOT_COMPARED / NON_PLAIN_TEXT_CONTENT`。三次调用均校验两端精确 DV、parseRun 与 semanticRevision=1；各端各保留一组厂家修订说明，并分别返回未选择单元。连接及既有工具清单兼容检查通过。本轮只读，不触发模型、重解析或工作保存。
+
+上述证据补齐真实 MCP 读取，仍不证明正式版本次序、完整换版跨度或评估覆盖；返回值继续为 `publicationRelationship=NOT_VERIFIED`、`assessmentCoverage=NOT_RECORDED_BY_THIS_READ`。HTTP 浏览器身份读取、生产视图接入与完整换版业务验收仍待完成。T1 隔离样例不得将本次文本比较结果映射为工程影响不变。
+
+真实浏览器 HTTP 联调已定位一处入口错误：裸地址导航先被平台 CSRF 拒绝；按现有客户端规则携带同源 CSRF 头后，请求到达 Host，返回 `ENGINEERING_MATTER_RUNTIME_AUTHORIZATION_UNAVAILABLE`。原因是共用读取服务无条件进入仅供 Hosted SQL 身份使用的 `withActorScope`。本地修复将 HTTP 路由接入 `readForBrowser`，沿用已经过登录及对象入口 guard 的请求身份与 RLS；MCP 继续使用原 Hosted scope。两端原文授权、准确语义修订、同 family 检查及返回前来源回查仍共用。三套十七项定向测试及 server 类型检查通过；此修复待技术发布和相同浏览器请求复测，不将 MCP 成功视为 HTTP 已通过。
