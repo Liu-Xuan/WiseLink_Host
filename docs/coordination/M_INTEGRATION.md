@@ -1333,3 +1333,5 @@ FTD revision 12 还精确引用 SB revision 16 的问题 `claim_maintenance_disr
 日期表达按保存合同保真：`DAY` 画为日期点，`QUARTER` 画为带端点的季度范围，不伪装成季度中某日；`TBD`、相对时间和无可靠坐标的声明不进入日期图，统一进入“日期未定／尚无可计算时间”。“信息取得”因当前合同没有系统取得时间而禁用并说明原因。当前候选也没有跨版本活动身份，页面明确不把相似标题自动拼成同一活动的预计历史；因此构造样例中的 Q3、Q4、TBD 只证明显示边界，不构成真实同活动版本关系。
 
 定向 Jest 2 个 suite、12 项通过；client typecheck、受影响源码 ESLint/stylelint、client production build、完整 precommit 与 diff check 通过。1600×1000、DPR 1、reduced-motion 的固定视口读回确认 Q3/Q4 为范围线，2026-09-16 为点，TBD 只在未定区，选中声明与右侧检查器仍准确联动。该截图使用隔离构造候选验证生产组件，不是线上业务或视觉验收；线上发布后仍需在登录环境核对真实候选。
+
+前端提交 `4df464ee182ad398c8a426fcbbd9ecf8b60c61d0`（父提交 `93fe29a5921e052e924e8fbcb651ef26c76f8c49`）只包含时间轴 TSX、CSS、对应测试和本集成记录，已普通非强制同步 origin/github 同名开发分支且两端 SHA 一致。release `7686233982300048312` 已 `finished`，精确 `commit_id=4df464ee182ad398c8a426fcbbd9ecf8b60c61d0`，`error_logs=[]`。发布后再次尝试外部浏览器控制，仍在获取浏览器清单时 30 秒超时并重置；因此发布事实成立，已登录线上页面的可见读回仍待 macOS 解锁后补做。
