@@ -525,3 +525,9 @@ M集成记录顶部记录实际部署、Skill、工作与Overall、原文、请�
 现行产品语义以[当前产品与技术规则](WISELINK_R10_CURRENT.md)为准。本计划中的F1—F6、H0/H1/H2和分流保留原材料术语，但没有将原先某个历史缺陷重新认定为当前源码缺陷。原文件和章节迁移见[修订说明](WISELINK_R10_REVISION_NOTES_20260916.md)。
 
 本文件的交付不执行仓库替换、云文档写入、代码发布、任务派发或业务采用。实际执行者在既有授权内实施并分别记录结果。
+
+### 15.5 2026-09-18 Graph 与摘要增量记录
+
+Graph 接受范围已集成为提交 `584697dd934fd5035c89cac26fab2894fcddf249`（父提交 `9222a46511c6888c372dfd84fcce99abb310110d`），精确 21 文件；discussion 身份去重增量已集成为 `584697dd` 的 2 文件提交。相关 Graph 定向验证为 12 suites/59 tests，discussion 增量回归 4/4，client TypeScript 检查退出 0。`origin` 与 GitHub 同名 codex 分支均已核对至 `584697dd`。妙搭 release `7686576070900616179` 最终 `finished`，`commit_id=584697dd`，`error_logs=[]`；技术发布完成不代表线上视觉或业务读取验收。
+
+摘要契约 8 文件已集成为提交 `98b0ce7a40d09cdd767979bdb2d63576930083f2`（父提交 `584697dd`），`origin` 与 GitHub 同名分支均已核对至该 SHA。Host 发布暂缓，等待 17c runtime 配套安装及验证；不以 Git 同步代替 runtime 就绪。L/K 本地隔离视觉 harness 使用真实 `KnowledgeLookupPage`、生产作用域 CSS 与 mock provider/API，在 1672/1440/390 均产生业务内容截图；该结果是本地样例渲染，不代表线上视觉验收。静态妙搭预览因缺少 `__platform__` runtime/auth bridge 的旧失败记录单独保留。

@@ -676,6 +676,9 @@ function priorRejectedRatingCorrection(messages, modelInput) {
 
 function workShapeCorrection(code, work, modelInput) {
   if (!work) return {};
+  if (['JOBAID_READING_SUMMARY_REQUIRED', 'JOBAID_READING_SUMMARY_PAIR_REQUIRED'].includes(code)) {
+    return { instruction: 'The Host requires headline and listBrief together for the initial saved work or an explicit summary revision. Supply a concise engineering topic and a short explanation of the actual saved understanding, preserving decisive conditions and uncertainty. Do not copy the first issue question, invent a conclusion, or rerun source reading. Preserve the complete issue bodies and evidence. Later updates may omit both fields only to retain an existing saved summary.' };
+  }
   const rating = /^JOBAID_(SEVERITY|LIKELIHOOD)_BUSINESS_EVIDENCE_REQUIRED$/.exec(code)?.[1]?.toLowerCase();
   if (rating) {
     const kinds = new Map((modelInput.availableSources ?? []).map(source => [source.ref, source.kind]));

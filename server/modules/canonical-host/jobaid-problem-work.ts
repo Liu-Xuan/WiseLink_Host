@@ -312,11 +312,13 @@ export function materializeJobAidWork(
   // a qualification here. Omitting both fields retains the prior saved copy.
   if ((value.headline === undefined) !== (value.listBrief === undefined))
     fail('READING_SUMMARY_PAIR_REQUIRED');
+  if (!context.previous && value.headline === undefined)
+    fail('READING_SUMMARY_REQUIRED');
   const headline = value.headline === undefined
-    ? context.previous?.headline ?? issues[0].question
+    ? context.previous!.headline
     : text(value.headline, 'HEADLINE');
   const listBrief = value.listBrief === undefined
-    ? context.previous?.listBrief ?? headline
+    ? context.previous!.listBrief
     : text(value.listBrief, 'LIST_BRIEF');
   const decisiveIssueKeys = issues.map(issue => issue.issueKey);
   const roundCompletion = choice(
