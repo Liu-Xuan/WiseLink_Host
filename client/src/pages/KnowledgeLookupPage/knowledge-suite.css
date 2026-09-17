@@ -1,7 +1,7 @@
 /* Suite 1.1 Knowledge.jsx / index.css / suite.css geometry, scoped to Host. */
 .wl-knowledge-suite{--surface:#fff;--line:#e3e9f0;--dim:#55657b;--ink:#1c2938;--blue:#367ad8;display:flex;flex-direction:column;gap:14px;height:100%;min-height:480px;padding:0;color:var(--ink);font-family:var(--wl-font)}
 .wl-knowledge-suite .page-heading{display:flex;justify-content:space-between;align-items:center;min-height:76px;padding:5px 6px 12px;gap:17px;flex-shrink:0}
-.wl-knowledge-suite .page-heading h1{font-size:26px;font-weight:650;margin:0}
+.wl-knowledge-suite .page-heading h1{font-size:25px;font-weight:650;margin:0}
 .wl-knowledge-suite .page-heading p{font-size:12px;line-height:1.9;color:var(--dim);margin-top:4px}
 .wl-knowledge-suite small{font-size:11px;color:var(--dim)}
 .wl-knowledge-suite button,.wl-knowledge-suite select,.wl-knowledge-suite .knowledge-actions a{border:1px solid var(--line);border-radius:9px;padding:8px 12px;background:var(--surface);color:var(--ink);font-size:12px;cursor:pointer}
@@ -28,6 +28,8 @@
 .wl-knowledge-suite .knowledge-preview>section{margin:25px 0}
 .wl-knowledge-suite .knowledge-preview h2{font-size:18px;margin:12px 0}
 .wl-knowledge-suite .knowledge-preview p{font-size:14px;line-height:2;color:var(--dim)}
+/* EngineeringIssueBody renders div/span, not paragraph nodes. */
+.wl-knowledge-suite .knowledge-prose .whitespace-pre-wrap{font-size:15px;line-height:1.85;color:var(--dim)}
 .wl-knowledge-suite .knowledge-preview .article-lead{font-size:19px;line-height:1.85;color:var(--ink);margin-bottom:20px}
 .wl-knowledge-suite .knowledge-notice{margin:24px 0;padding:15px 18px;border:1px solid color-mix(in srgb,#b68134 25%,var(--line));border-radius:10px;background:color-mix(in srgb,#b68134 8%,var(--surface));font-size:12px;line-height:1.9}
 .wl-knowledge-suite .knowledge-actions{display:flex;gap:8px;flex-wrap:wrap;margin-top:25px}
@@ -52,6 +54,7 @@
 .wl-knowledge-suite .knowledge-source-conditions-toggle:focus-visible{outline:2px solid var(--blue);outline-offset:2px}
 .wl-knowledge-suite .knowledge-source-conditions ul{margin:0;padding-left:16px;display:grid;gap:2px;font-size:12px;line-height:1.5;color:var(--ink)}
 @media(max-width:1100px){.wl-knowledge-suite .knowledge-layout{grid-template-columns:310px minmax(0,1fr)}.wl-knowledge-suite .knowledge-preview{padding:28px}}
+@media(max-width:1030px){.wl-knowledge-suite .page-heading h1{font-size:23px}}
 @media(max-width:760px){.wl-knowledge-suite{height:auto;min-height:calc(100dvh - 120px);padding:7px 0 0}.wl-knowledge-suite .page-heading{align-items:flex-start;flex-wrap:wrap}.wl-knowledge-suite .page-heading h1{font-size:23px}.wl-knowledge-suite .knowledge-toolbar{flex-wrap:wrap;gap:10px}.wl-knowledge-suite .knowledge-search{flex-basis:100%;order:2}.wl-knowledge-suite .knowledge-layout{display:flex;flex-direction:column}.wl-knowledge-suite .knowledge-results{max-height:330px}.wl-knowledge-suite .knowledge-preview{padding:26px 22px}.wl-knowledge-suite .knowledge-preview h1{font-size:25px}}
 
 html[data-wl-theme=dark] .wl-knowledge-suite{--surface:#22252a;--line:#353a43;--dim:#b8bfca;--ink:#edeef2;--blue:#80a7eb}
