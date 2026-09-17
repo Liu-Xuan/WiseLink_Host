@@ -49,7 +49,7 @@ const {
 const {
   materializeJobAidWork,
 } = require('../../server/modules/canonical-host/jobaid-problem-work.ts');
-const { JOBAID_METHOD_BINDING } = require('../../server/modules/canonical-host/jobaid-method-pack.ts');
+const { JOBAID_CORE_METHOD_REFS, JOBAID_METHOD_BINDING, JOBAID_METHOD_EVIDENCE } = require('../../server/modules/canonical-host/jobaid-method-pack.ts');
 
 const {
   materializeEngineeringMatterWorkingState,
@@ -242,7 +242,10 @@ test('cross Matter references save exact lineage and reauthorize scopes and root
       assert.equal(continuedStatus.audit.referenceWorks[0].workRef, savedA.workRevisionRef);
       assert.equal(continuedStatus.audit.referenceWorks[0].correctionNotices[0].attemptRef,
         sourceCorrection.target.attemptRef, 'status preserves the inherited reference notice delivered to this attempt');
+      const readCurrentB = () => owner.runtime(() => service.readCurrentWork({tenantId: 'tenant-A', actorUserId: 'actor-A', matterId: b.matter.matterId, authorizeReferenceMatter}));
+      assert.equal((await readCurrentB()).workRef, savedB.workRevisionRef);
       allowed.delete(a.matter.matterId);
+      await assert.rejects(readCurrentB(), /TEST_SERVICE_SCOPE_REVOKED/u);
       await assert.rejects(owner.runtime(() => service.readStatus(continuedB.target)), /TEST_SERVICE_SCOPE_REVOKED/u);
       allowed.add(a.matter.matterId);
       const { inputHash: _continuedHash, ...legacyStatusFields } = structuredClone(continuedB.reserved.task);
@@ -330,6 +333,7 @@ test('cross Matter references save exact lineage and reauthorize scopes and root
       assert.equal(nextOverview.reserved.task.modelInput.modelInput.knownOverviewCorrections.length, 3);
       await owner.runtime(() => service.cancel({ ...nextOverview.target, reason: 'Exact overview scope verified in isolated test' }));
       await sql`UPDATE engineering_matter SET created_by_user_id = 'actor-B' WHERE matter_id = ${a.matter.matterId}`;
+      await assert.rejects(readCurrentB(), /AUTHORIZATION/u);
       await assert.rejects(owner.workingService.readWorkingRevision(b.matter.matterId, savedB.workRevisionRef, owner.actor), /AUTHORIZATION/u);
       assert.equal((await search.search('CrossReferenceProbe', owner.actor)).hits.length, 0);
       await sql`UPDATE engineering_matter SET created_by_user_id = 'actor-A' WHERE matter_id = ${a.matter.matterId}`;
@@ -352,6 +356,7 @@ test('cross Matter references save exact lineage and reauthorize scopes and root
       assert.equal((await owner.workingService.readWorkingRevision(b.matter.matterId, savedB.workRevisionRef, owner.actor))
         .state.problemWork.evidence.find(item => item.kind === 'PRIOR_RESULT').resultRef, savedA.workRevisionRef);
       await sql`UPDATE work_item SET requested_by_user_id = 'actor-B' WHERE work_item_id = ${FTD_WORK_ITEM_ID}`;
+      await assert.rejects(readCurrentB(), /AUTHORIZATION/u);
       await assert.rejects(owner.workingService.readWorkingRevision(b.matter.matterId, savedB.workRevisionRef, owner.actor), /AUTHORIZATION/u);
     } finally { if (owner) await owner.release(); await sql.end({ timeout: 5 }); }
   });
@@ -3714,6 +3719,217 @@ async function assertSaveBeforeFinish(sql, owner, service, baseInput) {
     ),
     /LEASE_FENCE_REJECTED|SAVE_FENCE_REJECTED/u,
   );
+}
+
+test('read_matter_current_work returns the fresh complete work and registered sources without writing',
+  { skip: !databaseUrl, concurrency: false, timeout: 60000 }, async () => {
+    assertSafeIsolatedDatabase(databaseUrl);
+    const sql = postgres(databaseUrl, { max: 8, onnotice() {} });
+    const connections = [];
+    try {
+      await resetDatabase(sql);
+      await seedRealDocumentWorkItems(sql, await loadRealDocumentFixtures());
+      await sql`UPDATE dm_publication_family SET canonical_identity_key = 'tenant:tenant-A:family:' || canonical_identity_key`;
+      const owner = await reserveActorService('actor-A'); connections.push(owner);
+      const created = await owner.service.create({ requestId: 'read-current-work-fixture', title: 'Read current work fixture',
+        primaryWorkItemId: FTD_WORK_ITEM_ID }, owner.actor);
+      const scope = { tenantId: 'tenant-A', actorUserId: 'actor-A', matterId: created.matter.matterId };
+      const service = new MatterActionAttemptService(owner.working,
+        new CanonicalModelSettingsService(new CanonicalModelSettingsRepository(owner.database)));
+
+      const empty = await owner.runtime(() => service.readCurrentWork(scope));
+      assert.equal(empty.matterId, scope.matterId);
+      assert.equal(empty.workRef, null);
+      assert.equal(empty.workingRevision, 0);
+      assert.equal(empty.current, null);
+      assert.deepEqual(empty.activeAttempts, []);
+      assert.deepEqual(empty.sourceCatalog.map(item => item.evidenceRef),
+        JOBAID_METHOD_EVIDENCE.map(item => item.evidenceRef));
+      assert.deepEqual(empty.eligibleEvidenceRefs, [...JOBAID_CORE_METHOD_REFS]);
+
+      const basis = await owner.workingService.resolveWorkingBasis(scope.matterId, owner.actor);
+      const reserve = { ...scope, expectedMatterRevisionId: basis.snapshot.currentMatterRevisionId,
+        expectedMatterRevision: basis.snapshot.currentRevisionNo, expectedWorkingRevision: 0,
+        idempotencyKey: 'read-current-initial',
+        trigger: { kind: 'USER_REQUEST', requestId: 'read-current', instruction: 'Synthetic read fixture' } };
+      const initial = await owner.runtime(() => service.reserveJobAid(reserve));
+      const initialScope = { ...scope, attemptRef: initial.task.operationRef, principalId: 'hosted-test' };
+      const lease = await owner.runtime(() => service.claim(initialScope));
+      const fence = { ...initialScope, leaseToken: lease.leaseToken, leaseGeneration: lease.leaseGeneration };
+      const documentVersionId = initial.task.workingBasis.inputs[0].documentVersionId;
+      const ref = `DOCUMENT_VERSION:${documentVersionId}:page:1`;
+      const evidence = { kind: 'DOCUMENT_PASSAGE', documentVersionId, workItemId: null, evidenceRef: ref, sourceRefId: ref,
+        title: 'Read fixture source', versionLabel: null, locator: 'Page 1', excerpt: 'The read condition remains bounded.' };
+      await owner.runtime(() => service.readSourcePages({ ...fence, documentVersionId, pageStart: 1, purpose: 'Read fixture source' },
+        async () => ({ documentVersionId, sourceSha256: 'a'.repeat(64), sourceByteLength: 80, pageCount: 1,
+          extractionScope: 'NATIVE_TEXT_LAYER', pages: [{ page: 1, sourceRefId: ref, text: evidence.excerpt,
+            textLayerStatus: 'PRESENT', visualContentVerified: false, evidence }] })));
+      const method = initial.task.modelInput.sourceCatalog.find(item => item.kind === 'METHOD_CLAUSE');
+      assert.ok(method);
+      await owner.runtime(() => service.readRegisteredSources({ ...fence,
+        sourceRefs: [method.evidenceRef], purpose: 'Read the method supporting the read fixture' }));
+      const proposal = { schemaVersion: 'wiselink.jobaid-problem-work.v3', overview: 'Read fixture understanding.',
+        roundCompletion: 'COMPLETE_WITH_OPEN_QUESTIONS', completionReason: 'Fixture setup', changeSummary: 'Fixture setup',
+        issues: [{ issueKey: 'read-fixture', question: 'What does the read expose?', body: `The condition stays bounded. [[${ref}]]`,
+          openQuestions: [{ question: 'Check the read view', affects: 'Requirement',
+            nextEvidence: 'Review the registered source', reason: 'Fixture verification' }] }] };
+      const seeded = await owner.runtime(() => service.saveJobAidWork({ ...fence, requestId: 'read-fixture-save',
+        expectedWorkRevision: 0, workJson: JSON.stringify(proposal) }));
+      const { contentHash: _seededHash, ...initialResult } = matterResult(initial.task);
+      initialResult.modelOutput = JSON.stringify({ workRevisionRef: seeded.workRevisionRef });
+      await owner.runtime(() => service.finishJobAid({ ...fence, result: sealMatterResultEnvelope(initialResult) }));
+
+      const before = await persistedMatterSnapshot(sql, scope.matterId);
+      const first = await owner.runtime(() => service.readCurrentWork(scope));
+      const second = await owner.runtime(() => service.readCurrentWork(scope));
+      const after = await persistedMatterSnapshot(sql, scope.matterId);
+      assert.deepEqual(after, before, 'read_matter_current_work must not write work, attempts or persisted events');
+      assert.deepEqual(second, first, 'the read is repeatable');
+
+      const latestBasis = await owner.workingService.resolveWorkingBasis(scope.matterId, owner.actor);
+      assert.equal(first.matterRevisionId, latestBasis.snapshot.currentMatterRevisionId);
+      assert.equal(first.matterRevision, latestBasis.snapshot.currentRevisionNo);
+      assert.equal(first.workRef, seeded.workRevisionRef);
+      assert.equal(first.workingRevision, seeded.workRevision);
+      assert.equal(first.current.matterWorkRevisionId, seeded.workRevisionRef);
+      assert.equal(first.current.workingRevision, seeded.workRevision);
+      assert.deepEqual(first.current.state.problemWork.issues[0].openQuestions, proposal.issues[0].openQuestions);
+      assert.deepEqual(first.current.overviewSourceWork,
+        { workRef: seeded.workRevisionRef, workingRevision: seeded.workRevision });
+      assert.deepEqual(first.currentInputs.map(item => item.inputId),
+        latestBasis.currentInputs.map(item => item.inputId));
+      const retained = first.current.state.problemWork.evidence;
+      assert.deepEqual(first.sourceCatalog.map(item => item.evidenceRef),
+        [...new Set([...JOBAID_METHOD_EVIDENCE.map(item => item.evidenceRef), ...retained.map(item => item.evidenceRef)])]);
+      assert.ok(retained.some(item => item.evidenceRef === ref), 'the read source must stay registered');
+      for (const eligible of first.eligibleEvidenceRefs)
+        assert.ok(first.sourceCatalog.some(item => item.evidenceRef === eligible),
+          `eligible ref ${eligible} must be registered in the catalog`);
+      assert.ok(first.eligibleEvidenceRefs.includes(method.evidenceRef));
+      assert.ok(first.eligibleEvidenceRefs.includes(ref), 'read source refs stay eligible for a later authorized BEGIN');
+      assert.equal(new Set(first.eligibleEvidenceRefs).size, first.eligibleEvidenceRefs.length);
+      assert.deepEqual(first.activeAttempts, []);
+
+      const queuedBasis = await owner.workingService.resolveWorkingBasis(scope.matterId, owner.actor);
+      const queued = await owner.runtime(() => service.reserveJobAid({ ...scope,
+        expectedMatterRevisionId: queuedBasis.snapshot.currentMatterRevisionId,
+        expectedMatterRevision: queuedBasis.snapshot.currentRevisionNo,
+        expectedWorkingRevision: queuedBasis.working.workingRevision,
+        idempotencyKey: 'read-current-queued',
+        trigger: { kind: 'USER_REQUEST', requestId: 'read-current-queued', instruction: 'Synthetic queued attempt' } }));
+      const withQueued = await owner.runtime(() => service.readCurrentWork(scope));
+      assert.deepEqual(withQueued.activeAttempts, [{ attemptRef: queued.task.operationRef, status: 'QUEUED' }]);
+      assert.equal(withQueued.workRef, seeded.workRevisionRef);
+      const queuedScope = { ...scope, attemptRef: queued.task.operationRef, principalId: 'hosted-test' };
+      await owner.runtime(() => service.claim(queuedScope));
+      const withRunning = await owner.runtime(() => service.readCurrentWork(scope));
+      assert.deepEqual(withRunning.activeAttempts, [{ attemptRef: queued.task.operationRef, status: 'RUNNING' }]);
+
+      await owner.runtime(() => service.cancel({ ...queuedScope, reason: 'read fixture cleanup' }));
+      const fresh = await owner.runtime(() => service.readCurrentWork(scope));
+      const advanced = await owner.runtime(() => service.reserveJobAid({ ...scope,
+        expectedMatterRevisionId: fresh.matterRevisionId, expectedMatterRevision: fresh.matterRevision,
+        expectedWorkingRevision: fresh.workingRevision,
+        idempotencyKey: 'read-current-after',
+        trigger: { kind: 'USER_REQUEST', requestId: 'read-current-after', instruction: 'CAS freshness probe' } }));
+      assert.equal(advanced.created, true);
+      await owner.runtime(() => service.cancel({ ...scope, attemptRef: advanced.task.operationRef,
+        principalId: 'hosted-test', reason: 'read fixture cleanup' }));
+
+      for (const denied of [
+        { ...scope, actorUserId: 'actor-B' },
+        { ...scope, tenantId: 'tenant-B' },
+      ]) {
+        await assert.rejects(owner.runtime(() => service.readCurrentWork(denied)),
+          error => error?.statusCode === 404);
+      }
+      await assert.rejects(owner.runtime(() => service.readCurrentWork({ ...scope, matterId: 'MAT-missing' })),
+        error => error?.statusCode === 404);
+    } finally {
+      for (const connection of connections) await connection.release();
+      await sql.end({ timeout: 1 });
+    }
+  });
+
+test('read_matter_current_work concurrent reads stay internally consistent or fail closed',
+  { skip: !databaseUrl, concurrency: false, timeout: 60000 }, async () => {
+    assertSafeIsolatedDatabase(databaseUrl);
+    const sql = postgres(databaseUrl, { max: 16, onnotice() {} });
+    const connections = [];
+    try {
+      await resetDatabase(sql);
+      await seedRealDocumentWorkItems(sql, await loadRealDocumentFixtures());
+      await sql`UPDATE dm_publication_family SET canonical_identity_key = 'tenant:tenant-A:family:' || canonical_identity_key`;
+      const owner = await reserveActorService('actor-A'); connections.push(owner);
+      const created = await owner.service.create({ requestId: 'read-current-race-fixture', title: 'Read current race fixture',
+        primaryWorkItemId: FTD_WORK_ITEM_ID }, owner.actor);
+      const scope = { tenantId: 'tenant-A', actorUserId: 'actor-A', matterId: created.matter.matterId };
+      const service = new MatterActionAttemptService(owner.working,
+        new CanonicalModelSettingsService(new CanonicalModelSettingsRepository(owner.database)));
+      const basis = await owner.workingService.resolveWorkingBasis(scope.matterId, owner.actor);
+      const reserve = { ...scope, expectedMatterRevisionId: basis.snapshot.currentMatterRevisionId,
+        expectedMatterRevision: basis.snapshot.currentRevisionNo, expectedWorkingRevision: 0,
+        idempotencyKey: 'read-race-initial',
+        trigger: { kind: 'USER_REQUEST', requestId: 'read-race', instruction: 'Race fixture' } };
+      const initial = await owner.runtime(() => service.reserveJobAid(reserve));
+      const initialScope = { ...scope, attemptRef: initial.task.operationRef, principalId: 'hosted-test' };
+      const lease = await owner.runtime(() => service.claim(initialScope));
+      const fence = { ...initialScope, leaseToken: lease.leaseToken, leaseGeneration: lease.leaseGeneration };
+
+      const writer = async (label) => {
+        const currentNow = await owner.working.loadCurrent(scope);
+        const proposal = { schemaVersion: 'wiselink.jobaid-problem-work.v3', overview: `Race write ${label}.`,
+          roundCompletion: 'IN_PROGRESS', completionReason: 'Race fixture', changeSummary: `Race write ${label}`,
+          issues: [{ issueKey: 'race', question: 'Is the snapshot consistent?', body: 'Check the scope without asserting external facts. [[method:scope]]' }] };
+        return owner.runtime(() => service.saveJobAidWork({ ...fence, requestId: `race-save-${label}`,
+          expectedWorkRevision: currentNow?.workingRevision ?? 0, workJson: JSON.stringify(proposal) }));
+      };
+      const writes = writer('during-reads');
+      const reads = await Promise.all(Array.from({ length: 12 }, (_unused, index) =>
+        owner.runtime(() => service.readCurrentWork(scope)).then(
+          (result) => ({ ok: true, result, index }),
+          (error) => ({ ok: false, error, index }),
+        )));
+      const written = await writes;
+      for (const outcome of reads) {
+        if (!outcome.ok) {
+          assert.equal(outcome.error?.code, 'MATTER_CURRENT_WORK_READ_CONFLICT');
+          assert.equal(outcome.error?.statusCode, 409);
+          continue;
+        }
+        const { result } = outcome;
+        assert.equal(result.workRef, result.current ? result.current.matterWorkRevisionId : null);
+        assert.equal(result.workingRevision, result.current ? result.current.workingRevision : 0);
+        assert.ok(result.matterRevision > 0);
+        for (const eligible of result.eligibleEvidenceRefs)
+          assert.ok(result.sourceCatalog.some(item => item.evidenceRef === eligible));
+      }
+      assert.ok(reads.some(outcome => outcome.ok), 'at least one racing read returns a consistent snapshot');
+      const settled = await owner.runtime(() => service.readCurrentWork(scope));
+      assert.equal(settled.workRef, written.workRevisionRef);
+      assert.equal(settled.workingRevision, written.workRevision);
+    } finally {
+      for (const connection of connections) await connection.release();
+      await sql.end({ timeout: 1 });
+    }
+  });
+
+async function persistedMatterSnapshot(sql, matterId) {
+  const [work] = await sql`SELECT count(*)::int AS n,
+    coalesce(md5(string_agg(row_to_json(t)::text, ',' ORDER BY row_to_json(t)::text)), '') AS digest
+    FROM (SELECT * FROM engineering_matter_work_revision WHERE matter_id = ${matterId}) t`;
+  const [attempts] = await sql`SELECT count(*)::int AS n,
+    coalesce(md5(string_agg(row_to_json(t)::text, ',' ORDER BY row_to_json(t)::text)), '') AS digest
+    FROM (SELECT * FROM action_attempt WHERE matter_id = ${matterId}) t`;
+  const [matter] = await sql`SELECT row_to_json(t)::text AS digest
+    FROM (SELECT * FROM engineering_matter WHERE matter_id = ${matterId}) t`;
+  return {
+    workRevisions: work.n,
+    workDigest: work.digest,
+    attempts: attempts.n,
+    attemptDigest: attempts.digest,
+    matter: matter?.digest ?? null,
+  };
 }
 
 async function assertRawMatterJobAidSave(sql, owner, service, baseInput) {
