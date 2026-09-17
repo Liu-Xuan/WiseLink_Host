@@ -12,7 +12,7 @@ description: Orchestrate the single official hosted WiseLink engineering profile
 - hosted app：`app_17c3zn24kv2`
 - logical profile：`wiselink-engineering`
 - model policy：`official-hosted-profile-config`（任务可绑定已登记的内置或用户授权自定义模型；仍经唯一官方 Hosted profile/Gateway）
-- Skill：`wiselink-research-and-synthesize@r09.c110`
+- Skill：`wiselink-research-and-synthesize@r09.c111`
 - Skill compatibility：`wiselink-research-and-synthesize@r09`（历史任务最低接受 `r09.c10`，翻译 v2 必须为 `r09.c44` 或更新兼容包）
 - Host MCP：`wiselink-openclaw-engineering-assessment@1.2.0`（保留既有工具，新增语义翻译工作与 JobAid 来源/工作工具）
 - Host 集成提交：以本次发布包清单记录的实际提交为准
@@ -557,7 +557,7 @@ Interactive Review 的复杂 ResultEnvelope 必须由 `sealResultEnvelope` 生�
 当前 validator 强制：
 
 - `modelVersion` 优先取响应中可读实际模型；绑定任务未回报实际模型时使用 `configured-route:<modelRef>`，旧无绑定任务使用无 fallback 的 configured endpoint。后两者只证明路由，不代表已暴露下游具体模型，也不做具体版本等值判断
-- `skillVersion=wiselink-research-and-synthesize@r09.c110`
+- `skillVersion=wiselink-research-and-synthesize@r09.c111`
 - `toolVersions.wiselink-openclaw-engineering-assessment=1.2.0`
 - `promptVersion` 非空并来自当前运行
 - task/result exact binding、SourceRef allowlist 和 canonical hash 一致
@@ -614,3 +614,7 @@ Host 拒绝 severity/likelihood 的业务依据时，反馈具体风险字段及
 已明确结束且无完整载荷的失败，正常后继可使用 Host 重新授权保留的已读证据继续生成；一般 HTTP 错误、响应未知或不完整候选不作为可重放工作。后继不复活旧任务、不改原模型和来源绑定，不自动将函数缺失解释为 TPM 或 length。
 
 Host documentActivityAction 的文档活动消费由 `scripts/consume-hosted-document-activity.mjs` 的确定性消费者执行：STATUS 优先、null/pending 或已存 result 零模型、仅消费显式 BEGIN 产生的已有 run，消费者不得自动 BEGIN；SAVE 回执丢失只查 `STATUS.result`，禁止重生成。合同见 [document-activity 工作协议](references/document-activity-work.md)。
+
+## c111 同源简明认识
+
+正常工作保存可成对提交 headline 与 listBrief，分别表达简短主题和带决定性条件的已有认识。两字段与正文、来源和工作版本一起保存、读取；省略时保留原值，不在页面截取问题句或另跑评估转 Wiki。overview 表达工程综合，变更过程使用 changeSummary。旧工作不会因安装自动改写；新能力需由支持这两个字段的 Host 接收，部署顺序为 Host 后 Skill。
