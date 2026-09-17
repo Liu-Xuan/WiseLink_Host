@@ -192,6 +192,21 @@ export function revisionReadingReturnParams(
 }
 
 const ACTIVITY_TEXT_KEYS = ['parseRunId', 'runRef', 'statementId', 'anchor'] as const;
+const ACTIVITY_WINDOW_VALUES = ['all', 'current-year'] as const;
+
+export type ActivityWindowPin =
+  | { state: 'absent' | 'duplicate' | 'empty' | 'invalid' }
+  | { state: 'ok'; value: (typeof ACTIVITY_WINDOW_VALUES)[number] };
+
+/** Controlled timeline window: single occurrence, whitelist-only; anything else is rejected, never repaired. */
+export function activityWindowPin(params: URLSearchParams): ActivityWindowPin {
+  const pin = revisionTextPin(params, 'window');
+  if (pin.state !== 'ok') return { state: pin.state };
+  const value = pin.value as (typeof ACTIVITY_WINDOW_VALUES)[number];
+  return ACTIVITY_WINDOW_VALUES.includes(value)
+    ? { state: 'ok', value }
+    : { state: 'invalid' };
+}
 
 export interface ActivityPinSet {
   parseRunId: string;
@@ -209,6 +224,8 @@ export function activityReadingParams(params: URLSearchParams): URLSearchParams 
   }
   const candidateRevision = singleSemanticToken(params, 'candidateRevision');
   if (candidateRevision) result.set('candidateRevision', candidateRevision);
+  const window = activityWindowPin(params);
+  if (window.state === 'ok') result.set('window', window.value);
   const returnLibraryQuery = params.getAll('returnLibraryQuery');
   if (returnLibraryQuery.length === 1 && returnLibraryQuery[0]) {
     const normalized = libraryReadingParams(
@@ -235,13 +252,15 @@ export function completeActivityIdentity(
   const statementId = revisionTextPin(params, 'statementId');
   const anchor = revisionTextPin(params, 'anchor');
   const libraryQuery = revisionTextPin(params, 'returnLibraryQuery');
+  const window = activityWindowPin(params);
   if (
     parseRunId.state !== 'ok' ||
     candidateRevision.state !== 'ok' ||
     runRef.state !== 'ok' ||
     (statementId.state !== 'ok' && statementId.state !== 'absent') ||
     (anchor.state !== 'ok' && anchor.state !== 'absent') ||
-    (libraryQuery.state !== 'ok' && libraryQuery.state !== 'absent')
+    (libraryQuery.state !== 'ok' && libraryQuery.state !== 'absent') ||
+    (window.state !== 'ok' && window.state !== 'absent')
   )
     return null;
   return {
@@ -250,6 +269,7 @@ export function completeActivityIdentity(
     runRef: runRef.value,
     statementId: statementId.state === 'ok' ? statementId.value : null,
     anchor: anchor.state === 'ok' ? anchor.value : null,
+    window: window.state === 'ok' ? window.value : null,
   };
 }
 
@@ -259,6 +279,7 @@ export interface ActivityIdentityPins {
   runRef: string;
   statementId: string | null;
   anchor: string | null;
+  window: 'all' | 'current-year' | null;
 }
 
 /** The four exact pins of an activity reading entry (selections are optional there). */

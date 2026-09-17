@@ -7,6 +7,7 @@ import type {
 import type { TranslationSourceAnchorV2 } from '@shared/canonical-translation-v2.interface';
 import {
   activityReadingParams,
+  activityWindowPin,
   revisionSemanticPin,
   revisionTextPin,
 } from '@client/src/features/matter/reading-return';
@@ -69,6 +70,9 @@ function pinProblem(state: 'duplicate' | 'empty' | 'invalid'): string {
 export function validateActivityEntry(
   params: URLSearchParams,
 ): ActivityEntryValidation {
+  const window = activityWindowPin(params);
+  if (window.state !== 'ok' && window.state !== 'absent')
+    return { ok: false, reason: `时间窗参数${pinProblem(window.state)}，只允许 all 或 current-year，无法进行活动阅读。` };
   const parseRunId = revisionTextPin(params, 'parseRunId');
   if (parseRunId.state !== 'ok' && parseRunId.state !== 'absent')
     return { ok: false, reason: `解析版本${pinProblem(parseRunId.state)}，无法进行活动阅读。` };
