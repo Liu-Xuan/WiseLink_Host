@@ -21,18 +21,29 @@ export default function SuiteMatterGraphPage({matterId}: {matterId: string}) {
 function MatterGraphContent({matterId, workRef, session, denied}: {matterId: string; workRef: string; session: number; denied: boolean}) {
   const navigate = useNavigate();
   const [params, setParams] = useSearchParams();
-  const initialState = useRef(readGraphReadingState(params));
-  const displayState = useRef<SuiteGraphReadingState>(initialState.current);
+  const paramsString = params.toString();
+  const [navigation, setNavigation] = useState(() => ({key: 0, state: readGraphReadingState(params)}));
+  const displayState = useRef<SuiteGraphReadingState>(navigation.state);
   const structuralRef = useRef('');
-  const lastWritten = useRef(params.toString());
+  const lastWritten = useRef(paramsString);
   const persistTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const [perspective, setPerspective] = useState(initialState.current.perspective ?? 'matter');
+  const [perspective, setPerspective] = useState(navigation.state.perspective ?? 'matter');
   const read = useSuiteMatterGraph(matterId, workRef, session, denied);
   const visibleGraph = useMemo(() => read.graph && perspective === 'documents' ? suiteDocumentPerspective(read.graph) : read.graph, [read.graph, perspective]);
   const open = (route: string) => navigate(withGraphReturn(route, graphReadingParams(matterId, read.graph?.workRef ?? (workRef || null), displayState.current)));
   const openWiki = () => open(read.graph?.workRef ? matterWorkRoute(matterId, read.graph.workRef) : `/matters/${encodeURIComponent(matterId)}`);
   const locateEvidence = (evidence: DocumentAssessmentEvidence) => open(matterDocumentRoute(matterId, evidence, 'brief', read.graph?.workRef ?? undefined));
   useEffect(() => () => { if (persistTimer.current) clearTimeout(persistTimer.current); }, []);
+  useEffect(() => {
+    if (paramsString === lastWritten.current) return;
+    lastWritten.current = paramsString;
+    const next = readGraphReadingState(new URLSearchParams(paramsString));
+    displayState.current = next;
+    structuralRef.current = '';
+    if (persistTimer.current) { clearTimeout(persistTimer.current); persistTimer.current = null; }
+    setPerspective(next.perspective ?? 'matter');
+    setNavigation((current) => ({key: current.key + 1, state: next}));
+  }, [paramsString]);
   const persistState = useCallback((state: SuiteGraphReadingState) => {
     const next = graphReadingParams(matterId, workRef || null, state);
     const serialized = next.toString();
@@ -63,5 +74,5 @@ function MatterGraphContent({matterId, workRef, session, denied}: {matterId: str
   };
   if (read.error) return <section role="alert"><p>{read.error}</p><button onClick={() => void read.refresh().catch(() => undefined)}>重新读取</button></section>;
   if (read.loading || !read.graph) return <p role="status">正在读取事项及指定保存工作…</p>;
-  return <SuiteMatterGraphView initialState={initialState.current} onStateChange={handleStateChange} read={visibleGraph!} perspective={perspective} onPerspectiveChange={setPerspective} availablePerspectives={['matter', 'documents']} revision={read.revision} onOpenWiki={openWiki} onLocateEvidence={locateEvidence} onOpenTarget={openTarget} />;
+  return <SuiteMatterGraphView key={navigation.key} initialState={navigation.state} onStateChange={handleStateChange} read={visibleGraph!} perspective={perspective} onPerspectiveChange={setPerspective} availablePerspectives={['matter', 'documents']} revision={read.revision} onOpenWiki={openWiki} onLocateEvidence={locateEvidence} onOpenTarget={openTarget} />;
 }

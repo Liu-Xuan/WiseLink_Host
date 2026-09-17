@@ -1,6 +1,6 @@
-import { act, createElement } from 'react';
+import { act, createElement, createRef } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
-import SuiteGraphCanvas from '../../client/src/pages/RelationGraphPage/SuiteGraphCanvas';
+import SuiteGraphCanvas, { type SuiteGraphCanvasHandle } from '../../client/src/pages/RelationGraphPage/SuiteGraphCanvas';
 import type { SuiteGraphPresentation } from '../../client/src/pages/RelationGraphPage/suite-graph-model';
 
 var mockCyFactory = jest.fn();
@@ -14,7 +14,7 @@ function createCy() {
   const cy = {
     nodes: () => Object.assign(definitions.filter((definition) => definition.group === 'nodes').map((definition) => ({
       id: () => String(definition.data.id),
-      data: () => definition.data,
+      data: (key?: string) => (key === undefined ? definition.data : definition.data[key]),
       renderedPosition: () => definition.position ?? { x: 0, y: 0 },
       addClass: jest.fn(),
     })), { removeClass: jest.fn() }),
@@ -27,12 +27,13 @@ function createCy() {
     trigger: (key: string, event: { target: unknown }) => handlers.get(key)?.(event),
     removeAllListeners: jest.fn(),
     destroy: jest.fn(),
-    getElementById: () => ({ addClass: jest.fn() }),
+    getElementById: jest.fn(() => ({ length: 1, addClass: jest.fn() })),
     minZoom: () => 0.16,
     maxZoom: () => 2.4,
     zoom: jest.fn(() => 1),
     pan: jest.fn(() => ({ x: 0, y: 0 })),
     width: () => 800,
+    height: () => 600,
     center: jest.fn(),
   };
   return cy;
@@ -52,6 +53,27 @@ const presentation: SuiteGraphPresentation = {
   omittedRelationships: [],
   bounds: { x1: 0, y1: 0, x2: 400, y2: 400, w: 400, h: 400 },
 };
+
+const groupPresentation: SuiteGraphPresentation = {
+  elements: [
+    { group: 'nodes', data: { id: 'sg:hub:m', viewKind: 'hub', businessId: 'm', title: 'Matter', w: 180, h: 180 }, position: { x: 100, y: 100 } },
+    { group: 'nodes', data: { id: 'sg:item:a', viewKind: 'item', businessId: 'a', groupKey: 'g1', title: 'Card A', w: 183.6, h: 48 }, position: { x: 349, y: 200 } },
+    { group: 'nodes', data: { id: 'sg:item:b', viewKind: 'item', businessId: 'b', groupKey: 'g1', title: 'Card B', w: 183.6, h: 48 }, position: { x: 532.6, y: 200 } },
+  ],
+  groups: [],
+  visibleIds: ['m', 'a', 'b'],
+  visibleItemIds: ['a', 'b'],
+  overflow: { page: 0, pageSize: 6, totalGroups: 1, displayedGroups: 1, omittedGroupKeys: [], hasMore: false },
+  counts: { loaded: { groups: 1, items: 2, relationships: 0 }, eligible: { groups: 1, items: 2 }, page: { index: 0, size: 6, count: 1, pageCount: 1 }, shown: { groups: 1, items: 2, cards: 2 }, represented: { relationships: 0 } },
+  omittedRelationships: [],
+  bounds: { x1: 0, y1: 0, x2: 600, y2: 400, w: 600, h: 400 },
+};
+
+function mockNarrowLayout(): () => void {
+  const original = dom.window.matchMedia;
+  dom.window.matchMedia = (() => ({ matches: true, media: '', onchange: null, addListener() {}, removeListener() {}, addEventListener() {}, removeEventListener() {}, dispatchEvent: () => false })) as typeof dom.window.matchMedia;
+  return () => { dom.window.matchMedia = original; };
+}
 
 const { JSDOM } = require('jsdom');
 let dom: { window: Window & typeof globalThis };
@@ -117,6 +139,64 @@ describe('SuiteGraphCanvas', () => {
     expect(cy.fit).not.toHaveBeenCalled();
     act(() => { resizeCallback?.(); });
     expect(cy.fit).not.toHaveBeenCalled();
+  });
+
+  it('marks toolbar zoom and reset as user camera so later resizes never fit over them', async () => {
+    const ref = createRef<SuiteGraphCanvasHandle>();
+    await act(async () => {
+      root = createRoot(container);
+      root.render(createElement(SuiteGraphCanvas, { presentation, ref }));
+    });
+    await act(async () => { await Promise.resolve(); });
+    const cy = mockCyFactory.mock.results[0].value as { fit: jest.Mock; zoom: jest.Mock };
+    expect(cy.fit).toHaveBeenCalledTimes(1);
+    act(() => ref.current!.zoomBy(1.18));
+    expect(cy.zoom).toHaveBeenCalledWith(expect.objectContaining({ level: expect.closeTo(1.18, 5) }));
+    act(() => { resizeCallback?.(); });
+    expect(cy.fit).toHaveBeenCalledTimes(1);
+    act(() => ref.current!.reset());
+    expect(cy.fit).toHaveBeenCalledTimes(2);
+    act(() => { resizeCallback?.(); });
+    expect(cy.fit).toHaveBeenCalledTimes(2);
+  });
+
+  it('enters with a readable zoom centered on the matter hub on narrow layouts instead of fitting everything', async () => {
+    const restoreMatchMedia = mockNarrowLayout();
+    try {
+      await act(async () => {
+        root = createRoot(container);
+        root.render(createElement(SuiteGraphCanvas, { presentation }));
+      });
+      await act(async () => { await Promise.resolve(); });
+      const cy = mockCyFactory.mock.results[0].value as { fit: jest.Mock; zoom: jest.Mock; center: jest.Mock; getElementById: jest.Mock };
+      expect(cy.fit).not.toHaveBeenCalled();
+      expect(cy.zoom).toHaveBeenCalledWith(0.85);
+      expect(cy.getElementById).toHaveBeenCalledWith('sg:hub:m');
+      expect(cy.center).toHaveBeenCalled();
+      act(() => { resizeCallback?.(); });
+      expect(cy.fit).not.toHaveBeenCalled();
+    } finally {
+      restoreMatchMedia();
+    }
+  });
+
+  it('focuses the filtered group target cards into a readable view on narrow layouts instead of only the hub', async () => {
+    const restoreMatchMedia = mockNarrowLayout();
+    try {
+      await act(async () => {
+        root = createRoot(container);
+        root.render(createElement(SuiteGraphCanvas, { presentation: groupPresentation, focusGroupKey: 'g1' }));
+      });
+      await act(async () => { await Promise.resolve(); });
+      const cy = mockCyFactory.mock.results[0].value as { fit: jest.Mock; center: jest.Mock };
+      expect(cy.fit).toHaveBeenCalledTimes(1);
+      const [fitCollection, fitPadding] = cy.fit.mock.calls[0] as [unknown[], number];
+      expect(fitCollection.length).toBe(3);
+      expect(fitPadding).toBe(28);
+      expect(cy.center).not.toHaveBeenCalled();
+    } finally {
+      restoreMatchMedia();
+    }
   });
 
   it('fits only without a restored viewport and stops fitting once a user camera exists', async () => {

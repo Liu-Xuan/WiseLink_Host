@@ -1,5 +1,6 @@
 import {
   forwardRef,
+  useCallback,
   useEffect,
   useImperativeHandle,
   useRef,
@@ -17,6 +18,7 @@ export interface SuiteGraphCanvasProps {
   presentation: SuiteGraphPresentation;
   initialViewport?: { zoom: number; pan: { x: number; y: number } };
   selectedId?: string;
+  focusGroupKey?: string | null;
   onSelect?: (data: Record<string, unknown>, isEdge: boolean) => void;
   onGroup?: (groupKey: string) => void;
   onOverflow?: (groupKey: string) => void;
@@ -54,6 +56,20 @@ const GROUP_ICONS: Record<string, LucideIcon> = {
   claims: Lightbulb,
 };
 const FALLBACK_TONE = '#4f83d6';
+const NARROW_ENTRY_MAX_WIDTH = 760;
+const NARROW_ENTRY_ZOOM = 0.85;
+const NARROW_FOCUS_PADDING = 28;
+const NARROW_READABLE_MIN_ZOOM = 0.55;
+const NARROW_LAYOUT_QUERY = `(max-width: ${NARROW_ENTRY_MAX_WIDTH}px)`;
+
+function clampZoom(level: number, cy: Core): number {
+  return Math.max(cy.minZoom(), Math.min(cy.maxZoom(), level));
+}
+
+function isNarrowLayout(): boolean {
+  if (typeof window === 'undefined' || typeof window.matchMedia !== 'function') return false;
+  return window.matchMedia(NARROW_LAYOUT_QUERY).matches;
+}
 
 function toneFor(groupKey: string): string {
   return GROUP_TONES[groupKey] ?? FALLBACK_TONE;
@@ -201,7 +217,7 @@ function OverlayCard({
 }
 
 const SuiteGraphCanvas = forwardRef<SuiteGraphCanvasHandle, SuiteGraphCanvasProps>(function SuiteGraphCanvas(
-  { presentation, initialViewport, selectedId, onSelect, onGroup, onOverflow, onInspectRelationships, onViewport, className, ariaLabel = '关系图谱' },
+  { presentation, initialViewport, selectedId, focusGroupKey, onSelect, onGroup, onOverflow, onInspectRelationships, onViewport, className, ariaLabel = '关系图谱' },
   ref,
 ) {
   const mountRef = useRef<HTMLDivElement | null>(null);
@@ -216,23 +232,68 @@ const SuiteGraphCanvas = forwardRef<SuiteGraphCanvasHandle, SuiteGraphCanvasProp
   const initialViewportAppliedRef = useRef(false);
   const initialViewportRef = useRef(initialViewport);
   const cameraReadyRef = useRef(false);
+  const elementsRef = useRef<CytoscapeSuiteElement[]>([]);
+  const selectedIdRef = useRef<string | undefined>(selectedId);
+  const focusGroupKeyRef = useRef<string | null | undefined>(focusGroupKey);
   callbacksRef.current = { onSelect, onGroup, onOverflow, onInspectRelationships, onViewport };
+  selectedIdRef.current = selectedId;
+  focusGroupKeyRef.current = focusGroupKey;
 
   useImperativeHandle(ref, () => ({
-    fit: () => cyRef.current?.fit(undefined, 24),
+    fit: () => {
+      userCameraRef.current = true;
+      cyRef.current?.fit(undefined, 24);
+    },
     zoomBy: (factor) => {
       const cy = cyRef.current;
       if (!cy || !Number.isFinite(factor) || factor <= 0) return;
+      userCameraRef.current = true;
       cy.zoom({ level: Math.max(cy.minZoom(), Math.min(cy.maxZoom(), cy.zoom() * factor)), renderedPosition: { x: cy.width() / 2, y: cy.height() / 2 } });
     },
     reset: () => {
       const cy = cyRef.current;
       if (!cy) return;
-      userCameraRef.current = false;
+      userCameraRef.current = true;
       cy.fit(undefined, 24);
     },
     getCore: () => cyRef.current,
   }), []);
+
+  const applyNarrowFocus = useCallback((cy: Core) => {
+    const focusGroup = focusGroupKeyRef.current;
+    if (focusGroup) {
+      const collection = cy.nodes().filter((node) => String(node.data('groupKey')) === focusGroup || String(node.data('viewKind')) === 'hub');
+      if (collection.length > 0) {
+        cy.fit(collection, NARROW_FOCUS_PADDING);
+        const fitted = cy.zoom();
+        if (!Number.isFinite(fitted) || fitted < NARROW_READABLE_MIN_ZOOM) {
+          cy.zoom(clampZoom(NARROW_READABLE_MIN_ZOOM, cy));
+          cy.center(collection);
+        }
+        return;
+      }
+    }
+    const currentSelection = selectedIdRef.current;
+    const focus = (currentSelection
+      ? elementsRef.current.find((element) => element.group === 'nodes' && (element.data.businessId === currentSelection || element.data.id === currentSelection))
+      : undefined)
+      ?? elementsRef.current.find((element) => element.group === 'nodes' && element.data.viewKind === 'hub')
+      ?? elementsRef.current.find((element) => element.group === 'nodes');
+    const node = focus ? cy.getElementById(String(focus.data.id)) : null;
+    if (node && node.length) {
+      cy.zoom(clampZoom(NARROW_ENTRY_ZOOM, cy));
+      cy.center(node);
+    } else {
+      cy.fit(undefined, 24);
+    }
+  }, []);
+
+  const applyAutoCamera = useCallback((cy: Core) => {
+    internalCameraRef.current = true;
+    if (isNarrowLayout()) applyNarrowFocus(cy);
+    else cy.fit(undefined, 24);
+    internalCameraRef.current = false;
+  }, [applyNarrowFocus]);
 
   useEffect(() => {
     const mount = mountRef.current;
@@ -266,7 +327,7 @@ const SuiteGraphCanvas = forwardRef<SuiteGraphCanvasHandle, SuiteGraphCanvasProp
       ? new MutationObserver(applyTheme)
       : null;
     themeObserver?.observe(document.documentElement, { attributes: true, attributeFilter: ['data-wl-theme', 'data-wl-visual-mode'] });
-    const handleResize = () => { cy.resize(); if (!userCameraRef.current) { internalCameraRef.current = true; cy.fit(undefined, 24); internalCameraRef.current = false; } };
+    const handleResize = () => { cy.resize(); if (!userCameraRef.current) applyAutoCamera(cy); };
     const resizeObserver = new ResizeObserver(handleResize);
     resizeObserver.observe(mount);
     window.addEventListener('resize', handleResize);
@@ -283,13 +344,18 @@ const SuiteGraphCanvas = forwardRef<SuiteGraphCanvasHandle, SuiteGraphCanvasProp
       cy.destroy();
       cyRef.current = null;
     };
-  }, []);
+  }, [applyAutoCamera]);
+
+  useEffect(() => {
+    userCameraRef.current = false;
+  }, [focusGroupKey]);
 
   useEffect(() => {
     const cy = cyRef.current;
     if (!cy) return;
     cy.elements().remove();
     cy.add(asElements(presentation.elements));
+    elementsRef.current = presentation.elements;
     const positions = Object.fromEntries(presentation.elements.filter((element) => element.group === 'nodes').map((element) => [String(element.data.id), element.position]));
     cy.layout({ name: 'preset', positions, fit: false, animate: !window.matchMedia('(prefers-reduced-motion: reduce)').matches, animationDuration: 320 }).run();
     internalCameraRef.current = true;
@@ -300,12 +366,12 @@ const SuiteGraphCanvas = forwardRef<SuiteGraphCanvasHandle, SuiteGraphCanvasProp
       initialViewportAppliedRef.current = true;
       userCameraRef.current = true;
     } else if (!userCameraRef.current) {
-      cy.fit(undefined, 24);
+      applyAutoCamera(cy);
     }
     internalCameraRef.current = false;
     cameraReadyRef.current = true;
     callbacksRef.current.onViewport?.({ zoom: cy.zoom(), pan: cy.pan() });
-  }, [presentation]);
+  }, [presentation, applyAutoCamera]);
 
   useEffect(() => {
     const cy = cyRef.current;
