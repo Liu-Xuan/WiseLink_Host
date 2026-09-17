@@ -43,6 +43,7 @@ export function DocumentSourceReadingWorkspace({
   const [page, setPage] = useState(initialPage ?? 1);
   const [tocOpen, setTocOpen] = useState(false);
   const [mobileSecondary, setMobileSecondary] = useState(false);
+  const [originalRequested, setOriginalRequested] = useState(false);
   const headings = useMemo(
     () =>
       original.source.units.filter(
@@ -57,6 +58,16 @@ export function DocumentSourceReadingWorkspace({
   useEffect(() => {
     if (initialPage) setPage(initialPage);
   }, [initialPage]);
+
+  useEffect(() => {
+    setOriginalRequested(false);
+  }, [documentVersionId]);
+
+  function locateUnit(pageIndex: number): void {
+    setPage(pageIndex);
+    setOriginalRequested(true);
+    if (mode === 'original') onModeChange('dual');
+  }
 
   function focusHeading(unitId: string): void {
     if (mode === 'bilingual') onModeChange('dual');
@@ -152,7 +163,7 @@ export function DocumentSourceReadingWorkspace({
             style={columnStyle}
           >
             <div className="source-reader-primary">
-              <DocumentOriginalReader original={original} onPageSelect={setPage} />
+              <DocumentOriginalReader original={original} onUnitLocate={locateUnit} />
             </div>
             {mode === 'dual' ? (
               <>
@@ -172,7 +183,7 @@ export function DocumentSourceReadingWorkspace({
                     setSplit((value) => Math.max(32, Math.min(68, value + (event.key === 'ArrowLeft' ? -2 : 2))));
                   }}
                 />
-                <DocumentOriginalInlinePreview documentVersionId={documentVersionId} page={page} />
+                <DocumentOriginalInlinePreview documentVersionId={documentVersionId} page={page} autoLoad={originalRequested} />
               </>
             ) : null}
           </div>

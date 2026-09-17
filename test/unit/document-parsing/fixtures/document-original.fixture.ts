@@ -19,7 +19,7 @@ export function originalFixture(): DocumentOriginalResult {
         { unitId: 'u2', kind: 'table', moduleId: 'body', parentUnitId: null, order: 1,
           depth: 0, continuityKey: 'table1', sourceRefIds: [refs[1]], sourceSegmentIds: ['s2'], mapping: {},
           payload: { layout: 'grid', columns: [], rowGroups: [{ rows: [
-            { cells: ['Pressure', '12 kPa', 'Only when X'].map((text, index) => ({
+            { rowId: 'r0', cells: ['Pressure', '12 kPa', 'Only when X'].map((text, index) => ({
               cellId: `c${index}`, rowSpan: 1, colSpan: 1,
               inlineContent: [{ text, sourceRefIds: [refs[1]] }],
             })) },

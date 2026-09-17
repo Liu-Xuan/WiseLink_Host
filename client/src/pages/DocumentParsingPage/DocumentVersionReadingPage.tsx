@@ -24,7 +24,9 @@ export default function DocumentVersionReadingPage() {
     documentVersionId,
     requestedRun,
   );
-  const navigationIdentity = JSON.stringify([documentVersionId, requestedRun, requestedSource]);
+  // The body reading depends only on the exact version and run; a new external
+  // sourceRef anchor must not trigger a full reading request again.
+  const readingIdentity = JSON.stringify([documentVersionId, requestedRun]);
   const [status, setStatus] = useState<DocumentParsingStatus | null>(null);
   const [readingNavigation, setReadingNavigation] = useState<string | null>(null);
   const [reading, setReading] = useState<DocumentParsedReading | null>(null);
@@ -36,12 +38,18 @@ export default function DocumentVersionReadingPage() {
   const [translationError, setTranslationError] = useState<string | null>(null);
   const [view, setView] = useState<DocumentSourceReaderMode>('dual');
   const epoch = useRef(0);
+  // Terminal rejection (401/403/404/revoked) for one identity/session/epoch must
+  // invalidate BOTH the body reading and the translation, no matter which load
+  // resolved first. bodyControllerRef lets the translation effect abort the body
+  // epoch too; rejectedRef keeps late resolutions of either side from re-writing.
+  const rejectedRef = useRef(false);
+  const bodyControllerRef = useRef<AbortController | null>(null);
   const [sending, setSending] = useState(false);
   const [refresh, setRefresh] = useState(0);
   const loaded = useRef('');
   const request = useRef<StartDocumentParseRequest | null>(null);
-  const identity = useRef(navigationIdentity);
-  identity.current = navigationIdentity;
+  const identity = useRef(readingIdentity);
+  identity.current = readingIdentity;
 
   useEffect(() => {
     epoch.current++;
@@ -50,53 +58,86 @@ export default function DocumentVersionReadingPage() {
     loaded.current = ''; request.current = null;
     return subscribeCanonicalHostClientSession(() => {
       epoch.current++;
+      rejectedRef.current = false;
       setStatus(null); setReading(null); setSource(null); setTranslation(null); setTranslationPage(null); setTranslationError(null);
       loaded.current = ''; request.current = null; setRefresh(value => value + 1);
     });
-  }, [navigationIdentity]);
+  }, [readingIdentity]);
 
   useEffect(() => {
     const controller = new AbortController();
+    bodyControllerRef.current = controller;
+    // A fresh body load (identity change or explicit retry) clears the rejection.
+    rejectedRef.current = false;
     let timer: ReturnType<typeof setTimeout> | undefined;
     const generation = epoch.current;
-    const current = () => !controller.signal.aborted && identity.current === navigationIdentity && epoch.current === generation;
+    const current = () => !controller.signal.aborted && identity.current === readingIdentity && epoch.current === generation;
+    const fail = (reason: unknown) => {
+      if (!current()) return;
+      setError(reason instanceof Error ? reason.message : '读取未完成，请重试。');
+      const code = reason && typeof reason === 'object' && 'statusCode' in reason ? Number(reason.statusCode) : null;
+      if (code !== null && [401, 403, 404].includes(code)) {
+        // A revoked / missing result is terminal for this identity/session/epoch:
+        // drop every partial result and abort so no late body or translation
+        // resolution can pass current() and re-display. The rejected state holds
+        // until an explicit retry starts a new epoch.
+        rejectedRef.current = true;
+        setReading(null); setStatus(null); setTranslation(null);
+        loaded.current = '';
+        controller.abort();
+      }
+    };
     const load = async () => {
+      setError(null);
+      if (requestedRun) {
+        // A pinned run is authorized on its own: the body reading must never wait for the status read.
+        void readParsedDocument(documentVersionId, requestedRun, controller.signal).then(result => {
+          if (!current() || rejectedRef.current) return;
+          if (result.documentVersionId !== documentVersionId || result.parseRunId !== requestedRun)
+            throw new Error('读取结果与指定解析版本不一致。');
+          loaded.current = result.parseRunId; setReadingNavigation(readingIdentity); setReading(result); setSource(null);
+        }).catch(fail);
+      }
       try {
         const next = await readDocumentParsingStatus(documentVersionId, controller.signal);
         if (!current()) return;
-        setStatus(next); setError(null);
-        const targetRun = requestedRun ?? next.publishedRun?.parseRunId;
-        if (targetRun) {
-          const result = await readParsedDocument(documentVersionId, targetRun, controller.signal);
-          if (!current()) return;
-          if (result.documentVersionId !== documentVersionId || result.parseRunId !== targetRun) throw new Error('读取结果与指定解析版本不一致。');
-          loaded.current = result.parseRunId; setReadingNavigation(navigationIdentity); setReading(result); setSource(null);
+        setStatus(next);
+        if (!requestedRun) {
+          const targetRun = next.publishedRun?.parseRunId;
+          if (targetRun) {
+            const result = await readParsedDocument(documentVersionId, targetRun, controller.signal);
+            if (!current() || rejectedRef.current) return;
+            if (result.documentVersionId !== documentVersionId || result.parseRunId !== targetRun)
+              throw new Error('读取结果与指定解析版本不一致。');
+            loaded.current = result.parseRunId; setReadingNavigation(readingIdentity); setReading(result); setSource(null);
+          }
+          if (next.latestRun && ['RUNNING', 'STAGING'].includes(next.latestRun.status) && current())
+            timer = setTimeout(() => { void load(); }, 5000);
         }
-        if (!requestedRun && (next.latestRun && ['RUNNING', 'STAGING'].includes(next.latestRun.status)) && current())
-          timer = setTimeout(() => { void load(); }, 5000);
       } catch (reason) {
-        if (!current()) return;
-        setError(reason instanceof Error ? reason.message : '读取未完成，请重试。');
-        const code = reason && typeof reason === 'object' && 'statusCode' in reason ? reason.statusCode : null;
-        if ([401, 403, 404].includes(Number(code))) { setReading(null); setStatus(null); setTranslation(null); loaded.current = ''; }
+        fail(reason);
       }
     };
     void load();
-    return () => { controller.abort(); if (timer) clearTimeout(timer); };
-  }, [navigationIdentity, refresh]);
+    return () => {
+      if (bodyControllerRef.current === controller) bodyControllerRef.current = null;
+      controller.abort(); if (timer) clearTimeout(timer);
+    };
+  }, [readingIdentity, refresh]);
 
   const currentStatus = status?.documentVersionId === documentVersionId ? status : null;
-  const currentReading = readingNavigation === navigationIdentity && reading?.documentVersionId === documentVersionId && (!requestedRun || reading.parseRunId === requestedRun) ? reading : null;
+  const currentReading = readingNavigation === readingIdentity && reading?.documentVersionId === documentVersionId && (!requestedRun || reading.parseRunId === requestedRun) ? reading : null;
   const currentTranslation = translation?.documentVersionId === documentVersionId && translation.parseRunId === currentReading?.parseRunId ? translation : null;
   useEffect(() => {
     const parseRunId = currentReading?.parseRunId;
-    if (!parseRunId || !currentReading?.original) { setTranslation(null); return; }
+    // Chinese loads on demand only: the default dual mode never requests translation.
+    if (!parseRunId || !currentReading?.original || view !== 'bilingual') { setTranslation(null); return; }
     setTranslationPage(null); setTranslationError(null); setWaitingForTranslationStart(false);
     let unstartedChecks = 0;
     const controller = new AbortController();
     const generation = epoch.current;
     let timer: ReturnType<typeof setTimeout> | undefined;
-    const current = () => !controller.signal.aborted && identity.current === navigationIdentity && epoch.current === generation;
+    const current = () => !controller.signal.aborted && identity.current === readingIdentity && epoch.current === generation;
     const load = async () => {
       try {
         const result = await readDocumentTranslationReading(documentVersionId, parseRunId, controller.signal);
@@ -108,14 +149,26 @@ export default function DocumentVersionReadingPage() {
           timer = setTimeout(() => { void load(); }, 5000);
       } catch (reason) {
         if (!current()) return;
-        setTranslationError(reason instanceof Error ? reason.message : '中文读取未完成，请刷新重试。');
-        const code = reason && typeof reason === 'object' && 'statusCode' in reason ? reason.statusCode : null;
-        if ([401, 403, 404].includes(Number(code))) { setTranslation(null); setReading(null); loaded.current = ''; }
+        const code = reason && typeof reason === 'object' && 'statusCode' in reason ? Number(reason.statusCode) : null;
+        if (code !== null && [401, 403, 404].includes(code)) {
+          // Terminal rejection of the translation must also invalidate the body
+          // epoch of the same identity/session/reading epoch: a late body result
+          // must not re-write reading and re-display over the rejected state.
+          rejectedRef.current = true;
+          const message = reason instanceof Error ? reason.message : '读取未完成，请重试。';
+          setError(message);
+          setTranslationError(reason instanceof Error ? reason.message : '中文读取未完成，请刷新重试。');
+          setTranslation(null); setReading(null); loaded.current = '';
+          controller.abort();
+          bodyControllerRef.current?.abort();
+        } else {
+          setTranslationError(reason instanceof Error ? reason.message : '中文读取未完成，请刷新重试。');
+        }
       }
     };
     void load();
     return () => { controller.abort(); if (timer) clearTimeout(timer); };
-  }, [navigationIdentity, currentReading?.parseRunId, refresh]);
+  }, [readingIdentity, currentReading?.parseRunId, view, refresh]);
   const locateTranslationSource = (unitId: string, sourceRef: string) => {
     const location = currentReading?.original?.locations.find(item => item.sourceRefId === sourceRef);
     if (location?.pageIndex !== null && location?.pageIndex !== undefined) {
@@ -128,7 +181,7 @@ export default function DocumentVersionReadingPage() {
   const selectedUnit = requestedSource ? currentReading?.original?.source.units.find(unit => unit.sourceRefIds.includes(requestedSource)) : null;
   useEffect(() => {
     if (view !== 'bilingual' && selectedUnit) document.getElementById(selectedUnit.unitId)?.scrollIntoView({ block: 'center' });
-  }, [navigationIdentity, selectedUnit?.unitId, view]);
+  }, [requestedSource, selectedUnit?.unitId, view]);
   const latest = currentStatus?.latestRun;
   const expired = latest ? Date.parse(latest.deadlineAt) <= Date.now() : false;
   const busy = Boolean(latest && ['RUNNING', 'STAGING'].includes(latest.status) && !expired);
@@ -145,7 +198,7 @@ export default function DocumentVersionReadingPage() {
   async function start() {
     if (!currentStatus || sending) return;
     const version = documentVersionId;
-    const navigation = navigationIdentity;
+    const navigation = readingIdentity;
     const generation = epoch.current;
     request.current ??= { requestId: `parse-${crypto.randomUUID()}`, expectedPublishedRevision: currentStatus.publishedRun?.parseRevision ?? 0 };
     setSending(true); setError(null);
