@@ -68,7 +68,12 @@ export class DocumentReadingRuntimeService {
         throw new Error('DOCUMENT_READING_ORIGINAL_CHANGED');
       if (input.action === 'READING_STATUS') {
         await this.parsing.status(scope.documentVersionId, context);
-        return summary(row);
+        // A consumer with an uncertain checkpoint only polls STATUS and never
+        // claims again. Reconcile the deadline here so it cannot stay RUNNING forever.
+        await this.runs.expire(scope, input.runRef);
+        const current = await this.runs.readRun(scope, input.runRef);
+        if (!current) throw new Error('DOCUMENT_READING_RUN_NOT_FOUND');
+        return summary(current);
       }
       if (input.action === 'READING_CANCEL') {
         await this.runs.cancel(scope, input.runRef);
