@@ -3494,6 +3494,23 @@ function matterResult(task, status = 'SUCCEEDED') {
   });
 }
 
+function matterCorrectionResult(task, status, producer) {
+  return sealMatterResultEnvelope({
+    schemaVersion: 'wiselink.3_1.openclaw_result_envelope.v2',
+    actionAttemptId: task.actionAttemptId, operationRef: task.operationRef,
+    taskType: task.taskType, subject: task.subject, baseRevision: task.baseRevision,
+    status, businessOutcome: status === 'SUCCEEDED' ? 'CANDIDATE_READY' : 'NOT_PRODUCED',
+    candidateStatus: null, modelOutput: null, outputArtifactRefs: [], sourceRefs: task.sourceRefs,
+    factsConsidered: [], missingInputs: [], conflicts: [], warnings: [],
+    modelVersion: null, skillVersion: null, producer,
+    promptVersion: 'wl-engineering-issue-correction.v1',
+    toolVersions: { [producer.instanceId]: producer.pluginVersion },
+    runMetrics: { durationMs: 1, inputUnits: null, outputUnits: null },
+    errorCode: status === 'FAILED' ? 'FIXTURE_FAILED' : null,
+    errorDetail: status === 'FAILED' ? 'isolated failure after save' : null,
+  });
+}
+
 async function assertSaveBeforeFinish(sql, owner, service, baseInput) {
   const basis = await owner.workingService.resolveWorkingBasis(
     baseInput.matterId,
@@ -4053,6 +4070,57 @@ test('targeted correction uses real PostgreSQL fences, durable generation and ex
       assert.equal((await owner.working.loadCurrent(scope)).overviewSourceWork, null);
       await sql`UPDATE action_attempt SET review_activity_json = ${savedOverviewEvents.review_activity_json} WHERE attempt_id = ${overviewTask.task.actionAttemptId}`;
 
+      const savedThenFailedOutput = { ...output,
+        body: `${output.body} A later saved qualification remains candidate work until separately accepted.`,
+        changeSummary: 'Save a bounded issue correction before a later task failure.' };
+      const savedThenFailedService = new MatterActionAttemptService(owner.working, models, undefined, {
+        generate: async (_context, assertActive) => { await assertActive(); return savedThenFailedOutput; },
+      });
+      const savedThenFailedTask = await owner.runtime(() => savedThenFailedService.reserveJobAid({ ...reserve,
+        idempotencyKey: 'correction-save-then-fail', expectedWorkingRevision: overviewSaved.workRevision,
+        correction: { ...correction, expectedWorkRef: overviewSaved.workRevisionRef } }));
+      const savedThenFailedScope = { ...scope, attemptRef: savedThenFailedTask.task.operationRef, principalId: 'hosted-test' };
+      const savedThenFailedLease = await owner.runtime(() => savedThenFailedService.claim(savedThenFailedScope));
+      const savedThenFailedFence = { ...savedThenFailedScope, leaseToken: savedThenFailedLease.leaseToken,
+        leaseGeneration: savedThenFailedLease.leaseGeneration };
+      await owner.runtime(() => savedThenFailedService.executeIssueCorrection({ ...savedThenFailedFence,
+        requestId: 'correction-save-then-fail-generate' }));
+      const savedThenFailed = await owner.runtime(() => savedThenFailedService.saveIssueCorrection({ ...savedThenFailedFence,
+        requestId: 'correction-save-then-fail-save', generationRequestId: 'correction-save-then-fail-generate' }));
+      await owner.runtime(() => savedThenFailedService.finishJobAid({ ...savedThenFailedFence,
+        result: matterCorrectionResult(savedThenFailedTask.task, 'FAILED', savedThenFailedOutput.producer) }));
+      const sourceAfterFailedFinish = await owner.working.readByRef({ ...scope, workRef: overviewSaved.workRevisionRef });
+      const persistedFailedNotice = sourceAfterFailedFinish.correctionNotices.find(
+        item => item.attemptRef === savedThenFailedTask.task.operationRef);
+      assert.equal(persistedFailedNotice.attemptStatus, 'FAILED');
+      assert.equal(persistedFailedNotice.correctedWorkRef, savedThenFailed.workRevisionRef,
+        'a real save receipt remains readable after the task later fails');
+      assert.equal(sourceAfterFailedFinish.state.problemWork.issues.find(issue => issue.issueKey === 'dependency').body,
+        overviewRead.state.problemWork.issues.find(issue => issue.issueKey === 'dependency').body,
+        'reading the corrected target never rewrites its immutable body');
+
+      const falseUnchangedOutput = JSON.stringify({ workRevisionRef: savedThenFailed.workRevisionRef, unchanged: true });
+      await sql`UPDATE action_attempt SET status = 'SUCCEEDED',
+        result_envelope_json = jsonb_set(COALESCE(result_envelope_json, '{}')::jsonb,
+          '{modelOutput}', to_jsonb(${falseUnchangedOutput}::text), true)::text
+        WHERE attempt_id = ${savedThenFailedTask.task.actionAttemptId}`;
+      const sourceAfterFalseUnchanged = await owner.working.readByRef({ ...scope, workRef: overviewSaved.workRevisionRef });
+      const falseUnchangedNotice = sourceAfterFalseUnchanged.correctionNotices.find(
+        item => item.attemptRef === savedThenFailedTask.task.operationRef);
+      assert.equal(falseUnchangedNotice.unchanged, undefined);
+      assert.equal(falseUnchangedNotice.correctedWorkRef, savedThenFailed.workRevisionRef,
+        'modelOutput unchanged cannot hide a real persisted correction save');
+
+      const fakeOutput = JSON.stringify({ workRevisionRef: 'MWREV-NOT-SAVED' });
+      await sql`UPDATE action_attempt SET status = 'SUCCEEDED',
+        result_envelope_json = jsonb_set(COALESCE(result_envelope_json, '{}')::jsonb,
+          '{modelOutput}', to_jsonb(${fakeOutput}::text), true)::text
+        WHERE attempt_id = ${failedTask.task.actionAttemptId}`;
+      const sourceAfterFakeOutput = await owner.working.readByRef({ ...scope, workRef: saved.workRevisionRef });
+      const fakeNotice = sourceAfterFakeOutput.correctionNotices.find(item => item.attemptRef === failedTask.task.operationRef);
+      assert.equal(fakeNotice.attemptStatus, 'SUCCEEDED');
+      assert.equal(fakeNotice.correctedWorkRef, null,
+        'a model output work ref without a matching persisted revision and save receipt is never projected');
 
     } finally { for (const connection of connections) await connection.release(); await sql.end({ timeout: 5 }); }
   });

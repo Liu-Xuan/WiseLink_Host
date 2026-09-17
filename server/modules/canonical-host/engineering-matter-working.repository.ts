@@ -89,6 +89,58 @@ export interface EngineeringMatterRuntimeAuthorization {
   currentInputs: EngineeringMatterWorkingInputBinding[];
 }
 
+export interface EngineeringMatterCorrectionSaveProjection {
+  attemptId: string | null;
+  workRef: string;
+  workingRevision: number;
+  requestId: string;
+}
+
+/** Resolve only a durable work revision backed by its exact save receipt. */
+export function savedCorrectionWorkRef(
+  attemptId: string,
+  reviewActivityJson: string | null,
+  saves: EngineeringMatterCorrectionSaveProjection[],
+): string | null {
+  let events: unknown;
+  try {
+    events = reviewActivityJson ? JSON.parse(reviewActivityJson) : [];
+  } catch {
+    throw workingPersistenceError();
+  }
+  if (!Array.isArray(events)) throw workingPersistenceError();
+  let selected: EngineeringMatterCorrectionSaveProjection | null = null;
+  for (const saved of saves) {
+    if (saved.attemptId !== attemptId) continue;
+    const hasReceipt = events.some(event => event && typeof event === 'object' &&
+      'kind' in event && event.kind === 'MATTER_JOBAID_WORK_SAVED' &&
+      'requestId' in event && event.requestId === saved.requestId &&
+      'workRevisionRef' in event && event.workRevisionRef === saved.workRef &&
+      'expectedWorkRevision' in event && event.expectedWorkRevision === saved.workingRevision - 1);
+    if (hasReceipt && (!selected || saved.workingRevision > selected.workingRevision)) selected = saved;
+  }
+  return selected?.workRef ?? null;
+}
+
+/** A comparison is unchanged only when the attempt durably recorded that exact retained work. */
+export function hasCorrectionUnchangedReceipt(
+  reviewActivityJson: string | null,
+  expectedWorkRef: string,
+  expectedWorkingRevision: number,
+): boolean {
+  let events: unknown;
+  try {
+    events = reviewActivityJson ? JSON.parse(reviewActivityJson) : [];
+  } catch {
+    throw workingPersistenceError();
+  }
+  if (!Array.isArray(events)) throw workingPersistenceError();
+  return events.some(event => event && typeof event === 'object' &&
+    'kind' in event && event.kind === 'MATTER_CORRECTION_UNCHANGED' &&
+    'workRevisionRef' in event && event.workRevisionRef === expectedWorkRef &&
+    'workRevision' in event && event.workRevision === expectedWorkingRevision);
+}
+
 @Injectable()
 // eslint-disable-next-line @darraghor/nestjs-typed/injectable-should-be-provided -- W1 registers/exports this in EngineeringMatterModule.
 export class EngineeringMatterWorkingRepository {
@@ -1022,25 +1074,42 @@ async function authorizedReadModel(
     }
     checkedReferences.set(referenceKey, canonicalJson(expected));
   }
-  const corrections = await executor.select({ attemptRef: actionAttempt.operationRef, status: actionAttempt.status,
-    purpose: sql<{ issueKey: string; correctionReason: string }>`${actionAttempt.taskEnvelopeJson}::jsonb -> 'modelInput' -> 'correction'`,
-    resultJson: actionAttempt.resultEnvelopeJson,
+  const corrections = await executor.select({ id: actionAttempt.attemptId,
+    attemptRef: actionAttempt.operationRef, status: actionAttempt.status,
+    purpose: sql<{ expectedWorkRef: string; issueKey: string; correctionReason: string }>`${actionAttempt.taskEnvelopeJson}::jsonb -> 'modelInput' -> 'correction'`,
+    reviewActivityJson: actionAttempt.reviewActivityJson,
   }).from(actionAttempt).where(and(
     eq(actionAttempt.tenantId, row.tenantId), eq(actionAttempt.matterId, row.matterId),
     sql`${actionAttempt.taskEnvelopeJson}::jsonb -> 'modelInput' -> 'correction' ->> 'kind' = 'ENGINEERING_ISSUE_CORRECTION'`,
     sql`${actionAttempt.taskEnvelopeJson}::jsonb -> 'modelInput' -> 'correction' ->> 'expectedWorkRef' = ${row.matterWorkRevisionId}`,
   )).orderBy(asc(actionAttempt.createdAt));
+  const correctionAttemptIds = corrections.map(item => item.id);
+  const correctionSaves = correctionAttemptIds.length ? await executor.select({
+    attemptId: engineeringMatterWorkRevision.actionAttemptId,
+    workRef: engineeringMatterWorkRevision.matterWorkRevisionId,
+    workingRevision: engineeringMatterWorkRevision.workingRevision,
+    requestId: engineeringMatterWorkRevision.requestId,
+  }).from(engineeringMatterWorkRevision).where(and(
+    eq(engineeringMatterWorkRevision.tenantId, row.tenantId),
+    eq(engineeringMatterWorkRevision.matterId, row.matterId),
+    eq(engineeringMatterWorkRevision.createdByUserId, row.createdByUserId),
+    inArray(engineeringMatterWorkRevision.actionAttemptId, correctionAttemptIds),
+  )).orderBy(asc(engineeringMatterWorkRevision.workingRevision)) : [];
+  const savedCorrectionWork = new Map<string, string>();
+  for (const item of corrections) {
+    const saved = savedCorrectionWorkRef(item.id, item.reviewActivityJson, correctionSaves);
+    if (saved) savedCorrectionWork.set(item.id, saved);
+  }
   if (corrections.length) revision.correctionNotices = corrections.map(item => {
-    if (!item.attemptRef || typeof item.purpose?.issueKey !== 'string' || typeof item.purpose?.correctionReason !== 'string')
+    if (!item.attemptRef || typeof item.purpose?.expectedWorkRef !== 'string' ||
+        typeof item.purpose?.issueKey !== 'string' || typeof item.purpose?.correctionReason !== 'string')
       throw new Error('ENGINEERING_CORRECTION_NOTICE_INVALID');
-    const result: unknown = item.resultJson ? JSON.parse(item.resultJson) : null;
-    const output: unknown = result && typeof result === 'object' && 'modelOutput' in result && typeof result.modelOutput === 'string'
-      ? JSON.parse(result.modelOutput) : null;
-    const unchanged = item.status === 'SUCCEEDED' && Boolean(output && typeof output === 'object' && 'unchanged' in output && output.unchanged === true);
+    const correctedWorkRef = savedCorrectionWork.get(item.id) ?? null;
+    const unchanged = correctedWorkRef === null && hasCorrectionUnchangedReceipt(
+      item.reviewActivityJson, item.purpose.expectedWorkRef, row.workingRevision);
     return { attemptRef: item.attemptRef, issueKey: item.purpose.issueKey, reason: item.purpose.correctionReason,
       ...(unchanged ? { unchanged: true } : {}),
-      attemptStatus: item.status, correctedWorkRef: !unchanged && item.status === 'SUCCEEDED' && output && typeof output === 'object' &&
-        'workRevisionRef' in output && typeof output.workRevisionRef === 'string' ? output.workRevisionRef : null };
+      attemptStatus: item.status, correctedWorkRef };
   });
   // These are the owner's explicit review requests, not extracted old source text.
   // Retain their target identity across later work so an unrelated save cannot
