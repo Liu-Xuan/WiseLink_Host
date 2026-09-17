@@ -8,6 +8,7 @@ import type { DocumentAssessmentEvidence } from '@client/src/features/matter/ass
 import { useSuiteMatterGraph } from './useSuiteMatterGraph';
 import SuiteMatterGraphView from './SuiteMatterGraphView';
 import type { SuiteMatterGraphTarget } from './suite-matter-graph';
+import type { EngineeringMatterCatalogEntry } from '@shared/api.interface';
 
 export default function SuiteMatterGraphPage({matterId}: {matterId: string}) {
   const [params] = useSearchParams();
@@ -33,6 +34,15 @@ function MatterGraphContent({matterId, workRef, session, denied}: {matterId: str
   const open = (route: string) => navigate(withGraphReturn(route, graphReadingParams(matterId, read.graph?.workRef ?? (workRef || null), displayState.current)));
   const openWiki = () => open(read.graph?.workRef ? matterWorkRoute(matterId, read.graph.workRef) : `/matters/${encodeURIComponent(matterId)}`);
   const locateEvidence = (evidence: DocumentAssessmentEvidence) => open(matterDocumentRoute(matterId, evidence, 'brief', read.graph?.workRef ?? undefined));
+  const openTimelineSource = (source: EngineeringMatterCatalogEntry) => {
+    const returnQuery = graphReadingParams(matterId, read.graph?.workRef ?? (workRef || null), displayState.current);
+    const query = new URLSearchParams({
+      documentVersionId: source.document.documentVersionId,
+      returnGraphQuery: returnQuery.toString(),
+      returnDocumentVersionId: source.document.documentVersionId,
+    });
+    navigate(`/timeline?${query}`);
+  };
   useEffect(() => () => { if (persistTimer.current) clearTimeout(persistTimer.current); }, []);
   useEffect(() => {
     if (paramsString === lastWritten.current) return;
@@ -74,5 +84,5 @@ function MatterGraphContent({matterId, workRef, session, denied}: {matterId: str
   };
   if (read.error) return <section role="alert"><p>{read.error}</p><button onClick={() => void read.refresh().catch(() => undefined)}>重新读取</button></section>;
   if (read.loading || !read.graph) return <p role="status">正在读取事项及指定保存工作…</p>;
-  return <SuiteMatterGraphView key={navigation.key} initialState={navigation.state} onStateChange={handleStateChange} read={visibleGraph!} perspective={perspective} onPerspectiveChange={setPerspective} availablePerspectives={['matter', 'documents']} revision={read.revision} onOpenWiki={openWiki} onLocateEvidence={locateEvidence} onOpenTarget={openTarget} />;
+  return <SuiteMatterGraphView key={navigation.key} initialState={navigation.state} onStateChange={handleStateChange} read={visibleGraph!} perspective={perspective} onPerspectiveChange={setPerspective} availablePerspectives={['matter', 'documents']} revision={read.revision} timelineSources={read.workspace?.matter.catalog.entries ?? []} onOpenTimelineSource={openTimelineSource} onOpenWiki={openWiki} onLocateEvidence={locateEvidence} onOpenTarget={openTarget} />;
 }
