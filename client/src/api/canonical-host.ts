@@ -906,6 +906,26 @@ export function searchEngineeringIssues(search: string, scope: 'CURRENT' | 'HIST
   });
 }
 
+export function readEngineeringKnowledgeCatalogue(search: string,
+  scope: import('@shared/engineering-issue-search.interface').EngineeringKnowledgeScope,
+  after?: string, signal?: AbortSignal) {
+  return reviewConversationRequest<import('@shared/engineering-issue-search.interface').EngineeringKnowledgePage>({
+    url: `/api/canonical-host/engineering-issues/catalogue?${new URLSearchParams({ search, scope, ...(after ? { after } : {}) })}`,
+    method: 'GET', operation: '查阅已保存的工程认识', signal,
+  });
+}
+
+export async function readEngineeringKnowledgeWork(
+  identity: import('@shared/engineering-issue-search.interface').EngineeringKnowledgeIdentity, signal?: AbortSignal) {
+  const read = await reviewConversationRequest<import('@shared/engineering-issue-search.interface').EngineeringKnowledgeRead>({
+    url: `/api/canonical-host/engineering-issues/catalogue/work?${new URLSearchParams(identity)}`,
+    method: 'GET', operation: '读取确切的工程认识', signal,
+  });
+  if (read.entry.subjectKind !== identity.subjectKind || read.entry.subjectId !== identity.subjectId || read.entry.workRef !== identity.workRef)
+    throw new Error('知识正文的工作版本不一致，请重新读取。');
+  return read;
+}
+
 export function searchDocumentSources(search: string, scope: 'CURRENT' | 'HISTORY' = 'CURRENT') {
   return reviewConversationRequest<import('@shared/document-source-search.interface').DocumentSourceSearchResponse>({
     url: `/api/canonical-host/engineering-issues/sources?${new URLSearchParams({ search, scope })}`,
@@ -1441,12 +1461,14 @@ async function reviewConversationRequest<T>(input: {
     | EngineeringIssueReferenceRequest
     | ConfirmReviewActionDraftRequest;
   operation: string;
+  signal?: AbortSignal;
 }): Promise<T> {
   const requestGeneration = clientSessionGeneration;
   try {
     const response = await axiosForBackend<T>({
       url: input.url,
       method: input.method,
+      signal: input.signal,
       ...(input.data === undefined ? {} : { data: input.data }),
     });
     if (response.status === 401) {

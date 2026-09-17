@@ -5,7 +5,6 @@ import {
   Clock3,
   FileSearch2,
   LibraryBig,
-  Layers,
   LifeBuoy,
   Palette,
   Share2,
@@ -59,17 +58,20 @@ const GLOBAL_NAV: Array<{
   end?: boolean;
 }> = [
   { to: '/library', label: '资料库', icon: LibraryBig },
-  { to: '/situation', label: '工程态势', icon: Compass },
-  { to: '/timeline', label: '工程时间轴', icon: Clock3 },
   { to: '/knowledge', label: '工程知识', icon: BookMarked },
   { to: '/graph', label: '关系图谱', icon: Share2 },
+  { to: '/situation', label: '工程态势', icon: Compass },
+  { to: '/library?mode=tasks', label: '工作进展', icon: Clock3 },
 ];
 
 const SECONDARY_NAV: Array<{
   to: string;
   label: string;
   icon: React.ComponentType<React.SVGProps<SVGSVGElement>>;
-}> = [{ to: '/external-discovery', label: '补充资料', icon: FileSearch2 }];
+}> = [
+  { to: '/timeline', label: '工程时间轴', icon: Clock3 },
+  { to: '/external-discovery', label: '补充资料', icon: FileSearch2 },
+];
 
 const Sidebar: React.FC<SidebarProps> = ({ mobileOpen, onMobileClose }) => {
   const location = useLocation();
@@ -79,7 +81,16 @@ const Sidebar: React.FC<SidebarProps> = ({ mobileOpen, onMobileClose }) => {
   );
   const { workItemId, matterId, documentVersionId, workRef } = routeContext;
   const { currentObject } = useCurrentObjectContext();
-  const { theme, toggleTheme, visualMode, setVisualMode } = useWlTheme();
+  const {
+    theme,
+    toggleTheme,
+    visualMode,
+    setVisualMode,
+    motionEnabled,
+    motionPausedByUser,
+    systemReducedMotion,
+    toggleMotion,
+  } = useWlTheme();
   const [settingsOpen, setSettingsOpen] = useState<boolean>(false);
   const [helpOpen, setHelpOpen] = useState<boolean>(false);
 
@@ -103,8 +114,10 @@ const Sidebar: React.FC<SidebarProps> = ({ mobileOpen, onMobileClose }) => {
     workRef || matterId || documentVersionId || workItemId;
   const objectLabel: string =
     !workRef && currentObject
-      ? currentObject.displayCode
+      ? currentObject.title || currentObject.displayCode
       : shortId(routeObjectId);
+  const objectCode: string =
+    !workRef && currentObject ? currentObject.displayCode : '';
 
   const globalNavTarget = (target: string): string => {
     if (!workItemId || (target !== '/knowledge' && target !== '/graph')) {
@@ -112,6 +125,11 @@ const Sidebar: React.FC<SidebarProps> = ({ mobileOpen, onMobileClose }) => {
     }
     return `${target}?workItemId=${encodeURIComponent(workItemId)}`;
   };
+
+  const isTasksRoute =
+    location.pathname === '/library' &&
+    new URLSearchParams(location.search).get('mode') === 'tasks';
+  const isLibraryRoute = location.pathname === '/library' && !isTasksRoute;
 
   return (
     <>
@@ -122,7 +140,7 @@ const Sidebar: React.FC<SidebarProps> = ({ mobileOpen, onMobileClose }) => {
       >
         <div className="wl-sidebar-brand">
           <span className="wiselink-app-mark" aria-hidden="true">
-            <Layers />
+            W
           </span>
           <span className="wl-sidebar-brand-text">
             <strong>WiseLink</strong>
@@ -151,6 +169,17 @@ const Sidebar: React.FC<SidebarProps> = ({ mobileOpen, onMobileClose }) => {
                 key={item.to}
                 end={item.end}
                 to={globalNavTarget(item.to)}
+                className={({ isActive }) => {
+                  const active =
+                    item.to === '/library'
+                      ? isLibraryRoute
+                      : item.to === '/library?mode=tasks'
+                        ? isTasksRoute
+                        : item.to === '/knowledge'
+                          ? isActive && !isTasksRoute
+                          : isActive;
+                  return `wl-shell-nav-link${active ? ' active' : ''}`;
+                }}
                 aria-label={item.label}
                 title={item.label}
               >
@@ -161,11 +190,18 @@ const Sidebar: React.FC<SidebarProps> = ({ mobileOpen, onMobileClose }) => {
           )}
         </nav>
 
+        <p className="wl-sidebar-quote">
+          把分散资料，
+          <br />
+          转化为可核对的认识。
+        </p>
+
         {hasRouteObject ? (
           <div className="wl-sidebar-object">
             <h3>{objectHeading}</h3>
             <div className="wl-sidebar-object-title" title={routeObjectId}>
-              {objectLabel}
+              <strong>{objectLabel}</strong>
+              {objectCode ? <small>{objectCode}</small> : null}
             </div>
             {objectLinks.length ? (
               <nav
@@ -290,6 +326,26 @@ const Sidebar: React.FC<SidebarProps> = ({ mobileOpen, onMobileClose }) => {
                 )}
               </div>
               <p>{activeEffectHint}</p>
+            </div>
+            <div className="wiselink-settings-row">
+              <h3>环境动态</h3>
+              <button
+                type="button"
+                className="wiselink-settings-motion"
+                aria-pressed={motionPausedByUser}
+                onClick={toggleMotion}
+              >
+                {motionPausedByUser
+                  ? '恢复动态'
+                  : systemReducedMotion
+                    ? '系统减少动态'
+                    : motionEnabled
+                      ? '暂停动态'
+                      : '恢复动态'}
+              </button>
+              <p>
+                系统减少动态设置会自动降低动画；暂停后只保留必要的状态变化。
+              </p>
             </div>
           </div>
         </DialogContent>

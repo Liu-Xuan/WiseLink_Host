@@ -4,7 +4,7 @@ import { StaticRouter } from 'react-router-dom/server';
 import KnowledgeLookupPage from '../../client/src/pages/KnowledgeLookupPage/KnowledgeLookupPage';
 import EngineeringIssueSearch from '../../client/src/features/matter/EngineeringIssueSearch';
 import { exactDocumentSourceRoute, matterDocumentRoute } from '../../client/src/features/matter/matter-navigation';
-import { readingReturnTarget } from '../../client/src/features/matter/reading-return';
+import { readingReturnTarget, knowledgeReadingIdentity } from '../../client/src/features/matter/reading-return';
 
 let mockAuthenticationRequired = false;
 jest.mock('@client/src/app/providers/CurrentUserSessionProvider', () => ({ useCurrentUserSession: () => ({ sessionGeneration: 1, authenticationRequired: mockAuthenticationRequired }) }));
@@ -17,21 +17,30 @@ jest.mock('@client/src/components/ui/select', () => ({ Select: 'select', SelectC
 jest.mock('@lark-apaas/client-toolkit/logger', () => ({ logger: { error: jest.fn() } }));
 jest.mock('@client/src/pages/DocumentParsingPage/jobaid-problem-workspace.css', () => ({}));
 jest.mock('../../client/src/pages/KnowledgeLookupPage/knowledge-lookup.css', () => ({}));
+jest.mock('../../client/src/pages/KnowledgeLookupPage/knowledge-suite.css', () => ({}));
 
-test('knowledge mounts the shared read-only search without requiring a selected Matter or querying units first', () => {
+test('knowledge defaults to saved explanation catalogue without process cards or write actions', () => {
   const html = renderToStaticMarkup(createElement(StaticRouter, { location: '/knowledge?referenceAttemptRef=must-not-run' }, createElement(KnowledgeLookupPage)));
-  expect(html).toContain('只读工程知识检索');
-  expect(html).toContain('knowledge-catalog');
-  expect(html).toContain('知识读取口径');
-  expect(html).toContain('当前与历史范围明确切换');
-  expect(html).toContain('知识详情');
-  expect(html).toContain('工程工作检索结果');
-  expect(html).toContain('原文检索结果');
-  expect(html).toContain('按文档任务与准确版本查询解析单元');
-  expect(html).not.toContain('请先在资料库选择事项');
-  expect(html).not.toContain('正在确认事项范围');
+  expect(html).toContain('已有工程认识');
+  expect(html).toContain('完整工程认识');
+  expect(html).toContain('仅历史工作');
+  expect(html).not.toContain('知识读取口径');
+  expect(html).not.toContain('解析单元');
   expect(html).not.toContain('引用比较处理状态');
-  expect(html).not.toContain('引用并比较本事项');
+});
+
+test('knowledge identity refuses partial, empty and duplicated history pins', () => {
+  for (const query of ['workRef=old', 'subjectKind=WORK_ITEM&subjectId=X&workRef=', 'subjectKind=WORK_ITEM&subjectId=X&workRef=old&workRef=new']) {
+    expect(knowledgeReadingIdentity(new URLSearchParams(query)).state).toBe('invalid');
+    const params = new URLSearchParams({ returnDocumentVersionId: 'DV', returnKnowledgeQuery: query });
+    expect(readingReturnTarget(params, 'DV')).toBeNull();
+  }
+  expect(knowledgeReadingIdentity(new URLSearchParams()).state).toBe('absent');
+  const query = 'kind=works&scope=HISTORICAL&subjectKind=WORK_ITEM&subjectId=X&workRef=old&articleY=123';
+  const params = new URLSearchParams({ returnDocumentVersionId: 'DV', returnKnowledgeQuery: query });
+  expect(readingReturnTarget(params, 'DV')!.route).toContain('workRef=old');
+  expect(readingReturnTarget(params, 'DV')!.route).toContain('articleY=123');
+  expect(readingReturnTarget(params, 'other')).toBeNull();
 });
 
 test('authentication-required knowledge does not retain either result surface', () => {

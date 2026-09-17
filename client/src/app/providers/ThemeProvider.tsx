@@ -4,6 +4,7 @@ import {
   useContext,
   useLayoutEffect,
   useMemo,
+  useEffect,
   useState,
   type ReactNode,
 } from 'react';
@@ -14,14 +15,20 @@ export type WlVisualMode = 'default' | 'ultra' | 'compatible';
 const THEME_STORAGE_KEY = 'wiselink.ui.theme';
 const TRANSPARENCY_STORAGE_KEY = 'wiselink.ui.reduce-transparency';
 const VISUAL_MODE_STORAGE_KEY = 'wiselink.ui.visual-mode';
+const MOTION_STORAGE_KEY = 'wiselink.ui.motion';
 
 interface WlThemeContextValue {
   theme: WlTheme;
   visualMode: WlVisualMode;
   reduceTransparency: boolean;
+  motionEnabled: boolean;
+  motionPausedByUser: boolean;
+  systemReducedMotion: boolean;
+  documentHidden: boolean;
   setVisualMode: (mode: WlVisualMode) => void;
   toggleTheme: () => void;
   toggleTransparency: () => void;
+  toggleMotion: () => void;
 }
 
 const WlThemeContext = createContext<WlThemeContextValue | null>(null);
@@ -62,6 +69,17 @@ function readInitialVisualMode(): WlVisualMode {
   return 'default';
 }
 
+function readInitialMotionPreference(): boolean | null {
+  try {
+    const stored = window.localStorage.getItem(MOTION_STORAGE_KEY);
+    if (stored === 'true') return true;
+    if (stored === 'false') return false;
+    return null;
+  } catch {
+    return null;
+  }
+}
+
 export function WlThemeProvider({ children }: { children: ReactNode }) {
   const [theme, setTheme] = useState<WlTheme>(readInitialTheme);
   const [visualMode, setVisualMode] = useState<WlVisualMode>(
@@ -70,6 +88,35 @@ export function WlThemeProvider({ children }: { children: ReactNode }) {
   const [reduceTransparency, setReduceTransparency] = useState(
     readInitialTransparency,
   );
+  const [motionPreference, setMotionPreference] = useState<boolean | null>(
+    readInitialMotionPreference,
+  );
+  const [systemReducedMotion, setSystemReducedMotion] = useState(
+    () =>
+      typeof window.matchMedia === 'function' &&
+      window.matchMedia('(prefers-reduced-motion: reduce)').matches,
+  );
+  const [documentHidden, setDocumentHidden] = useState(() => document.hidden);
+
+  useEffect(() => {
+    const media =
+      typeof window.matchMedia === 'function'
+        ? window.matchMedia('(prefers-reduced-motion: reduce)')
+        : null;
+    const onPreferenceChange = (event: MediaQueryListEvent) =>
+      setSystemReducedMotion(event.matches);
+    const onVisibilityChange = () => setDocumentHidden(document.hidden);
+    media?.addEventListener?.('change', onPreferenceChange);
+    document.addEventListener('visibilitychange', onVisibilityChange);
+    return () => {
+      media?.removeEventListener?.('change', onPreferenceChange);
+      document.removeEventListener('visibilitychange', onVisibilityChange);
+    };
+  }, []);
+
+  const motionEnabled =
+    !systemReducedMotion && !documentHidden && motionPreference !== false;
+  const motionPausedByUser = motionPreference === false;
 
   useLayoutEffect(() => {
     document.documentElement.dataset.wlTheme = theme;
@@ -83,6 +130,7 @@ export function WlThemeProvider({ children }: { children: ReactNode }) {
 
   useLayoutEffect(() => {
     document.documentElement.dataset.wlVisualMode = visualMode;
+    document.documentElement.dataset.effects = visualMode;
     try {
       window.localStorage.setItem(VISUAL_MODE_STORAGE_KEY, visualMode);
     } catch {
@@ -104,6 +152,22 @@ export function WlThemeProvider({ children }: { children: ReactNode }) {
     }
   }, [reduceTransparency]);
 
+  useLayoutEffect(() => {
+    document.documentElement.dataset.wlMotion = motionEnabled ? 'on' : 'off';
+    try {
+      if (motionPreference === null) {
+        window.localStorage.removeItem(MOTION_STORAGE_KEY);
+      } else {
+        window.localStorage.setItem(
+          MOTION_STORAGE_KEY,
+          String(motionPreference),
+        );
+      }
+    } catch {
+      /* 仅视觉偏好持久化失败，不影响当前会话 */
+    }
+  }, [motionEnabled, motionPreference]);
+
   const toggleTheme = useCallback(() => {
     setTheme((current) => (current === 'dark' ? 'light' : 'dark'));
   }, []);
@@ -112,16 +176,36 @@ export function WlThemeProvider({ children }: { children: ReactNode }) {
     setReduceTransparency((current) => !current);
   }, []);
 
+  const toggleMotion = useCallback(() => {
+    setMotionPreference((current) => (current !== false ? false : true));
+  }, []);
+
   const value = useMemo(
     () => ({
       theme,
       visualMode,
       reduceTransparency,
+      motionEnabled,
+      motionPausedByUser,
+      systemReducedMotion,
+      documentHidden,
       setVisualMode,
       toggleTheme,
       toggleTransparency,
+      toggleMotion,
     }),
-    [reduceTransparency, theme, toggleTheme, toggleTransparency, visualMode],
+    [
+      documentHidden,
+      motionEnabled,
+      motionPausedByUser,
+      reduceTransparency,
+      theme,
+      systemReducedMotion,
+      toggleMotion,
+      toggleTheme,
+      toggleTransparency,
+      visualMode,
+    ],
   );
 
   return (

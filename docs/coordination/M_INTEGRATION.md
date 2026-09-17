@@ -1,5 +1,17 @@
 # M 主控集成交接
 
+## 2026-09-17 Suite 1.1 共享外壳与知识阅读首批
+
+已完成五份补充附件、12 类页面源码及 25 张参考截图审阅，逐页范围与差异落实到 `docs/WISELINK_FRONTEND_SUITE_PLAN_20260917.md`；Goal 已采用 Suite 1.1 全部页面范围，工程态势保留现有已接受双环。源码和参考图审阅不等同逐控件交互复测。
+
+本批代码：共享壳采用 188px 贴边侧栏、60px 顶栏、独立面包屑/准确返回/全屏及新版导航；保留 Router、身份和主题 Provider。搜索进入真实知识页，暂停动态同时响应系统 reduced-motion 和页面隐藏。知识页采用工程认识/来源资料、当前/含历史/仅历史、左侧保存认识列表与右侧完整正文；有界分页目录及精确工作读取沿用保存内容和原授权 reader，不调用模型。工作当前性与 Overall 覆盖分开；最多检查 200 个候选，耗尽明确失败，不伪装完整空页。URL 保存查询、范围、分页、完整工作身份与滚动，拒绝半套/重复身份，取消请求并阻止迟到正文及跨工作滚动污染；准确原文返程已接入。
+
+验证：32 项定向 Jest 检查通过，服务端/客户端类型检查、相关 ESLint/Stylelint、diff check 与客户端构建通过；构建仍有既有旁支 tsconfig 路径和大 chunk 警告。真实本地 PostgreSQL 隔离测试 1/1 通过、0 跳过，覆盖当前/历史与分页 SQL；授权 reader 为测试替身，不能据此声称生产 RLS 验收。Astra 前后端只读复审均接受本批功能范围。
+
+同组件隔离预览使用生产 Layout/Theme/Knowledge 及样式，只替换身份和只读 API 为明确构造样例。最终截图在 1672×1000、1440×1000、390×844、DPR1 下均无 JavaScript 错误和整页横溢；桌面知识面板上边界 y=260.30、列表宽 370px，与本轮目标几何相符。预览位于临时 4182，原 4179 仍是旧 Trinity 隔离预览；不能混用其截图。新批尚未发布，深色、完整动效及真实线上视觉未验收。资料库准确版本短解读仍缺接线，Wiki、Reader、换版、图谱/时间轴和后续页面仍按计划继续，不能把本批称为整套前端完成。
+
+妙搭原前端会话最新只读核对 turn `7686309868802804685` 已完成：云端 `/home/gem/workspace/code`、分支 `codex/wl-frontend-revision-reading-view-20260916`、HEAD `b08cc2d15761431d263842f06a869e959adba360`，tracked 干净且无 stash；Suite 新素材未在云端，只有旧 Trinity 材料。同仓存在其他会话的 worktree/交接和共享 memory，尚无独立并行生成证明。因此未新增云端开发会话或重发开发任务，按已授权方案采用本地文件职责分开开发、独立审查和统一提交。
+
 ## 2026-09-16 跨事项恢复审计发布与工作12闭合
 
 Host补齐精确attempt的只读审计投影：STATUS在原事项/actor及每个参考事项重新授权后，只返回封存的matter revision、base working revision、prior work、trigger、输入、实际交付模型的referenceWorks及其更正通知、保存回执；不返回lease、executionModel、完整任务或模型载荷。Astra两轮发现并关闭继承参考遗漏及旧任务缺referenceWorks兼容；25项单测、server type、源码eslint/diffcheck通过，隔离PG全套6/6通过，含显式/继承引用、问题/Overall通知、撤权拒绝、失败恢复、保存回执及合法历史封存。提交61caffd00cc78b45790d38eaf4f19a6c030a04da（父3b1d462669d7b3b422a53d1259ee636de65d72e6）精确4文件，正常hook及origin/github同名分支SHA一致；release7686084654881278914最终finished并绑定该提交。发布中一度回读旧SHA，终态已纠正，不将中间态当发布完成。app17c是OpenClaw操作目标，不支持代码release；Host发布面仍为full-stack app17b。

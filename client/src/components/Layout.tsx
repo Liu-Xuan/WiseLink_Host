@@ -22,13 +22,39 @@ const Layout = () => {
 function LayoutChrome() {
   const location = useLocation();
   const [mobileNavOpen, setMobileNavOpen] = useState(false);
+  const [immersive, setImmersive] = useState(false);
 
   useEffect(() => {
     setMobileNavOpen(false);
-  }, [location.pathname]);
+  }, [location.pathname, location.search]);
+
+  useEffect(() => {
+    const onKeyDown = (event: KeyboardEvent) => {
+      const target = event.target as HTMLElement | null;
+      if (event.key === 'Escape') {
+        setMobileNavOpen(false);
+        setImmersive(false);
+        return;
+      }
+      if (
+        event.key === '/' &&
+        target &&
+        !['INPUT', 'TEXTAREA', 'SELECT'].includes(target.tagName) &&
+        !target.isContentEditable
+      ) {
+        event.preventDefault();
+        document.getElementById('global-search')?.focus();
+      }
+    };
+    document.addEventListener('keydown', onKeyDown);
+    return () => document.removeEventListener('keydown', onKeyDown);
+  }, []);
 
   return (
-    <div className="wiselink-app-shell wl-environment">
+    <div
+      className={`wiselink-app-shell wl-environment${immersive ? ' is-immersive' : ''}`}
+      data-motion-state={immersive ? 'immersive' : 'normal'}
+    >
       <UniversalLink to="#main-content" className="wiselink-skip-link">
         跳转到主内容
       </UniversalLink>
@@ -44,6 +70,8 @@ function LayoutChrome() {
           search={location.search}
           mobileNavOpen={mobileNavOpen}
           onToggleMobile={() => setMobileNavOpen((open) => !open)}
+          immersive={immersive}
+          onToggleImmersive={() => setImmersive((open) => !open)}
         />
 
         <div

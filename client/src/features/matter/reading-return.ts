@@ -8,6 +8,38 @@ const LIBRARY_FILTERS = [
   'fleetModel',
 ] as const;
 
+/** URL-only read state; never accept an arbitrary return URL or a write intent. */
+export function knowledgeReadingIdentity(params: URLSearchParams):
+  | { state: 'absent' | 'invalid' }
+  | { state: 'ok'; identity: { subjectKind: 'WORK_ITEM' | 'ENGINEERING_MATTER'; subjectId: string; workRef: string } } {
+  const keys = ['subjectKind', 'subjectId', 'workRef'];
+  if (keys.every(key => !params.has(key))) return { state: 'absent' };
+  if (keys.some(key => params.getAll(key).length !== 1)) return { state: 'invalid' };
+  const subjectKind = params.get('subjectKind');
+  const subjectId = params.get('subjectId') ?? '', workRef = params.get('workRef') ?? '';
+  if ((subjectKind !== 'WORK_ITEM' && subjectKind !== 'ENGINEERING_MATTER') ||
+    [subjectId, workRef].some(value => !value.trim() || value !== value.trim() || value.length > 255 || /[\u0000-\u001f\u007f]/u.test(value)))
+    return { state: 'invalid' };
+  return { state: 'ok', identity: { subjectKind, subjectId, workRef } };
+}
+
+export function knowledgeReadingParams(params: URLSearchParams): URLSearchParams {
+  const result = new URLSearchParams();
+  for (const key of ['query', 'subjectKind', 'subjectId', 'workRef', 'scope', 'kind', 'after', 'listY', 'articleY']) {
+    if (params.getAll(key).length !== 1) continue;
+    const value = params.get(key) ?? '';
+    const limit = key === 'after' ? 2400 : key === 'query' ? 200 : 255;
+    if (value.length > limit || /[\u0000-\u001f\u007f]/u.test(value)) continue;
+    if (key === 'scope' && !['CURRENT', 'ALL', 'HISTORICAL'].includes(value)) continue;
+    if (key === 'kind' && !['works', 'sources'].includes(value)) continue;
+    if (key === 'subjectKind' && !['WORK_ITEM', 'ENGINEERING_MATTER'].includes(value)) continue;
+    if ((key === 'listY' || key === 'articleY') && !/^\d{1,7}$/.test(value)) continue;
+    if (value) result.set(key, value);
+  }
+  result.sort();
+  return result;
+}
+
 function identifier(value: string | null): string {
   const text = value?.trim() ?? '';
   return text.length <= 512 && !/[\u0000-\u001f\u007f]/u.test(text) ? text : '';
@@ -341,6 +373,7 @@ export function readingReturnTarget(
 ): { route: string; label: string } | null {
   const keys = [
     'returnMatterId',
+    'returnKnowledgeQuery',
     'returnLibraryQuery',
     'returnRevisionQuery',
     'returnActivityQuery',
@@ -368,6 +401,13 @@ export function readingReturnTarget(
   )
     return null;
   const matterId = identifier(params.get('returnMatterId'));
+  if (params.has('returnKnowledgeQuery')) {
+    const query = params.get('returnKnowledgeQuery');
+    if (!binding || !query || query.length > 4096) return null;
+    const nested = new URLSearchParams(query);
+    if (knowledgeReadingIdentity(nested).state === 'invalid') return null;
+    return { route: `/knowledge?${knowledgeReadingParams(nested)}`, label: '返回工程知识' };
+  }
   if (matterId) {
     const panel = params.get('returnMatterPanel');
     const workRef = identifier(params.get('returnMatterWorkRef'));

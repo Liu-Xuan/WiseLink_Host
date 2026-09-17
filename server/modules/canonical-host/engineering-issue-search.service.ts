@@ -4,6 +4,7 @@ import {
   Injectable,
   NotFoundException,
   Optional,
+  ServiceUnavailableException,
 } from '@nestjs/common';
 import {
   DRIZZLE_DATABASE,
@@ -16,6 +17,11 @@ import type {
   EngineeringIssueSearchResponse,
   EngineeringIssueReferenceReceipt,
   EngineeringIssueReferenceStatus,
+  EngineeringKnowledgeIdentity,
+  EngineeringKnowledgeScope,
+  EngineeringKnowledgeEntry,
+  EngineeringKnowledgePage,
+  EngineeringKnowledgeRead,
 } from '@shared/engineering-issue-search.interface';
 import { z } from 'zod/v4';
 import { MatterActionAttemptService } from './matter-action-attempt.service';
@@ -51,6 +57,106 @@ export class EngineeringIssueSearchService {
     @Optional() @Inject(CANONICAL_SERVICE_SCOPE_AUTHORIZATION)
     private readonly serviceAuthorization?: CanonicalServiceScopeAuthorizationPort,
   ) {}
+
+  /** Browses saved explanations without generating text or requiring a keyword. */
+  async catalogue(query: string, scope: EngineeringKnowledgeScope, after: string | undefined,
+    actor: CanonicalHostActor): Promise<EngineeringKnowledgePage> {
+    this.requireActor(actor);
+    if (typeof query !== 'string' || query.length > 200 || !['CURRENT', 'ALL', 'HISTORICAL'].includes(scope))
+      throw new BadRequestException('ENGINEERING_KNOWLEDGE_QUERY_INVALID');
+    const search = query.trim();
+    let cursor: EngineeringKnowledgeIdentity | undefined;
+    if (after) {
+      try {
+        if (after.length > 2400) throw new Error();
+        const decoded = JSON.parse(Buffer.from(after, 'base64url').toString('utf8'));
+        if (decoded.search !== search || decoded.scope !== scope) throw new Error();
+        cursor = knowledgeIdentitySchema.parse(decoded.identity);
+      } catch { throw new BadRequestException('ENGINEERING_KNOWLEDGE_CURSOR_INVALID'); }
+    }
+    const entries: EngineeringKnowledgeEntry[] = [];
+    let batches = 0;
+    // Only authorized entries count toward the page and continuation. Each batch
+    // loads identities only; the existing exact reader checks retained sources.
+    while (entries.length < 21) {
+      if (batches++ === 5) throw new ServiceUnavailableException('ENGINEERING_KNOWLEDGE_SCAN_LIMIT');
+      const rows = await this.db.execute<EngineeringKnowledgeIdentity & { current: boolean }>(sql`
+        WITH works AS (
+          SELECT 'WORK_ITEM'::text AS kind, w.work_item_id AS subject_id,
+            w.assessment_work_revision_id AS work_ref, w.content_json::jsonb AS content,
+            NOT EXISTS (SELECT 1 FROM assessment_work_revision newer WHERE newer.tenant_id=w.tenant_id
+              AND newer.work_item_id=w.work_item_id AND newer.work_revision>w.work_revision) AS current
+          FROM assessment_work_revision w
+          WHERE w.tenant_id=${actor.tenantId} AND w.created_by_user_id=${actor.userId}
+          UNION ALL
+          SELECT 'ENGINEERING_MATTER', w.matter_id, w.matter_work_revision_id,
+            w.state_json::jsonb->'problemWork',
+            NOT EXISTS (SELECT 1 FROM engineering_matter_work_revision newer WHERE newer.tenant_id=w.tenant_id
+              AND newer.matter_id=w.matter_id AND newer.working_revision>w.working_revision)
+          FROM engineering_matter_work_revision w
+          WHERE w.tenant_id=${actor.tenantId} AND w.created_by_user_id=${actor.userId}
+        )
+        SELECT kind AS "subjectKind", subject_id AS "subjectId", work_ref AS "workRef", current
+        FROM works
+        WHERE content IS NOT NULL AND content <> 'null'::jsonb
+          AND (${scope}='ALL' OR (${scope}='CURRENT' AND current) OR (${scope}='HISTORICAL' AND NOT current))
+          AND (${search}='' OR position(lower(${search}) in lower(content::text))>0)
+          ${cursor ? sql`AND (kind,subject_id,work_ref)>(${cursor.subjectKind},${cursor.subjectId},${cursor.workRef})` : sql``}
+        ORDER BY kind,subject_id,work_ref LIMIT 40`);
+      for (const row of rows) {
+        try {
+          const revision = await this.loadWork({ ...row, issueKey: '' }, actor);
+          entries.push(this.knowledgeFromWork(row, revision, row.current).entry);
+          if (entries.length === 21) break;
+        } catch (error) { if (!isAccessUnavailable(error)) throw error; }
+      }
+      if (rows.length < 40 || entries.length === 21) break;
+      cursor = rows[rows.length - 1];
+    }
+    const page = entries.slice(0, 20);
+    const last = page[page.length - 1];
+    return { entries: page, nextCursor: entries.length > 20 && last ? Buffer.from(JSON.stringify({
+      search, scope, identity: { subjectKind: last.subjectKind, subjectId: last.subjectId, workRef: last.workRef },
+    })).toString('base64url') : null };
+  }
+
+  async readKnowledge(identity: EngineeringKnowledgeIdentity, actor: CanonicalHostActor): Promise<EngineeringKnowledgeRead> {
+    this.requireActor(actor);
+    const parsed = knowledgeIdentitySchema.safeParse(identity);
+    if (!parsed.success) throw new BadRequestException('ENGINEERING_KNOWLEDGE_IDENTITY_INVALID');
+    const exact = parsed.data;
+    const revision = await this.loadWork({ ...exact, issueKey: '' }, actor);
+    const rows = exact.subjectKind === 'WORK_ITEM'
+      ? await this.db.execute<{ current: boolean }>(sql`SELECT NOT EXISTS (
+          SELECT 1 FROM assessment_work_revision newer WHERE newer.tenant_id=w.tenant_id
+          AND newer.work_item_id=w.work_item_id AND newer.work_revision>w.work_revision) AS current
+          FROM assessment_work_revision w WHERE w.tenant_id=${actor.tenantId}
+          AND w.work_item_id=${exact.subjectId} AND w.assessment_work_revision_id=${exact.workRef}`)
+      : await this.db.execute<{ current: boolean }>(sql`SELECT NOT EXISTS (
+          SELECT 1 FROM engineering_matter_work_revision newer WHERE newer.tenant_id=w.tenant_id
+          AND newer.matter_id=w.matter_id AND newer.working_revision>w.working_revision) AS current
+          FROM engineering_matter_work_revision w WHERE w.tenant_id=${actor.tenantId}
+          AND w.matter_id=${exact.subjectId} AND w.matter_work_revision_id=${exact.workRef}`);
+    if (!rows.length) throw new NotFoundException('ENGINEERING_KNOWLEDGE_WORK_NOT_FOUND');
+    return this.knowledgeFromWork(exact, revision, rows[0].current);
+  }
+
+  private knowledgeFromWork(identity: EngineeringKnowledgeIdentity, revision: SavedIssueWork,
+    current: boolean): EngineeringKnowledgeRead {
+    const content = 'content' in revision ? revision.content : revision.state.problemWork;
+    const reading = 'content' in revision ? jobAidReadingResult(revision) : revision.state.substantiveResult;
+    if (!content || !reading) throw new NotFoundException('ENGINEERING_KNOWLEDGE_WORK_NOT_FOUND');
+    return {
+      entry: { subjectKind: identity.subjectKind, subjectId: identity.subjectId, workRef: identity.workRef,
+        workRevision: 'workRevision' in revision ? revision.workRevision : revision.workingRevision,
+        current, headline: content.headline, listBrief: content.listBrief,
+        createdAt: revision.createdAt, overviewStatus: content.overviewStatus },
+      content, reading: { ...reading, evidence: content.evidence },
+      ...('state' in revision ? { correctionNotices: revision.correctionNotices,
+        overviewCorrectionNotices: revision.overviewCorrectionNotices,
+        referenceWorkNotices: revision.referenceWorkNotices, overviewSourceWork: revision.overviewSourceWork } : {}),
+    };
+  }
 
   async reference(input: unknown, actor: CanonicalHostActor): Promise<EngineeringIssueReferenceReceipt> {
     this.requireActor(actor);
@@ -402,3 +508,9 @@ function isAccessUnavailable(error: unknown): boolean {
 function identifierArray(values: readonly string[]) {
   return sql`ARRAY[${sql.join(values.map(value => sql`${value}`), sql`, `)}]::text[]`;
 }
+
+const knowledgeIdentitySchema = z.object({
+  subjectKind: z.enum(['WORK_ITEM', 'ENGINEERING_MATTER']),
+  subjectId: z.string().min(1).max(255),
+  workRef: z.string().min(1).max(255),
+}).strict();

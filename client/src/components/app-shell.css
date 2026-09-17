@@ -4,9 +4,9 @@
  * ============================================================ */
 
 .wiselink-app-shell {
-  --wl-shell-sidebar: 202px;
+  --wl-shell-sidebar: 188px;
   --wl-shell-page-pad: 24px;
-  --wl-shell-topbar: 58px;
+  --wl-shell-topbar: 60px;
   --wl-shell-bg: #edeeef;
   --wl-shell-ink: #27292c;
   --wl-shell-dim: #555b62;
@@ -56,6 +56,15 @@ html[data-wl-theme='dark'] .wiselink-app-shell {
   min-width: 0;
   min-height: 0;
   flex-direction: column;
+}
+
+.wiselink-app-shell.is-immersive {
+  grid-template-columns: minmax(0, 1fr);
+}
+
+.wiselink-app-shell.is-immersive .wl-sidebar,
+.wiselink-app-shell.is-immersive .wl-topbar {
+  display: none;
 }
 
 .wiselink-app-body {
@@ -114,6 +123,16 @@ html[data-wl-theme='dark'] .wiselink-app-shell {
   white-space: nowrap;
 }
 
+.wl-sidebar-quote {
+  position: relative;
+  margin: auto 8px 2px;
+  padding: 10px 10px 10px 12px;
+  border-left: 2px solid color-mix(in srgb, var(--wl-accent) 35%, transparent);
+  color: var(--wl-shell-muted);
+  font-size: 11px;
+  line-height: 1.8;
+}
+
 .wl-sidebar-close {
   display: none;
   margin-left: auto;
@@ -136,6 +155,12 @@ html[data-wl-theme='dark'] .wiselink-app-shell {
   display: block;
   width: 21px;
   height: 21px;
+}
+
+.wiselink-app-mark {
+  font-size: 18px;
+  font-weight: 750;
+  letter-spacing: -0.08em;
 }
 
 .wl-sidebar-nav,
@@ -216,8 +241,25 @@ html[data-wl-theme='dark'] .wiselink-app-shell {
 }
 
 .wl-sidebar-object-title {
+  display: grid;
+  min-width: 0;
+  gap: 2px;
   overflow: hidden;
   padding: 0 12px;
+  color: var(--wl-muted);
+}
+
+.wl-sidebar-object-title strong {
+  overflow: hidden;
+  color: var(--wl-ink);
+  font-size: 12px;
+  font-weight: 600;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.wl-sidebar-object-title small {
+  overflow: hidden;
   color: var(--wl-muted);
   font-family: var(--wl-mono);
   font-size: 10px;
@@ -306,6 +348,111 @@ html[data-wl-theme='dark'] .wiselink-app-shell {
   gap: 10px;
   margin: 10px 0 0;
   padding: 0 var(--wl-shell-page-pad);
+}
+
+.wl-global-search {
+  display: flex;
+  min-width: 180px;
+  max-width: 560px;
+  height: 36px;
+  flex: 1;
+  align-items: center;
+  gap: 9px;
+  padding: 0 11px;
+  border: 1px solid var(--wl-shell-line);
+  border-radius: 10px;
+  background: var(--wl-shell-glass);
+  color: var(--wl-shell-muted);
+  box-shadow: inset 0 1px 0 var(--wl-shell-edge);
+}
+
+.wl-global-search svg {
+  width: 16px;
+  height: 16px;
+  flex: 0 0 16px;
+}
+
+.wl-global-search input {
+  min-width: 0;
+  flex: 1;
+  border: 0;
+  outline: 0;
+  background: transparent;
+  color: var(--wl-shell-ink);
+  font: inherit;
+  font-size: 12px;
+}
+
+.wl-global-search input::placeholder {
+  color: var(--wl-shell-muted);
+}
+
+.wl-global-search kbd {
+  min-width: 20px;
+  padding: 2px 5px;
+  border: 1px solid var(--wl-shell-line);
+  border-radius: 5px;
+  color: var(--wl-shell-muted);
+  font-size: 10px;
+  text-align: center;
+}
+
+.wl-pagebar {
+  z-index: 35;
+  display: flex;
+  min-height: 45px;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 0 var(--wl-shell-page-pad);
+  border-bottom: 1px solid var(--wl-shell-line);
+  background: color-mix(in srgb, var(--wl-shell-bg) 88%, transparent);
+}
+
+.wl-pagebar-breadcrumb,
+.wl-pagebar-actions {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  gap: 8px;
+}
+
+.wl-pagebar-back,
+.wl-pagebar-action {
+  display: inline-flex;
+  min-height: 32px;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  border: 1px solid var(--wl-shell-line);
+  border-radius: 8px;
+  background: var(--wl-shell-glass);
+  color: var(--wl-shell-dim);
+  cursor: pointer;
+  font: inherit;
+  font-size: 11px;
+}
+
+.wl-pagebar-back {
+  width: 32px;
+  flex: 0 0 32px;
+}
+
+.wl-pagebar-action {
+  padding: 0 10px;
+}
+
+.wl-pagebar-back:hover,
+.wl-pagebar-action:hover {
+  border-color: var(--wl-shell-active);
+  background: var(--wl-shell-hover);
+  color: var(--wl-shell-ink);
+}
+
+.wl-pagebar-back svg,
+.wl-pagebar-action svg {
+  width: 15px;
+  height: 15px;
 }
 
 .wl-topbar-toggle {
@@ -511,6 +658,17 @@ select:focus-visible {
   box-shadow: var(--wl-shadow-1);
 }
 
+.wiselink-settings-motion {
+  min-height: 32px;
+  padding: 6px 10px;
+  border: 1px solid var(--wl-border);
+  border-radius: 8px;
+  background: var(--wl-glass-soft);
+  color: var(--wl-ink);
+  cursor: pointer;
+  font-size: 12px;
+}
+
 /* ---------- 响应式 ---------- */
 
 @media (max-width: 1439px) {
@@ -550,6 +708,7 @@ select:focus-visible {
   }
   .wl-sidebar-brand-text,
   .wl-sidebar-group-label,
+  .wl-sidebar-quote,
   .wl-sidebar-nav a span,
   .wl-sidebar-secondary a span,
   .wl-sidebar-footer button span,
@@ -596,6 +755,9 @@ select:focus-visible {
     margin: 8px 0 22px;
     gap: 7px;
   }
+  .wl-sidebar-quote {
+    display: none;
+  }
   .wl-sidebar-brand-text strong {
     font-size: 15px;
   }
@@ -631,10 +793,30 @@ select:focus-visible {
   .wiselink-app-body {
     padding-top: 12px;
   }
+
+  .wl-global-search {
+    max-width: none;
+  }
+
+  .wl-pagebar {
+    min-height: 42px;
+  }
+
+  .wl-pagebar-action span {
+    display: none;
+  }
 }
 
 html[data-wl-visual-mode='ultra'] .wiselink-app-shell {
   --wl-shell-blur: 30px;
+}
+
+html[data-wl-motion='off'] *,
+html[data-wl-motion='off'] *::before,
+html[data-wl-motion='off'] *::after {
+  animation: none !important;
+  transition: none !important;
+  scroll-behavior: auto !important;
 }
 html[data-wl-visual-mode='compatible'] .wl-sidebar,
 html[data-wl-transparency='reduced'] .wl-sidebar {
@@ -671,3 +853,230 @@ html[data-effects='ultra'] .wl-glass-nav {
     transition-duration: 0.01ms !important;
   }
 }
+
+/* Suite 1.1 shell geometry. These overrides keep Trinity page internals
+ * independent while matching the shared navigation frame. */
+.wiselink-app-shell {
+  --wl-shell-sidebar: 188px;
+  --wl-shell-topbar: 60px;
+  --wl-shell-bg: #f4f6f9;
+  --wl-shell-ink: #1c2938;
+  --wl-shell-dim: #55657b;
+  --wl-shell-muted: #7d8ba1;
+  --wl-shell-line: #e3e9f0;
+  --wl-shell-hover: color-mix(in srgb, #367ad8 6%, transparent);
+  --wl-shell-active: color-mix(in srgb, #367ad8 11%, transparent);
+  --wl-shell-glass: rgb(247 250 254 / 80%);
+  --wl-shell-edge: #fff;
+  --wl-shell-shadow: 0 10px 32px rgb(47 69 97 / 6%);
+  --wl-shell-blur: 20px;
+}
+
+html[data-wl-theme='dark'] .wiselink-app-shell {
+  --wl-shell-bg: #181a1e;
+  --wl-shell-ink: #edeef2;
+  --wl-shell-dim: #b8bfca;
+  --wl-shell-muted: #858e9c;
+  --wl-shell-line: #353a43;
+  --wl-shell-hover: color-mix(in srgb, #80a7eb 7%, transparent);
+  --wl-shell-active: color-mix(in srgb, #80a7eb 12%, transparent);
+  --wl-shell-glass: rgb(36 39 44 / 86%);
+  --wl-shell-edge: #46515f;
+  --wl-shell-shadow: 0 12px 35px rgb(0 0 0 / 13%);
+}
+
+.wiselink-app-shell .wl-sidebar {
+  margin: 0;
+  padding: 22px 12px 18px;
+  border: 0;
+  border-right: 1px solid var(--wl-shell-line);
+  border-radius: 0;
+  box-shadow: none;
+  background: linear-gradient(145deg, var(--wl-shell-glass), transparent 95%);
+}
+
+.wiselink-app-shell .wiselink-app-mark {
+  background: transparent;
+  color: #209ca9;
+  box-shadow: none;
+  font-size: 32px;
+  font-weight: 850;
+  letter-spacing: -0.18em;
+}
+
+.wiselink-app-shell .wl-sidebar-brand {
+  margin: 0 6px 30px;
+  gap: 7px;
+}
+
+.wiselink-app-shell .wl-sidebar-brand-text strong {
+  font-size: 23px;
+  letter-spacing: -0.03em;
+}
+
+.wiselink-app-shell .wl-topbar {
+  height: 60px;
+  min-height: 60px;
+  margin: 0;
+  padding: 10px 20px;
+  gap: 17px;
+  border-bottom: 1px solid var(--wl-shell-line);
+  background: var(--wl-shell-glass);
+  backdrop-filter: blur(20px);
+}
+
+.wiselink-app-shell .wl-global-search {
+  max-width: 730px;
+}
+
+.wiselink-app-shell .wl-pagebar {
+  min-height: 44px;
+  padding: 7px 18px;
+  border-bottom: 0;
+}
+
+.wiselink-app-shell .wiselink-app-body {
+  padding: 0 16px 15px;
+}
+
+@media (max-width: 1030px) {
+  .wiselink-app-shell {
+    --wl-shell-sidebar: 65px;
+    --wl-shell-page-pad: 16px;
+  }
+
+  .wiselink-app-shell .wl-sidebar {
+    align-items: center;
+    gap: 25px;
+    overflow: visible;
+    padding: 20px 8px 12px;
+  }
+
+  .wiselink-app-shell .wl-sidebar-brand {
+    justify-content: center;
+    margin: 0 0 23px;
+  }
+
+  .wiselink-app-shell .wl-sidebar-brand-text,
+  .wiselink-app-shell .wl-sidebar-group-label,
+  .wiselink-app-shell .wl-sidebar-quote,
+  .wiselink-app-shell .wl-sidebar-nav a span,
+  .wiselink-app-shell .wl-sidebar-secondary a span,
+  .wiselink-app-shell .wl-sidebar-footer button span,
+  .wiselink-app-shell .wl-sidebar-object {
+    display: none;
+  }
+
+  .wiselink-app-shell .wl-sidebar-nav a,
+  .wiselink-app-shell .wl-sidebar-secondary a,
+  .wiselink-app-shell .wl-sidebar-footer button {
+    width: 43px;
+    justify-content: center;
+    padding: 11px;
+  }
+
+  .wiselink-app-shell .wl-sidebar-footer {
+    width: 43px;
+  }
+
+  .wiselink-app-shell .wl-topbar {
+    padding-inline: 15px;
+    gap: 10px;
+  }
+
+  .wiselink-app-shell .wl-topbar-item,
+  .wiselink-app-shell .top-user {
+    display: none;
+  }
+}
+
+@media (max-width: 760px) {
+  .wiselink-app-shell {
+    --wl-shell-sidebar: 0px;
+    --wl-shell-page-pad: 10px;
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .wiselink-app-shell .wl-sidebar {
+    display: none;
+  }
+
+  .wiselink-app-shell .wl-sidebar.is-open {
+    position: fixed;
+    inset: 60px auto 0 0;
+    z-index: 60;
+    display: flex;
+    width: 215px;
+    align-items: stretch;
+    margin: 0;
+    padding: 18px 12px;
+    border-right: 1px solid var(--wl-shell-line);
+    background: var(--wl-shell-bg);
+    box-shadow: 15px 0 35px rgb(16 33 55 / 15%);
+  }
+
+  .wiselink-app-shell .wl-sidebar.is-open .wl-sidebar-brand-text,
+  .wiselink-app-shell .wl-sidebar.is-open .wl-sidebar-group-label,
+  .wiselink-app-shell .wl-sidebar.is-open .wl-sidebar-quote,
+  .wiselink-app-shell .wl-sidebar.is-open .wl-sidebar-nav a span,
+  .wiselink-app-shell .wl-sidebar.is-open .wl-sidebar-secondary a span,
+  .wiselink-app-shell .wl-sidebar.is-open .wl-sidebar-footer button span,
+  .wiselink-app-shell .wl-sidebar.is-open .wl-sidebar-object {
+    display: grid;
+  }
+
+  .wiselink-app-shell .wl-sidebar.is-open .wl-sidebar-brand-text {
+    display: grid;
+  }
+
+  .wiselink-app-shell .wl-sidebar.is-open .wl-sidebar-quote {
+    display: block;
+  }
+
+  .wiselink-app-shell .wl-sidebar.is-open .wl-sidebar-brand {
+    justify-content: flex-start;
+    margin: 8px 0 22px;
+  }
+
+  .wiselink-app-shell .wl-sidebar.is-open .wl-sidebar-nav a,
+  .wiselink-app-shell .wl-sidebar.is-open .wl-sidebar-secondary a,
+  .wiselink-app-shell .wl-sidebar.is-open .wl-sidebar-footer button {
+    width: auto;
+    justify-content: flex-start;
+  }
+
+  .wiselink-app-shell .wl-topbar {
+    height: 58px;
+    min-height: 58px;
+    padding: 9px 12px;
+    gap: 8px;
+  }
+
+  .wiselink-app-shell .wl-topbar-toggle {
+    display: inline-flex;
+  }
+
+  .wiselink-app-shell .wl-global-search {
+    min-width: 0;
+    max-width: none;
+    padding-inline: 8px;
+  }
+
+  .wiselink-app-shell .wl-global-search kbd {
+    display: none;
+  }
+
+  .wiselink-app-shell .wl-pagebar {
+    min-height: 45px;
+    padding: 6px 11px;
+  }
+
+  .wiselink-app-shell .wiselink-app-body {
+    padding: 0 10px 10px;
+  }
+}
+
+/* Suite navigation starts directly below the brand; labels remain in aria. */
+.wiselink-app-shell .wl-sidebar-nav > .wl-sidebar-group-label{display:none}
+.wiselink-app-shell .wl-sidebar-nav a.active{color:#367ad8}
+html[data-wl-theme="dark"] .wiselink-app-shell .wl-sidebar-nav a.active{color:#80a7eb}
