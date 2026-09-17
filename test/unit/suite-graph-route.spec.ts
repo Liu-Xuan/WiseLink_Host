@@ -21,6 +21,11 @@ it('opens exact work and exact original source from graph actions', () => {
   render();
   mockProps.onOpenWiki!();
   expect(mockNavigate.mock.calls.at(-1)![0]).toContain('workRef=test-working-3');
+  mockProps.onOpenProcess!();
+  const processRoute = new URL(mockNavigate.mock.calls.at(-1)![0], 'https://example.test');
+  expect(processRoute.pathname).toBe('/matters/ui-test-matter/process');
+  expect(processRoute.searchParams.get('workRef')).toBe('test-working-3');
+  expect(new URLSearchParams(processRoute.searchParams.get('returnGraphQuery')!).get('matterId')).toBe('ui-test-matter');
   mockProps.onLocateEvidence!({kind: 'DOCUMENT_PASSAGE', evidenceRef: 'e1', title: '原文', versionLabel: 'R1', excerpt: '条件', workItemId: null, documentVersionId: 'old-version', sourceRefId: 'source-a', locator: JSON.stringify({parseRunId: 'old-run', sourceRefId: 'source-a'})});
   const route = new URL(mockNavigate.mock.calls.at(-1)![0], 'https://example.test');
   expect(route.pathname).toBe('/document-versions/old-version');

@@ -5,6 +5,7 @@ import DialoguePage from './pages/DialoguePage';
 import Layout from './components/Layout';
 import WorkItemOverviewPage from './features/workitem/WorkItemOverviewPage';
 import EngineeringMatterPage from './features/matter/EngineeringMatterPage';
+import MatterProblemAnalysisPage from './features/matter/MatterProblemAnalysisPage';
 import EngineeringSituationPage from './pages/EngineeringSituationPage/EngineeringSituationPage';
 import EngineeringTimelinePage from './pages/EngineeringTimelinePage/EngineeringTimelinePage';
 import DocumentParsingPage from './pages/DocumentParsingPage/DocumentParsingPage';
@@ -52,6 +53,7 @@ const RoutesComponent = () => {
         <Route path="document-versions/:documentVersionId/activities" element={<DocumentActivityReadingPage />} />
         <Route path="document-versions/:documentVersionId" element={<DocumentVersionReadingPage />} />
         <Route path="matters/:matterId" element={<EngineeringMatterPage />} />
+        <Route path="matters/:matterId/process" element={<MatterProblemAnalysisPage />} />
         <Route path="matters/:matterId/posture" element={<EngineeringSituationPage />} />
         <Route
           path="work-items/:workItemId"

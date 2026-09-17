@@ -92,7 +92,7 @@ export function buildMatterObjectContext(
     routes: {
       overview,
       workspace: overview,
-      process: overview,
+      process: `${overview}/process${working.current ? `?${new URLSearchParams({workRef: working.current.matterWorkRevisionId})}` : ''}`,
       jobAid: overview,
       review: `${overview}?panel=review`,
       history: overview,

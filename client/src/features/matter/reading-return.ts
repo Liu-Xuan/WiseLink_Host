@@ -500,6 +500,7 @@ export function readingReturnTarget(
     }
     if (params.has('returnMatterGraphQuery')) {
       const raw = params.get('returnMatterGraphQuery')!;
+      if (workRef) query.set('workRef', workRef);
       query.set('returnGraphQuery', raw);
       query.set('returnGraphTargetMatterId', matterId);
       if (workRef) query.set('returnGraphTargetWorkRef', workRef);
