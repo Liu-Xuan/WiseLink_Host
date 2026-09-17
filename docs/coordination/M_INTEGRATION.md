@@ -1417,3 +1417,15 @@ F3 实现提交 `d0009e6958bb18f6877e4b6d6701bca09769965e`（父提交 `9362b476
 Astra 首轮复审发现并闭合三项实码问题：单年月份刻度偏移一月、未固定候选的迟到发现会覆盖用户刚切换的窗口、活动详情入口会在读取后静默删除非法窗口。修正后 7 个相关 Jest suite 共 91 项、client typecheck、定向 ESLint/CSS stylelint、client production build、完整 precommit 与 diff check 均通过；Astra 最终准入。两个提交已分别以普通非强制快进同步到 origin/github 同名 `codex/wl31-r09-master-handoff-20260903`，两端均回读 `d0009e6958bb18f6877e4b6d6701bca09769965e`。
 
 Host release `7686289702877760745` 已 `finished`，精确 `commit_id=d0009e6958bb18f6877e4b6d6701bca09769965e`，`error_logs=[]`。这证明交接协议和 F3 代码已技术发布；本轮未取得登录态生产页面的视觉与真实内容往返读回，不能据此宣布线上视觉验收或跨版本活动身份已经接通。系统取得时间、跨版本同一活动身份及其他业务泳道仍以当前合同未提供为准。
+
+## 2026-09-17：Trinity F4 已保存复看条件与更正保存引用一致性
+
+前端原妙搭会话按固化交接协议交回 F4 补丁：原 patch 17,305 字节、SHA-256 `f8254f47dc6c7eeb20d378f635aa4b284c929babe655c5fd6af862730c35fc8e`，gzip payload 4,729 字节、SHA-256 `ac4e999e76da4de3dbd0537bb06ed4302ce36b185b614219ebb24d44356a117d`。声明的 6 个文件与实际 diff 一致，本机在精确基线 `64f85201f0ab093fe47c5ed1d715f85fd2272585` 上通过 `git apply --check --whitespace=error-all` 后才应用和审查；云端口头测试结果没有代替本地验收。
+
+工程态势的“改进与复看”现在逐项读取当前已保存工作的 `reviewConditions`，保留条件正文、触发口径、依据引用标识和准确 `matterWorkRevisionId`，并可打开所属工作修订。`undefined`、`null` 和空数组分别保留未投影、没有当前保存工作、当前工作未保存复看条件的差异。该读取没有改变 `activeStages`、事件、事项数、生命周期覆盖或状态推导；页面明确把条件保持为候选，不判断已触发、逾期或已经形成正式改进。现行 Host 仍没有计划与准备、实施与记录、效果与验证的正式记录合同，本批没有用样例或页面位置补造这些状态。
+
+后端同时修正针对性更正的保存读取差异：旧实现只从完成结果的 `modelOutput` 投影 `correctedWorkRef`，导致 SAVE 已持久成功而 FINISH 随后失败或取消时，历史工作、Overall、检索及后续引用看不到真实保存工作。新实现只接受同租户、事项、actor、attempt 的实际 `engineering_matter_work_revision`，并要求匹配的 `MATTER_JOBAID_WORK_SAVED` 持久回执；真实保存优先于后续结果文本。`unchanged` 也只读取与目标 `workRef`/revision 精确匹配的 `MATTER_CORRECTION_UNCHANGED` 回执，不再相信模型输出。attempt 的实际失败或取消状态仍保留，未修改旧工作正文、Overall、正式采用或审批。
+
+定向前后端 Jest、client/server typecheck、受影响源码 ESLint、client production build、完整 precommit 和 diff check 均通过。另在本机隔离 PostgreSQL 实例上执行真实 repository 路径，覆盖“保存成功后 FINISH 失败仍读到准确新工作”“结果声称 unchanged 不能覆盖真实保存”“只有伪造 modelOutput 且没有保存行/回执时不得产生 correctedWorkRef”，目标用例 1/1 通过；该隔离实例随后正常停止，不涉及线上业务数据。
+
+后端提交 `118903524ca81e40b853bcfdcf951b827c952e82`（父提交 `64f85201f0ab093fe47c5ed1d715f85fd2272585`）和前端提交 `f1cfb43147885d96476fb7acad91c7ff80e1a5e1`（父提交 `118903524ca81e40b853bcfdcf951b827c952e82`）已分别按精确文件范围提交；origin/github 同名开发分支均回读 `f1cfb43147885d96476fb7acad91c7ff80e1a5e1`。Host release `7686300155057933252` 已 `finished`，精确 `commit_id=f1cfb43147885d96476fb7acad91c7ff80e1a5e1`，`error_logs=[]`。这证明实现已技术发布；没有取得登录态线上页面读回，仍不能声明线上视觉验收、复看条件真实触发或后续三个生命周期环节已经接通。
