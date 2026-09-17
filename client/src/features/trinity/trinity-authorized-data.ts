@@ -2,7 +2,12 @@ import type { EngineeringMatterDirectoryResponse } from '@shared/api.interface';
 import type { EngineeringMatterWorkspaceRead } from '@client/src/api/engineering-matter';
 import { matterWorkRoute } from '@client/src/features/matter/matter-navigation';
 import { TRINITY_STAGE_META, TRINITY_KNOWLEDGE_STAGE_META } from './trinity-model';
-import type { TrinityAvailability, TrinityMatter, TrinitySituationData } from './trinity-types';
+import type {
+  TrinityAvailability,
+  TrinityMatter,
+  TrinityReviewConditionItem,
+  TrinitySituationData,
+} from './trinity-types';
 
 export interface AuthorizedTrinityProjection {
   data: TrinitySituationData;
@@ -25,6 +30,7 @@ export function projectAuthorizedSituation(
   directoryExhausted = false,
 ): AuthorizedTrinityProjection {
   const readable = availability === 'complete' || availability === 'partial';
+  let reviewConditions: TrinityReviewConditionItem[] | null | undefined;
   const matters: TrinityMatter[] = readable ? [...new Map(items.map((row) => [row.matterId, row])).values()].map((row) => ({
     id: row.matterId,
     code: '',
@@ -63,6 +69,17 @@ export function projectAuthorizedSituation(
     };
     const existing = matters.findIndex((row) => row.id === matter.matterId);
     if (existing < 0) matters.push(saved); else matters[existing] = saved;
+    // Saved review conditions are candidate work content, projected only with
+    // the exact work revision that owns them; never re-read per directory row.
+    reviewConditions = current ? current.state.reviewConditions.map((item) => ({
+      itemId: item.itemId,
+      text: item.text,
+      basisRefs: item.basisRefs,
+      when: item.when,
+      matterId: matter.matterId,
+      matterWorkRevisionId: current.matterWorkRevisionId,
+      workingRevision: current.workingRevision,
+    })) : null;
     if (current && hasAnalysis) {
       const id = current.matterWorkRevisionId;
       knowledge.push({
@@ -87,6 +104,7 @@ export function projectAuthorizedSituation(
       },
       stages: TRINITY_STAGE_META, knowledgeStages: TRINITY_KNOWLEDGE_STAGE_META,
       matters, events: [], knowledge,
+      reviewConditions,
     },
     knowledgeTargets,
   };

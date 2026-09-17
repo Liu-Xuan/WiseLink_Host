@@ -1,6 +1,7 @@
 import { projectAuthorizedSituation } from '../../client/src/features/trinity/trinity-authorized-data';
 import { situationMetrics, stageLabel } from '../../client/src/features/trinity/trinity-model';
 import { libraryMatterFixture } from './fixtures/library-matter';
+import type { EngineeringMatterWorkspaceRead } from '../../client/src/api/engineering-matter';
 import type { EngineeringMatterDirectoryResponse } from '@shared/api.interface';
 
 const row: EngineeringMatterDirectoryResponse['items'][number] = {
@@ -69,5 +70,58 @@ describe('authorized Trinity projection', () => {
     expect(data.knowledge[0].reuseCountKnown).toBe(false);
     expect(data.matters[0].activeStages).toEqual(['assess']);
     expect(data.matters[0].status).toBe('综合覆盖尚未核实');
+  });
+  it('projects every saved review condition bound to the exact work revision only when current saved work exists', () => {
+    const base = libraryMatterFixture();
+    const current = base.working.current!;
+    const focus: EngineeringMatterWorkspaceRead = {
+      ...base,
+      working: {
+        ...base.working,
+        current: {
+          ...current,
+          state: {
+            ...current.state,
+            reviewConditions: [
+              { itemId: 'rc-due', text: '到期复看条件。', basisRefs: ['basis-1', 'basis-2'],
+                when: { kind: 'DUE_AT', at: '2026-12-31' } },
+              { itemId: 'rc-changed', text: '原文变化后复看。', basisRefs: [],
+                when: { kind: 'ORIGINAL_CHANGED', inputId: 'input-9', afterParseRunId: null } },
+            ],
+          },
+        },
+      },
+    };
+    const { data } = projectAuthorizedSituation([], 'complete', focus);
+    expect(data.reviewConditions).toEqual([
+      { itemId: 'rc-due', text: '到期复看条件。', basisRefs: ['basis-1', 'basis-2'],
+        when: { kind: 'DUE_AT', at: '2026-12-31' },
+        matterId: base.matter.matterId, matterWorkRevisionId: current.matterWorkRevisionId,
+        workingRevision: current.workingRevision },
+      { itemId: 'rc-changed', text: '原文变化后复看。', basisRefs: [],
+        when: { kind: 'ORIGINAL_CHANGED', inputId: 'input-9', afterParseRunId: null },
+        matterId: base.matter.matterId, matterWorkRevisionId: current.matterWorkRevisionId,
+        workingRevision: current.workingRevision },
+    ]);
+    expect(data.matters[0].activeStages).toEqual(['assess']);
+    expect(data.events).toEqual([]);
+  });
+  it('separates a missing current saved work from an empty saved condition list', () => {
+    const base = libraryMatterFixture();
+    const withoutCurrent: EngineeringMatterWorkspaceRead =
+      { ...base, working: { ...base.working, current: null } };
+    expect(projectAuthorizedSituation([], 'complete', withoutCurrent).data.reviewConditions).toBeNull();
+    const current = base.working.current!;
+    const emptyConditions: EngineeringMatterWorkspaceRead = {
+      ...base,
+      working: {
+        ...base.working,
+        current: { ...current, state: { ...current.state, reviewConditions: [] } },
+      },
+    };
+    expect(projectAuthorizedSituation([], 'complete', emptyConditions).data.reviewConditions).toEqual([]);
+  });
+  it('does not project review conditions without a focused saved work', () => {
+    expect(projectAuthorizedSituation([row], 'complete').data.reviewConditions).toBeUndefined();
   });
 });

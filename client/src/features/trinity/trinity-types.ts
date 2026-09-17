@@ -48,6 +48,18 @@ export interface TrinityKnowledgeItem {
   reuseCountKnown?: boolean;
 }
 
+export interface TrinityReviewConditionItem {
+  itemId: string;
+  text: string;
+  basisRefs: string[];
+  when?:
+    | { kind: 'DUE_AT'; at: string }
+    | { kind: 'ORIGINAL_CHANGED'; inputId: string; afterParseRunId: string | null };
+  matterId: string;
+  matterWorkRevisionId: string;
+  workingRevision: number;
+}
+
 export interface TrinitySampleMeta {
   name: string;
   asOf: string;
@@ -76,6 +88,10 @@ export interface TrinitySituationData {
   knowledge: TrinityKnowledgeItem[];
   availability?: TrinityAvailability;
   coverage?: TrinityCoverage;
+  /** Projected only for a focused matter with a current saved work revision.
+   *  null means the focus loaded without any current saved work;
+   *  undefined means no focus projection is in scope. */
+  reviewConditions?: TrinityReviewConditionItem[] | null;
 }
 
 export interface TrinitySituationMetrics {
@@ -89,6 +105,7 @@ export type TrinityNavigationTarget =
   | { type: 'view'; view: 'situation' | 'timeline' | 'graph' | 'library' }
   | { type: 'focus-matter'; matterId: string }
   | { type: 'matter-reading'; matterId: string }
+  | { type: 'matter-work'; matterId: string; workRef: string }
   | { type: 'matter-timeline'; matterId: string }
   | { type: 'event'; eventId: string }
   | { type: 'knowledge-item'; knowledgeId: string }

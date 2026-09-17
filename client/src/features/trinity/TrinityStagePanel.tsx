@@ -12,6 +12,7 @@ import type {
   TrinityKnowledgeStageMeta,
   TrinityMatter,
   TrinityNavigationTarget,
+  TrinityReviewConditionItem,
   TrinitySituationData,
   TrinityStageMeta,
 } from './trinity-types';
@@ -32,6 +33,8 @@ export default function TrinityStagePanel({
     if (!stage) return null;
     const matters = (scope ?? []).filter((m: TrinityMatter) =>
       m.activeStages.includes(selectedStageId));
+    const conditions = stage.id === 'improve' ? data.reviewConditions : undefined;
+    const firstCondition = conditions && conditions.length > 0 ? conditions[0] : null;
     return (
       <>
         <div className="eyebrow">业务环 · {stage.caption}</div>
@@ -75,6 +78,46 @@ export default function TrinityStagePanel({
           )}
         </section>
 
+        {stage.id === 'improve' ? (
+          <section>
+            <div className="row">
+              <h3>已保存复看条件</h3>
+              {conditions ? <Badge variant="outline">{`${conditions.length} 项`}</Badge> : null}
+            </div>
+            <p>
+              以下为已保存工作中的候选工作内容，不是正式改进记录；未必已经触发或逾期。
+            </p>
+            {conditions === undefined || conditions === null ? (
+              <p className="empty-tip">
+                {conditions === null
+                  ? '聚焦事项已取得，但尚无当前已保存工作，不投影保存的复看条件。'
+                  : '当前范围未携带聚焦事项的已保存工作，不投影保存的复看条件。'}
+              </p>
+            ) : conditions.length === 0 ? (
+              <p className="empty-tip">当前已保存工作未单独保存复看条件。</p>
+            ) : (
+              <div className="matter-list">
+                {conditions.map((c: TrinityReviewConditionItem) => (
+                  <div key={c.itemId} className="phase-matter" data-review-condition={c.itemId}>
+                    <small>复看条件 {c.itemId} · 工作修订 {c.workingRevision}（{c.matterWorkRevisionId}）</small>
+                    <strong>{c.text}</strong>
+                    {c.when?.kind === 'DUE_AT' ? (
+                      <small>期限：{c.when.at}（保存原文，未判断是否逾期）</small>
+                    ) : null}
+                    {c.when?.kind === 'ORIGINAL_CHANGED' ? (
+                      <small>
+                        触发：原文变化后复看 · 输入 {c.when.inputId} · 其后解析 {c.when.afterParseRunId ?? '未固定'}
+                      </small>
+                    ) : null}
+                    {!c.when ? <small>未单独保存触发条件或期限。</small> : null}
+                    <small>保存的依据引用标识：{c.basisRefs.length > 0 ? c.basisRefs.join('、') : '无'}</small>
+                  </div>
+                ))}
+              </div>
+            )}
+          </section>
+        ) : null}
+
         <div className="end-actions">
           <Button variant="outline" size="sm"
             onClick={(): void => onNavigate({ type: 'stage-library', stageId: stage.id })}>
@@ -85,6 +128,18 @@ export default function TrinityStagePanel({
             查看知识产出
             <ArrowRight size={14} />
           </Button>
+          {firstCondition ? (
+            <Button variant="outline" size="sm"
+              data-open-work={firstCondition.matterWorkRevisionId}
+              onClick={(): void => onNavigate({
+                type: 'matter-work',
+                matterId: firstCondition.matterId,
+                workRef: firstCondition.matterWorkRevisionId,
+              })}>
+              打开所属工作修订
+              <ArrowRight size={14} />
+            </Button>
+          ) : null}
         </div>
       </>
     );
