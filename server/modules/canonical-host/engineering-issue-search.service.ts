@@ -78,6 +78,19 @@ export class EngineeringIssueSearchService {
     let batches = 0;
     // Only authorized entries count toward the page and continuation. Each batch
     // loads identities only; the existing exact reader checks retained sources.
+    // Reads run in order-preserving groups of four. One in-flight or succeeded
+    // read is shared per exact identity within this call only; a denied read is
+    // dropped so it never becomes an authorization cache.
+    const workReads = new Map<string, Promise<SavedIssueWork>>();
+    const readWork = (row: EngineeringKnowledgeIdentity): Promise<SavedIssueWork> => {
+      const key = JSON.stringify([row.subjectKind, row.subjectId, row.workRef]);
+      const existing = workReads.get(key);
+      if (existing) return existing;
+      const work = this.loadWork({ ...row, issueKey: '' }, actor);
+      workReads.set(key, work);
+      void work.catch(() => workReads.delete(key));
+      return work;
+    };
     while (entries.length < 21) {
       if (batches++ === 5) throw new ServiceUnavailableException('ENGINEERING_KNOWLEDGE_SCAN_LIMIT');
       const rows = await this.db.execute<EngineeringKnowledgeIdentity & { current: boolean }>(sql`
@@ -103,12 +116,17 @@ export class EngineeringIssueSearchService {
           AND (${search}='' OR position(lower(${search}) in lower(content::text))>0)
           ${cursor ? sql`AND (kind,subject_id,work_ref)>(${cursor.subjectKind},${cursor.subjectId},${cursor.workRef})` : sql``}
         ORDER BY kind,subject_id,work_ref LIMIT 40`);
-      for (const row of rows) {
-        try {
-          const revision = await this.loadWork({ ...row, issueKey: '' }, actor);
-          entries.push(this.knowledgeFromWork(row, revision, row.current).entry);
-          if (entries.length === 21) break;
-        } catch (error) { if (!isAccessUnavailable(error)) throw error; }
+      for (let start = 0; start < rows.length && entries.length < 21; start += CATALOGUE_READ_GROUP_SIZE) {
+        const group = rows.slice(start, start + CATALOGUE_READ_GROUP_SIZE);
+        const settled = await Promise.allSettled(group.map(readWork));
+        for (let index = 0; index < group.length && entries.length < 21; index += 1) {
+          const row = group[index];
+          const outcome = settled[index];
+          try {
+            if (outcome.status === 'rejected') throw outcome.reason;
+            entries.push(this.knowledgeFromWork(row, outcome.value, row.current).entry);
+          } catch (error) { if (!isAccessUnavailable(error)) throw error; }
+        }
       }
       if (rows.length < 40 || entries.length === 21) break;
       cursor = rows[rows.length - 1];
@@ -490,6 +508,8 @@ export class EngineeringIssueSearchService {
       });
   }
 }
+
+const CATALOGUE_READ_GROUP_SIZE = 4;
 
 function isAccessUnavailable(error: unknown): boolean {
   if (!(error instanceof Error)) return false;
