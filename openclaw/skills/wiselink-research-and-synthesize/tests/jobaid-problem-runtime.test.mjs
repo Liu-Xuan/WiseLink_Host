@@ -1035,3 +1035,17 @@ test('long change summary has no artificial limit and reaches SAVE unchanged', a
   await f.run();
   assert.equal(JSON.parse(f.saves[0].workJson).changeSummary,work.changeSummary);
 });
+
+test('concise reading copy travels with the same work save without another generation', async () => {
+  const { jobAidWorkTypeErrors }=await import('../scripts/jobaid-work-shape.mjs');
+  const work={...completed,headline:'更换措施的适用前提',
+    listBrief:'只有指示持续超过五秒才符合更换前提；当前未核实，不能认定本机适用。'};
+  assert.deepEqual(jobAidWorkTypeErrors(work),[]);
+  const f=fixture([{action:'SAVE_WORK',work},{action:'FINISH'}]);
+  await f.run();
+  assert.equal(f.saves.length,1);
+  assert.equal(f.calls.length,2);
+  const saved=JSON.parse(f.saves[0].workJson);
+  assert.equal(saved.headline,work.headline);
+  assert.equal(saved.listBrief,work.listBrief);
+});

@@ -10,12 +10,18 @@
 
 ## 云端产物
 
-云端操作员以开始开发时的精确 `base_sha` 生成：
+云端操作员以开始开发时的精确 `base_sha` 生成。先检查已跟踪差异与未跟踪文件，明确本批源码和测试清单。普通 `git diff` 不包含新文件，不能用它交付含新增组件的批次。使用仓库外的临时 index，只加入准确清单中的文件（下面的路径为占位示例，执行前替换）：
 
 ```bash
-git diff --binary --no-ext-diff > /tmp/wl-handoff.patch
+handoff_dir=$(mktemp -d /tmp/wl-handoff-export.XXXXXX)
+handoff_base=<已核实的40位base_sha>
+GIT_INDEX_FILE="$handoff_dir/index" git read-tree "$handoff_base"
+GIT_INDEX_FILE="$handoff_dir/index" git add -- <本批已修改路径> <本批新增源码及测试路径>
+GIT_INDEX_FILE="$handoff_dir/index" git diff --cached --binary --no-ext-diff --no-renames "$handoff_base" > /tmp/wl-handoff.patch
 gzip -9 -c /tmp/wl-handoff.patch > /tmp/wl-handoff.patch.gz
 ```
+
+该操作不改变正式 index、不提交、不推送。禁止用 `git add .` 收入平台记忆、下载材料、预览产物或无关修改。逐项确认清单包含本批所有新增文件，删除项也必须显式列入；最终 manifest 从实际 patch 文件边界生成，不凭记忆填写。
 
 随后记录原始 patch 与 gzip payload 的 SHA256、原始字节数、按 `diff --git` 顺序排列的精确文件清单。gzip 文件只作 base64 传输，建议每块不超过 12 KiB 文本。输出必须使用以下固定格式；manifest 可重复，但每份内容必须完全一致。
 
@@ -58,6 +64,8 @@ node scripts/verify-miaoda-cloud-handoff.mjs \
 7. 输出位于仓库外；已有同名文件只有内容哈希相同才允许复用。
 
 脚本只重建和验证，不执行 `git apply`。Astra/M 阅读实际 patch 并接受后，才由集成 owner 应用、运行本地验证、提交和同步。技术发布及真实线上验证仍单独记录。
+
+若 canonical 工作树已保留同批早期 WIP，不为通过检查而 reset、clean 或覆盖。先在仓库外建立精确 `base_sha` 的干净临时 checkout，将其作为验证器的 `--repo`；通过后在那里审查云端完整结果，再与 canonical 的现有文件逐项比较并集成。临时 checkout 检查通过仅证明补丁能应用于声明基线，不代表它能直接覆盖当前脏工作树，也不代替实际代码审查。
 
 ## 回报格式
 

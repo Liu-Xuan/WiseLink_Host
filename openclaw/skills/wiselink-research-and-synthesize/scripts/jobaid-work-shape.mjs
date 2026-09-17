@@ -32,6 +32,8 @@ export function jobAidFunctionSchema(shape) {
 
 export const JOBAID_WORK_UPDATE_SHAPE = object({
   schemaVersion: choice('wiselink.jobaid-problem-work.v3'),
+  headline: text,
+  listBrief: text,
   overview: text,
   roundCompletion: choice('IN_PROGRESS', 'COMPLETE', 'COMPLETE_WITH_OPEN_QUESTIONS'),
   completionReason: text, changeSummary: text, unchangedExplanation: text,

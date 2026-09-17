@@ -87,14 +87,15 @@ export interface JobAidProblemModelInput extends Record<string, unknown> {
 }
 
 export type JobAidProblemModelWorkContent = Pick<JobAidProblemWorkContent,
-  'schemaVersion' | 'roundCompletion' | 'completionReason' | 'changeSummary' | 'unchangedExplanation'> & {
+  'schemaVersion' | 'headline' | 'listBrief' | 'roundCompletion' | 'completionReason' | 'changeSummary' | 'unchangedExplanation'> & {
   overview: string;
   issues: Array<Omit<JobAidProblemIssue, 'issueRef' | 'sourceDependencies' | 'premiseRefs' | 'legacyCriterionRefs' | 'riskScenarios'> & { riskScenarios: Array<Omit<JobAidProblemIssue['riskScenarios'][number], 'gradeMeaning'>> }>;
 };
 
 export function jobAidProblemModelWorkContent(content: JobAidProblemWorkContent): JobAidProblemModelWorkContent {
   return {
-    schemaVersion: content.schemaVersion, overview: content.understanding,
+    schemaVersion: content.schemaVersion, headline: content.headline,
+    listBrief: content.listBrief, overview: content.understanding,
     roundCompletion: content.roundCompletion, completionReason: content.completionReason,
     changeSummary: content.changeSummary, unchangedExplanation: content.unchangedExplanation,
     issues: content.issues.map(({ issueRef: _ref, sourceDependencies: _deps, premiseRefs: _premises, legacyCriterionRefs: _legacy, ...issue }) => ({ ...structuredClone(issue), riskScenarios: issue.riskScenarios.map(({ gradeMeaning: _meaning, ...risk }) => structuredClone(risk)) })),
