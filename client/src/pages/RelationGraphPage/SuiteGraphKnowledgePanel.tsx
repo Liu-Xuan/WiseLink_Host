@@ -232,7 +232,21 @@ const SuiteGraphKnowledgePanel = memo(function SuiteGraphKnowledgePanel({
     evidence: problemWork.evidence,
     content: {schemaVersion: 'wiselink.3_1.assessment_reading.v1', headline: problemWork.headline, listBrief: problemWork.listBrief, lead: problemWork.understanding, claims: [], decisiveClaimIds: []},
   } : null;
-  const openQuestions = revision?.state.openQuestions ?? [];
+  // Deduplicate the displayed question while retaining every saved issue's identity and scope.
+  const pendingByText = new Map<string, { text: string; sources: Array<{ key: string; issueRef: string; question: string; affects: string; nextEvidence: string; reason: string }> }>();
+  for (const item of revision?.state.openQuestions ?? []) {
+    const key = item.text.trim();
+    if (!pendingByText.has(key)) pendingByText.set(key, { text: item.text, sources: [] });
+  }
+  for (const issue of problemWork?.issues ?? []) {
+    for (const [index, item] of issue.openQuestions.entries()) {
+      const key = item.question.trim();
+      const entry = pendingByText.get(key) ?? { text: item.question, sources: [] };
+      entry.sources.push({ ...item, key: `${issue.issueRef}-${index}`, issueRef: issue.issueRef, question: issue.question });
+      pendingByText.set(key, entry);
+    }
+  }
+  const openQuestions = [...pendingByText.values()];
   const reviewConditions = revision?.state.reviewConditions ?? [];
   const renderTabContent = () => {
     if (tab === 'discussion') {
@@ -243,7 +257,17 @@ const SuiteGraphKnowledgePanel = memo(function SuiteGraphKnowledgePanel({
             <p className="suite-graph-muted">当前工作没有已保存的未决问题或复看条件。</p>
           ) : null}
           {openQuestions.map((item) => (
-            <p className="suite-graph-notice" key={item.itemId}>未决问题：{item.text}</p>
+            <div className="suite-graph-notice" key={item.text.trim()}>
+              <p>未决问题：{item.text}</p>
+              {item.sources.map(source => (
+                <div key={source.key}>
+                  <p>所属问题：{source.question}（{source.issueRef}）</p>
+                  {source.affects ? <p>影响：{source.affects}</p> : null}
+                  {source.reason ? <p>原因：{source.reason}</p> : null}
+                  {source.nextEvidence ? <p>下一证据：{source.nextEvidence}</p> : null}
+                </div>
+              ))}
+            </div>
           ))}
           {reviewConditions.map((item) => (
             <p className="suite-graph-notice" key={item.itemId}>复看条件：{item.text}{item.when ? `（${whenText(item.when)}）` : ''}</p>
