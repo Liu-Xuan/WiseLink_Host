@@ -121,6 +121,9 @@ describe('validateActivityEntry', () => {
       'statementId=',
       'anchor=',
       'anchor=A&anchor=B',
+      'window=',
+      'window=bogus',
+      'window=all&window=current-year',
     ]) {
       expect(validateActivityEntry(new URLSearchParams(query)).ok).toBe(false);
     }
@@ -188,6 +191,24 @@ describe('loadActivityEntry', () => {
     expect(result.error).toContain('候选改版号');
     expect(calls.status).toBe(0);
     expect(calls.activity).toBe(0);
+  });
+
+  test('an invalid window issues zero requests instead of being normalized away', async () => {
+    for (const query of ['window=', 'window=bogus', 'window=all&window=current-year']) {
+      const { calls, deps } = makeDeps();
+      const params = new URLSearchParams(query);
+      const result = await loadActivityEntry({
+        documentVersionId: 'DV1',
+        entry: validateActivityEntry(params),
+        baseParams: params,
+        deps,
+        signal: new AbortController().signal,
+        current: alwaysCurrent,
+      });
+      expect(result.error).toContain('时间窗参数');
+      expect(calls.status).toBe(0);
+      expect(calls.activity).toBe(0);
+    }
   });
 
   test('a half candidate pair issues zero requests even with a parse run', async () => {
@@ -415,10 +436,10 @@ describe('completeActivityIdentity', () => {
 
   test('requires the route run and candidate pair; statementId and anchor are optional', () => {
     expect(completeActivityIdentity(new URLSearchParams(base))).toEqual({
-      parseRunId: 'PR1', candidateRevision: 4, runRef: 'run-1', statementId: null, anchor: null,
+      parseRunId: 'PR1', candidateRevision: 4, runRef: 'run-1', statementId: null, anchor: null, window: null,
     });
-    expect(completeActivityIdentity(new URLSearchParams(`${base}&statementId=ST1&anchor=A1`))).toEqual({
-      parseRunId: 'PR1', candidateRevision: 4, runRef: 'run-1', statementId: 'ST1', anchor: 'A1',
+    expect(completeActivityIdentity(new URLSearchParams(`${base}&statementId=ST1&anchor=A1&window=current-year`))).toEqual({
+      parseRunId: 'PR1', candidateRevision: 4, runRef: 'run-1', statementId: 'ST1', anchor: 'A1', window: 'current-year',
     });
   });
 

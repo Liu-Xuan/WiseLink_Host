@@ -2,6 +2,9 @@ import { createElement } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { StaticRouter } from 'react-router-dom/server';
 import {
+  activityReadingParams,
+  activityWindowPin,
+  completeActivityIdentity,
   libraryDocumentReadingRoute,
   libraryReadingParams,
   libraryReadingScope,
@@ -175,6 +178,35 @@ test('an unloaded selected family is not reported missing and does not silently 
   expect(html).toContain('原选择尚未在当前读取范围内加载');
   expect(html).toContain('不代表资料不存在');
   expect(html).toContain('不会自动改选首行');
+});
+
+test('activity window pins are whitelist-only, single-occurrence, and carried through the exact return', () => {
+  const allPin = activityWindowPin(new URLSearchParams('window=all'));
+  expect(allPin.state === 'ok' ? allPin.value : null).toBe('all');
+  const yearPin = activityWindowPin(new URLSearchParams('window=current-year'));
+  expect(yearPin.state === 'ok' ? yearPin.value : null).toBe('current-year');
+  expect(activityWindowPin(new URLSearchParams('window=2026')).state).toBe('invalid');
+  expect(activityWindowPin(new URLSearchParams('window=all&window=all')).state).toBe('duplicate');
+  expect(activityWindowPin(new URLSearchParams('window=')).state).toBe('empty');
+  expect(activityWindowPin(new URLSearchParams()).state).toBe('absent');
+  expect(activityReadingParams(new URLSearchParams('parseRunId=PR1&window=current-year&window=evil')).get('window')).toBeNull();
+  expect(activityReadingParams(new URLSearchParams('parseRunId=PR1&window=current-year')).get('window')).toBe('current-year');
+  const identity = 'parseRunId=PR1&candidateRevision=2&runRef=run-2&statementId=S1&anchor=A1&window=current-year';
+  const pins = completeActivityIdentity(new URLSearchParams(identity));
+  expect(pins).not.toBeNull();
+  expect(pins!.window).toBe('current-year');
+  expect(completeActivityIdentity(new URLSearchParams(`${identity}&window=all`))).toBeNull();
+  expect(completeActivityIdentity(new URLSearchParams('parseRunId=PR1&candidateRevision=2&runRef=run-2&window=bogus'))).toBeNull();
+  const returnQuery = new URLSearchParams({
+    returnDocumentVersionId: 'DV1',
+    returnActivityQuery: identity,
+    returnActivityView: 'timeline',
+  });
+  const target = readingReturnTarget(returnQuery, 'DV1', 'PR1')!;
+  expect(target).not.toBeNull();
+  expect(target.route).toContain('/timeline?');
+  expect(target.route).toContain('window=current-year');
+  expect(target.route).toContain('statementId=S1');
 });
 
 test('opening a tree version without first selecting its quicklook preserves that row identity', () => {

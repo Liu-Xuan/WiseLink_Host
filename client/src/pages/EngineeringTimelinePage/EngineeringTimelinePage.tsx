@@ -6,7 +6,8 @@ import { readDocumentActivityReading, readDocumentParsingStatus, subscribeCanoni
 import type { DocumentActivityReadingResponse } from '@shared/document-activity.interface';
 import type { DocumentOriginalBinding } from '@shared/document-original.interface';
 import { activityEntryPins, activityEntryReason, loadActivityEntry, validateActivityEntry } from '@client/src/pages/DocumentParsingPage/document-activity-entry';
-import { activityReadingParams, activityReadingReturnParams, revisionTextPin } from '@client/src/features/matter/reading-return';
+import { activityReadingParams, activityReadingReturnParams, activityWindowPin, revisionTextPin } from '@client/src/features/matter/reading-return';
+import type { ActivityTimelineWindow } from '@client/src/features/trinity/document-activity-timeline';
 import DocumentActivityReadingView from '@client/src/pages/DocumentParsingPage/DocumentActivityReadingView';
 import DocumentActivityGraphView from '@client/src/features/trinity/DocumentActivityGraphView';
 import DocumentActivityTimelineView from '@client/src/features/trinity/DocumentActivityTimelineView';
@@ -26,7 +27,18 @@ export default function EngineeringTimelinePage({ view = 'timeline', onNavigateG
       ? '路径与查询的文档版本不一致。' : null;
   const entry = useMemo(() => validateActivityEntry(searchParams), [searchParams]);
   const pins = activityEntryPins(entry);
-  const blocker = documentError || activityEntryReason(entry);
+  // The window is a presentation choice, not candidate identity: it gates rendering
+  // but stays out of the read key so switching windows never re-reads the candidate.
+  const windowPin = activityWindowPin(searchParams);
+  const windowMode: ActivityTimelineWindow = windowPin.state === 'ok' ? windowPin.value : 'all';
+  const windowError = windowPin.state === 'duplicate'
+    ? '时间窗参数出现重复，只允许 all 或 current-year。'
+    : windowPin.state === 'empty'
+      ? '时间窗参数为空，只允许 all 或 current-year。'
+      : windowPin.state === 'invalid'
+        ? '时间窗参数不在允许范围内，只允许 all 或 current-year。'
+        : null;
+  const blocker = documentError || windowError || activityEntryReason(entry);
   const [sessionRevision, setSessionRevision] = useState(0);
   // Statement and anchor are view selection, not candidate identity. Keeping them
   // out of the read key preserves the loaded candidate and graph camera while a
@@ -35,7 +47,9 @@ export default function EngineeringTimelinePage({ view = 'timeline', onNavigateG
   const [state, setState] = useState<TimelineReadState | null>(null);
   const epoch = useRef(0);
   const currentIdentity = useRef(identity);
+  const currentSearchParams = useRef(searchParams);
   currentIdentity.current = identity;
+  currentSearchParams.current = searchParams;
   const visible = state?.identity === identity ? state : null;
   const reading = !blocker ? visible?.reading ?? null : null;
   const error = blocker || visible?.error || null;
@@ -63,7 +77,13 @@ export default function EngineeringTimelinePage({ view = 'timeline', onNavigateG
         const result = await loadActivityEntry({ documentVersionId, entry, baseParams: searchParams, deps: { readParsingStatus: readDocumentParsingStatus, readActivityReading: readDocumentActivityReading }, signal: controller.signal, current });
         if (!current()) return;
         if (result.replaceQuery) {
-          const query = new URLSearchParams(result.replaceQuery); query.set('documentVersionId', documentVersionId);
+          const discovered = new URLSearchParams(result.replaceQuery);
+          const query = activityReadingParams(currentSearchParams.current);
+          for (const key of ['parseRunId', 'candidateRevision', 'runRef'] as const) {
+            const value = discovered.get(key);
+            if (value) query.set(key, value); else query.delete(key);
+          }
+          query.set('documentVersionId', documentVersionId);
           navigate(`${pagePath}?${query}`, { replace: true });
           return;
         }
@@ -94,6 +114,11 @@ export default function EngineeringTimelinePage({ view = 'timeline', onNavigateG
   };
   const selectAnchor = (anchorId: string) => {
     const query = activityReadingParams(searchParams); query.set('anchor', anchorId);
+    navigate(pageRoute(query), { replace: true });
+  };
+  const changeWindow = (next: ActivityTimelineWindow) => {
+    const query = activityReadingParams(searchParams);
+    query.set('window', next);
     navigate(pageRoute(query), { replace: true });
   };
   const returnParamsFor = (binding: DocumentOriginalBinding, statementId: string | null, anchorId: string | null = null) => {
@@ -130,7 +155,7 @@ export default function EngineeringTimelinePage({ view = 'timeline', onNavigateG
       <strong>{documentVersionId ? `文档版本 ${documentVersionId}` : '尚未选择文档版本'}</strong>
       <span>{pins.parseRunId ? `解析版本 ${pins.parseRunId}` : '将从当前已发布解析版本发现已保存候选'}</span>
     </div>
-    {view === 'graph' && reading?.candidate ? <DocumentActivityGraphView reading={reading} selectedStatementId={pins.statementId} selectedAnchorId={pins.anchor} onSelectLocation={selectLocation} onReturnTimeline={() => navigate(pageRoute(searchParams, '/timeline'))} /> : <DocumentActivityTimelineView reading={reading} selectedStatementId={pins.statementId} onSelectStatement={selectStatement} onOpenReading={openReading} onOpenAnchor={openReading} onNavigateGraph={openGraph} loading={loading} error={error} hasExactSource={Boolean(documentVersionId && pins.parseRunId)} />}
+    {view === 'graph' && reading?.candidate ? <DocumentActivityGraphView reading={reading} selectedStatementId={pins.statementId} selectedAnchorId={pins.anchor} onSelectLocation={selectLocation} onReturnTimeline={() => navigate(pageRoute(searchParams, '/timeline'))} /> : <DocumentActivityTimelineView reading={reading} selectedStatementId={pins.statementId} onSelectStatement={selectStatement} onOpenReading={openReading} onOpenAnchor={openReading} onNavigateGraph={openGraph} loading={loading} error={error} hasExactSource={Boolean(documentVersionId && pins.parseRunId)} window={windowMode} onWindowChange={changeWindow} />}
     {!documentVersionId && !error ? <Link to="/library?mode=document">选择文档版本</Link> : null}
     {reading?.candidate && (pins.statementId || pins.anchor) ? <DocumentActivityReadingView binding={reading.binding} familyId={reading.familyId} candidate={reading.candidate} selectedStatementId={pins.statementId} selectedAnchorId={pins.anchor} returnParamsFor={returnParamsFor} onSelectStatement={selectStatement} onSelectAnchor={selectAnchor} /> : null}
   </main>;

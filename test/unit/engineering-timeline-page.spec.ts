@@ -60,6 +60,7 @@ describe('engineering timeline view', () => {
     const map = html.match(/<svg[\s\S]*?<\/svg>/u)?.[0] ?? '';
     expect(map).toContain('activity-map-range');
     expect(map).not.toContain('TBD');
+    expect(map).toMatch(/<text x="125" y="24" text-anchor="middle">1月<\/text>/u);
     expect(html).toContain('日期未定／尚无可计算时间');
   });
 });
@@ -129,6 +130,20 @@ describe('engineering timeline page gates', () => {
       statements: ['S1','S2'].map(statementId=>({statementId, label:statementId, time:null, quotes:[{anchorId: statementId === 'S1' ? 'A1' : 'A2'}], statusRaw:null, limitations:[]})),
     }};
   }
+  const thisYear = new Date().getFullYear();
+  function windowedSaved() {
+    return { familyId: 'F1', binding: {documentVersionId:'DV1', parseRunId:'PR1'}, candidate: {
+      schemaVersion: 'wiselink.document.activity-candidate.v1', candidateOnly: true,
+      sourceBinding: { original: {documentVersionId:'DV1', parseRunId:'PR1'}, semanticRevision: 1 },
+      readCoverage: { status: 'DELIVERED_RANGES_ONLY', selection: { sectionIds: [] }, deliveredRanges: [], sourceCoverage: { knownPageCount: 0, readPageIndexes: [], unresolvedRanges: [] } },
+      runRef:'run-2', candidateRevision:2, producer:{skillVersion:'s', modelVersion:'m'},
+      savedAt:'2026-09-16T00:00:00Z', sourceAnchors:[],
+      statements: [
+        { statementId:'S-IN', statementKey:'k-in', label:'窗口内', quotes:[{anchorId:'A1', start:0, end:1, text:'x'}], time:{ role:'TARGET', precision:'DAY', expression:'CALENDAR', raw:`${thisYear}-03-05`, quoteIndex:0 }, statusRaw:null, limitations:[] },
+        { statementId:'S-OUT', statementKey:'k-out', label:'窗口外', quotes:[], time:{ role:'TARGET', precision:'QUARTER', expression:'CALENDAR', raw:`${thisYear - 1} Q3`, quoteIndex:0 }, statusRaw:null, limitations:[] },
+      ],
+    }};
+  }
   const pinned = '/timeline?documentVersionId=DV1&parseRunId=PR1&candidateRevision=2&runRef=run-2';
   it('follows external URL selection without re-reading the same saved candidate', async () => {
     mockActivity.mockResolvedValue(saved());
@@ -194,6 +209,119 @@ describe('engineering timeline page gates', () => {
     expect(router.state.location.pathname).toBe('/timeline');
     expect(new URLSearchParams(router.state.location.search).get('anchor')).toBe('A1');
   });
+  it('switching windows never re-reads the same saved candidate and keeps the window in the URL', async () => {
+    mockActivity.mockResolvedValue(windowedSaved());
+    await mount(`${pinned}&window=all`);
+    await act(async () => undefined);
+    expect(mockActivity).toHaveBeenCalledTimes(1);
+    const currentYearButton = container.querySelector('[data-window="current-year"]') as HTMLElement;
+    await act(async () => { currentYearButton.dispatchEvent(new dom.window.MouseEvent('click', { bubbles: true })); });
+    expect(mockActivity).toHaveBeenCalledTimes(1);
+    expect(router.state.location.search).toContain('window=current-year');
+    expect(container.textContent).toContain('窗口内 1 条 · 窗口外 1 条');
+  });
+
+  it('keeps a selected statement outside the window as marked context and never counts it in the window', async () => {
+    mockActivity.mockResolvedValue(windowedSaved());
+    await mount(`${pinned}&window=current-year&statementId=S-OUT`);
+    await act(async () => undefined);
+    expect(container.textContent).toContain('窗口外声明 · 保留为上下文');
+    expect(container.querySelector('.activity-window-context .activity-timeline-item.selected')).not.toBeNull();
+    expect(container.textContent).toContain('该声明在当前时间窗外');
+    expect(container.textContent).toContain('窗口内 1 条');
+    expect(container.textContent).not.toContain('窗口内 2 条');
+  });
+
+  it('rejects an out-of-whitelist window value before any request', async () => {
+    await mount(`${pinned}&window=bogus`);
+    expect(mockStatus).not.toHaveBeenCalled();
+    expect(mockActivity).not.toHaveBeenCalled();
+    expect(container.textContent).toContain('时间窗参数不在允许范围内');
+  });
+
+  it('rejects a duplicated window pin before any request', async () => {
+    await mount(`${pinned}&window=all&window=all`);
+    expect(mockStatus).not.toHaveBeenCalled();
+    expect(mockActivity).not.toHaveBeenCalled();
+    expect(container.textContent).toContain('时间窗参数出现重复');
+  });
+
+  it('keeps DV/parse/candidate/run/statement/anchor/window through timeline, graph, reading and return', async () => {
+    mockActivity.mockResolvedValue(windowedSaved());
+    await mount(`${pinned}&window=current-year&statementId=S-IN&anchor=A1`);
+    await act(async () => undefined);
+    const graphButton = [...container.querySelectorAll('.activity-timeline-item.selected button')].find(button => button.textContent === '进入图谱')!;
+    await act(async () => graphButton.dispatchEvent(new dom.window.MouseEvent('click', { bubbles: true })));
+    expect(router.state.location.pathname).toBe('/activity-graph');
+    let graphQuery = new URLSearchParams(router.state.location.search);
+    expect(graphQuery.get('documentVersionId')).toBe('DV1');
+    expect(graphQuery.get('parseRunId')).toBe('PR1');
+    expect(graphQuery.get('candidateRevision')).toBe('2');
+    expect(graphQuery.get('runRef')).toBe('run-2');
+    expect(graphQuery.get('statementId')).toBe('S-IN');
+    expect(graphQuery.get('anchor')).toBe('A1');
+    expect(graphQuery.get('window')).toBe('current-year');
+    await act(async () => mockGraph.onReturnTimeline());
+    expect(router.state.location.pathname).toBe('/timeline');
+    expect(new URLSearchParams(router.state.location.search).get('window')).toBe('current-year');
+    const anchorButton = [...container.querySelectorAll('.activity-timeline-item.selected button')].find(button => button.textContent === '锚点 A1')!;
+    await act(async () => anchorButton.dispatchEvent(new dom.window.MouseEvent('click', { bubbles: true })));
+    expect(router.state.location.pathname).toBe('/document-versions/DV1/activities');
+    const readingQuery = new URLSearchParams(router.state.location.search);
+    expect(readingQuery.get('statementId')).toBe('S-IN');
+    expect(readingQuery.get('anchor')).toBe('A1');
+    expect(readingQuery.get('window')).toBe('current-year');
+    const nested = new URLSearchParams(readingQuery.get('returnActivityQuery')!);
+    expect(nested.get('parseRunId')).toBe('PR1');
+    expect(nested.get('candidateRevision')).toBe('2');
+    expect(nested.get('runRef')).toBe('run-2');
+    expect(nested.get('statementId')).toBe('S-IN');
+    expect(nested.get('anchor')).toBe('A1');
+    expect(nested.get('window')).toBe('current-year');
+    const target = readingReturnTarget(readingQuery, 'DV1', 'PR1');
+    expect(target).not.toBeNull();
+    expect(target!.route).toContain('/timeline?');
+    expect(target!.route).toContain('window=current-year');
+    await act(async () => { await router.navigate(target!.route); });
+    expect(router.state.location.pathname).toBe('/timeline');
+    const backQuery = new URLSearchParams(router.state.location.search);
+    expect(backQuery.get('statementId')).toBe('S-IN');
+    expect(backQuery.get('anchor')).toBe('A1');
+    expect(backQuery.get('window')).toBe('current-year');
+    const lastRequest = mockActivity.mock.calls[mockActivity.mock.calls.length - 1][0];
+    expect(lastRequest).toEqual({ documentVersionId: 'DV1', parseRunId: 'PR1', candidateRevision: 2 });
+  });
+
+  it('issues no second request when the window changes while the first read is still pending', async () => {
+    let resolveRead: (value: unknown) => void = () => undefined;
+    mockActivity.mockImplementation(() => new Promise((resolve) => { resolveRead = resolve; }));
+    await mount(`${pinned}&window=all`);
+    expect(mockActivity).toHaveBeenCalledTimes(1);
+    expect(container.textContent).toContain('正在读取');
+    await act(async () => { await router.navigate(`${pinned}&window=current-year`); });
+    expect(mockActivity).toHaveBeenCalledTimes(1);
+    await act(async () => { resolveRead(windowedSaved()); });
+    expect(container.textContent).toContain('窗口内 1 条 · 窗口外 1 条');
+    expect(container.querySelector('[data-window="current-year"].active')).not.toBeNull();
+  });
+
+  it('keeps the newest window when an unpinned discovery finishes after a window change', async () => {
+    let resolveRead: (value: unknown) => void = () => undefined;
+    mockStatus.mockResolvedValue({ publishedRun: { parseRunId: 'PR1' } });
+    mockActivity.mockImplementation(() => new Promise((resolve) => { resolveRead = resolve; }));
+    await mount('/timeline?documentVersionId=DV1&window=all');
+    expect(mockStatus).toHaveBeenCalledTimes(1);
+    expect(mockActivity).toHaveBeenCalledTimes(1);
+    await act(async () => { await router.navigate('/timeline?documentVersionId=DV1&window=current-year'); });
+    expect(mockActivity).toHaveBeenCalledTimes(1);
+    await act(async () => { resolveRead(windowedSaved()); });
+    const query = new URLSearchParams(router.state.location.search);
+    expect(query.get('window')).toBe('current-year');
+    expect(query.get('parseRunId')).toBe('PR1');
+    expect(query.get('candidateRevision')).toBe('2');
+    expect(query.get('runRef')).toBe('run-2');
+  });
+
   it('nests library context when opening details so the exact timeline return remains valid', async () => {
     mockActivity.mockResolvedValue(saved());
     await mount(`${pinned}&returnLibraryQuery=${encodeURIComponent('mode=document&search=777')}`);
