@@ -1008,7 +1008,12 @@ export async function callJsonTool(client, name, args, requestOptions, optionsPo
     requestOptions?.signal instanceof AbortSignal &&
     Number.isSafeInteger(requestOptions.timeout) && requestOptions.timeout > 0 && requestOptions.timeout <= 120_000 &&
     Object.keys(requestOptions).every(key => key === 'timeout' || key === 'signal');
-  if (requestOptions !== undefined && !correctionOptions && !activityOptions)
+  const readingOptions = name === 'document_reading' &&
+    ['READING_STATUS', 'READING_CLAIM', 'READING_READ', 'READING_HEARTBEAT', 'READING_SAVE', 'READING_FAIL'].includes(args?.action) &&
+    requestOptions?.signal instanceof AbortSignal &&
+    Number.isSafeInteger(requestOptions.timeout) && requestOptions.timeout > 0 && requestOptions.timeout <= 120_000 &&
+    Object.keys(requestOptions).every(key => key === 'timeout' || key === 'signal');
+  if (requestOptions !== undefined && !correctionOptions && !activityOptions && !readingOptions)
     throw new Error('REVIEW_HOST_MCP_REQUEST_OPTIONS_INVALID');
   const result = requestOptions === undefined
     ? await client.callTool({ name, arguments: args })

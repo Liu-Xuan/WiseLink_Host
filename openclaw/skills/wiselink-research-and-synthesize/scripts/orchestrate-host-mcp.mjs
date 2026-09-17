@@ -54,6 +54,7 @@ export const INTERACTIVE_REVIEW_TOOLS = [
 ];
 
 export const HOST_MCP_TOOLS = [
+  'document_reading',
   'document_work',
   'read_document_original',
   'document_translation',

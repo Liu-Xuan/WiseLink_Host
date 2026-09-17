@@ -12,6 +12,8 @@ import { recoverNativeMatterResponse } from './recover-native-matter-response.mj
 import { invokeHostedJobAidProblemModel } from './run-jobaid-problem-assessment.mjs';
 import { invokeHostedInitialModel } from './invoke-hosted-initial-model.mjs';
 import { invokeHostedDocumentActivityModel } from './invoke-hosted-document-activity-model.mjs';
+import { consumeHostedDocumentReading } from './consume-hosted-document-reading.mjs';
+import { invokeHostedDocumentReadingModel } from './invoke-hosted-document-reading-model.mjs';
 import { consumeHostedDocumentActivity } from './consume-hosted-document-activity.mjs';
 import { INITIAL_ANALYSIS_OPERATIONS, parseConfigurationEvidenceReevaluationStatus, runInitialAnalysis } from './orchestrate-host-mcp.mjs';
 import {
@@ -285,8 +287,13 @@ function option(argv, name) {
 }
 
 export async function consumeHostedDocument(
-  { documentVersionId, activityRunRef, leaseOwner },
-  { callTool, documentTranslationCheckpoint, activityCheckpoint, invokeActivityModel }) {
+  { documentVersionId, activityRunRef, readingRunRef, leaseOwner },
+  { callTool, documentTranslationCheckpoint, activityCheckpoint, invokeActivityModel, readingCheckpoint, invokeReadingModel }) {
+  if (activityRunRef && readingRunRef) throw new Error('DOCUMENT_CONSUMER_RUN_AMBIGUOUS');
+  const consumeReading = runRef => consumeHostedDocumentReading(
+    { documentVersionId, runRef, leaseOwner },
+    { callTool, invokeModel: invokeReadingModel, checkpointFactory: readingCheckpoint });
+  if (readingRunRef) return consumeReading(readingRunRef);
   const state = await callTool('document_work', { action: 'STATUS', documentVersionId });
   if (state?.documentVersionId !== documentVersionId) throw new Error('DOCUMENT_CONSUMER_SCOPE_MISMATCH');
   // An already-accepted activity run is consumed first: state.nextActivityRunRef
@@ -300,6 +307,8 @@ export async function consumeHostedDocument(
       { documentVersionId, runRef, leaseOwner },
       { callTool, invokeModel: invokeActivityModel, checkpointFactory: activityCheckpoint });
   }
+  // Discovery consumes only runs already accepted by Host READING_BEGIN.
+  if (state.nextReadingRunRef) return consumeReading(state.nextReadingRunRef);
   const run = state.latestRun;
   if (!run) return { status: 'IDLE', documentVersionId };
   if (run.documentVersionId !== documentVersionId || !run.parseRunId) throw new Error('DOCUMENT_CONSUMER_RUN_MISMATCH');
@@ -389,7 +398,7 @@ function assertSingleConsumerSubject({ workItemId, matterId, documentVersionId }
 
 async function main(argv, env) {
   if (argv.includes('--help')) {
-    process.stdout.write('Usage: node consume-hosted-work-item.mjs [--work-item-id WI-...] [--matter-id MAT-...] [--document-version-id DV] [--applicability-context-ref REF] [--checkpoint-root PATH] [--openclaw-config PATH] [--native-session-store PATH] [--document-translation-recovery ID] [--activity-run-ref ID] [--lease-owner ID]\nOne native job per authorized subject. Choose exactly one WorkItem, Matter or DocumentVersion; independent jobs use native cron concurrency.\n');
+    process.stdout.write('Usage: node consume-hosted-work-item.mjs [--work-item-id WI-...] [--matter-id MAT-...] [--document-version-id DV] [--applicability-context-ref REF] [--checkpoint-root PATH] [--openclaw-config PATH] [--native-session-store PATH] [--document-translation-recovery ID] [--activity-run-ref ID] [--reading-run-ref ID] [--lease-owner ID]\nOne native job per authorized subject. Choose exactly one WorkItem, Matter or DocumentVersion; independent jobs use native cron concurrency.\n');
     return;
   }
   const workItemId = option(argv, '--work-item-id');
@@ -401,6 +410,11 @@ async function main(argv, env) {
   const activityRunRef = option(argv, '--activity-run-ref');
   if (activityRunRef !== undefined && !/^[A-Za-z0-9_-]{1,96}$/u.test(activityRunRef))
     throw new Error('ACTIVITY_RUN_REF_INVALID');
+  const readingRunRef = option(argv, '--reading-run-ref');
+  if (readingRunRef !== undefined && !/^[A-Za-z0-9_-]{1,96}$/u.test(readingRunRef))
+    throw new Error('READING_RUN_REF_INVALID');
+  if ((readingRunRef || activityRunRef) && !documentVersionId) throw new Error('DOCUMENT_CONSUMER_TARGET_REQUIRED');
+  if (readingRunRef && activityRunRef) throw new Error('DOCUMENT_CONSUMER_RUN_AMBIGUOUS');
   const leaseOwner = option(argv, '--lease-owner') ?? `openclaw:${runtime.agentId}`;
   const recovery = option(argv, '--document-translation-recovery') ?? 'initial';
   if (!/^[A-Za-z0-9_-]{1,96}$/.test(recovery)) throw new Error('DOCUMENT_TRANSLATION_RECOVERY_INVALID');
@@ -418,6 +432,11 @@ async function main(argv, env) {
     return createCheckpointStore(join(checkpointRoot, 'document-activity',
       encodeURIComponent(endpoint.origin + endpoint.pathname), documentVersionId, runRef));
   } : undefined;
+  const readingCheckpoint = documentVersionId ? ({ runRef }) => {
+    if (!/^[A-Za-z0-9_-]{1,96}$/u.test(runRef)) throw new Error('READING_RUN_REF_INVALID');
+    return createCheckpointStore(join(checkpointRoot, 'document-reading',
+      encodeURIComponent(endpoint.origin + endpoint.pathname), documentVersionId, runRef));
+  } : undefined;
   const connection = await createHostMcpConnection(runtime);
   try {
     const result = await consumeHostedWorkItem({
@@ -427,11 +446,14 @@ async function main(argv, env) {
       applicabilityContextRef: option(argv, '--applicability-context-ref'),
       checkpointRoot,
       activityRunRef,
+      readingRunRef,
       leaseOwner,
     }, {
       callTool: connection.callTool,
       documentTranslationCheckpoint,
       activityCheckpoint,
+      readingCheckpoint,
+      invokeReadingModel: (input, hooks) => invokeHostedDocumentReadingModel(input, { ...runtime, ...hooks }),
       invokeActivityModel: (input, hooks) => invokeHostedDocumentActivityModel(input, { ...runtime, ...hooks }),
       ...(option(argv, '--native-session-store') ? { recoverNativeMatterResponse: input => recoverNativeMatterResponse({
         ...input, storePath: option(argv, '--native-session-store'),

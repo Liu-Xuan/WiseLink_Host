@@ -38,6 +38,7 @@ import {
 } from './canonical-host-readonly-mcp-tools';
 import { CanonicalHostVerticalService } from './canonical-host-vertical.service';
 import { DocumentActivityRuntimeService, documentActivityActionSchemas } from './document-activity-runtime.service';
+import { DocumentReadingRuntimeService, documentReadingActionSchemas } from './document-reading-runtime.service';
 import {
   CANONICAL_SERVICE_SCOPE_AUTHORIZATION,
   type CanonicalServiceScopeAuthorizationPort,
@@ -211,6 +212,7 @@ export class CanonicalHostOpenClawMcpService {
     @Optional() private readonly documentTranslation?: DocumentTranslationRuntimeService,
     @Optional() private readonly originalReader?: UnifiedReaderService,
     @Optional() private readonly documentActivity?: DocumentActivityRuntimeService,
+    @Optional() private readonly documentReading?: DocumentReadingRuntimeService,
   ) {
     const handler = createMcpHandler(() => this.createServer(), {
       legacy: 'stateless',
@@ -257,6 +259,12 @@ export class CanonicalHostOpenClawMcpService {
       if (!this.documentActivity) throw new Error('DOCUMENT_ACTIVITY_RUNTIME_UNAVAILABLE');
       return textResult(await this.documentActivity.run(input));
     });
+
+    if (this.documentReading) server.registerTool('document_reading', {
+      title: '读取与保存文件自身解读',
+      description: 'READING_BEGIN显式受理确切文件版本解读；READ按已发布原文分页交付并记录真实范围，SAVE同次保存短主题、简明认识、完整解释及关键条件。只保存候选，不确认机队适用或正式采用；不解析或翻译原件。读取活动声明与事项工作使用各自独立入口。',
+      inputSchema: z.discriminatedUnion('action', documentReadingActionSchemas),
+    }, async input => textResult(await this.documentReading!.run(input)));
 
     if (this.documentWork) server.registerTool('read_document_original', {
       title: '读取确切版本原文',

@@ -73,6 +73,39 @@ export function listOwnedLibraryFamilies(
         originalFilename: dmDocumentVersion.originalFilename,
         extractedMetadata: dmDocumentVersionMetadata.extractedMetadata,
         metadataRevision: dmDocumentVersionMetadata.metadataRevision,
+        documentReading: sql<CanonicalLibraryDocumentVersionSummary['documentReading']>`(
+          select jsonb_build_object(
+            'status', case when r.result_json is not null then 'AVAILABLE'
+              when exists (select 1 from dm_document_reading_run older
+                where older.tenant_id=${input.tenantId} and older.document_version_id=${dmDocumentVersion.documentVersionId}
+                  and older.status='SAVED') then 'SOURCE_CHANGED' else 'NOT_GENERATED' end,
+            'reading', case when r.result_json is null then null else jsonb_build_object(
+              'readingRunRef', r.run_ref, 'readingRevision', r.reading_revision,
+              'headline', r.result_json->>'headline', 'brief', r.result_json->'brief'->>'text',
+              'criticalConditions', (select coalesce(jsonb_agg(c->>'text'), '[]'::jsonb)
+                from jsonb_array_elements(r.result_json->'criticalConditions') c),
+              'limitations', r.result_json->'limitations', 'sourceBinding', r.result_json->'sourceBinding',
+              'sourceLimitations', (select coalesce(jsonb_agg(l->>'message'), '[]'::jsonb)
+                from jsonb_array_elements(r.result_json->'readCoverage'->'sourceCoverage'->'unresolvedRanges') l
+                where coalesce(l->>'readingImpact', 'LIMITATION') <> 'DIAGNOSTIC'),
+              'coverageStatus', r.result_json->'readCoverage'->>'status',
+              'deliveredUnitCount', jsonb_array_length(r.result_json->'readCoverage'->'deliveredUnitIds'),
+              'totalUnitCount', r.result_json->'readCoverage'->'totalUnitCount',
+              'savedAt', r.result_json->>'savedAt') end)
+          from (values (1)) reading_scope(value)
+          left join lateral (select p.parse_run_id, p.manifest_artifact from ${dmDocumentParseRun} p
+            where p.tenant_id=${input.tenantId} and p.document_version_id=${dmDocumentVersion.documentVersionId}
+              and p.status='PUBLISHED' order by p.parse_revision desc limit 1) p on true
+          left join lateral (select s.semantic_revision from dm_document_semantic_revision s
+            where s.tenant_id=${input.tenantId} and s.document_version_id=${dmDocumentVersion.documentVersionId}
+              and s.parse_run_id=p.parse_run_id and s.original_manifest_sha256=p.manifest_artifact->>'sha256'
+            order by s.semantic_revision desc limit 1) s on true
+          left join lateral (select r.run_ref,r.reading_revision,r.result_json from dm_document_reading_run r
+            where r.tenant_id=${input.tenantId} and r.document_version_id=${dmDocumentVersion.documentVersionId}
+              and r.parse_run_id=p.parse_run_id and r.semantic_revision=s.semantic_revision and r.status='SAVED'
+              and r.original_manifest_sha256=p.manifest_artifact->>'sha256'
+            order by r.reading_revision desc limit 1) r on true
+        )`.as('document_reading'),
         parsing: sql<CanonicalLibraryDocumentVersionSummary['parsing']>`(
           select jsonb_build_object('status', p.status, 'latestRevision', p.parse_revision,
             'publishedRevision', (select max(published.parse_revision) from ${dmDocumentParseRun} published
@@ -183,6 +216,7 @@ export function listOwnedLibraryFamilies(
       'originalFilename', ${versions.originalFilename},
       'extractedMetadata', ${versions.extractedMetadata},
       'metadataRevision', ${versions.metadataRevision},
+      'documentReading', ${versions.documentReading},
       'parsing', ${versions.parsing},
       'byteLength', ${versions.byteLength},
       'committedAt', ${versions.committedAt},

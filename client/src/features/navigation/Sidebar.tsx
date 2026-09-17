@@ -120,6 +120,11 @@ const Sidebar: React.FC<SidebarProps> = ({ mobileOpen, onMobileClose }) => {
     !workRef && currentObject ? currentObject.displayCode : '';
 
   const globalNavTarget = (target: string): string => {
+    if (target === '/graph' && matterId) {
+      const params = new URLSearchParams({matterId});
+      if (workRef) params.set('workRef', workRef);
+      return `/graph?${params}`;
+    }
     if (!workItemId || (target !== '/knowledge' && target !== '/graph')) {
       return target;
     }

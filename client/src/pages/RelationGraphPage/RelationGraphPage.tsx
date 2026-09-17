@@ -1,3 +1,4 @@
+import SuiteMatterGraphPage from './SuiteMatterGraphPage';
 import { useEffect, useMemo, useState } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import type {
@@ -49,7 +50,17 @@ const KIND_DOT_CLASS: Record<CanonicalLibraryIndexNodeKind, string> = {
   AEO_CANDIDATE: 'rg-dot-package',
 };
 
-export default function RelationGraphPage({
+export default function RelationGraphPage(props: RelationGraphPageProps) {
+  const [params] = useSearchParams();
+  const matters = params.getAll('matterId');
+  if (!props.injectedProjection && matters.length) {
+    if (matters.length !== 1 || !matters[0].trim() || params.has('workItemId')) return <p role="alert">图谱对象身份不明确，请从事项或工作入口重新进入。</p>;
+    return <SuiteMatterGraphPage matterId={matters[0]} />;
+  }
+  return <LegacyRelationGraphPage {...props} />;
+}
+
+function LegacyRelationGraphPage({
   injectedProjection,
   onNodeSelect,
   highlightedNodeId,

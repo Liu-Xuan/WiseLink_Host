@@ -59,6 +59,7 @@ const TopBar: React.FC<TopBarProps> = ({
     matterId || undefined,
   );
   const returnIntentKeys = [
+    'returnMatterGraphQuery', 'returnGraphQuery', 'returnGraphTargetMatterId', 'returnGraphTargetWorkRef', 'returnGraphParseRunId',
     'returnMatterId',
     'returnKnowledgeQuery',
     'returnLibraryQuery',
