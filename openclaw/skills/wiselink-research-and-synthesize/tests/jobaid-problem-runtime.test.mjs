@@ -1049,3 +1049,28 @@ test('concise reading copy travels with the same work save without another gener
   assert.equal(saved.headline,work.headline);
   assert.equal(saved.listBrief,work.listBrief);
 });
+
+for (const matter of [false, true]) test(`missing initial summary is corrected without invented fields or rereading, Matter=${matter}`, async () => {
+  const invalid = { ...completed };
+  delete invalid.headline; delete invalid.listBrief;
+  const corrected = { ...invalid, headline: '条件与适用范围', listBrief: '已读内容的适用前提尚待核查。' };
+  const f = fixture([{action:'SAVE_WORK',work:invalid},{action:'SAVE_WORK',work:corrected},{action:'FINISH'}]);
+  const save = f.options.saveAssessmentWork;
+  let attempts=0;
+  f.options.saveAssessmentWork=async input => {
+    if (++attempts===1) {
+      assert.deepEqual(JSON.parse(input.workJson),invalid);
+      throw Object.assign(new Error('REVIEW_HOST_MCP_TOOL_FAILED:save_assessment_work'),{hostErrorCode:'JOBAID_READING_SUMMARY_REQUIRED'});
+    }
+    return save(input);
+  };
+  if (matter) {
+    const input={...modelInput(),schemaVersion:'wiselink.matter-jobaid-task.v2',subject:{kind:'ENGINEERING_MATTER',matterId:'MAT-one'},availableDocuments:[{documentVersionId:'DV-one'}]};
+    await invokeHostedJobAidProblemModel({operation:'ASSESS_MATTER',modelInput:input},f.options,f.dependencies);
+  } else await f.run();
+  const receipt=JSON.parse(f.calls[1].messages.at(-1).content);
+  assert.equal(receipt.errorCode,'JOBAID_READING_SUMMARY_REQUIRED');
+  assert.match(receipt.instruction,/headline and listBrief together/);
+  assert.deepEqual([...f.store.values()][0].content,corrected);
+  assert.equal(f.reads.length,0);
+});

@@ -23,6 +23,7 @@ const root: AssessmentEvidence = { evidenceRef: 'DOC-A:original:1', kind: 'DOCUM
 const history = { required: false, priorAssessmentRefs: [], engineeringDocumentRefs: [],
   coverage: 'NOT_REQUIRED' as const, limitation: null };
 const proposal = (body: string) => ({ schemaVersion: 'wiselink.jobaid-problem-work.v3',
+  headline: '适用构型条件', listBrief: '目标构型尚未确认，不能直接适用。',
   issues: [{ issueKey: 'condition', question: 'Which conditions apply?', body }],
   roundCompletion: 'IN_PROGRESS', completionReason: 'Target configuration remains unknown.', changeSummary: 'Preserve the conditions.' });
 function sourceWork(): EngineeringMatterWorkingRevisionReadModel {

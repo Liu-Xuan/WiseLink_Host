@@ -29,6 +29,9 @@ export function readHistoricalJobAidWork(raw: unknown, subject: { matterId: stri
       openQuestions: issue.openQuestions, requirementHandling: issue.requirementHandling };
   });
   const saved = materializeJobAidWork({ schemaVersion: JOBAID_PROBLEM_WORK_SCHEMA, issues,
+    // Preserve the legacy reading projection; this is not a new model-authored save.
+    headline: work.headline ?? issues[0]?.question,
+    listBrief: work.listBrief ?? work.headline ?? issues[0]?.question,
     overview: work.understanding, roundCompletion: work.roundCompletion,
     completionReason: work.completionReason, changeSummary: work.changeSummary,
     unchangedExplanation: work.unchangedExplanation }, {

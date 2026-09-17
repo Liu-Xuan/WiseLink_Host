@@ -17,12 +17,12 @@ const context = { matterId:'MAT-test', methodBinding: JOBAID_METHOD_BINDING, pre
 const issue = (key:string, body='指示持续超过五秒才符合原文更换前提；单次正常检查不能证明间歇问题消失。') => ({
   issueKey:key, question:`问题${key}`, body:`${body} [[${source.evidenceRef}]]` });
 const update = (issues: ReturnType<typeof issue>[], extra: Record<string,unknown>={}) => ({
-  schemaVersion:JOBAID_PROBLEM_WORK_SCHEMA, issues, roundCompletion:'IN_PROGRESS',
+  schemaVersion:JOBAID_PROBLEM_WORK_SCHEMA, headline:'指示持续条件',listBrief:'更换前提尚待核查。', issues, roundCompletion:'IN_PROGRESS',
   completionReason:'当前认识已保存，继续核对适用前提。', changeSummary:'保存本批有依据的认识。', ...extra });
 
 test('historical projection preserves actual prose and source identity without accepting old writes',()=>{
   const current=materializeJobAidWork(update([issue('A')]),context);
-  const old={...current,schemaVersion:'wiselink.jobaid-problem-work.v2',issues:[{
+  const old={...current,headline:undefined,listBrief:undefined,schemaVersion:'wiselink.jobaid-problem-work.v2',issues:[{
     ...current.issues[0],body:undefined,understanding:'旧工作原有解释。',statements:[{
       claimId:'old-claim',text:'五秒条件尚未确认。',premises:[{role:'LIMITS',explanation:'这是更换前提。',
         evidenceRef:source.evidenceRef,limitation:'不能据此确认本机适用。'}]}]}]};
@@ -33,6 +33,8 @@ test('historical projection preserves actual prose and source identity without a
   expect(projected.issues[0].body).toContain('不能据此确认本机适用。');
   expect(projected.evidence).toEqual(current.evidence);
   expect(projected.issues[0].issueRef).toBe(current.issues[0].issueRef);
+  expect(projected.headline).toBe(current.issues[0].question);
+  expect(projected.listBrief).toBe(projected.headline);
   expect(()=>materializeJobAidWork(old,context)).toThrow();
   expect(()=>readHistoricalJobAidWork({...old,readSourceRefs:[]},{matterId:'MAT-test'})).toThrow('SOURCE_NOT_DELIVERED');
 });
@@ -55,7 +57,7 @@ test('saved reading summary preserves decisive negation and survives local updat
     listBrief:'指示持续超过五秒才符合更换前提；当前尚未确认该条件，不能据此确认本机适用。'};
   const work=materializeJobAidWork(update([issue('A')],summary),context);
   expect(work).toMatchObject(summary);
-  const next=materializeJobAidWork(update([issue('B')]),{...context,previous:work});
+  const next=materializeJobAidWork(update([issue('B')],{headline:undefined,listBrief:undefined}),{...context,previous:work});
   expect(next).toMatchObject(summary);
   const input={matterId:'MAT-test',matterRevisionId:'MR1',attemptRef:'AQ-summary',requestId:'save-summary',expectedWorkRevision:0,previous:null,
     inputs:[{kind:'DOCUMENT_VERSION' as const,inputId:'I1',familyId:'F1',workItemId:null,workItemRevision:null,resultRef:null,resultRevision:null,documentVersionId:'dv',original:{parseRunId:'pr1',parseRevision:1,semantic:{revision:1,profileRef:'ftd'}}}],
@@ -68,7 +70,7 @@ test('saved reading summary preserves decisive negation and survives local updat
   expect(read.substantiveResult?.content).toMatchObject(summary);
   expect(read.problemWork?.overviewStatus).toBe('NOT_AVAILABLE');
   expect(read.problemWork?.issues[0].body).toBe(issue('A').body);
-  for(const supplied of [{headline:'只有标题'},{listBrief:'只有摘要'},
+  for(const supplied of [{headline:'只有标题',listBrief:undefined},{headline:undefined,listBrief:'只有摘要'},
     {headline:'',listBrief:'摘要'},{headline:'标题',listBrief:null}]) {
     expect(()=>materializeJobAidWork(update([issue('A')],supplied),context)).toThrow();
   }
@@ -106,6 +108,7 @@ test('normal Matter command materializes, validates and reads the same body with
     inputs:[{kind:'DOCUMENT_VERSION' as const,inputId:'I1',familyId:'F1',workItemId:null,workItemRevision:null,resultRef:null,resultRevision:null,documentVersionId:'dv',original:{parseRunId:'pr1',parseRevision:1,semantic:{revision:1,profileRef:'ftd'}}}],proposal:update([issue('A')]),
     evidence:context.evidence,readSourceRefs:context.readSourceRefs,capabilities:[],history:context.history,methodBinding:context.methodBinding};
   // No synthetic DB writes: use the actual command and state validators.
+  expect(()=>materializeMatterJobAidCommand({...input,proposal:{...input.proposal,headline:undefined,listBrief:undefined}})).toThrow('JOBAID_READING_SUMMARY_REQUIRED');
   const command=materializeMatterJobAidCommand(input);
   const {state}=materializeEngineeringMatterWorkingState({matterId:'MAT-test',current:null,command});
   expect(state.focus.question).toBe('问题A');
@@ -248,4 +251,14 @@ test('long change summaries preserve content and still reject blank input', () =
   const accepted=materializeJobAidWork(update([issue('A')],{changeSummary:summary}),context);
   expect(accepted.changeSummary).toBe(summary);
   expect(()=>materializeJobAidWork(update([issue('A')],{changeSummary:'  '}),context)).toThrow('JOBAID_CHANGE_SUMMARY_INVALID');
+});
+
+
+test('initial work requires an explicit summary, but saved copy survives overview-only omission',()=>{
+ const missing=update([issue('A')],{headline:undefined,listBrief:undefined});
+ expect(()=>materializeJobAidWork(missing,context)).toThrow('JOBAID_READING_SUMMARY_REQUIRED');
+ const first=materializeJobAidWork(update([issue('A')]),context);
+ const next=materializeJobAidWork(update([],{headline:undefined,listBrief:undefined,overview:'已有综合正文'}),{...context,previous:first});
+ expect(next.headline).toBe(first.headline); expect(next.listBrief).toBe(first.listBrief);
+ expect(next.issues).toEqual(first.issues);
 });

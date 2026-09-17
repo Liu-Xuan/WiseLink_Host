@@ -443,6 +443,7 @@ describe('Engineering Matter working state materializer', () => {
     const retainedEvidence = evidence('E-OLD', 'WI-A', 'DV-A');
     const work = materializeJobAidWork({
       schemaVersion: JOBAID_PROBLEM_WORK_SCHEMA,
+      headline: '更换前提', listBrief: '更换前提需原文支持。',
       issues: [{
         issueKey: 'A',
         question: '问题A',
