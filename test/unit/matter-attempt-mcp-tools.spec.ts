@@ -1,3 +1,5 @@
+import { z } from 'zod/v4';
+
 import { registerMatterAttemptMcpTools } from '../../server/modules/canonical-host/matter-attempt-mcp-tools';
 
 function fixture(allowed = true, tool = 'matter_action_attempt') {
@@ -18,7 +20,10 @@ function fixture(allowed = true, tool = 'matter_action_attempt') {
     } }),
     heartbeat: jest.fn(), cancel: jest.fn().mockResolvedValue({ status: 'CANCELLED' }), readOriginal: jest.fn(),
     readSourcePages: jest.fn().mockImplementation((input, reader) => reader(input.documentVersionId, { pageStart: input.pageStart, pageEnd: input.pageStart })),
-    readSavedWork: jest.fn().mockResolvedValue({ matterWorkRevisionId: 'MWR-exact' }) };
+    readSavedWork: jest.fn().mockResolvedValue({ matterWorkRevisionId: 'MWR-exact' }),
+    readCurrentWork: jest.fn().mockResolvedValue({ matterId: 'MAT-one', matterRevisionId: 'MR-2', matterRevision: 2,
+      workRef: 'MWR-2', workingRevision: 2, current: null, currentInputs: [], sourceCatalog: [],
+      eligibleEvidenceRefs: [], activeAttempts: [] }) };
   const documents = { readDocumentSourcePagesForRuntime: jest.fn().mockResolvedValue({ pages: [] }) };
   const scope = { appId: 'app_17bzc551rsg', actorUserId: 'host-actor', tenantId: 'host-tenant',
     principalId: 'service:executor', matterId: 'MAT-one', attemptRef: 'AQ-one' };
@@ -28,7 +33,7 @@ function fixture(allowed = true, tool = 'matter_action_attempt') {
   registerMatterAttemptMcpTools({ registerTool } as never, attempts as never,
     allowed ? { authorizeOpenClawMatterAttempt, authorizeOpenClawMatterRequest } as never : {} as never, documents as never, originalReader as never);
   const [name, definition, handler] = registerTool.mock.calls.find(([name]) => name === tool)!;
-  return { attempts, documents, originalReader, scope, expectedScope: { ...scope, authorizeReferenceMatter: expect.any(Function) }, authorizeOpenClawMatterAttempt, authorizeOpenClawMatterRequest, name,
+  return { attempts, documents, originalReader, scope, expectedScope: { ...scope, authorizeReferenceMatter: expect.any(Function) }, authorizeOpenClawMatterAttempt, authorizeOpenClawMatterRequest, name, definition,
     call: (input: unknown) => handler(definition.inputSchema.parse(input)) };
 }
 const request = { operation: 'CLAIM', matterId: 'MAT-one', attemptRef: 'AQ-one' };
@@ -179,5 +184,73 @@ describe('Matter MCP existing attempt lifecycle', () => {
     expect(JSON.stringify(result)).toContain('JOBAID_WORK_VALIDATION_FAILED');
     expect(JSON.stringify(result)).not.toMatch(/private-token|private-task|leaseToken|taskEnvelopeJson/);
     expect(f.attempts.claim).not.toHaveBeenCalled();
+  });
+});
+
+describe('read_matter_current_work', () => {
+  it('registers a strict matterId-only schema with read-only annotations', () => {
+    const f = fixture(true, 'read_matter_current_work');
+    expect(f.definition.annotations).toEqual({
+      readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false });
+    const schema = z.toJSONSchema(f.definition.inputSchema) as {
+      type?: string; additionalProperties?: boolean; required?: string[]; properties?: Record<string, unknown>;
+    };
+    expect(schema.type).toBe('object');
+    expect(schema.additionalProperties).toBe(false);
+    expect(schema.required).toEqual(['matterId']);
+    expect(Object.keys(schema.properties ?? {})).toEqual(['matterId']);
+  });
+
+  it('returns the read model through the authorized Host scope without any write', async () => {
+    const f = fixture(true, 'read_matter_current_work');
+    const result = await f.call({ matterId: 'MAT-one' });
+    const payload = JSON.parse((result as { content: Array<{ text: string }> }).content[0].text) as Record<string, unknown>;
+    expect(payload).toMatchObject({ matterId: 'MAT-one', workRef: 'MWR-2', workingRevision: 2 });
+    expect(f.authorizeOpenClawMatterRequest).toHaveBeenCalledWith({ matterId: 'MAT-one' });
+    expect(f.attempts.readCurrentWork).toHaveBeenCalledWith(expect.objectContaining({
+      tenantId: 'host-tenant', actorUserId: 'host-actor', principalId: 'service:executor',
+      matterId: 'MAT-one', authorizeReferenceMatter: expect.any(Function) }));
+    for (const write of [f.attempts.reserveJobAid, f.attempts.saveJobAidWork, f.attempts.finishJobAid,
+      f.attempts.claim, f.attempts.heartbeat, f.attempts.cancel, f.attempts.nextForRuntime])
+      expect(write).not.toHaveBeenCalled();
+  });
+
+  it('keeps reference-matter re-authorization for retained sources', async () => {
+    const f = fixture(true, 'read_matter_current_work');
+    await f.call({ matterId: 'MAT-one' });
+    const { authorizeReferenceMatter } = f.attempts.readCurrentWork.mock.calls[0][0];
+    f.authorizeOpenClawMatterRequest.mockResolvedValue({ ...f.scope, matterId: 'MAT-source' });
+    await expect(authorizeReferenceMatter('MAT-source')).resolves.toBeUndefined();
+    for (const changed of [{ tenantId: 'other-tenant' }, { actorUserId: 'other-actor' },
+      { principalId: 'other-principal' }, { matterId: 'MAT-other' }]) {
+      f.authorizeOpenClawMatterRequest.mockResolvedValue({ ...f.scope, matterId: 'MAT-source', ...changed });
+      await expect(authorizeReferenceMatter('MAT-source')).rejects.toMatchObject({ statusCode: 503 });
+    }
+  });
+
+  it('rejects caller-supplied identity, attempt or document fields before dispatch', () => {
+    const f = fixture(true, 'read_matter_current_work');
+    for (const forged of [{ matterId: 'MAT-one', actorUserId: 'forged' },
+      { matterId: 'MAT-one', tenantId: 'tenant-forged' }, { matterId: 'MAT-one', principalId: 'principal-forged' },
+      { matterId: 'MAT-one', attemptRef: 'AQ-forged' }, { matterId: 'MAT-one', documents: ['DV-1'] }])
+      expect(() => f.call(forged)).toThrow();
+    expect(f.authorizeOpenClawMatterRequest).not.toHaveBeenCalled();
+    expect(f.attempts.readCurrentWork).not.toHaveBeenCalled();
+  });
+
+  it('fails closed on a mismatched app or matter scope and on empty principals', async () => {
+    const f = fixture(true, 'read_matter_current_work');
+    for (const mismatched of [{ ...f.scope, matterId: 'MAT-other' }, { ...f.scope, appId: 'app_other' },
+      { ...f.scope, principalId: '' }, { ...f.scope, actorUserId: '' }]) {
+      f.authorizeOpenClawMatterRequest.mockResolvedValue(mismatched);
+      await expect(f.call({ matterId: 'MAT-one' })).rejects.toMatchObject({ statusCode: 503 });
+    }
+    expect(f.attempts.readCurrentWork).not.toHaveBeenCalled();
+  });
+
+  it('fails closed when Matter request authorization is unavailable', async () => {
+    const f = fixture(false, 'read_matter_current_work');
+    await expect(f.call({ matterId: 'MAT-one' })).rejects.toMatchObject({ statusCode: 503 });
+    expect(f.attempts.readCurrentWork).not.toHaveBeenCalled();
   });
 });

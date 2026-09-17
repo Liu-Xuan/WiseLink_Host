@@ -37,20 +37,8 @@ export function buildMatterJobAidTask(input: {
   previous: EngineeringMatterWorkingRevisionReadModel | null;
 }) {
   const prior = input.previous?.state.problemWork ?? null;
-  if (input.previous && !prior)
-    throw new Error('JOBAID_PREVIOUS_WORK_INCOMPLETE');
+  const { sourceCatalog, eligibleEvidenceRefs: initiallyDeliveredRefs } = matterJobAidSourceRegistry(input.previous);
   const methodBinding = prior?.methodBinding ?? JOBAID_METHOD_BINDING;
-  const registry = new Map<string, AssessmentEvidence>();
-  for (const evidence of [...JOBAID_METHOD_EVIDENCE, ...(prior?.evidence ?? [])]) {
-    const existing = registry.get(evidence.evidenceRef);
-    if (existing && canonicalJson(existing) !== canonicalJson(evidence))
-      throw new Error('JOBAID_PRIOR_SOURCE_CHANGED');
-    registry.set(evidence.evidenceRef, structuredClone(evidence));
-  }
-  const sourceCatalog = [...registry.values()];
-  const initiallyDeliveredRefs = [...new Set([...JOBAID_CORE_METHOD_REFS, ...(prior?.readSourceRefs ?? []),
-  ])];
-  if (initiallyDeliveredRefs.some((ref) => !registry.has(ref))) throw new Error('JOBAID_PRIOR_SOURCE_MISSING');
   const historyReview: JobAidProblemWorkContent['historyReview'] = {
     required: input.previous !== null,
     priorAssessmentRefs: input.previous ? [input.previous.matterWorkRevisionId] : [],
@@ -138,4 +126,29 @@ export function addMatterDeliveredEvidence(task: ReturnType<typeof buildMatterJo
   task.modelInput.availableSources = task.sourceCatalog.map(item => ({ ref: item.evidenceRef, kind: item.kind,
     title: item.title, versionLabel: item.versionLabel, locator: 'locator' in item ? item.locator : null }));
   task.modelInput.deliveredEvidence = overallModelEvidenceRegistry(task.sourceCatalog.filter(item => task.initiallyDeliveredRefs.includes(item.evidenceRef)));
+}
+
+/**
+ * Pure registered-source view shared by task assembly (BEGIN) and the
+ * read-only current work entry. The catalog is the registered source roster,
+ * not original content; eligible refs are candidates a later BEGIN must
+ * re-authorize and deliver again.
+ */
+export function matterJobAidSourceRegistry(
+  previous: EngineeringMatterWorkingRevisionReadModel | null,
+): { sourceCatalog: AssessmentEvidence[]; eligibleEvidenceRefs: string[] } {
+  const prior = previous?.state.problemWork ?? null;
+  if (previous && !prior)
+    throw new Error('JOBAID_PREVIOUS_WORK_INCOMPLETE');
+  const registry = new Map<string, AssessmentEvidence>();
+  for (const evidence of [...JOBAID_METHOD_EVIDENCE, ...(prior?.evidence ?? [])]) {
+    const existing = registry.get(evidence.evidenceRef);
+    if (existing && canonicalJson(existing) !== canonicalJson(evidence))
+      throw new Error('JOBAID_PRIOR_SOURCE_CHANGED');
+    registry.set(evidence.evidenceRef, structuredClone(evidence));
+  }
+  const sourceCatalog = [...registry.values()];
+  const eligibleEvidenceRefs = [...new Set([...JOBAID_CORE_METHOD_REFS, ...(prior?.readSourceRefs ?? [])])];
+  if (eligibleEvidenceRefs.some((ref) => !registry.has(ref))) throw new Error('JOBAID_PRIOR_SOURCE_MISSING');
+  return { sourceCatalog, eligibleEvidenceRefs };
 }

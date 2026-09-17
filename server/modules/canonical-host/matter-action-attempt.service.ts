@@ -1,5 +1,5 @@
 import type { EngineeringMatterWorkingRevisionCommand, EngineeringMatterWorkingInputBinding } from '@shared/matter-working.interface';
-import { addMatterDeliveredEvidence, buildMatterJobAidTask, MATTER_JOBAID_TASK_SCHEMA, type MatterIssueCorrectionPurpose, type MatterOverviewCorrectionPurpose } from './matter-jobaid-task';
+import { addMatterDeliveredEvidence, buildMatterJobAidTask, MATTER_JOBAID_TASK_SCHEMA, matterJobAidSourceRegistry, type MatterIssueCorrectionPurpose, type MatterOverviewCorrectionPurpose } from './matter-jobaid-task';
 import { materializeMatterJobAidCommand } from './matter-jobaid-save';
 import { buildEngineeringIssueCorrectionContext, buildEngineeringOverviewCorrectionContext, summarizeEngineeringIssueCorrection } from './engineering-issue-correction-context';
 import { EngineeringIssueCorrectionPluginService } from './engineering-issue-correction-plugin.service';
@@ -10,6 +10,7 @@ import { engineeringMatterPendingInputs } from './engineering-matter-working-sta
 import { readMatterDocumentIdentities } from './matter-document-identity';
 import type { AssessmentEvidence } from '@shared/assessment-reading.interface';
 import { JOBAID_PROBLEM_WORK_SCHEMA } from '@shared/jobaid-problem-assessment.interface';
+import type { MatterCurrentWorkActiveAttempt, MatterCurrentWorkReadModel } from '@shared/matter-current-work.interface';
 import { randomUUID } from 'node:crypto';
 import { Injectable, Optional } from '@nestjs/common';
 import { DocumentSemanticService } from './document-semantic.service';
@@ -193,6 +194,88 @@ export class MatterActionAttemptService {
     if ('next' in observed) return { matterId: input.matterId, next: observed.next };
     const reserved = await this.reserveJobAid(observed.reservation);
     return { matterId: input.matterId, next: { attemptRef: reserved.task.operationRef, status: reserved.row.status } };
+  }
+
+  /**
+   * Read-only current work view for an authorized Hosted client. Reuses the
+   * same actor transaction, runtime authorization and retained-reference
+   * re-authorization as dispatch, but never reserves, claims, saves, finishes
+   * or recovers anything.
+   */
+  async readCurrentWork(input: MatterAttemptScope): Promise<MatterCurrentWorkReadModel> {
+    return this.authorized(input, async (executor) => {
+      const readMatterRevision = async () => {
+        const [matter] = await executor.database.select().from(engineeringMatter)
+          .where(and(eq(engineeringMatter.tenantId, input.tenantId), eq(engineeringMatter.matterId, input.matterId))).limit(1);
+        if (!matter) throw failure('ENGINEERING_MATTER_NOT_FOUND', 404);
+        return matter;
+      };
+      const firstInputs = (await executor.authorizeRuntimeInputs(input)).currentInputs;
+      const firstMatter = await readMatterRevision();
+      const firstCurrent = await executor.loadCurrent(input);
+      if (firstCurrent && firstCurrent.basedOnMatterRevisionId !== firstMatter.currentMatterRevisionId)
+        await executor.authorizeRuntimeInputs({ ...input, basedOnMatterRevisionId: firstCurrent.basedOnMatterRevisionId });
+
+      const { sourceCatalog, eligibleEvidenceRefs } = matterJobAidSourceRegistry(firstCurrent);
+      const retainedEvidence = [...(firstCurrent?.state.problemWork?.evidence ?? [])];
+      const overviewSource = firstCurrent?.overviewSourceWork ?? null;
+      if (firstCurrent && overviewSource) {
+        const overviewRevision = await this.working.readByRef(
+          { tenantId: input.tenantId, matterId: input.matterId, workRef: overviewSource.workRef },
+          executor.database,
+        );
+        if (!overviewRevision) throw failure('MATTER_REFERENCE_WORK_NOT_FOUND', 404);
+        if (overviewRevision.workingRevision !== overviewSource.workingRevision)
+          throw failure('MATTER_REFERENCE_WORK_BINDING_CHANGED');
+        await executor.authorizeRuntimeInputs({ ...input, basedOnMatterRevisionId: overviewRevision.basedOnMatterRevisionId });
+        retainedEvidence.push(...(overviewRevision.state.problemWork?.evidence ?? []));
+      }
+      await this.authorizeReferenceEvidence(executor, input, retainedEvidence);
+
+      // One READ COMMITTED transaction does not by itself give every statement
+      // the same snapshot: re-read the versioned identity and fail closed on
+      // any drift instead of returning a mixed version.
+      const secondInputs = (await executor.authorizeRuntimeInputs(input)).currentInputs;
+      const secondMatter = await readMatterRevision();
+      const secondCurrent = await executor.loadCurrent(input);
+      if (
+        secondMatter.currentMatterRevisionId !== firstMatter.currentMatterRevisionId ||
+        secondMatter.currentRevisionNo !== firstMatter.currentRevisionNo ||
+        (secondCurrent?.matterWorkRevisionId ?? null) !== (firstCurrent?.matterWorkRevisionId ?? null) ||
+        (secondCurrent?.workingRevision ?? 0) !== (firstCurrent?.workingRevision ?? 0) ||
+        canonicalJson(secondInputs) !== canonicalJson(firstInputs)
+      )
+        throw failure('MATTER_CURRENT_WORK_READ_CONFLICT');
+
+      const activeRows = await executor.database
+        .select({ ref: actionAttempt.operationRef, status: actionAttempt.status })
+        .from(actionAttempt)
+        .where(and(
+          eq(actionAttempt.tenantId, input.tenantId),
+          eq(actionAttempt.actorUserId, input.actorUserId),
+          eq(actionAttempt.matterId, input.matterId),
+          eq(actionAttempt.requestOrigin, ACTION_ATTEMPT_REQUEST_ORIGIN),
+          inArray(actionAttempt.status, ['QUEUED', 'RUNNING', 'RETRY_SCHEDULED', 'COMMITTING']),
+        ))
+        .orderBy(actionAttempt.createdAt);
+      const activeAttempts: MatterCurrentWorkActiveAttempt[] = [];
+      for (const row of activeRows) {
+        if (!row.ref) continue;
+        activeAttempts.push({ attemptRef: row.ref, status: row.status as MatterCurrentWorkActiveAttempt['status'] });
+      }
+      return {
+        matterId: input.matterId,
+        matterRevisionId: firstMatter.currentMatterRevisionId,
+        matterRevision: firstMatter.currentRevisionNo,
+        workRef: firstCurrent?.matterWorkRevisionId ?? null,
+        workingRevision: firstCurrent?.workingRevision ?? 0,
+        current: firstCurrent,
+        currentInputs: firstInputs,
+        sourceCatalog,
+        eligibleEvidenceRefs,
+        activeAttempts,
+      };
+    });
   }
 
   private reserveInternal(input: ReserveMatterAttempt | ReserveMatterJobAidAttempt, nativeActor?: CanonicalHostActor): Promise<{

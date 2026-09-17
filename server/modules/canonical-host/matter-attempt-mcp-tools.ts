@@ -24,6 +24,21 @@ export function registerMatterAttemptMcpTools(server: McpServer, attempts: Matte
       throw canonicalServiceScopeUnavailable();
     return textResult(await attempts.nextForRuntime(referenceAuthorizedScope(scope, authorization)));
   });
+
+  server.registerTool('read_matter_current_work', {
+    title: '读取事项当前工作',
+    description:
+      '读取已授权事项的最新版本标识、完整当前工作/Overview、准确输入绑定与已登记来源目录，以及活动任务摘要。纯读取：不创建/认领/保存/完成任何任务，不写工作、事件或来源回执；后续 BEGIN 仍需重新授权与 CAS。',
+    inputSchema: z.object({ matterId: target.matterId }).strict(),
+    annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false },
+  }, async (input) => {
+    if (!authorization.authorizeOpenClawMatterRequest) throw canonicalServiceScopeUnavailable();
+    const scope = await authorization.authorizeOpenClawMatterRequest(input);
+    if (scope.appId !== 'app_17bzc551rsg' || scope.matterId !== input.matterId ||
+      !scope.tenantId || !scope.actorUserId || !scope.principalId) throw canonicalServiceScopeUnavailable();
+    return textResult(await attempts.readCurrentWork(referenceAuthorizedScope(scope, authorization)));
+  });
+
   server.registerTool('begin_matter_assessment', {
     title: '申请事项持续评估',
     description: '按精确事项和工作版本登记一个评估请求；Host 组装来源与前次完整工作，同一请求可重复读回。',
