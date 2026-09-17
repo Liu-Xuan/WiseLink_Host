@@ -1353,7 +1353,7 @@ test('accepts shared background in new JobAid and Overall inputs while retaining
   validatePayload('synthesis-input', { ...overall, commonContext });
 });
 
-test('requires 34 MCP capabilities, six review tools, and hosted provenance', () => {
+test('requires 35 MCP capabilities, six review tools, and hosted provenance', () => {
   assert.deepEqual(INITIAL_ANALYSIS_OPERATIONS, [
     'TRANSLATE',
     'EXTRACT_APPLICABILITY',
@@ -1368,9 +1368,10 @@ test('requires 34 MCP capabilities, six review tools, and hosted provenance', ()
     'get_action_attempt_status',
     'commit_review_turn_candidate',
   ]);
-  assert.equal(HOST_MCP_TOOLS.length, 34);
-  assert.equal(new Set(HOST_MCP_TOOLS).size, 34);
+  assert.equal(HOST_MCP_TOOLS.length, 35);
+  assert.equal(new Set(HOST_MCP_TOOLS).size, 35);
   for (const name of ['translation_workspace', 'read_assessment_sources', 'query_assessment_knowledge', 'save_assessment_work', 'read_assessment_work']) assert.ok(HOST_MCP_TOOLS.includes(name));
+  assert.ok(HOST_MCP_TOOLS.includes('read_matter_current_work'));
   assert.ok(HOST_MCP_TOOLS.includes('begin_applicability_evaluation'));
   assert.ok(HOST_MCP_TOOLS.includes('commit_applicability_candidate'));
   assert.equal(
@@ -7668,19 +7669,72 @@ test('official model adapter chooses original discovery guidance and returns nat
 // Previous deployed surface confirmed at release 7684835221602864077, plus c112 document_reading.
 // The added tool is a code contract here, not a claim of current online deployment.
 // Keep this observation independent of HOST_MCP_TOOLS, which omitted four tools in c87.
-test('accepts the deployed document tool surface while rejecting unknown tools and weakened commits', () => {
-  const names = 'document_reading document_work read_document_original document_translation next_original_assessment next_matter_assessment begin_matter_assessment matter_action_attempt query_review_aily get_parse_status query_parsed_package get_deep_link begin_translation commit_translation_candidate translation_workspace begin_applicability_evaluation commit_applicability_candidate begin_dynamic_evaluation commit_dynamic_evaluation_candidate read_assessment_sources query_assessment_knowledge save_assessment_work read_assessment_work record_oem_discovery_run begin_overall_synthesis resume_overall_synthesis commit_overall_candidate begin_review_turn get_review_turn_context read_source_refs get_action_attempt_status commit_review_turn_candidate heartbeat_action_attempt cancel_action_attempt get_pending_review_turn'.split(' ');
+// read_matter_current_work is reserved for the future 17b Host read-only precheck and is
+// NOT yet deployed by the Host; the surface below only pins the runtime contract (name,
+// read-only annotations, strict matterId-only schema) the Host must provide once that
+// batch lands. Do not claim this tool is already available on the Host.
+const READ_MATTER_CURRENT_WORK_TOOL = {
+  name: 'read_matter_current_work',
+  annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false },
+  inputSchema: {
+    type: 'object', additionalProperties: false, required: ['matterId'],
+    properties: { matterId: {} },
+  },
+};
+
+const buildHostToolSurface = () => {
+  const names = 'document_reading document_work read_document_original document_translation next_original_assessment next_matter_assessment begin_matter_assessment matter_action_attempt read_matter_current_work query_review_aily get_parse_status query_parsed_package get_deep_link begin_translation commit_translation_candidate translation_workspace begin_applicability_evaluation commit_applicability_candidate begin_dynamic_evaluation commit_dynamic_evaluation_candidate read_assessment_sources query_assessment_knowledge save_assessment_work read_assessment_work record_oem_discovery_run begin_overall_synthesis resume_overall_synthesis commit_overall_candidate begin_review_turn get_review_turn_context read_source_refs get_action_attempt_status commit_review_turn_candidate heartbeat_action_attempt cancel_action_attempt get_pending_review_turn'.split(' ');
   const commitFields = ['attemptRef', 'leaseGeneration', 'leaseToken', 'resultJson'];
-  const tools = names.map(name => ({ name, inputSchema: name === 'commit_review_turn_candidate' ? {
+  return names.map(name => name === 'read_matter_current_work' ? structuredClone(READ_MATTER_CURRENT_WORK_TOOL) : ({ name, inputSchema: name === 'commit_review_turn_candidate' ? {
     type: 'object', additionalProperties: false, required: commitFields,
     properties: Object.fromEntries(commitFields.map(key => [key, {}])),
   } : {} }));
+};
+
+test('accepts the runtime tool surface with the future read-only precheck while rejecting unknown tools and weakened commits', () => {
+  const tools = buildHostToolSurface();
   assert.doesNotThrow(() => validateHostToolMetadata({ tools }));
-  for (const name of ['document_reading', 'document_work', 'document_translation', 'read_document_original', 'next_original_assessment']) {
+  for (const name of ['document_reading', 'document_work', 'document_translation', 'read_document_original', 'next_original_assessment', 'read_matter_current_work']) {
     assert.throws(() => validateHostToolMetadata({ tools: tools.filter(tool => tool.name !== name) }), /REVIEW_HOST_MCP_EXACT20_MISMATCH/);
   }
   assert.throws(() => validateHostToolMetadata({ tools: [...tools, { name: 'unexpected_write' }] }), /REVIEW_HOST_MCP_EXACT20_MISMATCH/);
   const weakened = structuredClone(tools);
   weakened.find(tool => tool.name === 'commit_review_turn_candidate').inputSchema.additionalProperties = true;
   assert.throws(() => validateHostToolMetadata({ tools: weakened }), /REVIEW_HOST_MCP_COMMIT_SCHEMA_MISMATCH/);
+});
+
+// Every rejection below is produced by the real validateHostToolMetadata
+// implementation running on a mutated full tool surface; no case only
+// re-asserts the fixture constant above.
+test('rejects weakened read_matter_current_work metadata through the real validator', () => {
+  assert.doesNotThrow(() => validateHostToolMetadata({ tools: buildHostToolSurface() }));
+  const findPrecheck = tools => tools.find(tool => tool.name === 'read_matter_current_work');
+  for (const [key, wrong] of [
+    ['readOnlyHint', false],
+    ['destructiveHint', true],
+    ['idempotentHint', false],
+    ['openWorldHint', true],
+  ]) {
+    const tools = buildHostToolSurface();
+    findPrecheck(tools).annotations[key] = wrong;
+    assert.throws(() => validateHostToolMetadata({ tools }), /REVIEW_HOST_MCP_PRECHECK_SCHEMA_MISMATCH/);
+  }
+  const annotationsMissing = buildHostToolSurface();
+  delete findPrecheck(annotationsMissing).annotations;
+  assert.throws(() => validateHostToolMetadata({ tools: annotationsMissing }), /REVIEW_HOST_MCP_PRECHECK_SCHEMA_MISMATCH/);
+  const extraProperty = buildHostToolSurface();
+  findPrecheck(extraProperty).inputSchema.properties.tenant = {};
+  assert.throws(() => validateHostToolMetadata({ tools: extraProperty }), /REVIEW_HOST_MCP_PRECHECK_SCHEMA_MISMATCH/);
+  const widened = buildHostToolSurface();
+  findPrecheck(widened).inputSchema.additionalProperties = true;
+  assert.throws(() => validateHostToolMetadata({ tools: widened }), /REVIEW_HOST_MCP_PRECHECK_SCHEMA_MISMATCH/);
+  const wrongRequired = buildHostToolSurface();
+  findPrecheck(wrongRequired).inputSchema.required = ['matterId', 'tenant'];
+  assert.throws(() => validateHostToolMetadata({ tools: wrongRequired }), /REVIEW_HOST_MCP_PRECHECK_SCHEMA_MISMATCH/);
+  const missingRequired = buildHostToolSurface();
+  findPrecheck(missingRequired).inputSchema.required = [];
+  assert.throws(() => validateHostToolMetadata({ tools: missingRequired }), /REVIEW_HOST_MCP_PRECHECK_SCHEMA_MISMATCH/);
+  const missingMatterId = buildHostToolSurface();
+  delete findPrecheck(missingMatterId).inputSchema.properties.matterId;
+  assert.throws(() => validateHostToolMetadata({ tools: missingMatterId }), /REVIEW_HOST_MCP_PRECHECK_SCHEMA_MISMATCH/);
 });
