@@ -21,6 +21,7 @@ import {
   documentLabel,
   libraryDateLabel,
   libraryVersionLabel,
+  projectLibraryDocumentReading,
 } from './library-document-presentation';
 
 interface LibraryDocumentDetailsProps {
@@ -50,6 +51,9 @@ export function LibraryDocumentDetails({
       ? document?.versions.find(version => version.documentVersionId === selectedVersionPin)
       : undefined
     : document?.versions.find(version => version.selectedVersionIsCurrent);
+  const selectedReading = selectedVersion
+    ? projectLibraryDocumentReading(selectedVersion)
+    : null;
 
   useEffect(() => {
     if (!document) {
@@ -120,10 +124,44 @@ export function LibraryDocumentDetails({
               </p>
             </div>
           </header>
-          {selectedVersion ? <section className="library-selected-version" data-document-version-id={selectedVersion.documentVersionId}>
+          {selectedVersion && selectedReading ? <section className="library-selected-version" data-document-version-id={selectedVersion.documentVersionId}>
             <p>{libraryVersionLabel(selectedVersion)} · {selectedVersion.selectedVersionIsCurrent ? '库内当前版本' : '历史版本'}</p>
-            <h4>这份资料说明什么</h4>
-            <p>此版本尚无可用的简明解读，可进入精读核对原文。</p>
+            <h4>简明解读</h4>
+            {selectedReading.brief ? (
+              <div
+                className="library-quicklook-reading"
+                data-reading-run-ref={selectedReading.readingRunRef ?? undefined}
+                data-reading-revision={selectedReading.readingRevision ?? undefined}
+              >
+                <strong className="library-quicklook-headline">{selectedReading.headline}</strong>
+                <p className="library-quicklook-brief">{selectedReading.brief}</p>
+                {selectedReading.coverageStatus === 'PARTIAL_DELIVERY' ? (
+                  <p className="library-quicklook-note">
+                    部分覆盖：已送达 {selectedReading.deliveredUnitCount}/{selectedReading.totalUnitCount}，仅代表已送达范围，不代表完整理解。
+                  </p>
+                ) : null}
+              </div>
+            ) : (
+              <p>{selectedReading.note}</p>
+            )}
+            {selectedReading.criticalConditions.length > 0 ||
+            selectedReading.limitations.length > 0 ||
+            selectedReading.sourceLimitations.length > 0 ? (
+              <div className="library-quicklook-conditions">
+                <h4>关键条件与阅读限制</h4>
+                <ul>
+                  {selectedReading.criticalConditions.map((condition) => (
+                    <li key={`condition:${condition}`}>{condition}</li>
+                  ))}
+                  {selectedReading.limitations.map((limitation) => (
+                    <li key={`limitation:${limitation}`}>{limitation}</li>
+                  ))}
+                  {selectedReading.sourceLimitations.map((sourceLimitation) => (
+                    <li key={`source:${sourceLimitation}`}>{sourceLimitation}</li>
+                  ))}
+                </ul>
+              </div>
+            ) : null}
             <DocumentVersionLink version={selectedVersion} familyId={document.familyId}>进入精读工作台</DocumentVersionLink>
           </section> : <p role="status">所选版本未在当前读取范围内返回，未替换为其他版本。</p>}
           <p className="library-quicklook-note">
@@ -136,6 +174,8 @@ export function LibraryDocumentDetails({
               document={document}
             />
           ) : null}
+          <details className="library-quicklook-history">
+            <summary>改版比较与全部版本（{document.versions.length}）</summary>
           <div className="library-revision-picker">
             <p className="library-revision-picker-note">
               选择两个不同的版本进行只读改版比较。「基线端」与「比较目标端」只表示本次比较的两端，不代表厂家先后、正式采用或最新。
@@ -240,6 +280,7 @@ export function LibraryDocumentDetails({
               </li>
             ))}
           </ol>
+          </details>
           <div className="library-quicklook-actions">
             <Button
               type="button"

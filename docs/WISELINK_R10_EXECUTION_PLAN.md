@@ -363,7 +363,7 @@ Host 服务端只读能力由 **17b 对应会话的唯一 Luna** 在隔离工作
 
 E1 已独立接受并选择性集成：补丁 `e6d2a6c9…` 的准确 8 文件基于 `5991f4439`，原 10 回归与 Sidebar 两处残余修复均通过，本机 5 套 74/74；集成提交 `c856de70af4a5ed064831477c6772bf8001d5319`，父提交 `5991f44397b2e430137bfb9906509a054311da41`。后续 Host 批次以实际集成后提交为基线；本次接受不代表部署或线上业务验收。私有证据：`/private/tmp/wl-e1-final2-from-tool.patch`、`/private/tmp/wl-e1-final2-tests.txt`。
 
-runtime r2 四文件已接受并集成为 `88c062eceaf24c1bd27e1a7703a1726f25837556`（父提交为上述 E1 提交），双远端同名分支已确认该 SHA，尚未安装/激活：以准确 c113 包（SHA `1a5fa4a9…`）为基线，保留 `document_reading` 及 SKILL/yaml；真实 `validateHostToolMetadata` 已拒绝弱化只读注解、额外属性及缺失必填 matterId，独立本机 validation 203/203。交接 tar SHA `515abca0…`、patch SHA `6b22d2ec…`，4 文件前后哈希及隔离 apply-check 通过。文件映射到 `openclaw/skills/wiselink-research-and-synthesize/` 下的 `scripts/orchestrate-host-mcp.mjs`、`scripts/run-hosted-review-turn.mjs`、`references/host-mcp-orchestration.md`、`tests/validation.test.mjs`；需与 17b Host 工具实现配套后再协调发布/安装，不能提前激活严格新名单。私有证据：`/private/tmp/wl-runtime-r2-astra/MANIFEST.json`、`/private/tmp/wl-runtime-r2-astra/validation-results.txt`。
+runtime r2 四文件已接受并集成为 `88c062eceaf24c1bd27e1a7703a1726f25837556`（父提交为上述 E1 提交），双远端同名分支已确认该 SHA；2026-09-18 已完成下述四文件安装，配置过滤接线仍待核验：以准确 c113 包（SHA `1a5fa4a9…`）为基线，保留 `document_reading` 及 SKILL/yaml；真实 `validateHostToolMetadata` 已拒绝弱化只读注解、额外属性及缺失必填 matterId，独立本机 validation 203/203。交接 tar SHA `515abca0…`、patch SHA `6b22d2ec…`，4 文件前后哈希及隔离 apply-check 通过。文件映射到 `openclaw/skills/wiselink-research-and-synthesize/` 下的 `scripts/orchestrate-host-mcp.mjs`、`scripts/run-hosted-review-turn.mjs`、`references/host-mcp-orchestration.md`、`tests/validation.test.mjs`；17b Host 配套已技术发布，安装与生产 metadata 最新证据见 15.4；不把代码安装等同于配置过滤器生效或业务验收。私有证据：`/private/tmp/wl-runtime-r2-astra/MANIFEST.json`、`/private/tmp/wl-runtime-r2-astra/validation-results.txt`。
 
 早期只读核验已确认多个 17b 会话默认共享 `/home/gem/workspace/code`，不能在默认 checkout 并写。后续已实际建立并核对下表四个独立工作树，均从 `88c062eceaf24c1bd27e1a7703a1726f25837556` 开始、创建时 clean，git-dir/index 分离（common-dir 共享允许）。用户已明确允许按适合模块新增会话，不限会话数量、不扩额度；每会话一个 Luna，文件范围不重叠，Git 集成及发布串行。独立目录成立不代表 shell 并发可靠或代码已完成：Reader 曾两次 `ErrorAgtShellSessionDisposed`，操作可能已落盘，应先查实际目录而非重复创建。
 
@@ -374,7 +374,7 @@ runtime r2 四文件已接受并集成为 `88c062eceaf24c1bd27e1a7703a1726f25837
 | P2 知识目录 `conversation_4m1xuavvgyhaz` | 前端 Luna `/root/luna_frontend_resume_e1` | `/home/gem/workspace/wl-knowledge-p2-88c`；engineering-issue-search.service与对应unit spec两文件，不改Host的PG测试 |
 | Suite Wiki `conversation_4m2pzkdh5j9et` | 后端名 Luna `/root/luna_backend_resume_overall` | `/home/gem/workspace/code/tmp/wl-suite-wiki-wt`；EngineeringMatterPage/matter-wiki.css、页面专用组件及Wiki测试，不改公共壳/API |
 
-截至本次记录，四批尚无已接受代码产物；Host已创建 `shared/matter-current-work.interface.ts` 并成功编辑 `matter-action-attempt.service.ts`，仍待完整交付审查（原始工具证据 `/private/tmp/wl-host-fresh-now.json`）；P2仍在读取上下文。P1受保护依赖操作失败，不能绕过；P1短纠偏和Wiki源包说明仍排队，入队不等于立即生效。原始 `turns[]` 中的 running 句柄与其增量工具消息优先于孤立 `latest_turn`：已见后发纠偏记录 cancelled/无id，但原turn仍执行且实际收到纠偏。CLI `+chat` 成功只证明接收，不能声称已实施；需要即时发送的UI操作已告知用户，内置UI当前不可用，不切外部浏览器。受保护依赖不改，获准代码可先实施交本机隔离验证；代码路径也明确受阻时先保存并结束该云端写者，再按已有授权转本地隔离，不双写、不无限堆队列。私有证据：`/private/tmp/wl-host-fallback-latest.json`、`/private/tmp/wl-p2-latest.json`、`/private/tmp/wl-progress-p1-astra.json`、`/private/tmp/wl-progress-wiki-messages-astra.json`、`/private/tmp/wl-host-second-astra-tail.json`。
+以下为 2026-09-17 的阶段快照（后续接受、发布与安装以 15.4 为准）：当时四批尚无已接受代码产物；Host已创建 `shared/matter-current-work.interface.ts` 并成功编辑 `matter-action-attempt.service.ts`，仍待完整交付审查（原始工具证据 `/private/tmp/wl-host-fresh-now.json`）；P2仍在读取上下文。P1受保护依赖操作失败，不能绕过；P1短纠偏和Wiki源包说明仍排队，入队不等于立即生效。原始 `turns[]` 中的 running 句柄与其增量工具消息优先于孤立 `latest_turn`：已见后发纠偏记录 cancelled/无id，但原turn仍执行且实际收到纠偏。CLI `+chat` 成功只证明接收，不能声称已实施；需要即时发送的UI操作已告知用户，内置UI当前不可用，不切外部浏览器。受保护依赖不改，获准代码可先实施交本机隔离验证；代码路径也明确受阻时先保存并结束该云端写者，再按已有授权转本地隔离，不双写、不无限堆队列。私有证据：`/private/tmp/wl-host-fallback-latest.json`、`/private/tmp/wl-p2-latest.json`、`/private/tmp/wl-progress-p1-astra.json`、`/private/tmp/wl-progress-wiki-messages-astra.json`、`/private/tmp/wl-host-second-astra-tail.json`。
 
 交接优先直接取完整产物，不为传输将未接受代码推入共享远端。本机 CLI 应用文件存储的私有上传/下载往返已核验；这不证明云端会话已有相同上传授权，云端上传仍须独立核对，不能宣称端到端已通。已取得的 gzip/patch继续校验基线、双哈希、文件清单与隔离适用性；不把本机临时路径发给云端当材料正文。往返产物：`/private/tmp/read-matter-current-work-roundtrip.gz`；最小只读批次分析：`/private/tmp/wl-read-matter-current-work-batch-20260917.md`。这些是本机私有证据定位，不作为其他环境可直接读取的路径。
 
@@ -509,6 +509,16 @@ M集成记录顶部记录实际部署、Skill、工作与Overall、原文、请�
 已接受的 e24 提交 `e24cc6ee8153ff10cdd8387087279b7382c36a86` 已通过妙搭 release `7686541034353331169` 发布完成，最终 `commit_id` 与 origin/GitHub 同名分支一致，`error_logs=[]`。发布创建后短暂回显旧 `5991`，最终完成回执已确认取 e24；后续不得把中间 `publishing` 回执当作最终源码版本。
 
 发布状态仅以本次 `release_id` 的 `release-get status`、`commit_id` 及 `error_logs` 核对；开发会话的 turn/streaming/queued 字段不用于判断发布结果。本次 e24 技术发布完成；页面视觉、真实读取与性能验收另计，17c c113 未改变。详细原始回执保留在本机临时证据，不写入仓库。
+
+### 15.4.1 Host 当前工作读取与 runtime 配套（2026-09-18）
+
+`read_matter_current_work` 的准确 7 文件已接受：保留 actor/租户/事项与来源重新授权，当前工作、输入和保存正文的快照/CAS 一致性，纯读取不创建或保存业务任务。独立本机 unit 29/29、修正测试夹具后 PG 定向 2/2，另有跨事项来源撤权 1/1，实际退出码均为 0。Host release `7686555422471228382` 已 `finished`，发布提交 `a1f5efbd6`，`error_logs=[]`。Git 后续 `f9360f665` 为纯测试更正，不冒充另一次生产发布；旧本地 MCP fixture 漏传 document_reading 服务所致的 EXACT20_MISMATCH 已与生产结果区分，未降低名单校验。
+
+生产官方端点的只读 initialize/tools/list 已独立核对：服务版本 1.2.0，36 项为完整必需 35 项加 `get_pending_review_turn`，无缺失或重复；新工具仅必填 matterId、禁止额外属性，readOnly/destructive/idempotent/openWorld 分别 true/false/true/false。探测沿既有官方配置端点与密钥来源，只读 metadata，无业务工具调用。该记录不含 Git 发布字段，发布 SHA 另以上述 release 回执核对。私有原始证据：`/private/tmp/backend-tools-list-latest.json`；Host 接受报告：`/private/tmp/wl-host-final-astra-review-result.md`。
+
+17c 已把接受的 88c runtime 四文件安装到原 c113 skill：安装后四文件哈希与候选一致，保留 document_reading、SKILL/yaml 和其他文件；远端 validation 实际 `VALIDATION_TEST_EXIT=0`、171 项通过、0 失败，skill 列表为 ready。组合命令的外层退出 1 不覆盖已记录的测试退出码，也不写成整条命令全部通过。原始证据：`/private/tmp/backend-install-final.json`。这 171 项为本次远端运行结果，不与此前隔离本机 203 项计数混同。
+
+`mcp.servers.wiselink_host_controller.toolFilter.include` 从旧 20 项接至接受的 `HOST_MCP_TOOLS` 35 项，已在 turn `7686561201664855226` 完成唯一键更新：`SCRIPT_EXIT=0`、`otherKeysUnchanged=true`，`openclaw config validate` 退出 0；模型、身份、endpoint、provider、secrets、TLS 不变，调度仍要求恢复原值。安装路径的实际 `createHostMcpConnection` 已连接生产并通过完整 metadata validator，`NAMES_MATCH_35=true`、`HAS_READ_MATTER_CURRENT_WORK=true`、`PROBE_EXIT=0`。原始证据：`/private/tmp/backend-filter-progress.json`。该 skill 连接仍不经过 OpenClaw 配置过滤器；官方 `openclaw mcp probe wiselink_host_controller --json` 随后退出 0，报告 tools=35、filteredTools=1（pending）、diagnostics=[]，确认配置过滤路径可发现接受的 35 项；原始证据 `/private/tmp/backend-filter-final.json`（含凭据的其他输出仅私有保管，不入仓）。本轮未重启，未观察已有常驻进程的热缓存；后续先核实实际消费者是否依赖该缓存，无必要不重启。以上为实现、技术发布与安装证据，不代表真实当前工作业务读取、全 Suite 视觉或性能验收。
 
 ## 参考与生效说明
 

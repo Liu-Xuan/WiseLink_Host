@@ -413,6 +413,16 @@
 .suite-version-rows { border-bottom: 1px solid var(--wl-border); background: color-mix(in srgb, var(--wl-muted) 4%, var(--wl-sheet)); }
 .suite-version-row { border-bottom: 1px solid var(--wl-border); color: var(--wl-muted); font-size: 11px; }
 .suite-library-table-wrap.is-compact .suite-library-table td { padding-block: 8px; }
+.suite-library-table .suite-reading { display: grid; gap: 2px; }
+.suite-library-table .suite-reading-headline { color: var(--wl-ink); font-weight: 600; }
+.suite-library-table .suite-reading-brief { overflow-wrap: anywhere; }
+.suite-library-table .suite-reading.is-folded .suite-reading-brief { display: -webkit-box; overflow: hidden; -webkit-box-orient: vertical; -webkit-line-clamp: 2; }
+.suite-library-table .suite-reading-note { color: var(--wl-muted); }
+.suite-library-table .suite-reading-toggle { margin-top: 2px; padding: 0; border: 0; background: none; color: var(--wl-accent); font-size: 11px; cursor: pointer; }
+.suite-library-table .suite-reading-toggle:hover { text-decoration: underline; }
+.suite-library-table .suite-conditions { display: grid; gap: 2px; }
+.suite-library-table .suite-conditions > span { overflow-wrap: anywhere; }
+.suite-library-table .suite-conditions.is-folded > span:nth-child(n+3) { display: none; }
 .suite-library-empty { padding: 40px 12px; color: var(--wl-muted); font-size: 12px; }
 .library-atlas-home .library-tree-panel {
   min-width: 0;

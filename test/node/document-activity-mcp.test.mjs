@@ -15,7 +15,7 @@ test('actual MCP transport keeps the installed tool catalog and dispatches expli
   const calls = [];
   const documentWork = { run: async input => { calls.push(['document', input]); return { status: 'PUBLISHED' }; } };
   const activity = { run: async input => { calls.push(['activity', input]); return { status: 'QUEUED', runRef: input.runRef }; } };
-  const service = new CanonicalHostOpenClawMcpService({}, {}, {}, {}, {}, {}, {}, {}, {}, {}, {}, {}, {}, documentWork, {}, {}, activity);
+  const service = new CanonicalHostOpenClawMcpService({}, {}, {}, {}, {}, {}, {}, {}, {}, {}, {}, {}, {}, documentWork, {}, {}, activity, { run: async () => ({ reading: null }) });
   const server = createServer((request, response) => { void service.handle(request, response); });
   await new Promise((resolve, reject) => { server.once('error', reject); server.listen(0, '127.0.0.1', resolve); });
   const address = server.address();
