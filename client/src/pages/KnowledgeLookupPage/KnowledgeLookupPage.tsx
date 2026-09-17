@@ -1,7 +1,7 @@
-import { useEffect, useRef, useState } from 'react';
+import { Fragment, useEffect, useRef, useState } from 'react';
 import { Link, useNavigate, useSearchParams } from 'react-router-dom';
-import { BookOpen, Search } from 'lucide-react';
-import type { CanonicalLibraryDocumentsResponse } from '@shared/api.interface';
+import { BookOpen, ChevronDown, ChevronRight, Search } from 'lucide-react';
+import type { CanonicalLibraryDocumentsResponse, CanonicalLibraryDocumentVersionSummary } from '@shared/api.interface';
 import type { EngineeringKnowledgeEntry, EngineeringKnowledgeIdentity, EngineeringKnowledgePage, EngineeringKnowledgeRead, EngineeringKnowledgeScope } from '@shared/engineering-issue-search.interface';
 import { getCanonicalLibraryDocuments, readEngineeringKnowledgeCatalogue, readEngineeringKnowledgeWork } from '@client/src/api/canonical-host';
 import { useCurrentUserSession } from '@client/src/app/providers/CurrentUserSessionProvider';
@@ -9,6 +9,10 @@ import EngineeringIssueBody from '@client/src/features/matter/EngineeringIssueBo
 import { JobAidIssueArticle } from '@client/src/pages/DocumentParsingPage/JobAidIssueArticle';
 import { exactDocumentSourceRoute, matterWorkRoute } from '@client/src/features/matter/matter-navigation';
 import { knowledgeReadingParams, knowledgeReadingIdentity } from '@client/src/features/matter/reading-return';
+import {
+  libraryVersionLabel,
+  projectLibraryDocumentReading,
+} from '@client/src/pages/WorkspaceHomePage/library-document-presentation';
 import type { DocumentAssessmentEvidence } from '@client/src/features/matter/assessment-reading';
 import MatterDocumentSourceDialog from '@client/src/features/matter/MatterDocumentSourceDialog';
 import OverviewCorrectionNotices from '@client/src/features/matter/OverviewCorrectionNotices';
@@ -60,6 +64,8 @@ function KnowledgeCatalogue() {
   const read = loadedRead && keyOf(loadedRead.entry) === selection ? loadedRead : null;
   const [retry, setRetry] = useState(0);
   const [source, setSource] = useState<{ documentVersionId: string; sourceRef: string | null } | null>(null);
+  const [expandedFamilies, setExpandedFamilies] = useState<Record<string, boolean>>({});
+  const [expandedConditions, setExpandedConditions] = useState<Record<string, boolean>>({});
   const listRef = useRef<HTMLElement>(null), articleRef = useRef<HTMLElement>(null);
   const currentParams = useRef(params); currentParams.current = params;
   const scrollTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -197,11 +203,132 @@ function KnowledgeCatalogue() {
     </div> : <section className="panel knowledge-sources" aria-label="来源资料">
       <div className="panel-head"><h2>资料标题与确切版本</h2></div>
       {loading ? <p role="status">正在读取来源资料…</p> : documents?.items.map(document => {
-        const version = document.versions.find(item => item.selectedVersionIsCurrent);
-        return <div className="knowledge-source" key={document.familyId}>
-          <div><small>{document.normalizedFamily} · {version?.businessRevision || '版次未登记'}</small><h2>{document.documentCode}</h2><p>{version?.extractedMetadata?.title.observations.map(item => item.value).join('；') || version?.originalFilename || '主题待补齐'}</p></div>
-          {version && <button onClick={() => openDocument(`/document-versions/${encodeURIComponent(version.documentVersionId)}`, version.documentVersionId)}>精读 →</button>}
-        </div>;
+        const current = document.versions.find(item => item.selectedVersionIsCurrent);
+        const historical = document.versions.filter(item => !item.selectedVersionIsCurrent);
+        const expanded = Boolean(expandedFamilies[document.familyId]);
+        const sourceBody = (version: CanonicalLibraryDocumentVersionSummary) => {
+          const reading = projectLibraryDocumentReading(version);
+          const partialCoverageLine =
+            reading.coverageStatus === 'PARTIAL_DELIVERY'
+              ? (reading.conditionLines[0] ?? null)
+              : null;
+          const foldedLines = partialCoverageLine
+            ? reading.conditionLines.slice(1)
+            : reading.conditionLines;
+          const conditionsOpen = Boolean(
+            expandedConditions[version.documentVersionId],
+          );
+          return (
+            <div>
+              <small>{document.normalizedFamily} · {libraryVersionLabel(version)}{version.selectedVersionIsCurrent ? '' : ' · 历史版本'}</small>
+              <h2>{document.documentCode}</h2>
+              <p
+                className="knowledge-source-reading"
+                data-reading-run-ref={reading.readingRunRef ?? undefined}
+                data-reading-revision={reading.readingRevision ?? undefined}
+              >
+                <strong>{reading.brief ? reading.headline : reading.fileTitle}</strong>
+                {reading.brief ?? reading.note}
+              </p>
+              {partialCoverageLine || foldedLines.length ? (
+                <div className="knowledge-source-conditions">
+                  {partialCoverageLine ? (
+                    <p className="knowledge-source-coverage">{partialCoverageLine}</p>
+                  ) : null}
+                  {foldedLines.length ? (
+                    <>
+                      <button
+                        type="button"
+                        className="knowledge-source-conditions-toggle"
+                        aria-expanded={conditionsOpen}
+                        onClick={(event) => {
+                          event.stopPropagation();
+                          setExpandedConditions((prior) => ({
+                            ...prior,
+                            [version.documentVersionId]:
+                              !prior[version.documentVersionId],
+                          }));
+                        }}
+                      >
+                        {conditionsOpen
+                          ? '收起关键条件与阅读限制'
+                          : `关键条件与阅读限制（${foldedLines.length}）`}
+                      </button>
+                      {conditionsOpen ? (
+                        <ul>
+                          {foldedLines.map((line) => (
+                            <li key={line}>{line}</li>
+                          ))}
+                        </ul>
+                      ) : null}
+                    </>
+                  ) : null}
+                </div>
+              ) : null}
+            </div>
+          );
+        };
+        const openVersion = (version: CanonicalLibraryDocumentVersionSummary) => openDocument(`/document-versions/${encodeURIComponent(version.documentVersionId)}`, version.documentVersionId);
+        return (
+          <Fragment key={document.familyId}>
+            {current ? (
+              <div
+                className="knowledge-source"
+                tabIndex={0}
+                onClick={() => openVersion(current)}
+                onKeyDown={(event) => event.target === event.currentTarget && event.key === 'Enter' && openVersion(current)}
+              >
+                {historical.length ? (
+                  <button
+                    type="button"
+                    className="knowledge-source-toggle"
+                    aria-expanded={expanded}
+                    aria-label={expanded ? '收起版本历史' : '展开版本历史'}
+                    onClick={(event) => {
+                      event.stopPropagation();
+                      setExpandedFamilies((prior) => ({ ...prior, [document.familyId]: !prior[document.familyId] }));
+                    }}
+                  >
+                    {expanded ? <ChevronDown aria-hidden="true" /> : <ChevronRight aria-hidden="true" />}
+                  </button>
+                ) : null}
+                {sourceBody(current)}
+                <span aria-hidden="true">精读 →</span>
+              </div>
+            ) : (
+              <div className="knowledge-source">
+                {historical.length ? (
+                  <button
+                    type="button"
+                    className="knowledge-source-toggle"
+                    aria-expanded={expanded}
+                    aria-label={expanded ? '收起版本历史' : '展开版本历史'}
+                    onClick={() => setExpandedFamilies((prior) => ({ ...prior, [document.familyId]: !prior[document.familyId] }))}
+                  >
+                    {expanded ? <ChevronDown aria-hidden="true" /> : <ChevronRight aria-hidden="true" />}
+                  </button>
+                ) : null}
+                <div>
+                  <small>{document.normalizedFamily} · 当前版本不可见</small>
+                  <h2>{document.documentCode}</h2>
+                  <p className="knowledge-source-reading">当前版本不可见，主题待补齐；可展开查看可见的历史版本。</p>
+                </div>
+              </div>
+            )}
+            {expanded ? historical.map((version) => (
+              <div
+                className="knowledge-source knowledge-source-history"
+                key={version.documentVersionId}
+                tabIndex={0}
+                onClick={() => openVersion(version)}
+                onKeyDown={(event) => event.target === event.currentTarget && event.key === 'Enter' && openVersion(version)}
+              >
+                {sourceBody(version)}
+                <span aria-hidden="true">精读 →</span>
+              </div>
+            )) : null}
+          </Fragment>
+        );
       })}
       {!loading && !error && !documents?.items.length && <p className="knowledge-empty">没有匹配的可读资料。</p>}{pagination}
     </section>}

@@ -7,13 +7,76 @@ import type {
   EngineeringKnowledgeRead,
   EngineeringKnowledgeScope,
 } from '@shared/engineering-issue-search.interface';
+import type { CanonicalLibraryDocumentsResponse } from '@shared/api.interface';
+import type { DocumentReadingPreview } from '@shared/document-reading.interface';
+import { getCanonicalLibraryDocuments } from '@client/src/api/canonical-host';
 import KnowledgeLookupPage from '@client/src/pages/KnowledgeLookupPage/KnowledgeLookupPage';
+import { libraryDocuments } from './fixtures/canonical-library';
 
 const { JSDOM } = require('jsdom');
 
 const mockCatalogue = jest.fn();
 const mockReadWork = jest.fn();
+const mockDocuments = jest.mocked(getCanonicalLibraryDocuments);
 let sessionGeneration = 1;
+
+type PreviewReading = NonNullable<DocumentReadingPreview['reading']>;
+
+function previewReading(
+  headline: string,
+  overrides: Partial<PreviewReading> = {},
+): PreviewReading {
+  return {
+    readingRunRef: `RUN-${headline}`,
+    readingRevision: 2,
+    headline,
+    brief: `来源简明解读 ${headline}`,
+    criticalConditions: [`关键条件 ${headline}`],
+    limitations: [`认识限制 ${headline}`],
+    sourceLimitations: [`来源限制 ${headline}`],
+    sourceBinding: {
+      original: {
+        documentVersionId: 'DV-X',
+        parseRunId: 'parse-1',
+        parseRevision: 1,
+        sourceArtifactId: 'art-1',
+        sourceSha256: 'd'.repeat(64),
+        sourceByteLength: 200,
+      },
+      semanticRevision: 1,
+    },
+    coverageStatus: 'COMPLETE_DELIVERY',
+    deliveredUnitCount: 4,
+    totalUnitCount: 4,
+    savedAt: '2026-09-10T00:00:00.000Z',
+    ...overrides,
+  };
+}
+
+function sourceDocuments(): CanonicalLibraryDocumentsResponse {
+  const response = libraryDocuments(['FAM-1']);
+  response.items[0].versions = [
+    {
+      ...response.items[0].versions[0],
+      documentReading: {
+        status: 'AVAILABLE',
+        reading: previewReading('现行版主题', {
+          coverageStatus: 'PARTIAL_DELIVERY',
+          deliveredUnitCount: 2,
+          totalUnitCount: 5,
+        }),
+      },
+    },
+    {
+      ...response.items[0].versions[1],
+      documentReading: {
+        status: 'AVAILABLE',
+        reading: previewReading('旧版主题'),
+      },
+    },
+  ];
+  return response;
+}
 
 jest.mock('@client/src/api/canonical-host', () => ({
   readEngineeringKnowledgeCatalogue: (...args: unknown[]) => mockCatalogue(...args),
@@ -99,7 +162,10 @@ async function settle(ms = 10) {
 
 async function mount(search = '') {
   router = createMemoryRouter(
-    [{ path: '/knowledge', element: createElement(KnowledgeLookupPage) }],
+    [
+      { path: '/knowledge', element: createElement(KnowledgeLookupPage) },
+      { path: '*', element: createElement('div') },
+    ],
     { initialEntries: [`/knowledge${search}`] },
   );
   root = createRoot(container);
@@ -266,5 +332,94 @@ describe('knowledge catalogue identity and reading lifecycle', () => {
     await act(async () => pending.resolve(page(entry('C'))));
     await settle();
     expect(container.textContent).toContain('主题 C');
+  });
+});
+
+describe('knowledge source documents reading', () => {
+  it('shows the current version and expandable family history, each with its own saved reading', async () => {
+    mockDocuments.mockResolvedValue(sourceDocuments());
+    await mount('?kind=sources');
+    await settle();
+    expect(container.textContent).toContain('现行版主题');
+    expect(container.textContent).toContain('部分覆盖：已送达 2/5');
+    expect(container.textContent).not.toContain('旧版主题');
+    const toggle = container.querySelector<HTMLButtonElement>(
+      'button[aria-label="展开版本历史"]',
+    )!;
+    await act(async () =>
+      toggle.dispatchEvent(new dom.window.MouseEvent('click', { bubbles: true })),
+    );
+    expect(container.textContent).toContain('旧版主题');
+    expect(container.textContent).toContain('历史版本');
+  });
+
+  it('expands key conditions and limitations per version without leaving the list', async () => {
+    mockDocuments.mockResolvedValue(sourceDocuments());
+    await mount('?kind=sources');
+    await settle();
+    const toggle = container.querySelector<HTMLButtonElement>(
+      '.knowledge-source-conditions-toggle',
+    )!;
+    expect(toggle.textContent).toContain('关键条件与阅读限制（3）');
+    await act(async () =>
+      toggle.dispatchEvent(new dom.window.MouseEvent('click', { bubbles: true })),
+    );
+    expect(container.textContent).toContain('认识限制 现行版主题');
+    expect(container.textContent).toContain('来源限制 现行版主题');
+    expect(router.state.location.pathname).toBe('/knowledge');
+  });
+
+  it('opens the exact historical document version for close reading', async () => {
+    mockDocuments.mockResolvedValue(sourceDocuments());
+    await mount('?kind=sources');
+    await settle();
+    await act(async () =>
+      container
+        .querySelector<HTMLButtonElement>('button[aria-label="展开版本历史"]')!
+        .dispatchEvent(new dom.window.MouseEvent('click', { bubbles: true })),
+    );
+    const historicalRow = container.querySelector<HTMLElement>(
+      '.knowledge-source-history',
+    )!;
+    await act(async () =>
+      historicalRow.dispatchEvent(
+        new dom.window.MouseEvent('click', { bubbles: true }),
+      ),
+    );
+    expect(router.state.location.pathname).toBe('/document-versions/DV-FAM-1-1');
+    expect(router.state.location.search).toContain(
+      'returnDocumentVersionId=DV-FAM-1-1',
+    );
+    expect(router.state.location.search).toContain('returnKnowledgeQuery=');
+  });
+
+  it('never shows a stale reading and keeps history expandable without a current version', async () => {
+    const response = libraryDocuments(['FAM-2']);
+    const [newer, older] = response.items[0].versions;
+    response.items[0].versions = [
+      {
+        ...newer,
+        selectedVersionIsCurrent: false,
+        documentReading: {
+          status: 'SOURCE_CHANGED',
+          reading: previewReading('过期主题'),
+        },
+      },
+      { ...older, selectedVersionIsCurrent: false },
+    ];
+    mockDocuments.mockResolvedValue(response);
+    await mount('?kind=sources');
+    await settle();
+    expect(container.textContent).toContain('当前版本不可见');
+    expect(container.textContent).not.toContain('过期主题');
+    await act(async () =>
+      container
+        .querySelector<HTMLButtonElement>('button[aria-label="展开版本历史"]')!
+        .dispatchEvent(new dom.window.MouseEvent('click', { bubbles: true })),
+    );
+    expect(container.textContent).toContain('来源已变化');
+    expect(container.textContent).toContain('当前接口未返回该版本解读');
+    expect(container.textContent).not.toContain('过期主题');
+    expect(container.textContent).not.toContain('来源简明解读 过期主题');
   });
 });

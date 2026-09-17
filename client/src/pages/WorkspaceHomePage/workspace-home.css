@@ -2972,3 +2972,62 @@
   color: var(--destructive, var(--wl-muted));
   font-size: var(--wl-text-caption);
 }
+
+.library-quicklook-reading {
+  display: grid;
+  gap: 0.375rem;
+}
+
+.library-quicklook-headline {
+  color: var(--wl-ink);
+  font-size: var(--wl-text-body-sm);
+  font-weight: 600;
+  line-height: 1.55;
+  overflow-wrap: break-word;
+}
+
+.library-quicklook-brief {
+  margin: 0;
+  color: var(--wl-muted);
+  font-size: var(--wl-text-caption);
+  line-height: 1.7;
+  overflow-wrap: break-word;
+}
+
+.library-quicklook-conditions {
+  display: grid;
+  gap: 0.375rem;
+  margin-top: 0.625rem;
+}
+
+.library-quicklook-conditions > h4 {
+  margin: 0;
+  color: var(--wl-muted);
+  font-size: var(--wl-text-caption);
+  font-weight: 600;
+}
+
+.library-quicklook-conditions ul {
+  display: grid;
+  gap: 0.25rem;
+  margin: 0;
+  padding-left: 1rem;
+  color: var(--wl-muted);
+  font-size: var(--wl-text-caption);
+  line-height: 1.6;
+}
+
+.library-quicklook-history {
+  display: grid;
+  gap: 0.625rem;
+}
+
+.library-quicklook-history > summary {
+  cursor: pointer;
+  color: var(--wl-muted);
+  font-size: var(--wl-text-caption);
+}
+
+.library-quicklook-history > summary:hover {
+  color: var(--wl-ink);
+}
