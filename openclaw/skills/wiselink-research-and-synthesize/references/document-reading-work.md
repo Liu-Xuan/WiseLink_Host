@@ -1,4 +1,4 @@
-# 独立文档解读（c112）
+# 独立文档解读（c112 引入，c113 引用修订）
 
 本能力提供文件自身的简明主题、解读正文、关键条件及来源限制，不是工程事项综合、适用性决定、正式采用或活动时间线。前端读取同一已保存产物，GET 不调用模型。必须先具备本次 Host 接口及数据库迁移，再安装包含本能力的后继 Skill；c111 已安装版本不具备本能力。
 
@@ -9,6 +9,12 @@
 现有 `consume-hosted-work-item.mjs --document-version-id DV --reading-run-ref RUN --lease-owner OWNER` 可精确消费/恢复已有任务；省略 reading-run-ref 时，document_work STATUS 提供已准入的 nextReadingRunRef。既有活动任务仍先消费；显式 reading 和 activity ref 不得同时传入。
 
 消费顺序为 STATUS、CLAIM、带租约的 READ 分页、官方 Hosted 模型、SAVE。READ 按原文单元读取，包括尚未分章节的单元；实际交付不足只标 PARTIAL_DELIVERY，不冒充全篇理解。模型输出仅包含 schemaVersion、headline、brief、explanation、criticalConditions、limitations；所有解释性 statement 的引文必须逐字匹配实际交付 anchor。Host 决定来源绑定、覆盖范围、保存版本和候选身份。引用校验不是语义正确性或工程接受的证明。
+
+## c113 模型引用与保存合同
+
+新模型工具的每个 quote 只输出已交付的 `anchorId`；候选适配器复制该锚点完整 `sourceText`，确定性生成 `start=0`、`end=sourceText.length`（UTF-16）及原文 `text`，再交 Host 既有 v1 保存合同校验。模型不能提供或修补数字偏移，也不按相似文本或重复文本猜换锚点。未知锚点、重复输入身份、空来源及夹带字段明确失败。模型仍负责选择真正支持解释的依据；合法身份不证明语义支持。
+
+此变化只用于新模型调用，provenance记录prompt v2；既有model.result/save.started不转换、不重写、不以本地修订内容冒充原模型结果。输入在派发前被拒绝时持久化明确失败，重启不进入等待模型确认；真实传输未知仍保留原有不重复规则。
 
 ## 恢复与错误
 

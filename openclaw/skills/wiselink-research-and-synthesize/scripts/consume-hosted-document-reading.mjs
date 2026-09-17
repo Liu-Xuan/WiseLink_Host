@@ -244,5 +244,5 @@ export async function consumeHostedDocumentReading(options, dependencies) {
 // Report bounded application validation codes, never raw transport details or credentials.
 function definiteError(error) {
   const code = error?.hostErrorCode ?? error?.code ?? error?.message;
-  return typeof code === 'string' && /^(?:DOCUMENT_READING_|READING_(?:MODEL_RESULT_|SAVE_RECEIPT_|SOURCE_CHECKPOINT_))[A-Z0-9_]+$/u.test(code) ? code : null;
+  return typeof code === 'string' && /^(?:DOCUMENT_READING_|READING_(?:MODEL_INPUT_|MODEL_RESULT_|SAVE_RECEIPT_|SOURCE_CHECKPOINT_))[A-Z0-9_]+$/u.test(code) ? code : null;
 }

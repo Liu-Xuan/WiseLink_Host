@@ -1,5 +1,11 @@
 # M 主控集成交接
 
+## 2026-09-17 c113打包与过期状态修订
+
+c113源码提交链123b3e560 → 09e7413a6 → f65689158已由Git协调员按同名开发分支同步origin/github。准确源f65689158f9b2f8b316c59950f28dd43d478a994已打包58文件/446210字节，archive SHA256 1a5fa4a9d7f97db72dcb21d2725470a9f369fa0f593f86a1284e553e6352356e，manifest SHA256 a8476756d19e9361a9b05ee6f6ec6121b6a0b9b605d4a4b8d8d5ad819008af3c；419项本地测试通过。已派发原后端Luna按原配置短时窗口安装与核验，尚未以派发或包生成声称已安装。Host线上仍145d84c。
+
+后台只读核查旧DRR-479689ba-b5a8-4be7-87e5-d7ca4e97ed15期限已过、无持有消费者进程，但Host仍RUNNING且result/revision为空；旧save.started使消费者仅查询STATUS、不再CLAIM，而过期更新此前只在CLAIM调用，因此一直PENDING_SAVE_CONFIRMATION。M最小修订STATUS：在既有来源与最终权限校验后调用现有、按DB期限和状态保护的expire，再回读真实状态；不修改期限、不覆盖SAVED、不触发模型或保存、不更改旧检查点。6项运行时测试与server类型检查通过；Astra独立审查与6项复跑接受，未部署该修订。
+
 ## 2026-09-17 连续阅读与性能修订
 
 用户明确要求解析阅读恢复连续文档，移除常驻流程/免责提示和逐段定位按钮，文字/段落直接定位原件，阅读视图隐藏重复页眉页脚；所有页面秒级可读。已落实到Suite计划并交唯一前端Luna紧接图谱r4交接实施。M实际app_web trace核对当前6d一次文档打开：parsing1017ms、reading2006ms、translation-reading4642ms依次执行，正文约3.03秒返回；不将此单样本当全页分位统计。

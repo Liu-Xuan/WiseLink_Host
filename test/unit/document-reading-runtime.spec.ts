@@ -24,7 +24,7 @@ function fixture() {
   const runs = { begin: jest.fn().mockResolvedValue(row), readRun: jest.fn().mockResolvedValue(row), readSaved: jest.fn().mockResolvedValue(null),
     recordDelivery: jest.fn(async (_scope, _fence, range) => { row.deliveredRanges.push(range); }),
     save: jest.fn(async (_scope, _fence, _command, materialize) => materialize(row, 1)),
-    renew: jest.fn().mockResolvedValue(true), claim: jest.fn().mockResolvedValue(fence), cancel: jest.fn(), fail: jest.fn() };
+    renew: jest.fn().mockResolvedValue(true), claim: jest.fn().mockResolvedValue(fence), cancel: jest.fn(), fail: jest.fn(), expire: jest.fn() };
   const service = new DocumentReadingRuntimeService(authorization as never, actors as never, reader as never, semantics as never, parsing as never, runs as never);
   const context = { ...scope, roles: [] };
   return { original, map, loaded, row, scope, fence, authorization, actors, reader, semantics, parsing, runs, service, context };
@@ -71,6 +71,28 @@ describe('independent file reading runtime', () => {
     f.loaded.run.manifestArtifact.sha256 = 'c'.repeat(64);
     await expect(f.service.run(read)).rejects.toThrow('ORIGINAL_CHANGED');
     expect(f.runs.recordDelivery).not.toHaveBeenCalled();
+  });
+
+  it('reconciles expired STATUS after source authorization and returns the fresh persisted state', async () => {
+    const f = fixture();
+    f.runs.readRun.mockResolvedValueOnce(f.row).mockResolvedValueOnce({ ...f.row,
+      status: 'EXPIRED', errorCode: 'DOCUMENT_READING_DEADLINE_EXCEEDED' });
+    await expect(f.service.run({ action: 'READING_STATUS', documentVersionId: f.scope.documentVersionId,
+      runRef: f.row.runRef })).resolves.toMatchObject({ status: 'EXPIRED', errorCode: 'DOCUMENT_READING_DEADLINE_EXCEEDED' });
+    expect(f.runs.expire).toHaveBeenCalledWith(f.scope, f.row.runRef);
+    expect(f.runs.claim).not.toHaveBeenCalled();
+    expect(f.runs.save).not.toHaveBeenCalled();
+  });
+
+  it('STATUS preserves a concurrent saved outcome and does not mutate after revoked source access', async () => {
+    const f = fixture();
+    f.runs.readRun.mockResolvedValueOnce(f.row).mockResolvedValueOnce({ ...f.row, status: 'SAVED', readingRevision: 1 });
+    const request = { action: 'READING_STATUS', documentVersionId: f.scope.documentVersionId, runRef: f.row.runRef };
+    await expect(f.service.run(request)).resolves.toMatchObject({ status: 'SAVED', readingRevision: 1 });
+    f.runs.expire.mockClear();
+    f.parsing.status.mockRejectedValueOnce(new Error('SOURCE_ACCESS_DENIED'));
+    await expect(f.service.run(request)).rejects.toThrow('SOURCE_ACCESS_DENIED');
+    expect(f.runs.expire).not.toHaveBeenCalled();
   });
 
   it('keeps browser reads pinned to semantic and reading revisions, with no production writes', async () => {
