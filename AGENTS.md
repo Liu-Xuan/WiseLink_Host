@@ -17,6 +17,7 @@
 - 前端操作目标为 `app_17bzc551rsg`，后端/OpenClaw 操作目标为 `app_17c3zn24kv2`。本仓库仍为 Host 源码来源，不能混淆两个应用或从旧分支整边覆盖；应用操作方式的调整不迁移代码来源或产品运行权限。
 - 每个妙搭会话只有一个 Luna 操作员；先核对在途与排队状态，再执行下一批。Astra/M 接受阶段结果并明确后续范围后，由对应 Luna 继续；不重复发送未知状态的任务，不自动执行旧排队指令。
 - 阶段交付提供准确提交、父提交、文件范围和实际验证；平台自动无关修改须排除。Git 协调员执行已接受范围的提交和同步；现有发布授权、产品 Hosted profile、来源授权和正式采用边界保持有效。
+- 云端会话工作树不是本机 Git worktree。待选择性审查的云端代码统一按 [`docs/coordination/MIAODA_CLOUD_CODE_HANDOFF.md`](docs/coordination/MIAODA_CLOUD_CODE_HANDOFF.md) 生成 gzip+base64 交接产物，并由本地验证器核对基线、双重哈希、文件清单和 `git apply --check`；不再人工拼接裸 patch，也不以云端“完成/测试通过”代替本地代码审查。若准确提交已推到获准同名分支，优先正常 fetch 和提交核对，不重复分块传输。
 
 ## Git 同步边界
 
