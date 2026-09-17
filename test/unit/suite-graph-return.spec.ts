@@ -35,3 +35,12 @@ it('retains the graph context across Wiki to source and back to the same work', 
   const restored = new URL(backWiki!.route, 'https://example.test');
   expect(readingReturnTarget(restored.searchParams, undefined, null, 'matter-a')?.route).toBe(`/graph?${query}`);
 });
+
+it('adds a bounded graph return only to the supported matter process route', () => {
+  const process = new URL(withGraphReturn('/matters/matter-a/process?workRef=old-work', query), 'https://example.test');
+  expect(process.pathname).toBe('/matters/matter-a/process');
+  expect(process.searchParams.get('returnGraphTargetMatterId')).toBe('matter-a');
+  expect(process.searchParams.get('returnGraphTargetWorkRef')).toBe('old-work');
+  expect(readingReturnTarget(process.searchParams, undefined, null, 'matter-a')?.route).toBe(`/graph?${query}`);
+  expect(withGraphReturn('/matters/matter-a/unknown', query)).toBe('/matters/matter-a/unknown');
+});
