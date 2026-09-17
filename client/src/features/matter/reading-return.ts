@@ -1,3 +1,4 @@
+import { graphReturnTarget } from '@client/src/pages/RelationGraphPage/suite-graph-return';
 const LIBRARY_FILTERS = [
   'familyId',
   'search',
@@ -413,6 +414,9 @@ export function matterReadingReturnParams(
       new URLSearchParams(directoryContext.get('returnLibraryQuery')!),
     ).toString());
   }
+  if (directoryContext?.has('returnGraphQuery') && graphReturnTarget(directoryContext, undefined, null, matterId)) {
+    params.set('returnMatterGraphQuery', directoryContext.get('returnGraphQuery')!);
+  }
   return params;
 }
 
@@ -423,6 +427,7 @@ export function readingReturnTarget(
   currentMatterId?: string,
 ): { route: string; label: string } | null {
   const keys = [
+    'returnGraphQuery',
     'returnMatterId',
     'returnKnowledgeQuery',
     'returnLibraryQuery',
@@ -438,6 +443,7 @@ export function readingReturnTarget(
       'returnMatterWorkRef',
       'returnLibraryMatterId',
       'returnMatterLibraryQuery',
+      'returnMatterGraphQuery',
       'returnDocumentVersionId',
       'returnRevisionSide',
       'returnActivityQuery',
@@ -445,7 +451,10 @@ export function readingReturnTarget(
     ].some((key) => params.getAll(key).length > 1)
   )
     return null;
+  if (params.has('returnGraphQuery')) return graphReturnTarget(params, documentVersionId, requestedRun, currentMatterId);
+  if (['returnGraphTargetMatterId', 'returnGraphTargetWorkRef', 'returnGraphParseRunId'].some(key => params.has(key))) return null;
   if (params.has('returnActivityView') && !params.has('returnActivityQuery')) return null;
+  if (params.has('returnMatterGraphQuery') && (!params.has('returnMatterId') || params.has('returnMatterLibraryQuery'))) return null;
   if (params.has('returnMatterLibraryQuery') && !params.has('returnMatterId')) return null;
   if (params.has('returnLibraryMatterId')) {
     const boundMatter = identifier(params.get('returnLibraryMatterId'));
@@ -488,6 +497,13 @@ export function readingReturnTarget(
         nested.getAll('selectedMatterId').length !== 1 || nested.get('selectedMatterId') !== matterId) return null;
       query.set('returnLibraryMatterId', matterId);
       query.set('returnLibraryQuery', libraryReadingParams(nested).toString());
+    }
+    if (params.has('returnMatterGraphQuery')) {
+      const raw = params.get('returnMatterGraphQuery')!;
+      query.set('returnGraphQuery', raw);
+      query.set('returnGraphTargetMatterId', matterId);
+      if (workRef) query.set('returnGraphTargetWorkRef', workRef);
+      if (!graphReturnTarget(query, undefined, null, matterId)) return null;
     }
     return {
       route: `/matters/${encodeURIComponent(matterId)}${query.size ? `?${query}` : ''}`,

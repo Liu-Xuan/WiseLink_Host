@@ -1,0 +1,376 @@
+import {
+  forwardRef,
+  useEffect,
+  useImperativeHandle,
+  useRef,
+  useState,
+  type CSSProperties,
+  type MouseEvent,
+} from 'react';
+import cytoscape, { type Core, type ElementDefinition, type EventObject, type StylesheetStyle } from 'cytoscape';
+import { AlertTriangle, ClipboardList, Database, FileText, Lightbulb, Network, type LucideIcon } from 'lucide-react';
+import type { CytoscapeSuiteElement, SuiteGraphPresentation } from './suite-graph-model';
+import './suite-graph-canvas.css';
+import { Image } from '@client/src/components/ui/image';
+
+export interface SuiteGraphCanvasProps {
+  presentation: SuiteGraphPresentation;
+  initialViewport?: { zoom: number; pan: { x: number; y: number } };
+  selectedId?: string;
+  onSelect?: (data: Record<string, unknown>, isEdge: boolean) => void;
+  onGroup?: (groupKey: string) => void;
+  onOverflow?: (groupKey: string) => void;
+  onInspectRelationships?: (relationshipIds: string[]) => void;
+  onViewport?: (viewport: { zoom: number; pan: { x: number; y: number } }) => void;
+  className?: string;
+  ariaLabel?: string;
+}
+
+export interface SuiteGraphCanvasHandle {
+  fit: () => void;
+  zoomBy: (factor: number) => void;
+  reset: () => void;
+  getCore: () => Core | null;
+}
+
+interface OverlayNode {
+  id: string;
+  data: Record<string, unknown>;
+  position: { x: number; y: number };
+}
+
+const GROUP_TONES: Record<string, string> = {
+  fulfilled: '#25a06c',
+  inputs: '#2a9d93',
+  questions: '#d65c68',
+  evidence: '#8b6fc9',
+  claims: '#4f83d6',
+};
+const GROUP_ICONS: Record<string, LucideIcon> = {
+  fulfilled: FileText,
+  inputs: Database,
+  questions: AlertTriangle,
+  evidence: ClipboardList,
+  claims: Lightbulb,
+};
+const FALLBACK_TONE = '#4f83d6';
+
+function toneFor(groupKey: string): string {
+  return GROUP_TONES[groupKey] ?? FALLBACK_TONE;
+}
+
+function text(value: unknown, fallback = ''): string {
+  return typeof value === 'string' ? value : fallback;
+}
+
+interface ThemeTokens {
+  ink: string;
+  muted: string;
+  faint: string;
+  surface: string;
+}
+
+function readThemeTokens(): ThemeTokens {
+  const computed = typeof getComputedStyle === 'function' ? getComputedStyle(document.documentElement) : null;
+  const read = (name: string, fallback: string): string => computed?.getPropertyValue(name).trim() || fallback;
+  return {
+    ink: read('--wl-ink', '#242424'),
+    muted: read('--wl-muted', '#666666'),
+    faint: read('--wl-faint', '#8a8a8a'),
+    surface: read('--wl-surface-solid', '#ffffff'),
+  };
+}
+
+function buildStyleSheet(tokens: ThemeTokens): StylesheetStyle[] {
+  const sheets: StylesheetStyle[] = [
+    {
+      selector: 'node',
+      style: {
+        label: '',
+        'background-opacity': 0,
+        'border-width': 0,
+        width: 'data(w)',
+        height: 'data(h)',
+        'overlay-opacity': 0,
+      },
+    },
+    { selector: '.visual-group', style: { 'background-opacity': 0, 'border-width': 0, opacity: 0 } },
+    { selector: '.matter-root', style: { shape: 'ellipse', 'background-opacity': 0 } },
+    {
+      selector: 'edge',
+      style: {
+        width: 1.15,
+        'curve-style': 'unbundled-bezier',
+        'control-point-step-size': 70,
+        'line-color': tokens.faint,
+        'target-arrow-color': tokens.faint,
+        'target-arrow-shape': 'triangle',
+        'arrow-scale': 0.55,
+        opacity: 0.3,
+        label: 'data(label)',
+        color: tokens.muted,
+        'font-size': '9.5px',
+        'text-background-color': tokens.surface,
+        'text-background-opacity': 0.8,
+        'text-background-padding': '3px',
+        'text-rotation': 'none',
+        'overlay-opacity': 0,
+      },
+    },
+    { selector: '.bundle-edge', style: { opacity: 0.62 } },
+    { selector: '.business-edge', style: { width: 1.7, opacity: 0.68 } },
+  ];
+  Object.entries(GROUP_TONES).forEach(([key, tone]) => {
+    sheets.push({
+      selector: `edge[groupKey = "${key}"]`,
+      style: { 'line-color': tone, 'target-arrow-color': tone, opacity: 0.68 },
+    });
+  });
+  return sheets;
+}
+
+function asElements(elements: CytoscapeSuiteElement[]): ElementDefinition[] {
+  return elements as ElementDefinition[];
+}
+
+function OverlayCard({
+  node,
+  selected,
+  onSelect,
+  onGroup,
+  onOverflow,
+  onDragStart,
+}: {
+  node: OverlayNode;
+  selected: boolean;
+  onSelect: (event: MouseEvent<HTMLButtonElement>, data: Record<string, unknown>) => void;
+  onGroup: (groupKey: string) => void;
+  onOverflow: (groupKey: string) => void;
+  onDragStart: (event: React.PointerEvent<HTMLButtonElement>, id: string) => void;
+}) {
+  const data = node.data;
+  const viewKind = text(data.viewKind);
+  const groupKey = text(data.groupKey);
+  const tone = toneFor(groupKey);
+  const title = text(data.title, viewKind === 'more' ? '展开全部' : '未命名');
+  const subtitle = text(data.subtitle);
+  const style = {
+    '--tone': tone,
+    '--suite-node-w': `${Number(data.w) || 120}px`,
+    '--suite-node-h': `${Number(data.h) || 48}px`,
+  } as CSSProperties;
+  if (viewKind === 'halo') {
+    return (
+      <button type="button" className="suite-graph-overlay suite-graph-halo" style={style} onClick={() => onGroup(groupKey)} aria-label={`按 ${title} 过滤`}>
+        <span className="suite-graph-cluster-heading">{title}<small>{Number(data.count) || 0}</small></span>
+      </button>
+    );
+  }
+  if (viewKind === 'more') {
+    return (
+      <button type="button" className="suite-graph-overlay suite-graph-more" style={style} onClick={() => onOverflow(groupKey)} aria-label={`展开全部，${Number(data.count) || 0} 项`}>
+        <span aria-hidden="true">•••</span> 另有 {Number(data.count) || 0} 项 · 展开全部
+      </button>
+    );
+  }
+  if (viewKind === 'hub') {
+    const picture = text(data.picture);
+    return (
+      <button type="button" className={`suite-graph-overlay suite-graph-hub${selected ? ' is-selected' : ''}`} style={style} onClick={(event) => onSelect(event, data)} aria-label={title}>
+        <span className="suite-graph-hub-portrait" aria-hidden="true">{picture ? <Image src={picture} alt="" /> : <Network />}</span>
+        <strong>{title}</strong>
+        {text(data.code) && <small>{text(data.code)}</small>}
+        <span className="suite-graph-hub-sub">工程事项 · 持续认识</span>
+      </button>
+    );
+  }
+  const Icon = GROUP_ICONS[groupKey] ?? FileText;
+  return (
+    <button
+      type="button"
+      className={`suite-graph-overlay suite-graph-node-card${data.compact ? ' is-compact' : ''}${selected ? ' is-selected' : ''}`}
+      style={style}
+      onPointerDown={(event) => onDragStart(event, node.id)}
+      onClick={(event) => onSelect(event, data)}
+      aria-label={subtitle ? `${title}，${subtitle}` : title}
+    >
+      <span className="suite-graph-node-icon" aria-hidden="true"><Icon /></span>
+      <span className="suite-graph-node-copy"><strong>{title}</strong>{subtitle && <small>{subtitle}</small>}</span>
+    </button>
+  );
+}
+
+const SuiteGraphCanvas = forwardRef<SuiteGraphCanvasHandle, SuiteGraphCanvasProps>(function SuiteGraphCanvas(
+  { presentation, initialViewport, selectedId, onSelect, onGroup, onOverflow, onInspectRelationships, onViewport, className, ariaLabel = '关系图谱' },
+  ref,
+) {
+  const mountRef = useRef<HTMLDivElement | null>(null);
+  const cyRef = useRef<Core | null>(null);
+  const callbacksRef = useRef({ onSelect, onGroup, onOverflow, onInspectRelationships, onViewport });
+  const [overlayNodes, setOverlayNodes] = useState<OverlayNode[]>([]);
+  const [camera, setCamera] = useState({ zoom: 1, pan: { x: 0, y: 0 } });
+  const dragRef = useRef<{ id: string; moved: boolean } | null>(null);
+  const suppressClickRef = useRef(false);
+  const internalCameraRef = useRef(false);
+  const userCameraRef = useRef(false);
+  const initialViewportAppliedRef = useRef(false);
+  const initialViewportRef = useRef(initialViewport);
+  const cameraReadyRef = useRef(false);
+  callbacksRef.current = { onSelect, onGroup, onOverflow, onInspectRelationships, onViewport };
+
+  useImperativeHandle(ref, () => ({
+    fit: () => cyRef.current?.fit(undefined, 24),
+    zoomBy: (factor) => {
+      const cy = cyRef.current;
+      if (!cy || !Number.isFinite(factor) || factor <= 0) return;
+      cy.zoom({ level: Math.max(cy.minZoom(), Math.min(cy.maxZoom(), cy.zoom() * factor)), renderedPosition: { x: cy.width() / 2, y: cy.height() / 2 } });
+    },
+    reset: () => {
+      const cy = cyRef.current;
+      if (!cy) return;
+      userCameraRef.current = false;
+      cy.fit(undefined, 24);
+    },
+    getCore: () => cyRef.current,
+  }), []);
+
+  useEffect(() => {
+    const mount = mountRef.current;
+    if (!mount) return undefined;
+    const cy = cytoscape({
+      container: mount,
+      elements: [],
+      layout: { name: 'preset', fit: false },
+      minZoom: 0.16,
+      maxZoom: 2.4,
+      wheelSensitivity: 0.19,
+      boxSelectionEnabled: false,
+      style: buildStyleSheet(readThemeTokens()),
+    });
+    const sync = () => {
+      const next = cy.nodes().map((node) => ({ id: node.id(), data: node.data() as Record<string, unknown>, position: node.renderedPosition() }));
+      setOverlayNodes(next);
+      const nextCamera = { zoom: cy.zoom(), pan: cy.pan() };
+      setCamera(nextCamera);
+      if (cameraReadyRef.current && !internalCameraRef.current) callbacksRef.current.onViewport?.(nextCamera);
+    };
+    cy.on('render resize pan zoom', sync);
+    cy.on('tap', 'edge', (event: EventObject) => {
+      const ids = event.target.data('relationshipIds');
+      if (Array.isArray(ids)) callbacksRef.current.onInspectRelationships?.(ids.filter((id): id is string => typeof id === 'string'));
+    });
+    cyRef.current = cy;
+    sync();
+    const applyTheme = () => cy.style(buildStyleSheet(readThemeTokens()));
+    const themeObserver = typeof MutationObserver === 'function'
+      ? new MutationObserver(applyTheme)
+      : null;
+    themeObserver?.observe(document.documentElement, { attributes: true, attributeFilter: ['data-wl-theme', 'data-wl-visual-mode'] });
+    const handleResize = () => { cy.resize(); if (!userCameraRef.current) { internalCameraRef.current = true; cy.fit(undefined, 24); internalCameraRef.current = false; } };
+    const resizeObserver = new ResizeObserver(handleResize);
+    resizeObserver.observe(mount);
+    window.addEventListener('resize', handleResize);
+    const markUserCamera = (event: Event) => { if ((event.target as HTMLElement | null)?.closest('.suite-graph-cy')) userCameraRef.current = true; };
+    mount.addEventListener('wheel', markUserCamera, { passive: true });
+    mount.addEventListener('pointerdown', markUserCamera, { passive: true });
+    return () => {
+      themeObserver?.disconnect();
+      resizeObserver.disconnect();
+      window.removeEventListener('resize', handleResize);
+      mount.removeEventListener('wheel', markUserCamera);
+      mount.removeEventListener('pointerdown', markUserCamera);
+      cy.removeAllListeners();
+      cy.destroy();
+      cyRef.current = null;
+    };
+  }, []);
+
+  useEffect(() => {
+    const cy = cyRef.current;
+    if (!cy) return;
+    cy.elements().remove();
+    cy.add(asElements(presentation.elements));
+    const positions = Object.fromEntries(presentation.elements.filter((element) => element.group === 'nodes').map((element) => [String(element.data.id), element.position]));
+    cy.layout({ name: 'preset', positions, fit: false, animate: !window.matchMedia('(prefers-reduced-motion: reduce)').matches, animationDuration: 320 }).run();
+    internalCameraRef.current = true;
+    const restore = initialViewportRef.current;
+    if (!initialViewportAppliedRef.current && restore && Number.isFinite(restore.zoom) && Number.isFinite(restore.pan.x) && Number.isFinite(restore.pan.y)) {
+      cy.zoom(Math.max(cy.minZoom(), Math.min(cy.maxZoom(), restore.zoom)));
+      cy.pan({ x: restore.pan.x, y: restore.pan.y });
+      initialViewportAppliedRef.current = true;
+      userCameraRef.current = true;
+    } else if (!userCameraRef.current) {
+      cy.fit(undefined, 24);
+    }
+    internalCameraRef.current = false;
+    cameraReadyRef.current = true;
+    callbacksRef.current.onViewport?.({ zoom: cy.zoom(), pan: cy.pan() });
+  }, [presentation]);
+
+  useEffect(() => {
+    const cy = cyRef.current;
+    if (!cy) return;
+    cy.nodes().removeClass('suite-selected');
+    const target = presentation.elements.find((element) => element.group === 'nodes' && (element.data.businessId === selectedId || element.data.id === selectedId));
+    if (target) cy.getElementById(String(target.data.id)).addClass('suite-selected');
+  }, [presentation, selectedId]);
+
+  const handleOverlaySelect = (event: MouseEvent<HTMLButtonElement>, data: Record<string, unknown>) => {
+    event.stopPropagation();
+    if (suppressClickRef.current) {
+      suppressClickRef.current = false;
+      return;
+    }
+    callbacksRef.current.onSelect?.(data, false);
+  };
+  const handleDragStart = (event: React.PointerEvent<HTMLButtonElement>, id: string) => {
+    if (event.button !== 0) return;
+    const cy = cyRef.current;
+    const mount = mountRef.current;
+    if (!cy || !mount) return;
+    const target = cy.getElementById(id);
+    if (!target.length) return;
+    const start = { x: event.clientX, y: event.clientY };
+    dragRef.current = { id, moved: false };
+    const move = (next: PointerEvent) => {
+      const drag = dragRef.current;
+      if (!drag) return;
+      if (Math.hypot(next.clientX - start.x, next.clientY - start.y) > 3) drag.moved = true;
+      if (!drag.moved) return;
+      suppressClickRef.current = true;
+      const rect = mount.getBoundingClientRect();
+      const pan = cy.pan();
+      const zoom = cy.zoom();
+      target.position({ x: (next.clientX - rect.left - pan.x) / zoom, y: (next.clientY - rect.top - pan.y) / zoom });
+    };
+    const end = () => {
+      window.removeEventListener('pointermove', move);
+      window.removeEventListener('pointerup', end);
+      dragRef.current = null;
+    };
+    window.addEventListener('pointermove', move);
+    window.addEventListener('pointerup', end);
+  };
+  return (
+    <div className={`suite-graph-canvas${className ? ` ${className}` : ''}`}>
+      <div ref={mountRef} className="suite-graph-cy" role="img" aria-label={ariaLabel} />
+      <div className="suite-graph-overlays">
+        {overlayNodes.map((node) => (
+          <div key={node.id} className="suite-graph-overlay-position" style={{ left: node.position.x, top: node.position.y, transform: `translate(-50%, -50%) scale(${camera.zoom})` }}>
+            <OverlayCard
+              node={node}
+              selected={node.data.businessId === selectedId || node.id === selectedId}
+              onSelect={handleOverlaySelect}
+              onDragStart={handleDragStart}
+              onGroup={(groupKey) => callbacksRef.current.onGroup?.(groupKey)}
+              onOverflow={(groupKey) => callbacksRef.current.onOverflow?.(groupKey)}
+            />
+          </div>
+        ))}
+      </div>
+      <div className="suite-graph-camera-status" aria-live="polite">{Math.round(camera.zoom * 100)}%</div>
+    </div>
+  );
+});
+
+export default SuiteGraphCanvas;
