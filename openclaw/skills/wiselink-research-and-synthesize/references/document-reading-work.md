@@ -12,6 +12,14 @@
 
 ## 恢复与错误
 
+### 长任务启动与观察
+
+消费者包含真实模型请求，不能用短命令等待窗口作为进程生命周期。使用平台支持的持续进程会话或后台任务，记录原进程标识、准确 runRef、checkpoint 路径及私有输出路径；后续读取该进程和检查点，不重复启动。工具返回等待超时只结束本次观察，不应杀死消费者。不得套用 `timeout 165` 等短于正常模型预算的外层强制终止；实际终止仍由消费者已有 deadline、租约和 AbortSignal 控制，不增加模型预算或调整 cron。
+
+同一线上 run 的手动观察和调度消费必须使用同一个持久检查点根目录；不能为人工验证另设目录，再仅凭该目录为空判断尚未调用模型。默认根目录为 `~/.openclaw/wiselink-work-item-runs`。接手已有 run 前核对实际启动参数、默认及此前指定目录，发现任一 `model.started` 而无结果时按未知处理；Host 租约过期不证明此前没有模型调用。已存在的检查点不搬移、覆盖或删除，隔离测试目录只用于明确隔离的测试任务。
+
+若已被外层命令中断，先核对原进程、原请求回执及同一检查点。没有 `model.result` 只表示结果未知，不代表网关未执行；不可删掉 `model.started`、重发模型或创建新 run 绕过。原请求结果无法取回时明确报告该限制，再处理有依据的后续方案。
+
 检查点按 Host endpoint（不含凭据）、文档版本和 runRef 隔离，并校验 parseRun/semanticRevision/expectedRevision。先持久化 model.started，再调用模型；持久化 model.result 后才准备保存。保存前持久化 save.started。模型结果未知不重调；保存结果未知只查准确原 run 的 STATUS。SAVED 回执始终比对已有提交内容、来源及真实 producer；CLAIM 并发完成需重读检查点。
 
 明确的应用校验失败返回 REQUIRES_ATTENTION 和安全错误代码，保留诊断，不自动重试模型/SAVE。不确定的传输结果保留 PENDING_MODEL_CONFIRMATION 或 PENDING_SAVE_CONFIRMATION；不能把它改写成成功或直接创建后继。取消通过明确 READING_CANCEL；模型不能自动正式接受任何工程结论。

@@ -1,5 +1,71 @@
 # M 主控集成交接
 
+## 2026-09-17 连续阅读与性能修订
+
+用户明确要求解析阅读恢复连续文档，移除常驻流程/免责提示和逐段定位按钮，文字/段落直接定位原件，阅读视图隐藏重复页眉页脚；所有页面秒级可读。已落实到Suite计划并交唯一前端Luna紧接图谱r4交接实施。M实际app_web trace核对当前6d一次文档打开：parsing1017ms、reading2006ms、translation-reading4642ms依次执行，正文约3.03秒返回；不将此单样本当全页分位统计。
+
+M本地修订DocumentOriginalStore：删除SDK download之外的重复元数据请求，仍验证download返回对象metadata及bytes/SHA；新增loadForReading，只读校验已发布自包含manifest并核对raw描述符范围，普通read/loadPublished切换到该路径。发布/恢复/重用/换版分析仍load全量审计，前后权限和PUBLISHED校验不变。Astra独立查SDK与代码接受；3套11项（含实际execute/service.read）及server tsc通过。新增测试证明读取仅消费manifest、错误parseRevision拒绝、raw字节篡改仍被全审计拒绝。尚未部署，提速和全页秒级目标未验收。
+
+## 2026-09-17 真实候选取回与引用拒绝复现
+
+M将独立取回的aa/ab/ac与Luna最后ad拼接，得到完整31816字节gzip，SHA256 92af8f6ff78e27c37a89e81522e0e2572c41bf8ffbcb004a2d326ab9d3575bd4；三个解压检查点分别216667/23488/23733字节，逐文件SHA与云端回执一致。产物仅在私有临时目录，不入Git。实际Host validateDocumentReading以真实source/model产物复现DOCUMENT_READING_QUOTE_MISMATCH：26处不匹配，包括18处位置/长度和8处错anchor；部分引文在原文重复，不能自动任选来源。没有重模型、SAVE或改原检查点；已交Astra审查正文语义，后续修法不能放宽Host逐字来源校验。
+
+图谱r4六文件补丁48906字节，SHA256 e1ddfbbff130cbe49d5d4f808b39d4bc535d8d6c9dc2a0e6966342a6baa739a5，payload校验一致；但声明基线5d51736a本地无对象，准确fetch在TLS重试后返回not our ref。已要求唯一前端Luna补相对可得45c3e525的完整明确清单补丁或准确基线bundle，不伪改base字段，不整边覆盖当前fa6ad62。
+
+## 2026-09-17 文档解读错误分类实际缺陷
+
+M读取受控后继原始回执，确认旧run取消并读回CANCELLED，新run DRR-479689ba-b5a8-4be7-87e5-d7ca4e97ed15已产生model.result和save.started，consumer返回PENDING_SAVE_CONFIRMATION，Host仍无保存回执。真实候选待从Hosted私有检查点取回；不据此重模型或SAVE。启动PID归属报告存在前后不一致，已要求按实际命令及默认/指定检查点核验，不将模型调用次数口头回报作为完整证明。
+
+M另定位safeHostErrorCode未识别DOCUMENT_READING命名空间；用实际MCP解包函数接consumer新增回归，修前明确QUOTE_MISMATCH被吞为PENDING_SAVE_CONFIRMATION，修后REQUIRES_ATTENTION并持久化安全代码。最小修法只增加该错误码命名空间；保留SAVED准确回执优先、传输未知待确认、不自动FAIL/重模型/重SAVE。两套21项通过，含Host租约/来源错误、已保存竞态及非结构化错误边界。Astra只读审查接受此分类边界。本地修复尚未升版安装，不能据此宣称原线上SAVE拒绝原因已确定。
+
+## 2026-09-17 图谱 r3 审查与真实解读中断定位
+
+独立实际Page/View/Canvas隔离验证确认三项缺陷：1440中央画布666×602误用85%导致裁切；390选组后183.6px卡片仅29px可见；手机filters计算宽度仍54%。同身份query同时改变密度/选中/视角/viewport可恢复到110%，toolbar放大后resize保持100%，两项通过。M已批准原前端Luna在妙搭继续r4修相机适用范围、组聚焦及CSS，并落实Suite手机时间轴/图谱/Wiki活动面切换，保留已通过逻辑。隔离harness未载完整全局材质，不作为全页面视觉验收。后端受控恢复原会话新turn7686382458791087065已由M官方查询确认为running/streaming/queue0；不是重启原未知进程。
+
+后续只读诊断确认原consumer已终止、检查点无后续写入、网关无按请求取回响应接口。M审查Host取消会清租约且SAVE要求RUNNING有效fence/CAS后，明确批准一次受控后继：先原run STATUS、取消并读回终态且无保存，再以requestId reading-c112-ftd-777-revised-20260204-supervised-v2、相同源绑定/expectedRevision0启动正式消费者，使用持续进程与私有日志。若原run已SAVED则停止后继；不删除旧检查点，不把原模型状态认定失败，不自动循环重试。此为既有线上授权内的明确恢复决定，尚待执行回执。
+
+M取得完整r3补丁，135970字节、23文件，SHA256 f6109d0c214d5bc968c25f4d97360989a5b63e3e0762200f9a1be20141625997；按声明45c3e525基线在隔离目录验证并应用。相比当前6d02827仅5个图谱源/测试文件变化，未整体应用到canonical。M独立跑两套定向测试6项通过；Astra发现手机筛选宽度被后续CSS覆盖，窄画布相机可能误影响桌面三栏，正在真实组件核验，不接受为全尺寸视觉完成。前端原turn7686370384778005446已completed/queue0。
+
+真实FTD解读run DRR-290a37bf-005c-4114-a8ed-953e908d0c7b精确读取91 units、144 anchors、5页，无未交付范围；官方模型请求已发一次。M直接查原始工具回执确认，云端启动命令使用外层timeout 165并返回EXIT=124，没有model.result或SAVE；恢复只报PENDING_MODEL_CONFIRMATION，Host RUNNING，无readingRevision。不能将此认定模型失败或验收通过。已要求原唯一后端Luna仅查原进程/请求是否可恢复，不重BEGIN/模型/SAVE；长任务持续运行和观察分离已写入document-reading-work.md，现仅本地规范修改，未宣称安装了新Skill。
+
+## 2026-09-17 FTD真实解读前核对日期口径
+
+阶段3 turn `7686376305823386850` 已只读核对固定DV/parse/semantic，原文91 units、5页、无unresolvedRanges；但M先前使用“2026-05-27版”的日期推定与原文不符，Luna按明确条件停止，未BEGIN/模型/SAVE。M读取完整官方消息（has_more=false、69条）确认原文u6表：Originated 06/10/2021、Last Revised 02/04/2026、Created On 01/26/2026；u7表为Estimated Completion 05/28/2026、Next Update 04/30/2026。
+
+M已更正日期口径并继续授权同一准确DV/parse/semantic，不换源，不改原数据；新稳定requestId为reading-c112-ftd-777-revised-20260204-v1，实际日期角色分别保留。该修正不代表预计事件已经实际完成，真实解读保存仍待回执。
+
+生产资料库另查到入口不对称：默认事项目录无可见工程文档切换，而?mode=document页有工程事项切换。已交唯一前端Luna后继资料库批处理；不将直接改URL可进入等同于入口交互完整。
+
+## 2026-09-17 外部Chrome生产资料库内容核对
+
+CUA浏览器provider连接失败，但原生Chrome AX可操作，已实际打开已部署 /library 并等到真实目录加载（初始加载空白不记为故障）。当前默认事项目录两条：777FTD事项工作rev12、787SB事项工作rev16，主题与“解读与当前认识”重复整段任务提问。该生产观察证明旧数据下简明呈现仍未满足用户要求，不能因headline/listBrief新合同已上线便称内容验收完成。
+
+已通知唯一前端Luna在后继资料库/文档解读接线批移除长question充当主题/认识的fallback；准确已有元数据可以标识对象，缺简述要诚实表明，不能前端生成或机械截断；M后续以同一保存工作补齐真实简明认识。此轮仅读取生产页面，没有编辑事项、重生成或更改权限。
+
+## 2026-09-17 c112 安装验证与调度恢复完成
+
+阶段2原会话 turn `7686374798755450079` 已 completed/streaming=false/queue0。官方安装仅一次，c112/source commit `6d02827aff61d35c46d1ada30df19e57b8ac1dd1`，58包文件逐字节及集合校验通过，source-origin单独保留；installed 16测试文件共412项通过，skills ready。真实配置createHostMcpConnection完成identity、34必需工具加pending查询和commit schema校验，document_reading存在。没有以mock替代此真实连通。
+
+六项原cron恢复enabled=true；原始回执精确比较name、schedule、payload、agentId、sessionTarget、wakeMode均IDENTICAL，6→6，当前idle无在途。M读取完整阶段2消息has_more=false（44条）并核对恢复结果。安装批未人为调用BEGIN/SAVE、模型、解析或翻译。
+
+后继已授权唯一Luna在原会话做一份已有FTD的独立解读：固定 document_version_78c6d0adb612265f85e1d338 / PRUN-9e7cd784-92bb-478d-b34f-ae56fd53e087 / semanticRevision=1，先只读核对身份与源日期，匹配后以稳定requestId创建一次新解读、使用原runRef持久消费者；不重跑解析/中文、不改模型额度/cron，不将候选当工程接受。目前仅派发该范围，尚未取得真实解读保存结果。
+
+## 2026-09-17 Host 文档解读部署完成、c112 安装窗口
+
+后端唯一 Luna 在原会话 turn `7686372850471259419` 暂存校验 c112 包；六项原 cron 均由 enabled=true/idle/无 runningAtMs 经官方 disable 暂停，回读 enabled=false、nextRunAtMs=null，cron status jobs=6/nextWakeAtMs=null。阶段1未安装、不触发业务，原配置私有保留。
+
+M在此窗口发起 Host release `7686373403477887951`，同一release持续轮询最终 `finished`，精确 commit `6d02827aff61d35c46d1ada30df19e57b8ac1dd1`，error_logs=[]。发布中的旧commit字段没有当作成功证据。该部署包含先前图谱r2中间集成及独立文档解读Host；不等同于完整图谱、手机视觉或真实解读内容验收。
+
+随后授权后端 Luna 阶段2：唯一一次官方 c112 安装、58文件完整校验、installed tests、真实 MCP identity/tools-list只读校验，通过后按原快照恢复六cron。当前仍等待阶段2回执；不得提前记作已安装/已恢复。
+
+Reader下一批只读审查已形成 /private/tmp/wl-suite-reader-next-scope.md：现有semantic-reading能提供真实业务主题，当前前端硬禁并非无API；现有translation模式可继承补齐五模式。精读完整批排在图谱小批与DocumentReading前端接线之后，自身换版单独后继；当前角色级TEXT_EQUAL/TEXT_DIFFERENT不可伪装成全文件逐段差异。
+
+## 2026-09-17 文档解读代码接受与 c112 包
+
+提交 `6d02827aff61d35c46d1ada30df19e57b8ac1dd1`（父 `0014d6a8b46ccd82bdbba5548fb4c44e4b1a1da7`）仅含接受的 33 个文件，正常 precommit、公开敏感检查、diff check 通过；origin/github 同名 codex 开发分支均独立回读相同 SHA。无诊断、截图或旧 zip 纳入。
+
+从该提交实际生成 c112 包：442871 bytes、58 文件、archive SHA256 `3e795a7ea635f31e9f19c842dbf64f97786e13a4783abcbffce140173341d83d`、manifest SHA256 `4a613811ee5c9d577896c2ea40689fa26d8120186a2060845a17d93e948a23f5`。包内测试和版本对齐通过。已交后端唯一 Luna 准备暂存包、暂停原六项 cron 并确认无在途；M 尚未发起 Host 发布，c112 尚未安装。发布必须在停调度窗口内完成两端切换才恢复，不能将该准备记录视为完成。
+
 ## 2026-09-17 c112 文档解读实链发布准备
 
 c112 已加入独立解读协议与消费者。审查发现并修复新工具未进入精确 MCP 名单、READING 请求选项未进入真实 SDK 传输白名单；实际 callJsonTool 测试覆盖 SDK 两种参数位置。真实 adapter 已收到但格式错误的响应现统一带安全 READING_MODEL_RESULT_INVALID 并持久化 REQUIRES_ATTENTION；断流/超时仍不自动重调。全 Skill 412 项通过，Host 两套 8 项通过，server production build 通过。此前 7 项真实 PG 仓储及 6 项实际目录 SQL 证据继承，不以 mock 代替。

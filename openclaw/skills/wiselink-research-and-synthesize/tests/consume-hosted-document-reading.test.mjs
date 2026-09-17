@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { consumeHostedDocumentReading } from '../scripts/consume-hosted-document-reading.mjs';
+import { readHostMcpJsonResult } from '../scripts/run-hosted-review-turn.mjs';
 
 function fixture() {
   const records = new Map(); const calls = []; let models = 0; let saved = null;
@@ -54,6 +55,57 @@ test('lost model response remains uncertain across restart and never generates o
   assert.equal((await consumeHostedDocumentReading(f.options, f.deps)).status, 'PENDING_MODEL_CONFIRMATION');
   assert.equal((await consumeHostedDocumentReading(f.options, f.deps)).status, 'PENDING_MODEL_CONFIRMATION');
   assert.equal(attempts, 1); assert.ok(!f.calls.includes('READING_SAVE'));
+});
+
+test('actual MCP reading rejection remains a bounded application error across consumer restart', async () => {
+  const f = fixture(); const call = f.deps.callTool; let saves = 0;
+  f.deps.callTool = async (tool, request) => {
+    if (request.action === 'READING_SAVE') {
+      saves++;
+      return readHostMcpJsonResult({ isError: true, content: [{ type: 'text',
+        text: 'Error: DOCUMENT_READING_QUOTE_MISMATCH' }] }, tool, request);
+    }
+    return call(tool, request);
+  };
+  const result = await consumeHostedDocumentReading(f.options, f.deps);
+  assert.equal(result.status, 'REQUIRES_ATTENTION');
+  assert.equal(result.errorCode, 'DOCUMENT_READING_QUOTE_MISMATCH');
+  assert.deepEqual(f.records.get('failure').value, { errorCode: 'DOCUMENT_READING_QUOTE_MISMATCH' });
+  const resumed = await consumeHostedDocumentReading(f.options, f.deps);
+  assert.equal(resumed.status, 'REQUIRES_ATTENTION');
+  assert.equal(resumed.modelInvocations, 0);
+  assert.equal(saves, 1); assert.equal(f.count(), 1);
+});
+
+test('exact SAVED receipt takes precedence over an MCP reading error', async () => {
+  const f = fixture(); const call = f.deps.callTool;
+  f.deps.callTool = async (tool, request) => {
+    const value = await call(tool, request);
+    if (request.action === 'READING_SAVE') return readHostMcpJsonResult({ isError: true,
+      content: [{ type: 'text', text: 'DOCUMENT_READING_LEASE_REJECTED' }] }, tool, request);
+    return value;
+  };
+  const result = await consumeHostedDocumentReading(f.options, f.deps);
+  assert.equal(result.status, 'READING_SAVED');
+  assert.equal(f.records.has('failure'), false);
+  assert.equal(f.count(), 1);
+});
+
+test('Host lease/source errors need attention while unstructured transport errors remain uncertain', async () => {
+  for (const code of ['DOCUMENT_READING_LEASE_REJECTED', 'DOCUMENT_READING_ORIGINAL_CHANGED', 'fetch failed']) {
+    const f = fixture(); const call = f.deps.callTool; let saves = 0;
+    f.deps.callTool = async (tool, request) => {
+      if (request.action === 'READING_SAVE') {
+        saves++;
+        return readHostMcpJsonResult({ isError: true, content: [{ type: 'text', text: code }] }, tool, request);
+      }
+      return call(tool, request);
+    };
+    const result = await consumeHostedDocumentReading(f.options, f.deps);
+    assert.equal(result.status, code === 'fetch failed' ? 'PENDING_SAVE_CONFIRMATION' : 'REQUIRES_ATTENTION');
+    assert.equal(f.calls.includes('READING_FAIL'), false);
+    assert.equal(saves, 1); assert.equal(f.count(), 1);
+  }
 });
 
 test('lost SAVE response is recovered only by exact saved Host readback', async () => {

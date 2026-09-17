@@ -211,7 +211,7 @@ export class DocumentParsingHostedService {
     const run = await this.publishedRun(documentVersionId, parseRunId, context);
     if (run.manifestArtifact!.relativePath === 'original/manifest.json') {
       const artifact = originalArtifact(run.manifestArtifact!);
-      const bundle = await this.store.load(storageScope(run), artifact, originalBinding(run));
+      const bundle = await this.store.loadForReading(storageScope(run), artifact, originalBinding(run));
       await this.assertRead(documentVersionId, context);
       return { documentVersionId, parseRunId: run.parseRunId, parseRevision: run.parseRevision,
         originalFilename: source.version.originalFilename, parser: { name: 'OfficialPluginHybrid', version: bundle.original.producer.pluginVersion, backend: 'Host' },
@@ -231,7 +231,7 @@ export class DocumentParsingHostedService {
   async loadPublished(documentVersionId: string, parseRunId: string, context: ReadScope) {
     await this.authorizedSource(documentVersionId, context);
     const run = await this.publishedRun(documentVersionId, parseRunId, context);
-    const loaded = await this.store.load(storageScope(run), originalArtifact(run.manifestArtifact!), originalBinding(run));
+    const loaded = await this.store.loadForReading(storageScope(run), originalArtifact(run.manifestArtifact!), originalBinding(run));
     await this.assertRead(documentVersionId, context);
     return { run, original: loaded.original, structuredSource: documentOriginalStructuredSource(loaded.original, originalBinding(run)) };
   }
