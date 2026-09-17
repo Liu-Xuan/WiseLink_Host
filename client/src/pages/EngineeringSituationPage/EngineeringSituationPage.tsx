@@ -50,6 +50,7 @@ export default function EngineeringSituationPage() {
     switch (target.type) {
       case 'focus-matter': navigate(`/matters/${encodeURIComponent(target.matterId)}/posture`); return;
       case 'matter-reading': navigate(readingRoute(target.matterId)); return;
+      case 'matter-work': navigate(matterWorkRoute(target.matterId, target.workRef)); return;
       case 'knowledge-item': {
         const route = projection.knowledgeTargets[target.knowledgeId];
         if (route) navigate(route);

@@ -24,6 +24,7 @@ import { TRINITY_SAMPLE_FIXTURE } from '../../client/src/features/trinity/trinit
 import type {
   TrinityLevel,
   TrinityNavigationTarget,
+  TrinitySituationData,
 } from '../../client/src/features/trinity/trinity-types';
 
 const { JSDOM } = require('jsdom');
@@ -38,12 +39,14 @@ type Recorded =
 
 const recorded: Recorded[] = [];
 
-function Harness(): ReturnType<typeof createElement> {
+function Harness({ data = TRINITY_SAMPLE_FIXTURE }: {
+  data?: TrinitySituationData;
+}): ReturnType<typeof createElement> {
   const [level, setLevel] = useState<TrinityLevel>('macro');
   const [stage, setStage] = useState('');
   const [knowledge, setKnowledge] = useState('');
   return createElement(TrinitySituationView, {
-    data: TRINITY_SAMPLE_FIXTURE,
+    data,
     level,
     selectedStageId: stage,
     selectedKnowledgeId: knowledge,
@@ -93,7 +96,7 @@ describe('Trinity situation view interactions', () => {
     document.body.appendChild(container);
     root = createRoot(container);
     act(() => {
-      root.render(createElement(Harness));
+      root.render(createElement(Harness, {}));
     });
   });
 
@@ -251,5 +254,67 @@ describe('Trinity situation view interactions', () => {
       kind: 'navigate',
       target: { type: 'matter-timeline', matterId: 'm1' },
     });
+  });
+
+  function rerender(data: TrinitySituationData): void {
+    act(() => {
+      root.unmount();
+    });
+    container.remove();
+    container = document.createElement('div');
+    document.body.appendChild(container);
+    root = createRoot(container);
+    act(() => {
+      root.render(createElement(Harness, { data }));
+    });
+  }
+
+  it('lists saved review conditions as candidate work and opens the exact owning work revision', () => {
+    rerender({
+      ...TRINITY_SAMPLE_FIXTURE,
+      reviewConditions: [
+        { itemId: 'rc-1', text: '构型记录到达后重新核对。', basisRefs: ['basis-a'],
+          when: { kind: 'DUE_AT', at: '2026-12-31' },
+          matterId: 'm1', matterWorkRevisionId: 'work-rev-7', workingRevision: 7 },
+        { itemId: 'rc-2', text: '原文变化后复看该条件。', basisRefs: [],
+          when: { kind: 'ORIGINAL_CHANGED', inputId: 'input-4', afterParseRunId: null },
+          matterId: 'm1', matterWorkRevisionId: 'work-rev-7', workingRevision: 7 },
+      ],
+    });
+    click(stageButtons('improve')[0]);
+    expect(container.textContent).toContain('已保存复看条件');
+    expect(container.textContent).toContain('候选工作内容，不是正式改进记录');
+    expect(container.textContent).toContain('构型记录到达后重新核对。');
+    expect(container.textContent).toContain('期限：2026-12-31（保存原文，未判断是否逾期）');
+    expect(container.textContent).toContain('输入 input-4 · 其后解析 未固定');
+    expect(container.textContent).toContain('保存的依据引用标识：basis-a');
+    expect(container.textContent).toContain('保存的依据引用标识：无');
+    recorded.length = 0;
+    const open = [...container.querySelectorAll('button')].find(
+      (b) => b.textContent?.includes('打开所属工作修订')) as Element;
+    expect(open).toBeDefined();
+    click(open);
+    expect(recorded).toContainEqual({
+      kind: 'navigate',
+      target: { type: 'matter-work', matterId: 'm1', workRef: 'work-rev-7' },
+    });
+  });
+
+  it('shows exact empty states for missing current work and for an empty saved condition list', () => {
+    rerender({ ...TRINITY_SAMPLE_FIXTURE, reviewConditions: null });
+    click(stageButtons('improve')[0]);
+    expect(container.textContent).toContain('尚无当前已保存工作');
+    expect(container.textContent).not.toContain('打开所属工作修订');
+
+    rerender({ ...TRINITY_SAMPLE_FIXTURE, reviewConditions: [] });
+    click(stageButtons('improve')[0]);
+    expect(container.textContent).toContain('当前已保存工作未单独保存复看条件');
+    expect(container.textContent).not.toContain('打开所属工作修订');
+  });
+
+  it('does not project saved review conditions without focus scope', () => {
+    click(stageButtons('improve')[0]);
+    expect(container.textContent).toContain('不投影保存的复看条件');
+    expect(container.textContent).not.toContain('打开所属工作修订');
   });
 });

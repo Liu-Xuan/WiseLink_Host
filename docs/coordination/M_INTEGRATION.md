@@ -1405,3 +1405,15 @@ FTD revision 12 还精确引用 SB revision 16 的问题 `claim_maintenance_disr
 定向图谱与活动图测试 2 个 suite、9 项通过，其中新增覆盖四尺度、未接通态不发网络请求、隔离样例不外跳，以及真实读取后的生产节点选择和显式深链；client typecheck、受影响源码 ESLint/CSS stylelint、client production build、完整 precommit 与 diff check 通过。固定视口本地预览因妙搭 `AppContainer` 缺平台注入未挂载 React，故不记录视觉通过；登录态线上视觉仍需外部浏览器解锁后核对。
 
 实现提交 `789bf2a9500a60586a071e9de324c8350f104641`（父提交 `e9a796130d83d5e536c2e1d36cca77ca1ce5cc5c`）仅含上述关系图谱 4 个实现/测试文件与本记录，origin/github 同名开发分支均回读该 SHA。Host release `7686267875095301052` 已 `finished`，精确 `commit_id=789bf2a9500a60586a071e9de324c8350f104641`，`error_logs=[]`。这证明代码已技术发布；未执行登录态生产视觉验收，也未据图布局生成工程关系或结论。
+
+## 2026-09-17：妙搭云端代码交接固化与 F3 准确时间窗
+
+妙搭云端会话的隔离工作树不是本机 Git worktree；这一差异只影响云端仍有未推送代码的交接，不是每次开发的必经步骤。本轮先从前端原会话按精确基线 `3b38da01422588cabd041758206a5a7a59fd0628` 取回 F3 patch：61,802 字节，SHA-256 `a1fa5768ab5cd1e7d77d93bf8f10350606dbeb117c9a8d94b7936f24972422e3`，云端声明的 9 个文件与实际 diff 一致且本机 `git apply --check --whitespace=error-all` 通过。云端测试只作为交接证据；补丁恢复到 canonical 后才由 Astra 阅读实际代码并进行本地验收。
+
+为避免后续重复进行裸 patch 人工分块，提交 `9362b476ad2d0d2b02da2b8b04506a06b57ce67d`（父提交 `3b38da01422588cabd041758206a5a7a59fd0628`）固化 `MIAODA_CLOUD_CODE_HANDOFF.md` 和本地验证器。新协议要求精确 base SHA、原 patch 与 gzip payload 双 SHA-256、字节数、有序文件清单和带序号压缩分块；本地只在分块完整一致、当前 HEAD 等于基线、路径与文件清单安全、哈希/字节数相符且 patch 可干净应用时写出仓库外临时文件。验证器不自动 apply、提交、同步或发布。3 项 Node 测试覆盖准确重建、缺块拒绝和基线拒绝。
+
+F3 实现提交 `d0009e6958bb18f6877e4b6d6701bca09769965e`（父提交 `9362b476ad2d0d2b02da2b8b04506a06b57ce67d`）将明确年份的 DAY/MONTH/QUARTER/YEAR 解析为真实 UTC 闭区间并按跨年连续坐标显示；缺年份、TBD、RELATIVE 和 UNKNOWN 继续保留原词但不猜日期。`all/current-year` 是受控 URL 时间窗，窗口外已选声明保留为上下文且不进入窗口内计数；时间窗不进入候选读取 identity，因此合法切窗不重读同一候选。timeline、activity graph、原文精读和返回链保持确切 DocumentVersion、ParseRun、candidate revision、runRef、statement、anchor 与 window；非法、空或重复 window 在活动入口即零请求拒绝。
+
+Astra 首轮复审发现并闭合三项实码问题：单年月份刻度偏移一月、未固定候选的迟到发现会覆盖用户刚切换的窗口、活动详情入口会在读取后静默删除非法窗口。修正后 7 个相关 Jest suite 共 91 项、client typecheck、定向 ESLint/CSS stylelint、client production build、完整 precommit 与 diff check 均通过；Astra 最终准入。两个提交已分别以普通非强制快进同步到 origin/github 同名 `codex/wl31-r09-master-handoff-20260903`，两端均回读 `d0009e6958bb18f6877e4b6d6701bca09769965e`。
+
+Host release `7686289702877760745` 已 `finished`，精确 `commit_id=d0009e6958bb18f6877e4b6d6701bca09769965e`，`error_logs=[]`。这证明交接协议和 F3 代码已技术发布；本轮未取得登录态生产页面的视觉与真实内容往返读回，不能据此宣布线上视觉验收或跨版本活动身份已经接通。系统取得时间、跨版本同一活动身份及其他业务泳道仍以当前合同未提供为准。
