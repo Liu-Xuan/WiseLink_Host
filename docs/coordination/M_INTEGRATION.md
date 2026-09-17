@@ -1428,4 +1428,6 @@ Host release `7686289702877760745` 已 `finished`，精确 `commit_id=d0009e6958
 
 定向前后端 Jest、client/server typecheck、受影响源码 ESLint、client production build、完整 precommit 和 diff check 均通过。另在本机隔离 PostgreSQL 实例上执行真实 repository 路径，覆盖“保存成功后 FINISH 失败仍读到准确新工作”“结果声称 unchanged 不能覆盖真实保存”“只有伪造 modelOutput 且没有保存行/回执时不得产生 correctedWorkRef”，目标用例 1/1 通过；该隔离实例随后正常停止，不涉及线上业务数据。
 
-后端提交 `118903524ca81e40b853bcfdcf951b827c952e82`（父提交 `64f85201f0ab093fe47c5ed1d715f85fd2272585`）和前端提交 `f1cfb43147885d96476fb7acad91c7ff80e1a5e1`（父提交 `118903524ca81e40b853bcfdcf951b827c952e82`）已分别按精确文件范围提交；origin/github 同名开发分支均回读 `f1cfb43147885d96476fb7acad91c7ff80e1a5e1`。Host release `7686300155057933252` 已 `finished`，精确 `commit_id=f1cfb43147885d96476fb7acad91c7ff80e1a5e1`，`error_logs=[]`。这证明实现已技术发布；没有取得登录态线上页面读回，仍不能声明线上视觉验收、复看条件真实触发或后续三个生命周期环节已经接通。
+后端提交 `118903524ca81e40b853bcfdcf951b827c952e82`（父提交 `64f85201f0ab093fe47c5ed1d715f85fd2272585`）和前端提交 `f1cfb43147885d96476fb7acad91c7ff80e1a5e1`（父提交 `118903524ca81e40b853bcfdcf951b827c952e82`）已分别按精确文件范围提交；origin/github 同名开发分支均回读 `f1cfb43147885d96476fb7acad91c7ff80e1a5e1`。Host release `7686300155057933252` 已 `finished`，精确 `commit_id=f1cfb43147885d96476fb7acad91c7ff80e1a5e1`，`error_logs=[]`。
+
+发布后通过已登录外部 Chrome 读取线上生产页面：FTD revision 12 在“改进与复看”准确显示 0 项及“当前已保存工作未单独保存复看条件”；SB revision 16 显示 2 条已保存条件、完整条件正文和各自保存的依据引用标识，并继续标明候选内容未必已经触发或逾期。点击“打开所属工作修订”实际进入同一 SB 事项的 `MWREV-75632e5d-e5f4-4cd2-8ace-a254f99f5874` / revision 16，页面明确说明指定版本不会被最新工作替换。该读回验证已发布读取与准确导航，不证明条件真实触发，也不补齐计划、实施或效果合同。
