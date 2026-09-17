@@ -93,6 +93,15 @@
 
 S1、S2 优先，形成“资料库快速理解 → Wiki → 准确原文 → 返回”与“已有知识 → 完整解释 → 来源”的两条真实路径。S3—S5 继承现有精读、换版、时间窗、图谱、讨论及任务消费者，做视觉与交互差异迁移。后端既有更正、正式换版验证、获准后台来源和长 SB 工作继续按 R10 计划执行，不因前端换版重新生成成果。
 
+### 3.3 四视角实际读取接线决定（2026-09-17 代码核对）
+
+- 事项和工程文档视角继承现有 `useSuiteMatterGraph` 与 `suiteDocumentPerspective`，保持所选事项/工作身份。工程文档目前只覆盖该工作已授权资料，不称全库。
+- 全景下一批复用分页 `GET /api/canonical-host/engineering-matters`，按用户展开读取单事项现有 catalog/materials；不预先遍历全库，不按名称拼接文档与事项。节点保留各自 matter/work/documentVersion 身份，显示已加载范围及后续分页。旧工作进入当前全景时须明确视角范围变化；返回原工作仍恢复精确身份。现阶段不新增目录聚合API或图数据库。
+- 领域先接确切文档版本的已有 metadata GET：ATA 是 `ACTUAL_PDF_TEXT` 的 `PENDING_REVIEW` 观察，保留 metadataRevision、原文页和引文证据；只能表达文档标注，不能自动形成系统、部件、专业实体的正式归属。读取不触发元数据重新提取。完整系统/部件联系仍待实际保存关系来源，不把这一层标注当作完整领域能力交付。
+- 新消费者沿用现有会话/对象授权，分页与迟到响应按视角及身份隔离；打开原文继续走原权限链。当前客户端 metadata 读取支持精确 revision，初次解析出的 revision 应用于后续返回；历史工作没有绑定 metadata revision 时不得暗中用最新标注冒充当时状态。
+
+上述是后继实现范围，不代表四视角已完成。前端当前先完成图谱 r4 手机相机/组聚焦、样式覆盖和时间轴/图谱/Wiki活动面修订；随后仍优先接独立文档解读到资料库与Reader，再按本节补四视角。
+
 ## 4. 接入原则与必须解决的数据缺口
 
 现有接线起点包括 `WorkspaceHomePage/Library*`、`KnowledgeLookupPage`、`EngineeringIssueSearch`、Matter 阅读、独立 Reader、Trinity 和 Atlas 组件。套件提供展示实现，现有 router、身份、主题 Provider、API、PDF 与保存行为仍由 Host 承接。以正常 React 组件迁移，必要时用受控 props 适配；不安装第二套路由/业务存储，不嵌入静态 HTML。
