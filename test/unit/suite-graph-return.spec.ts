@@ -36,6 +36,22 @@ it('retains the graph context across Wiki to source and back to the same work', 
   expect(readingReturnTarget(restored.searchParams, undefined, null, 'matter-a')?.route).toBe(`/graph?${query}`);
 });
 
+it('round-trips the selected event and wiki tab through exact pins and back', () => {
+  const state = {eventId: '["event","dv-a","st-1"]', wikiTab: 'basis' as const};
+  const query = graphReadingParams('matter-a', 'old-work', state);
+  expect(query.get('eventId')).toBe(state.eventId);
+  expect(query.get('wikiTab')).toBe('basis');
+  expect(readGraphReadingState(query)).toMatchObject(state);
+});
+
+it('rejects out-of-schema event and wiki tab values', () => {
+  const params = new URLSearchParams('eventId=' + 'x'.repeat(3000) + '&wikiTab=external');
+  const state = readGraphReadingState(params);
+  expect(state.eventId).toBeUndefined();
+  expect(state.wikiTab).toBeUndefined();
+  expect(readGraphReadingState(new URLSearchParams('wikiTab=discussion')).wikiTab).toBe('discussion');
+});
+
 it('adds a bounded graph return only to the supported matter process route', () => {
   const process = new URL(withGraphReturn('/matters/matter-a/process?workRef=old-work', query), 'https://example.test');
   expect(process.pathname).toBe('/matters/matter-a/process');

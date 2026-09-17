@@ -12,7 +12,10 @@ const mockData = libraryMatterFixture();
 let mockProps: SuiteMatterGraphViewProps;
 let viewMounts = 0;
 jest.mock('../../client/src/app/providers/CurrentUserSessionProvider', () => ({ useCurrentUserSession: () => ({ sessionGeneration: 1, authenticationRequired: false }) }));
-jest.mock('../../client/src/pages/RelationGraphPage/useSuiteMatterGraph', () => ({ useSuiteMatterGraph: () => ({ graph: buildSuiteMatterGraph(mockData), revision: mockData.working.current, loading: false, error: null }) }));
+jest.mock('../../client/src/api/engineering-matter', () => ({ getEngineeringMatterDirectory: jest.fn() }));
+jest.mock('@client/src/api/canonical-host', () => ({ getCanonicalHostClientSessionGeneration: () => 1, getCanonicalLibraryDocuments: jest.fn() }));
+jest.mock('../../client/src/pages/RelationGraphPage/useSuiteGraphSources', () => ({ useSuiteGraphSources: () => ({ activities: new Map(), sources: [], loading: false, activeSourceId: null, selectSource: jest.fn(), expandSource: jest.fn() }) }));
+jest.mock('../../client/src/pages/RelationGraphPage/useSuiteMatterGraph', () => ({ useSuiteMatterGraph: () => ({ graph: buildSuiteMatterGraph(mockData), revision: mockData.working.current, workspace: mockData, loading: false, error: null }) }));
 jest.mock('../../client/src/pages/RelationGraphPage/SuiteMatterGraphView', () => {
   const React = jest.requireActual<typeof import('react')>('react');
   return {
@@ -66,6 +69,26 @@ describe('SuiteMatterGraphPage navigation state', () => {
       createElement(Routes, null,
         createElement(Route, { path: '/graph', element: createElement(SuiteMatterGraphPage, { matterId: 'ui-test-matter' }) }))));
   }
+
+  it('keeps the view through request errors, explicit retry and another directory page', async () => {
+    const api = jest.requireMock('@client/src/api/canonical-host');
+    api.getCanonicalLibraryDocuments.mockRejectedValueOnce(new Error('403 FORBIDDEN'))
+      .mockResolvedValueOnce({items: [], nextCursor: 'page-2'})
+      .mockResolvedValueOnce({items: [], nextCursor: null});
+    await act(async () => renderPage('/graph?matterId=ui-test-matter'));
+    const mounts = viewMounts;
+    await act(async () => mockProps.onPerspectiveChange!('domain'));
+    expect(viewMounts).toBe(mounts);
+    expect(mockProps.perspectiveError).toBe(true);
+    expect(mockProps.perspectiveNotice).toContain('403');
+    await act(async () => mockProps.onRetryPerspective!());
+    expect(mockProps.perspectiveError).toBe(false);
+    expect(mockProps.nextDirectoryPage).toBeDefined();
+    await act(async () => mockProps.nextDirectoryPage!());
+    expect(api.getCanonicalLibraryDocuments.mock.calls.at(-1)[0].cursor).toBe('page-2');
+    expect(mockProps.nextDirectoryPage).toBeUndefined();
+    expect(viewMounts).toBe(mounts);
+  });
 
   it('restores new display state from same-identity SPA query navigation and ignores its own writes', async () => {
     await act(async () => renderPage('/graph?matterId=ui-test-matter&density=2'));

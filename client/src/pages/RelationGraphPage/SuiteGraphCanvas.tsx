@@ -9,7 +9,7 @@ import {
   type MouseEvent,
 } from 'react';
 import cytoscape, { type Core, type ElementDefinition, type EventObject, type StylesheetStyle } from 'cytoscape';
-import { AlertTriangle, ClipboardList, Database, FileText, Lightbulb, Network, type LucideIcon } from 'lucide-react';
+import { AlertTriangle, ClipboardList, Clock, Database, FileText, FolderOpen, Lightbulb, Network, type LucideIcon } from 'lucide-react';
 import type { CytoscapeSuiteElement, SuiteGraphPresentation } from './suite-graph-model';
 import './suite-graph-canvas.css';
 import { Image } from '@client/src/components/ui/image';
@@ -32,6 +32,8 @@ export interface SuiteGraphCanvasHandle {
   fit: () => void;
   zoomBy: (factor: number) => void;
   reset: () => void;
+  /** Apply an exact saved camera, or auto-fit when null (used on perspective switch). */
+  setViewport: (viewport: { zoom: number; pan: { x: number; y: number } } | null) => void;
   getCore: () => Core | null;
 }
 
@@ -47,6 +49,14 @@ const GROUP_TONES: Record<string, string> = {
   questions: '#d65c68',
   evidence: '#8b6fc9',
   claims: '#4f83d6',
+  MEMBER: '#2a9d93',
+  RELATED: '#64748b',
+  EXPECTED: '#b45309',
+  catalog: '#64748b',
+  statements: '#b45309',
+  matters: '#4f83d6',
+  documents: '#25a06c',
+  unclassified: '#8a8a8a',
 };
 const GROUP_ICONS: Record<string, LucideIcon> = {
   fulfilled: FileText,
@@ -54,6 +64,14 @@ const GROUP_ICONS: Record<string, LucideIcon> = {
   questions: AlertTriangle,
   evidence: ClipboardList,
   claims: Lightbulb,
+  MEMBER: FileText,
+  RELATED: FolderOpen,
+  EXPECTED: FolderOpen,
+  catalog: FolderOpen,
+  statements: Clock,
+  matters: Network,
+  documents: FileText,
+  unclassified: FolderOpen,
 };
 const FALLBACK_TONE = '#4f83d6';
 const NARROW_ENTRY_MAX_WIDTH = 760;
@@ -255,6 +273,18 @@ const SuiteGraphCanvas = forwardRef<SuiteGraphCanvasHandle, SuiteGraphCanvasProp
       if (!cy) return;
       userCameraRef.current = true;
       cy.fit(undefined, 24);
+    },
+    setViewport: (viewport) => {
+      const cy = cyRef.current;
+      if (!cy) return;
+      if (viewport && Number.isFinite(viewport.zoom) && Number.isFinite(viewport.pan?.x) && Number.isFinite(viewport.pan?.y)) {
+        userCameraRef.current = true;
+        cy.zoom(Math.max(cy.minZoom(), Math.min(cy.maxZoom(), viewport.zoom)));
+        cy.pan({ x: viewport.pan.x, y: viewport.pan.y });
+      } else {
+        userCameraRef.current = false;
+        cy.fit(undefined, 24);
+      }
     },
     getCore: () => cyRef.current,
   }), []);

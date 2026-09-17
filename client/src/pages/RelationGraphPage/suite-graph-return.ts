@@ -6,6 +6,9 @@ export interface SuiteGraphReadingState {
   relationMode?: 'aggregated' | 'individual';
   perspective?: 'matter' | 'documents' | 'domain' | 'panorama';
   viewport?: {zoom: number; pan: {x: number; y: number}};
+  /** Selected left-column event identity (internal serialized key, never an entry pin). */
+  eventId?: string;
+  wikiTab?: 'knowledge' | 'basis' | 'discussion';
 }
 const text = (value: string, limit = 512) => Boolean(value && value === value.trim() && value.length <= limit && !/[\u0000-\u001f\u007f]/u.test(value));
 const single = (params: URLSearchParams, key: string) => params.getAll(key).length === 1 ? params.get(key)! : '';
@@ -18,6 +21,8 @@ export function graphReadingParams(matterId: string, workRef: string | null, sta
   if (Number.isInteger(state.density) && state.density! >= 1 && state.density! <= 6) params.set('density', String(state.density));
   if (state.relationMode === 'aggregated' || state.relationMode === 'individual') params.set('relationMode', state.relationMode);
   if (state.perspective && ['matter', 'documents', 'domain', 'panorama'].includes(state.perspective)) params.set('perspective', state.perspective);
+  if (state.eventId && text(state.eventId, 2048)) params.set('eventId', state.eventId);
+  if (state.wikiTab && ['knowledge', 'basis', 'discussion'].includes(state.wikiTab)) params.set('wikiTab', state.wikiTab);
   const camera = state.viewport;
   if (camera && Number.isFinite(camera.zoom) && camera.zoom >= .05 && camera.zoom <= 6 && [camera.pan.x, camera.pan.y].every(n => Number.isFinite(n) && Math.abs(n) <= 100000)) params.set('viewport', JSON.stringify(camera));
   return params;
@@ -38,6 +43,10 @@ export function readGraphReadingState(params: URLSearchParams): SuiteGraphReadin
   if (mode === 'aggregated' || mode === 'individual') state.relationMode = mode;
   const perspective = single(params, 'perspective');
   if (perspective === 'matter' || perspective === 'documents' || perspective === 'domain' || perspective === 'panorama') state.perspective = perspective;
+  const eventId = single(params, 'eventId');
+  if (text(eventId, 2048)) state.eventId = eventId;
+  const wikiTab = single(params, 'wikiTab');
+  if (wikiTab === 'knowledge' || wikiTab === 'basis' || wikiTab === 'discussion') state.wikiTab = wikiTab;
   try {
     const camera = JSON.parse(single(params, 'viewport'));
     if (camera && typeof camera.zoom === 'number' && typeof camera.pan?.x === 'number' && typeof camera.pan?.y === 'number') state.viewport = camera;
