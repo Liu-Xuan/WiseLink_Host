@@ -531,3 +531,9 @@ M集成记录顶部记录实际部署、Skill、工作与Overall、原文、请�
 Graph 接受范围已集成为提交 `584697dd934fd5035c89cac26fab2894fcddf249`（父提交 `9222a46511c6888c372dfd84fcce99abb310110d`），精确 21 文件；discussion 身份去重增量已集成为 `584697dd` 的 2 文件提交。相关 Graph 定向验证为 12 suites/59 tests，discussion 增量回归 4/4，client TypeScript 检查退出 0。`origin` 与 GitHub 同名 codex 分支均已核对至 `584697dd`。妙搭 release `7686576070900616179` 最终 `finished`，`commit_id=584697dd`，`error_logs=[]`；技术发布完成不代表线上视觉或业务读取验收。
 
 摘要契约 8 文件已集成为提交 `98b0ce7a40d09cdd767979bdb2d63576930083f2`（父提交 `584697dd`），`origin` 与 GitHub 同名分支均已核对至该 SHA。Host 发布暂缓，等待 17c runtime 配套安装及验证；不以 Git 同步代替 runtime 就绪。L/K 本地隔离视觉 harness 使用真实 `KnowledgeLookupPage`、生产作用域 CSS 与 mock provider/API，在 1672/1440/390 均产生业务内容截图；该结果是本地样例渲染，不代表线上视觉验收。静态妙搭预览因缺少 `__platform__` runtime/auth bridge 的旧失败记录单独保留。
+
+### 15.6 2026-09-18 摘要发布与 Knowledge 视觉修订
+
+17c runtime 配套安装与 50/50 定向验证已由对应操作员完成，详见其私有回执；Host 摘要提交 `98b0ce7a` 尚未有准确发布回执。release `7686579431414959298` 最终绑定已发布的旧提交 `584697dd`，虽 `finished` 且 `error_logs=[]`，不能记录为摘要契约发布；后续应以包含摘要提交的最新同名分支重新创建 release，并以最终 `release-get.commit_id` 核对。
+
+Knowledge 页面视觉修订已接受并集成为 `798c72bde30bf463029f59b2b85b1c941e9656f6`（父提交 `d363a64fe`），精确 2 文件；17/17 定向测试与 client TypeScript 检查通过，origin/GitHub 同名分支已同步。隔离 mock 视觉证据覆盖四尺寸浅深主题，仍属于本地组件验证，不代表线上视觉验收。
