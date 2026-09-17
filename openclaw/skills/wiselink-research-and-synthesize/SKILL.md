@@ -12,7 +12,7 @@ description: Orchestrate the single official hosted WiseLink engineering profile
 - hosted app：`app_17c3zn24kv2`
 - logical profile：`wiselink-engineering`
 - model policy：`official-hosted-profile-config`（任务可绑定已登记的内置或用户授权自定义模型；仍经唯一官方 Hosted profile/Gateway）
-- Skill：`wiselink-research-and-synthesize@r09.c111`
+- Skill：`wiselink-research-and-synthesize@r09.c112`
 - Skill compatibility：`wiselink-research-and-synthesize@r09`（历史任务最低接受 `r09.c10`，翻译 v2 必须为 `r09.c44` 或更新兼容包）
 - Host MCP：`wiselink-openclaw-engineering-assessment@1.2.0`（保留既有工具，新增语义翻译工作与 JobAid 来源/工作工具）
 - Host 集成提交：以本次发布包清单记录的实际提交为准
@@ -557,7 +557,7 @@ Interactive Review 的复杂 ResultEnvelope 必须由 `sealResultEnvelope` 生�
 当前 validator 强制：
 
 - `modelVersion` 优先取响应中可读实际模型；绑定任务未回报实际模型时使用 `configured-route:<modelRef>`，旧无绑定任务使用无 fallback 的 configured endpoint。后两者只证明路由，不代表已暴露下游具体模型，也不做具体版本等值判断
-- `skillVersion=wiselink-research-and-synthesize@r09.c111`
+- `skillVersion=wiselink-research-and-synthesize@r09.c112`
 - `toolVersions.wiselink-openclaw-engineering-assessment=1.2.0`
 - `promptVersion` 非空并来自当前运行
 - task/result exact binding、SourceRef allowlist 和 canonical hash 一致
@@ -618,3 +618,7 @@ Host documentActivityAction 的文档活动消费由 `scripts/consume-hosted-doc
 ## c111 同源简明认识
 
 正常工作保存可成对提交 headline 与 listBrief，分别表达简短主题和带决定性条件的已有认识。两字段与正文、来源和工作版本一起保存、读取；省略时保留原值，不在页面截取问题句或另跑评估转 Wiki。overview 表达工程综合，变更过程使用 changeSummary。旧工作不会因安装自动改写；新能力需由支持这两个字段的 Host 接收，部署顺序为 Host 后 Skill。
+
+## c112 独立文档解读
+
+文件自身解读使用独立 document_reading 工具和确定性消费者，与活动候选、事项工作分开保存；主题、简明解读、完整解释及条件来自同一准确源版本产物。消费者只消费显式准入任务，未知模型或保存结果不自动重复，明确校验失败保留原因。读取和目录投影不触发模型，部分阅读不宣称全篇理解。详见 [文档解读协议](references/document-reading-work.md)。部署顺序为数据库、Host、Skill；新包安装不自动启动解读或改写旧工作。

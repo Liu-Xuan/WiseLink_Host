@@ -63,6 +63,9 @@ import { DocumentTranslationReadingController } from './document-translation-rea
 import { DocumentActivityReadingController } from './document-activity-reading.controller';
 import { DocumentActivityRunRepository } from './document-activity-run.repository';
 import { DocumentActivityRuntimeService } from './document-activity-runtime.service';
+import { DocumentReadingRuntimeService } from './document-reading-runtime.service';
+import { DocumentReadingRunRepository } from './document-reading-run.repository';
+import { DocumentReadingController } from './document-reading.controller';
 import { DocumentTranslationAttemptRepository } from '../action-attempt/document-translation-attempt.repository';
 import { EngineeringSearchProjectionWriter } from './engineering-search-projection';
 import { CanonicalHostReviewActionController } from './canonical-host-review-action.controller';
@@ -453,6 +456,7 @@ export class CanonicalHostModule {
       controllers: [
         DocumentTranslationReadingController,
         DocumentActivityReadingController,
+        DocumentReadingController,
         DialogueController,
         EngineeringIssueSearchController,
         CanonicalHostController,
@@ -538,6 +542,8 @@ export class CanonicalHostModule {
         DocumentRevisionReadingService,
         DocumentActivityRunRepository,
         DocumentActivityRuntimeService,
+        DocumentReadingRunRepository,
+        DocumentReadingRuntimeService,
         DocumentSourceSearchService,
         DocumentTranslationRuntimeService,
         DocumentTranslationAttemptRepository,

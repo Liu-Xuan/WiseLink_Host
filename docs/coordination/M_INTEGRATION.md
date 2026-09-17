@@ -1,5 +1,74 @@
 # M 主控集成交接
 
+## 2026-09-17 c112 文档解读实链发布准备
+
+c112 已加入独立解读协议与消费者。审查发现并修复新工具未进入精确 MCP 名单、READING 请求选项未进入真实 SDK 传输白名单；实际 callJsonTool 测试覆盖 SDK 两种参数位置。真实 adapter 已收到但格式错误的响应现统一带安全 READING_MODEL_RESULT_INVALID 并持久化 REQUIRES_ATTENTION；断流/超时仍不自动重调。全 Skill 412 项通过，Host 两套 8 项通过，server production build 通过。此前 7 项真实 PG 仓储及 6 项实际目录 SQL 证据继承，不以 mock 代替。
+
+发布须协调暂停既有后台消费者并确认零在途，再部署 Host 新34工具清单、安装 c112，验证后恢复原配置；旧 c111 对新工具严格拒绝，不能在切换窗口继续调度。当前尚未发布 Host 或安装 c112，不启动真实解读。
+
+## 2026-09-17 文档解读正式数据库迁移与实际 schema
+
+本轮先由官方 db-table-get 确认开发库无 dm_document_reading_run，db-env-diff 确认原待发布变化为空，再按 0060 在 dev 事务创建。Astra 核对官方差异准确为 32 项，仅新表、guard 函数/触发器、约束、七条策略、索引和注释；无删除、无既有表改写。官方 db-env-migrate 回执 changes_applied=32、status=migrated；这里 dev→main 是平台数据库分支，不是 Git main。线上 table-get 读回 26 列及索引与 dev 一致，估计行数零；发布后官方 diff 为空。
+
+首次 npx latest 生成调用被自动审批拒绝，未执行。核验项目既有官方生成流程及本机 @lark-apaas/db-schema-sync 0.1.19 后，以固定已安装版本执行获准；旧环境凭据 401 通过官方 env-pull 拉到私有临时目录修复，未覆盖项目环境、未输出凭据。实际 dev schema 输出到仓库外临时文件，仅提取新表为 server/database/document-reading.schema.ts；repository 已引用生成表，未整边覆盖其他 schema。server typecheck 与 diff check 通过。生成表替换后的实际 repository 隔离 PG 复验 7 项通过、0 失败、0 跳过，临时实例已停止。缺测试环境变量的首次直接调用为 skip，不计通过。
+
+数据库已具备新表，但新解读 Host/Skill/前端仍未发布、未启动真实模型解读。已有解析、中文及保存工作没有重跑或修改；不能将数据库发布等同于完整功能上线。
+
+## 2026-09-17 文档解读消费者接线与恢复审查
+
+图谱 r2 中间集成提交 `0014d6a8b46ccd82bdbba5548fb4c44e4b1a1da7`，父提交 `d1b891050a177aea889579775abf0df1b20e75cd`，仅 22 个已接受文件；正常 precommit、公开敏感检查及 diff check 通过，origin/github 精确同名开发分支均独立回读该 SHA。未发布。前端原 turn `7686357438837214396` 本轮官方仍为 running、queue0；Luna 未重复派发，390 可读性、同身份 query 恢复和工具栏缩放后相机保持等待原 turn 终态。
+
+独立文档解读消费者已接入现有 consume-hosted-work-item：明确 readingRunRef 精确恢复，或从授权 document_work STATUS 的 nextReadingRunRef 消费已创建任务；不隐式 BEGIN，不解析/翻译，不改活动候选。检查点按 endpoint（无凭据）、DocumentVersion、runRef 隔离，并绑定 parseRun、semanticRevision 和 expectedRevision；未知模型/SAVE 结果不自动重调或重复保存。现有活动任务优先级保持，未发现任务继续 idle。
+
+Astra 找到并由 M 修复两个恢复问题：SAVED 快捷返回绕过原 save.started 内容比对，以及明确校验失败被吞成待确认。现已先读取检查点再比对所有已保存回执；明确应用校验代码持久保存并返回 REQUIRES_ATTENTION，网络结果不确定仍保留待确认。新增实际消费者入口、idle、重启内容差异及已知拒绝反例；另补 CLAIM 并发完成后的检查点重读，拒绝另一生产者返回与预期不同的正文；阅读消费者现 12 项本地通过。接线时关联阅读/活动/工作项 75 项通过（当时阅读为 9 项），服务端 typecheck 通过。均为本地验证，没有线上模型调用。
+
+后续仍需完成正式 DDL/生成 schema、生产前端消费以及完整包接受后升版安装；新文档解读尚未迁移、提交或部署，不以此记录冒充完整上线或业务验收。
+
+
+## 2026-09-17 图谱r2实际取回复测与文档解读数据库验证
+
+M从wl-followup消息中原样提取chunk-aa/ab/ac/ad并机械封装，第二轮127449字节/22文件patch SHA256 532662f5d1e1e0db982256c57d5a0d81caf2f07778ffe0038abf3d846beb6fed，gzip SHA256 6d7339cbbacce136b371ec2e950f7e9b59371d36602fe48cdd2f10664a1ddcc6；固定验证器在clean45c新目录/private/tmp/wl-graph-r2-review-wsc8igv9通过。已应用隔离目录，本地7套/33项全部通过，canonical前端仍保留原WIP未覆盖。r2加入URL replace/debounce恢复与相机保护，正在Astra差异复审。390手机全图缩小仍不可读，未视觉接受/发布。
+
+相机运行证据更正：旧4185预览缓存旧main，之前113%的报告不能证明已传80%初始参数。M新起4186后通过served main核对r2路径及initialViewport，再实际运行restore-r2.mjs，结果requested80%、initial80%、afterResize80%；以此作为r2相机修复有效证据，不引用旧缓存运行证明修前行为。
+
+Astra新增两个真实隔离PG测试：test/node/document-reading-postgres.test.mjs的7项通过，test/node/document-reading-library-postgres.test.mjs的6项通过，均0失败/0跳过。后者直接调用生产listOwnedLibraryFamilies，不复制SQL；覆盖PARTIAL投影/条件/源限制、新FAILED或QUEUED解析不遮PUBLISHED、新semantic或已发布parse失效、准确历史版本、actor/tenant及撤权。前者验证0060与实际repository的lease/CAS/重复SAVE/不可变终态且活动表与readSaved不变。两个临时PG实例已停止，无线上操作。
+
+M新增独立Hosted文档解读模型适配invoke-hosted-document-reading-model.mjs，复用官方网关/既有profile和实际model provenance，单一proposal工具，不调用Host写入或原文解析/翻译；3项隔离mock网关测试通过。持久消费/恢复与前端接线仍待完成，Skill未升版/安装，未调用线上模型。当前仍不具备发布完整文档解读的条件。
+
+## 2026-09-17 文档解读独立Host实现进行中（未迁移、未发布）
+
+M接受Astra复核后的独立DocumentReading方案，未往活动候选塞摘要。当前新增shared/document-reading.interface.ts、document-reading-candidate.ts、document-reading-run.repository.ts、document-reading-runtime.service.ts、document-reading.controller.ts、0060_document_reading_run.sql及两套测试；module和独立document_reading MCP已接线，CanonicalLibraryDocumentVersionSummary和library-query已投影同一准确已保存解读，保留关键条件、模型限制和源文件实际限制。资料库查询仅选最新有效PUBLISHED原文和对应semanticRevision；旧解读不冒充新来源，未发布新解析不遮掉旧有效原文。新表DDL尚未执行，repository暂用固定SQL表标识；正式部署前须走授权DDL及生成schema，不声称已生成。
+
+实际本地2套/8项测试通过，覆盖来源实际交付、partial、未分章节单元、不可伪造引用/覆盖、撤权、原文变化、精确只读无生成。server typecheck和新增源码ESLint通过；新增目录投影后server typecheck再通过。Astra只读审查当前来源/CAS/租约/重复SAVE边界无阻断问题，正在独立新增test/node/document-reading-postgres.test.mjs以实际隔离PG验证0060与repository，不得把mock测试称数据库验收。
+
+尚缺Hosted生产者与恢复接线、目录SQL运行验证、官方数据库迁移及生成schema、前端妙搭对新字段的实际消费与真实内容接受。以上全部为未提交WIP，不发布、不重跑原件中文，不把接口具备能力称已消除线上占位。前端原修正turn7686357438837214396仍官方确认running/streaming=true/queue0，独立继续。
+
+## 2026-09-17 继续核对：安装终态、图谱交接与文档解读缺口
+
+M通过官方接口独立确认c111安装原turn 7686353274471533508已completed、streaming=false、queue=0。M已读取本地完整原始官方消息/private/tmp/wl-c111-accepted/session-7686353274471533508.raw.json（has_more=false），逐项核对远端verify-package=true/53文件、安装后missing/mismatch/extra均为空、installed tests 395/395、skills ready及6→6 cron配置IDENTICAL且均enabled=true。安装sourceCommit准确为d1b891050a177aea889579775abf0df1b20e75cd。安装接受；未据此启动新业务，也不称旧摘要已改善。
+
+图谱导出操作员报告124103字节、22文件、4块gzip，但M对已落本地的11页消息实际执行现行verify-miaoda-cloud-handoff.mjs，结果“未找到WL_CODE_HANDOFF_V1 manifest”。这些消息只记录云端生成导出文件的命令，没有实际manifest和分块正文；故当前不能称代码已取回、校验或接受。已要求唯一前端操作员继续原任务取得实际文件，未改写canonical图谱WIP。
+
+后续M找到页3的真实文件清单/sha256与页6—9的4个chunk原始工具输出，将其机械封装为/private/tmp/wl-graph-export-normalized.txt，没有手工修改patch正文。固定验证器通过：124103字节、22文件、SHA256 eb911175aaba6de4b08754ba0e36d89d38149185ff926e22744819ed24b3af3a；已在干净45c临时checkout应用，canonical未变。比对冻结本地WIP，实际云端修改集中5文件。图谱导出turn已自然completed、queue=0。
+
+M本地实际验证7套图谱Jest：6套通过/30项，Canvas套件因新增Image组件引入的@/lib/utils在测试类型配置下无法解析而未运行，并非云端回报的全部31项通过。实际审查另确认SuiteMatterGraphPage仍只写内存ref、不支持刷新恢复；Canvas恢复相机后userCameraRef仍false，resize自动fit会覆盖恢复。已交原唯一妙搭操作员进行限定修正、必要回归及1440/390视觉检查，暂不合入或发布当前补丁；领域/全景和完整工程事件仍未完成。
+
+M随后使用已取回的实际Canvas、正式tokens和隔离构造数据生成1440/390截图，产物/private/tmp/wl-graph-cloud-visual/canvas-1440.png及canvas-390.png，无页面JS错误。桌面大灰黑团已改善；390画布自动fit为37%，卡片字约4.8px，不满足手机可读性。已要求妙搭在完整手机页验证合理初始尺度/聚焦与交互，不能全图缩小代替适配。这是局部组件问题定位，未覆盖完整三栏或生产内容，不称视觉验收。
+
+本轮修正会话由M官方重读确认为turn 7686357438837214396，running/streaming=true/queue=0；后继只跟踪原handle，不因等待而重发。隔离浏览器实际复现相机恢复故障：请求zoom80%/pan80,50，首次挂载ResizeObserver后已变113%，后续resize仍113%；证据/private/tmp/wl-graph-cloud-visual/restore.mjs，已送原操作员修正。
+
+Astra已完成文档解读只读调查，/private/tmp/wl-document-reading-scope.md确认现有合同缺此产物，尚未实施。其首版提出扩展activity结果；M指出这会影响原活动latest读取、共享candidateRevision和时间轴语义，正在比较独立Host文档解读产物与复用活动模式的实际受影响面，不把“禁止另建业务数据库”误读为“禁止必要新表”，也不接受为零新表而耦合不同实体。部分阅读须有范围，不能假称整份已读。
+
+文档解读与事项短认识是两个不同缺口。只读核对miaoda-hosted-library-query.ts及CanonicalLibraryDocumentVersionSummary，目录只投影准确文档版本、元数据、解析状态和Reader入口，没有文档自身简明解读。现行LibraryDocumentRows/Details固定显示待补齐；DocumentSemanticMap只组织原文标题/范围，DocumentActivityRevision只是准确来源声明候选，二者均不能充作文档通用解读。后续需为文档自身建立有来源绑定的保存阅读投影，至少固定documentVersionId、parseRunId及实际使用的semanticRevision/来源定位与覆盖范围；新原文运行或语义修订不得静默沿用为当前。不得借用任意事项的最新headline/listBrief，不截正文、不在GET调用模型；前端接线必须等真实可读内容具备。本轮仅定位和记录，未新增存储或触发生成。
+
+## 2026-09-17 c111 标准包与图谱云端交付取回准备
+
+M独立官方实时核对：后端安装turn7686353274471533508（app_17c3zn24kv2 / conversation_4ky0f6r24fz90）与前端只导出turn7686353445042064365（app_17bzc551rsg / conversation_4m1xuavvgyhaz）均为running、streaming=true、queue=0。后继须继续读取这两个原turn，不因观察超时重复派发；当前尚无安装完成或补丁本地验收结论。
+
+c111版本提交d1b891050a177aea889579775abf0df1b20e75cd（父a7835ba27）已正常precommit及origin/github同名快进回读。标准package从已提交Skill子树生成，内置全部Skill测试通过；实际包/private/tmp/wl-c111-accepted/wiselink-research-and-synthesize-r09.c111.zip为426703字节、53文件，SHA256 dc32c485df054b34b88e07f6dcf07bde454862a7cf3700dd58b169184cc660b1，manifest SHA256 fe63d616d4527abac0441557f685b60413442e5b8b69afd19433fbefb5641b6c。verify-package.py逐文件校验通过；52个DOS条目未携带Unix模式，未声称核验了缺失权限位。已交唯一后端Luna按现行operator流程传输、quiet核对和安装/恢复，最终回执待取得；未授权本轮另触发工程生成或原文中文重跑。
+
+前端原turn7686342154516564960已completed，回报基线45c3e525与图谱提交5d51736ad45690cecb17db4c5b2fc1adf7cf563f，7套/31项测试及lint通过；这是云端报告，本地代码尚待取回。其提交链曾夹带9个自动无关修改，不能整体cherry-pick。M已要求原唯一操作员仅导出现成代码：相对45c的18个新增源/测试与4个原集成文件，排除平台/tmp/隔离预览路由等无关内容；若新增必要路径先回报。M建立/private/tmp/wl-graph-cloud-review-00z3i33f干净checkout，HEAD精确45c，用于协议验证与后续审查，canonical现有图谱WIP保持。云端仍缺1440/390真实视口截图、领域/全景及完整事件，不能据此宣布S4或线上验收完成。
+
 ## 2026-09-17 同源短认识修法提交与部署在途
 
 已接受9文件提交a7835ba27cdcf27444d5f643f51a06cc282e178e（父45c3e525df9e0ac42e695c98560c157b5c6bb744），正常precommit及公开敏感检查通过，origin/github精确同名开发分支均回读该SHA。Host release 7686351180390747366 已由官方release-get确认finished、commit_id精确为a7835ba27、error_logs=[]。新字段接收能力已技术发布，未触发业务生成或改写旧数据。后继Skill版本已在7处现行声明/说明/测试文件推进至c111，源检查53文件与11处声明一致；尚待提交后按标准打包/安装，不能用c110旧包冒充新指导。

@@ -2944,6 +2944,8 @@ export interface DocumentMetadataReextractResponse extends DocumentMetadataReadR
 }
 
 export interface CanonicalLibraryDocumentVersionSummary {
+  /** Exact published source reading, never an arbitrary matter assessment. */
+  documentReading?: import('./document-reading.interface').DocumentReadingPreview;
   parsing?: { status: import('./document-parsing.interface').DocumentParseStatus; latestRevision: number; publishedRevision: number | null } | null;
   metadataRevision?: number | null;
   extractedMetadata?: DocumentExtractedMetadata | null;
