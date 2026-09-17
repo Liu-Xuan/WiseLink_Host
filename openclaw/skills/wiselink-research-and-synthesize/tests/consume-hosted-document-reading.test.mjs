@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { consumeHostedDocumentReading } from '../scripts/consume-hosted-document-reading.mjs';
+import { invokeHostedDocumentReadingModel } from '../scripts/invoke-hosted-document-reading-model.mjs';
 import { readHostMcpJsonResult } from '../scripts/run-hosted-review-turn.mjs';
 
 function fixture() {
@@ -246,4 +247,31 @@ test('received malformed real adapter response stays actionable across restart w
   assert.equal(result.status,'REQUIRES_ATTENTION');assert.equal(result.errorCode,'READING_MODEL_RESULT_INVALID');
   assert.equal((await consumeHostedDocumentReading(f.options,f.deps)).errorCode,result.errorCode);
   assert.equal(requests,1);
+});
+
+test('pre-dispatch invalid source anchors are a durable explicit failure, not a pending model', async () => {
+  for (const kind of ['duplicate', 'empty']) {
+    const f = fixture(); const call = f.deps.callTool;
+    let dispatched = 0;
+    f.deps.callTool = async (tool, request) => {
+      const result = await call(tool, request);
+      if (request.action === 'READING_READ') {
+        if (kind === 'duplicate') {
+          result.anchors.push(structuredClone(result.anchors[0]));
+          result.range.anchorIds.push(result.anchors[0].anchorId);
+        } else result.anchors[0].sourceText = '';
+      }
+      return result;
+    };
+    f.deps.invokeModel = input => invokeHostedDocumentReadingModel(input, {}, {
+      requestGateway: async () => { dispatched++; throw new Error('must not dispatch'); },
+    });
+    const result = await consumeHostedDocumentReading(f.options, f.deps);
+    assert.equal(result.status, 'REQUIRES_ATTENTION');
+    assert.equal(result.errorCode, 'READING_MODEL_INPUT_INVALID');
+    assert.equal(f.records.get('failure').value.errorCode, 'READING_MODEL_INPUT_INVALID');
+    assert.equal((await consumeHostedDocumentReading(f.options, f.deps)).status, 'REQUIRES_ATTENTION');
+    assert.equal(dispatched, 0);
+    assert.equal(f.calls.includes('READING_SAVE'), false);
+  }
 });
