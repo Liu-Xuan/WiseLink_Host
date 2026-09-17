@@ -1,5 +1,37 @@
 # M 主控集成交接
 
+## 2026-09-17 Suite 资料库返程增量接受（尚未发布）
+
+资料库文档/事项表与快览增量完成独立审查。最后两项 P2 已修：完整正文来源链接携带绑定目录上下文，准确工作 Wiki 可继续返回原目录；双面板位置由页面级 Provider 同步合并，避免同一渲染批次的 URL setter 相互覆盖。新增同批列表 450/快览 100 的回归断言，三份定向测试 24/24 通过；客户端类型、受影响源码 eslint 通过。隔离实际组件预览在正常页面高度下滚动快览 60 后刷新恢复 60；该证据不代表真实线上验收。
+
+图谱纯投影层经过独立复审修复 ID/聚合/分页/虚节点问题，16 项定向测试通过；display root 为虚节点且不作为业务关系端点，matter root 保留真实身份。纯层接受，真实页面消费者及全部视觉效果尚待接通。资料库版本解读缺项、完整逐页视觉核验与线上发布仍未完成，不将本批接受等同于 S1 或整体前端完成。
+
+## 2026-09-17 Suite 1.1 共享外壳与知识阅读首批
+
+本批 18 文件已提交 `5078bb002addfac46e52343ca0a0beeaaf50dad6`，父提交 `378bc3236e7c044f39479748749e6f98f015b5da`；正常 precommit 通过，origin/github 的 `codex/wl31-r09-master-handoff-20260903` 均普通快进并读回同一 SHA，未发布。首次 HEAD 源 ref 被既有 pre-push 拒绝后，使用精确同名本地分支 ref 成功，未绕过 hook。
+
+后续 S1 已进入资料库组件迁移；M 补齐只读目录返回的事项模式、所选事项/文档版本、family 展开、密度及双面板滚动，并排除滚动数值参与阅读 scope，避免滚动使恢复键变化。原文仍绑定准确 DV，写入意图及任意 URL 不进入返程。返回/比较两套定向检查 43/43 通过；该后续增量尚未提交，须结合新页面继续验收。
+
+后续实际进展：M 新增绑定事项的目录→Wiki→确切原文→同一 workRef Wiki→原目录返回链，`returnLibraryMatterId` 与嵌套 `returnMatterLibraryQuery` 必须匹配当前事项；拒绝串事项、重复绑定和混合入口。导航/比较/共享壳 49 项测试通过。资料库文档已换为五列表格，历史行紧邻所属 family 且排除当前版本；M 修复历史选择连续两次 URL 更新导致选择被覆盖的问题，并接入精确版本快览，所选版本缺失或重复不替换为 current。事项表首屏保留短认识，快览展示完整决定性条件及覆盖/更正提醒，完整工作折叠下钻；相关 8 项阅读测试、客户端类型和定向 lint 通过。此增量未提交、未发布；尚缺资料库整页同环境预览、事项表完整视觉迁移、双面板滚动实际读写及文件自身短解读，不能称 S1 已完成。
+
+Astra 定向返程审查指出事项列表真实 `workItemId` 筛选未在白名单保留；已修为仅事项模式保留单值合法筛选，完整二级往返断言包含该筛选、选中事项及滚动，文档模式和重复参数不保留。修后两套导航/比较 45/45 通过；另加实际 DocumentDetails 历史版本/缺失/空/重复选择渲染检查，该阅读返程套件最终 15/15 通过。
+
+随后继续实际 S1 实现：事项目录也改为五列表格及分组/主表/快览三栏，默认认识不再重复标题或堆积过程；历史版本行修复旧 grid 样式，原文链接停止行选择冒泡。新增 `useLibraryPaneScroll` 并接入文档/事项列表及快览，URL 分别保存 listY/quicklookY，选择改变清除快览位置、搜索改变清除旧选择与位置；请求未 ready 时不写滚动，读写按 session 与阅读 scope 校验，无延迟回调。24 项定向检查及客户端类型通过；Astra 发现同 scope 只改 URL Y 时未恢复，已令 y 独立触发 layout 恢复并增加该场景断言，复跑通过。以上是实际组件与 JSDOM 证据，真实高度下的钳制、完整整页几何和跨页面视觉仍待隔离预览检查，尚未提交/发布。图谱 S4 真实接口与组件只读映射同步进行。
+
+整页隔离预览 4183 已实际运行：初次 `process is not defined` 来自 toolkit logger，临时 alias 隔离后可读，生产未加 polyfill。M 查看实际截图后将旧受理/上传/帮助收为标题栏操作菜单，搜索与视图收为紧凑工具栏；修复手机树面板宽 780px 被祖先隐藏裁切的问题，不能以根节点无横溢替代可读性。最终 1672/1440 下三栏上边界 y=184、高 800、目录 166、快览 292；390 下主表及快览外框均宽 370，无页面错误，表格内部横向滚动。截图仍为构造资料和临时身份，尚非同数据全页视觉接受或线上验收。新增目录 `overallStatus` 直接取当前保存 problemWork，表格明确 STALE/NOT_AVAILABLE，不从工作修订推断综合覆盖；双端类型和相关 24 测试通过。文档原文链接返程追加准确 selectedDocumentVersionId，15 项返程套件通过。
+
+S4 已取得真实接口映射；新增纯分组展示模型/投影及 11 项测试，支持 1–6 组、隐藏/溢出/分页及真实 relationIds，尚在独立审查、尚未接页面。领域关系与事项级时间聚合缺口保留，不按标题推断关系，不把纯展示模块称为完整图谱。
+
+已完成五份补充附件、12 类页面源码及 25 张参考截图审阅，逐页范围与差异落实到 `docs/WISELINK_FRONTEND_SUITE_PLAN_20260917.md`；Goal 已采用 Suite 1.1 全部页面范围，工程态势保留现有已接受双环。源码和参考图审阅不等同逐控件交互复测。
+
+本批代码：共享壳采用 188px 贴边侧栏、60px 顶栏、独立面包屑/准确返回/全屏及新版导航；保留 Router、身份和主题 Provider。搜索进入真实知识页，暂停动态同时响应系统 reduced-motion 和页面隐藏。知识页采用工程认识/来源资料、当前/含历史/仅历史、左侧保存认识列表与右侧完整正文；有界分页目录及精确工作读取沿用保存内容和原授权 reader，不调用模型。工作当前性与 Overall 覆盖分开；最多检查 200 个候选，耗尽明确失败，不伪装完整空页。URL 保存查询、范围、分页、完整工作身份与滚动，拒绝半套/重复身份，取消请求并阻止迟到正文及跨工作滚动污染；准确原文返程已接入。
+
+验证：32 项定向 Jest 检查通过，服务端/客户端类型检查、相关 ESLint/Stylelint、diff check 与客户端构建通过；构建仍有既有旁支 tsconfig 路径和大 chunk 警告。真实本地 PostgreSQL 隔离测试 1/1 通过、0 跳过，覆盖当前/历史与分页 SQL；授权 reader 为测试替身，不能据此声称生产 RLS 验收。Astra 前后端只读复审均接受本批功能范围。
+
+同组件隔离预览使用生产 Layout/Theme/Knowledge 及样式，只替换身份和只读 API 为明确构造样例。最终截图在 1672×1000、1440×1000、390×844、DPR1 下均无 JavaScript 错误和整页横溢；桌面知识面板上边界 y=260.30、列表宽 370px，与本轮目标几何相符。追加 1440 深色截图已查看，reduced-motion 下 motion=off；全屏按钮进入 is-immersive、Escape 恢复成功。首次脚本错误使用按钮可见文字而非其 aria 名称而超时，修正定位后通过，未改产品代码。预览位于临时 4182，原 4179 仍是旧 Trinity 隔离预览；不能混用其截图。新批尚未发布，完整动效及真实线上视觉未验收。资料库准确版本短解读仍缺接线，Wiki、Reader、换版、图谱/时间轴和后续页面仍按计划继续，不能把本批称为整套前端完成。
+
+妙搭原前端会话最新只读核对 turn `7686309868802804685` 已完成：云端 `/home/gem/workspace/code`、分支 `codex/wl-frontend-revision-reading-view-20260916`、HEAD `b08cc2d15761431d263842f06a869e959adba360`，tracked 干净且无 stash；Suite 新素材未在云端，只有旧 Trinity 材料。同仓存在其他会话的 worktree/交接和共享 memory，尚无独立并行生成证明。因此未新增云端开发会话或重发开发任务，按已授权方案采用本地文件职责分开开发、独立审查和统一提交。
+
 ## 2026-09-16 跨事项恢复审计发布与工作12闭合
 
 Host补齐精确attempt的只读审计投影：STATUS在原事项/actor及每个参考事项重新授权后，只返回封存的matter revision、base working revision、prior work、trigger、输入、实际交付模型的referenceWorks及其更正通知、保存回执；不返回lease、executionModel、完整任务或模型载荷。Astra两轮发现并关闭继承参考遗漏及旧任务缺referenceWorks兼容；25项单测、server type、源码eslint/diffcheck通过，隔离PG全套6/6通过，含显式/继承引用、问题/Overall通知、撤权拒绝、失败恢复、保存回执及合法历史封存。提交61caffd00cc78b45790d38eaf4f19a6c030a04da（父3b1d462669d7b3b422a53d1259ee636de65d72e6）精确4文件，正常hook及origin/github同名分支SHA一致；release7686084654881278914最终finished并绑定该提交。发布中一度回读旧SHA，终态已纠正，不将中间态当发布完成。app17c是OpenClaw操作目标，不支持代码release；Host发布面仍为full-stack app17b。
@@ -1417,3 +1449,17 @@ F3 实现提交 `d0009e6958bb18f6877e4b6d6701bca09769965e`（父提交 `9362b476
 Astra 首轮复审发现并闭合三项实码问题：单年月份刻度偏移一月、未固定候选的迟到发现会覆盖用户刚切换的窗口、活动详情入口会在读取后静默删除非法窗口。修正后 7 个相关 Jest suite 共 91 项、client typecheck、定向 ESLint/CSS stylelint、client production build、完整 precommit 与 diff check 均通过；Astra 最终准入。两个提交已分别以普通非强制快进同步到 origin/github 同名 `codex/wl31-r09-master-handoff-20260903`，两端均回读 `d0009e6958bb18f6877e4b6d6701bca09769965e`。
 
 Host release `7686289702877760745` 已 `finished`，精确 `commit_id=d0009e6958bb18f6877e4b6d6701bca09769965e`，`error_logs=[]`。这证明交接协议和 F3 代码已技术发布；本轮未取得登录态生产页面的视觉与真实内容往返读回，不能据此宣布线上视觉验收或跨版本活动身份已经接通。系统取得时间、跨版本同一活动身份及其他业务泳道仍以当前合同未提供为准。
+
+## 2026-09-17：Trinity F4 已保存复看条件与更正保存引用一致性
+
+前端原妙搭会话按固化交接协议交回 F4 补丁：原 patch 17,305 字节、SHA-256 `f8254f47dc6c7eeb20d378f635aa4b284c929babe655c5fd6af862730c35fc8e`，gzip payload 4,729 字节、SHA-256 `ac4e999e76da4de3dbd0537bb06ed4302ce36b185b614219ebb24d44356a117d`。声明的 6 个文件与实际 diff 一致，本机在精确基线 `64f85201f0ab093fe47c5ed1d715f85fd2272585` 上通过 `git apply --check --whitespace=error-all` 后才应用和审查；云端口头测试结果没有代替本地验收。
+
+工程态势的“改进与复看”现在逐项读取当前已保存工作的 `reviewConditions`，保留条件正文、触发口径、依据引用标识和准确 `matterWorkRevisionId`，并可打开所属工作修订。`undefined`、`null` 和空数组分别保留未投影、没有当前保存工作、当前工作未保存复看条件的差异。该读取没有改变 `activeStages`、事件、事项数、生命周期覆盖或状态推导；页面明确把条件保持为候选，不判断已触发、逾期或已经形成正式改进。现行 Host 仍没有计划与准备、实施与记录、效果与验证的正式记录合同，本批没有用样例或页面位置补造这些状态。
+
+后端同时修正针对性更正的保存读取差异：旧实现只从完成结果的 `modelOutput` 投影 `correctedWorkRef`，导致 SAVE 已持久成功而 FINISH 随后失败或取消时，历史工作、Overall、检索及后续引用看不到真实保存工作。新实现只接受同租户、事项、actor、attempt 的实际 `engineering_matter_work_revision`，并要求匹配的 `MATTER_JOBAID_WORK_SAVED` 持久回执；真实保存优先于后续结果文本。`unchanged` 也只读取与目标 `workRef`/revision 精确匹配的 `MATTER_CORRECTION_UNCHANGED` 回执，不再相信模型输出。attempt 的实际失败或取消状态仍保留，未修改旧工作正文、Overall、正式采用或审批。
+
+定向前后端 Jest、client/server typecheck、受影响源码 ESLint、client production build、完整 precommit 和 diff check 均通过。另在本机隔离 PostgreSQL 实例上执行真实 repository 路径，覆盖“保存成功后 FINISH 失败仍读到准确新工作”“结果声称 unchanged 不能覆盖真实保存”“只有伪造 modelOutput 且没有保存行/回执时不得产生 correctedWorkRef”，目标用例 1/1 通过；该隔离实例随后正常停止，不涉及线上业务数据。
+
+后端提交 `118903524ca81e40b853bcfdcf951b827c952e82`（父提交 `64f85201f0ab093fe47c5ed1d715f85fd2272585`）和前端提交 `f1cfb43147885d96476fb7acad91c7ff80e1a5e1`（父提交 `118903524ca81e40b853bcfdcf951b827c952e82`）已分别按精确文件范围提交；origin/github 同名开发分支均回读 `f1cfb43147885d96476fb7acad91c7ff80e1a5e1`。Host release `7686300155057933252` 已 `finished`，精确 `commit_id=f1cfb43147885d96476fb7acad91c7ff80e1a5e1`，`error_logs=[]`。
+
+发布后通过已登录外部 Chrome 读取线上生产页面：FTD revision 12 在“改进与复看”准确显示 0 项及“当前已保存工作未单独保存复看条件”；SB revision 16 显示 2 条已保存条件、完整条件正文和各自保存的依据引用标识，并继续标明候选内容未必已经触发或逾期。点击“打开所属工作修订”实际进入同一 SB 事项的 `MWREV-75632e5d-e5f4-4cd2-8ace-a254f99f5874` / revision 16，页面明确说明指定版本不会被最新工作替换。该读回验证已发布读取与准确导航，不证明条件真实触发，也不补齐计划、实施或效果合同。

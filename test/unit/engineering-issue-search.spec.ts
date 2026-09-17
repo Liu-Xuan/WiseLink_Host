@@ -260,3 +260,57 @@ describe('authorized engineering issue search and exact expansion', () => {
     expect(h.db.execute).not.toHaveBeenCalled();
   });
 });
+
+
+describe('saved knowledge catalogue', () => {
+  it('browses exact saved titles and briefs without a query and keeps overview coverage separate from currentness', async () => {
+    const h = setup();
+    h.saved.content.overviewStatus = 'STALE';
+    h.db.execute.mockResolvedValue([{ ...h.identity, current: true }]);
+    const page = await h.service.catalogue('', 'CURRENT', undefined, actor);
+    expect(page.entries).toEqual([expect.objectContaining({ headline: h.saved.content.headline,
+      listBrief: h.saved.content.listBrief, current: true, overviewStatus: 'STALE', workRef: h.saved.workRevisionRef })]);
+    expect(page.entries[0]).not.toHaveProperty('content');
+    expect(page.nextCursor).toBeNull();
+    const read = await h.service.readKnowledge({ subjectKind: 'WORK_ITEM', subjectId: h.saved.workItemId, workRef: h.saved.workRevisionRef }, actor);
+    expect(read.content).toBe(h.saved.content);
+  });
+
+  it('continues across denied work and never exposes denied identity metadata', async () => {
+    const h = setup();
+    h.db.execute.mockResolvedValueOnce(Array.from({ length: 40 }, (_, n) => ({ ...h.identity, workRef: `revoked-${n}`, current: false })))
+      .mockResolvedValueOnce([{ ...h.identity, current: false }]);
+    const page = await h.service.catalogue('', 'HISTORICAL', undefined, actor);
+    expect(page.entries).toHaveLength(1);
+    expect(page.entries[0].current).toBe(false);
+    expect(JSON.stringify(page)).not.toContain('revoked');
+  });
+
+  it('limits candidate scans and does not report an incomplete denied scan as an empty complete page', async () => {
+    const h = setup();
+    h.db.execute.mockResolvedValue(Array.from({ length: 40 }, (_, n) => ({ ...h.identity, workRef: `revoked-${n}`, current: false })));
+    await expect(h.service.catalogue('', 'ALL', undefined, actor)).rejects.toThrow('ENGINEERING_KNOWLEDGE_SCAN_LIMIT');
+    expect(h.db.execute).toHaveBeenCalledTimes(5);
+    expect(h.jobAid.readBrowserRevision).toHaveBeenCalledTimes(200);
+  });
+
+  it('uses the last visible identity for a 20-entry page cursor and rejects replay with another filter', async () => {
+    const h = setup();
+    const rows = Array.from({ length: 21 }, (_, n) => ({ ...h.identity, subjectId: `WI-${String(n).padStart(2, '0')}`, current: true }));
+    h.db.execute.mockResolvedValue(rows);
+    const page = await h.service.catalogue('工具', 'ALL', undefined, actor);
+    expect(page.entries).toHaveLength(20);
+    const cursor = JSON.parse(Buffer.from(page.nextCursor!, 'base64url').toString());
+    expect(cursor.identity.subjectId).toBe('WI-19');
+    await expect(h.service.catalogue('另一关键词', 'ALL', page.nextCursor!, actor)).rejects.toThrow('ENGINEERING_KNOWLEDGE_CURSOR_INVALID');
+    await expect(h.service.catalogue('工具', 'CURRENT', page.nextCursor!, actor)).rejects.toThrow('ENGINEERING_KNOWLEDGE_CURSOR_INVALID');
+  });
+
+  it('reauthorizes direct reads and propagates data failures instead of silently dropping them', async () => {
+    const h = setup();
+    h.jobAid.readBrowserRevision.mockRejectedValue(new Error('CORRUPT_SAVED_WORK'));
+    await expect(h.service.catalogue('', 'CURRENT', undefined, actor)).rejects.toThrow('CORRUPT_SAVED_WORK');
+    h.jobAid.readBrowserRevision.mockRejectedValue(Object.assign(new Error('REVOKED'), { statusCode: 403 }));
+    await expect(h.service.readKnowledge({ subjectKind: 'WORK_ITEM', subjectId: h.saved.workItemId, workRef: h.saved.workRevisionRef }, actor)).rejects.toThrow('REVOKED');
+  });
+});

@@ -1,7 +1,7 @@
 import { BadRequestException, Body, Controller, Get, Header, Post, Query, Req, UseGuards } from '@nestjs/common';
 import { NeedLogin } from '@lark-apaas/fullstack-nestjs-core';
 import type { Request } from 'express';
-import type { EngineeringIssueSearchHit } from '@shared/engineering-issue-search.interface';
+import type { EngineeringIssueSearchHit, EngineeringKnowledgeScope } from '@shared/engineering-issue-search.interface';
 import { ProductionMiaodaBrowserObjectIngressGuard } from '../work-item/production-miaoda-browser-ingress';
 import { hostActor } from './canonical-host-request-actor';
 import { EngineeringIssueSearchService } from './engineering-issue-search.service';
@@ -12,6 +12,20 @@ import { DocumentSourceSearchService } from './document-source-search.service';
 @Controller('api/canonical-host/engineering-issues')
 export class EngineeringIssueSearchController {
   constructor(private readonly issues: EngineeringIssueSearchService, private readonly sources: DocumentSourceSearchService) {}
+
+  @Get('catalogue')
+  @Header('Cache-Control', 'private, no-store')
+  catalogue(@Query('search') search: string | undefined, @Query('scope') scope: EngineeringKnowledgeScope = 'CURRENT',
+    @Query('after') after: string | undefined, @Req() request: Request) {
+    return this.issues.catalogue(search ?? '', scope, after, hostActor(request));
+  }
+
+  @Get('catalogue/work')
+  @Header('Cache-Control', 'private, no-store')
+  readKnowledge(@Query('subjectKind') subjectKind: EngineeringIssueSearchHit['subjectKind'],
+    @Query('subjectId') subjectId: string, @Query('workRef') workRef: string, @Req() request: Request) {
+    return this.issues.readKnowledge({ subjectKind, subjectId, workRef }, hostActor(request));
+  }
 
   @Post('references')
   reference(@Body() input: unknown, @Req() request: Request) {

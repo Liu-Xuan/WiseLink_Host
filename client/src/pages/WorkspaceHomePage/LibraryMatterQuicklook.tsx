@@ -1,12 +1,12 @@
+import { useLibraryPaneScroll } from './useLibraryPaneScroll';
 import { useEffect } from 'react';
 import { ArrowRight, BookOpen, X } from 'lucide-react';
-import { Link, useNavigate } from 'react-router-dom';
+import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import { Button } from '@client/src/components/ui/button';
 import useEngineeringMatter from '@client/src/features/matter/useEngineeringMatter';
 import SavedAssessmentReading from '@client/src/features/matter/SavedAssessmentReading';
 import {
   matterDocumentRoute,
-  matterOverviewRoute,
 } from '@client/src/features/matter/matter-navigation';
 import MatterProblemWork from '@client/src/features/matter/MatterProblemWork';
 import OverviewCorrectionNotices from '@client/src/features/matter/OverviewCorrectionNotices';
@@ -14,6 +14,8 @@ import OverviewSourceWork from '@client/src/features/matter/OverviewSourceWork';
 import ReferenceWorkNotices from '@client/src/features/matter/ReferenceWorkNotices';
 import type { DocumentAssessmentEvidence } from '@client/src/features/matter/assessment-reading';
 import type { EngineeringMatterWorkspaceRead } from '@client/src/api/engineering-matter';
+import { savedReadingSummary } from '@client/src/features/matter/AssessmentReadingListSummary';
+import { libraryDocumentReadingRoute, libraryMatterReadingRoute } from '@client/src/features/matter/reading-return';
 
 export function LibraryMatterQuicklookContent({
   data,
@@ -21,19 +23,52 @@ export function LibraryMatterQuicklookContent({
   data: EngineeringMatterWorkspaceRead;
 }) {
   const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
   const current = data.working.current;
   const result = current?.state.substantiveResult;
   const problemWork = current?.state.problemWork;
+  const summary = result ? savedReadingSummary(result) : null;
   const locateDocument = (source: DocumentAssessmentEvidence) =>
-    navigate(matterDocumentRoute(data.matter.matterId, source, 'brief', current?.matterWorkRevisionId));
+    navigate(matterDocumentRoute(data.matter.matterId, source, 'brief', current?.matterWorkRevisionId,
+      new URLSearchParams(libraryMatterReadingRoute(data.matter.matterId, searchParams).split('?')[1])));
   return (
     <>
       <header className="atlas-library-inspector-title">
         <BookOpen aria-hidden="true" />
         <small>工程事项 · 工作修订 {data.working.currentWorkingRevision}</small>
-        <h2>{data.matter.title}</h2>
-        <p>{current?.state.focus.question || '当前问题描述尚未单独保存。'}</p>
+        <h2>{problemWork?.headline || summary?.headline || data.matter.title}</h2>
       </header>
+      <section className="atlas-library-reading-block atlas-library-summary-block">
+        <h3>{problemWork?.overviewStatus === 'STALE' ? '已保存认识 · 综合待更新' : '当前认识'}</h3>
+        {problemWork?.overviewStatus === 'STALE' ? <p className="atlas-library-attention">最新问题已更新，以下综合尚未覆盖这些变化。</p> : null}
+        {data.working.pendingInputs.length ? <p className="atlas-library-attention">{data.working.pendingInputs.length} 项资料变化待核对。</p> : null}
+        {current?.correctionNotices?.map(notice => <p key={notice.attemptRef} className="atlas-library-attention">{notice.unchanged ? '已核对并保留原认识' : notice.correctedWorkRef ? '已有后继更正，当前仍为原版本' : '更正待核对'}：{notice.reason}</p>)}
+        {current?.overviewCorrectionNotices?.length ? <p className="atlas-library-attention">本综合存在更正记录，请展开核对其保存结果与覆盖范围。</p> : null}
+        {summary && problemWork?.overviewStatus !== 'NOT_AVAILABLE' ? (
+          <>
+            <p><strong>{summary.listBrief}</strong></p>
+            <h4>决定性条件</h4>
+            <ul>
+              {summary.decisiveClaims.map((claim) => (
+                <li key={claim.claimId}>{claim.text}</li>
+              ))}
+            </ul>
+          </>
+        ) : (
+          <p>尚无已保存的事项综合认识。</p>
+        )}
+      </section>
+      <ReferenceWorkNotices notices={current?.referenceWorkNotices} />
+      <div className="atlas-library-inspector-actions">
+        <Button asChild><Link to={`/matters/${encodeURIComponent(data.matter.matterId)}/posture`}>工程态势</Link></Button>
+        <Button asChild>
+          <Link to={libraryMatterReadingRoute(data.matter.matterId, searchParams)}>
+            阅读事项 Wiki <ArrowRight aria-hidden="true" />
+          </Link>
+        </Button>
+      </div>
+      <details className="atlas-library-details">
+        <summary>展开完整工作、依据与后续关注</summary>
       <section className="atlas-library-reading-block">
         <h3>已保存工作 · 我方候选意见</h3>
         {problemWork ? (
@@ -55,7 +90,7 @@ export function LibraryMatterQuicklookContent({
             notices={current?.overviewCorrectionNotices}
           />
         ) : null}
-        <ReferenceWorkNotices notices={current?.referenceWorkNotices} />
+
         {result && problemWork?.overviewStatus !== 'NOT_AVAILABLE' ? (
           <>
             <h4>
@@ -78,7 +113,7 @@ export function LibraryMatterQuicklookContent({
           {data.matter.catalog.entries.map((entry) => (
             <li key={entry.workItemId}>
               <Link
-                to={`/work-items/${encodeURIComponent(entry.workItemId)}/documents?node=reader&tab=reader&documentVersionId=${encodeURIComponent(entry.document.documentVersionId)}`}
+                to={libraryDocumentReadingRoute(entry.document.documentVersionId, searchParams)}
               >
                 {entry.document.documentCode} ·{' '}
                 {entry.document.businessRevision || '版本待核'}
@@ -139,14 +174,8 @@ export function LibraryMatterQuicklookContent({
           <p>尚未单独保存待核问题或复看条件；不表示没有后续关注事项。</p>
         )}
       </section>
-      <div className="atlas-library-inspector-actions">
-        <Button asChild><Link to={`/matters/${encodeURIComponent(data.matter.matterId)}/posture`}>工程态势</Link></Button>
-        <Button asChild>
-          <Link to={matterOverviewRoute(data.matter.matterId)}>
-            进入事项简报 <ArrowRight aria-hidden="true" />
-          </Link>
-        </Button>
-      </div>
+
+      </details>
     </>
   );
 }
@@ -169,11 +198,12 @@ export default function LibraryMatterQuicklook({
     sessionGeneration,
     authenticationRequired,
   );
+  const paneScroll = useLibraryPaneScroll<HTMLElement>('quicklookY', Boolean(read.data), sessionGeneration);
   useEffect(() => {
     onRead(read.data);
   }, [read.data, onRead]);
   return (
-    <aside className="atlas-library-inspector" aria-label="工程事项快览">
+    <aside {...paneScroll} className="atlas-library-inspector" aria-label="工程事项快览">
       <div className="atlas-library-inspector-heading">
         <span>这件事的工程要点</span>
         <Button

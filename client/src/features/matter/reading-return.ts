@@ -8,6 +8,38 @@ const LIBRARY_FILTERS = [
   'fleetModel',
 ] as const;
 
+/** URL-only read state; never accept an arbitrary return URL or a write intent. */
+export function knowledgeReadingIdentity(params: URLSearchParams):
+  | { state: 'absent' | 'invalid' }
+  | { state: 'ok'; identity: { subjectKind: 'WORK_ITEM' | 'ENGINEERING_MATTER'; subjectId: string; workRef: string } } {
+  const keys = ['subjectKind', 'subjectId', 'workRef'];
+  if (keys.every(key => !params.has(key))) return { state: 'absent' };
+  if (keys.some(key => params.getAll(key).length !== 1)) return { state: 'invalid' };
+  const subjectKind = params.get('subjectKind');
+  const subjectId = params.get('subjectId') ?? '', workRef = params.get('workRef') ?? '';
+  if ((subjectKind !== 'WORK_ITEM' && subjectKind !== 'ENGINEERING_MATTER') ||
+    [subjectId, workRef].some(value => !value.trim() || value !== value.trim() || value.length > 255 || /[\u0000-\u001f\u007f]/u.test(value)))
+    return { state: 'invalid' };
+  return { state: 'ok', identity: { subjectKind, subjectId, workRef } };
+}
+
+export function knowledgeReadingParams(params: URLSearchParams): URLSearchParams {
+  const result = new URLSearchParams();
+  for (const key of ['query', 'subjectKind', 'subjectId', 'workRef', 'scope', 'kind', 'after', 'listY', 'articleY']) {
+    if (params.getAll(key).length !== 1) continue;
+    const value = params.get(key) ?? '';
+    const limit = key === 'after' ? 2400 : key === 'query' ? 200 : 255;
+    if (value.length > limit || /[\u0000-\u001f\u007f]/u.test(value)) continue;
+    if (key === 'scope' && !['CURRENT', 'ALL', 'HISTORICAL'].includes(value)) continue;
+    if (key === 'kind' && !['works', 'sources'].includes(value)) continue;
+    if (key === 'subjectKind' && !['WORK_ITEM', 'ENGINEERING_MATTER'].includes(value)) continue;
+    if ((key === 'listY' || key === 'articleY') && !/^\d{1,7}$/.test(value)) continue;
+    if (value) result.set(key, value);
+  }
+  result.sort();
+  return result;
+}
+
 function identifier(value: string | null): string {
   const text = value?.trim() ?? '';
   return text.length <= 512 && !/[\u0000-\u001f\u007f]/u.test(text) ? text : '';
@@ -15,10 +47,35 @@ function identifier(value: string | null): string {
 
 /** Read-only directory state, never arbitrary URLs or write-intent parameters. */
 export function libraryReadingParams(params: URLSearchParams): URLSearchParams {
-  const result = new URLSearchParams({ mode: 'document' });
+  const mode = params.getAll('mode').length === 1 && params.get('mode') === 'matter'
+    ? 'matter' : 'document';
+  const result = new URLSearchParams({ mode });
   for (const key of LIBRARY_FILTERS) {
+    if (params.getAll(key).length !== 1) continue;
     const value = identifier(params.get(key));
     if (value) result.set(key, value);
+  }
+  const selectionKey = mode === 'matter' ? 'selectedMatterId' : 'selectedDocumentVersionId';
+  if (params.getAll(selectionKey).length === 1) {
+    const value = identifier(params.get(selectionKey));
+    if (value) result.set(selectionKey, value);
+  }
+  if (mode === 'matter' && params.getAll('workItemId').length === 1) {
+    const value = identifier(params.get('workItemId'));
+    if (value) result.set('workItemId', value);
+  }
+  if (mode === 'document' && params.getAll('expandedFamilyIds').length === 1) {
+    const raw = params.get('expandedFamilyIds') ?? '';
+    const families = raw.split(',');
+    if (raw.length <= 2048 && families.length <= 32 &&
+      families.every(value => value && identifier(value) === value))
+      result.set('expandedFamilyIds', [...new Set(families)].sort().join(','));
+  }
+  if (params.getAll('density').length === 1 && params.get('density') === 'compact')
+    result.set('density', 'compact');
+  for (const key of ['listY', 'quicklookY']) {
+    const value = params.get(key) ?? '';
+    if (params.getAll(key).length === 1 && /^\d{1,7}$/.test(value)) result.set(key, value);
   }
   if (params.get('catalogView') === 'tree') result.set('catalogView', 'tree');
   if (params.get('grouping') === 'ata' || params.get('grouping') === 'aircraft')
@@ -28,7 +85,10 @@ export function libraryReadingParams(params: URLSearchParams): URLSearchParams {
 }
 
 export function libraryReadingScope(params: URLSearchParams): string {
-  return `library:${libraryReadingParams(params).toString()}`;
+  const state = libraryReadingParams(params);
+  state.delete('listY');
+  state.delete('quicklookY');
+  return `library:${state.toString()}`;
 }
 
 export function libraryDocumentReadingRoute(
@@ -40,6 +100,21 @@ export function libraryDocumentReadingRoute(
     returnLibraryQuery: libraryReadingParams(params).toString(),
   });
   return `/document-versions/${encodeURIComponent(documentVersionId)}?${query}`;
+}
+
+/** Bind directory return to the matter being opened, never an arbitrary destination. */
+export function libraryMatterReadingRoute(
+  matterId: string,
+  params: URLSearchParams,
+): string {
+  const state = new URLSearchParams(params);
+  state.set('mode', 'matter');
+  state.set('selectedMatterId', matterId);
+  const query = new URLSearchParams({
+    returnLibraryMatterId: matterId,
+    returnLibraryQuery: libraryReadingParams(state).toString(),
+  });
+  return `/matters/${encodeURIComponent(matterId)}?${query}`;
 }
 
 const REVISION_SIDE_KEYS = ['before', 'after', 'roleKey'] as const;
@@ -323,6 +398,7 @@ export function matterReadingReturnParams(
   documentVersionId: string,
   panel: string,
   workRef = '',
+  directoryContext?: URLSearchParams,
 ): URLSearchParams {
   const params = new URLSearchParams({
     returnMatterId: matterId,
@@ -331,6 +407,12 @@ export function matterReadingReturnParams(
   if (panel === 'review' || panel === 'materials')
     params.set('returnMatterPanel', panel);
   if (workRef) params.set('returnMatterWorkRef', workRef);
+  if (directoryContext?.has('returnLibraryMatterId') &&
+    readingReturnTarget(directoryContext, undefined, null, matterId)) {
+    params.set('returnMatterLibraryQuery', libraryReadingParams(
+      new URLSearchParams(directoryContext.get('returnLibraryQuery')!),
+    ).toString());
+  }
   return params;
 }
 
@@ -338,9 +420,11 @@ export function readingReturnTarget(
   params: URLSearchParams,
   documentVersionId?: string,
   requestedRun?: string | null,
+  currentMatterId?: string,
 ): { route: string; label: string } | null {
   const keys = [
     'returnMatterId',
+    'returnKnowledgeQuery',
     'returnLibraryQuery',
     'returnRevisionQuery',
     'returnActivityQuery',
@@ -352,6 +436,8 @@ export function readingReturnTarget(
     [
       ...keys,
       'returnMatterWorkRef',
+      'returnLibraryMatterId',
+      'returnMatterLibraryQuery',
       'returnDocumentVersionId',
       'returnRevisionSide',
       'returnActivityQuery',
@@ -360,6 +446,17 @@ export function readingReturnTarget(
   )
     return null;
   if (params.has('returnActivityView') && !params.has('returnActivityQuery')) return null;
+  if (params.has('returnMatterLibraryQuery') && !params.has('returnMatterId')) return null;
+  if (params.has('returnLibraryMatterId')) {
+    const boundMatter = identifier(params.get('returnLibraryMatterId'));
+    const raw = params.get('returnLibraryQuery');
+    if (!boundMatter || boundMatter !== currentMatterId || !raw || raw.length > 4096 ||
+      params.has('returnDocumentVersionId') || params.has('returnMatterWorkRef')) return null;
+    const state = new URLSearchParams(raw);
+    if (state.getAll('mode').length !== 1 || state.get('mode') !== 'matter' ||
+      state.getAll('selectedMatterId').length !== 1 || state.get('selectedMatterId') !== boundMatter) return null;
+    return { route: `/library?${libraryReadingParams(state)}`, label: '返回原事项目录' };
+  }
   const binding = identifier(params.get('returnDocumentVersionId'));
   if (
     params.has('returnDocumentVersionId') &&
@@ -368,6 +465,13 @@ export function readingReturnTarget(
   )
     return null;
   const matterId = identifier(params.get('returnMatterId'));
+  if (params.has('returnKnowledgeQuery')) {
+    const query = params.get('returnKnowledgeQuery');
+    if (!binding || !query || query.length > 4096) return null;
+    const nested = new URLSearchParams(query);
+    if (knowledgeReadingIdentity(nested).state === 'invalid') return null;
+    return { route: `/knowledge?${knowledgeReadingParams(nested)}`, label: '返回工程知识' };
+  }
   if (matterId) {
     const panel = params.get('returnMatterPanel');
     const workRef = identifier(params.get('returnMatterWorkRef'));
@@ -376,6 +480,15 @@ export function readingReturnTarget(
     if (workRef) query.set('workRef', workRef);
     else if (panel === 'review' || panel === 'materials')
       query.set('panel', panel);
+    if (params.has('returnMatterLibraryQuery')) {
+      const raw = params.get('returnMatterLibraryQuery');
+      if (!raw || raw.length > 4096) return null;
+      const nested = new URLSearchParams(raw);
+      if (nested.getAll('mode').length !== 1 || nested.get('mode') !== 'matter' ||
+        nested.getAll('selectedMatterId').length !== 1 || nested.get('selectedMatterId') !== matterId) return null;
+      query.set('returnLibraryMatterId', matterId);
+      query.set('returnLibraryQuery', libraryReadingParams(nested).toString());
+    }
     return {
       route: `/matters/${encodeURIComponent(matterId)}${query.size ? `?${query}` : ''}`,
       label: workRef
@@ -396,7 +509,8 @@ export function readingReturnTarget(
       return null;
     return {
       route: `/library?${libraryReadingParams(new URLSearchParams(params.get('returnLibraryQuery')!))}`,
-      label: '返回原文档目录',
+      label: new URLSearchParams(params.get('returnLibraryQuery')!).get('mode') === 'matter'
+        ? '返回原事项目录' : '返回原文档目录',
     };
   }
   if (params.has('returnRevisionQuery')) {

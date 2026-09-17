@@ -1,4 +1,5 @@
 import { useState, type FormEvent } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import type { AssessmentReadingResult } from '@shared/assessment-reading.interface';
 import AssessmentReadingListSummary, {
   savedReadingSummary,
@@ -36,6 +37,7 @@ import type {
 interface LibraryDocumentDirectoryProps {
   directory: ReturnType<typeof useLibraryDocuments>;
   authenticationRequired: boolean;
+  sessionGeneration?: number;
   search: string;
   searchText: string;
   mode: 'document' | 'tasks';
@@ -56,6 +58,7 @@ interface LibraryDocumentDirectoryProps {
 export function LibraryDocumentDirectory({
   directory,
   authenticationRequired,
+  sessionGeneration = 0,
   search,
   searchText,
   mode,
@@ -74,102 +77,54 @@ export function LibraryDocumentDirectory({
 }: LibraryDocumentDirectoryProps) {
   const [localGrouping, setLocalGrouping] = useState<LibraryGrouping>('category');
   const [localView, setLocalView] = useState<'list' | 'tree'>('list');
+  const [params, setParams] = useSearchParams();
+  const expandedFamilyIds = (params.get('expandedFamilyIds') ?? '').split(',').filter(Boolean);
+  const selectedDocumentVersionId = mode === 'document' ? params.get('selectedDocumentVersionId') ?? '' : '';
+  const compact = params.get('density') === 'compact';
   const grouping = presentation?.grouping ?? localGrouping;
   const catalogView = presentation?.view ?? localView;
   const setGrouping = (value: LibraryGrouping) => onPresentationChange ? onPresentationChange({ grouping: value, view: catalogView }) : setLocalGrouping(value);
   const setCatalogView = (value: 'list' | 'tree') => onPresentationChange ? onPresentationChange({ grouping, view: value }) : setLocalView(value);
+  const toggleFamily = (familyId: string) => {
+    const next = expandedFamilyIds.includes(familyId)
+      ? expandedFamilyIds.filter((id) => id !== familyId)
+      : [...expandedFamilyIds, familyId];
+    const nextParams = new URLSearchParams(params);
+    if (next.length) nextParams.set('expandedFamilyIds', next.join(','));
+    else nextParams.delete('expandedFamilyIds');
+    setParams(nextParams);
+  };
+  const toggleDensity = () => {
+    const nextParams = new URLSearchParams(params);
+    if (compact) nextParams.delete('density');
+    else nextParams.set('density', 'compact');
+    setParams(nextParams);
+  };
+  const selectVersion = (familyId: string, documentVersionId: string) => {
+    const nextParams = new URLSearchParams(params);
+    nextParams.set('mode', 'document');
+    nextParams.set('familyId', familyId);
+    nextParams.set('selectedDocumentVersionId', documentVersionId);
+    nextParams.delete('quicklookY');
+    nextParams.delete('workItemId');
+    setParams(nextParams);
+  };
   const taskMode = mode === 'tasks';
   const filtered = Boolean(search || Object.values(filters).some(Boolean));
   const label = taskMode ? '评估任务' : '工程文档';
   return (
     <>
-      <div className="library-panel-heading">
-        <div>
-          <span className="library-section-label">
-            {taskMode ? '任务记录' : '文档管理'}
-          </span>
-          <h2>{taskMode ? '最近任务' : '工程文档'}</h2>
-        </div>
-        <Button
-          type="button"
-          variant="ghost"
-          size="icon"
-          onClick={onRefresh}
-          disabled={directory.loading || authenticationRequired}
-          aria-label={`刷新${label}`}
-        >
-          <RefreshCw
-            className={directory.loading ? 'library-spin' : undefined}
-            aria-hidden="true"
-          />
-        </Button>
-      </div>
-      <form className="library-catalog-search" onSubmit={onSearch}>
-        <label htmlFor="library-catalog-query">搜索{label}</label>
-        <div className="library-query-row">
-          <div className="library-query-input">
-            <Search aria-hidden="true" />
-            <Input
-              id="library-catalog-query"
-              value={searchText}
-              maxLength={200}
-              onChange={(event) => onSearchTextChange(event.target.value)}
-              placeholder={
-                taskMode
-                  ? '文档编号、文件名或资料类型'
-                  : '编号、标题、ATA 或正文提及机型'
-              }
-              autoComplete="off"
-            />
-          </div>
-          <Button type="submit" disabled={authenticationRequired}>
-            搜索
-          </Button>
-        </div>
+      <form className="suite-table-toolbar" onSubmit={onSearch}>
+        <div className="suite-table-tabs"><strong>{taskMode ? '评估任务' : '工程文档'}</strong><button type="button" onClick={() => setParams({ mode: 'matter' })}>工程事项</button></div>
+        <label className="suite-table-query"><Search aria-hidden="true" /><Input aria-label={`搜索${label}`} value={searchText} maxLength={200} onChange={event => onSearchTextChange(event.target.value)} placeholder="名称、主题与版本…" /></label>
+        <Button type="submit" size="sm" variant="outline" disabled={authenticationRequired}>搜索</Button>
+        <Button type="button" variant="ghost" size="icon" onClick={onRefresh} disabled={directory.loading || authenticationRequired} aria-label={`刷新${label}`}><RefreshCw aria-hidden="true" /></Button>
+        {!taskMode ? <Button type="button" variant="ghost" size="sm" onClick={toggleDensity}>{compact ? '标准行距' : '紧凑行距'}</Button> : null}
       </form>
-      <p className="library-recent-boundary">
-        {taskMode
-          ? '按创建时间显示当前账户的评估任务，同一文档可以有多次评估。'
-          : '每个 family 显示一份工程文档，当前版本与历史版本由文档管理模块统一管理。'}
-      </p>
-      {!taskMode ? (
-        <div
-          className="atlas-library-view-switch"
-          role="group"
-          aria-label="文档列表与分类目录"
-        >
-          <Button
-            variant="outline"
-            aria-pressed={catalogView === 'list'}
-            onClick={() => setCatalogView('list')}
-          >
-            文档列表
-          </Button>
-          <Button
-            variant="outline"
-            aria-pressed={catalogView === 'tree'}
-            onClick={() => setCatalogView('tree')}
-          >
-            分类目录
-          </Button>
-        </div>
-      ) : null}
-      {!taskMode ? (
-        <details className="atlas-library-filters">
-          <summary>类别、ATA 与机型联合筛选</summary>
-          <LibraryClassificationControls
-            grouping={grouping}
-            onGroupingChange={setGrouping}
-            filters={filters}
-            onFilterChange={onFilterChange ?? (() => undefined)}
-            counts={directory}
-            fleet={fleet}
-            disabled={
-              authenticationRequired || directory.loading || !onFilterChange
-            }
-          />
-        </details>
-      ) : null}
+      {!taskMode ? <details className="atlas-library-filters suite-library-filters"><summary>筛选与目录</summary>
+        <div className="atlas-library-view-switch"><Button variant="outline" aria-pressed={catalogView === 'list'} onClick={() => setCatalogView('list')}>文档列表</Button><Button variant="outline" aria-pressed={catalogView === 'tree'} onClick={() => setCatalogView('tree')}>分类目录</Button></div>
+        <LibraryClassificationControls grouping={grouping} onGroupingChange={setGrouping} filters={filters} onFilterChange={onFilterChange ?? (() => undefined)} counts={directory} fleet={fleet} disabled={authenticationRequired || directory.loading || !onFilterChange} />
+      </details> : null}
       {!taskMode &&
       !directory.items.length &&
       directory.totalCount !== undefined ? (
@@ -194,13 +149,18 @@ export function LibraryDocumentDirectory({
       ) : null}
       <div className="library-tree-recent-wrapper">
         {directory.items.length && !taskMode && catalogView === 'list' ? (
-          <LibraryDocumentRows
+            <LibraryDocumentRows sessionGeneration={sessionGeneration}
             documents={directory.items.filter(
               (item) => item.kind === 'DOCUMENT',
             )}
             selectedId={selectedId}
-            onSelect={onSelect}
-          />
+              onSelect={onSelect}
+              selectedDocumentVersionId={selectedDocumentVersionId}
+              onSelectVersion={selectVersion}
+              expandedFamilyIds={expandedFamilyIds}
+              compact={compact}
+              onToggleFamily={toggleFamily}
+            />
         ) : directory.items.length && !taskMode ? (
           <LibraryHierarchy
             documents={directory.items.filter(

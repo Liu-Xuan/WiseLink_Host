@@ -6,6 +6,7 @@ import {
   activityWindowPin,
   completeActivityIdentity,
   libraryDocumentReadingRoute,
+  libraryMatterReadingRoute,
   libraryReadingParams,
   libraryReadingScope,
   readingReturnTarget,
@@ -20,9 +21,95 @@ import {
   clearMatterReadingLocations,
 } from '../../client/src/features/matter/reading-location';
 import type { CanonicalLibraryDocumentVersionSummary } from '@shared/api.interface';
+import type { CanonicalLibraryDocumentSummary } from '@shared/api.interface';
 import { subscribeCanonicalHostClientSession } from '@client/src/api/canonical-host';
 
 let mockSession = 1;
+
+test('document quicklook reads selected historical version and does not silently substitute an invalid pin', () => {
+  const version = (id: string, current: boolean): CanonicalLibraryDocumentVersionSummary => ({
+    documentVersionId: id, businessRevision: id, revisionDate: '', sourceGeneratedDate: '',
+    originalFilename: `${id}.pdf`, byteLength: 100, committedAt: '2026-09-17T00:00:00Z',
+    selectedVersionIsCurrent: current, readerWorkItemId: '', workItemCount: 0,
+  });
+  const document: CanonicalLibraryDocumentSummary = {
+    kind: 'DOCUMENT', familyId: 'F1', documentId: 'D1', documentCode: 'SB-1',
+    normalizedFamily: 'SB', issuerAuthority: '', createdAt: '', updatedAt: '',
+    versions: [version('NEW', true), version('OLD', false)], workItemCount: 0,
+  };
+  const render = (query: string) => renderToStaticMarkup(createElement(StaticRouter,
+    {location: `/library?mode=document&familyId=F1&${query}`},
+    createElement(LibraryDocumentDetails, {document, onRefresh: jest.fn(), onViewTasks: jest.fn()})));
+  expect(render('selectedDocumentVersionId=OLD')).toContain('class="library-selected-version" data-document-version-id="OLD"');
+  for (const query of ['selectedDocumentVersionId=missing', 'selectedDocumentVersionId=', 'selectedDocumentVersionId=OLD&selectedDocumentVersionId=NEW']) {
+    const html = render(query);
+    expect(html).not.toContain('class="library-selected-version"');
+    expect(html).toContain('未替换为其他版本');
+  }
+});
+
+test('matter Wiki return is bound to the opened matter and original directory selection', () => {
+  const route = new URL(libraryMatterReadingRoute('MAT-A', new URLSearchParams('search=gear&listY=240&quicklookY=80&linkMatterId=WRITE')), 'https://example.invalid');
+  expect(route.pathname).toBe('/matters/MAT-A');
+  const target = readingReturnTarget(route.searchParams, undefined, null, 'MAT-A')!;
+  expect(target.label).toBe('返回原事项目录');
+  expect(target.route).toContain('selectedMatterId=MAT-A');
+  expect(target.route).toContain('listY=240');
+  expect(target.route).not.toContain('linkMatterId');
+  expect(readingReturnTarget(route.searchParams, undefined, null, 'MAT-B')).toBeNull();
+  expect(readingReturnTarget(route.searchParams, 'DV-A')).toBeNull();
+  const duplicate = new URLSearchParams(route.searchParams);
+  duplicate.append('returnLibraryMatterId', 'MAT-A');
+  expect(readingReturnTarget(duplicate, undefined, null, 'MAT-A')).toBeNull();
+  route.searchParams.set('returnLibraryQuery', 'mode=matter&selectedMatterId=MAT-B');
+  expect(readingReturnTarget(route.searchParams, undefined, null, 'MAT-A')).toBeNull();
+});
+
+test('directory to Wiki to exact source returns through the same saved work and directory state', () => {
+  const wiki = new URL(libraryMatterReadingRoute('MAT-A', new URLSearchParams('search=gear&listY=240&workItemId=WI-filter')), 'https://example.invalid');
+  const source = new URL(matterDocumentRoute('MAT-A', {
+    documentVersionId: 'DV-old', workItemId: 'WI-A', sourceRefId: 'SRC-A',
+    locator: JSON.stringify({parseRunId: 'PRUN-old', sourceRefId: 'SRC-A'}),
+  }, 'brief', 'MW-3', wiki.searchParams), 'https://example.invalid');
+  expect(source.searchParams.get('parseRunId')).toBe('PRUN-old');
+  const returnedWiki = new URL(readingReturnTarget(source.searchParams, 'DV-old')!.route, 'https://example.invalid');
+  expect(returnedWiki.searchParams.get('workRef')).toBe('MW-3');
+  const returnedLibrary = readingReturnTarget(returnedWiki.searchParams, undefined, null, 'MAT-A')!;
+  expect(returnedLibrary.route).toContain('listY=240');
+  expect(returnedLibrary.route).toContain('workItemId=WI-filter');
+  expect(libraryReadingParams(new URLSearchParams('mode=document&workItemId=WI-filter')).has('workItemId')).toBe(false);
+  expect(libraryReadingParams(new URLSearchParams('mode=matter&workItemId=WI-A&workItemId=WI-B')).has('workItemId')).toBe(false);
+  expect(returnedLibrary.route).toContain('selectedMatterId=MAT-A');
+  source.searchParams.set('returnMatterLibraryQuery', 'mode=matter&selectedMatterId=MAT-B');
+  expect(readingReturnTarget(source.searchParams, 'DV-old')).toBeNull();
+});
+
+test('Suite directory return preserves selected matter and pane positions without write intent', () => {
+  const state = new URLSearchParams('mode=matter&selectedMatterId=MAT-A&search=gear&density=compact&listY=280&quicklookY=510&linkMatterId=WRITE&returnUrl=https://invalid.example');
+  const route = new URL(libraryDocumentReadingRoute('DV-A', state), 'https://example.invalid');
+  const back = readingReturnTarget(route.searchParams, 'DV-A')!;
+  expect(back.label).toBe('返回原事项目录');
+  const restored = new URL(back.route, 'https://example.invalid').searchParams;
+  expect(Object.fromEntries(restored)).toEqual({mode: 'matter', selectedMatterId: 'MAT-A', search: 'gear', density: 'compact', listY: '280', quicklookY: '510'});
+  const changedScroll = new URLSearchParams(state);
+  changedScroll.set('listY', '800');
+  expect(libraryReadingScope(changedScroll)).toBe(libraryReadingScope(state));
+  expect(readingReturnTarget(route.searchParams, 'DV-B')).toBeNull();
+});
+
+test('Suite document return retains bounded family expansion and rejects ambiguous or malformed display state', () => {
+  const state = new URLSearchParams('mode=document&selectedDocumentVersionId=OLD&expandedFamilyIds=F2,F1,F2&density=compact&listY=-2&quicklookY=Infinity&selectedMatterId=OTHER');
+  const clean = libraryReadingParams(state);
+  expect(clean.get('selectedDocumentVersionId')).toBe('OLD');
+  expect(clean.get('expandedFamilyIds')).toBe('F1,F2');
+  expect(clean.has('selectedMatterId')).toBe(false);
+  expect(clean.has('listY')).toBe(false);
+  expect(clean.has('quicklookY')).toBe(false);
+  state.append('selectedDocumentVersionId', 'NEW');
+  expect(libraryReadingParams(state).has('selectedDocumentVersionId')).toBe(false);
+  state.set('expandedFamilyIds', Array.from({length: 33}, (_, i) => `F${i}`).join(','));
+  expect(libraryReadingParams(state).has('expandedFamilyIds')).toBe(false);
+});
 jest.mock('@client/src/components/ui/button', () => ({ Button: 'button' }));
 jest.mock('@client/src/features/matter/LinkDocumentMatterMaterial', () => ({ __esModule: true, default: 'span' }));
 jest.mock('@client/src/api/canonical-host', () => ({
@@ -46,6 +133,7 @@ test('the actual document row link returns to the same allowed directory filters
     ),
   );
   const href = html.match(/href="([^"]+)"/)![1].replace(/&amp;/g, '&');
+  params.set('selectedDocumentVersionId', version.documentVersionId);
   expect(href).toBe(
     libraryDocumentReadingRoute(version.documentVersionId, params),
   );
@@ -215,5 +303,6 @@ test('opening a tree version without first selecting its quicklook preserves tha
     createElement(DocumentVersionLink, { version, familyId: 'clicked-family', children: '原文' })));
   const route = new URL(html.match(/href="([^"]+)"/)![1].replace(/&amp;/g, '&'), 'https://example.invalid');
   expect(readingReturnTarget(route.searchParams, 'DV-row')!.route).toContain('familyId=clicked-family');
+  expect(readingReturnTarget(route.searchParams, 'DV-row')!.route).toContain('selectedDocumentVersionId=DV-row');
   expect(readingReturnTarget(route.searchParams, 'DV-row')!.route).not.toContain('previous');
 });

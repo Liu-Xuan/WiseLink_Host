@@ -34,7 +34,7 @@ test('real SQL current/history search resolves real subjects and reauthorizes ex
       } else {
         const state={problemWork:value.content,substantiveResult:jobAidReadingResult(value)};
         await db`INSERT INTO engineering_matter_work_revision VALUES ('tenant','actor','MAT-real',${ref},${revision},${JSON.stringify(state)})`;
-        saved.set(ref,{workingRevision:revision,state});
+        saved.set(ref,{matterId:'MAT-real',matterWorkRevisionId:ref,workingRevision:revision,createdAt:value.createdAt,state});
       }
       await db`INSERT INTO engineering_search_projection VALUES (${ref+':issue:ISSUE'},'tenant',${kind==='WI'?'USER':'MATTER'},'actor',
         ${ref},'WORK',${kind+'-real'},'ISSUE',ARRAY['ISSUE'],to_tsvector('simple',${value.content.issues[0].question}))`;
@@ -62,5 +62,35 @@ test('real SQL current/history search resolves real subjects and reauthorizes ex
       assert.equal((await service.search('retiredneedle',actor,'HISTORY')).hits.length,0);
       denied=false;
     }
+    // Catalogue is work-based: empty-query browsing and three exact version ranges.
+    const allKnowledge = await service.catalogue('', 'ALL', undefined, actor);
+    assert.equal(allKnowledge.entries.length, 4);
+    assert.equal((await service.catalogue('', 'CURRENT', undefined, actor)).entries.length, 2);
+    const historical = await service.catalogue('', 'HISTORICAL', undefined, actor);
+    assert.equal(historical.entries.length, 2);
+    assert.ok(historical.entries.every(entry => !entry.current && entry.workRevision === 1));
+    const old = historical.entries[0];
+    const exactOld = await service.readKnowledge({subjectKind:old.subjectKind,subjectId:old.subjectId,workRef:old.workRef}, actor);
+    assert.equal(exactOld.entry.current, false);
+    assert.equal(exactOld.content.issues[0].question, 'retiredneedle');
+    denied=true;
+    assert.equal((await service.catalogue('', 'ALL', undefined, actor)).entries.length, 0);
+    denied=false;
+    // A latest revision with no problem work never promotes old content to CURRENT.
+    await db`INSERT INTO engineering_matter_work_revision VALUES ('tenant','actor','MAT-real','MAT-empty',3,'{"problemWork":null}')`;
+    const remainingCurrent = await service.catalogue('', 'CURRENT', undefined, actor);
+    assert.deepEqual(remainingCurrent.entries.map(entry=>entry.subjectId), ['WI-real']);
+    for(let n=0;n<21;n++) {
+      const value=structuredClone(saved.get('WI-revision-2'));
+      value.workItemId=`PAGE-${String(n).padStart(2,'0')}`; value.workRevisionRef=`page-${n}`;
+      value.content.headline='pagekeyword';
+      saved.set(value.workRevisionRef,value);
+      await db`INSERT INTO assessment_work_revision VALUES ('tenant','actor',${value.workItemId},${value.workRevisionRef},2,${JSON.stringify(value.content)})`;
+    }
+    const pageOne=await service.catalogue('pagekeyword','CURRENT',undefined,actor);
+    assert.equal(pageOne.entries.length,20);assert.ok(pageOne.nextCursor);
+    const pageTwo=await service.catalogue('pagekeyword','CURRENT',pageOne.nextCursor,actor);
+    assert.equal(pageTwo.entries.length,1);assert.equal(pageTwo.nextCursor,null);
+    assert.equal(new Set([...pageOne.entries,...pageTwo.entries].map(entry=>entry.workRef)).size,21);
   } finally { if(priorProjection===undefined)delete process.env.WL_ENGINEERING_SEARCH_PROJECTION;else process.env.WL_ENGINEERING_SEARCH_PROJECTION=priorProjection;await db.end(); }
 });
