@@ -5,6 +5,7 @@ import {
   readDocumentVersionOriginal,
   subscribeCanonicalHostClientSession,
 } from '@client/src/api/canonical-host';
+import { UniversalLink } from '@lark-apaas/client-toolkit/components/UniversalLink';
 
 function useDocumentOriginalUrl(documentVersionId: string) {
   const [preview, setPreview] = useState<{url: string; documentVersionId: string; generation: number} | null>(null);
@@ -69,7 +70,7 @@ export function DocumentOriginalPreview({
   return (
     <span className="library-original-preview" data-document-version-id={documentVersionId}>
       {url ? <>
-        <a href={page && Number.isSafeInteger(page) && page > 0 ? `${url}#page=${page}` : url} target="_blank" rel="noopener noreferrer">{children}</a>
+        <UniversalLink to={page && Number.isSafeInteger(page) && page > 0 ? `${url}#page=${page}` : url} target="_blank" rel="noopener noreferrer">{children}</UniversalLink>
         <span role="status">原件已读取，请点击链接在新标签页打开。</span>
       </> : <Button variant="ghost" size="sm" disabled={busy} onClick={() => { void prepare(); }}>
         {busy ? '正在读取原件…' : '读取原件以预览'}
@@ -79,13 +80,19 @@ export function DocumentOriginalPreview({
   );
 }
 
-export function DocumentOriginalInlinePreview({ documentVersionId, page = 1 }: { documentVersionId: string; page?: number }) {
+export function DocumentOriginalInlinePreview({ documentVersionId, page = 1, autoLoad = false }: { documentVersionId: string; page?: number; autoLoad?: boolean }) {
   const { url, busy, error, prepare } = useDocumentOriginalUrl(documentVersionId);
+
+  useEffect(() => {
+    if (autoLoad && !url) void prepare();
+    // prepare() has a controller guard; deps stay coarse so page-only changes never refetch.
+  }, [autoLoad, documentVersionId]);
+
   return <section className="document-original-inline" aria-label="PDF 原件">
     {url ? <>
       <div className="document-original-inline-label">受控原件 · 第 {page} 页</div>
       <iframe title={`PDF 原件第 ${page} 页`} src={`${url}#page=${page}&view=FitH`} />
-      <a href={`${url}#page=${page}`} target="_blank" rel="noopener noreferrer">在新标签页打开第 {page} 页</a>
+      <UniversalLink to={`${url}#page=${page}`} target="_blank" rel="noopener noreferrer">在新标签页打开第 {page} 页</UniversalLink>
     </> : <div className="document-original-inline-empty">
       <strong>原件按需读取</strong>
       <p>读取后在此显示同一 DocumentVersion 的 PDF；未取得原件时不生成替代页面。</p>
