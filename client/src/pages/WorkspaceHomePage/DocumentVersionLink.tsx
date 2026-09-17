@@ -21,6 +21,7 @@ export function DocumentVersionLink({
   const location = useLocation();
   const params = new URLSearchParams(location.search);
   if (familyId) params.set('familyId', familyId);
+  if (params.get('mode') !== 'matter') params.set('selectedDocumentVersionId', version.documentVersionId);
   const inLibrary = location.pathname === '/library';
   return (
     <Link
@@ -29,7 +30,8 @@ export function DocumentVersionLink({
           ? libraryDocumentReadingRoute(version.documentVersionId, params)
           : `/document-versions/${encodeURIComponent(version.documentVersionId)}`
       }
-      onClick={() => {
+      onClick={(event) => {
+        event.stopPropagation();
         if (inLibrary)
           saveReadingLocation(
             libraryReadingScope(params),

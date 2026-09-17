@@ -99,8 +99,9 @@ describe('Guided Atlas library uses saved business reading', () => {
     unavailable.working.current!.overviewSourceWork = data.working.current!.overviewSourceWork;
     expect(renderQuicklook(unavailable)).not.toContain('workRef=actual-save-1');
   });
-  it('renders the saved row and all decisive limitations without asserting implementation', () => {
+  it('keeps the row brief and retains complete decisive conditions in quicklook', () => {
     const rows = libraryMatterRows();
+    rows[0].overallStatus = 'STALE';
     const html = renderToStaticMarkup(
       createElement(
         StaticRouter,
@@ -123,13 +124,18 @@ describe('Guided Atlas library uses saved business reading', () => {
           onCreateFromTask: jest.fn(),
           filteredByWorkItem: false,
           onViewAll: jest.fn(),
+          selectedId: '',
+          onSelect: jest.fn(),
         }),
       ),
     );
     expect(html).toContain(rows[0].result!.listBrief);
-    expect(html).toContain(rows[0].result!.decisiveClaims[0].text);
+    expect(html).toContain('问题已更新，综合尚未覆盖');
+    expect(html).not.toContain(rows[0].result!.decisiveClaims[0].text);
+    expect(renderQuicklook(libraryMatterFixture())).toContain(rows[0].result!.decisiveClaims[0].text);
     expect(html).toContain('data-result-ref="test-saved-result"');
-    expect(html).toContain('实施与故障：未核实');
+    expect(html).not.toContain('实施与故障：未核实');
+    expect(renderQuicklook(libraryMatterFixture())).toContain('不能判断已完成、未实施或无故障');
     expect(html).toContain('/matters/ui-test-matter');
   });
   it('reads the same substantive result and separates absent source measures and implementation', () => {
@@ -243,6 +249,9 @@ describe('Guided Atlas library uses saved business reading', () => {
     expect(url.pathname).toBe('/document-versions/DV%2Fold');
     expect(url.searchParams.get('parseRunId')).toBe('PRUN/old');
     expect(url.searchParams.get('sourceRef')).toBe('source/old');
+    const directory = new URLSearchParams(url.searchParams.get('returnMatterLibraryQuery') ?? '');
+    expect(directory.get('mode')).toBe('matter');
+    expect(directory.get('selectedMatterId')).toBe('ui-test-matter');
     mockLocateDocument({ ...source, locator: 'Page 1' });
     expect(mockNavigate.mock.calls.at(-1)![0]).toContain(
       '/matters/ui-test-matter?sourceDocument=',

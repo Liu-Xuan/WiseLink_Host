@@ -56,11 +56,14 @@ const TopBar: React.FC<TopBarProps> = ({
     searchParams,
     documentVersionId || undefined,
     requestedParseRun,
+    matterId || undefined,
   );
   const returnIntentKeys = [
     'returnMatterId',
     'returnKnowledgeQuery',
     'returnLibraryQuery',
+    'returnLibraryMatterId',
+    'returnMatterLibraryQuery',
     'returnRevisionQuery',
     'returnActivityQuery',
     'returnLibraryWorkItemId',

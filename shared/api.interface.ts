@@ -3104,6 +3104,8 @@ export interface EngineeringMatterDirectoryResponse {
     currentMatterRevisionId: string;
     workingRevision: number;
     result: AssessmentReadingSummary | null;
+    /** Coverage of the saved overview, independently of the work revision. */
+    overallStatus?: 'NOT_AVAILABLE' | 'CURRENT' | 'STALE' | null;
   }>;
   nextCursor: string | null;
   fileReadPerformed: false;

@@ -1,3 +1,4 @@
+import { LibraryPaneScrollProvider } from './useLibraryPaneScroll';
 import { useEffect, useMemo, useRef, useState, type FormEvent } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import {
@@ -66,6 +67,10 @@ import useReadingLocation from '@client/src/features/matter/useReadingLocation';
 import { libraryReadingScope } from '@client/src/features/matter/reading-return';
 
 export default function WorkspaceHomePage() {
+  return <LibraryPaneScrollProvider><WorkspaceHomeContent /></LibraryPaneScrollProvider>;
+}
+
+function WorkspaceHomeContent() {
   const { authenticationRequired, sessionGeneration } = useCurrentUserSession();
   const { publishCurrentObject } = useCurrentObjectContext();
   const navigate = useNavigate();
@@ -75,6 +80,7 @@ export default function WorkspaceHomePage() {
   const search: string = searchParams.get('search')?.trim() ?? '';
   const treeMode = libraryViewMode(searchParams);
   const linkMatterId = searchParams.get('linkMatterId')?.trim() ?? '';
+  const selectedMatterId = searchParams.get('selectedMatterId')?.trim() ?? '';
   const familyId = searchParams.get('familyId')?.trim() ?? '';
   const catalogFilters: LibraryCatalogFilters = {
     normalizedFamily: searchParams.get('normalizedFamily') ?? '',
@@ -219,6 +225,8 @@ export default function WorkspaceHomePage() {
     params.set('mode', 'document');
     params.set('familyId', targetFamilyId);
     params.delete('workItemId');
+    params.delete('selectedDocumentVersionId');
+    params.delete('quicklookY');
     setSearchParams(params);
   }
 
@@ -227,6 +235,9 @@ export default function WorkspaceHomePage() {
     params.set('mode', 'document');
     params.delete('familyId');
     params.delete('workItemId');
+    params.delete('selectedDocumentVersionId');
+    params.delete('listY');
+    params.delete('quicklookY');
     for (const key of [
       'normalizedFamily',
       'ata',
@@ -255,6 +266,15 @@ export default function WorkspaceHomePage() {
     setSearchParams({ mode: 'matter' });
   }
 
+  function selectMatter(targetMatterId: string): void {
+    const params = new URLSearchParams(searchParams);
+    params.set('mode', 'matter');
+    if (targetMatterId) params.set('selectedMatterId', targetMatterId);
+    else params.delete('selectedMatterId');
+    params.delete('quicklookY');
+    setSearchParams(params);
+  }
+
   function handleSubmit(event: FormEvent<HTMLFormElement>): void {
     event.preventDefault();
     const normalized: string | null = workItemIdFromLocator(workItemId);
@@ -268,6 +288,10 @@ export default function WorkspaceHomePage() {
     else params.delete('search');
     if (treeMode !== 'matter') params.delete('workItemId');
     if (treeMode === 'document') params.delete('familyId');
+    params.delete('selectedDocumentVersionId');
+    params.delete('selectedMatterId');
+    params.delete('listY');
+    params.delete('quicklookY');
     setSearchParams(params);
   }
 
@@ -394,8 +418,7 @@ export default function WorkspaceHomePage() {
                   : '份文档'}
             </strong>
           </div>
-        </header>
-
+          <details className="suite-library-actions"><summary>接收资料与更多</summary><div className="suite-library-actions-panel">
         <div className="library-reading-tools">
           <details className="library-reading-help">
             <summary>阅读帮助</summary>
@@ -473,6 +496,9 @@ export default function WorkspaceHomePage() {
           />
         ) : null}
 
+          </div></details>
+        </header>
+
         {error ? (
           <div className="library-alert" role="alert">
             <CircleAlert aria-hidden="true" />
@@ -493,12 +519,14 @@ export default function WorkspaceHomePage() {
             sessionGeneration={sessionGeneration}
             authenticationRequired={authenticationRequired}
             searchText={searchText}
+            selectedId={selectedMatterId}
             filteredByWorkItem={Boolean(deepLinkedWorkItemId)}
             onSearchTextChange={setSearchText}
             onSearch={handleSearch}
             onRefresh={refresh}
             onCreateFromTask={() => viewTasks()}
             onViewAll={viewMatters}
+            onSelect={selectMatter}
           />
         ) : (
           <>
@@ -521,6 +549,14 @@ export default function WorkspaceHomePage() {
                 treeMode === 'tasks' ? '评估任务与工程快览' : '工程文档与版本'
               }
             >
+              <aside className="suite-library-folder" aria-label="资料分组">
+                <div className="suite-folder-head"><strong>资料分组</strong><span>目录</span></div>
+                <button type="button" className={`suite-folder-row${!Object.values(catalogFilters).some(Boolean) ? ' active' : ''}`} onClick={() => filterDocuments({})}><span>全部资料</span><small>{directory.totalCount ?? directory.items.length}</small></button>
+                {Object.entries(directory.ataCounts ?? {}).slice(0, 8).map(([ata, count]) => <button type="button" className={`suite-folder-row${catalogFilters.ata === ata ? ' active' : ''}`} key={ata} onClick={() => filterDocuments({ ...catalogFilters, ata })}><span>ATA {ata}</span><small>{count}</small></button>)}
+                <div className="suite-folder-separator">阅读范围</div>
+                <button type="button" className={`suite-folder-row${treeMode === 'tasks' ? ' active' : ''}`} onClick={() => viewTasks()}><span>评估任务</span><small>{directory.items.length}</small></button>
+                <button type="button" className="suite-folder-row" onClick={() => filterDocuments({})}><span>清除筛选</span></button>
+              </aside>
               <section
                 className="library-tree-panel"
                 aria-label={
@@ -528,6 +564,7 @@ export default function WorkspaceHomePage() {
                 }
               >
                 <LibraryDocumentDirectory
+                  sessionGeneration={sessionGeneration}
                   key={`${sessionGeneration}:${treeMode}`}
                   directory={directory}
                   authenticationRequired={authenticationRequired}

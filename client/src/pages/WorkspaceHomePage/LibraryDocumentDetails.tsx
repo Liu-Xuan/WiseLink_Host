@@ -14,6 +14,8 @@ import { captureReadingLocation } from '@client/src/features/matter/useReadingLo
 import { DocumentVersionLink } from './DocumentVersionLink';
 import { LibraryMetadata } from './LibraryMetadata';
 import LinkDocumentMatterMaterial from '@client/src/features/matter/LinkDocumentMatterMaterial';
+import { useLibraryPaneScroll } from './useLibraryPaneScroll';
+import { metadataValues } from './library-classification';
 import {
   byteLabel,
   documentLabel,
@@ -41,6 +43,13 @@ export function LibraryDocumentDetails({
   const [baseline, setBaseline] = useState('');
   const [compare, setCompare] = useState('');
   const [revisionNote, setRevisionNote] = useState<string | null>(null);
+  const paneScroll = useLibraryPaneScroll<HTMLDivElement>('quicklookY', Boolean(document), getCanonicalHostClientSessionGeneration());
+  const selectedVersionPin = searchParams.get('selectedDocumentVersionId');
+  const selectedVersion = searchParams.has('selectedDocumentVersionId')
+    ? searchParams.getAll('selectedDocumentVersionId').length === 1
+      ? document?.versions.find(version => version.documentVersionId === selectedVersionPin)
+      : undefined
+    : document?.versions.find(version => version.selectedVersionIsCurrent);
 
   useEffect(() => {
     if (!document) {
@@ -89,8 +98,8 @@ export function LibraryDocumentDetails({
     >
       <div className="library-panel-heading">
         <div>
-          <span className="library-section-label">文档管理</span>
-          <h2>文档与版本</h2>
+          <span className="library-section-label">来源资料</span>
+          <h2>快速理解</h2>
         </div>
         <History aria-hidden="true" />
       </div>
@@ -101,16 +110,22 @@ export function LibraryDocumentDetails({
           <p>{selectionPending ? '已保留原文档选择。可加载更多目录或核对筛选与访问范围；未出现在本次读取中不代表资料不存在，也不会自动改选首行。' : '同一文档的版本集中在这里，评估记录可在最近任务中查看。'}</p>
         </div>
       ) : (
-        <div className="library-quicklook-scroll">
+        <div {...paneScroll} className="library-quicklook-scroll">
           <header className="library-quicklook-title">
             <div>
-              <h3>{documentLabel(document)}</h3>
+              <h3>{metadataValues(selectedVersion?.extractedMetadata?.title).join(' / ') || documentLabel(document)}</h3>
               <p>
                 {document.issuerAuthority} · {document.normalizedFamily} ·{' '}
                 {document.versions.length} 个可见版本
               </p>
             </div>
           </header>
+          {selectedVersion ? <section className="library-selected-version" data-document-version-id={selectedVersion.documentVersionId}>
+            <p>{libraryVersionLabel(selectedVersion)} · {selectedVersion.selectedVersionIsCurrent ? '库内当前版本' : '历史版本'}</p>
+            <h4>这份资料说明什么</h4>
+            <p>此版本尚无可用的简明解读，可进入精读核对原文。</p>
+            <DocumentVersionLink version={selectedVersion} familyId={document.familyId}>进入精读工作台</DocumentVersionLink>
+          </section> : <p role="status">所选版本未在当前读取范围内返回，未替换为其他版本。</p>}
           <p className="library-quicklook-note">
             版本状态以文档管理模块的登记为准。重复评估关联已有文档版本。
           </p>

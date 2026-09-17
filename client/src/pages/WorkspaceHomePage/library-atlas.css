@@ -1,5 +1,11 @@
 /* Library navigation lives in the shell; the reading sheet uses the full width. */
 .library-home.library-atlas-home {
+  --wl-accent: #367ad8;
+  --wl-ink: #1c2938;
+  --wl-muted: #55657b;
+  --wl-border: #e3e9f0;
+  --wl-sheet: #fff;
+  --wl-selected: #f0f5fc;
   display: grid;
   grid-template-columns: minmax(0, 1fr);
   gap: 0;
@@ -9,6 +15,15 @@
   border: 0;
   border-radius: 0;
   background: transparent;
+}
+
+[data-wl-theme="dark"] .library-home.library-atlas-home {
+  --wl-accent: #80a7eb;
+  --wl-ink: #edeef2;
+  --wl-muted: #b8bfca;
+  --wl-border: #353a43;
+  --wl-sheet: #22252a;
+  --wl-selected: #29313d;
 }
 
 .atlas-library-content {
@@ -291,6 +306,189 @@
   border-left: 1px solid var(--wl-border);
   background: var(--wl-frame-solid);
   overflow-wrap: anywhere;
+}
+
+/* Suite 1.1 library reading surface: compact three-column work area. */
+.library-atlas-home .atlas-library-content {
+  border: 0;
+  border-radius: 0;
+  box-shadow: none;
+  background: transparent;
+}
+.library-atlas-home .library-home-header {
+  min-height: 76px;
+  padding: 5px 6px 12px;
+  align-items: center;
+}
+.library-atlas-home .library-home-header h1 {
+  margin: 0;
+  font-size: 23px;
+  line-height: 1.35;
+}
+.library-atlas-home .library-home-eyebrow {
+  display: none;
+}
+.library-atlas-home .library-home-lede {
+  margin-top: 4px;
+  color: var(--wl-muted);
+}
+.library-atlas-home .library-reading-tools {
+  min-height: 34px;
+  padding: 0 6px 6px;
+}
+.library-atlas-home .library-entry-disclosure {
+  width: auto;
+  margin: 0 0 8px;
+  border: 1px solid var(--wl-border);
+  border-radius: 8px;
+  background: var(--wl-sheet);
+}
+.library-atlas-home .library-entry-disclosure > summary {
+  min-height: 34px;
+  padding: 6px 10px;
+}
+.library-atlas-home .library-entry-disclosure .library-entry-grid {
+  padding: 10px;
+}
+.library-atlas-home .library-surface {
+  grid-template-columns: 166px minmax(0, 1fr) 292px;
+  height: calc(100dvh - 200px);
+  min-height: 0;
+  align-items: stretch;
+  gap: 13px;
+  border: 0;
+  background: transparent;
+}
+.suite-library-folder {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: 3px;
+  padding: 13px 7px;
+  border: 1px solid var(--wl-border);
+  border-radius: 8px;
+  background: var(--wl-sheet);
+  overflow: auto;
+}
+.suite-folder-head { display: flex; justify-content: space-between; padding: 2px 7px 9px; color: var(--wl-ink); font-size: 12px; }
+.suite-folder-head span { color: var(--wl-muted); font-size: 10px; }
+.suite-folder-row { display: flex; min-height: 31px; align-items: center; justify-content: space-between; gap: 7px; padding: 6px 8px; border: 0; border-radius: 6px; color: var(--wl-muted); background: transparent; text-align: left; font: inherit; font-size: 11px; cursor: pointer; }
+.suite-folder-row:hover, .suite-folder-row.active { color: var(--wl-ink); background: var(--wl-selected); }
+.suite-folder-row small { color: var(--wl-muted); font-size: 10px; }
+.suite-folder-separator { margin: 15px 7px 4px; padding-top: 9px; border-top: 1px solid var(--wl-border); color: var(--wl-muted); font-size: 10px; }
+.suite-library-table-wrap,
+.suite-matter-list-scroll { overflow: auto; min-height: 0; max-height: max(280px, calc(100dvh - 320px)); }
+.suite-library-actions { position: relative; flex: 0 0 auto; font-size: 12px; }
+.suite-library-actions > summary { cursor: pointer; padding: 8px 12px; border: 1px solid var(--wl-border); border-radius: 8px; background: var(--wl-sheet); }
+.suite-library-actions-panel { position: absolute; z-index: 30; right: 0; top: 40px; width: min(650px, calc(100vw - 40px)); max-height: 70dvh; overflow: auto; padding: 16px; border: 1px solid var(--wl-border); border-radius: 12px; background: var(--wl-sheet); box-shadow: var(--wl-sheet-shadow); }
+.suite-table-toolbar { display: flex; align-items: center; gap: 8px; padding: 12px; flex-wrap: wrap; }
+.suite-table-tabs { display: flex; align-items: center; gap: 10px; font-size: 12px; }
+.suite-table-tabs strong { color: var(--wl-accent); }
+.suite-table-tabs button { padding: 7px; background: transparent; border: 0; cursor: pointer; }
+.suite-table-query { display: flex; align-items: center; gap: 6px; flex: 1; min-width: 140px; }
+.suite-table-query > svg { width: 16px; flex: 0 0 auto; }
+.suite-table-query input { height: 34px; }
+.suite-library-filters { margin: 0 12px 8px; font-size: 11px; }
+.library-atlas-home .suite-matter-browser { display: grid; grid-template-columns: 166px minmax(0, 1fr) 292px; gap: 13px; background: transparent; }
+.suite-matter-browser .atlas-library-list { min-width: 0; padding: 0; border: 1px solid var(--wl-border); border-radius: 8px; background: var(--wl-sheet); }
+.suite-matter-browser .atlas-library-inspector { min-width: 0; border: 1px solid var(--wl-border); border-radius: 8px; }
+@media (max-width: 1024px) {
+  .library-atlas-home .suite-matter-browser { grid-template-columns: minmax(0, 1fr) 280px; }
+  .suite-matter-browser > .suite-library-folder { display: none; }
+}
+@media (max-width: 760px) {
+  .library-atlas-home .suite-matter-browser { grid-template-columns: minmax(0, 1fr); }
+}
+.library-atlas-home .library-quicklook-scroll,
+.library-atlas-home .atlas-library-inspector { overflow: auto; max-height: max(320px, calc(100dvh - 240px)); }
+.suite-library-table { width: 100%; min-width: 620px; border-collapse: collapse; table-layout: fixed; font-size: 12px; }
+.suite-library-table th { position: sticky; top: 0; z-index: 1; padding: 11px 10px; border-bottom: 1px solid var(--wl-border); color: var(--wl-muted); background: var(--wl-sheet); text-align: left; font-size: 11px; font-weight: 500; }
+.suite-library-table th:nth-child(1) { width: 29%; } .suite-library-table th:nth-child(2) { width: 12%; } .suite-library-table th:nth-child(3) { width: 33%; } .suite-library-table th:nth-child(4) { width: 18%; } .suite-library-table th:nth-child(5) { width: 8%; }
+.suite-library-table td { padding: 14px 10px; border-bottom: 1px solid color-mix(in srgb, var(--wl-border) 75%, transparent); vertical-align: top; line-height: 1.75; overflow-wrap: anywhere; }
+.suite-library-table tr { cursor: pointer; } .suite-library-table tr.selected { background: var(--wl-selected); box-shadow: inset 3px 0 var(--wl-accent); } .suite-library-table tr:hover { background: color-mix(in srgb, var(--wl-accent) 3%, var(--wl-sheet)); }
+.suite-library-table small, .suite-version-row small { display: block; margin-top: 4px; color: var(--wl-muted); font-size: 10px; line-height: 1.6; }
+.suite-library-table .meaning { color: var(--wl-muted); font-size: 13px; line-height: 1.85; }
+.suite-doc-cell { display: flex; min-width: 0; align-items: flex-start; gap: 6px; } .suite-doc-cell > svg { width: 16px; flex: 0 0 16px; color: var(--wl-muted); } .suite-doc-cell > span:last-child { display: grid; min-width: 0; }
+.suite-expand-button { width: 20px; height: 20px; min-height: 20px; padding: 2px; } .suite-expand-button svg { width: 13px; }
+.suite-version-rows { border-bottom: 1px solid var(--wl-border); background: color-mix(in srgb, var(--wl-muted) 4%, var(--wl-sheet)); }
+.suite-version-row { border-bottom: 1px solid var(--wl-border); color: var(--wl-muted); font-size: 11px; }
+.suite-library-table-wrap.is-compact .suite-library-table td { padding-block: 8px; }
+.suite-library-empty { padding: 40px 12px; color: var(--wl-muted); font-size: 12px; }
+.library-atlas-home .library-tree-panel {
+  min-width: 0;
+  width: 100%;
+  max-width: 100%;
+  padding: 0;
+  border: 1px solid var(--wl-border);
+  border-radius: 8px;
+  background: var(--wl-sheet);
+  overflow: auto;
+}
+.library-atlas-home .library-quicklook-panel {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  border: 1px solid var(--wl-border);
+  border-radius: 8px;
+  background: var(--wl-sheet);
+  overflow: auto;
+}
+.library-atlas-home .library-tree-panel > .library-panel-heading,
+.library-atlas-home .library-tree-panel > .library-catalog-search,
+.library-atlas-home .library-tree-panel > .library-recent-boundary,
+.library-atlas-home .library-tree-panel > .atlas-library-view-switch,
+.library-atlas-home .library-tree-panel > .atlas-library-filters,
+.library-atlas-home .library-tree-panel > .library-catalog-error,
+.library-atlas-home .library-tree-panel > .library-tree-recent-wrapper,
+.library-atlas-home .library-tree-panel > .library-catalog-more {
+  margin-inline: 13px;
+}
+.library-atlas-home .library-tree-panel > .library-panel-heading {
+  padding-top: 13px;
+}
+.library-atlas-home .library-catalog-search {
+  margin-bottom: 8px;
+}
+.library-atlas-home .library-catalog-search > label,
+.library-atlas-home .library-recent-boundary,
+.library-atlas-home .library-reading-help {
+  color: var(--wl-muted);
+  font-size: 11px;
+}
+.library-atlas-home .library-recent-boundary {
+  margin-block: 5px 8px;
+}
+.library-atlas-home .atlas-library-document-rows .atlas-library-columns,
+.library-atlas-home .atlas-library-document-rows .atlas-library-select,
+.library-atlas-home .library-recent-rows .library-recent-open {
+  font-size: 12px;
+}
+.library-atlas-home .atlas-library-document-rows .atlas-library-select {
+  padding-block: 13px;
+}
+.library-atlas-home .atlas-library-document-rows .atlas-library-columns {
+  grid-template-columns: minmax(180px, 1.2fr) minmax(110px, .7fr) minmax(180px, 1.4fr);
+}
+.library-atlas-home .atlas-library-document-rows .atlas-library-select {
+  grid-template-columns: minmax(180px, 1.2fr) minmax(110px, .7fr) minmax(180px, 1.4fr);
+}
+.library-atlas-home .atlas-library-summary-block {
+  border: 1px solid var(--wl-border);
+  border-radius: 8px;
+  padding: 11px 12px;
+  background: var(--wl-sheet-muted);
+}
+@media (max-width: 1030px) {
+  .library-atlas-home .library-surface { grid-template-columns: 147px minmax(0, 1fr) 265px; }
+  .suite-library-folder { font-size: 10px; }
+}
+@media (max-width: 760px) {
+  .library-atlas-home .library-surface { display: flex; flex-direction: column; height: auto; min-height: 0; }
+  .suite-library-folder { display: none; }
+  .library-atlas-home .library-tree-panel { min-height: 340px; }
+  .library-atlas-home .library-quicklook-panel { min-height: 230px; }
+  .library-atlas-home .atlas-library-document-rows { min-width: 620px; }
 }
 .atlas-library-inspector-heading {
   display: flex;

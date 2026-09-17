@@ -178,6 +178,7 @@ export class EngineeringMatterDirectoryService {
           currentMatterRevisionId: working.currentMatterRevisionId,
           workingRevision: working.currentWorkingRevision,
           result: result ? assessmentReadingSummary(result) : null,
+          overallStatus: working.current?.state.problemWork?.overviewStatus ?? null,
         };
       }),
     );

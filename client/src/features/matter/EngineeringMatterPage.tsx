@@ -206,7 +206,7 @@ const MatterWorkspace: FC<MatterWorkspaceProps> = ({
     const workRef = displayedRevision?.matterWorkRevisionId ?? requestedWorkRef;
     saveLocation(matterReadingScope(matterId, workRef));
     if (!evidence.workItemId) setClaimSelection(null);
-    navigate(matterDocumentRoute(matterId, evidence, panel, workRef));
+    navigate(matterDocumentRoute(matterId, evidence, panel, workRef, searchParams));
   }
 
   function locateReviewSource(sourceRef: string): void {
@@ -512,7 +512,7 @@ const MatterWorkspace: FC<MatterWorkspaceProps> = ({
               onOpenMember={(member: EngineeringMatterCatalogEntry) => {
                 const workRef = displayedRevision?.matterWorkRevisionId ?? requestedWorkRef;
                 saveLocation(matterReadingScope(matterId, workRef));
-                const params = matterReadingReturnParams(matterId, member.document.documentVersionId, panel, workRef);
+                const params = matterReadingReturnParams(matterId, member.document.documentVersionId, panel, workRef, searchParams);
                 navigate(`/document-versions/${encodeURIComponent(member.document.documentVersionId)}?${params}`);
               }}
             />

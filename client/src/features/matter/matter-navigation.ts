@@ -30,8 +30,9 @@ export function matterDocumentRoute(
   > & { sourceRefId?: string; locator?: string },
   returnPanel: 'brief' | 'review' | 'materials' = 'brief',
   returnWorkRef = '',
+  directoryContext?: URLSearchParams,
 ): string {
-  const returnParams = matterReadingReturnParams(matterId, evidence.documentVersionId, returnPanel, returnWorkRef);
+  const returnParams = matterReadingReturnParams(matterId, evidence.documentVersionId, returnPanel, returnWorkRef, directoryContext);
   const exactRoute = exactDocumentSourceRoute(evidence);
   if (exactRoute) return `${exactRoute}&${returnParams}`;
   if (!evidence.workItemId) {
@@ -39,6 +40,11 @@ export function matterDocumentRoute(
     if (evidence.sourceRefId) params.set('sourceRef', evidence.sourceRefId);
     if (returnPanel !== 'brief') params.set('panel', returnPanel);
     if (returnWorkRef) params.set('workRef', returnWorkRef);
+    const directoryQuery = returnParams.get('returnMatterLibraryQuery');
+    if (directoryQuery) {
+      params.set('returnLibraryMatterId', matterId);
+      params.set('returnLibraryQuery', directoryQuery);
+    }
     return `${matterOverviewRoute(matterId)}?${params.toString()}`;
   }
   const params: URLSearchParams = new URLSearchParams({
