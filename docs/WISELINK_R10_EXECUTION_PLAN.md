@@ -357,6 +357,27 @@ H0通过不等于线上启用，H1个案成功不等于所有文种质量保证�
 
 以上操作/审查分工按2026-09-16用户最新要求执行，替代旧的单一Luna/CodeM开发协调方式。前端目标为 `app_17bzc551rsg`，后端/OpenClaw目标为 `app_17c3zn24kv2`；Host源码仍来自本仓库。先核对对应应用的真实会话、源码基线与在途状态，再由Astra/M形成具体批次交Luna执行；回执审查、合并与下一批计划构成同一循环，不改变既有业务或运行权限。
 
+### 12.1.1 2026-09-17 代码归属与当前交接限制
+
+Host 服务端只读能力由 **17b 对应会话的唯一 Luna** 在隔离工作树实施；17c 会话仅做 OpenClaw runtime 工具名单、协议与安装接线。操作员可按明确分工控制另一个 17b 会话，不能据其“后端 Luna”名称把 Host 代码放入 17c runtime 仓。17c 的 `development-work` 实为 runtime 仓（外层基线 `8a970c4`），没有完整 Host 的 `server/shared/test` 或 `5991f4439` 对象，不能在其中以片段目录代替 Host 源码，也不能由 Luna 转为本地编码冒充妙搭开发。Host 与 runtime 分别交准确基线和文件差异，Astra 审查后再协调兼容的发布/安装窗口；Host 只读工具未实现前，不用 `next_matter_assessment` 或旧 attempt 审计替代当前工作读取。
+
+E1 已独立接受并选择性集成：补丁 `e6d2a6c9…` 的准确 8 文件基于 `5991f4439`，原 10 回归与 Sidebar 两处残余修复均通过，本机 5 套 74/74；集成提交 `c856de70af4a5ed064831477c6772bf8001d5319`，父提交 `5991f44397b2e430137bfb9906509a054311da41`。后续 Host 批次以实际集成后提交为基线；本次接受不代表部署或线上业务验收。私有证据：`/private/tmp/wl-e1-final2-from-tool.patch`、`/private/tmp/wl-e1-final2-tests.txt`。
+
+runtime r2 四文件已接受并集成为 `88c062eceaf24c1bd27e1a7703a1726f25837556`（父提交为上述 E1 提交），双远端同名分支已确认该 SHA，尚未安装/激活：以准确 c113 包（SHA `1a5fa4a9…`）为基线，保留 `document_reading` 及 SKILL/yaml；真实 `validateHostToolMetadata` 已拒绝弱化只读注解、额外属性及缺失必填 matterId，独立本机 validation 203/203。交接 tar SHA `515abca0…`、patch SHA `6b22d2ec…`，4 文件前后哈希及隔离 apply-check 通过。文件映射到 `openclaw/skills/wiselink-research-and-synthesize/` 下的 `scripts/orchestrate-host-mcp.mjs`、`scripts/run-hosted-review-turn.mjs`、`references/host-mcp-orchestration.md`、`tests/validation.test.mjs`；需与 17b Host 工具实现配套后再协调发布/安装，不能提前激活严格新名单。私有证据：`/private/tmp/wl-runtime-r2-astra/MANIFEST.json`、`/private/tmp/wl-runtime-r2-astra/validation-results.txt`。
+
+早期只读核验已确认多个 17b 会话默认共享 `/home/gem/workspace/code`，不能在默认 checkout 并写。后续已实际建立并核对下表四个独立工作树，均从 `88c062eceaf24c1bd27e1a7703a1726f25837556` 开始、创建时 clean，git-dir/index 分离（common-dir 共享允许）。用户已明确允许按适合模块新增会话，不限会话数量、不扩额度；每会话一个 Luna，文件范围不重叠，Git 集成及发布串行。独立目录成立不代表 shell 并发可靠或代码已完成：Reader 曾两次 `ErrorAgtShellSessionDisposed`，操作可能已落盘，应先查实际目录而非重复创建。
+
+| 批次 / 17b 会话 | 唯一操作员 | 隔离目录与文件边界 |
+| --- | --- | --- |
+| Host `conversation_4m1xjake97byg` | 前端 Luna `/root/luna_frontend_resume_e1` | `/home/gem/workspace/wl-host-current-work-88c`；Matter MCP/service/registry及必要repository/shared类型、Host测试 |
+| P1 Reader `conversation_4m1xhqx18fej2` | 后端名 Luna `/root/luna_backend_resume_overall` | `/home/gem/workspace/wl-reader-p1-88c`；DocumentVersionReadingPage与first-paint spec两文件 |
+| P2 知识目录 `conversation_4m1xuavvgyhaz` | 前端 Luna `/root/luna_frontend_resume_e1` | `/home/gem/workspace/wl-knowledge-p2-88c`；engineering-issue-search.service与对应unit spec两文件，不改Host的PG测试 |
+| Suite Wiki `conversation_4m2pzkdh5j9et` | 后端名 Luna `/root/luna_backend_resume_overall` | `/home/gem/workspace/code/tmp/wl-suite-wiki-wt`；EngineeringMatterPage/matter-wiki.css、页面专用组件及Wiki测试，不改公共壳/API |
+
+截至本次记录，四批尚无已接受代码产物；Host已创建 `shared/matter-current-work.interface.ts` 并成功编辑 `matter-action-attempt.service.ts`，仍待完整交付审查（原始工具证据 `/private/tmp/wl-host-fresh-now.json`）；P2仍在读取上下文。P1受保护依赖操作失败，不能绕过；P1短纠偏和Wiki源包说明仍排队，入队不等于立即生效。原始 `turns[]` 中的 running 句柄与其增量工具消息优先于孤立 `latest_turn`：已见后发纠偏记录 cancelled/无id，但原turn仍执行且实际收到纠偏。CLI `+chat` 成功只证明接收，不能声称已实施；需要即时发送的UI操作已告知用户，内置UI当前不可用，不切外部浏览器。受保护依赖不改，获准代码可先实施交本机隔离验证；代码路径也明确受阻时先保存并结束该云端写者，再按已有授权转本地隔离，不双写、不无限堆队列。私有证据：`/private/tmp/wl-host-fallback-latest.json`、`/private/tmp/wl-p2-latest.json`、`/private/tmp/wl-progress-p1-astra.json`、`/private/tmp/wl-progress-wiki-messages-astra.json`、`/private/tmp/wl-host-second-astra-tail.json`。
+
+交接优先直接取完整产物，不为传输将未接受代码推入共享远端。本机 CLI 应用文件存储的私有上传/下载往返已核验；这不证明云端会话已有相同上传授权，云端上传仍须独立核对，不能宣称端到端已通。已取得的 gzip/patch继续校验基线、双哈希、文件清单与隔离适用性；不把本机临时路径发给云端当材料正文。往返产物：`/private/tmp/read-matter-current-work-roundtrip.gz`；最小只读批次分析：`/private/tmp/wl-read-matter-current-work-batch-20260917.md`。这些是本机私有证据定位，不作为其他环境可直接读取的路径。
+
 ## 12.2 CodeM恢复的边界
 
 Luna只核对当前真实入口、监督进程/会话归属、授权和可用工具，通过已有受支持方式做一次有边界恢复。不要使用旧报告的PID、sessionId或锁强行续接；不要重复启动执行器。

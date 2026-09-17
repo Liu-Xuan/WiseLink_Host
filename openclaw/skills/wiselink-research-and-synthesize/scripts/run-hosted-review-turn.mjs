@@ -994,6 +994,25 @@ export function validateHostToolMetadata(value) {
   ) {
     throw new Error('REVIEW_HOST_MCP_COMMIT_SCHEMA_MISMATCH');
   }
+  // read_matter_current_work is the future 17b Host read-only precheck. The
+  // runtime pins its read-only annotations and its strict matterId-only
+  // inputSchema; never widen either without a matching Host contract change.
+  const precheck = tools.find(
+    ({ name }) => name === 'read_matter_current_work',
+  );
+  const precheckProperties = Object.keys(precheck?.inputSchema?.properties ?? {}).sort();
+  const precheckRequired = [...(precheck?.inputSchema?.required ?? [])].sort();
+  if (
+    precheck?.inputSchema?.additionalProperties !== false ||
+    canonicalJson(precheckProperties) !== canonicalJson(['matterId']) ||
+    canonicalJson(precheckRequired) !== canonicalJson(['matterId']) ||
+    precheck?.annotations?.readOnlyHint !== true ||
+    precheck?.annotations?.destructiveHint !== false ||
+    precheck?.annotations?.idempotentHint !== true ||
+    precheck?.annotations?.openWorldHint !== false
+  ) {
+    throw new Error('REVIEW_HOST_MCP_PRECHECK_SCHEMA_MISMATCH');
+  }
 }
 
 export async function callJsonTool(client, name, args, requestOptions, optionsPosition = 3) {

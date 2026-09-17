@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import {
   BookMarked,
   Compass,
@@ -17,6 +17,13 @@ import {
   type WlVisualMode,
 } from '@client/src/app/providers/ThemeProvider';
 import { useCurrentObjectContext } from '@client/src/app/providers/CurrentObjectContextProvider';
+import { useCurrentUserSession } from '@client/src/app/providers/CurrentUserSessionProvider';
+import { getEngineeringMatter } from '@client/src/api/engineering-matter';
+import { activityReadingParams } from '@client/src/features/matter/reading-return';
+import type {
+  EngineeringMatterCatalogEntry,
+  EngineeringMatterReadModel,
+} from '@shared/api.interface';
 import {
   Dialog,
   DialogContent,
@@ -27,9 +34,12 @@ import {
 import {
   buildShellObjectLinks,
   deriveShellRouteContext,
+  deriveShellUrlIdentity,
+  selectMatterTimelineSources,
   shortId,
   type ShellObjectLink,
   type ShellRouteContext,
+  type ShellUrlIdentity,
 } from './shell-utils';
 
 interface SidebarProps {
@@ -80,6 +90,17 @@ const Sidebar: React.FC<SidebarProps> = ({ mobileOpen, onMobileClose }) => {
     location.search,
   );
   const { workItemId, matterId, documentVersionId, workRef } = routeContext;
+  const urlIdentity: ShellUrlIdentity = deriveShellUrlIdentity(
+    location.search,
+  );
+  const graphMatterId: string =
+    matterId || urlIdentity.matterId || urlIdentity.librarySelectedMatterId;
+  const pinnedDocumentVersionId: string =
+    documentVersionId ||
+    urlIdentity.documentVersionId ||
+    urlIdentity.librarySelectedDocumentVersionId;
+  const { sessionGeneration, authenticationRequired } =
+    useCurrentUserSession();
   const { currentObject } = useCurrentObjectContext();
   const {
     theme,
@@ -119,16 +140,115 @@ const Sidebar: React.FC<SidebarProps> = ({ mobileOpen, onMobileClose }) => {
   const objectCode: string =
     !workRef && currentObject ? currentObject.displayCode : '';
 
-  const globalNavTarget = (target: string): string => {
-    if (target === '/graph' && matterId) {
-      const params = new URLSearchParams({matterId});
-      if (workRef) params.set('workRef', workRef);
-      return `/graph?${params}`;
+  const [matterTimelineSources, setMatterTimelineSources] = useState<
+    EngineeringMatterCatalogEntry[] | null
+  >(null);
+  useEffect(() => {
+    if (!graphMatterId || authenticationRequired) {
+      setMatterTimelineSources(null);
+      return;
     }
-    if (!workItemId || (target !== '/knowledge' && target !== '/graph')) {
+    const controller = new AbortController();
+    setMatterTimelineSources(null);
+    void getEngineeringMatter(graphMatterId, controller.signal)
+      .then((read: EngineeringMatterReadModel) => {
+        if (!controller.signal.aborted) {
+          setMatterTimelineSources(
+            selectMatterTimelineSources(read.catalog.entries),
+          );
+        }
+      })
+      .catch(() => {
+        if (!controller.signal.aborted) {
+          setMatterTimelineSources(null);
+        }
+      });
+    return () => controller.abort();
+  }, [graphMatterId, sessionGeneration, authenticationRequired]);
+
+  const currentSearchParams = new URLSearchParams(location.search);
+  // An illegal object pin stays visibly blocked: forward it as an empty pin so the
+  // destination page rejects it, never degrade to a bare default entry.
+  const blockedPins: string[] = urlIdentity.invalidPins
+    .map((key: string) =>
+      key === 'selectedMatterId'
+        ? 'matterId'
+        : key === 'selectedDocumentVersionId'
+          ? 'documentVersionId'
+          : key,
+    )
+    .filter(
+      (key: string, index: number, all: string[]) =>
+        (key === 'matterId' || key === 'documentVersionId') &&
+        all.indexOf(key) === index,
+    );
+
+  const globalNavTarget = (target: string): string => {
+    if (
+      blockedPins.length > 0 &&
+      (target === '/graph' ||
+        target === '/timeline' ||
+        target === '/activity-graph')
+    ) {
+      const blocked = new URLSearchParams();
+      for (const key of blockedPins) blocked.set(key, '');
+      return `${target}?${blocked}`;
+    }
+    if (target === '/graph') {
+      if (graphMatterId) {
+        // Explicit activity identity stays on the matter graph target so the
+        // graph dispatcher runs its relation check with the exact pins; only
+        // the library selection resolves through the matter catalog alone.
+        const query = activityReadingParams(currentSearchParams);
+        query.set('matterId', graphMatterId);
+        const explicitDocumentVersionId: string =
+          documentVersionId || urlIdentity.documentVersionId;
+        if (explicitDocumentVersionId) {
+          query.set('documentVersionId', explicitDocumentVersionId);
+        }
+        const pinnedWorkRef: string = workRef || urlIdentity.workRef;
+        if (pinnedWorkRef) query.set('workRef', pinnedWorkRef);
+        return `/graph?${query}`;
+      }
+      if (workItemId || urlIdentity.workItemId) {
+        return `/graph?workItemId=${encodeURIComponent(
+          workItemId || urlIdentity.workItemId,
+        )}`;
+      }
+      if (pinnedDocumentVersionId) {
+        const query = activityReadingParams(currentSearchParams);
+        query.set('documentVersionId', pinnedDocumentVersionId);
+        return `/activity-graph?${query}`;
+      }
       return target;
     }
-    return `${target}?workItemId=${encodeURIComponent(workItemId)}`;
+    if (target === '/timeline' || target === '/activity-graph') {
+      // An explicit document version wins over the matter current-source discovery.
+      if (pinnedDocumentVersionId) {
+        const query = activityReadingParams(currentSearchParams);
+        query.set('documentVersionId', pinnedDocumentVersionId);
+        return `${target}?${query}`;
+      }
+      if (graphMatterId) {
+        const query = activityReadingParams(currentSearchParams);
+        const firstSource = matterTimelineSources?.[0];
+        if (firstSource) {
+          query.set(
+            'documentVersionId',
+            firstSource.document.documentVersionId,
+          );
+        } else {
+          // Pending or unregistered matter source: keep the explicit matter identity.
+          query.set('matterId', graphMatterId);
+        }
+        return `${target}?${query}`;
+      }
+      return target;
+    }
+    if (target === '/knowledge' && workItemId) {
+      return `/knowledge?workItemId=${encodeURIComponent(workItemId)}`;
+    }
+    return target;
   };
 
   const isTasksRoute =
@@ -236,7 +356,7 @@ const Sidebar: React.FC<SidebarProps> = ({ mobileOpen, onMobileClose }) => {
             }) => (
               <NavLink
                 key={item.to}
-                to={item.to}
+                to={globalNavTarget(item.to)}
                 aria-label={item.label}
                 title={item.label}
               >

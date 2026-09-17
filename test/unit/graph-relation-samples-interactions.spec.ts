@@ -6,6 +6,10 @@ import RelationGraphPage from '../../client/src/pages/RelationGraphPage/Relation
 import { GRAPH_RELATION_SAMPLE_ENTRIES, GRAPH_RELATION_SAMPLE_PROJECTION } from '../../client/src/features/review/graph-samples';
 import { claimKey } from '../../client/src/features/review/GraphRelationSamplesView';
 import { getLibraryIndex } from '@client/src/api/canonical-host';
+import {
+  getEngineeringMatter,
+  getEngineeringMatterDirectory,
+} from '@client/src/api/engineering-matter';
 import type { RelationGraphCanvasProps } from '../../client/src/pages/RelationGraphPage/RelationGraphCanvas';
 
 // JSDOM is a development dependency; the production runtime does not use it.
@@ -21,6 +25,27 @@ jest.mock('@client/src/api/canonical-host', () => ({
 jest.mock('@lark-apaas/client-toolkit/logger', () => ({
   logger: { error: jest.fn() },
 }));
+jest.mock('@client/src/api/engineering-matter', () => ({
+  getEngineeringMatterDirectory: jest.fn(),
+  getEngineeringMatter: jest.fn(),
+}));
+jest.mock(
+  '../../client/src/app/providers/CurrentUserSessionProvider',
+  () => ({
+    useCurrentUserSession: () => ({
+      sessionGeneration: 1,
+      authenticationRequired: false,
+    }),
+  }),
+);
+jest.mock(
+  '../../client/src/pages/RelationGraphPage/SuiteMatterGraphPage',
+  () => ({
+    __esModule: true,
+    default: ({ matterId }: { matterId: string }) =>
+      createElement('div', { 'data-testid': 'matter-graph', 'data-matter': matterId }),
+  }),
+);
 jest.mock(
   '../../client/src/pages/RelationGraphPage/relation-graph.css',
   () => ({}),
@@ -252,4 +277,138 @@ it('selects a production graph node before an explicit deep-link navigation', as
   await click('打开准确对象');
   expect(router.state.location.pathname).toBe('/work-items/wi-sample-graph-a/documents');
   expect(params().get('documentVersionId')).toBe('dv-sample-b');
+});
+
+describe('graph object entry gates', () => {
+  beforeEach(() => {
+    (getEngineeringMatterDirectory as jest.Mock).mockClear();
+    (getEngineeringMatter as jest.Mock).mockClear();
+  });
+
+  async function mountEntry(url: string) {
+    router = createMemoryRouter(
+      [
+        { path: '/graph', element: createElement(RelationGraphPage) },
+        {
+          path: '/activity-graph',
+          element: createElement('div', { 'data-testid': 'activity-graph' }, '活动来源关系'),
+        },
+      ],
+      { initialEntries: [url] },
+    );
+    root = createRoot(container);
+    await act(async () => root.render(createElement(RouterProvider, { router })));
+  }
+
+  it('routes a document-version-only entry to the activity graph without guessing a matter', async () => {
+    await mountEntry('/graph?documentVersionId=dv-9');
+    expect(router.state.location.pathname).toBe('/activity-graph');
+    expect(new URLSearchParams(router.state.location.search).get('documentVersionId')).toBe('dv-9');
+  });
+
+  it('rejects an empty document-version pin instead of falling back', async () => {
+    await mountEntry('/graph?documentVersionId=');
+    expect(router.state.location.pathname).toBe('/graph');
+    expect(container.textContent).toContain('图谱对象参数为空、重复或不合法');
+  });
+
+  it('rejects a duplicated document-version pin instead of falling back', async () => {
+    await mountEntry('/graph?documentVersionId=a&documentVersionId=b');
+    expect(container.textContent).toContain('图谱对象参数为空、重复或不合法');
+  });
+
+  it('rejects an orphan work identity that lacks its matter', async () => {
+    await mountEntry('/graph?workRef=wr-1');
+    expect(container.textContent).toContain('工作身份缺少所属事项');
+    expect(getEngineeringMatterDirectory).not.toHaveBeenCalled();
+  });
+
+  it('resolves a stable default matter from the authorized directory on a bare entry', async () => {
+    (getEngineeringMatterDirectory as jest.Mock).mockResolvedValue({
+      items: [{ matterId: 'm-1' }],
+    });
+    await mountEntry('/graph');
+    await act(async () => undefined);
+    expect(getEngineeringMatterDirectory).toHaveBeenCalledTimes(1);
+    expect(new URLSearchParams(router.state.location.search).get('matterId')).toBe('m-1');
+  });
+
+  it('routes a document-version entry with candidate, run, statement, anchor and window intact', async () => {
+    await mountEntry('/graph?documentVersionId=DV1&parseRunId=PR1&candidateRevision=3&runRef=R3&statementId=S1&anchor=A1&window=current-year');
+    expect(router.state.location.pathname).toBe('/activity-graph');
+    const params = new URLSearchParams(router.state.location.search);
+    expect(params.get('documentVersionId')).toBe('DV1');
+    expect(params.get('parseRunId')).toBe('PR1');
+    expect(params.get('candidateRevision')).toBe('3');
+    expect(params.get('runRef')).toBe('R3');
+    expect(params.get('statementId')).toBe('S1');
+    expect(params.get('anchor')).toBe('A1');
+    expect(params.get('window')).toBe('current-year');
+  });
+
+  it('rejects an orphan parse run without a document version before any directory request', async () => {
+    await mountEntry('/graph?parseRunId=PR1');
+    expect(container.textContent).toContain('缺少所属文档版本');
+    expect(getEngineeringMatterDirectory).not.toHaveBeenCalled();
+    expect(router.state.location.pathname).toBe('/graph');
+  });
+
+  it('rejects a statement or anchor used without a parse run before any directory request', async () => {
+    await mountEntry('/graph?documentVersionId=DV1&statementId=S1');
+    expect(container.textContent).toContain('未指定解析版本时');
+    expect(getEngineeringMatterDirectory).not.toHaveBeenCalled();
+    expect(router.state.location.pathname).toBe('/graph');
+  });
+
+  it('rejects a candidate revision without its run reference before any directory request', async () => {
+    await mountEntry('/graph?documentVersionId=DV1&parseRunId=PR1&candidateRevision=3');
+    expect(container.textContent).toContain('候选改版与运行标识必须成对出现');
+    expect(getEngineeringMatterDirectory).not.toHaveBeenCalled();
+  });
+
+  it('routes a matter together with its registered document version to the activity graph', async () => {
+    (getEngineeringMatter as jest.Mock).mockResolvedValue({
+      catalog: { entries: [{ document: { documentVersionId: 'DV1' } }] },
+    });
+    await mountEntry('/graph?matterId=M1&documentVersionId=DV1');
+    await act(async () => undefined);
+    expect(router.state.location.pathname).toBe('/activity-graph');
+    expect(new URLSearchParams(router.state.location.search).get('documentVersionId')).toBe('DV1');
+  });
+
+  it('blocks a document version that is not registered to the pinned matter', async () => {
+    (getEngineeringMatter as jest.Mock).mockResolvedValue({
+      catalog: { entries: [{ document: { documentVersionId: 'DV-OTHER' } }] },
+    });
+    await mountEntry('/graph?matterId=M1&documentVersionId=DV1');
+    await act(async () => undefined);
+    expect(container.textContent).toContain('该文档版本未登记在当前事项');
+    expect(router.state.location.pathname).toBe('/graph');
+  });
+
+  it('rejects conflicting matter and work item identities without any directory request', async () => {
+    await mountEntry('/graph?matterId=M1&workItemId=WI-1');
+    expect(container.textContent).toContain('图谱对象身份不明确');
+    expect(getEngineeringMatterDirectory).not.toHaveBeenCalled();
+  });
+
+  it('E1 REVIEW: DV redirect preserves exact candidate and presentation pins', async () => {
+    await mountEntry('/graph?documentVersionId=DV1&parseRunId=PR1&candidateRevision=3&runRef=R3&statementId=S1&anchor=A1&window=current-year');
+    const query = new URLSearchParams(router.state.location.search);
+    expect(query.get('parseRunId')).toBe('PR1');
+    expect(query.get('candidateRevision')).toBe('3');
+    expect(query.get('runRef')).toBe('R3');
+    expect(query.get('window')).toBe('current-year');
+  });
+
+  it('E1 REVIEW: orphan activity pin must not select a default matter', async () => {
+    (getEngineeringMatterDirectory as jest.Mock).mockResolvedValue({items:[]});
+    await mountEntry('/graph?parseRunId=PR1');
+    expect(getEngineeringMatterDirectory).not.toHaveBeenCalled();
+  });
+
+  it('E1 REVIEW R2: graph DV redirect preserves library return', async () => {
+    await mountEntry('/graph?documentVersionId=DV1&parseRunId=P1&returnLibraryQuery=mode%3Ddocument');
+    expect(new URLSearchParams(router.state.location.search).get('returnLibraryQuery')).toBe('mode=document');
+  });
 });

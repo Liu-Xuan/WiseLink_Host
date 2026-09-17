@@ -62,6 +62,7 @@ export const HOST_MCP_TOOLS = [
   'next_matter_assessment',
   'begin_matter_assessment',
   'matter_action_attempt',
+  'read_matter_current_work',
   'query_review_aily',
   'get_parse_status',
   'query_parsed_package',

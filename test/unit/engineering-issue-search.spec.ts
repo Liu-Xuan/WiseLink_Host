@@ -313,4 +313,128 @@ describe('saved knowledge catalogue', () => {
     h.jobAid.readBrowserRevision.mockRejectedValue(Object.assign(new Error('REVOKED'), { statusCode: 403 }));
     await expect(h.service.readKnowledge({ subjectKind: 'WORK_ITEM', subjectId: h.saved.workItemId, workRef: h.saved.workRevisionRef }, actor)).rejects.toThrow('REVOKED');
   });
+
+  it('keeps catalogue reads bounded at four in flight and preserves SQL row order regardless of completion order', async () => {
+    const h = setup();
+    const rows = Array.from({ length: 9 }, (_, n) => ({ ...h.identity, subjectId: `WI-${String(n).padStart(2, '0')}`, current: true }));
+    h.db.execute.mockResolvedValue(rows);
+    const flush = async () => {
+      await new Promise((resolve) => setImmediate(resolve));
+      await new Promise((resolve) => setImmediate(resolve));
+    };
+    let inFlight = 0;
+    let peak = 0;
+    const resolvers: Array<() => void> = [];
+    h.jobAid.readBrowserRevision.mockImplementation(() => {
+      inFlight += 1;
+      peak = Math.max(peak, inFlight);
+      let release!: () => void;
+      const pending = new Promise((resolve) => {
+        release = () => { inFlight -= 1; resolve(h.saved); };
+      });
+      resolvers.push(release);
+      return pending;
+    });
+    const cataloguePromise = h.service.catalogue('', 'ALL', undefined, actor);
+    await flush();
+    expect(resolvers).toHaveLength(4);
+    resolvers[2]();
+    resolvers[0]();
+    await flush();
+    expect(resolvers).toHaveLength(4);
+    resolvers[3]();
+    resolvers[1]();
+    await flush();
+    expect(resolvers).toHaveLength(8);
+    for (const release of resolvers.slice(4)) release();
+    await flush();
+    expect(resolvers).toHaveLength(9);
+    resolvers[8]();
+    const page = await cataloguePromise;
+    expect(peak).toBeGreaterThan(1);
+    expect(peak).toBeLessThanOrEqual(4);
+    expect(page.entries.map((entry) => entry.subjectId)).toEqual(rows.map((row) => row.subjectId));
+    expect(page.nextCursor).toBeNull();
+  });
+
+  it('stops launching read groups once the page is complete and ignores speculative tail failures', async () => {
+    const h = setup();
+    const rows = Array.from({ length: 28 }, (_, n) => ({ ...h.identity, subjectId: `WI-${String(n).padStart(2, '0')}`, current: true }));
+    h.db.execute.mockResolvedValue(rows);
+    h.jobAid.readBrowserRevision.mockImplementation(async (id: string) => {
+      if (['WI-21', 'WI-22', 'WI-23'].includes(id)) throw new Error('CORRUPT_SPECULATIVE_TAIL');
+      return h.saved;
+    });
+    const page = await h.service.catalogue('', 'ALL', undefined, actor);
+    expect(page.entries).toHaveLength(20);
+    expect(JSON.parse(Buffer.from(page.nextCursor!, 'base64url').toString()).identity.subjectId).toBe('WI-19');
+    expect(h.jobAid.readBrowserRevision).toHaveBeenCalledTimes(24);
+    expect(h.db.execute).toHaveBeenCalledTimes(1);
+  });
+
+  it('mixes denied and readable work across scan groups and continues the page from the last visible identity', async () => {
+    const h = setup();
+    const batch = Array.from({ length: 40 }, (_, n) => n % 4 === 3
+      ? { ...h.identity, subjectId: `WI-DENIED-${String(n).padStart(2, '0')}`, workRef: `revoked-${n}`, current: true }
+      : { ...h.identity, subjectId: `WI-OK-${String(n).padStart(2, '0')}`, current: true });
+    const rest = Array.from({ length: 10 }, (_, n) => ({ ...h.identity, subjectId: `WI-OK-${String(28 + n).padStart(2, '0')}`, current: true }));
+    h.db.execute.mockResolvedValueOnce(batch).mockResolvedValueOnce(rest);
+    const page = await h.service.catalogue('', 'ALL', undefined, actor);
+    expect(page.entries.map((entry) => entry.subjectId)).toEqual(
+      batch.filter((_, n) => n % 4 !== 3).slice(0, 20).map((row) => row.subjectId));
+    expect(page.entries.every((entry) => !entry.subjectId.includes('DENIED') && !entry.workRef.startsWith('revoked'))).toBe(true);
+    expect(JSON.parse(Buffer.from(page.nextCursor!, 'base64url').toString()).identity.subjectId).toBe('WI-OK-25');
+    expect(h.jobAid.readBrowserRevision).toHaveBeenCalledTimes(28);
+    expect(h.db.execute).toHaveBeenCalledTimes(1);
+    const next = await h.service.catalogue('', 'ALL', page.nextCursor!, actor);
+    expect(next.entries.map((entry) => entry.subjectId)).toEqual(rest.map((row) => row.subjectId));
+    expect(next.nextCursor).toBeNull();
+  });
+
+  it('reads a duplicated exact identity once per request but reads the same workRef under another subject separately', async () => {
+    const h = setup();
+    h.matters.readWorkingRevision.mockResolvedValue({
+      matterId: 'MAT-1', matterWorkRevisionId: h.saved.workRevisionRef, workingRevision: 7,
+      createdAt: '2026-09-01T00:00:00.000Z',
+      correctionNotices: [], overviewCorrectionNotices: [], referenceWorkNotices: [], overviewSourceWork: null,
+      state: { problemWork: h.saved.content, substantiveResult: { sections: [] } },
+    });
+    h.db.execute.mockResolvedValue([
+      { ...h.identity, current: true },
+      { ...h.identity, current: true },
+      { ...h.identity, subjectId: 'WI-OTHER', current: true },
+      { ...h.identity, subjectKind: 'ENGINEERING_MATTER' as const, subjectId: 'MAT-1', current: true },
+    ]);
+    const page = await h.service.catalogue('', 'ALL', undefined, actor);
+    expect(page.entries).toHaveLength(4);
+    expect(h.jobAid.readBrowserRevision).toHaveBeenCalledTimes(2);
+    expect(h.jobAid.readBrowserRevision).toHaveBeenCalledWith('WI-OTHER', h.saved.workRevisionRef, actor);
+    expect(h.matters.readWorkingRevision).toHaveBeenCalledTimes(1);
+  });
+
+  it('reauthorizes catalogue reads on the next request and observes revocation', async () => {
+    const h = setup();
+    h.db.execute.mockResolvedValue([{ ...h.identity, current: true }]);
+    expect((await h.service.catalogue('', 'ALL', undefined, actor)).entries).toHaveLength(1);
+    h.jobAid.readBrowserRevision.mockRejectedValue(new Error('JOBAID_SOURCE_AUTHORIZATION_CHANGED'));
+    expect((await h.service.catalogue('', 'ALL', undefined, actor)).entries).toHaveLength(0);
+    expect(h.jobAid.readBrowserRevision).toHaveBeenCalledTimes(2);
+  });
+
+  it('propagates a consumed data failure from a mixed group instead of dropping it', async () => {
+    const h = setup();
+    h.db.execute.mockResolvedValue([
+      { ...h.identity, subjectId: 'WI-OK-1', current: true },
+      { ...h.identity, subjectId: 'WI-DENIED', workRef: 'revoked', current: true },
+      { ...h.identity, subjectId: 'WI-CORRUPT', current: true },
+      { ...h.identity, subjectId: 'WI-OK-2', current: true },
+    ]);
+    h.jobAid.readBrowserRevision.mockImplementation(async (id: string, ref: string) => {
+      if (id === 'WI-CORRUPT') throw new Error('CORRUPT_SAVED_WORK');
+      if (ref !== h.saved.workRevisionRef)
+        throw Object.assign(new Error('JOBAID_WORK_NOT_FOUND'), { statusCode: 404 });
+      return h.saved;
+    });
+    await expect(h.service.catalogue('', 'ALL', undefined, actor)).rejects.toThrow('CORRUPT_SAVED_WORK');
+  });
 });

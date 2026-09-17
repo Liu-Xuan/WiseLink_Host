@@ -1,8 +1,13 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom';
+import { useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import { Clock, Compass, Network } from 'lucide-react';
 import { Button } from '@client/src/components/ui/button';
-import { readDocumentActivityReading, readDocumentParsingStatus, subscribeCanonicalHostClientSession } from '@client/src/api/canonical-host';
+import { logger } from '@lark-apaas/client-toolkit/logger';
+import { useCurrentUserSession } from '@client/src/app/providers/CurrentUserSessionProvider';
+import { getEngineeringMatter } from '@client/src/api/engineering-matter';
+import { selectMatterTimelineSources } from '@client/src/features/navigation/shell-utils';
+import type { EngineeringMatterCatalogEntry } from '@shared/api.interface';
+import { readDocumentActivityReading, readDocumentParsingStatus, subscribeCanonicalHostClientSession, getCanonicalHostClientSessionGeneration, getCanonicalLibraryDocuments } from '@client/src/api/canonical-host';
 import type { DocumentActivityReadingResponse } from '@shared/document-activity.interface';
 import type { DocumentOriginalBinding } from '@shared/document-original.interface';
 import { activityEntryPins, activityEntryReason, loadActivityEntry, validateActivityEntry } from '@client/src/pages/DocumentParsingPage/document-activity-entry';
@@ -39,6 +44,27 @@ export default function EngineeringTimelinePage({ view = 'timeline', onNavigateG
         ? '时间窗参数不在允许范围内，只允许 all 或 current-year。'
         : null;
   const blocker = documentError || windowError || activityEntryReason(entry);
+  const matterIdPin = revisionTextPin(searchParams, 'matterId');
+  const anyActivityPin =
+    searchParams.has('parseRunId') ||
+    searchParams.has('candidateRevision') ||
+    searchParams.has('runRef') ||
+    searchParams.has('statementId') ||
+    searchParams.has('anchor');
+  const orphanPinBlocker =
+    !documentVersionId && !blocker && anyActivityPin
+      ? '时间声明、候选或解析版本缺少所属文档版本，请从准确文档入口重新进入。'
+      : null;
+  const matterIdInvalid =
+    matterIdPin.state !== 'ok' && matterIdPin.state !== 'absent'
+      ? '事项标识为空、重复或不合法，请从准确事项入口重新进入。'
+      : null;
+  const matterIdentity: 'absent' | 'invalid' | 'matter' =
+    matterIdPin.state === 'ok'
+      ? 'matter'
+      : matterIdPin.state !== 'absent'
+        ? 'invalid'
+        : 'absent';
   const [sessionRevision, setSessionRevision] = useState(0);
   // Statement and anchor are view selection, not candidate identity. Keeping them
   // out of the read key preserves the loaded candidate and graph camera while a
@@ -51,9 +77,10 @@ export default function EngineeringTimelinePage({ view = 'timeline', onNavigateG
   currentIdentity.current = identity;
   currentSearchParams.current = searchParams;
   const visible = state?.identity === identity ? state : null;
-  const reading = !blocker ? visible?.reading ?? null : null;
-  const error = blocker || visible?.error || null;
-  const loading = Boolean(!blocker && documentVersionId && !visible);
+  const mainBlocker = blocker || orphanPinBlocker;
+  const reading = !mainBlocker ? visible?.reading ?? null : null;
+  const error = mainBlocker || visible?.error || null;
+  const loading = Boolean(!mainBlocker && documentVersionId && !visible);
 
   useEffect(() => subscribeCanonicalHostClientSession(() => {
     epoch.current += 1;
@@ -155,8 +182,172 @@ export default function EngineeringTimelinePage({ view = 'timeline', onNavigateG
       <strong>{documentVersionId ? `文档版本 ${documentVersionId}` : '尚未选择文档版本'}</strong>
       <span>{pins.parseRunId ? `解析版本 ${pins.parseRunId}` : '将从当前已发布解析版本发现已保存候选'}</span>
     </div>
-    {view === 'graph' && reading?.candidate ? <DocumentActivityGraphView reading={reading} selectedStatementId={pins.statementId} selectedAnchorId={pins.anchor} onSelectLocation={selectLocation} onReturnTimeline={() => navigate(pageRoute(searchParams, '/timeline'))} /> : <DocumentActivityTimelineView reading={reading} selectedStatementId={pins.statementId} onSelectStatement={selectStatement} onOpenReading={openReading} onOpenAnchor={openReading} onNavigateGraph={openGraph} loading={loading} error={error} hasExactSource={Boolean(documentVersionId && pins.parseRunId)} window={windowMode} onWindowChange={changeWindow} />}
-    {!documentVersionId && !error ? <Link to="/library?mode=document">选择文档版本</Link> : null}
+    {documentVersionId || mainBlocker ? (
+      view === 'graph' && reading?.candidate ? <DocumentActivityGraphView reading={reading} selectedStatementId={pins.statementId} selectedAnchorId={pins.anchor} onSelectLocation={selectLocation} onReturnTimeline={() => navigate(pageRoute(searchParams, '/timeline'))} /> : <DocumentActivityTimelineView reading={reading} selectedStatementId={pins.statementId} onSelectStatement={selectStatement} onOpenReading={openReading} onOpenAnchor={openReading} onNavigateGraph={openGraph} loading={loading} error={error} hasExactSource={Boolean(documentVersionId && pins.parseRunId)} window={windowMode} onWindowChange={changeWindow} />
+    ) : matterIdentity === 'invalid' ? (
+      <div className="activity-timeline-empty" role="alert">
+        <h2>事项标识不合法</h2>
+        <p>{matterIdInvalid}</p>
+      </div>
+    ) : matterIdentity === 'matter' && matterIdPin.state === 'ok' ? (
+      <TimelineMatterSourceResolver
+        matterId={matterIdPin.value}
+        pagePath={pagePath}
+        searchParams={searchParams}
+      />
+    ) : (
+      <TimelineDefaultDocumentResolver pagePath={pagePath} searchParams={searchParams} />
+    )}
     {reading?.candidate && (pins.statementId || pins.anchor) ? <DocumentActivityReadingView binding={reading.binding} familyId={reading.familyId} candidate={reading.candidate} selectedStatementId={pins.statementId} selectedAnchorId={pins.anchor} returnParamsFor={returnParamsFor} onSelectStatement={selectStatement} onSelectAnchor={selectAnchor} /> : null}
   </main>;
+}
+
+function TimelineDefaultDocumentResolver({ pagePath, searchParams }: { pagePath: string; searchParams: URLSearchParams }) {
+  const navigate = useNavigate();
+  const { sessionGeneration, authenticationRequired } = useCurrentUserSession();
+  const [state, setState] = useState<'loading' | 'empty' | 'error'>('loading');
+  const [nextCursor, setNextCursor] = useState<string | null>(null);
+  const [cursor, setCursor] = useState<string | undefined>(undefined);
+  const [reloadKey, setReloadKey] = useState(0);
+  const epochRef = useRef(0);
+
+  useEffect(() => {
+    if (authenticationRequired) return;
+    const controller = new AbortController();
+    const epoch = ++epochRef.current;
+    const session = getCanonicalHostClientSessionGeneration();
+    setState('loading');
+    void (async () => {
+      try {
+        const catalog = await getCanonicalLibraryDocuments(
+          cursor ? { limit: 24, cursor } : { limit: 24 },
+          controller.signal,
+        );
+        if (controller.signal.aborted || epochRef.current !== epoch || session !== getCanonicalHostClientSessionGeneration()) return;
+        for (let index = 0; index < catalog.items.length; index += 1) {
+          const version = catalog.items[index].versions.find(item => item.selectedVersionIsCurrent);
+          if (version?.documentVersionId) {
+            const query = activityReadingParams(searchParams);
+            query.set('documentVersionId', version.documentVersionId);
+            navigate(`${pagePath}?${query}`, { replace: true });
+            return;
+          }
+        }
+        setNextCursor(catalog.nextCursor);
+        setState('empty');
+      } catch (reason) {
+        if (controller.signal.aborted || epochRef.current !== epoch) return;
+        logger.error('工程时间轴默认文档目录读取失败', reason);
+        setState('error');
+      }
+    })();
+    return () => controller.abort();
+  }, [pagePath, sessionGeneration, authenticationRequired, reloadKey, cursor, navigate, searchParams]);
+
+  if (authenticationRequired) {
+    return (
+      <div className="activity-timeline-empty">
+        <h2>请先登录</h2>
+        <p>登录后才能读取当前账号有权访问的文档版本，再打开工程时间轴。</p>
+      </div>
+    );
+  }
+  if (state === 'loading') {
+    return (
+      <div className="activity-timeline-empty" role="status">
+        <p>正在读取当前账号可访问的文档目录…</p>
+      </div>
+    );
+  }
+  if (state === 'empty') {
+    return (
+      <div className="activity-timeline-empty">
+        <h2>本页未取到当前版本</h2>
+        <p>
+          工程时间轴基于某个确切文档版本已保存的时间活动候选。已读取当前账号文档目录的{nextCursor ? '当前页' : '最后一页'}，本页没有标记为当前版本的文档，这不代表当前账号没有任何文档版本。
+          {nextCursor ? '目录还有后续页，可继续读取以扩大范围。' : '当前已读到目录末尾。'}
+        </p>
+        <div>
+          {nextCursor ? (
+            <Button variant="outline" onClick={() => { setCursor(nextCursor); setReloadKey(value => value + 1); }}>继续读取下一页</Button>
+          ) : null}
+          <Button variant="outline" onClick={() => navigate('/library?mode=document')}>去资料库</Button>
+        </div>
+      </div>
+    );
+  }
+  return (
+    <div className="activity-timeline-empty" role="alert">
+      <h2>目录读取受阻</h2>
+      <p>文档目录服务暂时不可用，已停止而不是换用其他文档，请稍后重试。</p>
+      <Button variant="outline" onClick={() => setReloadKey(value => value + 1)}>重试</Button>
+    </div>
+  );
+}
+
+function TimelineMatterSourceResolver({ matterId, pagePath, searchParams }: { matterId: string; pagePath: string; searchParams: URLSearchParams }) {
+  const navigate = useNavigate();
+  const { sessionGeneration, authenticationRequired } = useCurrentUserSession();
+  const [state, setState] = useState<'loading' | 'empty' | 'error'>('loading');
+  const [reloadKey, setReloadKey] = useState(0);
+  const epochRef = useRef(0);
+
+  useEffect(() => {
+    if (authenticationRequired) return;
+    const controller = new AbortController();
+    const epoch = ++epochRef.current;
+    const session = getCanonicalHostClientSessionGeneration();
+    setState('loading');
+    void (async () => {
+      try {
+        const read = await getEngineeringMatter(matterId, controller.signal);
+        if (controller.signal.aborted || epochRef.current !== epoch || session !== getCanonicalHostClientSessionGeneration()) return;
+        const source = selectMatterTimelineSources(read.catalog.entries)[0];
+        if (source) {
+          const query = activityReadingParams(searchParams);
+          query.set('documentVersionId', source.document.documentVersionId);
+          navigate(`${pagePath}?${query}`, { replace: true });
+          return;
+        }
+        setState('empty');
+      } catch (reason) {
+        if (controller.signal.aborted || epochRef.current !== epoch) return;
+        logger.error('工程时间轴事项来源读取失败', reason);
+        setState('error');
+      }
+    })();
+    return () => controller.abort();
+  }, [matterId, pagePath, sessionGeneration, authenticationRequired, reloadKey, navigate, searchParams]);
+
+  if (authenticationRequired) {
+    return (
+      <div className="activity-timeline-empty">
+        <h2>请先登录</h2>
+        <p>登录后才能读取该事项已登记的资料，再打开工程时间轴。</p>
+      </div>
+    );
+  }
+  if (state === 'loading') {
+    return (
+      <div className="activity-timeline-empty" role="status">
+        <p>正在读取该事项已登记的资料…</p>
+      </div>
+    );
+  }
+  if (state === 'empty') {
+    return (
+      <div className="activity-timeline-empty">
+        <h2>该事项没有已登记的文档版本</h2>
+        <p>工程时间轴只阅读该事项实际登记来源的时间声明；当前事项尚未登记可用于时间轴的文档版本，不会改读其他文档。</p>
+        <Button variant="outline" onClick={() => navigate('/library?mode=matter')}>去资料库</Button>
+      </div>
+    );
+  }
+  return (
+    <div className="activity-timeline-empty" role="alert">
+      <h2>事项来源读取受阻</h2>
+      <p>无法读取该事项已登记的资料，已停止而不是换用其他文档，请稍后重试。</p>
+      <Button variant="outline" onClick={() => setReloadKey(value => value + 1)}>重试</Button>
+    </div>
+  );
 }

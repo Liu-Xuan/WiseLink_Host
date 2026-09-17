@@ -67,6 +67,7 @@ export default function DocumentVersionReadingPage() {
   useEffect(() => {
     const controller = new AbortController();
     bodyControllerRef.current = controller;
+    if (refresh > 0) loaded.current = '';
     // A fresh body load (identity change or explicit retry) clears the rejection.
     rejectedRef.current = false;
     let timer: ReturnType<typeof setTimeout> | undefined;
@@ -104,7 +105,11 @@ export default function DocumentVersionReadingPage() {
         setStatus(next);
         if (!requestedRun) {
           const targetRun = next.publishedRun?.parseRunId;
-          if (targetRun) {
+          // A status poll still runs on every cycle so authorization and the
+          // latest-run state are rechecked, but a successfully painted body is
+          // read once per run. An explicit refresh starts a new effect cycle
+          // and clears this marker below.
+          if (targetRun && loaded.current !== targetRun) {
             const result = await readParsedDocument(documentVersionId, targetRun, controller.signal);
             if (!current() || rejectedRef.current) return;
             if (result.documentVersionId !== documentVersionId || result.parseRunId !== targetRun)

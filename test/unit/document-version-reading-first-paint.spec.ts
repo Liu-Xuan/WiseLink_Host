@@ -21,7 +21,7 @@ jest.mock('@client/src/pages/DocumentParsingPage/DocumentParsedImage', () => ({
   DocumentParsedImage: () => null,
 }));
 jest.mock('@client/src/pages/DocumentParsingPage/MineruMarkdownReader', () => ({
-  MineruMarkdownReader: () => createElement('div', null, 'markdown-body'),
+  MineruMarkdownReader: ({ markdown }: { markdown?: string }) => createElement('div', null, markdown ?? 'markdown-body'),
 }));
 jest.mock('@client/src/pages/DocumentParsingPage/SemanticBilingualReader', () => ({
   SemanticBilingualReader: () => createElement('div', { 'data-bilingual': 'rendered' }, '双语对照已渲染'),
@@ -169,6 +169,56 @@ it('does not poll a pinned run even when the latest run is still running', async
   }
 });
 
+it('rechecks a busy latest run without rereading an unchanged published body', async () => {
+  jest.useFakeTimers();
+  try {
+    mockStatus.mockResolvedValue({ ...statusPayload(), latestRun: { parseRunId: 'PR2', status: 'RUNNING', deadlineAt: '2030-01-01T00:00:00Z' } });
+    await mount();
+    expect(mockStatus).toHaveBeenCalledTimes(1);
+    expect(mockReading).toHaveBeenCalledTimes(1);
+    await act(async () => { jest.advanceTimersByTime(5000); await Promise.resolve(); });
+    expect(mockStatus).toHaveBeenCalledTimes(2);
+    expect(mockReading).toHaveBeenCalledTimes(1);
+    expect(container.textContent).toContain('constructed');
+  } finally { jest.useRealTimers(); }
+});
+
+it('reads a newly published run once after polling observes the new run', async () => {
+  jest.useFakeTimers();
+  try {
+    mockStatus.mockResolvedValueOnce({ ...statusPayload(), latestRun: { parseRunId: 'PR2', status: 'RUNNING', deadlineAt: '2030-01-01T00:00:00Z' } })
+      .mockResolvedValueOnce({ ...statusPayload(), publishedRun: { parseRunId: 'PR2', parseRevision: 4 }, latestRun: { parseRunId: 'PR2', status: 'PUBLISHED', deadlineAt: '2030-01-01T00:00:00Z' } });
+    mockReading.mockResolvedValueOnce(readingPayload()).mockResolvedValueOnce({ ...readingPayload(), parseRunId: 'PR2', parseRevision: 4, markdown: 'new run' });
+    await mount();
+    await act(async () => { jest.advanceTimersByTime(5000); await Promise.resolve(); await Promise.resolve(); });
+    expect(mockStatus).toHaveBeenCalledTimes(2);
+    expect(mockReading).toHaveBeenCalledTimes(2);
+    expect(mockReading).toHaveBeenLastCalledWith('DV1', 'PR2', expect.anything());
+  } finally { jest.useRealTimers(); }
+});
+
+it('explicit refresh rereads the same published run', async () => {
+  await mount();
+  expect(mockReading).toHaveBeenCalledTimes(1);
+  await act(async () => {
+    [...container.querySelectorAll('button')].find(item => item.textContent === '刷新')
+      ?.dispatchEvent(new dom.window.MouseEvent('click', { bubbles: true }));
+    await Promise.resolve();
+  });
+  expect(mockReading).toHaveBeenCalledTimes(2);
+});
+
+it('restarts the same run after a session event and ignores the prior epoch', async () => {
+  let resolveSecond!: (value: unknown) => void;
+  mockReading.mockResolvedValueOnce(readingPayload()).mockImplementationOnce(() => new Promise(resolve => { resolveSecond = resolve; }));
+  await mount();
+  expect(mockReading).toHaveBeenCalledTimes(1);
+  await act(async () => { mockSessionCallbacks[0]?.(); await Promise.resolve(); });
+  expect(mockReading).toHaveBeenCalledTimes(2);
+  await act(async () => { resolveSecond({ ...readingPayload(), original: null, markdown: 'session refreshed' }); });
+  expect(container.textContent).toContain('session refreshed');
+});
+
 it('a terminal translation rejection aborts the mounted body load chain and keeps the rejected state visible', async () => {
   const revoked = Object.assign(new Error('中文访问已被撤销'), { statusCode: 403 });
   let resolveStatus!: (value: unknown) => void;
@@ -208,4 +258,34 @@ it('a 403 rejection aborts the epoch so a late body result cannot re-display ove
   await act(async () => { resolveReading(readingPayload()); });
   expect(container.textContent).not.toContain('阅读版本 3');
   expect(container.querySelector('[role="alert"]')?.textContent).toContain('访问已被撤销');
+});
+
+it('independent P1: late old-session body cannot overwrite the same-run new session body', async () => {
+  let resolveOld!: (value: unknown) => void;
+  mockReading.mockImplementationOnce(() => new Promise(resolve => { resolveOld = resolve; }))
+    .mockResolvedValueOnce({ ...readingPayload(), original: null, markdown: 'NEW-SESSION-BODY' });
+  await mount();
+  await act(async () => { mockSessionCallbacks[0]?.(); });
+  expect(mockReading).toHaveBeenCalledTimes(2);
+  expect(container.textContent).toContain('NEW-SESSION-BODY');
+  await act(async () => { resolveOld({ ...readingPayload(), original: null, markdown: 'OLD-SESSION-BODY' }); });
+  expect(container.textContent).toContain('NEW-SESSION-BODY');
+  expect(container.textContent).not.toContain('OLD-SESSION-BODY');
+});
+
+it('independent P1: a status poll 403 clears an already loaded unpinned body and stops polling', async () => {
+  jest.useFakeTimers();
+  try {
+    mockStatus.mockResolvedValueOnce({ ...statusPayload(), latestRun: { parseRunId: 'PR2', status: 'RUNNING', deadlineAt: '2030-01-01T00:00:00Z' } })
+      .mockRejectedValue(Object.assign(new Error('POLL-REVOKED'), { statusCode: 403 }));
+    mockReading.mockResolvedValue({ ...readingPayload(), original: null, markdown: 'PROTECTED-BODY' });
+    await mount();
+    expect(container.textContent).toContain('PROTECTED-BODY');
+    await act(async () => { jest.advanceTimersByTime(5000); });
+    expect(container.textContent).not.toContain('PROTECTED-BODY');
+    expect(container.querySelector('[role="alert"]')?.textContent).toContain('POLL-REVOKED');
+    await act(async () => { jest.advanceTimersByTime(10000); });
+    expect(mockStatus).toHaveBeenCalledTimes(2);
+    expect(mockReading).toHaveBeenCalledTimes(1);
+  } finally { jest.useRealTimers(); }
 });

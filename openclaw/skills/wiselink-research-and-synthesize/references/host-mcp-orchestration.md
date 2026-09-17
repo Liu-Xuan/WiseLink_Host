@@ -43,6 +43,25 @@ Attempt 控制面：
 本 Skill 的 INTERACTIVE_REVIEW runtime path 精确只使用 14–18。Heartbeat/cancel 不是 review model 工具，
 不用于替代五工具会话合同。
 
+## 未来只读预检 read_matter_current_work（尚未由 Host 部署）
+
+`read_matter_current_work({matterId})` 是规划中由后续 17b Host 批次提供的只读预检工具，当前 Host
+尚未提供。runtime 已在 `HOST_MCP_TOOLS` 预先登记该工具名，并在
+`scripts/run-hosted-review-turn.mjs` 的生产校验 `validateHostToolMetadata` 中固化其精确 metadata：
+只读注解 `readOnlyHint=true`、`destructiveHint=false`、`idempotentHint=true`、`openWorldHint=false`；
+strict inputSchema 仅 `matterId` 一个属性且必填，`additionalProperties:false`，不接受
+tenant/actor/principal/attempt/lease/requestId/model 等额外字段。
+
+未来 Host 预检边界：
+
+- 在 Host 部署该工具之前，`validateHostToolMetadata` 的名单校验会与实际 Host tools/list 不一致而
+  失败——这是预期行为，不能通过移除登记或放宽校验来“修复”；只能等 Host 批次落地或回退本登记。
+- 调用必须由既有 `createHostMcpConnection` 返回的 `callTool` 精确执行；不经过
+  `next_matter_assessment` / `consume-hosted-matter`。
+- 只读语义：不创建 attempt、不取得 lease、不调用模型、不保存。
+- 预检结果不能代替 BEGIN 的再次 current/CAS/source 授权核对；也不能把返回的
+  `eligibleEvidenceRefs` 当作本 attempt 已读取的证据。
+
 ## TaskEnvelope 与 lease fence
 
 除 Translation 外，每个 `begin_*` 直接返回 `attemptRef`、status、`leaseToken`、`leaseGeneration`、lease expiry
