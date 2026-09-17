@@ -52,7 +52,8 @@ export class DocumentOriginalStore {
   async read(scope: DocumentOriginalStoreScope, artifact: DocumentOriginalArtifact): Promise<Uint8Array> {
     assertDescriptor(scope, artifact);
     const scoped = this.files.from(scope.bucketId);
-    assertMetadata(await withFileReadTransportRetry(() => scoped.getFileMetadata(artifact.filePath)), artifact);
+    // Download returns the object's metadata alongside its bytes. Validate that
+    // receipt rather than issuing a second, earlier metadata request per read.
     const result = await withFileReadTransportRetry(() => scoped.download(artifact.filePath));
     assertMetadata(result.metadata, artifact);
     if (result.content.size !== artifact.byteLength) throw new Error('DOCUMENT_ORIGINAL_READBACK_SIZE_MISMATCH');
@@ -78,19 +79,28 @@ export class DocumentOriginalStore {
   }
 
   async load(scope: DocumentOriginalStoreScope, artifact: DocumentOriginalArtifact, expected: DocumentOriginalBinding) {
+    const bundle = await this.loadForReading(scope, artifact, expected);
+    await this.read(scope, bundle.rawMarkdown);
+    for (const descriptor of bundle.rawPdfArtifacts) await this.read(scope, descriptor);
+    return bundle;
+  }
+
+  /** Read the self-contained, verified manifest after the caller checks publication
+   * and authorization. Raw extraction artifacts are audited by load on publication
+   * and recovery; they are not consumed to display this saved reading. */
+  async loadForReading(scope: DocumentOriginalStoreScope, artifact: DocumentOriginalArtifact, expected: DocumentOriginalBinding) {
     if (artifact.role !== 'MANIFEST' || artifact.readback !== 'VERIFIED') throw new Error('DOCUMENT_ORIGINAL_MANIFEST_REQUIRED');
     const bundle: DocumentOriginalBundle = JSON.parse(Buffer.from(await this.read(scope, artifact)).toString('utf8'));
     if (bundle.schemaVersion !== 'wiselink.document.bundle.v1') throw new Error('DOCUMENT_ORIGINAL_BUNDLE_INVALID');
     documentOriginalStructuredSource(bundle.original, expected);
     if (bundle.rawMarkdown.role !== 'RAW_MARKDOWN' || bundle.rawMarkdown.readback !== 'VERIFIED')
       throw new Error('DOCUMENT_ORIGINAL_RAW_REQUIRED');
-    // The original manifest is version-bound and its raw descriptor remains immutable.
-    await this.read(scope, bundle.rawMarkdown);
+    assertDescriptor(scope, bundle.rawMarkdown);
     if (!Array.isArray(bundle.rawPdfArtifacts) || !bundle.rawPdfArtifacts.length) throw new Error('DOCUMENT_ORIGINAL_RAW_PAGES_REQUIRED');
     for (const descriptor of bundle.rawPdfArtifacts) {
       if (descriptor.role !== 'MANIFEST' || !/^original\/pages-[0-9]+\.json$/.test(descriptor.relativePath) || descriptor.readback !== 'VERIFIED')
         throw new Error('DOCUMENT_ORIGINAL_RAW_PAGES_INVALID');
-      await this.read(scope, descriptor);
+      assertDescriptor(scope, descriptor);
     }
     return bundle;
   }

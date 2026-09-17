@@ -1,5 +1,17 @@
 # M 主控集成交接
 
+## 2026-09-17 连续阅读与性能修订
+
+用户明确要求解析阅读恢复连续文档，移除常驻流程/免责提示和逐段定位按钮，文字/段落直接定位原件，阅读视图隐藏重复页眉页脚；所有页面秒级可读。已落实到Suite计划并交唯一前端Luna紧接图谱r4交接实施。M实际app_web trace核对当前6d一次文档打开：parsing1017ms、reading2006ms、translation-reading4642ms依次执行，正文约3.03秒返回；不将此单样本当全页分位统计。
+
+M本地修订DocumentOriginalStore：删除SDK download之外的重复元数据请求，仍验证download返回对象metadata及bytes/SHA；新增loadForReading，只读校验已发布自包含manifest并核对raw描述符范围，普通read/loadPublished切换到该路径。发布/恢复/重用/换版分析仍load全量审计，前后权限和PUBLISHED校验不变。Astra独立查SDK与代码接受；3套11项（含实际execute/service.read）及server tsc通过。新增测试证明读取仅消费manifest、错误parseRevision拒绝、raw字节篡改仍被全审计拒绝。尚未部署，提速和全页秒级目标未验收。
+
+## 2026-09-17 真实候选取回与引用拒绝复现
+
+M将独立取回的aa/ab/ac与Luna最后ad拼接，得到完整31816字节gzip，SHA256 92af8f6ff78e27c37a89e81522e0e2572c41bf8ffbcb004a2d326ab9d3575bd4；三个解压检查点分别216667/23488/23733字节，逐文件SHA与云端回执一致。产物仅在私有临时目录，不入Git。实际Host validateDocumentReading以真实source/model产物复现DOCUMENT_READING_QUOTE_MISMATCH：26处不匹配，包括18处位置/长度和8处错anchor；部分引文在原文重复，不能自动任选来源。没有重模型、SAVE或改原检查点；已交Astra审查正文语义，后续修法不能放宽Host逐字来源校验。
+
+图谱r4六文件补丁48906字节，SHA256 e1ddfbbff130cbe49d5d4f808b39d4bc535d8d6c9dc2a0e6966342a6baa739a5，payload校验一致；但声明基线5d51736a本地无对象，准确fetch在TLS重试后返回not our ref。已要求唯一前端Luna补相对可得45c3e525的完整明确清单补丁或准确基线bundle，不伪改base字段，不整边覆盖当前fa6ad62。
+
 ## 2026-09-17 文档解读错误分类实际缺陷
 
 M读取受控后继原始回执，确认旧run取消并读回CANCELLED，新run DRR-479689ba-b5a8-4be7-87e5-d7ca4e97ed15已产生model.result和save.started，consumer返回PENDING_SAVE_CONFIRMATION，Host仍无保存回执。真实候选待从Hosted私有检查点取回；不据此重模型或SAVE。启动PID归属报告存在前后不一致，已要求按实际命令及默认/指定检查点核验，不将模型调用次数口头回报作为完整证明。
