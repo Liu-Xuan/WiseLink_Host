@@ -75,7 +75,7 @@ export function materializeJobAidWork(
   context: JobAidWorkValidationContext,
 ): JobAidProblemWorkContent {
   const value = object(raw, 'WORK');
-  exact(value, ['schemaVersion', 'issues', 'overview', 'roundCompletion', 'completionReason', 'changeSummary', 'unchangedExplanation', 'unchangedIssueKeys', 'retiredIssues', 'inputDispositions', 'reviewConditionDelta']);
+  exact(value, ['schemaVersion', 'issues', 'headline', 'listBrief', 'overview', 'roundCompletion', 'completionReason', 'changeSummary', 'unchangedExplanation', 'unchangedIssueKeys', 'retiredIssues', 'inputDispositions', 'reviewConditionDelta']);
   if (!isJobAidMethodBinding(context.methodBinding)) fail('METHOD_BINDING_INVALID');
   const subjectId = text(context.matterId ?? context.workItemId, 'SUBJECT');
   if (context.matterId !== undefined && context.workItemId !== undefined)
@@ -307,7 +307,17 @@ export function materializeJobAidWork(
   // Omission retains the exact saved summary, never an inferred new conclusion.
   // Explicit null/empty values still pass through the normal validators.
   const overview = value.overview === undefined ? context.previous?.understanding : text(value.overview, 'OVERVIEW');
-  const headline = issues[0].question;
+  // Reading copy belongs to the same saved revision as the substantive work.
+  // Never replace a supplied summary with the first issue's question or shorten
+  // a qualification here. Omitting both fields retains the prior saved copy.
+  if ((value.headline === undefined) !== (value.listBrief === undefined))
+    fail('READING_SUMMARY_PAIR_REQUIRED');
+  const headline = value.headline === undefined
+    ? context.previous?.headline ?? issues[0].question
+    : text(value.headline, 'HEADLINE');
+  const listBrief = value.listBrief === undefined
+    ? context.previous?.listBrief ?? headline
+    : text(value.listBrief, 'LIST_BRIEF');
   const decisiveIssueKeys = issues.map(issue => issue.issueKey);
   const roundCompletion = choice(
     value.roundCompletion,
@@ -336,7 +346,7 @@ export function materializeJobAidWork(
   return {
     schemaVersion: JOBAID_PROBLEM_WORK_SCHEMA,
     headline,
-    listBrief: headline,
+    listBrief,
     understanding: overview ?? '问题正文已保存；综合认识尚未形成。',
     decisiveIssueKeys,
     overviewStatus: context.persistedOverviewStatus ?? (value.overview !== undefined ? 'CURRENT' :

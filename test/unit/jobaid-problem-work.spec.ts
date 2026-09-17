@@ -50,6 +50,29 @@ test('body directly persists and exact reading/search use the complete same answ
   const projection=buildWorkSearchProjection({ownerKind:'MATTER',ownerId:'MAT-test',subjectId:'MAT-test',exactRevisionRef:'W1',content:work});
   expect(projection[0].search.originalText).toContain(work.issues[0].body);
 });
+test('saved reading summary preserves decisive negation and survives local updates and validation',()=>{
+  const summary={headline:'指示持续条件与更换范围',
+    listBrief:'指示持续超过五秒才符合更换前提；当前尚未确认该条件，不能据此确认本机适用。'};
+  const work=materializeJobAidWork(update([issue('A')],summary),context);
+  expect(work).toMatchObject(summary);
+  const next=materializeJobAidWork(update([issue('B')]),{...context,previous:work});
+  expect(next).toMatchObject(summary);
+  const input={matterId:'MAT-test',matterRevisionId:'MR1',attemptRef:'AQ-summary',requestId:'save-summary',expectedWorkRevision:0,previous:null,
+    inputs:[{kind:'DOCUMENT_VERSION' as const,inputId:'I1',familyId:'F1',workItemId:null,workItemRevision:null,resultRef:null,resultRevision:null,documentVersionId:'dv',original:{parseRunId:'pr1',parseRevision:1,semantic:{revision:1,profileRef:'ftd'}}}],
+    proposal:update([issue('A')],summary),evidence:context.evidence,readSourceRefs:context.readSourceRefs,
+    capabilities:[],history:context.history,methodBinding:context.methodBinding};
+  const command=materializeMatterJobAidCommand(input);
+  const state=materializeEngineeringMatterWorkingState({matterId:'MAT-test',current:null,command}).state;
+  const read=parseEngineeringMatterWorkingState(JSON.stringify(state),'MAT-test');
+  expect(read.problemWork).toMatchObject(summary);
+  expect(read.substantiveResult?.content).toMatchObject(summary);
+  expect(read.problemWork?.overviewStatus).toBe('NOT_AVAILABLE');
+  expect(read.problemWork?.issues[0].body).toBe(issue('A').body);
+  for(const supplied of [{headline:'只有标题'},{listBrief:'只有摘要'},
+    {headline:'',listBrief:'摘要'},{headline:'标题',listBrief:null}]) {
+    expect(()=>materializeJobAidWork(update([issue('A')],supplied),context)).toThrow();
+  }
+});
 test('A survives B failure; batch B, correction A and pure retirement keep accurate work',()=>{
   const a=materializeJobAidWork(update([issue('A')],{overview:'当前措施仅覆盖列明前提。'}),context);
   expect(()=>materializeJobAidWork(update([{...issue('B'),body:'未经交付 [[unknown]]'}]),{...context,previous:a})).toThrow('SOURCE_NOT_DELIVERED');

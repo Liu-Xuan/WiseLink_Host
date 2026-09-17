@@ -1,5 +1,45 @@
 # M 主控集成交接
 
+## 2026-09-17 线上简明认识缺口与同源保存修法（未提交、未安装）
+
+45c发布后，M通过外部Chrome已登录生产资料库实际读到新版五列表格、资料分组、事项快览，以及知识页“工程认识/来源资料、当前/历史、左目录右正文”。SB工作16和FTD工作12均仍以第一条长问题重复充当标题与短摘要；SB快览正确显示综合未覆盖提醒，但没有形成有价值的简明认识，故内容验收未通过，不能将结构上线写成Suite整体完成。知识页准确定位SB工作16 MWREV-75632e5d-e5f4-4cd2-8ace-a254f99f5874，并显示保留综合来自工作14；实际正文仍有过程叙述和大段问题结构，后继仍需按设计改进阅读架构。
+
+M使用官方只读数据库查询精确工作16的schema/headline/listBrief/overviewStatus，确认是已持久v3数据，headline与listBrief确实等于第一条issue.question，overviewStatus=STALE，不是前端缓存或历史v2兼容导致。源码根因是materializeJobAidWork固定生成这两个值。6文件最小修法允许正常work update成对提交headline/listBrief，省略时保留前次保存值，空/类型错/只给一个字段均拒绝；不机械裁切关键条件。模型工作投影与持久重构同步保留这两个字段，仍走同一保存、版本及CAS。Hosted实际消费者导入的guide/shape说明短主题和一句认识随工作一次保存，overview写工程综合、变更过程放changeSummary，不另跑评估转Wiki。
+
+实际验证：保存/状态重构两套Jest共33项通过，更正插件/检索两套Jest共41项通过，Hosted runtime共48项通过（新增短认识与正文同一次SAVE、无额外生成的断言）；受影响ESLint及server typecheck通过，diff check通过。最初误用不存在的server/tsconfig.json未运行类型检查，随后已用项目正式type:check:server成功检查。Astra只读复审限定接受，未发现必须修项；确认成对校验、持久重构、变化检测、同次SAVE一致。初次保存若省略两字段仍会回退首个问题，不能把可选字段支持当成已改善所有结果。批次正在交Git协调员提交；尚未发布/安装，现有线上旧记录没有被改写，仍需后续正常工作和真实内容验收，不能把本地修法当作已消除线上缺口。
+
+## 2026-09-17 Suite 资料库与知识页技术发布、后台旧队列核对
+
+M重新独立读取origin/github的精确同名开发分支，均为45c3e525df9e0ac42e695c98560c157b5c6bb744。仅发布已接受的共享壳、知识阅读与资料库两批，未提交图谱WIP不在本次发布内。Host release 7686346531314109398 已由官方release-get确认finished，commit_id精确为45c3e525df9e0ac42e695c98560c157b5c6bb744，error_logs=[]；发布中读回的旧commit字段不作为终态证据。正在外部Chrome核验已登录生产资料库与知识阅读，技术发布本身不代表完整视觉或线上链路验收。
+
+后台原会话conversation_4ky0f6r24fz90官方读回最新turn7686294291635112907为completed、streaming=false、queue=0；该轮因云端基线及development-work不可见而没有交付。对应correctedWorkRef问题已由Host提交118903524实现、随f1cfb发布，不能因此重复开发或回退。另一旧会话conversation_4kuem6js768t6最新turn7678808736835767515为cancelled、streaming=false，但queue=5；只读核对均为2026-08-27的旧分片上传及清理修订消息（第3至6段及后继任务），不得自动续跑。官方session-get可读队列文本/seq_no，现有CLI未发现单项撤销能力，session-stop只停止运行turn。本次未取消、发送或安装，当前5条状态覆盖此前历史queue=0的报告。
+
+云端代码交接协议已补齐新增文件导出：使用临时index和准确文件清单，避免普通git diff遗漏未跟踪源码/测试；canonical已有早期WIP时先在精确基线的干净临时checkout验证完整patch，再逐项对照集成，不清除现有成果。
+
+## 2026-09-17 恢复妙搭实施与在途成果保留
+
+用户追问确认 Luna 应操作妙搭而非自行本地开发。M 已中断本地 Canvas 实施，前端 View 操作员本地批次已停，后续恢复原妙搭会话唯一操作员；本地只承担审查、验证、集成与必要关键修正，不再派发 Luna 本地功能实现。45c3e525 接受基线保留；未接受图谱差异不删除、不当作完成代码发布。
+
+Luna 已通过官方接口核对 app_17bzc551rsg / conversation_4m1xuavvgyhaz：latest turn 7686309868802804685 completed、is_streaming=false、queued_count=0。该轮回执记录 /home/gem/workspace/code、codex/wl-frontend-revision-reading-view-20260916、b08cc2d15761431d263842f06a869e959adba360，已跟踪文件干净，仅平台记忆目录未跟踪；此 Git 状态是该轮工具回执，下一次操作仍需现场核对。Suite20260917尚未在该云端目录。准备的续修包包含18个新增源码/测试、4文件集成patch、完整新版src/docs/screenshots和计划；不含私有诊断、凭据或线上业务数据。续修材料已上传原应用存储 `/1876547992787031.gz`，大小 8,095,183 字节，SHA256 `657a719785b48b7510d30a5e1292ea7e25d77e4c1dcf1e9792c946746c96aae7`；包内18个快照文件和4文件patch均按manifest复核，含25张参考截图。唯一前端操作员已单次派发该具体批次；M独立通过 app_17bzc551rsg / conversation_4m1xuavvgyhaz 官方查询确认新 turn `7686342154516564960` 为 running、is_streaming=true、queued_count=0（建议30秒轮询）。M随后直接核对消息回执：云端fetch的精确tip为45c3e525，旧分支b08cc2d1已同步且源码干净；正常checkout -b切入同名codex开发分支，下载8,095,183字节材料并得到相同SHA256。云端已解压并读取README、manifest、计划及Graph/GraphCanvas参考，开始检查快照。源码与验证结果仍待交付；repo内tmp材料及平台记忆不进入接受范围。恢复云端后按同一基线继承、检查差异再续修，不整边覆盖。图谱视觉差异、剩余完整交互与真实读取继续保留任务范围。
+
+## 2026-09-17 图谱返程与视觉差异修订（未验收）
+
+新增有界图谱显示状态序列化及原文/Wiki目标身份绑定。Graph→Reader→Graph、Graph→Wiki→Reader→同一Wiki→Graph保留原事项/工作、所选节点、视角、过滤、分页/密度/边模式与相机参数；目标版本、parseRun或工作不符及重复/混合返程参数拒绝。返程与既有目录19项检查、实际容器路由2项检查通过，客户端类型通过；View已接initialState/onStateChange，实际浏览器整链恢复仍待核验。
+
+M随后只读核对返程消费者发现：当前 onStateChange 只写内存 ref，图谱内直接操作后刷新没有持久位置；Reader 返回时带 query 的恢复不能替代这一项。已交唯一操作员作为云端终态核对/必要后继修订项，不在云端在途期间本地并行改写。
+
+M查阅隔离Canvas桌面截图发现默认黑边灰底椭圆与HTML分组重叠、组标题遮挡和边标签黑底，与Suite参考图明显不同，已退回修订。图谱视觉尚未接受，不能以当前截图或纯组件测试替代完整三栏对照。
+
+## 2026-09-17 新版事项图谱消费者接线（未提交、未发布）
+
+`/graph?matterId=…&workRef=…` 已进入新三栏消费者及授权读取 hook，Sidebar 从事项携带准确身份；旧 workItem 图入口仍保留，混合/重复事项身份与空/重复 workRef 明确拒绝。原文回调保留完整 DocumentAssessmentEvidence 的版本/parseRun/sourceRef，Wiki 固定实际保存 workRef。新增路由与已有外壳检查共 6 项通过，客户端类型通过。三栏组件实际可编译，但分组溢出完整阅读、聚合关系明细、图谱自身相机/选择返程、完整工程事件及领域/全景真实读取尚未完成；这些继续作为交付要求，不将当前三栏或四个切换按钮称为 S4 完成。Canvas 正在独立无 Host middleware 的隔离浏览器入口验证。
+
+## 2026-09-17 资料库批次 Git 闭合与图谱真实投影续做
+
+资料库 19 文件已提交 45c3e525df9e0ac42e695c98560c157b5c6bb744（父 5078bb002addfac46e52343ca0a0beeaaf50dad6）；正常 precommit 通过，origin/github 同名开发分支均非强制快进。origin 独立回读曾临时 SSL 失败，随后 M 重试已精确读回同 SHA，github 亦一致。未发布。
+
+新增当前事项图谱读取适配器：明确材料记录、预计取得、保存认识和准确依据，保留前提解释/限制与取得范围；缺材料合同和缺证据均明确报告，未知综合状态不推断 CURRENT。当前工作投影 5 项定向测试通过并已接受。随后扩展精确历史选择与保存输入/继续核对组，6 项投影测试通过；新读取 hook 的 JSDOM 实测覆盖指定旧工作等待、切换后的迟到响应、身份变更与撤权，不以当前工作替代，1 项多断言测试通过；客户端类型与受影响 eslint 通过。历史增量仍待独立复审及实际页面接入。Canvas 与三栏 View 正在独立实施，四视角、完整时间事件和全页视觉验收继续保留范围。临时安装的 HTML 标签插件因 Canvas 使用 React HTML 层而移除，package/lock 回到原状态，避免冗余依赖。
+
 ## 2026-09-17 Suite 资料库返程增量接受（尚未发布）
 
 资料库文档/事项表与快览增量完成独立审查。最后两项 P2 已修：完整正文来源链接携带绑定目录上下文，准确工作 Wiki 可继续返回原目录；双面板位置由页面级 Provider 同步合并，避免同一渲染批次的 URL setter 相互覆盖。新增同批列表 450/快览 100 的回归断言，三份定向测试 24/24 通过；客户端类型、受影响源码 eslint 通过。隔离实际组件预览在正常页面高度下滚动快览 60 后刷新恢复 60；该证据不代表真实线上验收。
