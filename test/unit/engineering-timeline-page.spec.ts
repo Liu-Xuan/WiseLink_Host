@@ -9,13 +9,25 @@ import EngineeringTimelinePage from '../../client/src/pages/EngineeringTimelineP
 
 const mockStatus = jest.fn();
 const mockActivity = jest.fn();
+const mockLibraryDocuments = jest.fn();
+const mockMatter = jest.fn();
 const mockSessionCallbacks = new Set<() => void>();
+let mockSessionGen = 1;
 let mockDetail: any = null;
 let mockGraph: any = null;
+jest.mock('@lark-apaas/client-toolkit/logger', () => ({ logger: { error: jest.fn() } }));
 jest.mock('@client/src/api/canonical-host', () => ({
   readDocumentParsingStatus: (...args: unknown[]) => mockStatus(...args),
   readDocumentActivityReading: (...args: unknown[]) => mockActivity(...args),
+  getCanonicalLibraryDocuments: (...args: unknown[]) => mockLibraryDocuments(...args),
+  getCanonicalHostClientSessionGeneration: () => mockSessionGen,
   subscribeCanonicalHostClientSession: (callback: () => void) => { mockSessionCallbacks.add(callback); return () => mockSessionCallbacks.delete(callback); },
+}));
+jest.mock('@client/src/api/engineering-matter', () => ({
+  getEngineeringMatter: (...args: unknown[]) => mockMatter(...args),
+}));
+jest.mock('../../client/src/app/providers/CurrentUserSessionProvider', () => ({
+  useCurrentUserSession: () => ({ sessionGeneration: mockSessionGen, authenticationRequired: false }),
 }));
 jest.mock('@client/src/pages/DocumentParsingPage/DocumentActivityReadingView', () => ({
   __esModule: true, default: (props: any) => { mockDetail = props; return createElement('div', { 'data-testid': 'reading-detail', 'data-statement': props.selectedStatementId }, 'detail'); },
@@ -80,7 +92,7 @@ describe('engineering timeline page gates', () => {
     Object.defineProperty(globalThis, 'HTMLElement', { configurable: true, value: dom.window.HTMLElement });
     Object.defineProperty(globalThis, 'IS_REACT_ACT_ENVIRONMENT', { configurable: true, value: true });
     container = dom.window.document.getElementById('root');
-    mockStatus.mockReset(); mockActivity.mockReset(); mockDetail = null; mockSessionCallbacks.clear();
+    mockStatus.mockReset(); mockActivity.mockReset(); mockLibraryDocuments.mockReset(); mockMatter.mockReset(); mockSessionGen = 1; mockDetail = null; mockSessionCallbacks.clear();
   });
   afterEach(() => { act(() => root?.unmount()); router?.dispose(); dom.window.close(); });
 
@@ -124,6 +136,102 @@ describe('engineering timeline page gates', () => {
     await act(async () => statement.dispatchEvent(new dom.window.MouseEvent('click', { bubbles: true })));
     expect(router.state.location.search).toContain('statementId=S1');
   });
+  it('resolves a stable default document version from the authorized catalog when none is pinned', async () => {
+    mockStatus.mockImplementation(() => new Promise(() => undefined));
+    mockLibraryDocuments.mockResolvedValue({ items: [
+      { documentId: 'D1', versions: [ { documentVersionId: 'DV-OLD', selectedVersionIsCurrent: false }, { documentVersionId: 'DV-CUR', selectedVersionIsCurrent: true } ] },
+    ] });
+    await mount('/timeline');
+    await act(async () => undefined);
+    expect(mockLibraryDocuments).toHaveBeenCalledTimes(1);
+    expect(router.state.location.pathname).toBe('/timeline');
+    expect(new URLSearchParams(router.state.location.search).get('documentVersionId')).toBe('DV-CUR');
+  });
+
+  it('shows a page-scoped empty state without claiming the whole catalog has no versions', async () => {
+    mockLibraryDocuments.mockResolvedValue({ items: [], nextCursor: null });
+    await mount('/timeline');
+    await act(async () => undefined);
+    expect(mockLibraryDocuments).toHaveBeenCalledTimes(1);
+    expect(container.textContent).toContain('本页未取到当前版本');
+    expect(container.textContent).toContain('这不代表当前账号没有任何文档版本');
+    expect(container.textContent).toContain('当前已读到目录末尾');
+    expect(new URLSearchParams(router.state.location.search).get('documentVersionId')).toBeNull();
+  });
+
+  function matterEntry(documentVersionId: string, selectedVersionIsCurrent: boolean) {
+    return {
+      workItemId: 'WI-1', relationRole: 'PRIMARY', linkedAtWorkItemRevision: 1, currentWorkItemRevision: 1,
+      workItemChangedSinceLink: false, workItemStatus: 'ACTIVE',
+      document: { documentId: `DOC-${documentVersionId}`, documentVersionId, documentCode: 'C', businessRevision: 'R1', normalizedFamily: 'F' },
+      documentCurrentness: { familyId: 'F', currentDocumentVersionId: selectedVersionIsCurrent ? documentVersionId : null, currentGeneration: 1, selectedVersionIsCurrent },
+      sourceNavigation: { status: 'NOT_PARSED', sourceRefCount: 0, structuredContentPath: null },
+    };
+  }
+
+  it('blocks an orphan parse run pin without touching the document catalog or a matter', async () => {
+    await mount('/timeline?parseRunId=PR1');
+    await act(async () => undefined);
+    expect(mockLibraryDocuments).not.toHaveBeenCalled();
+    expect(mockMatter).not.toHaveBeenCalled();
+    expect(container.textContent).toContain('缺少所属文档版本');
+    expect(new URLSearchParams(router.state.location.search).get('documentVersionId')).toBeNull();
+  });
+
+  it('blocks orphan candidate pins without touching the document catalog or a matter', async () => {
+    await mount('/timeline?candidateRevision=2&runRef=run-2');
+    await act(async () => undefined);
+    expect(mockLibraryDocuments).not.toHaveBeenCalled();
+    expect(mockMatter).not.toHaveBeenCalled();
+    expect(container.textContent).toContain('未指定解析版本时');
+  });
+
+  it('resolves a matter entry from the matter registered sources instead of the global catalog', async () => {
+    mockMatter.mockResolvedValue({ catalog: { entries: [matterEntry('DV-OLD', false), matterEntry('DV-CUR', true)] } });
+    await mount('/timeline?matterId=M1');
+    await act(async () => undefined);
+    expect(mockMatter).toHaveBeenCalledTimes(1);
+    expect(mockLibraryDocuments).not.toHaveBeenCalled();
+    expect(new URLSearchParams(router.state.location.search).get('documentVersionId')).toBe('DV-CUR');
+  });
+
+  it('blocks a matter entry that registers no document version without falling back to the global catalog', async () => {
+    mockMatter.mockResolvedValue({ catalog: { entries: [] } });
+    await mount('/timeline?matterId=M1');
+    await act(async () => undefined);
+    expect(mockLibraryDocuments).not.toHaveBeenCalled();
+    expect(container.textContent).toContain('该事项没有已登记的文档版本');
+    expect(new URLSearchParams(router.state.location.search).get('documentVersionId')).toBeNull();
+  });
+
+  it('keeps a matter read failure blocked instead of swapping to another object', async () => {
+    mockMatter.mockRejectedValue(new Error('forbidden'));
+    await mount('/timeline?matterId=M1');
+    await act(async () => undefined);
+    expect(mockLibraryDocuments).not.toHaveBeenCalled();
+    expect(container.textContent).toContain('事项来源读取受阻');
+    expect(new URLSearchParams(router.state.location.search).get('documentVersionId')).toBeNull();
+  });
+
+  it('rejects an invalid empty matter id before any catalog or matter request', async () => {
+    await mount('/timeline?matterId=');
+    await act(async () => undefined);
+    expect(mockMatter).not.toHaveBeenCalled();
+    expect(mockLibraryDocuments).not.toHaveBeenCalled();
+    expect(container.textContent).toContain('事项标识为空、重复或不合法');
+  });
+
+  it('keeps the time window when resolving the global default document', async () => {
+    mockLibraryDocuments.mockResolvedValue({ items: [
+      { documentId: 'D1', versions: [ { documentVersionId: 'DV-CUR', selectedVersionIsCurrent: true } ] },
+    ], nextCursor: null });
+    await mount('/timeline?window=current-year');
+    await act(async () => undefined);
+    const params = new URLSearchParams(router.state.location.search);
+    expect(params.get('documentVersionId')).toBe('DV-CUR');
+    expect(params.get('window')).toBe('current-year');
+  });
+
   function saved(runRef = 'run-2') {
     return { familyId: 'F1', binding: {documentVersionId:'DV1', parseRunId:'PR1'}, candidate: {
       runRef, candidateRevision:2, savedAt:'2026-09-16T00:00:00Z', sourceAnchors:[],
@@ -333,6 +441,30 @@ describe('engineering timeline page gates', () => {
     expect(target).not.toBeNull();
     expect(JSON.stringify(target)).toContain('/timeline?');
     expect(new URLSearchParams(query.get('returnActivityQuery')!).get('returnLibraryQuery')).toBe('mode=document&search=777');
+  });
+
+  it('E1 REVIEW: orphan parse run never receives a catalog default DV', async () => {
+    mockLibraryDocuments.mockResolvedValue({items:[{versions:[{documentVersionId:'UNRELATED',selectedVersionIsCurrent:true}]}]});
+    mockActivity.mockImplementation(() => new Promise(() => undefined));
+    await mount('/timeline?parseRunId=PR-EXPLICIT');
+    expect(mockLibraryDocuments).not.toHaveBeenCalled();
+  });
+
+  it('E1 REVIEW: explicit matter never receives a global document default', async () => {
+    mockLibraryDocuments.mockResolvedValue({items:[]});
+    await mount('/timeline?matterId=M1');
+    expect(mockLibraryDocuments).not.toHaveBeenCalled();
+  });
+
+  it('E1 REVIEW: old-session catalog cannot navigate after session invalidation', async () => {
+    let complete!: (result: unknown) => void;
+    mockLibraryDocuments.mockImplementation(() => new Promise(resolve => { complete = resolve; }));
+    mockStatus.mockImplementation(() => new Promise(() => undefined));
+    await mount('/timeline');
+    const oldComplete = complete;
+    await act(async () => { mockSessionGen += 1; mockSessionCallbacks.forEach(callback => callback()); });
+    await act(async () => { oldComplete({items:[{versions:[{documentVersionId:'OLD-ACTOR-DV',selectedVersionIsCurrent:true}]}]}); });
+    expect(router.state.location.search).not.toContain('OLD-ACTOR-DV');
   });
 
 });
