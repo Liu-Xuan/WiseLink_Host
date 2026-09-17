@@ -1,18 +1,30 @@
 import type { EngineeringMatterWorkingRevisionReadModel, EngineeringMatterWorkingInputBinding, EngineeringMatterWorkingTextItem } from '@shared/matter-working.interface';
 import type { EngineeringMatterWorkspaceRead } from '@client/src/api/engineering-matter';
+import type { EngineeringMatterCatalogEntry } from '@shared/api.interface';
 import type { AssessmentClaimPremise, AssessmentEvidence, AssessmentReadingClaim } from '@shared/assessment-reading.interface';
 import type { MatterMaterialLink } from '@shared/matter-material.interface';
+import type { DocumentActivityRevision, DocumentActivityStatement } from '@shared/document-activity.interface';
 import type { SuiteGraphGroup, SuiteGraphMatter, SuiteGraphRelation } from './suite-graph-model';
 
 export type SuiteMatterGraphTarget =
+  | { kind: 'root' }
   | { kind: 'input'; binding: EngineeringMatterWorkingInputBinding; workRef: string }
   | { kind: 'question'; item: EngineeringMatterWorkingTextItem; workRef: string }
   | { kind: 'material'; material: MatterMaterialLink }
   | { kind: 'claim'; claim: AssessmentReadingClaim; workRef: string }
   | { kind: 'evidence'; evidence: AssessmentEvidence; workRef: string }
-  | { kind: 'document'; documentVersionId: string; familyId: string };
+  | { kind: 'document'; documentVersionId: string; familyId: string }
+  | { kind: 'catalog-document'; entry: EngineeringMatterCatalogEntry }
+  | { kind: 'statement'; statement: DocumentActivityStatement; documentVersionId: string; familyId: string; parseRunId: string; candidateRevision: number; runRef: string }
+  | { kind: 'matter-node'; matterId: string; title: string; status: string | null };
 
-export type SuiteRelationDetail = MatterMaterialLink | AssessmentClaimPremise | { kind: 'FULFILLED_BY'; material: Extract<MatterMaterialLink, {kind: 'EXPECTED'}>; index: number; target: {familyId: string; documentVersionId: string; scope: string} };
+export type SuiteGraphRelationDetailExtension =
+  | { kind: 'CATALOG'; entry: EngineeringMatterCatalogEntry }
+  | { kind: 'STATEMENT'; statement: DocumentActivityStatement; documentVersionId: string; parseRunId: string; candidateRevision: number; runRef: string }
+  | { kind: 'ATA_CLASSIFICATION'; value: string; status: string }
+  | { kind: 'DIRECTORY_MEMBERSHIP'; matterId: string };
+
+export type SuiteRelationDetail = MatterMaterialLink | AssessmentClaimPremise | SuiteGraphRelationDetailExtension | { kind: 'FULFILLED_BY'; material: Extract<MatterMaterialLink, {kind: 'EXPECTED'}>; index: number; target: {familyId: string; documentVersionId: string; scope: string} };
 
 export interface SuiteMatterGraphRead {
   graph: SuiteGraphMatter;
@@ -20,6 +32,8 @@ export interface SuiteMatterGraphRead {
   relationDetails: Map<string, SuiteRelationDetail>;
   notices: string[];
   workRef: string | null;
+  /** True when the view reads an exact historical saved work, not the current one. */
+  historical?: boolean;
   overviewStatus: 'CURRENT' | 'STALE' | 'NOT_AVAILABLE' | null;
   missingEvidenceRefs: string[];
 }
@@ -117,7 +131,138 @@ export function buildSuiteMatterGraph(read: EngineeringMatterWorkspaceRead, sele
   }
   return {
     graph: { id: root, title: matter.title, rootKind: 'matter', groups: [...groups.values()], relations },
-    targets, relationDetails, notices, workRef, overviewStatus: current?.state.problemWork?.overviewStatus ?? null,
+    targets, relationDetails, notices, workRef, historical, overviewStatus: current?.state.problemWork?.overviewStatus ?? null,
     missingEvidenceRefs: [...missing],
   };
+}
+
+/** Node id of the first target matching the predicate; null when absent. */
+function findNodeId(targets: ReadonlyMap<string, SuiteMatterGraphTarget>, match: (target: SuiteMatterGraphTarget) => boolean): string | null {
+  for (const [nodeId, target] of targets) if (match(target)) return nodeId;
+  return null;
+}
+
+/** Document node id for a catalog document version, across material/document/catalog kinds. */
+export function suiteGraphDocumentNodeId(targets: ReadonlyMap<string, SuiteMatterGraphTarget>, documentVersionId: string): string | null {
+  return findNodeId(targets, (target) =>
+    (target.kind === 'material' && target.material.documentVersionId === documentVersionId) ||
+    (target.kind === 'document' && target.documentVersionId === documentVersionId) ||
+    (target.kind === 'catalog-document' && target.entry.document.documentVersionId === documentVersionId));
+}
+
+/**
+ * Append registered catalog documents that have no node yet (no material link, not
+ * fulfilled, not a saved input). The catalog association itself is a registered
+ * relation; nothing is inferred from titles. Historical views never receive current
+ * registrations.
+ */
+export function appendSuiteGraphCatalogDocuments(read: SuiteMatterGraphRead, catalog: EngineeringMatterCatalogEntry[]): SuiteMatterGraphRead {
+  if (read.historical || catalog.length === 0) return read;
+  const targets = new Map(read.targets);
+  const relationDetails = new Map(read.relationDetails);
+  const relations = [...read.graph.relations];
+  const groups = read.graph.groups.map((group) => ({ ...group, items: [...group.items] }));
+  let added = 0;
+  for (const entry of catalog) {
+    const documentVersionId = entry.document.documentVersionId;
+    if (suiteGraphDocumentNodeId(targets, documentVersionId) !== null) continue;
+    const nodeId = identity('catalog', documentVersionId);
+    if (targets.has(nodeId)) continue;
+    targets.set(nodeId, { kind: 'catalog-document', entry });
+    let group = groups.find((item) => item.key === 'catalog');
+    if (!group) {
+      group = { key: 'catalog', title: '已登记资料', items: [] };
+      groups.push(group);
+    }
+    group.items.push({
+      id: nodeId,
+      title: entry.document.documentCode,
+      subtitle: `${entry.document.businessRevision} · ${entry.relationRole === 'PRIMARY' ? '主要资料' : '关联资料'}`,
+      kind: 'catalog-document',
+    });
+    const relationId = identity('catalog-link', documentVersionId);
+    relations.push({
+      id: relationId,
+      source: read.graph.id,
+      target: nodeId,
+      type: 'CATALOG',
+      label: entry.relationRole === 'PRIMARY' ? '主要资料' : '关联资料',
+    });
+    relationDetails.set(relationId, { kind: 'CATALOG', entry });
+    added += 1;
+  }
+  if (added === 0) return read;
+  return { ...read, graph: { ...read.graph, groups, relations }, targets, relationDetails };
+}
+
+export interface SuiteGraphActivityCandidate {
+  candidate: DocumentActivityRevision;
+  familyId: string;
+}
+
+/** Statement node id for a saved source statement; null when the statement is not in the graph. */
+export function suiteGraphStatementNodeId(targets: ReadonlyMap<string, SuiteMatterGraphTarget>, documentVersionId: string, statementId: string): string | null {
+  return findNodeId(targets, (target) =>
+    target.kind === 'statement' && target.documentVersionId === documentVersionId && target.statement.statementId === statementId);
+}
+
+/**
+ * Append saved source-declared statements of catalog documents. Each statement keeps
+ * its exact saved identity (document version, parse run, candidate revision, run ref);
+ * edges only connect a document node already in the graph to its own saved statements.
+ */
+export function appendSuiteGraphActivityStatements(read: SuiteMatterGraphRead, activities: ReadonlyMap<string, SuiteGraphActivityCandidate>): SuiteMatterGraphRead {
+  if (read.historical || activities.size === 0) return read;
+  const targets = new Map(read.targets);
+  const relationDetails = new Map(read.relationDetails);
+  const relations = [...read.graph.relations];
+  const groups = read.graph.groups.map((group) => ({ ...group, items: [...group.items] }));
+  const notices = read.notices;
+  let added = 0;
+  let detached = 0;
+  for (const [documentVersionId, activity] of activities) {
+    const parentId = suiteGraphDocumentNodeId(targets, documentVersionId);
+    if (parentId === null) {
+      detached += activity.candidate.statements.length;
+      continue;
+    }
+    for (const statement of activity.candidate.statements) {
+      const nodeId = identity('statement', documentVersionId, statement.statementId);
+      if (targets.has(nodeId)) continue;
+      targets.set(nodeId, {
+        kind: 'statement',
+        statement,
+        documentVersionId,
+        familyId: activity.familyId,
+        parseRunId: activity.candidate.sourceBinding.original.parseRunId,
+        candidateRevision: activity.candidate.candidateRevision,
+        runRef: activity.candidate.runRef,
+      });
+      let group = groups.find((item) => item.key === 'statements');
+      if (!group) {
+        group = { key: 'statements', title: '时间声明', items: [] };
+        groups.push(group);
+      }
+      group.items.push({
+        id: nodeId,
+        title: statement.label,
+        subtitle: statement.time?.raw ?? '时间未提取',
+        kind: 'statement',
+      });
+      const relationId = identity('declares', documentVersionId, statement.statementId);
+      relations.push({ id: relationId, source: parentId, target: nodeId, type: 'DECLARES', label: '资料声明' });
+      relationDetails.set(relationId, {
+        kind: 'STATEMENT',
+        statement,
+        documentVersionId,
+        parseRunId: activity.candidate.sourceBinding.original.parseRunId,
+        candidateRevision: activity.candidate.candidateRevision,
+        runRef: activity.candidate.runRef,
+      });
+      added += 1;
+    }
+  }
+  if (added === 0 && detached === 0) return read;
+  const nextNotices = detached > 0 ? [...notices, `${detached} 条已保存声明所属资料未入图，未挂靠到其他节点。`] : notices;
+  return { ...read, graph: { ...read.graph, groups, relations }, targets, relationDetails, notices: nextNotices };
 }

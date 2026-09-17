@@ -2,6 +2,7 @@ import type { SuiteMatterGraphRead, SuiteMatterGraphTarget } from './suite-matte
 
 function isDocumentTarget(target: SuiteMatterGraphTarget): boolean {
   return target.kind === 'material' || target.kind === 'document' || target.kind === 'input' ||
+    target.kind === 'catalog-document' || target.kind === 'statement' ||
     (target.kind === 'evidence' && (target.evidence.kind === 'DOCUMENT_PASSAGE' || target.evidence.kind === 'ENGINEER_ATTACHMENT'));
 }
 
