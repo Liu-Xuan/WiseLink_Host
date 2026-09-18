@@ -1,0 +1,188 @@
+/**
+ * Design Tokens - WiseLink Design System
+ *
+ * 从静态演示页面提取的核心设计语言
+ * 适用于 WikiPage 及其他需要专业视觉效果的页面
+ */
+
+:root {
+  /* 核心色彩系统 - 来自静态页面 */
+  --navy: #0F2744;
+  --navy2: #163458;
+  --blue: #1E5FA8;
+  --blue2: #EAF2FB;
+  --cyan: #00AFA0;
+  --cyan2: #E5F8F5;
+  --gold: #E8A838;
+  --gold2: #FFF5DF;
+
+  /* 语义化颜色 - 航空维修领域 */
+  --color-primary: var(--blue);
+  --color-knowledge: var(--cyan);
+  --color-warning: var(--gold);
+  --color-evidence: var(--navy);
+
+  /* 背景和表面 */
+  --bg: #F4F7F8;
+  --panel: #FFFFFF;
+  --panel-secondary: #FCFDFD;
+  --panel-hover: #F8FAFB;
+
+  /* 文字颜色 */
+  --ink: #0F2744;
+  --ink-secondary: #627283;
+  --ink-tertiary: #8B99A7;
+  --ink-inverse: #FFFFFF;
+  --ink-soft: #C6D2E0;
+
+  /* 边框 */
+  --line: #DCE4E8;
+  --line-strong: #B8C5CF;
+  --line-active: var(--blue);
+
+  /* 阴影系统 */
+  --shadow-sm: 0 4px 12px rgba(15, 39, 68, 0.055);
+  --shadow-md: 0 7px 20px rgba(15, 39, 68, 0.065);
+  --shadow-lg: 0 12px 34px rgba(15, 39, 68, 0.10);
+  --shadow-hover: 0 7px 18px rgba(30, 95, 168, 0.12);
+
+  /* 圆角系统 */
+  --radius-sm: 7px;
+  --radius-md: 11px;
+  --radius-lg: 14px;
+  --radius-xl: 17px;
+  --radius-pill: 999px;
+
+  /* 间距系统 */
+  --space-xs: 8px;
+  --space-sm: 12px;
+  --space-md: 16px;
+  --space-lg: 20px;
+  --space-xl: 24px;
+  --space-2xl: 32px;
+
+  /* 过渡动画 */
+  --transition-fast: 0.15s ease;
+  --transition-base: 0.18s ease;
+  --transition-slow: 0.24s ease;
+
+  /* 字体系统 */
+  --font-system: -apple-system, BlinkMacSystemFont, "HarmonyOS Sans SC", "PingFang SC",
+                 "Helvetica Neue", Helvetica, Arial, "Hiragino Sans GB", "Microsoft YaHei",
+                 sans-serif;
+  --font-mono: "SF Mono", Monaco, "Cascadia Code", "Roboto Mono", Consolas,
+               "Courier New", monospace;
+}
+
+/* 暗色模式 */
+html[data-theme="dark"],
+[data-theme="dark"] {
+  /* 核心色彩 - 暗色变体 */
+  --navy: #071B29;
+  --navy2: #0D2535;
+  --blue: #69B4FF;
+  --blue2: #0D2842;
+  --cyan: #45DBC8;
+  --cyan2: #0A2D29;
+  --gold: #FFB84D;
+  --gold2: #2D2410;
+
+  /* 背景和表面 */
+  --bg: #071219;
+  --panel: #0D1E27;
+  --panel-secondary: #0F2330;
+  --panel-hover: #12293A;
+
+  /* 文字颜色 */
+  --ink: #E8F1F4;
+  --ink-secondary: #A8BCC9;
+  --ink-tertiary: #6B8090;
+  --ink-inverse: #0F2744;
+  --ink-soft: #8B9FAB;
+
+  /* 边框 */
+  --line: #1A3342;
+  --line-strong: #2A4556;
+  --line-active: var(--blue);
+
+  /* 阴影系统 - 暗色更强 */
+  --shadow-sm: 0 4px 12px rgba(0, 0, 0, 0.24);
+  --shadow-md: 0 7px 20px rgba(0, 0, 0, 0.30);
+  --shadow-lg: 0 18px 48px rgba(0, 0, 0, 0.34);
+  --shadow-hover: 0 7px 18px rgba(105, 180, 255, 0.18);
+}
+
+/* 背景纹理（可选） */
+.with-grid-texture {
+  background-image:
+    linear-gradient(rgba(30, 95, 168, 0.018) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(30, 95, 168, 0.018) 1px, transparent 1px);
+  background-size: 32px 32px;
+}
+
+[data-theme="dark"] .with-grid-texture {
+  background-image:
+    linear-gradient(rgba(105, 180, 255, 0.028) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(105, 180, 255, 0.028) 1px, transparent 1px);
+}
+
+/* 渐变背景预设 */
+.gradient-navy {
+  background: linear-gradient(125deg, var(--navy), var(--navy2));
+}
+
+.gradient-blue {
+  background: linear-gradient(135deg, #f0f9ff 0%, #e0f2fe 100%);
+}
+
+[data-theme="dark"] .gradient-blue {
+  background: linear-gradient(135deg, var(--navy) 0%, var(--navy2) 100%);
+}
+
+/* 实用类 - 常用组合 */
+.card {
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-md);
+}
+
+.card:hover {
+  border-color: var(--line-active);
+  box-shadow: var(--shadow-hover);
+  transition: var(--transition-base);
+}
+
+.pill {
+  display: inline-flex;
+  align-items: center;
+  padding: 5px 9px;
+  border-radius: var(--radius-pill);
+  font-size: 9px;
+  font-weight: 800;
+  text-transform: uppercase;
+  letter-spacing: 0.02em;
+}
+
+.pill-blue {
+  background: var(--blue2);
+  color: var(--blue);
+}
+
+.pill-cyan {
+  background: var(--cyan2);
+  color: #057B72;
+}
+
+[data-theme="dark"] .pill-cyan {
+  color: var(--cyan);
+}
+
+.pill-gold {
+  background: var(--gold2);
+  color: #986200;
+}
+
+[data-theme="dark"] .pill-gold {
+  color: var(--gold);
+}

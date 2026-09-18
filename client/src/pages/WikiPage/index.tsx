@@ -1,52 +1,19 @@
 /**
  * WikiPage - 事项 Wiki 页面
  *
- * 基于 Suite 1.1 设计的主次布局
- * 主区：连贯正文
- * 侧边栏：目录、继续关注、关键依据
+ * 基于静态演示页面的设计语言
+ * 主区：连贯正文，突出核心摘要，详细分析可展开
+ * 侧边栏：目录、继续关注、关键依据（均可折叠）
  */
 
 import React, { useState, useEffect, useMemo } from 'react';
 import { WikiArticle } from './WikiArticle';
 import { WikiSidebar } from './WikiSidebar';
+import type { WikiMatter, WikiPageProps } from './types';
+import '../../styles/design-tokens.css';
 import './wiki.css';
 
-export interface WikiMatter {
-  id: string;
-  title: string;
-  code: string;
-  ata: string;
-  fleet: string;
-  overview: string;
-  revision: string;
-  summary: string;
-
-  body: Array<{
-    id: string;
-    title: string;
-    paragraphs: string[];
-    sources: string[];
-    sourceRefs: string[];
-  }>;
-
-  open: string[];  // 继续关注项
-  evidenceDocIds: string[];  // 关键依据文档ID
-  primaryDocId?: string;  // 主要来源文档
-
-  workHistory: Array<{
-    version: string;
-    date: string;
-    summary: string;
-  }>;
-}
-
-interface WikiPageProps {
-  matterId: string;
-  tab?: string;
-  onNavigateToDoc?: (docId: string) => void;
-  onNavigateToTimeline?: (matterId: string) => void;
-  onNavigateToGraph?: (matterId: string) => void;
-}
+export type { WikiMatter } from './types';
 
 export function WikiPage({
   matterId,
@@ -54,6 +21,7 @@ export function WikiPage({
   onNavigateToDoc,
   onNavigateToTimeline,
   onNavigateToGraph,
+  onNavigateToMatter,
 }: WikiPageProps) {
   const [matter, setMatter] = useState<WikiMatter | null>(null);
   const [loading, setLoading] = useState(true);
@@ -147,6 +115,7 @@ export function WikiPage({
         onNavigateToDoc={onNavigateToDoc}
         onNavigateToTimeline={onNavigateToTimeline}
         onNavigateToGraph={onNavigateToGraph}
+        onNavigateToMatter={onNavigateToMatter}
       />
     </div>
   );
@@ -241,6 +210,25 @@ function getMockMatter(matterId: string): WikiMatter {
         version: 'v1',
         date: '2024-01-10',
         summary: '建立问题档案；定义分析范围。',
+      },
+    ],
+
+    // 关联事项（借鉴 LLM Wiki 的交叉引用）
+    relatedMatters: [
+      {
+        id: 'WL-M015',
+        title: '液压系统老化趋势分析',
+        relationship: 'related',
+      },
+      {
+        id: 'WL-M042',
+        title: '作动筒密封件改进项目',
+        relationship: 'depends',
+      },
+      {
+        id: 'WL-M008',
+        title: '起落架收放异常（旧版分析）',
+        relationship: 'supersedes',
       },
     ],
   };
