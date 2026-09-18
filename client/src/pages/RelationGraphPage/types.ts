@@ -62,6 +62,7 @@ export interface GraphEdge {
   animated?: boolean;
   label?: string;
   type?: 'reference' | 'dependency' | 'relation';
+  style?: React.CSSProperties;
 }
 
 export interface GraphData {

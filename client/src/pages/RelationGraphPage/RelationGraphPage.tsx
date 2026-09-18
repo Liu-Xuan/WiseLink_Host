@@ -1,12 +1,14 @@
 // RelationGraphPage - Main orchestration component
 import React, { useState } from 'react';
 import { GraphView } from './components/GraphView';
+import { GraphPathTrail } from './components/GraphPathTrail';
 import { PerspectiveSwitcher } from './components/PerspectiveSwitcher';
 import { TimelinePanel } from './components/TimelinePanel';
 import { KnowledgePanel } from './components/KnowledgePanel';
 import { GraphErrorBoundary } from './components/GraphErrorBoundary';
 import { GraphLoadingSkeleton } from './components/GraphLoadingSkeleton';
 import { useGraphData } from './hooks/useGraphData';
+import { useGraphPath } from './hooks/useGraphPath';
 import type { PerspectiveType } from './types';
 import type { RelationGraphNodeData } from './relation-graph-data';
 import type { CanonicalLibraryIndexReadResponse } from '@shared/api.interface';
@@ -33,6 +35,14 @@ export function RelationGraphPage({
   // Extract workItemId from URL path: /app/:workItemId/graph
   const workItemId = window.location.pathname.split('/')[2] || 'app_17bzc551rsg';
 
+  const effectiveSelectedNodeId = highlightedNodeId || selectedNodeId;
+
+  // Calculate path from MatterHub to selected node
+  const path = useGraphPath(
+    effectiveSelectedNodeId,
+    data || { nodes: [], edges: [] }
+  );
+
   const handleNodeClick = (nodeId: string) => {
     setSelectedNodeId(nodeId);
     if (onNodeSelect && data) {
@@ -58,7 +68,10 @@ export function RelationGraphPage({
     setSelectedNodeId(artifactRef);
   };
 
-  const effectiveSelectedNodeId = highlightedNodeId || selectedNodeId;
+  const handlePathNodeClick = (nodeId: string) => {
+    // Navigate to a node in the path
+    setSelectedNodeId(nodeId);
+  };
 
   if (error) {
     return (
@@ -96,6 +109,10 @@ export function RelationGraphPage({
                 selectedNodeId={effectiveSelectedNodeId}
                 perspective={perspective}
                 forceLayoutEnabled={true}
+              />
+              <GraphPathTrail
+                path={path}
+                onNodeClick={handlePathNodeClick}
               />
             </GraphErrorBoundary>
           ) : null}

@@ -151,7 +151,7 @@ export function WikiPage({
               {matter.open.map((item, index) => (
                 <p key={index} className="bullet">{item}</p>
               ))}
-              <button className="btn" onClick={() => onNavigateToTimeline?.()}>
+              <button className="btn" onClick={() => onNavigateToTimeline?.(matter.id)}>
                 <svg className="icon" viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="1.5">
                   <circle cx="10" cy="10" r="7" />
                   <path d="M10 6v4l3 2" />
@@ -181,7 +181,7 @@ export function WikiPage({
                   <span>{docId}</span>
                 </button>
               ))}
-              <button className="btn" onClick={() => onNavigateToGraph?.()}>
+              <button className="btn" onClick={() => onNavigateToGraph?.(matter.id)}>
                 <svg className="icon" viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="1.5">
                   <circle cx="10" cy="5" r="2" />
                   <circle cx="5" cy="15" r="2" />

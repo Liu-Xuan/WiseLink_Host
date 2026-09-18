@@ -1,6 +1,6 @@
 // useNodeHighlight Hook - Phase 3.1: Focus Mode node dimming/highlighting
 import { useEffect } from 'react';
-import { useReactFlow } from '@xyflow/react';
+import { useReactFlow } from 'reactflow';
 import type { GraphEdge } from '../types';
 
 interface UseNodeHighlightOptions {

@@ -1,7 +1,8 @@
 import React, { useEffect, useRef, useState } from 'react';
-// @ts-ignore - archived legacy Cytoscape playground, intentionally untyped
+// @ts-expect-error - archived legacy Cytoscape playground, intentionally untyped
 import cytoscape from 'cytoscape';
-// @ts-ignore - archived legacy Cytoscape playground, intentionally untyped
+// eslint-disable-next-line @typescript-eslint/ban-ts-comment
+// @ts-expect-error - archived legacy Cytoscape playground, intentionally untyped
 import popper from 'cytoscape-popper';
 import './cytoscape-validation.css';
 

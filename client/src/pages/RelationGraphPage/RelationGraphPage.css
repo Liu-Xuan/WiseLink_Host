@@ -812,3 +812,97 @@
 .knowledge-content::-webkit-scrollbar-thumb:hover {
   background: #475569;
 }
+
+/* Graph Path Trail - Phase 3.2 */
+.graph-path-trail {
+  position: absolute;
+  bottom: 1rem;
+  left: 50%;
+  transform: translateX(-50%);
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  background: rgba(30, 41, 59, 0.95);
+  backdrop-filter: blur(8px);
+  border: 1px solid #334155;
+  border-radius: 8px;
+  padding: 0.75rem 1.25rem;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+  z-index: 10;
+  max-width: 80%;
+  animation: path-trail-slide-up 0.2s ease-out;
+}
+
+@keyframes path-trail-slide-up {
+  from {
+    opacity: 0;
+    transform: translateX(-50%) translateY(10px);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(-50%) translateY(0);
+  }
+}
+
+.path-label {
+  font-size: 0.8125rem;
+  font-weight: 600;
+  color: #94A3B8;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  flex-shrink: 0;
+}
+
+.path-nodes {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  overflow-x: auto;
+  scrollbar-width: thin;
+  scrollbar-color: #334155 transparent;
+}
+
+.path-nodes::-webkit-scrollbar {
+  height: 4px;
+}
+
+.path-nodes::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.path-nodes::-webkit-scrollbar-thumb {
+  background: #334155;
+  border-radius: 2px;
+}
+
+.path-node {
+  background: transparent;
+  border: none;
+  color: #F8FAFC;
+  font-size: 0.875rem;
+  font-weight: 500;
+  padding: 0.25rem 0.5rem;
+  border-radius: 4px;
+  cursor: pointer;
+  transition: all 0.15s ease;
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+
+.path-node:hover {
+  background: #38BDF8;
+  color: #0B0E14;
+  transform: translateY(-1px);
+}
+
+.path-node:active {
+  transform: translateY(0);
+}
+
+.path-arrow {
+  color: #64748B;
+  font-size: 0.875rem;
+  flex-shrink: 0;
+  user-select: none;
+}
+
