@@ -1,0 +1,27 @@
+/**
+ * WiseLink Suite 1.1 样式系统
+ *
+ * 来源: /Users/liuxuan/Downloads/WiseLink_Frontend_Suite_20260917/
+ * 日期: 2026-09-18
+ *
+ * 这是 Suite 1.1 的完整样式系统，提供统一的视觉语言。
+ * 所有样式都在 .wl-studio 命名空间下，不会污染现有样式。
+ */
+
+/* 导入 Suite 核心样式 */
+@import './index.css';   /* 915 行 - 完整设计系统 */
+@import './suite.css';   /* 22 行 - 本版修订 */
+
+/*
+ * 使用说明:
+ * 1. 在组件根元素添加 className="wl-studio"
+ * 2. 使用 data-theme="light|dark" 控制主题
+ * 3. 使用 data-effects="default|ultra|compatible" 控制效果
+ *
+ * 示例:
+ * <div className="wl-studio" data-theme="light" data-effects="default">
+ *   <Shell>
+ *     <LibraryPage />
+ *   </Shell>
+ * </div>
+ */

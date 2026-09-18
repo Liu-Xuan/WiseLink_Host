@@ -24,6 +24,10 @@ import KnowledgeLookupPage from './pages/KnowledgeLookupPage/KnowledgeLookupPage
 import GraphRelationPreviewPage from './pages/GraphRelationPreviewPage/GraphRelationPreviewPage';
 import EngineeringChronologyPreviewPage from './pages/EngineeringChronologyPreviewPage/EngineeringChronologyPreviewPage';
 
+// Suite 1.1 Pages
+import ReaderPageAdapter from './adapters/ReaderPageAdapter';
+import VersionComparisonPageAdapter from './adapters/VersionComparisonPageAdapter';
+
 const LibraryIndexRedirect = () => {
   const location = useLocation();
 
@@ -71,6 +75,9 @@ const RoutesComponent = () => {
           path="work-items/:workItemId/documents"
           element={<DocumentParsingPage />}
         />
+        {/* Suite 1.1 Routes */}
+        <Route path="reader/:documentId" element={<ReaderPageAdapter />} />
+        <Route path="version-comparison/:documentId" element={<VersionComparisonPageAdapter />} />
         <Route path="*" element={<NotFound />} />
       </Route>
       <Route path="client/oauth/callback" element={<OAuthCallbackPage />} />

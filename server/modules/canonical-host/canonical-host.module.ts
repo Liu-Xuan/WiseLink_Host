@@ -66,6 +66,8 @@ import { DocumentActivityRuntimeService } from './document-activity-runtime.serv
 import { DocumentReadingRuntimeService } from './document-reading-runtime.service';
 import { DocumentReadingRunRepository } from './document-reading-run.repository';
 import { DocumentReadingController } from './document-reading.controller';
+import { DocumentReadingListController } from './document-reading-list.controller';
+import { DocumentReadingListService } from './document-reading-list.service';
 import { DocumentTranslationAttemptRepository } from '../action-attempt/document-translation-attempt.repository';
 import { EngineeringSearchProjectionWriter } from './engineering-search-projection';
 import { CanonicalHostReviewActionController } from './canonical-host-review-action.controller';
@@ -457,6 +459,7 @@ export class CanonicalHostModule {
         DocumentTranslationReadingController,
         DocumentActivityReadingController,
         DocumentReadingController,
+        DocumentReadingListController,
         DialogueController,
         EngineeringIssueSearchController,
         CanonicalHostController,
@@ -544,6 +547,7 @@ export class CanonicalHostModule {
         DocumentActivityRuntimeService,
         DocumentReadingRunRepository,
         DocumentReadingRuntimeService,
+        DocumentReadingListService,
         DocumentSourceSearchService,
         DocumentTranslationRuntimeService,
         DocumentTranslationAttemptRepository,
