@@ -388,11 +388,13 @@
 .react-flow__node {
   background: transparent;
   border: none;
+  transition: opacity 0.3s ease;
 }
 
 .react-flow__edge-path {
   stroke: #334155;
   stroke-width: 2px;
+  transition: opacity 0.3s ease;
 }
 
 .react-flow__edge.selected .react-flow__edge-path {

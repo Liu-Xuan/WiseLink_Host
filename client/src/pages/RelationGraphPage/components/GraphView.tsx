@@ -17,6 +17,7 @@ import { ClusterNode } from './ClusterNode';
 import { MatterHubNode } from './MatterHubNode';
 import { MoreNode } from './MoreNode';
 import { useForceLayout } from '../hooks/useForceLayout';
+import { useNodeHighlight } from '../hooks/useNodeHighlight';
 import type { GraphData, PerspectiveType } from '../types';
 
 const nodeTypes: NodeTypes = {
@@ -46,6 +47,13 @@ function GraphViewInner({ graphData, onNodeClick, selectedNodeId, perspective, f
     chargeStrength: -300,
     linkDistance: 150,
     collisionRadius: 80
+  });
+
+  // Apply Focus Mode: highlight selected node and neighbors, dim others
+  useNodeHighlight({
+    selectedNodeId,
+    dimOpacity: 0.27,
+    edgeDimOpacity: 0.15
   });
 
   // Update nodes and edges when graphData changes

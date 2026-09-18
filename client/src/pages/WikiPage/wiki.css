@@ -1,215 +1,133 @@
 /**
  * WikiPage 样式
- * 基于静态演示页面的设计语言重构
+ * 匹配 WiseLink_Frontend_Suite_20260917 的两列布局
  * 使用 design-tokens.css 的设计系统
  */
 
-/* 单列内容页布局 - 匹配静态演示页面 */
+/* 两列布局：主文 + 侧边栏 */
 .wiki-layout {
-  padding: 16px 20px 40px;
-  max-width: 1400px;
-  margin: 0 auto;
-  min-height: 100vh;
-
-  /* 添加微妙的网格背景纹理 */
-  background-image:
-    linear-gradient(rgba(30, 95, 168, 0.018) 1px, transparent 1px),
-    linear-gradient(90deg, rgba(30, 95, 168, 0.018) 1px, transparent 1px);
-  background-size: 32px 32px;
-  background-color: var(--bg);
-}
-
-/* 页面英雄区 - 匹配静态演示页面 */
-.page-hero {
-  border-radius: 17px;
-  background: linear-gradient(125deg, var(--navy), var(--navy2));
-  color: #fff;
-  padding: 20px 24px;
-  margin-bottom: 20px;
-  box-shadow: var(--shadow-md);
-  display: flex;
-  justify-content: space-between;
-  align-items: flex-start;
-  gap: 24px;
-}
-
-.page-hero h1 {
-  margin: 0;
-  font-size: 24px;
-  color: #fff;
-}
-
-.page-hero p {
-  margin: 7px 0 0;
-  color: #C6D2E0;
-  font-size: 12px;
-  line-height: 1.7;
-  max-width: 900px;
-}
-
-.hero-tags {
-  display: flex;
-  gap: 7px;
-  flex-wrap: wrap;
-}
-
-.hero-tags .pill {
-  background: rgba(255, 255, 255, 0.1);
-  color: #D8E4EF;
-  border: 1px solid rgba(255, 255, 255, 0.16);
-}
-
-/* 章节标题 - 匹配静态演示页面 */
-.section-title {
-  display: flex;
-  justify-content: space-between;
-  align-items: flex-end;
-  margin: 20px 2px 10px;
-}
-
-.section-title h2 {
-  font-size: 17px;
-  margin: 0;
-  color: var(--ink);
-}
-
-.section-title p {
-  font-size: 10px;
-  color: var(--ink-secondary);
-  margin: 0;
-}
-
-/* 网格系统 - 匹配静态演示页面 */
-.grid {
   display: grid;
-  gap: 13px;
-  margin-bottom: 20px;
+  grid-template-columns: minmax(0, 1fr) 298px;
+  gap: 15px;
+  min-height: 0;
+  flex: 1;
 }
 
-.g1 {
-  grid-template-columns: 1fr;
-}
-
-.g2 {
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-}
-
-.g3 {
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-}
-
-.g4 {
-  grid-template-columns: repeat(4, minmax(0, 1fr));
-}
-
-/* 卡片 - 匹配静态演示页面 */
-.card {
+/* 主文面板 */
+.article-panel {
   background: var(--panel);
   border: 1px solid var(--line);
   border-radius: 14px;
-  padding: 15px;
-  box-shadow: 0 7px 20px rgba(15, 39, 68, 0.055);
-  transition: var(--transition-base);
-}
-
-.card:hover {
-  border-color: var(--line-active);
-  box-shadow: 0 7px 18px rgba(30, 95, 168, 0.12);
-}
-
-.card h3 {
-  font-size: 14px;
-  margin: 0 0 8px;
-  color: var(--ink);
-}
-
-.card p {
-  font-size: 10px;
-  color: var(--ink-secondary);
-  line-height: 1.65;
-  margin: 5px 0;
-}
-
-/* 统计数据行 */
-.stat {
+  box-shadow: var(--shadow-sm);
+  overflow: hidden;
   display: flex;
-  justify-content: space-between;
+  flex-direction: column;
+}
+
+/* 文章工具栏 */
+.article-tools {
+  display: flex;
   align-items: center;
-  padding: 9px 0;
-  border-bottom: 1px dashed var(--line);
+  gap: 8px;
+  padding: 14px 22px;
+  border-bottom: 1px solid var(--line);
 }
 
-.stat:last-child {
-  border: 0;
+.article-tools .push {
+  margin-left: auto;
 }
 
-.stat span {
-  font-size: 10px;
+/* 工程文章样式 */
+.engineering-article {
+  max-width: 1000px;
+  margin: 0 auto;
+  padding: 36px 54px 50px;
+  overflow: auto;
+  scrollbar-width: thin;
+}
+
+.article-kicker {
+  font-size: 11px;
   color: var(--ink-secondary);
+  margin-bottom: 11px;
 }
 
-.stat strong {
-  font-size: 22px;
-  font-weight: 850;
-  font-variant-numeric: tabular-nums;
-}
-/* 删除旧的 article-panel 和 sidebar 样式 */
-
-/* 正文内容卡片 */
-.content-card {
-  background: var(--panel);
-  border: 1px solid var(--line);
-  border-radius: 14px;
-  padding: 15px;
-  box-shadow: 0 7px 20px rgba(15, 39, 68, 0.055);
-}
-
-.content-card h3 {
-  font-size: 14px;
-  margin: 0 0 8px;
+.engineering-article > h1 {
+  font-size: 30px;
+  line-height: 1.5;
+  margin-bottom: 15px;
+  letter-spacing: -0.75px;
   color: var(--ink);
 }
 
-.content-card p {
-  font-size: 10px;
+.article-lead {
+  font-size: 18px !important;
+  color: var(--ink) !important;
+  line-height: 1.95 !important;
+  margin: 18px 0 !important;
+}
+
+.engineering-article > section {
+  margin-top: 32px;
+  scroll-margin: 20px;
+}
+
+.engineering-article > section > h2 {
+  font-size: 19px;
+  margin-bottom: 12px;
   color: var(--ink);
-  line-height: 1.65;
-  margin: 0 0 var(--space-sm) 0;
 }
 
-.content-card ul,
-.content-card ol {
-  margin: 0 0 var(--space-sm) 0;
-  padding-left: var(--space-lg);
+.engineering-article > section > p {
+  font-size: 15px;
+  color: var(--ink-secondary);
+  line-height: 2.05;
+  margin: 10px 0;
 }
 
-.content-card li {
-  font-size: 10px;
-  line-height: 1.65;
-  margin-bottom: var(--space-xs);
+.engineering-article > section > ul,
+.engineering-article > section > ol {
+  margin: 10px 0;
+  padding-left: 24px;
+}
+
+.engineering-article > section > li {
+  font-size: 15px;
+  color: var(--ink-secondary);
+  line-height: 2.05;
+  margin-bottom: 8px;
+}
+
+/* 文章页脚 */
+.article-footer {
+  margin-top: 28px;
+  padding-top: 22px;
+  border-top: 1px solid var(--line);
+  display: flex;
+  gap: 9px;
+  flex-wrap: wrap;
 }
 
 /* 来源链接 */
 .source-links {
   display: flex;
   align-items: center;
-  gap: var(--space-xs);
-  margin-top: var(--space-md);
-  padding-top: var(--space-md);
-  border-top: 1px solid var(--line);
+  gap: 8px;
+  margin-top: 16px;
+  flex-wrap: wrap;
 }
 
 .source-links small {
-  font-size: 0.75rem;
+  font-size: 11px;
   color: var(--ink-secondary);
 }
 
 .source-link {
-  padding: 0.25rem 0.625rem;
+  padding: 5px 10px;
   border: 1px solid var(--line);
   background: var(--panel);
-  border-radius: var(--radius-sm);
-  font-size: 9px;
+  border-radius: 6px;
+  font-size: 11px;
   color: var(--blue);
   cursor: pointer;
   transition: var(--transition-base);
@@ -221,104 +139,164 @@
   border-color: var(--blue);
 }
 
-/* 关联事项样式 */
-.related-card {
+/* 侧边栏 */
+.wiki-aside {
+  display: flex;
+  flex-direction: column;
+  gap: 13px;
+  overflow: auto;
+  min-height: 0;
+  scrollbar-width: thin;
+}
+
+.wiki-aside > .panel {
+  flex-shrink: 0;
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  box-shadow: var(--shadow-sm);
+  overflow: hidden;
+}
+
+/* 面板头部 */
+.panel-head {
+  padding: 17px 18px 13px;
+  border-bottom: 1px solid var(--line);
   display: flex;
   align-items: center;
-  gap: var(--space-xs);
-  padding: 10px 12px;
-  border: 1px solid var(--line);
-  border-radius: var(--radius-md);
-  background: var(--panel);
-  cursor: pointer;
-  transition: var(--transition-base);
+  gap: 10px;
+}
+
+.panel-head h3 {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--ink);
+  margin: 0;
+}
+
+.panel-head .push {
+  margin-left: auto;
+}
+
+/* 大纲链接 */
+.outline-links {
+  padding: 9px 12px;
+  display: grid;
+}
+
+.outline-links button {
+  padding: 9px 8px;
   text-align: left;
+  border: 0;
+  background: none;
+  color: var(--ink-secondary);
+  font-size: 12px;
+  cursor: pointer;
+  border-radius: 6px;
+  transition: var(--transition-fast);
 }
 
-.related-card:hover {
-  background: var(--cyan2);
-  border-color: var(--cyan);
-  box-shadow: 0 4px 12px rgba(0, 175, 160, 0.08);
-}
-
-.relationship-badge {
-  padding: 5px 9px;
-  border-radius: var(--radius-pill);
-  font-size: 9px;
-  font-weight: 800;
-  flex-shrink: 0;
-  text-transform: uppercase;
-  letter-spacing: 0.02em;
-}
-
-.relationship-related .relationship-badge {
+.outline-links button:hover {
   background: var(--blue2);
   color: var(--blue);
 }
 
-.relationship-depends .relationship-badge {
-  background: var(--gold2);
-  color: #986200;
+/* 侧边栏正文 */
+.aside-body {
+  padding: 17px 19px;
 }
 
-.relationship-blocks .relationship-badge {
-  background: #FEE2E2;
-  color: #991B1B;
+.aside-body > p {
+  font-size: 13px;
+  line-height: 1.95;
+  margin: 8px 0 14px;
+  color: var(--ink-secondary);
 }
 
-.relationship-supersedes .relationship-badge {
-  background: #E0E7FF;
-  color: #3730A3;
-}
-
-.related-title {
-  font-size: 10px;
+.aside-body > h2 {
+  margin: 12px 0;
+  font-size: 14px;
   color: var(--ink);
-  line-height: 1.4;
 }
 
-/* 继续关注卡片 */
-.open-items-card p {
-  font-size: 10px;
-  line-height: 1.6;
-  color: var(--ink);
-  margin: 0 0 var(--space-sm) 0;
-  padding-left: var(--space-md);
+.aside-body > .btn {
+  margin: 6px 7px 2px 0;
+}
+
+/* 历史条目 */
+.history-entry {
+  margin: 0 0 14px;
+  padding-bottom: 14px;
+  border-bottom: 1px solid var(--line);
+}
+
+.history-entry:last-child {
+  margin: 0;
+  border: 0;
+  padding: 0;
+}
+
+.history-entry small {
+  font-size: 11px;
+  color: var(--ink-secondary);
+  display: block;
+  margin-bottom: 6px;
+}
+
+.history-entry p {
+  font-size: 12px;
+  line-height: 1.9;
+  color: var(--ink-secondary);
+  margin: 0;
+}
+
+/* 项目符号 */
+.bullet {
+  padding-left: 13px;
   position: relative;
 }
 
-.open-items-card p::before {
-  content: '□';
+.bullet:before {
+  content: '•';
   position: absolute;
   left: 0;
   color: var(--ink-secondary);
 }
 
 /* 响应式 */
-@media (max-width: 768px) {
+@media (max-width: 1450px) {
   .wiki-layout {
-    padding: 1rem;
+    grid-template-columns: minmax(0, 1fr) 290px;
   }
 
-  .page-hero {
-    flex-direction: column;
-    padding: 1.5rem;
-  }
-
-  .g3, .g4 {
-    grid-template-columns: 1fr;
-  }
-
-  .g2 {
-    grid-template-columns: 1fr;
+  .engineering-article {
+    padding: 29px 34px;
   }
 }
 
-/* 删除旧的 related-matters 和 icon 样式 */
+@media (max-width: 1250px) {
+  .wiki-layout {
+    grid-template-columns: minmax(0, 1fr) 255px;
+  }
 
-/* 暗色模式网格背景 */
-html[data-theme="dark"] .wiki-layout {
-  background-image:
-    linear-gradient(rgba(105, 180, 255, 0.026) 1px, transparent 1px),
-    linear-gradient(90deg, rgba(105, 180, 255, 0.026) 1px, transparent 1px);
+  .engineering-article {
+    padding: 26px;
+  }
+}
+
+@media (max-width: 900px) {
+  .wiki-layout {
+    grid-template-columns: 1fr;
+  }
+
+  .wiki-aside {
+    margin-top: 12px;
+    display: grid;
+    grid-template-columns: 1fr;
+    overflow: visible;
+  }
+
+  .engineering-article {
+    padding: 22px 19px;
+  }
 }

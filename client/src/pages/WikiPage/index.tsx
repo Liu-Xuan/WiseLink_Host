@@ -1,8 +1,9 @@
 /**
  * WikiPage - 事项 Wiki 页面
  *
- * 基于静态演示页面的设计语言
- * 单列内容页布局，使用 .page-hero、.section-title、.grid、.card
+ * 匹配 WiseLink_Frontend_Suite_20260917 的两列布局
+ * 左侧：主文区（.article-panel + .engineering-article）
+ * 右侧：侧边栏（.wiki-aside）- 阅读目录、继续关注、关键依据、认识的历史
  */
 
 import React, { useState, useEffect } from 'react';
@@ -63,27 +64,32 @@ export function WikiPage({
 
   return (
     <div className="wiki-layout">
-      {/* 页面英雄区 */}
-      <div className="page-hero">
-        <div>
-          <h1>{matter.title}</h1>
-          <p>{matter.summary}</p>
+      {/* 左侧：主文面板 */}
+      <section className="panel article-panel scroll-region">
+        {/* 工具栏 */}
+        <div className="article-tools">
+          <span className="badge">{matter.fleet} · ATA {matter.ata}</span>
+          <span className="badge">{matter.overview}</span>
+          <div className="push" />
+          <button className="btn" onClick={() => onNavigateToDoc?.(matter.primaryDocId)}>
+            <svg className="icon" viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="1.5">
+              <path d="M4 4h8l4 4v8a1 1 0 01-1 1H4a1 1 0 01-1-1V5a1 1 0 011-1z" />
+            </svg>
+            主要来源
+          </button>
+          <button className="btn">复制</button>
         </div>
-        <div className="hero-tags">
-          <span className="pill">{matter.fleet} · ATA {matter.ata}</span>
-          <span className="pill">{matter.overview}</span>
-          <span className="pill">{matter.code} · {matter.revision}</span>
-        </div>
-      </div>
 
-      {/* 正文章节 */}
-      {matter.body.map((section) => (
-        <React.Fragment key={section.id}>
-          <div className="section-title">
-            <h2>{section.title}</h2>
-          </div>
-          <div className="grid g1">
-            <div className="content-card" id={`section-${section.id}`}>
+        {/* 工程文章主体 */}
+        <article className="engineering-article">
+          <div className="article-kicker">{matter.code} · {matter.revision}</div>
+          <h1>{matter.title}</h1>
+          <p className="article-lead">{matter.summary}</p>
+
+          {/* 正文章节 */}
+          {matter.body.map((section) => (
+            <section key={section.id} id={`issue-${section.id}`}>
+              <h2>{section.title}</h2>
               {section.paragraphs.map((para, index) => (
                 <p key={index}>{para}</p>
               ))}
@@ -106,74 +112,105 @@ export function WikiPage({
                   ))}
                 </div>
               )}
-            </div>
-          </div>
-        </React.Fragment>
-      ))}
+            </section>
+          ))}
+        </article>
+      </section>
 
-      {/* 继续关注 */}
-      {matter.open && matter.open.length > 0 && (
-        <>
-          <div className="section-title">
-            <h2>继续关注</h2>
-            <p>{matter.open.length} 项待确认</p>
+      {/* 右侧：侧边栏 */}
+      <aside className="wiki-aside">
+        {/* 阅读目录 */}
+        <section className="panel">
+          <div className="panel-head">
+            <h3>阅读目录</h3>
           </div>
-          <div className="grid g1">
-            <div className="card open-items-card">
-              {matter.open.map((item, index) => (
-                <p key={index}>{item}</p>
-              ))}
-            </div>
-          </div>
-        </>
-      )}
-
-      {/* 关联事项 */}
-      {matter.relatedMatters && matter.relatedMatters.length > 0 && (
-        <>
-          <div className="section-title">
-            <h2>关联事项</h2>
-            <p>{matter.relatedMatters.length} 个相关事项</p>
-          </div>
-          <div className="grid g3">
-            {matter.relatedMatters.map((related) => (
-              <div
-                key={related.id}
-                className={`related-card relationship-${related.relationship}`}
-                onClick={() => onNavigateToMatter?.(related.id)}
+          <div className="outline-links">
+            {matter.body.map((section) => (
+              <button
+                key={section.id}
+                onClick={() => {
+                  document.getElementById(`issue-${section.id}`)?.scrollIntoView({
+                    block: 'start',
+                    behavior: 'smooth'
+                  });
+                }}
               >
-                <span className="relationship-badge">
-                  {related.relationship === 'related' && 'Related'}
-                  {related.relationship === 'depends' && 'Depends'}
-                  {related.relationship === 'blocks' && 'Blocks'}
-                  {related.relationship === 'supersedes' && 'Supersedes'}
-                </span>
-                <span className="related-title">{related.title}</span>
-              </div>
+                {section.title}
+              </button>
             ))}
           </div>
-        </>
-      )}
+        </section>
 
-      {/* 认识历史 */}
-      {matter.workHistory && matter.workHistory.length > 0 && (
-        <>
-          <div className="section-title">
-            <h2>认识历史</h2>
-            <p>{matter.workHistory.length} 个版本</p>
-          </div>
-          <div className="grid g1">
-            <div className="card">
-              {matter.workHistory.map((entry, index) => (
-                <div key={index} className="stat">
-                  <span>{entry.version} · {entry.date}</span>
-                  <span style={{ fontSize: '10px', color: 'var(--ink)' }}>{entry.summary}</span>
+        {/* 继续关注 */}
+        {matter.open && matter.open.length > 0 && (
+          <section className="panel">
+            <div className="panel-head">
+              <h3>继续关注</h3>
+            </div>
+            <div className="aside-body">
+              {matter.open.map((item, index) => (
+                <p key={index} className="bullet">{item}</p>
+              ))}
+              <button className="btn" onClick={() => onNavigateToTimeline?.()}>
+                <svg className="icon" viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="1.5">
+                  <circle cx="10" cy="10" r="7" />
+                  <path d="M10 6v4l3 2" />
+                </svg>
+                变化与时间轴
+              </button>
+            </div>
+          </section>
+        )}
+
+        {/* 关键依据 */}
+        {matter.evidenceDocIds && matter.evidenceDocIds.length > 0 && (
+          <section className="panel">
+            <div className="panel-head">
+              <h3>关键依据</h3>
+            </div>
+            <div className="aside-body">
+              {matter.evidenceDocIds.map((docId) => (
+                <button
+                  key={docId}
+                  className="related-file"
+                  onClick={() => onNavigateToDoc?.(docId)}
+                >
+                  <svg className="icon" viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="1.5">
+                    <path d="M4 4h8l4 4v8a1 1 0 01-1 1H4a1 1 0 01-1-1V5a1 1 0 011-1z" />
+                  </svg>
+                  <span>{docId}</span>
+                </button>
+              ))}
+              <button className="btn" onClick={() => onNavigateToGraph?.()}>
+                <svg className="icon" viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="1.5">
+                  <circle cx="10" cy="5" r="2" />
+                  <circle cx="5" cy="15" r="2" />
+                  <circle cx="15" cy="15" r="2" />
+                  <path d="M10 7v3M7 13l3-3M13 13l-3-3" />
+                </svg>
+                查看实际关系
+              </button>
+            </div>
+          </section>
+        )}
+
+        {/* 认识的历史 */}
+        {matter.workHistory && matter.workHistory.length > 0 && (
+          <section className="panel">
+            <div className="panel-head">
+              <h3>认识的历史</h3>
+            </div>
+            <div className="aside-body">
+              {matter.workHistory.map((entry) => (
+                <div key={entry.version} className="history-entry">
+                  <small>{entry.date} · {entry.version}</small>
+                  <p>{entry.summary}</p>
                 </div>
               ))}
             </div>
-          </div>
-        </>
-      )}
+          </section>
+        )}
+      </aside>
     </div>
   );
 }
