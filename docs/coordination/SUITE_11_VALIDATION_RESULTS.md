@@ -102,7 +102,7 @@ npm run dev
 ```
 
 ### Step 2: Open Validation Playground
-Navigate to: `http://localhost:5173/dev-preview/cytoscape-validation`
+Navigate to: `http://localhost:8080/app/app_17bzc551rsg/dev-preview/cytoscape-validation`
 
 ### Step 3: Verify Basic Rendering
 - **Expected**: 5 HTML cards visible on dark canvas
@@ -271,6 +271,6 @@ interface CameraState {
 
 ---
 
-**Status**: Ready for manual testing  
-**Blocker**: Development server startup (npm package update in progress)  
-**Next Action**: Run manual tests once dev server is available
+**Status**: Development server running - Ready for manual validation  
+**Server URL**: http://localhost:8080/app/app_17bzc551rsg/dev-preview/cytoscape-validation  
+**Next Action**: Perform manual validation tests (see Manual Testing Instructions above)

@@ -29,8 +29,8 @@
   --panel-hover: #F8FAFB;
 
   /* 文字颜色 */
-  --ink: #0F2744;
-  --ink-secondary: #627283;
+  --ink: #17243A;
+  --ink-secondary: #68768A;
   --ink-tertiary: #8B99A7;
   --ink-inverse: #FFFFFF;
   --ink-soft: #C6D2E0;
@@ -41,7 +41,7 @@
   --line-active: var(--blue);
 
   /* 阴影系统 */
-  --shadow-sm: 0 4px 12px rgba(15, 39, 68, 0.055);
+  --shadow-sm: 0 7px 20px rgba(15, 39, 68, 0.055);
   --shadow-md: 0 7px 20px rgba(15, 39, 68, 0.065);
   --shadow-lg: 0 12px 34px rgba(15, 39, 68, 0.10);
   --shadow-hover: 0 7px 18px rgba(30, 95, 168, 0.12);
@@ -62,8 +62,8 @@
   --space-2xl: 32px;
 
   /* 过渡动画 */
-  --transition-fast: 0.15s ease;
-  --transition-base: 0.18s ease;
+  --transition-fast: 0.18s ease;
+  --transition-base: 0.22s ease;
   --transition-slow: 0.24s ease;
 
   /* 字体系统 */

@@ -11,9 +11,10 @@ import type { WikiMatter } from './types';
 interface WikiArticleProps {
   matter: WikiMatter;
   onNavigateToDoc?: (docId: string) => void;
+  activeSection?: string | null;
 }
 
-export function WikiArticle({ matter, onNavigateToDoc }: WikiArticleProps) {
+export function WikiArticle({ matter, onNavigateToDoc, activeSection }: WikiArticleProps) {
   const [expandedSections, setExpandedSections] = React.useState<Set<string>>(new Set());
 
   const toggleSection = (sectionId: string) => {
@@ -59,10 +60,17 @@ export function WikiArticle({ matter, onNavigateToDoc }: WikiArticleProps) {
       {matter.body.map((section) => {
         const isExpanded = expandedSections.has(section.id);
         return (
-          <section key={section.id} id={`issue-${section.id}`} className="content-section">
+          <section
+            key={section.id}
+            id={`issue-${section.id}`}
+            className={`content-section ${activeSection === section.id ? 'active' : ''}`}
+          >
             <div className="section-header" onClick={() => toggleSection(section.id)}>
               <h2>{section.title}</h2>
-              <button className="expand-toggle" aria-expanded={isExpanded}>
+              <button
+                className={`expand-toggle ${isExpanded ? 'expanded' : ''}`}
+                aria-expanded={isExpanded}
+              >
                 <Icon name={isExpanded ? 'chevron-up' : 'chevron-down'} />
               </button>
             </div>

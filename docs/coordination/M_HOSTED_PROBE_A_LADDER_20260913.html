@@ -1,0 +1,186 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>方案A 持久化与输出阶梯实测 · 妙搭托管 OpenClaw（2026-09-13）</title>
+<style>
+  :root{
+    --bg:#f5f6f8; --card:#ffffff; --ink:#1f2733; --sub:#5b6675; --line:#d9dee6;
+    --blue:#2f6db5; --blue-soft:#e3edf8; --green:#1f8a4c; --green-soft:#e3f4ea;
+    --red:#c0392b; --red-soft:#fbe9e7; --amber:#b9770e; --amber-soft:#fdf3e0;
+    --gray:#8a94a3; --gray-soft:#eef1f5;
+  }
+  *{box-sizing:border-box;}
+  body{margin:0;background:var(--bg);color:var(--ink);
+    font-family:-apple-system,BlinkMacSystemFont,"PingFang SC","Microsoft YaHei",Segoe UI,sans-serif;
+    line-height:1.55;font-size:14px;}
+  .wrap{max-width:1000px;margin:0 auto;padding:28px 22px 48px;}
+  h1{font-size:21px;margin:0 0 6px;}
+  .meta{color:var(--sub);font-size:12.5px;margin-bottom:22px;}
+  h2{font-size:15.5px;margin:26px 0 12px;padding-left:9px;border-left:4px solid var(--blue);}
+  .card{background:var(--card);border:1px solid var(--line);border-radius:10px;padding:16px 18px;margin-bottom:14px;}
+  /* 分层链 */
+  .layer{display:flex;align-items:stretch;gap:12px;margin:0;}
+  .node{flex:1;border:1.5px solid var(--line);border-radius:9px;padding:11px 12px;background:var(--gray-soft);position:relative;}
+  .node .tag{font-size:11.5px;color:var(--sub);font-weight:600;letter-spacing:.3px;}
+  .node .nm{font-size:13.5px;font-weight:700;margin:3px 0 2px;}
+  .node .vl{font-size:12px;color:var(--sub);}
+  .node.ok{background:var(--green-soft);border-color:var(--green);}
+  .node.cap{background:var(--red-soft);border-color:var(--red);border-width:2px;}
+  .arrow{align-self:center;color:var(--gray);font-size:20px;font-weight:700;flex:0 0 auto;}
+  .capline{margin-top:10px;font-size:12px;color:var(--red);font-weight:600;}
+  .note{font-size:12px;color:var(--sub);margin-top:8px;}
+  /* 条形图 */
+  .row{display:grid;grid-template-columns:118px 1fr 118px;align-items:center;gap:10px;margin:9px 0;}
+  .row .lbl{font-size:12.5px;font-weight:600;text-align:right;}
+  .track{position:relative;height:34px;background:#f0f2f6;border-radius:6px;overflow:hidden;}
+  .seg{position:absolute;top:0;bottom:0;border-radius:6px 0 0 6px;}
+  .seg.req{background:repeating-linear-gradient(45deg,#cfe0f3,#cfe0f3 6px,#dde9f7 6px,#dde9f7 12px);border:1px solid #a9c6e6;}
+  .seg.act{background:var(--blue);top:13px;height:21px;}
+  .seg.act.stop{background:var(--red);}
+  .seg.act.invalid{background:var(--gray);}
+  .hardline{position:absolute;top:-3px;bottom:-3px;width:0;border-left:2px dashed var(--red);z-index:5;}
+  .hardline span{position:absolute;top:-2px;left:5px;font-size:10.5px;color:var(--red);white-space:nowrap;font-weight:700;}
+  .val{font-size:12px;color:var(--sub);}
+  .val b{color:var(--ink);}
+  .legend{display:flex;gap:18px;flex-wrap:wrap;font-size:11.5px;color:var(--sub);margin-top:10px;}
+  .sw{display:inline-block;width:13px;height:13px;border-radius:3px;vertical-align:-2px;margin-right:5px;}
+  /* 结论卡 */
+  .grid3{display:grid;grid-template-columns:repeat(3,1fr);gap:12px;}
+  .kc{border:1px solid var(--line);border-radius:9px;padding:12px 13px;background:var(--card);}
+  .kc .h{font-weight:700;font-size:13px;margin-bottom:6px;}
+  .kc .b{font-size:12.3px;color:#33404f;}
+  .pill{display:inline-block;font-size:10.5px;font-weight:700;padding:1px 7px;border-radius:10px;margin-left:6px;vertical-align:1px;}
+  .p-green{background:var(--green-soft);color:var(--green);}
+  .p-red{background:var(--red-soft);color:var(--red);}
+  .p-amber{background:var(--amber-soft);color:var(--amber);}
+  table{border-collapse:collapse;width:100%;font-size:12.3px;margin-top:4px;}
+  th,td{border:1px solid var(--line);padding:6px 8px;text-align:left;}
+  th{background:#f3f5f9;}
+  td.num{text-align:right;font-variant-numeric:tabular-nums;}
+  .muted{color:var(--sub);}
+  code{background:#eef1f5;padding:1px 5px;border-radius:4px;font-size:11.8px;}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>方案 A：自定义模型条目持久化 + 输出上限阶梯实测</h1>
+  <div class="meta">妙搭官方托管 OpenClaw · app_17c3zn24kv2 · profile wiselink-engineering · OpenClaw 2026.6.6 · 2026-09-13（UTC）· 独立诊断会话 / 构造数据 / 对业务零写入</div>
+
+  <h2>一、单次输出请求穿过的四层，以及 16000 硬顶的位置</h2>
+  <div class="card">
+    <div class="layer">
+      <div class="node">
+        <div class="tag">第 1 层 · 客户端请求</div>
+        <div class="nm">max_completion_tokens</div>
+        <div class="vl">分别申请 16001 / 32768 / 65536</div>
+      </div>
+      <div class="arrow">→</div>
+      <div class="node ok">
+        <div class="tag">第 2 层 · OpenClaw 本地条目</div>
+        <div class="nm">m3probe.maxTokens = 131072</div>
+        <div class="vl">已放大，<b>不再本地预夹</b>，大申请值原样上送</div>
+      </div>
+      <div class="arrow">→</div>
+      <div class="node cap">
+        <div class="tag">第 3 层 · 内网 sgw 网关 / 通道授权</div>
+        <div class="nm">innerapi.aiforce.cloud</div>
+        <div class="vl">单次输出在此被截，实际硬顶 ≈ <b>16000</b></div>
+      </div>
+      <div class="arrow">→</div>
+      <div class="node">
+        <div class="tag">第 4 层 · MiniMax 上游</div>
+        <div class="nm">minimax-m3</div>
+        <div class="vl">官方标称 completion 上限 524288，但本托管通道实际只给到 16000</div>
+      </div>
+    </div>
+    <div class="capline">▲ 关键：把第 2 层本地条目从 16000 放大到 131072 后，请求确实携带 32768/65536 到达上游，但真实输出仍恒定停在 16000 —— 证明瓶颈不在本地配置，而在第 3 层（sgw 及其上游授权），本地改 maxTokens 无法突破。</div>
+    <div class="note">对照：旧内置条目 <code>miaoda/minimax-m3 = 16000</code> 会在第 2 层就把申请夹到 16000；本次 m3probe 已越过第 2 层，仍被第 3 层截断，两层独立、本次区分清楚。</div>
+  </div>
+
+  <h2>二、四档阶梯实测：申请值 vs 实际输出（completion_tokens）</h2>
+  <div class="card">
+    <div class="row">
+      <div class="lbl">s16001 · m3probe</div>
+      <div class="track">
+        <div class="seg req" style="left:0;width:24.41%;"></div>
+        <div class="seg act" style="left:0;width:26.07%;"></div>
+        <div class="hardline" style="left:24.41%;"><span>16000 硬顶</span></div>
+      </div>
+      <div class="val">申请 <b>16001</b><br>实际 17087（可见≈16000 + 思考≈1087）</div>
+    </div>
+    <div class="row">
+      <div class="lbl">builtin · 内置</div>
+      <div class="track">
+        <div class="seg req" style="left:0;width:24.41%;"></div>
+        <div class="seg act invalid" style="left:0;width:1.82%;"></div>
+        <div class="hardline" style="left:24.41%;"></div>
+      </div>
+      <div class="val">申请 <b>16001</b><br>实际 1190（模型谎称完成·无效）</div>
+    </div>
+    <div class="row">
+      <div class="lbl">p32768 · m3probe</div>
+      <div class="track">
+        <div class="seg req" style="left:0;width:50%;"></div>
+        <div class="seg act stop" style="left:0;width:24.41%;"></div>
+        <div class="hardline" style="left:24.41%;"><span>16000 硬顶</span></div>
+      </div>
+      <div class="val">申请 <b>32768</b><br>实际 <b style="color:var(--red);">16000</b>（连续数到 5601/12000 被截）</div>
+    </div>
+    <div class="row">
+      <div class="lbl">p65536 · m3probe</div>
+      <div class="track">
+        <div class="seg req" style="left:0;width:100%;"></div>
+        <div class="seg act stop" style="left:0;width:24.41%;"></div>
+        <div class="hardline" style="left:24.41%;"><span>16000 硬顶</span></div>
+      </div>
+      <div class="val">申请 <b>65536</b><br>实际 <b style="color:var(--red);">16000</b>（连续数到 5589/24000 被截）</div>
+    </div>
+    <div class="legend">
+      <span><span class="sw" style="background:repeating-linear-gradient(45deg,#cfe0f3,#cfe0f3 4px,#dde9f7 4px,#dde9f7 8px);"></span>申请的 max_completion_tokens</span>
+      <span><span class="sw" style="background:var(--blue);"></span>实际输出（≈硬顶）</span>
+      <span><span class="sw" style="background:var(--red);"></span>精确停在 16000</span>
+      <span><span class="sw" style="background:var(--gray);"></span>无效样本（模型提前自停）</span>
+      <span>标尺：满格 = 65536 token</span>
+    </div>
+    <div class="note">两次真实逐字输出都在约 5600 个整数 / 26.8k 字符处、序列中途被截，finish_reason 被归一化为 stop（非 length），但远未到目标，属硬截断；与申请值无关，恒定 16000。</div>
+  </div>
+
+  <h2>三、原始数据</h2>
+  <div class="card">
+    <table>
+      <thead><tr><th>序号</th><th>模型条目（条目 maxTokens）</th><th class="num">申请</th><th class="num">实际 completion</th><th class="num">可见字符</th><th>连续输出到</th><th>HTTP / finish</th></tr></thead>
+      <tbody>
+        <tr><td>s16001</td><td>m3probe（131072）</td><td class="num">16001</td><td class="num">17087</td><td class="num">26275</td><td>~5490</td><td>200 / stop（中途截）</td></tr>
+        <tr><td>builtin16001</td><td>miaoda（16000）</td><td class="num">16001</td><td class="num">1190</td><td class="num">129</td><td>谎称完成</td><td>200 / stop（无效）</td></tr>
+        <tr><td>p32768</td><td>m3probe（131072）</td><td class="num">32768</td><td class="num"><b>16000</b></td><td class="num">26897</td><td>5601 / 目标12000</td><td>200 / stop（中途截）</td></tr>
+        <tr><td>p65536</td><td>m3probe（131072）</td><td class="num">65536</td><td class="num"><b>16000</b></td><td class="num">26837</td><td>5589 / 目标24000</td><td>200 / stop（中途截）</td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <h2>四、对三个目标的最终判定</h2>
+  <div class="grid3">
+    <div class="kc">
+      <div class="h">① 稳定 100 万上下文<span class="pill p-amber">部分可达</span></div>
+      <div class="b">独立条目声明 contextWindow=1000000 可持久、models list 识别 977k，428k/586k/681k 输入均 HTTP 200；但既有测试 382k 全对、893k 仅 2/6，<b>能接收 ≠ 可靠</b>，业务工作点建议 ≤约 30 万，真实窗口同样受上游约束。</div>
+    </div>
+    <div class="kc">
+      <div class="h">② 突破 16000 输出<span class="pill p-red">本地不可突破</span></div>
+      <div class="b">本地条目放大到 131072 后实际仍恒定停在 16000，硬顶在<b>内网 sgw 通道 / 上游授权</b>。唯一路径＝<b>方案 B</b>：向妙搭平台 / 网关管理员申请上调该模型 sgw 单次 max_output；或换更高配额通道。</div>
+    </div>
+    <div class="kc">
+      <div class="h">③ 配置持久化<span class="pill p-green">已解决（形态）</span></div>
+      <div class="b">用<b>独立 provider id 新增</b>（m3probe）可持久：写入后约 30 分钟、多次调用 hash 恒定、无 gateway 回写；同构的 DLI 已穿越两次真实合并仍在。就地改内置 <code>miaoda/*</code> 必被托管目录回写——这就是"改过又恢复"的根因。</div>
+    </div>
+  </div>
+
+  <div class="note" style="margin-top:14px;">
+    m3probe 当前保留但<b>未设为默认</b>（primary 仍为 miaoda/minimax-m3，对业务零影响）；回滚：
+    <code>openclaw config unset models.providers.m3probe</code> 及 defaults.models 下别名，或
+    <code>cp openclaw.json.before-probeA openclaw.json</code>。详见 M_HOSTED_CONFIG_FORENSICS_UI_20260913.md 第 9 节。
+  </div>
+</div>
+</body>
+</html>

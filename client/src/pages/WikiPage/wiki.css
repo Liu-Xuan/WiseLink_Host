@@ -4,165 +4,189 @@
  * 使用 design-tokens.css 的设计系统
  */
 
-/* 主次布局 */
+/* 单列内容页布局 - 匹配静态演示页面 */
 .wiki-layout {
-  display: grid;
-  grid-template-columns: 1fr 280px;
-  gap: 20px;
   padding: 16px 20px 40px;
   max-width: 1400px;
   margin: 0 auto;
-  background: var(--bg);
   min-height: 100vh;
+
+  /* 添加微妙的网格背景纹理 */
+  background-image:
+    linear-gradient(rgba(30, 95, 168, 0.018) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(30, 95, 168, 0.018) 1px, transparent 1px);
+  background-size: 32px 32px;
+  background-color: var(--bg);
 }
 
-/* 主正文区 */
-.article-panel {
-  background: var(--panel);
-  border: 1px solid var(--line);
-  border-radius: var(--radius-lg);
-  padding: var(--space-xl);
+/* 页面英雄区 - 匹配静态演示页面 */
+.page-hero {
+  border-radius: 17px;
+  background: linear-gradient(125deg, var(--navy), var(--navy2));
+  color: #fff;
+  padding: 20px 24px;
+  margin-bottom: 20px;
   box-shadow: var(--shadow-md);
-}
-
-.article-tools {
   display: flex;
-  align-items: center;
-  gap: var(--space-xs);
-  margin-bottom: var(--space-lg);
-  padding-bottom: var(--space-md);
-  border-bottom: 1px solid var(--line);
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 24px;
 }
 
-.article-tools .push {
-  flex: 1;
+.page-hero h1 {
+  margin: 0;
+  font-size: 24px;
+  color: #fff;
 }
 
-.article-panel h1 {
-  font-size: 2rem;
-  font-weight: 600;
-  margin: 0 0 var(--space-xs) 0;
+.page-hero p {
+  margin: 7px 0 0;
+  color: #C6D2E0;
+  font-size: 12px;
+  line-height: 1.7;
+  max-width: 900px;
+}
+
+.hero-tags {
+  display: flex;
+  gap: 7px;
+  flex-wrap: wrap;
+}
+
+.hero-tags .pill {
+  background: rgba(255, 255, 255, 0.1);
+  color: #D8E4EF;
+  border: 1px solid rgba(255, 255, 255, 0.16);
+}
+
+/* 章节标题 - 匹配静态演示页面 */
+.section-title {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-end;
+  margin: 20px 2px 10px;
+}
+
+.section-title h2 {
+  font-size: 17px;
+  margin: 0;
   color: var(--ink);
 }
 
-.article-panel .matter-code {
-  font-size: 0.875rem;
+.section-title p {
+  font-size: 10px;
   color: var(--ink-secondary);
-  margin-bottom: var(--space-lg);
-}
-
-/* 核心摘要 - 使用静态页面的渐变背景风格 */
-.article-panel .matter-summary-highlight {
-  padding: var(--space-lg) var(--space-xl);
-  background: linear-gradient(125deg, var(--navy), var(--navy2));
-  border-radius: var(--radius-xl);
-  margin-bottom: var(--space-2xl);
-  box-shadow: var(--shadow-lg);
-}
-
-.article-panel .matter-summary-highlight p {
   margin: 0;
-  font-size: 1.0625rem;
-  line-height: 1.7;
-  color: var(--ink-soft);
-  font-weight: 400;
 }
 
-/* 可折叠内容区 */
-.article-panel .content-section {
-  margin-bottom: var(--space-lg);
-  scroll-margin-top: 80px;
+/* 网格系统 - 匹配静态演示页面 */
+.grid {
+  display: grid;
+  gap: 13px;
+  margin-bottom: 20px;
+}
+
+.g1 {
+  grid-template-columns: 1fr;
+}
+
+.g2 {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.g3 {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+.g4 {
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+}
+
+/* 卡片 - 匹配静态演示页面 */
+.card {
+  background: var(--panel);
   border: 1px solid var(--line);
-  border-radius: var(--radius-md);
-  overflow: hidden;
+  border-radius: 14px;
+  padding: 15px;
+  box-shadow: 0 7px 20px rgba(15, 39, 68, 0.055);
   transition: var(--transition-base);
 }
 
-.article-panel .content-section:hover {
+.card:hover {
   border-color: var(--line-active);
-  box-shadow: var(--shadow-hover);
+  box-shadow: 0 7px 18px rgba(30, 95, 168, 0.12);
 }
 
-.article-panel .section-header {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  padding: var(--space-sm) var(--space-md);
-  background: var(--panel-secondary);
-  cursor: pointer;
-  transition: background var(--transition-fast);
-  user-select: none;
-}
-
-.article-panel .section-header:hover {
-  background: var(--panel-hover);
-}
-
-.article-panel .section-header h2 {
-  font-size: 1.125rem;
-  font-weight: 600;
-  margin: 0;
+.card h3 {
+  font-size: 14px;
+  margin: 0 0 8px;
   color: var(--ink);
 }
 
-.article-panel .expand-toggle {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  width: 24px;
-  height: 24px;
-  border: none;
-  background: transparent;
+.card p {
+  font-size: 10px;
   color: var(--ink-secondary);
-  cursor: pointer;
-  transition: transform var(--transition-base), color var(--transition-fast);
+  line-height: 1.65;
+  margin: 5px 0;
 }
 
-.article-panel .expand-toggle:hover {
+/* 统计数据行 */
+.stat {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 9px 0;
+  border-bottom: 1px dashed var(--line);
+}
+
+.stat:last-child {
+  border: 0;
+}
+
+.stat span {
+  font-size: 10px;
+  color: var(--ink-secondary);
+}
+
+.stat strong {
+  font-size: 22px;
+  font-weight: 850;
+  font-variant-numeric: tabular-nums;
+}
+/* 删除旧的 article-panel 和 sidebar 样式 */
+
+/* 正文内容卡片 */
+.content-card {
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  padding: 15px;
+  box-shadow: 0 7px 20px rgba(15, 39, 68, 0.055);
+}
+
+.content-card h3 {
+  font-size: 14px;
+  margin: 0 0 8px;
   color: var(--ink);
 }
 
-.article-panel .section-content {
-  padding: var(--space-md);
-  animation: slideDown 0.2s ease-out;
-}
-
-@keyframes slideDown {
-  from {
-    opacity: 0;
-    transform: translateY(-8px);
-  }
-  to {
-    opacity: 1;
-    transform: translateY(0);
-  }
-}
-
-.article-panel p {
-  font-size: 0.9375rem;
-  line-height: 1.8;
+.content-card p {
+  font-size: 10px;
   color: var(--ink);
-  margin: 0 0 var(--space-md) 0;
+  line-height: 1.65;
+  margin: 0 0 var(--space-sm) 0;
 }
 
-.article-panel ul,
-.article-panel ol {
-  margin: 0 0 var(--space-md) 0;
+.content-card ul,
+.content-card ol {
+  margin: 0 0 var(--space-sm) 0;
   padding-left: var(--space-lg);
 }
 
-.article-panel li {
-  font-size: 0.9375rem;
-  line-height: 1.7;
+.content-card li {
+  font-size: 10px;
+  line-height: 1.65;
   margin-bottom: var(--space-xs);
-}
-
-/* 重要段落突出 */
-.article-panel p:has(strong) {
-  background: var(--gold2);
-  padding: var(--space-sm) var(--space-md);
-  border-radius: var(--radius-sm);
-  border-left: 3px solid var(--gold);
 }
 
 /* 来源链接 */
@@ -170,7 +194,7 @@
   display: flex;
   align-items: center;
   gap: var(--space-xs);
-  margin-top: var(--space-lg);
+  margin-top: var(--space-md);
   padding-top: var(--space-md);
   border-top: 1px solid var(--line);
 }
@@ -185,7 +209,7 @@
   border: 1px solid var(--line);
   background: var(--panel);
   border-radius: var(--radius-sm);
-  font-size: 0.8125rem;
+  font-size: 9px;
   color: var(--blue);
   cursor: pointer;
   transition: var(--transition-base);
@@ -197,204 +221,8 @@
   border-color: var(--blue);
 }
 
-/* 侧边栏 */
-.wiki-sidebar {
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-lg);
-}
-
-.wiki-sidebar .panel {
-  background: var(--panel);
-  border: 1px solid var(--line);
-  border-radius: var(--radius-md);
-  box-shadow: var(--shadow-sm);
-}
-
-.wiki-sidebar .panel-head {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  padding: var(--space-sm) var(--space-md);
-  border-bottom: 1px solid var(--line);
-}
-
-.wiki-sidebar .collapsible-panel .panel-head {
-  cursor: pointer;
-  user-select: none;
-  transition: background var(--transition-fast);
-}
-
-.wiki-sidebar .collapsible-panel .panel-head:hover {
-  background: var(--panel-hover);
-}
-
-.wiki-sidebar .panel-head h3 {
-  font-size: 0.875rem;
-  font-weight: 600;
-  margin: 0;
-  color: var(--ink);
-}
-
-.wiki-sidebar .badge-count {
-  padding: 0.125rem 0.5rem;
-  background: var(--blue2);
-  color: var(--blue);
-  border-radius: var(--radius-pill);
-  font-size: 0.75rem;
-  font-weight: 600;
-  margin-left: auto;
-  margin-right: var(--space-xs);
-}
-
-.aside-body {
-  padding: var(--space-md);
-}
-
-/* 目录 */
-.outline-links {
-  display: flex;
-  flex-direction: column;
-  gap: 0.25rem;
-}
-
-.outline-links button {
-  display: block;
-  width: 100%;
-  padding: var(--space-xs) var(--space-sm);
-  border: none;
-  background: transparent;
-  border-radius: var(--radius-sm);
-  text-align: left;
-  font-size: 0.875rem;
-  color: var(--ink);
-  cursor: pointer;
-  transition: var(--transition-fast);
-}
-
-.outline-links button:hover {
-  background: var(--panel-hover);
-}
-
-.outline-links button.active {
-  background: var(--blue2);
-  color: var(--blue);
-  font-weight: 500;
-}
-
-/* 继续关注 */
-.aside-body p {
-  font-size: 0.875rem;
-  line-height: 1.6;
-  color: var(--ink);
-  margin: 0 0 var(--space-sm) 0;
-  padding-left: var(--space-md);
-  position: relative;
-}
-
-.aside-body p::before {
-  content: '□';
-  position: absolute;
-  left: 0;
-  color: var(--ink-secondary);
-}
-
-.aside-body .btn {
-  width: 100%;
-  justify-content: center;
-  margin-top: var(--space-sm);
-}
-
-/* 关键依据 */
-.evidence-list {
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-xs);
-  margin-bottom: var(--space-sm);
-}
-
-.evidence-link {
-  display: flex;
-  align-items: center;
-  gap: var(--space-xs);
-  padding: var(--space-xs);
-  border: 1px solid var(--line);
-  border-radius: var(--radius-sm);
-  background: var(--panel);
-  font-size: 0.8125rem;
-  color: var(--blue);
-  cursor: pointer;
-  transition: var(--transition-base);
-  text-decoration: none;
-}
-
-.evidence-link:hover {
-  background: var(--blue2);
-  border-color: var(--blue);
-}
-
-/* 认识历史 */
-.history-entry {
-  padding: var(--space-sm) 0;
-  border-bottom: 1px solid var(--line);
-}
-
-.history-entry:last-child {
-  border-bottom: none;
-}
-
-.history-entry small {
-  display: block;
-  font-size: 0.75rem;
-  color: var(--ink-secondary);
-  margin-bottom: 0.25rem;
-}
-
-.history-entry p {
-  font-size: 0.8125rem;
-  line-height: 1.5;
-  color: var(--ink);
-  margin: 0;
-}
-
-/* 响应式 */
-@media (max-width: 1024px) {
-  .wiki-layout {
-    grid-template-columns: 1fr;
-  }
-
-  .wiki-sidebar {
-    order: -1;
-  }
-}
-
-@media (max-width: 768px) {
-  .wiki-layout {
-    padding: 1rem;
-    gap: 1rem;
-  }
-
-  .article-panel {
-    padding: 1.5rem;
-  }
-
-  .article-panel h1 {
-    font-size: 1.5rem;
-  }
-
-  .article-panel h2 {
-    font-size: 1.25rem;
-  }
-}
-
 /* 关联事项样式 */
-.related-matters {
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-xs);
-}
-
-.related-link {
+.related-card {
   display: flex;
   align-items: center;
   gap: var(--space-xs);
@@ -407,7 +235,7 @@
   text-align: left;
 }
 
-.related-link:hover {
+.related-card:hover {
   background: var(--cyan2);
   border-color: var(--cyan);
   box-shadow: 0 4px 12px rgba(0, 175, 160, 0.08);
@@ -444,37 +272,53 @@
 }
 
 .related-title {
-  font-size: 0.8125rem;
+  font-size: 10px;
   color: var(--ink);
   line-height: 1.4;
 }
 
-/* 图标样式 */
-.icon {
-  display: inline-block;
-  width: 16px;
-  height: 16px;
-  flex-shrink: 0;
-}
-
-.icon-chevron-down::before {
-  content: '▼';
+/* 继续关注卡片 */
+.open-items-card p {
   font-size: 10px;
+  line-height: 1.6;
+  color: var(--ink);
+  margin: 0 0 var(--space-sm) 0;
+  padding-left: var(--space-md);
+  position: relative;
 }
 
-.icon-chevron-up::before {
-  content: '▲';
-  font-size: 10px;
+.open-items-card p::before {
+  content: '□';
+  position: absolute;
+  left: 0;
+  color: var(--ink-secondary);
 }
 
-.icon-file::before {
-  content: '📄';
+/* 响应式 */
+@media (max-width: 768px) {
+  .wiki-layout {
+    padding: 1rem;
+  }
+
+  .page-hero {
+    flex-direction: column;
+    padding: 1.5rem;
+  }
+
+  .g3, .g4 {
+    grid-template-columns: 1fr;
+  }
+
+  .g2 {
+    grid-template-columns: 1fr;
+  }
 }
 
-.icon-clock::before {
-  content: '⏱️';
-}
+/* 删除旧的 related-matters 和 icon 样式 */
 
-.icon-graph::before {
-  content: '🕸️';
+/* 暗色模式网格背景 */
+html[data-theme="dark"] .wiki-layout {
+  background-image:
+    linear-gradient(rgba(105, 180, 255, 0.026) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(105, 180, 255, 0.026) 1px, transparent 1px);
 }

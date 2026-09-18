@@ -2,13 +2,10 @@
  * WikiPage - 事项 Wiki 页面
  *
  * 基于静态演示页面的设计语言
- * 主区：连贯正文，突出核心摘要，详细分析可展开
- * 侧边栏：目录、继续关注、关键依据（均可折叠）
+ * 单列内容页布局，使用 .page-hero、.section-title、.grid、.card
  */
 
-import React, { useState, useEffect, useMemo } from 'react';
-import { WikiArticle } from './WikiArticle';
-import { WikiSidebar } from './WikiSidebar';
+import React, { useState, useEffect } from 'react';
 import type { WikiMatter, WikiPageProps } from './types';
 import '../../styles/design-tokens.css';
 import './wiki.css';
@@ -26,7 +23,6 @@ export function WikiPage({
   const [matter, setMatter] = useState<WikiMatter | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [activeSection, setActiveSection] = useState<string | null>(null);
 
   // 加载事项数据
   useEffect(() => {
@@ -46,40 +42,6 @@ export function WikiPage({
       setLoading(false);
     }
   }
-
-  // 生成目录
-  const toc = useMemo(() => {
-    if (!matter) return [];
-    return matter.body.map((section, index) => ({
-      id: section.id,
-      title: section.title,
-      level: 2,
-      anchor: `issue-${section.id}`,
-    }));
-  }, [matter]);
-
-  // 滚动监听，更新当前激活的章节
-  useEffect(() => {
-    if (!matter) return;
-
-    const handleScroll = () => {
-      const sections = matter.body.map(s => document.getElementById(`issue-${s.id}`));
-      const scrollTop = window.scrollY + 100;
-
-      for (let i = sections.length - 1; i >= 0; i--) {
-        const section = sections[i];
-        if (section && section.offsetTop <= scrollTop) {
-          setActiveSection(matter.body[i].id);
-          break;
-        }
-      }
-    };
-
-    window.addEventListener('scroll', handleScroll);
-    handleScroll(); // 初始检查
-
-    return () => window.removeEventListener('scroll', handleScroll);
-  }, [matter]);
 
   if (loading) {
     return (
@@ -101,22 +63,117 @@ export function WikiPage({
 
   return (
     <div className="wiki-layout">
-      {/* 主正文区 */}
-      <WikiArticle
-        matter={matter}
-        onNavigateToDoc={onNavigateToDoc}
-      />
+      {/* 页面英雄区 */}
+      <div className="page-hero">
+        <div>
+          <h1>{matter.title}</h1>
+          <p>{matter.summary}</p>
+        </div>
+        <div className="hero-tags">
+          <span className="pill">{matter.fleet} · ATA {matter.ata}</span>
+          <span className="pill">{matter.overview}</span>
+          <span className="pill">{matter.code} · {matter.revision}</span>
+        </div>
+      </div>
 
-      {/* 侧边栏 */}
-      <WikiSidebar
-        matter={matter}
-        toc={toc}
-        activeSection={activeSection}
-        onNavigateToDoc={onNavigateToDoc}
-        onNavigateToTimeline={onNavigateToTimeline}
-        onNavigateToGraph={onNavigateToGraph}
-        onNavigateToMatter={onNavigateToMatter}
-      />
+      {/* 正文章节 */}
+      {matter.body.map((section) => (
+        <React.Fragment key={section.id}>
+          <div className="section-title">
+            <h2>{section.title}</h2>
+          </div>
+          <div className="grid g1">
+            <div className="content-card" id={`section-${section.id}`}>
+              {section.paragraphs.map((para, index) => (
+                <p key={index}>{para}</p>
+              ))}
+
+              {/* 来源链接 */}
+              {section.sourceRefs.length > 0 && (
+                <div className="source-links">
+                  <small>依据：</small>
+                  {section.sourceRefs.map((ref, index) => (
+                    <button
+                      key={index}
+                      className="source-link"
+                      onClick={() => {
+                        const docId = section.sources[index];
+                        onNavigateToDoc?.(docId);
+                      }}
+                    >
+                      {ref}
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
+          </div>
+        </React.Fragment>
+      ))}
+
+      {/* 继续关注 */}
+      {matter.open && matter.open.length > 0 && (
+        <>
+          <div className="section-title">
+            <h2>继续关注</h2>
+            <p>{matter.open.length} 项待确认</p>
+          </div>
+          <div className="grid g1">
+            <div className="card open-items-card">
+              {matter.open.map((item, index) => (
+                <p key={index}>{item}</p>
+              ))}
+            </div>
+          </div>
+        </>
+      )}
+
+      {/* 关联事项 */}
+      {matter.relatedMatters && matter.relatedMatters.length > 0 && (
+        <>
+          <div className="section-title">
+            <h2>关联事项</h2>
+            <p>{matter.relatedMatters.length} 个相关事项</p>
+          </div>
+          <div className="grid g3">
+            {matter.relatedMatters.map((related) => (
+              <div
+                key={related.id}
+                className={`related-card relationship-${related.relationship}`}
+                onClick={() => onNavigateToMatter?.(related.id)}
+              >
+                <span className="relationship-badge">
+                  {related.relationship === 'related' && 'Related'}
+                  {related.relationship === 'depends' && 'Depends'}
+                  {related.relationship === 'blocks' && 'Blocks'}
+                  {related.relationship === 'supersedes' && 'Supersedes'}
+                </span>
+                <span className="related-title">{related.title}</span>
+              </div>
+            ))}
+          </div>
+        </>
+      )}
+
+      {/* 认识历史 */}
+      {matter.workHistory && matter.workHistory.length > 0 && (
+        <>
+          <div className="section-title">
+            <h2>认识历史</h2>
+            <p>{matter.workHistory.length} 个版本</p>
+          </div>
+          <div className="grid g1">
+            <div className="card">
+              {matter.workHistory.map((entry, index) => (
+                <div key={index} className="stat">
+                  <span>{entry.version} · {entry.date}</span>
+                  <span style={{ fontSize: '10px', color: 'var(--ink)' }}>{entry.summary}</span>
+                </div>
+              ))}
+            </div>
+          </div>
+        </>
+      )}
     </div>
   );
 }

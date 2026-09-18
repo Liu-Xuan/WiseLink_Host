@@ -8,20 +8,57 @@ import { GraphErrorBoundary } from './components/GraphErrorBoundary';
 import { GraphLoadingSkeleton } from './components/GraphLoadingSkeleton';
 import { useGraphData } from './hooks/useGraphData';
 import type { PerspectiveType } from './types';
+import type { RelationGraphNodeData } from './relation-graph-data';
+import type { CanonicalLibraryIndexReadResponse } from '@shared/api.interface';
 import './RelationGraphPage.css';
 
-export function RelationGraphPage() {
+export interface RelationGraphPageProps {
+  /** Optional injected projection for testing/samples */
+  injectedProjection?: CanonicalLibraryIndexReadResponse;
+  /** Optional callback when a node is selected */
+  onNodeSelect?: (node: RelationGraphNodeData) => void;
+  /** Optional highlighted node ID for external control */
+  highlightedNodeId?: string;
+}
+
+export function RelationGraphPage({
+  injectedProjection,
+  onNodeSelect,
+  highlightedNodeId,
+}: RelationGraphPageProps = {}) {
   const [perspective, setPerspective] = useState<PerspectiveType>('document');
   const [selectedNodeId, setSelectedNodeId] = useState<string | null>(null);
   const { data, isLoading, error } = useGraphData(perspective);
 
+  // Extract workItemId from URL path: /app/:workItemId/graph
+  const workItemId = window.location.pathname.split('/')[2] || 'app_17bzc551rsg';
+
   const handleNodeClick = (nodeId: string) => {
     setSelectedNodeId(nodeId);
+    if (onNodeSelect && data) {
+      const node = data.nodes.find(n => n.id === nodeId);
+      if (node) {
+        const nodeData = node.data;
+        const title = 'title' in nodeData ? nodeData.title :
+                     'heading' in nodeData ? nodeData.heading : '';
+        onNodeSelect({
+          id: node.id,
+          title,
+          label: title,
+          detail: '',
+          type: 'document',
+        });
+      }
+    }
   };
 
-  const handleTimelineEventClick = (documentId: string) => {
-    setSelectedNodeId(documentId);
+  const handleTimelineEventClick = (artifactRef: string) => {
+    // Timeline events reference artifacts; find matching node by artifactRef
+    // For now, directly use artifactRef as nodeId for selection
+    setSelectedNodeId(artifactRef);
   };
+
+  const effectiveSelectedNodeId = highlightedNodeId || selectedNodeId;
 
   if (error) {
     return (
@@ -43,7 +80,8 @@ export function RelationGraphPage() {
 
       <div className="graph-container">
         <TimelinePanel
-          selectedNodeId={selectedNodeId}
+          workItemId={workItemId}
+          selectedNodeId={effectiveSelectedNodeId}
           onEventClick={handleTimelineEventClick}
         />
 
@@ -55,7 +93,7 @@ export function RelationGraphPage() {
               <GraphView
                 graphData={data}
                 onNodeClick={handleNodeClick}
-                selectedNodeId={selectedNodeId}
+                selectedNodeId={effectiveSelectedNodeId}
                 perspective={perspective}
                 forceLayoutEnabled={true}
               />
@@ -63,7 +101,7 @@ export function RelationGraphPage() {
           ) : null}
         </div>
 
-        <KnowledgePanel selectedNodeId={selectedNodeId} />
+        <KnowledgePanel selectedNodeId={effectiveSelectedNodeId} />
       </div>
     </div>
   );

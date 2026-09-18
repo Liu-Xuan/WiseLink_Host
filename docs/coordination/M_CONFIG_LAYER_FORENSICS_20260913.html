@@ -1,0 +1,189 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>OpenClaw 分层配置取证机制图 · 2026-09-13（示意）</title>
+<style>
+  :root{
+    --bg:#f5f6f7; --card:#ffffff; --ink:#1f2937; --sub:#6b7280; --line:#d6d9dd;
+    --teal:#0f766e; --teal-bg:#ecfdf5; --amber:#b45309; --amber-bg:#fffbeb;
+    --red:#b91c1c; --red-bg:#fef2f2; --green:#15803d; --green-bg:#f0fdf4;
+    --mono:ui-monospace,SFMono-Regular,Menlo,Consolas,"Liberation Mono",monospace;
+    --sans:-apple-system,BlinkMacSystemFont,"Segoe UI","PingFang SC","Hiragino Sans GB","Microsoft YaHei",sans-serif;
+  }
+  *{box-sizing:border-box;}
+  body{margin:0;background:var(--bg);color:var(--ink);font-family:var(--sans);
+       font-size:15px;line-height:1.55;padding:28px 18px 40px;}
+  .wrap{max-width:1060px;margin:0 auto;}
+  h1{font-size:21px;margin:0 0 4px;}
+  .meta{color:var(--sub);font-size:13px;margin-bottom:18px;}
+  .verdict{background:#111827;color:#f9fafb;border-radius:10px;padding:14px 16px;font-size:14.5px;margin-bottom:22px;}
+  .verdict b{color:#5eead4;}
+  section{background:var(--card);border:1px solid var(--line);border-radius:12px;
+          padding:18px 18px 20px;margin-bottom:20px;}
+  h2{font-size:16px;margin:0 0 14px;display:flex;align-items:center;gap:8px;}
+  h2 .n{display:inline-flex;width:22px;height:22px;border-radius:6px;background:#111827;color:#fff;
+        font-size:12.5px;align-items:center;justify-content:center;font-weight:700;}
+  /* ---- layer flow ---- */
+  .flow{display:flex;flex-direction:column;gap:0;}
+  .layer{border:1.5px solid var(--line);border-radius:10px;padding:11px 14px;background:#fcfcfd;position:relative;}
+  .layer .tag{font-size:12px;font-weight:700;letter-spacing:.02em;padding:2px 8px;border-radius:20px;display:inline-block;margin-bottom:5px;}
+  .layer .name{font-weight:700;font-size:14.5px;}
+  .layer .path{font-family:var(--mono);font-size:12px;color:var(--sub);word-break:break-all;margin-top:2px;}
+  .layer .note{font-size:13px;color:var(--ink);margin-top:5px;}
+  .l-persist{border-color:var(--teal);background:var(--teal-bg);}
+  .l-persist .tag{background:var(--teal);color:#fff;}
+  .l-derived{border-color:var(--amber);background:var(--amber-bg);}
+  .l-derived .tag{background:var(--amber);color:#fff;}
+  .l-request{border-color:#374151;background:#f3f4f6;}
+  .l-request .tag{background:#374151;color:#fff;}
+  .arrow{align-self:center;color:var(--sub);font-size:12px;padding:5px 0;display:flex;flex-direction:column;align-items:center;gap:1px;}
+  .arrow .bar{width:2px;height:14px;background:#9ca3af;}
+  .arrow .lbl{font-family:var(--mono);font-size:11.5px;color:#4b5563;background:#eef0f2;border:1px solid var(--line);
+              border-radius:20px;padding:1px 9px;margin:2px 0;}
+  .sides{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-top:6px;}
+  .side{border-radius:9px;padding:10px 12px;font-size:13px;border:1px solid var(--line);}
+  .side h3{margin:0 0 5px;font-size:13px;}
+  .side.ok{background:var(--green-bg);border-color:#bbf7d0;}
+  .side.ok h3{color:var(--green);}
+  .side.bad{background:var(--red-bg);border-color:#fecaca;}
+  .side.bad h3{color:var(--red);}
+  code,.mono{font-family:var(--mono);font-size:12.5px;background:rgba(0,0,0,.06);padding:1px 5px;border-radius:4px;}
+  /* ---- split io ---- */
+  .io{display:grid;grid-template-columns:1fr 1fr;gap:14px;}
+  .iocard{border-radius:10px;padding:13px 14px;border:1.5px solid;}
+  .iocard.in{background:var(--green-bg);border-color:#86efac;}
+  .iocard.out{background:var(--red-bg);border-color:#fca5a5;}
+  .iocard h3{margin:0 0 8px;font-size:14.5px;}
+  .iocard.in h3{color:var(--green);} .iocard.out h3{color:var(--red);}
+  .iocard ul{margin:0;padding-left:18px;font-size:13px;} .iocard li{margin-bottom:5px;}
+  .pill{display:inline-block;font-size:11.5px;font-weight:700;border-radius:5px;padding:1px 7px;margin-right:5px;}
+  .pill.pass{background:var(--green);color:#fff;} .pill.fail{background:var(--red);color:#fff;}
+  /* ---- timeline ---- */
+  .tl{display:grid;grid-template-columns:120px 26px 1fr;row-gap:14px;column-gap:10px;align-items:start;}
+  .tl .when{font-family:var(--mono);font-size:12.5px;color:var(--sub);text-align:right;padding-top:2px;}
+  .tl .col{position:relative;justify-self:center;width:26px;height:100%;display:flex;justify-content:center;}
+  .tl .col::before{content:"";position:absolute;top:6px;bottom:-14px;width:2px;background:var(--line);}
+  .tl .row:last-child .col::before{display:none;}
+  .tl .dot{width:13px;height:13px;border-radius:50%;background:#fff;border:3px solid #6b7280;z-index:1;margin-top:3px;}
+  .tl .dot.normal{border-color:var(--teal);}
+  .tl .dot.ext{border-color:var(--red);background:var(--red);}
+  .tl .dot.der{border-color:var(--amber);}
+  .tl .what{font-size:13.5px;padding-bottom:2px;}
+  .tl .what b{font-weight:700;}
+  .tl .what .ev{display:block;color:var(--sub);font-size:12.5px;margin-top:1px;}
+  .legend{display:flex;flex-wrap:wrap;gap:14px;font-size:12.5px;color:var(--sub);margin-top:14px;}
+  .legend span{display:inline-flex;align-items:center;gap:6px;}
+  .sw{width:12px;height:12px;border-radius:3px;display:inline-block;}
+  .foot{color:var(--sub);font-size:12.5px;margin-top:6px;}
+  @media (max-width:720px){
+    .sides,.io{grid-template-columns:1fr;}
+    .tl{grid-template-columns:96px 22px 1fr;}
+  }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>OpenClaw 分层配置与"疑似重置"机制图</h1>
+  <div class="meta">WiseLink · 2026-09-13 · 本地运行时取证（示意；数值以 M_CONFIG_LAYER_FORENSICS / M_MODEL_CAPACITY_TEST 文档为准）</div>
+
+  <div class="verdict">
+    主结论：不是"整个环境被定期重置"，而是 <b>持久主配置对派生层/易失层的单向再生成</b>，叠加一次
+    <b>绕过审计的外部覆盖</b>。改错层会被弹回旧值；写进持久层 providers 的 DLI 每次 merge 都会被重新下发，所以"恢复了却还在"。
+  </div>
+
+  <!-- ===== A. 分层与单向数据流 ===== -->
+  <section>
+    <h2><span class="n">A</span>四层配置与单向数据流（谁是真源、谁被重建）</h2>
+    <div class="flow">
+      <div class="layer l-persist">
+        <span class="tag">持久 · 真源</span>
+        <div class="name">主配置 openclaw.json —— models.mode=merge + models.providers</div>
+        <div class="path">config/openclaw.json</div>
+        <div class="note">只有改这一层才会持久。正常写入走 config-io：gateway 启动 / <code>openclaw models set</code>，都会留 audit + 轮转 .bak + 更新 meta。</div>
+      </div>
+      <div class="arrow"><div class="bar"></div><span class="lbl">启动 / 会话初始化时 merge 生成（单向，不回写）</span><div class="bar"></div></div>
+      <div class="layer l-derived">
+        <span class="tag">派生 / 易失 · 可重建</span>
+        <div class="name">Agent models.json ＋ 网关内存模型目录</div>
+        <div class="path">config/agents/&lt;agent&gt;/agent/models.json　·　gateway in-memory catalog</div>
+        <div class="note">由主配置 merge 并补默认值（reasoning/input/cost/api）。手改这里或只点 UI，重启 / 会话重建即被主配置覆盖 → 表现为"改过又恢复"。</div>
+      </div>
+      <div class="arrow"><div class="bar"></div><span class="lbl">最终请求按各层钳制后取值</span><div class="bar"></div></div>
+      <div class="layer l-request">
+        <span class="tag">一次性 · 实际生效</span>
+        <div class="name">每请求 payload：model / max_tokens / 实际上下文</div>
+        <div class="note">工程请求实际申请 16000 生成预算，与派生层 maxTokens=16000 精确吻合。</div>
+      </div>
+    </div>
+    <div class="sides">
+      <div class="side ok">
+        <h3>正常写入（可追溯）</h3>
+        两条入口：gateway 启动、CLI <code>models set</code>。特征：<code>result=rename</code> 轮转备份、更新 meta、追加 config-audit.jsonl。
+      </div>
+      <div class="side bad">
+        <h3>外部覆盖（绕过审计，已实锤 1 次）</h3>
+        08-01 主配置被直接改写：无 audit、无新 .bak、meta 停在 06-20。哈希链核验当前文件不在审计链上。候选：容器编排 / 卷铺放 / runtime provisioning / 升级迁移。
+      </div>
+    </div>
+    <div class="legend">
+      <span><i class="sw" style="background:var(--teal)"></i>持久真源</span>
+      <span><i class="sw" style="background:var(--amber)"></i>派生/易失</span>
+      <span><i class="sw" style="background:#374151"></i>实际请求</span>
+      <span><i class="sw" style="background:var(--red)"></i>外部覆盖/钳制点</span>
+    </div>
+  </section>
+
+  <!-- ===== B. 输入/输出分流 ===== -->
+  <section>
+    <h2><span class="n">B</span>同一份旧目录，输入与输出在不同层生效（解释 16000 与近百万输入）</h2>
+    <div class="io">
+      <div class="iocard in">
+        <h3>输入路径：未被旧 contextWindow=256000 钳死</h3>
+        <ul>
+          <li><span class="pill pass">38.2万</span>输入 382372 token，6/6 取值、6/6 判断全对（约57秒）。</li>
+          <li><span class="pill fail">89.3万</span>输入被接受并计量，但仅 2/6 取值、4/6 判断；<b>尾部对、中前部丢</b>，属可靠利用区不足，非协议拒绝。</li>
+          <li>结论：输入走网关/上游真实窗口；可靠利用区止于已验证的 38.2 万，需留裕度。</li>
+        </ul>
+      </div>
+      <div class="iocard out">
+        <h3>输出路径：被 maxTokens=16000 钳制</h3>
+        <ul>
+          <li>申请 65536 预算，三次原生生成各停在 output <b>16000</b>，均为 length、无完整函数载荷。</li>
+          <li>三次用量<b>不能相加</b>称为一份 48000 结果。</li>
+          <li>调大请求预算无效；改对持久层 maxTokens 前，用单批 ≤8–10k 输出 + 分批 SAVE 绕开。</li>
+        </ul>
+      </div>
+    </div>
+  </section>
+
+  <!-- ===== C. 时间线 ===== -->
+  <section>
+    <h2><span class="n">C</span>本地实例时间线（哈希链 + mtime + audit 重建）</h2>
+    <div class="tl">
+      <div class="when">06-17</div>
+      <div class="col"><div class="dot normal"></div></div>
+      <div class="what"><b>gateway 启动</b>，主配置连续写两次（audit rec1/2，62→495→622B）。
+        <span class="ev">入口：dist/index.js gateway（pid=1 子进程）</span></div>
+
+      <div class="when">06-20 08:46/48</div>
+      <div class="col"><div class="dot normal"></div></div>
+      <div class="what"><b>两次 CLI 切模型</b>：models set bailian → models set gpt-5.4，审计链尾停在 1205B。
+        <span class="ev">4 个 .bak 与审计 4 节点 SHA256 逐一吻合</span></div>
+
+      <div class="when">08-01 00:22</div>
+      <div class="col"><div class="dot ext"></div></div>
+      <div class="what"><b>外部覆盖主配置 → 2234B</b>：primary 改 wiselink DLI，注入 mode=merge 与 3 个 DLI providers（200000/8192）。
+        <span class="ev">无 audit · 无新 .bak · meta 仍停 06-20 · 当前哈希 13221d 不在审计链（链尾应 b32539）</span></div>
+
+      <div class="when">08-23 / 08-24</div>
+      <div class="col"><div class="dot der"></div></div>
+      <div class="what"><b>08-24 14:00 派生硬重生成</b>：agent/models.json 按主配置重建为 DLI 200000/8192 并补默认字段；主配置当天未改。
+        <span class="ev">08-23 检测到新版 2026.7.1-2，运行版本仍 2026.3.13</span></div>
+    </div>
+    <div class="foot">说明：本图基于本地容器卷 external/openclaw/.runtime 取证；远程 wiselink-engineering（256000/16000）为同机制的可检验推论，需在工程容器内按同样的 audit + 哈希链方法证实或证伪。</div>
+  </section>
+</div>
+</body>
+</html>

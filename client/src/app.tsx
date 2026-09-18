@@ -18,7 +18,7 @@ import RuntimeProbePage from './pages/RuntimeProbePage/RuntimeProbePage';
 import ExternalDiscoveryPage from './pages/ExternalDiscoveryPage/ExternalDiscoveryPage';
 import OAuthCallbackPage from './pages/OAuthCallbackPage/OAuthCallbackPage';
 import ModelSettingsPage from './pages/ModelSettingsPage/ModelSettingsPage';
-import RelationGraphPage from './pages/RelationGraphPage/RelationGraphPage';
+import { RelationGraphPage } from './pages/RelationGraphPage/RelationGraphPage';
 import KnowledgeLookupPage from './pages/KnowledgeLookupPage/KnowledgeLookupPage';
 
 import GraphRelationPreviewPage from './pages/GraphRelationPreviewPage/GraphRelationPreviewPage';
@@ -27,6 +27,9 @@ import EngineeringChronologyPreviewPage from './pages/EngineeringChronologyPrevi
 // Suite 1.1 Pages
 import ReaderPageAdapter from './adapters/ReaderPageAdapter';
 import VersionComparisonPageAdapter from './adapters/VersionComparisonPageAdapter';
+
+// Validation Playground
+import { ReactFlowValidationPlayground } from './playground/ReactFlowValidationPlayground';
 
 const LibraryIndexRedirect = () => {
   const location = useLocation();
@@ -48,6 +51,7 @@ const RoutesComponent = () => {
     <Routes>
       <Route path="dev-preview/graph" element={<GraphRelationPreviewPage />} />
       <Route path="dev-preview/chronology" element={<EngineeringChronologyPreviewPage />} />
+      <Route path="dev-preview/reactflow-validation" element={<ReactFlowValidationPlayground />} />
       <Route element={<Layout />}>
         <Route index element={<LibraryIndexRedirect />} />
         <Route path="dialogues" element={<DialoguePage />} />

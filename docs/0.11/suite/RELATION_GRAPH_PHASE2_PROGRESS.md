@@ -288,20 +288,57 @@ const nodeTypes: NodeTypes = {
    - 新增 d3-force 依赖
    - 新增 @types/d3-force 依赖
 
+### ✅ Phase 2.3: Timeline 面板真实数据集成
+
+**完成时间**: 2026-09-18  
+**状态**: ✅ 已完成  
+**完整报告**: RELATION_GRAPH_PHASE2_3_TIMELINE_COMPLETED.md
+
+#### 实施内容
+
+1. **创建 useTimelineData Hook**
+   - 文件: `client/src/pages/RelationGraphPage/hooks/useTimelineData.ts`
+   - 集成 Canonical Host API
+   - TypeScript 类型安全接口
+   - 加载状态、错误处理、自动刷新支持
+
+2. **API 集成**
+   - 端点: `GET /api/canonical-host/work-items/:workItemId/document-parsing`
+   - 返回 `timeline` 字段（TimelineProjection）
+   - 11 种事件类型支持
+
+3. **TimelinePanel 组件重构**
+   - 移除 MOCK_TIMELINE_EVENTS 依赖
+   - 新增加载/错误/空状态 UI
+   - 事件序列号、状态徽章、详情显示
+   - 11 种事件类型颜色区分
+
+4. **RelationGraphPage 更新**
+   - 从 URL 提取 workItemId
+   - 传递 workItemId 给 TimelinePanel
+   - artifactRef 映射到 nodeId
+
+5. **CSS 样式扩展**
+   - Timeline 状态样式（loading, error, empty）
+   - 事件卡片升级（序列号、状态徽章）
+   - 事件类型颜色类（11 种）
+   - 响应式布局优化
+
+#### 技术亮点
+
+- ✅ 真实 API 数据替换 Mock
+- ✅ 类型安全的数据结构
+- ✅ 健壮的错误处理
+- ✅ 加载状态反馈
+- ✅ 时间线 ↔ 图谱双向交互
+- ✅ 11 种事件类型视觉区分
+- ✅ 无障碍支持（role, tabIndex）
+
 ---
 
 ## 下一步工作
 
-### Phase 2.3: Timeline 面板真实数据（预计 1 周）
-
-#### 待实施
-- [ ] 创建 hooks/useTimelineData.ts
-- [ ] API 数据接口定义
-- [ ] 时间线事件渲染
-- [ ] 点击事件定位到图谱节点
-- [ ] 实时数据更新（WebSocket 或轮询）
-
----
+### Phase 3: 高级交互功能（预计 1-2 周）
 
 ## 测试计划
 
@@ -408,9 +445,9 @@ export const MatterHubNode = React.memo(({ data }: NodeProps<MatterHubData>) => 
 ### Phase 2 完成度
 - Phase 2.1: ✅ 100%
 - Phase 2.2: ✅ 100%
-- Phase 2.3: ⏳ 0%
+- Phase 2.3: ✅ 100%
 
-**Phase 2 总体进度**: **67%** (2/3 子阶段完成)
+**Phase 2 总体进度**: **100%** (3/3 子阶段完成)
 
 ### 与静态页面对比
 | 特性 | 静态页面 | Phase 2.1 | Phase 2.2 | 差距 |
@@ -418,19 +455,19 @@ export const MatterHubNode = React.memo(({ data }: NodeProps<MatterHubData>) => 
 | 节点类型 | 5种 | 5种 | 5种 | ✅ 已对齐 |
 | 节点样式 | 完整 | 完整 | 完整 | ✅ 已对齐 |
 | 动画效果 | 呼吸+脉冲 | 呼吸+脉冲 | 呼吸+脉冲 | ✅ 已对齐 |
-| 布局算法 | Cola力导向 | 手动坐标 | d3-force | ✅ 已对齐 |
-| 数据源 | 内嵌 | Mock | Mock | ⏳ Phase 2.3 |
-| 交互功能 | 完整 | 基础 | 基础 | ⏳ Phase 3 |
+| 布局算法 | Cola力导向 | d3-force | d3-force | ✅ 已对齐 |
+| 数据源 | 内嵌 | Mock | 真实API | ✅ 已对齐 |
+| 交互功能 | 完整 | 基础 | 时间线集成 | ⏳ Phase 3 |
 
 ### 剩余工作量估算
-- **Phase 2.3** (真实数据): 1 周
+- **Phase 2.3** (真实数据): ✅ 已完成
 - **Phase 3** (高级交互): 1-2 周
 - **Phase 4** (完整特性): 1 周
 
-**总计**: 3-4 周完成完整对齐
+**总计**: 2-3 周完成完整对齐
 
 ---
 
 **文档维护者**: WiseLink 开发团队  
 **最后更新**: 2026-09-18  
-**下次更新**: Phase 2.3 真实数据集成完成时
+**下次更新**: Phase 3 高级交互功能完成时

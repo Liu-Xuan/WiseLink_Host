@@ -34,6 +34,10 @@ export function WikiPageAdapter() {
     navigate(`/graph?matter=${matterId}`);
   };
 
+  const handleNavigateToMatter = (matterId: string) => {
+    navigate(`/wiki/${matterId}`);
+  };
+
   return (
     <WikiPage
       matterId={matterId}
@@ -41,6 +45,7 @@ export function WikiPageAdapter() {
       onNavigateToDoc={handleNavigateToDoc}
       onNavigateToTimeline={handleNavigateToTimeline}
       onNavigateToGraph={handleNavigateToGraph}
+      onNavigateToMatter={handleNavigateToMatter}
     />
   );
 }

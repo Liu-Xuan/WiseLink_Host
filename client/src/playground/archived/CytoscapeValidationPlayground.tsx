@@ -1,7 +1,7 @@
 import React, { useEffect, useRef, useState } from 'react';
-// @ts-expect-error - cytoscape has no bundled types for this legacy playground
+// @ts-ignore - archived legacy Cytoscape playground, intentionally untyped
 import cytoscape from 'cytoscape';
-// @ts-expect-error - cytoscape-popper has no bundled types
+// @ts-ignore - archived legacy Cytoscape playground, intentionally untyped
 import popper from 'cytoscape-popper';
 import './cytoscape-validation.css';
 
