@@ -8,8 +8,8 @@
 - 其他全部页面以 `/Users/liuxuan/Downloads/WiseLink_Frontend_Suite_20260917/` 的实际静态页面、组件、样式和截图为基准。真实身份、来源、正式版本、工作保存、CAS、对象授权和正式采用仍由 Host 决定。样例只在显式开发预览中出现。
 - 图谱除 Suite 的 `graph.html`、`src/pages/Graph.jsx`、`src/components/GraphCanvas.jsx` 和 `src/graph/` 外，以 `screenshots/graph-hydraulic-light-1672.png`、`graph-gear-light-1672.png`、`graph-gear-dark-1672.png`、`graph-fmc-light-1672.png` 和 `graph-light-390.png` 为持久视觉证据。用户会话中另给的最新截图明确要求左时间线、中央分组卡片画布和右知识正文；原临时附件已不可读取，视觉接受前须用上述持久参考核对同一构图，不凭描述降低标准。
 - 当前文档 HEAD 为 `codex/0-11` 的 `e9f28fd1673d4fd43d6d7829dd1fe9c45c84b142`，父提交 `1031e3caa00aa142b2e9c90d9d71fde8b7c241b8`；`origin/codex/0-11` 与 `github/codex/0-11` 已分别回读相同 SHA。`1031e3caa` 是最近已接受的生产 Reader/换版代码恢复点，它把正式入口迁回真实授权读取链，并把 Suite 构造页限制在 `dev-preview`。祖先链还包含针对 `9419d320c` 已知身份回归的纠正 `8d186d5b2`、知识读取修复 `957f327cd` 和资料库真实默认选择 `d7b074447`。
-- 当前本地证据为相关路由与阅读测试 71 项通过、client typecheck 和 lint 通过。旧 `single-app-workspace.spec.ts` 仍有 1 项与当前外壳不符的既存断言，须在改动共享外壳时一并校正，不能据此否定已通过的局部范围。四个原有未跟踪调试文件 `.claude/launch.json`、`query-work-items.cjs`、`query-work-items.mjs`、`scripts/create-test-work-item.mjs` 继续隔离，不提交也不删除。
-- 当前工作树另有六个 Reader 文件的未提交纵切，共 `217` 行新增、`76` 行删除；四个既有未跟踪调试文件继续隔离。失败的依赖安装没有改动 `package.json` 或锁文件。这些修改必须在提交前重新通过针对性测试、类型检查、lint、样式检查和独立审查。
+- 当前 Reader 1A 已形成可审阅提交 `88c36f2a1`，相关 6 套 Reader/预览测试共 51 项通过，client typecheck、定向 ESLint、Stylelint 和 diff check 通过。旧 `single-app-workspace.spec.ts` 仍有 1 项与当前外壳不符的既存断言，须在改动共享外壳时一并校正，不能据此否定已通过的局部范围。四个原有未跟踪调试文件 `.claude/launch.json`、`query-work-items.cjs`、`query-work-items.mjs`、`scripts/create-test-work-item.mjs` 继续隔离，不提交也不删除。
+- Reader 1A 已从工作树提交并同步；四个既有未跟踪调试文件继续隔离。Reader 1B（真实语义 anchor 的双语独立滚动同步、受控 PDF boxes 高亮）尚未实现，不能把 1A 描述为完整 Reader 视觉/来源验收。失败的依赖安装没有改动 `package.json` 或锁文件。
 - 以上只是代码恢复点与本地检查。当前 Nest 页面路由可以返回 HTML，但 Vite 模块请求被 View fallback 返回为 `text/html`；Vite 直连虽能加载 React，却没有 Nest 注入的 canonical identity handoff，真实 API 因此以 `CANONICAL_IDENTITY_HANDOFF_UNAVAILABLE` 拒绝。该证据只定位本地启动链，不能推断 Reader、数据库或 Drizzle 故障。当前提交尚无完整本地联合入口、精确 Hosted 发布、真实登录功能链、性能或视觉验收回执；不沿用历史 release 代替本轮结论。
 
 ## 本地 Claude 测试服务器的定位
@@ -23,13 +23,13 @@ Claude 搭建的本地服务器继续保留，作为生产 React 组件的快速
 | 批次 | 可审查的完成物 | 验证重点 |
 | --- | --- | --- |
 | 0. 安全恢复点（已完成特定代码纠正，持续守门） | `8d186d5b2` 已纠正 `9419d320c` 中已识别的本地身份放行、owner/creator 绕过和私有 db 穿透；正式 Reader/换版入口已去样例化。此结论只覆盖已审查回归，不宣称全部授权风险关闭 | 保持相关授权测试；未知 ID、撤权、版本缺失明确失败；正式入口绝不返回 AMM 等构造内容；不得重新引入 raw SQL、`as any`、本地权限模拟或静默错误 |
-| 1. Reader 与可信本地联调（当前批次） | 完成六文件 Reader WIP：连续正文、真实目录、五种阅读模式、分栏、全屏、文字/段落来源定位和返回恢复。增加独立本地联合入口，由 Nest 提供页面、身份、CSRF 和 API，由 Vite 提供模块/HMR；不改受保护的 `server/main.ts`，不进入 Hosted 启动链 | Reader 测试、typecheck、lint、stylelint、diff check；联合入口中 HTML 来自 Nest、模块为 JavaScript、API 不再因缺少 handoff 失败。本地验证可实现的路由和授权负例；真实登录、平台 CSRF 与撤权证据留给同一提交的 Hosted 候选 |
+| 1. Reader 1A 与可信本地联调（已提交，1B 待续） | `88c36f2a1` 交付连续正文、真实目录、五种阅读模式、分栏、全屏、文字/段落来源定位、URL/译文定位优先级和隔离视觉载具；双语语义 anchor 同步与 PDF boxes 高亮仍列入 1B。官方 Vite client dev server 负责本地模块、身份 handoff 和 CSRF 检查；不改受保护的 `server/main.ts`，不进入 Hosted 启动链 | 6 套定向 Reader/预览测试 51 项、typecheck、lint、stylelint、diff check 通过；本地 API 缺少 canonical handoff 时按安全设计拒绝。真实登录、平台 CSRF、撤权、部署性能和视觉截图证据留给同一提交的 Hosted 候选 |
 | 2. 完整图谱与时间 | 选择性继承现有 Cytoscape、typed API、明确 matterId、历史工作选择、session generation 和 AbortController 防护；还原 Suite 三栏、分组卡、中心圆环、配色、材质、连线、四视角、筛选、相机和手机活动面。按当前代码逐项修复仍存在的默认 mock、错误 URL、raw fetch、hub/matter 分类或类型问题，不把这些历史问题假定为仍全部存在；时间轴保留真实事件身份、预计历史和时间窗 | 1672/1440/1024/390 同条件截图及交互；真实关系与样例分开；同一事件往返、准确来源与选中状态恢复；正式入口只消费受权真实对象 |
 | 3. 信息架构与其余 Suite 页面 | 资料库、工程知识、Wiki、自身换版、问题分析、复核交流、工作进展、导览和共享外壳逐页对照 Suite；首屏先给主题、问题、关键条件和当前认识，清理无意义空态与过程噪声 | 上游选择自然传递；直达使用真实可解释默认对象或明确错误；同 family 正式改版与参考变化后续不同；桌面/手机、深浅主题和返回位置一致 |
 | 4. 工程态势 | 按旧单文件最高依据落为生产 React：信息聚合内环、评估辅助外环、中心工程智能体、宏观/聚焦、来源下钻、动态光效、演示、主题与效果设置 | 1672/1440/1024/390 同条件视觉与交互对照；reduced-motion 有效；样例隔离，环节、光效和数量不推导完成比例、模型运行或工程结论 |
 | 5. R10 业务与性能闭合 | 完成当前工作更正、Overall/Wiki/检索/知识同源、连续保存与恢复、正式换版/参考变化分流、准确综合、跨事项引用、获准后台来源及真实长 SB；页面稳定后测部署环境冷/暖读取并修实测瓶颈 | 无重跑有效中文、无虚构结论；技术发布指向准确接受组合；真实登录链和授权边界通过；常用页面以秒级有用内容为目标，记录实际时延分布 |
 
-批次 0 的已知回归已经纠正，但安全边界继续作为所有批次的守门条件。不能因本地联合入口尚未恢复而回退到本地模拟权限或生产 mock。主线先完成批次 1 的 Reader 真实组件、视觉纵切和联合入口，再进入完整图谱与时间；这不阻止只读图谱差距分析、静态素材核对和不覆盖共享文件的 R10 业务修正并行开展。图谱为独立完整交付，不用三栏骨架或编译通过替代。发布组合保持串行。每批先核对在途与当前 HEAD，明确文件所有权及旧成果，再进行最小实现、针对性测试、同条件视觉对照和独立审查；有新失败才扩大 gate。
+批次 0 的已知回归已经纠正，但安全边界继续作为所有批次的守门条件。不能因本地联合入口尚未恢复而回退到本地模拟权限或生产 mock。主线已完成 Reader 1A 的可审阅纵切，下一步先完成 1B 的真实来源交互，再进入完整图谱与时间；这不阻止只读图谱差距分析、静态素材核对和不覆盖共享文件的 R10 业务修正并行开展。图谱为独立完整交付，不用三栏骨架或编译通过替代。发布组合保持串行。每批先核对在途与当前 HEAD，明确文件所有权及旧成果，再进行最小实现、针对性测试、同条件视觉对照和独立审查；有新失败才扩大 gate。
 
 ## 当前 Reader 批次的开发顺序
 
