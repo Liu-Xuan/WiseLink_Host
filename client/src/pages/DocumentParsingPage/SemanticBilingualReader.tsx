@@ -299,6 +299,11 @@ function SemanticWorkspaceReader({
                 anchorNodes={bilingualAnchorNodes.current.original}
                 onFocus={focusBlock}
                 onSourceRefSelect={props.onSourceRefSelect}
+                workItem={props.workItem}
+                workspaceId={reading.workspaceId}
+                canRequestBlockTranslation={props.canRequestBlockTranslation}
+                onRevisionSaved={setRevisedReading}
+                onContinuationRequested={props.onContinuationRequested}
               />
               <SemanticPane
                 side="translation"
@@ -310,6 +315,11 @@ function SemanticWorkspaceReader({
                 anchorNodes={bilingualAnchorNodes.current.translation}
                 onFocus={focusBlock}
                 onSourceRefSelect={props.onSourceRefSelect}
+                workItem={props.workItem}
+                workspaceId={reading.workspaceId}
+                canRequestBlockTranslation={props.canRequestBlockTranslation}
+                onRevisionSaved={setRevisedReading}
+                onContinuationRequested={props.onContinuationRequested}
               />
             </div>
           ) : blocks.map((block) => {
@@ -512,6 +522,11 @@ function SemanticPane({
   anchorNodes,
   onFocus,
   onSourceRefSelect,
+  workItem,
+  workspaceId,
+  canRequestBlockTranslation,
+  onRevisionSaved,
+  onContinuationRequested,
 }: {
   side: 'original' | 'translation';
   blocks: SemanticReadingBlock[];
@@ -522,6 +537,11 @@ function SemanticPane({
   anchorNodes: Map<string, HTMLElement>;
   onFocus: (blockId: string | null, ids: string[], scroll?: boolean) => void;
   onSourceRefSelect: (unitId: string, sourceRef: string) => void;
+  workItem?: Pick<CanonicalWorkItemProjection, 'workItemId' | 'revision'>;
+  workspaceId: string;
+  canRequestBlockTranslation?: boolean;
+  onRevisionSaved: (reading: TranslationWorkspaceReadingV2) => void;
+  onContinuationRequested?: () => void;
 }) {
   const original = side === 'original';
   return (
@@ -590,6 +610,24 @@ function SemanticPane({
                       </button>
                     ))}
                   </div>
+                  {workItem ? (
+                    <TranslationRevisionEditor
+                      workItem={workItem}
+                      workspaceId={workspaceId}
+                      blockId={block.source.blockId}
+                      onSaved={onRevisionSaved}
+                    />
+                  ) : null}
+                  {workItem && canRequestBlockTranslation ? (
+                    <InitialAnalysisContinueButton
+                      workItemId={workItem.workItemId}
+                      expectedRevision={workItem.revision}
+                      operation="TRANSLATE"
+                      blockIds={[block.source.blockId]}
+                      label="重新翻译此完整语义范围"
+                      onQueued={onContinuationRequested}
+                    />
+                  ) : null}
                 </div>
               ) : null}
             </article>
