@@ -110,6 +110,44 @@
   padding: 28px clamp(16px, 4cqw, 52px) 80px;
   background: var(--wl-surface-solid, var(--background));
 }
+.wl-semantic-bilingual-panes {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  gap: 0;
+  min-height: 0;
+  height: 100%;
+}
+.wl-semantic-pane {
+  display: flex;
+  min-width: 0;
+  min-height: 0;
+  flex-direction: column;
+}
+.wl-semantic-pane + .wl-semantic-pane {
+  border-left: 1px solid var(--parse-rule);
+}
+.wl-semantic-pane-title {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  margin: 0;
+  padding: 10px clamp(16px, 3cqw, 42px);
+  border-bottom: 1px solid var(--parse-rule);
+  background: var(--wl-surface-solid, var(--background));
+  color: var(--parse-muted);
+  font-size: 12px;
+  font-weight: 650;
+}
+.wl-semantic-pane-scroll {
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  padding: 22px clamp(16px, 3cqw, 42px) 80px;
+}
+.wl-semantic-pane-scroll .wl-bilingual-block {
+  max-width: 78ch;
+  margin-inline: auto;
+}
 .wl-bilingual-block {
   max-width: 78ch;
   margin: 0 auto 18px;
@@ -299,6 +337,14 @@
   }
   .wl-bilingual-columns > div + div {
     padding-left: 16px;
+  }
+  .wl-semantic-bilingual-panes {
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-rows: minmax(0, 1fr) minmax(0, 1fr);
+  }
+  .wl-semantic-pane + .wl-semantic-pane {
+    border-top: 1px solid var(--parse-rule);
+    border-left: 0;
   }
 }
 @container (max-width: 480px) {

@@ -20,6 +20,7 @@ import {
   semanticSourceLinks,
   translationIssueOriginLabels,
   type SemanticReadingMode,
+  type SemanticReadingBlock,
 } from './semantic-reading';
 import './semantic-bilingual-reader.css';
 
@@ -73,6 +74,10 @@ function SemanticWorkspaceReader({
   const [revisedReading, setRevisedReading] =
     useState<TranslationWorkspaceReadingV2 | null>(null);
   const blockNodes = useRef(new Map<string, HTMLElement>());
+  const bilingualPaneNodes = useRef({
+    original: new Map<string, HTMLElement>(),
+    translation: new Map<string, HTMLElement>(),
+  });
   const reading: TranslationWorkspaceReadingV2 =
     revisedReading && revisedReading.rowVersion >= hostReading.rowVersion
       ? revisedReading
@@ -92,11 +97,18 @@ function SemanticWorkspaceReader({
       ? '尚无可计算文字范围'
       : `${Math.floor(view.readablePercent * 10) / 10}% 的原文已有可读中文`;
 
-  function focusBlock(blockId: string, ids: string[], scroll = false): void {
+  function focusBlock(blockId: string | null, ids: string[], scroll = false): void {
     setFocusedBlock(blockId);
     setSelectedAnchors(ids);
+    if (!blockId) return;
     if (scroll) {
       blockNodes.current
+        .get(blockId)
+        ?.scrollIntoView({ block: 'start', behavior: 'auto' });
+      bilingualPaneNodes.current.original
+        .get(blockId)
+        ?.scrollIntoView({ block: 'start', behavior: 'auto' });
+      bilingualPaneNodes.current.translation
         .get(blockId)
         ?.scrollIntoView({ block: 'start', behavior: 'auto' });
       blockNodes.current.get(blockId)?.focus({ preventScroll: true });
@@ -267,7 +279,30 @@ function SemanticWorkspaceReader({
                 : '语义对齐的中英对照'
           }
         >
-          {blocks.map((block) => {
+          {mode === 'bilingual' ? (
+            <div className="wl-semantic-bilingual-panes">
+              <SemanticPane
+                side="original"
+                blocks={blocks}
+                reading={reading}
+                focusedBlock={focusedBlock}
+                selectedAnchors={selectedAnchors}
+                nodes={bilingualPaneNodes.current.original}
+                onFocus={focusBlock}
+                onSourceRefSelect={props.onSourceRefSelect}
+              />
+              <SemanticPane
+                side="translation"
+                blocks={blocks}
+                reading={reading}
+                focusedBlock={focusedBlock}
+                selectedAnchors={selectedAnchors}
+                nodes={bilingualPaneNodes.current.translation}
+                onFocus={focusBlock}
+                onSourceRefSelect={props.onSourceRefSelect}
+              />
+            </div>
+          ) : blocks.map((block) => {
             const sourceAnchors = reading.anchors.filter((anchor) =>
               block.source.anchorIds.includes(anchor.anchorId),
             );
@@ -284,11 +319,7 @@ function SemanticWorkspaceReader({
                 }}
               >
                 <div
-                  className={
-                    mode === 'bilingual'
-                      ? 'wl-bilingual-columns'
-                      : 'wl-semantic-single'
-                  }
+                  className="wl-semantic-single"
                 >
                   {mode !== 'translation' ? (
                     <div lang="en">
@@ -458,5 +489,95 @@ function SemanticWorkspaceReader({
         </div>
       </div>
     </div>
+  );
+}
+
+function SemanticPane({
+  side,
+  blocks,
+  reading,
+  focusedBlock,
+  selectedAnchors,
+  nodes,
+  onFocus,
+  onSourceRefSelect,
+}: {
+  side: 'original' | 'translation';
+  blocks: SemanticReadingBlock[];
+  reading: TranslationWorkspaceReadingV2;
+  focusedBlock: string | null;
+  selectedAnchors: string[];
+  nodes: Map<string, HTMLElement>;
+  onFocus: (blockId: string | null, ids: string[], scroll?: boolean) => void;
+  onSourceRefSelect: (unitId: string, sourceRef: string) => void;
+}) {
+  const original = side === 'original';
+  return (
+    <section className={`wl-semantic-pane is-${side}`} aria-label={original ? '连续原文' : '连续中文阅读'}>
+      <h3 className="wl-semantic-pane-title">{original ? '原文' : '中文'}</h3>
+      <div className="wl-semantic-pane-scroll">
+        {blocks.map((block) => {
+          const sourceAnchors = reading.anchors.filter((anchor) =>
+            block.source.anchorIds.includes(anchor.anchorId),
+          );
+          const isFocused = focusedBlock === block.source.blockId;
+          return (
+            <article
+              className={`wl-bilingual-block kind-${block.source.kind}${isFocused ? ' is-selected' : ''}`}
+              key={block.source.blockId}
+              data-semantic-block={block.source.blockId}
+              tabIndex={-1}
+              ref={(node) => {
+                if (node) nodes.set(block.source.blockId, node);
+                else nodes.delete(block.source.blockId);
+              }}
+            >
+              <SemanticBlockContent
+                block={block}
+                anchors={sourceAnchors}
+                original={original}
+                selectedAnchors={selectedAnchors}
+                onFocus={(ids) => onFocus(block.source.blockId, ids)}
+              />
+              {!original && semanticReadingIssues(block).length ? (
+                <ul className="wl-bilingual-issues">
+                  {semanticReadingIssues(block).map((issue, index) => (
+                    <li key={`${issue.code}-${index}`} data-severity={issue.severity}>
+                      <strong>{translationIssueOriginLabels[issue.origin]}：</strong>{issue.message}
+                    </li>
+                  ))}
+                </ul>
+              ) : null}
+              <footer>
+                <button
+                  type="button"
+                  aria-expanded={isFocused}
+                  onClick={() => isFocused ? onFocus(null, []) : onFocus(block.source.blockId, block.source.anchorIds)}
+                >
+                  {isFocused ? '收起来源' : '查看来源'}
+                </button>
+                <span>{semanticReadingStatusLabels[block.readingStatus]}</span>
+              </footer>
+              {!original && isFocused ? (
+                <div className="wl-semantic-context">
+                  <p>本语义范围对应 {sourceAnchors.length} 个原文片段；来源位置以实际记录为准。</p>
+                  <div className="wl-bilingual-actions">
+                    {semanticSourceLinks(sourceAnchors).map(({ anchor, ref, label }) => (
+                      <button
+                        type="button"
+                        key={ref}
+                        onClick={() => onSourceRefSelect(anchor.sourceUnitId, ref)}
+                      >
+                        {label}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              ) : null}
+            </article>
+          );
+        })}
+      </div>
+    </section>
   );
 }
