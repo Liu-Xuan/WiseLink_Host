@@ -229,6 +229,14 @@ const SuiteGraphKnowledgePanel = memo(function SuiteGraphKnowledgePanel({
 }: SuiteGraphKnowledgePanelProps) {
   const result = revision?.state.substantiveResult ?? null;
   const problemWork = revision?.state.problemWork;
+  const overviewStatus = problemWork?.overviewStatus ?? read.overviewStatus;
+  const summaryUsesOverview = overviewStatus !== 'NOT_AVAILABLE' && Boolean(result?.content.lead);
+  const summaryText = overviewStatus === 'NOT_AVAILABLE'
+    ? problemWork?.understanding || problemWork?.listBrief
+    : result?.content.lead || problemWork?.understanding || problemWork?.listBrief;
+  const summaryLabel = summaryUsesOverview
+    ? overviewStatus === 'STALE' ? '此前综合摘要' : '综合摘要'
+    : problemWork?.understanding ? '问题理解' : '事项摘要';
   const evidenceList = [...new Map([...(result?.evidence ?? []), ...(problemWork?.evidence ?? [])].map(item => [item.evidenceRef, item])).values()];
   // Deduplicate the displayed question while retaining every saved issue's identity and scope.
   const pendingByText = new Map<string, { text: string; sources: Array<{ key: string; issueRef: string; question: string; affects: string; nextEvidence: string; reason: string }> }>();
@@ -374,19 +382,24 @@ const SuiteGraphKnowledgePanel = memo(function SuiteGraphKnowledgePanel({
       <>
         <h2>{read.graph.rootKind === 'display' ? '当前打开事项的已保存工作' : read.graph.title}</h2>
         {read.graph.code ? <small className="suite-graph-matter-code">{read.graph.code}</small> : null}
+        {overviewStatus === 'STALE' ? <p className="suite-graph-notice">此前综合尚未覆盖本工作中的最新问题，只按原范围保留阅读。</p> : null}
+        {overviewStatus === 'NOT_AVAILABLE' ? <p className="suite-graph-notice">问题工作已经保存，当前范围尚未形成综合认识。</p> : null}
         <section>
-          <h3><House aria-hidden="true" />背景概述</h3>
-          <p>{result?.content.lead || problemWork?.understanding || problemWork?.listBrief || '当前工作尚未保存背景概述。'}</p>
+          <h3><House aria-hidden="true" />{summaryLabel}</h3>
+          <p>{summaryText || '当前工作尚未保存问题理解或事项摘要。'}</p>
         </section>
         <section>
-          <h3><Lightbulb aria-hidden="true" />当前认识</h3>
-          {result?.content.claims.length ? result.content.claims.map((claim) => (
+          <h3><Lightbulb aria-hidden="true" />{overviewStatus === 'STALE' ? '此前综合认识' : '当前认识'}</h3>
+          {overviewStatus !== 'NOT_AVAILABLE' && result?.content.claims.length ? result.content.claims.map((claim) => (
             <p className="suite-graph-bullet" key={claim.claimId}>{claim.text}</p>
-          )) : <p>当前工作尚未保存可供阅读的认识正文。</p>}
+          )) : overviewStatus !== 'NOT_AVAILABLE' ? <p>当前工作尚未保存可供阅读的认识正文。</p> : null}
+        </section>
+        {problemWork?.issues.length ? <section>
+          <h3><AlertTriangle aria-hidden="true" />正在分析的问题</h3>
           {problemWork?.issues.map((issue) => (
             <p className="suite-graph-bullet" key={`issue-question-${issue.issueRef}`}>{issue.question}</p>
           ))}
-        </section>
+        </section> : null}
         <section>
           <h3><RotateCcw aria-hidden="true" />认识的变化</h3>
           <p>{revision?.changeSummary || '当前保存工作没有单独填写变化说明。'}</p>
@@ -396,9 +409,6 @@ const SuiteGraphKnowledgePanel = memo(function SuiteGraphKnowledgePanel({
         <section>
           <h3><AlertTriangle aria-hidden="true" />继续核对</h3>
           {openQuestions.map((item) => <p className="suite-graph-bullet" key={item.text.trim()}>{item.text}</p>)}
-          {problemWork?.issues.flatMap((issue) => issue.openQuestions).map((item) => (
-            <p className="suite-graph-bullet" key={`issue-${item.question}`}>{item.question}</p>
-          ))}
           {reviewConditions.map((item) => <p className="suite-graph-bullet" key={item.itemId}>{item.text}</p>)}
           {openQuestions.length === 0 && reviewConditions.length === 0 ? <p>当前工作没有已保存的未决问题或复看条件。</p> : null}
         </section>

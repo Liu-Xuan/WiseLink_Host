@@ -11,6 +11,13 @@ import {
 } from 'lucide-react';
 
 import { Button } from '@client/src/components/ui/button';
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+} from '@client/src/components/ui/dialog';
 import type { DocumentAssessmentEvidence } from '@client/src/features/matter/assessment-reading';
 import type { EngineeringMatterWorkingRevisionReadModel } from '@shared/matter-working.interface';
 
@@ -173,8 +180,11 @@ export default function SuiteMatterGraphView({
   const [focusedGroupKey, setFocusedGroupKey] = useState<string | null>(null);
   const [expandedGroupKey, setExpandedGroupKey] = useState<string | null>(null);
   const [relationshipIds, setRelationshipIds] = useState<string[]>([]);
+  const [relationshipDialogOpen, setRelationshipDialogOpen] =
+    useState<boolean>(false);
   const [filterOpen, setFilterOpen] = useState<boolean>(false);
   const canvasRef = useRef<SuiteGraphCanvasHandle | null>(null);
+  const relationshipReturnFocusRef = useRef<HTMLElement | null>(null);
   const viewportByPerspective = useRef(
     new Map<string, { zoom: number; pan: { x: number; y: number } }>(
       initialState?.viewport ? [[perspective, initialState.viewport]] : [],
@@ -318,6 +328,14 @@ export default function SuiteMatterGraphView({
     return id;
   };
 
+  const openRelationships = (ids: string[]) => {
+    relationshipReturnFocusRef.current = document.activeElement instanceof HTMLElement
+      ? document.activeElement
+      : null;
+    setRelationshipIds(ids);
+    setRelationshipDialogOpen(true);
+  };
+
   return (
     <main className="suite-matter-graph-page">
       <div className="suite-graph-viewbar">
@@ -452,12 +470,14 @@ export default function SuiteMatterGraphView({
           <div className="suite-graph-panel-bottom">
             <Button
               variant="outline"
-              disabled={!onOpenEventTimeline || !selectedEvent}
+              disabled={!selectedEvent || (selectedEvent.kind === 'source' ? !selectedEvent.pins || !onOpenEventTimeline : !onOpenWiki)}
               onClick={() => {
-                if (selectedEvent) onOpenEventTimeline?.(selectedEvent);
+                if (!selectedEvent) return;
+                if (selectedEvent.pins) onOpenEventTimeline?.(selectedEvent);
+                else onOpenWiki?.();
               }}
             >
-              展开完整历程 <ArrowRight aria-hidden="true" />
+              {!selectedEvent ? '选择时间节点' : selectedEvent.pins ? '展开完整历程' : '查看保存工作'} <ArrowRight aria-hidden="true" />
             </Button>
           </div>
         </aside>
@@ -505,9 +525,12 @@ export default function SuiteMatterGraphView({
                 onGroup={(key) => {
                   setExpandedGroupKey(key);
                   setRelationshipIds([]);
+                  setRelationshipDialogOpen(false);
                 }}
                 onOverflow={(key) => setExpandedGroupKey(key)}
-                onInspectRelationships={setRelationshipIds}
+                onInspectRelationships={(ids) => {
+                  openRelationships(ids);
+                }}
                 onViewport={handleViewport}
                 ariaLabel="工程事项关系图谱"
               />
@@ -562,25 +585,6 @@ export default function SuiteMatterGraphView({
                 </section>
               ) : null}
 
-              {relationshipIds.length ? (
-                <section className="suite-graph-relation-details" aria-label="关系明细">
-                  <div>
-                    <strong>当前实际登记关系</strong>
-                    <Button size="sm" variant="ghost" onClick={() => setRelationshipIds([])}>关闭</Button>
-                  </div>
-                  {selectedRelations.map((relation) => {
-                    const detail = read.relationDetails.get(relation.id);
-                    return (
-                      <p key={relation.id}>
-                        <b>{relation.label || relation.type}</b>
-                        <span>{nodeTitle(relation.source)} → {nodeTitle(relation.target)}</span>
-                        <small>{detail ? relationDetailText(detail) : '当前读取保留该登记关系，但未返回额外依据明细。'}</small>
-                      </p>
-                    );
-                  })}
-                  {selectedRelations.length === 0 ? <p>所选关系不在当前图谱范围内。</p> : null}
-                </section>
-              ) : null}
             </div>
           )}
 
@@ -593,7 +597,7 @@ export default function SuiteMatterGraphView({
                   size="sm"
                   variant="outline"
                   onClick={() => {
-                    setRelationshipIds(graph.relations.map((relation) => relation.id));
+                    openRelationships(graph.relations.map((relation) => relation.id));
                   }}
                 >
                   核对全部关系
@@ -638,6 +642,43 @@ export default function SuiteMatterGraphView({
           />
         </aside>
       </div>
+
+      <Dialog
+        open={relationshipDialogOpen}
+        onOpenChange={(open) => {
+          setRelationshipDialogOpen(open);
+          if (!open) setRelationshipIds([]);
+        }}
+      >
+        <DialogContent
+          className="suite-graph-relation-dialog"
+          onCloseAutoFocus={(event) => {
+            event.preventDefault();
+            relationshipReturnFocusRef.current?.focus();
+            relationshipReturnFocusRef.current = null;
+          }}
+        >
+          <DialogHeader>
+            <DialogTitle>当前实际登记关系</DialogTitle>
+            <DialogDescription>
+              仅列出当前已读取范围中的登记关系和可读依据，不依据图上距离推断归属或因果。
+            </DialogDescription>
+          </DialogHeader>
+          <div className="suite-graph-relation-details" aria-label="关系明细">
+            {selectedRelations.map((relation) => {
+              const detail = read.relationDetails.get(relation.id);
+              return (
+                <p key={relation.id}>
+                  <b>{relation.label || relation.type}</b>
+                  <span>{nodeTitle(relation.source)} → {nodeTitle(relation.target)}</span>
+                  <small>{detail ? relationDetailText(detail) : '当前读取保留该登记关系，但未返回额外依据明细。'}</small>
+                </p>
+              );
+            })}
+            {selectedRelations.length === 0 ? <p>当前读取范围没有可列出的登记关系。</p> : null}
+          </div>
+        </DialogContent>
+      </Dialog>
     </main>
   );
 }

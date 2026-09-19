@@ -43,19 +43,21 @@ const SuiteGraphTimeline = memo(function SuiteGraphTimeline({
   const sourceUnreadCount = sources.filter(
     (source) => source.status === 'skipped',
   ).length;
-  const sourceUnavailableCount = sources.filter(
-    (source) => source.status === 'unavailable' || source.status === 'empty' || source.status === 'unparsed',
-  ).length;
+  const sourceUnavailableCount = sources.filter((source) => source.status === 'unavailable').length;
+  const sourceEmptyCount = sources.filter((source) => source.status === 'empty').length;
+  const sourceUnparsedCount = sources.filter((source) => source.status === 'unparsed').length;
   const sourceLoadingCount = sources.filter(
     (source) => source.status === 'loading',
   ).length;
   const sourceSummary = [
     `来源读取状态（${sources.length}）`,
-    sourceUnavailableCount > 0 ? `不可读 ${sourceUnavailableCount}` : null,
+    sourceUnavailableCount > 0 ? `读取受阻 ${sourceUnavailableCount}` : null,
+    sourceEmptyCount > 0 ? `无保存声明 ${sourceEmptyCount}` : null,
+    sourceUnparsedCount > 0 ? `未解析 ${sourceUnparsedCount}` : null,
     sourceUnreadCount > 0 ? `未读取 ${sourceUnreadCount}` : null,
     sourceLoadingCount > 0 ? `读取中 ${sourceLoadingCount}` : null,
   ].filter(Boolean).join(' · ');
-  const hasSourceAttention = sourceUnreadCount > 0 || sourceUnavailableCount > 0;
+  const hasSourceAttention = sourceUnreadCount > 0 || sourceUnavailableCount > 0 || sourceUnparsedCount > 0;
 
   return (
     <div className="suite-graph-timeline" aria-label="来源声明事件">
