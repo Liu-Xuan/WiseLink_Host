@@ -1,4 +1,6 @@
 import { useEffect, useState } from 'react';
+import { getDocumentParsingPage } from '@client/src/api/canonical-host';
+import type { CanonicalTimelineProjection } from '@shared/api.interface';
 
 /**
  * Timeline event from the canonical host API
@@ -27,15 +29,7 @@ export interface TimelineEvent {
   actionAttemptId: string | null;
 }
 
-export interface TimelineProjection {
-  schemaVersion: 'wiselink.3_1.timeline_projection.v0.candidate';
-  workItemId: string;
-  events: TimelineEvent[];
-  boundary: {
-    onlyServerObservedEvents: true;
-    note: string;
-  };
-}
+export type TimelineProjection = CanonicalTimelineProjection;
 
 interface UseTimelineDataOptions {
   /** Work item ID to fetch timeline for */
@@ -82,20 +76,7 @@ export function useTimelineData({
       setIsLoading(true);
       setError(null);
 
-      const response = await fetch(
-        `/api/canonical-host/work-items/${workItemId}/document-parsing`
-      );
-
-      if (!response.ok) {
-        throw new Error(`HTTP ${response.status}: ${response.statusText}`);
-      }
-
-      const data = await response.json();
-
-      if (!data.timeline) {
-        throw new Error('No timeline field in response');
-      }
-
+      const data = await getDocumentParsingPage(workItemId, '');
       setTimeline(data.timeline);
     } catch (err) {
       setError(err instanceof Error ? err : new Error(String(err)));

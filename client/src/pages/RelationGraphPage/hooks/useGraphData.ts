@@ -1,10 +1,6 @@
 // Custom hook for fetching graph data based on perspective
 import { useState, useEffect } from 'react';
 import type { GraphData, PerspectiveType } from '../types';
-import { MOCK_GRAPH_DATA } from '../data/mockData';
-
-// Environment variable to control data source
-const USE_MOCK_DATA = import.meta.env.VITE_USE_MOCK_GRAPH !== 'false';
 
 interface UseGraphDataResult {
   data: GraphData | null;
@@ -18,37 +14,12 @@ export function useGraphData(perspective: PerspectiveType): UseGraphDataResult {
   const [error, setError] = useState<Error | null>(null);
 
   useEffect(() => {
-    const fetchData = async () => {
-      setIsLoading(true);
-      setError(null);
-
-      try {
-        if (USE_MOCK_DATA) {
-          // Simulate network delay
-          await new Promise(resolve => setTimeout(resolve, 300));
-          setData(MOCK_GRAPH_DATA[perspective]);
-        } else {
-          // Real API call
-          const response = await fetch(
-            `/api/canonical-host/relation-graph?perspective=${perspective}`
-          );
-
-          if (!response.ok) {
-            throw new Error(`Failed to fetch graph data: ${response.statusText}`);
-          }
-
-          const result = await response.json();
-          setData(result);
-        }
-      } catch (err) {
-        setError(err instanceof Error ? err : new Error('Unknown error'));
-        setData(null);
-      } finally {
-        setIsLoading(false);
-      }
-    };
-
-    fetchData();
+    // This pre-Suite hook has no matter/work identity and therefore cannot safely
+    // read a production graph. Keep the explicit failure for old consumers instead
+    // of silently showing mock data or calling the retired relation-graph endpoint.
+    setData(null);
+    setError(new Error(`旧图谱读取未接通：${perspective} 视角必须从事项图谱入口读取。`));
+    setIsLoading(false);
   }, [perspective]);
 
   return { data, isLoading, error };
