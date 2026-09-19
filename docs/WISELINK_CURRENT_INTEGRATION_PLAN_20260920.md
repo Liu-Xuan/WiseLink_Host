@@ -4,18 +4,17 @@
 
 ## 依据与当前恢复点
 
-- 工程态势以 `/Users/liuxuan/Downloads/WiseLink_工程态势_信息聚合与协同评估.html` 为最高视觉和交互依据：信息聚合内环、评估辅助外环、中心智能体、宏观/聚焦、来源下钻、动态光效和演示。既有 Trinity 画布只作可选择复用的实现材料。
+- 工程态势以 `/Users/liuxuan/Downloads/WiseLink_工程态势_信息聚合与协同评估.html` 为最高视觉和交互依据：信息聚合内环、六步工程师评估辅助外环、中心智能体、宏观/聚焦、来源下钻、动态光效和演示。既有 Trinity 生命周期画布只作可选择复用的实现材料，不保留与该单文件冲突的八环节外环或知识循环内环语义。
 - 其他全部页面以 `/Users/liuxuan/Downloads/WiseLink_Frontend_Suite_20260917/` 的实际静态页面、组件、样式和截图为基准。真实身份、来源、正式版本、工作保存、CAS、对象授权和正式采用仍由 Host 决定。样例只在显式开发预览中出现。
 - 图谱除 Suite 的 `graph.html`、`src/pages/Graph.jsx`、`src/components/GraphCanvas.jsx` 和 `src/graph/` 外，以 `screenshots/graph-hydraulic-light-1672.png`、`graph-gear-light-1672.png`、`graph-gear-dark-1672.png`、`graph-fmc-light-1672.png` 和 `graph-light-390.png` 为持久视觉证据。用户会话中另给的最新截图明确要求左时间线、中央分组卡片画布和右知识正文；原临时附件已不可读取，视觉接受前须用上述持久参考核对同一构图，不凭描述降低标准。
-- 当前文档对应的代码恢复点为 `codex/0-11` 的 `cdaa27caa`（父提交 `a9ed40b3b`）；`origin/codex/0-11` 与 `github/codex/0-11` 已分别回读相同 SHA。`1031e3caa` 仍是最近已接受的生产 Reader/换版代码恢复点，它把正式入口迁回真实授权读取链，并把 Suite 构造页限制在 `dev-preview`。之后已选择性提交 Reader 1A、图谱读取清理、筛选可访问性、图谱确切原文路径、Reader 来源定位优先级、无投影状态提示、Reader 1B 受控 PDF canvas 和图谱视觉连接修复。祖先链还包含针对 `9419d320c` 已知身份回归的纠正 `8d186d5b2`、知识读取修复 `957f327cd` 和资料库真实默认选择 `d7b074447`。
-- 当前 Reader 1A 已形成可审阅提交 `88c36f2a1`，相关 6 套 Reader/预览测试共 51 项通过，client typecheck、定向 ESLint、Stylelint 和 diff check 通过。旧 `single-app-workspace.spec.ts` 仍有 1 项与当前外壳不符的既存断言，须在改动共享外壳时一并校正，不能据此否定已通过的局部范围。四个原有未跟踪调试文件 `.claude/launch.json`、`query-work-items.cjs`、`query-work-items.mjs`、`scripts/create-test-work-item.mjs` 继续隔离，不提交也不删除。
-- Reader 1A 已从工作树提交并同步；`25c34281a` 修复 URL 来源与页面内译文来源选择的优先级，四个既有未跟踪调试文件继续隔离。Reader 1B 第一段已由 `589016bdf` 实现：受控 PDF canvas 复用 `documentVersionId` 原件授权链，并按真实 `locations.boxes` 叠加高亮；双语独立 anchor 同步和 Hosted 原件验证仍未完成，不能把 Reader 1B 或完整 Reader 视觉/来源验收写成已完成。图谱遗留 hook 的 mock 与旧 raw endpoint 已由 `b050b6e70` 收敛，筛选弹窗键盘/焦点行为由 `ca97db47c` 修复，`2c6691ea5` 恢复事项→确切原文→问题分析阅读路径；完整 Cytoscape 图谱视觉、真实关系模型和正式入口仍未完成。失败的依赖安装没有改动 `package.json` 或锁文件。
-- Reader 1B 的当前技术边界已进一步收敛：`DocumentOriginalResult.locations` 保存真实 `pageIndex`、坐标空间和 `boxes`；`DocumentOriginalCanvasPreview` 通过同一 `documentVersionId` 原件链生成 PDF.js canvas，`PdfDocumentViewer` 同时保留原 Host opaque locator 路径。当前只完成真实 box overlay，双语独立 anchor 同步、真实浏览器定位和 Hosted 业务证据仍待完成。
+- 当前代码恢复点为 `codex/0-11` 的 `06f1f3edd`（父提交 `b7b9399ce`）；`origin/codex/0-11` 与 `github/codex/0-11` 已分别回读相同 SHA。祖先链保留正式 Reader/换版真实授权读取、Suite 构造页 `dev-preview` 隔离、针对 `9419d320c` 已知身份回归的纠正 `8d186d5b2`、知识读取修复 `957f327cd` 和资料库真实默认选择 `d7b074447`。
+- Reader 1A 与 1B 已形成连续可审阅提交。`14aca246a` 建立双语独立阅读面，`c867771f2` 以真实来源 anchor 同步，`b7b9399ce` 保留本地译文修订与继续/重试动作，`06f1f3edd` 隔离视觉预览测试的受控 PDF canvas。Reader 语义/工作区测试 9 项、较宽 Reader/首屏/原件/返回测试 61 项及视觉预览测试均通过；client typecheck、Stylelint、diff check 和 precommit 通过。它们仍只是本地代码与测试证据，不是 Hosted 视觉或真实业务验收。
+- Reader 现在保留同一 `documentVersionId` 原件授权链、真实 `locations.boxes`、双语独立 anchor、准确 SourceRef 下钻、手机纵向双面和既有 Host opaque locator。真实登录浏览器中的精确定位、完整四尺寸截图和 Hosted 原件链仍须在发布候选上验证，不重做已完成的 Reader 生产组件。
 - Reader 来源上下文已统一为“最近一次明确定位动作”：页面内点击译文来源后，后续原件页、正文高亮和来源提示使用该 `sourceRef`，不会继续被旧 URL 来源覆盖；URL 变化仍会重置为新的外部定位。该修正只收敛前端状态，不改变原件授权链。
-- 图谱视觉纵切已定位并修正一批实际连接问题：Suite 图谱按钮样式改为匹配 Host `data-slot="button"`，图谱容器局部采用 Suite 蓝色/正文/边框色板，Cytoscape 从画布继承局部计算样式，并让 `data-wl-motion="off"` 同时关闭布局动画。该批只改变视觉连接与动效控制，不改变读取、关系或授权模型；完整截图对照和 workItem 入口统一仍待后续批次。
+- 图谱视觉纵切已定位并修正一批实际连接问题：Suite 图谱按钮样式改为匹配 Host `data-slot="button"`，图谱容器局部采用 Suite 蓝色/正文/边框色板，Cytoscape 从画布继承局部计算样式，并让 `data-wl-motion="off"` 同时关闭布局动画。该批只改变视觉连接与动效控制，不改变读取、关系或授权模型；workItem 正式入口已经统一，完整截图对照和剩余视觉差异仍待后续批次。
 - `workItemId` 正式图谱入口现先通过 typed `getEngineeringMatterDirectory({ workItemId })` 核对唯一事项绑定，唯一且无后续页才切换 Suite 图谱；零绑定、多绑定或读取失败均明确停止，不再把 workItem 投影直接送入旧 Legacy 画布，也不猜测 matter 归属。旧投影仅保留在显式注入的开发预览路径。
 - 图谱右侧选中对象的首屏内容已优先保留主题、范围、贡献、摘录和可读结论；文档版本、parseRun、工作版本、家族与依据标识收进“来源与版本”展开区，避免技术身份字段打断阅读。真实字段仍完整保留，未改变来源或授权边界。
-- 以上只是代码恢复点与本地检查。当前 Nest 页面路由可以返回 HTML，但 Vite 模块请求被 View fallback 返回为 `text/html`；Vite 直连虽能加载 React，却没有 Nest 注入的 canonical identity handoff，真实 API 因此以 `CANONICAL_IDENTITY_HANDOFF_UNAVAILABLE` 拒绝。该证据只定位本地启动链，不能推断 Reader、数据库或 Drizzle 故障。当前提交尚无完整本地联合入口、精确 Hosted 发布、真实登录功能链、性能或视觉验收回执；不沿用历史 release 代替本轮结论。
+- 以上只是代码恢复点与本地检查。官方本地链已区分页面路由 200、显式图谱预览 200、缺少 CSRF 的 403、带有效 CSRF cookie 但缺少 Hosted identity handoff 的 503 `CANONICAL_IDENTITY_HANDOFF_UNAVAILABLE`，以及未知 API 的 404。该证据证明路由、CSRF 与身份失败可以区分，不能推断 Reader、数据库或 Drizzle 故障。当前提交尚无精确 Hosted 发布、真实登录功能链、部署性能或完整视觉验收回执；不沿用历史 release 代替本轮结论。
 
 ## 本地 Claude 测试服务器的定位
 
@@ -28,27 +27,21 @@ Claude 搭建的本地服务器继续保留，作为生产 React 组件的快速
 | 批次 | 可审查的完成物 | 验证重点 |
 | --- | --- | --- |
 | 0. 安全恢复点（已完成特定代码纠正，持续守门） | `8d186d5b2` 已纠正 `9419d320c` 中已识别的本地身份放行、owner/creator 绕过和私有 db 穿透；正式 Reader/换版入口已去样例化。此结论只覆盖已审查回归，不宣称全部授权风险关闭 | 保持相关授权测试；未知 ID、撤权、版本缺失明确失败；正式入口绝不返回 AMM 等构造内容；不得重新引入 raw SQL、`as any`、本地权限模拟或静默错误 |
-| 1. Reader 1A 与可信本地联调（已提交，1B 待续） | `88c36f2a1` 交付连续正文、真实目录、五种阅读模式、分栏、全屏、文字/段落来源定位、URL/译文定位优先级和隔离视觉载具；双语语义 anchor 同步与 PDF boxes 高亮仍列入 1B。官方 Vite client dev server 负责本地模块、身份 handoff 和 CSRF 检查；不改受保护的 `server/main.ts`，不进入 Hosted 启动链 | 6 套定向 Reader/预览测试 51 项、typecheck、lint、stylelint、diff check 通过；本地 API 缺少 canonical handoff 时按安全设计拒绝。真实登录、平台 CSRF、撤权、部署性能和视觉截图证据留给同一提交的 Hosted 候选 |
-| 2. 完整图谱与时间 | 选择性继承现有 Cytoscape、typed API、明确 matterId、历史工作选择、session generation 和 AbortController 防护；还原 Suite 三栏、分组卡、中心圆环、配色、材质、连线、四视角、筛选、相机和手机活动面。按当前代码逐项修复仍存在的默认 mock、错误 URL、raw fetch、hub/matter 分类或类型问题，不把这些历史问题假定为仍全部存在；时间轴保留真实事件身份、预计历史和时间窗 | 1672/1440/1024/390 同条件截图及交互；真实关系与样例分开；同一事件往返、准确来源与选中状态恢复；正式入口只消费受权真实对象 |
-| 3. 信息架构与其余 Suite 页面 | 资料库、工程知识、Wiki、自身换版、问题分析、复核交流、工作进展、导览和共享外壳逐页对照 Suite；首屏先给主题、问题、关键条件和当前认识，清理无意义空态与过程噪声 | 上游选择自然传递；直达使用真实可解释默认对象或明确错误；同 family 正式改版与参考变化后续不同；桌面/手机、深浅主题和返回位置一致 |
-| 4. 工程态势 | 按旧单文件最高依据落为生产 React：信息聚合内环、评估辅助外环、中心工程智能体、宏观/聚焦、来源下钻、动态光效、演示、主题与效果设置 | 1672/1440/1024/390 同条件视觉与交互对照；reduced-motion 有效；样例隔离，环节、光效和数量不推导完成比例、模型运行或工程结论 |
+| 1. Reader 与可信本地联调（代码纵切已完成） | Reader 1A/1B 已交付连续正文、五种模式、分栏、全屏、双语独立阅读面、真实 anchor 同步、PDF boxes、准确 SourceRef 下钻及隔离视觉载具 | 保持现有 9 项、61 项和视觉预览测试；真实登录、撤权、部署性能与四尺寸截图留给同一精确 Hosted 候选，不重复开发 |
+| 2. 工程态势设计迁移（当前主批次） | 保留 `EngineeringSituationPage` 的真实受权目录、聚焦读取、事项/来源导航和显式不完整状态；将 Trinity 生命周期表现替换为旧单文件的信息聚合内环、六步评估辅助外环、中心工程智能体、宏观/聚焦、来源下钻、动态光效、演示、主题与效果设置 | 正式路由无 fixture；节点计数只表示实际关联范围；1672/1440/1024/390 同条件视觉与交互；reduced-motion 有效；光效、步骤和数量不推导完成比例、模型运行或工程结论 |
+| 3. 完整图谱与时间 | 选择性继承现有 Cytoscape、typed API、明确 matterId、历史工作选择、session generation 和 AbortController 防护；还原 Suite 三栏、分组卡、中心圆环、配色、材质、连线、四视角、筛选、相机和手机活动面。逐项核对当前代码，不按历史总结假定默认 mock、错误 URL、raw fetch、hub/matter 分类或类型问题仍存在；时间轴保留真实事件身份、预计历史和时间窗 | 1672/1440/1024/390 同条件截图及交互；真实关系与样例分开；同一事件往返、准确来源与选中状态恢复；正式入口只消费受权真实对象 |
+| 4. 信息架构与其余 Suite 页面 | 资料库、工程知识、Wiki、自身换版、问题分析、复核交流、工作进展、导览和共享外壳逐页对照 Suite；首屏先给主题、问题、关键条件和当前认识，清理无意义空态与过程噪声 | 上游选择自然传递；直达使用真实可解释默认对象或明确错误；同 family 正式改版与参考变化后续不同；桌面/手机、深浅主题和返回位置一致 |
 | 5. R10 业务与性能闭合 | 完成当前工作更正、Overall/Wiki/检索/知识同源、连续保存与恢复、正式换版/参考变化分流、准确综合、跨事项引用、获准后台来源及真实长 SB；页面稳定后测部署环境冷/暖读取并修实测瓶颈 | 无重跑有效中文、无虚构结论；技术发布指向准确接受组合；真实登录链和授权边界通过；常用页面以秒级有用内容为目标，记录实际时延分布 |
 
-批次 0 的已知回归已经纠正，但安全边界继续作为所有批次的守门条件。不能因本地联合入口尚未恢复而回退到本地模拟权限或生产 mock。主线已完成 Reader 1A 的可审阅纵切，下一步先完成 1B 的真实来源交互，再进入完整图谱与时间；这不阻止只读图谱差距分析、静态素材核对和不覆盖共享文件的 R10 业务修正并行开展。图谱为独立完整交付，不用三栏骨架或编译通过替代。发布组合保持串行。每批先核对在途与当前 HEAD，明确文件所有权及旧成果，再进行最小实现、针对性测试、同条件视觉对照和独立审查；有新失败才扩大 gate。
+批次 0 的已知回归已经纠正，但安全边界继续作为所有批次的守门条件。不能因本地环境缺少 Hosted identity handoff 而回退到本地模拟权限或生产 mock。Reader 1A/1B 的代码纵切已完成，当前先修正工程态势与最高设计依据的结构性冲突，再进入完整图谱与时间；这不阻止只读图谱差距分析、静态素材核对和不覆盖共享文件的 R10 业务修正并行开展。图谱为独立完整交付，不用三栏骨架或编译通过替代。发布组合保持串行。每批先核对当前 HEAD 和实际文件，再进行最小实现、针对性测试、同条件视觉对照和独立审查；有新失败才扩大 gate。
 
-## 当前 Reader 批次的开发顺序
+## 当前工程态势批次的开发顺序
 
-1. 以 Suite `reader.html`、React 源组件、完整 CSS 和参考截图建立逐区差距表，分别标注纯视觉差距、真实读取差距和来源/权限边界；不从构造页复制业务数据到正式入口。
-2. 在现有 `DocumentVersionReadingPage`、`DocumentSourceReadingWorkspace`、`DocumentOriginalReader` 和阅读样式上选择性实现连续正文、目录、阅读模式、分栏及全屏。复用现有授权读取和精确版本参数，不新建平行 API。
-3. 将“已读取页数”“不代表工程结论”等必要边界收敛到不打断正文的位置；页级准确定位改为段落或正文链接。去除中间页重复页眉页脚时保留真实页码、来源和可追溯关系。
-4. 用显式 `dev-preview` fixture 固定视觉状态，先完成 1672/1440，再检查 1024/390、深浅主题、动效和 `reduced-motion`；fixture 只证明视觉和交互，不证明正式读取。
-5. 使用独立本地联合入口验证 base path、身份 handoff、typed API、可本地复现的授权负例和返回恢复；同时检查开发脚本错误日志不输出凭据或连接字符串片段。真实登录、平台 CSRF、撤权和部署性能在同一精确提交的 Hosted 候选上验证，不以本地环境缺少平台能力阻塞形成候选。
-
-首批文件范围收敛为真实 `DocumentVersionReadingPage`、`DocumentSourceReadingWorkspace`、`DocumentOriginalReader` 和 `document-version-reading.css`。实现独立控制栏、可收目录、五种阅读模式、两张阅读面、桌面分栏和手机单面切换；中文模式复用现有语义读取的 `translation` 能力，仅中文和中英模式按需请求译文。保留 documentVersionId、pinned parseRun、epoch/AbortController、401/403/404 清空旧内容、受控原件 URL 生命周期和准确返回上下文。
-
-首批验收覆盖 1672x1000、1440x900、1024x768 和 390x844：目录收起后正文实际扩宽，分栏拖动和键盘调整有效，五模式均可到达，默认原文加原件不请求译文，历史 parseRun 切换模式后不漂移，来源定位使用真实 unitId、SourceRef 和保存的 location，全屏失败有可见反馈且退出不丢返回上下文。双语独立滚动面的锚点同步必须基于真实语义 block/anchor；PDF 区域高亮必须基于受控 PDF 渲染面和真实 boxes。二者未完成前明确列为后续子批次，不用数组索引、滚动百分比、公开 PDF 或演示图片伪装完成。
-
-Reader 分为两个连续接受点：1A 先交付当前五模式、目录、分栏、文字来源定位、手机切换和全屏，并明确双语仍为现有内容面；1B 再交付基于真实语义 anchor 的双语独立滚动同步和基于受控 boxes 的 PDF 区域高亮。只有 1B 通过后才称完整 Reader 视觉与来源交互验收；1A 可作为可审查提交和 Hosted 候选，不用未完成项阻塞已完成能力。
+1. 从单文件参考提取信息来源内环、宏观/聚焦状态、右侧下钻、演示幕次、主题和效果状态，并固定六个外环步骤：理解工程问题、核对要求与条件、分析风险与措施、形成综合评估、协同工程师复核、更新认识与依据。形成组件与真实字段映射；静态业务数量和文字只进入显式 `dev-preview`。
+2. 保留 `EngineeringSituationPage` 的真实受权数据 hook、分页、AbortController、事项选择、准确来源与返回导航，把展示模型从 Trinity 生命周期改为信息聚合/评估辅助语义；不新建平行 API，不从节点位置推导完成度。
+3. 先完成可读的桌面纵切：双环几何、中心智能体、宏观/聚焦切换、节点选择与右侧真实内容；随后接入暂停动态、演示过程、主题/效果和 `reduced-motion`，动画只表达信息流与评估关系。
+4. 用显式 `dev-preview` fixture 固定同条件视觉状态，完成 1672/1440/1024/390、深浅主题、默认/最高/兼容效果与 `reduced-motion` 对照；正式路由测试证明不导入 fixture，也不会在无数据时伪造事项或结论。
+5. 定向验证真实 matterId/workItemId 传递、宏观分页、不完整数据说明、来源/版本导航、迟到响应防护和授权失败清空旧内容。形成精确提交后才进入 Hosted 候选，Hosted 再验证真实登录、部署性能和视觉截图。
 
 性能同样分层：每个批次立即修复本次代码中确认的重复请求、迟到响应、无必要串行和过量载荷；相应页面稳定并形成 Hosted 候选后，再记录冷启动、暖首屏、切换和返回的时延分布。不得把所有性能工作推迟到最后，也不得用本地开发时延代替部署环境结论。
 
