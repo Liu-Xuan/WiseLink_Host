@@ -104,8 +104,10 @@ interface ThemeTokens {
   surface: string;
 }
 
-function readThemeTokens(): ThemeTokens {
-  const computed = typeof getComputedStyle === 'function' ? getComputedStyle(document.documentElement) : null;
+function readThemeTokens(scope?: HTMLElement): ThemeTokens {
+  const computed = typeof getComputedStyle === 'function'
+    ? getComputedStyle(scope ?? document.documentElement)
+    : null;
   const read = (name: string, fallback: string): string => computed?.getPropertyValue(name).trim() || fallback;
   return {
     ink: read('--wl-ink', '#242424'),
@@ -113,6 +115,11 @@ function readThemeTokens(): ThemeTokens {
     faint: read('--wl-faint', '#8a8a8a'),
     surface: read('--wl-surface-solid', '#ffffff'),
   };
+}
+
+function motionDisabled(): boolean {
+  return document.documentElement.getAttribute('data-wl-motion') === 'off'
+    || (typeof window.matchMedia === 'function' && window.matchMedia('(prefers-reduced-motion: reduce)').matches);
 }
 
 function buildStyleSheet(tokens: ThemeTokens): StylesheetStyle[] {
@@ -354,7 +361,7 @@ const SuiteGraphCanvas = forwardRef<SuiteGraphCanvasHandle, SuiteGraphCanvasProp
       maxZoom: 2.4,
       wheelSensitivity: 0.19,
       boxSelectionEnabled: false,
-      style: buildStyleSheet(readThemeTokens()),
+      style: buildStyleSheet(readThemeTokens(mount)),
     });
     const sync = () => {
       const next = cy.nodes().map((node) => ({ id: node.id(), data: node.data() as Record<string, unknown>, position: node.renderedPosition() }));
@@ -370,7 +377,7 @@ const SuiteGraphCanvas = forwardRef<SuiteGraphCanvasHandle, SuiteGraphCanvasProp
     });
     cyRef.current = cy;
     sync();
-    const applyTheme = () => cy.style(buildStyleSheet(readThemeTokens()));
+    const applyTheme = () => cy.style(buildStyleSheet(readThemeTokens(mount)));
     const themeObserver = typeof MutationObserver === 'function'
       ? new MutationObserver(applyTheme)
       : null;
@@ -405,7 +412,7 @@ const SuiteGraphCanvas = forwardRef<SuiteGraphCanvasHandle, SuiteGraphCanvasProp
     cy.add(asElements(presentation.elements));
     elementsRef.current = presentation.elements;
     const positions = Object.fromEntries(presentation.elements.filter((element) => element.group === 'nodes').map((element) => [String(element.data.id), element.position]));
-    cy.layout({ name: 'preset', positions, fit: false, animate: !window.matchMedia('(prefers-reduced-motion: reduce)').matches, animationDuration: 320 }).run();
+    cy.layout({ name: 'preset', positions, fit: false, animate: !motionDisabled(), animationDuration: 320 }).run();
     internalCameraRef.current = true;
     const restore = initialViewportRef.current;
     if (!initialViewportAppliedRef.current && restore && Number.isFinite(restore.zoom) && Number.isFinite(restore.pan.x) && Number.isFinite(restore.pan.y)) {

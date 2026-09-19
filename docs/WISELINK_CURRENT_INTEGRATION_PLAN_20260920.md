@@ -12,6 +12,7 @@
 - Reader 1A 已从工作树提交并同步；`25c34281a` 修复 URL 来源与页面内译文来源选择的优先级，四个既有未跟踪调试文件继续隔离。Reader 1B 第一段已由 `589016bdf` 实现：受控 PDF canvas 复用 `documentVersionId` 原件授权链，并按真实 `locations.boxes` 叠加高亮；双语独立 anchor 同步和 Hosted 原件验证仍未完成，不能把 Reader 1B 或完整 Reader 视觉/来源验收写成已完成。图谱遗留 hook 的 mock 与旧 raw endpoint 已由 `b050b6e70` 收敛，筛选弹窗键盘/焦点行为由 `ca97db47c` 修复，`2c6691ea5` 恢复事项→确切原文→问题分析阅读路径；完整 Cytoscape 图谱视觉、真实关系模型和正式入口仍未完成。失败的依赖安装没有改动 `package.json` 或锁文件。
 - Reader 1B 的当前技术边界已进一步收敛：`DocumentOriginalResult.locations` 保存真实 `pageIndex`、坐标空间和 `boxes`；`DocumentOriginalCanvasPreview` 通过同一 `documentVersionId` 原件链生成 PDF.js canvas，`PdfDocumentViewer` 同时保留原 Host opaque locator 路径。当前只完成真实 box overlay，双语独立 anchor 同步、真实浏览器定位和 Hosted 业务证据仍待完成。
 - Reader 来源上下文已统一为“最近一次明确定位动作”：页面内点击译文来源后，后续原件页、正文高亮和来源提示使用该 `sourceRef`，不会继续被旧 URL 来源覆盖；URL 变化仍会重置为新的外部定位。该修正只收敛前端状态，不改变原件授权链。
+- 图谱视觉纵切已定位并修正一批实际连接问题：Suite 图谱按钮样式改为匹配 Host `data-slot="button"`，图谱容器局部采用 Suite 蓝色/正文/边框色板，Cytoscape 从画布继承局部计算样式，并让 `data-wl-motion="off"` 同时关闭布局动画。该批只改变视觉连接与动效控制，不改变读取、关系或授权模型；完整截图对照和 workItem 入口统一仍待后续批次。
 - 以上只是代码恢复点与本地检查。当前 Nest 页面路由可以返回 HTML，但 Vite 模块请求被 View fallback 返回为 `text/html`；Vite 直连虽能加载 React，却没有 Nest 注入的 canonical identity handoff，真实 API 因此以 `CANONICAL_IDENTITY_HANDOFF_UNAVAILABLE` 拒绝。该证据只定位本地启动链，不能推断 Reader、数据库或 Drizzle 故障。当前提交尚无完整本地联合入口、精确 Hosted 发布、真实登录功能链、性能或视觉验收回执；不沿用历史 release 代替本轮结论。
 
 ## 本地 Claude 测试服务器的定位
