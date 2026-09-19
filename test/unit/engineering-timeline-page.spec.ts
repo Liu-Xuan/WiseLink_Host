@@ -148,14 +148,31 @@ describe('engineering timeline page gates', () => {
     expect(new URLSearchParams(router.state.location.search).get('documentVersionId')).toBe('DV-CUR');
   });
 
+  it('continues the authorized catalog before showing a default timeline empty state', async () => {
+    mockLibraryDocuments
+      .mockResolvedValueOnce({
+        items: [{ documentId: 'D1', versions: [{ documentVersionId: 'DV-OLD', selectedVersionIsCurrent: false }] }],
+        nextCursor: 'page-2',
+      })
+      .mockResolvedValueOnce({
+        items: [{ documentId: 'D2', versions: [{ documentVersionId: 'DV-CUR', selectedVersionIsCurrent: true }] }],
+        nextCursor: null,
+      });
+    await mount('/timeline');
+    await act(async () => undefined);
+    expect(mockLibraryDocuments).toHaveBeenCalledTimes(2);
+    expect(mockLibraryDocuments).toHaveBeenNthCalledWith(2, { limit: 24, cursor: 'page-2' }, expect.any(AbortSignal));
+    expect(new URLSearchParams(router.state.location.search).get('documentVersionId')).toBe('DV-CUR');
+    expect(container.textContent).not.toContain('当前账号没有可打开的当前文档版本');
+  });
+
   it('shows a page-scoped empty state without claiming the whole catalog has no versions', async () => {
     mockLibraryDocuments.mockResolvedValue({ items: [], nextCursor: null });
     await mount('/timeline');
     await act(async () => undefined);
     expect(mockLibraryDocuments).toHaveBeenCalledTimes(1);
-    expect(container.textContent).toContain('本页未取到当前版本');
-    expect(container.textContent).toContain('这不代表当前账号没有任何文档版本');
-    expect(container.textContent).toContain('当前已读到目录末尾');
+    expect(container.textContent).toContain('当前账号没有可打开的当前文档版本');
+    expect(container.textContent).toContain('已完整读取当前账号有权访问的文档目录');
     expect(new URLSearchParams(router.state.location.search).get('documentVersionId')).toBeNull();
   });
 

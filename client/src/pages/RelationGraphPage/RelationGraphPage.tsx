@@ -340,8 +340,6 @@ function GraphDefaultMatterResolver() {
   const { sessionGeneration, authenticationRequired } =
     useCurrentUserSession();
   const [state, setState] = useState<'loading' | 'empty' | 'error'>('loading');
-  const [nextCursor, setNextCursor] = useState<string | null>(null);
-  const [cursor, setCursor] = useState<string | undefined>(undefined);
   const [reloadKey, setReloadKey] = useState(0);
 
   useEffect(() => {
@@ -350,19 +348,28 @@ function GraphDefaultMatterResolver() {
     setState('loading');
     void (async () => {
       try {
-        const directory = await getEngineeringMatterDirectory(
-          cursor ? { limit: 1, cursor } : { limit: 1 },
-        );
-        if (cancelled) return;
-        const first: EngineeringMatterDirectoryResponse['items'][number] | undefined =
-          directory.items[0];
-        setNextCursor(directory.nextCursor);
-        if (first?.matterId) {
-          navigate(
-            `/graph?${new URLSearchParams({ matterId: first.matterId })}`,
-            { replace: true },
+        let cursor: string | undefined;
+        const seenCursors = new Set<string>();
+        while (!cancelled) {
+          const directory = await getEngineeringMatterDirectory(
+            cursor ? { limit: 20, cursor } : { limit: 20 },
           );
-          return;
+          if (cancelled) return;
+          const first: EngineeringMatterDirectoryResponse['items'][number] | undefined =
+            directory.items.find((item) => item.matterId.trim());
+          if (first) {
+            navigate(
+              `/graph?${new URLSearchParams({ matterId: first.matterId })}`,
+              { replace: true },
+            );
+            return;
+          }
+          if (!directory.nextCursor) break;
+          if (seenCursors.has(directory.nextCursor)) {
+            throw new Error('工程事项目录游标未推进。');
+          }
+          seenCursors.add(directory.nextCursor);
+          cursor = directory.nextCursor;
         }
         setState('empty');
       } catch (reason) {
@@ -374,7 +381,7 @@ function GraphDefaultMatterResolver() {
     return () => {
       cancelled = true;
     };
-  }, [authenticationRequired, sessionGeneration, reloadKey, cursor, navigate]);
+  }, [authenticationRequired, sessionGeneration, reloadKey, navigate]);
 
   if (authenticationRequired) {
     return (
@@ -398,24 +405,12 @@ function GraphDefaultMatterResolver() {
   if (state === 'empty') {
     return (
       <section className="rg-panel">
-        <h2 className="rg-panel-title">本页未取到可用事项</h2>
+        <h2 className="rg-panel-title">当前账号没有可打开的工程事项</h2>
         <p className="rg-panel-note">
-          关系图谱基于单个事项的规范对象投影渲染。已读取当前账号工程事项目录的
-          {nextCursor ? '当前页' : '最后一页'}，本页没有可用于关系图谱的事项，
-          这不代表当前账号没有任何工程事项。
-          {nextCursor ? '目录还有后续页，可继续读取以扩大范围。' : '当前已读到目录末尾。'}
+          关系图谱基于单个事项的规范对象投影渲染。已完整读取当前账号有权访问的工程事项目录，
+          没有发现可用于打开图谱的事项。
         </p>
         <div>
-          {nextCursor ? (
-            <Button
-              onClick={() => {
-                setCursor(nextCursor);
-                setReloadKey((value) => value + 1);
-              }}
-            >
-              继续读取下一页
-            </Button>
-          ) : null}
           <Button variant="outline" onClick={() => navigate('/library')}>
             去资料库
           </Button>

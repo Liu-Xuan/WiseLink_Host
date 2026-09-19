@@ -206,8 +206,6 @@ function TimelineDefaultDocumentResolver({ pagePath, searchParams }: { pagePath:
   const navigate = useNavigate();
   const { sessionGeneration, authenticationRequired } = useCurrentUserSession();
   const [state, setState] = useState<'loading' | 'empty' | 'error'>('loading');
-  const [nextCursor, setNextCursor] = useState<string | null>(null);
-  const [cursor, setCursor] = useState<string | undefined>(undefined);
   const [reloadKey, setReloadKey] = useState(0);
   const epochRef = useRef(0);
 
@@ -219,21 +217,30 @@ function TimelineDefaultDocumentResolver({ pagePath, searchParams }: { pagePath:
     setState('loading');
     void (async () => {
       try {
-        const catalog = await getCanonicalLibraryDocuments(
-          cursor ? { limit: 24, cursor } : { limit: 24 },
-          controller.signal,
-        );
-        if (controller.signal.aborted || epochRef.current !== epoch || session !== getCanonicalHostClientSessionGeneration()) return;
-        for (let index = 0; index < catalog.items.length; index += 1) {
-          const version = catalog.items[index].versions.find(item => item.selectedVersionIsCurrent);
-          if (version?.documentVersionId) {
-            const query = activityReadingParams(searchParams);
-            query.set('documentVersionId', version.documentVersionId);
-            navigate(`${pagePath}?${query}`, { replace: true });
-            return;
+        let cursor: string | undefined;
+        const seenCursors = new Set<string>();
+        while (!controller.signal.aborted) {
+          const catalog = await getCanonicalLibraryDocuments(
+            cursor ? { limit: 24, cursor } : { limit: 24 },
+            controller.signal,
+          );
+          if (controller.signal.aborted || epochRef.current !== epoch || session !== getCanonicalHostClientSessionGeneration()) return;
+          for (let index = 0; index < catalog.items.length; index += 1) {
+            const version = catalog.items[index].versions.find(item => item.selectedVersionIsCurrent);
+            if (version?.documentVersionId) {
+              const query = activityReadingParams(searchParams);
+              query.set('documentVersionId', version.documentVersionId);
+              navigate(`${pagePath}?${query}`, { replace: true });
+              return;
+            }
           }
+          if (!catalog.nextCursor) break;
+          if (seenCursors.has(catalog.nextCursor)) {
+            throw new Error('文档目录游标未推进。');
+          }
+          seenCursors.add(catalog.nextCursor);
+          cursor = catalog.nextCursor;
         }
-        setNextCursor(catalog.nextCursor);
         setState('empty');
       } catch (reason) {
         if (controller.signal.aborted || epochRef.current !== epoch) return;
@@ -242,7 +249,7 @@ function TimelineDefaultDocumentResolver({ pagePath, searchParams }: { pagePath:
       }
     })();
     return () => controller.abort();
-  }, [pagePath, sessionGeneration, authenticationRequired, reloadKey, cursor, navigate, searchParams]);
+  }, [pagePath, sessionGeneration, authenticationRequired, reloadKey, navigate, searchParams]);
 
   if (authenticationRequired) {
     return (
@@ -262,15 +269,12 @@ function TimelineDefaultDocumentResolver({ pagePath, searchParams }: { pagePath:
   if (state === 'empty') {
     return (
       <div className="activity-timeline-empty">
-        <h2>本页未取到当前版本</h2>
+        <h2>当前账号没有可打开的当前文档版本</h2>
         <p>
-          工程时间轴基于某个确切文档版本已保存的时间活动候选。已读取当前账号文档目录的{nextCursor ? '当前页' : '最后一页'}，本页没有标记为当前版本的文档，这不代表当前账号没有任何文档版本。
-          {nextCursor ? '目录还有后续页，可继续读取以扩大范围。' : '当前已读到目录末尾。'}
+          工程时间轴基于某个确切文档版本已保存的时间活动候选。已完整读取当前账号有权访问的文档目录，
+          没有发现标记为当前版本且可用于时间轴的文档。
         </p>
         <div>
-          {nextCursor ? (
-            <Button variant="outline" onClick={() => { setCursor(nextCursor); setReloadKey(value => value + 1); }}>继续读取下一页</Button>
-          ) : null}
           <Button variant="outline" onClick={() => navigate('/library?mode=document')}>去资料库</Button>
         </div>
       </div>
