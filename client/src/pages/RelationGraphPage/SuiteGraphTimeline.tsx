@@ -40,24 +40,33 @@ const SuiteGraphTimeline = memo(function SuiteGraphTimeline({
   onOpenFullTimeline,
   onExpandSource,
 }: SuiteGraphTimelineProps) {
+  const hasSourceAttention = sources.some(
+    (source) => source.status !== 'loaded' && source.status !== 'loading',
+  );
+
   return (
     <div className="suite-graph-timeline" aria-label="来源声明事件">
-      <div className="suite-graph-timeline-sources" role="list" aria-label="来源读取状态">
-        {sources.map((source) => (
-          <div className="suite-graph-timeline-source" role="listitem" key={source.documentVersionId}>
-            <div className="suite-graph-timeline-source-row">
-              <b>{source.label}</b>
-              <span data-status={source.status}>{SOURCE_STATUS_LABELS[source.status] ?? source.status}</span>
-            </div>
-            {source.notice ? <p className="suite-graph-muted">{source.notice}</p> : null}
-            {source.status === 'skipped' || source.status === 'unavailable' || source.status === 'empty' || source.status === 'unparsed' ? (
-              <Button size="sm" variant="ghost" onClick={() => onExpandSource(source.documentVersionId)}>
-                {source.status === 'skipped' ? '读取该来源声明' : '重新读取'}
-              </Button>
-            ) : null}
+      {sources.length > 0 ? (
+        <details className="suite-graph-timeline-sources" open={hasSourceAttention}>
+          <summary>来源读取状态（{sources.length}）</summary>
+          <div role="list" aria-label="来源读取状态">
+            {sources.map((source) => (
+              <div className="suite-graph-timeline-source" role="listitem" key={source.documentVersionId}>
+                <div className="suite-graph-timeline-source-row">
+                  <b>{source.label}</b>
+                  <span data-status={source.status}>{SOURCE_STATUS_LABELS[source.status] ?? source.status}</span>
+                </div>
+                {source.notice ? <p className="suite-graph-muted">{source.notice}</p> : null}
+                {source.status === 'skipped' || source.status === 'unavailable' || source.status === 'empty' || source.status === 'unparsed' ? (
+                  <Button size="sm" variant="ghost" onClick={() => onExpandSource(source.documentVersionId)}>
+                    {source.status === 'skipped' ? '读取该来源声明' : '重新读取'}
+                  </Button>
+                ) : null}
+              </div>
+            ))}
           </div>
-        ))}
-      </div>
+        </details>
+      ) : null}
       {loading && events.length === 0 ? <p className="suite-graph-muted" role="status">正在读取来源声明…</p> : null}
       {!loading && events.length === 0 ? (
         <p className="suite-graph-muted">当前授权范围没有可进入的文档时间声明。</p>
@@ -65,7 +74,7 @@ const SuiteGraphTimeline = memo(function SuiteGraphTimeline({
       <ol className="suite-graph-timeline-events">
         {events.map((event) => (
           <li key={event.id}>
-            <div className={`suite-graph-timeline-event${selectedEventId === event.id ? ' is-selected' : ''}`}>
+            <div className={`suite-graph-timeline-event is-${event.kind}${selectedEventId === event.id ? ' is-selected' : ''}`}>
               <button
                 type="button"
                 className="suite-graph-timeline-event-main"
