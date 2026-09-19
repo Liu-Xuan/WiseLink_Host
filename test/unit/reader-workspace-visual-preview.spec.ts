@@ -8,6 +8,10 @@ jest.mock('../../client/src/pages/DocumentParsingPage/document-version-reading.c
 jest.mock('../../client/src/pages/WorkspaceHomePage/DocumentOriginalPreview', () => ({
   DocumentOriginalInlinePreview: () => createElement('div', { 'data-testid': 'mock-production-pdf' }),
 }));
+jest.mock('../../client/src/pages/DocumentParsingPage/DocumentOriginalCanvasPreview', () => ({
+  __esModule: true,
+  default: () => createElement('div', { 'data-testid': 'mock-production-pdf-canvas' }),
+}));
 jest.mock('@client/src/components/ui/button', () => ({
   Button: ({ asChild, children, ...props }: { asChild?: boolean; children?: ReactNode }) =>
     asChild ? children : createElement('button', props, children),
