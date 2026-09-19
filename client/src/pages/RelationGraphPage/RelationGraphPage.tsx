@@ -26,6 +26,7 @@ import { useCurrentUserSession } from '@client/src/app/providers/CurrentUserSess
 import { Button } from '@client/src/components/ui/button';
 import { ButtonGroup } from '@client/src/components/ui/button-group';
 import RelationGraphCanvas from './RelationGraphCanvas';
+import { resolveWorkItemMatter } from './work-item-matter-resolver';
 import {
   buildGraphElements,
   buildNodeDeepLink,
@@ -295,32 +296,18 @@ function WorkItemMatterResolver({ workItemId }: { workItemId: string }) {
     setState('loading');
     void (async () => {
       try {
-        let cursor: string | undefined;
-        const seenCursors = new Set<string>();
-        const matterIds = new Set<string>();
-        while (true) {
-          const directory = await getEngineeringMatterDirectory(
-            cursor ? { workItemId, limit: 20, cursor } : { workItemId, limit: 20 },
-            controller.signal,
-          );
-          if (controller.signal.aborted) return;
-          directory.items.forEach((item) => {
-            const matterId = item.matterId.trim();
-            if (matterId) matterIds.add(matterId);
-          });
-          if (matterIds.size > 1) {
-            setState('ambiguous');
-            return;
-          }
-          if (!directory.nextCursor) break;
-          if (seenCursors.has(directory.nextCursor)) {
-            throw new Error('工程事项目录游标未推进。');
-          }
-          seenCursors.add(directory.nextCursor);
-          cursor = directory.nextCursor;
+        const resolution = await resolveWorkItemMatter(
+          workItemId,
+          getEngineeringMatterDirectory,
+          controller.signal,
+        );
+        if (controller.signal.aborted) return;
+        if (resolution.kind === 'ambiguous') {
+          setState('ambiguous');
+          return;
         }
-        const [matterId] = [...matterIds];
-        if (matterId) {
+        if (resolution.kind === 'unique') {
+          const matterId = resolution.matterId;
           navigate(`/graph?${new URLSearchParams({ matterId })}`, { replace: true });
           return;
         }
