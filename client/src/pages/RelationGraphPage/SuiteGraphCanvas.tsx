@@ -153,6 +153,8 @@ function buildStyleSheet(tokens: ThemeTokens): StylesheetStyle[] {
     },
     { selector: '.bundle-edge', style: { opacity: 0.62 } },
     { selector: '.business-edge', style: { width: 1.7, opacity: 0.68 } },
+    { selector: '.suite-connected-edge', style: { width: 2.4, opacity: 0.92 } },
+    { selector: '.suite-dimmed-edge', style: { opacity: 0.14 } },
   ];
   Object.entries(GROUP_TONES).forEach(([key, tone]) => {
     sheets.push({
@@ -421,8 +423,22 @@ const SuiteGraphCanvas = forwardRef<SuiteGraphCanvasHandle, SuiteGraphCanvasProp
     const cy = cyRef.current;
     if (!cy) return;
     cy.nodes().removeClass('suite-selected');
+    if (typeof cy.edges === 'function') {
+      const edges = cy.edges();
+      edges.removeClass('suite-connected-edge');
+      edges.removeClass('suite-dimmed-edge');
+    }
     const target = presentation.elements.find((element) => element.group === 'nodes' && (element.data.businessId === selectedId || element.data.id === selectedId));
-    if (target) cy.getElementById(String(target.data.id)).addClass('suite-selected');
+    if (!target) return;
+    cy.getElementById(String(target.data.id)).addClass('suite-selected');
+    if (typeof cy.edges !== 'function') return;
+    const targetGroupKey = target.data.groupKey;
+    cy.edges().forEach((edge) => {
+      const connected = edge.source().id() === String(target.data.id)
+        || edge.target().id() === String(target.data.id)
+        || (typeof targetGroupKey === 'string' && edge.data('groupKey') === targetGroupKey);
+      edge.addClass(connected ? 'suite-connected-edge' : 'suite-dimmed-edge');
+    });
   }, [presentation, selectedId]);
 
   const handleOverlaySelect = (event: MouseEvent<HTMLButtonElement>, data: Record<string, unknown>) => {
