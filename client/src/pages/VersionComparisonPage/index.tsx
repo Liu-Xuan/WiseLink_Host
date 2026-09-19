@@ -148,11 +148,11 @@ export default function VersionComparisonPage() {
   }, [documentId]);
 
   const handleFamilyChange = (newDocumentId: string) => {
-    navigate(`/version-comparison/${newDocumentId}`);
+    navigate(`/dev-preview/version-comparison/${newDocumentId}`);
   };
 
   const handleOpenReader = (docId: string) => {
-    navigate(`/reader/${docId}`);
+    navigate(`/dev-preview/reader/${docId}`);
   };
 
   if (loading) {

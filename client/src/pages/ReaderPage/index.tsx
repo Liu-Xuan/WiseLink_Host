@@ -287,7 +287,7 @@ export default function ReaderPage() {
       <ReaderHeader
         document={document}
         onBack={() => navigate(-1)}
-        onOpenRevision={() => navigate(`/revision/${document.id}`)}
+        onOpenRevision={() => navigate(`/dev-preview/version-comparison/${encodeURIComponent(document.id)}`)}
       />
 
       <ReaderControls

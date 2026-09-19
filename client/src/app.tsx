@@ -24,6 +24,8 @@ import KnowledgeLookupPage from './pages/KnowledgeLookupPage/KnowledgeLookupPage
 import GraphRelationPreviewPage from './pages/GraphRelationPreviewPage/GraphRelationPreviewPage';
 import SuiteGraphVisualPreviewPage from './pages/GraphRelationPreviewPage/SuiteGraphVisualPreviewPage';
 import EngineeringChronologyPreviewPage from './pages/EngineeringChronologyPreviewPage/EngineeringChronologyPreviewPage';
+import ReaderPage from './pages/ReaderPage';
+import VersionComparisonPage from './pages/VersionComparisonPage';
 
 // Suite 1.1 Pages
 import ReaderPageAdapter from './adapters/ReaderPageAdapter';
@@ -53,6 +55,8 @@ const RoutesComponent = () => {
       <Route path="dev-preview/graph" element={<SuiteGraphVisualPreviewPage />} />
       <Route path="dev-preview/graph-legacy" element={<GraphRelationPreviewPage />} />
       <Route path="dev-preview/chronology" element={<EngineeringChronologyPreviewPage />} />
+      <Route path="dev-preview/reader/:documentId" element={<ReaderPage />} />
+      <Route path="dev-preview/version-comparison/:documentId" element={<VersionComparisonPage />} />
       <Route path="dev-preview/reactflow-validation" element={<ReactFlowValidationPlayground />} />
       <Route element={<Layout />}>
         <Route index element={<LibraryIndexRedirect />} />
@@ -81,7 +85,7 @@ const RoutesComponent = () => {
           path="work-items/:workItemId/documents"
           element={<DocumentParsingPage />}
         />
-        {/* Suite 1.1 Routes */}
+        {/* Compatibility entries resolve only to existing authorized version readers. */}
         <Route path="reader/:documentId" element={<ReaderPageAdapter />} />
         <Route path="version-comparison/:documentId" element={<VersionComparisonPageAdapter />} />
         <Route path="*" element={<NotFound />} />

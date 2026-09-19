@@ -1,26 +1,28 @@
-import VersionComparisonPage from '../pages/VersionComparisonPage';
+import { FileQuestion } from 'lucide-react';
+import { Link, Navigate, useLocation, useParams, useSearchParams } from 'react-router-dom';
+import { legacyComparisonTarget } from './legacy-document-routes';
+import '../pages/NotFound/not-found.css';
 
-interface VersionComparisonPageAdapterProps {
-  documentId?: string;
-}
-
-/**
- * VersionComparisonPage 集成适配器
- *
- * 将 Suite 1.1 的 VersionComparisonPage 集成到现有系统中
- *
- * 使用方式：
- * <VersionComparisonPageAdapter documentId="doc-123" />
- */
-export default function VersionComparisonPageAdapter(
-  props: VersionComparisonPageAdapterProps
-) {
-  // 适配器直接透传到 VersionComparisonPage
-  // 未来可以在这里添加额外的集成逻辑，例如：
-  // - 认证检查
-  // - 租户上下文注入
-  // - 文档族历史数据预加载
-  // - 错误边界处理
-
-  return <VersionComparisonPage />;
+export default function VersionComparisonPageAdapter() {
+  const { documentId } = useParams<{ documentId: string }>();
+  const [params] = useSearchParams();
+  const { hash } = useLocation();
+  const target = legacyComparisonTarget(documentId, params, hash);
+  if (target.route) return <Navigate replace to={target.route} />;
+  return (
+    <main className="wl-not-found" aria-labelledby="legacy-comparison-title">
+      <section className="wl-not-found-card wl-glass-content">
+        <FileQuestion aria-hidden="true" />
+        <h1 id="legacy-comparison-title">无法比较版本</h1>
+        <p>{target.reason}</p>
+        {documentId ? (
+          <Link to={`/document-versions/${encodeURIComponent(documentId)}`}>
+            阅读指定版本
+          </Link>
+        ) : (
+          <Link to="/library">返回资料库</Link>
+        )}
+      </section>
+    </main>
+  );
 }

@@ -1,26 +1,22 @@
-import ReaderPage from '../pages/ReaderPage';
+import { FileQuestion } from 'lucide-react';
+import { Link, Navigate, useLocation, useParams, useSearchParams } from 'react-router-dom';
+import { legacyReaderTarget } from './legacy-document-routes';
+import '../pages/NotFound/not-found.css';
 
-interface ReaderPageAdapterProps {
-  documentId?: string;
-  parseRunId?: string;
-  sourceRef?: string;
-}
-
-/**
- * ReaderPage 集成适配器
- *
- * 将 Suite 1.1 的 ReaderPage 集成到现有系统中
- *
- * 使用方式：
- * <ReaderPageAdapter documentId="doc-123" sourceRef="block-5" />
- */
-export default function ReaderPageAdapter(props: ReaderPageAdapterProps) {
-  // 适配器直接透传到 ReaderPage
-  // 未来可以在这里添加额外的集成逻辑，例如：
-  // - 认证检查
-  // - 租户上下文注入
-  // - 数据预加载
-  // - 错误边界处理
-
-  return <ReaderPage />;
+export default function ReaderPageAdapter() {
+  const { documentId } = useParams<{ documentId: string }>();
+  const [params] = useSearchParams();
+  const { hash } = useLocation();
+  const target = legacyReaderTarget(documentId, params, hash);
+  if (target.route) return <Navigate replace to={target.route} />;
+  return (
+    <main className="wl-not-found" aria-labelledby="legacy-reader-title">
+      <section className="wl-not-found-card wl-glass-content">
+        <FileQuestion aria-hidden="true" />
+        <h1 id="legacy-reader-title">无法定位原文</h1>
+        <p>{target.reason}</p>
+        <Link to="/library">返回资料库</Link>
+      </section>
+    </main>
+  );
 }
