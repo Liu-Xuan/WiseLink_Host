@@ -279,6 +279,13 @@ const SuiteGraphCanvas = forwardRef<SuiteGraphCanvasHandle, SuiteGraphCanvasProp
       const cy = cyRef.current;
       if (!cy) return;
       userCameraRef.current = true;
+      elementsRef.current.forEach((element) => {
+        if (element.group !== 'nodes' || !element.position) return;
+        const node = cy.getElementById(String(element.data.id));
+        if (node.length && typeof node.position === 'function') {
+          node.position(element.position);
+        }
+      });
       cy.fit(undefined, 24);
     },
     setViewport: (viewport) => {
