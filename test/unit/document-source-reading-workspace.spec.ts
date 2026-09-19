@@ -6,8 +6,15 @@ import { DocumentSourceReadingWorkspace } from '../../client/src/pages/DocumentP
 import { originalFixture } from './document-parsing/fixtures/document-original.fixture';
 
 jest.mock('@client/src/pages/WorkspaceHomePage/DocumentOriginalPreview', () => ({
+  useDocumentOriginalUrl: () => ({ url: null, busy: false, error: null, prepare: () => Promise.resolve() }),
   DocumentOriginalPreview: ({ children }: { children: string }) => createElement('span', null, children),
-  DocumentOriginalInlinePreview: ({ page }: { page: number }) => createElement('div', { 'data-pdf-page': page }, 'PDF'),
+}));
+jest.mock('../../client/src/pages/DocumentParsingPage/DocumentOriginalCanvasPreview', () => ({
+  __esModule: true,
+  default: ({ page }: { page: number }) => createElement('div', { 'data-pdf-page': page }, 'PDF'),
+}));
+jest.mock('../../client/src/utils/document-original-url', () => ({
+  useDocumentOriginalUrl: () => ({ url: null, busy: false, error: null, prepare: () => Promise.resolve() }),
 }));
 jest.mock('@client/src/components/ui/button', () => ({
   Button: ({ asChild, children, ...props }: { asChild?: boolean; children: ReactNode }) =>

@@ -12,8 +12,8 @@ import { Link } from 'react-router-dom';
 
 import { Button } from '@client/src/components/ui/button';
 import type { DocumentOriginalResult } from '@shared/document-original.interface';
-import { DocumentOriginalInlinePreview } from '../WorkspaceHomePage/DocumentOriginalPreview';
 import { DocumentOriginalReader } from './DocumentOriginalReader';
+import DocumentOriginalCanvasPreview from './DocumentOriginalCanvasPreview';
 import { originalUnitPages } from './original-reading';
 
 export type DocumentSourceReaderMode = 'dual' | 'bilingual' | 'translation' | 'original' | 'pdf';
@@ -59,7 +59,6 @@ export function DocumentSourceReadingWorkspace({
   const [tocOpen, setTocOpen] = useState(() => typeof window === 'undefined' ||
     typeof window.matchMedia !== 'function' || window.matchMedia('(min-width: 900px)').matches);
   const [mobileSecondary, setMobileSecondary] = useState(false);
-  const [originalRequested, setOriginalRequested] = useState(false);
   const [activeUnitId, setActiveUnitId] = useState<string | null>(initialUnitId ?? null);
   const [fullscreen, setFullscreen] = useState(false);
   const [fullscreenMessage, setFullscreenMessage] = useState<string | null>(null);
@@ -75,7 +74,7 @@ export function DocumentSourceReadingWorkspace({
   );
 
   useEffect(() => {
-    if (initialPage) { setPage(initialPage); setOriginalRequested(true); }
+    if (initialPage) setPage(initialPage);
   }, [initialPage]);
 
   useEffect(() => {
@@ -88,10 +87,6 @@ export function DocumentSourceReadingWorkspace({
   }, [initialUnitId, initialLocationRequest]);
 
   useEffect(() => {
-    setOriginalRequested(Boolean(initialPage));
-  }, [documentVersionId]);
-
-  useEffect(() => {
     const update = () => setFullscreen(document.fullscreenElement === workspaceRef.current);
     document.addEventListener('fullscreenchange', update);
     return () => document.removeEventListener('fullscreenchange', update);
@@ -100,7 +95,6 @@ export function DocumentSourceReadingWorkspace({
   function locateUnit(pageIndex: number, unitId: string): void {
     setPage(pageIndex);
     setActiveUnitId(unitId);
-    setOriginalRequested(true);
     if (mode === 'original') onModeChange('dual');
   }
 
@@ -147,6 +141,28 @@ export function DocumentSourceReadingWorkspace({
   const showText = mode === 'dual' || mode === 'original';
   const showPdf = mode === 'dual' || mode === 'pdf';
   const showTranslation = mode === 'bilingual' || mode === 'translation';
+  const targetBoxes = useMemo(() => {
+    if (!activeUnitId) return null;
+    const unit = original.source.units.find((item) => item.unitId === activeUnitId);
+    if (!unit) return null;
+    const locations = original.locations.filter((location) =>
+      unit.sourceRefIds.includes(location.sourceRefId)
+      && location.pageIndex === page - 1
+      && location.boxes.length > 0
+      && location.viewportWidth !== null
+      && location.viewportHeight !== null
+      && location.viewportWidth > 0
+      && location.viewportHeight > 0,
+    );
+    if (locations.length === 0) return null;
+    const first = locations[0];
+    if (!first || first.viewportWidth === null || first.viewportHeight === null) return null;
+    return {
+      boxes: locations.flatMap((location) => location.boxes),
+      viewportWidth: first.viewportWidth,
+      viewportHeight: first.viewportHeight,
+    };
+  }, [activeUnitId, original, page]);
 
   return (
     <div className={`source-reader-workspace${tocOpen ? '' : ' no-toc'}`} ref={workspaceRef}>
@@ -232,12 +248,23 @@ export function DocumentSourceReadingWorkspace({
                 />
                 <div className="source-reader-pdf-pane">
                   <div className="source-reader-pane-title"><strong>PDF 原件</strong><span>受控读取 · 第 {page} 页</span></div>
-                  {renderPdfPreview ? renderPdfPreview(page) : <DocumentOriginalInlinePreview documentVersionId={documentVersionId} page={page} autoLoad={originalRequested} />}
+                  {renderPdfPreview ? renderPdfPreview(page) : <DocumentOriginalCanvasPreview
+                    documentVersionId={documentVersionId}
+                    page={page}
+                    autoLoad={Boolean(initialPage)}
+                    targetSignal={`${activeUnitId ?? ''}:${initialLocationRequest}`}
+                    targetBoxes={targetBoxes}
+                  />}
                 </div>
               </>
             ) : showPdf ? <div className="source-reader-pdf-pane">
               <div className="source-reader-pane-title"><strong>PDF 原件</strong><span>受控读取 · 第 {page} 页</span></div>
-              {renderPdfPreview ? renderPdfPreview(page) : <DocumentOriginalInlinePreview documentVersionId={documentVersionId} page={page} />}
+              {renderPdfPreview ? renderPdfPreview(page) : <DocumentOriginalCanvasPreview
+                documentVersionId={documentVersionId}
+                page={page}
+                targetSignal={`${activeUnitId ?? ''}:${initialLocationRequest}`}
+                targetBoxes={targetBoxes}
+              />}
             </div> : null}
           </div>
         )}

@@ -37,12 +37,30 @@ const PDF_WORKER_SRC: string = resolvePdfWorkerUrl(
   import.meta.url,
 );
 
-interface PdfDocumentViewerProps {
-  workItemId: string;
-  preview: Extract<CanonicalPdfPreviewProjection, { status: 'AVAILABLE' }>;
+export interface PdfBoxTarget {
+  boxes: ReadonlyArray<[number, number, number, number]>;
+  viewportWidth: number;
+  viewportHeight: number;
+}
+
+type PdfDocumentViewerProps = {
   targetPage: number | null;
   targetSignal: string;
-}
+  targetBoxes?: PdfBoxTarget | null;
+} & (
+  | {
+      workItemId: string;
+      preview: Extract<CanonicalPdfPreviewProjection, { status: 'AVAILABLE' }>;
+      sourceUrl?: never;
+      sourceSupportsRange?: never;
+    }
+  | {
+      sourceUrl: string;
+      sourceSupportsRange?: boolean;
+      workItemId?: never;
+      preview?: never;
+    }
+);
 
 interface PdfCanvasPageProps {
   document: PDFDocumentProxy;
@@ -50,6 +68,7 @@ interface PdfCanvasPageProps {
   zoom: number;
   highlighted: boolean;
   renderRequested: boolean;
+  targetBoxes?: PdfBoxTarget | null;
 }
 
 interface PdfScrollRequest {
@@ -61,12 +80,8 @@ const MIN_ZOOM = 0.75;
 const MAX_ZOOM = 1.75;
 const ZOOM_STEP = 0.25;
 
-export default function PdfDocumentViewer({
-  workItemId,
-  preview,
-  targetPage,
-  targetSignal,
-}: PdfDocumentViewerProps) {
+export default function PdfDocumentViewer(props: PdfDocumentViewerProps) {
+  const { targetPage, targetSignal, targetBoxes } = props;
   const panelActive: boolean = useWorkbenchPanelActive();
   const [pdfDocument, setPdfDocument] = useState<PDFDocumentProxy | null>(null);
   const [pageCount, setPageCount] = useState<number>(0);
@@ -88,9 +103,16 @@ export default function PdfDocumentViewer({
   const appliedScrollRequestRef = useRef<PdfScrollRequest | null>(null);
   const isMobile: boolean = usePdfMobileViewport();
   const previewUrl: string = useMemo(
-    () => canonicalPdfPreviewUrl(workItemId, preview.opaqueLocator),
-    [preview.opaqueLocator, workItemId],
+    () => 'sourceUrl' in props
+      ? props.sourceUrl
+      : canonicalPdfPreviewUrl(props.workItemId, props.preview.opaqueLocator),
+    'sourceUrl' in props
+      ? [props.sourceUrl]
+      : [props.workItemId, props.preview.opaqueLocator],
   );
+  const supportsRange: boolean = 'sourceUrl' in props
+    ? props.sourceSupportsRange ?? false
+    : props.preview.supportsRange;
 
   useEffect(() => {
     const initialPage: number = targetPage ?? 1;
@@ -112,7 +134,7 @@ export default function PdfDocumentViewer({
       .then((runtime) => {
         if (!active) return null;
         loadingTask = runtime.getDocument(
-          buildPdfDocumentRequest(previewUrl, preview.supportsRange),
+          buildPdfDocumentRequest(previewUrl, supportsRange),
         );
         return loadingTask.promise;
       })
@@ -141,7 +163,7 @@ export default function PdfDocumentViewer({
       active = false;
       if (loadingTask) void loadingTask.destroy();
     };
-  }, [preview.supportsRange, previewUrl]);
+  }, [previewUrl, supportsRange]);
 
   useEffect(() => {
     if (!pdfDocument || targetPage === null) return;
@@ -409,6 +431,7 @@ export default function PdfDocumentViewer({
             highlighted={
               pageNumber === sourceTargetPage && Boolean(targetSignal)
             }
+            targetBoxes={pageNumber === sourceTargetPage ? targetBoxes : null}
           />
         ))}
       </div>
@@ -422,11 +445,18 @@ function PdfCanvasPage({
   zoom,
   highlighted,
   renderRequested,
+  targetBoxes,
 }: PdfCanvasPageProps) {
   const panelActive: boolean = useWorkbenchPanelActive();
   const frameRef = useRef<HTMLDivElement | null>(null);
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const [renderError, setRenderError] = useState<boolean>(false);
+  const [renderScale, setRenderScale] = useState<{
+    x: number;
+    y: number;
+    left: number;
+    top: number;
+  } | null>(null);
 
   useEffect(() => {
     if (!panelActive) return;
@@ -455,6 +485,12 @@ function PdfCanvasPage({
         canvas.height = Math.floor(viewport.height * outputScale);
         canvas.style.width = `${Math.floor(viewport.width)}px`;
         canvas.style.height = `${Math.floor(viewport.height)}px`;
+        setRenderScale({
+          x: cssScale * (targetBoxes ? baseViewport.width / targetBoxes.viewportWidth : 1),
+          y: cssScale * (targetBoxes ? baseViewport.height / targetBoxes.viewportHeight : 1),
+          left: Math.max(0, (frame.clientWidth - viewport.width) / 2),
+          top: 4,
+        });
         const renderTask = page.render({
           canvasContext: context,
           viewport,
@@ -517,6 +553,19 @@ function PdfCanvasPage({
         role="img"
         aria-label={`PDF 第 ${pageNumber} 页画布`}
       />
+      {targetBoxes && renderScale !== null ? targetBoxes.boxes.map((box, index) => (
+        <span
+          key={`${pageNumber}-${index}`}
+          className="parse-pdf-source-box"
+          style={{
+            left: `${renderScale.left + box[0] * renderScale.x}px`,
+            top: `${renderScale.top + box[1] * renderScale.y}px`,
+            width: `${box[2] * renderScale.x}px`,
+            height: `${box[3] * renderScale.y}px`,
+          }}
+          aria-hidden="true"
+        />
+      )) : null}
     </article>
   );
 }

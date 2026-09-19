@@ -246,6 +246,16 @@
   background: #ffffff;
 }
 
+.parse-pdf-source-box {
+  position: absolute;
+  z-index: 2;
+  border: 2px solid color-mix(in srgb, var(--wl-accent) 82%, #ffffff);
+  border-radius: 4px;
+  background: color-mix(in srgb, var(--wl-accent) 18%, transparent);
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--wl-accent) 12%, transparent);
+  pointer-events: none;
+}
+
 .parse-pdf-page-number {
   position: absolute;
   top: 6px;
