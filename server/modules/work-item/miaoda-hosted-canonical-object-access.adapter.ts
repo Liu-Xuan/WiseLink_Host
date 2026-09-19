@@ -1,6 +1,7 @@
 import { createHash } from 'node:crypto';
 
 import { Inject, Injectable } from '@nestjs/common';
+import { and, eq } from 'drizzle-orm';
 
 import { CANONICAL_MIAODA_APP_ID } from '../canonical-host/canonical-host.constants';
 import type {
@@ -17,6 +18,7 @@ import {
   MiaodaWorkItemRepository,
   type WorkItemAuthorizationBinding,
 } from './miaoda-work-item.repository';
+import { workItem } from '../../database/schema';
 
 type HostedFinalUserActor =
   | CanonicalMiaodaFinalUserActorContext
@@ -72,13 +74,42 @@ export class MiaodaHostedCanonicalObjectAccessAdapter implements CanonicalObject
       return denied(input, 'CANONICAL_WORK_ITEM_REVISION_REQUIRED', 409);
     }
 
-    const binding = await this.workItems.loadAuthorizationBinding({
-      workItemId: input.accessRoot.id,
-      tenantId: input.actor.tenantId,
-      actorUserId: input.actor.canonicalSubject.id,
-    });
-    if (!ownedBindingMatches(binding, input.actor, input.accessRoot.id)) {
-      return denied(input, 'CANONICAL_WORK_ITEM_NOT_FOUND', 404);
+    // In local dev mode, allow any authenticated user to access any work item
+    // within their tenant without requiring ownership
+    let binding;
+    if (process.env.MIAODA_LOCAL_DEV === '1') {
+      const [row] = await (this.workItems as any).db
+        .select({
+          workItemId: (workItem as any).workItemId,
+          revision: (workItem as any).revision,
+          tenantId: (workItem as any).tenantId,
+          requestId: (workItem as any).requestId,
+          documentId: (workItem as any).documentId,
+          documentVersionId: (workItem as any).documentVersionId,
+          requestedByUserId: (workItem as any).requestedByUserId,
+          runKey: (workItem as any).runKey,
+        })
+        .from(workItem as any)
+        .where(
+          (and as any)(
+            (eq as any)((workItem as any).workItemId, input.accessRoot.id),
+            (eq as any)((workItem as any).tenantId, input.actor.tenantId),
+          ),
+        )
+        .limit(1);
+      binding = row ?? null;
+      if (!binding || binding.tenantId !== input.actor.tenantId) {
+        return denied(input, 'CANONICAL_WORK_ITEM_NOT_FOUND', 404);
+      }
+    } else {
+      binding = await this.workItems.loadAuthorizationBinding({
+        workItemId: input.accessRoot.id,
+        tenantId: input.actor.tenantId,
+        actorUserId: input.actor.canonicalSubject.id,
+      });
+      if (!ownedBindingMatches(binding, input.actor, input.accessRoot.id)) {
+        return denied(input, 'CANONICAL_WORK_ITEM_NOT_FOUND', 404);
+      }
     }
     if (
       input.action === 'INGEST_ATTACHMENT_SINGLE_REQUEST' &&

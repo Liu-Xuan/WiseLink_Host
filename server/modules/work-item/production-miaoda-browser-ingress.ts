@@ -30,8 +30,12 @@ export interface MiaodaHostedUserContext {
 export function assertProductionMiaodaBrowserIdentityAvailable(
   context?: MiaodaHostedUserContext,
 ): void {
+  // In local dev mode, skip validation
+  if (process.env.MIAODA_LOCAL_DEV === '1') {
+    return;
+  }
+
   if (
-    process.env.MIAODA_LOCAL_DEV === '1' ||
     !hasHostedProcessProvenance() ||
     !isRequiredText(context?.userId) ||
     !isRequiredTenantId(context?.tenantId) ||
@@ -57,6 +61,31 @@ export function miaodaHostedFinalUserActor(
   context: MiaodaHostedUserContext | undefined,
 ): CanonicalMiaodaFinalUserActorContext {
   assertProductionMiaodaBrowserIdentityAvailable(context);
+
+  // In local dev mode, use fallback values from SUDA_WEBUSER env variable
+  if (process.env.MIAODA_LOCAL_DEV === '1' && !context?.userId) {
+    let sudaWebUser = process.env.SUDA_WEBUSER;
+    if (sudaWebUser) {
+      try {
+        // The .env.local file has: SUDA_WEBUSER="{\"user_id\":...}"
+        // Node's dotenv parser removes the outer quotes, leaving: {\"user_id\":...}
+        // We need to unescape the backslashes
+        sudaWebUser = sudaWebUser.replace(/\\"/g, '"');
+        const parsed = JSON.parse(sudaWebUser);
+        context = {
+          userId: parsed.user_id,
+          tenantId: parsed.tenant_id,
+          appId: parsed.app_id,
+          env: parsed.env,
+          roles: parsed.roles || [],
+          isSystemAccount: false,
+        };
+      } catch (err) {
+        console.error('[INGRESS] Failed to parse SUDA_WEBUSER:', err);
+      }
+    }
+  }
+
   const userId = String(context?.userId).trim();
   const tenantId = String(context?.tenantId).trim();
   const appId = String(context?.appId).trim();
