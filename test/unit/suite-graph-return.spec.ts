@@ -21,6 +21,13 @@ it('rejects destination mismatches, duplicate and mixed return intents', () => {
   params.delete('returnGraphQuery'); params.set('returnGraphQuery', query.toString()); params.set('returnMatterId', 'another');
   expect(readingReturnTarget(params, 'dv1', 'pr1')).toBeNull();
 });
+it('preserves a question mark inside an existing route parameter', () => {
+  const result = new URL(
+    withGraphReturn('/document-versions/dv1?parseRunId=pr1&note=a?b', query),
+    'https://example.test',
+  );
+  expect(result.searchParams.get('note')).toBe('a?b');
+});
 it('only restores bounded display state, never arbitrary URLs or invalid numbers', () => {
   const state = readGraphReadingState(new URLSearchParams('page=NaN&density=0&perspective=external&viewport=%7B%22zoom%22%3A999%2C%22pan%22%3A%7B%22x%22%3A0%2C%22y%22%3A0%7D%7D&next=https://evil.test'));
   expect(state).toEqual({});

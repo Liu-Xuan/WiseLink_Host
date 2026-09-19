@@ -295,17 +295,36 @@ function WorkItemMatterResolver({ workItemId }: { workItemId: string }) {
     setState('loading');
     void (async () => {
       try {
-        const directory = await getEngineeringMatterDirectory(
-          { workItemId, limit: 20 },
-          controller.signal,
-        );
-        if (controller.signal.aborted) return;
-        const matches = directory.items.filter((item) => item.matterId.trim());
-        if (matches.length === 1 && !directory.nextCursor) {
-          navigate(`/graph?${new URLSearchParams({ matterId: matches[0].matterId })}`, { replace: true });
+        let cursor: string | undefined;
+        const seenCursors = new Set<string>();
+        const matterIds = new Set<string>();
+        while (true) {
+          const directory = await getEngineeringMatterDirectory(
+            cursor ? { workItemId, limit: 20, cursor } : { workItemId, limit: 20 },
+            controller.signal,
+          );
+          if (controller.signal.aborted) return;
+          directory.items.forEach((item) => {
+            const matterId = item.matterId.trim();
+            if (matterId) matterIds.add(matterId);
+          });
+          if (matterIds.size > 1) {
+            setState('ambiguous');
+            return;
+          }
+          if (!directory.nextCursor) break;
+          if (seenCursors.has(directory.nextCursor)) {
+            throw new Error('工程事项目录游标未推进。');
+          }
+          seenCursors.add(directory.nextCursor);
+          cursor = directory.nextCursor;
+        }
+        const [matterId] = [...matterIds];
+        if (matterId) {
+          navigate(`/graph?${new URLSearchParams({ matterId })}`, { replace: true });
           return;
         }
-        setState(matches.length === 0 ? 'empty' : 'ambiguous');
+        setState('empty');
       } catch (reason) {
         if (controller.signal.aborted) return;
         logger.error('按工作事项解析工程事项失败', reason);
@@ -344,17 +363,18 @@ function GraphDefaultMatterResolver() {
 
   useEffect(() => {
     if (authenticationRequired) return;
-    let cancelled = false;
+    const controller = new AbortController();
     setState('loading');
     void (async () => {
       try {
         let cursor: string | undefined;
         const seenCursors = new Set<string>();
-        while (!cancelled) {
+        while (!controller.signal.aborted) {
           const directory = await getEngineeringMatterDirectory(
             cursor ? { limit: 20, cursor } : { limit: 20 },
+            controller.signal,
           );
-          if (cancelled) return;
+          if (controller.signal.aborted) return;
           const first: EngineeringMatterDirectoryResponse['items'][number] | undefined =
             directory.items.find((item) => item.matterId.trim());
           if (first) {
@@ -373,14 +393,12 @@ function GraphDefaultMatterResolver() {
         }
         setState('empty');
       } catch (reason) {
-        if (cancelled) return;
+        if (controller.signal.aborted) return;
         logger.error('关系图谱默认事项目录读取失败', reason);
         setState('error');
       }
     })();
-    return () => {
-      cancelled = true;
-    };
+    return () => controller.abort();
   }, [authenticationRequired, sessionGeneration, reloadKey, navigate]);
 
   if (authenticationRequired) {

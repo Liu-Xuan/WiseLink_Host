@@ -142,7 +142,9 @@ function KnowledgeCatalogue() {
   function openDocument(route: string, documentVersionId: string) {
     if (kind === 'works' && (!read || keyOf(read.entry) !== selection)) return;
     clearPendingScroll();
-    const [path, raw] = route.split('?');
+    const queryStart = route.indexOf('?');
+    const path = queryStart === -1 ? route : route.slice(0, queryStart);
+    const raw = queryStart === -1 ? '' : route.slice(queryStart + 1);
     const next = new URLSearchParams(raw);
     const state = knowledgeReadingParams(currentParams.current);
     state.set('listY', String(Math.round(listRef.current?.scrollTop ?? 0)));

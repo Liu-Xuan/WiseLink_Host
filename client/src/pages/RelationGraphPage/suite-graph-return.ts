@@ -59,7 +59,9 @@ export function readGraphReadingState(params: URLSearchParams): SuiteGraphReadin
   return state;
 }
 export function withGraphReturn(route: string, graphQuery: URLSearchParams): string {
-  const [path, raw = ''] = route.split('?');
+  const queryStart = route.indexOf('?');
+  const path = queryStart === -1 ? route : route.slice(0, queryStart);
+  const raw = queryStart === -1 ? '' : route.slice(queryStart + 1);
   const match = /^\/(document-versions|matters)\/([^/]+)(\/process)?$/.exec(path);
   if (!match) return route;
   if (match[1] === 'document-versions' && match[3]) return route;

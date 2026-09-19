@@ -119,6 +119,7 @@ function readThemeTokens(scope?: HTMLElement): ThemeTokens {
 
 function motionDisabled(): boolean {
   return document.documentElement.getAttribute('data-wl-motion') === 'off'
+    || document.documentElement.getAttribute('data-wl-visual-mode') === 'compatible'
     || (typeof window.matchMedia === 'function' && window.matchMedia('(prefers-reduced-motion: reduce)').matches);
 }
 
@@ -170,6 +171,9 @@ function buildStyleSheet(tokens: ThemeTokens): StylesheetStyle[] {
   sheets.push(
     { selector: '.suite-connected-edge', style: { width: 2.4, opacity: 0.92 } },
     { selector: '.suite-dimmed-edge', style: { opacity: 0.14 } },
+    { selector: '.individual-edge', style: { display: 'none' } },
+    { selector: '.individual-edge.suite-connected-edge', style: { display: 'element', opacity: 0.92 } },
+    { selector: '.individual-edge.suite-dimmed-edge', style: { display: 'none', opacity: 0 } },
   );
   return sheets;
 }
@@ -377,11 +381,18 @@ const SuiteGraphCanvas = forwardRef<SuiteGraphCanvasHandle, SuiteGraphCanvasProp
     });
     cyRef.current = cy;
     sync();
-    const applyTheme = () => cy.style(buildStyleSheet(readThemeTokens(mount)));
+    const applyTheme = () => {
+      if (motionDisabled()) {
+        cy.stop();
+        const elements = cy.elements();
+        if (typeof elements.stop === 'function') elements.stop();
+      }
+      cy.style(buildStyleSheet(readThemeTokens(mount)));
+    };
     const themeObserver = typeof MutationObserver === 'function'
       ? new MutationObserver(applyTheme)
       : null;
-    themeObserver?.observe(document.documentElement, { attributes: true, attributeFilter: ['data-wl-theme', 'data-wl-visual-mode'] });
+    themeObserver?.observe(document.documentElement, { attributes: true, attributeFilter: ['data-wl-theme', 'data-wl-visual-mode', 'data-wl-motion'] });
     const handleResize = () => { cy.resize(); if (!userCameraRef.current) applyAutoCamera(cy); };
     const resizeObserver = new ResizeObserver(handleResize);
     resizeObserver.observe(mount);
@@ -412,6 +423,10 @@ const SuiteGraphCanvas = forwardRef<SuiteGraphCanvasHandle, SuiteGraphCanvasProp
     cy.add(asElements(presentation.elements));
     elementsRef.current = presentation.elements;
     const positions = Object.fromEntries(presentation.elements.filter((element) => element.group === 'nodes').map((element) => [String(element.data.id), element.position]));
+    if (motionDisabled()) {
+      const elements = cy.elements();
+      if (typeof elements.stop === 'function') elements.stop();
+    }
     cy.layout({ name: 'preset', positions, fit: false, animate: !motionDisabled(), animationDuration: 320 }).run();
     internalCameraRef.current = true;
     const restore = initialViewportRef.current;
@@ -444,14 +459,17 @@ const SuiteGraphCanvas = forwardRef<SuiteGraphCanvasHandle, SuiteGraphCanvasProp
     const targetGroupKey = target.data.groupKey;
     cy.edges().forEach((edge) => {
       const edgeKind = edge.data('viewKind');
-      const connected = edgeKind === 'bundle'
-        ? edge.source().id() === String(target.data.id)
-          || edge.target().id() === String(target.data.id)
-          || (typeof targetGroupKey === 'string'
-            && (edge.source().data('groupKey') === targetGroupKey
-              || edge.target().data('groupKey') === targetGroupKey))
-        : edge.source().id() === String(target.data.id)
-          || edge.target().id() === String(target.data.id);
+      const connected = edgeKind === 'relationship'
+          ? edge.source().id() === String(target.data.id)
+            || edge.target().id() === String(target.data.id)
+          : edgeKind === 'bundle'
+          ? edge.source().id() === String(target.data.id)
+            || edge.target().id() === String(target.data.id)
+            || (typeof targetGroupKey === 'string'
+              && (edge.source().data('groupKey') === targetGroupKey
+                || edge.target().data('groupKey') === targetGroupKey))
+          : edge.source().id() === String(target.data.id)
+            || edge.target().id() === String(target.data.id);
       edge.addClass(connected ? 'suite-connected-edge' : 'suite-dimmed-edge');
     });
   }, [presentation, selectedId]);

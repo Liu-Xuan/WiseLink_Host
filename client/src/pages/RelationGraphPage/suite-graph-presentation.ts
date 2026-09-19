@@ -195,8 +195,15 @@ export function buildSuiteGraphPresentation(
   const allItemGroups = new Map(matter.groups.flatMap((group) => group.items.map((item) => [item.id, group.key] as const)));
   const eligibleItemGroups = new Map(eligible.flatMap((group) => group.items.map((item) => [item.id, group.key] as const)));
   const omittedRelationships: SuiteGraphPresentation['omittedRelationships'] = [];
-  const representedRelations = (options.relationMode ?? 'aggregated') === 'individual' ? individualRelations : aggregatedRelations;
-  const representedIds = new Set(representedRelations.map((relation) => relation.id));
+  const relationMode = options.relationMode ?? 'aggregated';
+  const representedRelations = relationMode === 'individual' ? individualRelations : aggregatedRelations;
+  // In aggregated mode individual edges remain present as a hidden selection
+  // layer, so they are represented even though the visible bundle carries the
+  // default relationship count.
+  const representedIds = new Set([
+    ...representedRelations.map((relation) => relation.id),
+    ...(relationMode === 'aggregated' ? individualRelations.map((relation) => relation.id) : []),
+  ]);
   matter.relations.forEach((relation) => {
     if (representedIds.has(relation.id)) return;
     const endpointIds = [relation.source, relation.target];
@@ -215,7 +222,7 @@ export function buildSuiteGraphPresentation(
     }
     omittedRelationships.push({ id: relation.id, reason: 'cardOverflow' });
   });
-  if ((options.relationMode ?? 'aggregated') === 'individual') {
+  if (relationMode === 'individual') {
     individualRelations.forEach((relation) => {
       const source = relation.source === rootBusinessId ? HUB_ID(matter.id) : ITEM_ID(relation.source);
       const target = relation.target === rootBusinessId ? HUB_ID(matter.id) : ITEM_ID(relation.target);
@@ -234,6 +241,16 @@ export function buildSuiteGraphPresentation(
     bundles.forEach((bundle) => {
       const ids = bundle.relations.map((relation) => relation.id);
       elements.push({ group: 'edges', data: { id: `sg:bundle:${JSON.stringify(ids)}`, source: bundle.source, target: bundle.target, viewKind: 'bundle', label: bundle.relations.length === 1 ? bundle.relations[0].label : '资料关联', relationshipIds: ids, groupKey: bundle.groupKey, virtual: true }, classes: 'bundle-edge' });
+    });
+    // Keep exact business edges as a hidden interaction layer. The default view
+    // stays aggregated; selecting a node reveals only its real adjacent edges.
+    individualRelations.forEach((relation) => {
+      const source = relation.source === rootBusinessId ? HUB_ID(matter.id) : ITEM_ID(relation.source);
+      const target = relation.target === rootBusinessId ? HUB_ID(matter.id) : ITEM_ID(relation.target);
+      elements.push({
+        ...relationEdge(relation, source, target, itemGroup.get(relation.source) ?? itemGroup.get(relation.target)),
+        classes: 'business-edge individual-edge',
+      });
     });
   }
 
