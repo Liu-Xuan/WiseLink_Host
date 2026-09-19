@@ -83,7 +83,8 @@ html[data-wl-theme='dark'] .suite-matter-graph-page {
   overflow: hidden;
   border: 1px solid var(--wl-border);
   border-radius: 14px;
-  background: var(--wl-sheet);
+  background: color-mix(in srgb, var(--wl-sheet) 96%, transparent);
+  box-shadow: var(--wl-shadow-1);
 }
 
 .suite-graph-panel-head {
