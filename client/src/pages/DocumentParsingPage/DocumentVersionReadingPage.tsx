@@ -180,7 +180,9 @@ export default function DocumentVersionReadingPage() {
   const locateTranslationSource = (unitId: string, sourceRef: string) => {
     const location = currentReading?.original?.locations.find(item => item.sourceRefId === sourceRef);
     setTranslationUnitId(unitId);
-    setTranslationSourceContext(requestedSource);
+    // A click inside the current document is the newest navigation decision;
+    // keep its exact sourceRef so it can override an older URL anchor.
+    setTranslationSourceContext(sourceRef);
     setTranslationLocationRequest((value) => value + 1);
     setView('dual');
     if (location?.pageIndex !== null && location?.pageIndex !== undefined) {
@@ -198,7 +200,7 @@ export default function DocumentVersionReadingPage() {
   }, [requestedSource]);
   const selectedLocation = requestedSource ? currentReading?.original?.locations.find(item => item.sourceRefId === requestedSource) : null;
   const selectedUnit = requestedSource ? currentReading?.original?.source.units.find(unit => unit.sourceRefIds.includes(requestedSource)) : null;
-  const localTranslationLocationIsCurrent = translationSourceContext === requestedSource && translationUnitId !== null;
+  const localTranslationLocationIsCurrent = translationSourceContext !== null && translationUnitId !== null;
   const initialLocationUnitId = localTranslationLocationIsCurrent ? translationUnitId : selectedUnit?.unitId;
   const initialLocationPage = localTranslationLocationIsCurrent ? translationPage : selectedLocation?.pageIndex != null ? selectedLocation.pageIndex + 1 : undefined;
   useEffect(() => {
