@@ -131,8 +131,11 @@ function TargetDetail({ target, onLocateEvidence, onOpenTarget }: {
       <>
         <span className="suite-graph-target-kind">{material.kind === 'MEMBER' ? '事项资料' : '参考资料'}</span>
         <p>材料范围：{material.scope || '未注明'}；贡献：{material.contribution || '未单独保存'}。</p>
-        <p className="suite-graph-muted">版本身份：{material.documentVersionId || '未返回'}</p>
-        <p className="suite-graph-muted">依据：{material.basis.map((item) => `${item.documentVersionId}/${item.sourceRefId}`).join('、') || '未返回'}</p>
+        <details className="suite-graph-governance-details">
+          <summary>来源与版本</summary>
+          <p className="suite-graph-muted">版本身份：{material.documentVersionId || '未返回'}</p>
+          <p className="suite-graph-muted">依据：{material.basis.map((item) => `${item.documentVersionId}/${item.sourceRefId}`).join('、') || '未返回'}</p>
+        </details>
         {material.documentVersionId && onOpenTarget ? (
           <Button variant="outline" onClick={() => onOpenTarget(target)}>打开确切原文 <ArrowRight aria-hidden="true" /></Button>
         ) : null}
@@ -145,14 +148,17 @@ function TargetDetail({ target, onLocateEvidence, onOpenTarget }: {
       <>
         <span className="suite-graph-target-kind">{entry.relationRole === 'PRIMARY' ? '主要资料' : '关联资料'}</span>
         <h3>{entry.document.documentCode} · {entry.document.businessRevision}</h3>
-        <p className="suite-graph-muted">版本身份：{entry.document.documentVersionId}</p>
-        <p className="suite-graph-muted">家族：{entry.document.normalizedFamily}</p>
-        <p className="suite-graph-muted">
-          {entry.documentCurrentness.selectedVersionIsCurrent
-            ? '该版本为家族当前版本。'
-            : `该版本不是家族当前版本；当前版本：${entry.documentCurrentness.currentDocumentVersionId ?? '未返回'}。`}
-        </p>
-        <p className="suite-graph-muted">关联工作项状态：{entry.workItemStatus}</p>
+        <details className="suite-graph-governance-details">
+          <summary>来源与版本</summary>
+          <p className="suite-graph-muted">版本身份：{entry.document.documentVersionId}</p>
+          <p className="suite-graph-muted">家族：{entry.document.normalizedFamily}</p>
+          <p className="suite-graph-muted">
+            {entry.documentCurrentness.selectedVersionIsCurrent
+              ? '该版本为家族当前版本。'
+              : `该版本不是家族当前版本；当前版本：${entry.documentCurrentness.currentDocumentVersionId ?? '未返回'}。`}
+          </p>
+          <p className="suite-graph-muted">关联工作项状态：{entry.workItemStatus}</p>
+        </details>
         {onOpenTarget ? <Button variant="outline" onClick={() => onOpenTarget(target)}>打开确切原文 <ArrowRight aria-hidden="true" /></Button> : null}
       </>
     );
@@ -172,7 +178,10 @@ function TargetDetail({ target, onLocateEvidence, onOpenTarget }: {
             <cite>定位：{quote.anchorId}</cite>
           </blockquote>
         ))}
-        <p className="suite-graph-muted">保存身份：{target.documentVersionId} · {target.parseRunId} · 候选修订 {target.candidateRevision}</p>
+        <details className="suite-graph-governance-details">
+          <summary>来源与版本</summary>
+          <p className="suite-graph-muted">保存身份：{target.documentVersionId} · {target.parseRunId} · 候选修订 {target.candidateRevision}</p>
+        </details>
         {onOpenTarget ? <Button variant="outline" onClick={() => onOpenTarget(target)}>查看完整时间轴 <ArrowRight aria-hidden="true" /></Button> : null}
       </>
     );
@@ -192,7 +201,10 @@ function TargetDetail({ target, onLocateEvidence, onOpenTarget }: {
     return (
       <>
         <span className="suite-graph-target-kind">已取得资料</span>
-        <p className="suite-graph-muted">确切文档版本：{target.documentVersionId}</p>
+        <details className="suite-graph-governance-details">
+          <summary>来源与版本</summary>
+          <p className="suite-graph-muted">确切文档版本：{target.documentVersionId}</p>
+        </details>
         {onOpenTarget ? <Button variant="outline" onClick={() => onOpenTarget(target)}>打开确切原文 <ArrowRight aria-hidden="true" /></Button> : null}
       </>
     );
@@ -201,7 +213,10 @@ function TargetDetail({ target, onLocateEvidence, onOpenTarget }: {
     return (
       <>
         <span className="suite-graph-target-kind">当时保存的输入</span>
-        <p className="suite-graph-muted">保存输入绑定：{target.binding.documentVersionId}；工作版本：{target.workRef}。</p>
+        <details className="suite-graph-governance-details">
+          <summary>来源与版本</summary>
+          <p className="suite-graph-muted">保存输入绑定：{target.binding.documentVersionId}；工作版本：{target.workRef}。</p>
+        </details>
         {onOpenTarget ? <Button variant="outline" onClick={() => onOpenTarget(target)}>查看保存正文 <ArrowRight aria-hidden="true" /></Button> : null}
       </>
     );
