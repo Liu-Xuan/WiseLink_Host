@@ -1,5 +1,5 @@
 // RelationGraphPage - Main orchestration component
-import React, { useState, useCallback, useRef } from 'react';
+import React, { useState, useCallback, useRef, useMemo } from 'react';
 import GraphCanvas from './components/GraphCanvas';
 import { GraphPathTrail } from './components/GraphPathTrail';
 import { GraphSearchBar } from './components/GraphSearchBar';
@@ -53,9 +53,6 @@ export function RelationGraphPage({
 
   const effectiveSelectedNodeId = highlightedNodeId || selectedNodeId;
 
-  // Transform GraphData to Matter format for Cytoscape
-  const matterData = data ? transformGraphDataToMatter(data, workItemId) : null;
-
   // History navigation callback
   const handleHistoryStateChange = useCallback((nodeId: string | null, newPerspective: PerspectiveType) => {
     setSelectedNodeId(nodeId);
@@ -69,15 +66,22 @@ export function RelationGraphPage({
     handleHistoryStateChange
   );
 
-  // Apply filter directly
+  // Apply filter to data before transformation
   const filteredData = useGraphFilter(
     data || { nodes: [], edges: [] },
     filterConfig
   );
 
-  // Calculate edge statistics for legend
-  const relationshipTypes = data ? getRelationshipTypes(data.edges) : undefined;
-  const strengthDistribution = data ? getStrengthDistribution(data.edges) : undefined;
+  // Transform filtered GraphData to Matter format for Cytoscape (memoized)
+  const matterData = useMemo(() => {
+    return filteredData.nodes.length > 0
+      ? transformGraphDataToMatter(filteredData, workItemId)
+      : null;
+  }, [filteredData, workItemId]);
+
+  // Calculate edge statistics for legend (using filtered data)
+  const relationshipTypes = filteredData.edges.length > 0 ? getRelationshipTypes(filteredData.edges) : undefined;
+  const strengthDistribution = filteredData.edges.length > 0 ? getStrengthDistribution(filteredData.edges) : undefined;
 
   // Calculate path from MatterHub to selected node (using filtered data)
   const path = useGraphPath(
@@ -87,7 +91,7 @@ export function RelationGraphPage({
 
   const handleNodeClick = (nodeId: string) => {
     // Check if it's a documentGroup or more node
-    const node = data?.nodes.find(n => n.id === nodeId);
+    const node = filteredData.nodes.find(n => n.id === nodeId);
 
     // Check if it's a documentGroup node
     if (node?.type === 'documentGroup') {
