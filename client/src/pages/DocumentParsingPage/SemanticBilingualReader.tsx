@@ -78,6 +78,10 @@ function SemanticWorkspaceReader({
     original: new Map<string, HTMLElement>(),
     translation: new Map<string, HTMLElement>(),
   });
+  const bilingualAnchorNodes = useRef({
+    original: new Map<string, HTMLElement>(),
+    translation: new Map<string, HTMLElement>(),
+  });
   const reading: TranslationWorkspaceReadingV2 =
     revisedReading && revisedReading.rowVersion >= hostReading.rowVersion
       ? revisedReading
@@ -111,6 +115,10 @@ function SemanticWorkspaceReader({
       bilingualPaneNodes.current.translation
         .get(blockId)
         ?.scrollIntoView({ block: 'start', behavior: 'auto' });
+      const anchorNode = ids
+        .map((id) => bilingualAnchorNodes.current.original.get(id) ?? bilingualAnchorNodes.current.translation.get(id))
+        .find((node): node is HTMLElement => Boolean(node));
+      anchorNode?.scrollIntoView({ block: 'center', behavior: 'auto' });
       blockNodes.current.get(blockId)?.focus({ preventScroll: true });
     }
   }
@@ -288,6 +296,7 @@ function SemanticWorkspaceReader({
                 focusedBlock={focusedBlock}
                 selectedAnchors={selectedAnchors}
                 nodes={bilingualPaneNodes.current.original}
+                anchorNodes={bilingualAnchorNodes.current.original}
                 onFocus={focusBlock}
                 onSourceRefSelect={props.onSourceRefSelect}
               />
@@ -298,6 +307,7 @@ function SemanticWorkspaceReader({
                 focusedBlock={focusedBlock}
                 selectedAnchors={selectedAnchors}
                 nodes={bilingualPaneNodes.current.translation}
+                anchorNodes={bilingualAnchorNodes.current.translation}
                 onFocus={focusBlock}
                 onSourceRefSelect={props.onSourceRefSelect}
               />
@@ -499,6 +509,7 @@ function SemanticPane({
   focusedBlock,
   selectedAnchors,
   nodes,
+  anchorNodes,
   onFocus,
   onSourceRefSelect,
 }: {
@@ -508,6 +519,7 @@ function SemanticPane({
   focusedBlock: string | null;
   selectedAnchors: string[];
   nodes: Map<string, HTMLElement>;
+  anchorNodes: Map<string, HTMLElement>;
   onFocus: (blockId: string | null, ids: string[], scroll?: boolean) => void;
   onSourceRefSelect: (unitId: string, sourceRef: string) => void;
 }) {
@@ -538,6 +550,12 @@ function SemanticPane({
                 original={original}
                 selectedAnchors={selectedAnchors}
                 onFocus={(ids) => onFocus(block.source.blockId, ids)}
+                onAnchorNode={(ids, node) => {
+                  ids.forEach((id) => {
+                    if (node) anchorNodes.set(id, node);
+                    else anchorNodes.delete(id);
+                  });
+                }}
               />
               {!original && semanticReadingIssues(block).length ? (
                 <ul className="wl-bilingual-issues">

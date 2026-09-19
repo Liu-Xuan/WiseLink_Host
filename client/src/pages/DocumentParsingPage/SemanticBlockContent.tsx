@@ -10,10 +10,12 @@ export function SemanticElements({
   elements,
   selectedAnchors,
   onFocus,
+  onAnchorNode,
 }: {
   elements: TranslationReadingElementV2[];
   selectedAnchors: string[];
   onFocus: (ids: string[]) => void;
+  onAnchorNode?: (ids: string[], node: HTMLElement | null) => void;
 }) {
   const content: ReactNode[] = [];
   let list: TranslationReadingElementV2[] = [];
@@ -21,6 +23,7 @@ export function SemanticElements({
     <button
       type="button"
       onClick={() => onFocus(element.anchorIds)}
+      ref={(node) => onAnchorNode?.(element.anchorIds, node)}
       title="显示这段译文的全部来源"
     >
       {element.translatedText}
@@ -69,12 +72,14 @@ export function SemanticBlockContent({
   original,
   selectedAnchors,
   onFocus,
+  onAnchorNode,
 }: {
   block: SemanticReadingBlock;
   anchors: TranslationSourceAnchorV2[];
   original: boolean;
   selectedAnchors: string[];
   onFocus: (ids: string[]) => void;
+  onAnchorNode?: (ids: string[], node: HTMLElement | null) => void;
 }) {
   const elements: TranslationReadingElementV2[] =
     block.selected?.candidate.elements ?? [];
@@ -108,12 +113,14 @@ export function SemanticBlockContent({
             anchors={extraAnchors}
             selectedAnchors={selectedAnchors}
             onFocus={onFocus}
+            onAnchorNode={onAnchorNode}
           />
         ) : (
           <SemanticElements
             elements={extraElements}
             selectedAnchors={selectedAnchors}
             onFocus={onFocus}
+            onAnchorNode={onAnchorNode}
           />
         )}
         {block.source.sourceStructure.map((unit) =>
@@ -126,6 +133,7 @@ export function SemanticBlockContent({
               elements={original ? undefined : elements}
               selectedAnchors={selectedAnchors}
               onFocus={onFocus}
+              onAnchorNode={onAnchorNode}
             />
           ) : (
             <p key={unit.sourceUnitId} className="wl-bilingual-unresolved">
@@ -142,6 +150,7 @@ export function SemanticBlockContent({
         anchors={anchors}
         selectedAnchors={selectedAnchors}
         onFocus={onFocus}
+        onAnchorNode={onAnchorNode}
         heading={block.source.kind === 'heading'}
       />
     ) : (
@@ -154,6 +163,7 @@ export function SemanticBlockContent({
       elements={elements}
       selectedAnchors={selectedAnchors}
       onFocus={onFocus}
+      onAnchorNode={onAnchorNode}
     />
   ) : (
     <p className="wl-bilingual-scope">保留原有结构或引用，无需另译文字。</p>
@@ -164,11 +174,13 @@ function OriginalAnchors({
   anchors,
   selectedAnchors,
   onFocus,
+  onAnchorNode,
   heading = false,
 }: {
   anchors: TranslationSourceAnchorV2[];
   selectedAnchors: string[];
   onFocus: (ids: string[]) => void;
+  onAnchorNode?: (ids: string[], node: HTMLElement | null) => void;
   heading?: boolean;
 }) {
   const Tag = heading ? 'h3' : 'p';
@@ -182,6 +194,7 @@ function OriginalAnchors({
           <button
             type="button"
             onClick={() => onFocus([anchor.anchorId])}
+            ref={(node) => onAnchorNode?.([anchor.anchorId], node)}
             title="显示来源对应"
           >
             {anchor.sourceText}

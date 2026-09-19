@@ -56,6 +56,7 @@ export function SemanticSourceGrid({
   elements,
   selectedAnchors,
   onFocus,
+  onAnchorNode,
 }: {
   payload: Record<string, unknown>;
   sourceUnitId: string;
@@ -63,6 +64,7 @@ export function SemanticSourceGrid({
   elements?: TranslationReadingElementV2[];
   selectedAnchors: string[];
   onFocus: (ids: string[]) => void;
+  onAnchorNode?: (ids: string[], node: HTMLElement | null) => void;
 }) {
   const columnCount: number = sourceColumnCount(payload);
   const groups = records(payload.rowGroups).sort(
@@ -155,6 +157,7 @@ export function SemanticSourceGrid({
               <button
                 type="button"
                 onClick={() => onFocus(ids)}
+                ref={(node) => onAnchorNode?.(ids, node)}
                 title="查看该单元格的全部来源"
               >
                 {text || '【此单元未返回可读译文】'}
