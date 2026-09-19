@@ -385,10 +385,53 @@ function LegacyRelationGraphPage({
   onNodeSelect,
   highlightedNodeId,
 }: RelationGraphPageProps) {
-  const navigate = useNavigate();
-  const [searchParams] = useSearchParams();
+  if (injectedProjection) {
+    return (
+      <LegacyRelationGraphContent
+        injectedProjection={injectedProjection}
+        onNodeSelect={onNodeSelect}
+        highlightedNodeId={highlightedNodeId}
+        sessionGeneration={0}
+        authenticationRequired={false}
+      />
+    );
+  }
+  return (
+    <SessionBoundLegacyRelationGraphPage
+      onNodeSelect={onNodeSelect}
+      highlightedNodeId={highlightedNodeId}
+    />
+  );
+}
+
+function SessionBoundLegacyRelationGraphPage(
+  props: Omit<RelationGraphPageProps, 'injectedProjection'>,
+) {
   const { sessionGeneration, authenticationRequired } =
     useCurrentUserSession();
+  return (
+    <LegacyRelationGraphContent
+      {...props}
+      sessionGeneration={sessionGeneration}
+      authenticationRequired={authenticationRequired}
+    />
+  );
+}
+
+interface LegacyRelationGraphContentProps extends RelationGraphPageProps {
+  sessionGeneration: number;
+  authenticationRequired: boolean;
+}
+
+function LegacyRelationGraphContent({
+  injectedProjection,
+  onNodeSelect,
+  highlightedNodeId,
+  sessionGeneration,
+  authenticationRequired,
+}: LegacyRelationGraphContentProps) {
+  const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
   /* 与 WorkspaceHomePage 相同的取值方式：query 参数 workItemId */
   const workItemId: string = searchParams.get('workItemId')?.trim() ?? '';
 

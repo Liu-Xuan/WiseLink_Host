@@ -89,8 +89,8 @@ function isNarrowLayout(): boolean {
   return window.matchMedia(NARROW_LAYOUT_QUERY).matches;
 }
 
-function toneFor(groupKey: string): string {
-  return GROUP_TONES[groupKey] ?? FALLBACK_TONE;
+function toneFor(groupKey: string, declaredTone: string): string {
+  return declaredTone || GROUP_TONES[groupKey] || FALLBACK_TONE;
 }
 
 function text(value: unknown, fallback = ''): string {
@@ -185,7 +185,7 @@ function OverlayCard({
   const data = node.data;
   const viewKind = text(data.viewKind);
   const groupKey = text(data.groupKey);
-  const tone = toneFor(groupKey);
+  const tone = toneFor(groupKey, text(data.color));
   const title = text(data.title, viewKind === 'more' ? '展开全部' : '未命名');
   const subtitle = text(data.subtitle);
   const style = {
@@ -219,6 +219,7 @@ function OverlayCard({
     );
   }
   const Icon = GROUP_ICONS[groupKey] ?? FileText;
+  const picture = text(data.picture);
   return (
     <button
       type="button"
@@ -228,7 +229,13 @@ function OverlayCard({
       onClick={(event) => onSelect(event, data)}
       aria-label={subtitle ? `${title}，${subtitle}` : title}
     >
-      <span className="suite-graph-node-icon" aria-hidden="true"><Icon /></span>
+      {picture ? (
+        <span className="suite-graph-node-picture" aria-hidden="true">
+          <Image src={picture} alt="" />
+        </span>
+      ) : (
+        <span className="suite-graph-node-icon" aria-hidden="true"><Icon /></span>
+      )}
       <span className="suite-graph-node-copy"><strong>{title}</strong>{subtitle && <small>{subtitle}</small>}</span>
     </button>
   );

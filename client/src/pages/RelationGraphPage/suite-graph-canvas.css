@@ -82,6 +82,21 @@
 
 .suite-graph-node-icon svg { width: 20px; height: 20px; }
 
+.suite-graph-node-picture {
+  width: 52px;
+  height: 31px;
+  flex: none;
+  overflow: hidden;
+  border-radius: 6px;
+  background: color-mix(in srgb, var(--tone) 7%, var(--wl-sheet));
+}
+
+.suite-graph-node-picture img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
 .suite-graph-node-copy { min-width: 0; flex: 1; }
 
 .suite-graph-node-copy strong {

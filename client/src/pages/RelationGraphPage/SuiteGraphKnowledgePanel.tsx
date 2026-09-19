@@ -1,12 +1,17 @@
 import { memo } from 'react';
-import { ArrowRight, BookOpen, MessagesSquare, ScrollText } from 'lucide-react';
+import {
+  AlertTriangle,
+  ArrowLeft,
+  ArrowRight,
+  FileText,
+  House,
+  Lightbulb,
+  RotateCcw,
+} from 'lucide-react';
 import { Button } from '@client/src/components/ui/button';
-import { JobAidIssueArticle } from '@client/src/pages/DocumentParsingPage/JobAidIssueArticle';
 import OverviewSourceWork from '@client/src/features/matter/OverviewSourceWork';
 import OverviewCorrectionNotices from '@client/src/features/matter/OverviewCorrectionNotices';
 import ReferenceWorkNotices from '@client/src/features/matter/ReferenceWorkNotices';
-import type { AssessmentReadingResult } from '@shared/assessment-reading.interface';
-import SavedAssessmentReading from '@client/src/features/matter/SavedAssessmentReading';
 import type { DocumentAssessmentEvidence } from '@client/src/features/matter/assessment-reading';
 import type { EngineeringMatterWorkingRevisionReadModel } from '@shared/matter-working.interface';
 import type { AssessmentEvidence } from '@shared/assessment-reading.interface';
@@ -25,6 +30,7 @@ export interface SuiteGraphKnowledgePanelProps {
   onLocateEvidence?: (evidence: DocumentAssessmentEvidence) => void;
   onOpenTarget?: (target: SuiteMatterGraphTarget) => void;
   onOpenWiki?: () => void;
+  onClearSelection?: () => void;
 }
 
 const OVERVIEW_STATUS_LABELS: Record<string, string> = {
@@ -40,10 +46,10 @@ const PREMISE_ROLE_LABELS: Record<string, string> = {
   CONFLICTS: '冲突',
 };
 
-const TABS: Array<{ id: SuiteGraphKnowledgeTab; label: string; icon: typeof BookOpen }> = [
-  { id: 'knowledge', label: '知识百科', icon: BookOpen },
-  { id: 'basis', label: '依据资料', icon: ScrollText },
-  { id: 'discussion', label: '交流', icon: MessagesSquare },
+const TABS: Array<{ id: SuiteGraphKnowledgeTab; label: string }> = [
+  { id: 'knowledge', label: '知识百科' },
+  { id: 'basis', label: '依据资料' },
+  { id: 'discussion', label: '交流' },
 ];
 
 const whenText = (when: { kind: 'DUE_AT'; at: string } | { kind: 'ORIGINAL_CHANGED'; inputId: string; afterParseRunId: string } | null): string => {
@@ -219,19 +225,11 @@ const SuiteGraphKnowledgePanel = memo(function SuiteGraphKnowledgePanel({
   onLocateEvidence,
   onOpenTarget,
   onOpenWiki,
+  onClearSelection,
 }: SuiteGraphKnowledgePanelProps) {
   const result = revision?.state.substantiveResult ?? null;
   const problemWork = revision?.state.problemWork;
   const evidenceList = [...new Map([...(result?.evidence ?? []), ...(problemWork?.evidence ?? [])].map(item => [item.evidenceRef, item])).values()];
-  // Local read projection only: problem text and evidence stay bound to this exact saved work.
-  const problemReading: AssessmentReadingResult | null = problemWork && revision ? {
-    resultRef: revision.matterWorkRevisionId,
-    resultRevision: revision.workingRevision,
-    scope: {kind: 'ENGINEERING_MATTER', matterId: revision.matterId},
-    candidateOnly: true,
-    evidence: problemWork.evidence,
-    content: {schemaVersion: 'wiselink.3_1.assessment_reading.v1', headline: problemWork.headline, listBrief: problemWork.listBrief, lead: problemWork.understanding, claims: [], decisiveClaimIds: []},
-  } : null;
   // Deduplicate the displayed question while retaining every saved issue's identity and scope.
   const pendingByText = new Map<string, { text: string; sources: Array<{ key: string; issueRef: string; question: string; affects: string; nextEvidence: string; reason: string }> }>();
   for (const item of revision?.state.openQuestions ?? []) {
@@ -334,7 +332,7 @@ const SuiteGraphKnowledgePanel = memo(function SuiteGraphKnowledgePanel({
         </>
       );
     }
-    if (selectedEvent?.statement) {
+    if (selectedEvent?.statement && selectedEvent.pins) {
       return (
         <>
           <span className="suite-graph-target-kind">来源声明</span>
@@ -344,11 +342,11 @@ const SuiteGraphKnowledgePanel = memo(function SuiteGraphKnowledgePanel({
             target={{
               kind: 'statement',
               statement: selectedEvent.statement,
-              documentVersionId: selectedEvent.pins!.documentVersionId,
-              familyId: selectedEvent.pins!.familyId,
-              parseRunId: selectedEvent.pins!.parseRunId,
-              candidateRevision: selectedEvent.pins!.candidateRevision,
-              runRef: selectedEvent.pins!.runRef,
+              documentVersionId: selectedEvent.pins.documentVersionId,
+              familyId: selectedEvent.pins.familyId,
+              parseRunId: selectedEvent.pins.parseRunId,
+              candidateRevision: selectedEvent.pins.candidateRevision,
+              runRef: selectedEvent.pins.runRef,
             }}
             onLocateEvidence={onLocateEvidence}
             onOpenTarget={onOpenTarget}
@@ -357,32 +355,69 @@ const SuiteGraphKnowledgePanel = memo(function SuiteGraphKnowledgePanel({
       );
     }
     if (selectedTarget) {
-      return <TargetDetail target={selectedTarget} onLocateEvidence={onLocateEvidence} onOpenTarget={onOpenTarget} />;
+      return (
+        <>
+          {onClearSelection ? (
+            <Button variant="ghost" className="suite-graph-back-to-matter" onClick={onClearSelection}>
+              <ArrowLeft aria-hidden="true" /> 返回事项
+            </Button>
+          ) : null}
+          <TargetDetail
+            target={selectedTarget}
+            onLocateEvidence={onLocateEvidence}
+            onOpenTarget={onOpenTarget}
+          />
+        </>
+      );
     }
     return (
       <>
         <h2>{read.graph.rootKind === 'display' ? '当前打开事项的已保存工作' : read.graph.title}</h2>
-        {problemWork && problemReading && revision ? <section aria-label="本工作完整问题分析">
-          <h3>已保存问题分析 · 工作修订 {revision.workingRevision}</h3>
-          <p>{problemWork.completionReason}</p>
-          {problemWork.overviewStatus !== 'CURRENT' ? <p role="note">{problemWork.overviewStatus === 'STALE' ? '下方保留综合尚未覆盖这些问题更新。' : '问题正文已保存，综合尚未形成。'}</p> : null}
-          {problemWork.issues.map(issue => <section key={issue.issueRef}><JobAidIssueArticle issue={issue} reading={problemReading} onLocateDocument={evidence => onLocateEvidence?.(evidence)} /></section>)}
-          {problemWork.capabilities.filter(item => item.status !== 'AVAILABLE').map(item => <p key={item.capability}>{item.impact}</p>)}
-          {problemWork.historyReview.limitation ? <p>{problemWork.historyReview.limitation}</p> : null}
-        </section> : null}
-        {revision ? <>
-          <OverviewSourceWork matterId={revision.matterId} source={revision.overviewSourceWork} overviewStatus={problemWork?.overviewStatus} />
-          <OverviewCorrectionNotices matterId={revision.matterId} notices={revision.overviewCorrectionNotices} />
-          {revision.correctionNotices?.map(notice => <p key={notice.attemptRef} role="note">{notice.unchanged ? '已比较并保留：' : '问题更正记录：'}{notice.reason}</p>)}
-          <ReferenceWorkNotices notices={revision.referenceWorkNotices} />
-        </> : null}
-        {result && problemWork?.overviewStatus !== 'NOT_AVAILABLE' ? (
-          <SavedAssessmentReading
-            result={result}
-            onLocateDocument={(evidence) => (evidence.kind === 'DOCUMENT_PASSAGE' ? onLocateEvidence?.(evidence) : undefined)}
-          />
-        ) : !problemWork ? (
-          <p>当前工作尚未保存可供阅读的认识正文；选择图中对象查看其保存身份。</p>
+        {read.graph.code ? <small className="suite-graph-matter-code">{read.graph.code}</small> : null}
+        <section>
+          <h3><House aria-hidden="true" />背景概述</h3>
+          <p>{result?.content.lead || problemWork?.understanding || problemWork?.listBrief || '当前工作尚未保存背景概述。'}</p>
+        </section>
+        <section>
+          <h3><Lightbulb aria-hidden="true" />当前认识</h3>
+          {result?.content.claims.length ? result.content.claims.map((claim) => (
+            <p className="suite-graph-bullet" key={claim.claimId}>{claim.text}</p>
+          )) : <p>当前工作尚未保存可供阅读的认识正文。</p>}
+          {problemWork?.issues.map((issue) => (
+            <p className="suite-graph-bullet" key={`issue-question-${issue.issueRef}`}>{issue.question}</p>
+          ))}
+        </section>
+        <section>
+          <h3><RotateCcw aria-hidden="true" />认识的变化</h3>
+          <p>{revision?.changeSummary || '当前保存工作没有单独填写变化说明。'}</p>
+          {problemWork?.overviewStatus === 'STALE' ? <p className="suite-graph-notice">综合尚未覆盖本工作中的问题更新。</p> : null}
+          {problemWork?.overviewStatus === 'NOT_AVAILABLE' ? <p className="suite-graph-notice">问题正文已保存，当前综合尚未形成。</p> : null}
+        </section>
+        <section>
+          <h3><AlertTriangle aria-hidden="true" />继续核对</h3>
+          {openQuestions.map((item) => <p className="suite-graph-bullet" key={item.text.trim()}>{item.text}</p>)}
+          {problemWork?.issues.flatMap((issue) => issue.openQuestions).map((item) => (
+            <p className="suite-graph-bullet" key={`issue-${item.question}`}>{item.question}</p>
+          ))}
+          {reviewConditions.map((item) => <p className="suite-graph-bullet" key={item.itemId}>{item.text}</p>)}
+          {openQuestions.length === 0 && reviewConditions.length === 0 ? <p>当前工作没有已保存的未决问题或复看条件。</p> : null}
+        </section>
+        <section>
+          <h3><FileText aria-hidden="true" />关键依据</h3>
+          {evidenceList.slice(0, 4).map((evidence) => (
+            <EvidenceLines evidence={evidence} key={evidence.evidenceRef} onLocate={onLocateEvidence} />
+          ))}
+          {evidenceList.length === 0 ? <p>当前工作没有已保存依据。</p> : null}
+          {read.missingEvidenceRefs.length ? <p className="suite-graph-notice">{read.missingEvidenceRefs.length} 条依据尚未在当前授权范围返回。</p> : null}
+        </section>
+        {revision ? (
+          <details className="suite-graph-governance-details">
+            <summary>版本、综合与更正边界</summary>
+            <OverviewSourceWork matterId={revision.matterId} source={revision.overviewSourceWork} overviewStatus={problemWork?.overviewStatus} />
+            <OverviewCorrectionNotices matterId={revision.matterId} notices={revision.overviewCorrectionNotices} />
+            {revision.correctionNotices?.map((notice) => <p key={notice.attemptRef} role="note">{notice.unchanged ? '已比较并保留：' : '问题更正记录：'}{notice.reason}</p>)}
+            <ReferenceWorkNotices notices={revision.referenceWorkNotices} />
+          </details>
         ) : null}
         {read.overviewStatus ? (
           <p className="suite-graph-status">当前综合状态：{OVERVIEW_STATUS_LABELS[read.overviewStatus] ?? read.overviewStatus}</p>
@@ -394,7 +429,7 @@ const SuiteGraphKnowledgePanel = memo(function SuiteGraphKnowledgePanel({
   return (
     <div className="suite-graph-knowledge" aria-label="知识正文">
       <div className="suite-graph-knowledge-tabs" role="tablist" aria-label="知识面板页签">
-        {TABS.map(({ id, label, icon: Icon }) => (
+        {TABS.map(({ id, label }) => (
           <button
             type="button"
             role="tab"
@@ -403,7 +438,7 @@ const SuiteGraphKnowledgePanel = memo(function SuiteGraphKnowledgePanel({
             key={id}
             onClick={() => onTabChange(id)}
           >
-            <Icon aria-hidden="true" /> {label}
+            {label}
           </button>
         ))}
       </div>

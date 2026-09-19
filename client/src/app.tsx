@@ -22,6 +22,7 @@ import { RelationGraphPage } from './pages/RelationGraphPage/RelationGraphPage';
 import KnowledgeLookupPage from './pages/KnowledgeLookupPage/KnowledgeLookupPage';
 
 import GraphRelationPreviewPage from './pages/GraphRelationPreviewPage/GraphRelationPreviewPage';
+import SuiteGraphVisualPreviewPage from './pages/GraphRelationPreviewPage/SuiteGraphVisualPreviewPage';
 import EngineeringChronologyPreviewPage from './pages/EngineeringChronologyPreviewPage/EngineeringChronologyPreviewPage';
 
 // Suite 1.1 Pages
@@ -49,7 +50,8 @@ const LibraryIndexRedirect = () => {
 const RoutesComponent = () => {
   return (
     <Routes>
-      <Route path="dev-preview/graph" element={<GraphRelationPreviewPage />} />
+      <Route path="dev-preview/graph" element={<SuiteGraphVisualPreviewPage />} />
+      <Route path="dev-preview/graph-legacy" element={<GraphRelationPreviewPage />} />
       <Route path="dev-preview/chronology" element={<EngineeringChronologyPreviewPage />} />
       <Route path="dev-preview/reactflow-validation" element={<ReactFlowValidationPlayground />} />
       <Route element={<Layout />}>
