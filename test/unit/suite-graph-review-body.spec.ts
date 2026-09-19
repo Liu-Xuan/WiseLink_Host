@@ -43,6 +43,20 @@ it('labels the current saved overview as a comprehensive summary', () => {
   expect(html).not.toContain('此前综合摘要');
 });
 
+it('provides a direct Wiki reading action from the knowledge overview', () => {
+  const data = libraryMatterFixture();
+  const html = renderToStaticMarkup(createElement(StaticRouter, {location:'/graph'}, createElement(SuiteGraphKnowledgePanel, {
+    read: buildSuiteMatterGraph(data),
+    revision: data.working.current,
+    selectedTarget: null,
+    selectedEvent: null,
+    tab: 'knowledge',
+    onTabChange: () => {},
+    onOpenWiki: () => {},
+  })));
+  expect(html).toContain('阅读完整事项 Wiki');
+});
+
 it.each([false, true])('keeps issue-level pending questions and identity, duplicate state question=%s', duplicate => {
   const data = libraryMatterFixture();
   const content = structuredClone(jobAidReadingFixture().current!.content);

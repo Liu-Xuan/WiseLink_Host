@@ -448,6 +448,13 @@ const SuiteGraphKnowledgePanel = memo(function SuiteGraphKnowledgePanel({
           <p className="suite-graph-status">当前综合状态：{OVERVIEW_STATUS_LABELS[read.overviewStatus] ?? read.overviewStatus}</p>
         ) : null}
         {read.notices.map((notice) => <p className="suite-graph-notice" key={notice}>{notice}</p>)}
+        {onOpenWiki ? (
+          <div className="suite-graph-knowledge-action">
+            <Button variant="outline" onClick={onOpenWiki}>
+              阅读完整事项 Wiki <ArrowRight aria-hidden="true" />
+            </Button>
+          </div>
+        ) : null}
       </>
     );
   };
