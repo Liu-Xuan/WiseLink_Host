@@ -43,12 +43,23 @@ const SuiteGraphTimeline = memo(function SuiteGraphTimeline({
   const hasSourceAttention = sources.some(
     (source) => source.status !== 'loaded' && source.status !== 'loading',
   );
+  const sourceAttentionCount = sources.filter(
+    (source) => source.status !== 'loaded',
+  ).length;
+  const sourceLoadingCount = sources.filter(
+    (source) => source.status === 'loading',
+  ).length;
+  const sourceSummary = [
+    `来源读取状态（${sources.length}）`,
+    sourceAttentionCount > 0 ? `待处理 ${sourceAttentionCount}` : null,
+    sourceLoadingCount > 0 ? `读取中 ${sourceLoadingCount}` : null,
+  ].filter(Boolean).join(' · ');
 
   return (
     <div className="suite-graph-timeline" aria-label="来源声明事件">
       {sources.length > 0 ? (
-        <details className="suite-graph-timeline-sources" open={hasSourceAttention}>
-          <summary>来源读取状态（{sources.length}）</summary>
+        <details className="suite-graph-timeline-sources" open={hasSourceAttention || sourceLoadingCount > 0}>
+          <summary>{sourceSummary}</summary>
           <div role="list" aria-label="来源读取状态">
             {sources.map((source) => (
               <div className="suite-graph-timeline-source" role="listitem" key={source.documentVersionId}>
