@@ -24,12 +24,16 @@ jest.mock('@client/src/pages/DocumentParsingPage/MineruMarkdownReader', () => ({
   MineruMarkdownReader: ({ markdown }: { markdown?: string }) => createElement('div', null, markdown ?? 'markdown-body'),
 }));
 jest.mock('@client/src/pages/DocumentParsingPage/SemanticBilingualReader', () => ({
-  SemanticBilingualReader: () => createElement('div', { 'data-bilingual': 'rendered' }, '双语对照已渲染'),
+  SemanticBilingualReader: ({ mode, onSourceRefSelect }: { mode: string; onSourceRefSelect?: (unitId: string, sourceRef: string) => void }) => createElement('div',
+    { 'data-bilingual': 'rendered', 'data-reading-mode': mode },
+    createElement('button', { id: 'select-translation-source', onClick: () => onSourceRefSelect?.('translation-unit', 'SR-TEST-P2') }, '定位译文来源'),
+    '双语对照已渲染'),
 }));
 jest.mock('@client/src/pages/DocumentParsingPage/DocumentSourceReadingWorkspace', () => ({
-  DocumentSourceReadingWorkspace: (props: { mode: string; onModeChange: (mode: string) => void; bilingualContent: ReactNode }) =>
-    createElement('div', { 'data-mode': props.mode },
+  DocumentSourceReadingWorkspace: (props: { mode: string; onModeChange: (mode: string) => void; bilingualContent: ReactNode; initialPage?: number; initialUnitId?: string }) =>
+    createElement('div', { 'data-mode': props.mode, 'data-initial-page': props.initialPage, 'data-initial-unit': props.initialUnitId },
       createElement('button', { id: 'switch-bilingual', onClick: () => props.onModeChange('bilingual') }, '切中英对照'),
+      createElement('button', { id: 'switch-translation', onClick: () => props.onModeChange('translation') }, '切中文阅读'),
       props.bilingualContent),
 }));
 
@@ -146,12 +150,36 @@ it('loads translation only after switching to bilingual mode, once', async () =>
   expect(container.querySelector('[data-bilingual="rendered"]')).not.toBeNull();
 });
 
+it('loads the same saved translation on demand in Chinese reading mode', async () => {
+  await mount('parseRunId=PR1');
+  expect(mockTranslation).not.toHaveBeenCalled();
+  await act(async () => {
+    container.querySelector('#switch-translation')?.dispatchEvent(new dom.window.MouseEvent('click', { bubbles: true }));
+  });
+  expect(mockTranslation).toHaveBeenCalledTimes(1);
+  expect(mockTranslation).toHaveBeenCalledWith('DV1', 'PR1', expect.anything());
+  expect(container.querySelector('[data-reading-mode="translation"]')).not.toBeNull();
+});
+
 it('changing only the external sourceRef anchor does not refetch the body reading', async () => {
   await mount('parseRunId=PR1');
   expect(mockReading).toHaveBeenCalledTimes(1);
   await navigate('/document-versions/DV1?parseRunId=PR1&sourceRef=SR-TEST-P1');
   expect(mockReading).toHaveBeenCalledTimes(1);
   expect(mockStatus).toHaveBeenCalledTimes(1);
+});
+
+it('lets a later in-page translation source override the URL source until navigation changes it', async () => {
+  await mount('parseRunId=PR1&sourceRef=SR-TEST-P1');
+  expect(container.querySelector('[data-initial-page="1"]')).not.toBeNull();
+  await act(async () => {
+    container.querySelector('#switch-bilingual')?.dispatchEvent(new dom.window.MouseEvent('click', { bubbles: true }));
+  });
+  await act(async () => {
+    container.querySelector('#select-translation-source')?.dispatchEvent(new dom.window.MouseEvent('click', { bubbles: true }));
+  });
+  expect(container.querySelector('[data-initial-unit="translation-unit"]')).not.toBeNull();
+  expect(container.querySelector('[data-initial-page="1"]')).toBeNull();
 });
 
 it('does not poll a pinned run even when the latest run is still running', async () => {

@@ -1,4 +1,4 @@
-import { ArrowLeft, Expand, List } from 'lucide-react';
+import { ArrowLeft, Expand, List, Minimize } from 'lucide-react';
 import {
   useEffect,
   useMemo,
@@ -14,8 +14,9 @@ import { Button } from '@client/src/components/ui/button';
 import type { DocumentOriginalResult } from '@shared/document-original.interface';
 import { DocumentOriginalInlinePreview } from '../WorkspaceHomePage/DocumentOriginalPreview';
 import { DocumentOriginalReader } from './DocumentOriginalReader';
+import { originalUnitPages } from './original-reading';
 
-export type DocumentSourceReaderMode = 'dual' | 'bilingual' | 'original';
+export type DocumentSourceReaderMode = 'dual' | 'bilingual' | 'translation' | 'original' | 'pdf';
 
 interface Props {
   original: DocumentOriginalResult;
@@ -25,8 +26,18 @@ interface Props {
   bilingualContent: ReactNode;
   returnRoute: string;
   returnLabel: string;
+  title: string;
   initialPage?: number;
+  initialUnitId?: string;
+  initialLocationRequest?: number;
+  renderPdfPreview?: (page: number) => ReactNode;
 }
+
+const READER_MODES: Array<{ value: DocumentSourceReaderMode; label: string }> = [
+  { value: 'dual', label: '原文＋原件' }, { value: 'bilingual', label: '中英对照' },
+  { value: 'translation', label: '中文阅读' }, { value: 'original', label: '仅原文' },
+  { value: 'pdf', label: '仅原件' },
+];
 
 export function DocumentSourceReadingWorkspace({
   original,
@@ -36,14 +47,22 @@ export function DocumentSourceReadingWorkspace({
   bilingualContent,
   returnRoute,
   returnLabel,
+  title,
   initialPage,
+  initialUnitId,
+  initialLocationRequest = 0,
+  renderPdfPreview,
 }: Props) {
-  const stageRef = useRef<HTMLElement>(null);
+  const workspaceRef = useRef<HTMLDivElement>(null);
   const [split, setSplit] = useState(50);
   const [page, setPage] = useState(initialPage ?? 1);
-  const [tocOpen, setTocOpen] = useState(false);
+  const [tocOpen, setTocOpen] = useState(() => typeof window === 'undefined' ||
+    typeof window.matchMedia !== 'function' || window.matchMedia('(min-width: 900px)').matches);
   const [mobileSecondary, setMobileSecondary] = useState(false);
   const [originalRequested, setOriginalRequested] = useState(false);
+  const [activeUnitId, setActiveUnitId] = useState<string | null>(initialUnitId ?? null);
+  const [fullscreen, setFullscreen] = useState(false);
+  const [fullscreenMessage, setFullscreenMessage] = useState<string | null>(null);
   const headings = useMemo(
     () =>
       original.source.units.filter(
@@ -56,25 +75,42 @@ export function DocumentSourceReadingWorkspace({
   );
 
   useEffect(() => {
-    if (initialPage) setPage(initialPage);
+    if (initialPage) { setPage(initialPage); setOriginalRequested(true); }
   }, [initialPage]);
 
   useEffect(() => {
-    setOriginalRequested(false);
+    if (initialUnitId) {
+      setActiveUnitId(initialUnitId);
+      window.requestAnimationFrame(() => {
+        document.getElementById(initialUnitId)?.scrollIntoView({ block: 'center' });
+      });
+    }
+  }, [initialUnitId, initialLocationRequest]);
+
+  useEffect(() => {
+    setOriginalRequested(Boolean(initialPage));
   }, [documentVersionId]);
 
-  function locateUnit(pageIndex: number): void {
+  useEffect(() => {
+    const update = () => setFullscreen(document.fullscreenElement === workspaceRef.current);
+    document.addEventListener('fullscreenchange', update);
+    return () => document.removeEventListener('fullscreenchange', update);
+  }, []);
+
+  function locateUnit(pageIndex: number, unitId: string): void {
     setPage(pageIndex);
+    setActiveUnitId(unitId);
     setOriginalRequested(true);
     if (mode === 'original') onModeChange('dual');
   }
 
   function focusHeading(unitId: string): void {
-    if (mode === 'bilingual') onModeChange('dual');
+    if (mode === 'bilingual' || mode === 'translation' || mode === 'pdf') onModeChange('original');
+    setActiveUnitId(unitId);
     window.requestAnimationFrame(() => {
       document.getElementById(unitId)?.scrollIntoView({ block: 'start' });
     });
-    setTocOpen(false);
+    if (window.innerWidth < 900) setTocOpen(false);
   }
 
   function startResize(event: ReactPointerEvent<HTMLDivElement>): void {
@@ -95,77 +131,88 @@ export function DocumentSourceReadingWorkspace({
   }
 
   async function toggleFullscreen(): Promise<void> {
+    setFullscreenMessage(null);
     try {
       if (document.fullscreenElement) await document.exitFullscreen();
-      else await stageRef.current?.requestFullscreen();
-    } catch {
-      // Some embedded browsers deny fullscreen. The reader remains usable in place.
+      else if (workspaceRef.current?.requestFullscreen) await workspaceRef.current.requestFullscreen();
+      else setFullscreenMessage('当前浏览器不支持全屏，可继续在当前页面阅读。');
+    } catch (reason: unknown) {
+      setFullscreenMessage(reason instanceof Error ? `全屏未开启：${reason.message}` : '全屏未开启，可继续在当前页面阅读。');
     }
   }
 
   const columnStyle = {
     '--reader-split': `${split}%`,
   } as CSSProperties;
+  const showText = mode === 'dual' || mode === 'original';
+  const showPdf = mode === 'dual' || mode === 'pdf';
+  const showTranslation = mode === 'bilingual' || mode === 'translation';
 
   return (
-    <div className="source-reader-layout">
-      <aside className={`source-reader-toc${tocOpen ? ' is-open' : ''}`}>
+    <div className={`source-reader-workspace${tocOpen ? '' : ' no-toc'}`} ref={workspaceRef}>
+      <header className="source-reader-toolbar">
+        <div className="source-reader-identity"><strong>{title}</strong><span>阅读版本 {original.binding.parseRevision}</span></div>
+        <Button type="button" size="sm" variant="ghost" aria-expanded={tocOpen} onClick={() => setTocOpen(value => !value)}>
+          <List aria-hidden="true" />目录
+        </Button>
+        <div className="source-reader-mode-tabs" aria-label="阅读模式">
+          {READER_MODES.map(item => <button key={item.value} type="button" aria-pressed={mode === item.value}
+            onClick={() => { setMobileSecondary(false); onModeChange(item.value); }}>{item.label}</button>)}
+        </div>
+        <Button type="button" size="sm" variant="ghost" onClick={() => void toggleFullscreen()}>
+          {fullscreen ? <Minimize aria-hidden="true" /> : <Expand aria-hidden="true" />}{fullscreen ? '退出全屏' : '全屏'}
+        </Button>
+        <Button asChild size="sm" variant="outline" className="source-reader-return">
+          <Link to={returnRoute}><ArrowLeft aria-hidden="true" />{returnLabel}</Link>
+        </Button>
+        {mode === 'dual' ? <Button type="button" size="sm" variant="outline" className="source-reader-mobile-switch"
+          onClick={() => setMobileSecondary(value => !value)}>{mobileSecondary ? '查看原文' : '查看原件'}</Button> : null}
+      </header>
+      {fullscreenMessage ? <p className="source-reader-fullscreen-message" role="status">{fullscreenMessage}</p> : null}
+
+      <div className="source-reader-layout">
+      {tocOpen ? <aside className="source-reader-toc">
         <div className="source-reader-toc-modes" aria-label="目录类型">
           <button type="button" aria-pressed="true">作者章节</button>
           <button type="button" disabled title="当前读取合同尚未提供业务主题目录">业务主题</button>
         </div>
         <nav aria-label="作者章节目录">
           {headings.length ? (
-            headings.map((heading) => (
-              <button key={heading.unitId} type="button" onClick={() => focusHeading(heading.unitId)}>
-                {String(heading.payload.text ?? '')}
-              </button>
-            ))
+            headings.map((heading) => {
+              const pages = originalUnitPages(original, heading.unitId);
+              return <button key={heading.unitId} type="button" className={activeUnitId === heading.unitId ? 'is-selected' : undefined}
+                onClick={() => focusHeading(heading.unitId)}><span>{String(heading.payload.text ?? '')}</span>
+                {pages.length === 1 ? <small>P{pages[0]}</small> : null}</button>;
+            })
           ) : (
             <p>当前原文没有可用的作者章节标题。</p>
           )}
         </nav>
         <div className="source-reader-toc-boundary">
           <strong>固定解析版本</strong>
-          <span>parse revision {original.binding.parseRevision}</span>
-          <span>业务主题目录尚未取得，不由标题文字猜测。</span>
+          <span>阅读版本 {original.binding.parseRevision}</span>
+          <span>业务主题目录暂不可用。</span>
         </div>
-      </aside>
+      </aside> : null}
 
-      <section className="source-reader-stage" ref={stageRef}>
-        <header className="source-reader-toolbar">
-          <div className="source-reader-mode-tabs" aria-label="阅读模式">
-            <button type="button" aria-pressed={mode === 'dual'} onClick={() => onModeChange('dual')}>原文＋原件</button>
-            <button type="button" aria-pressed={mode === 'bilingual'} onClick={() => onModeChange('bilingual')}>中英对照</button>
-            <button type="button" aria-pressed={mode === 'original'} onClick={() => onModeChange('original')}>仅原文</button>
+      <section className={`source-reader-stage mode-${mode}`}>
+        {showTranslation ? (
+          <div className="source-reader-translation">
+            <div className="source-reader-pane-title"><strong>{mode === 'translation' ? '中文阅读' : '中英对照'}</strong>
+              <span>完整语义与原文来源保持关联</span></div>
+            <div className="source-reader-bilingual">{bilingualContent}</div>
           </div>
-          <Button type="button" size="sm" variant="ghost" onClick={() => setTocOpen((value) => !value)}>
-            <List aria-hidden="true" />目录
-          </Button>
-          <Button type="button" size="sm" variant="ghost" onClick={() => void toggleFullscreen()}>
-            <Expand aria-hidden="true" />全屏
-          </Button>
-          <Button asChild size="sm" variant="outline" className="source-reader-return">
-            <Link to={returnRoute}><ArrowLeft aria-hidden="true" />{returnLabel}</Link>
-          </Button>
-          {mode === 'dual' ? (
-            <Button type="button" size="sm" variant="outline" className="source-reader-mobile-switch" onClick={() => setMobileSecondary((value) => !value)}>
-              {mobileSecondary ? '查看原文' : '查看原件'}
-            </Button>
-          ) : null}
-        </header>
-
-        {mode === 'bilingual' ? (
-          <div className="source-reader-bilingual">{bilingualContent}</div>
         ) : (
           <div
-            className={`source-reader-columns${mode === 'original' ? ' is-single' : ''}${mobileSecondary ? ' show-secondary' : ''}`}
+            className={`source-reader-columns${showText && showPdf ? '' : ' is-single'}${mobileSecondary ? ' show-secondary' : ''}`}
             style={columnStyle}
           >
-            <div className="source-reader-primary">
-              <DocumentOriginalReader original={original} onUnitLocate={locateUnit} />
-            </div>
-            {mode === 'dual' ? (
+            {showText ? <div className="source-reader-primary">
+              <div className="source-reader-pane-title"><strong>连续结构化原文</strong><span>源文顺序与完整语义保留</span></div>
+              <div className="source-reader-pane-scroll"><DocumentOriginalReader original={original}
+                activeUnitId={activeUnitId} onUnitLocate={locateUnit} /></div>
+            </div> : null}
+            {showText && showPdf ? (
               <>
                 <div
                   className="source-reader-splitter"
@@ -183,12 +230,19 @@ export function DocumentSourceReadingWorkspace({
                     setSplit((value) => Math.max(32, Math.min(68, value + (event.key === 'ArrowLeft' ? -2 : 2))));
                   }}
                 />
-                <DocumentOriginalInlinePreview documentVersionId={documentVersionId} page={page} autoLoad={originalRequested} />
+                <div className="source-reader-pdf-pane">
+                  <div className="source-reader-pane-title"><strong>PDF 原件</strong><span>受控读取 · 第 {page} 页</span></div>
+                  {renderPdfPreview ? renderPdfPreview(page) : <DocumentOriginalInlinePreview documentVersionId={documentVersionId} page={page} autoLoad={originalRequested} />}
+                </div>
               </>
-            ) : null}
+            ) : showPdf ? <div className="source-reader-pdf-pane">
+              <div className="source-reader-pane-title"><strong>PDF 原件</strong><span>受控读取 · 第 {page} 页</span></div>
+              {renderPdfPreview ? renderPdfPreview(page) : <DocumentOriginalInlinePreview documentVersionId={documentVersionId} page={page} />}
+            </div> : null}
           </div>
         )}
       </section>
+      </div>
     </div>
   );
 }

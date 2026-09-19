@@ -14,7 +14,7 @@ jest.mock('@client/src/components/ui/button', () => ({
     asChild ? children : createElement('button', props, children),
 }));
 
-function markup(mode: 'dual' | 'bilingual' | 'original' = 'dual') {
+function markup(mode: 'dual' | 'bilingual' | 'translation' | 'original' | 'pdf' = 'dual') {
   const original = originalFixture();
   original.binding.parseRevision = 7;
   original.source.units[0] = {
@@ -35,6 +35,7 @@ function markup(mode: 'dual' | 'bilingual' | 'original' = 'dual') {
         bilingualContent: createElement('div', null, '已保存中英内容'),
         returnRoute: '/library?mode=document',
         returnLabel: '返回文档库',
+        title: 'SB-A R02.pdf',
         initialPage: 3,
       }),
     ),
@@ -45,21 +46,25 @@ describe('document source reading workspace', () => {
   it('renders the exact source outline, fixed parse revision and accessible split control', () => {
     const html = markup();
     expect(html).toContain('1. Investigation scope');
-    expect(html).toContain('parse revision 7');
-    expect(html).toContain('业务主题目录尚未取得，不由标题文字猜测');
+    expect(html).toContain('阅读版本 7');
+    expect(html).toContain('业务主题目录暂不可用');
     expect(html).toContain('role="separator"');
     expect(html).toContain('aria-valuenow="50"');
     expect(html).toContain('data-pdf-page="3"');
   });
 
-  it('keeps the three reader modes and renders saved bilingual content only in that mode', () => {
+  it('keeps the five reader modes and renders saved Chinese content only in Chinese modes', () => {
     const dual = markup('dual');
     const bilingual = markup('bilingual');
+    const translation = markup('translation');
     expect(dual).toContain('原文＋原件');
     expect(dual).toContain('中英对照');
+    expect(dual).toContain('中文阅读');
     expect(dual).toContain('仅原文');
+    expect(dual).toContain('仅原件');
     expect(dual).not.toContain('已保存中英内容');
     expect(bilingual).toContain('已保存中英内容');
+    expect(translation).toContain('已保存中英内容');
     expect(bilingual).not.toContain('role="separator"');
   });
 });

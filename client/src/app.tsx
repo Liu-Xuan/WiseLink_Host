@@ -25,6 +25,7 @@ import GraphRelationPreviewPage from './pages/GraphRelationPreviewPage/GraphRela
 import SuiteGraphVisualPreviewPage from './pages/GraphRelationPreviewPage/SuiteGraphVisualPreviewPage';
 import EngineeringChronologyPreviewPage from './pages/EngineeringChronologyPreviewPage/EngineeringChronologyPreviewPage';
 import ReaderPage from './pages/ReaderPage';
+import ReaderWorkspaceVisualPreviewPage from './pages/DocumentParsingPage/ReaderWorkspaceVisualPreviewPage';
 import VersionComparisonPage from './pages/VersionComparisonPage';
 
 // Suite 1.1 Pages
@@ -56,6 +57,7 @@ const RoutesComponent = () => {
       <Route path="dev-preview/graph-legacy" element={<GraphRelationPreviewPage />} />
       <Route path="dev-preview/chronology" element={<EngineeringChronologyPreviewPage />} />
       <Route path="dev-preview/reader/:documentId" element={<ReaderPage />} />
+      <Route path="dev-preview/reader-workspace" element={<ReaderWorkspaceVisualPreviewPage />} />
       <Route path="dev-preview/version-comparison/:documentId" element={<VersionComparisonPage />} />
       <Route path="dev-preview/reactflow-validation" element={<ReactFlowValidationPlayground />} />
       <Route element={<Layout />}>

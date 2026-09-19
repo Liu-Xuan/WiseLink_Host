@@ -1,4 +1,3 @@
-import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@client/src/components/ui/dialog';
 import type { DocumentTranslationReadingResponse } from '@shared/document-translation-reading.interface';
 import { SemanticBilingualReader } from './SemanticBilingualReader';
 import { useCallback, useEffect, useRef, useState } from 'react';
@@ -35,6 +34,9 @@ export default function DocumentVersionReadingPage() {
   const [translation, setTranslation] = useState<DocumentTranslationReadingResponse | null>(null);
   const [waitingForTranslationStart, setWaitingForTranslationStart] = useState(false);
   const [translationPage, setTranslationPage] = useState<number | null>(null);
+  const [translationUnitId, setTranslationUnitId] = useState<string | null>(null);
+  const [translationSourceContext, setTranslationSourceContext] = useState<string | null>(requestedSource);
+  const [translationLocationRequest, setTranslationLocationRequest] = useState(0);
   const [translationError, setTranslationError] = useState<string | null>(null);
   const [view, setView] = useState<DocumentSourceReaderMode>('dual');
   const epoch = useRef(0);
@@ -54,12 +56,13 @@ export default function DocumentVersionReadingPage() {
   useEffect(() => {
     epoch.current++;
     setStatus(null); setReading(null); setSource(null); setError(null); setSending(false);
-    setTranslation(null); setTranslationPage(null); setTranslationError(null); setView('dual');
+    setTranslation(null); setTranslationPage(null); setTranslationUnitId(null); setTranslationSourceContext(requestedSource); setTranslationError(null); setView('dual');
+    setTranslationLocationRequest(0);
     loaded.current = ''; request.current = null;
     return subscribeCanonicalHostClientSession(() => {
       epoch.current++;
       rejectedRef.current = false;
-      setStatus(null); setReading(null); setSource(null); setTranslation(null); setTranslationPage(null); setTranslationError(null);
+      setStatus(null); setReading(null); setSource(null); setTranslation(null); setTranslationPage(null); setTranslationUnitId(null); setTranslationSourceContext(requestedSource); setTranslationError(null);
       loaded.current = ''; request.current = null; setRefresh(value => value + 1);
     });
   }, [readingIdentity]);
@@ -136,7 +139,7 @@ export default function DocumentVersionReadingPage() {
   useEffect(() => {
     const parseRunId = currentReading?.parseRunId;
     // Chinese loads on demand only: the default dual mode never requests translation.
-    if (!parseRunId || !currentReading?.original || view !== 'bilingual') { setTranslation(null); return; }
+    if (!parseRunId || !currentReading?.original || (view !== 'bilingual' && view !== 'translation')) { setTranslation(null); return; }
     setTranslationPage(null); setTranslationError(null); setWaitingForTranslationStart(false);
     let unstartedChecks = 0;
     const controller = new AbortController();
@@ -176,16 +179,31 @@ export default function DocumentVersionReadingPage() {
   }, [readingIdentity, currentReading?.parseRunId, view, refresh]);
   const locateTranslationSource = (unitId: string, sourceRef: string) => {
     const location = currentReading?.original?.locations.find(item => item.sourceRefId === sourceRef);
+    setTranslationUnitId(unitId);
+    setTranslationSourceContext(requestedSource);
+    setTranslationLocationRequest((value) => value + 1);
+    setView('dual');
     if (location?.pageIndex !== null && location?.pageIndex !== undefined) {
       // The original preview consumes only the physical page, not a guessed box.
-      setTranslationPage(location.pageIndex);
+      setTranslationPage(location.pageIndex + 1);
     }
-    document.getElementById(unitId)?.scrollIntoView({ block: 'center' });
   };
+  useEffect(() => {
+    // A URL sourceRef is a new navigation decision. It must replace a prior
+    // in-page translation selection without refetching the document body.
+    setTranslationUnitId(null);
+    setTranslationPage(null);
+    setTranslationSourceContext(requestedSource);
+    setTranslationLocationRequest((value) => value + 1);
+  }, [requestedSource]);
   const selectedLocation = requestedSource ? currentReading?.original?.locations.find(item => item.sourceRefId === requestedSource) : null;
   const selectedUnit = requestedSource ? currentReading?.original?.source.units.find(unit => unit.sourceRefIds.includes(requestedSource)) : null;
+  const localTranslationLocationIsCurrent = translationSourceContext === requestedSource && translationUnitId !== null;
+  const initialLocationUnitId = localTranslationLocationIsCurrent ? translationUnitId : selectedUnit?.unitId;
+  const initialLocationPage = localTranslationLocationIsCurrent ? translationPage : selectedLocation?.pageIndex != null ? selectedLocation.pageIndex + 1 : undefined;
   useEffect(() => {
-    if (view !== 'bilingual' && selectedUnit) document.getElementById(selectedUnit.unitId)?.scrollIntoView({ block: 'center' });
+    if ((view === 'dual' || view === 'original') && selectedUnit)
+      document.getElementById(selectedUnit.unitId)?.scrollIntoView({ block: 'center' });
   }, [requestedSource, selectedUnit?.unitId, view]);
   const latest = currentStatus?.latestRun;
   const expired = latest ? Date.parse(latest.deadlineAt) <= Date.now() : false;
@@ -248,37 +266,36 @@ export default function DocumentVersionReadingPage() {
     {currentReading ? <>
       {requestedRun && <p role="status">{currentStatus?.publishedRun?.parseRunId !== requestedRun ? '历史解析版本' : '指定解析版本'}：固定读取此版本，刷新不会切换到最新版本。 <Link to={`/document-versions/${encodeURIComponent(documentVersionId)}`}>查看最新版本</Link></p>}
       {requestedSource && <aside aria-label="检索命中来源">
-        {selectedLocation ? <><strong>已定位检索命中来源</strong>{selectedLocation.pageIndex !== null
-          ? <><p>原件第 {selectedLocation.pageIndex + 1} 页 · 页级定位</p><DocumentOriginalPreview documentVersionId={documentVersionId} page={selectedLocation.pageIndex + 1}>原件第 {selectedLocation.pageIndex + 1} 页（页级定位）</DocumentOriginalPreview></>
-          : <p>此来源没有可用的物理页定位。</p>}</>
+        {selectedLocation ? <><strong>已定位检索命中来源</strong><p>{selectedLocation.pageIndex !== null
+          ? '对应正文已标出；点击文字可在右侧核对准确原件位置。'
+          : '对应正文已标出；此来源没有可用的物理页定位。'}</p></>
           : <p role="alert">此解析版本中未找到指定来源，未替换为其他来源。</p>}
       </aside>}
       {currentReading.titleEnhancement.status === 'FAILED' && <p role="status">标题层级增强未完成，当前显示解析器标题。{currentReading.titleEnhancement.code}</p>}
       <p className="document-reading-version">阅读版本 {currentReading.parseRevision} · {currentReading.parser.name} {currentReading.parser.version}</p>
       {currentReading.original ? <>
         <DocumentSourceReadingWorkspace
+          key={`${currentReading.documentVersionId}:${currentReading.parseRunId}`}
           original={currentReading.original}
           documentVersionId={documentVersionId}
           mode={view}
-          onModeChange={(mode) => { setView(mode); if (mode !== 'bilingual') setTranslationPage(null); }}
+          onModeChange={(mode) => { setView(mode); if (mode !== 'bilingual' && mode !== 'translation') setTranslationPage(null); }}
           returnRoute={returnTarget?.route ?? '/library?mode=document'}
           returnLabel={returnTarget?.label ?? '返回原处'}
-          initialPage={selectedLocation?.pageIndex !== null && selectedLocation?.pageIndex !== undefined ? selectedLocation.pageIndex + 1 : undefined}
+          title={currentStatus?.originalFilename ?? '文档阅读'}
+          initialPage={initialLocationPage}
+          initialUnitId={initialLocationUnitId}
+          initialLocationRequest={translationLocationRequest}
           bilingualContent={<section aria-label="已保存中文阅读">
             {translationError && <p role="alert">{translationError}</p>}
             {currentTranslation && !currentTranslation.execution && <p role="status">{waitingForTranslationStart ? '正在等待中文任务启动…' : '尚未检测到中文任务启动，可稍后刷新。'}</p>}
             {currentTranslation?.execution && <p role="status">{translationExecutionLabel(currentTranslation.execution.status)}{currentTranslation.execution.errorCode ? `（${currentTranslation.execution.errorCode}）` : ''}</p>}
-            {currentTranslation ? <SemanticBilingualReader translation={currentTranslation.translation} onSourceRefSelect={locateTranslationSource} mode="bilingual" />
+            {currentTranslation ? <SemanticBilingualReader translation={currentTranslation.translation} onSourceRefSelect={locateTranslationSource}
+              mode={view === 'translation' ? 'translation' : 'bilingual'} />
               : <p role="status">正在读取已保存译文…</p>}
           </section>}
         />
         {activityEntryRoute ? <p className="document-reading-related"><Link to={activityEntryRoute}>查看同一解析版本的活动阅读</Link></p> : null}
-        <Dialog open={translationPage !== null} onOpenChange={open => { if (!open) setTranslationPage(null); }}>
-          <DialogContent><DialogHeader><DialogTitle>译段原件位置</DialogTitle></DialogHeader>
-          <p>原件第 {(translationPage ?? 0) + 1} 页 · 页级定位</p>
-          <DocumentOriginalPreview documentVersionId={documentVersionId} page={(translationPage ?? 0) + 1}>原件第 {(translationPage ?? 0) + 1} 页（页级定位）</DocumentOriginalPreview>
-          </DialogContent>
-        </Dialog>
       </> : <MineruMarkdownReader markdown={currentReading.markdown} assets={currentReading.assets} projection={currentReading.projection}
         renderImage={renderImage} onLocateSource={setSource} />}
       {source && <aside className="document-reading-source" aria-label="原件来源">
