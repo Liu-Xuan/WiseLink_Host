@@ -198,9 +198,10 @@ export default function DocumentVersionReadingPage() {
     setTranslationSourceContext(requestedSource);
     setTranslationLocationRequest((value) => value + 1);
   }, [requestedSource]);
-  const selectedLocation = requestedSource ? currentReading?.original?.locations.find(item => item.sourceRefId === requestedSource) : null;
-  const selectedUnit = requestedSource ? currentReading?.original?.source.units.find(unit => unit.sourceRefIds.includes(requestedSource)) : null;
   const localTranslationLocationIsCurrent = translationSourceContext !== null && translationUnitId !== null;
+  const activeSourceRef = localTranslationLocationIsCurrent ? translationSourceContext : requestedSource;
+  const selectedLocation = activeSourceRef ? currentReading?.original?.locations.find(item => item.sourceRefId === activeSourceRef) : null;
+  const selectedUnit = activeSourceRef ? currentReading?.original?.source.units.find(unit => unit.sourceRefIds.includes(activeSourceRef)) : null;
   const initialLocationUnitId = localTranslationLocationIsCurrent ? translationUnitId : selectedUnit?.unitId;
   const initialLocationPage = localTranslationLocationIsCurrent ? translationPage : selectedLocation?.pageIndex != null ? selectedLocation.pageIndex + 1 : undefined;
   useEffect(() => {
@@ -267,7 +268,7 @@ export default function DocumentVersionReadingPage() {
     </header>
     {currentReading ? <>
       {requestedRun && <p role="status">{currentStatus?.publishedRun?.parseRunId !== requestedRun ? '历史解析版本' : '指定解析版本'}：固定读取此版本，刷新不会切换到最新版本。 <Link to={`/document-versions/${encodeURIComponent(documentVersionId)}`}>查看最新版本</Link></p>}
-      {requestedSource && <aside aria-label="检索命中来源">
+      {activeSourceRef && <aside aria-label="检索命中来源">
         {selectedLocation ? <><strong>已定位检索命中来源</strong><p>{selectedLocation.pageIndex !== null
           ? '对应正文已标出；点击文字可在右侧核对准确原件位置。'
           : '对应正文已标出；此来源没有可用的物理页定位。'}</p></>
