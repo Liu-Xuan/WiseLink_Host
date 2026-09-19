@@ -24,7 +24,8 @@ const DOCUMENT_PERSPECTIVE: GraphData = {
       data: {
         title: '需求文档组',
         count: 12,
-        docs: ['产品需求文档 v3.1', '用户故事集 v2.0', 'UI/UX 设计规范']
+        docs: ['产品需求文档 v3.1', '用户故事集 v2.0', 'UI/UX 设计规范'],
+        type: 'documentGroup'
       }
     },
     // Compact nodes
@@ -160,7 +161,8 @@ const TIMELINE_PERSPECTIVE: GraphData = {
       data: {
         title: '2026-09 Week 1',
         count: 6,
-        docs: ['技术研究', '框架选型', '验证场地']
+        docs: ['技术研究', '框架选型', '验证场地'],
+        type: 'documentGroup'
       }
     },
     {
@@ -170,7 +172,8 @@ const TIMELINE_PERSPECTIVE: GraphData = {
       data: {
         title: '2026-09 Week 2',
         count: 8,
-        docs: ['页面实现', '布局设计', '组件开发']
+        docs: ['页面实现', '布局设计', '组件开发'],
+        type: 'documentGroup'
       }
     },
     {
@@ -180,7 +183,8 @@ const TIMELINE_PERSPECTIVE: GraphData = {
       data: {
         title: '2026-09 Week 3',
         count: 10,
-        docs: ['数据集成', 'API 对接', '测试优化']
+        docs: ['数据集成', 'API 对接', '测试优化'],
+        type: 'documentGroup'
       }
     }
   ],
@@ -200,7 +204,8 @@ const PEOPLE_PERSPECTIVE: GraphData = {
       data: {
         title: '产品团队',
         count: 4,
-        docs: ['产品经理', 'UI 设计师', 'UX 研究员']
+        docs: ['产品经理', 'UI 设计师', 'UX 研究员'],
+        type: 'documentGroup'
       }
     },
     {
@@ -209,18 +214,20 @@ const PEOPLE_PERSPECTIVE: GraphData = {
       position: { x: 500, y: 200 },
       data: {
         title: '开发团队',
-        count: 10,
-        docs: ['前端工程师', '后端工程师', '全栈工程师']
+        count: 6,
+        docs: ['前端工程师', '后端工程师', '全栈工程师'],
+        type: 'documentGroup'
       }
     },
     {
       id: 'p-3',
       type: 'documentGroup',
-      position: { x: 400, y: 350 },
+      position: { x: 700, y: 200 },
       data: {
-        title: '质量团队',
+        title: '测试团队',
         count: 3,
-        docs: ['测试工程师', 'QA 主管']
+        docs: ['测试工程师', '自动化测试', '质量保证'],
+        type: 'documentGroup'
       }
     }
   ],

@@ -8,6 +8,7 @@ export interface DocumentGroupData {
   title: string;
   count: number;
   docs: string[];
+  type: 'documentGroup';
   metadata?: Record<string, unknown>;
 }
 
@@ -24,6 +25,8 @@ export interface ClusterData {
   count: number;
   type: 'cluster';
   tone?: 'blue' | 'green' | 'amber' | 'red';
+  children?: string[]; // Child node IDs for collapse/expand
+  collapsed?: boolean; // Collapse state hint for UI
 }
 
 export interface MatterHubData {
@@ -38,6 +41,7 @@ export interface MoreNodeData {
   count: number;
   parentId: string;
   type: 'more';
+  hiddenNodes?: string[]; // Hidden node IDs that will be shown on expand
 }
 
 export type NodeData =
@@ -63,6 +67,13 @@ export interface GraphEdge {
   label?: string;
   type?: 'reference' | 'dependency' | 'relation';
   style?: React.CSSProperties;
+  data?: {
+    type?: string;
+    metadata?: {
+      weight?: number;
+      [key: string]: unknown;
+    };
+  };
 }
 
 export interface GraphData {

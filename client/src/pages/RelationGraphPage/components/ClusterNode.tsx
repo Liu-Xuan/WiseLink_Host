@@ -3,7 +3,7 @@ import React from 'react';
 import type { NodeProps } from 'reactflow';
 import type { ClusterData } from '../types';
 
-export function ClusterNode({ data }: NodeProps<ClusterData>) {
+export function ClusterNode({ data, selected }: NodeProps<ClusterData>) {
   const toneColor = {
     blue: 'rgba(56, 189, 248, 0.15)',
     green: 'rgba(74, 222, 128, 0.15)',
@@ -20,7 +20,7 @@ export function ClusterNode({ data }: NodeProps<ClusterData>) {
 
   return (
     <div
-      className="cluster-halo"
+      className={`cluster-halo ${selected ? 'selected' : ''}`}
       style={{
         background: `radial-gradient(circle, ${toneColor} 0%, transparent 70%)`,
         borderColor: toneBorder

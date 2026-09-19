@@ -16,8 +16,11 @@ import { CompactDocumentNode } from './CompactDocumentNode';
 import { ClusterNode } from './ClusterNode';
 import { MatterHubNode } from './MatterHubNode';
 import { MoreNode } from './MoreNode';
+import { GraphNodeTooltip } from './GraphNodeTooltip';
 import { useForceLayout } from '../hooks/useForceLayout';
 import { useNodeHighlight } from '../hooks/useNodeHighlight';
+import { useNodeTooltip } from '../hooks/useNodeTooltip';
+import { useEdgeStyles } from '../hooks/useEdgeStyles';
 import type { GraphData, PerspectiveType } from '../types';
 
 const nodeTypes: NodeTypes = {
@@ -40,8 +43,11 @@ function GraphViewInner({ graphData, onNodeClick, selectedNodeId, perspective, f
   const [nodes, setNodes, onNodesChange] = useNodesState(graphData.nodes);
   const [edges, setEdges, onEdgesChange] = useEdgesState(graphData.edges);
 
+  // Apply edge styles based on relationship strength
+  const styledEdges = useEdgeStyles(graphData.edges);
+
   // Apply force-directed layout
-  useForceLayout(nodes, edges, perspective, {
+  useForceLayout(nodes, styledEdges, perspective, {
     enabled: forceLayoutEnabled,
     centerStrength: 0.05,
     chargeStrength: -300,
@@ -55,6 +61,13 @@ function GraphViewInner({ graphData, onNodeClick, selectedNodeId, perspective, f
     dimOpacity: 0.27,
     edgeDimOpacity: 0.15
   });
+
+  // Tooltip state and handlers
+  const { tooltipState, handleNodeMouseEnter, handleNodeMouseLeave } = useNodeTooltip(
+    graphData.nodes,
+    graphData.edges,
+    { enabled: true }
+  );
 
   // Update nodes and edges when graphData changes
   React.useEffect(() => {
@@ -81,14 +94,23 @@ function GraphViewInner({ graphData, onNodeClick, selectedNodeId, perspective, f
     [onNodeClick]
   );
 
+  const handleNodeMouseEnterWrapper = React.useCallback(
+    (event: React.MouseEvent, node: any) => {
+      handleNodeMouseEnter(node.id, event);
+    },
+    [handleNodeMouseEnter]
+  );
+
   return (
     <div className="graph-view">
       <ReactFlow
         nodes={nodes}
-        edges={edges}
+        edges={styledEdges}
         onNodesChange={onNodesChange}
         onEdgesChange={onEdgesChange}
         onNodeClick={handleNodeClick}
+        onNodeMouseEnter={handleNodeMouseEnterWrapper}
+        onNodeMouseLeave={handleNodeMouseLeave}
         nodeTypes={nodeTypes}
         fitView
         minZoom={0.3}
@@ -106,10 +128,15 @@ function GraphViewInner({ graphData, onNodeClick, selectedNodeId, perspective, f
         <Controls />
         <Panel position="top-right" className="graph-info-panel">
           <div className="graph-stats">
-            Nodes: {nodes.length} | Edges: {edges.length}
+            Nodes: {nodes.length} | Edges: {styledEdges.length}
           </div>
         </Panel>
       </ReactFlow>
+      <GraphNodeTooltip
+        node={tooltipState.node}
+        position={tooltipState.position}
+        connectionCount={tooltipState.connectionCount}
+      />
     </div>
   );
 }
