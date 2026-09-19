@@ -3,7 +3,7 @@ import { createRoot, type Root } from 'react-dom/client';
 import { createMemoryRouter, RouterProvider } from 'react-router-dom';
 import GraphRelationPreviewPage from '../../client/src/pages/GraphRelationPreviewPage/GraphRelationPreviewPage';
 import RelationGraphPage from '../../client/src/pages/RelationGraphPage/RelationGraphPage';
-import { GRAPH_RELATION_SAMPLE_ENTRIES, GRAPH_RELATION_SAMPLE_PROJECTION } from '../../client/src/features/review/graph-samples';
+import { GRAPH_RELATION_SAMPLE_ENTRIES } from '../../client/src/features/review/graph-samples';
 import { claimKey } from '../../client/src/features/review/GraphRelationSamplesView';
 import { getLibraryIndex } from '@client/src/api/canonical-host';
 import {
@@ -114,15 +114,7 @@ async function mount(url = '/dev-preview/graph') {
   root = createRoot(container);
   await act(async () => root.render(createElement(RouterProvider, { router })));
 }
-async function mountProduction(
-  url = '/graph?workItemId=wi-sample-graph-a',
-  prepareResponse = true,
-) {
-  if (prepareResponse) {
-    (getLibraryIndex as jest.Mock).mockResolvedValue(
-      GRAPH_RELATION_SAMPLE_PROJECTION,
-    );
-  }
+async function mountProduction(url = '/graph?workItemId=wi-sample-graph-a') {
   router = createMemoryRouter(
     [
       { path: '/graph', element: createElement(RelationGraphPage) },
@@ -295,97 +287,39 @@ it('keeps the explicit sample-object action inside the isolated preview', async 
   expect(network).not.toHaveBeenCalled();
 });
 
-it('selects a production graph node before an explicit deep-link navigation', async () => {
-  await mountProduction();
-  expect(getLibraryIndex).toHaveBeenCalledWith('wi-sample-graph-a');
-  expect(container.querySelector('[aria-label="当前关系对象"]')?.textContent).toContain('SB-A 厂家服务通告');
-  await click('点击同文件图节点');
-  expect(router.state.location.pathname).toBe('/graph');
-  expect(container.querySelector('[aria-label="当前关系对象"]')?.textContent).toContain('doc-sample-graph-a');
-  await click('打开准确对象');
-  expect(router.state.location.pathname).toBe('/work-items/wi-sample-graph-a/documents');
-  expect(params().get('documentVersionId')).toBe('dv-sample-b');
-});
-
-it('clears a completed legacy projection as soon as authentication is required', async () => {
-  await mountProduction();
-  expect(container.textContent).toContain('SB-A 厂家服务通告');
-  expect(getLibraryIndex).toHaveBeenCalledTimes(1);
-
-  await updateMockSessionState({
-    sessionGeneration: 2,
-    authenticationRequired: true,
+it('resolves a unique work item to the Suite matter graph', async () => {
+  (getEngineeringMatterDirectory as jest.Mock).mockResolvedValue({
+    items: [{ matterId: 'matter-for-work-item' }],
+    nextCursor: null,
   });
-
-  expect(container.textContent).toContain('请先登录');
-  expect(container.textContent).not.toContain('SB-A 厂家服务通告');
-  expect(getLibraryIndex).toHaveBeenCalledTimes(1);
-});
-
-it('does not restore a legacy projection from a response that completes after logout', async () => {
-  let resolveRead: (value: typeof GRAPH_RELATION_SAMPLE_PROJECTION) => void =
-    () => undefined;
-  const pendingRead = new Promise<typeof GRAPH_RELATION_SAMPLE_PROJECTION>(
-    (resolve) => {
-      resolveRead = resolve;
-    },
+  await mountProduction();
+  await act(async () => undefined);
+  expect(getEngineeringMatterDirectory).toHaveBeenCalledWith(
+    { workItemId: 'wi-sample-graph-a', limit: 20 },
+    expect.anything(),
   );
-  (getLibraryIndex as jest.Mock).mockReturnValueOnce(pendingRead);
-  await mountProduction('/graph?workItemId=wi-sample-graph-a', false);
-  expect(container.textContent).toContain('正在读取资料库投影');
-
-  await updateMockSessionState({
-    sessionGeneration: 2,
-    authenticationRequired: true,
-  });
-  await act(async () => resolveRead(GRAPH_RELATION_SAMPLE_PROJECTION));
-
-  expect(container.textContent).toContain('请先登录');
-  expect(container.textContent).not.toContain('SB-A 厂家服务通告');
-  expect(getLibraryIndex).toHaveBeenCalledTimes(1);
+  expect(router.state.location.search).toContain('matterId=matter-for-work-item');
+  expect(container.querySelector('[data-testid="matter-graph"]')?.getAttribute('data-matter')).toBe('matter-for-work-item');
+  expect(getLibraryIndex).not.toHaveBeenCalled();
 });
 
-it('keeps the new user projection when the previous generation completes late', async () => {
-  let resolvePreviousRead: (
-    value: typeof GRAPH_RELATION_SAMPLE_PROJECTION,
-  ) => void = () => undefined;
-  const previousRead = new Promise<typeof GRAPH_RELATION_SAMPLE_PROJECTION>(
-    (resolve) => {
-      resolvePreviousRead = resolve;
-    },
-  );
-  const nextProjection: typeof GRAPH_RELATION_SAMPLE_PROJECTION = {
-    ...GRAPH_RELATION_SAMPLE_PROJECTION,
-    document: {
-      ...GRAPH_RELATION_SAMPLE_PROJECTION.document,
-      documentCode: 'SB-NEW-USER',
-    },
-  };
-  (getLibraryIndex as jest.Mock)
-    .mockReturnValueOnce(previousRead)
-    .mockResolvedValueOnce(nextProjection);
-  await mountProduction('/graph?workItemId=wi-sample-graph-a', false);
-
-  await updateMockSessionState({
-    sessionGeneration: 2,
-    authenticationRequired: false,
+it('stops a work item entry when its matter binding is ambiguous', async () => {
+  (getEngineeringMatterDirectory as jest.Mock).mockResolvedValue({
+    items: [{ matterId: 'matter-a' }, { matterId: 'matter-b' }],
+    nextCursor: null,
   });
-  expect(container.textContent).toContain('SB-NEW-USER');
-  await act(async () => resolvePreviousRead(GRAPH_RELATION_SAMPLE_PROJECTION));
-
-  expect(container.textContent).toContain('SB-NEW-USER');
-  expect(container.textContent).not.toContain('当前事项：SB-A · R2');
-  expect(getLibraryIndex).toHaveBeenCalledTimes(2);
-});
-
-it('does not request a legacy projection while authentication is required', async () => {
-  mockSessionState = {
-    sessionGeneration: 2,
-    authenticationRequired: true,
-  };
   await mountProduction();
+  await act(async () => undefined);
+  expect(container.textContent).toContain('工作事项对应多个工程事项');
+  expect(router.state.location.search).toContain('workItemId=wi-sample-graph-a');
+  expect(getLibraryIndex).not.toHaveBeenCalled();
+});
 
+it('does not request a work item binding while authentication is required', async () => {
+  mockSessionState = { sessionGeneration: 2, authenticationRequired: true };
+  await mountProduction();
   expect(container.textContent).toContain('请先登录');
+  expect(getEngineeringMatterDirectory).not.toHaveBeenCalled();
   expect(getLibraryIndex).not.toHaveBeenCalled();
 });
 

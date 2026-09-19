@@ -80,6 +80,9 @@ export function RelationGraphPage(props: RelationGraphPageProps) {
   if (identity.kind === 'matter') {
     return <SuiteMatterGraphPage matterId={identity.matterId} />;
   }
+  if (identity.kind === 'work-item') {
+    return <WorkItemMatterResolver workItemId={identity.workItemId} />;
+  }
   if (identity.kind === 'matter-dv') {
     return (
       <MatterGraphDvAssociation
@@ -110,6 +113,7 @@ type GraphIdentityState =
       activityQuery: string;
     }
   | { kind: 'legacy' }
+  | { kind: 'work-item'; workItemId: string }
   | { kind: 'activity-dv'; activityQuery: string }
   | { kind: 'bare' };
 
@@ -174,8 +178,11 @@ function graphIdentityState(params: URLSearchParams): GraphIdentityState {
     }
     return { kind: 'matter', matterId: matterPin.value };
   }
-  if (workItemPin.state === 'ok' || injected) {
+  if (injected) {
     return { kind: 'legacy' };
+  }
+  if (workItemPin.state === 'ok') {
+    return { kind: 'work-item', workItemId: workItemPin.value };
   }
   if (documentPin.state === 'ok') {
     return {
@@ -274,6 +281,58 @@ function MatterGraphDvAssociation({
     );
   }
   return <Navigate to={`/activity-graph?${activityQuery}`} replace />;
+}
+
+function WorkItemMatterResolver({ workItemId }: { workItemId: string }) {
+  const navigate = useNavigate();
+  const { sessionGeneration, authenticationRequired } = useCurrentUserSession();
+  const [state, setState] = useState<'loading' | 'empty' | 'ambiguous' | 'error'>('loading');
+  const [reloadKey, setReloadKey] = useState(0);
+
+  useEffect(() => {
+    if (authenticationRequired) return;
+    const controller = new AbortController();
+    setState('loading');
+    void (async () => {
+      try {
+        const directory = await getEngineeringMatterDirectory(
+          { workItemId, limit: 20 },
+          controller.signal,
+        );
+        if (controller.signal.aborted) return;
+        const matches = directory.items.filter((item) => item.matterId.trim());
+        if (matches.length === 1 && !directory.nextCursor) {
+          navigate(`/graph?${new URLSearchParams({ matterId: matches[0].matterId })}`, { replace: true });
+          return;
+        }
+        setState(matches.length === 0 ? 'empty' : 'ambiguous');
+      } catch (reason) {
+        if (controller.signal.aborted) return;
+        logger.error('按工作事项解析工程事项失败', reason);
+        setState('error');
+      }
+    })();
+    return () => controller.abort();
+  }, [authenticationRequired, navigate, reloadKey, sessionGeneration, workItemId]);
+
+  if (authenticationRequired) {
+    return <section className="rg-panel"><h2 className="rg-panel-title">请先登录</h2>
+      <p className="rg-panel-note">登录后才能核对该工作事项所属的工程事项。</p></section>;
+  }
+  if (state === 'loading') {
+    return <section className="rg-panel" role="status"><span className="rg-loading">正在核对工作事项所属的工程事项…</span></section>;
+  }
+  if (state === 'empty') {
+    return <section className="rg-panel" role="alert"><h2 className="rg-panel-title">工作事项尚未登记到工程事项</h2>
+      <p className="rg-panel-note">没有取得明确的事项绑定，图谱不会猜测归属。请从资料库或已登记事项入口重新进入。</p></section>;
+  }
+  if (state === 'ambiguous') {
+    return <section className="rg-panel" role="alert"><h2 className="rg-panel-title">工作事项对应多个工程事项</h2>
+      <p className="rg-panel-note">当前入口无法唯一确定事项归属，图谱已停止读取。请从明确的 matterId 入口进入。</p></section>;
+  }
+  return <section className="rg-panel rg-status-panel"><h2 className="rg-panel-title">事项归属核对受阻</h2>
+    <p className="rg-panel-note">无法确认工作事项与工程事项的登记关系。</p>
+    <Button variant="outline" onClick={() => setReloadKey((value) => value + 1)}>重试</Button></section>;
 }
 
 function GraphDefaultMatterResolver() {

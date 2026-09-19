@@ -13,6 +13,7 @@
 - Reader 1B 的当前技术边界已进一步收敛：`DocumentOriginalResult.locations` 保存真实 `pageIndex`、坐标空间和 `boxes`；`DocumentOriginalCanvasPreview` 通过同一 `documentVersionId` 原件链生成 PDF.js canvas，`PdfDocumentViewer` 同时保留原 Host opaque locator 路径。当前只完成真实 box overlay，双语独立 anchor 同步、真实浏览器定位和 Hosted 业务证据仍待完成。
 - Reader 来源上下文已统一为“最近一次明确定位动作”：页面内点击译文来源后，后续原件页、正文高亮和来源提示使用该 `sourceRef`，不会继续被旧 URL 来源覆盖；URL 变化仍会重置为新的外部定位。该修正只收敛前端状态，不改变原件授权链。
 - 图谱视觉纵切已定位并修正一批实际连接问题：Suite 图谱按钮样式改为匹配 Host `data-slot="button"`，图谱容器局部采用 Suite 蓝色/正文/边框色板，Cytoscape 从画布继承局部计算样式，并让 `data-wl-motion="off"` 同时关闭布局动画。该批只改变视觉连接与动效控制，不改变读取、关系或授权模型；完整截图对照和 workItem 入口统一仍待后续批次。
+- `workItemId` 正式图谱入口现先通过 typed `getEngineeringMatterDirectory({ workItemId })` 核对唯一事项绑定，唯一且无后续页才切换 Suite 图谱；零绑定、多绑定或读取失败均明确停止，不再把 workItem 投影直接送入旧 Legacy 画布，也不猜测 matter 归属。旧投影仅保留在显式注入的开发预览路径。
 - 以上只是代码恢复点与本地检查。当前 Nest 页面路由可以返回 HTML，但 Vite 模块请求被 View fallback 返回为 `text/html`；Vite 直连虽能加载 React，却没有 Nest 注入的 canonical identity handoff，真实 API 因此以 `CANONICAL_IDENTITY_HANDOFF_UNAVAILABLE` 拒绝。该证据只定位本地启动链，不能推断 Reader、数据库或 Drizzle 故障。当前提交尚无完整本地联合入口、精确 Hosted 发布、真实登录功能链、性能或视觉验收回执；不沿用历史 release 代替本轮结论。
 
 ## 本地 Claude 测试服务器的定位
