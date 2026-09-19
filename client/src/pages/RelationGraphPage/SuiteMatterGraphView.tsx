@@ -358,13 +358,12 @@ export default function SuiteMatterGraphView({
         </Button>
       </div>
 
-      {filterOpen ? (
-        <div className="suite-graph-filter-overlay" role="presentation" onClick={() => setFilterOpen(false)}>
-          <div className="suite-graph-filter-dialog" role="dialog" aria-modal="true" aria-labelledby="suite-graph-filter-title" onClick={(event) => event.stopPropagation()}>
-            <div className="suite-graph-filter-dialog-heading">
-              <h2 id="suite-graph-filter-title">图谱显示设置</h2>
-              <p>只改变当前画布显示，不更改工程资料、关系或保存工作。</p>
-            </div>
+      <Dialog open={filterOpen} onOpenChange={setFilterOpen}>
+        <DialogContent className="suite-graph-filter-dialog">
+          <DialogHeader className="suite-graph-filter-dialog-heading">
+            <DialogTitle>图谱显示设置</DialogTitle>
+            <DialogDescription>只改变当前画布显示，不更改工程资料、关系或保存工作。</DialogDescription>
+          </DialogHeader>
           <section>
             <h3>显示分组</h3>
             <div className="suite-graph-filter-options">
@@ -413,7 +412,7 @@ export default function SuiteMatterGraphView({
               </Button>
             </div>
           </section>
-            <Button
+          <Button
             variant="outline"
             onClick={() => {
               setHiddenGroups([]);
@@ -422,10 +421,9 @@ export default function SuiteMatterGraphView({
             }}
           >
             恢复全部分组
-            </Button>
-          </div>
-        </div>
-      ) : null}
+          </Button>
+        </DialogContent>
+      </Dialog>
 
       <div className="suite-graph-mobile-switch" role="tablist" aria-label="活动面板">
         <Button size="sm" variant={mobilePanel === 'graph' ? 'default' : 'outline'} aria-pressed={mobilePanel === 'graph'} onClick={() => setMobilePanel('graph')}>图谱</Button>
