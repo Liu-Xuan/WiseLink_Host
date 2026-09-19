@@ -626,13 +626,13 @@ function LegacyRelationGraphContent({
     }
     if (!response) {
       return (
-        <section className="rg-panel">
-          <h2 className="rg-panel-title">请先在资料库选择事项</h2>
+        <section className="rg-panel" role="alert">
+          <h2 className="rg-panel-title">尚未取得这项工作的图谱投影</h2>
           <p className="rg-panel-note">
-            关系图谱基于单个事项的规范对象投影渲染。请先在资料库中选择一个
-            事项，再回到本页查看文档、版本、来源与问题之间的关系。
+            当前入口没有可显示的授权对象。请从准确的事项或资料库入口重新打开，
+            系统会沿用对应的工作身份读取文档、版本、来源与问题关系。
           </p>
-          <Button onClick={() => navigate('/library')}>去资料库</Button>
+          <Button onClick={() => navigate('/library')}>打开资料库</Button>
         </section>
       );
     }
