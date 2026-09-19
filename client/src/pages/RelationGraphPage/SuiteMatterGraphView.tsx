@@ -92,6 +92,20 @@ const PREMISE_ROLE_LABELS: Record<string, string> = {
 
 const VIEWPORT_DEFAULT = { zoom: 1, pan: { x: 0, y: 0 } };
 
+function findPrimaryCatalogDocument(
+  targets: ReadonlyMap<string, SuiteMatterGraphTarget>,
+): SuiteMatterGraphTarget | null {
+  for (const target of targets.values()) {
+    if (
+      target.kind === 'catalog-document'
+      && target.entry.relationRole === 'PRIMARY'
+    ) {
+      return target;
+    }
+  }
+  return null;
+}
+
 function relationDetailText(detail: SuiteRelationDetail): string {
   if ('kind' in detail) {
     if (detail.kind === 'FULFILLED_BY') {
@@ -220,6 +234,10 @@ export default function SuiteMatterGraphView({
   const selectedEventHidden = Boolean(
     selectedEvent?.nodeId
     && !presentation.visibleItemIds.includes(selectedEvent.nodeId),
+  );
+  const primaryDocumentTarget = useMemo(
+    () => findPrimaryCatalogDocument(read.targets),
+    [read.targets],
   );
   const selectedRelations: SuiteGraphRelation[] = relationshipIds
     .map((id) => graph.relations.find((relation) => relation.id === id))
@@ -602,9 +620,30 @@ export default function SuiteMatterGraphView({
                 </Button>
               </div>
               <div className="suite-graph-reading-path">
-                <b>{graph.title}</b>
+                {onOpenWiki ? (
+                  <Button
+                    size="sm"
+                    variant="ghost"
+                    onClick={onOpenWiki}
+                    aria-label={`打开事项 Wiki：${graph.title}`}
+                  >
+                    {graph.title}
+                  </Button>
+                ) : <b>{graph.title}</b>}
                 {selectedEvent ? (
                   <><ChevronRight size={12} /><b>{selectedEvent.statement?.label ?? selectedEvent.title}</b></>
+                ) : null}
+                {onOpenTarget && primaryDocumentTarget ? (
+                  <>
+                    <ChevronRight size={12} />
+                    <Button
+                      size="sm"
+                      variant="ghost"
+                      onClick={() => onOpenTarget(primaryDocumentTarget)}
+                    >
+                      确切原文
+                    </Button>
+                  </>
                 ) : null}
                 {onOpenProcess ? (
                   <><ChevronRight size={12} /><Button size="sm" variant="ghost" onClick={onOpenProcess}>完整问题分析</Button></>
