@@ -300,7 +300,7 @@ export function JobAidProblemReading({
               >
                 <JobAidIssueArticle
                   issue={issue}
-                  reading={reading}
+                  evidence={reading.evidence}
                   onLocateDocument={onLocateDocument}
                 />
               </article>

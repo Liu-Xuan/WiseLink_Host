@@ -323,7 +323,7 @@ export default function EngineeringIssueSearch({
           ) : null}
           <JobAidIssueArticle
             issue={selected.issue}
-            reading={selected.reading}
+            evidence={selected.evidence}
             onLocateDocument={(evidence) => {
               const exactRoute = exactDocumentSourceRoute(evidence);
               if (exactRoute && !readOnly) navigate(matterDocumentRoute(matterId, evidence, 'materials'));

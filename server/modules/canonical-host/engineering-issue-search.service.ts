@@ -162,14 +162,15 @@ export class EngineeringIssueSearchService {
   private knowledgeFromWork(identity: EngineeringKnowledgeIdentity, revision: SavedIssueWork,
     current: boolean): EngineeringKnowledgeRead {
     const content = 'content' in revision ? revision.content : revision.state.problemWork;
-    const reading = 'content' in revision ? jobAidReadingResult(revision) : revision.state.substantiveResult;
-    if (!content || !reading) throw new NotFoundException('ENGINEERING_KNOWLEDGE_WORK_NOT_FOUND');
+    const reading = 'content' in revision ? jobAidReadingResult(revision)
+      : content?.overviewStatus === 'NOT_AVAILABLE' ? null : revision.state.substantiveResult;
+    if (!content) throw new NotFoundException('ENGINEERING_KNOWLEDGE_WORK_NOT_FOUND');
     return {
       entry: { subjectKind: identity.subjectKind, subjectId: identity.subjectId, workRef: identity.workRef,
         workRevision: 'workRevision' in revision ? revision.workRevision : revision.workingRevision,
         current, headline: content.headline, listBrief: content.listBrief,
         createdAt: revision.createdAt, overviewStatus: content.overviewStatus },
-      content, reading: { ...reading, evidence: content.evidence },
+      content, reading: reading ? { ...reading, evidence: content.evidence } : null,
       ...('state' in revision ? { correctionNotices: revision.correctionNotices,
         overviewCorrectionNotices: revision.overviewCorrectionNotices,
         referenceWorkNotices: revision.referenceWorkNotices, overviewSourceWork: revision.overviewSourceWork } : {}),
@@ -462,11 +463,13 @@ export class EngineeringIssueSearchService {
     const reading =
       'content' in revision
         ? jobAidReadingResult(revision)
-        : revision.state.substantiveResult;
+        : content?.overviewStatus === 'NOT_AVAILABLE'
+          ? null
+          : revision.state.substantiveResult;
     const issue = content?.issues.find(
       (item) => item.issueKey === identity.issueKey,
     );
-    if (!issue || !reading || !content)
+    if (!issue || !content)
       throw new NotFoundException('ENGINEERING_ISSUE_NOT_FOUND');
     return {
       identity: {
@@ -491,7 +494,8 @@ export class EngineeringIssueSearchService {
           ? { referenceWorkNotices: revision.referenceWorkNotices.filter(item => item.affectedIssueKeys.includes(issue.issueKey)) } : {}),
       },
       issue,
-      reading: { ...reading, evidence: content.evidence },
+      reading: reading ? { ...reading, evidence: content.evidence } : null,
+      evidence: content.evidence,
     };
   }
 
