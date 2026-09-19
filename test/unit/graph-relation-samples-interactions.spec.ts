@@ -14,6 +14,11 @@ import type { RelationGraphCanvasProps } from '../../client/src/pages/RelationGr
 
 // JSDOM is a development dependency; the production runtime does not use it.
 const { JSDOM } = require('jsdom');
+let mockSessionState = {
+  sessionGeneration: 1,
+  authenticationRequired: false,
+};
+const mockSessionListeners = new Set<() => void>();
 jest.mock('@client/src/components/ui/button', () => ({ Button: 'button' }));
 jest.mock('@client/src/components/ui/button-group', () => ({
   ButtonGroup: 'div',
@@ -31,12 +36,19 @@ jest.mock('@client/src/api/engineering-matter', () => ({
 }));
 jest.mock(
   '../../client/src/app/providers/CurrentUserSessionProvider',
-  () => ({
-    useCurrentUserSession: () => ({
-      sessionGeneration: 1,
-      authenticationRequired: false,
-    }),
-  }),
+  () => {
+    const React = jest.requireActual<typeof import('react')>('react');
+    return {
+      useCurrentUserSession: () => React.useSyncExternalStore(
+        (listener: () => void) => {
+          mockSessionListeners.add(listener);
+          return () => mockSessionListeners.delete(listener);
+        },
+        () => mockSessionState,
+        () => mockSessionState,
+      ),
+    };
+  },
 );
 jest.mock(
   '../../client/src/pages/RelationGraphPage/SuiteMatterGraphPage',
@@ -102,10 +114,15 @@ async function mount(url = '/dev-preview/graph') {
   root = createRoot(container);
   await act(async () => root.render(createElement(RouterProvider, { router })));
 }
-async function mountProduction(url = '/graph?workItemId=wi-sample-graph-a') {
-  (getLibraryIndex as jest.Mock).mockResolvedValue(
-    GRAPH_RELATION_SAMPLE_PROJECTION,
-  );
+async function mountProduction(
+  url = '/graph?workItemId=wi-sample-graph-a',
+  prepareResponse = true,
+) {
+  if (prepareResponse) {
+    (getLibraryIndex as jest.Mock).mockResolvedValue(
+      GRAPH_RELATION_SAMPLE_PROJECTION,
+    );
+  }
   router = createMemoryRouter(
     [
       { path: '/graph', element: createElement(RelationGraphPage) },
@@ -115,6 +132,12 @@ async function mountProduction(url = '/graph?workItemId=wi-sample-graph-a') {
   );
   root = createRoot(container);
   await act(async () => root.render(createElement(RouterProvider, { router })));
+}
+async function updateMockSessionState(nextState: typeof mockSessionState) {
+  await act(async () => {
+    mockSessionState = nextState;
+    for (const listener of mockSessionListeners) listener();
+  });
 }
 function params() {
   return new URLSearchParams(router.state.location.search);
@@ -151,6 +174,11 @@ beforeEach(() => {
   dom.window.XMLHttpRequest = network;
   container = dom.window.document.getElementById('root');
   jest.clearAllMocks();
+  mockSessionState = {
+    sessionGeneration: 1,
+    authenticationRequired: false,
+  };
+  mockSessionListeners.clear();
 });
 afterEach(async () => {
   await act(async () => root?.unmount());
@@ -277,6 +305,88 @@ it('selects a production graph node before an explicit deep-link navigation', as
   await click('打开准确对象');
   expect(router.state.location.pathname).toBe('/work-items/wi-sample-graph-a/documents');
   expect(params().get('documentVersionId')).toBe('dv-sample-b');
+});
+
+it('clears a completed legacy projection as soon as authentication is required', async () => {
+  await mountProduction();
+  expect(container.textContent).toContain('SB-A 厂家服务通告');
+  expect(getLibraryIndex).toHaveBeenCalledTimes(1);
+
+  await updateMockSessionState({
+    sessionGeneration: 2,
+    authenticationRequired: true,
+  });
+
+  expect(container.textContent).toContain('请先登录');
+  expect(container.textContent).not.toContain('SB-A 厂家服务通告');
+  expect(getLibraryIndex).toHaveBeenCalledTimes(1);
+});
+
+it('does not restore a legacy projection from a response that completes after logout', async () => {
+  let resolveRead: (value: typeof GRAPH_RELATION_SAMPLE_PROJECTION) => void =
+    () => undefined;
+  const pendingRead = new Promise<typeof GRAPH_RELATION_SAMPLE_PROJECTION>(
+    (resolve) => {
+      resolveRead = resolve;
+    },
+  );
+  (getLibraryIndex as jest.Mock).mockReturnValueOnce(pendingRead);
+  await mountProduction('/graph?workItemId=wi-sample-graph-a', false);
+  expect(container.textContent).toContain('正在读取资料库投影');
+
+  await updateMockSessionState({
+    sessionGeneration: 2,
+    authenticationRequired: true,
+  });
+  await act(async () => resolveRead(GRAPH_RELATION_SAMPLE_PROJECTION));
+
+  expect(container.textContent).toContain('请先登录');
+  expect(container.textContent).not.toContain('SB-A 厂家服务通告');
+  expect(getLibraryIndex).toHaveBeenCalledTimes(1);
+});
+
+it('keeps the new user projection when the previous generation completes late', async () => {
+  let resolvePreviousRead: (
+    value: typeof GRAPH_RELATION_SAMPLE_PROJECTION,
+  ) => void = () => undefined;
+  const previousRead = new Promise<typeof GRAPH_RELATION_SAMPLE_PROJECTION>(
+    (resolve) => {
+      resolvePreviousRead = resolve;
+    },
+  );
+  const nextProjection: typeof GRAPH_RELATION_SAMPLE_PROJECTION = {
+    ...GRAPH_RELATION_SAMPLE_PROJECTION,
+    document: {
+      ...GRAPH_RELATION_SAMPLE_PROJECTION.document,
+      documentCode: 'SB-NEW-USER',
+    },
+  };
+  (getLibraryIndex as jest.Mock)
+    .mockReturnValueOnce(previousRead)
+    .mockResolvedValueOnce(nextProjection);
+  await mountProduction('/graph?workItemId=wi-sample-graph-a', false);
+
+  await updateMockSessionState({
+    sessionGeneration: 2,
+    authenticationRequired: false,
+  });
+  expect(container.textContent).toContain('SB-NEW-USER');
+  await act(async () => resolvePreviousRead(GRAPH_RELATION_SAMPLE_PROJECTION));
+
+  expect(container.textContent).toContain('SB-NEW-USER');
+  expect(container.textContent).not.toContain('当前事项：SB-A · R2');
+  expect(getLibraryIndex).toHaveBeenCalledTimes(2);
+});
+
+it('does not request a legacy projection while authentication is required', async () => {
+  mockSessionState = {
+    sessionGeneration: 2,
+    authenticationRequired: true,
+  };
+  await mountProduction();
+
+  expect(container.textContent).toContain('请先登录');
+  expect(getLibraryIndex).not.toHaveBeenCalled();
 });
 
 describe('graph object entry gates', () => {

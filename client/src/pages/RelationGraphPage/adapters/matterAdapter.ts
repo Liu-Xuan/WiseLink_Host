@@ -60,22 +60,33 @@ const KIND_MAP: Record<string, string> = {
   configuration: 'configuration',
 };
 
+const GROUP_KEY_MAP: Record<string, string> = {
+  document: 'documents',
+  cluster: 'topics',
+};
+
 /**
  * Transform GraphData (React Flow format) to Matter (Cytoscape format)
  */
 export function transformGraphDataToMatter(graphData: GraphData, workItemId: string = 'app_17bzc551rsg'): Matter {
   // Group nodes by type
   const groupMap = new Map<string, MatterItem[]>();
-  const hubNode = graphData.nodes.find(n => n.data.type === 'hub');
+  const nodeGroupById = new Map<string, string>();
+  const hubNode = graphData.nodes.find((node) => node.data.type === 'matter');
 
-  graphData.nodes.forEach(node => {
+  graphData.nodes.forEach((node) => {
     // Skip special node types
-    if (node.data.type === 'hub' || node.data.type === 'more' || node.type === 'documentGroup') {
+    if (
+      node.data.type === 'matter' ||
+      node.data.type === 'more' ||
+      node.data.type === 'documentGroup'
+    ) {
       return;
     }
 
     // Determine group key from node type
-    const groupKey = node.data.type || 'documents';
+    const groupKey = GROUP_KEY_MAP[node.data.type] ?? 'documents';
+    nodeGroupById.set(node.id, groupKey);
 
     if (!groupMap.has(groupKey)) {
       groupMap.set(groupKey, []);
@@ -84,7 +95,7 @@ export function transformGraphDataToMatter(graphData: GraphData, workItemId: str
     const item: MatterItem = {
       id: node.id,
       title: 'title' in node.data ? String(node.data.title) : node.id,
-      subtitle: 'detail' in node.data ? String(node.data.detail) : '',
+      subtitle: 'brief' in node.data ? node.data.brief : '',
       kind: KIND_MAP[node.data.type as string] || 'document',
       isNew: false,
     };
@@ -120,7 +131,10 @@ export function transformGraphDataToMatter(graphData: GraphData, workItemId: str
     source: edge.source,
     target: edge.target,
     kind: edge.data?.type || 'related',
-    group: edge.data?.group || 'documents',
+    group:
+      nodeGroupById.get(edge.target) ??
+      nodeGroupById.get(edge.source) ??
+      'documents',
     label: edge.label,
   }));
 

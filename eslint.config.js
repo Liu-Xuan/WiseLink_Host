@@ -9,6 +9,7 @@ module.exports = tseslint.config(
       'node_modules',
       'source_package',
       'client/src/api/gen',
+      'client/src/playground/archived',
       '**/*.d.ts',
       '**/*.js.map',
     ],

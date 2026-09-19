@@ -19,6 +19,7 @@
     "dist",
     "public",
     "source_package",
+    "client/src/playground/archived",
     "client/src/api/gen"
   ]
 }

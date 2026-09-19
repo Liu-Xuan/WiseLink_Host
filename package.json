@@ -89,7 +89,7 @@
     "class-transformer": "^0.5.1",
     "class-validator": "^0.14.2",
     "crypto-js": "^4.2.0",
-    "cytoscape": "3.34.0",
+    "cytoscape": "3.33.1",
     "cytoscape-popper": "^4.0.1",
     "d3-force": "^3.0.0",
     "dayjs": "^1.11.15",
