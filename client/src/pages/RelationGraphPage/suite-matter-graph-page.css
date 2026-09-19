@@ -271,7 +271,12 @@
 .suite-graph-timeline-source-row b { font-size: 10.5px; }
 .suite-graph-timeline-source p { font-size: 10px; }
 .suite-graph-timeline-events { margin: 0; padding: 0; list-style: none; }
-.suite-graph-timeline-event { margin: 0 0 24px; }
+.suite-graph-timeline-event {
+  margin: 0;
+  padding-bottom: 24px;
+  border-left: 1px solid color-mix(in srgb, var(--wl-accent) 22%, var(--wl-border));
+}
+.suite-graph-timeline-event:last-child { padding-bottom: 0; border-left-color: transparent; }
 .suite-graph-timeline-event-main {
   position: relative;
   display: flex;
@@ -280,7 +285,6 @@
   gap: 4px;
   padding: 0 0 0 22px;
   border: 0;
-  border-left: 1px solid color-mix(in srgb, var(--wl-accent) 22%, var(--wl-border));
   background: transparent;
   color: inherit;
   text-align: left;
@@ -289,9 +293,9 @@
 }
 .suite-graph-timeline-event-main::before { content: ''; }
 .suite-graph-timeline-event-main::after { position: absolute; top: 12px; left: -5px; width: 9px; height: 9px; border: 2px solid var(--wl-sheet); border-radius: 50%; background: var(--wl-accent); content: ''; }
-.suite-graph-timeline-event.is-work .suite-graph-timeline-event-main { border-left-color: color-mix(in srgb, #9171cf 35%, var(--wl-border)); }
+.suite-graph-timeline-event.is-work { border-left-color: color-mix(in srgb, #9171cf 35%, var(--wl-border)); }
 .suite-graph-timeline-event.is-work .suite-graph-timeline-event-main::after { background: #9171cf; }
-.suite-graph-timeline-event.is-source .suite-graph-timeline-event-main { border-left-color: color-mix(in srgb, #367ad8 35%, var(--wl-border)); }
+.suite-graph-timeline-event.is-source { border-left-color: color-mix(in srgb, #367ad8 35%, var(--wl-border)); }
 .suite-graph-timeline-event.is-source .suite-graph-timeline-event-main::after { background: #367ad8; }
 .suite-graph-timeline-event.is-selected .suite-graph-timeline-event-main::after { box-shadow: 0 0 0 3px color-mix(in srgb, var(--wl-accent) 22%, transparent); }
 .suite-graph-timeline-event-date { display: flex; align-items: center; gap: 5px; color: var(--wl-ink); font-size: 12px; font-weight: 600; }
