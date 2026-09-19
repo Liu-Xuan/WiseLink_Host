@@ -9,7 +9,7 @@
 - 图谱除 Suite 的 `graph.html`、`src/pages/Graph.jsx`、`src/components/GraphCanvas.jsx` 和 `src/graph/` 外，以 `screenshots/graph-hydraulic-light-1672.png`、`graph-gear-light-1672.png`、`graph-gear-dark-1672.png`、`graph-fmc-light-1672.png` 和 `graph-light-390.png` 为持久视觉证据。用户会话中另给的最新截图明确要求左时间线、中央分组卡片画布和右知识正文；原临时附件已不可读取，视觉接受前须用上述持久参考核对同一构图，不凭描述降低标准。
 - 当前文档 HEAD 为 `codex/0-11` 的 `e9f28fd1673d4fd43d6d7829dd1fe9c45c84b142`，父提交 `1031e3caa00aa142b2e9c90d9d71fde8b7c241b8`；`origin/codex/0-11` 与 `github/codex/0-11` 已分别回读相同 SHA。`1031e3caa` 是最近已接受的生产 Reader/换版代码恢复点，它把正式入口迁回真实授权读取链，并把 Suite 构造页限制在 `dev-preview`。祖先链还包含针对 `9419d320c` 已知身份回归的纠正 `8d186d5b2`、知识读取修复 `957f327cd` 和资料库真实默认选择 `d7b074447`。
 - 当前 Reader 1A 已形成可审阅提交 `88c36f2a1`，相关 6 套 Reader/预览测试共 51 项通过，client typecheck、定向 ESLint、Stylelint 和 diff check 通过。旧 `single-app-workspace.spec.ts` 仍有 1 项与当前外壳不符的既存断言，须在改动共享外壳时一并校正，不能据此否定已通过的局部范围。四个原有未跟踪调试文件 `.claude/launch.json`、`query-work-items.cjs`、`query-work-items.mjs`、`scripts/create-test-work-item.mjs` 继续隔离，不提交也不删除。
-- Reader 1A 已从工作树提交并同步；四个既有未跟踪调试文件继续隔离。Reader 1B（真实语义 anchor 的双语独立滚动同步、受控 PDF boxes 高亮）尚未实现，不能把 1A 描述为完整 Reader 视觉/来源验收。失败的依赖安装没有改动 `package.json` 或锁文件。
+- Reader 1A 已从工作树提交并同步；四个既有未跟踪调试文件继续隔离。Reader 1B（真实语义 anchor 的双语独立滚动同步、受控 PDF boxes 高亮）尚未实现，不能把 1A 描述为完整 Reader 视觉/来源验收。图谱遗留 hook 的 mock 与旧 raw endpoint 已由 `b050b6e70` 收敛；完整 Cytoscape 图谱视觉、真实关系模型和正式入口仍未完成。失败的依赖安装没有改动 `package.json` 或锁文件。
 - 以上只是代码恢复点与本地检查。当前 Nest 页面路由可以返回 HTML，但 Vite 模块请求被 View fallback 返回为 `text/html`；Vite 直连虽能加载 React，却没有 Nest 注入的 canonical identity handoff，真实 API 因此以 `CANONICAL_IDENTITY_HANDOFF_UNAVAILABLE` 拒绝。该证据只定位本地启动链，不能推断 Reader、数据库或 Drizzle 故障。当前提交尚无完整本地联合入口、精确 Hosted 发布、真实登录功能链、性能或视觉验收回执；不沿用历史 release 代替本轮结论。
 
 ## 本地 Claude 测试服务器的定位
