@@ -63,6 +63,7 @@ import './workspace-home.css';
 import './library-hierarchy.css';
 import './library-atlas.css';
 import { useLibraryFleetCatalog } from './useLibraryFleetCatalog';
+import { useLibraryDefaultSelection } from './useLibraryDefaultSelection';
 import useReadingLocation from '@client/src/features/matter/useReadingLocation';
 import { libraryReadingScope } from '@client/src/features/matter/reading-return';
 
@@ -127,6 +128,17 @@ function WorkspaceHomeContent() {
     sessionGeneration,
     treeMode === 'matter' && !authenticationRequired,
     refreshRevision,
+  );
+  useLibraryDefaultSelection(
+    treeMode,
+    treeMode === 'matter'
+      ? matters.items[0]?.matterId
+      : treeMode === 'document'
+        ? directory.items.find((item) => item.kind === 'DOCUMENT')?.familyId
+        : undefined,
+    treeMode === 'matter' ? matters.loading : directory.loading,
+    treeMode === 'matter' ? Boolean(matters.error) : Boolean(directory.error),
+    authenticationRequired,
   );
   const quicklook = useLibraryQuicklook(
     treeMode === 'matter' ? '' : deepLinkedWorkItemId,
@@ -230,7 +242,7 @@ function WorkspaceHomeContent() {
     setSearchParams(params);
   }
 
-  function filterDocuments(filters: LibraryCatalogFilters): void {
+  function filterDocuments(filters: LibraryCatalogFilters, clearSearch = false): void {
     const params = new URLSearchParams(searchParams);
     params.set('mode', 'document');
     params.delete('familyId');
@@ -238,6 +250,7 @@ function WorkspaceHomeContent() {
     params.delete('selectedDocumentVersionId');
     params.delete('listY');
     params.delete('quicklookY');
+    if (clearSearch) params.delete('search');
     for (const key of [
       'normalizedFamily',
       'ata',
@@ -514,7 +527,7 @@ function WorkspaceHomeContent() {
 
         {treeMode === 'matter' ? (
           <LibraryMatterDirectory
-            key={`${sessionGeneration}:${search}:${deepLinkedWorkItemId}`}
+            key={`${sessionGeneration}:${search}:${deepLinkedWorkItemId}:${refreshRevision}`}
             directory={matters}
             sessionGeneration={sessionGeneration}
             authenticationRequired={authenticationRequired}
@@ -555,7 +568,7 @@ function WorkspaceHomeContent() {
                 {Object.entries(directory.ataCounts ?? {}).slice(0, 8).map(([ata, count]) => <button type="button" className={`suite-folder-row${catalogFilters.ata === ata ? ' active' : ''}`} key={ata} onClick={() => filterDocuments({ ...catalogFilters, ata })}><span>ATA {ata}</span><small>{count}</small></button>)}
                 <div className="suite-folder-separator">阅读范围</div>
                 <button type="button" className={`suite-folder-row${treeMode === 'tasks' ? ' active' : ''}`} onClick={() => viewTasks()}><span>评估任务</span><small>{directory.items.length}</small></button>
-                <button type="button" className="suite-folder-row" onClick={() => filterDocuments({})}><span>清除筛选</span></button>
+                <button type="button" className="suite-folder-row" onClick={() => filterDocuments({}, true)}><span>清除筛选</span></button>
               </aside>
               <section
                 className="library-tree-panel"
@@ -689,7 +702,10 @@ function WorkspaceHomeContent() {
                 <LibraryDocumentDetails
                   key={`${sessionGeneration}:${familyId}`}
                   linkMatterId={linkMatterId}
-                  selectionPending={Boolean(familyId && !selectedDocument)}
+                  selectionPending={Boolean(
+                    (familyId || searchParams.get('selectedDocumentVersionId')) &&
+                      !selectedDocument,
+                  )}
                   document={
                     selectedDocument?.kind === 'DOCUMENT'
                       ? selectedDocument

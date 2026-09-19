@@ -171,7 +171,6 @@ export default function LibraryMatterDirectory({
           matterId={selected.matterId}
           sessionGeneration={sessionGeneration}
           authenticationRequired={authenticationRequired}
-          onClose={() => onSelect('')}
           onRead={setSelectedRead}
         />
       ) : <aside className="atlas-library-inspector"><h2>快速理解</h2><p>{selectedId ? '所选事项尚未在当前读取范围内返回，可加载更多或核对筛选。' : '选择一个事项，查看当前认识和关键条件。'}</p></aside>}

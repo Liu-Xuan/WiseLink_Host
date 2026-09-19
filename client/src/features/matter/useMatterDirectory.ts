@@ -8,6 +8,7 @@ import type { EngineeringMatterDirectoryResponse } from '@shared/api.interface';
 
 interface MatterDirectoryState extends EngineeringMatterDirectoryResponse {
   scope: string;
+  refreshRevision: number;
   loading: boolean;
   loadingMore: boolean;
   error: string | null;
@@ -34,6 +35,7 @@ export default function useMatterDirectory(
         getCanonicalHostClientSessionGeneration() === sessionGeneration;
       const empty: MatterDirectoryState = {
         scope,
+        refreshRevision,
         items: [],
         nextCursor: null,
         fileReadPerformed: false,
@@ -43,6 +45,7 @@ export default function useMatterDirectory(
       };
       setState((prior) => ({
         ...(prior?.scope === scope ? prior : empty),
+        refreshRevision,
         loading: true,
         loadingMore: Boolean(cursor),
         error: null,
@@ -75,6 +78,7 @@ export default function useMatterDirectory(
         const revoked = [401, 403, 404].includes(error?.statusCode ?? 0);
         setState((prior) => ({
           ...(prior?.scope === scope && !revoked ? prior : empty),
+          refreshRevision,
           loading: false,
           loadingMore: false,
           error: error?.message ?? '事项目录读取失败，请重试。',
@@ -84,10 +88,12 @@ export default function useMatterDirectory(
     [enabled, scope, search, workItemId, sessionGeneration],
   );
   useEffect(() => {
+    if (!enabled) setState(null);
     void readPage();
     return () => controllerRef.current?.abort();
   }, [readPage, refreshRevision]);
-  const visible = enabled && state?.scope === scope ? state : null;
+  const visible = enabled && state?.scope === scope &&
+    state.refreshRevision === refreshRevision ? state : null;
   return {
     items: visible?.items ?? [],
     nextCursor: visible?.nextCursor ?? null,

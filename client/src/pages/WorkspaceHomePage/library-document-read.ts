@@ -11,6 +11,7 @@ export interface LibraryDocumentsRead {
   familyId: string;
   search: string;
   sessionGeneration: number;
+  refreshRevision?: number;
   items: LibraryDirectoryEntry[];
   nextCursor: string | null;
   loading: boolean;
@@ -60,6 +61,7 @@ export function beginLibraryDocumentsRead(
     sameFilters(prior, empty)
       ? prior
       : empty),
+    refreshRevision: empty.refreshRevision,
     loading: true,
     loadingMore: empty.loadingMore,
     error: null,
@@ -78,6 +80,7 @@ export function mergeLibraryDocumentsRead(
     prior.search === empty.search &&
     prior.mode === empty.mode &&
     prior.familyId === empty.familyId &&
+    prior.refreshRevision === empty.refreshRevision &&
     sameFilters(prior, empty)
       ? prior.items
       : [];
