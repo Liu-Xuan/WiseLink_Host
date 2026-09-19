@@ -12,6 +12,12 @@
 - 当前工作树另有六个 Reader 文件的未提交纵切，共 `217` 行新增、`76` 行删除；四个既有未跟踪调试文件继续隔离。失败的依赖安装没有改动 `package.json` 或锁文件。这些修改必须在提交前重新通过针对性测试、类型检查、lint、样式检查和独立审查。
 - 以上只是代码恢复点与本地检查。当前 Nest 页面路由可以返回 HTML，但 Vite 模块请求被 View fallback 返回为 `text/html`；Vite 直连虽能加载 React，却没有 Nest 注入的 canonical identity handoff，真实 API 因此以 `CANONICAL_IDENTITY_HANDOFF_UNAVAILABLE` 拒绝。该证据只定位本地启动链，不能推断 Reader、数据库或 Drizzle 故障。当前提交尚无完整本地联合入口、精确 Hosted 发布、真实登录功能链、性能或视觉验收回执；不沿用历史 release 代替本轮结论。
 
+## 本地 Claude 测试服务器的定位
+
+Claude 搭建的本地服务器继续保留，作为生产 React 组件的快速视觉与交互载具：用于加载显式 `dev-preview` fixture、复现路由状态、检查布局/动效/响应式断点、运行组件级测试和定位请求浪费。它不能替代官方本地 client dev server 的身份/CSRF 联调，也不能替代妙搭 Hosted 的真实数据、部署性能、权限、来源版本或线上业务验收。
+
+开发顺序固定为：先在本地 Claude 服务器完成结构和视觉纵切，再用官方 client dev server 做真实 Host 联调和授权负例，形成精确提交后发布到妙搭 Hosted，最后在 Hosted 测量冷/暖首屏、点击切换、返回恢复和真实登录链。若本地服务器与 Hosted 行为不同，保留差异证据并以 Host 真实链为准；禁止为了让本地样例通过而修改生产授权或加入 mock 兜底。
+
 ## 执行批次
 
 | 批次 | 可审查的完成物 | 验证重点 |
