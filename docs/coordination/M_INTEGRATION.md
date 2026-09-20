@@ -16,7 +16,7 @@
 - `/situation` 真实宏观页读取 2 个授权事项，显示“当前仅取得部分范围”，未用空态或构造数量掩盖未知。
 - 聚焦事项 `/matters/MAT-d9e6c294-f368-42e4-9a1b-b46c6170be02/posture` 显示真实事项标题、当前授权范围和态势双环；数据尚在读取时保留明确的“正在取得授权资料”状态。
 - 聚焦态势选择“工程文件”后读取准确 `document_version_78c6d0adb612265f85e1d338`；进入 Reader 的 URL 同时绑定该文档版本、事项、`source=documents` 和 `pageY=0`。Reader 的“返回当前工程态势”回到原事项与原来源，数据加载后双环与右侧工程文件卡片恢复，证明本样本的来源下钻与显式返回闭合。
-- 同一聚焦态势选择“历史工程工作”后打开精确 `workRef=MWREV-2ac8099c-04f1-4149-9ccb-6f40120a3b68`；工作页 URL 同时保留 `returnSituationWorkRef`、事项、`source=history` 和 `pageY=0`，页面明确显示“正在阅读已保存工作修订 12；不会替换为最新工作”。这证明历史工作身份没有被当前工作静默替换；该样本的返回按钮仍待下一次点击核对，不能扩大为完整历史工作往返验收。
+- 同一聚焦态势选择“历史工程工作”后打开精确 `workRef=MWREV-2ac8099c-04f1-4149-9ccb-6f40120a3b68`；工作页 URL 同时保留 `returnSituationWorkRef`、事项、`source=history` 和 `pageY=0`，页面明确显示“正在阅读已保存工作修订 12；不会替换为最新工作”。点击“返回当前工程态势”后 URL、双环、右侧历史工作卡片及工作修订 12 均恢复，证明本样本没有被当前工作静默替换且显式往返闭合。
 
 本批态势来源/工作下钻新增严格 `returnSituation*` 协议：只允许受控 stage/source/pageY，绑定准确
 documentVersionId、matterId/workRef，拒绝重复、冲突、混入其他 return 意图和非法内部路由；滚动保存/恢复使用实际
