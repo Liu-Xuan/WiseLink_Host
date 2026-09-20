@@ -92,6 +92,15 @@ const PREMISE_ROLE_LABELS: Record<string, string> = {
 
 const VIEWPORT_DEFAULT = { zoom: 1, pan: { x: 0, y: 0 } };
 
+function savedAtLabel(value: string): string {
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return '保存时间待核';
+  return date.toLocaleString('zh-CN', {
+    year: 'numeric', month: '2-digit', day: '2-digit',
+    hour: '2-digit', minute: '2-digit', hour12: false,
+  });
+}
+
 function findPrimaryCatalogDocument(
   targets: ReadonlyMap<string, SuiteMatterGraphTarget>,
 ): SuiteMatterGraphTarget | null {
@@ -474,7 +483,9 @@ export default function SuiteMatterGraphView({
             {revision ? (
               <details className="suite-graph-work-details">
                 <summary>当前保存工作</summary>
-                <p className="suite-graph-date">{revision.createdAt}</p>
+                <p className="suite-graph-date">
+                  <time dateTime={revision.createdAt}>{savedAtLabel(revision.createdAt)}</time>
+                </p>
                 <p className="suite-graph-change">{revision.changeSummary}</p>
                 {read.notices.map((notice) => (
                   <p className="suite-graph-notice" key={notice}>{notice}</p>

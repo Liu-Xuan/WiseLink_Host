@@ -8,6 +8,7 @@
   border-radius: var(--wl-radius-panel);
   background: radial-gradient(ellipse at 50% 45%, color-mix(in srgb, var(--wl-accent) 2.8%, var(--wl-sheet)), var(--wl-sheet) 70%);
   color: var(--wl-ink);
+  font-family: var(--wl-font, -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", sans-serif);
   contain: layout paint;
 }
 
@@ -60,7 +61,8 @@
   align-items: center;
   gap: 11px;
   width: var(--suite-node-w);
-  min-height: var(--suite-node-h);
+  height: var(--suite-node-h);
+  overflow: hidden;
   padding: 10px 12px;
   border: 1px solid color-mix(in srgb, var(--tone) 21%, var(--wl-border-strong));
   border-radius: 13px;
@@ -109,6 +111,7 @@
   font-weight: 600;
   line-height: 1.45;
   letter-spacing: -.015em;
+  overflow-wrap: anywhere;
 }
 
 .suite-graph-node-copy small {
@@ -139,7 +142,7 @@
   justify-content: center;
   gap: 6px;
   width: var(--suite-node-w);
-  min-height: var(--suite-node-h);
+  height: var(--suite-node-h);
   border: 1px dashed color-mix(in srgb, var(--tone) 25%, var(--wl-border-strong));
   border-radius: 10px;
   background: transparent;
@@ -197,10 +200,13 @@
 .suite-graph-hub-portrait svg { width: 46px; height: 46px; }
 
 .suite-graph-hub strong {
-  display: block;
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
   max-width: 165px;
   margin-top: 9px;
   overflow-wrap: anywhere;
+  overflow: hidden;
   font-size: 14px;
   line-height: 1.5;
   text-align: center;

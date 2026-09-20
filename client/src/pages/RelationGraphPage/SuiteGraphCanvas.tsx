@@ -153,6 +153,7 @@ interface ThemeTokens {
   faint: string;
   surface: string;
   edgeLabel: string;
+  fontFamily: string;
   tones: Record<SuiteGraphTone, string>;
 }
 
@@ -166,6 +167,7 @@ function readThemeTokens(scope?: HTMLElement): ThemeTokens {
     faint: read('--wl-faint', '#8a8a8a'),
     surface: read('--wl-sheet', '#ffffff'),
     edgeLabel: read('--suite-graph-edge-label', '#7b8fa3'),
+    fontFamily: read('--wl-font', '-apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", sans-serif'),
     tones: {
       blue: read('--suite-graph-tone-blue', '#3b7cd5'),
       green: read('--suite-graph-tone-green', '#249d89'),
@@ -213,6 +215,7 @@ function buildStyleSheet(tokens: ThemeTokens): StylesheetStyle[] {
         opacity: 0.3,
         label: 'data(label)',
         color: tokens.edgeLabel,
+        'font-family': tokens.fontFamily,
         'font-size': '12px',
         'text-background-color': tokens.surface,
         'text-background-opacity': 0.88,

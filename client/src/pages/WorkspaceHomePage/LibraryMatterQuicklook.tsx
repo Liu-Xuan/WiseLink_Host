@@ -47,12 +47,16 @@ export function LibraryMatterQuicklookContent({
         {summary && problemWork?.overviewStatus !== 'NOT_AVAILABLE' ? (
           <>
             <p><strong>{summary.listBrief}</strong></p>
-            <h4>决定性条件</h4>
-            <ul>
-              {summary.decisiveClaims.map((claim) => (
-                <li key={claim.claimId}>{claim.text}</li>
-              ))}
-            </ul>
+            {summary.decisiveClaims.length > 0 ? (
+              <>
+                <h4>决定性条件</h4>
+                <ul>
+                  {summary.decisiveClaims.map((claim) => (
+                    <li key={claim.claimId}>{claim.text}</li>
+                  ))}
+                </ul>
+              </>
+            ) : null}
           </>
         ) : (
           <p>尚无已保存的事项综合认识。</p>

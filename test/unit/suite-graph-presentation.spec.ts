@@ -27,6 +27,57 @@ describe('buildSuiteGraphPresentation', () => {
     expect(result.groups.every((group) => Number.isFinite(group.x) && Number.isFinite(group.y))).toBe(true);
   });
 
+  it('keeps dense group cards and the fixed matter hub from overlapping', () => {
+    const input = matter(6);
+    input.groups.forEach((group, groupIndex) => {
+      group.columns = groupIndex % 2 === 0 ? 1 : 2;
+      group.items = Array.from({ length: 5 }, (_, itemIndex) => ({
+        id: `item-${groupIndex}-${itemIndex}`,
+        title: `Long item ${groupIndex}-${itemIndex}`,
+        subtitle: 'A second line of context',
+      }));
+    });
+    input.relations = [];
+    const result = buildSuiteGraphPresentation(input, { density: 4 });
+    const repeated = buildSuiteGraphPresentation(input, { density: 4 });
+    expect(repeated.groups).toEqual(result.groups);
+    const rectangles = result.groups.map((group) => ({
+      left: group.x - group.w / 2,
+      right: group.x + group.w / 2,
+      top: group.y - group.h / 2,
+      bottom: group.y + group.h / 2,
+    }));
+    rectangles.forEach((rectangle, index) => {
+      rectangles.slice(index + 1).forEach((other) => {
+        expect(rectangle.right + 18 <= other.left || other.right + 18 <= rectangle.left
+          || rectangle.bottom + 18 <= other.top || other.bottom + 18 <= rectangle.top).toBe(true);
+      });
+      expect(rectangle.right + 18 <= 312 || rectangle.left - 18 >= 516
+        || rectangle.bottom + 18 <= 227 || rectangle.top - 18 >= 431).toBe(true);
+    });
+    result.groups.forEach((group) => {
+      const cards = result.elements.filter(
+        (element) => element.group === 'nodes'
+          && element.data.viewKind === 'item'
+          && element.data.groupKey === group.key,
+      );
+      expect(cards.length).toBeGreaterThan(0);
+      cards.forEach((card) => {
+        if (card.group !== 'nodes') return;
+        expect(Math.abs(card.position.x - group.x)).toBeLessThanOrEqual(group.w / 2);
+        expect(Math.abs(card.position.y - group.y)).toBeLessThanOrEqual(group.h / 2);
+      });
+    });
+    const fullCard = result.elements.find(
+      (element) => element.data.viewKind === 'item' && element.data.groupKey === 'g0',
+    );
+    const compactCard = result.elements.find(
+      (element) => element.data.viewKind === 'item' && element.data.groupKey === 'g1',
+    );
+    expect(fullCard?.data.h).toBe(84);
+    expect(compactCard?.data.h).toBe(80);
+  });
+
   it('honors hidden groups and reports groups past the bounded page', () => {
     const result = buildSuiteGraphPresentation(matter(8), { hiddenGroups: ['g1'], maxGroups: 6 });
     expect(result.groups.map((group) => group.key)).toEqual(['g0', 'g2', 'g3', 'g4', 'g5', 'g6']);

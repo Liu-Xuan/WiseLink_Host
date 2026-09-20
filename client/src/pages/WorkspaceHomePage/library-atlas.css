@@ -528,9 +528,11 @@
   box-shadow: none;
 }
 .atlas-library-inspector-title h2 {
-  font-size: 23px;
+  margin: 0;
+  font-size: 19px;
   font-weight: 600;
-  line-height: 1.5;
+  line-height: 1.55;
+  overflow-wrap: anywhere;
 }
 .atlas-library-inspector-title small {
   color: var(--wl-muted);
@@ -551,6 +553,8 @@
   font-size: 11px;
   font-weight: 600;
 }
+.atlas-library-summary-block > p > strong { font-weight: 500; }
+.atlas-library-summary-block h4 { margin: 16px 0 9px; font-size: 12px; font-weight: 600; }
 .atlas-library-reading-block ul {
   display: grid;
   gap: 12px;
