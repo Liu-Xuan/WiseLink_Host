@@ -138,6 +138,39 @@ test('timeline shell binds a validated graph return to its query document and pa
   expect(mismatched).toContain('aria-label="返回目标与当前版本不匹配"');
 });
 
+test('WorkItem reader shell validates and exposes an exact graph return', () => {
+  const graphQuery = new URLSearchParams({
+    matterId: 'MAT-1',
+    workRef: 'MW-1',
+    selectedId: 'evidence-1',
+  }).toString();
+  const search = `?${new URLSearchParams({
+    node: 'reader',
+    documentVersionId: 'DV-1',
+    returnGraphQuery: graphQuery,
+    returnDocumentVersionId: 'DV-1',
+  })}`;
+  const pathname = '/work-items/WI-1/documents';
+  expect(deriveShellRouteContext(pathname, search).documentVersionId).toBe('DV-1');
+  const reader = renderTopBar(pathname, search);
+  expect(reader).toContain('aria-label="返回关系图谱"');
+  expect(reader).not.toContain('aria-label="返回关系图谱" disabled=""');
+
+  const mismatched = renderTopBar(
+    pathname,
+    search.replace('documentVersionId=DV-1', 'documentVersionId=DV-2'),
+  );
+  expect(mismatched).toContain('aria-label="返回目标与当前版本不匹配"');
+
+  const duplicated = renderTopBar(pathname, `${search}&documentVersionId=DV-1`);
+  expect(duplicated).toContain('aria-label="返回目标与当前版本不匹配"');
+  const empty = renderTopBar(
+    pathname,
+    search.replace('documentVersionId=DV-1', 'documentVersionId='),
+  );
+  expect(empty).toContain('aria-label="返回目标与当前版本不匹配"');
+});
+
 test('WorkItem navigation retains the existing assessment and reader paths', () => {
   const links = buildShellObjectLinks(
     deriveShellRouteContext('/work-items/WI%2F7/documents', ''),
