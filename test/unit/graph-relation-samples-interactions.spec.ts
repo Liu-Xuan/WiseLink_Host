@@ -367,6 +367,19 @@ describe('graph object entry gates', () => {
     expect(getEngineeringMatterDirectory).not.toHaveBeenCalled();
   });
 
+  it('rejects mixed work-item and document identities without widening the scope', async () => {
+    await mountEntry('/graph?workItemId=WI-1&documentVersionId=DV-1');
+    expect(container.textContent).toContain('工作事项与文档版本不能在此入口混用');
+    expect(getEngineeringMatterDirectory).not.toHaveBeenCalled();
+    expect(getEngineeringMatter).not.toHaveBeenCalled();
+  });
+
+  it('rejects a historical work mixed into a document activity entry', async () => {
+    await mountEntry('/graph?matterId=M1&workRef=MW-1&documentVersionId=DV-1');
+    expect(container.textContent).toContain('历史工作与文档活动不能在此入口混用');
+    expect(getEngineeringMatter).not.toHaveBeenCalled();
+  });
+
   it('resolves a stable default matter from the authorized directory on a bare entry', async () => {
     (getEngineeringMatterDirectory as jest.Mock).mockResolvedValue({
       items: [{ matterId: 'm-1' }],
@@ -428,6 +441,26 @@ describe('graph object entry gates', () => {
     await act(async () => undefined);
     expect(container.textContent).toContain('该文档版本未登记在当前事项');
     expect(router.state.location.pathname).toBe('/graph');
+  });
+
+  it('does not reuse a linked result after the matter and document identity changes', async () => {
+    let resolveFirst: (value: unknown) => void = () => undefined;
+    (getEngineeringMatter as jest.Mock)
+      .mockImplementationOnce(() => new Promise((resolve) => {
+        resolveFirst = resolve;
+      }))
+      .mockImplementationOnce(() => new Promise(() => undefined));
+    await mountEntry('/graph?matterId=M1&documentVersionId=DV1');
+    await act(async () => {
+      await router.navigate('/graph?matterId=M2&documentVersionId=DV2');
+    });
+    await act(async () => {
+      resolveFirst({
+        catalog: { entries: [{ document: { documentVersionId: 'DV1' } }] },
+      });
+    });
+    expect(router.state.location.pathname).toBe('/graph');
+    expect(container.textContent).toContain('正在核对该文档版本是否属于当前事项');
   });
 
   it('rejects conflicting matter and work item identities without any directory request', async () => {

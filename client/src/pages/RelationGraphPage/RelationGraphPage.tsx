@@ -145,8 +145,20 @@ function graphIdentityState(params: URLSearchParams): GraphIdentityState {
   if (matterPin.state === 'ok' && workItemPin.state === 'ok') {
     return { kind: 'invalid', message: '图谱对象身份不明确，请从事项或工作入口重新进入。' };
   }
+  if (workItemPin.state === 'ok' && documentPin.state === 'ok') {
+    return {
+      kind: 'invalid',
+      message: '工作事项与文档版本不能在此入口混用，请从准确对象重新进入。',
+    };
+  }
   if (workRefPin.state === 'ok' && matterPin.state !== 'ok') {
     return { kind: 'invalid', message: '工作身份缺少所属事项，请从准确事项入口重新进入。' };
+  }
+  if (workRefPin.state === 'ok' && documentPin.state === 'ok') {
+    return {
+      kind: 'invalid',
+      message: '历史工作与文档活动不能在此入口混用，请从准确工作或文档重新进入。',
+    };
   }
   const activityEntry = validateActivityEntry(params);
   if (!activityEntry.ok) {
@@ -216,15 +228,30 @@ function MatterGraphDvAssociation({
   activityQuery: string;
 }) {
   const { sessionGeneration, authenticationRequired } = useCurrentUserSession();
-  const [state, setState] = useState<'loading' | 'linked' | 'unlinked' | 'error'>('loading');
+  type AssociationStatus = 'loading' | 'linked' | 'unlinked' | 'error';
+  interface AssociationState {
+    identity: string;
+    status: AssociationStatus;
+  }
+  const identity = JSON.stringify([
+    matterId,
+    documentVersionId,
+    sessionGeneration,
+  ]);
+  const [state, setState] = useState<AssociationState>({
+    identity,
+    status: 'loading',
+  });
   const [reloadKey, setReloadKey] = useState(0);
   const generationRef = useRef(0);
+  const status: AssociationStatus =
+    state.identity === identity ? state.status : 'loading';
 
   useEffect(() => {
     if (authenticationRequired) return;
     const controller = new AbortController();
     const generation = ++generationRef.current;
-    setState('loading');
+    setState({ identity, status: 'loading' });
     void (async () => {
       try {
         const read = await getEngineeringMatter(matterId, controller.signal);
@@ -233,11 +260,11 @@ function MatterGraphDvAssociation({
           (entry: EngineeringMatterCatalogEntry) =>
             entry.document.documentVersionId === documentVersionId,
         );
-        setState(linked ? 'linked' : 'unlinked');
+        setState({ identity, status: linked ? 'linked' : 'unlinked' });
       } catch (reason) {
         if (controller.signal.aborted || generationRef.current !== generation) return;
         logger.error('事项与文档版本关联核对失败', reason);
-        setState('error');
+        setState({ identity, status: 'error' });
       }
     })();
     return () => controller.abort();
@@ -251,14 +278,14 @@ function MatterGraphDvAssociation({
       </section>
     );
   }
-  if (state === 'loading') {
+  if (status === 'loading') {
     return (
       <section className="rg-panel" role="status">
         <span className="rg-loading">正在核对该文档版本是否属于当前事项…</span>
       </section>
     );
   }
-  if (state === 'error') {
+  if (status === 'error') {
     return (
       <section className="rg-panel rg-status-panel">
         <h2 className="rg-panel-title">关联核对受阻</h2>
@@ -271,7 +298,7 @@ function MatterGraphDvAssociation({
       </section>
     );
   }
-  if (state === 'unlinked') {
+  if (status === 'unlinked') {
     return (
       <section className="rg-panel" role="alert">
         <h2 className="rg-panel-title">该文档版本未登记在当前事项</h2>

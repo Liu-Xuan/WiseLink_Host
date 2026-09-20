@@ -43,21 +43,37 @@ export default function EngineeringTimelinePage({ view = 'timeline', onNavigateG
       : windowPin.state === 'invalid'
         ? '时间窗参数不在允许范围内，只允许 all 或 current-year。'
         : null;
-  const blocker = documentError || windowError || activityEntryReason(entry);
   const matterIdPin = revisionTextPin(searchParams, 'matterId');
+  const workItemIdPin = revisionTextPin(searchParams, 'workItemId');
+  const workRefPin = revisionTextPin(searchParams, 'workRef');
   const anyActivityPin =
     searchParams.has('parseRunId') ||
     searchParams.has('candidateRevision') ||
     searchParams.has('runRef') ||
     searchParams.has('statementId') ||
     searchParams.has('anchor');
-  const orphanPinBlocker =
-    !documentVersionId && !blocker && anyActivityPin
-      ? '时间声明、候选或解析版本缺少所属文档版本，请从准确文档入口重新进入。'
-      : null;
   const matterIdInvalid =
     matterIdPin.state !== 'ok' && matterIdPin.state !== 'absent'
       ? '事项标识为空、重复或不合法，请从准确事项入口重新进入。'
+      : null;
+  const unsupportedWorkIdentity =
+    workItemIdPin.state !== 'absent' || workRefPin.state !== 'absent'
+      ? '时间轴入口不能混用工作事项或历史工作身份，请从准确事项或文档入口重新进入。'
+      : null;
+  const mixedMatterDocumentIdentity =
+    matterIdPin.state === 'ok' && documentVersionId
+      ? '事项与文档版本不能在未核对关联的时间轴入口混用，请从准确事项或文档重新进入。'
+      : null;
+  const blocker =
+    documentError ||
+    windowError ||
+    activityEntryReason(entry) ||
+    matterIdInvalid ||
+    unsupportedWorkIdentity ||
+    mixedMatterDocumentIdentity;
+  const orphanPinBlocker =
+    !documentVersionId && !blocker && anyActivityPin
+      ? '时间声明、候选或解析版本缺少所属文档版本，请从准确文档入口重新进入。'
       : null;
   const matterIdentity: 'absent' | 'invalid' | 'matter' =
     matterIdPin.state === 'ok'
@@ -89,7 +105,9 @@ export default function EngineeringTimelinePage({ view = 'timeline', onNavigateG
   }), []);
 
   function pageRoute(query: URLSearchParams, target = pagePath): string {
-    const next = activityReadingParams(query);
+    const source = new URLSearchParams(query);
+    if (documentVersionId) source.set('documentVersionId', documentVersionId);
+    const next = activityReadingParams(source);
     if (documentVersionId) next.set('documentVersionId', documentVersionId);
     return `${target}?${next}`;
   }
@@ -165,6 +183,14 @@ export default function EngineeringTimelinePage({ view = 'timeline', onNavigateG
     const back = returnParamsFor(reading.binding, statementId, anchorId || null);
     if (back) {
       query.delete('returnLibraryQuery');
+      for (const key of [
+        'returnGraphQuery',
+        'returnGraphTargetMatterId',
+        'returnGraphTargetWorkRef',
+        'returnGraphParseRunId',
+      ] as const) {
+        query.delete(key);
+      }
       new URLSearchParams(back).forEach((value, key) => query.set(key, value));
     }
     navigate(`/document-versions/${encodeURIComponent(documentVersionId)}/activities?${query}`);

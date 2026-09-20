@@ -269,6 +269,10 @@ export function revisionReadingReturnParams(
 
 const ACTIVITY_TEXT_KEYS = ['parseRunId', 'runRef', 'statementId', 'anchor'] as const;
 const ACTIVITY_WINDOW_VALUES = ['all', 'current-year'] as const;
+const ACTIVITY_RETURN_QUERY_LIMIT = 4096;
+// A graph query is bounded to 12,000 decoded characters by graphReturnTarget.
+// Nesting that query inside returnActivityQuery percent-encodes it once more.
+const ACTIVITY_WITH_GRAPH_RETURN_QUERY_LIMIT = 50_000;
 
 export type ActivityWindowPin =
   | { state: 'absent' | 'duplicate' | 'empty' | 'invalid' }
@@ -308,6 +312,32 @@ export function activityReadingParams(params: URLSearchParams): URLSearchParams 
       new URLSearchParams(returnLibraryQuery[0]),
     ).toString();
     if (normalized) result.set('returnLibraryQuery', normalized);
+  }
+  const documentVersionId = singleToken(params, 'documentVersionId');
+  const requestedRun = singleToken(params, 'parseRunId');
+  const hasCompetingReturnIntent = [
+    'returnMatterId',
+    'returnKnowledgeQuery',
+    'returnLibraryQuery',
+    'returnRevisionQuery',
+    'returnActivityQuery',
+    'returnLibraryWorkItemId',
+    'returnWorkItemId',
+  ].some((key) => params.has(key));
+  if (
+    documentVersionId &&
+    !hasCompetingReturnIntent &&
+    params.has('returnGraphQuery') &&
+    graphReturnTarget(params, documentVersionId, requestedRun)
+  ) {
+    result.set('returnGraphQuery', params.get('returnGraphQuery')!);
+    for (const key of [
+      'returnDocumentVersionId',
+      'returnGraphParseRunId',
+    ] as const) {
+      const value = singleToken(params, key);
+      if (value) result.set(key, value);
+    }
   }
   result.sort();
   return result;
@@ -551,8 +581,19 @@ export function readingReturnTarget(
   }
   if (params.has('returnActivityQuery')) {
     const activityQuery = params.get('returnActivityQuery');
-    if (!binding || !activityQuery || activityQuery.length > 4096) return null;
+    if (!binding || !activityQuery) return null;
     const nested = new URLSearchParams(activityQuery);
+    const graphValidation = new URLSearchParams(nested);
+    graphValidation.set('documentVersionId', binding);
+    const nestedRun = singleToken(nested, 'parseRunId');
+    const hasValidGraphReturn = Boolean(
+      nested.has('returnGraphQuery') &&
+      graphReturnTarget(graphValidation, binding, nestedRun),
+    );
+    const activityLimit = hasValidGraphReturn
+      ? ACTIVITY_WITH_GRAPH_RETURN_QUERY_LIMIT
+      : ACTIVITY_RETURN_QUERY_LIMIT;
+    if (activityQuery.length > activityLimit) return null;
     if (
       nested.has('returnActivityQuery') ||
       nested.has('returnActivityView') ||
@@ -567,7 +608,9 @@ export function readingReturnTarget(
     if (requestedRun && pins.parseRunId !== requestedRun) return null;
     const view = params.get('returnActivityView');
     if (view !== null && view !== 'timeline' && view !== 'graph') return null;
-    const query = activityReadingParams(nested);
+    const normalizedSource = new URLSearchParams(nested);
+    normalizedSource.set('documentVersionId', binding);
+    const query = activityReadingParams(normalizedSource);
     if (view) {
       query.set('documentVersionId', binding);
       return {

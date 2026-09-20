@@ -112,6 +112,30 @@ test('historical Matter and document-version top bars expose their exact route i
   expect(unrelatedQuery).not.toContain('历史工作');
 });
 
+test('timeline shell binds a validated graph return to its query document and parse run', () => {
+  const graphQuery = new URLSearchParams({
+    matterId: 'MAT-1',
+    workRef: 'MW-1',
+    perspective: 'documents',
+  }).toString();
+  const search = `?${new URLSearchParams({
+    documentVersionId: 'DV-1',
+    parseRunId: 'PR-1',
+    returnGraphQuery: graphQuery,
+    returnDocumentVersionId: 'DV-1',
+  })}`;
+  expect(deriveShellRouteContext('/timeline', search).documentVersionId).toBe('DV-1');
+  const timeline = renderTopBar('/timeline', search);
+  expect(timeline).toContain('aria-label="返回关系图谱"');
+  expect(timeline).not.toContain('aria-label="返回关系图谱" disabled=""');
+
+  const mismatched = renderTopBar(
+    '/timeline',
+    search.replace('documentVersionId=DV-1', 'documentVersionId=DV-2'),
+  );
+  expect(mismatched).toContain('aria-label="返回目标与当前版本不匹配"');
+});
+
 test('WorkItem navigation retains the existing assessment and reader paths', () => {
   const links = buildShellObjectLinks(
     deriveShellRouteContext('/work-items/WI%2F7/documents', ''),

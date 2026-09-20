@@ -2,6 +2,7 @@ import { createElement } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { StaticRouter } from 'react-router-dom/server';
 import {
+  activityReadingReturnParams,
   activityReadingParams,
   activityWindowPin,
   completeActivityIdentity,
@@ -295,6 +296,45 @@ test('activity window pins are whitelist-only, single-occurrence, and carried th
   expect(target.route).toContain('/timeline?');
   expect(target.route).toContain('window=current-year');
   expect(target.route).toContain('statementId=S1');
+});
+
+test('activity navigation preserves a validated long graph return without widening other return intents', () => {
+  const selectedId = `["claim","MW-1","${'条件'.repeat(500)}"]`;
+  const graphQuery = new URLSearchParams({
+    matterId: 'MAT-1',
+    workRef: 'MW-1',
+    selectedId,
+    perspective: 'documents',
+  }).toString();
+  const params = new URLSearchParams({
+    documentVersionId: 'DV-1',
+    parseRunId: 'PR-1',
+    candidateRevision: '2',
+    runRef: 'RUN-2',
+    returnGraphQuery: graphQuery,
+    returnDocumentVersionId: 'DV-1',
+  });
+  expect(graphQuery.length).toBeGreaterThan(512);
+  expect(activityReadingParams(params).get('returnGraphQuery')).toBe(graphQuery);
+  const activityIdentity = activityReadingParams(params);
+  const outer = activityReadingReturnParams(
+    activityIdentity.toString(),
+    'DV-1',
+    'timeline',
+  );
+  expect(outer.get('returnActivityQuery')!.length).toBeGreaterThan(4096);
+  const timelineTarget = readingReturnTarget(outer, 'DV-1', 'PR-1');
+  expect(timelineTarget?.route.startsWith('/timeline?')).toBe(true);
+  const returnedTimeline = new URL(
+    timelineTarget!.route,
+    'https://example.test',
+  ).searchParams;
+  const graphTarget = readingReturnTarget(returnedTimeline, 'DV-1', 'PR-1');
+  expect(graphTarget?.route).toContain('/graph?');
+  expect(new URL(graphTarget!.route, 'https://example.test').searchParams.get('selectedId'))
+    .toBe(selectedId);
+  params.set('returnLibraryQuery', 'mode=document');
+  expect(activityReadingParams(params).has('returnGraphQuery')).toBe(false);
 });
 
 test('opening a tree version without first selecting its quicklook preserves that row identity', () => {

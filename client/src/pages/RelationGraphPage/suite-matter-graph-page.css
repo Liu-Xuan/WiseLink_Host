@@ -302,7 +302,10 @@ html[data-wl-theme='dark'] .suite-matter-graph-page {
   padding-bottom: 24px;
   border-left: 1px solid color-mix(in srgb, var(--wl-accent) 22%, var(--wl-border));
 }
-.suite-graph-timeline-event:last-child { padding-bottom: 0; border-left-color: transparent; }
+.suite-graph-timeline-events > li:last-child .suite-graph-timeline-event {
+  padding-bottom: 0;
+  border-left-color: transparent;
+}
 .suite-graph-timeline-event-main {
   position: relative;
   display: flex;
@@ -333,8 +336,8 @@ html[data-wl-theme='dark'] .suite-matter-graph-page {
 .suite-graph-mobile-switch{display:none}
 .suite-graph-muted { color: var(--wl-muted); font-size: 10px; }
 .suite-graph-notice { padding: 7px; border-left: 2px solid var(--wl-accent); color: var(--wl-muted); font-size: 11px; line-height: 1.7; }
-.suite-graph-selection-hidden { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 7px 11px; border-top: 1px solid var(--wl-border); background: var(--wl-selected); color: var(--wl-ink); font-size: 11px; }
-.suite-graph-overflow-list { max-height: 190px; overflow: auto; padding: 8px 11px; border-top: 1px solid var(--wl-border); background: var(--wl-sheet-muted); font-size: 11px; }
+.suite-graph-selection-hidden { position: absolute; right: 12px; bottom: 36px; left: 12px; z-index: 6; display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 7px 11px; border: 1px solid var(--wl-border); border-radius: 8px; background: color-mix(in srgb, var(--wl-selected) 94%, transparent); color: var(--wl-ink); font-size: 11px; box-shadow: 0 8px 24px color-mix(in srgb, var(--wl-ink) 10%, transparent); }
+.suite-graph-overflow-list { position: absolute; inset: 44px 12px 34px; z-index: 7; overflow: auto; padding: 12px 14px; border: 1px solid var(--wl-border); border-radius: 9px; background: color-mix(in srgb, var(--wl-sheet-muted) 96%, transparent); font-size: 11px; box-shadow: 0 16px 44px color-mix(in srgb, var(--wl-ink) 16%, transparent); backdrop-filter: blur(16px); }
 .suite-graph-overflow-list > div { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-bottom: 5px; }
 .suite-graph-overflow-list button:not([data-slot='button']) { display: flex; width: 100%; flex-direction: column; gap: 2px; padding: 6px; border: 0; border-bottom: 1px solid var(--wl-border); background: transparent; text-align: left; font: inherit; cursor: pointer; }
 .suite-graph-overflow-list button:hover { background: var(--wl-selected); }

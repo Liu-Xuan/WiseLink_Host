@@ -238,6 +238,22 @@ describe('engineering timeline page gates', () => {
     expect(container.textContent).toContain('事项标识为空、重复或不合法');
   });
 
+  it.each([
+    ['/timeline?workRef=MW-1', '历史工作身份'],
+    ['/timeline?workItemId=WI-1', '工作事项'],
+    ['/timeline?matterId=M1&documentVersionId=DV1', '事项与文档版本'],
+  ])(
+    'rejects unsupported mixed timeline identity %s before reading a default',
+    async (route, expected) => {
+      await mount(route);
+      expect(container.textContent).toContain(expected);
+      expect(mockMatter).not.toHaveBeenCalled();
+      expect(mockLibraryDocuments).not.toHaveBeenCalled();
+      expect(mockStatus).not.toHaveBeenCalled();
+      expect(mockActivity).not.toHaveBeenCalled();
+    },
+  );
+
   it('keeps the time window when resolving the global default document', async () => {
     mockLibraryDocuments.mockResolvedValue({ items: [
       { documentId: 'D1', versions: [ { documentVersionId: 'DV-CUR', selectedVersionIsCurrent: true } ] },
@@ -415,6 +431,48 @@ describe('engineering timeline page gates', () => {
     expect(backQuery.get('window')).toBe('current-year');
     const lastRequest = mockActivity.mock.calls[mockActivity.mock.calls.length - 1][0];
     expect(lastRequest).toEqual({ documentVersionId: 'DV1', parseRunId: 'PR1', candidateRevision: 2 });
+  });
+
+  it('preserves the validated graph return through timeline selection and original reading', async () => {
+    mockActivity.mockResolvedValue(windowedSaved());
+    const graphQuery = new URLSearchParams({
+      matterId: 'M1',
+      workRef: 'MW1',
+      selectedId: '["claim","MW1","C1"]',
+      eventId: '["event","DV1","S-IN"]',
+      perspective: 'documents',
+    }).toString();
+    const route = `${pinned}&statementId=S-IN&returnGraphQuery=${encodeURIComponent(graphQuery)}&returnDocumentVersionId=DV1`;
+    await mount(route);
+    await act(async () => undefined);
+    const currentYearButton = container.querySelector('[data-window="current-year"]') as HTMLElement;
+    await act(async () => {
+      currentYearButton.dispatchEvent(new dom.window.MouseEvent('click', { bubbles: true }));
+    });
+    let current = new URLSearchParams(router.state.location.search);
+    expect(current.get('returnGraphQuery')).toBe(graphQuery);
+    expect(current.get('returnDocumentVersionId')).toBe('DV1');
+    const readButton = [...container.querySelectorAll('button')].find(
+      (button) => button.textContent === '阅读原文依据',
+    )!;
+    await act(async () => {
+      readButton.dispatchEvent(new dom.window.MouseEvent('click', { bubbles: true }));
+    });
+    current = new URLSearchParams(router.state.location.search);
+    const nested = new URLSearchParams(current.get('returnActivityQuery')!);
+    expect(nested.get('returnGraphQuery')).toBe(graphQuery);
+    expect(nested.get('returnDocumentVersionId')).toBe('DV1');
+    const timelineTarget = readingReturnTarget(current, 'DV1', 'PR1');
+    expect(timelineTarget?.route.startsWith('/timeline?')).toBe(true);
+    const returnedTimeline = new URL(
+      timelineTarget!.route,
+      'https://example.test',
+    ).searchParams;
+    expect(returnedTimeline.get('returnGraphQuery')).toBe(graphQuery);
+    const graphTarget = readingReturnTarget(returnedTimeline, 'DV1', 'PR1');
+    expect(graphTarget?.route.startsWith('/graph?')).toBe(true);
+    expect(Object.fromEntries(new URL(graphTarget!.route, 'https://example.test').searchParams))
+      .toEqual(Object.fromEntries(new URLSearchParams(graphQuery)));
   });
 
   it('issues no second request when the window changes while the first read is still pending', async () => {

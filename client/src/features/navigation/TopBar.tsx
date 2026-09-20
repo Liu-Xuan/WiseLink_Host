@@ -49,6 +49,8 @@ const TopBar: React.FC<TopBarProps> = ({
   }, [searchParams]);
   const requestedParseRun =
     pathname.includes('/activities') ||
+    pathname === '/timeline' ||
+    pathname === '/activity-graph' ||
     pathname.match(/^\/document-versions\/[^/]+$/u)
       ? searchParams.get('parseRunId')
       : null;
