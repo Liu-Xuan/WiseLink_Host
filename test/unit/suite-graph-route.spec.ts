@@ -55,6 +55,38 @@ it('opens exact work and exact original source from graph actions', () => {
   expect(new URLSearchParams(route.searchParams.get('returnGraphQuery')!).get('workRef')).toBe('test-working-3');
 });
 
+it('returns from a work-item page locator to the exact graph view', () => {
+  const viewport = encodeURIComponent(JSON.stringify({
+    zoom: 0.7,
+    pan: { x: 20, y: -30 },
+  }));
+  render(`&selectedId=question-a&perspective=documents&viewport=${viewport}`);
+  mockProps.onLocateEvidence!({
+    kind: 'DOCUMENT_PASSAGE',
+    evidenceRef: 'page-evidence',
+    title: '原文页',
+    versionLabel: 'R1',
+    excerpt: '适用条件',
+    workItemId: 'work-source',
+    documentVersionId: 'page-version',
+    sourceRefId: 'source-page',
+    locator: 'page 1-2',
+  });
+  const route = new URL(mockNavigate.mock.calls.at(-1)![0], 'https://example.test');
+  expect(route.pathname).toBe('/work-items/work-source/documents');
+  expect(route.searchParams.get('documentVersionId')).toBe('page-version');
+  expect(route.searchParams.get('sourceRef')).toBe('source-page');
+  const graph = new URLSearchParams(route.searchParams.get('returnGraphQuery')!);
+  expect(graph.get('matterId')).toBe('ui-test-matter');
+  expect(graph.get('workRef')).toBe('test-working-3');
+  expect(graph.get('selectedId')).toBe('question-a');
+  expect(graph.get('perspective')).toBe('documents');
+  expect(JSON.parse(graph.get('viewport')!)).toEqual({
+    zoom: 0.7,
+    pan: { x: 20, y: -30 },
+  });
+});
+
 function catalogEntry(documentVersionId: string) {
   return {
     workItemId: 'wi-timeline', relationRole: 'PRIMARY' as const, linkedAtWorkItemRevision: 1,

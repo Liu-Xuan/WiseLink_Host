@@ -28,6 +28,32 @@ it('preserves a question mark inside an existing route parameter', () => {
   );
   expect(result.searchParams.get('note')).toBe('a?b');
 });
+
+it('returns from an exact work-item document reader with graph state intact', () => {
+  const source = new URL(withGraphReturn(
+    '/work-items/work-1/documents?node=reader&tab=reader&readerMode=structured&documentVersionId=dv1&sourceRef=s1&returnMatterId=old',
+    query,
+  ), 'https://example.test');
+  expect(source.pathname).toBe('/work-items/work-1/documents');
+  expect(source.searchParams.get('node')).toBe('reader');
+  expect(source.searchParams.get('readerMode')).toBe('structured');
+  expect(source.searchParams.get('documentVersionId')).toBe('dv1');
+  expect(source.searchParams.get('sourceRef')).toBe('s1');
+  expect(source.searchParams.has('returnMatterId')).toBe(false);
+  expect(readingReturnTarget(source.searchParams, 'dv1')?.route)
+    .toBe(`/graph?${query}`);
+});
+
+it('does not attach graph state to an ambiguous work-item document reader', () => {
+  const missing = '/work-items/work-1/documents?node=reader';
+  const duplicate = '/work-items/work-1/documents?documentVersionId=dv1&documentVersionId=dv2';
+  expect(withGraphReturn(missing, query)).toBe(missing);
+  expect(withGraphReturn(duplicate, query)).toBe(duplicate);
+  expect(withGraphReturn(
+    '/work-items/work-1/documents?documentVersionId=%20dv1',
+    query,
+  )).toBe('/work-items/work-1/documents?documentVersionId=%20dv1');
+});
 it('only restores bounded display state, never arbitrary URLs or invalid numbers', () => {
   const state = readGraphReadingState(new URLSearchParams('page=NaN&density=0&perspective=external&viewport=%7B%22zoom%22%3A999%2C%22pan%22%3A%7B%22x%22%3A0%2C%22y%22%3A0%7D%7D&next=https://evil.test'));
   expect(state).toEqual({});
