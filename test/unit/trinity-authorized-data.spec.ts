@@ -107,6 +107,88 @@ describe('authorized Trinity projection', () => {
       source.id === `document:${versionId}`)).toBe(false);
     expect(projection.sourceTargets[`document:${versionId}`]).toBeUndefined();
   });
+  it('uses included native materials as exact document sources without a legacy catalog', () => {
+    const focus = libraryMatterFixture();
+    const current = focus.working.current!;
+    focus.matter.catalog = { scope: 'MATTER_MATERIALS', entries: [] };
+    focus.matter.materials = [
+      {
+        kind: 'MEMBER', materialId: 'member-1', familyId: 'family-1',
+        documentVersionId: 'version-member', scope: '适用范围',
+        contribution: '界定当前事项主题。', basis: [], origin: 'DOCUMENT',
+        disposition: 'INCLUDED',
+      },
+      {
+        kind: 'RELATED', materialId: 'related-1', familyId: 'family-2',
+        documentVersionId: 'version-related', scope: '参考范围',
+        contribution: '补充相关条件。', basis: [], origin: 'ENGINEER',
+        disposition: 'INCLUDED',
+      },
+      {
+        kind: 'RELATED', materialId: 'related-duplicate', familyId: 'family-2',
+        documentVersionId: 'version-related', scope: '重复登记',
+        contribution: '不得生成第二个来源。', basis: [], origin: 'ENGINEER',
+        disposition: 'INCLUDED',
+      },
+      {
+        kind: 'RELATED', materialId: 'excluded-1', familyId: 'family-3',
+        documentVersionId: 'version-excluded', scope: '',
+        contribution: '明确不纳入。', basis: [], origin: 'ENGINEER',
+        disposition: 'EXCLUDED',
+      },
+      {
+        kind: 'RELATED', materialId: 'included-conflict', familyId: 'family-4',
+        documentVersionId: 'version-conflict', scope: '',
+        contribution: '较早纳入。', basis: [], origin: 'ENGINEER',
+        disposition: 'INCLUDED',
+      },
+      {
+        kind: 'RELATED', materialId: 'excluded-conflict', familyId: 'family-4',
+        documentVersionId: 'version-conflict', scope: '',
+        contribution: '同版明确排除。', basis: [], origin: 'ENGINEER',
+        disposition: 'EXCLUDED',
+      },
+      {
+        kind: 'EXPECTED', materialId: 'expected-1', familyId: null,
+        documentVersionId: null, scope: '', contribution: '等待取得。',
+        basis: [], origin: 'ENGINEER', disposition: 'INCLUDED',
+        expected: {
+          issuer: null, documentNumber: null, description: '后续文件',
+          expectedContribution: '补充验证', expectedDate: null,
+          sourceAsOf: '2026-09-20', publicationStatus: 'PLANNED',
+          acquisitionStatus: 'NOT_ACQUIRED', fulfilledBy: [],
+        },
+      },
+    ];
+
+    const projection = projectAuthorizedSituation([], 'complete', focus);
+    expect(projection.data.sources.filter((source) =>
+      source.category === 'documents')).toEqual([
+      {
+        id: 'document:version-member', matter: focus.matter.matterId,
+        category: 'documents', title: 'version-member',
+        version: '业务版本未取得', contribution: '界定当前事项主题。',
+      },
+      {
+        id: 'document:version-related', matter: focus.matter.matterId,
+        category: 'documents', title: 'version-related',
+        version: '业务版本未取得', contribution: '不得生成第二个来源。',
+      },
+    ]);
+    for (const versionId of ['version-member', 'version-related']) {
+      const target = new URL(
+        projection.sourceTargets[`document:${versionId}`],
+        'https://example.test',
+      );
+      expect(target.pathname).toBe(`/document-versions/${versionId}`);
+      expect(target.searchParams.get('returnMatterId')).toBe(focus.matter.matterId);
+      expect(target.searchParams.get('returnMatterWorkRef')).toBe(
+        current.matterWorkRevisionId,
+      );
+    }
+    expect(projection.sourceTargets['document:version-excluded']).toBeUndefined();
+    expect(projection.sourceTargets['document:version-conflict']).toBeUndefined();
+  });
   it('projects every saved review condition bound to the exact work revision only when current saved work exists', () => {
     const base = libraryMatterFixture();
     const current = base.working.current!;
