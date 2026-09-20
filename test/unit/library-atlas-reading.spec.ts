@@ -115,6 +115,19 @@ describe('Guided Atlas library uses saved business reading', () => {
             nextCursor: null,
             loadMore: jest.fn(),
           },
+          documentDirectory: {
+            items: [],
+            loading: false,
+            loadingMore: false,
+            error: null,
+            nextCursor: null,
+            totalCount: 12,
+            familyCounts: {},
+            ataCounts: { '32': 4, '34': 3 },
+            aircraftModelCounts: {},
+            discard: jest.fn(),
+            loadMore: jest.fn(),
+          },
           authenticationRequired: false,
           sessionGeneration: 1,
           searchText: '',
@@ -124,12 +137,19 @@ describe('Guided Atlas library uses saved business reading', () => {
           onCreateFromTask: jest.fn(),
           filteredByWorkItem: false,
           onViewAll: jest.fn(),
+          onViewDocuments: jest.fn(),
+          onViewTasks: jest.fn(),
           selectedId: '',
           onSelect: jest.fn(),
         }),
       ),
     );
     expect(html).toContain(rows[0].result!.listBrief);
+    expect(html).toContain('全部资料');
+    expect(html).toContain('ATA 32');
+    expect(html).toContain('ATA 34');
+    expect(html).toContain('工程事项');
+    expect(html).toContain('评估任务');
     expect(html).toContain('问题已更新，综合尚未覆盖');
     expect(html).not.toContain(rows[0].result!.decisiveClaims[0].text);
     expect(renderQuicklook(libraryMatterFixture())).toContain(rows[0].result!.decisiveClaims[0].text);
