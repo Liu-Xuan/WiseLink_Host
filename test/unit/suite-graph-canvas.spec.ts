@@ -127,6 +127,42 @@ describe('SuiteGraphCanvas', () => {
     expect(cy.destroy).toHaveBeenCalledTimes(1);
   });
 
+  it('applies declared edge curves, theme tones, and the local graph sheet to Cytoscape', async () => {
+    const originalGetComputedStyle = globalThis.getComputedStyle;
+    globalThis.getComputedStyle = (() => ({
+      getPropertyValue: (name: string) => ({
+        '--wl-sheet': '#112233',
+        '--suite-graph-tone-green': '#55aa88',
+        '--suite-graph-edge-label': '#aabbcc',
+      })[name] ?? '',
+    })) as unknown as typeof getComputedStyle;
+    try {
+      await act(async () => {
+        root = createRoot(container);
+        root.render(createElement(SuiteGraphCanvas, { presentation }));
+      });
+      await act(async () => { await Promise.resolve(); });
+      const options = mockCyFactory.mock.calls[0][0] as {
+        style: Array<{ selector: string; style: Record<string, unknown> }>;
+      };
+      expect(options.style.find((item) => item.selector === 'edge')?.style).toMatchObject({
+        'control-point-distances': 'data(curvature)',
+        'control-point-weights': 0.5,
+        'text-background-color': '#112233',
+        color: '#aabbcc',
+      });
+      expect(options.style.find((item) => item.selector === 'edge[tone = "green"]')?.style).toMatchObject({
+        'line-color': '#55aa88',
+        'target-arrow-color': '#55aa88',
+      });
+      expect(options.style.find((item) => item.selector === 'edge[color]')?.style).toMatchObject({
+        'line-color': 'data(color)',
+      });
+    } finally {
+      globalThis.getComputedStyle = originalGetComputedStyle;
+    }
+  });
+
   it('keeps a restored initial viewport and never fits over it, including the first resize', async () => {
     await act(async () => {
       root = createRoot(container);
@@ -160,7 +196,7 @@ describe('SuiteGraphCanvas', () => {
     expect(cy.fit).toHaveBeenCalledTimes(2);
   });
 
-  it('enters with a readable zoom centered on the matter hub on narrow layouts instead of fitting everything', async () => {
+  it('enters with the complete graph fitted on narrow layouts', async () => {
     const restoreMatchMedia = mockNarrowLayout();
     try {
       await act(async () => {
@@ -169,12 +205,34 @@ describe('SuiteGraphCanvas', () => {
       });
       await act(async () => { await Promise.resolve(); });
       const cy = mockCyFactory.mock.results[0].value as { fit: jest.Mock; zoom: jest.Mock; center: jest.Mock; getElementById: jest.Mock };
-      expect(cy.fit).not.toHaveBeenCalled();
-      expect(cy.zoom).toHaveBeenCalledWith(0.85);
-      expect(cy.getElementById).toHaveBeenCalledWith('sg:hub:m');
-      expect(cy.center).toHaveBeenCalled();
+      expect(cy.fit).toHaveBeenCalledTimes(1);
+      expect(cy.zoom).not.toHaveBeenCalledWith(0.85);
+      expect(cy.center).not.toHaveBeenCalled();
       act(() => { resizeCallback?.(); });
+      expect(cy.fit).toHaveBeenCalledTimes(2);
+    } finally {
+      restoreMatchMedia();
+    }
+  });
+
+  it('focuses an explicitly selected non-hub object on narrow layouts', async () => {
+    const restoreMatchMedia = mockNarrowLayout();
+    try {
+      await act(async () => {
+        root = createRoot(container);
+        root.render(createElement(SuiteGraphCanvas, { presentation, selectedId: 'i' }));
+      });
+      await act(async () => { await Promise.resolve(); });
+      const cy = mockCyFactory.mock.results[0].value as {
+        fit: jest.Mock;
+        zoom: jest.Mock;
+        center: jest.Mock;
+        getElementById: jest.Mock;
+      };
       expect(cy.fit).not.toHaveBeenCalled();
+      expect(cy.getElementById).toHaveBeenCalledWith('sg:item:i');
+      expect(cy.zoom).toHaveBeenCalledWith(0.85);
+      expect(cy.center).toHaveBeenCalled();
     } finally {
       restoreMatchMedia();
     }

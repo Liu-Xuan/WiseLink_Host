@@ -18,6 +18,14 @@
   --wl-accent: #367ad8;
   --wl-accent-soft: rgb(54 122 216 / 10%);
   --wl-accent-2: #1c9daa;
+  --suite-graph-tone-blue: #3b7cd5;
+  --suite-graph-tone-green: #249d89;
+  --suite-graph-tone-amber: #bb872f;
+  --suite-graph-tone-rose: #c9747b;
+  --suite-graph-tone-teal: #209ca9;
+  --suite-graph-tone-purple: #9578ce;
+  --suite-graph-tone-neutral: #7d8ba1;
+  --suite-graph-edge-label: #7b8fa3;
 }
 
 html[data-wl-theme='dark'] .suite-matter-graph-page {
@@ -32,6 +40,14 @@ html[data-wl-theme='dark'] .suite-matter-graph-page {
   --wl-accent: #80a7eb;
   --wl-accent-soft: rgb(128 167 235 / 12%);
   --wl-accent-2: #79beca;
+  --suite-graph-tone-blue: #88b1ed;
+  --suite-graph-tone-green: #7ec5b3;
+  --suite-graph-tone-amber: #d9b780;
+  --suite-graph-tone-rose: #d8969c;
+  --suite-graph-tone-teal: #80c3cd;
+  --suite-graph-tone-purple: #b9a0de;
+  --suite-graph-tone-neutral: #858e9c;
+  --suite-graph-edge-label: #a9b6c8;
 }
 
 .suite-graph-viewbar {

@@ -9,8 +9,30 @@ import {
   type MouseEvent,
 } from 'react';
 import cytoscape, { type Core, type ElementDefinition, type EventObject, type StylesheetStyle } from 'cytoscape';
-import { AlertTriangle, ClipboardList, Clock, Database, FileText, FolderOpen, Lightbulb, Network, type LucideIcon } from 'lucide-react';
+import {
+  Activity,
+  AlertTriangle,
+  BookOpen,
+  CircleDot,
+  ClipboardCheck,
+  ClipboardList,
+  Clock,
+  Database,
+  FileText,
+  Lightbulb,
+  MessageSquareText,
+  Network,
+  Plane,
+  SlidersHorizontal,
+  type LucideIcon,
+} from 'lucide-react';
 import type { CytoscapeSuiteElement, SuiteGraphPresentation } from './suite-graph-model';
+import {
+  suiteGraphAppearance,
+  suiteGraphIconKind,
+  type SuiteGraphIconKind,
+  type SuiteGraphTone,
+} from './suite-graph-appearance';
 import './suite-graph-canvas.css';
 import { Image } from '@client/src/components/ui/image';
 
@@ -43,37 +65,22 @@ interface OverlayNode {
   position: { x: number; y: number };
 }
 
-const GROUP_TONES: Record<string, string> = {
-  fulfilled: '#25a06c',
-  inputs: '#2a9d93',
-  questions: '#d65c68',
-  evidence: '#8b6fc9',
-  claims: '#4f83d6',
-  MEMBER: '#2a9d93',
-  RELATED: '#64748b',
-  EXPECTED: '#b45309',
-  catalog: '#64748b',
-  statements: '#b45309',
-  matters: '#4f83d6',
-  documents: '#25a06c',
-  unclassified: '#8a8a8a',
+const ICONS: Record<SuiteGraphIconKind, LucideIcon> = {
+  activity: Activity,
+  book: BookOpen,
+  claim: Lightbulb,
+  component: CircleDot,
+  configuration: SlidersHorizontal,
+  document: FileText,
+  input: Database,
+  matter: Network,
+  plane: Plane,
+  question: AlertTriangle,
+  record: ClipboardList,
+  statement: Clock,
+  topic: MessageSquareText,
+  work: ClipboardCheck,
 };
-const GROUP_ICONS: Record<string, LucideIcon> = {
-  fulfilled: FileText,
-  inputs: Database,
-  questions: AlertTriangle,
-  evidence: ClipboardList,
-  claims: Lightbulb,
-  MEMBER: FileText,
-  RELATED: FolderOpen,
-  EXPECTED: FolderOpen,
-  catalog: FolderOpen,
-  statements: Clock,
-  matters: Network,
-  documents: FileText,
-  unclassified: FolderOpen,
-};
-const FALLBACK_TONE = '#4f83d6';
 const NARROW_ENTRY_MAX_WIDTH = 760;
 const NARROW_ENTRY_ZOOM = 0.85;
 const NARROW_FOCUS_PADDING = 28;
@@ -89,8 +96,14 @@ function isNarrowLayout(): boolean {
   return window.matchMedia(NARROW_LAYOUT_QUERY).matches;
 }
 
-function toneFor(groupKey: string, declaredTone: string): string {
-  return declaredTone || GROUP_TONES[groupKey] || FALLBACK_TONE;
+function toneFor(groupKey: string, declaredTone: string, toneName: string): string {
+  const normalizedColor = declaredTone.trim();
+  const normalizedTone = toneName.trim();
+  if (normalizedColor && !(['blue', 'green', 'amber', 'rose', 'teal', 'purple', 'neutral'] as string[]).includes(normalizedColor)) {
+    return normalizedColor;
+  }
+  const appearance = suiteGraphAppearance(groupKey, normalizedTone || normalizedColor);
+  return `var(--suite-graph-tone-${appearance.tone})`;
 }
 
 function text(value: unknown, fallback = ''): string {
@@ -99,9 +112,10 @@ function text(value: unknown, fallback = ''): string {
 
 interface ThemeTokens {
   ink: string;
-  muted: string;
   faint: string;
   surface: string;
+  edgeLabel: string;
+  tones: Record<SuiteGraphTone, string>;
 }
 
 function readThemeTokens(scope?: HTMLElement): ThemeTokens {
@@ -111,9 +125,18 @@ function readThemeTokens(scope?: HTMLElement): ThemeTokens {
   const read = (name: string, fallback: string): string => computed?.getPropertyValue(name).trim() || fallback;
   return {
     ink: read('--wl-ink', '#242424'),
-    muted: read('--wl-muted', '#666666'),
     faint: read('--wl-faint', '#8a8a8a'),
-    surface: read('--wl-surface-solid', '#ffffff'),
+    surface: read('--wl-sheet', '#ffffff'),
+    edgeLabel: read('--suite-graph-edge-label', '#7b8fa3'),
+    tones: {
+      blue: read('--suite-graph-tone-blue', '#3b7cd5'),
+      green: read('--suite-graph-tone-green', '#249d89'),
+      amber: read('--suite-graph-tone-amber', '#bb872f'),
+      rose: read('--suite-graph-tone-rose', '#c9747b'),
+      teal: read('--suite-graph-tone-teal', '#209ca9'),
+      purple: read('--suite-graph-tone-purple', '#9578ce'),
+      neutral: read('--suite-graph-tone-neutral', '#7d8ba1'),
+    },
   };
 }
 
@@ -143,30 +166,36 @@ function buildStyleSheet(tokens: ThemeTokens): StylesheetStyle[] {
       style: {
         width: 1.15,
         'curve-style': 'unbundled-bezier',
-        'control-point-step-size': 70,
+        'control-point-distances': 'data(curvature)',
+        'control-point-weights': 0.5,
         'line-color': tokens.faint,
         'target-arrow-color': tokens.faint,
         'target-arrow-shape': 'triangle',
         'arrow-scale': 0.55,
         opacity: 0.3,
         label: 'data(label)',
-        color: tokens.muted,
-        'font-size': '9.5px',
+        color: tokens.edgeLabel,
+        'font-size': '12px',
         'text-background-color': tokens.surface,
-        'text-background-opacity': 0.8,
+        'text-background-opacity': 0.88,
         'text-background-padding': '3px',
         'text-rotation': 'none',
+        'text-margin-y': -5,
         'overlay-opacity': 0,
       },
     },
-    { selector: '.bundle-edge', style: { opacity: 0.62 } },
-    { selector: '.business-edge', style: { width: 1.7, opacity: 0.68 } },
+    { selector: '.bundle-edge', style: { width: 1.3, opacity: 0.68 } },
+    { selector: '.business-edge', style: { width: 1, opacity: 0.28, 'font-size': '10px' } },
   ];
-  Object.entries(GROUP_TONES).forEach(([key, tone]) => {
+  Object.entries(tokens.tones).forEach(([toneName, tone]) => {
     sheets.push({
-      selector: `edge[groupKey = "${key}"]`,
+      selector: `edge[tone = "${toneName}"]`,
       style: { 'line-color': tone, 'target-arrow-color': tone, opacity: 0.68 },
     });
+  });
+  sheets.push({
+    selector: 'edge[color]',
+    style: { 'line-color': 'data(color)', 'target-arrow-color': 'data(color)', opacity: 0.68 },
   });
   sheets.push(
     { selector: '.suite-connected-edge', style: { width: 2.4, opacity: 0.92 } },
@@ -200,7 +229,7 @@ function OverlayCard({
   const data = node.data;
   const viewKind = text(data.viewKind);
   const groupKey = text(data.groupKey);
-  const tone = toneFor(groupKey, text(data.color));
+  const tone = toneFor(groupKey, text(data.color), text(data.tone));
   const title = text(data.title, viewKind === 'more' ? '展开全部' : '未命名');
   const subtitle = text(data.subtitle);
   const style = {
@@ -233,7 +262,7 @@ function OverlayCard({
       </button>
     );
   }
-  const Icon = GROUP_ICONS[groupKey] ?? FileText;
+  const Icon = ICONS[suiteGraphIconKind(text(data.kind), groupKey)];
   const picture = text(data.picture);
   return (
     <button
@@ -332,14 +361,19 @@ const SuiteGraphCanvas = forwardRef<SuiteGraphCanvasHandle, SuiteGraphCanvasProp
         return;
       }
     }
+    const hub = elementsRef.current.find(
+      (element) => element.group === 'nodes' && element.data.viewKind === 'hub',
+    );
     const currentSelection = selectedIdRef.current;
-    const focus = (currentSelection
-      ? elementsRef.current.find((element) => element.group === 'nodes' && (element.data.businessId === currentSelection || element.data.id === currentSelection))
-      : undefined)
-      ?? elementsRef.current.find((element) => element.group === 'nodes' && element.data.viewKind === 'hub')
-      ?? elementsRef.current.find((element) => element.group === 'nodes');
+    const focus = currentSelection
+      ? elementsRef.current.find(
+        (element) => element.group === 'nodes'
+          && element.data.viewKind !== 'hub'
+          && (element.data.businessId === currentSelection || element.data.id === currentSelection),
+      )
+      : undefined;
     const node = focus ? cy.getElementById(String(focus.data.id)) : null;
-    if (node && node.length) {
+    if (node && node.length && currentSelection !== hub?.data.businessId) {
       cy.zoom(clampZoom(NARROW_ENTRY_ZOOM, cy));
       cy.center(node);
     } else {
