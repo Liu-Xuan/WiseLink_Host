@@ -104,9 +104,24 @@ export function withGraphReturn(route: string, graphQuery: URLSearchParams): str
   const path = queryStart === -1 ? route : route.slice(0, queryStart);
   const raw = queryStart === -1 ? '' : route.slice(queryStart + 1);
   const match = /^\/(document-versions|matters)\/([^/]+)(\/process)?$/.exec(path);
+  const workItemDocumentMatch = /^\/work-items\/([^/]+)\/documents$/.exec(path);
+  if (!match && !workItemDocumentMatch) return route;
+  const params = new URLSearchParams(raw);
+  if (workItemDocumentMatch) {
+    const documentVersions = params.getAll('documentVersionId');
+    if (
+      documentVersions.length !== 1
+      || !text(documentVersions[0], 512)
+    ) return route;
+    for (const key of [...params.keys()]) {
+      if (key.startsWith('return')) params.delete(key);
+    }
+    params.set('returnGraphQuery', graphQuery.toString());
+    params.set('returnDocumentVersionId', documentVersions[0]);
+    return `${path}?${params}`;
+  }
   if (!match) return route;
   if (match[1] === 'document-versions' && match[3]) return route;
-  const params = new URLSearchParams(raw);
   for (const key of [...params.keys()]) if (key.startsWith('return')) params.delete(key);
   params.set('returnGraphQuery', graphQuery.toString());
   if (match[1] === 'document-versions') {
