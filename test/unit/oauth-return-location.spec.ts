@@ -40,6 +40,14 @@ it('restores the exact historical document and source selection after login', ()
   expect(readOauthReturnPath('document-state',saved)).toBe(target);
 });
 
+it('restores the canonical work-item analysis panel after login', () => {
+  const target =
+    '/work-items/WI-example/analysis?panel=review&documentVersionId=DV-1#discussion';
+  const saved = storage();
+  expect(rememberOauthReturnPath(target, 'analysis-state', saved)).toBe(true);
+  expect(readOauthReturnPath('analysis-state', saved)).toBe(target);
+});
+
 it.each([
   'https://outside.example/work-items/WI-example',
   '//outside.example/work-items/WI-example',

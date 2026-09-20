@@ -74,25 +74,24 @@ export function buildGraphElements(
   return elements;
 }
 
-const DEEP_LINK_TARGET: Partial<Record<CanonicalLibraryIndexNodeKind, { node: string; tab: string }>> = {
-  DOCUMENT: { node: 'reader', tab: 'source' },
-  DOCUMENT_VERSION: { node: 'reader', tab: 'source' },
-  PARSED_PACKAGE: { node: 'reader', tab: 'source' },
-  READER_QUERY: { node: 'reader', tab: 'source' },
-  WORK_ITEM: { node: 'assessment', tab: 'assessment' },
-  DYNAMIC_EVALUATION: { node: 'assessment', tab: 'assessment' },
-  ENGINEER_REVIEW: { node: 'assessment', tab: 'assessment' },
-  OVERALL_SYNTHESIS: { node: 'overall', tab: 'overall' },
-  AEO_CANDIDATE: { node: 'aeo', tab: 'aeo' },
+const DEEP_LINK_TARGET: Partial<Record<CanonicalLibraryIndexNodeKind, string>> = {
+  DOCUMENT: 'reader',
+  DOCUMENT_VERSION: 'reader',
+  PARSED_PACKAGE: 'reader',
+  READER_QUERY: 'reader',
+  WORK_ITEM: 'assessment',
+  DYNAMIC_EVALUATION: 'assessment',
+  ENGINEER_REVIEW: 'assessment',
+  OVERALL_SYNTHESIS: 'overall',
+  AEO_CANDIDATE: 'aeo',
 };
 
 /** 节点深链：文档/版本/来源侧 → reader 节点 source 页；问题侧 → assessment 页。 */
 export function buildNodeDeepLink(workItemId: string, node: RelationGraphNodeData): string | null {
-  const target: { node: string; tab: string } | undefined = DEEP_LINK_TARGET[node.kind];
+  const target: string | undefined = DEEP_LINK_TARGET[node.kind];
   if (!target) return null;
   const params = new URLSearchParams();
-  params.set('node', target.node);
-  params.set('tab', target.tab);
+  params.set('panel', target);
   if (
     node.documentVersionId &&
     (node.kind === 'DOCUMENT' ||
@@ -103,5 +102,5 @@ export function buildNodeDeepLink(workItemId: string, node: RelationGraphNodeDat
     params.set('documentVersionId', node.documentVersionId);
   }
   if (node.sourceRef) params.set('sourceRef', node.sourceRef);
-  return `/work-items/${encodeURIComponent(workItemId)}/documents?${params.toString()}`;
+  return `/work-items/${encodeURIComponent(workItemId)}/analysis?${params.toString()}`;
 }

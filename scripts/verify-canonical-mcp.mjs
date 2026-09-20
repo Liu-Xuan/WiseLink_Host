@@ -143,7 +143,7 @@ const vertical = {
     calls.push({ tool: 'get_deep_link', workItemId });
     return {
       workItemId,
-      deepLink: `https://host.example.test/work-items/${workItemId}/documents`,
+      deepLink: `https://host.example.test/work-items/${workItemId}/analysis`,
     };
   },
 };
@@ -577,7 +577,7 @@ try {
       ),
       {
         workItemId: 'WI-LINK',
-        deepLink: 'https://host.example.test/work-items/WI-LINK/documents',
+        deepLink: 'https://host.example.test/work-items/WI-LINK/analysis',
       },
     );
     assert.deepEqual(calls, [
@@ -1106,7 +1106,7 @@ try {
       ),
       {
         workItemId: 'WI-MODERN',
-        deepLink: 'https://host.example.test/work-items/WI-MODERN/documents',
+        deepLink: 'https://host.example.test/work-items/WI-MODERN/analysis',
       },
     );
     assert.deepEqual(calls, [

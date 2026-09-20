@@ -9,7 +9,7 @@ export class OrdinaryMiaodaAppBindingAdapter implements CanonicalMiaodaAppBindin
       bindingStatus: 'VERIFIED_CANONICAL' as const,
       appId: CANONICAL_MIAODA_APP_ID,
       origin: ORIGIN,
-      deepLink: `${ORIGIN}/work-items/${encodeURIComponent(workItemId)}/documents`,
+      deepLink: `${ORIGIN}/work-items/${encodeURIComponent(workItemId)}/analysis`,
     };
   }
 }

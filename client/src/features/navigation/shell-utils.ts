@@ -51,7 +51,7 @@ export function deriveShellRouteContext(
   const queryDocumentVersionId: string =
     pathname === '/timeline'
       || pathname === '/activity-graph'
-      || /^\/work-items\/[^/]+\/documents$/u.test(pathname)
+      || /^\/work-items\/[^/]+\/(?:analysis|documents)$/u.test(pathname)
       ? singleSafeParam(params, 'documentVersionId')
       : '';
   return {
@@ -194,14 +194,14 @@ export function buildShellObjectLinks(
   }
   if (context.workItemId) {
     const overview = `/work-items/${encodeURIComponent(context.workItemId)}`;
-    const workspace = `${overview}/documents`;
+    const workspace = `${overview}/analysis`;
     return [
       { to: overview, label: '事项综述' },
-      { to: `${workspace}?node=assessment&tab=assessment`, label: '问题分析' },
-      { to: `${workspace}?node=reader&tab=source`, label: '相关资料' },
-      { to: `${workspace}?node=review&tab=review`, label: '复核与交流' },
-      { to: `${workspace}?node=overall&tab=overall`, label: '变化与历史' },
-      { to: `${workspace}?node=document`, label: '版本附件' },
+      { to: `${workspace}?panel=assessment`, label: '问题分析' },
+      { to: `${workspace}?panel=reader`, label: '相关资料' },
+      { to: `${workspace}?panel=review`, label: '复核与交流' },
+      { to: `${workspace}?panel=overall`, label: '变化与历史' },
+      { to: `${workspace}?panel=document`, label: '版本附件' },
     ];
   }
   return [];
@@ -222,9 +222,11 @@ export function deriveBreadcrumbs(
     const overview = `/work-items/${encodeURIComponent(context.workItemId)}`;
     crumbs.push({
       label: shortId(context.workItemId),
-      ...(pathname.endsWith('/documents') ? { to: overview } : {}),
+      ...(/\/(?:analysis|documents)$/u.test(pathname) ? { to: overview } : {}),
     });
-    if (pathname.endsWith('/documents')) crumbs.push({ label: '精读工作台' });
+    if (/\/(?:analysis|documents)$/u.test(pathname)) {
+      crumbs.push({ label: '事项分析' });
+    }
     return crumbs;
   }
 

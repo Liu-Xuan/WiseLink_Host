@@ -72,9 +72,10 @@ describe('canonical Host production client boundary', () => {
     expect(home).toContain('评估任务与工程快览');
     expect(home).toContain('进入工作台');
     expect(home).toContain(
-      '/work-items/${encodeURIComponent(projection.workItemId)}/documents',
+      '/work-items/${encodeURIComponent(projection.workItemId)}/analysis',
     );
     expect(app).toContain('work-items/:workItemId/documents');
+    expect(app).toContain('work-items/:workItemId/analysis');
   });
 
   it('uses one browser-compatible correlation id helper for hosted writes', async () => {

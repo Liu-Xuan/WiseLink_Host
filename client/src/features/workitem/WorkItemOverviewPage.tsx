@@ -162,7 +162,7 @@ export default function WorkItemOverviewPage() {
 
   function openWorkbench(): void {
     navigate(
-      `/work-items/${encodeURIComponent(workItemId)}/documents?node=review&tab=review`,
+      `/work-items/${encodeURIComponent(workItemId)}/analysis?panel=review`,
     );
   }
 
@@ -172,7 +172,7 @@ export default function WorkItemOverviewPage() {
       navigate(workItemDocumentReadingRoute(visibleView.document.documentVersionId, workItemId));
       return;
     }
-    navigate(`/work-items/${encodeURIComponent(workItemId)}/documents?node=reader&tab=reader&readerMode=source&sourceRef=${encodeURIComponent(sourceRefId)}`);
+    navigate(`/work-items/${encodeURIComponent(workItemId)}/analysis?panel=reader&readerMode=source&sourceRef=${encodeURIComponent(sourceRefId)}`);
   }
 
   if (loading && visibleView === null) {
@@ -223,10 +223,10 @@ export default function WorkItemOverviewPage() {
         workItemId, true));
       return;
     }
-    const params = new URLSearchParams({ node: 'reader', tab: 'reader',
+    const params = new URLSearchParams({ panel: 'reader',
       documentVersionId: evidence.documentVersionId, sourceRef: evidence.sourceRefId,
       returnWorkItemId: workItemId });
-    navigate(`/work-items/${encodeURIComponent(evidence.workItemId)}/documents?${params}`);
+    navigate(`/work-items/${encodeURIComponent(evidence.workItemId)}/analysis?${params}`);
   }
 
   return (
@@ -316,7 +316,7 @@ export default function WorkItemOverviewPage() {
             variant="outline"
             onClick={() =>
               navigate(
-                `/work-items/${encodeURIComponent(workItemId)}/documents?node=assessment&tab=assessment`,
+                `/work-items/${encodeURIComponent(workItemId)}/analysis?panel=assessment`,
               )
             }
           >

@@ -92,7 +92,7 @@ describe('recent WorkItem navigation references', () => {
   it('resolves both a workbench route and a library query deep link', () => {
     expect(
       workItemIdFromLocator(
-        'http://localhost:8081/work-items/WI-ROUTE-1/documents?node=reader',
+        'http://localhost:8081/work-items/WI-ROUTE-1/analysis?panel=reader',
       ),
     ).toBe('WI-ROUTE-1');
     expect(

@@ -59,13 +59,58 @@ export function getWorkbenchNode(value: string | null): WorkbenchNode {
   return 'assessment';
 }
 
+export function getWorkbenchPanel(params: URLSearchParams): WorkbenchNode {
+  const panels: string[] = params.getAll('panel');
+  return panels.length === 1 ? getWorkbenchNode(panels[0]) : 'assessment';
+}
+
+export function workItemAnalysisRoute(
+  workItemId: string,
+  panel: WorkbenchNode,
+  state?: URLSearchParams,
+): string {
+  const normalizedWorkItemId: string = workItemId.trim();
+  if (!normalizedWorkItemId) {
+    throw new Error('WORKITEM_ID_REQUIRED');
+  }
+  const params: URLSearchParams = new URLSearchParams(state);
+  params.delete('node');
+  params.delete('tab');
+  params.delete('panel');
+  params.set('panel', panel);
+  return `/work-items/${encodeURIComponent(normalizedWorkItemId)}/analysis?${params.toString()}`;
+}
+
+export function legacyDocumentWorkbenchRoute(
+  workItemId: string,
+  search: string,
+): string {
+  const params: URLSearchParams = new URLSearchParams(search);
+  const nodes: string[] = params.getAll('node');
+  const tabs: string[] = params.getAll('tab');
+  const legacyValue: string | null =
+    nodes.length > 0
+      ? nodes.length === 1
+        ? nodes[0]
+        : null
+      : tabs.length === 1 && tabs[0] !== 'source'
+        ? tabs[0]
+        : tabs.length === 1
+          ? 'document'
+          : null;
+  return workItemAnalysisRoute(
+    workItemId,
+    getWorkbenchNode(legacyValue),
+    params,
+  );
+}
+
 export function structuredSourceDeepLink(
   sourceRef: string,
   pageStart: number | null | undefined,
 ): Record<string, string | null> {
   return {
-    node: 'package',
-    tab: 'package',
+    panel: 'package',
     unit: null,
     sourceRef,
     readerMode: null,

@@ -466,7 +466,7 @@ export default function EngineeringIssueSearch({
                 navigate(matterDocumentRoute(matterId, evidence, 'materials', '', params));
               else if (selected.identity.subjectKind === 'ENGINEERING_MATTER')
                 navigate(matterDocumentRoute(selected.identity.subjectId, evidence, 'brief', selected.identity.workRef));
-              else navigate(`/work-items/${encodeURIComponent(evidence.workItemId)}/documents?${new URLSearchParams({ node: 'reader', tab: 'reader', documentVersionId: evidence.documentVersionId, sourceRef: evidence.sourceRefId, returnWorkItemId: selected.identity.subjectId })}`);
+              else navigate(`/work-items/${encodeURIComponent(evidence.workItemId)}/analysis?${new URLSearchParams({ panel: 'reader', documentVersionId: evidence.documentVersionId, sourceRef: evidence.sourceRefId, returnWorkItemId: selected.identity.subjectId })}`);
             }}
           />
         </aside>

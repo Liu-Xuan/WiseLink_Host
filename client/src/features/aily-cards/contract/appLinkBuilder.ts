@@ -20,13 +20,13 @@ export function workbenchPathOf(view: WorkbenchView): string {
     case 'overview':
       return `/work-items/${encodeURIComponent(view.workItemId)}?view=overview`;
     case 'source':
-      return `/work-items/${encodeURIComponent(view.workItemId)}/documents${
+      return `/work-items/${encodeURIComponent(view.workItemId)}/analysis?panel=reader&readerMode=source${
         view.sourceRef
-          ? `?view=source&sourceRef=${encodeURIComponent(view.sourceRef)}`
+          ? `&sourceRef=${encodeURIComponent(view.sourceRef)}`
           : ''
       }`;
     case 'documents':
-      return `/work-items/${encodeURIComponent(view.workItemId)}/documents`;
+      return `/work-items/${encodeURIComponent(view.workItemId)}/analysis`;
     case 'library':
       return '/library';
     case 'home':

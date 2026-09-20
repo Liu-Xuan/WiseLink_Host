@@ -320,16 +320,15 @@ function WorkspaceHomeContent() {
         selectedDocumentVersionId: projection.documentVersionId })}`);
       return;
     }
-    const targetTab: string = targetNode === 'document' ? 'source' : targetNode;
     navigate(
-      `/work-items/${encodeURIComponent(projection.workItemId)}/documents?node=${targetNode}&tab=${targetTab}`,
+      `/work-items/${encodeURIComponent(projection.workItemId)}/analysis?panel=${targetNode}`,
     );
   }
 
   function locateQuicklookEvidence(sourceRefId: string): void {
     if (!projection || !sourceRefId) return;
     navigate(
-      `/work-items/${encodeURIComponent(projection.workItemId)}/documents?node=reader&tab=reader&readerMode=source&sourceRef=${encodeURIComponent(sourceRefId)}`,
+      `/work-items/${encodeURIComponent(projection.workItemId)}/analysis?panel=reader&readerMode=source&sourceRef=${encodeURIComponent(sourceRefId)}`,
     );
   }
 
@@ -374,7 +373,7 @@ function WorkspaceHomeContent() {
       assertSameWorkItemReparseReadback(readback, expected);
       if (!isCurrent()) return;
       navigate(
-        `/work-items/${encodeURIComponent(expected.workItemId)}/documents?node=document&tab=source`,
+        `/work-items/${encodeURIComponent(expected.workItemId)}/analysis?panel=document`,
         {
           state: {
             documentParsingHandoff: createCanonicalDocumentParsingRouteHandoff(
@@ -745,7 +744,7 @@ function WorkspaceHomeContent() {
                         deepLinkedWorkItemId, searchParams, true));
                       return;
                     }
-                    navigate(`/work-items/${encodeURIComponent(evidence.workItemId)}/documents?${new URLSearchParams({ node: 'reader', tab: 'reader', documentVersionId: evidence.documentVersionId, sourceRef: evidence.sourceRefId, returnLibraryWorkItemId: deepLinkedWorkItemId }).toString()}`);
+                    navigate(`/work-items/${encodeURIComponent(evidence.workItemId)}/analysis?${new URLSearchParams({ panel: 'reader', documentVersionId: evidence.documentVersionId, sourceRef: evidence.sourceRefId, returnLibraryWorkItemId: deepLinkedWorkItemId }).toString()}`);
                   }}
                 />
               )}

@@ -48,12 +48,12 @@ export function matterDocumentRoute(
     return `${matterOverviewRoute(matterId)}?${params.toString()}`;
   }
   const params: URLSearchParams = new URLSearchParams({
-    node: 'reader', tab: 'reader', readerMode: 'structured',
+    panel: 'reader', readerMode: 'structured',
     documentVersionId: evidence.documentVersionId,
   });
   if (evidence.sourceRefId) params.set('sourceRef', evidence.sourceRefId);
   returnParams.forEach((value, key) => params.set(key, value));
-  return `/work-items/${encodeURIComponent(evidence.workItemId)}/documents?${params.toString()}`;
+  return `/work-items/${encodeURIComponent(evidence.workItemId)}/analysis?${params.toString()}`;
 }
 
 export function exactDocumentSourceRoute(

@@ -552,7 +552,7 @@ export function HostedDevelopmentIntake() {
         ) : null}
         {failedWorkItemId ? (
           <Link
-            to={`/work-items/${encodeURIComponent(failedWorkItemId)}/documents?node=reader&tab=reader`}
+            to={`/work-items/${encodeURIComponent(failedWorkItemId)}/analysis?panel=reader`}
           >
             查看已登记事项及失败详情
           </Link>

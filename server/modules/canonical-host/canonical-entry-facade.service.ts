@@ -67,7 +67,7 @@ function requiredDeepLink(
   }
   const basePath = origin.pathname.replace(/\/$/u, '');
   const expectedPath: string =
-    `${basePath}/work-items/${encodeURIComponent(workItemId)}/documents`;
+    `${basePath}/work-items/${encodeURIComponent(workItemId)}/analysis`;
   if (
     parsed.protocol !== 'https:' ||
     origin.protocol !== 'https:' ||

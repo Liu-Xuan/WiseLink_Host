@@ -27,10 +27,10 @@ describe('R05.9 contextual navigation', () => {
     expect(context.displayCode).toBe('737-34-3830');
     expect(context.statusLabel).toBe('历史登记版本 · 原文未核验');
     expect(context.routes.review).toBe(
-      '/work-items/WI-737%2F34/documents?node=review&tab=review',
+      '/work-items/WI-737%2F34/analysis?panel=review',
     );
     expect(context.routes.family).toBe(
-      '/work-items/WI-737%2F34/documents?node=document&tab=source',
+      '/work-items/WI-737%2F34/analysis?panel=document',
     );
   });
 
@@ -118,8 +118,8 @@ describe('R05.9 contextual navigation', () => {
   it('restores the current object identity from workbench and library preview routes', () => {
     expect(
       currentRouteWorkItemId(
-        '/work-items/WI-737%2F34/documents',
-        '?node=reader',
+        '/work-items/WI-737%2F34/analysis',
+        '?panel=reader',
       ),
     ).toBe('WI-737/34');
     expect(

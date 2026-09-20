@@ -396,7 +396,7 @@ async function verticalFixture() {
         bindingStatus: 'VERIFIED_CANONICAL',
         appId: 'fixture-app',
         origin: 'https://fixture.invalid',
-        deepLink: `https://fixture.invalid/work-items/${workItemId}/documents`,
+        deepLink: `https://fixture.invalid/work-items/${workItemId}/analysis`,
       }),
     }),
     {} as never,

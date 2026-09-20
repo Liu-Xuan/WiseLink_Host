@@ -150,7 +150,7 @@ export function AeoAuthoringWorkspace({
           </div>
           <Link
             className="aeo-authoring-reader-link"
-            to={`/work-items/${encodeURIComponent(workItemId)}/documents?node=reader&tab=reader`}
+            to={`/work-items/${encodeURIComponent(workItemId)}/analysis?panel=reader`}
           >
             返回原文查看同一事项的来源
           </Link>

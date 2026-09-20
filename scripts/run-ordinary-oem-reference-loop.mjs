@@ -508,7 +508,7 @@ for (const version of VERSIONS) {
   assert.equal(page.workItem.package.packageId, version.packageId);
   assert.equal(
     page.entry.deepLinkPath,
-    `${APP_ORIGIN}/work-items/${version.workItemId}/documents`,
+    `${APP_ORIGIN}/work-items/${version.workItemId}/analysis`,
   );
   assert.equal('assessment' in first.result.workItem, false);
   assert.equal('aeo' in first.result.workItem, false);

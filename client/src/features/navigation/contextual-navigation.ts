@@ -74,15 +74,15 @@ export function countQuicklookDerivedArtifacts(
 
 function workItemRoutes(workItemId: string) {
   const encoded: string = encodeURIComponent(workItemId);
-  const workbench: string = `/work-items/${encoded}/documents`;
+  const workbench: string = `/work-items/${encoded}/analysis`;
   return {
     overview: `/work-items/${encoded}`,
-    workspace: `${workbench}?node=reader&tab=reader&readerMode=structured`,
-    process: `${workbench}?node=overall&tab=overall`,
-    jobAid: `${workbench}?node=assessment&tab=assessment`,
-    review: `${workbench}?node=review&tab=review`,
-    history: `${workbench}?node=overall&tab=overall#workspace-history`,
-    family: `${workbench}?node=document&tab=source`,
+    workspace: `${workbench}?panel=reader&readerMode=structured`,
+    process: `${workbench}?panel=overall`,
+    jobAid: `${workbench}?panel=assessment`,
+    review: `${workbench}?panel=review`,
+    history: `${workbench}?panel=overall#workspace-history`,
+    family: `${workbench}?panel=document`,
   };
 }
 

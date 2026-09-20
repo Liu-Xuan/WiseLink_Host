@@ -109,7 +109,7 @@ export function withGraphReturn(route: string, graphQuery: URLSearchParams): str
   const path = queryStart === -1 ? route : route.slice(0, queryStart);
   const raw = queryStart === -1 ? '' : route.slice(queryStart + 1);
   const match = /^\/(document-versions|matters)\/([^/]+)(\/process)?$/.exec(path);
-  const workItemDocumentMatch = /^\/work-items\/([^/]+)\/documents$/.exec(path);
+  const workItemDocumentMatch = /^\/work-items\/([^/]+)\/(?:analysis|documents)$/.exec(path);
   if (!match && !workItemDocumentMatch) return route;
   const params = new URLSearchParams(raw);
   if (workItemDocumentMatch) {
