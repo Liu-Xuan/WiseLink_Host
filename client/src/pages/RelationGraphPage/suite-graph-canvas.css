@@ -187,9 +187,9 @@
 .suite-graph-hub-portrait {
   display: grid;
   place-items: center;
-  width: 141px;
-  height: 81px;
-  margin-top: 2px;
+  flex: 0 0 auto;
+  width: 132px;
+  height: 58px;
   overflow: hidden;
   border-radius: 66px 66px 8px 8px;
   background: color-mix(in srgb, var(--wl-accent) 8%, var(--wl-sheet));
@@ -201,19 +201,20 @@
 
 .suite-graph-hub strong {
   display: -webkit-box;
+  flex: 0 0 auto;
   -webkit-box-orient: vertical;
   -webkit-line-clamp: 2;
   max-width: 165px;
-  margin-top: 9px;
+  margin-top: 6px;
   overflow-wrap: anywhere;
   overflow: hidden;
   font-size: 14px;
-  line-height: 1.5;
+  line-height: 1.35;
   text-align: center;
 }
 
-.suite-graph-hub small { margin-top: 3px; color: var(--wl-muted); font-size: 10px; }
-.suite-graph-hub-sub { margin-top: 3px; color: var(--wl-accent); font-size: 10px; }
+.suite-graph-hub small { flex: 0 0 auto; margin-top: 2px; color: var(--wl-muted); font-size: 10px; }
+.suite-graph-hub-sub { flex: 0 0 auto; margin-top: 2px; color: var(--wl-accent); font-size: 10px; }
 
 .suite-graph-hub.is-selected {
   border-color: var(--wl-accent);
