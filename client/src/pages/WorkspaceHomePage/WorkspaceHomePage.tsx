@@ -105,14 +105,14 @@ function WorkspaceHomeContent() {
   const selectionRef = useRef(deepLinkedWorkItemId);
   selectionRef.current = deepLinkedWorkItemId;
   const directory = useLibraryDocuments(
-    search,
+    treeMode === 'matter' ? '' : search,
     sessionGeneration,
     authenticationRequired,
     refreshRevision,
     treeMode === 'tasks' ? 'tasks' : 'document',
     treeMode === 'tasks' ? familyId : '',
-    treeMode !== 'matter',
-    catalogFilters,
+    !authenticationRequired,
+    treeMode === 'matter' ? {} : catalogFilters,
   );
   useReadingLocation(libraryReadingScope(searchParams), sessionGeneration,
     treeMode === 'document' && !authenticationRequired && !directory.loading && !directory.error,
@@ -529,6 +529,7 @@ function WorkspaceHomeContent() {
           <LibraryMatterDirectory
             key={`${sessionGeneration}:${search}:${deepLinkedWorkItemId}:${refreshRevision}`}
             directory={matters}
+            documentDirectory={directory}
             sessionGeneration={sessionGeneration}
             authenticationRequired={authenticationRequired}
             searchText={searchText}
@@ -539,6 +540,10 @@ function WorkspaceHomeContent() {
             onRefresh={refresh}
             onCreateFromTask={() => viewTasks()}
             onViewAll={viewMatters}
+            onViewDocuments={(ata?: string) =>
+              filterDocuments(ata ? { ata } : {}, true)
+            }
+            onViewTasks={() => viewTasks()}
             onSelect={selectMatter}
           />
         ) : (
@@ -565,7 +570,7 @@ function WorkspaceHomeContent() {
               <aside className="suite-library-folder" aria-label="资料分组">
                 <div className="suite-folder-head"><strong>资料分组</strong><span>目录</span></div>
                 <button type="button" className={`suite-folder-row${!Object.values(catalogFilters).some(Boolean) ? ' active' : ''}`} onClick={() => filterDocuments({})}><span>全部资料</span><small>{directory.totalCount ?? directory.items.length}</small></button>
-                {Object.entries(directory.ataCounts ?? {}).slice(0, 8).map(([ata, count]) => <button type="button" className={`suite-folder-row${catalogFilters.ata === ata ? ' active' : ''}`} key={ata} onClick={() => filterDocuments({ ...catalogFilters, ata })}><span>ATA {ata}</span><small>{count}</small></button>)}
+                {Object.entries(directory.ataCounts ?? {}).map(([ata, count]) => <button type="button" className={`suite-folder-row${catalogFilters.ata === ata ? ' active' : ''}`} key={ata} onClick={() => filterDocuments({ ...catalogFilters, ata })}><span>ATA {ata}</span><small>{count}</small></button>)}
                 <div className="suite-folder-separator">阅读范围</div>
                 <button type="button" className={`suite-folder-row${treeMode === 'tasks' ? ' active' : ''}`} onClick={() => viewTasks()}><span>评估任务</span><small>{directory.items.length}</small></button>
                 <button type="button" className="suite-folder-row" onClick={() => filterDocuments({}, true)}><span>清除筛选</span></button>

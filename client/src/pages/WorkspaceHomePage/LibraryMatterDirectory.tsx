@@ -5,6 +5,7 @@ import { ArrowRight, BookOpen, RefreshCw, Search } from 'lucide-react';
 import { Button } from '@client/src/components/ui/button';
 import { Input } from '@client/src/components/ui/input';
 import type useMatterDirectory from '@client/src/features/matter/useMatterDirectory';
+import type { useLibraryDocuments } from './useLibraryDocuments';
 import { libraryDateLabel } from './library-document-presentation';
 import LibraryMatterQuicklook from './LibraryMatterQuicklook';
 import type { EngineeringMatterWorkspaceRead } from '@client/src/api/engineering-matter';
@@ -14,6 +15,7 @@ import { libraryMatterReadingRoute } from '@client/src/features/matter/reading-r
 
 export default function LibraryMatterDirectory({
   directory,
+  documentDirectory,
   authenticationRequired,
   sessionGeneration,
   searchText,
@@ -24,9 +26,12 @@ export default function LibraryMatterDirectory({
   onCreateFromTask,
   filteredByWorkItem,
   onViewAll,
+  onViewDocuments,
+  onViewTasks,
   onSelect,
 }: {
   directory: ReturnType<typeof useMatterDirectory>;
+  documentDirectory: ReturnType<typeof useLibraryDocuments>;
   authenticationRequired: boolean;
   sessionGeneration: number;
   searchText: string;
@@ -37,6 +42,8 @@ export default function LibraryMatterDirectory({
   onCreateFromTask(): void;
   filteredByWorkItem: boolean;
   onViewAll(): void;
+  onViewDocuments(ata?: string): void;
+  onViewTasks(): void;
   onSelect(matterId: string): void;
 }) {
   const [searchParams] = useSearchParams();
@@ -63,13 +70,43 @@ export default function LibraryMatterDirectory({
     <section
       className="atlas-library-browser suite-matter-browser"
       aria-label="工程事项目录"
-      aria-busy={directory.loading}
+      aria-busy={directory.loading || documentDirectory.loading}
     >
       <aside className="suite-library-folder" aria-label="事项分组">
-        <div className="suite-folder-head"><strong>资料分组</strong></div>
-        <button type="button" className="suite-folder-row active" onClick={onViewAll}>工程事项 <small>已读取 {directory.items.length}</small></button>
+        <div className="suite-folder-head"><strong>资料分组</strong><span>目录</span></div>
+        <button type="button" className="suite-folder-row" onClick={() => onViewDocuments()}>
+          <span>全部资料</span>
+          <small>
+            {documentDirectory.loading
+              ? '读取中'
+              : documentDirectory.error
+                ? '暂不可用'
+                : documentDirectory.totalCount ?? documentDirectory.items.length}
+          </small>
+        </button>
+        {documentDirectory.error ? (
+          <p role="alert">资料目录暂不可用，可刷新后重试。</p>
+        ) : null}
+        {Object.entries(documentDirectory.ataCounts ?? {}).map(([ata, count]) => (
+          <button
+            type="button"
+            className="suite-folder-row"
+            key={ata}
+            onClick={() => onViewDocuments(ata)}
+          >
+            <span>ATA {ata}</span>
+            <small>{count}</small>
+          </button>
+        ))}
         {filteredByWorkItem ? <p>当前按关联任务筛选。</p> : null}
         <div className="suite-folder-separator">阅读范围</div>
+        <button type="button" className="suite-folder-row active" onClick={onViewAll}>
+          <span>工程事项</span>
+          <small>{directory.items.length}</small>
+        </button>
+        <button type="button" className="suite-folder-row" onClick={onViewTasks}>
+          <span>评估任务</span>
+        </button>
         <p>按当前账户可读取的事项展示。</p>
       </aside>
       <div className="atlas-library-list">

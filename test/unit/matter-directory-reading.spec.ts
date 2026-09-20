@@ -40,7 +40,7 @@ const summary: AssessmentReadingSummary = {
 
 describe('real matter directory and saved list summaries', () => {
   it('separates real matters from legacy WorkItem links and the document catalog', () => {
-    expect(libraryViewMode(new URLSearchParams())).toBe('matter');
+    expect(libraryViewMode(new URLSearchParams())).toBe('document');
     expect(libraryViewMode(new URLSearchParams('mode=document'))).toBe(
       'document',
     );
@@ -124,31 +124,35 @@ describe('real matter directory and saved list summaries', () => {
       resultRef: 'saved-result-B',
     };
     const html = renderToStaticMarkup(
-      createElement(LibraryDocumentDirectory, {
-        directory: {
-          items: response.items,
-          nextCursor: null,
-          loading: false,
-          loadingMore: false,
-          error: null,
-          totalCount: undefined,
-          familyCounts: undefined,
-          ataCounts: undefined,
-          aircraftModelCounts: undefined,
-          discard: jest.fn(),
-          loadMore: jest.fn(),
-        },
-        authenticationRequired: false,
-        search: '',
-        searchText: '',
-        mode: 'tasks',
-        selectedId: 'WI-A',
-        quicklookLoading: false,
-        onSearchTextChange: jest.fn(),
-        onSearch: jest.fn(),
-        onRefresh: jest.fn(),
-        onSelect: jest.fn(),
-      }),
+      createElement(
+        StaticRouter,
+        { location: '/library?mode=tasks' },
+        createElement(LibraryDocumentDirectory, {
+          directory: {
+            items: response.items,
+            nextCursor: null,
+            loading: false,
+            loadingMore: false,
+            error: null,
+            totalCount: undefined,
+            familyCounts: undefined,
+            ataCounts: undefined,
+            aircraftModelCounts: undefined,
+            discard: jest.fn(),
+            loadMore: jest.fn(),
+          },
+          authenticationRequired: false,
+          search: '',
+          searchText: '',
+          mode: 'tasks',
+          selectedId: 'WI-A',
+          quicklookLoading: false,
+          onSearchTextChange: jest.fn(),
+          onSearch: jest.fn(),
+          onRefresh: jest.fn(),
+          onSelect: jest.fn(),
+        }),
+      ),
     );
     expect(html).toContain('data-result-ref="saved-result-B"');
     expect(html.split('data-claim-id="condition-4"')).toHaveLength(3);
