@@ -15,12 +15,13 @@
 - `/graph?matterId=MAT-d9e6c294-f368-42e4-9a1b-b46c6170be02&workRef=MWREV-2ac8099c-04f1-4149-9ccb-6f40120a3b68` 中央 Cytoscape 画布可见，中心事项、分组卡片、右侧知识正文均显示；当前可见对象 6、关系 2，坏相机没有将画布推到首屏外。
 - `/situation` 真实宏观页读取 2 个授权事项，显示“当前仅取得部分范围”，未用空态或构造数量掩盖未知。
 - 聚焦事项 `/matters/MAT-d9e6c294-f368-42e4-9a1b-b46c6170be02/posture` 显示真实事项标题、当前授权范围和态势双环；数据尚在读取时保留明确的“正在取得授权资料”状态。
+- 聚焦态势选择“工程文件”后读取准确 `document_version_78c6d0adb612265f85e1d338`；进入 Reader 的 URL 同时绑定该文档版本、事项、`source=documents` 和 `pageY=0`。Reader 的“返回当前工程态势”回到原事项与原来源，数据加载后双环与右侧工程文件卡片恢复，证明本样本的来源下钻与显式返回闭合。
 
 本批态势来源/工作下钻新增严格 `returnSituation*` 协议：只允许受控 stage/source/pageY，绑定准确
 documentVersionId、matterId/workRef，拒绝重复、冲突、混入其他 return 意图和非法内部路由；滚动保存/恢复使用实际
 `.wiselink-app-body`，并在 requestAnimationFrame 真正执行后记录恢复标记。Astra medium 独立复审发现的态势弹窗绕过返回协议已改为同事项返回、跨事项先聚焦；相关 33 项回归、client typecheck、ESLint、生产构建和 diff check 通过。
 
-以上是技术发布和真实登录页面技术证据，不等同于完整线上业务验收。尚未闭合：态势来源真实点击往返的全覆盖、宏观分页安全、撤权/缺失版本负例、Wiki/Overall/检索同源核对、部署冷暖性能分布和真实长 SB；内置浏览器因认证 token 缺失未用于本批证据。
+以上是技术发布和真实登录页面技术证据，不等同于完整线上业务验收。尚未闭合：其他来源类别与历史工作的真实点击往返、宏观分页安全、撤权/缺失版本负例、Wiki/Overall/检索同源核对、部署冷暖性能分布和真实长 SB；内置浏览器因认证 token 缺失未用于本批证据。
 
 ## 2026-09-17 c113安装目录与调度恢复实际证据
 
