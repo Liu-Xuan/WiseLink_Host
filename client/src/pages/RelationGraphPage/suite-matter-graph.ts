@@ -81,9 +81,10 @@ export function buildSuiteMatterGraph(read: EngineeringMatterWorkspaceRead, sele
     const id = identity('material', material.materialId);
     const catalog = matter.catalog.entries.find(entry => entry.document.documentVersionId === material.documentVersionId);
     const title = material.kind === 'EXPECTED' ? material.expected.documentNumber || material.expected.description :
-      catalog ? `${catalog.document.documentCode} · ${catalog.document.businessRevision}` : `资料版本 ${material.documentVersionId}`;
+      catalog ? `${catalog.document.documentCode} · ${catalog.document.businessRevision}` : '资料版本';
     const labels = { MEMBER: '事项资料', RELATED: '参考资料', EXPECTED: '预计资料' };
-    add(material.kind, labels[material.kind], id, title, material.contribution, { kind: 'material', material });
+    add(material.kind, labels[material.kind], id, title,
+      material.contribution || (catalog ? '' : material.documentVersionId), { kind: 'material', material });
     relationDetails.set(identity('material-link', material.materialId), material);
     relations.push({ id: identity('material-link', material.materialId), source: root, target: id, type: material.kind, label: labels[material.kind] });
     if (material.kind === 'EXPECTED') {
@@ -104,7 +105,8 @@ export function buildSuiteMatterGraph(read: EngineeringMatterWorkspaceRead, sele
     notices.push('正在阅读指定历史工作；当前材料目录不作为当时采用的依据。');
     for (const binding of current.state.substantiveInputs) {
       const id = identity('input', workRef, binding.inputId);
-      add('inputs', '当时保存的输入', id, `资料版本 ${binding.documentVersionId}`, '', {kind: 'input', binding, workRef});
+      add('inputs', '当时保存的输入', id, '资料版本', binding.documentVersionId,
+        {kind: 'input', binding, workRef});
       relations.push({id: identity('saved-input', workRef, binding.inputId), source: root, target: id, type: 'SAVED_INPUT', label: '该工作保存的输入'});
     }
   }

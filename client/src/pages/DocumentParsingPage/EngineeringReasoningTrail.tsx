@@ -99,7 +99,6 @@ export function EngineeringReasoningTrail({
   return (
     <section
       className="engineering-reasoning-trail"
-      id="workspace-reasoning"
       aria-label="可解释工程分析记录"
     >
       <header>

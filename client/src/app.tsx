@@ -10,6 +10,7 @@ import EngineeringSituationPage from './pages/EngineeringSituationPage/Engineeri
 import EngineeringSituationVisualPreviewPage from './pages/EngineeringSituationPage/EngineeringSituationVisualPreviewPage';
 import EngineeringTimelinePage from './pages/EngineeringTimelinePage/EngineeringTimelinePage';
 import DocumentParsingPage from './pages/DocumentParsingPage/DocumentParsingPage';
+import LegacyDocumentWorkbenchRoute from './pages/DocumentParsingPage/LegacyDocumentWorkbenchRoute';
 import DocumentVersionReadingPage from './pages/DocumentParsingPage/DocumentVersionReadingPage';
 import DocumentRevisionReadingPage from './pages/DocumentParsingPage/DocumentRevisionReadingPage';
 import DocumentActivityReadingPage from './pages/DocumentParsingPage/DocumentActivityReadingPage';
@@ -86,8 +87,12 @@ const RoutesComponent = () => {
         <Route path="graph" element={<RelationGraphPage />} />
         <Route path="knowledge" element={<KnowledgeLookupPage />} />
         <Route
-          path="work-items/:workItemId/documents"
+          path="work-items/:workItemId/analysis"
           element={<DocumentParsingPage />}
+        />
+        <Route
+          path="work-items/:workItemId/documents"
+          element={<LegacyDocumentWorkbenchRoute />}
         />
         {/* Compatibility entries resolve only to existing authorized version readers. */}
         <Route path="reader/:documentId" element={<ReaderPageAdapter />} />

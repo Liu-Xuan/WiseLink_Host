@@ -43,6 +43,7 @@ test('registered shell routes have concrete breadcrumbs instead of a not-found l
     ['/library', ''],
     ['/work-items/WI-1', ''],
     ['/work-items/WI-1/documents', '?node=reader'],
+    ['/work-items/WI-1/analysis', '?panel=reader'],
     ['/matters/MAT-1', ''],
     ['/matters/MAT-1', '?workRef=MWREV-1'],
     ['/document-versions/DV-1', ''],
@@ -177,9 +178,9 @@ test('WorkItem navigation retains the existing assessment and reader paths', () 
   );
   expect(links.map((item) => item.to)).toEqual(
     expect.arrayContaining([
-      '/work-items/WI%2F7/documents?node=assessment&tab=assessment',
-      '/work-items/WI%2F7/documents?node=reader&tab=source',
-      '/work-items/WI%2F7/documents?node=review&tab=review',
+      '/work-items/WI%2F7/analysis?panel=assessment',
+      '/work-items/WI%2F7/analysis?panel=reader',
+      '/work-items/WI%2F7/analysis?panel=review',
     ]),
   );
 });

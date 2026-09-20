@@ -184,6 +184,9 @@ export default function SuiteMatterGraphView({
   const [relationMode, setRelationMode] = useState<SuiteGraphRelationMode>(
     () => initialState?.relationMode ?? 'aggregated',
   );
+  const [layoutMode, setLayoutMode] = useState<'reference' | 'force'>(
+    () => initialState?.layoutMode ?? 'force',
+  );
   const [density, setDensity] = useState<number>(
     () => initialState?.density ?? 4,
   );
@@ -227,11 +230,12 @@ export default function SuiteMatterGraphView({
     () => buildSuiteGraphPresentation(graph, {
       hiddenGroups: effectiveHiddenGroups,
       relationMode,
+      layoutMode,
       density,
       page,
       maxGroups: 6,
     }),
-    [density, effectiveHiddenGroups, graph, page, relationMode],
+    [density, effectiveHiddenGroups, graph, layoutMode, page, relationMode],
   );
   const selectedTarget = selectedId ? read.targets.get(selectedId) ?? null : null;
   const selectedEvent = useMemo(
@@ -270,6 +274,7 @@ export default function SuiteMatterGraphView({
       page,
       density,
       relationMode,
+      layoutMode,
       perspective,
       viewport: viewportByPerspective.current.get(perspective),
       eventId: selectedEventId ?? undefined,
@@ -282,6 +287,7 @@ export default function SuiteMatterGraphView({
   }, [
     density,
     effectiveHiddenGroups,
+    layoutMode,
     onStateChange,
     page,
     perspective,
@@ -567,6 +573,11 @@ export default function SuiteMatterGraphView({
                 ariaLabel="工程事项关系图谱"
               />
               <div className="suite-graph-canvas-tools" aria-label="图谱画布控制">
+                <Button size="icon" variant="ghost" aria-label="力导向布局" title="力导向布局" aria-pressed={layoutMode === 'force'} onClick={() => {
+                  setLayoutMode((mode) => mode === 'force' ? 'reference' : 'force');
+                  viewportByPerspective.current.delete(perspective);
+                  canvasRef.current?.setViewport(null);
+                }}><Network /></Button>
                 <Button
                   size="sm"
                   variant="ghost"

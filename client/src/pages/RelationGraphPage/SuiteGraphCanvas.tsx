@@ -104,6 +104,7 @@ const NARROW_ENTRY_MAX_WIDTH = 760;
 const NARROW_ENTRY_ZOOM = 0.85;
 const NARROW_FOCUS_PADDING = 28;
 const NARROW_READABLE_MIN_ZOOM = 0.55;
+const DESKTOP_READABLE_MIN_ZOOM = 0.82;
 const NARROW_LAYOUT_QUERY = `(max-width: ${NARROW_ENTRY_MAX_WIDTH}px)`;
 
 function clampZoom(level: number, cy: Core): number {
@@ -227,6 +228,7 @@ function buildStyleSheet(tokens: ThemeTokens): StylesheetStyle[] {
     },
     { selector: '.bundle-edge', style: { width: 1.3, opacity: 0.68 } },
     { selector: '.business-edge', style: { width: 1, opacity: 0.28, 'font-size': '10px' } },
+    { selector: '.suite-small-edge-label', style: { label: '' } },
   ];
   Object.entries(tokens.tones).forEach(([toneName, tone]) => {
     sheets.push({
@@ -519,7 +521,21 @@ const SuiteGraphCanvas = forwardRef<SuiteGraphCanvasHandle, SuiteGraphCanvasProp
   const applyAutoCamera = useCallback((cy: Core) => {
     internalCameraRef.current = true;
     if (isNarrowLayout()) applyNarrowFocus(cy);
-    else cy.fit(undefined, 24);
+    else {
+      cy.fit(undefined, 24);
+      if (cy.zoom() < DESKTOP_READABLE_MIN_ZOOM) {
+        cy.zoom(clampZoom(DESKTOP_READABLE_MIN_ZOOM, cy));
+        const selected = selectedIdRef.current;
+        const focus = selected
+          ? elementsRef.current.find((element) => element.group === 'nodes'
+            && (element.data.businessId === selected || element.data.id === selected))
+          : undefined;
+        const node = focus
+          ? cy.getElementById(String(focus.data.id))
+          : cy.nodes('.matter-root');
+        if (node.length) cy.center(node);
+      }
+    }
     internalCameraRef.current = false;
   }, [applyNarrowFocus]);
 
@@ -536,7 +552,13 @@ const SuiteGraphCanvas = forwardRef<SuiteGraphCanvasHandle, SuiteGraphCanvasProp
       boxSelectionEnabled: false,
       style: buildStyleSheet(readThemeTokens(mount)),
     });
+    let labelsHidden = false;
     const sync = () => {
+      const hideLabels = cy.zoom() < 0.9;
+      if (labelsHidden !== hideLabels && typeof cy.edges === 'function') {
+        labelsHidden = hideLabels;
+        cy.edges().toggleClass('suite-small-edge-label', hideLabels);
+      }
       const next = cy.nodes().map((node) => ({ id: node.id(), data: node.data() as Record<string, unknown>, position: node.renderedPosition() }));
       setOverlayNodes(next);
       const nextCamera = { zoom: cy.zoom(), pan: cy.pan() };
@@ -599,6 +621,9 @@ const SuiteGraphCanvas = forwardRef<SuiteGraphCanvasHandle, SuiteGraphCanvasProp
     dragCleanupRef.current?.(true);
     cy.elements().remove();
     cy.add(cloneElements(presentation.elements));
+    if (typeof cy.edges === 'function') {
+      cy.edges().toggleClass('suite-small-edge-label', cy.zoom() < 0.9);
+    }
     elementsRef.current = presentation.elements;
     const positions = Object.fromEntries(presentation.elements.filter((element) => element.group === 'nodes').map((element) => [String(element.data.id), element.position]));
     if (motionDisabled()) {

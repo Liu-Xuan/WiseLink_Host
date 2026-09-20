@@ -13,7 +13,10 @@ import {
 } from '../../client/src/pages/DocumentParsingPage/workbench-projection';
 import {
   getWorkbenchNode,
+  getWorkbenchPanel,
+  legacyDocumentWorkbenchRoute,
   structuredSourceDeepLink,
+  workItemAnalysisRoute,
   WORKBENCH_TAB_DEFINITIONS,
 } from '../../client/src/pages/DocumentParsingPage/document-parsing-navigation';
 
@@ -32,13 +35,55 @@ describe('canonical Host workbench projection', () => {
 
   it('keeps a structured page locator in the paired package workspace', () => {
     expect(structuredSourceDeepLink('SOURCE-REF-1', 22)).toEqual({
-      node: 'package',
-      tab: 'package',
+      panel: 'package',
       unit: null,
       sourceRef: 'SOURCE-REF-1',
       readerMode: null,
       page: '22',
     });
+  });
+
+  it('uses one canonical analysis route and converts legacy deep links', () => {
+    expect(
+      workItemAnalysisRoute(
+        'WI/1',
+        'review',
+        new URLSearchParams('sourceRef=SRC-1&returnWorkItemId=WI-0'),
+      ),
+    ).toBe(
+      '/work-items/WI%2F1/analysis?sourceRef=SRC-1&returnWorkItemId=WI-0&panel=review',
+    );
+    expect(
+      legacyDocumentWorkbenchRoute(
+        'WI/1',
+        '?node=reader&tab=reader&readerMode=source&sourceRef=SRC-1',
+      ),
+    ).toBe(
+      '/work-items/WI%2F1/analysis?readerMode=source&sourceRef=SRC-1&panel=reader',
+    );
+    expect(getWorkbenchPanel(new URLSearchParams('panel=overall'))).toBe(
+      'overall',
+    );
+    expect(
+      getWorkbenchPanel(new URLSearchParams('panel=review&panel=overall')),
+    ).toBe('assessment');
+    expect(
+      legacyDocumentWorkbenchRoute(
+        'WI-1',
+        '?tab=source&documentVersionId=DV-1&sourceRef=SRC-1&returnGraphQuery=graph%3D1&returnMatterId=MAT-1',
+      ),
+    ).toBe(
+      '/work-items/WI-1/analysis?documentVersionId=DV-1&sourceRef=SRC-1&returnGraphQuery=graph%3D1&returnMatterId=MAT-1&panel=document',
+    );
+    expect(
+      legacyDocumentWorkbenchRoute(
+        'WI-1',
+        '?node=review&node=overall&tab=review',
+      ),
+    ).toBe('/work-items/WI-1/analysis?panel=assessment');
+    expect(
+      legacyDocumentWorkbenchRoute('WI-1', '?node=unknown'),
+    ).toBe('/work-items/WI-1/analysis?panel=assessment');
   });
 
   it('keeps PDF and bilingual modes explicit when Host data is absent', () => {

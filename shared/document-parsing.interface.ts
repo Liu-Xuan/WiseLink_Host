@@ -17,6 +17,15 @@ export interface DocumentParseRunSummary {
 
 export interface DocumentParsingStatus {
   documentVersionId: string;
+  familyId: string;
+  documentCode: string;
+  documentTitle: string | null;
+  normalizedFamily: string;
+  issuerAuthority: string;
+  businessRevision: string;
+  revisionDate: string;
+  sourceGeneratedDate: string;
+  selectedVersionIsCurrent: boolean;
   originalFilename: string;
   latestRun: DocumentParseRunSummary | null;
   publishedRun: DocumentParseRunSummary | null;

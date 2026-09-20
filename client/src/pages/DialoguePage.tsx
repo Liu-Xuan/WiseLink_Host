@@ -203,7 +203,7 @@ function DialoguePageContent() {
             评估更新已提交。
             <Link
               className="underline"
-              to={`/work-items/${encodeURIComponent(receipt.workItemId)}/documents?node=review&tab=review`}
+              to={`/work-items/${encodeURIComponent(receipt.workItemId)}/analysis?panel=review`}
             >
               查看执行进度与保存结果
             </Link>

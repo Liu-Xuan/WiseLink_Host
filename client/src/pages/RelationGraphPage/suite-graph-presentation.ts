@@ -9,6 +9,7 @@ import type {
   SuiteGraphRelation,
 } from './suite-graph-model';
 import { suiteGraphAppearance, type SuiteGraphAppearance } from './suite-graph-appearance';
+import { forceCollide, forceManyBody, forceSimulation, forceX, forceY } from 'd3-force';
 
 const GROUP_ID = (key: string) => `sg:group:${key}`;
 const ITEM_ID = (id: string) => `sg:item:${id}`;
@@ -73,7 +74,7 @@ function pushApart(a: GroupForceBody, b: GroupForceBody, strength: number): bool
  * force bodies. The center stays fixed and no relationship is interpreted as
  * a physics constraint.
  */
-function relaxGroupViews(views: SuiteGraphGroupView[]): void {
+function relaxGroupViews(views: SuiteGraphGroupView[], forceDirected = false): void {
   const bodies: GroupForceBody[] = views.map((view) => ({
     view,
     anchorX: view.x,
@@ -95,6 +96,21 @@ function relaxGroupViews(views: SuiteGraphGroupView[]): void {
     vx: 0,
     vy: 0,
   };
+
+  if (forceDirected && bodies.length > 0) {
+    const simulation = forceSimulation(bodies)
+      .force('charge', forceManyBody<GroupForceBody>().strength(-1350))
+      .force('anchor-x', forceX<GroupForceBody>((body) => body.anchorX).strength(0.09))
+      .force('anchor-y', forceY<GroupForceBody>((body) => body.anchorY).strength(0.09))
+      .force('collision', forceCollide<GroupForceBody>((body) =>
+        Math.max(body.view.w, body.view.h) * 0.58 + GROUP_COLLISION_GAP).strength(0.8))
+      .stop();
+    simulation.tick(160);
+    bodies.forEach((body) => {
+      body.vx = 0;
+      body.vy = 0;
+    });
+  }
 
   for (let tick = 0; tick < 120; tick += 1) {
     bodies.forEach((body) => {
@@ -337,7 +353,7 @@ export function buildSuiteGraphPresentation(
   });
 
   const anchors = new Map(views.map((view, index) => [view.key, { x: coords[index][0], y: coords[index][1] }]));
-  relaxGroupViews(views);
+  relaxGroupViews(views, options.layoutMode === 'force');
   elements.forEach((element) => {
     if (element.group !== 'nodes') return;
     const groupKey = typeof element.data.groupKey === 'string' ? element.data.groupKey : '';

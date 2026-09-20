@@ -10,6 +10,7 @@
 .document-version-reading > header { margin-bottom: 20px; }
 .document-version-reading > header > a { color: var(--wl-muted, #70777d); font-size: 11px; }
 .document-version-reading h1 { margin: 12px 0 4px; overflow-wrap: anywhere; font-size: 28px; font-weight: 650; letter-spacing: -.035em; }
+.document-reading-identity { margin: 0; color: var(--wl-muted, #70777d); font-size: 12px; line-height: 1.7; }
 .document-reading-actions { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; margin-top: 14px; }
 .document-reading-maintenance { width: fit-content; margin-top: 8px; }
 .document-reading-maintenance summary { color: var(--wl-muted, #70777d); font-size: 10px; cursor: pointer; }

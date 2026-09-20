@@ -52,20 +52,22 @@ function identifier(value: string | null): string {
 
 /** Read-only directory state, never arbitrary URLs or write-intent parameters. */
 export function libraryReadingParams(params: URLSearchParams): URLSearchParams {
-  const mode = params.getAll('mode').length === 1 && params.get('mode') === 'matter'
-    ? 'matter' : 'document';
+  const requestedMode = params.getAll('mode').length === 1 ? params.get('mode') : null;
+  const mode = requestedMode === 'matter' || requestedMode === 'tasks'
+    ? requestedMode : 'document';
   const result = new URLSearchParams({ mode });
   for (const key of LIBRARY_FILTERS) {
     if (params.getAll(key).length !== 1) continue;
     const value = identifier(params.get(key));
     if (value) result.set(key, value);
   }
-  const selectionKey = mode === 'matter' ? 'selectedMatterId' : 'selectedDocumentVersionId';
-  if (params.getAll(selectionKey).length === 1) {
+  const selectionKey = mode === 'matter' ? 'selectedMatterId'
+    : mode === 'document' ? 'selectedDocumentVersionId' : null;
+  if (selectionKey && params.getAll(selectionKey).length === 1) {
     const value = identifier(params.get(selectionKey));
     if (value) result.set(selectionKey, value);
   }
-  if (mode === 'matter' && params.getAll('workItemId').length === 1) {
+  if ((mode === 'matter' || mode === 'tasks') && params.getAll('workItemId').length === 1) {
     const value = identifier(params.get('workItemId'));
     if (value) result.set('workItemId', value);
   }
@@ -105,6 +107,36 @@ export function libraryDocumentReadingRoute(
     returnLibraryQuery: libraryReadingParams(params).toString(),
   });
   return `/document-versions/${encodeURIComponent(documentVersionId)}?${query}`;
+}
+
+function directDocumentReadingRoute(documentVersionId: string,
+  returnKey: 'returnWorkItemId', workItemId: string,
+  unboundEvidence = false): string {
+  const version = identifier(documentVersionId), workItem = identifier(workItemId);
+  if (!version || !workItem)
+    throw new Error('DOCUMENT_READING_ROUTE_IDENTITY_INVALID');
+  const query = new URLSearchParams({ [returnKey]: workItem });
+  if (unboundEvidence) query.set('unboundEvidence', '1');
+  return `/document-versions/${encodeURIComponent(version)}?${query}`;
+}
+
+export function libraryTaskDocumentReadingRoute(documentVersionId: string,
+  workItemId: string, params: URLSearchParams,
+  unboundEvidence = false): string {
+  const version = identifier(documentVersionId), workItem = identifier(workItemId);
+  if (!version || !workItem) throw new Error('DOCUMENT_READING_ROUTE_IDENTITY_INVALID');
+  const state = new URLSearchParams(params);
+  state.set('mode', 'tasks'); state.set('workItemId', workItem);
+  const query = new URLSearchParams({ returnDocumentVersionId: version,
+    returnLibraryQuery: libraryReadingParams(state).toString() });
+  if (unboundEvidence) query.set('unboundEvidence', '1');
+  return `/document-versions/${encodeURIComponent(version)}?${query}`;
+}
+
+export function workItemDocumentReadingRoute(documentVersionId: string,
+  workItemId: string, unboundEvidence = false): string {
+  return directDocumentReadingRoute(documentVersionId, 'returnWorkItemId', workItemId,
+    unboundEvidence);
 }
 
 /** Bind directory return to the matter being opened, never an arbitrary destination. */
@@ -714,7 +746,9 @@ export function readingReturnTarget(
     return {
       route: `/library?${libraryReadingParams(new URLSearchParams(params.get('returnLibraryQuery')!))}`,
       label: new URLSearchParams(params.get('returnLibraryQuery')!).get('mode') === 'matter'
-        ? '返回原事项目录' : '返回原文档目录',
+        ? '返回原事项目录'
+        : new URLSearchParams(params.get('returnLibraryQuery')!).get('mode') === 'tasks'
+          ? '返回任务快览' : '返回原文档目录',
     };
   }
   if (params.has('returnRevisionQuery')) {

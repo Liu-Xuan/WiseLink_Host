@@ -27,6 +27,7 @@ interface Props {
   overall?: CanonicalOpenClawOverallProjection | null;
   onUpdated?: () => void;
   children?: ReactNode;
+  presentation?: 'default' | 'assessment';
 }
 const completionLabels = {
   IN_PROGRESS: '分析进行中',
@@ -118,6 +119,7 @@ export function JobAidProblemReading({
   initialAnalysis,
   overall,
   onContinue,
+  presentation = 'default',
 }: Omit<Props, 'workItemId' | 'children' | 'onUpdated'> & {
   data: JobAidWorkingReadModel;
   onContinue?: () => void;
@@ -153,7 +155,11 @@ export function JobAidProblemReading({
   );
   if (!current)
     return (
-      <section className="wl-jobaid-workspace">
+      <section
+        className={`wl-jobaid-workspace${
+          presentation === 'assessment' ? ' is-assessment' : ''
+        }`}
+      >
         <p>
           尚无已保存的问题分析。原文和工程师输入仍可阅读；形成的工作会在这里接续。
         </p>
@@ -175,10 +181,55 @@ export function JobAidProblemReading({
       ?.scrollIntoView({ block: 'start', behavior: 'auto' });
     nodes.current.get(issueKey)?.focus({ preventScroll: true });
   }
+  const issueIndex: ReactNode = content.issues.length ? (
+    <nav className="wl-jobaid-index" aria-label="实际问题目录">
+      <span>本轮问题</span>
+      {content.issues.map((issue) => (
+        <button
+          type="button"
+          key={issue.issueKey}
+          aria-current={
+            selectedIssue === issue.issueKey ? 'location' : undefined
+          }
+          onClick={() => locateIssue(issue.issueKey)}
+        >
+          {issue.question}
+        </button>
+      ))}
+    </nav>
+  ) : null;
+  const issueReading: ReactNode = (
+    <div className="wl-jobaid-reading">
+      <header>
+        <h2>{content.headline}</h2>
+        <p>{content.understanding}</p>
+      </header>
+      {content.issues.map((issue) => (
+        <article
+          key={issue.issueKey}
+          className="wl-jobaid-issue"
+          data-issue-key={issue.issueKey}
+          tabIndex={-1}
+          ref={(node) => {
+            if (node) nodes.current.set(issue.issueKey, node);
+            else nodes.current.delete(issue.issueKey);
+          }}
+        >
+          <JobAidIssueArticle
+            issue={issue}
+            evidence={reading.evidence}
+            onLocateDocument={onLocateDocument}
+          />
+        </article>
+      ))}
+    </div>
+  );
   return (
     <section
       aria-label="JobAid 问题分析"
-      className="wl-jobaid-workspace"
+      className={`wl-jobaid-workspace${
+        presentation === 'assessment' ? ' is-assessment' : ''
+      }`}
       data-work-revision-ref={current.workRevisionRef}
     >
       <header className="wl-jobaid-status">
@@ -265,47 +316,8 @@ export function JobAidProblemReading({
         <div
           className={`wl-jobaid-layout${content.issues.length ? ' has-issues' : ''}`}
         >
-          {content.issues.length ? (
-            <nav className="wl-jobaid-index" aria-label="实际问题目录">
-              <span>本轮问题</span>
-              {content.issues.map((issue) => (
-                <button
-                  type="button"
-                  key={issue.issueKey}
-                  aria-current={
-                    selectedIssue === issue.issueKey ? 'location' : undefined
-                  }
-                  onClick={() => locateIssue(issue.issueKey)}
-                >
-                  {issue.question}
-                </button>
-              ))}
-            </nav>
-          ) : null}
-          <div className="wl-jobaid-reading">
-            <header>
-              <h2>{content.headline}</h2>
-              <p>{content.understanding}</p>
-            </header>
-            {content.issues.map((issue) => (
-              <article
-                key={issue.issueKey}
-                className="wl-jobaid-issue"
-                data-issue-key={issue.issueKey}
-                tabIndex={-1}
-                ref={(node) => {
-                  if (node) nodes.current.set(issue.issueKey, node);
-                  else nodes.current.delete(issue.issueKey);
-                }}
-              >
-                <JobAidIssueArticle
-                  issue={issue}
-                  evidence={reading.evidence}
-                  onLocateDocument={onLocateDocument}
-                />
-              </article>
-            ))}
-          </div>
+          {presentation === 'assessment' ? issueReading : issueIndex}
+          {presentation === 'assessment' ? issueIndex : issueReading}
         </div>
       ) : null}
       {tab === 'method' ? (

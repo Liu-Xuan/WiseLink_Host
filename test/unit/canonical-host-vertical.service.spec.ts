@@ -155,7 +155,7 @@ function entryFacade(): CanonicalEntryFacadeService {
       bindingStatus: 'VERIFIED_CANONICAL',
       appId: 'app-synthetic-unit-test-only',
       origin: TEST_APP_ORIGIN,
-      deepLink: `${TEST_APP_ORIGIN}/work-items/${encodeURIComponent(workItemId)}/documents`,
+      deepLink: `${TEST_APP_ORIGIN}/work-items/${encodeURIComponent(workItemId)}/analysis`,
     }),
   });
 }
@@ -356,7 +356,7 @@ describe('CanonicalHostVerticalService', () => {
       entry: {
         phase: 'CANDIDATE_READBACK_VERIFIED',
         packageId,
-        deepLinkPath: `${TEST_APP_ORIGIN}/work-items/${request.workItemId}/documents`,
+        deepLinkPath: `${TEST_APP_ORIGIN}/work-items/${request.workItemId}/analysis`,
         capabilities: {
           status: true,
           queryParsedUnits: true,
@@ -405,7 +405,7 @@ describe('CanonicalHostVerticalService', () => {
     ).toBe(true);
     expect(ailyDeepLink).toEqual({
       workItemId: request.workItemId,
-      deepLink: `${TEST_APP_ORIGIN}/work-items/${request.workItemId}/documents`,
+      deepLink: `${TEST_APP_ORIGIN}/work-items/${request.workItemId}/analysis`,
     });
     const { revision, ...currentWithoutRevision } = first.workItem;
     const integratedProjection = await registrar.compareAndSet({
@@ -1574,7 +1574,7 @@ describe('CanonicalHostVerticalService', () => {
         origin: TEST_APP_ORIGIN,
         deepLink:
           `https://attacker.example.test/work-items/` +
-          `${encodeURIComponent(workItemId)}/documents`,
+          `${encodeURIComponent(workItemId)}/analysis`,
       }),
     });
 

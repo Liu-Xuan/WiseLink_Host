@@ -11,7 +11,9 @@ import {
   libraryMatterReadingRoute,
   libraryReadingParams,
   libraryReadingScope,
+  libraryTaskDocumentReadingRoute,
   readingReturnTarget,
+  workItemDocumentReadingRoute,
 } from '../../client/src/features/matter/reading-return';
 import { matterDocumentRoute } from '../../client/src/features/matter/matter-navigation';
 import {
@@ -31,6 +33,26 @@ import type { CanonicalLibraryDocumentSummary } from '@shared/api.interface';
 import { subscribeCanonicalHostClientSession } from '@client/src/api/canonical-host';
 
 let mockSession = 1;
+
+test('direct reading routes pin one exact version and preserve their source task', () => {
+  const libraryRoute = new URL(libraryTaskDocumentReadingRoute('DV/1', 'WI/1',
+    new URLSearchParams('mode=tasks&search=hydraulic&listY=410&quicklookY=90')), 'https://example.test');
+  expect(libraryRoute.pathname).toBe('/document-versions/DV%2F1');
+  expect(libraryRoute.searchParams.get('returnDocumentVersionId')).toBe('DV/1');
+  expect(readingReturnTarget(libraryRoute.searchParams, 'DV/1')).toEqual({
+    route: '/library?listY=410&mode=tasks&quicklookY=90&search=hydraulic&workItemId=WI%2F1',
+    label: '返回任务快览' });
+  const workItemRoute = new URL(workItemDocumentReadingRoute('DV-2', 'WI-2'), 'https://example.test');
+  expect(readingReturnTarget(workItemRoute.searchParams, 'DV-2')).toEqual({
+    route: '/work-items/WI-2', label: '返回评估简报' });
+  expect(() => workItemDocumentReadingRoute('', 'WI-2'))
+    .toThrow('DOCUMENT_READING_ROUTE_IDENTITY_INVALID');
+  const unbound = new URL(workItemDocumentReadingRoute('DV-B', 'WI-A', true),
+    'https://example.test');
+  expect(unbound.pathname).toBe('/document-versions/DV-B');
+  expect(unbound.searchParams.get('unboundEvidence')).toBe('1');
+  expect(unbound.searchParams.has('sourceRef')).toBe(false);
+});
 
 test('document quicklook reads selected historical version and does not silently substitute an invalid pin', () => {
   const version = (id: string, current: boolean): CanonicalLibraryDocumentVersionSummary => ({

@@ -73,7 +73,8 @@ it('returns from a work-item page locator to the exact graph view', () => {
     locator: 'page 1-2',
   });
   const route = new URL(mockNavigate.mock.calls.at(-1)![0], 'https://example.test');
-  expect(route.pathname).toBe('/work-items/work-source/documents');
+  expect(route.pathname).toBe('/work-items/work-source/analysis');
+  expect(route.searchParams.get('panel')).toBe('reader');
   expect(route.searchParams.get('documentVersionId')).toBe('page-version');
   expect(route.searchParams.get('sourceRef')).toBe('source-page');
   const graph = new URLSearchParams(route.searchParams.get('returnGraphQuery')!);

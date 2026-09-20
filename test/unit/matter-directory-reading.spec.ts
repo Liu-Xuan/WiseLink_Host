@@ -193,7 +193,8 @@ describe('real matter directory and saved list summaries', () => {
       'review',
     );
     const url = new URL(route, 'https://example.invalid');
-    expect(url.pathname).toBe('/work-items/member%2F2/documents');
+    expect(url.pathname).toBe('/work-items/member%2F2/analysis');
+    expect(url.searchParams.get('panel')).toBe('reader');
     expect(url.searchParams.get('documentVersionId')).toBe('DV-OLD');
     expect(url.searchParams.get('sourceRef')).toBe('source-original/3');
     expect(readingReturnTarget(url.searchParams)).toEqual({

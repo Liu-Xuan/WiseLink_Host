@@ -97,6 +97,7 @@ describe('single canonical app workspace', () => {
     expect(routes).toContain('search: location.search');
     expect(routes.split('element={<WorkspaceHomePage />}')).toHaveLength(2);
     expect(routes).toContain('work-items/:workItemId/documents');
+    expect(routes).toContain('work-items/:workItemId/analysis');
     expect(routes).not.toContain('ailyCardsPreviewRoute');
     expect(routes).not.toContain('AilyCardsPreview');
     expect(routes).not.toContain('mockFixtures');

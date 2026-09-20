@@ -1,4 +1,4 @@
-import type { CanonicalLibraryDocumentVersionSummary } from '@shared/api.interface';
+import type { CanonicalLibraryDocumentVersionSummary, DocumentExtractedMetadata } from '@shared/api.interface';
 import type { DocumentReadingPreview } from '@shared/document-reading.interface';
 
 type LibraryDocumentReading = NonNullable<DocumentReadingPreview['reading']>;
@@ -22,9 +22,20 @@ export function byteLabel(bytes: number): string {
 
 export function documentLabel(document: {
   documentCode: string;
-  originalFilename?: string;
 }): string {
-  return document.documentCode || document.originalFilename || '未命名工程资料';
+  return document.documentCode.trim() || '文档编号待核';
+}
+
+export function documentIdentityPresentation(input: {
+  documentCode: string;
+  extractedMetadata?: DocumentExtractedMetadata | null;
+  documentTitle?: string | null;
+}): { documentNumber: string; documentTitle: string; hasDocumentTitle: boolean } {
+  const documentNumber = documentLabel(input);
+  const observedTitles = [...new Set(input.extractedMetadata?.title.observations
+    .map((observation) => observation.value.trim()).filter(Boolean) ?? [])];
+  const documentTitle = input.documentTitle?.trim() || observedTitles.join(' / ') || '文档标题待核';
+  return { documentNumber, documentTitle, hasDocumentTitle: documentTitle !== '文档标题待核' };
 }
 
 export function libraryDateLabel(value: string): string {

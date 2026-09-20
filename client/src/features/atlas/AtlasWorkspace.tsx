@@ -489,7 +489,7 @@ export default function AtlasWorkspace({
     documentVersionId?: string,
   ) {
     onNavigate(
-      `/work-items/${encodeURIComponent(id)}/documents?node=reader${sourceRef ? `&sourceRef=${encodeURIComponent(sourceRef)}` : ''}${documentVersionId ? `&documentVersionId=${encodeURIComponent(documentVersionId)}` : ''}`,
+      `/work-items/${encodeURIComponent(id)}/analysis?panel=reader${sourceRef ? `&sourceRef=${encodeURIComponent(sourceRef)}` : ''}${documentVersionId ? `&documentVersionId=${encodeURIComponent(documentVersionId)}` : ''}`,
     );
   }
   function enterScene(trackIndex: number, index: number) {

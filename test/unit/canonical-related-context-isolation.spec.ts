@@ -489,7 +489,7 @@ function previewService(
         origin: 'https://related-context.example.test',
         deepLink:
           `https://related-context.example.test/work-items/` +
-          `${encodeURIComponent(workItemId)}/documents`,
+          `${encodeURIComponent(workItemId)}/analysis`,
       }),
     }),
     new CanonicalFailureRecordingService(

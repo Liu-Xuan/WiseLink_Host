@@ -125,8 +125,7 @@ describe('workbench adaptive layout', () => {
     const mainWidthAfterEmptyRailRelease = 1494 - base.navWidth - 6;
 
     expect(deepLink).toMatchObject({
-      node: 'package',
-      tab: 'package',
+      panel: 'package',
       sourceRef: 'SOURCE-REF-22',
       page: '22',
     });

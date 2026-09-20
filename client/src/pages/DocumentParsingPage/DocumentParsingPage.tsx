@@ -51,11 +51,13 @@ import { assertDocumentReadingVersion } from './document-parsing-load';
 
 import {
   getWorkbenchNode,
+  getWorkbenchPanel,
   structuredSourceDeepLink,
   type WorkbenchNode,
   WORKBENCH_TAB_DEFINITIONS,
 } from './document-parsing-navigation';
-import { EngineeringReasoningTrail } from './EngineeringReasoningTrail';
+import WorkItemProcessWorkspace from './WorkItemProcessWorkspace';
+import WorkItemAssessmentWorkspace from './WorkItemAssessmentWorkspace';
 import { AeoAuthoringWorkspace } from './AeoAuthoringWorkspace';
 import ApplicabilitySelectionPanel from './ApplicabilitySelectionPanel';
 import AssessmentRuleWorkspace from './AssessmentRuleWorkspace';
@@ -73,7 +75,6 @@ import ReviewImpactPreview from '@client/src/features/review/ReviewImpactPreview
 import ContinuousReviewPanel from '@client/src/features/review/ContinuousReviewPanel';
 import DocumentUnavailableReview from './DocumentUnavailableReview';
 import { documentFailureAllowsReviewReadback } from './saved-review-readback';
-import RevisionTimeline from '@client/src/features/review/RevisionTimeline';
 import InitialAnalysisProgress from '@client/src/features/review/InitialAnalysisProgress';
 import WorkbenchShell from '@client/src/features/workbench/WorkbenchShell';
 import RetainedWorkbenchPanel from '@client/src/features/workbench/RetainedWorkbenchPanel';
@@ -155,16 +156,6 @@ const NODE_TARGETS: Record<WorkbenchNode, string> = {
   aeo: 'workspace-aeo',
 };
 
-const NODE_TABS: Record<WorkbenchNode, string> = {
-  document: 'source',
-  package: 'source',
-  reader: 'reader',
-  assessment: 'assessment',
-  review: 'review',
-  overall: 'overall',
-  aeo: 'aeo',
-};
-
 /** Spec R01 §4.2：顶部工作台标签顺序为
  *  综合评估、结构化内容、PDF 原文、分析过程、复核意见；
  *  AEO 候选作为后续扩展入口追加在末尾（需先确认整体综合）。 */
@@ -205,7 +196,7 @@ export default function DocumentParsingPage() {
   const scrolledNodesRef = useRef(new Set<string>());
   const { workItemId = '' } = useParams<{ workItemId: string }>();
   const [searchParams, setSearchParams] = useSearchParams();
-  const activeNode: WorkbenchNode = getWorkbenchNode(searchParams.get('node'));
+  const activeNode: WorkbenchNode = getWorkbenchPanel(searchParams);
   const activeQuery: string = searchParams.get('q')?.trim() ?? '';
   const requestedReaderUnit: string = searchParams.get('unit')?.trim() ?? '';
   const requestedSourceRef: string =
@@ -693,8 +684,7 @@ export default function DocumentParsingPage() {
     if (nextQuery.length < 2) return;
     updateDeepLink({
       q: nextQuery,
-      node: 'reader',
-      tab: 'reader',
+      panel: 'reader',
       unit: null,
       sourceRef: null,
       readerMode: 'structured',
@@ -767,8 +757,7 @@ export default function DocumentParsingPage() {
   function handleTabChange(key: string): void {
     const node = getWorkbenchNode(key);
     updateDeepLink({
-      node,
-      tab: NODE_TABS[node],
+      panel: node,
       ...(node === 'reader' ? { readerMode: 'source' } : {}),
     });
   }
@@ -776,7 +765,7 @@ export default function DocumentParsingPage() {
   function handleNavigatorSelect(node: NavigationNodeView): void {
     setTreeSelection(node.id);
     const target = getWorkbenchNode(node.targetNode ?? null);
-    updateDeepLink({ node: target, tab: NODE_TABS[target] });
+    updateDeepLink({ panel: target });
   }
 
   function locateSourceRef(
@@ -787,8 +776,7 @@ export default function DocumentParsingPage() {
     setStructuredSourceLocator(null);
     setEvidenceSignal((v) => v + 1);
     updateDeepLink({
-      node: 'reader',
-      tab: 'reader',
+      panel: 'reader',
       unit: unitId,
       sourceRef,
       readerMode: intent,
@@ -802,8 +790,7 @@ export default function DocumentParsingPage() {
 
   function returnToDocumentReader(): void {
     updateDeepLink({
-      node: 'reader',
-      tab: 'reader',
+      panel: 'reader',
       readerMode: semanticReading ? 'translation' : 'structured',
     });
   }
@@ -825,8 +812,7 @@ export default function DocumentParsingPage() {
   ): void {
     if (evidence.workItemId === workItemId) {
       updateDeepLink({
-        node: 'reader',
-        tab: 'reader',
+        panel: 'reader',
         readerMode: 'structured',
         sourceRef: evidence.sourceRefId,
         documentVersionId: evidence.documentVersionId,
@@ -835,8 +821,7 @@ export default function DocumentParsingPage() {
       return;
     }
     const params: URLSearchParams = new URLSearchParams({
-      node: 'reader',
-      tab: 'reader',
+      panel: 'reader',
       readerMode: 'structured',
       sourceRef: evidence.sourceRefId,
       documentVersionId: evidence.documentVersionId,
@@ -858,7 +843,7 @@ export default function DocumentParsingPage() {
         searchParams.get('returnWorkItemId') || workItemId,
       );
     navigate(
-      `/work-items/${encodeURIComponent(evidence.workItemId)}/documents?${params.toString()}`,
+      `/work-items/${encodeURIComponent(evidence.workItemId)}/analysis?${params.toString()}`,
     );
   }
 
@@ -1179,7 +1164,7 @@ export default function DocumentParsingPage() {
                   locateSignal={pdfLocateSignal}
                   onLocate={locatePdfQuerySourceRef}
                   onReturnStructured={() =>
-                    updateDeepLink({ node: 'package', tab: 'package' })
+                    updateDeepLink({ panel: 'package' })
                   }
                 />
               </div>
@@ -1221,8 +1206,7 @@ export default function DocumentParsingPage() {
               }}
               onReaderModeChange={(mode: ReaderViewMode) =>
                 updateDeepLink({
-                  node: 'reader',
-                  tab: 'reader',
+                  panel: 'reader',
                   readerMode: mode,
                 })
               }
@@ -1247,23 +1231,32 @@ export default function DocumentParsingPage() {
         </RetainedWorkbenchPanel>
 
         <RetainedWorkbenchPanel active={activeNode === 'assessment'}>
-          <ApplicabilitySelectionPanel
-            key={workItemId}
-            workItemId={workItemId}
-            workItemRevision={data.workItem.revision}
-            workItemRefreshing={loading}
-            onOpenInteractiveReview={() =>
-              updateDeepLink({ node: 'review', tab: 'review' })
+          <WorkItemAssessmentWorkspace
+            documentCode={
+              data.workItem.package?.documentIdentity?.documentCode?.trim() ||
+              data.workItem.source.documentId
             }
-            onConfigurationEvidenceAdopted={() => load(activeQuery)}
-          />
-          <JobAidProblemWorkspace
-            workItemId={workItemId}
-            initialAnalysis={data.initialAnalysis}
-            overall={integratedAssessment?.overallSynthesis}
-            onUpdated={() => void load(activeQuery)}
-            onLocateDocument={locateAssessmentDocument}
+            onOpenProcess={() => updateDeepLink({ panel: 'overall' })}
+            onOpenReview={() => updateDeepLink({ panel: 'review' })}
           >
+            <ApplicabilitySelectionPanel
+              key={workItemId}
+              workItemId={workItemId}
+              workItemRevision={data.workItem.revision}
+              workItemRefreshing={loading}
+              onOpenInteractiveReview={() =>
+                updateDeepLink({ panel: 'review' })
+              }
+              onConfigurationEvidenceAdopted={() => load(activeQuery)}
+            />
+            <JobAidProblemWorkspace
+              workItemId={workItemId}
+              initialAnalysis={data.initialAnalysis}
+              overall={integratedAssessment?.overallSynthesis}
+              onUpdated={() => void load(activeQuery)}
+              onLocateDocument={locateAssessmentDocument}
+              presentation="assessment"
+            >
             {assessmentEligible ? (
               <section
                 className="parse-assessment-panel parse-assessment-workspace"
@@ -1288,12 +1281,11 @@ export default function DocumentParsingPage() {
                       disabled: loading || overallRegeneration.disabled,
                     }}
                     onOpenWorkbench={() =>
-                      updateDeepLink({ node: 'review', tab: 'review' })
+                      updateDeepLink({ panel: 'review' })
                     }
                     onViewEvidence={(sourceRefId) =>
                       updateDeepLink({
-                        node: 'reader',
-                        tab: 'reader',
+                        panel: 'reader',
                         readerMode: 'structured',
                         unit: null,
                         sourceRef: sourceRefId ?? null,
@@ -1528,15 +1520,13 @@ export default function DocumentParsingPage() {
                     primaryActionLabel="核对原文依据"
                     onOpenWorkbench={() =>
                       updateDeepLink({
-                        node: 'reader',
-                        tab: 'reader',
+                        panel: 'reader',
                         readerMode: 'structured',
                       })
                     }
                     onViewEvidence={(sourceRefId) =>
                       updateDeepLink({
-                        node: 'reader',
-                        tab: 'reader',
+                        panel: 'reader',
                         readerMode: 'structured',
                         unit: null,
                         sourceRef: sourceRefId ?? null,
@@ -1564,8 +1554,7 @@ export default function DocumentParsingPage() {
                     variant="outline"
                     onClick={() =>
                       updateDeepLink({
-                        node: 'reader',
-                        tab: 'reader',
+                        panel: 'reader',
                         readerMode: 'structured',
                       })
                     }
@@ -1575,7 +1564,8 @@ export default function DocumentParsingPage() {
                 </article>
               </section>
             )}
-          </JobAidProblemWorkspace>
+            </JobAidProblemWorkspace>
+          </WorkItemAssessmentWorkspace>
         </RetainedWorkbenchPanel>
 
         {/* Legacy rule reviews remain read-only alongside problem-oriented work. */}
@@ -1596,14 +1586,12 @@ export default function DocumentParsingPage() {
                   onSelectCriterion={(criterionId: string) =>
                     updateDeepLink({
                       criterion: criterionId,
-                      node: 'review',
-                      tab: 'review',
+                      panel: 'review',
                     })
                   }
                   onLocateSourceRef={(sourceRef: string) =>
                     updateDeepLink({
-                      node: 'reader',
-                      tab: 'reader',
+                      panel: 'reader',
                       readerMode: 'structured',
                       unit: null,
                       sourceRef,
@@ -1639,8 +1627,7 @@ export default function DocumentParsingPage() {
                           onChange={(event) =>
                             updateDeepLink({
                               criterion: event.target.value,
-                              node: 'review',
-                              tab: 'review',
+                              panel: 'review',
                             })
                           }
                         >
@@ -1765,8 +1752,7 @@ export default function DocumentParsingPage() {
               },
               onOpenPrimary: () =>
                 updateDeepLink({
-                  node: 'reader',
-                  tab: 'reader',
+                  panel: 'reader',
                   readerMode: 'structured',
                 }),
               related: (
@@ -1776,7 +1762,7 @@ export default function DocumentParsingPage() {
                   onLocateSourceRef={locateStructuredSourceRef}
                   onOpenTarget={(targetWorkItemId) =>
                     navigate(
-                      `/work-items/${encodeURIComponent(targetWorkItemId)}/documents?node=reader&tab=reader&readerMode=structured`,
+                      `/work-items/${encodeURIComponent(targetWorkItemId)}/analysis?panel=reader&readerMode=structured`,
                     )
                   }
                 />
@@ -1786,12 +1772,11 @@ export default function DocumentParsingPage() {
         </RetainedWorkbenchPanel>
 
         {activeNode === 'overall' ? (
-          <>
-            <EngineeringReasoningTrail data={data} />
-            <div id="workspace-history">
-              <RevisionTimeline timeline={data.timeline} />
-            </div>
-          </>
+          <WorkItemProcessWorkspace
+            data={data}
+            onOpenAssessment={() => updateDeepLink({ panel: 'assessment' })}
+            onOpenReview={() => updateDeepLink({ panel: 'review' })}
+          />
         ) : null}
 
         {activeNode === 'aeo' ? (
@@ -1903,7 +1888,7 @@ export default function DocumentParsingPage() {
         <footer className="parse-footer">
           <span>当前工程事项 · 候选意见需工程师确认</span>
           <Link
-            to={`/work-items/${encodeURIComponent(workItemId)}/documents?node=review&tab=review`}
+            to={`/work-items/${encodeURIComponent(workItemId)}/analysis?panel=review`}
           >
             与 Aily 继续讨论 <ArrowUpRight />
           </Link>

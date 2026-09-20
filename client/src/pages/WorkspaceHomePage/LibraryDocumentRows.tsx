@@ -4,11 +4,10 @@ import { ChevronDown, ChevronRight, FileText } from 'lucide-react';
 import type { CanonicalLibraryDocumentSummary } from '@shared/api.interface';
 import { Button } from '@client/src/components/ui/button';
 import {
-  documentLabel,
+  documentIdentityPresentation,
   libraryVersionLabel,
   projectLibraryDocumentReading,
 } from './library-document-presentation';
-import { metadataValues } from './library-classification';
 import { DocumentVersionLink } from './DocumentVersionLink';
 
 export default function LibraryDocumentRows({
@@ -41,13 +40,14 @@ export default function LibraryDocumentRows({
         <tbody>
           {documents.map((document) => {
             const current = document.versions.find((version) => version.selectedVersionIsCurrent);
-            const title = metadataValues(current?.extractedMetadata?.title).join(' / ');
+            const identity = documentIdentityPresentation({ documentCode: document.documentCode,
+              extractedMetadata: current?.extractedMetadata });
             const expanded = expandedFamilyIds.includes(document.familyId);
             const currentReading = current ? projectLibraryDocumentReading(current) : null;
             return (
               <Fragment key={document.familyId}>
                 <tr className={selectedId === document.familyId && (!selectedDocumentVersionId || selectedDocumentVersionId === current?.documentVersionId) ? 'selected' : ''} tabIndex={0} onClick={() => onSelect(document.familyId)} onKeyDown={(event) => event.target === event.currentTarget && event.key === 'Enter' && onSelect(document.familyId)}>
-                  <td><div className="suite-doc-cell"><Button className="suite-expand-button" variant="ghost" size="icon" aria-label={`${expanded ? '收起' : '展开'}${documentLabel(document)}历史版本`} onClick={(event) => { event.stopPropagation(); onToggleFamily(document.familyId); }}>{expanded ? <ChevronDown aria-hidden="true" /> : <ChevronRight aria-hidden="true" />}</Button><FileText aria-hidden="true" /><span><b>{title || documentLabel(document)}</b><small>{documentLabel(document)} · 文档族</small></span></div></td>
+                  <td><div className="suite-doc-cell"><Button className="suite-expand-button" variant="ghost" size="icon" aria-label={`${expanded ? '收起' : '展开'}${identity.documentNumber}历史版本`} onClick={(event) => { event.stopPropagation(); onToggleFamily(document.familyId); }}>{expanded ? <ChevronDown aria-hidden="true" /> : <ChevronRight aria-hidden="true" />}</Button><FileText aria-hidden="true" /><span><b>{identity.documentNumber}</b><small>{identity.documentTitle} · {document.normalizedFamily}</small></span></div></td>
                   <td><b>{current ? libraryVersionLabel(current) : '当前版本未返回'}</b><small>{document.versions.length} 个可见版本</small></td>
                   <td className="meaning">
                     {currentReading?.brief ? (
@@ -112,9 +112,11 @@ export default function LibraryDocumentRows({
                 </tr>
                 {expanded ? document.versions.filter((version) => !version.selectedVersionIsCurrent).map((version) => {
                   const versionReading = projectLibraryDocumentReading(version);
+                  const versionIdentity = documentIdentityPresentation({ documentCode: document.documentCode,
+                    extractedMetadata: version.extractedMetadata });
                   return (
                   <tr className={selectedId === document.familyId && selectedDocumentVersionId === version.documentVersionId ? 'selected suite-version-row' : 'suite-version-row'} key={version.documentVersionId} tabIndex={0} onClick={() => onSelectVersion(document.familyId, version.documentVersionId)} onKeyDown={(event) => event.target === event.currentTarget && event.key === 'Enter' && onSelectVersion(document.familyId, version.documentVersionId)}>
-                    <td><div className="suite-doc-cell suite-version-cell"><span /><span><b>{libraryVersionLabel(version)}</b><small>{documentLabel(document)} · 该文件自己的历史版本</small></span></div></td>
+                    <td><div className="suite-doc-cell suite-version-cell"><span /><span><b>{versionIdentity.documentNumber}</b><small>{versionIdentity.documentTitle} · {libraryVersionLabel(version)}</small></span></div></td>
                     <td><span>{version.revisionDate || version.sourceGeneratedDate || '版本日期未标注'}</span><small>{version.originalFilename}</small></td>
                     <td className="meaning">
                       {versionReading.brief ? (

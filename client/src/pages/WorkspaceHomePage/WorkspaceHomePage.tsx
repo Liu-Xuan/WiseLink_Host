@@ -65,7 +65,7 @@ import './library-atlas.css';
 import { useLibraryFleetCatalog } from './useLibraryFleetCatalog';
 import { useLibraryDefaultSelection } from './useLibraryDefaultSelection';
 import useReadingLocation from '@client/src/features/matter/useReadingLocation';
-import { libraryReadingScope } from '@client/src/features/matter/reading-return';
+import { libraryReadingScope, libraryTaskDocumentReadingRoute } from '@client/src/features/matter/reading-return';
 
 export default function WorkspaceHomePage() {
   return <LibraryPaneScrollProvider><WorkspaceHomeContent /></LibraryPaneScrollProvider>;
@@ -310,16 +310,25 @@ function WorkspaceHomeContent() {
 
   function openWorkbench(targetNode: string = 'reader'): void {
     if (!projection) return;
-    const targetTab: string = targetNode === 'document' ? 'source' : targetNode;
+    if (targetNode === 'reader') {
+      navigate(libraryTaskDocumentReadingRoute(projection.documentVersionId,
+        projection.workItemId, searchParams));
+      return;
+    }
+    if (targetNode === 'document') {
+      navigate(`/library?${new URLSearchParams({ mode: 'document', familyId: projection.familyId,
+        selectedDocumentVersionId: projection.documentVersionId })}`);
+      return;
+    }
     navigate(
-      `/work-items/${encodeURIComponent(projection.workItemId)}/documents?node=${targetNode}&tab=${targetTab}`,
+      `/work-items/${encodeURIComponent(projection.workItemId)}/analysis?panel=${targetNode}`,
     );
   }
 
   function locateQuicklookEvidence(sourceRefId: string): void {
     if (!projection || !sourceRefId) return;
     navigate(
-      `/work-items/${encodeURIComponent(projection.workItemId)}/documents?node=reader&tab=reader&readerMode=source&sourceRef=${encodeURIComponent(sourceRefId)}`,
+      `/work-items/${encodeURIComponent(projection.workItemId)}/analysis?panel=reader&readerMode=source&sourceRef=${encodeURIComponent(sourceRefId)}`,
     );
   }
 
@@ -364,7 +373,7 @@ function WorkspaceHomeContent() {
       assertSameWorkItemReparseReadback(readback, expected);
       if (!isCurrent()) return;
       navigate(
-        `/work-items/${encodeURIComponent(expected.workItemId)}/documents?node=document&tab=source`,
+        `/work-items/${encodeURIComponent(expected.workItemId)}/analysis?panel=document`,
         {
           state: {
             documentParsingHandoff: createCanonicalDocumentParsingRouteHandoff(
@@ -729,11 +738,14 @@ function WorkspaceHomeContent() {
                   onContinueReview={() => openWorkbench('review')}
                   onOpenFamily={() => openWorkbench('document')}
                   onLocateEvidence={locateQuicklookEvidence}
-                  onLocateDocument={(evidence: DocumentAssessmentEvidence) =>
-                    navigate(
-                      `/work-items/${encodeURIComponent(evidence.workItemId)}/documents?${new URLSearchParams({ node: 'reader', tab: 'reader', documentVersionId: evidence.documentVersionId, sourceRef: evidence.sourceRefId, returnLibraryWorkItemId: deepLinkedWorkItemId }).toString()}`,
-                    )
-                  }
+                  onLocateDocument={(evidence: DocumentAssessmentEvidence) => {
+                    if (!evidence.workItemId) {
+                      navigate(libraryTaskDocumentReadingRoute(evidence.documentVersionId,
+                        deepLinkedWorkItemId, searchParams, true));
+                      return;
+                    }
+                    navigate(`/work-items/${encodeURIComponent(evidence.workItemId)}/analysis?${new URLSearchParams({ panel: 'reader', documentVersionId: evidence.documentVersionId, sourceRef: evidence.sourceRefId, returnLibraryWorkItemId: deepLinkedWorkItemId }).toString()}`);
+                  }}
                 />
               )}
             </section>

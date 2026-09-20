@@ -1,0 +1,235 @@
+.wl-assessment-workspace {
+  display: grid;
+  min-width: 0;
+  gap: 15px;
+}
+
+.wl-assessment-heading {
+  display: flex;
+  min-height: 78px;
+  align-items: center;
+  justify-content: space-between;
+  gap: 20px;
+  padding: 6px 3px 10px;
+}
+
+.wl-assessment-heading p,
+.wl-assessment-heading span {
+  margin: 0;
+  color: var(--wl-muted, #68737b);
+  font-size: 12px;
+}
+
+.wl-assessment-heading h1 {
+  margin: 3px 0 5px;
+  color: var(--wl-ink, #252b2e);
+  font-size: 25px;
+  font-weight: 640;
+  letter-spacing: 0;
+}
+
+.wl-assessment-heading-actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+.wl-assessment-content {
+  display: grid;
+  min-width: 0;
+  align-content: start;
+  gap: 15px;
+  container-type: inline-size;
+}
+
+.wl-assessment-content > .applicability-selection-panel,
+.wl-assessment-content > .wl-jobaid-workspace,
+.wl-assessment-content > .parse-assessment-panel {
+  margin: 0;
+}
+
+.wl-jobaid-workspace.is-assessment {
+  display: grid;
+  gap: 15px;
+  background: transparent;
+}
+
+.wl-jobaid-workspace.is-assessment > .wl-jobaid-status,
+.wl-jobaid-workspace.is-assessment > .wl-jobaid-notice,
+.wl-jobaid-workspace.is-assessment > .wl-jobaid-tabs,
+.wl-jobaid-workspace.is-assessment > .wl-jobaid-reading,
+.wl-jobaid-workspace.is-assessment > .wl-jobaid-layout > * {
+  border: 1px solid var(--wl-border, #dfe5e8);
+  border-radius: 8px;
+  background: var(--wl-surface-solid, var(--background));
+  box-shadow: 0 7px 22px rgb(33 48 56 / 5%);
+}
+
+.wl-jobaid-workspace.is-assessment > .wl-jobaid-status {
+  padding: 16px 22px;
+}
+
+.wl-jobaid-workspace.is-assessment > .wl-jobaid-notice {
+  margin: 0;
+  border-left: 3px solid var(--wl-amber, #a77420);
+}
+
+.wl-jobaid-workspace.is-assessment > .wl-jobaid-tabs {
+  padding: 6px 10px;
+}
+
+.wl-jobaid-workspace.is-assessment .wl-jobaid-layout.has-issues {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 298px;
+  gap: 15px;
+}
+
+.wl-jobaid-workspace.is-assessment
+  .wl-jobaid-layout.has-issues
+  > .wl-jobaid-reading {
+  grid-column: 1;
+  grid-row: 1;
+  max-width: none;
+  margin: 0;
+  padding: 36px clamp(26px, 4cqw, 54px) 50px;
+}
+
+.wl-jobaid-workspace.is-assessment
+  .wl-jobaid-layout.has-issues
+  > .wl-jobaid-index {
+  position: sticky;
+  top: 0;
+  grid-column: 2;
+  grid-row: 1;
+  max-height: min(72dvh, 780px);
+  padding: 9px 12px;
+}
+
+.wl-jobaid-workspace.is-assessment .wl-jobaid-index::before {
+  display: block;
+  padding: 8px;
+  border-bottom: 1px solid var(--wl-border, #dfe5e8);
+  margin-bottom: 2px;
+  color: var(--wl-ink, #252b2e);
+  content: '阅读目录';
+  font-size: 13px;
+  font-weight: 620;
+}
+
+.wl-jobaid-workspace.is-assessment .wl-jobaid-index > span {
+  margin: 8px;
+  font-size: 10px;
+}
+
+.wl-jobaid-workspace.is-assessment .wl-jobaid-index button {
+  padding: 9px 8px;
+  border-radius: 6px;
+  font-size: 12px;
+  line-height: 1.7;
+}
+
+.wl-jobaid-workspace.is-assessment .wl-jobaid-index button[aria-current] {
+  color: var(--wl-accent, #28717d);
+  background: color-mix(in srgb, var(--wl-accent, #28717d) 7%, transparent);
+}
+
+.wl-jobaid-workspace.is-assessment .wl-jobaid-reading > header h2 {
+  margin-bottom: 15px;
+  font-size: 30px;
+  line-height: 1.5;
+  letter-spacing: 0;
+}
+
+.wl-jobaid-workspace.is-assessment .wl-jobaid-reading > header p {
+  margin: 18px 0;
+  color: var(--wl-ink, #252b2e);
+  font-size: 18px;
+  line-height: 1.95;
+}
+
+.wl-jobaid-workspace.is-assessment .wl-jobaid-issue h3 {
+  font-size: 19px;
+}
+
+.wl-jobaid-workspace.is-assessment .wl-jobaid-issue p {
+  font-size: 15px;
+  line-height: 2.05;
+}
+
+@media (max-width: 1250px) {
+  .wl-jobaid-workspace.is-assessment .wl-jobaid-layout.has-issues {
+    grid-template-columns: minmax(0, 1fr) 255px;
+  }
+}
+
+@container (max-width: 720px) {
+  .wl-jobaid-workspace.is-assessment .wl-jobaid-layout.has-issues {
+    display: flex;
+    flex-direction: column;
+  }
+
+  .wl-jobaid-workspace.is-assessment .wl-jobaid-layout.has-issues > * {
+    width: 100%;
+  }
+
+  .wl-jobaid-workspace.is-assessment
+    .wl-jobaid-layout.has-issues
+    > .wl-jobaid-index {
+    position: static;
+    max-height: 220px;
+  }
+
+  .wl-jobaid-workspace.is-assessment
+    .wl-jobaid-layout.has-issues
+    > .wl-jobaid-reading {
+    padding: 24px 19px 44px;
+  }
+}
+
+@media (max-width: 760px) {
+  .wl-assessment-heading {
+    align-items: flex-start;
+    flex-wrap: wrap;
+  }
+
+  .wl-assessment-heading h1 {
+    font-size: 23px;
+  }
+
+  .wl-assessment-heading-actions {
+    justify-content: flex-start;
+  }
+
+  .wl-jobaid-workspace.is-assessment .wl-jobaid-layout.has-issues {
+    display: flex;
+    flex-direction: column;
+  }
+
+  .wl-jobaid-workspace.is-assessment
+    .wl-jobaid-layout.has-issues
+    > .wl-jobaid-index {
+    position: static;
+    max-height: 220px;
+  }
+
+  .wl-jobaid-workspace.is-assessment
+    .wl-jobaid-layout.has-issues
+    > .wl-jobaid-reading {
+    padding: 24px 19px 44px;
+  }
+
+  .wl-jobaid-workspace.is-assessment .wl-jobaid-reading > header h2 {
+    font-size: 24px;
+  }
+
+  .wl-jobaid-workspace.is-assessment .wl-jobaid-reading > header p {
+    font-size: 15px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .wl-jobaid-workspace.is-assessment .wl-jobaid-index button {
+    scroll-behavior: auto;
+  }
+}
