@@ -263,6 +263,51 @@ describe('authorized engineering issue search and exact expansion', () => {
 
 
 describe('saved knowledge catalogue', () => {
+  it('keeps overview evidence separate from updated problem evidence', async () => {
+    const h = setup();
+    h.saved.content.overviewStatus = 'STALE';
+    const problemEvidence = structuredClone(h.saved.content.evidence);
+    const currentReading = (await h.service.read(h.identity, actor)).reading!;
+    const overviewEvidence = [{
+      ...structuredClone(problemEvidence[0]),
+      evidenceRef: 'overview-evidence',
+      title: '旧综合独有依据',
+    }];
+    h.matters.readWorkingRevision.mockResolvedValue({
+      matterId: 'MAT-STALE',
+      matterWorkRevisionId: 'MW-STALE',
+      workingRevision: 3,
+      createdAt: '2026-09-17T00:00:00.000Z',
+      correctionNotices: [],
+      overviewCorrectionNotices: [],
+      referenceWorkNotices: [],
+      overviewSourceWork: { workRef: 'MW-OLDER', workingRevision: 2 },
+      state: {
+        problemWork: h.saved.content,
+        substantiveResult: { ...currentReading, evidence: overviewEvidence },
+      },
+    });
+    const identity = {
+      subjectKind: 'ENGINEERING_MATTER' as const,
+      subjectId: 'MAT-STALE',
+      workRef: 'MW-STALE',
+      issueKey: h.identity.issueKey,
+    };
+    h.db.execute.mockResolvedValue([{ ...identity, current: true }]);
+
+    const knowledge = await h.service.readKnowledge({
+      subjectKind: identity.subjectKind,
+      subjectId: identity.subjectId,
+      workRef: identity.workRef,
+    }, actor);
+    expect(knowledge.reading?.evidence).toEqual(overviewEvidence);
+    expect(knowledge.content.evidence).toEqual(problemEvidence);
+
+    const issue = await h.service.read(identity, actor);
+    expect(issue.reading?.evidence).toEqual(overviewEvidence);
+    expect(issue.evidence).toEqual(problemEvidence);
+  });
+
   it('keeps authorized Matter problem work readable before an overview exists', async () => {
     const h = setup();
     h.saved.content.overviewStatus = 'NOT_AVAILABLE';

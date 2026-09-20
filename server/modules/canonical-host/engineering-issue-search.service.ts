@@ -170,7 +170,7 @@ export class EngineeringIssueSearchService {
         workRevision: 'workRevision' in revision ? revision.workRevision : revision.workingRevision,
         current, headline: content.headline, listBrief: content.listBrief,
         createdAt: revision.createdAt, overviewStatus: content.overviewStatus },
-      content, reading: reading ? { ...reading, evidence: content.evidence } : null,
+      content, reading,
       ...('state' in revision ? { correctionNotices: revision.correctionNotices,
         overviewCorrectionNotices: revision.overviewCorrectionNotices,
         referenceWorkNotices: revision.referenceWorkNotices, overviewSourceWork: revision.overviewSourceWork } : {}),
@@ -494,7 +494,7 @@ export class EngineeringIssueSearchService {
           ? { referenceWorkNotices: revision.referenceWorkNotices.filter(item => item.affectedIssueKeys.includes(issue.issueKey)) } : {}),
       },
       issue,
-      reading: reading ? { ...reading, evidence: content.evidence } : null,
+      reading,
       evidence: content.evidence,
     };
   }
