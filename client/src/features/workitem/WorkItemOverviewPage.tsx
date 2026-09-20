@@ -21,6 +21,7 @@ import TaskMatterActions from '@client/src/features/matter/TaskMatterActions';
 import { Button } from '@client/src/components/ui/button';
 import type { CanonicalLibraryQuicklookResponse } from '@shared/api.interface';
 import type { DocumentAssessmentEvidence } from '@client/src/features/matter/assessment-reading';
+import { workItemDocumentReadingRoute } from '@client/src/features/matter/reading-return';
 import { useOverallRegeneration } from '@client/src/features/workitem/useOverallRegeneration';
 
 import '@client/src/features/workitem/workitem-overview.css';
@@ -166,12 +167,12 @@ export default function WorkItemOverviewPage() {
   }
 
   function viewEvidence(sourceRefId?: string): void {
-    const sourceQuery = sourceRefId
-      ? `&sourceRef=${encodeURIComponent(sourceRefId)}`
-      : '';
-    navigate(
-      `/work-items/${encodeURIComponent(workItemId)}/documents?node=reader&tab=reader${sourceQuery}`,
-    );
+    if (!visibleView) return;
+    if (!sourceRefId) {
+      navigate(workItemDocumentReadingRoute(visibleView.document.documentVersionId, workItemId));
+      return;
+    }
+    navigate(`/work-items/${encodeURIComponent(workItemId)}/documents?node=reader&tab=reader&readerMode=source&sourceRef=${encodeURIComponent(sourceRefId)}`);
   }
 
   if (loading && visibleView === null) {
@@ -217,16 +218,15 @@ export default function WorkItemOverviewPage() {
   if (!visibleView) return null;
 
   function locateDocument(evidence: DocumentAssessmentEvidence): void {
-    const params: URLSearchParams = new URLSearchParams({
-      node: 'reader',
-      tab: 'reader',
-      documentVersionId: evidence.documentVersionId,
-      sourceRef: evidence.sourceRefId,
-      returnWorkItemId: workItemId,
-    });
-    navigate(
-      `/work-items/${encodeURIComponent(evidence.workItemId)}/documents?${params.toString()}`,
-    );
+    if (!evidence.workItemId) {
+      navigate(workItemDocumentReadingRoute(evidence.documentVersionId,
+        workItemId, true));
+      return;
+    }
+    const params = new URLSearchParams({ node: 'reader', tab: 'reader',
+      documentVersionId: evidence.documentVersionId, sourceRef: evidence.sourceRefId,
+      returnWorkItemId: workItemId });
+    navigate(`/work-items/${encodeURIComponent(evidence.workItemId)}/documents?${params}`);
   }
 
   return (
@@ -237,8 +237,7 @@ export default function WorkItemOverviewPage() {
             当前评估任务 · 已保存结果
           </p>
           <h1 className="text-2xl font-semibold">
-            {visibleView.document.documentCode ||
-              visibleView.document.originalFilename}
+            {visibleView.document.documentCode || '文档编号待核'}
           </h1>
         </div>
         <Button
@@ -262,8 +261,7 @@ export default function WorkItemOverviewPage() {
       ) : null}
       <EngineeringQuicklook
         title={
-          visibleView.document.documentCode ||
-          visibleView.document.originalFilename
+          visibleView.document.documentCode || '文档编号待核'
         }
         quicklook={buildLibraryEngineeringQuicklook(visibleView)}
         loading={loading}
@@ -271,7 +269,8 @@ export default function WorkItemOverviewPage() {
         onContinueReview={openWorkbench}
         onOpenFamily={() =>
           navigate(
-            `/work-items/${encodeURIComponent(workItemId)}/documents?node=document&tab=source`,
+            `/library?${new URLSearchParams({ mode: 'document', familyId: visibleView.document.familyId,
+              selectedDocumentVersionId: visibleView.document.documentVersionId })}`,
           )
         }
         onLocateEvidence={viewEvidence}

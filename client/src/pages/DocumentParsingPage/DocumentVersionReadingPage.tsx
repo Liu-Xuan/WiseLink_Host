@@ -12,12 +12,15 @@ import { DocumentOriginalPreview } from '../WorkspaceHomePage/DocumentOriginalPr
 import './document-version-reading.css';
 import { libraryReadingParams, readingReturnTarget } from '@client/src/features/matter/reading-return';
 import { DocumentSourceReadingWorkspace, type DocumentSourceReaderMode } from './DocumentSourceReadingWorkspace';
+import { documentIdentityPresentation, libraryVersionLabel } from '../WorkspaceHomePage/library-document-presentation';
 
 export default function DocumentVersionReadingPage() {
   const { documentVersionId = '' } = useParams();
   const [searchParams] = useSearchParams();
   const requestedRun = searchParams.get('parseRunId') || null;
   const requestedSource = searchParams.get('sourceRef') || null;
+  const unboundEvidence = searchParams.getAll('unboundEvidence').length === 1 &&
+    searchParams.get('unboundEvidence') === '1';
   const returnTarget = readingReturnTarget(
     searchParams,
     documentVersionId,
@@ -209,6 +212,9 @@ export default function DocumentVersionReadingPage() {
       document.getElementById(selectedUnit.unitId)?.scrollIntoView({ block: 'center' });
   }, [requestedSource, selectedUnit?.unitId, view]);
   const latest = currentStatus?.latestRun;
+  const documentIdentity = documentIdentityPresentation({ documentCode: currentStatus?.documentCode ?? '',
+    documentTitle: currentStatus?.documentTitle });
+  const documentVersionLabel = currentStatus ? libraryVersionLabel(currentStatus) : '版本未标注';
   const expired = latest ? Date.parse(latest.deadlineAt) <= Date.now() : false;
   const busy = Boolean(latest && ['RUNNING', 'STAGING'].includes(latest.status) && !expired);
   // The activity entry is only available when the original reading exists for this exact
@@ -247,7 +253,8 @@ export default function DocumentVersionReadingPage() {
   return <main className="document-version-reading">
     <header>
       <Link to={returnTarget?.route ?? '/library?mode=document'}>{returnTarget?.label ?? '返回文档库'}</Link>
-      <h1>{currentStatus?.originalFilename ?? '文档阅读'}</h1>
+      <h1>{currentStatus ? documentIdentity.documentNumber : '文档阅读'}</h1>
+      {currentStatus ? <p className="document-reading-identity">{documentIdentity.documentTitle} · {documentVersionLabel} · {currentStatus.selectedVersionIsCurrent ? '库内当前版本' : '历史版本'} · 原始文件 {currentStatus.originalFilename || '未标注'}</p> : null}
       <details className="document-reading-maintenance">
         <summary>文档处理</summary>
         <div className="document-reading-actions">
@@ -259,6 +266,7 @@ export default function DocumentVersionReadingPage() {
         </div>
       </details>
       {error && <p role="alert">{error}</p>}
+      {unboundEvidence ? <p role="status">此保存依据没有工作项执行身份。已打开它绑定的确切文档版本，未猜测任务或具体段落位置。</p> : null}
       {currentStatus && !currentStatus.runtimeAvailable && <p role="status">
         {currentStatus.runtime?.state === 'FAILED' ? '最近的文档处理未完成，已保存的范围仍可读取。' : '官方文档解析插件尚未配置。'}
       </p>}
@@ -285,7 +293,7 @@ export default function DocumentVersionReadingPage() {
           onModeChange={(mode) => { setView(mode); if (mode !== 'bilingual' && mode !== 'translation') setTranslationPage(null); }}
           returnRoute={returnTarget?.route ?? '/library?mode=document'}
           returnLabel={returnTarget?.label ?? '返回原处'}
-          title={currentStatus?.originalFilename ?? '文档阅读'}
+          title={currentStatus ? `${documentIdentity.documentNumber} · ${documentIdentity.documentTitle}` : '文档阅读'}
           initialPage={initialLocationPage}
           initialUnitId={initialLocationUnitId}
           initialLocationRequest={translationLocationRequest}

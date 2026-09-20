@@ -6,7 +6,7 @@ import type {
   CanonicalLibraryDocumentVersionSummary,
 } from '@shared/api.interface';
 import type { DocumentReadingPreview } from '@shared/document-reading.interface';
-import { projectLibraryDocumentReading } from '@client/src/pages/WorkspaceHomePage/library-document-presentation';
+import { documentIdentityPresentation, projectLibraryDocumentReading } from '@client/src/pages/WorkspaceHomePage/library-document-presentation';
 import LibraryDocumentRows from '@client/src/pages/WorkspaceHomePage/LibraryDocumentRows';
 import { LibraryDocumentDetails } from '@client/src/pages/WorkspaceHomePage/LibraryDocumentDetails';
 import { libraryMetadata } from './fixtures/canonical-library';
@@ -100,6 +100,14 @@ function family(
 }
 
 describe('projectLibraryDocumentReading', () => {
+  it('keeps the registered document number and parsed title separate from the file name', () => {
+    expect(documentIdentityPresentation({ documentCode: 'SB-TEST-1',
+      extractedMetadata: libraryMetadata() })).toEqual({ documentNumber: 'SB-TEST-1',
+      documentTitle: '测试原文标题', hasDocumentTitle: true });
+    expect(documentIdentityPresentation({ documentCode: '' })).toEqual({
+      documentNumber: '文档编号待核', documentTitle: '文档标题待核', hasDocumentTitle: false });
+  });
+
   it('projects AVAILABLE readings with conditions, limitations and source limitations', () => {
     const projection = projectLibraryDocumentReading(
       version('DV-1', {

@@ -15,10 +15,9 @@ import { DocumentVersionLink } from './DocumentVersionLink';
 import { LibraryMetadata } from './LibraryMetadata';
 import LinkDocumentMatterMaterial from '@client/src/features/matter/LinkDocumentMatterMaterial';
 import { useLibraryPaneScroll } from './useLibraryPaneScroll';
-import { metadataValues } from './library-classification';
 import {
   byteLabel,
-  documentLabel,
+  documentIdentityPresentation,
   libraryDateLabel,
   libraryVersionLabel,
   projectLibraryDocumentReading,
@@ -54,6 +53,8 @@ export function LibraryDocumentDetails({
   const selectedReading = selectedVersion
     ? projectLibraryDocumentReading(selectedVersion)
     : null;
+  const selectedIdentity = document ? documentIdentityPresentation({ documentCode: document.documentCode,
+    extractedMetadata: selectedVersion?.extractedMetadata }) : null;
 
   useEffect(() => {
     if (!document) {
@@ -117,15 +118,15 @@ export function LibraryDocumentDetails({
         <div {...paneScroll} className="library-quicklook-scroll">
           <header className="library-quicklook-title">
             <div>
-              <h3>{metadataValues(selectedVersion?.extractedMetadata?.title).join(' / ') || documentLabel(document)}</h3>
+              <h3>{selectedIdentity?.documentNumber}</h3>
               <p>
-                {document.issuerAuthority} · {document.normalizedFamily} ·{' '}
+                {selectedIdentity?.documentTitle} · {document.issuerAuthority} · {document.normalizedFamily} ·{' '}
                 {document.versions.length} 个可见版本
               </p>
             </div>
           </header>
           {selectedVersion && selectedReading ? <section className="library-selected-version" data-document-version-id={selectedVersion.documentVersionId}>
-            <p>{libraryVersionLabel(selectedVersion)} · {selectedVersion.selectedVersionIsCurrent ? '库内当前版本' : '历史版本'}</p>
+            <p>{libraryVersionLabel(selectedVersion)} · {selectedVersion.selectedVersionIsCurrent ? '库内当前版本' : '历史版本'} · 原始文件 {selectedVersion.originalFilename || '未标注'}</p>
             <h4>简明解读</h4>
             {selectedReading.brief ? (
               <div

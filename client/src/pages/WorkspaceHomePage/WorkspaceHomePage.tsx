@@ -65,7 +65,7 @@ import './library-atlas.css';
 import { useLibraryFleetCatalog } from './useLibraryFleetCatalog';
 import { useLibraryDefaultSelection } from './useLibraryDefaultSelection';
 import useReadingLocation from '@client/src/features/matter/useReadingLocation';
-import { libraryReadingScope } from '@client/src/features/matter/reading-return';
+import { libraryReadingScope, libraryTaskDocumentReadingRoute } from '@client/src/features/matter/reading-return';
 
 export default function WorkspaceHomePage() {
   return <LibraryPaneScrollProvider><WorkspaceHomeContent /></LibraryPaneScrollProvider>;
@@ -310,6 +310,16 @@ function WorkspaceHomeContent() {
 
   function openWorkbench(targetNode: string = 'reader'): void {
     if (!projection) return;
+    if (targetNode === 'reader') {
+      navigate(libraryTaskDocumentReadingRoute(projection.documentVersionId,
+        projection.workItemId, searchParams));
+      return;
+    }
+    if (targetNode === 'document') {
+      navigate(`/library?${new URLSearchParams({ mode: 'document', familyId: projection.familyId,
+        selectedDocumentVersionId: projection.documentVersionId })}`);
+      return;
+    }
     const targetTab: string = targetNode === 'document' ? 'source' : targetNode;
     navigate(
       `/work-items/${encodeURIComponent(projection.workItemId)}/documents?node=${targetNode}&tab=${targetTab}`,
@@ -729,11 +739,14 @@ function WorkspaceHomeContent() {
                   onContinueReview={() => openWorkbench('review')}
                   onOpenFamily={() => openWorkbench('document')}
                   onLocateEvidence={locateQuicklookEvidence}
-                  onLocateDocument={(evidence: DocumentAssessmentEvidence) =>
-                    navigate(
-                      `/work-items/${encodeURIComponent(evidence.workItemId)}/documents?${new URLSearchParams({ node: 'reader', tab: 'reader', documentVersionId: evidence.documentVersionId, sourceRef: evidence.sourceRefId, returnLibraryWorkItemId: deepLinkedWorkItemId }).toString()}`,
-                    )
-                  }
+                  onLocateDocument={(evidence: DocumentAssessmentEvidence) => {
+                    if (!evidence.workItemId) {
+                      navigate(libraryTaskDocumentReadingRoute(evidence.documentVersionId,
+                        deepLinkedWorkItemId, searchParams, true));
+                      return;
+                    }
+                    navigate(`/work-items/${encodeURIComponent(evidence.workItemId)}/documents?${new URLSearchParams({ node: 'reader', tab: 'reader', documentVersionId: evidence.documentVersionId, sourceRef: evidence.sourceRefId, returnLibraryWorkItemId: deepLinkedWorkItemId }).toString()}`);
+                  }}
                 />
               )}
             </section>

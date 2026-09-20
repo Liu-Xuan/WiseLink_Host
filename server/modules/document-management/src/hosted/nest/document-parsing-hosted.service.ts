@@ -45,7 +45,15 @@ export class DocumentParsingHostedService {
     const state = await this.repository.current({ ...context, documentVersionId });
     const configured = this.plugins.configured();
     const officialPublished = state.published?.manifestArtifact?.relativePath === 'original/manifest.json';
-    return { documentVersionId, originalFilename: source.version.originalFilename,
+    const documentTitle = source.metadata?.extractedMetadata.title.observations
+      .map((observation) => observation.value.trim()).filter(Boolean).join(' / ') || null;
+    return { documentVersionId, familyId: source.family.familyId,
+      documentCode: source.family.canonicalDocumentNumber, documentTitle,
+      normalizedFamily: source.family.documentFamily, issuerAuthority: source.family.issuerAuthority,
+      businessRevision: source.version.businessRevision, revisionDate: source.version.revisionDate,
+      sourceGeneratedDate: source.version.sourceGeneratedDate,
+      selectedVersionIsCurrent: source.family.currentDocumentVersionId === documentVersionId,
+      originalFilename: source.version.originalFilename,
       latestRun: state.latest ? summary(state.latest) : null, publishedRun: state.published ? summary(state.published) : null,
       runtimeAvailable: configured, runtime: { state: !configured ? 'NOT_CONFIGURED' : state.latest?.errorCode ? 'FAILED' :
         officialPublished ? 'CALL_SUCCEEDED' : 'CONFIGURED_UNVERIFIED',

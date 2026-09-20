@@ -212,7 +212,7 @@ export default function EngineeringQuicklook({
                   </ol>
                 ) : (
                   <p className="library-quicklook-missing">
-                    可进入统一工作台继续查看原文、解析结果和复核状态。
+                    可阅读原文，或继续进入复核查看已保存状态。
                   </p>
                 )}
               </section>
@@ -244,7 +244,7 @@ export default function EngineeringQuicklook({
 
           <div className="library-quicklook-actions">
             <Button type="button" onClick={onOpenWorkbench}>
-              打开统一工作台 <ArrowRight aria-hidden="true" />
+              阅读原文 <ArrowRight aria-hidden="true" />
             </Button>
             <Button type="button" variant="outline" onClick={onContinueReview}>
               继续复核

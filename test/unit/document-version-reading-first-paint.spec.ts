@@ -65,7 +65,11 @@ function readingPayload() {
 
 function statusPayload() {
   return {
-    documentVersionId: 'DV1', originalFilename: 'constructed.pdf', runtimeAvailable: true, runtime: { state: 'OK' },
+    documentVersionId: 'DV1', familyId: 'FAM-1', documentCode: 'SB-TEST-001',
+    documentTitle: '测试服务通告', normalizedFamily: 'SB', issuerAuthority: 'OEM',
+    businessRevision: 'R2', revisionDate: '2026-09-01', sourceGeneratedDate: '',
+    selectedVersionIsCurrent: true, originalFilename: 'constructed.pdf',
+    runtimeAvailable: true, runtime: { state: 'CALL_SUCCEEDED' },
     publishedRun: { parseRunId: 'PR1', parseRevision: 3 },
     latestRun: { parseRunId: 'PR1', status: 'PUBLISHED', deadlineAt: '2030-01-01T00:00:00Z' },
   };
@@ -136,7 +140,15 @@ it('renders the pinned body before the status read resolves and never requests t
   expect(mockTranslation).not.toHaveBeenCalled(); // default dual must not auto-request Chinese
   resolveStatus(statusPayload());
   await act(async () => {});
+  expect(container.querySelector('h1')?.textContent).toBe('SB-TEST-001');
+  expect(container.textContent).toContain('测试服务通告 · R2 · 库内当前版本');
   expect(container.textContent).toContain('constructed.pdf');
+});
+
+it('explains when direct evidence has no task-bound paragraph location', async () => {
+  await mount('parseRunId=PR1&unboundEvidence=1');
+  expect(container.textContent).toContain('没有工作项执行身份');
+  expect(container.textContent).toContain('未猜测任务或具体段落位置');
 });
 
 it('loads translation only after switching to bilingual mode, once', async () => {

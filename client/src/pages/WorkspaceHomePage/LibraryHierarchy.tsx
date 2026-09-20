@@ -79,23 +79,22 @@ export function LibraryHierarchy({
                 {document.versions.map((version) => (
                   <li key={version.documentVersionId}>
                     <DocumentVersionLink version={version} familyId={document.familyId}>
-                      <strong>{libraryVersionLabel(version)}</strong>
+                      <strong>{documentLabel(document)}</strong>
                       <span>
-                        {version.selectedVersionIsCurrent
+                        {libraryVersionLabel(version)} · {version.selectedVersionIsCurrent
                           ? '当前版本'
                           : '历史版本'}
                       </span>
-                      <small>{version.originalFilename}</small>
                       {version.extractedMetadata ? (
                         <small>
                           {metadataValues(version.extractedMetadata.title).join(
                             ' / ',
-                          ) || '标题本次未检出'}
-                          {' · 元数据待核'}
+                          ) || '文档标题待核'}
                         </small>
                       ) : (
-                        <small>元数据未提取</small>
+                        <small>文档标题待核</small>
                       )}
+                      <small>原始文件 {version.originalFilename || '未标注'}</small>
                     </DocumentVersionLink>
                   </li>
                 ))}

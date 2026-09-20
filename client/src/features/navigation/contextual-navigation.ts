@@ -231,12 +231,12 @@ export function buildLibraryObjectContext(
   kind: CurrentObjectKind,
 ): CurrentObjectContextView {
   const displayCode: string =
-    document.documentCode || document.originalFilename;
+    document.documentCode || '文档编号待核';
   return {
     kind,
     routeWorkItemId: document.workItemId,
     displayCode,
-    title: document.originalFilename || '当前受控资料',
+    title: displayCode,
     meta: `${document.businessRevision || document.sourceGeneratedDate || '版本未标注'} · ${document.normalizedFamily}`,
     parentLabel:
       kind === 'DOCUMENT'

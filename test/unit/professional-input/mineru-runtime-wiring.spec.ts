@@ -11,7 +11,9 @@ describe('Official document plugin wiring', () => {
     }) };
     const catalog = { readMetadataSource: jest.fn(async () => {
       events.push('source');
-      return { version: { originalFilename: 'source.pdf' }, source: {} };
+      return { version: { originalFilename: 'source.pdf', businessRevision: 'R1', revisionDate: '2026-09-01', sourceGeneratedDate: '' },
+        family: { familyId: 'FAM-1', canonicalDocumentNumber: 'SB-TEST-1', documentFamily: 'SB',
+          issuerAuthority: 'OEM', currentDocumentVersionId: 'version' }, metadata: null, source: {} };
     }) };
     const repository = { current: jest.fn(async () => ({ latest: null, published: null })),
       readRequest: jest.fn(async () => null), reserve: jest.fn() };
