@@ -124,7 +124,7 @@ function MatterGraphContent({matterId, workRef, session, denied}: {matterId: str
   }, [matterId, workRef, setParams]);
   const handleStateChange = useCallback((state: SuiteGraphReadingState) => {
     displayState.current = state;
-    const structural = JSON.stringify([state.selectedId ?? null, state.hiddenGroups ?? [], state.page ?? 0, state.density ?? 4, state.relationMode ?? 'aggregated', state.perspective ?? 'matter', state.eventId ?? null, state.wikiTab ?? 'knowledge']);
+    const structural = JSON.stringify([state.selectedId ?? null, state.hiddenGroups ?? [], state.page ?? 0, state.density ?? 4, state.relationMode ?? 'aggregated', state.layoutMode ?? 'force', state.perspective ?? 'matter', state.eventId ?? null, state.wikiTab ?? 'knowledge']);
     const structuralChanged = structural !== structuralRef.current;
     structuralRef.current = structural;
     if (persistTimer.current) { clearTimeout(persistTimer.current); persistTimer.current = null; }

@@ -9,6 +9,7 @@ export interface SuiteGraphReadingState {
   page?: number;
   density?: number;
   relationMode?: 'aggregated' | 'individual';
+  layoutMode?: 'reference' | 'force';
   perspective?: 'matter' | 'documents' | 'domain' | 'panorama';
   viewport?: {zoom: number; pan: {x: number; y: number}};
   /** Selected left-column event identity (internal serialized key, never an entry pin). */
@@ -45,6 +46,7 @@ export function graphReadingParams(matterId: string, workRef: string | null, sta
   if (Number.isInteger(state.page) && state.page! >= 0 && state.page! <= 99999) params.set('page', String(state.page));
   if (Number.isInteger(state.density) && state.density! >= 1 && state.density! <= 6) params.set('density', String(state.density));
   if (state.relationMode === 'aggregated' || state.relationMode === 'individual') params.set('relationMode', state.relationMode);
+  if (state.layoutMode === 'reference' || state.layoutMode === 'force') params.set('layoutMode', state.layoutMode);
   if (state.perspective && ['matter', 'documents', 'domain', 'panorama'].includes(state.perspective)) params.set('perspective', state.perspective);
   if (state.eventId && text(state.eventId, 2048)) {
     params.set('eventId', state.eventId);
@@ -74,6 +76,8 @@ export function readGraphReadingState(params: URLSearchParams): SuiteGraphReadin
   }
   const mode = single(params, 'relationMode');
   if (mode === 'aggregated' || mode === 'individual') state.relationMode = mode;
+  const layout = single(params, 'layoutMode');
+  if (layout === 'reference' || layout === 'force') state.layoutMode = layout;
   const perspective = single(params, 'perspective');
   if (perspective === 'matter' || perspective === 'documents' || perspective === 'domain' || perspective === 'panorama') state.perspective = perspective;
   const eventId = single(params, 'eventId');
@@ -97,6 +101,7 @@ export function readGraphReadingState(params: URLSearchParams): SuiteGraphReadin
   if (!bounded.has('viewport')) delete state.viewport;
   if (!bounded.has('page')) delete state.page;
   if (!bounded.has('density')) delete state.density;
+  if (state.viewport && !state.layoutMode) state.layoutMode = 'reference';
   return state;
 }
 export function withGraphReturn(route: string, graphQuery: URLSearchParams): string {

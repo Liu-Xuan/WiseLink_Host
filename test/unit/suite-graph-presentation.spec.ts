@@ -78,6 +78,32 @@ describe('buildSuiteGraphPresentation', () => {
     expect(compactCard?.data.h).toBe(80);
   });
 
+  it('offers a deterministic force layout without moving cards outside their groups', () => {
+    const input = matter(6);
+    input.groups.forEach((group, groupIndex) => {
+      group.items = Array.from({ length: 4 }, (_, index) => ({
+        id: `item-${groupIndex}-${index}`, title: `Item ${index}`,
+      }));
+    });
+    input.relations = [];
+    const force = buildSuiteGraphPresentation(input, { layoutMode: 'force' });
+    expect(buildSuiteGraphPresentation(input, { layoutMode: 'force' }).groups).toEqual(force.groups);
+    force.groups.forEach((group, index) => {
+      expect(Math.abs(group.x - 414) >= (group.w + 204) / 2 + 18
+        || Math.abs(group.y - 329) >= (group.h + 204) / 2 + 18).toBe(true);
+      for (const other of force.groups.slice(index + 1)) {
+        expect(Math.abs(group.x - other.x) >= (group.w + other.w) / 2 + 18
+          || Math.abs(group.y - other.y) >= (group.h + other.h) / 2 + 18).toBe(true);
+      }
+      const cards = force.elements.filter((element) => element.group === 'nodes'
+        && element.data.viewKind === 'item' && element.data.groupKey === group.key);
+      expect(cards).toHaveLength(4);
+      expect(cards.every((card) => card.group === 'nodes'
+        && Math.abs(card.position.x - group.x) <= group.w / 2
+        && Math.abs(card.position.y - group.y) <= group.h / 2)).toBe(true);
+    });
+  });
+
   it('honors hidden groups and reports groups past the bounded page', () => {
     const result = buildSuiteGraphPresentation(matter(8), { hiddenGroups: ['g1'], maxGroups: 6 });
     expect(result.groups.map((group) => group.key)).toEqual(['g0', 'g2', 'g3', 'g4', 'g5', 'g6']);

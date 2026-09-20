@@ -39,6 +39,7 @@ export interface SuiteGraphPresentationOptions {
   hiddenGroups?: readonly string[];
   density?: number;
   relationMode?: SuiteGraphRelationMode;
+  layoutMode?: 'reference' | 'force';
   page?: number;
   maxGroups?: number;
 }

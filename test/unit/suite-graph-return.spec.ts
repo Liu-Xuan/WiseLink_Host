@@ -1,6 +1,6 @@
 import { graphReadingParams, readGraphReadingState, withGraphReturn } from '../../client/src/pages/RelationGraphPage/suite-graph-return';
 import { matterReadingReturnParams, readingReturnTarget } from '../../client/src/features/matter/reading-return';
-const query = graphReadingParams('matter-a', 'old-work', {selectedId: '["claim","old-work","c1"]', hiddenGroups: ['evidence'], perspective: 'documents', page: 1, density: 3, relationMode: 'individual', viewport: {zoom: .7, pan: {x: 20, y: -30}}});
+const query = graphReadingParams('matter-a', 'old-work', {selectedId: '["claim","old-work","c1"]', hiddenGroups: ['evidence'], perspective: 'documents', page: 1, density: 3, relationMode: 'individual', layoutMode: 'reference', viewport: {zoom: .7, pan: {x: 20, y: -30}}});
 it('restores exact graph state after a pinned source and after Wiki', () => {
   const source = new URL(withGraphReturn('/document-versions/dv1?parseRunId=pr1&sourceRef=s1&returnMatterId=old', query), 'https://example.test');
   expect(source.searchParams.has('returnMatterId')).toBe(false);
@@ -58,6 +58,11 @@ it('only restores bounded display state, never arbitrary URLs or invalid numbers
   const state = readGraphReadingState(new URLSearchParams('page=NaN&density=0&perspective=external&viewport=%7B%22zoom%22%3A999%2C%22pan%22%3A%7B%22x%22%3A0%2C%22y%22%3A0%7D%7D&next=https://evil.test'));
   expect(state).toEqual({});
   expect(readGraphReadingState(query).viewport).toEqual({zoom: .7, pan: {x: 20, y: -30}});
+  expect(readGraphReadingState(query).layoutMode).toBe('reference');
+  expect(readGraphReadingState(new URLSearchParams('layoutMode=invalid')).layoutMode).toBeUndefined();
+  expect(readGraphReadingState(new URLSearchParams({
+    viewport: JSON.stringify({zoom: .7, pan: {x: 20, y: -30}}),
+  })).layoutMode).toBe('reference');
 });
 
 it('retains the graph context across Wiki to source and back to the same work', () => {

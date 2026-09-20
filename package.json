@@ -255,6 +255,10 @@
       ]
     },
     "moduleNameMapper": {
+      "^d3-force$": "<rootDir>/node_modules/d3-force/dist/d3-force.min.js",
+      "^d3-quadtree$": "<rootDir>/node_modules/d3-quadtree/dist/d3-quadtree.min.js",
+      "^d3-dispatch$": "<rootDir>/node_modules/d3-dispatch/dist/d3-dispatch.min.js",
+      "^d3-timer$": "<rootDir>/node_modules/d3-timer/dist/d3-timer.min.js",
       "^@server/(.*)$": "<rootDir>/server/$1",
       "^@shared/(.*)$": "<rootDir>/shared/$1",
       "^@client/(.*)$": "<rootDir>/client/$1"
