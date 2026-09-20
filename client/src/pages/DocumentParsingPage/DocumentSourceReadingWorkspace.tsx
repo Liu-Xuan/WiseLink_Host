@@ -11,6 +11,9 @@ import {
 import { Link } from 'react-router-dom';
 
 import { Button } from '@client/src/components/ui/button';
+import RetainedWorkbenchPanel, {
+  useWorkbenchPanelActive,
+} from '@client/src/features/workbench/RetainedWorkbenchPanel';
 import type { DocumentOriginalResult } from '@shared/document-original.interface';
 import { DocumentOriginalReader } from './DocumentOriginalReader';
 import DocumentOriginalCanvasPreview from './DocumentOriginalCanvasPreview';
@@ -53,11 +56,15 @@ export function DocumentSourceReadingWorkspace({
   initialLocationRequest = 0,
   renderPdfPreview,
 }: Props) {
+  const workspaceActive: boolean = useWorkbenchPanelActive();
   const workspaceRef = useRef<HTMLDivElement>(null);
   const [split, setSplit] = useState(50);
   const [page, setPage] = useState(initialPage ?? 1);
   const [tocOpen, setTocOpen] = useState(() => typeof window === 'undefined' ||
     typeof window.matchMedia !== 'function' || window.matchMedia('(min-width: 761px)').matches);
+  const [compact, setCompact] = useState(() => typeof window !== 'undefined'
+    && typeof window.matchMedia === 'function'
+    && window.matchMedia('(max-width: 760px)').matches);
   const [mobileSecondary, setMobileSecondary] = useState(false);
   const [activeUnitId, setActiveUnitId] = useState<string | null>(initialUnitId ?? null);
   const [fullscreen, setFullscreen] = useState(false);
@@ -85,6 +92,15 @@ export function DocumentSourceReadingWorkspace({
       });
     }
   }, [initialUnitId, initialLocationRequest]);
+
+  useEffect(() => {
+    if (typeof window.matchMedia !== 'function') return;
+    const media: MediaQueryList = window.matchMedia('(max-width: 760px)');
+    const update = (): void => setCompact(media.matches);
+    update();
+    media.addEventListener('change', update);
+    return () => media.removeEventListener('change', update);
+  }, []);
 
   useEffect(() => {
     const update = () => setFullscreen(document.fullscreenElement === workspaceRef.current);
@@ -140,6 +156,8 @@ export function DocumentSourceReadingWorkspace({
   } as CSSProperties;
   const showText = mode === 'dual' || mode === 'original';
   const showPdf = mode === 'dual' || mode === 'pdf';
+  const pdfActive = workspaceActive && showPdf
+    && (!compact || mode === 'pdf' || mobileSecondary);
   const showTranslation = mode === 'bilingual' || mode === 'translation';
   const targetBoxes = useMemo(() => {
     if (!activeUnitId) return null;
@@ -212,62 +230,51 @@ export function DocumentSourceReadingWorkspace({
       </aside> : null}
 
       <section className={`source-reader-stage mode-${mode}`}>
-        {showTranslation ? (
-          <div className="source-reader-translation">
-            <div className="source-reader-pane-title"><strong>{mode === 'translation' ? '中文阅读' : '中英对照'}</strong>
-              <span>完整语义与原文来源保持关联</span></div>
-            <div className="source-reader-bilingual">{bilingualContent}</div>
-          </div>
-        ) : (
-          <div
-            className={`source-reader-columns${showText && showPdf ? '' : ' is-single'}${mobileSecondary ? ' show-secondary' : ''}`}
-            style={columnStyle}
-          >
-            {showText ? <div className="source-reader-primary">
+        <div className="source-reader-translation" hidden={!showTranslation}>
+          <div className="source-reader-pane-title"><strong>{mode === 'translation' ? '中文阅读' : '中英对照'}</strong>
+            <span>完整语义与原文来源保持关联</span></div>
+          <div className="source-reader-bilingual">{bilingualContent}</div>
+        </div>
+        <div
+          className={`source-reader-columns${showText && showPdf ? '' : ' is-single'}${mobileSecondary ? ' show-secondary' : ''}`}
+          style={columnStyle}
+          hidden={showTranslation}
+        >
+            <div className="source-reader-primary" hidden={!showText}>
               <div className="source-reader-pane-title"><strong>连续结构化原文</strong><span>源文顺序与完整语义保留</span></div>
               <div className="source-reader-pane-scroll"><DocumentOriginalReader original={original}
                 activeUnitId={activeUnitId} onUnitLocate={locateUnit} /></div>
-            </div> : null}
-            {showText && showPdf ? (
-              <>
-                <div
-                  className="source-reader-splitter"
-                  role="separator"
-                  tabIndex={0}
-                  aria-label="调整阅读分栏"
-                  aria-orientation="vertical"
-                  aria-valuemin={32}
-                  aria-valuemax={68}
-                  aria-valuenow={Math.round(split)}
-                  onPointerDown={startResize}
-                  onKeyDown={(event) => {
-                    if (event.key !== 'ArrowLeft' && event.key !== 'ArrowRight') return;
-                    event.preventDefault();
-                    setSplit((value) => Math.max(32, Math.min(68, value + (event.key === 'ArrowLeft' ? -2 : 2))));
-                  }}
-                />
-                <div className="source-reader-pdf-pane">
-                  <div className="source-reader-pane-title"><strong>PDF 原件</strong><span>受控读取 · 第 {page} 页</span></div>
-                  {renderPdfPreview ? renderPdfPreview(page) : <DocumentOriginalCanvasPreview
-                    documentVersionId={documentVersionId}
-                    page={page}
-                    autoLoad={Boolean(initialPage)}
-                    targetSignal={`${activeUnitId ?? ''}:${initialLocationRequest}`}
-                    targetBoxes={targetBoxes}
-                  />}
-                </div>
-              </>
-            ) : showPdf ? <div className="source-reader-pdf-pane">
+            </div>
+            <div
+              className="source-reader-splitter"
+              role="separator"
+              tabIndex={showText && showPdf ? 0 : -1}
+              hidden={!(showText && showPdf)}
+              aria-label="调整阅读分栏"
+              aria-orientation="vertical"
+              aria-valuemin={32}
+              aria-valuemax={68}
+              aria-valuenow={Math.round(split)}
+              onPointerDown={startResize}
+              onKeyDown={(event) => {
+                if (event.key !== 'ArrowLeft' && event.key !== 'ArrowRight') return;
+                event.preventDefault();
+                setSplit((value) => Math.max(32, Math.min(68, value + (event.key === 'ArrowLeft' ? -2 : 2))));
+              }}
+            />
+            <div className="source-reader-pdf-pane" hidden={!showPdf}>
               <div className="source-reader-pane-title"><strong>PDF 原件</strong><span>受控读取 · 第 {page} 页</span></div>
-              {renderPdfPreview ? renderPdfPreview(page) : <DocumentOriginalCanvasPreview
-                documentVersionId={documentVersionId}
-                page={page}
-                targetSignal={`${activeUnitId ?? ''}:${initialLocationRequest}`}
-                targetBoxes={targetBoxes}
-              />}
-            </div> : null}
-          </div>
-        )}
+              <RetainedWorkbenchPanel active={pdfActive}>
+                {renderPdfPreview ? renderPdfPreview(page) : <DocumentOriginalCanvasPreview
+                  documentVersionId={documentVersionId}
+                  page={page}
+                  autoLoad={Boolean(initialPage)}
+                  targetSignal={`${activeUnitId ?? ''}:${initialLocationRequest}`}
+                  targetBoxes={targetBoxes}
+                />}
+              </RetainedWorkbenchPanel>
+            </div>
+        </div>
       </section>
       </div>
     </div>

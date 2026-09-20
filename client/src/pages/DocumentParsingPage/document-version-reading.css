@@ -35,6 +35,7 @@
 .source-reader-toc-boundary strong { color: var(--wl-ink, #27292c); font-weight: 600; }
 
 .source-reader-stage { min-width: 0; overflow: hidden; }
+.source-reader-stage [hidden] { display: none !important; }
 .source-reader-toolbar { display: flex; align-items: center; flex-wrap: wrap; gap: 7px; min-height: 61px; padding: 11px 15px; border-bottom: 1px solid var(--wl-border, #e1e4e5); }
 .source-reader-mode-tabs { display: flex; padding: 3px; border-radius: 12px; background: var(--wl-canvas, #f4f5f5); }
 .source-reader-mode-tabs button { min-height: 29px; padding: 5px 12px; border: 0; border-radius: 9px; background: transparent; color: var(--wl-muted, #70777d); font-size: 10px; }
