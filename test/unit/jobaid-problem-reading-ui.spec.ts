@@ -78,6 +78,24 @@ describe('problem-oriented JobAid reading', () => {
     expect(html).not.toContain('逐项评估尚未形成');
     expect(html).not.toMatch(/<details[^>]*>\s*<summary[^>]*>措施是否/u);
   });
+  it('uses the assessment presentation without changing the saved work identity', () => {
+    const data = jobAidReadingFixture();
+    const html = renderToStaticMarkup(
+      createElement(JobAidProblemReading, {
+        data,
+        presentation: 'assessment',
+        onLocateDocument: jest.fn(),
+      }),
+    );
+    expect(html).toContain('class="wl-jobaid-workspace is-assessment"');
+    expect(html).toContain('data-work-revision-ref="work-current-test"');
+    expect(html).toContain('措施是否对当前构型有效？');
+    expect(html).toContain('当前认识');
+    expect(html).toContain('方法与要求');
+    expect(html.indexOf('wl-jobaid-reading')).toBeLessThan(
+      html.indexOf('wl-jobaid-index'),
+    );
+  });
   it('shows unknown grades as unknown and keeps other classification identities separate', () => {
     const html = renderToStaticMarkup(
       createElement(JobAidProblemReading, {

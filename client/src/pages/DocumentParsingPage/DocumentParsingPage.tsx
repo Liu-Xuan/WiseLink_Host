@@ -57,6 +57,7 @@ import {
   WORKBENCH_TAB_DEFINITIONS,
 } from './document-parsing-navigation';
 import WorkItemProcessWorkspace from './WorkItemProcessWorkspace';
+import WorkItemAssessmentWorkspace from './WorkItemAssessmentWorkspace';
 import { AeoAuthoringWorkspace } from './AeoAuthoringWorkspace';
 import ApplicabilitySelectionPanel from './ApplicabilitySelectionPanel';
 import AssessmentRuleWorkspace from './AssessmentRuleWorkspace';
@@ -1230,23 +1231,32 @@ export default function DocumentParsingPage() {
         </RetainedWorkbenchPanel>
 
         <RetainedWorkbenchPanel active={activeNode === 'assessment'}>
-          <ApplicabilitySelectionPanel
-            key={workItemId}
-            workItemId={workItemId}
-            workItemRevision={data.workItem.revision}
-            workItemRefreshing={loading}
-            onOpenInteractiveReview={() =>
-              updateDeepLink({ panel: 'review' })
+          <WorkItemAssessmentWorkspace
+            documentCode={
+              data.workItem.package?.documentIdentity?.documentCode?.trim() ||
+              data.workItem.source.documentId
             }
-            onConfigurationEvidenceAdopted={() => load(activeQuery)}
-          />
-          <JobAidProblemWorkspace
-            workItemId={workItemId}
-            initialAnalysis={data.initialAnalysis}
-            overall={integratedAssessment?.overallSynthesis}
-            onUpdated={() => void load(activeQuery)}
-            onLocateDocument={locateAssessmentDocument}
+            onOpenProcess={() => updateDeepLink({ panel: 'overall' })}
+            onOpenReview={() => updateDeepLink({ panel: 'review' })}
           >
+            <ApplicabilitySelectionPanel
+              key={workItemId}
+              workItemId={workItemId}
+              workItemRevision={data.workItem.revision}
+              workItemRefreshing={loading}
+              onOpenInteractiveReview={() =>
+                updateDeepLink({ panel: 'review' })
+              }
+              onConfigurationEvidenceAdopted={() => load(activeQuery)}
+            />
+            <JobAidProblemWorkspace
+              workItemId={workItemId}
+              initialAnalysis={data.initialAnalysis}
+              overall={integratedAssessment?.overallSynthesis}
+              onUpdated={() => void load(activeQuery)}
+              onLocateDocument={locateAssessmentDocument}
+              presentation="assessment"
+            >
             {assessmentEligible ? (
               <section
                 className="parse-assessment-panel parse-assessment-workspace"
@@ -1554,7 +1564,8 @@ export default function DocumentParsingPage() {
                 </article>
               </section>
             )}
-          </JobAidProblemWorkspace>
+            </JobAidProblemWorkspace>
+          </WorkItemAssessmentWorkspace>
         </RetainedWorkbenchPanel>
 
         {/* Legacy rule reviews remain read-only alongside problem-oriented work. */}
