@@ -194,7 +194,6 @@ const MatterWorkspace: FC<MatterWorkspaceProps> = ({
     return () => controller.abort();
   }, [
     authenticationRequired,
-    currentRevision?.matterWorkRevisionId,
     matterId,
     requestedWorkRef,
     scopeKey,
