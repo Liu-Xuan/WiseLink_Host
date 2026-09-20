@@ -8,9 +8,10 @@ export interface TrinityStageMeta {
   output: string;
 }
 
-export interface TrinityKnowledgeStageMeta {
+export interface TrinitySourceCategoryMeta {
   id: string;
   title: string;
+  subtitle: string;
   purpose: string;
 }
 
@@ -26,7 +27,19 @@ export interface TrinityMatter {
   next: string;
   /** Null when the directory row does not expose enough saved-work detail to classify attention. */
   attention: boolean | null;
-  activeStages: string[];
+  /** Null when the saved overview coverage is not exposed by the directory row. */
+  synthesisPending: boolean | null;
+  /** Associations supported by saved work, never inferred completion states. */
+  activeAssessmentStages: string[];
+}
+
+export interface TrinitySourceItem {
+  id: string;
+  matter: string;
+  category: string;
+  title: string;
+  version: string;
+  contribution: string;
 }
 
 export interface TrinityEventItem {
@@ -73,8 +86,9 @@ export interface TrinityCoverage {
   /** Whether the authorized matter directory has been exhausted and de-duplicated. */
   matterTotal?: TrinityAvailability;
   matters?: TrinityAvailability;
-  /** Whether lifecycle associations are complete for every matter in scope. */
-  lifecycle?: TrinityAvailability;
+  /** Whether assessment associations are complete for every matter in scope. */
+  assessment?: TrinityAvailability;
+  sources?: TrinityAvailability;
   events?: TrinityAvailability;
   knowledge?: TrinityAvailability;
 }
@@ -82,8 +96,9 @@ export interface TrinityCoverage {
 export interface TrinitySituationData {
   meta: TrinitySampleMeta;
   stages: TrinityStageMeta[];
-  knowledgeStages: TrinityKnowledgeStageMeta[];
+  sourceCategories: TrinitySourceCategoryMeta[];
   matters: TrinityMatter[];
+  sources: TrinitySourceItem[];
   events: TrinityEventItem[];
   knowledge: TrinityKnowledgeItem[];
   availability?: TrinityAvailability;
@@ -96,9 +111,9 @@ export interface TrinitySituationData {
 
 export interface TrinitySituationMetrics {
   visibleMatters: number | null;
+  sourceCount: number | null;
   attention: number | null;
-  knowledgeWorks: number | null;
-  effectWatch: number | null;
+  synthesisPending: number | null;
 }
 
 export type TrinityNavigationTarget =
@@ -107,6 +122,7 @@ export type TrinityNavigationTarget =
   | { type: 'matter-reading'; matterId: string }
   | { type: 'matter-work'; matterId: string; workRef: string }
   | { type: 'matter-timeline'; matterId: string }
+  | { type: 'source-item'; sourceId: string }
   | { type: 'event'; eventId: string }
   | { type: 'knowledge-item'; knowledgeId: string }
   | { type: 'knowledge-view'; phase?: string }

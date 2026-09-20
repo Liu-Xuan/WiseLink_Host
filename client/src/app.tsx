@@ -7,6 +7,7 @@ import WorkItemOverviewPage from './features/workitem/WorkItemOverviewPage';
 import EngineeringMatterPage from './features/matter/EngineeringMatterPage';
 import MatterProblemAnalysisPage from './features/matter/MatterProblemAnalysisPage';
 import EngineeringSituationPage from './pages/EngineeringSituationPage/EngineeringSituationPage';
+import EngineeringSituationVisualPreviewPage from './pages/EngineeringSituationPage/EngineeringSituationVisualPreviewPage';
 import EngineeringTimelinePage from './pages/EngineeringTimelinePage/EngineeringTimelinePage';
 import DocumentParsingPage from './pages/DocumentParsingPage/DocumentParsingPage';
 import DocumentVersionReadingPage from './pages/DocumentParsingPage/DocumentVersionReadingPage';
@@ -62,6 +63,7 @@ const RoutesComponent = () => {
       <Route path="dev-preview/reactflow-validation" element={<ReactFlowValidationPlayground />} />
       <Route element={<Layout />}>
         <Route index element={<LibraryIndexRedirect />} />
+        <Route path="dev-preview/situation" element={<EngineeringSituationVisualPreviewPage />} />
         <Route path="dialogues" element={<DialoguePage />} />
         <Route path="dialogues/:threadRef" element={<DialoguePage />} />
         <Route path="library" element={<WorkspaceHomePage />} />

@@ -2,7 +2,10 @@ import { projectAuthorizedSituation } from '../../client/src/features/trinity/tr
 import { situationMetrics, stageLabel } from '../../client/src/features/trinity/trinity-model';
 import { libraryMatterFixture } from './fixtures/library-matter';
 import type { EngineeringMatterWorkspaceRead } from '../../client/src/api/engineering-matter';
-import type { EngineeringMatterDirectoryResponse } from '@shared/api.interface';
+import type {
+  EngineeringMatterCatalogEntry,
+  EngineeringMatterDirectoryResponse,
+} from '@shared/api.interface';
 
 const row: EngineeringMatterDirectoryResponse['items'][number] = {
   matterId: 'matter-1', title: '授权事项', primaryWorkItemId: null,
@@ -15,7 +18,7 @@ describe('authorized Trinity projection', () => {
   it('keeps directory pagination, fleet, event time and lifecycle unknown', () => {
     const { data } = projectAuthorizedSituation([row, row], 'complete');
     expect(data.matters).toHaveLength(1);
-    expect(data.matters[0].activeStages).toEqual(['assess']);
+    expect(data.matters[0].activeAssessmentStages).toEqual(['synthesis']);
     expect(data.matters[0].fleet).toBe('机型范围未核实');
     expect(data.availability).toBe('partial');
     expect(data.events).toEqual([]);
@@ -25,19 +28,19 @@ describe('authorized Trinity projection', () => {
   it('separates an exhausted matter total from incomplete lifecycle coverage', () => {
     const { data } = projectAuthorizedSituation([row, row], 'complete', null, true);
     expect(data.coverage?.matterTotal).toBe('complete');
-    expect(data.coverage?.lifecycle).toBe('partial');
+    expect(data.coverage?.assessment).toBe('partial');
     expect(situationMetrics(data, data.matters)).toEqual({
       visibleMatters: 1,
+      sourceCount: null,
       attention: 1,
-      knowledgeWorks: null,
-      effectWatch: null,
+      synthesisPending: null,
     });
-    expect(stageLabel(data.matters, 'macro', 'assess', false, false))
+    expect(stageLabel(data.matters, 'macro', 'synthesis', false, false))
       .toBe('已取得 1 项关联 · 部分范围');
   });
   it('does not infer analysis or formal execution from a saved work number alone', () => {
     const { data } = projectAuthorizedSituation([{...row, result: null}], 'complete');
-    expect(data.matters[0].activeStages).toEqual([]);
+    expect(data.matters[0].activeAssessmentStages).toEqual([]);
     expect(data.matters[0].attention).toBeNull();
   });
   it('does not turn a missing completion classification into an exact zero attention count', () => {
@@ -68,8 +71,41 @@ describe('authorized Trinity projection', () => {
     const target = new URL(knowledgeTargets[work.matterWorkRevisionId], 'https://example.test');
     expect(target.searchParams.get('workRef')).toBe(work.matterWorkRevisionId);
     expect(data.knowledge[0].reuseCountKnown).toBe(false);
-    expect(data.matters[0].activeStages).toEqual(['assess']);
+    expect(data.matters[0].activeAssessmentStages).toEqual([
+      'question', 'analysis', 'synthesis', 'update',
+    ]);
     expect(data.matters[0].status).toBe('综合覆盖尚未核实');
+  });
+  it('does not expose a catalog version explicitly excluded from matter materials', () => {
+    const focus = libraryMatterFixture();
+    const versionId = 'excluded-version';
+    const entry: EngineeringMatterCatalogEntry = {
+      workItemId: 'WI-excluded', relationRole: 'RELATED',
+      linkedAtWorkItemRevision: 1, currentWorkItemRevision: 1,
+      workItemChangedSinceLink: false, workItemStatus: 'ACTIVE',
+      document: {
+        documentId: 'DOC-excluded', documentVersionId: versionId,
+        documentCode: 'SB-EXCLUDED', businessRevision: 'R1',
+        normalizedFamily: 'SB-EXCLUDED',
+      },
+      documentCurrentness: {
+        familyId: 'SB-EXCLUDED', currentDocumentVersionId: versionId,
+        currentGeneration: 1, selectedVersionIsCurrent: true,
+      },
+      sourceNavigation: {
+        status: 'NOT_PARSED', sourceRefCount: 0, structuredContentPath: null,
+      },
+    };
+    focus.matter.catalog.entries = [entry];
+    focus.matter.materials = [{
+      kind: 'RELATED', materialId: 'material-excluded', familyId: 'SB-EXCLUDED',
+      documentVersionId: versionId, scope: '', contribution: '明确不纳入',
+      basis: [], origin: 'ENGINEER', disposition: 'EXCLUDED',
+    }];
+    const projection = projectAuthorizedSituation([], 'complete', focus);
+    expect(projection.data.sources.some((source) =>
+      source.id === `document:${versionId}`)).toBe(false);
+    expect(projection.sourceTargets[`document:${versionId}`]).toBeUndefined();
   });
   it('projects every saved review condition bound to the exact work revision only when current saved work exists', () => {
     const base = libraryMatterFixture();
@@ -103,7 +139,9 @@ describe('authorized Trinity projection', () => {
         matterId: base.matter.matterId, matterWorkRevisionId: current.matterWorkRevisionId,
         workingRevision: current.workingRevision },
     ]);
-    expect(data.matters[0].activeStages).toEqual(['assess']);
+    expect(data.matters[0].activeAssessmentStages).toEqual([
+      'question', 'analysis', 'synthesis', 'update',
+    ]);
     expect(data.events).toEqual([]);
   });
   it('separates a missing current saved work from an empty saved condition list', () => {

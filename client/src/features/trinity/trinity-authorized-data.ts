@@ -1,7 +1,11 @@
 import type { EngineeringMatterDirectoryResponse } from '@shared/api.interface';
 import type { EngineeringMatterWorkspaceRead } from '@client/src/api/engineering-matter';
 import { matterWorkRoute } from '@client/src/features/matter/matter-navigation';
-import { TRINITY_STAGE_META, TRINITY_KNOWLEDGE_STAGE_META } from './trinity-model';
+import { matterReadingReturnParams } from '@client/src/features/matter/reading-return';
+import {
+  TRINITY_SOURCE_CATEGORY_META,
+  TRINITY_STAGE_META,
+} from './trinity-model';
 import type {
   TrinityAvailability,
   TrinityMatter,
@@ -12,6 +16,7 @@ import type {
 export interface AuthorizedTrinityProjection {
   data: TrinitySituationData;
   knowledgeTargets: Record<string, string>;
+  sourceTargets: Record<string, string>;
 }
 
 function directoryAttention(
@@ -42,10 +47,14 @@ export function projectAuthorizedSituation(
     brief: row.result?.listBrief || '请进入事项核对已保存工作和关联资料。',
     next: '展开已保存工作，核对条件、来源与综合覆盖。',
     attention: directoryAttention(row.result),
-    // A saved assessment is evidence of associated analysis, never a completion status.
-    activeStages: row.result ? ['assess'] : [],
+    synthesisPending: row.overallStatus === 'STALE' ? true
+      : row.overallStatus === 'CURRENT' ? false : null,
+    // A saved summary proves an association with synthesis, never completion.
+    activeAssessmentStages: row.result ? ['synthesis'] : [],
   })) : [];
   const knowledgeTargets: Record<string, string> = {};
+  const sourceTargets: Record<string, string> = {};
+  const sources: TrinitySituationData['sources'] = [];
   const knowledge: TrinitySituationData['knowledge'] = [];
   if (readable && focus) {
     const { matter, working } = focus;
@@ -65,7 +74,19 @@ export function projectAuthorizedSituation(
       next: conditions[0]?.text || questions[0]?.text || (working.pendingInputs.length
         ? '有输入尚未纳入已保存工作，请核对其来源和范围。' : '未单独保存后续关注条件。'),
       attention: Boolean(conditions.length || questions.length || working.pendingInputs.length || work?.overviewStatus === 'STALE'),
-      activeStages: hasAnalysis ? ['assess'] : [],
+      synthesisPending: !current ? null
+        : work?.overviewStatus === 'STALE' || work?.overviewStatus === 'NOT_AVAILABLE'
+          ? true
+          : work?.overviewStatus === 'CURRENT' ? false : null,
+      activeAssessmentStages: [
+        ...(current?.state.focus.question ? ['question'] : []),
+        ...(matter.catalog.entries.length || matter.materials?.length ? ['conditions'] : []),
+        ...(hasAnalysis ? ['analysis'] : []),
+        ...(result && work?.overviewStatus !== 'NOT_AVAILABLE' ? ['synthesis'] : []),
+        ...(current?.source && 'reviewTurnId' in current.source &&
+          current.source.reviewTurnId ? ['review'] : []),
+        ...(current ? ['update'] : []),
+      ],
     };
     const existing = matters.findIndex((row) => row.id === matter.matterId);
     if (existing < 0) matters.push(saved); else matters[existing] = saved;
@@ -88,6 +109,53 @@ export function projectAuthorizedSituation(
         reuse: [], reuseCountKnown: false,
       });
       knowledgeTargets[id] = matterWorkRoute(matter.matterId, id);
+      const sourceId: string = `work:${id}`;
+      sources.push({
+        id: sourceId,
+        matter: matter.matterId,
+        category: 'history',
+        title: saved.brief,
+        version: `工作修订 ${current.workingRevision}`,
+        contribution: current.changeSummary || '保留当前已保存认识及其准确工作身份。',
+      });
+      sourceTargets[sourceId] = matterWorkRoute(matter.matterId, id);
+    }
+    const materialByVersion: Map<string, { contribution: string }> = new Map(
+      (matter.materials ?? [])
+        .filter((material) => material.kind !== 'EXPECTED' &&
+          material.disposition === 'INCLUDED')
+        .map((material) => [material.documentVersionId, {
+          contribution: material.contribution,
+        }]),
+    );
+    const excludedVersionIds: Set<string> = new Set(
+      (matter.materials ?? [])
+        .filter((material) => material.kind !== 'EXPECTED'
+          && material.disposition === 'EXCLUDED')
+        .map((material) => material.documentVersionId),
+    );
+    for (const entry of matter.catalog.entries) {
+      const versionId: string = entry.document.documentVersionId;
+      if (excludedVersionIds.has(versionId)) continue;
+      const sourceId: string = `document:${versionId}`;
+      if (sources.some((source) => source.id === sourceId)) continue;
+      sources.push({
+        id: sourceId,
+        matter: matter.matterId,
+        category: 'documents',
+        title: entry.document.documentCode,
+        version: entry.document.businessRevision,
+        contribution: materialByVersion.get(versionId)?.contribution ??
+          '已登记为事项资料；具体作用需进入原文和事项材料核对。',
+      });
+      const returnParams: URLSearchParams = matterReadingReturnParams(
+        matter.matterId,
+        versionId,
+        'brief',
+        current?.matterWorkRevisionId ?? '',
+      );
+      sourceTargets[sourceId] =
+        `/document-versions/${encodeURIComponent(versionId)}?${returnParams}`;
     }
   }
   return {
@@ -98,14 +166,17 @@ export function projectAuthorizedSituation(
       coverage: {
         matterTotal: readable && directoryExhausted ? 'complete' : readable ? 'partial' : availability,
         matters: readable ? 'partial' : availability,
-        lifecycle: 'partial',
+        assessment: 'partial',
+        sources: 'partial',
         knowledge: 'partial',
         events: 'partial',
       },
-      stages: TRINITY_STAGE_META, knowledgeStages: TRINITY_KNOWLEDGE_STAGE_META,
-      matters, events: [], knowledge,
+      stages: TRINITY_STAGE_META,
+      sourceCategories: TRINITY_SOURCE_CATEGORY_META,
+      matters, sources, events: [], knowledge,
       reviewConditions,
     },
     knowledgeTargets,
+    sourceTargets,
   };
 }

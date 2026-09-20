@@ -1,212 +1,143 @@
 import { useMemo } from 'react';
 import {
-  Brain,
-  BookOpen,
-  Eye,
-  FileText,
-  Layers,
-  RefreshCw,
-  Search,
-  Shield,
-  Wrench,
+  Activity, BookOpen, Brain, FileCheck2, FileText, History, Layers,
+  ListChecks, MessageSquare, RefreshCw, Search, Shield,
 } from 'lucide-react';
 import {
-  buildRingArrows,
-  knowledgeAnchor,
-  nodePositionPercent,
-  stageAnchor,
-  TRINITY_RING,
+  nodePositionPercent, sourceAnchor, stageAnchor, TRINITY_RING,
 } from './trinity-model';
 import type {
-  TrinityKnowledgeStageMeta,
-  TrinityMatter,
-  TrinityNavigationTarget,
-  TrinityStageMeta,
+  TrinityNavigationTarget, TrinitySourceCategoryMeta, TrinityStageMeta,
 } from './trinity-types';
 
-const STAGE_ICONS = [
-  Search, Eye, BookOpen, FileText, Layers, Wrench, Shield, RefreshCw,
+const ASSESSMENT_ICONS = [
+  Search, ListChecks, Shield, FileCheck2, MessageSquare, RefreshCw,
+] as const;
+const SOURCE_ICONS = [
+  FileText, Activity, Layers, History, BookOpen, MessageSquare,
 ] as const;
 
 interface TrinityRingsProps {
   stages: TrinityStageMeta[];
-  knowledgeStages: TrinityKnowledgeStageMeta[];
+  sourceCategories: TrinitySourceCategoryMeta[];
   selectedStageId: string;
-  selectedKnowledgeId: string;
+  selectedSourceId: string;
   level: 'macro' | 'focus';
   stageLabelFor: (stageId: string) => string;
+  sourceLabelFor: (sourceId: string) => string;
   focusActiveStageIds: string[];
+  motionEnabled: boolean;
+  walkthroughStageId: string;
+  walkthroughSourceId: string;
   onSelectStage: (stageId: string) => void;
-  onSelectKnowledge: (stageId: string) => void;
+  onSelectSource: (sourceId: string) => void;
   onNavigate: (target: TrinityNavigationTarget) => void;
 }
 
 export default function TrinityRings({
-  stages, knowledgeStages, selectedStageId, selectedKnowledgeId,
-  level, stageLabelFor, focusActiveStageIds, onSelectStage, onSelectKnowledge, onNavigate,
+  stages, sourceCategories, selectedStageId, selectedSourceId, level,
+  stageLabelFor, sourceLabelFor, focusActiveStageIds, motionEnabled,
+  walkthroughStageId, walkthroughSourceId, onSelectStage, onSelectSource,
+  onNavigate,
 }: TrinityRingsProps) {
-  const arrows = useMemo(() => buildRingArrows(), []);
-  const hasSelection = selectedStageId !== '' || selectedKnowledgeId !== '';
-  const focusActives = useMemo(() => new Set(focusActiveStageIds), [focusActiveStageIds]);
-
+  const focusActives: Set<string> = useMemo(
+    () => new Set(focusActiveStageIds), [focusActiveStageIds],
+  );
   return (
-    <section className="card ring-card" data-geometry="ring-card">
+    <section className="card ring-card source-assessment-orbit"
+      data-geometry="ring-card" data-motion={motionEnabled ? 'running' : 'paused'}>
       <div className="ring-header">
-        <span className="legend"><i />业务环 · 事项全生命周期</span>
-        <span className="legend knowledge"><i />知识环 · 工作中积累与复用</span>
+        <span className="legend source"><i />内环 · 围绕事项聚合信息</span>
+        <span className="legend"><i />外环 · 协同工程师评估</span>
       </div>
       <div className="ring-board" data-geometry="ring-board">
         <div className="ring-ambient" aria-hidden="true" />
-        <svg
-          className="ring-svg"
+        <svg className="ring-svg"
           viewBox={`0 0 ${TRINITY_RING.viewWidth} ${TRINITY_RING.viewHeight}`}
-          aria-hidden="true"
-        >
-          <ellipse
-            className="outer-route"
-            cx={TRINITY_RING.cx}
-            cy={TRINITY_RING.cy}
-            rx={TRINITY_RING.outerRx}
-            ry={TRINITY_RING.outerRy}
-          />
-          <ellipse
-            className="ring-halo"
-            cx={TRINITY_RING.cx}
-            cy={TRINITY_RING.cy}
-            rx={TRINITY_RING.innerRx + 6}
-            ry={TRINITY_RING.innerRy + 4}
-          />
-          <ellipse
-            className="inner-route"
-            cx={TRINITY_RING.cx}
-            cy={TRINITY_RING.cy}
-            rx={TRINITY_RING.innerRx}
-            ry={TRINITY_RING.innerRy}
-          />
-          {arrows.map((a: { d: string; transform: string; kind: string }, i: number) => (
-            <path
-              key={i}
-              className={a.kind === 'business' ? 'ring-arrow' : 'ring-knowledge-arrow'}
-              d={a.d}
-              transform={a.transform}
-            />
-          ))}
-          <path
-            className={`ring-bridge ${hasSelection ? 'on' : ''}`}
-            d="M870 303Q750 319 687 372M497 437Q519 475 500 538"
-          />
+          aria-hidden="true">
+          <ellipse className="outer-bed" cx={TRINITY_RING.cx} cy={TRINITY_RING.cy}
+            rx={TRINITY_RING.outerRx} ry={TRINITY_RING.outerRy} />
+          <ellipse className="outer-route" cx={TRINITY_RING.cx} cy={TRINITY_RING.cy}
+            rx={TRINITY_RING.outerRx} ry={TRINITY_RING.outerRy} />
+          <ellipse className="outer-glimmer" cx={TRINITY_RING.cx} cy={TRINITY_RING.cy}
+            rx={TRINITY_RING.outerRx} ry={TRINITY_RING.outerRy} />
+          <ellipse className="inner-band" cx={TRINITY_RING.cx} cy={TRINITY_RING.cy}
+            rx={TRINITY_RING.innerRx} ry={TRINITY_RING.innerRy} />
+          <ellipse className="inner-route" cx={TRINITY_RING.cx} cy={TRINITY_RING.cy}
+            rx={TRINITY_RING.innerRx} ry={TRINITY_RING.innerRy} />
+          {sourceCategories.map((source: TrinitySourceCategoryMeta, index: number) => {
+            const anchor = sourceAnchor(index);
+            return <path key={source.id} className="source-flow"
+              d={`M ${anchor.x} ${anchor.y} Q ${TRINITY_RING.cx} ${TRINITY_RING.cy - 42} ${TRINITY_RING.cx} ${TRINITY_RING.cy}`} />;
+          })}
         </svg>
-
-        {stages.map((s: TrinityStageMeta, i: number) => {
-          const pos = nodePositionPercent(stageAnchor(i));
-          const Icon = STAGE_ICONS[i];
-          const isFocusActive = level === 'focus' && focusActives.has(s.id);
-          const isFocusUnentered = level === 'focus' && !focusActives.has(s.id);
-          return (
-            <button
-              key={s.id}
-              type="button"
-              className={`stage-node ${selectedStageId === s.id ? 'selected' : ''} ${
-                isFocusActive ? 'focus-active' : isFocusUnentered ? 'focus-unentered' : ''
-              }`}
-              style={pos}
-              data-stage={s.id}
-              data-geometry={`stage-${s.id}`}
-              aria-label={`${s.title}，${stageLabelFor(s.id)}`}
-              onClick={(): void => onSelectStage(s.id)}
-            >
-              <span className="stage-top">
-                <small>{String(i + 1).padStart(2, '0')}</small>
-                <Icon size={16} />
-              </span>
-              <strong>{s.title}</strong>
-              <span className="stage-count">{stageLabelFor(s.id)}</span>
-            </button>
-          );
+        {stages.map((stage: TrinityStageMeta, index: number) => {
+          const Icon = ASSESSMENT_ICONS[index];
+          const active = level === 'focus' && focusActives.has(stage.id);
+          const unavailable = level === 'focus' && !active;
+          return <button key={stage.id} type="button"
+            className={`stage-node ${selectedStageId === stage.id ? 'selected' : ''} ${
+              active ? 'focus-active' : unavailable ? 'focus-unentered' : ''
+            } ${walkthroughStageId === stage.id ? 'walk-active' : ''}`}
+            style={nodePositionPercent(stageAnchor(index))}
+            data-stage={stage.id} data-geometry={`stage-${stage.id}`}
+            aria-label={`${stage.title}，${stageLabelFor(stage.id)}`}
+            onClick={(): void => onSelectStage(stage.id)}>
+            <span className="stage-top"><small>{String(index + 1).padStart(2, '0')}</small><Icon size={16} /></span>
+            <strong>{stage.title}</strong>
+            <span className="stage-count">{stageLabelFor(stage.id)}</span>
+          </button>;
         })}
-
-        {knowledgeStages.map((k: TrinityKnowledgeStageMeta, i: number) => {
-          const pos = nodePositionPercent(knowledgeAnchor(i));
-          return (
-            <button
-              key={k.id}
-              type="button"
-              className={`knowledge-node ${selectedKnowledgeId === k.id ? 'selected' : ''}`}
-              style={pos}
-              data-kstage={k.id}
-              onClick={(): void => onSelectKnowledge(k.id)}
-              aria-label={`${k.title}，知识循环`}
-            >
-              <strong>{k.title}</strong>
-              <small>知识循环</small>
-            </button>
-          );
+        {sourceCategories.map((source: TrinitySourceCategoryMeta, index: number) => {
+          const Icon = SOURCE_ICONS[index];
+          return <button key={source.id} type="button"
+            className={`source-node ${selectedSourceId === source.id ? 'selected' : ''} ${
+              walkthroughSourceId === source.id ? 'walk-active' : ''
+            }`}
+            style={nodePositionPercent(sourceAnchor(index))}
+            data-source-category={source.id}
+            onClick={(): void => onSelectSource(source.id)}
+            aria-label={`${source.title}，${sourceLabelFor(source.id)}`}>
+            <Icon size={15} /><strong>{source.title}</strong>
+            <small>{sourceLabelFor(source.id)}</small>
+          </button>;
         })}
-
-        <button
-          type="button"
-          className="agent-core"
-          data-action="agent"
-          data-geometry="agent-core"
-          aria-label="查看工程智能体如何协助工作"
-          onClick={(): void => onNavigate({ type: 'agent' })}
-        >
-          <Brain size={22} />
-          <strong>工程智能体</strong>
-          <small>理解 · 调查 · 评估 · 协作</small>
-          <span className="core-status">
-            <i className="dot" />
-            基于已有知识，继续工程工作
-          </span>
+        <button type="button" className="agent-core" data-action="agent"
+          data-geometry="agent-core" aria-label="查看工程智能体如何组织依据并协同评估"
+          onClick={(): void => onNavigate({ type: 'agent' })}>
+          <Brain size={28} /><strong>工程智能体</strong>
+          <small>{level === 'macro' ? '分事项理解 · 分范围评估' : '理解本事项 · 协同判断'}</small>
+          <span className="core-status">多源信息 → 判断依据</span>
         </button>
       </div>
-
-      <div className="mobile-rings" aria-label="移动端业务环与知识环">
-        <button
-          type="button"
-          className="mobile-core"
-          data-action="agent"
-          onClick={(): void => onNavigate({ type: 'agent' })}
-        >
-          <Brain size={20} />
-          <span>
-            <strong>工程智能体</strong>
-            <small>理解 · 调查 · 评估 · 协作</small>
-          </span>
+      <div className="mobile-rings" aria-label="移动端信息聚合与评估辅助双环">
+        <button type="button" className="mobile-core" data-action="agent"
+          onClick={(): void => onNavigate({ type: 'agent' })}>
+          <Brain size={20} /><span><strong>工程智能体</strong><small>多源信息 → 判断依据</small></span>
         </button>
+        <div className="mobile-source-grid">
+          {sourceCategories.map((source: TrinitySourceCategoryMeta) => (
+            <button key={source.id} type="button" data-source-category={source.id}
+              className={selectedSourceId === source.id ? 'selected' : ''}
+              onClick={(): void => onSelectSource(source.id)}>
+              <strong>{source.title}</strong><small>{sourceLabelFor(source.id)}</small>
+            </button>
+          ))}
+        </div>
         <div className="mobile-stage-grid">
-          {stages.map((s: TrinityStageMeta, i: number) => (
-            <button
-              key={s.id}
-              type="button"
-              data-stage={s.id}
-              className={selectedStageId === s.id ? 'selected' : ''}
-              onClick={(): void => onSelectStage(s.id)}
-            >
-              <small>{String(i + 1).padStart(2, '0')}</small>
-              <span className="stage-next">→</span>
-              <strong>{s.title}</strong>
-              <small>{stageLabelFor(s.id)}</small>
-            </button>
-          ))}
-        </div>
-        <div className="mobile-knowledge">
-          {knowledgeStages.map((k: TrinityKnowledgeStageMeta) => (
-            <button
-              key={k.id}
-              type="button"
-              data-kstage={k.id}
-              onClick={(): void => onSelectKnowledge(k.id)}
-            >
-              {k.title}
+          {stages.map((stage: TrinityStageMeta, index: number) => (
+            <button key={stage.id} type="button" data-stage={stage.id}
+              className={selectedStageId === stage.id ? 'selected' : ''}
+              onClick={(): void => onSelectStage(stage.id)}>
+              <small>{String(index + 1).padStart(2, '0')}</small>
+              <strong>{stage.title}</strong><small>{stageLabelFor(stage.id)}</small>
             </button>
           ))}
         </div>
       </div>
-
       <div className="ring-caption">
-        <span>同一事项可在多个环节并行，阶段数量不相加作总数。</span>
-        <span>箭头表示业务循环，不代表已执行。</span>
+        <span>内环形成依据，外环协同判断。</span>
+        <span>关联位置不代表已完成，数量不相加作总体。</span>
       </div>
     </section>
   );

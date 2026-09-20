@@ -1,240 +1,203 @@
-import { Button } from '@client/src/components/ui/button';
-import { Badge } from '@client/src/components/ui/badge';
 import { ArrowRight } from 'lucide-react';
+import { Badge } from '@client/src/components/ui/badge';
+import { Button } from '@client/src/components/ui/button';
 import {
-  attentionItems,
-  scopeKnowledge,
-  completeCoverage,
-  completeLifecycleCoverage,
+  attentionItems, completeAssessmentCoverage, scopeSources,
 } from './trinity-model';
 import type {
-  TrinityKnowledgeItem,
-  TrinityKnowledgeStageMeta,
-  TrinityMatter,
-  TrinityNavigationTarget,
-  TrinityReviewConditionItem,
-  TrinitySituationData,
+  TrinityMatter, TrinityNavigationTarget, TrinityReviewConditionItem,
+  TrinitySituationData, TrinitySourceCategoryMeta, TrinitySourceItem,
   TrinityStageMeta,
 } from './trinity-types';
 
 interface TrinityStagePanelProps {
   data: TrinitySituationData;
   scope: TrinityMatter[] | null;
+  level: 'macro' | 'focus';
   selectedStageId: string;
-  selectedKnowledgeId: string;
+  selectedSourceId: string;
   onNavigate: (target: TrinityNavigationTarget) => void;
 }
 
+function ReviewConditions({
+  conditions, onNavigate,
+}: {
+  conditions: TrinityReviewConditionItem[] | null | undefined;
+  onNavigate: (target: TrinityNavigationTarget) => void;
+}) {
+  if (conditions === undefined || conditions === null) {
+    return <p className="empty-tip">
+      {conditions === null
+        ? '聚焦事项已取得，但尚无当前已保存工作。'
+        : '当前范围未携带聚焦事项的已保存工作。'}
+    </p>;
+  }
+  if (conditions.length === 0)
+    return <p className="empty-tip">当前已保存工作未单独保存复看条件。</p>;
+  return <div className="matter-list">
+    {conditions.map((condition: TrinityReviewConditionItem) => (
+      <button key={condition.itemId} type="button" className="phase-matter"
+        data-review-condition={condition.itemId}
+        onClick={(): void => onNavigate({
+          type: 'matter-work', matterId: condition.matterId,
+          workRef: condition.matterWorkRevisionId,
+        })}>
+        <small>工作修订 {condition.workingRevision}</small>
+        <strong>{condition.text}</strong>
+        <small>依据引用：{condition.basisRefs.length
+          ? condition.basisRefs.join('、') : '未单独保存'}</small>
+      </button>
+    ))}
+  </div>;
+}
+
 export default function TrinityStagePanel({
-  data, scope, selectedStageId, selectedKnowledgeId, onNavigate,
+  data, scope, level, selectedStageId, selectedSourceId, onNavigate,
 }: TrinityStagePanelProps) {
   if (selectedStageId) {
-    const stage = data.stages.find((s: TrinityStageMeta) => s.id === selectedStageId);
+    const stage: TrinityStageMeta | undefined = data.stages.find(
+      (item: TrinityStageMeta) => item.id === selectedStageId,
+    );
     if (!stage) return null;
-    const matters = (scope ?? []).filter((m: TrinityMatter) =>
-      m.activeStages.includes(selectedStageId));
-    const conditions = stage.id === 'improve' ? data.reviewConditions : undefined;
-    const firstCondition = conditions && conditions.length > 0 ? conditions[0] : null;
-    return (
-      <>
-        <div className="eyebrow">业务环 · {stage.caption}</div>
-        <h2>{stage.title}</h2>
-        <p className="lead">{stage.purpose}</p>
-
-        <section>
-          <h3>这个环节形成什么</h3>
-          <p>{stage.output}</p>
-          <div className="knowledge-output">
-            随业务保存，供知识库复用
-            <span>来源、范围、责任与版本共同保留</span>
-          </div>
-        </section>
-
-        <section>
-          <div className="row">
-            <h3>当前关联事项</h3>
-            <Badge variant="outline">{scope && completeLifecycleCoverage(data) ? `${matters.length} 项` : '—'}</Badge>
-          </div>
-          {scope && matters.length > 0 ? (
-            <div className="matter-list">
-              {matters.map((m: TrinityMatter) => (
-                <button
-                  key={m.id}
-                  type="button"
-                  className="phase-matter"
-                  data-focus={m.id}
-                  onClick={(): void => onNavigate({ type: 'focus-matter', matterId: m.id })}
-                >
-                  <small>{m.code} · {m.fleet}</small>
-                  <strong>{m.title}</strong>
-                  <small>{m.status}</small>
-                </button>
-              ))}
-            </div>
-          ) : (
-            <p className="empty-tip">
-              当前范围未取得此环节的记录，不自动推断已完成或不适用。
-            </p>
-          )}
-        </section>
-
-        {stage.id === 'improve' ? (
-          <section>
-            <div className="row">
-              <h3>已保存复看条件</h3>
-              {conditions ? <Badge variant="outline">{`${conditions.length} 项`}</Badge> : null}
-            </div>
-            <p>
-              以下为已保存工作中的候选工作内容，不是正式改进记录；未必已经触发或逾期。
-            </p>
-            {conditions === undefined || conditions === null ? (
-              <p className="empty-tip">
-                {conditions === null
-                  ? '聚焦事项已取得，但尚无当前已保存工作，不投影保存的复看条件。'
-                  : '当前范围未携带聚焦事项的已保存工作，不投影保存的复看条件。'}
-              </p>
-            ) : conditions.length === 0 ? (
-              <p className="empty-tip">当前已保存工作未单独保存复看条件。</p>
-            ) : (
-              <div className="matter-list">
-                {conditions.map((c: TrinityReviewConditionItem) => (
-                  <div key={c.itemId} className="phase-matter" data-review-condition={c.itemId}>
-                    <small>复看条件 {c.itemId} · 工作修订 {c.workingRevision}（{c.matterWorkRevisionId}）</small>
-                    <strong>{c.text}</strong>
-                    {c.when?.kind === 'DUE_AT' ? (
-                      <small>期限：{c.when.at}（保存原文，未判断是否逾期）</small>
-                    ) : null}
-                    {c.when?.kind === 'ORIGINAL_CHANGED' ? (
-                      <small>
-                        触发：原文变化后复看 · 输入 {c.when.inputId} · 其后解析 {c.when.afterParseRunId ?? '未固定'}
-                      </small>
-                    ) : null}
-                    {!c.when ? <small>未单独保存触发条件或期限。</small> : null}
-                    <small>保存的依据引用标识：{c.basisRefs.length > 0 ? c.basisRefs.join('、') : '无'}</small>
-                  </div>
-                ))}
-              </div>
-            )}
-          </section>
-        ) : null}
-
-        <div className="end-actions">
-          <Button variant="outline" size="sm"
-            onClick={(): void => onNavigate({ type: 'stage-library', stageId: stage.id })}>
-            表格查看
-          </Button>
-          <Button variant="outline" size="sm"
-            onClick={(): void => onNavigate({ type: 'stage-knowledge', stageId: stage.id })}>
-            查看知识产出
-            <ArrowRight size={14} />
-          </Button>
-          {firstCondition ? (
-            <Button variant="outline" size="sm"
-              data-open-work={firstCondition.matterWorkRevisionId}
+    const matters: TrinityMatter[] = (scope ?? []).filter(
+      (matter: TrinityMatter) =>
+        matter.activeAssessmentStages.includes(selectedStageId),
+    );
+    return <>
+      <div className="eyebrow">外环 · {stage.caption}</div>
+      <h2>{stage.title}</h2>
+      <p className="lead">{stage.purpose}</p>
+      <section>
+        <h3>这一环节形成什么</h3>
+        <p>{stage.output}</p>
+      </section>
+      <section>
+        <div className="row">
+          <h3>当前关联事项</h3>
+          <Badge variant="outline">
+            {scope && completeAssessmentCoverage(data) ? `${matters.length} 项` : '已取得范围'}
+          </Badge>
+        </div>
+        {matters.length ? <div className="matter-list">
+          {matters.map((matter: TrinityMatter) => (
+            <button key={matter.id} type="button" className="phase-matter"
+              data-focus={matter.id}
               onClick={(): void => onNavigate({
-                type: 'matter-work',
-                matterId: firstCondition.matterId,
-                workRef: firstCondition.matterWorkRevisionId,
+                type: 'focus-matter', matterId: matter.id,
               })}>
-              打开所属工作修订
-              <ArrowRight size={14} />
-            </Button>
-          ) : null}
-        </div>
-      </>
-    );
-  }
-
-  if (selectedKnowledgeId) {
-    const k = data.knowledgeStages.find(
-      (x: TrinityKnowledgeStageMeta) => x.id === selectedKnowledgeId);
-    if (!k) return null;
-    const examples = scope ? scopeKnowledge(data, scope).slice(0, 3) : [];
-    return (
-      <>
-        <div className="eyebrow">知识环 · 来自业务，反哺业务</div>
-        <h2>{k.title}</h2>
-        <p className="lead">{k.purpose}</p>
-        <section>
-          <h3>当前工作中的例子</h3>
-          <div className="matter-list">
-            {examples.map((it: TrinityKnowledgeItem) => (
-              <button
-                key={it.id}
-                type="button"
-                className="phase-matter"
-                data-knowledge={it.id}
-                onClick={(): void =>
-                  onNavigate({ type: 'knowledge-item', knowledgeId: it.id })}
-              >
-                <small>
-                  {data.stages.find((s: TrinityStageMeta) => s.id === it.phase)?.title}产出 ·
-                  {it.version}
-                </small>
-                <strong>{it.title}</strong>
-                <small>{it.status}</small>
-              </button>
-            ))}
-          </div>
-          {(!scope || !completeCoverage(data, 'knowledge')) && <p className="empty-tip">当前范围未取得知识记录，不自动推断为零。</p>}
-        </section>
-        <section>
-          <h3>不是第二套知识审批</h3>
-          <p>
-            治理随产生、读取和复用进行。知识可以带条件复用；正式采用仍保持独立身份。
-          </p>
-        </section>
-        <div className="end-actions">
-          <Button size="sm"
-            onClick={(): void => onNavigate({ type: 'knowledge-view', phase: k.id })}>
-            进入统一知识查阅
-            <ArrowRight size={14} />
-          </Button>
-        </div>
-      </>
-    );
-  }
-
-  const attention = attentionItems(scope).slice(0, 3);
-  return (
-    <>
-      <div className="eyebrow">从全貌到需要关注的工作</div>
-      <h2>当前关注</h2>
-      <p className="lead">先看变化与条件，再进入具体事项理解。</p>
-
-        <div className="attention-list">
-          {attention.map((m: TrinityMatter) => (
-            <button
-              key={m.id}
-              type="button"
-              className="attention-item"
-              onClick={(): void => onNavigate({ type: 'focus-matter', matterId: m.id })}
-            >
-              <Badge variant="secondary" className="at-badge">
-                {m.tag}
-              </Badge>
-              <strong>{m.title}</strong>
-              <p>{m.next}</p>
+              <small>{matter.code || '工程事项'} · {matter.fleet}</small>
+              <strong>{matter.title}</strong><small>{matter.status}</small>
             </button>
           ))}
-        </div>
-
-      <section>
-        <h3>知识也需要跟着变化</h3>
-        <p>
-          文件自身更新、原文更正与工程师纠正，会使有关知识需要复看；不代表所有事项一起重算。
-        </p>
+        </div> : <p className="empty-tip">
+          当前范围尚未取得该评估环节的关联工作，不推断为已完成或不适用。
+        </p>}
       </section>
-        <div className="end-actions">
-          <Button variant="outline" size="sm"
-            onClick={(): void => onNavigate({ type: 'view', view: 'library' })}>
-            表格查看全部事项
-          </Button>
-          <Button variant="outline" size="sm"
-            onClick={(): void => onNavigate({ type: 'knowledge-view' })}>
-            知识查阅
-          </Button>
-        </div>
-    </>
-  );
+      {stage.id === 'update' ? <section>
+        <div className="row"><h3>已保存复看条件</h3></div>
+        <p>这是候选工作内容，不代表已经触发、逾期或正式采用。</p>
+        <ReviewConditions conditions={data.reviewConditions}
+          onNavigate={onNavigate} />
+      </section> : null}
+      <div className="end-actions">
+        <Button variant="outline" size="sm"
+          onClick={(): void => onNavigate({
+            type: 'stage-library', stageId: stage.id,
+          })}>查看有关事项</Button>
+        <Button variant="outline" size="sm"
+          onClick={(): void => onNavigate({ type: 'knowledge-view' })}>
+          查阅已有知识 <ArrowRight size={14} />
+        </Button>
+      </div>
+    </>;
+  }
+
+  if (selectedSourceId) {
+    const category: TrinitySourceCategoryMeta | undefined =
+      data.sourceCategories.find(
+        (item: TrinitySourceCategoryMeta) => item.id === selectedSourceId,
+      );
+    if (!category) return null;
+    const sources: TrinitySourceItem[] = scope
+      ? scopeSources(data, scope).filter(
+        (source: TrinitySourceItem) => source.category === selectedSourceId,
+      ) : [];
+    return <>
+      <div className="eyebrow">内环 · {category.subtitle}</div>
+      <h2>{category.title}</h2>
+      <p className="lead">{category.purpose}</p>
+      <section>
+        <h3>当前取得的材料</h3>
+        {sources.length ? <div className="matter-list">
+          {sources.map((source: TrinitySourceItem) => (
+            <button key={source.id} type="button" className="source-item"
+              data-source={source.id}
+              onClick={(): void => onNavigate({
+                type: 'source-item', sourceId: source.id,
+              })}>
+              <small>{source.version}</small><strong>{source.title}</strong>
+              <span>{source.contribution}</span>
+            </button>
+          ))}
+        </div> : <p className="empty-tip">
+          当前授权读取未取得这一类材料。缺少记录不表示该类信息不存在。
+        </p>}
+      </section>
+      <div className="end-actions">
+        <Button variant="outline" size="sm"
+          onClick={(): void => onNavigate({ type: 'view', view: 'library' })}>
+          进入资料库 <ArrowRight size={14} />
+        </Button>
+      </div>
+    </>;
+  }
+
+  if (level === 'focus' && scope?.[0]) {
+    const matter: TrinityMatter = scope[0];
+    return <>
+      <div className="eyebrow">{matter.code || '聚焦事项'} · 当前授权认识</div>
+      <h2>目前怎样理解</h2>
+      <p className="lead">{matter.brief}</p>
+      <section className="condition-panel">
+        <h3>会改变判断的条件</h3><p>{matter.next}</p>
+      </section>
+      <section><h3>综合覆盖</h3><p>{matter.status}</p></section>
+      <div className="end-actions">
+        <Button size="sm" onClick={(): void => onNavigate({
+          type: 'matter-reading', matterId: matter.id,
+        })}>阅读完整认识</Button>
+        <Button variant="outline" size="sm"
+          onClick={(): void => onNavigate({ type: 'knowledge-view' })}>
+          查阅知识
+        </Button>
+      </div>
+    </>;
+  }
+
+  const attention: TrinityMatter[] = attentionItems(scope).slice(0, 4);
+  return <>
+    <div className="eyebrow">宏观概览 · 从资料到评估</div>
+    <h2>当前关注</h2>
+    <p className="lead">先看哪些事项需要继续核对，再进入具体依据与认识。</p>
+    <div className="attention-list">
+      {attention.map((matter: TrinityMatter) => (
+        <button key={matter.id} type="button" className="attention-item"
+          onClick={(): void => onNavigate({
+            type: 'focus-matter', matterId: matter.id,
+          })}>
+          <Badge variant="secondary" className="at-badge">{matter.tag}</Badge>
+          <strong>{matter.title}</strong><p>{matter.next}</p>
+        </button>
+      ))}
+      {!attention.length ? <p className="empty-tip">
+        当前读取范围尚未取得可确定的待核事项；未知不会显示为零。
+      </p> : null}
+    </div>
+    <div className="end-actions">
+      <Button variant="outline" size="sm"
+        onClick={(): void => onNavigate({ type: 'view', view: 'library' })}>
+        查看本范围事项
+      </Button>
+    </div>
+  </>;
 }

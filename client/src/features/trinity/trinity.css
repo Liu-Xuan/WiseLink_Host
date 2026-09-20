@@ -257,8 +257,6 @@
   opacity: 0;
 }
 .trinity-situation .ring-bridge.on { opacity: 0.7; }
-.trinity-situation .ring-arrow { fill: var(--tr-ring-active); opacity: 0.65; }
-.trinity-situation .ring-knowledge-arrow { fill: var(--tr-knowledge); opacity: 0.75; }
 
 .trinity-situation .stage-node {
   position: absolute;
@@ -893,6 +891,289 @@
 .trinity-situation .inspector .end-actions button { min-height: 29px; height: auto; padding: 6px 10px; font-size: 11px; line-height: normal; }
 
 .trinity-situation .view-nav button { min-height: 0; }
+
+/* Source aggregation x engineer-assisted assessment. */
+.trinity-situation {
+  --tr-source: #567c6d;
+  --tr-source-soft: color-mix(in srgb, var(--tr-source) 10%, transparent);
+  --tr-source-line: color-mix(in srgb, var(--tr-source) 30%, transparent);
+  --tr-track: color-mix(in srgb, var(--wl-ink) 18%, transparent);
+}
+.trinity-situation .page-head { align-items: flex-end; margin-bottom: 20px; }
+.trinity-situation .page-head h1 {
+  max-width: 920px;
+  font-size: clamp(26px, 2.2vw, 34px);
+  line-height: 1.35;
+}
+.trinity-situation .page-head .subtitle {
+  max-width: 920px;
+  margin-top: 8px;
+  font-size: 14px;
+  line-height: 1.9;
+}
+.trinity-situation .scope-bar {
+  position: relative;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin-bottom: 15px;
+  padding-bottom: 0;
+}
+.trinity-situation .scope-bar .asof { margin-left: 0; }
+.trinity-situation .situation-controls {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  margin-left: auto;
+}
+.trinity-situation .walkthrough-primary { color: var(--primary-foreground); }
+.trinity-situation .settings-wrap { position: relative; }
+.trinity-situation .situation-settings {
+  position: absolute;
+  z-index: 30;
+  top: calc(100% + 8px);
+  right: 0;
+  width: 270px;
+  padding: 18px;
+  border: 1px solid var(--wl-border);
+  border-radius: 16px;
+  background: color-mix(in srgb, var(--wl-sheet) 92%, transparent);
+  box-shadow: var(--tr-shadow);
+  backdrop-filter: blur(18px);
+}
+.trinity-situation .situation-settings h3 {
+  margin: 0 0 9px;
+  color: var(--wl-muted);
+  font-size: 11px;
+}
+.trinity-situation .situation-settings h3:not(:first-child) { margin-top: 16px; }
+.trinity-situation .settings-options {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 6px;
+}
+.trinity-situation .metrics { margin-bottom: 18px; border-radius: 18px; }
+.trinity-situation .situation-grid {
+  grid-template-columns: minmax(0, 1fr) 330px;
+  align-items: stretch;
+  gap: 18px;
+}
+.trinity-situation .ring-card {
+  overflow: hidden;
+  border-radius: 22px;
+  background: var(--wl-sheet);
+}
+.trinity-situation .ring-board { width: 100%; aspect-ratio: 1100 / 660; }
+.trinity-situation .ring-header { min-height: 58px; padding: 17px 22px 9px; }
+.trinity-situation .legend.source i { background: var(--tr-source); }
+.trinity-situation .outer-bed {
+  fill: none;
+  stroke: color-mix(in srgb, var(--wl-ink) 4%, transparent);
+  stroke-width: 14;
+}
+.trinity-situation .outer-route {
+  fill: none;
+  stroke: var(--tr-track);
+  stroke-width: 1.5;
+}
+.trinity-situation .outer-glimmer {
+  fill: none;
+  stroke: var(--tr-source);
+  stroke-width: 2.7;
+  stroke-linecap: round;
+  stroke-dasharray: 42 2500;
+  opacity: 0.56;
+  animation: tr-orbit-glimmer 9s linear infinite;
+}
+.trinity-situation .inner-band {
+  fill: none;
+  stroke: var(--tr-source-soft);
+  stroke-width: 44;
+}
+.trinity-situation .inner-route {
+  fill: none;
+  stroke: var(--tr-source-line);
+  stroke-width: 1.7;
+  stroke-dasharray: 4 7;
+}
+.trinity-situation .source-flow {
+  fill: none;
+  stroke: var(--tr-source-line);
+  stroke-width: 1.2;
+  stroke-dasharray: 5 13;
+  opacity: 0.48;
+  animation: tr-source-flow 7s linear infinite;
+}
+.trinity-situation [data-motion='paused'] :is(.outer-glimmer, .source-flow),
+html[data-wl-visual-mode='compatible'] .trinity-situation :is(.outer-glimmer, .source-flow),
+html[data-wl-motion='off'] .trinity-situation :is(.outer-glimmer, .source-flow) {
+  animation-play-state: paused;
+}
+.trinity-situation .stage-node {
+  width: 18.2%;
+  min-height: 13.9%;
+  padding: 10px 14px;
+  border-radius: 16px;
+  background: linear-gradient(145deg, var(--wl-sheet), var(--wl-sheet-muted));
+}
+.trinity-situation .stage-node strong {
+  font-size: clamp(12px, 1.25cqw, 16px);
+  white-space: nowrap;
+}
+.trinity-situation :is(.stage-node, .source-node).walk-active {
+  border-color: var(--tr-source);
+  box-shadow: 0 0 0 3px var(--tr-source-soft), var(--tr-shadow);
+}
+.trinity-situation .source-node {
+  position: absolute;
+  display: flex;
+  width: 14.4%;
+  min-height: 10.3%;
+  transform: translate(-50%, -50%);
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 3px;
+  padding: 8px 10px;
+  border: 1px solid var(--tr-source-line);
+  border-radius: 14px;
+  background: var(--tr-source-soft);
+  color: var(--tr-source);
+  text-align: center;
+  transition: border-color 180ms ease, box-shadow 180ms ease, background 180ms ease;
+}
+.trinity-situation .source-node:hover,
+.trinity-situation .source-node.selected {
+  border-color: var(--tr-source);
+  background: color-mix(in srgb, var(--tr-source) 15%, var(--wl-sheet));
+  box-shadow: 0 7px 20px color-mix(in srgb, var(--tr-source) 14%, transparent);
+}
+.trinity-situation .source-node strong {
+  font-size: clamp(11px, 1.2cqw, 15px);
+  line-height: 1.35;
+  white-space: nowrap;
+}
+.trinity-situation .source-node small {
+  overflow: hidden;
+  max-width: 100%;
+  color: var(--tr-source);
+  font-size: clamp(9px, 0.92cqw, 11px);
+  line-height: 1.35;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.trinity-situation .agent-core {
+  width: 20.1%;
+  aspect-ratio: 1;
+  border-radius: 50%;
+  background: radial-gradient(circle at 35% 24%, var(--wl-sheet), var(--wl-sheet-muted) 72%);
+}
+.trinity-situation .agent-core .core-status {
+  margin-top: 12px;
+  color: var(--tr-source);
+  background: transparent;
+}
+.trinity-situation .inspector { max-height: none; padding: 24px; border-radius: 22px; }
+.trinity-situation .source-item {
+  display: flex;
+  width: 100%;
+  flex-direction: column;
+  gap: 5px;
+  margin-bottom: 8px;
+  padding: 12px 13px;
+  border: 1px solid var(--wl-border);
+  border-radius: 12px;
+  background: var(--wl-sheet);
+  text-align: left;
+}
+.trinity-situation .source-item:hover { border-color: var(--tr-source-line); }
+.trinity-situation .source-item small,
+.trinity-situation .source-item span {
+  color: var(--wl-muted);
+  font-size: 11px;
+  line-height: 1.7;
+}
+.trinity-situation .condition-panel {
+  padding: 13px 14px;
+  border: 0;
+  border-radius: 12px;
+  background: var(--tr-warm-soft);
+}
+.trinity-situation .walkbar {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  margin-top: -1px;
+  padding: 13px 20px;
+  border: 1px solid var(--wl-border);
+  border-radius: 0 0 18px 18px;
+  background: var(--tr-source-soft);
+}
+.trinity-situation .walktext { min-width: 0; flex: 1; }
+.trinity-situation .walktext small {
+  display: block;
+  margin-bottom: 3px;
+  color: var(--tr-source);
+  font-size: 10px;
+}
+.trinity-situation .walktext p { font-size: 12px; line-height: 1.7; }
+.trinity-situation .walk-actions,
+.trinity-situation .walk-dots { display: flex; align-items: center; gap: 6px; }
+.trinity-situation .walk-dots { margin-top: 8px; }
+.trinity-situation .walk-dots button {
+  width: 16px;
+  height: 4px;
+  padding: 0;
+  border-radius: 4px;
+  background: var(--tr-source-line);
+}
+.trinity-situation .walk-dots button.current { width: 30px; background: var(--tr-source); }
+@keyframes tr-orbit-glimmer { to { stroke-dashoffset: -2542; } }
+@keyframes tr-source-flow { to { stroke-dashoffset: -72; } }
+@media (max-width: 1120px) {
+  .trinity-situation .situation-grid { grid-template-columns: 1fr; }
+  .trinity-situation .inspector { min-height: 280px; }
+}
+@media (max-width: 740px) {
+  .trinity-situation .situation-controls { width: 100%; margin-left: 0; }
+  .trinity-situation .situation-controls > button:nth-child(2) { margin-left: auto; }
+  .trinity-situation .mobile-source-grid,
+  .trinity-situation .mobile-stage-grid {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 8px;
+    margin-top: 10px;
+  }
+  .trinity-situation .mobile-source-grid button,
+  .trinity-situation .mobile-stage-grid button {
+    display: flex;
+    min-height: 72px;
+    flex-direction: column;
+    align-items: flex-start;
+    justify-content: center;
+    gap: 5px;
+    padding: 11px 12px;
+    border: 1px solid var(--wl-border);
+    border-radius: 12px;
+    background: var(--wl-sheet);
+    text-align: left;
+  }
+  .trinity-situation .mobile-source-grid button {
+    border-color: var(--tr-source-line);
+    background: var(--tr-source-soft);
+  }
+  .trinity-situation :is(.mobile-source-grid, .mobile-stage-grid) button.selected {
+    border-color: var(--tr-source);
+    box-shadow: 0 0 0 2px var(--tr-source-soft);
+  }
+  .trinity-situation :is(.mobile-source-grid, .mobile-stage-grid) small {
+    color: var(--wl-muted);
+    font-size: 10px;
+  }
+  .trinity-situation .walkbar { align-items: flex-start; padding: 12px; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .trinity-situation :is(.outer-glimmer, .source-flow) { animation: none !important; }
+}
 @media (max-width: 639px) {
   .trinity-situation .trinity-select { font-size: 11px; max-width: 190px; }
   .trinity-situation .mobile-core { width: fit-content; }
