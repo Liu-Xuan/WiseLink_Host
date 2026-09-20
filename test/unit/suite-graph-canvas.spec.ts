@@ -11,6 +11,8 @@ jest.mock('../../client/src/components/ui/image', () => ({ __esModule: true, Ima
 function createCy() {
   const handlers = new Map<string, (event?: { target: unknown }) => void>();
   let definitions: Array<{ group: string; data: Record<string, unknown>; position?: { x: number; y: number } }> = [];
+  let currentZoom = 1;
+  let currentPan = { x: 0, y: 0 };
   const nodeFor = (definition?: { group: string; data: Record<string, unknown>; position?: { x: number; y: number } }) => {
     if (!definition) return { length: 0, addClass: jest.fn() };
     return {
@@ -35,7 +37,22 @@ function createCy() {
   };
   const cy = {
     nodes: () => Object.assign(definitions.filter((definition) => definition.group === 'nodes').map(nodeFor), { removeClass: jest.fn() }),
-    elements: () => ({ remove: () => { definitions = []; } }),
+    elements: () => ({
+      remove: () => { definitions = []; },
+      renderedBoundingBox: () => {
+        const positions = definitions
+          .filter((definition) => definition.group === 'nodes')
+          .map((definition) => definition.position ?? { x: 0, y: 0 });
+        const xs = positions.map((position) => position.x * currentZoom + currentPan.x);
+        const ys = positions.map((position) => position.y * currentZoom + currentPan.y);
+        return {
+          x1: Math.min(...xs),
+          y1: Math.min(...ys),
+          x2: Math.max(...xs),
+          y2: Math.max(...ys),
+        };
+      },
+    }),
     add: (next: Array<{ group: string; data: Record<string, unknown>; position?: { x: number; y: number } }>) => {
       definitions = next.map((definition) => ({
         ...definition,
@@ -54,8 +71,15 @@ function createCy() {
     getElementById: jest.fn((id: string) => nodeFor(definitions.find((definition) => definition.data.id === id))),
     minZoom: () => 0.16,
     maxZoom: () => 2.4,
-    zoom: jest.fn(() => 1),
-    pan: jest.fn(() => ({ x: 0, y: 0 })),
+    zoom: jest.fn((next?: number | { level: number }) => {
+      if (typeof next === 'number') currentZoom = next;
+      else if (next) currentZoom = next.level;
+      return currentZoom;
+    }),
+    pan: jest.fn((next?: { x: number; y: number }) => {
+      if (next) currentPan = next;
+      return currentPan;
+    }),
     width: () => 800,
     height: () => 600,
     center: jest.fn(),
@@ -213,6 +237,23 @@ describe('SuiteGraphCanvas', () => {
     expect(cy.fit).not.toHaveBeenCalled();
   });
 
+  it('repairs a restored viewport that places the complete graph outside the canvas', async () => {
+    await act(async () => {
+      root = createRoot(container);
+      root.render(createElement(SuiteGraphCanvas, {
+        presentation,
+        initialViewport: { zoom: 1.3, pan: { x: 12, y: 3565 } },
+      }));
+    });
+    await act(async () => { await Promise.resolve(); });
+    const cy = mockCyFactory.mock.results[0].value as {
+      fit: jest.Mock;
+      resize: jest.Mock;
+    };
+    expect(cy.resize).toHaveBeenCalled();
+    expect(cy.fit).toHaveBeenCalledWith(undefined, 24);
+  });
+
   it('marks toolbar zoom and reset as user camera so later resizes never fit over them', async () => {
     const ref = createRef<SuiteGraphCanvasHandle>();
     await act(async () => {
@@ -220,7 +261,11 @@ describe('SuiteGraphCanvas', () => {
       root.render(createElement(SuiteGraphCanvas, { presentation, ref }));
     });
     await act(async () => { await Promise.resolve(); });
-    const cy = mockCyFactory.mock.results[0].value as { fit: jest.Mock; zoom: jest.Mock };
+    const cy = mockCyFactory.mock.results[0].value as {
+      fit: jest.Mock;
+      resize: jest.Mock;
+      zoom: jest.Mock;
+    };
     expect(cy.fit).toHaveBeenCalledTimes(1);
     act(() => ref.current!.zoomBy(1.18));
     expect(cy.zoom).toHaveBeenCalledWith(expect.objectContaining({ level: expect.closeTo(1.18, 5) }));
@@ -228,6 +273,7 @@ describe('SuiteGraphCanvas', () => {
     expect(cy.fit).toHaveBeenCalledTimes(1);
     act(() => ref.current!.reset());
     expect(cy.fit).toHaveBeenCalledTimes(2);
+    expect(cy.resize).toHaveBeenCalled();
     act(() => { resizeCallback?.(); });
     expect(cy.fit).toHaveBeenCalledTimes(2);
   });

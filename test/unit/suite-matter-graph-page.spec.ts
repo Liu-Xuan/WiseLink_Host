@@ -121,4 +121,10 @@ describe('SuiteMatterGraphPage mobile layout contract', () => {
     expect(css).toContain(".suite-graph-layout[data-mobile-panel='timeline'] .suite-graph-center-panel");
     expect(css).toContain(".suite-graph-layout[data-mobile-panel='wiki'] .suite-graph-work-panel");
   });
+
+  it('constrains the three-column workspace and absolutely fills the graph stage', () => {
+    const css = readFileSync(resolve(process.cwd(), 'client/src/pages/RelationGraphPage/suite-matter-graph-page.css'), 'utf8');
+    expect(css).toMatch(/\.suite-matter-graph-page\s*\{[^}]*height:\s*100%;[^}]*min-height:\s*0;/s);
+    expect(css).toMatch(/\.suite-graph-stage\s*>\s*\.suite-graph-canvas\s*\{[^}]*position:\s*absolute;[^}]*inset:\s*0;/s);
+  });
 });

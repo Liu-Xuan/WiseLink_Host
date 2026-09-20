@@ -110,6 +110,25 @@ function clampZoom(level: number, cy: Core): number {
   return Math.max(cy.minZoom(), Math.min(cy.maxZoom(), level));
 }
 
+function graphIntersectsViewport(cy: Core): boolean {
+  const bounds = cy.elements().renderedBoundingBox();
+  const width = cy.width();
+  const height = cy.height();
+  const measurements = [
+    bounds.x1,
+    bounds.y1,
+    bounds.x2,
+    bounds.y2,
+    width,
+    height,
+  ];
+  if (!measurements.every(Number.isFinite) || width <= 0 || height <= 0) return false;
+  return bounds.x2 >= 0
+    && bounds.y2 >= 0
+    && bounds.x1 <= width
+    && bounds.y1 <= height;
+}
+
 function isNarrowLayout(): boolean {
   if (typeof window === 'undefined' || typeof window.matchMedia !== 'function') return false;
   return window.matchMedia(NARROW_LAYOUT_QUERY).matches;
@@ -406,8 +425,11 @@ const SuiteGraphCanvas = forwardRef<SuiteGraphCanvasHandle, SuiteGraphCanvasProp
 
   useImperativeHandle(ref, () => ({
     fit: () => {
+      const cy = cyRef.current;
+      if (!cy) return;
       userCameraRef.current = true;
-      cyRef.current?.fit(undefined, 24);
+      cy.resize();
+      cy.fit(undefined, 24);
     },
     zoomBy: (factor) => {
       const cy = cyRef.current;
@@ -430,17 +452,25 @@ const SuiteGraphCanvas = forwardRef<SuiteGraphCanvasHandle, SuiteGraphCanvasProp
           }
         }
       });
+      cy.resize();
       cy.fit(undefined, 24);
     },
     setViewport: (viewport) => {
       const cy = cyRef.current;
       if (!cy) return;
       if (viewport && Number.isFinite(viewport.zoom) && Number.isFinite(viewport.pan?.x) && Number.isFinite(viewport.pan?.y)) {
-        userCameraRef.current = true;
+        cy.resize();
         cy.zoom(Math.max(cy.minZoom(), Math.min(cy.maxZoom(), viewport.zoom)));
         cy.pan({ x: viewport.pan.x, y: viewport.pan.y });
+        if (graphIntersectsViewport(cy)) {
+          userCameraRef.current = true;
+        } else {
+          userCameraRef.current = false;
+          cy.fit(undefined, 24);
+        }
       } else {
         userCameraRef.current = false;
+        cy.resize();
         cy.fit(undefined, 24);
       }
     },
@@ -573,13 +603,19 @@ const SuiteGraphCanvas = forwardRef<SuiteGraphCanvasHandle, SuiteGraphCanvasProp
       if (typeof elements.stop === 'function') elements.stop();
     }
     cy.layout({ name: 'preset', positions, fit: false, animate: !motionDisabled(), animationDuration: 320 }).run();
+    cy.resize();
     internalCameraRef.current = true;
     const restore = initialViewportRef.current;
     if (!initialViewportAppliedRef.current && restore && Number.isFinite(restore.zoom) && Number.isFinite(restore.pan.x) && Number.isFinite(restore.pan.y)) {
       cy.zoom(Math.max(cy.minZoom(), Math.min(cy.maxZoom(), restore.zoom)));
       cy.pan({ x: restore.pan.x, y: restore.pan.y });
       initialViewportAppliedRef.current = true;
-      userCameraRef.current = true;
+      if (graphIntersectsViewport(cy)) {
+        userCameraRef.current = true;
+      } else {
+        userCameraRef.current = false;
+        cy.fit(undefined, 24);
+      }
     } else if (!userCameraRef.current) {
       applyAutoCamera(cy);
     }
