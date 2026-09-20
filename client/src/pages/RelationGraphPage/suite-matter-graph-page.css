@@ -366,11 +366,14 @@ html[data-wl-theme='dark'] .suite-matter-graph-page {
 
 @media (max-width: 1500px) {
   .suite-graph-layout { grid-template-columns: 205px minmax(0, 1fr) 282px; gap: 11px; }
+  .suite-graph-center-head h1 { font-size: 20px; }
+  .suite-graph-knowledge-body { padding: 17px; }
 }
 
 @media (max-width: 1250px) {
   .suite-graph-layout { grid-template-columns: minmax(0, 1fr) 280px; }
   .suite-graph-work-panel { display: none; }
+  .suite-graph-center-head { padding-right: 15px; padding-left: 15px; }
 }
 
 @media (max-width: 1030px) {

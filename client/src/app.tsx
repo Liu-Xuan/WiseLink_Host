@@ -54,15 +54,15 @@ const LibraryIndexRedirect = () => {
 const RoutesComponent = () => {
   return (
     <Routes>
-      <Route path="dev-preview/graph" element={<SuiteGraphVisualPreviewPage />} />
       <Route path="dev-preview/graph-legacy" element={<GraphRelationPreviewPage />} />
       <Route path="dev-preview/chronology" element={<EngineeringChronologyPreviewPage />} />
       <Route path="dev-preview/reader/:documentId" element={<ReaderPage />} />
-      <Route path="dev-preview/reader-workspace" element={<ReaderWorkspaceVisualPreviewPage />} />
       <Route path="dev-preview/version-comparison/:documentId" element={<VersionComparisonPage />} />
       <Route path="dev-preview/reactflow-validation" element={<ReactFlowValidationPlayground />} />
       <Route element={<Layout />}>
         <Route index element={<LibraryIndexRedirect />} />
+        <Route path="dev-preview/graph" element={<SuiteGraphVisualPreviewPage />} />
+        <Route path="dev-preview/reader-workspace" element={<ReaderWorkspaceVisualPreviewPage />} />
         <Route path="dev-preview/situation" element={<EngineeringSituationVisualPreviewPage />} />
         <Route path="dialogues" element={<DialoguePage />} />
         <Route path="dialogues/:threadRef" element={<DialoguePage />} />

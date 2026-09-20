@@ -17,10 +17,7 @@ export default function SuiteGraphVisualPreviewPage() {
   const [perspective, setPerspective] =
     useState<SuiteMatterGraphPerspective>('matter');
   return (
-    <div className="suite-graph-preview-shell">
-      <p className="suite-graph-preview-note">
-        隔离视觉样例：仅用于与 Suite 静态页面同条件对照；不读取生产数据，也不代表工程结论或线上验收。
-      </p>
+    <div className="suite-graph-preview-shell" data-preview="isolated-graph-fixture">
       <SuiteMatterGraphView
         read={SUITE_GRAPH_VISUAL_READS[perspective]}
         revision={SUITE_GRAPH_VISUAL_REVISION}

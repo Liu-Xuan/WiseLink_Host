@@ -180,6 +180,15 @@
   gap: var(--tr-panel-gap);
   align-items: stretch;
 }
+@media (min-width: 1650px) {
+  .trinity-situation .situation-grid { grid-template-columns: minmax(0, 1fr) 350px; }
+}
+@media (min-width: 1121px) and (max-width: 1360px) {
+  .trinity-situation .situation-grid {
+    grid-template-columns: minmax(0, 1fr) 294px;
+    gap: 15px;
+  }
+}
 .trinity-situation .ring-card {
   min-width: 0;
   overflow: hidden;
@@ -764,16 +773,21 @@
   .trinity-situation .mobile-rings { display: block; padding: 10px 16px; }
   .trinity-situation .mobile-core {
     display: flex;
+    width: 190px;
+    height: 190px;
+    flex-direction: column;
     align-items: center;
-    gap: 15px;
-    width: 100%;
-    margin: 8px 0 19px;
-    padding: 18px;
-    border-radius: 16px;
+    justify-content: center;
+    gap: 12px;
+    margin: 15px auto 27px;
+    padding: 20px;
+    border-radius: 50%;
     border: 1px solid var(--wl-border-strong);
-    background: radial-gradient(circle at 10% 10%, var(--wl-raised), var(--wl-sheet-muted));
+    background: radial-gradient(circle at 35% 24%, var(--wl-raised), var(--wl-sheet-muted) 72%);
+    box-shadow: inset 0 1px 0 var(--wl-border), 0 16px 38px rgb(19 42 34 / 10%),
+      0 0 0 10px rgb(128 148 140 / 4%);
     color: var(--wl-ink);
-    text-align: left;
+    text-align: center;
   }
   .trinity-situation .mobile-core strong { font-size: 17px; display: block; }
   .trinity-situation .mobile-core small {
@@ -782,6 +796,14 @@
     margin-top: 6px;
     font-size: 10px;
   }
+  .trinity-situation .mobile-ring-heading {
+    margin: 0 0 9px;
+    color: var(--wl-dim);
+    font-size: 11px;
+    font-weight: 600;
+    line-height: 1.5;
+  }
+  .trinity-situation .mobile-source-grid + .mobile-ring-heading { margin-top: 17px; }
   .trinity-situation .mobile-stage-grid {
     display: grid;
     grid-template-columns: 1fr 1fr;
@@ -962,8 +984,8 @@
   border-radius: 22px;
   background: var(--wl-sheet);
 }
-.trinity-situation .ring-board { width: 100%; aspect-ratio: 1100 / 660; }
-.trinity-situation .ring-header { min-height: 58px; padding: 17px 22px 9px; }
+.trinity-situation .ring-board { width: min(100%, 950px); margin: 0 auto; aspect-ratio: 1100 / 660; }
+.trinity-situation .ring-header { min-height: 43px; padding: 13px 20px 5px; }
 .trinity-situation .legend.source i { background: var(--tr-source); }
 .trinity-situation .outer-bed {
   fill: none;
@@ -1009,7 +1031,7 @@ html[data-wl-motion='off'] .trinity-situation :is(.outer-glimmer, .source-flow) 
   animation-play-state: paused;
 }
 .trinity-situation .stage-node {
-  width: 18.2%;
+  width: 17.4%;
   min-height: 13.9%;
   padding: 10px 14px;
   border-radius: 16px;
@@ -1026,7 +1048,7 @@ html[data-wl-motion='off'] .trinity-situation :is(.outer-glimmer, .source-flow) 
 .trinity-situation .source-node {
   position: absolute;
   display: flex;
-  width: 14.4%;
+  width: 13.5%;
   min-height: 10.3%;
   transform: translate(-50%, -50%);
   flex-direction: column;
@@ -1133,6 +1155,9 @@ html[data-wl-motion='off'] .trinity-situation :is(.outer-glimmer, .source-flow) 
   .trinity-situation .situation-grid { grid-template-columns: 1fr; }
   .trinity-situation .inspector { min-height: 280px; }
 }
+@media (min-width: 1121px) and (max-height: 940px) {
+  .trinity-situation .ring-board { width: min(100%, 870px); }
+}
 @media (max-width: 740px) {
   .trinity-situation .situation-controls { width: 100%; margin-left: 0; }
   .trinity-situation .situation-controls > button:nth-child(2) { margin-left: auto; }
@@ -1146,7 +1171,7 @@ html[data-wl-motion='off'] .trinity-situation :is(.outer-glimmer, .source-flow) 
   .trinity-situation .mobile-source-grid button,
   .trinity-situation .mobile-stage-grid button {
     display: flex;
-    min-height: 72px;
+    min-height: 86px;
     flex-direction: column;
     align-items: flex-start;
     justify-content: center;
@@ -1158,6 +1183,7 @@ html[data-wl-motion='off'] .trinity-situation :is(.outer-glimmer, .source-flow) 
     text-align: left;
   }
   .trinity-situation .mobile-source-grid button {
+    min-height: 67px;
     border-color: var(--tr-source-line);
     background: var(--tr-source-soft);
   }
@@ -1176,7 +1202,6 @@ html[data-wl-motion='off'] .trinity-situation :is(.outer-glimmer, .source-flow) 
 }
 @media (max-width: 639px) {
   .trinity-situation .trinity-select { font-size: 11px; max-width: 190px; }
-  .trinity-situation .mobile-core { width: fit-content; }
   .trinity-situation .mobile-core svg { width: 35px; height: 35px; stroke-width: 1.2; }
   .trinity-situation .mobile-knowledge { gap: 7px; margin-top: 17px; }
   .trinity-situation .mobile-knowledge button { padding: 10px 4px; border-color: var(--tr-ring-inner); }

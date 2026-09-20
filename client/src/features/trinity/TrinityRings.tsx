@@ -115,6 +115,7 @@ export default function TrinityRings({
           onClick={(): void => onNavigate({ type: 'agent' })}>
           <Brain size={20} /><span><strong>工程智能体</strong><small>多源信息 → 判断依据</small></span>
         </button>
+        <h3 className="mobile-ring-heading">内环 · 围绕事项聚合多源信息</h3>
         <div className="mobile-source-grid">
           {sourceCategories.map((source: TrinitySourceCategoryMeta) => (
             <button key={source.id} type="button" data-source-category={source.id}
@@ -124,6 +125,7 @@ export default function TrinityRings({
             </button>
           ))}
         </div>
+        <h3 className="mobile-ring-heading">外环 · 协同工程师开展综合评估</h3>
         <div className="mobile-stage-grid">
           {stages.map((stage: TrinityStageMeta, index: number) => (
             <button key={stage.id} type="button" data-stage={stage.id}

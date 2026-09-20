@@ -8,8 +8,7 @@ const original = readerWorkspaceVisualFixture();
 export default function ReaderWorkspaceVisualPreviewPage() {
   const [mode, setMode] = useState<DocumentSourceReaderMode>('dual');
   return (
-    <main className="document-version-reading">
-      <p role="note">隔离视觉样例：构造内容仅用于核对 Reader 布局与交互，不读取生产数据。</p>
+    <main className="document-version-reading" data-preview="isolated-reader-fixture">
       <DocumentSourceReadingWorkspace
         original={original}
         documentVersionId={original.binding.documentVersionId}

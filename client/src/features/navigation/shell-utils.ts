@@ -260,6 +260,8 @@ export function deriveBreadcrumbs(
     '/knowledge': '工程知识',
     '/graph': '关系图谱',
     '/situation': '工程态势',
+    '/dev-preview/graph': '关系图谱视觉样例',
+    '/dev-preview/reader-workspace': '精读工作台视觉样例',
     '/dev-preview/situation': '工程态势视觉样例',
     '/timeline': '工程时间轴',
     '/activity-graph': '活动来源关系',

@@ -57,7 +57,7 @@ export function DocumentSourceReadingWorkspace({
   const [split, setSplit] = useState(50);
   const [page, setPage] = useState(initialPage ?? 1);
   const [tocOpen, setTocOpen] = useState(() => typeof window === 'undefined' ||
-    typeof window.matchMedia !== 'function' || window.matchMedia('(min-width: 900px)').matches);
+    typeof window.matchMedia !== 'function' || window.matchMedia('(min-width: 761px)').matches);
   const [mobileSecondary, setMobileSecondary] = useState(false);
   const [activeUnitId, setActiveUnitId] = useState<string | null>(initialUnitId ?? null);
   const [fullscreen, setFullscreen] = useState(false);
@@ -104,7 +104,7 @@ export function DocumentSourceReadingWorkspace({
     window.requestAnimationFrame(() => {
       document.getElementById(unitId)?.scrollIntoView({ block: 'start' });
     });
-    if (window.innerWidth < 900) setTocOpen(false);
+    if (window.innerWidth <= 760) setTocOpen(false);
   }
 
   function startResize(event: ReactPointerEvent<HTMLDivElement>): void {

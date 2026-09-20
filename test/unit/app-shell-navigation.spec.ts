@@ -54,6 +54,8 @@ test('registered shell routes have concrete breadcrumbs instead of a not-found l
     ['/knowledge', ''],
     ['/graph', ''],
     ['/situation', ''],
+    ['/dev-preview/graph', ''],
+    ['/dev-preview/reader-workspace', ''],
     ['/dev-preview/situation', ''],
     ['/timeline', '?documentVersionId=DV-1'],
     ['/activity-graph', '?documentVersionId=DV-1'],

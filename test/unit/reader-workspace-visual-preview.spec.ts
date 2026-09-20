@@ -37,9 +37,15 @@ it('renders the isolated Reader fixture without requesting a production document
   const root = createRoot(dom.window.document.getElementById('root')!);
   try {
     await act(async () => root.render(createElement(RouterProvider, { router })));
-    expect(dom.window.document.body.textContent).toContain('隔离视觉样例');
+    expect(dom.window.document.querySelector(
+      '[data-preview="isolated-reader-fixture"]',
+    )).not.toBeNull();
     expect(dom.window.document.body.textContent).toContain('SB-A R02 · Reader 视觉样例');
     expect(dom.window.document.querySelector('[aria-label="构造原件第 1 页"]')).not.toBeNull();
+    expect(dom.window.document.querySelector('[data-testid="mock-production-pdf"]')).toBeNull();
+    expect(dom.window.document.querySelector(
+      '[data-testid="mock-production-pdf-canvas"]',
+    )).toBeNull();
     expect(network).not.toHaveBeenCalled();
   } finally {
     await act(async () => root.unmount());
