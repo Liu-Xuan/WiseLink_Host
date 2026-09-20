@@ -10,6 +10,9 @@ import type { DocumentActivityRevision } from '@shared/document-activity.interfa
 const mockNavigate = jest.fn();
 let mockHistorical = false;
 let mockProps: SuiteMatterGraphViewProps;
+let mockSourcesInput: {
+  restorePins?: import('../../client/src/pages/RelationGraphPage/suite-graph-timeline').SuiteGraphTimelineEventPins;
+};
 const mockData = libraryMatterFixture();
 const mockActivities = new Map<string, SuiteGraphActivityCandidate>();
 const mockExpandSource = jest.fn();
@@ -18,14 +21,17 @@ jest.mock('../../client/src/app/providers/CurrentUserSessionProvider', () => ({u
 jest.mock('../../client/src/api/engineering-matter', () => ({getEngineeringMatterDirectory: jest.fn()}));
 jest.mock('@client/src/api/canonical-host', () => ({getCanonicalHostClientSessionGeneration: () => 1, getCanonicalLibraryDocuments: jest.fn()}));
 jest.mock('../../client/src/pages/RelationGraphPage/useSuiteMatterGraph', () => ({useSuiteMatterGraph: () => ({graph: {...buildSuiteMatterGraph(mockData), historical: mockHistorical}, revision: mockData.working.current, workspace: mockData, loading: false, error: null})}));
-jest.mock('../../client/src/pages/RelationGraphPage/useSuiteGraphSources', () => ({useSuiteGraphSources: () => ({
+jest.mock('../../client/src/pages/RelationGraphPage/useSuiteGraphSources', () => ({useSuiteGraphSources: (input: typeof mockSourcesInput) => {
+  mockSourcesInput = input;
+  return {
   activities: mockActivities,
   sources: [...mockActivities.keys()].map((documentVersionId) => ({documentVersionId, label: 'SB-001 · R02', status: 'loaded', notice: null})),
   loading: false,
   activeSourceId: null,
   selectSource: jest.fn(),
   expandSource: mockExpandSource,
-})}));
+  };
+}}));
 jest.mock('../../client/src/pages/RelationGraphPage/SuiteMatterGraphView', () => ({__esModule: true, default: (props: SuiteMatterGraphViewProps) => {mockProps = props; return null;}}));
 function render(search = '') { return renderToStaticMarkup(createElement(StaticRouter, {location: `/graph?matterId=ui-test-matter${search}`}, createElement(SuiteMatterGraphPage, {matterId: 'ui-test-matter'}))); }
 it('rejects ambiguous explicit work refs instead of showing current work', () => {
@@ -118,6 +124,24 @@ it('requests an unloaded source only through the explicit expand action', () => 
   expect(mockProps.timelineSources).toEqual([]);
   mockProps.onExpandTimelineSource!('dv-a');
   expect(mockExpandSource).toHaveBeenCalledWith('dv-a');
+});
+
+it('passes exact returned event pins to the source loader', () => {
+  const pins = {
+    documentVersionId: 'dv-b',
+    familyId: 'family-b',
+    parseRunId: 'parse-b',
+    candidateRevision: 7,
+    runRef: 'run-b',
+    statementId: 'statement-b',
+    anchorId: 'anchor-b',
+  };
+  const query = new URLSearchParams({
+    eventId: '["event","dv-b","parse-b","7","run-b","statement-b"]',
+    eventPins: JSON.stringify(pins),
+  });
+  render(`&${query}`);
+  expect(mockSourcesInput.restorePins).toEqual(pins);
 });
 
 it('keeps a usable view when historical work requests an unavailable perspective', () => {

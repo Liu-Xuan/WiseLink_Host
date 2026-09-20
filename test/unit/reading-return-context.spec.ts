@@ -4,6 +4,7 @@ import { StaticRouter } from 'react-router-dom/server';
 import {
   activityReadingReturnParams,
   activityReadingParams,
+  activityReaderParams,
   activityWindowPin,
   completeActivityIdentity,
   libraryDocumentReadingRoute,
@@ -13,6 +14,10 @@ import {
   readingReturnTarget,
 } from '../../client/src/features/matter/reading-return';
 import { matterDocumentRoute } from '../../client/src/features/matter/matter-navigation';
+import {
+  engineeringIssueReadingParams,
+  readEngineeringIssueReadingState,
+} from '../../client/src/features/matter/engineering-issue-reading';
 import { DocumentVersionLink } from '../../client/src/pages/WorkspaceHomePage/DocumentVersionLink';
 import { LibraryDocumentDetails } from '../../client/src/pages/WorkspaceHomePage/LibraryDocumentDetails';
 import {
@@ -335,6 +340,185 @@ test('activity navigation preserves a validated long graph return without wideni
     .toBe(selectedId);
   params.set('returnLibraryQuery', 'mode=document');
   expect(activityReadingParams(params).has('returnGraphQuery')).toBe(false);
+});
+
+test('an activities reader preserves exactly one bound timeline parent', () => {
+  const parent = new URLSearchParams({
+    documentVersionId: 'DV-1',
+    parseRunId: 'PR-1',
+    candidateRevision: '2',
+    runRef: 'RUN-2',
+    statementId: 'ST-parent',
+    anchor: 'A-parent',
+    window: 'current-year',
+  });
+  const reader = new URLSearchParams({
+    parseRunId: 'PR-1',
+    candidateRevision: '2',
+    runRef: 'RUN-2',
+    statementId: 'ST-reader',
+    anchor: 'A-reader',
+    returnActivityQuery: parent.toString(),
+    returnActivityView: 'timeline',
+  });
+  const normalized = activityReaderParams(reader, 'DV-1');
+  expect(normalized.get('returnActivityView')).toBe('timeline');
+  expect(new URLSearchParams(normalized.get('returnActivityQuery')!).get('statementId'))
+    .toBe('ST-parent');
+  const original = activityReadingReturnParams(
+    normalized.toString(),
+    'DV-1',
+  );
+  const backToReader = readingReturnTarget(original, 'DV-1', 'PR-1');
+  expect(backToReader?.route).toContain('/document-versions/DV-1/activities?');
+  const readerQuery = new URL(backToReader!.route, 'https://example.test').searchParams;
+  expect(readerQuery.get('statementId')).toBe('ST-reader');
+  const backToTimeline = readingReturnTarget(readerQuery, 'DV-1', 'PR-1');
+  expect(backToTimeline?.route).toContain('/timeline?');
+  const timelineQuery = new URL(backToTimeline!.route, 'https://example.test').searchParams;
+  expect(timelineQuery.get('statementId')).toBe('ST-parent');
+  expect(timelineQuery.get('anchor')).toBe('A-parent');
+  expect(timelineQuery.get('window')).toBe('current-year');
+});
+
+test('an activities reader rejects mismatched or recursive parent state', () => {
+  const current = new URLSearchParams({
+    parseRunId: 'PR-1',
+    candidateRevision: '2',
+    runRef: 'RUN-2',
+    statementId: 'ST-reader',
+  });
+  const parent = new URLSearchParams({
+    documentVersionId: 'DV-1',
+    parseRunId: 'PR-1',
+    candidateRevision: '3',
+    runRef: 'RUN-2',
+    statementId: 'ST-parent',
+  });
+  current.set('returnActivityQuery', parent.toString());
+  current.set('returnActivityView', 'timeline');
+  expect(activityReaderParams(current, 'DV-1').has('returnActivityQuery')).toBe(false);
+  parent.set('candidateRevision', '2');
+  parent.set('returnActivityQuery', 'parseRunId=PR-1');
+  parent.set('returnActivityView', 'timeline');
+  current.set('returnActivityQuery', parent.toString());
+  expect(activityReaderParams(current, 'DV-1').has('returnActivityQuery')).toBe(false);
+});
+
+test('historical issue source reading returns to the exact issue and graph state', () => {
+  const graphQuery = new URLSearchParams({
+    matterId: 'MAT-A',
+    workRef: 'MW-current',
+    selectedId: 'prior-result',
+    perspective: 'matter',
+  }).toString();
+  const issueState = engineeringIssueReadingParams({
+    query: '液压条件',
+    scope: 'HISTORY',
+    selected: {
+      subjectKind: 'ENGINEERING_MATTER',
+      subjectId: 'MAT-B',
+      workRef: 'MW-old',
+      issueKey: 'ISSUE-2',
+    },
+  });
+  issueState.set('returnGraphQuery', graphQuery);
+  issueState.set('returnGraphTargetMatterId', 'MAT-A');
+  issueState.set('returnGraphTargetWorkRef', 'MW-current');
+  issueState.set('sourceWorkRef', 'MW-current');
+  const route = matterDocumentRoute('MAT-A', {
+    workItemId: null,
+    documentVersionId: 'DV-old',
+    sourceRefId: 'SR-old',
+    locator: JSON.stringify({
+      parseRunId: 'PR-old',
+      sourceRefId: 'SR-old',
+    }),
+  }, 'materials', '', issueState);
+  const original = new URL(route, 'https://example.test');
+  const target = readingReturnTarget(
+    original.searchParams,
+    'DV-old',
+    'PR-old',
+  );
+  expect(target?.route).toContain('/matters/MAT-A?');
+  const returned = new URL(target!.route, 'https://example.test').searchParams;
+  expect(returned.get('panel')).toBe('materials');
+  expect(returned.get('issueSubjectKind')).toBe('ENGINEERING_MATTER');
+  expect(returned.get('issueSubjectId')).toBe('MAT-B');
+  expect(returned.get('issueWorkRef')).toBe('MW-old');
+  expect(returned.get('issueKey')).toBe('ISSUE-2');
+  expect(returned.get('issueSearchScope')).toBe('HISTORY');
+  expect(returned.get('returnGraphQuery')).toBe(graphQuery);
+  expect(readEngineeringIssueReadingState(returned)).toMatchObject({
+    state: 'ok',
+    value: {
+      selected: {
+        subjectKind: 'ENGINEERING_MATTER',
+        subjectId: 'MAT-B',
+        workRef: 'MW-old',
+        issueKey: 'ISSUE-2',
+      },
+    },
+  });
+});
+
+test('partial or duplicate historical issue identity never falls back to current work', () => {
+  for (const query of [
+    'issueSubjectKind=ENGINEERING_MATTER&issueSubjectId=MAT-B&issueWorkRef=MW-old',
+    'issueSubjectKind=WORK_ITEM&issueSubjectId=WI-1&issueWorkRef=MW-old&issueKey=I1&issueKey=I2',
+    'issueSubjectKind=OTHER&issueSubjectId=X&issueWorkRef=MW-old&issueKey=I1',
+  ]) {
+    expect(readEngineeringIssueReadingState(new URLSearchParams(query)).state)
+      .toBe('invalid');
+  }
+  const params = new URLSearchParams({
+    returnMatterId: 'MAT-A',
+    returnDocumentVersionId: 'DV-old',
+    returnMatterPanel: 'materials',
+    returnMatterIssueQuery:
+      'issueSubjectKind=ENGINEERING_MATTER&issueSubjectId=MAT-B&issueWorkRef=MW-old',
+  });
+  expect(readingReturnTarget(params, 'DV-old')).toBeNull();
+  params.set('returnMatterIssueQuery', new URLSearchParams({
+    issueSearchScope: 'HISTORY',
+    issueSubjectKind: 'ENGINEERING_MATTER',
+    issueSubjectId: 'MAT-B',
+    issueWorkRef: 'MW-old',
+    issueKey: 'I1',
+    returnGraphQuery: 'matterId=MAT-B',
+  }).toString());
+  expect(readingReturnTarget(params, 'DV-old')).toBeNull();
+});
+
+test('legacy referenced-work state converts to a bound issue return only on source navigation', () => {
+  const context = new URLSearchParams({
+    panel: 'materials',
+    sourceWorkRef: 'MW-legacy',
+    sourceIssueKey: 'I-legacy',
+  });
+  const route = matterDocumentRoute('MAT-A', {
+    workItemId: null,
+    documentVersionId: 'DV-old',
+    sourceRefId: 'SR-old',
+    locator: JSON.stringify({
+      parseRunId: 'PR-old',
+      sourceRefId: 'SR-old',
+    }),
+  }, 'materials', '', context);
+  const original = new URL(route, 'https://example.test');
+  const target = readingReturnTarget(
+    original.searchParams,
+    'DV-old',
+    'PR-old',
+  );
+  const returned = new URL(target!.route, 'https://example.test').searchParams;
+  expect(returned.get('issueSubjectKind')).toBe('ENGINEERING_MATTER');
+  expect(returned.get('issueSubjectId')).toBe('MAT-A');
+  expect(returned.get('issueWorkRef')).toBe('MW-legacy');
+  expect(returned.get('issueKey')).toBe('I-legacy');
+  expect(returned.get('sourceWorkRef')).toBeNull();
+  expect(returned.get('sourceIssueKey')).toBeNull();
 });
 
 test('opening a tree version without first selecting its quicklook preserves that row identity', () => {

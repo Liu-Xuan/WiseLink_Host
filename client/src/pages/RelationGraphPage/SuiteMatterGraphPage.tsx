@@ -44,7 +44,13 @@ function MatterGraphContent({matterId, workRef, session, denied}: {matterId: str
   const historical = Boolean(read.graph?.historical);
   const catalog = useMemo(() => read.workspace?.matter.catalog.entries ?? [], [read.workspace]);
   const sourceCatalog = useMemo(() => historical ? [] : catalog, [historical, catalog]);
-  const sources = useSuiteGraphSources({ catalog: sourceCatalog, enabled: !historical, session, denied });
+  const sources = useSuiteGraphSources({
+    catalog: sourceCatalog,
+    enabled: !historical,
+    session,
+    denied,
+    restorePins: navigation.state.eventPins,
+  });
   const matterGraph = useMemo<SuiteMatterGraphRead | null>(() => {
     if (!read.graph) return null;
     const withCatalog = appendSuiteGraphCatalogDocuments(read.graph, catalog);

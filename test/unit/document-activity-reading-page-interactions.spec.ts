@@ -328,6 +328,42 @@ describe('reader return identity comes from the loaded candidate and the click c
     expect(none.get('anchor')).toBeNull();
     expect(none.get('runRef')).toBe('run-1');
   });
+
+  it('returns through the reader selection and then the original timeline selection', async () => {
+    const parent = new URLSearchParams({
+      documentVersionId: 'DV1',
+      parseRunId: 'PR1',
+      candidateRevision: '4',
+      runRef: 'run-1',
+      statementId: 'ST1',
+      anchor: 'A1',
+      window: 'current-year',
+    });
+    const entry = new URLSearchParams({
+      parseRunId: 'PR1',
+      candidateRevision: '4',
+      runRef: 'run-1',
+      statementId: 'ST-reader',
+      returnActivityQuery: parent.toString(),
+      returnActivityView: 'timeline',
+    });
+    await mount(entry.toString());
+    const view = container.querySelector('[data-candidate="yes"]');
+    const originalParams = new URLSearchParams(
+      view?.getAttribute('data-return-st2') ?? '',
+    );
+    const readerTarget = readingReturnTarget(originalParams, 'DV1', 'PR1');
+    expect(readerTarget?.route).toContain('/activities?');
+    const readerQuery = new URL(readerTarget!.route, 'https://example.test').searchParams;
+    expect(readerQuery.get('statementId')).toBe('ST2');
+    expect(readerQuery.get('anchor')).toBe('A2');
+    const timelineTarget = readingReturnTarget(readerQuery, 'DV1', 'PR1');
+    expect(timelineTarget?.route).toContain('/timeline?');
+    const timelineQuery = new URL(timelineTarget!.route, 'https://example.test').searchParams;
+    expect(timelineQuery.get('statementId')).toBe('ST1');
+    expect(timelineQuery.get('anchor')).toBe('A1');
+    expect(timelineQuery.get('window')).toBe('current-year');
+  });
 });
 
 describe('activity -> reader -> activity round trip', () => {

@@ -44,9 +44,23 @@ it('retains the graph context across Wiki to source and back to the same work', 
 });
 
 it('round-trips the selected event and wiki tab through exact pins and back', () => {
-  const state = {eventId: '["event","dv-a","st-1"]', wikiTab: 'basis' as const};
+  const eventPins = {
+    documentVersionId: 'dv-a',
+    familyId: 'family-a',
+    parseRunId: 'parse-a',
+    candidateRevision: 3,
+    runRef: 'run-a',
+    statementId: 'st-1',
+    anchorId: 'anchor-1',
+  };
+  const state = {
+    eventId: '["event","dv-a","parse-a","3","run-a","st-1"]',
+    eventPins,
+    wikiTab: 'basis' as const,
+  };
   const query = graphReadingParams('matter-a', 'old-work', state);
   expect(query.get('eventId')).toBe(state.eventId);
+  expect(JSON.parse(query.get('eventPins')!)).toEqual(eventPins);
   expect(query.get('wikiTab')).toBe('basis');
   expect(readGraphReadingState(query)).toMatchObject(state);
 });
@@ -57,6 +71,26 @@ it('rejects out-of-schema event and wiki tab values', () => {
   expect(state.eventId).toBeUndefined();
   expect(state.wikiTab).toBeUndefined();
   expect(readGraphReadingState(new URLSearchParams('wikiTab=discussion')).wikiTab).toBe('discussion');
+});
+
+it('drops malformed or unpaired event pins instead of guessing a source candidate', () => {
+  const validPins = JSON.stringify({
+    documentVersionId: 'dv-a',
+    familyId: 'family-a',
+    parseRunId: 'parse-a',
+    candidateRevision: 3,
+    runRef: 'run-a',
+    statementId: 'st-1',
+    anchorId: null,
+  });
+  expect(readGraphReadingState(new URLSearchParams({ eventPins: validPins })))
+    .toEqual({});
+  const malformed = new URLSearchParams({ eventId: 'event-a', eventPins: validPins });
+  malformed.set('eventPins', validPins.replace('"candidateRevision":3', '"candidateRevision":0'));
+  expect(readGraphReadingState(malformed)).toEqual({ eventId: 'event-a' });
+  malformed.set('eventPins', validPins);
+  malformed.append('eventPins', validPins);
+  expect(readGraphReadingState(malformed)).toEqual({ eventId: 'event-a' });
 });
 
 it('adds a bounded graph return only to the supported matter process route', () => {

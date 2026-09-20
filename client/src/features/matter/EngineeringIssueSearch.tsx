@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import {
   searchEngineeringIssues,
@@ -24,6 +24,11 @@ import ReferenceWorkNotices from './ReferenceWorkNotices';
 import OverviewCorrectionNotices from './OverviewCorrectionNotices';
 import OverviewSourceWork from './OverviewSourceWork';
 import { exactDocumentSourceRoute, matterDocumentRoute } from './matter-navigation';
+import {
+  engineeringIssueReadingParams,
+  readEngineeringIssueReadingState,
+  type EngineeringIssueReadingState,
+} from './engineering-issue-reading';
 import type { DocumentSourceSearchResponse } from '@shared/document-source-search.interface';
 import '@client/src/pages/DocumentParsingPage/jobaid-problem-workspace.css';
 
@@ -40,11 +45,40 @@ export default function EngineeringIssueSearch({
   const catalog = readOnly && presentation === 'catalog';
   const navigate = useNavigate();
   const [params, setParams] = useSearchParams();
+  const issueReading = useMemo(
+    () => readEngineeringIssueReadingState(params),
+    [params],
+  );
+  const restored = issueReading.state === 'ok' ? issueReading.value : null;
   const referenceAttemptRef = readOnly ? null : params.get('referenceAttemptRef');
-  const sourceWorkRef = readOnly ? null : params.get('sourceWorkRef');
-  const sourceIssueKey = readOnly ? null : params.get('sourceIssueKey');
-  const [query, setQuery] = useState('');
-  const [scope, setScope] = useState<'CURRENT' | 'HISTORY'>('CURRENT');
+  const legacySourceWorkRef = readOnly ? null : params.get('sourceWorkRef');
+  const legacySourceIssueKey = readOnly ? null : params.get('sourceIssueKey');
+  const hasModernIssueState = [
+    'issueSearchQuery',
+    'issueSearchScope',
+    'issueSubjectKind',
+    'issueSubjectId',
+    'issueWorkRef',
+    'issueKey',
+  ].some((key) => params.has(key));
+  const sourceIdentity = readOnly
+    ? null
+    : restored?.selected ?? (
+      !hasModernIssueState
+        && legacySourceWorkRef
+        && legacySourceIssueKey
+        ? {
+            subjectKind: 'ENGINEERING_MATTER' as const,
+            subjectId: matterId,
+            workRef: legacySourceWorkRef,
+            issueKey: legacySourceIssueKey,
+          }
+        : null
+    );
+  const [query, setQuery] = useState(restored?.query ?? '');
+  const [scope, setScope] = useState<'CURRENT' | 'HISTORY'>(
+    restored?.scope ?? 'CURRENT',
+  );
   const [results, setResults] = useState<EngineeringIssueSearchResponse | null>(
     null,
   );
@@ -64,16 +98,29 @@ export default function EngineeringIssueSearch({
     sourceRef: string | null;
   } | null>(null);
   const epoch = useRef(0);
+  const issueReadEpoch = useRef(0);
+  const automaticIssueIdentity = useRef('');
+  const restoredRef = useRef(restored);
+  restoredRef.current = restored;
   useEffect(() => {
     const clear = () => {
-      epoch.current += 1; statusEpoch.current += 1;
-      setQuery(''); setResults(null); setOriginals(null); setSelected(null); setSource(null);
+      epoch.current += 1; issueReadEpoch.current += 1;
+      statusEpoch.current += 1;
+      automaticIssueIdentity.current = '';
+      setQuery(restoredRef.current?.query ?? '');
+      setScope(restoredRef.current?.scope ?? 'CURRENT');
+      setResults(null); setOriginals(null); setSelected(null); setSource(null);
       setError(null); setBusy(false); setPurpose(''); setReferenceReceipt(null); setReferenceStatus(null);
       setReferenceBusy(false); setReferenceStatusBusy(false); pendingReference.current = null;
     };
     clear();
     const unsubscribe = subscribeCanonicalHostClientSession(clear);
-    return () => { epoch.current += 1; statusEpoch.current += 1; unsubscribe(); };
+    return () => {
+      epoch.current += 1;
+      issueReadEpoch.current += 1;
+      statusEpoch.current += 1;
+      unsubscribe();
+    };
   }, [matterId, readOnly]);
   useEffect(() => {
     const generation = ++statusEpoch.current;
@@ -88,20 +135,80 @@ export default function EngineeringIssueSearch({
     return () => { statusEpoch.current += 1; };
   }, [matterId, referenceAttemptRef]);
   useEffect(() => {
-    if (!sourceWorkRef || !sourceIssueKey) return;
-    const request = ++epoch.current;
+    if (!sourceIdentity || issueReading.state === 'invalid') {
+      automaticIssueIdentity.current = '';
+      return;
+    }
+    const identityKey = JSON.stringify([
+      sourceIdentity.subjectKind,
+      sourceIdentity.subjectId,
+      sourceIdentity.workRef,
+      sourceIdentity.issueKey,
+    ]);
+    if (automaticIssueIdentity.current === identityKey) return;
+    automaticIssueIdentity.current = identityKey;
+    const request = ++issueReadEpoch.current;
     setBusy(true); setError(null); setSelected(null); setSource(null);
-    void readEngineeringIssue({ subjectKind: 'ENGINEERING_MATTER', subjectId: matterId,
-      workRef: sourceWorkRef, issueKey: sourceIssueKey }).then(value => {
-      if (request === epoch.current) setSelected(value);
+    void readEngineeringIssue(sourceIdentity).then(value => {
+      if (request === issueReadEpoch.current) setSelected(value);
     }).catch((cause: unknown) => {
-      if (request === epoch.current) setError(cause instanceof Error ? cause.message : '所引工作读取失败');
-    }).finally(() => { if (request === epoch.current) setBusy(false); });
-    return () => { epoch.current += 1; };
-  }, [matterId, sourceWorkRef, sourceIssueKey]);
+      if (request === issueReadEpoch.current) {
+        setError(cause instanceof Error ? cause.message : '所引工作读取失败');
+      }
+    }).finally(() => {
+      if (request === issueReadEpoch.current) setBusy(false);
+    });
+    return () => { issueReadEpoch.current += 1; };
+  }, [
+    issueReading.state,
+    sourceIdentity?.subjectKind,
+    sourceIdentity?.subjectId,
+    sourceIdentity?.workRef,
+    sourceIdentity?.issueKey,
+  ]);
+
+  const writeReadingState = (state: EngineeringIssueReadingState) => {
+    const issueParams = engineeringIssueReadingParams({
+      ...state,
+      query: state.query.trim(),
+    });
+    setParams((current) => {
+      const next = new URLSearchParams(current);
+      for (const key of [
+        'issueSearchQuery',
+        'issueSearchScope',
+        'issueSubjectKind',
+        'issueSubjectId',
+        'issueWorkRef',
+        'issueKey',
+      ]) next.delete(key);
+      issueParams.forEach((value, key) => next.set(key, value));
+      return next;
+    }, { replace: true });
+  };
+  const loadSelectedIssue = (
+    identity: Pick<
+      EngineeringIssueSearchResponse['hits'][number],
+      'subjectKind' | 'subjectId' | 'workRef' | 'issueKey'
+    >,
+  ) => {
+    const request = ++issueReadEpoch.current;
+    setBusy(true); setError(null); setSelected(null); setSource(null);
+    void readEngineeringIssue(identity).then((value) => {
+      if (request === issueReadEpoch.current) setSelected(value);
+    }).catch((cause: unknown) => {
+      if (request === issueReadEpoch.current) {
+        setResults(null); setOriginals(null); setSource(null);
+        setError(cause instanceof Error ? cause.message : '展开未完成');
+      }
+    }).finally(() => {
+      if (request === issueReadEpoch.current) setBusy(false);
+    });
+  };
   useEffect(
     () => () => {
       epoch.current += 1;
+      issueReadEpoch.current += 1;
     },
     [],
   );
@@ -127,6 +234,7 @@ export default function EngineeringIssueSearch({
           setResults(null);
           setOriginals(null);
           setSource(null);
+          writeReadingState({ query: query.trim(), scope, selected: null });
           void Promise.all([searchEngineeringIssues(query, scope), searchDocumentSources(query, scope)])
             .then(([value, sources]) => {
               if (request === epoch.current) { setResults(value); setOriginals(sources); }
@@ -151,7 +259,13 @@ export default function EngineeringIssueSearch({
           查找
         </Button>
         <select aria-label="检索版本范围" value={scope} disabled={busy}
-          onChange={event => { epoch.current += 1; setScope(event.target.value as 'CURRENT' | 'HISTORY'); setResults(null); setOriginals(null); setSelected(null); setSource(null); }}
+          onChange={event => {
+            const nextScope = event.target.value as 'CURRENT' | 'HISTORY';
+            epoch.current += 1;
+            setScope(nextScope); setResults(null); setOriginals(null);
+            setSelected(null); setSource(null);
+            writeReadingState({ query, scope: nextScope, selected: null });
+          }}
           className="rounded-md border border-input bg-background px-2 text-sm">
           <option value="CURRENT">当前版本</option>
           <option value="HISTORY">包含历史</option>
@@ -170,6 +284,9 @@ export default function EngineeringIssueSearch({
         }}>{referenceStatusBusy ? '正在读取状态…' : '读取最新处理状态'}</Button>
       </div> : null}
       {busy ? <p role="status">正在读取…</p> : null}
+      {issueReading.state === 'invalid' ? (
+        <p role="alert">{issueReading.reason}</p>
+      ) : null}
       {error ? <p role="alert">{error}</p> : null}
       <div className={catalog ? 'knowledge-catalog-layout' : undefined}>
       <div className={catalog ? 'knowledge-catalog-results' : undefined}>
@@ -192,26 +309,23 @@ export default function EngineeringIssueSearch({
             variant="ghost"
             className="h-auto whitespace-normal px-0 text-left"
             onClick={() => {
-              const request = ++epoch.current;
-              setBusy(true);
               setError(null);
-              setSelected(null);
               setSource(null);
-              void readEngineeringIssue(hit)
-                .then((value) => {
-                  if (request === epoch.current) setSelected(value);
-                })
-                .catch((cause: unknown) => {
-                  if (request === epoch.current) {
-                    setResults(null); setOriginals(null); setSource(null);
-                    setError(
-                      cause instanceof Error ? cause.message : '展开未完成',
-                    );
-                  }
-                })
-                .finally(() => {
-                  if (request === epoch.current) setBusy(false);
-                });
+              const identity = {
+                subjectKind: hit.subjectKind,
+                subjectId: hit.subjectId,
+                workRef: hit.workRef,
+                issueKey: hit.issueKey,
+              };
+              const sameSelection = Boolean(
+                sourceIdentity
+                && sourceIdentity.subjectKind === identity.subjectKind
+                && sourceIdentity.subjectId === identity.subjectId
+                && sourceIdentity.workRef === identity.workRef
+                && sourceIdentity.issueKey === identity.issueKey,
+              );
+              if (readOnly || sameSelection) loadSelectedIssue(identity);
+              else writeReadingState({ query, scope, selected: identity });
             }}
           >
             {hit.question}
@@ -250,7 +364,21 @@ export default function EngineeringIssueSearch({
         <summary className="cursor-pointer">原文 · 解析修订 {hit.parseRevision} · {hit.documentVersionId}</summary>
         <p className="mt-2 whitespace-pre-wrap text-sm">{hit.originalText}</p>
         <p className="mt-2 text-xs text-muted-foreground">原文覆盖限制 {hit.coverage.unresolvedRanges.length} 项；命中不代表已完成评估。</p>
-        <Button variant="ghost" onClick={() => navigate(`/document-versions/${encodeURIComponent(hit.documentVersionId)}?${new URLSearchParams({ parseRunId: hit.parseRunId, sourceRef: hit.sourceRefId })}`)}>
+        <Button variant="ghost" onClick={() => {
+          if (!readOnly) {
+            navigate(matterDocumentRoute(matterId, {
+              workItemId: null,
+              documentVersionId: hit.documentVersionId,
+              sourceRefId: hit.sourceRefId,
+              locator: JSON.stringify({
+                parseRunId: hit.parseRunId,
+                sourceRefId: hit.sourceRefId,
+              }),
+            }, 'materials', '', params));
+          } else {
+            navigate(`/document-versions/${encodeURIComponent(hit.documentVersionId)}?${new URLSearchParams({ parseRunId: hit.parseRunId, sourceRef: hit.sourceRefId })}`);
+          }
+        }}>
           阅读确切原文与来源
         </Button>
       </details>)}
@@ -326,7 +454,7 @@ export default function EngineeringIssueSearch({
             evidence={selected.evidence}
             onLocateDocument={(evidence) => {
               const exactRoute = exactDocumentSourceRoute(evidence);
-              if (exactRoute && !readOnly) navigate(matterDocumentRoute(matterId, evidence, 'materials'));
+              if (exactRoute && !readOnly) navigate(matterDocumentRoute(matterId, evidence, 'materials', '', params));
               else if (exactRoute && selected.identity.subjectKind === 'ENGINEERING_MATTER') navigate(matterDocumentRoute(selected.identity.subjectId, evidence, 'brief', selected.identity.workRef));
               else if (exactRoute) navigate(exactRoute);
               else if (!evidence.workItemId)
@@ -335,7 +463,7 @@ export default function EngineeringIssueSearch({
                   sourceRef: evidence.sourceRefId ?? null,
                 });
               else if (!readOnly)
-                navigate(matterDocumentRoute(matterId, evidence, 'materials'));
+                navigate(matterDocumentRoute(matterId, evidence, 'materials', '', params));
               else if (selected.identity.subjectKind === 'ENGINEERING_MATTER')
                 navigate(matterDocumentRoute(selected.identity.subjectId, evidence, 'brief', selected.identity.workRef));
               else navigate(`/work-items/${encodeURIComponent(evidence.workItemId)}/documents?${new URLSearchParams({ node: 'reader', tab: 'reader', documentVersionId: evidence.documentVersionId, sourceRef: evidence.sourceRefId, returnWorkItemId: selected.identity.subjectId })}`);

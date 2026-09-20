@@ -264,6 +264,10 @@ export default function SuiteMatterGraphView({
       perspective,
       viewport: viewportByPerspective.current.get(perspective),
       eventId: selectedEventId ?? undefined,
+      eventPins: selectedEvent?.pins
+        ?? (selectedEventId === initialState?.eventId
+          ? initialState.eventPins
+          : undefined),
       wikiTab,
     });
   }, [
@@ -274,6 +278,7 @@ export default function SuiteMatterGraphView({
     perspective,
     relationMode,
     selectedEventId,
+    selectedEvent,
     selectedId,
     viewport,
     wikiTab,

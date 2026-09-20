@@ -9,7 +9,7 @@ import {
   subscribeCanonicalHostClientSession,
 } from '@client/src/api/canonical-host';
 import {
-  activityReadingParams,
+  activityReaderParams,
   activityReadingReturnParams,
   libraryReadingParams,
   readingReturnTarget,
@@ -140,14 +140,14 @@ export default function DocumentActivityReadingPage() {
 
   const selectStatement = (statementId: string) => {
     navigate(
-      `/document-versions/${encodeURIComponent(documentVersionId)}/activities?${activitySelectionQuery(searchParams, { statementId })}`,
+      `/document-versions/${encodeURIComponent(documentVersionId)}/activities?${activitySelectionQuery(searchParams, documentVersionId, { statementId })}`,
       { replace: true },
     );
   };
 
   const selectAnchor = (anchorId: string) => {
     navigate(
-      `/document-versions/${encodeURIComponent(documentVersionId)}/activities?${activitySelectionQuery(searchParams, { anchor: anchorId })}`,
+      `/document-versions/${encodeURIComponent(documentVersionId)}/activities?${activitySelectionQuery(searchParams, documentVersionId, { anchor: anchorId })}`,
       { replace: true },
     );
   };
@@ -163,7 +163,7 @@ export default function DocumentActivityReadingPage() {
     if (!reading || !candidate) return null;
     if (bound.documentVersionId !== documentVersionId) return null;
     if (bound.parseRunId !== reading.binding.parseRunId) return null;
-    const params = activityReadingParams(searchParams);
+    const params = activityReaderParams(searchParams, documentVersionId);
     params.set('parseRunId', reading.binding.parseRunId);
     params.set('candidateRevision', String(candidate.candidateRevision));
     params.set('runRef', candidate.runRef);

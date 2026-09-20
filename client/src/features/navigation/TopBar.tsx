@@ -67,6 +67,7 @@ const TopBar: React.FC<TopBarProps> = ({
     'returnLibraryQuery',
     'returnLibraryMatterId',
     'returnMatterLibraryQuery',
+    'returnMatterIssueQuery',
     'returnRevisionQuery',
     'returnActivityQuery',
     'returnLibraryWorkItemId',

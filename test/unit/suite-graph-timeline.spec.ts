@@ -140,8 +140,53 @@ describe('buildSuiteGraphTimeline', () => {
       statementId: 'st-1',
       anchorId: 'anchor-st-1',
     });
-    expect(events[0].id.startsWith('["event",')).toBe(true);
+    expect(JSON.parse(events[0].id)).toEqual([
+      'event',
+      'dv-a',
+      'pr-1',
+      '2',
+      'run-1',
+      'st-1',
+    ]);
     expect(events[0].sourceLabel).toBe('SB-001 · R02');
+  });
+
+  it('uses the saved candidate identity in source event keys', () => {
+    const first = new Map<string, SuiteGraphActivityCandidate>([[
+      'dv-a',
+      {
+        familyId: 'family-dv-a',
+        candidate: makeCandidate({
+          candidateRevision: 2,
+          runRef: 'run-1',
+          statements: [statement('st-1', '2026-02-01', '旧声明')],
+        }),
+      },
+    ]]);
+    const next = new Map<string, SuiteGraphActivityCandidate>([[
+      'dv-a',
+      {
+        familyId: 'family-dv-a',
+        candidate: makeCandidate({
+          candidateRevision: 3,
+          runRef: 'run-2',
+          statements: [statement('st-1', '2026-02-01', '新声明')],
+        }),
+      },
+    ]]);
+    const firstEvent = buildSuiteGraphTimeline({
+      read: null,
+      catalog: [catalogEntry('dv-a')],
+      activities: first,
+      revision: null,
+    }).events[0];
+    const nextEvent = buildSuiteGraphTimeline({
+      read: null,
+      catalog: [catalogEntry('dv-a')],
+      activities: next,
+      revision: null,
+    }).events[0];
+    expect(firstEvent.id).not.toBe(nextEvent.id);
   });
 
   it('links an event to its statement node when the graph contains appended statements', () => {

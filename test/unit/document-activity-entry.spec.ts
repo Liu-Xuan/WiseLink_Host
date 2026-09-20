@@ -349,7 +349,7 @@ describe('loadActivityEntry', () => {
 describe('activitySelectionQuery', () => {
   test('sets a statement selection and keeps every pin identical', () => {
     const base = new URLSearchParams('parseRunId=PR1&candidateRevision=4&runRef=run-1');
-    const out = new URLSearchParams(activitySelectionQuery(base, { statementId: 'ST1' }));
+    const out = new URLSearchParams(activitySelectionQuery(base, 'DV1', { statementId: 'ST1' }));
     expect(out.get('parseRunId')).toBe('PR1');
     expect(out.get('candidateRevision')).toBe('4');
     expect(out.get('runRef')).toBe('run-1');
@@ -358,10 +358,35 @@ describe('activitySelectionQuery', () => {
 
   test('clears a selection when passed null', () => {
     const base = new URLSearchParams('parseRunId=PR1&statementId=ST1&anchor=A1');
-    const out = new URLSearchParams(activitySelectionQuery(base, { statementId: null, anchor: null }));
+    const out = new URLSearchParams(activitySelectionQuery(base, 'DV1', { statementId: null, anchor: null }));
     expect(out.get('statementId')).toBeNull();
     expect(out.get('anchor')).toBeNull();
     expect(out.get('parseRunId')).toBe('PR1');
+  });
+
+  test('keeps a bound timeline parent while changing the reader selection', () => {
+    const parent = new URLSearchParams({
+      documentVersionId: 'DV1',
+      parseRunId: 'PR1',
+      candidateRevision: '4',
+      runRef: 'run-1',
+      statementId: 'ST-parent',
+    });
+    const base = new URLSearchParams({
+      parseRunId: 'PR1',
+      candidateRevision: '4',
+      runRef: 'run-1',
+      statementId: 'ST-reader',
+      returnActivityQuery: parent.toString(),
+      returnActivityView: 'timeline',
+    });
+    const out = new URLSearchParams(
+      activitySelectionQuery(base, 'DV1', { statementId: 'ST-next' }),
+    );
+    expect(out.get('statementId')).toBe('ST-next');
+    expect(out.get('returnActivityView')).toBe('timeline');
+    expect(new URLSearchParams(out.get('returnActivityQuery')!).get('statementId'))
+      .toBe('ST-parent');
   });
 });
 

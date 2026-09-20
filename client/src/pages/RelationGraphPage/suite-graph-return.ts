@@ -1,3 +1,8 @@
+import {
+  suiteGraphSourceEventId,
+  type SuiteGraphTimelineEventPins,
+} from './suite-graph-timeline';
+
 export interface SuiteGraphReadingState {
   selectedId?: string;
   hiddenGroups?: string[];
@@ -8,10 +13,30 @@ export interface SuiteGraphReadingState {
   viewport?: {zoom: number; pan: {x: number; y: number}};
   /** Selected left-column event identity (internal serialized key, never an entry pin). */
   eventId?: string;
+  /** Exact saved source identity needed to restore a source event after remount. */
+  eventPins?: SuiteGraphTimelineEventPins;
   wikiTab?: 'knowledge' | 'basis' | 'discussion';
 }
 const text = (value: string, limit = 512) => Boolean(value && value === value.trim() && value.length <= limit && !/[\u0000-\u001f\u007f]/u.test(value));
 const single = (params: URLSearchParams, key: string) => params.getAll(key).length === 1 ? params.get(key)! : '';
+
+function validEventPins(value: unknown): value is SuiteGraphTimelineEventPins {
+  if (!value || typeof value !== 'object') return false;
+  const pins = value as Partial<SuiteGraphTimelineEventPins>;
+  return [
+    pins.documentVersionId,
+    pins.familyId,
+    pins.parseRunId,
+    pins.runRef,
+    pins.statementId,
+  ].every((item) => typeof item === 'string' && text(item, 512))
+    && Number.isSafeInteger(pins.candidateRevision)
+    && pins.candidateRevision! >= 1
+    && pins.candidateRevision! <= 999999
+    && (pins.anchorId === null
+      || (typeof pins.anchorId === 'string' && text(pins.anchorId, 512)));
+}
+
 export function graphReadingParams(matterId: string, workRef: string | null, state: SuiteGraphReadingState): URLSearchParams {
   const params = new URLSearchParams({matterId});
   if (workRef) params.set('workRef', workRef);
@@ -21,7 +46,15 @@ export function graphReadingParams(matterId: string, workRef: string | null, sta
   if (Number.isInteger(state.density) && state.density! >= 1 && state.density! <= 6) params.set('density', String(state.density));
   if (state.relationMode === 'aggregated' || state.relationMode === 'individual') params.set('relationMode', state.relationMode);
   if (state.perspective && ['matter', 'documents', 'domain', 'panorama'].includes(state.perspective)) params.set('perspective', state.perspective);
-  if (state.eventId && text(state.eventId, 2048)) params.set('eventId', state.eventId);
+  if (state.eventId && text(state.eventId, 2048)) {
+    params.set('eventId', state.eventId);
+    if (
+      validEventPins(state.eventPins)
+      && suiteGraphSourceEventId(state.eventPins) === state.eventId
+    ) {
+      params.set('eventPins', JSON.stringify(state.eventPins));
+    }
+  }
   if (state.wikiTab && ['knowledge', 'basis', 'discussion'].includes(state.wikiTab)) params.set('wikiTab', state.wikiTab);
   const camera = state.viewport;
   if (camera && Number.isFinite(camera.zoom) && camera.zoom >= .05 && camera.zoom <= 6 && [camera.pan.x, camera.pan.y].every(n => Number.isFinite(n) && Math.abs(n) <= 100000)) params.set('viewport', JSON.stringify(camera));
@@ -44,7 +77,15 @@ export function readGraphReadingState(params: URLSearchParams): SuiteGraphReadin
   const perspective = single(params, 'perspective');
   if (perspective === 'matter' || perspective === 'documents' || perspective === 'domain' || perspective === 'panorama') state.perspective = perspective;
   const eventId = single(params, 'eventId');
-  if (text(eventId, 2048)) state.eventId = eventId;
+  if (text(eventId, 2048)) {
+    state.eventId = eventId;
+    try {
+      const pins: unknown = JSON.parse(single(params, 'eventPins'));
+      if (validEventPins(pins) && suiteGraphSourceEventId(pins) === eventId) {
+        state.eventPins = pins;
+      }
+    } catch { /* Optional malformed event pins are omitted. */ }
+  }
   const wikiTab = single(params, 'wikiTab');
   if (wikiTab === 'knowledge' || wikiTab === 'basis' || wikiTab === 'discussion') state.wikiTab = wikiTab;
   try {
