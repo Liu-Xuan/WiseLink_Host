@@ -85,7 +85,7 @@ export default function useMatterDirectory(
         }));
       }
     },
-    [enabled, scope, search, workItemId, sessionGeneration],
+    [enabled, refreshRevision, scope, search, workItemId, sessionGeneration],
   );
   useEffect(() => {
     if (!enabled) setState(null);
