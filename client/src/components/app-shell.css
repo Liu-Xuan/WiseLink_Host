@@ -158,9 +158,14 @@ html[data-wl-theme='dark'] .wiselink-app-shell {
 }
 
 .wiselink-app-mark {
-  font-size: 18px;
-  font-weight: 750;
-  letter-spacing: -0.08em;
+  background: white;
+}
+
+.wiselink-app-mark .wiselink-brand-image {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
 }
 
 .wl-sidebar-nav,
@@ -546,6 +551,136 @@ html[data-wl-theme='dark'] .wiselink-app-shell {
   flex: 0 0 auto;
   align-items: center;
   gap: 8px;
+  white-space: nowrap;
+}
+
+.wiselink-header-icon-action {
+  display: grid;
+  width: var(--wl-touch-target);
+  height: var(--wl-touch-target);
+  flex: 0 0 var(--wl-touch-target);
+  padding: 0;
+  place-items: center;
+  border: 1px solid var(--wl-shell-line);
+  border-radius: 10px;
+  color: var(--wl-shell-dim);
+  background: transparent;
+  cursor: pointer;
+}
+
+.wiselink-header-icon-action:hover,
+.wiselink-header-icon-action:focus-visible {
+  color: var(--wl-shell-ink);
+  background: var(--wl-shell-hover);
+}
+
+.wiselink-header-icon-action svg {
+  width: 18px;
+  height: 18px;
+}
+
+.wiselink-account-control,
+.wiselink-account-state {
+  height: var(--wl-touch-target);
+  flex: 0 0 auto;
+  border: 1px solid var(--wl-shell-line);
+  border-radius: 10px;
+  color: var(--wl-shell-ink);
+  background: transparent;
+}
+
+.wiselink-account-control {
+  display: inline-flex;
+  min-width: 0;
+  align-items: center;
+  gap: 2px;
+  padding-left: 5px;
+  white-space: nowrap;
+}
+
+.wiselink-account-display,
+.wiselink-account-display > div,
+.wiselink-account-display > div > div {
+  display: inline-flex;
+  min-width: 0;
+  align-items: center;
+  flex-wrap: nowrap;
+}
+
+.wiselink-account-display > div > div {
+  max-width: 130px;
+  background: transparent;
+}
+
+.wiselink-account-display [data-slot='avatar'] {
+  flex: 0 0 auto;
+}
+
+.wiselink-account-display [data-slot='avatar'] + span {
+  overflow: hidden;
+  max-width: 92px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.wiselink-account-menu-trigger {
+  display: grid;
+  width: var(--wl-touch-target);
+  height: var(--wl-touch-target);
+  flex: 0 0 var(--wl-touch-target);
+  padding: 0;
+  place-items: center;
+  border: 0;
+  border-radius: 10px;
+  color: var(--wl-shell-muted);
+  background: transparent;
+  cursor: pointer;
+}
+
+.wiselink-account-menu-trigger:hover,
+.wiselink-account-menu-trigger[data-state='open'] {
+  color: var(--wl-shell-ink);
+  background: var(--wl-shell-hover);
+}
+
+.wiselink-account-menu-trigger svg {
+  display: block;
+  width: 15px;
+  height: 15px;
+}
+
+.wiselink-account-menu {
+  min-width: 188px;
+  border-color: var(--wl-border);
+  border-radius: 10px;
+  color: var(--wl-ink);
+  background: var(--wl-surface-solid);
+  box-shadow: var(--wl-shadow-1);
+}
+
+.wiselink-account-state {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 0 10px;
+  font-family: var(--wl-font);
+  font-size: 11px;
+  font-weight: 650;
+  white-space: nowrap;
+}
+
+button.wiselink-account-state {
+  cursor: pointer;
+}
+
+.wiselink-account-state.is-action:hover {
+  color: var(--wl-shell-ink);
+  background: var(--wl-shell-hover);
+}
+
+.wiselink-account-state svg {
+  width: 15px;
+  height: 15px;
 }
 
 .wl-topbar-item span {
@@ -1064,6 +1199,28 @@ html[data-wl-theme='dark'] .wiselink-app-shell {
 
   .wiselink-app-shell .wl-global-search kbd {
     display: none;
+  }
+
+  .wiselink-app-shell .wiselink-account-display
+    [data-slot='avatar'] + span,
+  .wiselink-app-shell .wiselink-account-state:not(.is-checking) > span {
+    display: none;
+  }
+
+  .wiselink-app-shell .wiselink-account-state.is-checking > span {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    padding: 0;
+    margin: -1px;
+    overflow: hidden;
+    clip: rect(0, 0, 0, 0);
+    white-space: nowrap;
+    border: 0;
+  }
+
+  .wiselink-app-shell .wiselink-account-control {
+    padding-left: 4px;
   }
 
   .wiselink-app-shell .wl-pagebar {

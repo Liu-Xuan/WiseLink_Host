@@ -19,6 +19,7 @@ import {
 import { useCurrentObjectContext } from '@client/src/app/providers/CurrentObjectContextProvider';
 import { useCurrentUserSession } from '@client/src/app/providers/CurrentUserSessionProvider';
 import { getEngineeringMatter } from '@client/src/api/engineering-matter';
+import WiseLinkBrandMark from '@client/src/components/WiseLinkBrandMark';
 import { activityReadingParams } from '@client/src/features/matter/reading-return';
 import type {
   EngineeringMatterCatalogEntry,
@@ -265,7 +266,7 @@ const Sidebar: React.FC<SidebarProps> = ({ mobileOpen, onMobileClose }) => {
       >
         <div className="wl-sidebar-brand">
           <span className="wiselink-app-mark" aria-hidden="true">
-            W
+            <WiseLinkBrandMark size={33} />
           </span>
           <span className="wl-sidebar-brand-text">
             <strong>WiseLink</strong>
