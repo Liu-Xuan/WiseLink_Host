@@ -1,7 +1,17 @@
+import type {
+  CanonicalLibraryDocumentSummary,
+  EngineeringMatterCatalogEntry,
+  EngineeringMatterDirectoryResponse,
+} from '@shared/api.interface';
 import type { EngineeringMatterWorkingRevisionReadModel } from '@shared/matter-working.interface';
 import type { SuiteMatterGraphRead, SuiteMatterGraphTarget } from '@client/src/pages/RelationGraphPage/suite-matter-graph';
 import type { SuiteGraphTimelineEvent } from '@client/src/pages/RelationGraphPage/suite-graph-timeline';
 import type { SuiteGraphGroup, SuiteGraphRelation } from '@client/src/pages/RelationGraphPage/suite-graph-model';
+import { suiteDocumentPerspective } from '@client/src/pages/RelationGraphPage/suite-document-perspective';
+import {
+  buildSuiteDomainGraph,
+  buildSuitePanoramaGraph,
+} from '@client/src/pages/RelationGraphPage/suite-graph-perspectives';
 import { WL_ASSETS } from '@client/src/lib/graph/assets';
 
 const MATTER_ID = 'preview:gear';
@@ -70,6 +80,13 @@ const relations: SuiteGraphRelation[] = groups.flatMap((group: SuiteGraphGroup) 
     label: group.title,
   })),
 );
+relations.push({
+  id: 'preview:relation:record-limits-question',
+  source: 'g-r1',
+  target: 'g-q1',
+  type: 'LIMITS',
+  label: '条件限定',
+});
 
 function questionTarget(id: string, text: string): SuiteMatterGraphTarget {
   return {
@@ -107,13 +124,192 @@ export const SUITE_GRAPH_VISUAL_READ: SuiteMatterGraphRead = {
     relations,
   },
   targets,
-  relationDetails: new Map(),
+  relationDetails: new Map([[
+    'preview:relation:record-limits-question',
+    {
+      evidenceRef: 'preview:evidence:taxi-condition',
+      role: 'LIMITS',
+      explanation: '滑行现象记录只覆盖样例中登记的温度和速度条件。',
+      limitation: '不扩展为其他工况下的原因判断。',
+    },
+  ]]),
   notices: [],
   workRef: WORK_REF,
   historical: false,
   overviewStatus: 'CURRENT',
   missingEvidenceRefs: [],
 };
+
+function catalogEntry(
+  documentVersionId: string,
+  code: string,
+  role: 'PRIMARY' | 'RELATED',
+  businessRevision: string,
+  familyId: string,
+): EngineeringMatterCatalogEntry {
+  return {
+    workItemId: `preview:wi:${documentVersionId}`,
+    relationRole: role,
+    linkedAtWorkItemRevision: 2,
+    currentWorkItemRevision: 2,
+    workItemChangedSinceLink: false,
+    workItemStatus: 'ACTIVE',
+    document: {
+      documentId: `preview:document:${documentVersionId}`,
+      documentVersionId,
+      documentCode: code,
+      businessRevision,
+      normalizedFamily: code,
+    },
+    documentCurrentness: {
+      familyId,
+      currentDocumentVersionId: documentVersionId,
+      currentGeneration: 1,
+      selectedVersionIsCurrent: true,
+    },
+    sourceNavigation: {
+      status: 'AVAILABLE',
+      sourceRefCount: 2,
+      structuredContentPath: `/document-versions/${documentVersionId}`,
+    },
+  };
+}
+
+function libraryDocument(
+  entry: EngineeringMatterCatalogEntry,
+  ata: string | null,
+): CanonicalLibraryDocumentSummary {
+  return {
+    kind: 'DOCUMENT',
+    familyId: entry.documentCurrentness.familyId,
+    documentId: entry.document.documentId,
+    documentCode: entry.document.documentCode,
+    normalizedFamily: entry.document.normalizedFamily,
+    issuerAuthority: 'PREVIEW_OEM',
+    createdAt: '2026-04-01T00:00:00.000Z',
+    updatedAt: '2026-06-01T00:00:00.000Z',
+    workItemCount: 1,
+    versions: [{
+      documentVersionId: entry.document.documentVersionId,
+      businessRevision: entry.document.businessRevision,
+      revisionDate: '2026-06-01',
+      sourceGeneratedDate: '2026-05-28',
+      originalFilename: `${entry.document.documentCode}.pdf`,
+      byteLength: 1024,
+      committedAt: '2026-06-01T00:00:00.000Z',
+      selectedVersionIsCurrent: true,
+      readerWorkItemId: entry.workItemId,
+      workItemCount: 1,
+      extractedMetadata: ata === null ? null : {
+        schemaVersion: 'wiselink.document_metadata.v1',
+        source: 'ACTUAL_PDF_TEXT',
+        sourceSha256: `preview:sha:${entry.document.documentVersionId}`,
+        sourceByteLength: 1024,
+        pageCount: 4,
+        inspectedPages: [0],
+        extractedAt: '2026-06-01T00:00:00.000Z',
+        title: { status: 'NOT_FOUND', observations: [] },
+        documentType: { status: 'NOT_FOUND', observations: [] },
+        issuer: { status: 'NOT_FOUND', observations: [] },
+        ata: {
+          status: 'PENDING_REVIEW',
+          observations: [{
+            value: ata,
+            status: 'PENDING_REVIEW',
+            evidence: [{ page: 0, text: `ATA ${ata}` }],
+          }],
+        },
+        mentionedAircraftModels: { status: 'NOT_FOUND', observations: [] },
+        aircraftModelSemantics: 'DOCUMENT_MENTION_ONLY',
+        applicabilityAssessment: 'NOT_EVALUATED',
+      },
+    }],
+  };
+}
+
+const visualCatalog: EngineeringMatterCatalogEntry[] = [
+  catalogEntry(
+    'preview:dv:sb:r02',
+    'SB-DEMO-032',
+    'PRIMARY',
+    'R02',
+    'preview:family:sb',
+  ),
+  catalogEntry(
+    'preview:dv:ftd:r03',
+    'FTD-DEMO-032',
+    'RELATED',
+    'R03',
+    'preview:family:ftd',
+  ),
+  catalogEntry(
+    'preview:dv:note:r01',
+    'NOTE-DEMO',
+    'RELATED',
+    'R01',
+    'preview:family:note',
+  ),
+];
+
+const visualDirectory: EngineeringMatterDirectoryResponse = {
+  items: [
+    {
+      matterId: MATTER_ID,
+      title: '前起落架抖振问题',
+      primaryWorkItemId: 'preview:wi:gear',
+      createdAt: '2026-04-08T00:00:00.000Z',
+      updatedAt: '2026-07-03T00:00:00.000Z',
+      currentMatterRevisionId: 'preview:matter:revision:3',
+      workingRevision: 3,
+      result: null,
+      overallStatus: 'CURRENT',
+    },
+    {
+      matterId: 'preview:hydraulic',
+      title: '液压压力波动事项',
+      primaryWorkItemId: 'preview:wi:hydraulic',
+      createdAt: '2026-03-10T00:00:00.000Z',
+      updatedAt: '2026-06-20T00:00:00.000Z',
+      currentMatterRevisionId: 'preview:hydraulic:revision:2',
+      workingRevision: 2,
+      result: null,
+      overallStatus: 'STALE',
+    },
+    {
+      matterId: 'preview:fmc',
+      title: 'FMC 软件资料跟踪',
+      primaryWorkItemId: 'preview:wi:fmc',
+      createdAt: '2026-02-18T00:00:00.000Z',
+      updatedAt: '2026-05-30T00:00:00.000Z',
+      currentMatterRevisionId: 'preview:fmc:revision:1',
+      workingRevision: 1,
+      result: null,
+      overallStatus: 'NOT_AVAILABLE',
+    },
+  ],
+  nextCursor: null,
+  fileReadPerformed: false,
+};
+
+export const SUITE_GRAPH_VISUAL_READS = {
+  matter: SUITE_GRAPH_VISUAL_READ,
+  documents: suiteDocumentPerspective(SUITE_GRAPH_VISUAL_READ),
+  domain: buildSuiteDomainGraph({
+    matterId: MATTER_ID,
+    matterTitle: SUITE_GRAPH_VISUAL_READ.graph.title,
+    catalog: visualCatalog,
+    documents: [
+      libraryDocument(visualCatalog[0], '32'),
+      libraryDocument(visualCatalog[1], '34'),
+      libraryDocument(visualCatalog[2], null),
+    ],
+  }),
+  panorama: buildSuitePanoramaGraph({
+    directory: visualDirectory,
+    currentMatterId: MATTER_ID,
+    currentMatter: SUITE_GRAPH_VISUAL_READ,
+  }),
+} satisfies Record<'matter' | 'documents' | 'domain' | 'panorama', SuiteMatterGraphRead>;
 
 export const SUITE_GRAPH_VISUAL_REVISION: EngineeringMatterWorkingRevisionReadModel = {
   matterWorkRevisionId: WORK_REF,
