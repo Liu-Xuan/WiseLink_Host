@@ -1,5 +1,27 @@
 # M 主控集成交接
 
+## 2026-09-20 Hosted 精确候选回读与态势返回闭合
+
+当前前端精确候选为 `ac96c35f8f836ef4191e24044a4eb5b4f1d24c7c`，提交父项为
+`8ed3c3aad8f448de9174045b261f2a0f1001556a`。本批只包含工程态势返回协议及其测试，未跟踪的
+`.claude/launch.json`、`query-work-items.cjs`、`query-work-items.mjs` 和
+`scripts/create-test-work-item.mjs` 未加入提交。`origin/codex/0-11` 与
+`github/codex/0-11` 已分别推送并读回同一 SHA。
+
+妙搭 release `7687554012006747123` 已回读 `status=finished`、精确
+`commit_id=ac96c35f8f836ef4191e24044a4eb5b4f1d24c7c`、`error_logs=[]`。
+外部 Chrome 真实登录只读核验取得：
+
+- `/graph?matterId=MAT-d9e6c294-f368-42e4-9a1b-b46c6170be02&workRef=MWREV-2ac8099c-04f1-4149-9ccb-6f40120a3b68` 中央 Cytoscape 画布可见，中心事项、分组卡片、右侧知识正文均显示；当前可见对象 6、关系 2，坏相机没有将画布推到首屏外。
+- `/situation` 真实宏观页读取 2 个授权事项，显示“当前仅取得部分范围”，未用空态或构造数量掩盖未知。
+- 聚焦事项 `/matters/MAT-d9e6c294-f368-42e4-9a1b-b46c6170be02/posture` 显示真实事项标题、当前授权范围和态势双环；数据尚在读取时保留明确的“正在取得授权资料”状态。
+
+本批态势来源/工作下钻新增严格 `returnSituation*` 协议：只允许受控 stage/source/pageY，绑定准确
+documentVersionId、matterId/workRef，拒绝重复、冲突、混入其他 return 意图和非法内部路由；滚动保存/恢复使用实际
+`.wiselink-app-body`，并在 requestAnimationFrame 真正执行后记录恢复标记。Astra medium 独立复审发现的态势弹窗绕过返回协议已改为同事项返回、跨事项先聚焦；相关 33 项回归、client typecheck、ESLint、生产构建和 diff check 通过。
+
+以上是技术发布和真实登录页面技术证据，不等同于完整线上业务验收。尚未闭合：态势来源真实点击往返的全覆盖、宏观分页安全、撤权/缺失版本负例、Wiki/Overall/检索同源核对、部署冷暖性能分布和真实长 SB；内置浏览器因认证 token 缺失未用于本批证据。
+
 ## 2026-09-17 c113安装目录与调度恢复实际证据
 
 M读取原后端turn7686408969818475488及后续核验回执：已下载ZIP并核对archive 446210 bytes、SHA256 `1a5fa4a9d7f97db72dcb21d2725470a9f369fa0f593f86a1284e553e6352356e`；补传的真实c113 manifest为12749 bytes、SHA256 `a8476756d19e9361a9b05ee6f6ec6121b6a0b9b605d4a4b8d8d5ad819008af3c`。真实manifest、ZIP与已安装目录三方逐文件核验58/58一致，无缺失或内容不一致；唯一额外文件是本地`.openclaw/source-origin.json`。
