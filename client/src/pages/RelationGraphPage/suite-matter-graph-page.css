@@ -310,6 +310,14 @@ html[data-wl-theme='dark'] .suite-matter-graph-page {
 .suite-graph-filter-density > div:last-child { display: flex; align-items: center; gap: 7px; }
 
 .suite-graph-panel-scroll .suite-graph-timeline { padding: 0 17px 25px 21px; }
+.suite-graph-work-details { margin: 8px 17px 18px 21px; color: var(--wl-ink); }
+.suite-graph-work-details summary { font-size: 12px; font-weight: 600; cursor: pointer; }
+.suite-graph-work-details p { margin: 7px 0 0; }
+.suite-graph-date { color: var(--wl-muted); font-size: 11px; font-variant-numeric: tabular-nums; line-height: 1.6; }
+.suite-graph-change { font-size: 12px; line-height: 1.7; overflow-wrap: anywhere; }
+.suite-graph-work-facts { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 5px 10px; margin-top: 9px; font-size: 11px; line-height: 1.55; }
+.suite-graph-work-facts span { min-width: 0; color: var(--wl-muted); }
+.suite-graph-work-facts b { font-weight: 600; font-variant-numeric: tabular-nums; text-align: right; }
 .suite-graph-timeline-sources { margin: 6px -6px 10px; border-bottom: 1px solid var(--wl-border); }
 .suite-graph-timeline-sources summary { padding: 5px 7px; color: var(--wl-muted); font-size: 10px; cursor: pointer; }
 .suite-graph-timeline-sources > div { padding-bottom: 4px; }

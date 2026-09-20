@@ -131,36 +131,36 @@ const TopBar: React.FC<TopBarProps> = ({
           <kbd aria-hidden="true">/</kbd>
         </form>
 
-        {workRef ? (
-          <span className="wl-topbar-item" title={workRef}>
-            历史工作 · {shortId(workRef)}
-          </span>
-        ) : currentObject ? (
-          <span
-            className="wl-topbar-item"
-            title={`${currentObjectKindLabel(currentObject.kind)} · ${currentObject.displayCode} · ${currentObject.title}`}
-          >
-            {currentObjectKindLabel(currentObject.kind)} ·{' '}
-            {shortId(currentObject.displayCode)}
-          </span>
-        ) : workItemId ? (
-          <NavLink
-            className="wl-topbar-item"
-            title={workItemId}
-            to={`/work-items/${encodeURIComponent(workItemId)}`}
-          >
-            {shortId(workItemId)}
-          </NavLink>
-        ) : matterId ? (
-          <span className="wl-topbar-item" title={matterId}>
-            工程事项 · {shortId(matterId)}
-          </span>
-        ) : documentVersionId ? (
-          <span className="wl-topbar-item" title={documentVersionId}>
-            文档版本 · {shortId(documentVersionId)}
-          </span>
-        ) : null}
         <div className="wl-topbar-actions">
+          {workRef ? (
+            <span className="wl-topbar-item" title={workRef}>
+              历史工作 · {shortId(workRef)}
+            </span>
+          ) : currentObject ? (
+            <span
+              className="wl-topbar-item"
+              title={`${currentObjectKindLabel(currentObject.kind)} · ${currentObject.displayCode} · ${currentObject.title}`}
+            >
+              {currentObjectKindLabel(currentObject.kind)} ·{' '}
+              {shortId(currentObject.displayCode)}
+            </span>
+          ) : workItemId ? (
+            <NavLink
+              className="wl-topbar-item"
+              title={workItemId}
+              to={`/work-items/${encodeURIComponent(workItemId)}`}
+            >
+              {shortId(workItemId)}
+            </NavLink>
+          ) : matterId ? (
+            <span className="wl-topbar-item" title={matterId}>
+              工程事项 · {shortId(matterId)}
+            </span>
+          ) : documentVersionId ? (
+            <span className="wl-topbar-item" title={documentVersionId}>
+              文档版本 · {shortId(documentVersionId)}
+            </span>
+          ) : null}
           <AtlasLauncher />
           <CurrentUserControl />
         </div>

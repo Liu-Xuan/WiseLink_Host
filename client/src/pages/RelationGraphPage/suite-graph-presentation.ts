@@ -14,6 +14,9 @@ const GROUP_ID = (key: string) => `sg:group:${key}`;
 const ITEM_ID = (id: string) => `sg:item:${id}`;
 const MORE_ID = (key: string) => `sg:more:${key}`;
 const HUB_ID = (id: string) => `sg:hub:${id}`;
+const HUB_POSITION = { x: 414, y: 329 };
+const HUB_COLLISION_SIZE = 204;
+const GROUP_COLLISION_GAP = 18;
 
 function finiteInteger(value: number | undefined, fallback: number, minimum: number, maximum?: number): number {
   if (!Number.isFinite(value)) return fallback;
@@ -30,6 +33,127 @@ const LAYOUTS: Record<number, Array<[number, number]>> = {
   5: [[128, 176], [414, 107], [702, 176], [244, 508], [626, 508]],
   6: [[128, 168], [414, 108], [702, 168], [128, 464], [414, 550], [702, 477]],
 };
+
+interface GroupForceBody {
+  view: SuiteGraphGroupView;
+  anchorX: number;
+  anchorY: number;
+  x: number;
+  y: number;
+  vx: number;
+  vy: number;
+}
+
+function overlap(a: GroupForceBody, b: GroupForceBody): { x: number; y: number } {
+  return {
+    x: (a.view.w + b.view.w) / 2 + GROUP_COLLISION_GAP - Math.abs(a.x - b.x),
+    y: (a.view.h + b.view.h) / 2 + GROUP_COLLISION_GAP - Math.abs(a.y - b.y),
+  };
+}
+
+function pushApart(a: GroupForceBody, b: GroupForceBody, strength: number): boolean {
+  const amount = overlap(a, b);
+  if (amount.x <= 0 || amount.y <= 0) return false;
+  if (amount.x < amount.y) {
+    const direction = a.x === b.x ? (a.anchorX <= b.anchorX ? -1 : 1) : Math.sign(a.x - b.x);
+    const force = (amount.x + 1) * strength;
+    a.vx += direction * force;
+    b.vx -= direction * force;
+  } else {
+    const direction = a.y === b.y ? (a.anchorY <= b.anchorY ? -1 : 1) : Math.sign(a.y - b.y);
+    const force = (amount.y + 1) * strength;
+    a.vy += direction * force;
+    b.vy -= direction * force;
+  }
+  return true;
+}
+
+/**
+ * Keep the reference composition while resolving dense groups as rectangular
+ * force bodies. The center stays fixed and no relationship is interpreted as
+ * a physics constraint.
+ */
+function relaxGroupViews(views: SuiteGraphGroupView[]): void {
+  const bodies: GroupForceBody[] = views.map((view) => ({
+    view,
+    anchorX: view.x,
+    anchorY: view.y,
+    x: view.x,
+    y: view.y,
+    vx: 0,
+    vy: 0,
+  }));
+  const hub: GroupForceBody = {
+    view: {
+      key: '__hub__', id: '__hub__', title: '', x: HUB_POSITION.x, y: HUB_POSITION.y,
+      w: HUB_COLLISION_SIZE, h: HUB_COLLISION_SIZE, count: 1, visible: 1, overflow: 0,
+    },
+    anchorX: HUB_POSITION.x,
+    anchorY: HUB_POSITION.y,
+    x: HUB_POSITION.x,
+    y: HUB_POSITION.y,
+    vx: 0,
+    vy: 0,
+  };
+
+  for (let tick = 0; tick < 120; tick += 1) {
+    bodies.forEach((body) => {
+      body.vx += (body.anchorX - body.x) * 0.025;
+      body.vy += (body.anchorY - body.y) * 0.025;
+    });
+    for (let index = 0; index < bodies.length; index += 1) {
+      for (let other = index + 1; other < bodies.length; other += 1) {
+        pushApart(bodies[index], bodies[other], 0.12);
+      }
+      const body = bodies[index];
+      const fixedHub = { ...hub };
+      if (pushApart(body, fixedHub, 0.16)) {
+        // The hub is pinned; transfer its equal-and-opposite response back.
+        body.vx -= fixedHub.vx;
+        body.vy -= fixedHub.vy;
+      }
+    }
+    bodies.forEach((body) => {
+      body.vx = Math.max(-18, Math.min(18, body.vx * 0.68));
+      body.vy = Math.max(-18, Math.min(18, body.vy * 0.68));
+      body.x += body.vx;
+      body.y += body.vy;
+    });
+  }
+
+  // Finish with deterministic non-penetration passes after the anchor springs.
+  for (let pass = 0; pass < 40; pass += 1) {
+    let moved = false;
+    for (let index = 0; index < bodies.length; index += 1) {
+      for (let other = index + 1; other < bodies.length; other += 1) {
+        const a = bodies[index];
+        const b = bodies[other];
+        a.vx = a.vy = b.vx = b.vy = 0;
+        if (pushApart(a, b, 0.5)) {
+          a.x += a.vx;
+          a.y += a.vy;
+          b.x += b.vx;
+          b.y += b.vy;
+          moved = true;
+        }
+      }
+      const body = bodies[index];
+      const fixedHub = { ...hub };
+      body.vx = body.vy = 0;
+      if (pushApart(body, fixedHub, 1)) {
+        body.x += body.vx - fixedHub.vx;
+        body.y += body.vy - fixedHub.vy;
+        moved = true;
+      }
+    }
+    if (!moved) break;
+  }
+
+  bodies.forEach((body) => {
+    body.view.x = Math.round(body.x);
+    body.view.y = Math.round(body.y);
+  });
+}
 
 function groupNode(group: SuiteGraphGroup, view: SuiteGraphGroupView): CytoscapeSuiteElement {
   const appearance = suiteGraphAppearance(group.key, group.color);
@@ -141,9 +265,9 @@ export function buildSuiteGraphPresentation(
     const cap = columns === 2 ? 6 : density;
     const shown = group.items.slice(0, cap);
     const extra = group.items.length - shown.length;
-    const cardH = columns === 2 ? 57 : group.key === 'objects' ? 60 : 54;
+    const cardH = columns === 2 ? 80 : 84;
     const cardW = columns === 2 ? 118 : 216;
-    const gap = 8;
+    const gap = 12;
     const rows = Math.ceil(shown.length / columns);
     const [x, y] = coords[index];
     const h = 36 + rows * cardH + Math.max(0, rows - 1) * gap + (extra ? 38 : 0) + 10;
@@ -212,10 +336,24 @@ export function buildSuiteGraphPresentation(
     }
   });
 
+  const anchors = new Map(views.map((view, index) => [view.key, { x: coords[index][0], y: coords[index][1] }]));
+  relaxGroupViews(views);
+  elements.forEach((element) => {
+    if (element.group !== 'nodes') return;
+    const groupKey = typeof element.data.groupKey === 'string' ? element.data.groupKey : '';
+    const view = views.find((candidate) => candidate.key === groupKey);
+    const anchor = anchors.get(groupKey);
+    if (!view || !anchor) return;
+    element.position = {
+      x: element.position.x + view.x - anchor.x,
+      y: element.position.y + view.y - anchor.y,
+    };
+  });
+
   elements.push({
     group: 'nodes',
     data: { id: HUB_ID(matter.id), ...(matter.rootKind === 'matter' ? { businessId: matter.id } : {}), rootKind: matter.rootKind, viewKind: 'hub', title: matter.title, code: matter.code, picture: matter.picture, w: 180, h: 180, virtual: matter.rootKind === 'display' },
-    position: { x: 414, y: 329 },
+    position: HUB_POSITION,
     classes: 'matter-root',
     grabbable: false,
   });
@@ -340,7 +478,13 @@ export function buildSuiteGraphPresentation(
       represented: { relationships: representedRelations.length },
     },
     omittedRelationships,
-    bounds: { x1: -4, y1: 0, x2: 836, y2: 650, w: 840, h: 650 },
+    bounds: (() => {
+      const x1 = Math.min(HUB_POSITION.x - 102, ...views.map((view) => view.x - view.w / 2)) - 20;
+      const y1 = Math.min(HUB_POSITION.y - 102, ...views.map((view) => view.y - view.h / 2)) - 20;
+      const x2 = Math.max(HUB_POSITION.x + 102, ...views.map((view) => view.x + view.w / 2)) + 20;
+      const y2 = Math.max(HUB_POSITION.y + 102, ...views.map((view) => view.y + view.h / 2)) + 20;
+      return { x1, y1, x2, y2, w: x2 - x1, h: y2 - y1 };
+    })(),
   };
 }
 
