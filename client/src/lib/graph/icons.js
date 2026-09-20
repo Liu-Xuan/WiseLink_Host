@@ -1,0 +1,46 @@
+const PATHS={
+ graph:'<circle cx="12" cy="12" r="3"/><circle cx="4" cy="5" r="2"/><circle cx="20" cy="5" r="2"/><circle cx="5" cy="20" r="2"/><circle cx="20" cy="20" r="2"/><path d="m6 6 4 4m4 0 4-4m-8 8-4 4m8-4 4 4"/>',
+ file:'<path d="M5 3h9l5 5v13H5zM14 3v6h5M8 13h8M8 17h6"/>',
+ book:'<path d="M3 4h7l2 2 2-2h7v16h-7l-2 2-2-2H3zM12 6v16"/>',
+ clock:'<circle cx="12" cy="12" r="9"/><path d="M12 6v6l4 2"/>',
+ search:'<circle cx="10.5" cy="10.5" r="6.5"/><path d="m16 16 5 5"/>',
+ home:'<path d="m3 10 9-7 9 7M5 9v12h14V9M9 21v-7h6v7"/>',
+ list:'<path d="M8 5h13M8 12h13M8 19h13"/><circle cx="3" cy="5" r="1"/><circle cx="3" cy="12" r="1"/><circle cx="3" cy="19" r="1"/>',
+ layers:'<path d="m12 3 9 5-9 5-9-5zM3 12l9 5 9-5M3 16l9 5 9-5"/>',
+ activity:'<path d="M2 12h4l3-8 5 16 3-8h5"/>',
+ plane:'<path d="m22 14-8-5V4a2 2 0 0 0-4 0v5l-8 5v3l8-3v5l-3 2v1l5-1 5 1v-1l-3-2v-5l8 3z"/>',
+ help:'<circle cx="12" cy="12" r="9"/><path d="M9 8a3 3 0 1 1 4 3c-1 .5-1 1-1 3M12 17h.01"/>',
+ bulb:'<path d="M9 18h6M10 21h4M8 14c-4-4-1-11 4-11s8 7 4 11l-1 2H9z"/>',
+ settings:'<path d="m9 3-1 3-3 1-2 3 2 2-1 3 3 3h3l2 3 3-2 3 1 3-3-1-3 2-2-2-3-3-1-1-3z"/><circle cx="12" cy="12" r="3"/>',
+ record:'<rect x="4" y="4" width="16" height="17" rx="2"/><path d="M9 3h6v3H9zM8 11h8M8 16h5"/>',
+ chapter:'<path d="M6 3h13v18H6a3 3 0 0 1 0-6h13M6 3a3 3 0 0 0-3 3v12M8 7h7M8 11h4"/>',
+ topic:'<rect x="4" y="4" width="16" height="16" rx="4"/><path d="M8 9h8M8 13h5"/>',
+ configuration:'<path d="M4 6h16M4 12h16M4 18h16"/><circle cx="8" cy="6" r="2"/><circle cx="15" cy="12" r="2"/><circle cx="10" cy="18" r="2"/>',
+ component:'<circle cx="12" cy="12" r="8"/><circle cx="12" cy="12" r="3"/><path d="m6 6 4 4m4 4 4 4m-12 0 4-4m4-4 4-4"/>',
+ event:'<path d="M4 5h16v16H4zM7 2v6M17 2v6M4 10h16M8 14h3M8 17h7"/>',
+ discussion:'<path d="M21 4H3v13h5l4 4v-4h9zM7 8h10M7 12h6"/>',
+ work:'<path d="M4 20V4h16v16zM7 8l2 2 4-4M7 15h10"/>',
+ question:'<path d="m12 3 10 18H2zM12 9v5M12 18h.01"/>',
+ chevron:'<path d="m8 5 7 7-7 7"/>',
+ down:'<path d="m6 9 6 6 6-6"/>',
+ plus:'<path d="M12 4v16M4 12h16"/>',
+ minus:'<path d="M4 12h16"/>',
+ fit:'<path d="M3 9V3h6M15 3h6v6M21 15v6h-6M9 21H3v-6"/>',
+ close:'<path d="m5 5 14 14M5 19 19 5"/>',
+ moon:'<path d="M20 14A9 9 0 0 1 10 3a9 9 0 1 0 10 11z"/>',
+ sun:'<circle cx="12" cy="12" r="4"/><path d="M12 1v2M12 21v2M1 12h2M21 12h2M4 4l2 2M18 18l2 2M4 20l2-2M18 6l2-2"/>',
+ pause:'<path d="M8 4v16M16 4v16"/>',
+ play:'<path d="m7 3 13 9-13 9z"/>',
+ reset:'<path d="M4 10a8 8 0 1 1 1 8M4 3v7h7"/>',
+ external:'<path d="M14 3h7v7M21 3l-11 11M9 3H3v18h18v-6"/>',
+ filter:'<path d="M3 5h18l-7 8v7l-4-2v-5z"/>',
+ check:'<path d="m4 12 5 5L20 6"/>',
+ bell:'<path d="M5 9a7 7 0 0 1 14 0v7l2 2H3l2-2zM9 21h6"/>',
+ more:'<circle cx="5" cy="12" r="1"/><circle cx="12" cy="12" r="1"/><circle cx="19" cy="12" r="1"/>',
+ gear:'<path d="M10 2h4v10h-4zM12 12v6M5 17h14"/><rect x="3" y="16" width="5" height="6" rx="2"/><rect x="16" y="16" width="5" height="6" rx="2"/>'
+};
+function esc(value){return String(value??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));}
+function icon(name,cls=''){return `<svg class="icon ${cls}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${PATHS[name]||PATHS.file}</svg>`;}
+
+
+export {PATHS, icon, esc};

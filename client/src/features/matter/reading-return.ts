@@ -1,4 +1,7 @@
 import { graphReturnTarget } from '@client/src/pages/RelationGraphPage/suite-graph-return';
+import {
+  normalizedEngineeringIssueReadingParams,
+} from './engineering-issue-reading';
 const LIBRARY_FILTERS = [
   'familyId',
   'search',
@@ -269,6 +272,13 @@ export function revisionReadingReturnParams(
 
 const ACTIVITY_TEXT_KEYS = ['parseRunId', 'runRef', 'statementId', 'anchor'] as const;
 const ACTIVITY_WINDOW_VALUES = ['all', 'current-year'] as const;
+const ACTIVITY_RETURN_QUERY_LIMIT = 4096;
+// A graph query is bounded to 12,000 decoded characters by graphReturnTarget.
+// Nesting that query inside returnActivityQuery percent-encodes it once more.
+const ACTIVITY_WITH_GRAPH_RETURN_QUERY_LIMIT = 50_000;
+// One activities reader layer may wrap a bounded timeline query which itself owns
+// the already bounded graph return. This is not a general recursive return format.
+const ACTIVITY_READER_RETURN_QUERY_LIMIT = 120_000;
 
 export type ActivityWindowPin =
   | { state: 'absent' | 'duplicate' | 'empty' | 'invalid' }
@@ -309,6 +319,91 @@ export function activityReadingParams(params: URLSearchParams): URLSearchParams 
     ).toString();
     if (normalized) result.set('returnLibraryQuery', normalized);
   }
+  const documentVersionId = singleToken(params, 'documentVersionId');
+  const requestedRun = singleToken(params, 'parseRunId');
+  const hasCompetingReturnIntent = [
+    'returnMatterId',
+    'returnKnowledgeQuery',
+    'returnLibraryQuery',
+    'returnRevisionQuery',
+    'returnActivityQuery',
+    'returnLibraryWorkItemId',
+    'returnWorkItemId',
+  ].some((key) => params.has(key));
+  if (
+    documentVersionId &&
+    !hasCompetingReturnIntent &&
+    params.has('returnGraphQuery') &&
+    graphReturnTarget(params, documentVersionId, requestedRun)
+  ) {
+    result.set('returnGraphQuery', params.get('returnGraphQuery')!);
+    for (const key of [
+      'returnDocumentVersionId',
+      'returnGraphParseRunId',
+    ] as const) {
+      const value = singleToken(params, key);
+      if (value) result.set(key, value);
+    }
+  }
+  result.sort();
+  return result;
+}
+
+const ACTIVITY_PARENT_RETURN_KEYS = new Set([
+  'returnGraphQuery',
+  'returnDocumentVersionId',
+  'returnGraphParseRunId',
+  'returnLibraryQuery',
+]);
+
+/**
+ * Activity-reader state may retain one exact timeline/activity-graph parent. The
+ * parent is bound to the same saved candidate and cannot contain another activity
+ * return, a write intent, or an arbitrary destination.
+ */
+export function activityReaderParams(
+  params: URLSearchParams,
+  documentVersionId: string,
+): URLSearchParams {
+  const result = activityReadingParams(params);
+  const rawQueries = params.getAll('returnActivityQuery');
+  const rawViews = params.getAll('returnActivityView');
+  if (rawQueries.length === 0 && rawViews.length === 0) return result;
+  if (rawQueries.length !== 1 || rawViews.length !== 1) return result;
+  const view = rawViews[0];
+  const raw = rawQueries[0];
+  if (
+    (view !== 'timeline' && view !== 'graph')
+    || !raw
+    || raw.length > ACTIVITY_WITH_GRAPH_RETURN_QUERY_LIMIT
+  ) return result;
+  const current = completeActivityIdentity(params);
+  if (!current) return result;
+  const parent = new URLSearchParams(raw);
+  if (
+    [...parent.keys()].some(
+      (key) => key.startsWith('return')
+        && !ACTIVITY_PARENT_RETURN_KEYS.has(key),
+    )
+    || parent.getAll('documentVersionId').length !== 1
+    || parent.get('documentVersionId') !== documentVersionId
+  ) return result;
+  const parentIdentity = completeActivityIdentity(parent);
+  if (
+    !parentIdentity
+    || parentIdentity.parseRunId !== current.parseRunId
+    || parentIdentity.candidateRevision !== current.candidateRevision
+    || parentIdentity.runRef !== current.runRef
+  ) return result;
+  const normalizedParent = activityReadingParams(parent);
+  normalizedParent.set('documentVersionId', documentVersionId);
+  if (
+    parent.has('returnGraphQuery')
+    && !normalizedParent.has('returnGraphQuery')
+  ) return result;
+  result.set('returnActivityQuery', normalizedParent.toString());
+  result.set('returnActivityView', view);
+  result.set('returnDocumentVersionId', documentVersionId);
   result.sort();
   return result;
 }
@@ -417,6 +512,37 @@ export function matterReadingReturnParams(
   if (directoryContext?.has('returnGraphQuery') && graphReturnTarget(directoryContext, undefined, null, matterId)) {
     params.set('returnMatterGraphQuery', directoryContext.get('returnGraphQuery')!);
   }
+  if (panel === 'materials' && !workRef && directoryContext) {
+    const hasIssueState = [
+      'issueSearchQuery',
+      'issueSearchScope',
+      'issueSubjectKind',
+      'issueSubjectId',
+      'issueWorkRef',
+      'issueKey',
+    ].some((key) => directoryContext.has(key));
+    if (hasIssueState) {
+      const issueState = normalizedEngineeringIssueReadingParams(directoryContext);
+      if (issueState) params.set('returnMatterIssueQuery', issueState.toString());
+    } else {
+      const sourceWorkRef = singleToken(directoryContext, 'sourceWorkRef');
+      const sourceIssueKey = singleToken(directoryContext, 'sourceIssueKey');
+      if (sourceWorkRef && sourceIssueKey) {
+        const legacyState = normalizedEngineeringIssueReadingParams(
+          new URLSearchParams({
+            issueSearchScope: 'CURRENT',
+            issueSubjectKind: 'ENGINEERING_MATTER',
+            issueSubjectId: matterId,
+            issueWorkRef: sourceWorkRef,
+            issueKey: sourceIssueKey,
+          }),
+        );
+        if (legacyState) {
+          params.set('returnMatterIssueQuery', legacyState.toString());
+        }
+      }
+    }
+  }
   return params;
 }
 
@@ -444,6 +570,7 @@ export function readingReturnTarget(
       'returnLibraryMatterId',
       'returnMatterLibraryQuery',
       'returnMatterGraphQuery',
+      'returnMatterIssueQuery',
       'returnDocumentVersionId',
       'returnRevisionSide',
       'returnActivityQuery',
@@ -456,6 +583,7 @@ export function readingReturnTarget(
   if (params.has('returnActivityView') && !params.has('returnActivityQuery')) return null;
   if (params.has('returnMatterGraphQuery') && (!params.has('returnMatterId') || params.has('returnMatterLibraryQuery'))) return null;
   if (params.has('returnMatterLibraryQuery') && !params.has('returnMatterId')) return null;
+  if (params.has('returnMatterIssueQuery') && !params.has('returnMatterId')) return null;
   if (params.has('returnLibraryMatterId')) {
     const boundMatter = identifier(params.get('returnLibraryMatterId'));
     const raw = params.get('returnLibraryQuery');
@@ -506,6 +634,20 @@ export function readingReturnTarget(
       if (workRef) query.set('returnGraphTargetWorkRef', workRef);
       if (!graphReturnTarget(query, undefined, null, matterId)) return null;
     }
+    if (params.has('returnMatterIssueQuery')) {
+      if (workRef || panel !== 'materials') return null;
+      const raw = params.get('returnMatterIssueQuery');
+      if (!raw || raw.length > 4096) return null;
+      const rawIssueState = new URLSearchParams(raw);
+      if ([...rawIssueState.keys()].some((key) => key.startsWith('return'))) {
+        return null;
+      }
+      const issueState = normalizedEngineeringIssueReadingParams(
+        rawIssueState,
+      );
+      if (!issueState) return null;
+      issueState.forEach((value, key) => query.set(key, value));
+    }
     return {
       route: `/matters/${encodeURIComponent(matterId)}${query.size ? `?${query}` : ''}`,
       label: workRef
@@ -551,11 +693,30 @@ export function readingReturnTarget(
   }
   if (params.has('returnActivityQuery')) {
     const activityQuery = params.get('returnActivityQuery');
-    if (!binding || !activityQuery || activityQuery.length > 4096) return null;
+    if (!binding || !activityQuery) return null;
     const nested = new URLSearchParams(activityQuery);
+    const graphValidation = new URLSearchParams(nested);
+    graphValidation.set('documentVersionId', binding);
+    const nestedRun = singleToken(nested, 'parseRunId');
+    const hasValidGraphReturn = Boolean(
+      nested.has('returnGraphQuery') &&
+      graphReturnTarget(graphValidation, binding, nestedRun),
+    );
+    const hasReaderParent = params.get('returnActivityView') === null
+      && nested.getAll('returnActivityQuery').length === 1
+      && nested.getAll('returnActivityView').length === 1
+      && activityReaderParams(nested, binding).has('returnActivityQuery');
+    const activityLimit = hasReaderParent
+      ? ACTIVITY_READER_RETURN_QUERY_LIMIT
+      : hasValidGraphReturn
+        ? ACTIVITY_WITH_GRAPH_RETURN_QUERY_LIMIT
+        : ACTIVITY_RETURN_QUERY_LIMIT;
+    if (activityQuery.length > activityLimit) return null;
     if (
-      nested.has('returnActivityQuery') ||
-      nested.has('returnActivityView') ||
+      (!hasReaderParent && (
+        nested.has('returnActivityQuery')
+        || nested.has('returnActivityView')
+      )) ||
       nested.has('returnRevisionQuery') ||
       nested.has('returnMatterId') ||
       nested.has('returnLibraryWorkItemId') ||
@@ -567,7 +728,11 @@ export function readingReturnTarget(
     if (requestedRun && pins.parseRunId !== requestedRun) return null;
     const view = params.get('returnActivityView');
     if (view !== null && view !== 'timeline' && view !== 'graph') return null;
-    const query = activityReadingParams(nested);
+    const normalizedSource = new URLSearchParams(nested);
+    normalizedSource.set('documentVersionId', binding);
+    const query = hasReaderParent
+      ? activityReaderParams(normalizedSource, binding)
+      : activityReadingParams(normalizedSource);
     if (view) {
       query.set('documentVersionId', binding);
       return {

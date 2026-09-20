@@ -1,6 +1,6 @@
 import { useLibraryPaneScroll } from './useLibraryPaneScroll';
 import { useEffect } from 'react';
-import { ArrowRight, BookOpen, X } from 'lucide-react';
+import { ArrowRight, BookOpen } from 'lucide-react';
 import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import { Button } from '@client/src/components/ui/button';
 import useEngineeringMatter from '@client/src/features/matter/useEngineeringMatter';
@@ -184,13 +184,11 @@ export default function LibraryMatterQuicklook({
   matterId,
   sessionGeneration,
   authenticationRequired,
-  onClose,
   onRead,
 }: {
   matterId: string;
   sessionGeneration: number;
   authenticationRequired: boolean;
-  onClose(): void;
   onRead(data: EngineeringMatterWorkspaceRead | null): void;
 }) {
   const read = useEngineeringMatter(
@@ -206,14 +204,6 @@ export default function LibraryMatterQuicklook({
     <aside {...paneScroll} className="atlas-library-inspector" aria-label="工程事项快览">
       <div className="atlas-library-inspector-heading">
         <span>这件事的工程要点</span>
-        <Button
-          variant="ghost"
-          size="icon"
-          aria-label="关闭事项快览"
-          onClick={onClose}
-        >
-          <X aria-hidden="true" />
-        </Button>
       </div>
       {read.loading ? <p role="status">正在读取已保存的事项认识…</p> : null}
       {read.error ? (

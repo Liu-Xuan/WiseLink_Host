@@ -55,6 +55,18 @@ export interface SuiteGraphTimelineSource {
 
 const eventIdentity = (...parts: string[]) => JSON.stringify(['event', ...parts]);
 
+export function suiteGraphSourceEventId(
+  pins: SuiteGraphTimelineEventPins,
+): string {
+  return eventIdentity(
+    pins.documentVersionId,
+    pins.parseRunId,
+    String(pins.candidateRevision),
+    pins.runRef,
+    pins.statementId,
+  );
+}
+
 const sourceLabelFor = (entry: EngineeringMatterCatalogEntry): string =>
   `${entry.document.documentCode} · ${entry.document.businessRevision}`;
 
@@ -81,8 +93,17 @@ export function buildSuiteGraphTimeline(input: {
         ? suiteGraphStatementNodeId(input.read.targets, documentVersionId, statement.statementId) ??
           suiteGraphDocumentNodeId(input.read.targets, documentVersionId)
         : null;
+      const pins: SuiteGraphTimelineEventPins = {
+        documentVersionId,
+        familyId: activity.familyId,
+        parseRunId: activity.candidate.sourceBinding.original.parseRunId,
+        candidateRevision: activity.candidate.candidateRevision,
+        runRef: activity.candidate.runRef,
+        statementId: statement.statementId,
+        anchorId: statement.quotes[0]?.anchorId ?? null,
+      };
       events.push({
-        id: eventIdentity(documentVersionId, statement.statementId),
+        id: suiteGraphSourceEventId(pins),
         kind: 'source',
         date: item.displayTime,
         sortKey: item.span?.start ?? null,
@@ -91,15 +112,7 @@ export function buildSuiteGraphTimeline(input: {
           ? `${label} · 状态：${statement.statusRaw}`
           : label,
         nodeId,
-        pins: {
-          documentVersionId,
-          familyId: activity.familyId,
-          parseRunId: activity.candidate.sourceBinding.original.parseRunId,
-          candidateRevision: activity.candidate.candidateRevision,
-          runRef: activity.candidate.runRef,
-          statementId: statement.statementId,
-          anchorId: statement.quotes[0]?.anchorId ?? null,
-        },
+        pins,
         statement,
         sourceLabel: label,
       });

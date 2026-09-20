@@ -4,7 +4,6 @@ import EngineeringIssueBody from '@client/src/features/matter/EngineeringIssueBo
 import type { DocumentAssessmentEvidence } from '@client/src/features/matter/assessment-reading';
 import type {
   AssessmentEvidence,
-  AssessmentReadingResult,
 } from '@shared/assessment-reading.interface';
 import type {
   JobAidProblemIssue,
@@ -98,24 +97,24 @@ export function JobAidRequirement({
 
 export function JobAidIssueArticle({
   issue,
-  reading,
+  evidence,
   onLocateDocument,
 }: {
   issue: JobAidProblemIssue;
-  reading: AssessmentReadingResult;
+  evidence: AssessmentEvidence[];
   onLocateDocument: (evidence: DocumentAssessmentEvidence) => void;
 }) {
   const sourceDetails = (refs: string[]) => (
     <JobAidEvidenceDetails
       refs={refs}
-      evidence={reading.evidence}
+      evidence={evidence}
       onLocateDocument={onLocateDocument}
     />
   );
   return (
     <>
       <h3>{issue.question}</h3>
-      <EngineeringIssueBody body={issue.body} evidence={reading.evidence} onLocateDocument={onLocateDocument} />
+      <EngineeringIssueBody body={issue.body} evidence={evidence} onLocateDocument={onLocateDocument} />
       {issue.riskScenarios.map((risk, index) => (
         <section key={index} className="wl-jobaid-risk">
           <h4>风险情景：{risk.scenario}</h4>

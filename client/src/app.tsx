@@ -7,6 +7,7 @@ import WorkItemOverviewPage from './features/workitem/WorkItemOverviewPage';
 import EngineeringMatterPage from './features/matter/EngineeringMatterPage';
 import MatterProblemAnalysisPage from './features/matter/MatterProblemAnalysisPage';
 import EngineeringSituationPage from './pages/EngineeringSituationPage/EngineeringSituationPage';
+import EngineeringSituationVisualPreviewPage from './pages/EngineeringSituationPage/EngineeringSituationVisualPreviewPage';
 import EngineeringTimelinePage from './pages/EngineeringTimelinePage/EngineeringTimelinePage';
 import DocumentParsingPage from './pages/DocumentParsingPage/DocumentParsingPage';
 import DocumentVersionReadingPage from './pages/DocumentParsingPage/DocumentVersionReadingPage';
@@ -18,11 +19,22 @@ import RuntimeProbePage from './pages/RuntimeProbePage/RuntimeProbePage';
 import ExternalDiscoveryPage from './pages/ExternalDiscoveryPage/ExternalDiscoveryPage';
 import OAuthCallbackPage from './pages/OAuthCallbackPage/OAuthCallbackPage';
 import ModelSettingsPage from './pages/ModelSettingsPage/ModelSettingsPage';
-import RelationGraphPage from './pages/RelationGraphPage/RelationGraphPage';
+import { RelationGraphPage } from './pages/RelationGraphPage/RelationGraphPage';
 import KnowledgeLookupPage from './pages/KnowledgeLookupPage/KnowledgeLookupPage';
 
 import GraphRelationPreviewPage from './pages/GraphRelationPreviewPage/GraphRelationPreviewPage';
+import SuiteGraphVisualPreviewPage from './pages/GraphRelationPreviewPage/SuiteGraphVisualPreviewPage';
 import EngineeringChronologyPreviewPage from './pages/EngineeringChronologyPreviewPage/EngineeringChronologyPreviewPage';
+import ReaderPage from './pages/ReaderPage';
+import ReaderWorkspaceVisualPreviewPage from './pages/DocumentParsingPage/ReaderWorkspaceVisualPreviewPage';
+import VersionComparisonPage from './pages/VersionComparisonPage';
+
+// Suite 1.1 Pages
+import ReaderPageAdapter from './adapters/ReaderPageAdapter';
+import VersionComparisonPageAdapter from './adapters/VersionComparisonPageAdapter';
+
+// Validation Playground
+import { ReactFlowValidationPlayground } from './playground/ReactFlowValidationPlayground';
 
 const LibraryIndexRedirect = () => {
   const location = useLocation();
@@ -42,10 +54,16 @@ const LibraryIndexRedirect = () => {
 const RoutesComponent = () => {
   return (
     <Routes>
-      <Route path="dev-preview/graph" element={<GraphRelationPreviewPage />} />
+      <Route path="dev-preview/graph-legacy" element={<GraphRelationPreviewPage />} />
       <Route path="dev-preview/chronology" element={<EngineeringChronologyPreviewPage />} />
+      <Route path="dev-preview/reader/:documentId" element={<ReaderPage />} />
+      <Route path="dev-preview/version-comparison/:documentId" element={<VersionComparisonPage />} />
+      <Route path="dev-preview/reactflow-validation" element={<ReactFlowValidationPlayground />} />
       <Route element={<Layout />}>
         <Route index element={<LibraryIndexRedirect />} />
+        <Route path="dev-preview/graph" element={<SuiteGraphVisualPreviewPage />} />
+        <Route path="dev-preview/reader-workspace" element={<ReaderWorkspaceVisualPreviewPage />} />
+        <Route path="dev-preview/situation" element={<EngineeringSituationVisualPreviewPage />} />
         <Route path="dialogues" element={<DialoguePage />} />
         <Route path="dialogues/:threadRef" element={<DialoguePage />} />
         <Route path="library" element={<WorkspaceHomePage />} />
@@ -71,6 +89,9 @@ const RoutesComponent = () => {
           path="work-items/:workItemId/documents"
           element={<DocumentParsingPage />}
         />
+        {/* Compatibility entries resolve only to existing authorized version readers. */}
+        <Route path="reader/:documentId" element={<ReaderPageAdapter />} />
+        <Route path="version-comparison/:documentId" element={<VersionComparisonPageAdapter />} />
         <Route path="*" element={<NotFound />} />
       </Route>
       <Route path="client/oauth/callback" element={<OAuthCallbackPage />} />

@@ -1,0 +1,466 @@
+/* ============================================
+   VersionComparisonPage 样式
+   ============================================ */
+
+.version-comparison-page {
+  display: flex;
+  flex-direction: column;
+  height: 100vh;
+  background: #0f172a;
+  color: #f8fafc;
+}
+
+/* 加载和错误状态 */
+.version-comparison-page.loading,
+.version-comparison-page.error {
+  align-items: center;
+  justify-content: center;
+}
+
+.loading-spinner {
+  font-size: 1.125rem;
+  color: #94a3b8;
+}
+
+.error-message {
+  text-align: center;
+  max-width: 500px;
+  padding: 2rem;
+}
+
+.error-message h2 {
+  font-size: 1.5rem;
+  margin-bottom: 0.5rem;
+  color: #f87171;
+}
+
+.error-message p {
+  color: #94a3b8;
+  margin-bottom: 1.5rem;
+}
+
+.error-message button {
+  padding: 0.5rem 1.5rem;
+  background: #1e293b;
+  color: #f8fafc;
+  border: 1px solid #334155;
+  border-radius: 6px;
+  cursor: pointer;
+}
+
+.error-message button:hover {
+  background: #334155;
+}
+
+/* ============================================
+   ComparisonHeader
+   ============================================ */
+
+.comparison-header {
+  padding: 1.5rem 2rem;
+  border-bottom: 1px solid #1e293b;
+  background: #0b0e14;
+}
+
+.comparison-header-content {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 2rem;
+}
+
+.comparison-title-section h1 {
+  font-size: 1.5rem;
+  font-weight: 600;
+  margin: 0 0 0.5rem 0;
+  color: #f8fafc;
+}
+
+.comparison-title-section p {
+  font-size: 0.9375rem;
+  color: #94a3b8;
+  margin: 0;
+}
+
+.comparison-actions {
+  display: flex;
+  gap: 0.75rem;
+  align-items: center;
+  flex-shrink: 0;
+}
+
+.btn {
+  padding: 0.5rem 1rem;
+  background: #1e293b;
+  color: #f8fafc;
+  border: 1px solid #334155;
+  border-radius: 6px;
+  font-size: 0.875rem;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.15s;
+}
+
+.btn:hover {
+  background: #334155;
+  border-color: #475569;
+}
+
+.btn-secondary {
+  background: transparent;
+  border-color: #475569;
+}
+
+.btn-secondary:hover {
+  background: #1e293b;
+}
+
+.btn-primary {
+  background: #38bdf8;
+  color: #0f172a;
+  border-color: #38bdf8;
+}
+
+.btn-primary:hover {
+  background: #22d3ee;
+  border-color: #22d3ee;
+}
+
+.btn-sm {
+  padding: 0.375rem 0.75rem;
+  font-size: 0.8125rem;
+}
+
+.family-select {
+  padding: 0.5rem 1rem;
+  background: #1e293b;
+  color: #f8fafc;
+  border: 1px solid #334155;
+  border-radius: 6px;
+  font-size: 0.875rem;
+  cursor: pointer;
+  transition: all 0.15s;
+  min-width: 250px;
+}
+
+.family-select:hover {
+  background: #334155;
+  border-color: #475569;
+}
+
+.family-select:focus {
+  outline: none;
+  border-color: #38bdf8;
+  box-shadow: 0 0 0 2px rgba(56, 189, 248, 0.2);
+}
+
+/* ============================================
+   ComparisonOverview
+   ============================================ */
+
+.comparison-overview {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 2rem;
+  margin: 2rem;
+  padding: 2rem;
+  background: #0f172a;
+  border: 1px solid #1e293b;
+  border-radius: 8px;
+}
+
+.overview-section small {
+  display: block;
+  font-size: 0.75rem;
+  color: #64748b;
+  margin-bottom: 0.5rem;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+.overview-section h2 {
+  font-size: 1.5rem;
+  font-weight: 600;
+  color: #f8fafc;
+  margin: 0;
+}
+
+.overview-section p {
+  font-size: 0.9375rem;
+  line-height: 1.6;
+  color: #cbd5e1;
+  margin: 0;
+}
+
+/* ============================================
+   ComparisonGrid
+   ============================================ */
+
+.comparison-grid {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 2rem;
+  flex: 1;
+  overflow: hidden;
+  padding: 0 2rem 2rem;
+}
+
+.comparison-column {
+  display: flex;
+  flex-direction: column;
+  background: #0f172a;
+  border: 1px solid #1e293b;
+  border-radius: 8px;
+  overflow: hidden;
+}
+
+.column-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 1.25rem 1.5rem;
+  border-bottom: 1px solid #1e293b;
+  background: #0b0e14;
+}
+
+.column-header h2 {
+  font-size: 1.125rem;
+  font-weight: 600;
+  color: #f8fafc;
+  margin: 0;
+}
+
+.comparison-prose {
+  flex: 1;
+  padding: 1.5rem;
+  overflow-y: auto;
+  overflow-x: hidden;
+}
+
+.comparison-prose::-webkit-scrollbar {
+  width: 8px;
+}
+
+.comparison-prose::-webkit-scrollbar-track {
+  background: #0f172a;
+}
+
+.comparison-prose::-webkit-scrollbar-thumb {
+  background: #334155;
+  border-radius: 4px;
+}
+
+.comparison-prose::-webkit-scrollbar-thumb:hover {
+  background: #475569;
+}
+
+/* ============================================
+   ComparisonBlock
+   ============================================ */
+
+.comparison-block {
+  padding: 1.5rem;
+  margin-bottom: 1.5rem;
+  border: 1px solid #1e293b;
+  border-radius: 8px;
+  background: #0f172a;
+  transition: all 0.15s;
+}
+
+.comparison-block h3 {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  font-size: 1.0625rem;
+  font-weight: 600;
+  color: #f8fafc;
+  margin: 0 0 1rem 0;
+}
+
+.change-badge {
+  padding: 0.25rem 0.625rem;
+  background: #78350f;
+  border: 1px solid #92400e;
+  border-radius: 4px;
+  font-size: 0.75rem;
+  font-weight: 500;
+  color: #fbbf24;
+}
+
+.comparison-block.changed {
+  border-width: 2px;
+}
+
+.comparison-block.changed.old {
+  border-color: #f97316;
+  background: linear-gradient(to right, rgba(249, 115, 22, 0.05), transparent);
+}
+
+.comparison-block.changed.new {
+  border-color: #22d3ee;
+  background: linear-gradient(to right, rgba(34, 211, 238, 0.05), transparent);
+}
+
+.block-chinese {
+  font-size: 0.9375rem;
+  line-height: 1.75;
+  color: #f8fafc;
+  margin: 0 0 1rem 0;
+}
+
+.block-english {
+  font-size: 0.875rem;
+  line-height: 1.65;
+  color: #94a3b8;
+  font-style: italic;
+  margin: 0;
+  padding-top: 1rem;
+  border-top: 1px solid #1e293b;
+}
+
+/* ============================================
+   ComparisonEmpty
+   ============================================ */
+
+.comparison-empty {
+  flex: 1;
+  margin: 2rem;
+  background: #0f172a;
+  border: 1px solid #1e293b;
+  border-radius: 8px;
+}
+
+.empty-state {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 4rem 2rem;
+  text-align: center;
+}
+
+.empty-state h3 {
+  font-size: 1.25rem;
+  font-weight: 600;
+  color: #f8fafc;
+  margin: 0 0 0.75rem 0;
+}
+
+.empty-state p {
+  font-size: 0.9375rem;
+  color: #94a3b8;
+  margin: 0 0 2rem 0;
+  max-width: 400px;
+}
+
+.empty-state .btn {
+  padding: 0.625rem 1.5rem;
+}
+
+/* ============================================
+   响应式
+   ============================================ */
+
+/* 1440px - 中等桌面 */
+@media (max-width: 1440px) {
+  .comparison-overview {
+    grid-template-columns: 1fr;
+    gap: 1.5rem;
+  }
+
+  .comparison-header-content {
+    flex-direction: column;
+  }
+
+  .comparison-actions {
+    width: 100%;
+    justify-content: flex-start;
+  }
+}
+
+/* 1024px - 折叠屏/平板 */
+@media (max-width: 1024px) {
+  .comparison-grid {
+    grid-template-columns: 1fr;
+    gap: 1.5rem;
+  }
+
+  .comparison-column {
+    min-height: 400px;
+  }
+
+  .comparison-header {
+    padding: 1rem;
+  }
+
+  .comparison-overview {
+    margin: 1rem;
+    padding: 1.5rem;
+  }
+
+  .comparison-grid {
+    padding: 0 1rem 1rem;
+  }
+}
+
+/* 390px - 手机 */
+@media (max-width: 390px) {
+  .comparison-header {
+    padding: 1rem;
+  }
+
+  .comparison-title-section h1 {
+    font-size: 1.25rem;
+  }
+
+  .comparison-actions {
+    flex-direction: column;
+    width: 100%;
+  }
+
+  .family-select {
+    width: 100%;
+  }
+
+  .comparison-overview {
+    margin: 1rem;
+    padding: 1rem;
+    gap: 1rem;
+  }
+
+  .comparison-grid {
+    padding: 0 1rem 1rem;
+  }
+
+  .comparison-prose {
+    padding: 1rem;
+  }
+
+  .comparison-block {
+    padding: 1rem;
+  }
+
+  .column-header {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 0.75rem;
+  }
+
+  .column-header h2 {
+    font-size: 1rem;
+  }
+}
+
+/* ============================================
+   通用面板样式
+   ============================================ */
+
+.panel {
+  background: #0f172a;
+  border: 1px solid #1e293b;
+}
+
+.scroll-region {
+  overflow-y: auto;
+  overflow-x: hidden;
+}

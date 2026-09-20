@@ -38,12 +38,13 @@ export default function EngineeringSituationPage() {
   ), [directory.items, availability, matterId, focus.data, directoryExhausted]);
   const data = projection.data;
   const stage = params.get('stage') || '';
-  const knowledgeStage = params.get('knowledgeStage') || '';
+  const sourceCategory = params.get('source') || '';
   const readingRoute = (id: string) => id === matterId && focus.data?.working.current
     ? matterWorkRoute(id, focus.data.working.current.matterWorkRevisionId) : `/matters/${encodeURIComponent(id)}`;
-  function select(key: string, value: string) {
+  function select(stageId: string, sourceId: string) {
     const next = new URLSearchParams(params);
-    if (value) next.set(key, value); else next.delete(key);
+    if (stageId) next.set('stage', stageId); else next.delete('stage');
+    if (sourceId) next.set('source', sourceId); else next.delete('source');
     setParams(next, { replace: true });
   }
   function handleNavigate(target: TrinityNavigationTarget) {
@@ -56,10 +57,23 @@ export default function EngineeringSituationPage() {
         if (route) navigate(route);
         return;
       }
+      case 'source-item': {
+        const route = projection.sourceTargets[target.sourceId];
+        if (route) navigate(route);
+        return;
+      }
       case 'view':
         if (target.view === 'library') navigate('/library?mode=matter');
         else if (target.view === 'timeline') { if (matterId) setPanel({type:'matter-timeline', matterId}); else navigate('/timeline'); }
-        else if (target.view === 'graph') navigate('/graph');
+        else if (target.view === 'graph') {
+          if (!matterId) navigate('/graph');
+          else {
+            const graphParams = new URLSearchParams({ matterId });
+            const workRef = focus.data?.working.current?.matterWorkRevisionId;
+            if (workRef) graphParams.set('workRef', workRef);
+            navigate(`/graph?${graphParams}`);
+          }
+        }
         return;
       case 'matter-timeline': setPanel(target); return;
       case 'knowledge-view': navigate('/knowledge'); return;
@@ -67,7 +81,8 @@ export default function EngineeringSituationPage() {
     }
   }
   const stageId = panel && 'stageId' in panel ? panel.stageId : '';
-  const associated = data.matters.filter((matter) => matter.activeStages.includes(stageId));
+  const associated = data.matters.filter((matter) =>
+    matter.activeAssessmentStages.includes(stageId));
   const canRead = availability === 'complete';
   const catalog = focus.data?.matter.catalog.entries ?? [];
   const materials = focus.data?.matter.materials;
@@ -78,16 +93,17 @@ export default function EngineeringSituationPage() {
   return <>
     <TrinitySituationView data={data} level={matterId ? 'focus' : 'macro'} focusMatterId={matterId}
       fleet="all" fleetOptions={[{value:'all', label:'当前授权事项'}]}
-      selectedStageId={stage} selectedKnowledgeId={knowledgeStage}
+      selectedStageId={stage} selectedSourceId={sourceCategory}
       onLevelChange={(level) => {
         if (level === 'macro') navigate('/situation');
         else if (data.matters[0]) navigate(`/matters/${encodeURIComponent(data.matters[0].id)}/posture`);
         else setPanel({type:'view', view:'library'});
       }}
       onFocusMatterChange={(id) => navigate(`/matters/${encodeURIComponent(id)}/posture`)}
-      onSelectStage={(id) => select('stage', id)} onSelectKnowledge={(id) => select('knowledgeStage', id)} onNavigate={handleNavigate} />
+      onSelectionChange={({stageId, sourceId}) => select(stageId, sourceId)}
+      onNavigate={handleNavigate} />
     <div className="mt-4 flex flex-wrap items-center gap-3 text-xs text-muted-foreground">
-      <p>{canRead ? `本次目录已取得 ${directory.items.length} 个事项；生命周期分布、全量知识和业务时间记录尚未完整接入。` : authenticationRequired ? '请登录后读取授权事项。' : focus.error || directory.error || '正在读取授权资料。'}</p>
+      <p>{canRead ? `本次目录已取得 ${directory.items.length} 个事项；六类来源与评估关联仍按实际接入范围显示。` : authenticationRequired ? '请登录后读取授权事项。' : focus.error || directory.error || '正在读取授权资料。'}</p>
       <Button variant="outline" size="sm" disabled={authenticationRequired || directory.loading || focus.loading} onClick={() => {setRefresh((value)=>value+1); if (matterId) void focus.refresh().catch(()=>undefined);}}>重新读取</Button>
       {directory.nextCursor ? <Button variant="outline" size="sm" disabled={directory.loading} onClick={directory.loadMore}>继续读取事项</Button> : null}
     </div>

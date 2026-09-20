@@ -8,6 +8,7 @@ import type {
   SuiteGraphPresentationOptions,
   SuiteGraphRelation,
 } from './suite-graph-model';
+import { suiteGraphAppearance, type SuiteGraphAppearance } from './suite-graph-appearance';
 
 const GROUP_ID = (key: string) => `sg:group:${key}`;
 const ITEM_ID = (id: string) => `sg:item:${id}`;
@@ -31,6 +32,7 @@ const LAYOUTS: Record<number, Array<[number, number]>> = {
 };
 
 function groupNode(group: SuiteGraphGroup, view: SuiteGraphGroupView): CytoscapeSuiteElement {
+  const appearance = suiteGraphAppearance(group.key, group.color);
   return {
     group: 'nodes',
     data: {
@@ -38,6 +40,7 @@ function groupNode(group: SuiteGraphGroup, view: SuiteGraphGroupView): Cytoscape
       viewKind: 'halo',
       title: group.title,
       color: group.color,
+      ...appearance,
       w: view.w,
       h: view.h,
       count: group.items.length,
@@ -57,6 +60,8 @@ function relationEdge(
   source: string,
   target: string,
   groupKey?: string,
+  appearance: SuiteGraphAppearance = suiteGraphAppearance(groupKey ?? ''),
+  curvature = 33,
 ): CytoscapeSuiteElement {
   return {
     group: 'edges',
@@ -71,6 +76,8 @@ function relationEdge(
       label: relation.label,
       viewKind: 'relationship',
       groupKey,
+      ...appearance,
+      curvature,
       virtual: false,
       relationshipIds: [relation.id],
     },
@@ -125,8 +132,10 @@ export function buildSuiteGraphPresentation(
   const views: SuiteGraphGroupView[] = [];
   const visibleItems = new Map<string, { group: SuiteGraphGroup; item: SuiteGraphGroup['items'][number] }>();
   const itemGroup = new Map<string, string>();
+  const groupByKey = new Map(groups.map((group) => [group.key, group]));
 
   groups.forEach((group, index) => {
+    const appearance = suiteGraphAppearance(group.key, group.color);
     group.items.forEach((item) => itemGroup.set(item.id, group.key));
     const columns = group.columns ?? 1;
     const cap = columns === 2 ? 6 : density;
@@ -161,7 +170,19 @@ export function buildSuiteGraphPresentation(
       itemGroup.set(item.id, group.key);
       elements.push({
         group: 'nodes',
-      data: { ...item, id, businessId: item.id, viewKind: 'item', groupKey: group.key, color: group.color, w: cardW, h: cardH, compact: columns === 2, virtual: false },
+        data: {
+          ...item,
+          id,
+          businessId: item.id,
+          viewKind: 'item',
+          groupKey: group.key,
+          color: group.color,
+          ...appearance,
+          w: cardW,
+          h: cardH,
+          compact: columns === 2,
+          virtual: false,
+        },
         position: { x: cx, y: cy },
         classes: 'business-node',
         grabbable: true,
@@ -170,7 +191,19 @@ export function buildSuiteGraphPresentation(
     if (extra > 0) {
       elements.push({
         group: 'nodes',
-        data: { id: MORE_ID(group.key), rootKind: 'display', viewKind: 'more', title: '展开全部', count: extra, groupKey: group.key, color: group.color, w: cardW, h: 32, virtual: true },
+        data: {
+          id: MORE_ID(group.key),
+          rootKind: 'display',
+          viewKind: 'more',
+          title: '展开全部',
+          count: extra,
+          groupKey: group.key,
+          color: group.color,
+          ...appearance,
+          w: cardW,
+          h: 32,
+          virtual: true,
+        },
         position: { x, y: y - h / 2 + h - 27 },
         classes: 'visual-more',
         grabbable: false,
@@ -195,8 +228,19 @@ export function buildSuiteGraphPresentation(
   const allItemGroups = new Map(matter.groups.flatMap((group) => group.items.map((item) => [item.id, group.key] as const)));
   const eligibleItemGroups = new Map(eligible.flatMap((group) => group.items.map((item) => [item.id, group.key] as const)));
   const omittedRelationships: SuiteGraphPresentation['omittedRelationships'] = [];
-  const representedRelations = (options.relationMode ?? 'aggregated') === 'individual' ? individualRelations : aggregatedRelations;
-  const representedIds = new Set(representedRelations.map((relation) => relation.id));
+  const relationMode = options.relationMode ?? 'aggregated';
+  const representedRelations = relationMode === 'individual' ? individualRelations : aggregatedRelations;
+  // In aggregated mode individual edges remain present as a hidden selection
+  // layer, so they are represented even though the visible bundle carries the
+  // default relationship count.
+  const representedIds = new Set([
+    ...representedRelations.map((relation) => relation.id),
+    ...(relationMode === 'aggregated' ? individualRelations.map((relation) => relation.id) : []),
+  ]);
+  const appearanceForGroup = (groupKey?: string): SuiteGraphAppearance => {
+    const group = groupKey ? groupByKey.get(groupKey) : undefined;
+    return suiteGraphAppearance(groupKey ?? '', group?.color);
+  };
   matter.relations.forEach((relation) => {
     if (representedIds.has(relation.id)) return;
     const endpointIds = [relation.source, relation.target];
@@ -215,11 +259,13 @@ export function buildSuiteGraphPresentation(
     }
     omittedRelationships.push({ id: relation.id, reason: 'cardOverflow' });
   });
-  if ((options.relationMode ?? 'aggregated') === 'individual') {
+  if (relationMode === 'individual') {
     individualRelations.forEach((relation) => {
       const source = relation.source === rootBusinessId ? HUB_ID(matter.id) : ITEM_ID(relation.source);
       const target = relation.target === rootBusinessId ? HUB_ID(matter.id) : ITEM_ID(relation.target);
-      elements.push(relationEdge(relation, source, target, itemGroup.get(relation.source) ?? itemGroup.get(relation.target)));
+      const groupKey = itemGroup.get(relation.source) ?? itemGroup.get(relation.target);
+      const curvature = relation.source === rootBusinessId || relation.target === rootBusinessId ? 0 : 33;
+      elements.push(relationEdge(relation, source, target, groupKey, appearanceForGroup(groupKey), curvature));
     });
   } else {
     const bundles = new Map<string, { source: string; target: string; relations: SuiteGraphRelation[]; groupKey?: string }>();
@@ -233,7 +279,50 @@ export function buildSuiteGraphPresentation(
     });
     bundles.forEach((bundle) => {
       const ids = bundle.relations.map((relation) => relation.id);
-      elements.push({ group: 'edges', data: { id: `sg:bundle:${JSON.stringify(ids)}`, source: bundle.source, target: bundle.target, viewKind: 'bundle', label: bundle.relations.length === 1 ? bundle.relations[0].label : '资料关联', relationshipIds: ids, groupKey: bundle.groupKey, virtual: true }, classes: 'bundle-edge' });
+      const sourceGroup = views.find((view) => view.id === bundle.source);
+      const targetGroup = views.find((view) => view.id === bundle.target);
+      const relativeX = targetGroup
+        ? targetGroup.x - 414
+        : sourceGroup
+          ? sourceGroup.x - 414
+          : 0;
+      const curvature = sourceGroup && targetGroup
+        ? Math.sign(targetGroup.x - sourceGroup.x) * 22
+        : Math.sign(relativeX) * 22;
+      const labels = new Set(bundle.relations.map((relation) => relation.label));
+      elements.push({
+        group: 'edges',
+        data: {
+          id: `sg:bundle:${JSON.stringify(ids)}`,
+          source: bundle.source,
+          target: bundle.target,
+          viewKind: 'bundle',
+          label: labels.size === 1 ? bundle.relations[0].label : '资料关联',
+          relationshipIds: ids,
+          groupKey: bundle.groupKey,
+          ...appearanceForGroup(bundle.groupKey),
+          curvature,
+          virtual: true,
+        },
+        classes: 'bundle-edge',
+      });
+    });
+    // Keep exact business edges as a hidden interaction layer. The default view
+    // stays aggregated; selecting a node reveals only its real adjacent edges.
+    individualRelations.forEach((relation) => {
+      const source = relation.source === rootBusinessId ? HUB_ID(matter.id) : ITEM_ID(relation.source);
+      const target = relation.target === rootBusinessId ? HUB_ID(matter.id) : ITEM_ID(relation.target);
+      elements.push({
+        ...relationEdge(
+          relation,
+          source,
+          target,
+          itemGroup.get(relation.source) ?? itemGroup.get(relation.target),
+          appearanceForGroup(itemGroup.get(relation.source) ?? itemGroup.get(relation.target)),
+          relation.source === rootBusinessId || relation.target === rootBusinessId ? 0 : 33,
+        ),
+        classes: 'business-edge individual-edge',
+      });
     });
   }
 

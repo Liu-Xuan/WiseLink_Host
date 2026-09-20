@@ -32,7 +32,9 @@ export interface EngineeringIssueSearchResponse {
 export interface EngineeringIssueRead {
   identity: EngineeringIssueSearchHit;
   issue: JobAidProblemIssue;
-  reading: AssessmentReadingResult;
+  /** Null means this saved problem has no overview; the issue and its evidence remain readable. */
+  reading: AssessmentReadingResult | null;
+  evidence: AssessmentReadingResult['evidence'];
 }
 
 /** A saved work is the knowledge catalogue unit; its issues are read on demand. */
@@ -53,7 +55,7 @@ export interface EngineeringKnowledgePage {
 export interface EngineeringKnowledgeRead {
   entry: EngineeringKnowledgeEntry;
   content: JobAidProblemWorkContent;
-  reading: AssessmentReadingResult;
+  reading: AssessmentReadingResult | null;
   correctionNotices?: EngineeringMatterCorrectionNotice[];
   overviewCorrectionNotices?: EngineeringMatterOverviewCorrectionNotice[];
   referenceWorkNotices?: EngineeringMatterReferenceWorkNotice[];

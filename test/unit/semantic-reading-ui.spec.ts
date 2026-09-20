@@ -48,6 +48,22 @@ describe('semantic document reading', () => {
       semanticSourceLinks(reading.anchors).map((link) => link.label),
     ).toEqual(['第 3 页', '第 3 页', '第 4 页']);
   });
+  it('renders bilingual mode as two independently identifiable reading panes', () => {
+    const reading = semanticReadingFixture();
+    const html: string = renderToStaticMarkup(
+      createElement(SemanticBilingualReader, {
+        translation: { status: 'SEMANTIC_READING_AID_AVAILABLE', reading },
+        mode: 'bilingual',
+        onSourceRefSelect: jest.fn(),
+      }),
+    );
+    expect(html).toContain('class="wl-semantic-bilingual-panes"');
+    expect(html).toContain('aria-label="连续原文"');
+    expect(html).toContain('aria-label="连续中文阅读"');
+    expect(html).toContain('class="wl-semantic-pane-title">原文</h3>');
+    expect(html).toContain('class="wl-semantic-pane-title">中文</h3>');
+    expect(html).toContain('data-semantic-block="paragraph-test"');
+  });
   it('does not turn 100% registered text into complete source or delivery', () => {
     const reading = semanticReadingFixture();
     reading.coverage.readableSourceCharacters = 1000;

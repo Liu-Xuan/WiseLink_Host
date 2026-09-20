@@ -3,7 +3,11 @@ import { createRoot, type Root } from 'react-dom/client';
 import SuiteMatterGraphView from '../../client/src/pages/RelationGraphPage/SuiteMatterGraphView';
 import type { SuiteGraphCanvasProps } from '../../client/src/pages/RelationGraphPage/SuiteGraphCanvas';
 import { libraryMatterFixture } from './fixtures/library-matter';
-import { buildSuiteMatterGraph } from '../../client/src/pages/RelationGraphPage/suite-matter-graph';
+import {
+ appendSuiteGraphCatalogDocuments,
+ buildSuiteMatterGraph,
+} from '../../client/src/pages/RelationGraphPage/suite-matter-graph';
+import type { EngineeringMatterCatalogEntry } from '@shared/api.interface';
 import type { SuiteGraphReadingState } from '../../client/src/pages/RelationGraphPage/suite-graph-return';
 const {JSDOM} = require('jsdom');
 let canvasProps: SuiteGraphCanvasProps, latest: SuiteGraphReadingState;
@@ -32,6 +36,29 @@ it('keeps the initial URL camera and restores each perspective across pending da
  await act(async()=>canvasProps.onViewport?.(cameraB));
  await click('事项图谱');expect(canvasProps.initialViewport).toEqual(cameraA);expect(latest.viewport).toEqual(cameraA);
  await click('领域聚焦');expect(canvasProps.initialViewport).toEqual(cameraB);
+});
+
+it('keeps the reading thread on the exact primary source path', async () => {
+ const entry: EngineeringMatterCatalogEntry = {
+  workItemId:'ui-test-work-item', relationRole:'PRIMARY', linkedAtWorkItemRevision:1,
+  currentWorkItemRevision:1, workItemChangedSinceLink:false, workItemStatus:'ACTIVE',
+  document:{documentId:'ui-test-document',documentVersionId:'ui-test-version',documentCode:'SB-001',businessRevision:'R02',normalizedFamily:'SB-001'},
+  documentCurrentness:{familyId:'ui-test-family',currentDocumentVersionId:'ui-test-version',currentGeneration:1,selectedVersionIsCurrent:true},
+  sourceNavigation:{status:'AVAILABLE',sourceRefCount:1,structuredContentPath:'/document-versions/ui-test-version'},
+ };
+ const displayRead=appendSuiteGraphCatalogDocuments(read,[entry]);
+ let openedWiki=false;
+ let openedTarget:string|null=null;
+ await act(async()=>root.render(createElement(SuiteMatterGraphView,{
+  read:displayRead,revision:data.working.current,perspective:'matter',
+  availablePerspectives:['matter'],onOpenWiki:()=>{openedWiki=true;},
+  onOpenTarget:(target)=>{if(target.kind==='catalog-document') openedTarget=target.entry.document.documentVersionId;},
+  initialState:{perspective:'matter'},onStateChange:()=>{},
+ })));
+ await click('测试事项：软件标准转换与一致性核查');
+ expect(openedWiki).toBe(true);
+ await click('确切原文');
+ expect(openedTarget).toBe('ui-test-version');
 });
 
 jest.mock('../../client/src/pages/RelationGraphPage/suite-matter-graph-page.css', () => ({}));

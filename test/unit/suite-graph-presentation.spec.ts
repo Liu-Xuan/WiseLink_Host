@@ -51,11 +51,38 @@ describe('buildSuiteGraphPresentation', () => {
 
   it('preserves real relation ids when aggregating', () => {
     const result = buildSuiteGraphPresentation(matter(), { relationMode: 'aggregated' });
-    const bundles = result.elements.filter((element) => element.group === 'edges');
+    const bundles = result.elements.filter((element) => element.group === 'edges' && element.data.viewKind === 'bundle');
+    const individual = result.elements.filter((element) => element.group === 'edges' && element.data.viewKind === 'relationship');
     expect(bundles).toHaveLength(2);
     expect(bundles.map((edge) => edge.data.relationshipIds)).toEqual([['r1'], ['r2']]);
     expect(bundles.every((edge) => String(edge.data.id).startsWith('sg:bundle:'))).toBe(true);
     expect(String(bundles[0].data.id)).toContain('["r1"]');
+    expect(individual.map((edge) => edge.data.businessId)).toEqual(['r1', 'r2']);
+  });
+
+  it('carries declared group colors and stable reference curves without changing relation identity', () => {
+    const input = matter(3);
+    input.groups[0].color = '#123456';
+    input.groups[1].color = 'green';
+    const result = buildSuiteGraphPresentation(input, { relationMode: 'aggregated' });
+    const bundles = result.elements.filter(
+      (element) => element.group === 'edges' && element.data.viewKind === 'bundle',
+    );
+    const exact = result.elements.filter(
+      (element) => element.group === 'edges' && element.data.viewKind === 'relationship',
+    );
+    expect(bundles[0].data).toMatchObject({
+      relationshipIds: ['r1'],
+      color: '#123456',
+      curvature: 0,
+    });
+    expect(bundles[1].data).toMatchObject({
+      relationshipIds: ['r2'],
+      tone: 'green',
+      curvature: -22,
+    });
+    expect(exact.map((edge) => edge.data.businessId)).toEqual(['r1', 'r2']);
+    expect(exact.map((edge) => edge.data.curvature)).toEqual([0, 33]);
   });
 
   it('aggregates relations to overflow cards through their displayed group', () => {

@@ -6,7 +6,11 @@ import {
   readDocumentParsingStatus,
 } from '@client/src/api/canonical-host';
 import type { SuiteGraphActivityCandidate } from './suite-matter-graph';
-import type { SuiteGraphTimelineSource, SuiteGraphTimelineSourceStatus } from './suite-graph-timeline';
+import type {
+  SuiteGraphTimelineEventPins,
+  SuiteGraphTimelineSource,
+  SuiteGraphTimelineSourceStatus,
+} from './suite-graph-timeline';
 
 interface SourceRecord {
   status: SuiteGraphTimelineSourceStatus;
@@ -30,10 +34,17 @@ export function useSuiteGraphSources(input: {
   enabled: boolean;
   session: number;
   denied: boolean;
+  restorePins?: SuiteGraphTimelineEventPins;
 }) {
   const key = useMemo(
-    () => JSON.stringify([input.catalog.map((entry) => entry.document.documentVersionId), input.session, input.enabled, input.denied]),
-    [input.catalog, input.session, input.enabled, input.denied],
+    () => JSON.stringify([
+      input.catalog.map((entry) => entry.document.documentVersionId),
+      input.session,
+      input.enabled,
+      input.denied,
+      input.restorePins ?? null,
+    ]),
+    [input.catalog, input.session, input.enabled, input.denied, input.restorePins],
   );
   const [records, setRecords] = useState<ReadonlyMap<string, SourceRecord>>(new Map());
   const [loadingIds, setLoadingIds] = useState<ReadonlySet<string>>(new Set());
@@ -51,7 +62,10 @@ export function useSuiteGraphSources(input: {
     };
   }, [key]);
 
-  const loadSource = useCallback((entry: EngineeringMatterCatalogEntry) => {
+  const loadSource = useCallback((
+    entry: EngineeringMatterCatalogEntry,
+    exactPins?: SuiteGraphTimelineEventPins,
+  ) => {
     if (!input.enabled || input.denied) return;
     const documentVersionId = entry.document.documentVersionId;
     const generation = generationRef.current;
@@ -75,6 +89,34 @@ export function useSuiteGraphSources(input: {
       });
     };
     void (async () => {
+      if (exactPins) {
+        const reading = await readDocumentActivityReading({
+          documentVersionId,
+          parseRunId: exactPins.parseRunId,
+          candidateRevision: exactPins.candidateRevision,
+        }, controller.signal);
+        if (
+          reading.familyId !== exactPins.familyId
+          || !reading.candidate
+          || reading.candidate.runRef !== exactPins.runRef
+          || !reading.candidate.statements.some(
+            (statement) => statement.statementId === exactPins.statementId,
+          )
+        ) {
+          finish({
+            status: 'unavailable',
+            notice: '原时间节点的保存候选已不可读；未改用当前候选。',
+            candidate: null,
+          });
+          return;
+        }
+        finish({
+          status: 'loaded',
+          notice: null,
+          candidate: { candidate: reading.candidate, familyId: reading.familyId },
+        });
+        return;
+      }
       const status = await readDocumentParsingStatus(documentVersionId, controller.signal);
       const publishedRun = status.publishedRun;
       if (!publishedRun) {
@@ -110,7 +152,15 @@ export function useSuiteGraphSources(input: {
     });
   }, [input.enabled, input.denied, input.session]);
 
-  const defaultSourceId = input.catalog[0]?.document.documentVersionId ?? null;
+  const restorableSourceId = input.restorePins
+    && input.catalog.some(
+      (entry) => entry.document.documentVersionId === input.restorePins?.documentVersionId,
+    )
+    ? input.restorePins.documentVersionId
+    : null;
+  const defaultSourceId = restorableSourceId
+    ?? input.catalog[0]?.document.documentVersionId
+    ?? null;
   const [selectedSourceId, setSelectedSourceId] = useState<string | null>(null);
   useEffect(() => {
     setSelectedSourceId(null);
@@ -123,19 +173,51 @@ export function useSuiteGraphSources(input: {
     if (!input.enabled || input.denied || !activeSourceId) return;
     if (records.has(activeSourceId) || loadingIds.has(activeSourceId)) return;
     const entry = input.catalog.find((item) => item.document.documentVersionId === activeSourceId);
-    if (entry) loadSource(entry);
-  }, [input.enabled, input.denied, activeSourceId, records, loadingIds, input.catalog, loadSource]);
+    if (entry) {
+      const exactPins = input.restorePins?.documentVersionId === activeSourceId
+        ? input.restorePins
+        : undefined;
+      loadSource(entry, exactPins);
+    }
+  }, [
+    input.enabled,
+    input.denied,
+    input.restorePins,
+    activeSourceId,
+    records,
+    loadingIds,
+    input.catalog,
+    loadSource,
+  ]);
 
-  const sources = useMemo<SuiteGraphTimelineSource[]>(() => input.catalog.map((entry) => {
-    const documentVersionId = entry.document.documentVersionId;
-    const record = records.get(documentVersionId);
-    return {
-      documentVersionId,
-      label: labelFor(entry),
-      status: record?.status ?? (loadingIds.has(documentVersionId) ? 'loading' : 'skipped'),
-      notice: record?.notice ?? null,
-    };
-  }), [input.catalog, records, loadingIds]);
+  const sources = useMemo<SuiteGraphTimelineSource[]>(() => {
+    const items = input.catalog.map((entry) => {
+      const documentVersionId = entry.document.documentVersionId;
+      const record = records.get(documentVersionId);
+      return {
+        documentVersionId,
+        label: labelFor(entry),
+        status: record?.status
+          ?? (loadingIds.has(documentVersionId) ? 'loading' : 'skipped'),
+        notice: record?.notice ?? null,
+      };
+    });
+    if (
+      input.restorePins
+      && !input.catalog.some(
+        (entry) => entry.document.documentVersionId
+          === input.restorePins?.documentVersionId,
+      )
+    ) {
+      items.push({
+        documentVersionId: input.restorePins.documentVersionId,
+        label: '原时间节点来源',
+        status: 'unavailable',
+        notice: '原时间节点来源已不在当前授权目录；未改用其他来源。',
+      });
+    }
+    return items;
+  }, [input.catalog, input.restorePins, records, loadingIds]);
 
   const activities = useMemo(() => {
     const map = new Map<string, SuiteGraphActivityCandidate>();
@@ -147,8 +229,15 @@ export function useSuiteGraphSources(input: {
 
   const expandSource = useCallback((documentVersionId: string) => {
     const entry = input.catalog.find((item) => item.document.documentVersionId === documentVersionId);
-    if (entry) loadSource(entry);
-  }, [input.catalog, loadSource]);
+    if (entry) {
+      loadSource(
+        entry,
+        input.restorePins?.documentVersionId === documentVersionId
+          ? input.restorePins
+          : undefined,
+      );
+    }
+  }, [input.catalog, input.restorePins, loadSource]);
 
   return {
     activities,

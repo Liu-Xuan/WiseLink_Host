@@ -10,9 +10,11 @@ import { originalReadingGroups, originalUnitPages, sameOriginalBinding } from '.
 export function DocumentOriginalReader({
   original,
   onUnitLocate,
+  activeUnitId,
 }: {
   original: DocumentOriginalResult;
   onUnitLocate?: (page: number, unitId: string) => void;
+  activeUnitId?: string | null;
 }) {
   const groups = useMemo(() => originalReadingGroups(original), [original]);
   const [notice, setNotice] = useState<string | null>(null);
@@ -52,9 +54,11 @@ export function DocumentOriginalReader({
   }
 
   function locatableProps(unitId: string, block = false) {
+    const selected = activeUnitId === unitId;
     return {
       'data-unit-id': unitId,
-      className: block ? 'original-locatable original-locatable-block' : 'original-locatable',
+      'aria-current': selected ? 'location' as const : undefined,
+      className: `${block ? 'original-locatable original-locatable-block' : 'original-locatable'}${selected ? ' is-selected' : ''}`,
       tabIndex: 0,
       role: 'button',
       onClick: (event: ReactMouseEvent<HTMLElement>) => {
@@ -87,7 +91,7 @@ export function DocumentOriginalReader({
     {groups.map(group => {
       const unit = group[0];
       return <article key={unit.unitId}>
-        {unit.kind === 'heading' ? <h3 id={unit.unitId}>{String(unit.payload.text ?? '')}</h3>
+        {unit.kind === 'heading' ? <h3 id={unit.unitId} {...locatableProps(unit.unitId, true)}>{String(unit.payload.text ?? '')}</h3>
           : unit.kind === 'table' ? <div id={unit.unitId} {...locatableProps(unit.unitId, true)}><OriginalTable payload={unit.payload} /></div>
           : <p style={{ whiteSpace: 'pre-wrap' }}>
             {group.map((member, index) => <span key={member.unitId} id={member.unitId} {...locatableProps(member.unitId)}>

@@ -3,7 +3,7 @@ import { createRoot, type Root } from 'react-dom/client';
 import { createMemoryRouter, RouterProvider } from 'react-router-dom';
 import GraphRelationPreviewPage from '../../client/src/pages/GraphRelationPreviewPage/GraphRelationPreviewPage';
 import RelationGraphPage from '../../client/src/pages/RelationGraphPage/RelationGraphPage';
-import { GRAPH_RELATION_SAMPLE_ENTRIES, GRAPH_RELATION_SAMPLE_PROJECTION } from '../../client/src/features/review/graph-samples';
+import { GRAPH_RELATION_SAMPLE_ENTRIES } from '../../client/src/features/review/graph-samples';
 import { claimKey } from '../../client/src/features/review/GraphRelationSamplesView';
 import { getLibraryIndex } from '@client/src/api/canonical-host';
 import {
@@ -14,6 +14,11 @@ import type { RelationGraphCanvasProps } from '../../client/src/pages/RelationGr
 
 // JSDOM is a development dependency; the production runtime does not use it.
 const { JSDOM } = require('jsdom');
+let mockSessionState = {
+  sessionGeneration: 1,
+  authenticationRequired: false,
+};
+const mockSessionListeners = new Set<() => void>();
 jest.mock('@client/src/components/ui/button', () => ({ Button: 'button' }));
 jest.mock('@client/src/components/ui/button-group', () => ({
   ButtonGroup: 'div',
@@ -31,12 +36,19 @@ jest.mock('@client/src/api/engineering-matter', () => ({
 }));
 jest.mock(
   '../../client/src/app/providers/CurrentUserSessionProvider',
-  () => ({
-    useCurrentUserSession: () => ({
-      sessionGeneration: 1,
-      authenticationRequired: false,
-    }),
-  }),
+  () => {
+    const React = jest.requireActual<typeof import('react')>('react');
+    return {
+      useCurrentUserSession: () => React.useSyncExternalStore(
+        (listener: () => void) => {
+          mockSessionListeners.add(listener);
+          return () => mockSessionListeners.delete(listener);
+        },
+        () => mockSessionState,
+        () => mockSessionState,
+      ),
+    };
+  },
 );
 jest.mock(
   '../../client/src/pages/RelationGraphPage/SuiteMatterGraphPage',
@@ -103,9 +115,6 @@ async function mount(url = '/dev-preview/graph') {
   await act(async () => root.render(createElement(RouterProvider, { router })));
 }
 async function mountProduction(url = '/graph?workItemId=wi-sample-graph-a') {
-  (getLibraryIndex as jest.Mock).mockResolvedValue(
-    GRAPH_RELATION_SAMPLE_PROJECTION,
-  );
   router = createMemoryRouter(
     [
       { path: '/graph', element: createElement(RelationGraphPage) },
@@ -115,6 +124,12 @@ async function mountProduction(url = '/graph?workItemId=wi-sample-graph-a') {
   );
   root = createRoot(container);
   await act(async () => root.render(createElement(RouterProvider, { router })));
+}
+async function updateMockSessionState(nextState: typeof mockSessionState) {
+  await act(async () => {
+    mockSessionState = nextState;
+    for (const listener of mockSessionListeners) listener();
+  });
 }
 function params() {
   return new URLSearchParams(router.state.location.search);
@@ -151,6 +166,11 @@ beforeEach(() => {
   dom.window.XMLHttpRequest = network;
   container = dom.window.document.getElementById('root');
   jest.clearAllMocks();
+  mockSessionState = {
+    sessionGeneration: 1,
+    authenticationRequired: false,
+  };
+  mockSessionListeners.clear();
 });
 afterEach(async () => {
   await act(async () => root?.unmount());
@@ -267,16 +287,40 @@ it('keeps the explicit sample-object action inside the isolated preview', async 
   expect(network).not.toHaveBeenCalled();
 });
 
-it('selects a production graph node before an explicit deep-link navigation', async () => {
+it('resolves a unique work item to the Suite matter graph', async () => {
+  (getEngineeringMatterDirectory as jest.Mock).mockResolvedValue({
+    items: [{ matterId: 'matter-for-work-item' }],
+    nextCursor: null,
+  });
   await mountProduction();
-  expect(getLibraryIndex).toHaveBeenCalledWith('wi-sample-graph-a');
-  expect(container.querySelector('[aria-label="当前关系对象"]')?.textContent).toContain('SB-A 厂家服务通告');
-  await click('点击同文件图节点');
-  expect(router.state.location.pathname).toBe('/graph');
-  expect(container.querySelector('[aria-label="当前关系对象"]')?.textContent).toContain('doc-sample-graph-a');
-  await click('打开准确对象');
-  expect(router.state.location.pathname).toBe('/work-items/wi-sample-graph-a/documents');
-  expect(params().get('documentVersionId')).toBe('dv-sample-b');
+  await act(async () => undefined);
+  expect(getEngineeringMatterDirectory).toHaveBeenCalledWith(
+    { workItemId: 'wi-sample-graph-a', limit: 20 },
+    expect.anything(),
+  );
+  expect(router.state.location.search).toContain('matterId=matter-for-work-item');
+  expect(container.querySelector('[data-testid="matter-graph"]')?.getAttribute('data-matter')).toBe('matter-for-work-item');
+  expect(getLibraryIndex).not.toHaveBeenCalled();
+});
+
+it('stops a work item entry when its matter binding is ambiguous', async () => {
+  (getEngineeringMatterDirectory as jest.Mock).mockResolvedValue({
+    items: [{ matterId: 'matter-a' }, { matterId: 'matter-b' }],
+    nextCursor: null,
+  });
+  await mountProduction();
+  await act(async () => undefined);
+  expect(container.textContent).toContain('工作事项对应多个工程事项');
+  expect(router.state.location.search).toContain('workItemId=wi-sample-graph-a');
+  expect(getLibraryIndex).not.toHaveBeenCalled();
+});
+
+it('does not request a work item binding while authentication is required', async () => {
+  mockSessionState = { sessionGeneration: 2, authenticationRequired: true };
+  await mountProduction();
+  expect(container.textContent).toContain('请先登录');
+  expect(getEngineeringMatterDirectory).not.toHaveBeenCalled();
+  expect(getLibraryIndex).not.toHaveBeenCalled();
 });
 
 describe('graph object entry gates', () => {
@@ -321,6 +365,19 @@ describe('graph object entry gates', () => {
     await mountEntry('/graph?workRef=wr-1');
     expect(container.textContent).toContain('工作身份缺少所属事项');
     expect(getEngineeringMatterDirectory).not.toHaveBeenCalled();
+  });
+
+  it('rejects mixed work-item and document identities without widening the scope', async () => {
+    await mountEntry('/graph?workItemId=WI-1&documentVersionId=DV-1');
+    expect(container.textContent).toContain('工作事项与文档版本不能在此入口混用');
+    expect(getEngineeringMatterDirectory).not.toHaveBeenCalled();
+    expect(getEngineeringMatter).not.toHaveBeenCalled();
+  });
+
+  it('rejects a historical work mixed into a document activity entry', async () => {
+    await mountEntry('/graph?matterId=M1&workRef=MW-1&documentVersionId=DV-1');
+    expect(container.textContent).toContain('历史工作与文档活动不能在此入口混用');
+    expect(getEngineeringMatter).not.toHaveBeenCalled();
   });
 
   it('resolves a stable default matter from the authorized directory on a bare entry', async () => {
@@ -384,6 +441,26 @@ describe('graph object entry gates', () => {
     await act(async () => undefined);
     expect(container.textContent).toContain('该文档版本未登记在当前事项');
     expect(router.state.location.pathname).toBe('/graph');
+  });
+
+  it('does not reuse a linked result after the matter and document identity changes', async () => {
+    let resolveFirst: (value: unknown) => void = () => undefined;
+    (getEngineeringMatter as jest.Mock)
+      .mockImplementationOnce(() => new Promise((resolve) => {
+        resolveFirst = resolve;
+      }))
+      .mockImplementationOnce(() => new Promise(() => undefined));
+    await mountEntry('/graph?matterId=M1&documentVersionId=DV1');
+    await act(async () => {
+      await router.navigate('/graph?matterId=M2&documentVersionId=DV2');
+    });
+    await act(async () => {
+      resolveFirst({
+        catalog: { entries: [{ document: { documentVersionId: 'DV1' } }] },
+      });
+    });
+    expect(router.state.location.pathname).toBe('/graph');
+    expect(container.textContent).toContain('正在核对该文档版本是否属于当前事项');
   });
 
   it('rejects conflicting matter and work item identities without any directory request', async () => {

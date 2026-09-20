@@ -1,5 +1,4 @@
 import {
-  buildRingArrows,
   formatAsof,
   nodePositionPercent,
   recentEvents,
@@ -8,6 +7,7 @@ import {
   scopeMatters,
   situationMetrics,
   stageAnchor,
+  sourceAnchor,
   stageAssociationCount,
   stageLabel,
   toggleSelection,
@@ -17,45 +17,35 @@ import { TRINITY_SAMPLE_FIXTURE } from '../../client/src/features/trinity/trinit
 
 describe('Trinity ring geometry', () => {
   it('locks the viewBox, center and ring radii from the design contract', () => {
-    expect(TRINITY_RING.viewWidth).toBe(1000);
-    expect(TRINITY_RING.viewHeight).toBe(610);
-    expect(TRINITY_RING.cx).toBe(500);
-    expect(TRINITY_RING.cy).toBe(305);
-    expect(TRINITY_RING.outerRx).toBe(378);
-    expect(TRINITY_RING.outerRy).toBe(234);
-    expect(TRINITY_RING.innerRx).toBe(210);
-    expect(TRINITY_RING.innerRy).toBe(136);
-    expect(TRINITY_RING.stageStepDeg).toBe(45);
-    expect(TRINITY_RING.knowledgeStepDeg).toBe(60);
-    expect(TRINITY_RING.outerArrowOffsetDeg).toBe(24);
-    expect(TRINITY_RING.knowledgeArrowOffsetDeg).toBe(32);
+    expect(TRINITY_RING.viewWidth).toBe(1100);
+    expect(TRINITY_RING.viewHeight).toBe(660);
+    expect(TRINITY_RING.cx).toBe(550);
+    expect(TRINITY_RING.cy).toBe(330);
+    expect(TRINITY_RING.outerRx).toBe(465);
+    expect(TRINITY_RING.outerRy).toBe(257);
+    expect(TRINITY_RING.innerRx).toBe(253);
+    expect(TRINITY_RING.innerRy).toBe(154);
+    expect(TRINITY_RING.stageStepDeg).toBe(60);
+    expect(TRINITY_RING.sourceStepDeg).toBe(60);
   });
 
   it('positions anchors on the ellipse and converts to percent coordinates', () => {
-    expect(ringPoint(378, 234, -90)).toEqual({ x: 500, y: 71 });
-    expect(ringPoint(378, 234, 0)).toEqual({ x: 878, y: 305 });
-    expect(stageAnchor(0)).toEqual({ x: 500, y: 71 });
+    expect(ringPoint(465, 257, -90)).toEqual({ x: 550, y: 73 });
+    expect(ringPoint(465, 257, 0)).toEqual({ x: 1015, y: 330 });
+    expect(stageAnchor(0)).toEqual({ x: 550, y: 73 });
+    expect(sourceAnchor(0)).toEqual({ x: 550, y: 176 });
     const pos = nodePositionPercent(stageAnchor(0));
     expect(pos.left).toBe('50%');
-    expect(pos.top).toBe('11.64%');
+    expect(pos.top).toBe('11.06%');
   });
 
-  it('builds 14 arrows: 8 business and 6 knowledge', () => {
-    const arrows = buildRingArrows();
-    expect(arrows).toHaveLength(14);
-    expect(arrows.filter((a) => a.kind === 'business')).toHaveLength(8);
-    expect(arrows.filter((a) => a.kind === 'knowledge')).toHaveLength(6);
-    for (const arrow of arrows) {
-      expect(arrow.transform).toMatch(/^translate\(-?\d+(\.\d+)? -?\d+(\.\d+)?\) rotate\(-?\d+(\.\d+)?\)$/);
-    }
-  });
 });
 
 describe('Trinity selection semantics', () => {
   it('toggles a repeated stage click to cancel the selection', () => {
-    expect(toggleSelection('', 'track')).toBe('track');
-    expect(toggleSelection('track', 'track')).toBe('');
-    expect(toggleSelection('track', 'verify')).toBe('verify');
+    expect(toggleSelection('', 'conditions')).toBe('conditions');
+    expect(toggleSelection('conditions', 'conditions')).toBe('');
+    expect(toggleSelection('conditions', 'analysis')).toBe('analysis');
   });
 });
 
@@ -64,11 +54,11 @@ describe('Trinity scope and metrics', () => {
 
   it('keeps deduplicated totals and per-stage association counts separate', () => {
     const all = scopeMatters(data, 'macro', 'all', 'm1');
-    expect(all).toHaveLength(16);
-    expect(stageAssociationCount(all, 'track')).toBe(4);
-    expect(stageAssociationCount(all, 'verify')).toBe(3);
+    expect(all).toHaveLength(6);
+    expect(stageAssociationCount(all, 'question')).toBe(5);
+    expect(stageAssociationCount(all, 'synthesis')).toBe(4);
     const fleet777 = scopeMatters(data, 'macro', '777', 'm1');
-    expect(fleet777).toHaveLength(5);
+    expect(fleet777).toHaveLength(3);
     const focus = scopeMatters(data, 'focus', 'all', 'm1');
     expect(focus).toHaveLength(1);
     expect(focus[0].id).toBe('m1');
@@ -77,29 +67,29 @@ describe('Trinity scope and metrics', () => {
   it('never fabricates totals or stage status without data', () => {
     expect(situationMetrics(null, null)).toEqual({
       visibleMatters: null,
+      sourceCount: null,
       attention: null,
-      knowledgeWorks: null,
-      effectWatch: null,
+      synthesisPending: null,
     });
-    expect(stageLabel(null, 'macro', 'track', false)).toBe('阶段关联未取得');
-    expect(stageLabel([], 'focus', 'track', false)).toBe('无当前阶段记录');
-    expect(stageLabel([], 'focus', 'track', true)).toBe('当前有工作在此环节');
+    expect(stageLabel(null, 'macro', 'conditions', false)).toBe('评估关联未取得');
+    expect(stageLabel([], 'focus', 'conditions', false)).toBe('尚未取得相关工作');
+    expect(stageLabel([], 'focus', 'conditions', true)).toBe('已有相关工作');
   });
 
   it('computes metrics from the scoped records only', () => {
     const scope = scopeMatters(data, 'macro', 'all', 'm1');
     expect(situationMetrics(data, scope)).toEqual({
-      visibleMatters: 16,
-      attention: 6,
-      knowledgeWorks: 6,
-      effectWatch: 3,
+      visibleMatters: 6,
+      sourceCount: 9,
+      attention: 5,
+      synthesisPending: 3,
     });
   });
 
   it('lists recent events within the asOf cutoff in descending order', () => {
     const scope = scopeMatters(data, 'macro', 'all', 'm1');
     const events = recentEvents(data, scope, data.meta.asOf);
-    expect(events.map((e) => e.id)).toEqual(['e9', 'e8', 'e7']);
+    expect(events.map((e) => e.id)).toEqual(['e1']);
     for (const e of events) {
       expect(e.date).not.toBeNull();
       expect((e.date ?? '') <= data.meta.asOf).toBe(true);
@@ -126,10 +116,10 @@ describe('Trinity fixture contract', () => {
   it('keeps the isolated sample marked and structurally complete', () => {
     const data = TRINITY_SAMPLE_FIXTURE;
     expect(data.meta.origin).toBe('ISOLATED_EXAMPLE');
-    expect(data.stages).toHaveLength(8);
-    expect(data.knowledgeStages).toHaveLength(6);
+    expect(data.stages).toHaveLength(6);
+    expect(data.sourceCategories).toHaveLength(6);
     expect(data.matters.length).toBeGreaterThan(0);
-    for (const k of data.knowledgeStages) {
+    for (const k of data.sourceCategories) {
       expect(k.purpose.length).toBeGreaterThan(0);
     }
   });

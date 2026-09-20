@@ -1,0 +1,302 @@
+/**
+ * WikiPage 样式
+ * 匹配 WiseLink_Frontend_Suite_20260917 的两列布局
+ * 使用 design-tokens.css 的设计系统
+ */
+
+/* 两列布局：主文 + 侧边栏 */
+.wiki-layout {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 298px;
+  gap: 15px;
+  min-height: 0;
+  flex: 1;
+}
+
+/* 主文面板 */
+.article-panel {
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  box-shadow: var(--shadow-sm);
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+}
+
+/* 文章工具栏 */
+.article-tools {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 14px 22px;
+  border-bottom: 1px solid var(--line);
+}
+
+.article-tools .push {
+  margin-left: auto;
+}
+
+/* 工程文章样式 */
+.engineering-article {
+  max-width: 1000px;
+  margin: 0 auto;
+  padding: 36px 54px 50px;
+  overflow: auto;
+  scrollbar-width: thin;
+}
+
+.article-kicker {
+  font-size: 11px;
+  color: var(--ink-secondary);
+  margin-bottom: 11px;
+}
+
+.engineering-article > h1 {
+  font-size: 30px;
+  line-height: 1.5;
+  margin-bottom: 15px;
+  letter-spacing: -0.75px;
+  color: var(--ink);
+}
+
+.article-lead {
+  font-size: 18px !important;
+  color: var(--ink) !important;
+  line-height: 1.95 !important;
+  margin: 18px 0 !important;
+}
+
+.engineering-article > section {
+  margin-top: 32px;
+  scroll-margin: 20px;
+}
+
+.engineering-article > section > h2 {
+  font-size: 19px;
+  margin-bottom: 12px;
+  color: var(--ink);
+}
+
+.engineering-article > section > p {
+  font-size: 15px;
+  color: var(--ink-secondary);
+  line-height: 2.05;
+  margin: 10px 0;
+}
+
+.engineering-article > section > ul,
+.engineering-article > section > ol {
+  margin: 10px 0;
+  padding-left: 24px;
+}
+
+.engineering-article > section > li {
+  font-size: 15px;
+  color: var(--ink-secondary);
+  line-height: 2.05;
+  margin-bottom: 8px;
+}
+
+/* 文章页脚 */
+.article-footer {
+  margin-top: 28px;
+  padding-top: 22px;
+  border-top: 1px solid var(--line);
+  display: flex;
+  gap: 9px;
+  flex-wrap: wrap;
+}
+
+/* 来源链接 */
+.source-links {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 16px;
+  flex-wrap: wrap;
+}
+
+.source-links small {
+  font-size: 11px;
+  color: var(--ink-secondary);
+}
+
+.source-link {
+  padding: 5px 10px;
+  border: 1px solid var(--line);
+  background: var(--panel);
+  border-radius: 6px;
+  font-size: 11px;
+  color: var(--blue);
+  cursor: pointer;
+  transition: var(--transition-base);
+  text-decoration: none;
+}
+
+.source-link:hover {
+  background: var(--blue2);
+  border-color: var(--blue);
+}
+
+/* 侧边栏 */
+.wiki-aside {
+  display: flex;
+  flex-direction: column;
+  gap: 13px;
+  overflow: auto;
+  min-height: 0;
+  scrollbar-width: thin;
+}
+
+.wiki-aside > .panel {
+  flex-shrink: 0;
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  box-shadow: var(--shadow-sm);
+  overflow: hidden;
+}
+
+/* 面板头部 */
+.panel-head {
+  padding: 17px 18px 13px;
+  border-bottom: 1px solid var(--line);
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.panel-head h3 {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--ink);
+  margin: 0;
+}
+
+.panel-head .push {
+  margin-left: auto;
+}
+
+/* 大纲链接 */
+.outline-links {
+  padding: 9px 12px;
+  display: grid;
+}
+
+.outline-links button {
+  padding: 9px 8px;
+  text-align: left;
+  border: 0;
+  background: none;
+  color: var(--ink-secondary);
+  font-size: 12px;
+  cursor: pointer;
+  border-radius: 6px;
+  transition: var(--transition-fast);
+}
+
+.outline-links button:hover {
+  background: var(--blue2);
+  color: var(--blue);
+}
+
+/* 侧边栏正文 */
+.aside-body {
+  padding: 17px 19px;
+}
+
+.aside-body > p {
+  font-size: 13px;
+  line-height: 1.95;
+  margin: 8px 0 14px;
+  color: var(--ink-secondary);
+}
+
+.aside-body > h2 {
+  margin: 12px 0;
+  font-size: 14px;
+  color: var(--ink);
+}
+
+.aside-body > .btn {
+  margin: 6px 7px 2px 0;
+}
+
+/* 历史条目 */
+.history-entry {
+  margin: 0 0 14px;
+  padding-bottom: 14px;
+  border-bottom: 1px solid var(--line);
+}
+
+.history-entry:last-child {
+  margin: 0;
+  border: 0;
+  padding: 0;
+}
+
+.history-entry small {
+  font-size: 11px;
+  color: var(--ink-secondary);
+  display: block;
+  margin-bottom: 6px;
+}
+
+.history-entry p {
+  font-size: 12px;
+  line-height: 1.9;
+  color: var(--ink-secondary);
+  margin: 0;
+}
+
+/* 项目符号 */
+.bullet {
+  padding-left: 13px;
+  position: relative;
+}
+
+.bullet:before {
+  content: '•';
+  position: absolute;
+  left: 0;
+  color: var(--ink-secondary);
+}
+
+/* 响应式 */
+@media (max-width: 1450px) {
+  .wiki-layout {
+    grid-template-columns: minmax(0, 1fr) 290px;
+  }
+
+  .engineering-article {
+    padding: 29px 34px;
+  }
+}
+
+@media (max-width: 1250px) {
+  .wiki-layout {
+    grid-template-columns: minmax(0, 1fr) 255px;
+  }
+
+  .engineering-article {
+    padding: 26px;
+  }
+}
+
+@media (max-width: 900px) {
+  .wiki-layout {
+    grid-template-columns: 1fr;
+  }
+
+  .wiki-aside {
+    margin-top: 12px;
+    display: grid;
+    grid-template-columns: 1fr;
+    overflow: visible;
+  }
+
+  .engineering-article {
+    padding: 22px 19px;
+  }
+}

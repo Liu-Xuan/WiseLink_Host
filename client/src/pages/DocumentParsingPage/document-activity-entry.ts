@@ -6,7 +6,7 @@ import type {
 } from '@shared/document-activity.interface';
 import type { TranslationSourceAnchorV2 } from '@shared/canonical-translation-v2.interface';
 import {
-  activityReadingParams,
+  activityReaderParams,
   activityWindowPin,
   revisionSemanticPin,
   revisionTextPin,
@@ -224,7 +224,7 @@ export async function loadActivityEntry(options: {
   let replaceQuery: string | null = null;
   const discovered = entry.candidateRevision === null && entry.runRef === null;
   if (discovered && (candidate !== null || entry.parseRunId === null)) {
-    const query = activityReadingParams(baseParams);
+    const query = activityReaderParams(baseParams, documentVersionId);
     query.set('parseRunId', request.parseRunId);
     if (candidate) {
       query.set('candidateRevision', String(candidate.candidateRevision));
@@ -238,9 +238,10 @@ export async function loadActivityEntry(options: {
 /** Query for a statement/anchor selection change; known pins are never altered. */
 export function activitySelectionQuery(
   baseParams: URLSearchParams,
+  documentVersionId: string,
   selection: { statementId?: string | null; anchor?: string | null },
 ): string {
-  const query = activityReadingParams(baseParams);
+  const query = activityReaderParams(baseParams, documentVersionId);
   if (selection.statementId !== undefined) {
     query.delete('statementId');
     if (selection.statementId) query.set('statementId', selection.statementId);

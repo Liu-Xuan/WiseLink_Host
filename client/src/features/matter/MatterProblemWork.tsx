@@ -16,8 +16,7 @@ export default function MatterProblemWork({
   showReferenceNotices?: boolean;
 }) {
   const work = revision?.state.problemWork;
-  const reading = revision?.state.substantiveResult;
-  if (!work || !reading) return null;
+  if (!work || !revision) return null;
   return (
     <section
       className="wl-jobaid-workspace mt-6 space-y-4"
@@ -70,7 +69,7 @@ export default function MatterProblemWork({
             ) : null}
             <JobAidIssueArticle
               issue={issue}
-              reading={{ ...reading, evidence: work.evidence }}
+              evidence={work.evidence}
               onLocateDocument={onLocateDocument}
             />
           </div>

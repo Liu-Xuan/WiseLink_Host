@@ -50,6 +50,7 @@ export function useLibraryDocuments(
         familyId,
         search,
         sessionGeneration,
+        refreshRevision,
         items: [],
         nextCursor: null,
         loading: true,
@@ -96,6 +97,7 @@ export function useLibraryDocuments(
         if (!current()) return;
         setRead((prior: LibraryDocumentsRead | null) => ({
           ...(isCanonicalObjectNotFound(reason) ? empty : (prior ?? empty)),
+          refreshRevision,
           loading: false,
           loadingMore: false,
           error: libraryReadErrorPresentation(reason),
@@ -104,6 +106,7 @@ export function useLibraryDocuments(
     },
     [
       authenticationRequired,
+      refreshRevision,
       search,
       sessionGeneration,
       mode,
@@ -118,6 +121,7 @@ export function useLibraryDocuments(
   );
 
   useEffect(() => {
+    if (!enabled) setRead(null);
     void readPage();
     return () => controllerRef.current?.abort();
   }, [readPage, refreshRevision]);
@@ -126,6 +130,7 @@ export function useLibraryDocuments(
     enabled &&
     !authenticationRequired &&
     read?.sessionGeneration === sessionGeneration &&
+    read.refreshRevision === refreshRevision &&
     read.search === search &&
     read.mode === mode &&
     read.familyId === familyId &&

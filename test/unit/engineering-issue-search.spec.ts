@@ -263,6 +263,45 @@ describe('authorized engineering issue search and exact expansion', () => {
 
 
 describe('saved knowledge catalogue', () => {
+  it('keeps authorized Matter problem work readable before an overview exists', async () => {
+    const h = setup();
+    h.saved.content.overviewStatus = 'NOT_AVAILABLE';
+    const oldReading = (await h.service.read(h.identity, actor)).reading;
+    h.matters.readWorkingRevision.mockResolvedValue({
+      matterId: 'MAT-PROBLEM',
+      matterWorkRevisionId: 'MW-PROBLEM',
+      workingRevision: 1,
+      createdAt: '2026-09-17T00:00:00.000Z',
+      state: { problemWork: h.saved.content, substantiveResult: oldReading },
+    });
+    const identity = {
+      subjectKind: 'ENGINEERING_MATTER' as const,
+      subjectId: 'MAT-PROBLEM',
+      workRef: 'MW-PROBLEM',
+      issueKey: h.identity.issueKey,
+    };
+    h.db.execute.mockResolvedValue([{ ...identity, current: true }]);
+    const page = await h.service.catalogue('', 'CURRENT', undefined, actor);
+    expect(page.entries).toEqual([expect.objectContaining({
+      subjectId: identity.subjectId,
+      overviewStatus: 'NOT_AVAILABLE',
+      headline: h.saved.content.headline,
+    })]);
+    const work = await h.service.readKnowledge({
+      subjectKind: identity.subjectKind,
+      subjectId: identity.subjectId,
+      workRef: identity.workRef,
+    }, actor);
+    expect(work.reading).toBeNull();
+    expect(work.content.issues[0].body).toBe(h.saved.content.issues[0].body);
+    const issue = await h.service.read(identity, actor);
+    expect(issue.reading).toBeNull();
+    expect(issue.evidence).toEqual(h.saved.content.evidence);
+    expect(h.matters.readWorkingRevision).toHaveBeenCalledWith(
+      identity.subjectId, identity.workRef, actor,
+    );
+  });
+
   it('browses exact saved titles and briefs without a query and keeps overview coverage separate from currentness', async () => {
     const h = setup();
     h.saved.content.overviewStatus = 'STALE';

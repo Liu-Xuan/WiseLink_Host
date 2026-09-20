@@ -23,6 +23,28 @@ function empty(
 }
 
 describe('library documents and tasks stay separate across reads', () => {
+  it('keeps the previous rows visible during refresh, then replaces them with the new read', () => {
+    const first = mergeLibraryDocumentsRead(
+      null,
+      { ...empty('document'), refreshRevision: 0 },
+      libraryDocuments(['787']),
+      new Set(),
+    );
+    const refreshing = beginLibraryDocumentsRead(first, {
+      ...empty('document'), refreshRevision: 1,
+    });
+    expect(refreshing.loading).toBe(true);
+    expect(refreshing.refreshRevision).toBe(1);
+    expect(refreshing.items.map((item) => item.familyId)).toEqual(['787']);
+    const updated = mergeLibraryDocumentsRead(
+      refreshing,
+      { ...empty('document'), refreshRevision: 1 },
+      libraryDocuments(['737']),
+      new Set(),
+    );
+    expect(updated.items.map((item) => item.familyId)).toEqual(['737']);
+  });
+
   it('keeps full server counts separate from the loaded page and invalidates all facets on filter changes', () => {
     const first = mergeLibraryDocumentsRead(
       null,

@@ -8,9 +8,41 @@ import {
   type CSSProperties,
   type MouseEvent,
 } from 'react';
-import cytoscape, { type Core, type ElementDefinition, type EventObject, type StylesheetStyle } from 'cytoscape';
-import { AlertTriangle, ClipboardList, Clock, Database, FileText, FolderOpen, Lightbulb, Network, type LucideIcon } from 'lucide-react';
-import type { CytoscapeSuiteElement, SuiteGraphPresentation } from './suite-graph-model';
+import cytoscape, {
+  type Core,
+  type ElementDefinition,
+  type EventObject,
+  type NodeSingular,
+  type StylesheetStyle,
+} from 'cytoscape';
+import {
+  Activity,
+  AlertTriangle,
+  BookOpen,
+  CircleDot,
+  ClipboardCheck,
+  ClipboardList,
+  Clock,
+  Database,
+  FileText,
+  Lightbulb,
+  MessageSquareText,
+  Network,
+  Plane,
+  SlidersHorizontal,
+  type LucideIcon,
+} from 'lucide-react';
+import type {
+  CytoscapeSuiteElement,
+  CytoscapeSuiteNode,
+  SuiteGraphPresentation,
+} from './suite-graph-model';
+import {
+  suiteGraphAppearance,
+  suiteGraphIconKind,
+  type SuiteGraphIconKind,
+  type SuiteGraphTone,
+} from './suite-graph-appearance';
 import './suite-graph-canvas.css';
 import { Image } from '@client/src/components/ui/image';
 
@@ -43,37 +75,31 @@ interface OverlayNode {
   position: { x: number; y: number };
 }
 
-const GROUP_TONES: Record<string, string> = {
-  fulfilled: '#25a06c',
-  inputs: '#2a9d93',
-  questions: '#d65c68',
-  evidence: '#8b6fc9',
-  claims: '#4f83d6',
-  MEMBER: '#2a9d93',
-  RELATED: '#64748b',
-  EXPECTED: '#b45309',
-  catalog: '#64748b',
-  statements: '#b45309',
-  matters: '#4f83d6',
-  documents: '#25a06c',
-  unclassified: '#8a8a8a',
+interface DragState {
+  id: string;
+  pointerId: number;
+  moved: boolean;
+  startPointer: { x: number; y: number };
+  startPosition: { x: number; y: number };
+  groupKey: string;
+}
+
+const ICONS: Record<SuiteGraphIconKind, LucideIcon> = {
+  activity: Activity,
+  book: BookOpen,
+  claim: Lightbulb,
+  component: CircleDot,
+  configuration: SlidersHorizontal,
+  document: FileText,
+  input: Database,
+  matter: Network,
+  plane: Plane,
+  question: AlertTriangle,
+  record: ClipboardList,
+  statement: Clock,
+  topic: MessageSquareText,
+  work: ClipboardCheck,
 };
-const GROUP_ICONS: Record<string, LucideIcon> = {
-  fulfilled: FileText,
-  inputs: Database,
-  questions: AlertTriangle,
-  evidence: ClipboardList,
-  claims: Lightbulb,
-  MEMBER: FileText,
-  RELATED: FolderOpen,
-  EXPECTED: FolderOpen,
-  catalog: FolderOpen,
-  statements: Clock,
-  matters: Network,
-  documents: FileText,
-  unclassified: FolderOpen,
-};
-const FALLBACK_TONE = '#4f83d6';
 const NARROW_ENTRY_MAX_WIDTH = 760;
 const NARROW_ENTRY_ZOOM = 0.85;
 const NARROW_FOCUS_PADDING = 28;
@@ -89,8 +115,14 @@ function isNarrowLayout(): boolean {
   return window.matchMedia(NARROW_LAYOUT_QUERY).matches;
 }
 
-function toneFor(groupKey: string): string {
-  return GROUP_TONES[groupKey] ?? FALLBACK_TONE;
+function toneFor(groupKey: string, declaredTone: string, toneName: string): string {
+  const normalizedColor = declaredTone.trim();
+  const normalizedTone = toneName.trim();
+  if (normalizedColor && !(['blue', 'green', 'amber', 'rose', 'teal', 'purple', 'neutral'] as string[]).includes(normalizedColor)) {
+    return normalizedColor;
+  }
+  const appearance = suiteGraphAppearance(groupKey, normalizedTone || normalizedColor);
+  return `var(--suite-graph-tone-${appearance.tone})`;
 }
 
 function text(value: unknown, fallback = ''): string {
@@ -99,20 +131,38 @@ function text(value: unknown, fallback = ''): string {
 
 interface ThemeTokens {
   ink: string;
-  muted: string;
   faint: string;
   surface: string;
+  edgeLabel: string;
+  tones: Record<SuiteGraphTone, string>;
 }
 
-function readThemeTokens(): ThemeTokens {
-  const computed = typeof getComputedStyle === 'function' ? getComputedStyle(document.documentElement) : null;
+function readThemeTokens(scope?: HTMLElement): ThemeTokens {
+  const computed = typeof getComputedStyle === 'function'
+    ? getComputedStyle(scope ?? document.documentElement)
+    : null;
   const read = (name: string, fallback: string): string => computed?.getPropertyValue(name).trim() || fallback;
   return {
     ink: read('--wl-ink', '#242424'),
-    muted: read('--wl-muted', '#666666'),
     faint: read('--wl-faint', '#8a8a8a'),
-    surface: read('--wl-surface-solid', '#ffffff'),
+    surface: read('--wl-sheet', '#ffffff'),
+    edgeLabel: read('--suite-graph-edge-label', '#7b8fa3'),
+    tones: {
+      blue: read('--suite-graph-tone-blue', '#3b7cd5'),
+      green: read('--suite-graph-tone-green', '#249d89'),
+      amber: read('--suite-graph-tone-amber', '#bb872f'),
+      rose: read('--suite-graph-tone-rose', '#c9747b'),
+      teal: read('--suite-graph-tone-teal', '#209ca9'),
+      purple: read('--suite-graph-tone-purple', '#9578ce'),
+      neutral: read('--suite-graph-tone-neutral', '#7d8ba1'),
+    },
   };
+}
+
+function motionDisabled(): boolean {
+  return document.documentElement.getAttribute('data-wl-motion') === 'off'
+    || document.documentElement.getAttribute('data-wl-visual-mode') === 'compatible'
+    || (typeof window.matchMedia === 'function' && window.matchMedia('(prefers-reduced-motion: reduce)').matches);
 }
 
 function buildStyleSheet(tokens: ThemeTokens): StylesheetStyle[] {
@@ -135,36 +185,125 @@ function buildStyleSheet(tokens: ThemeTokens): StylesheetStyle[] {
       style: {
         width: 1.15,
         'curve-style': 'unbundled-bezier',
-        'control-point-step-size': 70,
+        'control-point-distances': 'data(curvature)',
+        'control-point-weights': 0.5,
         'line-color': tokens.faint,
         'target-arrow-color': tokens.faint,
         'target-arrow-shape': 'triangle',
         'arrow-scale': 0.55,
         opacity: 0.3,
         label: 'data(label)',
-        color: tokens.muted,
-        'font-size': '9.5px',
+        color: tokens.edgeLabel,
+        'font-size': '12px',
         'text-background-color': tokens.surface,
-        'text-background-opacity': 0.8,
+        'text-background-opacity': 0.88,
         'text-background-padding': '3px',
         'text-rotation': 'none',
+        'text-margin-y': -5,
         'overlay-opacity': 0,
       },
     },
-    { selector: '.bundle-edge', style: { opacity: 0.62 } },
-    { selector: '.business-edge', style: { width: 1.7, opacity: 0.68 } },
+    { selector: '.bundle-edge', style: { width: 1.3, opacity: 0.68 } },
+    { selector: '.business-edge', style: { width: 1, opacity: 0.28, 'font-size': '10px' } },
   ];
-  Object.entries(GROUP_TONES).forEach(([key, tone]) => {
+  Object.entries(tokens.tones).forEach(([toneName, tone]) => {
     sheets.push({
-      selector: `edge[groupKey = "${key}"]`,
+      selector: `edge[tone = "${toneName}"]`,
       style: { 'line-color': tone, 'target-arrow-color': tone, opacity: 0.68 },
     });
   });
+  sheets.push({
+    selector: 'edge[color]',
+    style: { 'line-color': 'data(color)', 'target-arrow-color': 'data(color)', opacity: 0.68 },
+  });
+  sheets.push(
+    { selector: '.suite-connected-edge', style: { width: 2.4, opacity: 0.92 } },
+    { selector: '.suite-dimmed-edge', style: { opacity: 0.14 } },
+    { selector: '.individual-edge', style: { display: 'none' } },
+    { selector: '.individual-edge.suite-connected-edge', style: { display: 'element', opacity: 0.92 } },
+    { selector: '.individual-edge.suite-dimmed-edge', style: { display: 'none', opacity: 0 } },
+  );
   return sheets;
 }
 
-function asElements(elements: CytoscapeSuiteElement[]): ElementDefinition[] {
-  return elements as ElementDefinition[];
+function cloneElements(elements: CytoscapeSuiteElement[]): ElementDefinition[] {
+  return elements.map((element): ElementDefinition => element.group === 'nodes'
+    ? {
+      ...element,
+      data: { ...element.data },
+      position: { ...element.position },
+    }
+    : { ...element, data: { ...element.data } });
+}
+
+function finiteDimension(value: unknown): number {
+  const dimension = Number(value);
+  return Number.isFinite(dimension) ? dimension : 0;
+}
+
+function isSuiteNode(element: CytoscapeSuiteElement): element is CytoscapeSuiteNode {
+  return element.group === 'nodes';
+}
+
+function updateGroupHalo(
+  cy: Core,
+  groupKey: string,
+  baseline: CytoscapeSuiteElement[],
+): void {
+  if (!groupKey) return;
+  const haloDefinition = baseline.find(
+    (element) => element.group === 'nodes'
+      && element.data.viewKind === 'halo'
+      && element.data.groupKey === groupKey,
+  );
+  if (!haloDefinition || haloDefinition.group !== 'nodes') return;
+  const baselineItems = baseline.filter(isSuiteNode).filter(
+    (element) => element.data.viewKind === 'item' && element.data.groupKey === groupKey,
+  );
+  if (baselineItems.length === 0) return;
+  const boundsFor = (
+    items: Array<{ position: { x: number; y: number }; data: Record<string, unknown> }>,
+  ) => items.reduce(
+    (bounds, item) => {
+      const halfWidth = finiteDimension(item.data.w) / 2;
+      const halfHeight = finiteDimension(item.data.h) / 2;
+      return {
+        left: Math.min(bounds.left, item.position.x - halfWidth),
+        right: Math.max(bounds.right, item.position.x + halfWidth),
+        top: Math.min(bounds.top, item.position.y - halfHeight),
+        bottom: Math.max(bounds.bottom, item.position.y + halfHeight),
+      };
+    },
+    { left: Number.POSITIVE_INFINITY, right: Number.NEGATIVE_INFINITY, top: Number.POSITIVE_INFINITY, bottom: Number.NEGATIVE_INFINITY },
+  );
+  const baselineBounds = boundsFor(baselineItems);
+  const haloHalfWidth = finiteDimension(haloDefinition.data.w) / 2;
+  const haloHalfHeight = finiteDimension(haloDefinition.data.h) / 2;
+  const insets = {
+    left: baselineBounds.left - (haloDefinition.position.x - haloHalfWidth),
+    right: haloDefinition.position.x + haloHalfWidth - baselineBounds.right,
+    top: baselineBounds.top - (haloDefinition.position.y - haloHalfHeight),
+    bottom: haloDefinition.position.y + haloHalfHeight - baselineBounds.bottom,
+  };
+  const liveItems: Array<{
+    position: { x: number; y: number };
+    data: Record<string, unknown>;
+  }> = [];
+  cy.nodes().forEach((node: NodeSingular) => {
+    if (node.data('viewKind') !== 'item' || node.data('groupKey') !== groupKey) return;
+    liveItems.push({ position: node.position(), data: node.data() as Record<string, unknown> });
+  });
+  if (liveItems.length === 0) return;
+  const liveBounds = boundsFor(liveItems);
+  const left = liveBounds.left - insets.left;
+  const right = liveBounds.right + insets.right;
+  const top = liveBounds.top - insets.top;
+  const bottom = liveBounds.bottom + insets.bottom;
+  const halo = cy.getElementById(String(haloDefinition.data.id));
+  if (!halo.length) return;
+  halo.data('w', right - left);
+  halo.data('h', bottom - top);
+  halo.position({ x: (left + right) / 2, y: (top + bottom) / 2 });
 }
 
 function OverlayCard({
@@ -185,7 +324,7 @@ function OverlayCard({
   const data = node.data;
   const viewKind = text(data.viewKind);
   const groupKey = text(data.groupKey);
-  const tone = toneFor(groupKey);
+  const tone = toneFor(groupKey, text(data.color), text(data.tone));
   const title = text(data.title, viewKind === 'more' ? '展开全部' : '未命名');
   const subtitle = text(data.subtitle);
   const style = {
@@ -218,7 +357,8 @@ function OverlayCard({
       </button>
     );
   }
-  const Icon = GROUP_ICONS[groupKey] ?? FileText;
+  const Icon = ICONS[suiteGraphIconKind(text(data.kind), groupKey)];
+  const picture = text(data.picture);
   return (
     <button
       type="button"
@@ -228,7 +368,13 @@ function OverlayCard({
       onClick={(event) => onSelect(event, data)}
       aria-label={subtitle ? `${title}，${subtitle}` : title}
     >
-      <span className="suite-graph-node-icon" aria-hidden="true"><Icon /></span>
+      {picture ? (
+        <span className="suite-graph-node-picture" aria-hidden="true">
+          <Image src={picture} alt="" />
+        </span>
+      ) : (
+        <span className="suite-graph-node-icon" aria-hidden="true"><Icon /></span>
+      )}
       <span className="suite-graph-node-copy"><strong>{title}</strong>{subtitle && <small>{subtitle}</small>}</span>
     </button>
   );
@@ -243,8 +389,9 @@ const SuiteGraphCanvas = forwardRef<SuiteGraphCanvasHandle, SuiteGraphCanvasProp
   const callbacksRef = useRef({ onSelect, onGroup, onOverflow, onInspectRelationships, onViewport });
   const [overlayNodes, setOverlayNodes] = useState<OverlayNode[]>([]);
   const [camera, setCamera] = useState({ zoom: 1, pan: { x: 0, y: 0 } });
-  const dragRef = useRef<{ id: string; moved: boolean } | null>(null);
-  const suppressClickRef = useRef(false);
+  const dragRef = useRef<DragState | null>(null);
+  const dragCleanupRef = useRef<((cancelled: boolean) => void) | null>(null);
+  const suppressClickRef = useRef<{ id: string; until: number } | null>(null);
   const internalCameraRef = useRef(false);
   const userCameraRef = useRef(false);
   const initialViewportAppliedRef = useRef(false);
@@ -272,6 +419,17 @@ const SuiteGraphCanvas = forwardRef<SuiteGraphCanvasHandle, SuiteGraphCanvasProp
       const cy = cyRef.current;
       if (!cy) return;
       userCameraRef.current = true;
+      elementsRef.current.forEach((element) => {
+        if (element.group !== 'nodes' || !element.position) return;
+        const node = cy.getElementById(String(element.data.id));
+        if (node.length && typeof node.position === 'function') {
+          node.position(element.position);
+          if (element.data.viewKind === 'halo') {
+            node.data('w', element.data.w);
+            node.data('h', element.data.h);
+          }
+        }
+      });
       cy.fit(undefined, 24);
     },
     setViewport: (viewport) => {
@@ -292,7 +450,9 @@ const SuiteGraphCanvas = forwardRef<SuiteGraphCanvasHandle, SuiteGraphCanvasProp
   const applyNarrowFocus = useCallback((cy: Core) => {
     const focusGroup = focusGroupKeyRef.current;
     if (focusGroup) {
-      const collection = cy.nodes().filter((node) => String(node.data('groupKey')) === focusGroup || String(node.data('viewKind')) === 'hub');
+      const collection = cy.nodes().filter((node) => (
+        node.data('viewKind') === 'item' && node.data('groupKey') === focusGroup
+      ) || node.data('viewKind') === 'hub');
       if (collection.length > 0) {
         cy.fit(collection, NARROW_FOCUS_PADDING);
         const fitted = cy.zoom();
@@ -303,14 +463,19 @@ const SuiteGraphCanvas = forwardRef<SuiteGraphCanvasHandle, SuiteGraphCanvasProp
         return;
       }
     }
+    const hub = elementsRef.current.find(
+      (element) => element.group === 'nodes' && element.data.viewKind === 'hub',
+    );
     const currentSelection = selectedIdRef.current;
-    const focus = (currentSelection
-      ? elementsRef.current.find((element) => element.group === 'nodes' && (element.data.businessId === currentSelection || element.data.id === currentSelection))
-      : undefined)
-      ?? elementsRef.current.find((element) => element.group === 'nodes' && element.data.viewKind === 'hub')
-      ?? elementsRef.current.find((element) => element.group === 'nodes');
+    const focus = currentSelection
+      ? elementsRef.current.find(
+        (element) => element.group === 'nodes'
+          && element.data.viewKind !== 'hub'
+          && (element.data.businessId === currentSelection || element.data.id === currentSelection),
+      )
+      : undefined;
     const node = focus ? cy.getElementById(String(focus.data.id)) : null;
-    if (node && node.length) {
+    if (node && node.length && currentSelection !== hub?.data.businessId) {
       cy.zoom(clampZoom(NARROW_ENTRY_ZOOM, cy));
       cy.center(node);
     } else {
@@ -336,7 +501,7 @@ const SuiteGraphCanvas = forwardRef<SuiteGraphCanvasHandle, SuiteGraphCanvasProp
       maxZoom: 2.4,
       wheelSensitivity: 0.19,
       boxSelectionEnabled: false,
-      style: buildStyleSheet(readThemeTokens()),
+      style: buildStyleSheet(readThemeTokens(mount)),
     });
     const sync = () => {
       const next = cy.nodes().map((node) => ({ id: node.id(), data: node.data() as Record<string, unknown>, position: node.renderedPosition() }));
@@ -350,13 +515,27 @@ const SuiteGraphCanvas = forwardRef<SuiteGraphCanvasHandle, SuiteGraphCanvasProp
       const ids = event.target.data('relationshipIds');
       if (Array.isArray(ids)) callbacksRef.current.onInspectRelationships?.(ids.filter((id): id is string => typeof id === 'string'));
     });
+    cy.on('tap', (event: EventObject) => {
+      if (event.target !== cy || dragRef.current?.moved) return;
+      const hub = elementsRef.current.find(
+        (element) => element.group === 'nodes' && element.data.viewKind === 'hub',
+      );
+      if (hub) callbacksRef.current.onSelect?.(hub.data, false);
+    });
     cyRef.current = cy;
     sync();
-    const applyTheme = () => cy.style(buildStyleSheet(readThemeTokens()));
+    const applyTheme = () => {
+      if (motionDisabled()) {
+        cy.stop();
+        const elements = cy.elements();
+        if (typeof elements.stop === 'function') elements.stop();
+      }
+      cy.style(buildStyleSheet(readThemeTokens(mount)));
+    };
     const themeObserver = typeof MutationObserver === 'function'
       ? new MutationObserver(applyTheme)
       : null;
-    themeObserver?.observe(document.documentElement, { attributes: true, attributeFilter: ['data-wl-theme', 'data-wl-visual-mode'] });
+    themeObserver?.observe(document.documentElement, { attributes: true, attributeFilter: ['data-wl-theme', 'data-wl-visual-mode', 'data-wl-motion'] });
     const handleResize = () => { cy.resize(); if (!userCameraRef.current) applyAutoCamera(cy); };
     const resizeObserver = new ResizeObserver(handleResize);
     resizeObserver.observe(mount);
@@ -365,6 +544,7 @@ const SuiteGraphCanvas = forwardRef<SuiteGraphCanvasHandle, SuiteGraphCanvasProp
     mount.addEventListener('wheel', markUserCamera, { passive: true });
     mount.addEventListener('pointerdown', markUserCamera, { passive: true });
     return () => {
+      dragCleanupRef.current?.(true);
       themeObserver?.disconnect();
       resizeObserver.disconnect();
       window.removeEventListener('resize', handleResize);
@@ -383,11 +563,16 @@ const SuiteGraphCanvas = forwardRef<SuiteGraphCanvasHandle, SuiteGraphCanvasProp
   useEffect(() => {
     const cy = cyRef.current;
     if (!cy) return;
+    dragCleanupRef.current?.(true);
     cy.elements().remove();
-    cy.add(asElements(presentation.elements));
+    cy.add(cloneElements(presentation.elements));
     elementsRef.current = presentation.elements;
     const positions = Object.fromEntries(presentation.elements.filter((element) => element.group === 'nodes').map((element) => [String(element.data.id), element.position]));
-    cy.layout({ name: 'preset', positions, fit: false, animate: !window.matchMedia('(prefers-reduced-motion: reduce)').matches, animationDuration: 320 }).run();
+    if (motionDisabled()) {
+      const elements = cy.elements();
+      if (typeof elements.stop === 'function') elements.stop();
+    }
+    cy.layout({ name: 'preset', positions, fit: false, animate: !motionDisabled(), animationDuration: 320 }).run();
     internalCameraRef.current = true;
     const restore = initialViewportRef.current;
     if (!initialViewportAppliedRef.current && restore && Number.isFinite(restore.zoom) && Number.isFinite(restore.pan.x) && Number.isFinite(restore.pan.y)) {
@@ -407,17 +592,53 @@ const SuiteGraphCanvas = forwardRef<SuiteGraphCanvasHandle, SuiteGraphCanvasProp
     const cy = cyRef.current;
     if (!cy) return;
     cy.nodes().removeClass('suite-selected');
+    if (typeof cy.edges === 'function') {
+      const edges = cy.edges();
+      edges.removeClass('suite-connected-edge');
+      edges.removeClass('suite-dimmed-edge');
+    }
     const target = presentation.elements.find((element) => element.group === 'nodes' && (element.data.businessId === selectedId || element.data.id === selectedId));
-    if (target) cy.getElementById(String(target.data.id)).addClass('suite-selected');
+    if (!target) return;
+    cy.getElementById(String(target.data.id)).addClass('suite-selected');
+    if (typeof cy.edges !== 'function') return;
+    const targetGroupKey = target.data.groupKey;
+    cy.edges().forEach((edge) => {
+      const edgeKind = edge.data('viewKind');
+      const connected = edgeKind === 'relationship'
+          ? edge.source().id() === String(target.data.id)
+            || edge.target().id() === String(target.data.id)
+          : edgeKind === 'bundle'
+          ? edge.source().id() === String(target.data.id)
+            || edge.target().id() === String(target.data.id)
+            || (typeof targetGroupKey === 'string'
+              && (edge.source().data('groupKey') === targetGroupKey
+                || edge.target().data('groupKey') === targetGroupKey))
+          : edge.source().id() === String(target.data.id)
+            || edge.target().id() === String(target.data.id);
+      edge.addClass(connected ? 'suite-connected-edge' : 'suite-dimmed-edge');
+    });
   }, [presentation, selectedId]);
 
   const handleOverlaySelect = (event: MouseEvent<HTMLButtonElement>, data: Record<string, unknown>) => {
     event.stopPropagation();
-    if (suppressClickRef.current) {
-      suppressClickRef.current = false;
+    const id = text(data.id);
+    const suppressed = suppressClickRef.current;
+    if (event.detail > 0 && suppressed?.id === id && Date.now() <= suppressed.until) {
+      suppressClickRef.current = null;
       return;
     }
+    suppressClickRef.current = null;
     callbacksRef.current.onSelect?.(data, false);
+    const cy = cyRef.current;
+    if (!cy || !id || data.viewKind === 'hub' || !isNarrowLayout() || userCameraRef.current) return;
+    const target = cy.getElementById(id);
+    if (!target.length) return;
+    internalCameraRef.current = true;
+    cy.zoom(clampZoom(NARROW_ENTRY_ZOOM, cy));
+    cy.center(target);
+    internalCameraRef.current = false;
+    userCameraRef.current = true;
+    callbacksRef.current.onViewport?.({ zoom: cy.zoom(), pan: cy.pan() });
   };
   const handleDragStart = (event: React.PointerEvent<HTMLButtonElement>, id: string) => {
     if (event.button !== 0) return;
@@ -426,26 +647,58 @@ const SuiteGraphCanvas = forwardRef<SuiteGraphCanvasHandle, SuiteGraphCanvasProp
     if (!cy || !mount) return;
     const target = cy.getElementById(id);
     if (!target.length) return;
-    const start = { x: event.clientX, y: event.clientY };
-    dragRef.current = { id, moved: false };
-    const move = (next: PointerEvent) => {
-      const drag = dragRef.current;
-      if (!drag) return;
-      if (Math.hypot(next.clientX - start.x, next.clientY - start.y) > 3) drag.moved = true;
-      if (!drag.moved) return;
-      suppressClickRef.current = true;
-      const rect = mount.getBoundingClientRect();
-      const pan = cy.pan();
-      const zoom = cy.zoom();
-      target.position({ x: (next.clientX - rect.left - pan.x) / zoom, y: (next.clientY - rect.top - pan.y) / zoom });
+    dragCleanupRef.current?.(true);
+    const groupKey = text(target.data('groupKey'));
+    const targetPosition = target.position();
+    const drag: DragState = {
+      id,
+      pointerId: event.pointerId,
+      moved: false,
+      startPointer: { x: event.clientX, y: event.clientY },
+      startPosition: { x: targetPosition.x, y: targetPosition.y },
+      groupKey,
     };
-    const end = () => {
+    dragRef.current = drag;
+    const move = (next: PointerEvent) => {
+      const current = dragRef.current;
+      if (!current || next.pointerId !== current.pointerId) return;
+      if (Math.hypot(next.clientX - current.startPointer.x, next.clientY - current.startPointer.y) > 3) current.moved = true;
+      if (!current.moved) return;
+      const zoom = cy.zoom();
+      target.position({
+        x: current.startPosition.x + (next.clientX - current.startPointer.x) / zoom,
+        y: current.startPosition.y + (next.clientY - current.startPointer.y) / zoom,
+      });
+      updateGroupHalo(cy, current.groupKey, elementsRef.current);
+    };
+    const finish = (cancelled: boolean) => {
+      const current = dragRef.current;
       window.removeEventListener('pointermove', move);
       window.removeEventListener('pointerup', end);
+      window.removeEventListener('pointercancel', cancel);
+      dragCleanupRef.current = null;
+      if (!current) return;
+      if (cancelled && current.moved) {
+        target.position(current.startPosition);
+        updateGroupHalo(cy, current.groupKey, elementsRef.current);
+        suppressClickRef.current = null;
+      } else if (current.moved) {
+        suppressClickRef.current = { id: current.id, until: Date.now() + 250 };
+      }
       dragRef.current = null;
     };
+    const end = (next: PointerEvent) => {
+      if (next.pointerId !== dragRef.current?.pointerId) return;
+      finish(false);
+    };
+    const cancel = (next: PointerEvent) => {
+      if (next.pointerId !== dragRef.current?.pointerId) return;
+      finish(true);
+    };
+    dragCleanupRef.current = finish;
     window.addEventListener('pointermove', move);
     window.addEventListener('pointerup', end);
+    window.addEventListener('pointercancel', cancel);
   };
   return (
     <div className={`suite-graph-canvas${className ? ` ${className}` : ''}`}>

@@ -2,7 +2,7 @@ import { useEffect } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import type { CanonicalLibraryIndexReadResponse } from '@shared/api.interface';
 import { Button } from '@client/src/components/ui/button';
-import RelationGraphPage from '@client/src/pages/RelationGraphPage/RelationGraphPage';
+import { RelationGraphPage } from '@client/src/pages/RelationGraphPage/RelationGraphPage';
 import type { RelationGraphNodeData } from '@client/src/pages/RelationGraphPage/relation-graph-data';
 import { matterDocumentRoute } from '@client/src/features/matter/matter-navigation';
 import {

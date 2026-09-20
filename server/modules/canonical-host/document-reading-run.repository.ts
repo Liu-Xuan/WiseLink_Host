@@ -97,6 +97,46 @@ export class DocumentReadingRunRepository {
     });
   }
 
+  /**
+   * 获取文档的最新完成解读
+   *
+   * @param scope - 文档范围
+   * @returns 最新完成的解读运行记录，如果没有则返回 null
+   */
+  async getLatestCompleted(scope: DocumentReadingScope): Promise<{
+    parseRunId: string;
+    semanticRevision: number;
+    readingRevision: number;
+    savedReading: DocumentReadingRevision | null;
+  } | null> {
+    const rows = await this.db.execute<{
+      parseRunId: string;
+      semanticRevision: number;
+      readingRevision: number;
+      result: DocumentReadingRevision;
+    }>(sql`SELECT
+      parse_run_id AS "parseRunId",
+      semantic_revision AS "semanticRevision",
+      reading_revision AS "readingRevision",
+      result_json AS result
+    FROM ${dmDocumentReadingRun}
+    WHERE tenant_id=${scope.tenantId}
+      AND document_version_id=${scope.documentVersionId}
+      AND status='SAVED'
+      AND result_json IS NOT NULL
+    ORDER BY _created_at DESC, reading_revision DESC
+    LIMIT 1`);
+
+    if (!rows[0]) return null;
+
+    return {
+      parseRunId: rows[0].parseRunId,
+      semanticRevision: rows[0].semanticRevision,
+      readingRevision: rows[0].readingRevision,
+      savedReading: rows[0].result,
+    };
+  }
+
   async expire(scope: DocumentReadingScope, runRef: string): Promise<void> {
     await this.db.execute(sql`UPDATE ${dmDocumentReadingRun} SET status='EXPIRED',error_code='DOCUMENT_READING_DEADLINE_EXCEEDED',
       lease_owner=NULL,lease_token=NULL,lease_expires_at=NULL,_updated_at=CURRENT_TIMESTAMP

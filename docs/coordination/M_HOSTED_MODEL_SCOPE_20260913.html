@@ -1,0 +1,234 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>妙搭托管 OpenClaw 模型容量与配置作用域（示意）</title>
+<style>
+  :root{
+    --ink:#1f2733; --sub:#5b6675; --line:#d7dde5; --bg:#f4f6f9; --card:#ffffff;
+    --navy:#27406b; --navy-soft:#eaf0f8;
+    --ok:#1f8a4d; --ok-bg:#e7f5ec;
+    --warn:#c2790b; --warn-bg:#fbf2dd;
+    --bad:#c0392b; --bad-bg:#fbeae8;
+    --grey:#6b7480; --grey-bg:#eceff3;
+    --mono:"SFMono-Regular",Consolas,"Liberation Mono",Menlo,monospace;
+  }
+  *{box-sizing:border-box;}
+  body{margin:0;background:var(--bg);color:var(--ink);
+    font-family:-apple-system,BlinkMacSystemFont,"PingFang SC","Hiragino Sans GB","Microsoft YaHei","Noto Sans CJK SC",sans-serif;
+    line-height:1.55;font-size:14px;}
+  .wrap{max-width:1180px;margin:0 auto;padding:28px 30px 40px;}
+  header h1{font-size:21px;margin:0 0 6px;letter-spacing:.2px;}
+  .scope{font-size:12.5px;color:var(--sub);}
+  .scope code{font-family:var(--mono);background:#e9edf2;padding:1px 6px;border-radius:4px;font-size:12px;}
+  .hint{display:inline-block;margin-top:8px;font-size:12px;color:var(--grey);background:var(--grey-bg);
+    border:1px dashed var(--line);border-radius:6px;padding:3px 9px;}
+  h2{font-size:15.5px;margin:26px 0 12px;padding-left:10px;border-left:4px solid var(--navy);}
+  .grid3{display:grid;grid-template-columns:repeat(3,1fr);gap:14px;}
+  .card{background:var(--card);border:1px solid var(--line);border-radius:10px;padding:14px 15px;}
+  .card .t{font-weight:700;font-size:14px;margin-bottom:2px;}
+  .card .id{font-family:var(--mono);font-size:11.5px;color:var(--sub);margin-bottom:9px;word-break:break-all;}
+  .card ul{margin:6px 0 0;padding-left:18px;}
+  .card li{margin:4px 0;}
+  .tag{display:inline-block;font-size:11px;font-weight:700;border-radius:4px;padding:1px 7px;margin-right:5px;}
+  .tag.no{background:var(--bad-bg);color:var(--bad);}
+  .tag.yes{background:var(--ok-bg);color:var(--ok);}
+  .tag.ctrl{background:var(--navy-soft);color:var(--navy);}
+  code{font-family:var(--mono);font-size:12px;background:#eef1f5;padding:1px 5px;border-radius:4px;}
+
+  /* clamp chain */
+  .chain{display:grid;grid-template-columns:1fr 40px 1fr 40px 1fr;align-items:stretch;gap:0;}
+  .node{background:var(--card);border:1px solid var(--line);border-radius:10px;padding:12px 13px;position:relative;}
+  .node .h{font-weight:700;font-size:13.5px;margin-bottom:6px;}
+  .row{display:flex;justify-content:space-between;gap:8px;font-size:12.5px;padding:3px 0;border-bottom:1px dotted #e6eaf0;}
+  .row:last-child{border-bottom:0;}
+  .row .v{font-family:var(--mono);font-weight:700;white-space:nowrap;}
+  .v.bad{color:var(--bad);} .v.ok{color:var(--ok);} .v.unk{color:var(--warn);}
+  .arrow{display:flex;align-items:center;justify-content:center;color:var(--navy);font-size:22px;font-weight:700;}
+  .minline{margin-top:11px;text-align:center;font-size:13px;background:var(--navy-soft);
+    border:1px solid #cdd9ea;border-radius:8px;padding:8px 10px;}
+  .minline code{background:#dbe5f2;}
+  .cap-note{font-size:11.5px;color:var(--sub);margin-top:6px;text-align:center;}
+
+  /* scope columns */
+  .scopes{display:grid;grid-template-columns:repeat(3,1fr);gap:14px;}
+  .scope-card{background:var(--card);border:1px solid var(--line);border-radius:10px;padding:13px 14px;}
+  .scope-card.key{border:2px solid var(--ok);box-shadow:0 0 0 3px var(--ok-bg);}
+  .scope-card .head{display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:2px;}
+  .scope-card .head .t{margin:0;}
+  .scope-card .flag{font-size:11px;font-weight:700;padding:2px 8px;border-radius:20px;white-space:nowrap;}
+  .flag.ephemeral{background:var(--grey-bg);color:var(--grey);}
+  .flag.correct{background:var(--ok-bg);color:var(--ok);}
+  .flag.isolated{background:var(--warn-bg);color:var(--warn);}
+  .scope-card .cmd{font-family:var(--mono);font-size:12px;background:#eef1f5;border-radius:5px;padding:2px 7px;display:inline-block;margin:6px 0;}
+  .scope-card p{margin:6px 0 0;font-size:12.5px;}
+  .cross{margin-top:10px;background:var(--bad-bg);border:1px solid #eccac4;border-radius:8px;
+    font-size:12.5px;padding:8px 11px;color:#8e2f24;}
+
+  /* reliability axis */
+  .axiswrap{background:var(--card);border:1px solid var(--line);border-radius:10px;padding:16px 18px 14px;}
+  .axis{position:relative;height:14px;border-radius:8px;margin:26px 6px 8px;
+    background:linear-gradient(90deg,var(--ok-bg) 0%,var(--ok-bg) 38.2%,var(--warn-bg) 38.2%,var(--warn-bg) 89.3%,var(--grey-bg) 89.3%,var(--grey-bg) 100%);}
+  .tick{position:absolute;top:-22px;transform:translateX(-50%);font-size:11.5px;font-weight:700;}
+  .tick small{display:block;font-weight:400;color:var(--sub);font-size:10.5px;white-space:nowrap;}
+  .tick::after{content:"";position:absolute;left:50%;top:19px;width:1px;height:9px;background:var(--sub);}
+  .seg-legend{display:flex;gap:18px;flex-wrap:wrap;font-size:12px;margin-top:14px;}
+  .seg-legend span{display:inline-flex;align-items:center;gap:6px;}
+  .dot{width:11px;height:11px;border-radius:3px;display:inline-block;}
+
+  /* actions */
+  .acts{display:grid;grid-template-columns:repeat(3,1fr);gap:14px;}
+  .act{background:var(--card);border:1px solid var(--line);border-top:3px solid var(--navy);border-radius:10px;padding:13px 14px;}
+  .act .goal{font-weight:700;font-size:13.5px;margin-bottom:7px;}
+  .act ol{margin:0;padding-left:18px;font-size:12.5px;}
+  .act li{margin:5px 0;}
+  .who{font-size:11px;font-weight:700;border-radius:4px;padding:1px 6px;margin-left:4px;}
+  .who.skill{background:var(--navy-soft);color:var(--navy);}
+  .who.platform{background:var(--warn-bg);color:var(--warn);}
+  .who.test{background:var(--ok-bg);color:var(--ok);}
+  footer{margin-top:26px;font-size:11.5px;color:var(--grey);border-top:1px solid var(--line);padding-top:10px;}
+  @media (max-width:860px){
+    .grid3,.scopes,.acts{grid-template-columns:1fr;}
+    .chain{grid-template-columns:1fr;}
+    .arrow{transform:rotate(90deg);height:26px;}
+  }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <h1>妙搭托管 OpenClaw：模型容量瓶颈与配置持久化作用域（示意）</h1>
+    <div class="scope">实例 <code>app_17c3zn24kv2</code> ｜ profile <code>wiselink-engineering</code> ｜ 模型 <code>miaoda/minimax-m3</code> ｜ 业务 Host 为另一应用 <code>app_17bzc551rsg</code></div>
+    <span class="hint">示意图：结构与数值来自仓库代码 / Skill 文档 / 本轮容量实测，配套说明见 M_HOSTED_MODEL_SCOPE_20260913.md；非官方架构图</span>
+  </header>
+
+  <h2>一、三层控制权：容量参数到底在哪一层</h2>
+  <div class="grid3">
+    <div class="card">
+      <div class="t">业务 Host</div>
+      <div class="id">app_17bzc551rsg · model-settings</div>
+      <span class="tag no">不含容量</span>
+      <ul>
+        <li>只持久化“选哪个模型”：<code>modelRef</code> + revision（CAS、分租户）</li>
+        <li>模型目录仅路由标识白名单，无 contextWindow / maxTokens / reasoning</li>
+        <li>切换默认模型须模型管理角色经页面，禁 CLI 绕过</li>
+      </ul>
+    </div>
+    <div class="card">
+      <div class="t">工程 Skill（c96，跑在托管内）</div>
+      <div class="id">wiselink-research-and-synthesize</div>
+      <span class="tag yes">请求侧额度 · 我们可控</span>
+      <ul>
+        <li>每请求带 <code>max_completion_tokens</code></li>
+        <li>Review / Initial：<b>524288</b></li>
+        <li>JobAid 动态问题：策略写死 <b style="color:var(--bad)">16000</b>（不自动扩）</li>
+        <li>改它走 Skill-only 覆盖安装，无需 Host 发布</li>
+      </ul>
+    </div>
+    <div class="card">
+      <div class="t">托管 OpenClaw（真正夹限处）</div>
+      <div class="id">app_17c3zn24kv2 · wiselink-engineering</div>
+      <span class="tag ctrl">模型条目 clamp</span>
+      <ul>
+        <li>Gateway 按该 agent 模型条目 <code>maxTokens</code> 夹限请求</li>
+        <li>当前 agent 条目：maxTokens <b style="color:var(--bad)">16000</b> / contextWindow 256000 / reasoning false</li>
+        <li>租户无容器 shell，须经托管配置面（owner/admin）</li>
+      </ul>
+    </div>
+  </div>
+
+  <h2>二、输出上限是“取最小值”：16000 有两层，必须同时放开</h2>
+  <div class="chain">
+    <div class="node">
+      <div class="h">① Skill 请求额度</div>
+      <div class="row"><span>Review / Initial</span><span class="v ok">524288</span></div>
+      <div class="row"><span>JobAid（写死）</span><span class="v bad">16000</span></div>
+    </div>
+    <div class="arrow">→</div>
+    <div class="node">
+      <div class="h">② agent 模型条目 maxTokens</div>
+      <div class="row"><span>wiselink-engineering</span><span class="v bad">16000</span></div>
+      <div class="row"><span>global / 网关目录</span><span class="v">1000000（不作用于此 agent）</span></div>
+    </div>
+    <div class="arrow">→</div>
+    <div class="node">
+      <div class="h">③ 平台 / 上游 M3 真实硬顶</div>
+      <div class="row"><span>本平台实际值</span><span class="v unk">未知 · 待阶梯实测</span></div>
+      <div class="row"><span>对照（非承诺）</span><span class="v">131072 / 524288</span></div>
+    </div>
+  </div>
+  <div class="minline">单次实际输出 = min( ① , ② , ③ )　｜　当前 ①JobAid 与 ② 同时命中 <code>16000</code>，所以必停 16000；只改一层会被另一层夹住</div>
+  <div class="cap-note">长输出时 reasoning / thinking token 也计入 completion，会挤占正文与函数调用额度 —— 对应“只产出 thinking、无完整函数载荷、HTTP400”</div>
+
+  <h2>三、持久化作用域：为什么“改了全局又回弹”</h2>
+  <div class="scopes">
+    <div class="scope-card">
+      <div class="head"><div class="t">session 会话</div><span class="flag ephemeral">临时</span></div>
+      <span class="cmd">/model &lt;m&gt; -s</span>
+      <p>只影响当前会话 pin；新会话 / reset 即失效。</p>
+    </div>
+    <div class="scope-card key">
+      <div class="head"><div class="t">agent 代理（wiselink-engineering）</div><span class="flag correct">必须改这层</span></div>
+      <span class="cmd">/model &lt;m&gt; -a　·　models set --agent</span>
+      <p>写入 <code>agents.entries.&lt;agent&gt;</code> 与该 agent 的 <code>models.json</code>，<b>持久且工程请求真正读它</b>；contextWindow / maxTokens / reasoning 在此一次配套改对。</p>
+    </div>
+    <div class="scope-card">
+      <div class="head"><div class="t">global 全局</div><span class="flag isolated">不覆盖 agent</span></div>
+      <span class="cmd">/model &lt;m&gt; -g</span>
+      <p>写共享 <code>agents.defaults.model</code>。</p>
+      <p>官方明确<b>不覆盖其他 agent 的显式条目</b>；之前改的“主配置 / 网关目录”在这层，故 agent 仍旧值。</p>
+    </div>
+  </div>
+  <div class="cross">回弹机制（非环境重置）：global / 网关内存的改动按设计不会覆盖 wiselink-engineering 的显式 agent 条目；改错落 → 重启 / 新会话被 agent 持久条目弹回。DLI 因写在可被持久 merge 下发处而保留。改后须读回 <b>该 agent</b> 条目，并在重启 / 新会话后再次读回确认。</div>
+
+  <h2>四、百万上下文：协议可接收 ≠ 内容可靠利用（本轮实测）</h2>
+  <div class="axiswrap">
+    <div class="axis">
+      <div class="tick" style="left:0%">0<small>起点</small></div>
+      <div class="tick" style="left:38.2%">38.2 万<small>取值 6/6 · 判断 6/6 全对</small></div>
+      <div class="tick" style="left:89.3%">89.3 万<small>取值 2/6 · 判断 4/6，中段丢</small></div>
+      <div class="tick" style="left:100%">100 万<small>标称窗口 / 协议接收</small></div>
+    </div>
+    <div class="seg-legend">
+      <span><i class="dot" style="background:var(--ok-bg);border:1px solid var(--ok)"></i>已验证可靠区（业务单次工作点建议 ≤ 约 30 万留余量）</span>
+      <span><i class="dot" style="background:var(--warn-bg);border:1px solid var(--warn)"></i>可接收但 needle-in-haystack 衰减</span>
+      <span><i class="dot" style="background:var(--grey-bg);border:1px solid var(--grey)"></i>标称 contextWindow=1,000,000（输入未被旧 256000 拒）</span>
+    </div>
+    <div class="cap-note" style="text-align:left;margin-top:10px;">把 agent 条目 contextWindow 对齐 1000000 只消除“提前拒绝 / 计量不一致”，不提升可靠回忆；更大原文走连续会话 + 动态问题组 + 分批 SAVE。恒等式：contextWindow = 输入 + 输出 + thinking。</div>
+  </div>
+
+  <h2>五、三目标行动落点</h2>
+  <div class="acts">
+    <div class="act">
+      <div class="goal">A · 突破 16000 输出</div>
+      <ol>
+        <li>调大 JobAid 策略 <code>requestMaxCompletionTokens</code> 与单测<span class="who skill">Skill 可控</span></li>
+        <li>agent 作用域把 M3 条目 maxTokens 调大并持久、重启读回<span class="who platform">托管面</span></li>
+        <li>16001→32k→64k→131k 阶梯实测，看 finish_reason / 真实 completion<span class="who test">实测</span></li>
+      </ol>
+    </div>
+    <div class="act">
+      <div class="goal">B · 对齐百万上下文</div>
+      <ol>
+        <li>agent 作用域 contextWindow=1000000，与 maxTokens/reasoning 配套<span class="who platform">托管面</span></li>
+        <li>标称放开到百万，业务可靠工作点留在已验证区间<span class="who test">实测</span></li>
+        <li>多点位多次重复画“正确率–长度”曲线再决定上调</li>
+      </ol>
+    </div>
+    <div class="act">
+      <div class="goal">C · 配置持久化</div>
+      <ol>
+        <li>唯一落点：wiselink-engineering 的 <b>agent 作用域</b>持久条目<span class="who platform">托管面</span></li>
+        <li>留存 global / 网关 / agent / 真实请求 output-shape 四层脱敏快照与哈希</li>
+        <li>保存前后、重启 / 新会话前后各比对一次；不主动重置环境</li>
+      </ol>
+    </div>
+  </div>
+
+  <footer>
+    待托管 UI / 平台确认（代码库无法自证）：① 是否开放 agent 作用域模型条目编辑并持久，还是仅 global、内置 miaoda/* 只读；② 平台对 M3 的真实单次输出硬顶与真实窗口；③ 此前“界面 / 网关目录更新”选的是哪个作用域。任何保存 / 修改属外部写入，须经用户确认后执行。
+  </footer>
+</div>
+</body>
+</html>

@@ -142,7 +142,9 @@ function KnowledgeCatalogue() {
   function openDocument(route: string, documentVersionId: string) {
     if (kind === 'works' && (!read || keyOf(read.entry) !== selection)) return;
     clearPendingScroll();
-    const [path, raw] = route.split('?');
+    const queryStart = route.indexOf('?');
+    const path = queryStart === -1 ? route : route.slice(0, queryStart);
+    const raw = queryStart === -1 ? '' : route.slice(queryStart + 1);
     const next = new URLSearchParams(raw);
     const state = knowledgeReadingParams(currentParams.current);
     state.set('listY', String(Math.round(listRef.current?.scrollTop ?? 0)));
@@ -186,8 +188,8 @@ function KnowledgeCatalogue() {
           <small>{read.entry.subjectKind === 'ENGINEERING_MATTER' ? '工程事项' : '文档工作'} · {displayDate(read.entry.createdAt)}</small>
           {!read.entry.current && <div className="knowledge-notice">当前显示当时保存的解释；查看当前事项是独立导航，不替换本条历史内容。</div>}
           {read.entry.overviewStatus !== 'CURRENT' && <div className="knowledge-notice">{read.entry.overviewStatus === 'STALE' ? '问题已更新，综合尚未覆盖。本页保留各部分的确切保存范围。' : '当前已保存问题解释，综合认识尚未形成。'}</div>}
-          {read.content.understanding && <section className="knowledge-prose"><h2>当前保存的认识</h2><EngineeringIssueBody body={read.content.understanding} evidence={read.content.evidence} onLocateDocument={locate} /></section>}
-          {read.content.issues.map(issue => <section className="knowledge-prose" key={issue.issueKey}><JobAidIssueArticle issue={issue} reading={read.reading} onLocateDocument={locate} /></section>)}
+          {read.content.understanding && <section className="knowledge-prose"><h2>本工作的问题理解</h2><EngineeringIssueBody body={read.content.understanding} evidence={read.content.evidence} onLocateDocument={locate} /></section>}
+          {read.content.issues.map(issue => <section className="knowledge-prose" key={issue.issueKey}><JobAidIssueArticle issue={issue} evidence={read.content.evidence} onLocateDocument={locate} /></section>)}
           {read.entry.subjectKind === 'ENGINEERING_MATTER' && <>
             <OverviewSourceWork matterId={read.entry.subjectId} source={read.overviewSourceWork} overviewStatus={read.entry.overviewStatus} />
             <OverviewCorrectionNotices matterId={read.entry.subjectId} notices={read.overviewCorrectionNotices} />

@@ -41,6 +41,7 @@ import { matterReadingReturnParams } from './reading-return';
 import useEngineeringMatter from './useEngineeringMatter';
 import useReadingLocation from './useReadingLocation';
 import { selectMatterWorkRevision } from './matter-work-selection';
+import { readableMatterOverview } from './matter-overview-reading';
 
 import '@client/src/features/workitem/workitem-overview.css';
 import './matter-wiki.css';
@@ -109,7 +110,8 @@ const MatterWorkspace: FC<MatterWorkspaceProps> = ({
       requestedRevision,
     );
   const result: AssessmentReadingResult | null =
-    displayedRevision?.state.substantiveResult ?? null;
+    readableMatterOverview(displayedRevision);
+  const overviewStatus = displayedRevision?.state.problemWork?.overviewStatus;
   const discussionClaim: AssessmentReadingClaim | undefined =
     result?.content.claims.find(
       (claim: AssessmentReadingClaim) => claim.claimId === discussionClaimId,
@@ -137,6 +139,14 @@ const MatterWorkspace: FC<MatterWorkspaceProps> = ({
     },
     [result],
   );
+
+  useEffect(() => {
+    if (displayedRevision && overviewStatus === 'NOT_AVAILABLE') {
+      setClaimSelection(null);
+      setFocusClaimId(null);
+      setDiscussionClaimId(null);
+    }
+  }, [displayedRevision, overviewStatus]);
 
   useEffect(() => {
     publishCurrentObject(
@@ -356,6 +366,16 @@ const MatterWorkspace: FC<MatterWorkspaceProps> = ({
       <RetainedWorkbenchPanel active={panel === 'brief'}>
         <div className="matter-wiki-layout">
           <article className="wl-overall-hero wl-glass-content matter-wiki-article">
+            {displayedRevision && overviewStatus === 'STALE' ? (
+              <p className="wl-projection-refresh" role="status">
+                问题已更新；以下为此前综合，仅按原保存范围阅读。最新问题正文见下方。
+              </p>
+            ) : null}
+            {displayedRevision && overviewStatus === 'NOT_AVAILABLE' ? (
+              <p className="wl-projection-refresh" role="status">
+                问题正文已保存，当前范围尚未形成综合认识。
+              </p>
+            ) : null}
             {requestedWorkRef && !displayedRevision ? (
               <div className="space-y-4">
                 <h2 className="text-xl font-semibold">指定工作尚未读回</h2>
@@ -363,27 +383,30 @@ const MatterWorkspace: FC<MatterWorkspaceProps> = ({
                   页面不会用当前工作替代所请求的历史版本。
                 </p>
               </div>
-            ) : result ? (
-              <AssessmentReadingBrief
-                result={result}
-                onOpenClaim={(
-                  selection: AssessmentClaimSelection,
-                  trigger: HTMLButtonElement,
-                ) => {
-                  triggerRef.current = trigger;
-                  setFocusClaimId(selection.claimId);
-                  setClaimSelection(selection);
-                }}
-              />
+            ) : result && overviewStatus !== 'NOT_AVAILABLE' ? (
+              <section aria-label={overviewStatus === 'STALE' ? '此前综合' : '当前综合'}>
+                {overviewStatus === 'STALE' ? <h2>此前综合</h2> : null}
+                <AssessmentReadingBrief
+                  result={result}
+                  onOpenClaim={(
+                    selection: AssessmentClaimSelection,
+                    trigger: HTMLButtonElement,
+                  ) => {
+                    triggerRef.current = trigger;
+                    setFocusClaimId(selection.claimId);
+                    setClaimSelection(selection);
+                  }}
+                />
+              </section>
             ) : (
               <div className="space-y-4">
                 <h2 className="text-xl font-semibold">尚未形成事项综合认识</h2>
                 <p className="text-sm leading-7">
-                  成员文档的已有判断仍属于各自任务，不会自动充任本事项的综合结果。可围绕当前问题开始讨论。
+                  {displayedRevision?.state.problemWork
+                    ? '已保存的问题分析可在下方直接阅读；成员文档的判断不会自动充任事项综合。'
+                    : '成员文档的已有判断仍属于各自任务，不会自动充任本事项的综合结果。可围绕当前问题开始讨论。'}
                 </p>
-                <Button onClick={() => setPanel('review')}>
-                  开始核对与讨论
-                </Button>
+                {!requestedWorkRef ? <Button onClick={() => setPanel('review')}>开始核对与讨论</Button> : null}
               </div>
             )}
             {displayedRevision && result && !displayedRevision.state.problemWork ? <OverviewSourceWork matterId={matterId} source={displayedRevision.overviewSourceWork} /> : null}
@@ -539,7 +562,7 @@ const MatterWorkspace: FC<MatterWorkspaceProps> = ({
         />
       ) : null}
       <ClaimEvidenceDialog
-        selection={claimSelection}
+        selection={result ? claimSelection : null}
         readClaim={readClaim}
         onClose={() => setClaimSelection(null)}
         returnFocus={triggerRef.current}
