@@ -2,6 +2,7 @@ import { graphReturnTarget } from '@client/src/pages/RelationGraphPage/suite-gra
 import {
   normalizedEngineeringIssueReadingParams,
 } from './engineering-issue-reading';
+import { parseSituationReadingQuery } from '../trinity/situation-reading';
 const LIBRARY_FILTERS = [
   'familyId',
   'search',
@@ -551,8 +552,10 @@ export function readingReturnTarget(
   documentVersionId?: string,
   requestedRun?: string | null,
   currentMatterId?: string,
+  currentWorkRef?: string,
 ): { route: string; label: string } | null {
   const keys = [
+    'returnSituationQuery',
     'returnGraphQuery',
     'returnMatterId',
     'returnKnowledgeQuery',
@@ -571,6 +574,8 @@ export function readingReturnTarget(
       'returnMatterLibraryQuery',
       'returnMatterGraphQuery',
       'returnMatterIssueQuery',
+      'returnSituationMatterId',
+      'returnSituationWorkRef',
       'returnDocumentVersionId',
       'returnRevisionSide',
       'returnActivityQuery',
@@ -578,6 +583,46 @@ export function readingReturnTarget(
     ].some((key) => params.getAll(key).length > 1)
   )
     return null;
+  if (params.has('returnSituationQuery')) {
+    const allowedSituationReturnKeys = new Set([
+      'returnSituationQuery',
+      'returnSituationMatterId',
+      'returnSituationWorkRef',
+      'returnDocumentVersionId',
+    ]);
+    if ([...params.keys()].some((key) =>
+      key.startsWith('return') && !allowedSituationReturnKeys.has(key))) {
+      return null;
+    }
+    const raw = params.get('returnSituationQuery');
+    const matterId = identifier(params.get('returnSituationMatterId'));
+    const workRef = identifier(params.get('returnSituationWorkRef'));
+    const binding = identifier(params.get('returnDocumentVersionId'));
+    if (raw === null || !matterId || !parseSituationReadingQuery(raw)) return null;
+    if (params.has('returnSituationWorkRef') && !workRef) return null;
+    if (params.has('returnDocumentVersionId')) {
+      if (workRef || documentVersionId === undefined ||
+        !binding || binding !== documentVersionId) return null;
+    } else if (!currentMatterId || matterId !== currentMatterId ||
+      (workRef && workRef !== currentWorkRef)) {
+      return null;
+    }
+    if (workRef) {
+      const routeWorkRefs = params.getAll('workRef');
+      if (routeWorkRefs.length !== 1 ||
+        identifier(routeWorkRefs[0]) !== workRef) return null;
+    }
+    const state = parseSituationReadingQuery(raw)!;
+    return {
+      route: `/matters/${encodeURIComponent(matterId)}/posture${
+        state.size ? `?${state.toString()}` : ''
+      }`,
+      label: '返回当前工程态势',
+    };
+  }
+  if (['returnSituationMatterId', 'returnSituationWorkRef'].some(
+    (key) => params.has(key),
+  )) return null;
   if (params.has('returnGraphQuery')) return graphReturnTarget(params, documentVersionId, requestedRun, currentMatterId);
   if (['returnGraphTargetMatterId', 'returnGraphTargetWorkRef', 'returnGraphParseRunId'].some(key => params.has(key))) return null;
   if (params.has('returnActivityView') && !params.has('returnActivityQuery')) return null;
