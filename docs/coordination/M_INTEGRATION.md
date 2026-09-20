@@ -1,5 +1,20 @@
 # M 主控集成交接
 
+## 2026-09-20 知识与检索的 Overall 来源一致性修复
+
+只读审查确认 `EngineeringIssueSearchService` 的知识完整读取和问题展开会把已保存
+`substantiveResult.evidence` 覆盖成当前 `problemWork.evidence`。当问题工作已更新而 Overall 为
+`STALE` 时，这会形成“旧综合正文配新问题来源”；Wiki 原样读取保存的 substantiveResult，三者因而不一致。
+提交 `d5a0baae30ea20305f93332dc07fd3e277fb53d2` 保留 reading 自身 evidence，同时保持问题
+`content.evidence`、独立问题 evidence、sourceRefs/rootRefs 和 overviewSourceWork 不变；NOT_AVAILABLE
+仍返回 null，没有新增接口、迁移、授权或保存路径。新增 STALE 双证据池回归同时覆盖
+`readKnowledge` 与问题 `read`。相关 2 套 46 项测试、server typecheck、源码 ESLint、diff check 和
+precommit 通过；Astra medium 独立复审无 P1/P2。
+
+`origin/codex/0-11` 与 `github/codex/0-11` 已同步同一提交。妙搭 release
+`7687561526300265441` 已回读 `status=finished`、精确 commit、`error_logs=[]`。这是代码、测试和
+技术发布证据；真实登录 Wiki/知识/搜索对同一 STALE 工作的显示仍需单独读回，不能据本记录称线上业务验收完成。
+
 ## 2026-09-20 Hosted 精确候选回读与态势返回闭合
 
 当前前端精确候选为 `ac96c35f8f836ef4191e24044a4eb5b4f1d24c7c`，提交父项为
