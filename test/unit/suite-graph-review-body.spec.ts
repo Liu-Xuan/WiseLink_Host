@@ -10,38 +10,111 @@ it.each(['STALE', 'NOT_AVAILABLE'] as const)('includes selected work problem bod
   const data = libraryMatterFixture();
   const content = structuredClone(jobAidReadingFixture().current!.content);
   content.overviewStatus = status;
-  data.working.current!.state.substantiveResult!.content.lead = 'OLD_OVERVIEW_MUST_NOT_APPEAR';
+  data.working.current!.state.substantiveResult!.content.lead = content.understanding;
+  data.working.current!.state.substantiveResult!.content.claims = [];
   content.issues[0].question = 'UNIQUE_NEW_PROBLEM_QUESTION';
+  data.working.current!.state.substantiveResult!.content.issueArticles = content.issues.map(
+    ({ issueKey, issueRef, question, body }) => ({ issueKey, issueRef, question, body }),
+  );
   data.working.current!.state.problemWork = content;
   const html = renderToStaticMarkup(createElement(StaticRouter, {location: "/graph"}, createElement(SuiteGraphKnowledgePanel, {read:buildSuiteMatterGraph(data), revision:data.working.current, selectedTarget:null,selectedEvent:null,tab:'knowledge',onTabChange:()=>{}})));
   expect(html).toContain('UNIQUE_NEW_PROBLEM_QUESTION');
-  expect(html).toContain('正在分析的问题');
+  expect(html).toContain('问题与分析');
+  expect(html).toContain('仅当构型匹配时才有判断基础');
+  expect(html).toContain('依据');
+  expect(html).not.toContain('[[evidence-test]]');
+  expect(html).toContain('问题理解');
+  expect(html).toContain('已保存问题正文');
   if (status === 'STALE') {
-    expect(html).toContain('此前综合认识');
-    expect(html).toContain('此前综合摘要');
-    expect(html).toContain('OLD_OVERVIEW_MUST_NOT_APPEAR');
     expect(html).toContain('尚未覆盖本工作中的最新问题');
+    expect(html).not.toContain('此前综合认识');
   } else {
     expect(html).toContain('当前范围尚未形成综合认识');
     expect(html).not.toContain('此前综合认识');
-    expect(html).not.toContain('OLD_OVERVIEW_MUST_NOT_APPEAR');
   }
 });
 
 jest.mock('@client/src/components/ui/button', () => ({ Button: ({children}: {children: ReactNode}) => createElement('button', null, children) }));
 
-it('labels the current saved overview as a comprehensive summary', () => {
+it('labels problem work understanding without presenting it as a separate overview', () => {
   const data = libraryMatterFixture();
   const content = structuredClone(jobAidReadingFixture().current!.content);
   content.overviewStatus = 'CURRENT';
   content.understanding = 'CURRENT_PROBLEM_UNDERSTANDING';
   data.working.current!.state.problemWork = content;
-  data.working.current!.state.substantiveResult!.content.lead = 'CURRENT_OVERVIEW_LEAD';
+  data.working.current!.state.substantiveResult!.content.lead = content.understanding;
+  data.working.current!.state.substantiveResult!.content.claims = [];
   const html = renderToStaticMarkup(createElement(StaticRouter, {location:'/graph'}, createElement(SuiteGraphKnowledgePanel, {read:buildSuiteMatterGraph(data),revision:data.working.current,selectedTarget:null,selectedEvent:null,tab:'knowledge',onTabChange:()=>{}})));
-  expect(html).toContain('综合摘要');
-  expect(html).toContain('CURRENT_OVERVIEW_LEAD');
-  expect(html).not.toContain('此前综合摘要');
+  expect(html).toContain('问题理解');
+  expect(html).toContain('CURRENT_PROBLEM_UNDERSTANDING');
+  expect(html).not.toContain('综合摘要');
 });
+
+it('treats saved issue articles as readable knowledge when atomic claims are empty', () => {
+  const data = libraryMatterFixture();
+  const content = structuredClone(jobAidReadingFixture().current!.content);
+  content.overviewStatus = 'CURRENT';
+  content.issues[0].body = 'EXACT_SAVED_ISSUE_BODY';
+  data.working.current!.state.problemWork = content;
+  data.working.current!.state.substantiveResult!.content.claims = [];
+  data.working.current!.state.substantiveResult!.content.issueArticles = [
+    {
+      issueKey: content.issues[0].issueKey,
+      issueRef: content.issues[0].issueRef,
+      question: content.issues[0].question,
+      body: content.issues[0].body,
+    },
+  ];
+  const html = renderToStaticMarkup(createElement(StaticRouter, {location:'/graph'}, createElement(SuiteGraphKnowledgePanel, {read:buildSuiteMatterGraph(data),revision:data.working.current,selectedTarget:null,selectedEvent:null,tab:'knowledge',onTabChange:()=>{}})));
+  expect(html).toContain('当前工作已保存 1 项完整问题正文');
+  expect(html).toContain('EXACT_SAVED_ISSUE_BODY');
+  expect(html).not.toContain('当前工作尚未保存可供阅读的认识正文');
+});
+
+it.each(['CURRENT', 'STALE', 'NOT_AVAILABLE'] as const)(
+  'renders modern problem work as saved issue bodies for %s',
+  status => {
+    const data = libraryMatterFixture();
+    const content = structuredClone(jobAidReadingFixture().current!.content);
+    const evidenceRef = content.evidence[0].evidenceRef;
+    content.overviewStatus = status;
+    content.issues[0].body = `FIRST_LINE\nSECOND_LINE [[${evidenceRef}]]`;
+    data.working.current!.state.problemWork = content;
+    data.working.current!.state.substantiveResult!.content.lead = content.understanding;
+    data.working.current!.state.substantiveResult!.content.claims = [];
+    data.working.current!.state.substantiveResult!.content.issueArticles = content.issues.map(
+      ({ issueKey, issueRef, question, body }) => ({ issueKey, issueRef, question, body }),
+    );
+    const html = renderToStaticMarkup(createElement(StaticRouter, {location:'/graph'}, createElement(SuiteGraphKnowledgePanel, {read:buildSuiteMatterGraph(data),revision:data.working.current,selectedTarget:null,selectedEvent:null,tab:'knowledge',onTabChange:()=>{}})));
+    expect(html).toContain('已保存问题正文');
+    expect(html).toContain('whitespace-pre-wrap');
+    expect(html).toContain('FIRST_LINE\nSECOND_LINE');
+    expect(html).toContain('依据');
+    expect(html).not.toContain(`[[${evidenceRef}]]`);
+    expect(html).not.toContain('此前综合认识');
+  },
+);
+
+it.each(['CURRENT', 'STALE'] as const)(
+  'retains saved atomic claims for historical problem work with %s overview',
+  status => {
+    const data = libraryMatterFixture();
+    const content = structuredClone(jobAidReadingFixture().current!.content);
+    content.historicalSourceSchema = 'wiselink.jobaid-problem-work.v2';
+    content.overviewStatus = status;
+    data.working.current!.state.problemWork = content;
+    data.working.current!.state.substantiveResult!.content.lead = content.understanding;
+    data.working.current!.state.substantiveResult!.content.claims = [{
+      claimId: 'HISTORICAL_CLAIM',
+      text: 'HISTORICAL_CLAIM_TEXT',
+      basis: 'CONDITIONAL_INFERENCE',
+      premises: [],
+    }];
+    const html = renderToStaticMarkup(createElement(StaticRouter, {location:'/graph'}, createElement(SuiteGraphKnowledgePanel, {read:buildSuiteMatterGraph(data),revision:data.working.current,selectedTarget:null,selectedEvent:null,tab:'knowledge',onTabChange:()=>{}})));
+    expect(html).toContain('HISTORICAL_CLAIM_TEXT');
+    expect(html).toContain(status === 'STALE' ? '此前综合认识' : '当前认识');
+  },
+);
 
 it('provides a direct Wiki reading action from the knowledge overview', () => {
   const data = libraryMatterFixture();

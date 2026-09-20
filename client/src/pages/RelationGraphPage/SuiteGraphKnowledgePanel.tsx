@@ -12,6 +12,7 @@ import { Button } from '@client/src/components/ui/button';
 import OverviewSourceWork from '@client/src/features/matter/OverviewSourceWork';
 import OverviewCorrectionNotices from '@client/src/features/matter/OverviewCorrectionNotices';
 import ReferenceWorkNotices from '@client/src/features/matter/ReferenceWorkNotices';
+import EngineeringIssueBody from '@client/src/features/matter/EngineeringIssueBody';
 import type { DocumentAssessmentEvidence } from '@client/src/features/matter/assessment-reading';
 import type { EngineeringMatterWorkingRevisionReadModel } from '@shared/matter-working.interface';
 import type { AssessmentEvidence } from '@shared/assessment-reading.interface';
@@ -245,13 +246,21 @@ const SuiteGraphKnowledgePanel = memo(function SuiteGraphKnowledgePanel({
   const result = revision?.state.substantiveResult ?? null;
   const problemWork = revision?.state.problemWork;
   const overviewStatus = problemWork?.overviewStatus ?? read.overviewStatus;
-  const summaryUsesOverview = overviewStatus !== 'NOT_AVAILABLE' && Boolean(result?.content.lead);
-  const summaryText = overviewStatus === 'NOT_AVAILABLE'
-    ? problemWork?.understanding || problemWork?.listBrief
-    : result?.content.lead || problemWork?.understanding || problemWork?.listBrief;
-  const summaryLabel = summaryUsesOverview
+  const summaryUsesOverview = !problemWork
+    && overviewStatus !== 'NOT_AVAILABLE'
+    && Boolean(result?.content.lead);
+  const summaryText = problemWork
+    ? problemWork.understanding || problemWork.listBrief
+    : overviewStatus === 'NOT_AVAILABLE'
+      ? result?.content.listBrief
+      : result?.content.lead || result?.content.listBrief;
+  const summaryLabel = problemWork
+    ? '问题理解'
+    : summaryUsesOverview
     ? overviewStatus === 'STALE' ? '此前综合摘要' : '综合摘要'
-    : problemWork?.understanding ? '问题理解' : '事项摘要';
+    : '事项摘要';
+  const savedClaims = result?.content.claims ?? [];
+  const savedIssues = problemWork?.issues ?? [];
   const evidenceList = [...new Map([...(result?.evidence ?? []), ...(problemWork?.evidence ?? [])].map(item => [item.evidenceRef, item])).values()];
   // Deduplicate the displayed question while retaining every saved issue's identity and scope.
   const pendingByText = new Map<string, { text: string; sources: Array<{ key: string; issueRef: string; question: string; affects: string; nextEvidence: string; reason: string }> }>();
@@ -404,15 +413,33 @@ const SuiteGraphKnowledgePanel = memo(function SuiteGraphKnowledgePanel({
           <p>{summaryText || '当前工作尚未保存问题理解或事项摘要。'}</p>
         </section>
         <section>
-          <h3><Lightbulb aria-hidden="true" />{overviewStatus === 'STALE' ? '此前综合认识' : '当前认识'}</h3>
-          {overviewStatus !== 'NOT_AVAILABLE' && result?.content.claims.length ? result.content.claims.map((claim) => (
+          <h3><Lightbulb aria-hidden="true" />{
+            overviewStatus !== 'NOT_AVAILABLE' && savedClaims.length
+              ? overviewStatus === 'STALE' ? '此前综合认识' : '当前认识'
+              : savedIssues.length ? '已保存问题正文' : '当前认识'
+          }</h3>
+          {overviewStatus !== 'NOT_AVAILABLE' && savedClaims.length ? savedClaims.map((claim) => (
             <p className="suite-graph-bullet" key={claim.claimId}>{claim.text}</p>
-          )) : overviewStatus !== 'NOT_AVAILABLE' ? <p>当前工作尚未保存可供阅读的认识正文。</p> : null}
+          )) : savedIssues.length ? (
+            <p>当前工作已保存 {savedIssues.length} 项完整问题正文，可在下方逐项阅读。</p>
+          ) : overviewStatus !== 'NOT_AVAILABLE' ? (
+            <p>当前工作尚未保存独立论点或问题正文。</p>
+          ) : null}
         </section>
-        {problemWork?.issues.length ? <section>
-          <h3><AlertTriangle aria-hidden="true" />正在分析的问题</h3>
-          {problemWork?.issues.map((issue) => (
-            <p className="suite-graph-bullet" key={`issue-question-${issue.issueRef}`}>{issue.question}</p>
+        {savedIssues.length ? <section>
+          <h3><AlertTriangle aria-hidden="true" />问题与分析</h3>
+          {savedIssues.map((issue) => (
+            <details
+              className="suite-graph-governance-details"
+              key={`issue-body-${issue.issueRef}`}
+            >
+              <summary>{issue.question}</summary>
+              <EngineeringIssueBody
+                body={issue.body}
+                evidence={evidenceList}
+                onLocateDocument={(evidence) => onLocateEvidence?.(evidence)}
+              />
+            </details>
           ))}
         </section> : null}
         <section>
