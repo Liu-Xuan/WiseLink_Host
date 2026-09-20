@@ -48,15 +48,17 @@ export function deriveShellRouteContext(
 ): ShellRouteContext {
   const matterId: string = matterIdFromPath(pathname);
   const params: URLSearchParams = new URLSearchParams(search);
-  const activityDocumentVersionId: string =
-    pathname === '/timeline' || pathname === '/activity-graph'
+  const queryDocumentVersionId: string =
+    pathname === '/timeline'
+      || pathname === '/activity-graph'
+      || /^\/work-items\/[^/]+\/documents$/u.test(pathname)
       ? singleSafeParam(params, 'documentVersionId')
       : '';
   return {
     workItemId: workItemIdFromPath(pathname),
     matterId,
     documentVersionId:
-      documentVersionIdFromPath(pathname) || activityDocumentVersionId,
+      documentVersionIdFromPath(pathname) || queryDocumentVersionId,
     workRef: matterId
       ? (params.get('workRef')?.trim() ?? '')
       : '',
