@@ -11,15 +11,39 @@ jest.mock('../../client/src/components/ui/image', () => ({ __esModule: true, Ima
 function createCy() {
   const handlers = new Map<string, (event?: { target: unknown }) => void>();
   let definitions: Array<{ group: string; data: Record<string, unknown>; position?: { x: number; y: number } }> = [];
-  const cy = {
-    nodes: () => Object.assign(definitions.filter((definition) => definition.group === 'nodes').map((definition) => ({
+  const nodeFor = (definition?: { group: string; data: Record<string, unknown>; position?: { x: number; y: number } }) => {
+    if (!definition) return { length: 0, addClass: jest.fn() };
+    return {
+      length: 1,
       id: () => String(definition.data.id),
-      data: (key?: string) => (key === undefined ? definition.data : definition.data[key]),
+      data: (key?: string, value?: unknown) => {
+        if (key === undefined) return definition.data;
+        if (value !== undefined) definition.data[key] = value;
+        return definition.data[key];
+      },
+      position: (next?: { x: number; y: number }) => {
+        if (next) {
+          definition.position ??= { x: 0, y: 0 };
+          definition.position.x = next.x;
+          definition.position.y = next.y;
+        }
+        return definition.position ?? { x: 0, y: 0 };
+      },
       renderedPosition: () => definition.position ?? { x: 0, y: 0 },
       addClass: jest.fn(),
-    })), { removeClass: jest.fn() }),
+    };
+  };
+  const cy = {
+    nodes: () => Object.assign(definitions.filter((definition) => definition.group === 'nodes').map(nodeFor), { removeClass: jest.fn() }),
     elements: () => ({ remove: () => { definitions = []; } }),
-    add: (next: Array<{ group: string; data: Record<string, unknown>; position?: { x: number; y: number } }>) => { definitions = next; handlers.get('render')?.(); },
+    add: (next: Array<{ group: string; data: Record<string, unknown>; position?: { x: number; y: number } }>) => {
+      definitions = next.map((definition) => ({
+        ...definition,
+        data: { ...definition.data },
+        position: definition.position ? { ...definition.position } : undefined,
+      }));
+      handlers.get('render')?.();
+    },
     layout: () => ({ run: () => handlers.get('render')?.() }),
     fit: jest.fn(),
     resize: jest.fn(),
@@ -27,7 +51,7 @@ function createCy() {
     trigger: (key: string, event: { target: unknown }) => handlers.get(key)?.(event),
     removeAllListeners: jest.fn(),
     destroy: jest.fn(),
-    getElementById: jest.fn(() => ({ length: 1, addClass: jest.fn() })),
+    getElementById: jest.fn((id: string) => nodeFor(definitions.find((definition) => definition.data.id === id))),
     minZoom: () => 0.16,
     maxZoom: () => 2.4,
     zoom: jest.fn(() => 1),
@@ -57,6 +81,7 @@ const presentation: SuiteGraphPresentation = {
 const groupPresentation: SuiteGraphPresentation = {
   elements: [
     { group: 'nodes', data: { id: 'sg:hub:m', viewKind: 'hub', businessId: 'm', title: 'Matter', w: 180, h: 180 }, position: { x: 100, y: 100 } },
+    { group: 'nodes', data: { id: 'sg:group:g1', viewKind: 'halo', groupKey: 'g1', title: 'Group', w: 430, h: 130 }, position: { x: 440, y: 200 } },
     { group: 'nodes', data: { id: 'sg:item:a', viewKind: 'item', businessId: 'a', groupKey: 'g1', title: 'Card A', w: 183.6, h: 48 }, position: { x: 349, y: 200 } },
     { group: 'nodes', data: { id: 'sg:item:b', viewKind: 'item', businessId: 'b', groupKey: 'g1', title: 'Card B', w: 183.6, h: 48 }, position: { x: 532.6, y: 200 } },
   ],
@@ -68,6 +93,17 @@ const groupPresentation: SuiteGraphPresentation = {
   omittedRelationships: [],
   bounds: { x1: 0, y1: 0, x2: 600, y2: 400, w: 600, h: 400 },
 };
+
+function pointerEvent(type: string, pointerId: number, clientX: number, clientY: number): Event {
+  const event = new dom.window.Event(type, { bubbles: true, cancelable: true });
+  Object.defineProperties(event, {
+    button: { value: 0 },
+    pointerId: { value: pointerId },
+    clientX: { value: clientX },
+    clientY: { value: clientY },
+  });
+  return event;
+}
 
 function mockNarrowLayout(): () => void {
   const original = dom.window.matchMedia;
@@ -271,5 +307,143 @@ describe('SuiteGraphCanvas', () => {
     act(() => { surface.dispatchEvent(new dom.window.Event('pointerdown', { bubbles: true })); });
     act(() => { resizeCallback?.(); });
     expect(cy.fit).toHaveBeenCalledTimes(2);
+  });
+
+  it('moves a card by pointer delta, expands its halo, suppresses the drag click, and resets both', async () => {
+    const onSelect = jest.fn();
+    const ref = createRef<SuiteGraphCanvasHandle>();
+    const originalPresentation: SuiteGraphPresentation = structuredClone(groupPresentation);
+    await act(async () => {
+      root = createRoot(container);
+      root.render(createElement(SuiteGraphCanvas, { presentation: groupPresentation, onSelect, ref }));
+    });
+    await act(async () => { await Promise.resolve(); });
+    const cy = mockCyFactory.mock.results[0].value as {
+      getElementById: (id: string) => { data: (key?: string) => unknown; position: () => { x: number; y: number } };
+    };
+    const card = container.querySelector('[aria-label="Card A"]') as HTMLButtonElement;
+    act(() => card.dispatchEvent(pointerEvent('pointerdown', 7, 120, 100)));
+    act(() => window.dispatchEvent(pointerEvent('pointermove', 7, 140, 120)));
+    act(() => window.dispatchEvent(pointerEvent('pointermove', 7, 160, 130)));
+    expect(cy.getElementById('sg:item:a').position()).toEqual({ x: 389, y: 230 });
+    expect(Number(cy.getElementById('sg:group:g1').data('h'))).toBeGreaterThan(130);
+    act(() => window.dispatchEvent(pointerEvent('pointerup', 7, 160, 130)));
+    await act(async () => card.dispatchEvent(new dom.window.MouseEvent('click', { bubbles: true, detail: 1 })));
+    expect(onSelect).not.toHaveBeenCalled();
+    await act(async () => card.click());
+    expect(onSelect).toHaveBeenCalledTimes(1);
+    act(() => ref.current?.reset());
+    expect(cy.getElementById('sg:item:a').position()).toEqual({ x: 349, y: 200 });
+    expect(cy.getElementById('sg:group:g1').data('w')).toBe(430);
+    expect(cy.getElementById('sg:group:g1').data('h')).toBe(130);
+    expect(groupPresentation).toEqual(originalPresentation);
+  });
+
+  it('rolls a cancelled drag back, ignores another pointer, and does not swallow the next click', async () => {
+    const onSelect = jest.fn();
+    await act(async () => {
+      root = createRoot(container);
+      root.render(createElement(SuiteGraphCanvas, { presentation: groupPresentation, onSelect }));
+    });
+    await act(async () => { await Promise.resolve(); });
+    const cy = mockCyFactory.mock.results[0].value as {
+      getElementById: (id: string) => { position: () => { x: number; y: number } };
+    };
+    const card = container.querySelector('[aria-label="Card A"]') as HTMLButtonElement;
+    act(() => card.dispatchEvent(pointerEvent('pointerdown', 11, 100, 100)));
+    act(() => window.dispatchEvent(pointerEvent('pointermove', 12, 180, 160)));
+    expect(cy.getElementById('sg:item:a').position()).toEqual({ x: 349, y: 200 });
+    act(() => window.dispatchEvent(pointerEvent('pointermove', 11, 180, 160)));
+    expect(cy.getElementById('sg:item:a').position()).toEqual({ x: 429, y: 260 });
+    act(() => window.dispatchEvent(pointerEvent('pointercancel', 11, 180, 160)));
+    expect(cy.getElementById('sg:item:a').position()).toEqual({ x: 349, y: 200 });
+    await act(async () => card.click());
+    expect(onSelect).toHaveBeenCalledTimes(1);
+  });
+
+  it('selects the center object on a true canvas tap and keeps edge taps separate', async () => {
+    const onSelect = jest.fn();
+    const onInspectRelationships = jest.fn();
+    await act(async () => {
+      root = createRoot(container);
+      root.render(createElement(SuiteGraphCanvas, { presentation, onSelect, onInspectRelationships }));
+    });
+    await act(async () => { await Promise.resolve(); });
+    const cy = mockCyFactory.mock.results[0].value as {
+      trigger: (key: string, event: { target: unknown }) => void;
+    };
+    act(() => cy.trigger('tap', { target: cy }));
+    expect(onSelect).toHaveBeenCalledWith(expect.objectContaining({ businessId: 'm', viewKind: 'hub' }), false);
+    act(() => cy.trigger('tap edge', { target: { data: () => ['relationship-1'] } }));
+    expect(onInspectRelationships).toHaveBeenCalledWith(['relationship-1']);
+    expect(onSelect).toHaveBeenCalledTimes(1);
+  });
+
+  it('focuses a real narrow-screen card click only before a restored or manual camera exists', async () => {
+    const restoreMatchMedia = mockNarrowLayout();
+    try {
+      const onViewport = jest.fn();
+      await act(async () => {
+        root = createRoot(container);
+        root.render(createElement(SuiteGraphCanvas, { presentation, onViewport }));
+      });
+      await act(async () => { await Promise.resolve(); });
+      const cy = mockCyFactory.mock.results[0].value as { zoom: jest.Mock; center: jest.Mock };
+      cy.zoom.mockClear();
+      cy.center.mockClear();
+      await act(async () => (container.querySelector('[aria-label="Item，Detail"]') as HTMLButtonElement).click());
+      expect(cy.zoom).toHaveBeenCalledWith(0.85);
+      expect(cy.center).toHaveBeenCalledTimes(1);
+      cy.zoom.mockClear();
+      cy.center.mockClear();
+      await act(async () => (container.querySelector('[aria-label="Item，Detail"]') as HTMLButtonElement).click());
+      expect(cy.zoom).not.toHaveBeenCalledWith(0.85);
+      expect(cy.center).not.toHaveBeenCalled();
+    } finally {
+      restoreMatchMedia();
+    }
+  });
+
+  it('keeps an exact restored camera when a narrow-screen card is clicked', async () => {
+    const restoreMatchMedia = mockNarrowLayout();
+    try {
+      await act(async () => {
+        root = createRoot(container);
+        root.render(createElement(SuiteGraphCanvas, {
+          presentation,
+          initialViewport: { zoom: 1.4, pan: { x: 24, y: -18 } },
+        }));
+      });
+      await act(async () => { await Promise.resolve(); });
+      const cy = mockCyFactory.mock.results[0].value as { zoom: jest.Mock; center: jest.Mock; pan: jest.Mock };
+      cy.zoom.mockClear();
+      cy.center.mockClear();
+      cy.pan.mockClear();
+      await act(async () => (container.querySelector('[aria-label="Item，Detail"]') as HTMLButtonElement).click());
+      expect(cy.zoom).not.toHaveBeenCalled();
+      expect(cy.center).not.toHaveBeenCalled();
+      expect(cy.pan).not.toHaveBeenCalled();
+    } finally {
+      restoreMatchMedia();
+    }
+  });
+
+  it('rolls back an active drag and removes its listeners when unmounted', async () => {
+    await act(async () => {
+      root = createRoot(container);
+      root.render(createElement(SuiteGraphCanvas, { presentation: groupPresentation }));
+    });
+    await act(async () => { await Promise.resolve(); });
+    const cy = mockCyFactory.mock.results[0].value as {
+      getElementById: (id: string) => { position: () => { x: number; y: number } };
+    };
+    const card = container.querySelector('[aria-label="Card A"]') as HTMLButtonElement;
+    act(() => card.dispatchEvent(pointerEvent('pointerdown', 19, 100, 100)));
+    act(() => window.dispatchEvent(pointerEvent('pointermove', 19, 150, 140)));
+    expect(cy.getElementById('sg:item:a').position()).toEqual({ x: 399, y: 240 });
+    await act(async () => root.unmount());
+    expect(cy.getElementById('sg:item:a').position()).toEqual({ x: 349, y: 200 });
+    act(() => window.dispatchEvent(pointerEvent('pointermove', 19, 210, 190)));
+    expect(cy.getElementById('sg:item:a').position()).toEqual({ x: 349, y: 200 });
   });
 });

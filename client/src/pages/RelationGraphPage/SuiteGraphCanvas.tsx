@@ -8,7 +8,13 @@ import {
   type CSSProperties,
   type MouseEvent,
 } from 'react';
-import cytoscape, { type Core, type ElementDefinition, type EventObject, type StylesheetStyle } from 'cytoscape';
+import cytoscape, {
+  type Core,
+  type ElementDefinition,
+  type EventObject,
+  type NodeSingular,
+  type StylesheetStyle,
+} from 'cytoscape';
 import {
   Activity,
   AlertTriangle,
@@ -26,7 +32,11 @@ import {
   SlidersHorizontal,
   type LucideIcon,
 } from 'lucide-react';
-import type { CytoscapeSuiteElement, SuiteGraphPresentation } from './suite-graph-model';
+import type {
+  CytoscapeSuiteElement,
+  CytoscapeSuiteNode,
+  SuiteGraphPresentation,
+} from './suite-graph-model';
 import {
   suiteGraphAppearance,
   suiteGraphIconKind,
@@ -63,6 +73,15 @@ interface OverlayNode {
   id: string;
   data: Record<string, unknown>;
   position: { x: number; y: number };
+}
+
+interface DragState {
+  id: string;
+  pointerId: number;
+  moved: boolean;
+  startPointer: { x: number; y: number };
+  startPosition: { x: number; y: number };
+  groupKey: string;
 }
 
 const ICONS: Record<SuiteGraphIconKind, LucideIcon> = {
@@ -207,8 +226,84 @@ function buildStyleSheet(tokens: ThemeTokens): StylesheetStyle[] {
   return sheets;
 }
 
-function asElements(elements: CytoscapeSuiteElement[]): ElementDefinition[] {
-  return elements as ElementDefinition[];
+function cloneElements(elements: CytoscapeSuiteElement[]): ElementDefinition[] {
+  return elements.map((element): ElementDefinition => element.group === 'nodes'
+    ? {
+      ...element,
+      data: { ...element.data },
+      position: { ...element.position },
+    }
+    : { ...element, data: { ...element.data } });
+}
+
+function finiteDimension(value: unknown): number {
+  const dimension = Number(value);
+  return Number.isFinite(dimension) ? dimension : 0;
+}
+
+function isSuiteNode(element: CytoscapeSuiteElement): element is CytoscapeSuiteNode {
+  return element.group === 'nodes';
+}
+
+function updateGroupHalo(
+  cy: Core,
+  groupKey: string,
+  baseline: CytoscapeSuiteElement[],
+): void {
+  if (!groupKey) return;
+  const haloDefinition = baseline.find(
+    (element) => element.group === 'nodes'
+      && element.data.viewKind === 'halo'
+      && element.data.groupKey === groupKey,
+  );
+  if (!haloDefinition || haloDefinition.group !== 'nodes') return;
+  const baselineItems = baseline.filter(isSuiteNode).filter(
+    (element) => element.data.viewKind === 'item' && element.data.groupKey === groupKey,
+  );
+  if (baselineItems.length === 0) return;
+  const boundsFor = (
+    items: Array<{ position: { x: number; y: number }; data: Record<string, unknown> }>,
+  ) => items.reduce(
+    (bounds, item) => {
+      const halfWidth = finiteDimension(item.data.w) / 2;
+      const halfHeight = finiteDimension(item.data.h) / 2;
+      return {
+        left: Math.min(bounds.left, item.position.x - halfWidth),
+        right: Math.max(bounds.right, item.position.x + halfWidth),
+        top: Math.min(bounds.top, item.position.y - halfHeight),
+        bottom: Math.max(bounds.bottom, item.position.y + halfHeight),
+      };
+    },
+    { left: Number.POSITIVE_INFINITY, right: Number.NEGATIVE_INFINITY, top: Number.POSITIVE_INFINITY, bottom: Number.NEGATIVE_INFINITY },
+  );
+  const baselineBounds = boundsFor(baselineItems);
+  const haloHalfWidth = finiteDimension(haloDefinition.data.w) / 2;
+  const haloHalfHeight = finiteDimension(haloDefinition.data.h) / 2;
+  const insets = {
+    left: baselineBounds.left - (haloDefinition.position.x - haloHalfWidth),
+    right: haloDefinition.position.x + haloHalfWidth - baselineBounds.right,
+    top: baselineBounds.top - (haloDefinition.position.y - haloHalfHeight),
+    bottom: haloDefinition.position.y + haloHalfHeight - baselineBounds.bottom,
+  };
+  const liveItems: Array<{
+    position: { x: number; y: number };
+    data: Record<string, unknown>;
+  }> = [];
+  cy.nodes().forEach((node: NodeSingular) => {
+    if (node.data('viewKind') !== 'item' || node.data('groupKey') !== groupKey) return;
+    liveItems.push({ position: node.position(), data: node.data() as Record<string, unknown> });
+  });
+  if (liveItems.length === 0) return;
+  const liveBounds = boundsFor(liveItems);
+  const left = liveBounds.left - insets.left;
+  const right = liveBounds.right + insets.right;
+  const top = liveBounds.top - insets.top;
+  const bottom = liveBounds.bottom + insets.bottom;
+  const halo = cy.getElementById(String(haloDefinition.data.id));
+  if (!halo.length) return;
+  halo.data('w', right - left);
+  halo.data('h', bottom - top);
+  halo.position({ x: (left + right) / 2, y: (top + bottom) / 2 });
 }
 
 function OverlayCard({
@@ -294,8 +389,9 @@ const SuiteGraphCanvas = forwardRef<SuiteGraphCanvasHandle, SuiteGraphCanvasProp
   const callbacksRef = useRef({ onSelect, onGroup, onOverflow, onInspectRelationships, onViewport });
   const [overlayNodes, setOverlayNodes] = useState<OverlayNode[]>([]);
   const [camera, setCamera] = useState({ zoom: 1, pan: { x: 0, y: 0 } });
-  const dragRef = useRef<{ id: string; moved: boolean } | null>(null);
-  const suppressClickRef = useRef(false);
+  const dragRef = useRef<DragState | null>(null);
+  const dragCleanupRef = useRef<((cancelled: boolean) => void) | null>(null);
+  const suppressClickRef = useRef<{ id: string; until: number } | null>(null);
   const internalCameraRef = useRef(false);
   const userCameraRef = useRef(false);
   const initialViewportAppliedRef = useRef(false);
@@ -328,6 +424,10 @@ const SuiteGraphCanvas = forwardRef<SuiteGraphCanvasHandle, SuiteGraphCanvasProp
         const node = cy.getElementById(String(element.data.id));
         if (node.length && typeof node.position === 'function') {
           node.position(element.position);
+          if (element.data.viewKind === 'halo') {
+            node.data('w', element.data.w);
+            node.data('h', element.data.h);
+          }
         }
       });
       cy.fit(undefined, 24);
@@ -350,7 +450,9 @@ const SuiteGraphCanvas = forwardRef<SuiteGraphCanvasHandle, SuiteGraphCanvasProp
   const applyNarrowFocus = useCallback((cy: Core) => {
     const focusGroup = focusGroupKeyRef.current;
     if (focusGroup) {
-      const collection = cy.nodes().filter((node) => String(node.data('groupKey')) === focusGroup || String(node.data('viewKind')) === 'hub');
+      const collection = cy.nodes().filter((node) => (
+        node.data('viewKind') === 'item' && node.data('groupKey') === focusGroup
+      ) || node.data('viewKind') === 'hub');
       if (collection.length > 0) {
         cy.fit(collection, NARROW_FOCUS_PADDING);
         const fitted = cy.zoom();
@@ -413,6 +515,13 @@ const SuiteGraphCanvas = forwardRef<SuiteGraphCanvasHandle, SuiteGraphCanvasProp
       const ids = event.target.data('relationshipIds');
       if (Array.isArray(ids)) callbacksRef.current.onInspectRelationships?.(ids.filter((id): id is string => typeof id === 'string'));
     });
+    cy.on('tap', (event: EventObject) => {
+      if (event.target !== cy || dragRef.current?.moved) return;
+      const hub = elementsRef.current.find(
+        (element) => element.group === 'nodes' && element.data.viewKind === 'hub',
+      );
+      if (hub) callbacksRef.current.onSelect?.(hub.data, false);
+    });
     cyRef.current = cy;
     sync();
     const applyTheme = () => {
@@ -435,6 +544,7 @@ const SuiteGraphCanvas = forwardRef<SuiteGraphCanvasHandle, SuiteGraphCanvasProp
     mount.addEventListener('wheel', markUserCamera, { passive: true });
     mount.addEventListener('pointerdown', markUserCamera, { passive: true });
     return () => {
+      dragCleanupRef.current?.(true);
       themeObserver?.disconnect();
       resizeObserver.disconnect();
       window.removeEventListener('resize', handleResize);
@@ -453,8 +563,9 @@ const SuiteGraphCanvas = forwardRef<SuiteGraphCanvasHandle, SuiteGraphCanvasProp
   useEffect(() => {
     const cy = cyRef.current;
     if (!cy) return;
+    dragCleanupRef.current?.(true);
     cy.elements().remove();
-    cy.add(asElements(presentation.elements));
+    cy.add(cloneElements(presentation.elements));
     elementsRef.current = presentation.elements;
     const positions = Object.fromEntries(presentation.elements.filter((element) => element.group === 'nodes').map((element) => [String(element.data.id), element.position]));
     if (motionDisabled()) {
@@ -510,11 +621,24 @@ const SuiteGraphCanvas = forwardRef<SuiteGraphCanvasHandle, SuiteGraphCanvasProp
 
   const handleOverlaySelect = (event: MouseEvent<HTMLButtonElement>, data: Record<string, unknown>) => {
     event.stopPropagation();
-    if (suppressClickRef.current) {
-      suppressClickRef.current = false;
+    const id = text(data.id);
+    const suppressed = suppressClickRef.current;
+    if (event.detail > 0 && suppressed?.id === id && Date.now() <= suppressed.until) {
+      suppressClickRef.current = null;
       return;
     }
+    suppressClickRef.current = null;
     callbacksRef.current.onSelect?.(data, false);
+    const cy = cyRef.current;
+    if (!cy || !id || data.viewKind === 'hub' || !isNarrowLayout() || userCameraRef.current) return;
+    const target = cy.getElementById(id);
+    if (!target.length) return;
+    internalCameraRef.current = true;
+    cy.zoom(clampZoom(NARROW_ENTRY_ZOOM, cy));
+    cy.center(target);
+    internalCameraRef.current = false;
+    userCameraRef.current = true;
+    callbacksRef.current.onViewport?.({ zoom: cy.zoom(), pan: cy.pan() });
   };
   const handleDragStart = (event: React.PointerEvent<HTMLButtonElement>, id: string) => {
     if (event.button !== 0) return;
@@ -523,26 +647,58 @@ const SuiteGraphCanvas = forwardRef<SuiteGraphCanvasHandle, SuiteGraphCanvasProp
     if (!cy || !mount) return;
     const target = cy.getElementById(id);
     if (!target.length) return;
-    const start = { x: event.clientX, y: event.clientY };
-    dragRef.current = { id, moved: false };
-    const move = (next: PointerEvent) => {
-      const drag = dragRef.current;
-      if (!drag) return;
-      if (Math.hypot(next.clientX - start.x, next.clientY - start.y) > 3) drag.moved = true;
-      if (!drag.moved) return;
-      suppressClickRef.current = true;
-      const rect = mount.getBoundingClientRect();
-      const pan = cy.pan();
-      const zoom = cy.zoom();
-      target.position({ x: (next.clientX - rect.left - pan.x) / zoom, y: (next.clientY - rect.top - pan.y) / zoom });
+    dragCleanupRef.current?.(true);
+    const groupKey = text(target.data('groupKey'));
+    const targetPosition = target.position();
+    const drag: DragState = {
+      id,
+      pointerId: event.pointerId,
+      moved: false,
+      startPointer: { x: event.clientX, y: event.clientY },
+      startPosition: { x: targetPosition.x, y: targetPosition.y },
+      groupKey,
     };
-    const end = () => {
+    dragRef.current = drag;
+    const move = (next: PointerEvent) => {
+      const current = dragRef.current;
+      if (!current || next.pointerId !== current.pointerId) return;
+      if (Math.hypot(next.clientX - current.startPointer.x, next.clientY - current.startPointer.y) > 3) current.moved = true;
+      if (!current.moved) return;
+      const zoom = cy.zoom();
+      target.position({
+        x: current.startPosition.x + (next.clientX - current.startPointer.x) / zoom,
+        y: current.startPosition.y + (next.clientY - current.startPointer.y) / zoom,
+      });
+      updateGroupHalo(cy, current.groupKey, elementsRef.current);
+    };
+    const finish = (cancelled: boolean) => {
+      const current = dragRef.current;
       window.removeEventListener('pointermove', move);
       window.removeEventListener('pointerup', end);
+      window.removeEventListener('pointercancel', cancel);
+      dragCleanupRef.current = null;
+      if (!current) return;
+      if (cancelled && current.moved) {
+        target.position(current.startPosition);
+        updateGroupHalo(cy, current.groupKey, elementsRef.current);
+        suppressClickRef.current = null;
+      } else if (current.moved) {
+        suppressClickRef.current = { id: current.id, until: Date.now() + 250 };
+      }
       dragRef.current = null;
     };
+    const end = (next: PointerEvent) => {
+      if (next.pointerId !== dragRef.current?.pointerId) return;
+      finish(false);
+    };
+    const cancel = (next: PointerEvent) => {
+      if (next.pointerId !== dragRef.current?.pointerId) return;
+      finish(true);
+    };
+    dragCleanupRef.current = finish;
     window.addEventListener('pointermove', move);
     window.addEventListener('pointerup', end);
+    window.addEventListener('pointercancel', cancel);
   };
   return (
     <div className={`suite-graph-canvas${className ? ` ${className}` : ''}`}>
