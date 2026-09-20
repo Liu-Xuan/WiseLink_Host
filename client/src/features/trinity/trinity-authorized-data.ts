@@ -134,17 +134,28 @@ export function projectAuthorizedSituation(
           && material.disposition === 'EXCLUDED')
         .map((material) => material.documentVersionId),
     );
-    for (const entry of matter.catalog.entries) {
-      const versionId: string = entry.document.documentVersionId;
+    const catalogByVersion: Map<
+      string,
+      (typeof matter.catalog.entries)[number]
+    > = new Map(matter.catalog.entries.map((entry) => [
+      entry.document.documentVersionId,
+      entry,
+    ]));
+    const sourceVersionIds: string[] = matter.materials !== undefined
+      ? [...materialByVersion.keys()]
+      : matter.catalog.entries
+        .map((entry) => entry.document.documentVersionId);
+    for (const versionId of [...new Set(sourceVersionIds)]) {
       if (excludedVersionIds.has(versionId)) continue;
+      const entry = catalogByVersion.get(versionId);
       const sourceId: string = `document:${versionId}`;
       if (sources.some((source) => source.id === sourceId)) continue;
       sources.push({
         id: sourceId,
         matter: matter.matterId,
         category: 'documents',
-        title: entry.document.documentCode,
-        version: entry.document.businessRevision,
+        title: entry?.document.documentCode || versionId,
+        version: entry?.document.businessRevision || '业务版本未取得',
         contribution: materialByVersion.get(versionId)?.contribution ??
           '已登记为事项资料；具体作用需进入原文和事项材料核对。',
       });
