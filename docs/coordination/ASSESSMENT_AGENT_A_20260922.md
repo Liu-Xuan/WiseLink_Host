@@ -105,3 +105,15 @@ A负责文档/事项解析后的关联上下文、JobAid动态问题分析、已
 知识工具UI明确说明是观察记录，完成不代表原件已核实；无记录不等于已完成。新字段可选，旧Host无此字段时不假装存在工具记录。未加数据库表/迁移、新MCP工具、模型调用、原件缓存或全局调度；不碰B原件读取区域。已受控返回的查询内容仍仅经原授权来源及保存正文流程传递。
 
 直接验证：5套45项Jest通过（新增真实repository写入路径与source/binding/lease/cancel拒绝反例、原来源事件兼容；queryKnowledge实际回执状态/异常不重试/不可用/调用前再授权失败；projector白名单/缺时间/窗口/损坏；真实UI与activity-only更新；既有当前执行快照和读取生命周期）。server typecheck通过；client首次仅沙箱写tsbuildinfo EPERM，获准独立工作树写权限后同命令复验exit 0。受影响TS/TSX定向lint及diff-check通过。未运行真实PG/Hosted知识检索和浏览器自然调度；其部署与全链验收仍由主控协调，不把本批UI或单测视为完整Goal完成。
+
+## 2026-09-23 线上修复：任务目录快照的Datapaas兼容
+
+父提交 `b10e6e570744169c5c057a806ccad2637414eab1`。Luna在ef258aa7正常身份两次读取 `/library?mode=tasks` 失败；A通过官方只读日志证实 `GET /api/canonical-host/library/tasks?search=&limit=24` 两次HTTP500。trace为 `935e8aa76e80edb44092eb03c369cc1d`、`5a433570c4f145feb6edc055063e7c0e`；服务链listTasks→readBrowser失败于 `set transaction isolation level repeatable read read only`，Postgres code25000，原错误“Switch transaction type failed, please terminate the current transaction.”。原始私有日志留在 `/private/tmp/wiselink-a-recent-errors.json`，不写入仓库。本缺陷来自A的0c350显式快照事务和平台数据库执行层不兼容，不是任务为空，也未证明历史业务数据损坏。
+
+本次以单条参数化CTE SELECT读取current execution、latest saved work和所选attempt的最近51条保存回执，单条语句具有同一MVCC快照，不调用db.transaction或SET TRANSACTION。仍使用原注入数据库、原native认证上下文和RLS，不自建产品连接、不改平台SDK、不改数据库结构。原tenant/WorkItem/current DocumentVersion/WORK_ITEM/requestOrigin/actionType条件、active优先和确定性排序不变；latest旧正文的合法保留语义不变，保存活动精确attempt限定不变。JSON中的时间显式转回Date，当前正文仍经原历史解析和返回前fresh evidence校验。数据库失败/无响应行/坏历史仍明确抛错，不能空态降级；不触发模型、生成或重解析。
+
+前述0c350的三读事务实现由本节单语句实现替代；其本地mock通过不构成平台兼容证据。补充真实本机PostgreSQL测试，加载项目真实SqlExecutionContextMiddleware和Datapaas Drizzle patch，在专用合成库使用authenticated角色/RLS；覆盖空快照、正确身份/跨tenant/错误actor、文档版本选择、Date转换、确定性并发换轮（RLS内advisory lock确认读取已进入DB快照，然后另一连接提交新轮与新保存，首读保留旧一致快照，次读看到新轮）、活跃新轮无保存时保留旧正文。该测试不修改生产数据库，不证明线上代理已经复验。
+
+验证：4套Jest34项通过（current-execution、activity、read-lifecycle、canonical-library.service），真实PG集成1/1通过无skip，server typecheck、3文件lint、diffcheck通过。首次单测正则误将COMMITTING枚举识别为COMMIT语句，修正为词边界后通过；生产SQL无需为此变化。测试仅临时本机127.0.0.1:55447/wiselink_snapshot_test_a，可通过JOBAID_SNAPSHOT_TEST_DATABASE_URL运行test/node/jobaid-browser-snapshot-postgres.test.mjs；新库路径检查限制localhost及wiselink_snapshot_test_*前缀，fixture结束清理专用表/角色。
+
+本批仅repository、对应单测、新PG测试及本记录4文件。未动B的图谱、知识页、原件或Matter服务区域，未自行push/release。主控部署后Luna须用正常身份只读复验任务目录和单WorkItem assessment-work，保留knowledge16/activity正常证据；技术发布前不能称线上已恢复。

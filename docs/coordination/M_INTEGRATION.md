@@ -1,5 +1,14 @@
 # M 主控集成交接
 
+## 2026-09-23 第二批发布及任务目录兼容修复
+
+第二批 release `7688432648880098235` 已回读 `finished`、commit `ef258aa7faba42277d38dec7584e41bb4be2ee55`、error_logs=[]；origin/github 精确同名 `codex/integration-ab2-20260923` 均已回读该SHA。正常身份线上：PDF第5页定位与用户滚动接管通过；knowledge进入graph保持同一事项/修订通过；graph实际返回按钮仍错到library，B独立修复待验收发布。保存知识与既有活动候选可读，不代表新评估运行成功。
+
+任务目录真实HTTP500：平台Postgres code25000，`set transaction isolation level repeatable read read only`触发不支持的事务类型切换。根因和两次请求trace已由官方日志核对，私有原始记录 `/private/tmp/wiselink-a-recent-errors.json`。本次仅选择性加入A `a89d76741599e089d5295ec67dcd2012ecb3ff50` 四文件修复，改为单条参数化CTE查询取得同一语句快照，保持SDK身份/RLS/来源/active优先与旧正文语义，未降级混合读取。
+
+专属Luna在ef258组合树独立验证：4套34项、真实本机专用PG/RLS/SDK middleware/确定性并发换轮1项（无skip）、server typecheck、定向lint、diff-check通过；四文件与a89逐字一致。真实平台代理仍需发布后正常身份重读任务目录；本段不声称该紧急修复已发布或线上恢复。后续B77ae/fadf/e10/a7不加入此修复。Hosted新Skill仍未完成安装。
+
+
 ## 2026-09-23 A/B 统一集成与发布当前状态
 
 已部署 Host：`app_17bzc551rsg`，release `7688408024273652704` 已回读 `finished`，准确提交 `e812421cb050aed0954ca3f6945159100155a301`，`error_logs=[]`。`origin` 与 `github` 的同名 `codex/integration-ab-20260923` 已分别回读该 SHA。
