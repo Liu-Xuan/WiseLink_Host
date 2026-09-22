@@ -404,6 +404,22 @@ function OverlayCard({
   );
 }
 
+type GraphCamera = { zoom: number; pan: { x: number; y: number } };
+
+function sameCamera(left: GraphCamera | null, right: GraphCamera): boolean {
+  return left?.zoom === right.zoom && left.pan.x === right.pan.x && left.pan.y === right.pan.y;
+}
+
+function sameOverlayNodes(left: OverlayNode[], right: OverlayNode[]): boolean {
+  return left.length === right.length && left.every((node, index) => {
+    const next = right[index];
+    return node.id === next.id && node.position.x === next.position.x
+      && node.position.y === next.position.y
+      && Object.keys(node.data).length === Object.keys(next.data).length
+      && Object.keys(node.data).every((key) => Object.is(node.data[key], next.data[key]));
+  });
+}
+
 const SuiteGraphCanvas = forwardRef<SuiteGraphCanvasHandle, SuiteGraphCanvasProps>(function SuiteGraphCanvas(
   { presentation, initialViewport, selectedId, focusGroupKey, onSelect, onGroup, onOverflow, onInspectRelationships, onViewport, className, ariaLabel = '关系图谱' },
   ref,
@@ -413,6 +429,13 @@ const SuiteGraphCanvas = forwardRef<SuiteGraphCanvasHandle, SuiteGraphCanvasProp
   const callbacksRef = useRef({ onSelect, onGroup, onOverflow, onInspectRelationships, onViewport });
   const [overlayNodes, setOverlayNodes] = useState<OverlayNode[]>([]);
   const [camera, setCamera] = useState({ zoom: 1, pan: { x: 0, y: 0 } });
+  const syncNowRef = useRef<(() => void) | null>(null);
+  const publishedCameraRef = useRef<GraphCamera | null>(null);
+  const publishViewport = useCallback((viewport: GraphCamera) => {
+    if (sameCamera(publishedCameraRef.current, viewport)) return;
+    publishedCameraRef.current = { zoom: viewport.zoom, pan: { ...viewport.pan } };
+    callbacksRef.current.onViewport?.(viewport);
+  }, []);
   const dragRef = useRef<DragState | null>(null);
   const dragCleanupRef = useRef<((cancelled: boolean) => void) | null>(null);
   const suppressClickRef = useRef<{ id: string; until: number } | null>(null);
@@ -553,19 +576,37 @@ const SuiteGraphCanvas = forwardRef<SuiteGraphCanvasHandle, SuiteGraphCanvasProp
       style: buildStyleSheet(readThemeTokens(mount)),
     });
     let labelsHidden = false;
+    let frame: number | null = null;
+    let disposed = false;
+    let lastNodes: OverlayNode[] = [];
+    let lastCamera: GraphCamera | null = null;
     const sync = () => {
+      if (disposed) return;
+      if (frame !== null) window.cancelAnimationFrame(frame);
+      frame = null;
       const hideLabels = cy.zoom() < 0.9;
       if (labelsHidden !== hideLabels && typeof cy.edges === 'function') {
         labelsHidden = hideLabels;
         cy.edges().toggleClass('suite-small-edge-label', hideLabels);
       }
-      const next = cy.nodes().map((node) => ({ id: node.id(), data: node.data() as Record<string, unknown>, position: node.renderedPosition() }));
-      setOverlayNodes(next);
-      const nextCamera = { zoom: cy.zoom(), pan: cy.pan() };
-      setCamera(nextCamera);
-      if (cameraReadyRef.current && !internalCameraRef.current) callbacksRef.current.onViewport?.(nextCamera);
+      // Cytoscape mutates data/positions in place; retain detached snapshots.
+      const next = cy.nodes().map((node) => ({ id: node.id(), data: { ...node.data() } as Record<string, unknown>, position: { ...node.renderedPosition() } }));
+      if (!sameOverlayNodes(lastNodes, next)) {
+        lastNodes = next;
+        setOverlayNodes(next);
+      }
+      const nextCamera = { zoom: cy.zoom(), pan: { ...cy.pan() } };
+      if (!sameCamera(lastCamera, nextCamera)) {
+        lastCamera = nextCamera;
+        setCamera(nextCamera);
+      }
+      if (cameraReadyRef.current && !internalCameraRef.current) publishViewport(nextCamera);
     };
-    cy.on('render resize pan zoom', sync);
+    const scheduleSync = () => {
+      if (!disposed && frame === null) frame = window.requestAnimationFrame(sync);
+    };
+    syncNowRef.current = sync;
+    cy.on('render resize pan zoom', scheduleSync);
     cy.on('tap', 'edge', (event: EventObject) => {
       const ids = event.target.data('relationshipIds');
       if (Array.isArray(ids)) callbacksRef.current.onInspectRelationships?.(ids.filter((id): id is string => typeof id === 'string'));
@@ -599,6 +640,11 @@ const SuiteGraphCanvas = forwardRef<SuiteGraphCanvasHandle, SuiteGraphCanvasProp
     mount.addEventListener('wheel', markUserCamera, { passive: true });
     mount.addEventListener('pointerdown', markUserCamera, { passive: true });
     return () => {
+      disposed = true;
+      if (frame !== null) window.cancelAnimationFrame(frame);
+      syncNowRef.current = null;
+      cameraReadyRef.current = false;
+      publishedCameraRef.current = null;
       dragCleanupRef.current?.(true);
       themeObserver?.disconnect();
       resizeObserver.disconnect();
@@ -609,7 +655,7 @@ const SuiteGraphCanvas = forwardRef<SuiteGraphCanvasHandle, SuiteGraphCanvasProp
       cy.destroy();
       cyRef.current = null;
     };
-  }, [applyAutoCamera]);
+  }, [applyAutoCamera, publishViewport]);
 
   useEffect(() => {
     userCameraRef.current = false;
@@ -649,8 +695,9 @@ const SuiteGraphCanvas = forwardRef<SuiteGraphCanvasHandle, SuiteGraphCanvasProp
     }
     internalCameraRef.current = false;
     cameraReadyRef.current = true;
-    callbacksRef.current.onViewport?.({ zoom: cy.zoom(), pan: cy.pan() });
-  }, [presentation, applyAutoCamera]);
+    publishViewport({ zoom: cy.zoom(), pan: { ...cy.pan() } });
+    syncNowRef.current?.();
+  }, [presentation, applyAutoCamera, publishViewport]);
 
   useEffect(() => {
     const cy = cyRef.current;
@@ -702,7 +749,8 @@ const SuiteGraphCanvas = forwardRef<SuiteGraphCanvasHandle, SuiteGraphCanvasProp
     cy.center(target);
     internalCameraRef.current = false;
     userCameraRef.current = true;
-    callbacksRef.current.onViewport?.({ zoom: cy.zoom(), pan: cy.pan() });
+    publishViewport({ zoom: cy.zoom(), pan: { ...cy.pan() } });
+    syncNowRef.current?.();
   };
   const handleDragStart = (event: React.PointerEvent<HTMLButtonElement>, id: string) => {
     if (event.button !== 0) return;
