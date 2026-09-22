@@ -484,3 +484,16 @@ Host新增GET original-identity（private,no-store），原登录/平台入口gu
 验证：4套117项（original-memory、original-canvas-preparation、metadata-enrichment、canonical-host-client）通过；另补并发hash共享但授权独立测试。覆盖撤权/503拒绝旧bytes、digest/length变化、DV/session隔离、计时器过期、数量/总字节/单文件限制、最多2次在途与排队取消、迟到结果拒绝、真实组件三次开关URL平衡、Host二次授权与不读存储。双端typecheck、5生产文件ESLint、build:prod通过（client13.11s，既有module/chunk警告；构建不是实际OCR/Hosted运行）。test目录不纳入现有ESLint配置。必须组合部署新Host identity端点与对应前端；未实现旧Host端点缺失时绕过授权的缓存回退。
 
 前批d0829db9c独立验收已通过。计数澄清：B的6/54集合含matter-graph-page/graph-route，Luna的6/63集合用appearance/presentation替换这两套，属于并列补充证据而非计数过时；Luna已明确更正，不重复门禁。
+
+
+## 2026-09-23 B：3A.4 活动控制与来源权限
+
+基线 `ff46e1d98a96664b522277134c52bc1da2d21bb7`，独立树 `/private/tmp/wiselink-perf-b-activity-control-20260923`。实际发现Activity所有动作在分派前load原文/semantic，导致状态、心跳、取消也受文件服务失败影响。控制操作改为服务范围+actor/RLS读取run后fresh parsing.status复核普通来源ACL/catalog，再执行生命周期动作；不加载原文字节、semantic map或plan。BEGIN及READ/SAVE继续精确原文和manifest/parseRevision完整性路径。成功控制只证明任务控制权限，不证明历史原文当前可下载或字节完整。
+
+同时核对ConfiguredDevelopmentCanonicalServiceScopeAuthorization：authorizeDocumentWork仅配置允许列表与actor绑定，文档明确每次仍需普通来源权限。既有Reading除STATUS外的CANCEL/CLAIM/HEARTBEAT/FAIL未复核这一权限；本批补齐轻量parsing.status，来源撤权后不能修改任务，lease/fence/事务不变。
+
+Activity STATUS在来源授权后调用已有expire（仅QUEUED/RUNNING且deadline已过），再读取最新持久状态；已保存/取消的并发结果不会被该SQL覆盖。防止只轮询未知结果的消费者一直看到过期RUNNING，没有触发新的模型请求或重放未知结果。
+
+反例：新控制/撤权/截止时间测试在基线15失败18通过；修复后2套33项全通过，覆盖五类Activity控制零original/semantic读、fresh ACL、拒绝后零控制写、READ/SAVE原文失败、fresh状态回读及Reading普通来源权限。server types/两个生产文件ESLint/server build通过。额外实际Host Runtime+MCP+本地构造模型服务互通2项通过；该夹具原先漏注入已存在documentReading服务，在到达业务动作前工具目录校验失败，已补齐测试依赖并给未来deadline fixture补expire。未改生产MCP工具清单或模型契约，未调用真实模型/生产平台。构建仅静态运行资产检查，不是Hosted运行验收。
+
+前批ff46e1d98原件复用已获Luna独立4套118项（含新增并发hash项）、controller4项、双端types、生产lint/build/precommit通过；真实授权网络延迟、浏览器heap/p95仍未取得。主控当前已回读为idle且尚未提供新集成/发布证据，已请求安排统一集成及授权预览样本，B继续独立2D/3B工作。

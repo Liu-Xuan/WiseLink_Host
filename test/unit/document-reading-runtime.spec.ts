@@ -219,3 +219,14 @@ describe('independent file reading runtime', () => {
     await expect(f.service.readForBrowser(request, f.context)).rejects.toThrow('SOURCE_ACCESS_DENIED');
   });
 });
+
+it.each(['READING_CANCEL','READING_CLAIM','READING_HEARTBEAT','READING_FAIL'])('%s requires ordinary source authorization beyond the service allowlist', async action => {
+ const f=fixture(); f.parsing.status.mockRejectedValue(new Error('SOURCE_REVOKED'));
+ const base={ action, documentVersionId: f.scope.documentVersionId, runRef: f.row.runRef };
+ const input=action==='READING_HEARTBEAT' ? { ...base, ...f.fence }
+  : action==='READING_FAIL' ? { ...base, ...f.fence, errorCode: 'TEST_FAILURE' }
+  : action==='READING_CLAIM' ? { ...base, leaseOwner: f.fence.leaseOwner } : base;
+ await expect(f.service.run(input)).rejects.toThrow('SOURCE_REVOKED');
+ for (const method of ['cancel','claim','renew','fail','expire'] as const) expect(f.runs[method]).not.toHaveBeenCalled();
+ expect(f.reader.readDocumentOriginal).not.toHaveBeenCalled();
+});

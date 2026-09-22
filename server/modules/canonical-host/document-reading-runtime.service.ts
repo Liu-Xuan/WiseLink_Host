@@ -60,15 +60,17 @@ export class DocumentReadingRuntimeService {
           manifestSha256: source.artifact.sha256, expectedRevision: input.expectedRevision });
         return summary(row);
       }
-      // RLS and the run registry validate ownership again. Control operations
+      // RLS/run ownership and fresh ordinary source ACL are both required. Control operations
       // stop here and manage lifecycle only, without taking original bytes,
       // semantic maps or source plans. Their success proves task control, not
       // that the original is still downloadable or byte-correct; a historical
       // run keeps the exact source/parse registration recorded at BEGIN.
       const row = await this.runs.readRun(scope, input.runRef);
       if (!row) throw new Error('DOCUMENT_READING_RUN_NOT_FOUND');
-      if (input.action === 'READING_STATUS') {
+      if (input.action !== 'READING_READ' && input.action !== 'READING_SAVE') {
         await this.parsing.status(scope.documentVersionId, context);
+      }
+      if (input.action === 'READING_STATUS') {
         // A consumer with an uncertain checkpoint only polls STATUS and never
         // claims again. Reconcile the deadline here so it cannot stay RUNNING forever.
         await this.runs.expire(scope, input.runRef);
