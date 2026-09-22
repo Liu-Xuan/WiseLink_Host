@@ -412,6 +412,137 @@ describe('engineering matter QueryClient resource identity', () => {
     ).toBe('');
   });
 
+  test('workspace revoke is not undone by a later network failure', async () => {
+    mockWorkspaceRead.mockResolvedValueOnce(workspace('Cached matter'));
+    render(createElement(Consumer, { matterId: 'M-1', label: 'only' }));
+    await waitUntil(
+      () =>
+        container
+          .querySelector('[data-consumer="only"]')
+          ?.getAttribute('data-title') === 'Cached matter',
+    );
+
+    mockWorkspaceRead.mockRejectedValueOnce(
+      Object.assign(new Error('access denied'), { statusCode: 403 }),
+    );
+    await act(async () =>
+      container
+        .querySelector<HTMLButtonElement>('[data-action="refresh-only"]')
+        ?.click(),
+    );
+    await waitUntil(
+      () =>
+        container
+          .querySelector('[data-consumer="only"]')
+          ?.getAttribute('data-error') === 'access denied',
+    );
+
+    mockWorkspaceRead.mockRejectedValueOnce(new Error('network unavailable'));
+    await act(async () =>
+      container
+        .querySelector<HTMLButtonElement>('[data-action="refresh-only"]')
+        ?.click(),
+    );
+    await waitUntil(
+      () =>
+        container
+          .querySelector('[data-consumer="only"]')
+          ?.getAttribute('data-error') === 'network unavailable',
+    );
+    expect(
+      container
+        .querySelector('[data-consumer="only"]')
+        ?.getAttribute('data-title'),
+    ).toBe('');
+
+    mockWorkspaceRead.mockResolvedValueOnce(workspace('Reauthorized matter'));
+    await act(async () =>
+      container
+        .querySelector<HTMLButtonElement>('[data-action="refresh-only"]')
+        ?.click(),
+    );
+    await waitUntil(
+      () =>
+        container
+          .querySelector('[data-consumer="only"]')
+          ?.getAttribute('data-title') === 'Reauthorized matter',
+    );
+  });
+
+  test('exact historical work revoke is not undone by a later network failure', async () => {
+    const historical = structuredClone(libraryMatterFixture().working.current!);
+    historical.matterWorkRevisionId = 'history-1';
+    mockWorkspaceRead.mockResolvedValue(workspace('Current matter'));
+    mockHistoricalRead.mockResolvedValueOnce(historical);
+    render(
+      createElement(Consumer, {
+        matterId: 'M-1',
+        workRef: 'history-1',
+        label: 'only',
+      }),
+    );
+    await waitUntil(
+      () =>
+        container
+          .querySelector('[data-consumer="only"]')
+          ?.getAttribute('data-revision') === 'history-1',
+    );
+
+    mockHistoricalRead.mockRejectedValueOnce(
+      Object.assign(new Error('historical denied'), { statusCode: 403 }),
+    );
+    await act(async () =>
+      container
+        .querySelector<HTMLButtonElement>('[data-action="refresh-only"]')
+        ?.click(),
+    );
+    await waitUntil(
+      () =>
+        container
+          .querySelector('[data-consumer="only"]')
+          ?.getAttribute('data-error') === 'historical denied',
+    );
+    expect(
+      container
+        .querySelector('[data-consumer="only"]')
+        ?.getAttribute('data-revision'),
+    ).toBe('');
+
+    mockHistoricalRead.mockRejectedValueOnce(new Error('network unavailable'));
+    await act(async () =>
+      container
+        .querySelector<HTMLButtonElement>('[data-action="refresh-only"]')
+        ?.click(),
+    );
+    await waitUntil(
+      () =>
+        container
+          .querySelector('[data-consumer="only"]')
+          ?.getAttribute('data-error') === 'network unavailable',
+    );
+    expect(
+      container
+        .querySelector('[data-consumer="only"]')
+        ?.getAttribute('data-revision'),
+    ).toBe('');
+
+    mockHistoricalRead.mockResolvedValueOnce({
+      ...historical,
+      workingRevision: 2,
+    });
+    await act(async () =>
+      container
+        .querySelector<HTMLButtonElement>('[data-action="refresh-only"]')
+        ?.click(),
+    );
+    await waitUntil(
+      () =>
+        container
+          .querySelector('[data-consumer="only"]')
+          ?.getAttribute('data-revision') === 'history-1',
+    );
+  });
+
   test('exact historical workRef is shared and never replaced by current work', async () => {
     const historical = structuredClone(libraryMatterFixture().working.current!);
     historical.matterWorkRevisionId = 'history-2';
