@@ -2,7 +2,7 @@
 
 ## 本批身份
 
-B知识交互证据树：`/private/tmp/wiselink-perf-b-knowledge-interaction-evidence-20260923`，基线`157bf13ffe078ade031ad06cef48ce229b009963`。Main正统一发布已接受dd1/f7/a0，157bf留后续同步。本轮补40次已保存知识预览依据展开/收起：展开DOM p95 100.8ms、2RAF237.8ms，并观察后20次5个63–141ms长任务；零业务请求。实际页面为/knowledge，不是Wiki路由。完整样本及测量扰动边界见KNOWLEDGE_INTERACTION_EVIDENCE_20260923.json，临时探针已清理。下一步定向profile归因，发布后同版本复测及Hosted/后台竞争证据继续，Goal active。
+B证据树：`/private/tmp/wiselink-perf-b-knowledge-interaction-evidence-20260923`，本批父提交`c32853129ff303a1e276e8f6d48c515e555368a0`。f24已发布且实际资产SHA吻合。三次冷目录4.175–4.724秒、正文3.723–4.310秒，目标未闭合；图谱过期正常重读，三次新鲜期返回来源请求0。完整匿名证据见F24_READ_RUNTIME_EVIDENCE_20260923.json。前批展开长任务待归因；Hosted/后台竞争继续，Goal active。
 
 ## 完整路线状态（2026-09-23）
 

@@ -750,3 +750,11 @@ Main回执：ef258 release7688432648880098235 finished updated_at=1790103060000�
 - 后20次另开PerformanceObserver longtask，观察5次63/102/102/129/141ms长任务；其中4次起点与点击附近重合，一次在点击间。这里只证明观察到长任务，不以时间接近直接断定具体React/CSS函数是原因。后续需要trace归因及本地对照，不能因2RAF本身不是GPU而丢弃长任务证据。
 - 探针在capture click记录performance.now、MutationObserver检测open变化；展开读取内容rect/text，收起只以原生open=false判断。此浏览器收起后内容getBoundingClientRect仍保留4608高度，故不把rect当隐藏证明。强制布局与工具AX快照可能扰动时序，记录为诊断样本，不外推真实用户总体p95。未修改产品DOM/数据或发起生成；结束已移除observer/listener/PerformanceObserver，测量对象读回undefined。
 - 热知识返回21.6ms与图谱返回24.5ms证据保持原范围，不能代替普通展开流畅性。此新热点待下一批定向profile，整体Goal不关闭。
+
+
+## B f24发布后冷读与图谱来源复用（2026-09-23）
+
+- Main确认Host发布`f24b9714ec87f586cb5302185480ddcb7fc49e86`，release `7688462050381221075` finished；含dd1/f7/a0。B浏览器实际加载的RelationGraphPage资产路径也带该SHA。精确保存修订16、正常登录只读，不触发生成。匿名记录见F24_READ_RUNTIME_EVIDENCE_20260923.json。
+- 三次完整刷新：catalogue 4175.110/4290.715/4723.600ms，work 3723.083/3950.776/4310.134ms，均200。目录与正文请求相差约1–2ms，已经并行；不能以继续调整前端并发解释此热点。平台origin分别3828–4378ms和3226–3870ms；它不是SQL独立耗时。三个样本不计算p95，也不宣称窄投影/跳过一次查询已使线上达标。
+- 图谱首次来源状态553.450ms，33.390秒后的返回1149.734ms，均200：已超过30秒新鲜期，正常重读。随后三次实际“返回工程知识→关系图谱”位于新鲜期内，完整无截断Network窗口中来源请求为0，每次图谱可见，URL仍绑定同一matter/workRef并恢复82%镜头。该样本为无已发布解析的来源状态，不能外推所有已发布来源与活动组合。
+- 首轮窗口从identity前序列重新提取后完整，后两轮直接完整；保留全部样本，不筛慢值。没有注入探针，没有改变业务数据。下一步定位服务端串行调用与普通展开长任务；Hosted实际安装、背景竞争/公平仍由既定分工继续，整体Goal active。
