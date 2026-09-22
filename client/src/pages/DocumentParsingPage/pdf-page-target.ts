@@ -5,6 +5,7 @@ export function followPdfPageTarget(
   container: HTMLElement,
   page: number,
   onPosition: (scrollTop: number) => void,
+  offsetRatio = 0,
 ): () => void {
   let following = true;
   let frame: number | null = null;
@@ -17,10 +18,12 @@ export function followPdfPageTarget(
     // A short last page needs enough trailing space to reach the reading line.
     // Only extend an already scrollable viewport, avoiding auto-height feedback.
     const trailing = last && container.scrollHeight > container.clientHeight + 1
-      ? Math.max(6, container.clientHeight - last.getBoundingClientRect().height + 6) : 6;
+      ? Math.max(6, container.clientHeight - last.getBoundingClientRect().height + 6
+        + (last === target ? Math.max(0, offsetRatio) * last.getBoundingClientRect().height : 0)) : 6;
     const padding = `${trailing}px`;
     if (container.style.paddingBottom !== padding) container.style.paddingBottom = padding;
-    const offset = target.getBoundingClientRect().top - container.getBoundingClientRect().top;
+    const targetRect = target.getBoundingClientRect();
+    const offset = targetRect.top - container.getBoundingClientRect().top + offsetRatio * targetRect.height;
     if (Math.abs(offset) > 0.5) container.scrollTo({ top: Math.max(0, container.scrollTop + offset), behavior: 'auto' });
     onPosition(container.scrollTop);
   }

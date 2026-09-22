@@ -5,6 +5,10 @@ import { createRoot, type Root } from 'react-dom/client';
 import { transformSync } from 'esbuild';
 const { JSDOM } = require('jsdom');
 jest.mock('@lark-apaas/client-toolkit', () => ({ getCsrfToken: () => null }));
+jest.mock('@client/src/api/canonical-host', () => ({
+  getCanonicalHostClientSessionGeneration: () => 0,
+  subscribeCanonicalHostClientSession: () => () => undefined,
+}));
 
 // Compile only Vite's worker URL/import.meta syntax. Run the actual React viewer;
 // PDF acquisition is isolated so late page geometry can be controlled precisely.
@@ -19,7 +23,7 @@ const moduleObject = { exports: {} as { default: (props: any) => any } };
 new Function('require', 'module', 'exports', compiled)((name: string) => {
   if (name.endsWith('?worker&url')) return 'http://localhost/pdf.worker.mjs';
   if (name === './pdfjs-runtime') return runtime;
-  if (name === '@client/src/api/canonical-host') return { canonicalPdfPreviewUrl: () => '/unused' };
+  if (name === '@client/src/api/canonical-host') return { canonicalPdfPreviewUrl: () => '/unused', getCanonicalHostClientSessionGeneration: () => 0 };
   if (name.endsWith('RetainedWorkbenchPanel')) return { useWorkbenchPanelActive: () => panelActive };
   if (name.startsWith('./')) return require(resolve(viewerFile, '..', name));
   return require(name);
@@ -36,8 +40,8 @@ describe('actual PDF viewer with asynchronous page geometry (isolated PDF engine
   function resize() { for (const observer of observers) if (observer.targets.size) observer.callback(); flushFrames(); }
   function container() { return host.querySelector('.parse-pdf-pages') as HTMLElement; }
   function targetTop(page = 5) { return host.querySelector(`[data-pdf-page="${page}"]`)!.getBoundingClientRect().top - container().getBoundingClientRect().top; }
-  async function mount(signal = 'source-5', targetPage = 5) { await act(async () => { root.render(createElement(Viewer, {
-    sourceUrl: 'blob:isolated-pdf', targetPage, targetSignal: signal,
+  async function mount(signal = 'source-5', targetPage = 5, readingScope?: string) { await act(async () => { root.render(createElement(Viewer, {
+    sourceUrl: 'blob:isolated-pdf', targetPage, targetSignal: signal, readingScope,
   })); }); await act(async () => flushFrames()); }
   beforeEach(() => {
     dom = new JSDOM('<div id="root"></div>', { url: 'http://localhost' });
@@ -105,6 +109,50 @@ describe('actual PDF viewer with asynchronous page geometry (isolated PDF engine
     expect(container().scrollTop).toBe(manualTop);
     await mount('new-source-5');
     expect(targetTop()).toBe(0);
+  });
+
+  it('restores manually scrolled page and within-page position after unmount, then honors a new source', async () => {
+    await mount('entry', 1, 'DV-return:parse-1:revision-2');
+    await act(async () => {
+      container().dispatchEvent(new dom.window.WheelEvent('wheel', { bubbles: true }));
+      container().scrollTo({ top: pageOffset(3) + 40 });
+      flushFrames();
+    });
+    expect((host.querySelector('input') as HTMLInputElement).value).toBe('3');
+    await act(async () => root.unmount()); root = createRoot(host);
+    await mount('entry', 1, 'DV-return:parse-1:revision-2');
+    expect((host.querySelector('input') as HTMLInputElement).value).toBe('3');
+    expect(container().scrollTop).toBeCloseTo(pageOffset(3) + 40);
+    await act(async () => { heights = [514, 514, 514, 514, 514]; resize(); });
+    expect(container().scrollTop).toBeCloseTo(pageOffset(3) + 40 / 280 * 514);
+    await mount('new-source-5', 5, 'DV-return:parse-1:revision-2');
+    expect(targetTop(5)).toBe(0);
+    expect((host.querySelector('input') as HTMLInputElement).value).toBe('5');
+  });
+
+  it.each([['放大 PDF', '125%'], ['缩小 PDF', '75%']])('retains zoom-only interaction %s across navigation', async (label, expected) => {
+    const scope = `DV-zoom-only:${label}`;
+    await mount('entry', 1, scope);
+    await act(async () => { (host.querySelector(`[aria-label="${label}"]`) as HTMLButtonElement).click(); });
+    expect(host.querySelector('.parse-pdf-zoom-controls span')!.textContent).toBe(expected);
+    await act(async () => root.unmount()); root = createRoot(host);
+    await mount('entry', 1, scope);
+    expect(host.querySelector('.parse-pdf-zoom-controls span')!.textContent).toBe(expected);
+  });
+
+  it('captures a last scroll before its animation frame and does not restore into another parse', async () => {
+    await mount('entry', 1, 'DV-fast:parse-1');
+    await act(async () => {
+      container().dispatchEvent(new dom.window.WheelEvent('wheel', { bubbles: true }));
+      container().scrollTo({ top: pageOffset(2) + 25 });
+      root.unmount();
+    });
+    root = createRoot(host); await mount('entry', 1, 'DV-fast:parse-1');
+    expect((host.querySelector('input') as HTMLInputElement).value).toBe('2');
+    expect(container().scrollTop).toBeCloseTo(pageOffset(2) + 25);
+    await act(async () => root.unmount()); root = createRoot(host);
+    await mount('entry', 1, 'DV-fast:parse-2');
+    expect((host.querySelector('input') as HTMLInputElement).value).toBe('1');
   });
 
   it('disconnects target observers and pending frames when hidden or unmounted without reopening the PDF', async () => {

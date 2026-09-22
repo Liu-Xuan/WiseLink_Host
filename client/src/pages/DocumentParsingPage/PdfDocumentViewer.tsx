@@ -22,7 +22,7 @@ import {
   type ChangeEvent,
 } from 'react';
 
-import { canonicalPdfPreviewUrl } from '@client/src/api/canonical-host';
+import { canonicalPdfPreviewUrl, getCanonicalHostClientSessionGeneration } from '@client/src/api/canonical-host';
 import { useWorkbenchPanelActive } from '@client/src/features/workbench/RetainedWorkbenchPanel';
 import type { CanonicalPdfPreviewProjection } from '@shared/api.interface';
 import {
@@ -32,6 +32,7 @@ import {
 import { clampPdfPage, visiblePdfPages } from './pdf-viewer-state';
 import { loadPdfJsRuntime } from './pdfjs-runtime';
 import { followPdfPageTarget } from './pdf-page-target';
+import { readPdfPosition, savePdfPosition } from './pdf-reading-position';
 
 const PDF_WORKER_SRC: string = resolvePdfWorkerUrl(
   pdfWorkerUrl,
@@ -45,6 +46,8 @@ export interface PdfBoxTarget {
 }
 
 type PdfDocumentViewerProps = {
+  readingScope?: string;
+  onVisiblePageChange?: (page: number) => void;
   targetPage: number | null;
   targetSignal: string;
   targetBoxes?: PdfBoxTarget | null;
@@ -73,6 +76,7 @@ interface PdfCanvasPageProps {
 }
 
 interface PdfScrollRequest {
+  offsetRatio?: number;
   page: number;
   sequence: number;
 }
@@ -83,12 +87,20 @@ const ZOOM_STEP = 0.25;
 
 export default function PdfDocumentViewer(props: PdfDocumentViewerProps) {
   const { targetPage, targetSignal, targetBoxes } = props;
+  const [positionSession] = useState(getCanonicalHostClientSessionGeneration);
+  const positionKey = props.readingScope
+    ? JSON.stringify([props.readingScope, targetPage, targetSignal]) : null;
+  const [initialPositionKey] = useState(positionKey);
+  const capturePositionRef = useRef<() => void>(() => undefined);
+  const [initialPosition] = useState(() => readPdfPosition(positionKey, positionSession));
+  const initialPositionUsed = useRef(false);
+  const userControlsPosition = useRef(false);
   const panelActive: boolean = useWorkbenchPanelActive();
   const [pdfDocument, setPdfDocument] = useState<PDFDocumentProxy | null>(null);
   const [pageCount, setPageCount] = useState<number>(0);
   const [currentPage, setCurrentPage] = useState<number>(1);
   const [pageInput, setPageInput] = useState<string>('1');
-  const [zoom, setZoom] = useState<number>(1);
+  const [zoom, setZoom] = useState<number>(initialPosition?.zoom ?? 1);
   const [loading, setLoading] = useState<boolean>(true);
   const [error, setError] = useState<boolean>(false);
   const [renderedPages, setRenderedPages] = useState<ReadonlySet<number>>(
@@ -168,9 +180,21 @@ export default function PdfDocumentViewer(props: PdfDocumentViewerProps) {
 
   useEffect(() => {
     if (!pdfDocument || targetPage === null) return;
-    const nextPage: number = clampPdfPage(targetPage, pdfDocument.numPages);
-    requestPdfPage(nextPage);
-  }, [pdfDocument, targetPage, targetSignal]);
+    // Only mount restoration may consume remembered metadata. Every subsequent
+    // explicit source/page signal wins, even if that target has older memory.
+    const saved = initialPositionUsed.current || positionKey !== initialPositionKey ? null : initialPosition;
+    initialPositionUsed.current = true;
+    userControlsPosition.current = false;
+    if (scrollFrameRef.current !== null) {
+      window.cancelAnimationFrame(scrollFrameRef.current);
+      scrollFrameRef.current = null;
+    }
+    requestPdfPage(clampPdfPage(saved?.page ?? targetPage, pdfDocument.numPages), saved?.offsetRatio);
+  }, [pdfDocument, targetPage, targetSignal, positionKey]);
+
+  useEffect(() => {
+    if (pdfDocument && panelActive) props.onVisiblePageChange?.(currentPage);
+  }, [pdfDocument, panelActive, currentPage, props.onVisiblePageChange]);
 
   const visiblePages: number[] = useMemo(
     () => visiblePdfPages(currentPage, pageCount, isMobile),
@@ -239,7 +263,8 @@ export default function PdfDocumentViewer(props: PdfDocumentViewerProps) {
     appliedScrollRequestRef.current = scrollRequest;
     return followPdfPageTarget(container, scrollRequest.page, (scrollTop) => {
       savedScrollTopRef.current = scrollTop;
-    });
+    }, scrollRequest.offsetRatio);
+
   }, [pageCount, scrollRequest, panelActive]);
 
   useEffect(
@@ -251,7 +276,7 @@ export default function PdfDocumentViewer(props: PdfDocumentViewerProps) {
     [],
   );
 
-  function requestPdfPage(page: number): void {
+  function requestPdfPage(page: number, offsetRatio?: number): void {
     const nextPage: number = clampPdfPage(page, pageCount);
     setCurrentPage(nextPage);
     setPageInput(String(nextPage));
@@ -261,20 +286,68 @@ export default function PdfDocumentViewer(props: PdfDocumentViewerProps) {
     });
     setScrollRequest((current: PdfScrollRequest) => ({
       page: nextPage,
+      offsetRatio,
       sequence: current.sequence + 1,
     }));
   }
 
   function movePage(offset: number): void {
+    userControlsPosition.current = true;
     const nextPage: number = clampPdfPage(currentPage + offset, pageCount);
     requestPdfPage(nextPage);
   }
 
   function commitPageInput(): void {
+    userControlsPosition.current = true;
     const parsed: number = Number.parseInt(pageInput, 10);
     const nextPage: number = clampPdfPage(parsed, pageCount);
     requestPdfPage(nextPage);
   }
+
+  useLayoutEffect(() => () => capturePositionRef.current(), []);
+
+  function reportPagesPosition(updateUi = true): void {
+    const container: HTMLDivElement | null = pagesRef.current;
+    if (!container) return;
+    const pages: HTMLElement[] = Array.from(
+      container.querySelectorAll<HTMLElement>('[data-pdf-page]'),
+    );
+    if (pages.length === 0) return;
+    const containerRect: DOMRect = container.getBoundingClientRect();
+    const readingLine: number =
+      containerRect.top + Math.min(container.clientHeight * 0.32, 180);
+    const pageAtReadingLine: HTMLElement | undefined = pages.find(
+      (page: HTMLElement) => {
+        const rect: DOMRect = page.getBoundingClientRect();
+        return rect.top <= readingLine && rect.bottom > readingLine;
+      },
+    );
+    const visiblePage: HTMLElement =
+      pageAtReadingLine ??
+      pages.reduce((nearest: HTMLElement, candidate: HTMLElement) => {
+        const nearestDistance: number = Math.abs(
+          nearest.getBoundingClientRect().top - readingLine,
+        );
+        const candidateDistance: number = Math.abs(
+          candidate.getBoundingClientRect().top - readingLine,
+        );
+        return candidateDistance < nearestDistance ? candidate : nearest;
+      });
+    const nextPage: number = Number(
+      visiblePage.getAttribute('data-pdf-page'),
+    );
+    if (!Number.isSafeInteger(nextPage)) return;
+    if (userControlsPosition.current) {
+      const rect = visiblePage.getBoundingClientRect();
+      if (rect.height > 0) savePdfPosition(positionKey, {
+        page: nextPage, offsetRatio: (containerRect.top - rect.top) / rect.height, zoom,
+      }, positionSession);
+    }
+    if (!updateUi || nextPage === currentPage) return;
+    setCurrentPage(nextPage);
+    setPageInput(String(nextPage));
+  }
+  capturePositionRef.current = () => reportPagesPosition(false);
 
   function handlePagesScroll(): void {
     if (!panelActive) return;
@@ -282,38 +355,7 @@ export default function PdfDocumentViewer(props: PdfDocumentViewerProps) {
     if (scrollFrameRef.current !== null) return;
     scrollFrameRef.current = window.requestAnimationFrame(() => {
       scrollFrameRef.current = null;
-      const container: HTMLDivElement | null = pagesRef.current;
-      if (!container) return;
-      const pages: HTMLElement[] = Array.from(
-        container.querySelectorAll<HTMLElement>('[data-pdf-page]'),
-      );
-      if (pages.length === 0) return;
-      const containerRect: DOMRect = container.getBoundingClientRect();
-      const readingLine: number =
-        containerRect.top + Math.min(container.clientHeight * 0.32, 180);
-      const pageAtReadingLine: HTMLElement | undefined = pages.find(
-        (page: HTMLElement) => {
-          const rect: DOMRect = page.getBoundingClientRect();
-          return rect.top <= readingLine && rect.bottom > readingLine;
-        },
-      );
-      const visiblePage: HTMLElement =
-        pageAtReadingLine ??
-        pages.reduce((nearest: HTMLElement, candidate: HTMLElement) => {
-          const nearestDistance: number = Math.abs(
-            nearest.getBoundingClientRect().top - readingLine,
-          );
-          const candidateDistance: number = Math.abs(
-            candidate.getBoundingClientRect().top - readingLine,
-          );
-          return candidateDistance < nearestDistance ? candidate : nearest;
-        });
-      const nextPage: number = Number(
-        visiblePage.getAttribute('data-pdf-page'),
-      );
-      if (!Number.isSafeInteger(nextPage) || nextPage === currentPage) return;
-      setCurrentPage(nextPage);
-      setPageInput(String(nextPage));
+      reportPagesPosition();
     });
   }
 
@@ -380,9 +422,10 @@ export default function PdfDocumentViewer(props: PdfDocumentViewerProps) {
         <div className="parse-pdf-zoom-controls">
           <button
             type="button"
-            onClick={() =>
-              setZoom((value: number) => Math.max(MIN_ZOOM, value - ZOOM_STEP))
-            }
+            onClick={() => {
+              userControlsPosition.current = true;
+              setZoom((value: number) => Math.max(MIN_ZOOM, value - ZOOM_STEP));
+            }}
             disabled={zoom <= MIN_ZOOM}
             aria-label="缩小 PDF"
           >
@@ -391,9 +434,10 @@ export default function PdfDocumentViewer(props: PdfDocumentViewerProps) {
           <span>{Math.round(zoom * 100)}%</span>
           <button
             type="button"
-            onClick={() =>
-              setZoom((value: number) => Math.min(MAX_ZOOM, value + ZOOM_STEP))
-            }
+            onClick={() => {
+              userControlsPosition.current = true;
+              setZoom((value: number) => Math.min(MAX_ZOOM, value + ZOOM_STEP));
+            }}
             disabled={zoom >= MAX_ZOOM}
             aria-label="放大 PDF"
           >
@@ -407,6 +451,13 @@ export default function PdfDocumentViewer(props: PdfDocumentViewerProps) {
         aria-live="polite"
         aria-label="PDF 页面"
         tabIndex={0}
+        onWheelCapture={() => { userControlsPosition.current = true; }}
+        onTouchStartCapture={() => { userControlsPosition.current = true; }}
+        onPointerDownCapture={() => { userControlsPosition.current = true; }}
+        onKeyDownCapture={(event) => {
+          if (['ArrowUp', 'ArrowDown', 'PageUp', 'PageDown', 'Home', 'End', ' '].includes(event.key))
+            userControlsPosition.current = true;
+        }}
         onScroll={handlePagesScroll}
       >
         {visiblePages.map((pageNumber: number) => (

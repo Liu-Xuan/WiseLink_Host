@@ -1,0 +1,47 @@
+{
+  "date": "2026-09-23",
+  "parent": "ca6aa4e6232519930894dc1dd42b37e956fec1c3",
+  "status": "local_pass_pending_independent_review",
+  "scope": "manual PDF scroll/unmount/remount under exact document, parse, source, entry target and client session",
+  "bounds": {
+    "maxEntries": 32,
+    "ttlMinutes": 30,
+    "contentCached": false,
+    "freshAuthorizationUnchanged": true
+  },
+  "validation": {
+    "suites": 5,
+    "tests": 38,
+    "clientTypes": "pass",
+    "productLint": "pass",
+    "testLintNoIgnore": "excluded: no matching ESLint configuration",
+    "clientBuildSeconds": 12.86,
+    "parentCounterexample": {
+      "expectedPage": 3,
+      "actualPage": 1,
+      "exitCode": 1
+    },
+    "candidate": [
+      "restores page and relative offset",
+      "follows delayed geometry",
+      "captures unmount before RAF",
+      "new explicit source wins",
+      "changed parse isolates",
+      "session reset rejects stale writes",
+      "observed visible page does not change source target"
+    ]
+  },
+  "limits": [
+    "not deployed",
+    "no production performance claim",
+    "existing React Router future and bundle size warnings"
+  ],
+  "reviewFollowup": {
+    "finding": "zoom-only interaction not saved",
+    "repair": "both zoom buttons mark user-controlled position",
+    "directRed": "125% and 75% both return as 100% on 5bd167",
+    "affectedSuites": 2,
+    "affectedTests": 11,
+    "result": "pass_pending_reviewer"
+  }
+}

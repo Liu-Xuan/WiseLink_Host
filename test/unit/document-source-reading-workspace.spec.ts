@@ -16,12 +16,12 @@ jest.mock('../../client/src/pages/DocumentParsingPage/DocumentOriginalCanvasPrev
   const React = require('react');
   return {
     __esModule: true,
-    default: ({ page }: { page: number }) => {
+    default: ({ page, readingScope, onVisiblePageChange }: { page: number; readingScope?: string; onVisiblePageChange?: (page: number) => void }) => {
       React.useEffect(() => {
         mockPdfMounts += 1;
         return () => { mockPdfUnmounts += 1; };
       }, []);
-      return React.createElement('div', { 'data-pdf-page': page }, 'PDF');
+      return React.createElement('div', { 'data-pdf-page': page, 'data-reading-scope': readingScope, onClick: () => onVisiblePageChange?.(3) }, 'PDF');
     },
   };
 });
@@ -133,6 +133,16 @@ describe('document source reading workspace', () => {
       ));
       expect(selectedLocations).toHaveBeenCalledWith(2, 'u2');
       expect(container.querySelector('[data-pdf-page="2"]')).not.toBeNull();
+      const pdf = container.querySelector('[data-pdf-page="2"]')!;
+      expect(JSON.parse(pdf.getAttribute('data-reading-scope')!)).toEqual([
+        original.binding.documentVersionId, original.binding.parseRunId, original.binding.parseRevision,
+        original.binding.sourceArtifactId, original.binding.sourceSha256,
+      ]);
+      await act(async () => pdf.dispatchEvent(new dom.window.MouseEvent('click', { bubbles: true })));
+      expect(container.textContent).toContain('受控读取 · 第 3 页');
+      // An observed manual page updates the label, not the source target command.
+      expect(container.querySelector('[data-pdf-page="2"]')).not.toBeNull();
+      expect(selectedLocations).toHaveBeenCalledTimes(1);
       const clickMode = async (label: string) => {
         const button = [...container.querySelectorAll('button')]
           .find((item) => item.textContent === label);
