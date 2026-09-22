@@ -272,7 +272,7 @@ function MatterGraphContent({
     [matterId, workRef, setParams],
   );
   const handleStateChange = useCallback(
-    (state: SuiteGraphReadingState) => {
+    (state: SuiteGraphReadingState, beforeNavigation = false) => {
       displayState.current = state;
       const structural = JSON.stringify([
         state.selectedId ?? null,
@@ -291,7 +291,7 @@ function MatterGraphContent({
         clearTimeout(persistTimer.current);
         persistTimer.current = null;
       }
-      if (structuralChanged) {
+      if (structuralChanged || beforeNavigation) {
         persistState(state);
         return;
       }

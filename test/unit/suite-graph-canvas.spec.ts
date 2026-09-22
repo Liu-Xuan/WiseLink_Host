@@ -590,6 +590,24 @@ describe('SuiteGraphCanvas', () => {
     }
   });
 
+  it('reads the last camera before a pending frame and returns a detached snapshot', async () => {
+    const ref = createRef<SuiteGraphCanvasHandle>();
+    const onViewport = jest.fn();
+    await act(async () => {
+      root = createRoot(container);
+      root.render(createElement(SuiteGraphCanvas, { presentation, ref, onViewport }));
+    });
+    const cy = mockCyFactory.mock.results[0].value as ReturnType<typeof createCy>;
+    onViewport.mockClear();
+    act(() => { cy.zoom(1.3); cy.pan({ x: 45, y: 67 }); cy.trigger('pan', { target: cy }); });
+    expect(frames.size).toBe(1);
+    expect(onViewport).not.toHaveBeenCalled();
+    const camera = ref.current!.getViewport()!;
+    expect(camera).toEqual({ zoom: 1.3, pan: { x: 45, y: 67 } });
+    camera.pan.x = 999;
+    expect(ref.current!.getViewport()!.pan.x).toBe(45);
+  });
+
   it('refreshes real node content without replacing objects, losing dragged positions, or running layout', async () => {
     const realCytoscape = jest.requireActual('cytoscape') as typeof import('cytoscape');
     document.documentElement.setAttribute('data-wl-motion', 'off');

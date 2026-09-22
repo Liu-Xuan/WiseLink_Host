@@ -67,7 +67,7 @@ export interface SuiteMatterGraphViewProps {
   onOpenEventTimeline?: (event: SuiteGraphTimelineEvent) => void;
   onNodeSelect?: (target: SuiteMatterGraphTarget | null) => void;
   initialState?: SuiteGraphReadingState;
-  onStateChange?: (state: SuiteGraphReadingState) => void;
+  onStateChange?: (state: SuiteGraphReadingState, beforeNavigation?: boolean) => void;
   availablePerspectives?: SuiteMatterGraphPerspective[];
   perspectiveNotice?: string | null;
   perspectiveError?: boolean;
@@ -154,15 +154,15 @@ export default function SuiteMatterGraphView({
   revision,
   perspective: controlledPerspective,
   onPerspectiveChange,
-  onLocateEvidence,
-  onOpenWiki,
-  onOpenProcess,
-  onOpenTarget,
+  onLocateEvidence: onLocateEvidenceCallback,
+  onOpenWiki: onOpenWikiCallback,
+  onOpenProcess: onOpenProcessCallback,
+  onOpenTarget: onOpenTargetCallback,
   timelineEvents = [],
   timelineSources = [],
   timelineLoading = false,
   onExpandTimelineSource,
-  onOpenEventTimeline,
+  onOpenEventTimeline: onOpenEventTimelineCallback,
   onNodeSelect,
   initialState,
   onStateChange,
@@ -267,39 +267,51 @@ export default function SuiteMatterGraphView({
     setViewport(viewportByPerspective.current.get(perspective));
   }, [perspective]);
 
-  useEffect(() => {
-    onStateChange?.({
-      selectedId: selectedId ?? undefined,
-      hiddenGroups: effectiveHiddenGroups,
-      page,
-      density,
-      relationMode,
-      layoutMode,
-      perspective,
-      viewport: viewportByPerspective.current.get(perspective),
-      eventId: selectedEventId ?? undefined,
-      eventPins: selectedEvent?.pins
-        ?? (selectedEventId === initialState?.eventId
-          ? initialState.eventPins
-          : undefined),
-      wikiTab,
-    });
-  }, [
-    density,
-    effectiveHiddenGroups,
-    layoutMode,
-    onStateChange,
+  const readingState = (): SuiteGraphReadingState => ({
+    selectedId: selectedId ?? undefined,
+    hiddenGroups: effectiveHiddenGroups,
     page,
-    perspective,
+    density,
     relationMode,
-    selectedEventId,
-    selectedEvent,
-    selectedId,
-    viewport,
+    layoutMode,
+    perspective,
+    viewport: viewportByPerspective.current.get(perspective),
+    eventId: selectedEventId ?? undefined,
+    eventPins: selectedEvent?.pins
+      ?? (selectedEventId === initialState?.eventId
+        ? initialState.eventPins
+        : undefined),
     wikiTab,
+  });
+
+  useEffect(() => { onStateChange?.(readingState()); }, [
+    density, effectiveHiddenGroups, layoutMode, onStateChange, page, perspective,
+    relationMode, selectedEventId, selectedEvent, selectedId, viewport, wikiTab,
   ]);
 
+  const captureCamera = () => {
+    const current = canvasRef.current?.getViewport();
+    if (current) viewportByPerspective.current.set(perspective, current);
+  };
+  const beforeNavigation = () => {
+    captureCamera();
+    // The caller builds the exact return route synchronously; do not wait for React/RAF.
+    onStateChange?.(readingState(), true);
+  };
+  const onLocateEvidence = onLocateEvidenceCallback ? (evidence: DocumentAssessmentEvidence) => {
+    beforeNavigation(); onLocateEvidenceCallback(evidence);
+  } : undefined;
+  const onOpenWiki = onOpenWikiCallback ? () => { beforeNavigation(); onOpenWikiCallback(); } : undefined;
+  const onOpenProcess = onOpenProcessCallback ? () => { beforeNavigation(); onOpenProcessCallback(); } : undefined;
+  const onOpenTarget = onOpenTargetCallback ? (target: SuiteMatterGraphTarget) => {
+    beforeNavigation(); onOpenTargetCallback(target);
+  } : undefined;
+  const onOpenEventTimeline = onOpenEventTimelineCallback ? (event: SuiteGraphTimelineEvent) => {
+    beforeNavigation(); onOpenEventTimelineCallback(event);
+  } : undefined;
+
   const setPerspective = (next: SuiteMatterGraphPerspective) => {
+    captureCamera();
     setPage(0);
     setSelectedId(null);
     setSelectedEventId(null);

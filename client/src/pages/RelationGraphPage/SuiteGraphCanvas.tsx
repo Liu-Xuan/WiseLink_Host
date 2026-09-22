@@ -68,6 +68,8 @@ export interface SuiteGraphCanvasHandle {
   /** Apply an exact saved camera, or auto-fit when null (used on perspective switch). */
   setViewport: (viewport: { zoom: number; pan: { x: number; y: number } } | null) => void;
   getCore: () => Core | null;
+  /** Detached current camera, including events not yet published by the animation frame. */
+  getViewport: () => { zoom: number; pan: { x: number; y: number } } | null;
 }
 
 interface OverlayNode {
@@ -504,6 +506,10 @@ const SuiteGraphCanvas = forwardRef<SuiteGraphCanvasHandle, SuiteGraphCanvasProp
       }
     },
     getCore: () => cyRef.current,
+    getViewport: () => {
+      const cy = cyRef.current;
+      return cy ? { zoom: cy.zoom(), pan: { ...cy.pan() } } : null;
+    },
   }), []);
 
   const applyNarrowFocus = useCallback((cy: Core) => {

@@ -449,3 +449,12 @@ Actual old-source component regression: zoom updated geometry but also called th
 真实 headless Cytoscape 消费者反例在旧 Canvas（bcccd815）失败：标题刷新会替换节点对象；新实现保留对象/拖动位置/镜头，更新可见标题且 layout/fit 为零。增量辅助测试涵盖节点/边增删、端点替换、声明属性清除、交互类和 halo 保留、明确布局/尺寸变化。6 suites/57 tests 通过，client 类型检查通过；生产文件 ESLint 无错误；test 目录被现有 ESLint 配置排除，未声称对其 lint 通过，Jest/TypeScript 已实际编译执行。client build 成功（13.44s，仅既有 chunk/module 警告）。这不是浏览器 p95 或完整返回布局验收。
 
 前批独立证据：Luna 已通过 bcccd815 的 5 套 53 项、client types/lint/build/precommit；c65d0aa 的真实 PG14.17 实例 1/1，实际迁移和 readReady JOIN/RLS、错误身份/版本/manifest、非owner非超级用户角色及约束通过，临时 127.0.0.1:55441 实例和唯一创建目录已停止清理。主控确认本轮统一集成/发布/Skill install 和授权预览样本核验仍待执行，不因等待而重复本地验收。
+
+
+## 2026-09-23 B：2C.4a 导航前保存最后相机
+
+基线 `b2247dee71a415636232d85f31c846948d296353`，独立树 `/private/tmp/wiselink-perf-b-graph-return-20260923`。Canvas 提供脱离内部可变 pan 对象的当前相机读取；View 在打开 Wiki、原文/目标、过程、证据或时间线前同步采集相机并交给上层，切换视角前也保存离开的镜头。平时仍按帧发布，未改为每个 pan/zoom 都触发 React 更新。Page 收到导航边界通知时直接 replace 当前历史项，避免延迟320ms的保存被卸载取消；目标页的精确返回链接与浏览器后退都可恢复最后相机。
+
+两个实际消费者反例在基线失败：View 未收到 RAF 回调就打开 Wiki 使用旧镜头；Page 导航前只有相机变化时，精确返回链接虽然新鲜，浏览器后退仍得到旧镜头。新测试分别覆盖两处，并验证读取相机为独立副本、视角切换保存。此批不宣称跨页恢复拖动节点布局、所有外部退出或真实浏览器p95已完成；后续继续这些要求，不关闭完整Goal。
+
+验证：8 suites/71 tests、client typecheck、三个生产文件 ESLint、client build（13.46s，既有 module/chunk 警告）通过。现有 ESLint 配置不覆盖 test 目录，不将其记为 lint 通过。提交使用正常 precommit。
