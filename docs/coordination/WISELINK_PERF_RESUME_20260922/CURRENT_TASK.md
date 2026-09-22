@@ -1,16 +1,15 @@
-# 第三批统一集成 — 2026-09-23
+# 原件身份窄读增量集成 — 2026-09-23
 
-独立树 `/private/tmp/wiselink-integration-ab3-20260923`，分支 `codex/integration-ab3-20260923`。
-线上基线 `dc4915437dba7157406e6b18b1f51ed2ad7a83ea`（release `7688437914978126804` finished）；任务目录500经正常身份真实请求与日志核对已恢复，保存工作及活动读取无回归。
-本批合并已独立接受的B链至 `a88ec0daa3daf4049db5ee6c034df3c625139270`：77ae元数据批量读取、fadf文档发布有界接续、e10知识会话资源复用、a7知识图谱准确返回、0d66真实读取证据、a88普通段落来源位置恢复。
-共享useEngineeringMatter和consumer自动合并；REPORT唯一文档冲突保留双方历史。各批与组合已通过：前端6套82项，共享consumer132项，任务2套16项，双端types/lint/build。元数据PG本轮无URL跳过，未称实际PG验收。Host发布与Hosted Skill安装分开记账，未安装不算消费者运行生效；来源位置仅覆盖实际点击，不宣称全部自由滚动恢复。
-以下是B交付时历史，不代表本集成树实时部署状态。
+基线79bd2380615ff18582269cc3cd5d95f805261b87已由release7688444473504353246确认发布；正常身份知识→graph→实际返回及普通原文页5离开返回已通过。知识fresh窗口内24次同版本热返回DOM p95=21.6ms，首次及reload仍慢，不宣称全站达标。
+本次仅集成已独立接受的626dcf6d79e2fe4ee7c382268467e2d0934ccc97原件identity窄投影与59791bba08bbda73254d63dbc29c0dac6c7128d3匿名文档。产品自动合并，历史REPORT冲突保留双方。
+正在当前组合核对；未声称本次增量发布。Skill相对79bd无变化，已核验包保持原样且尚未完成Hosted安装。
+以下是B交付时历史。
 
 # Current Task
 
 ## 本批身份
 
-B阅读位置恢复工作树：`/private/tmp/wiselink-perf-b-reader-location-20260923`，分支`codex/perf-b-reader-location-20260923`；起点`0d66a32a7566167626c6a4b90e7ae14116b496e7`。本批把普通原文段落实际选页映射到登记SourceRef并固定当前保存parseRunId，URL replace保留返回上下文。旧2个反例失败/15通过；标准验证与提交见REPORT。e10/a7已独立接受待Main集成；Main任务目录兼容修复dc491已发布release7688437914978126804，PDF代码不变；原件三次采样跨越此后端发布，SPA未刷新，不能全标为ef258。后两次identity约1.0–1.3s仍未达目标。整体Goal继续。
+B热知识读取证据工作树：`/private/tmp/wiselink-perf-b-hot-read-evidence-20260923`，起点`626dcf6d79e2fe4ee7c382268467e2d0934ccc97`（Luna独立接受，未包含本次发布）。Main ab3 `79bd2380615ff18582269cc3cd5d95f805261b87` / release7688444473504353246已finished并双远端一致，含至a88。B发布后25次精确窗口：24次无knowledge重读、DOM ready p95 21.6ms（2RAF36.5ms），1次过期重读5.65s保留；只证明单会话同保存版本新鲜窗口知识热正文目标，图谱、非缓存及后台竞争未闭合。匿名完整49次含探索数据见KNOWLEDGE_HOT_READ_EVIDENCE_20260923.json。整体Goal继续。
 
 ## 完整路线状态（2026-09-23）
 
@@ -26,9 +25,11 @@ B阅读位置恢复工作树：`/private/tmp/wiselink-perf-b-reader-location-202
 | 3A.2/3 | 81ea079ea已改pending优先、空闲窄查精确语义登记，Luna本地4套25项验收通过，真实SQL/RLS已通过。3A.3已按主控授权单写者修订consumer：新START需当前语义就绪，历史pending不替代；已就绪不等待索引，索引失败鲜活回读就绪，旧任务状态/恢复不阻断。b020437e1的98项Node及3套16项Jest已获Luna本地验收；c65d0aa10由Luna在主控授权的独立PG14.17实例实际执行1/1通过，JOIN/RLS/非owner角色/约束均验证；唯一临时实例已停止删除。 |
 | 3B | 当前3B.1单执行最多两个8页组、组间10秒预算/16MiB原件上限；组间fresh ACL/lease，每组checkpoint，PDF在返回/异常/最终组装前释放。25页构造样本原件读取/PDF打开4→2，插件仍1次。70ad48ea9的5套38项+真实PDF.js Node5项/types/lint/build/precommit已获Luna独立验收。当前3B.2执行内来源plan准备61单元分页4次→1次；独立授权复核仍另算1次，实际begin总5→2次；6f77d9456的3套41项/types/lint/build/precommit已获Luna独立验收。跨任务公平与真实竞争计量仍未完成。 |
 | 4 | A负责JobAid/OpenClaw/Overall/Wiki连续工作。A回报当前0c350f04c（含0ee/35a/47adb/301/60ec/786/0c350），Luna已本地验收；0c350f04已进入固定e812并发布，b10e6e570已进入ef258；Hosted安装/全链验收仍需主控闭合；应取A的确切交付，不在B重写。 |
-| V/R | 主控回读Host app_17bzc551rsg release7688432648880098235 finished / ef258aa7；B正常已有登录只读资料库、既有5页FTD解析2/部分中文/PDF，未生成。已发现并本地修复真实目标页错位。尚无热正文/图谱返回/暖轻量读取p95，完整Wiki→图谱→原件→返回→历史链待继续。 |
+| V/R | 主控回读Host app_17bzc551rsg release7688432648880098235 finished / ef258aa7；B正常已有登录只读资料库、既有5页FTD解析2/部分中文/PDF，未生成。已发现并本地修复真实目标页错位。79bd已有知识同版本新鲜窗口24次DOM p95 21.6ms证据；图谱返回/暖轻量读取p95与后台竞争仍未完成，完整路径由Luna继续独立功能复验。 |
 
 ## 集成及边界
+
+最新ab3：Main提交`79bd2380615ff18582269cc3cd5d95f805261b87`，release`7688444473504353246` finished updated_at1790106250000、error_logs=[]；origin/github同名`codex/integration-ab3-20260923`同SHA。含至a88并保留dc491任务目录修复，不含626dcf。Skill包source79bd、sha256 b491433f299c90b02118ea612e803c48fe0540ad6c4f2a4c636e96f6890cb4de、456451bytes/60files已由Main核验，但尚未安装，不算consumer生效。
 
 最新ab2：Main独占集成树`/private/tmp/wiselink-integration-ab2-20260923`，准确HEAD `ef258aa7faba42277d38dec7584e41bb4be2ee55`；origin/github同名`codex/integration-ab2-20260923`均由Main核对同SHA；Host release `7688432648880098235` finished，error_logs=[]。含B至c58与A b10；不含77ae/fadf/e10/a7。后四批已独立接受，B已请求Main纳入下一次发布，未代替Main推送或发布。
 

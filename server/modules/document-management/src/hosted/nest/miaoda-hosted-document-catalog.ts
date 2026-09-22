@@ -1715,6 +1715,23 @@ export class MiaodaHostedDocumentCatalog {
     return Boolean(row);
   }
 
+  /** Immutable identity only; warm byte reuse does not consume extracted metadata. */
+  async readOriginalRegistryIdentity(documentVersionId: string, tenantId: string) {
+    const [row] = await this.db.select({
+      version: {
+        documentVersionId: dmDocumentVersion.documentVersionId,
+        pdfSha256: dmDocumentVersion.pdfSha256,
+        byteLength: dmDocumentVersion.byteLength,
+      },
+      source: { sha256: dmSourceArtifact.sha256, byteLength: dmSourceArtifact.byteLength },
+    }).from(dmDocumentVersion)
+      .innerJoin(dmPublicationFamily, eq(dmPublicationFamily.familyId, dmDocumentVersion.familyId))
+      .innerJoin(dmSourceArtifact, eq(dmSourceArtifact.sourceArtifactId, dmDocumentVersion.sourceArtifactId))
+      .where(and(eq(dmDocumentVersion.documentVersionId, documentVersionId),
+        sql`starts_with(${dmPublicationFamily.canonicalIdentityKey}, ${tenantFamilyIdentityPrefix(tenantId)})`)).limit(1);
+    return row || null;
+  }
+
   async readMetadataSource(documentVersionId: string, tenantId: string) {
     const [row] = await this.db.select({ version: dmDocumentVersion, family: dmPublicationFamily, source: dmSourceArtifact, metadata: dmDocumentVersionMetadata })
       .from(dmDocumentVersion)
