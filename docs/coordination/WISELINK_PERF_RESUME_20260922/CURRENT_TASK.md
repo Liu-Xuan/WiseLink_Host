@@ -2,7 +2,7 @@
 
 ## 本批身份
 
-B当前树：`/private/tmp/wiselink-perf-b-member-read-overlap-20260923`。本批在fresh授权后重叠租户投影与精确来源identity读取，保留一致性检查/错误优先级/两次版本核对；3套61项、types/lint/build通过，父提交反例160ms、新实现100ms（受控时序，非线上）。待独立验收与集成。此前41e9已独立接受并进入81abd9，release7688473071305133285已finished、实际资产SHA吻合。三次冷目录3.324–4.167秒/正文2.654–3.473秒，过期返回目录4.070秒/正文3.419秒，全部200、修订16完整。不是p95/A-B，目标未闭合。见AB81_READ_RUNTIME_EVIDENCE_20260923.json；Hosted安装与后台竞争仍待主控，Goal active。
+B当前树：`/private/tmp/wiselink-perf-b-member-read-overlap-20260923`。本批在fresh授权后重叠租户投影与精确来源identity读取，保留一致性检查/错误优先级/两次版本核对；3套61项、types/lint/build通过，父提交反例160ms、新实现100ms（受控时序，非线上）。84acf1611已获Luna独立接受（另选3套70项/types/lint/diff），待主控集成发布及线上收益验证。此前41e9已独立接受并进入81abd9，release7688473071305133285已finished、实际资产SHA吻合。三次冷目录3.324–4.167秒/正文2.654–3.473秒，过期返回目录4.070秒/正文3.419秒，全部200、修订16完整。不是p95/A-B，目标未闭合。见AB81_READ_RUNTIME_EVIDENCE_20260923.json；Hosted安装与后台竞争仍待主控，Goal active。
 
 本轮 Trace 详情已定位：目录 60 条 SQL 标注合计 1095.79ms / 服务端 3633.95ms；正文两样本均 26 条，SQL 328.69/267.48ms / 服务端 2817.51/2082.99ms。调用间等待显著，尚不能归因于网络或 CPU。下一步减少依赖读取往返，保留鲜活授权与版本核对。见 AB81_DATABASE_TRACE_EVIDENCE_20260923.json。
 

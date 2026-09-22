@@ -846,3 +846,12 @@ The controlled overlap counterexample fails on the exact parent (160ms versus
 serial dependency, not a production speedup. SQL/RLS logic is unchanged; no new
 PostgreSQL run is claimed. Independent review and deployed tracing are pending.
 See MEMBER_READ_OVERLAP_EVIDENCE_20260923.json.
+
+
+Independent review accepted exact 84acf1611e3fd8c6c4c321a91fada60260b01931
+with no blocker. Luna ran working-service, engineering-search and ordinary
+work-item suites: 70/70, server types, scoped lint and diff check passed. This
+is a different suite selection from B's 61 tests. Neither review reran old PG
+fixtures. Main received the accepted commit for sole-owner integration and
+release; deployed performance remains unverified. Member count stays bounded
+as before; dependent reads per member can increase from one to two in flight.
