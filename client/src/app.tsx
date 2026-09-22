@@ -1,7 +1,8 @@
-import React, { Suspense, lazy, type ReactNode } from 'react';
+import React, { lazy } from 'react';
 import { Navigate, Route, Routes, useLocation } from 'react-router-dom';
 
 import Layout from './components/Layout';
+import RouteOutletBoundary from './components/RouteOutletBoundary';
 import WorkspaceHomePage from './pages/WorkspaceHomePage/WorkspaceHomePage';
 
 // Route chunks load on demand. AppContainer, identity providers and the
@@ -105,150 +106,135 @@ const LibraryIndexRedirect = () => {
   );
 };
 
-class RouteChunkBoundary extends React.Component<
-  { children: ReactNode; routeKey: string },
-  { failed: boolean }
-> {
-  state = { failed: false };
-
-  static getDerivedStateFromError(): { failed: boolean } {
-    return { failed: true };
-  }
-
-  componentDidUpdate(previous: { routeKey: string }): void {
-    if (previous.routeKey !== this.props.routeKey && this.state.failed) {
-      this.setState({ failed: false });
-    }
-  }
-
-  render(): ReactNode {
-    if (!this.state.failed) return this.props.children;
-    return (
-      <section role="alert" className="wl-route-load-error">
-        <h1>页面加载失败</h1>
-        <p>当前页面代码未能加载，已有内容未受影响。</p>
-        <button type="button" onClick={() => window.location.reload()}>
-          重新加载页面
-        </button>
-      </section>
-    );
-  }
-}
-
-function RouteLoadingFallback() {
-  return (
-    <p role="status" className="wl-route-loading">
-      正在加载页面…
-    </p>
-  );
-}
-
 const RoutesComponent = () => {
-  const location = useLocation();
   return (
-    <RouteChunkBoundary routeKey={location.pathname}>
-      <Suspense fallback={<RouteLoadingFallback />}>
-        <Routes>
-          <Route
-            path="dev-preview/graph-legacy"
-            element={<GraphRelationPreviewPage />}
-          />
-          <Route
-            path="dev-preview/chronology"
-            element={<EngineeringChronologyPreviewPage />}
-          />
-          <Route
-            path="dev-preview/reader/:documentId"
-            element={<ReaderPage />}
-          />
-          <Route
-            path="dev-preview/version-comparison/:documentId"
-            element={<VersionComparisonPage />}
-          />
-          <Route
-            path="dev-preview/reactflow-validation"
-            element={<ReactFlowValidationPlayground />}
-          />
-          <Route element={<Layout />}>
-            <Route index element={<LibraryIndexRedirect />} />
-            <Route
-              path="dev-preview/graph"
-              element={<SuiteGraphVisualPreviewPage />}
-            />
-            <Route
-              path="dev-preview/reader-workspace"
-              element={<ReaderWorkspaceVisualPreviewPage />}
-            />
-            <Route
-              path="dev-preview/situation"
-              element={<EngineeringSituationVisualPreviewPage />}
-            />
-            <Route path="dialogues" element={<DialoguePage />} />
-            <Route path="dialogues/:threadRef" element={<DialoguePage />} />
-            <Route path="library" element={<WorkspaceHomePage />} />
-            <Route
-              path="document-revisions"
-              element={<DocumentRevisionReadingPage />}
-            />
-            <Route
-              path="document-versions/:documentVersionId/activities"
-              element={<DocumentActivityReadingPage />}
-            />
-            <Route
-              path="document-versions/:documentVersionId"
-              element={<DocumentVersionReadingPage />}
-            />
-            <Route
-              path="matters/:matterId"
-              element={<EngineeringMatterPage />}
-            />
-            <Route
-              path="matters/:matterId/process"
-              element={<MatterProblemAnalysisPage />}
-            />
-            <Route
-              path="matters/:matterId/posture"
-              element={<EngineeringSituationPage />}
-            />
-            <Route
-              path="work-items/:workItemId"
-              element={<WorkItemOverviewPage />}
-            />
-            <Route path="runtime-probe" element={<RuntimeProbePage />} />
-            <Route path="settings/models" element={<ModelSettingsPage />} />
-            <Route
-              path="external-discovery"
-              element={<ExternalDiscoveryPage />}
-            />
-            <Route path="situation" element={<EngineeringSituationPage />} />
-            <Route path="timeline" element={<EngineeringTimelinePage />} />
-            <Route
-              path="activity-graph"
-              element={<EngineeringTimelinePage view="graph" />}
-            />
-            <Route path="graph" element={<RelationGraphPage />} />
-            <Route path="knowledge" element={<KnowledgeLookupPage />} />
-            <Route
-              path="work-items/:workItemId/analysis"
-              element={<DocumentParsingPage />}
-            />
-            <Route
-              path="work-items/:workItemId/documents"
-              element={<LegacyDocumentWorkbenchRoute />}
-            />
-            {/* Compatibility entries resolve only to existing authorized version readers. */}
-            <Route path="reader/:documentId" element={<ReaderPageAdapter />} />
-            <Route
-              path="version-comparison/:documentId"
-              element={<VersionComparisonPageAdapter />}
-            />
-            <Route path="*" element={<NotFound />} />
-          </Route>
-          <Route path="client/oauth/callback" element={<OAuthCallbackPage />} />
-          <Route path="*" element={<NotFound />} />
-        </Routes>
-      </Suspense>
-    </RouteChunkBoundary>
+    <Routes>
+      <Route
+        path="dev-preview/graph-legacy"
+        element={
+          <RouteOutletBoundary>
+            <GraphRelationPreviewPage />
+          </RouteOutletBoundary>
+        }
+      />
+      <Route
+        path="dev-preview/chronology"
+        element={
+          <RouteOutletBoundary>
+            <EngineeringChronologyPreviewPage />
+          </RouteOutletBoundary>
+        }
+      />
+      <Route
+        path="dev-preview/reader/:documentId"
+        element={
+          <RouteOutletBoundary>
+            <ReaderPage />
+          </RouteOutletBoundary>
+        }
+      />
+      <Route
+        path="dev-preview/version-comparison/:documentId"
+        element={
+          <RouteOutletBoundary>
+            <VersionComparisonPage />
+          </RouteOutletBoundary>
+        }
+      />
+      <Route
+        path="dev-preview/reactflow-validation"
+        element={
+          <RouteOutletBoundary>
+            <ReactFlowValidationPlayground />
+          </RouteOutletBoundary>
+        }
+      />
+      <Route element={<Layout />}>
+        <Route index element={<LibraryIndexRedirect />} />
+        <Route
+          path="dev-preview/graph"
+          element={<SuiteGraphVisualPreviewPage />}
+        />
+        <Route
+          path="dev-preview/reader-workspace"
+          element={<ReaderWorkspaceVisualPreviewPage />}
+        />
+        <Route
+          path="dev-preview/situation"
+          element={<EngineeringSituationVisualPreviewPage />}
+        />
+        <Route path="dialogues" element={<DialoguePage />} />
+        <Route path="dialogues/:threadRef" element={<DialoguePage />} />
+        <Route path="library" element={<WorkspaceHomePage />} />
+        <Route
+          path="document-revisions"
+          element={<DocumentRevisionReadingPage />}
+        />
+        <Route
+          path="document-versions/:documentVersionId/activities"
+          element={<DocumentActivityReadingPage />}
+        />
+        <Route
+          path="document-versions/:documentVersionId"
+          element={<DocumentVersionReadingPage />}
+        />
+        <Route path="matters/:matterId" element={<EngineeringMatterPage />} />
+        <Route
+          path="matters/:matterId/process"
+          element={<MatterProblemAnalysisPage />}
+        />
+        <Route
+          path="matters/:matterId/posture"
+          element={<EngineeringSituationPage />}
+        />
+        <Route
+          path="work-items/:workItemId"
+          element={<WorkItemOverviewPage />}
+        />
+        <Route path="runtime-probe" element={<RuntimeProbePage />} />
+        <Route path="settings/models" element={<ModelSettingsPage />} />
+        <Route path="external-discovery" element={<ExternalDiscoveryPage />} />
+        <Route path="situation" element={<EngineeringSituationPage />} />
+        <Route path="timeline" element={<EngineeringTimelinePage />} />
+        <Route
+          path="activity-graph"
+          element={<EngineeringTimelinePage view="graph" />}
+        />
+        <Route path="graph" element={<RelationGraphPage />} />
+        <Route path="knowledge" element={<KnowledgeLookupPage />} />
+        <Route
+          path="work-items/:workItemId/analysis"
+          element={<DocumentParsingPage />}
+        />
+        <Route
+          path="work-items/:workItemId/documents"
+          element={<LegacyDocumentWorkbenchRoute />}
+        />
+        {/* Compatibility entries resolve only to existing authorized version readers. */}
+        <Route path="reader/:documentId" element={<ReaderPageAdapter />} />
+        <Route
+          path="version-comparison/:documentId"
+          element={<VersionComparisonPageAdapter />}
+        />
+        <Route path="*" element={<NotFound />} />
+      </Route>
+      <Route
+        path="client/oauth/callback"
+        element={
+          <RouteOutletBoundary>
+            <OAuthCallbackPage />
+          </RouteOutletBoundary>
+        }
+      />
+      <Route
+        path="*"
+        element={
+          <RouteOutletBoundary>
+            <NotFound />
+          </RouteOutletBoundary>
+        }
+      />
+    </Routes>
   );
 };
 

@@ -6,6 +6,7 @@ import { CurrentObjectContextProvider } from '@client/src/app/providers/CurrentO
 import { CurrentUserSessionProvider } from '@client/src/app/providers/CurrentUserSessionProvider';
 import { subscribeCanonicalHostClientSession } from '@client/src/api/canonical-host';
 import { clearEngineeringMatterQueries } from '@client/src/features/matter/useEngineeringMatter';
+import RouteOutletBoundary from '@client/src/components/RouteOutletBoundary';
 import Sidebar from '@client/src/features/navigation/Sidebar';
 import TopBar from '@client/src/features/navigation/TopBar';
 import { UniversalLink } from '@lark-apaas/client-toolkit/components/UniversalLink';
@@ -97,7 +98,9 @@ function LayoutChrome() {
           data-reading-scroll-container
           tabIndex={-1}
         >
-          <Outlet />
+          <RouteOutletBoundary>
+            <Outlet />
+          </RouteOutletBoundary>
         </div>
       </div>
     </div>

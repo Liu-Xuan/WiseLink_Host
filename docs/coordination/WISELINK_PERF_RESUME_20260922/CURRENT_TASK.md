@@ -37,15 +37,21 @@
   fetch clears the denial. A normal network failure without a prior denial
   still keeps the last readable content. Denying the current matter also
   suppresses its exact historical work in the wiki and graph consumers.
+- 1C denial ownership: the read outcome is a shared
+  `readable`/`rejected` query value, so remounts and sibling consumers see the
+  same conclusion. There is no component-local denial Set and no claim that
+  `setQueryData(key, undefined)` deletes data; direct verification showed it
+  leaves the previous data in place.
 - 1C test lifecycle: the previous `--forceExit` need came from six QueryClient
   `gcTime` timers left by the session-change test, not from business requests.
   The test now owns a fake clock and destroys its root, QueryClient, JSDOM
   window and cache; production cleanup only removes inactive engineering-matter
   queries and leaves active observers intact.
 - 2A: heavy routes are lazy-loaded while `Layout` and the library entry stay
-  eager. A `Suspense` fallback and a recoverable route-chunk error boundary
-  wrap `Routes`; `AppContainer`, identity providers and the QueryClient stay
-  above the boundary. Route generation still reports 32 routes.
+  eager. The chunk boundary moved to `RouteOutletBoundary` around the `Layout`
+  outlet, so the shell, identity providers and QueryClient stay mounted while a
+  page waits or fails; non-`Layout` preview and OAuth routes keep their own
+  boundary. Route generation still reports 32 routes.
 - 1B: available two-file candidate imported and tested against the current
   directory-runtime spec. The final unavailable cloud worktree difference is
   not covered.
@@ -57,11 +63,12 @@
 
 - Server typecheck: pass.
 - Client typecheck: pass.
-- Focused Jest: 20 suites, 154/154 tests passed with the repository standard
-  configuration, `--runInBand` only, and no `--forceExit`; the process exits
-  normally.
-- Client production build: entry chunk 3,742.29 -> 1,678.64 kB raw and
-  1,183.84 -> 538.05 kB gzip. `routes.json` still lists 32 routes and keeps
+- Focused Jest: 21 suites, 158/158 tests passed with the repository standard
+  configuration, `--runInBand` only, and no `--forceExit`; the original
+  20-suite set passes 156/156.
+- Client production build: entry chunk 3,742.29 -> 1,678.38 kB raw and
+  1,183.84 -> 538.06 kB gzip (code version `1d9434e64` plus this round).
+  `routes.json` still lists 32 routes and keeps
   `/library`, `matters/:matterId`, `graph`, `reader`, `version-comparison` and
   the dev-preview paths.
 - Isolated PostgreSQL: pass on 127.0.0.1:55441 with a NOBYPASSRLS test role;
@@ -72,7 +79,11 @@
 
 ## Next Action
 
-This round adds two independent commits: the denied-resource cache fix (A) and
-route-level lazy loading (B). Browser request timing, content appearance timing
-and online p95 remain unmeasured. Stop after these commits; do not start PDF,
-graph lifecycle, further resource caches or other runtime batches.
+This round adds two independent commits: the shared-resource denial correction
+(A) and the outlet-local route boundary (B). `matter-resource-reuse.spec.ts`
+and `timeline-activity-discovery-handoff.spec.ts` interfere when run in the
+same Jest process (both pass alone, and the ordered 20-suite command passes);
+this is a pre-existing test-ordering interaction outside this round. Browser
+request timing, content appearance timing and online p95 remain unmeasured.
+Stop after these commits; do not start PDF, graph lifecycle, further resource
+caches or other runtime batches.

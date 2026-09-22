@@ -138,52 +138,69 @@ destroys remaining cache entries. Production cleanup calls `cancelQueries`
 first and deletes only inactive engineering-matter queries; it never clears
 the whole client and never disposes a query another consumer still observes.
 
-## Round 3: Denied-Resource Durability And Route Lazy Loading
+## Round 4: Shared Rejection State And Local Route Boundary
 
-### A. 403 Followed By A Network Failure
+### A. Denial State Belongs To The Shared Resource
 
-The reported counterexample reproduced against the real hooks: after a
-successful read, a refresh returning 403 hid the body, but the next refresh
-failing with an ordinary network error restored the pre-denial body, because
-`revoked` was derived only from the latest query error.
+The earlier round stored the denial in a per-hook `useState` Set and asserted
+that `setQueryData(queryKey, undefined)` cleared the cached body. Direct
+verification against the installed `@tanstack/query-core` showed the opposite:
+`setQueryData(key, undefined)` leaves the previous data in `state.data`, and a
+component-local Set is forgotten on remount. The report above that used that
+claim was wrong and is corrected here.
 
-Minimal fix in `client/src/features/matter/useEngineeringMatter.ts`:
+`client/src/features/matter/useEngineeringMatter.ts` now normalises the read
+outcome inside the shared query value:
 
-- each hook tracks the denied resource by its own query key in component state;
-- the exact-work hook also receives the workspace denial as an authorization
-  gate, so its query is disabled while the current matter is denied and the
-  wiki and graph cannot surface a stale historical view from a different key;
-- `setQueryData(queryKey, undefined)` runs while the resource is denied, so the
-  shared cache no longer holds the rejected body;
-- a later `revoke` only clears once a genuinely successful fetch is recorded,
-  so an ordinary network failure after a denial cannot re-expose it;
-- a normal network failure without a prior denial still keeps the last readable
-  content, and a successful reauthorized fetch restores consumption;
-- the tracking is per query key and per hook, so denying matter A does not
-  affect matter B, and the exact-work key is independent of the current
-  workspace key.
+- the workspace and exact-work query functions resolve to
+  `{ kind: 'readable', data }` on success and `{ kind: 'rejected', error }` for
+  401/403/404; other errors keep the normal throwing behaviour;
+- `revoked` is `result.kind === 'rejected'` (or a denied identity error), so it
+  is read from the same cached value by every consumer and survives unmount and
+  remount without a component-level flag or a second cache;
+- a denial is never overwritten by a later ordinary network error, because that
+  network error throws and leaves the previously cached `rejected` value in
+  place;
+- a successful re-authorization resolves to a new `readable` value and every
+  consumer of that key recovers together;
+- a normal network failure with no prior denial still keeps the last readable
+  result, and a denial of the current matter still suppresses its exact
+  historical work.
 
-Tests added in `test/unit/engineering-matter-query-cache.spec.ts`:
+Read semantics are kept distinct: the page hides denied content, the shared
+resource records the denial, and no business data is deleted from the server.
+The previous "delete the body" wording is not used.
+
+Tests in `test/unit/engineering-matter-query-cache.spec.ts` now cover:
 
 - `workspace revoke is not undone by a later network failure`;
 - `exact historical work revoke is not undone by a later network failure`;
-- `a current matter denial also hides its exact historical work`.
+- `a current matter denial also hides its exact historical work`;
+- `a denied resource stays denied after the reader unmounts and remounts`;
+- `two consumers recover together after a shared resource is reauthorized`.
 
-Both assert denial -> network failure -> hidden, then a successful
-re-authorization restores content. The pre-fix run failed both cases with the
-old body visible; the post-fix focused run passes 16/16 in the four related
-suites.
+The remount and two-consumer cases use separate mounts/clicks rather than one
+consumer clicking repeatedly. The denial and recovery assertions pass.
 
-### B. 2A First-Screen Route Lazy Loading
+### B. The Route Chunk Boundary Sits At The Outlet
 
-`client/src/app.tsx` now declares every heavy route component with a top-level
-`lazy(() => import(...))`. `Layout` and `WorkspaceHomePage` stay eager so the
-library shell and its redirect are available without waiting for a chunk.
-`AppContainer`, `BrowserRouter`, the theme provider and the QueryClient remain
-outside the `Suspense` boundary, so loading a route chunk does not rebuild the
-providers or the shared matter cache. A `RouteChunkBoundary` renders a visible
-"page failed to load" panel with a manual reload button; it resets when the
-route changes and never auto-refreshes.
+The module-level `lazy(() => import(...))` declarations stay in
+`client/src/app.tsx`; all 32 generated routes are unchanged. The Suspense and
+error boundary moved out of `app.tsx` into
+`client/src/components/RouteOutletBoundary.tsx`, which wraps the `Outlet` in
+`client/src/components/Layout.tsx`. As a result the sidebar, top bar, identity
+providers and `QueryClient` remain mounted while a page chunk loads, and a
+single page chunk failure no longer removes the app shell. Routes that do not
+render through `Layout` (the dev-preview entries and the OAuth callback) are
+wrapped individually so they keep their existing purpose. The error panel
+offers an explicit manual whole-page reload; it does not auto-refresh, and it
+does not promise that unsaved in-page state survives the reload.
+
+A controlled async integration test in `test/unit/route-outlet-boundary.spec.ts`
+uses the real `Routes`, `Layout` and boundary: a pending chunk keeps the shell
+and shell navigation mounted; a rejected chunk keeps the shell and shows the
+recoverable panel; navigating back to the library restores the shell and the
+route content without rebuilding the sidebar.
 
 Lazy route set: dialogue, work-item overview, matter wiki, matter analysis,
 situation, timeline, document parsing and readers, document revision/activity,
@@ -196,8 +213,8 @@ same Node 24.14.1 and the same installed dependency tree:
 
 | Metric                |      Before |       After |
 | --------------------- | ----------: | ----------: |
-| Entry chunk raw       | 3,742.29 kB | 1,678.64 kB |
-| Entry chunk gzip      | 1,183.84 kB |   538.05 kB |
+| Entry chunk raw       | 3,742.29 kB | 1,678.38 kB |
+| Entry chunk gzip      | 1,183.84 kB |   538.06 kB |
 | Entry-reachable JS    |     3.57 MB |     1.60 MB |
 | Entry CSS             |    637.9 kB |    325.0 kB |
 | `routes.json` entries |          32 |          32 |
@@ -280,8 +297,9 @@ Results:
 
 - Server typecheck: pass.
 - Client typecheck: pass.
-- Jest: 20 suites passed, 154/154 tests passed with the repository standard
+- Jest: 21 suites passed, 158/158 tests passed with the repository standard
   configuration, `--runInBand` only and no `--forceExit`; Jest exited normally.
+  The original 20-suite set passes 156/156 in its recorded order.
 - Client production build: pass. Entry chunk 1,678.64 kB raw / 538.05 kB gzip,
   down from 3,742.29 kB / 1,183.84 kB. `dist/client/routes.json` has 32 routes.
 - Isolated PostgreSQL directory test: 1 passed; six queries and EXPLAIN plans
@@ -307,3 +325,9 @@ Results:
   assertion failure on `wl-light--cold`; the Layout source never contained that
   token at `c85a0b616` either, and this round did not change Layout. It is
   outside the focused regression set and is recorded rather than worked around.
+- `test/unit/matter-resource-reuse.spec.ts` and
+  `test/unit/timeline-activity-discovery-handoff.spec.ts` interfere when run in
+  the same Jest process: each passes alone, and the recorded ordered 20-suite
+  command passes, but running the resource-reuse suite immediately before the
+  timeline suite fails one timeline assertion. This ordering interaction is
+  pre-existing and outside this round's scope.

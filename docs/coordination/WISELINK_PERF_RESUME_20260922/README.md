@@ -44,8 +44,8 @@ new-file bytes.
 - `npm run type:check:client`: pass.
 - Focused Jest: 20 suites passed, 151/151 tests passed with the repository
   standard configuration and no `--forceExit`; Jest exits normally. After the
-  denied-resource fix and cache-edge tests the focused set is 20 suites,
-  154/154 tests passed.
+  denial/recovery and route-boundary work the focused set is 21 suites,
+  158/158 tests passed; the original 20-suite set is 156/156.
 - Client production build (`vite build`, no plugin install, no environment
   copy): entry chunk 3,742.29 kB -> 1,678.64 kB raw, 1,183.84 kB -> 538.05 kB
   gzip; entry-reachable JS 3.57 MB -> 1.60 MB; entry CSS 637.9 kB -> 325.0 kB.
@@ -69,6 +69,10 @@ The focused Jest command is recorded in `REPORT.md`.
   not clear unrelated resources.
 - A denied workspace or exact-work resource stays hidden until a fetch succeeds
   again; an ordinary network failure after a denial does not restore the
-  rejected body.
+  rejected content. The denial lives in the shared query value, not in a
+  component-local flag.
+- Lazy route chunks wait and fail inside the `Layout` content area; the shell,
+  identity providers and QueryClient stay mounted. The failure panel uses an
+  explicit manual whole-page reload.
 - The local build is not a Miaoda release validation. No browser HAR, preview
   deploy or online p95 was measured.
