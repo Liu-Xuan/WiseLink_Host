@@ -825,3 +825,24 @@ Next implementation investigation: reduce dependent read round trips while
 preserving fresh authorization, tenant projection/source consistency and both
 current-version checks. Do not remove ACL checks or introduce cross-request
 authorization caching. Evidence: AB81_DATABASE_TRACE_EVIDENCE_20260923.json.
+
+
+## Fresh-authorized member read overlap (2026-09-23)
+
+AB81 traces showed non-SQL time between dependent member validation stages.
+After fresh READ_WORK_ITEM supplies the precise authorized version, tenant
+projection and source identity can be read independently. Both now settle before
+the existing projection-first validation/error ordering. Denial still starts
+neither read; changed work/source identities and projection mismatches still
+fail closed. Fresh authorization is never cached, and both Matter version
+checks remain. Successful SQL count is unchanged; saved groups retain four
+members, with up to eight dependent reads in flight. Current-member fanout is
+unchanged in member count. Invalid projections may overlap an already-authorized
+source lookup, but no source result is exposed after projection failure.
+
+Three suites / 61 tests pass, as do server types, scoped lint and server build.
+The controlled overlap counterexample fails on the exact parent (160ms versus
+100ms expected), then passes with the candidate. This demonstrates removed
+serial dependency, not a production speedup. SQL/RLS logic is unchanged; no new
+PostgreSQL run is claimed. Independent review and deployed tracing are pending.
+See MEMBER_READ_OVERLAP_EVIDENCE_20260923.json.
