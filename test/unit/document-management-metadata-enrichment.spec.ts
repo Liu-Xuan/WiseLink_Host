@@ -183,6 +183,26 @@ describe('existing-version metadata enrichment', () => {
       }),
     );
   });
+  it('freshly authorizes registered original identity without storage reads or metadata writes', async () => {
+    const f = fixture();
+    await expect(f.service.readDocumentOriginalIdentity('version-1', context)).resolves.toEqual({ documentVersionId: 'version-1', sha256, byteLength: bytes.length });
+    expect(f.authorizer.assertCanRead).toHaveBeenCalledTimes(2);
+    expect(f.catalog.readMetadataSource).toHaveBeenCalledWith('version-1', 'tenant-1');
+    expect(f.read).not.toHaveBeenCalled();
+    expect(f.parse).not.toHaveBeenCalled();
+    expect(f.catalog.fillMissingExtractedMetadata).not.toHaveBeenCalled();
+    f.authorizer.assertCanRead.mockRejectedValue(new Error('REVOKED'));
+    await expect(f.service.readDocumentOriginalIdentity('version-1', context)).rejects.toThrow('REVOKED');
+  });
+  it('rejects inconsistent original registration and authorization lost during identity read', async () => {
+    const f = fixture();
+    f.catalog.readMetadataSource.mockResolvedValue({ ...sourceRow(), source: { ...sourceRow().source, sha256: 'other' } });
+    await expect(f.service.readDocumentOriginalIdentity('version-1', context)).rejects.toMatchObject({ code: 'DOCUMENT_METADATA_SOURCE_MISMATCH' });
+    f.catalog.readMetadataSource.mockResolvedValue(sourceRow());
+    f.authorizer.assertCanRead.mockReset().mockResolvedValueOnce(undefined).mockRejectedValueOnce(new Error('REVOKED'));
+    await expect(f.service.readDocumentOriginalIdentity('version-1', context)).rejects.toThrow('REVOKED');
+    expect(f.read).not.toHaveBeenCalled();
+  });
   it('reads the exact original for versions with no WorkItem and performs no parse or metadata write', async () => {
     const f = fixture();
     await expect(

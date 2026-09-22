@@ -469,3 +469,18 @@ Actual old-source component regression: zoom updated geometry but also called th
 直接反例：旧View打开Wiki未保存任何layoutSnapshot，新View导航→返回挂载能取回几何；切换实际工作scope拒绝旧快照。真实Cytoscape remount恢复拖动坐标，reset回到默认；测试还涵盖脱离副本、迟到节点/已存节点不覆盖、基准不兼容、会话/拒绝清空、30分钟过期、条数/字节限制、不可变历史、返回引用过滤。6套54项、client typecheck、5生产文件ESLint、client build14.15s通过；test目录不在现有ESLint覆盖内，未将其记为lint通过。仍需真实用户链路与p95，不将此批等同于全部2C完成。
 
 前批验收回读：Luna已独立通过b2247dee7（6套57项、真实Cytoscape边界探针）与8de759fb9（8套71项、类型/lint/build/precommit）。A当前准确HEAD为0c350f04c2da8f6e2257689092bf8b312497d342，本地验收通过；A未新增source plan/原件缓存或全局公平调度，后续B 3B不得缓存权限判定或弱化其恢复fresh授权/未知模型结果拒绝重放边界。仍待主控统一集成与真实Hosted流程验证。
+
+
+## 2026-09-23 B：2B.2 原件会话复用
+
+基线 `d0829db9c1b81560622210f3e37c1a988227dd78`，独立树 `/private/tmp/wiselink-perf-b-original-reuse-20260923`。主控确认B拥有原件API/Host原件service-controller/URL utility区域；canonical-host.ts含A的assessment-work修改，主控组合时只合并本批原件函数，不整文件覆盖。
+
+测量先行：实际React原件预览链、合成8MiB Blob、相同DV三次打开/卸载。基线 `/private/tmp/wiselink-original-reuse-before.log` 验证3次完整下载、24MiB、创建/撤销URL各3；新实现相同流程1次完整下载8MiB、2次新identity请求，URL仍各3。不把synthetic PDF或mock网络当真实业务/浏览器p95；真实收益还要计算每次新授权网络请求耗时和首次暖命中的SHA-256计算/临时ArrayBuffer成本。
+
+Host新增GET original-identity（private,no-store），原登录/平台入口guard保持；前后两次DOCUMENT_READ授权，tenant限定读取精确DV登记并核对version/source sha与length一致，仅返回DV/sha/length。它证明本次授权和登记身份，不读取对象存储，不能证明当前对象仍可下载。首次/缓存不匹配的完整GET仍走原有实际字节sha/length/provider身份校验。浏览器按sessionGeneration+DV留存Blob；每次暖读取都重新请求identity，首次暖命中对实际Blob算SHA-256（同Blob并发只共享hash，不共享权限结果），sha/length均匹配才使用。拒绝、请求故障或会话失效不返回旧字节；摘要/长度改变淘汰并重新完整读取。
+
+边界：缓存最多4份、单份16MiB、总Blob字节32MiB、5分钟固定TTL，计时器主动删除并在空缓存注销session监听；身份变更立即清空。最多两次读取/校验/哈希在途，排队可被取消，旧generation出队拒绝。超限文件保留原本直接读取能力但不驻留缓存。32MiB是本模块持有Blob字节上限，不代表浏览器总堆/PDF.js解码/活跃组件URL/临时hash buffer；对象URL始终由组件创建并在卸载/换版/身份失效时撤销，缓存淘汰不提前撤销活跃组件URL。
+
+验证：4套117项（original-memory、original-canvas-preparation、metadata-enrichment、canonical-host-client）通过；另补并发hash共享但授权独立测试。覆盖撤权/503拒绝旧bytes、digest/length变化、DV/session隔离、计时器过期、数量/总字节/单文件限制、最多2次在途与排队取消、迟到结果拒绝、真实组件三次开关URL平衡、Host二次授权与不读存储。双端typecheck、5生产文件ESLint、build:prod通过（client13.11s，既有module/chunk警告；构建不是实际OCR/Hosted运行）。test目录不纳入现有ESLint配置。必须组合部署新Host identity端点与对应前端；未实现旧Host端点缺失时绕过授权的缓存回退。
+
+前批d0829db9c独立验收已通过。计数澄清：B的6/54集合含matter-graph-page/graph-route，Luna的6/63集合用appearance/presentation替换这两套，属于并列补充证据而非计数过时；Luna已明确更正，不重复门禁。

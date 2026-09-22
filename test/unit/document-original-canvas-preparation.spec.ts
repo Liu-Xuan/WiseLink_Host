@@ -1,3 +1,4 @@
+import { createHash } from 'node:crypto';
 import * as React from 'react';
 import { act, createElement } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
@@ -5,11 +6,14 @@ let DocumentOriginalCanvasPreview: typeof import('../../client/src/pages/Documen
 
 const { JSDOM } = require('jsdom');
 const mockRead = jest.fn();
+const mockIdentity = jest.fn();
+let clearMemory: () => void;
 const mockImport = jest.fn();
 let mockGeneration = 1;
 const mockListeners = new Set<() => void>();
 jest.mock('@client/src/api/canonical-host', () => ({
   readDocumentVersionOriginal: (...args: unknown[]) => mockRead(...args),
+  readDocumentVersionOriginalIdentity: (...args: unknown[]) => mockIdentity(...args),
   getCanonicalHostClientSessionGeneration: () => mockGeneration,
   subscribeCanonicalHostClientSession: (listener: () => void) => {
     mockListeners.add(listener);
@@ -67,6 +71,7 @@ const mockRevoke = jest.fn();
 
 beforeEach(() => {
   mockRead.mockReset();
+  mockIdentity.mockReset();
   mockImport.mockReset();
   mockCreate.mockReset();
   mockRevoke.mockReset();
@@ -78,6 +83,7 @@ beforeEach(() => {
   jest.isolateModules(() => {
     DocumentOriginalCanvasPreview =
       require('../../client/src/pages/DocumentParsingPage/DocumentOriginalCanvasPreview').default;
+    clearMemory = require('../../client/src/utils/document-original-memory').clearDocumentOriginalMemory;
   });
   dom = new JSDOM('<div id="root"></div>', { url: 'https://example.test/' });
   oldGlobals = new Map();
@@ -113,6 +119,7 @@ beforeEach(() => {
 afterEach(async () => {
   try {
     await act(async () => root.unmount());
+    clearMemory();
     expect(mockListeners.size).toBe(0);
   } finally {
     dom.window.close();
@@ -324,4 +331,23 @@ test('session exit while both preparations are pending never mounts the late res
   expect(mockRead).toHaveBeenCalledTimes(1);
   expect(container.textContent).toContain('登录状态已变化');
   expect(container.querySelector('[data-viewer]')).toBeNull();
+});
+
+test('measures repeated original returns with an 8 MiB synthetic PDF and balanced URLs', async () => {
+  const bytes = new Uint8Array(8 * 1024 * 1024);
+  bytes.set(new TextEncoder().encode('%PDF-1.7\n'));
+  const sample = new Blob([bytes], { type: 'application/pdf' });
+  mockRead.mockResolvedValue(sample);
+  mockIdentity.mockResolvedValue({ documentVersionId: 'DV-return', sha256: createHash('sha256').update(bytes).digest('hex'), byteLength: sample.size });
+  for (let i = 0; i < 3; i++) {
+    await render('DV-return', true);
+    for (let wait=0;wait<100 && !container.querySelector('[data-viewer]');wait++) await act(async () => { await new Promise(resolve => setTimeout(resolve, 2)); });
+    expect(container.querySelector('[data-viewer]')).not.toBeNull();
+    await act(async () => root.render(null));
+  }
+  expect(mockRead).toHaveBeenCalledTimes(1);
+  expect(mockIdentity).toHaveBeenCalledTimes(2);
+  expect(mockRead.mock.calls.length * sample.size).toBe(8 * 1024 * 1024);
+  expect(mockCreate).toHaveBeenCalledTimes(3);
+  expect(mockRevoke).toHaveBeenCalledTimes(3);
 });
