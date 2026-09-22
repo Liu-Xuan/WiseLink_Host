@@ -1,101 +1,310 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect } from 'react';
+import {
+  useQuery,
+  useQueryClient,
+  type QueryClient,
+} from '@tanstack/react-query';
 
 import {
+  getCanonicalHostClientSessionGeneration,
+  getCanonicalHostIdentityContext,
+} from '@client/src/api/canonical-host';
+import {
   getEngineeringMatterWorkspace,
-  type EngineeringMatterClientError,
+  getEngineeringMatterWorkingRevision,
   type EngineeringMatterWorkspaceRead,
 } from '@client/src/api/engineering-matter';
-import { getCanonicalHostClientSessionGeneration } from '@client/src/api/canonical-host';
+import { useCurrentUserSession } from '@client/src/app/providers/CurrentUserSessionProvider';
 import { writeReviewDraft } from '@client/src/features/review/review-draft-store';
+import type { EngineeringMatterWorkingRevisionReadModel } from '@shared/matter-working.interface';
 import { clearMatterReadingLocations } from './reading-location';
 
-interface MatterReadState {
-  matterId: string;
+const MATTER_STALE_TIME_MS = 30_000;
+const MATTER_GC_TIME_MS = 5 * 60_000;
+
+export const ENGINEERING_MATTER_QUERY_ROOT = [
+  'canonical-host',
+  'engineering-matter',
+] as const;
+
+interface EngineeringMatterQueryIdentity {
+  appId: string;
+  tenantId: string;
+  actorId: string;
   sessionGeneration: number;
+}
+
+export interface EngineeringMatterReadState {
   data: EngineeringMatterWorkspaceRead | null;
   loading: boolean;
   error: string | null;
+  revoked: boolean;
+  refresh(): Promise<void>;
+}
+
+export interface EngineeringMatterWorkingRevisionReadState {
+  data: EngineeringMatterWorkingRevisionReadModel | null;
+  loading: boolean;
+  error: string | null;
+  revoked: boolean;
+  refresh(): Promise<void>;
 }
 
 export default function useEngineeringMatter(
   matterId: string,
   sessionGeneration: number,
   authenticationRequired: boolean,
-) {
-  const [state, setState] = useState<MatterReadState | null>(null);
-  const epochRef = useRef<number>(0);
-  const refresh = useCallback(async (): Promise<void> => {
-    const epoch: number = ++epochRef.current;
-    if (!matterId || authenticationRequired) {
-      setState(null);
-      return;
-    }
-    const current = (): boolean =>
-      epochRef.current === epoch &&
-      getCanonicalHostClientSessionGeneration() === sessionGeneration;
-    const empty: MatterReadState = {
-      matterId,
-      sessionGeneration,
-      data: null,
-      loading: true,
-      error: null,
-    };
-    setState((previous: MatterReadState | null) => ({
-      ...(previous?.matterId === matterId &&
-      previous.sessionGeneration === sessionGeneration
-        ? previous
-        : empty),
-      loading: true,
-      error: null,
-    }));
-    try {
-      const data: EngineeringMatterWorkspaceRead =
-        await getEngineeringMatterWorkspace(matterId);
-      if (current()) setState({ ...empty, data, loading: false });
-    } catch (cause: unknown) {
-      if (!current()) return;
-      const error: EngineeringMatterClientError | null =
-        cause instanceof Error ? cause : null;
-      const revoked: boolean =
-        error?.statusCode === 401 ||
-        error?.statusCode === 403 ||
-        error?.statusCode === 404;
-      if (revoked) {
-        writeReviewDraft(`matter:${matterId}`, '', sessionGeneration);
-        clearMatterReadingLocations(matterId);
-      }
-      setState((previous: MatterReadState | null) => ({
-        ...(revoked ? empty : (previous ?? empty)),
-        loading: false,
-        error: error?.message ?? '读取事项失败，请稍后重试。',
-      }));
-      throw cause;
-    }
-  }, [matterId, sessionGeneration, authenticationRequired]);
-
+): EngineeringMatterReadState {
+  const effectiveMatterId: string = matterId.trim();
+  const enabled: boolean =
+    Boolean(effectiveMatterId) && !authenticationRequired;
+  const { identityQuery, identity } = useEngineeringMatterQueryIdentity(
+    enabled,
+    sessionGeneration,
+  );
+  const workspaceQuery = useQuery({
+    queryKey: identity
+      ? engineeringMatterWorkspaceQueryKey(identity, effectiveMatterId)
+      : [...ENGINEERING_MATTER_QUERY_ROOT, 'workspace-pending'],
+    queryFn: async ({ signal }): Promise<EngineeringMatterWorkspaceRead> => {
+      const workspace = await getEngineeringMatterWorkspace(
+        effectiveMatterId,
+        signal,
+      );
+      assertCurrentSession(sessionGeneration);
+      return workspace;
+    },
+    enabled: enabled && Boolean(identity),
+    staleTime: MATTER_STALE_TIME_MS,
+    gcTime: MATTER_GC_TIME_MS,
+    retry: false,
+  });
+  const error: unknown = workspaceQuery.error ?? identityQuery.error;
+  const revoked: boolean = isRevokedMatterError(error);
   useEffect(() => {
-    // The hook presents the error; callers may also await a refresh receipt.
-    void refresh().catch(() => undefined);
-    return () => {
-      epochRef.current += 1;
-    };
-  }, [refresh]);
-
-  const visible: MatterReadState | null =
-    !authenticationRequired &&
-    state?.matterId === matterId &&
-    state.sessionGeneration === sessionGeneration
-      ? state
-      : null;
+    if (!revoked) return;
+    writeReviewDraft(`matter:${effectiveMatterId}`, '', sessionGeneration);
+    clearMatterReadingLocations(effectiveMatterId);
+  }, [effectiveMatterId, revoked, sessionGeneration]);
+  const data: EngineeringMatterWorkspaceRead | null = revoked
+    ? null
+    : (workspaceQuery.data ?? null);
+  const refresh = useCallback(async (): Promise<void> => {
+    if (!enabled) return;
+    const identityResult = identityQuery.data
+      ? null
+      : await identityQuery.refetch({ cancelRefetch: true });
+    if (identityResult?.error) throw identityResult.error;
+    if (!identityQuery.data && !identityResult?.data) return;
+    const result = await workspaceQuery.refetch({ cancelRefetch: true });
+    if (result.error) throw result.error;
+  }, [
+    enabled,
+    identityQuery.data,
+    identityQuery.refetch,
+    workspaceQuery.refetch,
+  ]);
   return {
-    data: visible?.data ?? null,
+    data,
     loading:
-      !authenticationRequired &&
-      Boolean(matterId) &&
-      (visible?.loading ?? true),
+      enabled && !data && (identityQuery.isPending || workspaceQuery.isPending),
     error: authenticationRequired
       ? '请先登录，再读取当前事项。'
-      : (visible?.error ?? null),
+      : matterErrorMessage(error),
+    revoked,
     refresh,
   };
+}
+
+export function useEngineeringMatterWorkingRevision(
+  matterId: string,
+  workRef: string,
+  sessionGeneration: number,
+  authenticationRequired: boolean,
+  enabled = true,
+): EngineeringMatterWorkingRevisionReadState {
+  const effectiveMatterId: string = matterId.trim();
+  const effectiveWorkRef: string = workRef.trim();
+  const queryEnabled: boolean =
+    enabled &&
+    Boolean(effectiveMatterId) &&
+    Boolean(effectiveWorkRef) &&
+    !authenticationRequired;
+  const { identityQuery, identity } = useEngineeringMatterQueryIdentity(
+    queryEnabled,
+    sessionGeneration,
+  );
+  const revisionQuery = useQuery({
+    queryKey: identity
+      ? engineeringMatterWorkingRevisionQueryKey(
+          identity,
+          effectiveMatterId,
+          effectiveWorkRef,
+        )
+      : [...ENGINEERING_MATTER_QUERY_ROOT, 'working-revision-pending'],
+    queryFn: async ({ signal }) => {
+      const revision = await getEngineeringMatterWorkingRevision(
+        effectiveMatterId,
+        effectiveWorkRef,
+        signal,
+      );
+      assertCurrentSession(sessionGeneration);
+      return revision;
+    },
+    enabled: queryEnabled && Boolean(identity),
+    staleTime: MATTER_STALE_TIME_MS,
+    gcTime: MATTER_GC_TIME_MS,
+    retry: false,
+  });
+  const error: unknown = revisionQuery.error ?? identityQuery.error;
+  const revoked: boolean = isRevokedMatterError(error);
+  const data: EngineeringMatterWorkingRevisionReadModel | null = revoked
+    ? null
+    : (revisionQuery.data ?? null);
+  const refresh = useCallback(async (): Promise<void> => {
+    if (!queryEnabled) return;
+    const identityResult = identityQuery.data
+      ? null
+      : await identityQuery.refetch({ cancelRefetch: true });
+    if (identityResult?.error) throw identityResult.error;
+    if (!identityQuery.data && !identityResult?.data) return;
+    const result = await revisionQuery.refetch({ cancelRefetch: true });
+    if (result.error) throw result.error;
+  }, [
+    identityQuery.data,
+    identityQuery.refetch,
+    queryEnabled,
+    revisionQuery.refetch,
+  ]);
+  return {
+    data,
+    loading:
+      queryEnabled &&
+      !data &&
+      (identityQuery.isPending || revisionQuery.isPending),
+    error: matterErrorMessage(error),
+    revoked,
+    refresh,
+  };
+}
+
+export async function clearEngineeringMatterQueries(
+  queryClient: QueryClient,
+): Promise<void> {
+  await queryClient.cancelQueries({ queryKey: ENGINEERING_MATTER_QUERY_ROOT });
+  queryClient.removeQueries({
+    queryKey: ENGINEERING_MATTER_QUERY_ROOT,
+    type: 'inactive',
+  });
+  await new Promise<void>((resolve) => setTimeout(resolve, 0));
+  queryClient.removeQueries({
+    queryKey: ENGINEERING_MATTER_QUERY_ROOT,
+    type: 'inactive',
+  });
+}
+
+function useEngineeringMatterQueryIdentity(
+  enabled: boolean,
+  sessionGeneration: number,
+) {
+  const { currentUser } = useCurrentUserSession();
+  const appId: string = currentAppId();
+  const actorId: string = currentUser.user_id?.trim() ?? '';
+  const identityQuery = useQuery({
+    queryKey: [
+      ...ENGINEERING_MATTER_QUERY_ROOT,
+      'identity',
+      appId,
+      actorId,
+      sessionGeneration,
+    ],
+    queryFn: async (): Promise<EngineeringMatterQueryIdentity> => {
+      const identity = await getCanonicalHostIdentityContext();
+      assertCurrentSession(sessionGeneration);
+      return {
+        appId,
+        tenantId: identity.tenantId,
+        actorId: identity.userId,
+        sessionGeneration,
+      };
+    },
+    enabled,
+    staleTime: MATTER_STALE_TIME_MS,
+    gcTime: MATTER_GC_TIME_MS,
+    retry: false,
+  });
+  return {
+    identityQuery,
+    identity: identityQuery.data ?? null,
+  };
+}
+
+function engineeringMatterWorkspaceQueryKey(
+  identity: EngineeringMatterQueryIdentity,
+  matterId: string,
+) {
+  return [
+    ...ENGINEERING_MATTER_QUERY_ROOT,
+    'workspace',
+    identity.appId,
+    identity.tenantId,
+    identity.actorId,
+    identity.sessionGeneration,
+    matterId,
+  ] as const;
+}
+
+function engineeringMatterWorkingRevisionQueryKey(
+  identity: EngineeringMatterQueryIdentity,
+  matterId: string,
+  workRef: string,
+) {
+  return [
+    ...ENGINEERING_MATTER_QUERY_ROOT,
+    'working-revision',
+    identity.appId,
+    identity.tenantId,
+    identity.actorId,
+    identity.sessionGeneration,
+    matterId,
+    workRef,
+  ] as const;
+}
+
+function assertCurrentSession(sessionGeneration: number): void {
+  if (getCanonicalHostClientSessionGeneration() !== sessionGeneration) {
+    throw Object.assign(new Error('登录状态已变化，事项读回已失效。'), {
+      name: 'AbortError',
+    });
+  }
+}
+
+function isRevokedMatterError(error: unknown): boolean {
+  const statusCode: number | undefined = matterErrorStatus(error);
+  return statusCode === 401 || statusCode === 403 || statusCode === 404;
+}
+
+function matterErrorMessage(error: unknown): string | null {
+  if (!error) return null;
+  return error instanceof Error ? error.message : '读取事项失败，请稍后重试。';
+}
+
+function matterErrorStatus(error: unknown): number | undefined {
+  if (
+    error &&
+    typeof error === 'object' &&
+    'statusCode' in error &&
+    typeof error.statusCode === 'number'
+  ) {
+    return error.statusCode;
+  }
+  return undefined;
+}
+
+function currentAppId(): string {
+  if (typeof window === 'undefined') return 'unknown-app';
+  const value: unknown = Reflect.get(window, 'appId');
+  return typeof value === 'string' && value.trim()
+    ? value.trim()
+    : 'unknown-app';
 }

@@ -24,6 +24,7 @@ Do not treat chat summaries, old release references, or the unavailable
 
 - 1A default graph entry and timeline discovery handoff.
 - Engineering Matter directory batch narrow reading.
+- Engineering Matter QueryClient sharing for Wiki and exact workRef views.
 - The available earlier two-file 1B control-read candidate.
 - The recovered metadata boundary changes plus local reimplementations of the
   three missing new files.
@@ -38,7 +39,8 @@ new-file bytes.
 
 - `npm run type:check:server`: pass.
 - `npm run type:check:client`: pass.
-- Focused Jest: 11 suites passed, 106/106 tests passed.
+- Focused Jest: 20 suites passed, 151/151 tests passed with the repository
+  standard configuration and no `--forceExit`; Jest exits normally.
 - Isolated PostgreSQL directory test: pass; 6 production-generated queries on
   representative small and 80-matter datasets.
 - Postgres metadata suite: 4 skipped because no test database was configured.
@@ -50,4 +52,8 @@ The focused Jest command is recorded in `REPORT.md`.
 
 - No production model, permission, database or schema change.
 - No production analysis or release was triggered.
-- No browser, preview or online p95 measurement was performed.
+- No browser, preview, HAR or online p95 measurement was performed. Wiki to
+  graph to Wiki request counts are deterministic mock/API-call counts only.
+- Query cache policy remains `staleTime` 30 s, `gcTime` 5 min, `retry` false.
+  Session or identity change clears the engineering-matter query root; it does
+  not clear unrelated resources.

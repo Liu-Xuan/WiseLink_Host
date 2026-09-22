@@ -1,8 +1,11 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useState, type ReactNode } from 'react';
+import { useQueryClient } from '@tanstack/react-query';
 import { Outlet, useLocation } from 'react-router-dom';
 
 import { CurrentObjectContextProvider } from '@client/src/app/providers/CurrentObjectContextProvider';
 import { CurrentUserSessionProvider } from '@client/src/app/providers/CurrentUserSessionProvider';
+import { subscribeCanonicalHostClientSession } from '@client/src/api/canonical-host';
+import { clearEngineeringMatterQueries } from '@client/src/features/matter/useEngineeringMatter';
 import Sidebar from '@client/src/features/navigation/Sidebar';
 import TopBar from '@client/src/features/navigation/TopBar';
 import { UniversalLink } from '@lark-apaas/client-toolkit/components/UniversalLink';
@@ -12,12 +15,26 @@ import './app-shell.css';
 const Layout = () => {
   return (
     <CurrentUserSessionProvider>
-      <CurrentObjectContextProvider>
-        <LayoutChrome />
-      </CurrentObjectContextProvider>
+      <MatterQuerySessionBoundary>
+        <CurrentObjectContextProvider>
+          <LayoutChrome />
+        </CurrentObjectContextProvider>
+      </MatterQuerySessionBoundary>
     </CurrentUserSessionProvider>
   );
 };
+
+function MatterQuerySessionBoundary({ children }: { children: ReactNode }) {
+  const queryClient = useQueryClient();
+  useEffect(
+    () =>
+      subscribeCanonicalHostClientSession(() => {
+        void clearEngineeringMatterQueries(queryClient);
+      }),
+    [queryClient],
+  );
+  return children;
+}
 
 function LayoutChrome() {
   const location = useLocation();

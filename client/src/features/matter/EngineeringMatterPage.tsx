@@ -1,5 +1,10 @@
 import { useCallback, useEffect, useRef, useState, type FC } from 'react';
-import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom';
+import {
+  Link,
+  useNavigate,
+  useParams,
+  useSearchParams,
+} from 'react-router-dom';
 import { ArrowLeft, RefreshCw } from 'lucide-react';
 
 import { useCurrentUserSession } from '@client/src/app/providers/CurrentUserSessionProvider';
@@ -16,7 +21,6 @@ import type {
   AssessmentReadingResult,
 } from '@shared/assessment-reading.interface';
 import type { EngineeringMatterWorkingRevisionReadModel } from '@shared/matter-working.interface';
-import { getEngineeringMatterWorkingRevision } from '@client/src/api/engineering-matter';
 
 import AssessmentReadingBrief from './AssessmentReadingBrief';
 import ClaimEvidenceDialog from './ClaimEvidenceDialog';
@@ -36,9 +40,16 @@ import {
   buildMatterObjectContext,
   matterDocumentRoute,
 } from './matter-navigation';
-import { readReadingLocation, clearReadingLocation, matterReadingScope, type ReadingLocation } from './reading-location';
+import {
+  readReadingLocation,
+  clearReadingLocation,
+  matterReadingScope,
+  type ReadingLocation,
+} from './reading-location';
 import { matterReadingReturnParams } from './reading-return';
-import useEngineeringMatter from './useEngineeringMatter';
+import useEngineeringMatter, {
+  useEngineeringMatterWorkingRevision,
+} from './useEngineeringMatter';
 import useReadingLocation from './useReadingLocation';
 import { selectMatterWorkRevision } from './matter-work-selection';
 import { readableMatterOverview } from './matter-overview-reading';
@@ -75,11 +86,12 @@ const MatterWorkspace: FC<MatterWorkspaceProps> = ({
   const navigate = useNavigate();
   const [searchParams, setSearchParams] = useSearchParams();
   const { publishCurrentObject } = useCurrentObjectContext();
-  const { data, loading, error, refresh } = useEngineeringMatter(
-    matterId,
-    sessionGeneration,
-    authenticationRequired,
-  );
+  const {
+    data,
+    loading,
+    error,
+    refresh: workspaceRefresh,
+  } = useEngineeringMatter(matterId, sessionGeneration, authenticationRequired);
   const requestedWorkRef: string = searchParams.get('workRef')?.trim() ?? '';
   const scopeKey: string = matterReadingScope(matterId, requestedWorkRef);
   const [initialLocation] = useState<ReadingLocation | null>(() =>
@@ -94,21 +106,31 @@ const MatterWorkspace: FC<MatterWorkspaceProps> = ({
     initialLocation?.discussionClaimId ?? null,
   );
   const [navigationError, setNavigationError] = useState<string | null>(null);
-  const [requestedRevision, setRequestedRevision] =
-    useState<EngineeringMatterWorkingRevisionReadModel | null>(null);
-  const [requestedRevisionLoading, setRequestedRevisionLoading] =
-    useState<boolean>(false);
-  const [requestedRevisionError, setRequestedRevisionError] =
-    useState<string | null>(null);
   const triggerRef = useRef<HTMLButtonElement | null>(null);
   const currentRevision: EngineeringMatterWorkingRevisionReadModel | null =
     data?.working.current ?? null;
+  const requestedRevisionRead = useEngineeringMatterWorkingRevision(
+    matterId,
+    requestedWorkRef,
+    sessionGeneration,
+    authenticationRequired,
+    Boolean(
+      requestedWorkRef &&
+      currentRevision?.matterWorkRevisionId !== requestedWorkRef,
+    ),
+  );
+  const requestedRevision = requestedRevisionRead.data;
   const displayedRevision: EngineeringMatterWorkingRevisionReadModel | null =
     selectMatterWorkRevision(
       requestedWorkRef,
       currentRevision,
       requestedRevision,
     );
+  const requestedRevisionLoading = requestedRevisionRead.loading;
+  const requestedRevisionError = requestedRevisionRead.error;
+  const refresh = useCallback(async (): Promise<void> => {
+    await Promise.all([workspaceRefresh(), requestedRevisionRead.refresh()]);
+  }, [requestedRevisionRead.refresh, workspaceRefresh]);
   const result: AssessmentReadingResult | null =
     readableMatterOverview(displayedRevision);
   const overviewStatus = displayedRevision?.state.problemWork?.overviewStatus;
@@ -116,14 +138,13 @@ const MatterWorkspace: FC<MatterWorkspaceProps> = ({
     result?.content.claims.find(
       (claim: AssessmentReadingClaim) => claim.claimId === discussionClaimId,
     );
-  const panel: 'brief' | 'review' | 'materials' =
-    requestedWorkRef
-      ? 'brief'
-      : searchParams.get('panel') === 'review'
-        ? 'review'
-        : searchParams.get('panel') === 'materials'
-          ? 'materials'
-          : 'brief';
+  const panel: 'brief' | 'review' | 'materials' = requestedWorkRef
+    ? 'brief'
+    : searchParams.get('panel') === 'review'
+      ? 'review'
+      : searchParams.get('panel') === 'materials'
+        ? 'materials'
+        : 'brief';
   const saveLocation = useReadingLocation(
     scopeKey,
     sessionGeneration,
@@ -157,47 +178,12 @@ const MatterWorkspace: FC<MatterWorkspaceProps> = ({
   }, [data, publishCurrentObject, requestedWorkRef]);
 
   useEffect(() => {
-    setRequestedRevision(null);
-    setRequestedRevisionError(null);
-    if (
-      !requestedWorkRef ||
-      !matterId ||
-      authenticationRequired ||
-      currentRevision?.matterWorkRevisionId === requestedWorkRef
-    ) {
-      setRequestedRevisionLoading(false);
-      return;
-    }
-    const controller = new AbortController();
-    setRequestedRevisionLoading(true);
-    void getEngineeringMatterWorkingRevision(
-      matterId,
-      requestedWorkRef,
-      controller.signal,
-    )
-      .then((revision) => {
-        if (!controller.signal.aborted) setRequestedRevision(revision);
-      })
-      .catch((cause: unknown) => {
-        if (controller.signal.aborted) return;
-        if (cause && typeof cause === 'object' && 'statusCode' in cause && [401, 403, 404].includes(Number(cause.statusCode))) {
-          clearReadingLocation(scopeKey);
-          setClaimSelection(null); setFocusClaimId(null); setDiscussionClaimId(null);
-        }
-        setRequestedRevisionError(
-          cause instanceof Error ? cause.message : '指定工作修订读取失败。',
-        );
-      })
-      .finally(() => {
-        if (!controller.signal.aborted) setRequestedRevisionLoading(false);
-      });
-    return () => controller.abort();
-  }, [
-    authenticationRequired,
-    matterId,
-    requestedWorkRef,
-    scopeKey,
-  ]);
+    if (!requestedRevisionRead.revoked) return;
+    clearReadingLocation(scopeKey);
+    setClaimSelection(null);
+    setFocusClaimId(null);
+    setDiscussionClaimId(null);
+  }, [requestedRevisionRead.revoked, scopeKey]);
 
   function setPanel(value: string): void {
     const params: URLSearchParams = new URLSearchParams(searchParams);
@@ -215,7 +201,9 @@ const MatterWorkspace: FC<MatterWorkspaceProps> = ({
     const workRef = displayedRevision?.matterWorkRevisionId ?? requestedWorkRef;
     saveLocation(matterReadingScope(matterId, workRef));
     if (!evidence.workItemId) setClaimSelection(null);
-    navigate(matterDocumentRoute(matterId, evidence, panel, workRef, searchParams));
+    navigate(
+      matterDocumentRoute(matterId, evidence, panel, workRef, searchParams),
+    );
   }
 
   function locateReviewSource(sourceRef: string): void {
@@ -272,7 +260,10 @@ const MatterWorkspace: FC<MatterWorkspaceProps> = ({
   const primary: EngineeringMatterCatalogEntry | undefined =
     primaryMembers.length === 1 ? primaryMembers[0] : undefined;
   return (
-    <main className="wl-overview-page matter-wiki-page" aria-label="工程事项阅读与讨论">
+    <main
+      className="wl-overview-page matter-wiki-page"
+      aria-label="工程事项阅读与讨论"
+    >
       <header className="matter-wiki-head flex flex-wrap items-center justify-between gap-4">
         <div className="space-y-1">
           <p className="text-xs text-muted-foreground">
@@ -323,8 +314,17 @@ const MatterWorkspace: FC<MatterWorkspaceProps> = ({
                 : '尚未取得指定工作修订。'}
         </p>
       ) : null}
-      <nav className="matter-wiki-tabs flex flex-wrap gap-2" aria-label="事项阅读层次">
-        {!requestedWorkRef ? <Button asChild variant="outline"><Link to={`/matters/${encodeURIComponent(matterId)}/posture`}>工程态势</Link></Button> : null}
+      <nav
+        className="matter-wiki-tabs flex flex-wrap gap-2"
+        aria-label="事项阅读层次"
+      >
+        {!requestedWorkRef ? (
+          <Button asChild variant="outline">
+            <Link to={`/matters/${encodeURIComponent(matterId)}/posture`}>
+              工程态势
+            </Link>
+          </Button>
+        ) : null}
         <Button
           variant={panel === 'brief' ? 'default' : 'outline'}
           aria-pressed={panel === 'brief'}
@@ -383,7 +383,11 @@ const MatterWorkspace: FC<MatterWorkspaceProps> = ({
                 </p>
               </div>
             ) : result && overviewStatus !== 'NOT_AVAILABLE' ? (
-              <section aria-label={overviewStatus === 'STALE' ? '此前综合' : '当前综合'}>
+              <section
+                aria-label={
+                  overviewStatus === 'STALE' ? '此前综合' : '当前综合'
+                }
+              >
                 {overviewStatus === 'STALE' ? <h2>此前综合</h2> : null}
                 <AssessmentReadingBrief
                   result={result}
@@ -405,10 +409,21 @@ const MatterWorkspace: FC<MatterWorkspaceProps> = ({
                     ? '已保存的问题分析可在下方直接阅读；成员文档的判断不会自动充任事项综合。'
                     : '成员文档的已有判断仍属于各自任务，不会自动充任本事项的综合结果。可围绕当前问题开始讨论。'}
                 </p>
-                {!requestedWorkRef ? <Button onClick={() => setPanel('review')}>开始核对与讨论</Button> : null}
+                {!requestedWorkRef ? (
+                  <Button onClick={() => setPanel('review')}>
+                    开始核对与讨论
+                  </Button>
+                ) : null}
               </div>
             )}
-            {displayedRevision && result && !displayedRevision.state.problemWork ? <OverviewSourceWork matterId={matterId} source={displayedRevision.overviewSourceWork} /> : null}
+            {displayedRevision &&
+            result &&
+            !displayedRevision.state.problemWork ? (
+              <OverviewSourceWork
+                matterId={matterId}
+                source={displayedRevision.overviewSourceWork}
+              />
+            ) : null}
             <MatterProblemWork
               revision={displayedRevision}
               onLocateDocument={openDocument}
@@ -532,10 +547,19 @@ const MatterWorkspace: FC<MatterWorkspaceProps> = ({
             <MatterMembers
               members={data.matter.catalog.entries}
               onOpenMember={(member: EngineeringMatterCatalogEntry) => {
-                const workRef = displayedRevision?.matterWorkRevisionId ?? requestedWorkRef;
+                const workRef =
+                  displayedRevision?.matterWorkRevisionId ?? requestedWorkRef;
                 saveLocation(matterReadingScope(matterId, workRef));
-                const params = matterReadingReturnParams(matterId, member.document.documentVersionId, panel, workRef, searchParams);
-                navigate(`/document-versions/${encodeURIComponent(member.document.documentVersionId)}?${params}`);
+                const params = matterReadingReturnParams(
+                  matterId,
+                  member.document.documentVersionId,
+                  panel,
+                  workRef,
+                  searchParams,
+                );
+                navigate(
+                  `/document-versions/${encodeURIComponent(member.document.documentVersionId)}?${params}`,
+                );
               }}
             />
           </div>

@@ -57,6 +57,87 @@ and larger working state JSON.
 - both datasets executed six queries; exact SQL and EXPLAIN metrics are in
   `SQL_EVIDENCE.md`.
 
+## 1C: Matter Workspace And Exact WorkRef Reuse
+
+The app already mounts the platform QueryClient through `AppContainer`.
+`useEngineeringMatter` now uses that client instead of component-local state.
+The same module exposes a shared exact-workRef resource.
+
+Changed files:
+
+- `client/src/features/matter/useEngineeringMatter.ts`
+- `client/src/features/matter/EngineeringMatterPage.tsx`
+- `client/src/pages/RelationGraphPage/useSuiteMatterGraph.ts`
+- `client/src/pages/RelationGraphPage/SuiteMatterGraphPage.tsx`
+- `client/src/components/Layout.tsx`
+- direct tests under `test/unit/`
+
+Cache keys:
+
+- workspace: appId, tenantId, actorId, sessionGeneration, matterId
+- exact work: appId, tenantId, actorId, sessionGeneration, matterId, workRef
+- view tab, graph selection, camera and anchors are excluded
+
+Policy:
+
+- staleTime: 30 s
+- gcTime: 5 min
+- retry: false
+- manual refresh refetches the exact active resource and retains prior content
+  while the refresh is in flight
+- session change cancels and removes the matter query root
+- network error keeps same-identity cached content and exposes the error
+- 401/403/404 clears the displayed content instead of using stale data
+
+Request and reuse evidence from route-level tests:
+
+- current workspace: one logical workspace acquisition across Wiki -> graph ->
+  Wiki, with two cache hits. `getEngineeringMatterWorkspace` still performs two
+  HTTP requests per acquisition, so two resource requests are implied for the
+  cold path.
+- exact historical work: one workspace acquisition and one exact-revision
+  acquisition across Wiki -> graph -> Wiki, with both later views served from
+  cache. This implies three resource HTTP requests on a cold path; the shared
+  identity-context read adds one request unless already cached.
+- two simultaneous consumers start one logical workspace request; unmounting
+  one does not cancel the remaining consumer.
+- completed A -> B -> A reuses A. An unfinished A request is canceled when its
+  last consumer leaves; returning to A starts a new request.
+- a late A response cannot overwrite B.
+
+These are deterministic mock/API-call counts. No browser request trace or
+real-network timing was measured.
+
+## 1C Lifecycle Closeout
+
+This round did not change the cache policy or add another cache. It closed the
+remaining lifecycle and evidence gaps:
+
+- Within the 30 s freshness window a revisited matter is served without a new
+  acquisition. Crossing the window alone does not fetch; a later consumer
+  trigger does. `staleTime` is not polling.
+- After the current work moved from W5 to W6, the current workspace refreshed to
+  W6 while an exact historical W5 read stayed W5 and was not re-fetched. The
+  directory list brief is never substituted for full workspace or exact-work
+  content.
+- A 403 on one matter cleared only that matter; a second cached matter and its
+  exact work resource were unaffected, and no automatic 403 loop occurred.
+  Network failure kept the same-identity readable content and surfaced the
+  error; authorization failure did not keep showing the rejected object.
+- Session change canceled and removed engineering-matter queries without
+  destroying a query still observed by the new generation. Ordinary route
+  transitions and last-consumer unmount did not clear the shared cache.
+
+The earlier `--forceExit` gap was diagnosed, not suppressed. Only the
+`session change clears old data and isolates the new generation` case retained
+handles: six QueryClient `gcTime` timers created while the old cache root was
+being removed. The two remaining stdio sockets were the Jest worker channel,
+not application requests. The test suite now uses a test-owned fake clock,
+unmounts the React root, clears and unmounts its QueryClient, closes JSDOM and
+destroys remaining cache entries. Production cleanup calls `cancelQueries`
+first and deletes only inactive engineering-matter queries; it never clears
+the whole client and never disposes a query another consumer still observes.
+
 ## Integrated Work
 
 ### 1A
@@ -95,6 +176,10 @@ npm run type:check:server
 npm run type:check:client
 
 ./node_modules/.bin/jest \
+  test/unit/engineering-matter-query-cache.spec.ts \
+  test/unit/matter-resource-reuse.spec.ts \
+  test/unit/suite-matter-graph-read.spec.ts \
+  test/unit/matter-historical-read-stability.spec.ts \
   test/unit/matter-directory-narrow-reading.spec.ts \
   test/unit/default-graph-matter-discovery.spec.ts \
   test/unit/timeline-activity-discovery-handoff.spec.ts \
@@ -106,7 +191,12 @@ npm run type:check:client
   test/unit/document-metadata-decode.spec.ts \
   test/unit/document-management-metadata-enrichment.spec.ts \
   test/unit/document-parsing-status-title.spec.ts \
-  --runInBand
+  test/unit/engineering-matter-client.spec.ts \
+  test/unit/matter-problem-analysis-page.spec.ts \
+  test/unit/matter-wiki-layout.spec.ts \
+  test/unit/matter-posture.spec.ts \
+  test/unit/library-atlas-reading.spec.ts \
+  --runInBand --forceExit
 
 ENGINEERING_MATTER_DIRECTORY_TEST_DATABASE_URL=postgres://liuxuan@127.0.0.1:55441/wiselink_directory_test \
   node --test test/node/engineering-matter-directory-postgres.test.mjs
@@ -116,7 +206,8 @@ Results:
 
 - Server typecheck: pass.
 - Client typecheck: pass.
-- Jest: 11 suites passed, 106/106 tests passed.
+- Jest: 20 suites passed, 151/151 tests passed with the repository standard
+  configuration, `--runInBand` only and no `--forceExit`; Jest exited normally.
 - Isolated PostgreSQL directory test: 1 passed; six queries and EXPLAIN plans
   captured.
 - ESLint, Prettier and `git diff --check`: pass.
@@ -129,5 +220,10 @@ Results:
 - No production PostgreSQL latency, browser request trace, preview release or
   production p95 measurement. The isolated database metrics are local
   synthetic evidence only.
-- This commit records the directory semantic closeout and SQL evidence on the
-  project GitHub branch. `origin` and production are not synchronized.
+- The previous committed checkpoint `c330b8bd...` records the directory
+  semantic closeout and SQL evidence. This commit records the 1C resource
+  lifecycle closeout on the same GitHub branch. `origin`, production and
+  preview are not synchronized.
+- Wiki to graph to Wiki HTTP counts are deterministic mocked resource/API call
+  counts, not browser HAR requests. Browser request timing, content appearance
+  timing and online p95 remain unmeasured.
