@@ -777,3 +777,13 @@ Main回执：ef258 release7688432648880098235 finished updated_at=1790103060000�
 - 下一实现切入点是事项快照读的查询合并：保留同一tenant/RLS、ACTIVE/revision/changeKind校验、完整links/materials及持久化形状校验，减少往返；不把第二次确认简单改成无关系校验的revision指针读取。当前17/22/19是实现前基准，线上3–4秒的阶段占比仍未独立测得。
 - `ENGINEERING_MATTER_TEST_DATABASE_URL=postgres://<local-user>@127.0.0.1:55443/wiselink_engineering_matter_test WL_PROFILE_SAVED_READS=1 node --test --test-name-pattern='cross Matter references' test/node/engineering-matter-postgres.test.mjs`实际1/1通过、0skip，覆盖原有精确引用/撤权/更正场景。首次分类把LATERAL误列为表且document ownership函数名不匹配，修正诊断后重跑通过；最终记录来自修正后的完整运行。ESLint通过，正常precommit在提交时执行。
 - 实例已pg_ctl fast停止，确认pid不存在后仅删除本批数据目录；日志保留`/private/tmp/wiselink-read-query-profile-test.log`及对应init/server/lint日志。没有连接生产或发起模型业务。Goal active。
+
+
+## B 事项快照一次完整读取（2026-09-23）
+
+- 独立树`/private/tmp/wiselink-perf-b-matter-snapshot-query-20260923`，父4ff75608c。EngineeringMatterRepository.loadCurrent保留外层matter/revision三键JOIN与tenant过滤，将links和materials改为两个独立相关JSON聚合；各自仍按ordinal/material_id排序，避免普通双JOIN行数相乘。每次完整快照3条SQL→1条。
+- ACTIVE、revisionNo一致、changeKind、非空组合、成员role、材料JSON与parseMatterMaterial校验不变。返回Date由原Drizzle字段转换，material_json聚合为字符串后走原解析路径。两次当前版本读、fresh object ACL、tenant projection、source identity及历史成员核对均保留；一条statement让快照三部分处于同一MVCC视图。没有缓存权限，没有改schema/索引或生产数据。
+- 实际PostgreSQL14 localhost:55445：三类保存读17→13、22→18、19→15条，均减少4条。新断言要求完整快照一次statement、成员/标题/Date完整、跨tenant不可读；临时恢复父版本repository时实际失败`3 !== 1`，之后恢复候选。完整匿名查询序列见MATTER_SNAPSHOT_QUERY_EVIDENCE_20260923.json；不外推线上p95。
+- 首次全PG8项中2通过6失败，全部JOBAID_READING_SUMMARY_REQUIRED；在未改动4ff基线完整复跑得到相同6失败。四处旧fixture构建器/初次proposal遗漏当前必填headline/listBrief；仅补测试数据，未放宽产品校验。修正后完整8/8通过、0skip，包括cross-Matter lineage/撤权、材料scope/重放/完整来源授权、CAS/运行时ownership、并发一致性/只读与targeted correction。
+- working-service单测11项、search单测23项分别通过；server tsc、两个修改文件ESLint、server build与diffcheck通过。早先把search文件名写成不存在的engineering-issue-search.service.spec.ts，Jest只运行了working11项；随后按真实engineering-issue-search.spec.ts单独完成23项，不冒称最初跑了两套。正常precommit随提交执行。
+- PG实例已停止并仅删除本批data目录，日志`/private/tmp/wiselink-snapshot-{pg-test,baseline-pg-test,pg-test-fixed,red,types,unit,search,lint-final,build}.log`保留。等待Luna独立审查及Main集成发布，之后才测线上收益；Goal active。

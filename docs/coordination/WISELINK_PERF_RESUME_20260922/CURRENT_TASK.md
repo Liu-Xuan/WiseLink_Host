@@ -2,7 +2,7 @@
 
 ## 本批身份
 
-B查询剖析树：`/private/tmp/wiselink-perf-b-read-query-profile-20260923`，基线c30b180a1。真实隔离PG得到保存正文17/22/19条SQL（无更正/历史引用/3综合更正）。两次事项快照共6条，是下一批合并查询的具体切入点；保留完整links/materials形状、授权和revision检查。可选诊断及匿名顺序证据见SAVED_READ_QUERY_PROFILE_20260923.json；cross-Matter1/1实际通过，临时实例已清理。f24线上冷读与无障碍序列化结论仍保留，Hosted/后台竞争继续，Goal active。
+B事项快照实现树：`/private/tmp/wiselink-perf-b-matter-snapshot-query-20260923`，父4ff75608c。loadCurrent保留完整三键/RLS/状态/形状校验，将3条读取合为1条，保存正文三类实际SQL 17/22/19→13/18/15。新计数反例父版本3!==1，完整PG修正旧摘要fixture后8/8通过，working11/search23、server types/lint/build通过；临时PG已清理。详见MATTER_SNAPSHOT_QUERY_EVIDENCE_20260923.json。待Luna独立审查与Main发布后线上计量，其他路线未关闭，Goal active。
 
 ## 完整路线状态（2026-09-23）
 

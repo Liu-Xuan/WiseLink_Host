@@ -553,6 +553,29 @@ export class EngineeringMatterRepository {
         changeKind: engineeringMatterRevision.changeKind,
         changeSummary: engineeringMatterRevision.changeSummary,
         revisionCreatedAt: engineeringMatterRevision.createdAt,
+        // Correlated aggregates avoid multiplying links by materials while
+        // keeping the complete snapshot under one statement's RLS visibility.
+        linkRows: sql<Array<{
+          workItemId: string;
+          ordinal: number;
+          relationRole: string;
+          linkedAtWorkItemRevision: number;
+        }>>`(SELECT COALESCE(jsonb_agg(jsonb_build_object(
+          'workItemId', link.work_item_id,
+          'ordinal', link.ordinal,
+          'relationRole', link.relation_role,
+          'linkedAtWorkItemRevision', link.linked_at_work_item_revision
+        ) ORDER BY link.ordinal), '[]'::jsonb)
+          FROM engineering_matter_revision_work_item link
+          WHERE link.tenant_id = ${engineeringMatter.tenantId}
+            AND link.matter_id = ${engineeringMatter.matterId}
+            AND link.matter_revision_id = ${engineeringMatter.currentMatterRevisionId})`,
+        materialJsonRows: sql<string[]>`(SELECT COALESCE(
+          jsonb_agg(material.material_json ORDER BY material.material_id), '[]'::jsonb)
+          FROM engineering_matter_material_link material
+          WHERE material.tenant_id = ${engineeringMatter.tenantId}
+            AND material.matter_id = ${engineeringMatter.matterId}
+            AND material.matter_revision_id = ${engineeringMatter.currentMatterRevisionId})`,
       })
       .from(engineeringMatter)
       .innerJoin(
@@ -583,32 +606,14 @@ export class EngineeringMatterRepository {
     ) {
       throw matterPersistenceError();
     }
-    const linkRows: Array<
-      typeof engineeringMatterRevisionWorkItem.$inferSelect
-    > = await executor
-      .select()
-      .from(engineeringMatterRevisionWorkItem)
-      .where(
-        and(
-          eq(
-            engineeringMatterRevisionWorkItem.matterRevisionId,
-            row.currentMatterRevisionId,
-          ),
-          eq(engineeringMatterRevisionWorkItem.matterId, row.matterId),
-          eq(engineeringMatterRevisionWorkItem.tenantId, row.tenantId),
-        ),
-      )
-      .orderBy(asc(engineeringMatterRevisionWorkItem.ordinal));
-    const materials = await loadMaterials(
-      executor,
-      row.tenantId,
-      row.matterId,
-      row.currentMatterRevisionId,
+    const linkRows = row.linkRows;
+    const materials = row.materialJsonRows.map((value: string) =>
+      parseMatterMaterial(JSON.parse(value)),
     );
     if (linkRows.length === 0 && materials.length === 0)
       throw matterPersistenceError();
     const links: EngineeringMatterRevisionLinkSnapshot[] = linkRows.map(
-      (link: typeof engineeringMatterRevisionWorkItem.$inferSelect) => ({
+      (link) => ({
         workItemId: link.workItemId,
         ordinal: link.ordinal,
         relationRole: requiredRole(link.relationRole),

@@ -93,6 +93,16 @@ test('cross Matter references save exact lineage and reauthorize scopes and root
       owner = await reserveActorService('actor-A');
       const a = await owner.service.create({ requestId: 'reference-A', title: 'Synthetic reference A', primaryWorkItemId: FTD_WORK_ITEM_ID }, owner.actor);
       const b = await owner.service.create({ requestId: 'reference-B', title: 'Synthetic reference B', primaryWorkItemId: SB_WORK_ITEM_ID }, owner.actor);
+      if (process.env.WL_PROFILE_SAVED_READS === '1') {
+        const queryStart = owner.queryMetrics.queries.length;
+        const snapshot = await owner.matters.loadCurrent({ tenantId: 'tenant-A', matterId: a.matter.matterId });
+        assert.equal(owner.queryMetrics.queries.length - queryStart, 1, 'complete matter snapshot uses one database statement');
+        assert.deepEqual(snapshot.links.map(link => link.workItemId), [FTD_WORK_ITEM_ID]);
+        assert.equal(snapshot.title, 'Synthetic reference A');
+        assert.ok(snapshot.revisionCreatedAt instanceof Date);
+        assert.equal(await owner.matters.loadCurrent({ tenantId: 'tenant-B', matterId: a.matter.matterId }), null);
+      }
+
       const allowed = new Set([a.matter.matterId, b.matter.matterId]);
       const authorizeReferenceMatter = async id => { if (!allowed.has(id)) throw new Error('TEST_SERVICE_SCOPE_REVOKED'); };
       const service = new MatterActionAttemptService(owner.working,
@@ -2068,6 +2078,8 @@ async function assertWorkingRevisionFlow(
   command.nextProblemWork = materializeJobAidWork(
     {
       schemaVersion: 'wiselink.jobaid-problem-work.v3',
+      headline: command.nextSubstantiveResult.content.headline,
+      listBrief: command.nextSubstantiveResult.content.listBrief,
       overview: command.nextSubstantiveResult.content.lead,
       roundCompletion: 'COMPLETE_WITH_OPEN_QUESTIONS',
       completionReason: '完成本轮来源核查，实际措施状态待确认。',
@@ -3816,6 +3828,7 @@ test('read_matter_current_work returns the fresh complete work and registered so
       await owner.runtime(() => service.readRegisteredSources({ ...fence,
         sourceRefs: [method.evidenceRef], purpose: 'Read the method supporting the read fixture' }));
       const proposal = { schemaVersion: 'wiselink.jobaid-problem-work.v3', overview: 'Read fixture understanding.',
+        headline: 'Bounded read fixture', listBrief: 'The registered condition remains to be checked.',
         roundCompletion: 'COMPLETE_WITH_OPEN_QUESTIONS', completionReason: 'Fixture setup', changeSummary: 'Fixture setup',
         issues: [{ issueKey: 'read-fixture', question: 'What does the read expose?', body: `The condition stays bounded. [[${ref}]]`,
           openQuestions: [{ question: 'Check the read view', affects: 'Requirement',
@@ -3926,6 +3939,7 @@ test('read_matter_current_work concurrent reads stay internally consistent or fa
       const writer = async (label) => {
         const currentNow = await owner.working.loadCurrent(scope);
         const proposal = { schemaVersion: 'wiselink.jobaid-problem-work.v3', overview: `Race write ${label}.`,
+          headline: `Race fixture ${label}`, listBrief: 'Read one complete saved revision under concurrent updates.',
           roundCompletion: 'IN_PROGRESS', completionReason: 'Race fixture', changeSummary: `Race write ${label}`,
           issues: [{ issueKey: 'race', question: 'Is the snapshot consistent?', body: 'Check the scope without asserting external facts. [[method:scope]]' }] };
         return owner.runtime(() => service.saveJobAidWork({ ...fence, requestId: `race-save-${label}`,
@@ -4112,6 +4126,7 @@ test('targeted correction uses real PostgreSQL fences, durable generation and ex
       const oldRequirement = { methodRef: method.evidenceRef, requirement: 'Dependency has no effect',
         conditions: [], treatment: 'ADDRESSED', basisRefs: [ref], explanation: 'Old assertion under review' };
       const proposal = { schemaVersion: 'wiselink.jobaid-problem-work.v3', overview: 'Synthetic initial understanding.',
+        headline: 'Dependency assertion under review', listBrief: 'The synthetic dependency assertion needs correction; retained source conditions remain.',
         roundCompletion: 'COMPLETE_WITH_OPEN_QUESTIONS', completionReason: 'Fixture setup', changeSummary: 'Fixture setup',
         issues: [{ issueKey: 'dependency', question: 'What follows from an unknown dependency?', body: `No effect. [[${ref}]]`, requirementHandling: [oldRequirement],
           openQuestions: [{ question: 'Check the old assertion', affects: 'Requirement',
