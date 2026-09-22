@@ -787,3 +787,8 @@ Main回执：ef258 release7688432648880098235 finished updated_at=1790103060000�
 - 首次全PG8项中2通过6失败，全部JOBAID_READING_SUMMARY_REQUIRED；在未改动4ff基线完整复跑得到相同6失败。四处旧fixture构建器/初次proposal遗漏当前必填headline/listBrief；仅补测试数据，未放宽产品校验。修正后完整8/8通过、0skip，包括cross-Matter lineage/撤权、材料scope/重放/完整来源授权、CAS/运行时ownership、并发一致性/只读与targeted correction。
 - working-service单测11项、search单测23项分别通过；server tsc、两个修改文件ESLint、server build与diffcheck通过。早先把search文件名写成不存在的engineering-issue-search.service.spec.ts，Jest只运行了working11项；随后按真实engineering-issue-search.spec.ts单独完成23项，不冒称最初跑了两套。正常precommit随提交执行。
 - PG实例已停止并仅删除本批data目录，日志`/private/tmp/wiselink-snapshot-{pg-test,baseline-pg-test,pg-test-fixed,red,types,unit,search,lint-final,build}.log`保留。等待Luna独立审查及Main集成发布，之后才测线上收益；Goal active。
+
+
+### 41e9c82b0 独立接受与运行依赖
+
+Luna已接受`41e9c82b008a804b076ffb88542754cc0eb080e8`，无阻塞：核对JSON聚合类型/排序、RLS和完整字段/形状边界；独立working service11项、官方server typecheck、两文件quiet lint和diffcheck通过。Luna未连接PG，8/8仍明确属于B实现者实际运行证据。已向Main交付并明确请求按原授权执行集成/双远端同步/发布，B不越权执行。Main接续任务已返回active/inProgress；尚未取得新的精确release/SHA，不将41e9记成已发布。A仍待Hosted实际安装回执；B同步请求源码/包hash、运行窗口，以便测既有授权样本的后台竞争。没有新增业务任务或扩展预算。
