@@ -408,3 +408,13 @@ Validation:
 - Logs `/private/tmp/wiselink-translation-control-{before,test,regression,types,lint,build}.log`. No local devserver started in this tree; relevant compiler/test logs inspected.
 
 Entire adopted roadmap is now preserved in OFFICIAL_CODEX_ROADMAP; CURRENT_TASK distinguishes every remaining stage and incorporates main's current no-integration/no-release/no-authorized-preview-sample report. No source/permission/schema/production-profile change, no Hosted model/plugin invocation, no push/release/install. Luna independent acceptance and main's selected integration follow this commit. Full roadmap Goal remains active.
+
+## B 3A.2 — idle source projection preparation (2026-09-23)
+
+Parent e7b6b6c040585f17fd4bb949a90b47fa0bd47647; independent tree `/private/tmp/wiselink-perf-b-source-idle-20260923`. Actual document_work INDEX caller still executes parsing.status and actor scope before this service. Source projection now selects pending first. Only the no-pending case reads two readiness columns through DocumentSemanticService/RevisionRepository. Query joins exact tenant/document/parse/revision and VERIFIED PUBLISHED original manifest SHA; it neither selects map_json nor loads object-store bytes. If registration is absent, normal Reader and ensure still create first semantics. Pending work retains original integrity/semantic validation and unchanged transactional offset/manifest/RLS write guards.
+
+This is a registered readiness result, not a claim of current object-store integrity. No new authorization cache, schema, SourceRef or model action. Direct tests prove ready+idle original/ensure counts=0; missing initial semantics and pending still read; readiness errors propagate. SQL generation verifies parameters and exact binding predicates. Original production projection failed the new idle test with STORAGE_UNAVAILABLE, exit1; new path passes. Updated the existing PostgreSQL fixture's semantic dependency to implement readReady; did not run that database suite or claim live SQL/RLS proof.
+
+Validation: 4 suites/25 tests (document-source-idle, document-semantic-map, document-translation-structure, document-translation-runtime), standard Jest normal exit; server typecheck, changed-file ESLint and server build pass. Same non-target OCR limitation as 3A.1. Logs `/private/tmp/wiselink-source-idle-{before,test,regression,types,lint,build}.log`.
+
+Also removes two trailing-space lines copied into OFFICIAL_CODEX_ROADMAP in e7. Those were newly introduced documentation whitespace, not an old repository baseline; full cumulative diff-check must include the tracked new file. 3A.1 product code remains unchanged for Luna. Full roadmap still active; real SQL, independent acceptance, 3A.3 and other open stages remain.

@@ -2,7 +2,7 @@
 
 ## 本批身份
 
-B系统性能工作树：`/private/tmp/wiselink-perf-b-translation-20260923`，分支`codex/perf-b-translation-control-20260923`；起点`3e0cc6074bb19b88d6ab33c324323ea45e407d53`。当前3A.1翻译控制轻量化。独立源码/测试变更由B提交、Luna验收、主控选择性集成。不要把本树当最终集成/线上版本。
+B系统性能工作树：`/private/tmp/wiselink-perf-b-source-idle-20260923`，分支`codex/perf-b-source-idle-20260923`；起点`e7b6b6c040585f17fd4bb949a90b47fa0bd47647`。当前3A.2索引空闲准备优化。独立源码/测试变更由B提交、Luna验收、主控选择性集成。不要把本树当最终集成/线上版本。
 
 ## 完整路线状态（2026-09-23）
 
@@ -14,8 +14,8 @@ B系统性能工作树：`/private/tmp/wiselink-perf-b-translation-20260923`，�
 | 2B.2 | 未实现跨页有界原件复用，须先取得返回重复下载/内存证据。 |
 | 2C | 3e0cc6074按帧合并/状态去重/销毁清理，Luna5套52项及构建通过。正文与位置分离、增量拓扑、返回布局和退出最后相机、真实交互计量仍需继续。 |
 | 2D | 后续依据实际阅读热点选择，未完成全范围验收。 |
-| 3A.1 | 当前控制分派移出原文路径，见REPORT；真实执行的重复内容校验尚保留，活动链另查。 |
-| 3A.2/3 | 源码仍先读原件/ensure语义再查pending；依赖消费者时序尚待实证处理。 |
+| 3A.1 | e7b6b6c04控制分派移出原文路径，5套43项与server构建通过，Luna正在独立验收；真实执行的重复内容校验尚保留，活动链另查。 |
+| 3A.2/3 | 当前3A.2已改pending优先、空闲窄查精确语义登记，4套25项通过；尚需独立验收/真实SQL。3A.3已确认consumer将INDEX与翻译并发，且可能处理历史pending，不能只等待历史INDEX就启动当前翻译；与A协调单写者。 |
 | 3B | 原件/PDF/来源plan执行内复用与有限公平推进尚未交付。 |
 | 4 | A负责JobAid/OpenClaw/Overall/Wiki连续工作。主控回报A树47adbcd09（父35a→0ee→21a）；应取A的确切交付，不在B重写。 |
 | V/R | 尚无最终集成SHA、正常身份样本或真实浏览器p95；不可从单测/bundle推断体验达标。主控唯一发布者。 |
@@ -28,4 +28,4 @@ B系统性能工作树：`/private/tmp/wiselink-perf-b-translation-20260923`，�
 
 ## 当前与随后
 
-完成3A.1直接回归、构建和Luna验收；随后核查3A.2 pending/语义就绪与3A.3真实消费者依赖，不忽略2B.2/2C/2D/3B。完整计划见OFFICIAL_CODEX_ROADMAP。Goal仅在全部要求证据齐备时关闭，不在子批交付时关闭。
+完成3A.2独立验收与SQL证据；继续3A.3真实消费者依赖，不忽略2B.2/2C/2D/3B。完整计划见OFFICIAL_CODEX_ROADMAP。Goal仅在全部要求证据齐备时关闭，不在子批交付时关闭。

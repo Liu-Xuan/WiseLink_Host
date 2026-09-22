@@ -25,6 +25,24 @@ export class DocumentSemanticRevisionRepository {
     return rows[0]?.map ?? null;
   }
 
+  /** Registered readiness only; caller holds fresh source ACL and actor scope.
+   * Never hydrates map_json or proves current object-store byte health. */
+  async readReady(scope: Scope, parseRunId: string) {
+    const rows = await this.db.execute<{ semanticRevision: number; profileRef: string }>(sql`
+      SELECT s.semantic_revision AS "semanticRevision", s.profile_ref AS "profileRef"
+      FROM dm_document_semantic_revision s
+      JOIN dm_document_parse_run p ON p.tenant_id=s.tenant_id
+        AND p.document_version_id=s.document_version_id AND p.parse_run_id=s.parse_run_id
+        AND p.parse_revision=s.parse_revision
+        AND p.manifest_artifact->>'sha256'=s.original_manifest_sha256
+      WHERE s.tenant_id=${scope.tenantId} AND s.document_version_id=${scope.documentVersionId}
+        AND s.parse_run_id=${parseRunId} AND p.status='PUBLISHED'
+        AND p.manifest_artifact->>'relativePath'='original/manifest.json'
+        AND p.manifest_artifact->>'readback'='VERIFIED'
+      ORDER BY s.semantic_revision DESC LIMIT 1`);
+    return rows[0] ?? null;
+  }
+
   /** Deterministic organization of an authorized original. No plugin call spans this transaction. */
   async append(scope: Scope, original: DocumentOriginalResult, map: DocumentSemanticMap,
     expectedRevision: number, manifestSha256: string): Promise<DocumentSemanticMap> {
