@@ -71,16 +71,16 @@ function harness() {
       revision: 3,
     }),
   };
-  const work = {
+  const database = { snapshot: true };
+  const transaction = jest.fn(async (operation: (db: unknown) => Promise<unknown>) => operation(database));
+  const repository = new JobAidWorkRepository({ transaction } as never, {} as never, {} as never);
+  const work = Object.assign(repository, {
     latest: jest.fn().mockResolvedValue(null),
     readCurrentExecution: jest.fn().mockResolvedValue({
-      status: 'QUEUED',
-      attemptId: 'current-attempt',
-      attemptRef: 'current-ref',
-      activityJson: null,
+      status: 'QUEUED', attemptId: 'current-attempt', attemptRef: 'current-ref', activityJson: null,
     }),
     readSavedActivity: jest.fn().mockResolvedValue([]),
-  };
+  });
   const service = new CanonicalJobAidProblemService(
     registrar as never,
     {} as never,
@@ -100,7 +100,7 @@ function harness() {
     roles: [],
     env: 'test',
   };
-  return { service, actor, work, authorize, freshRead };
+  return { service, actor, work, authorize, freshRead, transaction, database };
 }
 
 it('reports the current attempt before the first save using the authorized document version', async () => {
@@ -113,13 +113,13 @@ it('reports the current attempt before the first save using the authorized docum
     workItemId: 'WI-one',
     documentVersionId: 'DV-current',
     actionAttemptId: 'current-attempt',
-  });
+  }, f.database);
   expect(result.activity?.attemptRef).toBe('current-ref');
   expect(f.work.readCurrentExecution).toHaveBeenCalledWith({
     tenantId: 'tenant-one',
     workItemId: 'WI-one',
     documentVersionId: 'DV-current',
-  });
+  }, f.database);
 });
 
 it('does not read attempt state when object permission or its fresh snapshot is denied', async () => {
@@ -130,6 +130,7 @@ it('does not read attempt state when object permission or its fresh snapshot is 
     else
       f.freshRead.mockResolvedValue({ permissionSnapshotVersion: 'changed' });
     await expect(f.service.readBrowser('WI-one', f.actor)).rejects.toThrow();
+    expect(f.transaction).not.toHaveBeenCalled();
     expect(f.work.latest).not.toHaveBeenCalled();
     expect(f.work.readCurrentExecution).not.toHaveBeenCalled();
     expect(f.work.readSavedActivity).not.toHaveBeenCalled();
@@ -217,4 +218,71 @@ it('reads saved work after terminal status so the final save cannot be missed wh
   const result = await f.service.readBrowser('WI-one', f.actor);
   expect(result.executionStatus).toBe('SUCCEEDED');
   expect(result.current).toBe(finalWork);
+});
+
+
+it.each([false, true])('keeps an old terminal snapshot coherent when a new run appears between reads (saved=%s)', async (saved) => {
+  const f = harness();
+  const oldWork = { workRevisionRef: 'old-work', actionAttemptId: 'old', basedOnWorkItemRevision: 3, content: { evidence: [] } };
+  const newWork = { ...oldWork, workRevisionRef: 'new-work', actionAttemptId: 'new' };
+  const oldExecution = { status: 'SUCCEEDED', attemptId: 'old', attemptRef: 'old-ref', activityJson: null };
+  const newExecution = { ...oldExecution, status: 'RUNNING', attemptId: 'new', attemptRef: 'new-ref' };
+  let liveWork = oldWork;
+  let liveExecution = oldExecution;
+  let snapshotWork = oldWork;
+  let snapshotExecution = oldExecution;
+  f.transaction.mockImplementation(async (operation) => {
+    snapshotWork = liveWork;
+    snapshotExecution = liveExecution;
+    return operation(f.database);
+  });
+  f.work.readCurrentExecution.mockImplementation(async (_input, db) => {
+    const observed = db === f.database ? snapshotExecution : liveExecution;
+    // Another client starts the next run just after this SELECT.
+    liveExecution = newExecution;
+    if (saved) liveWork = newWork;
+    return observed;
+  });
+  f.work.latest.mockImplementation(async (_input, db) => db === f.database ? snapshotWork : liveWork);
+  Object.assign(f.service, { assertEvidenceOwned: jest.fn().mockResolvedValue(undefined) });
+  const first = await f.service.readBrowser('WI-one', f.actor);
+  expect(first.current).toBe(oldWork);
+  expect(first.executionStatus).toBe('SUCCEEDED');
+  expect(first.activity?.attemptRef).toBe('old-ref');
+  expect(f.transaction).toHaveBeenCalledWith(expect.any(Function), {
+    isolationLevel: 'repeatable read', accessMode: 'read only',
+  });
+  expect(f.work.readSavedActivity).toHaveBeenLastCalledWith(expect.objectContaining({ actionAttemptId: 'old' }), f.database);
+  const next = await f.service.readBrowser('WI-one', f.actor);
+  expect(next.executionStatus).toBe('RUNNING');
+  expect(next.current).toBe(saved ? newWork : oldWork);
+  expect(next.activity?.attemptRef).toBe('new-ref');
+  expect(f.work.readSavedActivity).toHaveBeenLastCalledWith(expect.objectContaining({ actionAttemptId: 'new' }), f.database);
+});
+
+it('runs all three real repository SELECTs on the same read-only snapshot connection', async () => {
+  const execution = { status: 'RUNNING', attemptId: 'one', attemptRef: 'ref-one', activityJson: null };
+  const receipt = { workRevisionRef: 'saved-one', workRevision: 1, createdAt: new Date('2026-09-23T00:00:00Z') };
+  const limit = jest.fn().mockResolvedValueOnce([execution]).mockResolvedValueOnce([]).mockResolvedValueOnce([receipt]);
+  const select = jest.fn(() => ({ from: () => ({ where: () => ({ orderBy: () => ({ limit }) }) }) }));
+  const database = { select };
+  const transaction = jest.fn(async (operation: (db: unknown) => Promise<unknown>) => operation(database));
+  const outsideSelect = jest.fn(() => { throw new Error('READ_ESCAPED_SNAPSHOT'); });
+  const repository = new JobAidWorkRepository({ transaction, select: outsideSelect } as never, {} as never, {} as never);
+  const input = { tenantId: 'tenant', workItemId: 'WI', documentVersionId: 'DV' };
+  await expect(repository.readBrowserSnapshot(input)).resolves.toEqual({ execution, current: null, savedActivity: [receipt] });
+  expect(select).toHaveBeenCalledTimes(3);
+  expect(outsideSelect).not.toHaveBeenCalled();
+  expect(transaction).toHaveBeenCalledWith(expect.any(Function), { accessMode: 'read only', isolationLevel: 'repeatable read' });
+  limit.mockRejectedValueOnce(new Error('SNAPSHOT_READ_FAILED'));
+  await expect(repository.readBrowserSnapshot(input)).rejects.toThrow('SNAPSHOT_READ_FAILED');
+  expect(outsideSelect).not.toHaveBeenCalled();
+});
+
+it('still rejects saved evidence that is no longer authorized after the snapshot read', async () => {
+  const f = harness();
+  f.work.latest.mockResolvedValue({ content: { evidence: [] } });
+  Object.assign(f.service, { assertEvidenceOwned: jest.fn().mockRejectedValue(new Error('SOURCE_REVOKED')) });
+  await expect(f.service.readBrowser('WI-one', f.actor)).rejects.toThrow('SOURCE_REVOKED');
+  expect(f.transaction).toHaveBeenCalledTimes(1);
 });

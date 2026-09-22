@@ -266,12 +266,30 @@ export class JobAidWorkRepository {
     );
   }
 
+  /** Preserve the request's native SQL identity/RLS and observe one MVCC snapshot.
+   * A terminal attempt must never be combined with a later run's saved body. */
+  async readBrowserSnapshot(input: {
+    tenantId: string;
+    workItemId: string;
+    documentVersionId: string;
+  }) {
+    return this.db.transaction(async (transaction) => {
+      const database = transaction as PostgresJsDatabase;
+      const execution = await this.readCurrentExecution(input, database);
+      const current = await this.latest(input, database);
+      const savedActivity = execution
+        ? await this.readSavedActivity({ ...input, actionAttemptId: execution.attemptId }, database)
+        : [];
+      return { execution, current, savedActivity };
+    }, { accessMode: 'read only', isolationLevel: 'repeatable read' });
+  }
+
   async readCurrentExecution(input: {
     tenantId: string;
     workItemId: string;
     documentVersionId: string;
-  }): Promise<JobAidExecutionObservation | null> {
-    const [row] = await this.db
+  }, database = this.db): Promise<JobAidExecutionObservation | null> {
+    const [row] = await database
       .select({ status: actionAttempt.status, attemptId: actionAttempt.attemptId,
         attemptRef: actionAttempt.operationRef, activityJson: actionAttempt.reviewActivityJson })
       .from(actionAttempt)
@@ -294,8 +312,8 @@ export class JobAidWorkRepository {
 
   async readSavedActivity(input: {
     tenantId: string; workItemId: string; documentVersionId: string; actionAttemptId: string;
-  }): Promise<JobAidSavedActivityObservation[]> {
-    return this.db.select({
+  }, database = this.db): Promise<JobAidSavedActivityObservation[]> {
+    return database.select({
       workRevisionRef: assessmentWorkRevision.assessmentWorkRevisionId,
       workRevision: assessmentWorkRevision.workRevision,
       createdAt: assessmentWorkRevision.createdAt,

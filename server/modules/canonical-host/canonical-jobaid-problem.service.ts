@@ -1296,19 +1296,12 @@ export class CanonicalJobAidProblemService {
       action: 'READ_DOCUMENT_PARSING',
       workItemId,
     });
-    // Saved work and the currently executing attempt are separate resources.
-    // A new run can be active before it produces its first saved revision.
-    const execution = await this.work.readCurrentExecution({
+    // A new attempt may legitimately retain the previous saved body, but all
+    // three observations must come from the same database snapshot.
+    const { execution, current, savedActivity } = await this.work.readBrowserSnapshot({
       tenantId: actor.tenantId,
       workItemId,
       documentVersionId: workItem.source.documentVersionId,
-    });
-    // Read saved work after the status snapshot: a terminal status must not be
-    // paired with a body read before its final save, or the client would stop
-    // polling while retaining an older revision.
-    const current = await this.work.latest({
-      tenantId: actor.tenantId,
-      workItemId,
     });
     if (current)
       await this.assertEvidenceOwned(
@@ -1317,9 +1310,7 @@ export class CanonicalJobAidProblemService {
         actor.userId,
         workItemId,
       );
-    const activity = execution ? projectJobAidActivity(execution,
-      await this.work.readSavedActivity({ tenantId: actor.tenantId, workItemId,
-        documentVersionId: workItem.source.documentVersionId, actionAttemptId: execution.attemptId })) : null;
+    const activity = execution ? projectJobAidActivity(execution, savedActivity) : null;
     const overall = workItem.integratedAssessment?.overallSynthesis;
     const base = workItem.integratedAssessment?.baseRules;
     return {

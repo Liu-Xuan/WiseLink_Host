@@ -81,3 +81,15 @@ A负责文档/事项解析后的关联上下文、JobAid动态问题分析、已
 直接验证：最终5套58项Jest通过，覆盖字段白名单/隐私标记不外泄、原序号与重复读取、损坏与保存分离、窗口省略、真实组件展示、活动更新、查询范围、fresh权限前置和终态最终保存竞态；双端typecheck、10文件ESLint及diffcheck通过。一次编译检查发现unknown时间字段在项目非strict-null设置下无法收窄，已用显式类型分支构造安全字段；新测试初次直接导入SDK ESM导致Jest加载失败，已mock未调用的客户端API依赖，无修改SDK或放宽Jest配置。证据仍是受控gateway/repository/React测试，未真实PG或托管UI验收。
 
 至此已有Matter与WorkItem的读取/保存过程本地实现，活动首切不再仅限Matter。完整业务Goal仍需对实际上下文、动态问题分组、已准入取数、增量保存与接续作Luna独立验收并修复确认问题；状态与过程UI不能替代真实运行证据。主控统一集成发布，A未推送或发布。
+
+## 2026-09-23 验收修订：换轮读取的一致快照
+
+父提交 `786bd094be6e2eb168d43deac1217b57de4f4daa`。专属Luna独立验收发现P2：原三次独立读取可先取得旧attempt的SUCCEEDED，再取得刚启动新attempt的正文，最后仍读取旧attempt回执；前端因此按旧终态停止轮询。主控要求修复后再验收，原786未按无缺陷接受。
+
+本次将原assessment-work GET的execution/current/savedActivity放入同一个只读、repeatable-read事务，沿用仓库configuration-evidence既有事务用法和注入的数据库连接。三个repository SELECT均显式使用该事务执行器，tenant/WorkItem/documentVersion/精确attempt过滤不变；不进入Hosted service actor、不改RLS或数据库结构、不加缓存、循环重试或新状态。对象授权与fresh permission仍在读取前，正文evidence仍在返回前校验；任一读取或授权失败直接拒绝，不退回独立读取。
+
+同一快照允许“新轮运行但尚未保存、仍展示旧正文”的合法组合；不允许跨快照拼接旧终态与新正文。SUCCEEDED快照已包含其之前提交的最终保存。快照建立后才启动的其他客户端任务将在下一次实际读取时可见；本次不把终态停止轮询改成跨客户端实时订阅。
+
+确定性反例在修复前失败（已保存新轮时实际返回new-work而非old-work）；修复后同一请求保持旧轮一致快照，下一次读取显示新轮RUNNING，并分别验证新轮已保存/尚未保存两种情形。另验证三个真实repository查询都走同一事务执行器、数据库失败无降级，以及来源撤权拒绝。4套Jest共55项通过（current-execution/activity/read-lifecycle/continuation），3文件ESLint及diff-check通过。client typecheck通过；server首次只因沙箱不能写dist/tsconfig.node.tsbuildinfo失败，按同命令在获准A工作树写权限下复验exit 0。没有真实PostgreSQL并发、托管UI或模型运行证据；此处事务语义使用受控连接验证，仍须主控部署后按对应范围验收。
+
+范围仅canonical-jobaid-problem.service.ts、jobaid-work.repository.ts、jobaid-current-execution.spec.ts和本记录，不触碰B consumer区域。A不推送、不发布；完成提交后向专属Luna与主控交付准确SHA。
