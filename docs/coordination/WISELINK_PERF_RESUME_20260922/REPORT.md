@@ -527,3 +527,16 @@ Activity STATUS在来源授权后调用已有expire（仅QUEUED/RUNNING且deadli
 发现并修正同一个Node测试里的旧夹具：它用两行普通PDF文字宣称有列结构，与当前compose“必须有实际物理列对齐证据”不符；在基线同样2≠1失败。改为jsPDF逐格绘制有对齐坐标的真实两页表格，仍要求全部四行/每个单元格/两个来源页，定位精度验证改为实际TEXT_ITEM及非空box。生产compose未修改，未削弱表格证据规则。
 
 协作：Luna已独立验收396ad7e81（5套59项、types/lint/build/precommit）；其PG说明明确只读实现者日志、不算第二次实际PG运行。主控固定e812集成发布切点不受本批影响；尚未收到新的实际Host/Hosted Skill版本及正常身份业务样本证据。Goal保持active。
+
+
+## 2026-09-23 B：3B.2 JobAid单执行来源plan复用
+
+基线 `70ad48ea9f1ba0fb73d0ddd1c428ebbbfc631489`，独立树 `/private/tmp/wiselink-perf-b-source-plan-20260923`。A明确确认工程原文helper及JobAid buildInput分页循环无在途修改，允许B单写者推进；B只改service该循环和import，不覆盖A b10e6e570知识观察或租约/活动/恢复区域。
+
+反例来自实际JobAid begin和真实plan构建，文件/工作/权限服务使用隔离fixture：61个源单元按20分页，原先准备阶段重建plan4次；begin返回前assertSourcesAuthorized另一次fresh原件读取/plan验证，总5次。新实现执行内prepareDocumentOriginalEngineeringReader一次构建plan和coverage，组织unit/ref/finding/locator索引；原文quote按选中SourceRef惰性拼接一次，保留该ref跨页所有anchor，不截短table/例外。JobAid四页共用该局部reader；begin返回前的fresh原件/来源复核仍另做一次，总plan5→2、原件读取保持2次。既有单页调用保留包装入口，每次独立准备，不引入跨请求缓存或缓存授权结果。
+
+reader只属于已完整验证的不可变原件这一次准备，普通源/semantic/manifest绑定及actor边界由原有真实读取链继续执行。不同请求、parse/source/semanticRevision分别准备；不把同parseId当跨请求复用许可。预计算的coverage对每个返回值复制，evidence每次新建，调用者修改返回对象不污染后续页；完整SourceRef引用和原有源顺序保持。未修改模型调用、checkpoint/lease、未知结果重放或正式采用。该批未优化独立assertSourcesAuthorized内部多ref扫描，也未声称所有来源消费者/公平调度完成。
+
+验证：旧实现新入口反例实际5次plan（期望优化后2），修复后完整任务sourceCatalog仍是61个单元的完整合并原文，不少末尾条件。3套41项（engineering-reading 7、JobAid continuation 30、source-idle 4）通过，包括单reader plan/coverage各1、长文/表格/跨页同ref、selected findings、可变返回副本、不同原文内容/semanticRevision隔离、错binding拒绝、实际begin二次fresh读取、续接原件变更与撤权拒绝。server typecheck、2生产文件ESLint、server build通过；构建仍是静态资产校验，未触发线上模型/业务。没有线上p95或堆采样结论。
+
+协作：前批70ad48ea9已获Luna独立5套38项/实际PDF.js5项及types/lint/build/precommit验收，可供主控选择性集成。完整Goal继续active，仍需跨任务竞争、其余阅读热点、通用图谱退出及真实资料库→Wiki→图谱→原文→返回→历史/最终部署证据。

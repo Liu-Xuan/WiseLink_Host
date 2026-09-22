@@ -1,3 +1,4 @@
+import * as sourcePlanning from '../../server/modules/canonical-host/canonical-translation-source-plan';
 import type { CanonicalWorkItemProjection } from '@shared/api.interface';
 import { originalFixture } from './document-parsing/fixtures/document-original.fixture';
 import type { AssessmentEvidence } from '@shared/assessment-reading.interface';
@@ -43,6 +44,25 @@ const scope = {
 };
 
 describe('JobAid continuation requests', () => {
+  it('prepares all pages with one plan and independently revalidates before returning the task', async () => {
+    const h = harness();
+    const loaded = await h.originalReader.readDocumentOriginal();
+    const first = loaded.structuredSource.units[0];
+    loaded.structuredSource.units = Array.from({ length: 61 }, (_, index) => ({ ...first,
+      unitId: `u${index}`, order: index, payload: { text: `Complete source condition ${index}.` } }));
+    h.originalReader.readDocumentOriginal.mockResolvedValue(loaded);
+    h.originalReader.readDocumentOriginal.mockClear();
+    const plan = jest.spyOn(sourcePlanning, 'buildTranslationSourcePlan');
+    try {
+      const started = await h.service.begin(h.current(), scope, 'INITIAL_PROBLEM_ASSESSMENT');
+      expect(plan).toHaveBeenCalledTimes(2); // One for preparation, one for fresh source authorization.
+      expect(h.originalReader.readDocumentOriginal).toHaveBeenCalledTimes(2);
+      const catalog = parseJobAidProblemTask(started.task).sourceCatalog.filter(item => item.kind === 'DOCUMENT_PASSAGE');
+      expect(catalog).toHaveLength(1);
+      expect(catalog[0].excerpt).toBe(loaded.structuredSource.units.map(unit => unit.payload.text).join('\n'));
+    } finally { plan.mockRestore(); }
+  });
+
   it('requires published original input and rechecks exact original bytes on a resumed task', async () => {
     const missing = harness();
     missing.work.publishedOriginalBinding.mockRejectedValue(new Error('DOCUMENT_ORIGINAL_NOT_PUBLISHED'));

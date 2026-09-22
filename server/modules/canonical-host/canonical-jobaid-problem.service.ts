@@ -2,7 +2,7 @@ import { originalApplicabilityResultMatches } from './original-applicability-cur
 import { InitialAssessmentKnowledgeService } from './initial-assessment-knowledge.service';
 import { UnifiedReaderService } from '../unified-reader/unified-reader.service';
 import { DocumentSemanticService } from './document-semantic.service';
-import { documentOriginalEngineeringReading, findDocumentOriginalEvidence } from './document-original-engineering-reading';
+import { prepareDocumentOriginalEngineeringReader, findDocumentOriginalEvidence } from './document-original-engineering-reading';
 import { Inject, Injectable, Optional } from '@nestjs/common';
 import type { PostgresJsDatabase } from '@lark-apaas/fullstack-nestjs-core';
 import type { AssessmentEvidence } from '@shared/assessment-reading.interface';
@@ -504,8 +504,9 @@ export class CanonicalJobAidProblemService {
     const assessmentWorkItem = workItem.applicability?.schemaVersion==='wiselink.3_1.applicability_candidate_projection.v3' &&
       !originalApplicabilityResultMatches(workItem,original.original.binding) ? {...workItem,applicability:null} : workItem;
     const primaryByRef = new Map<string, AssessmentEvidence>();
+    const readOriginal = prepareDocumentOriginalEngineeringReader(original);
     for (let offset=0; offset<original.structuredSource.units.length; offset+=20)
-      for (const evidence of documentOriginalEngineeringReading(original,offset,20).evidence)
+      for (const evidence of readOriginal(offset,20).evidence)
         primaryByRef.set(evidence.evidenceRef,{...evidence,workItemId:workItem.workItemId});
     if (!primaryByRef.size) throw new Error('DOCUMENT_ORIGINAL_NO_READABLE_EVIDENCE');
     const originalUnits = original.structuredSource.units.map(unit => ({unitId:unit.unitId,kind:unit.kind,
