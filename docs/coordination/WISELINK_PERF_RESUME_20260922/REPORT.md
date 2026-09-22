@@ -740,3 +740,13 @@ Main回执：ef258 release7688432648880098235 finished updated_at=1790103060000�
 - `WL_SOURCE_IDENTITY_LOCAL_PG=1 npx jest --runInBand test/unit/miaoda-source-identity-postgres.spec.ts`实际10/10通过、无skip：一次SELECT返回两个文档ID，双向actor隔离；5张必需表逐一被RLS隐藏均拒绝；preflight acquisition/version/status三类错误绑定均拒绝；成功JOIN后digest mismatch仍拒绝。DDL、参数与真实resolver由Drizzle/Postgres执行，非只编译SQL。
 - 最初sandbox initdb因系统shared memory权限失败且自动清理了未完成目录；通过已授权的本地临时PG执行权限后正常初始化/启动，未把第一次失败记成成功。测试fixture afterAll删除schema/role并断开连接。服务器已用pg_ctl fast停止，确认postmaster.pid不存在后仅删除本批`/private/tmp/wiselink-source-identity-pgdata-20260923`；日志保留`/private/tmp/wiselink-source-identity-pg-{init,server,test,lint}.log`。
 - 测试仅补拒绝/SQL执行边界，不将本机毫秒推成线上收益，不因此重跑已通过全仓测试。主控可将已接受a0与前批统一集成；线上冷读、浏览器端到端500ms、Hosted安装与真实后台公平仍未闭合。
+
+
+## B 已保存知识正文展开交互的尾延迟（2026-09-23）
+
+- 本轮重读完整路线后明确剩余：dd1/f7/a0统一发布后的同版本冷读、后台运行对读取的影响、Hosted真实接续，以及普通展开交互。Main已固定至a0并在统一发布中；157bf纯测试文档留后续同步，不要求为证据重发版。
+- 在正常登录、精确保存修订的`/knowledge`正文预览中，点击原生`details.wl-jobaid-evidence > summary`的「核对来源与方法（9）」20次展开/20次收起。早期操作描述称Wiki，最终URL/DOM核对实际是工程知识页，已修正本记录；不将它冒称Wiki路由验收。页面1834 DOM元素、78 details，目标9个内容子项，初末均closed。
+- 全部40次匿名样本见KNOWLEDGE_INTERACTION_EVIDENCE_20260923.json。开DOM-ready p95 100.8ms/max128.7ms，关DOM状态p95 47.2ms/max62.5ms；开两RAF p95 237.8ms/max254.1ms，关两RAF p95 157.5ms/max242.1ms。nearest-rank，保留慢值。两完整Network事件窗口无截断/无业务API读取；平台telemetry单列排除。
+- 后20次另开PerformanceObserver longtask，观察5次63/102/102/129/141ms长任务；其中4次起点与点击附近重合，一次在点击间。这里只证明观察到长任务，不以时间接近直接断定具体React/CSS函数是原因。后续需要trace归因及本地对照，不能因2RAF本身不是GPU而丢弃长任务证据。
+- 探针在capture click记录performance.now、MutationObserver检测open变化；展开读取内容rect/text，收起只以原生open=false判断。此浏览器收起后内容getBoundingClientRect仍保留4608高度，故不把rect当隐藏证明。强制布局与工具AX快照可能扰动时序，记录为诊断样本，不外推真实用户总体p95。未修改产品DOM/数据或发起生成；结束已移除observer/listener/PerformanceObserver，测量对象读回undefined。
+- 热知识返回21.6ms与图谱返回24.5ms证据保持原范围，不能代替普通展开流畅性。此新热点待下一批定向profile，整体Goal不关闭。

@@ -1,0 +1,425 @@
+{
+  "lastConfirmedDeployment": "8d139e310fdc7dbe33e26e7e0bf6834762168c42",
+  "page": "/knowledge with exact saved subject/workRef; not a Matter Wiki route",
+  "interaction": "Native summary/details: 核对来源与方法（9） inside .knowledge-prose / .knowledge-preview",
+  "dom": {
+    "elements": 1834,
+    "details": 78,
+    "targetContentChildren": 9,
+    "initialOpen": false,
+    "finalOpen": false
+  },
+  "measurement": "Capture click -> MutationObserver open-attribute change. Opening also reads nonzero content rect and nonempty text. Two RAF callbacks are a frame-opportunity proxy, not GPU paint.",
+  "samples": [
+    {
+      "attempt": 1,
+      "startEpochMs": 1790110325166.8,
+      "opening": true,
+      "domReadyMs": 16.5,
+      "twoRafMs": 65.3,
+      "contentNodes": 9
+    },
+    {
+      "attempt": 2,
+      "startEpochMs": 1790110328675.7,
+      "opening": false,
+      "domReadyMs": 17.5,
+      "twoRafMs": 64.8,
+      "contentNodes": 9
+    },
+    {
+      "attempt": 3,
+      "startEpochMs": 1790110329101.5,
+      "opening": true,
+      "domReadyMs": 23.5,
+      "twoRafMs": 88,
+      "contentNodes": 9
+    },
+    {
+      "attempt": 4,
+      "startEpochMs": 1790110329532.3,
+      "opening": false,
+      "domReadyMs": 26,
+      "twoRafMs": 75.7,
+      "contentNodes": 9
+    },
+    {
+      "attempt": 5,
+      "startEpochMs": 1790110329948.6,
+      "opening": true,
+      "domReadyMs": 17.6,
+      "twoRafMs": 84.2,
+      "contentNodes": 9
+    },
+    {
+      "attempt": 6,
+      "startEpochMs": 1790110330390.6,
+      "opening": false,
+      "domReadyMs": 35.7,
+      "twoRafMs": 112.5,
+      "contentNodes": 9
+    },
+    {
+      "attempt": 7,
+      "startEpochMs": 1790110330826.6,
+      "opening": true,
+      "domReadyMs": 25.4,
+      "twoRafMs": 100.3,
+      "contentNodes": 9
+    },
+    {
+      "attempt": 8,
+      "startEpochMs": 1790110331256.7,
+      "opening": false,
+      "domReadyMs": 27.7,
+      "twoRafMs": 91.2,
+      "contentNodes": 9
+    },
+    {
+      "attempt": 9,
+      "startEpochMs": 1790110331674.3,
+      "opening": true,
+      "domReadyMs": 21.6,
+      "twoRafMs": 98.8,
+      "contentNodes": 9
+    },
+    {
+      "attempt": 10,
+      "startEpochMs": 1790110332107.5,
+      "opening": false,
+      "domReadyMs": 37.3,
+      "twoRafMs": 113.4,
+      "contentNodes": 9
+    },
+    {
+      "attempt": 11,
+      "startEpochMs": 1790110352233,
+      "opening": true,
+      "domReadyMs": 15.2,
+      "twoRafMs": 107.4,
+      "contentNodes": 9
+    },
+    {
+      "attempt": 12,
+      "startEpochMs": 1790110352639.7,
+      "opening": false,
+      "domReadyMs": 36.7,
+      "twoRafMs": 148.4,
+      "contentNodes": 9
+    },
+    {
+      "attempt": 13,
+      "startEpochMs": 1790110353063.2,
+      "opening": true,
+      "domReadyMs": 21.8,
+      "twoRafMs": 71.3,
+      "contentNodes": 9
+    },
+    {
+      "attempt": 14,
+      "startEpochMs": 1790110353492.2,
+      "opening": false,
+      "domReadyMs": 23,
+      "twoRafMs": 85.8,
+      "contentNodes": 9
+    },
+    {
+      "attempt": 15,
+      "startEpochMs": 1790110353930.5,
+      "opening": true,
+      "domReadyMs": 27.3,
+      "twoRafMs": 93,
+      "contentNodes": 9
+    },
+    {
+      "attempt": 16,
+      "startEpochMs": 1790110354367.4,
+      "opening": false,
+      "domReadyMs": 38.5,
+      "twoRafMs": 96.1,
+      "contentNodes": 9
+    },
+    {
+      "attempt": 17,
+      "startEpochMs": 1790110354826.8,
+      "opening": true,
+      "domReadyMs": 19.7,
+      "twoRafMs": 80.1,
+      "contentNodes": 9
+    },
+    {
+      "attempt": 18,
+      "startEpochMs": 1790110355232.5,
+      "opening": false,
+      "domReadyMs": 23.1,
+      "twoRafMs": 83.8,
+      "contentNodes": 9
+    },
+    {
+      "attempt": 19,
+      "startEpochMs": 1790110355641.6,
+      "opening": true,
+      "domReadyMs": 20.6,
+      "twoRafMs": 254.1,
+      "contentNodes": 9
+    },
+    {
+      "attempt": 20,
+      "startEpochMs": 1790110356204.2,
+      "opening": false,
+      "domReadyMs": 29.2,
+      "twoRafMs": 109.4,
+      "contentNodes": 9
+    },
+    {
+      "attempt": 21,
+      "startEpochMs": 1790110376047.2,
+      "opening": true,
+      "domReadyMs": 128.7,
+      "twoRafMs": 155.7,
+      "contentNodes": 9
+    },
+    {
+      "attempt": 22,
+      "startEpochMs": 1790110376449.4,
+      "opening": false,
+      "domReadyMs": 62.5,
+      "twoRafMs": 117.8,
+      "contentNodes": 9
+    },
+    {
+      "attempt": 23,
+      "startEpochMs": 1790110376867.1,
+      "opening": true,
+      "domReadyMs": 13.3,
+      "twoRafMs": 104.1,
+      "contentNodes": 9
+    },
+    {
+      "attempt": 24,
+      "startEpochMs": 1790110377301.8,
+      "opening": false,
+      "domReadyMs": 24.3,
+      "twoRafMs": 157.5,
+      "contentNodes": 9
+    },
+    {
+      "attempt": 25,
+      "startEpochMs": 1790110377751.6,
+      "opening": true,
+      "domReadyMs": 100.8,
+      "twoRafMs": 167.7,
+      "contentNodes": 9
+    },
+    {
+      "attempt": 26,
+      "startEpochMs": 1790110378202.2,
+      "opening": false,
+      "domReadyMs": 30.3,
+      "twoRafMs": 242.1,
+      "contentNodes": 9
+    },
+    {
+      "attempt": 27,
+      "startEpochMs": 1790110378829.2,
+      "opening": true,
+      "domReadyMs": 100.8,
+      "twoRafMs": 237.8,
+      "contentNodes": 9
+    },
+    {
+      "attempt": 28,
+      "startEpochMs": 1790110379282.1,
+      "opening": false,
+      "domReadyMs": 21.3,
+      "twoRafMs": 93.9,
+      "contentNodes": 9
+    },
+    {
+      "attempt": 29,
+      "startEpochMs": 1790110379700.9,
+      "opening": true,
+      "domReadyMs": 40.3,
+      "twoRafMs": 123,
+      "contentNodes": 9
+    },
+    {
+      "attempt": 30,
+      "startEpochMs": 1790110380140.5,
+      "opening": false,
+      "domReadyMs": 31.8,
+      "twoRafMs": 81.3,
+      "contentNodes": 9
+    },
+    {
+      "attempt": 31,
+      "startEpochMs": 1790110405082.8,
+      "opening": true,
+      "domReadyMs": 17.3,
+      "twoRafMs": 87.7,
+      "contentNodes": 9
+    },
+    {
+      "attempt": 32,
+      "startEpochMs": 1790110405516.6,
+      "opening": false,
+      "domReadyMs": 47.2,
+      "twoRafMs": 103.8,
+      "contentNodes": 9
+    },
+    {
+      "attempt": 33,
+      "startEpochMs": 1790110405942.2,
+      "opening": true,
+      "domReadyMs": 18.8,
+      "twoRafMs": 80.5,
+      "contentNodes": 9
+    },
+    {
+      "attempt": 34,
+      "startEpochMs": 1790110406385.1,
+      "opening": false,
+      "domReadyMs": 37.1,
+      "twoRafMs": 112.9,
+      "contentNodes": 9
+    },
+    {
+      "attempt": 35,
+      "startEpochMs": 1790110406813,
+      "opening": true,
+      "domReadyMs": 15.2,
+      "twoRafMs": 65.2,
+      "contentNodes": 9
+    },
+    {
+      "attempt": 36,
+      "startEpochMs": 1790110407273.7,
+      "opening": false,
+      "domReadyMs": 34.2,
+      "twoRafMs": 86,
+      "contentNodes": 9
+    },
+    {
+      "attempt": 37,
+      "startEpochMs": 1790110407699,
+      "opening": true,
+      "domReadyMs": 14.7,
+      "twoRafMs": 92.9,
+      "contentNodes": 9
+    },
+    {
+      "attempt": 38,
+      "startEpochMs": 1790110408133.1,
+      "opening": false,
+      "domReadyMs": 27.2,
+      "twoRafMs": 85,
+      "contentNodes": 9
+    },
+    {
+      "attempt": 39,
+      "startEpochMs": 1790110408574.4,
+      "opening": true,
+      "domReadyMs": 26.1,
+      "twoRafMs": 123.9,
+      "contentNodes": 9
+    },
+    {
+      "attempt": 40,
+      "startEpochMs": 1790110409015.6,
+      "opening": false,
+      "domReadyMs": 41.3,
+      "twoRafMs": 108.4,
+      "contentNodes": 9
+    }
+  ],
+  "statistics": {
+    "open": {
+      "domReadyMs": {
+        "n": 20,
+        "min": 13.3,
+        "p95": 100.8,
+        "max": 128.7
+      },
+      "twoRafMs": {
+        "n": 20,
+        "min": 65.2,
+        "p95": 237.8,
+        "max": 254.1
+      }
+    },
+    "close": {
+      "domReadyMs": {
+        "n": 20,
+        "min": 17.5,
+        "p95": 47.2,
+        "max": 62.5
+      },
+      "twoRafMs": {
+        "n": 20,
+        "min": 64.8,
+        "p95": 157.5,
+        "max": 242.1
+      }
+    }
+  },
+  "longTaskObservation": {
+    "onlyAttempts": [
+      21,
+      22,
+      23,
+      24,
+      25,
+      26,
+      27,
+      28,
+      29,
+      30,
+      31,
+      32,
+      33,
+      34,
+      35,
+      36,
+      37,
+      38,
+      39,
+      40
+    ],
+    "entries": [
+      {
+        "startEpochMs": 1790110376046.2,
+        "durationMs": 129
+      },
+      {
+        "startEpochMs": 1790110376448.4,
+        "durationMs": 63
+      },
+      {
+        "startEpochMs": 1790110377749.8,
+        "durationMs": 102
+      },
+      {
+        "startEpochMs": 1790110378635.1,
+        "durationMs": 141
+      },
+      {
+        "startEpochMs": 1790110378827.9,
+        "durationMs": 102
+      }
+    ]
+  },
+  "network": {
+    "businessRequests": 0,
+    "windowsTruncated": false,
+    "windowsHasMore": false,
+    "platformTelemetryExcluded": true
+  },
+  "cleanup": "MutationObserver, click listener and PerformanceObserver disconnected; measurement object typeof undefined; final details closed",
+  "limitations": [
+    "Single-session automated-browser observation; not general production p95.",
+    "getBoundingClientRect forces layout; tool accessibility snapshots and active debugging can affect timing. Trace attribution and controlled local comparison remain needed before claiming a code bottleneck.",
+    "Collapsed content rect retained height 4608 in this browser, so that rect is not treated as proof of visibility. Close result uses native details.open=false; opening uses open=true plus content geometry.",
+    "No new backend/model task. No asset SHA or responding pod capture. Last confirmed deployment used only as context.",
+    "Two attempted semantic locators timed out before samples; target was then located from actual DOM summary, no measurement samples discarded."
+  ]
+}

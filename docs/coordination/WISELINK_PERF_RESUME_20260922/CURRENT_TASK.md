@@ -2,7 +2,7 @@
 
 ## 本批身份
 
-B来源身份PG补证树：`/private/tmp/wiselink-perf-b-source-identity-pg-20260923`，基线`a0e712f82985ca57fd1a52bf75be3a8971aba4ba`。a0已获Luna独立22项/types/lint/diffcheck接受。本批真实隔离PG14非owner/非bypass角色10/10通过，无skip：双向actor隔离、5必需登记RLS隐藏拒绝、三类preflight错配、digest mismatch；无生产连接。临时实例已停止删除，日志保留。只增测试/docs，不改产品，不声称线上收益或生产RLS全覆盖；Main可统一集成已接受批次，完整Goal继续。
+B知识交互证据树：`/private/tmp/wiselink-perf-b-knowledge-interaction-evidence-20260923`，基线`157bf13ffe078ade031ad06cef48ce229b009963`。Main正统一发布已接受dd1/f7/a0，157bf留后续同步。本轮补40次已保存知识预览依据展开/收起：展开DOM p95 100.8ms、2RAF237.8ms，并观察后20次5个63–141ms长任务；零业务请求。实际页面为/knowledge，不是Wiki路由。完整样本及测量扰动边界见KNOWLEDGE_INTERACTION_EVIDENCE_20260923.json，临时探针已清理。下一步定向profile归因，发布后同版本复测及Hosted/后台竞争证据继续，Goal active。
 
 ## 完整路线状态（2026-09-23）
 
