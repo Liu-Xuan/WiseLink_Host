@@ -801,3 +801,27 @@ Luna已接受`41e9c82b008a804b076ffb88542754cc0eb080e8`，无阻塞：核对JSON
 - 最后一次目录起点49.863秒后，从关系图谱实际按钮返回同一精确知识正文，缓存已过期，重新读取目录4070.388ms、正文3418.508ms，均200；返回修订16、正文存在、0 alert。完整事件窗口无截断；首冷读广域窗口曾截断，按identity请求前序列取回的聚焦窗口完整。
 - 全部匿名时间/字节/平台段见AB81_READ_RUNTIME_EVIDENCE_20260923.json。相较f24部分样本较低，但不是严格前后A/B、不计算p95、不宣布13/18/15条SQL已让线上达标。目录平台origin2982–3826ms，正文2248–3045ms，仍有明显服务端路径成本；origin/inner不等于SQL独立耗时。
 - 此发布同时含A覆盖/知识快照更新，不能把全部变化归因B。Hosted仍未安装，未调用后台模型/解析/翻译任务。下一步优先分解剩余服务路径与读取期间的平台资源，保留500ms端到端目标未闭合；Goal active。
+
+
+## AB81 production SQL trace decomposition (2026-09-23)
+
+Official trace detail expands the list's single root into actual SQL spans. The
+first catalogue/work traces match the browser response log IDs; raw identity and
+request attributes remain private. Catalogue: 60 data spans, 1095.79 ms reported
+SQL sum versus 3633.95 ms app-server. Saved work: 26 spans, 328.69 ms versus
+2817.51 ms; a second saved-work sample has the same 26 spans, 267.48 ms versus
+2082.99 ms. These are request samples, not p95. The two snapshot queries are
+visible in each work request, confirming the deployed single-statement snapshot.
+
+The current and saved three-member checks each retain three fresh ACL queries,
+three tenant projection reads and three source identity reads. Statement starts
+show material gaps between dependent stages. SQL execution alone does not
+explain the remaining seconds, but the spans cannot distinguish SDK transport,
+application scheduling or other uninstrumented waiting. No CPU saturation or
+absence of contention is asserted from five minute-scale CPU/memory samples
+whose response does not state units.
+
+Next implementation investigation: reduce dependent read round trips while
+preserving fresh authorization, tenant projection/source consistency and both
+current-version checks. Do not remove ACL checks or introduce cross-request
+authorization caching. Evidence: AB81_DATABASE_TRACE_EVIDENCE_20260923.json.
