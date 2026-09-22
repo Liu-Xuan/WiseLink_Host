@@ -50,9 +50,11 @@ const viewerModule = {
     targetPage: number;
     targetSignal: string;
     targetBoxes: unknown;
+    readingScope?: string;
   }) =>
     createElement('div', {
       'data-viewer': props.sourceUrl,
+      'data-scope': props.readingScope,
       'data-page': props.targetPage,
       'data-range': String(props.sourceSupportsRange),
       'data-signal': props.targetSignal,
@@ -143,6 +145,7 @@ async function render(documentVersionId = 'DV1', autoLoad = false, page = 3) {
         autoLoad,
         page,
         targetSignal: 'source-3',
+        readingScope: `${documentVersionId}:PR-1:R2`,
         targetBoxes: {
           boxes: [[10, 20, 30, 40]],
           viewportWidth: 600,
@@ -192,6 +195,7 @@ test('opens only on intent, starts both preparations, shows chunk failure and re
   await act(async () => retry.resolve(viewerModule));
   const viewer = container.querySelector('[data-viewer]');
   expect(viewer?.getAttribute('data-page')).toBe('3');
+  expect(viewer?.getAttribute('data-scope')).toBe('DV1:PR-1:R2');
   expect(viewer?.getAttribute('data-range')).toBe('false');
   expect(viewer?.getAttribute('data-signal')).toBe('source-3');
   expect(viewer?.getAttribute('data-boxes')).toContain('[10,20,30,40]');

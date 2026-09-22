@@ -15,6 +15,8 @@ interface PdfBoxTarget {
 
 interface DocumentOriginalCanvasPreviewProps {
   documentVersionId: string;
+  readingScope?: string;
+  onVisiblePageChange?: (page: number) => void;
   page: number;
   autoLoad?: boolean;
   targetSignal?: string;
@@ -29,6 +31,8 @@ interface DocumentOriginalCanvasPreviewProps {
  */
 export default function DocumentOriginalCanvasPreview({
   documentVersionId,
+  readingScope,
+  onVisiblePageChange,
   page,
   autoLoad = false,
   targetSignal = '',
@@ -115,6 +119,8 @@ export default function DocumentOriginalCanvasPreview({
       }
     >
       <LazyPdfDocumentViewer
+        readingScope={readingScope}
+        onVisiblePageChange={onVisiblePageChange}
         sourceUrl={url}
         sourceSupportsRange={false}
         targetPage={page}

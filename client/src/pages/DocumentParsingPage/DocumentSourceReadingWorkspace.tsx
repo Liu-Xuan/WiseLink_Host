@@ -62,6 +62,7 @@ export function DocumentSourceReadingWorkspace({
   const workspaceRef = useRef<HTMLDivElement>(null);
   const [split, setSplit] = useState(50);
   const [page, setPage] = useState(initialPage ?? 1);
+  const [visiblePdfPage, setVisiblePdfPage] = useState(initialPage ?? 1);
   const [tocOpen, setTocOpen] = useState(() => typeof window === 'undefined' ||
     typeof window.matchMedia !== 'function' || window.matchMedia('(min-width: 761px)').matches);
   const [compact, setCompact] = useState(() => typeof window !== 'undefined'
@@ -266,10 +267,14 @@ export function DocumentSourceReadingWorkspace({
               }}
             />
             <div className="source-reader-pdf-pane" hidden={!showPdf}>
-              <div className="source-reader-pane-title"><strong>PDF 原件</strong><span>受控读取 · 第 {page} 页</span></div>
+              <div className="source-reader-pane-title"><strong>PDF 原件</strong><span>受控读取 · 第 {visiblePdfPage} 页</span></div>
               <RetainedWorkbenchPanel active={pdfActive}>
                 {renderPdfPreview ? renderPdfPreview(page) : <DocumentOriginalCanvasPreview
                   documentVersionId={documentVersionId}
+                  readingScope={JSON.stringify([original.binding.documentVersionId,
+                    original.binding.parseRunId, original.binding.parseRevision,
+                    original.binding.sourceArtifactId, original.binding.sourceSha256])}
+                  onVisiblePageChange={setVisiblePdfPage}
                   page={page}
                   autoLoad={Boolean(initialPage)}
                   targetSignal={`${activeUnitId ?? ''}:${initialLocationRequest}`}
