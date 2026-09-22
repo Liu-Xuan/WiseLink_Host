@@ -141,3 +141,33 @@ it('roundtrips only a bounded geometry reference with the exact source return', 
  expect(readGraphReadingState(new URLSearchParams('layoutSnapshot=gl-1&layoutSnapshot=gl-2')).layoutSnapshot).toBeUndefined();
  expect(graphReadingParams('matter-a', null, { layoutSnapshot: '<script>' }).has('layoutSnapshot')).toBe(false);
 });
+
+const knowledgeOrigin = new URLSearchParams({ subjectKind: 'ENGINEERING_MATTER', subjectId: 'matter-a', workRef: 'old-work', articleY: '19000', query: 'saved', next: 'https://evil.test' });
+it('retains the knowledge return across camera persistence and a source round trip', () => {
+  const origin = new URLSearchParams({ returnKnowledgeQuery: knowledgeOrigin.toString() });
+  const graph = graphReadingParams('matter-a', 'old-work', readGraphReadingState(query), origin);
+  const source = new URL(withGraphReturn('/document-versions/dv1', graph), 'https://example.test');
+  const returnedGraph = new URL(readingReturnTarget(source.searchParams, 'dv1')!.route, 'https://example.test');
+  expect(readGraphReadingState(returnedGraph.searchParams).viewport).toEqual(readGraphReadingState(query).viewport);
+  const target = readingReturnTarget(returnedGraph.searchParams, undefined, null, 'matter-a', 'old-work');
+  expect(target?.route).toContain('/knowledge?');
+  const restored = new URL(target!.route, 'https://example.test');
+  expect(restored.searchParams.get('articleY')).toBe('19000');
+  expect(restored.searchParams.has('next')).toBe(false);
+  expect(readingReturnTarget(graph, undefined, null, 'other', 'old-work')).toBeNull();
+  expect(readingReturnTarget(graph, undefined, null, 'matter-a', 'new-work')).toBeNull();
+  graph.append('returnKnowledgeQuery', knowledgeOrigin.toString());
+  expect(readingReturnTarget(graph, undefined, null, 'matter-a', 'old-work')).toBeNull();
+});
+
+it('keeps malformed knowledge intent rejected after graph view-state replacement', () => {
+  const mixed = new URLSearchParams({ matterId: 'matter-a', workRef: 'old-work', returnKnowledgeQuery: knowledgeOrigin.toString(), returnDocumentVersionId: 'dv1' });
+  expect(readingReturnTarget(mixed, 'other', null, 'matter-a', 'old-work')).toBeNull();
+  const duplicate = new URLSearchParams({ returnKnowledgeQuery: knowledgeOrigin.toString() });
+  duplicate.append('returnKnowledgeQuery', knowledgeOrigin.toString());
+  const persisted = graphReadingParams('matter-a', 'old-work', {}, duplicate);
+  expect(persisted.has('returnKnowledgeQuery')).toBe(true);
+  expect(readingReturnTarget(persisted, undefined, null, 'matter-a', 'old-work')).toBeNull();
+  const wrongWork = graphReadingParams('matter-a', 'new-work', {}, new URLSearchParams({ returnKnowledgeQuery: knowledgeOrigin.toString() }));
+  expect(readingReturnTarget(wrongWork, undefined, null, 'matter-a', 'new-work')).toBeNull();
+});

@@ -20,7 +20,7 @@ import { useCurrentObjectContext } from '@client/src/app/providers/CurrentObject
 import { useCurrentUserSession } from '@client/src/app/providers/CurrentUserSessionProvider';
 import { getEngineeringMatter } from '@client/src/api/engineering-matter';
 import WiseLinkBrandMark from '@client/src/components/WiseLinkBrandMark';
-import { activityReadingParams, knowledgeReadingIdentity } from '@client/src/features/matter/reading-return';
+import { activityReadingParams, knowledgeReadingIdentity, knowledgeReadingParams } from '@client/src/features/matter/reading-return';
 import type {
   EngineeringMatterCatalogEntry,
   EngineeringMatterReadModel,
@@ -213,6 +213,9 @@ const Sidebar: React.FC<SidebarProps> = ({ mobileOpen, onMobileClose }) => {
             [subjectKind === 'ENGINEERING_MATTER' ? 'matterId' : 'workItemId']: subjectId,
             workRef: savedWorkRef,
           });
+          if (subjectKind === 'ENGINEERING_MATTER') {
+            query.set('returnKnowledgeQuery', knowledgeReadingParams(currentSearchParams).toString());
+          }
           // The dispatcher may reject unsupported document-work history, but
           // must not silently resolve it into a different/current matter work.
           return `/graph?${query}`;

@@ -620,3 +620,13 @@ KnowledgeLookupPage原useEffect每次remount清空并请求，未使用既有共
 实际页面反例旧1失败/12通过，修复4套48项通过（knowledge-catalogue-interactions、knowledge-reading-ui、matter-resource-reuse、reading-return-context）。两次新鲜路由访问的catalogue/work调用各2→1；覆盖stale刷新隐藏、403替换/返回不自动重试、显式恢复、历史ref区别、actor/tenant隔离、session清除、31秒过期重读、非法pin清除后默认选择，以及既有迟到/来源/滚动行为。测试为组件补实际QueryClientProvider，并在SSR/卸载后clear自有client；初轮SSR未clear导致等待GC的测试进程已正常中断，修订后最终测试正常退出，不用forceExit或改变生产gcTime。client types、3个生产文件ESLint、client build13.22s通过。
 
 主控回报ab2 commit ef258aa7faba42277d38dec7584e41bb4be2ee55、origin/github同名分支准确SHA一致；release7688432648880098235 finished/同commit/error_logs=[]。该部署包括c58前序与A b10，不含77ae/fadf/本批。两Luna线上验收进行中，已证实侧栏图谱保留M/W，但主控转报“返回原阅读位置”按钮可能到裸/library；B已要求区分真实按钮与browser back，并将其作为独立下一修复。不能把进入成功或浏览器后退当完整往返完成。77ae/fadf已获独立验收，本批待审查/发布/实际热路径采样，Goal保持active。
+
+
+## B 知识页经图谱的实际返回按钮（2026-09-23）
+
+- 实际生产 ef258aa7 / release 7688432648880098235 的两位独立只读验收：知识 exact M/W → sidebar graph 保留修订16；实际“返回原阅读位置”按钮落到资料库（有时携带已有family），丢失知识阅读上下文。browser back成功不能代替按钮通过。样本私有身份只保留临时证据，不写入公开仓库。
+- 同轮独立线上PDF证据：既有5页样本点击真实目标段落再读原件，工具栏5/5、实际第5页；手动向上滚动工具栏变3，用户可以接管。保存工作UI读取n=3为6395/4773/5655ms，仅单会话观测，不是服务端p95。
+- 根因：Sidebar只传M/W；graph镜头persist重建query；通用TopBar只从matter路径而非graph query取得事项。修复以现有returnKnowledgeQuery传白名单知识参数，返回时强制nested ENGINEERING_MATTER + M/W与当前graph query一致；source reader原有document绑定不变。图谱persist、打开原文/时间轴/Wiki及返回保留该上下文，保留viewport/layoutSnapshot等原有镜头协议；不接受任意返回URL。
+- malformed/duplicate/超长返回意图保留为明确拒绝，不因显示状态改写而降级猜测；知识参数next等未知字段不带回。返回上下文useMemo仅随返回意图改变，不因每次camera URL改变反复重建回调。
+- 有效旧反例：Sidebar实际组件生成的graph链接缺少articleY等返回状态，1 failed/21 passed。修复后测试真正点击侧栏链接及TopBar返回按钮，恢复knowledge同M/W/articleY；另验camera persist→source→graph→knowledge、跨事项/跨修订、duplicate及混合绑定。5 suites/68 tests通过；client typecheck、5个production文件ESLint通过。早期交互fixture缺graph路由后的getMatter Promise，已补测试fixture，未改产品容错。
+- 构建与提交检查见 `/private/tmp/wiselink-graph-return-build.log`、`/private/tmp/wiselink-graph-return-precommit.log`。本地验证不代表线上返回按钮已修复；待独立审查、Main集成发布及只读复验。完整Goal、真实p95、后台竞争及Hosted阶段4仍未闭合。

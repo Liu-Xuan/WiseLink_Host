@@ -2,7 +2,7 @@
 
 ## 本批身份
 
-B系统性能工作树：`/private/tmp/wiselink-perf-b-knowledge-reuse-20260923`，分支`codex/perf-b-knowledge-reuse-20260923`；起点`fadf512b932eec820cecd1fe42e97e4e47d9c047`。本批知识目录/精确保存正文接入既有Query身份、session清除及30秒新鲜窗口；4套48项/客户端标准检查通过，待独立验收。主控ab2已发布ef258aa7/release7688432648880098235；新缓存/77ae/fadf均不在该部署。线上图谱返回按钮新缺口单独优先处理，不以browser back算按钮通过。
+B系统性能工作树：`/private/tmp/wiselink-perf-b-knowledge-graph-return-20260923`，分支`codex/perf-b-knowledge-graph-return-20260923`；起点`e10fc6163b855044c00ca1e0608dc04b9d4253c6`。前批知识复用已交Luna/Main；本批修复线上知识页→图谱→实际返回按钮丢失上下文，并保留原文往返的镜头状态。5套68项、client types/lint通过，build/precommit见REPORT。主控ab2已发布ef258aa7/release7688432648880098235；新缓存/77ae/fadf/本返回修复均不在该部署。PDF页5与手动接管已有独立线上只读通过证据；返回修复仍需集成发布后实测。整体Goal继续。
 
 ## 完整路线状态（2026-09-23）
 
