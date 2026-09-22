@@ -815,6 +815,19 @@ test('overlapping source batches cannot silently replace different source conten
   })), /JOBAID_SOURCE_READ_FAILED:INCONSISTENT_EVIDENCE/);
 });
 
+test('WorkItem reassessment cannot finish with previous completed work before saving this round', async () => {
+  const input = { ...modelInput(), expectedWorkRevision: 3,
+    previousWork: { workRevisionRef: 'JAWR-3', workRevision: 3, content: completed } };
+  const f = fixture([{ action: 'FINISH' }, { action: 'SAVE_WORK', work: completed }, { action: 'FINISH' }]);
+  const result = await f.run(input);
+  assert.equal(f.calls.length, 3);
+  assert.equal(f.saves.length, 1);
+  assert.equal(f.saves[0].expectedWorkRevision, 3);
+  assert.equal(result.output.workRevisionRef, 'JAWR-4');
+  assert.equal(input.previousWork.workRevisionRef, 'JAWR-3');
+  assert.match(JSON.stringify(f.calls[1].messages), /JOBAID_COMPLETED_WORK_REQUIRED/);
+});
+
 test('Matter uses the same model loop and must save this attempt before finishing prior completed work', async () => {
   const input = { ...modelInput(), schemaVersion: 'wiselink.matter-jobaid-task.v2',
     subject: { kind: 'ENGINEERING_MATTER', matterId: 'MAT-one' }, availableDocuments: [{ documentVersionId: 'DV-one' }],

@@ -203,7 +203,11 @@ export async function invokeHostedJobAidProblemModel(
   if (options.recoveredSourceContext) systemMessage.content += '\n这是 Host 正常授权的后继任务：旧任务已结束但未交付完整工作载荷。当前 deliveredEvidence 包含 Host 重新授权并保留的已读原文，previousWork 是实际已保存工作。先使用这些完整证据形成本批有价值正文，仅在缺少必要语境时补读；不要为了恢复而重复获取已交付的相同范围。旧任务错误不是工程结论，也不是已保存正文。本次仍须正常 SAVE_WORK 后才能完成。';
   const initialContextMessage = messages[1];
   let expectedWorkRevision = modelInput.expectedWorkRevision;
-  let saved = modelInput.previousWork?.content && (modelInput.schemaVersion !== MATTER_JOBAID_TASK_SCHEMA || options.resumeSavedWork)
+  // Host accepts a prior attempt's completed work only for Overall consistency.
+  // Ordinary reassessment must save under this attempt, even if unchanged.
+  const canReusePreviousWork = (operation === 'SYNTHESIZE_OVERALL' && modelInput.purpose === 'OVERALL_CONSISTENCY') ||
+    (modelInput.schemaVersion === MATTER_JOBAID_TASK_SCHEMA && options.resumeSavedWork);
+  let saved = modelInput.previousWork?.content && canReusePreviousWork
     ? {
         workRevisionRef: modelInput.previousWork.workRevisionRef,
         workRevision: modelInput.previousWork.workRevision,
