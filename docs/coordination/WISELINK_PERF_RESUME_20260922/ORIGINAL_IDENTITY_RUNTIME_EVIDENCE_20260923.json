@@ -1,0 +1,267 @@
+{
+  "deploymentCommit": "8d139e310fdc7dbe33e26e7e0bf6834762168c42",
+  "release": "7688452846325648565",
+  "updatedAt": 1790107974000,
+  "scope": "Existing normal logged-in session; same saved five-page PDF, same parseRun and registered sourceRef; actual library navigation then browser back. Fresh full navigation after release. No business generation.",
+  "firstOriginal": {
+    "startEpochMs": 1790108243377.496,
+    "headersMs": 2532.673,
+    "totalMs": 5570.678,
+    "encodedDataLength": 122800,
+    "status": 200
+  },
+  "warmIdentity": [
+    {
+      "startEpochMs": 1790108283167.542,
+      "headersMs": 711.501,
+      "totalMs": 710.585,
+      "encodedDataLength": 1649,
+      "originMs": 301,
+      "innerMs": 295,
+      "status": 200,
+      "failed": false
+    },
+    {
+      "startEpochMs": 1790108313669.156,
+      "headersMs": 754.722,
+      "totalMs": 1323.86,
+      "encodedDataLength": 1692,
+      "originMs": 263,
+      "innerMs": 260,
+      "status": 200,
+      "failed": false
+    },
+    {
+      "startEpochMs": 1790108339312.445,
+      "headersMs": 695.926,
+      "totalMs": 703.169,
+      "encodedDataLength": 1661,
+      "originMs": 284,
+      "innerMs": 231,
+      "status": 200,
+      "failed": false
+    },
+    {
+      "startEpochMs": 1790108369970.217,
+      "headersMs": 743.438,
+      "totalMs": 742.462,
+      "encodedDataLength": 1655,
+      "originMs": 329,
+      "innerMs": 279,
+      "status": 200,
+      "failed": false
+    },
+    {
+      "startEpochMs": 1790108372967.033,
+      "headersMs": 763.421,
+      "totalMs": 767.971,
+      "encodedDataLength": 1695,
+      "originMs": 354,
+      "innerMs": 350,
+      "status": 200,
+      "failed": false
+    },
+    {
+      "startEpochMs": 1790108393059.423,
+      "headersMs": 1952.937,
+      "totalMs": 1952.004,
+      "encodedDataLength": 1696,
+      "originMs": 339,
+      "innerMs": 321,
+      "status": 200,
+      "failed": false
+    },
+    {
+      "startEpochMs": 1790108396904.604,
+      "headersMs": 920.965,
+      "totalMs": 920.229,
+      "encodedDataLength": 1673,
+      "originMs": 277,
+      "innerMs": 259,
+      "status": 200,
+      "failed": false
+    },
+    {
+      "startEpochMs": 1790108400089.034,
+      "headersMs": 743.659,
+      "totalMs": 746.975,
+      "encodedDataLength": 1684,
+      "originMs": 340,
+      "innerMs": 292,
+      "status": 200,
+      "failed": false
+    },
+    {
+      "startEpochMs": 1790108418366.92,
+      "headersMs": 675.453,
+      "totalMs": 676.413,
+      "encodedDataLength": 1675,
+      "originMs": 273,
+      "innerMs": 268,
+      "status": 200,
+      "failed": false
+    },
+    {
+      "startEpochMs": 1790108421120.98,
+      "headersMs": 684.574,
+      "totalMs": 686.456,
+      "encodedDataLength": 1670,
+      "originMs": 282,
+      "innerMs": 265,
+      "status": 200,
+      "failed": false
+    },
+    {
+      "startEpochMs": 1790108424164.823,
+      "headersMs": 913.551,
+      "totalMs": 912.414,
+      "encodedDataLength": 1672,
+      "originMs": 282,
+      "innerMs": 276,
+      "status": 200,
+      "failed": false
+    },
+    {
+      "startEpochMs": 1790108463522.76,
+      "headersMs": 774.945,
+      "totalMs": 807.854,
+      "encodedDataLength": 1685,
+      "originMs": 296,
+      "innerMs": 277,
+      "status": 200,
+      "failed": false
+    },
+    {
+      "startEpochMs": 1790108466572.463,
+      "headersMs": 1699.712,
+      "totalMs": 1696.78,
+      "encodedDataLength": 1660,
+      "originMs": 288,
+      "innerMs": 270,
+      "status": 200,
+      "failed": false
+    },
+    {
+      "startEpochMs": 1790108470530.777,
+      "headersMs": 813.799,
+      "totalMs": 1395.647,
+      "encodedDataLength": 1687,
+      "originMs": 369,
+      "innerMs": 351,
+      "status": 200,
+      "failed": false
+    },
+    {
+      "startEpochMs": 1790108488310.135,
+      "headersMs": 1516.251,
+      "totalMs": 1514.689,
+      "encodedDataLength": 1665,
+      "originMs": 270,
+      "innerMs": 221,
+      "status": 200,
+      "failed": false
+    },
+    {
+      "startEpochMs": 1790108492132.515,
+      "headersMs": 1042.797,
+      "totalMs": 1041.32,
+      "encodedDataLength": 1693,
+      "originMs": 294,
+      "innerMs": 286,
+      "status": 200,
+      "failed": false
+    },
+    {
+      "startEpochMs": 1790108495526.625,
+      "headersMs": 687.987,
+      "totalMs": 686.936,
+      "encodedDataLength": 1651,
+      "originMs": 266,
+      "innerMs": 262,
+      "status": 200,
+      "failed": false
+    },
+    {
+      "startEpochMs": 1790108514372.581,
+      "headersMs": 688.065,
+      "totalMs": 701.166,
+      "encodedDataLength": 1694,
+      "originMs": 275,
+      "innerMs": 271,
+      "status": 200,
+      "failed": false
+    },
+    {
+      "startEpochMs": 1790108517023.542,
+      "headersMs": 768.921,
+      "totalMs": 1349.554,
+      "encodedDataLength": 1696,
+      "originMs": 359,
+      "innerMs": 341,
+      "status": 200,
+      "failed": false
+    },
+    {
+      "startEpochMs": 1790108520228.198,
+      "headersMs": 759.451,
+      "totalMs": 757.544,
+      "encodedDataLength": 1676,
+      "originMs": 331,
+      "innerMs": 325,
+      "status": 200,
+      "failed": false
+    }
+  ],
+  "statistics": {
+    "headersMs": {
+      "n": 20,
+      "min": 675.453,
+      "median": 761.436,
+      "p95": 1699.712,
+      "max": 1952.937
+    },
+    "totalMs": {
+      "n": 20,
+      "min": 676.413,
+      "median": 787.9125,
+      "p95": 1696.78,
+      "max": 1952.004
+    },
+    "originMs": {
+      "n": 20,
+      "min": 263,
+      "median": 291.0,
+      "p95": 359,
+      "max": 369
+    },
+    "innerMs": {
+      "n": 20,
+      "min": 221,
+      "median": 276.5,
+      "p95": 350,
+      "max": 351
+    }
+  },
+  "network": {
+    "allWindowsTruncated": false,
+    "allWindowsHasMore": false,
+    "originalDownloads": 1,
+    "warmIdentityRequests": 20,
+    "errors": 0,
+    "protocol": "h2",
+    "connectionReusedAll": true,
+    "cdnCacheAll": "MISS",
+    "dnsConnectSslTimingAll": -1,
+    "bytesMeaning": "CDP encodedDataLength includes transfer encoding and response headers; not original PDF bytes"
+  },
+  "observationNotes": [
+    "An early bounded event poll ended before the request started; same navigation was subsequently read to completion, no repeated navigation used to replace it.",
+    "One visible-canvas locator wait returned a tool deadline despite a visible matching canvas; same navigation/request was subsequently read to completion, not counted as an application failure.",
+    "Several CDP loadingFinished timestamps precede responseReceived by about 1–3 ms; values preserved, no submillisecond inference.",
+    "Platform Server-Timing origin/inner are platform-reported segments, not independently instrumented Host/database durations. Do not add nested segments or relabel them end-to-end.",
+    "All 20 actual warm requests retained, no latency filtering. Nearest-rank p95; single-session small sample, not general production p95.",
+    "No asset SHA or responding pod identity captured. Release identity relies on Main release readback plus fresh navigation.",
+    "No persistent observer or application mutation added in this measurement."
+  ],
+  "conclusion": "Exact original reuse works in this sample. Browser-observed warm end-to-end p95 1696.780ms remains above 500ms. Platform origin p95 359ms is separate evidence, not a substitute acceptance metric."
+}
