@@ -1132,13 +1132,25 @@ async function authorizedReadModel(
     if (!item.attemptRef || typeof item.purpose?.expectedWorkRef !== 'string' ||
         typeof item.purpose?.correctionReason !== 'string' || !item.purpose.correctionReason.trim())
       throw new Error('ENGINEERING_OVERVIEW_CORRECTION_NOTICE_INVALID');
-    // A FINISH status alone does not prove a save; use the original persisted source binding.
-    const [saved] = await executor.select({ ref: engineeringMatterWorkRevision.matterWorkRevisionId,
-      revision: engineeringMatterWorkRevision.workingRevision }).from(engineeringMatterWorkRevision).where(and(
-        eq(engineeringMatterWorkRevision.tenantId, row.tenantId), eq(engineeringMatterWorkRevision.matterId, row.matterId),
-        eq(engineeringMatterWorkRevision.createdByUserId, row.createdByUserId),
-        eq(engineeringMatterWorkRevision.actionAttemptId, item.id),
-      )).orderBy(desc(engineeringMatterWorkRevision.workingRevision)).limit(1);
+  }
+  // A FINISH status alone does not prove a save; use the original persisted
+  // source binding. Resolve one latest metadata row per attempt in one query,
+  // retaining tenant/matter/owner constraints and the notice order below.
+  const overviewSaves = overviewCorrections.length ? await executor
+    .selectDistinctOn([engineeringMatterWorkRevision.actionAttemptId], {
+      attemptId: engineeringMatterWorkRevision.actionAttemptId,
+      ref: engineeringMatterWorkRevision.matterWorkRevisionId,
+      revision: engineeringMatterWorkRevision.workingRevision,
+    }).from(engineeringMatterWorkRevision).where(and(
+      eq(engineeringMatterWorkRevision.tenantId, row.tenantId),
+      eq(engineeringMatterWorkRevision.matterId, row.matterId),
+      eq(engineeringMatterWorkRevision.createdByUserId, row.createdByUserId),
+      inArray(engineeringMatterWorkRevision.actionAttemptId, overviewCorrections.map(item => item.id)),
+    )).orderBy(engineeringMatterWorkRevision.actionAttemptId,
+      desc(engineeringMatterWorkRevision.workingRevision)) : [];
+  const overviewSaveByAttempt = new Map(overviewSaves.map(saved => [saved.attemptId, saved]));
+  for (const item of overviewCorrections) {
+    const saved = overviewSaveByAttempt.get(item.id);
     (revision.overviewCorrectionNotices ??= []).push({ attemptRef: item.attemptRef,
       targetWorkRef: item.purpose.expectedWorkRef, reason: item.purpose.correctionReason,
       attemptStatus: item.status, savedWorkRef: saved?.ref ?? null, savedWorkingRevision: saved?.revision ?? null });

@@ -583,3 +583,16 @@ Luna已独立接受e5dd PDF修复5套25项、types/lint/build/precommit。本批
 实际服务反例使用真实requireInput依赖路径和可控授权延迟：2个current+9个saved唯一member，每个freshRead20ms；原实现200ms，修复80ms（1组current+3组历史），历史最大并发4，fresh调用仍11次；第二次请求重新检查全部11次。另一反例历史被移除成员拒绝时等待该组其余读结束，active=0才返回，下一组不启动。current拒绝时不读取保存body，确切历史缺失不回退current。旧版2失败/5通过，修复相关3套53项通过（engineering-matter-working.service、engineering-issue-search、engineering-matter-working-state），server types、生产service ESLint、server build通过。
 
 本批不能单独解释或解决线上4–5秒：仓库完整授权/血缘和数据库路径仍需继续证据定位；没有生产trace不能宣称某个查询是主要瓶颈。Luna已接受上一批287ddd668的3套35项/types/lint/build/precommit。本批待独立验收、主控集成及实际重复采样；Goal保持active。
+
+
+## 2026-09-23 B：2D 总体更正提示元数据批量读取
+
+在已观测秒级保存工作读取路径继续定向定位，engineering-matter-working.repository authorizedReadModel对每一overviewCorrection单独查询该actionAttempt的最新保存workRef/revision。已有真实历史页出现多条更正，现有隔离PG来源血缘fixture可直接复现N+1；没有把这个局部往返数声称为线上主要耗时或p95。
+
+主控确认该repository无在途修改。独立树从c58eb5c08起点，只将此元数据查询改为按actionAttemptId DISTINCT ON一次读取、workingRevision降序取最新；tenantId/matterId/createdByUserId和attempt集合过滤原样保留。matterId+workingRevision已有唯一约束，排序不存在同事项同revision平局。notice仍按原overviewCorrections顺序填充；无对应保存保持null，FINISH状态不冒充保存，无notice不发查询。没有读取全部正文、截短内容、改变来源血缘/actor RLS或添加跨请求缓存。
+
+真实PostgreSQL14.17独立实例127.0.0.1:55439、唯一测试库wiselink_engineering_matter_test：既有cross Matter references fixture加入Drizzle匿名计数（只计元数据查询数，不记录SQL参数）。原实现3次≠期望1产生有效红例，修复后1次通过。扩展同一更正attempt保存两版后FAILED，验证最新第三修订仍可见；旧工作只纳入不晚于该版本的更正目标，未保存/失败仍null；零notice查询0次；保留原fixture对来源事项/原始文档撤权、跨事项血缘完整性的拒绝验证。原fixture首轮因历史缺失headline/listBrief而无法通过当前业务schema，补入明确合成摘要后才获得有效红绿证据，未降低生产校验。
+
+最终实际PG测试1/1通过、0跳过；相关Jest3套35项（engineering-matter-correction-save-projection、matter-work-reference、engineering-issue-search）通过，server types、生产repository ESLint、server build通过。日志/private/tmp/wiselink-correction-read-{red,pg,tests,types,lint,build}.log。initdb首次因沙箱共享内存限制失败，获准在沙箱外初始化同一空隔离目录后完成；测试后pg_ctl确认stopped，测试目录已删除，无生产数据库连接或修改。
+
+Luna已独立接受c58eb5c08的3套53项/types/lint/build/precommit。本批待独立验收与主控集成发布。仍缺最终线上复验、服务端trace/资源数据、热正文/图谱返回/暖API分布及后台竞争证据，完整Goal保持active。
