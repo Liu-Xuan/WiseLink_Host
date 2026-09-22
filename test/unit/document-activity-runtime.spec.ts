@@ -21,8 +21,8 @@ function fixture() {
   const authorization = { authorizeDocumentWork: jest.fn().mockResolvedValue(scope) };
   const actors = { withActorScope: jest.fn(async (_actor, fn) => fn()) };
   const reader = { readDocumentOriginal: jest.fn().mockResolvedValue(loaded) };
-  const semantics = { read: jest.fn().mockResolvedValue(map), ensure: jest.fn() };
-  const parsing = { status: jest.fn().mockResolvedValue({}) };
+  const semantics = { read: jest.fn().mockResolvedValue(map), ensure: jest.fn(), readReady: jest.fn().mockResolvedValue({ semanticRevision: 1 }) };
+  const parsing = { status: jest.fn().mockResolvedValue({}), inspectPublishedIdentity: jest.fn().mockResolvedValue({ familyId: 'family-test', binding: original.binding }) };
   const runs = { begin: jest.fn().mockResolvedValue(row), readRun: jest.fn().mockResolvedValue(row), readSaved: jest.fn().mockResolvedValue(null),
     recordDelivery: jest.fn(async (_scope, _fence, range) => { row.deliveredRanges.push(range); }),
     save: jest.fn(async (_scope, _fence, _command, materialize) => materialize(row, 1)),
@@ -134,4 +134,25 @@ it('READ and SAVE still require the exact original bytes', async () => {
  await expect(f.service.run({ action: 'ACTIVITY_READ', ...f.fence, sectionId: f.row.selection.sectionIds[0], offset: 0, limit: 1 })).rejects.toThrow('STORAGE_UNAVAILABLE');
  await expect(f.service.run({ action: 'ACTIVITY_SAVE', ...f.fence, candidate: {}, producer: { skillVersion: 'test', modelVersion: 'test' } })).rejects.toThrow('STORAGE_UNAVAILABLE');
  expect(f.runs.recordDelivery).not.toHaveBeenCalled(); expect(f.runs.save).not.toHaveBeenCalled();
+});
+
+it('returns the complete saved browser result with fresh exact identities and zero content hydration', async () => {
+ const f=fixture();
+ f.reader.readDocumentOriginal.mockRejectedValue(new Error('STORAGE_UNAVAILABLE'));
+ const result = { sourceBinding: { original: f.original.binding, semanticRevision: 1 },
+  candidateRevision: 9, statements: [{ label: '完整已保存正文'.repeat(5000) }] };
+ f.runs.readSaved.mockResolvedValue(result as never);
+ const request = { documentVersionId: f.scope.documentVersionId, parseRunId: f.row.parseRunId, candidateRevision: 9 };
+ const response = await f.service.readForBrowser(request, f.context);
+ expect(response.candidate).toBe(result);
+ expect(f.reader.readDocumentOriginal).not.toHaveBeenCalled(); expect(f.semantics.read).not.toHaveBeenCalled();
+ expect(f.parsing.inspectPublishedIdentity).toHaveBeenCalledWith(request.documentVersionId, request.parseRunId, f.context);
+ expect(f.semantics.readReady).toHaveBeenCalledWith(f.context, request.parseRunId, 1);
+ f.runs.readSaved.mockResolvedValue({ ...result, sourceBinding: { ...result.sourceBinding, original: { ...f.original.binding, parseRunId: 'other' } } } as never);
+ await expect(f.service.readForBrowser(request, f.context)).rejects.toThrow('BINDING_MISMATCH');
+ f.runs.readSaved.mockResolvedValue(result as never);
+ f.semantics.readReady.mockResolvedValueOnce(null);
+ await expect(f.service.readForBrowser(request, f.context)).rejects.toThrow('SEMANTIC_REVISION_NOT_FOUND');
+ f.parsing.inspectPublishedIdentity.mockRejectedValueOnce(new Error('SOURCE_REVOKED'));
+ await expect(f.service.readForBrowser(request, f.context)).rejects.toThrow('SOURCE_REVOKED');
 });

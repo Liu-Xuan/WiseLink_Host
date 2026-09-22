@@ -239,6 +239,27 @@ export class DocumentParsingHostedService {
       projection: buildMineruReadingProjection(loaded.document, { documentVersionId, parseRunId: run.parseRunId }) };
   }
 
+  /** Read-side registry identity, not an object-store content-health check. */
+  async inspectPublishedIdentity(documentVersionId: string, parseRunId: string, context: ReadScope) {
+    const source = await this.authorizedSource(documentVersionId, context);
+    const run = await this.publishedRun(documentVersionId, parseRunId, context);
+    const binding = originalBinding(run);
+    const manifest = run.manifestArtifact!;
+    if (run.tenantId !== context.tenantId || run.documentVersionId !== documentVersionId || run.parseRunId !== parseRunId
+      || manifest.relativePath !== 'original/manifest.json' || manifest.role !== 'MANIFEST' || manifest.readback !== 'VERIFIED'
+      || !Number.isSafeInteger(binding.parseRevision) || binding.parseRevision < 1
+      || source.version.documentVersionId !== documentVersionId || run.sourceBinding.documentVersionId !== documentVersionId
+      || run.sourceBinding.documentId !== source.version.documentId || run.sourceBinding.familyId !== source.version.familyId
+      || source.family.familyId !== source.version.familyId
+      || binding.sourceArtifactId !== source.version.sourceArtifactId || binding.sourceArtifactId !== source.source.sourceArtifactId
+      || binding.sourceSha256 !== source.version.pdfSha256 || binding.sourceSha256 !== source.source.sha256
+      || binding.sourceByteLength !== source.version.byteLength || binding.sourceByteLength !== source.source.byteLength) {
+      throw documentParseError('DOCUMENT_PARSE_SOURCE_CHANGED');
+    }
+    await this.assertRead(documentVersionId, context);
+    return { familyId: source.family.familyId, binding };
+  }
+
   async loadPublished(documentVersionId: string, parseRunId: string, context: ReadScope) {
     await this.authorizedSource(documentVersionId, context);
     const run = await this.publishedRun(documentVersionId, parseRunId, context);

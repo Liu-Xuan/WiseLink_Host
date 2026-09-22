@@ -2,7 +2,7 @@
 
 ## 本批身份
 
-B系统性能工作树：`/private/tmp/wiselink-perf-b-activity-control-20260923`，分支`codex/perf-b-activity-control-20260923`；起点`ff46e1d98a96664b522277134c52bc1da2d21bb7`。当前3A.4活动控制轻量化、Reading控制来源权限补齐与活动STATUS截止时间收敛。独立源码/测试由B提交、Luna验收、主控选择性集成。本树不是最终集成/线上版本。
+B系统性能工作树：`/private/tmp/wiselink-perf-b-saved-reading-20260923`，分支`codex/perf-b-saved-reading-20260923`；起点`d051d2781010ec0d5ef2cc8bf3acc7ab13864903`。当前2D.1已保存活动/解读浏览器读取使用精确登记身份，不再下载整原文/semanticmap。独立源码/测试由B提交、Luna验收、主控选择性集成。本树不是最终集成/线上版本。
 
 ## 完整路线状态（2026-09-23）
 
@@ -13,8 +13,8 @@ B系统性能工作树：`/private/tmp/wiselink-perf-b-activity-control-20260923
 | 2B.1 | d58615c5含PDF模块与原件并行准备，Luna已做本地独立验收；真实浏览器目标页/高亮证据仍未齐。 |
 | 2B.2 | 当前本地受控8MiB样本3次打开：基线3次下载24MiB，新实现1次下载8MiB+2次fresh授权/登记核对。最多4条/单条16MiB/总32MiB/5分钟主动过期，同步工作最多2次；SHA/length匹配才复用，不缓存权限，URL仍组件拥有。ff46e1d98已获Luna独立4套118项及controller4项验收；仍待真实浏览器耗时/内存证据。 |
 | 2C | 3e0cc6074按帧合并/状态去重/销毁清理，Luna5套52项及构建通过。2C.2 bcccd815正文memo/稳定回调已获Luna 5套53项验收。2C.3 b2247dee7增量拓扑、标题刷新不重排/不丢拖动位置，6套57项已获Luna独立验收；2C.4a 8de759fb9导航/切视角捕获最新相机、立即保存导航历史已获Luna8套71项独立验收。2C.4b d0829db9c有限会话几何返回恢复已获Luna独立验收；B 6套54项与Luna不同集合6套63项并列，精确身份/工作/显示参数绑定。通用外部退出、真实交互计量仍需继续。 |
-| 2D | 后续依据实际阅读热点选择，未完成全范围验收。 |
-| 3A.1 | e7b6b6c04控制分派移出原文路径，5套43项与server构建通过，Luna本地验收通过；真实执行的重复内容校验尚保留；当前3A.4活动STATUS/CANCEL/CLAIM/HEARTBEAT/FAIL移到fresh普通来源授权后、不加载原文/semantic；Reading相同控制补齐普通来源授权，2套33项及MCP真实服务互通2项通过待Luna。 |
+| 2D | 当前2D.1：已保存活动/解读结果完整返回，fresh普通来源授权+精确published parse/source登记+指定semanticRevision窄查；5套59项、独立PG真实SQL/RLS1项通过，待Luna。目录/来源章节其余热点及真实耗时仍需核对。 |
+| 3A.1 | e7b6b6c04控制分派移出原文路径，5套43项与server构建通过，Luna本地验收通过；真实执行的重复内容校验尚保留；当前3A.4活动STATUS/CANCEL/CLAIM/HEARTBEAT/FAIL移到fresh普通来源授权后、不加载原文/semantic；Reading相同控制补齐普通来源授权，d051d2781的2套33项及MCP真实服务互通2项已获Luna独立验收。 |
 | 3A.2/3 | 81ea079ea已改pending优先、空闲窄查精确语义登记，Luna本地4套25项验收通过，真实SQL/RLS已通过。3A.3已按主控授权单写者修订consumer：新START需当前语义就绪，历史pending不替代；已就绪不等待索引，索引失败鲜活回读就绪，旧任务状态/恢复不阻断。b020437e1的98项Node及3套16项Jest已获Luna本地验收；c65d0aa10由Luna在主控授权的独立PG14.17实例实际执行1/1通过，JOIN/RLS/非owner角色/约束均验证；唯一临时实例已停止删除。 |
 | 3B | 原件/PDF/来源plan执行内复用与有限公平推进尚未交付。 |
 | 4 | A负责JobAid/OpenClaw/Overall/Wiki连续工作。A回报当前0c350f04c（含0ee/35a/47adb/301/60ec/786/0c350），Luna已本地验收；尚未集成/发布/Hosted全链验收；应取A的确切交付，不在B重写。 |
@@ -22,10 +22,10 @@ B系统性能工作树：`/private/tmp/wiselink-perf-b-activity-control-20260923
 
 ## 集成及边界
 
-主控2026-09-23回报：canonical仍b02395537；未执行统一集成、push、Host release或Skill install。其引用的上次线上确认release7687614542885374932/commit b023为旧记录，不是本轮新鲜回读。B旧修复aac9bd64与审查28d87908仍保留，需主控接受。B不得自行完成发布来填验证空缺。
+主控最新回报：已建/private/tmp/wiselink-integration-ab-20260923，A0c350f04+merge Bff46e1d9并补aac9产品/测试，41个staged路径、文档冲突已处理，已于本轮只读回读集成HEAD为e812421cb050aed0954ca3f6945159100155a301（tracked clean），推送/发布仍待精确证据。Luna已对准确HEAD0c350f04/MERGE_HEADff46e1d9组合16套203项、双端types/lint/build/precommit验证通过；这不是线上发布。旧release7687614542885374932/b023只属历史。B旧修复aac9bd64与审查28d87908仍保留，需主控接受。B不得自行完成发布来填验证空缺。
 
 主控尚未核验正常登录预览及可交付的已保存样本；不把旧URL、fixture或构造身份当业务验证。继续独立本地开发，与主控协调V/R。真实解析/翻译/评估仍需明确样本、预算和环境；不触发正式采用或AssessmentRun。
 
 ## 当前与随后
 
-3A.2真实SQL/RLS、3A.3和2C.2独立验收已完成；2C.3/2C.4a已获独立验收，2C.4b已独立验收，2B.2已独立验收；3A.4交付后继续2D读取热点、3B执行复用/公平持续推进及2C通用退出，不重复已通过检查，不忽略2B.2/2C/2D/3B。完整计划见OFFICIAL_CODEX_ROADMAP。Goal仅在全部要求证据齐备时关闭，不在子批交付时关闭。
+3A.2真实SQL/RLS、3A.3和2C.2独立验收已完成；2C.3/2C.4a已获独立验收，2C.4b已独立验收，2B.2已独立验收；3A.4已独立验收；2D.1交付后继续读取热点、3B执行复用/公平持续推进及2C通用退出，不重复已通过检查，不忽略2B.2/2C/2D/3B。完整计划见OFFICIAL_CODEX_ROADMAP。Goal仅在全部要求证据齐备时关闭，不在子批交付时关闭。

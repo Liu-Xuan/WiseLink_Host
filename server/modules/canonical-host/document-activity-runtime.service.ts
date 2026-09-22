@@ -138,19 +138,17 @@ export class DocumentActivityRuntimeService {
   async readForBrowser(input: DocumentActivityReadingRequest, context: SourceContext): Promise<DocumentActivityReadingResponse> {
     id.parse(input.documentVersionId); id.parse(input.parseRunId);
     if (input.candidateRevision !== undefined) z.number().int().positive().parse(input.candidateRevision);
-    const loaded = await this.reader.readDocumentOriginal(input.documentVersionId, input.parseRunId, context);
-    const familyId = loaded.run.sourceBinding.familyId;
-    if (!familyId) throw new Error('DOCUMENT_ACTIVITY_FAMILY_NOT_FOUND');
+    const identity = await this.parsing.inspectPublishedIdentity(input.documentVersionId, input.parseRunId, context);
     const result = await this.runs.readSaved({ ...context, documentVersionId: input.documentVersionId }, input.parseRunId, input.candidateRevision);
     if (result) {
-      if (!isDeepStrictEqual(result.sourceBinding.original, loaded.original.binding) ||
+      if (!isDeepStrictEqual(result.sourceBinding.original, identity.binding) ||
         (input.candidateRevision !== undefined && result.candidateRevision !== input.candidateRevision))
         throw new Error('DOCUMENT_ACTIVITY_RESULT_BINDING_MISMATCH');
-      const map = await this.semantics.read({ ...context, documentVersionId: input.documentVersionId }, loaded, result.sourceBinding.semanticRevision);
-      if (!map || map.semanticRevision !== result.sourceBinding.semanticRevision) throw new Error('DOCUMENT_SEMANTIC_REVISION_NOT_FOUND');
+      const ready = await this.semantics.readReady({ ...context, documentVersionId: input.documentVersionId }, input.parseRunId, result.sourceBinding.semanticRevision);
+      if (!ready || ready.semanticRevision !== result.sourceBinding.semanticRevision) throw new Error('DOCUMENT_SEMANTIC_REVISION_NOT_FOUND');
     }
     await this.parsing.status(input.documentVersionId, context);
-    return { familyId, binding: loaded.original.binding, candidate: result };
+    return { familyId: identity.familyId, binding: identity.binding, candidate: result };
   }
 
   private async load(documentVersionId: string, parseRunId: string, semanticRevision: number, context: SourceContext) {

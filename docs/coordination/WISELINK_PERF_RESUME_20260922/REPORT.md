@@ -497,3 +497,18 @@ Activity STATUS在来源授权后调用已有expire（仅QUEUED/RUNNING且deadli
 反例：新控制/撤权/截止时间测试在基线15失败18通过；修复后2套33项全通过，覆盖五类Activity控制零original/semantic读、fresh ACL、拒绝后零控制写、READ/SAVE原文失败、fresh状态回读及Reading普通来源权限。server types/两个生产文件ESLint/server build通过。额外实际Host Runtime+MCP+本地构造模型服务互通2项通过；该夹具原先漏注入已存在documentReading服务，在到达业务动作前工具目录校验失败，已补齐测试依赖并给未来deadline fixture补expire。未改生产MCP工具清单或模型契约，未调用真实模型/生产平台。构建仅静态运行资产检查，不是Hosted运行验收。
 
 前批ff46e1d98原件复用已获Luna独立4套118项（含新增并发hash项）、controller4项、双端types、生产lint/build/precommit通过；真实授权网络延迟、浏览器heap/p95仍未取得。主控当前已回读为idle且尚未提供新集成/发布证据，已请求安排统一集成及授权预览样本，B继续独立2D/3B工作。
+
+
+## 2026-09-23 B：2D.1 已保存活动/解读窄读
+
+基线 `d051d2781010ec0d5ef2cc8bf3acc7ab13864903`，独立树 `/private/tmp/wiselink-perf-b-saved-reading-20260923`。实际热点是Activity/Reading readForBrowser即使只展示已保存结果也loadPublished下载整个original，再读semantic map。此批仅改变这两个浏览器结果路径：先fresh普通源ACL与tenant目录读取，按准确parseRunId读取PUBLISHED/VERIFIED MANIFEST登记，并核对DV/tenant/document/family/sourceArtifact/sha/byteLength绑定，再读完整saved JSON并严格比对其original binding/指定candidate或reading revision。语义查询用readReady的可选精确revision，JOIN已发布parse/manifest/parseRevision，不把历史请求替换为最新语义版本。最后保持普通来源权限复核，完整保存正文不裁剪、不改写、不代替新生成结果。
+
+边界：inspectPublishedIdentity及semantic readReady证明当前授权、持久登记关系；不下载对象、不证明当前对象存储可用或重新验证原文字节/semantic map内容。已有写入/保存验证与数据库版本约束保持。BEGIN/实际READ/SAVE/原文交付仍走原有实际bytes、semantic与manifest完整性校验。空候选也返回准确原件binding；不同工作/parse/source/semantic版本不回落当前版本。
+
+反例及验证：两个实际runtime browser反例在旧实现因STORAGE_UNAVAILABLE失败；新实现完整返回构造的长正文且original/semantic hydration计数均0，来源撤权、不同parse binding、缺失精确semantic仍拒绝。新增published identity服务测试覆盖双ACL、精确历史parse、tenant/状态/manifest/source摘要/字节/artifact/family不一致。最终5套59项（activity-runtime、reading-runtime、published-identity、source-idle、translation-runtime）通过，server types/5生产文件ESLint（两条既有unused-disable warning，无error）/server build通过。
+
+实际PG证据：新建仅本轮独立实例 `/private/tmp/wiselink-saved-reading-pg.0a77go3j`，loopback63135、专用wiselink_document_attempt_test；运行扩展的document-translation-attempt-postgres.test.mjs 1/1通过，历史semanticRevision=1与latest=2明确区分，缺失revision返回null、0拒绝，同时保留真实JOIN/RLS/非owner NOSUPERUSER NOBYPASSRLS角色和CHECK/immutable策略检查。日志 `/private/tmp/wiselink-saved-reading-pg.log`。实例已fast stop并仅删除创建目录，没有访问共享/生产库。该结果不是线上浏览器p95。
+
+协作更新：Luna已独立通过3A.4 d051d2781。主控已创建AB集成树，Luna对HEAD0c350f04/MERGE_HEADff46e1d9的41个staged路径组合16套203项、双端types/lint/build/precommit通过；仍未回报实际发布SHA/授权预览样本。本2D.1不修改或阻塞该固定截点。
+
+后续只读回读：集成树HEAD已为e812421cb050aed0954ca3f6945159100155a301，tracked clean仅node_modules链接；这是集成提交证据，尚不代表Host发布或授权样本验收。
