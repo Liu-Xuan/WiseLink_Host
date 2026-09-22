@@ -140,7 +140,8 @@ test('cross Matter references save exact lineage and reauthorize scopes and root
       const savedA = await save(fenceA, first.reserved.task, `A has an unverified target condition. [[${rootRef}]]`, 'save-A',
         { overview: `Synthetic overview with a condition requiring review. [[${rootRef}]]` });
       owner.queryMetrics.overviewSaveQueries = 0;
-      const withoutCorrections = await owner.workingService.readWorkingRevision(a.matter.matterId, savedA.workRevisionRef, owner.actor);
+      const withoutCorrections = await profileSavedRead(owner, 'one-member-no-corrections', () =>
+        owner.workingService.readWorkingRevision(a.matter.matterId, savedA.workRevisionRef, owner.actor));
       assert.deepEqual(withoutCorrections.overviewCorrectionNotices ?? [], []);
       assert.equal(owner.queryMetrics.overviewSaveQueries, 0, 'no saved-metadata query when there are no correction notices');
       const referenceA = { matterId: a.matter.matterId, workRef: savedA.workRevisionRef, issueKey: 'conditions', purpose: 'Compare A with B' };
@@ -247,6 +248,8 @@ test('cross Matter references save exact lineage and reauthorize scopes and root
       assert.equal(continuedStatus.audit.referenceWorks[0].correctionNotices[0].attemptRef,
         sourceCorrection.target.attemptRef, 'status preserves the inherited reference notice delivered to this attempt');
       const readCurrentB = () => owner.runtime(() => service.readCurrentWork({tenantId: 'tenant-A', actorUserId: 'actor-A', matterId: b.matter.matterId, authorizeReferenceMatter}));
+      if (process.env.WL_PROFILE_SAVED_READS === '1') await profileSavedRead(owner, 'one-member-with-prior-result', () =>
+        owner.workingService.readWorkingRevision(b.matter.matterId, savedB.workRevisionRef, owner.actor));
       assert.equal((await readCurrentB()).workRef, savedB.workRevisionRef);
       allowed.delete(a.matter.matterId);
       await assert.rejects(readCurrentB(), /TEST_SERVICE_SCOPE_REVOKED/u);
@@ -337,7 +340,8 @@ test('cross Matter references save exact lineage and reauthorize scopes and root
       const nextOverview = await start({ ...await requestFor(a.matter.matterId, 'overview-review-newer-A'),
         overviewCorrection: { ...overviewPurpose, expectedWorkRef: overviewResaved.workRevisionRef } });
       owner.queryMetrics.overviewSaveQueries = 0;
-      const exactOldA = await owner.workingService.readWorkingRevision(a.matter.matterId, savedA.workRevisionRef, owner.actor);
+      const exactOldA = await profileSavedRead(owner, 'one-member-three-overview-corrections', () =>
+        owner.workingService.readWorkingRevision(a.matter.matterId, savedA.workRevisionRef, owner.actor));
       assert.equal(exactOldA.overviewCorrectionNotices.length, 3);
       assert.equal(owner.queryMetrics.overviewSaveQueries, 1, 'all three correction attempts resolve saved metadata in one query');
       assert.ok(exactOldA.overviewCorrectionNotices.every(notice => notice.targetWorkRef === savedA.workRevisionRef),
@@ -1878,13 +1882,35 @@ async function seedDocument(sql, input) {
   `;
 }
 
+/** Optional local diagnostic: statement shapes only, never parameter values or body. */
+async function profileSavedRead(owner, name, operation) {
+  if (process.env.WL_PROFILE_SAVED_READS !== '1') return operation();
+  const start = owner.queryMetrics.queries.length;
+  const started = performance.now();
+  const result = await operation();
+  const elapsedMs = performance.now() - started;
+  const queries = owner.queryMetrics.queries.slice(start);
+  const statements = queries.map(query => ({
+    tables: [...new Set([...query.matchAll(/\b(?:from|join)\s+"?([a-z_][a-z_0-9]*)"?/giu)]
+      .map(match => match[1]).filter(table => !['jsonb_array_elements_text', 'lateral'].includes(table.toLowerCase())))],
+    sourceOwnershipCheck: query.includes('engineering_matter_work_item_owned_by_actor'),
+    originalOwnershipCheck: query.includes('engineering_matter_document_owned_by_actor'),
+    overviewProvenance: query.includes('submittedOverview'),
+    correctionNotices: query.includes("'ENGINEERING_ISSUE_CORRECTION'"),
+    overviewCorrectionNotices: query.includes("'ENGINEERING_OVERVIEW_CORRECTION'"),
+  }));
+  console.log('SAVED_READ_PROFILE', JSON.stringify({ name, elapsedMs, statementCount: statements.length, statements }));
+  return result;
+}
+
 async function reserveActorService(actorId, tenantId = 'tenant-A') {
   const connection = postgres(databaseUrl, { max: 1, onnotice: () => {} });
   try {
     await connection.unsafe('SET ROLE authenticated');
     await connection`SELECT set_config('app.user_id', ${actorId}, false)`;
-    const queryMetrics = { overviewSaveQueries: 0 };
+    const queryMetrics = { overviewSaveQueries: 0, queries: [] };
     const db = drizzle(connection, { logger: { logQuery(query) {
+      if (process.env.WL_PROFILE_SAVED_READS === '1') queryMetrics.queries.push(query);
       const selection = query.slice(0, query.indexOf(' from '));
       if (selection.includes('"matter_work_revision_id"') && selection.includes('"working_revision"')
           && !selection.includes('"request_id"') && query.includes('"action_attempt_id"')

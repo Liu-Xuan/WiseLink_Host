@@ -2,7 +2,7 @@
 
 ## 本批身份
 
-B证据树：`/private/tmp/wiselink-perf-b-knowledge-interaction-evidence-20260923`，本批父提交`c32853129ff303a1e276e8f6d48c515e555368a0`。f24已发布且实际资产SHA吻合。三次冷目录4.175–4.724秒、正文3.723–4.310秒，目标未闭合；图谱过期正常重读，三次新鲜期返回来源请求0。完整匿名证据见F24_READ_RUNTIME_EVIDENCE_20260923.json。展开长任务已用五组完整trace定位：四次accessibility SerializeLifecycleStage占Commit主要部分（47–78ms），重复AX快照之外仍存在；临时contain无收益已恢复，不删正文/关闭无障碍。见KNOWLEDGE_ACCESSIBILITY_TRACE_20260923.json。服务端调用定位与Hosted/后台竞争继续，Goal active。
+B查询剖析树：`/private/tmp/wiselink-perf-b-read-query-profile-20260923`，基线c30b180a1。真实隔离PG得到保存正文17/22/19条SQL（无更正/历史引用/3综合更正）。两次事项快照共6条，是下一批合并查询的具体切入点；保留完整links/materials形状、授权和revision检查。可选诊断及匿名顺序证据见SAVED_READ_QUERY_PROFILE_20260923.json；cross-Matter1/1实际通过，临时实例已清理。f24线上冷读与无障碍序列化结论仍保留，Hosted/后台竞争继续，Goal active。
 
 ## 完整路线状态（2026-09-23）
 

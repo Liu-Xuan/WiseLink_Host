@@ -767,3 +767,13 @@ Main回执：ef258 release7688432648880098235 finished updated_at=1790103060000�
 - 实际阅读区高446.2px、scrollHeight19714px，自身无filter/backdrop；仅顶栏有blur(20px)。第三组临时对阅读区应用contain:layout paint，Commit仍54.495–71.058ms，未证明改善。已完整恢复原inline style=null、探针undefined、details closed，不提交无效CSS。
 - 第四组cc详细trace：最慢Commit85.228ms中DoUpdateLayers1.052ms、WaitForCommitCompletion0.489ms，主要耗时在其后。第五组开启accessibility分类，四次SerializeLifecycleStage 50.526/53.543/77.924/47.467ms，分别处于55.610/63.253/86.201/51.803ms的Commit中；直接定位到无障碍树序列化占主要部分，最慢项thread duration66.025ms，不只是线程调度等待。
 - 这是小规模诊断，不能替代真实用户p95；先前40次交互数据保留测量范围。无障碍能力属于受支持功能，不关闭它、不删正文来报达标。下一步需控制不同浏览器/无障碍场景并验证有明确收益且保持全文与键盘可达的方案；当前不以React memo或layout containment作未经证明的修复。全部trace已结束，未发起解析/翻译/评估，整体Goal active。
+
+
+## B 保存正文真实SQL往返剖析（2026-09-23）
+
+- 独立树`/private/tmp/wiselink-perf-b-read-query-profile-20260923`，基线c30b180a1。既有cross-Matter PostgreSQL测试加入可选`WL_PROFILE_SAVED_READS=1`诊断，默认不记录查询、不额外读取；只输出表名/查询用途，不输出参数、正文或真实业务ID。产品代码未改变。
+- 在全新localhost:55443 PostgreSQL14实例执行真实Drizzle服务/Repository/actor RLS流程。一个成员无更正保存正文17条查询；一个成员且保留历史引用22条；一个成员且3项overview更正19条。完整有序语句分类见SAVED_READ_QUERY_PROFILE_20260923.json，不把权限函数内部执行次数算成已测独立语句。
+- 无更正路径中，两次事项快照各3条（matter/revision JOIN、work-item links、materials），共6条；当前与保存成员分别执行fresh object ACL、tenant projection、source identity各3条，共6条；准确工作行、来源ownership、overview provenance、issue correction、overview correction共5条。必须保留当前/历史授权与版本稳定性，不能仅为了计数删检查。
+- 下一实现切入点是事项快照读的查询合并：保留同一tenant/RLS、ACTIVE/revision/changeKind校验、完整links/materials及持久化形状校验，减少往返；不把第二次确认简单改成无关系校验的revision指针读取。当前17/22/19是实现前基准，线上3–4秒的阶段占比仍未独立测得。
+- `ENGINEERING_MATTER_TEST_DATABASE_URL=postgres://<local-user>@127.0.0.1:55443/wiselink_engineering_matter_test WL_PROFILE_SAVED_READS=1 node --test --test-name-pattern='cross Matter references' test/node/engineering-matter-postgres.test.mjs`实际1/1通过、0skip，覆盖原有精确引用/撤权/更正场景。首次分类把LATERAL误列为表且document ownership函数名不匹配，修正诊断后重跑通过；最终记录来自修正后的完整运行。ESLint通过，正常precommit在提交时执行。
+- 实例已pg_ctl fast停止，确认pid不存在后仅删除本批数据目录；日志保留`/private/tmp/wiselink-read-query-profile-test.log`及对应init/server/lint日志。没有连接生产或发起模型业务。Goal active。
