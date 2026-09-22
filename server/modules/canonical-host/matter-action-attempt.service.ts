@@ -1,3 +1,5 @@
+import { MATTER_ACTIVITY_ACTIVE_STATUSES, type MatterAssessmentActivityPage, type MatterAssessmentActivityQuery } from '@shared/matter-assessment-activity.interface';
+import { activityCursor, readActivityCursor, projectMatterActivity } from './matter-assessment-activity';
 import type { EngineeringMatterWorkingRevisionCommand, EngineeringMatterWorkingInputBinding } from '@shared/matter-working.interface';
 import { addMatterDeliveredEvidence, buildMatterJobAidTask, MATTER_JOBAID_TASK_SCHEMA, matterJobAidSourceRegistry, type MatterIssueCorrectionPurpose, type MatterOverviewCorrectionPurpose } from './matter-jobaid-task';
 import { materializeMatterJobAidCommand } from './matter-jobaid-save';
@@ -633,6 +635,61 @@ export class MatterActionAttemptService {
 
   readForBrowser(input: MatterAttemptScope & { attemptRef: string }, actor: CanonicalHostActor) {
     return this.authorized(input, (executor, queue) => this.scopedRow(executor, queue, input, input.attemptRef), actor);
+  }
+
+  /** Read-only browser projection, under the same native identity and frozen-source authorization as STATUS. */
+  readActivityForBrowser(scope: MatterAttemptScope, query: MatterAssessmentActivityQuery,
+    actor: CanonicalHostActor): Promise<MatterAssessmentActivityPage> {
+    const cursor = readActivityCursor(scope, query);
+    return this.authorized(scope, async (executor, queue) => {
+      const empty: MatterAssessmentActivityPage = {
+        matterId: scope.matterId, selection: query.workRef ? 'EXACT_WORK' : query.attemptRef ? 'EXACT_ATTEMPT' : 'CURRENT',
+        workRef: query.workRef ?? null, candidateOnly: true, attempt: null, items: [],
+        omittedEarlierCount: 0, unknownOmittedCount: 0, malformedCount: 0,
+        duplicateOmittedCount: 0, error: null, nextCursor: null, hasMore: false,
+      };
+      let ref = cursor?.attemptRef ?? query.attemptRef;
+      const whereScope = and(eq(actionAttempt.tenantId, scope.tenantId),
+        eq(actionAttempt.actorUserId, scope.actorUserId), eq(actionAttempt.matterId, scope.matterId),
+        eq(actionAttempt.subjectKind, 'ENGINEERING_MATTER'),
+        eq(actionAttempt.actionType, 'OPENCLAW_MATTER_ASSESSMENT'),
+        eq(actionAttempt.requestOrigin, ACTION_ATTEMPT_REQUEST_ORIGIN));
+      if (query.workRef) {
+        const revision = await this.working.readByRef({ ...scope, workRef: query.workRef }, executor.database);
+        if (!revision) throw failure('ENGINEERING_MATTER_WORK_NOT_FOUND', 404);
+        await executor.authorizeRuntimeInputs({ ...scope, basedOnMatterRevisionId: revision.basedOnMatterRevisionId });
+        if (!revision.source || !('kind' in revision.source) || revision.source.kind !== 'ENGINEERING_MATTER') {
+          if (cursor) throw failure('MATTER_ACTIVITY_CURSOR_INVALID', 400);
+          return empty;
+        }
+        const [associated] = await executor.database.select({ ref: actionAttempt.operationRef }).from(actionAttempt)
+          .where(and(whereScope, eq(actionAttempt.attemptId, revision.source.actionAttemptId))).limit(1);
+        if (!associated?.ref) throw failure('ACTION_ATTEMPT_NOT_FOUND', 404);
+        if (ref && ref !== associated.ref) throw failure('MATTER_ACTIVITY_CURSOR_INVALID', 400);
+        ref = associated.ref;
+      }
+      if (!ref) {
+        const select = (active: boolean) => executor.database.select({ ref: actionAttempt.operationRef }).from(actionAttempt)
+          .where(and(whereScope, ...(active ? [inArray(actionAttempt.status, [...MATTER_ACTIVITY_ACTIVE_STATUSES])] : [])))
+          .orderBy(desc(actionAttempt.createdAt), desc(actionAttempt.attemptId)).limit(1);
+        const [active] = await select(true);
+        const selected = active ?? (await select(false))[0];
+        if (selected && !selected.ref) throw failure('ACTION_ATTEMPT_IDENTITY_INVALID');
+        ref = selected?.ref ?? undefined;
+      }
+      if (!ref) return empty;
+      const row = await this.scopedRow(executor, queue, scope, ref);
+      const task = checkedTask(row);
+      if (row.actionType !== 'OPENCLAW_MATTER_ASSESSMENT') throw failure('ACTION_ATTEMPT_NOT_FOUND', 404);
+      const { nextOffset, ...page } = projectMatterActivity(row.reviewActivityJson, cursor?.offset ?? 0, query.limit ?? 50);
+      return { ...empty, ...page,
+        attempt: { attemptRef: ref, status: row.status,
+          active: MATTER_ACTIVITY_ACTIVE_STATUSES.some(status => status === row.status),
+          matterRevisionId: task.subject.matterRevisionId, baseWorkingRevision: task.baseRevision,
+          inputCount: task.workingBasis.inputs.length },
+        nextCursor: nextOffset === null ? null : activityCursor(scope, query, { attemptRef: ref, offset: nextOffset }),
+      };
+    }, actor);
   }
 
   async claim(

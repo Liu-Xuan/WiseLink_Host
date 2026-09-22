@@ -11,9 +11,11 @@ import type { EngineeringMatterCatalogEntry } from '@shared/api.interface';
 import type { SuiteGraphReadingState } from '../../client/src/pages/RelationGraphPage/suite-graph-return';
 const {JSDOM} = require('jsdom');
 let canvasProps: SuiteGraphCanvasProps, latest: SuiteGraphReadingState;
+let mockCurrentLayout: import('../../client/src/pages/RelationGraphPage/suite-graph-layout-memory').SuiteGraphLayoutSnapshot | null = null;
+let mockCurrentViewport: SuiteGraphReadingState['viewport'] | null = null;
 jest.mock('../../client/src/pages/RelationGraphPage/SuiteGraphCanvas', () => {
  const React = jest.requireActual<typeof import('react')>('react');
- return {__esModule:true, default:React.forwardRef((_props: SuiteGraphCanvasProps, _ref) => {canvasProps=_props; return null;})};
+ return {__esModule:true, default:React.forwardRef((_props: SuiteGraphCanvasProps, _ref) => {canvasProps=_props; React.useImperativeHandle(_ref, () => ({ getViewport: () => mockCurrentViewport, getLayout: () => mockCurrentLayout })); return null;})};
 });
 jest.mock('@client/src/components/ui/button', () => ({Button: ({children,onClick,disabled}: {children:ReactNode;onClick?:()=>void;disabled?:boolean}) => createElement('button',{onClick,disabled},children)}));
 jest.mock('../../client/src/pages/RelationGraphPage/SuiteGraphKnowledgePanel', () => ({__esModule:true,default:()=>null}));
@@ -26,7 +28,7 @@ function Wrapper() {
 let root:Root, container:HTMLDivElement,dom:{window:Window&typeof globalThis};
 beforeAll(()=>{dom=new JSDOM('<body/>');Object.assign(globalThis,{window:dom.window,document:dom.window.document,IS_REACT_ACT_ENVIRONMENT:true});});
 afterAll(()=>dom.window.close());
-beforeEach(()=>{container=document.createElement('div');root=createRoot(container);});
+beforeEach(()=>{mockCurrentViewport=null;mockCurrentLayout=null;container=document.createElement('div');root=createRoot(container);});
 afterEach(()=>act(()=>root.unmount()));
 async function click(text:string){const button=[...container.querySelectorAll('button')].find(b=>b.textContent===text)!;await act(async()=>button.dispatchEvent(new dom.window.MouseEvent('click',{bubbles:true})));}
 it('keeps the initial URL camera and restores each perspective across pending data',async()=>{
@@ -62,3 +64,37 @@ it('keeps the reading thread on the exact primary source path', async () => {
 });
 
 jest.mock('../../client/src/pages/RelationGraphPage/suite-matter-graph-page.css', () => ({}));
+
+it('captures a pending camera before building a navigation return and before switching perspectives', async () => {
+ let openedCamera: SuiteGraphReadingState['viewport'];
+ await act(async () => root.render(createElement(SuiteMatterGraphView, {
+  read, revision: data.working.current, availablePerspectives: ['matter', 'documents'],
+  initialState: { perspective: 'matter', viewport: cameraA },
+  onStateChange: state => { latest = state; },
+  onOpenWiki: () => { openedCamera = latest.viewport; },
+ })));
+ mockCurrentViewport = cameraB; // Real core moved but onViewport/RAF has not run.
+ await click('测试事项：软件标准转换与一致性核查');
+ expect(openedCamera).toEqual(cameraB);
+ await click('工程文档');
+ mockCurrentViewport = null;
+ await click('事项图谱');
+ expect(canvasProps.initialViewport).toEqual(cameraB);
+});
+
+it('carries layout through navigation and remount only within the exact authorized scope', async () => {
+ const saved = { nodes: [{ id: 'node-a', base: { x: 0, y: 0 }, position: { x: 60, y: 90 }, w: 100, h: 40, baseW: 100, baseH: 40 }] };
+ const props = { read, revision: data.working.current, layoutScope: 'session1/matter/work1',
+  availablePerspectives: ['matter' as const], onStateChange: (state: SuiteGraphReadingState) => { latest = state; }, onOpenWiki: () => {} };
+ await act(async () => root.render(createElement(SuiteMatterGraphView, props)));
+ mockCurrentLayout = saved;
+ await click('测试事项：软件标准转换与一致性核查');
+ const state = latest;
+ expect(state.layoutSnapshot).toMatch(/^gl-/);
+ await act(async () => root.unmount());
+ await act(async () => { root=createRoot(container); root.render(createElement(SuiteMatterGraphView, { ...props, initialState: state })); });
+ expect(canvasProps.initialLayout).toEqual(saved);
+ await act(async () => root.unmount());
+ await act(async () => { root=createRoot(container); const otherScope = { ...props, layoutScope: 'session1/matter/work2', initialState: state }; root.render(createElement(SuiteMatterGraphView, otherScope)); });
+ expect(canvasProps.initialLayout).toBeUndefined();
+});

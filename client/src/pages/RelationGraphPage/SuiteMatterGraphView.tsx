@@ -1,3 +1,4 @@
+import { readGraphLayout, saveGraphLayout } from './suite-graph-layout-memory';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import {
   ArrowRight,
@@ -67,7 +68,8 @@ export interface SuiteMatterGraphViewProps {
   onOpenEventTimeline?: (event: SuiteGraphTimelineEvent) => void;
   onNodeSelect?: (target: SuiteMatterGraphTarget | null) => void;
   initialState?: SuiteGraphReadingState;
-  onStateChange?: (state: SuiteGraphReadingState) => void;
+  layoutScope?: string;
+  onStateChange?: (state: SuiteGraphReadingState, beforeNavigation?: boolean) => void;
   availablePerspectives?: SuiteMatterGraphPerspective[];
   perspectiveNotice?: string | null;
   perspectiveError?: boolean;
@@ -154,17 +156,18 @@ export default function SuiteMatterGraphView({
   revision,
   perspective: controlledPerspective,
   onPerspectiveChange,
-  onLocateEvidence,
-  onOpenWiki,
-  onOpenProcess,
-  onOpenTarget,
+  onLocateEvidence: onLocateEvidenceCallback,
+  onOpenWiki: onOpenWikiCallback,
+  onOpenProcess: onOpenProcessCallback,
+  onOpenTarget: onOpenTargetCallback,
   timelineEvents = [],
   timelineSources = [],
   timelineLoading = false,
   onExpandTimelineSource,
-  onOpenEventTimeline,
+  onOpenEventTimeline: onOpenEventTimelineCallback,
   onNodeSelect,
   initialState,
+  layoutScope,
   onStateChange,
   availablePerspectives = ['matter'],
   perspectiveNotice,
@@ -217,6 +220,9 @@ export default function SuiteMatterGraphView({
     ),
   );
 
+  const layoutByPerspective = useRef(new Map<string, string>(initialState?.layoutSnapshot
+    ? [[perspective, initialState.layoutSnapshot]] : []));
+
   const graph: SuiteGraphMatter = useMemo(() => read.graph, [read.graph]);
   const effectiveHiddenGroups = useMemo(
     () => focusedGroupKey
@@ -267,39 +273,64 @@ export default function SuiteMatterGraphView({
     setViewport(viewportByPerspective.current.get(perspective));
   }, [perspective]);
 
-  useEffect(() => {
-    onStateChange?.({
-      selectedId: selectedId ?? undefined,
-      hiddenGroups: effectiveHiddenGroups,
-      page,
-      density,
-      relationMode,
-      layoutMode,
-      perspective,
-      viewport: viewportByPerspective.current.get(perspective),
-      eventId: selectedEventId ?? undefined,
-      eventPins: selectedEvent?.pins
-        ?? (selectedEventId === initialState?.eventId
-          ? initialState.eventPins
-          : undefined),
-      wikiTab,
-    });
-  }, [
-    density,
-    effectiveHiddenGroups,
-    layoutMode,
-    onStateChange,
+  const geometryScope = layoutScope ? JSON.stringify([layoutScope, perspective, layoutMode,
+    density, page, [...effectiveHiddenGroups].sort(), relationMode]) : null;
+  const layoutKey = layoutByPerspective.current.get(perspective);
+  const savedLayout = geometryScope ? readGraphLayout(layoutKey, geometryScope) : undefined;
+
+  const readingState = (): SuiteGraphReadingState => ({
+    selectedId: selectedId ?? undefined,
+    layoutSnapshot: geometryScope && readGraphLayout(layoutByPerspective.current.get(perspective), geometryScope)
+      ? layoutByPerspective.current.get(perspective) : undefined,
+    hiddenGroups: effectiveHiddenGroups,
     page,
-    perspective,
+    density,
     relationMode,
-    selectedEventId,
-    selectedEvent,
-    selectedId,
-    viewport,
+    layoutMode,
+    perspective,
+    viewport: viewportByPerspective.current.get(perspective),
+    eventId: selectedEventId ?? undefined,
+    eventPins: selectedEvent?.pins
+      ?? (selectedEventId === initialState?.eventId
+        ? initialState.eventPins
+        : undefined),
     wikiTab,
+  });
+
+  useEffect(() => { onStateChange?.(readingState()); }, [
+    density, effectiveHiddenGroups, layoutMode, onStateChange, page, perspective,
+    relationMode, selectedEventId, selectedEvent, selectedId, viewport, wikiTab,
   ]);
 
+  const captureCamera = () => {
+    const current = canvasRef.current?.getViewport();
+    if (current) viewportByPerspective.current.set(perspective, current);
+    const layout = canvasRef.current?.getLayout();
+    if (geometryScope && layout) {
+      const key = saveGraphLayout(geometryScope, layout, layoutByPerspective.current.get(perspective));
+      if (key) layoutByPerspective.current.set(perspective, key);
+      else layoutByPerspective.current.delete(perspective);
+    }
+  };
+  const beforeNavigation = () => {
+    captureCamera();
+    // The caller builds the exact return route synchronously; do not wait for React/RAF.
+    onStateChange?.(readingState(), true);
+  };
+  const onLocateEvidence = onLocateEvidenceCallback ? (evidence: DocumentAssessmentEvidence) => {
+    beforeNavigation(); onLocateEvidenceCallback(evidence);
+  } : undefined;
+  const onOpenWiki = onOpenWikiCallback ? () => { beforeNavigation(); onOpenWikiCallback(); } : undefined;
+  const onOpenProcess = onOpenProcessCallback ? () => { beforeNavigation(); onOpenProcessCallback(); } : undefined;
+  const onOpenTarget = onOpenTargetCallback ? (target: SuiteMatterGraphTarget) => {
+    beforeNavigation(); onOpenTargetCallback(target);
+  } : undefined;
+  const onOpenEventTimeline = onOpenEventTimelineCallback ? (event: SuiteGraphTimelineEvent) => {
+    beforeNavigation(); onOpenEventTimelineCallback(event);
+  } : undefined;
+
   const setPerspective = (next: SuiteMatterGraphPerspective) => {
+    captureCamera();
     setPage(0);
     setSelectedId(null);
     setSelectedEventId(null);
@@ -556,6 +587,7 @@ export default function SuiteMatterGraphView({
                 key={perspective}
                 ref={canvasRef}
                 presentation={presentation}
+                initialLayout={savedLayout}
                 initialViewport={viewportByPerspective.current.get(perspective)}
                 selectedId={selectedId ?? undefined}
                 focusGroupKey={focusedGroupKey}

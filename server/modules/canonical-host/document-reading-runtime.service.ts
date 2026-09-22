@@ -60,12 +60,13 @@ export class DocumentReadingRuntimeService {
           manifestSha256: source.artifact.sha256, expectedRevision: input.expectedRevision });
         return summary(row);
       }
-      // RLS and the ordinary Reader validate the original again for every operation.
+      // RLS and the run registry validate ownership again. Control operations
+      // stop here and manage lifecycle only, without taking original bytes,
+      // semantic maps or source plans. Their success proves task control, not
+      // that the original is still downloadable or byte-correct; a historical
+      // run keeps the exact source/parse registration recorded at BEGIN.
       const row = await this.runs.readRun(scope, input.runRef);
       if (!row) throw new Error('DOCUMENT_READING_RUN_NOT_FOUND');
-      const source = await this.load(scope.documentVersionId, row.parseRunId, row.semanticRevision, context);
-      if (source.artifact.sha256 !== row.manifestSha256 || source.loaded.original.binding.parseRevision !== row.parseRevision)
-        throw new Error('DOCUMENT_READING_ORIGINAL_CHANGED');
       if (input.action === 'READING_STATUS') {
         await this.parsing.status(scope.documentVersionId, context);
         // A consumer with an uncertain checkpoint only polls STATUS and never
@@ -91,6 +92,13 @@ export class DocumentReadingRuntimeService {
         await this.runs.fail(scope, input, input.errorCode);
         return summary((await this.runs.readRun(scope, input.runRef))!);
       }
+      // Only READING_READ and READING_SAVE reach here. Content health is proven
+      // where bytes are actually consumed: reload the exact registered version
+      // and re-check integrity before any delivery or save. This comparison is a
+      // binding check on registered fields, not a byte verification.
+      const source = await this.load(scope.documentVersionId, row.parseRunId, row.semanticRevision, context);
+      if (source.artifact.sha256 !== row.manifestSha256 || source.loaded.original.binding.parseRevision !== row.parseRevision)
+        throw new Error('DOCUMENT_READING_ORIGINAL_CHANGED');
       const plan = buildTranslationSourcePlan({ documentVersionId: scope.documentVersionId, packageId: row.parseRunId,
         parsedArtifact: { storeRole: 'UnifiedArtifactStoreCandidate', ref: `document-original://${encodeURIComponent(scope.documentVersionId)}/${encodeURIComponent(row.parseRunId)}`,
           sha256: source.artifact.sha256, byteLength: source.artifact.byteLength, mediaType: 'application/json' },

@@ -18,7 +18,9 @@ function fixture() {
     leaseToken: '0f23e82b-2b1e-46ba-b62b-9e9a2ec62ca0', leaseGeneration: 1 };
   const authorization = { authorizeDocumentWork: jest.fn().mockResolvedValue(scope) };
   const actors = { withActorScope: jest.fn(async (_actor, fn) => fn()) };
-  const reader = { readDocumentOriginal: jest.fn().mockResolvedValue(loaded) };
+  const reader = { readDocumentOriginal: jest.fn().mockResolvedValue(loaded),
+    readSourcePackage: jest.fn(), readAllSourceUnits: jest.fn(), inspectSourcePackage: jest.fn(),
+    readStructuredSource: jest.fn(), readback: jest.fn(), persistAndReadback: jest.fn() };
   const semantics = { read: jest.fn().mockResolvedValue(map), ensure: jest.fn() };
   const parsing = { status: jest.fn().mockResolvedValue({}) };
   const runs = { begin: jest.fn().mockResolvedValue(row), readRun: jest.fn().mockResolvedValue(row), readSaved: jest.fn().mockResolvedValue(null),
@@ -93,6 +95,113 @@ describe('independent file reading runtime', () => {
     f.parsing.status.mockRejectedValueOnce(new Error('SOURCE_ACCESS_DENIED'));
     await expect(f.service.run(request)).rejects.toThrow('SOURCE_ACCESS_DENIED');
     expect(f.runs.expire).not.toHaveBeenCalled();
+  });
+
+  it('control actions never take the original-bytes path under any name', async () => {
+    const f = fixture();
+    const control = [
+      { action: 'READING_STATUS', documentVersionId: f.scope.documentVersionId, runRef: f.row.runRef },
+      { action: 'READING_CANCEL', documentVersionId: f.scope.documentVersionId, runRef: f.row.runRef },
+      { action: 'READING_CLAIM', documentVersionId: f.scope.documentVersionId, runRef: f.row.runRef, leaseOwner: 'other-producer' },
+      { action: 'READING_HEARTBEAT', ...f.fence },
+      { action: 'READING_FAIL', ...f.fence, errorCode: 'TEST_FAILURE' },
+    ];
+    for (const request of control) await f.service.run(request);
+    expect(f.reader.readDocumentOriginal).not.toHaveBeenCalled();
+    for (const method of [f.reader.readSourcePackage, f.reader.readAllSourceUnits, f.reader.inspectSourcePackage,
+      f.reader.readStructuredSource, f.reader.readback, f.reader.persistAndReadback])
+      expect(method).not.toHaveBeenCalled();
+    expect(f.semantics.read).not.toHaveBeenCalled();
+    expect(f.semantics.ensure).not.toHaveBeenCalled();
+  });
+
+  it('control actions keep their admission rules without content access or unwanted writes', async () => {
+    const f1 = fixture();
+    f1.authorization.authorizeDocumentWork.mockRejectedValueOnce(new Error('DOCUMENT_WORK_NOT_AUTHORIZED'));
+    await expect(f1.service.run({ action: 'READING_CANCEL', documentVersionId: f1.scope.documentVersionId,
+      runRef: f1.row.runRef })).rejects.toThrow('DOCUMENT_WORK_NOT_AUTHORIZED');
+    expect(f1.runs.cancel).not.toHaveBeenCalled();
+    const f2 = fixture();
+    f2.authorization.authorizeDocumentWork.mockResolvedValueOnce({ ...f2.scope, documentVersionId: 'other' });
+    await expect(f2.service.run({ action: 'READING_HEARTBEAT', ...f2.fence })).rejects.toThrow('AUTHORIZATION_SCOPE_MISMATCH');
+    expect(f2.runs.renew).not.toHaveBeenCalled();
+    const f3 = fixture();
+    f3.runs.readRun.mockResolvedValueOnce(null);
+    await expect(f3.service.run({ action: 'READING_STATUS', documentVersionId: f3.scope.documentVersionId,
+      runRef: f3.row.runRef })).rejects.toThrow('DOCUMENT_READING_RUN_NOT_FOUND');
+    expect(f3.reader.readDocumentOriginal).not.toHaveBeenCalled();
+    const f4 = fixture();
+    f4.runs.renew.mockResolvedValueOnce(false);
+    await expect(f4.service.run({ action: 'READING_HEARTBEAT', ...f4.fence })).rejects.toThrow('DOCUMENT_READING_LEASE_REJECTED');
+    const f5 = fixture();
+    f5.runs.claim.mockRejectedValueOnce(new Error('DOCUMENT_READING_LEASE_REJECTED'));
+    await expect(f5.service.run({ action: 'READING_CLAIM', documentVersionId: f5.scope.documentVersionId,
+      runRef: f5.row.runRef, leaseOwner: 'other-producer' })).rejects.toThrow('DOCUMENT_READING_LEASE_REJECTED');
+    expect(f5.runs.recordDelivery).not.toHaveBeenCalled();
+    expect(f5.runs.save).not.toHaveBeenCalled();
+  });
+
+  it('control completions survive an unavailable file service while content paths surface the real error', async () => {
+    const f = fixture();
+    f.reader.readDocumentOriginal.mockRejectedValue(new Error('FILE_SERVICE_UNAVAILABLE'));
+    await expect(f.service.run({ action: 'READING_STATUS', documentVersionId: f.scope.documentVersionId,
+      runRef: f.row.runRef })).resolves.toMatchObject({ status: 'RUNNING' });
+    f.runs.readRun.mockResolvedValue({ ...f.row, status: 'CANCELLED' });
+    await expect(f.service.run({ action: 'READING_CANCEL', documentVersionId: f.scope.documentVersionId,
+      runRef: f.row.runRef })).resolves.toMatchObject({ status: 'CANCELLED' });
+    await expect(f.service.run({ action: 'READING_FAIL', ...f.fence,
+      errorCode: 'TEST_FAILURE' })).resolves.toMatchObject({ status: 'CANCELLED' });
+    await expect(f.service.run({ action: 'READING_READ', ...f.fence, offset: 0, limit: 1 }))
+      .rejects.toThrow('FILE_SERVICE_UNAVAILABLE');
+    expect(f.runs.recordDelivery).not.toHaveBeenCalled();
+    await expect(f.service.run({ action: 'READING_SAVE', ...f.fence, candidate: {},
+      producer: { skillVersion: 'test', modelVersion: 'test' } }))
+      .rejects.toThrow('FILE_SERVICE_UNAVAILABLE');
+    expect(f.runs.save).not.toHaveBeenCalled();
+  });
+
+  it('content paths still detect semantic or binding drift on the exact registered version', async () => {
+    const f = fixture();
+    f.semantics.read.mockResolvedValueOnce(null);
+    await expect(f.service.run({ action: 'READING_READ', ...f.fence, offset: 0, limit: 1 }))
+      .rejects.toThrow('DOCUMENT_SEMANTIC_REVISION_NOT_FOUND');
+    f.loaded.original.binding.parseRevision = f.original.binding.parseRevision + 1;
+    await expect(f.service.run({ action: 'READING_READ', ...f.fence, offset: 0, limit: 1 }))
+      .rejects.toThrow('DOCUMENT_READING_ORIGINAL_CHANGED');
+    expect(f.runs.recordDelivery).not.toHaveBeenCalled();
+    expect(f.runs.save).not.toHaveBeenCalled();
+  });
+
+  it('a newly published version does not rebind a historical run', async () => {
+    const f = fixture();
+    f.parsing.status.mockResolvedValue({ publishedRun: { parseRunId: 'PR-NEW', manifestSha256: 'd'.repeat(64) } });
+    const status = await f.service.run({ action: 'READING_STATUS', documentVersionId: f.scope.documentVersionId,
+      runRef: f.row.runRef });
+    expect(status).toMatchObject({ parseRunId: f.row.parseRunId });
+    const delivery = await f.service.run({ action: 'READING_READ', ...f.fence, offset: 0, limit: 1 });
+    if (!('anchors' in delivery)) throw new Error('expected source delivery');
+    expect(f.reader.readDocumentOriginal.mock.calls.every(call => call[1] === f.row.parseRunId)).toBe(true);
+    expect(f.reader.readDocumentOriginal).toHaveBeenCalledTimes(1);
+  });
+
+  it('counts controlled full-text reads per action class', async () => {
+    const f = fixture();
+    await f.service.run({ action: 'READING_STATUS', documentVersionId: f.scope.documentVersionId, runRef: f.row.runRef });
+    await f.service.run({ action: 'READING_HEARTBEAT', ...f.fence });
+    expect(f.reader.readDocumentOriginal).toHaveBeenCalledTimes(0);
+    expect(f.semantics.read).toHaveBeenCalledTimes(0);
+    const delivery = await f.service.run({ action: 'READING_READ', ...f.fence, offset: 0, limit: 1 });
+    if (!('anchors' in delivery)) throw new Error('expected source delivery');
+    expect(f.reader.readDocumentOriginal).toHaveBeenCalledTimes(1);
+    expect(f.semantics.read).toHaveBeenCalledTimes(1);
+    const anchor = delivery.anchors[0];
+    const statement = { text: '控制动作计数验证。', quotes: [{ anchorId: anchor.anchorId,
+      start: 0, end: anchor.sourceText.length, text: anchor.sourceText }] };
+    const candidate = { schemaVersion: 'wiselink.document.reading.v1', headline: '计数验证', brief: statement,
+      explanation: [statement], criticalConditions: [], limitations: ['部分阅读'] };
+    await f.service.run({ action: 'READING_SAVE', ...f.fence, candidate,
+      producer: { skillVersion: 'test', modelVersion: 'constructed-not-called' } });
+    expect(f.reader.readDocumentOriginal).toHaveBeenCalledTimes(2);
   });
 
   it('keeps browser reads pinned to semantic and reading revisions, with no production writes', async () => {

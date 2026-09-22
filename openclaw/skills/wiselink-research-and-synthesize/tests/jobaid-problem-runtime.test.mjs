@@ -293,9 +293,9 @@ async function persisted(run) {
   finally { await rm(directory, { recursive: true, force: true }); }
 }
 
-test('Matter counts durable model execution while keeping the Host deadline across maintenance downtime', () => persisted(async checkpoint => {
-  const input = { ...modelInput(), schemaVersion: 'wiselink.matter-jobaid-task.v2',
-    subject: { kind: 'ENGINEERING_MATTER', matterId: 'MAT-budget' }, availableDocuments: [{ documentVersionId: 'DV-budget' }] };
+for (const matter of [false, true]) test(`checkpointed assessment counts execution within the Host deadline, Matter=${matter}`, () => persisted(async checkpoint => {
+  const input = matter ? { ...modelInput(), schemaVersion: 'wiselink.matter-jobaid-task.v2',
+    subject: { kind: 'ENGINEERING_MATTER', matterId: 'MAT-budget' }, availableDocuments: [{ documentVersionId: 'DV-budget' }] } : modelInput();
   const f = fixture([{ action: 'READ_SOURCES', sourceRefs: ['source:dv:sr1'], purpose: 'read', context: 'PAGE' },
     { action: 'FINISH', work: completed }], { assessmentCheckpoint: checkpoint,
     taskDeadline: new Date(Date.now() + 10 * 60_000).toISOString() });
@@ -305,7 +305,7 @@ test('Matter counts durable model execution while keeping the Host deadline acro
     if (first) { first = false; throw new Error('HOST_SOURCE_TIMEOUT'); }
     return read(args);
   };
-  const run = () => invokeHostedJobAidProblemModel({ operation: 'ASSESS_MATTER', modelInput: input }, f.options, f.dependencies);
+  const run = () => invokeHostedJobAidProblemModel({ operation: matter ? 'ASSESS_MATTER' : 'EVALUATE_JOBAID', modelInput: input }, f.options, f.dependencies);
   await assert.rejects(run(), /HOST_SOURCE_TIMEOUT/);
   const enabled = await checkpoint.readOptional('assessment-enabled');
   enabled.startedAt = Date.now() - 40 * 60_000;
@@ -323,10 +323,10 @@ test('Matter counts durable model execution while keeping the Host deadline acro
   assert.deepEqual(await checkpoint.readOptional('assessment-round-1.result'), result);
 }));
 
-test('Matter still stops at consumed model budget or the absolute Host deadline', async () => {
+for (const matter of [false, true]) test(`checkpointed assessment stops at model budget or Host deadline, Matter=${matter}`, async () => {
   for (const mode of ['model-time', 'host-deadline', 'invalid-time']) await persisted(async checkpoint => {
-    const input = { ...modelInput(), schemaVersion: 'wiselink.matter-jobaid-task.v2',
-      subject: { kind: 'ENGINEERING_MATTER', matterId: 'MAT-budget' }, availableDocuments: [{ documentVersionId: 'DV-budget' }] };
+    const input = matter ? { ...modelInput(), schemaVersion: 'wiselink.matter-jobaid-task.v2',
+      subject: { kind: 'ENGINEERING_MATTER', matterId: 'MAT-budget' }, availableDocuments: [{ documentVersionId: 'DV-budget' }] } : modelInput();
     const f = fixture([{ action: 'READ_SOURCES', sourceRefs: ['source:dv:sr1'], purpose: 'read', context: 'PAGE' }],
       { assessmentCheckpoint: checkpoint, taskDeadline: new Date(Date.now() + 10 * 60_000).toISOString() });
     let first = true;
@@ -335,7 +335,7 @@ test('Matter still stops at consumed model budget or the absolute Host deadline'
       if (first) { first = false; throw new Error('HOST_SOURCE_TIMEOUT'); }
       return read(args);
     };
-    const run = () => invokeHostedJobAidProblemModel({ operation: 'ASSESS_MATTER', modelInput: input }, f.options, f.dependencies);
+    const run = () => invokeHostedJobAidProblemModel({ operation: matter ? 'ASSESS_MATTER' : 'EVALUATE_JOBAID', modelInput: input }, f.options, f.dependencies);
     await assert.rejects(run(), /HOST_SOURCE_TIMEOUT/);
     const start = await checkpoint.readOptional('assessment-round-1.started');
     const result = await checkpoint.readOptional('assessment-round-1.result');
@@ -813,6 +813,19 @@ test('overlapping source batches cannot silently replace different source conten
     status: 'AVAILABLE', scope: 'PAGE', completeRequestedScope: true, sourceRefs: input.sourceRefs,
     evidence: [{ evidenceRef: 'same-page', excerpt: `changed ${++calls}` }],
   })), /JOBAID_SOURCE_READ_FAILED:INCONSISTENT_EVIDENCE/);
+});
+
+test('WorkItem reassessment cannot finish with previous completed work before saving this round', async () => {
+  const input = { ...modelInput(), expectedWorkRevision: 3,
+    previousWork: { workRevisionRef: 'JAWR-3', workRevision: 3, content: completed } };
+  const f = fixture([{ action: 'FINISH' }, { action: 'SAVE_WORK', work: completed }, { action: 'FINISH' }]);
+  const result = await f.run(input);
+  assert.equal(f.calls.length, 3);
+  assert.equal(f.saves.length, 1);
+  assert.equal(f.saves[0].expectedWorkRevision, 3);
+  assert.equal(result.output.workRevisionRef, 'JAWR-4');
+  assert.equal(input.previousWork.workRevisionRef, 'JAWR-3');
+  assert.match(JSON.stringify(f.calls[1].messages), /JOBAID_COMPLETED_WORK_REQUIRED/);
 });
 
 test('Matter uses the same model loop and must save this attempt before finishing prior completed work', async () => {

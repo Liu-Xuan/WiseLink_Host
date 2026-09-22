@@ -1,8 +1,11 @@
-import { lazy, Suspense, useEffect } from 'react';
+import { Suspense, useEffect, useState } from 'react';
 import { Button } from '@client/src/components/ui/button';
 import { useDocumentOriginalUrl } from '@client/src/utils/document-original-url';
 
-const PdfDocumentViewer = lazy(() => import('./PdfDocumentViewer'));
+import {
+  LazyPdfDocumentViewer,
+  loadPdfDocumentViewer,
+} from './pdf-document-viewer-loader';
 
 interface PdfBoxTarget {
   boxes: ReadonlyArray<[number, number, number, number]>;
@@ -31,15 +34,43 @@ export default function DocumentOriginalCanvasPreview({
   targetSignal = '',
   targetBoxes = null,
 }: DocumentOriginalCanvasPreviewProps) {
-  const { url, busy, error, prepare } = useDocumentOriginalUrl(documentVersionId);
+  const { url, busy, error, prepare } =
+    useDocumentOriginalUrl(documentVersionId);
+
+  const [requested, setRequested] = useState(false);
+  const [moduleAttempt, setModuleAttempt] = useState(0);
+  const [moduleReady, setModuleReady] = useState(false);
+  const [moduleError, setModuleError] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!autoLoad && !requested) return;
+    let active = true;
+    setModuleError(null);
+    void loadPdfDocumentViewer().then(
+      () => {
+        if (active) setModuleReady(true);
+      },
+      () => {
+        if (active) setModuleError('PDF 阅读组件加载失败，请重试。');
+      },
+    );
+    return () => {
+      active = false;
+    };
+  }, [autoLoad, requested, moduleAttempt]);
+
+  function openOriginal() {
+    setRequested(true);
+    if (!url) void prepare();
+  }
 
   useEffect(() => {
     if (autoLoad && !url) void prepare();
-  // prepare() has a controller guard; keep deps coarse so page/box changes do
-  // not refetch the same authorized original.
+    // prepare() has a controller guard; keep deps coarse so page/box changes do
+    // not refetch the same authorized original.
   }, [autoLoad, documentVersionId]);
 
-  if (!url) {
+  if (!url || !moduleReady) {
     return (
       <section className="document-original-inline" aria-label="PDF 原件">
         <div className="document-original-inline-empty">
@@ -49,19 +80,41 @@ export default function DocumentOriginalCanvasPreview({
             type="button"
             variant="outline"
             disabled={busy}
-            onClick={() => { void prepare(); }}
+            onClick={openOriginal}
           >
-            {busy ? '正在读取原件…' : '读取受控原件'}
+            {busy
+              ? '正在读取原件…'
+              : url
+                ? '正在准备 PDF 阅读组件…'
+                : '读取受控原件'}
           </Button>
           {error ? <p role="alert">{error}</p> : null}
+          {moduleError ? (
+            <div role="alert">
+              <p>{moduleError}</p>
+              <Button
+                type="button"
+                variant="outline"
+                onClick={() => setModuleAttempt((value) => value + 1)}
+              >
+                重试 PDF 阅读组件
+              </Button>
+            </div>
+          ) : null}
         </div>
       </section>
     );
   }
 
   return (
-    <Suspense fallback={<div className="parse-pdf-viewer-state" role="status">正在打开受控 PDF 原件…</div>}>
-      <PdfDocumentViewer
+    <Suspense
+      fallback={
+        <div className="parse-pdf-viewer-state" role="status">
+          正在打开受控 PDF 原件…
+        </div>
+      }
+    >
+      <LazyPdfDocumentViewer
         sourceUrl={url}
         sourceSupportsRange={false}
         targetPage={page}

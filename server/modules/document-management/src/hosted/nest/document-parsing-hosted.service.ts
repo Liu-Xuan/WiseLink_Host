@@ -9,6 +9,7 @@ import { MiaodaFileServiceArtifactStore } from '../miaodaFileServiceArtifactStor
 import { MiaodaHostedDocumentCatalog } from './miaoda-hosted-document-catalog';
 import { DOCUMENT_MANAGEMENT_INGEST_AUTHORIZER, type DocumentManagementIngestAuthorizer } from './document-management-hosted.tokens';
 import { DocumentParsingRepository, documentParseError, type DocumentParseRow } from './document-parsing.repository';
+import { decodeExtractedMetadataTitle } from './document-metadata-decode';
 import { DocumentStepLeaseRepository, type DocumentStepFence } from './document-step-lease.repository';
 import { DocumentOfficialPluginService } from './document-official-plugin.service';
 import { DocumentOriginalStore, type DocumentOriginalBundle } from './document-original-store';
@@ -45,8 +46,10 @@ export class DocumentParsingHostedService {
     const state = await this.repository.current({ ...context, documentVersionId });
     const configured = this.plugins.configured();
     const officialPublished = state.published?.manifestArtifact?.relativePath === 'original/manifest.json';
-    const documentTitle = source.metadata?.extractedMetadata.title.observations
-      .map((observation) => observation.value.trim()).filter(Boolean).join(' / ') || null;
+    const extractedMetadata = source.metadata?.extractedMetadata;
+    const documentTitle = extractedMetadata == null ? null
+      : decodeExtractedMetadataTitle(extractedMetadata).observations
+          .map((observation) => observation.value.trim()).filter(Boolean).join(' / ') || null;
     return { documentVersionId, familyId: source.family.familyId,
       documentCode: source.family.canonicalDocumentNumber, documentTitle,
       normalizedFamily: source.family.documentFamily, issuerAuthority: source.family.issuerAuthority,

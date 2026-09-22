@@ -11,6 +11,7 @@ import { consumeHostedMatter } from './consume-hosted-matter.mjs';
 import { recoverNativeMatterResponse } from './recover-native-matter-response.mjs';
 import { invokeHostedJobAidProblemModel } from './run-jobaid-problem-assessment.mjs';
 import { invokeHostedInitialModel } from './invoke-hosted-initial-model.mjs';
+import { findInitialAssessmentRecovery, initialStageCheckpointPath, assertFreshInitialAssessmentClaim } from './initial-assessment-recovery.mjs';
 import { invokeHostedDocumentActivityModel } from './invoke-hosted-document-activity-model.mjs';
 import { consumeHostedDocumentReading } from './consume-hosted-document-reading.mjs';
 import { invokeHostedDocumentReadingModel } from './invoke-hosted-document-reading-model.mjs';
@@ -78,29 +79,32 @@ export async function consumeHostedWorkItem(options, dependencies) {
     if (next.documentVersionId !== initial.documentVersionId) throw new Error('INITIAL_DOCUMENT_VERSION_DRIFT');
     initial = next;
   }
+  let assessmentRecovery = await findInitialAssessmentRecovery(options, initial);
+  if (assessmentRecovery?.status === 'REQUIRES_ATTENTION') return { ...assessmentRecovery, completedStages: [] };
   const limit = options.maxInitialStages ?? INITIAL_ANALYSIS_OPERATIONS.length;
   if (!Number.isSafeInteger(limit) || limit < 1 || limit > INITIAL_ANALYSIS_OPERATIONS.length) throw new Error('INITIAL_STAGE_LIMIT_INVALID');
   const tickStartedAt = Date.now();
   const completedStages = [];
   let report;
   for (let index = 0; index < limit; index += 1) {
-    if (initial.status === 'BUSY' || initial.status === 'NOT_READY') {
+    if ((initial.status === 'BUSY' && !assessmentRecovery) || initial.status === 'NOT_READY') {
       return { status: initial.status, nextOperation: null, completedStages };
     }
-    if (!['REQUIRED', 'WAITING_INPUT'].includes(initial.status) || !initial.nextOperation) {
+    if (!assessmentRecovery && (!['REQUIRED', 'WAITING_INPUT'].includes(initial.status) || !initial.nextOperation)) {
       return { status: 'REQUIRES_ATTENTION', initialStatus: initial.status, stages: initial.stages, completedStages };
     }
-    const operation = initial.nextOperation;
-    if (completedStages.includes(operation) || initial.stages[STAGE_BY_OPERATION[operation]]?.status !== 'PENDING') {
+    const operation = assessmentRecovery?.operation ?? initial.nextOperation;
+    if (completedStages.includes(operation) || (!assessmentRecovery && initial.stages[STAGE_BY_OPERATION[operation]]?.status !== 'PENDING')) {
       throw new Error('HOST_INITIAL_STAGE_NOT_PENDING');
     }
     const reevaluation = statusResult.configurationEvidenceReevaluation;
-    report = await runHostedInitialStage({ ...options, operation, initial,
+    report = await runHostedInitialStage({ ...options, operation, initial, assessmentRecovery,
       ...(operation === 'SYNTHESIZE_OVERALL' && reevaluation && reevaluation.status !== 'SUCCEEDED'
         ? { configurationEvidenceReevaluation: parseConfigurationEvidenceReevaluationStatus(statusResult, options.workItemId) } : {}),
     }, dependencies);
     if (report.status !== 'INITIAL_STAGE_SAVED') return { ...report, completedStages };
     completedStages.push(operation);
+    assessmentRecovery = null;
     // Long translations finish their own stage before the native cron's
     // 60-minute limit; leave later stages to a fresh natural tick after 15 minutes.
     // A later natural tick continues from Host status; there is no hidden retry.
@@ -119,12 +123,7 @@ export async function runHostedInitialStage(options, dependencies) {
   const { operation, initial } = options;
   if (!INITIAL_ANALYSIS_OPERATIONS.includes(operation)) throw new Error('INITIAL_OPERATION_INVALID');
   const continuationRequestId = initial.stages[STAGE_BY_OPERATION[operation]]?.requestId;
-  if (continuationRequestId !== undefined && !/^[A-Za-z0-9_-]{1,64}$/u.test(continuationRequestId))
-    throw new Error('INITIAL_CONTINUATION_REQUEST_INVALID');
-  const checkpoint = await createCheckpointStore(join(
-    options.checkpointRoot, encodeURIComponent(options.workItemId), 'initial', operation,
-    ...(continuationRequestId ? ['requests', continuationRequestId] : []),
-  ));
+  const checkpoint = await createCheckpointStore(initialStageCheckpointPath(options, operation, continuationRequestId));
   const binding = await checkpoint.readOptional('binding');
   const exactBinding = {
     workItemId: options.workItemId, documentVersionId: initial.documentVersionId, operation,
@@ -147,28 +146,39 @@ export async function runHostedInitialStage(options, dependencies) {
   let executionModel;
   let finalCommitStarted = false;
   let modelCallCount = 0;
+  let problemAssessment = false;
+  let taskDeadline;
   const callTool = async (name, args) => {
     if (!INITIAL_TOOLS.has(name)) throw new Error('INITIAL_TOOL_NOT_ALLOWED');
     const count = (callCounts.get(name) ?? 0) + 1;
     callCounts.set(name, count);
     if (name.startsWith('commit_') && args.phase !== 'UPLOAD_PART') finalCommitStarted = true;
-    const value = await checkpoint.remoteStep({
+    const freshAssessmentCall = problemAssessment && !name.startsWith('commit_');
+    const value = freshAssessmentCall || (options.assessmentRecovery && name.startsWith('begin_'))
+      ? await dependencies.callTool(name, args) : await checkpoint.remoteStep({
       step: `${name}-${count}`, args,
       ambiguousCommit: name.startsWith('commit_'),
       perform: () => dependencies.callTool(name, args),
     });
     if (name.startsWith('begin_') && value.status === 'RUNNING') {
+      if (options.assessmentRecovery) assertFreshInitialAssessmentClaim(options.assessmentRecovery.previousClaim, value);
+      problemAssessment = value.modelInput?.schemaVersion === 'wiselink.jobaid-problem-task.v2';
+      if (problemAssessment) {
+        await checkpoint.write('assessment-current-claim', value);
+        taskDeadline = value.task?.deadline;
+      }
       startedAttempt = value.attemptRef;
       executionModel = value.task?.executionModel ?? value.taskBinding?.executionModel;
     }
     return value;
   };
-  const invoke = async (modelInput, runtimeHooks = {}) => checkpoint.remoteStep({
-    step: runtimeHooks.checkpointKey ?? 'model', args: modelInput, ambiguousCommit: false,
-    perform: () => {
+  const invoke = async (modelInput, runtimeHooks = {}) => {
+    const assessment = problemAssessment && modelInput.schemaVersion === 'wiselink.jobaid-problem-task.v2';
+    const perform = () => {
       modelCallCount += 1;
       return dependencies.invokeInitialModel({ operation, modelInput }, {
         executionModel,
+        ...(assessment ? { assessmentCheckpoint: checkpoint, taskDeadline } : {}),
         heartbeat: runtimeHooks.heartbeat,
         timeoutMs: runtimeHooks.timeoutMs,
         sessionDiscriminator: runtimeHooks.sessionDiscriminator ?? runBinding.requestId,
@@ -186,8 +196,13 @@ export async function runHostedInitialStage(options, dependencies) {
           `model.candidate-rejection-${report.correctionNo}`, report,
         ),
       });
-    },
-  });
+    };
+    // A durable round owns its exact response and save request identities.
+    // Legacy outer model.started without this marker remains unknown.
+    if (assessment && await checkpoint.readOptional('assessment-enabled')) return perform();
+    return checkpoint.remoteStep({ step: runtimeHooks.checkpointKey ?? 'model', args: modelInput,
+      ambiguousCommit: false, perform });
+  };
   try {
     const result = await (dependencies.runInitial ?? runInitialAnalysis)({
       mode: 'INITIAL_ANALYSIS', operation, workItemId: options.workItemId,
@@ -219,6 +234,8 @@ export async function runHostedInitialStage(options, dependencies) {
     await checkpoint.writeOnce('run-result', report);
     return report;
   } catch (error) {
+    if (error?.message === 'INITIAL_ASSESSMENT_STILL_OWNED')
+      return { status: 'BUSY', operation, nextOperation: null, modelCallCount, candidateOnly: true };
     if (startedAttempt && !finalCommitStarted) {
       try {
         const stopped = await checkpoint.remoteStep({
@@ -315,18 +332,39 @@ export async function consumeHostedDocument(
   if (run.status === 'PUBLISHED') {
     const indexRun = state.nextSourceProjectionRunId ?? run.parseRunId;
     if (typeof indexRun !== 'string' || !/^[A-Za-z0-9_-]{1,96}$/.test(indexRun)) throw new Error('DOCUMENT_SOURCE_PROJECTION_RUN_INVALID');
+    const projectionPromise = Promise.resolve().then(() =>
+      callTool('document_work', { action: 'INDEX', documentVersionId, parseRunId: indexRun }));
+    // STATUS and existing-work recovery remain independent of derived indexing.
+    // Only a new START depends on semantics for this exact current parse, not
+    // whichever historical pending run the index queue selected.
+    const beforeStart = async () => {
+      let prepared;
+      try {
+        prepared = await (indexRun === run.parseRunId ? projectionPromise :
+          callTool('document_work', { action: 'INDEX', documentVersionId, parseRunId: run.parseRunId }));
+      } catch {
+        // INDEX may fail after persisting semantics (for example search writes).
+        // Re-read the Host's narrow exact registration instead of guessing from
+        // a failed derived index. Old Hosts omit this field and fail closed.
+        const readiness = await callTool('document_translation', {
+          action: 'STATUS', documentVersionId, parseRunId: run.parseRunId });
+        if (readiness?.documentVersionId !== documentVersionId || readiness.parseRunId !== run.parseRunId)
+          throw new Error('DOCUMENT_TRANSLATION_SCOPE_MISMATCH');
+        return readiness.status === 'IDLE' && readiness.semanticReady === true;
+      }
+      assertSourceProjection(prepared, documentVersionId, run.parseRunId);
+      return true;
+    };
     const outcomes = await Promise.allSettled([
-      callTool('document_work', { action: 'INDEX', documentVersionId, parseRunId: indexRun }),
-      advanceDocumentTranslationWithRecovery(documentVersionId, run, callTool, documentTranslationCheckpoint),
+      projectionPromise,
+      advanceDocumentTranslationWithRecovery(documentVersionId, run, callTool, documentTranslationCheckpoint, beforeStart),
     ]);
     const [projection, translation] = outcomes;
     if (translation.status === 'rejected') throw translation.reason;
     if (projection.status === 'rejected') return { ...translation.value, status: 'REQUIRES_ATTENTION',
       sourceProjection: { status: 'FAILED', errorCode: 'DOCUMENT_SOURCE_PROJECTION_FAILED' } };
     const indexed = projection.value;
-    if (indexed?.documentVersionId !== documentVersionId || indexed.parseRunId !== indexRun ||
-        !['INDEXED','PROGRESS','RETRY','NO_PENDING'].includes(indexed.status))
-      throw new Error('DOCUMENT_SOURCE_PROJECTION_RESULT_INVALID');
+    assertSourceProjection(indexed, documentVersionId, indexRun);
     return { ...translation.value, sourceProjection: indexed };
   }
   if (run.errorCode || run.status === 'FAILED' || !state.runtimeAvailable || Date.parse(run.deadlineAt) <= Date.now()) {
@@ -341,9 +379,15 @@ export async function consumeHostedDocument(
   return { ...result, documentVersionId };
 }
 
+function assertSourceProjection(indexed, documentVersionId, parseRunId) {
+  if (indexed?.documentVersionId !== documentVersionId || indexed.parseRunId !== parseRunId ||
+      !['INDEXED','PROGRESS','RETRY','NO_PENDING'].includes(indexed.status))
+    throw new Error('DOCUMENT_SOURCE_PROJECTION_RESULT_INVALID');
+}
+
 // This checkpoint records an operation stop, not a Host task or a successful
 // translation. A new parse run can still advance through the branch above.
-async function advanceDocumentTranslationWithRecovery(documentVersionId, run, callTool, checkpointFactory) {
+async function advanceDocumentTranslationWithRecovery(documentVersionId, run, callTool, checkpointFactory, beforeStart) {
   const checkpoint = await checkpointFactory?.(run.parseRunId);
   const blocked = await checkpoint?.readOptional('admission-blocked');
   if (blocked) {
@@ -353,7 +397,7 @@ async function advanceDocumentTranslationWithRecovery(documentVersionId, run, ca
       translation: blocked };
   }
   try {
-    return await advanceDocumentTranslation(documentVersionId, run, callTool);
+    return await advanceDocumentTranslation(documentVersionId, run, callTool, beforeStart);
   } catch (error) {
     if (error?.receivedHostToolError !== true || error.hostToolName !== 'document_translation' ||
         error.hostErrorCode !== 'DOCUMENT_TRANSLATION_ADMISSION_DENIED' || !checkpoint) throw error;
@@ -365,11 +409,15 @@ async function advanceDocumentTranslationWithRecovery(documentVersionId, run, ca
   }
 }
 
-async function advanceDocumentTranslation(documentVersionId, run, callTool) {
+async function advanceDocumentTranslation(documentVersionId, run, callTool, beforeStart) {
     const binding = { documentVersionId, parseRunId: run.parseRunId };
     const translation = await callTool('document_translation', { action: 'STATUS', ...binding });
     if (translation?.documentVersionId !== documentVersionId) throw new Error('DOCUMENT_TRANSLATION_SCOPE_MISMATCH');
     if (translation.status === 'IDLE') {
+      if (translation.semanticReady === true && translation.parseRunId !== run.parseRunId)
+        throw new Error('DOCUMENT_TRANSLATION_RUN_MISMATCH');
+      if (translation.semanticReady !== true && !await beforeStart()) return { status: 'REQUIRES_ATTENTION', ...binding,
+        semanticPreparation: { status: 'FAILED', errorCode: 'DOCUMENT_SEMANTIC_NOT_READY' } };
       const started = await callTool('document_translation', { action: 'START', ...binding, requestId: `translation-${run.parseRunId}` });
       if (started?.documentVersionId !== documentVersionId || started.parseRunId !== run.parseRunId || !started.attemptRef)
         throw new Error('DOCUMENT_TRANSLATION_START_MISMATCH');

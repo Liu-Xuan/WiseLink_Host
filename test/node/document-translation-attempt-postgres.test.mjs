@@ -155,6 +155,44 @@ test('document attempts preserve published source identity and service-only acto
     await semantic('service_role','actor',repo => append(repo,nextMap,1));
     assert.deepEqual(await semantic('service_role','actor',repo => repo.read(scope,'parse-new',1)), map);
     assert.deepEqual(await semantic('service_role','actor',repo => repo.read(scope,'parse-new')), nextMap);
+    // Readiness executes real SQL under the same non-owner runtime roles and
+    // actual 0048/0054/0055 policies used above, never under the bootstrap owner.
+    const roles = await db`SELECT rolname, rolsuper, rolbypassrls FROM pg_roles
+      WHERE rolname IN ('authenticated','service_role')`;
+    assert.equal(roles.length, 2);
+    for (const role of roles) { assert.equal(role.rolsuper, false); assert.equal(role.rolbypassrls, false); }
+    const [owner] = await db`SELECT pg_get_userbyid(relowner) AS name FROM pg_class WHERE relname='dm_document_semantic_revision'`;
+    assert.ok(!roles.some(role => role.rolname === owner.name));
+    const ready = (role='service_role', actor='actor', requested=scope, run='parse-new') =>
+      semantic(role,actor,repo => repo.readReady(requested,run));
+    assert.deepEqual(await ready(), { semanticRevision: 2, profileRef: map.profileRef });
+    assert.deepEqual(await ready('authenticated'), { semanticRevision: 2, profileRef: map.profileRef });
+    assert.equal(await ready('service_role','other'), null);
+    assert.equal(await ready('service_role','actor',{...scope,tenantId:'wrong'}), null);
+    assert.equal(await ready('service_role','actor',{...scope,documentVersionId:'wrong'}), null);
+    assert.equal(await ready('service_role','actor',scope,'missing'), null);
+    assert.equal(await ready('service_role','actor',scope,'staging'), null);
+    for (const mutation of [
+      { sha256: 'c'.repeat(64) }, { relativePath: 'other.json' }, { readback: 'PENDING' },
+    ]) {
+      await db`UPDATE dm_document_parse_run SET manifest_artifact=manifest_artifact || ${JSON.stringify(mutation)}::jsonb WHERE parse_run_id='parse-new'`;
+      assert.equal(await ready(), null);
+      await db`UPDATE dm_document_parse_run SET manifest_artifact=${JSON.stringify({role:'MANIFEST',relativePath:'original/manifest.json',readback:'VERIFIED',sha256:'a'.repeat(64),byteLength:123})}::jsonb WHERE parse_run_id='parse-new'`;
+    }
+    await db`UPDATE dm_document_parse_run SET parse_revision=99 WHERE parse_run_id='parse-new'`;
+    assert.equal(await ready(), null);
+    await db`UPDATE dm_document_parse_run SET parse_revision=3 WHERE parse_run_id='parse-new'`;
+    await db`UPDATE dm_document_parse_run SET status='STAGING' WHERE parse_run_id='parse-new'`;
+    assert.equal(await ready(), null);
+    await db`UPDATE dm_document_parse_run SET status='PUBLISHED' WHERE parse_run_id='parse-new'`;
+    // A profile column disagreeing with its immutable saved map is rejected by
+    // the real schema CHECK; it cannot become a misleading readiness receipt.
+    await assert.rejects(db`INSERT INTO dm_document_semantic_revision
+      (tenant_id,document_version_id,parse_run_id,parse_revision,semantic_revision,actor_user_id,profile_ref,original_manifest_sha256,map_json)
+      VALUES ('tenant','DV','parse-new',3,3,'actor','wrong-profile',${'a'.repeat(64)},${JSON.stringify({...map,semanticRevision:3})}::jsonb)`,
+      error => error.code === '23514');
+    assert.deepEqual(await ready(), { semanticRevision: 2, profileRef: map.profileRef });
+
     // Exercise the actual INDEX semantic service, including registered family lookup and retry readback.
     const { DocumentSemanticService } = require('../../server/modules/canonical-host/document-semantic.service.ts');
     await db.unsafe("ALTER TABLE dm_document_version ADD COLUMN family_id varchar; CREATE TABLE dm_publication_family(family_id varchar,document_family varchar,issuer_authority varchar); INSERT INTO dm_publication_family VALUES ('family','FTD','BOEING'); UPDATE dm_document_version SET family_id='family'; GRANT SELECT ON dm_publication_family TO service_role");

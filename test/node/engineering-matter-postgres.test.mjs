@@ -2669,7 +2669,7 @@ async function assertBoundOriginalReceipt(sql, owner, service, attemptId, scope)
   await assert.rejects(owner.runtime(() => service.readOriginal({ ...input, leaseGeneration: 99 }, reader)), /LEASE_FENCE_REJECTED/u);
   const reading = await owner.runtime(() => service.readOriginal(input, reader));
   assert.equal(reading.evidence[0].excerpt, original.source.units[0].payload.text);
-  const projection = new DocumentSourceProjectionService(owner.database, reader, new EngineeringSearchProjectionWriter(owner.database), { ensure: async () => ({ semanticRevision: 1, profileRef: "generic.author-sections.v1" }) });
+  const projection = new DocumentSourceProjectionService(owner.database, reader, new EngineeringSearchProjectionWriter(owner.database), { readReady: async () => ({ semanticRevision: 1, profileRef: "generic.author-sections.v1" }), ensure: async () => ({ semanticRevision: 1, profileRef: "generic.author-sections.v1" }) });
   const indexStep = () => owner.runtime(() => owner.working.withActorScope(scope.actorUserId,
     () => projection.step({ ...scope, roles: [] }, 'PR-TEST-2')));
   assert.equal(await owner.runtime(() => owner.working.withActorScope(scope.actorUserId,() => projection.nextPendingRun(scope))),'PR-TEST-2');

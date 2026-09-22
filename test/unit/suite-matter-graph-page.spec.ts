@@ -90,6 +90,22 @@ describe('SuiteMatterGraphPage navigation state', () => {
     expect(viewMounts).toBe(mounts);
   });
 
+  it('flushes the last camera into browser history before immediate navigation', async () => {
+    await act(async () => renderPage('/graph?matterId=ui-test-matter'));
+    const oldCamera = { zoom: 1, pan: { x: 0, y: 0 } };
+    const lastCamera = { zoom: 1.3, pan: { x: 45, y: 67 } };
+    await act(async () => mockProps.onStateChange!({ viewport: oldCamera }));
+    await act(async () => {
+      mockProps.onStateChange!({ viewport: lastCamera }, true);
+      mockProps.onOpenWiki!();
+    });
+    const returnQuery = new URLSearchParams(currentSearch).get('returnGraphQuery');
+    expect(JSON.parse(new URLSearchParams(returnQuery!).get('viewport')!)).toEqual(lastCamera);
+    await act(async () => navigateTo(-1));
+    expect(JSON.parse(new URLSearchParams(currentSearch).get('viewport')!)).toEqual(lastCamera);
+    expect(mockProps.initialState?.viewport).toEqual(lastCamera);
+  });
+
   it('restores new display state from same-identity SPA query navigation and ignores its own writes', async () => {
     await act(async () => renderPage('/graph?matterId=ui-test-matter&density=2'));
     await act(async () => { await Promise.resolve(); });

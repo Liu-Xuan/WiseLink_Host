@@ -112,6 +112,15 @@ export class DocumentManagementHostedController {
     return this.service.enrichDocumentMetadata(documentVersionId, contextFromRequest(request));
   }
 
+  @Get('document-versions/:documentVersionId/original-identity')
+  @Header('Cache-Control', 'private, no-store')
+  readDocumentOriginalIdentity(
+    @Param('documentVersionId') documentVersionId: string,
+    @Req() request: Request,
+  ) {
+    return this.service.readDocumentOriginalIdentity(documentVersionId, contextFromRequest(request));
+  }
+
   @Get('document-versions/:documentVersionId/original')
   @Header('Cache-Control', 'private, no-store')
   async readDocumentOriginal(

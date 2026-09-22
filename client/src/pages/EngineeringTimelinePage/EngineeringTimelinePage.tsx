@@ -11,6 +11,7 @@ import { readDocumentActivityReading, readDocumentParsingStatus, subscribeCanoni
 import type { DocumentActivityReadingResponse } from '@shared/document-activity.interface';
 import type { DocumentOriginalBinding } from '@shared/document-original.interface';
 import { activityEntryPins, activityEntryReason, loadActivityEntry, validateActivityEntry } from '@client/src/pages/DocumentParsingPage/document-activity-entry';
+import { discoveredTimelineIdentity } from './activity-discovery-handoff';
 import { activityReadingParams, activityReadingReturnParams, activityWindowPin, revisionTextPin } from '@client/src/features/matter/reading-return';
 import type { ActivityTimelineWindow } from '@client/src/features/trinity/document-activity-timeline';
 import DocumentActivityReadingView from '@client/src/pages/DocumentParsingPage/DocumentActivityReadingView';
@@ -117,6 +118,11 @@ export default function EngineeringTimelinePage({ view = 'timeline', onNavigateG
     const generation = ++epoch.current;
     const current = () => !controller.signal.aborted && currentIdentity.current === identity && epoch.current === generation;
     if (blocker || !documentVersionId) return () => controller.abort();
+    // A loaded result under this exact identity already covers the read: this
+    // absorbs the discovery normalization re-run without forbidding later
+    // legitimate reads of the same identity (session change, return after a
+    // different object failed, retry), since those never carry the result.
+    if (state?.identity === identity && state.reading !== null) return () => controller.abort();
     void (async () => {
       try {
         const result = await loadActivityEntry({ documentVersionId, entry, baseParams: searchParams, deps: { readParsingStatus: readDocumentParsingStatus, readActivityReading: readDocumentActivityReading }, signal: controller.signal, current });
@@ -129,6 +135,11 @@ export default function EngineeringTimelinePage({ view = 'timeline', onNavigateG
             if (value) query.set(key, value); else query.delete(key);
           }
           query.set('documentVersionId', documentVersionId);
+          // Register the reading under the exact normalized identity before the
+          // replace navigates, so the pin completion never re-reads the saved
+          // candidate that this very discovery just returned.
+          const normalized = discoveredTimelineIdentity(documentVersionId, result.replaceQuery, blocker, sessionRevision);
+          setState({ identity: normalized.identity, reading: result.reading, error: null });
           navigate(`${pagePath}?${query}`, { replace: true });
           return;
         }
@@ -138,7 +149,7 @@ export default function EngineeringTimelinePage({ view = 'timeline', onNavigateG
       }
     })();
     return () => controller.abort();
-  }, [identity, blocker, documentVersionId, pagePath]);
+  }, [identity, blocker, documentVersionId, pagePath, sessionRevision]);
 
   const selectLocation = (statementId: string | null, anchorId: string | null) => {
     const query = activityReadingParams(searchParams);

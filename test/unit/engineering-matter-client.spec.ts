@@ -13,6 +13,7 @@ import {
   createEngineeringMatter,
   getEngineeringMatter,
   getEngineeringMatterDirectory,
+  getMatterAssessmentActivity,
   getEngineeringMatterWorkspace,
   linkEngineeringMatterWorkItem,
   reviseEngineeringMatterMaterials,
@@ -32,6 +33,22 @@ describe('engineering matter browser API bindings', () => {
     request.mockReset();
     requireAuthentication.mockReset();
     generation = 3;
+  });
+  it('reads activity by GET with cancellation and exact selector identity checks', async () => {
+    const signal = new AbortController().signal;
+    const data = { matterId: 'M/1', selection: 'EXACT_WORK', workRef: 'w', attempt: null };
+    request.mockResolvedValue({ status: 200, data });
+    expect(await getMatterAssessmentActivity('M/1', { workRef: 'w', cursor: 'c' }, signal)).toBe(data);
+    expect(request).toHaveBeenCalledWith(expect.objectContaining({
+      url: '/api/canonical-host/engineering-matters/M%2F1/assessment-activity', method: 'GET',
+      params: { workRef: 'w', cursor: 'c' }, signal,
+    }));
+    for (const mismatch of [{ matterId: 'other' }, { workRef: 'other' }, { selection: 'CURRENT' }]) {
+      request.mockResolvedValue({ status: 200, data: { ...data, ...mismatch } });
+      await expect(getMatterAssessmentActivity('M/1', { workRef: 'w' })).rejects.toMatchObject({ statusCode: 403 });
+    }
+    request.mockResolvedValue({ status: 200, data: { ...data, workRef: null, selection: 'EXACT_ATTEMPT', attempt: { attemptRef: 'other' } } });
+    await expect(getMatterAssessmentActivity('M/1', { attemptRef: 'a' })).rejects.toMatchObject({ statusCode: 403 });
   });
   it('reads a real directory without creating matters or reading member sources', async () => {
     const data = { items: [], nextCursor: null, fileReadPerformed: false };

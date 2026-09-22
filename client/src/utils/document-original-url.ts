@@ -1,7 +1,7 @@
+import { readReusableDocumentOriginal } from './document-original-memory';
 import { useEffect, useRef, useState } from 'react';
 import {
   getCanonicalHostClientSessionGeneration,
-  readDocumentVersionOriginal,
   subscribeCanonicalHostClientSession,
 } from '@client/src/api/canonical-host';
 
@@ -56,7 +56,7 @@ export function useDocumentOriginalUrl(documentVersionId: string) {
     setBusy(true);
     setError(null);
     try {
-      const pdf = await readDocumentVersionOriginal(documentVersionId, request.signal);
+      const pdf = await readReusableDocumentOriginal(documentVersionId, request.signal);
       if (!current()) return;
       if (objectUrl.current) URL.revokeObjectURL(objectUrl.current);
       const next = URL.createObjectURL(pdf);

@@ -27,6 +27,7 @@ import { Button } from '@client/src/components/ui/button';
 import { ButtonGroup } from '@client/src/components/ui/button-group';
 import RelationGraphCanvas from './RelationGraphCanvas';
 import { resolveWorkItemMatter } from './work-item-matter-resolver';
+import { resolveDefaultGraphMatter } from './default-matter-resolver';
 import {
   buildGraphElements,
   buildNodeDeepLink,
@@ -381,29 +382,19 @@ function GraphDefaultMatterResolver() {
     setState('loading');
     void (async () => {
       try {
-        let cursor: string | undefined;
-        const seenCursors = new Set<string>();
-        while (!controller.signal.aborted) {
-          const directory = await getEngineeringMatterDirectory(
-            cursor ? { limit: 20, cursor } : { limit: 20 },
-            controller.signal,
+        // The default entry only ever consumes the first lawful matter, so the
+        // resolver fetches limit-1 pages; pagination and cursor dedup remain.
+        const resolution = await resolveDefaultGraphMatter(
+          getEngineeringMatterDirectory,
+          controller.signal,
+        );
+        if (controller.signal.aborted) return;
+        if (resolution.kind === 'unique') {
+          navigate(
+            `/graph?${new URLSearchParams({ matterId: resolution.matterId })}`,
+            { replace: true },
           );
-          if (controller.signal.aborted) return;
-          const first: EngineeringMatterDirectoryResponse['items'][number] | undefined =
-            directory.items.find((item) => item.matterId.trim());
-          if (first) {
-            navigate(
-              `/graph?${new URLSearchParams({ matterId: first.matterId })}`,
-              { replace: true },
-            );
-            return;
-          }
-          if (!directory.nextCursor) break;
-          if (seenCursors.has(directory.nextCursor)) {
-            throw new Error('工程事项目录游标未推进。');
-          }
-          seenCursors.add(directory.nextCursor);
-          cursor = directory.nextCursor;
+          return;
         }
         setState('empty');
       } catch (reason) {

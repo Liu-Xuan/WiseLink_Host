@@ -1,3 +1,4 @@
+import { projectJobAidActivity } from './jobaid-activity';
 import { originalApplicabilityResultMatches } from './original-applicability-currentness';
 import { InitialAssessmentKnowledgeService } from './initial-assessment-knowledge.service';
 import { UnifiedReaderService } from '../unified-reader/unified-reader.service';
@@ -1295,9 +1296,12 @@ export class CanonicalJobAidProblemService {
       action: 'READ_DOCUMENT_PARSING',
       workItemId,
     });
-    const current = await this.work.latest({
+    // A new attempt may legitimately retain the previous saved body, but all
+    // three observations must come from the same database snapshot.
+    const { execution, current, savedActivity } = await this.work.readBrowserSnapshot({
       tenantId: actor.tenantId,
       workItemId,
+      documentVersionId: workItem.source.documentVersionId,
     });
     if (current)
       await this.assertEvidenceOwned(
@@ -1306,13 +1310,7 @@ export class CanonicalJobAidProblemService {
         actor.userId,
         workItemId,
       );
-    const executionStatus = current
-      ? await this.work.readExecutionStatus({
-          actionAttemptId: current.actionAttemptId,
-          tenantId: actor.tenantId,
-          workItemId,
-        })
-      : null;
+    const activity = execution ? projectJobAidActivity(execution, savedActivity) : null;
     const overall = workItem.integratedAssessment?.overallSynthesis;
     const base = workItem.integratedAssessment?.baseRules;
     return {
@@ -1323,7 +1321,8 @@ export class CanonicalJobAidProblemService {
         !!current ||
         isJobAidProblemProjection(base) ||
         (!base && this.enabledForNewTasks()),
-      executionStatus,
+      executionStatus: execution?.status ?? null,
+      activity,
       currentInputChanged:
         !!current &&
         current.basedOnWorkItemRevision !== workItem.revision &&

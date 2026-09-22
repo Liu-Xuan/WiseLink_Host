@@ -37,6 +37,7 @@ import {
   readDocumentVersionMetadata,
   reextractDocumentVersionMetadata,
   readDocumentVersionOriginal,
+  readDocumentVersionOriginalIdentity,
   readDocumentSemanticReading,
   readDocumentActivityReading,
   uploadLibraryDocument,
@@ -97,6 +98,16 @@ describe('canonical host assessment client', () => {
     await expect(readDocumentSemanticReading({ documentVersionId: 'DV', parseRunId: 'parse' })).rejects.toThrow('OBSOLETE');
   });
   const pdfBytes = new TextEncoder().encode('%PDF-1.7\nsynthetic PDF\n%%EOF').buffer;
+  it('reads an exact original identity and rejects mismatched or invalid receipts', async () => {
+    const identity = { documentVersionId: 'DV/old', sha256: 'a'.repeat(64), byteLength: 123 };
+    request.mockResolvedValue({ status: 200, data: identity });
+    await expect(readDocumentVersionOriginalIdentity('DV/old')).resolves.toEqual(identity);
+    expect(request.mock.calls.at(-1)[0].url).toContain('DV%2Fold/original-identity');
+    request.mockResolvedValue({ status: 200, data: { ...identity, documentVersionId: 'other' } });
+    await expect(readDocumentVersionOriginalIdentity('DV/old')).rejects.toThrow('IDENTITY_MISMATCH');
+    request.mockResolvedValue({ status: 200, data: { ...identity, sha256: 'bad' } });
+    await expect(readDocumentVersionOriginalIdentity('DV/old')).rejects.toThrow('IDENTITY_MISMATCH');
+  });
   it('reads the exact taskless original through authenticated platform Axios as binary', async () => {
     request.mockResolvedValue({ status: 200, headers: { 'content-type': 'application/pdf' }, data: pdfBytes });
     const signal = new AbortController().signal;
