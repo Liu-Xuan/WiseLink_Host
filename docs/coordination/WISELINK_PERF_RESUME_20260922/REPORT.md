@@ -731,3 +731,12 @@ Main回执：ef258 release7688432648880098235 finished updated_at=1790103060000�
 - 有效旧反例1 failed/10 passed：成员核对仍进入不被消费的完整source读取。新三套44项通过；随后追加真实Drizzle SQL编译核对并仅复跑resolver 11项（新增1项，45个不同测试，不称为统一45项复跑）。验证四必需join和preflight acquisition/version精确条件、COMMITTED/id/limit绑定参数、无descriptor/currentness投影、四类源身份错误及缺登记拒绝，原creator/currentness测试保留。SQL为真实builder生成，但没有连接PG，不冒充实际数据库/RLS或生产延迟验证。
 - server typecheck通过；两生产文件ESLint无error，working service既有unused-disable warning保留；server build和precommit按本批实际日志/提交回执记录。日志`/private/tmp/wiselink-source-identity-{red,tests,sql-tests,types,lint,build}.log`。本批不改模式/索引/存量数据，下一步Luna独立审查，Main统一集成发布，再测同保存正文冷路径。
 - 前批f7d6e82e9458f55a7663cac9041a8de90186a6c9已获Luna独立33项、官方server typecheck、服务/测试lint与diffcheck接受并回传Main。dd1亦已独立接受；未取得本批发布回执前不标为线上生效。
+
+
+## B 来源窄投影真实 PostgreSQL 补证（2026-09-23）
+
+- 基线a0e712f82985ca57fd1a52bf75be3a8971aba4ba，独立树`/private/tmp/wiselink-perf-b-source-identity-pg-20260923`；仅新增测试和更新协调文档，无产品变化。a0已获Luna独立resolver/service22项、官方server types、4文件lint、diffcheck接受，无阻断。Luna当轮未连接PG；本节为B单独补齐的实际数据库证据，不混称独立PG复测。
+- 使用全新隔离PostgreSQL14，本机127.0.0.1:55441；精简5表仅有8个投影字段、join keys和fixture owner字段，故意无currentness表/大descriptor或采集payload。实际非owner角色NOSUPERUSER/NOBYPASSRLS、5表FORCE RLS，使用本地fixture actor策略测试JOIN可见性。不是生产RLS完整策略认证，不连接生产数据库。
+- `WL_SOURCE_IDENTITY_LOCAL_PG=1 npx jest --runInBand test/unit/miaoda-source-identity-postgres.spec.ts`实际10/10通过、无skip：一次SELECT返回两个文档ID，双向actor隔离；5张必需表逐一被RLS隐藏均拒绝；preflight acquisition/version/status三类错误绑定均拒绝；成功JOIN后digest mismatch仍拒绝。DDL、参数与真实resolver由Drizzle/Postgres执行，非只编译SQL。
+- 最初sandbox initdb因系统shared memory权限失败且自动清理了未完成目录；通过已授权的本地临时PG执行权限后正常初始化/启动，未把第一次失败记成成功。测试fixture afterAll删除schema/role并断开连接。服务器已用pg_ctl fast停止，确认postmaster.pid不存在后仅删除本批`/private/tmp/wiselink-source-identity-pgdata-20260923`；日志保留`/private/tmp/wiselink-source-identity-pg-{init,server,test,lint}.log`。
+- 测试仅补拒绝/SQL执行边界，不将本机毫秒推成线上收益，不因此重跑已通过全仓测试。主控可将已接受a0与前批统一集成；线上冷读、浏览器端到端500ms、Hosted安装与真实后台公平仍未闭合。
