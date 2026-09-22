@@ -25,6 +25,10 @@ import { EngineeringMatterWorkingRepository } from './engineering-matter-working
 import type { JobAidSourceBinding } from './jobaid-problem-task';
 import { EngineeringSearchProjectionWriter } from './engineering-search-projection';
 
+type StoredJobAidWork = Pick<typeof assessmentWorkRevision.$inferSelect,
+  'assessmentWorkRevisionId' | 'workItemId' | 'workRevision' | 'previousWorkRevisionId' |
+  'requestId' | 'actionAttemptId' | 'basedOnWorkItemRevision' | 'documentVersionId' | 'createdAt' | 'contentJson'>;
+
 export interface JobAidWorkFence {
   principalId: string;
   leaseToken: string;
@@ -267,22 +271,61 @@ export class JobAidWorkRepository {
     );
   }
 
-  /** Preserve the request's native SQL identity/RLS and observe one MVCC snapshot.
-   * A terminal attempt must never be combined with a later run's saved body. */
+  /** One statement gives one MVCC snapshot without switching the platform's
+   * authenticated transaction type (Datapaas rejects SET TRANSACTION). */
   async readBrowserSnapshot(input: {
     tenantId: string;
     workItemId: string;
     documentVersionId: string;
   }) {
-    return this.db.transaction(async (transaction) => {
-      const database = transaction as PostgresJsDatabase;
-      const execution = await this.readCurrentExecution(input, database);
-      const current = await this.latest(input, database);
-      const savedActivity = execution
-        ? await this.readSavedActivity({ ...input, actionAttemptId: execution.attemptId }, database)
-        : [];
-      return { execution, current, savedActivity };
-    }, { accessMode: 'read only', isolationLevel: 'repeatable read' });
+    const rows = await this.db.execute<{
+      execution: JobAidExecutionObservation | null;
+      current: (Omit<StoredJobAidWork, 'createdAt'> & { createdAt: string }) | null;
+      savedActivity: Array<Omit<JobAidSavedActivityObservation, 'createdAt'> & { createdAt: string }>;
+    }>(sql`
+      WITH selected_execution AS (
+        SELECT ${actionAttempt.status} AS "status", ${actionAttempt.attemptId} AS "attemptId",
+          ${actionAttempt.operationRef} AS "attemptRef", ${actionAttempt.reviewActivityJson} AS "activityJson"
+        FROM ${actionAttempt}
+        WHERE ${actionAttempt.tenantId} = ${input.tenantId}
+          AND ${actionAttempt.workItemId} = ${input.workItemId}
+          AND ${actionAttempt.documentVersionId} = ${input.documentVersionId}
+          AND ${actionAttempt.subjectKind} = 'WORK_ITEM'
+          AND ${actionAttempt.requestOrigin} = ${ACTION_ATTEMPT_REQUEST_ORIGIN}
+          AND ${actionAttempt.actionType} IN ('OPENCLAW_DYNAMIC_EVALUATION', 'OPENCLAW_OVERALL_SYNTHESIS')
+        ORDER BY CASE WHEN ${actionAttempt.status} IN ('QUEUED', 'RUNNING', 'RETRY_SCHEDULED', 'COMMITTING') THEN 1 ELSE 0 END DESC,
+          ${actionAttempt.createdAt} DESC, ${actionAttempt.attemptId} DESC LIMIT 1
+      ), selected_work AS (
+        SELECT ${assessmentWorkRevision.assessmentWorkRevisionId} AS "assessmentWorkRevisionId",
+          ${assessmentWorkRevision.workItemId} AS "workItemId", ${assessmentWorkRevision.workRevision} AS "workRevision",
+          ${assessmentWorkRevision.previousWorkRevisionId} AS "previousWorkRevisionId",
+          ${assessmentWorkRevision.requestId} AS "requestId", ${assessmentWorkRevision.actionAttemptId} AS "actionAttemptId",
+          ${assessmentWorkRevision.basedOnWorkItemRevision} AS "basedOnWorkItemRevision",
+          ${assessmentWorkRevision.documentVersionId} AS "documentVersionId",
+          ${assessmentWorkRevision.createdAt} AS "createdAt", ${assessmentWorkRevision.contentJson} AS "contentJson"
+        FROM ${assessmentWorkRevision}
+        WHERE ${assessmentWorkRevision.tenantId} = ${input.tenantId}
+          AND ${assessmentWorkRevision.workItemId} = ${input.workItemId}
+        ORDER BY ${assessmentWorkRevision.workRevision} DESC LIMIT 1
+      ), selected_saves AS (
+        SELECT ${assessmentWorkRevision.assessmentWorkRevisionId} AS "workRevisionRef",
+          ${assessmentWorkRevision.workRevision} AS "workRevision", ${assessmentWorkRevision.createdAt} AS "createdAt"
+        FROM ${assessmentWorkRevision}
+        WHERE ${assessmentWorkRevision.tenantId} = ${input.tenantId}
+          AND ${assessmentWorkRevision.workItemId} = ${input.workItemId}
+          AND ${assessmentWorkRevision.documentVersionId} = ${input.documentVersionId}
+          AND ${assessmentWorkRevision.actionAttemptId} = (SELECT "attemptId" FROM selected_execution)
+        ORDER BY ${assessmentWorkRevision.workRevision} DESC LIMIT ${JOBAID_ACTIVITY_WINDOW + 1}
+      )
+      SELECT (SELECT to_jsonb(e) FROM selected_execution e) AS "execution",
+        (SELECT to_jsonb(w) FROM selected_work w) AS "current",
+        (SELECT COALESCE(jsonb_agg(to_jsonb(s) ORDER BY s."workRevision" DESC), '[]'::jsonb)
+          FROM selected_saves s) AS "savedActivity"
+    `);
+    const row = rows[0];
+    if (!row) throw new Error('JOBAID_SNAPSHOT_READBACK_MISSING');
+    return { execution: row.execution, current: row.current ? project({ ...row.current, createdAt: new Date(row.current.createdAt) }) : null,
+      savedActivity: row.savedActivity.map(saved => ({ ...saved, createdAt: new Date(saved.createdAt) })) };
   }
 
   async readCurrentExecution(input: {
@@ -577,7 +620,7 @@ export class JobAidWorkRepository {
 }
 
 function project(
-  row: typeof assessmentWorkRevision.$inferSelect,
+  row: StoredJobAidWork,
 ): JobAidWorkRevision {
   const content = readHistoricalJobAidWork(JSON.parse(row.contentJson), { workItemId: row.workItemId });
   if (
