@@ -229,7 +229,7 @@ export async function clearEngineeringMatterQueries(
   });
 }
 
-function useEngineeringMatterQueryIdentity(
+export function useEngineeringMatterQueryIdentity(
   enabled: boolean,
   sessionGeneration: number,
 ) {
@@ -319,7 +319,7 @@ type MatterResourceResult<T> =
  * readable "rejected" resource, so every consumer and every remount sees the
  * same conclusion until a later successful fetch replaces the cached value.
  */
-async function readMatterResource<T>(
+export async function readMatterResource<T>(
   read: () => Promise<T>,
   sessionGeneration: number,
 ): Promise<MatterResourceResult<T>> {

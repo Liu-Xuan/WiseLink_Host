@@ -607,3 +607,16 @@ Luna已独立接受c58eb5c08的3套53项/types/lint/build/precommit。本批待�
 直接反例原实现3失败/15通过；修复document/activity/reading三个Node文件86项通过，上半WorkItem单独17项通过，共103项；覆盖同tick接续、新parse/状态/新待办让出、STEP或recheck跨过10s边界、未知STEP/recheck、错误scope，原published语义与恢复集合通过。node --check、消费者ESLint通过；纯消费者JS变动未重复构建未改的Host。10秒是接续启动预算，不是硬中断或已开始操作的总时长上限；局部消除一轮固定等待不等于证明跨任务公平性、native cron并发配置或真实竞争性能。
 
 主控已实际建立/private/tmp/wiselink-integration-ab2-20260923、固定e812+MERGE_HEAD c58eb5c08+A b10，共35staged文件，组合独立验收进行中，尚无新release事实；77ae及本批明确留下一批。旧e812配套Hosted Skill安装仍未闭合，不能把consumer测试当线上持续工作完成。完整Goal保持active。
+
+
+## 2026-09-23 B：2D 知识目录及精确保存正文共享阅读资源
+
+真实e812同一SPA会话knowledge→library→knowledge（无reload）仍重新请求catalogue 200 headers2845.869ms/total2846.250ms/3254B，再请求work 200 headers1413.028ms/total1796.929ms/27689B；网络窗口未截断。DOM读取前后heap used14,998,392→15,747,564B、nodes4092→4095、listeners783→782、documents均5；仅单次浏览器观测，未归一GC，不认定泄漏/峰值或p95。本机匿名记录仍在/private/tmp/wiselink-vr-readonly-evidence-20260923.json。
+
+KnowledgeLookupPage原useEffect每次remount清空并请求，未使用既有共享Query资源。主控和A确认该页无在途；A纠正其历史hook曾改过，B只以当前树为准。新增useKnowledgeResources，复用现有QueryClient、ENGINEERING_MATTER_QUERY_ROOT及Layout session清除；useEngineeringMatter仅把现有identity hook/readMatterResource导出，行为不变。key含app/tenant/actor/session、目录query/scope/cursor或正文subjectKind/subjectId/workRef，沿用30s stale/5min GC。新鲜同身份返回复用完整正文/目录；过期或失效后的重新读取隐藏旧正文，拒绝结果替代旧数据并在新鲜窗口跨remount保留，显式重试可恢复；迟到响应、账户变化、精确历史不退current。source资料分支仍保留原读取流程，未扩大该分支改造。
+
+这是已授权数据的有限阅读窗口，不授权新scope或Host操作；窗口内若没有session失效或新的读取，不保证立刻察觉远端撤权，与现有Matter阅读窗口一致。每次实际API读取仍由Host fresh授权，进入新identity key重新读取；没有另造QueryClient、持久化正文缓存或缓存权限授予决定。新鲜窗口过后返回会重新读取，session清除移除inactive知识资源。
+
+实际页面反例旧1失败/12通过，修复4套48项通过（knowledge-catalogue-interactions、knowledge-reading-ui、matter-resource-reuse、reading-return-context）。两次新鲜路由访问的catalogue/work调用各2→1；覆盖stale刷新隐藏、403替换/返回不自动重试、显式恢复、历史ref区别、actor/tenant隔离、session清除、31秒过期重读、非法pin清除后默认选择，以及既有迟到/来源/滚动行为。测试为组件补实际QueryClientProvider，并在SSR/卸载后clear自有client；初轮SSR未clear导致等待GC的测试进程已正常中断，修订后最终测试正常退出，不用forceExit或改变生产gcTime。client types、3个生产文件ESLint、client build13.22s通过。
+
+主控回报ab2 commit ef258aa7faba42277d38dec7584e41bb4be2ee55、origin/github同名分支准确SHA一致；release7688432648880098235 finished/同commit/error_logs=[]。该部署包括c58前序与A b10，不含77ae/fadf/本批。两Luna线上验收进行中，已证实侧栏图谱保留M/W，但主控转报“返回原阅读位置”按钮可能到裸/library；B已要求区分真实按钮与browser back，并将其作为独立下一修复。不能把进入成功或浏览器后退当完整往返完成。77ae/fadf已获独立验收，本批待审查/发布/实际热路径采样，Goal保持active。

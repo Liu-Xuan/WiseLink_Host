@@ -1,4 +1,5 @@
 import { createElement } from 'react';
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { StaticRouter } from 'react-router-dom/server';
 import KnowledgeLookupPage from '../../client/src/pages/KnowledgeLookupPage/KnowledgeLookupPage';
@@ -6,8 +7,16 @@ import EngineeringIssueSearch from '../../client/src/features/matter/Engineering
 import { exactDocumentSourceRoute, matterDocumentRoute } from '../../client/src/features/matter/matter-navigation';
 import { readingReturnTarget, knowledgeReadingIdentity } from '../../client/src/features/matter/reading-return';
 
+function renderKnowledge(location: string) {
+  const client = new QueryClient();
+  try {
+    return renderToStaticMarkup(createElement(QueryClientProvider, { client },
+      createElement(StaticRouter, { location }, createElement(KnowledgeLookupPage))));
+  } finally { client.clear(); }
+}
+
 let mockAuthenticationRequired = false;
-jest.mock('@client/src/app/providers/CurrentUserSessionProvider', () => ({ useCurrentUserSession: () => ({ sessionGeneration: 1, authenticationRequired: mockAuthenticationRequired }) }));
+jest.mock('@client/src/app/providers/CurrentUserSessionProvider', () => ({ useCurrentUserSession: () => ({ sessionGeneration: 1, authenticationRequired: mockAuthenticationRequired, currentUser: { user_id: 'actor-test' } }) }));
 jest.mock('@client/src/api/canonical-host', () => ({ subscribeCanonicalHostClientSession: () => () => undefined }));
 jest.mock('@client/src/api/engineering-matter', () => ({}));
 jest.mock('@client/src/features/matter/MatterDocumentSourceDialog', () => ({ __esModule: true, default: 'div' }));
@@ -20,7 +29,7 @@ jest.mock('../../client/src/pages/KnowledgeLookupPage/knowledge-lookup.css', () 
 jest.mock('../../client/src/pages/KnowledgeLookupPage/knowledge-suite.css', () => ({}));
 
 test('knowledge defaults to saved explanation catalogue without process cards or write actions', () => {
-  const html = renderToStaticMarkup(createElement(StaticRouter, { location: '/knowledge?referenceAttemptRef=must-not-run' }, createElement(KnowledgeLookupPage)));
+  const html = renderKnowledge('/knowledge?referenceAttemptRef=must-not-run');
   expect(html).toContain('已有工程认识');
   expect(html).toContain('完整工程认识');
   expect(html).toContain('仅历史工作');
@@ -45,7 +54,7 @@ test('knowledge identity refuses partial, empty and duplicated history pins', ()
 
 test('authentication-required knowledge does not retain either result surface', () => {
   mockAuthenticationRequired = true;
-  const html = renderToStaticMarkup(createElement(StaticRouter, { location: '/knowledge' }, createElement(KnowledgeLookupPage)));
+  const html = renderKnowledge('/knowledge');
   mockAuthenticationRequired = false;
   expect(html).toContain('请先登录');
   expect(html).not.toContain('只读工程知识检索');
