@@ -1,0 +1,29 @@
+{
+  "parent": "e08f5b780",
+  "observedFailure": "AB81 graph -> global Library -> product return button stays in Library; browser Back passes separately.",
+  "implementation": [
+    "Sidebar captures Matter graph query only for global /library exit.",
+    "Dedicated returnLibraryGraphQuery is accepted only on /library, once, and without competing return intent.",
+    "Existing graphReturnTarget normalizes Matter/work identity and bounded display state, including viewport; unknown URL/action parameters are discarded.",
+    "TopBar uses the accepted exact graph target; malformed intent disables return instead of falling back to Library/current work."
+  ],
+  "regression": [
+    "Clicks real Sidebar Library link and TopBar return button in MemoryRouter.",
+    "Runs the real useLibraryDefaultSelection hook, preserving context through automatic family selection.",
+    "Asserts Matter ID, saved work, viewport, density, selected node, layout mode, wiki tab and nested knowledge return.",
+    "Rejects empty/multiple Matter IDs, empty/multiple workRefs, external URL, document graph conflict, wrong target route and competing/duplicate return keys."
+  ],
+  "validation": {
+    "unitSuites": 4,
+    "unitTests": 72,
+    "clientTypes": "passed",
+    "clientBuild": "passed with existing chunk-size advisory",
+    "scopedLint": "passed",
+    "parentCounterexample": "failed at missing Return to graph toolbar button after actual Library click; candidate passes"
+  },
+  "limits": [
+    "Not yet independently accepted, integrated or deployed.",
+    "No new browser performance measurement; this fixes the product button path, not all possible navigation history.",
+    "Changing library modes or navigating onward through unrelated routes is outside this specific return-path regression."
+  ]
+}

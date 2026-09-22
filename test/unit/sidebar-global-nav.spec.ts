@@ -52,6 +52,7 @@ jest.mock('@client/src/components/CurrentUserControl', () => ({ __esModule: true
 jest.mock('@client/src/features/atlas/AtlasLauncher', () => ({ __esModule: true, default: () => null }));
 import TopBar from '../../client/src/features/navigation/TopBar';
 import Sidebar from '../../client/src/features/navigation/Sidebar';
+import { useLibraryDefaultSelection } from '../../client/src/pages/WorkspaceHomePage/useLibraryDefaultSelection';
 
 function entry(
   documentVersionId: string,
@@ -137,7 +138,13 @@ describe('sidebar global navigation identity', () => {
       createElement(TopBar, { pathname: location.pathname, search: location.search, mobileNavOpen: false, onToggleMobile: () => undefined }));
   }
 
-  async function mount(path: string) {
+  function LibraryDefaultSelection() {
+    const location = useLocation();
+    useLibraryDefaultSelection('document', 'FAMILY-1', location.pathname !== '/library', false, false);
+    return null;
+  }
+
+  async function mount(path: string, selectLibraryDefault = false) {
     root = createRoot(container);
     await act(async () =>
       root.render(
@@ -145,6 +152,7 @@ describe('sidebar global navigation identity', () => {
           MemoryRouter,
           { initialEntries: [path] },
           createElement(Toolbar),
+          selectLibraryDefault ? createElement(LibraryDefaultSelection) : null,
           createElement(Sidebar, {
             mobileOpen: false,
             onMobileClose: () => undefined,
@@ -162,6 +170,37 @@ describe('sidebar global navigation identity', () => {
         ?.getAttribute('href') ?? null
     );
   }
+
+  it('returns from the global Library button to the exact graph through the product toolbar', async () => {
+    mockGetMatter.mockResolvedValue(matterWith([]));
+    const viewport = { zoom: 0.9348, pan: { x: -118.5, y: -138.05 } };
+    const graph = new URLSearchParams({ matterId: 'M1', workRef: 'MWREV-16',
+      viewport: JSON.stringify(viewport), layoutMode: 'force', density: '4',
+      selectedId: 'issue-2', wikiTab: 'basis',
+      returnKnowledgeQuery: 'subjectKind=ENGINEERING_MATTER&subjectId=M1&workRef=MWREV-16' });
+    await mount(`/graph?${graph}`, true);
+    const library = container.querySelector<HTMLAnchorElement>('a[aria-label="资料库"]')!;
+    await act(async () => library.click());
+    expect(container.querySelector('#route')?.textContent).toMatch(/^\/library\?/);
+    expect(container.querySelector('#route')?.textContent).toContain('familyId=FAMILY-1');
+    const back = container.querySelector<HTMLButtonElement>('button[aria-label="返回关系图谱"]');
+    expect(back).not.toBeNull();
+    expect(back?.disabled).toBe(false);
+    await act(async () => back!.click());
+    const restored = new URL(container.querySelector('#route')!.textContent!, 'https://example.test');
+    expect(restored.pathname).toBe('/graph');
+    for (const [key, value] of graph) expect(restored.searchParams.get(key)).toBe(value);
+  });
+
+  it.each([
+    '', 'matterId=M1&matterId=M2', 'matterId=M1&workRef=',
+    'matterId=M1&workRef=W1&workRef=W2', 'https://outside.test/graph',
+    'matterId=M1&documentVersionId=DV1',
+  ])('rejects malformed global graph return %s without a Library fallback', async raw => {
+    mockGetMatter.mockResolvedValue(matterWith([]));
+    await mount(`/library?${new URLSearchParams({ returnLibraryGraphQuery: raw })}`);
+    expect(container.querySelector<HTMLButtonElement>('.wl-pagebar-back')?.disabled).toBe(true);
+  });
 
   it('links a graph matter context to the timeline through the registered current source', async () => {
     mockGetMatter.mockResolvedValue(

@@ -873,3 +873,20 @@ Next scope is preserving exact graph return context through this global exit,
 without loosening existing explicit return/version validation. Shared Sidebar,
 TopBar and reading-return ownership must be coordinated before integration.
 See GRAPH_GLOBAL_EXIT_EVIDENCE_20260923.json; raw sample identifiers omitted.
+
+
+## Exact graph return through global Library (2026-09-23)
+
+The observed AB81 product-button failure now has a narrow fix: Sidebar carries
+the current Matter graph query into /library; TopBar reads this dedicated intent
+only on that route, rejects duplicate/conflicting return intents and delegates
+graph identity/display normalization to the existing graph return validator.
+No arbitrary return URL, new navigation stack or authorization bypass is added.
+
+The regression clicks actual Sidebar and TopBar components, including the real
+Library default-selection hook. It verifies exact saved work, viewport, selected
+node, density, layout, wiki tab and nested knowledge return. Restoring the parent
+product files makes that same test fail at the missing graph return button.
+Candidate: 4 suites / 72 tests, client types, scoped lint and client build pass;
+chunk-size advice remains in build output. No online result is claimed before
+review/integration/release. See GRAPH_LIBRARY_RETURN_FIX_EVIDENCE_20260923.json.
