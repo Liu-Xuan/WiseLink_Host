@@ -1,5 +1,7 @@
+import { captureGraphLayout, restoreGraphLayout, type SuiteGraphLayoutSnapshot } from './suite-graph-layout-memory';
 import {
   forwardRef,
+  memo,
   useCallback,
   useEffect,
   useImperativeHandle,
@@ -10,7 +12,6 @@ import {
 } from 'react';
 import cytoscape, {
   type Core,
-  type ElementDefinition,
   type EventObject,
   type NodeSingular,
   type StylesheetStyle,
@@ -32,6 +33,7 @@ import {
   SlidersHorizontal,
   type LucideIcon,
 } from 'lucide-react';
+import { reconcileSuiteGraphElements } from './suite-graph-elements';
 import type {
   CytoscapeSuiteElement,
   CytoscapeSuiteNode,
@@ -48,6 +50,7 @@ import { Image } from '@client/src/components/ui/image';
 
 export interface SuiteGraphCanvasProps {
   presentation: SuiteGraphPresentation;
+  initialLayout?: SuiteGraphLayoutSnapshot;
   initialViewport?: { zoom: number; pan: { x: number; y: number } };
   selectedId?: string;
   focusGroupKey?: string | null;
@@ -67,6 +70,9 @@ export interface SuiteGraphCanvasHandle {
   /** Apply an exact saved camera, or auto-fit when null (used on perspective switch). */
   setViewport: (viewport: { zoom: number; pan: { x: number; y: number } } | null) => void;
   getCore: () => Core | null;
+  getLayout: () => SuiteGraphLayoutSnapshot | null;
+  /** Detached current camera, including events not yet published by the animation frame. */
+  getViewport: () => { zoom: number; pan: { x: number; y: number } } | null;
 }
 
 interface OverlayNode {
@@ -250,16 +256,6 @@ function buildStyleSheet(tokens: ThemeTokens): StylesheetStyle[] {
   return sheets;
 }
 
-function cloneElements(elements: CytoscapeSuiteElement[]): ElementDefinition[] {
-  return elements.map((element): ElementDefinition => element.group === 'nodes'
-    ? {
-      ...element,
-      data: { ...element.data },
-      position: { ...element.position },
-    }
-    : { ...element, data: { ...element.data } });
-}
-
 function finiteDimension(value: unknown): number {
   const dimension = Number(value);
   return Number.isFinite(dimension) ? dimension : 0;
@@ -330,7 +326,7 @@ function updateGroupHalo(
   halo.position({ x: (left + right) / 2, y: (top + bottom) / 2 });
 }
 
-function OverlayCard({
+const OverlayCard = memo(function OverlayCard({
   node,
   selected,
   onSelect,
@@ -402,10 +398,36 @@ function OverlayCard({
       <span className="suite-graph-node-copy"><strong>{title}</strong>{subtitle && <small>{subtitle}</small>}</span>
     </button>
   );
+}, (previous, next) => previous.node.id === next.node.id
+  && sameNodeData(previous.node.data, next.node.data)
+  && previous.selected === next.selected
+  && previous.onSelect === next.onSelect
+  && previous.onGroup === next.onGroup
+  && previous.onOverflow === next.onOverflow
+  && previous.onDragStart === next.onDragStart);
+
+function sameNodeData(left: Record<string, unknown>, right: Record<string, unknown>): boolean {
+  const keys = Object.keys(left);
+  return keys.length === Object.keys(right).length && keys.every((key) => Object.is(left[key], right[key]));
+}
+
+type GraphCamera = { zoom: number; pan: { x: number; y: number } };
+
+function sameCamera(left: GraphCamera | null, right: GraphCamera): boolean {
+  return left?.zoom === right.zoom && left.pan.x === right.pan.x && left.pan.y === right.pan.y;
+}
+
+function sameOverlayNodes(left: OverlayNode[], right: OverlayNode[]): boolean {
+  return left.length === right.length && left.every((node, index) => {
+    const next = right[index];
+    return node.id === next.id && node.position.x === next.position.x
+      && node.position.y === next.position.y
+      && sameNodeData(node.data, next.data);
+  });
 }
 
 const SuiteGraphCanvas = forwardRef<SuiteGraphCanvasHandle, SuiteGraphCanvasProps>(function SuiteGraphCanvas(
-  { presentation, initialViewport, selectedId, focusGroupKey, onSelect, onGroup, onOverflow, onInspectRelationships, onViewport, className, ariaLabel = '关系图谱' },
+  { presentation, initialLayout, initialViewport, selectedId, focusGroupKey, onSelect, onGroup, onOverflow, onInspectRelationships, onViewport, className, ariaLabel = '关系图谱' },
   ref,
 ) {
   const mountRef = useRef<HTMLDivElement | null>(null);
@@ -413,6 +435,13 @@ const SuiteGraphCanvas = forwardRef<SuiteGraphCanvasHandle, SuiteGraphCanvasProp
   const callbacksRef = useRef({ onSelect, onGroup, onOverflow, onInspectRelationships, onViewport });
   const [overlayNodes, setOverlayNodes] = useState<OverlayNode[]>([]);
   const [camera, setCamera] = useState({ zoom: 1, pan: { x: 0, y: 0 } });
+  const syncNowRef = useRef<(() => void) | null>(null);
+  const publishedCameraRef = useRef<GraphCamera | null>(null);
+  const publishViewport = useCallback((viewport: GraphCamera) => {
+    if (sameCamera(publishedCameraRef.current, viewport)) return;
+    publishedCameraRef.current = { zoom: viewport.zoom, pan: { ...viewport.pan } };
+    callbacksRef.current.onViewport?.(viewport);
+  }, []);
   const dragRef = useRef<DragState | null>(null);
   const dragCleanupRef = useRef<((cancelled: boolean) => void) | null>(null);
   const suppressClickRef = useRef<{ id: string; until: number } | null>(null);
@@ -421,6 +450,7 @@ const SuiteGraphCanvas = forwardRef<SuiteGraphCanvasHandle, SuiteGraphCanvasProp
   const initialViewportAppliedRef = useRef(false);
   const initialViewportRef = useRef(initialViewport);
   const cameraReadyRef = useRef(false);
+  const discardedLayoutRef = useRef<SuiteGraphLayoutSnapshot | undefined>(undefined);
   const elementsRef = useRef<CytoscapeSuiteElement[]>([]);
   const selectedIdRef = useRef<string | undefined>(selectedId);
   const focusGroupKeyRef = useRef<string | null | undefined>(focusGroupKey);
@@ -443,6 +473,7 @@ const SuiteGraphCanvas = forwardRef<SuiteGraphCanvasHandle, SuiteGraphCanvasProp
       cy.zoom({ level: Math.max(cy.minZoom(), Math.min(cy.maxZoom(), cy.zoom() * factor)), renderedPosition: { x: cy.width() / 2, y: cy.height() / 2 } });
     },
     reset: () => {
+      discardedLayoutRef.current = initialLayout;
       const cy = cyRef.current;
       if (!cy) return;
       userCameraRef.current = true;
@@ -480,7 +511,12 @@ const SuiteGraphCanvas = forwardRef<SuiteGraphCanvasHandle, SuiteGraphCanvasProp
       }
     },
     getCore: () => cyRef.current,
-  }), []);
+    getLayout: () => cyRef.current ? captureGraphLayout(cyRef.current, elementsRef.current) : null,
+    getViewport: () => {
+      const cy = cyRef.current;
+      return cy ? { zoom: cy.zoom(), pan: { ...cy.pan() } } : null;
+    },
+  }), [initialLayout]);
 
   const applyNarrowFocus = useCallback((cy: Core) => {
     const focusGroup = focusGroupKeyRef.current;
@@ -553,19 +589,37 @@ const SuiteGraphCanvas = forwardRef<SuiteGraphCanvasHandle, SuiteGraphCanvasProp
       style: buildStyleSheet(readThemeTokens(mount)),
     });
     let labelsHidden = false;
+    let frame: number | null = null;
+    let disposed = false;
+    let lastNodes: OverlayNode[] = [];
+    let lastCamera: GraphCamera | null = null;
     const sync = () => {
+      if (disposed) return;
+      if (frame !== null) window.cancelAnimationFrame(frame);
+      frame = null;
       const hideLabels = cy.zoom() < 0.9;
       if (labelsHidden !== hideLabels && typeof cy.edges === 'function') {
         labelsHidden = hideLabels;
         cy.edges().toggleClass('suite-small-edge-label', hideLabels);
       }
-      const next = cy.nodes().map((node) => ({ id: node.id(), data: node.data() as Record<string, unknown>, position: node.renderedPosition() }));
-      setOverlayNodes(next);
-      const nextCamera = { zoom: cy.zoom(), pan: cy.pan() };
-      setCamera(nextCamera);
-      if (cameraReadyRef.current && !internalCameraRef.current) callbacksRef.current.onViewport?.(nextCamera);
+      // Cytoscape mutates data/positions in place; retain detached snapshots.
+      const next = cy.nodes().map((node) => ({ id: node.id(), data: { ...node.data() } as Record<string, unknown>, position: { ...node.renderedPosition() } }));
+      if (!sameOverlayNodes(lastNodes, next)) {
+        lastNodes = next;
+        setOverlayNodes(next);
+      }
+      const nextCamera = { zoom: cy.zoom(), pan: { ...cy.pan() } };
+      if (!sameCamera(lastCamera, nextCamera)) {
+        lastCamera = nextCamera;
+        setCamera(nextCamera);
+      }
+      if (cameraReadyRef.current && !internalCameraRef.current) publishViewport(nextCamera);
     };
-    cy.on('render resize pan zoom', sync);
+    const scheduleSync = () => {
+      if (!disposed && frame === null) frame = window.requestAnimationFrame(sync);
+    };
+    syncNowRef.current = sync;
+    cy.on('render resize pan zoom', scheduleSync);
     cy.on('tap', 'edge', (event: EventObject) => {
       const ids = event.target.data('relationshipIds');
       if (Array.isArray(ids)) callbacksRef.current.onInspectRelationships?.(ids.filter((id): id is string => typeof id === 'string'));
@@ -599,6 +653,11 @@ const SuiteGraphCanvas = forwardRef<SuiteGraphCanvasHandle, SuiteGraphCanvasProp
     mount.addEventListener('wheel', markUserCamera, { passive: true });
     mount.addEventListener('pointerdown', markUserCamera, { passive: true });
     return () => {
+      disposed = true;
+      if (frame !== null) window.cancelAnimationFrame(frame);
+      syncNowRef.current = null;
+      cameraReadyRef.current = false;
+      publishedCameraRef.current = null;
       dragCleanupRef.current?.(true);
       themeObserver?.disconnect();
       resizeObserver.disconnect();
@@ -609,7 +668,7 @@ const SuiteGraphCanvas = forwardRef<SuiteGraphCanvasHandle, SuiteGraphCanvasProp
       cy.destroy();
       cyRef.current = null;
     };
-  }, [applyAutoCamera]);
+  }, [applyAutoCamera, publishViewport]);
 
   useEffect(() => {
     userCameraRef.current = false;
@@ -618,20 +677,21 @@ const SuiteGraphCanvas = forwardRef<SuiteGraphCanvasHandle, SuiteGraphCanvasProp
   useEffect(() => {
     const cy = cyRef.current;
     if (!cy) return;
-    dragCleanupRef.current?.(true);
-    cy.elements().remove();
-    cy.add(cloneElements(presentation.elements));
+    const update = reconcileSuiteGraphElements(cy, elementsRef.current, presentation.elements,
+      () => dragCleanupRef.current?.(true));
     if (typeof cy.edges === 'function') {
       cy.edges().toggleClass('suite-small-edge-label', cy.zoom() < 0.9);
     }
+    if (initialLayout && initialLayout !== discardedLayoutRef.current) {
+      Object.assign(update.positions, restoreGraphLayout(cy, presentation.elements, elementsRef.current, initialLayout));
+    }
     elementsRef.current = presentation.elements;
-    const positions = Object.fromEntries(presentation.elements.filter((element) => element.group === 'nodes').map((element) => [String(element.data.id), element.position]));
-    if (motionDisabled()) {
+    if (update.layoutRequired) {
       const elements = cy.elements();
       if (typeof elements.stop === 'function') elements.stop();
+      cy.layout({ name: 'preset', positions: update.positions, fit: false, animate: !motionDisabled(), animationDuration: 320 }).run();
+      cy.resize();
     }
-    cy.layout({ name: 'preset', positions, fit: false, animate: !motionDisabled(), animationDuration: 320 }).run();
-    cy.resize();
     internalCameraRef.current = true;
     const restore = initialViewportRef.current;
     if (!initialViewportAppliedRef.current && restore && Number.isFinite(restore.zoom) && Number.isFinite(restore.pan.x) && Number.isFinite(restore.pan.y)) {
@@ -644,13 +704,14 @@ const SuiteGraphCanvas = forwardRef<SuiteGraphCanvasHandle, SuiteGraphCanvasProp
         userCameraRef.current = false;
         cy.fit(undefined, 24);
       }
-    } else if (!userCameraRef.current) {
+    } else if (update.layoutRequired && !userCameraRef.current) {
       applyAutoCamera(cy);
     }
     internalCameraRef.current = false;
     cameraReadyRef.current = true;
-    callbacksRef.current.onViewport?.({ zoom: cy.zoom(), pan: cy.pan() });
-  }, [presentation, applyAutoCamera]);
+    publishViewport({ zoom: cy.zoom(), pan: { ...cy.pan() } });
+    syncNowRef.current?.();
+  }, [presentation, initialLayout, applyAutoCamera, publishViewport]);
 
   useEffect(() => {
     const cy = cyRef.current;
@@ -683,7 +744,7 @@ const SuiteGraphCanvas = forwardRef<SuiteGraphCanvasHandle, SuiteGraphCanvasProp
     });
   }, [presentation, selectedId]);
 
-  const handleOverlaySelect = (event: MouseEvent<HTMLButtonElement>, data: Record<string, unknown>) => {
+  const handleOverlaySelect = useCallback((event: MouseEvent<HTMLButtonElement>, data: Record<string, unknown>) => {
     event.stopPropagation();
     const id = text(data.id);
     const suppressed = suppressClickRef.current;
@@ -702,9 +763,10 @@ const SuiteGraphCanvas = forwardRef<SuiteGraphCanvasHandle, SuiteGraphCanvasProp
     cy.center(target);
     internalCameraRef.current = false;
     userCameraRef.current = true;
-    callbacksRef.current.onViewport?.({ zoom: cy.zoom(), pan: cy.pan() });
-  };
-  const handleDragStart = (event: React.PointerEvent<HTMLButtonElement>, id: string) => {
+    publishViewport({ zoom: cy.zoom(), pan: { ...cy.pan() } });
+    syncNowRef.current?.();
+  }, [publishViewport]);
+  const handleDragStart = useCallback((event: React.PointerEvent<HTMLButtonElement>, id: string) => {
     if (event.button !== 0) return;
     const cy = cyRef.current;
     const mount = mountRef.current;
@@ -763,7 +825,9 @@ const SuiteGraphCanvas = forwardRef<SuiteGraphCanvasHandle, SuiteGraphCanvasProp
     window.addEventListener('pointermove', move);
     window.addEventListener('pointerup', end);
     window.addEventListener('pointercancel', cancel);
-  };
+  }, []);
+  const handleGroup = useCallback((groupKey: string) => callbacksRef.current.onGroup?.(groupKey), []);
+  const handleOverflow = useCallback((groupKey: string) => callbacksRef.current.onOverflow?.(groupKey), []);
   return (
     <div className={`suite-graph-canvas${className ? ` ${className}` : ''}`}>
       <div ref={mountRef} className="suite-graph-cy" role="img" aria-label={ariaLabel} />
@@ -775,8 +839,8 @@ const SuiteGraphCanvas = forwardRef<SuiteGraphCanvasHandle, SuiteGraphCanvasProp
               selected={node.data.businessId === selectedId || node.id === selectedId}
               onSelect={handleOverlaySelect}
               onDragStart={handleDragStart}
-              onGroup={(groupKey) => callbacksRef.current.onGroup?.(groupKey)}
-              onOverflow={(groupKey) => callbacksRef.current.onOverflow?.(groupKey)}
+              onGroup={handleGroup}
+              onOverflow={handleOverflow}
             />
           </div>
         ))}

@@ -1,4 +1,5 @@
-import { act, createElement, createRef } from 'react';
+import * as appearance from '../../client/src/pages/RelationGraphPage/suite-graph-appearance';
+import { act, createElement, createRef, Profiler } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 import SuiteGraphCanvas, { type SuiteGraphCanvasHandle } from '../../client/src/pages/RelationGraphPage/SuiteGraphCanvas';
 import type { SuiteGraphPresentation } from '../../client/src/pages/RelationGraphPage/suite-graph-model';
@@ -33,10 +34,14 @@ function createCy() {
       },
       renderedPosition: () => definition.position ?? { x: 0, y: 0 },
       addClass: jest.fn(),
+      remove: () => { definitions = definitions.filter((item) => item !== definition); },
+      removeData: (key: string) => { delete definition.data[key]; },
+      removeClass: jest.fn(),
     };
   };
   const cy = {
-    nodes: () => Object.assign(definitions.filter((definition) => definition.group === 'nodes').map(nodeFor), { removeClass: jest.fn() }),
+    batch: (callback: () => void) => callback(),
+    nodes: jest.fn(() => Object.assign(definitions.filter((definition) => definition.group === 'nodes').map(nodeFor), { removeClass: jest.fn() })),
     elements: () => ({
       remove: () => { definitions = []; },
       renderedBoundingBox: () => {
@@ -53,13 +58,11 @@ function createCy() {
         };
       },
     }),
-    add: (next: Array<{ group: string; data: Record<string, unknown>; position?: { x: number; y: number } }>) => {
-      definitions = next.map((definition) => ({
-        ...definition,
-        data: { ...definition.data },
-        position: definition.position ? { ...definition.position } : undefined,
-      }));
+    add: (input: { group: string; data: Record<string, unknown>; position?: { x: number; y: number } }) => {
+      const definition = { ...input, data: { ...input.data }, position: input.position ? { ...input.position } : undefined };
+      definitions.push(definition);
       handlers.get('render')?.();
+      return nodeFor(definition);
     },
     layout: () => ({ run: () => handlers.get('render')?.() }),
     fit: jest.fn(),
@@ -142,6 +145,8 @@ let resizeCallback: (() => void) | null = null;
 describe('SuiteGraphCanvas', () => {
   let container: HTMLDivElement;
   let root: Root;
+  let frames: Map<number, FrameRequestCallback>;
+  const flushFrames = () => { const pending = [...frames.values()]; frames.clear(); pending.forEach((callback) => callback(0)); };
 
   beforeAll(() => {
     dom = new JSDOM('<!doctype html><body></body>', { url: 'https://example.test/' });
@@ -155,6 +160,10 @@ describe('SuiteGraphCanvas', () => {
     container = document.createElement('div');
     document.body.appendChild(container);
     resizeCallback = null;
+    frames = new Map();
+    let nextFrame = 0;
+    dom.window.requestAnimationFrame = jest.fn((callback: FrameRequestCallback) => { frames.set(++nextFrame, callback); return nextFrame; });
+    dom.window.cancelAnimationFrame = jest.fn((id: number) => { frames.delete(id); });
     (globalThis as { ResizeObserver?: unknown }).ResizeObserver = class { constructor(callback: () => void) { resizeCallback = callback; } observe() {} disconnect() {} };
     mockCyFactory.mockReturnValue(createCy());
   });
@@ -492,4 +501,198 @@ describe('SuiteGraphCanvas', () => {
     act(() => window.dispatchEvent(pointerEvent('pointermove', 19, 210, 190)));
     expect(cy.getElementById('sg:item:a').position()).toEqual({ x: 349, y: 200 });
   });
+  it('coalesces 100 visual events into one snapshot and suppresses unchanged commits and viewport callbacks', async () => {
+    const onViewport = jest.fn();
+    const onRender = jest.fn();
+    await act(async () => {
+      root = createRoot(container);
+      root.render(createElement(Profiler, { id: 'canvas', onRender }, createElement(SuiteGraphCanvas, { presentation, onViewport })));
+    });
+    const cy = mockCyFactory.mock.results[0].value as ReturnType<typeof createCy>;
+    cy.nodes.mockClear(); onViewport.mockClear(); onRender.mockClear();
+    act(() => {
+      cy.zoom(1.5); cy.pan({ x: 10, y: 20 });
+      for (let index = 0; index < 100; index++) cy.trigger(['render', 'resize', 'pan', 'zoom'][index % 4], { target: cy });
+    });
+    expect(cy.nodes).not.toHaveBeenCalled();
+    expect(frames.size).toBe(1);
+    act(flushFrames);
+    expect(cy.nodes).toHaveBeenCalledTimes(1);
+    expect(onViewport).toHaveBeenCalledTimes(1);
+    expect(onViewport).toHaveBeenLastCalledWith({ zoom: 1.5, pan: { x: 10, y: 20 } });
+    expect(container.querySelector('.suite-graph-camera-status')?.textContent).toBe('150%');
+    onViewport.mockClear(); onRender.mockClear(); cy.nodes.mockClear();
+    act(() => { for (let index = 0; index < 100; index++) cy.trigger('render', { target: cy }); });
+    act(flushFrames);
+    expect(cy.nodes).toHaveBeenCalledTimes(1);
+    expect(onViewport).not.toHaveBeenCalled();
+    expect(onRender).not.toHaveBeenCalled();
+  });
+
+  it('updates mutated node data and drag positions without rebuilding, and cancels pending work on unmount', async () => {
+    await act(async () => {
+      root = createRoot(container);
+      root.render(createElement(SuiteGraphCanvas, { presentation }));
+    });
+    const cy = mockCyFactory.mock.results[0].value as ReturnType<typeof createCy>;
+    const node = cy.getElementById('sg:item:i');
+    act(() => {
+      if ('data' in node) { node.data('title', 'Updated'); node.position({ x: 150, y: 160 }); }
+      cy.trigger('render', { target: cy });
+    });
+    act(flushFrames);
+    const card = container.querySelector('[aria-label="Updated，Detail"]');
+    expect(card).toBeTruthy();
+    expect((card?.parentElement as HTMLElement).style.left).toBe('150px');
+    expect(mockCyFactory).toHaveBeenCalledTimes(1);
+    act(() => cy.trigger('pan', { target: cy }));
+    const lateFrame = [...frames.values()][0];
+    cy.nodes.mockClear();
+    act(() => root.unmount());
+    expect(frames.size).toBe(0);
+    act(() => lateFrame(0));
+    expect(cy.nodes).not.toHaveBeenCalled();
+    expect(cy.destroy).toHaveBeenCalledTimes(1);
+  });
+
+  it('tracks real Cytoscape pan/zoom and node mutations across frames and presentation replacement', async () => {
+    const realCytoscape = jest.requireActual<typeof import('cytoscape')>('cytoscape');
+    document.documentElement.setAttribute('data-wl-motion', 'off');
+    mockCyFactory.mockImplementation((options) => realCytoscape({ ...options, headless: true, styleEnabled: false }));
+    const onViewport = jest.fn();
+    try {
+      await act(async () => {
+        root = createRoot(container);
+        root.render(createElement(SuiteGraphCanvas, { presentation, onViewport }));
+      });
+      const cy = mockCyFactory.mock.results[0].value as import('cytoscape').Core;
+      onViewport.mockClear();
+      act(() => { cy.zoom(1.2); cy.pan({ x: 20, y: 30 }); });
+      expect(frames.size).toBe(1);
+      act(flushFrames);
+      expect(onViewport).toHaveBeenCalledTimes(1);
+      expect(onViewport).toHaveBeenCalledWith({ zoom: 1.2, pan: { x: 20, y: 30 } });
+      act(() => {
+        cy.getElementById('sg:item:i').position({ x: 50, y: 60 }).data('title', 'Real node');
+        cy.emit('render');
+      });
+      act(flushFrames);
+      const card = container.querySelector('[aria-label="Real node，Detail"]');
+      expect(card).toBeTruthy();
+      expect((card?.parentElement as HTMLElement).style.left).toBe('80px');
+      expect((card?.parentElement as HTMLElement).style.top).toBe('102px');
+      await act(async () => root.render(createElement(SuiteGraphCanvas, { presentation: groupPresentation, onViewport })));
+      expect(container.querySelector('[aria-label="Real node，Detail"]')).toBeNull();
+      expect(container.querySelector('[aria-label="Card A"]')).toBeTruthy();
+      expect(mockCyFactory).toHaveBeenCalledTimes(1);
+    } finally {
+      document.documentElement.removeAttribute('data-wl-motion');
+    }
+  });
+
+  it('restores real dragged geometry on remount and allows explicit layout reset', async () => {
+    const realCytoscape = jest.requireActual('cytoscape') as typeof import('cytoscape');
+    document.documentElement.setAttribute('data-wl-motion', 'off');
+    mockCyFactory.mockImplementation((options) => realCytoscape({ ...options, headless: true, styleEnabled: false }));
+    const ref = createRef<SuiteGraphCanvasHandle>();
+    try {
+      await act(async () => {
+        root = createRoot(container);
+        root.render(createElement(SuiteGraphCanvas, { presentation, ref }));
+      });
+      act(() => ref.current!.getCore()!.$id('sg:item:i').position({ x: 145, y: 167 }));
+      const saved = ref.current!.getLayout()!;
+      await act(async () => root.unmount());
+      await act(async () => {
+        root = createRoot(container);
+        root.render(createElement(SuiteGraphCanvas, { presentation, ref, initialLayout: saved }));
+      });
+      expect(ref.current!.getCore()!.$id('sg:item:i').position()).toEqual({ x: 145, y: 167 });
+      await act(async () => ref.current!.reset());
+      expect(ref.current!.getCore()!.$id('sg:item:i').position()).toEqual({ x: 80, y: 100 });
+    } finally { document.documentElement.removeAttribute('data-wl-motion'); }
+  });
+
+  it('reads the last camera before a pending frame and returns a detached snapshot', async () => {
+    const ref = createRef<SuiteGraphCanvasHandle>();
+    const onViewport = jest.fn();
+    await act(async () => {
+      root = createRoot(container);
+      root.render(createElement(SuiteGraphCanvas, { presentation, ref, onViewport }));
+    });
+    const cy = mockCyFactory.mock.results[0].value as ReturnType<typeof createCy>;
+    onViewport.mockClear();
+    act(() => { cy.zoom(1.3); cy.pan({ x: 45, y: 67 }); cy.trigger('pan', { target: cy }); });
+    expect(frames.size).toBe(1);
+    expect(onViewport).not.toHaveBeenCalled();
+    const camera = ref.current!.getViewport()!;
+    expect(camera).toEqual({ zoom: 1.3, pan: { x: 45, y: 67 } });
+    camera.pan.x = 999;
+    expect(ref.current!.getViewport()!.pan.x).toBe(45);
+  });
+
+  it('refreshes real node content without replacing objects, losing dragged positions, or running layout', async () => {
+    const realCytoscape = jest.requireActual('cytoscape') as typeof import('cytoscape');
+    document.documentElement.setAttribute('data-wl-motion', 'off');
+    mockCyFactory.mockImplementation((options) => realCytoscape({ ...options, headless: true, styleEnabled: false }));
+    try {
+      await act(async () => {
+        root = createRoot(container);
+        root.render(createElement(SuiteGraphCanvas, { presentation }));
+      });
+      const cy = mockCyFactory.mock.results[0].value as import('cytoscape').Core;
+      const item = cy.getElementById('sg:item:i')[0];
+      act(() => { item.position({ x: 91, y: 123 }); cy.zoom(1.1); cy.pan({ x: 12, y: 34 }); });
+      act(flushFrames);
+      const layout = jest.spyOn(cy, 'layout');
+      const fit = jest.spyOn(cy, 'fit');
+      const refreshed = { ...presentation, elements: presentation.elements.map((element) => ({
+        ...element, data: { ...element.data, ...(element.data.id === 'sg:item:i' ? { title: 'Fresh title' } : {}) },
+      })) };
+      await act(async () => root.render(createElement(SuiteGraphCanvas, { presentation: refreshed })));
+      expect(cy.getElementById('sg:item:i')[0] === item).toBe(true);
+      expect(item.position()).toEqual({ x: 91, y: 123 });
+      expect(layout).not.toHaveBeenCalled();
+      expect(fit).not.toHaveBeenCalled();
+      expect(cy.zoom()).toBe(1.1);
+      expect(cy.pan()).toEqual({ x: 12, y: 34 });
+      expect(container.querySelector('[aria-label="Fresh title，Detail"]')).toBeTruthy();
+    } finally { document.documentElement.removeAttribute('data-wl-motion'); }
+  });
+
+  it('moves overlay geometry without re-rendering card content and still uses fresh selection callbacks', async () => {
+    const iconKind = jest.spyOn(appearance, 'suiteGraphIconKind');
+    const oldSelect = jest.fn();
+    const nextSelect = jest.fn();
+    try {
+      await act(async () => {
+        root = createRoot(container);
+        root.render(createElement(SuiteGraphCanvas, { presentation, onSelect: oldSelect }));
+      });
+      const cy = mockCyFactory.mock.results[0].value as ReturnType<typeof createCy>;
+      iconKind.mockClear();
+      act(() => { cy.zoom(1.5); cy.trigger('zoom', { target: cy }); });
+      act(flushFrames);
+      expect(iconKind).not.toHaveBeenCalled();
+      expect(container.querySelector('.suite-graph-overlay-position')?.getAttribute('style')).toContain('scale(1.5)');
+      await act(async () => root.render(createElement(SuiteGraphCanvas, { presentation, onSelect: nextSelect })));
+      expect(iconKind).not.toHaveBeenCalled();
+      await act(async () => (container.querySelector('[aria-label="Item，Detail"]') as HTMLButtonElement).click());
+      expect(oldSelect).not.toHaveBeenCalled();
+      expect(nextSelect).toHaveBeenCalledTimes(1);
+      act(() => {
+        const node = cy.getElementById('sg:item:i');
+        if ('data' in node) node.data('title', 'Changed');
+        cy.trigger('render', { target: cy });
+      });
+      act(flushFrames);
+      expect(iconKind).toHaveBeenCalledTimes(1);
+      expect(container.querySelector('[aria-label="Changed，Detail"]')).toBeTruthy();
+      iconKind.mockClear();
+      await act(async () => root.render(createElement(SuiteGraphCanvas, { presentation, selectedId: 'i', onSelect: nextSelect })));
+      expect(iconKind).toHaveBeenCalledTimes(1);
+      expect(container.querySelector('[aria-label="Changed，Detail"]')?.classList.contains('is-selected')).toBe(true);
+    } finally { iconKind.mockRestore(); }
+  });
+
 });

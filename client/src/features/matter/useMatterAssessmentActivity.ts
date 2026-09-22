@@ -79,6 +79,17 @@ export function useMatterAssessmentActivity(
     staleTime: 30_000,
     gcTime: 5 * 60_000,
     retry: false,
+    // Visibility unmounts this observer. A remount must not undo a stopped
+    // read or silently retry a known refusal after the stale window expires.
+    retryOnMount: false,
+    refetchOnMount: (current) => {
+      const value = current.state.data;
+      return (
+        current.state.status !== 'error' &&
+        value?.kind !== 'rejected' &&
+        !(value?.kind === 'readable' && value.page.error)
+      );
+    },
     refetchOnWindowFocus: false,
     refetchOnReconnect: false,
     refetchInterval: (current) => {

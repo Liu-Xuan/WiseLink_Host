@@ -132,3 +132,12 @@ it('adds a bounded graph return only to the supported matter process route', () 
   expect(readingReturnTarget(process.searchParams, undefined, null, 'matter-a')?.route).toBe(`/graph?${query}`);
   expect(withGraphReturn('/matters/matter-a/unknown', query)).toBe('/matters/matter-a/unknown');
 });
+
+it('roundtrips only a bounded geometry reference with the exact source return', () => {
+ const query = graphReadingParams('matter-a', 'work-a', { layoutSnapshot: 'gl-12345678-1234-1234-1234-123456789abc' });
+ const params = new URL(withGraphReturn('/document-versions/dv1?parseRunId=pr1', query), 'https://example.test').searchParams;
+ const route = readingReturnTarget(params, 'dv1', 'pr1')!.route;
+ expect(readGraphReadingState(new URL(route, 'https://example.test').searchParams).layoutSnapshot).toBe('gl-12345678-1234-1234-1234-123456789abc');
+ expect(readGraphReadingState(new URLSearchParams('layoutSnapshot=gl-1&layoutSnapshot=gl-2')).layoutSnapshot).toBeUndefined();
+ expect(graphReadingParams('matter-a', null, { layoutSnapshot: '<script>' }).has('layoutSnapshot')).toBe(false);
+});

@@ -5,6 +5,8 @@ import {
 
 export interface SuiteGraphReadingState {
   selectedId?: string;
+  /** Opaque reference to bounded session-only geometry; never an authority or source pin. */
+  layoutSnapshot?: string;
   hiddenGroups?: string[];
   page?: number;
   density?: number;
@@ -40,6 +42,7 @@ function validEventPins(value: unknown): value is SuiteGraphTimelineEventPins {
 
 export function graphReadingParams(matterId: string, workRef: string | null, state: SuiteGraphReadingState): URLSearchParams {
   const params = new URLSearchParams({matterId});
+  if (state.layoutSnapshot && /^gl-[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/.test(state.layoutSnapshot)) params.set('layoutSnapshot', state.layoutSnapshot);
   if (workRef) params.set('workRef', workRef);
   if (state.selectedId && text(state.selectedId, 2048)) params.set('selectedId', state.selectedId);
   if (state.hiddenGroups?.length && state.hiddenGroups.length <= 32 && state.hiddenGroups.every(key => text(key, 256))) params.set('hiddenGroups', JSON.stringify([...new Set(state.hiddenGroups)]));
@@ -64,6 +67,8 @@ export function graphReadingParams(matterId: string, workRef: string | null, sta
 }
 export function readGraphReadingState(params: URLSearchParams): SuiteGraphReadingState {
   const state: SuiteGraphReadingState = {};
+  const snapshot = single(params, 'layoutSnapshot');
+  if (/^gl-[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/.test(snapshot)) state.layoutSnapshot = snapshot;
   const selected = single(params, 'selectedId');
   if (text(selected, 2048)) state.selectedId = selected;
   try {

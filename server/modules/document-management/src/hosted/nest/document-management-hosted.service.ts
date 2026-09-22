@@ -297,6 +297,22 @@ export class DocumentManagementHostedService {
     return selected;
   }
 
+  /** Fresh authorization and immutable registry identity for reusing previously verified bytes. */
+  async readDocumentOriginalIdentity(documentVersionId: string, context: HostedRequestContext) {
+    return publicDmOperation(async () => {
+      assertProductionMiaodaBrowserIdentityAvailable(hostedIdentity(context));
+      await this.authorizer.assertCanRead({ ...context, action: 'DOCUMENT_READ', documentVersionId });
+      const row = await this.catalog.readMetadataSource(documentVersionId, context.tenantId);
+      if (!row) throw Object.assign(new Error('Document original is unavailable.'), { code: 'DOCUMENT_VERSION_NOT_FOUND', statusCode: 404 });
+      if (row.version.documentVersionId !== documentVersionId || row.version.pdfSha256 !== row.source.sha256
+        || row.version.byteLength !== row.source.byteLength) {
+        throw Object.assign(new Error('Registered original identity is inconsistent.'), { code: 'DOCUMENT_METADATA_SOURCE_MISMATCH', statusCode: 409 });
+      }
+      await this.authorizer.assertCanRead({ ...context, action: 'DOCUMENT_READ', documentVersionId });
+      return { documentVersionId, sha256: row.version.pdfSha256, byteLength: row.version.byteLength };
+    });
+  }
+
   async readDocumentOriginal(documentVersionId: string, context: HostedRequestContext) {
     return publicDmOperation(async () => {
       assertProductionMiaodaBrowserIdentityAvailable(hostedIdentity(context));

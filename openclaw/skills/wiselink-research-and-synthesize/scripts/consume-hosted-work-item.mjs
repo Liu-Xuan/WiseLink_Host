@@ -332,18 +332,39 @@ export async function consumeHostedDocument(
   if (run.status === 'PUBLISHED') {
     const indexRun = state.nextSourceProjectionRunId ?? run.parseRunId;
     if (typeof indexRun !== 'string' || !/^[A-Za-z0-9_-]{1,96}$/.test(indexRun)) throw new Error('DOCUMENT_SOURCE_PROJECTION_RUN_INVALID');
+    const projectionPromise = Promise.resolve().then(() =>
+      callTool('document_work', { action: 'INDEX', documentVersionId, parseRunId: indexRun }));
+    // STATUS and existing-work recovery remain independent of derived indexing.
+    // Only a new START depends on semantics for this exact current parse, not
+    // whichever historical pending run the index queue selected.
+    const beforeStart = async () => {
+      let prepared;
+      try {
+        prepared = await (indexRun === run.parseRunId ? projectionPromise :
+          callTool('document_work', { action: 'INDEX', documentVersionId, parseRunId: run.parseRunId }));
+      } catch {
+        // INDEX may fail after persisting semantics (for example search writes).
+        // Re-read the Host's narrow exact registration instead of guessing from
+        // a failed derived index. Old Hosts omit this field and fail closed.
+        const readiness = await callTool('document_translation', {
+          action: 'STATUS', documentVersionId, parseRunId: run.parseRunId });
+        if (readiness?.documentVersionId !== documentVersionId || readiness.parseRunId !== run.parseRunId)
+          throw new Error('DOCUMENT_TRANSLATION_SCOPE_MISMATCH');
+        return readiness.status === 'IDLE' && readiness.semanticReady === true;
+      }
+      assertSourceProjection(prepared, documentVersionId, run.parseRunId);
+      return true;
+    };
     const outcomes = await Promise.allSettled([
-      callTool('document_work', { action: 'INDEX', documentVersionId, parseRunId: indexRun }),
-      advanceDocumentTranslationWithRecovery(documentVersionId, run, callTool, documentTranslationCheckpoint),
+      projectionPromise,
+      advanceDocumentTranslationWithRecovery(documentVersionId, run, callTool, documentTranslationCheckpoint, beforeStart),
     ]);
     const [projection, translation] = outcomes;
     if (translation.status === 'rejected') throw translation.reason;
     if (projection.status === 'rejected') return { ...translation.value, status: 'REQUIRES_ATTENTION',
       sourceProjection: { status: 'FAILED', errorCode: 'DOCUMENT_SOURCE_PROJECTION_FAILED' } };
     const indexed = projection.value;
-    if (indexed?.documentVersionId !== documentVersionId || indexed.parseRunId !== indexRun ||
-        !['INDEXED','PROGRESS','RETRY','NO_PENDING'].includes(indexed.status))
-      throw new Error('DOCUMENT_SOURCE_PROJECTION_RESULT_INVALID');
+    assertSourceProjection(indexed, documentVersionId, indexRun);
     return { ...translation.value, sourceProjection: indexed };
   }
   if (run.errorCode || run.status === 'FAILED' || !state.runtimeAvailable || Date.parse(run.deadlineAt) <= Date.now()) {
@@ -358,9 +379,15 @@ export async function consumeHostedDocument(
   return { ...result, documentVersionId };
 }
 
+function assertSourceProjection(indexed, documentVersionId, parseRunId) {
+  if (indexed?.documentVersionId !== documentVersionId || indexed.parseRunId !== parseRunId ||
+      !['INDEXED','PROGRESS','RETRY','NO_PENDING'].includes(indexed.status))
+    throw new Error('DOCUMENT_SOURCE_PROJECTION_RESULT_INVALID');
+}
+
 // This checkpoint records an operation stop, not a Host task or a successful
 // translation. A new parse run can still advance through the branch above.
-async function advanceDocumentTranslationWithRecovery(documentVersionId, run, callTool, checkpointFactory) {
+async function advanceDocumentTranslationWithRecovery(documentVersionId, run, callTool, checkpointFactory, beforeStart) {
   const checkpoint = await checkpointFactory?.(run.parseRunId);
   const blocked = await checkpoint?.readOptional('admission-blocked');
   if (blocked) {
@@ -370,7 +397,7 @@ async function advanceDocumentTranslationWithRecovery(documentVersionId, run, ca
       translation: blocked };
   }
   try {
-    return await advanceDocumentTranslation(documentVersionId, run, callTool);
+    return await advanceDocumentTranslation(documentVersionId, run, callTool, beforeStart);
   } catch (error) {
     if (error?.receivedHostToolError !== true || error.hostToolName !== 'document_translation' ||
         error.hostErrorCode !== 'DOCUMENT_TRANSLATION_ADMISSION_DENIED' || !checkpoint) throw error;
@@ -382,11 +409,15 @@ async function advanceDocumentTranslationWithRecovery(documentVersionId, run, ca
   }
 }
 
-async function advanceDocumentTranslation(documentVersionId, run, callTool) {
+async function advanceDocumentTranslation(documentVersionId, run, callTool, beforeStart) {
     const binding = { documentVersionId, parseRunId: run.parseRunId };
     const translation = await callTool('document_translation', { action: 'STATUS', ...binding });
     if (translation?.documentVersionId !== documentVersionId) throw new Error('DOCUMENT_TRANSLATION_SCOPE_MISMATCH');
     if (translation.status === 'IDLE') {
+      if (translation.semanticReady === true && translation.parseRunId !== run.parseRunId)
+        throw new Error('DOCUMENT_TRANSLATION_RUN_MISMATCH');
+      if (translation.semanticReady !== true && !await beforeStart()) return { status: 'REQUIRES_ATTENTION', ...binding,
+        semanticPreparation: { status: 'FAILED', errorCode: 'DOCUMENT_SEMANTIC_NOT_READY' } };
       const started = await callTool('document_translation', { action: 'START', ...binding, requestId: `translation-${run.parseRunId}` });
       if (started?.documentVersionId !== documentVersionId || started.parseRunId !== run.parseRunId || !started.attemptRef)
         throw new Error('DOCUMENT_TRANSLATION_START_MISMATCH');

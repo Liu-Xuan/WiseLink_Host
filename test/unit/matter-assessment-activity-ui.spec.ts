@@ -327,6 +327,74 @@ describe('visible Matter activity consumer', () => {
     await settle();
     expect(container.textContent).toContain('已保存候选工作');
   });
+  it('keeps failed polling stopped across visibility remount until manual refresh', async () => {
+    mockRead
+      .mockResolvedValueOnce(page())
+      .mockRejectedValueOnce(new Error('network-stopped'))
+      .mockResolvedValue(page(false));
+    await render();
+    await act(async () => {
+      await jest.advanceTimersByTimeAsync(4_001);
+    });
+    await settle();
+    expect(mockRead).toHaveBeenCalledTimes(2);
+    expect(container.textContent).toContain('network-stopped');
+    await act(async () => {
+      Object.defineProperty(document, 'hidden', {
+        configurable: true,
+        value: true,
+      });
+      document.dispatchEvent(new dom.window.Event('visibilitychange'));
+    });
+    await act(async () => {
+      await jest.advanceTimersByTimeAsync(31_000);
+    });
+    await act(async () => {
+      Object.defineProperty(document, 'hidden', {
+        configurable: true,
+        value: false,
+      });
+      document.dispatchEvent(new dom.window.Event('visibilitychange'));
+    });
+    await settle();
+    expect(mockRead).toHaveBeenCalledTimes(2);
+    expect(container.textContent).toContain('network-stopped');
+    await act(async () => button('刷新当前页').click());
+    await settle();
+    expect(mockRead).toHaveBeenCalledTimes(3);
+    expect(container.textContent).toContain('执行完成');
+  });
+  it.each(['first-error', 'denied', 'malformed'] as const)(
+    'keeps %s stopped when the visible consumer remounts',
+    async (failure) => {
+      if (failure === 'malformed') {
+        mockRead.mockResolvedValueOnce({
+          ...page(),
+          error: 'ACTIVITY_ITEMS_UNREADABLE',
+        });
+      } else {
+        mockRead.mockRejectedValueOnce(
+          Object.assign(
+            new Error(failure),
+            failure === 'denied' ? { statusCode: 403 } : {},
+          ),
+        );
+      }
+      mockRead.mockResolvedValue(page(false));
+      await render();
+      expect(mockRead).toHaveBeenCalledTimes(1);
+      await render({ denied: true });
+      await act(async () => {
+        await jest.advanceTimersByTimeAsync(31_000);
+      });
+      await render();
+      expect(mockRead).toHaveBeenCalledTimes(1);
+      await act(async () => button('刷新当前页').click());
+      await settle();
+      expect(mockRead).toHaveBeenCalledTimes(2);
+      expect(container.textContent).toContain('执行完成');
+    },
+  );
   it('cancels only after the last observer unmounts', async () => {
     const pending = deferred<MatterAssessmentActivityPage>();
     mockRead.mockReturnValue(pending.promise);

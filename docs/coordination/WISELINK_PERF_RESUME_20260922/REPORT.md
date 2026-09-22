@@ -529,3 +529,165 @@ npm run build:client
 剩余：WorkItem JobAid 的活动与enabled永久轮询、WorkProgress消费者未改；本首切不新增工具开始/结束事件。
 活动JSON仍可能整行读入，授权fresh-read仍会读取工作状态，未宣称数据库分页或读取性能已经优化。
 新保存活动不会自动替换旁边已读正文；正文沿原有“重新读取”入口更新，精确历史不自动变化。
+## H0/T0 — Deterministic Timeline Handoff (2026-09-22)
+
+Base: `21a6716b0c5018a53c580024c9f9d2523e6cf373`, clean integration branch
+`codex/perf-resume-20260922`. Implemented in isolated detached worktree
+`/private/tmp/wiselink-h0-t0-pdf-20260922`; the canonical worktree and its four
+untracked debug files were not modified. Existing 1A/directory/1B/metadata/1C/2A
+remain the starting implementation, not work repeated in this batch. The two
+referenced task histories agree with this checkpoint; the older Suite review
+layout remains separate future work.
+
+### Reproduction and cause
+
+The first normal pair run selected timeline then matter and passed 6/6.
+A diagnostic sequencer selected matter then timeline: one run passed 6/6,
+a second failed 5/6 at the final timeline test with DV1/RUN-STALE instead of
+DV2/RUN9. Reverse ordering also passed. Thus CLI argument order is not execution
+order, and choosing one passing order is not a fix.
+
+The failing helper used a zero-delay host timer to navigate to DV2. The test
+awaited React `act`, then resolved DV1 without ever asserting that the timer had
+navigated. `act` drains React work but does not promise execution of this host
+timer. Failure output still names DV1/PR-DV1: the old response was released
+before the intended switch. Suite timing exposed the race; no cross-suite
+window/document descriptor, QueryClient or mock leak was established. Both
+suites restore their DOM descriptors and unmount roots; matter clears its
+QueryClient. Production cancellation did not need alteration.
+
+Only the final timeline test changed: reuse the existing NavProbe, await its
+DV2 navigation, assert the DV2 URL and rendered candidate, then release the
+pending DV1 response and retain the original stale-result and request-count
+assertions. The test no longer owns a navigation timer. No sleep, timeout
+increase, fake-timer workaround, module reset or Jest config change was added.
+
+### Validation
+
+Commands ran in the isolated worktree with installed Node 24.14.1/Jest 29.7.0,
+repository ts-jest diagnostics/config and `--runInBand`, no `--forceExit`:
+
+- `jest --runInBand test/unit/matter-resource-reuse.spec.ts`: 2/2, exit 0.
+- `jest --runInBand test/unit/timeline-activity-discovery-handoff.spec.ts`:
+  4/4, exit 0.
+- Both paths with `--testSequencer=/private/tmp/wiselink-order.cjs`: actual
+  matter → timeline, 6/6, exit 0.
+- Same command with `WL_REVERSE=1`: actual timeline → matter, 6/6, exit 0.
+- ESLint for the modified test and `git diff --check`: exit 0.
+
+The temporary sequencer only sorts selected absolute test paths by
+`localeCompare` (multiplied by -1 when WL_REVERSE is set); it is diagnostic,
+not installed or committed as a success-order requirement. Reproduction logs:
+`/private/tmp/wiselink-t0-repeat.log` (failed), `wiselink-t0-before.log` and
+`wiselink-t0-reverse.log` (passed); after-fix logs are
+`wiselink-t0-{matter-alone,timeline-alone,forward,reverse}-after.log` under the
+same directory. These are local test evidence, not browser timing or p95.
+
+The `wl-light--cold` assertion targets obsolete Layout source decoration:
+current Layout delegates the Suite shell to Sidebar/TopBar and does not render
+those old light-layer class strings. No inert class was added and this unrelated
+text assertion was not expanded into a visual migration. Authorized browser,
+PDF target rendering and production behavior are not claimed by this test-only
+commit. 2B.1 is separately assigned; no publishing or runtime work occurred.
+
+## B 3A.1 — translation control dispatch (2026-09-23)
+
+Parent: `3e0cc6074bb19b88d6ab33c324323ea45e407d53`; tree `/private/tmp/wiselink-perf-b-translation-20260923`, branch `codex/perf-b-translation-control-20260923`. Runtime adds the existing exported DocumentParsingHostedService dependency (already consumed by document reading). `status` follows fresh DOCUMENT_READ ACL, narrow metadata source and parse-row registry, not original-store loading or semantic-map construction. No public tool/request shape changed.
+
+Control commands and no-work exits no longer call readDocumentOriginal before dispatch: STATUS, CANCEL, repeated START receipt, IDLE, terminal STEP, wrong attempt/run and BUSY. Existing actor/tenant repository scope, expire/claim/renew/release and exact producerRunId matching remain. New START still loads and verifies bytes, semantic readiness and manifest before preparing/reserving. Claimed live STEP loads the exact original inside the failure/release boundary; plugin/save authorization callbacks retain fresh original reads. This batch does not optimize those repeated content callbacks or claim all 3A is done.
+
+The old-source regression was actually run with the new test (only constructor wiring adapted to the old arity): storage unavailable makes STATUS reject, exit 1. New code permits status, repeat-START and cancel with zero original reads and zero semantic reads in the same fixture while still making four fresh ACL/status calls including initial START. Revocation, wrong authorized document, integrity failure, wrong/terminal/unclaimed steps and post-plugin revocation have direct tests. Original corruption on claimed STEP fails the attempt and releases the acquired lease without executing the plugin.
+
+Validation:
+- Standard Jest, runInBand only: document-translation-runtime, document-translation-task-envelope, document-translation-reading, document-reading-runtime, canonical-host-openclaw-translation.service: 5 suites / 43 tests pass, normal exit.
+- Server typecheck, exact two-file ESLint, server build: pass.
+- Build's OCR check is STATIC_VALIDATION_ONLY_NON_TARGET_BUILD on this host, not Linux OCR/Hosted execution.
+- Logs `/private/tmp/wiselink-translation-control-{before,test,regression,types,lint,build}.log`. No local devserver started in this tree; relevant compiler/test logs inspected.
+
+Entire adopted roadmap is now preserved in OFFICIAL_CODEX_ROADMAP; CURRENT_TASK distinguishes every remaining stage and incorporates main's current no-integration/no-release/no-authorized-preview-sample report. No source/permission/schema/production-profile change, no Hosted model/plugin invocation, no push/release/install. Luna independent acceptance and main's selected integration follow this commit. Full roadmap Goal remains active.
+
+## B 3A.2 — idle source projection preparation (2026-09-23)
+
+Parent e7b6b6c040585f17fd4bb949a90b47fa0bd47647; independent tree `/private/tmp/wiselink-perf-b-source-idle-20260923`. Actual document_work INDEX caller still executes parsing.status and actor scope before this service. Source projection now selects pending first. Only the no-pending case reads two readiness columns through DocumentSemanticService/RevisionRepository. Query joins exact tenant/document/parse/revision and VERIFIED PUBLISHED original manifest SHA; it neither selects map_json nor loads object-store bytes. If registration is absent, normal Reader and ensure still create first semantics. Pending work retains original integrity/semantic validation and unchanged transactional offset/manifest/RLS write guards.
+
+This is a registered readiness result, not a claim of current object-store integrity. No new authorization cache, schema, SourceRef or model action. Direct tests prove ready+idle original/ensure counts=0; missing initial semantics and pending still read; readiness errors propagate. SQL generation verifies parameters and exact binding predicates. Original production projection failed the new idle test with STORAGE_UNAVAILABLE, exit1; new path passes. Updated the existing PostgreSQL fixture's semantic dependency to implement readReady; did not run that database suite or claim live SQL/RLS proof.
+
+Validation: 4 suites/25 tests (document-source-idle, document-semantic-map, document-translation-structure, document-translation-runtime), standard Jest normal exit; server typecheck, changed-file ESLint and server build pass. Same non-target OCR limitation as 3A.1. Logs `/private/tmp/wiselink-source-idle-{before,test,regression,types,lint,build}.log`.
+
+Also removes two trailing-space lines copied into OFFICIAL_CODEX_ROADMAP in e7. Those were newly introduced documentation whitespace, not an old repository baseline; full cumulative diff-check must include the tracked new file. 3A.1 product code remains unchanged for Luna. Full roadmap still active; real SQL, independent acceptance, 3A.3 and other open stages remain.
+
+## B 3A.3 — current semantics before new translation (2026-09-23)
+
+Parent 81ea079eacf8b41c35bd82ad4493cef61705a86a; independent tree `/private/tmp/wiselink-perf-b-semantic-order-20260923`. Main confirmed B as sole writer of consumeHostedDocument and its tests; A's WorkItem resume/lease region is untouched. Main must selectively combine and test A/B; non-overlapping hunks alone are not combined validation.
+
+Previously INDEX and translation START raced via allSettled; the direct deferred-INDEX regression proves old code sent START before INDEX resolved (exit1). Now STATUS and existing-work recovery remain concurrent with search indexing; only a new IDLE START depends on current semantics. Successful current INDEX PROGRESS/RETRY/NO_PENDING already follows ensure and permits START without waiting for all indexing. A historical pending index cannot certify the current parse: a new current translation prepares that exact run separately when required.
+
+Host IDLE translation STATUS adds exact parseRunId + semanticReady from the existing narrow registry read, without original/map hydration. An already registered current semantic revision permits START immediately while search indexing continues. If INDEX fails after persisting semantics, the consumer re-reads exact Host readiness; true allows START while sourceProjection retains its failure. False/absent readiness prevents START and returns REQUIRES_ATTENTION; mismatched readiness identity fails closed. Existing RUNNING/SUCCEEDED/CANCELLED/status handling and admission-denied checkpoint are retained; no unknown model call is replayed.
+
+Compatibility: deploy compatible Host (3A.2 readReady + this STATUS field) before installing this Skill change. Old callers tolerate additive fields. Against old Host, successful exact INDEX can still establish readiness; after INDEX failure missing field cannot be guessed true. No actual install/release performed; only main may perform those actions.
+
+Validation: Node document/work-item/reading/activity consumer tests 98/98; Jest translation-runtime/source-idle/task-envelope 3 suites16/16. Server typecheck, four-file ESLint, server build pass (non-target OCR static only). Logs `/private/tmp/wiselink-semantic-order-{before,test,consumers,runtime,regression,types,lint,build}.log`. The only new timing claim is proven ordering/counts in controlled promises, not real plugin/Hosted speed. Luna acceptance pending. 3A.2 real PostgreSQL/RLS remains open despite local independent acceptance; V/R, 2B.2/2C/2D/3B/stage4 also remain open in whole Goal.
+
+## B 2C.2 — separate card content from geometry (2026-09-23)
+
+Parent c65d0aa101363dec19869403c5dde71c17a8ad1c; tree `/private/tmp/wiselink-perf-b-graph-cards-20260923`. Only SuiteGraphCanvas and its direct test plus this report/current task. Existing SuiteMatterGraphView memoizes presentation by graph/layout/filter inputs, so selection/side-panel alone is not asserted to rebuild topology without a counterexample.
+
+OverlayCard is memoized by id, detached data snapshot, selection and stable event handlers, excluding rendered position. Outer position/scale remains rendered every changed visual frame. Selection/group/overflow handlers read current callback refs; drag keeps the existing ref-based lifecycle. Body changes, selection and halo dimensions still invalidate cards. No theme, graph layout, source or relationship semantics change.
+
+Actual old-source component regression: zoom updated geometry but also called the unchanged item body/icon selector (expected0, actual1, exit1). Candidate gives0 on zoom and callback-only parent render,1 on title change and selection; clicking uses the replacement callback, not the old callback. Existing real Cytoscape/drag/cancel/halo/reset/narrow-screen tests retained.
+
+5 suites53 tests pass, client typecheck/exact ESLint pass, production client build14.18s pass with existing chunk warnings. Logs `/private/tmp/wiselink-graph-cards-{before,test,regression,types,lint,build}.log`. This is controlled body work reduction, not browser frame-time/p95 proof. Incremental topology and full layout/viewport return remain open. No publish/model/data action. 3A.3 independent local acceptance arrived during this batch; 3A.2 real PostgreSQL/RLS fixture c65d0aa10 is now under Luna's separately authorized temporary-instance validation.
+
+
+## 2026-09-23 B：2C.3 稳定 ID 增量拓扑
+
+基线 `bcccd815602537575371e769c1ddb47390c6a032`，独立树 `/private/tmp/wiselink-perf-b-graph-topology-20260923`。Canvas 接入增量 reconcile：保留同 ID 节点对象与当前拖动坐标，只删缺失/改变端点的元素，先节点后边补入；补丁更新声明数据、类与交互属性，保留运行期 halo/交互状态。仅拓扑、声明坐标或尺寸变化触发 preset layout；标题等正文刷新不 layout/resize/fit。显式声明新布局仍采用新坐标，既有 reset 行为保留。
+
+真实 headless Cytoscape 消费者反例在旧 Canvas（bcccd815）失败：标题刷新会替换节点对象；新实现保留对象/拖动位置/镜头，更新可见标题且 layout/fit 为零。增量辅助测试涵盖节点/边增删、端点替换、声明属性清除、交互类和 halo 保留、明确布局/尺寸变化。6 suites/57 tests 通过，client 类型检查通过；生产文件 ESLint 无错误；test 目录被现有 ESLint 配置排除，未声称对其 lint 通过，Jest/TypeScript 已实际编译执行。client build 成功（13.44s，仅既有 chunk/module 警告）。这不是浏览器 p95 或完整返回布局验收。
+
+前批独立证据：Luna 已通过 bcccd815 的 5 套 53 项、client types/lint/build/precommit；c65d0aa 的真实 PG14.17 实例 1/1，实际迁移和 readReady JOIN/RLS、错误身份/版本/manifest、非owner非超级用户角色及约束通过，临时 127.0.0.1:55441 实例和唯一创建目录已停止清理。主控确认本轮统一集成/发布/Skill install 和授权预览样本核验仍待执行，不因等待而重复本地验收。
+
+
+## 2026-09-23 B：2C.4a 导航前保存最后相机
+
+基线 `b2247dee71a415636232d85f31c846948d296353`，独立树 `/private/tmp/wiselink-perf-b-graph-return-20260923`。Canvas 提供脱离内部可变 pan 对象的当前相机读取；View 在打开 Wiki、原文/目标、过程、证据或时间线前同步采集相机并交给上层，切换视角前也保存离开的镜头。平时仍按帧发布，未改为每个 pan/zoom 都触发 React 更新。Page 收到导航边界通知时直接 replace 当前历史项，避免延迟320ms的保存被卸载取消；目标页的精确返回链接与浏览器后退都可恢复最后相机。
+
+两个实际消费者反例在基线失败：View 未收到 RAF 回调就打开 Wiki 使用旧镜头；Page 导航前只有相机变化时，精确返回链接虽然新鲜，浏览器后退仍得到旧镜头。新测试分别覆盖两处，并验证读取相机为独立副本、视角切换保存。此批不宣称跨页恢复拖动节点布局、所有外部退出或真实浏览器p95已完成；后续继续这些要求，不关闭完整Goal。
+
+验证：8 suites/71 tests、client typecheck、三个生产文件 ESLint、client build（13.46s，既有 module/chunk 警告）通过。现有 ESLint 配置不覆盖 test 目录，不将其记为 lint 通过。提交使用正常 precommit。
+
+
+## 2026-09-23 B：2C.4b 会话内几何恢复
+
+基线 `8de759fb9a3b2b3630370fa537e3fbe3e9dcdbfd`，独立树 `/private/tmp/wiselink-perf-b-graph-layout-20260923`。导航/视角切换前保存节点ID、当前坐标/宽高及声明的基准几何；URL只带随机引用，业务正文与权限结果不在缓存。范围绑定当前sessionGeneration、matterId、实际matterWorkRevisionId、视角、布局、密度、分页、有效隐藏组及关系模式。返回仍先获取当前授权图谱，只恢复现存且基准坐标/尺寸兼容的新节点，异步后到的节点也可按同样规则恢复；显式reset保留默认布局行为，不反复覆盖用户后续拖动。
+
+缓存限8条、每条512节点及256KiB序列化几何、总1MiB序列化几何（不是整个JS堆的精确大小），30分钟有效期；读取命中调整淘汰顺序，不延长有效期。过期条目在读取/保存时清理；会话变更或未认证时重新进入图谱清空。浏览器刷新/淘汰/过期/范围不匹配采用正常布局，镜头等原URL状态继续独立处理。不支持跨浏览器持久布局。变化生成新UUID引用，不覆盖旧历史快照；相同范围/几何允许保留同一引用。有限快照不替代授权或业务SourceRef。
+
+直接反例：旧View打开Wiki未保存任何layoutSnapshot，新View导航→返回挂载能取回几何；切换实际工作scope拒绝旧快照。真实Cytoscape remount恢复拖动坐标，reset回到默认；测试还涵盖脱离副本、迟到节点/已存节点不覆盖、基准不兼容、会话/拒绝清空、30分钟过期、条数/字节限制、不可变历史、返回引用过滤。6套54项、client typecheck、5生产文件ESLint、client build14.15s通过；test目录不在现有ESLint覆盖内，未将其记为lint通过。仍需真实用户链路与p95，不将此批等同于全部2C完成。
+
+前批验收回读：Luna已独立通过b2247dee7（6套57项、真实Cytoscape边界探针）与8de759fb9（8套71项、类型/lint/build/precommit）。A当前准确HEAD为0c350f04c2da8f6e2257689092bf8b312497d342，本地验收通过；A未新增source plan/原件缓存或全局公平调度，后续B 3B不得缓存权限判定或弱化其恢复fresh授权/未知模型结果拒绝重放边界。仍待主控统一集成与真实Hosted流程验证。
+
+
+## 2026-09-23 B：2B.2 原件会话复用
+
+基线 `d0829db9c1b81560622210f3e37c1a988227dd78`，独立树 `/private/tmp/wiselink-perf-b-original-reuse-20260923`。主控确认B拥有原件API/Host原件service-controller/URL utility区域；canonical-host.ts含A的assessment-work修改，主控组合时只合并本批原件函数，不整文件覆盖。
+
+测量先行：实际React原件预览链、合成8MiB Blob、相同DV三次打开/卸载。基线 `/private/tmp/wiselink-original-reuse-before.log` 验证3次完整下载、24MiB、创建/撤销URL各3；新实现相同流程1次完整下载8MiB、2次新identity请求，URL仍各3。不把synthetic PDF或mock网络当真实业务/浏览器p95；真实收益还要计算每次新授权网络请求耗时和首次暖命中的SHA-256计算/临时ArrayBuffer成本。
+
+Host新增GET original-identity（private,no-store），原登录/平台入口guard保持；前后两次DOCUMENT_READ授权，tenant限定读取精确DV登记并核对version/source sha与length一致，仅返回DV/sha/length。它证明本次授权和登记身份，不读取对象存储，不能证明当前对象仍可下载。首次/缓存不匹配的完整GET仍走原有实际字节sha/length/provider身份校验。浏览器按sessionGeneration+DV留存Blob；每次暖读取都重新请求identity，首次暖命中对实际Blob算SHA-256（同Blob并发只共享hash，不共享权限结果），sha/length均匹配才使用。拒绝、请求故障或会话失效不返回旧字节；摘要/长度改变淘汰并重新完整读取。
+
+边界：缓存最多4份、单份16MiB、总Blob字节32MiB、5分钟固定TTL，计时器主动删除并在空缓存注销session监听；身份变更立即清空。最多两次读取/校验/哈希在途，排队可被取消，旧generation出队拒绝。超限文件保留原本直接读取能力但不驻留缓存。32MiB是本模块持有Blob字节上限，不代表浏览器总堆/PDF.js解码/活跃组件URL/临时hash buffer；对象URL始终由组件创建并在卸载/换版/身份失效时撤销，缓存淘汰不提前撤销活跃组件URL。
+
+验证：4套117项（original-memory、original-canvas-preparation、metadata-enrichment、canonical-host-client）通过；另补并发hash共享但授权独立测试。覆盖撤权/503拒绝旧bytes、digest/length变化、DV/session隔离、计时器过期、数量/总字节/单文件限制、最多2次在途与排队取消、迟到结果拒绝、真实组件三次开关URL平衡、Host二次授权与不读存储。双端typecheck、5生产文件ESLint、build:prod通过（client13.11s，既有module/chunk警告；构建不是实际OCR/Hosted运行）。test目录不纳入现有ESLint配置。必须组合部署新Host identity端点与对应前端；未实现旧Host端点缺失时绕过授权的缓存回退。
+
+前批d0829db9c独立验收已通过。计数澄清：B的6/54集合含matter-graph-page/graph-route，Luna的6/63集合用appearance/presentation替换这两套，属于并列补充证据而非计数过时；Luna已明确更正，不重复门禁。
+
+
+## 2026-09-23 主控：A/B 固定集成与独立组合验收
+
+独立分支 `codex/integration-ab-20260923`，A 父 `0c350f04c2da8f6e2257689092bf8b312497d342`，B 合并父 `ff46e1d98a96664b522277134c52bc1da2d21bb7`。另纳入 `aac9bd64ee80fb9a967d64c05aed120b42c12350` 的产品及测试修复；两处文档冲突保留双方历史并在 CURRENT_TASK 标明当前集成状态。产品共享 API/consumer 自动合并，随后执行组合验证。最终提交 SHA 以本分支 Git 为准。
+
+A 专属 Luna：组合 consumer Node 84/84；staged 快照 Jest 5 suites/135 tests；server/client typecheck 通过。覆盖 WorkItem 恢复与 Document 当前语义依赖、原件身份/授权 API 和 A AbortSignal、JobAid 一致性快照与轮询。
+B 专属 Luna：合并树 Jest 16 suites/203 tests，server/client typecheck、生产 TS/TSX ESLint、build:prod、precommit 通过；client build 13.81s，仅既有 warnings。两组测试有交集，不相加为去重总数。
+42 个 staged 路径，cached/working diff-check 通过，无未暂存源码变化。node_modules 为 B 验收复用已有依赖的未跟踪链接，不纳入提交。文档补记后执行正常提交钩子，未改变已测试产品源码。
+尚未 push、Host release 或 Skill install；未验证真实 PostgreSQL 并发、Hosted UI、模型流程、浏览器 heap 或线上 p95。部署顺序：兼容 Host 先行，再安装该精确组合版本的 Skill，并核对实际文件哈希。B 后续 d051d278 及 2D.1 不在此固定截点。

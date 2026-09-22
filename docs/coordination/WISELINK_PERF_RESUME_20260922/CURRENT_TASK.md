@@ -1,99 +1,42 @@
+# Unified integration in progress — 2026-09-23
+
+This worktree is `/private/tmp/wiselink-integration-ab-20260923`, branch `codex/integration-ab-20260923`.
+A base: `0c350f04c2da8f6e2257689092bf8b312497d342`.
+B candidate: `ff46e1d98a96664b522277134c52bc1da2d21bb7`.
+Combined acceptance passed; integration commit is being prepared. No push, Host release or Skill install has occurred for this candidate.
+The product/test changes from Matter remount correction `aac9bd64ee80fb9a967d64c05aed120b42c12350` are included; its historical report remains available at that commit.
+A and B local independent acceptance does not replace combined or Hosted acceptance.
+Deploy the compatible Host before installing the matching Skill; verify both exact revisions.
+The following B handoff is retained as branch history. Its worktree identity and earlier integration status describe its delivery, not this integration worktree.
+
 # Current Task
 
-## 2026-09-22 当前接续：Matter JobAid 活动首切
+## 本批身份
 
-在 `21a6716b0c5018a53c580024c9f9d2523e6cf373` 上完成既有持久活动 → 安全分页 GET →
-MatterProblemAnalysisPage。最终8套76项回归、标准前后端类型检查、本地Client构建通过。
-准确文件范围、授权链、历史回读与未验证项见 REPORT 最后一节；准确提交以本分支 Git 为准。
-新接口已在静态/动态 Host module 注册，未推送或发布，未调用妙搭开发智能体。
-下一步由主控串行审查该提交、准备技术发布并在可用的托管 Host/OpenClaw 验证真实读取。
-WorkItem JobAid / WorkProgress 活动接线及其旧轮询仍是后续范围。
-以下为继承的性能支线历史状态，旧“Stop after these commits”不覆盖本轮授权。
+B系统性能工作树：`/private/tmp/wiselink-perf-b-original-reuse-20260923`，分支`codex/perf-b-original-reuse-20260923`；起点`d0829db9c1b81560622210f3e37c1a988227dd78`。当前2B.2原件重复返回的字节测量及有界会话复用。独立源码/测试由B提交、Luna验收、主控选择性集成。本树不是最终集成/线上版本。
 
-## Branch Identity
+## 完整路线状态（2026-09-23）
 
-- Base: `b02395537a948fbe427f232f5a52ab59ba43efe0`
-- Branch: `codex/perf-resume-20260922`
-- Last verified checkpoint before this round:
-  `c85a0b616e5bacbd2544924ddf31d0692987ab02`
-- Integration worktree:
-  `/Volumes/SSD/LLM/WiseLink/private/runtime/miaoda-app-repos/wiselink-v3-1-perf-resume-20260922`
+| 范围 | 当前证据与未完成项 |
+| --- | --- |
+| 目录/1A/1B/元数据/1C/2A | 既有21a6716b及REPORT/SQL_EVIDENCE保留。1B是可取得候选，不覆盖不可取得云端差异。 |
+| H0/T0 | d58615c5含已验证测试导航时序修复，原配置正反执行顺序正常退出；不再追查未证明的全局串扰。 |
+| 2B.1 | d58615c5含PDF模块与原件并行准备，Luna已做本地独立验收；真实浏览器目标页/高亮证据仍未齐。 |
+| 2B.2 | 当前本地受控8MiB样本3次打开：基线3次下载24MiB，新实现1次下载8MiB+2次fresh授权/登记核对。最多4条/单条16MiB/总32MiB/5分钟主动过期，同步工作最多2次；SHA/length匹配才复用，不缓存权限，URL仍组件拥有。尚待Luna及真实浏览器耗时/内存证据。 |
+| 2C | 3e0cc6074按帧合并/状态去重/销毁清理，Luna5套52项及构建通过。2C.2 bcccd815正文memo/稳定回调已获Luna 5套53项验收。2C.3 b2247dee7增量拓扑、标题刷新不重排/不丢拖动位置，6套57项已获Luna独立验收；2C.4a 8de759fb9导航/切视角捕获最新相机、立即保存导航历史已获Luna8套71项独立验收。2C.4b d0829db9c有限会话几何返回恢复已获Luna独立验收；B 6套54项与Luna不同集合6套63项并列，精确身份/工作/显示参数绑定。通用外部退出、真实交互计量仍需继续。 |
+| 2D | 后续依据实际阅读热点选择，未完成全范围验收。 |
+| 3A.1 | e7b6b6c04控制分派移出原文路径，5套43项与server构建通过，Luna本地验收通过；真实执行的重复内容校验尚保留，活动链另查。 |
+| 3A.2/3 | 81ea079ea已改pending优先、空闲窄查精确语义登记，Luna本地4套25项验收通过，真实SQL/RLS已通过。3A.3已按主控授权单写者修订consumer：新START需当前语义就绪，历史pending不替代；已就绪不等待索引，索引失败鲜活回读就绪，旧任务状态/恢复不阻断。b020437e1的98项Node及3套16项Jest已获Luna本地验收；c65d0aa10由Luna在主控授权的独立PG14.17实例实际执行1/1通过，JOIN/RLS/非owner角色/约束均验证；唯一临时实例已停止删除。 |
+| 3B | 原件/PDF/来源plan执行内复用与有限公平推进尚未交付。 |
+| 4 | A负责JobAid/OpenClaw/Overall/Wiki连续工作。A回报当前0c350f04c（含0ee/35a/47adb/301/60ec/786/0c350），Luna已本地验收；尚未集成/发布/Hosted全链验收；应取A的确切交付，不在B重写。 |
+| V/R | 尚无最终集成SHA、正常身份样本或真实浏览器p95；不可从单测/bundle推断体验达标。主控唯一发布者。 |
 
-## Work State
+## 集成及边界
 
-- 1A: default graph entry and timeline discovery handoff imported and tested.
-- Directory: `EngineeringMatterDirectoryService.list` uses batch composition
-  and working-summary reads, plus a final batch stability confirmation. It
-  does not call `matters.read/readWorking` per row and does not load complete
-  working state JSON. Work based on an older Matter revision is a legal
-  pending-update state, not a directory error.
-- Directory authorization: linked WorkItems are batch-checked for owner,
-  document version and family binding. Material JSON is parsed at the existing
-  `parseMatterMaterial` boundary in batch.
-- 1C: Wiki and Matter graph now share the mounted QueryClient for workspace and
-  exact `workRef` resources. Cache identity includes app, tenant, actor and
-  session generation. View state does not enter content keys.
-- 1C cache policy: staleTime 30 s, gcTime 5 min, retry disabled. The freshness
-  window is reuse-only; it does not poll. Exact refresh refetches only the
-  relevant resource. A current W5 to W6 refresh never rebinds an exact
-  historical W5. Session or identity change cancels and removes the
-  engineering-matter query root.
-- 1C error scope: a 403/404 on one matter clears only that matter and does not
-  affect another cached matter or retry automatically. Network errors keep the
-  same-identity readable content. Two consumers share one request and one
-  unmount does not cancel the other.
-- 1C denial durability: a denied workspace or exact-work resource stays hidden
-  when a later refresh fails with an ordinary network error. Only a successful
-  fetch clears the denial. A normal network failure without a prior denial
-  still keeps the last readable content. Denying the current matter also
-  suppresses its exact historical work in the wiki and graph consumers.
-- 1C denial ownership: the read outcome is a shared
-  `readable`/`rejected` query value, so remounts and sibling consumers see the
-  same conclusion. There is no component-local denial Set and no claim that
-  `setQueryData(key, undefined)` deletes data; direct verification showed it
-  leaves the previous data in place.
-- 1C test lifecycle: the previous `--forceExit` need came from six QueryClient
-  `gcTime` timers left by the session-change test, not from business requests.
-  The test now owns a fake clock and destroys its root, QueryClient, JSDOM
-  window and cache; production cleanup only removes inactive engineering-matter
-  queries and leaves active observers intact.
-- 2A: heavy routes are lazy-loaded while `Layout` and the library entry stay
-  eager. The chunk boundary moved to `RouteOutletBoundary` around the `Layout`
-  outlet, so the shell, identity providers and QueryClient stay mounted while a
-  page waits or fails; non-`Layout` preview and OAuth routes keep their own
-  boundary. Route generation still reports 32 routes.
-- 1B: available two-file candidate imported and tested against the current
-  directory-runtime spec. The final unavailable cloud worktree difference is
-  not covered.
-- Metadata: three recovered modified-file diffs plus local reimplementation of
-  the decoder and two tests. Legal missing/null metadata remains null; the full
-  API still rejects corrupt structures.
+主控2026-09-23回报：canonical仍b02395537；未执行统一集成、push、Host release或Skill install。其引用的上次线上确认release7687614542885374932/commit b023为旧记录，不是本轮新鲜回读。B旧修复aac9bd64与审查28d87908仍保留，需主控接受。B不得自行完成发布来填验证空缺。
 
-## Verification
+主控尚未核验正常登录预览及可交付的已保存样本；不把旧URL、fixture或构造身份当业务验证。继续独立本地开发，与主控协调V/R。真实解析/翻译/评估仍需明确样本、预算和环境；不触发正式采用或AssessmentRun。
 
-- Server typecheck: pass.
-- Client typecheck: pass.
-- Focused Jest: 21 suites, 158/158 tests passed with the repository standard
-  configuration, `--runInBand` only, and no `--forceExit`; the original
-  20-suite set passes 156/156.
-- Client production build: entry chunk 3,742.29 -> 1,678.38 kB raw and
-  1,183.84 -> 538.06 kB gzip (code version `1d9434e64` plus this round).
-  `routes.json` still lists 32 routes and keeps
-  `/library`, `matters/:matterId`, `graph`, `reader`, `version-comparison` and
-  the dev-preview paths.
-- Isolated PostgreSQL: pass on 127.0.0.1:55441 with a NOBYPASSRLS test role;
-  six production-generated queries for both representative and 80-matter
-  datasets. See `SQL_EVIDENCE.md`.
-- No production database, browser, preview or production run. The local
-  temporary database and role were removed after the test.
+## 当前与随后
 
-## Next Action
-
-This round adds two independent commits: the shared-resource denial correction
-(A) and the outlet-local route boundary (B). `matter-resource-reuse.spec.ts`
-and `timeline-activity-discovery-handoff.spec.ts` interfere when run in the
-same Jest process (both pass alone, and the ordered 20-suite command passes);
-this is a pre-existing test-ordering interaction outside this round. Browser
-request timing, content appearance timing and online p95 remain unmeasured.
-Stop after these commits; do not start PDF, graph lifecycle, further resource
-caches or other runtime batches.
+3A.2真实SQL/RLS、3A.3和2C.2独立验收已完成；2C.3/2C.4a已获独立验收，2C.4b已独立验收，2B.2交付后继续2C剩余生命周期、2D/3A剩余和3B定位，不忽略2B.2/2C/2D/3B。完整计划见OFFICIAL_CODEX_ROADMAP。Goal仅在全部要求证据齐备时关闭，不在子批交付时关闭。

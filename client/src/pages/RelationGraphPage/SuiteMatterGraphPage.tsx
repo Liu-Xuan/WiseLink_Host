@@ -1,3 +1,4 @@
+import { activateGraphLayoutSession } from './suite-graph-layout-memory';
 import { suiteDocumentPerspective } from './suite-document-perspective';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
@@ -48,6 +49,7 @@ export default function SuiteMatterGraphPage({
 }) {
   const [params] = useSearchParams();
   const { sessionGeneration, authenticationRequired } = useCurrentUserSession();
+  activateGraphLayoutSession(sessionGeneration, authenticationRequired);
   const workRefs = params.getAll('workRef');
   const workRef = workRefs[0] ?? '';
   if (workRefs.length > 1 || (workRefs.length === 1 && !workRef.trim()))
@@ -272,7 +274,7 @@ function MatterGraphContent({
     [matterId, workRef, setParams],
   );
   const handleStateChange = useCallback(
-    (state: SuiteGraphReadingState) => {
+    (state: SuiteGraphReadingState, beforeNavigation = false) => {
       displayState.current = state;
       const structural = JSON.stringify([
         state.selectedId ?? null,
@@ -291,7 +293,7 @@ function MatterGraphContent({
         clearTimeout(persistTimer.current);
         persistTimer.current = null;
       }
-      if (structuralChanged) {
+      if (structuralChanged || beforeNavigation) {
         persistState(state);
         return;
       }
@@ -398,6 +400,7 @@ function MatterGraphContent({
     <SuiteMatterGraphView
       key={navigation.key}
       initialState={navigation.state}
+      layoutScope={read.graph?.workRef ? JSON.stringify([session, matterId, read.graph.workRef]) : undefined}
       onStateChange={handleStateChange}
       read={displayRead}
       perspectiveNotice={combinedNotice}

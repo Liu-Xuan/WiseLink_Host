@@ -1,3 +1,4 @@
+import { DocumentParsingHostedService } from '../document-management/src/hosted/nest/document-parsing-hosted.service';
 import { DocumentSemanticService } from './document-semantic.service';
 import { Inject, Injectable } from '@nestjs/common';
 import { randomUUID } from 'node:crypto';
@@ -15,16 +16,19 @@ import { CANONICAL_SERVICE_SCOPE_AUTHORIZATION, canonicalServiceScopeUnavailable
 export class DocumentTranslationRuntimeService {
   constructor(@Inject(CANONICAL_SERVICE_SCOPE_AUTHORIZATION) private readonly authorization: CanonicalServiceScopeAuthorizationPort,
     private readonly actors: EngineeringMatterWorkingRepository, private readonly reader: UnifiedReaderService,
-    private readonly plugins: CanonicalTranslationV2PluginService, private readonly attempts: DocumentTranslationAttemptRepository, private readonly semantics: DocumentSemanticService) {}
+    private readonly plugins: CanonicalTranslationV2PluginService, private readonly attempts: DocumentTranslationAttemptRepository, private readonly semantics: DocumentSemanticService, private readonly parsing: DocumentParsingHostedService) {}
 
   async run(input: { action: 'START' | 'STATUS' | 'STEP' | 'CANCEL'; documentVersionId: string;
     parseRunId: string; requestId?: string; attemptRef?: string }) {
     if (!this.authorization.authorizeDocumentWork) throw canonicalServiceScopeUnavailable();
     const auth = await this.authorization.authorizeDocumentWork({ documentVersionId: input.documentVersionId });
+    if (auth.documentVersionId !== input.documentVersionId) throw new Error('DOCUMENT_TRANSLATION_AUTHORIZATION_SCOPE_MISMATCH');
     const scope: DocumentTranslationScope = { tenantId: auth.tenantId, actorUserId: auth.actorUserId, documentVersionId: auth.documentVersionId };
     return this.actors.withActorScope(scope.actorUserId, async () => {
       const read = () => this.reader.readDocumentOriginal(scope.documentVersionId, input.parseRunId, { ...scope, roles: [] });
-      const original = await read();
+      // Control requires fresh source ACL/catalog access, not original bytes or
+      // semantic hydration. A successful status is not a content-health proof.
+      await this.parsing.status(scope.documentVersionId, { ...scope, roles: [] });
       const assertAuthorized = async () => { await read(); };
       if (input.action === 'START') {
         if (!input.requestId) throw new Error('DOCUMENT_TRANSLATION_REQUEST_REQUIRED');
@@ -34,6 +38,7 @@ export class DocumentTranslationRuntimeService {
           if (prior.producerRunId !== input.parseRunId) throw new Error('DOCUMENT_TRANSLATION_REQUEST_CONFLICT');
           return summary(prior);
         }
+        const original = await read();
         const artifact = original.run.manifestArtifact;
         if (!artifact || artifact.relativePath !== 'original/manifest.json' || artifact.readback !== 'VERIFIED')
           throw new Error('DOCUMENT_ORIGINAL_MANIFEST_REQUIRED');
@@ -62,10 +67,12 @@ export class DocumentTranslationRuntimeService {
       }
       if (input.action === 'STEP') await this.attempts.expire(scope);
       const row = await this.attempts.latest(scope);
-      if (!row) return { status: 'IDLE', documentVersionId: scope.documentVersionId };
+      const idle = async () => ({ status: 'IDLE', documentVersionId: scope.documentVersionId,
+        parseRunId: input.parseRunId,
+        semanticReady: Boolean(await this.semantics.readReady({ ...scope, roles: [] }, input.parseRunId)) });
+      if (!row) return input.action === 'STATUS' ? idle() : { status: 'IDLE', documentVersionId: scope.documentVersionId };
       if (row.producerRunId !== input.parseRunId) {
-        if (input.action === 'STATUS') return { status: 'IDLE', documentVersionId: scope.documentVersionId,
-          parseRunId: input.parseRunId, previousAttempt: summary(row) };
+        if (input.action === 'STATUS') return { ...await idle(), previousAttempt: summary(row) };
         throw new Error('DOCUMENT_TRANSLATION_SOURCE_CHANGED');
       }
       if (input.action === 'STATUS') return summary(row);
@@ -82,6 +89,9 @@ export class DocumentTranslationRuntimeService {
           .catch(() => { renewalFailed = true; });
       }, 30_000);
       try {
+        // Only a claimed live step consumes content. Keep byte validation and
+        // all plugin/save authorization callbacks on the exact requested run.
+        await read();
         const result = await this.plugins.executeStep({ fence: { ...lease, tenantId: scope.tenantId, workItemId: null,
           documentVersionId: scope.documentVersionId, workspaceId: task.workspaceId },
           requestId: `step:${row.attemptId}:${lease.leaseGeneration}`, assertAuthorized });

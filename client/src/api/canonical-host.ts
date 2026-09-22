@@ -568,6 +568,18 @@ export async function readDocumentVersionSourcePage(documentVersionId: string, p
   return reading;
 }
 
+export async function readDocumentVersionOriginalIdentity(documentVersionId: string, signal?: AbortSignal) {
+  const generation = clientSessionGeneration;
+  const identity = await readCanonicalLibrary<{ documentVersionId: string; sha256: string; byteLength: number }>({
+    url: `/api/document-management/document-versions/${encodeURIComponent(documentVersionId)}/original-identity`, signal,
+  });
+  if (signal?.aborted || generation !== clientSessionGeneration || identity.documentVersionId !== documentVersionId
+    || !/^[a-f0-9]{64}$/.test(identity.sha256) || !Number.isSafeInteger(identity.byteLength) || identity.byteLength <= 0) {
+    throw new Error('DOCUMENT_ORIGINAL_IDENTITY_MISMATCH');
+  }
+  return identity;
+}
+
 export async function readDocumentVersionOriginal(
   documentVersionId: string,
   signal?: AbortSignal,

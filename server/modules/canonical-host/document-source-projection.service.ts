@@ -32,10 +32,16 @@ export class DocumentSourceProjectionService {
     const identity = and(eq(pendingTable.tenantId, scope.tenantId), eq(pendingTable.ownerKind, 'SOURCE'),
       eq(pendingTable.ownerId, scope.actorUserId), eq(pendingTable.subjectId, scope.documentVersionId),
       eq(pendingTable.exactRevisionRef, parseRunId));
-    // Always use the normal Reader, including retries of an already indexed run.
+    const [pending] = await this.db.select().from(pendingTable).where(identity).limit(1);
+    if (!pending) {
+      const ready = await this.semantics.readReady(scope, parseRunId);
+      if (ready) return { status: 'NO_PENDING' as const, documentVersionId: scope.documentVersionId,
+        parseRunId, semanticRevision: ready.semanticRevision, profileRef: ready.profileRef };
+    }
+    // Pending work or first semantic preparation still consumes and validates
+    // the exact original. No pending alone must never skip initial semantics.
     const loaded = await this.reader.readDocumentOriginal(scope.documentVersionId, parseRunId, scope);
     const semanticMap = await this.semantics.ensure(scope, loaded);
-    const [pending] = await this.db.select().from(pendingTable).where(identity).limit(1);
     if (!pending) return { status: 'NO_PENDING' as const, documentVersionId: scope.documentVersionId, parseRunId,
       semanticRevision: semanticMap.semanticRevision, profileRef: semanticMap.profileRef };
     const reading = documentOriginalEngineeringReading(loaded, pending.sourceNextOffset, 20);
