@@ -634,7 +634,7 @@ KnowledgeLookupPage原useEffect每次remount清空并请求，未使用既有共
 
 ## B 原件复用真实只读证据与独立审查收敛（2026-09-23）
 
-- ef258 / release7688432648880098235：正常现有登录、同一已保存5页PDF，首次完整导航加载当前应用资源后测试。切换“仅原文”仅隐藏保留PDF面板，不算unmount；本轮两次真正离开阅读器到library，再history back与显式打开原件。
+- 原件样本在ef258之后加载，采样跨越后续dc491任务目录修复发布：正常现有登录、同一已保存5页PDF，首次完整导航后测试（未直接捕获资源SHA，见下方准确边界）。切换“仅原文”仅隐藏保留PDF面板，不算unmount；本轮两次真正离开阅读器到library，再history back与显式打开原件。
 - 三个完整CDP事件窗口均truncated=false/hasMore=false：首次original 200，响应头3006.571ms、完成14001.699ms、网络encodedDataLength122853；第二次只发original-identity 200，1333.164/1337.594ms、1651字节；第三次只发identity 200，约1045ms、1658字节。第三次response/finish原始时间戳相差-0.832ms，保留原数据但不作亚毫秒推论。网络字节含传输编码，不冒充原始PDF字节数。
 - 结论限定：真实会话内两次复用均避免再次下载PDF，仍每次fresh identity授权核对；两次暖核对约1.0–1.3s，尚未满足500ms暖读取目标。n=3不是p95，未以工具壁钟充当渲染时间。
 - Performance.getMetrics非强制GC：打开前used/total=14991852/16613376；首次隐藏保留17928552/19398656；第二次打开18281948/19988480；第三次20614960/26017792。Documents均5；Nodes1117→1186→1180→1193；listeners879→926→695→718。不同瞬间且自然GC不受控，仅作观测，不能证明泄漏或无泄漏。原始匿名摘要在`/private/tmp/wiselink-vr-readonly-evidence-20260923.json`，不提交正文、认证头或私有样本主键。
@@ -642,3 +642,17 @@ KnowledgeLookupPage原useEffect每次remount清空并请求，未使用既有共
 - Luna本地独立接受：e10fc616（24知识测试、client types、ESLint、diffcheck）与a7e41a5（36导航/返回测试、client types、ESLint、diffcheck）。实现者原4套48/5套68与独立子集分别保留，不伪称同集合复测。已请求Main按父子顺序集成并回传release；尚未线上验收新缓存或返回按钮。
 
 - 最后真正卸载reader后停在资料库：heap used/total=19181488/26247168，Documents5/Nodes2295/listeners1201。资料库DOM与PDF页不同，不能将节点/监听器数直接相减认定泄漏；未强制GC。
+
+
+## B 普通原文定位的路由返回修复（2026-09-23）
+
+- 基线0d66，独立树`/private/tmp/wiselink-perf-b-reader-location-20260923`。实际来源为上一批正常身份第5页段落→资料库→history back回第1页；与PDF异步高度目标5错位到4是两个问题。
+- workspace把用户真实选页/单元传给page；page仅从当前已授权读取结果的unit/sourceRef/location登记中选出该页的ref，将sourceRef与实际保存parseRunId写入当前URL（replace，保留所有已有返回上下文）。未知单元/未登记页不写入；多页单元不取第一ref猜测。已固定run的页内选段不重读body；无固定run首次选段显式固定保存run，会重新授权读取该run，不能继续把旧来源绑定到latest。
+- 反例基线2 failed/15 passed；修复测试包含真实router离开/返回、最新published变更仍回旧run、保留returnLibraryQuery、页内不重读、无pin固定run、未知unit/未登记页不导航、多页unit明确选页、实际workspace回调。最终相关3套44项通过；client typecheck、2个production文件ESLint、client build（12.54s）、precommit与diffcheck通过。日志`/private/tmp/wiselink-reader-location-{red,tests,types,lint,build,precommit}.log`；只有既有React Router future-flag warnings，不代替线上验收。
+- 范围：本批恢复明确点击的普通原文物理页/SourceRef；未声称任意自由滚动像素、TOC或纯PDF手动滚动位置已全部持久化，完整阅读性能目标仍未完成。
+
+### 原件样本准确发布边界补记
+
+Main回执：ef258 release7688432648880098235 finished updated_at=1790103060000；仅任务目录500兼容修复dc4915437dba7157406e6b18b1f51ed2ad7a83ea，release7688437914978126804 finished updated_at=1790104842000、error_logs=[]、双远端同名一致；不含77ae/fadf/e10/a7/0d66。PDF代码两版本一致。
+
+既有CDP事件原始wallTime：首次original=1790104648.659391；第二identity=1790104858.009625；第三identity=1790104938.913739。首读早于dc491 finished，后两次晚于；三次间仅SPA导航没有刷新，因此前端资源不因后端发布自动换版。未直接捕获asset SHA或实际响应pod的二进制身份，不补造。三次同会话原件复用事实成立；不能把它标成单一ef258前后端环境的严格延迟对照。

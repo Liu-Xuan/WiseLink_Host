@@ -2,7 +2,7 @@
 
 ## 本批身份
 
-B运行证据工作树：`/private/tmp/wiselink-perf-b-runtime-evidence-20260923`，分支`codex/perf-b-runtime-evidence-20260923`；起点`a7e41a5a692c854747a4512850ab7f520cda462e`。e10知识复用与a7图谱返回均已获Luna独立接受，已请Main集成；当前真实部署仍按Main回执为ef258aa7/release7688432648880098235。本轮正常登录三次原件打开（实际路由卸载重挂）：1次PDF下载122853网络字节，2次identity核对1651/1658字节；后两次约1338/1045ms，仍未达到暖读取目标，不是p95。下一批处理未带sourceRef的普通段落阅读位置退出后重置第1页。整体Goal继续。
+B阅读位置恢复工作树：`/private/tmp/wiselink-perf-b-reader-location-20260923`，分支`codex/perf-b-reader-location-20260923`；起点`0d66a32a7566167626c6a4b90e7ae14116b496e7`。本批把普通原文段落实际选页映射到登记SourceRef并固定当前保存parseRunId，URL replace保留返回上下文。旧2个反例失败/15通过；标准验证与提交见REPORT。e10/a7已独立接受待Main集成；Main任务目录兼容修复dc491已发布release7688437914978126804，PDF代码不变；原件三次采样跨越此后端发布，SPA未刷新，不能全标为ef258。后两次identity约1.0–1.3s仍未达目标。整体Goal继续。
 
 ## 完整路线状态（2026-09-23）
 
