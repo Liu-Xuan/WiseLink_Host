@@ -60,8 +60,10 @@ const TopBar: React.FC<TopBarProps> = ({
     requestedParseRun,
     matterId || undefined,
     workRef || undefined,
+    pathname,
   );
   const returnIntentKeys = [
+    'returnLibraryGraphQuery',
     'returnSituationQuery', 'returnSituationMatterId',
     'returnSituationWorkRef',
     'returnMatterGraphQuery', 'returnGraphQuery', 'returnGraphTargetMatterId', 'returnGraphTargetWorkRef', 'returnGraphParseRunId',

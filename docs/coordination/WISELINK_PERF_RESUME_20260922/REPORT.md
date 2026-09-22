@@ -1003,3 +1003,106 @@ Main回执：ef258 release7688432648880098235 finished updated_at=1790103060000�
 - 首次全PG8项中2通过6失败，全部JOBAID_READING_SUMMARY_REQUIRED；在未改动4ff基线完整复跑得到相同6失败。四处旧fixture构建器/初次proposal遗漏当前必填headline/listBrief；仅补测试数据，未放宽产品校验。修正后完整8/8通过、0skip，包括cross-Matter lineage/撤权、材料scope/重放/完整来源授权、CAS/运行时ownership、并发一致性/只读与targeted correction。
 - working-service单测11项、search单测23项分别通过；server tsc、两个修改文件ESLint、server build与diffcheck通过。早先把search文件名写成不存在的engineering-issue-search.service.spec.ts，Jest只运行了working11项；随后按真实engineering-issue-search.spec.ts单独完成23项，不冒称最初跑了两套。正常precommit随提交执行。
 - PG实例已停止并仅删除本批data目录，日志`/private/tmp/wiselink-snapshot-{pg-test,baseline-pg-test,pg-test-fixed,red,types,unit,search,lint-final,build}.log`保留。等待Luna独立审查及Main集成发布，之后才测线上收益；Goal active。
+
+
+### 41e9c82b0 独立接受与运行依赖
+
+Luna已接受`41e9c82b008a804b076ffb88542754cc0eb080e8`，无阻塞：核对JSON聚合类型/排序、RLS和完整字段/形状边界；独立working service11项、官方server typecheck、两文件quiet lint和diffcheck通过。Luna未连接PG，8/8仍明确属于B实现者实际运行证据。已向Main交付并明确请求按原授权执行集成/双远端同步/发布，B不越权执行。Main接续任务已返回active/inProgress；尚未取得新的精确release/SHA，不将41e9记成已发布。A仍待Hosted实际安装回执；B同步请求源码/包hash、运行窗口，以便测既有授权样本的后台竞争。没有新增业务任务或扩展预算。
+
+
+## B 81abd9发布后冷读与过期返回（2026-09-23）
+
+- B使用lark-cli只读回读release `7688473071305133285`：publishing时commit暂态为f24，随后finished准确变为`81abd9b061cb1acb420d02752bd9d81a8a319d47`，updated_at1790113088000、error_logs=[]。实际浏览器资产也匹配81abd9；Main独立回报同一发布及双远端SHA一致。B没有发布操作。
+- 同一正常登录保存修订16完整刷新三次，目录4166.635/3323.589/3633.369ms；正文3473.230/2654.314/3221.205ms；身份592.651/511.866/555.541ms，全部HTTP200。全部样本保留，不筛选慢值。目录与正文起点仍相差约1ms，未形成串行加载。
+- 最后一次目录起点49.863秒后，从关系图谱实际按钮返回同一精确知识正文，缓存已过期，重新读取目录4070.388ms、正文3418.508ms，均200；返回修订16、正文存在、0 alert。完整事件窗口无截断；首冷读广域窗口曾截断，按identity请求前序列取回的聚焦窗口完整。
+- 全部匿名时间/字节/平台段见AB81_READ_RUNTIME_EVIDENCE_20260923.json。相较f24部分样本较低，但不是严格前后A/B、不计算p95、不宣布13/18/15条SQL已让线上达标。目录平台origin2982–3826ms，正文2248–3045ms，仍有明显服务端路径成本；origin/inner不等于SQL独立耗时。
+- 此发布同时含A覆盖/知识快照更新，不能把全部变化归因B。Hosted仍未安装，未调用后台模型/解析/翻译任务。下一步优先分解剩余服务路径与读取期间的平台资源，保留500ms端到端目标未闭合；Goal active。
+
+
+## AB81 production SQL trace decomposition (2026-09-23)
+
+Official trace detail expands the list's single root into actual SQL spans. The
+first catalogue/work traces match the browser response log IDs; raw identity and
+request attributes remain private. Catalogue: 60 data spans, 1095.79 ms reported
+SQL sum versus 3633.95 ms app-server. Saved work: 26 spans, 328.69 ms versus
+2817.51 ms; a second saved-work sample has the same 26 spans, 267.48 ms versus
+2082.99 ms. These are request samples, not p95. The two snapshot queries are
+visible in each work request, confirming the deployed single-statement snapshot.
+
+The current and saved three-member checks each retain three fresh ACL queries,
+three tenant projection reads and three source identity reads. Statement starts
+show material gaps between dependent stages. SQL execution alone does not
+explain the remaining seconds, but the spans cannot distinguish SDK transport,
+application scheduling or other uninstrumented waiting. No CPU saturation or
+absence of contention is asserted from five minute-scale CPU/memory samples
+whose response does not state units.
+
+Next implementation investigation: reduce dependent read round trips while
+preserving fresh authorization, tenant projection/source consistency and both
+current-version checks. Do not remove ACL checks or introduce cross-request
+authorization caching. Evidence: AB81_DATABASE_TRACE_EVIDENCE_20260923.json.
+
+
+## Fresh-authorized member read overlap (2026-09-23)
+
+AB81 traces showed non-SQL time between dependent member validation stages.
+After fresh READ_WORK_ITEM supplies the precise authorized version, tenant
+projection and source identity can be read independently. Both now settle before
+the existing projection-first validation/error ordering. Denial still starts
+neither read; changed work/source identities and projection mismatches still
+fail closed. Fresh authorization is never cached, and both Matter version
+checks remain. Successful SQL count is unchanged; saved groups retain four
+members, with up to eight dependent reads in flight. Current-member fanout is
+unchanged in member count. Invalid projections may overlap an already-authorized
+source lookup, but no source result is exposed after projection failure.
+
+Three suites / 61 tests pass, as do server types, scoped lint and server build.
+The controlled overlap counterexample fails on the exact parent (160ms versus
+100ms expected), then passes with the candidate. This demonstrates removed
+serial dependency, not a production speedup. SQL/RLS logic is unchanged; no new
+PostgreSQL run is claimed. Independent review and deployed tracing are pending.
+See MEMBER_READ_OVERLAP_EVIDENCE_20260923.json.
+
+
+Independent review accepted exact 84acf1611e3fd8c6c4c321a91fada60260b01931
+with no blocker. Luna ran working-service, engineering-search and ordinary
+work-item suites: 70/70, server types, scoped lint and diff check passed. This
+is a different suite selection from B's 61 tests. Neither review reran old PG
+fixtures. Main received the accepted commit for sole-owner integration and
+release; deployed performance remains unverified. Member count stays bounded
+as before; dependent reads per member can increase from one to two in flight.
+
+
+## Graph global exit verification (2026-09-23, deployed AB81)
+
+Normal logged-in saved revision 16: zoom from 82% to 93.48%, exit through
+Library, then browser back. Exact saved work, viewport and all 17 overlay style
+values match; three canvas elements are removed on exit and restored on return.
+This is functional evidence, not timing or proof of memory reclamation.
+
+A distinct path fails: after exiting to Library, its enabled “返回原阅读位置”
+button stays in Library instead of returning to the graph. No alert appears.
+Source inspection explains it: Sidebar's global Library link carries no return
+context, while TopBar falls back to /library for routes without object pins.
+This remains open; browser-back success must not be used to close all returns.
+Next scope is preserving exact graph return context through this global exit,
+without loosening existing explicit return/version validation. Shared Sidebar,
+TopBar and reading-return ownership must be coordinated before integration.
+See GRAPH_GLOBAL_EXIT_EVIDENCE_20260923.json; raw sample identifiers omitted.
+
+
+## Exact graph return through global Library (2026-09-23)
+
+The observed AB81 product-button failure now has a narrow fix: Sidebar carries
+the current Matter graph query into /library; TopBar reads this dedicated intent
+only on that route, rejects duplicate/conflicting return intents and delegates
+graph identity/display normalization to the existing graph return validator.
+No arbitrary return URL, new navigation stack or authorization bypass is added.
+
+The regression clicks actual Sidebar and TopBar components, including the real
+Library default-selection hook. It verifies exact saved work, viewport, selected
+node, density, layout, wiki tab and nested knowledge return. Restoring the parent
+product files makes that same test fail at the missing graph return button.
+Candidate: 4 suites / 72 tests, client types, scoped lint and client build pass;
+chunk-size advice remains in build output. No online result is claimed before
+review/integration/release. See GRAPH_LIBRARY_RETURN_FIX_EVIDENCE_20260923.json.

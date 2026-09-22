@@ -308,12 +308,15 @@ export class EngineeringMatterWorkingService {
         statusCode: access.statusCode,
       });
     }
-    const scoped: Awaited<
-      ReturnType<MiaodaWorkItemRepository['loadTenantScopedProjection']>
-    > = await this.workItems.loadTenantScopedProjection(
-      access.workItemId,
-      actor.tenantId,
-    );
+    // Fresh access already binds the exact source version. These reads are
+    // independent; settle both before validating or returning an error so no
+    // database work escapes this member check. Never cache the access decision.
+    const [scopedRead, sourceRead] = await Promise.allSettled([
+      this.workItems.loadTenantScopedProjection(access.workItemId, actor.tenantId),
+      this.documentVersions.resolveIdentity(access.documentVersionId),
+    ]);
+    if (scopedRead.status === 'rejected') throw scopedRead.reason;
+    const scoped = scopedRead.value;
     if (
       !scoped ||
       scoped.row.workItemId !== workItemId ||
@@ -330,9 +333,8 @@ export class EngineeringMatterWorkingService {
     }
     let source: DocumentVersionSource;
     try {
-      source = await this.documentVersions.resolveIdentity(
-        scoped.row.documentVersionId,
-      );
+      if (sourceRead.status === 'rejected') throw sourceRead.reason;
+      source = sourceRead.value;
     } catch (error: unknown) {
       if (
         error instanceof Error &&

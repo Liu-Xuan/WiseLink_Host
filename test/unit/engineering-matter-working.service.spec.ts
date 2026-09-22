@@ -93,6 +93,91 @@ describe('EngineeringMatterWorkingService', () => {
     expect(documentVersions.resolve).not.toHaveBeenCalled();
   });
 
+  it('overlaps source and tenant reads only after fresh access and settles both', async () => {
+    jest.useFakeTimers();
+    try {
+      const events: string[] = [];
+      const objectAccess = { freshRead: jest.fn(async ({ accessRoot }) => {
+        await new Promise(resolve => setTimeout(resolve, 20));
+        events.push(`authorized:${accessRoot.id}`);
+        return { allowed: true, workItemId: accessRoot.id,
+          documentVersionId: accessRoot.id === 'WI-A' ? 'DV-A' : 'DV-B' };
+      }) };
+      const workItems = { loadTenantScopedProjection: jest.fn(async (id: string, tenant: string) => {
+        expect(tenant).toBe('tenant-A');
+        expect(events).toContain(`authorized:${id}`);
+        events.push(`projection:${id}`);
+        await new Promise(resolve => setTimeout(resolve, 60));
+        events.push(`projection-done:${id}`);
+        return workItem(id);
+      }) };
+      const documentVersions = { resolveIdentity: jest.fn(async (id: string) => {
+        expect(events).toContain(`authorized:${id === 'DV-A' ? 'WI-A' : 'WI-B'}`);
+        events.push(`source:${id}`);
+        await new Promise(resolve => setTimeout(resolve, 80));
+        events.push(`source-done:${id}`);
+        return documentVersion(id);
+      }) };
+      const service = serviceWith({ objectAccess, workItems, documentVersions });
+      const start = Date.now();
+      const pending = service.resolveWorkingBasis('MAT-1', actor());
+      await jest.runAllTimersAsync();
+      expect((await pending).currentInputs).toHaveLength(2);
+      expect(Date.now() - start).toBe(100); // ACL + max(projection, source), not their sum
+      expect(events.filter(event => event.includes('-done:'))).toHaveLength(4);
+    } finally { jest.useRealTimers(); }
+  });
+
+  it('does not launch either dependent read after fresh access is denied', async () => {
+    const workItems = { loadTenantScopedProjection: jest.fn() };
+    const documentVersions = { resolveIdentity: jest.fn() };
+    const service = serviceWith({ workItems, documentVersions,
+      objectAccess: { freshRead: jest.fn().mockResolvedValue({ allowed: false, code: 'REVOKED', statusCode: 403 }) } });
+    await expect(service.readWorking('MAT-1', actor())).rejects.toMatchObject({ code: 'REVOKED' });
+    expect(workItems.loadTenantScopedProjection).not.toHaveBeenCalled();
+    expect(documentVersions.resolveIdentity).not.toHaveBeenCalled();
+  });
+
+  it('settles a slower source failure before returning the original tenant lookup failure', async () => {
+    jest.useFakeTimers();
+    try {
+      let activeSources = 0;
+      const documentVersions = { resolveIdentity: jest.fn(async () => {
+        activeSources++;
+        await new Promise(resolve => setTimeout(resolve, 80));
+        activeSources--;
+        throw new Error('DOCUMENT_VERSION_NOT_FOUND');
+      }) };
+      const service = serviceWith({ documentVersions,
+        matters: { loadCurrent: jest.fn().mockResolvedValue({ ...snapshot, links: snapshot.links.slice(0, 1) }) },
+        workItems: { loadTenantScopedProjection: jest.fn().mockRejectedValue(new Error('TENANT_READ_FAILED')) } });
+      const pending = service.readWorking('MAT-1', actor()).catch(error => ({ error, activeSources }));
+      await jest.runAllTimersAsync();
+      expect(await pending).toMatchObject({ error: new Error('TENANT_READ_FAILED'), activeSources: 0 });
+    } finally { jest.useRealTimers(); }
+  });
+
+  it.each(['missing', 'changed-version', 'projection-mismatch', 'source-mismatch', 'source-missing']) (
+    'still rejects %s after independent reads settle', async kind => {
+      const scoped = workItem('WI-A');
+      if (kind === 'changed-version') scoped.row.documentVersionId = 'DV-CHANGED';
+      if (kind === 'projection-mismatch') scoped.projection.source.documentVersionId = 'DV-OTHER';
+      const source = documentVersion('DV-A');
+      if (kind === 'source-mismatch') source.version.documentId = 'DOC-OTHER';
+      const documentVersions = { resolveIdentity: kind === 'source-missing'
+        ? jest.fn().mockRejectedValue(new Error('DOCUMENT_VERSION_NOT_FOUND'))
+        : jest.fn().mockResolvedValue(source) };
+      const service = serviceWith({ documentVersions,
+        matters: { loadCurrent: jest.fn().mockResolvedValue({ ...snapshot, links: snapshot.links.slice(0, 1) }) },
+        workItems: { loadTenantScopedProjection: jest.fn().mockResolvedValue(kind === 'missing' ? null : scoped) } });
+      const code = kind === 'missing' || kind === 'changed-version'
+        ? 'CANONICAL_WORK_ITEM_NOT_FOUND' : kind === 'source-missing'
+          ? 'DOCUMENT_VERSION_NOT_FOUND' : 'ENGINEERING_MATTER_WORK_ITEM_DOCUMENT_CONFLICT';
+      await expect(service.readWorking('MAT-1', actor())).rejects.toMatchObject({ code });
+      expect(documentVersions.resolveIdentity).toHaveBeenCalledWith('DV-A');
+    },
+  );
+
   it('fails closed when any current Matter member loses fresh access', async () => {
     const objectAccess = {
       freshRead: jest.fn().mockImplementation(({ accessRoot }) =>

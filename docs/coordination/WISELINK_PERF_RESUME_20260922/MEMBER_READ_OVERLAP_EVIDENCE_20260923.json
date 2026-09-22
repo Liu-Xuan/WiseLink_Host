@@ -1,0 +1,36 @@
+{
+  "basis": "AB81_DATABASE_TRACE_EVIDENCE_20260923.json",
+  "parent": "976ed56d3",
+  "change": "After fresh READ_WORK_ITEM succeeds, overlap tenant-scoped projection and the exact authorized document-version identity lookup; await allSettled before existing ordered validation.",
+  "preserved": [
+    "fresh authorization on every current and historical member read",
+    "denial starts neither dependent read",
+    "tenant-scoped lookup and work item / document version comparisons",
+    "projection and source document consistency checks",
+    "both current Matter revision reads and existing retry",
+    "full saved content and original binding behavior",
+    "error precedence: projection lookup / consistency before source lookup / consistency"
+  ],
+  "cost": [
+    "Successful SQL count unchanged; each authorized member can have two dependent reads in flight instead of one.",
+    "Saved groups remain four members, at most eight dependent reads in that group. Existing current-member fanout is unchanged in member count.",
+    "Invalid tenant projection may now overlap a source identity lookup already permitted by fresh access; its result is never returned on projection failure."
+  ],
+  "validation": {
+    "unitSuites": 3,
+    "unitTests": 61,
+    "types": "tsconfig.node.json passed",
+    "lint": "two changed TypeScript files passed",
+    "serverBuild": "passed",
+    "counterexample": {
+      "baselineExit": 1,
+      "baselineControlledMs": 160,
+      "candidateControlledMs": 100,
+      "fixture": "20ms fresh authorization + 60ms projection + 80ms source identity; independent current members"
+    }
+  },
+  "limits": [
+    "No new SQL or RLS policy change; this batch did not rerun PostgreSQL fixtures.",
+    "Controlled timing is not production latency or p95. Independent review, integration and deployed trace comparison remain pending."
+  ]
+}

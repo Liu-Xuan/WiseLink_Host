@@ -579,13 +579,40 @@ export function matterReadingReturnParams(
   return params;
 }
 
+/** Global Library exit from an exact Matter graph; never an arbitrary URL. */
+export function libraryGraphReturnRoute(graphQuery: URLSearchParams): string {
+  const raw = graphQuery.toString();
+  // Retain a rejected intent explicitly instead of falling back to a current graph.
+  return `/library?${new URLSearchParams({ returnLibraryGraphQuery: raw.length <= 12000 ? raw : '' })}`;
+}
+
+function libraryGraphReturnTarget(params: URLSearchParams, pathname?: string): { route: string; label: string } | null {
+  if (pathname !== '/library' || params.getAll('returnLibraryGraphQuery').length !== 1 ||
+    [...params.keys()].some(key => key.startsWith('return') && key !== 'returnLibraryGraphQuery')) return null;
+  const raw = params.get('returnLibraryGraphQuery')!;
+  if (!raw || raw.length > 12000) return null;
+  const graph = new URLSearchParams(raw);
+  const matterId = graph.get('matterId') ?? '';
+  const workRef = graph.get('workRef');
+  // A document/work-item graph cannot be silently converted to a Matter graph.
+  if (['workItemId', 'documentVersionId', 'sourceWorkRef'].some(key => graph.has(key))) return null;
+  const bound = new URLSearchParams({ returnGraphQuery: raw, returnGraphTargetMatterId: matterId });
+  if (workRef !== null) {
+    bound.set('workRef', workRef);
+    bound.set('returnGraphTargetWorkRef', workRef);
+  }
+  return graphReturnTarget(bound, undefined, null, matterId);
+}
+
 export function readingReturnTarget(
   params: URLSearchParams,
   documentVersionId?: string,
   requestedRun?: string | null,
   currentMatterId?: string,
   currentWorkRef?: string,
+  currentPathname?: string,
 ): { route: string; label: string } | null {
+  if (params.has('returnLibraryGraphQuery')) return libraryGraphReturnTarget(params, currentPathname);
   const keys = [
     'returnSituationQuery',
     'returnGraphQuery',

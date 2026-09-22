@@ -20,7 +20,7 @@ import { useCurrentObjectContext } from '@client/src/app/providers/CurrentObject
 import { useCurrentUserSession } from '@client/src/app/providers/CurrentUserSessionProvider';
 import { getEngineeringMatter } from '@client/src/api/engineering-matter';
 import WiseLinkBrandMark from '@client/src/components/WiseLinkBrandMark';
-import { activityReadingParams, knowledgeReadingIdentity, knowledgeReadingParams } from '@client/src/features/matter/reading-return';
+import { activityReadingParams, knowledgeReadingIdentity, knowledgeReadingParams, libraryGraphReturnRoute } from '@client/src/features/matter/reading-return';
 import type {
   EngineeringMatterCatalogEntry,
   EngineeringMatterReadModel,
@@ -185,6 +185,9 @@ const Sidebar: React.FC<SidebarProps> = ({ mobileOpen, onMobileClose }) => {
     );
 
   const globalNavTarget = (target: string): string => {
+    if (target === '/library' && location.pathname === '/graph' && currentSearchParams.has('matterId')) {
+      return libraryGraphReturnRoute(currentSearchParams);
+    }
     if (
       blockedPins.length > 0 &&
       (target === '/graph' ||
