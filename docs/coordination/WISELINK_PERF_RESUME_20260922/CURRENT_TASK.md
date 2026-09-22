@@ -4,7 +4,8 @@
 
 - Base: `b02395537a948fbe427f232f5a52ab59ba43efe0`
 - Branch: `codex/perf-resume-20260922`
-- Last pushed HEAD: `c330b8bd87428235ed95db1dec9d07d54c212977`
+- Last verified checkpoint before this round:
+  `c85a0b616e5bacbd2544924ddf31d0692987ab02`
 - Integration worktree:
   `/Volumes/SSD/LLM/WiseLink/private/runtime/miaoda-app-repos/wiselink-v3-1-perf-resume-20260922`
 
@@ -31,11 +32,19 @@
   affect another cached matter or retry automatically. Network errors keep the
   same-identity readable content. Two consumers share one request and one
   unmount does not cancel the other.
+- 1C denial durability: a denied workspace or exact-work resource stays hidden
+  when a later refresh fails with an ordinary network error. Only a successful
+  fetch clears the denial. A normal network failure without a prior denial
+  still keeps the last readable content.
 - 1C test lifecycle: the previous `--forceExit` need came from six QueryClient
   `gcTime` timers left by the session-change test, not from business requests.
   The test now owns a fake clock and destroys its root, QueryClient, JSDOM
   window and cache; production cleanup only removes inactive engineering-matter
   queries and leaves active observers intact.
+- 2A: heavy routes are lazy-loaded while `Layout` and the library entry stay
+  eager. A `Suspense` fallback and a recoverable route-chunk error boundary
+  wrap `Routes`; `AppContainer`, identity providers and the QueryClient stay
+  above the boundary. Route generation still reports 32 routes.
 - 1B: available two-file candidate imported and tested against the current
   directory-runtime spec. The final unavailable cloud worktree difference is
   not covered.
@@ -47,9 +56,13 @@
 
 - Server typecheck: pass.
 - Client typecheck: pass.
-- Focused Jest: 20 suites, 151/151 tests passed with the repository standard
+- Focused Jest: 20 suites, 153/153 tests passed with the repository standard
   configuration, `--runInBand` only, and no `--forceExit`; the process exits
   normally.
+- Client production build: entry chunk 3,742.29 -> 1,678.64 kB raw and
+  1,183.84 -> 538.05 kB gzip. `routes.json` still lists 32 routes and keeps
+  `/library`, `matters/:matterId`, `graph`, `reader`, `version-comparison` and
+  the dev-preview paths.
 - Isolated PostgreSQL: pass on 127.0.0.1:55441 with a NOBYPASSRLS test role;
   six production-generated queries for both representative and 80-matter
   datasets. See `SQL_EVIDENCE.md`.
@@ -58,7 +71,7 @@
 
 ## Next Action
 
-The directory closeout checkpoint is `c330b8bd...`. This round commits and
-pushes the verified 1C lifecycle closeout to the same GitHub branch. Browser
-request timing and online p95 remain unmeasured. Stop after this closeout; do
-not start PDF, graph lifecycle, shared query cache or other runtime batches.
+This round adds two independent commits: the denied-resource cache fix (A) and
+route-level lazy loading (B). Browser request timing, content appearance timing
+and online p95 remain unmeasured. Stop after these commits; do not start PDF,
+graph lifecycle, further resource caches or other runtime batches.

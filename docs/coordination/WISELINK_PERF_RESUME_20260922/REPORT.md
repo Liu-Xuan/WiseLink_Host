@@ -138,6 +138,74 @@ destroys remaining cache entries. Production cleanup calls `cancelQueries`
 first and deletes only inactive engineering-matter queries; it never clears
 the whole client and never disposes a query another consumer still observes.
 
+## Round 3: Denied-Resource Durability And Route Lazy Loading
+
+### A. 403 Followed By A Network Failure
+
+The reported counterexample reproduced against the real hooks: after a
+successful read, a refresh returning 403 hid the body, but the next refresh
+failing with an ordinary network error restored the pre-denial body, because
+`revoked` was derived only from the latest query error.
+
+Minimal fix in `client/src/features/matter/useEngineeringMatter.ts`:
+
+- each hook tracks the denied resource by its own query key in component state;
+- `setQueryData(queryKey, undefined)` runs while the resource is denied, so the
+  shared cache no longer holds the rejected body;
+- a later `revoke` only clears once a genuinely successful fetch is recorded,
+  so an ordinary network failure after a denial cannot re-expose it;
+- a normal network failure without a prior denial still keeps the last readable
+  content, and a successful reauthorized fetch restores consumption;
+- the tracking is per query key and per hook, so denying matter A does not
+  affect matter B, and the exact-work key is independent of the current
+  workspace key.
+
+Tests added in `test/unit/engineering-matter-query-cache.spec.ts`:
+
+- `workspace revoke is not undone by a later network failure`;
+- `exact historical work revoke is not undone by a later network failure`.
+
+Both assert denial -> network failure -> hidden, then a successful
+re-authorization restores content. The pre-fix run failed both cases with the
+old body visible; the post-fix focused run passes 16/16 in the four related
+suites.
+
+### B. 2A First-Screen Route Lazy Loading
+
+`client/src/app.tsx` now declares every heavy route component with a top-level
+`lazy(() => import(...))`. `Layout` and `WorkspaceHomePage` stay eager so the
+library shell and its redirect are available without waiting for a chunk.
+`AppContainer`, `BrowserRouter`, the theme provider and the QueryClient remain
+outside the `Suspense` boundary, so loading a route chunk does not rebuild the
+providers or the shared matter cache. A `RouteChunkBoundary` renders a visible
+"page failed to load" panel with a manual reload button; it resets when the
+route changes and never auto-refreshes.
+
+Lazy route set: dialogue, work-item overview, matter wiki, matter analysis,
+situation, timeline, document parsing and readers, document revision/activity,
+runtime probe, external discovery, OAuth callback, model settings, relation
+graph, knowledge lookup, all `dev-preview/*` pages, the reader/version
+compatibility adapters and the React Flow validation playground.
+
+Measured with `NODE_ENV=production vite build --config vite.config.ts` on the
+same Node 24.14.1 and the same installed dependency tree:
+
+| Metric | Before | After |
+| --- | ---: | ---: |
+| Entry chunk raw | 3,742.29 kB | 1,678.64 kB |
+| Entry chunk gzip | 1,183.84 kB | 538.05 kB |
+| Entry-reachable JS | 3.57 MB | 1.60 MB |
+| Entry CSS | 637.9 kB | 325.0 kB |
+| `routes.json` entries | 32 | 32 |
+
+The entry now references `cytoscape`, `mermaid`, `pdf`, `shiki` and
+`AtlasWorkspace` only through dynamic-import maps; those libraries are in
+separate async chunks. `routes.json` was regenerated twice during the build
+and still contains `/library`, `matters/:matterId`, `graph`, `timeline`,
+`reader/:documentId`, `version-comparison/:documentId` and the dev-preview
+paths. These numbers are build-artifact bytes, not first-paint time, server
+transfer bytes or online p95.
+
 ## Integrated Work
 
 ### 1A
@@ -196,10 +264,12 @@ npm run type:check:client
   test/unit/matter-wiki-layout.spec.ts \
   test/unit/matter-posture.spec.ts \
   test/unit/library-atlas-reading.spec.ts \
-  --runInBand --forceExit
+  --runInBand
 
 ENGINEERING_MATTER_DIRECTORY_TEST_DATABASE_URL=postgres://liuxuan@127.0.0.1:55441/wiselink_directory_test \
   node --test test/node/engineering-matter-directory-postgres.test.mjs
+
+NODE_ENV=production vite build --config vite.config.ts
 ```
 
 Results:
@@ -208,6 +278,8 @@ Results:
 - Client typecheck: pass.
 - Jest: 20 suites passed, 151/151 tests passed with the repository standard
   configuration, `--runInBand` only and no `--forceExit`; Jest exited normally.
+- Client production build: pass. Entry chunk 1,678.64 kB raw / 538.05 kB gzip,
+  down from 3,742.29 kB / 1,183.84 kB. `dist/client/routes.json` has 32 routes.
 - Isolated PostgreSQL directory test: 1 passed; six queries and EXPLAIN plans
   captured.
 - ESLint, Prettier and `git diff --check`: pass.
@@ -227,3 +299,8 @@ Results:
 - Wiki to graph to Wiki HTTP counts are deterministic mocked resource/API call
   counts, not browser HAR requests. Browser request timing, content appearance
   timing and online p95 remain unmeasured.
+- `test/unit/single-app-workspace.spec.ts` has one pre-existing source-text
+  assertion failure on `wl-light--cold`; the Layout source never contained that
+  token at `c85a0b616` either, and this round did not change Layout. It is
+  outside the focused regression set and is recorded rather than worked around.
+| Entry CSS (locally measured asset bytes) | 637.9 kB | 325.0 kB |

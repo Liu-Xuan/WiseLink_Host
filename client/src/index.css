@@ -28,3 +28,21 @@ body {
 #root {
   min-height: 100dvh;
 }
+
+.wl-route-loading,
+.wl-route-load-error {
+  margin: 0 auto;
+  max-width: 48rem;
+  padding: 3rem 1.5rem;
+  color: var(--wl-ink);
+}
+
+.wl-route-load-error h1 {
+  margin: 0 0 0.75rem;
+  font-size: 1.25rem;
+}
+
+.wl-route-load-error p {
+  margin: 0 0 1rem;
+  color: var(--wl-muted);
+}

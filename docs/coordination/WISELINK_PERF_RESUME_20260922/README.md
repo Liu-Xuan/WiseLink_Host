@@ -25,6 +25,9 @@ Do not treat chat summaries, old release references, or the unavailable
 - 1A default graph entry and timeline discovery handoff.
 - Engineering Matter directory batch narrow reading.
 - Engineering Matter QueryClient sharing for Wiki and exact workRef views.
+- Denied-resource cache continuity: a 403/404 keeps the resource hidden even
+  when the next refresh fails with an ordinary network error.
+- Route-level lazy loading for heavy pages; the library shell stays eager.
 - The available earlier two-file 1B control-read candidate.
 - The recovered metadata boundary changes plus local reimplementations of the
   three missing new files.
@@ -40,7 +43,14 @@ new-file bytes.
 - `npm run type:check:server`: pass.
 - `npm run type:check:client`: pass.
 - Focused Jest: 20 suites passed, 151/151 tests passed with the repository
-  standard configuration and no `--forceExit`; Jest exits normally.
+  standard configuration and no `--forceExit`; Jest exits normally. After the
+  denied-resource fix and cache-edge tests the focused set is 20 suites,
+  153/153 tests passed.
+- Client production build (`vite build`, no plugin install, no environment
+  copy): entry chunk 3,742.29 kB -> 1,678.64 kB raw, 1,183.84 kB -> 538.05 kB
+  gzip; entry-reachable JS 3.57 MB -> 1.60 MB; entry CSS 637.9 kB -> 325.0 kB.
+  `cytoscape`, `mermaid`, `pdf`/worker, `shiki` and `AtlasWorkspace` are no
+  longer statically reachable from the first-screen entry.
 - Isolated PostgreSQL directory test: pass; 6 production-generated queries on
   representative small and 80-matter datasets.
 - Postgres metadata suite: 4 skipped because no test database was configured.
@@ -57,3 +67,8 @@ The focused Jest command is recorded in `REPORT.md`.
 - Query cache policy remains `staleTime` 30 s, `gcTime` 5 min, `retry` false.
   Session or identity change clears the engineering-matter query root; it does
   not clear unrelated resources.
+- A denied workspace or exact-work resource stays hidden until a fetch succeeds
+  again; an ordinary network failure after a denial does not restore the
+  rejected body.
+- The local build is not a Miaoda release validation. No browser HAR, preview
+  deploy or online p95 was measured.
