@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect } from 'react';
 import {
   useQuery,
   useQueryClient,
@@ -66,45 +66,39 @@ export default function useEngineeringMatter(
   const queryKey = identity
     ? engineeringMatterWorkspaceQueryKey(identity, effectiveMatterId)
     : ([...ENGINEERING_MATTER_QUERY_ROOT, 'workspace-pending'] as const);
-  const queryClient = useQueryClient();
-  const { revoked, markRevocation, recordSuccessfulFetch } =
-    useEngineeringMatterRevokedKey(workspaceQueryRevokedKey(queryKey));
   const workspaceQuery = useQuery({
     queryKey,
-    queryFn: async ({ signal }): Promise<EngineeringMatterWorkspaceRead> => {
-      const workspace = await getEngineeringMatterWorkspace(
-        effectiveMatterId,
-        signal,
-      );
-      assertCurrentSession(sessionGeneration);
-      recordSuccessfulFetch();
-      return workspace;
-    },
+    queryFn: async ({
+      signal,
+    }): Promise<MatterResourceResult<EngineeringMatterWorkspaceRead>> =>
+      readMatterResource(
+        () => getEngineeringMatterWorkspace(effectiveMatterId, signal),
+        sessionGeneration,
+      ),
     enabled: enabled && Boolean(identity),
     staleTime: MATTER_STALE_TIME_MS,
     gcTime: MATTER_GC_TIME_MS,
     retry: false,
   });
-  const error: unknown = workspaceQuery.error ?? identityQuery.error;
-  useEffect(() => {
-    if (!enabled) return;
-    markRevocation(
-      isRevokedMatterError(error)
-        ? 'revoked'
-        : workspaceQuery.data !== undefined
-          ? 'idle'
-          : 'unchanged',
-    );
-  }, [enabled, error, markRevocation, workspaceQuery.data]);
+  const result: MatterResourceResult<EngineeringMatterWorkspaceRead> | null =
+    workspaceQuery.data ?? null;
+  const identityError: unknown = identityQuery.error;
+  const error: unknown =
+    result?.kind === 'rejected'
+      ? result.error
+      : (workspaceQuery.error ?? identityError);
+  const revoked: boolean =
+    result?.kind === 'rejected' || isRevokedMatterError(identityError);
   useEffect(() => {
     if (!revoked) return;
-    queryClient.setQueryData(queryKey, undefined);
     writeReviewDraft(`matter:${effectiveMatterId}`, '', sessionGeneration);
     clearMatterReadingLocations(effectiveMatterId);
-  }, [effectiveMatterId, queryClient, queryKey, revoked, sessionGeneration]);
+  }, [effectiveMatterId, revoked, sessionGeneration]);
   const data: EngineeringMatterWorkspaceRead | null = revoked
     ? null
-    : (workspaceQuery.data ?? null);
+    : result?.kind === 'readable'
+      ? result.data
+      : null;
   const refresh = useCallback(async (): Promise<void> => {
     if (!enabled) return;
     const identityResult = identityQuery.data
@@ -159,46 +153,39 @@ export function useEngineeringMatterWorkingRevision(
         effectiveWorkRef,
       )
     : ([...ENGINEERING_MATTER_QUERY_ROOT, 'working-revision-pending'] as const);
-  const queryClient = useQueryClient();
-  const { revoked, markRevocation, recordSuccessfulFetch } =
-    useEngineeringMatterRevokedKey(workspaceQueryRevokedKey(queryKey));
   const revisionQuery = useQuery({
     queryKey,
-    queryFn: async ({ signal }) => {
-      const revision = await getEngineeringMatterWorkingRevision(
-        effectiveMatterId,
-        effectiveWorkRef,
-        signal,
-      );
-      assertCurrentSession(sessionGeneration);
-      recordSuccessfulFetch();
-      return revision;
-    },
+    queryFn: async ({ signal }) =>
+      readMatterResource(
+        () =>
+          getEngineeringMatterWorkingRevision(
+            effectiveMatterId,
+            effectiveWorkRef,
+            signal,
+          ),
+        sessionGeneration,
+      ),
     enabled: queryEnabled && Boolean(identity),
     staleTime: MATTER_STALE_TIME_MS,
     gcTime: MATTER_GC_TIME_MS,
     retry: false,
   });
-  const error: unknown = revisionQuery.error ?? identityQuery.error;
-  useEffect(() => {
-    if (!queryEnabled) return;
-    markRevocation(
-      isRevokedMatterError(error)
-        ? 'revoked'
-        : revisionQuery.data !== undefined
-          ? 'idle'
-          : 'unchanged',
-    );
-  }, [error, markRevocation, queryEnabled, revisionQuery.data]);
-  useEffect(() => {
-    if (!revoked) return;
-    queryClient.setQueryData(queryKey, undefined);
-  }, [queryClient, queryKey, revoked]);
+  const result: MatterResourceResult<EngineeringMatterWorkingRevisionReadModel> | null =
+    revisionQuery.data ?? null;
+  const identityError: unknown = identityQuery.error;
+  const error: unknown =
+    result?.kind === 'rejected'
+      ? result.error
+      : (revisionQuery.error ?? identityError);
+  const revoked: boolean =
+    result?.kind === 'rejected' || isRevokedMatterError(identityError);
   const data: EngineeringMatterWorkingRevisionReadModel | null = revoked
     ? null
     : authorizationDenied
       ? null
-      : (revisionQuery.data ?? null);
+      : result?.kind === 'readable'
+        ? result.data
+        : null;
   const refresh = useCallback(async (): Promise<void> => {
     if (!queryEnabled) return;
     const identityResult = identityQuery.data
@@ -323,71 +310,27 @@ function isRevokedMatterError(error: unknown): boolean {
   return statusCode === 401 || statusCode === 403 || statusCode === 404;
 }
 
-type EngineeringMatterRevocationStatus = 'revoked' | 'idle' | 'unchanged';
-
-function workspaceQueryRevokedKey(queryKey: readonly unknown[]): string {
-  return JSON.stringify(queryKey);
-}
+type MatterResourceResult<T> =
+  | { kind: 'readable'; data: T }
+  | { kind: 'rejected'; error: unknown };
 
 /**
- * A denied resource stays hidden until a fetch succeeds again. Tracking the
- * denied key in component state keeps consumers of the same query key aligned
- * without writing a second source of truth into the shared cache.
+ * Normalise the read outcome inside the shared query value. A denial becomes a
+ * readable "rejected" resource, so every consumer and every remount sees the
+ * same conclusion until a later successful fetch replaces the cached value.
  */
-function useEngineeringMatterRevokedKey(queryRevokedKey: string): {
-  revoked: boolean;
-  markRevocation(status: EngineeringMatterRevocationStatus): void;
-  recordSuccessfulFetch(): void;
-} {
-  const [revokedQueryKeys, setRevokedQueryKeys] = useState<ReadonlySet<string>>(
-    () => new Set<string>(),
-  );
-  const previousQueryRevokedKey = useRef<string>(queryRevokedKey);
-  const hasSuccessfulFetch = useRef<boolean>(false);
-  if (previousQueryRevokedKey.current !== queryRevokedKey) {
-    previousQueryRevokedKey.current = queryRevokedKey;
-    hasSuccessfulFetch.current = false;
-    if (revokedQueryKeys.has(queryRevokedKey)) {
-      setRevokedQueryKeys((current) => {
-        if (!current.has(queryRevokedKey)) return current;
-        const next = new Set(current);
-        next.delete(queryRevokedKey);
-        return next;
-      });
-    }
+async function readMatterResource<T>(
+  read: () => Promise<T>,
+  sessionGeneration: number,
+): Promise<MatterResourceResult<T>> {
+  try {
+    const data: T = await read();
+    assertCurrentSession(sessionGeneration);
+    return { kind: 'readable', data };
+  } catch (error: unknown) {
+    if (isRevokedMatterError(error)) return { kind: 'rejected', error };
+    throw error;
   }
-  const markRevocation: (status: EngineeringMatterRevocationStatus) => void =
-    useCallback(
-      (status: EngineeringMatterRevocationStatus): void => {
-        if (status === 'unchanged') return;
-        if (status === 'idle') {
-          if (!hasSuccessfulFetch.current) return;
-          hasSuccessfulFetch.current = false;
-        }
-        setRevokedQueryKeys((current) => {
-          const isRevoked: boolean = current.has(queryRevokedKey);
-          if (status === 'revoked') {
-            if (isRevoked) return current;
-            const next = new Set(current);
-            next.add(queryRevokedKey);
-            return next;
-          }
-          if (!isRevoked) return current;
-          const next = new Set(current);
-          next.delete(queryRevokedKey);
-          return next;
-        });
-      },
-      [queryRevokedKey],
-    );
-  const recordSuccessfulFetch = useCallback((): void => {
-    hasSuccessfulFetch.current = true;
-  }, []);
-  return {
-    revoked: revokedQueryKeys.has(queryRevokedKey),
-    markRevocation,
-    recordSuccessfulFetch,
-  };
 }
 
 function matterErrorMessage(error: unknown): string | null {

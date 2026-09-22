@@ -448,7 +448,7 @@ describe('engineering matter QueryClient resource identity', () => {
       () =>
         container
           .querySelector('[data-consumer="only"]')
-          ?.getAttribute('data-error') === 'network unavailable',
+          ?.getAttribute('data-error') === 'access denied',
     );
     expect(
       container
@@ -468,6 +468,117 @@ describe('engineering matter QueryClient resource identity', () => {
           .querySelector('[data-consumer="only"]')
           ?.getAttribute('data-title') === 'Reauthorized matter',
     );
+  });
+
+  test('a denied resource stays denied after the reader unmounts and remounts', async () => {
+    mockWorkspaceRead
+      .mockResolvedValueOnce(workspace('Cached matter'))
+      .mockRejectedValueOnce(
+        Object.assign(new Error('access denied'), { statusCode: 403 }),
+      )
+      .mockRejectedValueOnce(
+        Object.assign(new Error('access denied'), { statusCode: 403 }),
+      );
+    render(createElement(Consumer, { matterId: 'M-1', label: 'only' }));
+    await waitUntil(
+      () =>
+        container
+          .querySelector('[data-consumer="only"]')
+          ?.getAttribute('data-title') === 'Cached matter',
+    );
+    await act(async () =>
+      container
+        .querySelector<HTMLButtonElement>('[data-action="refresh-only"]')
+        ?.click(),
+    );
+    await waitUntil(
+      () =>
+        container
+          .querySelector('[data-consumer="only"]')
+          ?.getAttribute('data-error') === 'access denied',
+    );
+    await act(async () => root.render(null));
+    render(createElement(Consumer, { matterId: 'M-1', label: 'only' }));
+    await waitUntil(
+      () =>
+        container
+          .querySelector('[data-consumer="only"]')
+          ?.getAttribute('data-error') === 'access denied',
+    );
+    expect(
+      container
+        .querySelector('[data-consumer="only"]')
+        ?.getAttribute('data-title'),
+    ).toBe('');
+    expect(mockWorkspaceRead).toHaveBeenCalledTimes(2);
+  });
+
+  test('two consumers recover together after a shared resource is reauthorized', async () => {
+    let workspaceCalls = 0;
+    let reauthorized = false;
+    mockWorkspaceRead.mockImplementation(() => {
+      workspaceCalls += 1;
+      if (workspaceCalls === 2 && !reauthorized)
+        return Promise.reject(
+          Object.assign(new Error('access denied'), { statusCode: 403 }),
+        );
+      return Promise.resolve(
+        workspace(
+          workspaceCalls === 1 ? 'Cached matter' : 'Reauthorized matter',
+        ),
+      );
+    });
+    render(createElement(Pair, { showB: true }));
+    await waitUntil(
+      () =>
+        container
+          .querySelector('[data-consumer="a"]')
+          ?.getAttribute('data-title') === 'Cached matter' &&
+        container
+          .querySelector('[data-consumer="b"]')
+          ?.getAttribute('data-title') === 'Cached matter',
+    );
+    await act(async () =>
+      container
+        .querySelector<HTMLButtonElement>('[data-action="refresh-a"]')
+        ?.click(),
+    );
+    await waitUntil(
+      () =>
+        container
+          .querySelector('[data-consumer="a"]')
+          ?.getAttribute('data-error') === 'access denied' &&
+        container
+          .querySelector('[data-consumer="b"]')
+          ?.getAttribute('data-error') === 'access denied',
+    );
+    expect(
+      container
+        .querySelector('[data-consumer="a"]')
+        ?.getAttribute('data-title'),
+    ).toBe('');
+    expect(
+      container
+        .querySelector('[data-consumer="b"]')
+        ?.getAttribute('data-title'),
+    ).toBe('');
+
+    reauthorized = true;
+    await act(async () =>
+      container
+        .querySelector<HTMLButtonElement>('[data-action="refresh-a"]')
+        ?.click(),
+    );
+    await waitUntil(
+      () =>
+        container
+          .querySelector('[data-consumer="a"]')
+          ?.getAttribute('data-title') === 'Reauthorized matter' &&
+        container
+          .querySelector('[data-consumer="b"]')
+          ?.getAttribute('data-title') === 'Reauthorized matter',
+    );
+    expect(mockWorkspaceRead).toHaveBeenCalledTimes(3);
   });
 
   test('exact historical work revoke is not undone by a later network failure', async () => {
@@ -519,7 +630,7 @@ describe('engineering matter QueryClient resource identity', () => {
       () =>
         container
           .querySelector('[data-consumer="only"]')
-          ?.getAttribute('data-error') === 'network unavailable',
+          ?.getAttribute('data-error') === 'historical denied',
     );
     expect(
       container
