@@ -93,6 +93,16 @@ test('cross Matter references save exact lineage and reauthorize scopes and root
       owner = await reserveActorService('actor-A');
       const a = await owner.service.create({ requestId: 'reference-A', title: 'Synthetic reference A', primaryWorkItemId: FTD_WORK_ITEM_ID }, owner.actor);
       const b = await owner.service.create({ requestId: 'reference-B', title: 'Synthetic reference B', primaryWorkItemId: SB_WORK_ITEM_ID }, owner.actor);
+      if (process.env.WL_PROFILE_SAVED_READS === '1') {
+        const queryStart = owner.queryMetrics.queries.length;
+        const snapshot = await owner.matters.loadCurrent({ tenantId: 'tenant-A', matterId: a.matter.matterId });
+        assert.equal(owner.queryMetrics.queries.length - queryStart, 1, 'complete matter snapshot uses one database statement');
+        assert.deepEqual(snapshot.links.map(link => link.workItemId), [FTD_WORK_ITEM_ID]);
+        assert.equal(snapshot.title, 'Synthetic reference A');
+        assert.ok(snapshot.revisionCreatedAt instanceof Date);
+        assert.equal(await owner.matters.loadCurrent({ tenantId: 'tenant-B', matterId: a.matter.matterId }), null);
+      }
+
       const allowed = new Set([a.matter.matterId, b.matter.matterId]);
       const authorizeReferenceMatter = async id => { if (!allowed.has(id)) throw new Error('TEST_SERVICE_SCOPE_REVOKED'); };
       const service = new MatterActionAttemptService(owner.working,
@@ -140,7 +150,8 @@ test('cross Matter references save exact lineage and reauthorize scopes and root
       const savedA = await save(fenceA, first.reserved.task, `A has an unverified target condition. [[${rootRef}]]`, 'save-A',
         { overview: `Synthetic overview with a condition requiring review. [[${rootRef}]]` });
       owner.queryMetrics.overviewSaveQueries = 0;
-      const withoutCorrections = await owner.workingService.readWorkingRevision(a.matter.matterId, savedA.workRevisionRef, owner.actor);
+      const withoutCorrections = await profileSavedRead(owner, 'one-member-no-corrections', () =>
+        owner.workingService.readWorkingRevision(a.matter.matterId, savedA.workRevisionRef, owner.actor));
       assert.deepEqual(withoutCorrections.overviewCorrectionNotices ?? [], []);
       assert.equal(owner.queryMetrics.overviewSaveQueries, 0, 'no saved-metadata query when there are no correction notices');
       const referenceA = { matterId: a.matter.matterId, workRef: savedA.workRevisionRef, issueKey: 'conditions', purpose: 'Compare A with B' };
@@ -247,6 +258,8 @@ test('cross Matter references save exact lineage and reauthorize scopes and root
       assert.equal(continuedStatus.audit.referenceWorks[0].correctionNotices[0].attemptRef,
         sourceCorrection.target.attemptRef, 'status preserves the inherited reference notice delivered to this attempt');
       const readCurrentB = () => owner.runtime(() => service.readCurrentWork({tenantId: 'tenant-A', actorUserId: 'actor-A', matterId: b.matter.matterId, authorizeReferenceMatter}));
+      if (process.env.WL_PROFILE_SAVED_READS === '1') await profileSavedRead(owner, 'one-member-with-prior-result', () =>
+        owner.workingService.readWorkingRevision(b.matter.matterId, savedB.workRevisionRef, owner.actor));
       assert.equal((await readCurrentB()).workRef, savedB.workRevisionRef);
       allowed.delete(a.matter.matterId);
       await assert.rejects(readCurrentB(), /TEST_SERVICE_SCOPE_REVOKED/u);
@@ -337,7 +350,8 @@ test('cross Matter references save exact lineage and reauthorize scopes and root
       const nextOverview = await start({ ...await requestFor(a.matter.matterId, 'overview-review-newer-A'),
         overviewCorrection: { ...overviewPurpose, expectedWorkRef: overviewResaved.workRevisionRef } });
       owner.queryMetrics.overviewSaveQueries = 0;
-      const exactOldA = await owner.workingService.readWorkingRevision(a.matter.matterId, savedA.workRevisionRef, owner.actor);
+      const exactOldA = await profileSavedRead(owner, 'one-member-three-overview-corrections', () =>
+        owner.workingService.readWorkingRevision(a.matter.matterId, savedA.workRevisionRef, owner.actor));
       assert.equal(exactOldA.overviewCorrectionNotices.length, 3);
       assert.equal(owner.queryMetrics.overviewSaveQueries, 1, 'all three correction attempts resolve saved metadata in one query');
       assert.ok(exactOldA.overviewCorrectionNotices.every(notice => notice.targetWorkRef === savedA.workRevisionRef),
@@ -1878,13 +1892,35 @@ async function seedDocument(sql, input) {
   `;
 }
 
+/** Optional local diagnostic: statement shapes only, never parameter values or body. */
+async function profileSavedRead(owner, name, operation) {
+  if (process.env.WL_PROFILE_SAVED_READS !== '1') return operation();
+  const start = owner.queryMetrics.queries.length;
+  const started = performance.now();
+  const result = await operation();
+  const elapsedMs = performance.now() - started;
+  const queries = owner.queryMetrics.queries.slice(start);
+  const statements = queries.map(query => ({
+    tables: [...new Set([...query.matchAll(/\b(?:from|join)\s+"?([a-z_][a-z_0-9]*)"?/giu)]
+      .map(match => match[1]).filter(table => !['jsonb_array_elements_text', 'lateral'].includes(table.toLowerCase())))],
+    sourceOwnershipCheck: query.includes('engineering_matter_work_item_owned_by_actor'),
+    originalOwnershipCheck: query.includes('engineering_matter_document_owned_by_actor'),
+    overviewProvenance: query.includes('submittedOverview'),
+    correctionNotices: query.includes("'ENGINEERING_ISSUE_CORRECTION'"),
+    overviewCorrectionNotices: query.includes("'ENGINEERING_OVERVIEW_CORRECTION'"),
+  }));
+  console.log('SAVED_READ_PROFILE', JSON.stringify({ name, elapsedMs, statementCount: statements.length, statements }));
+  return result;
+}
+
 async function reserveActorService(actorId, tenantId = 'tenant-A') {
   const connection = postgres(databaseUrl, { max: 1, onnotice: () => {} });
   try {
     await connection.unsafe('SET ROLE authenticated');
     await connection`SELECT set_config('app.user_id', ${actorId}, false)`;
-    const queryMetrics = { overviewSaveQueries: 0 };
+    const queryMetrics = { overviewSaveQueries: 0, queries: [] };
     const db = drizzle(connection, { logger: { logQuery(query) {
+      if (process.env.WL_PROFILE_SAVED_READS === '1') queryMetrics.queries.push(query);
       const selection = query.slice(0, query.indexOf(' from '));
       if (selection.includes('"matter_work_revision_id"') && selection.includes('"working_revision"')
           && !selection.includes('"request_id"') && query.includes('"action_attempt_id"')
@@ -2042,6 +2078,8 @@ async function assertWorkingRevisionFlow(
   command.nextProblemWork = materializeJobAidWork(
     {
       schemaVersion: 'wiselink.jobaid-problem-work.v3',
+      headline: command.nextSubstantiveResult.content.headline,
+      listBrief: command.nextSubstantiveResult.content.listBrief,
       overview: command.nextSubstantiveResult.content.lead,
       roundCompletion: 'COMPLETE_WITH_OPEN_QUESTIONS',
       completionReason: '完成本轮来源核查，实际措施状态待确认。',
@@ -3790,6 +3828,7 @@ test('read_matter_current_work returns the fresh complete work and registered so
       await owner.runtime(() => service.readRegisteredSources({ ...fence,
         sourceRefs: [method.evidenceRef], purpose: 'Read the method supporting the read fixture' }));
       const proposal = { schemaVersion: 'wiselink.jobaid-problem-work.v3', overview: 'Read fixture understanding.',
+        headline: 'Bounded read fixture', listBrief: 'The registered condition remains to be checked.',
         roundCompletion: 'COMPLETE_WITH_OPEN_QUESTIONS', completionReason: 'Fixture setup', changeSummary: 'Fixture setup',
         issues: [{ issueKey: 'read-fixture', question: 'What does the read expose?', body: `The condition stays bounded. [[${ref}]]`,
           openQuestions: [{ question: 'Check the read view', affects: 'Requirement',
@@ -3900,6 +3939,7 @@ test('read_matter_current_work concurrent reads stay internally consistent or fa
       const writer = async (label) => {
         const currentNow = await owner.working.loadCurrent(scope);
         const proposal = { schemaVersion: 'wiselink.jobaid-problem-work.v3', overview: `Race write ${label}.`,
+          headline: `Race fixture ${label}`, listBrief: 'Read one complete saved revision under concurrent updates.',
           roundCompletion: 'IN_PROGRESS', completionReason: 'Race fixture', changeSummary: `Race write ${label}`,
           issues: [{ issueKey: 'race', question: 'Is the snapshot consistent?', body: 'Check the scope without asserting external facts. [[method:scope]]' }] };
         return owner.runtime(() => service.saveJobAidWork({ ...fence, requestId: `race-save-${label}`,
@@ -4086,6 +4126,7 @@ test('targeted correction uses real PostgreSQL fences, durable generation and ex
       const oldRequirement = { methodRef: method.evidenceRef, requirement: 'Dependency has no effect',
         conditions: [], treatment: 'ADDRESSED', basisRefs: [ref], explanation: 'Old assertion under review' };
       const proposal = { schemaVersion: 'wiselink.jobaid-problem-work.v3', overview: 'Synthetic initial understanding.',
+        headline: 'Dependency assertion under review', listBrief: 'The synthetic dependency assertion needs correction; retained source conditions remain.',
         roundCompletion: 'COMPLETE_WITH_OPEN_QUESTIONS', completionReason: 'Fixture setup', changeSummary: 'Fixture setup',
         issues: [{ issueKey: 'dependency', question: 'What follows from an unknown dependency?', body: `No effect. [[${ref}]]`, requirementHandling: [oldRequirement],
           openQuestions: [{ question: 'Check the old assertion', affects: 'Requirement',

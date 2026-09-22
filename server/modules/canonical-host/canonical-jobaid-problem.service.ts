@@ -604,6 +604,21 @@ export class CanonicalJobAidProblemService {
         available: false,
         reason: 'NOT_CONFIGURED',
       };
+      const knowledgeCapability = taskInput.modelInput.capabilities.find(
+        (item) => item.capability === 'knowledge_retrieval',
+      );
+      if (knowledgeCapability) {
+        knowledgeCapability.status = knowledge?.binding
+          ? 'AVAILABLE'
+          : knowledge?.access.reason === 'USER_REAUTHORIZATION_REQUIRED'
+            ? 'ACCESS_DENIED'
+            : 'NOT_CONNECTED';
+        knowledgeCapability.impact = knowledge?.binding
+          ? '本轮准备时可按需检索；不代表已取得检索结果或核实原文，实际调用仍需有效授权。'
+          : knowledge?.access.reason === 'USER_REAUTHORIZATION_REQUIRED'
+            ? '本轮准备时缺少有效知识检索授权；可继续分析已授权正文，未取得资料保持线索。'
+            : '本轮未接通知识检索；可继续分析已授权正文，未取得资料保持线索。';
+      }
       if (taskInput.modelInput.contextPackage)
         taskInput.modelInput.contextPackage.knowledgeRetrieval = {
           status: knowledge?.binding ? 'NOT_REQUESTED' : 'UNAVAILABLE',

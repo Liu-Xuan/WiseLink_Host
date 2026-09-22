@@ -175,6 +175,63 @@ test('normal Matter command materializes, validates and reads the same body with
   }
 });
 
+test('independent issue updates retain exact-source coverage without hiding affected or revised inputs', () => {
+  const sourceB = { ...source, documentVersionId: 'dv-b', evidenceRef: 'DOCUMENT_ORIGINAL:dv-b:pr-b:u1' };
+  const issueB = (body: string) => ({ issueKey: 'B', question: '问题B', body: `${body} [[${sourceB.evidenceRef}]]` });
+  const priorSource: AssessmentEvidence = { kind: 'PRIOR_RESULT', evidenceRef: 'prior-A', resultRef: 'W-prior',
+    resultRevision: 1, originalEvidenceRefs: [source.evidenceRef], title: '既有候选分析', versionLabel: null, excerpt: '保留原文条件。' };
+  const relatedIssue = { issueKey: 'C', question: '问题C', body: '候选认识需结合原文条件核查。 [[prior-A]]' };
+  const bindingA = { kind: 'DOCUMENT_VERSION' as const, inputId: 'I1', familyId: 'F1', workItemId: null,
+    workItemRevision: null, resultRef: null, resultRevision: null, documentVersionId: 'dv',
+    original: { parseRunId: 'pr1', parseRevision: 1, semantic: { revision: 1, profileRef: 'ftd' } } };
+  const bindingB = { ...bindingA, inputId: 'I2', familyId: 'F2', documentVersionId: 'dv-b',
+    original: { ...bindingA.original, parseRunId: 'pr-b' } };
+  const input = { matterId: 'MAT-test', matterRevisionId: 'MR1', attemptRef: 'AQ1', requestId: 'save1',
+    expectedWorkRevision: 0, previous: null, inputs: [bindingA, bindingB],
+    proposal: update([issue('A'), issue('A2', '同一来源的另一条件也需要保留。'), issueB('来源 B 的条件尚待核查。'), relatedIssue]), evidence: [source, sourceB, priorSource],
+    readSourceRefs: [source.evidenceRef, sourceB.evidenceRef, priorSource.evidenceRef], capabilities: [], history: context.history,
+    methodBinding: context.methodBinding };
+  const initial = materializeMatterJobAidCommand(input);
+  const state = materializeEngineeringMatterWorkingState({ matterId: input.matterId, current: null, command: initial }).state;
+  const previous: EngineeringMatterWorkingRevisionReadModel = { matterWorkRevisionId: 'MW1', matterId: input.matterId,
+    workingRevision: 1, basedOnMatterRevisionId: 'MR1', updateKind: initial.updateKind, changeSummary: initial.changeSummary,
+    substantiveResultRef: state.substantiveResult!.resultRef, substantiveResultRevision: 1, state,
+    change: engineeringMatterWorkingChangeFromCommand(initial), source: null, createdAt: '2026-09-23T00:00:00Z' };
+  // Both sources were read in this attempt; only B's issue is replaced in this save.
+  const nextInput = { ...input, previous, expectedWorkRevision: 1, requestId: 'save2', attemptRef: 'AQ2',
+    currentReadSourceRefs: input.readSourceRefs, proposal: update([issueB('来源 B 的处置须满足新增前提。')]) };
+  const command = materializeMatterJobAidCommand(nextInput);
+  const next = materializeEngineeringMatterWorkingState({ matterId: input.matterId, current: state, command }).state;
+  expect(next.problemWork?.issues[0]).toEqual(state.problemWork?.issues[0]);
+  expect(next.coverage[0]).toEqual(state.coverage[0]);
+  expect(next.coverage[1].contribution).toBe('SUBSTANTIVE');
+  expect(engineeringMatterPendingInputs(next, input.inputs)).toEqual([]);
+  expect(parseEngineeringMatterWorkingState(JSON.stringify(next), input.matterId)).toEqual(next);
+
+  // Explicit disposition and withdrawn A analysis must still reopen A's input.
+  const explicit = materializeMatterJobAidCommand({ ...nextInput, proposal: update([issueB('B 的新认识。')], {
+    inputDispositions: [{ inputId: 'I1', contribution: 'READ_ONLY', checkedEvidenceRefs: [source.evidenceRef],
+      checkedScope: 'page 1', reason: '仅重新阅读，尚未完成处置。' }],
+  }) });
+  expect(explicit.coverageUpdates[0].contribution).toBe('READ_ONLY');
+  // A2 survives in all cases: neither a surviving citation nor indirect lineage
+  // can mask the withdrawal/replacement of other A-dependent analysis.
+  for (const proposal of [
+    update([issueB('B 的新认识。')], { retiredIssues: [{ issueKey: 'A', reason: '旧论证撤回。' }] }),
+    update([issueB('B 的新认识。')], { retiredIssues: [{ issueKey: 'C', reason: '间接依赖原文的旧论证撤回。' }] }),
+    update([{ ...issue('A'), body: `改为仅基于来源 B，旧推断撤回。 [[${sourceB.evidenceRef}]]` }]),
+  ]) {
+    const affected = materializeMatterJobAidCommand({ ...nextInput, proposal });
+    const affectedState = materializeEngineeringMatterWorkingState({ matterId: input.matterId, current: state, command: affected }).state;
+    expect(engineeringMatterPendingInputs(affectedState, input.inputs)).toEqual([
+      expect.objectContaining({ inputId: 'I1', reasons: ['READ_NOT_PROCESSED'] }),
+    ]);
+  }
+  const revisedBinding = { ...bindingA, original: { ...bindingA.original, semantic: { revision: 2, profileRef: 'ftd' } } };
+  const revised = materializeMatterJobAidCommand({ ...nextInput, inputs: [revisedBinding, bindingB] });
+  expect(revised.coverageUpdates[0].contribution).toBe('READ_ONLY');
+});
+
 test('Matter save summary reports actual differences even when the producer claims no change',()=>{
   const input={matterId:'MAT-test',matterRevisionId:'MR1',attemptRef:'AQ1',requestId:'save1',expectedWorkRevision:0,previous:null,
     inputs:[{kind:'DOCUMENT_VERSION' as const,inputId:'I1',familyId:'F1',workItemId:null,workItemRevision:null,resultRef:null,resultRevision:null,documentVersionId:'dv',original:{parseRunId:'pr1',parseRevision:1,semantic:{revision:1,profileRef:'ftd'}}}],

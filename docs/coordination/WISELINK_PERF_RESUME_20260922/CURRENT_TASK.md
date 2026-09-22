@@ -9,7 +9,7 @@
 
 ## 本批身份
 
-B成员来源窄投影树：`/private/tmp/wiselink-perf-b-source-identity-projection-20260923`，基线`f7d6e82e9458f55a7663cac9041a8de90186a6c9`。同知识冷读链requireInput不再取得六表全列，新增8字段resolveIdentity，保留四必需登记join及原来源状态/verified/digest/length验证，freshACL/tenant/文档一致性检查不变。三套44项通过；新增SQL编译边界后resolver11项通过，未做PG执行或声称线上收益。f7与dd1已获Luna独立接受，Main串行集成；本批将交独立审查。完整性能管线、线上目标、Hosted与后台公平仍未完成，Goal active。
+B事项快照实现树：`/private/tmp/wiselink-perf-b-matter-snapshot-query-20260923`，父4ff75608c。loadCurrent保留完整三键/RLS/状态/形状校验，将3条读取合为1条，保存正文三类实际SQL 17/22/19→13/18/15。新计数反例父版本3!==1，完整PG修正旧摘要fixture后8/8通过，working11/search23、server types/lint/build通过；临时PG已清理。详见MATTER_SNAPSHOT_QUERY_EVIDENCE_20260923.json。待Luna独立审查与Main发布后线上计量，其他路线未关闭，Goal active。
 
 ## 完整路线状态（2026-09-23）
 

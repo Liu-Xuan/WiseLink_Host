@@ -1,0 +1,641 @@
+{
+  "baseSha": "c30b180a18c8648d2f4edf03def8c0f1f416ac25",
+  "method": "Real Drizzle query logger, parameters and business content omitted; queries inside ownership functions are not separate logger statements.",
+  "environment": "isolated PostgreSQL14 on localhost:55443, existing synthetic cross-Matter fixture, authenticated actor-scoped connection",
+  "profiles": [
+    {
+      "name": "one-member-no-corrections",
+      "elapsedMs": 8.365999999999985,
+      "statementCount": 17,
+      "statements": [
+        {
+          "tables": [
+            "engineering_matter",
+            "engineering_matter_revision"
+          ],
+          "sourceOwnershipCheck": false,
+          "originalOwnershipCheck": false,
+          "overviewProvenance": false,
+          "correctionNotices": false,
+          "overviewCorrectionNotices": false
+        },
+        {
+          "tables": [
+            "engineering_matter_revision_work_item"
+          ],
+          "sourceOwnershipCheck": false,
+          "originalOwnershipCheck": false,
+          "overviewProvenance": false,
+          "correctionNotices": false,
+          "overviewCorrectionNotices": false
+        },
+        {
+          "tables": [
+            "engineering_matter_material_link"
+          ],
+          "sourceOwnershipCheck": false,
+          "originalOwnershipCheck": false,
+          "overviewProvenance": false,
+          "correctionNotices": false,
+          "overviewCorrectionNotices": false
+        },
+        {
+          "tables": [
+            "work_item"
+          ],
+          "sourceOwnershipCheck": false,
+          "originalOwnershipCheck": false,
+          "overviewProvenance": false,
+          "correctionNotices": false,
+          "overviewCorrectionNotices": false
+        },
+        {
+          "tables": [
+            "work_item"
+          ],
+          "sourceOwnershipCheck": false,
+          "originalOwnershipCheck": false,
+          "overviewProvenance": false,
+          "correctionNotices": false,
+          "overviewCorrectionNotices": false
+        },
+        {
+          "tables": [
+            "dm_document_version",
+            "dm_publication_family",
+            "dm_source_artifact",
+            "dm_acquisition",
+            "dm_ingress_preflight"
+          ],
+          "sourceOwnershipCheck": false,
+          "originalOwnershipCheck": false,
+          "overviewProvenance": false,
+          "correctionNotices": false,
+          "overviewCorrectionNotices": false
+        },
+        {
+          "tables": [
+            "engineering_matter",
+            "engineering_matter_revision"
+          ],
+          "sourceOwnershipCheck": false,
+          "originalOwnershipCheck": false,
+          "overviewProvenance": false,
+          "correctionNotices": false,
+          "overviewCorrectionNotices": false
+        },
+        {
+          "tables": [
+            "engineering_matter_revision_work_item"
+          ],
+          "sourceOwnershipCheck": false,
+          "originalOwnershipCheck": false,
+          "overviewProvenance": false,
+          "correctionNotices": false,
+          "overviewCorrectionNotices": false
+        },
+        {
+          "tables": [
+            "engineering_matter_material_link"
+          ],
+          "sourceOwnershipCheck": false,
+          "originalOwnershipCheck": false,
+          "overviewProvenance": false,
+          "correctionNotices": false,
+          "overviewCorrectionNotices": false
+        },
+        {
+          "tables": [
+            "engineering_matter_work_revision"
+          ],
+          "sourceOwnershipCheck": false,
+          "originalOwnershipCheck": false,
+          "overviewProvenance": false,
+          "correctionNotices": false,
+          "overviewCorrectionNotices": false
+        },
+        {
+          "tables": [],
+          "sourceOwnershipCheck": true,
+          "originalOwnershipCheck": true,
+          "overviewProvenance": false,
+          "correctionNotices": false,
+          "overviewCorrectionNotices": false
+        },
+        {
+          "tables": [
+            "engineering_matter_work_revision",
+            "action_attempt"
+          ],
+          "sourceOwnershipCheck": false,
+          "originalOwnershipCheck": false,
+          "overviewProvenance": true,
+          "correctionNotices": false,
+          "overviewCorrectionNotices": false
+        },
+        {
+          "tables": [
+            "action_attempt"
+          ],
+          "sourceOwnershipCheck": false,
+          "originalOwnershipCheck": false,
+          "overviewProvenance": false,
+          "correctionNotices": true,
+          "overviewCorrectionNotices": false
+        },
+        {
+          "tables": [
+            "action_attempt",
+            "engineering_matter_work_revision"
+          ],
+          "sourceOwnershipCheck": false,
+          "originalOwnershipCheck": false,
+          "overviewProvenance": false,
+          "correctionNotices": false,
+          "overviewCorrectionNotices": true
+        },
+        {
+          "tables": [
+            "work_item"
+          ],
+          "sourceOwnershipCheck": false,
+          "originalOwnershipCheck": false,
+          "overviewProvenance": false,
+          "correctionNotices": false,
+          "overviewCorrectionNotices": false
+        },
+        {
+          "tables": [
+            "work_item"
+          ],
+          "sourceOwnershipCheck": false,
+          "originalOwnershipCheck": false,
+          "overviewProvenance": false,
+          "correctionNotices": false,
+          "overviewCorrectionNotices": false
+        },
+        {
+          "tables": [
+            "dm_document_version",
+            "dm_publication_family",
+            "dm_source_artifact",
+            "dm_acquisition",
+            "dm_ingress_preflight"
+          ],
+          "sourceOwnershipCheck": false,
+          "originalOwnershipCheck": false,
+          "overviewProvenance": false,
+          "correctionNotices": false,
+          "overviewCorrectionNotices": false
+        }
+      ]
+    },
+    {
+      "name": "one-member-with-prior-result",
+      "elapsedMs": 9.805957999999919,
+      "statementCount": 22,
+      "statements": [
+        {
+          "tables": [
+            "engineering_matter",
+            "engineering_matter_revision"
+          ],
+          "sourceOwnershipCheck": false,
+          "originalOwnershipCheck": false,
+          "overviewProvenance": false,
+          "correctionNotices": false,
+          "overviewCorrectionNotices": false
+        },
+        {
+          "tables": [
+            "engineering_matter_revision_work_item"
+          ],
+          "sourceOwnershipCheck": false,
+          "originalOwnershipCheck": false,
+          "overviewProvenance": false,
+          "correctionNotices": false,
+          "overviewCorrectionNotices": false
+        },
+        {
+          "tables": [
+            "engineering_matter_material_link"
+          ],
+          "sourceOwnershipCheck": false,
+          "originalOwnershipCheck": false,
+          "overviewProvenance": false,
+          "correctionNotices": false,
+          "overviewCorrectionNotices": false
+        },
+        {
+          "tables": [
+            "work_item"
+          ],
+          "sourceOwnershipCheck": false,
+          "originalOwnershipCheck": false,
+          "overviewProvenance": false,
+          "correctionNotices": false,
+          "overviewCorrectionNotices": false
+        },
+        {
+          "tables": [
+            "work_item"
+          ],
+          "sourceOwnershipCheck": false,
+          "originalOwnershipCheck": false,
+          "overviewProvenance": false,
+          "correctionNotices": false,
+          "overviewCorrectionNotices": false
+        },
+        {
+          "tables": [
+            "dm_document_version",
+            "dm_publication_family",
+            "dm_source_artifact",
+            "dm_acquisition",
+            "dm_ingress_preflight"
+          ],
+          "sourceOwnershipCheck": false,
+          "originalOwnershipCheck": false,
+          "overviewProvenance": false,
+          "correctionNotices": false,
+          "overviewCorrectionNotices": false
+        },
+        {
+          "tables": [
+            "engineering_matter",
+            "engineering_matter_revision"
+          ],
+          "sourceOwnershipCheck": false,
+          "originalOwnershipCheck": false,
+          "overviewProvenance": false,
+          "correctionNotices": false,
+          "overviewCorrectionNotices": false
+        },
+        {
+          "tables": [
+            "engineering_matter_revision_work_item"
+          ],
+          "sourceOwnershipCheck": false,
+          "originalOwnershipCheck": false,
+          "overviewProvenance": false,
+          "correctionNotices": false,
+          "overviewCorrectionNotices": false
+        },
+        {
+          "tables": [
+            "engineering_matter_material_link"
+          ],
+          "sourceOwnershipCheck": false,
+          "originalOwnershipCheck": false,
+          "overviewProvenance": false,
+          "correctionNotices": false,
+          "overviewCorrectionNotices": false
+        },
+        {
+          "tables": [
+            "engineering_matter_work_revision"
+          ],
+          "sourceOwnershipCheck": false,
+          "originalOwnershipCheck": false,
+          "overviewProvenance": false,
+          "correctionNotices": false,
+          "overviewCorrectionNotices": false
+        },
+        {
+          "tables": [],
+          "sourceOwnershipCheck": true,
+          "originalOwnershipCheck": true,
+          "overviewProvenance": false,
+          "correctionNotices": false,
+          "overviewCorrectionNotices": false
+        },
+        {
+          "tables": [
+            "engineering_matter"
+          ],
+          "sourceOwnershipCheck": false,
+          "originalOwnershipCheck": false,
+          "overviewProvenance": false,
+          "correctionNotices": false,
+          "overviewCorrectionNotices": false
+        },
+        {
+          "tables": [],
+          "sourceOwnershipCheck": false,
+          "originalOwnershipCheck": false,
+          "overviewProvenance": false,
+          "correctionNotices": false,
+          "overviewCorrectionNotices": false
+        },
+        {
+          "tables": [
+            "engineering_matter_work_revision"
+          ],
+          "sourceOwnershipCheck": false,
+          "originalOwnershipCheck": false,
+          "overviewProvenance": false,
+          "correctionNotices": false,
+          "overviewCorrectionNotices": false
+        },
+        {
+          "tables": [],
+          "sourceOwnershipCheck": false,
+          "originalOwnershipCheck": false,
+          "overviewProvenance": false,
+          "correctionNotices": false,
+          "overviewCorrectionNotices": false
+        },
+        {
+          "tables": [],
+          "sourceOwnershipCheck": true,
+          "originalOwnershipCheck": true,
+          "overviewProvenance": false,
+          "correctionNotices": false,
+          "overviewCorrectionNotices": false
+        },
+        {
+          "tables": [
+            "engineering_matter_work_revision",
+            "action_attempt"
+          ],
+          "sourceOwnershipCheck": false,
+          "originalOwnershipCheck": false,
+          "overviewProvenance": true,
+          "correctionNotices": false,
+          "overviewCorrectionNotices": false
+        },
+        {
+          "tables": [
+            "action_attempt"
+          ],
+          "sourceOwnershipCheck": false,
+          "originalOwnershipCheck": false,
+          "overviewProvenance": false,
+          "correctionNotices": true,
+          "overviewCorrectionNotices": false
+        },
+        {
+          "tables": [
+            "engineering_matter_work_revision"
+          ],
+          "sourceOwnershipCheck": false,
+          "originalOwnershipCheck": false,
+          "overviewProvenance": false,
+          "correctionNotices": false,
+          "overviewCorrectionNotices": false
+        },
+        {
+          "tables": [
+            "action_attempt",
+            "engineering_matter_work_revision"
+          ],
+          "sourceOwnershipCheck": false,
+          "originalOwnershipCheck": false,
+          "overviewProvenance": false,
+          "correctionNotices": false,
+          "overviewCorrectionNotices": true
+        },
+        {
+          "tables": [
+            "action_attempt"
+          ],
+          "sourceOwnershipCheck": false,
+          "originalOwnershipCheck": false,
+          "overviewProvenance": false,
+          "correctionNotices": true,
+          "overviewCorrectionNotices": false
+        },
+        {
+          "tables": [
+            "action_attempt",
+            "engineering_matter_work_revision"
+          ],
+          "sourceOwnershipCheck": false,
+          "originalOwnershipCheck": false,
+          "overviewProvenance": false,
+          "correctionNotices": false,
+          "overviewCorrectionNotices": true
+        }
+      ]
+    },
+    {
+      "name": "one-member-three-overview-corrections",
+      "elapsedMs": 9.99304200000006,
+      "statementCount": 19,
+      "statements": [
+        {
+          "tables": [
+            "engineering_matter",
+            "engineering_matter_revision"
+          ],
+          "sourceOwnershipCheck": false,
+          "originalOwnershipCheck": false,
+          "overviewProvenance": false,
+          "correctionNotices": false,
+          "overviewCorrectionNotices": false
+        },
+        {
+          "tables": [
+            "engineering_matter_revision_work_item"
+          ],
+          "sourceOwnershipCheck": false,
+          "originalOwnershipCheck": false,
+          "overviewProvenance": false,
+          "correctionNotices": false,
+          "overviewCorrectionNotices": false
+        },
+        {
+          "tables": [
+            "engineering_matter_material_link"
+          ],
+          "sourceOwnershipCheck": false,
+          "originalOwnershipCheck": false,
+          "overviewProvenance": false,
+          "correctionNotices": false,
+          "overviewCorrectionNotices": false
+        },
+        {
+          "tables": [
+            "work_item"
+          ],
+          "sourceOwnershipCheck": false,
+          "originalOwnershipCheck": false,
+          "overviewProvenance": false,
+          "correctionNotices": false,
+          "overviewCorrectionNotices": false
+        },
+        {
+          "tables": [
+            "work_item"
+          ],
+          "sourceOwnershipCheck": false,
+          "originalOwnershipCheck": false,
+          "overviewProvenance": false,
+          "correctionNotices": false,
+          "overviewCorrectionNotices": false
+        },
+        {
+          "tables": [
+            "dm_document_version",
+            "dm_publication_family",
+            "dm_source_artifact",
+            "dm_acquisition",
+            "dm_ingress_preflight"
+          ],
+          "sourceOwnershipCheck": false,
+          "originalOwnershipCheck": false,
+          "overviewProvenance": false,
+          "correctionNotices": false,
+          "overviewCorrectionNotices": false
+        },
+        {
+          "tables": [
+            "engineering_matter",
+            "engineering_matter_revision"
+          ],
+          "sourceOwnershipCheck": false,
+          "originalOwnershipCheck": false,
+          "overviewProvenance": false,
+          "correctionNotices": false,
+          "overviewCorrectionNotices": false
+        },
+        {
+          "tables": [
+            "engineering_matter_revision_work_item"
+          ],
+          "sourceOwnershipCheck": false,
+          "originalOwnershipCheck": false,
+          "overviewProvenance": false,
+          "correctionNotices": false,
+          "overviewCorrectionNotices": false
+        },
+        {
+          "tables": [
+            "engineering_matter_material_link"
+          ],
+          "sourceOwnershipCheck": false,
+          "originalOwnershipCheck": false,
+          "overviewProvenance": false,
+          "correctionNotices": false,
+          "overviewCorrectionNotices": false
+        },
+        {
+          "tables": [
+            "engineering_matter_work_revision"
+          ],
+          "sourceOwnershipCheck": false,
+          "originalOwnershipCheck": false,
+          "overviewProvenance": false,
+          "correctionNotices": false,
+          "overviewCorrectionNotices": false
+        },
+        {
+          "tables": [],
+          "sourceOwnershipCheck": true,
+          "originalOwnershipCheck": true,
+          "overviewProvenance": false,
+          "correctionNotices": false,
+          "overviewCorrectionNotices": false
+        },
+        {
+          "tables": [
+            "engineering_matter_work_revision",
+            "action_attempt"
+          ],
+          "sourceOwnershipCheck": false,
+          "originalOwnershipCheck": false,
+          "overviewProvenance": true,
+          "correctionNotices": false,
+          "overviewCorrectionNotices": false
+        },
+        {
+          "tables": [
+            "action_attempt"
+          ],
+          "sourceOwnershipCheck": false,
+          "originalOwnershipCheck": false,
+          "overviewProvenance": false,
+          "correctionNotices": true,
+          "overviewCorrectionNotices": false
+        },
+        {
+          "tables": [
+            "engineering_matter_work_revision"
+          ],
+          "sourceOwnershipCheck": false,
+          "originalOwnershipCheck": false,
+          "overviewProvenance": false,
+          "correctionNotices": false,
+          "overviewCorrectionNotices": false
+        },
+        {
+          "tables": [
+            "action_attempt",
+            "engineering_matter_work_revision"
+          ],
+          "sourceOwnershipCheck": false,
+          "originalOwnershipCheck": false,
+          "overviewProvenance": false,
+          "correctionNotices": false,
+          "overviewCorrectionNotices": true
+        },
+        {
+          "tables": [
+            "engineering_matter_work_revision"
+          ],
+          "sourceOwnershipCheck": false,
+          "originalOwnershipCheck": false,
+          "overviewProvenance": false,
+          "correctionNotices": false,
+          "overviewCorrectionNotices": false
+        },
+        {
+          "tables": [
+            "work_item"
+          ],
+          "sourceOwnershipCheck": false,
+          "originalOwnershipCheck": false,
+          "overviewProvenance": false,
+          "correctionNotices": false,
+          "overviewCorrectionNotices": false
+        },
+        {
+          "tables": [
+            "work_item"
+          ],
+          "sourceOwnershipCheck": false,
+          "originalOwnershipCheck": false,
+          "overviewProvenance": false,
+          "correctionNotices": false,
+          "overviewCorrectionNotices": false
+        },
+        {
+          "tables": [
+            "dm_document_version",
+            "dm_publication_family",
+            "dm_source_artifact",
+            "dm_acquisition",
+            "dm_ingress_preflight"
+          ],
+          "sourceOwnershipCheck": false,
+          "originalOwnershipCheck": false,
+          "overviewProvenance": false,
+          "correctionNotices": false,
+          "overviewCorrectionNotices": false
+        }
+      ]
+    }
+  ],
+  "validation": {
+    "tests": 1,
+    "passed": 1,
+    "skipped": 0,
+    "lint": "passed",
+    "temporaryDatabaseStoppedAndRemoved": true
+  },
+  "limits": [
+    "Local elapsed times are not production estimates or p95.",
+    "Prior-result case and correction case carry their original fixture lineage, not identical payloads.",
+    "Real database test establishes actual statement counts, not production query-plan attribution."
+  ]
+}
