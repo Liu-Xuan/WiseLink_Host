@@ -132,3 +132,106 @@ test('unknown translation errors remain errors even when the source index succee
   } }), error => error === unknown);
   assert.equal(indexed, true);
 });
+
+test('new translation waits for exact current semantic preparation, not complete indexing', async () => {
+  const current = state(); current.latestRun.status = 'PUBLISHED';
+  let resolveIndex;
+  const indexing = new Promise(resolve => { resolveIndex = resolve; });
+  const actions = [];
+  const running = consumeHostedWorkItem({ documentVersionId: 'DV-test' }, { callTool: async (name, args) => {
+    actions.push(`${name}:${args.action}`);
+    if (name === 'document_work') return args.action === 'STATUS' ? current : indexing;
+    if (args.action === 'STATUS') return { documentVersionId: 'DV-test', status: 'IDLE' };
+    return { documentVersionId: 'DV-test', parseRunId: 'PRUN-test', attemptRef: 'DTQ', status: 'QUEUED' };
+  } });
+  await new Promise(resolve => setImmediate(resolve));
+  assert.ok(actions.includes('document_translation:STATUS'));
+  assert.equal(actions.includes('document_translation:START'), false);
+  resolveIndex({ documentVersionId: 'DV-test', parseRunId: 'PRUN-test', status: 'PROGRESS' });
+  assert.equal((await running).status, 'QUEUED');
+  assert.equal(actions.filter(action => action === 'document_work:INDEX').length, 1);
+  assert.equal(actions.filter(action => action === 'document_translation:START').length, 1);
+});
+
+test('historical index completion cannot stand in for current parse preparation', async () => {
+  const current = state(); current.latestRun.status = 'PUBLISHED'; current.nextSourceProjectionRunId = 'PRUN-old';
+  const indexes = [];
+  let currentReady = false;
+  const result = await consumeHostedWorkItem({ documentVersionId: 'DV-test' }, { callTool: async (name,args) => {
+    if (name === 'document_work' && args.action === 'STATUS') return current;
+    if (name === 'document_work') {
+      indexes.push(args.parseRunId);
+      if (args.parseRunId === 'PRUN-test') currentReady = true;
+      return { documentVersionId: 'DV-test', parseRunId: args.parseRunId, status: 'NO_PENDING' };
+    }
+    if (args.action === 'STATUS') return { documentVersionId: 'DV-test', status: 'IDLE' };
+    assert.equal(currentReady, true);
+    return { documentVersionId: 'DV-test', parseRunId: 'PRUN-test', attemptRef: 'DTQ', status: 'QUEUED' };
+  } });
+  assert.deepEqual(indexes, ['PRUN-old', 'PRUN-test']);
+  assert.equal(result.sourceProjection.parseRunId, 'PRUN-old');
+});
+
+test('failed current preparation prevents START while status and cancelled translation remain observable', async () => {
+  for (const status of ['IDLE', 'CANCELLED', 'RUNNING']) {
+    const current = state(); current.latestRun.status = 'PUBLISHED';
+    const actions = [];
+    const result = await consumeHostedWorkItem({ documentVersionId: 'DV-test' }, { callTool: async (name,args) => {
+      if (name === 'document_work' && args.action === 'STATUS') return current;
+      if (name === 'document_work') throw new Error('PREPARATION_UNAVAILABLE');
+      actions.push(args.action);
+      return { documentVersionId: 'DV-test', parseRunId: 'PRUN-test', attemptRef: 'DTQ', status };
+    } });
+    assert.deepEqual(actions, status === 'RUNNING' ? ['STATUS','STEP'] : status === 'IDLE' ? ['STATUS','STATUS'] : ['STATUS']);
+    assert.equal(result.status, 'REQUIRES_ATTENTION');
+    assert.equal(result.sourceProjection.status, 'FAILED');
+    if (status === 'IDLE') assert.equal(result.semanticPreparation.status, 'FAILED');
+  }
+});
+
+test('mismatched readiness response cannot admit translation', async () => {
+  const current = state(); current.latestRun.status = 'PUBLISHED';
+  let starts = 0;
+  await assert.rejects(consumeHostedWorkItem({ documentVersionId: 'DV-test' }, { callTool: async (name,args) => {
+    if (name === 'document_work' && args.action === 'STATUS') return current;
+    if (name === 'document_work') return { documentVersionId: 'DV-test', parseRunId: 'wrong', status: 'INDEXED' };
+    if (args.action === 'START') starts++;
+    return { documentVersionId: 'DV-test', status: 'IDLE' };
+  } }), /DOCUMENT_SOURCE_PROJECTION_RESULT_INVALID/);
+  assert.equal(starts, 0);
+});
+
+
+test('derived index failure after semantic save does not masquerade as missing upstream semantics', async () => {
+  const current = state(); current.latestRun.status = 'PUBLISHED';
+  const actions = [];
+  const result = await consumeHostedWorkItem({ documentVersionId: 'DV-test' }, { callTool: async (name,args) => {
+    if (name === 'document_work' && args.action === 'STATUS') return current;
+    if (name === 'document_work') throw new Error('SEARCH_INDEX_WRITE_FAILED');
+    actions.push(args.action);
+    return { documentVersionId: 'DV-test', parseRunId: 'PRUN-test', semanticReady: actions.length > 1,
+      status: args.action === 'STATUS' ? 'IDLE' : 'QUEUED', attemptRef: 'DTQ' };
+  } });
+  assert.deepEqual(actions, ['STATUS','STATUS','START']);
+  assert.equal(result.sourceProjection.status, 'FAILED');
+  assert.equal(result.attemptRef, 'DTQ');
+  assert.equal(result.semanticPreparation, undefined);
+});
+
+
+test('already registered current semantics permits START without waiting for the search index chunk', async () => {
+  const current = state(); current.latestRun.status = 'PUBLISHED';
+  let resolveIndex;
+  const indexing = new Promise(resolve => { resolveIndex = resolve; });
+  let started = false;
+  const pending = consumeHostedWorkItem({ documentVersionId: 'DV-test' }, { callTool: async (name,args) => {
+    if (name === 'document_work') return args.action === 'STATUS' ? current : indexing;
+    if (args.action === 'START') started = true;
+    return { documentVersionId: 'DV-test', parseRunId: 'PRUN-test', semanticReady: true,
+      status: args.action === 'STATUS' ? 'IDLE' : 'QUEUED', attemptRef: 'DTQ' };
+  } });
+  await new Promise(resolve => setImmediate(resolve));
+  assert.equal(started, true);
+  resolveIndex({ documentVersionId: 'DV-test', parseRunId: 'PRUN-test', status: 'PROGRESS' });
+  assert.equal((await pending).status, 'QUEUED');
+});

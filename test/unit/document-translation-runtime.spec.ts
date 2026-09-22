@@ -27,7 +27,7 @@ function setup() {
     cancel: jest.fn(), finish: jest.fn(), fail: jest.fn(), expire: jest.fn(),
   };
   const parsing = { status: jest.fn().mockResolvedValue({ documentVersionId }) };
-  const semantics = { read: jest.fn().mockResolvedValue({ profileRef: 'generic.author-sections.v1' }) };
+  const semantics = { readReady: jest.fn().mockResolvedValue(null), read: jest.fn().mockResolvedValue({ profileRef: 'generic.author-sections.v1' }) };
   const service = new DocumentTranslationRuntimeService(authorization as never, actors as never, reader as never,
     plugins as never, attempts as never, semantics as never, parsing as never);
   return { service, reader, plugins, attempts, authorization, parsing, semantics, binding: { documentVersionId, parseRunId } };
@@ -153,6 +153,21 @@ describe('independent document translation runtime', () => {
     await expect(f.service.run({ action: 'STEP', ...f.binding, attemptRef: state.attemptRef! })).rejects.toThrow('SOURCE_REVOKED');
     expect(f.attempts.finish).not.toHaveBeenCalled();
     expect(f.attempts.release).toHaveBeenCalledTimes(1);
+  });
+
+  it('reports registered semantic readiness for the requested idle parse without hydrating content', async () => {
+    const f = setup();
+    f.semantics.readReady.mockResolvedValue({ semanticRevision: 1, profileRef: 'profile' });
+    await expect(f.service.run({ action: 'STATUS', ...f.binding })).resolves.toMatchObject({
+      status: 'IDLE', parseRunId: f.binding.parseRunId, semanticReady: true });
+    expect(f.reader.readDocumentOriginal).not.toHaveBeenCalled();
+    expect(f.semantics.read).not.toHaveBeenCalled();
+    await f.service.run({ action: 'START', ...f.binding, requestId: 'request' });
+    f.semantics.readReady.mockResolvedValueOnce(null);
+    await expect(f.service.run({ action: 'STATUS', ...f.binding, parseRunId: 'new-parse' })).resolves.toMatchObject({
+      status: 'IDLE', parseRunId: 'new-parse', semanticReady: false,
+      previousAttempt: { parseRunId: f.binding.parseRunId } });
+    expect(f.semantics.readReady).toHaveBeenLastCalledWith(expect.objectContaining({ documentVersionId: f.binding.documentVersionId }), 'new-parse');
   });
 
 });

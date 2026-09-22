@@ -67,10 +67,12 @@ export class DocumentTranslationRuntimeService {
       }
       if (input.action === 'STEP') await this.attempts.expire(scope);
       const row = await this.attempts.latest(scope);
-      if (!row) return { status: 'IDLE', documentVersionId: scope.documentVersionId };
+      const idle = async () => ({ status: 'IDLE', documentVersionId: scope.documentVersionId,
+        parseRunId: input.parseRunId,
+        semanticReady: Boolean(await this.semantics.readReady({ ...scope, roles: [] }, input.parseRunId)) });
+      if (!row) return input.action === 'STATUS' ? idle() : { status: 'IDLE', documentVersionId: scope.documentVersionId };
       if (row.producerRunId !== input.parseRunId) {
-        if (input.action === 'STATUS') return { status: 'IDLE', documentVersionId: scope.documentVersionId,
-          parseRunId: input.parseRunId, previousAttempt: summary(row) };
+        if (input.action === 'STATUS') return { ...await idle(), previousAttempt: summary(row) };
         throw new Error('DOCUMENT_TRANSLATION_SOURCE_CHANGED');
       }
       if (input.action === 'STATUS') return summary(row);
