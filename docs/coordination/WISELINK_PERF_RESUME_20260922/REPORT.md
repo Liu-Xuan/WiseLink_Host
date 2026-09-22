@@ -440,3 +440,12 @@ OverlayCard is memoized by id, detached data snapshot, selection and stable even
 Actual old-source component regression: zoom updated geometry but also called the unchanged item body/icon selector (expected0, actual1, exit1). Candidate gives0 on zoom and callback-only parent render,1 on title change and selection; clicking uses the replacement callback, not the old callback. Existing real Cytoscape/drag/cancel/halo/reset/narrow-screen tests retained.
 
 5 suites53 tests pass, client typecheck/exact ESLint pass, production client build14.18s pass with existing chunk warnings. Logs `/private/tmp/wiselink-graph-cards-{before,test,regression,types,lint,build}.log`. This is controlled body work reduction, not browser frame-time/p95 proof. Incremental topology and full layout/viewport return remain open. No publish/model/data action. 3A.3 independent local acceptance arrived during this batch; 3A.2 real PostgreSQL/RLS fixture c65d0aa10 is now under Luna's separately authorized temporary-instance validation.
+
+
+## 2026-09-23 B：2C.3 稳定 ID 增量拓扑
+
+基线 `bcccd815602537575371e769c1ddb47390c6a032`，独立树 `/private/tmp/wiselink-perf-b-graph-topology-20260923`。Canvas 接入增量 reconcile：保留同 ID 节点对象与当前拖动坐标，只删缺失/改变端点的元素，先节点后边补入；补丁更新声明数据、类与交互属性，保留运行期 halo/交互状态。仅拓扑、声明坐标或尺寸变化触发 preset layout；标题等正文刷新不 layout/resize/fit。显式声明新布局仍采用新坐标，既有 reset 行为保留。
+
+真实 headless Cytoscape 消费者反例在旧 Canvas（bcccd815）失败：标题刷新会替换节点对象；新实现保留对象/拖动位置/镜头，更新可见标题且 layout/fit 为零。增量辅助测试涵盖节点/边增删、端点替换、声明属性清除、交互类和 halo 保留、明确布局/尺寸变化。6 suites/57 tests 通过，client 类型检查通过；生产文件 ESLint 无错误；test 目录被现有 ESLint 配置排除，未声称对其 lint 通过，Jest/TypeScript 已实际编译执行。client build 成功（13.44s，仅既有 chunk/module 警告）。这不是浏览器 p95 或完整返回布局验收。
+
+前批独立证据：Luna 已通过 bcccd815 的 5 套 53 项、client types/lint/build/precommit；c65d0aa 的真实 PG14.17 实例 1/1，实际迁移和 readReady JOIN/RLS、错误身份/版本/manifest、非owner非超级用户角色及约束通过，临时 127.0.0.1:55441 实例和唯一创建目录已停止清理。主控确认本轮统一集成/发布/Skill install 和授权预览样本核验仍待执行，不因等待而重复本地验收。

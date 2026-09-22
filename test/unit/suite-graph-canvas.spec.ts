@@ -34,9 +34,13 @@ function createCy() {
       },
       renderedPosition: () => definition.position ?? { x: 0, y: 0 },
       addClass: jest.fn(),
+      remove: () => { definitions = definitions.filter((item) => item !== definition); },
+      removeData: (key: string) => { delete definition.data[key]; },
+      removeClass: jest.fn(),
     };
   };
   const cy = {
+    batch: (callback: () => void) => callback(),
     nodes: jest.fn(() => Object.assign(definitions.filter((definition) => definition.group === 'nodes').map(nodeFor), { removeClass: jest.fn() })),
     elements: () => ({
       remove: () => { definitions = []; },
@@ -54,13 +58,11 @@ function createCy() {
         };
       },
     }),
-    add: (next: Array<{ group: string; data: Record<string, unknown>; position?: { x: number; y: number } }>) => {
-      definitions = next.map((definition) => ({
-        ...definition,
-        data: { ...definition.data },
-        position: definition.position ? { ...definition.position } : undefined,
-      }));
+    add: (input: { group: string; data: Record<string, unknown>; position?: { x: number; y: number } }) => {
+      const definition = { ...input, data: { ...input.data }, position: input.position ? { ...input.position } : undefined };
+      definitions.push(definition);
       handlers.get('render')?.();
+      return nodeFor(definition);
     },
     layout: () => ({ run: () => handlers.get('render')?.() }),
     fit: jest.fn(),
@@ -586,6 +588,35 @@ describe('SuiteGraphCanvas', () => {
     } finally {
       document.documentElement.removeAttribute('data-wl-motion');
     }
+  });
+
+  it('refreshes real node content without replacing objects, losing dragged positions, or running layout', async () => {
+    const realCytoscape = jest.requireActual('cytoscape') as typeof import('cytoscape');
+    document.documentElement.setAttribute('data-wl-motion', 'off');
+    mockCyFactory.mockImplementation((options) => realCytoscape({ ...options, headless: true, styleEnabled: false }));
+    try {
+      await act(async () => {
+        root = createRoot(container);
+        root.render(createElement(SuiteGraphCanvas, { presentation }));
+      });
+      const cy = mockCyFactory.mock.results[0].value as import('cytoscape').Core;
+      const item = cy.getElementById('sg:item:i')[0];
+      act(() => { item.position({ x: 91, y: 123 }); cy.zoom(1.1); cy.pan({ x: 12, y: 34 }); });
+      act(flushFrames);
+      const layout = jest.spyOn(cy, 'layout');
+      const fit = jest.spyOn(cy, 'fit');
+      const refreshed = { ...presentation, elements: presentation.elements.map((element) => ({
+        ...element, data: { ...element.data, ...(element.data.id === 'sg:item:i' ? { title: 'Fresh title' } : {}) },
+      })) };
+      await act(async () => root.render(createElement(SuiteGraphCanvas, { presentation: refreshed })));
+      expect(cy.getElementById('sg:item:i')[0] === item).toBe(true);
+      expect(item.position()).toEqual({ x: 91, y: 123 });
+      expect(layout).not.toHaveBeenCalled();
+      expect(fit).not.toHaveBeenCalled();
+      expect(cy.zoom()).toBe(1.1);
+      expect(cy.pan()).toEqual({ x: 12, y: 34 });
+      expect(container.querySelector('[aria-label="Fresh title，Detail"]')).toBeTruthy();
+    } finally { document.documentElement.removeAttribute('data-wl-motion'); }
   });
 
   it('moves overlay geometry without re-rendering card content and still uses fresh selection callbacks', async () => {

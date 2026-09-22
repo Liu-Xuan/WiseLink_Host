@@ -11,7 +11,6 @@ import {
 } from 'react';
 import cytoscape, {
   type Core,
-  type ElementDefinition,
   type EventObject,
   type NodeSingular,
   type StylesheetStyle,
@@ -33,6 +32,7 @@ import {
   SlidersHorizontal,
   type LucideIcon,
 } from 'lucide-react';
+import { reconcileSuiteGraphElements } from './suite-graph-elements';
 import type {
   CytoscapeSuiteElement,
   CytoscapeSuiteNode,
@@ -249,16 +249,6 @@ function buildStyleSheet(tokens: ThemeTokens): StylesheetStyle[] {
     { selector: '.individual-edge.suite-dimmed-edge', style: { display: 'none', opacity: 0 } },
   );
   return sheets;
-}
-
-function cloneElements(elements: CytoscapeSuiteElement[]): ElementDefinition[] {
-  return elements.map((element): ElementDefinition => element.group === 'nodes'
-    ? {
-      ...element,
-      data: { ...element.data },
-      position: { ...element.position },
-    }
-    : { ...element, data: { ...element.data } });
 }
 
 function finiteDimension(value: unknown): number {
@@ -675,20 +665,18 @@ const SuiteGraphCanvas = forwardRef<SuiteGraphCanvasHandle, SuiteGraphCanvasProp
   useEffect(() => {
     const cy = cyRef.current;
     if (!cy) return;
-    dragCleanupRef.current?.(true);
-    cy.elements().remove();
-    cy.add(cloneElements(presentation.elements));
+    const update = reconcileSuiteGraphElements(cy, elementsRef.current, presentation.elements,
+      () => dragCleanupRef.current?.(true));
     if (typeof cy.edges === 'function') {
       cy.edges().toggleClass('suite-small-edge-label', cy.zoom() < 0.9);
     }
     elementsRef.current = presentation.elements;
-    const positions = Object.fromEntries(presentation.elements.filter((element) => element.group === 'nodes').map((element) => [String(element.data.id), element.position]));
-    if (motionDisabled()) {
+    if (update.layoutRequired) {
       const elements = cy.elements();
       if (typeof elements.stop === 'function') elements.stop();
+      cy.layout({ name: 'preset', positions: update.positions, fit: false, animate: !motionDisabled(), animationDuration: 320 }).run();
+      cy.resize();
     }
-    cy.layout({ name: 'preset', positions, fit: false, animate: !motionDisabled(), animationDuration: 320 }).run();
-    cy.resize();
     internalCameraRef.current = true;
     const restore = initialViewportRef.current;
     if (!initialViewportAppliedRef.current && restore && Number.isFinite(restore.zoom) && Number.isFinite(restore.pan.x) && Number.isFinite(restore.pan.y)) {
@@ -701,7 +689,7 @@ const SuiteGraphCanvas = forwardRef<SuiteGraphCanvasHandle, SuiteGraphCanvasProp
         userCameraRef.current = false;
         cy.fit(undefined, 24);
       }
-    } else if (!userCameraRef.current) {
+    } else if (update.layoutRequired && !userCameraRef.current) {
       applyAutoCamera(cy);
     }
     internalCameraRef.current = false;
