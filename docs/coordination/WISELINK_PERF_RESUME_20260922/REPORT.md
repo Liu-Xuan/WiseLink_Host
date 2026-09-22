@@ -688,3 +688,15 @@ Main回执：ef258 release7688432648880098235 finished updated_at=1790103060000�
 - 临时isolated-world observer、capture click listener已移除，测量对象读回undefined；没有持久产品埋点或业务状态修改。
 - Luna独立ab3线上功能回执：知识→侧栏图谱保留同M/W与修订16；实际TopBar「返回工程知识」恢复精确知识上下文；普通已登记段落u112的实际第5页→资料库→browser back保留同parse/sourceRef/page5。显式reload 3次6582/6185/7709ms，median6582ms，仅功能/耗时观察，不冒充p95或请求计数。a7/a88已部署功能缺口由此闭合；自由像素/TOC/纯PDF滚动仍不在其声明范围。
 - 626dcf6原件identity窄投影已获Luna独立服务33项/types/lint/build接受；真实PG1/1仍是B证据，Luna未复跑。Main本轮确认正在集成626与59791；在确切发布回执前不声称生效。Main/A正在核实现行Hosted官方操作入口与历史已授权范围；没有已核实可供B观察的当前job，状态未知不撤销历史授权、不等同必需新授权。
+
+
+## B 图谱来源读取的会话内复用（2026-09-23）
+
+- 基线509098d23，独立树`/private/tmp/wiselink-perf-b-graph-source-reuse-20260923`。上一批线上graph→Wiki→graph各次返回自动读取首个来源parsing状态，留存19次需601.8–1894.1ms。根因是useSuiteGraphSources的局部records每次remount归零；这不是解析执行，不应误称模型重复运行。
+- 实现接入现有QueryClient与ENGINEERING_MATTER_QUERY_ROOT、既有identity hook。资源key含app/tenant/actor/session/documentVersion及完整exact事件pins；当前published与指定保存候选互不替代。新鲜30秒、GC5分钟，读取中重挂载共享in-flight；组件取消自己的订阅结果，不中断其他订阅者的共享读取。现有session-root取消/清理适用于本资源，session变化后不启动迟到状态的依赖活动读取。
+- 过期重挂载清空本地候选后fresh读取，显式「重新读取」绕过新鲜窗口；拒绝/失败以无候选结果替代旧内容，不通过自动remount循环重试，用户可显式恢复。身份、catalog、enabled/denied或pins改变时屏蔽旧records。exact响应另核对documentVersion/parseRun/candidateRevision及既有family/run/statement绑定。
+- 复用的是已授权读取结果，不是授权授予决定；每次实际API仍由Host授权。与其他30秒阅读窗口相同，未收到session失效且没有新读取时不保证立即发现远端撤权。不持久化正文，不缓存任意跨身份结果，不触发BEGIN或候选生成。
+- 有效旧反例1 failed/2 passed：实际卸载再挂载同来源状态调用2次而期待1次；修复后相关3套25项通过。覆盖fresh复用、in-flight复用、31秒过期隐藏旧候选、显式刷新、403替换/remount不自动重试/显式恢复、app/tenant/actor隔离、session迟到不继续依赖读取、根资源清理、exact候选版本区别及错配拒绝。测试拥有QueryClient并clear，正常退出，无forceExit。
+- client types/lint/build/precommit实际结果以本批日志`/private/tmp/wiselink-graph-source-{red,tests,types,lint,build}.log`及提交回执为据。待Luna独立审查、Main集成与线上请求计量；不把调用次数反例当线上500ms目标或总体完成。主控仍唯一发布者。
+
+- 本批实际client typecheck、生产hook ESLint通过（日志为空），client build13.71s通过；正常提交检查随后执行。主控新回执：626+59791已集成为8d139e310fdc7dbe33e26e7e0bf6834762168c42，release7688452846325648565 finished/error_logs=[]/updated_at1790107974000、双远端同名一致。该发布不含本批及509文档；暖identity待新部署实际复测，Hosted包仍source79bd且尚未安装。

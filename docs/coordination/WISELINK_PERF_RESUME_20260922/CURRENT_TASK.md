@@ -2,7 +2,7 @@
 
 ## 本批身份
 
-B图谱实测证据工作树：`/private/tmp/wiselink-perf-b-graph-runtime-evidence-20260923`，起点`59791bba08bbda73254d63dbc29c0dac6c7128d3`。ab3同保存修订实际Wiki→图谱返回20次DOM p95 24.5ms、两RAF38.8ms，几何/镜头一致；完整26次匿名结果含恢复样本见GRAPH_RETURN_EVIDENCE_20260923.json。网络开头被淘汰，不声称零请求，后台状态读仍0.6–1.9s、working读2.1–3.1s。知识24次热正文21.6ms证据保留；两个结果均只覆盖具体热路径。Luna已独立通过ab3真实知识返回按钮及普通段落第5页路由返回。626已独立接受、Main正在集成但未取得发布回执；Hosted安装/真实后台公平及暖后端目标继续，整体Goal active。
+B图谱来源复用工作树：`/private/tmp/wiselink-perf-b-graph-source-reuse-20260923`，基线`509098d23ac3e7c60059daae78426474fdd15978`。线上每次返回重复parsing读取已定位到局部records重置；接现有identity QueryClient，30秒fresh/5分钟GC，精确来源/保存候选绑定、显式重读、过期隐藏旧候选、session清理/迟到隔离。旧反例同来源remount调用2→1，相关3套25项通过，正在收尾验证与交Luna。ab3知识/图谱热路径实测及独立功能证据保留，不冒充新批已发布或暖后端500ms完成。626由Main集成发布中；Hosted/后台公平继续，Goal active。
 
 ## 完整路线状态（2026-09-23）
 
