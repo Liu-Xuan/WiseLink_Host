@@ -1,3 +1,4 @@
+import * as appearance from '../../client/src/pages/RelationGraphPage/suite-graph-appearance';
 import { act, createElement, createRef, Profiler } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 import SuiteGraphCanvas, { type SuiteGraphCanvasHandle } from '../../client/src/pages/RelationGraphPage/SuiteGraphCanvas';
@@ -585,6 +586,41 @@ describe('SuiteGraphCanvas', () => {
     } finally {
       document.documentElement.removeAttribute('data-wl-motion');
     }
+  });
+
+  it('moves overlay geometry without re-rendering card content and still uses fresh selection callbacks', async () => {
+    const iconKind = jest.spyOn(appearance, 'suiteGraphIconKind');
+    const oldSelect = jest.fn();
+    const nextSelect = jest.fn();
+    try {
+      await act(async () => {
+        root = createRoot(container);
+        root.render(createElement(SuiteGraphCanvas, { presentation, onSelect: oldSelect }));
+      });
+      const cy = mockCyFactory.mock.results[0].value as ReturnType<typeof createCy>;
+      iconKind.mockClear();
+      act(() => { cy.zoom(1.5); cy.trigger('zoom', { target: cy }); });
+      act(flushFrames);
+      expect(iconKind).not.toHaveBeenCalled();
+      expect(container.querySelector('.suite-graph-overlay-position')?.getAttribute('style')).toContain('scale(1.5)');
+      await act(async () => root.render(createElement(SuiteGraphCanvas, { presentation, onSelect: nextSelect })));
+      expect(iconKind).not.toHaveBeenCalled();
+      await act(async () => (container.querySelector('[aria-label="Item，Detail"]') as HTMLButtonElement).click());
+      expect(oldSelect).not.toHaveBeenCalled();
+      expect(nextSelect).toHaveBeenCalledTimes(1);
+      act(() => {
+        const node = cy.getElementById('sg:item:i');
+        if ('data' in node) node.data('title', 'Changed');
+        cy.trigger('render', { target: cy });
+      });
+      act(flushFrames);
+      expect(iconKind).toHaveBeenCalledTimes(1);
+      expect(container.querySelector('[aria-label="Changed，Detail"]')).toBeTruthy();
+      iconKind.mockClear();
+      await act(async () => root.render(createElement(SuiteGraphCanvas, { presentation, selectedId: 'i', onSelect: nextSelect })));
+      expect(iconKind).toHaveBeenCalledTimes(1);
+      expect(container.querySelector('[aria-label="Changed，Detail"]')?.classList.contains('is-selected')).toBe(true);
+    } finally { iconKind.mockRestore(); }
   });
 
 });

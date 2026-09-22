@@ -1,5 +1,6 @@
 import {
   forwardRef,
+  memo,
   useCallback,
   useEffect,
   useImperativeHandle,
@@ -330,7 +331,7 @@ function updateGroupHalo(
   halo.position({ x: (left + right) / 2, y: (top + bottom) / 2 });
 }
 
-function OverlayCard({
+const OverlayCard = memo(function OverlayCard({
   node,
   selected,
   onSelect,
@@ -402,6 +403,17 @@ function OverlayCard({
       <span className="suite-graph-node-copy"><strong>{title}</strong>{subtitle && <small>{subtitle}</small>}</span>
     </button>
   );
+}, (previous, next) => previous.node.id === next.node.id
+  && sameNodeData(previous.node.data, next.node.data)
+  && previous.selected === next.selected
+  && previous.onSelect === next.onSelect
+  && previous.onGroup === next.onGroup
+  && previous.onOverflow === next.onOverflow
+  && previous.onDragStart === next.onDragStart);
+
+function sameNodeData(left: Record<string, unknown>, right: Record<string, unknown>): boolean {
+  const keys = Object.keys(left);
+  return keys.length === Object.keys(right).length && keys.every((key) => Object.is(left[key], right[key]));
 }
 
 type GraphCamera = { zoom: number; pan: { x: number; y: number } };
@@ -415,8 +427,7 @@ function sameOverlayNodes(left: OverlayNode[], right: OverlayNode[]): boolean {
     const next = right[index];
     return node.id === next.id && node.position.x === next.position.x
       && node.position.y === next.position.y
-      && Object.keys(node.data).length === Object.keys(next.data).length
-      && Object.keys(node.data).every((key) => Object.is(node.data[key], next.data[key]));
+      && sameNodeData(node.data, next.data);
   });
 }
 
@@ -730,7 +741,7 @@ const SuiteGraphCanvas = forwardRef<SuiteGraphCanvasHandle, SuiteGraphCanvasProp
     });
   }, [presentation, selectedId]);
 
-  const handleOverlaySelect = (event: MouseEvent<HTMLButtonElement>, data: Record<string, unknown>) => {
+  const handleOverlaySelect = useCallback((event: MouseEvent<HTMLButtonElement>, data: Record<string, unknown>) => {
     event.stopPropagation();
     const id = text(data.id);
     const suppressed = suppressClickRef.current;
@@ -751,8 +762,8 @@ const SuiteGraphCanvas = forwardRef<SuiteGraphCanvasHandle, SuiteGraphCanvasProp
     userCameraRef.current = true;
     publishViewport({ zoom: cy.zoom(), pan: { ...cy.pan() } });
     syncNowRef.current?.();
-  };
-  const handleDragStart = (event: React.PointerEvent<HTMLButtonElement>, id: string) => {
+  }, [publishViewport]);
+  const handleDragStart = useCallback((event: React.PointerEvent<HTMLButtonElement>, id: string) => {
     if (event.button !== 0) return;
     const cy = cyRef.current;
     const mount = mountRef.current;
@@ -811,7 +822,9 @@ const SuiteGraphCanvas = forwardRef<SuiteGraphCanvasHandle, SuiteGraphCanvasProp
     window.addEventListener('pointermove', move);
     window.addEventListener('pointerup', end);
     window.addEventListener('pointercancel', cancel);
-  };
+  }, []);
+  const handleGroup = useCallback((groupKey: string) => callbacksRef.current.onGroup?.(groupKey), []);
+  const handleOverflow = useCallback((groupKey: string) => callbacksRef.current.onOverflow?.(groupKey), []);
   return (
     <div className={`suite-graph-canvas${className ? ` ${className}` : ''}`}>
       <div ref={mountRef} className="suite-graph-cy" role="img" aria-label={ariaLabel} />
@@ -823,8 +836,8 @@ const SuiteGraphCanvas = forwardRef<SuiteGraphCanvasHandle, SuiteGraphCanvasProp
               selected={node.data.businessId === selectedId || node.id === selectedId}
               onSelect={handleOverlaySelect}
               onDragStart={handleDragStart}
-              onGroup={(groupKey) => callbacksRef.current.onGroup?.(groupKey)}
-              onOverflow={(groupKey) => callbacksRef.current.onOverflow?.(groupKey)}
+              onGroup={handleGroup}
+              onOverflow={handleOverflow}
             />
           </div>
         ))}
