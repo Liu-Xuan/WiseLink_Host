@@ -630,3 +630,15 @@ KnowledgeLookupPage原useEffect每次remount清空并请求，未使用既有共
 - malformed/duplicate/超长返回意图保留为明确拒绝，不因显示状态改写而降级猜测；知识参数next等未知字段不带回。返回上下文useMemo仅随返回意图改变，不因每次camera URL改变反复重建回调。
 - 有效旧反例：Sidebar实际组件生成的graph链接缺少articleY等返回状态，1 failed/21 passed。修复后测试真正点击侧栏链接及TopBar返回按钮，恢复knowledge同M/W/articleY；另验camera persist→source→graph→knowledge、跨事项/跨修订、duplicate及混合绑定。5 suites/68 tests通过；client typecheck、5个production文件ESLint通过。早期交互fixture缺graph路由后的getMatter Promise，已补测试fixture，未改产品容错。
 - 构建与提交检查见 `/private/tmp/wiselink-graph-return-build.log`、`/private/tmp/wiselink-graph-return-precommit.log`。本地验证不代表线上返回按钮已修复；待独立审查、Main集成发布及只读复验。完整Goal、真实p95、后台竞争及Hosted阶段4仍未闭合。
+
+
+## B 原件复用真实只读证据与独立审查收敛（2026-09-23）
+
+- ef258 / release7688432648880098235：正常现有登录、同一已保存5页PDF，首次完整导航加载当前应用资源后测试。切换“仅原文”仅隐藏保留PDF面板，不算unmount；本轮两次真正离开阅读器到library，再history back与显式打开原件。
+- 三个完整CDP事件窗口均truncated=false/hasMore=false：首次original 200，响应头3006.571ms、完成14001.699ms、网络encodedDataLength122853；第二次只发original-identity 200，1333.164/1337.594ms、1651字节；第三次只发identity 200，约1045ms、1658字节。第三次response/finish原始时间戳相差-0.832ms，保留原数据但不作亚毫秒推论。网络字节含传输编码，不冒充原始PDF字节数。
+- 结论限定：真实会话内两次复用均避免再次下载PDF，仍每次fresh identity授权核对；两次暖核对约1.0–1.3s，尚未满足500ms暖读取目标。n=3不是p95，未以工具壁钟充当渲染时间。
+- Performance.getMetrics非强制GC：打开前used/total=14991852/16613376；首次隐藏保留17928552/19398656；第二次打开18281948/19988480；第三次20614960/26017792。Documents均5；Nodes1117→1186→1180→1193；listeners879→926→695→718。不同瞬间且自然GC不受控，仅作观测，不能证明泄漏或无泄漏。原始匿名摘要在`/private/tmp/wiselink-vr-readonly-evidence-20260923.json`，不提交正文、认证头或私有样本主键。
+- 新缺口：未带sourceRef的普通段落第5页点击只更新workspace component state；实际离开与返回时回第1页。源码locateUnit只有setPage/setActiveUnitId，与此一致。需下一批将当前精确段落位置纳入受限阅读返回状态，保留来源/版本绑定，不能以已通过的“显式目标5正确渲染”掩盖普通退出位置丢失。
+- Luna本地独立接受：e10fc616（24知识测试、client types、ESLint、diffcheck）与a7e41a5（36导航/返回测试、client types、ESLint、diffcheck）。实现者原4套48/5套68与独立子集分别保留，不伪称同集合复测。已请求Main按父子顺序集成并回传release；尚未线上验收新缓存或返回按钮。
+
+- 最后真正卸载reader后停在资料库：heap used/total=19181488/26247168，Documents5/Nodes2295/listeners1201。资料库DOM与PDF页不同，不能将节点/监听器数直接相减认定泄漏；未强制GC。
