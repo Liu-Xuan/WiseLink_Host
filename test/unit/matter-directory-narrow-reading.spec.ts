@@ -21,10 +21,19 @@ interface LinkRow {
   workItemId: string;
   relationRole: 'PRIMARY' | 'RELATED';
   ordinal: number;
+  requestedByUserId: string;
+  workItemDocumentId: string;
+  workItemDocumentVersionId: string;
+  versionDocumentId: string;
+  versionDocumentVersionId: string;
+  versionFamilyId: string;
+  familyId: string;
 }
 
 interface MaterialRow {
   matterRevisionId: string;
+  materialId: string;
+  materialJson: string;
 }
 
 interface WorkingRow {
@@ -48,19 +57,33 @@ interface DirectoryFixture {
   links: LinkRow[];
   materials: MaterialRow[];
   working: WorkingRow[];
+  confirmedMatters?: Array<{
+    matterId: string;
+    currentMatterRevisionId: string;
+  }>;
+  confirmedWorking?: Array<{
+    matterId: string;
+    workingRevision: number;
+  }>;
 }
 
 class FakeDirectoryQuery<T> implements PromiseLike<T[]> {
   private table: unknown = null;
   private limitValue: number | null = null;
+  private selectedFields: Record<string, unknown> | null = null;
 
   constructor(private readonly database: FakeDirectoryDb) {}
 
-  select(): this {
+  select(fields?: Record<string, unknown>): this {
+    this.selectedFields = fields ?? null;
     return this;
   }
 
-  selectDistinctOn(): this {
+  selectDistinctOn(
+    _distinctColumns: unknown[],
+    fields?: Record<string, unknown>,
+  ): this {
+    this.selectedFields = fields ?? null;
     return this;
   }
 
@@ -70,6 +93,10 @@ class FakeDirectoryQuery<T> implements PromiseLike<T[]> {
   }
 
   where(): this {
+    return this;
+  }
+
+  leftJoin(): this {
     return this;
   }
 
@@ -87,7 +114,7 @@ class FakeDirectoryQuery<T> implements PromiseLike<T[]> {
     onrejected?: ((reason: unknown) => TResult2 | PromiseLike<TResult2>) | null,
   ): Promise<TResult1 | TResult2> {
     this.database.executionCount += 1;
-    const rows = this.database.rowsFor(this.table) as T[];
+    const rows = this.database.rowsFor(this.table, this.selectedFields) as T[];
     const limited =
       this.limitValue === null ? rows : rows.slice(0, this.limitValue);
     return Promise.resolve(limited).then(onfulfilled, onrejected);
@@ -96,6 +123,8 @@ class FakeDirectoryQuery<T> implements PromiseLike<T[]> {
 
 class FakeDirectoryDb {
   executionCount = 0;
+  private matterReadCount = 0;
+  private workingReadCount = 0;
 
   constructor(private readonly fixture: DirectoryFixture) {}
 
@@ -107,8 +136,23 @@ class FakeDirectoryDb {
     return new FakeDirectoryQuery(this);
   }
 
-  rowsFor(table: unknown): unknown[] {
-    if (table === engineeringMatter) return this.fixture.matters;
+  rowsFor(
+    table: unknown,
+    _selectedFields: Record<string, unknown> | null,
+  ): unknown[] {
+    if (table === engineeringMatter) {
+      this.matterReadCount += 1;
+      if (this.matterReadCount % 2 === 1) {
+        return this.fixture.matters;
+      }
+      return (
+        this.fixture.confirmedMatters ??
+        this.fixture.matters.map((row: MatterRow) => ({
+          matterId: row.matterId,
+          currentMatterRevisionId: row.currentMatterRevisionId,
+        }))
+      );
+    }
     if (table === engineeringMatterRevisionWorkItem) {
       return this.fixture.links;
     }
@@ -116,7 +160,17 @@ class FakeDirectoryDb {
       return this.fixture.materials;
     }
     if (table === engineeringMatterWorkRevision) {
-      return this.fixture.working;
+      this.workingReadCount += 1;
+      if (this.workingReadCount % 2 === 1) {
+        return this.fixture.working;
+      }
+      return (
+        this.fixture.confirmedWorking ??
+        this.fixture.working.map((row: WorkingRow) => ({
+          matterId: row.matterId,
+          workingRevision: row.workingRevision,
+        }))
+      );
     }
     return [];
   }
@@ -178,6 +232,13 @@ function fixture(count = 1): DirectoryFixture {
       workItemId: `WI-${suffix}`,
       relationRole: 'PRIMARY',
       ordinal: 1,
+      requestedByUserId: actor.userId,
+      workItemDocumentId: `DOC-${suffix}`,
+      workItemDocumentVersionId: `DV-${suffix}`,
+      versionDocumentId: `DOC-${suffix}`,
+      versionDocumentVersionId: `DV-${suffix}`,
+      versionFamilyId: `FAM-${suffix}`,
+      familyId: `FAM-${suffix}`,
     });
     working.push({
       matterId,
@@ -198,6 +259,20 @@ function fixture(count = 1): DirectoryFixture {
     });
   }
   return { matters, links, materials: [], working };
+}
+
+function materialJson(materialId: string, familyId: string): string {
+  return JSON.stringify({
+    materialId,
+    kind: 'MEMBER',
+    familyId,
+    documentVersionId: `DV-${materialId}`,
+    scope: 'Synthetic scope',
+    contribution: 'Synthetic contribution',
+    basis: [],
+    origin: 'ENGINEER',
+    disposition: 'INCLUDED',
+  });
 }
 
 function serviceFor(directoryFixture: DirectoryFixture) {
@@ -244,11 +319,11 @@ describe('engineering matter directory narrow reading', () => {
   });
 
   it.each([1, 3])(
-    'uses four batch reads for limit %i and never falls back to per-row readers',
+    'uses fixed batch reads plus confirmation for limit %i',
     async (limit) => {
       const f = serviceFor(fixture(3));
       const response = await f.service.list({ limit }, actor);
-      expect(f.database.executionCount).toBe(4);
+      expect(f.database.executionCount).toBe(6);
       expect(response.items).toHaveLength(limit);
       expect(f.matters.read).not.toHaveBeenCalled();
       expect(f.working.readWorking).not.toHaveBeenCalled();
@@ -285,7 +360,13 @@ describe('engineering matter directory narrow reading', () => {
         },
       ],
       links: [],
-      materials: [{ matterRevisionId: 'MREV-M' }],
+      materials: [
+        {
+          matterRevisionId: 'MREV-M',
+          materialId: 'MATERIAL-M',
+          materialJson: materialJson('MATERIAL-M', 'FAM-M'),
+        },
+      ],
       working: [],
     });
     const response = await f.service.list({}, actor);
@@ -328,7 +409,10 @@ describe('engineering matter directory narrow reading', () => {
 
   it('rejects an ambiguous primary composition without material scope', async () => {
     const f = serviceFor(fixture());
-    f.database.rowsFor = (table: unknown) =>
+    f.database.rowsFor = (
+      table: unknown,
+      selectedFields: Record<string, unknown> | null,
+    ) =>
       table === engineeringMatterRevisionWorkItem
         ? [
             {
@@ -336,15 +420,29 @@ describe('engineering matter directory narrow reading', () => {
               workItemId: 'WI-1',
               relationRole: 'PRIMARY',
               ordinal: 1,
+              requestedByUserId: actor.userId,
+              workItemDocumentId: 'DOC-1',
+              workItemDocumentVersionId: 'DV-1',
+              versionDocumentId: 'DOC-1',
+              versionDocumentVersionId: 'DV-1',
+              versionFamilyId: 'FAM-1',
+              familyId: 'FAM-1',
             },
             {
               matterRevisionId: 'MREV-1',
               workItemId: 'WI-2',
               relationRole: 'PRIMARY',
               ordinal: 2,
+              requestedByUserId: actor.userId,
+              workItemDocumentId: 'DOC-2',
+              workItemDocumentVersionId: 'DV-2',
+              versionDocumentId: 'DOC-2',
+              versionDocumentVersionId: 'DV-2',
+              versionFamilyId: 'FAM-2',
+              familyId: 'FAM-2',
             },
           ]
-        : new FakeDirectoryDb(fixture()).rowsFor(table);
+        : new FakeDirectoryDb(fixture()).rowsFor(table, selectedFields);
     await expect(f.service.list({}, actor)).rejects.toMatchObject({
       code: 'ENGINEERING_MATTER_DIRECTORY_CHANGED',
       statusCode: 409,
@@ -353,22 +451,85 @@ describe('engineering matter directory narrow reading', () => {
 
   it('rejects a saved result whose scope is bound to another matter', async () => {
     const f = serviceFor(fixture());
-    f.database.rowsFor = (table: unknown) =>
+    f.database.rowsFor = (
+      table: unknown,
+      selectedFields: Record<string, unknown> | null,
+    ) =>
       table === engineeringMatterWorkRevision
         ? [{ ...fixture().working[0], resultScopeMatterId: 'OTHER' }]
-        : new FakeDirectoryDb(fixture()).rowsFor(table);
+        : new FakeDirectoryDb(fixture()).rowsFor(table, selectedFields);
     await expect(f.service.list({}, actor)).rejects.toMatchObject({
       code: 'ENGINEERING_MATTER_RESULT_BINDING_INVALID',
       statusCode: 409,
     });
   });
 
-  it('rejects a working revision based on an older matter composition', async () => {
+  it('keeps authorized work based on an older matter revision as a legal pending update', async () => {
     const f = serviceFor(fixture());
-    f.database.rowsFor = (table: unknown) =>
+    f.database.rowsFor = (
+      table: unknown,
+      selectedFields: Record<string, unknown> | null,
+    ) =>
       table === engineeringMatterWorkRevision
         ? [{ ...fixture().working[0], basedOnMatterRevisionId: 'MREV-OLD' }]
-        : new FakeDirectoryDb(fixture()).rowsFor(table);
+        : new FakeDirectoryDb(fixture()).rowsFor(table, selectedFields);
+    await expect(f.service.list({}, actor)).resolves.toMatchObject({
+      items: [
+        {
+          matterId: 'MAT-1',
+          currentMatterRevisionId: 'MREV-1',
+          workingRevision: 1,
+        },
+      ],
+    });
+  });
+
+  it('rejects a matter revision change observed by the final batch confirmation', async () => {
+    const f = serviceFor({
+      ...fixture(),
+      confirmedMatters: [
+        {
+          matterId: 'MAT-1',
+          currentMatterRevisionId: 'MREV-2',
+        },
+      ],
+    });
+    await expect(f.service.list({}, actor)).rejects.toMatchObject({
+      code: 'ENGINEERING_MATTER_DIRECTORY_CHANGED',
+      statusCode: 409,
+    });
+  });
+
+  it('rejects a latest working revision change observed by confirmation', async () => {
+    const f = serviceFor({
+      ...fixture(),
+      confirmedWorking: [
+        {
+          matterId: 'MAT-1',
+          workingRevision: 2,
+        },
+      ],
+    });
+    await expect(f.service.list({}, actor)).rejects.toMatchObject({
+      code: 'ENGINEERING_MATTER_DIRECTORY_CHANGED',
+      statusCode: 409,
+    });
+  });
+
+  it('rejects a linked work-item source binding mismatch', async () => {
+    const f = serviceFor(fixture());
+    f.database.rowsFor = (
+      table: unknown,
+      selectedFields: Record<string, unknown> | null,
+    ) =>
+      table === engineeringMatterRevisionWorkItem
+        ? [
+            {
+              ...fixture().links[0],
+              workItemDocumentVersionId: 'DV-OTHER',
+            },
+          ]
+        : new FakeDirectoryDb(fixture()).rowsFor(table, selectedFields);
     await expect(f.service.list({}, actor)).rejects.toMatchObject({
       code: 'ENGINEERING_MATTER_DIRECTORY_CHANGED',
       statusCode: 409,

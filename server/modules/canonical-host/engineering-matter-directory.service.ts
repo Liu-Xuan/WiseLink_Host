@@ -25,6 +25,8 @@ import type {
   AssessmentReadingSummary,
 } from '@shared/assessment-reading.interface';
 import {
+  dmDocumentVersion,
+  dmPublicationFamily,
   engineeringMatter,
   engineeringMatterMaterialLink,
   engineeringMatterRevisionWorkItem,
@@ -33,6 +35,7 @@ import {
 } from '../../database/schema';
 import { isHostedCanonicalFinalUserActor } from '../work-item/miaoda-hosted-canonical-object-access.adapter';
 import type { CanonicalHostActor } from './canonical-host.types';
+import { parseMatterMaterial } from './matter-material';
 import { EngineeringMatterService } from './engineering-matter.service';
 import { EngineeringMatterWorkingService } from './engineering-matter-working.service';
 
@@ -42,7 +45,6 @@ type DirectoryOverallStatus =
 interface DirectoryWorkingFact {
   matterId: string;
   workingRevision: number;
-  basedOnMatterRevisionId: string;
   createdAt: Date;
   hasSubstantiveResult: boolean;
   resultRef: string | null;
@@ -197,8 +199,39 @@ export class EngineeringMatterDirectoryService {
               workItemId: engineeringMatterRevisionWorkItem.workItemId,
               relationRole: engineeringMatterRevisionWorkItem.relationRole,
               ordinal: engineeringMatterRevisionWorkItem.ordinal,
+              requestedByUserId: workItem.requestedByUserId,
+              workItemDocumentId: workItem.documentId,
+              workItemDocumentVersionId: workItem.documentVersionId,
+              versionDocumentId: dmDocumentVersion.documentId,
+              versionDocumentVersionId: dmDocumentVersion.documentVersionId,
+              versionFamilyId: dmDocumentVersion.familyId,
+              familyId: dmPublicationFamily.familyId,
             })
             .from(engineeringMatterRevisionWorkItem)
+            .leftJoin(
+              workItem,
+              and(
+                eq(
+                  workItem.tenantId,
+                  engineeringMatterRevisionWorkItem.tenantId,
+                ),
+                eq(
+                  workItem.workItemId,
+                  engineeringMatterRevisionWorkItem.workItemId,
+                ),
+              ),
+            )
+            .leftJoin(
+              dmDocumentVersion,
+              eq(
+                dmDocumentVersion.documentVersionId,
+                workItem.documentVersionId,
+              ),
+            )
+            .leftJoin(
+              dmPublicationFamily,
+              eq(dmPublicationFamily.familyId, dmDocumentVersion.familyId),
+            )
             .where(
               and(
                 eq(engineeringMatterRevisionWorkItem.tenantId, actor.tenantId),
@@ -215,13 +248,11 @@ export class EngineeringMatterDirectoryService {
       revisionIds.length === 0
         ? Promise.resolve([])
         : this.db
-            .selectDistinctOn(
-              [engineeringMatterMaterialLink.matterRevisionId],
-              {
-                matterRevisionId:
-                  engineeringMatterMaterialLink.matterRevisionId,
-              },
-            )
+            .select({
+              matterRevisionId: engineeringMatterMaterialLink.matterRevisionId,
+              materialId: engineeringMatterMaterialLink.materialId,
+              materialJson: engineeringMatterMaterialLink.materialJson,
+            })
             .from(engineeringMatterMaterialLink)
             .where(
               and(
@@ -232,15 +263,16 @@ export class EngineeringMatterDirectoryService {
                 ),
               ),
             )
-            .orderBy(asc(engineeringMatterMaterialLink.matterRevisionId)),
+            .orderBy(
+              asc(engineeringMatterMaterialLink.matterRevisionId),
+              asc(engineeringMatterMaterialLink.materialId),
+            ),
       matterIds.length === 0
         ? Promise.resolve([])
         : this.db
             .selectDistinctOn([engineeringMatterWorkRevision.matterId], {
               matterId: engineeringMatterWorkRevision.matterId,
               workingRevision: engineeringMatterWorkRevision.workingRevision,
-              basedOnMatterRevisionId:
-                engineeringMatterWorkRevision.basedOnMatterRevisionId,
               createdAt: engineeringMatterWorkRevision.createdAt,
               hasSubstantiveResult: sql<boolean>`
                   coalesce(
@@ -315,30 +347,98 @@ export class EngineeringMatterDirectoryService {
     ]);
     const primaryByRevision: Map<string, string[]> = new Map();
     for (const link of linkRows) {
+      if (
+        link.requestedByUserId !== actor.userId ||
+        link.workItemDocumentId === null ||
+        link.workItemDocumentVersionId === null ||
+        link.versionDocumentId === null ||
+        link.versionDocumentVersionId === null ||
+        link.versionFamilyId === null ||
+        link.familyId === null ||
+        link.workItemDocumentId !== link.versionDocumentId ||
+        link.workItemDocumentVersionId !== link.versionDocumentVersionId ||
+        link.versionFamilyId !== link.familyId
+      ) {
+        throw directoryError('ENGINEERING_MATTER_DIRECTORY_CHANGED', 409);
+      }
       if (link.relationRole !== 'PRIMARY') continue;
       const primary = primaryByRevision.get(link.matterRevisionId) ?? [];
       primary.push(link.workItemId);
       primaryByRevision.set(link.matterRevisionId, primary);
     }
-    const materialRevisions: Set<string> = new Set(
-      materialRows.map(
-        (row: { matterRevisionId: string }) => row.matterRevisionId,
-      ),
-    );
+    const materialRevisions: Set<string> = new Set();
+    for (const material of materialRows) {
+      parseMatterMaterial(JSON.parse(material.materialJson));
+      materialRevisions.add(material.matterRevisionId);
+    }
     const workingByMatter: Map<string, DirectoryWorkingFact> = new Map(
       workingRows.map((row) => [row.matterId, row]),
+    );
+    const [confirmationRows, workingConfirmationRows] = await Promise.all([
+      matterIds.length === 0
+        ? Promise.resolve([])
+        : this.db
+            .select({
+              matterId: engineeringMatter.matterId,
+              currentMatterRevisionId:
+                engineeringMatter.currentMatterRevisionId,
+            })
+            .from(engineeringMatter)
+            .where(
+              and(
+                eq(engineeringMatter.tenantId, actor.tenantId),
+                inArray(engineeringMatter.matterId, matterIds),
+              ),
+            ),
+      matterIds.length === 0
+        ? Promise.resolve([])
+        : this.db
+            .selectDistinctOn([engineeringMatterWorkRevision.matterId], {
+              matterId: engineeringMatterWorkRevision.matterId,
+              workingRevision: engineeringMatterWorkRevision.workingRevision,
+            })
+            .from(engineeringMatterWorkRevision)
+            .where(
+              and(
+                eq(engineeringMatterWorkRevision.tenantId, actor.tenantId),
+                inArray(engineeringMatterWorkRevision.matterId, matterIds),
+              ),
+            )
+            .orderBy(
+              asc(engineeringMatterWorkRevision.matterId),
+              desc(engineeringMatterWorkRevision.workingRevision),
+            ),
+    ]);
+    const confirmedMatterRevisionById: Map<string, string> = new Map(
+      confirmationRows.map(
+        (row: { matterId: string; currentMatterRevisionId: string }) => [
+          row.matterId,
+          row.currentMatterRevisionId,
+        ],
+      ),
+    );
+    const confirmedWorkingRevisionById: Map<string, number> = new Map(
+      workingConfirmationRows.map(
+        (row: { matterId: string; workingRevision: number }) => [
+          row.matterId,
+          row.workingRevision,
+        ],
+      ),
     );
     const items = selected.map((row: (typeof selected)[number]) => {
       const primary = primaryByRevision.get(row.currentMatterRevisionId) ?? [];
       const working = workingByMatter.get(row.matterId);
       if (
+        confirmedMatterRevisionById.get(row.matterId) !==
+          row.currentMatterRevisionId ||
+        (confirmedWorkingRevisionById.get(row.matterId) ?? 0) !==
+          (working?.workingRevision ?? 0)
+      ) {
+        throw directoryError('ENGINEERING_MATTER_DIRECTORY_CHANGED', 409);
+      }
+      if (
         primary.length !== 1 &&
         !materialRevisions.has(row.currentMatterRevisionId)
-      )
-        throw directoryError('ENGINEERING_MATTER_DIRECTORY_CHANGED', 409);
-      if (
-        working &&
-        working.basedOnMatterRevisionId !== row.currentMatterRevisionId
       )
         throw directoryError('ENGINEERING_MATTER_DIRECTORY_CHANGED', 409);
       return {

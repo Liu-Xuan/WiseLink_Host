@@ -27,15 +27,35 @@ After:
   1. current-revision work-item links;
   2. material existence for current revisions;
   3. the latest working revision per matter.
+- Two final lightweight batch confirmations verify that current Matter
+  revisions and latest working revisions did not change during the read.
 - Working state JSON is not loaded. SQL projects only resultRef,
   resultRevision, headline, listBrief, decisive claim IDs/text, result scope
   and overviewStatus.
 - Tenant/actor identity, search, cursor, workItemId filtering, primary/material
-  handling, result binding and current working basis are retained.
+  handling, result binding and source bindings are retained.
+- Work based on an older Matter revision is allowed. It is not treated as a
+  corrupt or unauthorized state.
 
-The controlled query-count test reports four DB executions for both limit 1
-and limit 3. This is a mock call count, not SQL duration, bytes or production
-latency.
+The controlled query-count test reports six DB executions for both limit 1 and
+limit 3 when the page is non-empty. The last two are stability confirmations.
+This is a mock call count, not SQL duration, bytes or production latency.
+
+## Round 2: Semantic Closeout And SQL Evidence
+
+The local PostgreSQL fixture uses a NOBYPASSRLS role with actor and tenant
+session settings. It executes the production service against representative
+small data and an 80-matter scale set with one to four saved working revisions
+and larger working state JSON.
+
+- actor/tenant visibility, material-only matters, mixed WorkItem/material
+  composition, search, WorkItem filtering and cursor pagination were asserted.
+- decisive claim order, latest working revision, result scope and legal old
+  working basis were asserted.
+- a controlled matter revision change during a delayed working read produced
+  `ENGINEERING_MATTER_DIRECTORY_CHANGED`, not a mixed result.
+- both datasets executed six queries; exact SQL and EXPLAIN metrics are in
+  `SQL_EVIDENCE.md`.
 
 ## Integrated Work
 
@@ -87,13 +107,18 @@ npm run type:check:client
   test/unit/document-management-metadata-enrichment.spec.ts \
   test/unit/document-parsing-status-title.spec.ts \
   --runInBand
+
+ENGINEERING_MATTER_DIRECTORY_TEST_DATABASE_URL=postgres://liuxuan@127.0.0.1:55441/wiselink_directory_test \
+  node --test test/node/engineering-matter-directory-postgres.test.mjs
 ```
 
 Results:
 
 - Server typecheck: pass.
 - Client typecheck: pass.
-- Jest: 11 suites passed, 103/103 tests passed.
+- Jest: 11 suites passed, 106/106 tests passed.
+- Isolated PostgreSQL directory test: 1 passed; six queries and EXPLAIN plans
+  captured.
 - ESLint, Prettier and `git diff --check`: pass.
 - Postgres metadata tests: 4 skipped without a dedicated test database.
 
@@ -101,7 +126,8 @@ Results:
 
 - The front-end graph and timeline implementations remain as already accepted.
 - No schema, database, permission, model or production routing changes.
-- No real PostgreSQL latency, browser request trace, preview release or
-  production p95 measurement.
-- The branch is committed and pushed only to the project GitHub remote for
-  review; origin and production are not synchronized by this handoff.
+- No production PostgreSQL latency, browser request trace, preview release or
+  production p95 measurement. The isolated database metrics are local
+  synthetic evidence only.
+- This commit records the directory semantic closeout and SQL evidence on the
+  project GitHub branch. `origin` and production are not synchronized.

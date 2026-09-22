@@ -15,6 +15,7 @@ the worktree, then read:
 
 1. `CURRENT_TASK.md` for the short resume point.
 2. `REPORT.md` for implementation, verification and limitations.
+3. `SQL_EVIDENCE.md` for the latest isolated PostgreSQL query and plan evidence.
 
 Do not treat chat summaries, old release references, or the unavailable
 `5b8e2a3a...` cloud commit as a substitute for this branch.
@@ -37,7 +38,9 @@ new-file bytes.
 
 - `npm run type:check:server`: pass.
 - `npm run type:check:client`: pass.
-- Focused Jest: 11 suites passed, 103/103 tests passed.
+- Focused Jest: 11 suites passed, 106/106 tests passed.
+- Isolated PostgreSQL directory test: pass; 6 production-generated queries on
+  representative small and 80-matter datasets.
 - Postgres metadata suite: 4 skipped because no test database was configured.
 - ESLint, Prettier and `git diff --check`: pass.
 
@@ -47,5 +50,4 @@ The focused Jest command is recorded in `REPORT.md`.
 
 - No production model, permission, database or schema change.
 - No production analysis or release was triggered.
-- No browser, real-database latency, preview or online p95 measurement was
-  performed.
+- No browser, preview or online p95 measurement was performed.
