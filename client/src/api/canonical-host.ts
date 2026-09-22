@@ -891,11 +891,13 @@ export async function requestInitialAnalysisContinuation(
 
 export function readJobAidAssessmentWork(
   workItemId: string,
+  signal?: AbortSignal,
 ): Promise<JobAidWorkingReadModel> {
   return reviewConversationRequest<JobAidWorkingReadModel>({
     url: `/api/canonical-host/work-items/${encodeURIComponent(workItemId)}/assessment-work`,
     method: 'GET',
     operation: '读取已保存的问题评估',
+    signal,
   });
 }
 

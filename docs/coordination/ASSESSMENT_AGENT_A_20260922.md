@@ -55,3 +55,13 @@ A负责文档/事项解析后的关联上下文、JobAid动态问题分析、已
 直接验证：3套Jest共40项通过（新查询条件及确定性排序、实际服务授权前置、未保存/已有旧正文两条读取分支、界面首次保存前状态和既有continuation）；标准双端typecheck exit0、5文件ESLint及diffcheck通过。首次测试发现测试actor缺appId，补齐真实类型后复跑通过。SQL是Drizzle编译查询与受控repository证据，不是实际PostgreSQL/线上验收；source evidence分支沿原校验，旧正文测试用受控授权回执，不宣称新证明了其全部安全性。
 
 当前仍待完成：WorkItem来源读取/分次保存事件的安全可见投影、与真实运行配套的终态/隐藏页面读取策略，以及Luna对已交付执行接续与本状态读取的托管验收。本批没有将状态标签当作完整执行过程，也未改6秒全文读取策略。主控负责接受范围与实际发布，A未推送/发布。
+
+## 2026-09-23 子批：JobAid正文读取生命周期
+
+父提交 `301cb3633c1cf2e1249ce9c888e05d6f36eb59ef`。在前批真实当前执行状态基础上，既有useJobAidWorkingRead仅对QUEUED/RUNNING/RETRY_SCHEDULED/COMMITTING继续6秒读取；终态、无任务和未知状态不持续读取。浏览器隐藏或retained工作台panel失活时清除定时器并AbortSignal取消在途GET；重新显示按需读取当前状态。没有引入新全局缓存或改变保存/评估入口。
+
+本hook通过既有client session订阅响应身份代际变化，以session+WorkItem绑定当前本地读取状态；切换时立即隐藏旧内容，取消原请求且忽略迟到结果。网络/读取失败保留当前对象已读正文但停止自动读取；401/403/404清除正文；隐藏/retained切换不自动解除失败，手动刷新才恢复。此停止状态属于已挂载hook，完整卸载后的新访问会重新鉴权读取，不宣称跨完整卸载持久缓存。当前scope只保留一份本地读状态，未做跨多个组件的请求合并。
+
+文件：client API增加可选AbortSignal并传入既有request helper、useJobAidWorkingRead、jobaid-read-lifecycle.spec.ts及本记录。直接验证2套17项Jest（真实React挂载、fake timer/受控API、终态停止、隐藏取消/迟到返回、失败与权限拒绝、retained切换、会话/对象隔离）、client typecheck、3文件ESLint及diffcheck通过。未运行真实浏览器HAR/线上页面或模型，不作线上提速量化结论。
+
+安全活动投影与真实托管验收仍未完成；本批只减少不必要全文读取并使读取行为符合当前执行状态，不能替代来源/保存过程展示。主控负责集成发布，A未推送或发布。

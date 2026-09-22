@@ -1,7 +1,8 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState, useSyncExternalStore } from 'react';
 import {
   getCanonicalHostClientSessionGeneration,
   readJobAidAssessmentWork,
+  subscribeCanonicalHostClientSession,
   type CanonicalHostClientError,
 } from '@client/src/api/canonical-host';
 import { useWorkbenchPanelActive } from '@client/src/features/workbench/RetainedWorkbenchPanel';
@@ -30,45 +31,100 @@ export function jobAidReadAfterFailure(
   return [401, 403, 404].includes(failure.statusCode ?? 0) ? null : previous;
 }
 
+function subscribeVisibility(changed: () => void): () => void {
+  document.addEventListener('visibilitychange', changed);
+  return () => document.removeEventListener('visibilitychange', changed);
+}
+
+export function shouldPollJobAidRead(value: JobAidWorkingReadModel): boolean {
+  return (
+    value.enabled &&
+    ['QUEUED', 'RUNNING', 'RETRY_SCHEDULED', 'COMMITTING'].includes(
+      value.executionStatus ?? '',
+    )
+  );
+}
+
 export function useJobAidWorkingRead(workItemId: string) {
-  const active: boolean = useWorkbenchPanelActive();
-  const [data, setData] = useState<JobAidWorkingReadModel | null>(null);
-  const [error, setError] = useState<string | null>(null);
-  const [retry, setRetry] = useState<number>(0);
+  const active = useWorkbenchPanelActive();
+  const session = useSyncExternalStore(
+    subscribeCanonicalHostClientSession,
+    getCanonicalHostClientSessionGeneration,
+    getCanonicalHostClientSessionGeneration,
+  );
+  const visible = useSyncExternalStore(
+    subscribeVisibility,
+    () => !document.hidden,
+    () => true,
+  );
+  const key = JSON.stringify([session, workItemId]);
+  const stopped = useRef<{ key: string; failed: boolean }>({
+    key,
+    failed: false,
+  });
+  const [state, setState] = useState<{
+    key: string;
+    data: JobAidWorkingReadModel | null;
+    error: string | null;
+  }>({ key, data: null, error: null });
+  const [retry, setRetry] = useState(0);
   useEffect(() => {
-    if (!active) return;
-    const session: number = getCanonicalHostClientSessionGeneration();
-    let cancelled: boolean = false;
+    if (stopped.current.key !== key) stopped.current = { key, failed: false };
+    if (!active || !visible || stopped.current.failed) return;
+    const controller = new AbortController();
     let timer: ReturnType<typeof setTimeout> | undefined;
+    const obsolete = () =>
+      controller.signal.aborted ||
+      session !== getCanonicalHostClientSessionGeneration();
     const read = async (): Promise<void> => {
       try {
-        const result = await readJobAidAssessmentWork(workItemId);
-        if (cancelled || session !== getCanonicalHostClientSessionGeneration())
-          return;
+        const result = await readJobAidAssessmentWork(
+          workItemId,
+          controller.signal,
+        );
+        if (obsolete()) return;
         if (
           result.workItemId !== workItemId ||
           (result.current && result.current.workItemId !== workItemId)
         )
           throw new Error('返回内容不属于当前文档对象');
-        setData((previous) => preserveJobAidRead(previous, result));
-        setError(null);
-        if (result.enabled) timer = setTimeout(() => void read(), 6000);
+        setState((previous) => ({
+          key,
+          data: preserveJobAidRead(
+            previous.key === key ? previous.data : null,
+            result,
+          ),
+          error: null,
+        }));
+        if (shouldPollJobAidRead(result))
+          timer = setTimeout(() => void read(), 6000);
       } catch (caught) {
-        if (cancelled || session !== getCanonicalHostClientSessionGeneration())
-          return;
+        if (obsolete()) return;
+        stopped.current = { key, failed: true };
         const failure = caught as CanonicalHostClientError;
-        setData((previous) => jobAidReadAfterFailure(previous, failure));
-        // A read/network failure does not erase an already saved work revision.
-        setError(
-          caught instanceof Error ? caught.message : '已保存评估暂时无法读取',
-        );
+        setState((previous) => ({
+          key,
+          data: jobAidReadAfterFailure(
+            previous.key === key ? previous.data : null,
+            failure,
+          ),
+          error:
+            caught instanceof Error ? caught.message : '已保存评估暂时无法读取',
+        }));
       }
     };
     void read();
     return () => {
-      cancelled = true;
+      controller.abort();
       clearTimeout(timer);
     };
-  }, [workItemId, active, retry]);
-  return { data, error, refresh: () => setRetry((value) => value + 1) };
+  }, [workItemId, key, session, active, visible, retry]);
+  return {
+    data: state.key === key ? state.data : null,
+    error: state.key === key ? state.error : null,
+    refresh: () => {
+      stopped.current = { key, failed: false };
+      setRetry((value) => value + 1);
+    },
+  };
 }
