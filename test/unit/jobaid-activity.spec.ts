@@ -145,3 +145,35 @@ it('new activity updates the mounted view even when saved work and task status a
   expect(preserveJobAidRead(previous, next)).toBe(next);
   expect(preserveJobAidRead(next, structuredClone(next))).toBe(next);
 });
+
+
+it('shows knowledge tool observations through the actual view without exposing private receipt fields', () => {
+  const states = ['REQUESTED', 'STARTING', 'RUNNING', 'COMPLETED', 'FAILED', 'UNKNOWN', 'UNAVAILABLE'];
+  const result = projectJobAidActivity({ ...attempt, activityJson: JSON.stringify(states.map(status => ({
+    kind: 'ASSESSMENT_KNOWLEDGE_OBSERVED', status, observedAt: '2026-09-23T00:00:00Z',
+    queryRef: 'private-ref', query: 'private-query', error: 'private-error', answer: 'private-answer',
+  }))) }, []);
+  expect(result.knowledgeObservations?.map(item => item.status)).toEqual(states);
+  expect(result.sourceReads).toEqual([]);
+  expect(JSON.stringify(result)).not.toContain('private');
+  const html = renderToStaticMarkup(createElement(JobAidExecutionActivity, { activity: result }));
+  expect(html).toContain('检索进行中'); expect(html).toContain('检索失败');
+  expect(html).toContain('不证明工具当前仍在运行'); expect(html).toContain('不代表原始文档已核实');
+  expect(html).not.toContain('private');
+  const previous = jobAidReadingFixture(); previous.activity = projectJobAidActivity(attempt, []);
+  const next = { ...previous, activity: result };
+  expect(preserveJobAidRead(previous, next)).toBe(next);
+});
+
+it('counts invalid knowledge observations, preserves missing time and uses the existing bounded activity window', () => {
+  const record = { kind: 'ASSESSMENT_KNOWLEDGE_OBSERVED', status: 'RUNNING' };
+  const result = projectJobAidActivity({ ...attempt, activityJson: JSON.stringify([
+    ...Array.from({ length: 51 }, () => record), { ...record, status: 'private-status' },
+    { ...record, observedAt: 'not-a-date' },
+  ]) }, [saved]);
+  expect(result.omittedEarlierRecordCount).toBe(3);
+  expect(result.knowledgeObservations).toHaveLength(48);
+  expect(result.knowledgeObservations?.[0]).toEqual({ sequence: 4, status: 'RUNNING', observedAt: null });
+  expect(result.malformedRecordCount).toBe(2);
+  expect(result.savedRevisions).toHaveLength(1);
+});

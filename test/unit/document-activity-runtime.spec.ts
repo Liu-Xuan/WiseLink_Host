@@ -21,12 +21,12 @@ function fixture() {
   const authorization = { authorizeDocumentWork: jest.fn().mockResolvedValue(scope) };
   const actors = { withActorScope: jest.fn(async (_actor, fn) => fn()) };
   const reader = { readDocumentOriginal: jest.fn().mockResolvedValue(loaded) };
-  const semantics = { read: jest.fn().mockResolvedValue(map), ensure: jest.fn() };
-  const parsing = { status: jest.fn().mockResolvedValue({}) };
+  const semantics = { read: jest.fn().mockResolvedValue(map), ensure: jest.fn(), readReady: jest.fn().mockResolvedValue({ semanticRevision: 1 }) };
+  const parsing = { status: jest.fn().mockResolvedValue({}), inspectPublishedIdentity: jest.fn().mockResolvedValue({ familyId: 'family-test', binding: original.binding }) };
   const runs = { begin: jest.fn().mockResolvedValue(row), readRun: jest.fn().mockResolvedValue(row), readSaved: jest.fn().mockResolvedValue(null),
     recordDelivery: jest.fn(async (_scope, _fence, range) => { row.deliveredRanges.push(range); }),
     save: jest.fn(async (_scope, _fence, _command, materialize) => materialize(row, 1)),
-    renew: jest.fn().mockResolvedValue(true), claim: jest.fn().mockResolvedValue(fence), cancel: jest.fn(), fail: jest.fn() };
+    renew: jest.fn().mockResolvedValue(true), claim: jest.fn().mockResolvedValue(fence), cancel: jest.fn(), fail: jest.fn(), expire: jest.fn() };
   const service = new DocumentActivityRuntimeService(authorization as never, actors as never, reader as never, semantics as never, parsing as never, runs as never);
   const context = { ...scope, roles: [] };
   return { original, map, loaded, row, scope, fence, authorization, actors, reader, semantics, parsing, runs, service, context };
@@ -95,4 +95,64 @@ describe('independent source activity runtime', () => {
     await expect(f.service.readForBrowser({ documentVersionId: f.scope.documentVersionId, parseRunId: f.row.parseRunId }, f.context))
       .rejects.toThrow('SOURCE_ACCESS_DENIED');
   });
+});
+
+const controls = ['ACTIVITY_STATUS', 'ACTIVITY_CANCEL', 'ACTIVITY_CLAIM', 'ACTIVITY_HEARTBEAT', 'ACTIVITY_FAIL'];
+function controlInput(f: ReturnType<typeof fixture>, action: string) {
+ const base = { action, documentVersionId: f.scope.documentVersionId, runRef: f.row.runRef };
+ if (action === 'ACTIVITY_HEARTBEAT') return { ...base, ...f.fence };
+ if (action === 'ACTIVITY_FAIL') return { ...base, ...f.fence, errorCode: 'TEST_FAILURE' };
+ if (action === 'ACTIVITY_CLAIM') return { ...base, leaseOwner: f.fence.leaseOwner };
+ return base;
+}
+it.each(controls)('%s authorizes ordinary source access without loading content, semantics or plans', async action => {
+ const f=fixture();
+ f.reader.readDocumentOriginal.mockRejectedValue(new Error('STORAGE_UNAVAILABLE'));
+ await f.service.run(controlInput(f, action));
+ expect(f.authorization.authorizeDocumentWork).toHaveBeenCalledTimes(1);
+ expect(f.parsing.status).toHaveBeenCalledWith(f.scope.documentVersionId, f.context);
+ expect(f.reader.readDocumentOriginal).not.toHaveBeenCalled();
+ expect(f.semantics.read).not.toHaveBeenCalled();
+ expect(f.runs.recordDelivery).not.toHaveBeenCalled(); expect(f.runs.save).not.toHaveBeenCalled();
+});
+it.each(controls)('%s refuses revoked ordinary source access before control mutation', async action => {
+ const f=fixture(); f.parsing.status.mockRejectedValue(new Error('SOURCE_REVOKED'));
+ await expect(f.service.run(controlInput(f, action))).rejects.toThrow('SOURCE_REVOKED');
+ for (const method of ['cancel','claim','renew','fail','expire'] as const) expect(f.runs[method]).not.toHaveBeenCalled();
+ expect(f.reader.readDocumentOriginal).not.toHaveBeenCalled();
+});
+it('STATUS reconciles deadline and returns fresh state without overwriting a concurrent saved result', async () => {
+ const f=fixture();
+ f.runs.readRun.mockResolvedValueOnce(f.row).mockResolvedValueOnce({ ...f.row, status: 'EXPIRED', errorCode: 'DOCUMENT_ACTIVITY_DEADLINE_EXCEEDED' });
+ await expect(f.service.run(controlInput(f, 'ACTIVITY_STATUS'))).resolves.toMatchObject({ status: 'EXPIRED' });
+ expect(f.runs.expire).toHaveBeenCalledWith(f.scope, f.row.runRef);
+ f.runs.readRun.mockResolvedValueOnce(f.row).mockResolvedValueOnce({ ...f.row, status: 'SAVED', candidateRevision: 3 });
+ await expect(f.service.run(controlInput(f, 'ACTIVITY_STATUS'))).resolves.toMatchObject({ status: 'SAVED', candidateRevision: 3 });
+});
+it('READ and SAVE still require the exact original bytes', async () => {
+ const f=fixture(); f.reader.readDocumentOriginal.mockRejectedValue(new Error('STORAGE_UNAVAILABLE'));
+ await expect(f.service.run({ action: 'ACTIVITY_READ', ...f.fence, sectionId: f.row.selection.sectionIds[0], offset: 0, limit: 1 })).rejects.toThrow('STORAGE_UNAVAILABLE');
+ await expect(f.service.run({ action: 'ACTIVITY_SAVE', ...f.fence, candidate: {}, producer: { skillVersion: 'test', modelVersion: 'test' } })).rejects.toThrow('STORAGE_UNAVAILABLE');
+ expect(f.runs.recordDelivery).not.toHaveBeenCalled(); expect(f.runs.save).not.toHaveBeenCalled();
+});
+
+it('returns the complete saved browser result with fresh exact identities and zero content hydration', async () => {
+ const f=fixture();
+ f.reader.readDocumentOriginal.mockRejectedValue(new Error('STORAGE_UNAVAILABLE'));
+ const result = { sourceBinding: { original: f.original.binding, semanticRevision: 1 },
+  candidateRevision: 9, statements: [{ label: '完整已保存正文'.repeat(5000) }] };
+ f.runs.readSaved.mockResolvedValue(result as never);
+ const request = { documentVersionId: f.scope.documentVersionId, parseRunId: f.row.parseRunId, candidateRevision: 9 };
+ const response = await f.service.readForBrowser(request, f.context);
+ expect(response.candidate).toBe(result);
+ expect(f.reader.readDocumentOriginal).not.toHaveBeenCalled(); expect(f.semantics.read).not.toHaveBeenCalled();
+ expect(f.parsing.inspectPublishedIdentity).toHaveBeenCalledWith(request.documentVersionId, request.parseRunId, f.context);
+ expect(f.semantics.readReady).toHaveBeenCalledWith(f.context, request.parseRunId, 1);
+ f.runs.readSaved.mockResolvedValue({ ...result, sourceBinding: { ...result.sourceBinding, original: { ...f.original.binding, parseRunId: 'other' } } } as never);
+ await expect(f.service.readForBrowser(request, f.context)).rejects.toThrow('BINDING_MISMATCH');
+ f.runs.readSaved.mockResolvedValue(result as never);
+ f.semantics.readReady.mockResolvedValueOnce(null);
+ await expect(f.service.readForBrowser(request, f.context)).rejects.toThrow('SEMANTIC_REVISION_NOT_FOUND');
+ f.parsing.inspectPublishedIdentity.mockRejectedValueOnce(new Error('SOURCE_REVOKED'));
+ await expect(f.service.readForBrowser(request, f.context)).rejects.toThrow('SOURCE_REVOKED');
 });

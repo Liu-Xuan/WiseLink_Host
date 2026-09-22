@@ -20,7 +20,7 @@ import { useCurrentObjectContext } from '@client/src/app/providers/CurrentObject
 import { useCurrentUserSession } from '@client/src/app/providers/CurrentUserSessionProvider';
 import { getEngineeringMatter } from '@client/src/api/engineering-matter';
 import WiseLinkBrandMark from '@client/src/components/WiseLinkBrandMark';
-import { activityReadingParams } from '@client/src/features/matter/reading-return';
+import { activityReadingParams, knowledgeReadingIdentity } from '@client/src/features/matter/reading-return';
 import type {
   EngineeringMatterCatalogEntry,
   EngineeringMatterReadModel,
@@ -196,6 +196,28 @@ const Sidebar: React.FC<SidebarProps> = ({ mobileOpen, onMobileClose }) => {
       return `${target}?${blocked}`;
     }
     if (target === '/graph') {
+      if (location.pathname === '/knowledge') {
+        const knowledge = knowledgeReadingIdentity(currentSearchParams);
+        if (knowledge.state !== 'absent') {
+          // Knowledge reads are pinned to one saved work. Never let the graph's
+          // default matter resolver choose another object or a current revision.
+          const conflictingPins = [
+            'matterId', 'workItemId', 'documentVersionId',
+            'selectedMatterId', 'selectedDocumentVersionId',
+          ].some(key => currentSearchParams.has(key));
+          if (knowledge.state !== 'ok' || conflictingPins) {
+            return '/graph?matterId=';
+          }
+          const { subjectKind, subjectId, workRef: savedWorkRef } = knowledge.identity;
+          const query = new URLSearchParams({
+            [subjectKind === 'ENGINEERING_MATTER' ? 'matterId' : 'workItemId']: subjectId,
+            workRef: savedWorkRef,
+          });
+          // The dispatcher may reject unsupported document-work history, but
+          // must not silently resolve it into a different/current matter work.
+          return `/graph?${query}`;
+        }
+      }
       if (graphMatterId) {
         // Explicit activity identity stays on the matter graph target so the
         // graph dispatcher runs its relation check with the exact pins; only

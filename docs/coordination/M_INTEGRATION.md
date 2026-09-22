@@ -1,5 +1,16 @@
 # M 主控集成交接
 
+## 2026-09-23 A/B 统一集成与发布当前状态
+
+已部署 Host：`app_17bzc551rsg`，release `7688408024273652704` 已回读 `finished`，准确提交 `e812421cb050aed0954ca3f6945159100155a301`，`error_logs=[]`。`origin` 与 `github` 的同名 `codex/integration-ab-20260923` 已分别回读该 SHA。
+
+后端 Hosted Skill：e812 源码包已生成，版本标签 `r09.c113`，archive SHA256 `8ccad700e8b314b4fd430accdefd7350223e45a63a18061fbaa7f9e658d35f64`，455174 bytes/60 files；尚未取得本次安装及已安装逐文件核对回执，不能视为运行时已升级。历史 c113 标签不证明此次字节相同。依赖新 Skill 的真实消费者验收仍待安装后执行。
+
+正常身份只读线上验证已经进行，未重生成有效中文、解析或评估。确认 PDF 来源目标第5页实际停在第4页，以及知识页侧栏进入图谱时丢失精确事项/保存版本两项缺陷；修复已由 Luna 本地独立验收，尚待本次发布后从真实点击复验。知识读取多次总网络约3–5秒，非服务端执行时间或p95；未取得资源规格/服务端trace，不归因于权限本身。
+
+第二批固定集成树 `/private/tmp/wiselink-integration-ab2-20260923`，分支 `codex/integration-ab2-20260923`：e812基线合并B `c58eb5c08164da72cdbb33ffde49fd059317174f`，另选择性加入A `b10e6e570744169c5c057a806ccad2637414eab1` 全部增量。后续B `77ae67fd299bf153f038003922b8465b7e9b155d` 和consumer改动不在此范围；Skill无变化。各批及组合检查已接受：A 6套75项；B 13套151项、Node6项、双端types/lint/build/precommit通过（集合有交集）。本节不声称第二批已经推送或发布。
+
+
 ## 2026-09-20 知识与检索的 Overall 来源一致性修复
 
 只读审查确认 `EngineeringIssueSearchService` 的知识完整读取和问题展开会把已保存

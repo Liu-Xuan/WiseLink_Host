@@ -39,6 +39,7 @@ test('consumer and real Host runtime exchange exact table anchors over MCP, then
   let modelCalls = 0;
   const fence = { leaseOwner: 'fixture-producer', leaseToken: '0f23e82b-2b1e-46ba-b62b-9e9a2ec62ca0', leaseGeneration: 1 };
   const runs = {
+    expire: async () => {}, // This fixture deadline is in the future.
     readRun: async () => row,
     claim: async () => { row.status = 'RUNNING'; return fence; },
     renew: async () => true,
@@ -60,7 +61,7 @@ test('consumer and real Host runtime exchange exact table anchors over MCP, then
     assert.equal(input.action, 'STATUS');
     return { nextActivityRunRef: row.result ? null : row.runRef };
   } };
-  const mcp = new CanonicalHostOpenClawMcpService({}, {}, {}, {}, {}, {}, {}, {}, {}, {}, {}, {}, {}, documentWork, {}, {}, activity);
+  const mcp = new CanonicalHostOpenClawMcpService({}, {}, {}, {}, {}, {}, {}, {}, {}, {}, {}, {}, {}, documentWork, {}, {}, activity, { run: async () => { throw new Error('unexpected fixture document_reading'); } });
   const server = createServer((req, res) => {
     if (req.url !== '/v1/chat/completions') { void mcp.handle(req, res); return; }
     const chunks = [];

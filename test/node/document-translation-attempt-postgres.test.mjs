@@ -163,9 +163,12 @@ test('document attempts preserve published source identity and service-only acto
     for (const role of roles) { assert.equal(role.rolsuper, false); assert.equal(role.rolbypassrls, false); }
     const [owner] = await db`SELECT pg_get_userbyid(relowner) AS name FROM pg_class WHERE relname='dm_document_semantic_revision'`;
     assert.ok(!roles.some(role => role.rolname === owner.name));
-    const ready = (role='service_role', actor='actor', requested=scope, run='parse-new') =>
-      semantic(role,actor,repo => repo.readReady(requested,run));
+    const ready = (role='service_role', actor='actor', requested=scope, run='parse-new', revision) =>
+      semantic(role,actor,repo => repo.readReady(requested,run,revision));
     assert.deepEqual(await ready(), { semanticRevision: 2, profileRef: map.profileRef });
+    assert.deepEqual(await ready('service_role','actor',scope,'parse-new',1), { semanticRevision: 1, profileRef: map.profileRef });
+    assert.equal(await ready('service_role','actor',scope,'parse-new',99), null);
+    await assert.rejects(ready('service_role','actor',scope,'parse-new',0), /SEMANTIC_REVISION_INVALID/);
     assert.deepEqual(await ready('authenticated'), { semanticRevision: 2, profileRef: map.profileRef });
     assert.equal(await ready('service_role','other'), null);
     assert.equal(await ready('service_role','actor',{...scope,tenantId:'wrong'}), null);

@@ -1,19 +1,17 @@
-# Unified integration in progress — 2026-09-23
+# 第二批统一集成 — 2026-09-23
 
-This worktree is `/private/tmp/wiselink-integration-ab-20260923`, branch `codex/integration-ab-20260923`.
-A base: `0c350f04c2da8f6e2257689092bf8b312497d342`.
-B candidate: `ff46e1d98a96664b522277134c52bc1da2d21bb7`.
-Combined acceptance passed; integration commit is being prepared. No push, Host release or Skill install has occurred for this candidate.
-The product/test changes from Matter remount correction `aac9bd64ee80fb9a967d64c05aed120b42c12350` are included; its historical report remains available at that commit.
-A and B local independent acceptance does not replace combined or Hosted acceptance.
-Deploy the compatible Host before installing the matching Skill; verify both exact revisions.
-The following B handoff is retained as branch history. Its worktree identity and earlier integration status describe its delivery, not this integration worktree.
+当前独立集成树 `/private/tmp/wiselink-integration-ab2-20260923`，分支 `codex/integration-ab2-20260923`。
+部署基线 `e812421cb050aed0954ca3f6945159100155a301` 已由 release `7688408024273652704` 确认 finished，error_logs 为空。Hosted 新 Skill 尚未完成安装，技术发布不代表消费者业务验收。
+本次固定接受范围：B `c58eb5c08164da72cdbb33ffde49fd059317174f`（包含保存读取、解析/来源准备优化、PDF准确定位、知识到图谱身份修复），A `b10e6e570744169c5c057a806ccad2637414eab1` 的精确产品/测试/记录增量（知识取数过程可见）。
+各批及合并组合检查已由独立 Luna 通过（A 6套75项，B 13套151项及Node6项、双端types/lint/build）；新发布尚待完成。B 后续 `77ae67fd299bf153f038003922b8465b7e9b155d` 不在此固定范围。
+本批没有 Skill 文件变化，不重复打包或声称已安装。发布后须实际点击知识侧栏及原PDF来源文字复验，不以手工准确URL替代。
+以下是 B 交付时的历史记录，其工作树及进度不代表此集成树当前状态。
 
 # Current Task
 
 ## 本批身份
 
-B系统性能工作树：`/private/tmp/wiselink-perf-b-original-reuse-20260923`，分支`codex/perf-b-original-reuse-20260923`；起点`d0829db9c1b81560622210f3e37c1a988227dd78`。当前2B.2原件重复返回的字节测量及有界会话复用。独立源码/测试由B提交、Luna验收、主控选择性集成。本树不是最终集成/线上版本。
+B系统性能工作树：`/private/tmp/wiselink-perf-b-saved-work-read-20260923`，分支`codex/perf-b-saved-work-read-20260923`；起点`287ddd6689741644e19e7dae786caad2ed8dc40d`。知识目录实际重载仍约4–5秒；本批历史成员fresh授权改为最多4个一组并发，检查总数保持，失败等待组内收束。287ddd668已获Luna独立3套35项/types/lint/build/precommit验收；主控唯一集成/发布者，当前树不是线上版本。
 
 ## 完整路线状态（2026-09-23）
 
@@ -21,22 +19,25 @@ B系统性能工作树：`/private/tmp/wiselink-perf-b-original-reuse-20260923`�
 | --- | --- |
 | 目录/1A/1B/元数据/1C/2A | 既有21a6716b及REPORT/SQL_EVIDENCE保留。1B是可取得候选，不覆盖不可取得云端差异。 |
 | H0/T0 | d58615c5含已验证测试导航时序修复，原配置正反执行顺序正常退出；不再追查未证明的全局串扰。 |
-| 2B.1 | d58615c5含PDF模块与原件并行准备，Luna已做本地独立验收；真实浏览器目标页/高亮证据仍未齐。 |
-| 2B.2 | 当前本地受控8MiB样本3次打开：基线3次下载24MiB，新实现1次下载8MiB+2次fresh授权/登记核对。最多4条/单条16MiB/总32MiB/5分钟主动过期，同步工作最多2次；SHA/length匹配才复用，不缓存权限，URL仍组件拥有。尚待Luna及真实浏览器耗时/内存证据。 |
+| 2B.1 | d58615c5含PDF模块与原件并行准备，Luna已做本地独立验收；真实正常身份样本已读到目标页问题（请求5、实际4）；当前本地修复通过真实PDF.js浏览器正反对照，待独立验收/再发布。线上高亮/返回链仍需继续。 |
+| 2B.2 | 当前本地受控8MiB样本3次打开：基线3次下载24MiB，新实现1次下载8MiB+2次fresh授权/登记核对。最多4条/单条16MiB/总32MiB/5分钟主动过期，同步工作最多2次；SHA/length匹配才复用，不缓存权限，URL仍组件拥有。ff46e1d98已获Luna独立4套118项及controller4项验收；仍待真实浏览器耗时/内存证据。 |
 | 2C | 3e0cc6074按帧合并/状态去重/销毁清理，Luna5套52项及构建通过。2C.2 bcccd815正文memo/稳定回调已获Luna 5套53项验收。2C.3 b2247dee7增量拓扑、标题刷新不重排/不丢拖动位置，6套57项已获Luna独立验收；2C.4a 8de759fb9导航/切视角捕获最新相机、立即保存导航历史已获Luna8套71项独立验收。2C.4b d0829db9c有限会话几何返回恢复已获Luna独立验收；B 6套54项与Luna不同集合6套63项并列，精确身份/工作/显示参数绑定。通用外部退出、真实交互计量仍需继续。 |
-| 2D | 后续依据实际阅读热点选择，未完成全范围验收。 |
-| 3A.1 | e7b6b6c04控制分派移出原文路径，5套43项与server构建通过，Luna本地验收通过；真实执行的重复内容校验尚保留，活动链另查。 |
+| 2D | 当前2D.1：已保存活动/解读结果完整返回，fresh普通来源授权+精确published parse/source登记+指定semanticRevision窄查；396ad7e81已获Luna独立5套59项/types/lint/build/precommit验收；PG真实SQL/RLS1项是B实现者证据，Luna只读日志、未重复连接。目录/来源章节其余热点及真实耗时仍需核对。 |
+| 3A.1 | e7b6b6c04控制分派移出原文路径，5套43项与server构建通过，Luna本地验收通过；真实执行的重复内容校验尚保留；当前3A.4活动STATUS/CANCEL/CLAIM/HEARTBEAT/FAIL移到fresh普通来源授权后、不加载原文/semantic；Reading相同控制补齐普通来源授权，d051d2781的2套33项及MCP真实服务互通2项已获Luna独立验收。 |
 | 3A.2/3 | 81ea079ea已改pending优先、空闲窄查精确语义登记，Luna本地4套25项验收通过，真实SQL/RLS已通过。3A.3已按主控授权单写者修订consumer：新START需当前语义就绪，历史pending不替代；已就绪不等待索引，索引失败鲜活回读就绪，旧任务状态/恢复不阻断。b020437e1的98项Node及3套16项Jest已获Luna本地验收；c65d0aa10由Luna在主控授权的独立PG14.17实例实际执行1/1通过，JOIN/RLS/非owner角色/约束均验证；唯一临时实例已停止删除。 |
-| 3B | 原件/PDF/来源plan执行内复用与有限公平推进尚未交付。 |
-| 4 | A负责JobAid/OpenClaw/Overall/Wiki连续工作。A回报当前0c350f04c（含0ee/35a/47adb/301/60ec/786/0c350），Luna已本地验收；尚未集成/发布/Hosted全链验收；应取A的确切交付，不在B重写。 |
-| V/R | 尚无最终集成SHA、正常身份样本或真实浏览器p95；不可从单测/bundle推断体验达标。主控唯一发布者。 |
+| 3B | 当前3B.1单执行最多两个8页组、组间10秒预算/16MiB原件上限；组间fresh ACL/lease，每组checkpoint，PDF在返回/异常/最终组装前释放。25页构造样本原件读取/PDF打开4→2，插件仍1次。70ad48ea9的5套38项+真实PDF.js Node5项/types/lint/build/precommit已获Luna独立验收。当前3B.2执行内来源plan准备61单元分页4次→1次；独立授权复核仍另算1次，实际begin总5→2次；6f77d9456的3套41项/types/lint/build/precommit已获Luna独立验收。跨任务公平与真实竞争计量仍未完成。 |
+| 4 | A负责JobAid/OpenClaw/Overall/Wiki连续工作。A回报当前0c350f04c（含0ee/35a/47adb/301/60ec/786/0c350），Luna已本地验收；0c350f04已进入固定e812并发布，b10e6e570后续增量及Hosted全链验收仍需主控闭合；应取A的确切交付，不在B重写。 |
+| V/R | 主控回读Host app_17bzc551rsg release7688408024273652704 finished / e812421c；B正常已有登录只读资料库、既有5页FTD解析2/部分中文/PDF，未生成。已发现并本地修复真实目标页错位。尚无热正文/图谱返回/暖轻量读取p95，完整Wiki→图谱→原件→返回→历史链待继续。 |
 
 ## 集成及边界
 
-主控2026-09-23回报：canonical仍b02395537；未执行统一集成、push、Host release或Skill install。其引用的上次线上确认release7687614542885374932/commit b023为旧记录，不是本轮新鲜回读。B旧修复aac9bd64与审查28d87908仍保留，需主控接受。B不得自行完成发布来填验证空缺。
+主控最新回报：已建/private/tmp/wiselink-integration-ab-20260923，A0c350f04+merge Bff46e1d9并补aac9产品/测试，41个staged路径、文档冲突已处理，已于本轮只读回读集成HEAD为e812421cb050aed0954ca3f6945159100155a301（tracked clean），推送另待两端精确SHA；主控随后回读Host release7688408024273652704 finished、commit_id=e812421cb050aed0954ca3f6945159100155a301、error_logs=[]。Luna已对准确HEAD0c350f04/MERGE_HEADff46e1d9组合16套203项、双端types/lint/build/precommit验证通过；前述门禁本身不是线上发布，发布另以本轮主控readback为据。旧release7687614542885374932/b023只属历史。B旧修复aac9bd64与审查28d87908仍保留，需主控接受。B不得自行完成发布来填验证空缺。
 
-主控尚未核验正常登录预览及可交付的已保存样本；不把旧URL、fixture或构造身份当业务验证。继续独立本地开发，与主控协调V/R。真实解析/翻译/评估仍需明确样本、预算和环境；不触发正式采用或AssessmentRun。
+主控已授权正常身份只读现有保存样本；B IAB自建tab1现场已登录、可见11文档，已核对既有5页样本/解析2及21%过期部分中文，未重解析/重生成。样本对应关系及匿名数值在/private/tmp/wiselink-vr-readonly-evidence-20260923.json，公共报告不提交原文/认证头。Hosted新Skill尚未安装；真实新解析/翻译/评估仍需样本、预算和环境授权，不触发正式采用或AssessmentRun。
 
 ## 当前与随后
 
-3A.2真实SQL/RLS、3A.3和2C.2独立验收已完成；2C.3/2C.4a已获独立验收，2C.4b已独立验收，2B.2交付后继续2C剩余生命周期、2D/3A剩余和3B定位，不忽略2B.2/2C/2D/3B。完整计划见OFFICIAL_CODEX_ROADMAP。Goal仅在全部要求证据齐备时关闭，不在子批交付时关闭。
+3A.2真实SQL/RLS、3A.3和2C.2独立验收已完成；2C.3/2C.4a已获独立验收，2C.4b已独立验收，2B.2已独立验收；3A.4、2D.1已独立验收；3B.1/3B.2均已独立验收，PDF目标定位修复已独立验收，知识→正式图谱身份修复已独立验收，当前保存工作历史成员有界并发待独立验收。继续其他来源plan消费者热点、跨任务公平持续推进及2C通用退出，不重复已通过检查，不忽略2B.2/2C/2D/3B。完整计划见OFFICIAL_CODEX_ROADMAP。Goal仅在全部要求证据齐备时关闭，不在子批交付时关闭。
+
+
+共享文件协调：A已明确允许B单写者修改JobAid buildInput分页循环/相关import及document-original-engineering-reading.ts。A另有b10e6e570知识观察增量（JobAidKnowledgeObservationStatus import/queryKnowledge约791–842行），B未触及；主控选择性合并本批小差异，保留A其余变更，不整文件覆盖。

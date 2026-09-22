@@ -93,3 +93,15 @@ A负责文档/事项解析后的关联上下文、JobAid动态问题分析、已
 确定性反例在修复前失败（已保存新轮时实际返回new-work而非old-work）；修复后同一请求保持旧轮一致快照，下一次读取显示新轮RUNNING，并分别验证新轮已保存/尚未保存两种情形。另验证三个真实repository查询都走同一事务执行器、数据库失败无降级，以及来源撤权拒绝。4套Jest共55项通过（current-execution/activity/read-lifecycle/continuation），3文件ESLint及diff-check通过。client typecheck通过；server首次只因沙箱不能写dist/tsconfig.node.tsbuildinfo失败，按同命令在获准A工作树写权限下复验exit 0。没有真实PostgreSQL并发、托管UI或模型运行证据；此处事务语义使用受控连接验证，仍须主控部署后按对应范围验收。
 
 范围仅canonical-jobaid-problem.service.ts、jobaid-work.repository.ts、jobaid-current-execution.spec.ts和本记录，不触碰B consumer区域。A不推送、不发布；完成提交后向专属Luna与主控交付准确SHA。
+
+## 2026-09-23 后续子批：知识工具实际状态可见
+
+父提交 `0c350f04c2da8f6e2257689092bf8b312497d342`。继续完整评估管线，主控独立负责e812部署。本次补足“按需来源取数→用户可见工具状态”的真实缺口：原queryKnowledge已有持久检索回执，但浏览器仅看材料数量，无法区分工具运行、失败和结果未知。
+
+不放开review_aily_query的service-role RLS，也不让浏览器读取查询/回答。复用已有ActionAttempt活动通道，queryKnowledge在调用前登记REQUESTED，收到真实工具回执后登记STARTING/RUNNING/COMPLETED/FAILED/UNKNOWN；无连接或授权过期登记UNAVAILABLE；异常只登记UNKNOWN再传播原异常，不断言远端失败、不新增重试。REQUESTED意为已登记调用，不证明远端已接收；观察不是另一份检索真源，也不证明当前进程仍存活。
+
+活动写入复用原recordSourceRead的来源锁、actor事务、任务输入hash/事项revision绑定和fresh lease fence，独立知识方法只接受枚举状态；时间由Host写入。原来源读取保留sourceRefs/purpose供既有来源授权使用。返回的知识事件仅投影原序号、已有时间、白名单状态，不输出queryRef、查询正文、回答、错误文本、token、session或私有推理。现有快照GET和JobAidExecutionActivity直接消费，activity-only变化继续触发更新；与读取/保存共用尾50原始记录窗口，损坏和省略计数保持真实。
+
+知识工具UI明确说明是观察记录，完成不代表原件已核实；无记录不等于已完成。新字段可选，旧Host无此字段时不假装存在工具记录。未加数据库表/迁移、新MCP工具、模型调用、原件缓存或全局调度；不碰B原件读取区域。已受控返回的查询内容仍仅经原授权来源及保存正文流程传递。
+
+直接验证：5套45项Jest通过（新增真实repository写入路径与source/binding/lease/cancel拒绝反例、原来源事件兼容；queryKnowledge实际回执状态/异常不重试/不可用/调用前再授权失败；projector白名单/缺时间/窗口/损坏；真实UI与activity-only更新；既有当前执行快照和读取生命周期）。server typecheck通过；client首次仅沙箱写tsbuildinfo EPERM，获准独立工作树写权限后同命令复验exit 0。受影响TS/TSX定向lint及diff-check通过。未运行真实PG/Hosted知识检索和浏览器自然调度；其部署与全链验收仍由主控协调，不把本批UI或单测视为完整Goal完成。

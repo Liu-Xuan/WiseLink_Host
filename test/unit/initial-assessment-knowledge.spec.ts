@@ -11,7 +11,7 @@ const queryRow = { query_ref: '11111111-1111-4111-8111-111111111111', query_text
   status: 'UNKNOWN', answer_text: 'Partial lead; verify the original', error_code: 'AILY_STREAM_RESULT_UNCONFIRMED', _created_at: '2026-09-10T00:00:00.000Z' };
 
 function harness() {
-  const work = { recordSourceRead: jest.fn().mockResolvedValue(undefined) };
+  const work = { recordKnowledgeObservation: jest.fn().mockResolvedValue(undefined), recordSourceRead: jest.fn().mockResolvedValue(undefined) };
   const evidence = initialKnowledgeEvidence(queryRow);
   const knowledge = { query: jest.fn().mockResolvedValue({ queryRef: queryRow.query_ref, status: 'UNKNOWN', evidence, candidateOnly: true, originalDocumentsVerified: false }) };
   const taskInput = { actorUserId: 'owner', sourceCatalog: [], sourceBindings: [],
@@ -44,7 +44,7 @@ test('lost lease or requested cancellation prevents retrieval and source-read mu
   for (const change of [{leaseToken:'other'}, {cancelRequestedAt:new Date()}, {status:'CANCELLED'}]) {
     const h = harness(); Object.assign(h.authorized.row,change);
     await expect(h.service.queryKnowledge({...control,requestKey:'request',query:'query'})).rejects.toThrow('JOBAID_WORK_LEASE_FENCE_REJECTED');
-    expect(h.knowledge.query).not.toHaveBeenCalled(); expect(h.work.recordSourceRead).not.toHaveBeenCalled();
+    expect(h.knowledge.query).not.toHaveBeenCalled(); expect(h.work.recordSourceRead).not.toHaveBeenCalled(); expect(h.work.recordKnowledgeObservation).not.toHaveBeenCalled();
   }
 });
 
@@ -55,4 +55,37 @@ test('missing connector or expired user grant remains an explicit unavailable re
   h.authorized.task.allowedConnectors=['feishu-aily-user'];
   h.knowledge.query.mockRejectedValue(new Error('AILY_USER_REAUTHORIZATION_REQUIRED'));
   expect((await h.service.queryKnowledge({...control,requestKey:'request',query:'query'})).status).toBe('UNAVAILABLE');
+});
+
+
+test.each(['STARTING', 'RUNNING', 'COMPLETED', 'FAILED', 'UNKNOWN'])('observes the actual %s tool receipt without copying query text or errors', async status => {
+  const h = harness();
+  h.knowledge.query.mockResolvedValue({ queryRef: 'private-ref', status, evidence: [], candidateOnly: true, originalDocumentsVerified: false });
+  await h.service.queryKnowledge({ ...control, requestKey: 'private-request', query: 'private-query' });
+  expect(h.work.recordKnowledgeObservation.mock.calls.map(([input]) => input.status)).toEqual(['REQUESTED', status]);
+  expect(h.work.recordKnowledgeObservation).toHaveBeenLastCalledWith({ row: h.authorized.row, actorUserId: 'owner',
+    fence: expect.objectContaining(control), sourceBindings: [], status });
+  for (const [input] of h.work.recordKnowledgeObservation.mock.calls) {
+    expect(input.query).toBeUndefined(); expect(input.queryRef).toBeUndefined(); expect(input.error).toBeUndefined();
+  }
+  expect(h.work.recordSourceRead).not.toHaveBeenCalled();
+});
+
+test('records unavailable and unknown results honestly, without retrying the tool', async () => {
+  const h = harness();
+  h.authorized.task.allowedConnectors = [];
+  await h.service.queryKnowledge({ ...control, requestKey: 'request', query: 'query' });
+  expect(h.work.recordKnowledgeObservation).toHaveBeenLastCalledWith(expect.objectContaining({ status: 'UNAVAILABLE' }));
+  h.authorized.task.allowedConnectors = ['feishu-aily-user'];
+  h.knowledge.query.mockRejectedValue(new Error('private-transport-error'));
+  await expect(h.service.queryKnowledge({ ...control, requestKey: 'request', query: 'query' })).rejects.toThrow('private-transport-error');
+  expect(h.work.recordKnowledgeObservation).toHaveBeenLastCalledWith(expect.objectContaining({ status: 'UNKNOWN' }));
+  expect(h.knowledge.query).toHaveBeenCalledTimes(1);
+});
+
+test('does not dispatch when the observation source/lease recheck fails', async () => {
+  const h = harness();
+  h.work.recordKnowledgeObservation.mockRejectedValue(new Error('JOBAID_SOURCE_READ_BINDING_CHANGED'));
+  await expect(h.service.queryKnowledge({ ...control, requestKey: 'request', query: 'query' })).rejects.toThrow('JOBAID_SOURCE_READ_BINDING_CHANGED');
+  expect(h.knowledge.query).not.toHaveBeenCalled();
 });

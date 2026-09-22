@@ -17,9 +17,9 @@ export class DocumentSemanticService {
   constructor(@Inject(DRIZZLE_DATABASE) private readonly db: PostgresJsDatabase,
     private readonly revisions: DocumentSemanticRevisionRepository) {}
 
-  /** Control-only readiness for an already authorized exact parse. */
-  async readReady(scope: Scope, parseRunId: string) {
-    return this.revisions.readReady(scope, parseRunId);
+  /** Registered semantic identity for an already authorized exact parse; no map hydration. */
+  async readReady(scope: Scope, parseRunId: string, revision?: number) {
+    return this.revisions.readReady(scope, parseRunId, revision);
   }
 
   /** Pure organization is saved by the existing authorized INDEX operation, never by GET. */

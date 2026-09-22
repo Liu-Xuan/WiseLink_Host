@@ -13,12 +13,15 @@ import { decodeExtractedMetadataTitle } from './document-metadata-decode';
 import { DocumentStepLeaseRepository, type DocumentStepFence } from './document-step-lease.repository';
 import { DocumentOfficialPluginService } from './document-official-plugin.service';
 import { DocumentOriginalStore, type DocumentOriginalBundle } from './document-original-store';
-import { extractDocumentPdfPages, type DocumentPdfExtraction } from './document-original-pdf';
+import { openDocumentPdfSession, type DocumentPdfSession, type DocumentPdfExtraction } from './document-original-pdf';
 import { composeDocumentOriginal } from './document-original-compose';
 import { documentOriginalStructuredSource, documentOriginalReadingCoverage } from './document-original-adapter';
 
 type ReadScope = { actorUserId: string; tenantId: string; roles: string[] };
 const PAGE_GROUP_SIZE = 8;
+const MAX_PAGE_GROUPS_PER_STEP = 2;
+const STEP_CONTINUATION_BUDGET_MS = 10_000;
+const MAX_CONTINUATION_SOURCE_BYTES = 16 * 1024 * 1024;
 
 @Injectable()
 // Registered by DocumentManagementHostedModule.register().
@@ -82,6 +85,8 @@ export class DocumentParsingHostedService {
   }
 
   async executeStep(parseRunId: string, context: ReadScope & { documentVersionId: string }, fence: DocumentStepFence): Promise<DocumentOriginalStepResult> {
+    const executionStartedAt = performance.now();
+    let pdfSession: DocumentPdfSession | undefined;
     if (fence.parseRunId !== parseRunId) throw documentParseError('DOCUMENT_STEP_LEASE_REJECTED');
     const scope = { ...context };
     await this.leases.check(scope, fence);
@@ -158,7 +163,11 @@ export class DocumentParsingHostedService {
         assertPageChunk(chunk, start, null);
         currentPages.set(start, chunk); pageCount = chunk.pageCount; pageStart = start + chunk.pages.length;
       }
-      if (pageCount === null || pageStart < pageCount) {
+      let groupsProcessed = 0;
+      // Continue only a bounded amount of ready local work. Every group is saved
+      // before another begins; no PDF/bytes survive this request or lease scope.
+      while (pageCount === null || pageStart < pageCount) {
+        await assertActive();
         const path = `original/pages-${pageStart}.json`;
         // Recover a lost upload/progress response at exactly the next path before extracting again.
         let recovered = await this.store.recover(storage, 'MANIFEST', path);
@@ -167,16 +176,22 @@ export class DocumentParsingHostedService {
           const bytes = new Uint8Array(await this.store.read(reusable.scope, reusablePage));
           recovered = { bytes, artifact: await this.store.save(storage, 'MANIFEST', bytes, record, path) };
         }
+        if (!recovered && !pdfSession) pdfSession = await openDocumentPdfSession({ bytes: original.bytes, assertActive });
         const chunk: DocumentPdfExtraction = recovered
           ? JSON.parse(Buffer.from(recovered.bytes).toString('utf8'))
-          : await extractDocumentPdfPages({ bytes: original.bytes, pageStart, pageCount: PAGE_GROUP_SIZE, assertActive });
+          : await pdfSession!.extract({ pageStart, pageCount: PAGE_GROUP_SIZE });
         assertPageChunk(chunk, pageStart, pageCount);
         const artifact = recovered ? recovered.artifact
           : await this.store.save(storage, 'MANIFEST', Buffer.from(JSON.stringify(chunk)), record, path);
         if (recovered) await record(artifact);
         currentPages.set(pageStart, chunk); pageArtifacts.push(artifact);
         pageCount = chunk.pageCount; pageStart += chunk.pages.length;
+        groupsProcessed += 1;
+        if (groupsProcessed >= MAX_PAGE_GROUPS_PER_STEP || original.byteLength > MAX_CONTINUATION_SOURCE_BYTES ||
+            performance.now() - executionStartedAt >= STEP_CONTINUATION_BUDGET_MS) break;
       }
+      // Drop the decoder before final assembly loads the remaining saved groups.
+      if (pdfSession) { await pdfSession.destroy(); pdfSession = undefined; }
       if (pageStart < pageCount!) return stepResult(run, {
         knownPageCount: pageCount,
         readPageIndexes: Array.from({ length: pageStart }, (_, index) => index),
@@ -214,7 +229,7 @@ export class DocumentParsingHostedService {
       try { await this.repository.recordStepFailure(scope, fence, code); }
       catch { this.logger.error(`Document step ${parseRunId} failure record rejected; durable lease/deadline remains authoritative.`); }
       throw error;
-    }
+    } finally { await pdfSession?.destroy(); }
   }
 
   async read(documentVersionId: string, parseRunId: string | undefined, context: ReadScope): Promise<DocumentParsedReading> {
@@ -237,6 +252,27 @@ export class DocumentParsingHostedService {
       markdown: loaded.document.markdown, assets: Object.fromEntries(Object.keys(loaded.images).map(path => [path,
         `/api/document-management/document-versions/${encodeURIComponent(documentVersionId)}/parse-runs/${encodeURIComponent(run.parseRunId)}/asset?path=${encodeURIComponent(path)}`])),
       projection: buildMineruReadingProjection(loaded.document, { documentVersionId, parseRunId: run.parseRunId }) };
+  }
+
+  /** Read-side registry identity, not an object-store content-health check. */
+  async inspectPublishedIdentity(documentVersionId: string, parseRunId: string, context: ReadScope) {
+    const source = await this.authorizedSource(documentVersionId, context);
+    const run = await this.publishedRun(documentVersionId, parseRunId, context);
+    const binding = originalBinding(run);
+    const manifest = run.manifestArtifact!;
+    if (run.tenantId !== context.tenantId || run.documentVersionId !== documentVersionId || run.parseRunId !== parseRunId
+      || manifest.relativePath !== 'original/manifest.json' || manifest.role !== 'MANIFEST' || manifest.readback !== 'VERIFIED'
+      || !Number.isSafeInteger(binding.parseRevision) || binding.parseRevision < 1
+      || source.version.documentVersionId !== documentVersionId || run.sourceBinding.documentVersionId !== documentVersionId
+      || run.sourceBinding.documentId !== source.version.documentId || run.sourceBinding.familyId !== source.version.familyId
+      || source.family.familyId !== source.version.familyId
+      || binding.sourceArtifactId !== source.version.sourceArtifactId || binding.sourceArtifactId !== source.source.sourceArtifactId
+      || binding.sourceSha256 !== source.version.pdfSha256 || binding.sourceSha256 !== source.source.sha256
+      || binding.sourceByteLength !== source.version.byteLength || binding.sourceByteLength !== source.source.byteLength) {
+      throw documentParseError('DOCUMENT_PARSE_SOURCE_CHANGED');
+    }
+    await this.assertRead(documentVersionId, context);
+    return { familyId: source.family.familyId, binding };
   }
 
   async loadPublished(documentVersionId: string, parseRunId: string, context: ReadScope) {

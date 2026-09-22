@@ -1,9 +1,10 @@
+import type { JobAidKnowledgeObservationStatus } from '@shared/jobaid-activity.interface';
 import { projectJobAidActivity } from './jobaid-activity';
 import { originalApplicabilityResultMatches } from './original-applicability-currentness';
 import { InitialAssessmentKnowledgeService } from './initial-assessment-knowledge.service';
 import { UnifiedReaderService } from '../unified-reader/unified-reader.service';
 import { DocumentSemanticService } from './document-semantic.service';
-import { documentOriginalEngineeringReading, findDocumentOriginalEvidence } from './document-original-engineering-reading';
+import { prepareDocumentOriginalEngineeringReader, findDocumentOriginalEvidence } from './document-original-engineering-reading';
 import { Inject, Injectable, Optional } from '@nestjs/common';
 import type { PostgresJsDatabase } from '@lark-apaas/fullstack-nestjs-core';
 import type { AssessmentEvidence } from '@shared/assessment-reading.interface';
@@ -505,8 +506,9 @@ export class CanonicalJobAidProblemService {
     const assessmentWorkItem = workItem.applicability?.schemaVersion==='wiselink.3_1.applicability_candidate_projection.v3' &&
       !originalApplicabilityResultMatches(workItem,original.original.binding) ? {...workItem,applicability:null} : workItem;
     const primaryByRef = new Map<string, AssessmentEvidence>();
+    const readOriginal = prepareDocumentOriginalEngineeringReader(original);
     for (let offset=0; offset<original.structuredSource.units.length; offset+=20)
-      for (const evidence of documentOriginalEngineeringReading(original,offset,20).evidence)
+      for (const evidence of readOriginal(offset,20).evidence)
         primaryByRef.set(evidence.evidenceRef,{...evidence,workItemId:workItem.workItemId});
     if (!primaryByRef.size) throw new Error('DOCUMENT_ORIGINAL_NO_READABLE_EVIDENCE');
     const originalUnits = original.structuredSource.units.map(unit => ({unitId:unit.unitId,kind:unit.kind,
@@ -787,11 +789,16 @@ export class CanonicalJobAidProblemService {
       scope.tenantId,
       scope.workItemId,
     );
+    const observe = (status: JobAidKnowledgeObservationStatus) =>
+      this.work.recordKnowledgeObservation({ row, actorUserId: taskInput.actorUserId,
+        fence: { ...input, principalId: scope.principalId },
+        sourceBindings: taskInput.sourceBindings, status });
     if (
       !this.knowledge ||
       !taskInput.knowledgeBinding ||
       !task.allowedConnectors.includes('feishu-aily-user')
-    )
+    ) {
+      await observe('UNAVAILABLE');
       return {
         queryRef: null,
         status: 'UNAVAILABLE',
@@ -800,14 +807,8 @@ export class CanonicalJobAidProblemService {
         candidateOnly: true,
         originalDocumentsVerified: false,
       };
-    await this.work.recordSourceRead({
-      row,
-      actorUserId: taskInput.actorUserId,
-      fence: { ...input, principalId: scope.principalId },
-      sourceBindings: taskInput.sourceBindings,
-      sourceRefs: [],
-      purpose: '按需知识检索授权检查',
-    });
+    }
+    await observe('REQUESTED');
     let receipt;
     try {
       receipt = await this.knowledge.query(
@@ -824,7 +825,8 @@ export class CanonicalJobAidProblemService {
       if (
         error instanceof Error &&
         error.message === 'AILY_USER_REAUTHORIZATION_REQUIRED'
-      )
+      ) {
+        await observe('UNAVAILABLE');
         return {
           queryRef: input.queryRef ?? null,
           status: 'UNAVAILABLE',
@@ -833,8 +835,12 @@ export class CanonicalJobAidProblemService {
           candidateOnly: true,
           originalDocumentsVerified: false,
         };
+      }
+      // An exception does not prove that a remote query failed or never started.
+      await observe('UNKNOWN');
       throw error;
     }
+    await observe(receipt.status);
     if (receipt.evidence.length)
       await this.work.recordSourceRead({
         row,
