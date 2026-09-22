@@ -242,9 +242,9 @@ export async function invokeHostedJobAidProblemModel(
     expectedWorkRevision, saved, corrections, inputUnits, outputUnits, scopeAdjustments, sourceMetadata });
   const taskDeadlineMs = options.taskDeadline === undefined ? Infinity : Date.parse(options.taskDeadline);
   if (Number.isNaN(taskDeadlineMs)) throw new Error('JOBAID_TASK_DEADLINE_INVALID');
-  // Matter already has an absolute Host deadline. Its model budget measures
+  // A checkpointed assessment with an absolute Host deadline measures
   // actual recorded execution, not maintenance downtime between completed rounds.
-  const activeModelBudget = operation === 'ASSESS_MATTER' && checkpoint && Number.isFinite(taskDeadlineMs);
+  const activeModelBudget = checkpoint && Number.isFinite(taskDeadlineMs);
   let modelExecutionMs = 0;
   const accountedRounds = new Set();
   const accountRound = async number => {

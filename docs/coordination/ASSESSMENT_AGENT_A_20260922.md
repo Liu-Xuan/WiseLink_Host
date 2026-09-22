@@ -29,3 +29,19 @@ A负责文档/事项解析后的关联上下文、JobAid动态问题分析、已
 - git diff --check：通过。
 
 这些是本地受控模型/工具驱动证据，不是实际Hosted模型验收。真实验收应使用明确获准的重新评估任务，确认原工作保留、本轮新保存、准确FINISH与Overall引用关系；不要为测试重放未知在途请求。需要主控部署相应Skill脚本，单独Host发布不会安装此改动。
+
+## 2026-09-23 子批：WorkItem原请求的逐轮接续
+
+父提交 `35a7420c02b399dc9f03fd6540e787433d2138f5`。增加真实consumer接线而不是只传checkpoint：
+
+- 新JobAid/Overall problem-v2调用持久化当前claim及逐轮assessment状态。旧版本只有外层model.started的任务不自动迁移或重放。
+- Host报告BUSY时，只对同一事项/文档版本/操作/明确request及attempt、无run-result/commit-started、在Host原deadline内的已过期本地claim做候选检查。本地文件不证明停止；fresh begin必须重新通过Host来源授权，并返回完全相同task及更高leaseGeneration，才继续。若旧worker已续租而返回原代际，保持BUSY，不调用模型、不取消它。
+- 当前轮模型started但没有result时返回明确的INITIAL_ASSESSMENT_MODEL_OUTCOME_UNKNOWN，不claim、不重新请求模型。已完成模型响应与稳定save requestId由原driver恢复。自然调度仍以每subject唯一native job为前提，不新增第二执行者或强抢活跃租约。
+- problem-v2的心跳、来源读取、知识查询/精确读回与工作保存直接经Host，不重放旧工具回执；保存和查询幂等身份仍由逐轮driver和Host控制。最终commit沿用原unknown处理，不进入模型接续分支。
+- WorkItem现在和Matter一样，在存在真实Host绝对deadline时按已持久模型执行时长计原模型预算，排除维护/租约等待时间，但不延后Host绝对deadline，不增加模型预算。无deadline仍沿用原墙钟预算。
+
+本批文件：consumer、恢复资格/新claim辅助模块、JobAid driver、恢复测试、driver测试及本记录。没有修改Host协议、数据库或权限。
+
+直接验证：5个Node测试文件共100/100通过，含8个恢复检查/consumer接线用例、WorkItem与Matter实际driver的停机预算/已完成响应复用/未知响应拒绝反例；定向ESLint通过。consumer测试的Host与runInitial/model为受控替身，driver测试使用受控gateway；没有实际杀死托管进程、真实Host领取/PG租约竞争或真实模型恢复证据，不把本地通过表述为托管验收完成。
+
+主控交Luna独立验收时重点核对：新版本正常JobAid保存后运行中断、等待原lease失效且deadline尚未过时同一request重新领取；已保存正文不退回或重复保存，后续模型只调用未完成轮；授权撤回、原代际仍活跃、模型响应未知、commit已开始均不重放。相应Skill需按主控发布流程安装后才可验证。本批不自行发布，完整评估智能体目标保持未完成。
