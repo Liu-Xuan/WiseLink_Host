@@ -1,7 +1,7 @@
 import { createElement } from 'react';
 import { act } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
-import { MemoryRouter } from 'react-router-dom';
+import { MemoryRouter, useLocation } from 'react-router-dom';
 import type {
   EngineeringMatterCatalogEntry,
   EngineeringMatterReadModel,
@@ -48,6 +48,9 @@ jest.mock('@client/src/components/ui/dialog', () => ({
   DialogTitle: ({ children }: { children?: React.ReactNode }) => createElement('h2', null, children),
 }));
 
+jest.mock('@client/src/components/CurrentUserControl', () => ({ __esModule: true, default: () => null }));
+jest.mock('@client/src/features/atlas/AtlasLauncher', () => ({ __esModule: true, default: () => null }));
+import TopBar from '../../client/src/features/navigation/TopBar';
 import Sidebar from '../../client/src/features/navigation/Sidebar';
 
 function entry(
@@ -128,6 +131,12 @@ describe('sidebar global navigation identity', () => {
     dom.window.close();
   });
 
+  function Toolbar() {
+    const location = useLocation();
+    return createElement('div', null, createElement('output', { id: 'route' }, location.pathname + location.search),
+      createElement(TopBar, { pathname: location.pathname, search: location.search, mobileNavOpen: false, onToggleMobile: () => undefined }));
+  }
+
   async function mount(path: string) {
     root = createRoot(container);
     await act(async () =>
@@ -135,6 +144,7 @@ describe('sidebar global navigation identity', () => {
         createElement(
           MemoryRouter,
           { initialEntries: [path] },
+          createElement(Toolbar),
           createElement(Sidebar, {
             mobileOpen: false,
             onMobileClose: () => undefined,
@@ -226,8 +236,21 @@ describe('sidebar global navigation identity', () => {
   it('E1 FINAL: graph sidebar preserves explicit activity identity even with matter context', async () => { mockGetMatter.mockResolvedValue(matterWith([entry('DV-CUR', true)])); await mount('/graph?matterId=M1&documentVersionId=DV-HIST&parseRunId=P1&candidateRevision=2&runRef=R2&returnLibraryQuery=mode%3Ddocument'); const query = new URLSearchParams(href('关系图谱')!.split('?')[1]); expect(query.get('documentVersionId')).toBe('DV-HIST'); expect(query.get('parseRunId')).toBe('P1'); expect(query.get('returnLibraryQuery')).toBe('mode=document'); });
   it('keeps the saved knowledge matter and revision instead of opening a default matter', async () => {
     await mount('/knowledge?subjectKind=ENGINEERING_MATTER&subjectId=M-SAVED&workRef=MWREV-OLD&articleY=19000');
-    expect(href('关系图谱')).toBe('/graph?matterId=M-SAVED&workRef=MWREV-OLD');
+    const graph = new URL(href('关系图谱')!, 'https://example.test');
+    expect(graph.searchParams.get('matterId')).toBe('M-SAVED');
+    expect(graph.searchParams.get('workRef')).toBe('MWREV-OLD');
+    expect(new URLSearchParams(graph.searchParams.get('returnKnowledgeQuery')!).get('articleY')).toBe('19000');
     expect(mockGetMatter).not.toHaveBeenCalled();
+    mockGetMatter.mockResolvedValue(matterWith([]));
+    await act(async () => container.querySelector<HTMLAnchorElement>('a[aria-label="关系图谱"]')!.click());
+    const back = container.querySelector<HTMLButtonElement>('.wl-pagebar-back')!;
+    expect(back.getAttribute('aria-label')).toBe('返回工程知识');
+    await act(async () => back.click());
+    const restored = new URL(container.querySelector('#route')!.textContent!, 'https://example.test');
+    expect(restored.pathname).toBe('/knowledge');
+    expect(restored.searchParams.get('subjectId')).toBe('M-SAVED');
+    expect(restored.searchParams.get('workRef')).toBe('MWREV-OLD');
+    expect(restored.searchParams.get('articleY')).toBe('19000');
   });
 
   it.each([

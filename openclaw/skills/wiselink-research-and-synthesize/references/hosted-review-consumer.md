@@ -129,6 +129,8 @@ node <installed-skill-path>/scripts/consume-hosted-work-item.mjs --document-vers
 
 该参数与 WorkItem/Matter 主体互斥。Host 必须已配置获准文档、真实 actor/tenant 和官方服务主体；不能造 WorkItem 或借用其他材料授权。消费者先 STATUS，再按 Host 保存的确切 parseRun 执行有界 STEP；发布后原文 INDEX 和独立中文消费分别保存结果。中文或索引一支失败不抹去另一支已保存成果。关闭浏览器不负责下一步唤醒，运行必须来自真实配置的云端消费者。
 
+每次文档 tick 仍最多执行一个解析 STEP。只有该 STEP 明确返回 PUBLISHED，且从本轮开始不足 10 秒，才 fresh STATUS 重核同一 documentVersionId/parseRun；仍为 PUBLISHED、没有新活动或精读待办且重核后仍在预算内时，最多接续既有 INDEX/中文阶段一次。版本/状态变化或耗时达到预算时保留解析结果，交还下一次自然调度；未知 STEP 回执不重放。此预算只限制接续的启动，不中断已经开始的 Host 操作，也不代表全局并发调度或总执行时长上限。
+
 工程任务读取 Host 绑定的原文 parseRun/SourceRef，保留 coverage 与未读范围；文件中文不进入工程证据。READ_ORIGINAL 的实际读回才建立本轮读取回执，旧引用不能证明本轮比较。原文事件与到期复看由 Host 的持久条件和任务有效性决定，不由消费者制造时间条件、清理历史请求或反复重启失败任务。
 
 

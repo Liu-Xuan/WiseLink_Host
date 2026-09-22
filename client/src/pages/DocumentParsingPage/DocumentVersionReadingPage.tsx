@@ -16,7 +16,7 @@ import { documentIdentityPresentation, libraryVersionLabel } from '../WorkspaceH
 
 export default function DocumentVersionReadingPage() {
   const { documentVersionId = '' } = useParams();
-  const [searchParams] = useSearchParams();
+  const [searchParams, setSearchParams] = useSearchParams();
   const requestedRun = searchParams.get('parseRunId') || null;
   const requestedSource = searchParams.get('sourceRef') || null;
   const unboundEvidence = searchParams.getAll('unboundEvidence').length === 1 &&
@@ -180,6 +180,20 @@ export default function DocumentVersionReadingPage() {
     void load();
     return () => { controller.abort(); if (timer) clearTimeout(timer); };
   }, [readingIdentity, currentReading?.parseRunId, view, refresh]);
+  const persistOriginalLocation = (page: number, unitId: string) => {
+    if (!currentReading?.original || !Number.isSafeInteger(page) || page < 1) return;
+    const unit = currentReading.original.source.units.find(item => item.unitId === unitId);
+    const sourceRef = unit?.sourceRefIds.find(ref => currentReading.original!.locations.some(
+      location => location.sourceRefId === ref && location.pageIndex === page - 1,
+    ));
+    if (!sourceRef) return;
+    // Record the actual registered page choice, including multi-page units.
+    // Pin the saved parse before leaving; latest must not reinterpret an old anchor.
+    const next = new URLSearchParams(searchParams);
+    next.set('parseRunId', currentReading.parseRunId);
+    next.set('sourceRef', sourceRef);
+    setSearchParams(next, { replace: true });
+  };
   const locateTranslationSource = (unitId: string, sourceRef: string) => {
     const location = currentReading?.original?.locations.find(item => item.sourceRefId === sourceRef);
     setTranslationUnitId(unitId);
@@ -297,6 +311,7 @@ export default function DocumentVersionReadingPage() {
           initialPage={initialLocationPage}
           initialUnitId={initialLocationUnitId}
           initialLocationRequest={translationLocationRequest}
+          onLocationSelect={persistOriginalLocation}
           bilingualContent={<section aria-label="已保存中文阅读">
             {translationError && <p role="alert">{translationError}</p>}
             {currentTranslation && !currentTranslation.execution && <p role="status">{waitingForTranslationStart ? '正在等待中文任务启动…' : '尚未检测到中文任务启动，可稍后刷新。'}</p>}

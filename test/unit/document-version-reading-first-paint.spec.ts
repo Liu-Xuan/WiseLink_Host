@@ -30,8 +30,11 @@ jest.mock('@client/src/pages/DocumentParsingPage/SemanticBilingualReader', () =>
     '双语对照已渲染'),
 }));
 jest.mock('@client/src/pages/DocumentParsingPage/DocumentSourceReadingWorkspace', () => ({
-  DocumentSourceReadingWorkspace: (props: { mode: string; onModeChange: (mode: string) => void; bilingualContent: ReactNode; initialPage?: number; initialUnitId?: string }) =>
+  DocumentSourceReadingWorkspace: (props: { mode: string; onModeChange: (mode: string) => void; bilingualContent: ReactNode; initialPage?: number; initialUnitId?: string; onLocationSelect?: (page: number, unitId: string) => void }) =>
     createElement('div', { 'data-mode': props.mode, 'data-initial-page': props.initialPage, 'data-initial-unit': props.initialUnitId },
+      createElement('button', { id: 'select-original-source', onClick: () => props.onLocationSelect?.(2, 'u2') }, '定位原文段落'),
+      createElement('button', { id: 'select-unregistered-page', onClick: () => props.onLocationSelect?.(3, 'u2') }, '未登记页'),
+      createElement('button', { id: 'select-unknown-source', onClick: () => props.onLocationSelect?.(2, 'unregistered-unit') }, '未知段落'),
       createElement('button', { id: 'switch-bilingual', onClick: () => props.onModeChange('bilingual') }, '切中英对照'),
       createElement('button', { id: 'switch-translation', onClick: () => props.onModeChange('translation') }, '切中文阅读'),
       props.bilingualContent),
@@ -83,7 +86,7 @@ const oldGlobals = new Map<string, PropertyDescriptor | undefined>();
 
 async function mount(query = '') {
   router = createMemoryRouter(
-    [{ path: '/document-versions/:documentVersionId', element: createElement(DocumentVersionReadingPage) }],
+    [{ path: '/document-versions/:documentVersionId', element: createElement(DocumentVersionReadingPage) }, { path: '/library', element: createElement('p', null, 'library') }],
     { initialEntries: [`/document-versions/DV1${query ? `?${query}` : ''}`], future: { v7_relativeSplatPath: true } },
   );
   root = createRoot(container);
@@ -328,4 +331,43 @@ it('independent P1: a status poll 403 clears an already loaded unpinned body and
     expect(mockStatus).toHaveBeenCalledTimes(2);
     expect(mockReading).toHaveBeenCalledTimes(1);
   } finally { jest.useRealTimers(); }
+});
+
+it('persists a selected registered paragraph across actual route unmount and history return', async () => {
+  await mount('parseRunId=PR1&sourceRef=SR-TEST-P1&returnLibraryQuery=mode%3Ddocument&returnDocumentVersionId=DV1');
+  await act(async () => container.querySelector<HTMLButtonElement>('#select-original-source')!.click());
+  const state = new URLSearchParams(router.state.location.search);
+  expect(state.get('sourceRef')).toBe('SR-TEST-P2');
+  expect(state.get('parseRunId')).toBe('PR1');
+  expect(state.get('returnLibraryQuery')).toBe('mode=document');
+  expect(mockReading).toHaveBeenCalledTimes(1);
+  expect(container.querySelector('[data-initial-page="2"]')).not.toBeNull();
+  await navigate('/library');
+  mockStatus.mockResolvedValue({ ...statusPayload(), publishedRun: { parseRunId: 'PR-NEW', parseRevision: 4 } });
+  await act(async () => { await router.navigate(-1); });
+  expect(container.querySelector('[data-initial-page="2"]')).not.toBeNull();
+  expect(container.querySelector('[data-initial-unit="u2"]')).not.toBeNull();
+  expect(mockReading).toHaveBeenCalledTimes(2); // fresh authorized read on real remount
+  expect(mockReading).toHaveBeenLastCalledWith('DV1', 'PR1', expect.anything());
+});
+it('pins an unpinned reader to the saved parse when recording a location and ignores unknown units', async () => {
+  await mount();
+  await act(async () => container.querySelector<HTMLButtonElement>('#select-unknown-source')!.click());
+  expect(router.state.location.search).toBe('');
+  await act(async () => container.querySelector<HTMLButtonElement>('#select-original-source')!.click());
+  const state = new URLSearchParams(router.state.location.search);
+  expect(state.get('parseRunId')).toBe('PR1');
+  expect(state.get('sourceRef')).toBe('SR-TEST-P2');
+});
+
+it('records the selected registered page of a multi-page unit and rejects an unregistered page', async () => {
+  const reading = readingPayload();
+  reading.original.source.units[1].sourceRefIds = ['SR-TEST-P1', 'SR-TEST-P2'];
+  mockReading.mockResolvedValue(reading);
+  await mount('parseRunId=PR1');
+  await act(async () => container.querySelector<HTMLButtonElement>('#select-unregistered-page')!.click());
+  expect(new URLSearchParams(router.state.location.search).has('sourceRef')).toBe(false);
+  await act(async () => container.querySelector<HTMLButtonElement>('#select-original-source')!.click());
+  expect(new URLSearchParams(router.state.location.search).get('sourceRef')).toBe('SR-TEST-P2');
+  expect(mockReading).toHaveBeenCalledTimes(1);
 });

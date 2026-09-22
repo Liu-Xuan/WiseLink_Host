@@ -79,6 +79,12 @@ function MatterGraphContent({
   const navigate = useNavigate();
   const [params, setParams] = useSearchParams();
   const paramsString = params.toString();
+  const knowledgeReturn = params.has('returnKnowledgeQuery')
+    ? (params.getAll('returnKnowledgeQuery').length === 1 ? params.get('returnKnowledgeQuery')! : '')
+    : null;
+  const returnContext = useMemo(() => new URLSearchParams(
+    knowledgeReturn === null ? undefined : { returnKnowledgeQuery: knowledgeReturn },
+  ), [knowledgeReturn]);
   const [navigation, setNavigation] = useState(() => ({
     key: 0,
     state: readGraphReadingState(params),
@@ -199,6 +205,7 @@ function MatterGraphContent({
           matterId,
           read.graph?.workRef ?? (workRef || null),
           displayState.current,
+          returnContext,
         ),
       ),
     );
@@ -229,6 +236,7 @@ function MatterGraphContent({
         matterId,
         read.graph?.workRef ?? (workRef || null),
         displayState.current,
+        returnContext,
       );
       const query = new URLSearchParams({
         documentVersionId: pins.documentVersionId,
@@ -242,7 +250,7 @@ function MatterGraphContent({
       if (pins.anchorId) query.set('anchor', pins.anchorId);
       navigate(`/timeline?${query}`);
     },
-    [matterId, read.graph, workRef, navigate],
+    [matterId, read.graph, workRef, navigate, returnContext],
   );
   useEffect(
     () => () => {
@@ -265,13 +273,13 @@ function MatterGraphContent({
   }, [paramsString]);
   const persistState = useCallback(
     (state: SuiteGraphReadingState) => {
-      const next = graphReadingParams(matterId, workRef || null, state);
+      const next = graphReadingParams(matterId, workRef || null, state, returnContext);
       const serialized = next.toString();
       if (serialized === lastWritten.current) return;
       lastWritten.current = serialized;
       setParams(next, { replace: true });
     },
-    [matterId, workRef, setParams],
+    [matterId, workRef, setParams, returnContext],
   );
   const handleStateChange = useCallback(
     (state: SuiteGraphReadingState, beforeNavigation = false) => {

@@ -2,8 +2,8 @@ import { Fragment, useEffect, useRef, useState } from 'react';
 import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import { BookOpen, ChevronDown, ChevronRight, Search } from 'lucide-react';
 import type { CanonicalLibraryDocumentsResponse, CanonicalLibraryDocumentVersionSummary } from '@shared/api.interface';
-import type { EngineeringKnowledgeEntry, EngineeringKnowledgeIdentity, EngineeringKnowledgePage, EngineeringKnowledgeRead, EngineeringKnowledgeScope } from '@shared/engineering-issue-search.interface';
-import { getCanonicalLibraryDocuments, readEngineeringKnowledgeCatalogue, readEngineeringKnowledgeWork } from '@client/src/api/canonical-host';
+import type { EngineeringKnowledgeEntry, EngineeringKnowledgeIdentity, EngineeringKnowledgeScope } from '@shared/engineering-issue-search.interface';
+import { getCanonicalLibraryDocuments } from '@client/src/api/canonical-host';
 import { useCurrentUserSession } from '@client/src/app/providers/CurrentUserSessionProvider';
 import EngineeringIssueBody from '@client/src/features/matter/EngineeringIssueBody';
 import { JobAidIssueArticle } from '@client/src/pages/DocumentParsingPage/JobAidIssueArticle';
@@ -18,6 +18,7 @@ import MatterDocumentSourceDialog from '@client/src/features/matter/MatterDocume
 import OverviewCorrectionNotices from '@client/src/features/matter/OverviewCorrectionNotices';
 import ReferenceWorkNotices from '@client/src/features/matter/ReferenceWorkNotices';
 import OverviewSourceWork from '@client/src/features/matter/OverviewSourceWork';
+import { useKnowledgeResources } from './useKnowledgeResources';
 import './knowledge-lookup.css';
 import './knowledge-suite.css';
 
@@ -50,19 +51,19 @@ function KnowledgeCatalogue() {
   const identity = identityPin.state === 'ok' ? identityPin.identity : null;
   const selection = identity ? keyOf(identity) : '';
   const listKey = JSON.stringify([query, scope, kind, after]);
-  const [loadedPage, setPage] = useState<EngineeringKnowledgePage | null>(null);
+  const knowledge = useKnowledgeResources(query, scope, after, identity, kind === 'works');
   const [loadedDocuments, setDocuments] = useState<CanonicalLibraryDocumentsResponse | null>(null);
-  const [loadedRead, setRead] = useState<EngineeringKnowledgeRead | null>(null);
-  const [loading, setLoading] = useState(true), [readBusy, setReading] = useState(false);
-  const [error, setError] = useState(''), [readFailure, setReadError] = useState('');
-  const [readRequestKey, setReadRequestKey] = useState('');
-  const reading = Boolean(selection && (readRequestKey !== selection || readBusy));
-  const readError = readRequestKey === selection ? readFailure : '';
+  const [documentsLoading, setDocumentsLoading] = useState(true);
+  const [documentsError, setDocumentsError] = useState('');
   const [loadedKey, setLoadedKey] = useState('');
-  const page = loadedKey === listKey ? loadedPage : null;
   const documents = loadedKey === listKey ? loadedDocuments : null;
-  const read = loadedRead && keyOf(loadedRead.entry) === selection ? loadedRead : null;
+  const page = knowledge.page, read = knowledge.read;
+  const loading = kind === 'works' ? knowledge.loading : documentsLoading;
+  const error = kind === 'works' ? knowledge.catalogueError ? failure(knowledge.catalogueError) : '' : documentsError;
+  const reading = knowledge.reading;
+  const readError = knowledge.workError ? failure(knowledge.workError) : '';
   const [retry, setRetry] = useState(0);
+  function retryRead() { setRetry(value => value + 1); void knowledge.refresh(); }
   const [source, setSource] = useState<{ documentVersionId: string; sourceRef: string | null } | null>(null);
   const [expandedFamilies, setExpandedFamilies] = useState<Record<string, boolean>>({});
   const [expandedConditions, setExpandedConditions] = useState<Record<string, boolean>>({});
@@ -99,42 +100,28 @@ function KnowledgeCatalogue() {
   useEffect(() => () => { if (scrollTimer.current) clearTimeout(scrollTimer.current); }, []);
 
   useEffect(() => {
+    if (kind !== 'works' || !page) return;
+    if (knowledgeReadingIdentity(currentParams.current).state === 'absent' && page.entries[0]) select(page.entries[0]);
+  }, [page, kind, selection, identityPin.state]);
+
+  useEffect(() => {
+    if (kind !== 'sources') return;
     const controller = new AbortController();
-    setPage(null); setDocuments(null); setError(''); setLoading(true);
+    setDocuments(null); setDocumentsError(''); setDocumentsLoading(true);
     const timer = setTimeout(() => {
-      void (kind === 'works'
-        ? readEngineeringKnowledgeCatalogue(query, scope, after, controller.signal).then(value => {
-            if (controller.signal.aborted) return;
-            setPage(value); setLoadedKey(listKey);
-            if (knowledgeReadingIdentity(currentParams.current).state === 'absent' && value.entries[0]) select(value.entries[0]);
-          })
-        : getCanonicalLibraryDocuments({ search: query, cursor: after, limit: 24 }, controller.signal).then(value => {
-            if (!controller.signal.aborted) { setDocuments(value); setLoadedKey(listKey); }
-          }))
-        .catch(cause => { if (!controller.signal.aborted) setError(failure(cause)); })
-        .finally(() => { if (!controller.signal.aborted) setLoading(false); });
+      void getCanonicalLibraryDocuments({ search: query, cursor: after, limit: 24 }, controller.signal).then(value => {
+        if (!controller.signal.aborted) { setDocuments(value); setLoadedKey(listKey); }
+      }).catch(cause => { if (!controller.signal.aborted) setDocumentsError(failure(cause)); })
+        .finally(() => { if (!controller.signal.aborted) setDocumentsLoading(false); });
     }, query ? 250 : 0);
     return () => { clearTimeout(timer); controller.abort(); };
   }, [query, scope, kind, after, retry]);
 
-  useEffect(() => {
-    const controller = new AbortController();
-    setReadRequestKey(selection); setRead(null); setReadError(''); setSource(null);
-    if (!selection || kind !== 'works') { setReading(false); return; }
-    setReading(true);
-    const pin = knowledgeReadingIdentity(currentParams.current);
-    if (pin.state !== 'ok') return;
-    const selected = pin.identity;
-    void readEngineeringKnowledgeWork(selected, controller.signal).then(value => {
-      if (!controller.signal.aborted) setRead(value);
-    }).catch(cause => { if (!controller.signal.aborted) setReadError(failure(cause)); })
-      .finally(() => { if (!controller.signal.aborted) setReading(false); });
-    return () => controller.abort();
-  }, [selection, kind, retry]);
+  useEffect(() => { setSource(null); }, [selection, kind]);
 
   useEffect(() => {
     if (!loading && listRef.current) listRef.current.scrollTop = Number(currentParams.current.get('listY') ?? 0);
-  }, [loading]);
+  }, [loading, page, documents]);
   useEffect(() => {
     if (read && articleRef.current) articleRef.current.scrollTop = Number(currentParams.current.get('articleY') ?? 0);
   }, [read]);
@@ -169,7 +156,7 @@ function KnowledgeCatalogue() {
       {kind === 'works' && <select aria-label="知识版本范围" value={scope} onChange={event => change('scope', event.target.value)}><option value="CURRENT">当前工作</option><option value="ALL">包含历史工作</option><option value="HISTORICAL">仅历史工作</option></select>}
     </div>
     {identityPin.state === 'invalid' && <p role="alert">知识工作身份不完整或有重复参数，请重新选择确切工作。</p>}
-    {error && <p role="alert">{error} <button onClick={() => setRetry(value => value + 1)}>重试</button></p>}
+    {error && <p role="alert">{error} <button onClick={retryRead}>重试</button></p>}
     {kind === 'works' ? <div className="knowledge-layout">
       <section className="panel knowledge-results" aria-label="已有工程认识" ref={listRef} onScroll={event => rememberScroll('listY', event.currentTarget.scrollTop)}>
         <div className="panel-head"><h2>{loading ? '正在读取已有认识…' : `本批 ${page?.entries.length ?? 0} 条可查阅工作`}</h2></div>
@@ -182,7 +169,7 @@ function KnowledgeCatalogue() {
         {!loading && !error && !page?.entries.length && <p className="knowledge-empty">没有匹配的已保存认识，可调整关键词或版本范围。</p>}{pagination}
       </section>
       <section className="panel knowledge-preview" aria-label="完整工程认识" ref={articleRef} onScroll={event => rememberScroll('articleY', event.currentTarget.scrollTop)}>
-        {reading ? <p role="status">正在读取确切工作…</p> : readError ? <p role="alert">{readError} <button onClick={() => setRetry(value => value + 1)}>重试</button></p> : read ? <>
+        {reading ? <p role="status">正在读取确切工作…</p> : readError ? <p role="alert">{readError} <button onClick={retryRead}>重试</button></p> : read ? <>
           <div className="article-kicker">{read.entry.current ? '已保存的工程认识' : '当时的工程认识'} · 工作修订 {read.entry.workRevision}</div>
           <h1>{read.entry.headline || '已保存的工程认识'}</h1><p className="article-lead">{read.entry.listBrief}</p>
           <small>{read.entry.subjectKind === 'ENGINEERING_MATTER' ? '工程事项' : '文档工作'} · {displayDate(read.entry.createdAt)}</small>

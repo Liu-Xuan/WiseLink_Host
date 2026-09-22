@@ -40,8 +40,14 @@ function validEventPins(value: unknown): value is SuiteGraphTimelineEventPins {
       || (typeof pins.anchorId === 'string' && text(pins.anchorId, 512)));
 }
 
-export function graphReadingParams(matterId: string, workRef: string | null, state: SuiteGraphReadingState): URLSearchParams {
+export function graphReadingParams(matterId: string, workRef: string | null, state: SuiteGraphReadingState, origin?: URLSearchParams): URLSearchParams {
   const params = new URLSearchParams({matterId});
+  // Preserve the return intent through view-state replacement and source round trips.
+  // Malformed intent stays explicit (empty) so the toolbar rejects it instead of guessing.
+  if (origin?.has('returnKnowledgeQuery')) {
+    const raw = single(origin, 'returnKnowledgeQuery');
+    params.set('returnKnowledgeQuery', raw.length <= 4096 ? raw : '');
+  }
   if (state.layoutSnapshot && /^gl-[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/.test(state.layoutSnapshot)) params.set('layoutSnapshot', state.layoutSnapshot);
   if (workRef) params.set('workRef', workRef);
   if (state.selectedId && text(state.selectedId, 2048)) params.set('selectedId', state.selectedId);
@@ -161,5 +167,5 @@ export function graphReturnTarget(params: URLSearchParams, documentVersionId?: s
   const sourceMatter = single(query, 'matterId');
   const sourceWork = single(query, 'workRef');
   if (!text(sourceMatter) || query.getAll('workRef').length > 1 || (query.has('workRef') && !text(sourceWork))) return null;
-  return {route: `/graph?${graphReadingParams(sourceMatter, sourceWork || null, readGraphReadingState(query))}`, label: '返回关系图谱'};
+  return {route: `/graph?${graphReadingParams(sourceMatter, sourceWork || null, readGraphReadingState(query), query)}`, label: '返回关系图谱'};
 }

@@ -235,3 +235,87 @@ test('already registered current semantics permits START without waiting for the
   resolveIndex({ documentVersionId: 'DV-test', parseRunId: 'PRUN-test', status: 'PROGRESS' });
   assert.equal((await pending).status, 'QUEUED');
 });
+
+test('a confirmed publication advances its exact dependencies in the same bounded tick', async () => {
+  const calls = []; let statuses = 0;
+  const result = await consumeHostedWorkItem({ documentVersionId: 'DV-test' }, {
+    callTool: async (name, args) => {
+      calls.push([name, args]);
+      if (name === 'document_work' && args.action === 'STATUS') {
+        const current = state(); if (++statuses === 2) current.latestRun.status = 'PUBLISHED'; return current;
+      }
+      if (name === 'document_work' && args.action === 'STEP') return { parseRunId: 'PRUN-test', status: 'PUBLISHED' };
+      if (name === 'document_work' && args.action === 'INDEX') return { documentVersionId: 'DV-test', parseRunId: 'PRUN-test', status: 'INDEXED' };
+      if (args.action === 'STATUS') return { documentVersionId: 'DV-test', parseRunId: 'PRUN-test', status: 'IDLE', semanticReady: true };
+      if (args.action === 'START') return { documentVersionId: 'DV-test', parseRunId: 'PRUN-test', attemptRef: 'DTQ-test', status: 'QUEUED' };
+      throw new Error('unexpected operation');
+    },
+  });
+  assert.equal(result.status, 'QUEUED');
+  assert.deepEqual(calls.filter(([name]) => name === 'document_work').map(([, args]) => args.action), ['STATUS', 'STEP', 'STATUS', 'INDEX']);
+  assert.deepEqual(calls.filter(([name]) => name === 'document_translation').map(([, args]) => args.action), ['STATUS', 'START']);
+});
+
+test('publication continuation yields on a changed run or newly accepted activity/reading', async () => {
+  for (const patch of [{ parseRunId: 'PRUN-new' }, { status: 'STAGING' }, { nextActivityRunRef: 'DAR-new' }, { nextReadingRunRef: 'DRR-new' }]) {
+    const calls = []; let statuses = 0;
+    const result = await consumeHostedWorkItem({ documentVersionId: 'DV-test' }, {
+      callTool: async (name, args) => {
+        calls.push([name, args]);
+        if (args.action === 'STEP') return { parseRunId: 'PRUN-test', status: 'PUBLISHED' };
+        assert.equal(name, 'document_work'); assert.equal(args.action, 'STATUS');
+        const current = state();
+        if (++statuses === 2) { current.latestRun.status = 'PUBLISHED'; Object.assign(current.latestRun, patch); Object.assign(current, { nextActivityRunRef: patch.nextActivityRunRef, nextReadingRunRef: patch.nextReadingRunRef }); }
+        return current;
+      },
+    });
+    assert.equal(result.status, 'PUBLISHED');
+    assert.deepEqual(calls.map(([, args]) => args.action), ['STATUS', 'STEP', 'STATUS']);
+  }
+});
+
+test('publication continuation does not start after its scheduling budget is spent', async t => {
+  const realNow = Date.now(); let now = realNow;
+  t.mock.method(Date, 'now', () => now);
+  for (const slowStage of ['STEP', 'RECHECK']) {
+    now = realNow; const calls = []; let statuses = 0;
+    const result = await consumeHostedWorkItem({ documentVersionId: 'DV-test' }, {
+      callTool: async (_name, args) => {
+        calls.push(args.action);
+        if (args.action === 'STEP') { if (slowStage === 'STEP') now += 10_000; return { parseRunId: 'PRUN-test', status: 'PUBLISHED' }; }
+        const current = state(); if (++statuses === 2) { current.latestRun.status = 'PUBLISHED'; now += 10_000; } return current;
+      },
+    });
+    assert.equal(result.status, 'PUBLISHED');
+    assert.deepEqual(calls, slowStage === 'STEP' ? ['STATUS', 'STEP'] : ['STATUS', 'STEP', 'STATUS']);
+  }
+});
+
+test('unknown publication result is never replayed or inferred as successful', async () => {
+  const calls = [];
+  await assert.rejects(consumeHostedWorkItem({ documentVersionId: 'DV-test' }, {
+    callTool: async (_name, args) => { calls.push(args.action); if (args.action === 'STEP') throw new Error('receipt lost'); return state(); },
+  }), /receipt lost/);
+  assert.deepEqual(calls, ['STATUS', 'STEP']);
+});
+
+test('publication recheck rejects wrong document scope and does not continue after lost recheck', async () => {
+  for (const failure of ['DOCUMENT', 'RUN', 'LOST']) {
+    let statuses = 0; const calls = [];
+    await assert.rejects(consumeHostedWorkItem({ documentVersionId: 'DV-test' }, {
+      callTool: async (_name, args) => {
+        calls.push(args.action);
+        if (args.action === 'STEP') return { parseRunId: 'PRUN-test', status: 'PUBLISHED' };
+        const current = state();
+        if (++statuses === 2) {
+          if (failure === 'LOST') throw new Error('recheck lost');
+          current.latestRun.status = 'PUBLISHED';
+          if (failure === 'DOCUMENT') current.documentVersionId = 'DV-other';
+          else current.latestRun.documentVersionId = 'DV-other';
+        }
+        return current;
+      },
+    }), failure === 'LOST' ? /recheck lost/ : /MISMATCH/);
+    assert.deepEqual(calls, ['STATUS', 'STEP', 'STATUS']);
+  }
+});

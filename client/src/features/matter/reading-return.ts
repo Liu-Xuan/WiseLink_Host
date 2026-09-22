@@ -681,9 +681,20 @@ export function readingReturnTarget(
   const matterId = identifier(params.get('returnMatterId'));
   if (params.has('returnKnowledgeQuery')) {
     const query = params.get('returnKnowledgeQuery');
-    if (!binding || !query || query.length > 4096) return null;
+    if (!query || query.length > 4096) return null;
     const nested = new URLSearchParams(query);
-    if (knowledgeReadingIdentity(nested).state === 'invalid') return null;
+    const identity = knowledgeReadingIdentity(nested);
+    if (identity.state === 'invalid') return null;
+    if (!binding) {
+      // A graph return is bound to the exact saved matter work, not a document.
+      if (documentVersionId !== undefined || identity.state !== 'ok' ||
+        identity.identity.subjectKind !== 'ENGINEERING_MATTER' ||
+        identity.identity.subjectId !== currentMatterId ||
+        identity.identity.workRef !== currentWorkRef ||
+        params.getAll('matterId').length !== 1 || params.get('matterId') !== currentMatterId ||
+        params.getAll('workRef').length !== 1 || params.get('workRef') !== currentWorkRef ||
+        [...params.keys()].some(key => key.startsWith('return') && key !== 'returnKnowledgeQuery')) return null;
+    }
     return { route: `/knowledge?${knowledgeReadingParams(nested)}`, label: '返回工程知识' };
   }
   if (matterId) {
