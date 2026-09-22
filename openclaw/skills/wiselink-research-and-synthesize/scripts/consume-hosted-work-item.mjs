@@ -109,10 +109,19 @@ export async function consumeHostedWorkItem(options, dependencies) {
     // 60-minute limit; leave later stages to a fresh natural tick after 15 minutes.
     // A later natural tick continues from Host status; there is no hidden retry.
     if (!report.nextOperation || Date.now() - tickStartedAt >= 15 * 60_000 || index + 1 === limit) break;
+    // A Review accepted during this stage takes priority over background
+    // continuation. Observe only; the next natural tick owns its consumption.
+    const pending = await dependencies.callTool('get_pending_review_turn', { workItemId: options.workItemId });
+    if (!pending || typeof pending.busy !== 'boolean' || !Object.hasOwn(pending, 'next') ||
+        (pending.next !== null && (typeof pending.next !== 'object' || Array.isArray(pending.next))))
+      throw new Error('INITIAL_REVIEW_QUEUE_STATUS_INVALID');
+    if (pending.busy || pending.next) return { ...report, completedStages,
+      continuationDeferred: pending.busy ? 'REVIEW_BUSY' : 'REVIEW_PENDING' };
+    if (Date.now() - tickStartedAt >= 15 * 60_000) break;
     const next = await dependencies.callTool('get_parse_status', { workItemId: options.workItemId });
     const observed = readInitialStatus(next, options.workItemId);
     if (observed.documentVersionId !== initial.documentVersionId) throw new Error('INITIAL_DOCUMENT_VERSION_DRIFT');
-    if (initialComplete(observed)) break;
+    if (initialComplete(observed) || Date.now() - tickStartedAt >= 15 * 60_000) break;
     initial = observed;
     statusResult = next;
   }

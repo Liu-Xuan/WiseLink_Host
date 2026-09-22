@@ -5,7 +5,7 @@ import {
   DRIZZLE_DATABASE,
   type PostgresJsDatabase,
 } from '@lark-apaas/fullstack-nestjs-core';
-import { and, desc, eq, inArray, isNull, or } from 'drizzle-orm';
+import { and, desc, eq, inArray, isNull, or, sql } from 'drizzle-orm';
 
 import type {
   CanonicalParseAuthorizationProjection,
@@ -13,6 +13,7 @@ import type {
   CanonicalExecutionModelSelection,
 } from '@shared/api.interface';
 import { isRetryableParseFailureCode } from '@shared/parse-retry-policy';
+import { sourceIdentityQuery } from './document-version-source-identity';
 import { actionAttempt, workItem } from '../../database/schema';
 import { readStoredExecutionModel } from '../model-settings/canonical-execution-model';
 import { canonicalModelError } from '../model-settings/canonical-model-catalog';
@@ -515,6 +516,27 @@ export class MiaodaWorkItemRepository {
       .limit(1);
     if (!row) return null;
     return { row, projection: parseProjection(row.projectionJson) };
+  }
+
+  /** One post-authorization read, retaining a missing source separately from a missing WorkItem. */
+  async loadTenantScopedMemberIdentity(workItemId: string, tenantId: string, documentVersionId: string) {
+    const identity = sourceIdentityQuery(this.db, documentVersionId).as('member_source_identity');
+    const [value] = await this.db.select({
+      row: workItem,
+      sourceVersion: identity.version,
+      sourceArtifact: identity.artifact,
+    }).from(workItem)
+      .leftJoin(identity, sql`true`)
+      .where(and(eq(workItem.workItemId, workItemId), eq(workItem.tenantId, tenantId)))
+      .limit(1);
+    if (!value) return null;
+    // Parse first: corrupt stored projection retains precedence over source errors.
+    return {
+      row: value.row,
+      projection: parseProjection(value.row.projectionJson),
+      sourceIdentity: value.sourceVersion && value.sourceArtifact
+        ? { version: value.sourceVersion, artifact: value.sourceArtifact } : null,
+    };
   }
 
   async loadAuthorizationBinding(input: {

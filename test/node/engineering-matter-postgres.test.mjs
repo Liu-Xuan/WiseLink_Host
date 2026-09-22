@@ -1949,7 +1949,6 @@ async function reserveActorService(actorId, tenantId = 'tenant-A') {
       matters,
       working,
       workItems,
-      new MiaodaDocumentVersionSourceResolver(db),
       objectAccess,
     );
     return {

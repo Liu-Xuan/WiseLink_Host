@@ -1,5 +1,14 @@
 # M 主控集成交接
 
+## 2026-09-23 成员合并查询及公平续接接受
+
+PDF86100dfc63f250d0af291637b082c80c8fa174bc已由release7688502805204831170回读finished、updated_at1790119474000、errors=[]，双远端一致。独立线上PDF验收进行中。
+
+本次在86100dfc精确加入03d0d40bf2a93fd314c76827ad39fe9ea857b55e及c747c4b7b8c4bb88b553a135caade8d0a040c85d增量，排除分支CURRENT_TASK/REPORT。成员读取保留fresh授权独立先行，随后合并租户投影和共享来源完整性查询；公平续接在已保存阶段间只读检查新Review并自然让出，不改cron或预算。Luna固定组合30项、servertypes、diffcheck通过，03d0产品/测试精确一致；c747增量与既有initial-assessment-recovery正确叠加，未整文件覆盖。
+
+03d0原独立非owner/FORCE RLS PG证据保留，不将本次未复跑算通过。最新组合Skill须由publisher自测后打包，不能以c747单独测试替代安装包。Hosted终端已获得新时钟回执和miaoda-file-cli帮助；官方私有对象download路径可用，尚未暂停cron或安装。Host发布和Skill安装分别取得回执后才标为生效。
+
+
 ## 2026-09-23 PDF手动位置恢复独立发布准备
 
 bd6ff91db2cee26eea891f534d0b84bff166ab18已由release7688487086947273689 finished、updated_at1790116318000、error_logs=[]回读，双远端同名一致。Luna真实图谱放大→全局资料库→实际返回按钮已确认精确修订16/镜头/3资料11对象3关系保留。B冷/过期网络样本仍数秒，未声明性能达标。
