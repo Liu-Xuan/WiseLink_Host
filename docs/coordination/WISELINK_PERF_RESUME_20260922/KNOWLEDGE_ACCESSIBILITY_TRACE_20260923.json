@@ -1,0 +1,153 @@
+{
+  "deploymentSha": "f24b9714ec87f586cb5302185480ddcb7fc49e86",
+  "sample": "same saved revision16 knowledge preview; native evidence details with 9 entries; no body or identifiers retained",
+  "environment": {
+    "browser": "Codex IAB Chromium",
+    "viewport": [
+      1280,
+      720
+    ],
+    "previewClientHeight": 446.203125,
+    "previewScrollHeight": 19714,
+    "pageBackdropEffects": [
+      "topbar blur(20px)"
+    ],
+    "previewFilter": "none",
+    "previewBackdropFilter": "none"
+  },
+  "runs": [
+    {
+      "name": "six toggles with AX snapshot each time",
+      "complete": true,
+      "truncated": false,
+      "traceEventCount": 48991,
+      "clickHandlerMs": [
+        0.335,
+        0.392,
+        0.747,
+        0.329,
+        1.228,
+        0.539
+      ],
+      "mainThread": {
+        "RunTask": {
+          "count": 4321,
+          "totalMs": 1108.44,
+          "maxMs": 99.846
+        },
+        "Commit": {
+          "count": 45,
+          "totalMs": 419.109,
+          "maxMs": 85.706
+        },
+        "Layout": {
+          "count": 6,
+          "totalMs": 90.358,
+          "maxMs": 21.583
+        },
+        "Paint": {
+          "count": 14,
+          "totalMs": 58.39,
+          "maxMs": 15.021
+        },
+        "FunctionCall": {
+          "count": 477,
+          "totalMs": 53.994,
+          "maxMs": 11.289
+        }
+      }
+    },
+    {
+      "name": "six toggles with only details.open read between clicks",
+      "complete": true,
+      "truncated": false,
+      "largeCommitMsDescending": [
+        75.028,
+        54.777,
+        51.793,
+        50.007,
+        45.428,
+        44.252
+      ]
+    },
+    {
+      "name": "temporary preview contain:layout paint; same six toggles",
+      "complete": true,
+      "truncated": false,
+      "largeCommitMsDescending": [
+        71.058,
+        68.961,
+        64.609,
+        62.02,
+        61.8,
+        54.495
+      ],
+      "outcome": "No improvement established; not implemented; original style restored."
+    },
+    {
+      "name": "four toggles with detailed compositor categories",
+      "complete": true,
+      "truncated": false,
+      "slowestCommitMs": 85.228,
+      "insideSlowestCommit": {
+        "DoUpdateLayersMs": 1.052,
+        "WaitForCommitCompletionMs": 0.489,
+        "unattributedGapMsApprox": 83
+      }
+    },
+    {
+      "name": "four toggles with accessibility categories",
+      "complete": true,
+      "truncated": false,
+      "clickHandlerMs": [
+        0.324,
+        0.95,
+        0.456,
+        0.569
+      ],
+      "pairedCommitAndAccessibilitySerializationMs": [
+        [
+          55.61,
+          50.526
+        ],
+        [
+          63.253,
+          53.543
+        ],
+        [
+          86.201,
+          77.924
+        ],
+        [
+          51.803,
+          47.467
+        ]
+      ],
+      "slowestSerializationThreadMs": 66.025,
+      "insideSlowestSerialization": {
+        "SendPendingAccessibilityEventsMs": 14.0,
+        "TakeLocationChangesForSerializationMs": 1.608
+      }
+    }
+  ],
+  "conclusions": [
+    "Accessibility SerializeLifecycleStage directly explains most of four measured Commit intervals.",
+    "Omitting repeated full AX snapshots did not remove long commits; accessibility stays enabled in this browser.",
+    "Native click handler is not the measured dominant cost.",
+    "Temporary layout/paint containment did not establish a benefit."
+  ],
+  "limits": [
+    "Small diagnostic runs, not end-user p95 or representative browser fleet.",
+    "Tracing/tooling can perturb execution; no disabled-accessibility control performed.",
+    "Do not add nested event durations as exclusive totals.",
+    "Earlier 40-sample interaction evidence remains valid within its stated instrumentation scope.",
+    "Accessibility is a supported user capability, not overhead to disable as a fix."
+  ],
+  "cleanup": {
+    "tracingEndedEveryRun": true,
+    "temporaryStyleRestored": true,
+    "temporaryProbeAbsent": true,
+    "detailsFinalOpen": false,
+    "businessMutations": 0
+  }
+}

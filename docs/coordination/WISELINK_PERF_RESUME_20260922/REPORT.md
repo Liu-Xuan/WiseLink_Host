@@ -758,3 +758,12 @@ Main回执：ef258 release7688432648880098235 finished updated_at=1790103060000�
 - 三次完整刷新：catalogue 4175.110/4290.715/4723.600ms，work 3723.083/3950.776/4310.134ms，均200。目录与正文请求相差约1–2ms，已经并行；不能以继续调整前端并发解释此热点。平台origin分别3828–4378ms和3226–3870ms；它不是SQL独立耗时。三个样本不计算p95，也不宣称窄投影/跳过一次查询已使线上达标。
 - 图谱首次来源状态553.450ms，33.390秒后的返回1149.734ms，均200：已超过30秒新鲜期，正常重读。随后三次实际“返回工程知识→关系图谱”位于新鲜期内，完整无截断Network窗口中来源请求为0，每次图谱可见，URL仍绑定同一matter/workRef并恢复82%镜头。该样本为无已发布解析的来源状态，不能外推所有已发布来源与活动组合。
 - 首轮窗口从identity前序列重新提取后完整，后两轮直接完整；保留全部样本，不筛慢值。没有注入探针，没有改变业务数据。下一步定位服务端串行调用与普通展开长任务；Hosted实际安装、背景竞争/公平仍由既定分工继续，整体Goal active。
+
+
+## B 展开长任务的浏览器无障碍归因（2026-09-23）
+
+- 延续c328交互尾延迟，f24正常已登录同一保存知识正文，通过CDP Tracing对原生“核对来源与方法（9）”展开/收起做定向profile。五组完整无截断trace摘要见KNOWLEDGE_ACCESSIBILITY_TRACE_20260923.json；不记录正文、样本ID或原始页面数据。
+- 首组六次切换：点击处理0.329–1.228ms，主线程Commit最大85.706ms，Layout最大21.583ms。第二组不逐次抓取完整AX，仅读取details.open，六个主要Commit仍44.252–75.028ms，因此不能把问题简单归咎于逐次AX快照调用，也不能宣称普通浏览器没有此成本。
+- 实际阅读区高446.2px、scrollHeight19714px，自身无filter/backdrop；仅顶栏有blur(20px)。第三组临时对阅读区应用contain:layout paint，Commit仍54.495–71.058ms，未证明改善。已完整恢复原inline style=null、探针undefined、details closed，不提交无效CSS。
+- 第四组cc详细trace：最慢Commit85.228ms中DoUpdateLayers1.052ms、WaitForCommitCompletion0.489ms，主要耗时在其后。第五组开启accessibility分类，四次SerializeLifecycleStage 50.526/53.543/77.924/47.467ms，分别处于55.610/63.253/86.201/51.803ms的Commit中；直接定位到无障碍树序列化占主要部分，最慢项thread duration66.025ms，不只是线程调度等待。
+- 这是小规模诊断，不能替代真实用户p95；先前40次交互数据保留测量范围。无障碍能力属于受支持功能，不关闭它、不删正文来报达标。下一步需控制不同浏览器/无障碍场景并验证有明确收益且保持全文与键盘可达的方案；当前不以React memo或layout containment作未经证明的修复。全部trace已结束，未发起解析/翻译/评估，整体Goal active。
