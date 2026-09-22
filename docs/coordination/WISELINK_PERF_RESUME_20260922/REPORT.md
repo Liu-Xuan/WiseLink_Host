@@ -392,3 +392,19 @@ those old light-layer class strings. No inert class was added and this unrelated
 text assertion was not expanded into a visual migration. Authorized browser,
 PDF target rendering and production behavior are not claimed by this test-only
 commit. 2B.1 is separately assigned; no publishing or runtime work occurred.
+
+## B 3A.1 — translation control dispatch (2026-09-23)
+
+Parent: `3e0cc6074bb19b88d6ab33c324323ea45e407d53`; tree `/private/tmp/wiselink-perf-b-translation-20260923`, branch `codex/perf-b-translation-control-20260923`. Runtime adds the existing exported DocumentParsingHostedService dependency (already consumed by document reading). `status` follows fresh DOCUMENT_READ ACL, narrow metadata source and parse-row registry, not original-store loading or semantic-map construction. No public tool/request shape changed.
+
+Control commands and no-work exits no longer call readDocumentOriginal before dispatch: STATUS, CANCEL, repeated START receipt, IDLE, terminal STEP, wrong attempt/run and BUSY. Existing actor/tenant repository scope, expire/claim/renew/release and exact producerRunId matching remain. New START still loads and verifies bytes, semantic readiness and manifest before preparing/reserving. Claimed live STEP loads the exact original inside the failure/release boundary; plugin/save authorization callbacks retain fresh original reads. This batch does not optimize those repeated content callbacks or claim all 3A is done.
+
+The old-source regression was actually run with the new test (only constructor wiring adapted to the old arity): storage unavailable makes STATUS reject, exit 1. New code permits status, repeat-START and cancel with zero original reads and zero semantic reads in the same fixture while still making four fresh ACL/status calls including initial START. Revocation, wrong authorized document, integrity failure, wrong/terminal/unclaimed steps and post-plugin revocation have direct tests. Original corruption on claimed STEP fails the attempt and releases the acquired lease without executing the plugin.
+
+Validation:
+- Standard Jest, runInBand only: document-translation-runtime, document-translation-task-envelope, document-translation-reading, document-reading-runtime, canonical-host-openclaw-translation.service: 5 suites / 43 tests pass, normal exit.
+- Server typecheck, exact two-file ESLint, server build: pass.
+- Build's OCR check is STATIC_VALIDATION_ONLY_NON_TARGET_BUILD on this host, not Linux OCR/Hosted execution.
+- Logs `/private/tmp/wiselink-translation-control-{before,test,regression,types,lint,build}.log`. No local devserver started in this tree; relevant compiler/test logs inspected.
+
+Entire adopted roadmap is now preserved in OFFICIAL_CODEX_ROADMAP; CURRENT_TASK distinguishes every remaining stage and incorporates main's current no-integration/no-release/no-authorized-preview-sample report. No source/permission/schema/production-profile change, no Hosted model/plugin invocation, no push/release/install. Luna independent acceptance and main's selected integration follow this commit. Full roadmap Goal remains active.

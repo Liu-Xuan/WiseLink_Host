@@ -15,7 +15,8 @@ the worktree, then read:
 
 1. `CURRENT_TASK.md` for the short resume point.
 2. `REPORT.md` for implementation, verification and limitations.
-3. `SQL_EVIDENCE.md` for the latest isolated PostgreSQL query and plan evidence.
+3. `OFFICIAL_CODEX_ROADMAP.md` for the adopted complete remaining roadmap.
+4. `SQL_EVIDENCE.md` for the latest isolated PostgreSQL query and plan evidence.
 
 Do not treat chat summaries, old release references, or the unavailable
 `5b8e2a3a...` cloud commit as a substitute for this branch.

@@ -26,9 +26,11 @@ function setup() {
     renew: jest.fn().mockResolvedValue(true), release: jest.fn().mockResolvedValue(undefined),
     cancel: jest.fn(), finish: jest.fn(), fail: jest.fn(), expire: jest.fn(),
   };
+  const parsing = { status: jest.fn().mockResolvedValue({ documentVersionId }) };
+  const semantics = { read: jest.fn().mockResolvedValue({ profileRef: 'generic.author-sections.v1' }) };
   const service = new DocumentTranslationRuntimeService(authorization as never, actors as never, reader as never,
-    plugins as never, attempts as never, { read: jest.fn().mockResolvedValue({ profileRef: 'generic.author-sections.v1' }) } as never);
-  return { service, reader, plugins, attempts, binding: { documentVersionId, parseRunId } };
+    plugins as never, attempts as never, semantics as never, parsing as never);
+  return { service, reader, plugins, attempts, authorization, parsing, semantics, binding: { documentVersionId, parseRunId } };
 }
 
 describe('independent document translation runtime', () => {
@@ -73,7 +75,84 @@ describe('independent document translation runtime', () => {
     await f.service.run({ action: 'START', ...f.binding, requestId: 'request' });
     await expect(f.service.run({ action: 'STEP', ...f.binding, attemptRef: 'other' })).rejects.toThrow('ATTEMPT_NOT_FOUND');
     expect(f.plugins.executeStep).not.toHaveBeenCalled();
-    f.reader.readDocumentOriginal.mockRejectedValueOnce(new Error('SOURCE_DENIED'));
+    f.parsing.status.mockRejectedValueOnce(new Error('SOURCE_DENIED'));
     await expect(f.service.run({ action: 'STATUS', ...f.binding })).rejects.toThrow('SOURCE_DENIED');
   });
+  it('keeps status, duplicate start and cancel available without original bytes or semantic reads', async () => {
+    const f = setup();
+    const start = { action: 'START' as const, ...f.binding, requestId: 'request' };
+    const state = await f.service.run(start);
+    if (!('attemptRef' in state)) throw new Error('expected attempt');
+    f.reader.readDocumentOriginal.mockClear().mockRejectedValue(new Error('STORAGE_UNAVAILABLE'));
+    f.semantics.read.mockClear();
+    await expect(f.service.run({ action: 'STATUS', ...f.binding })).resolves.toEqual(state);
+    await expect(f.service.run(start)).resolves.toEqual(state);
+    await f.service.run({ action: 'CANCEL', ...f.binding, attemptRef: state.attemptRef! });
+    expect(f.attempts.cancel).toHaveBeenCalledTimes(1);
+    expect(f.reader.readDocumentOriginal).not.toHaveBeenCalled();
+    expect(f.semantics.read).not.toHaveBeenCalled();
+    expect(f.parsing.status).toHaveBeenCalledTimes(4);
+  });
+
+  it('does not consume content for idle, mismatched, terminal or unclaimed steps', async () => {
+    const f = setup();
+    await expect(f.service.run({ action: 'STATUS', ...f.binding })).resolves.toMatchObject({ status: 'IDLE' });
+    expect(f.reader.readDocumentOriginal).not.toHaveBeenCalled();
+    const state = await f.service.run({ action: 'START', ...f.binding, requestId: 'request' });
+    if (!('attemptRef' in state)) throw new Error('expected attempt');
+    f.reader.readDocumentOriginal.mockClear();
+    const step = { action: 'STEP' as const, ...f.binding, attemptRef: state.attemptRef! };
+    await expect(f.service.run({ ...step, parseRunId: 'other' })).rejects.toThrow('SOURCE_CHANGED');
+    await expect(f.service.run({ ...step, attemptRef: 'other' })).rejects.toThrow('ATTEMPT_NOT_FOUND');
+    f.attempts.claim.mockResolvedValueOnce(null as never);
+    await expect(f.service.run(step)).resolves.toMatchObject({ status: 'BUSY' });
+    const row = await f.attempts.latest();
+    if (!row) throw new Error('expected row');
+    row.status = 'COMPLETED';
+    await expect(f.service.run(step)).resolves.toMatchObject({ status: 'COMPLETED' });
+    expect(f.reader.readDocumentOriginal).not.toHaveBeenCalled();
+    expect(f.plugins.executeStep).not.toHaveBeenCalled();
+    expect(f.attempts.expire).toHaveBeenCalledTimes(5);
+  });
+
+  it('rejects withdrawn access and mismatched authorized scope before controlling an attempt', async () => {
+    const f = setup();
+    const state = await f.service.run({ action: 'START', ...f.binding, requestId: 'request' });
+    if (!('attemptRef' in state)) throw new Error('expected attempt');
+    f.parsing.status.mockRejectedValueOnce(new Error('SOURCE_DENIED'));
+    await expect(f.service.run({ action: 'CANCEL', ...f.binding, attemptRef: state.attemptRef! })).rejects.toThrow('SOURCE_DENIED');
+    expect(f.attempts.cancel).not.toHaveBeenCalled();
+    f.authorization.authorizeDocumentWork.mockResolvedValueOnce({ tenantId: 'tenant', actorUserId: 'actor', documentVersionId: 'wrong' });
+    await expect(f.service.run({ action: 'STATUS', ...f.binding })).rejects.toThrow('AUTHORIZATION_SCOPE_MISMATCH');
+  });
+
+  it('validates bytes on admitted content paths and releases a claimed step on source failure', async () => {
+    const f = setup();
+    const state = await f.service.run({ action: 'START', ...f.binding, requestId: 'request' });
+    if (!('attemptRef' in state)) throw new Error('expected attempt');
+    f.reader.readDocumentOriginal.mockRejectedValue(new Error('ORIGINAL_INTEGRITY_FAILED'));
+    await expect(f.service.run({ action: 'STEP', ...f.binding, attemptRef: state.attemptRef! })).rejects.toThrow('ORIGINAL_INTEGRITY_FAILED');
+    expect(f.attempts.fail).toHaveBeenCalledTimes(1);
+    expect(f.attempts.release).toHaveBeenCalledTimes(1);
+    expect(f.plugins.executeStep).not.toHaveBeenCalled();
+    const fresh = setup();
+    fresh.reader.readDocumentOriginal.mockRejectedValue(new Error('ORIGINAL_INTEGRITY_FAILED'));
+    await expect(fresh.service.run({ action: 'START', ...fresh.binding, requestId: 'new' })).rejects.toThrow('ORIGINAL_INTEGRITY_FAILED');
+    expect(fresh.attempts.reserve).not.toHaveBeenCalled();
+  });
+
+  it('keeps plugin callbacks fresh and prevents finish after revoked access', async () => {
+    const f = setup();
+    const state = await f.service.run({ action: 'START', ...f.binding, requestId: 'request' });
+    if (!('attemptRef' in state)) throw new Error('expected attempt');
+    f.plugins.executeStep.mockImplementationOnce(async (input) => {
+      f.reader.readDocumentOriginal.mockRejectedValueOnce(new Error('SOURCE_REVOKED'));
+      await input.assertAuthorized();
+      return { status: 'DONE' };
+    });
+    await expect(f.service.run({ action: 'STEP', ...f.binding, attemptRef: state.attemptRef! })).rejects.toThrow('SOURCE_REVOKED');
+    expect(f.attempts.finish).not.toHaveBeenCalled();
+    expect(f.attempts.release).toHaveBeenCalledTimes(1);
+  });
+
 });
