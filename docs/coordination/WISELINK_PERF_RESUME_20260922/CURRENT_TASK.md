@@ -2,7 +2,7 @@
 
 ## 本批身份
 
-B原件身份运行证据树：`/private/tmp/wiselink-perf-b-identity-runtime-evidence-20260923`，基线`dd1df7d662cf83cdf8947120fcb1f6dfd3643a78`。Main626已发布8d139e310/release7688452846325648565；正常已保存样本1次PDF下载+20次warm identity，均200、网络完整，无重复原件下载。浏览器总耗时p95 1696.780ms未达500ms；实际平台Server-Timing origin p95 359ms是独立口径，不能替代端到端。dd1图谱来源复用已提交交Luna审查，未发布；知识/图谱已保存热返回证据保留。完整匿名耗时见ORIGINAL_IDENTITY_RUNTIME_EVIDENCE_20260923.json；继续分辨平台/网络等待、Hosted与后台公平，不关闭Goal。
+B保存正文准备收窄树：`/private/tmp/wiselink-perf-b-saved-original-hydration-20260923`，基线`4bac6d6fb018ed3af39f401589289bfce31f0149`。8d139明确pin知识目录/正文已并行，但平台inner单次3567/3018ms。已定位并移除readWorkingRevision未消费的当前parse/semantic绑定查询，全部fresh ACL/来源检查/事项版本复核/保存绑定保留；当前basis仍正常准备。2套33项、server types/lint/build通过，准备提交独立审查，不声称已发布或3秒慢点全部解决。dd1已获Luna独立接受，Main串行集成；完整管线、Hosted与后台公平继续，Goal active。
 
 ## 完整路线状态（2026-09-23）
 

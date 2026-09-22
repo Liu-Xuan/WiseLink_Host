@@ -171,6 +171,36 @@ describe('EngineeringMatterWorkingService', () => {
     expect(working.readByRef).not.toHaveBeenCalled();
   });
 
+  it('reads saved original bindings without hydrating unrelated current parse state', async () => {
+    const revision = { state: { substantiveInputs: [{ workItemId: 'WI-A', original: { parseRunId: 'SAVED-PARSE', parseRevision: 2 } }], coverage: [] } };
+    const bindOriginalInputs = jest.fn(async (_tenant, inputs) => inputs);
+    const service = serviceWith({ working: { readByRef: jest.fn().mockResolvedValue(revision), bindOriginalInputs } });
+    expect(await service.readWorkingRevision('MAT-1', 'MWREV-OLD', actor())).toBe(revision);
+    expect(bindOriginalInputs).not.toHaveBeenCalled();
+    expect(revision.state.substantiveInputs[0].original.parseRunId).toBe('SAVED-PARSE');
+  });
+
+  it('preserves saved-read hydration choice across a current matter revision retry', async () => {
+    const changed = { ...snapshot, currentMatterRevisionId: 'MATREV-NEXT' };
+    const matters = { loadCurrent: jest.fn().mockResolvedValueOnce(snapshot).mockResolvedValue(changed) };
+    const revision = { state: { substantiveInputs: [], coverage: [] } };
+    const bindOriginalInputs = jest.fn(async (_tenant, inputs) => inputs);
+    const working = { readByRef: jest.fn().mockResolvedValue(revision), bindOriginalInputs };
+    const service = serviceWith({ matters, working });
+    expect(await service.readWorkingRevision('MAT-1', 'MWREV-OLD', actor())).toBe(revision);
+    expect(matters.loadCurrent).toHaveBeenCalledTimes(4);
+    expect(bindOriginalInputs).not.toHaveBeenCalled();
+    expect(working.readByRef).toHaveBeenCalledTimes(1);
+  });
+
+  it('still binds current parse state when building a current working basis', async () => {
+    const bindOriginalInputs = jest.fn(async (_tenant, inputs) => inputs.map(input => ({ ...input, original: { parseRunId: 'CURRENT-PARSE', parseRevision: 3 } })));
+    const service = serviceWith({ working: { loadCurrent: jest.fn().mockResolvedValue(null), bindOriginalInputs } });
+    const basis = await service.resolveWorkingBasis('MAT-1', actor());
+    expect(bindOriginalInputs).toHaveBeenCalledTimes(1);
+    expect(basis.currentInputs.every(input => input.original?.parseRunId === 'CURRENT-PARSE')).toBe(true);
+  });
+
   it('rejects a missing exact saved work without loading the current work as fallback', async () => {
     const working = { readByRef: jest.fn().mockResolvedValue(null), loadCurrent: jest.fn() };
     const service = serviceWith({ working });
@@ -195,7 +225,7 @@ function serviceWith(
   const working =
     overrides.working ??
     ({ loadCurrent: jest.fn().mockResolvedValue(null) } as const);
-  Object.assign(working, { bindOriginalInputs: jest.fn(async (_tenant, inputs) => inputs) });
+  if (!('bindOriginalInputs' in working)) Object.assign(working, { bindOriginalInputs: jest.fn(async (_tenant, inputs) => inputs) });
   const workItems =
     overrides.workItems ??
     ({

@@ -711,3 +711,13 @@ Main回执：ef258 release7688432648880098235 finished updated_at=1790103060000�
 - 少量loadingFinished时间戳比responseReceived早约1–3ms，原值保留，不作亚毫秒推断。两个观察工具问题（早期事件轮数上限、一次canvas locator deadline）均回读同一次导航/请求至完成，没有重新导航替换失败样本。最终及后续17轮PDF实际第5页恢复；UI功能另有Luna独立验收，不以网络数据替代功能结论。
 - Luna新部署独立只读功能验收：同DV/parseRun，真实u112点击写sourceRef并显示实际第5页；资料库→browser back保持；两次warm UI工具墙钟2159/1544ms，不是服务p95。Luna未获取网络字节，B本节另给CDP证据；线上未构造跨租户/digest错误，不冒充本地拒绝边界线上覆盖。
 - 下一步：B继续dd1独立审查及发布后实际请求复测；Main/A核实现行Hosted入口、已有授权运行窗口。需要用现有平台可读指标细分额外等待；不新增生产观测平台，不减少Host身份/来源核对，不关闭整体Goal。
+
+
+## B 保存正文读取移除未消费的当前原文准备（2026-09-23）
+
+- 基线4bac6d6fb，独立树`/private/tmp/wiselink-perf-b-saved-original-hydration-20260923`。新8d139正常身份完整导航、指定同保存修订16；准确CDP区间从identity request前sequence开始，truncated=false/hasMore=false。identity 200：start1790108840830.171ms，total1089.617ms、1335bytes，Server-Timing inner236/origin899ms；catalogue 200：start1790108841927.617、total4363.828ms、3193bytes、inner3567/origin4173ms；work 200：start1790108841928.061、total3985.654ms、27775bytes、inner3018/origin3599ms。请求CDP monotonic起点差0.485ms，已并行，不改前端并发。epoch/monotonic细小差异保留，不作亚毫秒推断。此为单次定位，不是p95。
+- 具体无用工作：readWorkingRevision先await authorizedMatter却完全不消费其currentInputs；authorizedMatter最后bindOriginalInputs额外查询当前全部published parse及最新semantic，用于当前工作输入计算。指定保存读取后续只用readByRef返回的持久原始绑定；上述当前绑定准备不会参与其返回或授权判定。
+- 增加私有includeOriginalBindings参数，默认true保持当前basis/apply流程；只有指定保存revision入口传false，事项版本变动的单次重试也传递该选择。仍完整检查当前成员freshRead、tenant projection、document resolver一致性、事项版本前后复核及历史移除成员逐组fresh读取；不复用权限、不减少fresh检查次数、不改变repository保存正文及RLS、不将保存绑定改成latest。
+- 有效旧反例1 failed/8 passed，精确保存读取仍调用了1次不被消费的当前绑定准备。修复后working service10项 + engineering issue search23项，合计2套33项通过；覆盖保存绑定保持、当前basis仍绑定、事项变动重试、当前撤权拒绝、移除成员拒绝、精确ref不存在不fallback等。去掉1次批量当前解析查询，不预报线上节省毫秒或声称解决全部3秒延迟。
+- server typecheck（tsconfig.node.json）通过，生产service ESLint无error，保留既有unused disable warning；server build通过。首次误用根tsconfig.json出现TS6305未构建shared声明文件，已改用正确服务端配置，未修改产品来绕过。日志`/private/tmp/wiselink-saved-original-hydration-{red,tests,search-tests,types,types-node,lint,build}.log`。正常precommit随后执行，待Luna独立接受/Main发布与真实计量。
+- dd1df7d662cf83cdf8947120fcb1f6dfd3643a78图谱来源复用已获Luna独立13项/client types/lint/diffcheck接受；没有重复build或线上生成。已回传Main允许按父子关系集成；本批与其后续验收不混同。

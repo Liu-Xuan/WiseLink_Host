@@ -79,7 +79,10 @@ export class EngineeringMatterWorkingService {
     workRef: string,
     actor: CanonicalHostActor,
   ): Promise<EngineeringMatterWorkingRevisionReadModel> {
-    await this.authorizedMatter(matterId, actor, 0);
+    // The exact saved revision below already owns its original bindings. Keep
+    // fresh member/source checks, but do not hydrate current parse/semantic state
+    // whose result is not consumed by this read.
+    await this.authorizedMatter(matterId, actor, 0, false);
     const revision = await this.working.readByRef({
       tenantId: actor.tenantId,
       matterId,
@@ -252,6 +255,7 @@ export class EngineeringMatterWorkingService {
     matterId: string,
     actor: CanonicalHostActor,
     attempt: number,
+    includeOriginalBindings = true,
   ): Promise<AuthorizedMatter> {
     const snapshot = await this.matters.loadCurrent({
       tenantId: actor.tenantId,
@@ -280,10 +284,12 @@ export class EngineeringMatterWorkingService {
     if (
       confirmed.currentMatterRevisionId !== snapshot.currentMatterRevisionId
     ) {
-      if (attempt === 0) return this.authorizedMatter(matterId, actor, 1);
+      if (attempt === 0) return this.authorizedMatter(matterId, actor, 1, includeOriginalBindings);
       throw workingReadConflict();
     }
-    return { snapshot, currentInputs: await this.working.bindOriginalInputs(actor.tenantId, currentInputs) };
+    return { snapshot, currentInputs: includeOriginalBindings
+      ? await this.working.bindOriginalInputs(actor.tenantId, currentInputs)
+      : currentInputs };
   }
 
   private async requireInput(
