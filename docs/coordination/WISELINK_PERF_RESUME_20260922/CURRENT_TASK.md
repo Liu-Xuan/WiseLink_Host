@@ -2,7 +2,7 @@
 
 ## 本批身份
 
-B系统性能工作树：`/private/tmp/wiselink-perf-b-correction-read-20260923`，分支`codex/perf-b-correction-read-20260923`；起点`c58eb5c08164da72cdbb33ffde49fd059317174f`。本批消除保存工作总体更正提示的逐attempt元数据查询，独立PostgreSQL验证3次→1次，保留最新保存版本与撤权拒绝。c58eb5c08已获Luna独立3套53项/types/lint/build/precommit验收。主控唯一集成/发布者；本树不是线上版本。
+B系统性能工作树：`/private/tmp/wiselink-perf-b-document-continuation-20260923`，分支`codex/perf-b-document-continuation-20260923`；起点`77ae67fd299bf153f038003922b8465b7e9b155d`。本批解析STEP明确发布后，在10秒接续启动预算内fresh重核同一来源后最多推进既有published阶段一次；无循环/未知重放/新BEGIN。主控第二批固定集成截点为e812+c58+A b10，77ae和本批消费者留下一批，不改变主控范围。
 
 ## 完整路线状态（2026-09-23）
 

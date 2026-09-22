@@ -289,6 +289,7 @@ function option(argv, name) {
 export async function consumeHostedDocument(
   { documentVersionId, activityRunRef, readingRunRef, leaseOwner },
   { callTool, documentTranslationCheckpoint, activityCheckpoint, invokeActivityModel, readingCheckpoint, invokeReadingModel }) {
+  const startedAt = Date.now();
   if (activityRunRef && readingRunRef) throw new Error('DOCUMENT_CONSUMER_RUN_AMBIGUOUS');
   const consumeReading = runRef => consumeHostedDocumentReading(
     { documentVersionId, runRef, leaseOwner },
@@ -312,7 +313,35 @@ export async function consumeHostedDocument(
   const run = state.latestRun;
   if (!run) return { status: 'IDLE', documentVersionId };
   if (run.documentVersionId !== documentVersionId || !run.parseRunId) throw new Error('DOCUMENT_CONSUMER_RUN_MISMATCH');
-  if (run.status === 'PUBLISHED') {
+  if (run.status === 'PUBLISHED') return advancePublishedDocument(state, run, documentVersionId, callTool, documentTranslationCheckpoint);
+
+  if (run.errorCode || run.status === 'FAILED' || !state.runtimeAvailable || Date.parse(run.deadlineAt) <= Date.now()) {
+    return { status: 'REQUIRES_ATTENTION', documentVersionId, parseRunId: run.parseRunId,
+      errorCode: run.errorCode ?? 'DOCUMENT_STEP_UNAVAILABLE' };
+  }
+  if (!['RUNNING', 'STAGING'].includes(run.status) || !Number.isFinite(Date.parse(run.deadlineAt))) throw new Error('DOCUMENT_CONSUMER_STATUS_INVALID');
+  const result = await callTool('document_work', { action: 'STEP', documentVersionId, parseRunId: run.parseRunId });
+  if (result?.parseRunId !== run.parseRunId || !['BUSY', 'STAGING', 'PUBLISHED', 'FAILED'].includes(result.status)) {
+    throw new Error('DOCUMENT_CONSUMER_STEP_INVALID');
+  }
+  if (result.status === 'PUBLISHED' && Date.now() - startedAt < 10_000) {
+    // One explicit success may continue into the existing published phase, but
+    // never infer success from a lost receipt, repeat a parse STEP, or consume a
+    // newly queued activity/reading in the same tick. Host performs fresh ACLs.
+    const fresh = await callTool('document_work', { action: 'STATUS', documentVersionId });
+    if (fresh?.documentVersionId !== documentVersionId) throw new Error('DOCUMENT_CONSUMER_SCOPE_MISMATCH');
+    if (fresh.latestRun && (fresh.latestRun.documentVersionId !== documentVersionId || !fresh.latestRun.parseRunId))
+      throw new Error('DOCUMENT_CONSUMER_RUN_MISMATCH');
+    if (Date.now() - startedAt < 10_000 && !fresh.nextActivityRunRef && !fresh.nextReadingRunRef &&
+        fresh.latestRun?.documentVersionId === documentVersionId &&
+        fresh.latestRun.parseRunId === run.parseRunId && fresh.latestRun.status === 'PUBLISHED') {
+      return advancePublishedDocument(fresh, fresh.latestRun, documentVersionId, callTool, documentTranslationCheckpoint);
+    }
+  }
+  return { ...result, documentVersionId };
+}
+
+async function advancePublishedDocument(state, run, documentVersionId, callTool, documentTranslationCheckpoint) {
     const indexRun = state.nextSourceProjectionRunId ?? run.parseRunId;
     if (typeof indexRun !== 'string' || !/^[A-Za-z0-9_-]{1,96}$/.test(indexRun)) throw new Error('DOCUMENT_SOURCE_PROJECTION_RUN_INVALID');
     const projectionPromise = Promise.resolve().then(() =>
@@ -349,17 +378,6 @@ export async function consumeHostedDocument(
     const indexed = projection.value;
     assertSourceProjection(indexed, documentVersionId, indexRun);
     return { ...translation.value, sourceProjection: indexed };
-  }
-  if (run.errorCode || run.status === 'FAILED' || !state.runtimeAvailable || Date.parse(run.deadlineAt) <= Date.now()) {
-    return { status: 'REQUIRES_ATTENTION', documentVersionId, parseRunId: run.parseRunId,
-      errorCode: run.errorCode ?? 'DOCUMENT_STEP_UNAVAILABLE' };
-  }
-  if (!['RUNNING', 'STAGING'].includes(run.status) || !Number.isFinite(Date.parse(run.deadlineAt))) throw new Error('DOCUMENT_CONSUMER_STATUS_INVALID');
-  const result = await callTool('document_work', { action: 'STEP', documentVersionId, parseRunId: run.parseRunId });
-  if (result?.parseRunId !== run.parseRunId || !['BUSY', 'STAGING', 'PUBLISHED', 'FAILED'].includes(result.status)) {
-    throw new Error('DOCUMENT_CONSUMER_STEP_INVALID');
-  }
-  return { ...result, documentVersionId };
 }
 
 function assertSourceProjection(indexed, documentVersionId, parseRunId) {

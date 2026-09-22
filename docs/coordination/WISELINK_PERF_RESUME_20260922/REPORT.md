@@ -596,3 +596,14 @@ Luna已独立接受e5dd PDF修复5套25项、types/lint/build/precommit。本批
 最终实际PG测试1/1通过、0跳过；相关Jest3套35项（engineering-matter-correction-save-projection、matter-work-reference、engineering-issue-search）通过，server types、生产repository ESLint、server build通过。日志/private/tmp/wiselink-correction-read-{red,pg,tests,types,lint,build}.log。initdb首次因沙箱共享内存限制失败，获准在沙箱外初始化同一空隔离目录后完成；测试后pg_ctl确认stopped，测试目录已删除，无生产数据库连接或修改。
 
 Luna已独立接受c58eb5c08的3套53项/types/lint/build/precommit。本批待独立验收与主控集成发布。仍缺最终线上复验、服务端trace/资源数据、热正文/图谱返回/暖API分布及后台竞争证据，完整Goal保持active。
+
+
+## 2026-09-23 B：3B 文档明确发布后的有界接续
+
+实际消费者反例：consumeHostedDocument收到唯一parse STEP的明确PUBLISHED后直接返回，INDEX/独立中文需要额外一次native调度唤醒。不是Host能力不足，也不必新增队列或调度器。主控及A确认B下半document消费者单写者，上半A WorkItem/JobAid恢复逻辑未修改。
+
+本批从77ae建独立树，把既有published分支原样抽成advancePublishedDocument供两条路径使用。一个tick仍最多一个parse STEP，只有明确PUBLISHED且elapsed<10s才fresh STATUS；同一documentVersionId/parseRun仍PUBLISHED、没有新activity/reading待办并再次检查elapsed<10s，才接续原INDEX/translation分支一次。状态/parse改变、无run或预算耗尽保留已发布回执并交还下一tick；wrong document/非法run身份抛错，未知STEP/recheck失败不重试。已有语义ready门槛、独立索引失败报告、翻译START/STEP恢复与admission checkpoint保持。没有增加模型/新BEGIN，未安装或运行真实任务。
+
+直接反例原实现3失败/15通过；修复document/activity/reading三个Node文件86项通过，上半WorkItem单独17项通过，共103项；覆盖同tick接续、新parse/状态/新待办让出、STEP或recheck跨过10s边界、未知STEP/recheck、错误scope，原published语义与恢复集合通过。node --check、消费者ESLint通过；纯消费者JS变动未重复构建未改的Host。10秒是接续启动预算，不是硬中断或已开始操作的总时长上限；局部消除一轮固定等待不等于证明跨任务公平性、native cron并发配置或真实竞争性能。
+
+主控已实际建立/private/tmp/wiselink-integration-ab2-20260923、固定e812+MERGE_HEAD c58eb5c08+A b10，共35staged文件，组合独立验收进行中，尚无新release事实；77ae及本批明确留下一批。旧e812配套Hosted Skill安装仍未闭合，不能把consumer测试当线上持续工作完成。完整Goal保持active。
