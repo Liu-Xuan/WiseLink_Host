@@ -28,6 +28,7 @@ export function useSuiteMatterGraph(
     session,
     authenticationRequired,
     needsHistory,
+    workspace.revoked,
   );
   const revision = selectMatterWorkRevision(workRef, current, historical.data);
   const projection = useMemo(() => {

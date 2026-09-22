@@ -45,7 +45,7 @@ new-file bytes.
 - Focused Jest: 20 suites passed, 151/151 tests passed with the repository
   standard configuration and no `--forceExit`; Jest exits normally. After the
   denied-resource fix and cache-edge tests the focused set is 20 suites,
-  153/153 tests passed.
+  154/154 tests passed.
 - Client production build (`vite build`, no plugin install, no environment
   copy): entry chunk 3,742.29 kB -> 1,678.64 kB raw, 1,183.84 kB -> 538.05 kB
   gzip; entry-reachable JS 3.57 MB -> 1.60 MB; entry CSS 637.9 kB -> 325.0 kB.

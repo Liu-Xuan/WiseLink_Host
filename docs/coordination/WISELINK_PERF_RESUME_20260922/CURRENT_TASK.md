@@ -35,7 +35,8 @@
 - 1C denial durability: a denied workspace or exact-work resource stays hidden
   when a later refresh fails with an ordinary network error. Only a successful
   fetch clears the denial. A normal network failure without a prior denial
-  still keeps the last readable content.
+  still keeps the last readable content. Denying the current matter also
+  suppresses its exact historical work in the wiki and graph consumers.
 - 1C test lifecycle: the previous `--forceExit` need came from six QueryClient
   `gcTime` timers left by the session-change test, not from business requests.
   The test now owns a fake clock and destroys its root, QueryClient, JSDOM
@@ -56,7 +57,7 @@
 
 - Server typecheck: pass.
 - Client typecheck: pass.
-- Focused Jest: 20 suites, 153/153 tests passed with the repository standard
+- Focused Jest: 20 suites, 154/154 tests passed with the repository standard
   configuration, `--runInBand` only, and no `--forceExit`; the process exits
   normally.
 - Client production build: entry chunk 3,742.29 -> 1,678.64 kB raw and

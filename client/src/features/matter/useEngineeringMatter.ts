@@ -47,6 +47,7 @@ export interface EngineeringMatterWorkingRevisionReadState {
   loading: boolean;
   error: string | null;
   revoked: boolean;
+  withheld: boolean;
   refresh(): Promise<void>;
 }
 
@@ -137,11 +138,13 @@ export function useEngineeringMatterWorkingRevision(
   sessionGeneration: number,
   authenticationRequired: boolean,
   enabled = true,
+  authorizationDenied = false,
 ): EngineeringMatterWorkingRevisionReadState {
   const effectiveMatterId: string = matterId.trim();
   const effectiveWorkRef: string = workRef.trim();
   const queryEnabled: boolean =
     enabled &&
+    !authorizationDenied &&
     Boolean(effectiveMatterId) &&
     Boolean(effectiveWorkRef) &&
     !authenticationRequired;
@@ -193,7 +196,9 @@ export function useEngineeringMatterWorkingRevision(
   }, [queryClient, queryKey, revoked]);
   const data: EngineeringMatterWorkingRevisionReadModel | null = revoked
     ? null
-    : (revisionQuery.data ?? null);
+    : authorizationDenied
+      ? null
+      : (revisionQuery.data ?? null);
   const refresh = useCallback(async (): Promise<void> => {
     if (!queryEnabled) return;
     const identityResult = identityQuery.data
@@ -217,6 +222,7 @@ export function useEngineeringMatterWorkingRevision(
       (identityQuery.isPending || revisionQuery.isPending),
     error: matterErrorMessage(error),
     revoked,
+    withheld: revoked || authorizationDenied,
     refresh,
   };
 }

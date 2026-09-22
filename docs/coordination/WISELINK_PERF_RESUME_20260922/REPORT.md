@@ -150,6 +150,9 @@ failing with an ordinary network error restored the pre-denial body, because
 Minimal fix in `client/src/features/matter/useEngineeringMatter.ts`:
 
 - each hook tracks the denied resource by its own query key in component state;
+- the exact-work hook also receives the workspace denial as an authorization
+  gate, so its query is disabled while the current matter is denied and the
+  wiki and graph cannot surface a stale historical view from a different key;
 - `setQueryData(queryKey, undefined)` runs while the resource is denied, so the
   shared cache no longer holds the rejected body;
 - a later `revoke` only clears once a genuinely successful fetch is recorded,
@@ -163,7 +166,8 @@ Minimal fix in `client/src/features/matter/useEngineeringMatter.ts`:
 Tests added in `test/unit/engineering-matter-query-cache.spec.ts`:
 
 - `workspace revoke is not undone by a later network failure`;
-- `exact historical work revoke is not undone by a later network failure`.
+- `exact historical work revoke is not undone by a later network failure`;
+- `a current matter denial also hides its exact historical work`.
 
 Both assert denial -> network failure -> hidden, then a successful
 re-authorization restores content. The pre-fix run failed both cases with the
@@ -190,13 +194,13 @@ compatibility adapters and the React Flow validation playground.
 Measured with `NODE_ENV=production vite build --config vite.config.ts` on the
 same Node 24.14.1 and the same installed dependency tree:
 
-| Metric | Before | After |
-| --- | ---: | ---: |
-| Entry chunk raw | 3,742.29 kB | 1,678.64 kB |
-| Entry chunk gzip | 1,183.84 kB | 538.05 kB |
-| Entry-reachable JS | 3.57 MB | 1.60 MB |
-| Entry CSS | 637.9 kB | 325.0 kB |
-| `routes.json` entries | 32 | 32 |
+| Metric                |      Before |       After |
+| --------------------- | ----------: | ----------: |
+| Entry chunk raw       | 3,742.29 kB | 1,678.64 kB |
+| Entry chunk gzip      | 1,183.84 kB |   538.05 kB |
+| Entry-reachable JS    |     3.57 MB |     1.60 MB |
+| Entry CSS             |    637.9 kB |    325.0 kB |
+| `routes.json` entries |          32 |          32 |
 
 The entry now references `cytoscape`, `mermaid`, `pdf`, `shiki` and
 `AtlasWorkspace` only through dynamic-import maps; those libraries are in
@@ -276,7 +280,7 @@ Results:
 
 - Server typecheck: pass.
 - Client typecheck: pass.
-- Jest: 20 suites passed, 151/151 tests passed with the repository standard
+- Jest: 20 suites passed, 154/154 tests passed with the repository standard
   configuration, `--runInBand` only and no `--forceExit`; Jest exited normally.
 - Client production build: pass. Entry chunk 1,678.64 kB raw / 538.05 kB gzip,
   down from 3,742.29 kB / 1,183.84 kB. `dist/client/routes.json` has 32 routes.
@@ -303,4 +307,3 @@ Results:
   assertion failure on `wl-light--cold`; the Layout source never contained that
   token at `c85a0b616` either, and this round did not change Layout. It is
   outside the focused regression set and is recorded rather than worked around.
-| Entry CSS (locally measured asset bytes) | 637.9 kB | 325.0 kB |

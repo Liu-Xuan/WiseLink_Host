@@ -91,6 +91,7 @@ const MatterWorkspace: FC<MatterWorkspaceProps> = ({
     loading,
     error,
     refresh: workspaceRefresh,
+    revoked: workspaceRevoked,
   } = useEngineeringMatter(matterId, sessionGeneration, authenticationRequired);
   const requestedWorkRef: string = searchParams.get('workRef')?.trim() ?? '';
   const scopeKey: string = matterReadingScope(matterId, requestedWorkRef);
@@ -118,6 +119,7 @@ const MatterWorkspace: FC<MatterWorkspaceProps> = ({
       requestedWorkRef &&
       currentRevision?.matterWorkRevisionId !== requestedWorkRef,
     ),
+    workspaceRevoked,
   );
   const requestedRevision = requestedRevisionRead.data;
   const displayedRevision: EngineeringMatterWorkingRevisionReadModel | null =
@@ -300,7 +302,9 @@ const MatterWorkspace: FC<MatterWorkspaceProps> = ({
           {navigationError}
         </p>
       ) : null}
-      {requestedWorkRef ? (
+      {requestedWorkRef &&
+      !requestedRevisionRead.withheld &&
+      !workspaceRevoked ? (
         <p
           role={requestedRevisionError ? 'alert' : 'status'}
           className="wl-projection-refresh"

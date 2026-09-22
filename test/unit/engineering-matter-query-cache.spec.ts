@@ -69,6 +69,7 @@ function Consumer({
     mockSession,
     false,
     Boolean(workRef),
+    read.revoked,
   );
   return createElement(
     'section',
@@ -692,6 +693,70 @@ describe('engineering matter QueryClient resource identity', () => {
       await Promise.resolve();
     });
     expect(matterACalls).toBe(2);
+  });
+
+  test('a current matter denial also hides its exact historical work', async () => {
+    const historical = structuredClone(libraryMatterFixture().working.current!);
+    historical.matterWorkRevisionId = 'test-working-3';
+    let matterACalls = 0;
+    mockWorkspaceRead.mockImplementation((matterId: string) => {
+      matterACalls += 1;
+      if (matterId !== 'A') return Promise.resolve(workspace('B matter'));
+      return matterACalls === 1
+        ? Promise.resolve(workspace('A current work'))
+        : Promise.reject(
+            Object.assign(new Error('matter denied'), { statusCode: 403 }),
+          );
+    });
+    mockHistoricalRead.mockResolvedValue(historical);
+    render(
+      createElement(
+        'div',
+        null,
+        createElement(Consumer, {
+          matterId: 'A',
+          workRef: 'test-working-3',
+          label: 'a',
+        }),
+        createElement(Consumer, { matterId: 'B', label: 'b' }),
+      ),
+    );
+    await waitUntil(
+      () =>
+        container
+          .querySelector('[data-consumer="a"]')
+          ?.getAttribute('data-revision') === 'test-working-3' &&
+        container
+          .querySelector('[data-consumer="b"]')
+          ?.getAttribute('data-title') === 'B matter',
+    );
+
+    await act(async () =>
+      container
+        .querySelector<HTMLButtonElement>('[data-action="refresh-a"]')
+        ?.click(),
+    );
+    await waitUntil(
+      () =>
+        container
+          .querySelector('[data-consumer="a"]')
+          ?.getAttribute('data-error') === 'matter denied',
+    );
+    expect(
+      container
+        .querySelector('[data-consumer="a"]')
+        ?.getAttribute('data-title'),
+    ).toBe('');
+    expect(
+      container
+        .querySelector('[data-consumer="a"]')
+        ?.getAttribute('data-revision'),
+    ).toBe('');
+    expect(
+      container
+        .querySelector('[data-consumer="b"]')
+        ?.getAttribute('data-title'),
+    ).toBe('B matter');
   });
 
   test('recycles an inactive matter workspace after gcTime', async () => {
