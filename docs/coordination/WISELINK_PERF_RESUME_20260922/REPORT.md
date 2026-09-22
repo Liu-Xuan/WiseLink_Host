@@ -557,3 +557,18 @@ reader只属于已完整验证的不可变原件这一次准备，普通源/sema
 真实浏览器对照：本轮自建loopback63217静态夹具，五页合成PDF、真实pdf.js/worker、实际Viewer与CSS，仅未走的Host API及本地CSRF依赖stub。旧模块目标5却工具栏4、targetTop500.875px、scrollTop1570；恢复修复模块后工具栏5、targetTop-0.25px、scrollTop2044、尾空间251px（容器760/末页515），截图确认实页5。局部静态服务已通过其运行句柄正常中断退出，本地tab已关闭；不是在生产页注入修复。线上e812仍需主控集成发布后复验。
 
 协作：6f77d9456的3套41项/types/lint/build/precommit已获Luna独立验收。消费者公平性本轮只读定位，尚未改consumer；V/R给出新实际失败后优先修复该失败。完整Goal保持active。
+
+
+## 2026-09-23 B：正常身份知识→图谱→来源→保存工作回查
+
+在主控报告已发布的 e812 上只读核验：知识页准确 ENGINEERING_MATTER/subjectId/workRef 已显示保存工作，但侧栏关系图谱 href 是裸 /graph；点击后默认解析为另一事项。顶部“打开图谱与自动演示”另属 Atlas，不具备精确保存工作入口，事项视图未接线提示不等于正式 Suite 图谱失败。A已按e812确认正式入口是 /graph?matterId=M&workRef=W，且其准确工作读取/校验已接入；主控和A确认B本批Sidebar范围无并发修改。
+
+独立树从e5dd起点最小修改Sidebar：/knowledge已有完整知识身份时复用knowledgeReadingIdentity，事项工作映射到matterId+workRef；不带知识选择的默认入口保持。重复/空/未知/缺失身份及混入其他对象pin显式阻断，不调用默认事项目录修复。WORK_ITEM保存版本保留workItemId+workRef，由现有dispatcher显式拒绝不支持的精确历史入口；本批未猜测JAWR到事项MWREV映射，也不声称该产品入口已可用。没有额外事项读取、后端权限变更或内容缓存。
+
+实际Sidebar组件反例：修复前9失败/13通过，修复后相关3套35项全部通过（sidebar-global-nav、shell-url-identity、app-shell-navigation）。测试仅隔离无关品牌SVG组件的Vite import.meta，Sidebar与路由/链接真实渲染。初始测试编译曾暴露此既有mock缺口及本批union narrowing问题，已分别修正后重新获得有效红绿结果。client types、生产Sidebar ESLint、client build13.65s通过。不是把静态字符串或自动化工具耗时当线上性能。
+
+实际业务只读补证：使用页面已显示的同一M/W及已核实正式路由进入，Suite图谱加载对应保存工作；确切原文入口打开该事项登记主文件，该文件当前无已发布解析，未重解析。返回关系图谱保留相同M/W、layoutSnapshot、viewport zoom/pan参数并重新显示图谱；未做像素/返回p95计量。图谱时间节点“保存工作修订16”打开同一保存Wiki，再通过其原有“工作修订14”链接打开历史版本，页面明确显示正在阅读指定修订14且不替换最新工作。此处主文件缺少解析，不能计为该样本的目标页阅读已通过；前批5页PDF证据属另一既有样本。
+
+网络只记匿名计量：此前工程知识catalogue单次响应头5270.617ms、catalogue/work1508.353ms。此次保存工作回查窗口中事项metadata 200 headers1328.567ms/total1330.135ms/2687B；working 200 headers1915.401ms/total1992.366ms/29807B；精确working/W 200 headers1473.856ms/total1542.370ms/30955B。中间浏览器事件缓冲曾过期，未恢复的数据不补造；新窗口明确未截断。排除外部telemetry，不计为暖后端p95。具体样本ID仅留本机/tmp证据JSON，不提交来源正文或认证信息。
+
+Luna已独立接受e5dd PDF修复5套25项、types/lint/build/precommit。本批仍待独立验收和主控集成发布；必须在最终部署后重新点击知识侧栏确认，不能用手动准确路由替代已修复上线证据。完整Goal继续active。

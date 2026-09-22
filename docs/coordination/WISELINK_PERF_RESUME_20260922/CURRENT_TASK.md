@@ -2,7 +2,7 @@
 
 ## 本批身份
 
-B系统性能工作树：`/private/tmp/wiselink-perf-b-pdf-target-20260923`，分支`codex/perf-b-pdf-target-20260923`；起点`6f77d9456b94d03b61d13a0fc48e973442828cc0`。本轮正常身份V/R发现发布版PDF目标5页实际停4页，已在独立树修复异步尺寸定位和短末页滚动空间，并完成真实PDF.js浏览器正反对照。主控仍唯一集成/发布者；本树不是线上版本。
+B系统性能工作树：`/private/tmp/wiselink-perf-b-knowledge-graph-20260923`，分支`codex/perf-b-knowledge-graph-20260923`；起点`e5dd9e3bfbdaee7e4051cbeffe936eaa456d2c15`。本轮正常身份V/R发现知识页侧栏丢弃保存事项/工作版本后默认进入另一事项，已最小修复Sidebar，保留invalid/conflict阻断。PDF目标页e5dd已获Luna独立5套25项/types/lint/build/precommit验收。主控仍唯一集成/发布者；本树不是线上版本。
 
 ## 完整路线状态（2026-09-23）
 
@@ -28,7 +28,7 @@ B系统性能工作树：`/private/tmp/wiselink-perf-b-pdf-target-20260923`，�
 
 ## 当前与随后
 
-3A.2真实SQL/RLS、3A.3和2C.2独立验收已完成；2C.3/2C.4a已获独立验收，2C.4b已独立验收，2B.2已独立验收；3A.4、2D.1已独立验收；3B.1/3B.2均已独立验收，当前PDF目标定位修复待独立验收。继续其他来源plan消费者热点、跨任务公平持续推进及2C通用退出，不重复已通过检查，不忽略2B.2/2C/2D/3B。完整计划见OFFICIAL_CODEX_ROADMAP。Goal仅在全部要求证据齐备时关闭，不在子批交付时关闭。
+3A.2真实SQL/RLS、3A.3和2C.2独立验收已完成；2C.3/2C.4a已获独立验收，2C.4b已独立验收，2B.2已独立验收；3A.4、2D.1已独立验收；3B.1/3B.2均已独立验收，PDF目标定位修复已独立验收，当前知识→正式图谱身份修复待独立验收。继续其他来源plan消费者热点、跨任务公平持续推进及2C通用退出，不重复已通过检查，不忽略2B.2/2C/2D/3B。完整计划见OFFICIAL_CODEX_ROADMAP。Goal仅在全部要求证据齐备时关闭，不在子批交付时关闭。
 
 
 共享文件协调：A已明确允许B单写者修改JobAid buildInput分页循环/相关import及document-original-engineering-reading.ts。A另有b10e6e570知识观察增量（JobAidKnowledgeObservationStatus import/queryKnowledge约791–842行），B未触及；主控选择性合并本批小差异，保留A其余变更，不整文件覆盖。

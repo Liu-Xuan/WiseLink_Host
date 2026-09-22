@@ -9,6 +9,10 @@ import type {
 
 const mockGetMatter = jest.fn();
 
+jest.mock('@client/src/components/WiseLinkBrandMark', () => ({
+  __esModule: true, default: () => null,
+}));
+
 jest.mock('@lark-apaas/client-toolkit/logger', () => ({
   logger: { error: jest.fn() },
 }));
@@ -220,4 +224,34 @@ describe('sidebar global navigation identity', () => {
   it('E1 FINAL: query historical work identity survives graph sidebar link', async () => { mockGetMatter.mockResolvedValue(matterWith([])); await mount('/graph?matterId=M1&workRef=MWREV-HIST'); expect(new URLSearchParams(href('关系图谱')!.split('?')[1]).get('workRef')).toBe('MWREV-HIST'); });
 
   it('E1 FINAL: graph sidebar preserves explicit activity identity even with matter context', async () => { mockGetMatter.mockResolvedValue(matterWith([entry('DV-CUR', true)])); await mount('/graph?matterId=M1&documentVersionId=DV-HIST&parseRunId=P1&candidateRevision=2&runRef=R2&returnLibraryQuery=mode%3Ddocument'); const query = new URLSearchParams(href('关系图谱')!.split('?')[1]); expect(query.get('documentVersionId')).toBe('DV-HIST'); expect(query.get('parseRunId')).toBe('P1'); expect(query.get('returnLibraryQuery')).toBe('mode=document'); });
+  it('keeps the saved knowledge matter and revision instead of opening a default matter', async () => {
+    await mount('/knowledge?subjectKind=ENGINEERING_MATTER&subjectId=M-SAVED&workRef=MWREV-OLD&articleY=19000');
+    expect(href('关系图谱')).toBe('/graph?matterId=M-SAVED&workRef=MWREV-OLD');
+    expect(mockGetMatter).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    'subjectKind=ENGINEERING_MATTER&subjectId=M-SAVED',
+    'subjectKind=ENGINEERING_MATTER&subjectId=M-SAVED&workRef=',
+    'subjectKind=ENGINEERING_MATTER&subjectId=M-SAVED&subjectId=M-OTHER&workRef=W',
+    'subjectKind=ENGINEERING_MATTER&subjectId=M-SAVED&workRef=W&workRef=OTHER',
+    'subjectKind=UNKNOWN&subjectId=M-SAVED&workRef=W',
+    'subjectKind=ENGINEERING_MATTER&subjectId=M-SAVED&workRef=W&matterId=M-OTHER',
+    'subjectKind=ENGINEERING_MATTER&subjectId=M-SAVED&workRef=W&documentVersionId=DV-OTHER',
+  ])('does not turn invalid or conflicting knowledge identity into a default graph: %s', async (query) => {
+    mockGetMatter.mockResolvedValue(matterWith([]));
+    await mount(`/knowledge?${query}`);
+    expect(href('关系图谱')).toBe('/graph?matterId=');
+  });
+
+  it('keeps a document work revision explicit so an unsupported graph cannot silently resolve current work', async () => {
+    await mount('/knowledge?subjectKind=WORK_ITEM&subjectId=WI-SAVED&workRef=W-OLD');
+    expect(href('关系图谱')).toBe('/graph?workItemId=WI-SAVED&workRef=W-OLD');
+  });
+
+  it('retains the ordinary unselected graph entry outside a pinned knowledge work', async () => {
+    await mount('/knowledge?query=example');
+    expect(href('关系图谱')).toBe('/graph');
+  });
+
 });
