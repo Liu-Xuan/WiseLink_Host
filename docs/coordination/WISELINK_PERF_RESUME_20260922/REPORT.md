@@ -572,3 +572,14 @@ reader只属于已完整验证的不可变原件这一次准备，普通源/sema
 网络只记匿名计量：此前工程知识catalogue单次响应头5270.617ms、catalogue/work1508.353ms。此次保存工作回查窗口中事项metadata 200 headers1328.567ms/total1330.135ms/2687B；working 200 headers1915.401ms/total1992.366ms/29807B；精确working/W 200 headers1473.856ms/total1542.370ms/30955B。中间浏览器事件缓冲曾过期，未恢复的数据不补造；新窗口明确未截断。排除外部telemetry，不计为暖后端p95。具体样本ID仅留本机/tmp证据JSON，不提交来源正文或认证信息。
 
 Luna已独立接受e5dd PDF修复5套25项、types/lint/build/precommit。本批仍待独立验收和主控集成发布；必须在最终部署后重新点击知识侧栏确认，不能用手动准确路由替代已修复上线证据。完整Goal继续active。
+
+
+## 2026-09-23 B：2D 保存工作历史成员授权有界并发
+
+真实热点继续存在：同一正常登录会话显式重载工程知识，catalogue 200 headers5405.168ms/total5405.496ms/3261B，catalogue/work 200 headers5108.373ms/total5225.923ms/27513B；该缓冲窗口标记截断，但两条请求均有response+finish，只报告这两条完整样本、不推断其他请求。再次重载完整未截断窗口：catalogue 200 headers3943.824ms/total3944.157ms/3236B，catalogue/work 200 headers3295.797ms/total3361.144ms/27575B。无效空采样未计入。页面重载样本不等于热React正文返回，也没有得到服务端trace或资源规格，因此不能把总网络耗时归因于某个SQL或宣称p95。
+
+主控和A明确无engineering-matter-working.service.ts在途写入。B从287ddd668建独立树，定位readWorkingRevision中current成员检查之后历史成员逐一串行requireInput。只将已去重的历史member列表按4个一组Promise.allSettled读取；每组完成后按原顺序传播首个错误，拒绝后不启动下一组。不跳过与current重合成员，不缓存权限，不更改authorizedMatter的snapshot重核/原件绑定、仓库readByRef完整来源/血缘核验、tenant/actor或exact workRef语义。这是每次精确读取的局部并发上限，不是全系统调度或全局数据库并发上限。
+
+实际服务反例使用真实requireInput依赖路径和可控授权延迟：2个current+9个saved唯一member，每个freshRead20ms；原实现200ms，修复80ms（1组current+3组历史），历史最大并发4，fresh调用仍11次；第二次请求重新检查全部11次。另一反例历史被移除成员拒绝时等待该组其余读结束，active=0才返回，下一组不启动。current拒绝时不读取保存body，确切历史缺失不回退current。旧版2失败/5通过，修复相关3套53项通过（engineering-matter-working.service、engineering-issue-search、engineering-matter-working-state），server types、生产service ESLint、server build通过。
+
+本批不能单独解释或解决线上4–5秒：仓库完整授权/血缘和数据库路径仍需继续证据定位；没有生产trace不能宣称某个查询是主要瓶颈。Luna已接受上一批287ddd668的3套35项/types/lint/build/precommit。本批待独立验收、主控集成及实际重复采样；Goal保持active。

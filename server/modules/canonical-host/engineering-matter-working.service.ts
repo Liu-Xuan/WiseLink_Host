@@ -87,13 +87,23 @@ export class EngineeringMatterWorkingService {
     });
     if (!revision) throw matterNotFound();
     // Historical work can contain a member that is no longer in the current composition.
-    for (const workItemId of new Set(
+    const savedMembers = [...new Set(
       [
         ...revision.state.substantiveInputs,
         ...revision.state.coverage.map((item) => item.binding),
       ].flatMap((binding) => (binding.workItemId ? [binding.workItemId] : [])),
-    ))
-      await this.requireInput(workItemId, actor);
+    )];
+    // Bound independent fresh reads within this request. Keep current and removed
+    // members checked, and settle the whole group before rejecting so no reads
+    // escape the request or overlap a caller's retry after an early rejection.
+    for (let start = 0; start < savedMembers.length; start += 4) {
+      const reads = await Promise.allSettled(
+        savedMembers.slice(start, start + 4).map(workItemId => this.requireInput(workItemId, actor)),
+      );
+      for (const read of reads) {
+        if (read.status === 'rejected') throw read.reason;
+      }
+    }
     return revision;
   }
 
