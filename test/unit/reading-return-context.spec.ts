@@ -552,3 +552,17 @@ test('opening a tree version without first selecting its quicklook preserves tha
   expect(readingReturnTarget(route.searchParams, 'DV-row')!.route).toContain('selectedDocumentVersionId=DV-row');
   expect(readingReturnTarget(route.searchParams, 'DV-row')!.route).not.toContain('previous');
 });
+
+
+test('Library graph return is local, singular and exclusive of other return intents', () => {
+  const params = new URLSearchParams({ returnLibraryGraphQuery: 'matterId=M1&workRef=W1&viewport=' + encodeURIComponent(JSON.stringify({ zoom: 1.2, pan: { x: 7, y: 8 } })) });
+  const read = (value: URLSearchParams, path = '/library') => readingReturnTarget(value, undefined, null, undefined, undefined, path);
+  expect(read(params)?.route).toContain('/graph?matterId=M1&workRef=W1');
+  expect(read(params, '/document-versions/DV1')).toBeNull();
+  for (const key of ['returnKnowledgeQuery', 'returnGraphQuery', 'returnDocumentVersionId', 'returnLibraryGraphQuery']) {
+    const mixed = new URLSearchParams(params); mixed.append(key, 'other');
+    expect(read(mixed)).toBeNull();
+  }
+  expect(read(new URLSearchParams({ returnLibraryGraphQuery: 'matterId=M1&workRef=W1&redirect=https://outside.test&action=START' }))?.route)
+    .toBe('/graph?matterId=M1&workRef=W1');
+});

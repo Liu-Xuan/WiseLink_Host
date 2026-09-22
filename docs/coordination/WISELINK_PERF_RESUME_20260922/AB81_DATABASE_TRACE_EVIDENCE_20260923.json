@@ -1,0 +1,780 @@
+{
+  "releaseCommit": "81abd9b061cb1acb420d02752bd9d81a8a319d47",
+  "method": "Official read-only trace-get; first catalogue/work pair correlated to browser response log IDs. Raw traces remain private.",
+  "samples": [
+    {
+      "sample": "catalogue",
+      "isBreak": false,
+      "serverMs": 3633.95,
+      "dataSpanCount": 60,
+      "sumReportedDataMs": 1095.79,
+      "groups": [
+        {
+          "tablesOrFunctions": "assessment_work_revision,engineering_matter_work_revision,works",
+          "count": 1,
+          "sumMs": 141.85,
+          "maxMs": 141.85
+        },
+        {
+          "tablesOrFunctions": "engineering_matter_revision_work_item,engineering_matter_material_link,engineering_matter,engineering_matter_revision",
+          "count": 4,
+          "sumMs": 41.95,
+          "maxMs": 16.26
+        },
+        {
+          "tablesOrFunctions": "work_item",
+          "count": 24,
+          "sumMs": 183.14,
+          "maxMs": 20.78
+        },
+        {
+          "tablesOrFunctions": "dm_document_version,dm_publication_family,dm_source_artifact,dm_acquisition,dm_ingress_preflight",
+          "count": 8,
+          "sumMs": 81.7,
+          "maxMs": 28.94
+        },
+        {
+          "tablesOrFunctions": "assessment_work_revision",
+          "count": 2,
+          "sumMs": 25.52,
+          "maxMs": 15.91
+        },
+        {
+          "tablesOrFunctions": "identity_subject_mapping",
+          "count": 2,
+          "sumMs": 28.45,
+          "maxMs": 16.41
+        },
+        {
+          "tablesOrFunctions": "engineering_matter_work_revision",
+          "count": 4,
+          "sumMs": 64.75,
+          "maxMs": 21.08
+        },
+        {
+          "tablesOrFunctions": "jsonb_array_elements_text",
+          "count": 3,
+          "sumMs": 15.02,
+          "maxMs": 5.08
+        },
+        {
+          "tablesOrFunctions": "engineering_matter_work_revision,action_attempt,LATERAL",
+          "count": 3,
+          "sumMs": 104.21,
+          "maxMs": 44.18
+        },
+        {
+          "tablesOrFunctions": "action_attempt",
+          "count": 3,
+          "sumMs": 149.07,
+          "maxMs": 75.11
+        },
+        {
+          "tablesOrFunctions": "engineering_matter",
+          "count": 1,
+          "sumMs": 6.05,
+          "maxMs": 6.05
+        },
+        {
+          "tablesOrFunctions": "action_attempt,engineering_matter_work_revision",
+          "count": 3,
+          "sumMs": 244.47,
+          "maxMs": 178.01
+        },
+        {
+          "tablesOrFunctions": "other",
+          "count": 2,
+          "sumMs": 9.61,
+          "maxMs": 5.28
+        }
+      ],
+      "timeline": [
+        {
+          "startRelativeToServerMs": 18.0,
+          "reportedDurationMs": 141.85,
+          "tablesOrFunctions": "assessment_work_revision,engineering_matter_work_revision,works"
+        },
+        {
+          "startRelativeToServerMs": 212.0,
+          "reportedDurationMs": 8.16,
+          "tablesOrFunctions": "engineering_matter_revision_work_item,engineering_matter_material_link,engineering_matter,engineering_matter_revision"
+        },
+        {
+          "startRelativeToServerMs": 239.0,
+          "reportedDurationMs": 10.24,
+          "tablesOrFunctions": "engineering_matter_revision_work_item,engineering_matter_material_link,engineering_matter,engineering_matter_revision"
+        },
+        {
+          "startRelativeToServerMs": 266.0,
+          "reportedDurationMs": 5.52,
+          "tablesOrFunctions": "work_item"
+        },
+        {
+          "startRelativeToServerMs": 289.0,
+          "reportedDurationMs": 5.48,
+          "tablesOrFunctions": "work_item"
+        },
+        {
+          "startRelativeToServerMs": 381.0,
+          "reportedDurationMs": 6.94,
+          "tablesOrFunctions": "work_item"
+        },
+        {
+          "startRelativeToServerMs": 406.0,
+          "reportedDurationMs": 6.86,
+          "tablesOrFunctions": "work_item"
+        },
+        {
+          "startRelativeToServerMs": 458.0,
+          "reportedDurationMs": 6.85,
+          "tablesOrFunctions": "work_item"
+        },
+        {
+          "startRelativeToServerMs": 482.0,
+          "reportedDurationMs": 6.91,
+          "tablesOrFunctions": "work_item"
+        },
+        {
+          "startRelativeToServerMs": 506.0,
+          "reportedDurationMs": 8.51,
+          "tablesOrFunctions": "work_item"
+        },
+        {
+          "startRelativeToServerMs": 535.0,
+          "reportedDurationMs": 6.68,
+          "tablesOrFunctions": "work_item"
+        },
+        {
+          "startRelativeToServerMs": 630.0,
+          "reportedDurationMs": 7.4,
+          "tablesOrFunctions": "work_item"
+        },
+        {
+          "startRelativeToServerMs": 658.0,
+          "reportedDurationMs": 7.68,
+          "tablesOrFunctions": "work_item"
+        },
+        {
+          "startRelativeToServerMs": 684.0,
+          "reportedDurationMs": 7.07,
+          "tablesOrFunctions": "work_item"
+        },
+        {
+          "startRelativeToServerMs": 708.0,
+          "reportedDurationMs": 7.27,
+          "tablesOrFunctions": "work_item"
+        },
+        {
+          "startRelativeToServerMs": 733.0,
+          "reportedDurationMs": 20.78,
+          "tablesOrFunctions": "work_item"
+        },
+        {
+          "startRelativeToServerMs": 789.0,
+          "reportedDurationMs": 9.93,
+          "tablesOrFunctions": "work_item"
+        },
+        {
+          "startRelativeToServerMs": 890.0,
+          "reportedDurationMs": 6.38,
+          "tablesOrFunctions": "dm_document_version,dm_publication_family,dm_source_artifact,dm_acquisition,dm_ingress_preflight"
+        },
+        {
+          "startRelativeToServerMs": 913.0,
+          "reportedDurationMs": 9.63,
+          "tablesOrFunctions": "dm_document_version,dm_publication_family,dm_source_artifact,dm_acquisition,dm_ingress_preflight"
+        },
+        {
+          "startRelativeToServerMs": 940.0,
+          "reportedDurationMs": 7.61,
+          "tablesOrFunctions": "dm_document_version,dm_publication_family,dm_source_artifact,dm_acquisition,dm_ingress_preflight"
+        },
+        {
+          "startRelativeToServerMs": 965.0,
+          "reportedDurationMs": 7.4,
+          "tablesOrFunctions": "dm_document_version,dm_publication_family,dm_source_artifact,dm_acquisition,dm_ingress_preflight"
+        },
+        {
+          "startRelativeToServerMs": 989.0,
+          "reportedDurationMs": 15.91,
+          "tablesOrFunctions": "assessment_work_revision"
+        },
+        {
+          "startRelativeToServerMs": 1027.0,
+          "reportedDurationMs": 9.61,
+          "tablesOrFunctions": "assessment_work_revision"
+        },
+        {
+          "startRelativeToServerMs": 1078.0,
+          "reportedDurationMs": 7.29,
+          "tablesOrFunctions": "engineering_matter_revision_work_item,engineering_matter_material_link,engineering_matter,engineering_matter_revision"
+        },
+        {
+          "startRelativeToServerMs": 1129.0,
+          "reportedDurationMs": 16.26,
+          "tablesOrFunctions": "engineering_matter_revision_work_item,engineering_matter_material_link,engineering_matter,engineering_matter_revision"
+        },
+        {
+          "startRelativeToServerMs": 1199.0,
+          "reportedDurationMs": 12.04,
+          "tablesOrFunctions": "identity_subject_mapping"
+        },
+        {
+          "startRelativeToServerMs": 1295.0,
+          "reportedDurationMs": 16.41,
+          "tablesOrFunctions": "identity_subject_mapping"
+        },
+        {
+          "startRelativeToServerMs": 1431.0,
+          "reportedDurationMs": 16.18,
+          "tablesOrFunctions": "engineering_matter_work_revision"
+        },
+        {
+          "startRelativeToServerMs": 1470.0,
+          "reportedDurationMs": 21.08,
+          "tablesOrFunctions": "engineering_matter_work_revision"
+        },
+        {
+          "startRelativeToServerMs": 1515.0,
+          "reportedDurationMs": 6.81,
+          "tablesOrFunctions": "work_item"
+        },
+        {
+          "startRelativeToServerMs": 1540.0,
+          "reportedDurationMs": 6.81,
+          "tablesOrFunctions": "work_item"
+        },
+        {
+          "startRelativeToServerMs": 1604.0,
+          "reportedDurationMs": 4.97,
+          "tablesOrFunctions": "jsonb_array_elements_text"
+        },
+        {
+          "startRelativeToServerMs": 1625.0,
+          "reportedDurationMs": 5.08,
+          "tablesOrFunctions": "jsonb_array_elements_text"
+        },
+        {
+          "startRelativeToServerMs": 1717.0,
+          "reportedDurationMs": 29.45,
+          "tablesOrFunctions": "engineering_matter_work_revision,action_attempt,LATERAL"
+        },
+        {
+          "startRelativeToServerMs": 1764.0,
+          "reportedDurationMs": 44.18,
+          "tablesOrFunctions": "engineering_matter_work_revision,action_attempt,LATERAL"
+        },
+        {
+          "startRelativeToServerMs": 1904.0,
+          "reportedDurationMs": 36.32,
+          "tablesOrFunctions": "action_attempt"
+        },
+        {
+          "startRelativeToServerMs": 1958.0,
+          "reportedDurationMs": 6.05,
+          "tablesOrFunctions": "engineering_matter"
+        },
+        {
+          "startRelativeToServerMs": 2054.0,
+          "reportedDurationMs": 34.09,
+          "tablesOrFunctions": "action_attempt,engineering_matter_work_revision"
+        },
+        {
+          "startRelativeToServerMs": 2105.0,
+          "reportedDurationMs": 4.33,
+          "tablesOrFunctions": "other"
+        },
+        {
+          "startRelativeToServerMs": 2233.0,
+          "reportedDurationMs": 6.73,
+          "tablesOrFunctions": "work_item"
+        },
+        {
+          "startRelativeToServerMs": 2257.0,
+          "reportedDurationMs": 6.77,
+          "tablesOrFunctions": "work_item"
+        },
+        {
+          "startRelativeToServerMs": 2281.0,
+          "reportedDurationMs": 6.82,
+          "tablesOrFunctions": "work_item"
+        },
+        {
+          "startRelativeToServerMs": 2305.0,
+          "reportedDurationMs": 15.13,
+          "tablesOrFunctions": "engineering_matter_work_revision"
+        },
+        {
+          "startRelativeToServerMs": 2438.0,
+          "reportedDurationMs": 7.55,
+          "tablesOrFunctions": "work_item"
+        },
+        {
+          "startRelativeToServerMs": 2463.0,
+          "reportedDurationMs": 7.03,
+          "tablesOrFunctions": "work_item"
+        },
+        {
+          "startRelativeToServerMs": 2487.0,
+          "reportedDurationMs": 6.89,
+          "tablesOrFunctions": "work_item"
+        },
+        {
+          "startRelativeToServerMs": 2511.0,
+          "reportedDurationMs": 5.28,
+          "tablesOrFunctions": "other"
+        },
+        {
+          "startRelativeToServerMs": 2635.0,
+          "reportedDurationMs": 8.11,
+          "tablesOrFunctions": "dm_document_version,dm_publication_family,dm_source_artifact,dm_acquisition,dm_ingress_preflight"
+        },
+        {
+          "startRelativeToServerMs": 2659.0,
+          "reportedDurationMs": 6.86,
+          "tablesOrFunctions": "dm_document_version,dm_publication_family,dm_source_artifact,dm_acquisition,dm_ingress_preflight"
+        },
+        {
+          "startRelativeToServerMs": 2683.0,
+          "reportedDurationMs": 28.94,
+          "tablesOrFunctions": "dm_document_version,dm_publication_family,dm_source_artifact,dm_acquisition,dm_ingress_preflight"
+        },
+        {
+          "startRelativeToServerMs": 2798.0,
+          "reportedDurationMs": 4.97,
+          "tablesOrFunctions": "jsonb_array_elements_text"
+        },
+        {
+          "startRelativeToServerMs": 2888.0,
+          "reportedDurationMs": 30.58,
+          "tablesOrFunctions": "engineering_matter_work_revision,action_attempt,LATERAL"
+        },
+        {
+          "startRelativeToServerMs": 2986.0,
+          "reportedDurationMs": 37.64,
+          "tablesOrFunctions": "action_attempt"
+        },
+        {
+          "startRelativeToServerMs": 3086.0,
+          "reportedDurationMs": 32.37,
+          "tablesOrFunctions": "action_attempt,engineering_matter_work_revision"
+        },
+        {
+          "startRelativeToServerMs": 3182.0,
+          "reportedDurationMs": 75.11,
+          "tablesOrFunctions": "action_attempt"
+        },
+        {
+          "startRelativeToServerMs": 3320.0,
+          "reportedDurationMs": 178.01,
+          "tablesOrFunctions": "action_attempt,engineering_matter_work_revision"
+        },
+        {
+          "startRelativeToServerMs": 3541.0,
+          "reportedDurationMs": 12.36,
+          "tablesOrFunctions": "engineering_matter_work_revision"
+        },
+        {
+          "startRelativeToServerMs": 3571.0,
+          "reportedDurationMs": 6.93,
+          "tablesOrFunctions": "work_item"
+        },
+        {
+          "startRelativeToServerMs": 3595.0,
+          "reportedDurationMs": 6.92,
+          "tablesOrFunctions": "work_item"
+        },
+        {
+          "startRelativeToServerMs": 3619.0,
+          "reportedDurationMs": 6.77,
+          "tablesOrFunctions": "dm_document_version,dm_publication_family,dm_source_artifact,dm_acquisition,dm_ingress_preflight"
+        }
+      ]
+    },
+    {
+      "sample": "work",
+      "isBreak": false,
+      "serverMs": 2817.51,
+      "dataSpanCount": 26,
+      "sumReportedDataMs": 328.69,
+      "groups": [
+        {
+          "tablesOrFunctions": "engineering_matter_revision_work_item,engineering_matter_material_link,engineering_matter,engineering_matter_revision",
+          "count": 2,
+          "sumMs": 17.58,
+          "maxMs": 10.17
+        },
+        {
+          "tablesOrFunctions": "work_item",
+          "count": 12,
+          "sumMs": 82.48,
+          "maxMs": 12.21
+        },
+        {
+          "tablesOrFunctions": "dm_document_version,dm_publication_family,dm_source_artifact,dm_acquisition,dm_ingress_preflight",
+          "count": 6,
+          "sumMs": 45.74,
+          "maxMs": 9.92
+        },
+        {
+          "tablesOrFunctions": "engineering_matter_work_revision",
+          "count": 2,
+          "sumMs": 80.48,
+          "maxMs": 75.22
+        },
+        {
+          "tablesOrFunctions": "jsonb_array_elements_text",
+          "count": 1,
+          "sumMs": 4.91,
+          "maxMs": 4.91
+        },
+        {
+          "tablesOrFunctions": "engineering_matter_work_revision,action_attempt,LATERAL",
+          "count": 1,
+          "sumMs": 29.91,
+          "maxMs": 29.91
+        },
+        {
+          "tablesOrFunctions": "action_attempt",
+          "count": 1,
+          "sumMs": 35.56,
+          "maxMs": 35.56
+        },
+        {
+          "tablesOrFunctions": "action_attempt,engineering_matter_work_revision",
+          "count": 1,
+          "sumMs": 32.03,
+          "maxMs": 32.03
+        }
+      ],
+      "timeline": [
+        {
+          "startRelativeToServerMs": 160.0,
+          "reportedDurationMs": 10.17,
+          "tablesOrFunctions": "engineering_matter_revision_work_item,engineering_matter_material_link,engineering_matter,engineering_matter_revision"
+        },
+        {
+          "startRelativeToServerMs": 292.0,
+          "reportedDurationMs": 5.86,
+          "tablesOrFunctions": "work_item"
+        },
+        {
+          "startRelativeToServerMs": 315.0,
+          "reportedDurationMs": 5.73,
+          "tablesOrFunctions": "work_item"
+        },
+        {
+          "startRelativeToServerMs": 339.0,
+          "reportedDurationMs": 5.68,
+          "tablesOrFunctions": "work_item"
+        },
+        {
+          "startRelativeToServerMs": 539.0,
+          "reportedDurationMs": 6.04,
+          "tablesOrFunctions": "work_item"
+        },
+        {
+          "startRelativeToServerMs": 562.0,
+          "reportedDurationMs": 5.84,
+          "tablesOrFunctions": "work_item"
+        },
+        {
+          "startRelativeToServerMs": 585.0,
+          "reportedDurationMs": 5.89,
+          "tablesOrFunctions": "work_item"
+        },
+        {
+          "startRelativeToServerMs": 796.0,
+          "reportedDurationMs": 9.92,
+          "tablesOrFunctions": "dm_document_version,dm_publication_family,dm_source_artifact,dm_acquisition,dm_ingress_preflight"
+        },
+        {
+          "startRelativeToServerMs": 823.0,
+          "reportedDurationMs": 6.51,
+          "tablesOrFunctions": "dm_document_version,dm_publication_family,dm_source_artifact,dm_acquisition,dm_ingress_preflight"
+        },
+        {
+          "startRelativeToServerMs": 846.0,
+          "reportedDurationMs": 6.73,
+          "tablesOrFunctions": "dm_document_version,dm_publication_family,dm_source_artifact,dm_acquisition,dm_ingress_preflight"
+        },
+        {
+          "startRelativeToServerMs": 1034.0,
+          "reportedDurationMs": 7.41,
+          "tablesOrFunctions": "engineering_matter_revision_work_item,engineering_matter_material_link,engineering_matter,engineering_matter_revision"
+        },
+        {
+          "startRelativeToServerMs": 1310.0,
+          "reportedDurationMs": 75.22,
+          "tablesOrFunctions": "engineering_matter_work_revision"
+        },
+        {
+          "startRelativeToServerMs": 1563.0,
+          "reportedDurationMs": 4.91,
+          "tablesOrFunctions": "jsonb_array_elements_text"
+        },
+        {
+          "startRelativeToServerMs": 1650.0,
+          "reportedDurationMs": 29.91,
+          "tablesOrFunctions": "engineering_matter_work_revision,action_attempt,LATERAL"
+        },
+        {
+          "startRelativeToServerMs": 1829.0,
+          "reportedDurationMs": 35.56,
+          "tablesOrFunctions": "action_attempt"
+        },
+        {
+          "startRelativeToServerMs": 1984.0,
+          "reportedDurationMs": 32.03,
+          "tablesOrFunctions": "action_attempt,engineering_matter_work_revision"
+        },
+        {
+          "startRelativeToServerMs": 2136.0,
+          "reportedDurationMs": 6.75,
+          "tablesOrFunctions": "work_item"
+        },
+        {
+          "startRelativeToServerMs": 2161.0,
+          "reportedDurationMs": 6.78,
+          "tablesOrFunctions": "work_item"
+        },
+        {
+          "startRelativeToServerMs": 2189.0,
+          "reportedDurationMs": 7.45,
+          "tablesOrFunctions": "work_item"
+        },
+        {
+          "startRelativeToServerMs": 2338.0,
+          "reportedDurationMs": 12.21,
+          "tablesOrFunctions": "work_item"
+        },
+        {
+          "startRelativeToServerMs": 2368.0,
+          "reportedDurationMs": 7.15,
+          "tablesOrFunctions": "work_item"
+        },
+        {
+          "startRelativeToServerMs": 2392.0,
+          "reportedDurationMs": 7.1,
+          "tablesOrFunctions": "work_item"
+        },
+        {
+          "startRelativeToServerMs": 2543.0,
+          "reportedDurationMs": 7.52,
+          "tablesOrFunctions": "dm_document_version,dm_publication_family,dm_source_artifact,dm_acquisition,dm_ingress_preflight"
+        },
+        {
+          "startRelativeToServerMs": 2567.0,
+          "reportedDurationMs": 7.63,
+          "tablesOrFunctions": "dm_document_version,dm_publication_family,dm_source_artifact,dm_acquisition,dm_ingress_preflight"
+        },
+        {
+          "startRelativeToServerMs": 2591.0,
+          "reportedDurationMs": 7.43,
+          "tablesOrFunctions": "dm_document_version,dm_publication_family,dm_source_artifact,dm_acquisition,dm_ingress_preflight"
+        },
+        {
+          "startRelativeToServerMs": 2799.0,
+          "reportedDurationMs": 5.26,
+          "tablesOrFunctions": "engineering_matter_work_revision"
+        }
+      ]
+    },
+    {
+      "sample": "work2",
+      "isBreak": false,
+      "serverMs": 2082.99,
+      "dataSpanCount": 26,
+      "sumReportedDataMs": 267.48,
+      "groups": [
+        {
+          "tablesOrFunctions": "engineering_matter_revision_work_item,engineering_matter_material_link,engineering_matter,engineering_matter_revision",
+          "count": 2,
+          "sumMs": 17.05,
+          "maxMs": 8.71
+        },
+        {
+          "tablesOrFunctions": "work_item",
+          "count": 12,
+          "sumMs": 83.88,
+          "maxMs": 7.71
+        },
+        {
+          "tablesOrFunctions": "dm_document_version,dm_publication_family,dm_source_artifact,dm_acquisition,dm_ingress_preflight",
+          "count": 6,
+          "sumMs": 42.54,
+          "maxMs": 8.52
+        },
+        {
+          "tablesOrFunctions": "engineering_matter_work_revision",
+          "count": 2,
+          "sumMs": 19.42,
+          "maxMs": 14.52
+        },
+        {
+          "tablesOrFunctions": "jsonb_array_elements_text",
+          "count": 1,
+          "sumMs": 5.11,
+          "maxMs": 5.11
+        },
+        {
+          "tablesOrFunctions": "engineering_matter_work_revision,action_attempt,LATERAL",
+          "count": 1,
+          "sumMs": 29.36,
+          "maxMs": 29.36
+        },
+        {
+          "tablesOrFunctions": "action_attempt",
+          "count": 1,
+          "sumMs": 36.08,
+          "maxMs": 36.08
+        },
+        {
+          "tablesOrFunctions": "action_attempt,engineering_matter_work_revision",
+          "count": 1,
+          "sumMs": 34.04,
+          "maxMs": 34.04
+        }
+      ],
+      "timeline": [
+        {
+          "startRelativeToServerMs": 13.0,
+          "reportedDurationMs": 8.34,
+          "tablesOrFunctions": "engineering_matter_revision_work_item,engineering_matter_material_link,engineering_matter,engineering_matter_revision"
+        },
+        {
+          "startRelativeToServerMs": 39.0,
+          "reportedDurationMs": 6.67,
+          "tablesOrFunctions": "work_item"
+        },
+        {
+          "startRelativeToServerMs": 63.0,
+          "reportedDurationMs": 6.74,
+          "tablesOrFunctions": "work_item"
+        },
+        {
+          "startRelativeToServerMs": 87.0,
+          "reportedDurationMs": 7.02,
+          "tablesOrFunctions": "work_item"
+        },
+        {
+          "startRelativeToServerMs": 111.0,
+          "reportedDurationMs": 6.99,
+          "tablesOrFunctions": "work_item"
+        },
+        {
+          "startRelativeToServerMs": 136.0,
+          "reportedDurationMs": 7.19,
+          "tablesOrFunctions": "work_item"
+        },
+        {
+          "startRelativeToServerMs": 321.0,
+          "reportedDurationMs": 7.71,
+          "tablesOrFunctions": "work_item"
+        },
+        {
+          "startRelativeToServerMs": 346.0,
+          "reportedDurationMs": 6.83,
+          "tablesOrFunctions": "dm_document_version,dm_publication_family,dm_source_artifact,dm_acquisition,dm_ingress_preflight"
+        },
+        {
+          "startRelativeToServerMs": 370.0,
+          "reportedDurationMs": 7.07,
+          "tablesOrFunctions": "dm_document_version,dm_publication_family,dm_source_artifact,dm_acquisition,dm_ingress_preflight"
+        },
+        {
+          "startRelativeToServerMs": 496.0,
+          "reportedDurationMs": 6.75,
+          "tablesOrFunctions": "dm_document_version,dm_publication_family,dm_source_artifact,dm_acquisition,dm_ingress_preflight"
+        },
+        {
+          "startRelativeToServerMs": 663.0,
+          "reportedDurationMs": 8.71,
+          "tablesOrFunctions": "engineering_matter_revision_work_item,engineering_matter_material_link,engineering_matter,engineering_matter_revision"
+        },
+        {
+          "startRelativeToServerMs": 855.0,
+          "reportedDurationMs": 14.52,
+          "tablesOrFunctions": "engineering_matter_work_revision"
+        },
+        {
+          "startRelativeToServerMs": 1047.0,
+          "reportedDurationMs": 5.11,
+          "tablesOrFunctions": "jsonb_array_elements_text"
+        },
+        {
+          "startRelativeToServerMs": 1164.0,
+          "reportedDurationMs": 29.36,
+          "tablesOrFunctions": "engineering_matter_work_revision,action_attempt,LATERAL"
+        },
+        {
+          "startRelativeToServerMs": 1342.0,
+          "reportedDurationMs": 36.08,
+          "tablesOrFunctions": "action_attempt"
+        },
+        {
+          "startRelativeToServerMs": 1440.0,
+          "reportedDurationMs": 34.04,
+          "tablesOrFunctions": "action_attempt,engineering_matter_work_revision"
+        },
+        {
+          "startRelativeToServerMs": 1600.0,
+          "reportedDurationMs": 7.7,
+          "tablesOrFunctions": "work_item"
+        },
+        {
+          "startRelativeToServerMs": 1624.0,
+          "reportedDurationMs": 6.55,
+          "tablesOrFunctions": "work_item"
+        },
+        {
+          "startRelativeToServerMs": 1648.0,
+          "reportedDurationMs": 6.64,
+          "tablesOrFunctions": "work_item"
+        },
+        {
+          "startRelativeToServerMs": 1748.0,
+          "reportedDurationMs": 6.87,
+          "tablesOrFunctions": "work_item"
+        },
+        {
+          "startRelativeToServerMs": 1771.0,
+          "reportedDurationMs": 6.89,
+          "tablesOrFunctions": "work_item"
+        },
+        {
+          "startRelativeToServerMs": 1795.0,
+          "reportedDurationMs": 6.91,
+          "tablesOrFunctions": "work_item"
+        },
+        {
+          "startRelativeToServerMs": 1889.0,
+          "reportedDurationMs": 6.67,
+          "tablesOrFunctions": "dm_document_version,dm_publication_family,dm_source_artifact,dm_acquisition,dm_ingress_preflight"
+        },
+        {
+          "startRelativeToServerMs": 1912.0,
+          "reportedDurationMs": 6.7,
+          "tablesOrFunctions": "dm_document_version,dm_publication_family,dm_source_artifact,dm_acquisition,dm_ingress_preflight"
+        },
+        {
+          "startRelativeToServerMs": 1936.0,
+          "reportedDurationMs": 8.52,
+          "tablesOrFunctions": "dm_document_version,dm_publication_family,dm_source_artifact,dm_acquisition,dm_ingress_preflight"
+        },
+        {
+          "startRelativeToServerMs": 2066.0,
+          "reportedDurationMs": 4.9,
+          "tablesOrFunctions": "engineering_matter_work_revision"
+        }
+      ]
+    }
+  ],
+  "limitations": [
+    "Three request samples, not p95 or a controlled A/B.",
+    "Trace-list span_count=1 is not the detail span count.",
+    "SQL duration_ms and timestamp intervals differ slightly; aggregate duration is not exclusive request time.",
+    "Uncovered request time includes application, database transport, queueing and instrumentation gaps; attribution to any one cause is not established.",
+    "CPU/memory responses omit units; minute samples cannot establish absence of transient contention."
+  ]
+}
