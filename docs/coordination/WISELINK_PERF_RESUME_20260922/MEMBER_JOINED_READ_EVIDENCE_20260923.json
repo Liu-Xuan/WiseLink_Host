@@ -1,0 +1,55 @@
+{
+  "date": "2026-09-23",
+  "parent": "3f3c771fe",
+  "status": "local_pass_pending_independent_review",
+  "change": "fresh ACL then single tenant projection + shared exact source identity query",
+  "invariants": [
+    "freshRead independent and first",
+    "projection errors precede source absence/integrity",
+    "shared four required joins and same source validator",
+    "both Matter version checks retained",
+    "no permission cache or dropped tenant/RLS checks"
+  ],
+  "validation": {
+    "unitSuites": 5,
+    "unitTests": 93,
+    "includesLocalPostgresTests": 12,
+    "fullMatterPostgresTests": 8,
+    "serverTypes": "pass",
+    "serverBuild": "pass",
+    "productLint": "pass; existing unused suppression warning",
+    "diffCheck": "pass",
+    "directRepositorySql": {
+      "old": 2,
+      "new": 1,
+      "sameProjectionAndSource": true
+    },
+    "fullReadSql": [
+      {
+        "name": "no-corrections",
+        "old": 13,
+        "new": 11
+      },
+      {
+        "name": "with-prior-result",
+        "old": 18,
+        "new": 17
+      },
+      {
+        "name": "three-overview-corrections",
+        "old": 15,
+        "new": 13
+      }
+    ]
+  },
+  "fixtures": {
+    "host": "127.0.0.1",
+    "port": 55441,
+    "disposableClusterStoppedAndDeleted": true,
+    "firstRunCorrection": "synthetic projection lacked required workItemId/revision; fixed fixture, not product parsing"
+  },
+  "limits": [
+    "local SQL evidence, no production latency claim",
+    "review and release pending"
+  ]
+}

@@ -13,7 +13,7 @@ import {
   CANONICAL_OBJECT_ACCESS,
   type CanonicalObjectAccessPort,
 } from '../work-item/canonical-object-access.port';
-import { MiaodaDocumentVersionSourceResolver } from '../work-item/miaoda-document-version-source.resolver';
+import { assertSourceIdentity } from '../work-item/document-version-source-identity';
 import { MiaodaWorkItemRepository } from '../work-item/miaoda-work-item.repository';
 import type { CanonicalHostActor } from './canonical-host.types';
 import {
@@ -32,9 +32,6 @@ import {
 
 type TenantScopedWorkItem = NonNullable<
   Awaited<ReturnType<MiaodaWorkItemRepository['loadTenantScopedProjection']>>
->;
-type DocumentVersionSource = Awaited<
-  ReturnType<MiaodaDocumentVersionSourceResolver['resolveIdentity']>
 >;
 
 interface AuthorizedMatter {
@@ -61,7 +58,6 @@ export class EngineeringMatterWorkingService {
     private readonly matters: EngineeringMatterRepository,
     private readonly working: EngineeringMatterWorkingRepository,
     private readonly workItems: MiaodaWorkItemRepository,
-    private readonly documentVersions: MiaodaDocumentVersionSourceResolver,
     @Inject(CANONICAL_OBJECT_ACCESS)
     private readonly objectAccess: CanonicalObjectAccessPort,
   ) {}
@@ -308,15 +304,10 @@ export class EngineeringMatterWorkingService {
         statusCode: access.statusCode,
       });
     }
-    // Fresh access already binds the exact source version. These reads are
-    // independent; settle both before validating or returning an error so no
-    // database work escapes this member check. Never cache the access decision.
-    const [scopedRead, sourceRead] = await Promise.allSettled([
-      this.workItems.loadTenantScopedProjection(access.workItemId, actor.tenantId),
-      this.documentVersions.resolveIdentity(access.documentVersionId),
-    ]);
-    if (scopedRead.status === 'rejected') throw scopedRead.reason;
-    const scoped = scopedRead.value;
+    // Fresh access binds the source before the tenant/source composite read.
+    const scoped = await this.workItems.loadTenantScopedMemberIdentity(
+      access.workItemId, actor.tenantId, access.documentVersionId,
+    );
     if (
       !scoped ||
       scoped.row.workItemId !== workItemId ||
@@ -331,19 +322,9 @@ export class EngineeringMatterWorkingService {
     ) {
       throw workItemDocumentConflict();
     }
-    let source: DocumentVersionSource;
-    try {
-      if (sourceRead.status === 'rejected') throw sourceRead.reason;
-      source = sourceRead.value;
-    } catch (error: unknown) {
-      if (
-        error instanceof Error &&
-        error.message === 'DOCUMENT_VERSION_NOT_FOUND'
-      ) {
-        throw documentVersionNotFound();
-      }
-      throw error;
-    }
+    const source = scoped.sourceIdentity;
+    if (!source) throw documentVersionNotFound();
+    assertSourceIdentity(source);
     if (
       source.version.documentId !== scoped.row.documentId ||
       source.version.documentVersionId !== scoped.row.documentVersionId

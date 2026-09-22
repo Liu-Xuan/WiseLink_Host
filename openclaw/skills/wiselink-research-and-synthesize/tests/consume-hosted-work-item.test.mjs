@@ -386,3 +386,65 @@ for (const operation of ['EVALUATE_JOBAID','EXTRACT_APPLICABILITY']) test(`origi
   assert.equal(result.status,'INITIAL_STAGE_SAVED');
   assert.equal(calls.filter(name => name==='next_original_assessment').length,1);
 });
+
+for (const queue of [
+  { busy: false, next: { reviewConversationRef: 'RC-new', reviewTurnRef: 'RT-new', requestId: 'REQ-new', turnNo: 1 } },
+  { busy: true, next: null },
+]) test(`a newly ${queue.busy ? 'busy' : 'queued'} Review yields after the saved stage`, async t => {
+  const input = { ...await options(t), maxInitialStages: 4 };
+  let saved = 0;
+  let queueReads = 0;
+  const started = [];
+  const result = await consumeHostedWorkItem(input, {
+    callTool: async name => {
+      if (name === 'get_pending_review_turn') { queueReads++; return saved ? queue : { busy: false, next: null }; }
+      assert.equal(name, 'get_parse_status');
+      return status({ workItemRevision: 2 + saved, nextOperation: saved ? 'EVALUATE_JOBAID' : 'TRANSLATE',
+        stages: { translation: { status: saved ? 'SUCCEEDED' : 'PENDING' }, applicability: { status: 'WAITING_INPUT' },
+          jobAid: { status: 'PENDING' }, overall: { status: 'PENDING' } } });
+    },
+    runInitial: async run => { started.push(run.operation); saved++; return { outcome: 'CANDIDATE_READY' }; },
+  });
+  assert.deepEqual(started, ['TRANSLATE']);
+  assert.equal(queueReads, 2);
+  assert.equal(result.status, 'INITIAL_STAGE_SAVED');
+  assert.deepEqual(result.completedStages, ['TRANSLATE']);
+  assert.equal(result.continuationDeferred, queue.busy ? 'REVIEW_BUSY' : 'REVIEW_PENDING');
+  const checkpoint = JSON.parse(await readFile(join(input.checkpointRoot, 'WI-new/initial/TRANSLATE/run-result.json'), 'utf8'));
+  assert.equal(checkpoint.status, 'INITIAL_STAGE_SAVED');
+});
+
+for (const condition of ['unknown-receipt', 'malformed-status', 'budget-exhausted'])
+  test(`continuation stops at ${condition} without losing the saved stage`, async t => {
+    const input = { ...await options(t), maxInitialStages: 4 };
+    const epoch = Date.now();
+    let clock = epoch;
+    t.mock.method(Date, 'now', () => clock);
+    let saved = 0;
+    let queueReads = 0;
+    const started = [];
+    const run = consumeHostedWorkItem(input, {
+      callTool: async name => {
+        if (name === 'get_pending_review_turn') {
+          queueReads++;
+          if (saved) {
+            if (condition === 'unknown-receipt') throw new Error('QUEUE_REPLY_LOST');
+            if (condition === 'malformed-status') return { busy: false };
+            clock = epoch + 15 * 60_000;
+          }
+          return { busy: false, next: null };
+        }
+        assert.equal(name, 'get_parse_status');
+        return status({ workItemRevision: 2 + saved, nextOperation: saved ? 'EVALUATE_JOBAID' : 'TRANSLATE',
+          stages: { translation: { status: saved ? 'SUCCEEDED' : 'PENDING' }, applicability: { status: 'WAITING_INPUT' },
+            jobAid: { status: 'PENDING' }, overall: { status: 'PENDING' } } });
+      },
+      runInitial: async operation => { started.push(operation.operation); saved++; return { outcome: 'CANDIDATE_READY' }; },
+    });
+    if (condition === 'budget-exhausted') assert.deepEqual((await run).completedStages, ['TRANSLATE']);
+    else await assert.rejects(run, condition === 'unknown-receipt' ? /QUEUE_REPLY_LOST/ : /INITIAL_REVIEW_QUEUE_STATUS_INVALID/);
+    assert.deepEqual(started, ['TRANSLATE']);
+    assert.equal(queueReads, 2, 'no replay of an uncertain queue read');
+    const checkpoint = JSON.parse(await readFile(join(input.checkpointRoot, 'WI-new/initial/TRANSLATE/run-result.json'), 'utf8'));
+    assert.equal(checkpoint.status, 'INITIAL_STAGE_SAVED');
+  });

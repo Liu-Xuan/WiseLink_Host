@@ -1,5 +1,9 @@
 import { drizzle } from 'drizzle-orm/postgres-js';
 import postgres from 'postgres';
+import { getTableColumns } from 'drizzle-orm';
+import { workItem } from '../../server/database/schema';
+import { MiaodaWorkItemRepository } from '../../server/modules/work-item/miaoda-work-item.repository';
+import { assertSourceIdentity } from '../../server/modules/work-item/document-version-source-identity';
 import { MiaodaDocumentVersionSourceResolver } from '../../server/modules/work-item/miaoda-document-version-source.resolver';
 
 const enabled = process.env.WL_SOURCE_IDENTITY_LOCAL_PG === '1';
@@ -8,9 +12,11 @@ const enabled = process.env.WL_SOURCE_IDENTITY_LOCAL_PG === '1';
   const schema = `source_identity_fixture_${process.pid}`;
   const role = `source_identity_reader_${process.pid}`;
   const queries: string[] = [];
-  const resolver = new MiaodaDocumentVersionSourceResolver(drizzle(client, {
+  const db = drizzle(client, {
     logger: { logQuery(query: string) { queries.push(query); } },
-  }) as never);
+  });
+  const resolver = new MiaodaDocumentVersionSourceResolver(db as never);
+  const workItems = new MiaodaWorkItemRepository(db as never);
   const tables = ['dm_document_version', 'dm_publication_family', 'dm_source_artifact', 'dm_acquisition', 'dm_ingress_preflight'];
   async function reader(actor = 'actor-1') {
     await client.unsafe(`SET ROLE "${role}"`);
@@ -22,6 +28,10 @@ const enabled = process.env.WL_SOURCE_IDENTITY_LOCAL_PG === '1';
     await client.unsafe(`CREATE ROLE "${role}" NOLOGIN NOSUPERUSER NOBYPASSRLS`);
     // Only identity and join columns exist: descriptors, acquisition payloads and
     // currentness table deliberately do not. This is not a production schema.
+    // Synthetic nullable WorkItem columns allow the real repository selection;
+    // full constraints are covered by engineering-matter-postgres.test.mjs.
+    const columns = Object.values(getTableColumns(workItem)).map(column => `"${column.name}" ${column.getSQLType().replace('user_profile', 'text')}`);
+    await client.unsafe(`CREATE TABLE work_item (${columns.join(', ')}, owner_id text)`);
     await client.unsafe('CREATE TABLE dm_document_version (document_version_id text PRIMARY KEY, document_id text, family_id text, source_artifact_id text, acquisition_id text, lifecycle_status text, pdf_sha256 text, byte_length bigint, owner_id text)');
     await client.unsafe('CREATE TABLE dm_publication_family (family_id text PRIMARY KEY, owner_id text)');
     await client.unsafe('CREATE TABLE dm_source_artifact (source_artifact_id text PRIMARY KEY, readback_verified boolean, sha256 text, byte_length bigint, owner_id text)');
@@ -29,6 +39,7 @@ const enabled = process.env.WL_SOURCE_IDENTITY_LOCAL_PG === '1';
     await client.unsafe('CREATE TABLE dm_ingress_preflight (preflight_id text PRIMARY KEY, acquisition_id text, document_version_id text, status text, owner_id text)');
     for (const suffix of ['1', '2']) {
       const owner = `actor-${suffix}`;
+      await client`INSERT INTO work_item (work_item_id, tenant_id, document_id, document_version_id, revision, projection_json, owner_id) VALUES (${`WI${suffix}`}, ${`tenant-${suffix}`}, ${`D${suffix}`}, ${`V${suffix}`}, 1, ${JSON.stringify({ workItemId: `WI${suffix}`, revision: 1, source: { documentVersionId: `V${suffix}` } })}, ${owner})`;
       await client`INSERT INTO dm_publication_family VALUES (${`F${suffix}`}, ${owner})`;
       await client`INSERT INTO dm_source_artifact VALUES (${`S${suffix}`}, true, ${'a'.repeat(64)}, 1234, ${owner})`;
       await client`INSERT INTO dm_acquisition VALUES (${`A${suffix}`}, ${owner})`;
@@ -36,7 +47,7 @@ const enabled = process.env.WL_SOURCE_IDENTITY_LOCAL_PG === '1';
       await client`INSERT INTO dm_ingress_preflight VALUES (${`P${suffix}`}, ${`A${suffix}`}, ${`V${suffix}`}, 'COMMITTED', ${owner})`;
     }
     await client.unsafe(`GRANT USAGE ON SCHEMA "${schema}" TO "${role}"`);
-    for (const table of tables) {
+    for (const table of [...tables, 'work_item']) {
       await client.unsafe(`ALTER TABLE ${table} ENABLE ROW LEVEL SECURITY`);
       await client.unsafe(`ALTER TABLE ${table} FORCE ROW LEVEL SECURITY`);
       await client.unsafe(`CREATE POLICY reader ON ${table} FOR SELECT USING (owner_id = current_setting('fixture.actor', true))`);
@@ -72,6 +83,9 @@ const enabled = process.env.WL_SOURCE_IDENTITY_LOCAL_PG === '1';
     try {
       await reader();
       await expect(resolver.resolveIdentity('V1')).rejects.toThrow('DOCUMENT_VERSION_NOT_FOUND');
+      const member = await workItems.loadTenantScopedMemberIdentity('WI1', 'tenant-1', 'V1');
+      expect(member?.row.documentVersionId).toBe('V1');
+      expect(member?.sourceIdentity).toBeNull();
     } finally {
       await client.unsafe('RESET ROLE');
       await client.unsafe(`UPDATE ${table} SET owner_id = 'actor-1' WHERE owner_id = 'hidden'`);
@@ -89,9 +103,48 @@ const enabled = process.env.WL_SOURCE_IDENTITY_LOCAL_PG === '1';
     try {
       await reader();
       await expect(resolver.resolveIdentity('V1')).rejects.toThrow('DOCUMENT_VERSION_NOT_FOUND');
+      const member = await workItems.loadTenantScopedMemberIdentity('WI1', 'tenant-1', 'V1');
+      expect(member?.row.documentVersionId).toBe('V1');
+      expect(member?.sourceIdentity).toBeNull();
     } finally {
       await client.unsafe('RESET ROLE');
       await client.unsafe(`UPDATE dm_ingress_preflight SET ${column} = $1 WHERE preflight_id = 'P1'`, [original]);
+      await reader();
+    }
+  });
+
+  it('returns the same projection and source as separate reads in one SQL statement, with tenant and WorkItem RLS isolation', async () => {
+    queries.length = 0;
+    const separate = await workItems.loadTenantScopedProjection('WI1', 'tenant-1');
+    const identity = await resolver.resolveIdentity('V1');
+    expect(queries).toHaveLength(2); // Direct old path: two actual SQL round trips.
+    queries.length = 0;
+    const combined = await workItems.loadTenantScopedMemberIdentity('WI1', 'tenant-1', 'V1');
+    expect(queries).toHaveLength(1);
+    expect(queries[0].match(/inner join/g)).toHaveLength(4);
+    expect(combined).toMatchObject({ ...separate, sourceIdentity: identity });
+    assertSourceIdentity(combined!.sourceIdentity!);
+    expect(await workItems.loadTenantScopedMemberIdentity('WI1', 'tenant-2', 'V1')).toBeNull();
+    await reader('actor-2');
+    expect(await workItems.loadTenantScopedMemberIdentity('WI1', 'tenant-1', 'V1')).toBeNull();
+    await reader();
+    const missing = await workItems.loadTenantScopedMemberIdentity('WI1', 'tenant-1', 'missing');
+    expect(missing?.row.workItemId).toBe('WI1');
+    expect(missing?.sourceIdentity).toBeNull();
+  });
+
+  it('preserves malformed projection failure even when the source is missing', async () => {
+    await client.unsafe('RESET ROLE');
+    await client`UPDATE work_item SET projection_json = 'broken' WHERE work_item_id = 'WI1'`;
+    try {
+      await reader();
+      let oldError: unknown;
+      try { await workItems.loadTenantScopedProjection('WI1', 'tenant-1'); } catch (error) { oldError = error; }
+      expect(oldError).toBeInstanceOf(Error);
+      await expect(workItems.loadTenantScopedMemberIdentity('WI1', 'tenant-1', 'missing')).rejects.toThrow((oldError as Error).message);
+    } finally {
+      await client.unsafe('RESET ROLE');
+      await client`UPDATE work_item SET projection_json = ${JSON.stringify({ workItemId: 'WI1', revision: 1, source: { documentVersionId: 'V1' } })} WHERE work_item_id = 'WI1'`;
       await reader();
     }
   });
@@ -101,5 +154,7 @@ const enabled = process.env.WL_SOURCE_IDENTITY_LOCAL_PG === '1';
     await client`UPDATE dm_source_artifact SET sha256 = 'different' WHERE source_artifact_id = 'S1'`;
     await reader();
     await expect(resolver.resolveIdentity('V1')).rejects.toThrow('DOCUMENT_VERSION_SOURCE_IDENTITY_INVALID');
+    const member = await workItems.loadTenantScopedMemberIdentity('WI1', 'tenant-1', 'V1');
+    expect(() => assertSourceIdentity(member!.sourceIdentity!)).toThrow('DOCUMENT_VERSION_SOURCE_IDENTITY_INVALID');
   });
 });

@@ -1,5 +1,4 @@
 import type { CanonicalObjectAccessPort } from '../../server/modules/work-item/canonical-object-access.port';
-import type { MiaodaDocumentVersionSourceResolver } from '../../server/modules/work-item/miaoda-document-version-source.resolver';
 import type { MiaodaWorkItemRepository } from '../../server/modules/work-item/miaoda-work-item.repository';
 import type { CanonicalHostActor } from '../../server/modules/canonical-host/canonical-host.types';
 import type { EngineeringMatterWorkingRepository } from '../../server/modules/canonical-host/engineering-matter-working.repository';
@@ -81,100 +80,54 @@ describe('EngineeringMatterWorkingService', () => {
     ]);
   });
 
-  it('checks member source identity without loading unused source records', async () => {
-    const documentVersions = {
-      resolveIdentity: jest.fn(async (id: string) => ({ version: documentVersion(id).version })),
-      resolve: jest.fn(() => { throw new Error('UNUSED_FULL_SOURCE_READ'); }),
-    };
-    const service = serviceWith({ documentVersions });
-    const basis = await service.resolveWorkingBasis('MAT-1', actor());
-    expect(basis.currentInputs).toHaveLength(2);
-    expect(documentVersions.resolveIdentity).toHaveBeenCalledTimes(2);
-    expect(documentVersions.resolve).not.toHaveBeenCalled();
+  it('loads the combined tenant/source identity only after fresh access', async () => {
+    const events: string[] = [];
+    const objectAccess = { freshRead: jest.fn(async ({ accessRoot }) => {
+      events.push(accessRoot.id);
+      return { allowed: true, workItemId: accessRoot.id,
+        documentVersionId: accessRoot.id === 'WI-A' ? 'DV-A' : 'DV-B' };
+    }) };
+    const workItems = { loadTenantScopedMemberIdentity: jest.fn(async (id: string, tenant: string, dv: string) => {
+      expect(events).toContain(id);
+      expect(tenant).toBe('tenant-A');
+      expect(dv).toBe(workItem(id).row.documentVersionId);
+      return workItem(id);
+    }) };
+    expect((await serviceWith({ objectAccess, workItems }).resolveWorkingBasis('MAT-1', actor())).currentInputs).toHaveLength(2);
+    expect(workItems.loadTenantScopedMemberIdentity).toHaveBeenCalledTimes(2);
   });
 
-  it('overlaps source and tenant reads only after fresh access and settles both', async () => {
-    jest.useFakeTimers();
-    try {
-      const events: string[] = [];
-      const objectAccess = { freshRead: jest.fn(async ({ accessRoot }) => {
-        await new Promise(resolve => setTimeout(resolve, 20));
-        events.push(`authorized:${accessRoot.id}`);
-        return { allowed: true, workItemId: accessRoot.id,
-          documentVersionId: accessRoot.id === 'WI-A' ? 'DV-A' : 'DV-B' };
-      }) };
-      const workItems = { loadTenantScopedProjection: jest.fn(async (id: string, tenant: string) => {
-        expect(tenant).toBe('tenant-A');
-        expect(events).toContain(`authorized:${id}`);
-        events.push(`projection:${id}`);
-        await new Promise(resolve => setTimeout(resolve, 60));
-        events.push(`projection-done:${id}`);
-        return workItem(id);
-      }) };
-      const documentVersions = { resolveIdentity: jest.fn(async (id: string) => {
-        expect(events).toContain(`authorized:${id === 'DV-A' ? 'WI-A' : 'WI-B'}`);
-        events.push(`source:${id}`);
-        await new Promise(resolve => setTimeout(resolve, 80));
-        events.push(`source-done:${id}`);
-        return documentVersion(id);
-      }) };
-      const service = serviceWith({ objectAccess, workItems, documentVersions });
-      const start = Date.now();
-      const pending = service.resolveWorkingBasis('MAT-1', actor());
-      await jest.runAllTimersAsync();
-      expect((await pending).currentInputs).toHaveLength(2);
-      expect(Date.now() - start).toBe(100); // ACL + max(projection, source), not their sum
-      expect(events.filter(event => event.includes('-done:'))).toHaveLength(4);
-    } finally { jest.useRealTimers(); }
-  });
-
-  it('does not launch either dependent read after fresh access is denied', async () => {
-    const workItems = { loadTenantScopedProjection: jest.fn() };
-    const documentVersions = { resolveIdentity: jest.fn() };
-    const service = serviceWith({ workItems, documentVersions,
+  it('does not launch the combined read after fresh access is denied', async () => {
+    const workItems = { loadTenantScopedMemberIdentity: jest.fn() };
+    const service = serviceWith({ workItems,
       objectAccess: { freshRead: jest.fn().mockResolvedValue({ allowed: false, code: 'REVOKED', statusCode: 403 }) } });
     await expect(service.readWorking('MAT-1', actor())).rejects.toMatchObject({ code: 'REVOKED' });
-    expect(workItems.loadTenantScopedProjection).not.toHaveBeenCalled();
-    expect(documentVersions.resolveIdentity).not.toHaveBeenCalled();
+    expect(workItems.loadTenantScopedMemberIdentity).not.toHaveBeenCalled();
   });
 
-  it('settles a slower source failure before returning the original tenant lookup failure', async () => {
-    jest.useFakeTimers();
-    try {
-      let activeSources = 0;
-      const documentVersions = { resolveIdentity: jest.fn(async () => {
-        activeSources++;
-        await new Promise(resolve => setTimeout(resolve, 80));
-        activeSources--;
-        throw new Error('DOCUMENT_VERSION_NOT_FOUND');
-      }) };
-      const service = serviceWith({ documentVersions,
-        matters: { loadCurrent: jest.fn().mockResolvedValue({ ...snapshot, links: snapshot.links.slice(0, 1) }) },
-        workItems: { loadTenantScopedProjection: jest.fn().mockRejectedValue(new Error('TENANT_READ_FAILED')) } });
-      const pending = service.readWorking('MAT-1', actor()).catch(error => ({ error, activeSources }));
-      await jest.runAllTimersAsync();
-      expect(await pending).toMatchObject({ error: new Error('TENANT_READ_FAILED'), activeSources: 0 });
-    } finally { jest.useRealTimers(); }
+  it('preserves a combined repository failure', async () => {
+    const service = serviceWith({ workItems: { loadTenantScopedMemberIdentity: jest.fn().mockRejectedValue(new Error('TENANT_READ_FAILED')) } });
+    await expect(service.readWorking('MAT-1', actor())).rejects.toThrow('TENANT_READ_FAILED');
   });
 
-  it.each(['missing', 'changed-version', 'projection-mismatch', 'source-mismatch', 'source-missing']) (
-    'still rejects %s after independent reads settle', async kind => {
+  it.each(['missing', 'changed-version', 'projection-mismatch', 'source-mismatch', 'source-missing', 'source-invalid']) (
+    'still rejects %s and gives projection validation precedence over source identity', async kind => {
       const scoped = workItem('WI-A');
       if (kind === 'changed-version') scoped.row.documentVersionId = 'DV-CHANGED';
       if (kind === 'projection-mismatch') scoped.projection.source.documentVersionId = 'DV-OTHER';
-      const source = documentVersion('DV-A');
-      if (kind === 'source-mismatch') source.version.documentId = 'DOC-OTHER';
-      const documentVersions = { resolveIdentity: kind === 'source-missing'
-        ? jest.fn().mockRejectedValue(new Error('DOCUMENT_VERSION_NOT_FOUND'))
-        : jest.fn().mockResolvedValue(source) };
-      const service = serviceWith({ documentVersions,
-        matters: { loadCurrent: jest.fn().mockResolvedValue({ ...snapshot, links: snapshot.links.slice(0, 1) }) },
-        workItems: { loadTenantScopedProjection: jest.fn().mockResolvedValue(kind === 'missing' ? null : scoped) } });
+      if (kind === 'source-mismatch') scoped.sourceIdentity.version.documentId = 'DOC-OTHER';
+      if (kind === 'source-invalid' || kind === 'projection-mismatch') scoped.sourceIdentity.artifact.sha256 = 'bad';
+      const workItems = { loadTenantScopedMemberIdentity: jest.fn().mockResolvedValue(kind === 'missing' ? null
+        : kind === 'source-missing' ? { ...scoped, sourceIdentity: null } : scoped) };
+      const service = serviceWith({ workItems,
+        matters: { loadCurrent: jest.fn().mockResolvedValue({ ...snapshot, links: snapshot.links.slice(0, 1) }) } });
       const code = kind === 'missing' || kind === 'changed-version'
         ? 'CANONICAL_WORK_ITEM_NOT_FOUND' : kind === 'source-missing'
-          ? 'DOCUMENT_VERSION_NOT_FOUND' : 'ENGINEERING_MATTER_WORK_ITEM_DOCUMENT_CONFLICT';
-      await expect(service.readWorking('MAT-1', actor())).rejects.toMatchObject({ code });
-      expect(documentVersions.resolveIdentity).toHaveBeenCalledWith('DV-A');
+          ? 'DOCUMENT_VERSION_NOT_FOUND' : kind === 'source-invalid'
+            ? 'DOCUMENT_VERSION_SOURCE_IDENTITY_INVALID' : 'ENGINEERING_MATTER_WORK_ITEM_DOCUMENT_CONFLICT';
+      const failure = await service.readWorking('MAT-1', actor()).catch(error => error);
+      expect(failure.code ?? failure.message).toBe(code);
+      expect(workItems.loadTenantScopedMemberIdentity).toHaveBeenCalledWith('WI-A', 'tenant-A', 'DV-A');
     },
   );
 
@@ -312,7 +265,6 @@ function serviceWith(
     matters?: Record<string, jest.Mock>;
     working?: Record<string, jest.Mock>;
     workItems?: Record<string, jest.Mock>;
-    documentVersions?: Record<string, jest.Mock>;
     objectAccess?: Record<string, jest.Mock>;
   } = {},
 ): EngineeringMatterWorkingService {
@@ -326,19 +278,10 @@ function serviceWith(
   const workItems =
     overrides.workItems ??
     ({
-      loadTenantScopedProjection: jest
+      loadTenantScopedMemberIdentity: jest
         .fn()
         .mockImplementation((workItemId: string) =>
           Promise.resolve(workItem(workItemId)),
-        ),
-    } as const);
-  const documentVersions =
-    overrides.documentVersions ??
-    ({
-      resolveIdentity: jest
-        .fn()
-        .mockImplementation((documentVersionId: string) =>
-          Promise.resolve(documentVersion(documentVersionId)),
         ),
     } as const);
   const objectAccess =
@@ -356,7 +299,6 @@ function serviceWith(
     matters as unknown as EngineeringMatterRepository,
     working as unknown as EngineeringMatterWorkingRepository,
     workItems as unknown as MiaodaWorkItemRepository,
-    documentVersions as unknown as MiaodaDocumentVersionSourceResolver,
     objectAccess as unknown as CanonicalObjectAccessPort,
   );
 }
@@ -379,6 +321,7 @@ function workItem(workItemId: string) {
       documentVersionId,
       revision: first ? 4 : 7,
     },
+    sourceIdentity: documentVersion(documentVersionId),
     projection: {
       source: { documentVersionId },
       integratedAssessment: { overallSynthesis: overall },
@@ -392,7 +335,9 @@ function documentVersion(documentVersionId: string) {
     version: {
       documentId: first ? 'DOC-A' : 'DOC-B',
       documentVersionId,
+      lifecycleStatus: 'COMMITTED_IMMUTABLE', pdfSha256: 'valid', byteLength: 42,
     },
+    artifact: { readbackVerified: true, sha256: 'valid', byteLength: 42 },
   };
 }
 
