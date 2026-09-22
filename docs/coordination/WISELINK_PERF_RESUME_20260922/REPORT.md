@@ -512,3 +512,18 @@ Activity STATUS在来源授权后调用已有expire（仅QUEUED/RUNNING且deadli
 协作更新：Luna已独立通过3A.4 d051d2781。主控已创建AB集成树，Luna对HEAD0c350f04/MERGE_HEADff46e1d9的41个staged路径组合16套203项、双端types/lint/build/precommit通过；仍未回报实际发布SHA/授权预览样本。本2D.1不修改或阻塞该固定截点。
 
 后续只读回读：集成树HEAD已为e812421cb050aed0954ca3f6945159100155a301，tracked clean仅node_modules链接；这是集成提交证据，尚不代表Host发布或授权样本验收。
+
+
+## 2026-09-23 B：3B.1 单执行解析复用与有限连续推进
+
+基线 `396ad7e8184718753166502dc06ffad9fcc2a023`，独立树 `/private/tmp/wiselink-perf-b-parse-execution-20260923`。改变范围是解析executeStep与PDF页提取，不触及A/WorkItem或共享consumer。25页构造执行样本，基线4次原件readSelection、4次独立PDF页提取生命周期、插件1次；新实现2次原件readSelection、2次PDF session打开/销毁、4个8页以内页组、插件仍1次。丢失第一次page upload进度回执时，原件读取5→3；已保存页组恢复，不重复提取0页组。该计数来自实际service加隔离存储/插件/PDF mock，真实PDF.js的生命周期与文本/图像/跨页内容另由Node测试核验；不是生产I/O时间或p95。
+
+同一executeStep只取得并核验一次原件字节/sha/length/provider绑定，惰性打开一次PDF，最多两个8页组；每组先fresh普通来源ACL与lease检查，页内保留检查，保存时原有事务/CAS不变。第二组只有从executeStep入口算起未超过10秒且源字节≤16MiB才继续。每组立即持久保存，最终组装前释放PDF；所有异常/返回均释放，下一请求重新取得、验证原件并检查新lease，不保留跨请求原件/PDF/权限缓存。恢复到已存在页组不打开PDF，复用旧parse revision的原始页面不新增解析插件调用。
+
+限制：10秒是页组间继续预算，不是抢占正在运行的插件/文件服务/PDF单页的硬截止；现有租约仍决定有效性。16MiB限制仅决定是否多处理一组，不是Node/PDF解码总堆上限，大原件保留既有每次一组能力。额外只多驻留一个有限页组，不新建并发执行器。跨任务调度/浏览器真实竞争、公平性和来源plan复用仍待后续完成，不把本批称作全部3B闭合。
+
+验证：两条新“第二轮应发布”反例在旧实现均失败；额外旧实现读数断言证实无丢失回执4读、丢失回执5读。新5套38项（execute、store、compose、layout、official-plugin）通过：最多两组、预算耗尽/大原件让出、组间撤权/租约失效、提取失败后只恢复未保存范围、provider漂移拒绝、parse revision复用/旧manifest不改。真实PDF.js Node5项通过：Hosted裁剪依赖加载、图像操作标记、跨页表格、同一session连续读取、关闭后拒绝、再次读取fresh授权和调用者bytes不被转移。server typecheck、2生产文件ESLint、server build通过；构建标记STATIC_VALIDATION_ONLY_NON_TARGET_BUILD/onlineMutationPerformed:false。测试目录不在ESLint覆盖内。
+
+发现并修正同一个Node测试里的旧夹具：它用两行普通PDF文字宣称有列结构，与当前compose“必须有实际物理列对齐证据”不符；在基线同样2≠1失败。改为jsPDF逐格绘制有对齐坐标的真实两页表格，仍要求全部四行/每个单元格/两个来源页，定位精度验证改为实际TEXT_ITEM及非空box。生产compose未修改，未削弱表格证据规则。
+
+协作：Luna已独立验收396ad7e81（5套59项、types/lint/build/precommit）；其PG说明明确只读实现者日志、不算第二次实际PG运行。主控固定e812集成发布切点不受本批影响；尚未收到新的实际Host/Hosted Skill版本及正常身份业务样本证据。Goal保持active。

@@ -9,7 +9,7 @@ const require = createRequire(import.meta.url);
 process.env.TS_NODE_COMPILER_OPTIONS = JSON.stringify({ module: 'CommonJS', moduleResolution: 'node' });
 require('ts-node/register/transpile-only'); require('tsconfig-paths/register');
 const { jsPDF } = require('jspdf');
-const { extractDocumentPdfPages } = require('../../server/modules/document-management/src/hosted/nest/document-original-pdf.ts');
+const { extractDocumentPdfPages, openDocumentPdfSession } = require('../../server/modules/document-management/src/hosted/nest/document-original-pdf.ts');
 const { composeDocumentOriginal } = require('../../server/modules/document-management/src/hosted/nest/document-original-compose.ts');
 
 test('Hosted extraction loads the packaged runtime engine without project node_modules', () => {
@@ -57,8 +57,11 @@ test('actual PDF.js bounded extraction reports raster painting even when parser 
 });
 
 test('a single verified logical table retains both physical source pages and every cell', async () => {
-  const pdf = new jsPDF(); pdf.text('Key Value A 10', 20, 20);
-  pdf.addPage(); pdf.text('B 20 C 30', 20, 20);
+  // Physical aligned columns are required; identical prose words do not prove a table.
+  const pdf = new jsPDF(); pdf.setFontSize(10);
+  const row = (left, right, y) => { pdf.text(left, 20, y); pdf.text(right, 70, y); };
+  row('Key', 'Value', 40); row('A', '10', 50);
+  pdf.addPage(); row('B', '20', 40); row('C', '30', 50);
   const bytes = new Uint8Array(pdf.output('arraybuffer'));
   const extraction = await extractDocumentPdfPages({ bytes, pageStart: 0, pageCount: 2, assertActive: async () => {} });
   const result = composeDocumentOriginal({ binding: { documentVersionId: 'DV-table', parseRunId: 'PR-table', parseRevision: 1,
@@ -69,6 +72,44 @@ test('a single verified logical table retains both physical source pages and eve
   const rows = result.source.units[0].payload.rowGroups[0].rows;
   assert.deepEqual(rows.map(row => row.cells.map(cell => cell.inlineContent[0].text)), [['Key','Value'],['A','10'],['B','20'],['C','30']]);
   assert.deepEqual(result.locations.map(location => location.pageIndex), [0, 1]);
-  assert.equal(result.locations.every(location => location.precision === 'PAGE' && location.boxes.length === 0), true);
+  assert.equal(result.locations.every(location => location.precision === 'TEXT_ITEM' && location.boxes.length > 0), true);
   assert.deepEqual(result.coverage.unresolvedRanges, []);
+});
+
+
+test('one actual PDF session processes successive bounded groups and rejects use after release', async () => {
+  const pdf = new jsPDF();
+  for (let page = 0; page < 17; page++) {
+    if (page) pdf.addPage();
+    pdf.text(`Original physical page ${page}.`, 20, 20);
+  }
+  const bytes = new Uint8Array(pdf.output('arraybuffer'));
+  const originalLength = bytes.length;
+  let checks = 0;
+  const session = await openDocumentPdfSession({ bytes, assertActive: async () => { checks++; } });
+  try {
+    await assert.rejects(session.extract({ pageStart: -1, pageCount: 8 }), /DOCUMENT_PDF_INPUT_INVALID/);
+    const first = await session.extract({ pageStart: 0, pageCount: 8 });
+    const next = await session.extract({ pageStart: 8, pageCount: 8 });
+    assert.equal(first.pageCount, 17); assert.equal(next.pageCount, 17);
+    assert.deepEqual([...first.pages, ...next.pages].map(page => page.text),
+      Array.from({ length: 16 }, (_, index) => `Original physical page ${index}.`));
+    assert.equal(bytes.length, originalLength, 'PDF worker must not transfer/detach the verified caller bytes');
+    assert.ok(checks >= 36, 'authorization/lease callback remains active throughout both page groups');
+  } finally { await session.destroy(); }
+  await session.destroy();
+  await assert.rejects(session.extract({ pageStart: 16, pageCount: 1 }), /DOCUMENT_PDF_SESSION_CLOSED/);
+});
+
+test('a reused actual PDF session rechecks authorization before serving the next group', async () => {
+  const pdf = new jsPDF(); pdf.text('First group.', 20, 20);
+  pdf.addPage(); pdf.text('Second group.', 20, 20);
+  let revoked = false;
+  const session = await openDocumentPdfSession({ bytes: new Uint8Array(pdf.output('arraybuffer')),
+    assertActive: async () => { if (revoked) throw new Error('SOURCE_READ_REVOKED'); } });
+  try {
+    assert.match((await session.extract({ pageStart: 0, pageCount: 1 })).pages[0].text, /First group/);
+    revoked = true;
+    await assert.rejects(session.extract({ pageStart: 1, pageCount: 1 }), /SOURCE_READ_REVOKED/);
+  } finally { await session.destroy(); }
 });
