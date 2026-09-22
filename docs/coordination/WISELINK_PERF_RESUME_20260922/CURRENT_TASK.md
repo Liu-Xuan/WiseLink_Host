@@ -2,7 +2,7 @@
 
 ## 本批身份
 
-B事项快照实现树：`/private/tmp/wiselink-perf-b-matter-snapshot-query-20260923`，父4ff75608c。loadCurrent保留完整三键/RLS/状态/形状校验，将3条读取合为1条，保存正文三类实际SQL 17/22/19→13/18/15。新计数反例父版本3!==1，完整PG修正旧摘要fixture后8/8通过，working11/search23、server types/lint/build通过；临时PG已清理。详见MATTER_SNAPSHOT_QUERY_EVIDENCE_20260923.json。Luna已独立接受41e9c82b0（11单测/官方server types/quiet lint/diffcheck），未另跑PG；已交Main执行集成发布。等待准确发布/Hosted安装回执后线上计量，其他路线未关闭，Goal active。
+B当前树：`/private/tmp/wiselink-perf-b-matter-snapshot-query-20260923`。41e9已独立接受并进入81abd9，release7688473071305133285已finished、实际资产SHA吻合。三次冷目录3.324–4.167秒/正文2.654–3.473秒，过期返回目录4.070秒/正文3.419秒，全部200、修订16完整。不是p95/A-B，目标未闭合。见AB81_READ_RUNTIME_EVIDENCE_20260923.json；Hosted安装与后台竞争仍待主控，Goal active。
 
 ## 完整路线状态（2026-09-23）
 

@@ -1,0 +1,166 @@
+{
+  "release": {
+    "id": "7688473071305133285",
+    "sha": "81abd9b061cb1acb420d02752bd9d81a8a319d47",
+    "status": "finished",
+    "updatedAt": 1790113088000,
+    "errorLogs": [],
+    "matchingBrowserAssetObserved": true
+  },
+  "sample": "same saved engineering matter revision16, normal login, no generation",
+  "cold": [
+    {
+      "completeNetworkWindow": true,
+      "requests": [
+        {
+          "endpoint": "identity-context",
+          "startEpochMs": 1790113174167.211,
+          "headersMs": 593.653,
+          "totalMs": 592.651,
+          "bytes": 1343,
+          "originMs": 254,
+          "innerMs": 135,
+          "status": 200,
+          "cdnCache": "MISS"
+        },
+        {
+          "endpoint": "catalogue",
+          "startEpochMs": 1790113174777.3882,
+          "headersMs": 4167.271,
+          "totalMs": 4166.635,
+          "bytes": 3247,
+          "originMs": 3826,
+          "innerMs": 3755,
+          "status": 200,
+          "cdnCache": "MISS"
+        },
+        {
+          "endpoint": "work",
+          "startEpochMs": 1790113174778.5972,
+          "headersMs": 3386.89,
+          "totalMs": 3473.23,
+          "bytes": 27406,
+          "originMs": 3045,
+          "innerMs": 2917,
+          "status": 200,
+          "cdnCache": "MISS"
+        }
+      ]
+    },
+    {
+      "completeNetworkWindow": true,
+      "requests": [
+        {
+          "endpoint": "identity-context",
+          "startEpochMs": 1790113218905.071,
+          "headersMs": 513.619,
+          "totalMs": 511.866,
+          "bytes": 1344,
+          "originMs": 170,
+          "innerMs": 142,
+          "status": 200,
+          "cdnCache": "MISS"
+        },
+        {
+          "endpoint": "catalogue",
+          "startEpochMs": 1790113219428.644,
+          "headersMs": 3324.924,
+          "totalMs": 3323.589,
+          "bytes": 3212,
+          "originMs": 2982,
+          "innerMs": 2851,
+          "status": 200,
+          "cdnCache": "MISS"
+        },
+        {
+          "endpoint": "work",
+          "startEpochMs": 1790113219429.457,
+          "headersMs": 2589.214,
+          "totalMs": 2654.314,
+          "bytes": 27658,
+          "originMs": 2248,
+          "innerMs": 2220,
+          "status": 200,
+          "cdnCache": "MISS"
+        }
+      ]
+    },
+    {
+      "completeNetworkWindow": true,
+      "requests": [
+        {
+          "endpoint": "identity-context",
+          "startEpochMs": 1790113227502.1528,
+          "headersMs": 556.504,
+          "totalMs": 555.541,
+          "bytes": 1346,
+          "originMs": 173,
+          "innerMs": 140,
+          "status": 200,
+          "cdnCache": "MISS"
+        },
+        {
+          "endpoint": "catalogue",
+          "startEpochMs": 1790113228069.326,
+          "headersMs": 3634.194,
+          "totalMs": 3633.369,
+          "bytes": 3206,
+          "originMs": 3293,
+          "innerMs": 3260,
+          "status": 200,
+          "cdnCache": "MISS"
+        },
+        {
+          "endpoint": "work",
+          "startEpochMs": 1790113228070.4639,
+          "headersMs": 3151.06,
+          "totalMs": 3221.205,
+          "bytes": 27877,
+          "originMs": 2807,
+          "innerMs": 2773,
+          "status": 200,
+          "cdnCache": "MISS"
+        }
+      ]
+    }
+  ],
+  "limitations": [
+    "Three cold samples and one expired return are not p95 or strict before-after A/B.",
+    "First broad event window was truncated; refetched complete focused window from immediately before identity request.",
+    "Server-Timing origin/inner are platform segments, not isolated SQL timings.",
+    "Includes A coverage and knowledge snapshot changes in the same release.",
+    "Hosted package not installed; no background model contention run."
+  ],
+  "expiredReturn": {
+    "completeNetworkWindow": true,
+    "clickEpochMs": 1790113277932,
+    "sincePriorCatalogueStartMs": 49862.674,
+    "requests": [
+      {
+        "endpoint": "catalogue",
+        "startEpochMs": 1790113277977.0679,
+        "headersMs": 4071.789,
+        "totalMs": 4070.388,
+        "bytes": 3212,
+        "originMs": 3732,
+        "innerMs": 3701,
+        "status": 200,
+        "cdnCache": "MISS"
+      },
+      {
+        "endpoint": "work",
+        "startEpochMs": 1790113277977.2798,
+        "headersMs": 3385.105,
+        "totalMs": 3418.508,
+        "bytes": 27652,
+        "originMs": 3034,
+        "innerMs": 3002,
+        "status": 200,
+        "cdnCache": "MISS"
+      }
+    ],
+    "revision16Visible": true,
+    "previewPresent": true,
+    "alertCount": 0
+  }
+}
