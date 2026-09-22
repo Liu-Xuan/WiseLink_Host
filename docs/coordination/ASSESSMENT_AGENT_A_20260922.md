@@ -65,3 +65,19 @@ A负责文档/事项解析后的关联上下文、JobAid动态问题分析、已
 文件：client API增加可选AbortSignal并传入既有request helper、useJobAidWorkingRead、jobaid-read-lifecycle.spec.ts及本记录。直接验证2套17项Jest（真实React挂载、fake timer/受控API、终态停止、隐藏取消/迟到返回、失败与权限拒绝、retained切换、会话/对象隔离）、client typecheck、3文件ESLint及diffcheck通过。未运行真实浏览器HAR/线上页面或模型，不作线上提速量化结论。
 
 安全活动投影与真实托管验收仍未完成；本批只减少不必要全文读取并使读取行为符合当前执行状态，不能替代来源/保存过程展示。主控负责集成发布，A未推送或发布。
+
+## 2026-09-23 子批：WorkItem真实读取与保存过程投影
+
+父提交 `60ec3a359f81b293fb46ba141a2d8dcdec145d67`。在原assessment-work GET及真实JobAidProblemWorkspace中接入本轮过程：复用同一已授权current attempt的reviewActivityJson与assessment_work_revision，不增加事件真源或模型调用。
+
+- 活动投影逐字段构造，只公开attemptRef、真实读取的引用数量/原数组序号/已有时间，以及真实保存workRef/版本/时间。来源标识、purpose、原文、查询文本、task/checkpoint和租约不输出。读取记录表示Host登记了读取，不证明模型已理解或响应一定送达；实际材料内容及引用仍通过既有授权正文入口查看。
+- 原始活动取尾50条，保留原序号与实际重复读取；未知类别、损坏条目、较早省略数分别提示，缺时间明确为空不补造。整个活动JSON损坏只影响读取记录，保存回执与已保存正文继续保留。
+- 保存查询限定tenant/WorkItem/当前DocumentVersion/精确attempt，仅读版本ID、版本号、时间，最多取51条判断是否还有较早保存，显示最近50次。读取与保存两组分别排序，不伪造统一事件顺序；这是有界窗口而非全部历史分页，UI明确显示范围。
+- 活动变化即使尚无新正文/任务状态变化也更新当前页面，不触发额外模型或业务更新。前批可见性/终态/失败停止策略保留。
+- 修正终态停轮询竞态：先选任务状态，再读取正文；如果状态已终结，正文查询不会早于它的最终保存。活动日志仍可能整行读入；未宣称数据库活动分页或整次读取成为窄字段查询。
+
+文件范围11个：shared/jobaid-activity.interface.ts、shared/jobaid-problem-assessment.interface.ts；server的jobaid-activity.ts、jobaid-work.repository.ts、canonical-jobaid-problem.service.ts；client的JobAidExecutionActivity.tsx、JobAidProblemWorkspace.tsx、useJobAidWorkingRead.ts；jobaid-activity.spec.ts、jobaid-current-execution.spec.ts；本记录。
+
+直接验证：最终5套58项Jest通过，覆盖字段白名单/隐私标记不外泄、原序号与重复读取、损坏与保存分离、窗口省略、真实组件展示、活动更新、查询范围、fresh权限前置和终态最终保存竞态；双端typecheck、10文件ESLint及diffcheck通过。一次编译检查发现unknown时间字段在项目非strict-null设置下无法收窄，已用显式类型分支构造安全字段；新测试初次直接导入SDK ESM导致Jest加载失败，已mock未调用的客户端API依赖，无修改SDK或放宽Jest配置。证据仍是受控gateway/repository/React测试，未真实PG或托管UI验收。
+
+至此已有Matter与WorkItem的读取/保存过程本地实现，活动首切不再仅限Matter。完整业务Goal仍需对实际上下文、动态问题分组、已准入取数、增量保存与接续作Luna独立验收并修复确认问题；状态与过程UI不能替代真实运行证据。主控统一集成发布，A未推送或发布。

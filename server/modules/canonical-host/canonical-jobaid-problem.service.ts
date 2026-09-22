@@ -1,3 +1,4 @@
+import { projectJobAidActivity } from './jobaid-activity';
 import { originalApplicabilityResultMatches } from './original-applicability-currentness';
 import { InitialAssessmentKnowledgeService } from './initial-assessment-knowledge.service';
 import { UnifiedReaderService } from '../unified-reader/unified-reader.service';
@@ -1295,6 +1296,16 @@ export class CanonicalJobAidProblemService {
       action: 'READ_DOCUMENT_PARSING',
       workItemId,
     });
+    // Saved work and the currently executing attempt are separate resources.
+    // A new run can be active before it produces its first saved revision.
+    const execution = await this.work.readCurrentExecution({
+      tenantId: actor.tenantId,
+      workItemId,
+      documentVersionId: workItem.source.documentVersionId,
+    });
+    // Read saved work after the status snapshot: a terminal status must not be
+    // paired with a body read before its final save, or the client would stop
+    // polling while retaining an older revision.
     const current = await this.work.latest({
       tenantId: actor.tenantId,
       workItemId,
@@ -1306,13 +1317,9 @@ export class CanonicalJobAidProblemService {
         actor.userId,
         workItemId,
       );
-    // Saved work and the currently executing attempt are separate resources.
-    // A new run can be active before it produces its first saved revision.
-    const executionStatus = await this.work.readCurrentExecutionStatus({
-      tenantId: actor.tenantId,
-      workItemId,
-      documentVersionId: workItem.source.documentVersionId,
-    });
+    const activity = execution ? projectJobAidActivity(execution,
+      await this.work.readSavedActivity({ tenantId: actor.tenantId, workItemId,
+        documentVersionId: workItem.source.documentVersionId, actionAttemptId: execution.attemptId })) : null;
     const overall = workItem.integratedAssessment?.overallSynthesis;
     const base = workItem.integratedAssessment?.baseRules;
     return {
@@ -1323,7 +1330,8 @@ export class CanonicalJobAidProblemService {
         !!current ||
         isJobAidProblemProjection(base) ||
         (!base && this.enabledForNewTasks()),
-      executionStatus,
+      executionStatus: execution?.status ?? null,
+      activity,
       currentInputChanged:
         !!current &&
         current.basedOnWorkItemRevision !== workItem.revision &&

@@ -1,3 +1,4 @@
+import JobAidExecutionActivity from './JobAidExecutionActivity';
 import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { getCanonicalHostClientSessionGeneration } from '@client/src/api/canonical-host';
 import { Button } from '@client/src/components/ui/button';
@@ -170,6 +171,7 @@ export function JobAidProblemReading({
           尚无已保存的问题分析。原文和工程师输入仍可阅读；形成的工作会在这里接续。
         </p>
         {execution}
+        <JobAidExecutionActivity activity={data.activity} />
         {actions}
       </section>
     );
@@ -249,6 +251,7 @@ export function JobAidProblemReading({
         </div>
         {actions}
         {execution}
+        <JobAidExecutionActivity activity={data.activity} />
         <p>{content.completionReason}</p>
       </header>
       {data.currentInputChanged ? (

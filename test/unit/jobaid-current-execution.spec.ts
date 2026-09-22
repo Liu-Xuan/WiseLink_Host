@@ -15,13 +15,18 @@ it('reads only the current document assessment status, prioritizing active attem
     {} as never,
   );
   expect(
-    await repository.readCurrentExecutionStatus({
+    await repository.readCurrentExecution({
       tenantId: 'tenant-one',
       workItemId: 'WI-one',
       documentVersionId: 'DV-one',
     }),
-  ).toBe('RUNNING');
-  expect(Object.keys(select.mock.calls[0][0] as object)).toEqual(['status']);
+  ).toEqual({ status: 'RUNNING' });
+  expect(Object.keys(select.mock.calls[0][0] as object)).toEqual([
+    'status',
+    'attemptId',
+    'attemptRef',
+    'activityJson',
+  ]);
   const dialect = new PgDialect();
   expect(dialect.sqlToQuery(where.mock.calls[0][0]).params).toEqual([
     'tenant-one',
@@ -43,7 +48,7 @@ it('reads only the current document assessment status, prioritizing active attem
   expect(limit).toHaveBeenCalledWith(1);
   limit.mockResolvedValueOnce([]);
   expect(
-    await repository.readCurrentExecutionStatus({
+    await repository.readCurrentExecution({
       tenantId: 'tenant-two',
       workItemId: 'WI-other',
       documentVersionId: 'DV-other',
@@ -52,27 +57,29 @@ it('reads only the current document assessment status, prioritizing active attem
 });
 
 function harness() {
-  const authorize = jest
-    .fn()
-    .mockResolvedValue({
-      allowed: true,
-      action: 'READ_DOCUMENT_PARSING',
-      permissionSnapshotVersion: 'fresh-1',
-    });
+  const authorize = jest.fn().mockResolvedValue({
+    allowed: true,
+    action: 'READ_DOCUMENT_PARSING',
+    permissionSnapshotVersion: 'fresh-1',
+  });
   const freshRead = jest
     .fn()
     .mockResolvedValue({ permissionSnapshotVersion: 'fresh-1' });
   const registrar = {
-    getTenantScopedByWorkItemId: jest
-      .fn()
-      .mockResolvedValue({
-        source: { documentVersionId: 'DV-current' },
-        revision: 3,
-      }),
+    getTenantScopedByWorkItemId: jest.fn().mockResolvedValue({
+      source: { documentVersionId: 'DV-current' },
+      revision: 3,
+    }),
   };
   const work = {
     latest: jest.fn().mockResolvedValue(null),
-    readCurrentExecutionStatus: jest.fn().mockResolvedValue('QUEUED'),
+    readCurrentExecution: jest.fn().mockResolvedValue({
+      status: 'QUEUED',
+      attemptId: 'current-attempt',
+      attemptRef: 'current-ref',
+      activityJson: null,
+    }),
+    readSavedActivity: jest.fn().mockResolvedValue([]),
   };
   const service = new CanonicalJobAidProblemService(
     registrar as never,
@@ -101,7 +108,14 @@ it('reports the current attempt before the first save using the authorized docum
   const result = await f.service.readBrowser('WI-one', f.actor);
   expect(result.current).toBeNull();
   expect(result.executionStatus).toBe('QUEUED');
-  expect(f.work.readCurrentExecutionStatus).toHaveBeenCalledWith({
+  expect(f.work.readSavedActivity).toHaveBeenCalledWith({
+    tenantId: 'tenant-one',
+    workItemId: 'WI-one',
+    documentVersionId: 'DV-current',
+    actionAttemptId: 'current-attempt',
+  });
+  expect(result.activity?.attemptRef).toBe('current-ref');
+  expect(f.work.readCurrentExecution).toHaveBeenCalledWith({
     tenantId: 'tenant-one',
     workItemId: 'WI-one',
     documentVersionId: 'DV-current',
@@ -117,7 +131,8 @@ it('does not read attempt state when object permission or its fresh snapshot is 
       f.freshRead.mockResolvedValue({ permissionSnapshotVersion: 'changed' });
     await expect(f.service.readBrowser('WI-one', f.actor)).rejects.toThrow();
     expect(f.work.latest).not.toHaveBeenCalled();
-    expect(f.work.readCurrentExecutionStatus).not.toHaveBeenCalled();
+    expect(f.work.readCurrentExecution).not.toHaveBeenCalled();
+    expect(f.work.readSavedActivity).not.toHaveBeenCalled();
   }
 });
 
@@ -132,7 +147,12 @@ it('a new run status does not replace or derive from the previous saved work', a
   f.work.latest.mockResolvedValue(previous);
   const checkEvidence = jest.fn().mockResolvedValue(undefined);
   Object.assign(f.service, { assertEvidenceOwned: checkEvidence });
-  f.work.readCurrentExecutionStatus.mockResolvedValue('RUNNING');
+  f.work.readCurrentExecution.mockResolvedValue({
+    status: 'RUNNING',
+    attemptId: 'current-attempt',
+    attemptRef: 'current-ref',
+    activityJson: null,
+  });
   const result = await f.service.readBrowser('WI-one', f.actor);
   expect(checkEvidence).toHaveBeenCalledWith(
     [],
@@ -143,4 +163,58 @@ it('a new run status does not replace or derive from the previous saved work', a
   expect(result.current).toBe(previous);
   expect(result.executionStatus).toBe('RUNNING');
   expect(result.currentInputChanged).toBe(true);
+});
+
+it('reads only bounded save receipts for the selected attempt and document scope', async () => {
+  const limit = jest.fn().mockResolvedValue([]);
+  const orderBy = jest.fn((..._orders: SQL[]) => ({ limit }));
+  const where = jest.fn((_condition: SQL) => ({ orderBy }));
+  const select = jest.fn((_fields: unknown) => ({ from: () => ({ where }) }));
+  const repository = new JobAidWorkRepository(
+    { select } as never,
+    {} as never,
+    {} as never,
+  );
+  await repository.readSavedActivity({
+    tenantId: 'tenant',
+    workItemId: 'WI',
+    documentVersionId: 'DV',
+    actionAttemptId: 'exact-attempt',
+  });
+  expect(Object.keys(select.mock.calls[0][0] as object)).toEqual([
+    'workRevisionRef',
+    'workRevision',
+    'createdAt',
+  ]);
+  expect(new PgDialect().sqlToQuery(where.mock.calls[0][0]).params).toEqual([
+    'tenant',
+    'WI',
+    'DV',
+    'exact-attempt',
+  ]);
+  expect(limit).toHaveBeenCalledWith(51);
+});
+
+it('reads saved work after terminal status so the final save cannot be missed when polling stops', async () => {
+  const f = harness();
+  const finalWork = {
+    workRevisionRef: 'final-work',
+    basedOnWorkItemRevision: 3,
+    content: { evidence: [] },
+  };
+  Object.assign(f.service, {
+    assertEvidenceOwned: jest.fn().mockResolvedValue(undefined),
+  });
+  f.work.readCurrentExecution.mockImplementation(async () => {
+    f.work.latest.mockResolvedValue(finalWork);
+    return {
+      status: 'SUCCEEDED',
+      attemptId: 'current-attempt',
+      attemptRef: 'current-ref',
+      activityJson: null,
+    };
+  });
+  const result = await f.service.readBrowser('WI-one', f.actor);
+  expect(result.executionStatus).toBe('SUCCEEDED');
+  expect(result.current).toBe(finalWork);
 });

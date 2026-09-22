@@ -1,3 +1,4 @@
+import type { JobAidActivityRead } from './jobaid-activity.interface';
 import type {
   AssessmentEvidence,
   AssessmentReadingResult,
@@ -225,6 +226,8 @@ export interface JobAidWorkingReadModel {
   workItemId: string;
   current: JobAidWorkRevision | null;
   executionStatus: string | null;
+  /** Optional for compatibility with Host versions before activity projection. */
+  activity?: JobAidActivityRead | null;
   currentInputChanged: boolean;
   overallStatus: 'NOT_AVAILABLE' | 'CURRENT' | 'STALE';
   overallBasedOnWorkRevisionRef: string | null;

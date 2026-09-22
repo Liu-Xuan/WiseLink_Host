@@ -1,3 +1,4 @@
+import { JOBAID_ACTIVITY_WINDOW, type JobAidExecutionObservation, type JobAidSavedActivityObservation } from './jobaid-activity';
 import { readHistoricalJobAidWork } from './jobaid-historical-reading';
 import { randomUUID } from 'node:crypto';
 import { dmDocumentParseRun } from '../../database/document-parsing.schema';
@@ -265,13 +266,14 @@ export class JobAidWorkRepository {
     );
   }
 
-  async readCurrentExecutionStatus(input: {
+  async readCurrentExecution(input: {
     tenantId: string;
     workItemId: string;
     documentVersionId: string;
-  }): Promise<string | null> {
+  }): Promise<JobAidExecutionObservation | null> {
     const [row] = await this.db
-      .select({ status: actionAttempt.status })
+      .select({ status: actionAttempt.status, attemptId: actionAttempt.attemptId,
+        attemptRef: actionAttempt.operationRef, activityJson: actionAttempt.reviewActivityJson })
       .from(actionAttempt)
       .where(and(
         eq(actionAttempt.tenantId, input.tenantId),
@@ -287,7 +289,22 @@ export class JobAidWorkRepository {
         desc(actionAttempt.attemptId),
       )
       .limit(1);
-    return row?.status ?? null;
+    return row ?? null;
+  }
+
+  async readSavedActivity(input: {
+    tenantId: string; workItemId: string; documentVersionId: string; actionAttemptId: string;
+  }): Promise<JobAidSavedActivityObservation[]> {
+    return this.db.select({
+      workRevisionRef: assessmentWorkRevision.assessmentWorkRevisionId,
+      workRevision: assessmentWorkRevision.workRevision,
+      createdAt: assessmentWorkRevision.createdAt,
+    }).from(assessmentWorkRevision).where(and(
+      eq(assessmentWorkRevision.tenantId, input.tenantId),
+      eq(assessmentWorkRevision.workItemId, input.workItemId),
+      eq(assessmentWorkRevision.documentVersionId, input.documentVersionId),
+      eq(assessmentWorkRevision.actionAttemptId, input.actionAttemptId),
+    )).orderBy(desc(assessmentWorkRevision.workRevision)).limit(JOBAID_ACTIVITY_WINDOW + 1);
   }
 
   async save(

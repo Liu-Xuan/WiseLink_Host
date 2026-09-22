@@ -16,6 +16,7 @@ export function preserveJobAidRead(
     previous.enabled === next.enabled &&
     previous.current?.workRevisionRef === next.current?.workRevisionRef &&
     previous.executionStatus === next.executionStatus &&
+    JSON.stringify(previous.activity) === JSON.stringify(next.activity) &&
     previous.currentInputChanged === next.currentInputChanged &&
     previous.overallStatus === next.overallStatus &&
     previous.overallBasedOnWorkRevisionRef ===
