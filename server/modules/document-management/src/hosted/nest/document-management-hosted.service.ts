@@ -1,4 +1,5 @@
 import type { DocumentMetadataReadRequest, DocumentMetadataReadResponse, DocumentMetadataReextractRequest, DocumentMetadataReextractResponse } from '@shared/api.interface';
+import { decodeExtractedMetadata } from './document-metadata-decode';
 import { mintDocumentUploadAuthority } from './document-upload-authority';
 import type { DocumentLibraryUploadRequest, DocumentUploadResponse } from '@shared/api.interface';
 import type { DocumentUploadAuthority } from './document-upload-authority';
@@ -228,7 +229,7 @@ export class DocumentManagementHostedService {
       await this.authorizer.assertCanRead({ ...context, action: 'DOCUMENT_READ', documentVersionId });
       const result = await this.catalog.fillMissingExtractedMetadata({ documentVersionId, sourceSha256: selected.sha256,
         sourceByteLength: selected.byteLength, extractedMetadata });
-      return { documentVersionId, ...result };
+      return { documentVersionId, ...result, extractedMetadata: decodeExtractedMetadata(result.extractedMetadata) };
     });
   }
 
@@ -258,7 +259,7 @@ export class DocumentManagementHostedService {
           throw Object.assign(new Error('Metadata request ID was already used with another expected revision.'), { code: 'DOCUMENT_METADATA_REQUEST_CONFLICT', statusCode: 409 });
         }
         return { documentVersionId, metadataId: replay.id, metadataRevision: replay.metadataRevision, requestId: input.requestId,
-          extractedMetadata: replay.extractedMetadata, disposition: 'IDEMPOTENT_REPLAY' };
+          extractedMetadata: decodeExtractedMetadata(replay.extractedMetadata), disposition: 'IDEMPOTENT_REPLAY' };
       }
       if (!row.metadata || row.metadata.metadataRevision !== input.expectedMetadataRevision) {
         throw Object.assign(new Error('Metadata revision changed; read the latest extraction before retrying.'), { code: 'DOCUMENT_METADATA_REVISION_CONFLICT', statusCode: 409 });
@@ -269,7 +270,7 @@ export class DocumentManagementHostedService {
       const result = await this.catalog.appendExtractedMetadata({ documentVersionId, ...input,
         sourceSha256: selected.sha256, sourceByteLength: selected.byteLength, extractedMetadata });
       return { documentVersionId, metadataId: result.metadata.id, metadataRevision: result.metadata.metadataRevision,
-        requestId: input.requestId, extractedMetadata: result.metadata.extractedMetadata, disposition: result.disposition };
+        requestId: input.requestId, extractedMetadata: decodeExtractedMetadata(result.metadata.extractedMetadata), disposition: result.disposition };
     });
   }
 
@@ -384,6 +385,7 @@ const PUBLIC_DM_REJECTIONS: Readonly<Record<string, { status: number; message: s
   DOCUMENT_METADATA_REVISION_CONFLICT: { status: 409, message: '元数据修订已变化，请读取最新结果后重新发起。' },
   DOCUMENT_METADATA_SOURCE_MISMATCH: { status: 409, message: '原件与已登记文档版本不一致，本次未保存元数据。' },
   DOCUMENT_METADATA_FILL_CONFLICT: { status: 409, message: '元数据来源核对未通过，本次未保存。' },
+  DOCUMENT_METADATA_SHAPE_INVALID: { status: 500, message: '已存档的文档元数据结构异常，请联系管理员核对。' },
   DOCUMENT_VERSION_NOT_FOUND: { status: 404, message: '文档版本不存在或当前用户无权访问。' },
   DOCUMENT_ACTION_FORBIDDEN: { status: 403, message: '当前用户无权执行此文档操作。' },
 };
@@ -402,7 +404,8 @@ async function publicDmOperation<T>(operation: () => Promise<T>): Promise<T> {
 
 function metadataReceipt(documentVersionId: string, metadata: Awaited<ReturnType<MiaodaHostedDocumentCatalog['readExtractedMetadata']>>): DocumentMetadataReadResponse {
   return { documentVersionId, metadataId: metadata?.id ?? null, metadataRevision: metadata?.metadataRevision ?? null,
-    requestId: metadata?.requestId ?? null, extractedMetadata: metadata?.extractedMetadata ?? null };
+    requestId: metadata?.requestId ?? null,
+    extractedMetadata: metadata?.extractedMetadata == null ? null : decodeExtractedMetadata(metadata.extractedMetadata) };
 }
 
 function invalidMetadataRequest(): never {

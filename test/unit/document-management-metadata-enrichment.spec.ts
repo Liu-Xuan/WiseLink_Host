@@ -378,6 +378,20 @@ describe('existing-version metadata enrichment', () => {
 });
 
 describe('metadata insert-only catalog boundary', () => {
+  const previousSandbox = process.env.SANDBOX_ID;
+  const previousLocal = process.env.MIAODA_LOCAL_DEV;
+  beforeEach(() => {
+    process.env.SANDBOX_ID = 'unit-sandbox';
+    delete process.env.MIAODA_LOCAL_DEV;
+  });
+  afterEach(() => {
+    jest.restoreAllMocks();
+    if (previousSandbox === undefined) delete process.env.SANDBOX_ID;
+    else process.env.SANDBOX_ID = previousSandbox;
+    if (previousLocal === undefined) delete process.env.MIAODA_LOCAL_DEV;
+    else process.env.MIAODA_LOCAL_DEV = previousLocal;
+  });
+
   it.each([true, false])(
     'keeps DocumentVersion immutable and handles inserted=%s without overwrite',
     async (inserted) => {
@@ -433,4 +447,82 @@ describe('metadata insert-only catalog boundary', () => {
       });
     },
   );
+
+  it('rejects a stored metadata shape that no longer matches the declared contract on ordinary read', async () => {
+    const f = fixture();
+    f.catalog.readMetadataSource.mockResolvedValue({
+      ...sourceRow(),
+      metadata: { ...metadataRow(), extractedMetadata: { schemaVersion: 'wiselink.document_metadata.v0' } },
+    });
+    await expect(
+      f.service.readDocumentMetadata('version-1', {}, context),
+    ).rejects.toMatchObject({ code: 'DOCUMENT_METADATA_SHAPE_INVALID', status: 500 });
+    expect(f.read).not.toHaveBeenCalled();
+  });
+
+  it('rejects corruption in a required non-title field on the full metadata API', async () => {
+    const f = fixture();
+    const corruptAta: unknown = {
+      ...metadata,
+      ata: { status: 'NOT_FOUND', observations: 'broken' },
+    };
+    f.catalog.readMetadataSource.mockResolvedValue({
+      ...sourceRow(),
+      metadata: { ...metadataRow(), extractedMetadata: corruptAta },
+    });
+    await expect(
+      f.service.readDocumentMetadata('version-1', {}, context),
+    ).rejects.toMatchObject({
+      code: 'DOCUMENT_METADATA_SHAPE_INVALID',
+      status: 500,
+    });
+    expect(f.read).not.toHaveBeenCalled();
+  });
+
+  it('rejects an idempotent replay whose stored metadata is corrupt instead of returning it', async () => {
+    const f = fixture();
+    f.catalog.readExtractedMetadata.mockResolvedValue({
+      ...metadataRow(2),
+      extractedMetadata: { title: {} },
+    });
+    await expect(
+      f.service.reextractDocumentMetadata(
+        'version-1',
+        { expectedMetadataRevision: 1, requestId: 'request-1' },
+        context,
+      ),
+    ).rejects.toMatchObject({ code: 'DOCUMENT_METADATA_SHAPE_INVALID', status: 500 });
+    expect(f.read).not.toHaveBeenCalled();
+  });
+
+  it('rejects a successful append whose readback metadata is corrupt instead of returning it', async () => {
+    const f = fixture();
+    f.catalog.readMetadataSource.mockResolvedValue({
+      ...sourceRow(),
+      metadata: metadataRow(1, 'previous-request'),
+    });
+    f.catalog.appendExtractedMetadata.mockResolvedValue({
+      disposition: 'APPENDED',
+      metadata: { ...metadataRow(2, 'request-1'), extractedMetadata: { pageCount: 'not-a-number' } },
+    });
+    await expect(
+      f.service.reextractDocumentMetadata(
+        'version-1',
+        { expectedMetadataRevision: 1, requestId: 'request-1' },
+        context,
+      ),
+    ).rejects.toMatchObject({ code: 'DOCUMENT_METADATA_SHAPE_INVALID', status: 500 });
+  });
+
+  it('rejects an enrichment fill whose stored metadata is corrupt instead of returning it', async () => {
+    const f = fixture();
+    f.catalog.fillMissingExtractedMetadata.mockResolvedValue({
+      disposition: 'ENRICHED',
+      extractedMetadata: { aircraftModelSemantics: 'FLEET_CONCLUSION' },
+    });
+    await expect(
+      f.service.enrichDocumentMetadata('version-1', context),
+    ).rejects.toMatchObject({ code: 'DOCUMENT_METADATA_SHAPE_INVALID', status: 500 });
+    expect(f.read).toHaveBeenCalled();
+  });
 });

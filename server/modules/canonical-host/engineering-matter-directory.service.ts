@@ -3,7 +3,19 @@ import {
   DRIZZLE_DATABASE,
   type PostgresJsDatabase,
 } from '@lark-apaas/fullstack-nestjs-core';
-import { and, desc, eq, exists, ilike, lt, notExists, or } from 'drizzle-orm';
+import {
+  and,
+  asc,
+  desc,
+  eq,
+  exists,
+  ilike,
+  inArray,
+  lt,
+  notExists,
+  or,
+  sql,
+} from 'drizzle-orm';
 import type {
   EngineeringMatterDirectoryRequest,
   EngineeringMatterDirectoryResponse,
@@ -14,7 +26,9 @@ import type {
 } from '@shared/assessment-reading.interface';
 import {
   engineeringMatter,
+  engineeringMatterMaterialLink,
   engineeringMatterRevisionWorkItem,
+  engineeringMatterWorkRevision,
   workItem,
 } from '../../database/schema';
 import { isHostedCanonicalFinalUserActor } from '../work-item/miaoda-hosted-canonical-object-access.adapter';
@@ -22,12 +36,33 @@ import type { CanonicalHostActor } from './canonical-host.types';
 import { EngineeringMatterService } from './engineering-matter.service';
 import { EngineeringMatterWorkingService } from './engineering-matter-working.service';
 
+type DirectoryOverallStatus =
+  EngineeringMatterDirectoryResponse['items'][number]['overallStatus'];
+
+interface DirectoryWorkingFact {
+  matterId: string;
+  workingRevision: number;
+  basedOnMatterRevisionId: string;
+  createdAt: Date;
+  hasSubstantiveResult: boolean;
+  resultRef: string | null;
+  resultRevision: number | null;
+  resultHeadline: string | null;
+  resultListBrief: string | null;
+  resultScopeKind: string | null;
+  resultScopeMatterId: string | null;
+  decisiveClaims: unknown;
+  overallStatus: string | null;
+}
+
 @Injectable()
 export class EngineeringMatterDirectoryService {
+  // Row-level readers remain injectable for callers, but list deliberately uses
+  // batch projections instead of entering either full read path.
   constructor(
     @Inject(DRIZZLE_DATABASE) private readonly db: PostgresJsDatabase,
-    private readonly matters: EngineeringMatterService,
-    private readonly working: EngineeringMatterWorkingService,
+    _matters: EngineeringMatterService,
+    _working: EngineeringMatterWorkingService,
   ) {}
 
   async list(
@@ -133,6 +168,8 @@ export class EngineeringMatterDirectoryService {
     const rows = await this.db
       .select({
         matterId: engineeringMatter.matterId,
+        title: engineeringMatter.title,
+        currentMatterRevisionId: engineeringMatter.currentMatterRevisionId,
         createdAt: engineeringMatter.createdAt,
         updatedAt: engineeringMatter.updatedAt,
       })
@@ -144,44 +181,179 @@ export class EngineeringMatterDirectoryService {
       )
       .limit(limit + 1);
     const selected = rows.slice(0, limit);
-    const items = await Promise.all(
-      selected.map(async (row) => {
-        const [matter, working] = await Promise.all([
-          this.matters.read(row.matterId, actor),
-          this.working.readWorking(row.matterId, actor),
-        ]);
-        const primary = matter.catalog.entries.filter(
-          (entry) => entry.relationRole === 'PRIMARY',
-        );
-        if (
-          (primary.length !== 1 && !matter.materials?.length) ||
-          matter.currentRevision.matterRevisionId !==
-            working.currentMatterRevisionId
-        )
-          throw directoryError('ENGINEERING_MATTER_DIRECTORY_CHANGED', 409);
-        const result = working.current?.state.substantiveResult ?? null;
-        if (
-          result &&
-          (result.scope.kind !== 'ENGINEERING_MATTER' ||
-            result.scope.matterId !== matter.matterId)
-        )
-          throw directoryError(
-            'ENGINEERING_MATTER_RESULT_BINDING_INVALID',
-            409,
-          );
-        return {
-          matterId: matter.matterId,
-          title: matter.title,
-          primaryWorkItemId: primary[0]?.workItemId ?? null,
-          createdAt: row.createdAt.toISOString(),
-          updatedAt: working.current?.createdAt ?? row.updatedAt.toISOString(),
-          currentMatterRevisionId: working.currentMatterRevisionId,
-          workingRevision: working.currentWorkingRevision,
-          result: result ? assessmentReadingSummary(result) : null,
-          overallStatus: working.current?.state.problemWork?.overviewStatus ?? null,
-        };
-      }),
+    const matterIds: string[] = selected.map(
+      (row: (typeof selected)[number]) => row.matterId,
     );
+    const revisionIds: string[] = selected.map(
+      (row: (typeof selected)[number]) => row.currentMatterRevisionId,
+    );
+    const [linkRows, materialRows, workingRows] = await Promise.all([
+      revisionIds.length === 0
+        ? Promise.resolve([])
+        : this.db
+            .select({
+              matterRevisionId:
+                engineeringMatterRevisionWorkItem.matterRevisionId,
+              workItemId: engineeringMatterRevisionWorkItem.workItemId,
+              relationRole: engineeringMatterRevisionWorkItem.relationRole,
+              ordinal: engineeringMatterRevisionWorkItem.ordinal,
+            })
+            .from(engineeringMatterRevisionWorkItem)
+            .where(
+              and(
+                eq(engineeringMatterRevisionWorkItem.tenantId, actor.tenantId),
+                inArray(
+                  engineeringMatterRevisionWorkItem.matterRevisionId,
+                  revisionIds,
+                ),
+              ),
+            )
+            .orderBy(
+              asc(engineeringMatterRevisionWorkItem.matterRevisionId),
+              asc(engineeringMatterRevisionWorkItem.ordinal),
+            ),
+      revisionIds.length === 0
+        ? Promise.resolve([])
+        : this.db
+            .selectDistinctOn(
+              [engineeringMatterMaterialLink.matterRevisionId],
+              {
+                matterRevisionId:
+                  engineeringMatterMaterialLink.matterRevisionId,
+              },
+            )
+            .from(engineeringMatterMaterialLink)
+            .where(
+              and(
+                eq(engineeringMatterMaterialLink.tenantId, actor.tenantId),
+                inArray(
+                  engineeringMatterMaterialLink.matterRevisionId,
+                  revisionIds,
+                ),
+              ),
+            )
+            .orderBy(asc(engineeringMatterMaterialLink.matterRevisionId)),
+      matterIds.length === 0
+        ? Promise.resolve([])
+        : this.db
+            .selectDistinctOn([engineeringMatterWorkRevision.matterId], {
+              matterId: engineeringMatterWorkRevision.matterId,
+              workingRevision: engineeringMatterWorkRevision.workingRevision,
+              basedOnMatterRevisionId:
+                engineeringMatterWorkRevision.basedOnMatterRevisionId,
+              createdAt: engineeringMatterWorkRevision.createdAt,
+              hasSubstantiveResult: sql<boolean>`
+                  coalesce(
+                    jsonb_typeof(
+                      ${engineeringMatterWorkRevision.stateJson}::jsonb
+                        -> 'substantiveResult'
+                    ) <> 'null',
+                    false
+                  )`,
+              resultRef: sql<string | null>`
+                  ${engineeringMatterWorkRevision.stateJson}::jsonb
+                    #>> '{substantiveResult,resultRef}'`,
+              resultRevision: sql<number | null>`
+                  (${engineeringMatterWorkRevision.stateJson}::jsonb
+                    #>> '{substantiveResult,resultRevision}')::integer`,
+              resultHeadline: sql<string | null>`
+                  ${engineeringMatterWorkRevision.stateJson}::jsonb
+                    #>> '{substantiveResult,content,headline}'`,
+              resultListBrief: sql<string | null>`
+                  ${engineeringMatterWorkRevision.stateJson}::jsonb
+                    #>> '{substantiveResult,content,listBrief}'`,
+              resultScopeKind: sql<string | null>`
+                  ${engineeringMatterWorkRevision.stateJson}::jsonb
+                    #>> '{substantiveResult,scope,kind}'`,
+              resultScopeMatterId: sql<string | null>`
+                  ${engineeringMatterWorkRevision.stateJson}::jsonb
+                    #>> '{substantiveResult,scope,matterId}'`,
+              decisiveClaims: sql<unknown>`
+                  CASE
+                    WHEN jsonb_typeof(
+                      ${engineeringMatterWorkRevision.stateJson}::jsonb
+                        -> 'substantiveResult' -> 'content' -> 'claims'
+                    ) <> 'array' THEN NULL
+                    ELSE (
+                      SELECT coalesce(
+                        jsonb_agg(
+                          jsonb_build_object(
+                            'claimId', claim ->> 'claimId',
+                            'text', claim ->> 'text'
+                          )
+                          ORDER BY claim_order
+                        ),
+                        '[]'::jsonb
+                      )
+                      FROM jsonb_array_elements(
+                        ${engineeringMatterWorkRevision.stateJson}::jsonb
+                          -> 'substantiveResult' -> 'content' -> 'claims'
+                      ) WITH ORDINALITY AS claims(claim, claim_order)
+                      WHERE jsonb_exists(
+                        ${engineeringMatterWorkRevision.stateJson}::jsonb
+                          -> 'substantiveResult' -> 'content'
+                          -> 'decisiveClaimIds',
+                        claim ->> 'claimId'
+                      )
+                    )
+                  END`,
+              overallStatus: sql<string | null>`
+                  ${engineeringMatterWorkRevision.stateJson}::jsonb
+                    #>> '{problemWork,overviewStatus}'`,
+            })
+            .from(engineeringMatterWorkRevision)
+            .where(
+              and(
+                eq(engineeringMatterWorkRevision.tenantId, actor.tenantId),
+                inArray(engineeringMatterWorkRevision.matterId, matterIds),
+              ),
+            )
+            .orderBy(
+              asc(engineeringMatterWorkRevision.matterId),
+              desc(engineeringMatterWorkRevision.workingRevision),
+            ),
+    ]);
+    const primaryByRevision: Map<string, string[]> = new Map();
+    for (const link of linkRows) {
+      if (link.relationRole !== 'PRIMARY') continue;
+      const primary = primaryByRevision.get(link.matterRevisionId) ?? [];
+      primary.push(link.workItemId);
+      primaryByRevision.set(link.matterRevisionId, primary);
+    }
+    const materialRevisions: Set<string> = new Set(
+      materialRows.map(
+        (row: { matterRevisionId: string }) => row.matterRevisionId,
+      ),
+    );
+    const workingByMatter: Map<string, DirectoryWorkingFact> = new Map(
+      workingRows.map((row) => [row.matterId, row]),
+    );
+    const items = selected.map((row: (typeof selected)[number]) => {
+      const primary = primaryByRevision.get(row.currentMatterRevisionId) ?? [];
+      const working = workingByMatter.get(row.matterId);
+      if (
+        primary.length !== 1 &&
+        !materialRevisions.has(row.currentMatterRevisionId)
+      )
+        throw directoryError('ENGINEERING_MATTER_DIRECTORY_CHANGED', 409);
+      if (
+        working &&
+        working.basedOnMatterRevisionId !== row.currentMatterRevisionId
+      )
+        throw directoryError('ENGINEERING_MATTER_DIRECTORY_CHANGED', 409);
+      return {
+        matterId: row.matterId,
+        title: row.title,
+        primaryWorkItemId: primary[0] ?? null,
+        createdAt: row.createdAt.toISOString(),
+        updatedAt:
+          working?.createdAt.toISOString() ?? row.updatedAt.toISOString(),
+        currentMatterRevisionId: row.currentMatterRevisionId,
+        workingRevision: working?.workingRevision ?? 0,
+        result: working ? directoryResultSummary(working) : null,
+        overallStatus: directoryOverallStatus(working?.overallStatus ?? null),
+      };
+    });
     const last = selected.at(-1);
     return {
       items,
@@ -214,6 +386,63 @@ export function assessmentReadingSummary(
       .filter((claim) => decisive.has(claim.claimId))
       .map((claim) => ({ claimId: claim.claimId, text: claim.text })),
   };
+}
+
+function directoryResultSummary(
+  working: DirectoryWorkingFact,
+): AssessmentReadingSummary | null {
+  if (!working.hasSubstantiveResult) return null;
+  if (
+    working.resultScopeKind !== 'ENGINEERING_MATTER' ||
+    working.resultScopeMatterId !== working.matterId
+  ) {
+    throw directoryError('ENGINEERING_MATTER_RESULT_BINDING_INVALID', 409);
+  }
+  if (
+    typeof working.resultRef !== 'string' ||
+    !working.resultRef.trim() ||
+    !Number.isSafeInteger(working.resultRevision) ||
+    Number(working.resultRevision) < 1 ||
+    typeof working.resultHeadline !== 'string' ||
+    typeof working.resultListBrief !== 'string' ||
+    !Array.isArray(working.decisiveClaims)
+  ) {
+    throw directoryError('ENGINEERING_MATTER_DIRECTORY_CHANGED', 409);
+  }
+  const decisiveClaims: AssessmentReadingSummary['decisiveClaims'] = [];
+  for (const claim of working.decisiveClaims) {
+    if (
+      !isRecord(claim) ||
+      typeof claim.claimId !== 'string' ||
+      typeof claim.text !== 'string'
+    ) {
+      throw directoryError('ENGINEERING_MATTER_DIRECTORY_CHANGED', 409);
+    }
+    decisiveClaims.push({ claimId: claim.claimId, text: claim.text });
+  }
+  return {
+    resultRef: working.resultRef,
+    resultRevision: working.resultRevision,
+    headline: working.resultHeadline,
+    listBrief: working.resultListBrief,
+    decisiveClaims,
+  };
+}
+
+function directoryOverallStatus(value: string | null): DirectoryOverallStatus {
+  switch (value) {
+    case null:
+    case 'NOT_AVAILABLE':
+    case 'CURRENT':
+    case 'STALE':
+      return value;
+    default:
+      throw directoryError('ENGINEERING_MATTER_DIRECTORY_CHANGED', 409);
+  }
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value);
 }
 
 function decodeCursor(
