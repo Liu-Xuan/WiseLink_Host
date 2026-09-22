@@ -87,10 +87,23 @@ export function materializeMatterJobAidCommand(input: {
   const hasSubstantiveChange = canonicalJson(readingContent(previous?.problemWork)) !==
     canonicalJson(readingContent(work));
   const unchangedIssues = canonicalJson(previous?.problemWork?.issues ?? null) === canonicalJson(work.issues);
-  // An overview update keeps the saved analysis of an unchanged exact input.
-  // It cannot certify a new source version or override an explicit disposition.
+  // Changes to independent issues do not invalidate this input's saved analysis.
+  // Trace changed/retired prior issues to their original sources before retaining
+  // coverage; a surviving citation alone must not hide a withdrawn analysis.
+  const currentIssues = new Map(work.issues.map(issue => [issue.issueKey, issue]));
+  const affectedPriorRefs = [...previousIssues.values()].filter(issue =>
+    canonicalJson(issue) !== canonicalJson(currentIssues.get(issue.issueKey) ?? null))
+    .flatMap(issue => collectIssueEvidenceUses(issue).map(use => use.evidenceRef));
+  const affectedRoots = assessmentEvidenceRoots(affectedPriorRefs, previous?.problemWork?.evidence ?? []);
+  const affectedRefs = new Set([...affectedPriorRefs, ...affectedRoots.rootRefs]);
+  const affectedDocuments = (previous?.problemWork?.evidence ?? [])
+    .filter(item => item.kind === 'DOCUMENT_PASSAGE' && affectedRefs.has(item.evidenceRef));
+  // Never certify a new binding or override an explicit disposition. Unresolved
+  // lineage remains conservative because its affected input cannot be identified.
   const retainedCoverageFor = (binding: EngineeringMatterWorkingInputBinding) => {
-    if (!unchangedIssues || byInput.has(binding.inputId) || !documents.some(item => matchesReadBinding(item, binding))) return undefined;
+    if (byInput.has(binding.inputId) || affectedRoots.unresolvedRefs.length ||
+      affectedDocuments.some(item => item.kind === 'DOCUMENT_PASSAGE' && matchesReadBinding(item, binding)) ||
+      !documents.some(item => matchesReadBinding(item, binding))) return undefined;
     return previous?.coverage.find(item => item.contribution === 'SUBSTANTIVE' &&
       canonicalJson(item.binding) === canonicalJson(binding));
   };

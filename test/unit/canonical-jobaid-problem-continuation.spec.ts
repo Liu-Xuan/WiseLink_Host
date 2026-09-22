@@ -295,9 +295,27 @@ describe('JobAid continuation requests', () => {
     expect(begun.task.allowedConnectors).toEqual(['feishu-aily-user']);
     expect(parseJobAidProblemTask(begun.task).knowledgeBinding).toEqual(binding);
     expect(begun.modelInput.knowledgeAccess).toEqual({ available: true });
+    expect(begun.modelInput.capabilities.find(item => item.capability === 'knowledge_retrieval'))
+      .toMatchObject({ status: 'AVAILABLE', impact: expect.stringContaining('不代表已取得检索结果') });
     expect(begun.modelInput.contextPackage?.knowledgeRetrieval.status).toBe('NOT_REQUESTED');
+    expect(begun.modelInput.contextPackage?.knowledgeRetrieval.fragments).toEqual([]);
     expect(JSON.stringify(begun.modelInput)).not.toMatch(/knowledgeBinding|sessionId|bound-agent-only|actorUserId|tenantId|leaseToken/);
     expect(JSON.stringify(begun.modelInput)).not.toContain(binding.sessionId);
+  });
+
+  it.each([
+    ['NOT_CONFIGURED', 'NOT_CONNECTED'],
+    ['USER_REAUTHORIZATION_REQUIRED', 'ACCESS_DENIED'],
+  ] as const)('keeps unavailable knowledge capability accurate: %s', async (reason, status) => {
+    const knowledge = { binding: jest.fn().mockResolvedValue({ access: { available: false, reason } }) };
+    const h = harness(knowledge);
+    const begun = await h.service.begin(h.current(), scope, 'INITIAL_PROBLEM_ASSESSMENT');
+    expect(begun.modelInput.knowledgeAccess).toEqual({ available: false, reason });
+    expect(begun.modelInput.capabilities.find(item => item.capability === 'knowledge_retrieval'))
+      .toMatchObject({ status });
+    expect(begun.modelInput.contextPackage?.knowledgeRetrieval).toMatchObject({ status: 'UNAVAILABLE', reason, fragments: [] });
+    expect(begun.task.allowedConnectors).toEqual([]);
+    expect(parseJobAidProblemTask(begun.task).knowledgeBinding).toBeUndefined();
   });
 
   it('delivers supplemental source context without treating inaccessible references or user assumptions as primary-source failures', () => {

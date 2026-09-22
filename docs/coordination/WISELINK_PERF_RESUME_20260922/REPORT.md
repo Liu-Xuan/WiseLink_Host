@@ -947,3 +947,59 @@ Main回执：ef258 release7688432648880098235 finished updated_at=1790103060000�
 - 有效旧反例1 failed/10 passed：成员核对仍进入不被消费的完整source读取。新三套44项通过；随后追加真实Drizzle SQL编译核对并仅复跑resolver 11项（新增1项，45个不同测试，不称为统一45项复跑）。验证四必需join和preflight acquisition/version精确条件、COMMITTED/id/limit绑定参数、无descriptor/currentness投影、四类源身份错误及缺登记拒绝，原creator/currentness测试保留。SQL为真实builder生成，但没有连接PG，不冒充实际数据库/RLS或生产延迟验证。
 - server typecheck通过；两生产文件ESLint无error，working service既有unused-disable warning保留；server build和precommit按本批实际日志/提交回执记录。日志`/private/tmp/wiselink-source-identity-{red,tests,sql-tests,types,lint,build}.log`。本批不改模式/索引/存量数据，下一步Luna独立审查，Main统一集成发布，再测同保存正文冷路径。
 - 前批f7d6e82e9458f55a7663cac9041a8de90186a6c9已获Luna独立33项、官方server typecheck、服务/测试lint与diffcheck接受并回传Main。dd1亦已独立接受；未取得本批发布回执前不标为线上生效。
+
+
+## B 来源窄投影真实 PostgreSQL 补证（2026-09-23）
+
+- 基线a0e712f82985ca57fd1a52bf75be3a8971aba4ba，独立树`/private/tmp/wiselink-perf-b-source-identity-pg-20260923`；仅新增测试和更新协调文档，无产品变化。a0已获Luna独立resolver/service22项、官方server types、4文件lint、diffcheck接受，无阻断。Luna当轮未连接PG；本节为B单独补齐的实际数据库证据，不混称独立PG复测。
+- 使用全新隔离PostgreSQL14，本机127.0.0.1:55441；精简5表仅有8个投影字段、join keys和fixture owner字段，故意无currentness表/大descriptor或采集payload。实际非owner角色NOSUPERUSER/NOBYPASSRLS、5表FORCE RLS，使用本地fixture actor策略测试JOIN可见性。不是生产RLS完整策略认证，不连接生产数据库。
+- `WL_SOURCE_IDENTITY_LOCAL_PG=1 npx jest --runInBand test/unit/miaoda-source-identity-postgres.spec.ts`实际10/10通过、无skip：一次SELECT返回两个文档ID，双向actor隔离；5张必需表逐一被RLS隐藏均拒绝；preflight acquisition/version/status三类错误绑定均拒绝；成功JOIN后digest mismatch仍拒绝。DDL、参数与真实resolver由Drizzle/Postgres执行，非只编译SQL。
+- 最初sandbox initdb因系统shared memory权限失败且自动清理了未完成目录；通过已授权的本地临时PG执行权限后正常初始化/启动，未把第一次失败记成成功。测试fixture afterAll删除schema/role并断开连接。服务器已用pg_ctl fast停止，确认postmaster.pid不存在后仅删除本批`/private/tmp/wiselink-source-identity-pgdata-20260923`；日志保留`/private/tmp/wiselink-source-identity-pg-{init,server,test,lint}.log`。
+- 测试仅补拒绝/SQL执行边界，不将本机毫秒推成线上收益，不因此重跑已通过全仓测试。主控可将已接受a0与前批统一集成；线上冷读、浏览器端到端500ms、Hosted安装与真实后台公平仍未闭合。
+
+
+## B 已保存知识正文展开交互的尾延迟（2026-09-23）
+
+- 本轮重读完整路线后明确剩余：dd1/f7/a0统一发布后的同版本冷读、后台运行对读取的影响、Hosted真实接续，以及普通展开交互。Main已固定至a0并在统一发布中；157bf纯测试文档留后续同步，不要求为证据重发版。
+- 在正常登录、精确保存修订的`/knowledge`正文预览中，点击原生`details.wl-jobaid-evidence > summary`的「核对来源与方法（9）」20次展开/20次收起。早期操作描述称Wiki，最终URL/DOM核对实际是工程知识页，已修正本记录；不将它冒称Wiki路由验收。页面1834 DOM元素、78 details，目标9个内容子项，初末均closed。
+- 全部40次匿名样本见KNOWLEDGE_INTERACTION_EVIDENCE_20260923.json。开DOM-ready p95 100.8ms/max128.7ms，关DOM状态p95 47.2ms/max62.5ms；开两RAF p95 237.8ms/max254.1ms，关两RAF p95 157.5ms/max242.1ms。nearest-rank，保留慢值。两完整Network事件窗口无截断/无业务API读取；平台telemetry单列排除。
+- 后20次另开PerformanceObserver longtask，观察5次63/102/102/129/141ms长任务；其中4次起点与点击附近重合，一次在点击间。这里只证明观察到长任务，不以时间接近直接断定具体React/CSS函数是原因。后续需要trace归因及本地对照，不能因2RAF本身不是GPU而丢弃长任务证据。
+- 探针在capture click记录performance.now、MutationObserver检测open变化；展开读取内容rect/text，收起只以原生open=false判断。此浏览器收起后内容getBoundingClientRect仍保留4608高度，故不把rect当隐藏证明。强制布局与工具AX快照可能扰动时序，记录为诊断样本，不外推真实用户总体p95。未修改产品DOM/数据或发起生成；结束已移除observer/listener/PerformanceObserver，测量对象读回undefined。
+- 热知识返回21.6ms与图谱返回24.5ms证据保持原范围，不能代替普通展开流畅性。此新热点待下一批定向profile，整体Goal不关闭。
+
+
+## B f24发布后冷读与图谱来源复用（2026-09-23）
+
+- Main确认Host发布`f24b9714ec87f586cb5302185480ddcb7fc49e86`，release `7688462050381221075` finished；含dd1/f7/a0。B浏览器实际加载的RelationGraphPage资产路径也带该SHA。精确保存修订16、正常登录只读，不触发生成。匿名记录见F24_READ_RUNTIME_EVIDENCE_20260923.json。
+- 三次完整刷新：catalogue 4175.110/4290.715/4723.600ms，work 3723.083/3950.776/4310.134ms，均200。目录与正文请求相差约1–2ms，已经并行；不能以继续调整前端并发解释此热点。平台origin分别3828–4378ms和3226–3870ms；它不是SQL独立耗时。三个样本不计算p95，也不宣称窄投影/跳过一次查询已使线上达标。
+- 图谱首次来源状态553.450ms，33.390秒后的返回1149.734ms，均200：已超过30秒新鲜期，正常重读。随后三次实际“返回工程知识→关系图谱”位于新鲜期内，完整无截断Network窗口中来源请求为0，每次图谱可见，URL仍绑定同一matter/workRef并恢复82%镜头。该样本为无已发布解析的来源状态，不能外推所有已发布来源与活动组合。
+- 首轮窗口从identity前序列重新提取后完整，后两轮直接完整；保留全部样本，不筛慢值。没有注入探针，没有改变业务数据。下一步定位服务端串行调用与普通展开长任务；Hosted实际安装、背景竞争/公平仍由既定分工继续，整体Goal active。
+
+
+## B 展开长任务的浏览器无障碍归因（2026-09-23）
+
+- 延续c328交互尾延迟，f24正常已登录同一保存知识正文，通过CDP Tracing对原生“核对来源与方法（9）”展开/收起做定向profile。五组完整无截断trace摘要见KNOWLEDGE_ACCESSIBILITY_TRACE_20260923.json；不记录正文、样本ID或原始页面数据。
+- 首组六次切换：点击处理0.329–1.228ms，主线程Commit最大85.706ms，Layout最大21.583ms。第二组不逐次抓取完整AX，仅读取details.open，六个主要Commit仍44.252–75.028ms，因此不能把问题简单归咎于逐次AX快照调用，也不能宣称普通浏览器没有此成本。
+- 实际阅读区高446.2px、scrollHeight19714px，自身无filter/backdrop；仅顶栏有blur(20px)。第三组临时对阅读区应用contain:layout paint，Commit仍54.495–71.058ms，未证明改善。已完整恢复原inline style=null、探针undefined、details closed，不提交无效CSS。
+- 第四组cc详细trace：最慢Commit85.228ms中DoUpdateLayers1.052ms、WaitForCommitCompletion0.489ms，主要耗时在其后。第五组开启accessibility分类，四次SerializeLifecycleStage 50.526/53.543/77.924/47.467ms，分别处于55.610/63.253/86.201/51.803ms的Commit中；直接定位到无障碍树序列化占主要部分，最慢项thread duration66.025ms，不只是线程调度等待。
+- 这是小规模诊断，不能替代真实用户p95；先前40次交互数据保留测量范围。无障碍能力属于受支持功能，不关闭它、不删正文来报达标。下一步需控制不同浏览器/无障碍场景并验证有明确收益且保持全文与键盘可达的方案；当前不以React memo或layout containment作未经证明的修复。全部trace已结束，未发起解析/翻译/评估，整体Goal active。
+
+
+## B 保存正文真实SQL往返剖析（2026-09-23）
+
+- 独立树`/private/tmp/wiselink-perf-b-read-query-profile-20260923`，基线c30b180a1。既有cross-Matter PostgreSQL测试加入可选`WL_PROFILE_SAVED_READS=1`诊断，默认不记录查询、不额外读取；只输出表名/查询用途，不输出参数、正文或真实业务ID。产品代码未改变。
+- 在全新localhost:55443 PostgreSQL14实例执行真实Drizzle服务/Repository/actor RLS流程。一个成员无更正保存正文17条查询；一个成员且保留历史引用22条；一个成员且3项overview更正19条。完整有序语句分类见SAVED_READ_QUERY_PROFILE_20260923.json，不把权限函数内部执行次数算成已测独立语句。
+- 无更正路径中，两次事项快照各3条（matter/revision JOIN、work-item links、materials），共6条；当前与保存成员分别执行fresh object ACL、tenant projection、source identity各3条，共6条；准确工作行、来源ownership、overview provenance、issue correction、overview correction共5条。必须保留当前/历史授权与版本稳定性，不能仅为了计数删检查。
+- 下一实现切入点是事项快照读的查询合并：保留同一tenant/RLS、ACTIVE/revision/changeKind校验、完整links/materials及持久化形状校验，减少往返；不把第二次确认简单改成无关系校验的revision指针读取。当前17/22/19是实现前基准，线上3–4秒的阶段占比仍未独立测得。
+- `ENGINEERING_MATTER_TEST_DATABASE_URL=postgres://<local-user>@127.0.0.1:55443/wiselink_engineering_matter_test WL_PROFILE_SAVED_READS=1 node --test --test-name-pattern='cross Matter references' test/node/engineering-matter-postgres.test.mjs`实际1/1通过、0skip，覆盖原有精确引用/撤权/更正场景。首次分类把LATERAL误列为表且document ownership函数名不匹配，修正诊断后重跑通过；最终记录来自修正后的完整运行。ESLint通过，正常precommit在提交时执行。
+- 实例已pg_ctl fast停止，确认pid不存在后仅删除本批数据目录；日志保留`/private/tmp/wiselink-read-query-profile-test.log`及对应init/server/lint日志。没有连接生产或发起模型业务。Goal active。
+
+
+## B 事项快照一次完整读取（2026-09-23）
+
+- 独立树`/private/tmp/wiselink-perf-b-matter-snapshot-query-20260923`，父4ff75608c。EngineeringMatterRepository.loadCurrent保留外层matter/revision三键JOIN与tenant过滤，将links和materials改为两个独立相关JSON聚合；各自仍按ordinal/material_id排序，避免普通双JOIN行数相乘。每次完整快照3条SQL→1条。
+- ACTIVE、revisionNo一致、changeKind、非空组合、成员role、材料JSON与parseMatterMaterial校验不变。返回Date由原Drizzle字段转换，material_json聚合为字符串后走原解析路径。两次当前版本读、fresh object ACL、tenant projection、source identity及历史成员核对均保留；一条statement让快照三部分处于同一MVCC视图。没有缓存权限，没有改schema/索引或生产数据。
+- 实际PostgreSQL14 localhost:55445：三类保存读17→13、22→18、19→15条，均减少4条。新断言要求完整快照一次statement、成员/标题/Date完整、跨tenant不可读；临时恢复父版本repository时实际失败`3 !== 1`，之后恢复候选。完整匿名查询序列见MATTER_SNAPSHOT_QUERY_EVIDENCE_20260923.json；不外推线上p95。
+- 首次全PG8项中2通过6失败，全部JOBAID_READING_SUMMARY_REQUIRED；在未改动4ff基线完整复跑得到相同6失败。四处旧fixture构建器/初次proposal遗漏当前必填headline/listBrief；仅补测试数据，未放宽产品校验。修正后完整8/8通过、0skip，包括cross-Matter lineage/撤权、材料scope/重放/完整来源授权、CAS/运行时ownership、并发一致性/只读与targeted correction。
+- working-service单测11项、search单测23项分别通过；server tsc、两个修改文件ESLint、server build与diffcheck通过。早先把search文件名写成不存在的engineering-issue-search.service.spec.ts，Jest只运行了working11项；随后按真实engineering-issue-search.spec.ts单独完成23项，不冒称最初跑了两套。正常precommit随提交执行。
+- PG实例已停止并仅删除本批data目录，日志`/private/tmp/wiselink-snapshot-{pg-test,baseline-pg-test,pg-test-fixed,red,types,unit,search,lint-final,build}.log`保留。等待Luna独立审查及Main集成发布，之后才测线上收益；Goal active。

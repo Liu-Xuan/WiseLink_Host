@@ -117,3 +117,30 @@ A负责文档/事项解析后的关联上下文、JobAid动态问题分析、已
 验证：4套Jest34项通过（current-execution、activity、read-lifecycle、canonical-library.service），真实PG集成1/1通过无skip，server typecheck、3文件lint、diffcheck通过。首次单测正则误将COMMITTING枚举识别为COMMIT语句，修正为词边界后通过；生产SQL无需为此变化。测试仅临时本机127.0.0.1:55447/wiselink_snapshot_test_a，可通过JOBAID_SNAPSHOT_TEST_DATABASE_URL运行test/node/jobaid-browser-snapshot-postgres.test.mjs；新库路径检查限制localhost及wiselink_snapshot_test_*前缀，fixture结束清理专用表/角色。
 
 本批仅repository、对应单测、新PG测试及本记录4文件。未动B的图谱、知识页、原件或Matter服务区域，未自行push/release。主控部署后Luna须用正常身份只读复验任务目录和单WorkItem assessment-work，保留knowledge16/activity正常证据；技术发布前不能称线上已恢复。
+
+## 2026-09-23 增量评估：保留未受影响来源的分析覆盖
+
+父提交 `a89d76741599e089d5295ec67dcd2012ecb3ff50`。本批无需 Hosted 安装；修复完整评估链“保留未受影响认识并增量更新”中的实际缺口。原 materializeMatterJobAidCommand 仅在全部 issues 完全不变时保留既有 SUBSTANTIVE 覆盖。来源 A、B 均已分析，下一批只修改 B 的问题，且 A 仍在本轮已交付/已读范围中时，A 正文虽被保留，其覆盖却被降为 READ_ONLY，engineeringMatterPendingInputs 因而重新列出 A 的 READ_NOT_PROCESSED。
+
+修复按旧问题的实际变化及来源血缘确定受影响范围：对被替换或撤回的旧问题，收集结构化来源使用并沿 PRIOR_RESULT 追溯根来源；其余来源在准确 input binding 相同、仍有正文引用且没有显式 disposition 时保留原 SUBSTANTIVE 覆盖、范围及理由。受影响问题即使还有另一条存活引用，也不能因此沿用旧覆盖；无法解析的受影响血缘仍采取保守处理。来源版本、解析/语义修订变化及显式 READ_ONLY 不沿用；新增实质分析仍走原 SUBSTANTIVE 判定。本批不自动升级 NO_MATERIAL_CHANGE，不认证工程结论，也不改变来源授权、租约、CAS、数据结构或模型调用。
+
+实际消费者为 MatterActionAttemptService.saveWork 的 materializeMatterJobAidCommand → appendWorkingRevision 链，既有 state.coverage 和 engineeringMatterPendingInputs 直接消费，无新入口。回归经过真实 command/state materializer、序列化读回及 pending-input 计算。先仅加入回归时 1 failed / 11 passed，失败精确显示 A 从 SUBSTANTIVE 变成 READ_ONLY；修复后 3 套 27 项通过（jobaid-problem-work、matter-work-reference、matter-jobaid-task），包含独立 B 更新后 A 不待处理、直接/间接来源分析撤回、问题改引另一来源、显式 READ_ONLY、语义修订变化及既有正式版本/解析修订反例。server typecheck、生产文件 ESLint、diff-check 通过；测试文件被现行 ESLint ignore，未把它算作 lint 通过。已查看 canonical 可用日志尾部，无该补丁运行记录（server 为 9 月20日旧日志），不能作为此补丁运行证明。
+
+范围仅 matter-jobaid-save.ts、jobaid-problem-work.spec.ts、本记录。A 未推送/发布/操作 Hosted 终端；本批 Host 逻辑不需要更新 Skill 包。独立验收交现有可见 Luna：检查保留准确绑定的未受影响 A，并验证撤回/换源/新版本仍为待核查；主控择机集成发布。本地合成回归不替代发布后真实事项连续两批保存验收，完整 Goal 不因此完成。
+
+## 2026-09-23 取数上下文：知识能力与已授权绑定一致
+
+父提交 `f329bd997784c050e6a1001860535eedb7500aab`。实际 BEGIN 在已有知识授权/绑定时给出 knowledgeAccess.available=true、knowledgeRetrieval=NOT_REQUESTED，但 buildJobAidProblemTask 的默认 capabilities.knowledge_retrieval 仍为 NOT_CONNECTED。模型同一输入自相矛盾；后续 materializeJobAidWork 又复制这份能力列表到已保存工作，用户仍会看到“未接通”。
+
+在原 buildInput 的知识绑定组装段同步现有能力条目：有授权绑定为 AVAILABLE，USER_REAUTHORIZATION_REQUIRED 为 ACCESS_DENIED，其余未配置/未连接为 NOT_CONNECTED。影响说明明确是“本轮准备时”的能力，AVAILABLE 不代表已取得检索结果或核实原文；实际调用仍需有效授权。未修改 knowledgeAccess、allowedConnectors、session/agent 绑定、fresh grant、QUERY_KNOWLEDGE 行为或检索回执，不自动发起查询；contextPackage 仍为 NOT_REQUESTED/UNAVAILABLE 且 fragments 为空。已封存旧任务仍按原身份恢复，不重写历史快照。
+
+通过真实 service.begin 的原 harness 复现 2 failed/29 passed：可用连接被标为 NOT_CONNECTED、重新授权需求也被标为 NOT_CONNECTED。修复后 continuation + knowledge-observation 2套37项通过；包含服务绑定留在 Host envelope、模型输入不泄露 session/actor/tenant/lease、未授权不准入 connector，以及既有检索调用观察/授权变化处理。server typecheck、生产文件 ESLint、diff-check 通过。没有新增接口或数据库修改；测试与受控服务不替代真实 Hosted 查询。仅 canonical-jobaid-problem.service.ts 的知识绑定段、continuation 测试、本记录；不碰 B 的原文分页实现。
+
+### 剩余真实运行验收（主控安装回执后串行安排）
+
+1. 以主控确认的安装包、Host 发布提交及新鲜 cron/在途状态为起点，在既有授权样本上执行正常新任务；不要重放历史 FAILED 请求。记录准确 attempt、来源版本、parse/semantic revision 和基线工作。
+2. 正常运行中核对关联材料/前次工作与本轮触发一致，原文读取范围准确，JobAid 形成完整问题批次并及时保存；实际需要知识时再 QUERY_KNOWLEDGE，核对真实回执及不可用/未知限制，不把检索完成当作原件核实。
+3. 连续两批保存后核对准确 workRef/工作修订：未受影响问题及来源覆盖保留，改动/撤回/新版本需相应处理；浏览器读取/知识/保存活动与真实回执一致，Overall 消费确切已完成工作。
+4. 在主控安排的中断窗口验证接续：fresh Host lease/授权/输入绑定、完成轮的 checkpoint 与保存响应丢失读回；未知模型结果不得重放，旧任务/旧来源或失效授权不得越过拒绝边界。以真实恢复后的工作与活动结束本轮，不以进程重新启动作为成功。
+
+本轮仅识别并修复已复现的两处衔接缺口；未宣称穷尽所有缺陷。以上运行项依赖主控安装和实际运行协调，A 不并发操作已交接终端，不增加运行预算或数据源权限。

@@ -1,0 +1,165 @@
+{
+  "deployment": {
+    "sha": "f24b9714ec87f586cb5302185480ddcb7fc49e86",
+    "release": "7688462050381221075",
+    "finishedEpochMs": 1790110424000,
+    "graphAssetShaObserved": true
+  },
+  "scope": "正常登录，同一工程事项保存修订16，只读；不含样本ID或正文",
+  "cold": [
+    {
+      "completeNetworkWindow": true,
+      "requests": [
+        {
+          "endpoint": "identity-context",
+          "startEpochMs": 1790110648727.9019,
+          "headersMs": 727.975,
+          "totalMs": 726.975,
+          "bytes": 1341,
+          "originMs": 386,
+          "innerMs": 209,
+          "status": 200,
+          "cdnCache": "MISS"
+        },
+        {
+          "endpoint": "catalogue",
+          "startEpochMs": 1790110649471.4219,
+          "headersMs": 4176.337,
+          "totalMs": 4175.11,
+          "bytes": 3221,
+          "originMs": 3828,
+          "innerMs": 3789,
+          "status": 200,
+          "cdnCache": "MISS"
+        },
+        {
+          "endpoint": "work",
+          "startEpochMs": 1790110649472.5981,
+          "headersMs": 3574.829,
+          "totalMs": 3723.083,
+          "bytes": 27588,
+          "originMs": 3226,
+          "innerMs": 3083,
+          "status": 200,
+          "cdnCache": "MISS"
+        }
+      ]
+    },
+    {
+      "completeNetworkWindow": true,
+      "requests": [
+        {
+          "endpoint": "identity-context",
+          "startEpochMs": 1790110714248.965,
+          "headersMs": 693.748,
+          "totalMs": 692.313,
+          "bytes": 1358,
+          "originMs": 280,
+          "innerMs": 114,
+          "status": 200,
+          "cdnCache": "MISS"
+        },
+        {
+          "endpoint": "catalogue",
+          "startEpochMs": 1790110714954.855,
+          "headersMs": 4291.336,
+          "totalMs": 4290.715,
+          "bytes": 3216,
+          "originMs": 3945,
+          "innerMs": 3907,
+          "status": 200,
+          "cdnCache": "MISS"
+        },
+        {
+          "endpoint": "work",
+          "startEpochMs": 1790110714956.656,
+          "headersMs": 3659.434,
+          "totalMs": 3950.776,
+          "bytes": 27758,
+          "originMs": 3309,
+          "innerMs": 3272,
+          "status": 200,
+          "cdnCache": "MISS"
+        }
+      ]
+    },
+    {
+      "completeNetworkWindow": true,
+      "requests": [
+        {
+          "endpoint": "identity-context",
+          "startEpochMs": 1790110720464.186,
+          "headersMs": 507.701,
+          "totalMs": 507.037,
+          "bytes": 1338,
+          "originMs": 162,
+          "innerMs": 116,
+          "status": 200,
+          "cdnCache": "MISS"
+        },
+        {
+          "endpoint": "catalogue",
+          "startEpochMs": 1790110720981.621,
+          "headersMs": 4725.029,
+          "totalMs": 4723.6,
+          "bytes": 3224,
+          "originMs": 4378,
+          "innerMs": 4333,
+          "status": 200,
+          "cdnCache": "MISS"
+        },
+        {
+          "endpoint": "work",
+          "startEpochMs": 1790110720982.514,
+          "headersMs": 4217.645,
+          "totalMs": 4310.134,
+          "bytes": 27811,
+          "originMs": 3870,
+          "innerMs": 3830,
+          "status": 200,
+          "cdnCache": "MISS"
+        }
+      ]
+    }
+  ],
+  "graph": {
+    "completeNetworkWindow": true,
+    "sourceRequests": [
+      {
+        "startEpochMs": 1790111002362.781,
+        "status": 200,
+        "totalMs": 553.45,
+        "bytes": 1932
+      },
+      {
+        "startEpochMs": 1790111035753.2761,
+        "status": 200,
+        "totalMs": 1149.734,
+        "bytes": 1944
+      }
+    ],
+    "firstReturn": "33.390秒后返回，已超过30秒新鲜期，正常重读",
+    "freshReturns": [
+      {
+        "startEpochMs": 1790111053863,
+        "endEpochMs": 1790111054357
+      },
+      {
+        "startEpochMs": 1790111054357,
+        "endEpochMs": 1790111054862
+      },
+      {
+        "startEpochMs": 1790111054862,
+        "endEpochMs": 1790111055356
+      }
+    ],
+    "freshReturnSourceRequestCount": 0,
+    "graphVisibleEachReturn": true
+  },
+  "limits": [
+    "三次冷读取不是p95，也不是严格前后A/B。",
+    "origin/inner是平台Server-Timing，不是独立SQL计时。",
+    "图谱轮次起止包括工具操作，不作为交互性能数值。",
+    "首个冷读广域事件窗口曾截断，已从identity请求前序列重新提取完整聚焦窗口；后两窗口完整。"
+  ]
+}
