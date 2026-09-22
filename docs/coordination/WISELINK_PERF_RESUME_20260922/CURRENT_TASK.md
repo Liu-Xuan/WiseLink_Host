@@ -2,7 +2,7 @@
 
 ## 本批身份
 
-B图谱来源复用工作树：`/private/tmp/wiselink-perf-b-graph-source-reuse-20260923`，基线`509098d23ac3e7c60059daae78426474fdd15978`。线上每次返回重复parsing读取已定位到局部records重置；接现有identity QueryClient，30秒fresh/5分钟GC，精确来源/保存候选绑定、显式重读、过期隐藏旧候选、session清理/迟到隔离。旧反例同来源remount调用2→1，相关3套25项通过，正在收尾验证与交Luna。ab3知识/图谱热路径实测及独立功能证据保留，不冒充新批已发布或暖后端500ms完成。626由Main集成发布中；Hosted/后台公平继续，Goal active。
+B原件身份运行证据树：`/private/tmp/wiselink-perf-b-identity-runtime-evidence-20260923`，基线`dd1df7d662cf83cdf8947120fcb1f6dfd3643a78`。Main626已发布8d139e310/release7688452846325648565；正常已保存样本1次PDF下载+20次warm identity，均200、网络完整，无重复原件下载。浏览器总耗时p95 1696.780ms未达500ms；实际平台Server-Timing origin p95 359ms是独立口径，不能替代端到端。dd1图谱来源复用已提交交Luna审查，未发布；知识/图谱已保存热返回证据保留。完整匿名耗时见ORIGINAL_IDENTITY_RUNTIME_EVIDENCE_20260923.json；继续分辨平台/网络等待、Hosted与后台公平，不关闭Goal。
 
 ## 完整路线状态（2026-09-23）
 

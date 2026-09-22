@@ -700,3 +700,14 @@ Main回执：ef258 release7688432648880098235 finished updated_at=1790103060000�
 - client types/lint/build/precommit实际结果以本批日志`/private/tmp/wiselink-graph-source-{red,tests,types,lint,build}.log`及提交回执为据。待Luna独立审查、Main集成与线上请求计量；不把调用次数反例当线上500ms目标或总体完成。主控仍唯一发布者。
 
 - 本批实际client typecheck、生产hook ESLint通过（日志为空），client build13.71s通过；正常提交检查随后执行。主控新回执：626+59791已集成为8d139e310fdc7dbe33e26e7e0bf6834762168c42，release7688452846325648565 finished/error_logs=[]/updated_at1790107974000、双远端同名一致。该发布不含本批及509文档；暖identity待新部署实际复测，Hosted包仍source79bd且尚未安装。
+
+
+## B 窄身份读取发布后的实际耗时分层（2026-09-23）
+
+- Main准确发布8d139e310fdc7dbe33e26e7e0bf6834762168c42 / release7688452846325648565 finished、updated_at1790107974000、error_logs=[]、双远端同名SHA一致；含626，未含dd1。本轮发布后完整导航到原已保存五页PDF/同parseRun与登记sourceRef；正常现有登录，只读资料库→browser back反复卸载/恢复，未触发生成。
+- 完整匿名数据见ORIGINAL_IDENTITY_RUNTIME_EVIDENCE_20260923.json。每次及时读取CDP事件，全部窗口truncated=false/hasMore=false。首读original200：headers2532.673ms、完成5570.678ms、122800网络字节；随后20次仅original-identity200，无重复original下载、无loadingFailed。所有样本保留。
+- 20次浏览器实际暖请求：总耗时median787.913ms、p95（nearest rank）1696.780ms、min676.413ms、max1952.004ms；500ms端到端目标未达到。此为单会话小样本，不推广为总体生产p95，不把新旧不同时间采样当严格因果A/B。
+- 新定位证据来自实际响应Server-Timing：20次origin 263–369ms、p95 359ms；inner221–351ms、p95 350ms。全部cdn-cache MISS、h2已复用连接，DNS/connect/SSL timing=-1。平台自报origin段低于500ms，不能冒充独立测量的Host/SQL耗时，也不能代替浏览器端到端验收。两层明显差距提示继续定位网关/网络/响应交付等待，不能把约1.7s全部归因数据库、删除fresh授权来追数字。
+- 少量loadingFinished时间戳比responseReceived早约1–3ms，原值保留，不作亚毫秒推断。两个观察工具问题（早期事件轮数上限、一次canvas locator deadline）均回读同一次导航/请求至完成，没有重新导航替换失败样本。最终及后续17轮PDF实际第5页恢复；UI功能另有Luna独立验收，不以网络数据替代功能结论。
+- Luna新部署独立只读功能验收：同DV/parseRun，真实u112点击写sourceRef并显示实际第5页；资料库→browser back保持；两次warm UI工具墙钟2159/1544ms，不是服务p95。Luna未获取网络字节，B本节另给CDP证据；线上未构造跨租户/digest错误，不冒充本地拒绝边界线上覆盖。
+- 下一步：B继续dd1独立审查及发布后实际请求复测；Main/A核实现行Hosted入口、已有授权运行窗口。需要用现有平台可读指标细分额外等待；不新增生产观测平台，不减少Host身份/来源核对，不关闭整体Goal。
