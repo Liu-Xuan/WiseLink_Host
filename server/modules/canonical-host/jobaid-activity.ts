@@ -1,4 +1,4 @@
-import type { JobAidActivityRead } from '@shared/jobaid-activity.interface';
+import type { JobAidActivityRead, JobAidKnowledgeObservationStatus } from '@shared/jobaid-activity.interface';
 
 export const JOBAID_ACTIVITY_WINDOW = 50;
 export interface JobAidExecutionObservation {
@@ -22,6 +22,7 @@ export function projectJobAidActivity(
     attemptRef: attempt.attemptRef,
     candidateOnly: true,
     sourceReads: [],
+    knowledgeObservations: [],
     savedRevisions: saves
       .slice(0, JOBAID_ACTIVITY_WINDOW)
       .reverse()
@@ -58,6 +59,20 @@ export function projectJobAidActivity(
       !('kind' in record)
     ) {
       result.malformedRecordCount++;
+      continue;
+    }
+    if (record.kind === 'ASSESSMENT_KNOWLEDGE_OBSERVED') {
+      const status = 'status' in record ? record.status : null;
+      const observedAt = 'observedAt' in record ? record.observedAt : null;
+      if (typeof status !== 'string' ||
+        !['REQUESTED', 'STARTING', 'RUNNING', 'COMPLETED', 'FAILED', 'UNKNOWN', 'UNAVAILABLE'].includes(status) ||
+        (observedAt !== null && (typeof observedAt !== 'string' || !Number.isFinite(Date.parse(observedAt))))) {
+        result.malformedRecordCount++;
+        continue;
+      }
+      result.knowledgeObservations!.push({ sequence: index + 1,
+        observedAt: typeof observedAt === 'string' ? observedAt : null,
+        status: status as JobAidKnowledgeObservationStatus });
       continue;
     }
     if (record.kind !== 'ASSESSMENT_SOURCES_READ') {

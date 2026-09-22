@@ -691,3 +691,106 @@ A 专属 Luna：组合 consumer Node 84/84；staged 快照 Jest 5 suites/135 tes
 B 专属 Luna：合并树 Jest 16 suites/203 tests，server/client typecheck、生产 TS/TSX ESLint、build:prod、precommit 通过；client build 13.81s，仅既有 warnings。两组测试有交集，不相加为去重总数。
 42 个 staged 路径，cached/working diff-check 通过，无未暂存源码变化。node_modules 为 B 验收复用已有依赖的未跟踪链接，不纳入提交。文档补记后执行正常提交钩子，未改变已测试产品源码。
 尚未 push、Host release 或 Skill install；未验证真实 PostgreSQL 并发、Hosted UI、模型流程、浏览器 heap 或线上 p95。部署顺序：兼容 Host 先行，再安装该精确组合版本的 Skill，并核对实际文件哈希。B 后续 d051d278 及 2D.1 不在此固定截点。
+## 2026-09-23 B：3A.4 活动控制与来源权限
+
+基线 `ff46e1d98a96664b522277134c52bc1da2d21bb7`，独立树 `/private/tmp/wiselink-perf-b-activity-control-20260923`。实际发现Activity所有动作在分派前load原文/semantic，导致状态、心跳、取消也受文件服务失败影响。控制操作改为服务范围+actor/RLS读取run后fresh parsing.status复核普通来源ACL/catalog，再执行生命周期动作；不加载原文字节、semantic map或plan。BEGIN及READ/SAVE继续精确原文和manifest/parseRevision完整性路径。成功控制只证明任务控制权限，不证明历史原文当前可下载或字节完整。
+
+同时核对ConfiguredDevelopmentCanonicalServiceScopeAuthorization：authorizeDocumentWork仅配置允许列表与actor绑定，文档明确每次仍需普通来源权限。既有Reading除STATUS外的CANCEL/CLAIM/HEARTBEAT/FAIL未复核这一权限；本批补齐轻量parsing.status，来源撤权后不能修改任务，lease/fence/事务不变。
+
+Activity STATUS在来源授权后调用已有expire（仅QUEUED/RUNNING且deadline已过），再读取最新持久状态；已保存/取消的并发结果不会被该SQL覆盖。防止只轮询未知结果的消费者一直看到过期RUNNING，没有触发新的模型请求或重放未知结果。
+
+反例：新控制/撤权/截止时间测试在基线15失败18通过；修复后2套33项全通过，覆盖五类Activity控制零original/semantic读、fresh ACL、拒绝后零控制写、READ/SAVE原文失败、fresh状态回读及Reading普通来源权限。server types/两个生产文件ESLint/server build通过。额外实际Host Runtime+MCP+本地构造模型服务互通2项通过；该夹具原先漏注入已存在documentReading服务，在到达业务动作前工具目录校验失败，已补齐测试依赖并给未来deadline fixture补expire。未改生产MCP工具清单或模型契约，未调用真实模型/生产平台。构建仅静态运行资产检查，不是Hosted运行验收。
+
+前批ff46e1d98原件复用已获Luna独立4套118项（含新增并发hash项）、controller4项、双端types、生产lint/build/precommit通过；真实授权网络延迟、浏览器heap/p95仍未取得。主控当前已回读为idle且尚未提供新集成/发布证据，已请求安排统一集成及授权预览样本，B继续独立2D/3B工作。
+
+
+## 2026-09-23 B：2D.1 已保存活动/解读窄读
+
+基线 `d051d2781010ec0d5ef2cc8bf3acc7ab13864903`，独立树 `/private/tmp/wiselink-perf-b-saved-reading-20260923`。实际热点是Activity/Reading readForBrowser即使只展示已保存结果也loadPublished下载整个original，再读semantic map。此批仅改变这两个浏览器结果路径：先fresh普通源ACL与tenant目录读取，按准确parseRunId读取PUBLISHED/VERIFIED MANIFEST登记，并核对DV/tenant/document/family/sourceArtifact/sha/byteLength绑定，再读完整saved JSON并严格比对其original binding/指定candidate或reading revision。语义查询用readReady的可选精确revision，JOIN已发布parse/manifest/parseRevision，不把历史请求替换为最新语义版本。最后保持普通来源权限复核，完整保存正文不裁剪、不改写、不代替新生成结果。
+
+边界：inspectPublishedIdentity及semantic readReady证明当前授权、持久登记关系；不下载对象、不证明当前对象存储可用或重新验证原文字节/semantic map内容。已有写入/保存验证与数据库版本约束保持。BEGIN/实际READ/SAVE/原文交付仍走原有实际bytes、semantic与manifest完整性校验。空候选也返回准确原件binding；不同工作/parse/source/semantic版本不回落当前版本。
+
+反例及验证：两个实际runtime browser反例在旧实现因STORAGE_UNAVAILABLE失败；新实现完整返回构造的长正文且original/semantic hydration计数均0，来源撤权、不同parse binding、缺失精确semantic仍拒绝。新增published identity服务测试覆盖双ACL、精确历史parse、tenant/状态/manifest/source摘要/字节/artifact/family不一致。最终5套59项（activity-runtime、reading-runtime、published-identity、source-idle、translation-runtime）通过，server types/5生产文件ESLint（两条既有unused-disable warning，无error）/server build通过。
+
+实际PG证据：新建仅本轮独立实例 `/private/tmp/wiselink-saved-reading-pg.0a77go3j`，loopback63135、专用wiselink_document_attempt_test；运行扩展的document-translation-attempt-postgres.test.mjs 1/1通过，历史semanticRevision=1与latest=2明确区分，缺失revision返回null、0拒绝，同时保留真实JOIN/RLS/非owner NOSUPERUSER NOBYPASSRLS角色和CHECK/immutable策略检查。日志 `/private/tmp/wiselink-saved-reading-pg.log`。实例已fast stop并仅删除创建目录，没有访问共享/生产库。该结果不是线上浏览器p95。
+
+协作更新：Luna已独立通过3A.4 d051d2781。主控已创建AB集成树，Luna对HEAD0c350f04/MERGE_HEADff46e1d9的41个staged路径组合16套203项、双端types/lint/build/precommit通过；仍未回报实际发布SHA/授权预览样本。本2D.1不修改或阻塞该固定截点。
+
+后续只读回读：集成树HEAD已为e812421cb050aed0954ca3f6945159100155a301，tracked clean仅node_modules链接；这是集成提交证据，尚不代表Host发布或授权样本验收。
+
+
+## 2026-09-23 B：3B.1 单执行解析复用与有限连续推进
+
+基线 `396ad7e8184718753166502dc06ffad9fcc2a023`，独立树 `/private/tmp/wiselink-perf-b-parse-execution-20260923`。改变范围是解析executeStep与PDF页提取，不触及A/WorkItem或共享consumer。25页构造执行样本，基线4次原件readSelection、4次独立PDF页提取生命周期、插件1次；新实现2次原件readSelection、2次PDF session打开/销毁、4个8页以内页组、插件仍1次。丢失第一次page upload进度回执时，原件读取5→3；已保存页组恢复，不重复提取0页组。该计数来自实际service加隔离存储/插件/PDF mock，真实PDF.js的生命周期与文本/图像/跨页内容另由Node测试核验；不是生产I/O时间或p95。
+
+同一executeStep只取得并核验一次原件字节/sha/length/provider绑定，惰性打开一次PDF，最多两个8页组；每组先fresh普通来源ACL与lease检查，页内保留检查，保存时原有事务/CAS不变。第二组只有从executeStep入口算起未超过10秒且源字节≤16MiB才继续。每组立即持久保存，最终组装前释放PDF；所有异常/返回均释放，下一请求重新取得、验证原件并检查新lease，不保留跨请求原件/PDF/权限缓存。恢复到已存在页组不打开PDF，复用旧parse revision的原始页面不新增解析插件调用。
+
+限制：10秒是页组间继续预算，不是抢占正在运行的插件/文件服务/PDF单页的硬截止；现有租约仍决定有效性。16MiB限制仅决定是否多处理一组，不是Node/PDF解码总堆上限，大原件保留既有每次一组能力。额外只多驻留一个有限页组，不新建并发执行器。跨任务调度/浏览器真实竞争、公平性和来源plan复用仍待后续完成，不把本批称作全部3B闭合。
+
+验证：两条新“第二轮应发布”反例在旧实现均失败；额外旧实现读数断言证实无丢失回执4读、丢失回执5读。新5套38项（execute、store、compose、layout、official-plugin）通过：最多两组、预算耗尽/大原件让出、组间撤权/租约失效、提取失败后只恢复未保存范围、provider漂移拒绝、parse revision复用/旧manifest不改。真实PDF.js Node5项通过：Hosted裁剪依赖加载、图像操作标记、跨页表格、同一session连续读取、关闭后拒绝、再次读取fresh授权和调用者bytes不被转移。server typecheck、2生产文件ESLint、server build通过；构建标记STATIC_VALIDATION_ONLY_NON_TARGET_BUILD/onlineMutationPerformed:false。测试目录不在ESLint覆盖内。
+
+发现并修正同一个Node测试里的旧夹具：它用两行普通PDF文字宣称有列结构，与当前compose“必须有实际物理列对齐证据”不符；在基线同样2≠1失败。改为jsPDF逐格绘制有对齐坐标的真实两页表格，仍要求全部四行/每个单元格/两个来源页，定位精度验证改为实际TEXT_ITEM及非空box。生产compose未修改，未削弱表格证据规则。
+
+协作：Luna已独立验收396ad7e81（5套59项、types/lint/build/precommit）；其PG说明明确只读实现者日志、不算第二次实际PG运行。主控固定e812集成发布切点不受本批影响；尚未收到新的实际Host/Hosted Skill版本及正常身份业务样本证据。Goal保持active。
+
+
+## 2026-09-23 B：3B.2 JobAid单执行来源plan复用
+
+基线 `70ad48ea9f1ba0fb73d0ddd1c428ebbbfc631489`，独立树 `/private/tmp/wiselink-perf-b-source-plan-20260923`。A明确确认工程原文helper及JobAid buildInput分页循环无在途修改，允许B单写者推进；B只改service该循环和import，不覆盖A b10e6e570知识观察或租约/活动/恢复区域。
+
+反例来自实际JobAid begin和真实plan构建，文件/工作/权限服务使用隔离fixture：61个源单元按20分页，原先准备阶段重建plan4次；begin返回前assertSourcesAuthorized另一次fresh原件读取/plan验证，总5次。新实现执行内prepareDocumentOriginalEngineeringReader一次构建plan和coverage，组织unit/ref/finding/locator索引；原文quote按选中SourceRef惰性拼接一次，保留该ref跨页所有anchor，不截短table/例外。JobAid四页共用该局部reader；begin返回前的fresh原件/来源复核仍另做一次，总plan5→2、原件读取保持2次。既有单页调用保留包装入口，每次独立准备，不引入跨请求缓存或缓存授权结果。
+
+reader只属于已完整验证的不可变原件这一次准备，普通源/semantic/manifest绑定及actor边界由原有真实读取链继续执行。不同请求、parse/source/semanticRevision分别准备；不把同parseId当跨请求复用许可。预计算的coverage对每个返回值复制，evidence每次新建，调用者修改返回对象不污染后续页；完整SourceRef引用和原有源顺序保持。未修改模型调用、checkpoint/lease、未知结果重放或正式采用。该批未优化独立assertSourcesAuthorized内部多ref扫描，也未声称所有来源消费者/公平调度完成。
+
+验证：旧实现新入口反例实际5次plan（期望优化后2），修复后完整任务sourceCatalog仍是61个单元的完整合并原文，不少末尾条件。3套41项（engineering-reading 7、JobAid continuation 30、source-idle 4）通过，包括单reader plan/coverage各1、长文/表格/跨页同ref、selected findings、可变返回副本、不同原文内容/semanticRevision隔离、错binding拒绝、实际begin二次fresh读取、续接原件变更与撤权拒绝。server typecheck、2生产文件ESLint、server build通过；构建仍是静态资产校验，未触发线上模型/业务。没有线上p95或堆采样结论。
+
+协作：前批70ad48ea9已获Luna独立5套38项/实际PDF.js5项及types/lint/build/precommit验收，可供主控选择性集成。完整Goal继续active，仍需跨任务竞争、其余阅读热点、通用图谱退出及真实资料库→Wiki→图谱→原文→返回→历史/最终部署证据。
+
+
+## 2026-09-23 B：首次正常身份V/R与真实PDF目标页修复
+
+主控回读Host app_17bzc551rsg release7688408024273652704 status=finished、commit_id=e812421cb050aed0954ca3f6945159100155a301、error_logs=[]。主控授权正常身份只读现有已保存样本，Hosted Skill新包尚未安装。B自建IAB tab现场已有正常登录、资料库11文档，打开既有5页FTD解析版本2：完整结构化原文、表格和作者目录可读；中文已有部分结果21%并明确DEADLINE_EXPIRED，未重生成或制造样本，未发起模型/正式采用。样本ID和安全过滤后的数字在本机/private/tmp/wiselink-vr-readonly-evidence-20260923.json；公共文档不复制业务原文/认证头。
+
+单次实际网络观测：translation-reading 200，headers1481.28ms，总网络1580.362ms、encoded21206bytes；original 200，headers1680.954ms，总网络2079.863ms、encoded122810bytes。它们是正文/原件读取单样本，不是暖轻量API或热正文p95；自动化工具曾超时但现场页面已完成，工具墙钟时间不算页面延迟。全链/Wiki/图谱及采样分布尚未完成。
+
+真实缺陷：第5页来源选择后外层显示5，但原件工具栏4/5且实际显示上一页。DOM证据：容器高760px，已渲染页514px；第一次目标页距顶部500px，手动再输入5仍因最大scrollTop1854而停在目标页上方240px，阅读线落在第4页。根因是一次性定位发生在canvas异步尺寸稳定前，且短末页没有足够末端滚动空间。
+
+独立修复基线6f77d9456，树/private/tmp/wiselink-perf-b-pdf-target-20260923：PdfDocumentViewer为明确导航请求接入局部followPdfPageTarget；观察容器/页frame尺寸并按RAF合并重定位，已可滚动容器按末页实际高度补足尾部空间。用户wheel/touch/pointer/翻页键即接管滚动并断开目标跟随；新明确来源请求才重新跟随，隐藏/卸载断开observer/listener/RAF。没有重新请求原件、换SourceRef或缓存权限。只在可滚动容器加尾空间，避免auto-height容器反馈增长。
+
+实际React组件回归先在旧实现2失败1通过；修复后新增中间页异步尺寸项，4项通过。输入模块仅为测试编译Vite worker URL/import.meta，PDF获取隔离，运行真实React viewer与控制的DOM几何；现有结构化workspace测试中两项源码字面scroll实现断言迁到此行为测试，不降低页面定位要求。相关5套共25项通过（首轮4套通过/一个旧字面断言失败，移除失效实现拼写断言后该套3项复跑通过），client types、2生产文件ESLint、client build14.99s通过。
+
+真实浏览器对照：本轮自建loopback63217静态夹具，五页合成PDF、真实pdf.js/worker、实际Viewer与CSS，仅未走的Host API及本地CSRF依赖stub。旧模块目标5却工具栏4、targetTop500.875px、scrollTop1570；恢复修复模块后工具栏5、targetTop-0.25px、scrollTop2044、尾空间251px（容器760/末页515），截图确认实页5。局部静态服务已通过其运行句柄正常中断退出，本地tab已关闭；不是在生产页注入修复。线上e812仍需主控集成发布后复验。
+
+协作：6f77d9456的3套41项/types/lint/build/precommit已获Luna独立验收。消费者公平性本轮只读定位，尚未改consumer；V/R给出新实际失败后优先修复该失败。完整Goal保持active。
+
+
+## 2026-09-23 B：正常身份知识→图谱→来源→保存工作回查
+
+在主控报告已发布的 e812 上只读核验：知识页准确 ENGINEERING_MATTER/subjectId/workRef 已显示保存工作，但侧栏关系图谱 href 是裸 /graph；点击后默认解析为另一事项。顶部“打开图谱与自动演示”另属 Atlas，不具备精确保存工作入口，事项视图未接线提示不等于正式 Suite 图谱失败。A已按e812确认正式入口是 /graph?matterId=M&workRef=W，且其准确工作读取/校验已接入；主控和A确认B本批Sidebar范围无并发修改。
+
+独立树从e5dd起点最小修改Sidebar：/knowledge已有完整知识身份时复用knowledgeReadingIdentity，事项工作映射到matterId+workRef；不带知识选择的默认入口保持。重复/空/未知/缺失身份及混入其他对象pin显式阻断，不调用默认事项目录修复。WORK_ITEM保存版本保留workItemId+workRef，由现有dispatcher显式拒绝不支持的精确历史入口；本批未猜测JAWR到事项MWREV映射，也不声称该产品入口已可用。没有额外事项读取、后端权限变更或内容缓存。
+
+实际Sidebar组件反例：修复前9失败/13通过，修复后相关3套35项全部通过（sidebar-global-nav、shell-url-identity、app-shell-navigation）。测试仅隔离无关品牌SVG组件的Vite import.meta，Sidebar与路由/链接真实渲染。初始测试编译曾暴露此既有mock缺口及本批union narrowing问题，已分别修正后重新获得有效红绿结果。client types、生产Sidebar ESLint、client build13.65s通过。不是把静态字符串或自动化工具耗时当线上性能。
+
+实际业务只读补证：使用页面已显示的同一M/W及已核实正式路由进入，Suite图谱加载对应保存工作；确切原文入口打开该事项登记主文件，该文件当前无已发布解析，未重解析。返回关系图谱保留相同M/W、layoutSnapshot、viewport zoom/pan参数并重新显示图谱；未做像素/返回p95计量。图谱时间节点“保存工作修订16”打开同一保存Wiki，再通过其原有“工作修订14”链接打开历史版本，页面明确显示正在阅读指定修订14且不替换最新工作。此处主文件缺少解析，不能计为该样本的目标页阅读已通过；前批5页PDF证据属另一既有样本。
+
+网络只记匿名计量：此前工程知识catalogue单次响应头5270.617ms、catalogue/work1508.353ms。此次保存工作回查窗口中事项metadata 200 headers1328.567ms/total1330.135ms/2687B；working 200 headers1915.401ms/total1992.366ms/29807B；精确working/W 200 headers1473.856ms/total1542.370ms/30955B。中间浏览器事件缓冲曾过期，未恢复的数据不补造；新窗口明确未截断。排除外部telemetry，不计为暖后端p95。具体样本ID仅留本机/tmp证据JSON，不提交来源正文或认证信息。
+
+Luna已独立接受e5dd PDF修复5套25项、types/lint/build/precommit。本批仍待独立验收和主控集成发布；必须在最终部署后重新点击知识侧栏确认，不能用手动准确路由替代已修复上线证据。完整Goal继续active。
+
+
+## 2026-09-23 B：2D 保存工作历史成员授权有界并发
+
+真实热点继续存在：同一正常登录会话显式重载工程知识，catalogue 200 headers5405.168ms/total5405.496ms/3261B，catalogue/work 200 headers5108.373ms/total5225.923ms/27513B；该缓冲窗口标记截断，但两条请求均有response+finish，只报告这两条完整样本、不推断其他请求。再次重载完整未截断窗口：catalogue 200 headers3943.824ms/total3944.157ms/3236B，catalogue/work 200 headers3295.797ms/total3361.144ms/27575B。无效空采样未计入。页面重载样本不等于热React正文返回，也没有得到服务端trace或资源规格，因此不能把总网络耗时归因于某个SQL或宣称p95。
+
+主控和A明确无engineering-matter-working.service.ts在途写入。B从287ddd668建独立树，定位readWorkingRevision中current成员检查之后历史成员逐一串行requireInput。只将已去重的历史member列表按4个一组Promise.allSettled读取；每组完成后按原顺序传播首个错误，拒绝后不启动下一组。不跳过与current重合成员，不缓存权限，不更改authorizedMatter的snapshot重核/原件绑定、仓库readByRef完整来源/血缘核验、tenant/actor或exact workRef语义。这是每次精确读取的局部并发上限，不是全系统调度或全局数据库并发上限。
+
+实际服务反例使用真实requireInput依赖路径和可控授权延迟：2个current+9个saved唯一member，每个freshRead20ms；原实现200ms，修复80ms（1组current+3组历史），历史最大并发4，fresh调用仍11次；第二次请求重新检查全部11次。另一反例历史被移除成员拒绝时等待该组其余读结束，active=0才返回，下一组不启动。current拒绝时不读取保存body，确切历史缺失不回退current。旧版2失败/5通过，修复相关3套53项通过（engineering-matter-working.service、engineering-issue-search、engineering-matter-working-state），server types、生产service ESLint、server build通过。
+
+本批不能单独解释或解决线上4–5秒：仓库完整授权/血缘和数据库路径仍需继续证据定位；没有生产trace不能宣称某个查询是主要瓶颈。Luna已接受上一批287ddd668的3套35项/types/lint/build/precommit。本批待独立验收、主控集成及实际重复采样；Goal保持active。
+
+## 2026-09-23 主控第二批组合验收
+
+固定e812基线 + B c58eb5c08164da72cdbb33ffde49fd059317174f + A b10e6e570744169c5c057a806ccad2637414eab1精确增量，产品自动合并无冲突。A专属Luna在staged快照跑6套75项通过；B专属Luna在组合树跑13套151项、Node runtime/PDF 6项通过（独立PG测试未配置URL而skip，不计实际PG验收），双端typecheck、生产源码ESLint、client/server build、precommit通过。两个集合有交集，不相加为去重数量。
+
+接受时35个staged路径，随后主控新增M_INTEGRATION当前状态与本段记录，最终36路径。额外变化仅文档，无产品修改；正常提交钩子继续执行。后续77ae及新consumer不加入。未将本地测试当作部署后点击或线上p95验收。Git/发布结果以本次实际回执为准。

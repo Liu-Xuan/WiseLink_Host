@@ -35,8 +35,8 @@ describe('structured PDF workspace wiring', () => {
       'pageFrames.forEach((frame: HTMLElement) => observer.observe(frame))',
     );
     expect(viewer).toContain('[pdfDocument, targetPage, targetSignal]');
-    expect(viewer).toContain('`[data-pdf-page="${scrollRequest.page}"]`');
-    expect(viewer).toContain('container.scrollTo({');
+    // Target scrolling and late geometry are exercised by the real React
+    // consumer in pdf-viewer-target-layout.spec.ts, not source spelling.
     expect(viewer).not.toContain('root: frame.parentElement');
   });
 

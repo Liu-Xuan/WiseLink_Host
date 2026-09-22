@@ -1,3 +1,4 @@
+import type { JobAidKnowledgeObservationStatus } from '@shared/jobaid-activity.interface';
 import { JOBAID_ACTIVITY_WINDOW, type JobAidExecutionObservation, type JobAidSavedActivityObservation } from './jobaid-activity';
 import { readHistoricalJobAidWork } from './jobaid-historical-reading';
 import { randomUUID } from 'node:crypto';
@@ -450,6 +451,32 @@ export class JobAidWorkRepository {
     sourceRefs: string[];
     purpose: string;
   }): Promise<void> {
+    return this.recordReadObservation(input, {
+      kind: 'ASSESSMENT_SOURCES_READ',
+      sourceRefs: input.sourceRefs,
+      purpose: input.purpose,
+    });
+  }
+
+  async recordKnowledgeObservation(input: {
+    row: ActionAttemptRow;
+    actorUserId: string;
+    fence: JobAidWorkFence;
+    sourceBindings: JobAidSourceBinding[];
+    status: JobAidKnowledgeObservationStatus;
+  }): Promise<void> {
+    return this.recordReadObservation(input, {
+      kind: 'ASSESSMENT_KNOWLEDGE_OBSERVED', status: input.status,
+    });
+  }
+
+  private async recordReadObservation(input: {
+    row: ActionAttemptRow;
+    actorUserId: string;
+    fence: JobAidWorkFence;
+    sourceBindings: JobAidSourceBinding[];
+  }, observation: { kind: 'ASSESSMENT_SOURCES_READ'; sourceRefs: string[]; purpose: string }
+    | { kind: 'ASSESSMENT_KNOWLEDGE_OBSERVED'; status: JobAidKnowledgeObservationStatus }): Promise<void> {
     await this.actorTransactions.withActorTransaction(
       input.actorUserId,
       async ({ database }) => {
@@ -478,10 +505,8 @@ export class JobAidWorkRepository {
           throw new Error('JOBAID_SOURCE_READ_BINDING_CHANGED');
         assertJobAidWorkFence(attempt, input.fence);
         const activity = {
-          kind: 'ASSESSMENT_SOURCES_READ',
+          ...observation,
           observedAt: new Date().toISOString(),
-          sourceRefs: input.sourceRefs,
-          purpose: input.purpose,
         };
         await database
           .update(actionAttempt)

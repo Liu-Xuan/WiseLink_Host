@@ -27,7 +27,9 @@ export class DocumentSemanticRevisionRepository {
 
   /** Registered readiness only; caller holds fresh source ACL and actor scope.
    * Never hydrates map_json or proves current object-store byte health. */
-  async readReady(scope: Scope, parseRunId: string) {
+  async readReady(scope: Scope, parseRunId: string, revision?: number) {
+    if (revision !== undefined && (!Number.isSafeInteger(revision) || revision < 1))
+      throw new Error('DOCUMENT_SEMANTIC_REVISION_INVALID');
     const rows = await this.db.execute<{ semanticRevision: number; profileRef: string }>(sql`
       SELECT s.semantic_revision AS "semanticRevision", s.profile_ref AS "profileRef"
       FROM dm_document_semantic_revision s
@@ -37,6 +39,7 @@ export class DocumentSemanticRevisionRepository {
         AND p.manifest_artifact->>'sha256'=s.original_manifest_sha256
       WHERE s.tenant_id=${scope.tenantId} AND s.document_version_id=${scope.documentVersionId}
         AND s.parse_run_id=${parseRunId} AND p.status='PUBLISHED'
+        ${revision === undefined ? sql`` : sql`AND s.semantic_revision=${revision}`}
         AND p.manifest_artifact->>'relativePath'='original/manifest.json'
         AND p.manifest_artifact->>'readback'='VERIFIED'
       ORDER BY s.semantic_revision DESC LIMIT 1`);

@@ -31,6 +31,7 @@ import {
 } from './pdf-viewer-request';
 import { clampPdfPage, visiblePdfPages } from './pdf-viewer-state';
 import { loadPdfJsRuntime } from './pdfjs-runtime';
+import { followPdfPageTarget } from './pdf-page-target';
 
 const PDF_WORKER_SRC: string = resolvePdfWorkerUrl(
   pdfWorkerUrl,
@@ -235,21 +236,10 @@ export default function PdfDocumentViewer(props: PdfDocumentViewerProps) {
       container.scrollTop = savedScrollTopRef.current;
       return;
     }
-    const target = container.querySelector<HTMLElement>(
-      `[data-pdf-page="${scrollRequest.page}"]`,
-    );
-    if (!target) return;
-    const containerRect: DOMRect = container.getBoundingClientRect();
-    const targetRect: DOMRect = target.getBoundingClientRect();
-    container.scrollTo({
-      top: Math.max(
-        0,
-        container.scrollTop + targetRect.top - containerRect.top,
-      ),
-      behavior: 'auto',
-    });
-    savedScrollTopRef.current = container.scrollTop;
     appliedScrollRequestRef.current = scrollRequest;
+    return followPdfPageTarget(container, scrollRequest.page, (scrollTop) => {
+      savedScrollTopRef.current = scrollTop;
+    });
   }, [pageCount, scrollRequest, panelActive]);
 
   useEffect(

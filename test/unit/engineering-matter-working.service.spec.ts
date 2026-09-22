@@ -106,6 +106,78 @@ describe('EngineeringMatterWorkingService', () => {
       statusCode: 404,
     });
   });
+
+  it('bounds saved-member reads while retaining every fresh check and the exact revision', async () => {
+    jest.useFakeTimers();
+    try {
+      let active = 0, peak = 0;
+      const savedIds = ['WI-A', 'WI-B', ...Array.from({ length: 7 }, (_, i) => `WI-H${i}`)];
+      const revision = { matterId: 'MAT-1', matterWorkRevisionId: 'MWREV-OLD',
+        state: { substantiveInputs: savedIds.map(workItemId => ({ workItemId })),
+          coverage: [{ binding: { workItemId: 'WI-A' } }] } };
+      const working = { readByRef: jest.fn().mockResolvedValue(revision) };
+      const objectAccess = { freshRead: jest.fn(async ({ accessRoot }) => {
+        active++; peak = Math.max(peak, active);
+        await new Promise(resolve => setTimeout(resolve, 20));
+        active--;
+        return { allowed: true, workItemId: accessRoot.id,
+          documentVersionId: accessRoot.id === 'WI-A' ? 'DV-A' : 'DV-B' };
+      }) };
+      const service = serviceWith({ working, objectAccess });
+      const start = Date.now();
+      const pending = service.readWorkingRevision('MAT-1', 'MWREV-OLD', actor());
+      await jest.runAllTimersAsync();
+      expect(await pending).toBe(revision);
+      expect(Date.now() - start).toBe(80); // current group + three saved groups
+      expect(peak).toBe(4);
+      expect(active).toBe(0);
+      expect(working.readByRef).toHaveBeenCalledWith({ tenantId: 'tenant-A', matterId: 'MAT-1', workRef: 'MWREV-OLD' });
+      expect(objectAccess.freshRead.mock.calls.map(([input]) => input.accessRoot.id)).toEqual(['WI-A', 'WI-B', ...savedIds]);
+      // A new request must recheck every source, even for an identical saved work.
+      const second = service.readWorkingRevision('MAT-1', 'MWREV-OLD', actor());
+      await jest.runAllTimersAsync(); await second;
+      expect(objectAccess.freshRead).toHaveBeenCalledTimes(22);
+    } finally { jest.useRealTimers(); }
+  });
+
+  it('settles a denied historical group before failing and never starts later groups', async () => {
+    jest.useFakeTimers();
+    try {
+      const ids = ['WI-REMOVED', 'WI-H1', 'WI-H2', 'WI-H3', 'WI-NEXT'];
+      const working = { readByRef: jest.fn().mockResolvedValue({
+        state: { substantiveInputs: ids.map(workItemId => ({ workItemId })), coverage: [] },
+      }) };
+      let active = 0;
+      const objectAccess = { freshRead: jest.fn(async ({ accessRoot }) => {
+        active++;
+        await new Promise(resolve => setTimeout(resolve, accessRoot.id === 'WI-REMOVED' ? 5 : 20));
+        active--;
+        return accessRoot.id === 'WI-REMOVED'
+          ? { allowed: false, code: 'REVOKED', statusCode: 403 }
+          : { allowed: true, workItemId: accessRoot.id, documentVersionId: accessRoot.id === 'WI-A' ? 'DV-A' : 'DV-B' };
+      }) };
+      const service = serviceWith({ working, objectAccess });
+      const pending = service.readWorkingRevision('MAT-1', 'MWREV-OLD', actor()).catch(error => ({ error, activeAtReturn: active }));
+      await jest.runAllTimersAsync();
+      expect(await pending).toMatchObject({ error: { code: 'REVOKED', statusCode: 403 }, activeAtReturn: 0 });
+      expect(objectAccess.freshRead.mock.calls.map(([input]) => input.accessRoot.id)).toEqual(['WI-A', 'WI-B', ...ids.slice(0, 4)]);
+    } finally { jest.useRealTimers(); }
+  });
+
+  it('does not read a saved body if a current member is denied', async () => {
+    const working = { readByRef: jest.fn() };
+    const service = serviceWith({ working, objectAccess: { freshRead: jest.fn().mockResolvedValue({ allowed: false, code: 'REVOKED', statusCode: 403 }) } });
+    await expect(service.readWorkingRevision('MAT-1', 'MWREV-OLD', actor())).rejects.toMatchObject({ statusCode: 403 });
+    expect(working.readByRef).not.toHaveBeenCalled();
+  });
+
+  it('rejects a missing exact saved work without loading the current work as fallback', async () => {
+    const working = { readByRef: jest.fn().mockResolvedValue(null), loadCurrent: jest.fn() };
+    const service = serviceWith({ working });
+    await expect(service.readWorkingRevision('MAT-1', 'MWREV-MISSING', actor())).rejects.toThrow();
+    expect(working.loadCurrent).not.toHaveBeenCalled();
+  });
+
 });
 
 function serviceWith(

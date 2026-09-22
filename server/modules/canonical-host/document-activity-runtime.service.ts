@@ -65,15 +65,18 @@ export class DocumentActivityRuntimeService {
           manifestSha256: source.artifact.sha256, selection, expectedRevision: input.expectedRevision });
         return summary(row);
       }
-      // RLS and the ordinary Reader validate the original again for every operation.
+      // RLS owns the run; control operations recheck ordinary source ACL/catalog
+      // without downloading content or hydrating semantic maps.
       const row = await this.runs.readRun(scope, input.runRef);
       if (!row) throw new Error('DOCUMENT_ACTIVITY_RUN_NOT_FOUND');
-      const source = await this.load(scope.documentVersionId, row.parseRunId, row.semanticRevision, context);
-      if (source.artifact.sha256 !== row.manifestSha256 || source.loaded.original.binding.parseRevision !== row.parseRevision)
-        throw new Error('DOCUMENT_ACTIVITY_ORIGINAL_CHANGED');
-      if (input.action === 'ACTIVITY_STATUS') {
+      if (input.action !== 'ACTIVITY_READ' && input.action !== 'ACTIVITY_SAVE') {
         await this.parsing.status(scope.documentVersionId, context);
-        return summary(row);
+      }
+      if (input.action === 'ACTIVITY_STATUS') {
+        await this.runs.expire(scope, input.runRef);
+        const current = await this.runs.readRun(scope, input.runRef);
+        if (!current) throw new Error('DOCUMENT_ACTIVITY_RUN_NOT_FOUND');
+        return summary(current);
       }
       if (input.action === 'ACTIVITY_CANCEL') {
         await this.runs.cancel(scope, input.runRef);
@@ -91,6 +94,10 @@ export class DocumentActivityRuntimeService {
         await this.runs.fail(scope, input, input.errorCode);
         return summary((await this.runs.readRun(scope, input.runRef))!);
       }
+      // READ/SAVE prove content integrity on the exact registered source.
+      const source = await this.load(scope.documentVersionId, row.parseRunId, row.semanticRevision, context);
+      if (source.artifact.sha256 !== row.manifestSha256 || source.loaded.original.binding.parseRevision !== row.parseRevision)
+        throw new Error('DOCUMENT_ACTIVITY_ORIGINAL_CHANGED');
       const plan = buildTranslationSourcePlan({ documentVersionId: scope.documentVersionId, packageId: row.parseRunId,
         parsedArtifact: { storeRole: 'UnifiedArtifactStoreCandidate', ref: `document-original://${encodeURIComponent(scope.documentVersionId)}/${encodeURIComponent(row.parseRunId)}`,
           sha256: source.artifact.sha256, byteLength: source.artifact.byteLength, mediaType: 'application/json' },
@@ -131,19 +138,17 @@ export class DocumentActivityRuntimeService {
   async readForBrowser(input: DocumentActivityReadingRequest, context: SourceContext): Promise<DocumentActivityReadingResponse> {
     id.parse(input.documentVersionId); id.parse(input.parseRunId);
     if (input.candidateRevision !== undefined) z.number().int().positive().parse(input.candidateRevision);
-    const loaded = await this.reader.readDocumentOriginal(input.documentVersionId, input.parseRunId, context);
-    const familyId = loaded.run.sourceBinding.familyId;
-    if (!familyId) throw new Error('DOCUMENT_ACTIVITY_FAMILY_NOT_FOUND');
+    const identity = await this.parsing.inspectPublishedIdentity(input.documentVersionId, input.parseRunId, context);
     const result = await this.runs.readSaved({ ...context, documentVersionId: input.documentVersionId }, input.parseRunId, input.candidateRevision);
     if (result) {
-      if (!isDeepStrictEqual(result.sourceBinding.original, loaded.original.binding) ||
+      if (!isDeepStrictEqual(result.sourceBinding.original, identity.binding) ||
         (input.candidateRevision !== undefined && result.candidateRevision !== input.candidateRevision))
         throw new Error('DOCUMENT_ACTIVITY_RESULT_BINDING_MISMATCH');
-      const map = await this.semantics.read({ ...context, documentVersionId: input.documentVersionId }, loaded, result.sourceBinding.semanticRevision);
-      if (!map || map.semanticRevision !== result.sourceBinding.semanticRevision) throw new Error('DOCUMENT_SEMANTIC_REVISION_NOT_FOUND');
+      const ready = await this.semantics.readReady({ ...context, documentVersionId: input.documentVersionId }, input.parseRunId, result.sourceBinding.semanticRevision);
+      if (!ready || ready.semanticRevision !== result.sourceBinding.semanticRevision) throw new Error('DOCUMENT_SEMANTIC_REVISION_NOT_FOUND');
     }
     await this.parsing.status(input.documentVersionId, context);
-    return { familyId, binding: loaded.original.binding, candidate: result };
+    return { familyId: identity.familyId, binding: identity.binding, candidate: result };
   }
 
   private async load(documentVersionId: string, parseRunId: string, semanticRevision: number, context: SourceContext) {

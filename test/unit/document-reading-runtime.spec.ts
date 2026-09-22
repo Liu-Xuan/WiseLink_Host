@@ -21,8 +21,8 @@ function fixture() {
   const reader = { readDocumentOriginal: jest.fn().mockResolvedValue(loaded),
     readSourcePackage: jest.fn(), readAllSourceUnits: jest.fn(), inspectSourcePackage: jest.fn(),
     readStructuredSource: jest.fn(), readback: jest.fn(), persistAndReadback: jest.fn() };
-  const semantics = { read: jest.fn().mockResolvedValue(map), ensure: jest.fn() };
-  const parsing = { status: jest.fn().mockResolvedValue({}) };
+  const semantics = { read: jest.fn().mockResolvedValue(map), ensure: jest.fn(), readReady: jest.fn().mockResolvedValue({ semanticRevision: 1 }) };
+  const parsing = { status: jest.fn().mockResolvedValue({}), inspectPublishedIdentity: jest.fn().mockResolvedValue({ familyId: 'family-test', binding: original.binding }) };
   const runs = { begin: jest.fn().mockResolvedValue(row), readRun: jest.fn().mockResolvedValue(row), readSaved: jest.fn().mockResolvedValue(null),
     recordDelivery: jest.fn(async (_scope, _fence, range) => { row.deliveredRanges.push(range); }),
     save: jest.fn(async (_scope, _fence, _command, materialize) => materialize(row, 1)),
@@ -213,9 +213,41 @@ describe('independent file reading runtime', () => {
     expect(f.actors.withActorScope).not.toHaveBeenCalled();
     expect(f.runs.begin).not.toHaveBeenCalled();
     expect(f.semantics.ensure).not.toHaveBeenCalled();
-    f.semantics.read.mockResolvedValueOnce(null);
+    f.semantics.readReady.mockResolvedValueOnce(null);
     await expect(f.service.readForBrowser(request, f.context)).rejects.toThrow('DOCUMENT_SEMANTIC_REVISION_NOT_FOUND');
     f.parsing.status.mockRejectedValueOnce(new Error('SOURCE_ACCESS_DENIED'));
     await expect(f.service.readForBrowser(request, f.context)).rejects.toThrow('SOURCE_ACCESS_DENIED');
   });
+});
+
+it.each(['READING_CANCEL','READING_CLAIM','READING_HEARTBEAT','READING_FAIL'])('%s requires ordinary source authorization beyond the service allowlist', async action => {
+ const f=fixture(); f.parsing.status.mockRejectedValue(new Error('SOURCE_REVOKED'));
+ const base={ action, documentVersionId: f.scope.documentVersionId, runRef: f.row.runRef };
+ const input=action==='READING_HEARTBEAT' ? { ...base, ...f.fence }
+  : action==='READING_FAIL' ? { ...base, ...f.fence, errorCode: 'TEST_FAILURE' }
+  : action==='READING_CLAIM' ? { ...base, leaseOwner: f.fence.leaseOwner } : base;
+ await expect(f.service.run(input)).rejects.toThrow('SOURCE_REVOKED');
+ for (const method of ['cancel','claim','renew','fail','expire'] as const) expect(f.runs[method]).not.toHaveBeenCalled();
+ expect(f.reader.readDocumentOriginal).not.toHaveBeenCalled();
+});
+
+it('returns the complete saved browser result with fresh exact identities and zero content hydration', async () => {
+ const f=fixture();
+ f.reader.readDocumentOriginal.mockRejectedValue(new Error('STORAGE_UNAVAILABLE'));
+ const result = { sourceBinding: { original: f.original.binding, semanticRevision: 1 },
+  readingRevision: 9, explanation: [{ text: '完整已保存正文'.repeat(5000) }] };
+ f.runs.readSaved.mockResolvedValue(result as never);
+ const request = { documentVersionId: f.scope.documentVersionId, parseRunId: f.row.parseRunId, semanticRevision: 1, readingRevision: 9 };
+ const response = await f.service.readForBrowser(request, f.context);
+ expect(response.reading).toBe(result);
+ expect(f.reader.readDocumentOriginal).not.toHaveBeenCalled(); expect(f.semantics.read).not.toHaveBeenCalled();
+ expect(f.parsing.inspectPublishedIdentity).toHaveBeenCalledWith(request.documentVersionId, request.parseRunId, f.context);
+ expect(f.semantics.readReady).toHaveBeenCalledWith(f.context, request.parseRunId, 1);
+ f.runs.readSaved.mockResolvedValue({ ...result, sourceBinding: { ...result.sourceBinding, original: { ...f.original.binding, parseRunId: 'other' } } } as never);
+ await expect(f.service.readForBrowser(request, f.context)).rejects.toThrow('BINDING_MISMATCH');
+ f.runs.readSaved.mockResolvedValue(result as never);
+ f.semantics.readReady.mockResolvedValueOnce(null);
+ await expect(f.service.readForBrowser(request, f.context)).rejects.toThrow('SEMANTIC_REVISION_NOT_FOUND');
+ f.parsing.inspectPublishedIdentity.mockRejectedValueOnce(new Error('SOURCE_REVOKED'));
+ await expect(f.service.readForBrowser(request, f.context)).rejects.toThrow('SOURCE_REVOKED');
 });
