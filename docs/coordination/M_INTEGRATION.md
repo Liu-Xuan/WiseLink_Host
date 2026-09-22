@@ -1,5 +1,16 @@
 # M 主控集成交接
 
+## 2026-09-23 已接受提速批次统一集成
+
+本次在已部署8d139e310fdc7dbe33e26e7e0bf6834762168c42基础合并B至a0e712f82985ca57fd1a52bf75be3a8971aba4ba，包含dd1图谱来源会话复用、f7d保存读取移除未消费的原件准备查询、a0e来源身份窄投影，以及509/4bac匿名性能记录。三个产品批次均已由Luna独立接受；保留fresh授权、tenant/source/version边界。仅REPORT追加记录冲突，保留双方内容；产品文件无冲突。
+
+此前release7688452846325648565已finished，对应8d139、error_logs=[]，两远端同名SHA一致。真实暖original-identity20次端到端p95约1697ms，平台origin p95约359ms；知识冷读catalogue/work已并行，实际平台inner约3567/3018ms，不能误归因为前端串行。新批次收益仍待本次发布后测量。
+
+固定组合由Luna独立核验：4套58项、server typecheck、暂存diff-check通过，两后端产品文件与a0e精确一致。图谱变更仍为已接受dd1范围。B另补157bf隔离PG/FORCE RLS实测10项通过（非生产RLS），该测试/文档提交未纳入本次固定范围。
+
+此记录仅表示集成准备；本批尚未发布。Hosted Skill仍待安装，未将Host发布当作Skill安装或真实评估验收。
+
+
 ## 2026-09-23 任务目录线上恢复与第三批集成
 
 任务目录修复 `dc4915437dba7157406e6b18b1f51ed2ad7a83ea` 已由 release `7688437914978126804` finished回读确认、error_logs=[]，双remote同名分支SHA一致。Luna正常身份首次读取24项、一次刷新仍24项；官方日志首次200，刷新gateway304/app-client200，均绑定dc491且错误为空。准确保存工作修订16和活动候选读取无回归。本次500故障已在该样本闭合，不代表完整评估消费者已验收。

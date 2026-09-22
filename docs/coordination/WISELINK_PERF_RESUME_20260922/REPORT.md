@@ -894,3 +894,56 @@ Main回执：ef258 release7688432648880098235 finished updated_at=1790103060000�
 - Main专属Luna负责本release的导航/普通段落功能复验，B本轮补计量，不以自身计量替代独立功能结果。A明确没有已核实获准在执行的job/subject窗口，旧cron/attempt不能当当前在途；Skill未安装，后台竞争与阶段4真实执行仍未闭合。2026-09-11原生并发8/4/8文档仅为历史快照，需Main回读当前配置与具体运行授权后验证公平性。
 
 主控最小集成接受：79bd基线合并626及59791匿名记录，两个生产文件与已独立接受626完全一致。Luna在固定staged树复跑identity/sessionreuse两套39项通过，diff-check通过；PG本轮无环境变量跳过，不计为新PG证据。未重复未变产品的全仓gate。发布结果以随后精确release回执为准，未预报性能。
+
+## B 图谱返回实际计量与 ab3 独立验收（2026-09-23）
+
+- 部署沿用 Main ab3 79bd2380615ff18582269cc3cd5d95f805261b87 / release7688444473504353246；已有正常登录，同保存修订16，实际 graph→Wiki→TopBar「返回关系图谱」。未新建解析、翻译、评估或模型任务。
+- 匿名26次完整DOM结果见 GRAPH_RETURN_EVIDENCE_20260923.json。上轮工具8次批处理超过30秒后内核重置，恢复6次已完成结果；本轮另20次，未删除慢值或失败。20次DOM-ready p95 24.5ms/max25.1ms；两RAF p95 38.8ms/max39.3ms，nearest-rank。每次exact M/W、layoutSnapshot、修订16、17 overlays、3个非空canvas、82%镜头且无graph alert；overlay位置字符串全部相同。
+- 该指标证明具体已保存图谱恢复满足200ms目标；两RAF不是GPU像素完成，也不表示后台刷新/授权已完成。保留旧数据的后台刷新发生在其后，不能将本结果用作500ms暖后端目标或新授权读取达标证据。未覆盖冷启动、大图、所有退出路径、用户连续拖动及真实模型竞争。
+- 网络事件buffer窗口开头被淘汰（truncated=true、cursor1054、最早保留sequence55），不宣称整窗零请求或完整请求总数。留存业务请求全部200：19个parsing状态读601.8–1894.1ms；5个matter读1191.5–1990.7ms；5个working读2060.1–3071.7ms。实际后台重复状态读取仍是候选热点，不能因前景快速恢复而隐去。
+- 临时isolated-world observer、capture click listener已移除，测量对象读回undefined；没有持久产品埋点或业务状态修改。
+- Luna独立ab3线上功能回执：知识→侧栏图谱保留同M/W与修订16；实际TopBar「返回工程知识」恢复精确知识上下文；普通已登记段落u112的实际第5页→资料库→browser back保留同parse/sourceRef/page5。显式reload 3次6582/6185/7709ms，median6582ms，仅功能/耗时观察，不冒充p95或请求计数。a7/a88已部署功能缺口由此闭合；自由像素/TOC/纯PDF滚动仍不在其声明范围。
+- 626dcf6原件identity窄投影已获Luna独立服务33项/types/lint/build接受；真实PG1/1仍是B证据，Luna未复跑。Main本轮确认正在集成626与59791；在确切发布回执前不声称生效。Main/A正在核实现行Hosted官方操作入口与历史已授权范围；没有已核实可供B观察的当前job，状态未知不撤销历史授权、不等同必需新授权。
+
+
+## B 图谱来源读取的会话内复用（2026-09-23）
+
+- 基线509098d23，独立树`/private/tmp/wiselink-perf-b-graph-source-reuse-20260923`。上一批线上graph→Wiki→graph各次返回自动读取首个来源parsing状态，留存19次需601.8–1894.1ms。根因是useSuiteGraphSources的局部records每次remount归零；这不是解析执行，不应误称模型重复运行。
+- 实现接入现有QueryClient与ENGINEERING_MATTER_QUERY_ROOT、既有identity hook。资源key含app/tenant/actor/session/documentVersion及完整exact事件pins；当前published与指定保存候选互不替代。新鲜30秒、GC5分钟，读取中重挂载共享in-flight；组件取消自己的订阅结果，不中断其他订阅者的共享读取。现有session-root取消/清理适用于本资源，session变化后不启动迟到状态的依赖活动读取。
+- 过期重挂载清空本地候选后fresh读取，显式「重新读取」绕过新鲜窗口；拒绝/失败以无候选结果替代旧内容，不通过自动remount循环重试，用户可显式恢复。身份、catalog、enabled/denied或pins改变时屏蔽旧records。exact响应另核对documentVersion/parseRun/candidateRevision及既有family/run/statement绑定。
+- 复用的是已授权读取结果，不是授权授予决定；每次实际API仍由Host授权。与其他30秒阅读窗口相同，未收到session失效且没有新读取时不保证立即发现远端撤权。不持久化正文，不缓存任意跨身份结果，不触发BEGIN或候选生成。
+- 有效旧反例1 failed/2 passed：实际卸载再挂载同来源状态调用2次而期待1次；修复后相关3套25项通过。覆盖fresh复用、in-flight复用、31秒过期隐藏旧候选、显式刷新、403替换/remount不自动重试/显式恢复、app/tenant/actor隔离、session迟到不继续依赖读取、根资源清理、exact候选版本区别及错配拒绝。测试拥有QueryClient并clear，正常退出，无forceExit。
+- client types/lint/build/precommit实际结果以本批日志`/private/tmp/wiselink-graph-source-{red,tests,types,lint,build}.log`及提交回执为据。待Luna独立审查、Main集成与线上请求计量；不把调用次数反例当线上500ms目标或总体完成。主控仍唯一发布者。
+
+- 本批实际client typecheck、生产hook ESLint通过（日志为空），client build13.71s通过；正常提交检查随后执行。主控新回执：626+59791已集成为8d139e310fdc7dbe33e26e7e0bf6834762168c42，release7688452846325648565 finished/error_logs=[]/updated_at1790107974000、双远端同名一致。该发布不含本批及509文档；暖identity待新部署实际复测，Hosted包仍source79bd且尚未安装。
+
+
+## B 窄身份读取发布后的实际耗时分层（2026-09-23）
+
+- Main准确发布8d139e310fdc7dbe33e26e7e0bf6834762168c42 / release7688452846325648565 finished、updated_at1790107974000、error_logs=[]、双远端同名SHA一致；含626，未含dd1。本轮发布后完整导航到原已保存五页PDF/同parseRun与登记sourceRef；正常现有登录，只读资料库→browser back反复卸载/恢复，未触发生成。
+- 完整匿名数据见ORIGINAL_IDENTITY_RUNTIME_EVIDENCE_20260923.json。每次及时读取CDP事件，全部窗口truncated=false/hasMore=false。首读original200：headers2532.673ms、完成5570.678ms、122800网络字节；随后20次仅original-identity200，无重复original下载、无loadingFailed。所有样本保留。
+- 20次浏览器实际暖请求：总耗时median787.913ms、p95（nearest rank）1696.780ms、min676.413ms、max1952.004ms；500ms端到端目标未达到。此为单会话小样本，不推广为总体生产p95，不把新旧不同时间采样当严格因果A/B。
+- 新定位证据来自实际响应Server-Timing：20次origin 263–369ms、p95 359ms；inner221–351ms、p95 350ms。全部cdn-cache MISS、h2已复用连接，DNS/connect/SSL timing=-1。平台自报origin段低于500ms，不能冒充独立测量的Host/SQL耗时，也不能代替浏览器端到端验收。两层明显差距提示继续定位网关/网络/响应交付等待，不能把约1.7s全部归因数据库、删除fresh授权来追数字。
+- 少量loadingFinished时间戳比responseReceived早约1–3ms，原值保留，不作亚毫秒推断。两个观察工具问题（早期事件轮数上限、一次canvas locator deadline）均回读同一次导航/请求至完成，没有重新导航替换失败样本。最终及后续17轮PDF实际第5页恢复；UI功能另有Luna独立验收，不以网络数据替代功能结论。
+- Luna新部署独立只读功能验收：同DV/parseRun，真实u112点击写sourceRef并显示实际第5页；资料库→browser back保持；两次warm UI工具墙钟2159/1544ms，不是服务p95。Luna未获取网络字节，B本节另给CDP证据；线上未构造跨租户/digest错误，不冒充本地拒绝边界线上覆盖。
+- 下一步：B继续dd1独立审查及发布后实际请求复测；Main/A核实现行Hosted入口、已有授权运行窗口。需要用现有平台可读指标细分额外等待；不新增生产观测平台，不减少Host身份/来源核对，不关闭整体Goal。
+
+
+## B 保存正文读取移除未消费的当前原文准备（2026-09-23）
+
+- 基线4bac6d6fb，独立树`/private/tmp/wiselink-perf-b-saved-original-hydration-20260923`。新8d139正常身份完整导航、指定同保存修订16；准确CDP区间从identity request前sequence开始，truncated=false/hasMore=false。identity 200：start1790108840830.171ms，total1089.617ms、1335bytes，Server-Timing inner236/origin899ms；catalogue 200：start1790108841927.617、total4363.828ms、3193bytes、inner3567/origin4173ms；work 200：start1790108841928.061、total3985.654ms、27775bytes、inner3018/origin3599ms。请求CDP monotonic起点差0.485ms，已并行，不改前端并发。epoch/monotonic细小差异保留，不作亚毫秒推断。此为单次定位，不是p95。
+- 具体无用工作：readWorkingRevision先await authorizedMatter却完全不消费其currentInputs；authorizedMatter最后bindOriginalInputs额外查询当前全部published parse及最新semantic，用于当前工作输入计算。指定保存读取后续只用readByRef返回的持久原始绑定；上述当前绑定准备不会参与其返回或授权判定。
+- 增加私有includeOriginalBindings参数，默认true保持当前basis/apply流程；只有指定保存revision入口传false，事项版本变动的单次重试也传递该选择。仍完整检查当前成员freshRead、tenant projection、document resolver一致性、事项版本前后复核及历史移除成员逐组fresh读取；不复用权限、不减少fresh检查次数、不改变repository保存正文及RLS、不将保存绑定改成latest。
+- 有效旧反例1 failed/8 passed，精确保存读取仍调用了1次不被消费的当前绑定准备。修复后working service10项 + engineering issue search23项，合计2套33项通过；覆盖保存绑定保持、当前basis仍绑定、事项变动重试、当前撤权拒绝、移除成员拒绝、精确ref不存在不fallback等。去掉1次批量当前解析查询，不预报线上节省毫秒或声称解决全部3秒延迟。
+- server typecheck（tsconfig.node.json）通过，生产service ESLint无error，保留既有unused disable warning；server build通过。首次误用根tsconfig.json出现TS6305未构建shared声明文件，已改用正确服务端配置，未修改产品来绕过。日志`/private/tmp/wiselink-saved-original-hydration-{red,tests,search-tests,types,types-node,lint,build}.log`。正常precommit随后执行，待Luna独立接受/Main发布与真实计量。
+- dd1df7d662cf83cdf8947120fcb1f6dfd3643a78图谱来源复用已获Luna独立13项/client types/lint/diffcheck接受；没有重复build或线上生成。已回传Main允许按父子关系集成；本批与其后续验收不混同。
+
+
+## B Matter 成员来源身份窄投影（2026-09-23）
+
+- 基线f7d6e82e9，独立树`/private/tmp/wiselink-perf-b-source-identity-projection-20260923`。沿上一批实际知识冷读inner约3秒链定位：requireInput每次fresh成员核对调用完整source resolver，六表全列含preflight/采集/现行性等数据，但该消费者只使用documentId/documentVersionId。没有把这些列的数据量推测成已实测毫秒。
+- 新resolveIdentity显式窄读8列：version的两个ID/lifecycle/digest/length，artifact的verified/digest/length。保留family/sourceArtifact/acquisition/COMMITTED preflight四个innerJoin、精确documentVersion过滤与原普通RLS；默认来源校验抽到同一私有函数，完整resolve的creator/current-head策略仍原样执行。身份窄读没有声称current-head或creator检查；调用点原先也使用不带这些选项的resolve。
+- 只有EngineeringMatterWorkingService.requireInput接入。此前fresh objectAccess/tenant projection以及后续documentId/version一致性检查不变；没有减少任何授权次数、缓存权限、变更scope或凭据。当前head的leftJoin是可选信息，既不限制原默认resolve的行可见性也不参与该消费者验证，因此窄读不再加载其字段。其他依赖完整来源信息的消费者继续用原resolve。
+- 有效旧反例1 failed/10 passed：成员核对仍进入不被消费的完整source读取。新三套44项通过；随后追加真实Drizzle SQL编译核对并仅复跑resolver 11项（新增1项，45个不同测试，不称为统一45项复跑）。验证四必需join和preflight acquisition/version精确条件、COMMITTED/id/limit绑定参数、无descriptor/currentness投影、四类源身份错误及缺登记拒绝，原creator/currentness测试保留。SQL为真实builder生成，但没有连接PG，不冒充实际数据库/RLS或生产延迟验证。
+- server typecheck通过；两生产文件ESLint无error，working service既有unused-disable warning保留；server build和precommit按本批实际日志/提交回执记录。日志`/private/tmp/wiselink-source-identity-{red,tests,sql-tests,types,lint,build}.log`。本批不改模式/索引/存量数据，下一步Luna独立审查，Main统一集成发布，再测同保存正文冷路径。
+- 前批f7d6e82e9458f55a7663cac9041a8de90186a6c9已获Luna独立33项、官方server typecheck、服务/测试lint与diffcheck接受并回传Main。dd1亦已独立接受；未取得本批发布回执前不标为线上生效。
