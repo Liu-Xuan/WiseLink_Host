@@ -540,3 +540,20 @@ reader只属于已完整验证的不可变原件这一次准备，普通源/sema
 验证：旧实现新入口反例实际5次plan（期望优化后2），修复后完整任务sourceCatalog仍是61个单元的完整合并原文，不少末尾条件。3套41项（engineering-reading 7、JobAid continuation 30、source-idle 4）通过，包括单reader plan/coverage各1、长文/表格/跨页同ref、selected findings、可变返回副本、不同原文内容/semanticRevision隔离、错binding拒绝、实际begin二次fresh读取、续接原件变更与撤权拒绝。server typecheck、2生产文件ESLint、server build通过；构建仍是静态资产校验，未触发线上模型/业务。没有线上p95或堆采样结论。
 
 协作：前批70ad48ea9已获Luna独立5套38项/实际PDF.js5项及types/lint/build/precommit验收，可供主控选择性集成。完整Goal继续active，仍需跨任务竞争、其余阅读热点、通用图谱退出及真实资料库→Wiki→图谱→原文→返回→历史/最终部署证据。
+
+
+## 2026-09-23 B：首次正常身份V/R与真实PDF目标页修复
+
+主控回读Host app_17bzc551rsg release7688408024273652704 status=finished、commit_id=e812421cb050aed0954ca3f6945159100155a301、error_logs=[]。主控授权正常身份只读现有已保存样本，Hosted Skill新包尚未安装。B自建IAB tab现场已有正常登录、资料库11文档，打开既有5页FTD解析版本2：完整结构化原文、表格和作者目录可读；中文已有部分结果21%并明确DEADLINE_EXPIRED，未重生成或制造样本，未发起模型/正式采用。样本ID和安全过滤后的数字在本机/private/tmp/wiselink-vr-readonly-evidence-20260923.json；公共文档不复制业务原文/认证头。
+
+单次实际网络观测：translation-reading 200，headers1481.28ms，总网络1580.362ms、encoded21206bytes；original 200，headers1680.954ms，总网络2079.863ms、encoded122810bytes。它们是正文/原件读取单样本，不是暖轻量API或热正文p95；自动化工具曾超时但现场页面已完成，工具墙钟时间不算页面延迟。全链/Wiki/图谱及采样分布尚未完成。
+
+真实缺陷：第5页来源选择后外层显示5，但原件工具栏4/5且实际显示上一页。DOM证据：容器高760px，已渲染页514px；第一次目标页距顶部500px，手动再输入5仍因最大scrollTop1854而停在目标页上方240px，阅读线落在第4页。根因是一次性定位发生在canvas异步尺寸稳定前，且短末页没有足够末端滚动空间。
+
+独立修复基线6f77d9456，树/private/tmp/wiselink-perf-b-pdf-target-20260923：PdfDocumentViewer为明确导航请求接入局部followPdfPageTarget；观察容器/页frame尺寸并按RAF合并重定位，已可滚动容器按末页实际高度补足尾部空间。用户wheel/touch/pointer/翻页键即接管滚动并断开目标跟随；新明确来源请求才重新跟随，隐藏/卸载断开observer/listener/RAF。没有重新请求原件、换SourceRef或缓存权限。只在可滚动容器加尾空间，避免auto-height容器反馈增长。
+
+实际React组件回归先在旧实现2失败1通过；修复后新增中间页异步尺寸项，4项通过。输入模块仅为测试编译Vite worker URL/import.meta，PDF获取隔离，运行真实React viewer与控制的DOM几何；现有结构化workspace测试中两项源码字面scroll实现断言迁到此行为测试，不降低页面定位要求。相关5套共25项通过（首轮4套通过/一个旧字面断言失败，移除失效实现拼写断言后该套3项复跑通过），client types、2生产文件ESLint、client build14.99s通过。
+
+真实浏览器对照：本轮自建loopback63217静态夹具，五页合成PDF、真实pdf.js/worker、实际Viewer与CSS，仅未走的Host API及本地CSRF依赖stub。旧模块目标5却工具栏4、targetTop500.875px、scrollTop1570；恢复修复模块后工具栏5、targetTop-0.25px、scrollTop2044、尾空间251px（容器760/末页515），截图确认实页5。局部静态服务已通过其运行句柄正常中断退出，本地tab已关闭；不是在生产页注入修复。线上e812仍需主控集成发布后复验。
+
+协作：6f77d9456的3套41项/types/lint/build/precommit已获Luna独立验收。消费者公平性本轮只读定位，尚未改consumer；V/R给出新实际失败后优先修复该失败。完整Goal保持active。
