@@ -667,3 +667,13 @@ Main回执：ef258 release7688432648880098235 finished updated_at=1790103060000�
 - PostgreSQL本地127.0.0.1:55439新建实例`/private/tmp/wiselink-original-identity-pg-20260923`已停止删除；只删除本批可丢弃数据目录，initdb/pg/test日志保留。未连接生产数据库。
 - server typecheck与两production文件ESLint通过；build/precommit日志`/private/tmp/wiselink-original-identity-{build,precommit}.log`，测试日志`/private/tmp/wiselink-original-identity-{red,tests,pg-test}.log`。提交后交Luna独立审查，Main串行集成发布；线上500ms目标仍未证明。
 - a88普通段落返回候选已获Luna独立22项与client types/lint/diffcheck接受；实现者3套44项/build/precommit证据另列，不混同独立覆盖。
+
+
+## B 发布后知识热正文实际计量（2026-09-23，79bd）
+
+- Main ab3 release7688444473504353246 finished / commit79bd2380615ff18582269cc3cd5d95f805261b87、两远端同SHA；含a88，不含626。B此后完整导航加载应用，观察到新sidebar带returnKnowledgeQuery；未直接捕获asset SHA，不作额外编造。
+- 使用现有正常登录与同一保存修订16。真实点击sidebar资料库→工程知识，CDP isolated world中的临时click listener记录performance.now；MutationObserver仅在exact M/W URL、修订16标记、完整knowledge-prose且无preview status/alert时记DOM-ready，再记录两次RAF后的值。没有改产品代码、正文或业务数据；结束已disconnect/remove listener/delete测量对象，读回undefined。2RAF只代表帧机会，不等于物理GPU显示时刻。
+- 全部49次尝试含探索数据保留在`KNOWLEDGE_HOT_READ_EVIDENCE_20260923.json`。最初探索两次的full navigation之后Network未重新enable，故不宣称零请求，也不纳入请求分类统计。
+- 精确连续25次窗口输入epoch1790106647392.4至1790106665092.3ms；事件buffer无truncation/hasMore=false，全部ready、0timeout/0failure。第1次：catalogue200 3391ms/3164网络字节 + work200 2212ms/27807字节；DOM5633.9ms，2RAF5647.9ms，保留为过期重读。其余24次无knowledge catalogue/work请求，按实际请求时间归类而非剔除慢值。
+- 24次新鲜窗口同保存版本：DOM p95（nearest rank）21.6ms、max31.2ms；2RAF p95 36.5ms、max36.6ms。这是单会话、小样本、具体热知识路径达到100ms目标的证据；不推广为全站或非缓存读取达标。过期重读5.65s及探索7–10.7s仍是待解决慢路径，未从原始样本删除。
+- Main专属Luna负责本release的导航/普通段落功能复验，B本轮补计量，不以自身计量替代独立功能结果。A明确没有已核实获准在执行的job/subject窗口，旧cron/attempt不能当当前在途；Skill未安装，后台竞争与阶段4真实执行仍未闭合。2026-09-11原生并发8/4/8文档仅为历史快照，需Main回读当前配置与具体运行授权后验证公平性。

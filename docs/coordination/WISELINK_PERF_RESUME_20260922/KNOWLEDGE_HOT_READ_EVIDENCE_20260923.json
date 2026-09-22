@@ -1,0 +1,438 @@
+{
+  "release": "7688444473504353246",
+  "commit": "79bd2380615ff18582269cc3cd5d95f805261b87",
+  "deploymentEvidence": "Main exact release finished; subsequent full application navigation, new sidebar returnKnowledgeQuery observed; no direct asset SHA captured",
+  "sample": "one existing authorized saved engineering matter work; revision16; identifiers/body omitted",
+  "method": "normal real sidebar clicks library→knowledge; isolated-world capture click time; MutationObserver requires exact subject/work URL, revision16 kicker, knowledge-prose present, no preview status/alert; record DOM ready then two requestAnimationFrame callbacks; temporary observers/listeners removed and state undefined verified",
+  "limit": "two RAF is frame opportunity proxy, not physical GPU presentation; one session/small same-version sample, no concurrent model job; timings rounded to0.1ms; no overall app p95 claim",
+  "allAttempts": [
+    {
+      "attempt": 1,
+      "domReadyMs": 10704.5,
+      "twoRafMs": 10722.8,
+      "status": "ready",
+      "phase": "exploratory"
+    },
+    {
+      "attempt": 2,
+      "domReadyMs": 7812.3,
+      "twoRafMs": 7829,
+      "status": "ready",
+      "phase": "exploratory"
+    },
+    {
+      "attempt": 3,
+      "domReadyMs": 7117.9,
+      "twoRafMs": 7136.1,
+      "status": "ready",
+      "phase": "exploratory"
+    },
+    {
+      "attempt": 4,
+      "domReadyMs": 22.3,
+      "twoRafMs": 36.9,
+      "status": "ready",
+      "phase": "exploratory"
+    },
+    {
+      "attempt": 5,
+      "domReadyMs": 21.7,
+      "twoRafMs": 39.3,
+      "status": "ready",
+      "phase": "exploratory"
+    },
+    {
+      "attempt": 6,
+      "domReadyMs": 22.1,
+      "twoRafMs": 36.4,
+      "status": "ready",
+      "phase": "exploratory"
+    },
+    {
+      "attempt": 7,
+      "domReadyMs": 20.7,
+      "twoRafMs": 34.4,
+      "status": "ready",
+      "phase": "exploratory"
+    },
+    {
+      "attempt": 8,
+      "domReadyMs": 21.3,
+      "twoRafMs": 35.1,
+      "status": "ready",
+      "phase": "exploratory"
+    },
+    {
+      "attempt": 9,
+      "domReadyMs": 20.7,
+      "twoRafMs": 34.4,
+      "status": "ready",
+      "phase": "exploratory"
+    },
+    {
+      "attempt": 10,
+      "domReadyMs": 21,
+      "twoRafMs": 34.2,
+      "status": "ready",
+      "phase": "exploratory"
+    },
+    {
+      "attempt": 11,
+      "domReadyMs": 20.4,
+      "twoRafMs": 34.3,
+      "status": "ready",
+      "phase": "exploratory"
+    },
+    {
+      "attempt": 12,
+      "domReadyMs": 21.5,
+      "twoRafMs": 35.8,
+      "status": "ready",
+      "phase": "exploratory"
+    },
+    {
+      "attempt": 13,
+      "domReadyMs": 19.9,
+      "twoRafMs": 34.4,
+      "status": "ready",
+      "phase": "exploratory"
+    },
+    {
+      "attempt": 14,
+      "domReadyMs": 21.2,
+      "twoRafMs": 37.2,
+      "status": "ready",
+      "phase": "exploratory"
+    },
+    {
+      "attempt": 15,
+      "domReadyMs": 21.1,
+      "twoRafMs": 36.1,
+      "status": "ready",
+      "phase": "exploratory"
+    },
+    {
+      "attempt": 16,
+      "domReadyMs": 22,
+      "twoRafMs": 35.8,
+      "status": "ready",
+      "phase": "exploratory"
+    },
+    {
+      "attempt": 17,
+      "domReadyMs": 19.8,
+      "twoRafMs": 33.3,
+      "status": "ready",
+      "phase": "exploratory"
+    },
+    {
+      "attempt": 18,
+      "domReadyMs": 20.7,
+      "twoRafMs": 34.3,
+      "status": "ready",
+      "phase": "exploratory"
+    },
+    {
+      "attempt": 19,
+      "domReadyMs": 20,
+      "twoRafMs": 32.9,
+      "status": "ready",
+      "phase": "exploratory"
+    },
+    {
+      "attempt": 20,
+      "domReadyMs": 7051.4,
+      "twoRafMs": 7067.5,
+      "status": "ready",
+      "phase": "exploratory"
+    },
+    {
+      "attempt": 21,
+      "domReadyMs": 19.9,
+      "twoRafMs": 33.5,
+      "status": "ready",
+      "phase": "exploratory"
+    },
+    {
+      "attempt": 22,
+      "domReadyMs": 30.7,
+      "twoRafMs": 32.8,
+      "status": "ready",
+      "phase": "exploratory"
+    },
+    {
+      "attempt": 23,
+      "domReadyMs": 19.7,
+      "twoRafMs": 34,
+      "status": "ready",
+      "phase": "exploratory"
+    },
+    {
+      "attempt": 24,
+      "domReadyMs": 21.3,
+      "twoRafMs": 35.9,
+      "status": "ready",
+      "phase": "exploratory"
+    },
+    {
+      "attempt": 25,
+      "domReadyMs": 5633.9,
+      "twoRafMs": 5647.9,
+      "status": "ready",
+      "phase": "exact-window"
+    },
+    {
+      "attempt": 26,
+      "domReadyMs": 21.4,
+      "twoRafMs": 36.3,
+      "status": "ready",
+      "phase": "exact-window"
+    },
+    {
+      "attempt": 27,
+      "domReadyMs": 31.2,
+      "twoRafMs": 33.2,
+      "status": "ready",
+      "phase": "exact-window"
+    },
+    {
+      "attempt": 28,
+      "domReadyMs": 20.1,
+      "twoRafMs": 33.5,
+      "status": "ready",
+      "phase": "exact-window"
+    },
+    {
+      "attempt": 29,
+      "domReadyMs": 21,
+      "twoRafMs": 34.5,
+      "status": "ready",
+      "phase": "exact-window"
+    },
+    {
+      "attempt": 30,
+      "domReadyMs": 20.4,
+      "twoRafMs": 34.3,
+      "status": "ready",
+      "phase": "exact-window"
+    },
+    {
+      "attempt": 31,
+      "domReadyMs": 19.8,
+      "twoRafMs": 34,
+      "status": "ready",
+      "phase": "exact-window"
+    },
+    {
+      "attempt": 32,
+      "domReadyMs": 21.5,
+      "twoRafMs": 35.4,
+      "status": "ready",
+      "phase": "exact-window"
+    },
+    {
+      "attempt": 33,
+      "domReadyMs": 21.6,
+      "twoRafMs": 36.5,
+      "status": "ready",
+      "phase": "exact-window"
+    },
+    {
+      "attempt": 34,
+      "domReadyMs": 19.8,
+      "twoRafMs": 34.2,
+      "status": "ready",
+      "phase": "exact-window"
+    },
+    {
+      "attempt": 35,
+      "domReadyMs": 19.9,
+      "twoRafMs": 34.2,
+      "status": "ready",
+      "phase": "exact-window"
+    },
+    {
+      "attempt": 36,
+      "domReadyMs": 19.2,
+      "twoRafMs": 32.8,
+      "status": "ready",
+      "phase": "exact-window"
+    },
+    {
+      "attempt": 37,
+      "domReadyMs": 21.4,
+      "twoRafMs": 36,
+      "status": "ready",
+      "phase": "exact-window"
+    },
+    {
+      "attempt": 38,
+      "domReadyMs": 19.8,
+      "twoRafMs": 34.1,
+      "status": "ready",
+      "phase": "exact-window"
+    },
+    {
+      "attempt": 39,
+      "domReadyMs": 20.6,
+      "twoRafMs": 35.7,
+      "status": "ready",
+      "phase": "exact-window"
+    },
+    {
+      "attempt": 40,
+      "domReadyMs": 19.5,
+      "twoRafMs": 32.6,
+      "status": "ready",
+      "phase": "exact-window"
+    },
+    {
+      "attempt": 41,
+      "domReadyMs": 20,
+      "twoRafMs": 34.5,
+      "status": "ready",
+      "phase": "exact-window"
+    },
+    {
+      "attempt": 42,
+      "domReadyMs": 21.3,
+      "twoRafMs": 35.5,
+      "status": "ready",
+      "phase": "exact-window"
+    },
+    {
+      "attempt": 43,
+      "domReadyMs": 20.5,
+      "twoRafMs": 34.5,
+      "status": "ready",
+      "phase": "exact-window"
+    },
+    {
+      "attempt": 44,
+      "domReadyMs": 21.1,
+      "twoRafMs": 36.2,
+      "status": "ready",
+      "phase": "exact-window"
+    },
+    {
+      "attempt": 45,
+      "domReadyMs": 20.7,
+      "twoRafMs": 34,
+      "status": "ready",
+      "phase": "exact-window"
+    },
+    {
+      "attempt": 46,
+      "domReadyMs": 19.4,
+      "twoRafMs": 33.8,
+      "status": "ready",
+      "phase": "exact-window"
+    },
+    {
+      "attempt": 47,
+      "domReadyMs": 21.3,
+      "twoRafMs": 36,
+      "status": "ready",
+      "phase": "exact-window"
+    },
+    {
+      "attempt": 48,
+      "domReadyMs": 19.6,
+      "twoRafMs": 33.3,
+      "status": "ready",
+      "phase": "exact-window"
+    },
+    {
+      "attempt": 49,
+      "domReadyMs": 21.6,
+      "twoRafMs": 36.6,
+      "status": "ready",
+      "phase": "exact-window"
+    }
+  ],
+  "exactWindow": {
+    "firstInputEpochMs": 1790106647392.4,
+    "lastInputEpochMs": 1790106665092.3,
+    "attemptNumbers": [
+      25,
+      26,
+      27,
+      28,
+      29,
+      30,
+      31,
+      32,
+      33,
+      34,
+      35,
+      36,
+      37,
+      38,
+      39,
+      40,
+      41,
+      42,
+      43,
+      44,
+      45,
+      46,
+      47,
+      48,
+      49
+    ],
+    "networkTruncated": false,
+    "networkHasMore": false,
+    "failures": 0,
+    "timeouts": 0,
+    "knowledgeRequests": [
+      {
+        "attempt": 25,
+        "kind": "catalogue",
+        "status": 200,
+        "durationMs": 3391,
+        "encodedDataLength": 3164
+      },
+      {
+        "attempt": 25,
+        "kind": "work",
+        "status": 200,
+        "durationMs": 2212,
+        "encodedDataLength": 27807
+      }
+    ],
+    "freshNoKnowledgeRequestAttempts": [
+      26,
+      27,
+      28,
+      29,
+      30,
+      31,
+      32,
+      33,
+      34,
+      35,
+      36,
+      37,
+      38,
+      39,
+      40,
+      41,
+      42,
+      43,
+      44,
+      45,
+      46,
+      47,
+      48,
+      49
+    ],
+    "classification": "actual complete request events joined by click wallTime intervals; not latency filtering",
+    "freshN": 24,
+    "quantile": "nearest rank ceil(0.95*n)",
+    "domP95Ms": 21.6,
+    "domMaxMs": 31.2,
+    "twoRafP95Ms": 36.5,
+    "twoRafMaxMs": 36.6
+  },
+  "exploratoryLimit": "network collection not enabled after full navigation for first two attempts; exploratory timing retained but excluded from request-classified window; no claim zero requests there"
+}

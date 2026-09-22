@@ -2,7 +2,7 @@
 
 ## 本批身份
 
-B原件身份窄读工作树：`/private/tmp/wiselink-perf-b-original-identity-20260923`，分支`codex/perf-b-original-identity-20260923`；起点`a88ec0daa3daf4049db5ee6c034df3c625139270`（阅读位置已获Luna独立接受）。本批original-identity改为5字段registry查询，去除无消费者的完整metadata/family/version/source投影及metadata revision子查询；前后两次fresh authorizer保留。2套39项与真实隔离PG1项通过，PG实例已停止清理，标准检查见REPORT。e10/a7/a88待Main集成；dc491发布边界及原件真实warm约1.0–1.3s限制保留。整体Goal继续。
+B热知识读取证据工作树：`/private/tmp/wiselink-perf-b-hot-read-evidence-20260923`，起点`626dcf6d79e2fe4ee7c382268467e2d0934ccc97`（Luna独立接受，未包含本次发布）。Main ab3 `79bd2380615ff18582269cc3cd5d95f805261b87` / release7688444473504353246已finished并双远端一致，含至a88。B发布后25次精确窗口：24次无knowledge重读、DOM ready p95 21.6ms（2RAF36.5ms），1次过期重读5.65s保留；只证明单会话同保存版本新鲜窗口知识热正文目标，图谱、非缓存及后台竞争未闭合。匿名完整49次含探索数据见KNOWLEDGE_HOT_READ_EVIDENCE_20260923.json。整体Goal继续。
 
 ## 完整路线状态（2026-09-23）
 
@@ -18,9 +18,11 @@ B原件身份窄读工作树：`/private/tmp/wiselink-perf-b-original-identity-2
 | 3A.2/3 | 81ea079ea已改pending优先、空闲窄查精确语义登记，Luna本地4套25项验收通过，真实SQL/RLS已通过。3A.3已按主控授权单写者修订consumer：新START需当前语义就绪，历史pending不替代；已就绪不等待索引，索引失败鲜活回读就绪，旧任务状态/恢复不阻断。b020437e1的98项Node及3套16项Jest已获Luna本地验收；c65d0aa10由Luna在主控授权的独立PG14.17实例实际执行1/1通过，JOIN/RLS/非owner角色/约束均验证；唯一临时实例已停止删除。 |
 | 3B | 当前3B.1单执行最多两个8页组、组间10秒预算/16MiB原件上限；组间fresh ACL/lease，每组checkpoint，PDF在返回/异常/最终组装前释放。25页构造样本原件读取/PDF打开4→2，插件仍1次。70ad48ea9的5套38项+真实PDF.js Node5项/types/lint/build/precommit已获Luna独立验收。当前3B.2执行内来源plan准备61单元分页4次→1次；独立授权复核仍另算1次，实际begin总5→2次；6f77d9456的3套41项/types/lint/build/precommit已获Luna独立验收。跨任务公平与真实竞争计量仍未完成。 |
 | 4 | A负责JobAid/OpenClaw/Overall/Wiki连续工作。A回报当前0c350f04c（含0ee/35a/47adb/301/60ec/786/0c350），Luna已本地验收；0c350f04已进入固定e812并发布，b10e6e570已进入ef258；Hosted安装/全链验收仍需主控闭合；应取A的确切交付，不在B重写。 |
-| V/R | 主控回读Host app_17bzc551rsg release7688432648880098235 finished / ef258aa7；B正常已有登录只读资料库、既有5页FTD解析2/部分中文/PDF，未生成。已发现并本地修复真实目标页错位。尚无热正文/图谱返回/暖轻量读取p95，完整Wiki→图谱→原件→返回→历史链待继续。 |
+| V/R | 主控回读Host app_17bzc551rsg release7688432648880098235 finished / ef258aa7；B正常已有登录只读资料库、既有5页FTD解析2/部分中文/PDF，未生成。已发现并本地修复真实目标页错位。79bd已有知识同版本新鲜窗口24次DOM p95 21.6ms证据；图谱返回/暖轻量读取p95与后台竞争仍未完成，完整路径由Luna继续独立功能复验。 |
 
 ## 集成及边界
+
+最新ab3：Main提交`79bd2380615ff18582269cc3cd5d95f805261b87`，release`7688444473504353246` finished updated_at1790106250000、error_logs=[]；origin/github同名`codex/integration-ab3-20260923`同SHA。含至a88并保留dc491任务目录修复，不含626dcf。Skill包source79bd、sha256 b491433f299c90b02118ea612e803c48fe0540ad6c4f2a4c636e96f6890cb4de、456451bytes/60files已由Main核验，但尚未安装，不算consumer生效。
 
 最新ab2：Main独占集成树`/private/tmp/wiselink-integration-ab2-20260923`，准确HEAD `ef258aa7faba42277d38dec7584e41bb4be2ee55`；origin/github同名`codex/integration-ab2-20260923`均由Main核对同SHA；Host release `7688432648880098235` finished，error_logs=[]。含B至c58与A b10；不含77ae/fadf/e10/a7。后四批已独立接受，B已请求Main纳入下一次发布，未代替Main推送或发布。
 
