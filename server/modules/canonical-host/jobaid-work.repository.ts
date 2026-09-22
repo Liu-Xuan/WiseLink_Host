@@ -6,7 +6,7 @@ import {
   DRIZZLE_DATABASE,
   type PostgresJsDatabase,
 } from '@lark-apaas/fullstack-nestjs-core';
-import { and, desc, eq, sql } from 'drizzle-orm';
+import { and, desc, eq, inArray, sql } from 'drizzle-orm';
 import type {
   JobAidProblemWorkContent,
   JobAidWorkRevision,
@@ -18,7 +18,7 @@ import {
   workItem,
 } from '../../database/schema';
 import { canonicalJson } from '../action-attempt/action-attempt-envelope';
-import type { ActionAttemptRow } from '../action-attempt/action-attempt.types';
+import { ACTION_ATTEMPT_REQUEST_ORIGIN, type ActionAttemptRow } from '../action-attempt/action-attempt.types';
 import { EngineeringMatterWorkingRepository } from './engineering-matter-working.repository';
 import type { JobAidSourceBinding } from './jobaid-problem-task';
 import { EngineeringSearchProjectionWriter } from './engineering-search-projection';
@@ -265,24 +265,29 @@ export class JobAidWorkRepository {
     );
   }
 
-  async readExecutionStatus(input: {
+  async readCurrentExecutionStatus(input: {
     tenantId: string;
     workItemId: string;
-    actionAttemptId: string;
-  }): Promise<string> {
+    documentVersionId: string;
+  }): Promise<string | null> {
     const [row] = await this.db
       .select({ status: actionAttempt.status })
       .from(actionAttempt)
-      .where(
-        and(
-          eq(actionAttempt.tenantId, input.tenantId),
-          eq(actionAttempt.workItemId, input.workItemId),
-          eq(actionAttempt.attemptId, input.actionAttemptId),
-        ),
+      .where(and(
+        eq(actionAttempt.tenantId, input.tenantId),
+        eq(actionAttempt.workItemId, input.workItemId),
+        eq(actionAttempt.documentVersionId, input.documentVersionId),
+        eq(actionAttempt.subjectKind, 'WORK_ITEM'),
+        eq(actionAttempt.requestOrigin, ACTION_ATTEMPT_REQUEST_ORIGIN),
+        inArray(actionAttempt.actionType, ['OPENCLAW_DYNAMIC_EVALUATION', 'OPENCLAW_OVERALL_SYNTHESIS']),
+      ))
+      .orderBy(
+        desc(sql`CASE WHEN ${actionAttempt.status} IN ('QUEUED', 'RUNNING', 'RETRY_SCHEDULED', 'COMMITTING') THEN 1 ELSE 0 END`),
+        desc(actionAttempt.createdAt),
+        desc(actionAttempt.attemptId),
       )
       .limit(1);
-    if (!row) throw new Error('JOBAID_WORK_ATTEMPT_NOT_FOUND');
-    return row.status;
+    return row?.status ?? null;
   }
 
   async save(

@@ -34,6 +34,19 @@ import MatterProblemWork from '../../client/src/features/matter/MatterProblemWor
 import { jobAidReadingResult } from '@shared/jobaid-problem-assessment.interface';
 
 describe('problem-oriented JobAid reading', () => {
+  it('shows the active attempt before any work is saved', () => {
+    const data = jobAidReadingFixture();
+    data.current = null;
+    data.executionStatus = 'RUNNING';
+    const html = renderToStaticMarkup(createElement(JobAidProblemReading, {
+      data, onLocateDocument: jest.fn(),
+    }));
+    expect(html).toContain('尚无已保存的问题分析');
+    expect(html).toContain('当前运行：');
+    expect(html).toContain('role="status"');
+    expect(html).not.toContain('data-work-revision-ref');
+  });
+
   it('uses the same complete issue reader for a saved Matter investigation', () => {
     const saved = jobAidReadingFixture().current!;
     const reading = jobAidReadingResult(saved);

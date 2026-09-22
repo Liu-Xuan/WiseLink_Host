@@ -45,3 +45,13 @@ A负责文档/事项解析后的关联上下文、JobAid动态问题分析、已
 直接验证：5个Node测试文件共100/100通过，含8个恢复检查/consumer接线用例、WorkItem与Matter实际driver的停机预算/已完成响应复用/未知响应拒绝反例；定向ESLint通过。consumer测试的Host与runInitial/model为受控替身，driver测试使用受控gateway；没有实际杀死托管进程、真实Host领取/PG租约竞争或真实模型恢复证据，不把本地通过表述为托管验收完成。
 
 主控交Luna独立验收时重点核对：新版本正常JobAid保存后运行中断、等待原lease失效且deadline尚未过时同一request重新领取；已保存正文不退回或重复保存，后续模型只调用未完成轮；授权撤回、原代际仍活跃、模型响应未知、commit已开始均不重放。相应Skill需按主控发布流程安装后才可验证。本批不自行发布，完整评估智能体目标保持未完成。
+
+## 2026-09-23 子批：当前执行与保存正文分开读取
+
+父提交 `47adbcd09a10a16fda3b942b4cb7466276b44243`。原readBrowser从最新正文的actionAttemptId读取状态，导致下一轮尚未保存时仍展示上一轮成功/失败，无正文时完全没有状态。本批改为授权与fresh permission snapshot通过后，按tenant、WorkItem、当前DocumentVersion、WORK_ITEM主体和既有OpenClaw requestOrigin，读取JobAid/Overall的真实持久任务状态；活跃任务优先，其余按createdAt/attemptId确定最近项。只select status，不读取任务载荷、原始活动、租约或模型正文。原历史正文与证据授权保持独立，前端首次保存前也显示该状态。它是Host持久状态快照，不声称证明模型进程当前存活。
+
+文件范围：jobaid-work.repository.ts、canonical-jobaid-problem.service.ts、JobAidProblemWorkspace.tsx、jobaid-current-execution.spec.ts、jobaid-problem-reading-ui.spec.ts及本记录。旧的按保存任务查状态方法已无消费者，随替换删除。无协议/数据库/配置变更。
+
+直接验证：3套Jest共40项通过（新查询条件及确定性排序、实际服务授权前置、未保存/已有旧正文两条读取分支、界面首次保存前状态和既有continuation）；标准双端typecheck exit0、5文件ESLint及diffcheck通过。首次测试发现测试actor缺appId，补齐真实类型后复跑通过。SQL是Drizzle编译查询与受控repository证据，不是实际PostgreSQL/线上验收；source evidence分支沿原校验，旧正文测试用受控授权回执，不宣称新证明了其全部安全性。
+
+当前仍待完成：WorkItem来源读取/分次保存事件的安全可见投影、与真实运行配套的终态/隐藏页面读取策略，以及Luna对已交付执行接续与本状态读取的托管验收。本批没有将状态标签当作完整执行过程，也未改6秒全文读取策略。主控负责接受范围与实际发布，A未推送/发布。

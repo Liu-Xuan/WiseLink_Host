@@ -1306,13 +1306,13 @@ export class CanonicalJobAidProblemService {
         actor.userId,
         workItemId,
       );
-    const executionStatus = current
-      ? await this.work.readExecutionStatus({
-          actionAttemptId: current.actionAttemptId,
-          tenantId: actor.tenantId,
-          workItemId,
-        })
-      : null;
+    // Saved work and the currently executing attempt are separate resources.
+    // A new run can be active before it produces its first saved revision.
+    const executionStatus = await this.work.readCurrentExecutionStatus({
+      tenantId: actor.tenantId,
+      workItemId,
+      documentVersionId: workItem.source.documentVersionId,
+    });
     const overall = workItem.integratedAssessment?.overallSynthesis;
     const base = workItem.integratedAssessment?.baseRules;
     return {

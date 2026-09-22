@@ -153,6 +153,12 @@ export function JobAidProblemReading({
         : null}
     </div>
   );
+  const execution = data.executionStatus ? (
+    <p role="status">
+      当前运行：{executionLabels[data.executionStatus] ?? data.executionStatus}。
+      已保存内容独立保留，不表示本轮执行已完成。
+    </p>
+  ) : null;
   if (!current)
     return (
       <section
@@ -163,6 +169,7 @@ export function JobAidProblemReading({
         <p>
           尚无已保存的问题分析。原文和工程师输入仍可阅读；形成的工作会在这里接续。
         </p>
+        {execution}
         {actions}
       </section>
     );
@@ -241,13 +248,7 @@ export function JobAidProblemReading({
           </span>
         </div>
         {actions}
-        {data.executionStatus ? (
-          <p>
-            运行：
-            {executionLabels[data.executionStatus] ?? data.executionStatus}
-            。本轮分析是否完成以已保存内容为准。
-          </p>
-        ) : null}
+        {execution}
         <p>{content.completionReason}</p>
       </header>
       {data.currentInputChanged ? (
