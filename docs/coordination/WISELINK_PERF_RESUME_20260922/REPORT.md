@@ -855,3 +855,21 @@ is a different suite selection from B's 61 tests. Neither review reran old PG
 fixtures. Main received the accepted commit for sole-owner integration and
 release; deployed performance remains unverified. Member count stays bounded
 as before; dependent reads per member can increase from one to two in flight.
+
+
+## Graph global exit verification (2026-09-23, deployed AB81)
+
+Normal logged-in saved revision 16: zoom from 82% to 93.48%, exit through
+Library, then browser back. Exact saved work, viewport and all 17 overlay style
+values match; three canvas elements are removed on exit and restored on return.
+This is functional evidence, not timing or proof of memory reclamation.
+
+A distinct path fails: after exiting to Library, its enabled “返回原阅读位置”
+button stays in Library instead of returning to the graph. No alert appears.
+Source inspection explains it: Sidebar's global Library link carries no return
+context, while TopBar falls back to /library for routes without object pins.
+This remains open; browser-back success must not be used to close all returns.
+Next scope is preserving exact graph return context through this global exit,
+without loosening existing explicit return/version validation. Shared Sidebar,
+TopBar and reading-return ownership must be coordinated before integration.
+See GRAPH_GLOBAL_EXIT_EVIDENCE_20260923.json; raw sample identifiers omitted.

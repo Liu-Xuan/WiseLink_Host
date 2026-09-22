@@ -6,6 +6,8 @@ B当前树：`/private/tmp/wiselink-perf-b-member-read-overlap-20260923`。本�
 
 本轮 Trace 详情已定位：目录 60 条 SQL 标注合计 1095.79ms / 服务端 3633.95ms；正文两样本均 26 条，SQL 328.69/267.48ms / 服务端 2817.51/2082.99ms。调用间等待显著，尚不能归因于网络或 CPU。下一步减少依赖读取往返，保留鲜活授权与版本核对。见 AB81_DATABASE_TRACE_EVIDENCE_20260923.json。
 
+新发现：AB81图谱→资料库→浏览器后退通过，17 overlay/viewport/精确work一致且退出canvas=0；但资料库“返回原阅读位置”仍回资料库，Sidebar未携带return上下文且TopBar默认/library。此全局退出路径尚未闭合，下一步修复精确图谱返回上下文，保留现有版本校验。见GRAPH_GLOBAL_EXIT_EVIDENCE_20260923.json。
+
 ## 完整路线状态（2026-09-23）
 
 | 范围 | 当前证据与未完成项 |

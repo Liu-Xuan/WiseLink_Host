@@ -1,0 +1,46 @@
+{
+  "releaseCommitObservedInBrowserAsset": "81abd9b061cb1acb420d02752bd9d81a8a319d47",
+  "scope": "Existing saved Matter work revision 16, normal logged-in read-only navigation. No business generation.",
+  "browserBack": {
+    "actions": [
+      "Knowledge sidebar graph",
+      "Zoom in from 82%",
+      "Sidebar Library",
+      "Browser back"
+    ],
+    "before": {
+      "canvasCount": 3,
+      "overlayCount": 17,
+      "zoom": 0.9347999999999999,
+      "pan": {
+        "x": -118.5071999999999,
+        "y": -138.04919999999993
+      }
+    },
+    "afterExit": {
+      "canvasCount": 0,
+      "overlayCount": 0
+    },
+    "afterReturn": {
+      "canvasCount": 3,
+      "overlayCount": 17,
+      "allOverlayStylesEqual": true,
+      "exactSavedWorkEqual": true,
+      "viewportEqual": true
+    }
+  },
+  "globalReturnButton": {
+    "actions": [
+      "Graph sidebar Library",
+      "Click enabled Return to original reading position"
+    ],
+    "observed": "Stayed in Library, no alert, no graph canvas. The current library selection was restored.",
+    "codeCause": "TopBar computes fallback /library when no return parameters or object identity exist; Sidebar library link supplies no return context. Clicking therefore navigates to library again rather than graph.",
+    "status": "Unresolved; browser back passes, product return button does not preserve this exit path."
+  },
+  "limitations": [
+    "Functional navigation sample, not p95.",
+    "Canvas absence proves DOM unmount only, not complete memory reclamation.",
+    "No immediate zoom/click race, free-pan or arbitrary node-drag result claimed."
+  ]
+}
