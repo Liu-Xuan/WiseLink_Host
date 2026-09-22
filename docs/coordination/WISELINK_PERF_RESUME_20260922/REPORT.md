@@ -656,3 +656,14 @@ KnowledgeLookupPage原useEffect每次remount清空并请求，未使用既有共
 Main回执：ef258 release7688432648880098235 finished updated_at=1790103060000；仅任务目录500兼容修复dc4915437dba7157406e6b18b1f51ed2ad7a83ea，release7688437914978126804 finished updated_at=1790104842000、error_logs=[]、双远端同名一致；不含77ae/fadf/e10/a7/0d66。PDF代码两版本一致。
 
 既有CDP事件原始wallTime：首次original=1790104648.659391；第二identity=1790104858.009625；第三identity=1790104938.913739。首读早于dc491 finished，后两次晚于；三次间仅SPA导航没有刷新，因此前端资源不因后端发布自动换版。未直接捕获asset SHA或实际响应pod的二进制身份，不补造。三次同会话原件复用事实成立；不能把它标成单一ef258前后端环境的严格延迟对照。
+
+
+## B 原件身份端点只读投影收窄（2026-09-23）
+
+- 基线a88，独立树`/private/tmp/wiselink-perf-b-original-identity-20260923`。真实warm identity两次约1.0–1.3s促成本次定位，但TTFB不能直接归因SQL。本批消除可证明不被消费的读取工作，不预报线上节省毫秒数。
+- 旧调用链：fresh authorizer→readMetadataSource（version/family/source/metadata全列、metadata leftJoin与max revision子查询）→一致性核对→fresh authorizer。新增readOriginalRegistryIdentity只投影5列：version id/digest/length，source digest/length；仍通过原family canonicalIdentity tenant前缀与精确version过滤，并innerJoin原source。service仅此identity端点调用新方法，原件下载与metadata业务调用不变。
+- 保留两次fresh actor/tenant authorization、未知来源404、version/source digest及length不一致409、读取中撤权拒绝；不缓存授权、不跳过source登记、不读取存储PDF、不触发parse/write，不改表/索引/RLS。
+- 旧服务反例2 failed/31 passed；新服务+session byte reuse两套39项通过。新真实PostgreSQL隔离fixture 1/1通过，无skip：fixture故意没有metadata表，证明该endpoint不依赖metadata修订；实际一条SELECT返回5字段、tenant-1不读取tenant-10、反向隔离、missing version/source无结果、空tenant拒绝。该fixture证明SQL执行及tenant条件，不冒充生产RLS或生产延迟测量。
+- PostgreSQL本地127.0.0.1:55439新建实例`/private/tmp/wiselink-original-identity-pg-20260923`已停止删除；只删除本批可丢弃数据目录，initdb/pg/test日志保留。未连接生产数据库。
+- server typecheck与两production文件ESLint通过；build/precommit日志`/private/tmp/wiselink-original-identity-{build,precommit}.log`，测试日志`/private/tmp/wiselink-original-identity-{red,tests,pg-test}.log`。提交后交Luna独立审查，Main串行集成发布；线上500ms目标仍未证明。
+- a88普通段落返回候选已获Luna独立22项与client types/lint/diffcheck接受；实现者3套44项/build/precommit证据另列，不混同独立覆盖。

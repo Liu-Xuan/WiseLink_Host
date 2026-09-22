@@ -2,7 +2,7 @@
 
 ## 本批身份
 
-B阅读位置恢复工作树：`/private/tmp/wiselink-perf-b-reader-location-20260923`，分支`codex/perf-b-reader-location-20260923`；起点`0d66a32a7566167626c6a4b90e7ae14116b496e7`。本批把普通原文段落实际选页映射到登记SourceRef并固定当前保存parseRunId，URL replace保留返回上下文。旧2个反例失败/15通过；标准验证与提交见REPORT。e10/a7已独立接受待Main集成；Main任务目录兼容修复dc491已发布release7688437914978126804，PDF代码不变；原件三次采样跨越此后端发布，SPA未刷新，不能全标为ef258。后两次identity约1.0–1.3s仍未达目标。整体Goal继续。
+B原件身份窄读工作树：`/private/tmp/wiselink-perf-b-original-identity-20260923`，分支`codex/perf-b-original-identity-20260923`；起点`a88ec0daa3daf4049db5ee6c034df3c625139270`（阅读位置已获Luna独立接受）。本批original-identity改为5字段registry查询，去除无消费者的完整metadata/family/version/source投影及metadata revision子查询；前后两次fresh authorizer保留。2套39项与真实隔离PG1项通过，PG实例已停止清理，标准检查见REPORT。e10/a7/a88待Main集成；dc491发布边界及原件真实warm约1.0–1.3s限制保留。整体Goal继续。
 
 ## 完整路线状态（2026-09-23）
 
