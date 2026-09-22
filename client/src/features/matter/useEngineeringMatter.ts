@@ -229,7 +229,7 @@ export async function clearEngineeringMatterQueries(
   });
 }
 
-function useEngineeringMatterQueryIdentity(
+export function useEngineeringMatterQueryIdentity(
   enabled: boolean,
   sessionGeneration: number,
 ) {

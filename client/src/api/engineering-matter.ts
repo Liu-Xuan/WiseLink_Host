@@ -1,3 +1,4 @@
+import type { MatterAssessmentActivityPage, MatterAssessmentActivityQuery } from '@shared/matter-assessment-activity.interface';
 import { axiosForBackend } from '@lark-apaas/client-toolkit/utils/getAxiosForBackend';
 
 import type {
@@ -220,7 +221,7 @@ async function requestEngineeringMatter<T>(
     | LinkEngineeringMatterWorkItemRequest
     | ReviseMatterMaterialsRequest,
   signal?: AbortSignal,
-  params?: EngineeringMatterDirectoryRequest,
+  params?: EngineeringMatterDirectoryRequest | MatterAssessmentActivityQuery,
 ): Promise<T> {
   const session: number = getCanonicalHostClientSessionGeneration();
   try {
@@ -278,4 +279,14 @@ function matterRequestError(
 
 function isMatterErrorRecord(value: unknown): value is Record<string, unknown> {
   return value !== null && typeof value === 'object' && !Array.isArray(value);
+}
+
+export async function getMatterAssessmentActivity(matterId: string, query: MatterAssessmentActivityQuery,
+  signal?: AbortSignal): Promise<MatterAssessmentActivityPage> {
+  const page: MatterAssessmentActivityPage = await requestEngineeringMatter(
+    `${matterPath(matterId)}/assessment-activity`, 'GET', undefined, signal, query);
+  if (page.matterId !== matterId || page.workRef !== (query.workRef ?? null) ||
+      page.selection !== (query.workRef ? 'EXACT_WORK' : query.attemptRef ? 'EXACT_ATTEMPT' : 'CURRENT') ||
+      (query.attemptRef && page.attempt?.attemptRef !== query.attemptRef)) throw invalidMatterReadback();
+  return page;
 }

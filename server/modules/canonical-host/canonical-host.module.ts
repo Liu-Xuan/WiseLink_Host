@@ -1,3 +1,4 @@
+import { MatterAssessmentActivityController } from './matter-assessment-activity.controller';
 import { EngineeringIssueSearchService } from './engineering-issue-search.service';
 import { EngineeringIssueSearchController } from './engineering-issue-search.controller';
 import {
@@ -220,6 +221,7 @@ export interface CanonicalHostModuleOptions {
     CanonicalHostOverallRegenerationController,
     CanonicalRuleSetLifecycleController,
     EngineeringMatterController,
+    MatterAssessmentActivityController,
     CanonicalHostAeoEditingController,
     CanonicalTranslationKnowledgeController,
     CanonicalTranslationRevisionController,
@@ -473,6 +475,7 @@ export class CanonicalHostModule {
         CanonicalHostOverallRegenerationController,
         CanonicalRuleSetLifecycleController,
         EngineeringMatterController,
+        MatterAssessmentActivityController,
         CanonicalHostAeoEditingController,
         CanonicalTranslationKnowledgeController,
         CanonicalTranslationRevisionController,

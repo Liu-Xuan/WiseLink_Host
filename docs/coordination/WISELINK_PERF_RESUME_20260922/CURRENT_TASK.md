@@ -1,5 +1,15 @@
 # Current Task
 
+## 2026-09-22 当前接续：Matter JobAid 活动首切
+
+在 `21a6716b0c5018a53c580024c9f9d2523e6cf373` 上完成既有持久活动 → 安全分页 GET →
+MatterProblemAnalysisPage。最终8套76项回归、标准前后端类型检查、本地Client构建通过。
+准确文件范围、授权链、历史回读与未验证项见 REPORT 最后一节；准确提交以本分支 Git 为准。
+新接口已在静态/动态 Host module 注册，未推送或发布，未调用妙搭开发智能体。
+下一步由主控串行审查该提交、准备技术发布并在可用的托管 Host/OpenClaw 验证真实读取。
+WorkItem JobAid / WorkProgress 活动接线及其旧轮询仍是后续范围。
+以下为继承的性能支线历史状态，旧“Stop after these commits”不覆盖本轮授权。
+
 ## Branch Identity
 
 - Base: `b02395537a948fbe427f232f5a52ab59ba43efe0`

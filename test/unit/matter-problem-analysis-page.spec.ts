@@ -1,3 +1,4 @@
+jest.mock('../../client/src/features/matter/MatterAssessmentActivity', () => ({__esModule: true, default: (props: {matterId: string; workRef: string}) => createElement('section', {'data-activity-matter': props.matterId, 'data-activity-work': props.workRef})}));
 import { act, createElement } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 import { MemoryRouter, Route, Routes } from 'react-router-dom';
@@ -65,6 +66,8 @@ describe('MatterProblemAnalysisPage', () => {
     await render('/matters/ui-test-matter/process?workRef=history-2');
     expect(readHistory).toHaveBeenCalledWith('ui-test-matter', 'history-2', expect.any(AbortSignal));
     expect(container.querySelector('[data-work]')?.getAttribute('data-work')).toBe('history-2');
+    expect(container.querySelector('[data-activity-work]')?.getAttribute('data-activity-work')).toBe('history-2');
+    expect(container.querySelector('[data-activity-matter]')?.getAttribute('data-activity-matter')).toBe('ui-test-matter');
     expect(container.textContent).toContain('指定工作修订 2');
   });
   it('does not show current work when the requested historical revision cannot be read', async () => {
