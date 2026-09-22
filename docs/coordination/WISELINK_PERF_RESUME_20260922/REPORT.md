@@ -721,3 +721,13 @@ Main回执：ef258 release7688432648880098235 finished updated_at=1790103060000�
 - 有效旧反例1 failed/8 passed，精确保存读取仍调用了1次不被消费的当前绑定准备。修复后working service10项 + engineering issue search23项，合计2套33项通过；覆盖保存绑定保持、当前basis仍绑定、事项变动重试、当前撤权拒绝、移除成员拒绝、精确ref不存在不fallback等。去掉1次批量当前解析查询，不预报线上节省毫秒或声称解决全部3秒延迟。
 - server typecheck（tsconfig.node.json）通过，生产service ESLint无error，保留既有unused disable warning；server build通过。首次误用根tsconfig.json出现TS6305未构建shared声明文件，已改用正确服务端配置，未修改产品来绕过。日志`/private/tmp/wiselink-saved-original-hydration-{red,tests,search-tests,types,types-node,lint,build}.log`。正常precommit随后执行，待Luna独立接受/Main发布与真实计量。
 - dd1df7d662cf83cdf8947120fcb1f6dfd3643a78图谱来源复用已获Luna独立13项/client types/lint/diffcheck接受；没有重复build或线上生成。已回传Main允许按父子关系集成；本批与其后续验收不混同。
+
+
+## B Matter 成员来源身份窄投影（2026-09-23）
+
+- 基线f7d6e82e9，独立树`/private/tmp/wiselink-perf-b-source-identity-projection-20260923`。沿上一批实际知识冷读inner约3秒链定位：requireInput每次fresh成员核对调用完整source resolver，六表全列含preflight/采集/现行性等数据，但该消费者只使用documentId/documentVersionId。没有把这些列的数据量推测成已实测毫秒。
+- 新resolveIdentity显式窄读8列：version的两个ID/lifecycle/digest/length，artifact的verified/digest/length。保留family/sourceArtifact/acquisition/COMMITTED preflight四个innerJoin、精确documentVersion过滤与原普通RLS；默认来源校验抽到同一私有函数，完整resolve的creator/current-head策略仍原样执行。身份窄读没有声称current-head或creator检查；调用点原先也使用不带这些选项的resolve。
+- 只有EngineeringMatterWorkingService.requireInput接入。此前fresh objectAccess/tenant projection以及后续documentId/version一致性检查不变；没有减少任何授权次数、缓存权限、变更scope或凭据。当前head的leftJoin是可选信息，既不限制原默认resolve的行可见性也不参与该消费者验证，因此窄读不再加载其字段。其他依赖完整来源信息的消费者继续用原resolve。
+- 有效旧反例1 failed/10 passed：成员核对仍进入不被消费的完整source读取。新三套44项通过；随后追加真实Drizzle SQL编译核对并仅复跑resolver 11项（新增1项，45个不同测试，不称为统一45项复跑）。验证四必需join和preflight acquisition/version精确条件、COMMITTED/id/limit绑定参数、无descriptor/currentness投影、四类源身份错误及缺登记拒绝，原creator/currentness测试保留。SQL为真实builder生成，但没有连接PG，不冒充实际数据库/RLS或生产延迟验证。
+- server typecheck通过；两生产文件ESLint无error，working service既有unused-disable warning保留；server build和precommit按本批实际日志/提交回执记录。日志`/private/tmp/wiselink-source-identity-{red,tests,sql-tests,types,lint,build}.log`。本批不改模式/索引/存量数据，下一步Luna独立审查，Main统一集成发布，再测同保存正文冷路径。
+- 前批f7d6e82e9458f55a7663cac9041a8de90186a6c9已获Luna独立33项、官方server typecheck、服务/测试lint与diffcheck接受并回传Main。dd1亦已独立接受；未取得本批发布回执前不标为线上生效。

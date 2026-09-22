@@ -20,6 +20,36 @@ export class MiaodaDocumentVersionSourceResolver {
     @Inject(DRIZZLE_DATABASE) private readonly db: PostgresJsDatabase,
   ) {}
 
+  /** For already-authorized member validation; no current-head or creator policy is inferred. */
+  async resolveIdentity(documentVersionId: string) {
+    const [value] = await this.db.select({
+      version: {
+        documentId: dmDocumentVersion.documentId,
+        documentVersionId: dmDocumentVersion.documentVersionId,
+        lifecycleStatus: dmDocumentVersion.lifecycleStatus,
+        pdfSha256: dmDocumentVersion.pdfSha256,
+        byteLength: dmDocumentVersion.byteLength,
+      },
+      artifact: {
+        readbackVerified: dmSourceArtifact.readbackVerified,
+        sha256: dmSourceArtifact.sha256,
+        byteLength: dmSourceArtifact.byteLength,
+      },
+    }).from(dmDocumentVersion)
+      .innerJoin(dmPublicationFamily, eq(dmDocumentVersion.familyId, dmPublicationFamily.familyId))
+      .innerJoin(dmSourceArtifact, eq(dmDocumentVersion.sourceArtifactId, dmSourceArtifact.sourceArtifactId))
+      .innerJoin(dmAcquisition, eq(dmDocumentVersion.acquisitionId, dmAcquisition.acquisitionId))
+      .innerJoin(dmIngressPreflight, and(
+        eq(dmIngressPreflight.acquisitionId, dmAcquisition.acquisitionId),
+        eq(dmIngressPreflight.documentVersionId, dmDocumentVersion.documentVersionId),
+        eq(dmIngressPreflight.status, 'COMMITTED'),
+      ))
+      .where(eq(dmDocumentVersion.documentVersionId, documentVersionId)).limit(1);
+    if (!value) throw new Error('DOCUMENT_VERSION_NOT_FOUND');
+    assertSourceIdentity(value);
+    return { version: { documentId: value.version.documentId, documentVersionId: value.version.documentVersionId } };
+  }
+
   async resolve(
     documentVersionId: string,
     options: { requireCurrent?: boolean; expectedCreatorUserId?: string } = {},
@@ -87,14 +117,7 @@ export class MiaodaDocumentVersionSourceResolver {
         statusCode: 404,
       });
     }
-    if (
-      value.version.lifecycleStatus !== 'COMMITTED_IMMUTABLE' ||
-      value.artifact.readbackVerified !== true ||
-      value.version.pdfSha256 !== value.artifact.sha256 ||
-      Number(value.version.byteLength) !== Number(value.artifact.byteLength)
-    ) {
-      throw new Error('DOCUMENT_VERSION_SOURCE_IDENTITY_INVALID');
-    }
+    assertSourceIdentity(value);
     if (options.requireCurrent) {
       if (value.family.currentDocumentVersionId !== documentVersionId) {
         throw Object.assign(new Error('DOCUMENT_VERSION_NOT_CURRENT'), {
@@ -119,5 +142,17 @@ export class MiaodaDocumentVersionSourceResolver {
       }
     }
     return value;
+  }
+}
+
+function assertSourceIdentity(value: {
+  version: { lifecycleStatus: string; pdfSha256: string; byteLength: number | string };
+  artifact: { readbackVerified: boolean; sha256: string; byteLength: number | string };
+}): void {
+  if (value.version.lifecycleStatus !== 'COMMITTED_IMMUTABLE'
+    || value.artifact.readbackVerified !== true
+    || value.version.pdfSha256 !== value.artifact.sha256
+    || Number(value.version.byteLength) !== Number(value.artifact.byteLength)) {
+    throw new Error('DOCUMENT_VERSION_SOURCE_IDENTITY_INVALID');
   }
 }

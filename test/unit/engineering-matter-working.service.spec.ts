@@ -81,6 +81,18 @@ describe('EngineeringMatterWorkingService', () => {
     ]);
   });
 
+  it('checks member source identity without loading unused source records', async () => {
+    const documentVersions = {
+      resolveIdentity: jest.fn(async (id: string) => ({ version: documentVersion(id).version })),
+      resolve: jest.fn(() => { throw new Error('UNUSED_FULL_SOURCE_READ'); }),
+    };
+    const service = serviceWith({ documentVersions });
+    const basis = await service.resolveWorkingBasis('MAT-1', actor());
+    expect(basis.currentInputs).toHaveLength(2);
+    expect(documentVersions.resolveIdentity).toHaveBeenCalledTimes(2);
+    expect(documentVersions.resolve).not.toHaveBeenCalled();
+  });
+
   it('fails closed when any current Matter member loses fresh access', async () => {
     const objectAccess = {
       freshRead: jest.fn().mockImplementation(({ accessRoot }) =>
@@ -238,7 +250,7 @@ function serviceWith(
   const documentVersions =
     overrides.documentVersions ??
     ({
-      resolve: jest
+      resolveIdentity: jest
         .fn()
         .mockImplementation((documentVersionId: string) =>
           Promise.resolve(documentVersion(documentVersionId)),

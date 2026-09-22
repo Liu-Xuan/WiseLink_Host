@@ -34,7 +34,7 @@ type TenantScopedWorkItem = NonNullable<
   Awaited<ReturnType<MiaodaWorkItemRepository['loadTenantScopedProjection']>>
 >;
 type DocumentVersionSource = Awaited<
-  ReturnType<MiaodaDocumentVersionSourceResolver['resolve']>
+  ReturnType<MiaodaDocumentVersionSourceResolver['resolveIdentity']>
 >;
 
 interface AuthorizedMatter {
@@ -330,7 +330,7 @@ export class EngineeringMatterWorkingService {
     }
     let source: DocumentVersionSource;
     try {
-      source = await this.documentVersions.resolve(
+      source = await this.documentVersions.resolveIdentity(
         scoped.row.documentVersionId,
       );
     } catch (error: unknown) {

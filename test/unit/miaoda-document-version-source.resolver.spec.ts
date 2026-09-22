@@ -1,3 +1,4 @@
+import { drizzle } from 'drizzle-orm/postgres-js';
 import {
   dmAcquisition,
   dmCurrentnessDecision,
@@ -19,7 +20,7 @@ function database(value: ReturnType<typeof resolvedValue>) {
   query.leftJoin.mockReturnValue(query);
   query.where.mockReturnValue(query);
   return {
-    select: jest.fn(() => ({ from: jest.fn(() => query) })),
+    select: jest.fn((_projection?: any) => ({ from: jest.fn(() => query) })),
     query,
   };
 }
@@ -130,5 +131,61 @@ describe('MiaodaDocumentVersionSourceResolver currentness', () => {
     ).rejects.toMatchObject({
       code: 'DOCUMENT_VERSION_CURRENTNESS_UNVERIFIED',
     });
+  });
+});
+
+
+describe('member source identity projection', () => {
+  it('retains required registration joins while returning only validated document ids', async () => {
+    const value = resolvedValue();
+    Object.assign(value.version, { documentId: 'document-sb' });
+    const db = database(value);
+    const resolver = new MiaodaDocumentVersionSourceResolver(db as never);
+    await expect(resolver.resolveIdentity('document-version-sb')).resolves.toEqual({ version: { documentId: 'document-sb', documentVersionId: 'document-version-sb' } });
+    expect(db.query.innerJoin.mock.calls.map(call => call[0])).toEqual([dmPublicationFamily, dmSourceArtifact, dmAcquisition, dmIngressPreflight]);
+    expect(db.query.leftJoin).not.toHaveBeenCalled();
+    const projection = db.select.mock.calls[0][0];
+    expect(Object.keys(projection)).toEqual(['version', 'artifact']);
+    expect(Object.keys(projection.version)).toHaveLength(5);
+    expect(Object.keys(projection.artifact)).toHaveLength(3);
+  });
+
+  it('compiles a narrow SQL projection with the exact committed preflight binding', async () => {
+    const builder = drizzle({} as never);
+    let compiled: { sql: string; params: unknown[] } | undefined;
+    const db = { select: (fields: never) => ({ from: (table: never) => {
+      const statement = builder.select(fields).from(table);
+      const limit = statement.limit.bind(statement);
+      jest.spyOn(statement, 'limit').mockImplementation((count: number) => {
+        compiled = limit(count).toSQL();
+        return Promise.resolve([resolvedValue()]) as never;
+      });
+      return statement;
+    } }) };
+    await new MiaodaDocumentVersionSourceResolver(db as never).resolveIdentity('exact-dv');
+    expect(compiled?.params).toEqual(['COMMITTED', 'exact-dv', 1]);
+    expect(compiled?.sql.match(/inner join/g)).toHaveLength(4);
+    expect(compiled?.sql).toContain('"dm_ingress_preflight"."acquisition_id" = "dm_acquisition"."acquisition_id"');
+    expect(compiled?.sql).toContain('"dm_ingress_preflight"."document_version_id" = "dm_document_version"."document_version_id"');
+    expect(compiled?.sql).not.toContain('normalized_descriptor_json');
+    expect(compiled?.sql).not.toContain('dm_currentness_decision');
+  });
+
+  it.each(['lifecycle', 'verified', 'digest', 'length'])('preserves the %s source rejection in both paths', async (reason) => {
+    const value = resolvedValue();
+    if (reason === 'lifecycle') value.version.lifecycleStatus = 'DRAFT';
+    if (reason === 'verified') value.artifact.readbackVerified = false;
+    if (reason === 'digest') value.artifact.sha256 = 'different';
+    if (reason === 'length') value.artifact.byteLength = 2048;
+    const resolver = new MiaodaDocumentVersionSourceResolver(database(value) as never);
+    await expect(resolver.resolveIdentity('document-version-sb')).rejects.toThrow('DOCUMENT_VERSION_SOURCE_IDENTITY_INVALID');
+    await expect(resolver.resolve('document-version-sb')).rejects.toThrow('DOCUMENT_VERSION_SOURCE_IDENTITY_INVALID');
+  });
+
+  it('rejects missing joined registration instead of returning a partial identity', async () => {
+    const db = database(resolvedValue());
+    db.query.limit.mockResolvedValue([]);
+    const resolver = new MiaodaDocumentVersionSourceResolver(db as never);
+    await expect(resolver.resolveIdentity('missing')).rejects.toThrow('DOCUMENT_VERSION_NOT_FOUND');
   });
 });
