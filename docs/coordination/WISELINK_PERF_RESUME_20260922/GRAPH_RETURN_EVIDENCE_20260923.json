@@ -1,0 +1,311 @@
+{
+  "deploymentCommit": "79bd2380615ff18582269cc3cd5d95f805261b87",
+  "release": "7688444473504353246",
+  "scope": "One existing normal-login session, same saved revision 16; graph → Wiki → actual Return to graph button. No new model or parsing execution.",
+  "precision": "Times rounded to 0.1 ms; epoch milliseconds.",
+  "predicate": {
+    "exactMatterAndWork": true,
+    "layoutSnapshotPresent": true,
+    "revision": 16,
+    "overlays": 17,
+    "nonemptyCanvases": 3,
+    "camera": "82%",
+    "noGraphAlert": true
+  },
+  "measurement": "capture click → matching DOM ready → two requestAnimationFrame callbacks; geometry compares inline overlay positions. Does not prove GPU paint or all background reads completed.",
+  "samples": [
+    {
+      "attempt": 1,
+      "startEpochMs": 1790107060821.6,
+      "domReadyMs": 25.7,
+      "twoRafMs": 40.4,
+      "status": "ready",
+      "sameGeometry": true,
+      "group": "recovered"
+    },
+    {
+      "attempt": 2,
+      "startEpochMs": 1790107095121.5,
+      "domReadyMs": 23.7,
+      "twoRafMs": 37.8,
+      "status": "ready",
+      "sameGeometry": true,
+      "group": "recovered"
+    },
+    {
+      "attempt": 3,
+      "startEpochMs": 1790107101736.8,
+      "domReadyMs": 19.7,
+      "twoRafMs": 30.2,
+      "status": "ready",
+      "sameGeometry": true,
+      "group": "recovered"
+    },
+    {
+      "attempt": 4,
+      "startEpochMs": 1790107108287.9,
+      "domReadyMs": 20.7,
+      "twoRafMs": 35.7,
+      "status": "ready",
+      "sameGeometry": true,
+      "group": "recovered"
+    },
+    {
+      "attempt": 5,
+      "startEpochMs": 1790107114811,
+      "domReadyMs": 18.9,
+      "twoRafMs": 31.5,
+      "status": "ready",
+      "sameGeometry": true,
+      "group": "recovered"
+    },
+    {
+      "attempt": 6,
+      "startEpochMs": 1790107121319.6,
+      "domReadyMs": 19.3,
+      "twoRafMs": 33.4,
+      "status": "ready",
+      "sameGeometry": true,
+      "group": "recovered"
+    },
+    {
+      "attempt": 7,
+      "startEpochMs": 1790107378821.6,
+      "domReadyMs": 25.1,
+      "twoRafMs": 39.3,
+      "status": "ready",
+      "sameGeometry": true,
+      "group": "newWindow"
+    },
+    {
+      "attempt": 8,
+      "startEpochMs": 1790107385346.6,
+      "domReadyMs": 18.9,
+      "twoRafMs": 32.4,
+      "status": "ready",
+      "sameGeometry": true,
+      "group": "newWindow"
+    },
+    {
+      "attempt": 9,
+      "startEpochMs": 1790107391902.7,
+      "domReadyMs": 19,
+      "twoRafMs": 32.4,
+      "status": "ready",
+      "sameGeometry": true,
+      "group": "newWindow"
+    },
+    {
+      "attempt": 10,
+      "startEpochMs": 1790107407845.9,
+      "domReadyMs": 22.6,
+      "twoRafMs": 36.8,
+      "status": "ready",
+      "sameGeometry": true,
+      "group": "newWindow"
+    },
+    {
+      "attempt": 11,
+      "startEpochMs": 1790107414479,
+      "domReadyMs": 23,
+      "twoRafMs": 37.5,
+      "status": "ready",
+      "sameGeometry": true,
+      "group": "newWindow"
+    },
+    {
+      "attempt": 12,
+      "startEpochMs": 1790107421019.3,
+      "domReadyMs": 19.4,
+      "twoRafMs": 32.6,
+      "status": "ready",
+      "sameGeometry": true,
+      "group": "newWindow"
+    },
+    {
+      "attempt": 13,
+      "startEpochMs": 1790107439694.3,
+      "domReadyMs": 24.5,
+      "twoRafMs": 38.8,
+      "status": "ready",
+      "sameGeometry": true,
+      "group": "newWindow"
+    },
+    {
+      "attempt": 14,
+      "startEpochMs": 1790107446240.1,
+      "domReadyMs": 21.9,
+      "twoRafMs": 36.5,
+      "status": "ready",
+      "sameGeometry": true,
+      "group": "newWindow"
+    },
+    {
+      "attempt": 15,
+      "startEpochMs": 1790107452789.4,
+      "domReadyMs": 21,
+      "twoRafMs": 34.4,
+      "status": "ready",
+      "sameGeometry": true,
+      "group": "newWindow"
+    },
+    {
+      "attempt": 16,
+      "startEpochMs": 1790107482546.5,
+      "domReadyMs": 24,
+      "twoRafMs": 37.9,
+      "status": "ready",
+      "sameGeometry": true,
+      "group": "newWindow"
+    },
+    {
+      "attempt": 17,
+      "startEpochMs": 1790107489058.2,
+      "domReadyMs": 19.1,
+      "twoRafMs": 29.5,
+      "status": "ready",
+      "sameGeometry": true,
+      "group": "newWindow"
+    },
+    {
+      "attempt": 18,
+      "startEpochMs": 1790107495578.1,
+      "domReadyMs": 17.4,
+      "twoRafMs": 31,
+      "status": "ready",
+      "sameGeometry": true,
+      "group": "newWindow"
+    },
+    {
+      "attempt": 19,
+      "startEpochMs": 1790107512446.1,
+      "domReadyMs": 22.5,
+      "twoRafMs": 36.4,
+      "status": "ready",
+      "sameGeometry": true,
+      "group": "newWindow"
+    },
+    {
+      "attempt": 20,
+      "startEpochMs": 1790107518979.8,
+      "domReadyMs": 20.6,
+      "twoRafMs": 33.8,
+      "status": "ready",
+      "sameGeometry": true,
+      "group": "newWindow"
+    },
+    {
+      "attempt": 21,
+      "startEpochMs": 1790107525461,
+      "domReadyMs": 17.4,
+      "twoRafMs": 31.4,
+      "status": "ready",
+      "sameGeometry": true,
+      "group": "newWindow"
+    },
+    {
+      "attempt": 22,
+      "startEpochMs": 1790107539665.9,
+      "domReadyMs": 23.3,
+      "twoRafMs": 35.6,
+      "status": "ready",
+      "sameGeometry": true,
+      "group": "newWindow"
+    },
+    {
+      "attempt": 23,
+      "startEpochMs": 1790107546170.5,
+      "domReadyMs": 20.1,
+      "twoRafMs": 33,
+      "status": "ready",
+      "sameGeometry": true,
+      "group": "newWindow"
+    },
+    {
+      "attempt": 24,
+      "startEpochMs": 1790107552671,
+      "domReadyMs": 21.5,
+      "twoRafMs": 34.4,
+      "status": "ready",
+      "sameGeometry": true,
+      "group": "newWindow"
+    },
+    {
+      "attempt": 25,
+      "startEpochMs": 1790107574917.7,
+      "domReadyMs": 24.2,
+      "twoRafMs": 36.5,
+      "status": "ready",
+      "sameGeometry": true,
+      "group": "newWindow"
+    },
+    {
+      "attempt": 26,
+      "startEpochMs": 1790107581396.9,
+      "domReadyMs": 20.3,
+      "twoRafMs": 32.3,
+      "status": "ready",
+      "sameGeometry": true,
+      "group": "newWindow"
+    }
+  ],
+  "newWindowSummary": {
+    "n": 20,
+    "domReadyP95Ms": 24.5,
+    "twoRafP95Ms": 38.8,
+    "domReadyMaxMs": 25.1,
+    "twoRafMaxMs": 39.3,
+    "method": "nearest rank ceil(0.95*n)",
+    "timeouts": 0,
+    "failures": 0
+  },
+  "toolInterruption": "Previous 8-cycle tool batch exceeded 30-second tool timeout after five additional completed cycles; six completed samples recovered. Not an application timeout. No samples discarded.",
+  "network": {
+    "truncated": true,
+    "hasMore": false,
+    "cursor": 1054,
+    "earliestRetainedSequence": 55,
+    "claim": "Incomplete start: no whole-window zero-request/count claim. Observed surviving business requests listed as durations below; all returned 200.",
+    "parsingReadTotalMs": [
+      1894.1,
+      1029,
+      785.8,
+      910.8,
+      939.5,
+      1216.5,
+      1204.7,
+      846.3,
+      872.5,
+      1004.8,
+      601.8,
+      1103.5,
+      921.9,
+      1007.3,
+      1054.5,
+      911.2,
+      1015.1,
+      979.7,
+      966.1
+    ],
+    "matterReadTotalMs": [
+      1990.7,
+      1340.3,
+      1625.4,
+      1191.5,
+      1954.6
+    ],
+    "workingReadTotalMs": [
+      2972,
+      2060.1,
+      2713.5,
+      2304.8,
+      3071.7
+    ]
+  },
+  "cleanup": "observer disconnected, click listener removed, measurement object deleted; typeof readback undefined",
+  "limitations": [
+    "Small single-session sample; existing graph restoration only.",
+    "Background stale refresh can follow ready predicate; not fresh authorization completion latency.",
+    "Not full graph interactions, cold load, all navigation exits, large topology, or concurrent model-work benchmark."
+  ]
+}

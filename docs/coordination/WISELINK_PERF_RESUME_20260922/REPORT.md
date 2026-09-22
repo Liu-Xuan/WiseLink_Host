@@ -677,3 +677,14 @@ Main回执：ef258 release7688432648880098235 finished updated_at=1790103060000�
 - 精确连续25次窗口输入epoch1790106647392.4至1790106665092.3ms；事件buffer无truncation/hasMore=false，全部ready、0timeout/0failure。第1次：catalogue200 3391ms/3164网络字节 + work200 2212ms/27807字节；DOM5633.9ms，2RAF5647.9ms，保留为过期重读。其余24次无knowledge catalogue/work请求，按实际请求时间归类而非剔除慢值。
 - 24次新鲜窗口同保存版本：DOM p95（nearest rank）21.6ms、max31.2ms；2RAF p95 36.5ms、max36.6ms。这是单会话、小样本、具体热知识路径达到100ms目标的证据；不推广为全站或非缓存读取达标。过期重读5.65s及探索7–10.7s仍是待解决慢路径，未从原始样本删除。
 - Main专属Luna负责本release的导航/普通段落功能复验，B本轮补计量，不以自身计量替代独立功能结果。A明确没有已核实获准在执行的job/subject窗口，旧cron/attempt不能当当前在途；Skill未安装，后台竞争与阶段4真实执行仍未闭合。2026-09-11原生并发8/4/8文档仅为历史快照，需Main回读当前配置与具体运行授权后验证公平性。
+
+
+## B 图谱返回实际计量与 ab3 独立验收（2026-09-23）
+
+- 部署沿用 Main ab3 79bd2380615ff18582269cc3cd5d95f805261b87 / release7688444473504353246；已有正常登录，同保存修订16，实际 graph→Wiki→TopBar「返回关系图谱」。未新建解析、翻译、评估或模型任务。
+- 匿名26次完整DOM结果见 GRAPH_RETURN_EVIDENCE_20260923.json。上轮工具8次批处理超过30秒后内核重置，恢复6次已完成结果；本轮另20次，未删除慢值或失败。20次DOM-ready p95 24.5ms/max25.1ms；两RAF p95 38.8ms/max39.3ms，nearest-rank。每次exact M/W、layoutSnapshot、修订16、17 overlays、3个非空canvas、82%镜头且无graph alert；overlay位置字符串全部相同。
+- 该指标证明具体已保存图谱恢复满足200ms目标；两RAF不是GPU像素完成，也不表示后台刷新/授权已完成。保留旧数据的后台刷新发生在其后，不能将本结果用作500ms暖后端目标或新授权读取达标证据。未覆盖冷启动、大图、所有退出路径、用户连续拖动及真实模型竞争。
+- 网络事件buffer窗口开头被淘汰（truncated=true、cursor1054、最早保留sequence55），不宣称整窗零请求或完整请求总数。留存业务请求全部200：19个parsing状态读601.8–1894.1ms；5个matter读1191.5–1990.7ms；5个working读2060.1–3071.7ms。实际后台重复状态读取仍是候选热点，不能因前景快速恢复而隐去。
+- 临时isolated-world observer、capture click listener已移除，测量对象读回undefined；没有持久产品埋点或业务状态修改。
+- Luna独立ab3线上功能回执：知识→侧栏图谱保留同M/W与修订16；实际TopBar「返回工程知识」恢复精确知识上下文；普通已登记段落u112的实际第5页→资料库→browser back保留同parse/sourceRef/page5。显式reload 3次6582/6185/7709ms，median6582ms，仅功能/耗时观察，不冒充p95或请求计数。a7/a88已部署功能缺口由此闭合；自由像素/TOC/纯PDF滚动仍不在其声明范围。
+- 626dcf6原件identity窄投影已获Luna独立服务33项/types/lint/build接受；真实PG1/1仍是B证据，Luna未复跑。Main本轮确认正在集成626与59791；在确切发布回执前不声称生效。Main/A正在核实现行Hosted官方操作入口与历史已授权范围；没有已核实可供B观察的当前job，状态未知不撤销历史授权、不等同必需新授权。
