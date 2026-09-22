@@ -331,3 +331,64 @@ Results:
   command passes, but running the resource-reuse suite immediately before the
   timeline suite fails one timeline assertion. This ordering interaction is
   pre-existing and outside this round's scope.
+
+## H0/T0 — Deterministic Timeline Handoff (2026-09-22)
+
+Base: `21a6716b0c5018a53c580024c9f9d2523e6cf373`, clean integration branch
+`codex/perf-resume-20260922`. Implemented in isolated detached worktree
+`/private/tmp/wiselink-h0-t0-pdf-20260922`; the canonical worktree and its four
+untracked debug files were not modified. Existing 1A/directory/1B/metadata/1C/2A
+remain the starting implementation, not work repeated in this batch. The two
+referenced task histories agree with this checkpoint; the older Suite review
+layout remains separate future work.
+
+### Reproduction and cause
+
+The first normal pair run selected timeline then matter and passed 6/6.
+A diagnostic sequencer selected matter then timeline: one run passed 6/6,
+a second failed 5/6 at the final timeline test with DV1/RUN-STALE instead of
+DV2/RUN9. Reverse ordering also passed. Thus CLI argument order is not execution
+order, and choosing one passing order is not a fix.
+
+The failing helper used a zero-delay host timer to navigate to DV2. The test
+awaited React `act`, then resolved DV1 without ever asserting that the timer had
+navigated. `act` drains React work but does not promise execution of this host
+timer. Failure output still names DV1/PR-DV1: the old response was released
+before the intended switch. Suite timing exposed the race; no cross-suite
+window/document descriptor, QueryClient or mock leak was established. Both
+suites restore their DOM descriptors and unmount roots; matter clears its
+QueryClient. Production cancellation did not need alteration.
+
+Only the final timeline test changed: reuse the existing NavProbe, await its
+DV2 navigation, assert the DV2 URL and rendered candidate, then release the
+pending DV1 response and retain the original stale-result and request-count
+assertions. The test no longer owns a navigation timer. No sleep, timeout
+increase, fake-timer workaround, module reset or Jest config change was added.
+
+### Validation
+
+Commands ran in the isolated worktree with installed Node 24.14.1/Jest 29.7.0,
+repository ts-jest diagnostics/config and `--runInBand`, no `--forceExit`:
+
+- `jest --runInBand test/unit/matter-resource-reuse.spec.ts`: 2/2, exit 0.
+- `jest --runInBand test/unit/timeline-activity-discovery-handoff.spec.ts`:
+  4/4, exit 0.
+- Both paths with `--testSequencer=/private/tmp/wiselink-order.cjs`: actual
+  matter → timeline, 6/6, exit 0.
+- Same command with `WL_REVERSE=1`: actual timeline → matter, 6/6, exit 0.
+- ESLint for the modified test and `git diff --check`: exit 0.
+
+The temporary sequencer only sorts selected absolute test paths by
+`localeCompare` (multiplied by -1 when WL_REVERSE is set); it is diagnostic,
+not installed or committed as a success-order requirement. Reproduction logs:
+`/private/tmp/wiselink-t0-repeat.log` (failed), `wiselink-t0-before.log` and
+`wiselink-t0-reverse.log` (passed); after-fix logs are
+`wiselink-t0-{matter-alone,timeline-alone,forward,reverse}-after.log` under the
+same directory. These are local test evidence, not browser timing or p95.
+
+The `wl-light--cold` assertion targets obsolete Layout source decoration:
+current Layout delegates the Suite shell to Sidebar/TopBar and does not render
+those old light-layer class strings. No inert class was added and this unrelated
+text assertion was not expanded into a visual migration. Authorized browser,
+PDF target rendering and production behavior are not claimed by this test-only
+commit. 2B.1 is separately assigned; no publishing or runtime work occurred.

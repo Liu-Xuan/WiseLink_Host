@@ -271,18 +271,6 @@ describe('engineering timeline discovery handoff', () => {
         return Promise.resolve(savedReading('DV2', 'PR-DV2', 'RUN9'));
       });
       const root = createRoot(container);
-      function Switcher() {
-        const { useEffect } = require('react');
-        const { useNavigate } = require('react-router-dom');
-        const navigate = useNavigate();
-        useEffect(() => {
-          const timer = setTimeout(() => {
-            navigate('/timeline?documentVersionId=DV2', { replace: true });
-          }, 0);
-          return () => clearTimeout(timer);
-        }, [navigate]);
-        return null;
-      }
       try {
         await act(async () => {
           root.render(
@@ -294,13 +282,21 @@ describe('engineering timeline discovery handoff', () => {
                 null,
                 createElement(Route, { path: '/timeline', element: createElement(EngineeringTimelinePage) }),
               ),
-              createElement(Switcher),
+              createElement(NavProbe),
               createElement(LocationProbe),
             ),
           );
         });
         await act(async () => {});
         expect(pendingA.length).toBe(1);
+        // act drains React work, not host timers. Explicitly commit the new
+        // selection before releasing A; a zero-delay timer made this assertion
+        // depend on machine timing and the preceding suite's duration.
+        await act(async () => {
+          testNavigate!('/timeline?documentVersionId=DV2');
+        });
+        expect(new URLSearchParams(observedSearch).get('documentVersionId')).toBe('DV2');
+        expect(container.textContent).toContain('RUN:RUN9@REV:4');
         await act(async () => {
           pendingA[0](savedReading('DV1', 'PR-DV1', 'RUN-STALE'));
         });

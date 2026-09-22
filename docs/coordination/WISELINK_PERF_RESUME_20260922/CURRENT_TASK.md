@@ -4,8 +4,8 @@
 
 - Base: `b02395537a948fbe427f232f5a52ab59ba43efe0`
 - Branch: `codex/perf-resume-20260922`
-- Last verified checkpoint before this round:
-  `c85a0b616e5bacbd2544924ddf31d0692987ab02`
+- Verified H0/T0 starting checkpoint:
+  `21a6716b0c5018a53c580024c9f9d2523e6cf373`
 - Integration worktree:
   `/Volumes/SSD/LLM/WiseLink/private/runtime/miaoda-app-repos/wiselink-v3-1-perf-resume-20260922`
 
@@ -59,7 +59,7 @@
   the decoder and two tests. Legal missing/null metadata remains null; the full
   API still rejects corrupt structures.
 
-## Verification
+## Prior Verification (before H0/T0)
 
 - Server typecheck: pass.
 - Client typecheck: pass.
@@ -77,13 +77,25 @@
 - No production database, browser, preview or production run. The local
   temporary database and role were removed after the test.
 
+## H0/T0 — 2026-09-22
+
+The integration worktree was clean at the checkpoint above. The protected
+canonical `codex/0-11` worktree remains at `b02395537` with its four untracked
+debug files untouched. This test-only batch was implemented separately in
+`/private/tmp/wiselink-h0-t0-pdf-20260922`.
+
+The intermittent timeline failure was reproduced (5/6 tests). Its test helper
+scheduled navigation with `setTimeout(0)` but released the old response before
+confirming navigation. `act` does not guarantee that host timer has fired.
+The test now explicitly commits DV2 navigation and asserts DV2 is visible
+before releasing DV1. No production behavior, globals or Query policy changed.
+Both suites pass individually (2 and 4 tests) and together in both actual
+execution orders (6 tests), exiting normally without forceExit. See REPORT.
+
 ## Next Action
 
-This round adds two independent commits: the shared-resource denial correction
-(A) and the outlet-local route boundary (B). `matter-resource-reuse.spec.ts`
-and `timeline-activity-discovery-handoff.spec.ts` interfere when run in the
-same Jest process (both pass alone, and the ordered 20-suite command passes);
-this is a pre-existing test-ordering interaction outside this round. Browser
-request timing, content appearance timing and online p95 remain unmeasured.
-Stop after these commits; do not start PDF, graph lifecycle, further resource
-caches or other runtime batches.
+Continue the separately assigned 2B.1 PDF module/original parallel preparation
+on its own worktree, then integrate the tested subset. PDF implementation is
+not part of this T0 commit. No 2B.2 cache, graph lifecycle or backend batch is
+started. Browser timing, authorized preview and online p95 remain unmeasured;
+no origin sync, release, database or production-model operation occurred.
