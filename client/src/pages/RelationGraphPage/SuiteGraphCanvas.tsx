@@ -1,3 +1,4 @@
+import { captureGraphLayout, restoreGraphLayout, type SuiteGraphLayoutSnapshot } from './suite-graph-layout-memory';
 import {
   forwardRef,
   memo,
@@ -49,6 +50,7 @@ import { Image } from '@client/src/components/ui/image';
 
 export interface SuiteGraphCanvasProps {
   presentation: SuiteGraphPresentation;
+  initialLayout?: SuiteGraphLayoutSnapshot;
   initialViewport?: { zoom: number; pan: { x: number; y: number } };
   selectedId?: string;
   focusGroupKey?: string | null;
@@ -68,6 +70,7 @@ export interface SuiteGraphCanvasHandle {
   /** Apply an exact saved camera, or auto-fit when null (used on perspective switch). */
   setViewport: (viewport: { zoom: number; pan: { x: number; y: number } } | null) => void;
   getCore: () => Core | null;
+  getLayout: () => SuiteGraphLayoutSnapshot | null;
   /** Detached current camera, including events not yet published by the animation frame. */
   getViewport: () => { zoom: number; pan: { x: number; y: number } } | null;
 }
@@ -424,7 +427,7 @@ function sameOverlayNodes(left: OverlayNode[], right: OverlayNode[]): boolean {
 }
 
 const SuiteGraphCanvas = forwardRef<SuiteGraphCanvasHandle, SuiteGraphCanvasProps>(function SuiteGraphCanvas(
-  { presentation, initialViewport, selectedId, focusGroupKey, onSelect, onGroup, onOverflow, onInspectRelationships, onViewport, className, ariaLabel = '关系图谱' },
+  { presentation, initialLayout, initialViewport, selectedId, focusGroupKey, onSelect, onGroup, onOverflow, onInspectRelationships, onViewport, className, ariaLabel = '关系图谱' },
   ref,
 ) {
   const mountRef = useRef<HTMLDivElement | null>(null);
@@ -447,6 +450,7 @@ const SuiteGraphCanvas = forwardRef<SuiteGraphCanvasHandle, SuiteGraphCanvasProp
   const initialViewportAppliedRef = useRef(false);
   const initialViewportRef = useRef(initialViewport);
   const cameraReadyRef = useRef(false);
+  const discardedLayoutRef = useRef<SuiteGraphLayoutSnapshot | undefined>(undefined);
   const elementsRef = useRef<CytoscapeSuiteElement[]>([]);
   const selectedIdRef = useRef<string | undefined>(selectedId);
   const focusGroupKeyRef = useRef<string | null | undefined>(focusGroupKey);
@@ -469,6 +473,7 @@ const SuiteGraphCanvas = forwardRef<SuiteGraphCanvasHandle, SuiteGraphCanvasProp
       cy.zoom({ level: Math.max(cy.minZoom(), Math.min(cy.maxZoom(), cy.zoom() * factor)), renderedPosition: { x: cy.width() / 2, y: cy.height() / 2 } });
     },
     reset: () => {
+      discardedLayoutRef.current = initialLayout;
       const cy = cyRef.current;
       if (!cy) return;
       userCameraRef.current = true;
@@ -506,11 +511,12 @@ const SuiteGraphCanvas = forwardRef<SuiteGraphCanvasHandle, SuiteGraphCanvasProp
       }
     },
     getCore: () => cyRef.current,
+    getLayout: () => cyRef.current ? captureGraphLayout(cyRef.current, elementsRef.current) : null,
     getViewport: () => {
       const cy = cyRef.current;
       return cy ? { zoom: cy.zoom(), pan: { ...cy.pan() } } : null;
     },
-  }), []);
+  }), [initialLayout]);
 
   const applyNarrowFocus = useCallback((cy: Core) => {
     const focusGroup = focusGroupKeyRef.current;
@@ -676,6 +682,9 @@ const SuiteGraphCanvas = forwardRef<SuiteGraphCanvasHandle, SuiteGraphCanvasProp
     if (typeof cy.edges === 'function') {
       cy.edges().toggleClass('suite-small-edge-label', cy.zoom() < 0.9);
     }
+    if (initialLayout && initialLayout !== discardedLayoutRef.current) {
+      Object.assign(update.positions, restoreGraphLayout(cy, presentation.elements, elementsRef.current, initialLayout));
+    }
     elementsRef.current = presentation.elements;
     if (update.layoutRequired) {
       const elements = cy.elements();
@@ -702,7 +711,7 @@ const SuiteGraphCanvas = forwardRef<SuiteGraphCanvasHandle, SuiteGraphCanvasProp
     cameraReadyRef.current = true;
     publishViewport({ zoom: cy.zoom(), pan: { ...cy.pan() } });
     syncNowRef.current?.();
-  }, [presentation, applyAutoCamera, publishViewport]);
+  }, [presentation, initialLayout, applyAutoCamera, publishViewport]);
 
   useEffect(() => {
     const cy = cyRef.current;

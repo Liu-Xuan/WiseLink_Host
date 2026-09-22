@@ -590,6 +590,29 @@ describe('SuiteGraphCanvas', () => {
     }
   });
 
+  it('restores real dragged geometry on remount and allows explicit layout reset', async () => {
+    const realCytoscape = jest.requireActual('cytoscape') as typeof import('cytoscape');
+    document.documentElement.setAttribute('data-wl-motion', 'off');
+    mockCyFactory.mockImplementation((options) => realCytoscape({ ...options, headless: true, styleEnabled: false }));
+    const ref = createRef<SuiteGraphCanvasHandle>();
+    try {
+      await act(async () => {
+        root = createRoot(container);
+        root.render(createElement(SuiteGraphCanvas, { presentation, ref }));
+      });
+      act(() => ref.current!.getCore()!.$id('sg:item:i').position({ x: 145, y: 167 }));
+      const saved = ref.current!.getLayout()!;
+      await act(async () => root.unmount());
+      await act(async () => {
+        root = createRoot(container);
+        root.render(createElement(SuiteGraphCanvas, { presentation, ref, initialLayout: saved }));
+      });
+      expect(ref.current!.getCore()!.$id('sg:item:i').position()).toEqual({ x: 145, y: 167 });
+      await act(async () => ref.current!.reset());
+      expect(ref.current!.getCore()!.$id('sg:item:i').position()).toEqual({ x: 80, y: 100 });
+    } finally { document.documentElement.removeAttribute('data-wl-motion'); }
+  });
+
   it('reads the last camera before a pending frame and returns a detached snapshot', async () => {
     const ref = createRef<SuiteGraphCanvasHandle>();
     const onViewport = jest.fn();

@@ -1,3 +1,4 @@
+import { readGraphLayout, saveGraphLayout } from './suite-graph-layout-memory';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import {
   ArrowRight,
@@ -67,6 +68,7 @@ export interface SuiteMatterGraphViewProps {
   onOpenEventTimeline?: (event: SuiteGraphTimelineEvent) => void;
   onNodeSelect?: (target: SuiteMatterGraphTarget | null) => void;
   initialState?: SuiteGraphReadingState;
+  layoutScope?: string;
   onStateChange?: (state: SuiteGraphReadingState, beforeNavigation?: boolean) => void;
   availablePerspectives?: SuiteMatterGraphPerspective[];
   perspectiveNotice?: string | null;
@@ -165,6 +167,7 @@ export default function SuiteMatterGraphView({
   onOpenEventTimeline: onOpenEventTimelineCallback,
   onNodeSelect,
   initialState,
+  layoutScope,
   onStateChange,
   availablePerspectives = ['matter'],
   perspectiveNotice,
@@ -217,6 +220,9 @@ export default function SuiteMatterGraphView({
     ),
   );
 
+  const layoutByPerspective = useRef(new Map<string, string>(initialState?.layoutSnapshot
+    ? [[perspective, initialState.layoutSnapshot]] : []));
+
   const graph: SuiteGraphMatter = useMemo(() => read.graph, [read.graph]);
   const effectiveHiddenGroups = useMemo(
     () => focusedGroupKey
@@ -267,8 +273,15 @@ export default function SuiteMatterGraphView({
     setViewport(viewportByPerspective.current.get(perspective));
   }, [perspective]);
 
+  const geometryScope = layoutScope ? JSON.stringify([layoutScope, perspective, layoutMode,
+    density, page, [...effectiveHiddenGroups].sort(), relationMode]) : null;
+  const layoutKey = layoutByPerspective.current.get(perspective);
+  const savedLayout = geometryScope ? readGraphLayout(layoutKey, geometryScope) : undefined;
+
   const readingState = (): SuiteGraphReadingState => ({
     selectedId: selectedId ?? undefined,
+    layoutSnapshot: geometryScope && readGraphLayout(layoutByPerspective.current.get(perspective), geometryScope)
+      ? layoutByPerspective.current.get(perspective) : undefined,
     hiddenGroups: effectiveHiddenGroups,
     page,
     density,
@@ -292,6 +305,12 @@ export default function SuiteMatterGraphView({
   const captureCamera = () => {
     const current = canvasRef.current?.getViewport();
     if (current) viewportByPerspective.current.set(perspective, current);
+    const layout = canvasRef.current?.getLayout();
+    if (geometryScope && layout) {
+      const key = saveGraphLayout(geometryScope, layout, layoutByPerspective.current.get(perspective));
+      if (key) layoutByPerspective.current.set(perspective, key);
+      else layoutByPerspective.current.delete(perspective);
+    }
   };
   const beforeNavigation = () => {
     captureCamera();
@@ -568,6 +587,7 @@ export default function SuiteMatterGraphView({
                 key={perspective}
                 ref={canvasRef}
                 presentation={presentation}
+                initialLayout={savedLayout}
                 initialViewport={viewportByPerspective.current.get(perspective)}
                 selectedId={selectedId ?? undefined}
                 focusGroupKey={focusedGroupKey}

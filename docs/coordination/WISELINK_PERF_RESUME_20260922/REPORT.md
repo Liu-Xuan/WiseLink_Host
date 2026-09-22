@@ -458,3 +458,14 @@ Actual old-source component regression: zoom updated geometry but also called th
 两个实际消费者反例在基线失败：View 未收到 RAF 回调就打开 Wiki 使用旧镜头；Page 导航前只有相机变化时，精确返回链接虽然新鲜，浏览器后退仍得到旧镜头。新测试分别覆盖两处，并验证读取相机为独立副本、视角切换保存。此批不宣称跨页恢复拖动节点布局、所有外部退出或真实浏览器p95已完成；后续继续这些要求，不关闭完整Goal。
 
 验证：8 suites/71 tests、client typecheck、三个生产文件 ESLint、client build（13.46s，既有 module/chunk 警告）通过。现有 ESLint 配置不覆盖 test 目录，不将其记为 lint 通过。提交使用正常 precommit。
+
+
+## 2026-09-23 B：2C.4b 会话内几何恢复
+
+基线 `8de759fb9a3b2b3630370fa537e3fbe3e9dcdbfd`，独立树 `/private/tmp/wiselink-perf-b-graph-layout-20260923`。导航/视角切换前保存节点ID、当前坐标/宽高及声明的基准几何；URL只带随机引用，业务正文与权限结果不在缓存。范围绑定当前sessionGeneration、matterId、实际matterWorkRevisionId、视角、布局、密度、分页、有效隐藏组及关系模式。返回仍先获取当前授权图谱，只恢复现存且基准坐标/尺寸兼容的新节点，异步后到的节点也可按同样规则恢复；显式reset保留默认布局行为，不反复覆盖用户后续拖动。
+
+缓存限8条、每条512节点及256KiB序列化几何、总1MiB序列化几何（不是整个JS堆的精确大小），30分钟有效期；读取命中调整淘汰顺序，不延长有效期。过期条目在读取/保存时清理；会话变更或未认证时重新进入图谱清空。浏览器刷新/淘汰/过期/范围不匹配采用正常布局，镜头等原URL状态继续独立处理。不支持跨浏览器持久布局。变化生成新UUID引用，不覆盖旧历史快照；相同范围/几何允许保留同一引用。有限快照不替代授权或业务SourceRef。
+
+直接反例：旧View打开Wiki未保存任何layoutSnapshot，新View导航→返回挂载能取回几何；切换实际工作scope拒绝旧快照。真实Cytoscape remount恢复拖动坐标，reset回到默认；测试还涵盖脱离副本、迟到节点/已存节点不覆盖、基准不兼容、会话/拒绝清空、30分钟过期、条数/字节限制、不可变历史、返回引用过滤。6套54项、client typecheck、5生产文件ESLint、client build14.15s通过；test目录不在现有ESLint覆盖内，未将其记为lint通过。仍需真实用户链路与p95，不将此批等同于全部2C完成。
+
+前批验收回读：Luna已独立通过b2247dee7（6套57项、真实Cytoscape边界探针）与8de759fb9（8套71项、类型/lint/build/precommit）。A当前准确HEAD为0c350f04c2da8f6e2257689092bf8b312497d342，本地验收通过；A未新增source plan/原件缓存或全局公平调度，后续B 3B不得缓存权限判定或弱化其恢复fresh授权/未知模型结果拒绝重放边界。仍待主控统一集成与真实Hosted流程验证。
