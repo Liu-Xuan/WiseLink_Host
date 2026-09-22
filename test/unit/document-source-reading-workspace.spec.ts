@@ -105,6 +105,7 @@ describe('document source reading workspace', () => {
       Object.defineProperty(globalThis, key, { configurable: true, writable: true, value });
     }
     const original = originalFixture();
+    const selectedLocations = jest.fn();
     function StatefulWorkspace() {
       const [mode, setMode] = useState<'dual' | 'bilingual' | 'translation' | 'original' | 'pdf'>('dual');
       return createElement(MemoryRouter, null, createElement(DocumentSourceReadingWorkspace, {
@@ -112,6 +113,7 @@ describe('document source reading workspace', () => {
         documentVersionId: original.binding.documentVersionId,
         mode,
         onModeChange: setMode,
+        onLocationSelect: selectedLocations,
         bilingualContent: createElement('div', null, '已保存中英内容'),
         returnRoute: '/library?mode=document',
         returnLabel: '返回文档库',
@@ -126,6 +128,11 @@ describe('document source reading workspace', () => {
     try {
       await act(async () => root.render(createElement(StatefulWorkspace)));
       expect(mockPdfMounts).toBe(1);
+      await act(async () => container.querySelector('[data-unit-id="u2"]')!.dispatchEvent(
+        new dom.window.MouseEvent('click', { bubbles: true }),
+      ));
+      expect(selectedLocations).toHaveBeenCalledWith(2, 'u2');
+      expect(container.querySelector('[data-pdf-page="2"]')).not.toBeNull();
       const clickMode = async (label: string) => {
         const button = [...container.querySelectorAll('button')]
           .find((item) => item.textContent === label);

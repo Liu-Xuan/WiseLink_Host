@@ -116,7 +116,7 @@ test('cross Matter references save exact lineage and reauthorize scopes and root
         return { ...target, leaseToken: lease.leaseToken, leaseGeneration: lease.leaseGeneration };
       };
       const save = async (fence, task, body, id, extra = {}) => {
-        const candidate = { schemaVersion: 'wiselink.jobaid-problem-work.v3', issues: [{ issueKey: 'conditions',
+        const candidate = { schemaVersion: 'wiselink.jobaid-problem-work.v3', headline: 'Synthetic conditions remain unverified', listBrief: 'Compare the synthetic sources without assuming target configuration.', issues: [{ issueKey: 'conditions',
           question: 'Synthetic target-specific conditions', body }], roundCompletion: 'COMPLETE_WITH_OPEN_QUESTIONS',
           completionReason: 'No target configuration records supplied.', changeSummary: 'Compare conditions without inheriting target facts.', ...extra };
         const saved = await owner.runtime(() => service.saveJobAidWork({ ...fence, requestId: id,
@@ -139,6 +139,10 @@ test('cross Matter references save exact lineage and reauthorize scopes and root
             textLayerStatus: 'PRESENT', visualContentVerified: false, evidence: original }] })));
       const savedA = await save(fenceA, first.reserved.task, `A has an unverified target condition. [[${rootRef}]]`, 'save-A',
         { overview: `Synthetic overview with a condition requiring review. [[${rootRef}]]` });
+      owner.queryMetrics.overviewSaveQueries = 0;
+      const withoutCorrections = await owner.workingService.readWorkingRevision(a.matter.matterId, savedA.workRevisionRef, owner.actor);
+      assert.deepEqual(withoutCorrections.overviewCorrectionNotices ?? [], []);
+      assert.equal(owner.queryMetrics.overviewSaveQueries, 0, 'no saved-metadata query when there are no correction notices');
       const referenceA = { matterId: a.matter.matterId, workRef: savedA.workRevisionRef, issueKey: 'conditions', purpose: 'Compare A with B' };
       const requestB = await requestFor(b.matter.matterId, 'reference-import-B', [referenceA]);
       const browserReferences = new EngineeringIssueSearchService(owner.database, {}, owner.workingService, undefined, service, {
@@ -318,16 +322,24 @@ test('cross Matter references save exact lineage and reauthorize scopes and root
           overview: `The reviewed synthetic overview preserves the target-specific limitation. [[${rootRef}]]`,
           roundCompletion: 'COMPLETE_WITH_OPEN_QUESTIONS', completionReason: 'Target facts remain unverified.',
           changeSummary: 'Revise the synthetic overview without changing problem bodies.' }) }));
+      const overviewResaved = await owner.runtime(() => service.saveJobAidWork({ ...overviewFence, requestId: 'save-overview-again-before-failure',
+        expectedWorkRevision: 2, workJson: JSON.stringify({ schemaVersion: 'wiselink.jobaid-problem-work.v3', issues: [],
+          overview: `The second reviewed overview still requires target-specific verification. [[${rootRef}]]`,
+          roundCompletion: 'COMPLETE_WITH_OPEN_QUESTIONS', completionReason: 'Target facts remain unverified.',
+          changeSummary: 'Record a second saved overview within the same attempt.' }) }));
       await owner.runtime(() => service.finishJobAid({ ...overviewFence, result: matterResult(overviewRecovery.reserved.task, 'FAILED') }));
       const currentAfterReview = await owner.workingService.readWorkingRevision(a.matter.matterId, overviewSaved.workRevisionRef, owner.actor);
       assert.deepEqual(currentAfterReview.state.problemWork.issues, reviewBefore.state.problemWork.issues);
       const savedNotice = currentAfterReview.overviewCorrectionNotices.find(notice => notice.attemptRef === overviewRecovery.target.attemptRef);
       assert.equal(savedNotice.attemptStatus, 'FAILED');
-      assert.equal(savedNotice.savedWorkRef, overviewSaved.workRevisionRef, 'persisted output remains visible after a later failure');
-      assert.equal(savedNotice.savedWorkingRevision, 2);
+      assert.equal(savedNotice.savedWorkRef, overviewResaved.workRevisionRef, 'latest persisted output from the same attempt remains visible after a later failure');
+      assert.equal(savedNotice.savedWorkingRevision, 3);
       const nextOverview = await start({ ...await requestFor(a.matter.matterId, 'overview-review-newer-A'),
-        overviewCorrection: { ...overviewPurpose, expectedWorkRef: overviewSaved.workRevisionRef } });
+        overviewCorrection: { ...overviewPurpose, expectedWorkRef: overviewResaved.workRevisionRef } });
+      owner.queryMetrics.overviewSaveQueries = 0;
       const exactOldA = await owner.workingService.readWorkingRevision(a.matter.matterId, savedA.workRevisionRef, owner.actor);
+      assert.equal(exactOldA.overviewCorrectionNotices.length, 3);
+      assert.equal(owner.queryMetrics.overviewSaveQueries, 1, 'all three correction attempts resolve saved metadata in one query');
       assert.ok(exactOldA.overviewCorrectionNotices.every(notice => notice.targetWorkRef === savedA.workRevisionRef),
         'historical reading does not attach review requests targeting newer work');
       assert.equal(nextOverview.reserved.task.modelInput.modelInput.knownOverviewCorrections.length, 3);
@@ -343,11 +355,11 @@ test('cross Matter references save exact lineage and reauthorize scopes and root
       assert.deepEqual(priorB.originalEvidenceRefs, [rootRef], 'A -> B -> A retains one original root');
       const last = await save(await claim(back.target), back.reserved.task,
         `A checks B's comparison while retaining its original uncertainty. [[${priorB.evidenceRef}]]`, 'save-A2');
-      assert.equal(last.workRevision, 3);
+      assert.equal(last.workRevision, 4);
       const laterA = await owner.workingService.readWorkingRevision(a.matter.matterId, last.workRevisionRef, owner.actor);
       assert.equal(laterA.overviewCorrectionNotices.length, 4, 'an unrelated later save does not erase explicit prior review requests');
       assert.equal(laterA.overviewCorrectionNotices.find(notice => notice.attemptRef === overviewRecovery.target.attemptRef)
-        .savedWorkRef, overviewSaved.workRevisionRef);
+        .savedWorkRef, overviewResaved.workRevisionRef);
       const ordinaryFailure = await start(await requestFor(a.matter.matterId, 'ordinary-failure-is-not-overview-review'));
       const ordinaryFailureFence = await claim(ordinaryFailure.target);
       await owner.runtime(() => service.finishJobAid({ ...ordinaryFailureFence, result: matterResult(ordinaryFailure.reserved.task, 'FAILED') }));
@@ -1871,7 +1883,15 @@ async function reserveActorService(actorId, tenantId = 'tenant-A') {
   try {
     await connection.unsafe('SET ROLE authenticated');
     await connection`SELECT set_config('app.user_id', ${actorId}, false)`;
-    const db = drizzle(connection);
+    const queryMetrics = { overviewSaveQueries: 0 };
+    const db = drizzle(connection, { logger: { logQuery(query) {
+      const selection = query.slice(0, query.indexOf(' from '));
+      if (selection.includes('"matter_work_revision_id"') && selection.includes('"working_revision"')
+          && !selection.includes('"request_id"') && query.includes('"action_attempt_id"')
+          && query.includes('order by') && query.includes('from "engineering_matter_work_revision"')) {
+        queryMetrics.overviewSaveQueries++;
+      }
+    } } });
     const workItems = new MiaodaWorkItemRepository(db);
     const objectAccess = new MiaodaHostedCanonicalObjectAccessAdapter(
       workItems,
@@ -1902,6 +1922,7 @@ async function reserveActorService(actorId, tenantId = 'tenant-A') {
       working,
       workingService,
       database: db,
+      queryMetrics,
       // Hosted MCP does not guarantee an HTTP RequestContextService store.
       // Exercise the actual SDK SQL context without manufacturing that flag.
       runtime: (operation) =>

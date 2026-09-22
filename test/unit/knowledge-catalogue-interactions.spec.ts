@@ -1,5 +1,6 @@
 import { act, createElement } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { createMemoryRouter, RouterProvider } from 'react-router-dom';
 import type {
   EngineeringKnowledgeEntry,
@@ -10,6 +11,7 @@ import type {
 import type { CanonicalLibraryDocumentsResponse } from '@shared/api.interface';
 import type { DocumentReadingPreview } from '@shared/document-reading.interface';
 import { getCanonicalLibraryDocuments } from '@client/src/api/canonical-host';
+import { clearEngineeringMatterQueries, ENGINEERING_MATTER_QUERY_ROOT } from '@client/src/features/matter/useEngineeringMatter';
 import KnowledgeLookupPage from '@client/src/pages/KnowledgeLookupPage/KnowledgeLookupPage';
 import { libraryDocuments } from './fixtures/canonical-library';
 
@@ -19,6 +21,9 @@ const mockCatalogue = jest.fn();
 const mockReadWork = jest.fn();
 const mockDocuments = jest.mocked(getCanonicalLibraryDocuments);
 let sessionGeneration = 1;
+let queryClient: QueryClient;
+let currentActor = 'actor-test';
+let currentTenant = 'tenant-test';
 
 type PreviewReading = NonNullable<DocumentReadingPreview['reading']>;
 
@@ -78,15 +83,19 @@ function sourceDocuments(): CanonicalLibraryDocumentsResponse {
   return response;
 }
 
+jest.mock('@client/src/api/engineering-matter', () => ({}));
 jest.mock('@client/src/api/canonical-host', () => ({
   readEngineeringKnowledgeCatalogue: (...args: unknown[]) => mockCatalogue(...args),
   readEngineeringKnowledgeWork: (...args: unknown[]) => mockReadWork(...args),
   getCanonicalLibraryDocuments: jest.fn(),
+  subscribeCanonicalHostClientSession: () => () => undefined,
+  getCanonicalHostClientSessionGeneration: () => sessionGeneration,
+  getCanonicalHostIdentityContext: async () => ({ tenantId: currentTenant, userId: currentActor }),
 }));
 jest.mock('@client/src/pages/KnowledgeLookupPage/knowledge-lookup.css', () => ({}));
 jest.mock('@client/src/pages/KnowledgeLookupPage/knowledge-suite.css', () => ({}));
 jest.mock('@client/src/app/providers/CurrentUserSessionProvider', () => ({
-  useCurrentUserSession: () => ({ sessionGeneration, authenticationRequired: false }),
+  useCurrentUserSession: () => ({ sessionGeneration, authenticationRequired: false, currentUser: { user_id: currentActor } }),
 }));
 jest.mock('@client/src/features/matter/EngineeringIssueBody', () => ({
   __esModule: true,
@@ -148,10 +157,11 @@ const oldGlobals = new Map<string, PropertyDescriptor | undefined>();
 
 function deferred<T>() {
   let resolve!: (value: T) => void;
-  const promise = new Promise<T>((done) => {
-    resolve = done;
+  let reject!: (error: unknown) => void;
+  const promise = new Promise<T>((done, fail) => {
+    resolve = done; reject = fail;
   });
-  return { promise, resolve };
+  return { promise, resolve, reject };
 }
 
 async function settle(ms = 10) {
@@ -170,7 +180,7 @@ async function mount(search = '') {
   );
   root = createRoot(container);
   await act(async () => {
-    root.render(createElement(RouterProvider, { router }));
+    root.render(createElement(QueryClientProvider, { client: queryClient }, createElement(RouterProvider, { router })));
   });
 }
 
@@ -178,7 +188,7 @@ async function remount() {
   await act(async () => root.unmount());
   root = createRoot(container);
   await act(async () => {
-    root.render(createElement(RouterProvider, { router }));
+    root.render(createElement(QueryClientProvider, { client: queryClient }, createElement(RouterProvider, { router })));
   });
 }
 
@@ -202,6 +212,8 @@ beforeEach(() => {
   }
   container = dom.window.document.getElementById('root')!;
   sessionGeneration = 1;
+  currentActor = 'actor-test'; currentTenant = 'tenant-test';
+  queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   jest.clearAllMocks();
   mockCatalogue.mockResolvedValue(page(entry('A'), entry('B')));
   mockReadWork.mockImplementation((identity: { subjectId: string }) => Promise.resolve(read(entry(identity.subjectId))));
@@ -210,6 +222,7 @@ beforeEach(() => {
 afterEach(async () => {
   await act(async () => root?.unmount());
   router?.dispose();
+  queryClient.clear();
   dom.window.close();
   for (const [key, descriptor] of oldGlobals) {
     if (descriptor) Object.defineProperty(globalThis, key, descriptor);
@@ -422,4 +435,88 @@ describe('knowledge source documents reading', () => {
     expect(container.textContent).not.toContain('过期主题');
     expect(container.textContent).not.toContain('来源简明解读 过期主题');
   });
+});
+
+test('reuses the exact saved knowledge and catalogue on a fresh same-session route return', async () => {
+  await mount('?subjectKind=ENGINEERING_MATTER&subjectId=A&workRef=WR-A');
+  await settle();
+  expect(container.querySelector('.knowledge-preview')?.textContent).toContain('主题 A');
+  await navigate('/library');
+  await navigate('/knowledge?subjectKind=ENGINEERING_MATTER&subjectId=A&workRef=WR-A');
+  await settle();
+  expect(container.querySelector('.knowledge-preview')?.textContent).toContain('主题 A');
+  expect(mockCatalogue).toHaveBeenCalledTimes(1);
+  expect(mockReadWork).toHaveBeenCalledTimes(1);
+});
+
+test('a stale saved work is withheld during refresh and a denial replaces it across remounts', async () => {
+  const route = '/knowledge?subjectKind=ENGINEERING_MATTER&subjectId=A&workRef=WR-A';
+  await mount(route.slice('/knowledge'.length)); await settle();
+  const rejection = deferred<EngineeringKnowledgeRead>();
+  mockReadWork.mockReturnValueOnce(rejection.promise);
+  await act(async () => { void queryClient.invalidateQueries({ predicate: query => query.queryKey.includes('work') }); });
+  await settle();
+  expect(container.querySelector('.knowledge-preview')?.textContent).not.toContain('主题 A');
+  // Explicit rejection, without changing the selected saved identity.
+  const failure = Object.assign(new Error('source access revoked'), { statusCode: 403 });
+  await act(async () => rejection.reject(failure));
+  await settle();
+  expect(container.querySelector('.knowledge-preview')?.textContent).toContain('source access revoked');
+  await navigate('/library'); await navigate(route); await settle();
+  expect(mockReadWork).toHaveBeenCalledTimes(2);
+  expect(container.querySelector('.knowledge-preview')?.textContent).not.toContain('主题 A');
+  mockReadWork.mockResolvedValueOnce(read(entry('A')));
+  const retryButton = [...container.querySelectorAll('button')].find(button => button.textContent === '重试')!;
+  await act(async () => retryButton.click()); await settle();
+  expect(mockReadWork).toHaveBeenCalledTimes(3);
+  expect(container.querySelector('.knowledge-preview')?.textContent).toContain('主题 A');
+});
+
+test('different saved revisions are not replaced by a fresh current-work cache', async () => {
+  await mount('?subjectKind=ENGINEERING_MATTER&subjectId=A&workRef=WR-A'); await settle();
+  mockReadWork.mockResolvedValueOnce(read({ ...entry('A'), workRef: 'WR-OLD', headline: '历史完整正文' }));
+  await navigate('/knowledge?subjectKind=ENGINEERING_MATTER&subjectId=A&workRef=WR-OLD'); await settle();
+  expect(mockReadWork).toHaveBeenLastCalledWith({ subjectKind: 'ENGINEERING_MATTER', subjectId: 'A', workRef: 'WR-OLD' }, expect.anything());
+  expect(container.querySelector('.knowledge-preview')?.textContent).toContain('历史完整正文');
+});
+
+test('actor and tenant scope changes cannot reuse another account saved body', async () => {
+  await mount('?subjectKind=ENGINEERING_MATTER&subjectId=A&workRef=WR-A'); await settle();
+  currentActor = 'actor-other'; currentTenant = 'tenant-other';
+  const pending = deferred<EngineeringKnowledgeRead>(); mockReadWork.mockReturnValueOnce(pending.promise);
+  await remount(); await settle();
+  expect(container.querySelector('.knowledge-preview')?.textContent).not.toContain('主题 A');
+  expect(mockReadWork).toHaveBeenCalledTimes(2);
+  await act(async () => pending.resolve(read({ ...entry('A'), headline: '另一账户的可见正文' }))); await settle();
+  expect(container.querySelector('.knowledge-preview')?.textContent).toContain('另一账户的可见正文');
+});
+
+test('the existing session boundary removes inactive knowledge resources', async () => {
+  await mount('?subjectKind=ENGINEERING_MATTER&subjectId=A&workRef=WR-A'); await settle();
+  expect(queryClient.getQueryCache().findAll({ queryKey: ENGINEERING_MATTER_QUERY_ROOT }).length).toBeGreaterThan(0);
+  await navigate('/library'); sessionGeneration++;
+  await clearEngineeringMatterQueries(queryClient);
+  expect(queryClient.getQueryCache().findAll({ queryKey: ENGINEERING_MATTER_QUERY_ROOT })).toHaveLength(0);
+});
+
+test('expired knowledge resources reread instead of treating retained data as fresh forever', async () => {
+  const route = '/knowledge?subjectKind=ENGINEERING_MATTER&subjectId=A&workRef=WR-A';
+  await mount(route.slice('/knowledge'.length)); await settle();
+  await navigate('/library');
+  for (const cached of queryClient.getQueryCache().findAll({ predicate: item => item.queryKey.includes('knowledge') })) {
+    queryClient.setQueryData(cached.queryKey, cached.state.data, { updatedAt: Date.now() - 31_000 });
+  }
+  await navigate(route); await settle();
+  expect(mockCatalogue).toHaveBeenCalledTimes(2);
+  expect(mockReadWork).toHaveBeenCalledTimes(2);
+  expect(container.querySelector('.knowledge-preview')?.textContent).toContain('主题 A');
+});
+
+test('clearing an invalid pin can select the first authorized cached catalogue entry', async () => {
+  await mount('?subjectId=A'); await settle();
+  expect(mockReadWork).not.toHaveBeenCalled();
+  await navigate('/knowledge'); await settle();
+  expect(router.state.location.search).toContain('workRef=WR-A');
+  expect(mockCatalogue).toHaveBeenCalledTimes(1);
+  expect(mockReadWork).toHaveBeenCalledTimes(1);
 });

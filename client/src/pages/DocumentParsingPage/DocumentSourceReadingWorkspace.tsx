@@ -33,6 +33,7 @@ interface Props {
   initialPage?: number;
   initialUnitId?: string;
   initialLocationRequest?: number;
+  onLocationSelect?: (page: number, unitId: string) => void;
   renderPdfPreview?: (page: number) => ReactNode;
 }
 
@@ -54,6 +55,7 @@ export function DocumentSourceReadingWorkspace({
   initialPage,
   initialUnitId,
   initialLocationRequest = 0,
+  onLocationSelect,
   renderPdfPreview,
 }: Props) {
   const workspaceActive: boolean = useWorkbenchPanelActive();
@@ -111,6 +113,7 @@ export function DocumentSourceReadingWorkspace({
   function locateUnit(pageIndex: number, unitId: string): void {
     setPage(pageIndex);
     setActiveUnitId(unitId);
+    onLocationSelect?.(pageIndex, unitId);
     if (mode === 'original') onModeChange('dual');
   }
 
