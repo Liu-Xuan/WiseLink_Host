@@ -382,6 +382,9 @@ test(
           initial.classification.normalizedFamily='FTD';
           const denied = initialProjection('WI-job-denied');
           const queued = initialProjection('WI-job-queued');
+          // Ordinary WorkItem projections retain the sha256: form, unlike parser bindings.
+          initial.source.sourceFileSha256 = `sha256:${hash}`;
+          queued.source.sourceFileSha256 = `sha256:${hash}`;
           queued.package = null; queued.classification.normalizedFamily='FTD';
           const queuedDenied = initialProjection('WI-job-queued-denied');
           const automatic = initialProjection('WI-job-original-successor');
@@ -497,6 +500,17 @@ test(
                 requestId,
               ),
             );
+          const { jobAidSourceFileReference } = require('../../server/modules/canonical-host/jobaid-problem-task.ts');
+          for (const invalidDigest of ['sha256:invalid', `sha256:sha256:${hash}`, ` ${hash}`, 'b'.repeat(63)]) {
+            const invalid = structuredClone(initial);
+            invalid.source.sourceFileSha256 = invalidDigest;
+            assert.throws(() => jobAidSourceFileReference(invalid), /JOBAID_SOURCE_FILE_BINDING_INVALID/);
+            await sql`UPDATE work_item SET projection_json=${JSON.stringify(invalid)} WHERE work_item_id=${initial.workItemId}`;
+            assert.equal(await browser(() => repository.loadOwnedSourceBinding({
+              ...scope, workItemId:initial.workItemId, kind:'SOURCE_FILE',
+            }, db)), null);
+          }
+          await sql`UPDATE work_item SET projection_json=${JSON.stringify(initial)} WHERE work_item_id=${initial.workItemId}`;
           const first = await begin(initial);
           assert.equal(first.status, 'RUNNING');
           assert.equal(first.task.modelInput.actorUserId, scope.actorUserId);

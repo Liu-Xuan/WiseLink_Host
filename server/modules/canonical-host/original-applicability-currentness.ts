@@ -1,3 +1,4 @@
+import { canonicalHostBareSha256 } from './canonical-host-sha256';
 import type { CanonicalWorkItemProjection } from '@shared/api.interface';
 import type { DocumentOriginalBinding } from '@shared/document-original.interface';
 import { canonicalJson } from '../action-attempt/action-attempt-envelope';
@@ -21,7 +22,7 @@ export function originalApplicabilityInputMatches(
     input.sourcePackageArtifactSha256 === null &&
     source.binding.documentVersionId === workItem.source.documentVersionId &&
     source.binding.sourceArtifactId === workItem.source.sourceArtifactId &&
-    source.binding.sourceSha256 === workItem.source.sourceFileSha256 &&
+    source.binding.sourceSha256 === canonicalHostBareSha256(workItem.source.sourceFileSha256) &&
     source.binding.sourceByteLength === workItem.source.sourceByteLength &&
     (!expected || canonicalJson(source.binding) === canonicalJson(expected))
   );

@@ -1,3 +1,4 @@
+import { canonicalHostBareSha256 } from './canonical-host-sha256';
 import { JobAidWorkRepository } from './jobaid-work.repository';
 import { MiaodaWorkItemRepository } from '../work-item/miaoda-work-item.repository';
 import { Inject, Injectable, Optional } from '@nestjs/common';
@@ -324,7 +325,7 @@ export class CanonicalHostApplicabilityInputProducer {
       const binding = loaded.original.binding;
       const artifact = loaded.run.manifestArtifact;
       if (binding.documentVersionId !== workItem.source.documentVersionId || binding.parseRunId !== bound.parseRunId ||
-        binding.sourceArtifactId !== workItem.source.sourceArtifactId || binding.sourceSha256 !== workItem.source.sourceFileSha256 ||
+        binding.sourceArtifactId !== workItem.source.sourceArtifactId || binding.sourceSha256 !== canonicalHostBareSha256(workItem.source.sourceFileSha256) ||
         binding.sourceByteLength !== workItem.source.sourceByteLength || !artifact || artifact.readback !== 'VERIFIED' ||
         artifact.relativePath !== 'original/manifest.json' || artifact.mediaType !== 'application/json') throw new Error('APPLICABILITY_ORIGINAL_BINDING_CHANGED');
       const originalSource: NonNullable<CanonicalApplicabilityInputProjection['originalSource']> = {binding,
@@ -439,7 +440,7 @@ function requiredApplicabilityInput(input: {
     canonicalSha256(value.originalSource ?? null) !== canonicalSha256(input.originalSource ?? null) ||
     (input.originalSource !== undefined && (input.originalSource.binding.documentVersionId !== input.workItem.source.documentVersionId ||
       input.originalSource.binding.sourceArtifactId !== input.workItem.source.sourceArtifactId ||
-      input.originalSource.binding.sourceSha256 !== input.workItem.source.sourceFileSha256 ||
+      input.originalSource.binding.sourceSha256 !== canonicalHostBareSha256(input.workItem.source.sourceFileSha256) ||
       input.originalSource.binding.sourceByteLength !== input.workItem.source.sourceByteLength)) ||
     value.targetBindingHash !== input.targetBindingHash ||
     !value.selectionRevision.trim() ||

@@ -27,8 +27,8 @@ describe('CanonicalHostApplicabilityInputProducer', () => {
     } finally {if(saved===undefined) delete process.env.WL_OPENCLAW_APPLICABILITY_CONTEXT_REF;else process.env.WL_OPENCLAW_APPLICABILITY_CONTEXT_REF=saved;}
   });
 
-  it('persists original provenance without a package and revalidates selection without file reads after publication', async () => {
-    const h=producerHarness({original:true});
+  it.each([false, true])('persists original provenance and revalidates prefixed=%s without a package', async prefixed => {
+    const h=producerHarness({original:true,prefixed});
     const scope=await h.serviceScope.authorizeOpenClawApplicabilityContext({applicabilityContextRef:'APCTX-OPAQUE-1',requestId:'request-original'});
     const produced=await h.producer.produceOriginalAuthorized(scope);
     expect(produced.applicabilityInput).toMatchObject({schemaVersion:'wiselink.3_1.applicability_input_projection.v2',
@@ -229,7 +229,7 @@ describe('CanonicalHostApplicabilityInputProducer', () => {
   });
 });
 
-function producerHarness(options: { p0b?: boolean; original?: boolean } = {}) {
+function producerHarness(options: { p0b?: boolean; original?: boolean; prefixed?: boolean } = {}) {
   const packageBytes = new TextEncoder().encode(
     JSON.stringify({
       sourceRefs: [{ sourceRefId: 'SRC-1' }],
@@ -265,6 +265,7 @@ function producerHarness(options: { p0b?: boolean; original?: boolean } = {}) {
   if (options.original) current.package=null;
   const original=originalFixture(); original.binding={documentVersionId:current.source.documentVersionId,parseRunId:'PR-2',
     parseRevision:2,sourceArtifactId:current.source.sourceArtifactId,sourceSha256:current.source.sourceFileSha256,sourceByteLength:current.source.sourceByteLength};
+  if (options.prefixed) current.source.sourceFileSha256 = `sha256:${current.source.sourceFileSha256}`;
   if (options.p0b) {
     Object.assign(current, servingProjectionSentinels(), {
       configurationEvidenceCurrent: {

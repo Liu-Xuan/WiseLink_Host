@@ -1,3 +1,5 @@
+import { drizzle } from 'drizzle-orm/postgres-js';
+import postgres from 'postgres';
 import { originalFixture } from './document-parsing/fixtures/document-original.fixture';
 import type {
   CanonicalApplicabilityCandidateProjection,
@@ -767,7 +769,7 @@ describe('CanonicalHost initial-analysis status projection', () => {
     const legacy=applicabilityCandidate(workItem,input,status);
     const original=originalFixture();
     original.binding={...original.binding,documentVersionId:workItem.source.documentVersionId,
-      sourceArtifactId:workItem.source.sourceArtifactId,sourceSha256:workItem.source.sourceFileSha256,
+      sourceArtifactId:workItem.source.sourceArtifactId,sourceSha256:workItem.source.sourceFileSha256.replace(/^sha256:/u,''),
       sourceByteLength:workItem.source.sourceByteLength};
     const originalSource={binding:original.binding,artifact:{ref:'document-original://fixture/parse',sha256:'c'.repeat(64),byteLength:100,mediaType:'application/json' as const}};
     workItem.applicabilityInput={...input,schemaVersion:'wiselink.3_1.applicability_input_projection.v2',
@@ -1135,3 +1137,60 @@ function artifact(name: string): UnifiedPackageArtifactDescriptor {
     mediaType: 'application/json',
   };
 }
+
+(process.env.WL_INITIAL_ORIGINAL_LOCAL_PG === '1' ? describe : describe.skip)(
+  'initial-analysis published original SQL against isolated PostgreSQL', () => {
+    const client = postgres({ host: '127.0.0.1', port: 55443, database: 'postgres', username: 'postgres', max: 1 });
+    const schema = `initial_original_fixture_${process.pid}`;
+    const database = drizzle(client);
+    const previousMode = process.env.WL_JOBAID_PROBLEM_V2_ENABLED;
+    const service = new CanonicalHostInitialAnalysisStatusService(database as never, {} as never);
+    beforeAll(async () => {
+      process.env.WL_JOBAID_PROBLEM_V2_ENABLED = '1';
+      await client.unsafe(`CREATE SCHEMA "${schema}"`);
+      await client.unsafe(`SET search_path TO "${schema}"`);
+      await client.unsafe(`CREATE TABLE dm_document_parse_run (
+        parse_run_id text, tenant_id text, document_version_id text, status text,
+        parse_revision integer, manifest_artifact jsonb, source_binding jsonb)`);
+      // Exercise the real original lookup; no attempts exist in this scenario.
+      jest.spyOn(database, 'selectDistinctOn').mockReturnValue({ from: () => ({
+        where: () => ({ orderBy: async () => [] }),
+      }) } as never);
+      await client`INSERT INTO dm_document_parse_run VALUES ('PR-original', 'tenant-1', 'DV-initial-1',
+        'PUBLISHED', 6, ${JSON.stringify({relativePath:'original/manifest.json'})}::jsonb,
+        ${JSON.stringify({sourceArtifactId:'source-artifact-1',pdfSha256:'a'.repeat(64),byteLength:1024})}::jsonb)`;
+    });
+    afterAll(async () => {
+      if (previousMode === undefined) delete process.env.WL_JOBAID_PROBLEM_V2_ENABLED;
+      else process.env.WL_JOBAID_PROBLEM_V2_ENABLED = previousMode;
+      try { await client.unsafe(`DROP SCHEMA IF EXISTS "${schema}" CASCADE`); }
+      finally { await client.end(); }
+    });
+    it.each(['a'.repeat(64), `sha256:${'a'.repeat(64)}`])(
+      'recognizes the exact published source for digest %s', async digest => {
+        const item = parsedWorkItem();
+        item.source.sourceFileSha256 = digest;
+        const result = await service.project({workItem:item,tenantId:'tenant-1',expectedOriginalParseRunId:'PR-original'});
+        expect(result.status).not.toBe('NOT_READY');
+      },
+    );
+    it.each([
+      {sourceFileSha256:`sha256:${'b'.repeat(64)}`}, {sourceFileSha256:'sha256:invalid'},
+      {sourceArtifactId:'other-source'}, {sourceByteLength:1025}, {documentVersionId:'other-version'},
+    ])('keeps a mismatched source blocked: %j', async mismatch => {
+      const item = parsedWorkItem();
+      Object.assign(item.source, mismatch);
+      expect((await service.project({workItem:item,tenantId:'tenant-1'})).status).toBe('NOT_READY');
+    });
+    it('keeps tenant, requested parse-run, publication and manifest fences', async () => {
+      const item = parsedWorkItem();
+      expect((await service.project({workItem:item,tenantId:'other-tenant'})).status).toBe('NOT_READY');
+      await expect(service.project({workItem:item,tenantId:'tenant-1',expectedOriginalParseRunId:'other-run'}))
+        .rejects.toThrow('JOBAID_ORIGINAL_REQUEST_CHANGED');
+      await client`UPDATE dm_document_parse_run SET status='FAILED'`;
+      expect((await service.project({workItem:item,tenantId:'tenant-1'})).status).toBe('NOT_READY');
+      await client`UPDATE dm_document_parse_run SET status='PUBLISHED', manifest_artifact='{}'::jsonb`;
+      expect((await service.project({workItem:item,tenantId:'tenant-1'})).status).toBe('NOT_READY');
+    });
+  },
+);

@@ -1,3 +1,4 @@
+import { canonicalHostBareSha256 } from './canonical-host-sha256';
 import type {
   AssessmentEvidence,
   AssessmentReadingClaim,
@@ -33,9 +34,10 @@ export interface JobAidSourceBinding {
 }
 
 export function jobAidSourceFileReference(item: CanonicalWorkItemProjection) {
-  if (!item.source.sourceArtifactId || !/^[a-f0-9]{64}$/u.test(item.source.sourceFileSha256 ?? ''))
+  const sha256 = canonicalHostBareSha256(item.source.sourceFileSha256);
+  if (!item.source.sourceArtifactId || !sha256)
     throw new Error('JOBAID_SOURCE_FILE_BINDING_INVALID');
-  return {ref:item.source.sourceArtifactId,sha256:item.source.sourceFileSha256};
+  return {ref:item.source.sourceArtifactId,sha256};
 }
 
 export interface JobAidProblemModelInput extends Record<string, unknown> {

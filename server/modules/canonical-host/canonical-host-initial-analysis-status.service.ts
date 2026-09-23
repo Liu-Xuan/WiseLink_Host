@@ -1,6 +1,7 @@
 import { CanonicalHostApplicabilityInputProducer } from './canonical-host-applicability-input.producer';
 import { originalApplicabilityInputMatches } from './original-applicability-currentness';
 import { canonicalJson } from '../action-attempt/action-attempt-envelope';
+import { canonicalHostBareSha256 } from './canonical-host-sha256';
 import { Inject, Injectable, Optional } from '@nestjs/common';
 import { JobAidWorkRepository } from './jobaid-work.repository';
 import { UnifiedReaderService } from '../unified-reader/unified-reader.service';
@@ -97,7 +98,8 @@ export class CanonicalHostInitialAnalysisStatusService {
       .where(and(eq(dmDocumentParseRun.tenantId,input.tenantId),eq(dmDocumentParseRun.documentVersionId,input.workItem.source.documentVersionId),
         eq(dmDocumentParseRun.status,'PUBLISHED'),sql`${dmDocumentParseRun.manifestArtifact}->>'relativePath' = 'original/manifest.json'`,
         sql`${dmDocumentParseRun.sourceBinding}->>'sourceArtifactId' = ${input.workItem.source.sourceArtifactId}`,
-        sql`${dmDocumentParseRun.sourceBinding}->>'pdfSha256' = ${input.workItem.source.sourceFileSha256}`,
+        // WorkItem projections may use sha256:<digest>; parser bindings use the bare digest.
+        sql`${dmDocumentParseRun.sourceBinding}->>'pdfSha256' = ${canonicalHostBareSha256(input.workItem.source.sourceFileSha256)}`,
         sql`${dmDocumentParseRun.sourceBinding}->>'byteLength' = ${String(input.workItem.source.sourceByteLength)}`))
       .orderBy(desc(dmDocumentParseRun.parseRevision)).limit(1);
     let published: Array<{id:string}> | null=null;
@@ -576,7 +578,7 @@ function applicabilityProjectionObservation(
       canonicalJson(applicability.originalSource) === canonicalJson(original) &&
       original.binding.documentVersionId === workItem.source.documentVersionId &&
       original.binding.sourceArtifactId === workItem.source.sourceArtifactId &&
-      original.binding.sourceSha256 === workItem.source.sourceFileSha256 &&
+      original.binding.sourceSha256 === canonicalHostBareSha256(workItem.source.sourceFileSha256) &&
       original.binding.sourceByteLength === workItem.source.sourceByteLength &&
       applicability.sourceReadingMode === 'VERIFIED_ENGLISH' && applicability.translationActionAttemptId === null
     : applicabilityInput?.sourcePackageId === workItem.package?.packageId &&

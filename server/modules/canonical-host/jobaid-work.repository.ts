@@ -1,3 +1,4 @@
+import { canonicalHostBareSha256 } from './canonical-host-sha256';
 import type { JobAidKnowledgeObservationStatus } from '@shared/jobaid-activity.interface';
 import { JOBAID_ACTIVITY_WINDOW, type JobAidExecutionObservation, type JobAidSavedActivityObservation } from './jobaid-activity';
 import { readHistoricalJobAidWork } from './jobaid-historical-reading';
@@ -136,9 +137,10 @@ export class JobAidWorkRepository {
     };
     if (input.kind === 'SOURCE_FILE') {
       const source=projection.source;
-      if (!source?.sourceArtifactId || !/^[a-f0-9]{64}$/u.test(source.sourceFileSha256 ?? '')) return null;
+      const sha256 = canonicalHostBareSha256(source?.sourceFileSha256);
+      if (!source?.sourceArtifactId || !sha256) return null;
       return {kind:'SOURCE_FILE',workItemId:input.workItemId,documentVersionId:row.documentVersionId,
-        artifactRef:source.sourceArtifactId,artifactSha256:source.sourceFileSha256!};
+        artifactRef:source.sourceArtifactId,artifactSha256:sha256};
     }
     const artifact = projection.package?.artifact;
     if (
@@ -623,7 +625,7 @@ export class JobAidWorkRepository {
         source?: {sourceArtifactId?: string;sourceFileSha256?: string};
       };
       if (binding.kind === 'SOURCE_FILE'
-        ? projection.source?.sourceArtifactId !== binding.artifactRef || projection.source?.sourceFileSha256 !== binding.artifactSha256
+        ? projection.source?.sourceArtifactId !== binding.artifactRef || canonicalHostBareSha256(projection.source?.sourceFileSha256) !== binding.artifactSha256
         : projection.package?.artifact?.sha256 !== binding.artifactSha256)
         throw new Error('JOBAID_SOURCE_VERSION_CHANGED');
       if (row.workItemId === attempt.workItemId) primary = row;
