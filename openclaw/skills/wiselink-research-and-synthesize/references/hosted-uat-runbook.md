@@ -138,9 +138,9 @@ c24 可选控制元数据兼容旧任务，但旧 Skill 不接受新字段，因
    优先读回非空、可识别的实际 `modelVersion`；响应未提供时，绑定任务记录 `configured-route:<modelRef>`，旧任务才使用唯一 configured endpoint。它们只证明路由，不解释为未暴露的下游具体模型。重复 agent、
    不可读 primary、fallbacks 非数组或非空均在调用模型前停止；
 4. 同名 Skill 只有一个，安装版本精确
-   `wiselink-research-and-synthesize@r09.c113`；
+   `wiselink-research-and-synthesize@r09.c114`；
 5. Host MCP package/version 为
-   `wiselink-openclaw-engineering-assessment@1.2.0`，exact 20 tools 可见；
+   `wiselink-openclaw-engineering-assessment@1.2.0`，exact 35 tools 可见；
 6. C3 successor 已进入 current Hosted release；只凭 Git commit 不等于 deployed readback；
 7. 凭据已轮换，托管日志/trace 不回显 Bearer、cookie、token、API key 或 FileService locator。
 
@@ -291,6 +291,6 @@ authenticated user。
 ## Non-claims
 
 本地 tests/lint/commit 只能证明 Skill 包合同。没有以上真实读回时，不宣称：Skill 已安装/发布、官方 profile 已
-使用此版本、20 tools 已在托管 UI 可见、Session create/resume 已跑通、profile 实际选择了哪个模型、fallback
+使用此版本、35 tools 已在托管 UI 可见、Session create/resume 已跑通、profile 实际选择了哪个模型、fallback
 路径是否仍提供可读实际 provenance、Applicability 端到端 Host/Hosted 路径、附件/search/compare/reevaluate/
 resynthesize 或端到端 UAT 完成。
