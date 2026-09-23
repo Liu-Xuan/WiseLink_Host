@@ -2,10 +2,6 @@ import { createElement } from 'react';
 import { act } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 import { MemoryRouter, useLocation } from 'react-router-dom';
-import type {
-  EngineeringMatterCatalogEntry,
-  EngineeringMatterReadModel,
-} from '@shared/api.interface';
 
 const mockGetMatter = jest.fn();
 
@@ -53,46 +49,6 @@ jest.mock('@client/src/features/atlas/AtlasLauncher', () => ({ __esModule: true,
 import TopBar from '../../client/src/features/navigation/TopBar';
 import Sidebar from '../../client/src/features/navigation/Sidebar';
 import { useLibraryDefaultSelection } from '../../client/src/pages/WorkspaceHomePage/useLibraryDefaultSelection';
-
-function entry(
-  documentVersionId: string,
-  selectedVersionIsCurrent: boolean,
-): EngineeringMatterCatalogEntry {
-  return {
-    workItemId: 'WI-1',
-    relationRole: 'PRIMARY',
-    linkedAtWorkItemRevision: 1,
-    currentWorkItemRevision: 1,
-    workItemChangedSinceLink: false,
-    workItemStatus: 'ACTIVE',
-    document: {
-      documentId: `DOC-${documentVersionId}`,
-      documentVersionId,
-      documentCode: `CODE-${documentVersionId}`,
-      businessRevision: 'R1',
-      normalizedFamily: `FAM-${documentVersionId}`,
-    },
-    documentCurrentness: {
-      familyId: `FAM-${documentVersionId}`,
-      currentDocumentVersionId: selectedVersionIsCurrent
-        ? documentVersionId
-        : null,
-      currentGeneration: 1,
-      selectedVersionIsCurrent,
-    },
-    sourceNavigation: {
-      status: 'NOT_PARSED',
-      sourceRefCount: 0,
-      structuredContentPath: null,
-    },
-  };
-}
-
-function matterWith(
-  entries: EngineeringMatterCatalogEntry[],
-): EngineeringMatterReadModel {
-  return { catalog: { entries } } as EngineeringMatterReadModel;
-}
 
 describe('sidebar global navigation identity', () => {
   const { JSDOM } = require('jsdom');
@@ -172,7 +128,6 @@ describe('sidebar global navigation identity', () => {
   }
 
   it('returns from the global Library button to the exact graph through the product toolbar', async () => {
-    mockGetMatter.mockResolvedValue(matterWith([]));
     const viewport = { zoom: 0.9348, pan: { x: -118.5, y: -138.05 } };
     const graph = new URLSearchParams({ matterId: 'M1', workRef: 'MWREV-16',
       viewport: JSON.stringify(viewport), layoutMode: 'force', density: '4',
@@ -197,29 +152,24 @@ describe('sidebar global navigation identity', () => {
     'matterId=M1&workRef=W1&workRef=W2', 'https://outside.test/graph',
     'matterId=M1&documentVersionId=DV1',
   ])('rejects malformed global graph return %s without a Library fallback', async raw => {
-    mockGetMatter.mockResolvedValue(matterWith([]));
     await mount(`/library?${new URLSearchParams({ returnLibraryGraphQuery: raw })}`);
     expect(container.querySelector<HTMLButtonElement>('.wl-pagebar-back')?.disabled).toBe(true);
   });
 
-  it('links a graph matter context to the timeline through the registered current source', async () => {
-    mockGetMatter.mockResolvedValue(
-      matterWith([entry('DV-OLD', false), entry('DV-CUR', true)]),
-    );
+  it('defers graph Matter source discovery until opening the timeline', async () => {
     await mount('/graph?matterId=M1');
-    expect(mockGetMatter).toHaveBeenCalledWith('M1', expect.anything());
-    expect(href('工程时间轴')).toBe('/timeline?documentVersionId=DV-CUR');
+    expect(mockGetMatter).not.toHaveBeenCalled();
+    expect(href('工程时间轴')).toBe('/timeline?matterId=M1');
     expect(href('关系图谱')).toBe('/graph?matterId=M1');
   });
 
-  it('links a current matter page to the timeline through the registered current source', async () => {
-    mockGetMatter.mockResolvedValue(matterWith([entry('DV-CUR', true)]));
+  it('preserves the current Matter identity without a background sidebar read', async () => {
     await mount('/matters/M1');
-    expect(href('工程时间轴')).toBe('/timeline?documentVersionId=DV-CUR');
+    expect(mockGetMatter).not.toHaveBeenCalled();
+    expect(href('工程时间轴')).toBe('/timeline?matterId=M1');
   });
 
   it('forwards the matter identity instead of clearing it when no source is registered', async () => {
-    mockGetMatter.mockResolvedValue(matterWith([]));
     await mount('/matters/M1');
     expect(href('工程时间轴')).toBe('/timeline?matterId=M1');
   });
@@ -230,7 +180,6 @@ describe('sidebar global navigation identity', () => {
   });
 
   it('carries the library matter and document selection into graph and timeline', async () => {
-    mockGetMatter.mockResolvedValue(matterWith([entry('DV7', true)]));
     await mount('/library?selectedMatterId=M7&selectedDocumentVersionId=DV7');
     expect(href('关系图谱')).toBe('/graph?matterId=M7');
     expect(href('工程时间轴')).toBe('/timeline?documentVersionId=DV7');
@@ -244,7 +193,6 @@ describe('sidebar global navigation identity', () => {
   });
 
   it('E1 REVIEW R2: pending matter source preserves matter in timeline target', async () => {
-    mockGetMatter.mockImplementation(() => new Promise(() => undefined));
     await mount('/graph?matterId=M1');
     expect(href('工程时间轴')).toBe('/timeline?matterId=M1');
   });
@@ -265,14 +213,13 @@ describe('sidebar global navigation identity', () => {
   });
 
   it('E1 REVIEW R2: explicit version wins over matter current source', async () => {
-    mockGetMatter.mockResolvedValue(matterWith([entry('DV-CUR', true)]));
     await mount('/graph?matterId=M1&documentVersionId=DV-HIST');
     expect(new URLSearchParams(href('工程时间轴')!.split('?')[1]).get('documentVersionId')).toBe('DV-HIST');
   });
 
-  it('E1 FINAL: query historical work identity survives graph sidebar link', async () => { mockGetMatter.mockResolvedValue(matterWith([])); await mount('/graph?matterId=M1&workRef=MWREV-HIST'); expect(new URLSearchParams(href('关系图谱')!.split('?')[1]).get('workRef')).toBe('MWREV-HIST'); });
+  it('E1 FINAL: query historical work identity survives graph sidebar link', async () => { await mount('/graph?matterId=M1&workRef=MWREV-HIST'); expect(new URLSearchParams(href('关系图谱')!.split('?')[1]).get('workRef')).toBe('MWREV-HIST'); });
 
-  it('E1 FINAL: graph sidebar preserves explicit activity identity even with matter context', async () => { mockGetMatter.mockResolvedValue(matterWith([entry('DV-CUR', true)])); await mount('/graph?matterId=M1&documentVersionId=DV-HIST&parseRunId=P1&candidateRevision=2&runRef=R2&returnLibraryQuery=mode%3Ddocument'); const query = new URLSearchParams(href('关系图谱')!.split('?')[1]); expect(query.get('documentVersionId')).toBe('DV-HIST'); expect(query.get('parseRunId')).toBe('P1'); expect(query.get('returnLibraryQuery')).toBe('mode=document'); });
+  it('E1 FINAL: graph sidebar preserves explicit activity identity even with matter context', async () => { await mount('/graph?matterId=M1&documentVersionId=DV-HIST&parseRunId=P1&candidateRevision=2&runRef=R2&returnLibraryQuery=mode%3Ddocument'); const query = new URLSearchParams(href('关系图谱')!.split('?')[1]); expect(query.get('documentVersionId')).toBe('DV-HIST'); expect(query.get('parseRunId')).toBe('P1'); expect(query.get('returnLibraryQuery')).toBe('mode=document'); });
   it('keeps the saved knowledge matter and revision instead of opening a default matter', async () => {
     await mount('/knowledge?subjectKind=ENGINEERING_MATTER&subjectId=M-SAVED&workRef=MWREV-OLD&articleY=19000');
     const graph = new URL(href('关系图谱')!, 'https://example.test');
@@ -280,7 +227,6 @@ describe('sidebar global navigation identity', () => {
     expect(graph.searchParams.get('workRef')).toBe('MWREV-OLD');
     expect(new URLSearchParams(graph.searchParams.get('returnKnowledgeQuery')!).get('articleY')).toBe('19000');
     expect(mockGetMatter).not.toHaveBeenCalled();
-    mockGetMatter.mockResolvedValue(matterWith([]));
     await act(async () => container.querySelector<HTMLAnchorElement>('a[aria-label="关系图谱"]')!.click());
     const back = container.querySelector<HTMLButtonElement>('.wl-pagebar-back')!;
     expect(back.getAttribute('aria-label')).toBe('返回工程知识');
@@ -301,7 +247,6 @@ describe('sidebar global navigation identity', () => {
     'subjectKind=ENGINEERING_MATTER&subjectId=M-SAVED&workRef=W&matterId=M-OTHER',
     'subjectKind=ENGINEERING_MATTER&subjectId=M-SAVED&workRef=W&documentVersionId=DV-OTHER',
   ])('does not turn invalid or conflicting knowledge identity into a default graph: %s', async (query) => {
-    mockGetMatter.mockResolvedValue(matterWith([]));
     await mount(`/knowledge?${query}`);
     expect(href('关系图谱')).toBe('/graph?matterId=');
   });

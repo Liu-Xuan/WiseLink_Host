@@ -1177,12 +1177,17 @@ export default function DocumentParsingPage() {
               <div className="parse-panel-label">
                 <Fingerprint /> 结构化内容
               </div>
-              <h3>结构化内容尚未形成</h3>
+              <h3>当前事项没有可浏览的结构化内容</h3>
               <p className="parse-empty">
                 {data.workItem.failure || data.workItem.recordingFailure
-                  ? '解析未完成，请刷新或联系支持人员。'
-                  : '文件正在等待解析。'}
+                  ? '本事项的解析或记录未完成，请刷新或联系支持人员。'
+                  : '文档版本的已发布原文请在原文页核对；此处为空不表示原文为空。'}
               </p>
+              {data.workItem.source.documentVersionId ? (
+                <Link to={`/document-versions/${encodeURIComponent(data.workItem.source.documentVersionId)}`}>
+                  阅读当前文档版本的原文与解析状态
+                </Link>
+              ) : null}
             </article>
           )}
         </RetainedWorkbenchPanel>
@@ -1214,6 +1219,7 @@ export default function DocumentParsingPage() {
               onClearSourceRef={() =>
                 updateDeepLink({ unit: null, sourceRef: null, page: null })
               }
+              onBrowseStructured={() => updateDeepLink({ panel: 'package' })}
             />
             <PdfSourcePane
               data={data}

@@ -30,6 +30,7 @@ interface DocumentReaderWorkspaceProps {
   onReaderModeChange: (mode: ReaderViewMode) => void;
   onSourceRefSelect: (unitId: string, sourceRef: string) => void;
   onClearSourceRef: () => void;
+  onBrowseStructured: () => void;
   onContinuationRequested?: () => void;
 }
 
@@ -69,6 +70,7 @@ export function DocumentReaderWorkspace({
   onReaderModeChange,
   onSourceRefSelect,
   onClearSourceRef,
+  onBrowseStructured,
   onContinuationRequested,
 }: DocumentReaderWorkspaceProps) {
   const capabilities: ReaderCapability[] = buildReaderCapabilities({
@@ -359,8 +361,24 @@ export function DocumentReaderWorkspace({
                   ) : null}
                 </article>
               ))
+            ) : !data.workItem.package ? (
+              <div className="parse-empty">
+                <p>当前事项尚无可查询的结构化内容；这里的 0 条结果不代表文档版本的已发布原文为空。</p>
+                {data.workItem.source.documentVersionId ? (
+                  <Link to={`/document-versions/${encodeURIComponent(data.workItem.source.documentVersionId)}`}>
+                    阅读当前文档版本的已发布原文
+                  </Link>
+                ) : null}
+              </div>
+            ) : !data.readerProjection?.query && !requestedSourceRef ? (
+              <div className="parse-empty">
+                <p>尚未查询来源绑定单元。可输入关键词，或打开完整结构化内容浏览。</p>
+                <Button type="button" variant="ghost" onClick={onBrowseStructured}>
+                  浏览完整结构化内容
+                </Button>
+              </div>
             ) : (
-              <p className="parse-empty">没有匹配的来源绑定单元。</p>
+              <p className="parse-empty">当前条件没有匹配的来源绑定单元。</p>
             )}
           </div>
         </section>

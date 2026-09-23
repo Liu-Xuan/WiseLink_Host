@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useState } from 'react';
 import {
   BookMarked,
   Compass,
@@ -17,14 +17,8 @@ import {
   type WlVisualMode,
 } from '@client/src/app/providers/ThemeProvider';
 import { useCurrentObjectContext } from '@client/src/app/providers/CurrentObjectContextProvider';
-import { useCurrentUserSession } from '@client/src/app/providers/CurrentUserSessionProvider';
-import { getEngineeringMatter } from '@client/src/api/engineering-matter';
 import WiseLinkBrandMark from '@client/src/components/WiseLinkBrandMark';
 import { activityReadingParams, knowledgeReadingIdentity, knowledgeReadingParams, libraryGraphReturnRoute } from '@client/src/features/matter/reading-return';
-import type {
-  EngineeringMatterCatalogEntry,
-  EngineeringMatterReadModel,
-} from '@shared/api.interface';
 import {
   Dialog,
   DialogContent,
@@ -36,7 +30,6 @@ import {
   buildShellObjectLinks,
   deriveShellRouteContext,
   deriveShellUrlIdentity,
-  selectMatterTimelineSources,
   shortId,
   type ShellObjectLink,
   type ShellRouteContext,
@@ -100,8 +93,6 @@ const Sidebar: React.FC<SidebarProps> = ({ mobileOpen, onMobileClose }) => {
     documentVersionId ||
     urlIdentity.documentVersionId ||
     urlIdentity.librarySelectedDocumentVersionId;
-  const { sessionGeneration, authenticationRequired } =
-    useCurrentUserSession();
   const { currentObject } = useCurrentObjectContext();
   const {
     theme,
@@ -140,32 +131,6 @@ const Sidebar: React.FC<SidebarProps> = ({ mobileOpen, onMobileClose }) => {
       : shortId(routeObjectId);
   const objectCode: string =
     !workRef && currentObject ? currentObject.displayCode : '';
-
-  const [matterTimelineSources, setMatterTimelineSources] = useState<
-    EngineeringMatterCatalogEntry[] | null
-  >(null);
-  useEffect(() => {
-    if (!graphMatterId || authenticationRequired) {
-      setMatterTimelineSources(null);
-      return;
-    }
-    const controller = new AbortController();
-    setMatterTimelineSources(null);
-    void getEngineeringMatter(graphMatterId, controller.signal)
-      .then((read: EngineeringMatterReadModel) => {
-        if (!controller.signal.aborted) {
-          setMatterTimelineSources(
-            selectMatterTimelineSources(read.catalog.entries),
-          );
-        }
-      })
-      .catch(() => {
-        if (!controller.signal.aborted) {
-          setMatterTimelineSources(null);
-        }
-      });
-    return () => controller.abort();
-  }, [graphMatterId, sessionGeneration, authenticationRequired]);
 
   const currentSearchParams = new URLSearchParams(location.search);
   // An illegal object pin stays visibly blocked: forward it as an empty pin so the
@@ -260,16 +225,9 @@ const Sidebar: React.FC<SidebarProps> = ({ mobileOpen, onMobileClose }) => {
       }
       if (graphMatterId) {
         const query = activityReadingParams(currentSearchParams);
-        const firstSource = matterTimelineSources?.[0];
-        if (firstSource) {
-          query.set(
-            'documentVersionId',
-            firstSource.document.documentVersionId,
-          );
-        } else {
-          // Pending or unregistered matter source: keep the explicit matter identity.
-          query.set('matterId', graphMatterId);
-        }
+        // The destination resolves the registered source after the user opens it.
+        // Sidebar rendering should not start a second Matter read on every route.
+        query.set('matterId', graphMatterId);
         return `${target}?${query}`;
       }
       return target;

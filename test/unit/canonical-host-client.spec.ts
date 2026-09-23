@@ -720,6 +720,7 @@ describe('canonical host assessment client', () => {
     expect(request).toHaveBeenCalledWith({
       url: '/api/canonical-host/work-items/WI-SB-1001/document-parsing',
       method: 'GET',
+      timeout: 45_000,
     });
   });
 
@@ -732,6 +733,7 @@ describe('canonical host assessment client', () => {
     expect(request).toHaveBeenCalledWith({
       url: '/api/canonical-host/work-items/WI-SB-1001/document-parsing',
       method: 'GET',
+      timeout: 45_000,
     });
   });
 
@@ -822,6 +824,7 @@ describe('canonical host assessment client', () => {
     expect(request).toHaveBeenCalledWith({
       url: '/api/canonical-host/work-items/WI-SB-1001/document-parsing',
       method: 'GET',
+      timeout: 45_000,
       params: { query: 'sourceRef APP-001' },
     });
   });
@@ -839,6 +842,7 @@ describe('canonical host assessment client', () => {
     expect(request).toHaveBeenCalledWith({
       url: '/api/canonical-host/work-items/WI-SB-1001/document-parsing',
       method: 'GET',
+      timeout: 45_000,
       params: {
         sourceRef: 'urn:techpub:source-ref:v1:sha256:abc123',
         _fresh: expect.any(String),
@@ -1122,6 +1126,7 @@ describe('canonical host assessment client', () => {
     expect(request).toHaveBeenNthCalledWith(1, {
       url: '/api/work-items/WI-1/review-conversations/current?matterId=M%2F1',
       method: 'GET',
+      timeout: 45_000,
     });
     expect(request).toHaveBeenNthCalledWith(2, {
       url: '/api/work-items/WI-1/review-conversations/current',
@@ -1202,10 +1207,32 @@ describe('canonical host assessment client', () => {
     expect(request).toHaveBeenNthCalledWith(1, {
       url: '/api/work-items/WI-SB-1001/review-conversations/current',
       method: 'GET',
+      timeout: 45_000,
     });
     expect(request).toHaveBeenNthCalledWith(2, {
       url: '/api/work-items/WI-SB-1001/review-conversations/current',
       method: 'GET',
+      timeout: 45_000,
+    });
+  });
+
+  it('settles a timed-out saved Review GET as explicitly retryable without masking access denial', async () => {
+    request.mockRejectedValueOnce({ code: 'ECONNABORTED' });
+    await expect(getCurrentReviewConversation('WI-SB-1001')).rejects.toMatchObject({
+      code: 'REVIEW_CONVERSATION_READ_TIMEOUT',
+      retryable: true,
+    });
+    expect(request).toHaveBeenCalledWith({
+      url: '/api/work-items/WI-SB-1001/review-conversations/current',
+      method: 'GET',
+      timeout: 45_000,
+    });
+    request.mockRejectedValueOnce({
+      code: 'ETIMEDOUT',
+      response: { status: 403, data: {} },
+    });
+    await expect(getCurrentReviewConversation('WI-SB-1001')).rejects.toMatchObject({
+      statusCode: 404,
     });
   });
 

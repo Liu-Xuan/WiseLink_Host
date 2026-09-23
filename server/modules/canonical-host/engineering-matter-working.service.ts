@@ -25,6 +25,7 @@ import {
 import { engineeringMatterPendingInputs } from './engineering-matter-working-state';
 import { materialInputBindings } from './matter-material';
 import { isHostedCanonicalFinalUserActor } from '../work-item/miaoda-hosted-canonical-object-access.adapter';
+import { EngineeringReadPhaseObservation, observeEngineeringRead } from './engineering-read-phase-observation';
 import {
   EngineeringMatterRepository,
   type EngineeringMatterRevisionLinkSnapshot,
@@ -75,16 +76,19 @@ export class EngineeringMatterWorkingService {
     matterId: string,
     workRef: string,
     actor: CanonicalHostActor,
+    observation?: EngineeringReadPhaseObservation,
   ): Promise<EngineeringMatterWorkingRevisionReadModel> {
     // The exact saved revision below already owns its original bindings. Keep
     // fresh member/source checks, but do not hydrate current parse/semantic state
     // whose result is not consumed by this read.
-    await this.authorizedMatter(matterId, actor, 0, false);
-    const revision = await this.working.readByRef({
+    await observeEngineeringRead(observation, 'matter_authorize_current', () =>
+      this.authorizedMatter(matterId, actor, 0, false));
+    const revision = await observeEngineeringRead(observation, 'matter_read_saved', () => this.working.readByRef({
       tenantId: actor.tenantId,
       matterId,
       workRef,
-    });
+      observation,
+    }));
     if (!revision) throw matterNotFound();
     // Historical work can contain a member that is no longer in the current composition.
     const savedMembers = [
@@ -101,7 +105,8 @@ export class EngineeringMatterWorkingService {
     // members checked, and settle the whole group before rejecting so no reads
     // escape the request or overlap a caller's retry after an early rejection.
     for (let start = 0; start < savedMembers.length; start += 4) {
-      await this.requireInputs(savedMembers.slice(start, start + 4), actor);
+      await observeEngineeringRead(observation, 'matter_recheck_saved_members', () =>
+        this.requireInputs(savedMembers.slice(start, start + 4), actor));
     }
     return revision;
   }

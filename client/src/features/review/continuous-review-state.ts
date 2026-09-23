@@ -177,7 +177,10 @@ export function reviewOperationErrorPresentation(
     userMessage =
       '当前浏览器缺少安全请求标识能力，请使用受支持的飞书客户端或浏览器。';
   }
-  if (operation === 'refresh' && !reviewErrorRevokesReadback(reason)) {
+  if (operation === 'refresh' && code === 'REVIEW_CONVERSATION_READ_TIMEOUT' &&
+      !reviewErrorRevokesReadback(reason)) {
+    userMessage = '读取讨论超时，请重新读取；已保存记录仍可供追溯。';
+  } else if (operation === 'refresh' && !reviewErrorRevokesReadback(reason)) {
     userMessage = '未能读取最新复核记录，请重新读取；未提交的草稿仍保留。';
   }
   return {

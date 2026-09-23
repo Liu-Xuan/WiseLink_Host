@@ -12,6 +12,10 @@ export function documentFailureAllowsReviewReadback(cause: unknown): boolean {
     (typeof response === 'object' && response !== null && 'status' in response
       ? response.status
       : null);
+  if (status === 401 || status === 403 || status === 404) return false;
+  // A bounded document GET may time out while the separately authorized saved
+  // conversation remains readable. Do not treat an access denial as a timeout.
+  if (error.code === 'ECONNABORTED' || error.code === 'ETIMEDOUT') return true;
   return typeof status === 'number' && status >= 500 && status <= 599;
 }
 

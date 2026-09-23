@@ -151,6 +151,18 @@ describe('saved review readback with unavailable source document', () => {
     expect(
       documentFailureAllowsReviewReadback(new Error('unknown failure')),
     ).toBe(false);
+    expect(
+      documentFailureAllowsReviewReadback({ code: 'ECONNABORTED' }),
+    ).toBe(true);
+    expect(
+      documentFailureAllowsReviewReadback({ code: 'ETIMEDOUT' }),
+    ).toBe(true);
+    expect(
+      documentFailureAllowsReviewReadback({
+        code: 'ECONNABORTED',
+        response: { status: 403 },
+      }),
+    ).toBe(false);
   });
 
   it('does not start document or review reads when identity discovery fails', async () => {
@@ -233,6 +245,33 @@ describe('saved review readback with unavailable source document', () => {
     expect(html).toContain('复核记录刷新失败');
     expect(html).not.toContain('事项版本 0');
     expect(html).not.toContain('独立接口未返回已保存讨论');
+  });
+
+  it('settles a retryable timeout and keeps saved discussion marked as old', async () => {
+    const timeout = { code: 'REVIEW_CONVERSATION_READ_TIMEOUT', retryable: true };
+    const onFresh = jest.fn();
+    const onError = jest.fn();
+    const onSettled = jest.fn();
+    await runSavedReviewReadback({
+      workItemId: 'WI-SAVED',
+      isCurrent: () => true,
+      read: async () => { throw timeout; },
+      onFresh,
+      onError,
+      onSettled,
+    });
+    expect(onFresh).not.toHaveBeenCalled();
+    expect(onError).toHaveBeenCalledWith(timeout);
+    expect(onSettled).toHaveBeenCalledTimes(1);
+    const html: string = render(
+      readback([reviewUiTurn(14, true)]),
+      timeout,
+    );
+    expect(html).toContain('读取讨论超时，请重新读取');
+    expect(html).toContain('不代表最新执行状态');
+    expect(html).toContain('重新读取讨论');
+    expect(html).not.toContain('正在读取讨论…');
+    expect(html).not.toContain('当前事项不可访问');
   });
 
   it('rejects another object even if the conversation read returned 200', async () => {
