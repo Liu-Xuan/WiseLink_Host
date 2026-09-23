@@ -1,0 +1,79 @@
+{
+  "date": "2026-09-23",
+  "sourceParent": "1df244c42597a019ccf7299ebf33668e9c1285bb",
+  "evidenceParent": "6966b9d863d678608a63ccf072dac4397877833a",
+  "change": "For multi-member Matter working reads, settle fresh READ_WORK_ITEM grants first, then load tenant-scoped WorkItem projections and exact source identity in one SQL statement for that request group. A single member keeps its original reader.",
+  "invariants": [
+    "Every linked and saved WorkItem receives a fresh object access decision on each request; denied groups execute no projection batch.",
+    "Selected WorkItem rows are tenant-scoped, and the four required source registration joins remain subject to PostgreSQL RLS.",
+    "The granted documentVersionId is compared against the selected WorkItem, and projection/source document and version identities are checked before returning a binding.",
+    "Projection parsing precedes source validation and follows request order. Historical saved members remain in groups of four, and both Matter version confirmations remain.",
+    "No source or permission result is cached across requests; no schema, role, tenant policy, or formal adoption path changed."
+  ],
+  "isolatedPostgres": {
+    "version": "14.17",
+    "host": "127.0.0.1",
+    "port": 55441,
+    "database": "wiselink_engineering_matter_test",
+    "fullMatterTests": 8,
+    "sourceJoinRlsTests": 13,
+    "directRepositorySql": {
+      "twoSeparateSingleReads": 2,
+      "oneBatchRead": 1,
+      "sourceRequiredInnerJoins": 4
+    },
+    "fullReadStatementCounts": [
+      {
+        "path": "two-member-current",
+        "parent": 18,
+        "candidate": 17
+      },
+      {
+        "path": "two-member-exact-saved",
+        "parent": 15,
+        "candidate": 13
+      },
+      {
+        "path": "one-member-no-corrections",
+        "parent": 11,
+        "candidate": 11
+      },
+      {
+        "path": "one-member-with-prior-result",
+        "parent": 17,
+        "candidate": 17
+      },
+      {
+        "path": "one-member-three-overview-corrections",
+        "parent": 13,
+        "candidate": 13
+      }
+    ],
+    "comparisonMethod": "Same fixed local fixture; candidate and exact parent implementations run separately against the same isolated database and existing full Matter test. Raw logs remain in local temporary storage."
+  },
+  "verification": {
+    "unitSuites": 4,
+    "unitTests": 71,
+    "serverTypes": "pass",
+    "scopedLint": "pass",
+    "serverBuild": "pass",
+    "diffCheck": "pass",
+    "explicitCases": [
+      "batch waits for all fresh grants",
+      "denied member starts no batch",
+      "missing second row fails",
+      "changed second source version fails",
+      "second source document mismatch fails",
+      "non-owner tenant/RLS hidden rows fail",
+      "each required source table hidden by RLS fails",
+      "malformed projection and missing source retain error precedence",
+      "source digest mismatch fails"
+    ]
+  },
+  "limits": [
+    "Local query counts and millisecond timings do not establish published latency or p95.",
+    "Published 1df traces showed no overlap of SQL spans, but that observation does not prove a general driver property.",
+    "A multi-member current composition uses one batch for all current linked WorkItems; saved historical members retain groups of four.",
+    "Independent review, selective integration, release, and same-sample deployed timing/background competition remain pending."
+  ]
+}

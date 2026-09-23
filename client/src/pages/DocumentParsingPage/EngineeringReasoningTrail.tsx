@@ -32,7 +32,11 @@ export function EngineeringReasoningTrail({
   const dynamic = integrated?.baseRules ?? null;
   const overall = integrated?.overallSynthesis ?? null;
   const timeline = data.timeline;
-  const sourceRefCount: number = data.workItem.package?.sourceRefCount ?? 0;
+  const sourceRefCount: number | null =
+    data.workItem.package?.sourceRefCount ?? null;
+  const originalReady: boolean =
+    data.initialAnalysis !== undefined &&
+    data.initialAnalysis.status !== 'NOT_READY';
   const unresolvedCount: number = isJobAidProblemProjection(dynamic)
     ? dynamic.openQuestionCount
     : (dynamic?.unresolvedCount ?? 0);
@@ -48,11 +52,17 @@ export function EngineeringReasoningTrail({
     },
     {
       label: '验证并建立来源定位',
-      status: data.workItem.package ? '结构化原文可查看' : '等待解析结果',
+      status: data.workItem.package
+        ? '结构化原文可查看'
+        : originalReady
+          ? '已发布原文可查看'
+          : '等待解析结果',
       detail: data.workItem.package
         ? `${data.workItem.package.contentUnitCount} 个内容单元 · ${data.workItem.package.sourceRefCount} 条来源依据`
-        : '尚无可读的结构化解析结果',
-      state: data.workItem.package ? 'done' : 'pending',
+        : originalReady
+          ? '已发布原文可用于后续评估；来源定位请在原文阅读中核对'
+          : '尚无可读的结构化解析结果',
+      state: data.workItem.package || originalReady ? 'done' : 'pending',
       icon: BookOpenCheck,
     },
     {
@@ -114,9 +124,17 @@ export function EngineeringReasoningTrail({
             <span>
               <strong>{data.queryResults.length}</strong> 项当前查询结果
             </span>
-            <span>
-              <strong>{sourceRefCount}</strong> 条来源依据
-            </span>
+            {sourceRefCount === null ? (
+              <span>
+                {originalReady
+                  ? '来源依据以已发布原文的实际阅读结果为准'
+                  : '尚无可计数的来源依据'}
+              </span>
+            ) : (
+              <span>
+                <strong>{sourceRefCount}</strong> 条来源依据
+              </span>
+            )}
             <span>
               <strong>{unresolvedCount}</strong> 项未闭合
             </span>

@@ -1776,6 +1776,7 @@ export default function DocumentParsingPage() {
             data={data}
             onOpenAssessment={() => updateDeepLink({ panel: 'assessment' })}
             onOpenReview={() => updateDeepLink({ panel: 'review' })}
+            onRefresh={() => void load(activeQuery)}
           />
         ) : null}
 

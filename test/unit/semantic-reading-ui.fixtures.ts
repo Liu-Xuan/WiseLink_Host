@@ -177,6 +177,11 @@ export function jobAidReadingFixture(): JobAidWorkingReadModel {
     schemaVersion: 'wiselink.jobaid-working-read.v2',
     enabled: true,
     workItemId: 'work-item-test',
+    latestAttempt: {
+      attemptId: 'attempt-test',
+      status: 'FAILED',
+      inputRevision: 5,
+    },
     executionStatus: 'FAILED',
     currentInputChanged: false,
     overallStatus: 'STALE',

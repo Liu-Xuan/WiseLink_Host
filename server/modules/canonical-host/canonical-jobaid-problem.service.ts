@@ -1319,7 +1319,7 @@ export class CanonicalJobAidProblemService {
     });
     // A new attempt may legitimately retain the previous saved body, but all
     // three observations must come from the same database snapshot.
-    const { execution, current, savedActivity } = await this.work.readBrowserSnapshot({
+    const { execution, current, savedActivity, latestAttempt } = await this.work.readBrowserSnapshot({
       tenantId: actor.tenantId,
       workItemId,
       documentVersionId: workItem.source.documentVersionId,
@@ -1338,6 +1338,7 @@ export class CanonicalJobAidProblemService {
       schemaVersion: 'wiselink.jobaid-working-read.v2',
       workItemId,
       current,
+      latestAttempt,
       enabled:
         !!current ||
         isJobAidProblemProjection(base) ||

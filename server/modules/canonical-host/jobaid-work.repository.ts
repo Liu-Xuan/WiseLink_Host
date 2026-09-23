@@ -280,6 +280,7 @@ export class JobAidWorkRepository {
   }) {
     const rows = await this.db.execute<{
       execution: JobAidExecutionObservation | null;
+      latestAttempt: { attemptId: string; status: string; inputRevision: number | null } | null;
       current: (Omit<StoredJobAidWork, 'createdAt'> & { createdAt: string }) | null;
       savedActivity: Array<Omit<JobAidSavedActivityObservation, 'createdAt'> & { createdAt: string }>;
     }>(sql`
@@ -295,6 +296,17 @@ export class JobAidWorkRepository {
           AND ${actionAttempt.actionType} IN ('OPENCLAW_DYNAMIC_EVALUATION', 'OPENCLAW_OVERALL_SYNTHESIS')
         ORDER BY CASE WHEN ${actionAttempt.status} IN ('QUEUED', 'RUNNING', 'RETRY_SCHEDULED', 'COMMITTING') THEN 1 ELSE 0 END DESC,
           ${actionAttempt.createdAt} DESC, ${actionAttempt.attemptId} DESC LIMIT 1
+      ), selected_dynamic AS (
+        SELECT ${actionAttempt.attemptId} AS "attemptId", ${actionAttempt.status} AS "status",
+          ${actionAttempt.inputRevision} AS "inputRevision"
+        FROM ${actionAttempt}
+        WHERE ${actionAttempt.tenantId} = ${input.tenantId}
+          AND ${actionAttempt.workItemId} = ${input.workItemId}
+          AND ${actionAttempt.documentVersionId} = ${input.documentVersionId}
+          AND ${actionAttempt.subjectKind} = 'WORK_ITEM'
+          AND ${actionAttempt.requestOrigin} = ${ACTION_ATTEMPT_REQUEST_ORIGIN}
+          AND ${actionAttempt.actionType} = 'OPENCLAW_DYNAMIC_EVALUATION'
+        ORDER BY ${actionAttempt.attemptNo} DESC, ${actionAttempt.attemptId} DESC LIMIT 1
       ), selected_work AS (
         SELECT ${assessmentWorkRevision.assessmentWorkRevisionId} AS "assessmentWorkRevisionId",
           ${assessmentWorkRevision.workItemId} AS "workItemId", ${assessmentWorkRevision.workRevision} AS "workRevision",
@@ -318,13 +330,15 @@ export class JobAidWorkRepository {
         ORDER BY ${assessmentWorkRevision.workRevision} DESC LIMIT ${JOBAID_ACTIVITY_WINDOW + 1}
       )
       SELECT (SELECT to_jsonb(e) FROM selected_execution e) AS "execution",
+        (SELECT to_jsonb(d) FROM selected_dynamic d) AS "latestAttempt",
         (SELECT to_jsonb(w) FROM selected_work w) AS "current",
         (SELECT COALESCE(jsonb_agg(to_jsonb(s) ORDER BY s."workRevision" DESC), '[]'::jsonb)
           FROM selected_saves s) AS "savedActivity"
     `);
     const row = rows[0];
     if (!row) throw new Error('JOBAID_SNAPSHOT_READBACK_MISSING');
-    return { execution: row.execution, current: row.current ? project({ ...row.current, createdAt: new Date(row.current.createdAt) }) : null,
+    return { execution: row.execution, latestAttempt: row.latestAttempt,
+      current: row.current ? project({ ...row.current, createdAt: new Date(row.current.createdAt) }) : null,
       savedActivity: row.savedActivity.map(saved => ({ ...saved, createdAt: new Date(saved.createdAt) })) };
   }
 

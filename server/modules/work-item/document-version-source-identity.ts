@@ -1,5 +1,5 @@
 import type { PostgresJsDatabase } from '@lark-apaas/fullstack-nestjs-core';
-import { and, eq, sql } from 'drizzle-orm';
+import { and, eq, inArray, sql } from 'drizzle-orm';
 import {
   dmAcquisition,
   dmDocumentVersion,
@@ -13,6 +13,22 @@ export function sourceIdentityQuery(
   db: PostgresJsDatabase,
   documentVersionId: string,
 ) {
+  return sourceIdentityBase(db)
+    .where(eq(dmDocumentVersion.documentVersionId, documentVersionId))
+    .limit(1);
+}
+
+/** The same required registration joins for a bounded, already-authorized group. */
+export function sourceIdentityBatchQuery(
+  db: PostgresJsDatabase,
+  documentVersionIds: string[],
+) {
+  return sourceIdentityBase(db).where(
+    inArray(dmDocumentVersion.documentVersionId, documentVersionIds),
+  );
+}
+
+function sourceIdentityBase(db: PostgresJsDatabase) {
   return db
     .select({
       version: {
@@ -53,9 +69,7 @@ export function sourceIdentityQuery(
         ),
         eq(dmIngressPreflight.status, 'COMMITTED'),
       ),
-    )
-    .where(eq(dmDocumentVersion.documentVersionId, documentVersionId))
-    .limit(1);
+    );
 }
 
 export function assertSourceIdentity(value: {

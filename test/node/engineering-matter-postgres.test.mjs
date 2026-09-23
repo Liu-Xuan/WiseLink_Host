@@ -834,9 +834,10 @@ test(
           ftd.documentCurrentness.currentDocumentVersionId,
           'document_version_fd88dcb9cf64cf3ba21033ef',
         );
-        const workingAfterInputAdvance = await owner.workingService.readWorking(
-          created.matter.matterId,
-          owner.actor,
+        const workingAfterInputAdvance = await profileSavedRead(
+          owner,
+          'two-member-current',
+          () => owner.workingService.readWorking(created.matter.matterId, owner.actor),
         );
         assert.deepEqual(
           workingAfterInputAdvance.pendingInputs.map((pending) => ({
@@ -2282,11 +2283,8 @@ async function assertWorkingRevisionFlow(
 
   assert.equal(exact.state.problemWork.issues[0].riskScenarios[0].score, null);
   assert.deepEqual(
-    await owner.workingService.readWorkingRevision(
-      matterId,
-      exactInput.workRef,
-      owner.actor,
-    ),
+    await profileSavedRead(owner, 'two-member-exact-saved', () =>
+      owner.workingService.readWorkingRevision(matterId, exactInput.workRef, owner.actor)),
     exact,
   );
   assert.equal(

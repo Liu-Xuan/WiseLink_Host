@@ -1,0 +1,87 @@
+{
+  "date": "2026-09-23",
+  "appId": "app_17bzc551rsg",
+  "releaseId": "7688504423391595498",
+  "releaseCommit": "1df244c42597a019ccf7299ebf33668e9c1285bb",
+  "releaseStatus": "finished",
+  "releaseErrorLogs": [],
+  "method": "Read-only official release-get and trace-list/get; three paired requests from one published window. Raw traces remain private.",
+  "samples": [
+    {
+      "sample": "cold1",
+      "path": "work",
+      "traceId": "828199f7e4bbaac150e6a8d837e915f1",
+      "complete": true,
+      "serverMs": 2328.12,
+      "dataSpanCount": 20,
+      "sumDataSpanMs": 290.98,
+      "maxObservedDataSpanOverlap": 1,
+      "workItemSpanCount": 12
+    },
+    {
+      "sample": "cold1",
+      "path": "catalogue",
+      "traceId": "1dec8c674eb7448afbdbf386c8a68c04",
+      "complete": true,
+      "serverMs": 3145.63,
+      "dataSpanCount": 52,
+      "sumDataSpanMs": 1036.35,
+      "maxObservedDataSpanOverlap": 1,
+      "workItemSpanCount": 24
+    },
+    {
+      "sample": "cold2",
+      "path": "work",
+      "traceId": "6190acced182a45535dc9b42dc1c160c",
+      "complete": true,
+      "serverMs": 2265.28,
+      "dataSpanCount": 20,
+      "sumDataSpanMs": 319.3,
+      "maxObservedDataSpanOverlap": 1,
+      "workItemSpanCount": 12
+    },
+    {
+      "sample": "cold2",
+      "path": "catalogue",
+      "traceId": "6bba872f83c9a9a1e19ab821573edfea",
+      "complete": true,
+      "serverMs": 2860.74,
+      "dataSpanCount": 52,
+      "sumDataSpanMs": 1022.79,
+      "maxObservedDataSpanOverlap": 1,
+      "workItemSpanCount": 24
+    },
+    {
+      "sample": "cold3",
+      "path": "work",
+      "traceId": "7f82b10688a378b209ad887ce74c1b14",
+      "complete": true,
+      "serverMs": 2232.16,
+      "dataSpanCount": 20,
+      "sumDataSpanMs": 239.21,
+      "maxObservedDataSpanOverlap": 1,
+      "workItemSpanCount": 12
+    },
+    {
+      "sample": "cold3",
+      "path": "catalogue",
+      "traceId": "af66bfe22a051e362482a38115c8a49b",
+      "complete": true,
+      "serverMs": 2807.59,
+      "dataSpanCount": 52,
+      "sumDataSpanMs": 1059.61,
+      "maxObservedDataSpanOverlap": 1,
+      "workItemSpanCount": 24
+    }
+  ],
+  "interpretation": [
+    "All six complete traces record data spans without overlap. This does not prove that the database driver cannot overlap queries generally.",
+    "The live catalogue path is EngineeringIssueSearchService.catalogue, which authorizes full exact saved work per entry; EngineeringMatterDirectoryService.list is a different endpoint.",
+    "Controlled Promise overlap alone is not evidence of deployed latency improvement. Reducing independent post-authorization SQL round trips is the next candidate; preserve fresh per-member access, tenant/source identity, version checks, and error precedence."
+  ],
+  "limits": [
+    "Three request pairs are not p95 or a controlled background-load comparison.",
+    "Trace spans do not explain every interval between SQL operations or isolate network, CPU, and platform scheduling.",
+    "No product code changed in this evidence batch."
+  ]
+}

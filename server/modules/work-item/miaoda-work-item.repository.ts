@@ -13,7 +13,7 @@ import type {
   CanonicalExecutionModelSelection,
 } from '@shared/api.interface';
 import { isRetryableParseFailureCode } from '@shared/parse-retry-policy';
-import { sourceIdentityQuery } from './document-version-source-identity';
+import { sourceIdentityBatchQuery, sourceIdentityQuery } from './document-version-source-identity';
 import { actionAttempt, workItem } from '../../database/schema';
 import { readStoredExecutionModel } from '../model-settings/canonical-execution-model';
 import { canonicalModelError } from '../model-settings/canonical-model-catalog';
@@ -537,6 +537,61 @@ export class MiaodaWorkItemRepository {
       sourceIdentity: value.sourceVersion && value.sourceArtifact
         ? { version: value.sourceVersion, artifact: value.sourceArtifact } : null,
     };
+  }
+
+  /** One tenant-scoped statement for the request members after fresh access grants. */
+  async loadTenantScopedMemberIdentities(
+    inputs: readonly { workItemId: string; documentVersionId: string }[],
+    tenantId: string,
+  ) {
+    const output = new Map<
+      string,
+      NonNullable<
+        Awaited<
+          ReturnType<MiaodaWorkItemRepository['loadTenantScopedMemberIdentity']>
+        >
+      >
+    >();
+    if (inputs.length === 0) return output;
+    const workItemIds = [...new Set(inputs.map((input) => input.workItemId))];
+    const documentVersionIds = [
+      ...new Set(inputs.map((input) => input.documentVersionId)),
+    ];
+    const identity = sourceIdentityBatchQuery(this.db, documentVersionIds).as(
+      'member_source_identity_batch',
+    );
+    const rows = await this.db
+      .select({
+        row: workItem,
+        sourceVersion: identity.version,
+        sourceArtifact: identity.artifact,
+      })
+      .from(workItem)
+      .leftJoin(
+        identity,
+        eq(identity.version.documentVersionId, workItem.documentVersionId),
+      )
+      .where(
+        and(
+          eq(workItem.tenantId, tenantId),
+          inArray(workItem.workItemId, workItemIds),
+        ),
+      );
+    const rowById = new Map(rows.map(value => [value.row.workItemId, value]));
+    for (const input of inputs) {
+      const value = rowById.get(input.workItemId);
+      if (!value || output.has(input.workItemId)) continue;
+      // Parse in request order and before source validation, as the single reader does.
+      output.set(input.workItemId, {
+        row: value.row,
+        projection: parseProjection(value.row.projectionJson),
+        sourceIdentity:
+          value.sourceVersion && value.sourceArtifact
+            ? { version: value.sourceVersion, artifact: value.sourceArtifact }
+            : null,
+      });
+    }
+    return output;
   }
 
   async loadAuthorizationBinding(input: {

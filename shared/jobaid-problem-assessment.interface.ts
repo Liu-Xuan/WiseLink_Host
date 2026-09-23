@@ -225,6 +225,12 @@ export interface JobAidWorkingReadModel {
   enabled: boolean;
   workItemId: string;
   current: JobAidWorkRevision | null;
+  /** Latest exact WorkItem evaluation request, independent of saved work. */
+  latestAttempt: {
+    attemptId: string;
+    status: string;
+    inputRevision: number | null;
+  } | null;
   executionStatus: string | null;
   /** Optional for compatibility with Host versions before activity projection. */
   activity?: JobAidActivityRead | null;
