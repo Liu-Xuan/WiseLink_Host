@@ -56,6 +56,7 @@ function page(
     enabled: true,
     workItemId,
     current: null,
+    latestAttempt: null,
     executionStatus: status,
     currentInputChanged: false,
     overallStatus: 'NOT_AVAILABLE',

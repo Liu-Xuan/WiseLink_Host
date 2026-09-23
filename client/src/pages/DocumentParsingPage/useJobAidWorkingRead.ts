@@ -15,6 +15,8 @@ export function preserveJobAidRead(
   return previous?.workItemId === next.workItemId &&
     previous.enabled === next.enabled &&
     previous.current?.workRevisionRef === next.current?.workRevisionRef &&
+    previous.latestAttempt?.attemptId === next.latestAttempt?.attemptId &&
+    previous.latestAttempt?.status === next.latestAttempt?.status &&
     previous.executionStatus === next.executionStatus &&
     JSON.stringify(previous.activity) === JSON.stringify(next.activity) &&
     previous.currentInputChanged === next.currentInputChanged &&

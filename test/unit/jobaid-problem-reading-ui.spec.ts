@@ -112,7 +112,8 @@ describe('problem-oriented JobAid reading', () => {
   it('shows live execution before the first work is saved', () => {
     const data = jobAidReadingFixture();
     data.current = null;
-    data.executionStatus = 'RUNNING';
+    data.executionStatus = null;
+    data.latestAttempt!.status = 'RUNNING';
     const html = renderToStaticMarkup(
       createElement(JobAidProblemReading, {
         data,
@@ -120,9 +121,53 @@ describe('problem-oriented JobAid reading', () => {
       }),
     );
     expect(html).toContain('尚无已保存的问题分析');
-    expect(html).toContain('运行：正在执行');
+    expect(html).toContain('最近一次评估请求：正在执行');
     expect(html).toContain('目前尚无已保存的分析结果');
     expect(html).not.toContain('执行完成');
+  });
+  it('distinguishes not started from a failed request without saved work', () => {
+    const data = jobAidReadingFixture();
+    data.current = null;
+    data.executionStatus = null;
+    data.latestAttempt = null;
+    const notStarted = renderToStaticMarkup(
+      createElement(JobAidProblemReading, {
+        data,
+        onLocateDocument: jest.fn(),
+      }),
+    );
+    expect(notStarted).toContain('尚无已保存的问题分析');
+    expect(notStarted).not.toContain('最近一次评估请求');
+    data.latestAttempt = {
+      attemptId: 'attempt-failed',
+      status: 'FAILED',
+      inputRevision: 5,
+    };
+    const failed = renderToStaticMarkup(
+      createElement(JobAidProblemReading, {
+        data,
+        onLocateDocument: jest.fn(),
+      }),
+    );
+    expect(failed).toContain('最近一次评估请求：执行失败');
+    expect(failed).toContain('目前尚无已保存的分析结果');
+  });
+  it('keeps saved work visible while a later request runs', () => {
+    const data = jobAidReadingFixture();
+    data.latestAttempt = {
+      attemptId: 'attempt-next',
+      status: 'RUNNING',
+      inputRevision: 6,
+    };
+    const html = renderToStaticMarkup(
+      createElement(JobAidProblemReading, {
+        data,
+        onLocateDocument: jest.fn(),
+      }),
+    );
+    expect(html).toContain('data-work-revision-ref="work-current-test"');
+    expect(html).toContain('后续评估请求：正在执行');
+    expect(html).toContain('先前已保存的工作保持可读');
   });
   it('shows unknown grades as unknown and keeps other classification identities separate', () => {
     const html = renderToStaticMarkup(
@@ -163,6 +208,9 @@ describe('problem-oriented JobAid reading', () => {
     const updated = structuredClone(data);
     updated.current!.workRevisionRef = 'work-new-test';
     expect(preserveJobAidRead(data, updated)).toBe(updated);
+    const running = structuredClone(data);
+    running.latestAttempt!.status = 'RUNNING';
+    expect(preserveJobAidRead(data, running)).toBe(running);
     expect(jobAidReadAfterFailure(data, { statusCode: 503 })).toBe(data);
     expect(jobAidReadAfterFailure(data, {})).toBe(data);
     for (const statusCode of [401, 403, 404])

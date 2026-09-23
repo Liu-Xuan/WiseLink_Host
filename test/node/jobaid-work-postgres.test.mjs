@@ -191,6 +191,33 @@ test(
         );
       await seed(sql);
       await t.test(
+        'latest evaluation attempt reads exact tenant, WorkItem and document version before work exists',
+        async () => {
+          const target = {
+            tenantId: scope.tenantId,
+            workItemId: 'WI-attempt-read',
+            documentVersionId: 'dv-attempt-read',
+          };
+          await sql`INSERT INTO work_item(work_item_id,tenant_id,requested_by_user_id,revision,document_version_id)
+            VALUES (${target.workItemId},${target.tenantId},${scope.actorUserId},1,${target.documentVersionId})`;
+          assert.equal((await repository.readBrowserSnapshot(target)).latestAttempt, null);
+          const insert = async (id, type, status, attemptNo, documentVersionId = target.documentVersionId) => {
+            await sql`INSERT INTO action_attempt(attempt_id,operation_ref,work_item_id,tenant_id,actor_user_id,subject_kind,action_type,request_origin,status,input_revision,base_revision,document_version_id,task_input_hash,attempt_no)
+              VALUES (${id},${`AQ-${id}`},${target.workItemId},${target.tenantId},${scope.actorUserId},'WORK_ITEM',${type},'OPENCLAW_MCP_V1',${status},1,1,${documentVersionId},${hash},${attemptNo})`;
+          };
+          await insert('ATT-attempt-read-1', 'OPENCLAW_DYNAMIC_EVALUATION', 'FAILED', 1);
+          await insert('ATT-attempt-read-2', 'OPENCLAW_DYNAMIC_EVALUATION', 'RUNNING', 2);
+          await insert('ATT-attempt-read-other-action', 'OPENCLAW_OVERALL_SYNTHESIS', 'SUCCEEDED', 3);
+          await insert('ATT-attempt-read-other-version', 'OPENCLAW_DYNAMIC_EVALUATION', 'SUCCEEDED', 4, 'dv-other');
+          const latest = (await repository.readBrowserSnapshot(target)).latestAttempt;
+          assert.equal(latest?.attemptId, 'ATT-attempt-read-2');
+          assert.equal(latest?.status, 'RUNNING');
+          assert.equal(latest?.inputRevision, 1);
+          assert.equal((await repository.readBrowserSnapshot({ ...target, tenantId: 'other-tenant' })).latestAttempt, null);
+          assert.equal((await repository.readBrowserSnapshot({ ...target, workItemId: scope.workItemId })).latestAttempt, null);
+        },
+      );
+      await t.test(
         'knowledge rebinding and reservation share one WorkItem transaction',
         async () => {
           const workItemId = 'WI-knowledge-rebind';

@@ -172,6 +172,14 @@ export function JobAidProblemReading({
         </p>
         {execution}
         <JobAidExecutionActivity activity={data.activity} />
+        {data.latestAttempt ? (
+          <p role="status">
+            最近一次评估请求：
+            {executionLabels[data.latestAttempt.status] ??
+              data.latestAttempt.status}
+            。目前尚无已保存的分析结果。
+          </p>
+        ) : null}
         {actions}
       </section>
     );
@@ -252,6 +260,15 @@ export function JobAidProblemReading({
         {actions}
         {execution}
         <JobAidExecutionActivity activity={data.activity} />
+        {data.latestAttempt &&
+        data.latestAttempt.attemptId !== current.actionAttemptId ? (
+          <p role="status">
+            后续评估请求：
+            {executionLabels[data.latestAttempt.status] ??
+              data.latestAttempt.status}
+            。先前已保存的工作保持可读。
+          </p>
+        ) : null}
         <p>{content.completionReason}</p>
       </header>
       {data.currentInputChanged ? (
