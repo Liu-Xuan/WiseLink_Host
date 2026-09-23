@@ -1111,6 +1111,10 @@ async function authorizedReadModel(
     reviewActivityJson: actionAttempt.reviewActivityJson,
   }).from(actionAttempt).where(and(
     eq(actionAttempt.tenantId, row.tenantId), eq(actionAttempt.matterId, row.matterId),
+    // Matter review requests are created with this exact scope. Keep the
+    // partial Matter index eligible before inspecting task-envelope JSON.
+    sql`${actionAttempt.subjectKind} = 'ENGINEERING_MATTER'`,
+    eq(actionAttempt.actionType, 'OPENCLAW_MATTER_ASSESSMENT'),
     or(correctionMatch, overviewMatch),
   )).orderBy(asc(actionAttempt.createdAt));
   const corrections = noticeAttempts.filter(item => item.isCorrection);
