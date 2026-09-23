@@ -109,6 +109,21 @@ describe('problem-oriented JobAid reading', () => {
       html.indexOf('wl-jobaid-index'),
     );
   });
+  it('shows live execution before the first work is saved', () => {
+    const data = jobAidReadingFixture();
+    data.current = null;
+    data.executionStatus = 'RUNNING';
+    const html = renderToStaticMarkup(
+      createElement(JobAidProblemReading, {
+        data,
+        onLocateDocument: jest.fn(),
+      }),
+    );
+    expect(html).toContain('尚无已保存的问题分析');
+    expect(html).toContain('运行：正在执行');
+    expect(html).toContain('目前尚无已保存的分析结果');
+    expect(html).not.toContain('执行完成');
+  });
   it('shows unknown grades as unknown and keeps other classification identities separate', () => {
     const html = renderToStaticMarkup(
       createElement(JobAidProblemReading, {
