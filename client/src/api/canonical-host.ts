@@ -206,6 +206,7 @@ export async function getCanonicalHostIdentityContext(): Promise<CanonicalHostId
       const response = await axiosForBackend<CanonicalHostIdentityContext>({
         url: '/api/canonical-host/identity-context',
         method: 'GET',
+        timeout: 45_000,
       });
       if (response.status === 401 || response.status === 403) {
         requireCanonicalHostClientAuthentication(generation);
@@ -1004,6 +1005,7 @@ export async function getDocumentParsingPage(
       await axiosForBackend<CanonicalDocumentParsingPageResponse>({
         url: `/api/canonical-host/work-items/${encodeURIComponent(workItemId)}/document-parsing`,
         method: 'GET',
+        timeout: 45_000,
         ...(Object.keys(params).length === 0 ? {} : { params }),
         ...(cacheBypassFreshRead
           ? {
@@ -1412,6 +1414,7 @@ export async function getCurrentReviewConversation(
     url: reviewConversationCurrentUrl(workItemId, reviewScope),
     method: 'GET',
     operation: '读取当前工程复核讨论',
+    timeoutMs: 45_000,
   });
 }
 
@@ -1476,6 +1479,7 @@ async function reviewConversationRequest<T>(input: {
     | ConfirmReviewActionDraftRequest;
   operation: string;
   signal?: AbortSignal;
+  timeoutMs?: number;
 }): Promise<T> {
   const requestGeneration = clientSessionGeneration;
   try {
@@ -1483,6 +1487,7 @@ async function reviewConversationRequest<T>(input: {
       url: input.url,
       method: input.method,
       signal: input.signal,
+      ...(input.timeoutMs === undefined ? {} : { timeout: input.timeoutMs }),
       ...(input.data === undefined ? {} : { data: input.data }),
     });
     if (response.status === 401) {
@@ -1509,6 +1514,20 @@ async function reviewConversationRequest<T>(input: {
     return response.data;
   } catch (error) {
     logCanonicalRequestFailure(`${input.operation}失败`, error);
+    if (
+      input.timeoutMs !== undefined &&
+      responseStatus(error) === null &&
+      isRecord(error) &&
+      ![401, 403, 404].includes(
+        typeof error.statusCode === 'number' ? error.statusCode : 0,
+      ) &&
+      ['ECONNABORTED', 'ETIMEDOUT'].includes(String(error.code ?? ''))
+    ) {
+      throw Object.assign(new Error('REVIEW_CONVERSATION_READ_TIMEOUT'), {
+        code: 'REVIEW_CONVERSATION_READ_TIMEOUT',
+        retryable: true,
+      });
+    }
     throw normalizedReviewConversationError(error, requestGeneration);
   }
 }
