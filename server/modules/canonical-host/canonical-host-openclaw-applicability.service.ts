@@ -1,3 +1,4 @@
+import { canonicalHostBareSha256 } from './canonical-host-sha256';
 import { bindOriginalApplicabilityCandidate } from './original-applicability-candidate';
 import { Inject, Injectable } from '@nestjs/common';
 
@@ -2512,7 +2513,7 @@ function applicabilityProjectionSourceMatches(
       projection.sourcePackageContentHash === null && canonicalJson(projection.originalSource) === canonicalJson(original) &&
       original.binding.documentVersionId === workItem.source.documentVersionId &&
       original.binding.sourceArtifactId === workItem.source.sourceArtifactId &&
-      original.binding.sourceSha256 === workItem.source.sourceFileSha256 &&
+      original.binding.sourceSha256 === canonicalHostBareSha256(workItem.source.sourceFileSha256) &&
       original.binding.sourceByteLength === workItem.source.sourceByteLength;
   }
   return projection.schemaVersion ===

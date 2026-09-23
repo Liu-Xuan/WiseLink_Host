@@ -1,3 +1,4 @@
+import { canonicalHostBareSha256 } from './canonical-host-sha256';
 import type { JobAidKnowledgeObservationStatus } from '@shared/jobaid-activity.interface';
 import { projectJobAidActivity } from './jobaid-activity';
 import { originalApplicabilityResultMatches } from './original-applicability-currentness';
@@ -500,7 +501,7 @@ export class CanonicalJobAidProblemService {
     const semanticMap = await this.work.withActorScope(actorUserId, () => this.semantics!.read(
       {tenantId,actorUserId,documentVersionId:workItem.source.documentVersionId,roles:[]},original));
     if (original.original.binding.sourceArtifactId !== workItem.source.sourceArtifactId ||
-      original.original.binding.sourceSha256 !== workItem.source.sourceFileSha256 ||
+      original.original.binding.sourceSha256 !== canonicalHostBareSha256(workItem.source.sourceFileSha256) ||
       original.original.binding.sourceByteLength !== workItem.source.sourceByteLength)
       throw new Error('JOBAID_ORIGINAL_FILE_BINDING_MISMATCH');
     const assessmentWorkItem = workItem.applicability?.schemaVersion==='wiselink.3_1.applicability_candidate_projection.v3' &&
