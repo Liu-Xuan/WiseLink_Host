@@ -4,7 +4,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import test from 'node:test';
 
-import { consumeHostedWorkItem } from '../scripts/consume-hosted-work-item.mjs';
+import { consumeHostedWorkItem, initialStageLimit } from '../scripts/consume-hosted-work-item.mjs';
 
 function status(overrides = {}) {
   return { entry: { workItemId: 'WI-new' }, initialAnalysis: {
@@ -20,6 +20,75 @@ async function options(t) {
   t.after(() => rm(checkpointRoot, { recursive: true, force: true }));
   return { workItemId: 'WI-new', checkpointRoot, applicabilityContextRef: 'AC-authorized', maxInitialStages: 1 };
 }
+
+test('CLI stage limit accepts only one WorkItem initial stage', () => {
+  assert.deepEqual(initialStageLimit([], 'WI-new'), {});
+  assert.deepEqual(initialStageLimit(['--max-initial-stages', '1'], 'WI-new'),
+    { maxInitialStages: 1, initialStageOnly: true });
+  for (const argv of [
+    ['--max-initial-stages'],
+    ['--max-initial-stages', '0'],
+    ['--max-initial-stages', '2'],
+    ['--max-initial-stages=1'],
+    ['--max-initial-stages', '1', '--max-initial-stages', '1'],
+  ]) {
+    assert.throws(() => initialStageLimit(argv, 'WI-new'), /INITIAL_STAGE_LIMIT_INVALID/);
+  }
+  assert.throws(() => initialStageLimit(['--max-initial-stages', '1'], null, 'MAT-new'),
+    /INITIAL_STAGE_LIMIT_INVALID/);
+  assert.throws(() => initialStageLimit(['--max-initial-stages', '1'], null, null, 'DV-new'),
+    /INITIAL_STAGE_LIMIT_INVALID/);
+});
+
+test('single-stage mode runs current JobAid once and leaves Overall pending', async t => {
+  const input = { ...await options(t), initialStageOnly: true };
+  let saved = false;
+  const calls = [];
+  const result = await consumeHostedWorkItem(input, {
+    callTool: async name => {
+      calls.push(name);
+      assert.equal(name, 'get_parse_status');
+      return status({
+        status: 'WAITING_INPUT',
+        nextOperation: saved ? 'SYNTHESIZE_OVERALL' : 'EVALUATE_JOBAID',
+        stages: {
+          translation: { status: 'PENDING' },
+          applicability: { status: 'WAITING_INPUT' },
+          jobAid: { status: saved ? 'SUCCEEDED' : 'PENDING' },
+          overall: { status: 'PENDING' },
+        },
+      });
+    },
+    runInitial: async run => {
+      assert.equal(run.operation, 'EVALUATE_JOBAID');
+      saved = true;
+      return { outcome: 'CANDIDATE_READY' };
+    },
+  });
+  assert.equal(saved, true);
+  assert.deepEqual(calls, ['get_parse_status', 'get_parse_status']);
+  assert.deepEqual(result.completedStages, ['EVALUATE_JOBAID']);
+  assert.equal(result.nextOperation, 'SYNTHESIZE_OVERALL');
+});
+
+test('single-stage mode leaves original-impact conflict untouched', async t => {
+  const input = { ...await options(t), initialStageOnly: true };
+  const calls = [];
+  const result = await consumeHostedWorkItem(input, {
+    callTool: async name => {
+      calls.push(name);
+      assert.equal(name, 'get_parse_status');
+      return status({ status: 'CONFLICT', nextOperation: null,
+        stages: { translation: { status: 'PENDING' },
+          applicability: { status: 'WAITING_INPUT' },
+          jobAid: { status: 'CONFLICT', terminalCode: 'DOCUMENT_ORIGINAL_IMPACT_REVIEW_REQUIRED' },
+          overall: { status: 'PENDING' } } });
+    },
+    runInitial: async () => assert.fail('a conflicted stage must not start'),
+  });
+  assert.equal(result.status, 'REQUIRES_ATTENTION');
+  assert.deepEqual(calls, ['get_parse_status']);
+});
 
 test('an explicit queued request uses its own checkpoint and preserves the old failed run', async (t) => {
   const input = await options(t);
