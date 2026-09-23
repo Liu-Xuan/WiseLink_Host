@@ -58,7 +58,7 @@ export async function consumeHostedWorkItem(options, dependencies) {
     workItemId: options.workItemId,
   });
   let initial = readInitialStatus(statusResult, options.workItemId);
-  if (initial.status !== 'BUSY' && initial.status !== 'NOT_READY') {
+  if (!options.initialStageOnly && initial.status !== 'BUSY' && initial.status !== 'NOT_READY') {
     // An explicit Review is an independent request. In particular, a Matter
     // review can assess parsed material before JobAid/Overall are available.
     // The Host still validates the queued turn's scope and prerequisites.
@@ -71,7 +71,7 @@ export async function consumeHostedWorkItem(options, dependencies) {
       return { ...review, initialStatus: initial.status, initialStages: initial.stages };
     }
   }
-  if (Object.values(initial.stages).some(stage => stage.status === 'CONFLICT' &&
+  if (!options.initialStageOnly && Object.values(initial.stages).some(stage => stage.status === 'CONFLICT' &&
       stage.terminalCode === 'DOCUMENT_ORIGINAL_IMPACT_REVIEW_REQUIRED')) {
     await dependencies.callTool('next_original_assessment', {workItemId:options.workItemId});
     statusResult = await dependencies.callTool('get_parse_status', {workItemId:options.workItemId});
@@ -81,6 +81,7 @@ export async function consumeHostedWorkItem(options, dependencies) {
   }
   let assessmentRecovery = await findInitialAssessmentRecovery(options, initial);
   if (assessmentRecovery?.status === 'REQUIRES_ATTENTION') return { ...assessmentRecovery, completedStages: [] };
+  if (options.initialStageOnly && options.maxInitialStages !== 1) throw new Error('INITIAL_STAGE_LIMIT_INVALID');
   const limit = options.maxInitialStages ?? INITIAL_ANALYSIS_OPERATIONS.length;
   if (!Number.isSafeInteger(limit) || limit < 1 || limit > INITIAL_ANALYSIS_OPERATIONS.length) throw new Error('INITIAL_STAGE_LIMIT_INVALID');
   const tickStartedAt = Date.now();
@@ -312,6 +313,19 @@ function option(argv, name) {
   return index < 0 ? undefined : argv[index + 1];
 }
 
+export function initialStageLimit(argv, workItemId, matterId, documentVersionId) {
+  if (argv.some(arg => arg.startsWith('--max-initial-stages='))) {
+    throw new Error('INITIAL_STAGE_LIMIT_INVALID');
+  }
+  const occurrences = argv.filter(arg => arg === '--max-initial-stages').length;
+  if (!occurrences) return {};
+  if (occurrences !== 1 || option(argv, '--max-initial-stages') !== '1' ||
+      !workItemId || matterId || documentVersionId) {
+    throw new Error('INITIAL_STAGE_LIMIT_INVALID');
+  }
+  return { maxInitialStages: 1, initialStageOnly: true };
+}
+
 export async function consumeHostedDocument(
   { documentVersionId, activityRunRef, readingRunRef, leaseOwner },
   { callTool, documentTranslationCheckpoint, activityCheckpoint, invokeActivityModel, readingCheckpoint, invokeReadingModel }) {
@@ -473,13 +487,14 @@ function assertSingleConsumerSubject({ workItemId, matterId, documentVersionId }
 
 async function main(argv, env) {
   if (argv.includes('--help')) {
-    process.stdout.write('Usage: node consume-hosted-work-item.mjs [--work-item-id WI-...] [--matter-id MAT-...] [--document-version-id DV] [--applicability-context-ref REF] [--checkpoint-root PATH] [--openclaw-config PATH] [--native-session-store PATH] [--document-translation-recovery ID] [--activity-run-ref ID] [--reading-run-ref ID] [--lease-owner ID]\nOne native job per authorized subject. Choose exactly one WorkItem, Matter or DocumentVersion; independent jobs use native cron concurrency.\n');
+    process.stdout.write('Usage: node consume-hosted-work-item.mjs [--work-item-id WI-...] [--matter-id MAT-...] [--document-version-id DV] [--max-initial-stages 1] [--applicability-context-ref REF] [--checkpoint-root PATH] [--openclaw-config PATH] [--native-session-store PATH] [--document-translation-recovery ID] [--activity-run-ref ID] [--reading-run-ref ID] [--lease-owner ID]\nOne native job per authorized subject. Choose exactly one WorkItem, Matter or DocumentVersion; independent jobs use native cron concurrency. --max-initial-stages 1 is WorkItem-only and consumes at most the current initial stage, without Review or original-impact work.\n');
     return;
   }
   const workItemId = option(argv, '--work-item-id');
   const matterId = option(argv, '--matter-id');
   const documentVersionId = option(argv, '--document-version-id');
   assertSingleConsumerSubject({ workItemId, matterId, documentVersionId });
+  const stageLimit = initialStageLimit(argv, workItemId, matterId, documentVersionId);
   const runtime = await resolveRuntimeConfig(argv, env);
   assertHostedModelGatewayReady(runtime);
   const activityRunRef = option(argv, '--activity-run-ref');
@@ -518,6 +533,7 @@ async function main(argv, env) {
       workItemId,
       matterId,
       documentVersionId,
+      ...stageLimit,
       applicabilityContextRef: option(argv, '--applicability-context-ref'),
       checkpointRoot,
       activityRunRef,
