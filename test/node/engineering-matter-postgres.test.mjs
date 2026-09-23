@@ -149,11 +149,11 @@ test('cross Matter references save exact lineage and reauthorize scopes and root
             textLayerStatus: 'PRESENT', visualContentVerified: false, evidence: original }] })));
       const savedA = await save(fenceA, first.reserved.task, `A has an unverified target condition. [[${rootRef}]]`, 'save-A',
         { overview: `Synthetic overview with a condition requiring review. [[${rootRef}]]` });
-      owner.queryMetrics.overviewSaveQueries = 0;
+      owner.queryMetrics.noticeSaveQueries = 0;
       const withoutCorrections = await profileSavedRead(owner, 'one-member-no-corrections', () =>
         owner.workingService.readWorkingRevision(a.matter.matterId, savedA.workRevisionRef, owner.actor));
       assert.deepEqual(withoutCorrections.overviewCorrectionNotices ?? [], []);
-      assert.equal(owner.queryMetrics.overviewSaveQueries, 0, 'no saved-metadata query when there are no correction notices');
+      assert.equal(owner.queryMetrics.noticeSaveQueries, 0, 'no saved-metadata query when there are no correction notices');
       const referenceA = { matterId: a.matter.matterId, workRef: savedA.workRevisionRef, issueKey: 'conditions', purpose: 'Compare A with B' };
       const requestB = await requestFor(b.matter.matterId, 'reference-import-B', [referenceA]);
       const browserReferences = new EngineeringIssueSearchService(owner.database, {}, owner.workingService, undefined, service, {
@@ -349,11 +349,11 @@ test('cross Matter references save exact lineage and reauthorize scopes and root
       assert.equal(savedNotice.savedWorkingRevision, 3);
       const nextOverview = await start({ ...await requestFor(a.matter.matterId, 'overview-review-newer-A'),
         overviewCorrection: { ...overviewPurpose, expectedWorkRef: overviewResaved.workRevisionRef } });
-      owner.queryMetrics.overviewSaveQueries = 0;
+      owner.queryMetrics.noticeSaveQueries = 0;
       const exactOldA = await profileSavedRead(owner, 'one-member-three-overview-corrections', () =>
         owner.workingService.readWorkingRevision(a.matter.matterId, savedA.workRevisionRef, owner.actor));
       assert.equal(exactOldA.overviewCorrectionNotices.length, 3);
-      assert.equal(owner.queryMetrics.overviewSaveQueries, 1, 'all three correction attempts resolve saved metadata in one query');
+      assert.equal(owner.queryMetrics.noticeSaveQueries, 1, 'all three correction attempts resolve saved metadata in one query');
       assert.ok(exactOldA.overviewCorrectionNotices.every(notice => notice.targetWorkRef === savedA.workRevisionRef),
         'historical reading does not attach review requests targeting newer work');
       assert.equal(nextOverview.reserved.task.modelInput.modelInput.knownOverviewCorrections.length, 3);
@@ -1919,14 +1919,14 @@ async function reserveActorService(actorId, tenantId = 'tenant-A') {
   try {
     await connection.unsafe('SET ROLE authenticated');
     await connection`SELECT set_config('app.user_id', ${actorId}, false)`;
-    const queryMetrics = { overviewSaveQueries: 0, queries: [] };
+    const queryMetrics = { noticeSaveQueries: 0, queries: [] };
     const db = drizzle(connection, { logger: { logQuery(query) {
       if (process.env.WL_PROFILE_SAVED_READS === '1') queryMetrics.queries.push(query);
       const selection = query.slice(0, query.indexOf(' from '));
       if (selection.includes('"matter_work_revision_id"') && selection.includes('"working_revision"')
-          && !selection.includes('"request_id"') && query.includes('"action_attempt_id"')
+          && selection.includes('"request_id"') && query.includes('"action_attempt_id"')
           && query.includes('order by') && query.includes('from "engineering_matter_work_revision"')) {
-        queryMetrics.overviewSaveQueries++;
+        queryMetrics.noticeSaveQueries++;
       }
     } } });
     const workItems = new MiaodaWorkItemRepository(db);

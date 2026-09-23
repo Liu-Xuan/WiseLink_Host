@@ -40,6 +40,7 @@ import type { OpenClawMatterTaskEnvelope } from '../action-attempt/action-attemp
 import { loadMaterials } from './engineering-matter.repository';
 import { materialInputBindings } from './matter-material';
 import { EngineeringSearchProjectionWriter } from './engineering-search-projection';
+import { EngineeringReadPhaseObservation, observeEngineeringRead, observeEngineeringReadSync } from './engineering-read-phase-observation';
 import {
   assertEngineeringMatterWorkingBindingsCurrent,
   engineeringMatterWorkingChangeFromCommand,
@@ -247,10 +248,10 @@ export class EngineeringMatterWorkingRepository {
 
   /** Exact saved identity, constrained before loading the full investigation body. */
   async readByRef(
-    input: { tenantId: string; matterId: string; workRef: string },
+    input: { tenantId: string; matterId: string; workRef: string; observation?: EngineeringReadPhaseObservation },
     executor: EngineeringMatterWorkingDatabaseExecutor = this.db,
   ): Promise<EngineeringMatterWorkingRevisionReadModel | null> {
-    const [row] = await executor
+    const [row] = await observeEngineeringRead(input.observation, 'saved_row_await', () => executor
       .select()
       .from(engineeringMatterWorkRevision)
       .where(
@@ -260,8 +261,8 @@ export class EngineeringMatterWorkingRepository {
           eq(engineeringMatterWorkRevision.matterWorkRevisionId, input.workRef),
         ),
       )
-      .limit(1);
-    return row ? authorizedReadModel(row, executor) : null;
+      .limit(1));
+    return row ? authorizedReadModel(row, executor, new Set(), input.observation) : null;
   }
 
   async readByRefForRuntime(input: {
@@ -961,10 +962,11 @@ async function authorizedReadModel(
   row: WorkRevisionRow,
   executor: EngineeringMatterWorkingDatabaseExecutor,
   ancestors: Set<string> = new Set(),
+  observation?: EngineeringReadPhaseObservation,
 ): Promise<EngineeringMatterWorkingRevisionReadModel> {
   if (ancestors.has(row.matterWorkRevisionId)) throw workingPersistenceError();
   const ancestry = new Set(ancestors).add(row.matterWorkRevisionId);
-  const revision = readModel(row);
+  const revision = observeEngineeringReadSync(observation, 'saved_state_parse', () => readModel(row));
   const bindings = [
     ...revision.state.substantiveInputs,
     ...revision.state.coverage.map((item) => item.binding),
@@ -985,12 +987,12 @@ async function authorizedReadModel(
       item.kind === 'DOCUMENT_PASSAGE' ? [item.documentVersionId] : [],
     ),
   ]);
-  await assertOwnedSources(
+  await observeEngineeringRead(observation, 'saved_sources_await', () => assertOwnedSources(
     executor,
     row.tenantId,
     workItemIds,
     documentVersionIds,
-  );
+  ));
   // Resolve the last explicit saved overview, using the same authorized history.
   // A status flag or matching save time cannot identify the work that supplied it.
   // Never reach backward across a different/absent overview merely because older
@@ -998,7 +1000,8 @@ async function authorizedReadModel(
   revision.overviewSourceWork = null;
   if (revision.state.problemWork && revision.state.problemWork.overviewStatus !== 'NOT_AVAILABLE') {
     const overview = revision.state.problemWork.understanding;
-    const [origin] = await executor.execute<{ workRef: string; workingRevision: number; submittedOverview: string }>(sql`
+    const [origin] = await observeEngineeringRead(observation, 'overview_origin_await', () =>
+      executor.execute<{ workRef: string; workingRevision: number; submittedOverview: string }>(sql`
       SELECT w.matter_work_revision_id AS "workRef", w.working_revision AS "workingRevision",
         receipt -> 'proposal' ->> 'overview' AS "submittedOverview"
       FROM engineering_matter_work_revision w
@@ -1022,7 +1025,7 @@ async function authorizedReadModel(
               OR later.state_json::jsonb -> 'problemWork' ->> 'overviewStatus' = 'NOT_AVAILABLE')
         )
       ORDER BY w.working_revision DESC LIMIT 1
-    `);
+    `));
     if (origin) {
       if (origin.submittedOverview.trim() !== overview) throw workingPersistenceError();
       revision.overviewSourceWork = { workRef: origin.workRef, workingRevision: origin.workingRevision };
@@ -1039,87 +1042,57 @@ async function authorizedReadModel(
       if (checkedReferences.get(referenceKey) !== canonicalJson(item)) throw workingPersistenceError();
       continue;
     }
-    const [sourceMatter] = await executor.select({ currentMatterRevisionId: engineeringMatter.currentMatterRevisionId })
-      .from(engineeringMatter).where(and(eq(engineeringMatter.tenantId, row.tenantId),
-        eq(engineeringMatter.matterId, ref.subjectId), eq(engineeringMatter.createdByUserId, row.createdByUserId))).limit(1);
+    const [sourceMatter] = await observeEngineeringRead(observation, 'prior_current_matter_await', () =>
+      executor.select({ currentMatterRevisionId: engineeringMatter.currentMatterRevisionId })
+        .from(engineeringMatter).where(and(eq(engineeringMatter.tenantId, row.tenantId),
+          eq(engineeringMatter.matterId, ref.subjectId), eq(engineeringMatter.createdByUserId, row.createdByUserId))).limit(1));
     if (!sourceMatter) throw runtimeAuthorizationUnavailable();
-    await assertAllLinksOwned(executor, row.tenantId, sourceMatter.currentMatterRevisionId);
-    const [source] = await executor.select().from(engineeringMatterWorkRevision).where(and(
-      eq(engineeringMatterWorkRevision.tenantId, row.tenantId), eq(engineeringMatterWorkRevision.matterId, ref.subjectId),
-      eq(engineeringMatterWorkRevision.matterWorkRevisionId, ref.workRef),
-      eq(engineeringMatterWorkRevision.createdByUserId, row.createdByUserId))).limit(1);
+    await observeEngineeringRead(observation, 'prior_current_links_await', () =>
+      assertAllLinksOwned(executor, row.tenantId, sourceMatter.currentMatterRevisionId));
+    const [source] = await observeEngineeringRead(observation, 'prior_saved_row_await', () =>
+      executor.select().from(engineeringMatterWorkRevision).where(and(
+        eq(engineeringMatterWorkRevision.tenantId, row.tenantId), eq(engineeringMatterWorkRevision.matterId, ref.subjectId),
+        eq(engineeringMatterWorkRevision.matterWorkRevisionId, ref.workRef),
+        eq(engineeringMatterWorkRevision.createdByUserId, row.createdByUserId))).limit(1));
     if (!source || source.workingRevision !== item.resultRevision || item.resultRef !== ref.workRef)
       throw runtimeAuthorizationUnavailable();
-    await assertAllLinksOwned(executor, row.tenantId, source.basedOnMatterRevisionId);
-    const sourceRevision = await authorizedReadModel(source, executor, ancestry);
-    if (!sourceRevision.state.problemWork?.issues.some(issue => issue.issueKey === ref.issueKey))
-      throw runtimeAuthorizationUnavailable();
-    const verified = buildMatterWorkReference({ matterId: ref.subjectId, workRef: ref.workRef,
-      issueKey: ref.issueKey, purpose: 'Verify saved lineage' }, sourceRevision);
-    const expected = verified[0]!;
-    if (expected.kind !== 'PRIOR_RESULT' || canonicalJson(expected) !== canonicalJson(item))
-      throw workingPersistenceError();
-    for (const rootRef of expected.originalEvidenceRefs) {
-      const original = verified.find(value => value.evidenceRef === rootRef);
-      const retained = evidence.find(value => value.evidenceRef === rootRef);
-      if (!original || !retained || canonicalJson(original) !== canonicalJson(retained)) throw workingPersistenceError();
-    }
-    const affectedIssueKeys = (revision.state.problemWork?.issues ?? []).filter(issue =>
-      collectIssueEvidenceUses(issue).some(use => use.evidenceRef === item.evidenceRef)).map(issue => issue.issueKey);
-    if (affectedIssueKeys.length) {
-      (revision.referenceWorkNotices ??= []).push({ sourceWork: structuredClone(ref), evidenceRef: item.evidenceRef,
-        affectedIssueKeys, overviewStatus: sourceRevision.state.problemWork.overviewStatus,
-        correctionNotices: structuredClone(sourceRevision.correctionNotices?.filter(notice => notice.issueKey === ref.issueKey) ?? []),
-        overviewCorrectionNotices: structuredClone(sourceRevision.overviewCorrectionNotices ?? []) });
-    }
-    checkedReferences.set(referenceKey, canonicalJson(expected));
+    await observeEngineeringRead(observation, 'prior_saved_links_await', () =>
+      assertAllLinksOwned(executor, row.tenantId, source.basedOnMatterRevisionId));
+    const sourceRevision = await observeEngineeringRead(observation, 'prior_recursive_read', () =>
+      authorizedReadModel(source, executor, ancestry, observation));
+    observeEngineeringReadSync(observation, 'prior_verify_reference_js', () => {
+      if (!sourceRevision.state.problemWork?.issues.some(issue => issue.issueKey === ref.issueKey))
+        throw runtimeAuthorizationUnavailable();
+      const verified = buildMatterWorkReference({ matterId: ref.subjectId, workRef: ref.workRef,
+        issueKey: ref.issueKey, purpose: 'Verify saved lineage' }, sourceRevision);
+      const expected = verified[0]!;
+      if (expected.kind !== 'PRIOR_RESULT' || canonicalJson(expected) !== canonicalJson(item))
+        throw workingPersistenceError();
+      for (const rootRef of expected.originalEvidenceRefs) {
+        const original = verified.find(value => value.evidenceRef === rootRef);
+        const retained = evidence.find(value => value.evidenceRef === rootRef);
+        if (!original || !retained || canonicalJson(original) !== canonicalJson(retained)) throw workingPersistenceError();
+      }
+      const affectedIssueKeys = (revision.state.problemWork?.issues ?? []).filter(issue =>
+        collectIssueEvidenceUses(issue).some(use => use.evidenceRef === item.evidenceRef)).map(issue => issue.issueKey);
+      if (affectedIssueKeys.length) {
+        (revision.referenceWorkNotices ??= []).push({ sourceWork: structuredClone(ref), evidenceRef: item.evidenceRef,
+          affectedIssueKeys, overviewStatus: sourceRevision.state.problemWork.overviewStatus,
+          correctionNotices: structuredClone(sourceRevision.correctionNotices?.filter(notice => notice.issueKey === ref.issueKey) ?? []),
+          overviewCorrectionNotices: structuredClone(sourceRevision.overviewCorrectionNotices ?? []) });
+      }
+      checkedReferences.set(referenceKey, canonicalJson(expected));
+    });
   }
-  const corrections = await executor.select({ id: actionAttempt.attemptId,
-    attemptRef: actionAttempt.operationRef, status: actionAttempt.status,
-    purpose: sql<{ expectedWorkRef: string; issueKey: string; correctionReason: string }>`${actionAttempt.taskEnvelopeJson}::jsonb -> 'modelInput' -> 'correction'`,
-    reviewActivityJson: actionAttempt.reviewActivityJson,
-  }).from(actionAttempt).where(and(
-    eq(actionAttempt.tenantId, row.tenantId), eq(actionAttempt.matterId, row.matterId),
+  // Fetch both kinds of explicit review request together. They share the same
+  // tenant/matter scope, while each keeps its original exact or historical
+  // work-ref predicate. Match flags preserve both predicates if a row carries
+  // both kinds of request.
+  const correctionMatch = and(
     sql`${actionAttempt.taskEnvelopeJson}::jsonb -> 'modelInput' -> 'correction' ->> 'kind' = 'ENGINEERING_ISSUE_CORRECTION'`,
     sql`${actionAttempt.taskEnvelopeJson}::jsonb -> 'modelInput' -> 'correction' ->> 'expectedWorkRef' = ${row.matterWorkRevisionId}`,
-  )).orderBy(asc(actionAttempt.createdAt));
-  const correctionAttemptIds = corrections.map(item => item.id);
-  const correctionSaves = correctionAttemptIds.length ? await executor.select({
-    attemptId: engineeringMatterWorkRevision.actionAttemptId,
-    workRef: engineeringMatterWorkRevision.matterWorkRevisionId,
-    workingRevision: engineeringMatterWorkRevision.workingRevision,
-    requestId: engineeringMatterWorkRevision.requestId,
-  }).from(engineeringMatterWorkRevision).where(and(
-    eq(engineeringMatterWorkRevision.tenantId, row.tenantId),
-    eq(engineeringMatterWorkRevision.matterId, row.matterId),
-    eq(engineeringMatterWorkRevision.createdByUserId, row.createdByUserId),
-    inArray(engineeringMatterWorkRevision.actionAttemptId, correctionAttemptIds),
-  )).orderBy(asc(engineeringMatterWorkRevision.workingRevision)) : [];
-  const savedCorrectionWork = new Map<string, string>();
-  for (const item of corrections) {
-    const saved = savedCorrectionWorkRef(item.id, item.reviewActivityJson, correctionSaves);
-    if (saved) savedCorrectionWork.set(item.id, saved);
-  }
-  if (corrections.length) revision.correctionNotices = corrections.map(item => {
-    if (!item.attemptRef || typeof item.purpose?.expectedWorkRef !== 'string' ||
-        typeof item.purpose?.issueKey !== 'string' || typeof item.purpose?.correctionReason !== 'string')
-      throw new Error('ENGINEERING_CORRECTION_NOTICE_INVALID');
-    const correctedWorkRef = savedCorrectionWork.get(item.id) ?? null;
-    const unchanged = correctedWorkRef === null && hasCorrectionUnchangedReceipt(
-      item.reviewActivityJson, item.purpose.expectedWorkRef, row.workingRevision);
-    return { attemptRef: item.attemptRef, issueKey: item.purpose.issueKey, reason: item.purpose.correctionReason,
-      ...(unchanged ? { unchanged: true } : {}),
-      attemptStatus: item.status, correctedWorkRef };
-  });
-  // These are the owner's explicit review requests, not extracted old source text.
-  // Retain their target identity across later work so an unrelated save cannot
-  // silently erase a known review. Historical reads exclude requests about newer work.
-  const overviewCorrections = await executor.select({ id: actionAttempt.attemptId,
-    attemptRef: actionAttempt.operationRef, status: actionAttempt.status,
-    purpose: sql<{ expectedWorkRef: string; correctionReason: string }>`
-      ${actionAttempt.taskEnvelopeJson}::jsonb -> 'modelInput' -> 'overviewCorrection'`,
-  }).from(actionAttempt).where(and(
-    eq(actionAttempt.tenantId, row.tenantId), eq(actionAttempt.matterId, row.matterId),
+  );
+  const overviewMatch = and(
     sql`${actionAttempt.taskEnvelopeJson}::jsonb -> 'modelInput' -> 'overviewCorrection' ->> 'kind' = 'ENGINEERING_OVERVIEW_CORRECTION'`,
     inArray(sql<string>`${actionAttempt.taskEnvelopeJson}::jsonb -> 'modelInput' -> 'overviewCorrection' ->> 'expectedWorkRef'`,
       executor.select({ ref: engineeringMatterWorkRevision.matterWorkRevisionId }).from(engineeringMatterWorkRevision).where(and(
@@ -1127,33 +1100,76 @@ async function authorizedReadModel(
         eq(engineeringMatterWorkRevision.createdByUserId, row.createdByUserId),
         lte(engineeringMatterWorkRevision.workingRevision, row.workingRevision),
       ))),
+  );
+  const noticeAttempts = await executor.select({ id: actionAttempt.attemptId,
+    attemptRef: actionAttempt.operationRef, status: actionAttempt.status,
+    isCorrection: sql<boolean>`${correctionMatch}`,
+    isOverview: sql<boolean>`${overviewMatch}`,
+    correctionPurpose: sql<{ kind: string; expectedWorkRef: string; issueKey: string; correctionReason: string }>`${actionAttempt.taskEnvelopeJson}::jsonb -> 'modelInput' -> 'correction'`,
+    overviewPurpose: sql<{ kind: string; expectedWorkRef: string; correctionReason: string }>`
+      ${actionAttempt.taskEnvelopeJson}::jsonb -> 'modelInput' -> 'overviewCorrection'`,
+    reviewActivityJson: actionAttempt.reviewActivityJson,
+  }).from(actionAttempt).where(and(
+    eq(actionAttempt.tenantId, row.tenantId), eq(actionAttempt.matterId, row.matterId),
+    or(correctionMatch, overviewMatch),
   )).orderBy(asc(actionAttempt.createdAt));
+  const corrections = noticeAttempts.filter(item => item.isCorrection);
+  const overviewCorrections = noticeAttempts.filter(item => item.isOverview);
+  // One scoped save lookup serves both notice types. Correction receipts still
+  // decide the exact saved work; overview-only attempts need their latest row.
+  const correctionAttemptIds = corrections.map(item => item.id);
+  const noticeAttemptIds = [...new Set([...corrections, ...overviewCorrections].map(item => item.id))];
+  const rankedSaves = executor.select({
+    attemptId: engineeringMatterWorkRevision.actionAttemptId,
+    workRef: engineeringMatterWorkRevision.matterWorkRevisionId,
+    workingRevision: engineeringMatterWorkRevision.workingRevision,
+    requestId: engineeringMatterWorkRevision.requestId,
+    saveRank: sql<number>`row_number() over (partition by ${engineeringMatterWorkRevision.actionAttemptId}
+      order by ${engineeringMatterWorkRevision.workingRevision} desc)`.as('save_rank'),
+  }).from(engineeringMatterWorkRevision).where(and(
+    eq(engineeringMatterWorkRevision.tenantId, row.tenantId),
+    eq(engineeringMatterWorkRevision.matterId, row.matterId),
+    eq(engineeringMatterWorkRevision.createdByUserId, row.createdByUserId),
+    inArray(engineeringMatterWorkRevision.actionAttemptId, noticeAttemptIds),
+  )).as('ranked_notice_saves');
+  const noticeSaves = noticeAttemptIds.length ? await executor.select({
+    attemptId: rankedSaves.attemptId, workRef: rankedSaves.workRef,
+    workingRevision: rankedSaves.workingRevision, requestId: rankedSaves.requestId,
+  }).from(rankedSaves).where(correctionAttemptIds.length
+    ? or(inArray(rankedSaves.attemptId, correctionAttemptIds), eq(rankedSaves.saveRank, 1))
+    : eq(rankedSaves.saveRank, 1)).orderBy(asc(rankedSaves.workingRevision)) : [];
+  const savedCorrectionWork = new Map<string, string>();
+  for (const item of corrections) {
+    const saved = savedCorrectionWorkRef(item.id, item.reviewActivityJson, noticeSaves);
+    if (saved) savedCorrectionWork.set(item.id, saved);
+  }
+  if (corrections.length) revision.correctionNotices = corrections.map(item => {
+    if (!item.attemptRef || typeof item.correctionPurpose?.expectedWorkRef !== 'string' ||
+        typeof item.correctionPurpose?.issueKey !== 'string' || typeof item.correctionPurpose?.correctionReason !== 'string')
+      throw new Error('ENGINEERING_CORRECTION_NOTICE_INVALID');
+    const correctedWorkRef = savedCorrectionWork.get(item.id) ?? null;
+    const unchanged = correctedWorkRef === null && hasCorrectionUnchangedReceipt(
+      item.reviewActivityJson, item.correctionPurpose.expectedWorkRef, row.workingRevision);
+    return { attemptRef: item.attemptRef, issueKey: item.correctionPurpose.issueKey, reason: item.correctionPurpose.correctionReason,
+      ...(unchanged ? { unchanged: true } : {}),
+      attemptStatus: item.status, correctedWorkRef };
+  });
+  // These are the owner's explicit review requests, not extracted old source text.
+  // Retain their target identity across later work so an unrelated save cannot
+  // silently erase a known review. Historical reads exclude requests about newer work.
   for (const item of overviewCorrections) {
-    if (!item.attemptRef || typeof item.purpose?.expectedWorkRef !== 'string' ||
-        typeof item.purpose?.correctionReason !== 'string' || !item.purpose.correctionReason.trim())
+    if (!item.attemptRef || typeof item.overviewPurpose?.expectedWorkRef !== 'string' ||
+        typeof item.overviewPurpose?.correctionReason !== 'string' || !item.overviewPurpose.correctionReason.trim())
       throw new Error('ENGINEERING_OVERVIEW_CORRECTION_NOTICE_INVALID');
   }
-  // A FINISH status alone does not prove a save; use the original persisted
-  // source binding. Resolve one latest metadata row per attempt in one query,
-  // retaining tenant/matter/owner constraints and the notice order below.
-  const overviewSaves = overviewCorrections.length ? await executor
-    .selectDistinctOn([engineeringMatterWorkRevision.actionAttemptId], {
-      attemptId: engineeringMatterWorkRevision.actionAttemptId,
-      ref: engineeringMatterWorkRevision.matterWorkRevisionId,
-      revision: engineeringMatterWorkRevision.workingRevision,
-    }).from(engineeringMatterWorkRevision).where(and(
-      eq(engineeringMatterWorkRevision.tenantId, row.tenantId),
-      eq(engineeringMatterWorkRevision.matterId, row.matterId),
-      eq(engineeringMatterWorkRevision.createdByUserId, row.createdByUserId),
-      inArray(engineeringMatterWorkRevision.actionAttemptId, overviewCorrections.map(item => item.id)),
-    )).orderBy(engineeringMatterWorkRevision.actionAttemptId,
-      desc(engineeringMatterWorkRevision.workingRevision)) : [];
-  const overviewSaveByAttempt = new Map(overviewSaves.map(saved => [saved.attemptId, saved]));
+  // Rows are ordered by working revision, so the last row for an attempt is
+  // the same latest save as the former DISTINCT ON query.
+  const overviewSaveByAttempt = new Map(noticeSaves.map(saved => [saved.attemptId, saved]));
   for (const item of overviewCorrections) {
     const saved = overviewSaveByAttempt.get(item.id);
     (revision.overviewCorrectionNotices ??= []).push({ attemptRef: item.attemptRef,
-      targetWorkRef: item.purpose.expectedWorkRef, reason: item.purpose.correctionReason,
-      attemptStatus: item.status, savedWorkRef: saved?.ref ?? null, savedWorkingRevision: saved?.revision ?? null });
+      targetWorkRef: item.overviewPurpose.expectedWorkRef, reason: item.overviewPurpose.correctionReason,
+      attemptStatus: item.status, savedWorkRef: saved?.workRef ?? null, savedWorkingRevision: saved?.workingRevision ?? null });
   }
   return revision;
 }

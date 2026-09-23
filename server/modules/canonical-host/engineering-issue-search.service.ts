@@ -2,6 +2,7 @@ import {
   BadRequestException,
   Inject,
   Injectable,
+  Logger,
   NotFoundException,
   Optional,
   ServiceUnavailableException,
@@ -37,6 +38,7 @@ import { assessmentEvidenceRoots } from '@shared/assessment-evidence-roots';
 import { prepareEngineeringSearchQuery } from './engineering-search-text';
 import { projectionOwnerToSubjectKind } from './engineering-search-projection';
 import { EngineeringSearchProjectionWriter } from './engineering-search-projection';
+import { EngineeringReadPhaseObservation, observeEngineeringRead } from './engineering-read-phase-observation';
 
 type IssueIdentity = Pick<
   EngineeringIssueSearchHit,
@@ -48,6 +50,7 @@ type SavedIssueWork =
 
 @Injectable()
 export class EngineeringIssueSearchService {
+  private readonly logger = new Logger(EngineeringIssueSearchService.name);
   constructor(
     @Inject(DRIZZLE_DATABASE) private readonly db: PostgresJsDatabase,
     private readonly jobAid: CanonicalJobAidProblemService,
@@ -143,20 +146,34 @@ export class EngineeringIssueSearchService {
     const parsed = knowledgeIdentitySchema.safeParse(identity);
     if (!parsed.success) throw new BadRequestException('ENGINEERING_KNOWLEDGE_IDENTITY_INVALID');
     const exact = parsed.data;
-    const revision = await this.loadWork({ ...exact, issueKey: '' }, actor);
-    const rows = exact.subjectKind === 'WORK_ITEM'
-      ? await this.db.execute<{ current: boolean }>(sql`SELECT NOT EXISTS (
+    const observation = exact.subjectKind === 'ENGINEERING_MATTER'
+      ? new EngineeringReadPhaseObservation() : undefined;
+    let completed = false;
+    try {
+      return await observeEngineeringRead(observation, 'knowledge_total', async () => {
+        const revision = await observeEngineeringRead(observation, 'knowledge_load_work', () =>
+          this.loadWork({ ...exact, issueKey: '' }, actor, observation));
+        const rows = await observeEngineeringRead(observation, 'knowledge_current_flag', () =>
+          exact.subjectKind === 'WORK_ITEM'
+            ? this.db.execute<{ current: boolean }>(sql`SELECT NOT EXISTS (
           SELECT 1 FROM assessment_work_revision newer WHERE newer.tenant_id=w.tenant_id
           AND newer.work_item_id=w.work_item_id AND newer.work_revision>w.work_revision) AS current
           FROM assessment_work_revision w WHERE w.tenant_id=${actor.tenantId}
           AND w.work_item_id=${exact.subjectId} AND w.assessment_work_revision_id=${exact.workRef}`)
-      : await this.db.execute<{ current: boolean }>(sql`SELECT NOT EXISTS (
+            : this.db.execute<{ current: boolean }>(sql`SELECT NOT EXISTS (
           SELECT 1 FROM engineering_matter_work_revision newer WHERE newer.tenant_id=w.tenant_id
           AND newer.matter_id=w.matter_id AND newer.working_revision>w.working_revision) AS current
           FROM engineering_matter_work_revision w WHERE w.tenant_id=${actor.tenantId}
-          AND w.matter_id=${exact.subjectId} AND w.matter_work_revision_id=${exact.workRef}`);
-    if (!rows.length) throw new NotFoundException('ENGINEERING_KNOWLEDGE_WORK_NOT_FOUND');
-    return this.knowledgeFromWork(exact, revision, rows[0].current);
+          AND w.matter_id=${exact.subjectId} AND w.matter_work_revision_id=${exact.workRef}`));
+        if (!rows.length) throw new NotFoundException('ENGINEERING_KNOWLEDGE_WORK_NOT_FOUND');
+        const result = this.knowledgeFromWork(exact, revision, rows[0].current);
+        completed = true;
+        return result;
+      });
+    } finally {
+      if (observation) this.logger.log({ event: 'ENGINEERING_KNOWLEDGE_READ_PHASES',
+        status: completed ? 'ok' : 'error', phases: observation.snapshot() });
+    }
   }
 
   private knowledgeFromWork(identity: EngineeringKnowledgeIdentity, revision: SavedIssueWork,
@@ -440,6 +457,7 @@ export class EngineeringIssueSearchService {
   private loadWork(
     identity: IssueIdentity,
     actor: CanonicalHostActor,
+    observation?: EngineeringReadPhaseObservation,
   ): Promise<SavedIssueWork> {
     return identity.subjectKind === 'WORK_ITEM'
       ? this.jobAid.readBrowserRevision(
@@ -447,7 +465,12 @@ export class EngineeringIssueSearchService {
           identity.workRef,
           actor,
         )
-      : this.matters.readWorkingRevision(
+      : observation ? this.matters.readWorkingRevision(
+          identity.subjectId,
+          identity.workRef,
+          actor,
+          observation,
+        ) : this.matters.readWorkingRevision(
           identity.subjectId,
           identity.workRef,
           actor,

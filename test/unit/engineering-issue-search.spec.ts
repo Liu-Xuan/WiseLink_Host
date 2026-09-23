@@ -342,9 +342,13 @@ describe('saved knowledge catalogue', () => {
     const issue = await h.service.read(identity, actor);
     expect(issue.reading).toBeNull();
     expect(issue.evidence).toEqual(h.saved.content.evidence);
-    expect(h.matters.readWorkingRevision).toHaveBeenCalledWith(
+    expect(h.matters.readWorkingRevision.mock.calls).toContainEqual([
       identity.subjectId, identity.workRef, actor,
-    );
+    ]);
+    expect(h.matters.readWorkingRevision.mock.calls).toContainEqual([
+      identity.subjectId, identity.workRef, actor,
+      expect.objectContaining({ measure: expect.any(Function) }),
+    ]);
   });
 
   it('browses exact saved titles and briefs without a query and keeps overview coverage separate from currentness', async () => {
