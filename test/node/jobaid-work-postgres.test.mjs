@@ -117,6 +117,8 @@ function proposal(text = document.excerpt) {
   return {
     schemaVersion: 'wiselink.jobaid-problem-work.v3',
     overview: text,
+    headline: '更换条件与当前构型的评估',
+    listBrief: '先核实持续条件和当前构型；未取得连续记录时保留开放问题。',
     roundCompletion: 'COMPLETE_WITH_OPEN_QUESTIONS',
     completionReason: '本轮来源分析完成；缺失证据明确保留。',
     changeSummary: '更新条件理解。',
@@ -1200,7 +1202,9 @@ test(
             ),
           );
           assert.deepEqual(browserView.current, saved);
-          assert.equal(browserView.executionStatus, 'SUCCEEDED');
+          // Current execution is the dynamic evaluation, not the saved review body.
+          assert.equal(browserView.executionStatus, 'CANCELLED');
+          assert.equal(browserView.latestAttempt?.attemptId, 'ATT-initial');
           assert.equal(browserView.currentInputChanged, false);
         },
       );
@@ -1361,9 +1365,9 @@ async function seed(sql) {
     VALUES ('RC-job','tenant-job','actor-job','WI-job','wiselink-engineering','review:test-job',1,1,'ACTIVE',now(),now())`;
 }
 async function seedAttempt(sql, id, ref, type, status, resultHash) {
-  await sql`INSERT INTO action_attempt (attempt_id,operation_ref,work_item_id,tenant_id,actor_user_id,action_type,request_origin,status,input_revision,base_revision,
+  await sql`INSERT INTO action_attempt (attempt_id,operation_ref,work_item_id,tenant_id,actor_user_id,subject_kind,action_type,request_origin,status,input_revision,base_revision,
     document_version_id,task_input_hash,lease_owner,lease_token,lease_generation,lease_expires_at,deadline_at,result_content_hash)
-    VALUES (${id},${ref},'WI-job','tenant-job','actor-job',${type},'OPENCLAW_MCP_V1',${status},1,1,'dv-job',${hash},'service-job','lease-job',1,now()+interval '1 hour',now()+interval '2 hours',${resultHash})`;
+    VALUES (${id},${ref},'WI-job','tenant-job','actor-job','WORK_ITEM',${type},'OPENCLAW_MCP_V1',${status},1,1,'dv-job',${hash},'service-job','lease-job',1,now()+interval '1 hour',now()+interval '2 hours',${resultHash})`;
 }
 async function seedReview(sql, number, resultHash) {
   await sql`INSERT INTO review_turn (review_turn_id,review_conversation_id,engineer_supplied_input_id,tenant_id,actor_id,work_item_id,turn_no,request_id,input_revision,user_message,input_type,adoption_status,created_at)
