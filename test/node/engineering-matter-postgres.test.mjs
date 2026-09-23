@@ -4397,5 +4397,11 @@ test('targeted correction uses real PostgreSQL fences, durable generation and ex
       assert.equal(fakeNotice.correctedWorkRef, null,
         'a model output work ref without a matching persisted revision and save receipt is never projected');
 
+      await sql`UPDATE action_attempt SET task_envelope_json = '{"modelInput":42}'
+        WHERE attempt_id = ${failedTask.task.actionAttemptId}`;
+      const afterMalformedPurpose = await owner.working.readByRef({ ...scope, workRef: saved.workRevisionRef });
+      assert.equal(afterMalformedPurpose.correctionNotices?.some(item => item.attemptRef === failedTask.task.operationRef), false,
+        'a non-object modelInput remains a non-match, rather than failing the whole historical read');
+
     } finally { for (const connection of connections) await connection.release(); await sql.end({ timeout: 5 }); }
   });
