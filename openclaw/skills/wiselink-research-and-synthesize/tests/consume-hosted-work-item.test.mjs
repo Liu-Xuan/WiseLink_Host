@@ -25,6 +25,8 @@ test('CLI stage limit accepts only one WorkItem initial stage', () => {
   assert.deepEqual(initialStageLimit([], 'WI-new'), {});
   assert.deepEqual(initialStageLimit(['--max-initial-stages', '1'], 'WI-new'),
     { maxInitialStages: 1, initialStageOnly: true });
+  assert.deepEqual(initialStageLimit(['--max-initial-stages', '1', '--expected-initial-operation', 'EVALUATE_JOBAID'], 'WI-new'),
+    { maxInitialStages: 1, initialStageOnly: true, expectedInitialOperation: 'EVALUATE_JOBAID' });
   for (const argv of [
     ['--max-initial-stages'],
     ['--max-initial-stages', '0'],
@@ -38,10 +40,21 @@ test('CLI stage limit accepts only one WorkItem initial stage', () => {
     /INITIAL_STAGE_LIMIT_INVALID/);
   assert.throws(() => initialStageLimit(['--max-initial-stages', '1'], null, null, 'DV-new'),
     /INITIAL_STAGE_LIMIT_INVALID/);
+  for (const argv of [
+    ['--expected-initial-operation'],
+    ['--expected-initial-operation', 'EVALUATE_JOBAID'],
+    ['--max-initial-stages', '1', '--expected-initial-operation'],
+    ['--max-initial-stages', '1', '--expected-initial-operation', 'SYNTHESIZE_OVERALL'],
+    ['--max-initial-stages', '1', '--expected-initial-operation', 'EVALUATE_JOBAID', '--expected-initial-operation', 'EVALUATE_JOBAID'],
+  ]) assert.throws(() => initialStageLimit(argv, 'WI-new'), /INITIAL_EXPECTED_OPERATION_INVALID/);
+  assert.throws(() => initialStageLimit(['--max-initial-stages', '1', '--expected-initial-operation=EVALUATE_JOBAID'], 'WI-new'),
+    /INITIAL_EXPECTED_OPERATION_INVALID/);
+  assert.throws(() => initialStageLimit(['--max-initial-stages', '1', '--expected-initial-operation', 'EVALUATE_JOBAID'], null, 'MAT-new'),
+    /INITIAL_STAGE_LIMIT_INVALID/);
 });
 
 test('single-stage mode runs current JobAid once and leaves Overall pending', async t => {
-  const input = { ...await options(t), initialStageOnly: true };
+  const input = { ...await options(t), initialStageOnly: true, expectedInitialOperation: 'EVALUATE_JOBAID' };
   let saved = false;
   const calls = [];
   const result = await consumeHostedWorkItem(input, {
@@ -69,6 +82,67 @@ test('single-stage mode runs current JobAid once and leaves Overall pending', as
   assert.deepEqual(calls, ['get_parse_status', 'get_parse_status']);
   assert.deepEqual(result.completedStages, ['EVALUATE_JOBAID']);
   assert.equal(result.nextOperation, 'SYNTHESIZE_OVERALL');
+  await assert.rejects(consumeHostedWorkItem(input, {
+    callTool: async name => {
+      calls.push(name);
+      assert.equal(name, 'get_parse_status');
+      return status({ status: 'REQUIRED', nextOperation: 'SYNTHESIZE_OVERALL',
+        stages: { translation: { status: 'PENDING' }, applicability: { status: 'WAITING_INPUT' },
+          jobAid: { status: 'SUCCEEDED' }, overall: { status: 'PENDING' } } });
+    },
+    runInitial: async () => assert.fail('re-entry must not start Overall'),
+  }), /INITIAL_EXPECTED_OPERATION_MISMATCH/);
+  assert.deepEqual(calls, ['get_parse_status', 'get_parse_status', 'get_parse_status']);
+});
+
+test('expected JobAid refuses any other entry stage before begin, recovery, or model', async t => {
+  const input = { ...await options(t), initialStageOnly: true, expectedInitialOperation: 'EVALUATE_JOBAID' };
+  const cases = [
+    status({ nextOperation: 'SYNTHESIZE_OVERALL', stages: {
+      translation: { status: 'SUCCEEDED' }, applicability: { status: 'WAITING_INPUT' },
+      jobAid: { status: 'SUCCEEDED' }, overall: { status: 'PENDING' } } }),
+    status({ nextOperation: 'TRANSLATE' }),
+    status({ status: 'NOT_READY', nextOperation: null }),
+    status({ status: 'BUSY', nextOperation: null, stages: {
+      translation: { status: 'SUCCEEDED' }, applicability: { status: 'WAITING_INPUT' },
+      jobAid: { status: 'SUCCEEDED' }, overall: { status: 'BUSY' } } }),
+  ];
+  for (const value of cases) {
+    const calls = [];
+    await assert.rejects(consumeHostedWorkItem(input, {
+      callTool: async name => { calls.push(name); return value; },
+      runInitial: async () => assert.fail('guard must not enter initial stage'),
+      consumeReview: async () => assert.fail('guard must not consume Review'),
+    }), /INITIAL_EXPECTED_OPERATION_MISMATCH/);
+    assert.deepEqual(calls, ['get_parse_status']);
+  }
+});
+
+test('expected JobAid allows a BUSY JobAid to wait for exact recovery without starting another stage', async t => {
+  const input = { ...await options(t), initialStageOnly: true, expectedInitialOperation: 'EVALUATE_JOBAID' };
+  const calls = [];
+  const result = await consumeHostedWorkItem(input, {
+    callTool: async name => {
+      calls.push(name);
+      return status({ status: 'BUSY', nextOperation: null, stages: {
+        translation: { status: 'SUCCEEDED' }, applicability: { status: 'WAITING_INPUT' },
+        jobAid: { status: 'BUSY', attemptStatus: 'RUNNING' }, overall: { status: 'PENDING' } } });
+    },
+    runInitial: async () => assert.fail('unowned BUSY attempt must not start'),
+  });
+  assert.equal(result.status, 'BUSY');
+  assert.deepEqual(calls, ['get_parse_status']);
+});
+
+test('expected JobAid requires the one-stage WorkItem mode before reading Host status', async t => {
+  const base = await options(t);
+  for (const input of [
+    { ...base, expectedInitialOperation: 'EVALUATE_JOBAID' },
+    { ...base, initialStageOnly: true, expectedInitialOperation: 'SYNTHESIZE_OVERALL' },
+    { ...base, initialStageOnly: true, expectedInitialOperation: 'EVALUATE_JOBAID', maxInitialStages: 2 },
+  ]) await assert.rejects(consumeHostedWorkItem(input, {
+    callTool: async () => assert.fail('invalid guard mode must not read or begin'),
+  }), /INITIAL_EXPECTED_OPERATION_INVALID/);
 });
 
 test('single-stage mode leaves original-impact conflict untouched', async t => {
