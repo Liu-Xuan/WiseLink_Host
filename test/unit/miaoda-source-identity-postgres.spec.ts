@@ -46,6 +46,7 @@ const enabled = process.env.WL_SOURCE_IDENTITY_LOCAL_PG === '1';
       await client`INSERT INTO dm_document_version VALUES (${`V${suffix}`}, ${`D${suffix}`}, ${`F${suffix}`}, ${`S${suffix}`}, ${`A${suffix}`}, 'COMMITTED_IMMUTABLE', ${'a'.repeat(64)}, 1234, ${owner})`;
       await client`INSERT INTO dm_ingress_preflight VALUES (${`P${suffix}`}, ${`A${suffix}`}, ${`V${suffix}`}, 'COMMITTED', ${owner})`;
     }
+    await client`INSERT INTO work_item (work_item_id, tenant_id, document_id, document_version_id, revision, projection_json, owner_id) VALUES ('WI3', 'tenant-1', 'D1', 'V1', 1, ${JSON.stringify({ workItemId: 'WI3', revision: 1, source: { documentVersionId: 'V1' } })}, 'actor-1')`;
     await client.unsafe(`GRANT USAGE ON SCHEMA "${schema}" TO "${role}"`);
     for (const table of [...tables, 'work_item']) {
       await client.unsafe(`ALTER TABLE ${table} ENABLE ROW LEVEL SECURITY`);
@@ -86,6 +87,12 @@ const enabled = process.env.WL_SOURCE_IDENTITY_LOCAL_PG === '1';
       const member = await workItems.loadTenantScopedMemberIdentity('WI1', 'tenant-1', 'V1');
       expect(member?.row.documentVersionId).toBe('V1');
       expect(member?.sourceIdentity).toBeNull();
+      const batch = await workItems.loadTenantScopedMemberIdentities([
+        { workItemId: 'WI1', documentVersionId: 'V1' },
+        { workItemId: 'WI3', documentVersionId: 'V1' },
+      ], 'tenant-1');
+      expect(batch.get('WI1')?.sourceIdentity).toBeNull();
+      expect(batch.get('WI3')?.sourceIdentity).toBeNull();
     } finally {
       await client.unsafe('RESET ROLE');
       await client.unsafe(`UPDATE ${table} SET owner_id = 'actor-1' WHERE owner_id = 'hidden'`);
@@ -133,6 +140,35 @@ const enabled = process.env.WL_SOURCE_IDENTITY_LOCAL_PG === '1';
     expect(missing?.sourceIdentity).toBeNull();
   });
 
+  it('loads two granted members in one tenant-scoped statement and keeps missing rows distinct', async () => {
+    queries.length = 0;
+    const members = await workItems.loadTenantScopedMemberIdentities([
+      { workItemId: 'WI1', documentVersionId: 'V1' },
+      { workItemId: 'WI3', documentVersionId: 'V1' },
+      { workItemId: 'WI2', documentVersionId: 'V2' },
+    ], 'tenant-1');
+    expect(queries).toHaveLength(1);
+    expect(queries[0].match(/inner join/g)).toHaveLength(4);
+    expect(members.size).toBe(2);
+    expect(members.get('WI1')?.sourceIdentity?.version.documentVersionId).toBe('V1');
+    expect(members.get('WI3')?.row.tenantId).toBe('tenant-1');
+    expect(members.has('WI2')).toBe(false);
+    await reader('actor-2');
+    const hidden = await workItems.loadTenantScopedMemberIdentities([
+      { workItemId: 'WI1', documentVersionId: 'V1' },
+      { workItemId: 'WI3', documentVersionId: 'V1' },
+    ], 'tenant-1');
+    expect(hidden.size).toBe(0);
+    await reader();
+    const missingSource = await workItems.loadTenantScopedMemberIdentities([
+      { workItemId: 'WI1', documentVersionId: 'missing' },
+      { workItemId: 'WI3', documentVersionId: 'missing' },
+    ], 'tenant-1');
+    expect(missingSource.size).toBe(2);
+    expect(missingSource.get('WI1')?.sourceIdentity).toBeNull();
+    expect(missingSource.get('WI3')?.sourceIdentity).toBeNull();
+  });
+
   it('preserves malformed projection failure even when the source is missing', async () => {
     await client.unsafe('RESET ROLE');
     await client`UPDATE work_item SET projection_json = 'broken' WHERE work_item_id = 'WI1'`;
@@ -142,6 +178,10 @@ const enabled = process.env.WL_SOURCE_IDENTITY_LOCAL_PG === '1';
       try { await workItems.loadTenantScopedProjection('WI1', 'tenant-1'); } catch (error) { oldError = error; }
       expect(oldError).toBeInstanceOf(Error);
       await expect(workItems.loadTenantScopedMemberIdentity('WI1', 'tenant-1', 'missing')).rejects.toThrow((oldError as Error).message);
+      await expect(workItems.loadTenantScopedMemberIdentities([
+        { workItemId: 'WI1', documentVersionId: 'missing' },
+        { workItemId: 'WI3', documentVersionId: 'V1' },
+      ], 'tenant-1')).rejects.toThrow((oldError as Error).message);
     } finally {
       await client.unsafe('RESET ROLE');
       await client`UPDATE work_item SET projection_json = ${JSON.stringify({ workItemId: 'WI1', revision: 1, source: { documentVersionId: 'V1' } })} WHERE work_item_id = 'WI1'`;
@@ -156,5 +196,10 @@ const enabled = process.env.WL_SOURCE_IDENTITY_LOCAL_PG === '1';
     await expect(resolver.resolveIdentity('V1')).rejects.toThrow('DOCUMENT_VERSION_SOURCE_IDENTITY_INVALID');
     const member = await workItems.loadTenantScopedMemberIdentity('WI1', 'tenant-1', 'V1');
     expect(() => assertSourceIdentity(member!.sourceIdentity!)).toThrow('DOCUMENT_VERSION_SOURCE_IDENTITY_INVALID');
+    const batch = await workItems.loadTenantScopedMemberIdentities([
+      { workItemId: 'WI1', documentVersionId: 'V1' },
+      { workItemId: 'WI3', documentVersionId: 'V1' },
+    ], 'tenant-1');
+    expect(() => assertSourceIdentity(batch.get('WI1')!.sourceIdentity!)).toThrow('DOCUMENT_VERSION_SOURCE_IDENTITY_INVALID');
   });
 });

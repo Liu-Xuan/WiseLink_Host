@@ -97,6 +97,73 @@ describe('EngineeringMatterWorkingService', () => {
     expect(workItems.loadTenantScopedMemberIdentity).toHaveBeenCalledTimes(2);
   });
 
+  it('waits for every fresh grant before issuing one bounded tenant batch', async () => {
+    let releaseSecond!: () => void;
+    const secondDecision = new Promise<void>(resolve => { releaseSecond = resolve; });
+    const objectAccess = { freshRead: jest.fn(async ({ accessRoot }) => {
+      if (accessRoot.id === 'WI-B') await secondDecision;
+      return { allowed: true, workItemId: accessRoot.id,
+        documentVersionId: accessRoot.id === 'WI-A' ? 'DV-A' : 'DV-B' };
+    }) };
+    const batch = jest.fn(async (inputs: { workItemId: string; documentVersionId: string }[], tenantId: string) => {
+      expect(tenantId).toBe('tenant-A');
+      expect(inputs).toEqual([
+        { workItemId: 'WI-A', documentVersionId: 'DV-A' },
+        { workItemId: 'WI-B', documentVersionId: 'DV-B' },
+      ]);
+      return new Map(inputs.map(input => [input.workItemId, workItem(input.workItemId)]));
+    });
+    const service = serviceWith({ objectAccess, workItems: {
+      loadTenantScopedMemberIdentity: jest.fn(),
+      loadTenantScopedMemberIdentities: batch,
+    } });
+    const pending = service.readWorking('MAT-1', actor());
+    await Promise.resolve();
+    expect(batch).not.toHaveBeenCalled();
+    releaseSecond();
+    expect((await pending).pendingInputs).toHaveLength(2);
+    expect(batch).toHaveBeenCalledTimes(1);
+  });
+
+  it.each(['missing-row', 'changed-version', 'source-mismatch'])(
+    'rejects a %s in the second authorized batch member', async kind => {
+      const batch = jest.fn(async () => {
+        const second = workItem('WI-B');
+        if (kind === 'changed-version') second.row.documentVersionId = 'DV-CHANGED';
+        if (kind === 'source-mismatch') second.sourceIdentity.version.documentId = 'DOC-OTHER';
+        const rows = new Map<string, ReturnType<typeof workItem>>();
+        rows.set('WI-A', workItem('WI-A'));
+        if (kind !== 'missing-row') rows.set('WI-B', second);
+        return rows;
+      });
+      const service = serviceWith({ workItems: {
+        loadTenantScopedMemberIdentity: jest.fn(),
+        loadTenantScopedMemberIdentities: batch,
+      } });
+      const code = kind === 'source-mismatch'
+        ? 'ENGINEERING_MATTER_WORK_ITEM_DOCUMENT_CONFLICT'
+        : 'CANONICAL_WORK_ITEM_NOT_FOUND';
+      await expect(service.readWorking('MAT-1', actor())).rejects.toMatchObject({ code });
+      expect(batch).toHaveBeenCalledTimes(1);
+    },
+  );
+
+  it('does not issue a batch when one fresh member is denied', async () => {
+    const batch = jest.fn();
+    const objectAccess = { freshRead: jest.fn(async ({ accessRoot }) =>
+      accessRoot.id === 'WI-B'
+        ? { allowed: false, code: 'REVOKED', statusCode: 403 }
+        : { allowed: true, workItemId: accessRoot.id, documentVersionId: 'DV-A' },
+    ) };
+    const service = serviceWith({ objectAccess, workItems: {
+      loadTenantScopedMemberIdentity: jest.fn(),
+      loadTenantScopedMemberIdentities: batch,
+    } });
+    await expect(service.readWorking('MAT-1', actor())).rejects.toMatchObject({ code: 'REVOKED' });
+    expect(objectAccess.freshRead).toHaveBeenCalledTimes(2);
+    expect(batch).not.toHaveBeenCalled();
+  });
+
   it('does not launch the combined read after fresh access is denied', async () => {
     const workItems = { loadTenantScopedMemberIdentity: jest.fn() };
     const service = serviceWith({ workItems,
@@ -284,6 +351,19 @@ function serviceWith(
           Promise.resolve(workItem(workItemId)),
         ),
     } as const);
+  if (!('loadTenantScopedMemberIdentities' in workItems)) {
+    Object.assign(workItems, {
+      loadTenantScopedMemberIdentities: jest.fn(async (
+        inputs: { workItemId: string; documentVersionId: string }[],
+        tenantId: string,
+      ) => new Map(await Promise.all(inputs.map(async input => [
+        input.workItemId,
+        await workItems.loadTenantScopedMemberIdentity(
+          input.workItemId, tenantId, input.documentVersionId,
+        ),
+      ] as const)))),
+    });
+  }
   const objectAccess =
     overrides.objectAccess ??
     ({

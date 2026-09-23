@@ -12,6 +12,7 @@ import type {
 import {
   CANONICAL_OBJECT_ACCESS,
   type CanonicalObjectAccessPort,
+  type CanonicalObjectAccessGrant,
 } from '../work-item/canonical-object-access.port';
 import { assertSourceIdentity } from '../work-item/document-version-source-identity';
 import { MiaodaWorkItemRepository } from '../work-item/miaoda-work-item.repository';
@@ -86,22 +87,21 @@ export class EngineeringMatterWorkingService {
     });
     if (!revision) throw matterNotFound();
     // Historical work can contain a member that is no longer in the current composition.
-    const savedMembers = [...new Set(
-      [
-        ...revision.state.substantiveInputs,
-        ...revision.state.coverage.map((item) => item.binding),
-      ].flatMap((binding) => (binding.workItemId ? [binding.workItemId] : [])),
-    )];
+    const savedMembers = [
+      ...new Set(
+        [
+          ...revision.state.substantiveInputs,
+          ...revision.state.coverage.map((item) => item.binding),
+        ].flatMap((binding) =>
+          binding.workItemId ? [binding.workItemId] : [],
+        ),
+      ),
+    ];
     // Bound independent fresh reads within this request. Keep current and removed
     // members checked, and settle the whole group before rejecting so no reads
     // escape the request or overlap a caller's retry after an early rejection.
     for (let start = 0; start < savedMembers.length; start += 4) {
-      const reads = await Promise.allSettled(
-        savedMembers.slice(start, start + 4).map(workItemId => this.requireInput(workItemId, actor)),
-      );
-      for (const read of reads) {
-        if (read.status === 'rejected') throw read.reason;
-      }
+      await this.requireInputs(savedMembers.slice(start, start + 4), actor);
     }
     return revision;
   }
@@ -266,10 +266,11 @@ export class EngineeringMatterWorkingService {
         actor.objectAccessActor.canonicalSubject.id !== actor.userId)
     )
       throw identityHandoffUnavailable();
-    const currentInputs = await Promise.all(
-      snapshot.links.map((link: EngineeringMatterRevisionLinkSnapshot) =>
-        this.requireInput(link.workItemId, actor),
+    const currentInputs = await this.requireInputs(
+      snapshot.links.map(
+        (link: EngineeringMatterRevisionLinkSnapshot) => link.workItemId,
       ),
+      actor,
     );
     currentInputs.push(...materialInputBindings(snapshot.materials ?? []));
     const confirmed = await this.matters.loadCurrent({
@@ -280,12 +281,68 @@ export class EngineeringMatterWorkingService {
     if (
       confirmed.currentMatterRevisionId !== snapshot.currentMatterRevisionId
     ) {
-      if (attempt === 0) return this.authorizedMatter(matterId, actor, 1, includeOriginalBindings);
+      if (attempt === 0)
+        return this.authorizedMatter(
+          matterId,
+          actor,
+          1,
+          includeOriginalBindings,
+        );
       throw workingReadConflict();
     }
-    return { snapshot, currentInputs: includeOriginalBindings
-      ? await this.working.bindOriginalInputs(actor.tenantId, currentInputs)
-      : currentInputs };
+    return {
+      snapshot,
+      currentInputs: includeOriginalBindings
+        ? await this.working.bindOriginalInputs(actor.tenantId, currentInputs)
+        : currentInputs,
+    };
+  }
+
+  private async requireInputs(
+    workItemIds: string[],
+    actor: CanonicalHostActor,
+  ): Promise<EngineeringMatterWorkingInputBinding[]> {
+    if (workItemIds.length === 0) return [];
+    if (workItemIds.length === 1)
+      return [await this.requireInput(workItemIds[0], actor)];
+    const objectAccessActor = actor.objectAccessActor;
+    if (!objectAccessActor) throw identityHandoffUnavailable();
+    // Every member gets a fresh independent decision. Settle all decisions
+    // before the one tenant-scoped projection query, including on denial.
+    const decisions = await Promise.allSettled(
+      workItemIds.map((workItemId) =>
+        this.objectAccess.freshRead({
+          actor: objectAccessActor,
+          action: 'READ_WORK_ITEM',
+          accessRoot: { kind: 'WORK_ITEM', id: workItemId },
+        }),
+      ),
+    );
+    const grants: CanonicalObjectAccessGrant[] = [];
+    for (const decision of decisions) {
+      if (decision.status === 'rejected') throw decision.reason;
+      if (decision.value.allowed === false) {
+        throw Object.assign(new Error('WorkItem is not available.'), {
+          code: decision.value.code,
+          statusCode: decision.value.statusCode,
+        });
+      }
+      grants.push(decision.value);
+    }
+    const scopedById = await this.workItems.loadTenantScopedMemberIdentities(
+      grants.map((grant) => ({
+        workItemId: grant.workItemId,
+        documentVersionId: grant.documentVersionId,
+      })),
+      actor.tenantId,
+    );
+    return grants.map((grant, index) =>
+      this.validateInput(
+        workItemIds[index],
+        grant,
+        scopedById.get(grant.workItemId),
+      ),
+    );
   }
 
   private async requireInput(
@@ -306,8 +363,22 @@ export class EngineeringMatterWorkingService {
     }
     // Fresh access binds the source before the tenant/source composite read.
     const scoped = await this.workItems.loadTenantScopedMemberIdentity(
-      access.workItemId, actor.tenantId, access.documentVersionId,
+      access.workItemId,
+      actor.tenantId,
+      access.documentVersionId,
     );
+    return this.validateInput(workItemId, access, scoped);
+  }
+
+  private validateInput(
+    workItemId: string,
+    access: CanonicalObjectAccessGrant,
+    scoped:
+      | Awaited<
+          ReturnType<MiaodaWorkItemRepository['loadTenantScopedMemberIdentity']>
+        >
+      | undefined,
+  ): EngineeringMatterWorkingInputBinding {
     if (
       !scoped ||
       scoped.row.workItemId !== workItemId ||
