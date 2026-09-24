@@ -77,7 +77,8 @@ export class CanonicalHostOpenClawAttemptStatusService {
       workItemId: scope.workItemId,
     });
     if (workItemId !== undefined &&
-      !['OPENCLAW_DYNAMIC_EVALUATION', 'OPENCLAW_OVERALL_SYNTHESIS'].includes(
+      !['OPENCLAW_DYNAMIC_EVALUATION', 'OPENCLAW_OVERALL_SYNTHESIS',
+        'OPENCLAW_APPLICABILITY_EVALUATION'].includes(
         row.actionType,
       )) throw statusNotFound();
     const result = projectCanonicalHostOpenClawAttemptStatus(row);

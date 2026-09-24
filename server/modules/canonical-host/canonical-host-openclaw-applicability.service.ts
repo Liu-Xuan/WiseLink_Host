@@ -325,12 +325,14 @@ export class CanonicalHostOpenClawApplicabilityService {
     leaseToken: string,
     leaseGeneration: number,
     resultEnvelope: unknown,
+    workItemId?: string,
   ): Promise<
     CommitApplicabilityCandidateResult | ActionAttemptTerminalProjection
   > {
     const scope = await this.serviceScope.authorizeOpenClawAttempt({
       operation: 'COMMIT_APPLICABILITY',
       attemptRef,
+      workItemId,
     });
     assertAttemptScope(scope, attemptRef);
 

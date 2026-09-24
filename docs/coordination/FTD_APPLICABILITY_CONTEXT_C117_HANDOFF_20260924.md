@@ -1,0 +1,17 @@
+# FTD applicability context c117 handoff (2026-09-24)
+
+## Exact scope
+
+- Branch: `codex/ftd-applicability-context-20260924`; parent: `c5445dfec677b911957f2753bf8103566dcea519`.
+- Host adds `WL_OPENCLAW_APPLICABILITY_ADDITIONAL_CONTEXT_BINDING`, a strict JSON object with exactly `workItemId` and `applicabilityContextRef`. Its WorkItem must be the sole ID in the existing `WL_OPENCLAW_SERVICE_ADDITIONAL_WORK_ITEM_IDS` allowlist. Its `APCTX-...` reference must differ from the legacy singleton. The variable is absent by default.
+- The additional context authorizes `BEGIN_APPLICABILITY` for only that WorkItem. Its selection must be persisted on the same WorkItem as `applicabilityControlledSelection`; the old global `WL_OPENCLAW_APPLICABILITY_TARGET_AIRCRAFT_ID` / `WL_OPENCLAW_APPLICABILITY_TARGET_AS_OF` target cannot be used. Missing or stale selection remains an explicit blocker.
+- `commit_applicability_candidate`, status, heartbeat and cancellation can carry the exact WorkItem selector. `begin_applicability_evaluation` remains opaque contextRef + requestId only. The Host checks the selected attempt's tenant, WorkItem, action type, service actor, source and revision before commit.
+- Skill `r09.c117` supports a one-stage `EXTRACT_APPLICABILITY` invocation and preserves the exact WorkItem in its durable checkpoint. `WAITING_INPUT` is reported as attention, never as a saved applicability result. It can still let the independent JobAid/Overall candidate stages proceed according to the Host status progression.
+
+## Real execution blockers
+
+The online FTD WorkItem `WI-990d6e76-78d4-440a-a419-1b2e37b94ac9` was read-only checked at revision 3: `applicabilityControlledSelection`, `applicabilityInput` and applicability candidate are absent. No additional context binding, target aircraft/date or Fleet provenance was supplied for this FTD. Do not copy the legacy B-1266 target or its legacy contextRef. A responsible operator must first choose the FTD's real aircraft and assessment date through the Host controlled-selection flow; the Host must resolve the corresponding authorized Fleet source. The original-source applicability path also requires a matching published original parse run for this DocumentVersion. Configuration of the new exact context binding and installation of Skill c117 are separate integration actions for the main coordinator.
+
+With verified English source, Host progression considers applicability before JobAid and Overall when it has a real pending input. Missing controlled selection remains `WAITING_INPUT`, and JobAid can proceed independently. Translation is not required before verified-English engineering analysis; an explicitly requested or running translation retains its own ordering. Review is a separate explicit request and remains candidate-only. None of these steps makes a formal applicability or engineering adoption decision.
+
+No online environment, controlled selection, Skill installation, model run, release or Git remote was changed by this branch.

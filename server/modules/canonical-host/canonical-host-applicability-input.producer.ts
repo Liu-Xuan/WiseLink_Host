@@ -52,6 +52,7 @@ export interface CanonicalApplicabilityControlledSelectionPort {
     documentVersionId: string;
     applicabilityContextRef: string;
     sourceMode?: 'ORIGINAL';
+    requirePersistedSelection?: true;
   }): Promise<CanonicalApplicabilityControlledSelection>;
 }
 
@@ -115,9 +116,9 @@ export class CanonicalHostApplicabilityInputProducer {
 
   /** Discover only a configured, authorized Host target; never persists an input. */
   async readOriginalAdmissionContext(input: {workItemId:string;tenantId:string;documentVersionId:string}) {
-    const ref=process.env.WL_OPENCLAW_APPLICABILITY_CONTEXT_REF?.trim();
-    if (!ref) return {contextRef:null,reason:'APPLICABILITY_CONTEXT_NOT_CONFIGURED'};
     try {
+      const ref=await this.serviceScope.resolveOpenClawApplicabilityContextRef(input);
+      if (!ref) return {contextRef:null,reason:'APPLICABILITY_CONTEXT_NOT_CONFIGURED'};
       const scope=await this.serviceScope.authorizeOpenClawApplicabilityContext({operation:'BEGIN_APPLICABILITY',
         applicabilityContextRef:ref,requestId:'initial-applicability-discovery'});
       assertScope(scope,ref,'initial-applicability-discovery');
@@ -126,7 +127,8 @@ export class CanonicalHostApplicabilityInputProducer {
       const {workItem}=await this.readAdmissionSnapshot(scope);
       if (workItem.source.documentVersionId!==input.documentVersionId)
         return {contextRef:null,reason:'APPLICABILITY_SOURCE_CHANGED'};
-      await this.controlledSelection.readCurrent({...input,applicabilityContextRef:ref,sourceMode:'ORIGINAL'});
+      await this.controlledSelection.readCurrent({...input,applicabilityContextRef:ref,sourceMode:'ORIGINAL',
+        ...(scope.requirePersistedSelection ? {requirePersistedSelection:true as const} : {})});
       return {contextRef:ref,reason:null};
     } catch (error) {
       const code=(error as {code?:unknown})?.code;
@@ -155,6 +157,7 @@ export class CanonicalHostApplicabilityInputProducer {
       workItemId: workItem.workItemId,
       documentVersionId: workItem.source.documentVersionId,
       applicabilityContextRef: scope.applicabilityContextRef,
+      ...(scope.requirePersistedSelection ? {requirePersistedSelection:true as const} : {}),
       ...((original || selectedApplicabilityInput(workItem)?.originalSource) ? {sourceMode:'ORIGINAL' as const} : {}),
     });
     const sourceBinding = await this.readSourceBinding(workItem, scope.tenantId, original);
@@ -198,7 +201,7 @@ export class CanonicalHostApplicabilityInputProducer {
   async resolveCurrent(
     scope: Pick<
       CanonicalVerifiedApplicabilityContextScope,
-      'tenantId' | 'workItemId' | 'applicabilityContextRef'
+      'tenantId' | 'workItemId' | 'applicabilityContextRef' | 'requirePersistedSelection'
     >,
   ): Promise<{
     workItem: CanonicalWorkItemProjection;
@@ -223,7 +226,7 @@ export class CanonicalHostApplicabilityInputProducer {
   async readCurrentOwnerValidated(
     scope: Pick<
       CanonicalVerifiedApplicabilityContextScope,
-      'tenantId' | 'workItemId' | 'applicabilityContextRef'
+      'tenantId' | 'workItemId' | 'applicabilityContextRef' | 'requirePersistedSelection'
     >,
   ): Promise<{
     workItem: CanonicalWorkItemProjection;
@@ -235,6 +238,7 @@ export class CanonicalHostApplicabilityInputProducer {
       workItemId: workItem.workItemId,
       documentVersionId: workItem.source.documentVersionId,
       applicabilityContextRef: scope.applicabilityContextRef,
+      ...(scope.requirePersistedSelection ? {requirePersistedSelection:true as const} : {}),
       ...(selectedApplicabilityInput(workItem)?.originalSource ? {sourceMode:'ORIGINAL' as const} : {}),
     });
     const sourceBinding = await this.readSourceBinding(workItem, scope.tenantId);
@@ -266,7 +270,7 @@ export class CanonicalHostApplicabilityInputProducer {
   async readCurrentSelectionValidated(
     scope: Pick<
       CanonicalVerifiedApplicabilityContextScope,
-      'tenantId' | 'workItemId' | 'applicabilityContextRef'
+      'tenantId' | 'workItemId' | 'applicabilityContextRef' | 'requirePersistedSelection'
     >,
   ): Promise<{
     workItem: CanonicalWorkItemProjection;
@@ -287,6 +291,7 @@ export class CanonicalHostApplicabilityInputProducer {
       workItemId: workItem.workItemId,
       documentVersionId: workItem.source.documentVersionId,
       applicabilityContextRef: scope.applicabilityContextRef,
+      ...(scope.requirePersistedSelection ? {requirePersistedSelection:true as const} : {}),
       ...(selectedApplicabilityInput(workItem)?.originalSource ? {sourceMode:'ORIGINAL' as const} : {}),
     });
     const derived = deriveProjection({

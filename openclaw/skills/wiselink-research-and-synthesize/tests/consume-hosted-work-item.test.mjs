@@ -31,6 +31,8 @@ test('CLI stage limit accepts only one WorkItem initial stage', () => {
     { maxInitialStages: 1, initialStageOnly: true, expectedInitialOperation: 'EVALUATE_JOBAID' });
   assert.deepEqual(initialStageLimit(['--max-initial-stages', '1', '--expected-initial-operation', 'SYNTHESIZE_OVERALL'], 'WI-new'),
     { maxInitialStages: 1, initialStageOnly: true, expectedInitialOperation: 'SYNTHESIZE_OVERALL' });
+  assert.deepEqual(initialStageLimit(['--max-initial-stages', '1', '--expected-initial-operation', 'EXTRACT_APPLICABILITY'], 'WI-new'),
+    { maxInitialStages: 1, initialStageOnly: true, expectedInitialOperation: 'EXTRACT_APPLICABILITY' });
   for (const argv of [
     ['--max-initial-stages'],
     ['--max-initial-stages', '0'],
@@ -456,6 +458,38 @@ test('JobAid attempt calls bind the exact WorkItem while other stages retain leg
     item.name === 'heartbeat_action_attempt').map(item => item.args), [
     { attemptRef: 'AQ-exact', workJson: '{}', workItemId: 'WI-new' },
     { attemptRef: 'AQ-exact', workItemId: 'WI-new' },
+  ]);
+});
+
+test('single-stage applicability keeps begin opaque and binds commit, heartbeat and status to the WorkItem', async (t) => {
+  const input={...await options(t),initialStageOnly:true,expectedInitialOperation:'EXTRACT_APPLICABILITY'};
+  const called=[]; let saved=false;
+  const stages={translation:{status:'SUCCEEDED'},applicability:{status:'PENDING'},jobAid:{status:'PENDING'},overall:{status:'PENDING'}};
+  const result=await consumeHostedWorkItem(input,{
+    callTool:async(name,args)=>{
+      called.push({name,args});
+      if(name==='get_parse_status') return status({status:'REQUIRED',nextOperation:saved?'EVALUATE_JOBAID':'EXTRACT_APPLICABILITY',
+        applicabilityContextRef:'APCTX-ftd',stages:{...stages,applicability:{status:saved?'SUCCEEDED':'PENDING'}}});
+      if(name==='begin_applicability_evaluation') return {status:'RUNNING',attemptRef:'AQ-ftd',task:{executionModel:{modelRef:'test'}}};
+      if(name==='heartbeat_action_attempt') return {leaseExpiresAt:'future'};
+      if(name==='commit_applicability_candidate'){saved=true;return {status:'SUCCEEDED'};}
+      return {status:'SUCCEEDED'};
+    },
+    runInitial:async(run)=>{
+      await run.callTool('begin_applicability_evaluation',{applicabilityContextRef:'APCTX-ftd',requestId:run.requestId});
+      await run.callTool('heartbeat_action_attempt',{attemptRef:'AQ-ftd'});
+      await run.callTool('get_action_attempt_status',{attemptRef:'AQ-ftd'});
+      await run.callTool('commit_applicability_candidate',{attemptRef:'AQ-ftd',result:{}});
+      return {outcome:'CANDIDATE_READY'};
+    },
+  });
+  assert.equal(result.status,'INITIAL_STAGE_SAVED');
+  assert.deepEqual(called.filter(item=>['begin_applicability_evaluation','heartbeat_action_attempt',
+    'get_action_attempt_status','commit_applicability_candidate'].includes(item.name)).map(item=>item.args),[
+    {applicabilityContextRef:'APCTX-ftd',requestId:called.find(item=>item.name==='begin_applicability_evaluation').args.requestId},
+    {attemptRef:'AQ-ftd',workItemId:'WI-new'},
+    {attemptRef:'AQ-ftd',workItemId:'WI-new'},
+    {attemptRef:'AQ-ftd',result:{},workItemId:'WI-new'},
   ]);
 });
 

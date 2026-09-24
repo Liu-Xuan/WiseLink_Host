@@ -40,6 +40,7 @@ export class MiaodaApplicabilityControlledSelectionAdapter implements CanonicalA
     documentVersionId: string;
     applicabilityContextRef: string;
     sourceMode?: 'ORIGINAL';
+    requirePersistedSelection?: true;
   }): Promise<CanonicalApplicabilityControlledSelection> {
     if (!input.applicabilityContextRef.trim()) {
       throw controlledSelectionUnavailable(
@@ -66,6 +67,12 @@ export class MiaodaApplicabilityControlledSelectionAdapter implements CanonicalA
     if (input.sourceMode !== 'ORIGINAL') assertFrozenApplicabilitySourceReady(workItem);
     const selection = optionalSelection(workItem);
     if (!selection) {
+      if (input.requirePersistedSelection) {
+        throw controlledSelectionUnavailable(
+          'APPLICABILITY_CONTROLLED_SELECTION_NOT_CONFIGURED',
+          409,
+        );
+      }
       return this.readConfiguredHostTarget(input, workItem);
     }
     const fleetMasterData: FleetMasterDataSource =

@@ -141,18 +141,37 @@ export class ConfiguredDevelopmentCanonicalServiceScopeAuthorization implements 
   }): Promise<CanonicalVerifiedApplicabilityContextScope> {
     const config = requiredConfig();
     const expectedRef = process.env.WL_OPENCLAW_APPLICABILITY_CONTEXT_REF;
-    if (
-      !expectedRef?.trim() ||
-      input.applicabilityContextRef !== expectedRef ||
-      !input.requestId.trim()
-    ) {
+    if (!input.requestId.trim()) throw scopeNotFound();
+    if (expectedRef?.trim() && input.applicabilityContextRef === expectedRef)
+      return {
+        ...exactWorkItemScope(config, config.workItemId),
+        applicabilityContextRef: expectedRef,
+        requestId: input.requestId,
+      };
+    const additional = additionalApplicabilityContext(config);
+    if (!additional || input.applicabilityContextRef !== additional.applicabilityContextRef)
       throw scopeNotFound();
-    }
     return {
-      ...exactWorkItemScope(config, config.workItemId),
-      applicabilityContextRef: expectedRef,
+      ...exactWorkItemScope(config, additional.workItemId),
+      applicabilityContextRef: additional.applicabilityContextRef,
       requestId: input.requestId,
+      requirePersistedSelection: true,
     };
+  }
+
+  async resolveOpenClawApplicabilityContextRef(input: {
+    tenantId: string;
+    workItemId: string;
+  }): Promise<string | null> {
+    const config = requiredConfig();
+    if (input.tenantId !== config.tenantId) throw scopeNotFound();
+    if (input.workItemId === config.workItemId)
+      return process.env.WL_OPENCLAW_APPLICABILITY_CONTEXT_REF?.trim() || null;
+    if (!additionalWorkItemIds(config.workItemId).includes(input.workItemId))
+      throw scopeNotFound();
+    const additional = additionalApplicabilityContext(config);
+    return additional?.workItemId === input.workItemId
+      ? additional.applicabilityContextRef : null;
   }
 
   async authorizeOpenClawAttempt(input: {
@@ -180,10 +199,15 @@ export class ConfiguredDevelopmentCanonicalServiceScopeAuthorization implements 
       ? config.workItemId : input.workItemId;
     if (selectedWorkItemId !== config.workItemId && ![
       'COMMIT_DYNAMIC', 'RESUME_OVERALL', 'COMMIT_OVERALL',
+      'COMMIT_APPLICABILITY',
       'READ_ASSESSMENT_SOURCES', 'SAVE_ASSESSMENT_WORK',
       'READ_ASSESSMENT_WORK', 'GET_ACTION_ATTEMPT_STATUS',
       'HEARTBEAT_ATTEMPT', 'CANCEL_ATTEMPT',
     ].includes(input.operation)) throw scopeNotFound();
+    if (selectedWorkItemId !== config.workItemId &&
+      input.operation === 'COMMIT_APPLICABILITY' &&
+      additionalApplicabilityContext(config)?.workItemId !== selectedWorkItemId)
+      throw scopeNotFound();
     return {
       ...exactWorkItemScope(config, selectedWorkItemId),
       attemptRef: input.attemptRef,
@@ -275,6 +299,31 @@ function additionalWorkItemIds(legacyWorkItemId: string): string[] {
     new Set(parsed).size !== parsed.length || parsed.includes(legacyWorkItemId))
     throw canonicalServiceScopeUnavailable();
   return parsed;
+}
+
+function additionalApplicabilityContext(config: DevelopmentServiceScopeConfig): {
+  workItemId: string;
+  applicabilityContextRef: string;
+} | null {
+  const raw = process.env.WL_OPENCLAW_APPLICABILITY_ADDITIONAL_CONTEXT_BINDING;
+  if (raw === undefined) return null;
+  let parsed: unknown;
+  try { parsed = JSON.parse(raw); }
+  catch { throw canonicalServiceScopeUnavailable(); }
+  if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed) ||
+    JSON.stringify(Object.keys(parsed).sort()) !==
+      JSON.stringify(['applicabilityContextRef', 'workItemId']) ||
+    !('workItemId' in parsed) || typeof parsed.workItemId !== 'string' ||
+    !additionalWorkItemIds(config.workItemId).includes(parsed.workItemId) ||
+    !('applicabilityContextRef' in parsed) ||
+    typeof parsed.applicabilityContextRef !== 'string' ||
+    !/^APCTX-[A-Za-z0-9_-]{1,154}$/u.test(parsed.applicabilityContextRef) ||
+    parsed.applicabilityContextRef === process.env.WL_OPENCLAW_APPLICABILITY_CONTEXT_REF)
+    throw canonicalServiceScopeUnavailable();
+  return {
+    workItemId: parsed.workItemId,
+    applicabilityContextRef: parsed.applicabilityContextRef,
+  };
 }
 
 function requiredDocumentConfig() {

@@ -164,7 +164,8 @@ export async function runHostedInitialStage(options, dependencies) {
   let taskDeadline;
   const callTool = async (name, args) => {
     if (!INITIAL_TOOLS.has(name)) throw new Error('INITIAL_TOOL_NOT_ALLOWED');
-    const scopedArgs = ['EVALUATE_JOBAID', 'SYNTHESIZE_OVERALL'].includes(operation)
+    const scopedArgs = (['EVALUATE_JOBAID', 'SYNTHESIZE_OVERALL'].includes(operation) ||
+      (operation === 'EXTRACT_APPLICABILITY' && name !== 'begin_applicability_evaluation'))
       ? { ...args, workItemId: options.workItemId } : args;
     const count = (callCounts.get(name) ?? 0) + 1;
     callCounts.set(name, count);
@@ -238,8 +239,7 @@ export async function runHostedInitialStage(options, dependencies) {
     const after = readInitialStatus(afterResult, options.workItemId);
     if (after.documentVersionId !== initial.documentVersionId) throw new Error('INITIAL_DOCUMENT_VERSION_DRIFT');
     const stageStatus = after.stages[STAGE_BY_OPERATION[operation]]?.status;
-    const stageDone = stageStatus === 'SUCCEEDED' ||
-      (operation === 'EXTRACT_APPLICABILITY' && stageStatus === 'WAITING_INPUT');
+    const stageDone = stageStatus === 'SUCCEEDED';
     const report = {
       status: stageDone ? 'INITIAL_STAGE_SAVED' : 'REQUIRES_ATTENTION',
       operation, stageStatus, nextOperation: after.nextOperation,
@@ -260,7 +260,7 @@ export async function runHostedInitialStage(options, dependencies) {
           step: 'stop-attempt', args: { attemptRef: startedAttempt }, ambiguousCommit: false,
           perform: () => dependencies.callTool('cancel_action_attempt', {
             attemptRef: startedAttempt,
-            ...(['EVALUATE_JOBAID', 'SYNTHESIZE_OVERALL'].includes(operation)
+            ...(['EVALUATE_JOBAID', 'SYNTHESIZE_OVERALL', 'EXTRACT_APPLICABILITY'].includes(operation)
               ? { workItemId: options.workItemId } : {}),
             reason: `HOSTED_INITIAL_EXECUTION_FAILED:${errorCode(error)}`,
           }),
@@ -333,7 +333,7 @@ export function initialStageLimit(argv, workItemId, matterId, documentVersionId)
   const occurrences = argv.filter(arg => arg === '--max-initial-stages').length;
   const expectedOccurrences = argv.filter(arg => arg === '--expected-initial-operation').length;
   if (expectedOccurrences && (expectedOccurrences !== 1 ||
-      !['EVALUATE_JOBAID', 'SYNTHESIZE_OVERALL'].includes(
+      !['EVALUATE_JOBAID', 'SYNTHESIZE_OVERALL', 'EXTRACT_APPLICABILITY'].includes(
         option(argv, '--expected-initial-operation')) ||
       occurrences !== 1)) throw new Error('INITIAL_EXPECTED_OPERATION_INVALID');
   if (!occurrences) return {};
@@ -347,7 +347,7 @@ export function initialStageLimit(argv, workItemId, matterId, documentVersionId)
 
 function assertExpectedInitialOperationMode(options) {
   if (options.expectedInitialOperation === undefined) return;
-  if (!['EVALUATE_JOBAID', 'SYNTHESIZE_OVERALL'].includes(options.expectedInitialOperation) || !options.workItemId ||
+  if (!['EVALUATE_JOBAID', 'SYNTHESIZE_OVERALL', 'EXTRACT_APPLICABILITY'].includes(options.expectedInitialOperation) || !options.workItemId ||
       options.matterId || options.documentVersionId || !options.initialStageOnly || options.maxInitialStages !== 1)
     throw new Error('INITIAL_EXPECTED_OPERATION_INVALID');
 }

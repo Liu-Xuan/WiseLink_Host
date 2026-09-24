@@ -17,6 +17,7 @@ const KEYS = [
   'WL_OPENCLAW_SERVICE_MATTER_IDS',
   'WL_OPENCLAW_SERVICE_MATTER_ACTOR_ID',
   'WL_OPENCLAW_APPLICABILITY_CONTEXT_REF',
+  'WL_OPENCLAW_APPLICABILITY_ADDITIONAL_CONTEXT_BINDING',
   'WL_OPENCLAW_DEVELOPMENT_CREATE_ENABLED',
   'WL_OPENCLAW_DEVELOPMENT_DOCUMENT_VERSION_ID',
   'WL_OPENCLAW_DEVELOPMENT_RUN_TOKEN',
@@ -33,6 +34,35 @@ describe('ConfiguredDevelopmentCanonicalServiceScopeAuthorization', () => {
       if (value === undefined) delete process.env[key];
       else process.env[key] = value;
     }
+  });
+
+  it('binds an additional applicability context to exactly one allowlisted WorkItem', async () => {
+    for (const key of KEYS) delete process.env[key];
+    Object.assign(process.env, { WL_OPENCLAW_SERVICE_SCOPE_ENABLED:'1', WL_OPENCLAW_GATEWAY_AUTH_MODE:'API_KEY',
+      WL_OPENCLAW_SERVICE_SCOPE_ENV:'UAT', WL_OPENCLAW_SERVICE_PRINCIPAL_ID:'service:openclaw-main',
+      WL_OPENCLAW_SERVICE_TENANT_ID:'tenant-1', WL_OPENCLAW_SERVICE_WORK_ITEM_ID:'WI-legacy',
+      WL_OPENCLAW_SERVICE_ADDITIONAL_WORK_ITEM_IDS:JSON.stringify(['WI-ftd']),
+      WL_OPENCLAW_APPLICABILITY_CONTEXT_REF:'APCTX-legacy',
+      WL_OPENCLAW_APPLICABILITY_ADDITIONAL_CONTEXT_BINDING:JSON.stringify({workItemId:'WI-ftd',applicabilityContextRef:'APCTX-ftd'}) });
+    const service=new ConfiguredDevelopmentCanonicalServiceScopeAuthorization();
+    await expect(service.resolveOpenClawApplicabilityContextRef({tenantId:'tenant-1',workItemId:'WI-ftd'}))
+      .resolves.toBe('APCTX-ftd');
+    await expect(service.authorizeOpenClawApplicabilityContext({operation:'BEGIN_APPLICABILITY',
+      applicabilityContextRef:'APCTX-ftd',requestId:'request-1'})).resolves.toMatchObject({
+        tenantId:'tenant-1',workItemId:'WI-ftd',requirePersistedSelection:true });
+    await expect(service.authorizeOpenClawApplicabilityContext({operation:'BEGIN_APPLICABILITY',
+      applicabilityContextRef:'APCTX-legacy',requestId:'request-1'})).resolves.toMatchObject({workItemId:'WI-legacy'});
+    await expect(service.authorizeOpenClawAttempt({operation:'COMMIT_APPLICABILITY',attemptRef:'AQ-1',workItemId:'WI-ftd'}))
+      .resolves.toMatchObject({workItemId:'WI-ftd'});
+    await expect(service.resolveOpenClawApplicabilityContextRef({tenantId:'other',workItemId:'WI-ftd'}))
+      .rejects.toMatchObject({statusCode:404});
+    await expect(service.authorizeOpenClawApplicabilityContext({operation:'BEGIN_APPLICABILITY',
+      applicabilityContextRef:'APCTX-other',requestId:'request-1'})).rejects.toMatchObject({statusCode:404});
+    process.env.WL_OPENCLAW_APPLICABILITY_ADDITIONAL_CONTEXT_BINDING=JSON.stringify({workItemId:'WI-other',applicabilityContextRef:'APCTX-ftd'});
+    await expect(service.resolveOpenClawApplicabilityContextRef({tenantId:'tenant-1',workItemId:'WI-ftd'}))
+      .rejects.toMatchObject({statusCode:503});
+    await expect(service.authorizeOpenClawApplicabilityContext({operation:'BEGIN_APPLICABILITY',
+      applicabilityContextRef:'APCTX-legacy',requestId:'request-1'})).resolves.toMatchObject({workItemId:'WI-legacy'});
   });
 
   it('authorizes one document independently without granting engineering WorkItem or Matter access', async () => {

@@ -27,6 +27,24 @@ describe('CanonicalHostApplicabilityInputProducer', () => {
     } finally {if(saved===undefined) delete process.env.WL_OPENCLAW_APPLICABILITY_CONTEXT_REF;else process.env.WL_OPENCLAW_APPLICABILITY_CONTEXT_REF=saved;}
   });
 
+  it('does not expose an additional context before its WorkItem has a controlled target',async()=>{
+    const h=producerHarness({original:true});
+    h.serviceScope.resolveOpenClawApplicabilityContextRef.mockResolvedValue('APCTX-ftd');
+    h.serviceScope.authorizeOpenClawApplicabilityContext.mockResolvedValue({
+      principalId:'service:openclaw-main',appId:'app_17bzc551rsg',tenantId:'tenant-1',workItemId:'WI-APP-1',
+      authorizationFingerprint:'scope-fingerprint-1',applicabilityContextRef:'APCTX-ftd',
+      requestId:'initial-applicability-discovery',requirePersistedSelection:true,
+    } as never);
+    h.controlledSelectionPort.readCurrent.mockRejectedValue(Object.assign(
+      new Error('APPLICABILITY_CONTROLLED_SELECTION_NOT_CONFIGURED'),
+      {code:'APPLICABILITY_CONTROLLED_SELECTION_NOT_CONFIGURED',statusCode:409}));
+    await expect(h.producer.readOriginalAdmissionContext({tenantId:'tenant-1',workItemId:'WI-APP-1',documentVersionId:'DV-1'}))
+      .resolves.toEqual({contextRef:null,reason:'APPLICABILITY_CONTROLLED_SELECTION_NOT_CONFIGURED'});
+    expect(h.controlledSelectionPort.readCurrent).toHaveBeenCalledWith(expect.objectContaining({
+      applicabilityContextRef:'APCTX-ftd',requirePersistedSelection:true}));
+    expect(h.registrar.compareAndSet).not.toHaveBeenCalled();
+  });
+
   it.each([false, true])('persists original provenance and revalidates prefixed=%s without a package', async prefixed => {
     const h=producerHarness({original:true,prefixed});
     const scope=await h.serviceScope.authorizeOpenClawApplicabilityContext({applicabilityContextRef:'APCTX-OPAQUE-1',requestId:'request-original'});
@@ -323,6 +341,9 @@ function producerHarness(options: { p0b?: boolean; original?: boolean; prefixed?
     ]),
   };
   const serviceScope = {
+    resolveOpenClawApplicabilityContextRef: jest.fn(async ({workItemId}: any) =>
+      workItemId === 'WI-APP-1'
+        ? process.env.WL_OPENCLAW_APPLICABILITY_CONTEXT_REF ?? null : null),
     authorizeOpenClawApplicabilityContext: jest.fn(
       async ({ applicabilityContextRef, requestId }: any) => ({
         principalId: 'service:openclaw-main',
@@ -355,7 +376,7 @@ function producerHarness(options: { p0b?: boolean; original?: boolean; prefixed?
     producer,
     registrar,
     selection,
-    packageArtifact,original,originalWork,reader,artifactStore,serviceScope,
+    packageArtifact,original,originalWork,reader,artifactStore,serviceScope,controlledSelectionPort,
     readCurrent: () => structuredClone(current),
   };
 }
