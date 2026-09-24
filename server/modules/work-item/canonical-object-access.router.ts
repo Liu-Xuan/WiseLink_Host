@@ -1,10 +1,11 @@
 import { Injectable } from '@nestjs/common';
 
-import type {
-  CanonicalObjectAccessInput,
-  CanonicalObjectAccessPort,
-  CanonicalObjectAccessResult,
-  CanonicalWorkItemReadInput,
+import {
+  settleCanonicalWorkItemReads,
+  type CanonicalObjectAccessInput,
+  type CanonicalObjectAccessPort,
+  type CanonicalObjectAccessResult,
+  type CanonicalWorkItemReadInput,
 } from './canonical-object-access.port';
 import {
   UnavailableAilyObjectAccessAdapter,
@@ -49,7 +50,7 @@ export class CanonicalObjectAccessRouter implements CanonicalObjectAccessPort {
   ): Promise<CanonicalObjectAccessResult[]> {
     if (inputs.some(input => input.actor.principalKind === 'UNAVAILABLE') ||
       !this.finalUser.freshReadBatch)
-      return Promise.all(inputs.map(input => this.freshRead(input)));
+      return settleCanonicalWorkItemReads(inputs, input => this.freshRead(input));
     return this.finalUser.freshReadBatch(inputs);
   }
 }

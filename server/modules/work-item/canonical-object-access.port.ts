@@ -275,6 +275,18 @@ export interface CanonicalObjectAccessPort {
   ): Promise<CanonicalObjectAccessResult[]>;
 }
 
+/** Settle every fallback read before reporting the first input-order failure. */
+export async function settleCanonicalWorkItemReads(
+  inputs: readonly CanonicalWorkItemReadInput[],
+  read: (input: CanonicalWorkItemReadInput) => Promise<CanonicalObjectAccessResult>,
+): Promise<CanonicalObjectAccessResult[]> {
+  const settled = await Promise.allSettled(inputs.map(input => read(input)));
+  return settled.map(result => {
+    if (result.status === 'rejected') throw result.reason;
+    return result.value;
+  });
+}
+
 export function unavailableAilyActorContext(): CanonicalUnavailableActorContext {
   return {
     principalKind: 'UNAVAILABLE',

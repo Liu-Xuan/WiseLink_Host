@@ -3,16 +3,17 @@ import { createHash } from 'node:crypto';
 import { Inject, Injectable } from '@nestjs/common';
 
 import { CANONICAL_MIAODA_APP_ID } from '../canonical-host/canonical-host.constants';
-import type {
-  CanonicalAilyFinalUserActorContext,
-  CanonicalGrantableObjectAccessAction,
-  CanonicalMiaodaFinalUserActorContext,
-  CanonicalObjectAccessDenied,
-  CanonicalObjectAccessGrant,
-  CanonicalObjectAccessInput,
-  CanonicalObjectAccessPort,
-  CanonicalObjectAccessResult,
-  CanonicalWorkItemReadInput,
+import {
+  settleCanonicalWorkItemReads,
+  type CanonicalAilyFinalUserActorContext,
+  type CanonicalGrantableObjectAccessAction,
+  type CanonicalMiaodaFinalUserActorContext,
+  type CanonicalObjectAccessDenied,
+  type CanonicalObjectAccessGrant,
+  type CanonicalObjectAccessInput,
+  type CanonicalObjectAccessPort,
+  type CanonicalObjectAccessResult,
+  type CanonicalWorkItemReadInput,
 } from './canonical-object-access.port';
 import {
   MiaodaWorkItemRepository,
@@ -98,7 +99,7 @@ export class MiaodaHostedCanonicalObjectAccessAdapter implements CanonicalObject
     if (inputs.length < 2 || inputs.length > 4 ||
       !isHostedCanonicalFinalUserActor(actor) ||
       inputs.some(input => input.actor !== actor))
-      return Promise.all(inputs.map(input => this.freshRead(input)));
+      return settleCanonicalWorkItemReads(inputs, input => this.freshRead(input));
     const bindings = await this.workItems.loadAuthorizationBindings(inputs.map(input => ({
       workItemId: input.accessRoot.id,
       tenantId: actor.tenantId,

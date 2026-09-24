@@ -107,7 +107,7 @@ B2 在同一个最多4个Matter根的窗口内，等待每个根完成原有保�
 
 主控回报 B2 发布 `68cf1f72feae2dda6218bf5afa7d575896a7a6a4`，ALL 首批 trace `6afd28a6fbd6649f32bf4a9bbc7e5e9c`：20条加lookahead、app_server 13316ms、SQL span 245。来源批量查询5次/合计195ms，来源等待23次/合计1475ms；相对先前 `3bf576f` 单样本的260个SQL span，结构性减少15次。端点没有证明提速，不能从两个不同时点的样本推定回退。该trace当前成员授权21次/累计16955ms、保存成员复核21次/累计9346ms，数据库trace有82次WorkItem owner-binding SELECT、42次当前Matter SELECT和42次成员来源身份SELECT；这些计时有嵌套和并行，不可相加。
 
-B3候选只批量同一个 `requireInputs` 调用中的2至4个WorkItem owner-binding事实：Host授权router保留原 `freshRead`，可选的 `freshReadBatch` 仅对同一个已验证final-user actor对象执行一个带租户、创建者及确切WorkItem ID条件的SELECT，逐输入生成原grant或denial。混合actor、缺身份、单个或超过4个输入沿用逐条freshRead；当前成员与保存成员仍在各自阶段重新读，不跨阶段/请求缓存，当前Matter指针的前后复查及成员来源身份核验不变。任何缺行仍为原404拒绝，查询错误仍为错误，不以空集合掩盖。
+B3候选只批量同一个 `requireInputs` 调用中的2至4个WorkItem owner-binding事实：Host授权router保留原 `freshRead`，可选的 `freshReadBatch` 仅对同一个已验证final-user actor对象执行一个带租户、创建者及确切WorkItem ID条件的SELECT，逐输入生成原grant或denial。混合actor、缺身份、单个或超过4个输入沿用逐条freshRead；回退路径先 `Promise.allSettled` 等全部读取结算，再按输入顺序抛首个错误，防止授权读取越过本次请求/重试边界。当前成员与保存成员仍在各自阶段重新读，不跨阶段/请求缓存，当前Matter指针的前后复查及成员来源身份核验不变。任何缺行仍为原404拒绝，查询错误仍为错误，不以空集合掩盖。
 
 这旨在减少82次绑定事实查询中的重复Host调用；现有并发单查可能已重叠，因此SQL调用下降不能推导同等幅度的端点收益。受控发布后应核对实际绑定查询次数、成员授权与复核阶段、read_group_wait和页面可用时间，并检查大成员组是否回退到原读取以及拒绝/错误结果。
 
