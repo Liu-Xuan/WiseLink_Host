@@ -23,6 +23,11 @@ export const documentReadingActionSchemas = [
     expectedRevision: z.number().int().nonnegative() }),
   z.strictObject({ action: z.literal('READING_STATUS'), ...run }),
   z.strictObject({ action: z.literal('READING_CANCEL'), ...run }),
+  z.strictObject({ action: z.literal('READING_RETRACT'), ...run,
+    expectedReadingRevision: z.number().int().positive(),
+    requestId: z.string().regex(/^[A-Za-z0-9:_-]{1,160}$/u),
+    reasonCode: z.string().regex(/^[A-Z0-9_:-]{1,160}$/u),
+    reviewReference: z.string().trim().min(1).max(255) }),
   z.strictObject({ action: z.literal('READING_CLAIM'), ...run, leaseOwner: fenced.leaseOwner }),
   z.strictObject({ action: z.literal('READING_HEARTBEAT'), ...fenced }),
   z.strictObject({ action: z.literal('READING_READ'), ...fenced,
@@ -76,8 +81,16 @@ export class DocumentReadingRuntimeService {
         await this.runs.expire(scope, input.runRef);
         const current = await this.runs.readRun(scope, input.runRef);
         if (!current) throw new Error('DOCUMENT_READING_RUN_NOT_FOUND');
-        return summary(current);
+        const retraction = await this.runs.readRetraction(scope, input.runRef);
+        return summary(current, retraction);
       }
+      if (input.action === 'READING_RETRACT') {
+        await this.parsing.status(scope.documentVersionId, context);
+        const retraction = await this.runs.retract(scope, input);
+        return summary(row, retraction);
+      }
+      if (await this.runs.readRetraction(scope, input.runRef))
+        throw new Error('DOCUMENT_READING_RETRACTED');
       if (input.action === 'READING_CANCEL') {
         await this.runs.cancel(scope, input.runRef);
         return summary((await this.runs.readRun(scope, input.runRef))!);
@@ -142,14 +155,16 @@ export class DocumentReadingRuntimeService {
     const identity = await this.parsing.inspectPublishedIdentity(input.documentVersionId, input.parseRunId, context);
     const ready = await this.semantics.readReady({ ...context, documentVersionId: input.documentVersionId }, input.parseRunId, input.semanticRevision);
     if (!ready || ready.semanticRevision !== input.semanticRevision) throw new Error('DOCUMENT_SEMANTIC_REVISION_NOT_FOUND');
-    const result = await this.runs.readSaved({ ...context, documentVersionId: input.documentVersionId }, input.parseRunId, input.semanticRevision, input.readingRevision);
+    const state = await this.runs.readSavedState({ ...context, documentVersionId: input.documentVersionId }, input.parseRunId, input.semanticRevision, input.readingRevision);
+    const result = state.reading;
     if (result) {
       if (!isDeepStrictEqual(result.sourceBinding.original, identity.binding) || result.sourceBinding.semanticRevision !== input.semanticRevision ||
         (input.readingRevision !== undefined && result.readingRevision !== input.readingRevision))
         throw new Error('DOCUMENT_READING_RESULT_BINDING_MISMATCH');
     }
     await this.parsing.status(input.documentVersionId, context);
-    return { familyId: identity.familyId, sourceBinding: { original: identity.binding, semanticRevision: input.semanticRevision }, reading: result };
+    return { familyId: identity.familyId, sourceBinding: { original: identity.binding, semanticRevision: input.semanticRevision },
+      status: state.status, reading: result };
   }
 
   private async load(documentVersionId: string, parseRunId: string, semanticRevision: number, context: SourceContext) {
@@ -164,9 +179,10 @@ export class DocumentReadingRuntimeService {
   }
 }
 
-function summary(run: DocumentReadingRun) {
+function summary(run: DocumentReadingRun, retraction: Awaited<ReturnType<DocumentReadingRunRepository['readRetraction']>> = null) {
   return { runRef: run.runRef, requestId: run.requestId, documentVersionId: run.documentVersionId,
     parseRunId: run.parseRunId, semanticRevision: run.semanticRevision,
-    expectedRevision: run.expectedRevision, status: run.status, deadline: run.deadline,
-    readingRevision: run.readingRevision, result: run.result, errorCode: run.errorCode };
+    expectedRevision: run.expectedRevision, status: retraction ? 'RETRACTED' : run.status, deadline: run.deadline,
+    readingRevision: run.readingRevision, result: retraction ? null : run.result,
+    errorCode: run.errorCode, retraction };
 }

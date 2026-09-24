@@ -21,7 +21,7 @@ export interface DocumentReadingBatchPreviewResponse {
     semanticRevision: number | null;
     headline: string | null;
     briefSummary: string | null;
-    status: 'AVAILABLE' | 'SOURCE_CHANGED' | 'NOT_GENERATED' | 'UNAUTHORIZED';
+    status: 'AVAILABLE' | 'RETRACTED' | 'SOURCE_CHANGED' | 'NOT_GENERATED' | 'UNAUTHORIZED';
   }>;
 }
 
@@ -45,7 +45,7 @@ export class DocumentReadingListController {
    * 返回轻量级的解读预览，用于资料库表格显示
    */
   @Get('readings/preview')
-  @Header('Cache-Control', 'private, max-age=60')
+  @Header('Cache-Control', 'private, no-store')
   async getBatchPreview(
     @Query('documentVersionIds') documentVersionIds: string,
     @Query('parseRunScope') parseRunScope: string | undefined,

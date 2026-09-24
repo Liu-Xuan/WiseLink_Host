@@ -59,6 +59,7 @@ export function libraryVersionLabel(version: {
 
 export type LibraryDocumentReadingStatus =
   | 'AVAILABLE'
+  | 'RETRACTED'
   | 'SOURCE_CHANGED'
   | 'NOT_GENERATED'
   | 'NOT_RETURNED';
@@ -119,6 +120,13 @@ export function projectLibraryDocumentReading(
     readingRevision: preview.reading?.readingRevision ?? null,
     sourceBinding: binding,
   };
+  if (preview.status === 'RETRACTED') {
+    return {
+      ...empty,
+      status: 'RETRACTED',
+      note: '该版本解读已撤回，待重新核验；原保存记录保留供审计',
+    };
+  }
   if (preview.status === 'SOURCE_CHANGED') {
     return {
       ...empty,

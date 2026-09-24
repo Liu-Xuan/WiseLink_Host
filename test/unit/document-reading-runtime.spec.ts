@@ -23,7 +23,9 @@ function fixture() {
     readStructuredSource: jest.fn(), readback: jest.fn(), persistAndReadback: jest.fn() };
   const semantics = { read: jest.fn().mockResolvedValue(map), ensure: jest.fn(), readReady: jest.fn().mockResolvedValue({ semanticRevision: 1 }) };
   const parsing = { status: jest.fn().mockResolvedValue({}), inspectPublishedIdentity: jest.fn().mockResolvedValue({ familyId: 'family-test', binding: original.binding }) };
-  const runs = { begin: jest.fn().mockResolvedValue(row), readRun: jest.fn().mockResolvedValue(row), readSaved: jest.fn().mockResolvedValue(null),
+  const runs = { begin: jest.fn().mockResolvedValue(row), readRun: jest.fn().mockResolvedValue(row),
+    readSavedState: jest.fn().mockResolvedValue({ status: 'NOT_GENERATED', reading: null }),
+    readRetraction: jest.fn().mockResolvedValue(null), retract: jest.fn(),
     recordDelivery: jest.fn(async (_scope, _fence, range) => { row.deliveredRanges.push(range); }),
     save: jest.fn(async (_scope, _fence, _command, materialize) => materialize(row, 1)),
     renew: jest.fn().mockResolvedValue(true), claim: jest.fn().mockResolvedValue(fence), cancel: jest.fn(), fail: jest.fn(), expire: jest.fn() };
@@ -209,7 +211,11 @@ describe('independent file reading runtime', () => {
     const request = { documentVersionId: f.scope.documentVersionId, parseRunId: f.row.parseRunId,
       semanticRevision: 1, readingRevision: 9 };
     await expect(f.service.readForBrowser(request, f.context)).resolves.toMatchObject({ reading: null });
-    expect(f.runs.readSaved).toHaveBeenCalledWith(f.context, f.row.parseRunId, 1, 9);
+    expect(f.runs.readSavedState).toHaveBeenCalledWith(f.context, f.row.parseRunId, 1, 9);
+    f.runs.readSavedState.mockResolvedValueOnce({ status: 'RETRACTED', reading: null });
+    await expect(f.service.readForBrowser(request, f.context)).resolves.toMatchObject({
+      status: 'RETRACTED', reading: null,
+    });
     expect(f.actors.withActorScope).not.toHaveBeenCalled();
     expect(f.runs.begin).not.toHaveBeenCalled();
     expect(f.semantics.ensure).not.toHaveBeenCalled();
@@ -217,6 +223,35 @@ describe('independent file reading runtime', () => {
     await expect(f.service.readForBrowser(request, f.context)).rejects.toThrow('DOCUMENT_SEMANTIC_REVISION_NOT_FOUND');
     f.parsing.status.mockRejectedValueOnce(new Error('SOURCE_ACCESS_DENIED'));
     await expect(f.service.readForBrowser(request, f.context)).rejects.toThrow('SOURCE_ACCESS_DENIED');
+  });
+
+  it('retracts only after source authorization and reports the effective state without serving the saved text', async () => {
+    const f = fixture();
+    const saved = { ...f.row, status: 'SAVED' as const, readingRevision: 1,
+      result: { headline: '错误候选' } as DocumentReadingRun['result'] };
+    const retraction = { runRef: saved.runRef, readingRevision: 1, requestId: 'review-1',
+      reasonCode: 'SOURCE_SEMANTIC_CONTRADICTION', reviewReference: 'independent-review',
+      retractedAt: '2026-09-24T00:00:00Z' };
+    f.runs.readRun.mockResolvedValue(saved);
+    f.runs.retract.mockResolvedValue(retraction);
+    const request = { action: 'READING_RETRACT', documentVersionId: f.scope.documentVersionId,
+      runRef: saved.runRef, expectedReadingRevision: 1, requestId: 'review-1',
+      reasonCode: retraction.reasonCode, reviewReference: retraction.reviewReference };
+    await expect(f.service.run(request)).resolves.toMatchObject({ status: 'RETRACTED', result: null,
+      readingRevision: 1, retraction });
+    expect(f.runs.retract).toHaveBeenCalledWith(f.scope, expect.objectContaining({ runRef: saved.runRef,
+      expectedReadingRevision: 1 }));
+    f.runs.readRetraction.mockResolvedValue(retraction);
+    await expect(f.service.run({ action: 'READING_STATUS', documentVersionId: f.scope.documentVersionId,
+      runRef: saved.runRef })).resolves.toMatchObject({ status: 'RETRACTED', result: null });
+    await expect(f.service.run({ action: 'READING_SAVE', ...f.fence,
+      candidate: {}, producer: { skillVersion: 'fixture', modelVersion: 'fixture' } }))
+      .rejects.toThrow('DOCUMENT_READING_RETRACTED');
+    expect(f.runs.save).not.toHaveBeenCalled();
+    f.runs.readRetraction.mockResolvedValue(null);
+    f.parsing.status.mockRejectedValueOnce(new Error('SOURCE_ACCESS_DENIED'));
+    await expect(f.service.run(request)).rejects.toThrow('SOURCE_ACCESS_DENIED');
+    expect(f.runs.retract).toHaveBeenCalledTimes(1);
   });
 });
 

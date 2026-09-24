@@ -32,4 +32,6 @@
 
 ## 读取
 
-浏览器沿既有身份/来源授权读取 `GET /api/document-management/document-versions/:documentVersionId/document-reading`，必须明确 parseRunId、semanticRevision，可明确 readingRevision。目录 documentReading 是该版本同一保存结果的轻量投影，携带 AVAILABLE / SOURCE_CHANGED / NOT_GENERATED 状态；更换原文或语义版本不能将旧解读当当前。关键否定、条件和源限制不得机械截断或被目录主题替代。
+浏览器沿既有身份/来源授权读取 `GET /api/document-management/document-versions/:documentVersionId/document-reading`，必须明确 parseRunId、semanticRevision，可明确 readingRevision。目录 documentReading 是该版本同一保存结果的轻量投影，携带 AVAILABLE / RETRACTED / SOURCE_CHANGED / NOT_GENERATED 状态；更换原文或语义版本不能将旧解读当当前。关键否定、条件和源限制不得机械截断或被目录主题替代。
+
+独立复核发现已保存候选有实质错误时，可由已授权的 document work 身份明确调用 `READING_RETRACT`，携带准确 documentVersionId、runRef、expectedReadingRevision、稳定 requestId、reasonCode 和 reviewReference。Host 在原文授权、来源版本及当前阅读修订 CAS 下追加唯一撤回记录；原 SAVED 行、result、saveCommand 和 readingRevision 保持不可变。重放同一请求返回同一撤回记录，不同请求或落后修订失败。STATUS 显示有效状态 RETRACTED、撤回记录和空 result；浏览器完整读取、目录及批量预览均不再提供撤回候选，显示待重新核验。新候选仍需独立准入和模型调用，expectedRevision 取已保存的最高修订（包括撤回者），不得回退到旧修订或静默覆写。

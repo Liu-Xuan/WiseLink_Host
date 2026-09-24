@@ -237,6 +237,7 @@ test('real MCP transport forwards bounded reading signals and rejects unrelated 
   const options={signal:new AbortController().signal,timeout:60000};
   const v2={callTool:async (_request,received)=>{assert.equal(received,options);return {content:[{type:'text',text:'{}'}]};}};
   await callJsonTool(v2,'document_reading',{action:'READING_STATUS'},options,2);
+  await callJsonTool(v2,'document_reading',{action:'READING_RETRACT'},options,2);
   await assert.rejects(callJsonTool(client,'document_reading',{action:'READING_BEGIN'},{signal:new AbortController().signal,timeout:120000}),/REQUEST_OPTIONS_INVALID/);
 });
 

@@ -9,6 +9,10 @@ import { dmDocumentReadingRun } from '../../database/document-reading.schema';
 
 export type DocumentReadingScope = { tenantId: string; actorUserId: string; documentVersionId: string };
 export type DocumentReadingFence = { runRef: string; leaseOwner: string; leaseToken: string; leaseGeneration: number };
+export type DocumentReadingRetraction = {
+  runRef: string; readingRevision: number; requestId: string; reasonCode: string;
+  reviewReference: string; retractedAt: string;
+};
 export type DocumentReadingRun = {
   runRef: string;
   requestId: string;
@@ -60,11 +64,68 @@ export class DocumentReadingRunRepository {
 
   /** Published candidates are readable independently of their producer or assessment work. */
   async readSaved(scope: DocumentReadingScope, parseRunId: string, semanticRevision: number, revision?: number): Promise<DocumentReadingRevision | null> {
-    const rows = await this.db.execute<{ result: DocumentReadingRevision }>(sql`SELECT result_json AS result FROM ${dmDocumentReadingRun}
-      WHERE tenant_id=${scope.tenantId} AND document_version_id=${scope.documentVersionId} AND parse_run_id=${parseRunId}
-        AND semantic_revision=${semanticRevision} AND status='SAVED' ${revision === undefined ? sql`` : sql`AND reading_revision=${revision}`}
-      ORDER BY reading_revision DESC LIMIT 1`);
-    return rows[0]?.result ?? null;
+    return (await this.readSavedState(scope, parseRunId, semanticRevision, revision)).reading;
+  }
+
+  async readSavedState(scope: DocumentReadingScope, parseRunId: string, semanticRevision: number, revision?: number): Promise<{
+    status: 'AVAILABLE' | 'RETRACTED' | 'NOT_GENERATED'; reading: DocumentReadingRevision | null;
+  }> {
+    const rows = await this.db.execute<{ result: DocumentReadingRevision; retracted: boolean }>(sql`
+      SELECT r.result_json AS result,(x.run_ref IS NOT NULL) AS retracted FROM ${dmDocumentReadingRun} r
+      LEFT JOIN dm_document_reading_retraction x ON x.run_ref=r.run_ref AND x.tenant_id=r.tenant_id
+      WHERE r.tenant_id=${scope.tenantId} AND r.document_version_id=${scope.documentVersionId}
+        AND r.parse_run_id=${parseRunId} AND r.semantic_revision=${semanticRevision} AND r.status='SAVED'
+        ${revision === undefined ? sql`` : sql`AND r.reading_revision=${revision}`}
+      ORDER BY r.reading_revision DESC LIMIT 1`);
+    if (!rows[0]) return { status: 'NOT_GENERATED', reading: null };
+    return rows[0].retracted ? { status: 'RETRACTED', reading: null } :
+      { status: 'AVAILABLE', reading: rows[0].result };
+  }
+
+  async readRetraction(scope: DocumentReadingScope, runRef: string): Promise<DocumentReadingRetraction | null> {
+    const rows = await this.db.execute<DocumentReadingRetraction>(sql`SELECT x.run_ref AS "runRef",
+      x.reading_revision AS "readingRevision",x.request_id AS "requestId",x.reason_code AS "reasonCode",
+      x.review_reference AS "reviewReference",x._created_at::text AS "retractedAt"
+      FROM dm_document_reading_retraction x WHERE x.tenant_id=${scope.tenantId}
+        AND x.actor_user_id=${scope.actorUserId} AND x.document_version_id=${scope.documentVersionId}
+        AND x.run_ref=${runRef}`);
+    return rows[0] ?? null;
+  }
+
+  async retract(scope: DocumentReadingScope, input: { runRef: string; expectedReadingRevision: number;
+    requestId: string; reasonCode: string; reviewReference: string }): Promise<DocumentReadingRetraction> {
+    return this.db.transaction(async tx => {
+      const prior = await tx.execute<DocumentReadingRetraction>(sql`SELECT run_ref AS "runRef",
+        reading_revision AS "readingRevision",request_id AS "requestId",reason_code AS "reasonCode",
+        review_reference AS "reviewReference",_created_at::text AS "retractedAt"
+        FROM dm_document_reading_retraction WHERE tenant_id=${scope.tenantId}
+          AND actor_user_id=${scope.actorUserId} AND request_id=${input.requestId}`);
+      if (prior[0]) {
+        if (prior[0].runRef !== input.runRef || prior[0].readingRevision !== input.expectedReadingRevision ||
+          prior[0].reasonCode !== input.reasonCode || prior[0].reviewReference !== input.reviewReference)
+          throw new Error('DOCUMENT_READING_RETRACTION_REQUEST_CONFLICT');
+        return prior[0];
+      }
+      const snapshot = await readRun(tx, scope, input.runRef);
+      if (!snapshot) throw new Error('DOCUMENT_READING_RUN_NOT_FOUND');
+      await lockSource(tx, scope, snapshot);
+      const row = await readRun(tx, scope, input.runRef, true);
+      if (!row || row.status !== 'SAVED' || row.readingRevision !== input.expectedReadingRevision)
+        throw new Error('DOCUMENT_READING_RETRACTION_TARGET_CONFLICT');
+      if (await currentRevision(tx, scope, row.parseRunId, row.semanticRevision) !== input.expectedReadingRevision)
+        throw new Error('DOCUMENT_READING_RETRACTION_REVISION_CONFLICT');
+      const existing = await tx.execute(sql`SELECT run_ref FROM dm_document_reading_retraction
+        WHERE run_ref=${input.runRef}`);
+      if (existing.length) throw new Error('DOCUMENT_READING_ALREADY_RETRACTED');
+      const inserted = await tx.execute<DocumentReadingRetraction>(sql`INSERT INTO dm_document_reading_retraction
+        (run_ref,tenant_id,actor_user_id,document_version_id,reading_revision,request_id,reason_code,review_reference)
+        VALUES (${input.runRef},${scope.tenantId},${scope.actorUserId},${scope.documentVersionId},
+          ${input.expectedReadingRevision},${input.requestId},${input.reasonCode},${input.reviewReference})
+        RETURNING run_ref AS "runRef",reading_revision AS "readingRevision",request_id AS "requestId",
+          reason_code AS "reasonCode",review_reference AS "reviewReference",_created_at::text AS "retractedAt"`);
+      if (!inserted[0]) throw new Error('DOCUMENT_READING_RETRACTION_SAVE_FAILED');
+      return inserted[0];
+    });
   }
 
   async begin(scope: DocumentReadingScope, input: {
@@ -108,23 +169,22 @@ export class DocumentReadingRunRepository {
     semanticRevision: number;
     readingRevision: number;
     savedReading: DocumentReadingRevision | null;
+    retracted: boolean;
   } | null> {
     const rows = await this.db.execute<{
       parseRunId: string;
       semanticRevision: number;
       readingRevision: number;
       result: DocumentReadingRevision;
-    }>(sql`SELECT
-      parse_run_id AS "parseRunId",
-      semantic_revision AS "semanticRevision",
-      reading_revision AS "readingRevision",
-      result_json AS result
-    FROM ${dmDocumentReadingRun}
-    WHERE tenant_id=${scope.tenantId}
-      AND document_version_id=${scope.documentVersionId}
-      AND status='SAVED'
-      AND result_json IS NOT NULL
-    ORDER BY _created_at DESC, reading_revision DESC
+      retracted: boolean;
+    }>(sql`SELECT r.parse_run_id AS "parseRunId",r.semantic_revision AS "semanticRevision",
+      r.reading_revision AS "readingRevision",r.result_json AS result,
+      (x.run_ref IS NOT NULL) AS retracted
+    FROM ${dmDocumentReadingRun} r
+    LEFT JOIN dm_document_reading_retraction x ON x.run_ref=r.run_ref AND x.tenant_id=r.tenant_id
+    WHERE r.tenant_id=${scope.tenantId} AND r.document_version_id=${scope.documentVersionId}
+      AND r.status='SAVED' AND r.result_json IS NOT NULL
+    ORDER BY r._created_at DESC,r.reading_revision DESC
     LIMIT 1`);
 
     if (!rows[0]) return null;
@@ -134,6 +194,7 @@ export class DocumentReadingRunRepository {
       semanticRevision: rows[0].semanticRevision,
       readingRevision: rows[0].readingRevision,
       savedReading: rows[0].result,
+      retracted: rows[0].retracted,
     };
   }
 
@@ -185,6 +246,9 @@ export class DocumentReadingRunRepository {
       const row = await readRun(tx, scope, fence.runRef, true);
       if (!row) throw new Error('DOCUMENT_READING_RUN_NOT_FOUND');
       if (row.status === 'SAVED') {
+        const withdrawn = await tx.execute(sql`SELECT run_ref FROM dm_document_reading_retraction
+          WHERE run_ref=${row.runRef}`);
+        if (withdrawn.length) throw new Error('DOCUMENT_READING_RETRACTED');
         if (!isDeepStrictEqual(row.saveCommand, command) || !row.result) throw new Error('DOCUMENT_READING_SAVE_REPLAY_CONFLICT');
         return row.result;
       }

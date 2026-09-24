@@ -158,6 +158,17 @@ describe('projectLibraryDocumentReading', () => {
     expect(projection.note).toBe('该版本尚无已保存解读');
   });
 
+  it('never paints withdrawn text even if an upstream response accidentally includes it', () => {
+    const projection = projectLibraryDocumentReading(
+      version('DV-1', { documentReading: { status: 'RETRACTED', reading: previewReading('错误候选') } }),
+    );
+    expect(projection.status).toBe('RETRACTED');
+    expect(projection.headline).toBeNull();
+    expect(projection.brief).toBeNull();
+    expect(projection.conditionLines).toEqual([]);
+    expect(projection.note).toContain('已撤回');
+  });
+
   it('treats AVAILABLE without reading content as not generated', () => {
     const projection = projectLibraryDocumentReading(
       version('DV-1', { documentReading: { status: 'AVAILABLE', reading: null } }),

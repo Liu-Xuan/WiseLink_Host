@@ -61,12 +61,13 @@ export interface DocumentReadingRequest {
 export interface DocumentReadingResponse {
   familyId: string;
   sourceBinding: DocumentReadingRevision['sourceBinding'];
+  status: 'AVAILABLE' | 'RETRACTED' | 'NOT_GENERATED';
   reading: DocumentReadingRevision | null;
 }
 
 /** List projection of the same saved reading, without paragraphs or full source anchors. */
 export interface DocumentReadingPreview {
-  status: 'AVAILABLE' | 'SOURCE_CHANGED' | 'NOT_GENERATED';
+  status: 'AVAILABLE' | 'RETRACTED' | 'SOURCE_CHANGED' | 'NOT_GENERATED';
   reading: {
     readingRunRef: string;
     readingRevision: number;
