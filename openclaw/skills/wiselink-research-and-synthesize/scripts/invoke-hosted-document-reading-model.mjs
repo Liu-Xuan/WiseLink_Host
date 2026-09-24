@@ -49,6 +49,27 @@ function requiredOption(value, code) {
   return value;
 }
 
+const tokenCount = value => Number.isSafeInteger(value) && value >= 0 ? value : null;
+function responseMetadata(payload, choice) {
+  const reason = choice?.finish_reason;
+  return {
+    finishReason: typeof reason === 'string' && /^[a-z_]{1,48}$/u.test(reason) ? reason : null,
+    usage: {
+      inputTokens: tokenCount(payload?.usage?.prompt_tokens),
+      outputTokens: tokenCount(payload?.usage?.completion_tokens),
+      totalTokens: tokenCount(payload?.usage?.total_tokens),
+      reasoningTokens: tokenCount(payload?.usage?.completion_tokens_details?.reasoning_tokens),
+    },
+  };
+}
+
+function modelResultError(code, metadata, cause) {
+  return Object.assign(new Error(code, cause ? { cause } : undefined), {
+    hostErrorCode: code,
+    modelResponse: metadata,
+  });
+}
+
 export async function invokeHostedDocumentReadingModel(input, options = {}, dependencies = {}) {
   if (input == null || typeof input !== 'object')
     throw new Error('READING_MODEL_INPUT_INVALID');
@@ -67,6 +88,7 @@ export async function invokeHostedDocumentReadingModel(input, options = {}, depe
   const signal = options.signal instanceof AbortSignal
     ? AbortSignal.any([options.signal, timeoutSignal]) : timeoutSignal;
   let endpoint;
+  let metadata = null;
   try {
     endpoint = new URL('/v1/chat/completions', gatewayUrl);
   } catch {
@@ -112,6 +134,14 @@ export async function invokeHostedDocumentReadingModel(input, options = {}, depe
     }
     if (!response.ok) throw new Error(`READING_GATEWAY_HTTP_${response.status}`);
     const choice = payload.choices?.[0];
+    metadata = responseMetadata(payload, choice);
+    if (choice?.finish_reason === 'length')
+      throw modelResultError('READING_MODEL_RESULT_TRUNCATED', metadata);
+    // Some official gateways return stop (or omit this field) alongside a
+    // complete tool call. The tool shape remains mandatory in every case.
+    if (choice?.finish_reason != null &&
+        !['stop', 'tool_calls'].includes(choice.finish_reason))
+      throw modelResultError('READING_MODEL_RESULT_FINISH_REASON_UNSUPPORTED', metadata);
     const toolCall = choice?.message?.tool_calls?.[0];
     if (choice?.message?.tool_calls?.length !== 1 || toolCall?.type !== 'function' ||
         toolCall.function?.name !== READING_PROPOSAL_FUNCTION_NAME)
@@ -122,6 +152,7 @@ export async function invokeHostedDocumentReadingModel(input, options = {}, depe
     return {
       proposal,
       modelVersion,
+      modelResponse: metadata,
       provenance: {
         modelVersion,
         promptVersion: READING_MODEL_PROMPT_VERSION,
@@ -131,7 +162,7 @@ export async function invokeHostedDocumentReadingModel(input, options = {}, depe
   } catch (error) {
     const code = String(error?.message ?? '');
     if (/^(READING_GATEWAY_RESPONSE_TOO_LARGE|READING_GATEWAY_INVALID_JSON_HTTP_[0-9]+|READING_MODEL_TOOL_CALL_INVALID|READING_MODEL_REFERENCE_INVALID|REVIEW_MODEL_[A-Z0-9_]+)$/u.test(code)) {
-      throw Object.assign(new Error('READING_MODEL_RESULT_INVALID', { cause: error }), { hostErrorCode: 'READING_MODEL_RESULT_INVALID' });
+      throw modelResultError('READING_MODEL_RESULT_INVALID', metadata, error);
     }
     throw error;
   }
