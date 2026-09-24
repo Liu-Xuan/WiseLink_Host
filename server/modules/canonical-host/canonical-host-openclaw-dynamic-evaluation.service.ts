@@ -290,6 +290,7 @@ export class CanonicalHostOpenClawDynamicEvaluationService {
     leaseToken: string,
     leaseGeneration: number,
     resultEnvelope: unknown,
+    workItemId?: string,
   ): Promise<
     | CommitDynamicEvaluationResult
     | ActionAttemptTerminalProjection
@@ -298,6 +299,7 @@ export class CanonicalHostOpenClawDynamicEvaluationService {
     const scope = await this.serviceScope.authorizeOpenClawAttempt({
       operation: 'COMMIT_DYNAMIC',
       attemptRef,
+      workItemId,
     });
     assertAttemptScope(scope, attemptRef);
     const preflightRow = await this.attempts.readScoped({

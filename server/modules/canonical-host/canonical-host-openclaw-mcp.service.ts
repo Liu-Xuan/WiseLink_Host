@@ -489,6 +489,7 @@ export class CanonicalHostOpenClawMcpService {
         inputSchema: z
           .object({
             attemptRef,
+            workItemId: mcpWorkItemId.optional(),
             leaseToken,
             leaseGeneration,
             sourceRefs: z.array(z.string().min(1).max(512)).min(1).max(96),
@@ -507,7 +508,7 @@ export class CanonicalHostOpenClawMcpService {
       {
         title: '按需检索初始评估补充知识',
         description: '仅使用新任务绑定的当前用户授权和官方智能体。提交一次requestKey/query，再按queryRef读取；提交响应不确定时仅传原requestKey读取，不重新发起。结果是未核实补充材料，失败/不确定必须保留。',
-        inputSchema: z.object({ attemptRef, leaseToken, leaseGeneration,
+        inputSchema: z.object({ attemptRef, workItemId: mcpWorkItemId.optional(), leaseToken, leaseGeneration,
           requestKey: z.string().min(1).max(200).optional(),
           query: z.string().trim().min(1).max(4000).optional(),
           queryRef: z.string().uuid().optional(),
@@ -526,6 +527,7 @@ export class CanonicalHostOpenClawMcpService {
         inputSchema: z
           .object({
             attemptRef,
+            workItemId: mcpWorkItemId.optional(),
             leaseToken,
             leaseGeneration,
             requestId: z.string().regex(/^[A-Za-z0-9:_-]{1,96}$/u),
@@ -545,13 +547,13 @@ export class CanonicalHostOpenClawMcpService {
         description:
           '在当前授权下读回原 request 的完整正文或最新工作，供保存响应丢失、退出及取消后的恢复核对；不发起模型或提升结果。',
         inputSchema: z
-          .object({ attemptRef, requestId: z.string().max(96).optional() })
+          .object({ attemptRef, workItemId: mcpWorkItemId.optional(), requestId: z.string().max(96).optional() })
           .strict(),
         annotations: resumeAnnotations,
       },
-      async ({ attemptRef: ref, requestId }) =>
+      async ({ attemptRef: ref, requestId, workItemId }) =>
         textResult(
-          await this.problemAssessment.readAttemptWork(ref, requestId),
+          await this.problemAssessment.readAttemptWork(ref, requestId, workItemId),
         ),
     );
 
@@ -564,6 +566,7 @@ export class CanonicalHostOpenClawMcpService {
         inputSchema: z
           .object({
             attemptRef,
+            workItemId: mcpWorkItemId.optional(),
             leaseToken,
             leaseGeneration,
             result: resultEnvelope,
@@ -573,6 +576,7 @@ export class CanonicalHostOpenClawMcpService {
       },
       async ({
         attemptRef: selectedAttemptRef,
+        workItemId,
         leaseToken: selectedLeaseToken,
         leaseGeneration: selectedLeaseGeneration,
         result,
@@ -583,6 +587,7 @@ export class CanonicalHostOpenClawMcpService {
             selectedLeaseToken,
             selectedLeaseGeneration,
             result,
+            workItemId,
           ),
         ),
     );
@@ -786,11 +791,11 @@ export class CanonicalHostOpenClawMcpService {
         title: '读取通用 ActionAttempt 状态',
         description:
           '先授权再按 tenant/WorkItem scope 只读返回五类 exact ActionAttempt 的 RUNNING/COMMITTING/terminal 状态；仅 COMMITTING 返回经 Host policy 校验的 recovery ResultEnvelope，不触发模型或业务写入。',
-        inputSchema: z.object({ attemptRef }).strict(),
+        inputSchema: z.object({ attemptRef, workItemId: mcpWorkItemId.optional() }).strict(),
         annotations: resumeAnnotations,
       },
-      async ({ attemptRef: selectedAttemptRef }) =>
-        textResult(await this.attemptStatus.status(selectedAttemptRef)),
+      async ({ attemptRef: selectedAttemptRef, workItemId }) =>
+        textResult(await this.attemptStatus.status(selectedAttemptRef, workItemId)),
     );
 
     server.registerTool(
@@ -824,6 +829,7 @@ export class CanonicalHostOpenClawMcpService {
         inputSchema: z
           .object({
             attemptRef,
+            workItemId: mcpWorkItemId.optional(),
             leaseToken,
             leaseGeneration,
             reviewProgress: reviewProgress.optional(),
@@ -833,6 +839,7 @@ export class CanonicalHostOpenClawMcpService {
       },
       async ({
         attemptRef: selectedAttemptRef,
+        workItemId,
         leaseToken: selectedLeaseToken,
         leaseGeneration: selectedLeaseGeneration,
         reviewProgress: selectedReviewProgress,
@@ -840,7 +847,19 @@ export class CanonicalHostOpenClawMcpService {
         const scope = await this.serviceScope.authorizeOpenClawAttempt({
           operation: 'HEARTBEAT_ATTEMPT',
           attemptRef: selectedAttemptRef,
+          workItemId,
         });
+        if (workItemId !== undefined) {
+          const row = await this.attempts.readScoped({
+            attemptRef: selectedAttemptRef,
+            tenantId: scope.tenantId,
+            workItemId: scope.workItemId,
+          });
+          if (row.actionType !== 'OPENCLAW_DYNAMIC_EVALUATION')
+            throw Object.assign(new Error('ACTION_ATTEMPT_NOT_FOUND'), {
+              code: 'ACTION_ATTEMPT_NOT_FOUND', statusCode: 404,
+            });
+        }
         return textResult(
           await this.attempts.heartbeat({
             attemptRef: selectedAttemptRef,
@@ -871,16 +890,29 @@ export class CanonicalHostOpenClawMcpService {
         inputSchema: z
           .object({
             attemptRef,
+            workItemId: mcpWorkItemId.optional(),
             reason: z.string().trim().min(1).max(4000),
           })
           .strict(),
         annotations: commitAnnotations,
       },
-      async ({ attemptRef: selectedAttemptRef, reason }) => {
+      async ({ attemptRef: selectedAttemptRef, workItemId, reason }) => {
         const scope = await this.serviceScope.authorizeOpenClawAttempt({
           operation: 'CANCEL_ATTEMPT',
           attemptRef: selectedAttemptRef,
+          workItemId,
         });
+        if (workItemId !== undefined) {
+          const row = await this.attempts.readScoped({
+            attemptRef: selectedAttemptRef,
+            tenantId: scope.tenantId,
+            workItemId: scope.workItemId,
+          });
+          if (row.actionType !== 'OPENCLAW_DYNAMIC_EVALUATION')
+            throw Object.assign(new Error('ACTION_ATTEMPT_NOT_FOUND'), {
+              code: 'ACTION_ATTEMPT_NOT_FOUND', statusCode: 404,
+            });
+        }
         return textResult(
           await this.attempts.requestCancel({
             attemptRef: selectedAttemptRef,

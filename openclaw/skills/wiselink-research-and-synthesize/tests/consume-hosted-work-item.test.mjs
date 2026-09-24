@@ -355,6 +355,39 @@ test('applicability WAITING_INPUT permits later candidates and completed initial
   }
 });
 
+test('JobAid attempt calls bind the exact WorkItem while other stages retain legacy arguments', async (t) => {
+  const input = { ...await options(t), initialStageOnly: true,
+    expectedInitialOperation: 'EVALUATE_JOBAID' };
+  let saved = false;
+  const called = [];
+  const result = await consumeHostedWorkItem(input, {
+    callTool: async (name, args) => {
+      called.push({ name, args });
+      if (name === 'get_pending_review_turn') assert.fail('single-stage JobAid must not read Review queue');
+      if (name === 'save_assessment_work') return { saved: true };
+      if (name === 'heartbeat_action_attempt') return { leaseExpiresAt: 'future' };
+      if (name === 'get_parse_status') return status({
+        status: 'WAITING_INPUT', nextOperation: saved ? 'SYNTHESIZE_OVERALL' : 'EVALUATE_JOBAID',
+        stages: { translation: { status: 'SUCCEEDED' }, applicability: { status: 'WAITING_INPUT' },
+          jobAid: { status: saved ? 'SUCCEEDED' : 'PENDING' }, overall: { status: 'PENDING' } },
+      });
+      assert.fail(name);
+    },
+    runInitial: async (run) => {
+      await run.callTool('save_assessment_work', { attemptRef: 'AQ-exact', workJson: '{}' });
+      await run.callTool('heartbeat_action_attempt', { attemptRef: 'AQ-exact' });
+      saved = true;
+      return { outcome: 'CANDIDATE_READY' };
+    },
+  });
+  assert.equal(result.status, 'INITIAL_STAGE_SAVED');
+  assert.deepEqual(called.filter(item => item.name === 'save_assessment_work' ||
+    item.name === 'heartbeat_action_attempt').map(item => item.args), [
+    { attemptRef: 'AQ-exact', workJson: '{}', workItemId: 'WI-new' },
+    { attemptRef: 'AQ-exact', workItemId: 'WI-new' },
+  ]);
+});
+
 test('pre-commit failure cancels once; unknown final commit never cancels or replays', async (t) => {
   for (const finalCommit of [false, true]) {
     const input = await options(t);

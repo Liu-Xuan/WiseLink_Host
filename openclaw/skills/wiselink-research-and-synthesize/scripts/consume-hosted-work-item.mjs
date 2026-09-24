@@ -164,15 +164,17 @@ export async function runHostedInitialStage(options, dependencies) {
   let taskDeadline;
   const callTool = async (name, args) => {
     if (!INITIAL_TOOLS.has(name)) throw new Error('INITIAL_TOOL_NOT_ALLOWED');
+    const scopedArgs = operation === 'EVALUATE_JOBAID'
+      ? { ...args, workItemId: options.workItemId } : args;
     const count = (callCounts.get(name) ?? 0) + 1;
     callCounts.set(name, count);
-    if (name.startsWith('commit_') && args.phase !== 'UPLOAD_PART') finalCommitStarted = true;
+    if (name.startsWith('commit_') && scopedArgs.phase !== 'UPLOAD_PART') finalCommitStarted = true;
     const freshAssessmentCall = problemAssessment && !name.startsWith('commit_');
     const value = freshAssessmentCall || (options.assessmentRecovery && name.startsWith('begin_'))
-      ? await dependencies.callTool(name, args) : await checkpoint.remoteStep({
-      step: `${name}-${count}`, args,
+      ? await dependencies.callTool(name, scopedArgs) : await checkpoint.remoteStep({
+      step: `${name}-${count}`, args: scopedArgs,
       ambiguousCommit: name.startsWith('commit_'),
-      perform: () => dependencies.callTool(name, args),
+      perform: () => dependencies.callTool(name, scopedArgs),
     });
     if (name.startsWith('begin_') && value.status === 'RUNNING') {
       if (options.assessmentRecovery) assertFreshInitialAssessmentClaim(options.assessmentRecovery.previousClaim, value);
@@ -255,7 +257,9 @@ export async function runHostedInitialStage(options, dependencies) {
         const stopped = await checkpoint.remoteStep({
           step: 'stop-attempt', args: { attemptRef: startedAttempt }, ambiguousCommit: false,
           perform: () => dependencies.callTool('cancel_action_attempt', {
-            attemptRef: startedAttempt, reason: `HOSTED_INITIAL_EXECUTION_FAILED:${errorCode(error)}`,
+            attemptRef: startedAttempt,
+            ...(operation === 'EVALUATE_JOBAID' ? { workItemId: options.workItemId } : {}),
+            reason: `HOSTED_INITIAL_EXECUTION_FAILED:${errorCode(error)}`,
           }),
         });
         if (stopped.attemptRef !== startedAttempt || stopped.status !== 'CANCELLED')

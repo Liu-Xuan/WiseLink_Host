@@ -12,7 +12,7 @@ description: Orchestrate the single official hosted WiseLink engineering profile
 - hosted app：`app_17c3zn24kv2`
 - logical profile：`wiselink-engineering`
 - model policy：`official-hosted-profile-config`（任务可绑定已登记的内置或用户授权自定义模型；仍经唯一官方 Hosted profile/Gateway）
-- Skill：`wiselink-research-and-synthesize@r09.c114`
+- Skill：`wiselink-research-and-synthesize@r09.c115`
 - Skill compatibility：`wiselink-research-and-synthesize@r09`（历史任务最低接受 `r09.c10`，翻译 v2 必须为 `r09.c44` 或更新兼容包）
 - Host MCP：`wiselink-openclaw-engineering-assessment@1.2.0`（保留既有工具，新增语义翻译工作与 JobAid 来源/工作工具）
 - Host 集成提交：以本次发布包清单记录的实际提交为准
@@ -59,7 +59,11 @@ Host 新任务若为 `wiselink.jobaid-problem-task.v2`，执行问题分析协�
   current 或标记 STALE。
 - 不把 actor、tenant、ACL、credential、OAuth/session cookie、FileService bucket/path/locator、原始 PDF、
   完整 Fleet 或其它 WorkItem 内容发送给模型。
-- `workItemId` 只用于 INITIAL_ANALYSIS 的 Host MCP 控制面。INTERACTIVE_REVIEW 入口只接收
+- `workItemId` 用于 INITIAL_ANALYSIS 的 Host MCP 控制面；c115 的 JobAid 阶段还将同一
+  WorkItem ID 传给来源读取、工作保存与读回、attempt 状态、心跳、取消及最终提交，
+  由 Host 与持久化 attempt 的 tenant/WorkItem 联合核对。该 ID 不发送给模型。
+  额外 WorkItem 作用域默认关闭，且当前仅支持 JobAid 单阶段；翻译、适用性、
+  Overall 与 Review 不由这项配置获得额外任务权限。INTERACTIVE_REVIEW 入口只接收
   `reviewConversationRef` 和 `requestId`；Host 派生其余身份和业务绑定。Host review context 中的
   `workItemId` 在送模型前移除。
   c69 同时处理已保存对话正文中引用当前任务精确 ID 的情形：仅在模型视图替换为
@@ -557,7 +561,7 @@ Interactive Review 的复杂 ResultEnvelope 必须由 `sealResultEnvelope` 生�
 当前 validator 强制：
 
 - `modelVersion` 优先取响应中可读实际模型；绑定任务未回报实际模型时使用 `configured-route:<modelRef>`，旧无绑定任务使用无 fallback 的 configured endpoint。后两者只证明路由，不代表已暴露下游具体模型，也不做具体版本等值判断
-- `skillVersion=wiselink-research-and-synthesize@r09.c114`
+- `skillVersion=wiselink-research-and-synthesize@r09.c115`
 - `toolVersions.wiselink-openclaw-engineering-assessment=1.2.0`
 - `promptVersion` 非空并来自当前运行
 - task/result exact binding、SourceRef allowlist 和 canonical hash 一致

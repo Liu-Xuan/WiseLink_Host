@@ -35,6 +35,31 @@ const PUBLIC_STATUS_KEYS = [
 ];
 
 describe('CanonicalHostOpenClawAttemptStatusService', () => {
+  it('passes an explicit WorkItem selector through authorization and scoped attempt lookup', async () => {
+    const task = taskEnvelope('OPENCLAW_DYNAMIC_EVALUATION');
+    const harness = statusHarness(actionAttemptRow(task, 'RUNNING'));
+    harness.scope.authorizeOpenClawAttempt.mockImplementation(async ({ attemptRef, workItemId }) => ({
+      principalId: 'service:openclaw-hosted', appId: 'app_17bzc551rsg',
+      tenantId: 'tenant-c5', workItemId: workItemId ?? 'WI-C5',
+      authorizationFingerprint: 'sha256:scope-c5', attemptRef,
+    }));
+    harness.attempts.readScoped.mockImplementation(async ({ workItemId }) => {
+      if (workItemId !== task.workItemId) throw Object.assign(new Error('ACTION_ATTEMPT_NOT_FOUND'), {
+        code: 'ACTION_ATTEMPT_NOT_FOUND', statusCode: 404,
+      });
+      return actionAttemptRow(task, 'RUNNING');
+    });
+    await expect(harness.service.status(task.operationRef, 'WI-OTHER'))
+      .rejects.toMatchObject({ statusCode: 404 });
+    expect(harness.scope.authorizeOpenClawAttempt).toHaveBeenCalledWith({
+      operation: 'GET_ACTION_ATTEMPT_STATUS', attemptRef: task.operationRef,
+      workItemId: 'WI-OTHER',
+    });
+    expect(harness.attempts.readScoped).toHaveBeenCalledWith({
+      attemptRef: task.operationRef, tenantId: 'tenant-c5', workItemId: 'WI-OTHER',
+    });
+  });
+
   it.each(TASK_TYPES)(
     'reads RUNNING, COMMITTING, and terminal %s without leaking scope or lease fields',
     async (taskType) => {
@@ -233,7 +258,9 @@ describe('CanonicalHostOpenClawAttemptStatusService', () => {
 function statusHarness(initialRow: ActionAttemptRow) {
   let row = initialRow;
   const attempts = {
-    readScoped: jest.fn(async () => structuredClone(row)),
+    readScoped: jest.fn(async (_input: {
+      attemptRef: string; tenantId: string; workItemId: string;
+    }) => structuredClone(row)),
   };
   const scope = {
     authorizeOpenClawAttempt: jest.fn(async ({ attemptRef }) => ({

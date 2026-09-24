@@ -743,6 +743,7 @@ export class CanonicalJobAidProblemService {
 
   async readSources(input: {
     attemptRef: string;
+    workItemId?: string;
     leaseToken: string;
     leaseGeneration: number;
     sourceRefs: string[];
@@ -752,6 +753,7 @@ export class CanonicalJobAidProblemService {
     const { row, taskInput, scope } = await this.authorizedAttempt(
       input.attemptRef,
       'READ_ASSESSMENT_SOURCES',
+      input.workItemId,
     );
     if (!input.purpose.trim())
       throw new Error('JOBAID_SOURCE_PURPOSE_REQUIRED');
@@ -788,6 +790,7 @@ export class CanonicalJobAidProblemService {
 
   async queryKnowledge(input: {
     attemptRef: string;
+    workItemId?: string;
     leaseToken: string;
     leaseGeneration: number;
     requestKey?: string;
@@ -797,6 +800,7 @@ export class CanonicalJobAidProblemService {
     const { row, task, taskInput, scope } = await this.authorizedAttempt(
       input.attemptRef,
       'READ_ASSESSMENT_SOURCES',
+      input.workItemId,
     );
     assertJobAidWorkFence(row, { ...input, principalId: scope.principalId });
     await this.assertSourcesAuthorized(
@@ -874,6 +878,7 @@ export class CanonicalJobAidProblemService {
 
   async saveWork(input: {
     attemptRef: string;
+    workItemId?: string;
     leaseToken: string;
     leaseGeneration: number;
     requestId: string;
@@ -883,6 +888,7 @@ export class CanonicalJobAidProblemService {
     const { row, taskInput, scope } = await this.authorizedAttempt(
       input.attemptRef,
       'SAVE_ASSESSMENT_WORK',
+      input.workItemId,
     );
     await this.assertSourcesAuthorized(
       taskInput.sourceCatalog,
@@ -952,10 +958,11 @@ export class CanonicalJobAidProblemService {
     };
   }
 
-  async readAttemptWork(attemptRef: string, requestId?: string) {
+  async readAttemptWork(attemptRef: string, requestId?: string, workItemId?: string) {
     const { row, taskInput, scope } = await this.authorizedAttempt(
       attemptRef,
       'READ_ASSESSMENT_WORK',
+      workItemId,
     );
     const history = await this.work.listForRuntime({
       tenantId: scope.tenantId,
@@ -1575,10 +1582,12 @@ export class CanonicalJobAidProblemService {
       | 'READ_ASSESSMENT_SOURCES'
       | 'SAVE_ASSESSMENT_WORK'
       | 'READ_ASSESSMENT_WORK',
+    workItemId?: string,
   ) {
     const scope = await this.serviceScope.authorizeOpenClawAttempt({
       attemptRef,
       operation,
+      workItemId,
     });
     const row = await this.attempts.readScoped({
       attemptRef,
@@ -1588,6 +1597,7 @@ export class CanonicalJobAidProblemService {
     if (
       row.operationRef !== attemptRef ||
       !row.taskEnvelopeJson ||
+      (workItemId !== undefined && row.actionType !== 'OPENCLAW_DYNAMIC_EVALUATION') ||
       !['OPENCLAW_DYNAMIC_EVALUATION', 'OPENCLAW_OVERALL_SYNTHESIS'].includes(
         row.actionType,
       )
