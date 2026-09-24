@@ -27,6 +27,8 @@ node <installed-skill-path>/scripts/consume-hosted-review-turn.mjs --work-item-i
 
 c118 扩展额外 WorkItem 的 Review：Host 须先把唯一额外 WorkItem 纳入现有 allowlist，并设置
 `WL_OPENCLAW_REVIEW_ADDITIONAL_CONVERSATION_BINDING={"workItemId":"WI-...","reviewConversationRef":"RC-..."}`。
+从 c119 起，客户端精确接受既有四属性或含唯一可选 `workItemId` 的五属性
+`commit_review_turn_candidate` schema；四个必填字段及 `additionalProperties=false` 保持不变。
 该配置只授权这一个已持久化会话的自动 Review；旧主 WorkItem 的 Review 保持原路径。消费者把
 `--work-item-id` 作为控制面参数传给 Review context、SourceRef、Aily、attempt 状态、续租、取消和提交工具，
 Host 每次按当前会话绑定复核。`begin_review_turn` 仍使用会话引用和 requestId；WorkItem ID 不进入模型输入。
