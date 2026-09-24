@@ -1,3 +1,4 @@
+import { createNoticeWindowReader } from '../../server/modules/canonical-host/engineering-notice-window';
 import { EngineeringReadPhaseObservation } from '../../server/modules/canonical-host/engineering-read-phase-observation';
 import { PgDialect } from 'drizzle-orm/pg-core';
 import { engineeringMatterWorkRevision } from '../../server/database/schema';
@@ -279,4 +280,45 @@ describe('notice timings preserve read outcomes', () => {
     const timeline = h.observation.timelineSnapshot()!;
     expect(timeline.events.find(event => timeline.names[event[0]] === 'notice_projection')?.[4]).toBe('error');
   });
+});
+
+describe('notice window exact-reader isolation', () => {
+  it('coalesces four authorized exact readers at the actual notice call site', async () => {
+    const h = noticeHarness();
+    const readNotices = h.repository.createSavedRowBatch(4, h.observation).readNotices;
+    const saved = await h.batch.read(a);
+    h.batch.read.mockImplementation(async key => ({ ...saved, matterWorkRevisionId: key.workRef }));
+    const results = await Promise.all(['W1', 'W2', 'W3', 'W4'].map(workRef =>
+      h.repository.readByRef({ ...a, workRef, batch: { ...h.batch, readNotices }, observation: h.observation })));
+    expect(results.map(result => result?.matterWorkRevisionId)).toEqual(['W1', 'W2', 'W3', 'W4']);
+    expect(h.db.execute).toHaveBeenCalledTimes(1);
+    expect(h.observation.snapshot().notice_attempts_query.count).toBe(4);
+    expect(h.observation.snapshot().notice_window_batch_query.count).toBe(1);
+  });
+  it('rejects a corrupt purpose only for its root while retaining the legal sibling', async () => {
+    const h = noticeHarness();
+    const readNotices = createNoticeWindowReader(h.db as never, h.observation);
+    h.db.execute.mockResolvedValue([{ index: 0, id: 'BAD', attemptRef: 'BAD-REF', status: 'FAILED',
+      isCorrection: true, isOverview: null, overviewPurpose: null, reviewActivityJson: '[]',
+      correctionPurpose: { kind: 'ENGINEERING_ISSUE_CORRECTION', expectedWorkRef: a.workRef, issueKey: 'I' } }]);
+    const saved = await h.batch.read(a);
+    h.batch.read.mockImplementation(async key => ({ ...saved, matterWorkRevisionId: key.workRef }));
+    const batch = { ...h.batch, readNotices };
+    const result = await Promise.allSettled([
+      h.repository.readByRef({ ...a, batch }), h.repository.readByRef({ ...a, workRef: 'LEGAL', batch }),
+    ]);
+    expect(result[0]).toMatchObject({ status: 'rejected', reason: new Error('ENGINEERING_CORRECTION_NOTICE_INVALID') });
+    expect(result[1]).toMatchObject({ status: 'fulfilled', value: { matterWorkRevisionId: 'LEGAL' } });
+    expect(h.db.execute).toHaveBeenCalledTimes(1);
+  });
+
+  it('keeps retries outside the queue', async () => {
+    const h = noticeHarness();
+    const readNotices = jest.fn();
+    await h.repository.readByRef({ ...a, batch: { ...h.batch, readNotices },
+      observation: h.observation.scope({ attempt: 1 }) });
+    expect(readNotices).not.toHaveBeenCalled();
+    expect(h.db.execute).toHaveBeenCalledTimes(1);
+  });
+
 });

@@ -10,6 +10,7 @@ import {
 } from '@lark-apaas/fullstack-nestjs-core';
 import type { Request, Response } from 'express';
 import { and, asc, desc, eq, inArray, isNull, lte, or, sql, type SQL } from 'drizzle-orm';
+import { createNoticeWindowReader, readNoticeAttempts, type NoticeReader } from './engineering-notice-window';
 import { bindMatterOriginalInputs } from './matter-original-input-bindings';
 import { buildMatterWorkReference } from './matter-work-reference';
 import { collectIssueEvidenceUses } from '@shared/jobaid-evidence-uses';
@@ -96,6 +97,7 @@ export interface EngineeringMatterSavedRowBatch {
   skipSources(): void;
   findOverview(key: OverviewOriginKey): Promise<OverviewOriginRow | null>;
   skipOverview(): void;
+  readNotices?: NoticeReader;
 }
 
 function savedRowKey(key: SavedRowKey): string {
@@ -433,6 +435,7 @@ export class EngineeringMatterWorkingRepository {
         arriveOverview();
       }),
       skipOverview: arriveOverview,
+      readNotices: createNoticeWindowReader(this.db, observation),
     };
   }
 
@@ -476,7 +479,8 @@ export class EngineeringMatterWorkingRepository {
             input.observation?.mark('overview_origin_root_skip', 'skip');
             batch.skipOverview();
           },
-        } : undefined) : null;
+        } : undefined,
+        input.observation?.context.attempt ? undefined : batch?.readNotices) : null;
     } finally {
       if (batch && !sourceArrived) {
         input.observation?.mark('saved_sources_root_skip', 'skip');
@@ -1189,6 +1193,7 @@ async function authorizedReadModel(
   observation?: EngineeringReadPhaseObservation,
   checkSources?: (tenantId: string, workItemIds: Set<string>, documentVersionIds: Set<string>) => Promise<void>,
   overviewBatch?: { find: (key: OverviewOriginKey) => Promise<OverviewOriginRow | null>; skip: () => void },
+  noticeReader?: NoticeReader,
 ): Promise<EngineeringMatterWorkingRevisionReadModel> {
   if (ancestors.has(row.matterWorkRevisionId)) throw workingPersistenceError();
   const ancestry = new Set(ancestors).add(row.matterWorkRevisionId);
@@ -1295,48 +1300,8 @@ async function authorizedReadModel(
       checkedReferences.set(referenceKey, canonicalJson(expected));
     });
   }
-  // A Matter attempt can carry hundreds of KB of source catalog. Materialize
-  // only the two small review-purpose objects so WHERE, match flags and output
-  // do not repeatedly cast the full task envelope from text to jsonb.
-  // jsonb_path_query_first returns SQL NULL for absent/non-object modelInput,
-  // retaining the former non-match behavior of -> on malformed shape.
-  const noticeAttempts = await observeEngineeringRead(observation, 'notice_attempts_query', () => executor.execute<{
-    id: string; attemptRef: string | null; status: string;
-    isCorrection: boolean | null; isOverview: boolean | null;
-    correctionPurpose: { kind: string; expectedWorkRef: string; issueKey: string; correctionReason: string } | null;
-    overviewPurpose: { kind: string; expectedWorkRef: string; correctionReason: string } | null;
-    reviewActivityJson: string | null;
-  }>(sql`
-    WITH scoped AS MATERIALIZED (
-      SELECT a.attempt_id AS "id", a.operation_ref AS "attemptRef", a.status,
-        a.review_activity_json AS "reviewActivityJson", a.created_at AS "createdAt",
-        purpose.correction AS "correctionPurpose",
-        purpose."overviewCorrection" AS "overviewPurpose"
-      FROM action_attempt a
-      CROSS JOIN LATERAL jsonb_to_record(jsonb_path_query_first(
-        a.task_envelope_json::jsonb, '$.modelInput ? (@.type() == "object")'
-      )) AS purpose(correction jsonb, "overviewCorrection" jsonb)
-      WHERE a.tenant_id = ${row.tenantId} AND a.matter_id = ${row.matterId}
-        AND a.subject_kind = 'ENGINEERING_MATTER'
-        AND a.action_type = 'OPENCLAW_MATTER_ASSESSMENT'
-    ), matched AS MATERIALIZED (
-      SELECT scoped.*,
-        (scoped."correctionPurpose" ->> 'kind' = 'ENGINEERING_ISSUE_CORRECTION'
-          AND scoped."correctionPurpose" ->> 'expectedWorkRef' = ${row.matterWorkRevisionId}) AS "isCorrection",
-        (scoped."overviewPurpose" ->> 'kind' = 'ENGINEERING_OVERVIEW_CORRECTION'
-          AND scoped."overviewPurpose" ->> 'expectedWorkRef' IN (
-            SELECT w.matter_work_revision_id FROM engineering_matter_work_revision w
-            WHERE w.tenant_id = ${row.tenantId} AND w.matter_id = ${row.matterId}
-              AND w.created_by_user_id = ${row.createdByUserId}
-              AND w.working_revision <= ${row.workingRevision}
-          )) AS "isOverview"
-      FROM scoped
-    )
-    SELECT "id", "attemptRef", status, "reviewActivityJson",
-      "correctionPurpose", "overviewPurpose", "isCorrection", "isOverview"
-    FROM matched WHERE "isCorrection" OR "isOverview"
-    ORDER BY "createdAt" ASC
-  `));
+  const noticeAttempts = await observeEngineeringRead(observation, 'notice_attempts_query', () =>
+    noticeReader ? noticeReader(row) : readNoticeAttempts(executor, row));
   const corrections = noticeAttempts.filter(item => item.isCorrection);
   const overviewCorrections = noticeAttempts.filter(item => item.isOverview);
   // One scoped save lookup serves both notice types. Correction receipts still
