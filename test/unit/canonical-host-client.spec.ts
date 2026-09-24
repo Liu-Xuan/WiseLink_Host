@@ -28,6 +28,7 @@ import {
   createDevelopmentWorkItem,
   generateAeoCandidate,
   getApplicabilitySelection,
+  getConfigurationEvidenceStatus,
   getCanonicalHostIdentityContext,
   getCanonicalHostClientSessionGeneration,
   getCanonicalLibraryDocuments,
@@ -1175,6 +1176,43 @@ describe('canonical host assessment client', () => {
       await requireOfficialOauthSession();
       expect(request).toHaveBeenCalledTimes(3);
       expect(request.mock.calls[2][0].url).toBe('/api/identity/whoami');
+    },
+  );
+
+  it.each(['resolved', 'rejected'])(
+    'keeps platform login for exact Host OAuth SESSION_REQUIRED on assessment reads (%s)',
+    async (mode) => {
+      for (const read of [getConfigurationEvidenceStatus, getApplicabilitySelection]) {
+        const generation = getCanonicalHostClientSessionGeneration();
+        const response = {
+          status: 401,
+          data: { code: 'SESSION_REQUIRED', message: 'A valid OAuth session is required.' },
+        };
+        if (mode === 'resolved') request.mockResolvedValueOnce(response);
+        else request.mockRejectedValueOnce({ response });
+        await expect(read('WI-SB-1001')).rejects.toMatchObject({
+          code: 'OFFICIAL_OAUTH_SESSION_REQUIRED',
+          statusCode: 401,
+        });
+        expect(isCanonicalHostClientSessionAuthenticationRequired()).toBe(false);
+        expect(getCanonicalHostClientSessionGeneration()).toBe(generation);
+      }
+    },
+  );
+
+  it.each(['resolved', 'rejected'])(
+    'still invalidates platform login for unclassified assessment 401 (%s)',
+    async (mode) => {
+      for (const read of [getConfigurationEvidenceStatus, getApplicabilitySelection]) {
+        const generation = getCanonicalHostClientSessionGeneration();
+        const response = { status: 401, data: {} };
+        if (mode === 'resolved') request.mockResolvedValueOnce(response);
+        else request.mockRejectedValueOnce({ response });
+        await expect(read('WI-SB-1001')).rejects.toBeDefined();
+        expect(isCanonicalHostClientSessionAuthenticationRequired()).toBe(true);
+        expect(getCanonicalHostClientSessionGeneration()).toBe(generation + 1);
+        invalidateCanonicalHostClientSession();
+      }
     },
   );
 

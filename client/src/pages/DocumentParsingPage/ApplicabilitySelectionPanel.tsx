@@ -8,6 +8,7 @@ import {
 } from 'lucide-react';
 
 import { canonicalHost } from '@client/src/api';
+import { OfficialOauthLink } from '@client/src/components/OfficialOauthLink';
 import { Badge } from '@client/src/components/ui/badge';
 import { Button } from '@client/src/components/ui/button';
 import type { CanonicalApplicabilitySelectionReadModel } from '@shared/api.interface';
@@ -44,10 +45,12 @@ const ApplicabilitySelectionPanel: FC<ApplicabilitySelectionPanelProps> = ({
   const [loadState, setLoadState] =
     useState<ApplicabilitySelectionLoadState>('loading');
   const [errorDetail, setErrorDetail] = useState<string | null>(null);
+  const [selectionOauthRequired, setSelectionOauthRequired] = useState(false);
   const [evidenceStatus, setEvidenceStatus] =
     useState<CanonicalConfigurationEvidenceStatusReadModel | null>(null);
   const [evidenceLoading, setEvidenceLoading] = useState<boolean>(true);
   const [evidenceError, setEvidenceError] = useState<string | null>(null);
+  const [evidenceOauthRequired, setEvidenceOauthRequired] = useState(false);
   const [adoptingEvidence, setAdoptingEvidence] = useState<boolean>(false);
 
   const readSelection = useCallback(async (): Promise<void> => {
@@ -56,6 +59,7 @@ const ApplicabilitySelectionPanel: FC<ApplicabilitySelectionPanelProps> = ({
     setLoadState('loading');
     setSelection(null);
     setErrorDetail(null);
+    setSelectionOauthRequired(false);
     try {
       const fresh: CanonicalApplicabilitySelectionReadModel =
         await canonicalHost.getApplicabilitySelection(workItemId);
@@ -70,6 +74,7 @@ const ApplicabilitySelectionPanel: FC<ApplicabilitySelectionPanelProps> = ({
         return;
       }
       setLoadState('error');
+      setSelectionOauthRequired(isOfficialOauthRequired(reason));
       setErrorDetail(presentApplicabilitySelectionError(reason));
     }
   }, [workItemId]);
@@ -79,6 +84,7 @@ const ApplicabilitySelectionPanel: FC<ApplicabilitySelectionPanelProps> = ({
     evidenceRequestEpochRef.current = epoch;
     setEvidenceLoading(true);
     setEvidenceError(null);
+    setEvidenceOauthRequired(false);
     try {
       const fresh: CanonicalConfigurationEvidenceStatusReadModel =
         await canonicalHost.getConfigurationEvidenceStatus(workItemId);
@@ -87,10 +93,14 @@ const ApplicabilitySelectionPanel: FC<ApplicabilitySelectionPanelProps> = ({
     } catch (reason) {
       if (evidenceRequestEpochRef.current !== epoch) return;
       setEvidenceStatus(null);
+      const oauthRequired = isOfficialOauthRequired(reason);
+      setEvidenceOauthRequired(oauthRequired);
       setEvidenceError(
-        reason instanceof Error
-          ? reason.message
-          : '构型证据状态暂时不可用，请刷新后重试。',
+        oauthRequired
+          ? '需要连接飞书身份，才能读取构型证据状态。'
+          : reason instanceof Error
+            ? reason.message
+            : '构型证据状态暂时不可用，请刷新后重试。',
       );
     } finally {
       if (evidenceRequestEpochRef.current === epoch) {
@@ -322,6 +332,11 @@ const ApplicabilitySelectionPanel: FC<ApplicabilitySelectionPanelProps> = ({
           <p>{errorDetail}</p>
         </div>
       ) : null}
+      {selectionOauthRequired || evidenceOauthRequired ? (
+        <Button asChild variant="outline">
+          <OfficialOauthLink>连接飞书身份后重新读取</OfficialOauthLink>
+        </Button>
+      ) : null}
       {selection ? (
         <details className="applicability-selection-readback">
           <summary>
@@ -432,3 +447,8 @@ function configurationEvidenceStageLabel(status: string): string {
 }
 
 export default ApplicabilitySelectionPanel;
+
+function isOfficialOauthRequired(reason: unknown): boolean {
+  return typeof reason === 'object' && reason !== null &&
+    'code' in reason && reason.code === 'OFFICIAL_OAUTH_SESSION_REQUIRED';
+}

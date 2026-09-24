@@ -98,13 +98,14 @@ describe('applicability selection presentation', () => {
       new Error('WORK_ITEM_REVISION_CONFLICT'),
       new Error('PERMISSION_DENIED: actor-id'),
       new Error('WAITING_INPUT: internal-detail'),
+      new Error('OFFICIAL_OAUTH_SESSION_REQUIRED'),
     ];
 
     for (const reason of cases) {
       const message: string = presentApplicabilitySelectionError(reason);
       expect(message).toMatch(/[\u4e00-\u9fff]/u);
       expect(message).not.toMatch(
-        /APPLICABILITY|WORK_ITEM|PERMISSION|WAITING_INPUT|actor-id|internal-detail/u,
+        /APPLICABILITY|WORK_ITEM|PERMISSION|WAITING_INPUT|OFFICIAL_OAUTH|actor-id|internal-detail/u,
       );
     }
   });

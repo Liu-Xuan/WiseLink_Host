@@ -35,6 +35,9 @@ export function isApplicabilitySelectionUnconfigured(reason: unknown): boolean {
 export function presentApplicabilitySelectionError(reason: unknown): string {
   const raw: string = rawErrorText(reason).toUpperCase();
 
+  if (raw.includes('OFFICIAL_OAUTH_SESSION_REQUIRED')) {
+    return '需要连接飞书身份，才能读取自动评估范围。';
+  }
   if (/CONFLICT|STALE|REVISION/u.test(raw)) {
     return '事项资料已经更新，请刷新自动评估范围。';
   }
