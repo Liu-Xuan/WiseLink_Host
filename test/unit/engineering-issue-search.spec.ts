@@ -445,7 +445,7 @@ describe('saved knowledge catalogue', () => {
     expect(page.nextCursor).toBeNull();
   });
 
-  it('stops launching read groups once the page is complete and ignores speculative tail failures', async () => {
+  it('reads only the needed final group and ignores speculative tail failures', async () => {
     const h = setup();
     const rows = Array.from({ length: 28 }, (_, n) => ({ ...h.identity, subjectId: `WI-${String(n).padStart(2, '0')}`, current: true }));
     h.db.execute.mockResolvedValue(rows);
@@ -456,7 +456,8 @@ describe('saved knowledge catalogue', () => {
     const page = await h.service.catalogue('', 'ALL', undefined, actor);
     expect(page.entries).toHaveLength(20);
     expect(JSON.parse(Buffer.from(page.nextCursor!, 'base64url').toString()).identity.subjectId).toBe('WI-19');
-    expect(h.jobAid.readBrowserRevision).toHaveBeenCalledTimes(24);
+    expect(h.jobAid.readBrowserRevision).toHaveBeenCalledTimes(21);
+    expect(h.jobAid.readBrowserRevision).not.toHaveBeenCalledWith('WI-21', expect.anything(), actor);
     expect(h.db.execute).toHaveBeenCalledTimes(1);
   });
 
@@ -472,7 +473,7 @@ describe('saved knowledge catalogue', () => {
       batch.filter((_, n) => n % 4 !== 3).slice(0, 20).map((row) => row.subjectId));
     expect(page.entries.every((entry) => !entry.subjectId.includes('DENIED') && !entry.workRef.startsWith('revoked'))).toBe(true);
     expect(JSON.parse(Buffer.from(page.nextCursor!, 'base64url').toString()).identity.subjectId).toBe('WI-OK-25');
-    expect(h.jobAid.readBrowserRevision).toHaveBeenCalledTimes(28);
+    expect(h.jobAid.readBrowserRevision).toHaveBeenCalledTimes(27);
     expect(h.db.execute).toHaveBeenCalledTimes(1);
     const next = await h.service.catalogue('', 'ALL', page.nextCursor!, actor);
     expect(next.entries.map((entry) => entry.subjectId)).toEqual(rest.map((row) => row.subjectId));
