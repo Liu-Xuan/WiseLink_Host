@@ -23,6 +23,8 @@ import './jobaid-problem-workspace.css';
 
 interface Props {
   workItemId: string;
+  baseRevision?: number;
+  baseReadConfirmed?: boolean;
   onLocateDocument: (evidence: DocumentAssessmentEvidence) => void;
   initialAnalysis?: CanonicalInitialAnalysisReadModel | null;
   overall?: CanonicalOpenClawOverallProjection | null;
@@ -61,12 +63,17 @@ const capabilityLabels = {
 export default function JobAidProblemWorkspace(props: Props) {
   const session: number = getCanonicalHostClientSessionGeneration();
   return (
-    <JobAidWorkspaceRead key={`${session}:${props.workItemId}`} {...props} />
+    <JobAidWorkspaceRead
+      key={`${session}:${props.workItemId}:${props.baseRevision ?? ''}`}
+      {...props}
+    />
   );
 }
 
 function JobAidWorkspaceRead(props: Props) {
-  const { data, error, refresh } = useJobAidWorkingRead(props.workItemId);
+  const { data, error, temporaryError, refresh } = useJobAidWorkingRead(
+    props.workItemId,
+  );
   const signature: string = `${data?.current?.workRevisionRef ?? ''}:${data?.overallStatus ?? ''}:${data?.overallBasedOnWorkRevisionRef ?? ''}`;
   const notified = useRef<string | null>(null);
   const latestUpdated = useRef(props.onUpdated);
@@ -85,6 +92,8 @@ function JobAidWorkspaceRead(props: Props) {
             问题分析刷新失败：{error}
             {data?.current
               ? '。以下保留上次读回的已保存工作，未确认有更新。'
+              : temporaryError && props.baseReadConfirmed
+                ? '。以下仅显示当前身份与对象已读回的原有评估，问题分析尚未确认。'
               : ''}
           </p>
           <Button variant="outline" onClick={refresh}>
@@ -105,6 +114,8 @@ function JobAidWorkspaceRead(props: Props) {
         ) : (
           props.children
         )
+      ) : error && temporaryError && props.baseReadConfirmed ? (
+        props.children
       ) : !error ? (
         <p role="status" className="p-4 text-sm">
           正在读取已保存的问题分析…

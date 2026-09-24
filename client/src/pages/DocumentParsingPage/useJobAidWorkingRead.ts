@@ -29,9 +29,20 @@ export function preserveJobAidRead(
 
 export function jobAidReadAfterFailure(
   previous: JobAidWorkingReadModel | null,
-  failure: Pick<CanonicalHostClientError, 'statusCode'>,
+  failure: Pick<CanonicalHostClientError, 'statusCode' | 'code'>,
 ): JobAidWorkingReadModel | null {
-  return [401, 403, 404].includes(failure.statusCode ?? 0) ? null : previous;
+  return isTemporaryJobAidReadFailure(failure) ? previous : null;
+}
+
+/** Only a transport interruption or server failure may show a prior read. */
+export function isTemporaryJobAidReadFailure(
+  failure: Pick<CanonicalHostClientError, 'statusCode' | 'code'>,
+): boolean {
+  if (typeof failure.statusCode === 'number')
+    return failure.statusCode >= 500 && failure.statusCode < 600;
+  return ['ERR_NETWORK', 'ECONNABORTED', 'ETIMEDOUT', 'ECONNRESET'].includes(
+    failure.code ?? '',
+  );
 }
 
 function subscribeVisibility(changed: () => void): () => void {
@@ -69,7 +80,8 @@ export function useJobAidWorkingRead(workItemId: string) {
     key: string;
     data: JobAidWorkingReadModel | null;
     error: string | null;
-  }>({ key, data: null, error: null });
+    temporaryError: boolean;
+  }>({ key, data: null, error: null, temporaryError: false });
   const [retry, setRetry] = useState(0);
   useEffect(() => {
     if (stopped.current.key !== key) stopped.current = { key, failed: false };
@@ -90,7 +102,9 @@ export function useJobAidWorkingRead(workItemId: string) {
           result.workItemId !== workItemId ||
           (result.current && result.current.workItemId !== workItemId)
         )
-          throw new Error('返回内容不属于当前文档对象');
+          throw Object.assign(new Error('返回内容不属于当前文档对象'), {
+            code: 'JOBAID_READ_OBJECT_MISMATCH',
+          });
         setState((previous) => ({
           key,
           data: preserveJobAidRead(
@@ -98,6 +112,7 @@ export function useJobAidWorkingRead(workItemId: string) {
             result,
           ),
           error: null,
+          temporaryError: false,
         }));
         if (shouldPollJobAidRead(result))
           timer = setTimeout(() => void read(), 6000);
@@ -113,6 +128,7 @@ export function useJobAidWorkingRead(workItemId: string) {
           ),
           error:
             caught instanceof Error ? caught.message : '已保存评估暂时无法读取',
+          temporaryError: isTemporaryJobAidReadFailure(failure),
         }));
       }
     };
@@ -125,6 +141,7 @@ export function useJobAidWorkingRead(workItemId: string) {
   return {
     data: state.key === key ? state.data : null,
     error: state.key === key ? state.error : null,
+    temporaryError: state.key === key && state.temporaryError,
     refresh: () => {
       stopped.current = { key, failed: false };
       setRetry((value) => value + 1);
