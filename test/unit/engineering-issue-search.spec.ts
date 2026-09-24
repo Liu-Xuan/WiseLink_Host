@@ -512,6 +512,24 @@ describe('saved knowledge catalogue', () => {
     expect(next.nextCursor).toBeNull();
   });
 
+  it('does not turn a later batched data failure into an earlier access denial', async () => {
+    const h = setup();
+    const batch = { read: jest.fn(), skip: jest.fn() };
+    h.matters.createSavedReadBatch.mockReturnValue(batch);
+    h.db.execute.mockResolvedValue([
+      { subjectKind: 'ENGINEERING_MATTER', subjectId: 'MAT-DENIED', workRef: 'REV-1', current: true },
+      { subjectKind: 'ENGINEERING_MATTER', subjectId: 'MAT-BROKEN', workRef: 'REV-2', current: true },
+    ]);
+    h.matters.readWorkingRevision.mockImplementation(async (matterId: string) => {
+      if (matterId === 'MAT-DENIED') throw Object.assign(new Error('REVOKED'), { statusCode: 403 });
+      throw new Error('SAVED_ROW_DATABASE_FAILURE');
+    });
+    await expect(h.service.catalogue('', 'ALL', undefined, actor))
+      .rejects.toThrow('SAVED_ROW_DATABASE_FAILURE');
+    expect(h.matters.createSavedReadBatch).toHaveBeenCalledWith(2, expect.any(Object));
+    expect(h.matters.readWorkingRevision).toHaveBeenCalledTimes(2);
+  });
+
   it('batches only new Matter identities in each bounded catalogue window', async () => {
     const h = setup();
     const batch = { read: jest.fn(), skip: jest.fn() };
