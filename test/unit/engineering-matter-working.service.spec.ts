@@ -281,6 +281,31 @@ describe('EngineeringMatterWorkingService', () => {
     } finally { jest.useRealTimers(); }
   });
 
+  it('uses the same authorized exact reader after a batched saved-row lookup', async () => {
+    const revision = { state: { substantiveInputs: [], coverage: [] } };
+    const working = { readByRef: jest.fn().mockResolvedValue(revision) };
+    const service = serviceWith({ working });
+    const batch = { read: jest.fn(), skip: jest.fn() };
+    await expect(service.readWorkingRevision('MAT-1', 'MWREV-OLD', actor(), undefined, batch))
+      .resolves.toBe(revision);
+    expect(working.readByRef).toHaveBeenCalledWith({
+      tenantId: 'tenant-A', matterId: 'MAT-1', workRef: 'MWREV-OLD',
+      observation: undefined, batch,
+    });
+    expect(batch.skip).not.toHaveBeenCalled();
+  });
+
+  it('releases a saved row batch slot when current member authorization fails', async () => {
+    const working = { readByRef: jest.fn() };
+    const service = serviceWith({ working, objectAccess: { freshRead: jest.fn()
+      .mockResolvedValue({ allowed: false, code: 'REVOKED', statusCode: 403 }) } });
+    const batch = { read: jest.fn(), skip: jest.fn() };
+    await expect(service.readWorkingRevision('MAT-1', 'MWREV-OLD', actor(), undefined, batch))
+      .rejects.toMatchObject({ statusCode: 403 });
+    expect(batch.skip).toHaveBeenCalledTimes(1);
+    expect(working.readByRef).not.toHaveBeenCalled();
+  });
+
   it('does not read a saved body if a current member is denied', async () => {
     const working = { readByRef: jest.fn() };
     const service = serviceWith({ working, objectAccess: { freshRead: jest.fn().mockResolvedValue({ allowed: false, code: 'REVOKED', statusCode: 403 }) } });
