@@ -135,7 +135,7 @@ export class EngineeringIssueSearchService {
           const outcome = settled[index];
           try {
             if (outcome.status === 'rejected') throw outcome.reason;
-            entries.push(this.knowledgeFromWork(row, outcome.value, row.current).entry);
+            entries.push(this.knowledgeEntryFromWork(row, outcome.value, row.current));
           } catch (error) { if (!isAccessUnavailable(error)) throw error; }
         }
       }
@@ -187,6 +187,16 @@ export class EngineeringIssueSearchService {
     }
   }
 
+  private knowledgeEntryFromWork(identity: EngineeringKnowledgeIdentity, revision: SavedIssueWork,
+    current: boolean): EngineeringKnowledgeEntry {
+    const content = 'content' in revision ? revision.content : revision.state.problemWork;
+    if (!content) throw new NotFoundException('ENGINEERING_KNOWLEDGE_WORK_NOT_FOUND');
+    return { subjectKind: identity.subjectKind, subjectId: identity.subjectId, workRef: identity.workRef,
+      workRevision: 'workRevision' in revision ? revision.workRevision : revision.workingRevision,
+      current, headline: content.headline, listBrief: content.listBrief,
+      createdAt: revision.createdAt, overviewStatus: content.overviewStatus };
+  }
+
   private knowledgeFromWork(identity: EngineeringKnowledgeIdentity, revision: SavedIssueWork,
     current: boolean): EngineeringKnowledgeRead {
     const content = 'content' in revision ? revision.content : revision.state.problemWork;
@@ -194,10 +204,7 @@ export class EngineeringIssueSearchService {
       : content?.overviewStatus === 'NOT_AVAILABLE' ? null : revision.state.substantiveResult;
     if (!content) throw new NotFoundException('ENGINEERING_KNOWLEDGE_WORK_NOT_FOUND');
     return {
-      entry: { subjectKind: identity.subjectKind, subjectId: identity.subjectId, workRef: identity.workRef,
-        workRevision: 'workRevision' in revision ? revision.workRevision : revision.workingRevision,
-        current, headline: content.headline, listBrief: content.listBrief,
-        createdAt: revision.createdAt, overviewStatus: content.overviewStatus },
+      entry: this.knowledgeEntryFromWork(identity, revision, current),
       content, reading,
       ...('state' in revision ? { correctionNotices: revision.correctionNotices,
         overviewCorrectionNotices: revision.overviewCorrectionNotices,

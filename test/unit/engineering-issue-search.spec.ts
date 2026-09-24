@@ -351,6 +351,27 @@ describe('saved knowledge catalogue', () => {
     ]);
   });
 
+  it('does not clone detail evidence for catalogue entries but retains it for exact detail', async () => {
+    const h = setup();
+    h.db.execute.mockResolvedValue([{ ...h.identity, current: true }]);
+    const clone = jest.spyOn(globalThis, 'structuredClone');
+    try {
+      const page = await h.service.catalogue('', 'CURRENT', undefined, actor);
+      expect(page.entries[0]).toEqual({
+        subjectKind: h.identity.subjectKind, subjectId: h.identity.subjectId,
+        workRef: h.identity.workRef, workRevision: h.saved.workRevision,
+        current: true, headline: h.saved.content.headline, listBrief: h.saved.content.listBrief,
+        createdAt: h.saved.createdAt, overviewStatus: h.saved.content.overviewStatus,
+      });
+      expect(clone).not.toHaveBeenCalled();
+      const detail = await h.service.readKnowledge({ subjectKind: h.identity.subjectKind,
+        subjectId: h.identity.subjectId, workRef: h.identity.workRef }, actor);
+      expect(clone).toHaveBeenCalledWith(h.saved.content.evidence);
+      expect(detail.reading?.evidence).toEqual(h.saved.content.evidence);
+      expect(detail.reading?.evidence).not.toBe(h.saved.content.evidence);
+    } finally { clone.mockRestore(); }
+  });
+
   it('browses exact saved titles and briefs without a query and keeps overview coverage separate from currentness', async () => {
     const h = setup();
     h.saved.content.overviewStatus = 'STALE';
