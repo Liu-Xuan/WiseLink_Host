@@ -88,6 +88,70 @@ describe('CanonicalHostOpenClawOverallService', () => {
     expect(harness.artifactStore.persistAndReadback).not.toHaveBeenCalled();
   });
 
+  it('rejects a Dynamic attempt selected for explicit Overall commit before preflight', async () => {
+    const harness = createHarness();
+    harness.attempts.readScoped.mockImplementationOnce(async () => ({
+      ...actionRow(sealTaskEnvelope({
+        schemaVersion: 'wiselink.3_1.openclaw_task_envelope.v1',
+        actionAttemptId: ATTEMPT_ID,
+        operationRef: ATTEMPT_REF,
+        taskType: 'OPENCLAW_OVERALL_SYNTHESIS',
+        priority: 100,
+        tenantId: 'tenant-overall',
+        workItemId: WORK_ITEM_ID,
+        inputRevision: 5,
+        baseRevision: 5,
+        documentVersionId: 'DV-737',
+        sourceRefs: [],
+        allowedConnectors: [],
+        hostResolvedMissingInputs: [],
+        modelInput: {},
+        deadline: '2026-08-24T12:00:00.000Z',
+        idempotencyKey: 'wrong-type',
+      })),
+      actionType: 'OPENCLAW_DYNAMIC_EVALUATION',
+    }));
+    await expect(harness.service.commit(ATTEMPT_REF, LEASE_TOKEN, 1, {}, WORK_ITEM_ID))
+      .rejects.toMatchObject({ code: 'ACTION_ATTEMPT_NOT_FOUND', statusCode: 404 });
+    expect(harness.scope.authorizeOpenClawAttempt).toHaveBeenCalledWith({
+      operation: 'COMMIT_OVERALL', attemptRef: ATTEMPT_REF, workItemId: WORK_ITEM_ID,
+    });
+    expect(harness.attempts.prepareCommit).not.toHaveBeenCalled();
+    expect(harness.artifactStore.persistAndReadback).not.toHaveBeenCalled();
+    expect(harness.registrar.compareAndSet).not.toHaveBeenCalled();
+  });
+
+  it('rejects a Dynamic attempt selected for explicit Overall resume before work reads', async () => {
+    const harness = createHarness();
+    harness.attempts.readScoped.mockImplementationOnce(async () => ({
+      ...actionRow(sealTaskEnvelope({
+        schemaVersion: 'wiselink.3_1.openclaw_task_envelope.v1',
+        actionAttemptId: ATTEMPT_ID,
+        operationRef: ATTEMPT_REF,
+        taskType: 'OPENCLAW_OVERALL_SYNTHESIS',
+        priority: 100,
+        tenantId: 'tenant-overall',
+        workItemId: WORK_ITEM_ID,
+        inputRevision: 5,
+        baseRevision: 5,
+        documentVersionId: 'DV-737',
+        sourceRefs: [],
+        allowedConnectors: [],
+        hostResolvedMissingInputs: [],
+        modelInput: {},
+        deadline: '2026-08-24T12:00:00.000Z',
+        idempotencyKey: 'wrong-type',
+      })),
+      actionType: 'OPENCLAW_DYNAMIC_EVALUATION',
+    }));
+    await expect(harness.service.resume(ATTEMPT_REF, WORK_ITEM_ID))
+      .rejects.toMatchObject({ code: 'ACTION_ATTEMPT_NOT_FOUND', statusCode: 404 });
+    expect(harness.scope.authorizeOpenClawAttempt).toHaveBeenCalledWith({
+      operation: 'RESUME_OVERALL', attemptRef: ATTEMPT_REF, workItemId: WORK_ITEM_ID,
+    });
+    expect(harness.registrar.getTenantScopedByWorkItemId).not.toHaveBeenCalled();
+  });
+
   it('reserves QUEUED work through the durable lifecycle and returns its lease', async () => {
     const harness = createHarness();
     const begun = await harness.service.begin(WORK_ITEM_ID, []);

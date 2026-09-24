@@ -1597,7 +1597,6 @@ export class CanonicalJobAidProblemService {
     if (
       row.operationRef !== attemptRef ||
       !row.taskEnvelopeJson ||
-      (workItemId !== undefined && row.actionType !== 'OPENCLAW_DYNAMIC_EVALUATION') ||
       !['OPENCLAW_DYNAMIC_EVALUATION', 'OPENCLAW_OVERALL_SYNTHESIS'].includes(
         row.actionType,
       )

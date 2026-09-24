@@ -29,6 +29,8 @@ test('CLI stage limit accepts only one WorkItem initial stage', () => {
     { maxInitialStages: 1, initialStageOnly: true });
   assert.deepEqual(initialStageLimit(['--max-initial-stages', '1', '--expected-initial-operation', 'EVALUATE_JOBAID'], 'WI-new'),
     { maxInitialStages: 1, initialStageOnly: true, expectedInitialOperation: 'EVALUATE_JOBAID' });
+  assert.deepEqual(initialStageLimit(['--max-initial-stages', '1', '--expected-initial-operation', 'SYNTHESIZE_OVERALL'], 'WI-new'),
+    { maxInitialStages: 1, initialStageOnly: true, expectedInitialOperation: 'SYNTHESIZE_OVERALL' });
   for (const argv of [
     ['--max-initial-stages'],
     ['--max-initial-stages', '0'],
@@ -46,7 +48,7 @@ test('CLI stage limit accepts only one WorkItem initial stage', () => {
     ['--expected-initial-operation'],
     ['--expected-initial-operation', 'EVALUATE_JOBAID'],
     ['--max-initial-stages', '1', '--expected-initial-operation'],
-    ['--max-initial-stages', '1', '--expected-initial-operation', 'SYNTHESIZE_OVERALL'],
+    ['--max-initial-stages', '1', '--expected-initial-operation', 'TRANSLATE'],
     ['--max-initial-stages', '1', '--expected-initial-operation', 'EVALUATE_JOBAID', '--expected-initial-operation', 'EVALUATE_JOBAID'],
   ]) assert.throws(() => initialStageLimit(argv, 'WI-new'), /INITIAL_EXPECTED_OPERATION_INVALID/);
   assert.throws(() => initialStageLimit(['--max-initial-stages', '1', '--expected-initial-operation=EVALUATE_JOBAID'], 'WI-new'),
@@ -140,11 +142,42 @@ test('expected JobAid requires the one-stage WorkItem mode before reading Host s
   const base = await options(t);
   for (const input of [
     { ...base, expectedInitialOperation: 'EVALUATE_JOBAID' },
-    { ...base, initialStageOnly: true, expectedInitialOperation: 'SYNTHESIZE_OVERALL' },
+    { ...base, initialStageOnly: true, expectedInitialOperation: 'TRANSLATE' },
     { ...base, initialStageOnly: true, expectedInitialOperation: 'EVALUATE_JOBAID', maxInitialStages: 2 },
   ]) await assert.rejects(consumeHostedWorkItem(input, {
     callTool: async () => assert.fail('invalid guard mode must not read or begin'),
   }), /INITIAL_EXPECTED_OPERATION_INVALID/);
+});
+
+test('expected Overall consumes only a pending Overall stage and binds its attempt calls', async t => {
+  const input = { ...await options(t), initialStageOnly: true,
+    expectedInitialOperation: 'SYNTHESIZE_OVERALL' };
+  let saved = false;
+  const calls = [];
+  const initial = () => status({ status: saved ? 'SUCCEEDED' : 'REQUIRED',
+    nextOperation: saved ? null : 'SYNTHESIZE_OVERALL',
+    stages: { translation: { status: 'SUCCEEDED' }, applicability: { status: 'WAITING_INPUT' },
+      jobAid: { status: 'SUCCEEDED' }, overall: { status: saved ? 'SUCCEEDED' : 'PENDING' } } });
+  const result = await consumeHostedWorkItem(input, {
+    callTool: async (name, args) => {
+      calls.push({ name, args });
+      if (name === 'get_parse_status') return initial();
+      if (name === 'heartbeat_action_attempt') return { leaseExpiresAt: 'future' };
+      assert.fail(`Overall must not enter ${name}`);
+    },
+    runInitial: async run => {
+      assert.equal(run.operation, 'SYNTHESIZE_OVERALL');
+      await run.callTool('heartbeat_action_attempt', { attemptRef: 'AQ-overall' });
+      saved = true;
+      return { outcome: 'CANDIDATE_READY' };
+    },
+  });
+  assert.equal(result.status, 'INITIAL_STAGE_SAVED');
+  assert.deepEqual(result.completedStages, ['SYNTHESIZE_OVERALL']);
+  assert.deepEqual(calls.filter(call => call.name === 'heartbeat_action_attempt').map(call => call.args),
+    [{ attemptRef: 'AQ-overall', workItemId: 'WI-new' }]);
+  assert.deepEqual(calls.map(call => call.name),
+    ['get_parse_status', 'heartbeat_action_attempt', 'get_parse_status']);
 });
 
 test('single-stage mode leaves original-impact conflict untouched', async t => {

@@ -117,7 +117,8 @@ export class ConfiguredDevelopmentCanonicalServiceScopeAuthorization implements 
   }): Promise<CanonicalVerifiedServiceScope> {
     const config = requiredConfig();
     if (input.workItemId !== config.workItemId &&
-      input.operation !== 'BEGIN_DYNAMIC') throw scopeNotFound();
+      !['BEGIN_DYNAMIC', 'BEGIN_OVERALL'].includes(input.operation))
+      throw scopeNotFound();
     return exactWorkItemScope(config, input.workItemId);
   }
 
@@ -178,7 +179,8 @@ export class ConfiguredDevelopmentCanonicalServiceScopeAuthorization implements 
     const selectedWorkItemId = input.workItemId === undefined
       ? config.workItemId : input.workItemId;
     if (selectedWorkItemId !== config.workItemId && ![
-      'COMMIT_DYNAMIC', 'READ_ASSESSMENT_SOURCES', 'SAVE_ASSESSMENT_WORK',
+      'COMMIT_DYNAMIC', 'RESUME_OVERALL', 'COMMIT_OVERALL',
+      'READ_ASSESSMENT_SOURCES', 'SAVE_ASSESSMENT_WORK',
       'READ_ASSESSMENT_WORK', 'GET_ACTION_ATTEMPT_STATUS',
       'HEARTBEAT_ATTEMPT', 'CANCEL_ATTEMPT',
     ].includes(input.operation)) throw scopeNotFound();
