@@ -52,6 +52,8 @@ export interface CanonicalVerifiedMatterAttemptScope {
 export interface CanonicalVerifiedApplicabilityContextScope extends CanonicalVerifiedServiceScope {
   applicabilityContextRef: string;
   requestId: string;
+  /** An additional WorkItem must use its persisted controlled target, never the legacy Host target. */
+  requirePersistedSelection?: true;
 }
 
 export interface CanonicalServiceScopeAuthorizationPort {
@@ -90,6 +92,10 @@ export interface CanonicalServiceScopeAuthorizationPort {
     applicabilityContextRef: string;
     requestId: string;
   }): Promise<CanonicalVerifiedApplicabilityContextScope>;
+  resolveOpenClawApplicabilityContextRef(input: {
+    tenantId: string;
+    workItemId: string;
+  }): Promise<string | null>;
   authorizeOpenClawAttempt(input: {
     operation:
       | 'COMMIT_DYNAMIC'
@@ -134,6 +140,10 @@ export class UnavailableCanonicalServiceScopeAuthorization implements CanonicalS
   }
 
   authorizeOpenClawApplicabilityContext(): Promise<CanonicalVerifiedApplicabilityContextScope> {
+    return Promise.reject(canonicalServiceScopeUnavailable());
+  }
+
+  resolveOpenClawApplicabilityContextRef(): Promise<string | null> {
     return Promise.reject(canonicalServiceScopeUnavailable());
   }
 

@@ -14,6 +14,17 @@ describe('production applicability controlled selection', () => {
     delete process.env[targetAsOfEnv];
   });
 
+  it('requires a persisted selection for an additional WorkItem even with the legacy global target configured', async () => {
+    const h=selectionHarness();
+    h.current.package!.usagePolicy!.applicability={sourceExpressionCount:1,normalizedCandidateCount:1,assignmentCount:1};
+    process.env[targetAircraftEnv]='B-1234'; process.env[targetAsOfEnv]='2026-08-27';
+    const provider=new MiaodaApplicabilityControlledSelectionAdapter(h.registrar as never,h.fleetRepository as never,h.configurationEvidence as never);
+    await expect(provider.readCurrent({tenantId:'tenant-1',workItemId:'WI-APP-1',documentVersionId:'DV-1',
+      applicabilityContextRef:'APCTX-ftd',requirePersistedSelection:true}))
+      .rejects.toThrow('APPLICABILITY_CONTROLLED_SELECTION_NOT_CONFIGURED');
+    expect(h.fleetRepository.readCurrentForAircraft).not.toHaveBeenCalled();
+  });
+
   it('persists only server-derived selection/Fleet revisions and exposes the real 0/0 frozen-source blocker', async () => {
     const harness = selectionHarness();
     const selected = await harness.service.configure(

@@ -429,6 +429,7 @@ export class CanonicalHostOpenClawMcpService {
         inputSchema: z
           .object({
             attemptRef,
+            workItemId: mcpWorkItemId.optional(),
             leaseToken,
             leaseGeneration,
             result: resultEnvelope,
@@ -438,6 +439,7 @@ export class CanonicalHostOpenClawMcpService {
       },
       async ({
         attemptRef: selectedAttemptRef,
+        workItemId,
         leaseToken: selectedLeaseToken,
         leaseGeneration: selectedLeaseGeneration,
         result,
@@ -448,6 +450,7 @@ export class CanonicalHostOpenClawMcpService {
             selectedLeaseToken,
             selectedLeaseGeneration,
             result,
+            workItemId,
           ),
         ),
     );
@@ -858,7 +861,8 @@ export class CanonicalHostOpenClawMcpService {
             tenantId: scope.tenantId,
             workItemId: scope.workItemId,
           });
-          if (!['OPENCLAW_DYNAMIC_EVALUATION', 'OPENCLAW_OVERALL_SYNTHESIS'].includes(row.actionType))
+          if (!['OPENCLAW_DYNAMIC_EVALUATION', 'OPENCLAW_OVERALL_SYNTHESIS',
+            'OPENCLAW_APPLICABILITY_EVALUATION'].includes(row.actionType))
             throw Object.assign(new Error('ACTION_ATTEMPT_NOT_FOUND'), {
               code: 'ACTION_ATTEMPT_NOT_FOUND', statusCode: 404,
             });
@@ -911,7 +915,8 @@ export class CanonicalHostOpenClawMcpService {
             tenantId: scope.tenantId,
             workItemId: scope.workItemId,
           });
-          if (!['OPENCLAW_DYNAMIC_EVALUATION', 'OPENCLAW_OVERALL_SYNTHESIS'].includes(row.actionType))
+          if (!['OPENCLAW_DYNAMIC_EVALUATION', 'OPENCLAW_OVERALL_SYNTHESIS',
+            'OPENCLAW_APPLICABILITY_EVALUATION'].includes(row.actionType))
             throw Object.assign(new Error('ACTION_ATTEMPT_NOT_FOUND'), {
               code: 'ACTION_ATTEMPT_NOT_FOUND', statusCode: 404,
             });
