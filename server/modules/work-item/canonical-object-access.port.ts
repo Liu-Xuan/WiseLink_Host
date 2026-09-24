@@ -269,22 +269,18 @@ export interface CanonicalObjectAccessPort {
   freshRead(
     input: CanonicalObjectAccessInput,
   ): Promise<CanonicalObjectAccessResult>;
-  /** Optional bounded read: one fresh statement, one decision per input, no cross-call cache. */
+  /** Optional bounded read: one fresh statement, one settled decision per input, no cross-call cache. */
   freshReadBatch?(
     inputs: readonly CanonicalWorkItemReadInput[],
-  ): Promise<CanonicalObjectAccessResult[]>;
+  ): Promise<PromiseSettledResult<CanonicalObjectAccessResult>[]>;
 }
 
-/** Settle every fallback read before reporting the first input-order failure. */
+/** Preserve the caller's input-order error and denial priority. */
 export async function settleCanonicalWorkItemReads(
   inputs: readonly CanonicalWorkItemReadInput[],
   read: (input: CanonicalWorkItemReadInput) => Promise<CanonicalObjectAccessResult>,
-): Promise<CanonicalObjectAccessResult[]> {
-  const settled = await Promise.allSettled(inputs.map(input => read(input)));
-  return settled.map(result => {
-    if (result.status === 'rejected') throw result.reason;
-    return result.value;
-  });
+): Promise<PromiseSettledResult<CanonicalObjectAccessResult>[]> {
+  return Promise.allSettled(inputs.map(input => read(input)));
 }
 
 export function unavailableAilyActorContext(): CanonicalUnavailableActorContext {

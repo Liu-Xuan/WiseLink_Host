@@ -262,8 +262,8 @@ describe('EngineeringMatterWorkingService', () => {
       coverage: [] } };
     const working = { readByRef: jest.fn().mockResolvedValue(revision) };
     const objectAccess = { freshRead: jest.fn(), freshReadBatch: jest.fn(async (inputs) =>
-      inputs.map(input => ({ allowed: true, workItemId: input.accessRoot.id,
-        documentVersionId: input.accessRoot.id === 'WI-A' ? 'DV-A' : 'DV-B' }))) };
+      inputs.map(input => ({ status: 'fulfilled' as const, value: { allowed: true, workItemId: input.accessRoot.id,
+        documentVersionId: input.accessRoot.id === 'WI-A' ? 'DV-A' : 'DV-B' } }))) };
     const service = serviceWith({ working, objectAccess });
     await expect(service.readWorkingRevision('MAT-1', 'MWREV-OLD', actor())).resolves.toBe(revision);
     expect(objectAccess.freshReadBatch).toHaveBeenCalledTimes(2);
@@ -277,12 +277,26 @@ describe('EngineeringMatterWorkingService', () => {
   it('keeps each batched member denial independent and stops before saved-body loading', async () => {
     const working = { readByRef: jest.fn() };
     const objectAccess = { freshRead: jest.fn(), freshReadBatch: jest.fn(async (inputs) =>
-      inputs.map(input => input.accessRoot.id === 'WI-B'
+      inputs.map(input => ({ status: 'fulfilled' as const, value: input.accessRoot.id === 'WI-B'
         ? { allowed: false, code: 'REVOKED', statusCode: 403 }
-        : { allowed: true, workItemId: 'WI-A', documentVersionId: 'DV-A' })) };
+        : { allowed: true, workItemId: 'WI-A', documentVersionId: 'DV-A' } }))) };
     const service = serviceWith({ working, objectAccess });
     await expect(service.readWorkingRevision('MAT-1', 'MWREV-OLD', actor()))
       .rejects.toMatchObject({ code: 'REVOKED', statusCode: 403 });
+    expect(working.readByRef).not.toHaveBeenCalled();
+  });
+
+  it('keeps input-order denial priority over a later fallback query error', async () => {
+    const working = { readByRef: jest.fn() };
+    const queryFailure = new Error('DATABASE_UNAVAILABLE');
+    const objectAccess = { freshRead: jest.fn(), freshReadBatch: jest.fn().mockResolvedValue([
+      { status: 'fulfilled', value: { allowed: false, code: 'REVOKED', statusCode: 403 } },
+      { status: 'rejected', reason: queryFailure },
+    ]) };
+    const service = serviceWith({ working, objectAccess });
+    await expect(service.readWorkingRevision('MAT-1', 'MWREV-OLD', actor()))
+      .rejects.toMatchObject({ code: 'REVOKED', statusCode: 403 });
+    expect(objectAccess.freshReadBatch).toHaveBeenCalledTimes(1);
     expect(working.readByRef).not.toHaveBeenCalled();
   });
 
@@ -292,12 +306,12 @@ describe('EngineeringMatterWorkingService', () => {
     }) };
     const objectAccess = { freshRead: jest.fn(), freshReadBatch: jest.fn()
       .mockResolvedValueOnce([
-        { allowed: true, workItemId: 'WI-A', documentVersionId: 'DV-A' },
-        { allowed: true, workItemId: 'WI-B', documentVersionId: 'DV-B' },
+        { status: 'fulfilled', value: { allowed: true, workItemId: 'WI-A', documentVersionId: 'DV-A' } },
+        { status: 'fulfilled', value: { allowed: true, workItemId: 'WI-B', documentVersionId: 'DV-B' } },
       ])
       .mockResolvedValueOnce([
-        { allowed: true, workItemId: 'WI-A', documentVersionId: 'DV-A' },
-        { allowed: false, code: 'REVOKED', statusCode: 403 },
+        { status: 'fulfilled', value: { allowed: true, workItemId: 'WI-A', documentVersionId: 'DV-A' } },
+        { status: 'fulfilled', value: { allowed: false, code: 'REVOKED', statusCode: 403 } },
       ]) };
     const service = serviceWith({ working, objectAccess });
     await expect(service.readWorkingRevision('MAT-1', 'MWREV-OLD', actor()))
