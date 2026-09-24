@@ -4,6 +4,7 @@ import type {
   CanonicalObjectAccessInput,
   CanonicalObjectAccessPort,
   CanonicalObjectAccessResult,
+  CanonicalWorkItemReadInput,
 } from './canonical-object-access.port';
 import {
   UnavailableAilyObjectAccessAdapter,
@@ -41,5 +42,14 @@ export class CanonicalObjectAccessRouter implements CanonicalObjectAccessPort {
       return this.unavailableSession.freshRead(input);
     }
     return this.finalUser.freshRead(input);
+  }
+
+  async freshReadBatch(
+    inputs: readonly CanonicalWorkItemReadInput[],
+  ): Promise<CanonicalObjectAccessResult[]> {
+    if (inputs.some(input => input.actor.principalKind === 'UNAVAILABLE') ||
+      !this.finalUser.freshReadBatch)
+      return Promise.all(inputs.map(input => this.freshRead(input)));
+    return this.finalUser.freshReadBatch(inputs);
   }
 }

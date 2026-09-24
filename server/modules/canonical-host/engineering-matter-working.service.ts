@@ -13,6 +13,7 @@ import {
   CANONICAL_OBJECT_ACCESS,
   type CanonicalObjectAccessPort,
   type CanonicalObjectAccessGrant,
+  type CanonicalWorkItemReadInput,
 } from '../work-item/canonical-object-access.port';
 import { assertSourceIdentity } from '../work-item/document-version-source-identity';
 import { MiaodaWorkItemRepository } from '../work-item/miaoda-work-item.repository';
@@ -324,17 +325,20 @@ export class EngineeringMatterWorkingService {
       return [await this.requireInput(workItemIds[0], actor)];
     const objectAccessActor = actor.objectAccessActor;
     if (!objectAccessActor) throw identityHandoffUnavailable();
-    // Every member gets a fresh independent decision. Settle all decisions
-    // before the one tenant-scoped projection query, including on denial.
-    const decisions = await Promise.allSettled(
-      workItemIds.map((workItemId) =>
-        this.objectAccess.freshRead({
-          actor: objectAccessActor,
-          action: 'READ_WORK_ITEM',
-          accessRoot: { kind: 'WORK_ITEM', id: workItemId },
-        }),
-      ),
-    );
+    // Each member retains its own fresh decision. The hosted adapter can read
+    // up to four owner bindings in one statement; other adapters keep the
+    // existing independent reads and all-settled behavior.
+    const accessInputs: CanonicalWorkItemReadInput[] = workItemIds.map(workItemId => ({
+      actor: objectAccessActor,
+      action: 'READ_WORK_ITEM',
+      accessRoot: { kind: 'WORK_ITEM', id: workItemId },
+    }));
+    const decisions = this.objectAccess.freshReadBatch && workItemIds.length <= 4
+      ? (await this.objectAccess.freshReadBatch(accessInputs))
+        .map(value => ({ status: 'fulfilled' as const, value }))
+      : await Promise.allSettled(accessInputs.map(input => this.objectAccess.freshRead(input)));
+    if (decisions.length !== workItemIds.length)
+      throw new Error('WORK_ITEM_AUTHORIZATION_BATCH_INCOMPLETE');
     const grants: CanonicalObjectAccessGrant[] = [];
     for (const decision of decisions) {
       if (decision.status === 'rejected') throw decision.reason;

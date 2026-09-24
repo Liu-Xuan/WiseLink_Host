@@ -102,3 +102,13 @@ release 7688916995013954763 完成当时为 finished、d6811c4b4d77c34bfdf359eef
 B2 在同一个最多4个Matter根的窗口内，等待每个根完成原有保存状态解析后，将其完整来源ID集合送入一次actor上下文查询。SQL仍对每个根分别执行原有两个 `NOT EXISTS ... IS NOT TRUE` 所有权谓词，按候选序号归还允许或拒绝；未授权入口、缺失行与损坏保存状态释放槽位。递归引用的来源核验仍走原单条路径，当前成员和历史成员的freshRead、概述来源及引用边验证不变。上述样本的21个根分成5个四根窗口和1个单根窗口，因此根来源显式查询预计由21次变为6次（5次批量、1次原单条）；另有2次递归来源仍为单条。这是Host查询调用数的结构预期，不是SQL span或延迟承诺。
 
 本地单测覆盖独立允许/拒绝、查询错误、损坏记录不阻塞其他根；隔离PostgreSQL测试用两种actor及来源撤权后的新事务核验结果。发布后需检查 `saved_sources_batch_query` 次数、根/递归来源调用数、read_group_wait、端点耗时及错误，并与相同身份和数据条件的重复样本比较。若成员freshRead仍主导，不以B2查询数下降宣称目录性能目标达成。
+
+## B2 发布结果与 B3 成员绑定事实候选
+
+主控回报 B2 发布 `68cf1f72feae2dda6218bf5afa7d575896a7a6a4`，ALL 首批 trace `6afd28a6fbd6649f32bf4a9bbc7e5e9c`：20条加lookahead、app_server 13316ms、SQL span 245。来源批量查询5次/合计195ms，来源等待23次/合计1475ms；相对先前 `3bf576f` 单样本的260个SQL span，结构性减少15次。端点没有证明提速，不能从两个不同时点的样本推定回退。该trace当前成员授权21次/累计16955ms、保存成员复核21次/累计9346ms，数据库trace有82次WorkItem owner-binding SELECT、42次当前Matter SELECT和42次成员来源身份SELECT；这些计时有嵌套和并行，不可相加。
+
+B3候选只批量同一个 `requireInputs` 调用中的2至4个WorkItem owner-binding事实：Host授权router保留原 `freshRead`，可选的 `freshReadBatch` 仅对同一个已验证final-user actor对象执行一个带租户、创建者及确切WorkItem ID条件的SELECT，逐输入生成原grant或denial。混合actor、缺身份、单个或超过4个输入沿用逐条freshRead；当前成员与保存成员仍在各自阶段重新读，不跨阶段/请求缓存，当前Matter指针的前后复查及成员来源身份核验不变。任何缺行仍为原404拒绝，查询错误仍为错误，不以空集合掩盖。
+
+这旨在减少82次绑定事实查询中的重复Host调用；现有并发单查可能已重叠，因此SQL调用下降不能推导同等幅度的端点收益。受控发布后应核对实际绑定查询次数、成员授权与复核阶段、read_group_wait和页面可用时间，并检查大成员组是否回退到原读取以及拒绝/错误结果。
+
+补充发布观测：平台显示 `1c838397a44e409f259d13fd4f4c6decf3512ccc` 发布完成后，旧页面连续请求的 `app_web.release_commit_id` 仍为 `68cf1f72f`；主控用全新页面重新打开 `/knowledge` 后，trace `6aa236a29bba09db7a2cf9b242370fc2` 的该字段变为 `1c838`。该字段只出现在 app_web span，不能独立证明服务端某条正常路径执行了仅影响异常清理的 `return await` 修订。发布回执、浏览器构建标记和实际服务端行为需分别核对，不将旧页面标记当作新发布失败。

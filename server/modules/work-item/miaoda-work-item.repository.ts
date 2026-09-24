@@ -622,6 +622,35 @@ export class MiaodaWorkItemRepository {
     return row ?? null;
   }
 
+  /** One fresh actor-scoped fact read for at most four catalogue members. */
+  async loadAuthorizationBindings(
+    inputs: readonly { workItemId: string; tenantId: string; actorUserId: string }[],
+  ): Promise<Map<string, WorkItemAuthorizationBinding>> {
+    if (inputs.length < 2 || inputs.length > 4)
+      throw new Error('WORK_ITEM_AUTHORIZATION_BATCH_SIZE_INVALID');
+    const { tenantId, actorUserId } = inputs[0];
+    if (inputs.some(input => input.tenantId !== tenantId || input.actorUserId !== actorUserId))
+      throw new Error('WORK_ITEM_AUTHORIZATION_BATCH_SCOPE_INVALID');
+    const rows = await this.db
+      .select({
+        workItemId: workItem.workItemId,
+        revision: workItem.revision,
+        tenantId: workItem.tenantId,
+        requestId: workItem.requestId,
+        documentId: workItem.documentId,
+        documentVersionId: workItem.documentVersionId,
+        requestedByUserId: workItem.requestedByUserId,
+        runKey: workItem.runKey,
+      })
+      .from(workItem)
+      .where(and(
+        eq(workItem.tenantId, tenantId),
+        eq(workItem.requestedByUserId, actorUserId),
+        inArray(workItem.workItemId, [...new Set(inputs.map(input => input.workItemId))]),
+      ));
+    return new Map(rows.map(row => [row.workItemId, row]));
+  }
+
   /** Fresh creator-only list; tenant and actor are both server-session facts. */
   async listOwnedWorkItems(input: {
     tenantId: string;

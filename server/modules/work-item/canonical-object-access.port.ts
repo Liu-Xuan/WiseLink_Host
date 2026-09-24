@@ -258,11 +258,21 @@ export type CanonicalObjectAccessInput = {
   actor: CanonicalActorContext;
 } & (RevisionBoundMutationRequest | NonRevisionBoundRequest);
 
+export interface CanonicalWorkItemReadInput {
+  actor: CanonicalActorContext;
+  action: 'READ_WORK_ITEM';
+  accessRoot: { kind: 'WORK_ITEM'; id: string };
+}
+
 export interface CanonicalObjectAccessPort {
   /** Every grant-capable call must re-read Host-owned object relation facts. */
   freshRead(
     input: CanonicalObjectAccessInput,
   ): Promise<CanonicalObjectAccessResult>;
+  /** Optional bounded read: one fresh statement, one decision per input, no cross-call cache. */
+  freshReadBatch?(
+    inputs: readonly CanonicalWorkItemReadInput[],
+  ): Promise<CanonicalObjectAccessResult[]>;
 }
 
 export function unavailableAilyActorContext(): CanonicalUnavailableActorContext {

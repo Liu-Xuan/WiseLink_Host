@@ -257,6 +257,55 @@ describe('EngineeringMatterWorkingService', () => {
     } finally { jest.useRealTimers(); }
   });
 
+  it('uses a fresh bounded owner-binding statement for each current and saved member group', async () => {
+    const revision = { state: { substantiveInputs: [{ workItemId: 'WI-A' }, { workItemId: 'WI-B' }],
+      coverage: [] } };
+    const working = { readByRef: jest.fn().mockResolvedValue(revision) };
+    const objectAccess = { freshRead: jest.fn(), freshReadBatch: jest.fn(async (inputs) =>
+      inputs.map(input => ({ allowed: true, workItemId: input.accessRoot.id,
+        documentVersionId: input.accessRoot.id === 'WI-A' ? 'DV-A' : 'DV-B' }))) };
+    const service = serviceWith({ working, objectAccess });
+    await expect(service.readWorkingRevision('MAT-1', 'MWREV-OLD', actor())).resolves.toBe(revision);
+    expect(objectAccess.freshReadBatch).toHaveBeenCalledTimes(2);
+    expect(objectAccess.freshReadBatch.mock.calls.map(([inputs]) =>
+      inputs.map(input => input.accessRoot.id))).toEqual([['WI-A', 'WI-B'], ['WI-A', 'WI-B']]);
+    expect(objectAccess.freshRead).not.toHaveBeenCalled();
+    await service.readWorkingRevision('MAT-1', 'MWREV-OLD', actor());
+    expect(objectAccess.freshReadBatch).toHaveBeenCalledTimes(4);
+  });
+
+  it('keeps each batched member denial independent and stops before saved-body loading', async () => {
+    const working = { readByRef: jest.fn() };
+    const objectAccess = { freshRead: jest.fn(), freshReadBatch: jest.fn(async (inputs) =>
+      inputs.map(input => input.accessRoot.id === 'WI-B'
+        ? { allowed: false, code: 'REVOKED', statusCode: 403 }
+        : { allowed: true, workItemId: 'WI-A', documentVersionId: 'DV-A' })) };
+    const service = serviceWith({ working, objectAccess });
+    await expect(service.readWorkingRevision('MAT-1', 'MWREV-OLD', actor()))
+      .rejects.toMatchObject({ code: 'REVOKED', statusCode: 403 });
+    expect(working.readByRef).not.toHaveBeenCalled();
+  });
+
+  it('rechecks saved members after the current batch and observes a new denial', async () => {
+    const working = { readByRef: jest.fn().mockResolvedValue({
+      state: { substantiveInputs: [{ workItemId: 'WI-A' }, { workItemId: 'WI-B' }], coverage: [] },
+    }) };
+    const objectAccess = { freshRead: jest.fn(), freshReadBatch: jest.fn()
+      .mockResolvedValueOnce([
+        { allowed: true, workItemId: 'WI-A', documentVersionId: 'DV-A' },
+        { allowed: true, workItemId: 'WI-B', documentVersionId: 'DV-B' },
+      ])
+      .mockResolvedValueOnce([
+        { allowed: true, workItemId: 'WI-A', documentVersionId: 'DV-A' },
+        { allowed: false, code: 'REVOKED', statusCode: 403 },
+      ]) };
+    const service = serviceWith({ working, objectAccess });
+    await expect(service.readWorkingRevision('MAT-1', 'MWREV-OLD', actor()))
+      .rejects.toMatchObject({ code: 'REVOKED', statusCode: 403 });
+    expect(working.readByRef).toHaveBeenCalledTimes(1);
+    expect(objectAccess.freshReadBatch).toHaveBeenCalledTimes(2);
+  });
+
   it('settles a denied historical group before failing and never starts later groups', async () => {
     jest.useFakeTimers();
     try {

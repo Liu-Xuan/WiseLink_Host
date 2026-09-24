@@ -12,6 +12,7 @@ import type {
   CanonicalObjectAccessInput,
   CanonicalObjectAccessPort,
   CanonicalObjectAccessResult,
+  CanonicalWorkItemReadInput,
 } from './canonical-object-access.port';
 import {
   MiaodaWorkItemRepository,
@@ -87,6 +88,28 @@ export class MiaodaHostedCanonicalObjectAccessAdapter implements CanonicalObject
       return denied(input, 'CANONICAL_WORK_ITEM_REVISION_MISMATCH', 409);
     }
     return grant(input.actor, grantableAction(input.action), binding);
+  }
+
+  async freshReadBatch(
+    inputs: readonly CanonicalWorkItemReadInput[],
+  ): Promise<CanonicalObjectAccessResult[]> {
+    if (inputs.length === 0) return [];
+    const actor = inputs[0].actor;
+    if (inputs.length < 2 || inputs.length > 4 ||
+      !isHostedCanonicalFinalUserActor(actor) ||
+      inputs.some(input => input.actor !== actor))
+      return Promise.all(inputs.map(input => this.freshRead(input)));
+    const bindings = await this.workItems.loadAuthorizationBindings(inputs.map(input => ({
+      workItemId: input.accessRoot.id,
+      tenantId: actor.tenantId,
+      actorUserId: actor.canonicalSubject.id,
+    })));
+    return inputs.map(input => {
+      const binding = bindings.get(input.accessRoot.id) ?? null;
+      return ownedBindingMatches(binding, actor, input.accessRoot.id)
+        ? grant(actor, 'READ_WORK_ITEM', binding)
+        : denied(input, 'CANONICAL_WORK_ITEM_NOT_FOUND', 404);
+    });
   }
 }
 
