@@ -190,7 +190,7 @@ describe('ConfiguredDevelopmentCanonicalServiceScopeAuthorization', () => {
     ).rejects.toMatchObject({ code: 'CANONICAL_WORK_ITEM_NOT_FOUND' });
   });
 
-  it('grants one explicit JobAid WorkItem without changing the legacy binding', async () => {
+  it('grants one explicit JobAid and Overall WorkItem without changing the legacy binding', async () => {
     configure();
     const service = new ConfiguredDevelopmentCanonicalServiceScopeAuthorization();
     const legacy = await service.authorizeOpenClawWorkItem({
@@ -210,12 +210,20 @@ describe('ConfiguredDevelopmentCanonicalServiceScopeAuthorization', () => {
     await expect(service.authorizeOpenClawWorkItem({
       operation: 'BEGIN_TRANSLATE', workItemId: 'WI-FTD-EXACT',
     })).rejects.toMatchObject({ statusCode: 404 });
+    await expect(service.authorizeOpenClawWorkItem({
+      operation: 'BEGIN_OVERALL', workItemId: 'WI-FTD-EXACT',
+    })).resolves.toMatchObject({ workItemId: 'WI-FTD-EXACT' });
     await expect(service.authorizeOpenClawAttempt({
       operation: 'COMMIT_DYNAMIC', attemptRef: 'AQ-FTD', workItemId: 'WI-FTD-EXACT',
     })).resolves.toMatchObject({ workItemId: 'WI-FTD-EXACT' });
     await expect(service.authorizeOpenClawAttempt({
       operation: 'COMMIT_TRANSLATE', attemptRef: 'AQ-FTD', workItemId: 'WI-FTD-EXACT',
     })).rejects.toMatchObject({ statusCode: 404 });
+    for (const operation of ['RESUME_OVERALL', 'COMMIT_OVERALL'] as const) {
+      await expect(service.authorizeOpenClawAttempt({
+        operation, attemptRef: 'AQ-FTD', workItemId: 'WI-FTD-EXACT',
+      })).resolves.toMatchObject({ workItemId: 'WI-FTD-EXACT' });
+    }
     await expect(service.authorizeOpenClawAttempt({
       operation: 'COMMIT_DYNAMIC', attemptRef: 'AQ-FTD',
     })).resolves.toMatchObject({ workItemId: 'WI-DEV-ISOLATED' });

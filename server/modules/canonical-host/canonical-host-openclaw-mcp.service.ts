@@ -648,11 +648,11 @@ export class CanonicalHostOpenClawMcpService {
         title: '恢复既有整体候选综合输入',
         description:
           '只读恢复既有 RUNNING overall attempt 的同语义 modelInput；接受内部 ATT 或 opaque OVR 引用，不创建 attempt、不写 DB/FileService，也不重跑 dynamic 或 discovery。',
-        inputSchema: z.object({ attemptRef }).strict(),
+        inputSchema: z.object({ attemptRef, workItemId: mcpWorkItemId.optional() }).strict(),
         annotations: resumeAnnotations,
       },
-      async ({ attemptRef: selectedAttemptRef }) =>
-        textResult(await this.overall.resume(selectedAttemptRef)),
+      async ({ attemptRef: selectedAttemptRef, workItemId }) =>
+        textResult(await this.overall.resume(selectedAttemptRef, workItemId)),
     );
 
     server.registerTool(
@@ -664,6 +664,7 @@ export class CanonicalHostOpenClawMcpService {
         inputSchema: z
           .object({
             attemptRef,
+            workItemId: mcpWorkItemId.optional(),
             leaseToken,
             leaseGeneration,
             result: resultEnvelope,
@@ -673,6 +674,7 @@ export class CanonicalHostOpenClawMcpService {
       },
       async ({
         attemptRef: selectedAttemptRef,
+        workItemId,
         leaseToken: selectedLeaseToken,
         leaseGeneration: selectedLeaseGeneration,
         result,
@@ -683,6 +685,7 @@ export class CanonicalHostOpenClawMcpService {
             selectedLeaseToken,
             selectedLeaseGeneration,
             result,
+            workItemId,
           ),
         ),
     );
@@ -855,7 +858,7 @@ export class CanonicalHostOpenClawMcpService {
             tenantId: scope.tenantId,
             workItemId: scope.workItemId,
           });
-          if (row.actionType !== 'OPENCLAW_DYNAMIC_EVALUATION')
+          if (!['OPENCLAW_DYNAMIC_EVALUATION', 'OPENCLAW_OVERALL_SYNTHESIS'].includes(row.actionType))
             throw Object.assign(new Error('ACTION_ATTEMPT_NOT_FOUND'), {
               code: 'ACTION_ATTEMPT_NOT_FOUND', statusCode: 404,
             });
@@ -908,7 +911,7 @@ export class CanonicalHostOpenClawMcpService {
             tenantId: scope.tenantId,
             workItemId: scope.workItemId,
           });
-          if (row.actionType !== 'OPENCLAW_DYNAMIC_EVALUATION')
+          if (!['OPENCLAW_DYNAMIC_EVALUATION', 'OPENCLAW_OVERALL_SYNTHESIS'].includes(row.actionType))
             throw Object.assign(new Error('ACTION_ATTEMPT_NOT_FOUND'), {
               code: 'ACTION_ATTEMPT_NOT_FOUND', statusCode: 404,
             });

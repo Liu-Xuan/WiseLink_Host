@@ -229,7 +229,7 @@ export class CanonicalHostOpenClawOverallService {
     };
   }
 
-  async resume(attemptReference: string): Promise<{
+  async resume(attemptReference: string, workItemId?: string): Promise<{
     attemptRef: string;
     leaseToken: string;
     leaseGeneration: number;
@@ -241,6 +241,7 @@ export class CanonicalHostOpenClawOverallService {
     const scope = await this.serviceScope.authorizeOpenClawAttempt({
       operation: 'RESUME_OVERALL',
       attemptRef: attemptReference,
+      workItemId,
     });
     assertAttemptScope(scope, attemptReference);
     const row = await this.attempts.readScoped({
@@ -249,6 +250,11 @@ export class CanonicalHostOpenClawOverallService {
       workItemId: scope.workItemId,
     });
     if (row.actionType !== 'OPENCLAW_OVERALL_SYNTHESIS') {
+      if (workItemId !== undefined) {
+        throw Object.assign(new Error('ACTION_ATTEMPT_NOT_FOUND'), {
+          code: 'ACTION_ATTEMPT_NOT_FOUND', statusCode: 404,
+        });
+      }
       throw new Error('OPENCLAW_OVERALL_RESUME_ACTION_MISMATCH');
     }
     if (
@@ -265,7 +271,7 @@ export class CanonicalHostOpenClawOverallService {
     if (isJobAidProblemTask(task.modelInput)) {
       if (!this.problemAssessment)
         throw new Error('JOBAID_PROBLEM_RUNTIME_UNAVAILABLE');
-      await this.problemAssessment.readAttemptWork(attemptReference);
+      await this.problemAssessment.readAttemptWork(attemptReference, undefined, workItemId);
       return {
         attemptRef: attemptReference,
         leaseToken: row.leaseToken,
@@ -293,10 +299,12 @@ export class CanonicalHostOpenClawOverallService {
     leaseToken: string,
     leaseGeneration: number,
     resultEnvelope: unknown,
+    workItemId?: string,
   ): Promise<Record<string, unknown> | ActionAttemptTerminalProjection> {
     const scope = await this.serviceScope.authorizeOpenClawAttempt({
       operation: 'COMMIT_OVERALL',
       attemptRef,
+      workItemId,
     });
     assertAttemptScope(scope, attemptRef);
     const preflightRow = await this.attempts.readScoped({
@@ -304,6 +312,12 @@ export class CanonicalHostOpenClawOverallService {
       tenantId: scope.tenantId,
       workItemId: scope.workItemId,
     });
+    if (workItemId !== undefined &&
+      preflightRow.actionType !== 'OPENCLAW_OVERALL_SYNTHESIS') {
+      throw Object.assign(new Error('ACTION_ATTEMPT_NOT_FOUND'), {
+        code: 'ACTION_ATTEMPT_NOT_FOUND', statusCode: 404,
+      });
+    }
     const preflight = preflightCanonicalHostOpenClawResult({
       row: preflightRow,
       result: resultEnvelope,

@@ -29,6 +29,8 @@ test('CLI stage limit accepts only one WorkItem initial stage', () => {
     { maxInitialStages: 1, initialStageOnly: true });
   assert.deepEqual(initialStageLimit(['--max-initial-stages', '1', '--expected-initial-operation', 'EVALUATE_JOBAID'], 'WI-new'),
     { maxInitialStages: 1, initialStageOnly: true, expectedInitialOperation: 'EVALUATE_JOBAID' });
+  assert.deepEqual(initialStageLimit(['--max-initial-stages', '1', '--expected-initial-operation', 'SYNTHESIZE_OVERALL'], 'WI-new'),
+    { maxInitialStages: 1, initialStageOnly: true, expectedInitialOperation: 'SYNTHESIZE_OVERALL' });
   for (const argv of [
     ['--max-initial-stages'],
     ['--max-initial-stages', '0'],
@@ -46,7 +48,7 @@ test('CLI stage limit accepts only one WorkItem initial stage', () => {
     ['--expected-initial-operation'],
     ['--expected-initial-operation', 'EVALUATE_JOBAID'],
     ['--max-initial-stages', '1', '--expected-initial-operation'],
-    ['--max-initial-stages', '1', '--expected-initial-operation', 'SYNTHESIZE_OVERALL'],
+    ['--max-initial-stages', '1', '--expected-initial-operation', 'TRANSLATE'],
     ['--max-initial-stages', '1', '--expected-initial-operation', 'EVALUATE_JOBAID', '--expected-initial-operation', 'EVALUATE_JOBAID'],
   ]) assert.throws(() => initialStageLimit(argv, 'WI-new'), /INITIAL_EXPECTED_OPERATION_INVALID/);
   assert.throws(() => initialStageLimit(['--max-initial-stages', '1', '--expected-initial-operation=EVALUATE_JOBAID'], 'WI-new'),
@@ -140,11 +142,78 @@ test('expected JobAid requires the one-stage WorkItem mode before reading Host s
   const base = await options(t);
   for (const input of [
     { ...base, expectedInitialOperation: 'EVALUATE_JOBAID' },
-    { ...base, initialStageOnly: true, expectedInitialOperation: 'SYNTHESIZE_OVERALL' },
+    { ...base, initialStageOnly: true, expectedInitialOperation: 'TRANSLATE' },
     { ...base, initialStageOnly: true, expectedInitialOperation: 'EVALUATE_JOBAID', maxInitialStages: 2 },
   ]) await assert.rejects(consumeHostedWorkItem(input, {
     callTool: async () => assert.fail('invalid guard mode must not read or begin'),
   }), /INITIAL_EXPECTED_OPERATION_INVALID/);
+});
+
+test('expected Overall consumes only a pending Overall stage and binds its attempt calls', async t => {
+  const input = { ...await options(t), initialStageOnly: true,
+    expectedInitialOperation: 'SYNTHESIZE_OVERALL' };
+  let saved = false;
+  const calls = [];
+  const initial = () => status({ status: saved ? 'SUCCEEDED' : 'REQUIRED',
+    nextOperation: saved ? null : 'SYNTHESIZE_OVERALL',
+    stages: { translation: { status: 'SUCCEEDED' }, applicability: { status: 'WAITING_INPUT' },
+      jobAid: { status: 'SUCCEEDED' }, overall: { status: saved ? 'SUCCEEDED' : 'PENDING' } } });
+  const result = await consumeHostedWorkItem(input, {
+    callTool: async (name, args) => {
+      calls.push({ name, args });
+      if (name === 'get_parse_status') return initial();
+      if (name === 'heartbeat_action_attempt') return { leaseExpiresAt: 'future' };
+      assert.fail(`Overall must not enter ${name}`);
+    },
+    runInitial: async run => {
+      assert.equal(run.operation, 'SYNTHESIZE_OVERALL');
+      await run.callTool('heartbeat_action_attempt', { attemptRef: 'AQ-overall' });
+      saved = true;
+      return { outcome: 'CANDIDATE_READY' };
+    },
+  });
+  assert.equal(result.status, 'INITIAL_STAGE_SAVED');
+  assert.deepEqual(result.completedStages, ['SYNTHESIZE_OVERALL']);
+  assert.deepEqual(calls.filter(call => call.name === 'heartbeat_action_attempt').map(call => call.args),
+    [{ attemptRef: 'AQ-overall', workItemId: 'WI-new' }]);
+  assert.deepEqual(calls.map(call => call.name),
+    ['get_parse_status', 'heartbeat_action_attempt', 'get_parse_status']);
+});
+
+test('Overall consumer passes its exact WorkItem through begin, work read, status and commit', async t => {
+  const input = await options(t);
+  let saved = false;
+  const calls = [];
+  const initial = status({ status: 'REQUIRED', nextOperation: 'SYNTHESIZE_OVERALL',
+    stages: { translation: { status: 'SUCCEEDED' }, applicability: { status: 'WAITING_INPUT' },
+      jobAid: { status: 'SUCCEEDED' }, overall: { status: 'PENDING' } } }).initialAnalysis;
+  const report = await runHostedInitialStage({ ...input, operation: 'SYNTHESIZE_OVERALL', initial }, {
+    callTool: async (name, args) => {
+      calls.push({ name, args });
+      if (name === 'begin_overall_synthesis') return { status: 'RUNNING', attemptRef: 'AQ-overall',
+        modelInput: { schemaVersion: 'wiselink.jobaid-problem-task.v2' } };
+      if (name === 'read_assessment_work') return { work: null };
+      if (name === 'get_action_attempt_status') return { attemptRef: 'AQ-overall', status: 'RUNNING' };
+      if (name === 'commit_overall_candidate') { saved = true; return { status: 'SUCCEEDED' }; }
+      if (name === 'get_parse_status') return status({ status: 'SUCCEEDED', nextOperation: null,
+        stages: { ...initial.stages, overall: { status: saved ? 'SUCCEEDED' : 'PENDING' } } });
+      assert.fail(`unexpected tool ${name}`);
+    },
+    runInitial: async run => {
+      await run.callTool('begin_overall_synthesis', { workItemId: 'WI-new', providers: [] });
+      await run.callTool('read_assessment_work', { attemptRef: 'AQ-overall' });
+      await run.callTool('get_action_attempt_status', { attemptRef: 'AQ-overall' });
+      await run.callTool('commit_overall_candidate', { attemptRef: 'AQ-overall', result: {} });
+      return { outcome: 'CANDIDATE_READY' };
+    },
+  });
+  assert.equal(report.status, 'INITIAL_STAGE_SAVED');
+  assert.deepEqual(calls.filter(call => call.name !== 'get_parse_status').map(call => call.args), [
+    { workItemId: 'WI-new', providers: [] },
+    { attemptRef: 'AQ-overall', workItemId: 'WI-new' },
+    { attemptRef: 'AQ-overall', workItemId: 'WI-new' },
+    { attemptRef: 'AQ-overall', result: {}, workItemId: 'WI-new' },
+  ]);
 });
 
 test('single-stage mode leaves original-impact conflict untouched', async t => {
@@ -417,6 +486,37 @@ test('c115 resumes a c114 JobAid checkpoint without changing its argument hash',
     runInitial: async (run) => {
       const restored = await run.callTool('begin_dynamic_evaluation', { workItemId: 'WI-new', requestId });
       assert.equal(restored.attemptRef, 'AQ-c114');
+      return { outcome: 'CANDIDATE_READY' };
+    },
+  });
+  assert.equal(report.status, 'INITIAL_STAGE_SAVED');
+  assert.deepEqual(remoteCalls.map(call => call.name), ['get_parse_status']);
+});
+
+test('c116 resumes a c115 Overall checkpoint without replaying begin', async t => {
+  const input = await options(t);
+  const requestId = 'legacy-c115-overall';
+  const initial = status({ status: 'REQUIRED', nextOperation: 'SYNTHESIZE_OVERALL',
+    stages: { translation: { status: 'SUCCEEDED' }, applicability: { status: 'WAITING_INPUT' },
+      jobAid: { status: 'SUCCEEDED' }, overall: { status: 'PENDING', requestId } } }).initialAnalysis;
+  const checkpoint = await createCheckpointStore(initialStageCheckpointPath(input, 'SYNTHESIZE_OVERALL', requestId));
+  await checkpoint.writeOnce('binding', { workItemId: 'WI-new', documentVersionId: 'DV-new',
+    operation: 'SYNTHESIZE_OVERALL', requestId });
+  const beginArgs = { workItemId: 'WI-new', providers: [], requestId };
+  await checkpoint.remoteStep({ step: 'begin_overall_synthesis-1', args: beginArgs,
+    ambiguousCommit: false, perform: async () => ({ status: 'RUNNING', attemptRef: 'AQ-c115-overall',
+      modelInput: { schemaVersion: 'legacy-overall' } }) });
+  const remoteCalls = [];
+  const report = await runHostedInitialStage({ ...input, operation: 'SYNTHESIZE_OVERALL', initial }, {
+    callTool: async (name, args) => {
+      remoteCalls.push({ name, args });
+      if (name === 'get_parse_status') return status({ status: 'SUCCEEDED', nextOperation: null,
+        stages: { ...initial.stages, overall: { status: 'SUCCEEDED', requestId } } });
+      assert.fail(`c115 completed Overall BEGIN must not replay: ${name}`);
+    },
+    runInitial: async run => {
+      const restored = await run.callTool('begin_overall_synthesis', beginArgs);
+      assert.equal(restored.attemptRef, 'AQ-c115-overall');
       return { outcome: 'CANDIDATE_READY' };
     },
   });

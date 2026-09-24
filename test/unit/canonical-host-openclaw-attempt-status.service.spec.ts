@@ -60,6 +60,17 @@ describe('CanonicalHostOpenClawAttemptStatusService', () => {
     });
   });
 
+  it('reads an explicitly selected Overall attempt and rejects an unrelated action type', async () => {
+    const overall = taskEnvelope('OPENCLAW_OVERALL_SYNTHESIS');
+    const harness = statusHarness(actionAttemptRow(overall, 'RUNNING'));
+    await expect(harness.service.status(overall.operationRef, overall.workItemId))
+      .resolves.toMatchObject({ taskType: 'OPENCLAW_OVERALL_SYNTHESIS', status: 'RUNNING' });
+    const translation = taskEnvelope('OPENCLAW_TRANSLATE');
+    harness.setRow(actionAttemptRow(translation, 'RUNNING'));
+    await expect(harness.service.status(translation.operationRef, translation.workItemId))
+      .rejects.toMatchObject({ statusCode: 404 });
+  });
+
   it.each(TASK_TYPES)(
     'reads RUNNING, COMMITTING, and terminal %s without leaking scope or lease fields',
     async (taskType) => {

@@ -164,7 +164,7 @@ export async function runHostedInitialStage(options, dependencies) {
   let taskDeadline;
   const callTool = async (name, args) => {
     if (!INITIAL_TOOLS.has(name)) throw new Error('INITIAL_TOOL_NOT_ALLOWED');
-    const scopedArgs = operation === 'EVALUATE_JOBAID'
+    const scopedArgs = ['EVALUATE_JOBAID', 'SYNTHESIZE_OVERALL'].includes(operation)
       ? { ...args, workItemId: options.workItemId } : args;
     const count = (callCounts.get(name) ?? 0) + 1;
     callCounts.set(name, count);
@@ -260,7 +260,8 @@ export async function runHostedInitialStage(options, dependencies) {
           step: 'stop-attempt', args: { attemptRef: startedAttempt }, ambiguousCommit: false,
           perform: () => dependencies.callTool('cancel_action_attempt', {
             attemptRef: startedAttempt,
-            ...(operation === 'EVALUATE_JOBAID' ? { workItemId: options.workItemId } : {}),
+            ...(['EVALUATE_JOBAID', 'SYNTHESIZE_OVERALL'].includes(operation)
+              ? { workItemId: options.workItemId } : {}),
             reason: `HOSTED_INITIAL_EXECUTION_FAILED:${errorCode(error)}`,
           }),
         });
@@ -332,7 +333,8 @@ export function initialStageLimit(argv, workItemId, matterId, documentVersionId)
   const occurrences = argv.filter(arg => arg === '--max-initial-stages').length;
   const expectedOccurrences = argv.filter(arg => arg === '--expected-initial-operation').length;
   if (expectedOccurrences && (expectedOccurrences !== 1 ||
-      option(argv, '--expected-initial-operation') !== 'EVALUATE_JOBAID' ||
+      !['EVALUATE_JOBAID', 'SYNTHESIZE_OVERALL'].includes(
+        option(argv, '--expected-initial-operation')) ||
       occurrences !== 1)) throw new Error('INITIAL_EXPECTED_OPERATION_INVALID');
   if (!occurrences) return {};
   if (occurrences !== 1 || option(argv, '--max-initial-stages') !== '1' ||
@@ -340,12 +342,12 @@ export function initialStageLimit(argv, workItemId, matterId, documentVersionId)
     throw new Error('INITIAL_STAGE_LIMIT_INVALID');
   }
   return { maxInitialStages: 1, initialStageOnly: true,
-    ...(expectedOccurrences ? { expectedInitialOperation: 'EVALUATE_JOBAID' } : {}) };
+    ...(expectedOccurrences ? { expectedInitialOperation: option(argv, '--expected-initial-operation') } : {}) };
 }
 
 function assertExpectedInitialOperationMode(options) {
   if (options.expectedInitialOperation === undefined) return;
-  if (options.expectedInitialOperation !== 'EVALUATE_JOBAID' || !options.workItemId ||
+  if (!['EVALUATE_JOBAID', 'SYNTHESIZE_OVERALL'].includes(options.expectedInitialOperation) || !options.workItemId ||
       options.matterId || options.documentVersionId || !options.initialStageOnly || options.maxInitialStages !== 1)
     throw new Error('INITIAL_EXPECTED_OPERATION_INVALID');
 }
@@ -353,9 +355,9 @@ function assertExpectedInitialOperationMode(options) {
 function assertExpectedInitialOperationStatus(expected, initial) {
   if (!expected) return;
   const pending = ['REQUIRED', 'WAITING_INPUT'].includes(initial.status) &&
-    initial.nextOperation === expected && initial.stages.jobAid.status === 'PENDING';
+    initial.nextOperation === expected && initial.stages[STAGE_BY_OPERATION[expected]]?.status === 'PENDING';
   const recovering = initial.status === 'BUSY' && initial.nextOperation === null &&
-    initial.stages.jobAid.status === 'BUSY';
+    initial.stages[STAGE_BY_OPERATION[expected]]?.status === 'BUSY';
   if (!pending && !recovering) throw new Error('INITIAL_EXPECTED_OPERATION_MISMATCH');
 }
 
@@ -520,7 +522,7 @@ function assertSingleConsumerSubject({ workItemId, matterId, documentVersionId }
 
 async function main(argv, env) {
   if (argv.includes('--help')) {
-    process.stdout.write('Usage: node consume-hosted-work-item.mjs [--work-item-id WI-...] [--matter-id MAT-...] [--document-version-id DV] [--max-initial-stages 1] [--expected-initial-operation EVALUATE_JOBAID] [--applicability-context-ref REF] [--checkpoint-root PATH] [--openclaw-config PATH] [--native-session-store PATH] [--document-translation-recovery ID] [--activity-run-ref ID] [--reading-run-ref ID] [--lease-owner ID]\nOne native job per authorized subject. Choose exactly one WorkItem, Matter or DocumentVersion; independent jobs use native cron concurrency. --max-initial-stages 1 is WorkItem-only and consumes at most the current initial stage, without Review or original-impact work. --expected-initial-operation requires that limit and refuses any entry stage other than the current JobAid stage.\n');
+    process.stdout.write('Usage: node consume-hosted-work-item.mjs [--work-item-id WI-...] [--matter-id MAT-...] [--document-version-id DV] [--max-initial-stages 1] [--expected-initial-operation EVALUATE_JOBAID|SYNTHESIZE_OVERALL] [--applicability-context-ref REF] [--checkpoint-root PATH] [--openclaw-config PATH] [--native-session-store PATH] [--document-translation-recovery ID] [--activity-run-ref ID] [--reading-run-ref ID] [--lease-owner ID]\nOne native job per authorized subject. Choose exactly one WorkItem, Matter or DocumentVersion; independent jobs use native cron concurrency. --max-initial-stages 1 is WorkItem-only and consumes at most the current initial stage, without Review or original-impact work. --expected-initial-operation requires that limit and refuses any entry stage other than the named JobAid or Overall stage.\n');
     return;
   }
   const workItemId = option(argv, '--work-item-id');
