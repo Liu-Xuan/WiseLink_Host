@@ -104,7 +104,7 @@ function summary(value, documentVersionId, runRef) {
   if (value?.documentVersionId !== documentVersionId || value.runRef !== runRef || !id(value.parseRunId) ||
       !Number.isSafeInteger(value.semanticRevision) || value.semanticRevision < 1 ||
       !Number.isSafeInteger(value.expectedRevision) || value.expectedRevision < 0 ||
-      !['QUEUED','RUNNING','SAVED','FAILED','CANCELLED','EXPIRED'].includes(value.status))
+      !['QUEUED','RUNNING','SAVED','RETRACTED','FAILED','CANCELLED','EXPIRED'].includes(value.status))
     throw new Error('READING_SUMMARY_INVALID');
   return value;
 }
@@ -248,6 +248,8 @@ export async function consumeHostedDocumentReading(options, dependencies) {
         const latest = await getStatus();
         if (latest.status === 'SAVED') return { status: 'READING_SAVED',
           saved: savedReceipt(latest.result, state, expected),
+          modelResponse: readingModelResponse(model), modelInvocations };
+        if (latest.status === 'RETRACTED') return { status: 'RETRACTED',
           modelResponse: readingModelResponse(model), modelInvocations };
       } catch (error) { recoveryError = error; }
       if (definiteError(recoveryError)) throw recoveryError;

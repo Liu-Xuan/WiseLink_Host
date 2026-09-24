@@ -63,7 +63,8 @@ export class DocumentReadingRuntimeService {
         const row = await this.runs.begin(scope, { requestId: input.requestId, parseRunId: input.parseRunId,
           parseRevision: source.loaded.original.binding.parseRevision, semanticRevision: input.semanticRevision,
           manifestSha256: source.artifact.sha256, expectedRevision: input.expectedRevision });
-        return summary(row);
+        const retraction = row.status === 'SAVED' ? await this.runs.readRetraction(scope, row.runRef) : null;
+        return summary(row, retraction);
       }
       // RLS/run ownership and fresh ordinary source ACL are both required. Control operations
       // stop here and manage lifecycle only, without taking original bytes,

@@ -47,6 +47,19 @@ describe('independent file reading runtime', () => {
     expect(f.runs.begin).toHaveBeenCalledTimes(1);
   });
 
+  it('does not re-expose a retracted saved result when the original BEGIN request is replayed', async () => {
+    const f = fixture();
+    f.runs.begin.mockResolvedValue({ ...f.row, status: 'SAVED', readingRevision: 1,
+      result: { headline: '错误候选' } });
+    f.runs.readRetraction.mockResolvedValue({ runRef: f.row.runRef, readingRevision: 1,
+      requestId: 'review-1', reasonCode: 'SOURCE_SEMANTIC_CONTRADICTION',
+      reviewReference: 'independent-review', retractedAt: '2026-09-24T00:00:00Z' });
+    await expect(f.service.run({ action: 'READING_BEGIN', documentVersionId: f.scope.documentVersionId,
+      parseRunId: f.row.parseRunId, semanticRevision: 1, requestId: f.row.requestId,
+      expectedRevision: 0 })).resolves.toMatchObject({ status: 'RETRACTED', result: null,
+        readingRevision: 1 });
+  });
+
   it('reads units outside semantic sections, then saves concise and complete text in one revision', async () => {
     const f = fixture();
     expect(f.map.unassignedUnitIds).toContain('u1');

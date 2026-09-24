@@ -53,6 +53,7 @@ test('production library SQL projects exact document reading and authorized curr
     await reset(admin);
     await catalog(admin);
     const producer = await actor('service_role', 'actor-one');
+    const secondProducer = await actor('service_role', 'actor-one');
     const browser = await actor('authenticated', 'actor-two');
     const foreign = await actor('authenticated', 'actor-foreign');
     const query = async (who = browser, overrides = {}) => {
@@ -106,8 +107,11 @@ test('production library SQL projects exact document reading and authorized curr
         (run_ref,tenant_id,actor_user_id,document_version_id,reading_revision,request_id,reason_code,review_reference)
         VALUES (${run.runRef},'tenant-test','actor-one','DV-test',1,'native-browser','OTHER','fixture')`,
       /row-level security/);
-      const recorded = await producer.repository.retract(scope, retraction);
+      const [recorded, concurrentReplay] = await Promise.all([
+        producer.repository.retract(scope, retraction), secondProducer.repository.retract(scope, retraction),
+      ]);
       assert.equal(recorded.readingRevision, 1);
+      assert.deepEqual(concurrentReplay, recorded);
       assert.deepEqual(await producer.repository.retract(scope, retraction), recorded);
       const preserved = await admin`SELECT status,reading_revision,result_json->>'headline' AS headline
         FROM dm_document_reading_run WHERE run_ref=${run.runRef}`;

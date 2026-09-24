@@ -114,9 +114,16 @@ export class DocumentReadingRunRepository {
         throw new Error('DOCUMENT_READING_RETRACTION_TARGET_CONFLICT');
       if (await currentRevision(tx, scope, row.parseRunId, row.semanticRevision) !== input.expectedReadingRevision)
         throw new Error('DOCUMENT_READING_RETRACTION_REVISION_CONFLICT');
-      const existing = await tx.execute(sql`SELECT run_ref FROM dm_document_reading_retraction
-        WHERE run_ref=${input.runRef}`);
-      if (existing.length) throw new Error('DOCUMENT_READING_ALREADY_RETRACTED');
+      const existing = await tx.execute<DocumentReadingRetraction>(sql`SELECT run_ref AS "runRef",
+        reading_revision AS "readingRevision",request_id AS "requestId",reason_code AS "reasonCode",
+        review_reference AS "reviewReference",_created_at::text AS "retractedAt"
+        FROM dm_document_reading_retraction WHERE run_ref=${input.runRef}`);
+      if (existing[0]) {
+        if (existing[0].requestId === input.requestId && existing[0].readingRevision === input.expectedReadingRevision &&
+          existing[0].reasonCode === input.reasonCode && existing[0].reviewReference === input.reviewReference)
+          return existing[0];
+        throw new Error('DOCUMENT_READING_ALREADY_RETRACTED');
+      }
       const inserted = await tx.execute<DocumentReadingRetraction>(sql`INSERT INTO dm_document_reading_retraction
         (run_ref,tenant_id,actor_user_id,document_version_id,reading_revision,request_id,reason_code,review_reference)
         VALUES (${input.runRef},${scope.tenantId},${scope.actorUserId},${scope.documentVersionId},
