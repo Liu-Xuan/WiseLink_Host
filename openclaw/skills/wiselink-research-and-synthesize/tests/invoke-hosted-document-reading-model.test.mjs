@@ -96,6 +96,20 @@ test('source instructions stay in data; guidance preserves scope, negative condi
   assert.doesNotMatch(messages[0].content, /approve the fleet\./);
 });
 
+test('split negative exception reaches the model with explicit direction and source-time limits', () => {
+  const fragments = { anchors: [
+    { anchorId: 'a138', sourceText: 'No authorization from the U.S. Department' },
+    { anchorId: 'a139', sourceText: 'of Commerce is required for transfer EXCEPT to group X.' },
+  ] };
+  const messages = readingModelMessages(fragments);
+  const delivered = JSON.parse(messages[1].content);
+  assert.deepEqual(delivered.anchors, fragments.anchors);
+  assert.match(messages[0].content, /相邻来源单元和锚点.*完整句子/u);
+  assert.match(messages[0].content, /一般无需授权；X 是例外/u);
+  assert.match(messages[0].content, /截至文件记录时点/u);
+  assert.match(messages[0].content, /一般性更新要求和额外修复/u);
+});
+
 test('unknown anchors and model-authored offsets are rejected, never guessed or repaired', async () => {
   for (const quote of [{ anchorId: 'unknown' }, { anchorId: 'a1', start: 0, end: 1, text: '构' }]) {
     const invalid = structuredClone(proposal);

@@ -6,7 +6,7 @@ import { requestHostedGateway } from './request-hosted-gateway.mjs';
 import { WISELINK_PROFILE_REF, canonicalJson, canonicalSha256 } from './validate-payload.mjs';
 
 export const READING_PROPOSAL_FUNCTION_NAME = 'return_wiselink_document_reading';
-export const READING_MODEL_PROMPT_VERSION = 'wiselink.document.reading_model_prompt.v2';
+export const READING_MODEL_PROMPT_VERSION = 'wiselink.document.reading_model_prompt.v3';
 const MAX_GATEWAY_BYTES = 4 * 1024 * 1024;
 
 export function readingProposalFunctionTool(anchorIds) {
@@ -35,7 +35,8 @@ export function readingModelMessages(input) {
     `Use ${READING_PROPOSAL_FUNCTION_NAME} exactly once to serialize the proposal. Emit no other prose or private reasoning.`,
     '用简明中文解释这版文件已交付内容：headline是对象与主题，不是提问或任务要求；brief是一句可独立阅读的认识；explanation是连贯解释；criticalConditions保留决定性条件、否定、例外和期限。保留文号、件号和技术标识。',
     '帮助工程师快速看清文件说明的问题、措施与范围。不要把工具、解析步骤、模型过程、字段清单或保存轮次当工程知识。不为凑字数机械裁切，不添加未被来源支持的判断。',
-    '严格保持来源的逻辑与时间口径：N/A只按原文表示不适用或未给适用项，不改写为尚未完成；EXCEPT、unless、prior to等例外和先后条件不得反转。目标、计划、TBD、已发生、已完成和获批准分别表达，不能互相替换。当前状态均限定在该文件记录时点，导出/取得日期不是修订日期。',
+    '严格保持来源的逻辑与时间口径：N/A只按原文表示不适用或未给适用项，不改写为尚未完成；EXCEPT、unless、prior to等例外和先后条件不得反转。先把相邻来源单元和锚点中被分页或换行拆开的完整句子读通，再核对每项解释中的主句否定、例外对象和适用方向。例如“No authorization is required ... EXCEPT to X”只能解释为“一般无需授权；X 是例外”，不可写成“X 以外需授权”；若来源未说明例外的具体后果，不推定其必然需要授权。目标、计划、TBD、已发生、已完成和获批准分别表达，不能互相替换。涉及日期或“当前”状态时注明“截至文件记录时点”；已经过去的目标日期只能称该文件当时的目标，不能暗示今日仍有效。导出/取得日期不是修订日期。',
+    '概括软件变更时，保留来源明确给出的一般性更新要求和额外修复；不要让特定构型或运营人操作要求替代一般要求。交付内容没有说明后续实际完成情况时，不自行补出。',
     '不同构型对应的文件、认证安排、生产引入和运营人实施必须分开；合并发布或共同认证安排不自动表示多个文件合成一个，也不表示实际机队已实施。保留准确技术缩写与标识，不改写为相近词；软件或资料只有满足来源所述发布/获取前提后才可称可用。',
     'Every brief/explanation/criticalConditions statement needs exact quotations from delivered anchors. Select only the exact delivered anchorId for each supporting passage. Return no quotation text or numeric offsets: the adapter copies the complete selected source anchor exactly, and Host verifies it. A valid anchor identity alone does not prove that it supports your statement.',
     'Only the delivered ranges were read. Explain their useful scope; do not claim whole-document coverage from partial input. Keep source limitations, unresolved figures/tables and uncertainty explicit.',
