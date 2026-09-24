@@ -85,10 +85,12 @@ export interface EngineeringMatterWorkingTransactionExecutor {
 type WorkRevisionRow = typeof engineeringMatterWorkRevision.$inferSelect;
 type SavedRowKey = { tenantId: string; matterId: string; workRef: string };
 
-/** One catalogue window only. Each SELECT still runs through the existing actor-bound RLS. */
+/** One catalogue window only. Both queries use the existing actor-bound database context. */
 export interface EngineeringMatterSavedRowBatch {
   read(key: SavedRowKey): Promise<WorkRevisionRow | null>;
   skip(): void;
+  checkSources(tenantId: string, workItemIds: Set<string>, documentVersionIds: Set<string>): Promise<void>;
+  skipSources(): void;
 }
 
 function savedRowKey(key: SavedRowKey): string {
@@ -262,8 +264,12 @@ export class EngineeringMatterWorkingRepository {
     if (!Number.isInteger(expected) || expected < 2 || expected > 4) throw new Error('MATTER_SAVED_ROW_BATCH_INVALID');
     const pending: Array<{ key: SavedRowKey; resolve: (row: WorkRevisionRow | null) => void;
       reject: (error: unknown) => void }> = [];
+    const sources: Array<{ tenantId: string; workItemIds: string[]; documentVersionIds: string[];
+      resolve: () => void; reject: (error: unknown) => void }> = [];
     let arrived = 0;
     let dispatched = false;
+    let sourceArrived = 0;
+    let sourcesDispatched = false;
     const dispatch = () => {
       if (dispatched || arrived !== expected) return;
       dispatched = true;
@@ -286,12 +292,48 @@ export class EngineeringMatterWorkingRepository {
       if (dispatched || ++arrived > expected) throw new Error('MATTER_SAVED_ROW_BATCH_OVERFLOW');
       dispatch();
     };
+    // A root that is denied, missing, or malformed releases its source slot.
+    // Each surviving root retains its own allowed result; no grant is cached.
+    const dispatchSources = () => {
+      if (sourcesDispatched || sourceArrived !== expected) return;
+      sourcesDispatched = true;
+      if (!sources.length) return;
+      const roots = sources.map((source, index) => ({ index, tenantId: source.tenantId,
+        workItemIds: source.workItemIds, documentVersionIds: source.documentVersionIds }));
+      void observeEngineeringRead(observation, 'saved_sources_batch_query', () => this.db.execute<{
+        index: number; allowed: boolean }>(sql`
+        SELECT (root.value ->> 'index')::integer AS "index",
+          NOT EXISTS (SELECT 1 FROM jsonb_array_elements_text(root.value -> 'workItemIds') AS w(id)
+            WHERE engineering_matter_work_item_owned_by_actor(
+              (root.value ->> 'tenantId')::varchar, w.id::varchar) IS NOT TRUE)
+          AND NOT EXISTS (SELECT 1 FROM jsonb_array_elements_text(root.value -> 'documentVersionIds') AS d(id)
+            WHERE engineering_matter_document_owned_by_actor(
+              (root.value ->> 'tenantId')::varchar, d.id::varchar) IS NOT TRUE) AS "allowed"
+        FROM jsonb_array_elements(${JSON.stringify(roots)}::jsonb) AS root(value)
+      `)).then(rows => {
+        const byIndex = new Map(rows.map(row => [row.index, row.allowed]));
+        sources.forEach((source, index) => {
+          if (byIndex.get(index) !== true) source.reject(runtimeAuthorizationUnavailable());
+          else source.resolve();
+        });
+      }).catch(error => sources.forEach(source => source.reject(error)));
+    };
+    const arriveSource = () => {
+      if (sourcesDispatched || ++sourceArrived > expected) throw new Error('MATTER_SOURCE_BATCH_OVERFLOW');
+      dispatchSources();
+    };
     return {
       read: key => new Promise<WorkRevisionRow | null>((resolve, reject) => {
         pending.push({ key, resolve, reject });
         arrive();
       }),
-      skip: arrive,
+      skip: () => { arrive(); arriveSource(); },
+      checkSources: (tenantId, workItemIds, documentVersionIds) => new Promise<void>((resolve, reject) => {
+        sources.push({ tenantId, workItemIds: [...workItemIds], documentVersionIds: [...documentVersionIds],
+          resolve, reject });
+        arriveSource();
+      }),
+      skipSources: arriveSource,
     };
   }
 
@@ -301,16 +343,26 @@ export class EngineeringMatterWorkingRepository {
       observation?: EngineeringReadPhaseObservation; batch?: EngineeringMatterSavedRowBatch },
     executor: EngineeringMatterWorkingDatabaseExecutor = this.db,
   ): Promise<EngineeringMatterWorkingRevisionReadModel | null> {
-    const row = await observeEngineeringRead(input.observation, 'saved_row_await', async () => {
-      if (input.batch) return input.batch.read(input);
-      const [found] = await executor.select().from(engineeringMatterWorkRevision).where(and(
-        eq(engineeringMatterWorkRevision.tenantId, input.tenantId),
-        eq(engineeringMatterWorkRevision.matterId, input.matterId),
-        eq(engineeringMatterWorkRevision.matterWorkRevisionId, input.workRef),
-      )).limit(1);
-      return found ?? null;
-    });
-    return row ? authorizedReadModel(row, executor, new Set(), input.observation) : null;
+    const batch = input.batch;
+    let sourceArrived = false;
+    try {
+      const row = await observeEngineeringRead(input.observation, 'saved_row_await', async () => {
+        if (batch) return batch.read(input);
+        const [found] = await executor.select().from(engineeringMatterWorkRevision).where(and(
+          eq(engineeringMatterWorkRevision.tenantId, input.tenantId),
+          eq(engineeringMatterWorkRevision.matterId, input.matterId),
+          eq(engineeringMatterWorkRevision.matterWorkRevisionId, input.workRef),
+        )).limit(1);
+        return found ?? null;
+      });
+      return row ? authorizedReadModel(row, executor, new Set(), input.observation,
+        batch ? (tenantId, workItemIds, documentVersionIds) => {
+          sourceArrived = true;
+          return batch.checkSources(tenantId, workItemIds, documentVersionIds);
+        } : undefined) : null;
+    } finally {
+      if (batch && !sourceArrived) batch.skipSources();
+    }
   }
 
   async readByRefForRuntime(input: {
@@ -1011,6 +1063,7 @@ async function authorizedReadModel(
   executor: EngineeringMatterWorkingDatabaseExecutor,
   ancestors: Set<string> = new Set(),
   observation?: EngineeringReadPhaseObservation,
+  checkSources?: (tenantId: string, workItemIds: Set<string>, documentVersionIds: Set<string>) => Promise<void>,
 ): Promise<EngineeringMatterWorkingRevisionReadModel> {
   if (ancestors.has(row.matterWorkRevisionId)) throw workingPersistenceError();
   const ancestry = new Set(ancestors).add(row.matterWorkRevisionId);
@@ -1035,12 +1088,9 @@ async function authorizedReadModel(
       item.kind === 'DOCUMENT_PASSAGE' ? [item.documentVersionId] : [],
     ),
   ]);
-  await observeEngineeringRead(observation, 'saved_sources_await', () => assertOwnedSources(
-    executor,
-    row.tenantId,
-    workItemIds,
-    documentVersionIds,
-  ));
+  await observeEngineeringRead(observation, 'saved_sources_await', () => checkSources
+    ? checkSources(row.tenantId, workItemIds, documentVersionIds)
+    : assertOwnedSources(executor, row.tenantId, workItemIds, documentVersionIds));
   // Resolve the last explicit saved overview, using the same authorized history.
   // A status flag or matching save time cannot identify the work that supplied it.
   // Never reach backward across a different/absent overview merely because older

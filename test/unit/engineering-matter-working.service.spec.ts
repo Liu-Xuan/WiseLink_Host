@@ -285,7 +285,7 @@ describe('EngineeringMatterWorkingService', () => {
     const revision = { state: { substantiveInputs: [], coverage: [] } };
     const working = { readByRef: jest.fn().mockResolvedValue(revision) };
     const service = serviceWith({ working });
-    const batch = { read: jest.fn(), skip: jest.fn() };
+    const batch = { read: jest.fn(), skip: jest.fn(), checkSources: jest.fn(), skipSources: jest.fn() };
     await expect(service.readWorkingRevision('MAT-1', 'MWREV-OLD', actor(), undefined, batch))
       .resolves.toBe(revision);
     expect(working.readByRef).toHaveBeenCalledWith({
@@ -299,7 +299,7 @@ describe('EngineeringMatterWorkingService', () => {
     const working = { readByRef: jest.fn() };
     const service = serviceWith({ working, objectAccess: { freshRead: jest.fn()
       .mockResolvedValue({ allowed: false, code: 'REVOKED', statusCode: 403 }) } });
-    const batch = { read: jest.fn(), skip: jest.fn() };
+    const batch = { read: jest.fn(), skip: jest.fn(), checkSources: jest.fn(), skipSources: jest.fn() };
     await expect(service.readWorkingRevision('MAT-1', 'MWREV-OLD', actor(), undefined, batch))
       .rejects.toMatchObject({ statusCode: 403 });
     expect(batch.skip).toHaveBeenCalledTimes(1);

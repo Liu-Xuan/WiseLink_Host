@@ -5,7 +5,7 @@ import { EngineeringMatterWorkingRepository } from '../../server/modules/canonic
 function harness(rows: Array<{ tenantId: string; matterId: string; matterWorkRevisionId: string }>) {
   const where = jest.fn().mockResolvedValue(rows);
   const from = jest.fn().mockReturnValue({ where });
-  const db = { select: jest.fn().mockReturnValue({ from }) };
+  const db = { select: jest.fn().mockReturnValue({ from }), execute: jest.fn() };
   const repository = new EngineeringMatterWorkingRepository(db as never, {} as never, {} as never, {} as never);
   return { repository, db, from, where };
 }
@@ -63,5 +63,75 @@ describe('catalogue saved row batch', () => {
     const second = batch.read(b);
     await expect(first).rejects.toBe(failure);
     await expect(second).rejects.toBe(failure);
+  });
+
+  it('checks each root source set independently in one actor-bound query', async () => {
+    const h = harness([]);
+    h.db.execute.mockResolvedValue([{ index: 1, allowed: false }, { index: 0, allowed: true }]);
+    const batch = h.repository.createSavedRowBatch(3);
+    const allowed = batch.checkSources('tenant-A', new Set(['WI-A']), new Set(['DV-A']));
+    const denied = batch.checkSources('tenant-A', new Set(['WI-B']), new Set(['DV-B']));
+    expect(h.db.execute).not.toHaveBeenCalled();
+    batch.skipSources();
+    await expect(allowed).resolves.toBeUndefined();
+    await expect(denied).rejects.toMatchObject({ statusCode: 404 });
+    expect(h.db.execute).toHaveBeenCalledTimes(1);
+    const query = new PgDialect().sqlToQuery(h.db.execute.mock.calls[0][0]);
+    expect(query.sql).toContain('engineering_matter_work_item_owned_by_actor');
+    expect(query.sql).toContain('engineering_matter_document_owned_by_actor');
+    expect(query.sql).toContain('IS NOT TRUE');
+    expect(query.params[0]).toContain('WI-A');
+    expect(query.params[0]).toContain('DV-B');
+  });
+
+  it('keeps a source query failure an error for each waiting root', async () => {
+    const h = harness([]);
+    const failure = new Error('DATABASE_UNAVAILABLE');
+    h.db.execute.mockRejectedValue(failure);
+    const batch = h.repository.createSavedRowBatch(2);
+    const first = batch.checkSources('tenant-A', new Set(), new Set());
+    const second = batch.checkSources('tenant-A', new Set(['WI-B']), new Set());
+    await expect(first).rejects.toBe(failure);
+    await expect(second).rejects.toBe(failure);
+  });
+
+  it('treats a missing source decision as unavailable, as the single-root reader does', async () => {
+    const h = harness([]);
+    h.db.execute.mockResolvedValue([{ index: 0, allowed: true }]);
+    const batch = h.repository.createSavedRowBatch(2);
+    const first = batch.checkSources('tenant-A', new Set(), new Set());
+    const missing = batch.checkSources('tenant-A', new Set(['WI-B']), new Set());
+    await expect(first).resolves.toBeUndefined();
+    await expect(missing).rejects.toMatchObject({
+      code: 'ENGINEERING_MATTER_RUNTIME_AUTHORIZATION_UNAVAILABLE', statusCode: 404,
+    });
+  });
+
+  it('releases a source slot after a malformed saved state without hiding the data error', async () => {
+    const command = JSON.stringify({ requestId: 'REQ', expectedWorkingRevision: 0,
+      basedOnMatterRevisionId: 'BASIS', updateKind: 'INITIAL_SYNTHESIS', changeSummary: 'saved',
+      nextFocus: null, claimDelta: null, openQuestionDelta: null, reviewConditionDelta: null,
+      nextSubstantiveResult: null, substantiveInputs: [], coverageUpdates: [] });
+    const state = JSON.stringify({ schemaVersion: 'wiselink.3_1.engineering_matter_working_state.v1',
+      focus: { question: 'Check', targetRefs: [] }, substantiveResult: null,
+      openQuestions: [], reviewConditions: [], substantiveInputs: [], coverage: [] });
+    const row = (key: typeof a, commandJson: string) => ({ tenantId: key.tenantId,
+      matterId: key.matterId, matterWorkRevisionId: key.workRef,
+      workingRevision: 1, requestId: 'REQ', createdByUserId: 'actor-A',
+      createdAt: new Date('2026-09-24T00:00:00.000Z'),
+      commandJson, stateJson: state, basedOnMatterRevisionId: 'BASIS',
+      updateKind: 'INITIAL_SYNTHESIS', changeSummary: 'saved',
+      substantiveResultRef: null, substantiveResultRevision: null,
+      actionAttemptId: null, reviewTurnId: null });
+    const h = harness([row(a, command), row(b, '{invalid')]);
+    h.db.execute.mockResolvedValueOnce([{ index: 0, allowed: true }]).mockResolvedValue([]);
+    const batch = h.repository.createSavedRowBatch(2);
+    const results = await Promise.allSettled([
+      h.repository.readByRef({ ...a, batch }),
+      h.repository.readByRef({ ...b, batch }),
+    ]);
+    expect(results[1]).toMatchObject({ status: 'rejected', reason: { code: 'ENGINEERING_MATTER_WORKING_COMMAND_JSON_INVALID' } });
+    expect(new PgDialect().sqlToQuery(h.db.execute.mock.calls[0][0]).sql)
+      .toContain('engineering_matter_work_item_owned_by_actor');
   });
 });

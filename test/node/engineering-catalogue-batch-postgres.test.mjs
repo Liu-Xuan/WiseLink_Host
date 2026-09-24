@@ -41,6 +41,7 @@ test('batched exact rows retain tenant, owner and source-link RLS in real Postgr
         )`;
         await tx`CREATE TABLE test_matter_access (tenant_id text, matter_id text, actor_id text, allowed boolean)`;
         await tx`CREATE TABLE test_link_access (tenant_id text, revision_id text, allowed boolean)`;
+        await tx`CREATE TABLE test_source_access (tenant_id text, source_kind text, source_id text, actor_id text, allowed boolean)`;
         await tx.unsafe(`CREATE FUNCTION engineering_matter_actor_has_tenant(value varchar)
           RETURNS boolean LANGUAGE sql STABLE AS $$ SELECT value = current_setting('app.tenant_id', true) $$`);
         await tx.unsafe(`CREATE FUNCTION engineering_matter_owned_by_actor(tenant varchar, matter varchar)
@@ -53,6 +54,18 @@ test('batched exact rows retain tenant, owner and source-link RLS in real Postgr
           RETURNS boolean LANGUAGE sql STABLE AS $$ SELECT EXISTS (
             SELECT 1 FROM "${schema}".test_link_access access
             WHERE access.tenant_id = tenant AND access.revision_id = revision AND access.allowed
+          ) $$`);
+        await tx.unsafe(`CREATE FUNCTION engineering_matter_work_item_owned_by_actor(tenant varchar, source varchar)
+          RETURNS boolean LANGUAGE sql STABLE SECURITY DEFINER SET search_path FROM CURRENT AS $$ SELECT EXISTS (
+            SELECT 1 FROM test_source_access access WHERE access.tenant_id = tenant
+              AND access.source_kind = 'WORK_ITEM' AND access.source_id = source
+              AND access.actor_id = current_setting('app.user_id', true) AND access.allowed
+          ) $$`);
+        await tx.unsafe(`CREATE FUNCTION engineering_matter_document_owned_by_actor(tenant varchar, source varchar)
+          RETURNS boolean LANGUAGE sql STABLE SECURITY DEFINER SET search_path FROM CURRENT AS $$ SELECT EXISTS (
+            SELECT 1 FROM test_source_access access WHERE access.tenant_id = tenant
+              AND access.source_kind = 'DOCUMENT' AND access.source_id = source
+              AND access.actor_id = current_setting('app.user_id', true) AND access.allowed
           ) $$`);
         await tx`ALTER TABLE engineering_matter_work_revision ENABLE ROW LEVEL SECURITY`;
         await tx.unsafe(`CREATE POLICY engineering_matter_work_revision_authenticated_select
@@ -71,6 +84,11 @@ test('batched exact rows retain tenant, owner and source-link RLS in real Postgr
         await tx`INSERT INTO test_link_access VALUES
           ('tenant-A','BASIS-A',true), ('tenant-A','BASIS-B',true),
           ('tenant-A','BASIS-C',false), ('tenant-B','BASIS-D',true)`;
+        await tx`INSERT INTO test_source_access VALUES
+          ('tenant-A','WORK_ITEM','WI-A','owner-A',true),
+          ('tenant-A','DOCUMENT','DV-A','owner-A',true),
+          ('tenant-A','WORK_ITEM','WI-B','owner-B',true),
+          ('tenant-A','DOCUMENT','DV-B','owner-B',true)`;
         await tx`INSERT INTO engineering_matter_work_revision
           (matter_work_revision_id,tenant_id,matter_id,working_revision,request_id,
             based_on_matter_revision_id,update_kind,command_json,state_json,
@@ -101,6 +119,26 @@ test('batched exact rows retain tenant, owner and source-link RLS in real Postgr
       await sql.unsafe(`UPDATE "${schema}".test_link_access SET allowed=false WHERE revision_id='BASIS-A'`);
       const revoked = await read('owner-A');
       assert.deepEqual(revoked.map(row => row?.matterWorkRevisionId ?? null), [null, null, null, null]);
+      const checkSources = async actor => drizzle(sql).transaction(async tx => {
+        await tx.execute(drizzleSql.raw(`SET LOCAL search_path TO "${schema}"`));
+        await tx.execute(drizzleSql`SELECT set_config('app.tenant_id', 'tenant-A', true)`);
+        await tx.execute(drizzleSql`SELECT set_config('app.user_id', ${actor}, true)`);
+        await tx.execute(drizzleSql.raw(`SET LOCAL ROLE "${role}"`));
+        const repo = new EngineeringMatterWorkingRepository(tx, {}, {}, {});
+        const batch = repo.createSavedRowBatch(3);
+        return Promise.allSettled([
+          batch.checkSources('tenant-A', new Set(['WI-A']), new Set(['DV-A'])),
+          batch.checkSources('tenant-A', new Set(['WI-B']), new Set(['DV-B'])),
+          batch.checkSources('tenant-A', new Set(['WI-A']), new Set(['DV-B'])),
+        ]);
+      });
+      assert.deepEqual((await checkSources('owner-A')).map(result => result.status),
+        ['fulfilled', 'rejected', 'rejected']);
+      assert.deepEqual((await checkSources('owner-B')).map(result => result.status),
+        ['rejected', 'fulfilled', 'rejected']);
+      await sql.unsafe(`UPDATE "${schema}".test_source_access SET allowed=false WHERE source_id='DV-A'`);
+      assert.deepEqual((await checkSources('owner-A')).map(result => result.status),
+        ['rejected', 'rejected', 'rejected']);
     } finally {
       await sql.unsafe(`DROP SCHEMA IF EXISTS "${schema}" CASCADE`);
       await sql.unsafe(`DROP ROLE IF EXISTS "${role}"`);
