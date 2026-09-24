@@ -1305,7 +1305,8 @@ export async function getConfigurationEvidenceStatus(
         method: 'GET',
       });
     if (response.status === 401) {
-      throw clientLoginRequired(
+      throw oauthProtectedLoginRequired(
+        response.data,
         'CONFIGURATION_EVIDENCE_LOGIN_REQUIRED',
         requestGeneration,
       );
@@ -1323,7 +1324,7 @@ export async function getConfigurationEvidenceStatus(
     return response.data;
   } catch (error) {
     logCanonicalRequestFailure('读取构型证据状态失败', error);
-    throw normalizedDirectObjectError(error, requestGeneration);
+    throw normalizedOauthProtectedError(error, requestGeneration);
   }
 }
 
@@ -1340,7 +1341,8 @@ export async function adoptConfigurationEvidenceCandidate(
       data: { expectedRevision },
     });
     if (response.status === 401) {
-      throw clientLoginRequired(
+      throw oauthProtectedLoginRequired(
+        response.data,
         'CONFIGURATION_EVIDENCE_LOGIN_REQUIRED',
         requestGeneration,
       );
@@ -1357,7 +1359,7 @@ export async function adoptConfigurationEvidenceCandidate(
     }
   } catch (error) {
     logCanonicalRequestFailure('采纳构型证据候选失败', error);
-    throw normalizedDirectObjectError(error, requestGeneration);
+    throw normalizedOauthProtectedError(error, requestGeneration);
   }
 }
 
@@ -1373,7 +1375,8 @@ async function applicabilitySelectionRequest(input: {
         method: 'GET',
       });
     if (response.status === 401) {
-      throw clientLoginRequired(
+      throw oauthProtectedLoginRequired(
+        response.data,
         'APPLICABILITY_SELECTION_LOGIN_REQUIRED',
         requestGeneration,
       );
@@ -1565,7 +1568,7 @@ function normalizedApplicabilitySelectionError(
   error: unknown,
   requestGeneration: number,
 ): unknown {
-  const normalized = normalizedDirectObjectError(error, requestGeneration);
+  const normalized = normalizedOauthProtectedError(error, requestGeneration);
   if (normalized !== error || !isRecord(error)) return normalized;
   const response = error.response;
   if (!isRecord(response)) return error;
@@ -1609,6 +1612,33 @@ function normalizedReviewConversationError(
     'REVIEW_CONVERSATION_UNAVAILABLE',
     typeof response.status === 'number' ? response.status : undefined,
   );
+}
+
+function oauthProtectedLoginRequired(
+  data: unknown,
+  fallbackCode: string,
+  requestGeneration: number,
+): Error {
+  return reviewOauthSessionRequired(data, requestGeneration) ??
+    clientLoginRequired(fallbackCode, requestGeneration);
+}
+
+function normalizedOauthProtectedError(
+  error: unknown,
+  requestGeneration: number,
+): unknown {
+  if (
+    responseStatus(error) === 401 &&
+    isRecord(error) &&
+    isRecord(error.response)
+  ) {
+    const sessionError = reviewOauthSessionRequired(
+      error.response.data,
+      requestGeneration,
+    );
+    if (sessionError) return sessionError;
+  }
+  return normalizedDirectObjectError(error, requestGeneration);
 }
 
 function reviewOauthSessionRequired(

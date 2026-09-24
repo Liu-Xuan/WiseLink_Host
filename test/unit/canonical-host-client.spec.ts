@@ -19,6 +19,7 @@ jest.mock('@lark-apaas/client-toolkit/logger', () => ({
 }));
 
 import {
+  adoptConfigurationEvidenceCandidate,
   appendReviewTextTurn,
   canonicalPdfPreviewUrl,
   closeReviewConversation,
@@ -28,6 +29,7 @@ import {
   createDevelopmentWorkItem,
   generateAeoCandidate,
   getApplicabilitySelection,
+  getConfigurationEvidenceStatus,
   getCanonicalHostIdentityContext,
   getCanonicalHostClientSessionGeneration,
   getCanonicalLibraryDocuments,
@@ -1175,6 +1177,100 @@ describe('canonical host assessment client', () => {
       await requireOfficialOauthSession();
       expect(request).toHaveBeenCalledTimes(3);
       expect(request.mock.calls[2][0].url).toBe('/api/identity/whoami');
+    },
+  );
+
+  it.each(['resolved', 'rejected'])(
+    'keeps platform login for exact Host OAuth SESSION_REQUIRED on assessment reads (%s)',
+    async (mode) => {
+      for (const read of [getConfigurationEvidenceStatus, getApplicabilitySelection]) {
+        const generation = getCanonicalHostClientSessionGeneration();
+        const response = {
+          status: 401,
+          data: { code: 'SESSION_REQUIRED', message: 'A valid OAuth session is required.' },
+        };
+        if (mode === 'resolved') request.mockResolvedValueOnce(response);
+        else request.mockRejectedValueOnce({ response });
+        await expect(read('WI-SB-1001')).rejects.toMatchObject({
+          code: 'OFFICIAL_OAUTH_SESSION_REQUIRED',
+          statusCode: 401,
+        });
+        expect(isCanonicalHostClientSessionAuthenticationRequired()).toBe(false);
+        expect(getCanonicalHostClientSessionGeneration()).toBe(generation);
+      }
+    },
+  );
+
+  it.each(['resolved', 'rejected'])(
+    'keeps platform login for exact Host OAuth SESSION_REQUIRED on evidence adoption (%s)',
+    async (mode) => {
+      const generation = getCanonicalHostClientSessionGeneration();
+      const response = {
+        status: 401,
+        data: { code: 'SESSION_REQUIRED', message: 'A valid OAuth session is required.' },
+      };
+      if (mode === 'resolved') request.mockResolvedValueOnce(response);
+      else request.mockRejectedValueOnce({ response });
+
+      await expect(
+        adoptConfigurationEvidenceCandidate('WI-SB-1001', 'CAND-1', 7),
+      ).rejects.toMatchObject({
+        code: 'OFFICIAL_OAUTH_SESSION_REQUIRED',
+        statusCode: 401,
+      });
+      expect(isCanonicalHostClientSessionAuthenticationRequired()).toBe(false);
+      expect(getCanonicalHostClientSessionGeneration()).toBe(generation);
+      expect(request).toHaveBeenCalledTimes(1);
+      expect(request).toHaveBeenCalledWith({
+        url: '/api/canonical-host/work-items/WI-SB-1001/configuration-evidence/candidate-evidence/CAND-1/adoptions',
+        method: 'POST',
+        data: { expectedRevision: 7 },
+      });
+    },
+  );
+
+  it.each(['resolved', 'rejected'])(
+    'still invalidates platform login for unclassified evidence adoption 401 (%s)',
+    async (mode) => {
+      const generation = getCanonicalHostClientSessionGeneration();
+      const response = { status: 401, data: {} };
+      if (mode === 'resolved') request.mockResolvedValueOnce(response);
+      else request.mockRejectedValueOnce({ response });
+
+      await expect(
+        adoptConfigurationEvidenceCandidate('WI-SB-1001', 'CAND-1', 7),
+      ).rejects.toBeDefined();
+      expect(isCanonicalHostClientSessionAuthenticationRequired()).toBe(true);
+      expect(getCanonicalHostClientSessionGeneration()).toBe(generation + 1);
+      expect(request).toHaveBeenCalledTimes(1);
+    },
+  );
+
+  it.each([403, 404])(
+    'keeps evidence adoption authorization boundary for status %s',
+    async (status) => {
+      request.mockResolvedValueOnce({ status, data: {} });
+      await expect(
+        adoptConfigurationEvidenceCandidate('WI-SB-1001', 'CAND-1', 7),
+      ).rejects.toMatchObject({ statusCode: 404 });
+      expect(isCanonicalHostClientSessionAuthenticationRequired()).toBe(false);
+      expect(request).toHaveBeenCalledTimes(1);
+    },
+  );
+
+  it.each(['resolved', 'rejected'])(
+    'still invalidates platform login for unclassified assessment 401 (%s)',
+    async (mode) => {
+      for (const read of [getConfigurationEvidenceStatus, getApplicabilitySelection]) {
+        const generation = getCanonicalHostClientSessionGeneration();
+        const response = { status: 401, data: {} };
+        if (mode === 'resolved') request.mockResolvedValueOnce(response);
+        else request.mockRejectedValueOnce({ response });
+        await expect(read('WI-SB-1001')).rejects.toBeDefined();
+        expect(isCanonicalHostClientSessionAuthenticationRequired()).toBe(true);
+        expect(getCanonicalHostClientSessionGeneration()).toBe(generation + 1);
+        invalidateCanonicalHostClientSession();
+      }
     },
   );
 
