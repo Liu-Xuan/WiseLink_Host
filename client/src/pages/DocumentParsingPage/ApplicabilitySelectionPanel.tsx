@@ -128,6 +128,7 @@ const ApplicabilitySelectionPanel: FC<ApplicabilitySelectionPanelProps> = ({
       return;
     setAdoptingEvidence(true);
     setEvidenceError(null);
+    setEvidenceOauthRequired(false);
     try {
       await canonicalHost.adoptConfigurationEvidenceCandidate(
         workItemId,
@@ -136,10 +137,14 @@ const ApplicabilitySelectionPanel: FC<ApplicabilitySelectionPanelProps> = ({
       );
       await onConfigurationEvidenceAdopted();
     } catch (reason) {
+      const oauthRequired = isOfficialOauthRequired(reason);
+      setEvidenceOauthRequired(oauthRequired);
       setEvidenceError(
-        reason instanceof Error
-          ? reason.message
-          : '构型证据候选采纳未完成，请刷新后重试。',
+        oauthRequired
+          ? '需要连接飞书身份，才能采纳构型证据候选；连接后请重新确认采纳。'
+          : reason instanceof Error
+            ? reason.message
+            : '构型证据候选采纳未完成，请刷新后重试。',
       );
     } finally {
       setAdoptingEvidence(false);
