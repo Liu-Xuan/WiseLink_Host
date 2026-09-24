@@ -101,7 +101,12 @@ export default function MatterExecutionSummary({
           </p>
           {summary.attemptRef ? (
             <>
-              <p>本轮：{summary.attemptRef}</p>
+              <p>
+                当前输入对应的自动执行轮：{summary.attemptRef}
+                {summary.baseWorkingRevision !== null
+                  ? ` · 基于工作修订 ${summary.baseWorkingRevision}`
+                  : ''}
+              </p>
               <p>
                 读取工具：登记来源
                 {summary.tools.registeredSourcesRead
@@ -120,6 +125,13 @@ export default function MatterExecutionSummary({
                   : '当前工作未关联本轮保存'}
                 。
               </p>
+              {!summary.currentWorkSavedByAttempt &&
+                summary.baseWorkingRevision !== null &&
+                summary.workingRevision > summary.baseWorkingRevision ? (
+                  <p className="text-muted-foreground">
+                    当前工作已在该轮开始后另行保存；该轮状态不表示当前工作已自动评估。
+                  </p>
+                ) : null}
               <p className="text-muted-foreground">
                 {summary.startedAt
                   ? `开始 ${new Date(summary.startedAt).toLocaleString('zh-CN')} · `
