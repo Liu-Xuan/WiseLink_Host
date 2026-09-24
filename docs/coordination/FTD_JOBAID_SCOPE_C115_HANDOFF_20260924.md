@@ -18,6 +18,8 @@
   还必须是 `OPENCLAW_DYNAMIC_EVALUATION`。跨任务 ref 返回 404。
 - 翻译、适用性、Overall、Review、事项与文档操作未因这项配置取得额外权限。
   `isOpenClawAutomaticReviewConfigured` 仍只认原任务。FTD 完整业务链尚未因此完成。
+- c115 的 JobAid 远程参数携带精确 WorkItem ID，但 checkpoint 的参数哈希沿用 c114
+  形态；外围 binding 已冻结任务 ID。旧任务的已完成步骤可按原哈希读回，不重放模型。
 
 ## 技术上线顺序（尚未授权执行）
 

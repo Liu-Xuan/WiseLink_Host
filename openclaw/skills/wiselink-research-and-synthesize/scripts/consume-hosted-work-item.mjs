@@ -168,11 +168,13 @@ export async function runHostedInitialStage(options, dependencies) {
       ? { ...args, workItemId: options.workItemId } : args;
     const count = (callCounts.get(name) ?? 0) + 1;
     callCounts.set(name, count);
-    if (name.startsWith('commit_') && scopedArgs.phase !== 'UPLOAD_PART') finalCommitStarted = true;
+    if (name.startsWith('commit_') && args.phase !== 'UPLOAD_PART') finalCommitStarted = true;
     const freshAssessmentCall = problemAssessment && !name.startsWith('commit_');
     const value = freshAssessmentCall || (options.assessmentRecovery && name.startsWith('begin_'))
       ? await dependencies.callTool(name, scopedArgs) : await checkpoint.remoteStep({
-      step: `${name}-${count}`, args: scopedArgs,
+      // Keep c114 checkpoint identity stable for an already-started JobAid run.
+      // The exact WorkItem is also frozen in the enclosing checkpoint binding.
+      step: `${name}-${count}`, args,
       ambiguousCommit: name.startsWith('commit_'),
       perform: () => dependencies.callTool(name, scopedArgs),
     });

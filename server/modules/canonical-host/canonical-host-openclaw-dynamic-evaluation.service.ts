@@ -307,6 +307,12 @@ export class CanonicalHostOpenClawDynamicEvaluationService {
       tenantId: scope.tenantId,
       workItemId: scope.workItemId,
     });
+    if (workItemId !== undefined &&
+      preflightRow.actionType !== 'OPENCLAW_DYNAMIC_EVALUATION') {
+      throw Object.assign(new Error('ACTION_ATTEMPT_NOT_FOUND'), {
+        code: 'ACTION_ATTEMPT_NOT_FOUND', statusCode: 404,
+      });
+    }
     const preflight = preflightCanonicalHostOpenClawResult({
       row: preflightRow,
       result: resultEnvelope,

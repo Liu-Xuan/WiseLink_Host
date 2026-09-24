@@ -4,7 +4,9 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import test from 'node:test';
 
-import { consumeHostedWorkItem, initialStageLimit } from '../scripts/consume-hosted-work-item.mjs';
+import { consumeHostedWorkItem, initialStageLimit, runHostedInitialStage } from '../scripts/consume-hosted-work-item.mjs';
+import { initialStageCheckpointPath } from '../scripts/initial-assessment-recovery.mjs';
+import { createCheckpointStore } from '../scripts/run-hosted-review-turn.mjs';
 
 function status(overrides = {}) {
   return { entry: { workItemId: 'WI-new' }, initialAnalysis: {
@@ -386,6 +388,40 @@ test('JobAid attempt calls bind the exact WorkItem while other stages retain leg
     { attemptRef: 'AQ-exact', workJson: '{}', workItemId: 'WI-new' },
     { attemptRef: 'AQ-exact', workItemId: 'WI-new' },
   ]);
+});
+
+test('c115 resumes a c114 JobAid checkpoint without changing its argument hash', async (t) => {
+  const input = await options(t);
+  const requestId = 'legacy-c114';
+  const initial = status({ status: 'WAITING_INPUT', nextOperation: 'EVALUATE_JOBAID',
+    stages: { translation: { status: 'SUCCEEDED' }, applicability: { status: 'WAITING_INPUT' },
+      jobAid: { status: 'PENDING', requestId }, overall: { status: 'PENDING' } } }).initialAnalysis;
+  const checkpoint = await createCheckpointStore(initialStageCheckpointPath(input, 'EVALUATE_JOBAID', requestId));
+  await checkpoint.writeOnce('binding', { workItemId: 'WI-new', documentVersionId: 'DV-new',
+    operation: 'EVALUATE_JOBAID', requestId });
+  await checkpoint.remoteStep({ step: 'begin_dynamic_evaluation-1',
+    args: { workItemId: 'WI-new', requestId }, ambiguousCommit: false,
+    perform: async () => ({ status: 'RUNNING', attemptRef: 'AQ-c114',
+      modelInput: { schemaVersion: 'wiselink.jobaid-problem-task.v2' },
+      task: { deadline: new Date(Date.now() + 60000).toISOString() } }),
+  });
+  const remoteCalls = [];
+  const report = await runHostedInitialStage({ ...input, operation: 'EVALUATE_JOBAID', initial }, {
+    callTool: async (name, args) => {
+      remoteCalls.push({ name, args });
+      if (name === 'get_parse_status') return status({ status: 'WAITING_INPUT',
+        nextOperation: 'SYNTHESIZE_OVERALL', stages: { ...initial.stages,
+          jobAid: { status: 'SUCCEEDED', requestId } } });
+      assert.fail(`c114 completed BEGIN must not replay: ${name}`);
+    },
+    runInitial: async (run) => {
+      const restored = await run.callTool('begin_dynamic_evaluation', { workItemId: 'WI-new', requestId });
+      assert.equal(restored.attemptRef, 'AQ-c114');
+      return { outcome: 'CANDIDATE_READY' };
+    },
+  });
+  assert.equal(report.status, 'INITIAL_STAGE_SAVED');
+  assert.deepEqual(remoteCalls.map(call => call.name), ['get_parse_status']);
 });
 
 test('pre-commit failure cancels once; unknown final commit never cancels or replays', async (t) => {
