@@ -90,3 +90,7 @@ release 7688916995013954763 完成当时为 finished、d6811c4b4d77c34bfdf359eef
 分支 codex/perf-catalogue-batched-rows-20260924 基于94d0f980。目录的每个最多4根窗口在至少2个新Matter身份时创建请求内batch；入口授权完成后通过原数据库执行器按(tenantId,matterId,workRef)复合键一次SELECT，返回结果按键映射。入口授权拒绝占一个已结算槽位，不装载其保存正文。结果随后仍调用authorizedReadModel、历史成员freshRead和原目录排序/错误消费。单根窗口走原读取。新增saved_row_batch_query计时只代表合并查询，saved_row_await包含等待其余入口授权的屏障时间，不能直接与旧阶段按毫秒比较。
 
 固定预期单测覆盖21个全Matter候选的5次四根batch+1次单根查询组织及第20条游标；repository测试核对所用表、复合身份SQL、乱序映射、跨租户同身份不会错误归位、缺失与数据库错误；service测试核对授权拒绝后释放槽位、通过者仍调用原精确读取。另已修复A投影发现的issues:[null]历史损坏语义差异：目录仍抛TypeError，详情仍抛TypeError，合法目录不克隆正文证据。本地无ENGINEERING_MATTER_TEST_DATABASE_URL，未运行真实PostgreSQL/RLS夹具，单测不能替代平台授权与性能验收；待受控环境验证后才能判断收益。
+
+## B1 隔离 PostgreSQL/RLS 补验（2026-09-24）
+
+新增 `test/node/engineering-catalogue-batch-postgres.test.mjs`，在临时本机127.0.0.1:55453、隔离数据库及每次唯一schema中运行1项通过，测试后删除schema。测试复现0023/0024 SELECT policy的三项谓词形状（tenant、Matter owner、based-on links），授权函数读取隔离构造表，真实Drizzle批量SQL在同一actor事务中执行。四条同时读取时仅返回该actor有权的确切行；换actor归位改变；撤销来源link后新请求不再返回原行。此测试证明批量查询使用PostgreSQL RLS且复合键映射不会串租户。隔离授权函数和数据不等同妙搭正式policy实现，也不证明页面延迟或线上撤权时序；仍需主控选择性审查与真实平台只读验收。
