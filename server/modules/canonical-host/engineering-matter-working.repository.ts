@@ -355,7 +355,8 @@ export class EngineeringMatterWorkingRepository {
         )).limit(1);
         return found ?? null;
       });
-      return row ? authorizedReadModel(row, executor, new Set(), input.observation,
+      // Keep the slot cleanup behind the entire parse and source-check promise.
+      return row ? await authorizedReadModel(row, executor, new Set(), input.observation,
         batch ? (tenantId, workItemIds, documentVersionIds) => {
           sourceArrived = true;
           return batch.checkSources(tenantId, workItemIds, documentVersionIds);

@@ -99,6 +99,6 @@ release 7688916995013954763 完成当时为 finished、d6811c4b4d77c34bfdf359eef
 
 主控回报 B1 发布提交 `3bf576f9488ebc857eb3b18d139e36240afb364c` 已完成。ALL 空查询首批 trace `c07ba62eaeb5e136dba41ab422dd6c75` 返回20条及lookahead：app_server 9826.61ms、SQL span 260、5次 `saved_row_batch_query` 合计296ms、21次 `matter_exact_read` 合计34221ms、6组 `read_group_wait` 合计9702ms。分阶段日志中的 `matter_authorize_current` 21次合计10209ms、`matter_recheck_saved_members` 21次合计6256ms、`saved_sources_await` 23次合计2816ms、`overview_origin_await` 22次合计3862ms。各阶段并行和嵌套，不能相加；与 d681 的少量历史样本不同时间段，不能认定端点提速。B1已证明根行批量查询接入，未完成真实性能验收。
 
-B2 在同一个最多4个Matter根的窗口内，等待每个根完成原有保存状态解析后，将其完整来源ID集合送入一次actor上下文查询。SQL仍对每个根分别执行原有两个 `NOT EXISTS ... IS NOT TRUE` 所有权谓词，按候选序号归还允许或拒绝；未授权入口、缺失行与损坏保存状态释放槽位。递归引用的来源核验仍走原单条路径，当前成员和历史成员的freshRead、概述来源及引用边验证不变。预计上述样本的21个根来源显式查询可由21次变为5次，加上2次递归来源仍为单条；这是Host查询调用数的结构预期，不是SQL span或延迟承诺。
+B2 在同一个最多4个Matter根的窗口内，等待每个根完成原有保存状态解析后，将其完整来源ID集合送入一次actor上下文查询。SQL仍对每个根分别执行原有两个 `NOT EXISTS ... IS NOT TRUE` 所有权谓词，按候选序号归还允许或拒绝；未授权入口、缺失行与损坏保存状态释放槽位。递归引用的来源核验仍走原单条路径，当前成员和历史成员的freshRead、概述来源及引用边验证不变。上述样本的21个根分成5个四根窗口和1个单根窗口，因此根来源显式查询预计由21次变为6次（5次批量、1次原单条）；另有2次递归来源仍为单条。这是Host查询调用数的结构预期，不是SQL span或延迟承诺。
 
 本地单测覆盖独立允许/拒绝、查询错误、损坏记录不阻塞其他根；隔离PostgreSQL测试用两种actor及来源撤权后的新事务核验结果。发布后需检查 `saved_sources_batch_query` 次数、根/递归来源调用数、read_group_wait、端点耗时及错误，并与相同身份和数据条件的重复样本比较。若成员freshRead仍主导，不以B2查询数下降宣称目录性能目标达成。
