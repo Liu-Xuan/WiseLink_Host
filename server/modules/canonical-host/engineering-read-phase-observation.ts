@@ -1,4 +1,5 @@
 import { performance } from 'node:perf_hooks';
+import { createHash } from 'node:crypto';
 
 export interface EngineeringReadScope {
   windowIndex?: number;
@@ -33,6 +34,53 @@ interface Collector {
   droppedWindows: number;
 }
 const MAX_TIMELINE_BYTES = 48000;
+// The hosted log body is truncated at 10 KiB. Base64 avoids JSON escaping
+// amplifying a slice, and leaves room for the logger's surrounding fields.
+const TIMELINE_LOG_SLICE_BYTES = 3072;
+
+function engineeringReadLogParts<T extends object>(
+  value: unknown, kind: 'TIMELINE' | 'WINDOWS', metadata: T,
+) {
+  const bytes = Buffer.from(JSON.stringify(value), 'utf8');
+  const sha256 = createHash('sha256').update(bytes).digest('hex');
+  const segmentCount = Math.ceil(bytes.length / TIMELINE_LOG_SLICE_BYTES);
+  const manifest = {
+    format: 'base64-json-utf8-v1' as const,
+    byteLength: bytes.length,
+    segmentCount,
+    sha256,
+    ...metadata,
+  };
+  const segments = Array.from({ length: segmentCount }, (_, segmentIndex) => ({
+    event: `ENGINEERING_KNOWLEDGE_CATALOGUE_${kind}_SEGMENT`,
+    format: manifest.format,
+    segmentIndex,
+    segmentCount,
+    sha256,
+    ...metadata,
+    payloadBase64: bytes.subarray(
+      segmentIndex * TIMELINE_LOG_SLICE_BYTES,
+      (segmentIndex + 1) * TIMELINE_LOG_SLICE_BYTES,
+    ).toString('base64'),
+  }));
+  return { manifest, segments };
+}
+
+export function engineeringReadTimelineLogParts(
+  timeline: NonNullable<ReturnType<EngineeringReadPhaseObservation['timelineSnapshot']>>,
+) {
+  return engineeringReadLogParts(timeline, 'TIMELINE', {
+    truncated: timeline.truncated, droppedEvents: timeline.droppedEvents,
+  });
+}
+
+export function engineeringReadWindowLogParts(
+  windows: ReturnType<EngineeringReadPhaseObservation['windowSnapshot']>,
+) {
+  return engineeringReadLogParts(windows, 'WINDOWS', {
+    droppedWindows: windows.droppedWindows,
+  });
+}
 
 /** Request-local telemetry. Scopes share storage, never mutable root context. */
 export class EngineeringReadPhaseObservation {

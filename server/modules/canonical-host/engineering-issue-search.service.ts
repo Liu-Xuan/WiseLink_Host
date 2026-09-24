@@ -39,7 +39,9 @@ import { assessmentEvidenceRoots } from '@shared/assessment-evidence-roots';
 import { prepareEngineeringSearchQuery } from './engineering-search-text';
 import { projectionOwnerToSubjectKind } from './engineering-search-projection';
 import { EngineeringSearchProjectionWriter } from './engineering-search-projection';
-import { EngineeringReadPhaseObservation, observeEngineeringRead } from './engineering-read-phase-observation';
+import { EngineeringReadPhaseObservation, engineeringReadTimelineLogParts,
+  engineeringReadWindowLogParts,
+  observeEngineeringRead } from './engineering-read-phase-observation';
 
 type IssueIdentity = Pick<
   EngineeringIssueSearchHit,
@@ -172,13 +174,26 @@ export class EngineeringIssueSearchService {
       observation.mark('catalogue_end', completed ? 'ok' : 'error');
       // Telemetry is best-effort: it must not replace a read result or its error.
       try {
-        this.logger.log({ event: 'ENGINEERING_KNOWLEDGE_CATALOGUE_PHASES',
+        const timeline = observation.timelineSnapshot();
+        const timelineParts = timeline ? engineeringReadTimelineLogParts(timeline) : undefined;
+        const windows = observation.windowSnapshot();
+        const summary = { event: 'ENGINEERING_KNOWLEDGE_CATALOGUE_PHASES',
           scope: ['CURRENT', 'ALL', 'HISTORICAL'].includes(scope) ? scope : undefined,
           status: completed ? 'ok' : 'error',
           candidateBatches: observation.snapshot().candidate_query?.count ?? 0,
           visibleEntries: entries.length, durationMs: observation.elapsedMs(),
-          windows: observation.windowSnapshot(), phases: observation.snapshot(),
-          timeline: observation.timelineSnapshot() });
+          phases: observation.snapshot(),
+          ...(timelineParts ? { timelineManifest: timelineParts.manifest } : {}) };
+        // A full five-batch scan can have many one-root windows after 20 visible
+        // entries. Keep even its aggregate summary below the hosted log limit.
+        const inlineBodyBytes = Buffer.byteLength(JSON.stringify({
+          0: { ...summary, windows }, 1: EngineeringIssueSearchService.name,
+        }), 'utf8');
+        const windowParts = inlineBodyBytes > 5000 ? engineeringReadWindowLogParts(windows) : undefined;
+        this.logger.log({ ...summary, ...(windowParts
+          ? { windowManifest: windowParts.manifest } : { windows }) });
+        for (const segment of windowParts?.segments ?? []) this.logger.log(segment);
+        for (const segment of timelineParts?.segments ?? []) this.logger.log(segment);
       } catch {
         try { this.logger.warn('ENGINEERING_KNOWLEDGE_CATALOGUE_OBSERVATION_UNAVAILABLE'); }
         catch { /* A broken telemetry sink cannot alter business error precedence. */ }

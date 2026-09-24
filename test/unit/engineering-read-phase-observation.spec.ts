@@ -1,4 +1,21 @@
-import { EngineeringReadPhaseObservation } from '../../server/modules/canonical-host/engineering-read-phase-observation';
+import { createHash } from 'node:crypto';
+import { EngineeringReadPhaseObservation, engineeringReadTimelineLogParts,
+  engineeringReadWindowLogParts } from
+  '../../server/modules/canonical-host/engineering-read-phase-observation';
+
+function reassembleTimeline(parts: { manifest: { segmentCount: number; byteLength: number; sha256: string };
+  segments: Array<{ segmentIndex: number; segmentCount: number; sha256: string; payloadBase64: string }> }) {
+  if (parts.segments.length !== parts.manifest.segmentCount) throw new Error('MISSING_SEGMENT');
+  const ordered = [...parts.segments].sort((a, b) => a.segmentIndex - b.segmentIndex);
+  if (ordered.some((segment, index) => segment.segmentIndex !== index ||
+    segment.segmentCount !== parts.manifest.segmentCount ||
+    segment.sha256 !== parts.manifest.sha256)) throw new Error('MISSING_OR_MIXED_SEGMENT');
+  const bytes = Buffer.concat(ordered.map(segment => Buffer.from(segment.payloadBase64, 'base64')));
+  if (bytes.length !== parts.manifest.byteLength ||
+    createHash('sha256').update(bytes).digest('hex') !== parts.manifest.sha256)
+    throw new Error('CORRUPT_SEGMENT');
+  return JSON.parse(bytes.toString('utf8'));
+}
 
 describe('request-scoped read timing', () => {
   it('keeps concurrent scopes and execution relationships stable when completions reverse', async () => {
@@ -71,5 +88,81 @@ describe('request-scoped read timing', () => {
     disabled.measureSync('parse', () => 1);
     expect(disabled.timelineSnapshot()).toBeUndefined();
     expect(disabled.snapshot().parse.count).toBe(1);
+  });
+
+  it('splits a full 21-root timeline below the hosted log limit and detects lost segments', () => {
+    const observation = new EngineeringReadPhaseObservation({ timeline: true, maxEvents: 2048 });
+    const rootPhases = [
+      'current_snapshot_read', 'current_member_grant', 'current_member_identity',
+      'current_snapshot_confirm', 'matter_authorize_current', 'saved_row_await',
+      'saved_state_parse', 'saved_sources_await', 'overview_origin_await',
+      'notice_attempts_query', 'notice_saves_query', 'notice_projection',
+      'matter_read_saved', 'saved_member_grant', 'saved_member_identity',
+      'matter_recheck_saved_members', 'matter_exact_read',
+    ];
+    for (let slot = 0; slot < 21; slot++) {
+      const root = observation.scope({ windowIndex: Math.floor(slot / 4), rootSlot: slot % 4,
+        readInstance: observation.nextReadInstance(), depth: 0, attempt: 0 });
+      for (const phase of rootPhases) root.measureSync(phase, () => 1);
+      if (slot === 13 || slot === 17) {
+        const recursive = root.scope({ depth: 1, readInstance: observation.nextReadInstance(),
+          parentReadInstance: root.context.readInstance });
+        for (const phase of ['prior_current_matter_await', 'prior_current_links_await',
+          'prior_saved_row_await', 'prior_saved_links_await', 'prior_recursive_read',
+          'prior_verify_reference_js']) recursive.measureSync(phase, () => 1);
+      }
+    }
+    const timeline = observation.timelineSnapshot()!;
+    const parts = engineeringReadTimelineLogParts(timeline);
+    expect(parts.segments.length).toBeGreaterThan(1);
+    expect(parts.manifest.truncated).toBe(timeline.truncated);
+    expect(timeline.truncated).toBe(false);
+    expect(reassembleTimeline({ ...parts, segments: [...parts.segments].reverse() })).toEqual(timeline);
+    for (const segment of parts.segments) {
+      const hostedBody = JSON.stringify({ 0: segment, 1: 'EngineeringIssueSearchService' });
+      expect(Buffer.byteLength(hostedBody, 'utf8')).toBeLessThan(8192);
+      expect(hostedBody).not.toContain('subjectId');
+    }
+    expect(() => reassembleTimeline({ ...parts, segments: parts.segments.slice(1) }))
+      .toThrow('MISSING_SEGMENT');
+    const damaged = [...parts.segments];
+    damaged[0] = { ...damaged[0], payloadBase64: Buffer.from('damaged').toString('base64') };
+    expect(() => reassembleTimeline({ ...parts, segments: damaged })).toThrow('CORRUPT_SEGMENT');
+  });
+
+  it('keeps a conservatively sized 200-window aggregate recoverable below the log limit', async () => {
+    const observation = new EngineeringReadPhaseObservation({ timeline: true });
+    for (let window = 0; window < 200; window++)
+      await observation.scope({ windowIndex: window }).measure('read_group_wait', async () => 1);
+    for (const phase of [
+      'candidate_query', 'current_snapshot_read', 'current_member_grant',
+      'current_member_identity', 'current_snapshot_confirm', 'matter_authorize_current',
+      'saved_row_batch_query', 'saved_row_batch_distribution', 'saved_row_await',
+      'saved_state_parse', 'saved_sources_batch_query', 'saved_sources_batch_distribution',
+      'saved_sources_await', 'overview_origin_batch_query', 'overview_origin_batch_distribution',
+      'overview_origin_await', 'notice_attempts_query', 'notice_saves_query',
+      'notice_projection', 'matter_read_saved', 'saved_member_grant',
+      'saved_member_identity', 'matter_recheck_saved_members', 'matter_exact_read',
+      'prior_current_matter_await', 'prior_current_links_await', 'prior_saved_row_await',
+      'prior_saved_links_await', 'prior_recursive_read', 'prior_verify_reference_js',
+    ]) observation.measureSync(phase, () => 1);
+    const windows = observation.windowSnapshot();
+    // Use six-digit request-relative times so the test does not rely on the
+    // very short intervals of a unit test process.
+    windows.timings = windows.timings.map(([index]) =>
+      [index, 99999.12 + index, 100000.45 + index, 'ok']);
+    const windowParts = engineeringReadWindowLogParts(windows);
+    expect(reassembleTimeline(windowParts)).toEqual(windows);
+    for (const segment of windowParts.segments)
+      expect(Buffer.byteLength(JSON.stringify({ 0: segment, 1: 'EngineeringIssueSearchService' })))
+        .toBeLessThan(8192);
+    const summary = {
+      event: 'ENGINEERING_KNOWLEDGE_CATALOGUE_PHASES', scope: 'ALL', status: 'ok',
+      candidateBatches: 5, visibleEntries: 20, durationMs: observation.elapsedMs(),
+      windowManifest: windowParts.manifest, phases: observation.snapshot(),
+      timelineManifest: engineeringReadTimelineLogParts(observation.timelineSnapshot()!).manifest,
+    };
+    const hostedBody = JSON.stringify({ 0: summary, 1: 'EngineeringIssueSearchService' });
+    expect(Buffer.byteLength(hostedBody, 'utf8')).toBeLessThan(8192);
   });
 });
