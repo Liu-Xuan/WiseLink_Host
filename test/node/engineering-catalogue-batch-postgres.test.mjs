@@ -46,6 +46,10 @@ test('batched exact rows retain tenant, owner and source-link RLS in real Postgr
           document_id varchar(96) NOT NULL, document_version_id varchar(96) NOT NULL,
           requested_by_user_id varchar(255) NOT NULL, run_key varchar(96) NOT NULL
         )`;
+        await tx`CREATE TABLE action_attempt (
+          attempt_id varchar(96) PRIMARY KEY, tenant_id varchar(128) NOT NULL,
+          matter_id varchar(96) NOT NULL, review_activity_json text
+        )`;
         await tx`CREATE TABLE test_matter_access (tenant_id text, matter_id text, actor_id text, allowed boolean)`;
         await tx`CREATE TABLE test_link_access (tenant_id text, revision_id text, allowed boolean)`;
         await tx`CREATE TABLE test_source_access (tenant_id text, source_kind text, source_id text, actor_id text, allowed boolean)`;
@@ -76,6 +80,7 @@ test('batched exact rows retain tenant, owner and source-link RLS in real Postgr
           ) $$`);
         await tx`ALTER TABLE engineering_matter_work_revision ENABLE ROW LEVEL SECURITY`;
         await tx`ALTER TABLE work_item ENABLE ROW LEVEL SECURITY`;
+        await tx`ALTER TABLE action_attempt ENABLE ROW LEVEL SECURITY`;
         await tx.unsafe(`CREATE POLICY engineering_matter_work_revision_authenticated_select
           ON engineering_matter_work_revision FOR SELECT TO "${role}" USING (
             engineering_matter_actor_has_tenant(tenant_id)
@@ -86,8 +91,12 @@ test('batched exact rows retain tenant, owner and source-link RLS in real Postgr
           tenant_id = current_setting('app.tenant_id', true)
           AND requested_by_user_id = current_setting('app.user_id', true)
         )`);
+        await tx.unsafe(`CREATE POLICY action_attempt_owner_select ON action_attempt FOR SELECT TO "${role}" USING (
+          tenant_id = current_setting('app.tenant_id', true)
+          AND engineering_matter_owned_by_actor(tenant_id, matter_id)
+        )`);
         await tx.unsafe(`GRANT USAGE ON SCHEMA "${schema}" TO "${role}"`);
-        await tx.unsafe(`GRANT SELECT ON engineering_matter_work_revision, work_item,
+        await tx.unsafe(`GRANT SELECT ON engineering_matter_work_revision, work_item, action_attempt,
           test_matter_access, test_link_access TO "${role}"`);
         await tx`INSERT INTO test_matter_access VALUES
           ('tenant-A','MAT-A','owner-A',true),
@@ -114,6 +123,23 @@ test('batched exact rows retain tenant, owner and source-link RLS in real Postgr
           ('REV-B','tenant-A','MAT-B',1,'REQ-B','BASIS-B','INITIAL_SYNTHESIS','{}','{}','saved','owner-B'),
           ('REV-C','tenant-A','MAT-C',1,'REQ-C','BASIS-C','INITIAL_SYNTHESIS','{}','{}','saved','owner-A'),
           ('REV-D','tenant-B','MAT-A',1,'REQ-D','BASIS-D','INITIAL_SYNTHESIS','{}','{}','saved','owner-A')`;
+        await tx`INSERT INTO action_attempt VALUES
+          ('ACT-A','tenant-A','MAT-A','[{"kind":"MATTER_JOBAID_WORK_SAVED","workRevisionRef":"REV-A","requestId":"REQ-A","expectedWorkRevision":0,"proposal":{"overview":"alpha"}}]'),
+          ('ACT-B','tenant-A','MAT-B','[{"kind":"MATTER_JOBAID_WORK_SAVED","workRevisionRef":"REV-B","requestId":"REQ-B","expectedWorkRevision":0,"proposal":{"overview":"beta"}}]')`;
+        await tx`UPDATE engineering_matter_work_revision SET
+          action_attempt_id='ACT-A', state_json='{"problemWork":{"understanding":"alpha"}}'
+          WHERE matter_work_revision_id='REV-A'`;
+        await tx`UPDATE engineering_matter_work_revision SET
+          action_attempt_id='ACT-B', state_json='{"problemWork":{"understanding":"beta"}}'
+          WHERE matter_work_revision_id='REV-B'`;
+        await tx`INSERT INTO engineering_matter_work_revision
+          (matter_work_revision_id,tenant_id,matter_id,working_revision,request_id,
+            based_on_matter_revision_id,update_kind,command_json,state_json,
+            change_summary,created_by_user_id) VALUES
+          ('REV-A2','tenant-A','MAT-A',2,'REQ-A2','BASIS-A','REASSESSMENT','{}',
+            '{"problemWork":{"understanding":"alpha"}}','saved','owner-A'),
+          ('REV-A3','tenant-A','MAT-A',3,'REQ-A3','BASIS-A','REASSESSMENT','{}',
+            '{"problemWork":{"understanding":"alpha","overviewStatus":"NOT_AVAILABLE"}}','saved','owner-A')`;
       });
       const read = async actor => drizzle(sql).transaction(async tx => {
         await tx.execute(drizzleSql.raw(`SET LOCAL search_path TO "${schema}"`));
@@ -172,6 +198,29 @@ test('batched exact rows retain tenant, owner and source-link RLS in real Postgr
       assert.deepEqual(await readMemberBindings('owner-B'), ['WI-B']);
       await sql.unsafe(`UPDATE "${schema}".work_item SET requested_by_user_id='owner-B' WHERE work_item_id='WI-A'`);
       assert.deepEqual(await readMemberBindings('owner-A'), []);
+      await sql.unsafe(`UPDATE "${schema}".test_link_access SET allowed=true WHERE revision_id='BASIS-A'`);
+      const readOverviewOrigins = async actor => drizzle(sql).transaction(async tx => {
+        await tx.execute(drizzleSql.raw(`SET LOCAL search_path TO "${schema}"`));
+        await tx.execute(drizzleSql`SELECT set_config('app.tenant_id', 'tenant-A', true)`);
+        await tx.execute(drizzleSql`SELECT set_config('app.user_id', ${actor}, true)`);
+        await tx.execute(drizzleSql.raw(`SET LOCAL ROLE "${role}"`));
+        const repo = new EngineeringMatterWorkingRepository(tx, {}, {}, {});
+        const batch = repo.createSavedRowBatch(4);
+        return Promise.all([
+          batch.findOverview({ tenantId: 'tenant-A', matterId: 'MAT-A', createdByUserId: 'owner-A',
+            workingRevision: 2, overview: 'alpha' }),
+          batch.findOverview({ tenantId: 'tenant-A', matterId: 'MAT-B', createdByUserId: 'owner-B',
+            workingRevision: 1, overview: 'beta' }),
+          batch.findOverview({ tenantId: 'tenant-A', matterId: 'MAT-A', createdByUserId: 'owner-A',
+            workingRevision: 3, overview: 'alpha' }),
+          batch.findOverview({ tenantId: 'tenant-B', matterId: 'MAT-A', createdByUserId: 'owner-A',
+            workingRevision: 1, overview: 'alpha' }),
+        ]);
+      });
+      assert.deepEqual((await readOverviewOrigins('owner-A')).map(origin => origin?.workRef ?? null),
+        ['REV-A', null, null, null]);
+      assert.deepEqual((await readOverviewOrigins('owner-B')).map(origin => origin?.workRef ?? null),
+        [null, 'REV-B', null, null]);
     } finally {
       await sql.unsafe(`DROP SCHEMA IF EXISTS "${schema}" CASCADE`);
       await sql.unsafe(`DROP ROLE IF EXISTS "${role}"`);

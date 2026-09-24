@@ -107,6 +107,49 @@ describe('catalogue saved row batch', () => {
     });
   });
 
+  it('resolves exact overview origins for each root in one query and releases skipped slots', async () => {
+    const h = harness([]);
+    h.db.execute.mockResolvedValue([
+      { index: 1, workRef: 'REV-B', workingRevision: 2, submittedOverview: 'beta' },
+      { index: 0, workRef: null, workingRevision: null, submittedOverview: null },
+    ]);
+    const batch = h.repository.createSavedRowBatch(3);
+    const first = batch.findOverview({ tenantId: 'tenant-A', matterId: 'MAT-A',
+      createdByUserId: 'actor-A', workingRevision: 3, overview: 'alpha' });
+    const second = batch.findOverview({ tenantId: 'tenant-A', matterId: 'MAT-B',
+      createdByUserId: 'actor-A', workingRevision: 2, overview: 'beta' });
+    expect(h.db.execute).not.toHaveBeenCalled();
+    batch.skip();
+    await expect(first).resolves.toBeNull();
+    await expect(second).resolves.toMatchObject({ workRef: 'REV-B', workingRevision: 2 });
+    expect(h.db.execute).toHaveBeenCalledTimes(1);
+    const query = new PgDialect().sqlToQuery(h.db.execute.mock.calls[0][0]);
+    expect(query.sql).toContain('LEFT JOIN LATERAL');
+    expect(query.sql).toContain('MATTER_JOBAID_WORK_SAVED');
+    expect(query.sql).toContain('later.working_revision');
+    expect(query.params[0]).toContain('MAT-A');
+    expect(query.params[0]).toContain('beta');
+  });
+
+  it('does not turn a missing or failed overview batch result into an inherited origin', async () => {
+    const h = harness([]);
+    h.db.execute.mockResolvedValueOnce([{ index: 0, workRef: null }]);
+    const batch = h.repository.createSavedRowBatch(2);
+    const first = batch.findOverview({ tenantId: 'tenant-A', matterId: 'MAT-A',
+      createdByUserId: 'actor-A', workingRevision: 1, overview: 'alpha' });
+    const missing = batch.findOverview({ tenantId: 'tenant-A', matterId: 'MAT-B',
+      createdByUserId: 'actor-A', workingRevision: 1, overview: 'beta' });
+    await expect(first).resolves.toBeNull();
+    await expect(missing).rejects.toMatchObject({ code: 'ENGINEERING_MATTER_WORKING_PERSISTENCE_INVALID' });
+    const failure = new Error('DATABASE_UNAVAILABLE');
+    h.db.execute.mockRejectedValueOnce(failure);
+    const next = h.repository.createSavedRowBatch(2);
+    const denied = next.findOverview({ tenantId: 'tenant-A', matterId: 'MAT-A',
+      createdByUserId: 'actor-A', workingRevision: 1, overview: 'alpha' });
+    next.skipOverview();
+    await expect(denied).rejects.toBe(failure);
+  });
+
   it('releases a source slot after a malformed saved state without hiding the data error', async () => {
     const command = JSON.stringify({ requestId: 'REQ', expectedWorkingRevision: 0,
       basedOnMatterRevisionId: 'BASIS', updateKind: 'INITIAL_SYNTHESIS', changeSummary: 'saved',
