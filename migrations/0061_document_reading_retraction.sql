@@ -19,8 +19,6 @@ CREATE TABLE dm_document_reading_retraction (
   UNIQUE (tenant_id, actor_user_id, request_id)
 );
 ALTER TABLE dm_document_reading_retraction ENABLE ROW LEVEL SECURITY;
-GRANT SELECT ON dm_document_reading_retraction TO authenticated,service_role;
-GRANT INSERT ON dm_document_reading_retraction TO service_role;
 CREATE POLICY document_reading_retraction_source_read ON dm_document_reading_retraction FOR SELECT
 TO authenticated, service_role USING (EXISTS (
   SELECT 1 FROM dm_document_reading_run r WHERE r.run_ref=dm_document_reading_retraction.run_ref
