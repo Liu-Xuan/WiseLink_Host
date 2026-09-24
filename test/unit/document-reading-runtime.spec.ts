@@ -284,16 +284,17 @@ it('returns the complete saved browser result with fresh exact identities and ze
  f.reader.readDocumentOriginal.mockRejectedValue(new Error('STORAGE_UNAVAILABLE'));
  const result = { sourceBinding: { original: f.original.binding, semanticRevision: 1 },
   readingRevision: 9, explanation: [{ text: '完整已保存正文'.repeat(5000) }] };
- f.runs.readSaved.mockResolvedValue(result as never);
+ f.runs.readSavedState.mockResolvedValue({ status: 'AVAILABLE', reading: result } as never);
  const request = { documentVersionId: f.scope.documentVersionId, parseRunId: f.row.parseRunId, semanticRevision: 1, readingRevision: 9 };
  const response = await f.service.readForBrowser(request, f.context);
  expect(response.reading).toBe(result);
  expect(f.reader.readDocumentOriginal).not.toHaveBeenCalled(); expect(f.semantics.read).not.toHaveBeenCalled();
  expect(f.parsing.inspectPublishedIdentity).toHaveBeenCalledWith(request.documentVersionId, request.parseRunId, f.context);
  expect(f.semantics.readReady).toHaveBeenCalledWith(f.context, request.parseRunId, 1);
- f.runs.readSaved.mockResolvedValue({ ...result, sourceBinding: { ...result.sourceBinding, original: { ...f.original.binding, parseRunId: 'other' } } } as never);
+ f.runs.readSavedState.mockResolvedValue({ status: 'AVAILABLE', reading: { ...result,
+   sourceBinding: { ...result.sourceBinding, original: { ...f.original.binding, parseRunId: 'other' } } } } as never);
  await expect(f.service.readForBrowser(request, f.context)).rejects.toThrow('BINDING_MISMATCH');
- f.runs.readSaved.mockResolvedValue(result as never);
+ f.runs.readSavedState.mockResolvedValue({ status: 'AVAILABLE', reading: result } as never);
  f.semantics.readReady.mockResolvedValueOnce(null);
  await expect(f.service.readForBrowser(request, f.context)).rejects.toThrow('SEMANTIC_REVISION_NOT_FOUND');
  f.parsing.inspectPublishedIdentity.mockRejectedValueOnce(new Error('SOURCE_REVOKED'));

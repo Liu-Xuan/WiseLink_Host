@@ -86,7 +86,6 @@ export class DocumentReadingRuntimeService {
         return summary(current, retraction);
       }
       if (input.action === 'READING_RETRACT') {
-        await this.parsing.status(scope.documentVersionId, context);
         const retraction = await this.runs.retract(scope, input);
         return summary(row, retraction);
       }
