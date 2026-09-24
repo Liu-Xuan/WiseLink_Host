@@ -4,6 +4,8 @@ import {
   PATH_METADATA,
 } from '@nestjs/common/constants';
 import { RequestMethod } from '@nestjs/common';
+import type { SQL } from 'drizzle-orm';
+import { PgDialect } from 'drizzle-orm/pg-core';
 import { ProductionMiaodaBrowserObjectIngressGuard } from '../../server/modules/work-item/production-miaoda-browser-ingress';
 import type { Request } from 'express';
 import { MatterActionAttemptService } from '../../server/modules/canonical-host/matter-action-attempt.service';
@@ -15,6 +17,7 @@ import type { CanonicalServiceScopeAuthorizationPort } from '../../server/module
 import type { CanonicalHostActor } from '../../server/modules/canonical-host/canonical-host.types';
 import {
   canonicalJson,
+  canonicalSha256,
   sealMatterTaskEnvelope,
 } from '../../server/modules/action-attempt/action-attempt-envelope';
 import type { MatterActionAttemptRow } from '../../server/modules/action-attempt/action-attempt.types';
@@ -205,10 +208,11 @@ describe('Matter activity authorized service', () => {
       .rejects.toThrow('ACTION_ATTEMPT_IDENTITY_INVALID');
   });
   it.each([
-    { baseRevision: 0, currentRevision: 0, status: 'RUNNING', expected: 'RUNNING', expectedRef: 'aq' },
-    { baseRevision: 5, currentRevision: 0, status: 'RUNNING', expected: 'IDLE', expectedRef: null },
-    { baseRevision: 0, currentRevision: 1, status: 'FAILED', expected: 'FAILED', expectedRef: 'aq' },
-  ])('shows only a current-basis automatic attempt (%s)', async ({ baseRevision, currentRevision, status, expected, expectedRef }) => {
+    { baseRevision: 0, currentRevision: 0, status: 'RUNNING', sourceAttemptId: null },
+    { baseRevision: 7, currentRevision: 16, status: 'SUCCEEDED', sourceAttemptId: 'manual-sb' },
+    { baseRevision: 0, currentRevision: 12, status: 'FAILED', sourceAttemptId: 'manual-777' },
+    { baseRevision: 0, currentRevision: 1, status: 'FAILED', sourceAttemptId: 'att' },
+  ])('retains the exact-input automatic attempt after later work (%s)', async ({ baseRevision, currentRevision, status, sourceAttemptId }) => {
     const selections: Array<unknown[]> = [
       [{ currentMatterRevisionId: 'mr' }], [{ ref: 'aq' }], [{ currentMatterRevisionId: 'mr' }],
     ];
@@ -220,7 +224,7 @@ describe('Matter activity authorized service', () => {
       authorizeRuntimeInputs: jest.fn().mockResolvedValue({ currentInputs: [] }),
       loadCurrent: jest.fn().mockResolvedValue(currentRevision ? {
         matterWorkRevisionId: 'current-work', workingRevision: currentRevision,
-        source: { kind: 'ENGINEERING_MATTER', actionAttemptId: 'att' },
+        source: { kind: 'ENGINEERING_MATTER', actionAttemptId: sourceAttemptId },
         state: { coverage: [] },
       } : null),
     };
@@ -242,12 +246,57 @@ describe('Matter activity authorized service', () => {
     const summary = await service.readExecutionSummaryForBrowser(scope, actor);
     expect(summary).toMatchObject({
       matterId: 'm', matterRevisionId: 'mr', workingRevision: currentRevision,
-      state: expected, attemptRef: expectedRef,
+      state: status, attemptRef: 'aq', baseWorkingRevision: baseRevision,
       inputs: { workItems: 0, documents: 0, pending: 0 },
     });
-    expect(summary.tools.candidateSaved).toBe(baseRevision === 0);
-    expect(summary.currentWorkSavedByAttempt).toBe(currentRevision > 0 && expectedRef !== null);
+    expect(summary.tools.candidateSaved).toBe(true);
+    expect(summary.currentWorkSavedByAttempt).toBe(sourceAttemptId === 'att');
     expect(JSON.stringify(summary)).not.toContain('PRIVATE');
+  });
+  it('shows IDLE without falling back when the exact input key has no attempt', async () => {
+    const selections: Array<unknown[]> = [
+      [{ currentMatterRevisionId: 'mr' }], [], [{ currentMatterRevisionId: 'mr' }],
+    ];
+    const currentInputs = [{
+      inputId: 'source', workItemId: 'source', workItemRevision: 3,
+      documentVersionId: 'document', resultRef: null, resultRevision: null,
+      original: { parseRunId: 'new-parse', parseRevision: 2 },
+    }];
+    const where = jest.fn((_condition: SQL) => ({ limit: async () => selections.shift() ?? [] }));
+    const select = jest.fn(() => ({ from: () => ({ where }) }));
+    const executor = {
+      database: { select },
+      authorizeRuntimeInputs: jest.fn().mockResolvedValue({ currentInputs }),
+      loadCurrent: jest.fn().mockResolvedValue({
+        matterWorkRevisionId: 'later-work', workingRevision: 16,
+        source: { kind: 'ENGINEERING_MATTER', actionAttemptId: 'old-att' },
+        state: { coverage: [] },
+      }),
+    };
+    const working = {
+      withTransaction: async <T>(fn: (value: typeof executor) => Promise<T>) => fn(executor),
+    };
+    const service = new MatterActionAttemptService(
+      working as unknown as EngineeringMatterWorkingRepository,
+      null as unknown as CanonicalModelSettingsService,
+    );
+    mockRead.mockReset();
+    const summary = await service.readExecutionSummaryForBrowser(scope, actor);
+    expect(summary).toMatchObject({
+      state: 'IDLE', attemptRef: null, baseWorkingRevision: null,
+      workingRevision: 16,
+    });
+    expect(mockRead).not.toHaveBeenCalled();
+    const params = new PgDialect().sqlToQuery(where.mock.calls[1][0]).params;
+    const currentKey = `matter-auto:m:${canonicalSha256({
+      matterRevisionId: 'mr', inputs: currentInputs,
+    })}`;
+    const oldKey = `matter-auto:m:${canonicalSha256({
+      matterRevisionId: 'mr', inputs: [{ ...currentInputs[0],
+        original: { parseRunId: 'old-parse', parseRevision: 1 } }],
+    })}`;
+    expect(params).toContain(currentKey);
+    expect(params).not.toContain(oldKey);
   });
   it('discovers active independently from saved work and never returns row internals', async () => {
     const f = fixture();

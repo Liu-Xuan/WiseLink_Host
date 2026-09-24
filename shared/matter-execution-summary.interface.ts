@@ -3,6 +3,8 @@ export interface MatterExecutionSummary {
   matterId: string;
   matterRevisionId: string;
   workingRevision: number;
+  /** Work revision at which the exact-input automatic attempt started. */
+  baseWorkingRevision: number | null;
   observedAt: string;
   state:
     | 'IDLE'

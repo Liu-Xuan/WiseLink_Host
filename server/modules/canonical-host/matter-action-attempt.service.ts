@@ -672,14 +672,17 @@ export class MatterActionAttemptService {
         (confirmedCurrent?.matterWorkRevisionId ?? null) !== (current?.matterWorkRevisionId ?? null) ||
         canonicalJson(confirmedInputs) !== canonicalJson(firstInputs))
         throw failure('MATTER_CURRENT_WORK_READ_CONFLICT', 409);
-      const relevant = row && row.matterRevisionId === matter.currentMatterRevisionId &&
-        (row.baseRevision === workingRevision || current?.source?.actionAttemptId === row.attemptId);
+      // The exact idempotency key already binds this attempt to the current
+      // matter revision and authorized inputs. Later manual work must not erase
+      // the automatic attempt's result from the summary.
+      const relevant = row && row.matterRevisionId === matter.currentMatterRevisionId;
       const events: Array<{ kind?: unknown }> = relevant ? JSON.parse(row.reviewActivityJson ?? '[]') : [];
       const has = (kind: string) => events.some(event => event?.kind === kind);
       return {
         matterId: scope.matterId,
         matterRevisionId: matter.currentMatterRevisionId,
         workingRevision,
+        baseWorkingRevision: relevant ? row.baseRevision : null,
         observedAt: new Date().toISOString(),
         state: relevant ? executionSummaryState(row.status) : 'IDLE',
         attemptRef: relevant ? row.operationRef : null,
