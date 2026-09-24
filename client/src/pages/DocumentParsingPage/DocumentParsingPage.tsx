@@ -1257,6 +1257,9 @@ export default function DocumentParsingPage() {
             />
             <JobAidProblemWorkspace
               workItemId={workItemId}
+              baseRevision={data.workItem.revision}
+              baseReadConfirmed={!loading}
+              baseReadProof={data}
               initialAnalysis={data.initialAnalysis}
               overall={integratedAssessment?.overallSynthesis}
               onUpdated={() => void load(activeQuery)}
@@ -1578,6 +1581,9 @@ export default function DocumentParsingPage() {
         <RetainedWorkbenchPanel active={activeNode === 'review'}>
           <JobAidProblemWorkspace
             workItemId={workItemId}
+            baseRevision={data.workItem.revision}
+            baseReadConfirmed={!loading}
+            baseReadProof={data}
             initialAnalysis={data.initialAnalysis}
             overall={integratedAssessment?.overallSynthesis}
             onUpdated={() => void load(activeQuery)}

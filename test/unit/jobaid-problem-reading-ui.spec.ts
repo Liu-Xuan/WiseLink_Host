@@ -212,7 +212,8 @@ describe('problem-oriented JobAid reading', () => {
     running.latestAttempt!.status = 'RUNNING';
     expect(preserveJobAidRead(data, running)).toBe(running);
     expect(jobAidReadAfterFailure(data, { statusCode: 503 })).toBe(data);
-    expect(jobAidReadAfterFailure(data, {})).toBe(data);
+    expect(jobAidReadAfterFailure(data, { code: 'ERR_NETWORK' })).toBe(data);
+    expect(jobAidReadAfterFailure(data, {})).toBeNull();
     for (const statusCode of [401, 403, 404])
       expect(jobAidReadAfterFailure(data, { statusCode })).toBeNull();
   });

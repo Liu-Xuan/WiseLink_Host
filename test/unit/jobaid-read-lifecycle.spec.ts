@@ -152,7 +152,9 @@ it('failure preserves readable work and stays stopped across visibility and reta
   const saved = page();
   mockRead
     .mockResolvedValueOnce(saved)
-    .mockRejectedValueOnce(new Error('network failed'))
+    .mockRejectedValueOnce(
+      Object.assign(new Error('network failed'), { code: 'ERR_NETWORK' }),
+    )
     .mockResolvedValue(page('SUCCEEDED'));
   await render();
   await advance(6000);
@@ -169,6 +171,15 @@ it('failure preserves readable work and stays stopped across visibility and reta
   await act(async () => current.refresh());
   expect(mockRead).toHaveBeenCalledTimes(3);
   expect(current.error).toBeNull();
+});
+it('drops saved work on an unclassified failure instead of treating it as network', async () => {
+  mockRead
+    .mockResolvedValueOnce(page())
+    .mockRejectedValueOnce(new Error('network failed'));
+  await render();
+  await advance(6000);
+  expect(current.data).toBeNull();
+  expect(current.temporaryError).toBe(false);
 });
 it('explicit denial removes prior content and an ordinary retry failure cannot restore it', async () => {
   mockRead

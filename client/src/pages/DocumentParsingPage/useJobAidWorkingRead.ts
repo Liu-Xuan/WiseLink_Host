@@ -29,9 +29,20 @@ export function preserveJobAidRead(
 
 export function jobAidReadAfterFailure(
   previous: JobAidWorkingReadModel | null,
-  failure: Pick<CanonicalHostClientError, 'statusCode'>,
+  failure: Pick<CanonicalHostClientError, 'statusCode' | 'code'>,
 ): JobAidWorkingReadModel | null {
-  return [401, 403, 404].includes(failure.statusCode ?? 0) ? null : previous;
+  return isTemporaryJobAidReadFailure(failure) ? previous : null;
+}
+
+/** Only a transport interruption or server failure may show a prior read. */
+export function isTemporaryJobAidReadFailure(
+  failure: Pick<CanonicalHostClientError, 'statusCode' | 'code'>,
+): boolean {
+  if (typeof failure.statusCode === 'number')
+    return failure.statusCode >= 500 && failure.statusCode < 600;
+  return ['ERR_NETWORK', 'ECONNABORTED', 'ETIMEDOUT', 'ECONNRESET'].includes(
+    failure.code ?? '',
+  );
 }
 
 function subscribeVisibility(changed: () => void): () => void {
@@ -48,7 +59,10 @@ export function shouldPollJobAidRead(value: JobAidWorkingReadModel): boolean {
   );
 }
 
-export function useJobAidWorkingRead(workItemId: string) {
+export function useJobAidWorkingRead(
+  workItemId: string,
+  baseReadProof: object | null = null,
+) {
   const active = useWorkbenchPanelActive();
   const session = useSyncExternalStore(
     subscribeCanonicalHostClientSession,
@@ -61,18 +75,36 @@ export function useJobAidWorkingRead(workItemId: string) {
     () => true,
   );
   const key = JSON.stringify([session, workItemId]);
-  const stopped = useRef<{ key: string; failed: boolean }>({
+  const stopped = useRef<{
+    key: string;
+    baseReadProof: object | null;
+    failed: boolean;
+  }>({
     key,
+    baseReadProof,
     failed: false,
   });
   const [state, setState] = useState<{
     key: string;
     data: JobAidWorkingReadModel | null;
     error: string | null;
-  }>({ key, data: null, error: null });
+    temporaryError: boolean;
+    /** A rejected JobAid read cannot regain base fallback by retrying JobAid. */
+    revokedBaseReadProof: object | null | undefined;
+  }>({
+    key,
+    data: null,
+    error: null,
+    temporaryError: false,
+    revokedBaseReadProof: undefined,
+  });
   const [retry, setRetry] = useState(0);
   useEffect(() => {
-    if (stopped.current.key !== key) stopped.current = { key, failed: false };
+    if (
+      stopped.current.key !== key ||
+      stopped.current.baseReadProof !== baseReadProof
+    )
+      stopped.current = { key, baseReadProof, failed: false };
     if (!active || !visible || stopped.current.failed) return;
     const controller = new AbortController();
     let timer: ReturnType<typeof setTimeout> | undefined;
@@ -90,7 +122,9 @@ export function useJobAidWorkingRead(workItemId: string) {
           result.workItemId !== workItemId ||
           (result.current && result.current.workItemId !== workItemId)
         )
-          throw new Error('返回内容不属于当前文档对象');
+          throw Object.assign(new Error('返回内容不属于当前文档对象'), {
+            code: 'JOBAID_READ_OBJECT_MISMATCH',
+          });
         setState((previous) => ({
           key,
           data: preserveJobAidRead(
@@ -98,13 +132,17 @@ export function useJobAidWorkingRead(workItemId: string) {
             result,
           ),
           error: null,
+          temporaryError: false,
+          revokedBaseReadProof:
+            previous.key === key ? previous.revokedBaseReadProof : undefined,
         }));
         if (shouldPollJobAidRead(result))
           timer = setTimeout(() => void read(), 6000);
       } catch (caught) {
         if (obsolete()) return;
-        stopped.current = { key, failed: true };
+        stopped.current = { key, baseReadProof, failed: true };
         const failure = caught as CanonicalHostClientError;
+        const temporaryError = isTemporaryJobAidReadFailure(failure);
         setState((previous) => ({
           key,
           data: jobAidReadAfterFailure(
@@ -113,6 +151,12 @@ export function useJobAidWorkingRead(workItemId: string) {
           ),
           error:
             caught instanceof Error ? caught.message : '已保存评估暂时无法读取',
+          temporaryError,
+          revokedBaseReadProof: temporaryError
+            ? previous.key === key
+              ? previous.revokedBaseReadProof
+              : undefined
+            : baseReadProof,
         }));
       }
     };
@@ -121,12 +165,17 @@ export function useJobAidWorkingRead(workItemId: string) {
       controller.abort();
       clearTimeout(timer);
     };
-  }, [workItemId, key, session, active, visible, retry]);
+  }, [workItemId, key, session, active, visible, retry, baseReadProof]);
   return {
     data: state.key === key ? state.data : null,
     error: state.key === key ? state.error : null,
+    temporaryError: state.key === key && state.temporaryError,
+    baseFallbackAllowed:
+      state.key === key &&
+      (state.revokedBaseReadProof === undefined ||
+        state.revokedBaseReadProof !== baseReadProof),
     refresh: () => {
-      stopped.current = { key, failed: false };
+      stopped.current = { key, baseReadProof, failed: false };
       setRetry((value) => value + 1);
     },
   };
