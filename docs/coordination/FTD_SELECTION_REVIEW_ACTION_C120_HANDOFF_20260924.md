@@ -30,6 +30,12 @@ revision and source back. If the response is lost, the UI reads current
 selection before suggesting any further action. No model output confirms the
 selection or formally adopts the resulting engineering candidate.
 
+After any confirmation attempt, the browser blocks that signed draft from a
+second POST, including when the response or readback is unavailable or
+mismatched. A read-only recovery can recognize the saved target or discard the
+old draft after checking the current WorkItem scope and revision. Any further
+attempt requires a fresh Fleet preview and a new explicit confirmation.
+
 The existing initial-analysis panel remains read-oriented; this is a
 separate ReviewAction dialog. The project's coding guide references a
 `forms-skill` that is not installed in this environment, so the dialog uses
@@ -56,9 +62,10 @@ are not real Hosted business acceptance.
 
 ## Local verification
 
-- Four focused Jest suites: 105/105, covering default closure, signed
+- Five focused Jest suites: 107/107, covering default closure, signed
   preview, Fleet and revision drift, expiry, revoked access, controller body
-  rejection, API wiring and existing presentation behavior.
+  rejection, API wiring, existing presentation behavior and the browser's
+  no-repeat rule after an unknown confirmation outcome.
 - `npm run lint`: ESLint, server/client TypeScript and Stylelint passed.
 - `npm run build:client` and `npm run build:server`: passed.
 - `git diff --check`: passed. Full `npm run build` could not start because
