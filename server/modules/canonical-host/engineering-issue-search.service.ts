@@ -92,7 +92,7 @@ export class EngineeringIssueSearchService {
       if (existing) return existing;
       const work = observation.measure(row.subjectKind === 'WORK_ITEM'
         ? 'work_item_exact_read' : 'matter_exact_read',
-      () => this.loadWork({ ...row, issueKey: '' }, actor));
+      () => this.loadWork({ ...row, issueKey: '' }, actor, observation));
       workReads.set(key, work);
       void work.catch(() => workReads.delete(key));
       return work;
