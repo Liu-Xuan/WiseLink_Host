@@ -125,6 +125,15 @@ describe('applicability selection ReviewAction unknown result', () => {
     expect(preview).toHaveBeenCalledTimes(1);
     await click('核对目标与来源');
     expect(preview).toHaveBeenCalledTimes(2);
+    expect(document.body.textContent).not.toContain('确认并保存该评估目标');
+    preview.mockResolvedValue({ ...draft, confirmationToken: 'b'.repeat(64) });
+    await click('核对目标与来源');
+    expect(preview).toHaveBeenCalledTimes(3);
+    confirmSelection.mockResolvedValue({ ...draft, workItemRevision: 8 });
+    await click('确认并保存该评估目标');
+    expect(confirmSelection).toHaveBeenCalledTimes(2);
+    expect(confirmSelection.mock.calls[1][1].draft.confirmationToken)
+      .toBe('b'.repeat(64));
   });
 
   async function click(label: string): Promise<void> {

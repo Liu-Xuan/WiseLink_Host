@@ -34,7 +34,9 @@ After any confirmation attempt, the browser blocks that signed draft from a
 second POST, including when the response or readback is unavailable or
 mismatched. A read-only recovery can recognize the saved target or discard the
 old draft after checking the current WorkItem scope and revision. Any further
-attempt requires a fresh Fleet preview and a new explicit confirmation.
+attempt requires a fresh Fleet preview with a different signed confirmation
+token and a new explicit confirmation. The attempted token remains blocked
+through React state updates, including after a successful readback.
 
 The existing initial-analysis panel remains read-oriented; this is a
 separate ReviewAction dialog. The project's coding guide references a

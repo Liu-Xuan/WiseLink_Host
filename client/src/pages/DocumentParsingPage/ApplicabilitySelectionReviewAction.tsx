@@ -31,7 +31,7 @@ const ApplicabilitySelectionReviewAction: FC<
     useState<CanonicalApplicabilitySelectionReviewDraft | null>(null);
   const [busy, setBusy] = useState(false);
   const [confirmationBlocked, setConfirmationBlocked] = useState(false);
-  const confirmationAttemptedRef = useRef(false);
+  const attemptedConfirmationTokenRef = useRef<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
@@ -40,7 +40,7 @@ const ApplicabilitySelectionReviewAction: FC<
     setAvailabilityError(null);
     setDraft(null);
     setConfirmationBlocked(false);
-    confirmationAttemptedRef.current = false;
+    attemptedConfirmationTokenRef.current = null;
     void canonicalHost.getApplicabilitySelectionReviewAvailability(workItemId)
       .then((result: CanonicalApplicabilitySelectionReviewAvailability) => {
         if (active) setAvailability(result.enabled);
@@ -54,8 +54,8 @@ const ApplicabilitySelectionReviewAction: FC<
   }, [workItemId, workItemRevision]);
 
   const preview = async (): Promise<void> => {
-    if (busy || confirmationBlocked || confirmationAttemptedRef.current ||
-      !aircraftIdentifier.trim() || !asOf.trim()) return;
+    if (busy || confirmationBlocked || !aircraftIdentifier.trim() || !asOf.trim())
+      return;
     setBusy(true);
     setError(null);
     setDraft(null);
@@ -63,6 +63,8 @@ const ApplicabilitySelectionReviewAction: FC<
       const result = await canonicalHost.previewApplicabilitySelectionReviewAction(
         workItemId, { aircraftIdentifier, asOf, expectedWorkItemRevision: workItemRevision },
       );
+      if (result.confirmationToken === attemptedConfirmationTokenRef.current)
+        throw new Error('来源预览未产生新的确认令牌，请稍后重新预览。');
       setDraft(result);
     } catch (reason) {
       setError(reason instanceof Error ? reason.message : '来源预览失败，请刷新后重试。');
@@ -72,9 +74,10 @@ const ApplicabilitySelectionReviewAction: FC<
   };
 
   const confirmSelection = async (): Promise<void> => {
-    if (busy || confirmationBlocked || confirmationAttemptedRef.current || !draft)
+    if (busy || confirmationBlocked || !draft ||
+      attemptedConfirmationTokenRef.current === draft.confirmationToken)
       return;
-    confirmationAttemptedRef.current = true;
+    attemptedConfirmationTokenRef.current = draft.confirmationToken;
     setConfirmationBlocked(true);
     setBusy(true);
     setError(null);
@@ -89,7 +92,6 @@ const ApplicabilitySelectionReviewAction: FC<
       setOpen(false);
       setDraft(null);
       setConfirmationBlocked(false);
-      confirmationAttemptedRef.current = false;
     } catch (reason) {
       try {
         const current = await canonicalHost.getApplicabilitySelection(workItemId);
@@ -97,7 +99,6 @@ const ApplicabilitySelectionReviewAction: FC<
           setError('目标已保存，但页面刷新未完成。请刷新工作项读取最新状态。');
           setDraft(null);
           setConfirmationBlocked(false);
-          confirmationAttemptedRef.current = false;
         } else {
           setError('确认结果与当前工作项不一致。已封锁再次提交；请只读核对状态。');
         }
@@ -120,7 +121,6 @@ const ApplicabilitySelectionReviewAction: FC<
       if (current && matchesDraft(current, draft)) {
         setDraft(null);
         setConfirmationBlocked(false);
-        confirmationAttemptedRef.current = false;
         setError('目标已保存。请刷新工作项读取最新状态。');
         try { await onConfirmed(); }
         catch { setError('目标已保存，但页面刷新未完成。请刷新工作项。'); }
@@ -134,7 +134,6 @@ const ApplicabilitySelectionReviewAction: FC<
         throw new Error('APPLICABILITY_SELECTION_RECOVERY_SCOPE_INVALID');
       setDraft(null);
       setConfirmationBlocked(false);
-      confirmationAttemptedRef.current = false;
       setError(status.workItemRevision === draft.expectedWorkItemRevision
         ? '当前工作项仍为原版本；请重新预览目标与来源后再确认。'
         : '工作项版本已变化；请重新预览当前目标与来源。');
