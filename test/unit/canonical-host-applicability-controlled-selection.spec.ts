@@ -12,6 +12,126 @@ describe('production applicability controlled selection', () => {
   beforeEach(() => {
     delete process.env[targetAircraftEnv];
     delete process.env[targetAsOfEnv];
+    delete process.env.WL_APPLICABILITY_SELECTION_REVIEW_ACTION_ENABLED;
+    delete process.env.WL_APPLICABILITY_SELECTION_REVIEW_SIGNING_KEY;
+    delete process.env.WL_OPENCLAW_SERVICE_ADDITIONAL_WORK_ITEM_IDS;
+    delete process.env.WL_OPENCLAW_SERVICE_WORK_ITEM_ID;
+  });
+
+  it('defaults the engineer selection ReviewAction closed', async () => {
+    const h = selectionHarness();
+    await expect(h.service.reviewAvailability('WI-APP-1', {} as Request))
+      .resolves.toEqual({ enabled: false });
+    await expect(h.service.previewReviewAction('WI-APP-1', {
+      aircraftIdentifier: 'B-1234', asOf: '2026-08-27', expectedWorkItemRevision: 7,
+    }, {} as Request)).rejects.toMatchObject({ statusCode: 404 });
+    expect(h.registrar.compareAndSet).not.toHaveBeenCalled();
+  });
+
+  it('fails closed when enabled without its server signing key', async () => {
+    enableReviewAction();
+    delete process.env.WL_APPLICABILITY_SELECTION_REVIEW_SIGNING_KEY;
+    const h = selectionHarness();
+    await expect(h.service.reviewAvailability('WI-APP-1', {} as Request))
+      .rejects.toThrow('APPLICABILITY_SELECTION_REVIEW_SIGNING_KEY_UNAVAILABLE');
+    expect(h.registrar.compareAndSet).not.toHaveBeenCalled();
+  });
+
+  it('previews exact Fleet provenance and confirms it with fresh actor grant and CAS', async () => {
+    const h = selectionHarness();
+    enableReviewAction();
+    await expect(h.service.reviewAvailability('WI-APP-1', {} as Request))
+      .resolves.toEqual({ enabled: true });
+    const draft = await h.service.previewReviewAction('WI-APP-1', {
+      aircraftIdentifier: 'b-1234', asOf: '2026-08-27', expectedWorkItemRevision: 7,
+    }, {} as Request);
+    expect(draft).toMatchObject({
+      workItemId: 'WI-APP-1', documentVersionId: 'DV-1',
+      expectedWorkItemRevision: 7, aircraftIdentifier: 'B-1234',
+      fleetSource: { snapshotId: 'fleet-snapshot-1', sourceRevisionKey: 'fleet-r1',
+        authorityRevision: 'authority-r1', sourceAsOf: '2026-08-26' },
+    });
+    expect(h.registrar.compareAndSet).not.toHaveBeenCalled();
+    const result = await h.service.confirmReviewAction('WI-APP-1',
+      { draft, confirmed: true }, {} as Request);
+    expect(result).toMatchObject({ workItemRevision: 8, aircraftIdentifier: 'B-1234',
+      asOf: '2026-08-27', fleetSource: { sourceRevisionKey: 'fleet-r1' } });
+    expect(h.objectAccess.freshRead).toHaveBeenCalledWith(expect.objectContaining({
+      action: 'CONFIGURE_APPLICABILITY_SELECTION',
+      accessRoot: { kind: 'WORK_ITEM', id: 'WI-APP-1' },
+    }));
+    expect(h.registrar.compareAndSet).toHaveBeenCalledWith(expect.objectContaining({
+      workItemId: 'WI-APP-1', expectedRevision: 7,
+    }));
+    expect(h.current.applicabilityControlledSelection?.reviewAction)
+      .toMatchObject({ action: 'CONFIRM_APPLICABILITY_SELECTION',
+        actorUserId: 'user-1', expectedWorkItemRevision: 7 });
+    await expect(h.service.previewReviewAction('WI-APP-1', {
+      aircraftIdentifier: 'B-1234', asOf: '2026-08-27', expectedWorkItemRevision: 8,
+    }, {} as Request)).rejects.toThrow('APPLICABILITY_SELECTION_ALREADY_CURRENT');
+  });
+
+  it('rejects revoked access and changed Fleet provenance before confirmation CAS', async () => {
+    enableReviewAction();
+    const h = selectionHarness();
+    const draft = await h.service.previewReviewAction('WI-APP-1', {
+      aircraftIdentifier: 'B-1234', asOf: '2026-08-27', expectedWorkItemRevision: 7,
+    }, {} as Request);
+    h.fleetRepository.readCurrentForAircraft.mockResolvedValueOnce({
+      ...fleetMasterData(), sourceRevisionKey: 'fleet-r2',
+    });
+    await expect(h.service.confirmReviewAction('WI-APP-1',
+      { draft, confirmed: true }, {} as Request))
+      .rejects.toThrow('APPLICABILITY_SELECTION_REVIEW_DRAFT_STALE');
+    expect(h.registrar.compareAndSet).not.toHaveBeenCalled();
+    h.objectAccess.freshRead.mockResolvedValueOnce({
+      allowed: false, code: 'CANONICAL_WORK_ITEM_NOT_FOUND', statusCode: 404,
+    } as never);
+    await expect(h.service.confirmReviewAction('WI-APP-1',
+      { draft, confirmed: true }, {} as Request))
+      .rejects.toThrow('CANONICAL_WORK_ITEM_NOT_FOUND');
+    expect(h.registrar.compareAndSet).not.toHaveBeenCalled();
+  });
+
+  it('rejects a forged or edited confirmation draft before any CAS', async () => {
+    enableReviewAction();
+    const h = selectionHarness();
+    const draft = await h.service.previewReviewAction('WI-APP-1', {
+      aircraftIdentifier: 'B-1234', asOf: '2026-08-27', expectedWorkItemRevision: 7,
+    }, {} as Request);
+    await expect(h.service.confirmReviewAction('WI-APP-1', {
+      draft: { ...draft, asOf: '2026-08-28' }, confirmed: true,
+    }, {} as Request)).rejects.toThrow('APPLICABILITY_SELECTION_REVIEW_DRAFT_STALE');
+    await expect(h.service.confirmReviewAction('WI-APP-1', {
+      draft: { ...draft, confirmationToken: '0'.repeat(64) }, confirmed: true,
+    }, {} as Request)).rejects.toThrow('APPLICABILITY_SELECTION_REVIEW_DRAFT_STALE');
+    const now = jest.spyOn(Date, 'now').mockReturnValue(
+      Date.parse(draft.expiresAt) + 1,
+    );
+    try {
+      await expect(h.service.confirmReviewAction('WI-APP-1', {
+        draft, confirmed: true,
+      }, {} as Request)).rejects.toThrow('APPLICABILITY_SELECTION_REVIEW_DRAFT_STALE');
+    } finally {
+      now.mockRestore();
+    }
+    expect(h.registrar.compareAndSet).not.toHaveBeenCalled();
+  });
+
+  it('rejects a stale WorkItem revision and another WorkItem scope', async () => {
+    enableReviewAction();
+    const h = selectionHarness();
+    const draft = await h.service.previewReviewAction('WI-APP-1', {
+      aircraftIdentifier: 'B-1234', asOf: '2026-08-27', expectedWorkItemRevision: 7,
+    }, {} as Request);
+    await expect(h.service.confirmReviewAction('WI-OTHER',
+      { draft, confirmed: true }, {} as Request))
+      .rejects.toMatchObject({ statusCode: 404 });
+    await h.service.configure('WI-APP-1',
+      { aircraftIdentifier: 'B-1234', asOf: '2026-08-27' }, {} as Request);
+    await expect(h.service.confirmReviewAction('WI-APP-1',
+      { draft, confirmed: true }, {} as Request))
+      .rejects.toThrow('APPLICABILITY_SELECTION_REVIEW_DRAFT_STALE');
   });
 
   it('requires a persisted selection for an additional WorkItem even with the legacy global target configured', async () => {
@@ -43,6 +163,7 @@ describe('production applicability controlled selection', () => {
       selectionRevision: 'work-item:WI-APP-1:applicability-selection:8',
       currentness: 'CURRENT',
       fleetSource: {
+        snapshotId: 'fleet-snapshot-1',
         sourceRevisionKey: 'fleet-r1',
         authorityRevision: 'authority-r1',
         sourceAsOf: '2026-08-26',
@@ -368,6 +489,7 @@ function selectionHarness(options: { deny?: boolean } = {}) {
   );
   return {
     service,
+    objectAccess,
     registrar,
     fleetRepository,
     configurationEvidence,
@@ -375,6 +497,15 @@ function selectionHarness(options: { deny?: boolean } = {}) {
       return current;
     },
   };
+}
+
+function enableReviewAction(): void {
+  process.env.WL_APPLICABILITY_SELECTION_REVIEW_ACTION_ENABLED = '1';
+  process.env.WL_OPENCLAW_SERVICE_WORK_ITEM_ID = 'WI-legacy';
+  process.env.WL_APPLICABILITY_SELECTION_REVIEW_SIGNING_KEY =
+    'test-only-signing-key-32-characters-long';
+  process.env.WL_OPENCLAW_SERVICE_ADDITIONAL_WORK_ITEM_IDS =
+    JSON.stringify(['WI-APP-1']);
 }
 
 function fleetMasterData(): FleetMasterDataSource {

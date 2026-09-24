@@ -1264,12 +1264,50 @@ export interface CanonicalApplicabilityControlledSelectionProjection {
   fleetSourceRevisionKey: string;
   fleetAuthorityRevision: string;
   fleetSourceAsOf: string;
+  reviewAction?: {
+    action: 'CONFIRM_APPLICABILITY_SELECTION';
+    actorUserId: string;
+    confirmedAt: string;
+    expectedWorkItemRevision: number;
+  };
 }
 
 /** Host-internal accepted-review command; never an initial-analysis form DTO. */
 export interface ConfigureCanonicalApplicabilitySelectionRequest {
   aircraftIdentifier: string;
   asOf: string;
+}
+
+/** Explicit engineer ReviewAction; preview and confirmation bind the same Fleet revision. */
+export interface PreviewCanonicalApplicabilitySelectionRequest
+  extends ConfigureCanonicalApplicabilitySelectionRequest {
+  expectedWorkItemRevision: number;
+}
+
+export interface CanonicalApplicabilitySelectionReviewDraft {
+  schemaVersion: 'wiselink.3_1.applicability_selection_review_draft.v1';
+  workItemId: string;
+  documentVersionId: string;
+  expectedWorkItemRevision: number;
+  aircraftIdentifier: string;
+  asOf: string;
+  fleetSource: {
+    snapshotId: string;
+    sourceRevisionKey: string;
+    authorityRevision: string;
+    sourceAsOf: string;
+  };
+  expiresAt: string;
+  confirmationToken: string;
+}
+
+export interface ConfirmCanonicalApplicabilitySelectionRequest {
+  draft: CanonicalApplicabilitySelectionReviewDraft;
+  confirmed: true;
+}
+
+export interface CanonicalApplicabilitySelectionReviewAvailability {
+  enabled: boolean;
 }
 
 /** Public, credential-free read model for the current WorkItem selection. */
@@ -1283,6 +1321,7 @@ export interface CanonicalApplicabilitySelectionReadModel {
   selectionRevision: string;
   currentness: 'CURRENT' | 'STALE';
   fleetSource: {
+    snapshotId: string;
     sourceRevisionKey: string;
     authorityRevision: string;
     sourceAsOf: string;

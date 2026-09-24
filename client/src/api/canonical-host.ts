@@ -11,6 +11,10 @@ import type {
   AppendReviewTextTurnRequest,
   AppendReviewTextTurnResponse,
   CanonicalApplicabilitySelectionReadModel,
+  CanonicalApplicabilitySelectionReviewAvailability,
+  CanonicalApplicabilitySelectionReviewDraft,
+  ConfirmCanonicalApplicabilitySelectionRequest,
+  PreviewCanonicalApplicabilitySelectionRequest,
   CanonicalConfigurationEvidenceStatusReadModel,
   CanonicalAeoCandidateRunResponse,
   CanonicalDocumentParsingPageResponse,
@@ -1292,6 +1296,58 @@ export async function getApplicabilitySelection(
     workItemId,
     operation: '读取当前适用性自动评估范围',
   });
+}
+
+export async function getApplicabilitySelectionReviewAvailability(
+  workItemId: string,
+): Promise<CanonicalApplicabilitySelectionReviewAvailability> {
+  return applicabilitySelectionReviewRequest({ workItemId, suffix: '',
+    method: 'GET', operation: '读取受控选择确认入口' });
+}
+
+export async function previewApplicabilitySelectionReviewAction(
+  workItemId: string,
+  input: PreviewCanonicalApplicabilitySelectionRequest,
+): Promise<CanonicalApplicabilitySelectionReviewDraft> {
+  return applicabilitySelectionReviewRequest({ workItemId, suffix: '/preview',
+    method: 'POST', data: input, operation: '预览受控选择来源' });
+}
+
+export async function confirmApplicabilitySelectionReviewAction(
+  workItemId: string,
+  input: ConfirmCanonicalApplicabilitySelectionRequest,
+): Promise<CanonicalApplicabilitySelectionReadModel> {
+  return applicabilitySelectionReviewRequest({ workItemId, suffix: '/confirm',
+    method: 'POST', data: input, operation: '确认受控选择' });
+}
+
+async function applicabilitySelectionReviewRequest<T>(input: {
+  workItemId: string;
+  suffix: '' | '/preview' | '/confirm';
+  method: 'GET' | 'POST';
+  data?: unknown;
+  operation: string;
+}): Promise<T> {
+  const requestGeneration = clientSessionGeneration;
+  try {
+    const response = await axiosForBackend<T>({
+      url: `/api/work-items/${encodeURIComponent(input.workItemId)}/applicability-selection/review-action${input.suffix}`,
+      method: input.method,
+      ...(input.data === undefined ? {} : { data: input.data }),
+    });
+    if (response.status === 401)
+      throw oauthProtectedLoginRequired(response.data,
+        'APPLICABILITY_SELECTION_LOGIN_REQUIRED', requestGeneration);
+    if (response.status === 403 || response.status === 404)
+      throw canonicalObjectNotFound();
+    if (response.status < 200 || response.status >= 300)
+      throw backendResponseError(response.data,
+        'APPLICABILITY_SELECTION_REVIEW_UNAVAILABLE', response.status);
+    return response.data;
+  } catch (error) {
+    logCanonicalRequestFailure(`${input.operation}失败`, error);
+    throw normalizedApplicabilitySelectionError(error, requestGeneration);
+  }
 }
 
 export async function getConfigurationEvidenceStatus(

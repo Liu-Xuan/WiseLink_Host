@@ -24,11 +24,13 @@ import {
   canonicalPdfPreviewUrl,
   closeReviewConversation,
   confirmReviewActionDraft,
+  confirmApplicabilitySelectionReviewAction,
   confirmIntegratedOverallForAeo,
   createOrResumeReviewConversation,
   createDevelopmentWorkItem,
   generateAeoCandidate,
   getApplicabilitySelection,
+  getApplicabilitySelectionReviewAvailability,
   getConfigurationEvidenceStatus,
   getCanonicalHostIdentityContext,
   getCanonicalHostClientSessionGeneration,
@@ -42,6 +44,7 @@ import {
   readDocumentVersionOriginalIdentity,
   readDocumentSemanticReading,
   readDocumentActivityReading,
+  previewApplicabilitySelectionReviewAction,
   uploadLibraryDocument,
   confirmLibraryHistoricalImport,
   refreshLibraryHistoricalImport,
@@ -960,6 +963,34 @@ describe('canonical host assessment client', () => {
       url: '/api/work-items/WI-SB%2F1001/applicability-selection',
       method: 'GET',
     });
+  });
+
+  it('previews and confirms an exact authorized selection ReviewAction', async () => {
+    const draft = { schemaVersion: 'wiselink.3_1.applicability_selection_review_draft.v1',
+      workItemId: 'WI-SB/1001', documentVersionId: 'DV-1',
+      expectedWorkItemRevision: 7, aircraftIdentifier: 'B-1234',
+      asOf: '2026-08-27', fleetSource: { snapshotId: 'snap-1',
+        sourceRevisionKey: 'fleet-r1', authorityRevision: 'auth-r1',
+        sourceAsOf: '2026-08-26' }, expiresAt: '2026-08-27T01:00:00.000Z',
+      confirmationToken: 'a'.repeat(64) } as const;
+    request.mockResolvedValueOnce({ status: 200, data: { enabled: true } });
+    request.mockResolvedValueOnce({ status: 200, data: draft });
+    request.mockResolvedValueOnce({ status: 200, data: {
+      workItemId: draft.workItemId, workItemRevision: 8,
+      aircraftIdentifier: draft.aircraftIdentifier, asOf: draft.asOf,
+    } });
+    await expect(getApplicabilitySelectionReviewAvailability('WI-SB/1001'))
+      .resolves.toEqual({ enabled: true });
+    await expect(previewApplicabilitySelectionReviewAction('WI-SB/1001', {
+      aircraftIdentifier: 'B-1234', asOf: '2026-08-27', expectedWorkItemRevision: 7,
+    })).resolves.toEqual(draft);
+    await confirmApplicabilitySelectionReviewAction('WI-SB/1001',
+      { draft, confirmed: true });
+    expect(request).toHaveBeenNthCalledWith(1, { method: 'GET',
+      url: '/api/work-items/WI-SB%2F1001/applicability-selection/review-action' });
+    expect(request).toHaveBeenNthCalledWith(3, { method: 'POST',
+      url: '/api/work-items/WI-SB%2F1001/applicability-selection/review-action/confirm',
+      data: { draft, confirmed: true } });
   });
 
   it('preserves the Host unconfigured code from a rejected 409 response', async () => {
