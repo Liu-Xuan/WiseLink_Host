@@ -107,11 +107,24 @@ test('production library SQL projects exact document reading and authorized curr
         (run_ref,tenant_id,actor_user_id,document_version_id,reading_revision,request_id,reason_code,review_reference)
         VALUES (${run.runRef},'tenant-test','actor-one','DV-test',1,'native-browser','OTHER','fixture')`,
       /row-level security/);
-      const [recorded, concurrentReplay] = await Promise.all([
-        producer.repository.retract(scope, retraction), secondProducer.repository.retract(scope, retraction),
-      ]);
+      let firstReadDone; let releaseDelayed;
+      const reached = new Promise(resolve => { firstReadDone = resolve; });
+      const gate = new Promise(resolve => { releaseDelayed = resolve; });
+      const delayedRepo = new DocumentReadingRunRepository({ transaction: fn =>
+        secondProducer.db.transaction(tx => {
+          let first = true;
+          return fn({ execute: async query => {
+            const rows = await tx.execute(query);
+            if (first) { first = false; firstReadDone(); await gate; }
+            return rows;
+          } });
+        }) });
+      const delayed = delayedRepo.retract(scope, retraction).then(value => ({ value }), error => ({ error }));
+      await reached;
+      let recorded; let replacement;
+      try {
+      recorded = await producer.repository.retract(scope, retraction);
       assert.equal(recorded.readingRevision, 1);
-      assert.deepEqual(concurrentReplay, recorded);
       assert.deepEqual(await producer.repository.retract(scope, retraction), recorded);
       const preserved = await admin`SELECT status,reading_revision,result_json->>'headline' AS headline
         FROM dm_document_reading_run WHERE run_ref=${run.runRef}`;
@@ -127,10 +140,12 @@ test('production library SQL projects exact document reading and authorized curr
       assert.equal(await browser.repository.readSaved({ ...scope, actorUserId: 'actor-two' }, source.parseRunId, 2, 1), null);
       await assert.rejects(producer.repository.retract(scope, { ...retraction, requestId: 'wrong-revision', expectedReadingRevision: 2 }),
         /DOCUMENT_READING_RETRACTION_TARGET_CONFLICT/);
-      const replacement = await producer.repository.begin(scope, { ...source, semanticRevision: 2,
+      replacement = await producer.repository.begin(scope, { ...source, semanticRevision: 2,
         requestId: 'replacement-reading', expectedRevision: 1 });
       const replacementFence = await producer.repository.claim(scope, replacement.runRef, 'fixture-producer');
       await producer.repository.save(scope, replacementFence, command, materialize);
+      } finally { releaseDelayed(); }
+      assert.deepEqual(await delayed, { value: recorded }, 'late same-request replay must retain its original receipt after revision 2');
       assert.equal(version(await query()).documentReading.reading.readingRevision, 2);
       assert.equal((await browser.repository.readSaved({ ...scope, actorUserId: 'actor-two' }, source.parseRunId, 2)).readingRevision, 2);
       assert.equal(await browser.repository.readSaved({ ...scope, actorUserId: 'actor-two' }, source.parseRunId, 2, 1), null);
