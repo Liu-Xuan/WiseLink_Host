@@ -25,6 +25,13 @@ node <installed-skill-path>/scripts/consume-hosted-review-turn.mjs --work-item-i
 
 `--checkpoint-root` 可指定持久私有目录；默认使用 Hosted 用户的 `.openclaw/wiselink-review-runs`，每个 Host ReviewTurn 主键对应一个目录。
 
+c118 扩展额外 WorkItem 的 Review：Host 须先把唯一额外 WorkItem 纳入现有 allowlist，并设置
+`WL_OPENCLAW_REVIEW_ADDITIONAL_CONVERSATION_BINDING={"workItemId":"WI-...","reviewConversationRef":"RC-..."}`。
+该配置只授权这一个已持久化会话的自动 Review；旧主 WorkItem 的 Review 保持原路径。消费者把
+`--work-item-id` 作为控制面参数传给 Review context、SourceRef、Aily、attempt 状态、续租、取消和提交工具，
+Host 每次按当前会话绑定复核。`begin_review_turn` 仍使用会话引用和 requestId；WorkItem ID 不进入模型输入。
+切换绑定前须先处理在途 attempt；移除或更换绑定后，旧额外会话的 attempt 不再可继续提交。
+
 ## c23 新资料统一入口
 
 在配套 Host 已发布并实际返回 `initialAnalysis` 后，将既有 cron 的 command argv 改为：

@@ -1376,7 +1376,7 @@ test('requires 35 MCP capabilities, six review tools, and hosted provenance', ()
   assert.ok(HOST_MCP_TOOLS.includes('commit_applicability_candidate'));
   assert.equal(
     WISELINK_SKILL_VERSION,
-    'wiselink-research-and-synthesize@r09.c117',
+    'wiselink-research-and-synthesize@r09.c118',
   );
   assert.equal(
     WISELINK_SKILL_COMPATIBILITY_REF,

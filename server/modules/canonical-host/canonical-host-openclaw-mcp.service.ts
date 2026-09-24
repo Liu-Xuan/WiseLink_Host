@@ -23,6 +23,7 @@ import {
 import { CanonicalHostOpenClawOverallService } from './canonical-host-openclaw-overall.service';
 import { CanonicalHostOpenClawAttemptStatusService } from './canonical-host-openclaw-attempt-status.service';
 import { CanonicalHostOpenClawReviewService } from './canonical-host-openclaw-review.service';
+import { assertCurrentReviewAttemptScope } from './canonical-host-openclaw-review-scope';
 import {
   CanonicalHostOpenClawTranslationService,
   TRANSLATION_RESULT_PART_MAX_BYTES,
@@ -63,6 +64,7 @@ const resultEnvelope = z.record(z.string(), z.unknown());
 const reviewCommitInput = z
   .object({
     attemptRef,
+    workItemId: mcpWorkItemId.optional(),
     leaseToken,
     leaseGeneration,
     resultJson: z.string().trim().min(2).max(1_000_000),
@@ -727,11 +729,11 @@ export class CanonicalHostOpenClawMcpService {
         title: '读取评审轮次最小上下文',
         description:
           '只读返回该 durable attempt 冻结的 WorkItem、evaluation、bilingual、applicability、adopted inputs 最小投影与执行 policy；不返回 tenant、actor、OAuth credential 或 server-owned sessionKey。',
-        inputSchema: z.object({ attemptRef }).strict(),
+        inputSchema: z.object({ attemptRef, workItemId: mcpWorkItemId.optional() }).strict(),
         annotations: resumeAnnotations,
       },
-      async ({ attemptRef: selectedAttemptRef }) =>
-        textResult(await this.review.context(selectedAttemptRef)),
+      async ({ attemptRef: selectedAttemptRef, workItemId }) =>
+        textResult(await this.review.context(selectedAttemptRef, workItemId)),
     );
 
     server.registerTool(
@@ -743,14 +745,15 @@ export class CanonicalHostOpenClawMcpService {
         inputSchema: z
           .object({
             attemptRef,
+            workItemId: mcpWorkItemId.optional(),
             sourceRefIds: z.array(reviewSourceRefId).min(1).max(100),
           })
           .strict(),
         annotations: resumeAnnotations,
       },
-      async ({ attemptRef: selectedAttemptRef, sourceRefIds }) =>
+      async ({ attemptRef: selectedAttemptRef, sourceRefIds, workItemId }) =>
         textResult(
-          await this.review.readSourceRefs(selectedAttemptRef, sourceRefIds),
+          await this.review.readSourceRefs(selectedAttemptRef, sourceRefIds, workItemId),
         ),
     );
 
@@ -763,6 +766,7 @@ export class CanonicalHostOpenClawMcpService {
         inputSchema: z
           .object({
             attemptRef,
+            workItemId: mcpWorkItemId.optional(),
             requestKey: z.string().min(1).max(200).optional(),
             query: z.string().min(1).max(4000).optional(),
             queryRef: z.string().uuid().optional(),
@@ -772,20 +776,21 @@ export class CanonicalHostOpenClawMcpService {
       },
       async ({
         attemptRef: selectedAttemptRef,
+        workItemId,
         requestKey,
         query,
         queryRef,
       }) => {
         if (queryRef && requestKey === undefined && query === undefined)
           return textResult(
-            await this.review.queryAily(selectedAttemptRef, { queryRef }),
+            await this.review.queryAily(selectedAttemptRef, { queryRef }, workItemId),
           );
         if (!queryRef && requestKey && query)
           return textResult(
             await this.review.queryAily(selectedAttemptRef, {
               requestKey,
               query,
-            }),
+            }, workItemId),
           );
         throw new Error('AILY_QUERY_ARGUMENTS_INVALID');
       },
@@ -821,6 +826,7 @@ export class CanonicalHostOpenClawMcpService {
             input.leaseToken,
             input.leaseGeneration,
             result,
+            input.workItemId,
           ),
         );
       },
@@ -861,7 +867,11 @@ export class CanonicalHostOpenClawMcpService {
             tenantId: scope.tenantId,
             workItemId: scope.workItemId,
           });
-          if (!['OPENCLAW_DYNAMIC_EVALUATION', 'OPENCLAW_OVERALL_SYNTHESIS',
+          if (row.actionType === 'OPENCLAW_INTERACTIVE_REVIEW')
+            await assertCurrentReviewAttemptScope({
+              row, scope, serviceScope: this.serviceScope,
+            });
+          else if (!['OPENCLAW_DYNAMIC_EVALUATION', 'OPENCLAW_OVERALL_SYNTHESIS',
             'OPENCLAW_APPLICABILITY_EVALUATION'].includes(row.actionType))
             throw Object.assign(new Error('ACTION_ATTEMPT_NOT_FOUND'), {
               code: 'ACTION_ATTEMPT_NOT_FOUND', statusCode: 404,
@@ -915,7 +925,11 @@ export class CanonicalHostOpenClawMcpService {
             tenantId: scope.tenantId,
             workItemId: scope.workItemId,
           });
-          if (!['OPENCLAW_DYNAMIC_EVALUATION', 'OPENCLAW_OVERALL_SYNTHESIS',
+          if (row.actionType === 'OPENCLAW_INTERACTIVE_REVIEW')
+            await assertCurrentReviewAttemptScope({
+              row, scope, serviceScope: this.serviceScope,
+            });
+          else if (!['OPENCLAW_DYNAMIC_EVALUATION', 'OPENCLAW_OVERALL_SYNTHESIS',
             'OPENCLAW_APPLICABILITY_EVALUATION'].includes(row.actionType))
             throw Object.assign(new Error('ACTION_ATTEMPT_NOT_FOUND'), {
               code: 'ACTION_ATTEMPT_NOT_FOUND', statusCode: 404,

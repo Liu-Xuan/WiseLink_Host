@@ -182,6 +182,9 @@ export class CanonicalHostOpenClawReviewService {
       workItemId,
     });
     if (!turn) return { next: null, busy: false };
+    await this.assertCurrentConversationScope(
+      scope, turn.reviewConversationId, turn.requestId,
+    );
     const busy = await this.dispatch.isBusy({
       ...turn,
       tenantId: scope.tenantId,
@@ -311,10 +314,11 @@ export class CanonicalHostOpenClawReviewService {
     });
   }
 
-  async context(attemptRef: string): Promise<ReviewTurnContextResult> {
+  async context(attemptRef: string, workItemId?: string): Promise<ReviewTurnContextResult> {
     const attempt = await this.requiredReviewAttempt(
       attemptRef,
       'GET_REVIEW_CONTEXT',
+      true, workItemId,
     );
     await this.dispatch.recordEvidenceActivity(attempt.row, {
       kind: 'CONTEXT_PREPARED',
@@ -345,11 +349,13 @@ export class CanonicalHostOpenClawReviewService {
   async readSourceRefs(
     attemptRef: string,
     sourceRefIds: string[],
+    workItemId?: string,
   ): Promise<ReviewSourceRefsResult> {
     assertDistinctRequiredTexts(sourceRefIds, 'REVIEW_SOURCE_REF_IDS_INVALID');
     const attempt = await this.requiredReviewAttempt(
       attemptRef,
       'READ_REVIEW_SOURCE_REFS',
+      true, workItemId,
     );
     const allowlist = new Map(
       attempt.contract.resourceRefs.map((resource) => [
@@ -388,10 +394,12 @@ export class CanonicalHostOpenClawReviewService {
   async queryAily(
     attemptRef: string,
     input: { requestKey: string; query: string } | { queryRef: string },
+    workItemId?: string,
   ) {
     const attempt = await this.requiredReviewAttempt(
       attemptRef,
       'READ_REVIEW_SOURCE_REFS',
+      true, workItemId,
     );
     if (
       attempt.turn.purpose !== 'CHAT' ||
@@ -415,10 +423,12 @@ export class CanonicalHostOpenClawReviewService {
     leaseToken: string,
     leaseGeneration: number,
     resultEnvelope: unknown,
+    workItemId?: string,
   ): Promise<CommitReviewTurnResult | ActionAttemptTerminalProjection> {
     const authorized = await this.requiredReviewAttempt(
       attemptRef,
       'COMMIT_REVIEW',
+      true, workItemId,
     );
     const { result } = preflightCanonicalHostOpenClawResult({
       row: authorized.row,
@@ -473,6 +483,11 @@ export class CanonicalHostOpenClawReviewService {
       leaseToken,
       leaseGeneration,
     });
+    await this.assertCurrentConversationScope(
+      authorized.scope,
+      authorized.contract.reviewConversationRef,
+      authorized.contract.requestId,
+    );
     const prepared = await this.attempts.prepareCommit({
       attemptRef,
       tenantId: authorized.scope.tenantId,
@@ -489,6 +504,11 @@ export class CanonicalHostOpenClawReviewService {
     ) {
       return this.attempts.projectTerminal(prepared.row);
     }
+    await this.assertCurrentConversationScope(
+      authorized.scope,
+      authorized.contract.reviewConversationRef,
+      authorized.contract.requestId,
+    );
     const persistenceInput = {
       conversation: authorized.conversation,
       turn: authorized.turn,
@@ -846,11 +866,13 @@ export class CanonicalHostOpenClawReviewService {
       | 'READ_REVIEW_SOURCE_REFS'
       | 'COMMIT_REVIEW',
     requireCurrent = true,
+    workItemId?: string,
   ): Promise<AuthorizedReviewAttempt> {
     requiredText(attemptRef, 'REVIEW_ATTEMPT_REF_REQUIRED');
     const scope = await this.serviceScope.authorizeOpenClawAttempt({
       operation,
       attemptRef,
+      workItemId,
     });
     assertAttemptScope(scope, attemptRef);
     const row = await this.attempts.readScoped({
@@ -867,6 +889,9 @@ export class CanonicalHostOpenClawReviewService {
     }
     const task = parseTaskEnvelope(row.taskEnvelopeJson);
     const contract = parseReviewTurnTaskContract(task.modelInput);
+    await this.assertCurrentConversationScope(
+      scope, contract.reviewConversationRef, contract.requestId,
+    );
     const binding = await this.conversations.loadOpenClawTurnByIdBinding({
       reviewConversationId: contract.reviewConversationRef,
       reviewTurnId: contract.reviewTurnRef,
@@ -908,6 +933,19 @@ export class CanonicalHostOpenClawReviewService {
       conversation: binding.conversation,
       turn: binding.turn,
     };
+  }
+
+  private async assertCurrentConversationScope(
+    scope: CanonicalVerifiedServiceScope,
+    reviewConversationRef: string,
+    requestId: string,
+  ): Promise<void> {
+    const current = await this.serviceScope.authorizeOpenClawReview({
+      operation: 'BEGIN_REVIEW', reviewConversationRef, requestId,
+    });
+    assertWorkItemScope(current, scope.workItemId);
+    if (current.tenantId !== scope.tenantId || current.principalId !== scope.principalId)
+      throw reviewNotFound();
   }
 
   private async discussionHistory(binding: ReviewBinding) {

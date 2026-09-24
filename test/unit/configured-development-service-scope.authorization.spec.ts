@@ -18,6 +18,7 @@ const KEYS = [
   'WL_OPENCLAW_SERVICE_MATTER_ACTOR_ID',
   'WL_OPENCLAW_APPLICABILITY_CONTEXT_REF',
   'WL_OPENCLAW_APPLICABILITY_ADDITIONAL_CONTEXT_BINDING',
+  'WL_OPENCLAW_REVIEW_ADDITIONAL_CONVERSATION_BINDING',
   'WL_OPENCLAW_DEVELOPMENT_CREATE_ENABLED',
   'WL_OPENCLAW_DEVELOPMENT_DOCUMENT_VERSION_ID',
   'WL_OPENCLAW_DEVELOPMENT_RUN_TOKEN',
@@ -34,6 +35,34 @@ describe('ConfiguredDevelopmentCanonicalServiceScopeAuthorization', () => {
       if (value === undefined) delete process.env[key];
       else process.env[key] = value;
     }
+  });
+
+  it('gates an additional Review conversation and its attempt tools to the exact WorkItem',async()=>{
+    for(const key of KEYS)delete process.env[key];
+    Object.assign(process.env,{WL_OPENCLAW_SERVICE_SCOPE_ENABLED:'1',WL_OPENCLAW_GATEWAY_AUTH_MODE:'API_KEY',
+      WL_OPENCLAW_SERVICE_SCOPE_ENV:'UAT',WL_OPENCLAW_SERVICE_PRINCIPAL_ID:'service:openclaw-main',
+      WL_OPENCLAW_SERVICE_TENANT_ID:'tenant-1',WL_OPENCLAW_SERVICE_WORK_ITEM_ID:'WI-legacy',
+      WL_OPENCLAW_SERVICE_ADDITIONAL_WORK_ITEM_IDS:JSON.stringify(['WI-ftd'])});
+    const service=new ConfiguredDevelopmentCanonicalServiceScopeAuthorization();
+    const pending={operation:'GET_PENDING_REVIEW_TURN' as const,workItemId:'WI-ftd'};
+    await expect(service.authorizeOpenClawWorkItem(pending)).rejects.toMatchObject({statusCode:404});
+    await expect(service.authorizeOpenClawAttempt({operation:'COMMIT_REVIEW',attemptRef:'AQ-1',workItemId:'WI-ftd'}))
+      .rejects.toMatchObject({statusCode:404});
+    process.env.WL_OPENCLAW_REVIEW_ADDITIONAL_CONVERSATION_BINDING=
+      JSON.stringify({workItemId:'WI-ftd',reviewConversationRef:'RC-ftd'});
+    await expect(service.authorizeOpenClawWorkItem(pending)).resolves.toMatchObject({workItemId:'WI-ftd'});
+    await expect(service.authorizeOpenClawReview({operation:'BEGIN_REVIEW',reviewConversationRef:'RC-ftd',requestId:'r-1'}))
+      .resolves.toMatchObject({tenantId:'tenant-1',workItemId:'WI-ftd'});
+    await expect(service.authorizeOpenClawAttempt({operation:'COMMIT_REVIEW',attemptRef:'AQ-1',workItemId:'WI-ftd'}))
+      .resolves.toMatchObject({workItemId:'WI-ftd'});
+    expect(isOpenClawAutomaticReviewConfigured({tenantId:'tenant-1',workItemId:'WI-ftd'})).toBe(false);
+    expect(isOpenClawAutomaticReviewConfigured({tenantId:'tenant-1',workItemId:'WI-ftd',reviewConversationId:'RC-ftd'})).toBe(true);
+    expect(isOpenClawAutomaticReviewConfigured({tenantId:'tenant-1',workItemId:'WI-ftd',reviewConversationId:'RC-other'})).toBe(false);
+    await expect(service.authorizeOpenClawReview({operation:'BEGIN_REVIEW',reviewConversationRef:'RC-other',requestId:'r-1'}))
+      .resolves.toMatchObject({workItemId:'WI-legacy'});
+    process.env.WL_OPENCLAW_REVIEW_ADDITIONAL_CONVERSATION_BINDING=
+      JSON.stringify({workItemId:'WI-other',reviewConversationRef:'RC-ftd'});
+    await expect(service.authorizeOpenClawWorkItem(pending)).rejects.toMatchObject({statusCode:503});
   });
 
   it('binds an additional applicability context to exactly one allowlisted WorkItem', async () => {

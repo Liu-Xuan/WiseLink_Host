@@ -12,6 +12,7 @@ import {
   parseCanonicalHostOpenClawAttemptTask,
   parseCanonicalHostOpenClawStoredResult,
 } from './canonical-host-openclaw-runtime-policy';
+import { assertCurrentReviewAttemptScope } from './canonical-host-openclaw-review-scope';
 import {
   CANONICAL_SERVICE_SCOPE_AUTHORIZATION,
   type CanonicalServiceScopeAuthorizationPort,
@@ -76,11 +77,16 @@ export class CanonicalHostOpenClawAttemptStatusService {
       tenantId: scope.tenantId,
       workItemId: scope.workItemId,
     });
-    if (workItemId !== undefined &&
-      !['OPENCLAW_DYNAMIC_EVALUATION', 'OPENCLAW_OVERALL_SYNTHESIS',
-        'OPENCLAW_APPLICABILITY_EVALUATION'].includes(
-        row.actionType,
-      )) throw statusNotFound();
+    if (workItemId !== undefined) {
+      if (row.actionType === 'OPENCLAW_INTERACTIVE_REVIEW')
+        await assertCurrentReviewAttemptScope({
+          row, scope, serviceScope: this.serviceScope,
+        });
+      else if (![
+        'OPENCLAW_DYNAMIC_EVALUATION', 'OPENCLAW_OVERALL_SYNTHESIS',
+        'OPENCLAW_APPLICABILITY_EVALUATION',
+      ].includes(row.actionType)) throw statusNotFound();
+    }
     const result = projectCanonicalHostOpenClawAttemptStatus(row);
     if (result.attemptRef !== attemptRef) throw statusNotFound();
     return result;

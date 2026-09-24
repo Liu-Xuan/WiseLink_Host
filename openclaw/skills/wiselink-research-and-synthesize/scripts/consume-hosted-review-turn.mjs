@@ -37,9 +37,13 @@ export async function consumePendingReviewTurn(options, dependencies) {
       {
         callTool: async (name, args) => {
           if (name === 'commit_review_turn_candidate') commitStarted = true;
+          const scopedArgs=['get_review_turn_context','read_source_refs','query_review_aily',
+            'get_action_attempt_status','commit_review_turn_candidate','heartbeat_action_attempt',
+            'cancel_action_attempt'].includes(name)
+            ? {...args,workItemId:options.workItemId} : args;
           let value;
           try {
-            value = await dependencies.callTool(name, args);
+            value = await dependencies.callTool(name, scopedArgs);
           } catch (error) {
             if (name === 'commit_review_turn_candidate' &&
               error?.receivedHostToolError === true &&
@@ -83,6 +87,7 @@ export async function consumePendingReviewTurn(options, dependencies) {
       try {
         const stopped = await dependencies.callTool('cancel_action_attempt', {
           attemptRef: startedAttempt,
+          workItemId: options.workItemId,
           reason: `HOSTED_REVIEW_EXECUTION_FAILED:${code}`,
         });
         if (stopped.attemptRef !== startedAttempt || stopped.status !== 'CANCELLED')

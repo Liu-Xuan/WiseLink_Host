@@ -24,6 +24,7 @@ import {
   parseReviewTurnTaskContract,
 } from '../../server/modules/canonical-host/canonical-host-openclaw-review.contract';
 import { CanonicalHostOpenClawReviewService } from '../../server/modules/canonical-host/canonical-host-openclaw-review.service';
+import { assertCurrentReviewAttemptScope } from '../../server/modules/canonical-host/canonical-host-openclaw-review-scope';
 import { taskModelSelection } from '../../server/modules/model-settings/canonical-model-catalog';
 import { CanonicalHostCommonContextService } from '../../server/modules/canonical-host/canonical-host-common-context.service';
 import { encodeReviewAttachmentParsedArtifact } from '../../server/modules/review-persistence/review-attachment-artifact';
@@ -34,6 +35,30 @@ import type { MatterWorkingDeltaProposal } from '../../server/modules/canonical-
 import { materializeEngineeringMatterWorkingState } from '../../server/modules/canonical-host/engineering-matter-working-state';
 
 describe('CanonicalHostOpenClawReviewService', () => {
+  it('rejects a Review attempt when the current conversation binding moves to another WorkItem', async () => {
+    const harness = reviewHarness();
+    const begin = await harness.service.begin('RC-1', 'request-1');
+    const row = await harness.attempts.readScoped();
+    harness.serviceScope.authorizeOpenClawReview.mockResolvedValue({
+      ...verifiedScope(),
+      workItemId: 'WI-other',
+    });
+    await expect(harness.service.context(begin.attemptRef, 'WI-1'))
+      .rejects.toMatchObject({ statusCode: 404 });
+    await expect(harness.service.commit(
+      begin.attemptRef, begin.leaseToken, begin.leaseGeneration,
+      harness.result(begin.task, {
+        'wiselink-openclaw-engineering-assessment': '1.2.0',
+      }), 'WI-1',
+    )).rejects.toMatchObject({ statusCode: 404 });
+    await expect(assertCurrentReviewAttemptScope({
+      row,
+      scope: verifiedScope(),
+      serviceScope: harness.serviceScope as never,
+    })).rejects.toMatchObject({ statusCode: 404 });
+    expect(harness.attempts.prepareCommit).not.toHaveBeenCalled();
+  });
+
   it('keeps Matter chat sources authorized across documents and commits without a working update', async () => {
     const harness = reviewHarness(false, false, false, null, true);
     const { turn } = await harness.conversations.loadOpenClawTurnBinding();

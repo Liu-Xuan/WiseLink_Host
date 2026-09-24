@@ -117,7 +117,9 @@ export class ConfiguredDevelopmentCanonicalServiceScopeAuthorization implements 
   }): Promise<CanonicalVerifiedServiceScope> {
     const config = requiredConfig();
     if (input.workItemId !== config.workItemId &&
-      !['BEGIN_DYNAMIC', 'BEGIN_OVERALL'].includes(input.operation))
+      !['BEGIN_DYNAMIC', 'BEGIN_OVERALL'].includes(input.operation) &&
+      !(input.operation === 'GET_PENDING_REVIEW_TURN' &&
+        additionalReviewConversation(config)?.workItemId === input.workItemId))
       throw scopeNotFound();
     return exactWorkItemScope(config, input.workItemId);
   }
@@ -131,7 +133,10 @@ export class ConfiguredDevelopmentCanonicalServiceScopeAuthorization implements 
       throw scopeNotFound();
     }
     const config = requiredConfig();
-    return exactWorkItemScope(config, config.workItemId);
+    const additional = additionalReviewConversation(config);
+    return exactWorkItemScope(config,
+      additional?.reviewConversationRef === input.reviewConversationRef
+        ? additional.workItemId : config.workItemId);
   }
 
   async authorizeOpenClawApplicabilityContext(input: {
@@ -200,6 +205,7 @@ export class ConfiguredDevelopmentCanonicalServiceScopeAuthorization implements 
     if (selectedWorkItemId !== config.workItemId && ![
       'COMMIT_DYNAMIC', 'RESUME_OVERALL', 'COMMIT_OVERALL',
       'COMMIT_APPLICABILITY',
+      'GET_REVIEW_CONTEXT', 'READ_REVIEW_SOURCE_REFS', 'COMMIT_REVIEW',
       'READ_ASSESSMENT_SOURCES', 'SAVE_ASSESSMENT_WORK',
       'READ_ASSESSMENT_WORK', 'GET_ACTION_ATTEMPT_STATUS',
       'HEARTBEAT_ATTEMPT', 'CANCEL_ATTEMPT',
@@ -207,6 +213,10 @@ export class ConfiguredDevelopmentCanonicalServiceScopeAuthorization implements 
     if (selectedWorkItemId !== config.workItemId &&
       input.operation === 'COMMIT_APPLICABILITY' &&
       additionalApplicabilityContext(config)?.workItemId !== selectedWorkItemId)
+      throw scopeNotFound();
+    if (selectedWorkItemId !== config.workItemId &&
+      ['GET_REVIEW_CONTEXT', 'READ_REVIEW_SOURCE_REFS', 'COMMIT_REVIEW'].includes(input.operation) &&
+      additionalReviewConversation(config)?.workItemId !== selectedWorkItemId)
       throw scopeNotFound();
     return {
       ...exactWorkItemScope(config, selectedWorkItemId),
@@ -226,12 +236,17 @@ interface DevelopmentServiceScopeConfig {
 export function isOpenClawAutomaticReviewConfigured(input: {
   tenantId: string;
   workItemId: string;
+  reviewConversationId?: string;
 }): boolean {
   try {
     const config = requiredConfig();
+    const additional = input.reviewConversationId === undefined
+      ? null : additionalReviewConversation(config);
     return (
       config.tenantId === input.tenantId &&
-      config.workItemId === input.workItemId
+      (config.workItemId === input.workItemId ||
+        (additional?.workItemId === input.workItemId &&
+          additional.reviewConversationRef === input.reviewConversationId))
     );
   } catch (error) {
     if (
@@ -323,6 +338,33 @@ function additionalApplicabilityContext(config: DevelopmentServiceScopeConfig): 
   return {
     workItemId: parsed.workItemId,
     applicabilityContextRef: parsed.applicabilityContextRef,
+  };
+}
+
+function additionalReviewConversation(config: DevelopmentServiceScopeConfig): {
+  workItemId: string;
+  reviewConversationRef: string;
+} | null {
+  const raw = process.env.WL_OPENCLAW_REVIEW_ADDITIONAL_CONVERSATION_BINDING;
+  if (raw === undefined) return null;
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(raw);
+  } catch {
+    throw canonicalServiceScopeUnavailable();
+  }
+  if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed) ||
+    JSON.stringify(Object.keys(parsed).sort()) !==
+      JSON.stringify(['reviewConversationRef', 'workItemId']) ||
+    !('workItemId' in parsed) || typeof parsed.workItemId !== 'string' ||
+    !additionalWorkItemIds(config.workItemId).includes(parsed.workItemId) ||
+    !('reviewConversationRef' in parsed) ||
+    typeof parsed.reviewConversationRef !== 'string' ||
+    !/^[A-Za-z0-9_-]{1,96}$/u.test(parsed.reviewConversationRef))
+    throw canonicalServiceScopeUnavailable();
+  return {
+    workItemId: parsed.workItemId,
+    reviewConversationRef: parsed.reviewConversationRef,
   };
 }
 
