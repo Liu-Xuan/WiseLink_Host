@@ -119,7 +119,7 @@ export class ConfiguredDevelopmentCanonicalServiceScopeAuthorization implements 
     if (input.workItemId !== config.workItemId &&
       !['BEGIN_DYNAMIC', 'BEGIN_OVERALL'].includes(input.operation) &&
       !(input.operation === 'GET_PENDING_REVIEW_TURN' &&
-        additionalReviewConversation(config)?.workItemId === input.workItemId))
+        additionalWorkItemIds(config.workItemId).includes(input.workItemId)))
       throw scopeNotFound();
     return exactWorkItemScope(config, input.workItemId);
   }

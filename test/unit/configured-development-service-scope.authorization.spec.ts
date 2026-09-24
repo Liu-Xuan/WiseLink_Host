@@ -45,7 +45,10 @@ describe('ConfiguredDevelopmentCanonicalServiceScopeAuthorization', () => {
       WL_OPENCLAW_SERVICE_ADDITIONAL_WORK_ITEM_IDS:JSON.stringify(['WI-ftd'])});
     const service=new ConfiguredDevelopmentCanonicalServiceScopeAuthorization();
     const pending={operation:'GET_PENDING_REVIEW_TURN' as const,workItemId:'WI-ftd'};
-    await expect(service.authorizeOpenClawWorkItem(pending)).rejects.toMatchObject({statusCode:404});
+    // An idle queue probe must not require a Review conversation that does not exist yet.
+    await expect(service.authorizeOpenClawWorkItem(pending)).resolves.toMatchObject({workItemId:'WI-ftd'});
+    await expect(service.authorizeOpenClawWorkItem({...pending,workItemId:'WI-other'}))
+      .rejects.toMatchObject({statusCode:404});
     await expect(service.authorizeOpenClawAttempt({operation:'COMMIT_REVIEW',attemptRef:'AQ-1',workItemId:'WI-ftd'}))
       .rejects.toMatchObject({statusCode:404});
     process.env.WL_OPENCLAW_REVIEW_ADDITIONAL_CONVERSATION_BINDING=
@@ -62,7 +65,9 @@ describe('ConfiguredDevelopmentCanonicalServiceScopeAuthorization', () => {
       .resolves.toMatchObject({workItemId:'WI-legacy'});
     process.env.WL_OPENCLAW_REVIEW_ADDITIONAL_CONVERSATION_BINDING=
       JSON.stringify({workItemId:'WI-other',reviewConversationRef:'RC-ftd'});
-    await expect(service.authorizeOpenClawWorkItem(pending)).rejects.toMatchObject({statusCode:503});
+    await expect(service.authorizeOpenClawWorkItem(pending)).resolves.toMatchObject({workItemId:'WI-ftd'});
+    await expect(service.authorizeOpenClawReview({operation:'BEGIN_REVIEW',reviewConversationRef:'RC-ftd',requestId:'r-1'}))
+      .rejects.toMatchObject({statusCode:503});
   });
 
   it('binds an additional applicability context to exactly one allowlisted WorkItem', async () => {

@@ -35,6 +35,16 @@ import type { MatterWorkingDeltaProposal } from '../../server/modules/canonical-
 import { materializeEngineeringMatterWorkingState } from '../../server/modules/canonical-host/engineering-matter-working-state';
 
 describe('CanonicalHostOpenClawReviewService', () => {
+  it('returns idle for an allowlisted WorkItem with no Review conversation', async () => {
+    const harness = reviewHarness();
+    harness.conversations.loadPendingOpenClawTurn.mockResolvedValueOnce(null);
+    await expect(harness.service.pending('WI-1')).resolves.toEqual({
+      next: null, busy: false,
+    });
+    expect(harness.serviceScope.authorizeOpenClawReview).not.toHaveBeenCalled();
+    expect(harness.dispatch.isBusy).not.toHaveBeenCalled();
+  });
+
   it('rejects a Review attempt when the current conversation binding moves to another WorkItem', async () => {
     const harness = reviewHarness();
     const begin = await harness.service.begin('RC-1', 'request-1');
@@ -333,6 +343,11 @@ describe('CanonicalHostOpenClawReviewService', () => {
       },
       busy: false,
     });
+    harness.serviceScope.authorizeOpenClawReview.mockResolvedValueOnce({
+      ...verifiedScope(), workItemId: 'WI-other',
+    });
+    await expect(harness.service.pending('WI-1'))
+      .rejects.toMatchObject({statusCode:404});
     expect(harness.conversations.loadPendingOpenClawTurn).toHaveBeenCalledWith({
       tenantId: 'tenant-1',
       actorId: 'actor-1',
