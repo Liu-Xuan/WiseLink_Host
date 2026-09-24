@@ -661,6 +661,7 @@ export class MatterActionAttemptService {
           eq(actionAttempt.requestOrigin, ACTION_ATTEMPT_REQUEST_ORIGIN),
           eq(actionAttempt.idempotencyKey, key),
         )).limit(1);
+      if (selected && !selected.ref) throw failure('ACTION_ATTEMPT_IDENTITY_INVALID');
       const row = selected?.ref ? await this.scopedRow(executor, queue, scope, selected.ref) : null;
       const [confirmedMatter] = await executor.database.select({ currentMatterRevisionId: engineeringMatter.currentMatterRevisionId })
         .from(engineeringMatter)

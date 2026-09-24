@@ -184,6 +184,26 @@ function fixture() {
 }
 
 describe('Matter activity authorized service', () => {
+  it('rejects an automatic attempt without a usable operation reference', async () => {
+    const selections: Array<unknown[]> = [
+      [{ currentMatterRevisionId: 'mr' }], [{ ref: null }],
+    ];
+    const database = { select: jest.fn(() => ({ from: () => ({ where: () => ({
+      limit: async () => selections.shift() ?? [],
+    }) }) })) };
+    const executor = {
+      database,
+      authorizeRuntimeInputs: jest.fn().mockResolvedValue({ currentInputs: [] }),
+      loadCurrent: jest.fn().mockResolvedValue(null),
+    };
+    const working = { withTransaction: async <T>(fn: (value: typeof executor) => Promise<T>) => fn(executor) };
+    const service = new MatterActionAttemptService(
+      working as unknown as EngineeringMatterWorkingRepository,
+      null as unknown as CanonicalModelSettingsService,
+    );
+    await expect(service.readExecutionSummaryForBrowser(scope, actor))
+      .rejects.toThrow('ACTION_ATTEMPT_IDENTITY_INVALID');
+  });
   it.each([
     { baseRevision: 0, currentRevision: 0, status: 'RUNNING', expected: 'RUNNING', expectedRef: 'aq' },
     { baseRevision: 5, currentRevision: 0, status: 'RUNNING', expected: 'IDLE', expectedRef: null },
