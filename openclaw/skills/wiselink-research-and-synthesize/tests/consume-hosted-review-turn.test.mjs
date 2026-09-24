@@ -100,8 +100,32 @@ test('a definite Host validation rejection and exact unprepared readback end onl
     'get_pending_review_turn', 'begin_review_turn', 'commit_review_turn_candidate', 'cancel_action_attempt',
   ]);
   assert.deepEqual(calls.at(-1).args, {
-    attemptRef: 'AQ-2', reason: 'HOSTED_REVIEW_EXECUTION_FAILED:JOBAID_IMPORTANT_EVENT_CATEGORY',
+    attemptRef: 'AQ-2', workItemId: 'WI-1',
+    reason: 'HOSTED_REVIEW_EXECUTION_FAILED:JOBAID_IMPORTANT_EVENT_CATEGORY',
   });
+});
+
+test('one Review turn binds attempt-scoped calls to the selected WorkItem', async () => {
+  const calls = [];
+  const result = await consumePendingReviewTurn(options, {
+    callTool: async (name, args) => {
+      calls.push({ name, args });
+      return name === 'get_pending_review_turn' ? { busy: false, next } : { ok: true };
+    },
+    runTurn: async (_input, { callTool }) => {
+      for (const name of ['begin_review_turn', 'get_review_turn_context', 'read_source_refs',
+        'query_review_aily', 'get_action_attempt_status', 'heartbeat_action_attempt',
+        'commit_review_turn_candidate']) {
+        await callTool(name, { attemptRef: 'AQ-2' });
+      }
+      return { ok: true };
+    },
+  });
+  assert.equal(result.status, 'CANDIDATE_SAVED');
+  assert.deepEqual(calls[1], { name: 'begin_review_turn', args: { attemptRef: 'AQ-2' } });
+  for (const { name, args } of calls.slice(2)) {
+    assert.equal(args.workItemId, 'WI-1', name);
+  }
 });
 
 test('uncertain, mismatched, prepared and terminal commit outcomes never authorize cancellation', async () => {

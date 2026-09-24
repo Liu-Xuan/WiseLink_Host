@@ -94,3 +94,11 @@ release 7688916995013954763 完成当时为 finished、d6811c4b4d77c34bfdf359eef
 ## B1 隔离 PostgreSQL/RLS 补验（2026-09-24）
 
 新增 `test/node/engineering-catalogue-batch-postgres.test.mjs`，在临时本机127.0.0.1:55453、隔离数据库及每次唯一schema中运行1项通过，测试后删除schema。测试复现0023/0024 SELECT policy的三项谓词形状（tenant、Matter owner、based-on links），授权函数读取隔离构造表，真实Drizzle批量SQL在同一actor事务中执行。四条同时读取时仅返回该actor有权的确切行；换actor归位改变；撤销来源link后新请求不再返回原行。此测试证明批量查询使用PostgreSQL RLS且复合键映射不会串租户。隔离授权函数和数据不等同妙搭正式policy实现，也不证明页面延迟或线上撤权时序；仍需主控选择性审查与真实平台只读验收。
+
+## B1 线上采样与 B2 来源核验增量
+
+主控回报 B1 发布提交 `3bf576f9488ebc857eb3b18d139e36240afb364c` 已完成。ALL 空查询首批 trace `c07ba62eaeb5e136dba41ab422dd6c75` 返回20条及lookahead：app_server 9826.61ms、SQL span 260、5次 `saved_row_batch_query` 合计296ms、21次 `matter_exact_read` 合计34221ms、6组 `read_group_wait` 合计9702ms。分阶段日志中的 `matter_authorize_current` 21次合计10209ms、`matter_recheck_saved_members` 21次合计6256ms、`saved_sources_await` 23次合计2816ms、`overview_origin_await` 22次合计3862ms。各阶段并行和嵌套，不能相加；与 d681 的少量历史样本不同时间段，不能认定端点提速。B1已证明根行批量查询接入，未完成真实性能验收。
+
+B2 在同一个最多4个Matter根的窗口内，等待每个根完成原有保存状态解析后，将其完整来源ID集合送入一次actor上下文查询。SQL仍对每个根分别执行原有两个 `NOT EXISTS ... IS NOT TRUE` 所有权谓词，按候选序号归还允许或拒绝；未授权入口、缺失行与损坏保存状态释放槽位。递归引用的来源核验仍走原单条路径，当前成员和历史成员的freshRead、概述来源及引用边验证不变。预计上述样本的21个根来源显式查询可由21次变为5次，加上2次递归来源仍为单条；这是Host查询调用数的结构预期，不是SQL span或延迟承诺。
+
+本地单测覆盖独立允许/拒绝、查询错误、损坏记录不阻塞其他根；隔离PostgreSQL测试用两种actor及来源撤权后的新事务核验结果。发布后需检查 `saved_sources_batch_query` 次数、根/递归来源调用数、read_group_wait、端点耗时及错误，并与相同身份和数据条件的重复样本比较。若成员freshRead仍主导，不以B2查询数下降宣称目录性能目标达成。
