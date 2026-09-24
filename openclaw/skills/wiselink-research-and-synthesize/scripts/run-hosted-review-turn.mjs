@@ -981,16 +981,23 @@ export function validateHostToolMetadata(value) {
   );
   const properties = Object.keys(commit?.inputSchema?.properties ?? {}).sort();
   const required = [...(commit?.inputSchema?.required ?? [])].sort();
-  const expectedCommit = [
+  const expectedRequiredCommit = [
     'attemptRef',
     'leaseGeneration',
     'leaseToken',
     'resultJson',
   ].sort();
+  const expectedCommitProperties = [...expectedRequiredCommit, 'workItemId'].sort();
+  const hasWorkItemSelector =
+    canonicalJson(properties) === canonicalJson(expectedCommitProperties);
   if (
     commit?.inputSchema?.additionalProperties !== false ||
-    canonicalJson(properties) !== canonicalJson(expectedCommit) ||
-    canonicalJson(required) !== canonicalJson(expectedCommit)
+    canonicalJson(required) !== canonicalJson(expectedRequiredCommit) ||
+    (!hasWorkItemSelector &&
+      canonicalJson(properties) !== canonicalJson(expectedRequiredCommit)) ||
+    (hasWorkItemSelector &&
+      canonicalJson(commit.inputSchema.properties.workItemId) !==
+        canonicalJson({ type: 'string', minLength: 1, maxLength: 200 }))
   ) {
     throw new Error('REVIEW_HOST_MCP_COMMIT_SCHEMA_MISMATCH');
   }
