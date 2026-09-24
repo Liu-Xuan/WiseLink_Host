@@ -13,6 +13,9 @@ CREATE TABLE dm_document_reading_retraction (
   _created_at timestamptz NOT NULL DEFAULT CURRENT_TIMESTAMP,
   _created_by user_profile DEFAULT CASE WHEN current_setting('app.user_id', true) = '' THEN NULL
     ELSE concat('(', current_setting('app.user_id', true), ')')::user_profile END,
+  _updated_at timestamptz NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  _updated_by user_profile DEFAULT CASE WHEN current_setting('app.user_id', true) = '' THEN NULL
+    ELSE concat('(', current_setting('app.user_id', true), ')')::user_profile END,
   UNIQUE (tenant_id, actor_user_id, request_id)
 );
 ALTER TABLE dm_document_reading_retraction ENABLE ROW LEVEL SECURITY;
@@ -34,6 +37,10 @@ TO service_role WITH CHECK (actor_user_id=current_setting('app.user_id', true) A
     AND r.document_version_id=dm_document_reading_retraction.document_version_id
     AND r.reading_revision=dm_document_reading_retraction.reading_revision AND r.status='SAVED'
 ));
+CREATE POLICY document_reading_retraction_no_native_insert ON dm_document_reading_retraction AS RESTRICTIVE
+FOR INSERT TO authenticated WITH CHECK (false);
+CREATE POLICY document_reading_retraction_no_native_update ON dm_document_reading_retraction AS RESTRICTIVE
+FOR UPDATE TO authenticated USING (false) WITH CHECK (false);
 CREATE FUNCTION document_reading_retraction_guard() RETURNS trigger LANGUAGE plpgsql AS $$
 BEGIN
   RAISE EXCEPTION 'DOCUMENT_READING_RETRACTION_IMMUTABLE' USING ERRCODE='23514';
