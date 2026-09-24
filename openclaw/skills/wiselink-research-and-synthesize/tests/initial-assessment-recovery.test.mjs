@@ -106,7 +106,8 @@ async function consumerFixture(t) {
 
 test('consumer reclaims the exact expired request, restores round state and uses fresh Host reads and heartbeats', async t => {
   const f = await consumerFixture(t);
-  const result = await consumeHostedWorkItem(f.options, f.deps);
+  const result = await consumeHostedWorkItem({ ...f.options,
+    initialStageOnly: true, expectedInitialOperation: 'EVALUATE_JOBAID' }, f.deps);
   assert.equal(result.status, 'INITIAL_STAGE_SAVED');
   const begin = f.calls.find(call => call.name === 'begin_dynamic_evaluation');
   assert.equal(begin.args.requestId, 'request-one');

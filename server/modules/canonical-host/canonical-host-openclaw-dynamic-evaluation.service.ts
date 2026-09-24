@@ -290,6 +290,7 @@ export class CanonicalHostOpenClawDynamicEvaluationService {
     leaseToken: string,
     leaseGeneration: number,
     resultEnvelope: unknown,
+    workItemId?: string,
   ): Promise<
     | CommitDynamicEvaluationResult
     | ActionAttemptTerminalProjection
@@ -298,6 +299,7 @@ export class CanonicalHostOpenClawDynamicEvaluationService {
     const scope = await this.serviceScope.authorizeOpenClawAttempt({
       operation: 'COMMIT_DYNAMIC',
       attemptRef,
+      workItemId,
     });
     assertAttemptScope(scope, attemptRef);
     const preflightRow = await this.attempts.readScoped({
@@ -305,6 +307,12 @@ export class CanonicalHostOpenClawDynamicEvaluationService {
       tenantId: scope.tenantId,
       workItemId: scope.workItemId,
     });
+    if (workItemId !== undefined &&
+      preflightRow.actionType !== 'OPENCLAW_DYNAMIC_EVALUATION') {
+      throw Object.assign(new Error('ACTION_ATTEMPT_NOT_FOUND'), {
+        code: 'ACTION_ATTEMPT_NOT_FOUND', statusCode: 404,
+      });
+    }
     const preflight = preflightCanonicalHostOpenClawResult({
       row: preflightRow,
       result: resultEnvelope,

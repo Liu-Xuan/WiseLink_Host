@@ -44,7 +44,11 @@ export class ConfiguredDevelopmentCanonicalServiceScopeAuthorization implements 
     operation: 'READ_STATUS' | 'QUERY_PARSED_PACKAGE' | 'READ_DEEP_LINK';
     workItemId: string;
   }): Promise<CanonicalVerifiedServiceScope> {
-    return exactWorkItemScope(requiredConfig(), input.workItemId);
+    const config = requiredConfig();
+    if (input.workItemId !== config.workItemId &&
+      !['READ_STATUS', 'READ_DEEP_LINK'].includes(input.operation))
+      throw scopeNotFound();
+    return exactWorkItemScope(config, input.workItemId);
   }
 
   async authorizeDevelopmentCreate(input: {
@@ -111,7 +115,10 @@ export class ConfiguredDevelopmentCanonicalServiceScopeAuthorization implements 
       | 'BEGIN_TRANSLATE';
     workItemId: string;
   }): Promise<CanonicalVerifiedServiceScope> {
-    return exactWorkItemScope(requiredConfig(), input.workItemId);
+    const config = requiredConfig();
+    if (input.workItemId !== config.workItemId &&
+      input.operation !== 'BEGIN_DYNAMIC') throw scopeNotFound();
+    return exactWorkItemScope(config, input.workItemId);
   }
 
   async authorizeOpenClawReview(input: {
@@ -164,11 +171,19 @@ export class ConfiguredDevelopmentCanonicalServiceScopeAuthorization implements 
       | 'HEARTBEAT_ATTEMPT'
       | 'CANCEL_ATTEMPT';
     attemptRef: string;
+    workItemId?: string;
   }): Promise<CanonicalVerifiedOpenClawAttemptScope> {
     const config = requiredConfig();
     if (!input.attemptRef.trim()) throw scopeNotFound();
+    const selectedWorkItemId = input.workItemId === undefined
+      ? config.workItemId : input.workItemId;
+    if (selectedWorkItemId !== config.workItemId && ![
+      'COMMIT_DYNAMIC', 'READ_ASSESSMENT_SOURCES', 'SAVE_ASSESSMENT_WORK',
+      'READ_ASSESSMENT_WORK', 'GET_ACTION_ATTEMPT_STATUS',
+      'HEARTBEAT_ATTEMPT', 'CANCEL_ATTEMPT',
+    ].includes(input.operation)) throw scopeNotFound();
     return {
-      ...exactWorkItemScope(config, config.workItemId),
+      ...exactWorkItemScope(config, selectedWorkItemId),
       attemptRef: input.attemptRef,
     };
   }
@@ -246,6 +261,20 @@ function requiredConfig(): DevelopmentServiceScopeConfig {
   };
 }
 
+function additionalWorkItemIds(legacyWorkItemId: string): string[] {
+  const raw = process.env.WL_OPENCLAW_SERVICE_ADDITIONAL_WORK_ITEM_IDS;
+  if (raw === undefined) return [];
+  let parsed: unknown;
+  try { parsed = JSON.parse(raw); }
+  catch { throw canonicalServiceScopeUnavailable(); }
+  if (!Array.isArray(parsed) || parsed.length !== 1 ||
+    !parsed.every((id): id is string =>
+      typeof id === 'string' && /^WI-[A-Za-z0-9_-]{1,93}$/u.test(id)) ||
+    new Set(parsed).size !== parsed.length || parsed.includes(legacyWorkItemId))
+    throw canonicalServiceScopeUnavailable();
+  return parsed;
+}
+
 function requiredDocumentConfig() {
   const base = requiredBaseConfig();
   const documentVersionId = process.env.WL_OPENCLAW_SERVICE_DOCUMENT_VERSION_ID;
@@ -316,19 +345,20 @@ function exactWorkItemScope(
   config: DevelopmentServiceScopeConfig,
   requestedWorkItemId: string,
 ): CanonicalVerifiedServiceScope {
-  if (requestedWorkItemId !== config.workItemId) throw scopeNotFound();
+  if (requestedWorkItemId !== config.workItemId &&
+    !additionalWorkItemIds(config.workItemId).includes(requestedWorkItemId)) throw scopeNotFound();
   return {
     principalId: config.principalId,
     appId: CANONICAL_APP_ID,
     tenantId: config.tenantId,
-    workItemId: config.workItemId,
+    workItemId: requestedWorkItemId,
     authorizationFingerprint: fingerprint([
       'configured-openclaw-service-scope.v1',
       config.environment,
       CANONICAL_APP_ID,
       config.principalId,
       config.tenantId,
-      config.workItemId,
+      requestedWorkItemId,
     ]),
   };
 }

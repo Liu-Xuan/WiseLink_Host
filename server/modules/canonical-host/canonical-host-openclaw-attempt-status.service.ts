@@ -63,10 +63,12 @@ export class CanonicalHostOpenClawAttemptStatusService {
 
   async status(
     attemptRef: string,
+    workItemId?: string,
   ): Promise<CanonicalHostOpenClawAttemptStatusResult> {
     const scope = await this.serviceScope.authorizeOpenClawAttempt({
       operation: 'GET_ACTION_ATTEMPT_STATUS',
       attemptRef,
+      workItemId,
     });
     assertAttemptScope(scope, attemptRef);
     const row = await this.attempts.readScoped({
@@ -74,6 +76,8 @@ export class CanonicalHostOpenClawAttemptStatusService {
       tenantId: scope.tenantId,
       workItemId: scope.workItemId,
     });
+    if (workItemId !== undefined &&
+      row.actionType !== 'OPENCLAW_DYNAMIC_EVALUATION') throw statusNotFound();
     const result = projectCanonicalHostOpenClawAttemptStatus(row);
     if (result.attemptRef !== attemptRef) throw statusNotFound();
     return result;

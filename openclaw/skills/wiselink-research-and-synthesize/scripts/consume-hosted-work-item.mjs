@@ -52,13 +52,15 @@ const INITIAL_TOOLS = new Set([
  * Dependencies within a WorkItem and shared-work commits remain ordered. */
 export async function consumeHostedWorkItem(options, dependencies) {
   assertSingleConsumerSubject(options);
+  assertExpectedInitialOperationMode(options);
   if (options.documentVersionId) return consumeHostedDocument(options, dependencies);
   if (options.matterId) return consumeHostedMatter(options, dependencies);
   let statusResult = await dependencies.callTool('get_parse_status', {
     workItemId: options.workItemId,
   });
   let initial = readInitialStatus(statusResult, options.workItemId);
-  if (initial.status !== 'BUSY' && initial.status !== 'NOT_READY') {
+  assertExpectedInitialOperationStatus(options.expectedInitialOperation, initial);
+  if (!options.initialStageOnly && initial.status !== 'BUSY' && initial.status !== 'NOT_READY') {
     // An explicit Review is an independent request. In particular, a Matter
     // review can assess parsed material before JobAid/Overall are available.
     // The Host still validates the queued turn's scope and prerequisites.
@@ -71,7 +73,7 @@ export async function consumeHostedWorkItem(options, dependencies) {
       return { ...review, initialStatus: initial.status, initialStages: initial.stages };
     }
   }
-  if (Object.values(initial.stages).some(stage => stage.status === 'CONFLICT' &&
+  if (!options.initialStageOnly && Object.values(initial.stages).some(stage => stage.status === 'CONFLICT' &&
       stage.terminalCode === 'DOCUMENT_ORIGINAL_IMPACT_REVIEW_REQUIRED')) {
     await dependencies.callTool('next_original_assessment', {workItemId:options.workItemId});
     statusResult = await dependencies.callTool('get_parse_status', {workItemId:options.workItemId});
@@ -80,7 +82,10 @@ export async function consumeHostedWorkItem(options, dependencies) {
     initial = next;
   }
   let assessmentRecovery = await findInitialAssessmentRecovery(options, initial);
+  if (options.expectedInitialOperation && assessmentRecovery && assessmentRecovery.operation !== options.expectedInitialOperation)
+    throw new Error('INITIAL_EXPECTED_OPERATION_MISMATCH');
   if (assessmentRecovery?.status === 'REQUIRES_ATTENTION') return { ...assessmentRecovery, completedStages: [] };
+  if (options.initialStageOnly && options.maxInitialStages !== 1) throw new Error('INITIAL_STAGE_LIMIT_INVALID');
   const limit = options.maxInitialStages ?? INITIAL_ANALYSIS_OPERATIONS.length;
   if (!Number.isSafeInteger(limit) || limit < 1 || limit > INITIAL_ANALYSIS_OPERATIONS.length) throw new Error('INITIAL_STAGE_LIMIT_INVALID');
   const tickStartedAt = Date.now();
@@ -159,15 +164,19 @@ export async function runHostedInitialStage(options, dependencies) {
   let taskDeadline;
   const callTool = async (name, args) => {
     if (!INITIAL_TOOLS.has(name)) throw new Error('INITIAL_TOOL_NOT_ALLOWED');
+    const scopedArgs = operation === 'EVALUATE_JOBAID'
+      ? { ...args, workItemId: options.workItemId } : args;
     const count = (callCounts.get(name) ?? 0) + 1;
     callCounts.set(name, count);
     if (name.startsWith('commit_') && args.phase !== 'UPLOAD_PART') finalCommitStarted = true;
     const freshAssessmentCall = problemAssessment && !name.startsWith('commit_');
     const value = freshAssessmentCall || (options.assessmentRecovery && name.startsWith('begin_'))
-      ? await dependencies.callTool(name, args) : await checkpoint.remoteStep({
+      ? await dependencies.callTool(name, scopedArgs) : await checkpoint.remoteStep({
+      // Keep c114 checkpoint identity stable for an already-started JobAid run.
+      // The exact WorkItem is also frozen in the enclosing checkpoint binding.
       step: `${name}-${count}`, args,
       ambiguousCommit: name.startsWith('commit_'),
-      perform: () => dependencies.callTool(name, args),
+      perform: () => dependencies.callTool(name, scopedArgs),
     });
     if (name.startsWith('begin_') && value.status === 'RUNNING') {
       if (options.assessmentRecovery) assertFreshInitialAssessmentClaim(options.assessmentRecovery.previousClaim, value);
@@ -250,7 +259,9 @@ export async function runHostedInitialStage(options, dependencies) {
         const stopped = await checkpoint.remoteStep({
           step: 'stop-attempt', args: { attemptRef: startedAttempt }, ambiguousCommit: false,
           perform: () => dependencies.callTool('cancel_action_attempt', {
-            attemptRef: startedAttempt, reason: `HOSTED_INITIAL_EXECUTION_FAILED:${errorCode(error)}`,
+            attemptRef: startedAttempt,
+            ...(operation === 'EVALUATE_JOBAID' ? { workItemId: options.workItemId } : {}),
+            reason: `HOSTED_INITIAL_EXECUTION_FAILED:${errorCode(error)}`,
           }),
         });
         if (stopped.attemptRef !== startedAttempt || stopped.status !== 'CANCELLED')
@@ -310,6 +321,42 @@ export function errorCode(error) {
 function option(argv, name) {
   const index = argv.indexOf(name);
   return index < 0 ? undefined : argv[index + 1];
+}
+
+export function initialStageLimit(argv, workItemId, matterId, documentVersionId) {
+  if (argv.some(arg => arg.startsWith('--max-initial-stages='))) {
+    throw new Error('INITIAL_STAGE_LIMIT_INVALID');
+  }
+  if (argv.some(arg => arg.startsWith('--expected-initial-operation=')))
+    throw new Error('INITIAL_EXPECTED_OPERATION_INVALID');
+  const occurrences = argv.filter(arg => arg === '--max-initial-stages').length;
+  const expectedOccurrences = argv.filter(arg => arg === '--expected-initial-operation').length;
+  if (expectedOccurrences && (expectedOccurrences !== 1 ||
+      option(argv, '--expected-initial-operation') !== 'EVALUATE_JOBAID' ||
+      occurrences !== 1)) throw new Error('INITIAL_EXPECTED_OPERATION_INVALID');
+  if (!occurrences) return {};
+  if (occurrences !== 1 || option(argv, '--max-initial-stages') !== '1' ||
+      !workItemId || matterId || documentVersionId) {
+    throw new Error('INITIAL_STAGE_LIMIT_INVALID');
+  }
+  return { maxInitialStages: 1, initialStageOnly: true,
+    ...(expectedOccurrences ? { expectedInitialOperation: 'EVALUATE_JOBAID' } : {}) };
+}
+
+function assertExpectedInitialOperationMode(options) {
+  if (options.expectedInitialOperation === undefined) return;
+  if (options.expectedInitialOperation !== 'EVALUATE_JOBAID' || !options.workItemId ||
+      options.matterId || options.documentVersionId || !options.initialStageOnly || options.maxInitialStages !== 1)
+    throw new Error('INITIAL_EXPECTED_OPERATION_INVALID');
+}
+
+function assertExpectedInitialOperationStatus(expected, initial) {
+  if (!expected) return;
+  const pending = ['REQUIRED', 'WAITING_INPUT'].includes(initial.status) &&
+    initial.nextOperation === expected && initial.stages.jobAid.status === 'PENDING';
+  const recovering = initial.status === 'BUSY' && initial.nextOperation === null &&
+    initial.stages.jobAid.status === 'BUSY';
+  if (!pending && !recovering) throw new Error('INITIAL_EXPECTED_OPERATION_MISMATCH');
 }
 
 export async function consumeHostedDocument(
@@ -473,13 +520,14 @@ function assertSingleConsumerSubject({ workItemId, matterId, documentVersionId }
 
 async function main(argv, env) {
   if (argv.includes('--help')) {
-    process.stdout.write('Usage: node consume-hosted-work-item.mjs [--work-item-id WI-...] [--matter-id MAT-...] [--document-version-id DV] [--applicability-context-ref REF] [--checkpoint-root PATH] [--openclaw-config PATH] [--native-session-store PATH] [--document-translation-recovery ID] [--activity-run-ref ID] [--reading-run-ref ID] [--lease-owner ID]\nOne native job per authorized subject. Choose exactly one WorkItem, Matter or DocumentVersion; independent jobs use native cron concurrency.\n');
+    process.stdout.write('Usage: node consume-hosted-work-item.mjs [--work-item-id WI-...] [--matter-id MAT-...] [--document-version-id DV] [--max-initial-stages 1] [--expected-initial-operation EVALUATE_JOBAID] [--applicability-context-ref REF] [--checkpoint-root PATH] [--openclaw-config PATH] [--native-session-store PATH] [--document-translation-recovery ID] [--activity-run-ref ID] [--reading-run-ref ID] [--lease-owner ID]\nOne native job per authorized subject. Choose exactly one WorkItem, Matter or DocumentVersion; independent jobs use native cron concurrency. --max-initial-stages 1 is WorkItem-only and consumes at most the current initial stage, without Review or original-impact work. --expected-initial-operation requires that limit and refuses any entry stage other than the current JobAid stage.\n');
     return;
   }
   const workItemId = option(argv, '--work-item-id');
   const matterId = option(argv, '--matter-id');
   const documentVersionId = option(argv, '--document-version-id');
   assertSingleConsumerSubject({ workItemId, matterId, documentVersionId });
+  const stageLimit = initialStageLimit(argv, workItemId, matterId, documentVersionId);
   const runtime = await resolveRuntimeConfig(argv, env);
   assertHostedModelGatewayReady(runtime);
   const activityRunRef = option(argv, '--activity-run-ref');
@@ -518,6 +566,7 @@ async function main(argv, env) {
       workItemId,
       matterId,
       documentVersionId,
+      ...stageLimit,
       applicabilityContextRef: option(argv, '--applicability-context-ref'),
       checkpointRoot,
       activityRunRef,

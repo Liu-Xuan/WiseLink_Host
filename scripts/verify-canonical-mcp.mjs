@@ -467,6 +467,13 @@ const openClawMcp = new CanonicalHostOpenClawMcpService(
     readAttemptWork: async (attemptRef, requestId) => { problemWorkCalls.push({ tool: 'read_assessment_work', attemptRef, requestId }); return { workRevisionRef: 'JA-SYNTHETIC-1' }; },
   },
   {}, // Register Matter tools exactly as the production module does.
+  undefined,
+  { run: async () => ({ synthetic: true }), readOriginal: async () => ({ synthetic: true }),
+    readRevision: async () => ({ synthetic: true }) },
+  { run: async () => ({ synthetic: true }) },
+  undefined,
+  undefined,
+  { run: async () => ({ synthetic: true }) },
 );
 
 const httpServer = createServer(async (request, response) => {
@@ -636,13 +643,19 @@ try {
         'query_parsed_package',
         'get_deep_link',
         'next_matter_assessment',
+        'read_matter_current_work',
         'begin_matter_assessment',
         'matter_action_attempt',
+        'document_work',
+        'document_reading',
+        'read_document_original',
+        'document_translation',
         'begin_translation',
         'translation_workspace',
         'commit_translation_candidate',
         'begin_applicability_evaluation',
         'commit_applicability_candidate',
+        'next_original_assessment',
         'begin_dynamic_evaluation',
         'read_assessment_sources',
         'query_assessment_knowledge',
@@ -664,7 +677,7 @@ try {
         'cancel_action_attempt',
       ],
     );
-    assert.equal(listed.tools.length, 30);
+    assert.equal(listed.tools.length, 36);
     assert.equal(openClawClient.getServerVersion()?.version, '1.2.0');
     const semanticBegin = await openClawClient.callTool({ name: 'begin_translation', arguments: { workItemId: 'WI-SEMANTIC', requestId: 'synthetic-v2' } });
     assert.notEqual(semanticBegin.isError, true);

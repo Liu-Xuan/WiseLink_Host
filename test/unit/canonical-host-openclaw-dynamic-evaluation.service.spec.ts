@@ -96,6 +96,25 @@ describe('CanonicalHostOpenClawDynamicEvaluationService', () => {
     expect(harness.artifactStore.persistAndReadback).not.toHaveBeenCalled();
   });
 
+  it('rejects a valid Overall attempt selected through the extra WorkItem before commit preparation', async () => {
+    const harness = createHarness();
+    const overallTask = sealTaskEnvelope({
+      ...taskEnvelope(workItemProjection()),
+      taskType: 'OPENCLAW_OVERALL_SYNTHESIS',
+      modelInput: { operation: 'SYNTHESIZE_OVERALL_CANDIDATE' },
+      idempotencyKey: 'openclaw-v1:overall:exact-scope-test',
+    });
+    harness.attempts.readScoped.mockResolvedValueOnce({
+      ...actionRow(overallTask), actionType: 'OPENCLAW_OVERALL_SYNTHESIS',
+    });
+    await expect(harness.service.commit(
+      ATTEMPT_REF, LEASE_TOKEN, 1, dynamicResult(overallTask), WORK_ITEM_ID,
+    )).rejects.toMatchObject({ code: 'ACTION_ATTEMPT_NOT_FOUND', statusCode: 404 });
+    expect(harness.attempts.prepareCommit).not.toHaveBeenCalled();
+    expect(harness.artifactStore.persistAndReadback).not.toHaveBeenCalled();
+    expect(harness.registrar.compareAndSet).not.toHaveBeenCalled();
+  });
+
   it.each(['FTD','SL','AMM'])('routes %s original analysis without reclassifying it as SB', async family => {
     const problemAssessment = {enabledForNewTasks:() => true,begin:jest.fn(async () => ({status:'RUNNING'}))};
     const harness = createHarness(undefined, {problemAssessment});

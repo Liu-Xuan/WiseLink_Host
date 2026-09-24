@@ -107,6 +107,7 @@ export interface CanonicalServiceScopeAuthorizationPort {
       | 'HEARTBEAT_ATTEMPT'
       | 'CANCEL_ATTEMPT';
     attemptRef: string;
+    workItemId?: string;
   }): Promise<CanonicalVerifiedOpenClawAttemptScope>;
 }
 
