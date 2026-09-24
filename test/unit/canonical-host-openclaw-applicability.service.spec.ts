@@ -29,6 +29,7 @@ import {
   type ApplicabilityTaskContract,
 } from '../../server/modules/canonical-host/canonical-host-openclaw-applicability.contract';
 import { CanonicalHostOpenClawApplicabilityService } from '../../server/modules/canonical-host/canonical-host-openclaw-applicability.service';
+import { ConfiguredDevelopmentCanonicalServiceScopeAuthorization } from '../../server/modules/canonical-host/configured-development-service-scope.authorization';
 import {
   activeConfigurationEvidenceReevaluation,
   createConfigurationEvidenceReevaluation,
@@ -38,6 +39,70 @@ import {
 } from '../../server/modules/canonical-host/configuration-evidence/configuration-evidence-reevaluation.state';
 
 describe('CanonicalHostOpenClawApplicabilityService', () => {
+  it('real exact scope rejects a previously admitted context after the additional binding changes',async()=>{
+    const keys=['WL_OPENCLAW_SERVICE_SCOPE_ENABLED','WL_OPENCLAW_GATEWAY_AUTH_MODE',
+      'WL_OPENCLAW_SERVICE_SCOPE_ENV','WL_OPENCLAW_SERVICE_PRINCIPAL_ID','WL_OPENCLAW_SERVICE_TENANT_ID',
+      'WL_OPENCLAW_SERVICE_WORK_ITEM_ID','WL_OPENCLAW_SERVICE_ADDITIONAL_WORK_ITEM_IDS',
+      'WL_OPENCLAW_APPLICABILITY_CONTEXT_REF','WL_OPENCLAW_APPLICABILITY_ADDITIONAL_CONTEXT_BINDING'];
+    const saved=Object.fromEntries(keys.map(key=>[key,process.env[key]]));
+    try {
+      Object.assign(process.env,{WL_OPENCLAW_SERVICE_SCOPE_ENABLED:'1',WL_OPENCLAW_GATEWAY_AUTH_MODE:'API_KEY',
+        WL_OPENCLAW_SERVICE_SCOPE_ENV:'UAT',WL_OPENCLAW_SERVICE_PRINCIPAL_ID:'service:openclaw-main',
+        WL_OPENCLAW_SERVICE_TENANT_ID:'tenant-1',WL_OPENCLAW_SERVICE_WORK_ITEM_ID:'WI-legacy',
+        WL_OPENCLAW_SERVICE_ADDITIONAL_WORK_ITEM_IDS:JSON.stringify(['WI-APP-1']),
+        WL_OPENCLAW_APPLICABILITY_CONTEXT_REF:'APCTX-legacy',
+        WL_OPENCLAW_APPLICABILITY_ADDITIONAL_CONTEXT_BINDING:JSON.stringify({workItemId:'WI-APP-1',applicabilityContextRef:'APCTX-OPAQUE-1'})});
+      const real=new ConfiguredDevelopmentCanonicalServiceScopeAuthorization();
+      const h=applicabilityHarness();
+      h.serviceScope.authorizeOpenClawApplicabilityContext.mockImplementation(input=>real.authorizeOpenClawApplicabilityContext(input));
+      h.serviceScope.authorizeOpenClawAttempt.mockImplementation(input=>real.authorizeOpenClawAttempt(input));
+      const began=await h.begin(); const result=h.resultFor(candidateFor(began));
+      process.env.WL_OPENCLAW_APPLICABILITY_ADDITIONAL_CONTEXT_BINDING=
+        JSON.stringify({workItemId:'WI-APP-1',applicabilityContextRef:'APCTX-new'});
+      await expect(h.service.commit(began.attemptRef,began.leaseToken,began.leaseGeneration,result,'WI-APP-1'))
+        .rejects.toMatchObject({statusCode:404});
+      expect(h.registrar.compareAndSet).not.toHaveBeenCalled();
+      expect(h.attempts.prepareCommit).not.toHaveBeenCalled();
+    } finally {for(const key of keys){if(saved[key]===undefined)delete process.env[key];else process.env[key]=saved[key];}}
+  });
+
+  it('rejects an old context after its exact WorkItem binding is revoked, including terminal replay',async()=>{
+    const h=applicabilityHarness();
+    const began=await h.begin(); const result=h.resultFor(candidateFor(began));
+    h.serviceScope.authorizeOpenClawApplicabilityContext.mockRejectedValueOnce(
+      Object.assign(new Error('CANONICAL_WORK_ITEM_NOT_FOUND'),{code:'CANONICAL_WORK_ITEM_NOT_FOUND',statusCode:404}));
+    await expect(h.service.commit(began.attemptRef,began.leaseToken,began.leaseGeneration,result))
+      .rejects.toMatchObject({statusCode:404});
+    expect(h.registrar.compareAndSet).not.toHaveBeenCalled();
+    await h.service.commit(began.attemptRef,began.leaseToken,began.leaseGeneration,result);
+    expect(h.registrar.compareAndSet).toHaveBeenCalledTimes(1);
+    h.setAttemptStatus('COMMITTING');
+    h.serviceScope.authorizeOpenClawApplicabilityContext.mockRejectedValueOnce(
+      Object.assign(new Error('CANONICAL_WORK_ITEM_NOT_FOUND'),{code:'CANONICAL_WORK_ITEM_NOT_FOUND',statusCode:404}));
+    await expect(h.service.commit(began.attemptRef,began.leaseToken,began.leaseGeneration,result))
+      .rejects.toMatchObject({statusCode:404});
+    h.setAttemptStatus('SUCCEEDED');
+    h.serviceScope.authorizeOpenClawApplicabilityContext.mockRejectedValueOnce(
+      Object.assign(new Error('CANONICAL_WORK_ITEM_NOT_FOUND'),{code:'CANONICAL_WORK_ITEM_NOT_FOUND',statusCode:404}));
+    await expect(h.service.commit(began.attemptRef,began.leaseToken,began.leaseGeneration,result))
+      .rejects.toMatchObject({statusCode:404});
+    expect(h.registrar.compareAndSet).toHaveBeenCalledTimes(1);
+  });
+
+  it('carries the additional WorkItem persisted-selection requirement through commit and recovery',async()=>{
+    const h=applicabilityHarness();
+    h.serviceScope.authorizeOpenClawApplicabilityContext.mockImplementation(async ({applicabilityContextRef,requestId})=>({
+      ...verifiedScope(),applicabilityContextRef,requestId,requirePersistedSelection:true as const,
+    }));
+    const began=await h.begin(); const result=h.resultFor(candidateFor(began));
+    await h.service.commit(began.attemptRef,began.leaseToken,began.leaseGeneration,result);
+    await h.service.commit(began.attemptRef,began.leaseToken,began.leaseGeneration,result);
+    expect(h.applicabilityInputs.readCurrentOwnerValidated).toHaveBeenCalledWith(expect.objectContaining({
+      requirePersistedSelection:true}));
+    expect(h.applicabilityInputs.readCurrentSelectionValidated).toHaveBeenCalledWith(expect.objectContaining({
+      requirePersistedSelection:true}));
+  });
+
   it.each(['UNKNOWN','APPLICABLE'] as const)('builds, commits and replays original v3 %s without a synthetic package', async (decision) => {
     const h=applicabilityHarness(); const original=originalFixture();
     if (decision === 'APPLICABLE') {
@@ -2118,6 +2183,7 @@ function applicabilityHarness(
   );
   return {
     service,
+    serviceScope,
     registrar,
     artifactStore,
     applicabilityInputs,

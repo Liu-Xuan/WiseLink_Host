@@ -312,6 +312,8 @@ export class CanonicalHostOpenClawApplicabilityService {
       workItem,
       stage: 'APPLICABILITY',
     });
+    await this.currentApplicabilityScope({tenantId:scope.tenantId,workItemId:workItem.workItemId},
+      scope.applicabilityContextRef, scope.principalId);
     await this.registrar.compareAndSet({
       workItemId: workItem.workItemId,
       expectedRevision: workItem.revision,
@@ -354,6 +356,7 @@ export class CanonicalHostOpenClawApplicabilityService {
     const applicabilityContextRef = requiredApplicabilityContextRef(
       task.modelInput,
     );
+    await this.currentApplicabilityScope(row, applicabilityContextRef, scope.principalId);
     const storedBinding = await this.registrar.getTenantScopedByWorkItemId({
       workItemId: row.workItemId,
       tenantId: scope.tenantId,
@@ -398,11 +401,8 @@ export class CanonicalHostOpenClawApplicabilityService {
     }
     if (recoveredProjection?.actionAttemptId === row.attemptId) {
       const recovered =
-        await this.applicabilityInputs.readCurrentSelectionValidated({
-          workItemId: row.workItemId,
-          tenantId: scope.tenantId,
-          applicabilityContextRef,
-        });
+        await this.applicabilityInputs.readCurrentSelectionValidated(
+          await this.currentApplicabilityScope(row, applicabilityContextRef));
       assertFreshAttemptWorkItemBinding(recovered.workItem, row, task);
       const currentProjection = selectedApplicabilityProjection(
         recovered.workItem,
@@ -425,11 +425,8 @@ export class CanonicalHostOpenClawApplicabilityService {
         resultEnvelope,
       });
       const freshRecovered =
-        await this.applicabilityInputs.readCurrentSelectionValidated({
-          workItemId: row.workItemId,
-          tenantId: scope.tenantId,
-          applicabilityContextRef,
-        });
+        await this.applicabilityInputs.readCurrentSelectionValidated(
+          await this.currentApplicabilityScope(row, applicabilityContextRef));
       const freshProjection = selectedApplicabilityProjection(
         freshRecovered.workItem,
       );
@@ -448,11 +445,8 @@ export class CanonicalHostOpenClawApplicabilityService {
     }
 
     let { workItem, applicabilityInput } =
-      await this.applicabilityInputs.readCurrentOwnerValidated({
-        workItemId: row.workItemId,
-        tenantId: scope.tenantId,
-        applicabilityContextRef,
-      });
+      await this.applicabilityInputs.readCurrentOwnerValidated(
+        await this.currentApplicabilityScope(row, applicabilityContextRef));
     assertFreshAttemptWorkItemBinding(workItem, row, task);
 
     if (workItem.revision !== task.baseRevision) {
@@ -656,6 +650,7 @@ export class CanonicalHostOpenClawApplicabilityService {
             ...workItem,
             applicability,
           };
+      await this.currentApplicabilityScope(prepared.row, applicabilityContextRef, scope.principalId);
       workItemCasAttempted = true;
       const updated = await this.registrar.compareAndSet({
         workItemId: workItem.workItemId,
@@ -665,11 +660,8 @@ export class CanonicalHostOpenClawApplicabilityService {
       });
 
       const terminalCurrent =
-        await this.applicabilityInputs.readCurrentSelectionValidated({
-          workItemId: prepared.row.workItemId,
-          tenantId: prepared.row.tenantId,
-          applicabilityContextRef,
-        });
+        await this.applicabilityInputs.readCurrentSelectionValidated(
+          await this.currentApplicabilityScope(prepared.row, applicabilityContextRef));
       const terminalProjection = selectedApplicabilityProjection(
         terminalCurrent.workItem,
       );
@@ -724,11 +716,8 @@ export class CanonicalHostOpenClawApplicabilityService {
             throw conflict('APPLICABILITY_RECOVERY_CURRENT_BINDING_MISMATCH');
           }
           const ownerValidated =
-            await this.applicabilityInputs.readCurrentSelectionValidated({
-              workItemId: prepared.row.workItemId,
-              tenantId: prepared.row.tenantId,
-              applicabilityContextRef,
-            });
+            await this.applicabilityInputs.readCurrentSelectionValidated(
+              await this.currentApplicabilityScope(prepared.row, applicabilityContextRef));
           const recoveredCurrent = selectedApplicabilityProjection(
             ownerValidated.workItem,
           );
@@ -744,11 +733,8 @@ export class CanonicalHostOpenClawApplicabilityService {
             finalized.artifact,
           );
           const beforeTerminal =
-            await this.applicabilityInputs.readCurrentSelectionValidated({
-              workItemId: prepared.row.workItemId,
-              tenantId: prepared.row.tenantId,
-              applicabilityContextRef,
-            });
+            await this.applicabilityInputs.readCurrentSelectionValidated(
+              await this.currentApplicabilityScope(prepared.row, applicabilityContextRef));
           const beforeTerminalProjection = selectedApplicabilityProjection(
             beforeTerminal.workItem,
           );
@@ -897,11 +883,8 @@ export class CanonicalHostOpenClawApplicabilityService {
       return null;
     }
     const ownerValidated =
-      await this.applicabilityInputs.readCurrentOwnerValidated({
-        workItemId: input.row.workItemId,
-        tenantId: input.row.tenantId,
-        applicabilityContextRef: input.applicabilityContextRef,
-      });
+      await this.applicabilityInputs.readCurrentOwnerValidated(
+        await this.currentApplicabilityScope(input.row, input.applicabilityContextRef));
     const rebuilt = await this.buildTaskContract(
       ownerValidated.workItem,
       ownerValidated.applicabilityInput,
@@ -979,6 +962,8 @@ export class CanonicalHostOpenClawApplicabilityService {
         input.message,
       );
       try {
+        await this.currentApplicabilityScope(input.prepared.row,
+          requiredApplicabilityContextRef(input.prepared.task.modelInput));
         await this.registrar.compareAndSet({
           workItemId: current.workItemId,
           expectedRevision: current.revision,
@@ -1220,11 +1205,8 @@ export class CanonicalHostOpenClawApplicabilityService {
     }
     if (recoveredProjection?.actionAttemptId === prepared.row.attemptId) {
       const recovered =
-        await this.applicabilityInputs.readCurrentSelectionValidated({
-          workItemId: prepared.row.workItemId,
-          tenantId: prepared.row.tenantId,
-          applicabilityContextRef,
-        });
+        await this.applicabilityInputs.readCurrentSelectionValidated(
+          await this.currentApplicabilityScope(prepared.row, applicabilityContextRef));
       assertFreshAttemptWorkItemBinding(
         recovered.workItem,
         prepared.row,
@@ -1245,11 +1227,8 @@ export class CanonicalHostOpenClawApplicabilityService {
       return projectionResult(recovered.workItem, applicability);
     }
     const { workItem } =
-      await this.applicabilityInputs.readCurrentOwnerValidated({
-        workItemId: prepared.row.workItemId,
-        tenantId: prepared.row.tenantId,
-        applicabilityContextRef,
-      });
+      await this.applicabilityInputs.readCurrentOwnerValidated(
+        await this.currentApplicabilityScope(prepared.row, applicabilityContextRef));
     assertFreshAttemptWorkItemBinding(workItem, prepared.row, prepared.task);
     if (
       prepared.row.status === 'COMMITTING' &&
@@ -1258,6 +1237,23 @@ export class CanonicalHostOpenClawApplicabilityService {
       throw conflict('APPLICABILITY_COMMITTING_WORK_ITEM_DRIFT');
     }
     return null;
+  }
+
+  private async currentApplicabilityScope(
+    row: Pick<ActionAttemptRow, 'tenantId' | 'workItemId'>,
+    applicabilityContextRef: string,
+    expectedPrincipalId?: string,
+  ): Promise<CanonicalVerifiedApplicabilityContextScope> {
+    const requestId = 'applicability-commit-current-scope';
+    const current = await this.serviceScope.authorizeOpenClawApplicabilityContext({
+      operation: 'BEGIN_APPLICABILITY',
+      applicabilityContextRef,
+      requestId,
+    });
+    assertApplicabilityContextScope(current, applicabilityContextRef, requestId);
+    if (current.tenantId !== row.tenantId || current.workItemId !== row.workItemId ||
+      (expectedPrincipalId !== undefined && current.principalId !== expectedPrincipalId)) throw scopeNotFound();
+    return current;
   }
 
   private async readFreshBaseCommitContext(
@@ -1282,11 +1278,8 @@ export class CanonicalHostOpenClawApplicabilityService {
       );
     }
     const { workItem, applicabilityInput } =
-      await this.applicabilityInputs.readCurrentOwnerValidated({
-        workItemId: row.workItemId,
-        tenantId: row.tenantId,
-        applicabilityContextRef,
-      });
+      await this.applicabilityInputs.readCurrentOwnerValidated(
+        await this.currentApplicabilityScope(row, applicabilityContextRef));
     assertFreshAttemptWorkItemBinding(workItem, row, task);
     if (workItem.revision !== task.baseRevision) {
       throw conflict(

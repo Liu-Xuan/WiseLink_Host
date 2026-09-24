@@ -493,6 +493,29 @@ test('single-stage applicability keeps begin opaque and binds commit, heartbeat 
   ]);
 });
 
+test('a new controlled selection revision can retry applicability after WAITING_INPUT without reusing its checkpoint',async t=>{
+  const input=await options(t); let runs=0;
+  const initial=revision=>status({workItemRevision:revision,status:'REQUIRED',nextOperation:'EXTRACT_APPLICABILITY',
+    applicabilityContextRef:'APCTX-ftd',stages:{translation:{status:'SUCCEEDED'},applicability:{status:'PENDING'},
+      jobAid:{status:'PENDING'},overall:{status:'PENDING'}}}).initialAnalysis;
+  const deps={
+    callTool:async name=>{
+      assert.equal(name,'get_parse_status');
+      return status({workItemRevision:runs===1?3:4,status:runs===1?'WAITING_INPUT':'REQUIRED',
+        nextOperation:runs===1?'EVALUATE_JOBAID':'EVALUATE_JOBAID',
+        stages:{translation:{status:'SUCCEEDED'},applicability:{status:runs===1?'WAITING_INPUT':'SUCCEEDED'},
+          jobAid:{status:'PENDING'},overall:{status:'PENDING'}}});
+    },
+    runInitial:async()=>{runs+=1;return {outcome:runs===1?'WAITING_INPUT':'CANDIDATE_READY'};},
+  };
+  const first=await runHostedInitialStage({...input,operation:'EXTRACT_APPLICABILITY',initial:initial(2)},deps);
+  assert.equal(first.status,'REQUIRES_ATTENTION');
+  assert.equal(first.stageStatus,'WAITING_INPUT');
+  const second=await runHostedInitialStage({...input,operation:'EXTRACT_APPLICABILITY',initial:initial(3)},deps);
+  assert.equal(second.status,'INITIAL_STAGE_SAVED');
+  assert.equal(runs,2);
+});
+
 test('c115 resumes a c114 JobAid checkpoint without changing its argument hash', async (t) => {
   const input = await options(t);
   const requestId = 'legacy-c114';

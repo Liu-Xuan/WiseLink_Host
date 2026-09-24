@@ -11,7 +11,8 @@ import { consumeHostedMatter } from './consume-hosted-matter.mjs';
 import { recoverNativeMatterResponse } from './recover-native-matter-response.mjs';
 import { invokeHostedJobAidProblemModel } from './run-jobaid-problem-assessment.mjs';
 import { invokeHostedInitialModel } from './invoke-hosted-initial-model.mjs';
-import { findInitialAssessmentRecovery, initialStageCheckpointPath, assertFreshInitialAssessmentClaim } from './initial-assessment-recovery.mjs';
+import { findInitialAssessmentRecovery, initialStageCheckpointPath, initialApplicabilityCheckpointPointerPath,
+  assertFreshInitialAssessmentClaim, assertCommittingInitialClaim } from './initial-assessment-recovery.mjs';
 import { invokeHostedDocumentActivityModel } from './invoke-hosted-document-activity-model.mjs';
 import { consumeHostedDocumentReading } from './consume-hosted-document-reading.mjs';
 import { invokeHostedDocumentReadingModel } from './invoke-hosted-document-reading-model.mjs';
@@ -137,7 +138,14 @@ export async function runHostedInitialStage(options, dependencies) {
   const { operation, initial } = options;
   if (!INITIAL_ANALYSIS_OPERATIONS.includes(operation)) throw new Error('INITIAL_OPERATION_INVALID');
   const continuationRequestId = initial.stages[STAGE_BY_OPERATION[operation]]?.requestId;
-  const checkpoint = await createCheckpointStore(initialStageCheckpointPath(options, operation, continuationRequestId));
+  const initialWorkItemRevision=operation === 'EXTRACT_APPLICABILITY'
+    ? (options.assessmentRecovery?.initialWorkItemRevision ?? initial.workItemRevision) : undefined;
+  const checkpoint = await createCheckpointStore(initialStageCheckpointPath(
+    {...options,initialWorkItemRevision}, operation, continuationRequestId));
+  if (operation === 'EXTRACT_APPLICABILITY' && !options.assessmentRecovery) {
+    const pointer=await createCheckpointStore(initialApplicabilityCheckpointPointerPath(options));
+    await pointer.write('active',{workItemRevision:initialWorkItemRevision,requestId:continuationRequestId ?? null});
+  }
   const binding = await checkpoint.readOptional('binding');
   const exactBinding = {
     workItemId: options.workItemId, documentVersionId: initial.documentVersionId, operation,
@@ -179,8 +187,11 @@ export async function runHostedInitialStage(options, dependencies) {
       ambiguousCommit: name.startsWith('commit_'),
       perform: () => dependencies.callTool(name, scopedArgs),
     });
+    if (name.startsWith('begin_') && options.assessmentRecovery?.status === 'RECOVERY_COMMITTING')
+      assertCommittingInitialClaim(options.assessmentRecovery.previousClaim,value);
     if (name.startsWith('begin_') && value.status === 'RUNNING') {
-      if (options.assessmentRecovery) assertFreshInitialAssessmentClaim(options.assessmentRecovery.previousClaim, value);
+      if (options.assessmentRecovery)
+        assertFreshInitialAssessmentClaim(options.assessmentRecovery.previousClaim, value);
       problemAssessment = value.modelInput?.schemaVersion === 'wiselink.jobaid-problem-task.v2';
       if (problemAssessment) {
         await checkpoint.write('assessment-current-claim', value);
