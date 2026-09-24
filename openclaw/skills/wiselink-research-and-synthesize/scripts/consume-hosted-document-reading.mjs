@@ -5,6 +5,24 @@ const HOST_READING_LEASE_MS = 120_000;
 const CHECKPOINT_SCHEMA = 'wiselink.document.reading-checkpoint.v1';
 const id = value => typeof value === 'string' && /^[A-Za-z0-9_-]{1,96}$/u.test(value);
 const nonempty = value => typeof value === 'string' && value.trim().length > 0;
+const tokenCount = value => Number.isSafeInteger(value) && value >= 0 ? value : null;
+
+// Older model.result/failure checkpoints have no response metadata. Keep that
+// absence explicit; zero is a reported token count, never a fallback.
+function readingModelResponse(value) {
+  const response = value?.modelResponse;
+  const usage = response?.usage;
+  return {
+    finishReason: typeof response?.finishReason === 'string' &&
+      /^[a-z_]{1,48}$/u.test(response.finishReason) ? response.finishReason : null,
+    usage: {
+      inputTokens: tokenCount(usage?.inputTokens),
+      outputTokens: tokenCount(usage?.outputTokens),
+      totalTokens: tokenCount(usage?.totalTokens),
+      reasoningTokens: tokenCount(usage?.reasoningTokens),
+    },
+  };
+}
 
 function withReadingSignal(operation, signal) {
   signal.throwIfAborted();
@@ -141,10 +159,13 @@ export async function consumeHostedDocumentReading(options, dependencies) {
   const modelStarted = await readCheckpoint('model.started');
   let model = await readCheckpoint('model.result');
   const saveStarted = await readCheckpoint('save.started');
-  if (state.status === 'SAVED') return { status: 'READING_SAVED', saved: savedReceipt(state.result, state, saveStarted), modelInvocations: 0 };
+  if (state.status === 'SAVED') return { status: 'READING_SAVED',
+    saved: savedReceipt(state.result, state, saveStarted), modelResponse: readingModelResponse(model), modelInvocations: 0 };
   const failure = await readCheckpoint('failure');
-  if (failure) return { status: 'REQUIRES_ATTENTION', ...target, errorCode: failure.errorCode, modelInvocations: 0 };
-  if (saveStarted) return { status: 'PENDING_SAVE_CONFIRMATION', ...target, modelInvocations: 0 };
+  if (failure) return { status: 'REQUIRES_ATTENTION', ...target, errorCode: failure.errorCode,
+    modelResponse: readingModelResponse(failure.modelResponse ? failure : model), modelInvocations: 0 };
+  if (saveStarted) return { status: 'PENDING_SAVE_CONFIRMATION', ...target,
+    modelResponse: readingModelResponse(model), modelInvocations: 0 };
   if (modelStarted && !model) return { status: 'PENDING_MODEL_CONFIRMATION', ...target, modelInvocations: 0 };
   if (model && (!source || !modelStarted)) throw new Error('READING_CHECKPOINT_INCOMPLETE');
   const claimedAt = Date.now();
@@ -158,7 +179,8 @@ export async function consumeHostedDocumentReading(options, dependencies) {
       sourceBinding: currentSource.sourceBinding, candidate: currentModel.proposal,
       producer: { skillVersion: WISELINK_SKILL_VERSION, modelVersion: currentModel.modelVersion },
     } : null);
-    return { status: 'READING_SAVED', saved: savedReceipt(claimed.result, state, expected), modelInvocations: 0 };
+    return { status: 'READING_SAVED', saved: savedReceipt(claimed.result, state, expected),
+      modelResponse: readingModelResponse(currentModel), modelInvocations: 0 };
   }
   const fence = claimed.fence;
   if (!fence || fence.leaseOwner !== leaseOwner || typeof fence.leaseToken !== 'string' ||
@@ -218,24 +240,30 @@ export async function consumeHostedDocumentReading(options, dependencies) {
     saveDispatched = true;
     try {
       const result = await lease.guard(() => call('READING_SAVE', { ...scope, candidate, producer }));
-      return { status: 'READING_SAVED', saved: savedReceipt(result, state, expected), modelInvocations };
+      return { status: 'READING_SAVED', saved: savedReceipt(result, state, expected),
+        modelResponse: readingModelResponse(model), modelInvocations };
     } catch (saveError) {
       let recoveryError;
       try {
         const latest = await getStatus();
-        if (latest.status === 'SAVED') return { status: 'READING_SAVED', saved: savedReceipt(latest.result, state, expected), modelInvocations };
+        if (latest.status === 'SAVED') return { status: 'READING_SAVED',
+          saved: savedReceipt(latest.result, state, expected),
+          modelResponse: readingModelResponse(model), modelInvocations };
       } catch (error) { recoveryError = error; }
       if (definiteError(recoveryError)) throw recoveryError;
       if (definiteError(saveError)) throw saveError;
-      return { status: 'PENDING_SAVE_CONFIRMATION', ...target, modelInvocations };
+      return { status: 'PENDING_SAVE_CONFIRMATION', ...target,
+        modelResponse: readingModelResponse(model), modelInvocations };
     }
   } catch (error) {
     const errorCode = definiteError(error);
     if (errorCode) {
-      await write('failure', { errorCode });
-      return { status: 'REQUIRES_ATTENTION', ...target, errorCode, modelInvocations };
+      const modelResponse = readingModelResponse(error.modelResponse ? error : model);
+      await write('failure', { errorCode, modelResponse });
+      return { status: 'REQUIRES_ATTENTION', ...target, errorCode, modelResponse, modelInvocations };
     }
-    if (saveDispatched) return { status: 'PENDING_SAVE_CONFIRMATION', ...target, modelInvocations };
+    if (saveDispatched) return { status: 'PENDING_SAVE_CONFIRMATION', ...target,
+      modelResponse: readingModelResponse(model), modelInvocations };
     if (modelDispatched) return { status: 'PENDING_MODEL_CONFIRMATION', ...target, modelInvocations };
     throw error;
   } finally { await lease.stop(); }

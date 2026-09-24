@@ -71,7 +71,10 @@ test('actual MCP reading rejection remains a bounded application error across co
   const result = await consumeHostedDocumentReading(f.options, f.deps);
   assert.equal(result.status, 'REQUIRES_ATTENTION');
   assert.equal(result.errorCode, 'DOCUMENT_READING_QUOTE_MISMATCH');
-  assert.deepEqual(f.records.get('failure').value, { errorCode: 'DOCUMENT_READING_QUOTE_MISMATCH' });
+  assert.deepEqual(f.records.get('failure').value, { errorCode: 'DOCUMENT_READING_QUOTE_MISMATCH',
+    modelResponse: { finishReason: null, usage: {
+      inputTokens: null, outputTokens: null, totalTokens: null, reasoningTokens: null,
+    } } });
   const resumed = await consumeHostedDocumentReading(f.options, f.deps);
   assert.equal(resumed.status, 'REQUIRES_ATTENTION');
   assert.equal(resumed.modelInvocations, 0);
@@ -247,6 +250,79 @@ test('received malformed real adapter response stays actionable across restart w
   assert.equal(result.status,'REQUIRES_ATTENTION');assert.equal(result.errorCode,'READING_MODEL_RESULT_INVALID');
   assert.equal((await consumeHostedDocumentReading(f.options,f.deps)).errorCode,result.errorCode);
   assert.equal(requests,1);
+});
+
+test('reading response metadata survives model checkpoint and SAVED readback', async () => {
+  const f = fixture();
+  const modelResponse = { finishReason: 'tool_calls', usage: {
+    inputTokens: 310, outputTokens: 120, totalTokens: 430, reasoningTokens: 20,
+  } };
+  const original = f.deps.invokeModel;
+  f.deps.invokeModel = async (...args) => ({ ...await original(...args), modelResponse });
+  const first = await consumeHostedDocumentReading(f.options, f.deps);
+  assert.equal(first.status, 'READING_SAVED');
+  assert.deepEqual(first.modelResponse, modelResponse);
+  assert.deepEqual(f.records.get('model.result').value.modelResponse, modelResponse);
+  const resumed = await consumeHostedDocumentReading(f.options, f.deps);
+  assert.deepEqual(resumed.modelResponse, modelResponse);
+  assert.equal(resumed.modelInvocations, 0);
+  assert.equal(f.count(), 1);
+});
+
+test('old model checkpoint remains readable with explicitly unknown response metadata', async () => {
+  const f = fixture();
+  await consumeHostedDocumentReading(f.options, f.deps);
+  assert.equal('modelResponse' in f.records.get('model.result').value, false);
+  const resumed = await consumeHostedDocumentReading(f.options, f.deps);
+  assert.deepEqual(resumed.modelResponse, { finishReason: null, usage: {
+    inputTokens: null, outputTokens: null, totalTokens: null, reasoningTokens: null,
+  } });
+  assert.equal(f.count(), 1);
+});
+
+test('old failure checkpoint remains readable without changing its retry decision', async () => {
+  const f = fixture();
+  f.deps.invokeModel = async () => ({ modelVersion: 'fixture', proposal: { schemaVersion: 'wrong' } });
+  const first = await consumeHostedDocumentReading(f.options, f.deps);
+  assert.equal(first.status, 'REQUIRES_ATTENTION');
+  const legacy = f.records.get('failure');
+  delete legacy.value.modelResponse;
+  f.records.set('failure', legacy);
+  const resumed = await consumeHostedDocumentReading(f.options, f.deps);
+  assert.equal(resumed.errorCode, 'READING_MODEL_RESULT_INVALID');
+  assert.deepEqual(resumed.modelResponse, { finishReason: null, usage: {
+    inputTokens: null, outputTokens: null, totalTokens: null, reasoningTokens: null,
+  } });
+  assert.equal(resumed.modelInvocations, 0);
+});
+
+test('length-finished tool call persists usage and never attempts SAVE or a second model', async () => {
+  const { READING_PROPOSAL_FUNCTION_NAME } = await import('../scripts/invoke-hosted-document-reading-model.mjs');
+  const f = fixture(); let requests = 0;
+  const candidate = { schemaVersion: 'wiselink.document.reading.v1', headline: '来源条件',
+    brief: { text: '尚未确认。', quotes: [{ anchorId: 'a1' }] },
+    explanation: [{ text: '尚未确认。', quotes: [{ anchorId: 'a1' }] }],
+    criticalConditions: [], limitations: [] };
+  f.deps.invokeModel = (input, hooks) => invokeHostedDocumentReadingModel(input, {
+    gatewayUrl: 'https://official.invalid', gatewayToken: 'fixture', configuredModelVersion: 'fixture', ...hooks,
+  }, { requestGateway: async () => {
+    requests++;
+    return Response.json({ choices: [{ finish_reason: 'length', message: { role: 'assistant', tool_calls: [{
+      type: 'function', function: { name: READING_PROPOSAL_FUNCTION_NAME, arguments: JSON.stringify(candidate) },
+    }] } }], usage: { prompt_tokens: 300, completion_tokens: 16000,
+      completion_tokens_details: { reasoning_tokens: 4000 } } });
+  } });
+  const first = await consumeHostedDocumentReading(f.options, f.deps);
+  assert.equal(first.status, 'REQUIRES_ATTENTION');
+  assert.equal(first.errorCode, 'READING_MODEL_RESULT_TRUNCATED');
+  assert.deepEqual(first.modelResponse, { finishReason: 'length', usage: {
+    inputTokens: 300, outputTokens: 16000, totalTokens: null, reasoningTokens: 4000,
+  } });
+  assert.equal(f.records.has('model.result'), false);
+  assert.equal(f.calls.includes('READING_SAVE'), false);
+  const resumed = await consumeHostedDocumentReading(f.options, f.deps);
+  assert.deepEqual(resumed.modelResponse, first.modelResponse);
+  assert.equal(requests, 1);
 });
 
 test('pre-dispatch invalid source anchors are a durable explicit failure, not a pending model', async () => {

@@ -11,8 +11,11 @@ const proposal = { schemaVersion: 'wiselink.document.reading.v1', headline: '构
   brief: { text: '构型核实前不能确认适用。', quotes: [{ anchorId: 'a1' }] }, explanation: [], criticalConditions: [], limitations: [] };
 const input = { anchors: [{ anchorId: 'a1', sourceText: '构型😀：须先核实。' }] };
 const call = { type: 'function', function: { name: READING_PROPOSAL_FUNCTION_NAME, arguments: JSON.stringify(proposal) } };
-const response = calls => ({ ok: true, status: 200, text: async () => JSON.stringify({ model_version: 'actual-fixture-model',
-  choices: [{ message: { role: 'assistant', tool_calls: calls } }] }) });
+const response = (calls, fields = {}) => ({ ok: true, status: 200, text: async () => JSON.stringify({
+  model_version: 'actual-fixture-model',
+  choices: [{ message: { role: 'assistant', tool_calls: calls }, ...fields.choice }],
+  ...(fields.usage === undefined ? {} : { usage: fields.usage }),
+}) });
 
 test('one mocked dispatch uses configured official routing and returns the actual model provenance without a Host write', async () => {
   const requests = [];
@@ -31,6 +34,51 @@ test('one mocked dispatch uses configured official routing and returns the actua
   assert.equal(result.proposal.brief.text, proposal.brief.text);
   assert.deepEqual(body.tools[0].function.parameters.properties.brief.properties.quotes.items.properties.anchorId.enum, ['a1']);
   assert.equal(result.modelVersion, 'actual-fixture-model');
+  assert.deepEqual(result.modelResponse, { finishReason: null, usage: {
+    inputTokens: null, outputTokens: null, totalTokens: null, reasoningTokens: null,
+  } });
+});
+
+test('normal tool and stop endings retain only bounded usage counts, including reported zero', async () => {
+  for (const finish_reason of ['tool_calls', 'stop']) {
+    const result = await invokeHostedDocumentReadingModel(input, options, {
+      requestGateway: async () => response([call], { choice: { finish_reason }, usage: {
+        prompt_tokens: 310, completion_tokens: 120, total_tokens: 430,
+        completion_tokens_details: { reasoning_tokens: 0, reasoning: 'private text must not persist' },
+      } }),
+    });
+    assert.deepEqual(result.modelResponse, { finishReason: finish_reason, usage: {
+      inputTokens: 310, outputTokens: 120, totalTokens: 430, reasoningTokens: 0,
+    } });
+    assert.doesNotMatch(JSON.stringify(result), /private text must not persist/u);
+  }
+});
+
+test('explicit length and other nonterminal endings cannot become a saved candidate', async () => {
+  for (const [finish_reason, code] of [
+    ['length', 'READING_MODEL_RESULT_TRUNCATED'],
+    ['content_filter', 'READING_MODEL_RESULT_FINISH_REASON_UNSUPPORTED'],
+  ]) {
+    await assert.rejects(invokeHostedDocumentReadingModel(input, options, {
+      requestGateway: async () => response([call], { choice: { finish_reason }, usage: {
+        prompt_tokens: 200, completion_tokens: 16000,
+      } }),
+    }), error => error.hostErrorCode === code &&
+      error.modelResponse.finishReason === finish_reason &&
+      error.modelResponse.usage.outputTokens === 16000);
+  }
+});
+
+test('missing and malformed usage remains unknown without rejecting a complete legacy response', async () => {
+  const result = await invokeHostedDocumentReadingModel(input, options, {
+    requestGateway: async () => response([call], { usage: {
+      prompt_tokens: -1, completion_tokens: '120', total_tokens: 1.5,
+      completion_tokens_details: { reasoning_tokens: Number.MAX_SAFE_INTEGER + 1 },
+    } }),
+  });
+  assert.deepEqual(result.modelResponse, { finishReason: null, usage: {
+    inputTokens: null, outputTokens: null, totalTokens: null, reasoningTokens: null,
+  } });
 });
 
 test('ambiguous multiple model outputs are rejected rather than silently taking the first', async () => {
