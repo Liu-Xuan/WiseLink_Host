@@ -25,6 +25,7 @@ interface Props {
   workItemId: string;
   baseRevision?: number;
   baseReadConfirmed?: boolean;
+  baseReadProof?: object;
   onLocateDocument: (evidence: DocumentAssessmentEvidence) => void;
   initialAnalysis?: CanonicalInitialAnalysisReadModel | null;
   overall?: CanonicalOpenClawOverallProjection | null;
@@ -71,9 +72,10 @@ export default function JobAidProblemWorkspace(props: Props) {
 }
 
 function JobAidWorkspaceRead(props: Props) {
-  const { data, error, temporaryError, refresh } = useJobAidWorkingRead(
-    props.workItemId,
-  );
+  const { data, error, temporaryError, baseFallbackAllowed, refresh } =
+    useJobAidWorkingRead(props.workItemId, props.baseReadProof ?? null);
+  const showBaseAfterTemporaryFailure =
+    temporaryError && props.baseReadConfirmed && baseFallbackAllowed;
   const signature: string = `${data?.current?.workRevisionRef ?? ''}:${data?.overallStatus ?? ''}:${data?.overallBasedOnWorkRevisionRef ?? ''}`;
   const notified = useRef<string | null>(null);
   const latestUpdated = useRef(props.onUpdated);
@@ -92,7 +94,7 @@ function JobAidWorkspaceRead(props: Props) {
             问题分析刷新失败：{error}
             {data?.current
               ? '。以下保留上次读回的已保存工作，未确认有更新。'
-              : temporaryError && props.baseReadConfirmed
+              : showBaseAfterTemporaryFailure
                 ? '。以下仅显示当前身份与对象已读回的原有评估，问题分析尚未确认。'
               : ''}
           </p>
@@ -114,7 +116,7 @@ function JobAidWorkspaceRead(props: Props) {
         ) : (
           props.children
         )
-      ) : error && temporaryError && props.baseReadConfirmed ? (
+      ) : error && showBaseAfterTemporaryFailure ? (
         props.children
       ) : !error ? (
         <p role="status" className="p-4 text-sm">

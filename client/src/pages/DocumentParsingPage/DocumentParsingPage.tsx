@@ -1259,6 +1259,7 @@ export default function DocumentParsingPage() {
               workItemId={workItemId}
               baseRevision={data.workItem.revision}
               baseReadConfirmed={!loading}
+              baseReadProof={data}
               initialAnalysis={data.initialAnalysis}
               overall={integratedAssessment?.overallSynthesis}
               onUpdated={() => void load(activeQuery)}
@@ -1582,6 +1583,7 @@ export default function DocumentParsingPage() {
             workItemId={workItemId}
             baseRevision={data.workItem.revision}
             baseReadConfirmed={!loading}
+            baseReadProof={data}
             initialAnalysis={data.initialAnalysis}
             overall={integratedAssessment?.overallSynthesis}
             onUpdated={() => void load(activeQuery)}
