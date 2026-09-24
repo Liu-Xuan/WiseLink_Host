@@ -119,8 +119,11 @@ export class EngineeringIssueSearchService {
           AND (${search}='' OR position(lower(${search}) in lower(content::text))>0)
           ${cursor ? sql`AND (kind,subject_id,work_ref)>(${cursor.subjectKind},${cursor.subjectId},${cursor.workRef})` : sql``}
         ORDER BY kind,subject_id,work_ref LIMIT 40`);
-      for (let start = 0; start < rows.length && entries.length < 21; start += CATALOGUE_READ_GROUP_SIZE) {
-        const group = rows.slice(start, start + CATALOGUE_READ_GROUP_SIZE);
+      for (let start = 0; start < rows.length && entries.length < 21;) {
+        // The final group only needs enough authorized entries to determine
+        // whether another page exists. Denied rows still advance the scan.
+        const group = rows.slice(start, start + Math.min(CATALOGUE_READ_GROUP_SIZE, 21 - entries.length));
+        start += group.length;
         const settled = await Promise.allSettled(group.map(readWork));
         for (let index = 0; index < group.length && entries.length < 21; index += 1) {
           const row = group[index];
