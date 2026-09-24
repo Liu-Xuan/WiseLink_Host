@@ -1084,39 +1084,48 @@ async function authorizedReadModel(
       checkedReferences.set(referenceKey, canonicalJson(expected));
     });
   }
-  // Fetch both kinds of explicit review request together. They share the same
-  // tenant/matter scope, while each keeps its original exact or historical
-  // work-ref predicate. Match flags preserve both predicates if a row carries
-  // both kinds of request.
-  const correctionMatch = and(
-    sql`${actionAttempt.taskEnvelopeJson}::jsonb -> 'modelInput' -> 'correction' ->> 'kind' = 'ENGINEERING_ISSUE_CORRECTION'`,
-    sql`${actionAttempt.taskEnvelopeJson}::jsonb -> 'modelInput' -> 'correction' ->> 'expectedWorkRef' = ${row.matterWorkRevisionId}`,
-  );
-  const overviewMatch = and(
-    sql`${actionAttempt.taskEnvelopeJson}::jsonb -> 'modelInput' -> 'overviewCorrection' ->> 'kind' = 'ENGINEERING_OVERVIEW_CORRECTION'`,
-    inArray(sql<string>`${actionAttempt.taskEnvelopeJson}::jsonb -> 'modelInput' -> 'overviewCorrection' ->> 'expectedWorkRef'`,
-      executor.select({ ref: engineeringMatterWorkRevision.matterWorkRevisionId }).from(engineeringMatterWorkRevision).where(and(
-        eq(engineeringMatterWorkRevision.tenantId, row.tenantId), eq(engineeringMatterWorkRevision.matterId, row.matterId),
-        eq(engineeringMatterWorkRevision.createdByUserId, row.createdByUserId),
-        lte(engineeringMatterWorkRevision.workingRevision, row.workingRevision),
-      ))),
-  );
-  const noticeAttempts = await executor.select({ id: actionAttempt.attemptId,
-    attemptRef: actionAttempt.operationRef, status: actionAttempt.status,
-    isCorrection: sql<boolean>`${correctionMatch}`,
-    isOverview: sql<boolean>`${overviewMatch}`,
-    correctionPurpose: sql<{ kind: string; expectedWorkRef: string; issueKey: string; correctionReason: string }>`${actionAttempt.taskEnvelopeJson}::jsonb -> 'modelInput' -> 'correction'`,
-    overviewPurpose: sql<{ kind: string; expectedWorkRef: string; correctionReason: string }>`
-      ${actionAttempt.taskEnvelopeJson}::jsonb -> 'modelInput' -> 'overviewCorrection'`,
-    reviewActivityJson: actionAttempt.reviewActivityJson,
-  }).from(actionAttempt).where(and(
-    eq(actionAttempt.tenantId, row.tenantId), eq(actionAttempt.matterId, row.matterId),
-    // Matter review requests are created with this exact scope. Keep the
-    // partial Matter index eligible before inspecting task-envelope JSON.
-    sql`${actionAttempt.subjectKind} = 'ENGINEERING_MATTER'`,
-    eq(actionAttempt.actionType, 'OPENCLAW_MATTER_ASSESSMENT'),
-    or(correctionMatch, overviewMatch),
-  )).orderBy(asc(actionAttempt.createdAt));
+  // A Matter attempt can carry hundreds of KB of source catalog. Materialize
+  // only the two small review-purpose objects so WHERE, match flags and output
+  // do not repeatedly cast the full task envelope from text to jsonb.
+  // jsonb_path_query_first returns SQL NULL for absent/non-object modelInput,
+  // retaining the former non-match behavior of -> on malformed shape.
+  const noticeAttempts = await executor.execute<{
+    id: string; attemptRef: string | null; status: string;
+    isCorrection: boolean | null; isOverview: boolean | null;
+    correctionPurpose: { kind: string; expectedWorkRef: string; issueKey: string; correctionReason: string } | null;
+    overviewPurpose: { kind: string; expectedWorkRef: string; correctionReason: string } | null;
+    reviewActivityJson: string | null;
+  }>(sql`
+    WITH scoped AS MATERIALIZED (
+      SELECT a.attempt_id AS "id", a.operation_ref AS "attemptRef", a.status,
+        a.review_activity_json AS "reviewActivityJson", a.created_at AS "createdAt",
+        purpose.correction AS "correctionPurpose",
+        purpose."overviewCorrection" AS "overviewPurpose"
+      FROM action_attempt a
+      CROSS JOIN LATERAL jsonb_to_record(jsonb_path_query_first(
+        a.task_envelope_json::jsonb, '$.modelInput ? (@.type() == "object")'
+      )) AS purpose(correction jsonb, "overviewCorrection" jsonb)
+      WHERE a.tenant_id = ${row.tenantId} AND a.matter_id = ${row.matterId}
+        AND a.subject_kind = 'ENGINEERING_MATTER'
+        AND a.action_type = 'OPENCLAW_MATTER_ASSESSMENT'
+    ), matched AS MATERIALIZED (
+      SELECT scoped.*,
+        (scoped."correctionPurpose" ->> 'kind' = 'ENGINEERING_ISSUE_CORRECTION'
+          AND scoped."correctionPurpose" ->> 'expectedWorkRef' = ${row.matterWorkRevisionId}) AS "isCorrection",
+        (scoped."overviewPurpose" ->> 'kind' = 'ENGINEERING_OVERVIEW_CORRECTION'
+          AND scoped."overviewPurpose" ->> 'expectedWorkRef' IN (
+            SELECT w.matter_work_revision_id FROM engineering_matter_work_revision w
+            WHERE w.tenant_id = ${row.tenantId} AND w.matter_id = ${row.matterId}
+              AND w.created_by_user_id = ${row.createdByUserId}
+              AND w.working_revision <= ${row.workingRevision}
+          )) AS "isOverview"
+      FROM scoped
+    )
+    SELECT "id", "attemptRef", status, "reviewActivityJson",
+      "correctionPurpose", "overviewPurpose", "isCorrection", "isOverview"
+    FROM matched WHERE "isCorrection" OR "isOverview"
+    ORDER BY "createdAt" ASC
+  `);
   const corrections = noticeAttempts.filter(item => item.isCorrection);
   const overviewCorrections = noticeAttempts.filter(item => item.isOverview);
   // One scoped save lookup serves both notice types. Correction receipts still
