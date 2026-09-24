@@ -13,6 +13,7 @@ import { readMatterDocumentIdentities } from './matter-document-identity';
 import type { AssessmentEvidence } from '@shared/assessment-reading.interface';
 import { JOBAID_PROBLEM_WORK_SCHEMA } from '@shared/jobaid-problem-assessment.interface';
 import type { MatterCurrentWorkActiveAttempt, MatterCurrentWorkReadModel } from '@shared/matter-current-work.interface';
+import type { MatterExecutionSummary } from '@shared/matter-execution-summary.interface';
 import { randomUUID } from 'node:crypto';
 import { Injectable, Optional } from '@nestjs/common';
 import { DocumentSemanticService } from './document-semantic.service';
@@ -635,6 +636,69 @@ export class MatterActionAttemptService {
 
   readForBrowser(input: MatterAttemptScope & { attemptRef: string }, actor: CanonicalHostActor) {
     return this.authorized(input, (executor, queue) => this.scopedRow(executor, queue, input, input.attemptRef), actor);
+  }
+
+  /** One current automatic request, selected by the exact authorized input roster. */
+  readExecutionSummaryForBrowser(scope: MatterAttemptScope, actor: CanonicalHostActor): Promise<MatterExecutionSummary> {
+    return this.authorized(scope, async (executor, queue) => {
+      const firstInputs = (await executor.authorizeRuntimeInputs(scope)).currentInputs;
+      const [matter] = await executor.database.select({ currentMatterRevisionId: engineeringMatter.currentMatterRevisionId })
+        .from(engineeringMatter)
+        .where(and(eq(engineeringMatter.tenantId, scope.tenantId), eq(engineeringMatter.matterId, scope.matterId))).limit(1);
+      if (!matter) throw failure('ENGINEERING_MATTER_NOT_FOUND', 404);
+      const current = await executor.loadCurrent(scope);
+      const workingRevision = current?.workingRevision ?? 0;
+      const key = `matter-auto:${scope.matterId}:${canonicalSha256({
+        matterRevisionId: matter.currentMatterRevisionId, inputs: firstInputs,
+      })}`;
+      const [selected] = await executor.database.select({ ref: actionAttempt.operationRef })
+        .from(actionAttempt).where(and(
+          eq(actionAttempt.tenantId, scope.tenantId),
+          eq(actionAttempt.actorUserId, scope.actorUserId),
+          eq(actionAttempt.matterId, scope.matterId),
+          eq(actionAttempt.subjectKind, 'ENGINEERING_MATTER'),
+          eq(actionAttempt.actionType, 'OPENCLAW_MATTER_ASSESSMENT'),
+          eq(actionAttempt.requestOrigin, ACTION_ATTEMPT_REQUEST_ORIGIN),
+          eq(actionAttempt.idempotencyKey, key),
+        )).limit(1);
+      const row = selected?.ref ? await this.scopedRow(executor, queue, scope, selected.ref) : null;
+      const [confirmedMatter] = await executor.database.select({ currentMatterRevisionId: engineeringMatter.currentMatterRevisionId })
+        .from(engineeringMatter)
+        .where(and(eq(engineeringMatter.tenantId, scope.tenantId), eq(engineeringMatter.matterId, scope.matterId))).limit(1);
+      const confirmedCurrent = await executor.loadCurrent(scope);
+      const confirmedInputs = (await executor.authorizeRuntimeInputs(scope)).currentInputs;
+      if (!confirmedMatter || confirmedMatter.currentMatterRevisionId !== matter.currentMatterRevisionId ||
+        (confirmedCurrent?.matterWorkRevisionId ?? null) !== (current?.matterWorkRevisionId ?? null) ||
+        canonicalJson(confirmedInputs) !== canonicalJson(firstInputs))
+        throw failure('MATTER_CURRENT_WORK_READ_CONFLICT', 409);
+      const relevant = row && row.matterRevisionId === matter.currentMatterRevisionId &&
+        (row.baseRevision === workingRevision || current?.source?.actionAttemptId === row.attemptId);
+      const events: Array<{ kind?: unknown }> = relevant ? JSON.parse(row.reviewActivityJson ?? '[]') : [];
+      const has = (kind: string) => events.some(event => event?.kind === kind);
+      return {
+        matterId: scope.matterId,
+        matterRevisionId: matter.currentMatterRevisionId,
+        workingRevision,
+        observedAt: new Date().toISOString(),
+        state: relevant ? executionSummaryState(row.status) : 'IDLE',
+        attemptRef: relevant ? row.operationRef : null,
+        startedAt: relevant && row.startedAt ? new Date(row.startedAt).toISOString() : null,
+        completedAt: relevant && row.completedAt ? new Date(row.completedAt).toISOString() : null,
+        updatedAt: relevant ? new Date(row.updatedAt).toISOString() : null,
+        currentWorkSavedByAttempt: Boolean(relevant && current?.source?.actionAttemptId === row.attemptId),
+        inputs: {
+          workItems: firstInputs.filter(input => input.workItemId !== null).length,
+          documents: firstInputs.filter(input => input.workItemId === null).length,
+          pending: current ? engineeringMatterPendingInputs(current.state, firstInputs).length : firstInputs.length,
+        },
+        tools: {
+          registeredSourcesRead: has('MATTER_REGISTERED_SOURCES_READ'),
+          sourcePagesRead: has('MATTER_SOURCE_PAGES_READ'),
+          originalRead: has('MATTER_ORIGINAL_READ'),
+          candidateSaved: has('MATTER_JOBAID_WORK_SAVED'),
+        },
+      };
+    }, actor);
   }
 
   /** Read-only browser projection, under the same native identity and frozen-source authorization as STATUS. */
@@ -1736,6 +1800,17 @@ export class MatterActionAttemptService {
       return this.working.withTransaction(run);
     }
     return this.working.withActorTransaction(scope.actorUserId, run);
+  }
+}
+
+function executionSummaryState(status: string): MatterExecutionSummary['state'] {
+  switch (status) {
+    case 'QUEUED': case 'RUNNING': case 'RETRY_SCHEDULED': case 'COMMITTING':
+    case 'SUCCEEDED': case 'FAILED': case 'TIMED_OUT': case 'CANCELLED':
+    case 'WAITING_INPUT': case 'CONFLICT': case 'OBSOLETE':
+      return status;
+    default:
+      throw failure('ACTION_ATTEMPT_STATUS_INVALID');
   }
 }
 

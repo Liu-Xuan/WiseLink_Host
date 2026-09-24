@@ -184,6 +184,51 @@ function fixture() {
 }
 
 describe('Matter activity authorized service', () => {
+  it.each([
+    { baseRevision: 0, currentRevision: 0, status: 'RUNNING', expected: 'RUNNING', expectedRef: 'aq' },
+    { baseRevision: 5, currentRevision: 0, status: 'RUNNING', expected: 'IDLE', expectedRef: null },
+    { baseRevision: 0, currentRevision: 1, status: 'FAILED', expected: 'FAILED', expectedRef: 'aq' },
+  ])('shows only a current-basis automatic attempt (%s)', async ({ baseRevision, currentRevision, status, expected, expectedRef }) => {
+    const selections: Array<unknown[]> = [
+      [{ currentMatterRevisionId: 'mr' }], [{ ref: 'aq' }], [{ currentMatterRevisionId: 'mr' }],
+    ];
+    const select = jest.fn(() => ({ from: () => ({ where: () => ({
+      limit: async () => selections.shift() ?? [],
+    }) }) }));
+    const executor = {
+      database: { select },
+      authorizeRuntimeInputs: jest.fn().mockResolvedValue({ currentInputs: [] }),
+      loadCurrent: jest.fn().mockResolvedValue(currentRevision ? {
+        matterWorkRevisionId: 'current-work', workingRevision: currentRevision,
+        source: { kind: 'ENGINEERING_MATTER', actionAttemptId: 'att' },
+        state: { coverage: [] },
+      } : null),
+    };
+    const working = {
+      withTransaction: async <T>(fn: (value: typeof executor) => Promise<T>) => fn(executor),
+      authorizeAttemptWorkingBasis: jest.fn(),
+    };
+    const service = new MatterActionAttemptService(
+      working as unknown as EngineeringMatterWorkingRepository,
+      null as unknown as CanonicalModelSettingsService,
+    );
+    const stored = row();
+    const { inputHash: _oldHash, ...taskFields } = JSON.parse(stored.taskEnvelopeJson!);
+    const task = sealMatterTaskEnvelope({ ...taskFields, baseRevision,
+      workingBasis: { ...taskFields.workingBasis,
+        priorWorkRef: baseRevision ? 'prior-work' : null } });
+    mockRead.mockReset().mockResolvedValue({ ...stored, baseRevision, status,
+      taskEnvelopeJson: canonicalJson(task), taskInputHash: task.inputHash });
+    const summary = await service.readExecutionSummaryForBrowser(scope, actor);
+    expect(summary).toMatchObject({
+      matterId: 'm', matterRevisionId: 'mr', workingRevision: currentRevision,
+      state: expected, attemptRef: expectedRef,
+      inputs: { workItems: 0, documents: 0, pending: 0 },
+    });
+    expect(summary.tools.candidateSaved).toBe(baseRevision === 0);
+    expect(summary.currentWorkSavedByAttempt).toBe(currentRevision > 0 && expectedRef !== null);
+    expect(JSON.stringify(summary)).not.toContain('PRIVATE');
+  });
   it('discovers active independently from saved work and never returns row internals', async () => {
     const f = fixture();
     const page = await f.service.readActivityForBrowser(scope, {}, actor);

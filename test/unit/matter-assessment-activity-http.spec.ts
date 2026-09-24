@@ -13,6 +13,7 @@ describe('Matter activity local HTTP ingress', () => {
   let origin: string;
   const readWorking = jest.fn();
   const readActivityForBrowser = jest.fn();
+  const readExecutionSummaryForBrowser = jest.fn();
   const authorizeOpenClawMatterRequest = jest.fn();
   const previousLocal = process.env.MIAODA_LOCAL_DEV;
 
@@ -24,7 +25,7 @@ describe('Matter activity local HTTP ingress', () => {
         { provide: EngineeringMatterWorkingService, useValue: { readWorking } },
         {
           provide: MatterActionAttemptService,
-          useValue: { readActivityForBrowser },
+          useValue: { readActivityForBrowser, readExecutionSummaryForBrowser },
         },
         {
           provide: CANONICAL_SERVICE_SCOPE_AUTHORIZATION,
@@ -59,4 +60,14 @@ describe('Matter activity local HTTP ingress', () => {
       expect(authorizeOpenClawMatterRequest).not.toHaveBeenCalled();
     },
   );
+
+  it('denies summary reads before any business access', async () => {
+    const response = await fetch(`${origin}/api/canonical-host/engineering-matters/local-test/execution-summary`);
+    expect(response.status).toBe(503);
+    expect(await response.json()).toMatchObject({
+      error: { code: 'CANONICAL_IDENTITY_HANDOFF_UNAVAILABLE' },
+    });
+    expect(readWorking).not.toHaveBeenCalled();
+    expect(readExecutionSummaryForBrowser).not.toHaveBeenCalled();
+  });
 });

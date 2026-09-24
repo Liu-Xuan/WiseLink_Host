@@ -6,6 +6,7 @@ import {
   useSearchParams,
 } from 'react-router-dom';
 import { ArrowLeft, RefreshCw } from 'lucide-react';
+import { useQueryClient } from '@tanstack/react-query';
 
 import { useCurrentUserSession } from '@client/src/app/providers/CurrentUserSessionProvider';
 import { useCurrentObjectContext } from '@client/src/app/providers/CurrentObjectContextProvider';
@@ -27,6 +28,7 @@ import ClaimEvidenceDialog from './ClaimEvidenceDialog';
 import MatterMembers from './MatterMembers';
 import MatterMaterials from './MatterMaterials';
 import MatterWorkingDetails from './MatterWorkingDetails';
+import MatterExecutionSummary from './MatterExecutionSummary';
 import MatterProblemWork from './MatterProblemWork';
 import OverviewSourceWork from './OverviewSourceWork';
 import EngineeringIssueSearch from './EngineeringIssueSearch';
@@ -48,6 +50,7 @@ import {
 } from './reading-location';
 import { matterReadingReturnParams } from './reading-return';
 import useEngineeringMatter, {
+  ENGINEERING_MATTER_QUERY_ROOT,
   useEngineeringMatterWorkingRevision,
 } from './useEngineeringMatter';
 import useReadingLocation from './useReadingLocation';
@@ -84,6 +87,7 @@ const MatterWorkspace: FC<MatterWorkspaceProps> = ({
   authenticationRequired,
 }) => {
   const navigate = useNavigate();
+  const queryClient = useQueryClient();
   const [searchParams, setSearchParams] = useSearchParams();
   const { publishCurrentObject } = useCurrentObjectContext();
   const {
@@ -132,7 +136,8 @@ const MatterWorkspace: FC<MatterWorkspaceProps> = ({
   const requestedRevisionError = requestedRevisionRead.error;
   const refresh = useCallback(async (): Promise<void> => {
     await Promise.all([workspaceRefresh(), requestedRevisionRead.refresh()]);
-  }, [requestedRevisionRead.refresh, workspaceRefresh]);
+    await queryClient.invalidateQueries({ queryKey: [...ENGINEERING_MATTER_QUERY_ROOT, 'execution-summary'] });
+  }, [queryClient, requestedRevisionRead.refresh, workspaceRefresh]);
   const result: AssessmentReadingResult | null =
     readableMatterOverview(displayedRevision);
   const overviewStatus = displayedRevision?.state.problemWork?.overviewStatus;
@@ -302,6 +307,12 @@ const MatterWorkspace: FC<MatterWorkspaceProps> = ({
           {navigationError}
         </p>
       ) : null}
+      {!requestedWorkRef && !workspaceRevoked && !loading && !error ? (
+        <MatterExecutionSummary matterId={matterId}
+          matterRevisionId={data.working.currentMatterRevisionId}
+          workingRevision={data.working.currentWorkingRevision}
+          sessionGeneration={sessionGeneration} />
+      ) : null}
       {requestedWorkRef &&
       !requestedRevisionRead.withheld &&
       !workspaceRevoked ? (
@@ -452,10 +463,8 @@ const MatterWorkspace: FC<MatterWorkspaceProps> = ({
                 )}
               </section>
             ) : (
-              <MatterWorkingDetails
-                working={data.working}
-                members={data.matter.catalog.entries}
-              />
+              <MatterWorkingDetails working={data.working}
+                members={data.matter.catalog.entries} />
             )}
           </aside>
         </div>
