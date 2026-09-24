@@ -1,3 +1,4 @@
+import { Logger } from '@nestjs/common';
 import { EngineeringIssueSearchService } from '../../server/modules/canonical-host/engineering-issue-search.service';
 import type { CanonicalHostActor } from '../../server/modules/canonical-host/canonical-host.types';
 import { jobAidReadingFixture } from './semantic-reading-ui.fixtures';
@@ -600,5 +601,72 @@ describe('saved knowledge catalogue', () => {
       return h.saved;
     });
     await expect(h.service.catalogue('', 'ALL', undefined, actor)).rejects.toThrow('CORRUPT_SAVED_WORK');
+  });
+});
+
+
+describe('catalogue window timing', () => {
+  const previous = process.env.WISELINK_CATALOGUE_TIMELINE;
+  afterEach(() => {
+    jest.restoreAllMocks();
+    if (previous === undefined) delete process.env.WISELINK_CATALOGUE_TIMELINE;
+    else process.env.WISELINK_CATALOGUE_TIMELINE = previous;
+  });
+
+  it('reports a single failure summary while preserving the database error object', async () => {
+    process.env.WISELINK_CATALOGUE_TIMELINE = '1';
+    const log = jest.spyOn(Logger.prototype, 'log').mockImplementation(() => undefined);
+    const h = setup();
+    const failure = new Error('private failure');
+    h.db.execute.mockRejectedValue(failure);
+    await expect(h.service.catalogue('', 'ALL', undefined, actor)).rejects.toBe(failure);
+    expect(log).toHaveBeenCalledTimes(1);
+    expect(log.mock.calls[0][0]).toMatchObject({ status: 'error', visibleEntries: 0,
+      phases: { candidate_query: { count: 1 } } });
+    expect(JSON.stringify(log.mock.calls)).not.toContain(failure.message);
+  });
+
+  it('reports five actual candidate queries on scan-limit failure', async () => {
+    const log = jest.spyOn(Logger.prototype, 'log').mockImplementation(() => undefined);
+    const h = setup();
+    h.db.execute.mockResolvedValue(Array.from({ length: 40 }, (_, n) =>
+      ({ ...h.identity, workRef: `revoked-${n}`, current: false })));
+    await expect(h.service.catalogue('', 'ALL', undefined, actor)).rejects.toThrow('ENGINEERING_KNOWLEDGE_SCAN_LIMIT');
+    expect(h.db.execute).toHaveBeenCalledTimes(5);
+    expect(log).toHaveBeenCalledTimes(1);
+    expect(log.mock.calls[0][0]).toMatchObject({ status: 'error', candidateBatches: 5 });
+  });
+
+  it('retains success and original failure when the telemetry sink throws', async () => {
+    jest.spyOn(Logger.prototype, 'log').mockImplementation(() => { throw new Error('sink failed'); });
+    const warn = jest.spyOn(Logger.prototype, 'warn').mockImplementation(() => undefined);
+    const h = setup();
+    await expect(h.service.catalogue('', 'ALL', undefined, actor)).resolves.toHaveProperty('entries');
+    const failure = new Error('actual read failure');
+    h.db.execute.mockRejectedValue(failure);
+    await expect(h.service.catalogue('', 'ALL', undefined, actor)).rejects.toBe(failure);
+    expect(warn).toHaveBeenCalledTimes(2);
+  });
+
+  it('links duplicate consumers to one actual read and does not record the object identity', async () => {
+    process.env.WISELINK_CATALOGUE_TIMELINE = '1';
+    const log = jest.spyOn(Logger.prototype, 'log').mockImplementation(() => undefined);
+    const h = setup();
+    h.db.execute.mockResolvedValue([h.identity, h.identity]);
+    await h.service.catalogue('', 'ALL', undefined, actor);
+    expect(h.jobAid.readBrowserRevision).toHaveBeenCalledTimes(1);
+    expect(log).toHaveBeenCalledTimes(1);
+    const summary = log.mock.calls[0][0] as unknown as {
+      phases: Record<string, { count: number }>;
+      timeline: { names: string[]; scopes: Array<{ rootSlot?: number; readInstance?: number }>;
+        events: Array<[number, number, number, number, string]> };
+    };
+    expect(summary.phases.work_item_exact_read.count).toBe(1);
+    const reuse = summary.timeline.events.find(event => summary.timeline.names[event[0]] === 'root_reuse')!;
+    const actual = summary.timeline.events.find(event => summary.timeline.names[event[0]] === 'work_item_exact_read')!;
+    expect(summary.timeline.scopes[reuse[1]]).toMatchObject({ rootSlot: 1, readInstance: 0 });
+    expect(summary.timeline.scopes[actual[1]]).toMatchObject({ rootSlot: 0, readInstance: 0 });
+    expect(JSON.stringify(summary)).not.toContain(h.identity.subjectId);
+    expect(JSON.stringify(summary)).not.toContain(h.identity.workRef);
   });
 });

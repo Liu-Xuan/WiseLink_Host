@@ -7,6 +7,10 @@ import type {
   EngineeringMatterRepository,
   EngineeringMatterSnapshot,
 } from '../../server/modules/canonical-host/engineering-matter.repository';
+import {
+  EngineeringReadPhaseObservation,
+  type EngineeringReadScope,
+} from '../../server/modules/canonical-host/engineering-read-phase-observation';
 
 const snapshot: EngineeringMatterSnapshot = {
   matterId: 'MAT-1',
@@ -233,6 +237,9 @@ describe('EngineeringMatterWorkingService', () => {
         state: { substantiveInputs: savedIds.map(workItemId => ({ workItemId })),
           coverage: [{ binding: { workItemId: 'WI-A' } }] } };
       const working = { readByRef: jest.fn().mockResolvedValue(revision) };
+      const observation = new EngineeringReadPhaseObservation({ timeline: true }, undefined, {
+        windowIndex: 5, rootSlot: 1, depth: 2,
+      });
       const objectAccess = { freshRead: jest.fn(async ({ accessRoot }) => {
         active++; peak = Math.max(peak, active);
         await new Promise(resolve => setTimeout(resolve, 20));
@@ -242,14 +249,20 @@ describe('EngineeringMatterWorkingService', () => {
       }) };
       const service = serviceWith({ working, objectAccess });
       const start = Date.now();
-      const pending = service.readWorkingRevision('MAT-1', 'MWREV-OLD', actor());
+      const pending = service.readWorkingRevision('MAT-1', 'MWREV-OLD', actor(), observation);
       await jest.runAllTimersAsync();
       expect(await pending).toBe(revision);
       expect(Date.now() - start).toBe(80); // current group + three saved groups
       expect(peak).toBe(4);
       expect(active).toBe(0);
-      expect(working.readByRef).toHaveBeenCalledWith({ tenantId: 'tenant-A', matterId: 'MAT-1', workRef: 'MWREV-OLD' });
+      expect(working.readByRef.mock.calls[0][0]).toMatchObject({
+        tenantId: 'tenant-A', matterId: 'MAT-1', workRef: 'MWREV-OLD',
+        observation: { context: { attempt: 0, windowIndex: 5, rootSlot: 1, depth: 2 } },
+      });
       expect(objectAccess.freshRead.mock.calls.map(([input]) => input.accessRoot.id)).toEqual(['WI-A', 'WI-B', ...savedIds]);
+      const savedGrantEvents = observationEvents(observation).filter(event => event.phase === 'saved_member_grant');
+      expect([...new Set(savedGrantEvents.map(event => event.scope.memberGroup))]).toEqual([0, 1, 2]);
+      expect(savedGrantEvents.every(event => event.scope.windowIndex === 5 && event.scope.rootSlot === 1 && event.scope.depth === 2)).toBe(true);
       // A new request must recheck every source, even for an identical saved work.
       const second = service.readWorkingRevision('MAT-1', 'MWREV-OLD', actor());
       await jest.runAllTimersAsync(); await second;
@@ -363,12 +376,19 @@ describe('EngineeringMatterWorkingService', () => {
     const working = { readByRef: jest.fn() };
     const service = serviceWith({ working, objectAccess: { freshRead: jest.fn()
       .mockResolvedValue({ allowed: false, code: 'REVOKED', statusCode: 403 }) } });
+    const observation = new EngineeringReadPhaseObservation({ timeline: true }, undefined, {
+      windowIndex: 0, rootSlot: 3,
+    });
     const batch = { read: jest.fn(), skip: jest.fn(), checkSources: jest.fn(), skipSources: jest.fn(),
       findOverview: jest.fn(), skipOverview: jest.fn() };
-    await expect(service.readWorkingRevision('MAT-1', 'MWREV-OLD', actor(), undefined, batch))
+    await expect(service.readWorkingRevision('MAT-1', 'MWREV-OLD', actor(), observation, batch))
       .rejects.toMatchObject({ statusCode: 403 });
     expect(batch.skip).toHaveBeenCalledTimes(1);
     expect(working.readByRef).not.toHaveBeenCalled();
+    expect(observationEvents(observation)).toContainEqual(expect.objectContaining({
+      phase: 'root_all_skip', outcome: 'skip', skipped: 1,
+      scope: expect.objectContaining({ windowIndex: 0, rootSlot: 3, attempt: 0 }),
+    }));
   });
 
   it('does not read a saved body if a current member is denied', async () => {
@@ -400,6 +420,48 @@ describe('EngineeringMatterWorkingService', () => {
     expect(working.readByRef).toHaveBeenCalledTimes(1);
   });
 
+  it('labels current reads and preserves the retry attempt for saved members', async () => {
+    const changed = { ...snapshot, currentMatterRevisionId: 'MATREV-NEXT' };
+    const matters = { loadCurrent: jest.fn().mockResolvedValueOnce(snapshot)
+      .mockResolvedValueOnce(changed).mockResolvedValueOnce(changed).mockResolvedValueOnce(changed) };
+    const revision = { state: { substantiveInputs: [{ workItemId: 'WI-A' }], coverage: [] } };
+    const working = { readByRef: jest.fn().mockResolvedValue(revision), bindOriginalInputs: jest.fn() };
+    const observation = new EngineeringReadPhaseObservation({ timeline: true }, undefined, {
+      windowIndex: 3, rootSlot: 2, depth: 4,
+    });
+    const service = serviceWith({ matters, working });
+
+    await expect(service.readWorkingRevision('MAT-1', 'MWREV-OLD', actor(), observation))
+      .resolves.toBe(revision);
+
+    const events = observationEvents(observation);
+    expect(events.filter(event => event.phase === 'current_snapshot_read')
+      .map(event => event.scope.attempt)).toEqual([0, 1]);
+    expect(events.filter(event => event.phase === 'current_snapshot_confirm')
+      .map(event => event.scope.attempt)).toEqual([0, 1]);
+    expect(events.filter(event => event.phase === 'current_member_grant')
+      .map(event => event.scope.attempt)).toEqual([0, 0, 1, 1]);
+    expect(events.filter(event => event.phase === 'current_member_identity')
+      .map(event => event.scope.attempt)).toEqual([0, 1]);
+    expect(events.find(event => event.phase === 'saved_member_grant')?.scope)
+      .toMatchObject({ attempt: 1, memberGroup: 0, depth: 4, rootSlot: 2 });
+    expect(working.bindOriginalInputs).not.toHaveBeenCalled();
+  });
+
+  it('records a failed current grant and propagates the original error', async () => {
+    const failure = new Error('FRESH_READ_FAILED');
+    const observation = new EngineeringReadPhaseObservation({ timeline: true });
+    const service = serviceWith({ objectAccess: {
+      freshRead: jest.fn().mockRejectedValue(failure),
+    } });
+
+    await expect(service.readWorkingRevision('MAT-1', 'MWREV-OLD', actor(), observation))
+      .rejects.toBe(failure);
+    expect(observationEvents(observation)).toContainEqual(expect.objectContaining({
+      phase: 'current_member_grant', outcome: 'error',
+    }));
+  });
+
   it('still binds current parse state when building a current working basis', async () => {
     const bindOriginalInputs = jest.fn(async (_tenant, inputs) => inputs.map(input => ({ ...input, original: { parseRunId: 'CURRENT-PARSE', parseRevision: 3 } })));
     const service = serviceWith({ working: { loadCurrent: jest.fn().mockResolvedValue(null), bindOriginalInputs } });
@@ -416,6 +478,24 @@ describe('EngineeringMatterWorkingService', () => {
   });
 
 });
+
+function observationEvents(observation: EngineeringReadPhaseObservation): Array<{
+  phase: string;
+  scope: Readonly<EngineeringReadScope>;
+  outcome: string;
+  participants?: number;
+  skipped?: number;
+}> {
+  const timeline = observation.timelineSnapshot();
+  if (!timeline) return [];
+  return timeline.events.map((event: typeof timeline.events[number]) => ({
+    phase: timeline.names[event[0]],
+    scope: timeline.scopes[event[1]],
+    outcome: event[4],
+    ...(event[5] !== undefined ? { participants: event[5] } : {}),
+    ...(event[6] !== undefined ? { skipped: event[6] } : {}),
+  }));
+}
 
 function serviceWith(
   overrides: {

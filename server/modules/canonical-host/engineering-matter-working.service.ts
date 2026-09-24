@@ -13,6 +13,7 @@ import {
   CANONICAL_OBJECT_ACCESS,
   type CanonicalObjectAccessPort,
   type CanonicalObjectAccessGrant,
+  type CanonicalObjectAccessResult,
   type CanonicalWorkItemReadInput,
 } from '../work-item/canonical-object-access.port';
 import { assertSourceIdentity } from '../work-item/document-version-source-identity';
@@ -27,7 +28,10 @@ import {
 import { engineeringMatterPendingInputs } from './engineering-matter-working-state';
 import { materialInputBindings } from './matter-material';
 import { isHostedCanonicalFinalUserActor } from '../work-item/miaoda-hosted-canonical-object-access.adapter';
-import { EngineeringReadPhaseObservation, observeEngineeringRead } from './engineering-read-phase-observation';
+import {
+  EngineeringReadPhaseObservation,
+  observeEngineeringRead,
+} from './engineering-read-phase-observation';
 import {
   EngineeringMatterRepository,
   type EngineeringMatterRevisionLinkSnapshot,
@@ -41,6 +45,7 @@ type TenantScopedWorkItem = NonNullable<
 interface AuthorizedMatter {
   snapshot: EngineeringMatterSnapshot;
   currentInputs: EngineeringMatterWorkingInputBinding[];
+  observation?: EngineeringReadPhaseObservation;
 }
 
 export interface EngineeringMatterWorkingBasis {
@@ -73,7 +78,10 @@ export class EngineeringMatterWorkingService {
     return readModelFromBasis(await this.resolveWorkingBasis(matterId, actor));
   }
 
-  createSavedReadBatch(expected: number, observation: EngineeringReadPhaseObservation): EngineeringMatterSavedRowBatch {
+  createSavedReadBatch(
+    expected: number,
+    observation: EngineeringReadPhaseObservation,
+  ): EngineeringMatterSavedRowBatch {
     return this.working.createSavedRowBatch(expected, observation);
   }
 
@@ -85,23 +93,36 @@ export class EngineeringMatterWorkingService {
     observation?: EngineeringReadPhaseObservation,
     batch?: EngineeringMatterSavedRowBatch,
   ): Promise<EngineeringMatterWorkingRevisionReadModel> {
+    const requestObservation = observation?.scope({ attempt: 0 });
     // The exact saved revision below already owns its original bindings. Keep
     // fresh member/source checks, but do not hydrate current parse/semantic state
     // whose result is not consumed by this read.
+    let authorizationObservation = requestObservation;
     try {
-      await observeEngineeringRead(observation, 'matter_authorize_current', () =>
-        this.authorizedMatter(matterId, actor, 0, false));
+      const authorized = await observeEngineeringRead(
+        requestObservation,
+        'matter_authorize_current',
+        () =>
+          this.authorizedMatter(matterId, actor, 0, false, requestObservation),
+      );
+      authorizationObservation = authorized.observation ?? requestObservation;
     } catch (error) {
+      requestObservation?.mark('root_all_skip', 'skip', { skipped: 1 });
       batch?.skip();
       throw error;
     }
-    const revision = await observeEngineeringRead(observation, 'matter_read_saved', () => this.working.readByRef({
-      tenantId: actor.tenantId,
-      matterId,
-      workRef,
-      observation,
-      ...(batch ? { batch } : {}),
-    }));
+    const revision = await observeEngineeringRead(
+      authorizationObservation,
+      'matter_read_saved',
+      () =>
+        this.working.readByRef({
+          tenantId: actor.tenantId,
+          matterId,
+          workRef,
+          observation: authorizationObservation,
+          ...(batch ? { batch } : {}),
+        }),
+    );
     if (!revision) throw matterNotFound();
     // Historical work can contain a member that is no longer in the current composition.
     const savedMembers = [
@@ -117,9 +138,23 @@ export class EngineeringMatterWorkingService {
     // Bound independent fresh reads within this request. Keep current and removed
     // members checked, and settle the whole group before rejecting so no reads
     // escape the request or overlap a caller's retry after an early rejection.
-    for (let start = 0; start < savedMembers.length; start += 4) {
-      await observeEngineeringRead(observation, 'matter_recheck_saved_members', () =>
-        this.requireInputs(savedMembers.slice(start, start + 4), actor));
+    for (
+      let start = 0, memberGroup = 0;
+      start < savedMembers.length;
+      start += 4, memberGroup += 1
+    ) {
+      const groupObservation = authorizationObservation?.scope({ memberGroup });
+      await observeEngineeringRead(
+        groupObservation,
+        'matter_recheck_saved_members',
+        () =>
+          this.requireInputs(
+            savedMembers.slice(start, start + 4),
+            actor,
+            groupObservation,
+            'saved',
+          ),
+      );
     }
     return revision;
   }
@@ -262,7 +297,11 @@ export class EngineeringMatterWorkingService {
       }
       throw workingReadConflict();
     }
-    return { ...authorized, snapshot: confirmedMatter, working: current };
+    return {
+      snapshot: confirmedMatter,
+      currentInputs: authorized.currentInputs,
+      working: current,
+    };
   }
 
   private async authorizedMatter(
@@ -270,11 +309,18 @@ export class EngineeringMatterWorkingService {
     actor: CanonicalHostActor,
     attempt: number,
     includeOriginalBindings = true,
+    observation?: EngineeringReadPhaseObservation,
   ): Promise<AuthorizedMatter> {
-    const snapshot = await this.matters.loadCurrent({
-      tenantId: actor.tenantId,
-      matterId,
-    });
+    const snapshotObservation = nextReadObservation(observation);
+    const snapshot = await observeEngineeringRead(
+      snapshotObservation,
+      'current_snapshot_read',
+      () =>
+        this.matters.loadCurrent({
+          tenantId: actor.tenantId,
+          matterId,
+        }),
+    );
     if (!snapshot) throw matterNotFound();
     if (
       snapshot.materials?.length &&
@@ -289,12 +335,20 @@ export class EngineeringMatterWorkingService {
         (link: EngineeringMatterRevisionLinkSnapshot) => link.workItemId,
       ),
       actor,
+      observation,
+      'current',
     );
     currentInputs.push(...materialInputBindings(snapshot.materials ?? []));
-    const confirmed = await this.matters.loadCurrent({
-      tenantId: actor.tenantId,
-      matterId,
-    });
+    const confirmationObservation = nextReadObservation(observation);
+    const confirmed = await observeEngineeringRead(
+      confirmationObservation,
+      'current_snapshot_confirm',
+      () =>
+        this.matters.loadCurrent({
+          tenantId: actor.tenantId,
+          matterId,
+        }),
+    );
     if (!confirmed) throw matterNotFound();
     if (
       confirmed.currentMatterRevisionId !== snapshot.currentMatterRevisionId
@@ -305,6 +359,7 @@ export class EngineeringMatterWorkingService {
           actor,
           1,
           includeOriginalBindings,
+          observation?.scope({ attempt: 1 }),
         );
       throw workingReadConflict();
     }
@@ -313,35 +368,69 @@ export class EngineeringMatterWorkingService {
       currentInputs: includeOriginalBindings
         ? await this.working.bindOriginalInputs(actor.tenantId, currentInputs)
         : currentInputs,
+      observation,
     };
   }
 
   private async requireInputs(
     workItemIds: string[],
     actor: CanonicalHostActor,
+    observation?: EngineeringReadPhaseObservation,
+    stage: 'current' | 'saved' = 'current',
   ): Promise<EngineeringMatterWorkingInputBinding[]> {
     if (workItemIds.length === 0) return [];
     if (workItemIds.length === 1)
-      return [await this.requireInput(workItemIds[0], actor)];
+      return [
+        await this.requireInput(workItemIds[0], actor, observation, stage),
+      ];
     const objectAccessActor = actor.objectAccessActor;
     if (!objectAccessActor) throw identityHandoffUnavailable();
     // Each member retains its own fresh decision. The hosted adapter can read
     // up to four owner bindings in one statement; other adapters keep the
     // existing independent reads and all-settled behavior.
-    const accessInputs: CanonicalWorkItemReadInput[] = workItemIds.map(workItemId => ({
-      actor: objectAccessActor,
-      action: 'READ_WORK_ITEM',
-      accessRoot: { kind: 'WORK_ITEM', id: workItemId },
-    }));
-    const decisions = this.objectAccess.freshReadBatch && workItemIds.length <= 4
-      ? await this.objectAccess.freshReadBatch(accessInputs)
-      : await Promise.allSettled(accessInputs.map(input => this.objectAccess.freshRead(input)));
+    const accessInputs: CanonicalWorkItemReadInput[] = workItemIds.map(
+      (workItemId) => ({
+        actor: objectAccessActor,
+        action: 'READ_WORK_ITEM',
+        accessRoot: { kind: 'WORK_ITEM', id: workItemId },
+      }),
+    );
+    const grantPhase = `${stage}_member_grant`;
+    const freshReadBatch = this.objectAccess.freshReadBatch;
+    const grantObservation =
+      freshReadBatch && workItemIds.length <= 4
+        ? nextReadObservation(observation)
+        : undefined;
+    const decisions: PromiseSettledResult<CanonicalObjectAccessResult>[] =
+      freshReadBatch && workItemIds.length <= 4
+        ? await observeEngineeringRead(grantObservation, grantPhase, () =>
+            freshReadBatch.call(this.objectAccess, accessInputs),
+          )
+        : await Promise.allSettled(
+            accessInputs.map((input) => {
+              const itemObservation = nextReadObservation(observation);
+              return observeEngineeringRead(itemObservation, grantPhase, () =>
+                this.objectAccess.freshRead(input),
+              );
+            }),
+          );
+    observation?.mark(`${stage}_member_grant_ready`, 'ok', {
+      participants: workItemIds.length,
+    });
     if (decisions.length !== workItemIds.length)
       throw new Error('WORK_ITEM_AUTHORIZATION_BATCH_INCOMPLETE');
     const grants: CanonicalObjectAccessGrant[] = [];
     for (const decision of decisions) {
-      if (decision.status === 'rejected') throw decision.reason;
+      if (decision.status === 'rejected') {
+        observation?.mark(`${stage}_member_identity`, 'skip', {
+          skipped: workItemIds.length,
+        });
+        throw decision.reason;
+      }
       if (decision.value.allowed === false) {
+        observation?.mark(`${stage}_member_identity`, 'skip', {
+          skipped: workItemIds.length,
+        });
         throw Object.assign(new Error('WorkItem is not available.'), {
           code: decision.value.code,
           statusCode: decision.value.statusCode,
@@ -349,43 +438,77 @@ export class EngineeringMatterWorkingService {
       }
       grants.push(decision.value);
     }
-    const scopedById = await this.workItems.loadTenantScopedMemberIdentities(
-      grants.map((grant) => ({
-        workItemId: grant.workItemId,
-        documentVersionId: grant.documentVersionId,
-      })),
-      actor.tenantId,
+    const identityObservation = nextReadObservation(
+      observation,
+      grantObservation?.context.readInstance,
     );
-    return grants.map((grant, index) =>
+    identityObservation?.mark(`${stage}_member_identity_dispatch`, 'ok', {
+      participants: grants.length,
+    });
+    const scopedById = await observeEngineeringRead(
+      identityObservation,
+      `${stage}_member_identity`,
+      () =>
+        this.workItems.loadTenantScopedMemberIdentities(
+          grants.map((grant) => ({
+            workItemId: grant.workItemId,
+            documentVersionId: grant.documentVersionId,
+          })),
+          actor.tenantId,
+        ),
+    );
+    const bindings = grants.map((grant, index) =>
       this.validateInput(
         workItemIds[index],
         grant,
         scopedById.get(grant.workItemId),
       ),
     );
+    identityObservation?.mark(`${stage}_member_identity_distribution`, 'ok', {
+      participants: bindings.length,
+    });
+    return bindings;
   }
 
   private async requireInput(
     workItemId: string,
     actor: CanonicalHostActor,
+    observation?: EngineeringReadPhaseObservation,
+    stage: 'current' | 'saved' = 'current',
   ): Promise<EngineeringMatterWorkingInputBinding> {
     if (!actor.objectAccessActor) throw identityHandoffUnavailable();
-    const access = await this.objectAccess.freshRead({
-      actor: actor.objectAccessActor,
-      action: 'READ_WORK_ITEM',
-      accessRoot: { kind: 'WORK_ITEM', id: workItemId },
-    });
+    const grantObservation = nextReadObservation(observation);
+    const access = await observeEngineeringRead(
+      grantObservation,
+      `${stage}_member_grant`,
+      () =>
+        this.objectAccess.freshRead({
+          actor: actor.objectAccessActor!,
+          action: 'READ_WORK_ITEM',
+          accessRoot: { kind: 'WORK_ITEM', id: workItemId },
+        }),
+    );
     if (access.allowed === false) {
+      observation?.mark(`${stage}_member_identity`, 'skip', { skipped: 1 });
       throw Object.assign(new Error('WorkItem is not available.'), {
         code: access.code,
         statusCode: access.statusCode,
       });
     }
     // Fresh access binds the source before the tenant/source composite read.
-    const scoped = await this.workItems.loadTenantScopedMemberIdentity(
-      access.workItemId,
-      actor.tenantId,
-      access.documentVersionId,
+    const identityObservation = nextReadObservation(
+      observation,
+      grantObservation?.context.readInstance,
+    );
+    const scoped = await observeEngineeringRead(
+      identityObservation,
+      `${stage}_member_identity`,
+      () =>
+        this.workItems.loadTenantScopedMemberIdentity(
+          access.workItemId,
+          actor.tenantId,
+          access.documentVersionId,
+        ),
     );
     return this.validateInput(workItemId, access, scoped);
   }
@@ -424,6 +547,19 @@ export class EngineeringMatterWorkingService {
     }
     return inputBinding(scoped);
   }
+}
+
+function nextReadObservation(
+  observation?: EngineeringReadPhaseObservation,
+  parentReadInstance?: number,
+): EngineeringReadPhaseObservation | undefined {
+  if (!observation) return undefined;
+  const inheritedParent = observation.context.readInstance;
+  const parent = parentReadInstance ?? inheritedParent;
+  return observation.scope({
+    readInstance: observation.nextReadInstance(),
+    ...(parent !== undefined ? { parentReadInstance: parent } : {}),
+  });
 }
 
 function inputBinding(

@@ -1,3 +1,4 @@
+import { EngineeringReadPhaseObservation } from '../../server/modules/canonical-host/engineering-read-phase-observation';
 import { PgDialect } from 'drizzle-orm/pg-core';
 import { engineeringMatterWorkRevision } from '../../server/database/schema';
 import { EngineeringMatterWorkingRepository } from '../../server/modules/canonical-host/engineering-matter-working.repository';
@@ -176,5 +177,106 @@ describe('catalogue saved row batch', () => {
     expect(results[1]).toMatchObject({ status: 'rejected', reason: { code: 'ENGINEERING_MATTER_WORKING_COMMAND_JSON_INVALID' } });
     expect(new PgDialect().sqlToQuery(h.db.execute.mock.calls[0][0]).sql)
       .toContain('engineering_matter_work_item_owned_by_actor');
+  });
+});
+
+
+describe('batch timeline preserves settlement', () => {
+  it('records full skips without issuing phantom queries', () => {
+    const h = harness([]);
+    const observation = new EngineeringReadPhaseObservation({ timeline: true }).scope({ windowIndex: 2 });
+    const batch = h.repository.createSavedRowBatch(2, observation);
+    batch.skip();
+    batch.skip();
+    expect(h.db.select).not.toHaveBeenCalled();
+    expect(h.db.execute).not.toHaveBeenCalled();
+    const timeline = observation.timelineSnapshot()!;
+    const ready = timeline.events.filter(event => timeline.names[event[0]].endsWith('_batch_ready'));
+    expect(ready).toHaveLength(3);
+    expect(ready.every(event => event[5] === 0 && event[6] === 2)).toBe(true);
+    expect(timeline.scopes).toEqual([{ windowIndex: 2 }]);
+    expect(Object.keys(observation.snapshot())).toEqual([]);
+  });
+
+  it('records one real query and distribution after a partial skip, preserving the original error', async () => {
+    const h = harness([]);
+    const failure = new Error('original SQL error');
+    h.where.mockRejectedValue(failure);
+    const observation = new EngineeringReadPhaseObservation({ timeline: true }).scope({ windowIndex: 0 });
+    const batch = h.repository.createSavedRowBatch(2, observation);
+    const first = batch.read(a);
+    expect(h.db.select).not.toHaveBeenCalled();
+    batch.skip();
+    await expect(first).rejects.toBe(failure);
+    expect(h.db.select).toHaveBeenCalledTimes(1);
+    const timeline = observation.timelineSnapshot()!;
+    const ready = timeline.events.find(event => timeline.names[event[0]] === 'saved_row_batch_ready')!;
+    const query = timeline.events.find(event => timeline.names[event[0]] === 'saved_row_batch_query')!;
+    expect(ready.slice(5)).toEqual([1, 1]);
+    expect(query[2]).toBeGreaterThanOrEqual(ready[3]);
+    expect(query[4]).toBe('error');
+    expect(observation.snapshot().saved_row_batch_distribution.count).toBe(1);
+    expect(JSON.stringify(timeline)).not.toContain(failure.message);
+  });
+});
+
+function noticeHarness() {
+  const command = JSON.stringify({ requestId: 'REQ', expectedWorkingRevision: 0,
+    basedOnMatterRevisionId: 'BASIS', updateKind: 'INITIAL_SYNTHESIS', changeSummary: 'saved',
+    nextFocus: null, claimDelta: null, openQuestionDelta: null, reviewConditionDelta: null,
+    nextSubstantiveResult: null, substantiveInputs: [], coverageUpdates: [] });
+  const row = { tenantId: a.tenantId, matterId: a.matterId, matterWorkRevisionId: a.workRef,
+    workingRevision: 1, requestId: 'REQ', createdByUserId: 'actor-A', createdAt: new Date(),
+    commandJson: command, stateJson: JSON.stringify({ schemaVersion: 'wiselink.3_1.engineering_matter_working_state.v1',
+      focus: { question: 'Check', targetRefs: [] }, substantiveResult: null,
+      openQuestions: [], reviewConditions: [], substantiveInputs: [], coverage: [] }),
+    basedOnMatterRevisionId: 'BASIS', updateKind: 'INITIAL_SYNTHESIS', changeSummary: 'saved',
+    substantiveResultRef: null, substantiveResultRevision: null, actionAttemptId: null, reviewTurnId: null };
+  const ranked = { attemptId: engineeringMatterWorkRevision.actionAttemptId,
+    workRef: engineeringMatterWorkRevision.matterWorkRevisionId, workingRevision: engineeringMatterWorkRevision.workingRevision,
+    requestId: engineeringMatterWorkRevision.requestId, saveRank: engineeringMatterWorkRevision.workingRevision };
+  const builder = { from: jest.fn(), where: jest.fn(), as: jest.fn().mockReturnValue(ranked),
+    orderBy: jest.fn().mockResolvedValue([]) };
+  builder.from.mockReturnValue(builder);
+  builder.where.mockReturnValue(builder);
+  const db = { select: jest.fn().mockReturnValue(builder), execute: jest.fn().mockResolvedValue([]) };
+  const batch = { read: jest.fn().mockResolvedValue(row), skip: jest.fn(),
+    checkSources: jest.fn().mockResolvedValue(undefined), skipSources: jest.fn(),
+    findOverview: jest.fn(), skipOverview: jest.fn() };
+  const repository = new EngineeringMatterWorkingRepository(db as never, {} as never, {} as never, {} as never);
+  const observation = new EngineeringReadPhaseObservation({ timeline: true }).scope({ windowIndex: 0, rootSlot: 0, readInstance: 0 });
+  return { repository, observation, batch, db, builder };
+}
+
+describe('notice timings preserve read outcomes', () => {
+  it('keeps an empty notice result readable and does not invent a saves query', async () => {
+    const h = noticeHarness();
+    await expect(h.repository.readByRef({ ...a, batch: h.batch, observation: h.observation }))
+      .resolves.toMatchObject({ matterWorkRevisionId: a.workRef });
+    expect(h.observation.snapshot().notice_attempts_query.count).toBe(1);
+    expect(h.observation.snapshot().notice_projection.count).toBe(1);
+    expect(h.observation.snapshot()).not.toHaveProperty('notice_saves_query');
+    expect(h.builder.orderBy).not.toHaveBeenCalled();
+  });
+
+  it('records a failed notice query without replacing the original infrastructure error', async () => {
+    const h = noticeHarness();
+    const failure = new Error('notice query failed');
+    h.db.execute.mockRejectedValue(failure);
+    await expect(h.repository.readByRef({ ...a, batch: h.batch, observation: h.observation })).rejects.toBe(failure);
+    const timeline = h.observation.timelineSnapshot()!;
+    expect(timeline.events.find(event => timeline.names[event[0]] === 'notice_attempts_query')?.[4]).toBe('error');
+    expect(h.observation.snapshot()).not.toHaveProperty('notice_projection');
+  });
+
+  it('continues to reject malformed notice data after its saves query', async () => {
+    const h = noticeHarness();
+    h.db.execute.mockResolvedValue([{ id: 'ATTEMPT', attemptRef: null, status: 'FAILED',
+      isCorrection: false, isOverview: true, overviewPurpose: { expectedWorkRef: a.workRef, correctionReason: 'review' } }]);
+    await expect(h.repository.readByRef({ ...a, batch: h.batch, observation: h.observation }))
+      .rejects.toThrow('ENGINEERING_OVERVIEW_CORRECTION_NOTICE_INVALID');
+    expect(h.observation.snapshot().notice_saves_query.count).toBe(1);
+    const timeline = h.observation.timelineSnapshot()!;
+    expect(timeline.events.find(event => timeline.names[event[0]] === 'notice_projection')?.[4]).toBe('error');
   });
 });

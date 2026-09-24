@@ -313,6 +313,7 @@ export class EngineeringMatterWorkingRepository {
     const dispatch = () => {
       if (dispatched || arrived !== expected) return;
       dispatched = true;
+      observation?.mark('saved_row_batch_ready', 'ok', { participants: pending.length, skipped: arrived - pending.length });
       if (!pending.length) return;
       const unique = [...new Map(pending.map(item => [savedRowKey(item.key), item.key])).values()];
       void observeEngineeringRead(observation, 'saved_row_batch_query', () => this.db
@@ -323,13 +324,20 @@ export class EngineeringMatterWorkingRepository {
           eq(engineeringMatterWorkRevision.matterId, key.matterId),
           eq(engineeringMatterWorkRevision.matterWorkRevisionId, key.workRef),
         ))))).then(rows => {
+          observeEngineeringReadSync(observation, 'saved_row_batch_distribution', () => {
           const byKey = new Map(rows.map(row => [savedRowKey({ tenantId: row.tenantId,
             matterId: row.matterId, workRef: row.matterWorkRevisionId }), row]));
           pending.forEach(item => item.resolve(byKey.get(savedRowKey(item.key)) ?? null));
-        }).catch(error => pending.forEach(item => item.reject(error)));
+
+          });
+        }).catch(error => {
+          observation?.mark('saved_row_batch_rejected', 'error');
+          observeEngineeringReadSync(observation, 'saved_row_batch_distribution', () => pending.forEach(item => item.reject(error)));
+        });
     };
     const arrive = () => {
       if (dispatched || ++arrived > expected) throw new Error('MATTER_SAVED_ROW_BATCH_OVERFLOW');
+      observation?.mark('saved_row_batch_arrival', 'ok', { participants: pending.length, skipped: arrived - pending.length });
       dispatch();
     };
     // A root that is denied, missing, or malformed releases its source slot.
@@ -337,6 +345,7 @@ export class EngineeringMatterWorkingRepository {
     const dispatchSources = () => {
       if (sourcesDispatched || sourceArrived !== expected) return;
       sourcesDispatched = true;
+      observation?.mark('saved_sources_batch_ready', 'ok', { participants: sources.length, skipped: sourceArrived - sources.length });
       if (!sources.length) return;
       const roots = sources.map((source, index) => ({ index, tenantId: source.tenantId,
         workItemIds: source.workItemIds, documentVersionIds: source.documentVersionIds }));
@@ -351,20 +360,28 @@ export class EngineeringMatterWorkingRepository {
               (root.value ->> 'tenantId')::varchar, d.id::varchar) IS NOT TRUE) AS "allowed"
         FROM jsonb_array_elements(${JSON.stringify(roots)}::jsonb) AS root(value)
       `)).then(rows => {
+          observeEngineeringReadSync(observation, 'saved_sources_batch_distribution', () => {
         const byIndex = new Map(rows.map(row => [row.index, row.allowed]));
         sources.forEach((source, index) => {
           if (byIndex.get(index) !== true) source.reject(runtimeAuthorizationUnavailable());
           else source.resolve();
         });
-      }).catch(error => sources.forEach(source => source.reject(error)));
+
+          });
+      }).catch(error => {
+          observation?.mark('saved_sources_batch_rejected', 'error');
+          observeEngineeringReadSync(observation, 'saved_sources_batch_distribution', () => sources.forEach(source => source.reject(error)));
+        });
     };
     const arriveSource = () => {
       if (sourcesDispatched || ++sourceArrived > expected) throw new Error('MATTER_SOURCE_BATCH_OVERFLOW');
+      observation?.mark('saved_sources_batch_arrival', 'ok', { participants: sources.length, skipped: sourceArrived - sources.length });
       dispatchSources();
     };
     const dispatchOverviews = () => {
       if (overviewsDispatched || overviewArrived !== expected) return;
       overviewsDispatched = true;
+      observation?.mark('overview_origin_batch_ready', 'ok', { participants: overviews.length, skipped: overviewArrived - overviews.length });
       if (!overviews.length) return;
       const roots = overviews.map((item, index) => ({ index, ...item.key }));
       void observeEngineeringRead(observation, 'overview_origin_batch_query', () =>
@@ -380,16 +397,23 @@ export class EngineeringMatterWorkingRepository {
             overview: sql`root.value ->> 'overview'`,
           })}) origin ON TRUE
         `)).then(rows => {
+          observeEngineeringReadSync(observation, 'overview_origin_batch_distribution', () => {
           const byIndex = new Map(rows.map(row => [row.index, row]));
           overviews.forEach((item, index) => {
             const row = byIndex.get(index);
             if (!row) item.reject(workingPersistenceError());
             else item.resolve(row.workRef === null ? null : row);
           });
-        }).catch(error => overviews.forEach(item => item.reject(error)));
+
+          });
+        }).catch(error => {
+          observation?.mark('overview_origin_batch_rejected', 'error');
+          observeEngineeringReadSync(observation, 'overview_origin_batch_distribution', () => overviews.forEach(item => item.reject(error)));
+        });
     };
     const arriveOverview = () => {
       if (overviewsDispatched || ++overviewArrived > expected) throw new Error('MATTER_OVERVIEW_BATCH_OVERFLOW');
+      observation?.mark('overview_origin_batch_arrival', 'ok', { participants: overviews.length, skipped: overviewArrived - overviews.length });
       dispatchOverviews();
     };
     return {
@@ -423,7 +447,10 @@ export class EngineeringMatterWorkingRepository {
     let overviewArrived = false;
     try {
       const row = await observeEngineeringRead(input.observation, 'saved_row_await', async () => {
-        if (batch) return batch.read(input);
+        if (batch) {
+          input.observation?.mark('saved_row_root_arrive');
+          return batch.read(input);
+        }
         const [found] = await executor.select().from(engineeringMatterWorkRevision).where(and(
           eq(engineeringMatterWorkRevision.tenantId, input.tenantId),
           eq(engineeringMatterWorkRevision.matterId, input.matterId),
@@ -435,21 +462,30 @@ export class EngineeringMatterWorkingRepository {
       return row ? await authorizedReadModel(row, executor, new Set(), input.observation,
         batch ? (tenantId, workItemIds, documentVersionIds) => {
           sourceArrived = true;
+          input.observation?.mark('saved_sources_root_arrive');
           return batch.checkSources(tenantId, workItemIds, documentVersionIds);
         } : undefined,
         batch ? {
           find: (key) => {
             overviewArrived = true;
+            input.observation?.mark('overview_origin_root_arrive');
             return batch.findOverview(key);
           },
           skip: () => {
             overviewArrived = true;
+            input.observation?.mark('overview_origin_root_skip', 'skip');
             batch.skipOverview();
           },
         } : undefined) : null;
     } finally {
-      if (batch && !sourceArrived) batch.skipSources();
-      if (batch && !overviewArrived) batch.skipOverview();
+      if (batch && !sourceArrived) {
+        input.observation?.mark('saved_sources_root_skip', 'skip');
+        batch.skipSources();
+      }
+      if (batch && !overviewArrived) {
+        input.observation?.mark('overview_origin_root_skip', 'skip');
+        batch.skipOverview();
+      }
     }
   }
 
@@ -1213,25 +1249,29 @@ async function authorizedReadModel(
       if (checkedReferences.get(referenceKey) !== canonicalJson(item)) throw workingPersistenceError();
       continue;
     }
-    const [sourceMatter] = await observeEngineeringRead(observation, 'prior_current_matter_await', () =>
+    const recursiveObservation = observation?.scope({
+      parentReadInstance: observation.context.readInstance,
+      readInstance: observation.nextReadInstance(), depth: (observation.context.depth ?? 0) + 1,
+    });
+    const [sourceMatter] = await observeEngineeringRead(recursiveObservation, 'prior_current_matter_await', () =>
       executor.select({ currentMatterRevisionId: engineeringMatter.currentMatterRevisionId })
         .from(engineeringMatter).where(and(eq(engineeringMatter.tenantId, row.tenantId),
           eq(engineeringMatter.matterId, ref.subjectId), eq(engineeringMatter.createdByUserId, row.createdByUserId))).limit(1));
     if (!sourceMatter) throw runtimeAuthorizationUnavailable();
-    await observeEngineeringRead(observation, 'prior_current_links_await', () =>
+    await observeEngineeringRead(recursiveObservation, 'prior_current_links_await', () =>
       assertAllLinksOwned(executor, row.tenantId, sourceMatter.currentMatterRevisionId));
-    const [source] = await observeEngineeringRead(observation, 'prior_saved_row_await', () =>
+    const [source] = await observeEngineeringRead(recursiveObservation, 'prior_saved_row_await', () =>
       executor.select().from(engineeringMatterWorkRevision).where(and(
         eq(engineeringMatterWorkRevision.tenantId, row.tenantId), eq(engineeringMatterWorkRevision.matterId, ref.subjectId),
         eq(engineeringMatterWorkRevision.matterWorkRevisionId, ref.workRef),
         eq(engineeringMatterWorkRevision.createdByUserId, row.createdByUserId))).limit(1));
     if (!source || source.workingRevision !== item.resultRevision || item.resultRef !== ref.workRef)
       throw runtimeAuthorizationUnavailable();
-    await observeEngineeringRead(observation, 'prior_saved_links_await', () =>
+    await observeEngineeringRead(recursiveObservation, 'prior_saved_links_await', () =>
       assertAllLinksOwned(executor, row.tenantId, source.basedOnMatterRevisionId));
-    const sourceRevision = await observeEngineeringRead(observation, 'prior_recursive_read', () =>
-      authorizedReadModel(source, executor, ancestry, observation));
-    observeEngineeringReadSync(observation, 'prior_verify_reference_js', () => {
+    const sourceRevision = await observeEngineeringRead(recursiveObservation, 'prior_recursive_read', () =>
+      authorizedReadModel(source, executor, ancestry, recursiveObservation));
+    observeEngineeringReadSync(recursiveObservation, 'prior_verify_reference_js', () => {
       if (!sourceRevision.state.problemWork?.issues.some(issue => issue.issueKey === ref.issueKey))
         throw runtimeAuthorizationUnavailable();
       const verified = buildMatterWorkReference({ matterId: ref.subjectId, workRef: ref.workRef,
@@ -1260,7 +1300,7 @@ async function authorizedReadModel(
   // do not repeatedly cast the full task envelope from text to jsonb.
   // jsonb_path_query_first returns SQL NULL for absent/non-object modelInput,
   // retaining the former non-match behavior of -> on malformed shape.
-  const noticeAttempts = await executor.execute<{
+  const noticeAttempts = await observeEngineeringRead(observation, 'notice_attempts_query', () => executor.execute<{
     id: string; attemptRef: string | null; status: string;
     isCorrection: boolean | null; isOverview: boolean | null;
     correctionPurpose: { kind: string; expectedWorkRef: string; issueKey: string; correctionReason: string } | null;
@@ -1296,7 +1336,7 @@ async function authorizedReadModel(
       "correctionPurpose", "overviewPurpose", "isCorrection", "isOverview"
     FROM matched WHERE "isCorrection" OR "isOverview"
     ORDER BY "createdAt" ASC
-  `);
+  `));
   const corrections = noticeAttempts.filter(item => item.isCorrection);
   const overviewCorrections = noticeAttempts.filter(item => item.isOverview);
   // One scoped save lookup serves both notice types. Correction receipts still
@@ -1316,46 +1356,48 @@ async function authorizedReadModel(
     eq(engineeringMatterWorkRevision.createdByUserId, row.createdByUserId),
     inArray(engineeringMatterWorkRevision.actionAttemptId, noticeAttemptIds),
   )).as('ranked_notice_saves');
-  const noticeSaves = noticeAttemptIds.length ? await executor.select({
+  const noticeSaves = noticeAttemptIds.length ? await observeEngineeringRead(observation, 'notice_saves_query', () => executor.select({
     attemptId: rankedSaves.attemptId, workRef: rankedSaves.workRef,
     workingRevision: rankedSaves.workingRevision, requestId: rankedSaves.requestId,
   }).from(rankedSaves).where(correctionAttemptIds.length
     ? or(inArray(rankedSaves.attemptId, correctionAttemptIds), eq(rankedSaves.saveRank, 1))
-    : eq(rankedSaves.saveRank, 1)).orderBy(asc(rankedSaves.workingRevision)) : [];
-  const savedCorrectionWork = new Map<string, string>();
-  for (const item of corrections) {
-    const saved = savedCorrectionWorkRef(item.id, item.reviewActivityJson, noticeSaves);
-    if (saved) savedCorrectionWork.set(item.id, saved);
-  }
-  if (corrections.length) revision.correctionNotices = corrections.map(item => {
-    if (!item.attemptRef || typeof item.correctionPurpose?.expectedWorkRef !== 'string' ||
-        typeof item.correctionPurpose?.issueKey !== 'string' || typeof item.correctionPurpose?.correctionReason !== 'string')
-      throw new Error('ENGINEERING_CORRECTION_NOTICE_INVALID');
-    const correctedWorkRef = savedCorrectionWork.get(item.id) ?? null;
-    const unchanged = correctedWorkRef === null && hasCorrectionUnchangedReceipt(
-      item.reviewActivityJson, item.correctionPurpose.expectedWorkRef, row.workingRevision);
-    return { attemptRef: item.attemptRef, issueKey: item.correctionPurpose.issueKey, reason: item.correctionPurpose.correctionReason,
-      ...(unchanged ? { unchanged: true } : {}),
-      attemptStatus: item.status, correctedWorkRef };
+    : eq(rankedSaves.saveRank, 1)).orderBy(asc(rankedSaves.workingRevision))) : [];
+  return observeEngineeringReadSync(observation, 'notice_projection', () => {
+    const savedCorrectionWork = new Map<string, string>();
+    for (const item of corrections) {
+      const saved = savedCorrectionWorkRef(item.id, item.reviewActivityJson, noticeSaves);
+      if (saved) savedCorrectionWork.set(item.id, saved);
+    }
+    if (corrections.length) revision.correctionNotices = corrections.map(item => {
+      if (!item.attemptRef || typeof item.correctionPurpose?.expectedWorkRef !== 'string' ||
+          typeof item.correctionPurpose?.issueKey !== 'string' || typeof item.correctionPurpose?.correctionReason !== 'string')
+        throw new Error('ENGINEERING_CORRECTION_NOTICE_INVALID');
+      const correctedWorkRef = savedCorrectionWork.get(item.id) ?? null;
+      const unchanged = correctedWorkRef === null && hasCorrectionUnchangedReceipt(
+        item.reviewActivityJson, item.correctionPurpose.expectedWorkRef, row.workingRevision);
+      return { attemptRef: item.attemptRef, issueKey: item.correctionPurpose.issueKey, reason: item.correctionPurpose.correctionReason,
+        ...(unchanged ? { unchanged: true } : {}),
+        attemptStatus: item.status, correctedWorkRef };
+    });
+    // These are the owner's explicit review requests, not extracted old source text.
+    // Retain their target identity across later work so an unrelated save cannot
+    // silently erase a known review. Historical reads exclude requests about newer work.
+    for (const item of overviewCorrections) {
+      if (!item.attemptRef || typeof item.overviewPurpose?.expectedWorkRef !== 'string' ||
+          typeof item.overviewPurpose?.correctionReason !== 'string' || !item.overviewPurpose.correctionReason.trim())
+        throw new Error('ENGINEERING_OVERVIEW_CORRECTION_NOTICE_INVALID');
+    }
+    // Rows are ordered by working revision, so the last row for an attempt is
+    // the same latest save as the former DISTINCT ON query.
+    const overviewSaveByAttempt = new Map(noticeSaves.map(saved => [saved.attemptId, saved]));
+    for (const item of overviewCorrections) {
+      const saved = overviewSaveByAttempt.get(item.id);
+      (revision.overviewCorrectionNotices ??= []).push({ attemptRef: item.attemptRef,
+        targetWorkRef: item.overviewPurpose.expectedWorkRef, reason: item.overviewPurpose.correctionReason,
+        attemptStatus: item.status, savedWorkRef: saved?.workRef ?? null, savedWorkingRevision: saved?.workingRevision ?? null });
+    }
+    return revision;
   });
-  // These are the owner's explicit review requests, not extracted old source text.
-  // Retain their target identity across later work so an unrelated save cannot
-  // silently erase a known review. Historical reads exclude requests about newer work.
-  for (const item of overviewCorrections) {
-    if (!item.attemptRef || typeof item.overviewPurpose?.expectedWorkRef !== 'string' ||
-        typeof item.overviewPurpose?.correctionReason !== 'string' || !item.overviewPurpose.correctionReason.trim())
-      throw new Error('ENGINEERING_OVERVIEW_CORRECTION_NOTICE_INVALID');
-  }
-  // Rows are ordered by working revision, so the last row for an attempt is
-  // the same latest save as the former DISTINCT ON query.
-  const overviewSaveByAttempt = new Map(noticeSaves.map(saved => [saved.attemptId, saved]));
-  for (const item of overviewCorrections) {
-    const saved = overviewSaveByAttempt.get(item.id);
-    (revision.overviewCorrectionNotices ??= []).push({ attemptRef: item.attemptRef,
-      targetWorkRef: item.overviewPurpose.expectedWorkRef, reason: item.overviewPurpose.correctionReason,
-      attemptStatus: item.status, savedWorkRef: saved?.workRef ?? null, savedWorkingRevision: saved?.workingRevision ?? null });
-  }
-  return revision;
 }
 
 async function assertOwnedSources(
