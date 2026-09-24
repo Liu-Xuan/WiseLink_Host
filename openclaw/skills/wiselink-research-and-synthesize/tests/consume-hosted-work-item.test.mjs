@@ -715,6 +715,16 @@ test('native jobs require one subject and never hide Matter behind a WorkItem de
   assert.equal(calls, 0);
 });
 
+test('Matter preflight modes stay scoped to one Matter and never enter WorkItem dispatch', async () => {
+  let calls = 0;
+  const dependencies = { callTool: async () => { calls += 1; } };
+  await assert.rejects(consumeHostedWorkItem({ workItemId: 'WI-one', matterPreflightOnly: true }, dependencies),
+    /MATTER_PREFLIGHT_TARGET_REQUIRED/);
+  await assert.rejects(consumeHostedWorkItem({ matterId: 'MAT-one', matterPreflightOnly: true,
+    matterExpectedSnapshot: 'a'.repeat(64) }, dependencies), /MATTER_PREFLIGHT_MODE_AMBIGUOUS/);
+  assert.equal(calls, 0);
+});
+
 test('independent native job invocations progress while another subject is waiting', async () => {
   let finishWorkItemRead;
   const workItemRead = new Promise(resolve => { finishWorkItemRead = resolve; });

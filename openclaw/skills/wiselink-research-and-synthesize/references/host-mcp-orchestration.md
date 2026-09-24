@@ -43,24 +43,27 @@ Attempt 控制面：
 本 Skill 的 INTERACTIVE_REVIEW runtime path 精确只使用 14–18。Heartbeat/cancel 不是 review model 工具，
 不用于替代五工具会话合同。
 
-## 未来只读预检 read_matter_current_work（尚未由 Host 部署）
+## Matter 当前工作只读预检 read_matter_current_work
 
-`read_matter_current_work({matterId})` 是规划中由后续 17b Host 批次提供的只读预检工具，当前 Host
-尚未提供。runtime 已在 `HOST_MCP_TOOLS` 预先登记该工具名，并在
+`read_matter_current_work({matterId})` 已由 Host 部署。runtime 在 `HOST_MCP_TOOLS` 登记该工具名，并在
 `scripts/run-hosted-review-turn.mjs` 的生产校验 `validateHostToolMetadata` 中固化其精确 metadata：
 只读注解 `readOnlyHint=true`、`destructiveHint=false`、`idempotentHint=true`、`openWorldHint=false`；
 strict inputSchema 仅 `matterId` 一个属性且必填，`additionalProperties:false`，不接受
 tenant/actor/principal/attempt/lease/requestId/model 等额外字段。
 
-未来 Host 预检边界：
+消费者用法与边界：
 
-- 在 Host 部署该工具之前，`validateHostToolMetadata` 的名单校验会与实际 Host tools/list 不一致而
-  失败——这是预期行为，不能通过移除登记或放宽校验来“修复”；只能等 Host 批次落地或回退本登记。
-- 调用必须由既有 `createHostMcpConnection` 返回的 `callTool` 精确执行；不经过
-  `next_matter_assessment` / `consume-hosted-matter`。
-- 只读语义：不创建 attempt、不取得 lease、不调用模型、不保存。
-- 预检结果不能代替 BEGIN 的再次 current/CAS/source 授权核对；也不能把返回的
-  `eligibleEvidenceRefs` 当作本 attempt 已读取的证据。
+- `consume-hosted-work-item.mjs --matter-id MAT-… --matter-preflight-only` 通过既有
+  `createHostMcpConnection` 只调用该工具，返回当前修订、工作引用、计数、活跃 attempt 和
+  `snapshot` 指纹；不调用 `next_matter_assessment`，不创建请求、领取租约、调用模型或写检查点。
+- 活跃 attempt 返回 `PREFLIGHT_ACTIVE_ATTEMPT`，空工作返回 `PREFLIGHT_NO_WORK`；两者都不是
+  自动续接或启动许可。`PREFLIGHT_READY` 只表示当前只读视图可供核对，不表示队列有工作。
+- 人工决定进入下一步时，可给同一 Matter 的消费者传入
+  `--matter-expected-snapshot <预检返回的 SHA-256>`。它只在这次显式消费前重新读取并比较；
+  变化返回 `PREFLIGHT_CHANGED`，活跃 attempt 或空工作也在调用 `next_matter_assessment` 前停止。
+  常规定时消费不带此参数，不额外重复读取完整来源目录，保留既有 attempt 恢复路径。
+- 两次读之间仍可能变化。预检及指纹不是锁，也不替代 Host 在后续调度、BEGIN 中重新执行的
+  current/CAS/source 授权核对；`eligibleEvidenceRefs` 不等于本 attempt 已读取的证据。
 
 ## TaskEnvelope 与 lease fence
 

@@ -1001,7 +1001,7 @@ export function validateHostToolMetadata(value) {
   ) {
     throw new Error('REVIEW_HOST_MCP_COMMIT_SCHEMA_MISMATCH');
   }
-  // read_matter_current_work is the future 17b Host read-only precheck. The
+  // read_matter_current_work is the deployed Host read-only precheck. The
   // runtime pins its read-only annotations and its strict matterId-only
   // inputSchema; never widen either without a matching Host contract change.
   const precheck = tools.find(

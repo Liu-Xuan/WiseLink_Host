@@ -5,6 +5,33 @@ import { readMatterRecoveryCandidate } from './read-matter-recovery-candidate.mj
 
 /** Called by a subject-scoped native job; lifecycle and leases remain Host-owned. */
 export async function consumeHostedMatter(options, dependencies) {
+  if (options.matterPreflightOnly || options.matterExpectedSnapshot !== undefined) {
+    if (options.matterExpectedSnapshot !== undefined && !/^[a-f0-9]{64}$/u.test(options.matterExpectedSnapshot))
+      throw new Error('MATTER_PREFLIGHT_SNAPSHOT_INVALID');
+    const current = await dependencies.callTool('read_matter_current_work', { matterId: options.matterId });
+    if (current?.matterId !== options.matterId || typeof current.matterRevisionId !== 'string' ||
+        !Number.isSafeInteger(current.matterRevision) || current.matterRevision < 0 ||
+        !Number.isSafeInteger(current.workingRevision) || current.workingRevision < 0 ||
+        (current.workRef !== null && (typeof current.workRef !== 'string' || !current.workRef)) ||
+        (current.current === null) !== (current.workRef === null) ||
+        (current.current !== null && (current.current?.matterWorkRevisionId !== current.workRef ||
+          current.current?.workingRevision !== current.workingRevision)) ||
+        !Array.isArray(current.currentInputs) || !Array.isArray(current.sourceCatalog) ||
+        !Array.isArray(current.eligibleEvidenceRefs) || !Array.isArray(current.activeAttempts) ||
+        current.activeAttempts.some(attempt => typeof attempt?.attemptRef !== 'string' || !attempt.attemptRef ||
+          !['QUEUED', 'RUNNING', 'RETRY_SCHEDULED', 'COMMITTING'].includes(attempt.status)))
+      throw new Error('MATTER_PREFLIGHT_READ_INVALID');
+    const snapshot = canonicalSha256(current);
+    const summary = { matterId: options.matterId, snapshot, matterRevisionId: current.matterRevisionId,
+      matterRevision: current.matterRevision, workRef: current.workRef, workingRevision: current.workingRevision,
+      currentInputCount: current.currentInputs.length, sourceCount: current.sourceCatalog.length,
+      eligibleEvidenceCount: current.eligibleEvidenceRefs.length, activeAttempts: current.activeAttempts };
+    if (options.matterExpectedSnapshot !== undefined && options.matterExpectedSnapshot !== snapshot)
+      return { status: 'PREFLIGHT_CHANGED', ...summary };
+    if (current.activeAttempts.length) return { status: 'PREFLIGHT_ACTIVE_ATTEMPT', ...summary };
+    if (current.current === null) return { status: 'PREFLIGHT_NO_WORK', ...summary };
+    if (options.matterPreflightOnly) return { status: 'PREFLIGHT_READY', ...summary };
+  }
   const pending = await dependencies.callTool('next_matter_assessment', { matterId: options.matterId });
   if (pending?.matterId !== options.matterId) throw new Error('MATTER_PENDING_BINDING_MISMATCH');
   if (!pending.next) return { status: 'IDLE', matterId: options.matterId };

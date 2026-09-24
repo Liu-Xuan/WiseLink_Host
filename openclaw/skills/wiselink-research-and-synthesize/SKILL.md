@@ -12,7 +12,7 @@ description: Orchestrate the single official hosted WiseLink engineering profile
 - hosted app：`app_17c3zn24kv2`
 - logical profile：`wiselink-engineering`
 - model policy：`official-hosted-profile-config`（任务可绑定已登记的内置或用户授权自定义模型；仍经唯一官方 Hosted profile/Gateway）
-- Skill：`wiselink-research-and-synthesize@r09.c121`
+- Skill：`wiselink-research-and-synthesize@r09.c122`
 - Skill compatibility：`wiselink-research-and-synthesize@r09`（历史任务最低接受 `r09.c10`，翻译 v2 必须为 `r09.c44` 或更新兼容包）
 - Host MCP：`wiselink-openclaw-engineering-assessment@1.2.0`（保留既有工具，新增语义翻译工作与 JobAid 来源/工作工具）
 - Host 集成提交：以本次发布包清单记录的实际提交为准
@@ -563,7 +563,7 @@ Interactive Review 的复杂 ResultEnvelope 必须由 `sealResultEnvelope` 生�
 当前 validator 强制：
 
 - `modelVersion` 优先取响应中可读实际模型；绑定任务未回报实际模型时使用 `configured-route:<modelRef>`，旧无绑定任务使用无 fallback 的 configured endpoint。后两者只证明路由，不代表已暴露下游具体模型，也不做具体版本等值判断
-- `skillVersion=wiselink-research-and-synthesize@r09.c121`
+- `skillVersion=wiselink-research-and-synthesize@r09.c122`
 - `toolVersions.wiselink-openclaw-engineering-assessment=1.2.0`
 - `promptVersion` 非空并来自当前运行
 - task/result exact binding、SourceRef allowlist 和 canonical hash 一致
@@ -628,3 +628,11 @@ Host documentActivityAction 的文档活动消费由 `scripts/consume-hosted-doc
 ## c112 独立文档解读
 
 文件自身解读使用独立 document_reading 工具和确定性消费者，与活动候选、事项工作分开保存；主题、简明解读、完整解释及条件来自同一准确源版本产物。消费者只消费显式准入任务，未知模型或保存结果不自动重复，明确校验失败保留原因。读取和目录投影不触发模型，部分阅读不宣称全篇理解。详见 [文档解读协议](references/document-reading-work.md)。部署顺序为数据库、Host、Skill；新包安装不自动启动解读或改写旧工作。
+
+## c122 Matter 当前工作预检
+
+已部署的 `read_matter_current_work` 通过现有官方 Host MCP 连接读取授权的当前工作、来源目录和活跃 attempt。
+统一消费者的 `--matter-preflight-only` 只读并返回快照指纹，不调度任务；显式
+`--matter-expected-snapshot` 在下一次消费前复核指纹，不一致、活跃 attempt 或空工作均停止在调度之前。
+正常 cron 不增加预检调用，旧检查点恢复保持原路径。预检不保证未来状态，Host 后续调度与 BEGIN
+仍执行当前版本、来源授权和 CAS 检查；细节见 [Host MCP 编排](references/host-mcp-orchestration.md)。
