@@ -32,11 +32,13 @@ export default function MatterExecutionSummary({
   matterId,
   matterRevisionId,
   workingRevision,
+  inputScopeKey,
   sessionGeneration,
 }: {
   matterId: string;
   matterRevisionId: string;
   workingRevision: number;
+  inputScopeKey: string;
   sessionGeneration: number;
 }) {
   const { identity } = useEngineeringMatterQueryIdentity(
@@ -54,6 +56,7 @@ export default function MatterExecutionSummary({
       matterId,
       matterRevisionId,
       workingRevision,
+      inputScopeKey,
     ],
     queryFn: ({ signal }) => getMatterExecutionSummary(matterId, signal),
     enabled: Boolean(identity),

@@ -311,6 +311,7 @@ const MatterWorkspace: FC<MatterWorkspaceProps> = ({
         <MatterExecutionSummary matterId={matterId}
           matterRevisionId={data.working.currentMatterRevisionId}
           workingRevision={data.working.currentWorkingRevision}
+          inputScopeKey={JSON.stringify(data.working.pendingInputs.map(input => input.current))}
           sessionGeneration={sessionGeneration} />
       ) : null}
       {requestedWorkRef &&
