@@ -93,7 +93,7 @@ export class MiaodaHostedCanonicalObjectAccessAdapter implements CanonicalObject
 
   async freshReadBatch(
     inputs: readonly CanonicalWorkItemReadInput[],
-  ): Promise<CanonicalObjectAccessResult[]> {
+  ): Promise<PromiseSettledResult<CanonicalObjectAccessResult>[]> {
     if (inputs.length === 0) return [];
     const actor = inputs[0].actor;
     if (inputs.length < 2 || inputs.length > 4 ||
@@ -107,9 +107,10 @@ export class MiaodaHostedCanonicalObjectAccessAdapter implements CanonicalObject
     })));
     return inputs.map(input => {
       const binding = bindings.get(input.accessRoot.id) ?? null;
-      return ownedBindingMatches(binding, actor, input.accessRoot.id)
+      const value = ownedBindingMatches(binding, actor, input.accessRoot.id)
         ? grant(actor, 'READ_WORK_ITEM', binding)
         : denied(input, 'CANONICAL_WORK_ITEM_NOT_FOUND', 404);
+      return { status: 'fulfilled' as const, value };
     });
   }
 }

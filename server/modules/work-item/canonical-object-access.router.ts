@@ -47,7 +47,7 @@ export class CanonicalObjectAccessRouter implements CanonicalObjectAccessPort {
 
   async freshReadBatch(
     inputs: readonly CanonicalWorkItemReadInput[],
-  ): Promise<CanonicalObjectAccessResult[]> {
+  ): Promise<PromiseSettledResult<CanonicalObjectAccessResult>[]> {
     if (inputs.some(input => input.actor.principalKind === 'UNAVAILABLE') ||
       !this.finalUser.freshReadBatch)
       return settleCanonicalWorkItemReads(inputs, input => this.freshRead(input));

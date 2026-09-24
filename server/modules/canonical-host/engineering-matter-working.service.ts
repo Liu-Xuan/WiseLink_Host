@@ -334,8 +334,7 @@ export class EngineeringMatterWorkingService {
       accessRoot: { kind: 'WORK_ITEM', id: workItemId },
     }));
     const decisions = this.objectAccess.freshReadBatch && workItemIds.length <= 4
-      ? (await this.objectAccess.freshReadBatch(accessInputs))
-        .map(value => ({ status: 'fulfilled' as const, value }))
+      ? await this.objectAccess.freshReadBatch(accessInputs)
       : await Promise.allSettled(accessInputs.map(input => this.objectAccess.freshRead(input)));
     if (decisions.length !== workItemIds.length)
       throw new Error('WORK_ITEM_AUTHORIZATION_BATCH_INCOMPLETE');

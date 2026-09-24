@@ -85,15 +85,16 @@ describe('hosted Aily signed MCP creator-only access', () => {
     const inputs = ['WI1', 'WI2'].map(id => ({ actor, action: 'READ_WORK_ITEM' as const,
       accessRoot: { kind: 'WORK_ITEM' as const, id } }));
     const first = await router.freshReadBatch(inputs);
-    expect(first.map(result => result.allowed)).toEqual([true, false]);
-    expect(first[1]).toMatchObject({ code: 'CANONICAL_WORK_ITEM_NOT_FOUND', statusCode: 404 });
+    expect(first.map(result => result.status === 'fulfilled' && result.value.allowed)).toEqual([true, false]);
+    expect(first[1]).toMatchObject({ status: 'fulfilled',
+      value: { code: 'CANONICAL_WORK_ITEM_NOT_FOUND', statusCode: 404 } });
     expect(repository.loadAuthorizationBindings).toHaveBeenCalledWith([
       { workItemId: 'WI1', tenantId: TENANT_ID, actorUserId: MIAODA_USER_ID },
       { workItemId: 'WI2', tenantId: TENANT_ID, actorUserId: MIAODA_USER_ID },
     ]);
     expect(repository.loadAuthorizationBinding).not.toHaveBeenCalled();
     const revoked = await router.freshReadBatch(inputs);
-    expect(revoked.map(result => result.allowed)).toEqual([false, false]);
+    expect(revoked.map(result => result.status === 'fulfilled' && result.value.allowed)).toEqual([false, false]);
     expect(repository.loadAuthorizationBindings).toHaveBeenCalledTimes(2);
   });
 
@@ -104,7 +105,7 @@ describe('hosted Aily signed MCP creator-only access', () => {
       { actor: ailyActor(), action: 'READ_WORK_ITEM', accessRoot: { kind: 'WORK_ITEM', id: 'WI1' } },
       { actor: ailyActor(), action: 'READ_WORK_ITEM', accessRoot: { kind: 'WORK_ITEM', id: 'WI2' } },
     ]);
-    expect(results.map(result => result.allowed)).toEqual([true, false]);
+    expect(results.map(result => result.status === 'fulfilled' && result.value.allowed)).toEqual([true, false]);
     expect(repository.loadAuthorizationBindings).not.toHaveBeenCalled();
     expect(repository.loadAuthorizationBinding).toHaveBeenCalledTimes(2);
   });
@@ -126,7 +127,10 @@ describe('hosted Aily signed MCP creator-only access', () => {
     await new Promise(resolve => setImmediate(resolve));
     expect(settled).toBe(false);
     finishSecond(null);
-    await expect(pending).rejects.toBe(failure);
+    await expect(pending).resolves.toMatchObject([
+      { status: 'rejected', reason: failure },
+      { status: 'fulfilled', value: { allowed: false } },
+    ]);
     await observed;
     expect(repository.loadAuthorizationBinding).toHaveBeenCalledTimes(2);
   });
@@ -150,7 +154,10 @@ describe('hosted Aily signed MCP creator-only access', () => {
     await new Promise(resolve => setImmediate(resolve));
     expect(settled).toBe(false);
     finishSecond(null);
-    await expect(pending).rejects.toBe(failure);
+    await expect(pending).resolves.toMatchObject([
+      { status: 'rejected', reason: failure },
+      { status: 'fulfilled' },
+    ]);
     await observed;
     expect(finalUser.freshRead).toHaveBeenCalledTimes(2);
   });
