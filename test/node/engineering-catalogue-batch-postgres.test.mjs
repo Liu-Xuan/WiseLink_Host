@@ -13,6 +13,7 @@ require('tsconfig-paths/register');
 const { drizzle } = require('drizzle-orm/postgres-js');
 const { sql: drizzleSql } = require('drizzle-orm');
 const { EngineeringMatterWorkingRepository } = require('../../server/modules/canonical-host/engineering-matter-working.repository.ts');
+const { MiaodaWorkItemRepository } = require('../../server/modules/work-item/miaoda-work-item.repository.ts');
 
 const databaseUrl = process.env.CATALOGUE_BATCH_TEST_DATABASE_URL;
 
@@ -38,6 +39,12 @@ test('batched exact rows retain tenant, owner and source-link RLS in real Postgr
           action_attempt_id varchar(96), review_turn_id varchar(96),
           created_by_user_id varchar(255) NOT NULL,
           created_at timestamptz(3) NOT NULL DEFAULT CURRENT_TIMESTAMP
+        )`;
+        await tx`CREATE TABLE work_item (
+          work_item_id varchar(96) PRIMARY KEY, revision integer NOT NULL,
+          tenant_id varchar(128) NOT NULL, request_id varchar(96) NOT NULL,
+          document_id varchar(96) NOT NULL, document_version_id varchar(96) NOT NULL,
+          requested_by_user_id varchar(255) NOT NULL, run_key varchar(96) NOT NULL
         )`;
         await tx`CREATE TABLE test_matter_access (tenant_id text, matter_id text, actor_id text, allowed boolean)`;
         await tx`CREATE TABLE test_link_access (tenant_id text, revision_id text, allowed boolean)`;
@@ -68,14 +75,20 @@ test('batched exact rows retain tenant, owner and source-link RLS in real Postgr
               AND access.actor_id = current_setting('app.user_id', true) AND access.allowed
           ) $$`);
         await tx`ALTER TABLE engineering_matter_work_revision ENABLE ROW LEVEL SECURITY`;
+        await tx`ALTER TABLE work_item ENABLE ROW LEVEL SECURITY`;
         await tx.unsafe(`CREATE POLICY engineering_matter_work_revision_authenticated_select
           ON engineering_matter_work_revision FOR SELECT TO "${role}" USING (
             engineering_matter_actor_has_tenant(tenant_id)
             AND engineering_matter_owned_by_actor(tenant_id, matter_id)
             AND engineering_matter_all_links_owned_by_actor(tenant_id, based_on_matter_revision_id)
           )`);
+        await tx.unsafe(`CREATE POLICY work_item_owner_select ON work_item FOR SELECT TO "${role}" USING (
+          tenant_id = current_setting('app.tenant_id', true)
+          AND requested_by_user_id = current_setting('app.user_id', true)
+        )`);
         await tx.unsafe(`GRANT USAGE ON SCHEMA "${schema}" TO "${role}"`);
-        await tx.unsafe(`GRANT SELECT ON engineering_matter_work_revision, test_matter_access, test_link_access TO "${role}"`);
+        await tx.unsafe(`GRANT SELECT ON engineering_matter_work_revision, work_item,
+          test_matter_access, test_link_access TO "${role}"`);
         await tx`INSERT INTO test_matter_access VALUES
           ('tenant-A','MAT-A','owner-A',true),
           ('tenant-A','MAT-B','owner-B',true),
@@ -89,6 +102,10 @@ test('batched exact rows retain tenant, owner and source-link RLS in real Postgr
           ('tenant-A','DOCUMENT','DV-A','owner-A',true),
           ('tenant-A','WORK_ITEM','WI-B','owner-B',true),
           ('tenant-A','DOCUMENT','DV-B','owner-B',true)`;
+        await tx`INSERT INTO work_item VALUES
+          ('WI-A',1,'tenant-A','REQ-A','DOC-A','DV-A','owner-A','RUN-A'),
+          ('WI-B',1,'tenant-A','REQ-B','DOC-B','DV-B','owner-B','RUN-B'),
+          ('WI-C',1,'tenant-B','REQ-C','DOC-C','DV-C','owner-A','RUN-C')`;
         await tx`INSERT INTO engineering_matter_work_revision
           (matter_work_revision_id,tenant_id,matter_id,working_revision,request_id,
             based_on_matter_revision_id,update_kind,command_json,state_json,
@@ -139,6 +156,22 @@ test('batched exact rows retain tenant, owner and source-link RLS in real Postgr
       await sql.unsafe(`UPDATE "${schema}".test_source_access SET allowed=false WHERE source_id='DV-A'`);
       assert.deepEqual((await checkSources('owner-A')).map(result => result.status),
         ['rejected', 'rejected', 'rejected']);
+      const readMemberBindings = async actor => drizzle(sql).transaction(async tx => {
+        await tx.execute(drizzleSql.raw(`SET LOCAL search_path TO "${schema}"`));
+        await tx.execute(drizzleSql`SELECT set_config('app.tenant_id', 'tenant-A', true)`);
+        await tx.execute(drizzleSql`SELECT set_config('app.user_id', ${actor}, true)`);
+        await tx.execute(drizzleSql.raw(`SET LOCAL ROLE "${role}"`));
+        const repo = new MiaodaWorkItemRepository(tx);
+        return [...(await repo.loadAuthorizationBindings([
+          { workItemId: 'WI-A', tenantId: 'tenant-A', actorUserId: actor },
+          { workItemId: 'WI-B', tenantId: 'tenant-A', actorUserId: actor },
+          { workItemId: 'WI-C', tenantId: 'tenant-A', actorUserId: actor },
+        ])).keys()];
+      });
+      assert.deepEqual(await readMemberBindings('owner-A'), ['WI-A']);
+      assert.deepEqual(await readMemberBindings('owner-B'), ['WI-B']);
+      await sql.unsafe(`UPDATE "${schema}".work_item SET requested_by_user_id='owner-B' WHERE work_item_id='WI-A'`);
+      assert.deepEqual(await readMemberBindings('owner-A'), []);
     } finally {
       await sql.unsafe(`DROP SCHEMA IF EXISTS "${schema}" CASCADE`);
       await sql.unsafe(`DROP ROLE IF EXISTS "${role}"`);

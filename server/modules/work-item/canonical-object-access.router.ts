@@ -1,9 +1,11 @@
 import { Injectable } from '@nestjs/common';
 
-import type {
-  CanonicalObjectAccessInput,
-  CanonicalObjectAccessPort,
-  CanonicalObjectAccessResult,
+import {
+  settleCanonicalWorkItemReads,
+  type CanonicalObjectAccessInput,
+  type CanonicalObjectAccessPort,
+  type CanonicalObjectAccessResult,
+  type CanonicalWorkItemReadInput,
 } from './canonical-object-access.port';
 import {
   UnavailableAilyObjectAccessAdapter,
@@ -41,5 +43,14 @@ export class CanonicalObjectAccessRouter implements CanonicalObjectAccessPort {
       return this.unavailableSession.freshRead(input);
     }
     return this.finalUser.freshRead(input);
+  }
+
+  async freshReadBatch(
+    inputs: readonly CanonicalWorkItemReadInput[],
+  ): Promise<CanonicalObjectAccessResult[]> {
+    if (inputs.some(input => input.actor.principalKind === 'UNAVAILABLE') ||
+      !this.finalUser.freshReadBatch)
+      return settleCanonicalWorkItemReads(inputs, input => this.freshRead(input));
+    return this.finalUser.freshReadBatch(inputs);
   }
 }

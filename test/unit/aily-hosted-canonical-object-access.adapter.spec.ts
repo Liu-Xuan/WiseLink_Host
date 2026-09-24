@@ -75,6 +75,98 @@ describe('hosted Aily signed MCP creator-only access', () => {
     expect(repository.loadAuthorizationBinding).toHaveBeenCalledTimes(2);
   });
 
+  it('returns independent bounded member decisions and re-reads on the next batch', async () => {
+    const repository = productionRepository();
+    repository.loadAuthorizationBindings
+      .mockResolvedValueOnce(new Map([['WI1', binding()]]))
+      .mockResolvedValueOnce(new Map());
+    const router = productionRouter(repository);
+    const actor = ailyActor();
+    const inputs = ['WI1', 'WI2'].map(id => ({ actor, action: 'READ_WORK_ITEM' as const,
+      accessRoot: { kind: 'WORK_ITEM' as const, id } }));
+    const first = await router.freshReadBatch(inputs);
+    expect(first.map(result => result.allowed)).toEqual([true, false]);
+    expect(first[1]).toMatchObject({ code: 'CANONICAL_WORK_ITEM_NOT_FOUND', statusCode: 404 });
+    expect(repository.loadAuthorizationBindings).toHaveBeenCalledWith([
+      { workItemId: 'WI1', tenantId: TENANT_ID, actorUserId: MIAODA_USER_ID },
+      { workItemId: 'WI2', tenantId: TENANT_ID, actorUserId: MIAODA_USER_ID },
+    ]);
+    expect(repository.loadAuthorizationBinding).not.toHaveBeenCalled();
+    const revoked = await router.freshReadBatch(inputs);
+    expect(revoked.map(result => result.allowed)).toEqual([false, false]);
+    expect(repository.loadAuthorizationBindings).toHaveBeenCalledTimes(2);
+  });
+
+  it('does not batch requests carrying different actor contexts', async () => {
+    const repository = productionRepository();
+    const router = productionRouter(repository);
+    const results = await router.freshReadBatch([
+      { actor: ailyActor(), action: 'READ_WORK_ITEM', accessRoot: { kind: 'WORK_ITEM', id: 'WI1' } },
+      { actor: ailyActor(), action: 'READ_WORK_ITEM', accessRoot: { kind: 'WORK_ITEM', id: 'WI2' } },
+    ]);
+    expect(results.map(result => result.allowed)).toEqual([true, false]);
+    expect(repository.loadAuthorizationBindings).not.toHaveBeenCalled();
+    expect(repository.loadAuthorizationBinding).toHaveBeenCalledTimes(2);
+  });
+
+  it('settles every mixed-actor fallback read before reporting the first database error', async () => {
+    const repository = productionRepository();
+    const failure = new Error('DATABASE_UNAVAILABLE');
+    let finishSecond!: (value: WorkItemAuthorizationBinding | null) => void;
+    const second = new Promise<WorkItemAuthorizationBinding | null>(resolve => { finishSecond = resolve; });
+    repository.loadAuthorizationBinding.mockImplementation(({ workItemId }) =>
+      workItemId === 'WI1' ? Promise.reject(failure) : second);
+    const router = productionRouter(repository);
+    const pending = router.freshReadBatch([
+      { actor: ailyActor(), action: 'READ_WORK_ITEM', accessRoot: { kind: 'WORK_ITEM', id: 'WI1' } },
+      { actor: ailyActor(), action: 'READ_WORK_ITEM', accessRoot: { kind: 'WORK_ITEM', id: 'WI2' } },
+    ]);
+    let settled = false;
+    const observed = pending.then(() => { settled = true; }, () => { settled = true; });
+    await new Promise(resolve => setImmediate(resolve));
+    expect(settled).toBe(false);
+    finishSecond(null);
+    await expect(pending).rejects.toBe(failure);
+    await observed;
+    expect(repository.loadAuthorizationBinding).toHaveBeenCalledTimes(2);
+  });
+
+  it('settles every router fallback read before reporting the first database error', async () => {
+    const failure = new Error('DATABASE_UNAVAILABLE');
+    let finishSecond!: (value: unknown) => void;
+    const second = new Promise<unknown>(resolve => { finishSecond = resolve; });
+    const finalUser = { freshRead: jest.fn(({ accessRoot }) =>
+      accessRoot.id === 'WI1' ? Promise.reject(failure) : second) };
+    const router = new CanonicalObjectAccessRouter(finalUser as never,
+      new UnavailableAilyObjectAccessAdapter(), new UnavailableServiceObjectAccessAdapter(),
+      new UnavailableSessionObjectAccessAdapter());
+    const actor = ailyActor();
+    const pending = router.freshReadBatch([
+      { actor, action: 'READ_WORK_ITEM', accessRoot: { kind: 'WORK_ITEM', id: 'WI1' } },
+      { actor, action: 'READ_WORK_ITEM', accessRoot: { kind: 'WORK_ITEM', id: 'WI2' } },
+    ]);
+    let settled = false;
+    const observed = pending.then(() => { settled = true; }, () => { settled = true; });
+    await new Promise(resolve => setImmediate(resolve));
+    expect(settled).toBe(false);
+    finishSecond(null);
+    await expect(pending).rejects.toBe(failure);
+    await observed;
+    expect(finalUser.freshRead).toHaveBeenCalledTimes(2);
+  });
+
+  it('keeps owner-binding batches bounded at four members', async () => {
+    const repository = productionRepository();
+    const router = productionRouter(repository);
+    const actor = ailyActor();
+    const inputs = Array.from({ length: 5 }, (_, index) => ({ actor,
+      action: 'READ_WORK_ITEM' as const,
+      accessRoot: { kind: 'WORK_ITEM' as const, id: `WI${index + 1}` } }));
+    await router.freshReadBatch(inputs);
+    expect(repository.loadAuthorizationBindings).not.toHaveBeenCalled();
+    expect(repository.loadAuthorizationBinding).toHaveBeenCalledTimes(5);
+  });
+
   it('fails closed on missing or conflicting Host ownership', async () => {
     const repository = productionRepository();
     const router = productionRouter(repository);
@@ -278,6 +370,7 @@ function productionRouter(
 
 function productionRepository() {
   return {
+    loadAuthorizationBindings: jest.fn().mockResolvedValue(new Map([['WI1', binding()]])),
     loadAuthorizationBinding: jest.fn(
       async (input: {
         workItemId: string;

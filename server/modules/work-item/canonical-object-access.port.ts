@@ -258,11 +258,33 @@ export type CanonicalObjectAccessInput = {
   actor: CanonicalActorContext;
 } & (RevisionBoundMutationRequest | NonRevisionBoundRequest);
 
+export interface CanonicalWorkItemReadInput {
+  actor: CanonicalActorContext;
+  action: 'READ_WORK_ITEM';
+  accessRoot: { kind: 'WORK_ITEM'; id: string };
+}
+
 export interface CanonicalObjectAccessPort {
   /** Every grant-capable call must re-read Host-owned object relation facts. */
   freshRead(
     input: CanonicalObjectAccessInput,
   ): Promise<CanonicalObjectAccessResult>;
+  /** Optional bounded read: one fresh statement, one decision per input, no cross-call cache. */
+  freshReadBatch?(
+    inputs: readonly CanonicalWorkItemReadInput[],
+  ): Promise<CanonicalObjectAccessResult[]>;
+}
+
+/** Settle every fallback read before reporting the first input-order failure. */
+export async function settleCanonicalWorkItemReads(
+  inputs: readonly CanonicalWorkItemReadInput[],
+  read: (input: CanonicalWorkItemReadInput) => Promise<CanonicalObjectAccessResult>,
+): Promise<CanonicalObjectAccessResult[]> {
+  const settled = await Promise.allSettled(inputs.map(input => read(input)));
+  return settled.map(result => {
+    if (result.status === 'rejected') throw result.reason;
+    return result.value;
+  });
 }
 
 export function unavailableAilyActorContext(): CanonicalUnavailableActorContext {
