@@ -83,6 +83,18 @@ export interface EngineeringMatterWorkingTransactionExecutor {
 }
 
 type WorkRevisionRow = typeof engineeringMatterWorkRevision.$inferSelect;
+type SavedRowKey = { tenantId: string; matterId: string; workRef: string };
+
+/** One catalogue window only. Each SELECT still runs through the existing actor-bound RLS. */
+export interface EngineeringMatterSavedRowBatch {
+  read(key: SavedRowKey): Promise<WorkRevisionRow | null>;
+  skip(): void;
+}
+
+function savedRowKey(key: SavedRowKey): string {
+  return JSON.stringify([key.tenantId, key.matterId, key.workRef]);
+}
+
 const OFFICIAL_CLIENT_ID = 'cli_aadde8b579f95bc9';
 
 export interface EngineeringMatterRuntimeAuthorization {
@@ -246,22 +258,58 @@ export class EngineeringMatterWorkingRepository {
     return row ? authorizedReadModel(row, executor) : null;
   }
 
+  createSavedRowBatch(expected: number, observation?: EngineeringReadPhaseObservation): EngineeringMatterSavedRowBatch {
+    if (!Number.isInteger(expected) || expected < 2 || expected > 4) throw new Error('MATTER_SAVED_ROW_BATCH_INVALID');
+    const pending: Array<{ key: SavedRowKey; resolve: (row: WorkRevisionRow | null) => void;
+      reject: (error: unknown) => void }> = [];
+    let arrived = 0;
+    let dispatched = false;
+    const dispatch = () => {
+      if (dispatched || arrived !== expected) return;
+      dispatched = true;
+      if (!pending.length) return;
+      const unique = [...new Map(pending.map(item => [savedRowKey(item.key), item.key])).values()];
+      void observeEngineeringRead(observation, 'saved_row_batch_query', () => this.db
+        .select()
+        .from(engineeringMatterWorkRevision)
+        .where(or(...unique.map(key => and(
+          eq(engineeringMatterWorkRevision.tenantId, key.tenantId),
+          eq(engineeringMatterWorkRevision.matterId, key.matterId),
+          eq(engineeringMatterWorkRevision.matterWorkRevisionId, key.workRef),
+        ))))).then(rows => {
+          const byKey = new Map(rows.map(row => [savedRowKey({ tenantId: row.tenantId,
+            matterId: row.matterId, workRef: row.matterWorkRevisionId }), row]));
+          pending.forEach(item => item.resolve(byKey.get(savedRowKey(item.key)) ?? null));
+        }).catch(error => pending.forEach(item => item.reject(error)));
+    };
+    const arrive = () => {
+      if (dispatched || ++arrived > expected) throw new Error('MATTER_SAVED_ROW_BATCH_OVERFLOW');
+      dispatch();
+    };
+    return {
+      read: key => new Promise<WorkRevisionRow | null>((resolve, reject) => {
+        pending.push({ key, resolve, reject });
+        arrive();
+      }),
+      skip: arrive,
+    };
+  }
+
   /** Exact saved identity, constrained before loading the full investigation body. */
   async readByRef(
-    input: { tenantId: string; matterId: string; workRef: string; observation?: EngineeringReadPhaseObservation },
+    input: { tenantId: string; matterId: string; workRef: string;
+      observation?: EngineeringReadPhaseObservation; batch?: EngineeringMatterSavedRowBatch },
     executor: EngineeringMatterWorkingDatabaseExecutor = this.db,
   ): Promise<EngineeringMatterWorkingRevisionReadModel | null> {
-    const [row] = await observeEngineeringRead(input.observation, 'saved_row_await', () => executor
-      .select()
-      .from(engineeringMatterWorkRevision)
-      .where(
-        and(
-          eq(engineeringMatterWorkRevision.tenantId, input.tenantId),
-          eq(engineeringMatterWorkRevision.matterId, input.matterId),
-          eq(engineeringMatterWorkRevision.matterWorkRevisionId, input.workRef),
-        ),
-      )
-      .limit(1));
+    const row = await observeEngineeringRead(input.observation, 'saved_row_await', async () => {
+      if (input.batch) return input.batch.read(input);
+      const [found] = await executor.select().from(engineeringMatterWorkRevision).where(and(
+        eq(engineeringMatterWorkRevision.tenantId, input.tenantId),
+        eq(engineeringMatterWorkRevision.matterId, input.matterId),
+        eq(engineeringMatterWorkRevision.matterWorkRevisionId, input.workRef),
+      )).limit(1);
+      return found ?? null;
+    });
     return row ? authorizedReadModel(row, executor, new Set(), input.observation) : null;
   }
 

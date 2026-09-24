@@ -21,6 +21,7 @@ import {
   engineeringMatterInputBinding,
   EngineeringMatterWorkingRepository,
   type EngineeringMatterWorkingTransactionExecutor,
+  type EngineeringMatterSavedRowBatch,
 } from './engineering-matter-working.repository';
 import { engineeringMatterPendingInputs } from './engineering-matter-working-state';
 import { materialInputBindings } from './matter-material';
@@ -71,23 +72,34 @@ export class EngineeringMatterWorkingService {
     return readModelFromBasis(await this.resolveWorkingBasis(matterId, actor));
   }
 
+  createSavedReadBatch(expected: number, observation: EngineeringReadPhaseObservation): EngineeringMatterSavedRowBatch {
+    return this.working.createSavedRowBatch(expected, observation);
+  }
+
   /** Browser path: requires the native actor and fresh object access per member. */
   async readWorkingRevision(
     matterId: string,
     workRef: string,
     actor: CanonicalHostActor,
     observation?: EngineeringReadPhaseObservation,
+    batch?: EngineeringMatterSavedRowBatch,
   ): Promise<EngineeringMatterWorkingRevisionReadModel> {
     // The exact saved revision below already owns its original bindings. Keep
     // fresh member/source checks, but do not hydrate current parse/semantic state
     // whose result is not consumed by this read.
-    await observeEngineeringRead(observation, 'matter_authorize_current', () =>
-      this.authorizedMatter(matterId, actor, 0, false));
+    try {
+      await observeEngineeringRead(observation, 'matter_authorize_current', () =>
+        this.authorizedMatter(matterId, actor, 0, false));
+    } catch (error) {
+      batch?.skip();
+      throw error;
+    }
     const revision = await observeEngineeringRead(observation, 'matter_read_saved', () => this.working.readByRef({
       tenantId: actor.tenantId,
       matterId,
       workRef,
       observation,
+      ...(batch ? { batch } : {}),
     }));
     if (!revision) throw matterNotFound();
     // Historical work can contain a member that is no longer in the current composition.

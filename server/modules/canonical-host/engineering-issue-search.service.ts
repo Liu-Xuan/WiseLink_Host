@@ -31,6 +31,7 @@ import { CANONICAL_SERVICE_SCOPE_AUTHORIZATION, canonicalServiceScopeUnavailable
 import type { CanonicalHostActor } from './canonical-host.types';
 import { CanonicalJobAidProblemService } from './canonical-jobaid-problem.service';
 import { EngineeringMatterWorkingService } from './engineering-matter-working.service';
+import type { EngineeringMatterSavedRowBatch } from './engineering-matter-working.repository';
 import { isHostedCanonicalFinalUserActor } from '../work-item/miaoda-hosted-canonical-object-access.adapter';
 import { jobAidReadingResult } from './jobaid-problem-work';
 import { collectIssueEvidenceUses } from '@shared/jobaid-evidence-uses';
@@ -86,13 +87,13 @@ export class EngineeringIssueSearchService {
     // read is shared per exact identity within this call only; a denied read is
     // dropped so it never becomes an authorization cache.
     const workReads = new Map<string, Promise<SavedIssueWork>>();
-    const readWork = (row: EngineeringKnowledgeIdentity): Promise<SavedIssueWork> => {
+    const readWork = (row: EngineeringKnowledgeIdentity, batch?: EngineeringMatterSavedRowBatch): Promise<SavedIssueWork> => {
       const key = JSON.stringify([row.subjectKind, row.subjectId, row.workRef]);
       const existing = workReads.get(key);
       if (existing) return existing;
       const work = observation.measure(row.subjectKind === 'WORK_ITEM'
         ? 'work_item_exact_read' : 'matter_exact_read',
-      () => this.loadWork({ ...row, issueKey: '' }, actor, observation));
+      () => this.loadWork({ ...row, issueKey: '' }, actor, observation, batch));
       workReads.set(key, work);
       void work.catch(() => workReads.delete(key));
       return work;
@@ -128,8 +129,13 @@ export class EngineeringIssueSearchService {
         // whether another page exists. Denied rows still advance the scan.
         const group = rows.slice(start, start + Math.min(CATALOGUE_READ_GROUP_SIZE, 21 - entries.length));
         start += group.length;
+        const newMatterKeys = new Set(group.filter(row => row.subjectKind === 'ENGINEERING_MATTER')
+          .map(row => JSON.stringify([row.subjectKind, row.subjectId, row.workRef]))
+          .filter(key => !workReads.has(key)));
+        const batch = newMatterKeys.size >= 2
+          ? this.matters.createSavedReadBatch(newMatterKeys.size, observation) : undefined;
         const settled = await observation.measure('read_group_wait', () =>
-          Promise.allSettled(group.map(readWork)));
+          Promise.allSettled(group.map(row => readWork(row, batch))));
         for (let index = 0; index < group.length && entries.length < 21; index += 1) {
           const row = group[index];
           const outcome = settled[index];
@@ -191,6 +197,12 @@ export class EngineeringIssueSearchService {
     current: boolean): EngineeringKnowledgeEntry {
     const content = 'content' in revision ? revision.content : revision.state.problemWork;
     if (!content) throw new NotFoundException('ENGINEERING_KNOWLEDGE_WORK_NOT_FOUND');
+    // The former detail projection rejected malformed saved issue arrays. Keep
+    // that validity boundary while avoiding article construction and evidence cloning.
+    if ('content' in revision) {
+      if (!Array.isArray(content.issues) || content.issues.some(issue => issue === null))
+        throw new TypeError('JOBAID_SAVED_ISSUES_INVALID');
+    }
     return { subjectKind: identity.subjectKind, subjectId: identity.subjectId, workRef: identity.workRef,
       workRevision: 'workRevision' in revision ? revision.workRevision : revision.workingRevision,
       current, headline: content.headline, listBrief: content.listBrief,
@@ -476,6 +488,7 @@ export class EngineeringIssueSearchService {
     identity: IssueIdentity,
     actor: CanonicalHostActor,
     observation?: EngineeringReadPhaseObservation,
+    batch?: EngineeringMatterSavedRowBatch,
   ): Promise<SavedIssueWork> {
     return identity.subjectKind === 'WORK_ITEM'
       ? this.jobAid.readBrowserRevision(
@@ -483,7 +496,13 @@ export class EngineeringIssueSearchService {
           identity.workRef,
           actor,
         )
-      : observation ? this.matters.readWorkingRevision(
+      : batch ? this.matters.readWorkingRevision(
+          identity.subjectId,
+          identity.workRef,
+          actor,
+          observation,
+          batch,
+        ) : observation ? this.matters.readWorkingRevision(
           identity.subjectId,
           identity.workRef,
           actor,

@@ -54,7 +54,7 @@ function setup() {
       return saved;
     }),
   };
-  const matters = { readWorkingRevision: jest.fn() };
+  const matters = { readWorkingRevision: jest.fn(), createSavedReadBatch: jest.fn() };
   return {
     saved,
     identity,
@@ -372,6 +372,17 @@ describe('saved knowledge catalogue', () => {
     } finally { clone.mockRestore(); }
   });
 
+  it('keeps malformed saved issue failure consistent between catalogue and detail', async () => {
+    const h = setup();
+    h.db.execute.mockResolvedValue([{ ...h.identity, current: true }]);
+    h.saved.content.issues = [null] as unknown as typeof h.saved.content.issues;
+    await expect(h.service.catalogue('', 'CURRENT', undefined, actor))
+      .rejects.toThrow(TypeError);
+    await expect(h.service.readKnowledge({ subjectKind: h.identity.subjectKind,
+      subjectId: h.identity.subjectId, workRef: h.identity.workRef }, actor))
+      .rejects.toThrow(TypeError);
+  });
+
   it('browses exact saved titles and briefs without a query and keeps overview coverage separate from currentness', async () => {
     const h = setup();
     h.saved.content.overviewStatus = 'STALE';
@@ -499,6 +510,31 @@ describe('saved knowledge catalogue', () => {
     const next = await h.service.catalogue('', 'ALL', page.nextCursor!, actor);
     expect(next.entries.map((entry) => entry.subjectId)).toEqual(rest.map((row) => row.subjectId));
     expect(next.nextCursor).toBeNull();
+  });
+
+  it('batches only new Matter identities in each bounded catalogue window', async () => {
+    const h = setup();
+    const batch = { read: jest.fn(), skip: jest.fn() };
+    h.matters.createSavedReadBatch.mockReturnValue(batch);
+    h.matters.readWorkingRevision.mockResolvedValue({
+      matterId: 'MAT-1', matterWorkRevisionId: h.saved.workRevisionRef, workingRevision: 7,
+      createdAt: '2026-09-01T00:00:00.000Z',
+      state: { problemWork: h.saved.content, substantiveResult: null },
+    });
+    h.db.execute.mockResolvedValue(Array.from({ length: 21 }, (_, n) => ({
+      subjectKind: 'ENGINEERING_MATTER', subjectId: `MAT-${n}`,
+      workRef: `MW-${n}`, current: true,
+    })));
+    const page = await h.service.catalogue('', 'ALL', undefined, actor);
+    expect(page.entries).toHaveLength(20);
+    expect(page.entries.map(item => item.subjectId)).toEqual(Array.from({ length: 20 }, (_, n) => `MAT-${n}`));
+    expect(JSON.parse(Buffer.from(page.nextCursor!, 'base64url').toString()).identity.subjectId).toBe('MAT-19');
+    expect(h.matters.createSavedReadBatch).toHaveBeenCalledTimes(5);
+    expect(h.matters.createSavedReadBatch.mock.calls.map(([size]) => size)).toEqual([4, 4, 4, 4, 4]);
+    expect(h.matters.readWorkingRevision).toHaveBeenCalledTimes(21);
+    for (const call of h.matters.readWorkingRevision.mock.calls.slice(0, 20))
+      expect(call[4]).toBe(batch);
+    expect(h.matters.readWorkingRevision.mock.calls[20]).toHaveLength(4);
   });
 
   it('reads a duplicated exact identity once per request but reads the same workRef under another subject separately', async () => {

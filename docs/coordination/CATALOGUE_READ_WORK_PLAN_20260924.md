@@ -84,3 +84,9 @@ catalogue仍按最多4个根身份建立窗口，按原输入顺序消费settled
 release 7688916995013954763 完成当时为 finished、d6811c4b4d77c34bfdf359eefe7b1dccfb91073b、error_logs=[]。ALL空查询首批trace 5121e84fd2d56ca73f16628fce264a31、release_commit=d681：app_server6577.57ms/275SQL；candidate132ms；21 Matter exact累计22693ms；6组等待6441ms。当前授权21/6552ms、保存读取21/12601ms、历史成员复核21/3541ms；保存内部saved_row21/2102ms、saved_sources23/1665ms、overview_origin22/2335ms，PRIOR递归2次。层级及并行计时重叠；与c544单样本差异不构成提速证据。
 
 下一实现选择B1：其21次根行读取可用6个窗口查询替代，保留完整保存状态、RLS和所有后续核验。来源和概述累计含递归，不按21根简单合并；递归仅2次，当前证据不支持优先引入复杂递归缓存。B1的主要价值是先验证批量确切事实读链路与错误映射，后续能复用该窗口结构做B2；不会将15次调用减少承诺成端点收益。完整平台验收仍待实现后进行。
+
+## B1 代码候选与验证口径
+
+分支 codex/perf-catalogue-batched-rows-20260924 基于94d0f980。目录的每个最多4根窗口在至少2个新Matter身份时创建请求内batch；入口授权完成后通过原数据库执行器按(tenantId,matterId,workRef)复合键一次SELECT，返回结果按键映射。入口授权拒绝占一个已结算槽位，不装载其保存正文。结果随后仍调用authorizedReadModel、历史成员freshRead和原目录排序/错误消费。单根窗口走原读取。新增saved_row_batch_query计时只代表合并查询，saved_row_await包含等待其余入口授权的屏障时间，不能直接与旧阶段按毫秒比较。
+
+固定预期单测覆盖21个全Matter候选的5次四根batch+1次单根查询组织及第20条游标；repository测试核对所用表、复合身份SQL、乱序映射、跨租户同身份不会错误归位、缺失与数据库错误；service测试核对授权拒绝后释放槽位、通过者仍调用原精确读取。另已修复A投影发现的issues:[null]历史损坏语义差异：目录仍抛TypeError，详情仍抛TypeError，合法目录不克隆正文证据。本地无ENGINEERING_MATTER_TEST_DATABASE_URL，未运行真实PostgreSQL/RLS夹具，单测不能替代平台授权与性能验收；待受控环境验证后才能判断收益。
