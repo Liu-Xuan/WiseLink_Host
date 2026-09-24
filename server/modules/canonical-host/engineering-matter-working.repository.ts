@@ -9,7 +9,7 @@ import {
   type PostgresJsDatabase,
 } from '@lark-apaas/fullstack-nestjs-core';
 import type { Request, Response } from 'express';
-import { and, asc, desc, eq, inArray, isNull, lte, or, sql } from 'drizzle-orm';
+import { and, asc, desc, eq, inArray, isNull, lte, or, sql, type SQL } from 'drizzle-orm';
 import { bindMatterOriginalInputs } from './matter-original-input-bindings';
 import { buildMatterWorkReference } from './matter-work-reference';
 import { collectIssueEvidenceUses } from '@shared/jobaid-evidence-uses';
@@ -84,17 +84,53 @@ export interface EngineeringMatterWorkingTransactionExecutor {
 
 type WorkRevisionRow = typeof engineeringMatterWorkRevision.$inferSelect;
 type SavedRowKey = { tenantId: string; matterId: string; workRef: string };
+type OverviewOriginKey = { tenantId: string; matterId: string; createdByUserId: string;
+  workingRevision: number; overview: string };
+type OverviewOriginRow = { workRef: string; workingRevision: number; submittedOverview: string };
 
-/** One catalogue window only. Both queries use the existing actor-bound database context. */
+/** One catalogue window only. Every query uses the existing actor-bound database context. */
 export interface EngineeringMatterSavedRowBatch {
   read(key: SavedRowKey): Promise<WorkRevisionRow | null>;
   skip(): void;
   checkSources(tenantId: string, workItemIds: Set<string>, documentVersionIds: Set<string>): Promise<void>;
   skipSources(): void;
+  findOverview(key: OverviewOriginKey): Promise<OverviewOriginRow | null>;
+  skipOverview(): void;
 }
 
 function savedRowKey(key: SavedRowKey): string {
   return JSON.stringify([key.tenantId, key.matterId, key.workRef]);
+}
+
+/** Same exact revision and save-receipt predicate for one read or a catalogue window. */
+function overviewOriginSelect(key: {
+  tenantId: SQL; matterId: SQL; createdByUserId: SQL; workingRevision: SQL; overview: SQL;
+}): SQL {
+  return sql`
+    SELECT w.matter_work_revision_id AS "workRef", w.working_revision AS "workingRevision",
+      receipt -> 'proposal' ->> 'overview' AS "submittedOverview"
+    FROM engineering_matter_work_revision w
+    JOIN action_attempt a ON a.attempt_id = w.action_attempt_id
+      AND a.tenant_id = w.tenant_id AND a.matter_id = w.matter_id
+    CROSS JOIN LATERAL jsonb_array_elements(COALESCE(a.review_activity_json::jsonb, '[]'::jsonb)) receipt
+    WHERE w.tenant_id = ${key.tenantId} AND w.matter_id = ${key.matterId}
+      AND w.created_by_user_id = ${key.createdByUserId}
+      AND w.working_revision <= ${key.workingRevision}
+      AND w.state_json::jsonb -> 'problemWork' ->> 'understanding' = ${key.overview}
+      AND receipt ->> 'kind' = 'MATTER_JOBAID_WORK_SAVED'
+      AND receipt ->> 'workRevisionRef' = w.matter_work_revision_id
+      AND receipt ->> 'requestId' = w.request_id
+      AND receipt -> 'expectedWorkRevision' = to_jsonb(w.working_revision - 1)
+      AND jsonb_typeof(receipt -> 'proposal' -> 'overview') = 'string'
+      AND NOT EXISTS (
+        SELECT 1 FROM engineering_matter_work_revision later
+        WHERE later.tenant_id = w.tenant_id AND later.matter_id = w.matter_id
+          AND later.working_revision > w.working_revision AND later.working_revision <= ${key.workingRevision}
+          AND (later.state_json::jsonb -> 'problemWork' ->> 'understanding' IS DISTINCT FROM ${key.overview}
+            OR later.state_json::jsonb -> 'problemWork' ->> 'overviewStatus' = 'NOT_AVAILABLE')
+      )
+    ORDER BY w.working_revision DESC LIMIT 1
+  `;
 }
 
 const OFFICIAL_CLIENT_ID = 'cli_aadde8b579f95bc9';
@@ -266,10 +302,14 @@ export class EngineeringMatterWorkingRepository {
       reject: (error: unknown) => void }> = [];
     const sources: Array<{ tenantId: string; workItemIds: string[]; documentVersionIds: string[];
       resolve: () => void; reject: (error: unknown) => void }> = [];
+    const overviews: Array<{ key: OverviewOriginKey; resolve: (origin: OverviewOriginRow | null) => void;
+      reject: (error: unknown) => void }> = [];
     let arrived = 0;
     let dispatched = false;
     let sourceArrived = 0;
     let sourcesDispatched = false;
+    let overviewArrived = 0;
+    let overviewsDispatched = false;
     const dispatch = () => {
       if (dispatched || arrived !== expected) return;
       dispatched = true;
@@ -322,18 +362,53 @@ export class EngineeringMatterWorkingRepository {
       if (sourcesDispatched || ++sourceArrived > expected) throw new Error('MATTER_SOURCE_BATCH_OVERFLOW');
       dispatchSources();
     };
+    const dispatchOverviews = () => {
+      if (overviewsDispatched || overviewArrived !== expected) return;
+      overviewsDispatched = true;
+      if (!overviews.length) return;
+      const roots = overviews.map((item, index) => ({ index, ...item.key }));
+      void observeEngineeringRead(observation, 'overview_origin_batch_query', () =>
+        this.db.execute<OverviewOriginRow & { index: number }>(sql`
+          SELECT (root.value ->> 'index')::integer AS "index",
+            origin."workRef", origin."workingRevision", origin."submittedOverview"
+          FROM jsonb_array_elements(${JSON.stringify(roots)}::jsonb) AS root(value)
+          LEFT JOIN LATERAL (${overviewOriginSelect({
+            tenantId: sql`(root.value ->> 'tenantId')::varchar`,
+            matterId: sql`(root.value ->> 'matterId')::varchar`,
+            createdByUserId: sql`(root.value ->> 'createdByUserId')::varchar`,
+            workingRevision: sql`(root.value ->> 'workingRevision')::integer`,
+            overview: sql`root.value ->> 'overview'`,
+          })}) origin ON TRUE
+        `)).then(rows => {
+          const byIndex = new Map(rows.map(row => [row.index, row]));
+          overviews.forEach((item, index) => {
+            const row = byIndex.get(index);
+            if (!row) item.reject(workingPersistenceError());
+            else item.resolve(row.workRef === null ? null : row);
+          });
+        }).catch(error => overviews.forEach(item => item.reject(error)));
+    };
+    const arriveOverview = () => {
+      if (overviewsDispatched || ++overviewArrived > expected) throw new Error('MATTER_OVERVIEW_BATCH_OVERFLOW');
+      dispatchOverviews();
+    };
     return {
       read: key => new Promise<WorkRevisionRow | null>((resolve, reject) => {
         pending.push({ key, resolve, reject });
         arrive();
       }),
-      skip: () => { arrive(); arriveSource(); },
+      skip: () => { arrive(); arriveSource(); arriveOverview(); },
       checkSources: (tenantId, workItemIds, documentVersionIds) => new Promise<void>((resolve, reject) => {
         sources.push({ tenantId, workItemIds: [...workItemIds], documentVersionIds: [...documentVersionIds],
           resolve, reject });
         arriveSource();
       }),
       skipSources: arriveSource,
+      findOverview: key => new Promise<OverviewOriginRow | null>((resolve, reject) => {
+        overviews.push({ key, resolve, reject });
+        arriveOverview();
+      }),
+      skipOverview: arriveOverview,
     };
   }
 
@@ -345,6 +420,7 @@ export class EngineeringMatterWorkingRepository {
   ): Promise<EngineeringMatterWorkingRevisionReadModel | null> {
     const batch = input.batch;
     let sourceArrived = false;
+    let overviewArrived = false;
     try {
       const row = await observeEngineeringRead(input.observation, 'saved_row_await', async () => {
         if (batch) return batch.read(input);
@@ -360,9 +436,20 @@ export class EngineeringMatterWorkingRepository {
         batch ? (tenantId, workItemIds, documentVersionIds) => {
           sourceArrived = true;
           return batch.checkSources(tenantId, workItemIds, documentVersionIds);
+        } : undefined,
+        batch ? {
+          find: (key) => {
+            overviewArrived = true;
+            return batch.findOverview(key);
+          },
+          skip: () => {
+            overviewArrived = true;
+            batch.skipOverview();
+          },
         } : undefined) : null;
     } finally {
       if (batch && !sourceArrived) batch.skipSources();
+      if (batch && !overviewArrived) batch.skipOverview();
     }
   }
 
@@ -1065,6 +1152,7 @@ async function authorizedReadModel(
   ancestors: Set<string> = new Set(),
   observation?: EngineeringReadPhaseObservation,
   checkSources?: (tenantId: string, workItemIds: Set<string>, documentVersionIds: Set<string>) => Promise<void>,
+  overviewBatch?: { find: (key: OverviewOriginKey) => Promise<OverviewOriginRow | null>; skip: () => void },
 ): Promise<EngineeringMatterWorkingRevisionReadModel> {
   if (ancestors.has(row.matterWorkRevisionId)) throw workingPersistenceError();
   const ancestry = new Set(ancestors).add(row.matterWorkRevisionId);
@@ -1099,37 +1187,21 @@ async function authorizedReadModel(
   revision.overviewSourceWork = null;
   if (revision.state.problemWork && revision.state.problemWork.overviewStatus !== 'NOT_AVAILABLE') {
     const overview = revision.state.problemWork.understanding;
-    const [origin] = await observeEngineeringRead(observation, 'overview_origin_await', () =>
-      executor.execute<{ workRef: string; workingRevision: number; submittedOverview: string }>(sql`
-      SELECT w.matter_work_revision_id AS "workRef", w.working_revision AS "workingRevision",
-        receipt -> 'proposal' ->> 'overview' AS "submittedOverview"
-      FROM engineering_matter_work_revision w
-      JOIN action_attempt a ON a.attempt_id = w.action_attempt_id
-        AND a.tenant_id = w.tenant_id AND a.matter_id = w.matter_id
-      CROSS JOIN LATERAL jsonb_array_elements(COALESCE(a.review_activity_json::jsonb, '[]'::jsonb)) receipt
-      WHERE w.tenant_id = ${row.tenantId} AND w.matter_id = ${row.matterId}
-        AND w.created_by_user_id = ${row.createdByUserId}
-        AND w.working_revision <= ${row.workingRevision}
-        AND w.state_json::jsonb -> 'problemWork' ->> 'understanding' = ${overview}
-        AND receipt ->> 'kind' = 'MATTER_JOBAID_WORK_SAVED'
-        AND receipt ->> 'workRevisionRef' = w.matter_work_revision_id
-        AND receipt ->> 'requestId' = w.request_id
-        AND receipt -> 'expectedWorkRevision' = to_jsonb(w.working_revision - 1)
-        AND jsonb_typeof(receipt -> 'proposal' -> 'overview') = 'string'
-        AND NOT EXISTS (
-          SELECT 1 FROM engineering_matter_work_revision later
-          WHERE later.tenant_id = w.tenant_id AND later.matter_id = w.matter_id
-            AND later.working_revision > w.working_revision AND later.working_revision <= ${row.workingRevision}
-            AND (later.state_json::jsonb -> 'problemWork' ->> 'understanding' IS DISTINCT FROM ${overview}
-              OR later.state_json::jsonb -> 'problemWork' ->> 'overviewStatus' = 'NOT_AVAILABLE')
-        )
-      ORDER BY w.working_revision DESC LIMIT 1
-    `));
+    const key = { tenantId: row.tenantId, matterId: row.matterId,
+      createdByUserId: row.createdByUserId, workingRevision: row.workingRevision, overview };
+    const origin = await observeEngineeringRead(observation, 'overview_origin_await', async () =>
+      overviewBatch ? overviewBatch.find(key) : (await executor.execute<OverviewOriginRow>(overviewOriginSelect({
+        tenantId: sql`${key.tenantId}`,
+        matterId: sql`${key.matterId}`,
+        createdByUserId: sql`${key.createdByUserId}`,
+        workingRevision: sql`${key.workingRevision}`,
+        overview: sql`${key.overview}`,
+      })))[0] ?? null);
     if (origin) {
       if (origin.submittedOverview.trim() !== overview) throw workingPersistenceError();
       revision.overviewSourceWork = { workRef: origin.workRef, workingRevision: origin.workingRevision };
     }
-  }
+  } else overviewBatch?.skip();
   // A saved B explanation does not keep A readable after A or its original inputs are revoked.
   // Walk exact immutable work identities, not the latest analysis or a detached excerpt.
   const checkedReferences = new Map<string, string>();

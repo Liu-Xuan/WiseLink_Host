@@ -21,6 +21,7 @@ import {
   type ApplicabilitySelectionLoadState,
   type ApplicabilitySelectionPresentation,
 } from './applicability-selection-presentation';
+import ApplicabilitySelectionReviewAction from './ApplicabilitySelectionReviewAction';
 import './applicability-selection-panel.css';
 
 interface ApplicabilitySelectionPanelProps {
@@ -230,6 +231,14 @@ const ApplicabilitySelectionPanel: FC<ApplicabilitySelectionPanelProps> = ({
           <MessageSquareText aria-hidden="true" />
           在交互式复核中补充
         </Button>
+        <ApplicabilitySelectionReviewAction
+          workItemId={workItemId}
+          workItemRevision={workItemRevision}
+          onConfirmed={async () => {
+            await refresh();
+            await onConfigurationEvidenceAdopted();
+          }}
+        />
       </div>
 
       <div className="configuration-evidence-status" aria-live="polite">

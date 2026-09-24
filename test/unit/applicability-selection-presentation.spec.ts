@@ -24,6 +24,7 @@ function selection(
     selectionRevision: 'internal-selection-revision',
     currentness: 'CURRENT',
     fleetSource: {
+      snapshotId: 'internal-snapshot',
       sourceRevisionKey: 'internal-source-revision',
       authorityRevision: 'internal-authority-revision',
       sourceAsOf: '2026-08-29',
