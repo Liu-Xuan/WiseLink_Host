@@ -75,11 +75,12 @@ export function listOwnedLibraryFamilies(
         metadataRevision: dmDocumentVersionMetadata.metadataRevision,
         documentReading: sql<CanonicalLibraryDocumentVersionSummary['documentReading']>`(
           select jsonb_build_object(
-            'status', case when r.result_json is not null then 'AVAILABLE'
+            'status', case when x.run_ref is not null then 'RETRACTED'
+              when r.result_json is not null then 'AVAILABLE'
               when exists (select 1 from dm_document_reading_run older
                 where older.tenant_id=${input.tenantId} and older.document_version_id=${dmDocumentVersion.documentVersionId}
                   and older.status='SAVED') then 'SOURCE_CHANGED' else 'NOT_GENERATED' end,
-            'reading', case when r.result_json is null then null else jsonb_build_object(
+            'reading', case when r.result_json is null or x.run_ref is not null then null else jsonb_build_object(
               'readingRunRef', r.run_ref, 'readingRevision', r.reading_revision,
               'headline', r.result_json->>'headline', 'brief', r.result_json->'brief'->>'text',
               'criticalConditions', (select coalesce(jsonb_agg(c->>'text'), '[]'::jsonb)
@@ -105,6 +106,7 @@ export function listOwnedLibraryFamilies(
               and r.parse_run_id=p.parse_run_id and r.semantic_revision=s.semantic_revision and r.status='SAVED'
               and r.original_manifest_sha256=p.manifest_artifact->>'sha256'
             order by r.reading_revision desc limit 1) r on true
+          left join dm_document_reading_retraction x on x.run_ref=r.run_ref and x.tenant_id=${input.tenantId}
         )`.as('document_reading'),
         parsing: sql<CanonicalLibraryDocumentVersionSummary['parsing']>`(
           select jsonb_build_object('status', p.status, 'latestRevision', p.parse_revision,

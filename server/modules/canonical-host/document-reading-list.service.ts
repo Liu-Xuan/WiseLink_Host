@@ -15,7 +15,7 @@ export interface DocumentReadingBatchPreviewItem {
   semanticRevision: number | null;
   headline: string | null;
   briefSummary: string | null;
-  status: 'AVAILABLE' | 'SOURCE_CHANGED' | 'NOT_GENERATED' | 'UNAUTHORIZED';
+  status: 'AVAILABLE' | 'RETRACTED' | 'SOURCE_CHANGED' | 'NOT_GENERATED' | 'UNAUTHORIZED';
 }
 
 export type ParseRunScope = 'current' | 'all';
@@ -102,6 +102,17 @@ export class DocumentReadingListService {
           headline: null,
           briefSummary: null,
           status: 'NOT_GENERATED',
+        };
+      }
+
+      if (latestReading.retracted) {
+        return {
+          documentVersionId,
+          parseRunId: latestReading.parseRunId,
+          semanticRevision: latestReading.semanticRevision,
+          headline: null,
+          briefSummary: null,
+          status: 'RETRACTED',
         };
       }
 

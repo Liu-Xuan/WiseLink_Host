@@ -50,6 +50,19 @@ test('one admitted run creates one source-bound save, and a second consumption r
   assert.equal(f.count(), 1); assert.ok(!f.calls.some(x => /BEGIN|ACTIVITY|TRANSLATION/.test(x)));
 });
 
+test('withdrawn saved run is a terminal status and never claims, models or saves', async () => {
+  const f = fixture();
+  f.deps.checkpointFactory = async () => assert.fail('terminal run must not touch checkpoints');
+  f.deps.invokeModel = async () => assert.fail('terminal run must not invoke a model');
+  f.deps.callTool = async (_tool, request) => {
+    assert.equal(request.action, 'READING_STATUS');
+    return { ...f.options, parseRunId: 'PR-test', semanticRevision: 1, expectedRevision: 0,
+      status: 'RETRACTED', result: null, readingRevision: 1 };
+  };
+  assert.deepEqual(await consumeHostedDocumentReading(f.options, f.deps),
+    { status: 'RETRACTED', modelInvocations: 0 });
+});
+
 test('lost model response remains uncertain across restart and never generates or saves again', async () => {
   const f = fixture(); let attempts = 0;
   f.deps.invokeModel = async () => { attempts++; throw new Error('uncertain network'); };
@@ -237,6 +250,7 @@ test('real MCP transport forwards bounded reading signals and rejects unrelated 
   const options={signal:new AbortController().signal,timeout:60000};
   const v2={callTool:async (_request,received)=>{assert.equal(received,options);return {content:[{type:'text',text:'{}'}]};}};
   await callJsonTool(v2,'document_reading',{action:'READING_STATUS'},options,2);
+  await callJsonTool(v2,'document_reading',{action:'READING_RETRACT'},options,2);
   await assert.rejects(callJsonTool(client,'document_reading',{action:'READING_BEGIN'},{signal:new AbortController().signal,timeout:120000}),/REQUEST_OPTIONS_INVALID/);
 });
 

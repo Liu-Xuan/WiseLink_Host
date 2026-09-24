@@ -53,6 +53,7 @@ test('production library SQL projects exact document reading and authorized curr
     await reset(admin);
     await catalog(admin);
     const producer = await actor('service_role', 'actor-one');
+    const secondProducer = await actor('service_role', 'actor-one');
     const browser = await actor('authenticated', 'actor-two');
     const foreign = await actor('authenticated', 'actor-foreign');
     const query = async (who = browser, overrides = {}) => {
@@ -99,6 +100,60 @@ test('production library SQL projects exact document reading and authorized curr
       assert.equal(result.status, 'AVAILABLE');
       assert.equal(result.reading.sourceBinding.semanticRevision, 2);
       assert.equal(result.reading.readingRevision, 1);
+      const retraction = { runRef: run.runRef, expectedReadingRevision: 1,
+        requestId: 'retract-semantic-two', reasonCode: 'SOURCE_SEMANTIC_CONTRADICTION',
+        reviewReference: 'fixture-independent-review' };
+      await assert.rejects(browser.client`INSERT INTO dm_document_reading_retraction
+        (run_ref,tenant_id,actor_user_id,document_version_id,reading_revision,request_id,reason_code,review_reference)
+        VALUES (${run.runRef},'tenant-test','actor-one','DV-test',1,'native-browser','OTHER','fixture')`,
+      /row-level security/);
+      let firstReadDone; let releaseDelayed;
+      const reached = new Promise(resolve => { firstReadDone = resolve; });
+      const gate = new Promise(resolve => { releaseDelayed = resolve; });
+      const delayedRepo = new DocumentReadingRunRepository({ transaction: fn =>
+        secondProducer.db.transaction(tx => {
+          let first = true;
+          return fn({ execute: async query => {
+            const rows = await tx.execute(query);
+            if (first) { first = false; firstReadDone(); await gate; }
+            return rows;
+          } });
+        }) });
+      const delayed = delayedRepo.retract(scope, retraction).then(value => ({ value }), error => ({ error }));
+      await reached;
+      let recorded; let replacement;
+      try {
+      recorded = await producer.repository.retract(scope, retraction);
+      assert.equal(recorded.readingRevision, 1);
+      assert.deepEqual(await producer.repository.retract(scope, retraction), recorded);
+      const preserved = await admin`SELECT status,reading_revision,result_json->>'headline' AS headline
+        FROM dm_document_reading_run WHERE run_ref=${run.runRef}`;
+      assert.deepEqual([preserved[0].status, preserved[0].reading_revision, preserved[0].headline],
+        ['SAVED', 1, '真实保存的文件主题']);
+      await assert.rejects(admin`UPDATE dm_document_reading_retraction SET reason_code='OTHER'
+        WHERE run_ref=${run.runRef}`, /DOCUMENT_READING_RETRACTION_IMMUTABLE/);
+      await assert.rejects(admin`DELETE FROM dm_document_reading_retraction WHERE run_ref=${run.runRef}`,
+        /DOCUMENT_READING_RETRACTION_IMMUTABLE/);
+      await assert.rejects(producer.repository.save(scope, fence, command, materialize),
+        /DOCUMENT_READING_RETRACTED/);
+      assert.deepEqual(version(await query()).documentReading, { status: 'RETRACTED', reading: null });
+      assert.equal(await browser.repository.readSaved({ ...scope, actorUserId: 'actor-two' }, source.parseRunId, 2, 1), null);
+      await assert.rejects(producer.repository.retract(scope, { ...retraction, requestId: 'wrong-revision', expectedReadingRevision: 2 }),
+        /DOCUMENT_READING_RETRACTION_TARGET_CONFLICT/);
+      replacement = await producer.repository.begin(scope, { ...source, semanticRevision: 2,
+        requestId: 'replacement-reading', expectedRevision: 1 });
+      const replacementFence = await producer.repository.claim(scope, replacement.runRef, 'fixture-producer');
+      await producer.repository.save(scope, replacementFence, command, materialize);
+      } finally { releaseDelayed(); }
+      assert.deepEqual(await delayed, { value: recorded }, 'late same-request replay must retain its original receipt after revision 2');
+      assert.equal(version(await query()).documentReading.reading.readingRevision, 2);
+      assert.equal((await browser.repository.readSaved({ ...scope, actorUserId: 'actor-two' }, source.parseRunId, 2)).readingRevision, 2);
+      assert.equal(await browser.repository.readSaved({ ...scope, actorUserId: 'actor-two' }, source.parseRunId, 2, 1), null);
+      await producer.repository.retract(scope, { runRef: replacement.runRef, expectedReadingRevision: 2,
+        requestId: 'retract-replacement', reasonCode: 'SOURCE_SEMANTIC_CONTRADICTION',
+        reviewReference: 'fixture-second-review' });
+      assert.deepEqual(version(await query()).documentReading, { status: 'RETRACTED', reading: null });
+      assert.equal(await browser.repository.readSaved({ ...scope, actorUserId: 'actor-two' }, source.parseRunId, 2), null);
     });
     await t.test('new published source never borrows previous parse reading', async () => {
       await admin`INSERT INTO dm_document_parse_run VALUES ('tenant-test','DV-test','PR-4',4,'PUBLISHED',
@@ -176,6 +231,7 @@ async function reset(admin) {
   await admin.unsafe(await readFile(new URL('../../migrations/0055_document_semantic_revision.sql', import.meta.url), 'utf8'));
   await admin.unsafe(await readFile(new URL('../../migrations/0058_document_activity_run.sql', import.meta.url), 'utf8'));
   await admin.unsafe(await readFile(new URL('../../migrations/0060_document_reading_run.sql', import.meta.url), 'utf8'));
+  await admin.unsafe(await readFile(new URL('../../migrations/0061_document_reading_retraction.sql', import.meta.url), 'utf8'));
   await admin.unsafe('GRANT USAGE ON SCHEMA public TO service_role,authenticated; GRANT SELECT,INSERT,UPDATE,DELETE ON ALL TABLES IN SCHEMA public TO service_role,authenticated');
   await admin`INSERT INTO identity_subject_mapping VALUES
     ('actor-one','tenant-test','cli_aadde8b579f95bc9','ACTIVE'),('actor-two','tenant-test','cli_aadde8b579f95bc9','ACTIVE'),

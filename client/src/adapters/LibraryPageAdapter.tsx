@@ -16,7 +16,7 @@ export interface DocumentReadingBatchPreviewItem {
   semanticRevision: number | null;
   headline: string | null;
   briefSummary: string | null;
-  status: 'AVAILABLE' | 'SOURCE_CHANGED' | 'NOT_GENERATED' | 'UNAUTHORIZED';
+  status: 'AVAILABLE' | 'RETRACTED' | 'SOURCE_CHANGED' | 'NOT_GENERATED' | 'UNAUTHORIZED';
 }
 
 /**
@@ -53,7 +53,8 @@ function useLibraryData() {
           const reading = readings.find(r => r.documentVersionId === doc.id);
           return {
             ...doc,
-            brief: reading?.briefSummary || '解读准备中…',
+            brief: reading?.status === 'RETRACTED' ? '该版本解读已撤回，待重新核验' :
+              reading?.briefSummary || '解读准备中…',
           };
         });
 

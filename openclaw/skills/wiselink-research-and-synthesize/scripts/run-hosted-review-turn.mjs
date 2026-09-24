@@ -1035,7 +1035,7 @@ export async function callJsonTool(client, name, args, requestOptions, optionsPo
     Number.isSafeInteger(requestOptions.timeout) && requestOptions.timeout > 0 && requestOptions.timeout <= 120_000 &&
     Object.keys(requestOptions).every(key => key === 'timeout' || key === 'signal');
   const readingOptions = name === 'document_reading' &&
-    ['READING_STATUS', 'READING_CLAIM', 'READING_READ', 'READING_HEARTBEAT', 'READING_SAVE', 'READING_FAIL'].includes(args?.action) &&
+    ['READING_STATUS', 'READING_RETRACT', 'READING_CLAIM', 'READING_READ', 'READING_HEARTBEAT', 'READING_SAVE', 'READING_FAIL'].includes(args?.action) &&
     requestOptions?.signal instanceof AbortSignal &&
     Number.isSafeInteger(requestOptions.timeout) && requestOptions.timeout > 0 && requestOptions.timeout <= 120_000 &&
     Object.keys(requestOptions).every(key => key === 'timeout' || key === 'signal');

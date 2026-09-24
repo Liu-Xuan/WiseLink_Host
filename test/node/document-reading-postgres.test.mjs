@@ -191,6 +191,7 @@ async function reset(admin) {
   await admin.unsafe(await readFile(new URL('../../migrations/0055_document_semantic_revision.sql', import.meta.url), 'utf8'));
   await admin.unsafe(await readFile(new URL('../../migrations/0058_document_activity_run.sql', import.meta.url), 'utf8'));
   await admin.unsafe(await readFile(new URL('../../migrations/0060_document_reading_run.sql', import.meta.url), 'utf8'));
+  await admin.unsafe(await readFile(new URL('../../migrations/0061_document_reading_retraction.sql', import.meta.url), 'utf8'));
   await admin.unsafe('GRANT USAGE ON SCHEMA public TO service_role,authenticated; GRANT SELECT,INSERT,UPDATE,DELETE ON ALL TABLES IN SCHEMA public TO service_role,authenticated');
   await admin`INSERT INTO identity_subject_mapping VALUES
     ('actor-one','tenant-test','cli_aadde8b579f95bc9','ACTIVE'),('actor-two','tenant-test','cli_aadde8b579f95bc9','ACTIVE'),
