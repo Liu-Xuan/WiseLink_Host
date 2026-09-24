@@ -65,43 +65,55 @@ export class EngineeringIssueSearchService {
   /** Browses saved explanations without generating text or requiring a keyword. */
   async catalogue(query: string, scope: EngineeringKnowledgeScope, after: string | undefined,
     actor: CanonicalHostActor): Promise<EngineeringKnowledgePage> {
-    this.requireActor(actor);
-    if (typeof query !== 'string' || query.length > 200 || !['CURRENT', 'ALL', 'HISTORICAL'].includes(scope))
-      throw new BadRequestException('ENGINEERING_KNOWLEDGE_QUERY_INVALID');
-    const search = query.trim();
-    let cursor: EngineeringKnowledgeIdentity | undefined;
-    if (after) {
-      try {
-        if (after.length > 2400) throw new Error();
-        const decoded = JSON.parse(Buffer.from(after, 'base64url').toString('utf8'));
-        if (decoded.search !== search || decoded.scope !== scope) throw new Error();
-        cursor = knowledgeIdentitySchema.parse(decoded.identity);
-      } catch { throw new BadRequestException('ENGINEERING_KNOWLEDGE_CURSOR_INVALID'); }
-    }
-    const observation = new EngineeringReadPhaseObservation();
+    const observation = new EngineeringReadPhaseObservation({
+      timeline: process.env.WISELINK_CATALOGUE_TIMELINE === '1',
+    });
     const entries: EngineeringKnowledgeEntry[] = [];
     let batches = 0;
-    // Only authorized entries count toward the page and continuation. Each batch
-    // loads identities only; the existing exact reader checks retained sources.
-    // Reads run in order-preserving groups of four. One in-flight or succeeded
-    // read is shared per exact identity within this call only; a denied read is
-    // dropped so it never becomes an authorization cache.
-    const workReads = new Map<string, Promise<SavedIssueWork>>();
-    const readWork = (row: EngineeringKnowledgeIdentity, batch?: EngineeringMatterSavedRowBatch): Promise<SavedIssueWork> => {
-      const key = JSON.stringify([row.subjectKind, row.subjectId, row.workRef]);
-      const existing = workReads.get(key);
-      if (existing) return existing;
-      const work = observation.measure(row.subjectKind === 'WORK_ITEM'
-        ? 'work_item_exact_read' : 'matter_exact_read',
-      () => this.loadWork({ ...row, issueKey: '' }, actor, observation, batch));
-      workReads.set(key, work);
-      void work.catch(() => workReads.delete(key));
-      return work;
-    };
-    while (entries.length < 21) {
-      if (batches++ === 5) throw new ServiceUnavailableException('ENGINEERING_KNOWLEDGE_SCAN_LIMIT');
-      const rows = await observation.measure('candidate_query', () =>
-        this.db.execute<EngineeringKnowledgeIdentity & { current: boolean }>(sql`
+    let windowIndex = 0;
+    let completed = false;
+    observation.mark('catalogue_start');
+    try {
+      this.requireActor(actor);
+      if (typeof query !== 'string' || query.length > 200 || !['CURRENT', 'ALL', 'HISTORICAL'].includes(scope))
+        throw new BadRequestException('ENGINEERING_KNOWLEDGE_QUERY_INVALID');
+      const search = query.trim();
+      let cursor: EngineeringKnowledgeIdentity | undefined;
+      if (after) {
+        try {
+          if (after.length > 2400) throw new Error();
+          const decoded = JSON.parse(Buffer.from(after, 'base64url').toString('utf8'));
+          if (decoded.search !== search || decoded.scope !== scope) throw new Error();
+          cursor = knowledgeIdentitySchema.parse(decoded.identity);
+        } catch { throw new BadRequestException('ENGINEERING_KNOWLEDGE_CURSOR_INVALID'); }
+      }
+      // Only authorized entries count toward the page and continuation. Each batch
+      // loads identities only; the existing exact reader checks retained sources.
+      // Reads run in order-preserving groups of four. One in-flight or succeeded
+      // read is shared per exact identity within this call only; a denied read is
+      // dropped so it never becomes an authorization cache.
+      const workReads = new Map<string, { work: Promise<SavedIssueWork>; readInstance: number }>();
+      const readWork = (row: EngineeringKnowledgeIdentity, window: EngineeringReadPhaseObservation,
+        rootSlot: number, batch?: EngineeringMatterSavedRowBatch): Promise<SavedIssueWork> => {
+        const key = JSON.stringify([row.subjectKind, row.subjectId, row.workRef]);
+        const existing = workReads.get(key);
+        if (existing) {
+          window.scope({ rootSlot, readInstance: existing.readInstance }).mark('root_reuse', 'reuse');
+          return existing.work;
+        }
+        const readInstance = observation.nextReadInstance();
+        const root = window.scope({ rootSlot, readInstance, attempt: 0, depth: 0 });
+        const work = root.measure(row.subjectKind === 'WORK_ITEM'
+          ? 'work_item_exact_read' : 'matter_exact_read',
+        () => this.loadWork({ ...row, issueKey: '' }, actor, root, batch));
+        workReads.set(key, { work, readInstance });
+        void work.catch(() => workReads.delete(key));
+        return work;
+      };
+      while (entries.length < 21) {
+        if (batches++ === 5) throw new ServiceUnavailableException('ENGINEERING_KNOWLEDGE_SCAN_LIMIT');
+        const rows = await observation.measure('candidate_query', () =>
+          this.db.execute<EngineeringKnowledgeIdentity & { current: boolean }>(sql`
         WITH works AS (
           SELECT 'WORK_ITEM'::text AS kind, w.work_item_id AS subject_id,
             w.assessment_work_revision_id AS work_ref, w.content_json::jsonb AS content,
@@ -124,38 +136,54 @@ export class EngineeringIssueSearchService {
           AND (${search}='' OR position(lower(${search}) in lower(content::text))>0)
           ${cursor ? sql`AND (kind,subject_id,work_ref)>(${cursor.subjectKind},${cursor.subjectId},${cursor.workRef})` : sql``}
         ORDER BY kind,subject_id,work_ref LIMIT 40`));
-      for (let start = 0; start < rows.length && entries.length < 21;) {
-        // The final group only needs enough authorized entries to determine
-        // whether another page exists. Denied rows still advance the scan.
-        const group = rows.slice(start, start + Math.min(CATALOGUE_READ_GROUP_SIZE, 21 - entries.length));
-        start += group.length;
-        const newMatterKeys = new Set(group.filter(row => row.subjectKind === 'ENGINEERING_MATTER')
-          .map(row => JSON.stringify([row.subjectKind, row.subjectId, row.workRef]))
-          .filter(key => !workReads.has(key)));
-        const batch = newMatterKeys.size >= 2
-          ? this.matters.createSavedReadBatch(newMatterKeys.size, observation) : undefined;
-        const settled = await observation.measure('read_group_wait', () =>
-          Promise.allSettled(group.map(row => readWork(row, batch))));
-        for (let index = 0; index < group.length && entries.length < 21; index += 1) {
-          const row = group[index];
-          const outcome = settled[index];
-          try {
-            if (outcome.status === 'rejected') throw outcome.reason;
-            entries.push(this.knowledgeEntryFromWork(row, outcome.value, row.current));
-          } catch (error) { if (!isAccessUnavailable(error)) throw error; }
+        for (let start = 0; start < rows.length && entries.length < 21;) {
+          // The final group only needs enough authorized entries to determine
+          // whether another page exists. Denied rows still advance the scan.
+          const group = rows.slice(start, start + Math.min(CATALOGUE_READ_GROUP_SIZE, 21 - entries.length));
+          start += group.length;
+          const newMatterKeys = new Set(group.filter(row => row.subjectKind === 'ENGINEERING_MATTER')
+            .map(row => JSON.stringify([row.subjectKind, row.subjectId, row.workRef]))
+            .filter(key => !workReads.has(key)));
+          const window = observation.scope({ windowIndex: windowIndex++ });
+          const batch = newMatterKeys.size >= 2
+            ? this.matters.createSavedReadBatch(newMatterKeys.size, window) : undefined;
+          const settled = await window.measure('read_group_wait', () =>
+            Promise.allSettled(group.map((row, rootSlot) => readWork(row, window, rootSlot, batch))));
+          for (let index = 0; index < group.length && entries.length < 21; index += 1) {
+            const row = group[index];
+            const outcome = settled[index];
+            try {
+              if (outcome.status === 'rejected') throw outcome.reason;
+              entries.push(this.knowledgeEntryFromWork(row, outcome.value, row.current));
+            } catch (error) { if (!isAccessUnavailable(error)) throw error; }
+          }
         }
+        if (rows.length < 40 || entries.length === 21) break;
+        cursor = rows[rows.length - 1];
       }
-      if (rows.length < 40 || entries.length === 21) break;
-      cursor = rows[rows.length - 1];
+      const page = entries.slice(0, 20);
+      const last = page[page.length - 1];
+      const result = { entries: page, nextCursor: entries.length > 20 && last ? Buffer.from(JSON.stringify({
+        search, scope, identity: { subjectKind: last.subjectKind, subjectId: last.subjectId, workRef: last.workRef },
+      })).toString('base64url') : null };
+      completed = true;
+      return result;
+    } finally {
+      observation.mark('catalogue_end', completed ? 'ok' : 'error');
+      // Telemetry is best-effort: it must not replace a read result or its error.
+      try {
+        this.logger.log({ event: 'ENGINEERING_KNOWLEDGE_CATALOGUE_PHASES',
+          scope: ['CURRENT', 'ALL', 'HISTORICAL'].includes(scope) ? scope : undefined,
+          status: completed ? 'ok' : 'error',
+          candidateBatches: observation.snapshot().candidate_query?.count ?? 0,
+          visibleEntries: entries.length, durationMs: observation.elapsedMs(),
+          windows: observation.windowSnapshot(), phases: observation.snapshot(),
+          timeline: observation.timelineSnapshot() });
+      } catch {
+        try { this.logger.warn('ENGINEERING_KNOWLEDGE_CATALOGUE_OBSERVATION_UNAVAILABLE'); }
+        catch { /* A broken telemetry sink cannot alter business error precedence. */ }
+      }
     }
-    const page = entries.slice(0, 20);
-    const last = page[page.length - 1];
-    this.logger.log({ event: 'ENGINEERING_KNOWLEDGE_CATALOGUE_PHASES',
-      scope, candidateBatches: batches, visibleEntries: entries.length,
-      phases: observation.snapshot() });
-    return { entries: page, nextCursor: entries.length > 20 && last ? Buffer.from(JSON.stringify({
-      search, scope, identity: { subjectKind: last.subjectKind, subjectId: last.subjectId, workRef: last.workRef },
-    })).toString('base64url') : null };
   }
 
   async readKnowledge(identity: EngineeringKnowledgeIdentity, actor: CanonicalHostActor): Promise<EngineeringKnowledgeRead> {
