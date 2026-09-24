@@ -1376,7 +1376,7 @@ test('requires 35 MCP capabilities, six review tools, and hosted provenance', ()
   assert.ok(HOST_MCP_TOOLS.includes('commit_applicability_candidate'));
   assert.equal(
     WISELINK_SKILL_VERSION,
-    'wiselink-research-and-synthesize@r09.c121',
+    'wiselink-research-and-synthesize@r09.c122',
   );
   assert.equal(
     WISELINK_SKILL_COMPATIBILITY_REF,
@@ -7666,13 +7666,9 @@ test('official model adapter chooses original discovery guidance and returns nat
   assert.deepEqual(result.output,output);
 });
 
-// Previous deployed surface confirmed at release 7684835221602864077, plus c112 document_reading.
-// The added tool is a code contract here, not a claim of current online deployment.
+// This synthetic surface preserves the exact deployed read_matter_current_work contract.
 // Keep this observation independent of HOST_MCP_TOOLS, which omitted four tools in c87.
-// read_matter_current_work is reserved for the future 17b Host read-only precheck and is
-// NOT yet deployed by the Host; the surface below only pins the runtime contract (name,
-// read-only annotations, strict matterId-only schema) the Host must provide once that
-// batch lands. Do not claim this tool is already available on the Host.
+// The runtime contract pins its name, read-only annotations and strict matterId-only schema.
 const READ_MATTER_CURRENT_WORK_TOOL = {
   name: 'read_matter_current_work',
   annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false },

@@ -15,6 +15,8 @@ import { ProductionMiaodaBrowserObjectIngressGuard } from '../work-item/producti
 import { hostActor } from './canonical-host-request-actor';
 import { EngineeringMatterWorkingService } from './engineering-matter-working.service';
 import { MatterActionAttemptService } from './matter-action-attempt.service';
+import type { MatterAttemptScope } from './matter-action-attempt.service';
+import type { CanonicalHostActor } from './canonical-host.types';
 import {
   CANONICAL_SERVICE_SCOPE_AUTHORIZATION,
   canonicalServiceScopeUnavailable,
@@ -33,16 +35,23 @@ export class MatterAssessmentActivityController {
     private readonly authorization: CanonicalServiceScopeAuthorizationPort,
   ) {}
 
+  @Get(':matterId/execution-summary')
+  async summary(@Param('matterId') matterId: string, @Req() request: Request) {
+    this.validateMatterId(matterId);
+    const actor = hostActor(request);
+    await this.working.readWorking(matterId, actor);
+    const scope = await this.browserScope(matterId, actor);
+    return this.attempts.readExecutionSummaryForBrowser(scope, actor);
+  }
+
   @Get(':matterId/assessment-activity')
   async read(
     @Param('matterId') matterId: string,
     @Query() raw: Record<string, unknown>,
     @Req() request: Request,
   ) {
+    this.validateMatterId(matterId);
     if (
-      !matterId ||
-      matterId.trim() !== matterId ||
-      matterId.length > 96 ||
       Object.keys(raw).some(
         (key) => !['attemptRef', 'workRef', 'cursor', 'limit'].includes(key),
       ) ||
@@ -63,6 +72,16 @@ export class MatterAssessmentActivityController {
     if (query.workRef)
       await this.working.readWorkingRevision(matterId, query.workRef, actor);
     else await this.working.readWorking(matterId, actor);
+    const scope = await this.browserScope(matterId, actor);
+    return this.attempts.readActivityForBrowser(scope, query, actor);
+  }
+
+  private validateMatterId(matterId: string): void {
+    if (!matterId || matterId.trim() !== matterId || matterId.length > 96)
+      throw new BadRequestException('MATTER_ACTIVITY_QUERY_INVALID');
+  }
+
+  private async browserScope(matterId: string, actor: CanonicalHostActor): Promise<MatterAttemptScope> {
     const target = await this.authorization.authorizeOpenClawMatterRequest?.({
       matterId,
     });
@@ -89,15 +108,11 @@ export class MatterAssessmentActivityController {
       )
         throw canonicalServiceScopeUnavailable();
     };
-    return this.attempts.readActivityForBrowser(
-      {
-        tenantId: actor.tenantId,
-        actorUserId: actor.userId,
-        matterId,
-        authorizeReferenceMatter,
-      },
-      query,
-      actor,
-    );
+    return {
+      tenantId: actor.tenantId,
+      actorUserId: actor.userId,
+      matterId,
+      authorizeReferenceMatter,
+    };
   }
 }

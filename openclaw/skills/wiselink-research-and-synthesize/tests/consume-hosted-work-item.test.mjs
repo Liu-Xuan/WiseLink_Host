@@ -4,7 +4,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import test from 'node:test';
 
-import { consumeHostedWorkItem, initialStageLimit, runHostedInitialStage } from '../scripts/consume-hosted-work-item.mjs';
+import { consumeHostedWorkItem, initialStageLimit, matterPreflightMode, runHostedInitialStage } from '../scripts/consume-hosted-work-item.mjs';
 import { initialStageCheckpointPath } from '../scripts/initial-assessment-recovery.mjs';
 import { createCheckpointStore } from '../scripts/run-hosted-review-turn.mjs';
 
@@ -713,6 +713,27 @@ test('native jobs require one subject and never hide Matter behind a WorkItem de
     await assert.rejects(consumeHostedWorkItem(input, dependencies), /CONSUMER_SINGLE_SUBJECT_REQUIRED/);
   }
   assert.equal(calls, 0);
+});
+
+test('Matter preflight modes stay scoped to one Matter and never enter WorkItem dispatch', async () => {
+  let calls = 0;
+  const dependencies = { callTool: async () => { calls += 1; } };
+  await assert.rejects(consumeHostedWorkItem({ workItemId: 'WI-one', matterPreflightOnly: true }, dependencies),
+    /MATTER_PREFLIGHT_TARGET_REQUIRED/);
+  await assert.rejects(consumeHostedWorkItem({ matterId: 'MAT-one', matterPreflightOnly: true,
+    matterExpectedSnapshot: 'a'.repeat(64) }, dependencies), /MATTER_PREFLIGHT_MODE_AMBIGUOUS/);
+  assert.equal(calls, 0);
+});
+
+test('Matter preflight CLI refuses unsupported equals syntax instead of silently dispatching', () => {
+  const snapshot = 'a'.repeat(64);
+  assert.deepEqual(matterPreflightMode(['--matter-preflight-only'], 'MAT-one'),
+    { matterPreflightOnly: true, matterExpectedSnapshot: undefined });
+  assert.deepEqual(matterPreflightMode(['--matter-expected-snapshot', snapshot], 'MAT-one'),
+    { matterPreflightOnly: false, matterExpectedSnapshot: snapshot });
+  for (const arg of [`--matter-expected-snapshot=${snapshot}`, '--matter-preflight-only=true'])
+    assert.throws(() => matterPreflightMode([arg], 'MAT-one'), /MATTER_PREFLIGHT_OPTION_INVALID/);
+  assert.throws(() => matterPreflightMode(['--matter-preflight-only'], null), /MATTER_PREFLIGHT_TARGET_REQUIRED/);
 });
 
 test('independent native job invocations progress while another subject is waiting', async () => {

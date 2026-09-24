@@ -6,7 +6,76 @@ import { join } from 'node:path';
 import { consumeHostedMatter } from '../scripts/consume-hosted-matter.mjs';
 import { invokeHostedJobAidProblemModel } from '../scripts/run-jobaid-problem-assessment.mjs';
 import { createCheckpointStore } from '../scripts/run-hosted-review-turn.mjs';
-import { WISELINK_SKILL_VERSION, WISELINK_HOST_MCP_NAME, WISELINK_HOST_MCP_VERSION } from '../scripts/validate-payload.mjs';
+import { canonicalSha256, WISELINK_SKILL_VERSION, WISELINK_HOST_MCP_NAME, WISELINK_HOST_MCP_VERSION } from '../scripts/validate-payload.mjs';
+
+const preflightWork = { matterId: 'MAT-one', matterRevisionId: 'MR-one', matterRevision: 2,
+  workRef: 'MWR-one', workingRevision: 1,
+  current: { matterWorkRevisionId: 'MWR-one', workingRevision: 1 },
+  currentInputs: [{ kind: 'DOCUMENT_VERSION', ref: 'DV-one' }],
+  sourceCatalog: [{ evidenceRef: 'DOCUMENT_VERSION:DV-one:page:1' }],
+  eligibleEvidenceRefs: ['DOCUMENT_VERSION:DV-one:page:1'], activeAttempts: [] };
+
+test('Matter preflight is read only and reports the authorized current binding', async () => {
+  const calls = [];
+  const result = await consumeHostedMatter({ matterId: 'MAT-one', matterPreflightOnly: true }, {
+    callTool: async (name, input) => { calls.push(name); assert.deepEqual(input, { matterId: 'MAT-one' });
+      return preflightWork; },
+  });
+  assert.deepEqual(calls, ['read_matter_current_work']);
+  assert.equal(result.status, 'PREFLIGHT_READY');
+  assert.equal(result.snapshot, canonicalSha256(preflightWork));
+  assert.equal(result.workRef, 'MWR-one');
+  assert.equal(result.sourceCount, 1);
+  assert.equal(Object.hasOwn(result, 'sourceCatalog'), false);
+});
+
+test('Matter preflight does not treat an active attempt or empty work as permission to dispatch', async () => {
+  for (const [read, status] of [
+    [{ ...preflightWork, activeAttempts: [{ attemptRef: 'AQ-one', status: 'RUNNING' }] }, 'PREFLIGHT_ACTIVE_ATTEMPT'],
+    [{ ...preflightWork, workRef: null, workingRevision: 0, current: null }, 'PREFLIGHT_NO_WORK'],
+  ]) {
+    let calls = 0;
+    const result = await consumeHostedMatter({ matterId: 'MAT-one', matterPreflightOnly: true }, {
+      callTool: async name => { calls++; assert.equal(name, 'read_matter_current_work'); return read; },
+    });
+    assert.equal(result.status, status);
+    assert.equal(calls, 1);
+  }
+});
+
+test('an explicit Matter snapshot gate stops changed work or sources before dispatch', async () => {
+  const expected = canonicalSha256(preflightWork);
+  for (const read of [
+    { ...preflightWork, workRef: 'MWR-two', workingRevision: 2,
+      current: { matterWorkRevisionId: 'MWR-two', workingRevision: 2 } },
+    { ...preflightWork, sourceCatalog: [{ evidenceRef: 'DOCUMENT_VERSION:DV-two:page:1' }] },
+  ]) {
+    const result = await consumeHostedMatter({ matterId: 'MAT-one', matterExpectedSnapshot: expected }, {
+      callTool: async name => { assert.equal(name, 'read_matter_current_work'); return read; },
+    });
+    assert.equal(result.status, 'PREFLIGHT_CHANGED');
+    assert.notEqual(result.snapshot, expected);
+  }
+  const calls = [];
+  const unchanged = await consumeHostedMatter({ matterId: 'MAT-one', matterExpectedSnapshot: expected }, {
+    callTool: async name => { calls.push(name); return name === 'read_matter_current_work' ? preflightWork
+      : { matterId: 'MAT-one', next: null }; },
+  });
+  assert.equal(unchanged.status, 'IDLE');
+  assert.deepEqual(calls, ['read_matter_current_work', 'next_matter_assessment']);
+});
+
+test('Matter preflight fails closed on an unauthorized or malformed read', async () => {
+  await assert.rejects(consumeHostedMatter({ matterId: 'MAT-one', matterPreflightOnly: true }, {
+    callTool: async () => { throw new Error('HOST_FORBIDDEN'); },
+  }), /HOST_FORBIDDEN/);
+  await assert.rejects(consumeHostedMatter({ matterId: 'MAT-one', matterPreflightOnly: true }, {
+    callTool: async () => ({ ...preflightWork, matterId: 'MAT-other' }),
+  }), /MATTER_PREFLIGHT_READ_INVALID/);
+  await assert.rejects(consumeHostedMatter({ matterId: 'MAT-one', matterExpectedSnapshot: 'old' }, {
+    callTool: async () => assert.fail('must not read'),
+  }), /MATTER_PREFLIGHT_SNAPSHOT_INVALID/);
+});
 
 test('Matter reads published original with exact evidence and returns its continuation', async () => {
   const { readMatterAssessmentSources } = await import('../scripts/consume-hosted-matter.mjs');

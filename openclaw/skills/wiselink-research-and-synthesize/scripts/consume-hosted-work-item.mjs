@@ -54,6 +54,10 @@ const INITIAL_TOOLS = new Set([
 export async function consumeHostedWorkItem(options, dependencies) {
   assertSingleConsumerSubject(options);
   assertExpectedInitialOperationMode(options);
+  if ((options.matterPreflightOnly || options.matterExpectedSnapshot !== undefined) && !options.matterId)
+    throw new Error('MATTER_PREFLIGHT_TARGET_REQUIRED');
+  if (options.matterPreflightOnly && options.matterExpectedSnapshot !== undefined)
+    throw new Error('MATTER_PREFLIGHT_MODE_AMBIGUOUS');
   if (options.documentVersionId) return consumeHostedDocument(options, dependencies);
   if (options.matterId) return consumeHostedMatter(options, dependencies);
   let statusResult = await dependencies.callTool('get_parse_status', {
@@ -531,18 +535,37 @@ function assertSingleConsumerSubject({ workItemId, matterId, documentVersionId }
       (hasDocument && !/^[A-Za-z0-9_-]{1,96}$/u.test(documentVersionId))) throw new Error('CONSUMER_SUBJECT_INVALID');
 }
 
+export function matterPreflightMode(argv, matterId) {
+  if (argv.some(arg => arg.startsWith('--matter-preflight-only=') ||
+      arg.startsWith('--matter-expected-snapshot=')))
+    throw new Error('MATTER_PREFLIGHT_OPTION_INVALID');
+  const matterPreflightOnly = argv.includes('--matter-preflight-only');
+  const hasExpectedSnapshot = argv.includes('--matter-expected-snapshot');
+  if ((matterPreflightOnly || hasExpectedSnapshot) && !matterId)
+    throw new Error('MATTER_PREFLIGHT_TARGET_REQUIRED');
+  if (matterPreflightOnly && hasExpectedSnapshot)
+    throw new Error('MATTER_PREFLIGHT_MODE_AMBIGUOUS');
+  const matterExpectedSnapshot = option(argv, '--matter-expected-snapshot');
+  if (argv.filter(arg => arg === '--matter-preflight-only').length > 1 ||
+      argv.filter(arg => arg === '--matter-expected-snapshot').length > 1 ||
+      (hasExpectedSnapshot && !/^[a-f0-9]{64}$/u.test(matterExpectedSnapshot ?? '')))
+    throw new Error('MATTER_PREFLIGHT_SNAPSHOT_INVALID');
+  return { matterPreflightOnly, matterExpectedSnapshot };
+}
+
 async function main(argv, env) {
   if (argv.includes('--help')) {
-    process.stdout.write('Usage: node consume-hosted-work-item.mjs [--work-item-id WI-...] [--matter-id MAT-...] [--document-version-id DV] [--max-initial-stages 1] [--expected-initial-operation EVALUATE_JOBAID|SYNTHESIZE_OVERALL] [--applicability-context-ref REF] [--checkpoint-root PATH] [--openclaw-config PATH] [--native-session-store PATH] [--document-translation-recovery ID] [--activity-run-ref ID] [--reading-run-ref ID] [--lease-owner ID]\nOne native job per authorized subject. Choose exactly one WorkItem, Matter or DocumentVersion; independent jobs use native cron concurrency. --max-initial-stages 1 is WorkItem-only and consumes at most the current initial stage, without Review or original-impact work. --expected-initial-operation requires that limit and refuses any entry stage other than the named JobAid or Overall stage.\n');
+    process.stdout.write('Usage: node consume-hosted-work-item.mjs [--work-item-id WI-...] [--matter-id MAT-...] [--document-version-id DV] [--matter-preflight-only | --matter-expected-snapshot SHA256] [--max-initial-stages 1] [--expected-initial-operation EVALUATE_JOBAID|SYNTHESIZE_OVERALL] [--applicability-context-ref REF] [--checkpoint-root PATH] [--openclaw-config PATH] [--native-session-store PATH] [--document-translation-recovery ID] [--activity-run-ref ID] [--reading-run-ref ID] [--lease-owner ID]\nOne native job per authorized subject. Choose exactly one WorkItem, Matter or DocumentVersion; independent jobs use native cron concurrency. --matter-preflight-only reads current Matter work without dispatch; --matter-expected-snapshot checks that read again before dispatch and stops on a changed snapshot. --max-initial-stages 1 is WorkItem-only and consumes at most the current initial stage, without Review or original-impact work. --expected-initial-operation requires that limit and refuses any entry stage other than the named JobAid or Overall stage.\n');
     return;
   }
   const workItemId = option(argv, '--work-item-id');
   const matterId = option(argv, '--matter-id');
   const documentVersionId = option(argv, '--document-version-id');
   assertSingleConsumerSubject({ workItemId, matterId, documentVersionId });
+  const { matterPreflightOnly, matterExpectedSnapshot } = matterPreflightMode(argv, matterId);
   const stageLimit = initialStageLimit(argv, workItemId, matterId, documentVersionId);
   const runtime = await resolveRuntimeConfig(argv, env);
-  assertHostedModelGatewayReady(runtime);
+  if (!matterPreflightOnly) assertHostedModelGatewayReady(runtime);
   const activityRunRef = option(argv, '--activity-run-ref');
   if (activityRunRef !== undefined && !/^[A-Za-z0-9_-]{1,96}$/u.test(activityRunRef))
     throw new Error('ACTIVITY_RUN_REF_INVALID');
@@ -578,6 +601,8 @@ async function main(argv, env) {
     const result = await consumeHostedWorkItem({
       workItemId,
       matterId,
+      matterPreflightOnly,
+      matterExpectedSnapshot,
       documentVersionId,
       ...stageLimit,
       applicabilityContextRef: option(argv, '--applicability-context-ref'),
