@@ -23,6 +23,7 @@ import {
 } from '@client/src/api/canonical-host';
 import { uploadFile } from '@client/src/components/business-ui/api/files/service';
 import { Button } from '@client/src/components/ui/button';
+import { OfficialOauthLink } from '@client/src/components/OfficialOauthLink';
 import { useCurrentUserSession } from '@client/src/app/providers/CurrentUserSessionProvider';
 import { createRequestCorrelationId } from '@client/src/utils/request-correlation-id';
 import TaskModelPicker, {
@@ -74,6 +75,7 @@ export function HostedDevelopmentIntake() {
   const [pickerOpen, setPickerOpen] = useState(false);
   const [pickerPhase, setPickerPhase] = useState<ExistingPickerPhase>('idle');
   const [pickerError, setPickerError] = useState<string | null>(null);
+  const [pickerNeedsOauth, setPickerNeedsOauth] = useState(false);
   const [pickerItems, setPickerItems] = useState<ExistingStoragePdfOption[]>(
     [],
   );
@@ -102,6 +104,7 @@ export function HostedDevelopmentIntake() {
     setPickerOpen(false);
     setPickerPhase('idle');
     setPickerError(null);
+    setPickerNeedsOauth(false);
     setPickerItems([]);
     setSearchDraft('');
     setSearchQuery('');
@@ -114,6 +117,7 @@ export function HostedDevelopmentIntake() {
     const controller = new AbortController();
     setPickerPhase('loading');
     setPickerError(null);
+    setPickerNeedsOauth(false);
     void listExistingStoragePdfs({
       search: searchQuery,
       offset: pickerOffset,
@@ -127,10 +131,10 @@ export function HostedDevelopmentIntake() {
       })
       .catch((reason: unknown) => {
         if (controller.signal.aborted) return;
-        if (
-          reason instanceof ExistingStoragePdfListError &&
-          reason.code === 'AUTH_REQUIRED'
-        ) {
+        const errorCode =
+          reason instanceof ExistingStoragePdfListError ? reason.code : null;
+        setPickerNeedsOauth(errorCode === 'OAUTH_REQUIRED');
+        if (errorCode === 'AUTH_REQUIRED') {
           invalidateSession();
         }
         setPickerItems([]);
@@ -471,13 +475,15 @@ export function HostedDevelopmentIntake() {
                   正在读取当前会话中的 PDF…
                 </p>
               ) : pickerPhase === 'failed' ? (
-                <p
-                  className="hosted-intake-existing-state is-error"
-                  role="alert"
-                >
-                  <TriangleAlert aria-hidden="true" />
-                  {pickerError}
-                </p>
+                <div role="alert">
+                  <p className="hosted-intake-existing-state is-error">
+                    <TriangleAlert aria-hidden="true" />
+                    {pickerError}
+                  </p>
+                  {pickerNeedsOauth ? (
+                    <OfficialOauthLink>连接飞书身份</OfficialOauthLink>
+                  ) : null}
+                </div>
               ) : pickerItems.length === 0 ? (
                 <p className="hosted-intake-existing-state">
                   当前页没有可选择的 PDF。
@@ -608,6 +614,9 @@ function fileSizeLabel(bytes: number): string {
 
 function existingPickerError(reason: unknown): string {
   if (reason instanceof ExistingStoragePdfListError) {
+    if (reason.code === 'OAUTH_REQUIRED') {
+      return '读取已上传 PDF 需要连接飞书身份。';
+    }
     if (reason.code === 'AUTH_REQUIRED') {
       return '登录状态已失效，请重新登录后再读取已上传 PDF。';
     }
