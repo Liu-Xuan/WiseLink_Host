@@ -1,5 +1,11 @@
 # M 主控集成交接
 
+## 2026-09-26 自动队列线上待领状态核对
+
+通过妙搭官方 `apps +db-execute` 以用户身份对 17b **online** 数据库作只读查询：`auto_work_item_authorization` 当前共 4 条，`COMPLETED=3`、`BLOCKED=1`，没有 `WAITING` 或 `LEASED`。真实 787 工程文档 `WI-a5ffd931-840b-40eb-b534-c05777b30706` 的授权为 `COMPLETED`，租约代次 3，完成时间 2026-09-26 04:36:40 +08。唯一阻断项 `WI-2c7a3b03-93ef-45a6-a99e-7dfa0321230e` 是 `dev:*` FTD 样本，`blocked_code=AUTO_WORK_ITEM_STAGE_JOBAID_FAILED`；其解析尝试成功，JobAid 尝试为 `CANCELLED_BY_REQUEST`。这些记录没有被修改，不把阻断样本重新入队冒充新上传。
+
+因此，当前不存在可供 C136 直接领取的待处理样本。17c Chrome 被扩展弹窗占用，Codex 内部浏览器的飞书登录已过期，本轮未取得 C136 定时任务的**当前**运行配置读回；上一次可确认的 C148 回执是 C136 停用、四项旧固定目标任务启用。后续无人值守验收须在浏览器恢复后，从正常上传入口产生新的有效授权，并先核对 C136 实际启停、命令与重叠调度行为；不得把一次受控消费或旧完成记录算作默认调度证明。
+
 ## 2026-09-26 C149 既存工作首屏保留决定性条件
 
 Host 提交 `caec4b3ad404c72b581808e3da71c43c686bec3b`（父项 `87758fef0`）已推送 `origin/codex/wl-c125-auto-engineering-flow`；17b release `7689586170108169172` 回读 `finished`、`commit_id=caec4b3ad404c72b581808e3da71c43c686bec3b`、`error_logs=[]`。本地定向 Jest 13/13、前端 TypeScript 与 `git diff --check` 通过。短保存摘要现在整体呈现，避免把“构型仍待核实、不可据此实施”等第二分句藏掉；旧的元数据开头长摘要从已保存原句中选取工程问题与限制，完整原文仍在展开区。综合阅读中的决定性条件也移到首个折叠区之前。
