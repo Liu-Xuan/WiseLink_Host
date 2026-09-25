@@ -29,7 +29,7 @@ describe('OpenClaw automatic WorkItem queue scope', () => {
     }
   });
 
-  it('requires the fixed service identity and dedicated queue opt-in', async () => {
+  it('uses the configured trusted service identity with dedicated queue opt-in', async () => {
     const authorization =
       new ConfiguredDevelopmentCanonicalServiceScopeAuthorization();
     setBaseScope();
@@ -45,17 +45,17 @@ describe('OpenClaw automatic WorkItem queue scope', () => {
     await expect(
       authorization.authorizeOpenClawAutoWorkItemQueue(),
     ).resolves.toMatchObject({
-      principalId: 'service:openclaw-main',
+      principalId: 'service:openclaw-g2-dev-20260826',
       appId: 'app_17bzc551rsg',
       tenantId: 'tenant-01',
       authorizationFingerprint: expect.stringMatching(/^sha256:[0-9a-f]{64}$/u),
     });
   });
 
-  it('does not accept another configured service principal for this queue', async () => {
+  it('rejects a malformed configured service principal', async () => {
     setBaseScope();
     process.env.WL_OPENCLAW_SERVICE_AUTO_QUEUE_ENABLED = '1';
-    process.env.WL_OPENCLAW_SERVICE_PRINCIPAL_ID = 'service:other';
+    process.env.WL_OPENCLAW_SERVICE_PRINCIPAL_ID = 'other';
     const authorization =
       new ConfiguredDevelopmentCanonicalServiceScopeAuthorization();
 
@@ -89,7 +89,7 @@ describe('OpenClaw automatic WorkItem queue scope', () => {
     > = {
       authorizeActiveLease: jest.fn().mockResolvedValue({
         tenantId: 'tenant-01',
-        principalId: 'service:openclaw-main',
+        principalId: 'service:openclaw-g2-dev-20260826',
         workItemId: 'WI-dynamic',
         requestId: 'REQ-dynamic',
         actorUserId: 'user-dynamic',
@@ -115,7 +115,7 @@ describe('OpenClaw automatic WorkItem queue scope', () => {
       }),
     ).resolves.toMatchObject({
       tenantId: 'tenant-01',
-      principalId: 'service:openclaw-main',
+      principalId: 'service:openclaw-g2-dev-20260826',
       workItemId: 'WI-dynamic',
       automaticWorkItemLease: {
         actorUserId: 'user-dynamic',
@@ -135,7 +135,7 @@ describe('OpenClaw automatic WorkItem queue scope', () => {
     expect(leaseAuthorization.authorizeActiveLease).toHaveBeenCalledTimes(3);
     expect(leaseAuthorization.authorizeActiveLease).toHaveBeenNthCalledWith(1, {
       tenantId: 'tenant-01',
-      principalId: 'service:openclaw-main',
+      principalId: 'service:openclaw-g2-dev-20260826',
       workItemId: 'WI-dynamic',
     });
   });
@@ -182,6 +182,6 @@ function setBaseScope(): void {
   process.env.WL_OPENCLAW_SERVICE_SCOPE_ENABLED = '1';
   process.env.WL_OPENCLAW_GATEWAY_AUTH_MODE = 'API_KEY';
   process.env.WL_OPENCLAW_SERVICE_SCOPE_ENV = 'DEV';
-  process.env.WL_OPENCLAW_SERVICE_PRINCIPAL_ID = 'service:openclaw-main';
+  process.env.WL_OPENCLAW_SERVICE_PRINCIPAL_ID = 'service:openclaw-g2-dev-20260826';
   process.env.WL_OPENCLAW_SERVICE_TENANT_ID = 'tenant-01';
 }

@@ -35,7 +35,6 @@ import { CanonicalHostInitialAnalysisStatusService } from './canonical-host-init
 import { canonicalHostBareSha256 } from './canonical-host-sha256';
 
 const CANONICAL_APP_ID = 'app_17bzc551rsg';
-const OPENCLAW_QUEUE_PRINCIPAL_ID = 'service:openclaw-main';
 const AUTO_WORK_ITEM_LEASE_MILLISECONDS = 60 * 60 * 1000;
 
 export type NextAutoWorkItemResult = AutomaticWorkItemClaimResult;
@@ -430,7 +429,9 @@ export function automaticAuthorizationBindingMismatch(
     Number(authorization.sourceByteLength) !== Number(row.sourceByteLength) ||
     authorization.grantKind !== 'MIAODA_CANONICAL_PARSE_REQUEST' ||
     row.actionType !== 'PARSE_PDF' ||
-    row.runKey !== 'canonical' ||
+    // The browser intake issues the grant only after OAuth upload and exact
+    // source binding. A dev run key alone never creates a queue candidate.
+    (row.runKey !== 'canonical' && !row.runKey.startsWith('dev:')) ||
     row.status !== 'CANDIDATE_READBACK_VERIFIED' ||
     row.packageId === null
   ) {
@@ -443,7 +444,7 @@ function assertQueueScope(
   scope: CanonicalVerifiedAutoWorkItemQueueScope,
 ): void {
   if (
-    scope.principalId !== OPENCLAW_QUEUE_PRINCIPAL_ID ||
+    scope.principalId !== process.env.WL_OPENCLAW_SERVICE_PRINCIPAL_ID ||
     scope.appId !== CANONICAL_APP_ID ||
     !scope.tenantId.trim() ||
     !/^sha256:[0-9a-f]{64}$/u.test(scope.authorizationFingerprint)

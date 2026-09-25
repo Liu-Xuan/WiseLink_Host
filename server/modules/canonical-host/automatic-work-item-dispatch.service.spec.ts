@@ -29,6 +29,20 @@ const SOURCE_SHA256 = 'a'.repeat(64);
 const NOW = new Date('2026-09-25T08:00:00.000Z');
 
 describe('AutomaticWorkItemDispatchService', () => {
+  const previousPrincipalId = process.env.WL_OPENCLAW_SERVICE_PRINCIPAL_ID;
+
+  beforeEach(() => {
+    process.env.WL_OPENCLAW_SERVICE_PRINCIPAL_ID = 'service:openclaw-main';
+  });
+
+  afterAll(() => {
+    if (previousPrincipalId === undefined) {
+      delete process.env.WL_OPENCLAW_SERVICE_PRINCIPAL_ID;
+    } else {
+      process.env.WL_OPENCLAW_SERVICE_PRINCIPAL_ID = previousPrincipalId;
+    }
+  });
+
   it('does not discover a legacy WorkItem without a Host enrollment row', async () => {
     const workItems = repositoryDouble([]);
     const sources = sourceDouble();
@@ -250,9 +264,11 @@ describe('AutomaticWorkItemDispatchService', () => {
     expect(workItems.acknowledgeAutoProcessingLease).not.toHaveBeenCalled();
   });
 
-  it('blocks one mismatched grant and continues to the next authorized item', async () => {
+  it('claims a browser dev task only with its matching enrollment and source', async () => {
     const invalid = candidate({ actorUserId: 'other-user' });
     const valid = candidate();
+    invalid.workItem.runKey = 'dev:9dbe727d-67f4-46f1-ab9a-ee8870521cf4';
+    valid.workItem.runKey = 'dev:9dbe727d-67f4-46f1-ab9a-ee8870521cf4';
     const workItems = repositoryDouble([invalid, valid]);
     workItems.loadAuthorizationBinding.mockResolvedValue({
       workItemId: WORK_ITEM_ID,
@@ -262,7 +278,7 @@ describe('AutomaticWorkItemDispatchService', () => {
       documentId: DOCUMENT_ID,
       documentVersionId: DOCUMENT_VERSION_ID,
       requestedByUserId: ACTOR_ID,
-      runKey: 'canonical',
+      runKey: 'dev:9dbe727d-67f4-46f1-ab9a-ee8870521cf4',
     });
     workItems.loadAutoProcessingProjection.mockResolvedValue({
       row: {
@@ -427,6 +443,13 @@ describe('AutomaticWorkItemDispatchService', () => {
       automaticAuthorizationBindingMismatch(grant, row, TENANT_ID),
     ).toBeNull();
     expect(
+      automaticAuthorizationBindingMismatch(
+        grant,
+        { ...row, runKey: 'dev:9dbe727d-67f4-46f1-ab9a-ee8870521cf4' },
+        TENANT_ID,
+      ),
+    ).toBeNull();
+    expect(
       automaticAuthorizationBindingMismatch(grant, row, 'other-tenant'),
     ).toBe('AUTO_WORK_ITEM_AUTHORIZATION_BINDING_INVALID');
     expect(
@@ -443,6 +466,13 @@ describe('AutomaticWorkItemDispatchService', () => {
           grantKind: 'LEGACY' as AutoWorkItemAuthorizationBinding['grantKind'],
         },
         row,
+        TENANT_ID,
+      ),
+    ).toBe('AUTO_WORK_ITEM_AUTHORIZATION_BINDING_INVALID');
+    expect(
+      automaticAuthorizationBindingMismatch(
+        grant,
+        { ...row, runKey: 'other:untrusted' },
         TENANT_ID,
       ),
     ).toBe('AUTO_WORK_ITEM_AUTHORIZATION_BINDING_INVALID');
