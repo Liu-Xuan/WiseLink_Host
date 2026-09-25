@@ -185,13 +185,9 @@ export class CanonicalHostVerticalService {
     assertSameRequest(projection, request);
     assertSameAuthorization(projection, actionContext);
     if (projection.phase === 'CANDIDATE_READBACK_VERIFIED') {
-      try {
-        return await this.reuseCompleted(request, projection);
-      } catch (error) {
-        const failed: CanonicalWorkItemProjection =
-          await this.recordUnexpectedFailure(request, projection, error);
-        return failedResponse(failed, this.entryFacade.status(failed));
-      }
+      // A replay reads the saved package. Its read failure must not replace
+      // the already verified WorkItem result with a new parsing failure.
+      return this.reuseCompleted(request, projection);
     }
     if (projection.phase !== 'PARSE_REQUESTED') {
       throw new Error(`WORK_ITEM_NOT_RUNNABLE:${projection.phase}`);
