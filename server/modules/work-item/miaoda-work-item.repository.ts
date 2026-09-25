@@ -354,6 +354,7 @@ export class MiaodaWorkItemRepository {
     tenantId: string;
     now: Date;
     limit?: number;
+    workItemId?: string;
   }): Promise<AutoWorkItemQueueCandidate[]> {
     const limit = Math.min(Math.max(input.limit ?? 32, 1), 100);
     return this.db
@@ -372,6 +373,9 @@ export class MiaodaWorkItemRepository {
       .where(
         and(
           eq(autoWorkItemAuthorization.tenantId, input.tenantId),
+          ...(input.workItemId
+            ? [eq(autoWorkItemAuthorization.workItemId, input.workItemId)]
+            : []),
           or(
             eq(autoWorkItemAuthorization.status, 'WAITING'),
             and(

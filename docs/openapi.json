@@ -405,6 +405,25 @@
         "operationId": "nextWorkItem",
         "summary": "领取一个已登记且可执行的工程 WorkItem",
         "description": "只发现 Host 在正常受理时持久登记的新请求；旧 WorkItem 不自动纳管。固定 service:openclaw-main 队列身份与 DEV/UAT 租户必须显式启用。Host 每项重验租户、原提交人、DocumentVersion、来源权限、当前原件及候选解析投影；坏对象隔离后继续查找。无任务返回 IDLE，不触发模型或制造 WorkItem。成功返回的 leaseToken/leaseGeneration 仅交可信消费者编排层，勿写入模型输入或日志。",
+        "requestBody": {
+          "required": false,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": ["resumeWorkItemId"],
+                "additionalProperties": false,
+                "properties": {
+                  "resumeWorkItemId": {
+                    "type": "string",
+                    "description": "仅在过期续跑时重领该 exact WorkItem；队列不会退而领取其他事项",
+                    "example": "WI-3d41f7"
+                  }
+                }
+              }
+            }
+          }
+        },
         "responses": {
           "200": {
             "description": "空队列，或一个成功领取的精确 WorkItem 和短时租约",
@@ -676,6 +695,7 @@
         "summary": "OpenClaw 专用 ActionAttempt 队列与候选评估 MCP 入口",
         "x-wiselink-automatic-work-item-queue": {
           "discover": "POST /openapi/wiselink/next-work-item",
+          "resumeExpiredLease": "POST /openapi/wiselink/next-work-item {resumeWorkItemId}",
           "acknowledge": "POST /openapi/wiselink/ack-work-item",
           "blockTerminalFailure": "POST /openapi/wiselink/block-work-item",
           "behavior": "每次下游 WorkItem-bound MCP 操作重新核验固定 service owner 的有效租约、持久 grant、租户、原 actor、DocumentVersion、来源读取权限与当前原件。Host 根据当前初始分析状态限制 ack，并仅允许对终态 FAILED/CONFLICT 的事项执行 lease-fenced block；两者都不暴露给模型。已配置的静态 exact WorkItem scope 仍按旧路径工作。"

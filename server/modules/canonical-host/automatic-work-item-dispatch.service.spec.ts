@@ -39,6 +39,26 @@ describe('AutomaticWorkItemDispatchService', () => {
     expect(workItems.claimAutoProcessingCandidate).not.toHaveBeenCalled();
   });
 
+  it('restricts expired-lease recovery to that exact WorkItem', async () => {
+    const workItems = repositoryDouble([]);
+    const other = candidate();
+    other.authorization = authorization({ workItemId: 'WI-OTHER' });
+    other.workItem = workItemRow({ workItemId: 'WI-OTHER' });
+    workItems.listAutoProcessingCandidates.mockResolvedValue([other]);
+    const service = dispatchService(workItems, sourceDouble());
+
+    await expect(service.nextWorkItem({
+      resumeWorkItemId: WORK_ITEM_ID,
+    })).rejects.toMatchObject({
+      code: 'AUTO_WORK_ITEM_RECLAIM_SCOPE_MISMATCH',
+      statusCode: 409,
+    });
+    expect(workItems.listAutoProcessingCandidates).toHaveBeenCalledWith(
+      expect.objectContaining({ workItemId: WORK_ITEM_ID }),
+    );
+    expect(workItems.claimAutoProcessingCandidate).not.toHaveBeenCalled();
+  });
+
   it('acknowledges only after fresh active lease verification and token-generation CAS', async () => {
     const workItems = repositoryDouble([]);
     workItems.loadAutoProcessingProjection.mockResolvedValue(currentSnapshot(9));

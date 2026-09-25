@@ -3267,6 +3267,10 @@ export type AutomaticWorkItemClaimResult =
       leaseExpiresAt: string;
     };
 
+export interface NextAutomaticWorkItemRequest {
+  resumeWorkItemId?: string;
+}
+
 export interface AcknowledgeAutomaticWorkItemRequest {
   workItemId: string;
   leaseToken: string;

@@ -6,6 +6,7 @@ import type {
   BlockAutomaticWorkItemRequest,
   BlockAutomaticWorkItemResponse,
   AutomaticWorkItemClaimResult,
+  NextAutomaticWorkItemRequest,
 } from '@shared/api.interface';
 
 import { CanonicalHostOpenClawMcpService } from './canonical-host-openclaw-mcp.service';
@@ -35,9 +36,11 @@ export class CanonicalHostOpenClawMcpOpenApiController {
   }
 
   @Post('next-work-item')
-  async nextWorkItem(): Promise<AutomaticWorkItemClaimResult> {
+  async nextWorkItem(
+    @Body() body?: NextAutomaticWorkItemRequest,
+  ): Promise<AutomaticWorkItemClaimResult> {
     await this.serviceScope.assertAutoWorkItemQueueTransport();
-    return this.autoWorkItems.nextWorkItem();
+    return this.autoWorkItems.nextWorkItem(body);
   }
 
   @Post('ack-work-item')

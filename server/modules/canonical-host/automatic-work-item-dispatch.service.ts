@@ -9,6 +9,7 @@ import type {
   BlockAutomaticWorkItemRequest,
   BlockAutomaticWorkItemResponse,
   AutomaticWorkItemClaimResult,
+  NextAutomaticWorkItemRequest,
 } from '@shared/api.interface';
 import { MiaodaDocumentVersionSourceResolver } from '../work-item/miaoda-document-version-source.resolver';
 import {
@@ -55,7 +56,10 @@ export class AutomaticWorkItemDispatchService {
     private readonly initialAnalysisStatus?: CanonicalHostInitialAnalysisStatusService,
   ) {}
 
-  async nextWorkItem(): Promise<NextAutoWorkItemResult> {
+  async nextWorkItem(
+    input?: NextAutomaticWorkItemRequest,
+  ): Promise<NextAutoWorkItemResult> {
+    assertNextWorkItemInput(input);
     const scope = await this.serviceScope.authorizeOpenClawAutoWorkItemQueue();
     assertQueueScope(scope);
     const now = new Date();
@@ -63,9 +67,24 @@ export class AutomaticWorkItemDispatchService {
       tenantId: scope.tenantId,
       now,
       limit: 100,
+      ...(input?.resumeWorkItemId
+        ? { workItemId: input.resumeWorkItemId }
+        : {}),
     });
 
     for (const candidate of candidates) {
+      if (
+        input?.resumeWorkItemId &&
+        candidate.authorization.workItemId !== input.resumeWorkItemId
+      ) {
+        throw Object.assign(
+          new Error('AUTO_WORK_ITEM_RECLAIM_SCOPE_MISMATCH'),
+          {
+            code: 'AUTO_WORK_ITEM_RECLAIM_SCOPE_MISMATCH',
+            statusCode: 409,
+          },
+        );
+      }
       const reason = await this.validateCandidate(candidate, scope);
       if (reason) {
         await this.workItems.blockAutoProcessingCandidate({
@@ -491,6 +510,26 @@ function assertAcknowledgementInput(
   ) {
     throw Object.assign(new Error('AUTO_WORK_ITEM_ACK_INPUT_INVALID'), {
       code: 'AUTO_WORK_ITEM_ACK_INPUT_INVALID',
+      statusCode: 400,
+    });
+  }
+}
+
+function assertNextWorkItemInput(
+  input?: NextAutomaticWorkItemRequest,
+): void {
+  if (input === undefined) return;
+  if (
+    !input ||
+    typeof input !== 'object' ||
+    Array.isArray(input) ||
+    JSON.stringify(Object.keys(input).sort()) !==
+      JSON.stringify(['resumeWorkItemId']) ||
+    typeof input.resumeWorkItemId !== 'string' ||
+    !/^WI-[A-Za-z0-9_-]{1,93}$/u.test(input.resumeWorkItemId)
+  ) {
+    throw Object.assign(new Error('AUTO_WORK_ITEM_NEXT_INPUT_INVALID'), {
+      code: 'AUTO_WORK_ITEM_NEXT_INPUT_INVALID',
       statusCode: 400,
     });
   }
