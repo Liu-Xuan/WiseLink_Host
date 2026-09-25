@@ -99,7 +99,7 @@ describe('OpenClaw automatic WorkItem queue scope', () => {
         sourceFileSha256: 'a'.repeat(64),
         sourceByteLength: 1024,
         leaseGeneration: 3,
-        leaseExpiresAt: '2026-09-25T09:00:00.000Z',
+        leaseExpiresAt: '2099-01-01T00:00:00.000Z',
       }),
     };
     const authorization =
