@@ -1,5 +1,17 @@
 # M 主控集成交接
 
+## 2026-09-26 C147 已发布安装，真实任务完成受控接续
+
+Host 提交 `81e9ef19e076cf5270481eb361b68abacdec7bb1`（父项 `8967727e4`）已推送 `origin/codex/wl-c125-auto-engineering-flow`；17b release `7689562415578860527` 回读 `finished` 且指向该提交。定向验证为 Skill 525/525、Host 34/34、server TypeScript 检查通过。C147 将失败的首次自动重试限定为一次确切的后继接续：只有 Host 对原尝试的授权回读确认其保存过同一输入版本的工作，才可基于该工作继续；读取、保存和 ACK 仍由 Host 授权及版本合同控制。
+
+17c 私有存储包 `/1877333908520964.zip` 的 SHA256 为 `5f5b0211f5ea46c6a443b0c6c100aab693699c6beae854bd4dfdd2fb97b7a03d`。2026-09-26 04:xx +08 在云端终端下载、校验 ZIP 完整性及 61 个文件，备份原 Skill 到 `/home/gem/workspace/agent/tmp/c147-install/backup-c146`，安装到 `/home/gem/workspace/agent/workspace/skills/wiselink-research-and-synthesize`。安装目录与包的 61 个相对路径和逐文件 SHA256 完全一致，无缺失、额外或内容差异；逐文件清单保存在云端 `/home/gem/workspace/agent/tmp/c147-install/installed-manifest.tsv`，该清单 SHA256 为 `d859fedcb931dbb420c15b75bc3826f45aee45121aa15e322468fec013493d91`。实际 `SKILL.md` 读回 `r09.c147`。
+
+安装前四项固定任务 `355f0161`、`5c430aac`、`efc2b938`、`436ae83c` 均启用，其他样本任务与 C136 自动队列停用；无在途消费进程。安装时精确暂停四项，安装后逐项恢复并回读为启用；其他任务仍停用。四项是旧固定目标的定时调度定义，并非四个常驻进程。当前不删除其记录，待默认自动队列完成真实闭环后再判断退役与迁移。
+
+已从 17c 终端对正常上传的 `WI-a5ffd931-840b-40eb-b534-c05777b30706` 连续发起两次受控 C147 消费。Host 租约代次由 2 增至 3；后继 JobAid 尝试 `ATT-49249500-0ab3-482c-921c-af2675687690` 成功，先前 15 条修订保留并新增修订 16、17；Overall 尝试 `ATT-7ef2d17b-79d2-4c13-964f-41eca389c751` 成功，保存 JobAid 修订 18（`JAWR-06d64556-29a3-4782-858f-5334617d9bbf`）及与其确切绑定的 Overall 候选 `openclaw-overall://REQ-367a5b24-a3db-4026-8ec7-ca11c57a4092`。2026-09-26 04:36:40 +08 ACK 回执 `ACKNOWLEDGED`，队列授权 `COMPLETED`、WorkItem `CANDIDATE_READBACK_VERIFIED`，无业务 BLOCK。17c 妙搭 AI 会话显示额度已耗尽，CLI 提交安装消息立即失败；此次安装走用户已登录的云端终端，不依赖该 AI 会话。
+
+上传工程师刘轩登录的 17b 页面可在资料库准确选中该 WorkItem，在工程知识读到修订 18，并进入文档工作页查看 JobAid 与 Overall 候选。然而资料库/知识首屏主要显示文档身份与一句事实，未突出 CMCF 上行报告故障、临时处置、Boeing 未定最终软件时间及机队适用性条件；候选正文及运行过程过长，且页面提示“本次未重新读取原文”，易被误读为原始文档从未核验。故技术接续和读取路径已验证，简洁有价值的默认交付、Wiki 专页以及无人值守调度仍未验收。C136 自动队列定时任务保持停用，不以受控双次消费冒充默认自动闭环。
+
 ## 2026-09-23 成员合并查询及公平续接接受
 
 PDF86100dfc63f250d0af291637b082c80c8fa174bc已由release7688502805204831170回读finished、updated_at1790119474000、errors=[]，双远端一致。独立线上PDF验收进行中。
