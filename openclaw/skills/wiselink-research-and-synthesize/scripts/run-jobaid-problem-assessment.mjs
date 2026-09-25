@@ -334,7 +334,13 @@ export async function invokeHostedJobAidProblemModel(
     !options.sessionDiscriminator
   )
     throw new Error('JOBAID_PROBLEM_RUNTIME_CAPABILITY_REQUIRED');
-  const toolChoice = { type: 'function', function: { name: FUNCTION } };
+  // The custom M3 Probe route can return a completed text response instead of
+  // the named function. Its gateway rejects that response as HTTP 502 when
+  // the function is forced, so allow the existing bounded text correction to
+  // request the exact function step without losing the model's first response.
+  const toolChoice = options.executionModel?.modelRef === 'm3probe/minimax-m3'
+    ? 'auto'
+    : { type: 'function', function: { name: FUNCTION } };
   let startedAt = Date.now();
   const timeoutMs = options.timeoutMs ?? 30 * 60_000;
   const boundedInitialJobAid = operation === 'EVALUATE_JOBAID' &&

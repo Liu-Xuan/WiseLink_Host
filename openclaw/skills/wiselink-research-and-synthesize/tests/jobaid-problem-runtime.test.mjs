@@ -335,7 +335,10 @@ test('a completed text-only correction resumes from its durable response and pre
   const corrected = structuredClone(invalid);
   corrected.issues[0].riskScenarios[0].likelihood = null;
   const f = fixture([{ action: 'SAVE_WORK', work: invalid }, { action: 'SAVE_WORK', work: corrected }, { action: 'FINISH' }],
-    { assessmentCheckpoint: checkpoint });
+    { assessmentCheckpoint: checkpoint,
+      executionModel: { modelRef: 'm3probe/minimax-m3', displayName: 'M3 Probe Large',
+        providerKind: 'CUSTOM', settingsRevision: 1, selectedAt: '2026-09-25T00:00:00.000Z' },
+      registeredModelRefs: ['m3probe/minimax-m3'] });
   const save = f.options.saveAssessmentWork;
   let saves = 0;
   f.options.saveAssessmentWork = async args => {
@@ -361,6 +364,7 @@ test('a completed text-only correction resumes from its durable response and pre
   await f.run(input);
   assert.deepEqual(await checkpoint.readOptional('assessment-round-2.result'), recorded);
   assert.equal(generations, 4, 'completed text-only response is reused, not generated again');
+  assert.ok(f.calls.every(call => call.tool_choice === 'auto'));
   assert.equal(saves, 2, 'the original rejected SAVE is not repeated');
   assert.equal(f.reads.length, 0);
   const rejection = JSON.parse(f.calls[1].messages.at(-1).content);
@@ -1231,6 +1235,7 @@ test('scoped Matter overview correction saves only synthesis and may retain an i
   assert.deepEqual(JSON.parse(f.saves[0].workJson), work);
   assert.match(f.calls[0].messages[0].content, /综合更正/);
   assert.equal(f.calls[0].max_completion_tokens, undefined);
+  assert.ok(f.calls.every(call => call.tool_choice === 'auto'));
 });
 
 
