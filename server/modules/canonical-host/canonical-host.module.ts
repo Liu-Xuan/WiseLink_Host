@@ -25,6 +25,7 @@ import { CanonicalHostMcpService } from './canonical-host-mcp.service';
 import { CanonicalHostOpenClawMcpOpenApiController } from './canonical-host-openclaw-mcp.openapi.controller';
 import { OauthSessionDevelopmentWorkItemController } from './oauth-session-development-work-item.controller';
 import { CanonicalHostOpenClawMcpService } from './canonical-host-openclaw-mcp.service';
+import { AutomaticWorkItemDispatchService } from './automatic-work-item-dispatch.service';
 import { CanonicalHostOpenClawDynamicEvaluationService } from './canonical-host-openclaw-dynamic-evaluation.service';
 import { CanonicalHostOpenClawDiscoveryService } from './canonical-host-openclaw-discovery.service';
 import { CanonicalHostOpenClawOverallService } from './canonical-host-openclaw-overall.service';
@@ -237,6 +238,7 @@ export interface CanonicalHostModuleOptions {
     CanonicalPdfPreviewService,
     CanonicalHostMcpService,
     CanonicalHostOpenClawMcpService,
+    AutomaticWorkItemDispatchService,
     CanonicalHostOpenClawDynamicEvaluationService,
     CanonicalHostOpenClawDiscoveryService,
     CanonicalHostOpenClawOverallService,
@@ -511,6 +513,7 @@ export class CanonicalHostModule {
         CanonicalPdfPreviewService,
         CanonicalHostMcpService,
         CanonicalHostOpenClawMcpService,
+        AutomaticWorkItemDispatchService,
         CanonicalHostOpenClawDynamicEvaluationService,
         CanonicalHostOpenClawDiscoveryService,
         CanonicalHostOpenClawOverallService,

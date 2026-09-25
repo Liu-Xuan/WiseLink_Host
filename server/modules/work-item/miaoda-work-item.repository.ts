@@ -5,7 +5,17 @@ import {
   DRIZZLE_DATABASE,
   type PostgresJsDatabase,
 } from '@lark-apaas/fullstack-nestjs-core';
-import { and, desc, eq, inArray, isNull, or, sql } from 'drizzle-orm';
+import {
+  and,
+  desc,
+  eq,
+  inArray,
+  isNotNull,
+  isNull,
+  lt,
+  or,
+  sql,
+} from 'drizzle-orm';
 
 import type {
   CanonicalParseAuthorizationProjection,
@@ -14,6 +24,7 @@ import type {
 } from '@shared/api.interface';
 import { isRetryableParseFailureCode } from '@shared/parse-retry-policy';
 import { sourceIdentityBatchQuery, sourceIdentityQuery } from './document-version-source-identity';
+import { autoWorkItemAuthorization } from '../../database/auto-work-item-authorization.schema';
 import { actionAttempt, workItem } from '../../database/schema';
 import { readStoredExecutionModel } from '../model-settings/canonical-execution-model';
 import { canonicalModelError } from '../model-settings/canonical-model-catalog';
@@ -21,6 +32,7 @@ import { canonicalModelError } from '../model-settings/canonical-model-catalog';
 const ACTION_TYPE = 'PARSE_PDF';
 
 export interface WorkItemReservationInput {
+  autoProcessingGrant?: 'MIAODA_CANONICAL_PARSE_REQUEST';
   analysisModel?: CanonicalExecutionModelSelection;
   /** Server-resolved session from this task's creation request; never client JSON. */
   initialAilySessionId?: string;
@@ -115,6 +127,57 @@ export interface OverallSynthesisActionAttempt {
   createdAt: Date;
 }
 
+export interface AutoWorkItemQueueCandidate {
+  authorization: AutoWorkItemAuthorizationBinding;
+  workItem: AutoWorkItemQueueWorkItem;
+}
+
+export type AutoWorkItemAuthorizationBinding = Pick<
+  typeof autoWorkItemAuthorization.$inferSelect,
+  | 'tenantId'
+  | 'workItemId'
+  | 'requestId'
+  | 'actorUserId'
+  | 'documentId'
+  | 'documentVersionId'
+  | 'sourceArtifactId'
+  | 'sourceFileSha256'
+  | 'sourceByteLength'
+  | 'grantKind'
+  | 'status'
+>;
+
+export type AutoWorkItemQueueWorkItem = Pick<
+  typeof workItem.$inferSelect,
+  | 'tenantId'
+  | 'workItemId'
+  | 'requestId'
+  | 'requestedByUserId'
+  | 'documentId'
+  | 'documentVersionId'
+  | 'sourceArtifactId'
+  | 'sourceFileSha256'
+  | 'sourceByteLength'
+  | 'actionType'
+  | 'runKey'
+  | 'status'
+  | 'revision'
+  | 'packageId'
+>;
+
+export interface AutoWorkItemProjectionSnapshot {
+  row: Pick<
+    typeof workItem.$inferSelect,
+    'workItemId' | 'requestedByUserId' | 'revision' | 'packageId'
+  >;
+  projection: CanonicalWorkItemProjection | null;
+}
+
+export interface AutoWorkItemLease {
+  leaseGeneration: number;
+  leaseToken: string;
+}
+
 @Injectable()
 export class MiaodaWorkItemRepository {
   constructor(
@@ -180,6 +243,24 @@ export class MiaodaWorkItemRepository {
 
       const created = inserted.length === 1;
       if (created) {
+        if (input.autoProcessingGrant) {
+          await transaction.insert(autoWorkItemAuthorization).values({
+            tenantId: stored.tenantId,
+            workItemId: stored.workItemId,
+            requestId: stored.requestId,
+            actorUserId: input.actorUserId,
+            documentId: stored.documentId,
+            documentVersionId: stored.documentVersionId,
+            sourceArtifactId: stored.sourceArtifactId,
+            sourceFileSha256: stored.sourceFileSha256,
+            sourceByteLength: stored.sourceByteLength,
+            grantKind: input.autoProcessingGrant,
+            status: 'WAITING',
+            leaseGeneration: 0,
+            createdAt: now,
+            updatedAt: now,
+          });
+        }
         await transaction
           .insert(actionAttempt)
           .values({
@@ -222,6 +303,162 @@ export class MiaodaWorkItemRepository {
         created,
       };
     });
+  }
+
+  /**
+   * Reads only explicitly enrolled, parse-complete WorkItems for one tenant.
+   * Legacy WorkItems and in-progress parser rows cannot enter this queue.
+   */
+  async listAutoProcessingCandidates(input: {
+    tenantId: string;
+    now: Date;
+    limit?: number;
+  }): Promise<AutoWorkItemQueueCandidate[]> {
+    const limit = Math.min(Math.max(input.limit ?? 32, 1), 100);
+    return this.db
+      .select({
+        authorization: autoWorkItemAuthorization,
+        workItem,
+      })
+      .from(autoWorkItemAuthorization)
+      .innerJoin(
+        workItem,
+        and(
+          eq(workItem.tenantId, autoWorkItemAuthorization.tenantId),
+          eq(workItem.workItemId, autoWorkItemAuthorization.workItemId),
+        ),
+      )
+      .where(
+        and(
+          eq(autoWorkItemAuthorization.tenantId, input.tenantId),
+          or(
+            eq(autoWorkItemAuthorization.status, 'WAITING'),
+            and(
+              eq(autoWorkItemAuthorization.status, 'LEASED'),
+              lt(autoWorkItemAuthorization.leaseExpiresAt, input.now),
+            ),
+          ),
+          eq(workItem.actionType, ACTION_TYPE),
+          eq(workItem.status, 'CANDIDATE_READBACK_VERIFIED'),
+          isNotNull(workItem.packageId),
+        ),
+      )
+      .orderBy(autoWorkItemAuthorization.createdAt)
+      .limit(limit);
+  }
+
+  /** One conditional UPDATE elects a single queue consumer for each lease. */
+  async claimAutoProcessingCandidate(input: {
+    tenantId: string;
+    workItemId: string;
+    requestId: string;
+    actorUserId: string;
+    documentId: string;
+    documentVersionId: string;
+    sourceArtifactId: string;
+    sourceFileSha256: string;
+    sourceByteLength: number;
+    expectedWorkItemRevision: number;
+    leaseOwner: string;
+    leaseToken: string;
+    now: Date;
+    leaseExpiresAt: Date;
+  }): Promise<AutoWorkItemLease | null> {
+    const [claimed] = await this.db
+      .update(autoWorkItemAuthorization)
+      .set({
+        status: 'LEASED',
+        leaseOwner: input.leaseOwner,
+        leaseToken: input.leaseToken,
+        leaseGeneration: sql`${autoWorkItemAuthorization.leaseGeneration} + 1`,
+        leaseExpiresAt: input.leaseExpiresAt,
+        blockedCode: null,
+        updatedAt: input.now,
+      })
+      .where(
+        and(
+          eq(autoWorkItemAuthorization.tenantId, input.tenantId),
+          eq(autoWorkItemAuthorization.workItemId, input.workItemId),
+          eq(autoWorkItemAuthorization.requestId, input.requestId),
+          eq(autoWorkItemAuthorization.actorUserId, input.actorUserId),
+          eq(autoWorkItemAuthorization.documentId, input.documentId),
+          eq(
+            autoWorkItemAuthorization.documentVersionId,
+            input.documentVersionId,
+          ),
+          eq(autoWorkItemAuthorization.sourceArtifactId, input.sourceArtifactId),
+          eq(autoWorkItemAuthorization.sourceFileSha256, input.sourceFileSha256),
+          eq(autoWorkItemAuthorization.sourceByteLength, input.sourceByteLength),
+          or(
+            eq(autoWorkItemAuthorization.status, 'WAITING'),
+            and(
+              eq(autoWorkItemAuthorization.status, 'LEASED'),
+              lt(autoWorkItemAuthorization.leaseExpiresAt, input.now),
+            ),
+          ),
+          sql`EXISTS (
+            SELECT 1 FROM work_item wi
+            WHERE wi.tenant_id = ${input.tenantId}
+              AND wi.work_item_id = ${input.workItemId}
+              AND wi.request_id = ${input.requestId}
+              AND wi.requested_by_user_id = ${input.actorUserId}
+              AND wi.document_id = ${input.documentId}
+              AND wi.document_version_id = ${input.documentVersionId}
+              AND wi.source_artifact_id = ${input.sourceArtifactId}
+              AND wi.source_file_sha256 = ${input.sourceFileSha256}
+              AND wi.source_byte_length = ${input.sourceByteLength}
+              AND wi.action_type = 'PARSE_PDF'
+              AND wi.status = 'CANDIDATE_READBACK_VERIFIED'
+              AND wi.package_id IS NOT NULL
+              AND wi.revision = ${input.expectedWorkItemRevision}
+          )`,
+        ),
+      )
+      .returning({
+        leaseGeneration: autoWorkItemAuthorization.leaseGeneration,
+        leaseToken: autoWorkItemAuthorization.leaseToken,
+      });
+    if (!claimed?.leaseToken) return null;
+    return {
+      leaseGeneration: claimed.leaseGeneration,
+      leaseToken: claimed.leaseToken,
+    };
+  }
+
+  /** Excludes one authorization whose current Host binding no longer matches. */
+  async blockAutoProcessingCandidate(input: {
+    tenantId: string;
+    workItemId: string;
+    requestId: string;
+    actorUserId: string;
+    blockedCode: string;
+    now: Date;
+  }): Promise<void> {
+    await this.db
+      .update(autoWorkItemAuthorization)
+      .set({
+        status: 'BLOCKED',
+        leaseOwner: null,
+        leaseToken: null,
+        leaseExpiresAt: null,
+        blockedCode: normalizeAutoProcessingBlockCode(input.blockedCode),
+        updatedAt: input.now,
+      })
+      .where(
+        and(
+          eq(autoWorkItemAuthorization.tenantId, input.tenantId),
+          eq(autoWorkItemAuthorization.workItemId, input.workItemId),
+          eq(autoWorkItemAuthorization.requestId, input.requestId),
+          eq(autoWorkItemAuthorization.actorUserId, input.actorUserId),
+          or(
+            eq(autoWorkItemAuthorization.status, 'WAITING'),
+            and(
+              eq(autoWorkItemAuthorization.status, 'LEASED'),
+              lt(autoWorkItemAuthorization.leaseExpiresAt, input.now),
+            ),
+          ),
+        ),
+      );
   }
 
   async reopenRetryableParseFailure(
@@ -516,6 +753,35 @@ export class MiaodaWorkItemRepository {
       .limit(1);
     if (!row) return null;
     return { row, projection: parseProjection(row.projectionJson) };
+  }
+
+  async loadAutoProcessingProjection(
+    workItemId: string,
+    tenantId: string,
+  ): Promise<AutoWorkItemProjectionSnapshot | null> {
+    const [value] = await this.db
+      .select({
+        row: {
+          workItemId: workItem.workItemId,
+          requestedByUserId: workItem.requestedByUserId,
+          revision: workItem.revision,
+          packageId: workItem.packageId,
+        },
+        projectionJson: workItem.projectionJson,
+      })
+      .from(workItem)
+      .where(
+        and(
+          eq(workItem.workItemId, workItemId),
+          eq(workItem.tenantId, tenantId),
+        ),
+      )
+      .limit(1);
+    if (!value) return null;
+    return {
+      row: value.row,
+      projection: parseProjection(value.projectionJson),
+    };
   }
 
   /** One post-authorization read, retaining a missing source separately from a missing WorkItem. */
@@ -1418,6 +1684,12 @@ function overallRequestOrigin(providerCodes: string[]): string {
 
 function rawHash(value: string): string {
   return value.replace(/^sha256:/u, '');
+}
+
+function normalizeAutoProcessingBlockCode(value: string): string {
+  return /^[A-Z][A-Z0-9_]{0,119}$/u.test(value)
+    ? value
+    : 'AUTO_WORK_ITEM_AUTHORIZATION_INVALID';
 }
 
 function parseProjection(

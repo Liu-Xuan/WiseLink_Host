@@ -2,6 +2,7 @@ import { Body, Controller, Inject, Post, Req, Res } from '@nestjs/common';
 import type { Request, Response } from 'express';
 
 import { CanonicalHostOpenClawMcpService } from './canonical-host-openclaw-mcp.service';
+import { AutomaticWorkItemDispatchService } from './automatic-work-item-dispatch.service';
 import {
   CANONICAL_SERVICE_SCOPE_AUTHORIZATION,
   type CanonicalServiceScopeAuthorizationPort,
@@ -11,6 +12,7 @@ import {
 export class CanonicalHostOpenClawMcpOpenApiController {
   constructor(
     private readonly mcp: CanonicalHostOpenClawMcpService,
+    private readonly autoWorkItems: AutomaticWorkItemDispatchService,
     @Inject(CANONICAL_SERVICE_SCOPE_AUTHORIZATION)
     private readonly serviceScope: CanonicalServiceScopeAuthorizationPort,
   ) {}
@@ -23,5 +25,11 @@ export class CanonicalHostOpenClawMcpOpenApiController {
   ): Promise<void> {
     await this.serviceScope.assertTransport({ transport: 'OPENCLAW_MCP' });
     await this.mcp.handle(request, response, body);
+  }
+
+  @Post('next-work-item')
+  async nextWorkItem() {
+    await this.serviceScope.assertAutoWorkItemQueueTransport();
+    return this.autoWorkItems.nextWorkItem();
   }
 }

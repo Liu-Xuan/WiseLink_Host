@@ -1,5 +1,7 @@
 import type { CanonicalWorkItemProjection } from '@shared/api.interface';
 
+import { actionAttempt, workItem } from '../../server/database/schema';
+import { autoWorkItemAuthorization } from '../../server/database/auto-work-item-authorization.schema';
 import { MiaodaWorkItemRepository } from '../../server/modules/work-item/miaoda-work-item.repository';
 
 function projection(): Omit<CanonicalWorkItemProjection, 'revision'> {
@@ -265,6 +267,140 @@ describe('MiaodaWorkItemRepository parse retry recovery', () => {
     expect(fixture.insert).not.toHaveBeenCalled();
   });
 });
+
+describe('MiaodaWorkItemRepository automatic processing enrollment', () => {
+  it('persists the explicit grant in the same reservation transaction for a new WorkItem', async () => {
+    const fixture = reservationFixture(true);
+
+    const reservation = await fixture.target.reserve(
+      automaticReservationInput(),
+    );
+    expect(reservation.created).toBe(true);
+
+    const enrollment = fixture.insertCalls.find(
+      (call) => call.table === autoWorkItemAuthorization,
+    );
+    expect(enrollment?.values).toMatchObject({
+      tenantId: 'tenant-auto',
+      workItemId: reservation.workItemId,
+      requestId: reservation.requestId,
+      actorUserId: 'actor-auto',
+      documentVersionId: 'DV-AUTO',
+      grantKind: 'MIAODA_CANONICAL_PARSE_REQUEST',
+      status: 'WAITING',
+    });
+    expect(fixture.db.transaction).toHaveBeenCalledTimes(1);
+    expect(fixture.insertCalls.map((call) => call.table)).toEqual([
+      workItem,
+      autoWorkItemAuthorization,
+      actionAttempt,
+    ]);
+  });
+
+  it('does not enroll an existing WorkItem when the reservation key conflicts', async () => {
+    const fixture = reservationFixture(false);
+
+    await expect(
+      fixture.target.reserve(automaticReservationInput()),
+    ).resolves.toMatchObject({
+      created: false,
+      workItemId: 'WI-AUTO-LEGACY',
+    });
+
+    expect(
+      fixture.insertCalls.some(
+        (call) => call.table === autoWorkItemAuthorization,
+      ),
+    ).toBe(false);
+  });
+});
+
+function automaticReservationInput() {
+  return {
+    tenantId: 'tenant-auto',
+    actorUserId: 'actor-auto',
+    documentId: 'DOC-AUTO',
+    documentVersionId: 'DV-AUTO',
+    sourceArtifactId: 'ART-AUTO',
+    sourceFileSha256: 'a'.repeat(64),
+    sourceByteLength: 4096,
+    normalizedFamily: 'FTD',
+    requestOrigin: 'MIAODA' as const,
+    runKey: 'canonical',
+    autoProcessingGrant: 'MIAODA_CANONICAL_PARSE_REQUEST' as const,
+  };
+}
+
+function reservationFixture(created: boolean) {
+  const insertCalls: Array<{ table: unknown; values: unknown }> = [];
+  let storedWorkItem: Record<string, unknown> | null = null;
+  const transaction = {
+    insert(table: unknown) {
+      return {
+        values(values: Record<string, unknown>) {
+          insertCalls.push({ table, values });
+          if (table === workItem) {
+            const workItemId = created
+              ? String(values.workItemId)
+              : 'WI-AUTO-LEGACY';
+            storedWorkItem = {
+              ...values,
+              workItemId,
+              requestId: created ? values.requestId : 'REQ-AUTO-LEGACY',
+              analysisModelJson: null,
+            };
+            return {
+              onConflictDoNothing: jest.fn().mockReturnValue({
+                returning: jest
+                  .fn()
+                  .mockResolvedValue(
+                    created ? [{ workItemId: storedWorkItem.workItemId }] : [],
+                  ),
+              }),
+            };
+          }
+          if (table === autoWorkItemAuthorization) {
+            return Promise.resolve(undefined);
+          }
+          return {
+            onConflictDoNothing: jest.fn().mockResolvedValue(undefined),
+          };
+        },
+      };
+    },
+    select() {
+      return {
+        from(table: unknown) {
+          return {
+            where: jest.fn().mockReturnValue({
+              limit: jest.fn().mockImplementation(async () =>
+                table === workItem
+                  ? [storedWorkItem]
+                  : [
+                      {
+                        attemptId: 'ATT-AUTO',
+                        workItemId: storedWorkItem?.workItemId,
+                      },
+                    ],
+              ),
+            }),
+          };
+        },
+      };
+    },
+  };
+  const db = {
+    transaction: jest.fn(
+      async (operation: (value: typeof transaction) => unknown) =>
+        operation(transaction),
+    ),
+  };
+  return {
+    target: new MiaodaWorkItemRepository(db as never),
+    db,
+    insertCalls,
+  };
+}
 
 function retryIdentity() {
   return {

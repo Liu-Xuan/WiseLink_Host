@@ -19,6 +19,13 @@ export interface CanonicalVerifiedServiceScope {
   authorizationFingerprint: string;
 }
 
+export interface CanonicalVerifiedAutoWorkItemQueueScope {
+  principalId: string;
+  appId: string;
+  tenantId: string;
+  authorizationFingerprint: string;
+}
+
 export interface CanonicalVerifiedDevelopmentCreateScope {
   principalId: string;
   appId: string;
@@ -57,6 +64,8 @@ export interface CanonicalVerifiedApplicabilityContextScope extends CanonicalVer
 }
 
 export interface CanonicalServiceScopeAuthorizationPort {
+  authorizeOpenClawAutoWorkItemQueue(): Promise<CanonicalVerifiedAutoWorkItemQueueScope>;
+  assertAutoWorkItemQueueTransport(): Promise<void>;
   authorizeDocumentWork?(input: { documentVersionId: string }): Promise<CanonicalVerifiedDocumentWorkScope>;
   authorizeOpenClawMatterRequest?(input: { matterId: string }): Promise<Omit<CanonicalVerifiedMatterAttemptScope, 'attemptRef'>>;
   /** Older adapters have no Matter authority; consumers must fail closed. */
@@ -119,6 +128,14 @@ export interface CanonicalServiceScopeAuthorizationPort {
 
 @Injectable()
 export class UnavailableCanonicalServiceScopeAuthorization implements CanonicalServiceScopeAuthorizationPort {
+  assertAutoWorkItemQueueTransport(): Promise<void> {
+    return Promise.reject(canonicalServiceScopeUnavailable());
+  }
+
+  authorizeOpenClawAutoWorkItemQueue(): Promise<CanonicalVerifiedAutoWorkItemQueueScope> {
+    return Promise.reject(canonicalServiceScopeUnavailable());
+  }
+
   authorizeWorkItemRead(): Promise<CanonicalVerifiedServiceScope> {
     return Promise.reject(canonicalServiceScopeUnavailable());
   }

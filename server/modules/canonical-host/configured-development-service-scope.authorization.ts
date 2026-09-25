@@ -14,6 +14,7 @@ import {
 } from './canonical-service-scope.authorization';
 
 const CANONICAL_APP_ID = 'app_17bzc551rsg';
+const OPENCLAW_QUEUE_PRINCIPAL_ID = 'service:openclaw-main';
 
 /**
  * Explicitly opt-in DEV/UAT service scope for one isolated WorkItem.
@@ -37,6 +38,26 @@ export class ConfiguredDevelopmentCanonicalServiceScopeAuthorization implements 
     if (!config.documentVersionIds.includes(input.documentVersionId)) throw Object.assign(new Error('DOCUMENT_WORK_NOT_FOUND'), { statusCode: 404 });
     return { principalId: config.principalId, appId: CANONICAL_APP_ID, tenantId: config.tenantId,
       actorUserId: config.actorUserId, documentVersionId: input.documentVersionId };
+  }
+
+  async authorizeOpenClawAutoWorkItemQueue() {
+    const config = requiredAutoWorkItemQueueConfig();
+    return {
+      principalId: config.principalId,
+      appId: CANONICAL_APP_ID,
+      tenantId: config.tenantId,
+      authorizationFingerprint: fingerprint([
+        'openclaw-auto-work-item-queue.v1',
+        config.environment,
+        CANONICAL_APP_ID,
+        config.principalId,
+        config.tenantId,
+      ]),
+    };
+  }
+
+  async assertAutoWorkItemQueueTransport(): Promise<void> {
+    requiredAutoWorkItemQueueConfig();
   }
 
   async authorizeWorkItemRead(input: {
@@ -232,6 +253,12 @@ interface DevelopmentServiceScopeConfig {
   workItemId: string;
 }
 
+interface AutoWorkItemQueueScopeConfig {
+  environment: 'DEV' | 'UAT';
+  principalId: string;
+  tenantId: string;
+}
+
 /** Project the existing executor scope; do not expose its service identity/config. */
 export function isOpenClawAutomaticReviewConfigured(input: {
   tenantId: string;
@@ -288,6 +315,17 @@ function requiredBaseConfig(): Omit<
     principalId,
     tenantId,
   };
+}
+
+function requiredAutoWorkItemQueueConfig(): AutoWorkItemQueueScopeConfig {
+  const base = requiredBaseConfig();
+  if (
+    process.env.WL_OPENCLAW_SERVICE_AUTO_QUEUE_ENABLED !== '1' ||
+    base.principalId !== OPENCLAW_QUEUE_PRINCIPAL_ID
+  ) {
+    throw canonicalServiceScopeUnavailable();
+  }
+  return base;
 }
 
 function requiredConfig(): DevelopmentServiceScopeConfig {

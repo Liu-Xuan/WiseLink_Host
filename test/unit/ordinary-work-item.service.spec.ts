@@ -233,6 +233,46 @@ describe('OrdinaryWorkItemService run identity', () => {
         modelChoiceExplicit: true,
       }),
     );
+    expect(instance.repository.reserve).toHaveBeenCalledWith(
+      expect.not.objectContaining({
+        autoProcessingGrant: expect.anything(),
+      }),
+    );
+  });
+
+  it('enrolls a normally accepted, verified engineering PDF for automatic processing', async () => {
+    const instance = target();
+    const previousSandbox = process.env.SANDBOX_ID;
+    const previousLocal = process.env.MIAODA_LOCAL_DEV;
+    process.env.SANDBOX_ID = 'unit-hosted-sandbox';
+    delete process.env.MIAODA_LOCAL_DEV;
+    try {
+      await instance.service.parsePdf(
+        { documentVersionId: 'document-version-sb' },
+        {
+          userId: ACTOR.userId,
+          tenantId: ACTOR.tenantId,
+          appId: ACTOR.appId,
+          roles: ACTOR.roles,
+          env: 'preview',
+          objectAccessActor: OAUTH_SESSION_ACTOR,
+        },
+      );
+
+      expect(instance.repository.reserve).toHaveBeenCalledWith(
+        expect.objectContaining({
+          tenantId: ACTOR.tenantId,
+          actorUserId: ACTOR.userId,
+          documentVersionId: 'document-version-sb',
+          normalizedFamily: 'SB',
+          runKey: 'canonical',
+          autoProcessingGrant: 'MIAODA_CANONICAL_PARSE_REQUEST',
+        }),
+      );
+    } finally {
+      restoreProcessEnv('SANDBOX_ID', previousSandbox);
+      restoreProcessEnv('MIAODA_LOCAL_DEV', previousLocal);
+    }
   });
   it('lists only actor-owned PDFs using the same canonical FileService path consumed by ingest', async () => {
     const targetValue = target();
