@@ -5,7 +5,7 @@ import { readFile } from 'node:fs/promises';
 import { pathToFileURL } from 'node:url';
 
 export const WISELINK_SKILL_VERSION =
-  'wiselink-research-and-synthesize@r09.c125';
+  'wiselink-research-and-synthesize@r09.c126';
 export const WISELINK_SKILL_COMPATIBILITY_REF =
   'wiselink-research-and-synthesize@r09';
 export const WISELINK_HOST_MCP_NAME =
@@ -2481,7 +2481,21 @@ function validateOriginalApplicabilityInput(input) {
   for (const context of input.sourceContext) {
     const unit = units.get(context.unitId);
     if (!unit || context.kind !== unit.kind || canonicalJson(context.sourceRefIds) !== canonicalJson(unit.sourceRefIds) ||
-      context.sourceText !== JSON.stringify(unit.payload)) fail('APPLICABILITY_ORIGINAL_CONTEXT_BINDING_INVALID');
+      !originalContextMatchesPayload(context.sourceText, unit.payload)) fail('APPLICABILITY_ORIGINAL_CONTEXT_BINDING_INVALID');
+  }
+}
+
+function originalContextMatchesPayload(sourceText, payload) {
+  if (typeof sourceText !== 'string') return false;
+  try {
+    const parsed = JSON.parse(sourceText);
+    // The Host stores the payload as JSONB, which can reorder object keys.
+    // Keep the source text a compact, unambiguous JSON serialization while
+    // comparing the actual value independently of key order.
+    return sourceText === JSON.stringify(parsed) &&
+      canonicalJson(parsed) === canonicalJson(payload);
+  } catch {
+    return false;
   }
 }
 
