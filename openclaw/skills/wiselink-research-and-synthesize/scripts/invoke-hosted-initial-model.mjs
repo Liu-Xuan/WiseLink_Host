@@ -411,9 +411,10 @@ export async function invokeHostedInitialModel(
       }
     }
     if (originalApplicability) {
-      validateApplicabilityWindow(parsed.candidate, modelInput, applicabilityOutputWindow);
-      applicabilityDispositions.push(...parsed.candidate.unitDispositions);
-      applicabilityExpressions.push(...parsed.candidate.expressions);
+      const windowCandidate = normalizeApplicabilityWireCandidate(parsed.candidate);
+      validateApplicabilityWindow(windowCandidate, modelInput, applicabilityOutputWindow);
+      applicabilityDispositions.push(...windowCandidate.unitDispositions);
+      applicabilityExpressions.push(...windowCandidate.expressions);
       if (applicabilityOutputWindow.endUnitIndexExclusive < modelInput.originalInput.source.units.length) {
         applicabilityOutputWindow = planApplicabilityOutputWindow(
           modelInput, applicabilityOutputWindow.endUnitIndexExclusive,
@@ -480,6 +481,35 @@ function planApplicabilityOutputWindow(input, startUnitIndex) {
     endUnitIndexExclusive += 1;
   }
   return { startUnitIndex, endUnitIndexExclusive, totalUnitCount: units.length, sourceCharacters };
+}
+
+/** The official M3 function serializer sometimes writes an empty array as an
+ * empty string or wraps a non-empty array in {item:[...]}. These exact wire
+ * variants carry no omitted rows; all source text and IDs remain unchanged. */
+function normalizeApplicabilityWireCandidate(candidate) {
+  if (!candidate || typeof candidate !== 'object' || Array.isArray(candidate))
+    throw new Error('INITIAL_APPLICABILITY_WINDOW_SHAPE_INVALID');
+  const rows = exactApplicabilityWireArray(candidate.unitDispositions);
+  if (!Array.isArray(rows)) throw new Error('INITIAL_APPLICABILITY_WINDOW_SHAPE_INVALID');
+  const unitDispositions = rows.map((row) => {
+    if (!row || typeof row !== 'object' || Array.isArray(row)) return row;
+    if (row.conditionIds === '' && row.disposition !== 'CONDITIONS')
+      return { ...row, conditionIds: [] };
+    const conditionIds = exactApplicabilityWireArray(row.conditionIds);
+    return conditionIds === row.conditionIds ? row : { ...row, conditionIds };
+  });
+  const emptyExpressionsAllowed = unitDispositions.every(row =>
+    row?.disposition !== 'CONDITIONS' && Array.isArray(row?.conditionIds) && row.conditionIds.length === 0);
+  const expressions = candidate.expressions === '' && emptyExpressionsAllowed
+    ? [] : exactApplicabilityWireArray(candidate.expressions);
+  return { ...candidate, unitDispositions, expressions };
+}
+
+function exactApplicabilityWireArray(value) {
+  if (Array.isArray(value)) return value;
+  if (value && typeof value === 'object' && !Array.isArray(value) &&
+    Object.keys(value).length === 1 && Array.isArray(value.item)) return value.item;
+  return value;
 }
 
 function validateApplicabilityWindow(candidate, input, window) {
