@@ -16,6 +16,17 @@ test('source rejection identifies only a reference already present in the submit
   }
 });
 
+test('initial assessment source rejection exposes only a submitted reference for correction', () => {
+  const ref = 'DOCUMENT_ORIGINAL:DV-one:PRUN-one:unit-16:p1';
+  const args = { workJson: JSON.stringify({ issues: [{ body: `条件待核对。[[${ref}]]` }] }) };
+  assert.throws(() => readHostMcpJsonResult({ isError: true, content: [{ type: 'text',
+    text: `Error: JOBAID_SOURCE_NOT_DELIVERED:${ref}` }] }, 'save_assessment_work', args), error => {
+    assert.equal(error.hostRejectedSourceRef, ref);
+    assert.equal(error.message.includes(ref), false);
+    return true;
+  });
+});
+
 test('body-first rejected citations retain exact feedback without disclosing unrelated Host text', () => {
   const ref = 'DOCUMENT_ORIGINAL:DV-one:PRUN-one:unit-32:p0';
   for (const body of [`条件仍待核对。[[${ref}]]`, `普通文字提及 ${ref}`, `[[${ref}-other]]`]) {

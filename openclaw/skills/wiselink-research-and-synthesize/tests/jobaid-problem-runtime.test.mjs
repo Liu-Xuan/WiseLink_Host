@@ -282,7 +282,7 @@ test('text-only protocol corrections are bounded and truncated or foreign calls 
         mode === 'text' ? 'JOBAID_INCOMPLETE_TERMINAL_RESPONSE' : mode === 'truncated' ? 'JOBAID_MODEL_OUTPUT_LENGTH' : undefined);
       return true;
     });
-    assert.equal(calls, mode === 'text' ? 3 : 1);
+    assert.equal(calls, mode === 'text' ? 5 : 1);
     assert.equal(f.saves.length, 0);
   }
 });
@@ -1043,10 +1043,10 @@ test('undeclared work fields report exact paths without deleting or rewriting ca
 
 test('exhausted explicit Host work rejection is terminal; unknown save response is not', async () => {
   const work = { ...completed, openQuestions: ['Keep this uncertainty'] };
-  const f = fixture(Array.from({ length: 3 }, () => ({ action: 'SAVE_WORK', work })));
+  const f = fixture(Array.from({ length: 5 }, () => ({ action: 'SAVE_WORK', work })));
   f.options.saveAssessmentWork = async () => { throw Object.assign(new Error('Rejected'), { hostErrorCode: 'JOBAID_UNDECLARED_FIELD' }); };
   await assert.rejects(f.run(), error => error.terminalAssessmentFailure?.errorCode === 'JOBAID_WORK_VALIDATION_FAILED');
-  assert.equal(f.calls.length, 3);
+  assert.equal(f.calls.length, 5);
   const feedback = JSON.parse(f.calls[1].messages.at(-1).content);
   assert.equal(feedback.fieldErrors[0].path, 'work.openQuestions');
   assert.match(feedback.instruction, /openQuestions belongs to an issue/);
@@ -1057,10 +1057,10 @@ test('exhausted explicit Host work rejection is terminal; unknown save response 
 
 
 test('exhausted malformed nested work JSON is terminal without a save or extra model call', async () => {
-  const f = fixture(Array.from({ length: 3 }, () => ({ action: 'SAVE_WORK', workJson: '{"issues":[' })));
+  const f = fixture(Array.from({ length: 5 }, () => ({ action: 'SAVE_WORK', workJson: '{"issues":[' })));
   await assert.rejects(f.run(), error => error.message === 'JOBAID_WORK_JSON_INVALID' &&
     error.terminalAssessmentFailure?.errorCode === 'JOBAID_WORK_JSON_INVALID');
-  assert.equal(f.calls.length, 3);
+  assert.equal(f.calls.length, 5);
   assert.equal(f.saves.length, 0);
   assert.equal(JSON.parse(f.calls[1].messages.at(-1).content).errorCode, 'JOBAID_WORK_JSON_INVALID');
 });
