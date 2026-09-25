@@ -486,8 +486,22 @@ const MatterWorkspace: FC<MatterWorkspaceProps> = ({
                 )}
               </section>
             ) : (
-              <MatterWorkingDetails working={data.working}
-                members={data.matter.catalog.entries} />
+              <>
+                {data.working.pendingInputs.length > 0 ? (
+                  <p className="text-sm leading-7" role="status">
+                    {data.working.pendingInputs.length} 项材料变化待核对
+                  </p>
+                ) : null}
+                <details className="border-t border-border pt-4">
+                  <summary className="cursor-pointer text-sm font-medium">
+                    展开工作过程、变化记录与待核问题
+                  </summary>
+                  <div className="mt-4">
+                    <MatterWorkingDetails working={data.working}
+                      members={data.matter.catalog.entries} />
+                  </div>
+                </details>
+              </>
             )}
           </aside>
         </div>
