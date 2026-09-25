@@ -493,6 +493,42 @@ test('single-stage applicability keeps begin opaque and binds commit, heartbeat 
   ]);
 });
 
+test('applicability correction checkpoints stay distinct across source windows', async (t) => {
+  const input = { ...await options(t), initialStageOnly: true,
+    expectedInitialOperation: 'EXTRACT_APPLICABILITY' };
+  let saved = false;
+  const result = await consumeHostedWorkItem(input, {
+    callTool: async (name) => {
+      assert.equal(name, 'get_parse_status');
+      return status({ status: 'REQUIRED',
+        nextOperation: saved ? 'EVALUATE_JOBAID' : 'EXTRACT_APPLICABILITY',
+        stages: { translation: { status: 'SUCCEEDED' },
+          applicability: { status: saved ? 'SUCCEEDED' : 'PENDING' },
+          jobAid: { status: 'PENDING' }, overall: { status: 'PENDING' } } });
+    },
+    invokeInitialModel: async (_input, hooks) => {
+      await hooks.observeCandidateRejection({ modelRound: 2, correctionNo: 1,
+        errorCode: 'APPLICABILITY_AST_VALUE_TYPE_INVALID' });
+      await hooks.observeCandidateRejection({ modelRound: 4, correctionNo: 1,
+        errorCode: 'APPLICABILITY_AST_VALUE_TYPE_INVALID' });
+      return { output: {}, provenance: {} };
+    },
+    runInitial: async (run) => {
+      await run.extractApplicability({ schemaVersion: 'fixture' });
+      saved = true;
+      return { outcome: 'CANDIDATE_READY' };
+    },
+  });
+  assert.equal(result.status, 'INITIAL_STAGE_SAVED');
+  const directory = initialStageCheckpointPath({ ...input,
+    initialWorkItemRevision: 2 }, 'EXTRACT_APPLICABILITY');
+  for (const round of [2, 4]) {
+    const report = JSON.parse(await readFile(join(directory,
+      `model.candidate-rejection-${round}-1.json`), 'utf8'));
+    assert.equal(report.modelRound, round);
+  }
+});
+
 test('a new controlled selection revision can retry applicability after WAITING_INPUT without reusing its checkpoint',async t=>{
   const input=await options(t); let runs=0;
   const initial=revision=>status({workItemRevision:revision,status:'REQUIRED',nextOperation:'EXTRACT_APPLICABILITY',

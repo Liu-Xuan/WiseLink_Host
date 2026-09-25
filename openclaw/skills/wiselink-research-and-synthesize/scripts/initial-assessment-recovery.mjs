@@ -27,6 +27,20 @@ export async function inspectInitialAssessmentRecovery({ checkpoint, initial, wo
       return null;
     return {status:'RECOVERY_COMMITTING',operation,previousClaim:claim};
   }
+  if (operation === 'EXTRACT_APPLICABILITY' && stage.attemptStatus === 'RUNNING') {
+    const begin = await checkpoint.readOptional(`${spec.begin}-1.result`);
+    if (!begin) {
+      const beginStarted = await checkpoint.readOptional(`${spec.begin}-1.started`);
+      if (!beginStarted) return null;
+      if (await checkpoint.readOptional('commit_applicability_candidate-1.started')) return null;
+      if (await checkpoint.readOptional('model.started')) {
+        return {status:'REQUIRES_ATTENTION',operation,attemptRef:stage.attemptRef,
+          errorCode:'INITIAL_APPLICABILITY_BEGIN_MODEL_ALREADY_STARTED',candidateOnly:true};
+      }
+      if (typeof stage.attemptRef !== 'string' || !stage.attemptRef) return null;
+      return {status:'RECOVERY_BEGIN',operation,previousAttemptRef:stage.attemptRef};
+    }
+  }
   // COMMITTING and an unconfirmed commit require the existing exact result
   // readback path, never a restarted model loop.
   if (await checkpoint.readOptional(`${spec.commit}-1.started`)) return null;
