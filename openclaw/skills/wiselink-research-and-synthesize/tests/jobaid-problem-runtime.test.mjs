@@ -648,7 +648,7 @@ test('source rejection retains field repair guidance and the declared object pro
     question: 'Which source remains unavailable?', affects: 'The unresolved comparison.',
     nextEvidence: 'The authorized source document.', reason: 'The source has not been read.',
   }] }] };
-  const rejected = 'evidenceRef:DOCUMENT_ORIGINAL:document_version_example:PRUN-example:u22:p0';
+  const rejected = 'evidenceRef:source:dv:sr1';
   const f = fixture([
     { action: 'SAVE_WORK', work: invalid },
     { action: 'SAVE_WORK', work: corrected },
@@ -668,6 +668,7 @@ test('source rejection retains field repair guidance and the declared object pro
   await f.run();
   const receipt = JSON.parse(f.calls[1].messages.at(-1).content);
   assert.equal(receipt.sourceRef, rejected);
+  assert.match(receipt.instruction, /Remove that label/u);
   assert.match(receipt.instruction, /Read it through READ_SOURCES/u);
   assert.match(receipt.instruction, /Correct the reported field types/u);
   assert.deepEqual(receipt.fieldErrors, [{

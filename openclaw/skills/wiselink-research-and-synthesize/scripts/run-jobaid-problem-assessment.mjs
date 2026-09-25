@@ -850,7 +850,10 @@ export async function invokeHostedJobAidProblemModel(
         } : {}),
         ...(code === 'JOBAID_SOURCE_NOT_DELIVERED' && error.hostRejectedSourceRef ? {
           sourceRef: error.hostRejectedSourceRef,
-          instruction: 'The Host rejected this exact source reference from your candidate. Read it through READ_SOURCES if it belongs to the authorized catalog or document range. If unavailable, preserve the limitation and revise the unsupported assertion. Do not guess another identifier, silently drop supported analysis, or treat the failed save as completed.' +
+          instruction: (error.hostRejectedSourceRef.startsWith('evidenceRef:') &&
+            sessionModelInput.availableSources.some(source => source.ref === error.hostRejectedSourceRef.slice('evidenceRef:'.length))
+            ? 'The candidate added the literal field label evidenceRef: to an exact catalog value. Remove that label from every inline citation and basisRefs value; use only the exact delivered evidenceRef value. The Host will still check that each value was actually delivered in this attempt or retained work. '
+            : '') + 'The Host rejected this exact source reference from your candidate. Read it through READ_SOURCES if it belongs to the authorized catalog or document range. If unavailable, preserve the limitation and revise the unsupported assertion. Do not guess another identifier, silently drop supported analysis, or treat the failed save as completed.' +
             (shapeCorrection.instruction ? ` ${shapeCorrection.instruction}` : ''),
         } : {}),
       };
@@ -939,7 +942,7 @@ function workShapeCorrection(code, work, modelInput) {
   return {
     fieldErrors,
     instruction:
-      'Use exact delivered [[evidenceRef]] citations in body. Do not generate redundant dependency fields. Correct the reported field types using the original evidence and the work-update shape. conditions, limitations and basisRefs are arrays of strings; addresses is one non-empty string describing the problem or risk addressed. Preserve justified analysis and unknowns; do not invent content or remove substantive work merely to pass validation. The Host will validate the revised work.' +
+      'Use the exact delivered evidenceRef value inside [[double brackets]] in body, without the literal label evidenceRef:. Use the same exact value in basisRefs. Do not generate redundant dependency fields. Correct the reported field types using the original evidence and the work-update shape. conditions, limitations and basisRefs are arrays of strings; addresses is one non-empty string describing the problem or risk addressed. Preserve justified analysis and unknowns; do not invent content or remove substantive work merely to pass validation. The Host will validate the revised work.' +
       (fieldErrors.some(error => error.received === 'undeclared field')
         ? ' The reported undeclared fields are not accepted at those paths; allowedFields lists the current contract. Preserve their substantive meaning in the relevant issue body or declared field. openQuestions belongs to an issue; explicit scheduling changes use reviewConditionDelta, not a full reviewConditions list. Work revision is assigned by Host, not authored in workJson.' : '') +
       (code === 'JOBAID_MEASURE_ADDRESSES_INVALID'
