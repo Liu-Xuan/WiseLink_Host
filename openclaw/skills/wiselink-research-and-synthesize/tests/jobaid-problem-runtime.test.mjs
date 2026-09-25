@@ -840,6 +840,32 @@ test('Matter uses the same model loop and must save this attempt before finishin
   assert.match(f.calls[0].messages[0].content, /DOCUMENT_VERSION/);
 });
 
+test('scoped Matter overview correction saves only synthesis and may retain an in-progress round', async () => {
+  const input = { ...modelInput(), schemaVersion: 'wiselink.matter-jobaid-task.v2',
+    subject: { kind: 'ENGINEERING_MATTER', matterId: 'MAT-sb' },
+    availableDocuments: [], expectedWorkRevision: 16,
+    previousWork: { workRevisionRef: 'MWR-16', workRevision: 16, overviewStatus: 'STALE',
+      content: { schemaVersion: 'wiselink.jobaid-problem-work.v3', issues: [{ issueKey: 'SB-condition' }],
+        overview: 'Old overall view', roundCompletion: 'IN_PROGRESS', completionReason: 'Needs review' } },
+    overviewCorrection: { kind: 'ENGINEERING_OVERVIEW_CORRECTION', expectedWorkRef: 'MWR-16',
+      correctionReason: '核对已更正问题', evidenceRefs: ['source:dv:sr1'] },
+    overviewCorrectionProtocol: 'OPENCLAW_SCOPED_V1' };
+  const work = { schemaVersion: 'wiselink.jobaid-problem-work.v3', issues: [],
+    overview: '仅在给定条件下成立 [[source:dv:sr1]]。', roundCompletion: 'IN_PROGRESS',
+    completionReason: '其他构型仍待核对 [[source:dv:sr1]]。', changeSummary: '核对综合。' };
+  const f = fixture([{ action: 'SAVE_WORK', work }, { action: 'FINISH' }], {
+    executionModel: { modelRef: 'm3probe/minimax-m3', displayName: 'M3 Probe Large',
+      providerKind: 'CUSTOM', settingsRevision: 1, selectedAt: '2026-09-25T00:00:00.000Z' },
+    registeredModelRefs: ['m3probe/minimax-m3'],
+  });
+  const result = await invokeHostedJobAidProblemModel({ operation: 'ASSESS_MATTER', modelInput: input },
+    f.options, f.dependencies);
+  assert.equal(result.output.workRevisionRef, 'JAWR-17');
+  assert.deepEqual(JSON.parse(f.saves[0].workJson), work);
+  assert.match(f.calls[0].messages[0].content, /综合更正/);
+  assert.equal(f.calls[0].max_completion_tokens, undefined);
+});
+
 
 test('the single structured channel still permits reading, saving and finishing', async () => {
   const f = fixture([

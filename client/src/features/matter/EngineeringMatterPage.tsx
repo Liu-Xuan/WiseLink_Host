@@ -407,15 +407,30 @@ const MatterWorkspace: FC<MatterWorkspaceProps> = ({
                 {overviewStatus === 'STALE' ? <h2>此前综合</h2> : null}
                 <AssessmentReadingBrief
                   result={result}
-                  onOpenClaim={(
-                    selection: AssessmentClaimSelection,
-                    trigger: HTMLButtonElement,
-                  ) => {
-                    triggerRef.current = trigger;
-                    setFocusClaimId(selection.claimId);
-                    setClaimSelection(selection);
-                  }}
+                  depth="list"
                 />
+                <details className="mt-5 border-t border-border pt-4">
+                  <summary className="cursor-pointer text-sm font-medium">
+                    展开综合意见、判断与依据
+                  </summary>
+                  <p className="mt-4 whitespace-pre-wrap break-words text-sm leading-7">
+                    {result.content.lead}
+                  </p>
+                  <div className="mt-5">
+                    <AssessmentReadingBrief
+                      result={result}
+                      presentation="claims"
+                      onOpenClaim={(
+                        selection: AssessmentClaimSelection,
+                        trigger: HTMLButtonElement,
+                      ) => {
+                        triggerRef.current = trigger;
+                        setFocusClaimId(selection.claimId);
+                        setClaimSelection(selection);
+                      }}
+                    />
+                  </div>
+                </details>
               </section>
             ) : (
               <div className="space-y-4">
@@ -440,10 +455,17 @@ const MatterWorkspace: FC<MatterWorkspaceProps> = ({
                 source={displayedRevision.overviewSourceWork}
               />
             ) : null}
-            <MatterProblemWork
-              revision={displayedRevision}
-              onLocateDocument={openDocument}
-            />
+            {displayedRevision?.state.problemWork ? (
+              <details className="mt-5 border-t border-border pt-4">
+                <summary className="cursor-pointer text-sm font-medium">
+                  展开问题分析、过程与原文依据
+                </summary>
+                <MatterProblemWork
+                  revision={displayedRevision}
+                  onLocateDocument={openDocument}
+                />
+              </details>
+            ) : null}
           </article>
           <aside className="wl-side-panel matter-wiki-inspector">
             {requestedWorkRef ? (

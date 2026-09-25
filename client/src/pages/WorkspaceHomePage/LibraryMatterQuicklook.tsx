@@ -45,19 +45,7 @@ export function LibraryMatterQuicklookContent({
         {current?.correctionNotices?.map(notice => <p key={notice.attemptRef} className="atlas-library-attention">{notice.unchanged ? '已核对并保留原认识' : notice.correctedWorkRef ? '已有后继更正，当前仍为原版本' : '更正待核对'}：{notice.reason}</p>)}
         {current?.overviewCorrectionNotices?.length ? <p className="atlas-library-attention">本综合存在更正记录，请展开核对其保存结果与覆盖范围。</p> : null}
         {summary && problemWork?.overviewStatus !== 'NOT_AVAILABLE' ? (
-          <>
-            <p><strong>{summary.listBrief}</strong></p>
-            {summary.decisiveClaims.length > 0 ? (
-              <>
-                <h4>决定性条件</h4>
-                <ul>
-                  {summary.decisiveClaims.map((claim) => (
-                    <li key={claim.claimId}>{claim.text}</li>
-                  ))}
-                </ul>
-              </>
-            ) : null}
-          </>
+          <p><strong>{summary.listBrief}</strong></p>
         ) : (
           <p>尚无已保存的事项综合认识。</p>
         )}

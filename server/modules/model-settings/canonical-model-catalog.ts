@@ -3,7 +3,7 @@ import type {
   CanonicalModelOption,
 } from '@shared/api.interface';
 
-// Registration snapshot read from the official Hosted instance on 2026-09-06.
+// Registration snapshot read from the official Hosted instance through 2026-09-25.
 // This is an allowlist of routing identifiers, not a live inference health check.
 // Provider credentials and URLs remain in that instance's official settings.
 export const CANONICAL_REGISTERED_MODELS: readonly CanonicalModelOption[] = [
@@ -42,10 +42,17 @@ export const CANONICAL_REGISTERED_MODELS: readonly CanonicalModelOption[] = [
     providerLabel: 'DLI',
     available: true,
   },
+  {
+    modelRef: 'm3probe/minimax-m3',
+    displayName: 'M3 Probe Large',
+    providerKind: 'CUSTOM',
+    providerLabel: '妙搭 Hosted',
+    available: true,
+  },
 ];
 
-// The explicit user-selected deployment default, not a failure fallback.
-export const CANONICAL_INITIAL_MODEL_REF = 'miaoda/minimax-m3';
+// New tasks use the registered large Hosted profile; saved task choices stay pinned.
+export const CANONICAL_INITIAL_MODEL_REF = 'm3probe/minimax-m3';
 export const CANONICAL_MODEL_MANAGER_ROLE_ENV =
   'WL_CANONICAL_MODEL_MANAGER_ROLE_ID';
 

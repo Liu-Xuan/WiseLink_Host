@@ -48,6 +48,8 @@ export async function consumeHostedMatter(options, dependencies) {
   const call = (operation, input = {}, requestOptions) => dependencies.callTool('matter_action_attempt', { ...fence, operation, ...input }, requestOptions);
   const checkpoint = await (dependencies.createCheckpoint ?? createCheckpointStore)(join(options.checkpointRoot, 'matter', encodeURIComponent(target.matterId), encodeURIComponent(target.attemptRef)));
   const binding = { ...target, inputHash: task.inputHash };
+  const savedStatus = task.modelInput.overviewCorrectionProtocol === 'OPENCLAW_SCOPED_V1'
+    ? 'MATTER_OVERVIEW_CORRECTION_SAVED' : 'MATTER_WORK_SAVED';
   const storedBinding = await checkpoint.readOptional('binding');
   if (storedBinding && canonicalSha256(storedBinding) !== canonicalSha256(binding)) throw new Error('MATTER_CHECKPOINT_BINDING_MISMATCH');
   if (!storedBinding) await checkpoint.writeOnce('binding', binding);
@@ -197,7 +199,7 @@ export async function consumeHostedMatter(options, dependencies) {
     if (status.status === result.status && status.resultContentHash === result.contentHash)
       return result.status === 'FAILED'
         ? { status: 'MATTER_ASSESSMENT_FAILED', ...target, errorCode: result.errorCode }
-        : { status: 'MATTER_WORK_SAVED', ...target, workRevisionRef: JSON.parse(result.modelOutput).workRevisionRef, candidateOnly: true };
+        : { status: savedStatus, ...target, workRevisionRef: JSON.parse(result.modelOutput).workRevisionRef, candidateOnly: true };
     if (!['RUNNING', 'COMMITTING'].includes(status.status)) throw new Error('MATTER_FINISH_RECOVERY_REQUIRES_ATTENTION');
   }
   const finished = await call('FINISH', { result });
@@ -207,7 +209,7 @@ export async function consumeHostedMatter(options, dependencies) {
   }
   if (finished.status !== 'SUCCEEDED' || finished.attemptRef !== target.attemptRef ||
     finished.workRevisionRef !== JSON.parse(result.modelOutput).workRevisionRef) throw new Error('MATTER_FINISH_READBACK_MISMATCH');
-  return { status: 'MATTER_WORK_SAVED', ...target, workRevisionRef: finished.workRevisionRef, candidateOnly: true };
+  return { status: savedStatus, ...target, workRevisionRef: finished.workRevisionRef, candidateOnly: true };
 }
 
 function modelWork(content) {

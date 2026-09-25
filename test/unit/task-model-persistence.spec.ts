@@ -119,7 +119,7 @@ describe('task model persistence', () => {
         });
       expect(
         JSON.parse(values.mock.calls[0][0].analysisModelJson).modelRef,
-      ).toBe('miaoda/minimax-m3');
+      ).toBe('m3probe/minimax-m3');
     },
   );
 });
