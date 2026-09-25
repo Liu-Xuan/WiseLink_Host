@@ -1,10 +1,16 @@
 # M 主控集成交接
 
+## 2026-09-26 浏览器事项归集的真实 RLS 阻断（C150 未发布）
+
+独立 PostgreSQL 16 容器 `wiselink_engineering_matter_test` 的现有 `v5 direct family materials` 测试 1/1 通过：`authenticated` 用户直接调用原有 `ensureFamilyMatter` 能创建/复用同族事项，原有租户、来源与 owner 限制生效。新增浏览器入口回归测试则确切复现 `EngineeringMatterService.organizeDocumentIntake` 返回 `ENGINEERING_MATTER_RUNTIME_AUTHORIZATION_UNAVAILABLE`：该方法错误使用只接受 `service_role_*` 的 `withActorTransaction`，而资料库上传和 OAuth 工程事项上传均是浏览器用户入口。由此，上一个提交 `7af4a2a52` 的新关联在真实浏览器上下文无法通过，不能发布或计为 Wiki 闭环。线上最近 17b release `7689586170108169172` 仍是 `caec4b3ad404c72b581808e3da71c43c686bec3b`，未包含 C150。
+
+拟修复范围是仅让浏览器上传归集沿已认证用户的 SQL 身份进入既有 `ensureFamilyMatter`；仓储函数继续在同一事务核对 `app.user_id`、租户、提交版本和来源 owner，服务消费者自己的角色切换规则不改。自动审批两次拒绝这项改动，认为移除显式服务角色/Actor 绑定在所有调用方身份隔离未证实时有越权或身份错配风险。已提出明确范围的用户授权请求；在取得授权并用上述隔离测试验证之前，不发布 C150。测试中的失败是已定位的代码阻断，不把它写成 PDF 业务失败。
+
 ## 2026-09-26 两条上传入口与事项 Wiki 的接线核对（本地待发布）
 
 现行 17b 首页有两条不同上传路径。资料库中的“上传文档到资料库”调用 `POST /api/document-management/uploads/file-service`：保存确切 DocumentVersion 并按 family 建立/延续 Matter，但回执明确“不创建评估任务”，没有 WorkItem 或自动队列授权。另一条“选择或上传 PDF 并新建工程事项”调用 `POST /api/canonical-host/work-items/development-runs`：经官方 OAuth 会话与妙搭开发角色核验后创建 WorkItem、解析及逐任务自动授权；此前没有将该 WorkItem 归入 family Matter。17b online 只读核对发现 787 的 `WI-a5ffd931-840b-40eb-b534-c05777b30706` 在 `engineering_matter_revision_work_item` 与其 DocumentVersion 的 `engineering_matter_material_link` 均无对应记录，故既有资料库/工程知识读回不等于事项 Wiki 已验收。
 
-本地变更将当前已获准的 OAuth 上传所得 WorkItem，在解析返回后通过原有 owner/source 校验、`ensureFamilyMatter` 与 Matter 版本 CAS 关联到同一 family；同一 WorkItem 重试不重复加链接。定向 Jest 44/44、前后端 TypeScript、定向 lint 与差异检查通过；本机没有 `ENGINEERING_MATTER_TEST_DATABASE_URL`，这条新接线的真实数据库/RLS 执行尚未核验。此变更未扩大上传或评估角色，尚未发布，也不会自动回填 787。资料库普通上传自动评估仍缺接线；直接让其创建 WorkItem 将扩大普通用户的评估权限，需先明确该权限范围并验证确切上传回执、来源绑定、幂等与失败恢复。C136 默认定时消费仍未获准恢复，不能把本地接线或旧任务完成视为无人值守闭环。
+本地变更将当前已获准的 OAuth 上传所得 WorkItem，在解析返回后通过原有 owner/source 校验、`ensureFamilyMatter` 与 Matter 版本 CAS 关联到同一 family；同一 WorkItem 重试不重复加链接。定向 Jest 44/44、前后端 TypeScript、定向 lint 与差异检查通过；随后隔离 PostgreSQL/RLS 测试发现上述浏览器归集入口仍被错误的服务角色检查拒绝，详见本文件顶部 C150 阻断。这项变更没有扩大上传或评估角色，尚未发布，也不会自动回填 787。资料库普通上传自动评估仍缺接线；直接让其创建 WorkItem 将扩大普通用户的评估权限，需先明确该权限范围并验证确切上传回执、来源绑定、幂等与失败恢复。C136 默认定时消费仍未获准恢复，不能把本地接线或旧任务完成视为无人值守闭环。
 
 ## 2026-09-26 自动队列线上待领状态核对
 
