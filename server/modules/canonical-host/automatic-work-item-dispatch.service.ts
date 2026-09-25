@@ -2,6 +2,11 @@ import { randomUUID } from 'node:crypto';
 
 import { Inject, Injectable, Optional } from '@nestjs/common';
 
+import type {
+  AcknowledgeAutomaticWorkItemRequest,
+  AcknowledgeAutomaticWorkItemResponse,
+  AutomaticWorkItemClaimResult,
+} from '@shared/api.interface';
 import { MiaodaDocumentVersionSourceResolver } from '../work-item/miaoda-document-version-source.resolver';
 import {
   MiaodaWorkItemRepository,
@@ -15,6 +20,10 @@ import {
   type CanonicalVerifiedAutoWorkItemQueueScope,
 } from './canonical-service-scope.authorization';
 import {
+  AUTOMATIC_WORK_ITEM_LEASE_AUTHORIZATION,
+  type AutomaticWorkItemLeaseAuthorizationPort,
+} from './automatic-work-item-lease-authorization.port';
+import {
   AUTOMATIC_WORK_ITEM_SOURCE_AUTHORIZATION,
   type AutomaticWorkItemSourceAuthorizationPort,
 } from './automatic-work-item-source-authorization.port';
@@ -23,18 +32,7 @@ const CANONICAL_APP_ID = 'app_17bzc551rsg';
 const OPENCLAW_QUEUE_PRINCIPAL_ID = 'service:openclaw-main';
 const AUTO_WORK_ITEM_LEASE_MILLISECONDS = 60 * 60 * 1000;
 
-export type NextAutoWorkItemResult =
-  | { status: 'IDLE' }
-  | {
-      status: 'CLAIMED';
-      workItemId: string;
-      requestId: string;
-      documentVersionId: string;
-      workItemRevision: number;
-      leaseToken: string;
-      leaseGeneration: number;
-      leaseExpiresAt: string;
-    };
+export type NextAutoWorkItemResult = AutomaticWorkItemClaimResult;
 
 @Injectable()
 export class AutomaticWorkItemDispatchService {
@@ -46,6 +44,9 @@ export class AutomaticWorkItemDispatchService {
     @Optional()
     @Inject(AUTOMATIC_WORK_ITEM_SOURCE_AUTHORIZATION)
     private readonly sourceAuthorization?: AutomaticWorkItemSourceAuthorizationPort,
+    @Optional()
+    @Inject(AUTOMATIC_WORK_ITEM_LEASE_AUTHORIZATION)
+    private readonly leaseAuthorization?: AutomaticWorkItemLeaseAuthorizationPort,
   ) {}
 
   async nextWorkItem(): Promise<NextAutoWorkItemResult> {
@@ -108,6 +109,51 @@ export class AutomaticWorkItemDispatchService {
     }
 
     return { status: 'IDLE' };
+  }
+
+  async acknowledgeWorkItem(
+    input: AcknowledgeAutomaticWorkItemRequest,
+  ): Promise<AcknowledgeAutomaticWorkItemResponse> {
+    const scope = await this.serviceScope.authorizeOpenClawAutoWorkItemQueue();
+    assertQueueScope(scope);
+    assertAcknowledgementInput(input);
+    if (!this.leaseAuthorization) throw sourceAuthorizationUnavailable();
+
+    const leaseIdentity = {
+      tenantId: scope.tenantId,
+      workItemId: input.workItemId,
+    };
+    const leaseInput = {
+      ...leaseIdentity,
+      principalId: scope.principalId,
+      leaseToken: input.leaseToken,
+      leaseGeneration: input.leaseGeneration,
+    };
+    try {
+      await this.leaseAuthorization.authorizeActiveLease(leaseInput);
+    } catch (error) {
+      if (!isWorkItemNotFound(error)) throw error;
+      const replay = await this.workItems.acknowledgeAutoProcessingLease({
+        ...leaseIdentity,
+        leaseOwner: scope.principalId,
+        leaseToken: input.leaseToken,
+        leaseGeneration: input.leaseGeneration,
+        now: new Date(),
+      });
+      if (replay?.replayed)
+        return acknowledgementResponse(input.workItemId, replay);
+      throw error;
+    }
+
+    const acknowledged = await this.workItems.acknowledgeAutoProcessingLease({
+      ...leaseIdentity,
+      leaseOwner: scope.principalId,
+      leaseToken: input.leaseToken,
+      leaseGeneration: input.leaseGeneration,
+      now: new Date(),
+    });
+    if (!acknowledged) throw autoWorkItemLeaseConflict();
+    return acknowledgementResponse(input.workItemId, acknowledged);
   }
 
   private async validateCandidate(
@@ -305,4 +351,54 @@ function normalizeSourceAclDenyCode(value: string): string {
   return /^AUTO_WORK_ITEM_SOURCE_ACL_[A-Z0-9_]{1,96}$/u.test(value)
     ? value
     : 'AUTO_WORK_ITEM_SOURCE_READ_FORBIDDEN';
+}
+
+function assertAcknowledgementInput(
+  input: AcknowledgeAutomaticWorkItemRequest,
+): void {
+  if (
+    !/^WI-[A-Za-z0-9_-]{1,93}$/u.test(input.workItemId) ||
+    !/^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/iu.test(
+      input.leaseToken,
+    ) ||
+    !Number.isSafeInteger(input.leaseGeneration) ||
+    input.leaseGeneration < 1
+  ) {
+    throw Object.assign(new Error('AUTO_WORK_ITEM_ACK_INPUT_INVALID'), {
+      code: 'AUTO_WORK_ITEM_ACK_INPUT_INVALID',
+      statusCode: 400,
+    });
+  }
+}
+
+function isWorkItemNotFound(error: unknown): boolean {
+  return (
+    error instanceof Error &&
+    'code' in error &&
+    error.code === 'CANONICAL_WORK_ITEM_NOT_FOUND' &&
+    'statusCode' in error &&
+    error.statusCode === 404
+  );
+}
+
+function acknowledgementResponse(
+  workItemId: string,
+  acknowledgement: { acknowledgedAt: Date; replayed: boolean },
+): AcknowledgeAutomaticWorkItemResponse {
+  return {
+    status: 'ACKNOWLEDGED',
+    workItemId,
+    replayed: acknowledgement.replayed,
+    acknowledgedAt: acknowledgement.acknowledgedAt.toISOString(),
+  };
+}
+
+function autoWorkItemLeaseConflict(): Error & {
+  code: string;
+  statusCode: number;
+} {
+  return Object.assign(new Error('AUTO_WORK_ITEM_LEASE_LOST'), {
+    code: 'AUTO_WORK_ITEM_LEASE_LOST',
+    statusCode: 409,
+  });
 }

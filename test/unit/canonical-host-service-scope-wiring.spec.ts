@@ -115,6 +115,8 @@ import { MiaodaConfigurationEvidenceStore } from '../../server/modules/canonical
 import { ConfigurationEvidenceService } from '../../server/modules/canonical-host/configuration-evidence/configuration-evidence.service';
 import { AUTOMATIC_WORK_ITEM_SOURCE_AUTHORIZATION } from '../../server/modules/canonical-host/automatic-work-item-source-authorization.port';
 import { MiaodaAutomaticWorkItemSourceAuthorizationAdapter } from '../../server/modules/canonical-host/miaoda-automatic-work-item-source-authorization.adapter';
+import { AUTOMATIC_WORK_ITEM_LEASE_AUTHORIZATION } from '../../server/modules/canonical-host/automatic-work-item-lease-authorization.port';
+import { MiaodaAutomaticWorkItemLeaseAuthorizationAdapter } from '../../server/modules/canonical-host/miaoda-automatic-work-item-lease-authorization.adapter';
 import {
   GET_INSTALLATION_EVENTS,
   UnconfiguredGetInstallationEventsAdapter,
@@ -216,6 +218,19 @@ describe('CanonicalHostModule service-scope wiring', () => {
         {
           provide: AUTOMATIC_WORK_ITEM_SOURCE_AUTHORIZATION,
           useClass: MiaodaAutomaticWorkItemSourceAuthorizationAdapter,
+        },
+      ]),
+    );
+  });
+
+  it('wires automatic lease authorization to the Host repository and current source resolver', () => {
+    const configured = CanonicalHostModule.forRoot();
+
+    expect(configured.providers).toEqual(
+      expect.arrayContaining([
+        {
+          provide: AUTOMATIC_WORK_ITEM_LEASE_AUTHORIZATION,
+          useClass: MiaodaAutomaticWorkItemLeaseAuthorizationAdapter,
         },
       ]),
     );

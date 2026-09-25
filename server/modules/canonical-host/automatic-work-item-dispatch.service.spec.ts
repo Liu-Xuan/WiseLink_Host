@@ -6,6 +6,7 @@ import {
   type AutoWorkItemQueueWorkItem,
 } from '../work-item/miaoda-work-item.repository';
 import type { CanonicalWorkItemProjection } from '@shared/api.interface';
+import type { AutomaticWorkItemLeaseAuthorizationPort } from './automatic-work-item-lease-authorization.port';
 import type { CanonicalServiceScopeAuthorizationPort } from './canonical-service-scope.authorization';
 import type { AutomaticWorkItemSourceAuthorizationPort } from './automatic-work-item-source-authorization.port';
 import {
@@ -32,6 +33,83 @@ describe('AutomaticWorkItemDispatchService', () => {
     await expect(service.nextWorkItem()).resolves.toEqual({ status: 'IDLE' });
     expect(sources.resolve).not.toHaveBeenCalled();
     expect(workItems.claimAutoProcessingCandidate).not.toHaveBeenCalled();
+  });
+
+  it('acknowledges only after fresh active lease verification and token-generation CAS', async () => {
+    const workItems = repositoryDouble([]);
+    workItems.acknowledgeAutoProcessingLease.mockResolvedValue({
+      acknowledgedAt: NOW,
+      replayed: false,
+    });
+    const leaseAuthorization = leaseAuthorizationDouble();
+    const service = dispatchService(
+      workItems,
+      sourceDouble(),
+      sourceAuthorizationDouble(),
+      leaseAuthorization,
+    );
+    const leaseToken = 'b1686364-7ee9-4ca1-a3aa-0b62794cb436';
+
+    await expect(
+      service.acknowledgeWorkItem({
+        workItemId: WORK_ITEM_ID,
+        leaseToken,
+        leaseGeneration: 3,
+      }),
+    ).resolves.toEqual({
+      status: 'ACKNOWLEDGED',
+      workItemId: WORK_ITEM_ID,
+      replayed: false,
+      acknowledgedAt: NOW.toISOString(),
+    });
+    expect(leaseAuthorization.authorizeActiveLease).toHaveBeenCalledWith({
+      tenantId: TENANT_ID,
+      principalId: 'service:openclaw-main',
+      workItemId: WORK_ITEM_ID,
+      leaseToken,
+      leaseGeneration: 3,
+    });
+    expect(workItems.acknowledgeAutoProcessingLease).toHaveBeenCalledWith(
+      expect.objectContaining({
+        tenantId: TENANT_ID,
+        workItemId: WORK_ITEM_ID,
+        leaseOwner: 'service:openclaw-main',
+        leaseToken,
+        leaseGeneration: 3,
+      }),
+    );
+  });
+
+  it('returns an idempotent replay only for an already completed matching lease', async () => {
+    const notFound = Object.assign(new Error('CANONICAL_WORK_ITEM_NOT_FOUND'), {
+      code: 'CANONICAL_WORK_ITEM_NOT_FOUND',
+      statusCode: 404,
+    });
+    const workItems = repositoryDouble([]);
+    workItems.acknowledgeAutoProcessingLease.mockResolvedValue({
+      acknowledgedAt: NOW,
+      replayed: true,
+    });
+    const leaseAuthorization = leaseAuthorizationDouble();
+    leaseAuthorization.authorizeActiveLease.mockRejectedValue(notFound);
+    const service = dispatchService(
+      workItems,
+      sourceDouble(),
+      sourceAuthorizationDouble(),
+      leaseAuthorization,
+    );
+
+    await expect(
+      service.acknowledgeWorkItem({
+        workItemId: WORK_ITEM_ID,
+        leaseToken: 'b1686364-7ee9-4ca1-a3aa-0b62794cb436',
+        leaseGeneration: 3,
+      }),
+    ).resolves.toMatchObject({
+      status: 'ACKNOWLEDGED',
+      replayed: true,
+      acknowledgedAt: NOW.toISOString(),
+    });
   });
 
   it('blocks one mismatched grant and continues to the next authorized item', async () => {
@@ -293,6 +371,7 @@ function repositoryDouble(candidates: AutoWorkItemQueueCandidate[]) {
     loadAutoProcessingProjection: jest.fn(),
     claimAutoProcessingCandidate: jest.fn(),
     blockAutoProcessingCandidate: jest.fn().mockResolvedValue(undefined),
+    acknowledgeAutoProcessingLease: jest.fn(),
   };
   return double as unknown as jest.Mocked<
     Pick<
@@ -302,6 +381,7 @@ function repositoryDouble(candidates: AutoWorkItemQueueCandidate[]) {
       | 'loadAutoProcessingProjection'
       | 'claimAutoProcessingCandidate'
       | 'blockAutoProcessingCandidate'
+      | 'acknowledgeAutoProcessingLease'
     >
   >;
 }
@@ -337,12 +417,16 @@ function dispatchService(
       | 'loadAutoProcessingProjection'
       | 'claimAutoProcessingCandidate'
       | 'blockAutoProcessingCandidate'
+      | 'acknowledgeAutoProcessingLease'
     >
   >,
   sources: jest.Mocked<Pick<MiaodaDocumentVersionSourceResolver, 'resolve'>>,
   sourceAuthorization: jest.Mocked<
     Pick<AutomaticWorkItemSourceAuthorizationPort, 'authorizeSourceRead'>
   > | null = sourceAuthorizationDouble(),
+  leaseAuthorization: jest.Mocked<
+    Pick<AutomaticWorkItemLeaseAuthorizationPort, 'authorizeActiveLease'>
+  > = leaseAuthorizationDouble(),
 ): AutomaticWorkItemDispatchService {
   const serviceScope = {
     authorizeOpenClawAutoWorkItemQueue: jest.fn().mockResolvedValue({
@@ -357,7 +441,29 @@ function dispatchService(
     sources as unknown as MiaodaDocumentVersionSourceResolver,
     serviceScope,
     sourceAuthorization ?? undefined,
+    leaseAuthorization,
   );
+}
+
+function leaseAuthorizationDouble() {
+  return {
+    authorizeActiveLease: jest.fn().mockResolvedValue({
+      tenantId: TENANT_ID,
+      principalId: 'service:openclaw-main',
+      workItemId: WORK_ITEM_ID,
+      requestId: REQUEST_ID,
+      actorUserId: ACTOR_ID,
+      documentId: DOCUMENT_ID,
+      documentVersionId: DOCUMENT_VERSION_ID,
+      sourceArtifactId: SOURCE_ARTIFACT_ID,
+      sourceFileSha256: SOURCE_SHA256,
+      sourceByteLength: 1024,
+      leaseGeneration: 3,
+      leaseExpiresAt: '2026-09-25T09:00:00.000Z',
+    }),
+  } as jest.Mocked<
+    Pick<AutomaticWorkItemLeaseAuthorizationPort, 'authorizeActiveLease'>
+  >;
 }
 
 function sourceAuthorizationDouble() {

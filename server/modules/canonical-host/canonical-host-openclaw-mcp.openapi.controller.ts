@@ -1,5 +1,10 @@
 import { Body, Controller, Inject, Post, Req, Res } from '@nestjs/common';
 import type { Request, Response } from 'express';
+import type {
+  AcknowledgeAutomaticWorkItemRequest,
+  AcknowledgeAutomaticWorkItemResponse,
+  AutomaticWorkItemClaimResult,
+} from '@shared/api.interface';
 
 import { CanonicalHostOpenClawMcpService } from './canonical-host-openclaw-mcp.service';
 import { AutomaticWorkItemDispatchService } from './automatic-work-item-dispatch.service';
@@ -28,8 +33,16 @@ export class CanonicalHostOpenClawMcpOpenApiController {
   }
 
   @Post('next-work-item')
-  async nextWorkItem() {
+  async nextWorkItem(): Promise<AutomaticWorkItemClaimResult> {
     await this.serviceScope.assertAutoWorkItemQueueTransport();
     return this.autoWorkItems.nextWorkItem();
+  }
+
+  @Post('ack-work-item')
+  async acknowledgeWorkItem(
+    @Body() body: AcknowledgeAutomaticWorkItemRequest,
+  ): Promise<AcknowledgeAutomaticWorkItemResponse> {
+    await this.serviceScope.assertAutoWorkItemQueueTransport();
+    return this.autoWorkItems.acknowledgeWorkItem(body);
   }
 }

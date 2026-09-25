@@ -45,6 +45,11 @@ export const autoWorkItemAuthorization = pgTable(
     leaseToken: uuid('lease_token'),
     leaseGeneration: integer('lease_generation').notNull().default(0),
     leaseExpiresAt: customTimestamptz('lease_expires_at', { precision: 3 }),
+    completedLeaseTokenHash: varchar('completed_lease_token_hash', {
+      length: 64,
+    }),
+    completedLeaseGeneration: integer('completed_lease_generation'),
+    completedAt: customTimestamptz('completed_at', { precision: 3 }),
     blockedCode: varchar('blocked_code', { length: 120 }),
     createdAt: customTimestamptz('created_at', { precision: 3 })
       .notNull()
