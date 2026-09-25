@@ -1376,7 +1376,7 @@ test('requires 35 MCP capabilities, six review tools, and hosted provenance', ()
   assert.ok(HOST_MCP_TOOLS.includes('commit_applicability_candidate'));
   assert.equal(
     WISELINK_SKILL_VERSION,
-    'wiselink-research-and-synthesize@r09.c127',
+    'wiselink-research-and-synthesize@r09.c128',
   );
   assert.equal(
     WISELINK_SKILL_COMPATIBILITY_REF,
@@ -7698,11 +7698,13 @@ test('original applicability collects bounded output windows before validating o
     if(windows.length===1) assert.deepEqual(JSON.parse(request.messages[1].content),input);
     else assert.equal(request.messages.length,3);
     const ids=new Set(input.originalInput.source.units.slice(window.startUnitIndex,window.endUnitIndexExclusive).map(unit=>unit.unitId));
+    const selectedExpressions=output.expressions.filter(expression=>ids.has(expression.original.quote.unitId));
     return Response.json({choices:[{message:{content:null,tool_calls:[{id:`window-${windows.length}`,type:'function',
       function:{name:'return_wiselink_initial_candidate',arguments:JSON.stringify({candidate:{
         schemaVersion:output.schemaVersion,
-        unitDispositions:output.unitDispositions.filter(row=>ids.has(row.unitId)),
-        expressions:output.expressions.filter(expression=>ids.has(expression.original.quote.unitId)),
+        unitDispositions:{item:output.unitDispositions.filter(row=>ids.has(row.unitId)).map(row=>
+          row.disposition==='NO_CONDITION'?{...row,conditionIds:''}:row)},
+        expressions:selectedExpressions.length?selectedExpressions:'',
       }})}}]}}]});
   }});
   assert.equal(windows.length,3);
@@ -7725,6 +7727,17 @@ test('original applicability rejects a missing window unit before advancing',asy
         unitDispositions:output.unitDispositions.slice(0,-1)}})}}]}}]});
   }}),/INITIAL_APPLICABILITY_WINDOW_COVERAGE_INVALID/u);
   assert.equal(calls,1);
+});
+
+test('original applicability never treats an empty-string expression list as a resolved condition',async()=>{
+  const {input,output}=await originalApplicabilityPair();
+  await assert.rejects(invokeInitialWithTransport({operation:'EXTRACT_APPLICABILITY',modelInput:input},{
+    gatewayChatCompletionsEnabled:true,gatewayUrl:'https://official.invalid',gatewayToken:'fixture-only',
+    configuredModelVersion:'m3probe/minimax-m3',sessionDiscriminator:'condition-empty-wire',
+    executionModel:modelSelection('m3probe/minimax-m3'),registeredModelRefs:['m3probe/minimax-m3'],
+  },{requestGateway:async()=>Response.json({choices:[{message:{content:null,tool_calls:[{id:'empty-expression',type:'function',
+    function:{name:'return_wiselink_initial_candidate',arguments:JSON.stringify({candidate:{...output,expressions:''}})}}]}}]})}),
+  /INITIAL_APPLICABILITY_WINDOW_SHAPE_INVALID/u);
 });
 
 // This synthetic surface preserves the exact deployed read_matter_current_work contract.
