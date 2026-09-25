@@ -297,7 +297,7 @@ export function buildLibraryEngineeringQuicklook(
           ? '已保存候选意见'
           : '尚无候选意见',
     freshnessLabel:
-      result?.status === 'STALE' ? '结论需更新' : '原文未在本次核验',
+      result?.status === 'STALE' ? '结论需更新' : '来源范围见依据',
     currentJudgment: firstNonEmpty(
       result?.readingResult?.content.headline,
       summary?.conclusion.text,
@@ -331,8 +331,8 @@ export function buildLibraryEngineeringQuicklook(
       null,
     derivedArtifactCount: null,
     sourceReadNote: result?.jobAidRoundCompletion
-      ? `${result.jobAidRoundCompletion === 'IN_PROGRESS' ? '本轮分析尚未完成。' : result.jobAidRoundCompletion === 'COMPLETE_WITH_OPEN_QUESTIONS' ? '本轮分析完成，待确认事项仍保持开放。' : '本轮分析完成。'}${result.overallStatus === 'STALE' ? '整体意见基于较早工作版本；这里展示最新已保存认识。' : ''}本次未重新读取原文；可打开具体判断核对其完整前提。`
-      : '摘要来自已保存的评估结果。本次未读取原文或解析包；打开依据时再核对来源。',
+      ? `${result.jobAidRoundCompletion === 'IN_PROGRESS' ? '本轮分析尚未完成。' : result.jobAidRoundCompletion === 'COMPLETE_WITH_OPEN_QUESTIONS' ? '本轮分析完成，待确认事项仍保持开放。' : '本轮分析完成。'}${result.overallStatus === 'STALE' ? '整体意见基于较早工作版本；这里展示最新已保存认识。' : ''}原文核验范围与关键条件可在具体判断中查看。`
+      : '摘要来自已保存的评估结果；打开依据可核对其来源与范围。',
   };
 }
 

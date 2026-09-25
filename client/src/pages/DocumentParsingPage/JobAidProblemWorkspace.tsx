@@ -170,7 +170,9 @@ export function JobAidProblemReading({
   const execution = data.executionStatus ? (
     <p role="status">
       当前运行：{executionLabels[data.executionStatus] ?? data.executionStatus}。
-      已保存内容独立保留，不表示本轮执行已完成。
+      {data.executionStatus === 'SUCCEEDED'
+        ? null
+        : '已保存内容独立保留，运行状态不改变其完成范围。'}
     </p>
   ) : null;
   if (!current)

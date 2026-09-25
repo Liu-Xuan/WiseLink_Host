@@ -1376,7 +1376,7 @@ test('requires 35 MCP capabilities, six review tools, and hosted provenance', ()
   assert.ok(HOST_MCP_TOOLS.includes('commit_applicability_candidate'));
   assert.equal(
     WISELINK_SKILL_VERSION,
-    'wiselink-research-and-synthesize@r09.c147',
+    'wiselink-research-and-synthesize@r09.c148',
   );
   assert.equal(
     WISELINK_SKILL_COMPATIBILITY_REF,
@@ -3205,6 +3205,39 @@ test('official initial model adapter selects the Overall v2 contract and sends t
     return Response.json({ model: 'actual-official-model', choices: [{ message: { content: null, tool_calls: [{ type: 'function', function: { name: 'return_wiselink_initial_candidate', arguments: JSON.stringify({ candidate }) } }] } }] });
   } });
   assert.deepEqual(result.output, candidate);
+});
+
+test('Overall corrects an overlong list brief in the same model session before saving', async () => {
+  const modelInput = readingSynthesisInput();
+  const concise = readingSynthesisOutput(modelInput);
+  const overlong = structuredClone(concise);
+  overlong.engineeringSummary.listBrief = '文件编号与日期。'.repeat(45);
+  let calls = 0;
+  const rejected = [];
+  const result = await invokeInitialWithTransport({ operation: 'SYNTHESIZE_OVERALL', modelInput }, {
+    gatewayChatCompletionsEnabled: true, gatewayUrl: 'https://official.invalid',
+    gatewayToken: 'fixture-only', configuredModelVersion: 'miaoda/miaoda-model-auto',
+    sessionDiscriminator: 'brief-correction',
+    observeCandidateRejection: (value) => rejected.push(value),
+  }, { requestGateway: async (_url, init) => {
+    calls += 1;
+    const request = JSON.parse(init.body);
+    if (calls === 2) {
+      const feedback = JSON.parse(request.messages.at(-1).content);
+      assert.equal(feedback.validationError, 'INITIAL_OVERALL_READING_COPY_TOO_LONG');
+      assert.equal(feedback.candidateAccepted, false);
+      assert.match(feedback.instruction, /engineering problem/u);
+    }
+    return Response.json({ model: 'actual-official-model', choices: [{ message: {
+      content: null, tool_calls: [{ id: `call-${calls}`, type: 'function', function: {
+        name: 'return_wiselink_initial_candidate',
+        arguments: JSON.stringify({ candidate: calls === 1 ? overlong : concise }),
+      } }],
+    } }] });
+  } });
+  assert.equal(calls, 2);
+  assert.equal(rejected.length, 1);
+  assert.deepEqual(result.output, concise);
 });
 
 test('Matter Review accepts full issue work and keeps read coverage and registered evidence boundaries', async () => {
