@@ -3000,8 +3000,8 @@
   margin-top: 0.625rem;
 }
 
-.library-quicklook-conditions > h4 {
-  margin: 0;
+.library-quicklook-conditions > summary {
+  cursor: pointer;
   color: var(--wl-muted);
   font-size: var(--wl-text-caption);
   font-weight: 600;

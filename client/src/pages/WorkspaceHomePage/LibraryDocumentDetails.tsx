@@ -53,6 +53,11 @@ export function LibraryDocumentDetails({
   const selectedReading = selectedVersion
     ? projectLibraryDocumentReading(selectedVersion)
     : null;
+  const readingConditionCount = selectedReading
+    ? selectedReading.criticalConditions.length +
+      selectedReading.limitations.length +
+      selectedReading.sourceLimitations.length
+    : 0;
   const selectedIdentity = document ? documentIdentityPresentation({ documentCode: document.documentCode,
     extractedMetadata: selectedVersion?.extractedMetadata }) : null;
 
@@ -145,11 +150,14 @@ export function LibraryDocumentDetails({
             ) : (
               <p>{selectedReading.note}</p>
             )}
-            {selectedReading.criticalConditions.length > 0 ||
-            selectedReading.limitations.length > 0 ||
-            selectedReading.sourceLimitations.length > 0 ? (
-              <div className="library-quicklook-conditions">
-                <h4>关键条件与阅读限制</h4>
+            {readingConditionCount > 0 ? (
+              <details
+                key={selectedVersion.documentVersionId}
+                className="library-quicklook-conditions"
+              >
+                <summary>
+                  关键条件与阅读限制（{readingConditionCount} 项）
+                </summary>
                 <ul>
                   {selectedReading.criticalConditions.map((condition) => (
                     <li key={`condition:${condition}`}>{condition}</li>
@@ -161,7 +169,7 @@ export function LibraryDocumentDetails({
                     <li key={`source:${sourceLimitation}`}>{sourceLimitation}</li>
                   ))}
                 </ul>
-              </div>
+              </details>
             ) : null}
             <DocumentVersionLink version={selectedVersion} familyId={document.familyId}>进入精读工作台</DocumentVersionLink>
           </section> : <p role="status">所选版本未在当前读取范围内返回，未替换为其他版本。</p>}
