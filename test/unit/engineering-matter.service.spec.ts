@@ -73,7 +73,7 @@ describe('EngineeringMatterService', () => {
       }),
     };
     const actorTransactions = {
-      withActorTransaction: jest
+      withBrowserActorTransaction: jest
         .fn()
         .mockImplementation((_, work) => work({ database: {} })),
     };
@@ -99,6 +99,10 @@ describe('EngineeringMatterService', () => {
       }),
     );
     expect(matters.ensureFamilyMatter).toHaveBeenCalledTimes(2);
+    expect(actorTransactions.withBrowserActorTransaction).toHaveBeenCalledWith(
+      'actor-A',
+      expect.any(Function),
+    );
   });
 
   it('rejects an intake source that differs from the authorized WorkItem', async () => {

@@ -57,7 +57,7 @@ export class EngineeringMatterService {
   }) {
     if (!this.actorTransactions)
       throw new Error('MATTER_MATERIAL_RUNTIME_UNAVAILABLE');
-    return this.actorTransactions.withActorTransaction(
+    return this.actorTransactions.withBrowserActorTransaction(
       input.actorUserId,
       ({ database }) => this.matters.ensureFamilyMatter(input, database),
     );

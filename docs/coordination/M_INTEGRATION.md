@@ -16,7 +16,7 @@
 
 独立 PostgreSQL 16 容器 `wiselink_engineering_matter_test` 的现有 `v5 direct family materials` 测试 1/1 通过：`authenticated` 用户直接调用原有 `ensureFamilyMatter` 能创建/复用同族事项，原有租户、来源与 owner 限制生效。新增浏览器入口回归测试则确切复现 `EngineeringMatterService.organizeDocumentIntake` 返回 `ENGINEERING_MATTER_RUNTIME_AUTHORIZATION_UNAVAILABLE`：该方法错误使用只接受 `service_role_*` 的 `withActorTransaction`，而资料库上传和 OAuth 工程事项上传均是浏览器用户入口。由此，上一个提交 `7af4a2a52` 的新关联在真实浏览器上下文无法通过，不能发布或计为 Wiki 闭环。线上最近 17b release `7689586170108169172` 仍是 `caec4b3ad404c72b581808e3da71c43c686bec3b`，未包含 C150。
 
-拟修复范围是仅让浏览器上传归集沿已认证用户的 SQL 身份进入既有 `ensureFamilyMatter`；仓储函数继续在同一事务核对 `app.user_id`、租户、提交版本和来源 owner，服务消费者自己的角色切换规则不改。自动审批两次拒绝这项改动，认为移除显式服务角色/Actor 绑定在所有调用方身份隔离未证实时有越权或身份错配风险。已提出明确范围的用户授权请求；在取得授权并用上述隔离测试验证之前，不发布 C150。测试中的失败是已定位的代码阻断，不把它写成 PDF 业务失败。
+直接移除服务角色检查的修法曾两次被自动审批拒绝，理由是在所有调用方身份隔离未证实时可能越权或错配。当前本地候选保留原 `withActorTransaction` 服务角色规则，新增独立的浏览器事务入口：在同一 SQL 事务核对实际 `current_user='authenticated'` 且 `app.user_id` 与 Host 传入的 actor 精确一致，才调用原 `ensureFamilyMatter`；后者继续核对租户、提交版本、来源 owner 和 RLS。独立 PostgreSQL 16 中浏览器归集与原材料规则 2/2 通过；获准 owner 创建/重放有效，跨 actor 冒用、跨租户、无来源权限及服务角色进入浏览器入口均拒绝，拒绝后没有多建 Matter。相关单元 45/45、server TypeScript 和定向 ESLint 无错误。本候选仍未发布，既有授权请求尚待回复；测试中的旧失败是代码阻断，不把它写成 PDF 业务失败。
 
 ## 2026-09-26 两条上传入口与事项 Wiki 的接线核对（本地待发布）
 
