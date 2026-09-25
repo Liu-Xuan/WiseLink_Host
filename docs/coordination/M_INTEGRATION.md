@@ -1,5 +1,9 @@
 # M 主控集成交接
 
+## 2026-09-26 C151 解析回执重读不再覆盖已保存工作（本地待发布）
+
+核对 `CanonicalHostVerticalService.runPdfAuthorized` 发现：同一请求重放已完成的解析时，`reuseCompleted` 若遇到 Reader/存储读回失败，原代码会调用 `recordUnexpectedFailure`，把已经 `CANDIDATE_READBACK_VERIFIED` 的 WorkItem 改成 `FAILED` 或 `RECORDING_FAILED`。本地修订让重放读取错误直接报告给调用者，保留原 WorkItem 修订和解析器结果；原件恢复可读后再次同请求读取成功，解析器只调用一次。真实字节漂移仍抛 `ARTIFACT_READBACK_MISMATCH`，不假装成功。定向 Jest 54/54、server TypeScript、定向 ESLint 和差异检查通过。此变更尚未发布；当前开发分支还包含 C150 已知浏览器事项归集 RLS 阻断，不得直接以该分支发布新版本。
+
 ## 2026-09-26 浏览器事项归集的真实 RLS 阻断（C150 未发布）
 
 17b online 只读汇总 `dm_acquisition` 中 `document_library_upload` 的已提交/确切链接来源有 3 个不同 DocumentVersion：1 个既无当前 Matter 材料关联也无 WorkItem，1 个有 WorkItem 但无当前 Matter 材料关联，1 个有当前 Matter 材料关联但无 WorkItem。Matter 统计只检查当前修订。该查询不改变任何记录，也不能仅凭关联缺失认定每次历史请求的响应原因；它证明两条入口分裂和既有结果未统一关联已影响线上对象，后续修复应按确切用户、来源及已有工作逐项接续，不批量补写权限或重新解析。
