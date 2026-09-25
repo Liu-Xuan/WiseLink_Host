@@ -231,6 +231,36 @@ describe('AutomaticWorkItemDispatchService', () => {
     expect(workItems.blockAutoProcessingLease).not.toHaveBeenCalled();
   });
 
+  it('keeps a cancelled execution available for controlled recovery', async () => {
+    const workItems = repositoryDouble([]);
+    workItems.loadAutoProcessingProjection.mockResolvedValue(currentSnapshot(12));
+    const initial = initialStatusDouble({
+      workItemRevision: 12,
+      status: 'FAILED',
+      nextOperation: null,
+      stages: {
+        ...completeInitialStatus().stages,
+        jobAid: {
+          ...stageStatus('FAILED'),
+          attemptStatus: 'CANCELLED',
+          terminalCode: 'REVIEW_CHECKPOINT_ALREADY_EXISTS',
+        },
+      },
+    });
+    const service = dispatchService(workItems, sourceDouble(),
+      sourceAuthorizationDouble(), leaseAuthorizationDouble(), initial);
+
+    await expect(service.blockWorkItem({
+      workItemId: WORK_ITEM_ID,
+      leaseToken: 'b1686364-7ee9-4ca1-a3aa-0b62794cb436',
+      leaseGeneration: 3,
+    })).rejects.toMatchObject({
+      code: 'AUTO_WORK_ITEM_FAILURE_NOT_CONFIRMED',
+      statusCode: 409,
+    });
+    expect(workItems.blockAutoProcessingLease).not.toHaveBeenCalled();
+  });
+
   it('returns an idempotent replay only for an already completed matching lease', async () => {
     const notFound = Object.assign(new Error('CANONICAL_WORK_ITEM_NOT_FOUND'), {
       code: 'CANONICAL_WORK_ITEM_NOT_FOUND',

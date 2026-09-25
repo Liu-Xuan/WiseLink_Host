@@ -422,7 +422,11 @@ function terminalFailedAutomaticWorkItem(initial) {
       !['FAILED', 'CONFLICT'].includes(initial.status) ||
       initial.nextOperation !== null || !isRecord(initial.stages)) return null;
   for (const stage of ['translation', 'applicability', 'jobAid', 'overall']) {
-    const status = initial.stages[stage]?.status;
+    const observation = initial.stages[stage];
+    // A cancelled attempt records an execution interruption, not a confirmed
+    // irreversible business failure. Keep its exact claim for attention.
+    if (observation?.attemptStatus === 'CANCELLED') continue;
+    const status = observation?.status;
     if (status === 'FAILED' || status === 'CONFLICT') return { stage, status };
   }
   return null;

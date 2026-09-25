@@ -348,6 +348,30 @@ test('terminal failure is Host-blocked and is never acknowledged', async () => {
   assert.equal(checkpoint.values.get('active-claim'), null);
 });
 
+test('cancelled execution asks for attention without blocking its queue grant', async () => {
+  const checkpoint = memoryCheckpoint(null);
+  const failed = status({
+    overallStatus: 'FAILED', nextOperation: null,
+    translation: 'SUCCEEDED', applicability: 'WAITING_INPUT',
+    jobAid: 'FAILED', overall: 'PENDING',
+  });
+  failed.stages.jobAid.attemptStatus = 'CANCELLED';
+  failed.stages.jobAid.terminalCode = 'REVIEW_CHECKPOINT_ALREADY_EXISTS';
+  let blocked = false;
+  const result = await consumeAutomaticWorkItemQueueTick({}, {
+    checkpoint,
+    now: () => new Date(START),
+    nextWorkItem: async () => lease(1, '2026-09-25T01:00:00.000Z'),
+    acknowledgeWorkItem: async () => assert.fail('cancelled attempt cannot ACK'),
+    blockWorkItem: async () => { blocked = true; },
+    readInitialStatus: async () => failed,
+    consumeWorkItem: async () => ({ status: 'REQUIRES_ATTENTION', errorCode: 'REVIEW_CHECKPOINT_ALREADY_EXISTS' }),
+  });
+  assert.equal(result.status, 'REQUIRES_ATTENTION');
+  assert.equal(blocked, false);
+  assert.equal(checkpoint.values.get('active-claim').consumerStopped, true);
+});
+
 test('a lost terminal block response is replayed from the persisted exact claim', async () => {
   const checkpoint = memoryCheckpoint(null);
   const failed = status({

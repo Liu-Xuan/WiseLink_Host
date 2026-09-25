@@ -601,7 +601,9 @@ function terminalFailedInitialStage(
     return null;
   }
   for (const stage of ['translation', 'applicability', 'jobAid', 'overall'] as const) {
-    const stageStatus = status.stages[stage].status;
+    const observation = status.stages[stage];
+    if (observation.attemptStatus === 'CANCELLED') continue;
+    const stageStatus = observation.status;
     if (stageStatus === 'FAILED' || stageStatus === 'CONFLICT') {
       return { stage, status: stageStatus };
     }

@@ -264,6 +264,29 @@ const completed = {
   overview: 'The source condition remains; reliability is unqueried.',
 };
 
+test('repeated correction number after a successful source read keeps distinct round checkpoints', () => persisted(async checkpoint => {
+  const rejectionRounds = [];
+  const f = fixture([
+    { action: 'READ_SOURCES', purpose: 'missing references', context: 'PAGE' },
+    { action: 'READ_SOURCES', sourceRefs: ['source:dv:sr1'], purpose: 'read source', context: 'PAGE' },
+    { action: 'READ_SOURCES', purpose: 'missing references again', context: 'PAGE' },
+    { action: 'SAVE_WORK', work: completed },
+    { action: 'FINISH' },
+  ], {
+    assessmentCheckpoint: checkpoint,
+    observeCandidateRejection: async event => {
+      rejectionRounds.push([event.modelRound, event.correctionNo]);
+      await checkpoint.writeOnce(`model.candidate-rejection-${event.modelRound}-${event.correctionNo}`, event);
+    },
+  });
+
+  const result = await f.run();
+  assert.equal(result.output.workRevisionRef, 'JAWR-1');
+  assert.deepEqual(rejectionRounds, [[1, 1], [3, 1]]);
+  assert.ok(await checkpoint.readOptional('model.candidate-rejection-1-1'));
+  assert.ok(await checkpoint.readOptional('model.candidate-rejection-3-1'));
+}));
+
 test('a completed text-only correction resumes from its durable response and preserves the rejected work', () => persisted(async checkpoint => {
   const input = modelInput();
   input.availableSources = [{ ref: 'engineer:1', kind: 'ENGINEER_STATEMENT' }];

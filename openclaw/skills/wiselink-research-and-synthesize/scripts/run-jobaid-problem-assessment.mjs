@@ -556,7 +556,7 @@ export async function invokeHostedJobAidProblemModel(
       scopeAdjustments += 1;
       // Retain the latest source/save receipt. The native session holds earlier
       // complete context; the incomplete output is never resubmitted as a tool.
-      await options.observeCandidateRejection?.({ correctionNo: scopeAdjustments, code: 'JOBAID_MODEL_OUTPUT_LENGTH' });
+      await options.observeCandidateRejection?.({ modelRound: round, correctionNo: scopeAdjustments, code: 'JOBAID_MODEL_OUTPUT_LENGTH' });
       await persistAssessmentState(round + 1);
       continue;
     }
@@ -598,7 +598,7 @@ export async function invokeHostedJobAidProblemModel(
         instruction: `Your completed text-only response did not submit any step. Return exactly one ${FUNCTION} function call. Continue the existing investigation and correct the prior rejected work using its evidence and receipt; do not restart the assessment or treat prose as saved work.`,
         ...priorRejectedRatingCorrection(messages, modelInput),
       }) }];
-      await options.observeCandidateRejection?.({ correctionNo: corrections, code: 'JOBAID_MODEL_OUTPUT_FUNCTION_REQUIRED' });
+      await options.observeCandidateRejection?.({ modelRound: round, correctionNo: corrections, code: 'JOBAID_MODEL_OUTPUT_FUNCTION_REQUIRED' });
       await persistAssessmentState(round + 1);
       continue;
     }
@@ -792,6 +792,7 @@ export async function invokeHostedJobAidProblemModel(
         } : {}),
       };
       await options.observeCandidateRejection?.({
+        modelRound: round,
         correctionNo: corrections,
         code,
         ...(receipt.fieldErrors ? { fieldErrors: receipt.fieldErrors } : {}),
