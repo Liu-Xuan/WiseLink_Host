@@ -12,13 +12,15 @@ description: Orchestrate the single official hosted WiseLink engineering profile
 - hosted app：`app_17c3zn24kv2`
 - logical profile：`wiselink-engineering`
 - model policy：`official-hosted-profile-config`（任务可绑定已登记的内置或用户授权自定义模型；仍经唯一官方 Hosted profile/Gateway）
-- Skill：`wiselink-research-and-synthesize@r09.c139`
+- Skill：`wiselink-research-and-synthesize@r09.c144`
 - Skill compatibility：`wiselink-research-and-synthesize@r09`（历史任务最低接受 `r09.c10`，翻译 v2 必须为 `r09.c44` 或更新兼容包）
 - Host MCP：`wiselink-openclaw-engineering-assessment@1.2.0`（保留既有工具，新增语义翻译工作与 JobAid 来源/工作工具）
 - Host 集成提交：以本次发布包清单记录的实际提交为准
 
 c137 修复同一 JobAid 执行中更正次数归零后检查点重名的问题；取消的执行转为人工关注，不自动将队列任务标为业务终态失败。
 c138 在初始 JobAid 读取前核对模型所选来源是否属于确切目录，指出可核对的同单元候选；原文尚未成功送达时拒绝保存仅描述流程状态的问题。
+c139 将初始 JobAid 每次原文读取限制为四个精确引用，随后仅保存一个完整问题或一组小范围相关问题。
+c142 对两种已观察到的引用拼写误差，仅在 Host 来源目录有唯一精确对应项时作可追溯的语法修正；Host 继续核验来源登记与实际交付，并明确要求每项提交正文包含内联引用。c141 明确引用只能使用 Host 交付的 evidenceRef 值，不得把字段名 `evidenceRef:` 添入引用。c140 初始 JobAid 续跑向模型只投影 Host 已保存问题的目录与未决问题；完整正文继续留在 Host，不把省略的旧正文宣称为已复核证据。
 
 c123 依据 Host 实际交付的结构化单元与分页游标，明确区分完整交付和部分交付。独立文件解读不能在全部单元已交付时写成“后续范围未读取”；原文图表等未解读限制仍以 `sourceCoverage.unresolvedRanges` 为准。此次仅修订阅读模型提示和 Skill 版本，不改变 Host 的来源、覆盖状态或保存合同。
 
@@ -588,7 +590,7 @@ Interactive Review 的复杂 ResultEnvelope 必须由 `sealResultEnvelope` 生�
 当前 validator 强制：
 
 - `modelVersion` 优先取响应中可读实际模型；绑定任务未回报实际模型时使用 `configured-route:<modelRef>`，旧无绑定任务使用无 fallback 的 configured endpoint。后两者只证明路由，不代表已暴露下游具体模型，也不做具体版本等值判断
-- `skillVersion=wiselink-research-and-synthesize@r09.c139`
+- `skillVersion=wiselink-research-and-synthesize@r09.c144`
 - `toolVersions.wiselink-openclaw-engineering-assessment=1.2.0`
 - `promptVersion` 非空并来自当前运行
 - task/result exact binding、SourceRef allowlist 和 canonical hash 一致

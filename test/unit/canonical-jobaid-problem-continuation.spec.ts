@@ -261,6 +261,39 @@ describe('JobAid continuation requests', () => {
     },
   );
 
+  it('continues from work saved by a cancelled exact Overall attempt', async () => {
+    const h = harness();
+    const base = savedWork();
+    h.current().integratedAssessment = {
+      status: 'BASE_RULE_CANDIDATE_READY',
+      baseRules: { schemaVersion: JOBAID_PROBLEM_RESULT_SCHEMA,
+        workRevisionRef: base.workRevisionRef, workRevision: base.workRevision },
+    } as never;
+    h.work.listForRuntime.mockResolvedValue([base]);
+    h.work.readByRefForRuntime.mockResolvedValue(base);
+    const failed = await h.service.enqueueOverall(h.current(), TENANT, 'permission');
+    h.rows.get(failed.attemptRef)!.status = 'CANCELLED';
+    const newer: JobAidWorkRevision = { ...base, workRevisionRef: 'JAWR-OVERALL-4',
+      workRevision: 4, previousWorkRevisionRef: base.workRevisionRef,
+      actionAttemptId: h.task(failed.attemptRef).actionAttemptId,
+      requestId: 'SAVE-OVERALL-4' };
+    h.work.listForRuntime.mockResolvedValue([newer, base]);
+    h.work.readByRefForRuntime.mockImplementation(async ({ workRevisionRef }: {workRevisionRef:string}) =>
+      workRevisionRef === newer.workRevisionRef ? newer : base);
+    await h.enqueue(REQUEST_2, 'OVERALL_CONSISTENCY');
+    const continued = await h.service.begin(h.current(), scope, 'OVERALL_CONSISTENCY', REQUEST_2);
+    const input = parseJobAidProblemTask(continued.task);
+    expect(input.previousWork).toEqual(newer);
+    expect(input.modelInput.expectedWorkRevision).toBe(4);
+    expect(h.attempts.readScopedById).toHaveBeenCalledWith({
+      attemptId: newer.actionAttemptId, tenantId: TENANT, workItemId: scope.workItemId,
+    });
+    h.rows.get(failed.attemptRef)!.status = 'RUNNING';
+    await h.enqueue(REQUEST_1, 'OVERALL_CONSISTENCY');
+    await expect(h.service.begin(h.current(), scope, 'OVERALL_CONSISTENCY', REQUEST_1))
+      .rejects.toThrow('JOBAID_OVERALL_EXACT_WORK_REQUIRED');
+  });
+
   it('prepares the same queued request with its reserved knowledge connector', async () => {
     const binding = { sessionId: '11111111-1111-4111-8111-111111111111', agentId: 'bound-agent-only' };
     const knowledge = { binding: jest.fn().mockResolvedValue({ binding, access: { available: true } }) };
@@ -772,6 +805,15 @@ function harness(knowledge?: { binding: jest.Mock }, initialAilySessionId?: stri
     hasActiveOfficialActorMapping: jest.fn(async () => true),
   };
   const attempts = {
+    readScopedById: jest.fn(async (input: {attemptId:string}) => {
+      const row = [...rows.values()].find((item) =>
+        parseTaskEnvelope(item.taskEnvelopeJson!).actionAttemptId === input.attemptId);
+      if (!row) return null;
+      const envelope = parseTaskEnvelope(row.taskEnvelopeJson!);
+      return { ...row, tenantId: envelope.tenantId, workItemId: envelope.workItemId,
+        actionType: envelope.taskType, documentVersionId: envelope.documentVersionId,
+        baseRevision: envelope.baseRevision };
+    }),
     readRequest: jest.fn(
       async (input: { idempotencyKey: string }) =>
         [...rows.values()].find(

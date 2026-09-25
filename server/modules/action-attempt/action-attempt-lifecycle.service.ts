@@ -726,6 +726,18 @@ export class ActionAttemptLifecycleService {
     return this.requiredScoped(input.attemptRef, input);
   }
 
+  async readScopedById(input: {
+    attemptId: string;
+    tenantId: string;
+    workItemId: string;
+  }): Promise<ActionAttemptRow> {
+    const row = await this.repository.readByAttemptId(input.attemptId);
+    if (!row || row.requestOrigin !== ACTION_ATTEMPT_REQUEST_ORIGIN ||
+      row.tenantId !== input.tenantId || row.workItemId !== input.workItemId)
+      throw actionAttemptNotFound();
+    return row;
+  }
+
   /** A departed worker cannot leave an expired initial analysis BUSY forever.
    * Reconcile only its existing hard deadline; never claim, retry or discard a
    * COMMITTING result. The saved lease generation fences a concurrent commit. */

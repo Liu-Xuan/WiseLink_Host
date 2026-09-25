@@ -4,7 +4,44 @@ import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { createCheckpointStore } from '../scripts/run-hosted-review-turn.mjs';
-import { invokeHostedJobAidProblemModel, projectJobAidModelInput } from '../scripts/run-jobaid-problem-assessment.mjs';
+import { invokeHostedJobAidProblemModel, projectJobAidModelInput, projectBoundedInitialJobAidInput, canonicalizeKnownJobAidSourceAliases } from '../scripts/run-jobaid-problem-assessment.mjs';
+
+test('source spelling repair uses only unique exact Host catalog refs and preserves the candidate', () => {
+  const exact = 'DOCUMENT_ORIGINAL:document_version_example:PRUN-example:PRUN-example:u32:p1';
+  const short = 'DOCUMENT_ORIGINAL:document_version_example:PRUN-example:u32:p1';
+  const unknown = 'DOCUMENT_ORIGINAL:document_version_other:PRUN-example:u32:p1';
+  const candidate = { issues: [{ body: `读取 [[${short}]]；未知 [[${unknown}]]。`,
+    measures: [{ basisRefs: [`evidenceRef:${exact}`, unknown] }] }] };
+  const result = canonicalizeKnownJobAidSourceAliases(candidate, [{ ref: exact }]);
+  assert.equal(result.work.issues[0].body, `读取 [[${exact}]]；未知 [[${unknown}]]。`);
+  assert.deepEqual(result.work.issues[0].measures[0].basisRefs, [exact, unknown]);
+  assert.deepEqual(result.repairs, [{ from: short, to: exact }, { from: `evidenceRef:${exact}`, to: exact }]);
+  assert.equal(candidate.issues[0].body, `读取 [[${short}]]；未知 [[${unknown}]]。`);
+  assert.equal(canonicalizeKnownJobAidSourceAliases(candidate, []).repairs.length, 0);
+});
+
+test('bounded initial continuation sends an issue index while Host work and source bindings stay intact', () => {
+  const input = initialChunkModelInput();
+  input.previousWork = {
+    workRevisionRef: 'JAWR-prior', workRevision: 3,
+    content: { schemaVersion: 'wiselink.jobaid-problem-work.v3', headline: '当前认识',
+      listBrief: '仍待核对最终措施', roundCompletion: 'IN_PROGRESS',
+      issues: [{ issueKey: 'issue-1', question: '最终措施是什么？', body: '长篇既有正文'.repeat(10000),
+        openQuestions: [{ question: '是否有正式计划？', nextEvidence: 'Final Action', affects: '实施时点' }] }],
+    },
+  };
+  const original = structuredClone(input);
+  const projected = projectBoundedInitialJobAidInput(input);
+  assert.deepEqual(input, original);
+  assert.deepEqual(projected.availableSources, input.availableSources);
+  assert.deepEqual(projected.deliveredEvidence, input.deliveredEvidence);
+  assert.equal(projected.previousWork.workRevisionRef, 'JAWR-prior');
+  assert.equal(projected.previousWork.projectionKind, 'HOST_SAVED_ISSUE_INDEX');
+  assert.equal(projected.previousWork.omittedIssueBodiesRetainedByHost, true);
+  assert.deepEqual(projected.previousWork.content.issues, [{ issueKey: 'issue-1',
+    question: '最终措施是什么？', openQuestions: [{ question: '是否有正式计划？', nextEvidence: 'Final Action' }] }]);
+  assert.ok(JSON.stringify(projected).length < JSON.stringify(input).length / 4);
+});
 
 test('explicit revisit conditions preserve both discriminated forms without leaking unknown values', async () => {
   const { JOBAID_WORK_UPDATE_SHAPE, decodeJobAidValue, jobAidWorkTypeErrors } = await import('../scripts/jobaid-work-shape.mjs');
@@ -625,7 +662,7 @@ test('source rejection retains field repair guidance and the declared object pro
     question: 'Which source remains unavailable?', affects: 'The unresolved comparison.',
     nextEvidence: 'The authorized source document.', reason: 'The source has not been read.',
   }] }] };
-  const rejected = 'evidenceRef:DOCUMENT_ORIGINAL:document_version_example:PRUN-example:u22:p0';
+  const rejected = 'evidenceRef:source:dv:sr1';
   const f = fixture([
     { action: 'SAVE_WORK', work: invalid },
     { action: 'SAVE_WORK', work: corrected },
@@ -645,6 +682,7 @@ test('source rejection retains field repair guidance and the declared object pro
   await f.run();
   const receipt = JSON.parse(f.calls[1].messages.at(-1).content);
   assert.equal(receipt.sourceRef, rejected);
+  assert.match(receipt.instruction, /Remove that label/u);
   assert.match(receipt.instruction, /Read it through READ_SOURCES/u);
   assert.match(receipt.instruction, /Correct the reported field types/u);
   assert.deepEqual(receipt.fieldErrors, [{

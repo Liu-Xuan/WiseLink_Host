@@ -146,6 +146,75 @@ export function projectJobAidModelInput(input) {
   };
 }
 
+/** Keep the Host's full revision, but send only its issue index during bounded initial source work. */
+export function projectBoundedInitialJobAidInput(input) {
+  const projected = projectJobAidModelInput(input);
+  const previous = projected.previousWork;
+  if (!previous?.content || !Array.isArray(previous.content.issues)) return projected;
+  return {
+    ...projected,
+    previousWork: {
+      ...previous,
+      projectionKind: 'HOST_SAVED_ISSUE_INDEX',
+      omittedIssueBodiesRetainedByHost: true,
+      content: {
+        schemaVersion: previous.content.schemaVersion,
+        headline: previous.content.headline,
+        listBrief: previous.content.listBrief,
+        roundCompletion: previous.content.roundCompletion,
+        completionReason: previous.content.completionReason,
+        issues: previous.content.issues.map(issue => ({
+          issueKey: issue.issueKey,
+          question: issue.question,
+          openQuestions: (issue.openQuestions ?? []).map(item => ({
+            question: item.question,
+            nextEvidence: item.nextEvidence,
+          })),
+        })),
+      },
+    },
+  };
+}
+
+/** Repair only two observed citation spellings when the Host catalog has one exact match. */
+export function canonicalizeKnownJobAidSourceAliases(work, availableSources) {
+  const aliases = new Map();
+  const register = (alias, exact) => {
+    if (!alias || alias === exact) return;
+    if (aliases.has(alias) && aliases.get(alias) !== exact) aliases.set(alias, null);
+    else if (!aliases.has(alias)) aliases.set(alias, exact);
+  };
+  for (const { ref } of availableSources) {
+    register(`evidenceRef:${ref}`, ref);
+    const original = /^(DOCUMENT_ORIGINAL:[^:]+):(PRUN-[A-Za-z0-9-]+):\2:(u\d+:p\d+)$/u.exec(ref);
+    if (original) {
+      const short = `${original[1]}:${original[2]}:${original[3]}`;
+      register(short, ref);
+      register(`evidenceRef:${short}`, ref);
+    }
+  }
+  const repaired = new Map();
+  const exact = (ref) => {
+    const replacement = aliases.get(ref);
+    if (!replacement) return ref;
+    repaired.set(ref, replacement);
+    return replacement;
+  };
+  const visit = (value, key = '') => {
+    if (typeof value === 'string') {
+      const withCitations = value.replace(/\[\[([^\[\]\r\n]+)\]\]/gu,
+        (whole, ref) => `[[${exact(ref)}]]`);
+      return ['basisRefs', 'checkedEvidenceRefs'].includes(key)
+        ? exact(withCitations) : withCitations;
+    }
+    if (Array.isArray(value)) return value.map(item => visit(item, key));
+    if (value && typeof value === 'object')
+      return Object.fromEntries(Object.entries(value).map(([field, item]) => [field, visit(item, field)]));
+    return value;
+  };
+  return { work: visit(work), repairs: [...repaired].map(([from, to]) => ({ from, to })) };
+}
+
 function projectSavedJobAidWorkContent(content) {
   if (content?.schemaVersion !== 'wiselink.jobaid-problem-work.v3' ||
       !Array.isArray(content.issues))
@@ -277,11 +346,14 @@ export async function invokeHostedJobAidProblemModel(
     systemMessage.content += '\n本轮是明确指定的工程事项综合更正。以 overviewCorrection.expectedWorkRef 对应的 previousWork 为准确基线，按 correctionReason 核对已保存的全部问题、当前综合及完成说明。问题正文只是比较语境，不自动重新认证为原文。只使用 overviewCorrection.evidenceRefs 所指本轮已交付证据作新综合的引用；缺少决定性依据时保留限制。新的 overview 面向工程师，用简短段落给出主要判断、决定性条件、下一步或尚缺资料；过程与展开的论证留在问题正文和依据中，关键限制仍须在综合里说清。SAVE_WORK 只提交一个完整的综合更正：issues:[]、新的 overview、completionReason、changeSummary，roundCompletion 与 previousWork.content 相同；不得提交问题正文、摘要或其他工作字段。即使旧综合标记 STALE，也要实际核对后形成综合，不把状态本身当作结论。保存回执后 FINISH；本轮不作正式采用。';
   }
   if (boundedInitialJobAid) {
-    systemMessage.content += `\n本次初始 JobAid 执行按可核验批次推进：每次 SAVE_WORK 前最多执行 ${INITIAL_JOBAID_READS_PER_SAVE} 个 READ_SOURCES 动作，每个动作最多 ${INITIAL_JOBAID_SOURCE_REFS_PER_READ} 个 sourceRefs。READ_SOURCES 的每个 sourceRef 必须逐字复制 availableSources[].ref；不能从 sourceRefId、页码或解析单元编号自行拼接。首次保存工程问题前先成功读取原文，不能将来源读取失败写成工程结论。保存有价值的完整增量时用 IN_PROGRESS 或 COMPLETE_WITH_OPEN_QUESTIONS，并保留未读范围；不要声称未读来源已经核验。Host 成功读取后，运行器会在独立 OpenClaw 会话中提供完整来源回执，并将工具Schema限制为必须 SAVE_WORK；Host 确认并读回保存后，再在新会话中提供完整已保存工作和版本回执，继续下一批。只有完整复核后才 FINISH。`;
+    systemMessage.content += `\n本次初始 JobAid 执行按可核验批次推进：每次 SAVE_WORK 前最多执行 ${INITIAL_JOBAID_READS_PER_SAVE} 个 READ_SOURCES 动作，每个动作最多 ${INITIAL_JOBAID_SOURCE_REFS_PER_READ} 个 sourceRefs。READ_SOURCES 的每个 sourceRef 必须逐字复制 availableSources[].ref；不能从 sourceRefId、页码或解析单元编号自行拼接。首次保存工程问题前先成功读取原文，不能将来源读取失败写成工程结论。previousWork 在模型输入中仅展示 Host 已保存问题的目录，正文仍由 Host 完整保留；目录不是重新核验的原文，不能据此声称已复核被省略的问题正文。每批只提交有新原文支持的改动，未变问题由 Host 保留；保存后读回精确修订，后续批次继续。保存有价值的完整增量时用 IN_PROGRESS 或 COMPLETE_WITH_OPEN_QUESTIONS，并保留未读范围；不要声称未读来源已经核验。必要原文已覆盖、问题已保存时，先检查 headline、listBrief、changeSummary 是否仍把已读章节说成未交付；如有过期表述，提交 issues:[] 的简短概览修订，保留 Host 已保存的问题正文。方法资料只在影响当前判断时补读，不为凑齐目录而延长执行。完成必要原文覆盖与概览一致性检查后 FINISH；未连接的外部资料列为待确认，不阻止候选阶段结束。`;
   }
+  const projectForModel = boundedInitialJobAid
+    ? projectBoundedInitialJobAidInput
+    : projectJobAidModelInput;
   let messages = [
     systemMessage,
-    { role: 'user', content: JSON.stringify(projectJobAidModelInput(modelInput)) },
+    { role: 'user', content: JSON.stringify(projectForModel(modelInput)) },
   ];
   if (options.recoveredSourceContext) systemMessage.content += '\n这是 Host 正常授权的后继任务：旧任务已结束但未交付完整工作载荷。当前 deliveredEvidence 包含 Host 重新授权并保留的已读原文，previousWork 是实际已保存工作。先使用这些完整证据形成本批有价值正文，仅在缺少必要语境时补读；不要为了恢复而重复获取已交付的相同范围。旧任务错误不是工程结论，也不是已保存正文。本次仍须正常 SAVE_WORK 后才能完成。';
   let initialContextMessage = messages[1];
@@ -332,7 +404,7 @@ export async function invokeHostedJobAidProblemModel(
   if (restored) {
     ({ round, messages, expectedWorkRevision, saved, corrections, inputUnits, outputUnits } = restored);
     sessionModelInput = restored.sessionModelInput ?? modelInput;
-    initialContextMessage = { role: 'user', content: JSON.stringify(projectJobAidModelInput(sessionModelInput)) };
+    initialContextMessage = { role: 'user', content: JSON.stringify(projectForModel(sessionModelInput)) };
     sessionWorkRevision = restored.sessionWorkRevision ?? modelInput.expectedWorkRevision;
     readsSinceSave = restored.readsSinceSave ?? 0;
     savedReadSourceRefs = restored.savedReadSourceRefs ?? [];
@@ -425,7 +497,7 @@ export async function invokeHostedJobAidProblemModel(
         ? [...revision.content.readSourceRefs] : [];
       initialContextMessage = {
         role: 'user',
-        content: JSON.stringify(projectJobAidModelInput(sessionModelInput)),
+        content: JSON.stringify(projectForModel(sessionModelInput)),
       };
       sessionWorkRevision = revision.workRevision;
     }
@@ -718,6 +790,16 @@ export async function invokeHostedJobAidProblemModel(
             throw new Error('JOBAID_PRIMARY_SOURCE_READ_REQUIRED');
           const priorWorkRevision = expectedWorkRevision;
           submittedWork = parseJobAidWorkJson(step.workJson);
+          if (boundedInitialJobAid) {
+            const normalized = canonicalizeKnownJobAidSourceAliases(
+              submittedWork,
+              sessionModelInput.availableSources,
+            );
+            submittedWork = normalized.work;
+            if (normalized.repairs.length)
+              await checkpoint?.write(`assessment-${round}-source-ref-normalizations`,
+                { repairs: normalized.repairs });
+          }
           receipt = await save(submittedWork);
           if (boundedInitialJobAid && expectedWorkRevision > priorWorkRevision) {
             readsSinceSave = 0;
@@ -817,7 +899,10 @@ export async function invokeHostedJobAidProblemModel(
         } : {}),
         ...(code === 'JOBAID_SOURCE_NOT_DELIVERED' && error.hostRejectedSourceRef ? {
           sourceRef: error.hostRejectedSourceRef,
-          instruction: 'The Host rejected this exact source reference from your candidate. Read it through READ_SOURCES if it belongs to the authorized catalog or document range. If unavailable, preserve the limitation and revise the unsupported assertion. Do not guess another identifier, silently drop supported analysis, or treat the failed save as completed.' +
+          instruction: (error.hostRejectedSourceRef.startsWith('evidenceRef:') &&
+            sessionModelInput.availableSources.some(source => source.ref === error.hostRejectedSourceRef.slice('evidenceRef:'.length))
+            ? 'The candidate added the literal field label evidenceRef: to an exact catalog value. Remove that label from every inline citation and basisRefs value; use only the exact delivered evidenceRef value. The Host will still check that each value was actually delivered in this attempt or retained work. '
+            : '') + 'The Host rejected this exact source reference from your candidate. Read it through READ_SOURCES if it belongs to the authorized catalog or document range. If unavailable, preserve the limitation and revise the unsupported assertion. Do not guess another identifier, silently drop supported analysis, or treat the failed save as completed.' +
             (shapeCorrection.instruction ? ` ${shapeCorrection.instruction}` : ''),
         } : {}),
       };
@@ -850,7 +935,7 @@ export async function invokeHostedJobAidProblemModel(
         workRevision: saved.workRevision,
         roundCompletion: saved.roundCompletion,
         readSourceRefs: savedReadSourceRefs,
-        instruction: `这是同一 Host attempt 在确认保存后的续段。previousWork 是同一 attempt 刚读回的完整工作基线。继续检查未覆盖范围并保留已有问题；本条 readSourceRefs 只证明先前已保存的来源读取，不是本新会话中可直接引用的正文。若新判断需要原文，先用 READ_SOURCES；每次只读一个不超过 ${INITIAL_JOBAID_SOURCE_REFS_PER_READ} refs 的批次，再保存一项完整且简洁的增量，不重写未变化的问题。不得重放先前 SAVE_WORK。`,
+        instruction: `这是同一 Host attempt 在确认保存后的续段。previousWork 是刚读回工作修订的精确问题目录；完整正文由 Host 保留，但没有送入本模型回合，不能声称已重新核验省略正文。继续检查未覆盖范围并保留已有问题；本条 readSourceRefs 只证明先前已保存的来源读取，不是本新会话中可直接引用的正文。若新判断需要原文，先用 READ_SOURCES；每次只读一个不超过 ${INITIAL_JOBAID_SOURCE_REFS_PER_READ} refs 的批次，再保存一项完整且简洁的增量，不重写未变化的问题。不得重放先前 SAVE_WORK。`,
       }) },
     ] : [
       systemMessage,
@@ -884,6 +969,9 @@ function priorRejectedRatingCorrection(messages, modelInput) {
 
 function workShapeCorrection(code, work, modelInput) {
   if (!work) return {};
+  if (code === 'JOBAID_BODY_CITATIONS_REQUIRED') {
+    return { instruction: 'Every submitted issue body must contain at least one inline citation in the exact form [[ACTUAL_DELIVERED_REF_VALUE]]. A prose label such as u32 or a citation only in another field is insufficient. Copy the complete evidenceRef value from the Host source receipt or availableSources catalog, including both repeated parse-run segments when present. Cite only source text actually delivered in this attempt or retained from saved work; the Host will verify both the identifier and delivery.' };
+  }
   if (['JOBAID_READING_SUMMARY_REQUIRED', 'JOBAID_READING_SUMMARY_PAIR_REQUIRED'].includes(code)) {
     return { instruction: 'The Host requires headline and listBrief together for the initial saved work or an explicit summary revision. Supply a concise engineering topic and a short explanation of the actual saved understanding, preserving decisive conditions and uncertainty. Do not copy the first issue question, invent a conclusion, or rerun source reading. Preserve the complete issue bodies and evidence. Later updates may omit both fields only to retain an existing saved summary.' };
   }
@@ -906,7 +994,7 @@ function workShapeCorrection(code, work, modelInput) {
   return {
     fieldErrors,
     instruction:
-      'Use exact delivered [[evidenceRef]] citations in body. Do not generate redundant dependency fields. Correct the reported field types using the original evidence and the work-update shape. conditions, limitations and basisRefs are arrays of strings; addresses is one non-empty string describing the problem or risk addressed. Preserve justified analysis and unknowns; do not invent content or remove substantive work merely to pass validation. The Host will validate the revised work.' +
+      'Use the exact delivered evidenceRef value inside [[double brackets]] in body, without the literal label evidenceRef:. Use the same exact value in basisRefs. Do not generate redundant dependency fields. Correct the reported field types using the original evidence and the work-update shape. conditions, limitations and basisRefs are arrays of strings; addresses is one non-empty string describing the problem or risk addressed. Preserve justified analysis and unknowns; do not invent content or remove substantive work merely to pass validation. The Host will validate the revised work.' +
       (fieldErrors.some(error => error.received === 'undeclared field')
         ? ' The reported undeclared fields are not accepted at those paths; allowedFields lists the current contract. Preserve their substantive meaning in the relevant issue body or declared field. openQuestions belongs to an issue; explicit scheduling changes use reviewConditionDelta, not a full reviewConditions list. Work revision is assigned by Host, not authored in workJson.' : '') +
       (code === 'JOBAID_MEASURE_ADDRESSES_INVALID'
