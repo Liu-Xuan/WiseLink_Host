@@ -553,7 +553,7 @@ export class CanonicalHostVerticalService {
     });
     if (!this.initialAnalysisStatus) throw new Error('INITIAL_ANALYSIS_STATUS_UNCONFIGURED');
     return this.initialAnalysisStatus.projectForBrowser({
-      workItem: projection, tenantId: actor.tenantId,
+      workItem: projection, tenantId: actor.tenantId, actorUserId: actor.userId,
     });
   }
 
@@ -698,7 +698,7 @@ export class CanonicalHostVerticalService {
       }),
       ...(this.initialAnalysisStatus ? {
         initialAnalysis: await this.initialAnalysisStatus.projectForBrowser({
-          workItem: projection, tenantId: actor.tenantId,
+          workItem: projection, tenantId: actor.tenantId, actorUserId: actor.userId,
         }),
       } : {}),
       readAuthorization: {

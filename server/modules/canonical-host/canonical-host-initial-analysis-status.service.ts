@@ -2,7 +2,8 @@ import { CanonicalHostApplicabilityInputProducer } from './canonical-host-applic
 import { originalApplicabilityInputMatches } from './original-applicability-currentness';
 import { canonicalJson } from '../action-attempt/action-attempt-envelope';
 import { canonicalHostBareSha256 } from './canonical-host-sha256';
-import { Inject, Injectable, Optional } from '@nestjs/common';
+import { ForbiddenException, Inject, Injectable, Optional, UnauthorizedException } from '@nestjs/common';
+import { SessionResolver } from '../identity/session-resolver.service';
 import { JobAidWorkRepository } from './jobaid-work.repository';
 import { UnifiedReaderService } from '../unified-reader/unified-reader.service';
 import { compareDocumentOriginal } from '../document-management/src/hosted/nest/document-original-change';
@@ -10,8 +11,9 @@ import {
   DRIZZLE_DATABASE,
   type PostgresJsDatabase,
 } from '@lark-apaas/fullstack-nestjs-core';
-import { and, desc, eq, inArray, sql } from 'drizzle-orm';
+import { and, desc, eq, inArray, isNotNull, sql } from 'drizzle-orm';
 import { dmDocumentParseRun } from '../../database/document-parsing.schema';
+import { autoWorkItemAuthorization } from '../../database/auto-work-item-authorization.schema';
 
 import type {
   AilyInitialAnalysisOperation,
@@ -86,6 +88,7 @@ export class CanonicalHostInitialAnalysisStatusService {
     @Optional() private readonly originalWork?: JobAidWorkRepository,
     @Optional() private readonly originalReader?: UnifiedReaderService,
     @Optional() private readonly applicabilityInputs?: CanonicalHostApplicabilityInputProducer,
+    @Optional() private readonly sessions?: SessionResolver,
   ) {}
 
   async project(input: {
@@ -230,9 +233,71 @@ export class CanonicalHostInitialAnalysisStatusService {
     );
   }
 
+  /** Browser continuation requires the same exact, still eligible Host grant as queue enrollment. */
+  async hasExactAutoProcessingGrant(input: {
+    tenantId: string;
+    actorUserId: string;
+    workItem: CanonicalWorkItemProjection;
+  }): Promise<boolean> {
+    if (!this.sessions) return false;
+    try {
+      return await this.sessions.withVerifiedServiceSql(
+        () => this.readExactAutoProcessingGrant(input),
+        input.actorUserId,
+      );
+    } catch (error) {
+      if (error instanceof UnauthorizedException || error instanceof ForbiddenException)
+        return false;
+      throw error;
+    }
+  }
+
+  private async readExactAutoProcessingGrant(input: {
+    tenantId: string;
+    actorUserId: string;
+    workItem: CanonicalWorkItemProjection;
+  }): Promise<boolean> {
+    const [grant] = await this.db
+      .select({ workItemId: autoWorkItemAuthorization.workItemId })
+      .from(autoWorkItemAuthorization)
+      .innerJoin(
+        workItem,
+        and(
+          eq(workItem.tenantId, autoWorkItemAuthorization.tenantId),
+          eq(workItem.workItemId, autoWorkItemAuthorization.workItemId),
+        ),
+      )
+      .where(
+        and(
+          eq(autoWorkItemAuthorization.tenantId, input.tenantId),
+          eq(autoWorkItemAuthorization.workItemId, input.workItem.workItemId),
+          eq(autoWorkItemAuthorization.actorUserId, input.actorUserId),
+          eq(autoWorkItemAuthorization.grantKind, 'MIAODA_CANONICAL_PARSE_REQUEST'),
+          inArray(autoWorkItemAuthorization.status, ['WAITING', 'LEASED']),
+          eq(workItem.requestId, autoWorkItemAuthorization.requestId),
+          eq(workItem.requestedByUserId, autoWorkItemAuthorization.actorUserId),
+          eq(workItem.documentId, autoWorkItemAuthorization.documentId),
+          eq(workItem.documentVersionId, autoWorkItemAuthorization.documentVersionId),
+          eq(workItem.documentVersionId, input.workItem.source.documentVersionId),
+          eq(workItem.sourceArtifactId, autoWorkItemAuthorization.sourceArtifactId),
+          eq(workItem.sourceArtifactId, input.workItem.source.sourceArtifactId),
+          eq(workItem.sourceFileSha256, autoWorkItemAuthorization.sourceFileSha256),
+          eq(workItem.sourceFileSha256, canonicalHostBareSha256(input.workItem.source.sourceFileSha256)),
+          eq(workItem.sourceByteLength, autoWorkItemAuthorization.sourceByteLength),
+          eq(workItem.sourceByteLength, input.workItem.source.sourceByteLength),
+          eq(workItem.actionType, 'PARSE_PDF'),
+          eq(workItem.status, 'CANDIDATE_READBACK_VERIFIED'),
+          isNotNull(workItem.packageId),
+        ),
+      )
+      .limit(1);
+    return !!grant;
+  }
+
   async projectForBrowser(input: {
     workItem: CanonicalWorkItemProjection;
     tenantId: string;
+    actorUserId: string;
   }): Promise<CanonicalInitialAnalysisReadModel> {
     const status = await this.project(input);
     const execution = activeConfigurationEvidenceReevaluation(input.workItem)
@@ -265,10 +330,11 @@ export class CanonicalHostInitialAnalysisStatusService {
     const automatic =
       status.status !== 'NOT_READY' &&
       !active &&
-      isOpenClawAutomaticReviewConfigured({
+      (isOpenClawAutomaticReviewConfigured({
         tenantId: input.tenantId,
         workItemId: input.workItem.workItemId,
-      });
+      }) ||
+        (await this.hasExactAutoProcessingGrant(input)));
     const canTranslate =
       automatic && isParsedPackageReady(input.workItem) && process.env.WL_TRANSLATION_V2_ENABLED === '1';
     const continuationOperations: NonNullable<

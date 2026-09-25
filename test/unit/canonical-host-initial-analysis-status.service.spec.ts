@@ -1,4 +1,5 @@
 import { drizzle } from 'drizzle-orm/postgres-js';
+import { UnauthorizedException } from '@nestjs/common';
 import postgres from 'postgres';
 import { originalFixture } from './document-parsing/fixtures/document-original.fixture';
 import type {
@@ -36,6 +37,24 @@ const HASH = `sha256:${'a'.repeat(64)}`;
 const OTHER_HASH = `sha256:${'b'.repeat(64)}`;
 
 describe('CanonicalHost initial-analysis status projection', () => {
+  it('checks enrolled continuation only under the verified owner service SQL context', async () => {
+    const limit = jest.fn().mockResolvedValue([{ workItemId: 'WI-enrolled' }]);
+    const chain = { innerJoin: jest.fn(), where: jest.fn(), limit };
+    chain.innerJoin.mockReturnValue(chain);
+    chain.where.mockReturnValue(chain);
+    const db = { select: jest.fn(() => ({ from: () => chain })) };
+    const sessions = { withVerifiedServiceSql: jest.fn(async (operation: () => Promise<boolean>) => operation()) };
+    const service = new CanonicalHostInitialAnalysisStatusService(
+      db as never, {} as never, undefined, undefined, undefined, sessions as never,
+    );
+    const input = { tenantId: 'tenant-1', actorUserId: 'owner-test', workItem: parsedWorkItem() };
+    await expect(service.hasExactAutoProcessingGrant(input)).resolves.toBe(true);
+    expect(sessions.withVerifiedServiceSql).toHaveBeenCalledWith(expect.any(Function), 'owner-test');
+    sessions.withVerifiedServiceSql.mockRejectedValueOnce(new UnauthorizedException());
+    await expect(service.hasExactAutoProcessingGrant(input)).resolves.toBe(false);
+    expect(db.select).toHaveBeenCalledTimes(1);
+  });
+
   it.each([
     {contentChanged:false, jobAidRun:'PR-TEST-2', overallRun:'PR-TEST-2', jobAid:'SUCCEEDED', overall:'SUCCEEDED'},
     {contentChanged:true, jobAidRun:'PR-TEST-2', overallRun:'PR-TEST-2', jobAid:'CONFLICT', overall:'CONFLICT'},
@@ -542,6 +561,7 @@ describe('CanonicalHost initial-analysis status projection', () => {
     const value = await service.projectForBrowser({
       workItem,
       tenantId: 'tenant-1',
+      actorUserId: 'owner-test',
     });
     expect(value.stages.translation.status).toBe('BUSY');
     expect(value.workItemId).toBe(workItem.workItemId);
@@ -828,7 +848,7 @@ async function browserStatus(
         englishAssessmentEnabled: true,
       }),
     );
-    return await service.projectForBrowser({ workItem, tenantId: 'tenant-1' });
+    return await service.projectForBrowser({ workItem, tenantId: 'tenant-1', actorUserId: 'owner-test' });
   } finally {
     automatic.mockRestore();
     if (savedJobAidFlag === undefined)

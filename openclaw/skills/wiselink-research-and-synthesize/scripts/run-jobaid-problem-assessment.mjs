@@ -21,7 +21,7 @@ export const JOBAID_PROBLEM_TASK_SCHEMA = 'wiselink.jobaid-problem-task.v2';
 export const MATTER_JOBAID_TASK_SCHEMA = 'wiselink.matter-jobaid-task.v2';
 const FUNCTION = 'return_wiselink_assessment_step';
 const INITIAL_JOBAID_READS_PER_SAVE = 1;
-const INITIAL_JOBAID_SOURCE_REFS_PER_READ = 10;
+const INITIAL_JOBAID_SOURCE_REFS_PER_READ = 4;
 export const JOBAID_GENERATION_POLICY = Object.freeze({
   version: 'continuous-body-batches-v5', requestMaxCompletionTokens: 16000,
   payloadTargetTokens: [2000, 4000], maxScopeAdjustments: 0,
@@ -204,6 +204,19 @@ function sourceBatchPolicyFeedback(code, requestedCount, readsSinceSave) {
   return {};
 }
 
+function sourceSelectionFeedback(requested, availableSources) {
+  const catalog = new Set(availableSources.map(source => source.ref));
+  const unregisteredRefs = requested.filter(ref => !catalog.has(ref));
+  if (!unregisteredRefs.length) return null;
+  const suggestedCatalogRefs = unregisteredRefs.flatMap(ref => {
+    const base = ref.replace(/:p\d+$/u, ':p');
+    const matches = availableSources.map(source => source.ref)
+      .filter(candidate => candidate.startsWith(base) && /:p\d+$/u.test(candidate));
+    return matches.length === 1 ? [{ rejectedRef: ref, exactCatalogRef: matches[0] }] : [];
+  });
+  return { unregisteredRefs, suggestedCatalogRefs };
+}
+
 // A model may request more sources than one Host MCP call accepts. Preserve
 // the entire intent, while each batch retains the Host's scope and lease checks.
 export async function readJobAidSourceBatches(intent, read) {
@@ -264,7 +277,7 @@ export async function invokeHostedJobAidProblemModel(
     systemMessage.content += '\n本轮是明确指定的工程事项综合更正。以 overviewCorrection.expectedWorkRef 对应的 previousWork 为准确基线，按 correctionReason 核对已保存的全部问题、当前综合及完成说明。问题正文只是比较语境，不自动重新认证为原文。只使用 overviewCorrection.evidenceRefs 所指本轮已交付证据作新综合的引用；缺少决定性依据时保留限制。新的 overview 面向工程师，用简短段落给出主要判断、决定性条件、下一步或尚缺资料；过程与展开的论证留在问题正文和依据中，关键限制仍须在综合里说清。SAVE_WORK 只提交一个完整的综合更正：issues:[]、新的 overview、completionReason、changeSummary，roundCompletion 与 previousWork.content 相同；不得提交问题正文、摘要或其他工作字段。即使旧综合标记 STALE，也要实际核对后形成综合，不把状态本身当作结论。保存回执后 FINISH；本轮不作正式采用。';
   }
   if (boundedInitialJobAid) {
-    systemMessage.content += `\n本次初始 JobAid 执行按可核验批次推进：每次 SAVE_WORK 前最多执行 ${INITIAL_JOBAID_READS_PER_SAVE} 个 READ_SOURCES 动作，每个动作最多 ${INITIAL_JOBAID_SOURCE_REFS_PER_READ} 个 sourceRefs。保存有价值的完整增量时用 IN_PROGRESS 或 COMPLETE_WITH_OPEN_QUESTIONS，并保留未读范围；不要声称未读来源已经核验。Host 成功读取后，运行器会在独立 OpenClaw 会话中提供完整来源回执，并将工具Schema限制为必须 SAVE_WORK；Host 确认并读回保存后，再在新会话中提供完整已保存工作和版本回执，继续下一批。只有完整复核后才 FINISH。`;
+    systemMessage.content += `\n本次初始 JobAid 执行按可核验批次推进：每次 SAVE_WORK 前最多执行 ${INITIAL_JOBAID_READS_PER_SAVE} 个 READ_SOURCES 动作，每个动作最多 ${INITIAL_JOBAID_SOURCE_REFS_PER_READ} 个 sourceRefs。READ_SOURCES 的每个 sourceRef 必须逐字复制 availableSources[].ref；不能从 sourceRefId、页码或解析单元编号自行拼接。首次保存工程问题前先成功读取原文，不能将来源读取失败写成工程结论。保存有价值的完整增量时用 IN_PROGRESS 或 COMPLETE_WITH_OPEN_QUESTIONS，并保留未读范围；不要声称未读来源已经核验。Host 成功读取后，运行器会在独立 OpenClaw 会话中提供完整来源回执，并将工具Schema限制为必须 SAVE_WORK；Host 确认并读回保存后，再在新会话中提供完整已保存工作和版本回执，继续下一批。只有完整复核后才 FINISH。`;
   }
   let messages = [
     systemMessage,
@@ -297,6 +310,7 @@ export async function invokeHostedJobAidProblemModel(
   const generationPolicy = JOBAID_GENERATION_POLICY;
   let scopeAdjustments = 0;
   let sourceMetadata = [];
+  let sourceSelectionError = null;
   const persistAssessmentState = (nextRound) => checkpoint?.write('assessment-state', {
     round: nextRound, messages, expectedWorkRevision, saved, corrections, inputUnits, outputUnits,
     scopeAdjustments, sourceMetadata, sessionModelInput, sessionWorkRevision, readsSinceSave,
@@ -433,7 +447,7 @@ export async function invokeHostedJobAidProblemModel(
       ? 'Reduce the amount delivered in this unfinished batch while retaining the full engineering context. Choose one or several complete, meaningful issue updates; do not split conditions or reasoning fragments. Preserve saved work and do not continue a truncated JSON string.'
       : boundedInitialJobAid
         ? forceSaveBeforeRead
-          ? 'The Host has delivered one successful source-read receipt in this fresh native session. Submit a substantive, complete SAVE_WORK now. The required function schema permits only SAVE_WORK until Host confirms the save; preserve unread scopes and do not claim them verified.'
+          ? 'The Host has delivered one successful source-read receipt in this fresh native session. Submit a substantive SAVE_WORK for one coherent issue or one small related group now. Supply only changed issues and necessary summary fields; Host retains unchanged issues. Keep the workJson concise while preserving every condition, uncertainty, and citation needed for this increment. The required function schema permits only SAVE_WORK until Host confirms the save; preserve unread scopes and do not claim them verified.'
           : 'Save each meaningful initial-analysis increment after one bounded source-read action. After a successful Host source read, the runtime starts a fresh native session with that exact evidence and requires SAVE_WORK. After a Host-confirmed SAVE_WORK, it starts another fresh native session containing the exact Host-read-back work and revision receipt. Do not accumulate more source reads before saving or claim unread scopes were verified.'
         : 'Keep the shared engineering context and investigate across relevant sections and sources. Choose the number of complete issues that can be delivered in this batch; save substantive results promptly without first exhausting every issue. After SAVE_WORK continue automatically in this same session. Do not rewrite unchanged issues or summary fields. Before completion check cross-issue consistency and save only necessary synthesis or corrections.';
     const requestStepShape = forceSaveBeforeRead ? {
@@ -636,6 +650,7 @@ export async function invokeHostedJobAidProblemModel(
     let submittedWork;
     let sessionResetKind = null;
     let requestedSourceRefCount = null;
+    sourceSelectionError = null;
     try {
       const args = parseStrictJsonObject(call.function.arguments);
       if (Object.keys(args).length !== 1 || !args.step || typeof args.step !== 'object' || Array.isArray(args.step))
@@ -656,6 +671,10 @@ export async function invokeHostedJobAidProblemModel(
         requestedSourceRefCount = step.sourceRefs.length;
         if (boundedInitialJobAid && step.sourceRefs.length > INITIAL_JOBAID_SOURCE_REFS_PER_READ)
           throw new Error('JOBAID_SOURCE_BATCH_TOO_LARGE');
+        sourceSelectionError = boundedInitialJobAid
+          ? sourceSelectionFeedback(step.sourceRefs, sessionModelInput.availableSources)
+          : null;
+        if (sourceSelectionError) throw new Error('JOBAID_SOURCE_NOT_REGISTERED');
         receipt = await readJobAidSourceBatches({
           sourceRefs: step.sourceRefs,
           purpose: step.purpose,
@@ -693,6 +712,10 @@ export async function invokeHostedJobAidProblemModel(
         }
       } else if (step.action === 'SAVE_WORK' || step.action === 'FINISH') {
         if (step.workJson !== undefined) {
+          if (boundedInitialJobAid && expectedWorkRevision === modelInput.expectedWorkRevision &&
+              !sessionModelInput.previousWork && readsSinceSave === 0 &&
+              !sessionModelInput.deliveredEvidence.some(item => item.kind === 'DOCUMENT_PASSAGE'))
+            throw new Error('JOBAID_PRIMARY_SOURCE_READ_REQUIRED');
           const priorWorkRevision = expectedWorkRevision;
           submittedWork = parseJobAidWorkJson(step.workJson);
           receipt = await save(submittedWork);
@@ -785,6 +808,13 @@ export async function invokeHostedJobAidProblemModel(
           'Correct only the rejected step or substantive work using the original evidence. Existing saved work remains available; never invent sources or turn failure into completion.',
         ...sourcePolicy,
         ...shapeCorrection,
+        ...(sourceSelectionError ? {
+          sourceSelection: { ...sourceSelectionError, hostReadExecuted: false },
+          instruction: 'The source IDs below are not in this exact Host catalog; no read occurred. Copy exact availableSources[].ref values, including the final page marker. Use each unique suggested exact ref only after checking its title and locator. Retry READ_SOURCES; do not save a status-only issue or claim the primary document was read.',
+        } : {}),
+        ...(code === 'JOBAID_PRIMARY_SOURCE_READ_REQUIRED' ? {
+          instruction: 'No primary-document passage has been delivered in this initial assessment. Select exact availableSources[].ref values and READ_SOURCES before saving engineering issue work. A failed read is not a document finding.',
+        } : {}),
         ...(code === 'JOBAID_SOURCE_NOT_DELIVERED' && error.hostRejectedSourceRef ? {
           sourceRef: error.hostRejectedSourceRef,
           instruction: 'The Host rejected this exact source reference from your candidate. Read it through READ_SOURCES if it belongs to the authorized catalog or document range. If unavailable, preserve the limitation and revise the unsupported assertion. Do not guess another identifier, silently drop supported analysis, or treat the failed save as completed.' +
@@ -820,7 +850,7 @@ export async function invokeHostedJobAidProblemModel(
         workRevision: saved.workRevision,
         roundCompletion: saved.roundCompletion,
         readSourceRefs: savedReadSourceRefs,
-        instruction: '这是同一 Host attempt 在确认保存后的续段。previousWork 是同一 attempt 刚读回的完整工作基线。继续检查未覆盖范围并保留已有问题；本条 readSourceRefs 只证明先前已保存的来源读取，不是本新会话中可直接引用的正文。若新判断需要原文，先用 READ_SOURCES；每次只读一个不超过 10 refs 的批次，再保存增量。不得重放先前 SAVE_WORK。',
+        instruction: `这是同一 Host attempt 在确认保存后的续段。previousWork 是同一 attempt 刚读回的完整工作基线。继续检查未覆盖范围并保留已有问题；本条 readSourceRefs 只证明先前已保存的来源读取，不是本新会话中可直接引用的正文。若新判断需要原文，先用 READ_SOURCES；每次只读一个不超过 ${INITIAL_JOBAID_SOURCE_REFS_PER_READ} refs 的批次，再保存一项完整且简洁的增量，不重写未变化的问题。不得重放先前 SAVE_WORK。`,
       }) },
     ] : [
       systemMessage,

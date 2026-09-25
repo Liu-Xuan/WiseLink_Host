@@ -898,13 +898,13 @@ test('initial JobAid bounds reads before save, then rotates only with exact save
   const secondWork = { ...firstWork, overview: 'A applies conditionally; other pages remain open.',
     roundCompletion: 'COMPLETE_WITH_OPEN_QUESTIONS', completionReason: 'Unverified pages remain.',
     changeSummary: 'Added the next read batch.', issues: [...firstWork.issues,
-      { issueKey: 'condition-b', question: 'Does B apply?', body: 'B remains unresolved [[source:ftd:11]].' }] };
+      { issueKey: 'condition-b', question: 'Does B apply?', body: 'B remains unresolved [[source:ftd:5]].' }] };
   const f = fixture([
-    { action: 'READ_SOURCES', sourceRefs: refs.slice(0, 11), purpose: 'select relevant source units', context: 'PAGE' },
-    { action: 'READ_SOURCES', sourceRefs: refs.slice(0, 10), purpose: 'read first batch', context: 'PAGE' },
+    { action: 'READ_SOURCES', sourceRefs: refs.slice(0, 5), purpose: 'select relevant source units', context: 'PAGE' },
+    { action: 'READ_SOURCES', sourceRefs: refs.slice(0, 4), purpose: 'read first batch', context: 'PAGE' },
     { action: 'READ_SOURCES', sourceRefs: ['source:ftd:not-registered'], purpose: 'read more', context: 'PAGE' },
     { action: 'SAVE_WORK', work: firstWork },
-    { action: 'READ_SOURCES', sourceRefs: refs.slice(10, 11), purpose: 'read next batch', context: 'PAGE' },
+    { action: 'READ_SOURCES', sourceRefs: refs.slice(4, 5), purpose: 'read next batch', context: 'PAGE' },
     { action: 'SAVE_WORK', work: secondWork },
     { action: 'FINISH' },
   ]);
@@ -925,8 +925,8 @@ test('initial JobAid bounds reads before save, then rotates only with exact save
 
   const result = await f.run(input);
   assert.equal(result.output.workRevisionRef, 'JAWR-2');
-  assert.deepEqual(f.reads.map(read => read.sourceRefs.length), [10, 1]);
-  assert.deepEqual(f.reads.map(read => read.sourceRefs[0]), [refs[0], refs[10]]);
+  assert.deepEqual(f.reads.map(read => read.sourceRefs.length), [4, 1]);
+  assert.deepEqual(f.reads.map(read => read.sourceRefs[0]), [refs[0], refs[4]]);
   assert.equal(f.saves.length, 2);
   const tooLargeReceipt = JSON.parse(f.calls[1].messages.at(-1).content);
   assert.equal(tooLargeReceipt.errorCode, 'JOBAID_SOURCE_BATCH_TOO_LARGE');
@@ -946,6 +946,8 @@ test('initial JobAid bounds reads before save, then rotates only with exact save
   const saveOnlyStep = f.calls[2].tools[0].function.parameters.properties.step;
   assert.deepEqual(saveOnlyStep.properties.action.enum, ['SAVE_WORK']);
   assert.ok(saveOnlyStep.required.includes('workJson'));
+  assert.match(f.calls[2].messages[0].content, /one coherent issue/u);
+  assert.match(f.calls[4].messages[2].content, /不超过 4 refs/u);
   assert.deepEqual(f.calls[2].tool_choice, { type: 'function', function: { name: 'return_wiselink_assessment_step' } });
   assert.notEqual(f.calls[4].user, f.calls[5].user,
     'each successful source read starts a fresh save-only session');
@@ -953,8 +955,8 @@ test('initial JobAid bounds reads before save, then rotates only with exact save
     'each exact saved revision begins the next native session');
   const sourceContinuation = JSON.parse(f.calls[2].messages[2].content);
   assert.equal(sourceContinuation.status, 'HOST_SOURCE_READ_CONFIRMED');
-  assert.deepEqual(sourceContinuation.sourceReadReceipt.sourceRefs, refs.slice(0, 10));
-  assert.equal(sourceContinuation.sourceReadReceipt.evidence.length, 10);
+  assert.deepEqual(sourceContinuation.sourceReadReceipt.sourceRefs, refs.slice(0, 4));
+  assert.equal(sourceContinuation.sourceReadReceipt.evidence.length, 4);
   assert.equal(f.calls[2].messages.some(message => message.role === 'assistant'), false,
     'fresh source continuation has no orphaned prior-session tool call');
   const resumedInput = JSON.parse(f.calls[4].messages[1].content);
@@ -963,7 +965,7 @@ test('initial JobAid bounds reads before save, then rotates only with exact save
   assert.equal(resumedInput.previousWork.workRevisionRef, 'JAWR-1');
   assert.equal(resumedInput.previousWork.content.issues[0].issueKey, 'condition-a');
   assert.equal(resumedInput.previousWork.content.evidence, undefined);
-  assert.deepEqual(continuationReceipt.readSourceRefs, refs.slice(0, 10));
+  assert.deepEqual(continuationReceipt.readSourceRefs, refs.slice(0, 4));
   assert.equal(continuationReceipt.workRevisionRef, 'JAWR-1');
   assert.equal(continuationReceipt.status, 'HOST_SAVE_CONFIRMED');
   assert.equal(f.calls[4].messages.some(message => message.role === 'assistant'), false,
@@ -972,41 +974,74 @@ test('initial JobAid bounds reads before save, then rotates only with exact save
 
 test('an unregistered source correction can recover, then the successful Host read gets a save-only fresh session', async () => {
   const input = initialChunkModelInput();
+  input.availableSources[0].ref = 'source:ftd:1:p0';
   const work = { schemaVersion: 'wiselink.jobaid-problem-work.v3', headline: 'Initial finding',
     listBrief: 'One verified point.', overview: 'One source was verified.',
     roundCompletion: 'COMPLETE_WITH_OPEN_QUESTIONS', completionReason: 'Other pages remain unread.',
     changeSummary: 'Saved the verified batch.',
-    issues: [{ issueKey: 'verified', question: 'What does the page establish?', body: 'It states condition A [[source:ftd:1]].' }] };
+    issues: [{ issueKey: 'verified', question: 'What does the page establish?', body: 'It states condition A [[source:ftd:1:p0]].' }] };
   const f = fixture([
-    { action: 'READ_SOURCES', sourceRefs: ['source:ftd:not-registered'], purpose: 'read selected page', context: 'PAGE' },
-    { action: 'READ_SOURCES', sourceRefs: ['source:ftd:1'], purpose: 'read registered page', context: 'PAGE' },
+    { action: 'READ_SOURCES', sourceRefs: ['source:ftd:1:p1'], purpose: 'read selected page', context: 'PAGE' },
+    { action: 'READ_SOURCES', sourceRefs: ['source:ftd:1:p0'], purpose: 'read registered page', context: 'PAGE' },
     { action: 'SAVE_WORK', work },
     { action: 'FINISH' },
   ]);
   f.options.readAssessmentSources = async request => {
     f.reads.push(request);
-    if (request.sourceRefs.includes('source:ftd:not-registered'))
-      throw Object.assign(new Error('source absent from current catalog'), { hostErrorCode: 'JOBAID_SOURCE_NOT_REGISTERED' });
     return { status: 'AVAILABLE', scope: request.context, completeRequestedScope: true,
       sourceRefs: request.sourceRefs, evidence: request.sourceRefs.map(evidenceRef => ({ evidenceRef, excerpt: 'Condition A.' })) };
   };
 
   const result = await f.run(input);
   assert.equal(result.output.workRevisionRef, 'JAWR-1');
-  assert.equal(f.reads.length, 2);
-  assert.deepEqual(f.reads.map(read => read.sourceRefs), [['source:ftd:not-registered'], ['source:ftd:1']]);
+  assert.equal(f.reads.length, 1);
+  assert.deepEqual(f.reads.map(read => read.sourceRefs), [['source:ftd:1:p0']]);
   assert.equal(f.saves.length, 1);
+  const rejection = JSON.parse(f.calls[1].messages.at(-1).content);
+  assert.equal(rejection.errorCode, 'JOBAID_SOURCE_NOT_REGISTERED');
+  assert.deepEqual(rejection.sourceSelection, {
+    unregisteredRefs: ['source:ftd:1:p1'],
+    suggestedCatalogRefs: [{ rejectedRef: 'source:ftd:1:p1', exactCatalogRef: 'source:ftd:1:p0' }],
+    hostReadExecuted: false,
+  });
   assert.equal(f.calls[0].user, f.calls[1].user,
     'the known unregistered-ref rejection corrects within the original session');
   assert.notEqual(f.calls[1].user, f.calls[2].user,
     'a successful Host read moves the save into a fresh native session');
   const continuation = JSON.parse(f.calls[2].messages[2].content);
   assert.equal(continuation.status, 'HOST_SOURCE_READ_CONFIRMED');
-  assert.deepEqual(continuation.sourceReadReceipt.sourceRefs, ['source:ftd:1']);
+  assert.deepEqual(continuation.sourceReadReceipt.sourceRefs, ['source:ftd:1:p0']);
   const stepSchema = f.calls[2].tools[0].function.parameters.properties.step;
   assert.deepEqual(stepSchema.properties.action.enum, ['SAVE_WORK']);
   assert.ok(stepSchema.required.includes('workJson'));
   assert.ok(f.calls.every(call => call.tool_choice.function.name === 'return_wiselink_assessment_step'));
+});
+
+test('initial JobAid cannot save a status-only issue before a primary source read', async () => {
+  const input = initialChunkModelInput();
+  const work = { schemaVersion: 'wiselink.jobaid-problem-work.v3', headline: 'Verified point',
+    listBrief: 'One source checked.', overview: 'One source was verified.',
+    roundCompletion: 'COMPLETE_WITH_OPEN_QUESTIONS', completionReason: 'Other pages remain unread.',
+    changeSummary: 'Saved the verified batch.',
+    issues: [{ issueKey: 'verified', question: 'What does the page establish?', body: 'It states condition A [[source:ftd:1]].' }] };
+  const f = fixture([
+    { action: 'SAVE_WORK', work },
+    { action: 'READ_SOURCES', sourceRefs: ['source:ftd:1'], purpose: 'read original', context: 'EXACT' },
+    { action: 'SAVE_WORK', work },
+    { action: 'FINISH' },
+  ]);
+  f.options.readAssessmentSources = async request => {
+    f.reads.push(request);
+    return { status: 'AVAILABLE', scope: request.context, completeRequestedScope: true,
+      sourceRefs: request.sourceRefs, evidence: [{ evidenceRef: 'source:ftd:1', kind: 'DOCUMENT_PASSAGE', excerpt: 'Condition A.' }] };
+  };
+  const result = await f.run(input);
+  assert.equal(result.output.workRevisionRef, 'JAWR-1');
+  assert.equal(f.saves.length, 1);
+  assert.equal(f.reads.length, 1);
+  const rejection = JSON.parse(f.calls[1].messages.at(-1).content);
+  assert.equal(rejection.errorCode, 'JOBAID_PRIMARY_SOURCE_READ_REQUIRED');
+  assert.match(rejection.instruction, /READ_SOURCES/u);
 });
 
 test('a confirmed source read and save-only session survive checkpoint resume without another Host read', () => persisted(async checkpoint => {
@@ -1058,8 +1093,10 @@ test('an oversized READ_SOURCES response is checkpointed once and the same attem
     listBrief: 'One conditional point.', overview: 'More sources remain.', roundCompletion: 'COMPLETE_WITH_OPEN_QUESTIONS',
     completionReason: 'Some pages not read.', changeSummary: 'Saved partial work.', issues: [] };
   const f = fixture([
-    { action: 'READ_SOURCES', sourceRefs: input.availableSources.slice(0, 11).map(source => source.ref),
+    { action: 'READ_SOURCES', sourceRefs: input.availableSources.slice(0, 5).map(source => source.ref),
       purpose: 'read selected pages', context: 'PAGE' },
+    { action: 'READ_SOURCES', sourceRefs: input.availableSources.slice(0, 4).map(source => source.ref),
+      purpose: 'read bounded selected pages', context: 'PAGE' },
     { action: 'SAVE_WORK', work },
     { action: 'FINISH' },
   ], { assessmentCheckpoint: checkpoint });
@@ -1072,7 +1109,8 @@ test('an oversized READ_SOURCES response is checkpointed once and the same attem
   f.options.saveAssessmentWork = async request => {
     const result = await save(request);
     const revision = f.store.get(request.requestId);
-    revision.content = completeSavedJobAidContent(revision.content, []);
+    revision.content = completeSavedJobAidContent(revision.content,
+      input.availableSources.slice(0, 4).map(source => source.ref));
     return result;
   };
   let interrupted = false;
@@ -1086,8 +1124,8 @@ test('an oversized READ_SOURCES response is checkpointed once and the same attem
   assert.ok(durable, 'the exact READ_SOURCES function response is durably recorded');
   await run();
   assert.deepEqual(await checkpoint.readOptional('assessment-round-1.result'), durable);
-  assert.equal(f.calls.length, 3, 'reentry reuses the same result and proceeds to new model rounds');
-  assert.equal(f.reads.length, 0, 'the over-limit selection never reaches the Host reader');
+  assert.equal(f.calls.length, 4, 'reentry reuses the same result and proceeds to new model rounds');
+  assert.equal(f.reads.length, 1, 'the over-limit selection never reaches the Host reader');
   assert.equal(f.saves.length, 1);
   assert.equal((await checkpoint.readOptional('assessment-state')).expectedWorkRevision, 1);
 }));

@@ -108,7 +108,12 @@ export class CanonicalInitialAnalysisContinuationService {
       !isOpenClawAutomaticReviewConfigured({
         tenantId: actor.tenantId,
         workItemId,
-      })
+      }) &&
+      !(await this.initial.hasExactAutoProcessingGrant({
+        tenantId: actor.tenantId,
+        actorUserId: actor.userId,
+        workItem,
+      }))
     )
       throw continuationConflict('AUTOMATIC_SCOPE_UNAVAILABLE');
     const binding = bindings[input.operation];
