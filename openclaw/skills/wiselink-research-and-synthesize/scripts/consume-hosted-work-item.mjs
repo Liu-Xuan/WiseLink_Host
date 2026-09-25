@@ -67,7 +67,10 @@ export async function consumeHostedWorkItem(options, dependencies) {
   let initial = readInitialStatus(statusResult, options.workItemId);
   assertExpectedInitialOperationStatus(options.expectedInitialOperation, initial);
   if (options.autoRetry) {
-    const retry = automaticRetryPlan(initial, options.workItemId);
+    const retry = await automaticRetryPlan(initial, options.workItemId,
+      attemptRef => dependencies.callTool('read_assessment_work', {
+        attemptRef, workItemId: options.workItemId,
+      }));
     if (!retry || retry.operation !== options.autoRetry.operation ||
         retry.requestId !== options.autoRetry.requestId ||
         retry.attemptRef !== options.autoRetry.attemptRef) {
@@ -243,7 +246,8 @@ export async function consumeAutomaticWorkItemQueueTick(options, dependencies) {
     await checkpoint.write('active-claim', claim);
     return acknowledgeAndClearAutoClaim(claim, checkpoint, dependencies);
   }
-  const retry = automaticRetryPlan(statusValue, claim.workItemId);
+  const retry = await automaticRetryPlan(statusValue, claim.workItemId,
+    dependencies.readSavedWork);
   if (claim.completionReady) {
     claim = { ...claim, completionReady: false };
     await checkpoint.write('active-claim', claim);
@@ -418,7 +422,7 @@ function assertAutomaticClaimStatusBinding(claim, initial) {
   }
 }
 
-function automaticRetryPlan(initial, workItemId) {
+async function automaticRetryPlan(initial, workItemId, readSavedWork) {
   if (!isRecord(initial) || initial.status !== 'FAILED' ||
       initial.nextOperation !== null || !isRecord(initial.stages) ||
       typeof initial.documentVersionId !== 'string') return null;
@@ -428,8 +432,7 @@ function automaticRetryPlan(initial, workItemId) {
   ]) {
     const observation = initial.stages[stage];
     if (observation?.status !== 'FAILED' ||
-        typeof observation.attemptRef !== 'string' || !observation.attemptRef ||
-        observation.requestId?.startsWith('auto-retry-')) continue;
+        typeof observation.attemptRef !== 'string' || !observation.attemptRef) continue;
     const interrupted = ['CANCELLED', 'TIMED_OUT'].includes(observation.attemptStatus);
     const preparationFailed = observation.attemptStatus === 'FAILED' &&
       observation.terminalCode === 'ACTION_ATTEMPT_INITIAL_PREPARATION_FAILED';
@@ -438,9 +441,27 @@ function automaticRetryPlan(initial, workItemId) {
     // even when the attempt was interrupted before commit.
     if (/(?:ACL|AUTH|PERMISSION|SOURCE_REVOKED|BINDING_CHANGED|VERSION_DRIFT)/u
       .test(observation.terminalCode ?? '')) continue;
+    let prefix = 'auto-retry';
+    if (/^auto-retry-[0-9a-f]{32}$/u.test(observation.requestId ?? '')) {
+      if (typeof readSavedWork !== 'function') continue;
+      const saved = await readSavedWork(observation.attemptRef, workItemId);
+      const revision = saved?.revision;
+      if (saved?.schemaVersion !== 'wiselink.jobaid-work-read.v2' ||
+          saved.executionStatus !== observation.attemptStatus ||
+          typeof saved.attemptId !== 'string' || !saved.attemptId ||
+          !Number.isSafeInteger(saved.inputWorkRevision) ||
+          saved.inputWorkRevision < 0 ||
+          revision?.actionAttemptId !== saved.attemptId ||
+          revision.workItemId !== workItemId ||
+          revision.documentVersionId !== initial.documentVersionId ||
+          revision.basedOnWorkItemRevision !== initial.workItemRevision ||
+          !Number.isSafeInteger(revision.workRevision) ||
+          revision.workRevision <= saved.inputWorkRevision) continue;
+      prefix = 'auto-resume-2';
+    } else if (observation.requestId?.startsWith('auto-')) continue;
     const identity = [workItemId, initial.documentVersionId, stage,
       observation.attemptRef].join(':');
-    const requestId = `auto-retry-${createHash('sha256').update(identity)
+    const requestId = `${prefix}-${createHash('sha256').update(identity)
       .digest('hex').slice(0, 32)}`;
     return { operation, attemptRef: observation.attemptRef, requestId };
   }
@@ -1035,6 +1056,9 @@ async function main(argv, env) {
         readInitialStatus: async id => readInitialStatus(
           await connection.callTool('get_parse_status', { workItemId: id }),
           id,
+        ),
+        readSavedWork: async (attemptRef, workItemId) => connection.callTool(
+          'read_assessment_work', { attemptRef, workItemId },
         ),
         consumeWorkItem: async item => {
           assertHostedModelGatewayReady(runtime);

@@ -26,6 +26,7 @@ test('bounded initial continuation sends an issue index while Host work and sour
     workRevisionRef: 'JAWR-prior', workRevision: 3,
     content: { schemaVersion: 'wiselink.jobaid-problem-work.v3', headline: '当前认识',
       listBrief: '仍待核对最终措施', roundCompletion: 'IN_PROGRESS',
+      readSourceRefs: ['SOURCE-ALREADY-READ'],
       issues: [{ issueKey: 'issue-1', question: '最终措施是什么？', body: '长篇既有正文'.repeat(10000),
         openQuestions: [{ question: '是否有正式计划？', nextEvidence: 'Final Action', affects: '实施时点' }] }],
     },
@@ -38,9 +39,13 @@ test('bounded initial continuation sends an issue index while Host work and sour
   assert.equal(projected.previousWork.workRevisionRef, 'JAWR-prior');
   assert.equal(projected.previousWork.projectionKind, 'HOST_SAVED_ISSUE_INDEX');
   assert.equal(projected.previousWork.omittedIssueBodiesRetainedByHost, true);
+  assert.deepEqual(projected.previousWork.content.readSourceRefs, ['SOURCE-ALREADY-READ']);
   assert.deepEqual(projected.previousWork.content.issues, [{ issueKey: 'issue-1',
     question: '最终措施是什么？', openQuestions: [{ question: '是否有正式计划？', nextEvidence: 'Final Action' }] }]);
   assert.ok(JSON.stringify(projected).length < JSON.stringify(input).length / 4);
+  input.previousWork.content.issues[0].body = '已保存的触发条件与措施限制。';
+  assert.equal(projectBoundedInitialJobAidInput(input).previousWork.content.issues[0].body,
+    '已保存的触发条件与措施限制。');
 });
 
 test('explicit revisit conditions preserve both discriminated forms without leaking unknown values', async () => {

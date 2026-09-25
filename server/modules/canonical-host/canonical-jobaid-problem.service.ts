@@ -1045,6 +1045,8 @@ export class CanonicalJobAidProblemService {
       );
     return {
       schemaVersion: 'wiselink.jobaid-work-read.v2',
+      attemptId: row.attemptId,
+      inputWorkRevision: taskInput.modelInput.expectedWorkRevision,
       revision,
       executionStatus: row.status,
     };

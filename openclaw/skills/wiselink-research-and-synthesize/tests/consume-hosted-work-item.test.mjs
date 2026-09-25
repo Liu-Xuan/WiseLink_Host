@@ -78,6 +78,41 @@ test('automatic retry rejects changed Host attempt before any model work', async
   }), /AUTO_WORK_ITEM_RETRY_STATUS_CHANGED/u);
 });
 
+test('second continuation rechecks saved progress through the exact Host attempt', async t => {
+  const input = await options(t);
+  const attemptRef = 'AQ-FIRST-RETRY';
+  const requestId = `auto-resume-2-${createHash('sha256')
+    .update(`WI-new:DV-new:jobAid:${attemptRef}`).digest('hex').slice(0, 32)}`;
+  const failed = status({ status: 'FAILED', nextOperation: null,
+    stages: { translation: { status: 'SUCCEEDED' },
+      applicability: { status: 'WAITING_INPUT' },
+      jobAid: { status: 'FAILED', attemptStatus: 'CANCELLED', attemptRef,
+        requestId: `auto-retry-${'b'.repeat(32)}`, terminalCode: 'CANCELLED_BY_REQUEST' },
+      overall: { status: 'PENDING' } } });
+  let started = false;
+  const result = await consumeHostedWorkItem({ ...input, initialStageOnly: true,
+    autoRetry: { operation: 'EVALUATE_JOBAID', attemptRef, requestId } }, {
+    callTool: async (name, args) => {
+      if (name === 'get_parse_status') return failed;
+      assert.equal(name, 'read_assessment_work');
+      assert.deepEqual(args, { attemptRef, workItemId: 'WI-new' });
+      return { schemaVersion: 'wiselink.jobaid-work-read.v2',
+        executionStatus: 'CANCELLED', attemptId: 'ATT-FIRST-RETRY',
+        inputWorkRevision: 1,
+        revision: { actionAttemptId: 'ATT-FIRST-RETRY', workRevision: 2,
+          workItemId: 'WI-new', documentVersionId: 'DV-new',
+          basedOnWorkItemRevision: 2 } };
+    },
+    runInitial: async run => {
+      assert.equal(run.continuationRequestId, requestId);
+      started = true;
+      return { outcome: 'CANDIDATE_ONLY' };
+    },
+  });
+  assert.equal(started, true);
+  assert.equal(result.operation, 'EVALUATE_JOBAID');
+});
+
 test('CLI stage limit accepts only one WorkItem initial stage', () => {
   assert.deepEqual(initialStageLimit([], 'WI-new'), {});
   assert.deepEqual(initialStageLimit(['--max-initial-stages', '1'], 'WI-new'),

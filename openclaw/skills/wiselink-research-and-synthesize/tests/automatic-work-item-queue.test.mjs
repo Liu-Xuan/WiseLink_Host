@@ -434,6 +434,69 @@ test('failed retry is not retried again or BLOCKed', async () => {
   assert.equal(checkpoint.values.get('active-claim').consumerStopped, true);
 });
 
+test('a failed first retry with newly saved work gets one bounded successor', async () => {
+  const checkpoint = memoryCheckpoint({ ...storedClaim(), consumerStopped: true,
+    attentionCode: 'HOSTED_GATEWAY_REQUEST_FAILED' });
+  const failed = status({ overallStatus: 'FAILED', nextOperation: null,
+    translation: 'SUCCEEDED', applicability: 'WAITING_INPUT',
+    jobAid: 'FAILED', overall: 'PENDING' });
+  failed.stages.jobAid = { status: 'FAILED', attemptStatus: 'CANCELLED',
+    attemptRef: 'AQ-RETRY-WITH-WORK', requestId: `auto-retry-${'a'.repeat(32)}`,
+    terminalCode: 'CANCELLED_BY_REQUEST' };
+  const saved = {
+    schemaVersion: 'wiselink.jobaid-work-read.v2',
+    executionStatus: 'CANCELLED', attemptId: 'ATT-RETRY-WITH-WORK',
+    inputWorkRevision: 0,
+    revision: { actionAttemptId: 'ATT-RETRY-WITH-WORK', workRevision: 15,
+      workItemId: 'WI-QUEUE', documentVersionId: 'DV-QUEUE',
+      basedOnWorkItemRevision: 4 },
+  };
+  let successor;
+  const dependencies = {
+    checkpoint,
+    now: () => new Date(START),
+    nextWorkItem: async () => assert.fail('current claim is live'),
+    acknowledgeWorkItem: async () => assert.fail('not complete'),
+    blockWorkItem: async () => assert.fail('runtime failure cannot BLOCK'),
+    readInitialStatus: async () => failed,
+    readSavedWork: async (attemptRef, workItemId) => {
+      assert.equal(attemptRef, 'AQ-RETRY-WITH-WORK');
+      assert.equal(workItemId, 'WI-QUEUE');
+      return saved;
+    },
+    consumeWorkItem: async input => {
+      successor = input.autoRetry;
+      return { status: 'REQUIRES_ATTENTION', errorCode: 'HOSTED_GATEWAY_REQUEST_FAILED' };
+    },
+  };
+  const result = await consumeAutomaticWorkItemQueueTick({}, dependencies);
+  assert.equal(result.status, 'REQUIRES_ATTENTION');
+  assert.equal(successor.operation, 'EVALUATE_JOBAID');
+  assert.equal(successor.attemptRef, 'AQ-RETRY-WITH-WORK');
+  assert.match(successor.requestId, /^auto-resume-2-[0-9a-f]{32}$/u);
+  for (const bad of [
+    { ...saved, inputWorkRevision: 15 },
+    { ...saved, revision: { ...saved.revision, actionAttemptId: 'ATT-OTHER' } },
+    { ...saved, revision: { ...saved.revision, documentVersionId: 'DV-OTHER' } },
+  ]) {
+    const stopped = memoryCheckpoint({ ...storedClaim(), consumerStopped: true,
+      attentionCode: 'HOSTED_GATEWAY_REQUEST_FAILED' });
+    const blocked = await consumeAutomaticWorkItemQueueTick({}, {
+      ...dependencies, checkpoint: stopped,
+      readSavedWork: async () => bad,
+      consumeWorkItem: async () => assert.fail('unbound work cannot start a successor'),
+    });
+    assert.equal(blocked.status, 'REQUIRES_ATTENTION');
+  }
+  failed.stages.jobAid.requestId = successor.requestId;
+  failed.stages.jobAid.attemptRef = 'AQ-SECOND-FAILED';
+  const exhausted = await consumeAutomaticWorkItemQueueTick({}, {
+    ...dependencies,
+    consumeWorkItem: async () => assert.fail('second successor is the final attempt'),
+  });
+  assert.equal(exhausted.status, 'REQUIRES_ATTENTION');
+});
+
 test('failed preparation receives a stable new request and recovers saved JobAid work', async () => {
   const checkpoint = memoryCheckpoint(storedClaim());
   const failed = status({
