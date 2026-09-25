@@ -110,6 +110,22 @@ test('split negative exception reaches the model with explicit direction and sou
   assert.match(messages[0].content, /一般性更新要求和额外修复/u);
 });
 
+test('delivery guidance distinguishes complete structured units from an unread range', () => {
+  const base = { units: [{ unitId: 'u0' }, { unitId: 'u1' }],
+    sourceCoverage: { knownPageCount: 2, readPageIndexes: [0, 1], unresolvedRanges: [] } };
+  const complete = readingModelMessages({ ...base, deliveredRanges: [
+    { offset: 0, unitIds: ['u0'], nextOffset: 1 },
+    { offset: 1, unitIds: ['u1'], nextOffset: null },
+  ] })[0].content;
+  assert.match(complete, /全部结构化单元/u);
+  assert.match(complete, /不要称这些单元或后续 offset 尚未读取/u);
+  const partial = readingModelMessages({ ...base, deliveredRanges: [
+    { offset: 0, unitIds: ['u0'], nextOffset: 1 },
+  ] })[0].content;
+  assert.match(partial, /仅部分结构化单元已交付/u);
+  assert.doesNotMatch(partial, /Host 已交付该版原文的全部结构化单元/u);
+});
+
 test('unknown anchors and model-authored offsets are rejected, never guessed or repaired', async () => {
   for (const quote of [{ anchorId: 'unknown' }, { anchorId: 'a1', start: 0, end: 1, text: '构' }]) {
     const invalid = structuredClone(proposal);
