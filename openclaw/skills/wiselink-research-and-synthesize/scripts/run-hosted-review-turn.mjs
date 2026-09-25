@@ -970,6 +970,77 @@ export async function createHostMcpConnection(options) {
   };
 }
 
+/** Trusted-consumer control calls stay on REST because queue controls are not model MCP tools. */
+export function createHostAutoWorkItemQueueClient(options, fetchImpl = globalThis.fetch) {
+  const mcpEndpoint = new URL(
+    requiredUrl(options.hostMcpUrl, 'REVIEW_HOST_MCP_URL_REQUIRED'),
+  );
+  if (mcpEndpoint.username || mcpEndpoint.password || mcpEndpoint.search ||
+      mcpEndpoint.hash || !['http:', 'https:'].includes(mcpEndpoint.protocol) ||
+      !mcpEndpoint.pathname.endsWith('/openapi/wiselink/openclaw-mcp')) {
+    throw new Error('AUTO_WORK_ITEM_QUEUE_ENDPOINT_INVALID');
+  }
+  if (typeof fetchImpl !== 'function') {
+    throw new Error('AUTO_WORK_ITEM_QUEUE_TRANSPORT_UNAVAILABLE');
+  }
+  const queueUrl = route => {
+    const endpoint = new URL(mcpEndpoint);
+    endpoint.pathname = endpoint.pathname.replace(
+      /\/openclaw-mcp$/u,
+      `/${route}`,
+    );
+    return endpoint;
+  };
+  const post = async (route, body) => {
+    const headers = { ...(isRecord(options.headers) ? options.headers : {}) };
+    headers['content-type'] = 'application/json';
+    let response;
+    try {
+      response = await fetchImpl(queueUrl(route), {
+        method: 'POST',
+        headers,
+        ...(body === undefined ? {} : { body: JSON.stringify(body) }),
+        redirect: 'error',
+        signal: AbortSignal.timeout(15_000),
+      });
+    } catch {
+      throw Object.assign(new Error('AUTO_WORK_ITEM_QUEUE_TRANSPORT_FAILED'), {
+        code: 'AUTO_WORK_ITEM_QUEUE_TRANSPORT_FAILED',
+      });
+    }
+    if (!response.ok) {
+      throw Object.assign(
+        new Error(`AUTO_WORK_ITEM_QUEUE_HTTP_${response.status}`),
+        { code: `AUTO_WORK_ITEM_QUEUE_HTTP_${response.status}` },
+      );
+    }
+    const contentType = response.headers?.get?.('content-type') ?? '';
+    if (!/application\/json/iu.test(contentType)) {
+      throw new Error('AUTO_WORK_ITEM_QUEUE_RESPONSE_INVALID');
+    }
+    const contentLength = Number(response.headers?.get?.('content-length'));
+    if (Number.isFinite(contentLength) && contentLength > 16 * 1024) {
+      throw new Error('AUTO_WORK_ITEM_QUEUE_RESPONSE_TOO_LARGE');
+    }
+    try {
+      const value = await response.json();
+      if (new TextEncoder().encode(JSON.stringify(value)).byteLength > 16 * 1024) {
+        throw new Error('AUTO_WORK_ITEM_QUEUE_RESPONSE_TOO_LARGE');
+      }
+      return value;
+    } catch (error) {
+      if (error instanceof Error && error.message.startsWith('AUTO_WORK_ITEM_QUEUE_'))
+        throw error;
+      throw new Error('AUTO_WORK_ITEM_QUEUE_RESPONSE_INVALID');
+    }
+  };
+  return {
+    nextWorkItem: input => post('next-work-item', input),
+    acknowledgeWorkItem: input => post('ack-work-item', input),
+    blockWorkItem: input => post('block-work-item', input),
+  };
+}
+
 export function validateHostToolMetadata(value) {
   const tools = Array.isArray(value?.tools) ? value.tools : [];
   // The pending-work query is an additive control-plane capability. It does

@@ -110,6 +110,18 @@ Host 新任务若为 `wiselink.jobaid-problem-task.v2`，执行问题分析协�
 `--applicability-context-ref`，该控制引用和本轮 requestId 不进入模型。部署见
 [Hosted 自动领取](references/hosted-review-consumer.md)。
 
+### Host 登记事项自动消费（c129）
+
+在 Host 队列迁移和自动受理登记已发布、固定 service queue scope 已启用后，原生单一 command cron 可使用
+`consume-hosted-work-item.mjs --auto-queue`。每个 tick 只领取并推进一个 Host 已登记事项；空队列返回 IDLE，不检查静态
+WorkItem、不调用模型。新事项的 applicability context 从 Host fresh status 读取，租约保存在 endpoint 专属、私有
+checkpoint；模型和业务工具仍复用现有消费者、官方 Gateway、阶段级 checkpoint 与 Host CAS。
+
+租约过期后仅发送之前 checkpoint 的精确 `resumeWorkItemId`。Host 不返回同一事项时，本地 claim 与阶段 checkpoint
+全部保留并返回 `REQUIRES_ATTENTION`；绝不接着消费其他排队项。消费者只在 Host fresh status 确认初始 JobAid 和
+Overall 完成后 ACK；Host fresh status 确认终态失败后才调用 lease-fenced block。模型结果不决定发现、续领或正式采用。
+静态 `--work-item-id`、Matter 和 DocumentVersion 命令仍使用原入口，不与 `--auto-queue` 混用。
+
 ### 共同背景（兼容增量）
 
 c35 曾针对 M3 JobAid 的 `length/incomplete_result` 失败申请 32000 输出额度。c38 按用户后续要求统一

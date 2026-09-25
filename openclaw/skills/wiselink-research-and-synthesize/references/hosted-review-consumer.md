@@ -58,6 +58,32 @@ Host 缺少受控适用性事实时，保留 WAITING_INPUT 并允许后续 JobAi
 remote-step checkpoint 保存在 `.openclaw/wiselink-work-item-runs/<WorkItem>/initial/<operation>`，权限沿用
 0700/0600；已开始的模型步骤不会因原生 tick 或重启再次运行。完成记录与 Host 当前投影不一致时报告漂移，不覆盖旧记录。
 
+## c129 Host 登记事项自动队列
+
+只有配套 Host 已运行自动登记迁移、受理写入 enrollment grant，且固定 queue service scope/开关已在目标环境启用后，
+才可将一个原生 command cron 配置为：
+
+```text
+node <installed-skill-path>/scripts/consume-hosted-work-item.mjs --auto-queue
+```
+
+不传 `--work-item-id` 或其他业务 subject。该 cron 每 tick 向 Host 领取最多一个已登记的事项；空队列零模型调用。
+默认本地 checkpoint 位于 Hosted 用户的 `.openclaw/wiselink-work-item-runs/automatic-work-item-queue/<endpoint>`，
+目录与文件沿用 0700/0600 权限。运行环境应为此原生 job 保留持久用户目录，不能把含租约 token 的 checkpoint 当作日志或模型输入。
+
+每个 tick 最多消费一个初始阶段，复用既有 WorkItem/operation/requestId checkpoint。Host 在每次 MCP 调用时按当前
+活动租约复核精确事项范围。租约过期时消费者只请求原 WorkItem 的精确续领；Host 返回 IDLE 或其他 ID 时，
+消费者保留旧 claim 和所有阶段 checkpoint 并停止本轮，不把另一条待办交给模型。未知模型或提交结果也按既有 checkpoint
+恢复规则停止，不重放不确定步骤。
+
+只有 Host fresh-read 满足初始分析完成条件（含 JobAid 和 Overall 成功）时才 ACK。Host fresh-read 确认终态
+FAILED/CONFLICT 时消费者才提交带当前租约的 block 请求；其他 consumer attention 不 ACK、不 block、不自动重试，
+保留 claim 交给运维处理。Host 的 enrollment、身份、来源权限、当前原件、状态 CAS 和正式采用仍是权威；模型结果
+不能选择队列事项或自动确认工程结论。
+
+自动队列与 `--work-item-id` 静态入口互斥。升级并启用前继续用既有静态 job 验收；启用后保留一个不重叠的原生队列
+cron，不按同租户或上传时间复制静态 job。关闭队列开关不会补登记历史 WorkItem。
+
 初始模型适配器只接收既有 operation modelInput，调用唯一官方 Gateway/profile，并只返回该 operation 的候选。
 它不执行 Host 工具、不拼 Task/ResultEnvelope、不把本轮控制引用或物理 locator 发给模型。四种输入输出校验、
 ResultEnvelope、Translation parts、Host readback/CAS 均复用现有实现。初始候选由 Host 按原有规则更新 revision；
@@ -108,11 +134,11 @@ JobAid c5 可省略没有新增条目的 sourceRefs、missingInputs、candidateE
 
 ### 原生并发与 Matter 持续评估接线
 
-每个原生 command cron 只绑定一个获授权 subject：`--work-item-id WI-...` 或 `--matter-id MAT-...` 二选一。同时指定会在连接 MCP 前明确拒绝，不能把 Matter 排在文档初评之后。不同 subject 使用不同原生 job，由 OpenClaw 自带 cron/lane 并发与同 job 不重叠机制管理；“统一消费者”指复用同一执行实现、Host ActionAttempt 和恢复协议，不是全局单线程，也不限制只能配置一个 cron。
+静态原生 command cron 只绑定一个获授权 subject：`--work-item-id WI-...` 或 `--matter-id MAT-...` 二选一；Host 登记队列使用独立的 `--auto-queue` 模式，二者不能混用。Matter 不排在文档初评之后。不同 subject 使用不同原生 job，由 OpenClaw 自带 cron/lane 并发与同 job 不重叠机制管理；“统一消费者”指复用同一执行实现、Host ActionAttempt 和恢复协议，不是全局单线程，也不限制只能配置一个 cron。
 
 本实例于 2026-09-11 只读核实：OpenClaw 2026.6.6 的 `cron.maxConcurrentRuns=8`、`agents.defaults.maxConcurrent=4`、`agents.defaults.subagents.maxConcurrent=8`；不同 sessionKey 使用独立 session lane，同一 sessionKey 串行。上述为实际当前值而非应用硬编码目标；不调用进程内私有队列 API，不为独立业务任务额外创建推理 Agent。Host 现有 ActionAttempt 共享 4 个租约槽，仍由原子领取/CAS约束实际工作。其他平台或模型额外限流需要按实际响应处理。
 
-作业配置必须与 Host 精确目标授权一致；目前 WorkItem 和 Matter 仍分别只有一个显式配置绑定，这不是允许扫描或消费同租户所有事项。多个目标的范围扩展必须接入真实授权后再启用，不能只复制 cron。一个目标不要配置重复 job，避免绕过原生同 job 不重叠；初始化、明确重评和自动来源续接仍遵守该 subject 的依赖和租约。
+静态作业配置必须与 Host 精确目标授权一致；WorkItem 和 Matter 的静态范围仍是各自显式绑定。自动 WorkItem 队列只发现 Host 正常受理时写入的授权登记，并逐项复核租户、原提交人、来源读取、原件当前性、投影和租约；它不回填旧事项，也不允许仅按同租户扫描。一个目标不要配置重复 job，避免绕过原生同 job 不重叠；初始化、明确重评和自动来源续接仍遵守该 subject 的依赖和租约。
 
 Matter 独立原文读取沿用 Host 每次最多 8 页的范围接口，仅合并实际请求的连续页，不跨未请求的空隙。每轮最多 4 个独立范围并发，已启动读取全部结束后才进入模型下一步或报告失败；失败不伪装成完整结果，后续未启动范围不继续派发。来源授权、版本、原件检查和读取回执仍由 Host 执行；共享工作保存和最终提交不并发。
 
