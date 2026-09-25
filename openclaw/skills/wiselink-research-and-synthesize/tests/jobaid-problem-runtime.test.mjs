@@ -4,7 +4,30 @@ import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { createCheckpointStore } from '../scripts/run-hosted-review-turn.mjs';
-import { invokeHostedJobAidProblemModel, projectJobAidModelInput } from '../scripts/run-jobaid-problem-assessment.mjs';
+import { invokeHostedJobAidProblemModel, projectJobAidModelInput, projectBoundedInitialJobAidInput } from '../scripts/run-jobaid-problem-assessment.mjs';
+
+test('bounded initial continuation sends an issue index while Host work and source bindings stay intact', () => {
+  const input = initialChunkModelInput();
+  input.previousWork = {
+    workRevisionRef: 'JAWR-prior', workRevision: 3,
+    content: { schemaVersion: 'wiselink.jobaid-problem-work.v3', headline: '当前认识',
+      listBrief: '仍待核对最终措施', roundCompletion: 'IN_PROGRESS',
+      issues: [{ issueKey: 'issue-1', question: '最终措施是什么？', body: '长篇既有正文'.repeat(10000),
+        openQuestions: [{ question: '是否有正式计划？', nextEvidence: 'Final Action', affects: '实施时点' }] }],
+    },
+  };
+  const original = structuredClone(input);
+  const projected = projectBoundedInitialJobAidInput(input);
+  assert.deepEqual(input, original);
+  assert.deepEqual(projected.availableSources, input.availableSources);
+  assert.deepEqual(projected.deliveredEvidence, input.deliveredEvidence);
+  assert.equal(projected.previousWork.workRevisionRef, 'JAWR-prior');
+  assert.equal(projected.previousWork.projectionKind, 'HOST_SAVED_ISSUE_INDEX');
+  assert.equal(projected.previousWork.omittedIssueBodiesRetainedByHost, true);
+  assert.deepEqual(projected.previousWork.content.issues, [{ issueKey: 'issue-1',
+    question: '最终措施是什么？', openQuestions: [{ question: '是否有正式计划？', nextEvidence: 'Final Action' }] }]);
+  assert.ok(JSON.stringify(projected).length < JSON.stringify(input).length / 4);
+});
 
 test('explicit revisit conditions preserve both discriminated forms without leaking unknown values', async () => {
   const { JOBAID_WORK_UPDATE_SHAPE, decodeJobAidValue, jobAidWorkTypeErrors } = await import('../scripts/jobaid-work-shape.mjs');

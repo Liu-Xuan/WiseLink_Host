@@ -146,6 +146,36 @@ export function projectJobAidModelInput(input) {
   };
 }
 
+/** Keep the Host's full revision, but send only its issue index during bounded initial source work. */
+export function projectBoundedInitialJobAidInput(input) {
+  const projected = projectJobAidModelInput(input);
+  const previous = projected.previousWork;
+  if (!previous?.content || !Array.isArray(previous.content.issues)) return projected;
+  return {
+    ...projected,
+    previousWork: {
+      ...previous,
+      projectionKind: 'HOST_SAVED_ISSUE_INDEX',
+      omittedIssueBodiesRetainedByHost: true,
+      content: {
+        schemaVersion: previous.content.schemaVersion,
+        headline: previous.content.headline,
+        listBrief: previous.content.listBrief,
+        roundCompletion: previous.content.roundCompletion,
+        completionReason: previous.content.completionReason,
+        issues: previous.content.issues.map(issue => ({
+          issueKey: issue.issueKey,
+          question: issue.question,
+          openQuestions: (issue.openQuestions ?? []).map(item => ({
+            question: item.question,
+            nextEvidence: item.nextEvidence,
+          })),
+        })),
+      },
+    },
+  };
+}
+
 function projectSavedJobAidWorkContent(content) {
   if (content?.schemaVersion !== 'wiselink.jobaid-problem-work.v3' ||
       !Array.isArray(content.issues))
@@ -277,11 +307,14 @@ export async function invokeHostedJobAidProblemModel(
     systemMessage.content += '\n本轮是明确指定的工程事项综合更正。以 overviewCorrection.expectedWorkRef 对应的 previousWork 为准确基线，按 correctionReason 核对已保存的全部问题、当前综合及完成说明。问题正文只是比较语境，不自动重新认证为原文。只使用 overviewCorrection.evidenceRefs 所指本轮已交付证据作新综合的引用；缺少决定性依据时保留限制。新的 overview 面向工程师，用简短段落给出主要判断、决定性条件、下一步或尚缺资料；过程与展开的论证留在问题正文和依据中，关键限制仍须在综合里说清。SAVE_WORK 只提交一个完整的综合更正：issues:[]、新的 overview、completionReason、changeSummary，roundCompletion 与 previousWork.content 相同；不得提交问题正文、摘要或其他工作字段。即使旧综合标记 STALE，也要实际核对后形成综合，不把状态本身当作结论。保存回执后 FINISH；本轮不作正式采用。';
   }
   if (boundedInitialJobAid) {
-    systemMessage.content += `\n本次初始 JobAid 执行按可核验批次推进：每次 SAVE_WORK 前最多执行 ${INITIAL_JOBAID_READS_PER_SAVE} 个 READ_SOURCES 动作，每个动作最多 ${INITIAL_JOBAID_SOURCE_REFS_PER_READ} 个 sourceRefs。READ_SOURCES 的每个 sourceRef 必须逐字复制 availableSources[].ref；不能从 sourceRefId、页码或解析单元编号自行拼接。首次保存工程问题前先成功读取原文，不能将来源读取失败写成工程结论。保存有价值的完整增量时用 IN_PROGRESS 或 COMPLETE_WITH_OPEN_QUESTIONS，并保留未读范围；不要声称未读来源已经核验。Host 成功读取后，运行器会在独立 OpenClaw 会话中提供完整来源回执，并将工具Schema限制为必须 SAVE_WORK；Host 确认并读回保存后，再在新会话中提供完整已保存工作和版本回执，继续下一批。只有完整复核后才 FINISH。`;
+    systemMessage.content += `\n本次初始 JobAid 执行按可核验批次推进：每次 SAVE_WORK 前最多执行 ${INITIAL_JOBAID_READS_PER_SAVE} 个 READ_SOURCES 动作，每个动作最多 ${INITIAL_JOBAID_SOURCE_REFS_PER_READ} 个 sourceRefs。READ_SOURCES 的每个 sourceRef 必须逐字复制 availableSources[].ref；不能从 sourceRefId、页码或解析单元编号自行拼接。首次保存工程问题前先成功读取原文，不能将来源读取失败写成工程结论。previousWork 在模型输入中仅展示 Host 已保存问题的目录，正文仍由 Host 完整保留；目录不是重新核验的原文，不能据此声称已复核被省略的问题正文。每批只提交有新原文支持的改动，未变问题由 Host 保留；保存后读回精确修订，后续批次继续。保存有价值的完整增量时用 IN_PROGRESS 或 COMPLETE_WITH_OPEN_QUESTIONS，并保留未读范围；不要声称未读来源已经核验。只有覆盖必要原文后才 FINISH。`;
   }
+  const projectForModel = boundedInitialJobAid
+    ? projectBoundedInitialJobAidInput
+    : projectJobAidModelInput;
   let messages = [
     systemMessage,
-    { role: 'user', content: JSON.stringify(projectJobAidModelInput(modelInput)) },
+    { role: 'user', content: JSON.stringify(projectForModel(modelInput)) },
   ];
   if (options.recoveredSourceContext) systemMessage.content += '\n这是 Host 正常授权的后继任务：旧任务已结束但未交付完整工作载荷。当前 deliveredEvidence 包含 Host 重新授权并保留的已读原文，previousWork 是实际已保存工作。先使用这些完整证据形成本批有价值正文，仅在缺少必要语境时补读；不要为了恢复而重复获取已交付的相同范围。旧任务错误不是工程结论，也不是已保存正文。本次仍须正常 SAVE_WORK 后才能完成。';
   let initialContextMessage = messages[1];
@@ -332,7 +365,7 @@ export async function invokeHostedJobAidProblemModel(
   if (restored) {
     ({ round, messages, expectedWorkRevision, saved, corrections, inputUnits, outputUnits } = restored);
     sessionModelInput = restored.sessionModelInput ?? modelInput;
-    initialContextMessage = { role: 'user', content: JSON.stringify(projectJobAidModelInput(sessionModelInput)) };
+    initialContextMessage = { role: 'user', content: JSON.stringify(projectForModel(sessionModelInput)) };
     sessionWorkRevision = restored.sessionWorkRevision ?? modelInput.expectedWorkRevision;
     readsSinceSave = restored.readsSinceSave ?? 0;
     savedReadSourceRefs = restored.savedReadSourceRefs ?? [];
@@ -425,7 +458,7 @@ export async function invokeHostedJobAidProblemModel(
         ? [...revision.content.readSourceRefs] : [];
       initialContextMessage = {
         role: 'user',
-        content: JSON.stringify(projectJobAidModelInput(sessionModelInput)),
+        content: JSON.stringify(projectForModel(sessionModelInput)),
       };
       sessionWorkRevision = revision.workRevision;
     }
@@ -850,7 +883,7 @@ export async function invokeHostedJobAidProblemModel(
         workRevision: saved.workRevision,
         roundCompletion: saved.roundCompletion,
         readSourceRefs: savedReadSourceRefs,
-        instruction: `这是同一 Host attempt 在确认保存后的续段。previousWork 是同一 attempt 刚读回的完整工作基线。继续检查未覆盖范围并保留已有问题；本条 readSourceRefs 只证明先前已保存的来源读取，不是本新会话中可直接引用的正文。若新判断需要原文，先用 READ_SOURCES；每次只读一个不超过 ${INITIAL_JOBAID_SOURCE_REFS_PER_READ} refs 的批次，再保存一项完整且简洁的增量，不重写未变化的问题。不得重放先前 SAVE_WORK。`,
+        instruction: `这是同一 Host attempt 在确认保存后的续段。previousWork 是刚读回工作修订的精确问题目录；完整正文由 Host 保留，但没有送入本模型回合，不能声称已重新核验省略正文。继续检查未覆盖范围并保留已有问题；本条 readSourceRefs 只证明先前已保存的来源读取，不是本新会话中可直接引用的正文。若新判断需要原文，先用 READ_SOURCES；每次只读一个不超过 ${INITIAL_JOBAID_SOURCE_REFS_PER_READ} refs 的批次，再保存一项完整且简洁的增量，不重写未变化的问题。不得重放先前 SAVE_WORK。`,
       }) },
     ] : [
       systemMessage,
