@@ -6,6 +6,7 @@ import type { EngineeringKnowledgeEntry, EngineeringKnowledgeIdentity, Engineeri
 import { getCanonicalLibraryDocuments } from '@client/src/api/canonical-host';
 import { useCurrentUserSession } from '@client/src/app/providers/CurrentUserSessionProvider';
 import EngineeringIssueBody from '@client/src/features/matter/EngineeringIssueBody';
+import { compactReadingSummary } from '@client/src/features/matter/compact-reading-summary';
 import { JobAidIssueArticle } from '@client/src/pages/DocumentParsingPage/JobAidIssueArticle';
 import { exactDocumentSourceRoute, matterWorkRoute } from '@client/src/features/matter/matter-navigation';
 import { knowledgeReadingParams, knowledgeReadingIdentity } from '@client/src/features/matter/reading-return';
@@ -162,7 +163,7 @@ function KnowledgeCatalogue() {
         <div className="panel-head"><h2>{loading ? '正在读取已有认识…' : `本批 ${page?.entries.length ?? 0} 条可查阅工作`}</h2></div>
         {page?.entries.map(entry => <button className={`knowledge-hit${selection === keyOf(entry) ? ' selected' : ''}`} key={keyOf(entry)} aria-pressed={selection === keyOf(entry)} onClick={() => select(entry)}>
           <small className={entry.current ? 'knowledge-badge' : 'knowledge-badge historical'}>{entry.current ? '当前工作' : '历史工作'} · 修订 {entry.workRevision}</small>
-          <h2>{entry.headline || '认识主题待补齐'}</h2><p>{entry.listBrief || '简明解读待补齐，可打开已保存正文。'}</p>
+          <h2>{entry.headline || '认识主题待补齐'}</h2>{compactReadingSummary(entry.headline, entry.listBrief) !== entry.headline && <p>{compactReadingSummary(entry.headline, entry.listBrief)}</p>}
           <small>{entry.subjectKind === 'ENGINEERING_MATTER' ? '工程事项' : '文档工作'} · {displayDate(entry.createdAt)}</small>
           {entry.overviewStatus === 'STALE' && <span className="coverage-hint">综合尚未覆盖本轮问题</span>}
         </button>)}
@@ -171,12 +172,13 @@ function KnowledgeCatalogue() {
       <section className="panel knowledge-preview" aria-label="完整工程认识" ref={articleRef} onScroll={event => rememberScroll('articleY', event.currentTarget.scrollTop)}>
         {reading ? <p role="status">正在读取确切工作…</p> : readError ? <p role="alert">{readError} <button onClick={retryRead}>重试</button></p> : read ? <>
           <div className="article-kicker">{read.entry.current ? '已保存的工程认识' : '当时的工程认识'} · 工作修订 {read.entry.workRevision}</div>
-          <h1>{read.entry.headline || '已保存的工程认识'}</h1><p className="article-lead">{read.entry.listBrief}</p>
+          <h1>{read.entry.headline || '已保存的工程认识'}</h1>{compactReadingSummary(read.entry.headline, read.entry.listBrief) !== read.entry.headline && <p className="article-lead">{compactReadingSummary(read.entry.headline, read.entry.listBrief)}</p>}
           <small>{read.entry.subjectKind === 'ENGINEERING_MATTER' ? '工程事项' : '文档工作'} · {displayDate(read.entry.createdAt)}</small>
           {!read.entry.current && <div className="knowledge-notice">当前显示当时保存的解释；查看当前事项是独立导航，不替换本条历史内容。</div>}
           {read.entry.overviewStatus !== 'CURRENT' && <div className="knowledge-notice">{read.entry.overviewStatus === 'STALE' ? '问题已更新，综合尚未覆盖。本页保留各部分的确切保存范围。' : '当前已保存问题解释，综合认识尚未形成。'}</div>}
           <details className="knowledge-work-details" key={keyOf(read.entry)}>
             <summary>展开问题分析、依据与过程{read.content.issues.length ? `（${read.content.issues.length} 项）` : ''}</summary>
+            {read.entry.listBrief && <section className="knowledge-prose"><h2>完整保存摘要</h2><p>{read.entry.listBrief}</p></section>}
             {read.content.understanding && <section className="knowledge-prose"><h2>本工作的问题理解</h2><EngineeringIssueBody body={read.content.understanding} evidence={read.content.evidence} onLocateDocument={locate} /></section>}
             {read.content.issues.map(issue => <section className="knowledge-prose" key={issue.issueKey}><JobAidIssueArticle issue={issue} evidence={read.content.evidence} onLocateDocument={locate} /></section>)}
             {read.entry.subjectKind === 'ENGINEERING_MATTER' && <>
