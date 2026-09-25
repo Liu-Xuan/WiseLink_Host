@@ -86,13 +86,6 @@ const AssessmentReadingBrief: FC<AssessmentReadingBriefProps> = ({
               ? result.content.lead
               : compactReadingSummary(result.content.headline, result.content.listBrief)}
           </p>
-          {depth === 'brief' && result.content.lead &&
-            result.content.lead !== compactReadingSummary(result.content.headline, result.content.listBrief) ? (
-              <details className="text-sm leading-7">
-                <summary className="cursor-pointer">展开完整概览与条件</summary>
-                <p className="whitespace-pre-wrap break-words">{result.content.lead}</p>
-              </details>
-            ) : null}
         </header>
       ) : null}
       {presentation === 'claims' ? (
@@ -105,6 +98,16 @@ const AssessmentReadingBrief: FC<AssessmentReadingBriefProps> = ({
           <h3 className="text-sm font-medium">决定性条件与待核判断</h3>
           <ul className="space-y-4">{groups.decisive.map(renderClaim)}</ul>
         </div>
+      ) : null}
+      {presentation === 'complete' && depth === 'brief' &&
+      result.content.lead &&
+      result.content.lead !== compactReadingSummary(
+        result.content.headline, result.content.listBrief,
+      ) ? (
+        <details className="text-sm leading-7">
+          <summary className="cursor-pointer">展开完整概览与条件</summary>
+          <p className="whitespace-pre-wrap break-words">{result.content.lead}</p>
+        </details>
       ) : null}
       {presentation === 'complete' &&
       depth !== 'list' &&
