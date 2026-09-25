@@ -18,7 +18,6 @@ import {
 } from './automatic-work-item-lease-authorization.port';
 
 const CANONICAL_APP_ID = 'app_17bzc551rsg';
-const OPENCLAW_QUEUE_PRINCIPAL_ID = 'service:openclaw-main';
 
 /**
  * Explicitly opt-in DEV/UAT service scope for one isolated WorkItem.
@@ -535,10 +534,7 @@ function requiredBaseConfig(): Omit<
 
 function requiredAutoWorkItemQueueConfig(): AutoWorkItemQueueScopeConfig {
   const base = requiredBaseConfig();
-  if (
-    process.env.WL_OPENCLAW_SERVICE_AUTO_QUEUE_ENABLED !== '1' ||
-    base.principalId !== OPENCLAW_QUEUE_PRINCIPAL_ID
-  ) {
+  if (process.env.WL_OPENCLAW_SERVICE_AUTO_QUEUE_ENABLED !== '1') {
     throw canonicalServiceScopeUnavailable();
   }
   return base;
