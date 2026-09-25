@@ -3,8 +3,11 @@ import { randomUUID } from 'node:crypto';
 import { Inject, Injectable, Optional } from '@nestjs/common';
 
 import type {
+  AilyInitialAnalysisStatus,
   AcknowledgeAutomaticWorkItemRequest,
   AcknowledgeAutomaticWorkItemResponse,
+  BlockAutomaticWorkItemRequest,
+  BlockAutomaticWorkItemResponse,
   AutomaticWorkItemClaimResult,
 } from '@shared/api.interface';
 import { MiaodaDocumentVersionSourceResolver } from '../work-item/miaoda-document-version-source.resolver';
@@ -27,6 +30,8 @@ import {
   AUTOMATIC_WORK_ITEM_SOURCE_AUTHORIZATION,
   type AutomaticWorkItemSourceAuthorizationPort,
 } from './automatic-work-item-source-authorization.port';
+import { CanonicalHostInitialAnalysisStatusService } from './canonical-host-initial-analysis-status.service';
+import { canonicalHostBareSha256 } from './canonical-host-sha256';
 
 const CANONICAL_APP_ID = 'app_17bzc551rsg';
 const OPENCLAW_QUEUE_PRINCIPAL_ID = 'service:openclaw-main';
@@ -47,6 +52,7 @@ export class AutomaticWorkItemDispatchService {
     @Optional()
     @Inject(AUTOMATIC_WORK_ITEM_LEASE_AUTHORIZATION)
     private readonly leaseAuthorization?: AutomaticWorkItemLeaseAuthorizationPort,
+    private readonly initialAnalysisStatus?: CanonicalHostInitialAnalysisStatusService,
   ) {}
 
   async nextWorkItem(): Promise<NextAutoWorkItemResult> {
@@ -129,20 +135,29 @@ export class AutomaticWorkItemDispatchService {
       leaseToken: input.leaseToken,
       leaseGeneration: input.leaseGeneration,
     };
+    let lease: Awaited<
+      ReturnType<AutomaticWorkItemLeaseAuthorizationPort['authorizeActiveLease']>
+    >;
     try {
-      await this.leaseAuthorization.authorizeActiveLease(leaseInput);
+      lease = await this.leaseAuthorization.authorizeActiveLease(leaseInput);
     } catch (error) {
       if (!isWorkItemNotFound(error)) throw error;
-      const replay = await this.workItems.acknowledgeAutoProcessingLease({
+      const replay = await this.workItems.readCompletedAutoProcessingLeaseReceipt({
         ...leaseIdentity,
-        leaseOwner: scope.principalId,
         leaseToken: input.leaseToken,
         leaseGeneration: input.leaseGeneration,
-        now: new Date(),
       });
       if (replay?.replayed)
         return acknowledgementResponse(input.workItemId, replay);
       throw error;
+    }
+
+    const current = await this.readCurrentInitialAnalysis(scope, lease);
+    if (!isHostInitialAnalysisComplete(current.status)) {
+      throw Object.assign(new Error('AUTO_WORK_ITEM_INITIAL_ANALYSIS_NOT_COMPLETE'), {
+        code: 'AUTO_WORK_ITEM_INITIAL_ANALYSIS_NOT_COMPLETE',
+        statusCode: 409,
+      });
     }
 
     const acknowledged = await this.workItems.acknowledgeAutoProcessingLease({
@@ -150,10 +165,113 @@ export class AutomaticWorkItemDispatchService {
       leaseOwner: scope.principalId,
       leaseToken: input.leaseToken,
       leaseGeneration: input.leaseGeneration,
+      expectedWorkItemRevision: current.revision,
       now: new Date(),
     });
     if (!acknowledged) throw autoWorkItemLeaseConflict();
     return acknowledgementResponse(input.workItemId, acknowledged);
+  }
+
+  async blockWorkItem(
+    input: BlockAutomaticWorkItemRequest,
+  ): Promise<BlockAutomaticWorkItemResponse> {
+    const scope = await this.serviceScope.authorizeOpenClawAutoWorkItemQueue();
+    assertQueueScope(scope);
+    assertAcknowledgementInput(input);
+    if (!this.leaseAuthorization) throw sourceAuthorizationUnavailable();
+    const leaseIdentity = {
+      tenantId: scope.tenantId,
+      workItemId: input.workItemId,
+    };
+    let lease: Awaited<
+      ReturnType<AutomaticWorkItemLeaseAuthorizationPort['authorizeActiveLease']>
+    >;
+    try {
+      lease = await this.leaseAuthorization.authorizeActiveLease({
+        ...leaseIdentity,
+        principalId: scope.principalId,
+        leaseToken: input.leaseToken,
+        leaseGeneration: input.leaseGeneration,
+      });
+    } catch (error) {
+      if (!isWorkItemNotFound(error)) throw error;
+      const replay = await this.workItems.readBlockedAutoProcessingLeaseReceipt({
+        ...leaseIdentity,
+        leaseToken: input.leaseToken,
+        leaseGeneration: input.leaseGeneration,
+      });
+      if (replay) return blockResponse(input.workItemId, replay, true);
+      throw error;
+    }
+
+    const current = await this.readCurrentInitialAnalysis(scope, lease);
+    const failedStage = terminalFailedInitialStage(current.status);
+    if (!failedStage) throw automaticWorkItemFailureNotConfirmed();
+    const blocked = await this.workItems.blockAutoProcessingLease({
+      ...leaseIdentity,
+      requestId: lease.requestId,
+      actorUserId: lease.actorUserId,
+      documentId: lease.documentId,
+      documentVersionId: lease.documentVersionId,
+      sourceArtifactId: lease.sourceArtifactId,
+      sourceFileSha256: lease.sourceFileSha256,
+      sourceByteLength: lease.sourceByteLength,
+      expectedWorkItemRevision: current.revision,
+      leaseOwner: scope.principalId,
+      leaseToken: input.leaseToken,
+      leaseGeneration: input.leaseGeneration,
+      blockedCode: `AUTO_WORK_ITEM_STAGE_${failedStage.stage.toUpperCase()}_${failedStage.status}`,
+      now: new Date(),
+    });
+    if (!blocked) throw autoWorkItemLeaseConflict();
+    return blockResponse(input.workItemId, blocked, blocked.replayed);
+  }
+
+  private async readCurrentInitialAnalysis(
+    scope: CanonicalVerifiedAutoWorkItemQueueScope,
+    lease: Awaited<
+      ReturnType<AutomaticWorkItemLeaseAuthorizationPort['authorizeActiveLease']>
+    >,
+  ): Promise<{ status: AilyInitialAnalysisStatus; revision: number }> {
+    if (!this.initialAnalysisStatus) {
+      throw Object.assign(new Error('INITIAL_ANALYSIS_STATUS_UNCONFIGURED'), {
+        code: 'INITIAL_ANALYSIS_STATUS_UNCONFIGURED',
+        statusCode: 503,
+      });
+    }
+    const current = await this.workItems.loadAutoProcessingProjection(
+      lease.workItemId,
+      scope.tenantId,
+    );
+    if (
+      !current?.projection ||
+      current.row.workItemId !== lease.workItemId ||
+      current.row.requestedByUserId !== lease.actorUserId ||
+      current.row.revision !== current.projection.revision ||
+      current.row.packageId !== current.projection.package?.packageId ||
+      current.projection.workItemId !== lease.workItemId ||
+      current.projection.requestId !== lease.requestId ||
+      current.projection.phase !== 'CANDIDATE_READBACK_VERIFIED' ||
+      current.projection.source.documentId !== lease.documentId ||
+      current.projection.source.documentVersionId !== lease.documentVersionId ||
+      current.projection.source.sourceArtifactId !== lease.sourceArtifactId ||
+      canonicalHostBareSha256(current.projection.source.sourceFileSha256) !==
+        lease.sourceFileSha256 ||
+      current.projection.source.sourceByteLength !== lease.sourceByteLength
+    ) {
+      throw autoWorkItemLeaseConflict();
+    }
+    const status = await this.initialAnalysisStatus.project({
+      workItem: current.projection,
+      tenantId: scope.tenantId,
+    });
+    if (
+      status.documentVersionId !== lease.documentVersionId ||
+      status.workItemRevision !== current.row.revision
+    ) {
+      throw autoWorkItemLeaseConflict();
+    }
+    return { status, revision: current.row.revision };
   }
 
   private async validateCandidate(
@@ -354,9 +472,16 @@ function normalizeSourceAclDenyCode(value: string): string {
 }
 
 function assertAcknowledgementInput(
-  input: AcknowledgeAutomaticWorkItemRequest,
+  input: AcknowledgeAutomaticWorkItemRequest | BlockAutomaticWorkItemRequest,
 ): void {
+  const expectedKeys = ['leaseGeneration', 'leaseToken', 'workItemId'];
   if (
+    !input ||
+    typeof input !== 'object' ||
+    Array.isArray(input) ||
+    JSON.stringify(Object.keys(input).sort()) !== JSON.stringify(expectedKeys) ||
+    typeof input.workItemId !== 'string' ||
+    typeof input.leaseToken !== 'string' ||
     !/^WI-[A-Za-z0-9_-]{1,93}$/u.test(input.workItemId) ||
     !/^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/iu.test(
       input.leaseToken,
@@ -393,6 +518,51 @@ function acknowledgementResponse(
   };
 }
 
+function blockResponse(
+  workItemId: string,
+  blocked: { blockedAt: Date; blockedCode: string },
+  replayed: boolean,
+): BlockAutomaticWorkItemResponse {
+  return {
+    status: 'BLOCKED',
+    workItemId,
+    blockedCode: blocked.blockedCode,
+    replayed,
+    blockedAt: blocked.blockedAt.toISOString(),
+  };
+}
+
+function isHostInitialAnalysisComplete(
+  status: AilyInitialAnalysisStatus,
+): boolean {
+  return (
+    (status.status === 'SUCCEEDED' || status.status === 'WAITING_INPUT') &&
+    status.nextOperation === null &&
+    (status.stages.applicability.status === 'SUCCEEDED' ||
+      status.stages.applicability.status === 'WAITING_INPUT') &&
+    status.stages.jobAid.status === 'SUCCEEDED' &&
+    status.stages.overall.status === 'SUCCEEDED'
+  );
+}
+
+function terminalFailedInitialStage(
+  status: AilyInitialAnalysisStatus,
+): { stage: 'translation' | 'applicability' | 'jobAid' | 'overall'; status: 'FAILED' | 'CONFLICT' } | null {
+  if (
+    (status.status !== 'FAILED' && status.status !== 'CONFLICT') ||
+    status.nextOperation !== null
+  ) {
+    return null;
+  }
+  for (const stage of ['translation', 'applicability', 'jobAid', 'overall'] as const) {
+    const stageStatus = status.stages[stage].status;
+    if (stageStatus === 'FAILED' || stageStatus === 'CONFLICT') {
+      return { stage, status: stageStatus };
+    }
+  }
+  return null;
+}
+
 function autoWorkItemLeaseConflict(): Error & {
   code: string;
   statusCode: number;
@@ -401,4 +571,17 @@ function autoWorkItemLeaseConflict(): Error & {
     code: 'AUTO_WORK_ITEM_LEASE_LOST',
     statusCode: 409,
   });
+}
+
+function automaticWorkItemFailureNotConfirmed(): Error & {
+  code: string;
+  statusCode: number;
+} {
+  return Object.assign(
+    new Error('AUTO_WORK_ITEM_FAILURE_NOT_CONFIRMED'),
+    {
+      code: 'AUTO_WORK_ITEM_FAILURE_NOT_CONFIRMED',
+      statusCode: 409,
+    },
+  );
 }

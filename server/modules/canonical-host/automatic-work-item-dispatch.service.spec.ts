@@ -5,10 +5,14 @@ import {
   type AutoWorkItemQueueCandidate,
   type AutoWorkItemQueueWorkItem,
 } from '../work-item/miaoda-work-item.repository';
-import type { CanonicalWorkItemProjection } from '@shared/api.interface';
+import type {
+  AilyInitialAnalysisStatus,
+  CanonicalWorkItemProjection,
+} from '@shared/api.interface';
 import type { AutomaticWorkItemLeaseAuthorizationPort } from './automatic-work-item-lease-authorization.port';
 import type { CanonicalServiceScopeAuthorizationPort } from './canonical-service-scope.authorization';
 import type { AutomaticWorkItemSourceAuthorizationPort } from './automatic-work-item-source-authorization.port';
+import type { CanonicalHostInitialAnalysisStatusService } from './canonical-host-initial-analysis-status.service';
 import {
   AutomaticWorkItemDispatchService,
   automaticAuthorizationBindingMismatch,
@@ -37,16 +41,19 @@ describe('AutomaticWorkItemDispatchService', () => {
 
   it('acknowledges only after fresh active lease verification and token-generation CAS', async () => {
     const workItems = repositoryDouble([]);
+    workItems.loadAutoProcessingProjection.mockResolvedValue(currentSnapshot(9));
     workItems.acknowledgeAutoProcessingLease.mockResolvedValue({
       acknowledgedAt: NOW,
       replayed: false,
     });
     const leaseAuthorization = leaseAuthorizationDouble();
+    const initial = initialStatusDouble();
     const service = dispatchService(
       workItems,
       sourceDouble(),
       sourceAuthorizationDouble(),
       leaseAuthorization,
+      initial,
     );
     const leaseToken = 'b1686364-7ee9-4ca1-a3aa-0b62794cb436';
 
@@ -76,8 +83,116 @@ describe('AutomaticWorkItemDispatchService', () => {
         leaseOwner: 'service:openclaw-main',
         leaseToken,
         leaseGeneration: 3,
+        expectedWorkItemRevision: 9,
       }),
     );
+  });
+
+  it('refuses acknowledgement until Host confirms JobAid and Overall success', async () => {
+    const workItems = repositoryDouble([]);
+    workItems.loadAutoProcessingProjection.mockResolvedValue(currentSnapshot(9));
+    const initial = initialStatusDouble({
+      status: 'WAITING_INPUT',
+      nextOperation: 'SYNTHESIZE_OVERALL',
+      stages: {
+        ...completeInitialStatus().stages,
+        overall: stageStatus('PENDING'),
+      },
+    });
+    const service = dispatchService(
+      workItems,
+      sourceDouble(),
+      sourceAuthorizationDouble(),
+      leaseAuthorizationDouble(),
+      initial,
+    );
+
+    await expect(service.acknowledgeWorkItem({
+      workItemId: WORK_ITEM_ID,
+      leaseToken: 'b1686364-7ee9-4ca1-a3aa-0b62794cb436',
+      leaseGeneration: 3,
+    })).rejects.toMatchObject({
+      code: 'AUTO_WORK_ITEM_INITIAL_ANALYSIS_NOT_COMPLETE',
+      statusCode: 409,
+    });
+    expect(workItems.acknowledgeAutoProcessingLease).not.toHaveBeenCalled();
+  });
+
+  it('blocks only a fresh Host-confirmed terminal failure using the latest revision', async () => {
+    const workItems = repositoryDouble([]);
+    workItems.loadAutoProcessingProjection.mockResolvedValue(currentSnapshot(12));
+    workItems.blockAutoProcessingLease.mockResolvedValue({
+      blockedAt: NOW,
+      blockedCode: 'AUTO_WORK_ITEM_STAGE_JOBAID_FAILED',
+      replayed: false,
+    });
+    const initial = initialStatusDouble({
+      workItemRevision: 12,
+      status: 'FAILED',
+      nextOperation: null,
+      stages: {
+        ...completeInitialStatus().stages,
+        jobAid: stageStatus('FAILED'),
+      },
+    });
+    const service = dispatchService(
+      workItems,
+      sourceDouble(),
+      sourceAuthorizationDouble(),
+      leaseAuthorizationDouble(),
+      initial,
+    );
+
+    await expect(service.blockWorkItem({
+      workItemId: WORK_ITEM_ID,
+      leaseToken: 'b1686364-7ee9-4ca1-a3aa-0b62794cb436',
+      leaseGeneration: 3,
+    })).resolves.toEqual({
+      status: 'BLOCKED',
+      workItemId: WORK_ITEM_ID,
+      blockedCode: 'AUTO_WORK_ITEM_STAGE_JOBAID_FAILED',
+      replayed: false,
+      blockedAt: NOW.toISOString(),
+    });
+    expect(workItems.blockAutoProcessingLease).toHaveBeenCalledWith(
+      expect.objectContaining({
+        expectedWorkItemRevision: 12,
+        leaseToken: 'b1686364-7ee9-4ca1-a3aa-0b62794cb436',
+        leaseGeneration: 3,
+        blockedCode: 'AUTO_WORK_ITEM_STAGE_JOBAID_FAILED',
+      }),
+    );
+  });
+
+  it('does not block from a stale or self-reported failure when Host status is active', async () => {
+    const workItems = repositoryDouble([]);
+    workItems.loadAutoProcessingProjection.mockResolvedValue(currentSnapshot(12));
+    const initial = initialStatusDouble({
+      workItemRevision: 12,
+      status: 'BUSY',
+      nextOperation: null,
+      stages: {
+        ...completeInitialStatus().stages,
+        jobAid: stageStatus('BUSY'),
+      },
+    });
+    const service = dispatchService(
+      workItems,
+      sourceDouble(),
+      sourceAuthorizationDouble(),
+      leaseAuthorizationDouble(),
+      initial,
+    );
+
+    await expect(service.blockWorkItem({
+      workItemId: WORK_ITEM_ID,
+      leaseToken: 'b1686364-7ee9-4ca1-a3aa-0b62794cb436',
+      leaseGeneration: 3,
+    })).rejects.toMatchObject({
+      code: 'AUTO_WORK_ITEM_FAILURE_NOT_CONFIRMED',
+      statusCode: 409,
+    });
+    expect(workItems.blockAutoProcessingLease).not.toHaveBeenCalled();
   });
 
   it('returns an idempotent replay only for an already completed matching lease', async () => {
@@ -86,7 +201,7 @@ describe('AutomaticWorkItemDispatchService', () => {
       statusCode: 404,
     });
     const workItems = repositoryDouble([]);
-    workItems.acknowledgeAutoProcessingLease.mockResolvedValue({
+    workItems.readCompletedAutoProcessingLeaseReceipt.mockResolvedValue({
       acknowledgedAt: NOW,
       replayed: true,
     });
@@ -110,6 +225,7 @@ describe('AutomaticWorkItemDispatchService', () => {
       replayed: true,
       acknowledgedAt: NOW.toISOString(),
     });
+    expect(workItems.acknowledgeAutoProcessingLease).not.toHaveBeenCalled();
   });
 
   it('blocks one mismatched grant and continues to the next authorized item', async () => {
@@ -371,7 +487,10 @@ function repositoryDouble(candidates: AutoWorkItemQueueCandidate[]) {
     loadAutoProcessingProjection: jest.fn(),
     claimAutoProcessingCandidate: jest.fn(),
     blockAutoProcessingCandidate: jest.fn().mockResolvedValue(undefined),
+    blockAutoProcessingLease: jest.fn(),
     acknowledgeAutoProcessingLease: jest.fn(),
+    readCompletedAutoProcessingLeaseReceipt: jest.fn(),
+    readBlockedAutoProcessingLeaseReceipt: jest.fn(),
   };
   return double as unknown as jest.Mocked<
     Pick<
@@ -381,7 +500,10 @@ function repositoryDouble(candidates: AutoWorkItemQueueCandidate[]) {
       | 'loadAutoProcessingProjection'
       | 'claimAutoProcessingCandidate'
       | 'blockAutoProcessingCandidate'
+      | 'blockAutoProcessingLease'
       | 'acknowledgeAutoProcessingLease'
+      | 'readCompletedAutoProcessingLeaseReceipt'
+      | 'readBlockedAutoProcessingLeaseReceipt'
     >
   >;
 }
@@ -417,7 +539,10 @@ function dispatchService(
       | 'loadAutoProcessingProjection'
       | 'claimAutoProcessingCandidate'
       | 'blockAutoProcessingCandidate'
+      | 'blockAutoProcessingLease'
       | 'acknowledgeAutoProcessingLease'
+      | 'readCompletedAutoProcessingLeaseReceipt'
+      | 'readBlockedAutoProcessingLeaseReceipt'
     >
   >,
   sources: jest.Mocked<Pick<MiaodaDocumentVersionSourceResolver, 'resolve'>>,
@@ -427,6 +552,7 @@ function dispatchService(
   leaseAuthorization: jest.Mocked<
     Pick<AutomaticWorkItemLeaseAuthorizationPort, 'authorizeActiveLease'>
   > = leaseAuthorizationDouble(),
+  initial = initialStatusDouble(),
 ): AutomaticWorkItemDispatchService {
   const serviceScope = {
     authorizeOpenClawAutoWorkItemQueue: jest.fn().mockResolvedValue({
@@ -442,7 +568,86 @@ function dispatchService(
     serviceScope,
     sourceAuthorization ?? undefined,
     leaseAuthorization,
+    initial as unknown as CanonicalHostInitialAnalysisStatusService,
   );
+}
+
+function stageStatus(
+  status: AilyInitialAnalysisStatus['stages']['overall']['status'],
+) {
+  return {
+    status,
+    attemptRef: null,
+    attemptStatus: null,
+    terminalCode: null,
+  };
+}
+
+function completeInitialStatus(): AilyInitialAnalysisStatus {
+  return {
+    workItemRevision: 9,
+    documentVersionId: DOCUMENT_VERSION_ID,
+    applicabilityContextRef: null,
+    status: 'SUCCEEDED',
+    nextOperation: null,
+    candidateOnly: true,
+    stages: {
+      translation: stageStatus('SUCCEEDED'),
+      applicability: stageStatus('WAITING_INPUT'),
+      jobAid: stageStatus('SUCCEEDED'),
+      overall: stageStatus('SUCCEEDED'),
+    },
+  };
+}
+
+function initialStatusDouble(
+  overrides: {
+    workItemRevision?: number;
+    status?: AilyInitialAnalysisStatus['status'];
+    nextOperation?: AilyInitialAnalysisStatus['nextOperation'];
+    stages?: Partial<AilyInitialAnalysisStatus['stages']>;
+  } = {},
+): jest.Mocked<Pick<CanonicalHostInitialAnalysisStatusService, 'project'>> {
+  const base = completeInitialStatus();
+  return {
+    project: jest.fn().mockResolvedValue({
+      ...base,
+      ...overrides,
+      workItemRevision: overrides.workItemRevision ?? base.workItemRevision,
+      stages: { ...base.stages, ...overrides.stages },
+    }),
+  } as unknown as jest.Mocked<
+    Pick<CanonicalHostInitialAnalysisStatusService, 'project'>
+  >;
+}
+
+function currentSnapshot(
+  revision: number,
+): NonNullable<
+  Awaited<ReturnType<MiaodaWorkItemRepository['loadAutoProcessingProjection']>>
+> {
+  return {
+    row: {
+      workItemId: WORK_ITEM_ID,
+      requestedByUserId: ACTOR_ID,
+      revision,
+      packageId: 'PKG-01',
+    },
+    projection: {
+      workItemId: WORK_ITEM_ID,
+      requestId: REQUEST_ID,
+      revision,
+      phase: 'CANDIDATE_READBACK_VERIFIED',
+      source: {
+        documentId: DOCUMENT_ID,
+        documentVersionId: DOCUMENT_VERSION_ID,
+        sourceArtifactId: SOURCE_ARTIFACT_ID,
+        sourceFileSha256: SOURCE_SHA256,
+        sourceByteLength: 1024,
+      },
+      package: { packageId: 'PKG-01' },
+    } as unknown as CanonicalWorkItemProjection,
+  };
 }
 
 function leaseAuthorizationDouble() {

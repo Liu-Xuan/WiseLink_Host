@@ -3280,6 +3280,20 @@ export interface AcknowledgeAutomaticWorkItemResponse {
   acknowledgedAt: string;
 }
 
+export interface BlockAutomaticWorkItemRequest {
+  workItemId: string;
+  leaseToken: string;
+  leaseGeneration: number;
+}
+
+export interface BlockAutomaticWorkItemResponse {
+  status: 'BLOCKED';
+  workItemId: string;
+  blockedCode: string;
+  replayed: boolean;
+  blockedAt: string;
+}
+
 export type CanonicalRelatedDocumentRelationRole =
   | 'SELECTED_DOCUMENT_VERSION'
   | 'PRODUCED_PARSED_PACKAGE'

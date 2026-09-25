@@ -3,6 +3,8 @@ import type { Request, Response } from 'express';
 import type {
   AcknowledgeAutomaticWorkItemRequest,
   AcknowledgeAutomaticWorkItemResponse,
+  BlockAutomaticWorkItemRequest,
+  BlockAutomaticWorkItemResponse,
   AutomaticWorkItemClaimResult,
 } from '@shared/api.interface';
 
@@ -44,5 +46,13 @@ export class CanonicalHostOpenClawMcpOpenApiController {
   ): Promise<AcknowledgeAutomaticWorkItemResponse> {
     await this.serviceScope.assertAutoWorkItemQueueTransport();
     return this.autoWorkItems.acknowledgeWorkItem(body);
+  }
+
+  @Post('block-work-item')
+  async blockWorkItem(
+    @Body() body: BlockAutomaticWorkItemRequest,
+  ): Promise<BlockAutomaticWorkItemResponse> {
+    await this.serviceScope.assertAutoWorkItemQueueTransport();
+    return this.autoWorkItems.blockWorkItem(body);
   }
 }
