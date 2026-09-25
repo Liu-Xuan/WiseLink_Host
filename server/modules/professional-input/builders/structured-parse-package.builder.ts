@@ -2367,6 +2367,18 @@ function semanticView(pkg: Record<string, unknown>): unknown {
     modules.map((module) => [String(module.moduleId), Number(module.order)]),
   );
   const units = pkg.contentUnits as Array<Record<string, unknown>>;
+  const references = new Map(
+    (pkg.references as Array<Record<string, unknown>>).map((item) => [
+      String(item.referenceId),
+      item,
+    ]),
+  );
+  const assets = new Map(
+    (pkg.assets as Array<Record<string, unknown>>).map((item) => [
+      String(item.assetId),
+      item,
+    ]),
+  );
   const unitsByParent = new Map<string, Array<Record<string, unknown>>>();
   for (const unit of units) {
     const parent = String(unit.parentUnitId ?? '');
@@ -2400,17 +2412,69 @@ function semanticView(pkg: Record<string, unknown>): unknown {
       structural.set(String(unit.unitId), `orphan/${String(unit.kind)}`);
     }
   }
-  const semanticUnits = units
-    .map((unit) => ({
-      key: structural.get(String(unit.unitId)),
-      kind: unit.kind,
-      order: unit.order,
-      depth: unit.depth,
-      parent: unit.parentUnitId
-        ? (structural.get(String(unit.parentUnitId)) ?? null)
+  const cleanReference = (referenceId: string): Record<string, unknown> => {
+    const reference = references.get(referenceId) as Record<string, unknown>;
+    const target = reference.target as Record<string, unknown>;
+    const identifier = target.identifier as Record<string, unknown>;
+    return {
+      referenceType: reference.referenceType,
+      from: structural.get(String(reference.fromUnitId)) ?? 'unknown',
+      target: {
+        kind: target.kind,
+        scheme: identifier.scheme,
+        value: identifier.value,
+        completeness: identifier.completeness,
+        missingComponents: identifier.missingComponents ?? [],
+      },
+      resolutionStatus: reference.resolutionStatus,
+    };
+  };
+  const cleanAsset = (assetId: string): Record<string, unknown> => {
+    const asset = assets.get(assetId) as Record<string, unknown>;
+    const title = asset.title as Record<string, unknown> | undefined;
+    const standardIdentity = asset.standardIdentity as
+      | Record<string, unknown>
+      | undefined;
+    return {
+      logicalType: asset.logicalType,
+      title: title?.value ?? null,
+      standardIdentity: standardIdentity
+        ? {
+            scheme: standardIdentity.scheme,
+            value: standardIdentity.value,
+            completeness: standardIdentity.completeness,
+          }
         : null,
-      payload: structuredClone(unit.payload),
-    }))
+      renditions: (asset.renditions as Array<Record<string, unknown>>).map(
+        (rendition) => ({
+          role: rendition.role,
+          mediaType: rendition.mediaType,
+          sha256: rendition.sha256,
+        }),
+      ),
+    };
+  };
+  const semanticUnits = units
+    .map((unit) => {
+      const payload = structuredClone(unit.payload as Record<string, unknown>);
+      if (unit.kind === 'figure') {
+        payload.assetIds = (payload.assetIds as string[]).map(cleanAsset);
+        payload.referenceIds = (payload.referenceIds as string[]).map(
+          cleanReference,
+        );
+        delete payload.figureId;
+      }
+      return {
+        key: structural.get(String(unit.unitId)),
+        kind: unit.kind,
+        order: unit.order,
+        depth: unit.depth,
+        parent: unit.parentUnitId
+          ? (structural.get(String(unit.parentUnitId)) ?? null)
+          : null,
+        payload,
+      };
+    })
     .sort((left, right) => compareText(String(left.key), String(right.key)));
   const document = pkg.document as Record<string, unknown>;
   const documentType = document.documentType as Record<string, unknown>;
