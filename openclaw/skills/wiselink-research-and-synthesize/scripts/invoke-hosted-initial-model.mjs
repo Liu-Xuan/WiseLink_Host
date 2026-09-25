@@ -28,6 +28,10 @@ const MAX_JOBAID_CANDIDATE_CORRECTIONS = 2;
 // not claimed model token limits. The FULL input stays in the native session.
 const TRANSLATION_RESPONSE_SOURCE_CHARACTERS = 6_000;
 const TRANSLATION_RESPONSE_SOURCE_UNITS = 96;
+const APPLICABILITY_RESPONSE_SOURCE_CHARACTERS = 4_000;
+const APPLICABILITY_RESPONSE_SOURCE_UNITS = 8;
+const APPLICABILITY_MODEL_TIMEOUT_MS = 45 * 60_000;
+const APPLICABILITY_RESPONSE_TIMEOUT_MS = 10 * 60_000;
 // The 437-unit DLI run reached 275 accepted units before the former 20-minute
 // budget expired. Each round renews the existing Host lease through the caller;
 // bound one response below its 30-minute lease and the whole model operation
@@ -49,7 +53,7 @@ const INPUT_KINDS = {
 };
 const OVERALL_ENVELOPE_GUIDANCE = 'Return {sourceResultId,documentVersionId,packageId,baseRuleRevision,baseRuleArtifactSha256,engineerReviewRevision,engineerReviewArtifactSha256,discoveryStatus,gap,candidateRefCount,findingCount,unresolvedCount,authorityLevel:"candidate_only",externalDiscoveryIsEvidence:false,adopted:false,usableAsEvidence:false,providers:{},overallCandidate,engineeringSummary,findings:[{finding,basis,sourceRefIds,assumptions,uncertainty}],missingInputs,applicabilityStatus,engineeringReviewRequired:true}. sourceResultId is input.outputCorrelationRef; copy document/package/base-rule and review bindings from input. An empty input.externalDiscoveryResults means NO_DISCOVERY, providers={}, and zero external candidates. Preserve exact counts and follow the Host applicability result exactly; missing facts remain conditional, and no candidate asserts Host approval or release.';
 const OVERALL_READING_GUIDANCE = `${OVERALL_ENVELOPE_GUIDANCE} This input has the Host-issued evidenceRegistry: return engineeringSummary={schemaVersion:"wiselink.3_1.overall_engineering_summary.v2",headline,listBrief,lead,claims:[{claimId,text,basis:"SOURCE_FACT"|"CONDITIONAL_INFERENCE",premises:[{evidenceRef,role:"SUPPORTS"|"LIMITS"|"CONTEXT"|"CONFLICTS",explanation,limitation:string|null}]}],decisiveClaimIds:[claimId]}. overallCandidate must equal lead exactly. headline, listBrief and lead are reading depths of this one saved result: state the actual issue, useful current understanding, scope, value and decisive uncertainties without losing negations or conditions. claims must contain at least one stable, unique claimId and exact full statement, each with all relevant registered premises. decisiveClaimIds identifies the claims whose conditions, limitations, negations or conflicts must remain visible. Cite only evidenceRef values from this call's evidenceRegistry. Cite every effective engineer-evidence alias in input.selectiveResynthesis.adoptedEvidenceSourceRefIds as a premise with its actual support, limiting or conflicting role. A historical review alias absent from evidenceRegistry remains discussion context and cannot be cited as a current premise. A related document may independently support its own claim; a primary-document premise is not required for every claim. Do not cite availableSourceRefIds or an unregistered reference as if its text had been read. Keep reasoning basis separate from evidence kind: an ENGINEER_STATEMENT reports what the engineer supplied and is not a controlled completion record; a PRIOR_RESULT is prior candidate context, not a new independent fact; a QUERY_RECEIPT supports only its actual checked scope and coverage. Never invent a query receipt or convert an engineer statement into a PDF citation. Unconnected retrieval does not prevent useful assessment of available material. Implementation, disposition and nextActions are not v2 summary fields or mandatory products; an assessment may finish with useful understanding, residual questions and no implementation decision. Attribute manufacturer positions accurately and preserve explicit non-approval; do not transform a source recommendation into a Host decision. findings may be [] with findingCount=0; if present their legacy sourceRefIds must come from input.unifiedSourceContext.sourceRefs, while v2 claims use evidenceRef. All identities and candidate-only flags remain unchanged.`;
-const ORIGINAL_APPLICABILITY_GUIDANCE = 'Read the complete verified originalInput.source.units and coverage, including headings, table cells, exceptions and cross-references. sourceExpressions is deliberately empty: discover source conditions, do not treat every paragraph as an applicability rule. Return only {schemaVersion:"wiselink.3_1.applicability_ast_candidate.v2",unitDispositions:[{unitId,disposition:"CONDITIONS"|"NO_CONDITION"|"UNRESOLVED",conditionIds:[]}],expressions:[{expressionId,sourceRefIds,extractionStatus:"extracted"|"extraction_failed"|"not_supported",expressionAst,original:{quote:{unitId,text},scope:{kind:"document"|"unit"|"unresolved",headingUnitId:string|null,targetUnitIds:[]}}}]}. Include exactly one disposition for each actual original unit. Use CONDITIONS with every local condition ID quoted from that unit; NO_CONDITION only after reading a unit with no applicability condition; UNRESOLVED when unreadable or uncertain. Do not erase a condition with no_rule_found or an invented true/false AST. Each quote is an exact original text passage from its unit payload, not a JSON key, identifier or translation. Copy the unit sourceRefIds exactly. Use the input astVocabulary; retain uninterpretable conditions with extraction_failed or not_supported and null AST. Scope is a proposal grounded in actual headings and target unit IDs: document scope must cite an explicit top-level Effectivity/Applicability heading, with no targetUnitIds; unit scope cites actual target units within the same heading section or the quoted unit itself. Use unresolved when the source does not establish scope, including ambiguous cross-references; do not promote a component condition to whole-document scope. Empty expressions are allowed only with complete reading dispositions and will remain UNKNOWN without document effectivity. Do not output source bindings, aircraft decisions, Fleet facts or Host result metadata. The deterministic caller binds this candidate to the exact Host original; Host validates scope and alone evaluates controlled Fleet facts. Chinese is not required or an engineering authority.';
+const ORIGINAL_APPLICABILITY_GUIDANCE = 'Read the complete verified originalInput.source.units and coverage, including headings, table cells, exceptions and cross-references. sourceExpressions is deliberately empty: discover source conditions, do not treat every paragraph as an applicability rule. Return only {schemaVersion:"wiselink.3_1.applicability_ast_candidate.v2",unitDispositions:[{unitId,disposition:"CONDITIONS"|"NO_CONDITION"|"UNRESOLVED",conditionIds:[]}],expressions:[{expressionId,sourceRefIds,extractionStatus:"extracted"|"extraction_failed"|"not_supported",expressionAst,original:{quote:{unitId,text},scope:{kind:"document"|"unit"|"unresolved",headingUnitId:string|null,targetUnitIds:[]}}}]}. The caller supplies an applicabilityOutputWindow; include exactly one disposition for each original unit in that window, and only expressions quoted from those units. Across all windows every original unit is covered before the caller validates the complete candidate. Use CONDITIONS with every local condition ID quoted from that unit; NO_CONDITION only after reading a unit with no applicability condition; UNRESOLVED when unreadable or uncertain. Do not erase a condition with no_rule_found or an invented true/false AST. Each quote is an exact original text passage from its unit payload, not a JSON key, identifier or translation. Copy the unit sourceRefIds exactly. Use the input astVocabulary; retain uninterpretable conditions with extraction_failed or not_supported and null AST. Scope is a proposal grounded in actual headings and target unit IDs: document scope must cite an explicit top-level Effectivity/Applicability heading, with no targetUnitIds; unit scope cites actual target units within the same heading section or the quoted unit itself. Use unresolved when the source does not establish scope, including ambiguous cross-references; do not promote a component condition to whole-document scope. Empty expressions are allowed only with complete reading dispositions and will remain UNKNOWN without document effectivity. Do not output source bindings, aircraft decisions, Fleet facts or Host result metadata. The deterministic caller binds this candidate to the exact Host original; Host validates scope and alone evaluates controlled Fleet facts. Chinese is not required or an engineering authority.';
 const OUTPUT_GUIDANCE = {
   TRANSLATE:
     'Read the entire document in input.sourceUnits before translating, using its headings, cross-references and rulePack terminology to understand context and keep terminology consistent throughout. This is one whole-document translation, not isolated unit tasks. Return only {translatedUnits:[{index:0,text:"Chinese translation"},...]}, with a zero-based integer index and one complete text for each requested source unit, in the exact input order. Each index must translate its own source text, including a fragment that continues in another unit. Use adjacent units for understanding but never move, merge, duplicate or omit their content across indices. translatedUnits is an array of objects, not XML or an item wrapper. The caller supplies a translationOutputWindow: start at startUnitIndex and stop before endUnitIndexExclusive. End the function arguments at that boundary instead of trying to emit the remaining document. For a short document the window covers the whole input. If even this output cannot fit, finish a non-empty contiguous prefix at a complete source-unit boundary and return valid function arguments before reaching the limit; the caller will ask you to continue in this same native session, retaining the original full document and previous translation. Never shorten the text to fit, omit units, restart the translation or repeat accepted indices. If the caller returns CORRECT_TRANSLATION_UNITS, return exactly those requested indices in order with corrected complete translations using the same original full-document context. The deterministic caller restores unitKey, sourceRefIds, rulePack and taskStartBinding from the unchanged Host input; do not repeat or invent those mechanical fields. Preserve numeric values and occurrence counts, ATA tokens, identifiers (including glued OCR identifiers), part numbers, table structure and warnings. Complete calendar dates may use equivalent Chinese year/month/day notation; preserve the exact date. Do not invent source units, summarize instead of translating, or silently repair OCR tokens.',
@@ -98,6 +102,8 @@ export async function invokeHostedInitialModel(
       ? WISELINK_APPLICABILITY_PROMPT_VERSION
       : 'wiselink-initial-generation@r09.c44';
   const jobAidJson = operation === 'EVALUATE_JOBAID';
+  const originalApplicability = operation === 'EXTRACT_APPLICABILITY' &&
+    modelInput.schemaVersion === 'wiselink.3_1.applicability_task.v3';
   const outputGuidance = operation === 'SYNTHESIZE_OVERALL' && Object.hasOwn(modelInput, 'evidenceRegistry')
     ? OVERALL_READING_GUIDANCE
     : operation === 'EXTRACT_APPLICABILITY' && modelInput.schemaVersion === 'wiselink.3_1.applicability_task.v3'
@@ -119,6 +125,11 @@ export async function invokeHostedInitialModel(
   let translationOutputWindow = operation === 'TRANSLATE'
     ? planTranslationOutputWindow(modelInput, 0)
     : null;
+  let applicabilityOutputWindow = originalApplicability
+    ? planApplicabilityOutputWindow(modelInput, 0)
+    : null;
+  const applicabilityDispositions = [];
+  const applicabilityExpressions = [];
   if (translationOutputWindow) {
     messages.push({
       role: 'user',
@@ -128,24 +139,35 @@ export async function invokeHostedInitialModel(
       }),
     });
   }
+  if (applicabilityOutputWindow) messages.push({
+    role: 'user',
+    content: JSON.stringify({
+      applicabilityOutputWindow,
+      instruction: 'Read the full original document above for context and scope. In this response return dispositions only for the original units from startUnitIndex through endUnitIndexExclusive, plus every condition expression whose quote.unitId belongs to those units. Return all units in that window in exact order. Do not return units outside the window. The caller will assemble and validate the complete candidate before any Host commit.',
+    }),
+  });
   let round = 0;
   let candidateCorrections = 0;
   let inputUnits = 0;
   let outputUnits = 0;
   const timeoutMs = operation === 'TRANSLATE'
     ? Math.min(options.timeoutMs ?? TRANSLATION_MODEL_TIMEOUT_MS, TRANSLATION_MODEL_TIMEOUT_MS)
+    : originalApplicability
+      ? Math.min(options.timeoutMs ?? APPLICABILITY_MODEL_TIMEOUT_MS, APPLICABILITY_MODEL_TIMEOUT_MS)
     : options.timeoutMs ?? 480_000;
   while (true) {
     let remainingMs =
       timeoutMs - (Date.now() - startedAt);
     if (remainingMs <= 0) throw new Error('INITIAL_MODEL_TIMEOUT');
-    if (operation === 'TRANSLATE' || jobAidJson) await options.heartbeat?.();
+    if (operation === 'TRANSLATE' || originalApplicability || jobAidJson) await options.heartbeat?.();
     remainingMs = timeoutMs - (Date.now() - startedAt);
     if (remainingMs <= 0) throw new Error('INITIAL_MODEL_TIMEOUT');
     round += 1;
     inputUnits += Buffer.byteLength(JSON.stringify(messages));
     const responseTimeoutMs = operation === 'TRANSLATE'
       ? Math.min(remainingMs, TRANSLATION_RESPONSE_TIMEOUT_MS)
+      : originalApplicability
+        ? Math.min(remainingMs, APPLICABILITY_RESPONSE_TIMEOUT_MS)
       : remainingMs;
     const signal = AbortSignal.timeout(responseTimeoutMs);
     let response;
@@ -248,6 +270,7 @@ export async function invokeHostedInitialModel(
           translationOutputWindow,
           translationTransport: summarizeTranslationTransport(payload, translationOutputWindow),
         } : {}),
+        ...(applicabilityOutputWindow ? { applicabilityOutputWindow } : {}),
         ...(translationCorrection ? { translationCorrection } : {}),
       },
       round,
@@ -387,9 +410,28 @@ export async function invokeHostedInitialModel(
         continue;
       }
     }
+    if (originalApplicability) {
+      validateApplicabilityWindow(parsed.candidate, modelInput, applicabilityOutputWindow);
+      applicabilityDispositions.push(...parsed.candidate.unitDispositions);
+      applicabilityExpressions.push(...parsed.candidate.expressions);
+      if (applicabilityOutputWindow.endUnitIndexExclusive < modelInput.originalInput.source.units.length) {
+        applicabilityOutputWindow = planApplicabilityOutputWindow(
+          modelInput, applicabilityOutputWindow.endUnitIndexExclusive,
+        );
+        messages = translationExchange(systemMessage, call, {
+          status: 'CONTINUE_APPLICABILITY',
+          applicabilityOutputWindow,
+          instruction: 'Continue reading the same full original document in this native session. Return exactly one disposition for each unit in this window, in order, and every expression quoted from those units. Preserve previously returned windows; do not repeat or revise their units. The caller will validate the complete assembled candidate before any Host commit.',
+        });
+        continue;
+      }
+    }
     const output =
       operation === 'TRANSLATE'
         ? bindWholeDocumentTranslation(modelInput, { translatedUnits })
+        : originalApplicability
+          ? { schemaVersion: 'wiselink.3_1.applicability_ast_candidate.v2',
+            unitDispositions: applicabilityDispositions, expressions: applicabilityExpressions }
         : parsed.candidate;
     if (operation === 'EXTRACT_APPLICABILITY')
       validateApplicabilityAstCandidate(output, modelInput);
@@ -421,6 +463,40 @@ export async function invokeHostedInitialModel(
         },
       },
     };
+  }
+}
+
+function planApplicabilityOutputWindow(input, startUnitIndex) {
+  const units = input.originalInput.source.units;
+  let endUnitIndexExclusive = startUnitIndex;
+  let sourceCharacters = 0;
+  while (endUnitIndexExclusive < units.length) {
+    const nextCharacters = JSON.stringify(units[endUnitIndexExclusive].payload).length;
+    if (endUnitIndexExclusive > startUnitIndex && (
+      endUnitIndexExclusive - startUnitIndex >= APPLICABILITY_RESPONSE_SOURCE_UNITS ||
+      sourceCharacters + nextCharacters > APPLICABILITY_RESPONSE_SOURCE_CHARACTERS
+    )) break;
+    sourceCharacters += nextCharacters;
+    endUnitIndexExclusive += 1;
+  }
+  return { startUnitIndex, endUnitIndexExclusive, totalUnitCount: units.length, sourceCharacters };
+}
+
+function validateApplicabilityWindow(candidate, input, window) {
+  if (!candidate || typeof candidate !== 'object' || Array.isArray(candidate) ||
+    Object.keys(candidate).sort().join(',') !== 'expressions,schemaVersion,unitDispositions' ||
+    candidate.schemaVersion !== 'wiselink.3_1.applicability_ast_candidate.v2' ||
+    !Array.isArray(candidate.unitDispositions) || !Array.isArray(candidate.expressions)) {
+    throw new Error('INITIAL_APPLICABILITY_WINDOW_SHAPE_INVALID');
+  }
+  const units = input.originalInput.source.units.slice(window.startUnitIndex, window.endUnitIndexExclusive);
+  if (candidate.unitDispositions.length !== units.length ||
+    candidate.unitDispositions.some((row, index) => row?.unitId !== units[index].unitId)) {
+    throw new Error('INITIAL_APPLICABILITY_WINDOW_COVERAGE_INVALID');
+  }
+  const unitIds = new Set(units.map((unit) => unit.unitId));
+  if (candidate.expressions.some((expression) => !unitIds.has(expression?.original?.quote?.unitId))) {
+    throw new Error('INITIAL_APPLICABILITY_WINDOW_EXPRESSION_INVALID');
   }
 }
 

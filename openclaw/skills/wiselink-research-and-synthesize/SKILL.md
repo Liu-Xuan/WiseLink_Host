@@ -12,12 +12,14 @@ description: Orchestrate the single official hosted WiseLink engineering profile
 - hosted app：`app_17c3zn24kv2`
 - logical profile：`wiselink-engineering`
 - model policy：`official-hosted-profile-config`（任务可绑定已登记的内置或用户授权自定义模型；仍经唯一官方 Hosted profile/Gateway）
-- Skill：`wiselink-research-and-synthesize@r09.c126`
+- Skill：`wiselink-research-and-synthesize@r09.c127`
 - Skill compatibility：`wiselink-research-and-synthesize@r09`（历史任务最低接受 `r09.c10`，翻译 v2 必须为 `r09.c44` 或更新兼容包）
 - Host MCP：`wiselink-openclaw-engineering-assessment@1.2.0`（保留既有工具，新增语义翻译工作与 JobAid 来源/工作工具）
 - Host 集成提交：以本次发布包清单记录的实际提交为准
 
 c123 依据 Host 实际交付的结构化单元与分页游标，明确区分完整交付和部分交付。独立文件解读不能在全部单元已交付时写成“后续范围未读取”；原文图表等未解读限制仍以 `sourceCoverage.unresolvedRanges` 为准。此次仅修订阅读模型提示和 Skill 版本，不改变 Host 的来源、覆盖状态或保存合同。
+
+c127 针对真实 787 PDF 的适用性模型 `incomplete_result`，把原文 41 单元的候选输出按完整单元窗口分批生成。模型始终保有全文上下文；每窗必须精确覆盖指定单元，全部收齐后才运行原有完整来源和条件校验并提交。窗口失败保留失败，不保存部分候选。
 
 app/profile/Skill/MCP 是执行合同，不是允许模型自报的标签。具体模型由官方托管 profile/config 选择；驱动从唯一
 profile 的 `agents.list[].model` 读取 string 或 `{primary,fallbacks}`，缺少显式 agent model 时才回退
@@ -565,7 +567,7 @@ Interactive Review 的复杂 ResultEnvelope 必须由 `sealResultEnvelope` 生�
 当前 validator 强制：
 
 - `modelVersion` 优先取响应中可读实际模型；绑定任务未回报实际模型时使用 `configured-route:<modelRef>`，旧无绑定任务使用无 fallback 的 configured endpoint。后两者只证明路由，不代表已暴露下游具体模型，也不做具体版本等值判断
-- `skillVersion=wiselink-research-and-synthesize@r09.c126`
+- `skillVersion=wiselink-research-and-synthesize@r09.c127`
 - `toolVersions.wiselink-openclaw-engineering-assessment=1.2.0`
 - `promptVersion` 非空并来自当前运行
 - task/result exact binding、SourceRef allowlist 和 canonical hash 一致

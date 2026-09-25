@@ -706,7 +706,10 @@ export async function runApplicabilityEvaluation({
     }
     await heartbeatAttempt(begin, callTool);
     const execution = normalizeExecution(
-      await extractApplicability(structuredClone(begin.modelInput)),
+      await extractApplicability(structuredClone(begin.modelInput), {
+        heartbeat: () => heartbeatAttempt(begin, callTool),
+        timeoutMs: Math.max(1, Date.parse(begin.task.deadline) - Date.now()),
+      }),
     );
     await heartbeatAttempt(begin, callTool);
     assertApplicabilityPromptVersion(execution.provenance);

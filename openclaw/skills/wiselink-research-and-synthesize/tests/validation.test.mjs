@@ -1376,7 +1376,7 @@ test('requires 35 MCP capabilities, six review tools, and hosted provenance', ()
   assert.ok(HOST_MCP_TOOLS.includes('commit_applicability_candidate'));
   assert.equal(
     WISELINK_SKILL_VERSION,
-    'wiselink-research-and-synthesize@r09.c126',
+    'wiselink-research-and-synthesize@r09.c127',
   );
   assert.equal(
     WISELINK_SKILL_COMPATIBILITY_REF,
@@ -7674,6 +7674,57 @@ test('official model adapter chooses original discovery guidance and returns nat
   }});
   assert.equal(calls,1);
   assert.deepEqual(result.output,output);
+});
+
+test('original applicability collects bounded output windows before validating one complete candidate',async()=>{
+  const {input,output}=await originalApplicabilityPair();
+  for(let index=0;index<17;index++){
+    const unit={unitId:`extra-${index}`,kind:'heading',payload:{text:`Background ${index}`,level:1},sourceRefIds:[`ref-extra-${index}`]};
+    input.originalInput.source.units.push(unit);
+    input.sourceContext.push({unitId:unit.unitId,kind:unit.kind,sourceText:JSON.stringify(unit.payload),sourceRefIds:unit.sourceRefIds});
+    output.unitDispositions.push({unitId:unit.unitId,disposition:'NO_CONDITION',conditionIds:[]});
+  }
+  const windows=[];
+  let heartbeats=0;
+  const result=await invokeInitialWithTransport({operation:'EXTRACT_APPLICABILITY',modelInput:input},{
+    gatewayChatCompletionsEnabled:true,gatewayUrl:'https://official.invalid',gatewayToken:'fixture-only',
+    configuredModelVersion:'m3probe/minimax-m3',sessionDiscriminator:'window-fixture',
+    executionModel:modelSelection('m3probe/minimax-m3'),registeredModelRefs:['m3probe/minimax-m3'],
+    heartbeat:async()=>{heartbeats++;},
+  },{requestGateway:async(_url,init)=>{
+    const request=JSON.parse(init.body);
+    const window=JSON.parse(request.messages.at(-1).content).applicabilityOutputWindow;
+    windows.push(window);
+    if(windows.length===1) assert.deepEqual(JSON.parse(request.messages[1].content),input);
+    else assert.equal(request.messages.length,3);
+    const ids=new Set(input.originalInput.source.units.slice(window.startUnitIndex,window.endUnitIndexExclusive).map(unit=>unit.unitId));
+    return Response.json({choices:[{message:{content:null,tool_calls:[{id:`window-${windows.length}`,type:'function',
+      function:{name:'return_wiselink_initial_candidate',arguments:JSON.stringify({candidate:{
+        schemaVersion:output.schemaVersion,
+        unitDispositions:output.unitDispositions.filter(row=>ids.has(row.unitId)),
+        expressions:output.expressions.filter(expression=>ids.has(expression.original.quote.unitId)),
+      }})}}]}}]});
+  }});
+  assert.equal(windows.length,3);
+  assert.equal(heartbeats,3);
+  assert.deepEqual(windows.map(window=>[window.startUnitIndex,window.endUnitIndexExclusive]),[[0,8],[8,16],[16,20]]);
+  assert.deepEqual(result.output,output);
+});
+
+test('original applicability rejects a missing window unit before advancing',async()=>{
+  const {input,output}=await originalApplicabilityPair();
+  let calls=0;
+  await assert.rejects(invokeInitialWithTransport({operation:'EXTRACT_APPLICABILITY',modelInput:input},{
+    gatewayChatCompletionsEnabled:true,gatewayUrl:'https://official.invalid',gatewayToken:'fixture-only',
+    configuredModelVersion:'m3probe/minimax-m3',sessionDiscriminator:'missing-window-fixture',
+    executionModel:modelSelection('m3probe/minimax-m3'),registeredModelRefs:['m3probe/minimax-m3'],
+  },{requestGateway:async()=>{
+    calls++;
+    return Response.json({choices:[{message:{content:null,tool_calls:[{id:'missing-unit',type:'function',
+      function:{name:'return_wiselink_initial_candidate',arguments:JSON.stringify({candidate:{...output,
+        unitDispositions:output.unitDispositions.slice(0,-1)}})}}]}}]});
+  }}),/INITIAL_APPLICABILITY_WINDOW_COVERAGE_INVALID/u);
+  assert.equal(calls,1);
 });
 
 // This synthetic surface preserves the exact deployed read_matter_current_work contract.
