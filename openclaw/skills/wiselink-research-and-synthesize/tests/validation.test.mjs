@@ -1376,7 +1376,7 @@ test('requires 35 MCP capabilities, six review tools, and hosted provenance', ()
   assert.ok(HOST_MCP_TOOLS.includes('commit_applicability_candidate'));
   assert.equal(
     WISELINK_SKILL_VERSION,
-    'wiselink-research-and-synthesize@r09.c129',
+    'wiselink-research-and-synthesize@r09.c130',
   );
   assert.equal(
     WISELINK_SKILL_COMPATIBILITY_REF,
@@ -7676,6 +7676,35 @@ test('official model adapter chooses original discovery guidance and returns nat
   assert.deepEqual(result.output,output);
 });
 
+test('original applicability rejects a malformed AST window and accepts only a model-corrected replacement',async()=>{
+  const {input,output}=await originalApplicabilityPair();
+  const malformed=structuredClone(output);
+  malformed.expressions[0].expressionAst={op:'eq',property:'model',value:'B737-8'};
+  malformed.expressions[0].original.quote.text=737;
+  let calls=0;
+  const rejections=[];
+  const result=await invokeInitialWithTransport({operation:'EXTRACT_APPLICABILITY',modelInput:input},{
+    gatewayChatCompletionsEnabled:true,gatewayUrl:'https://official.invalid',gatewayToken:'fixture-only',
+    configuredModelVersion:'m3probe/minimax-m3',sessionDiscriminator:'ast-correction-fixture',
+    executionModel:modelSelection('m3probe/minimax-m3'),registeredModelRefs:['m3probe/minimax-m3'],
+    observeCandidateRejection:async rejection=>rejections.push(rejection),
+  },{requestGateway:async(_url,init)=>{
+    calls++;
+    const request=JSON.parse(init.body);
+    if(calls===2){
+      assert.equal(request.messages.length,3);
+      const feedback=JSON.parse(request.messages.at(-1).content);
+      assert.equal(feedback.status,'CORRECT_APPLICABILITY_WINDOW');
+      assert.equal(feedback.validationError,'APPLICABILITY_AST_TYPE_REQUIRED');
+    }
+    return Response.json({choices:[{message:{content:null,tool_calls:[{id:`ast-round-${calls}`,type:'function',
+      function:{name:'return_wiselink_initial_candidate',arguments:JSON.stringify({candidate:calls===1?malformed:output})}}]}}]});
+  }});
+  assert.equal(calls,2);
+  assert.equal(rejections.length,1);
+  assert.deepEqual(result.output,output);
+});
+
 test('original applicability collects bounded output windows before validating one complete candidate',async()=>{
   const {input,output}=await originalApplicabilityPair();
   for(let index=0;index<17;index++){
@@ -7715,7 +7744,7 @@ test('original applicability collects bounded output windows before validating o
   assert.deepEqual(result.output,output);
 });
 
-test('original applicability rejects a noncontiguous window before advancing',async()=>{
+test('original applicability rejects a noncontiguous window after bounded corrections',async()=>{
   const {input,output}=await originalApplicabilityPair();
   let calls=0;
   await assert.rejects(invokeInitialWithTransport({operation:'EXTRACT_APPLICABILITY',modelInput:input},{
@@ -7728,7 +7757,7 @@ test('original applicability rejects a noncontiguous window before advancing',as
       function:{name:'return_wiselink_initial_candidate',arguments:JSON.stringify({candidate:{...output,
         unitDispositions:[output.unitDispositions[0],output.unitDispositions[2]]}})}}]}}]});
   }}),/INITIAL_APPLICABILITY_WINDOW_COVERAGE_INVALID/u);
-  assert.equal(calls,1);
+  assert.equal(calls,5);
 });
 
 test('original applicability never treats an empty-string expression list as a resolved condition',async()=>{
