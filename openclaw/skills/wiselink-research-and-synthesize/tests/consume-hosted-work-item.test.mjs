@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import { createHash } from 'node:crypto';
 import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -22,6 +23,95 @@ async function options(t) {
   t.after(() => rm(checkpointRoot, { recursive: true, force: true }));
   return { workItemId: 'WI-new', checkpointRoot, applicabilityContextRef: 'AC-authorized', maxInitialStages: 1 };
 }
+
+test('automatic retry uses a new request for the failed Overall stage and keeps saved JobAid', async t => {
+  const input = await options(t);
+  const attemptRef = 'AQ-overall-failed';
+  const requestId = `auto-retry-${createHash('sha256')
+    .update(`WI-new:DV-new:overall:${attemptRef}`).digest('hex').slice(0, 32)}`;
+  const failed = status({
+    status: 'FAILED', nextOperation: null,
+    stages: {
+      translation: { status: 'PENDING' },
+      applicability: { status: 'WAITING_INPUT' },
+      jobAid: { status: 'SUCCEEDED' },
+      overall: { status: 'FAILED', attemptStatus: 'FAILED', attemptRef,
+        requestId: 'original-1', terminalCode: 'ACTION_ATTEMPT_INITIAL_PREPARATION_FAILED' },
+    },
+  });
+  let saved = false;
+  const result = await consumeHostedWorkItem({
+    ...input,
+    initialStageOnly: true,
+    maxInitialStages: 1,
+    autoRetry: { operation: 'SYNTHESIZE_OVERALL', attemptRef, requestId },
+  }, {
+    callTool: async name => {
+      assert.equal(name, 'get_parse_status');
+      return saved ? status({ ...failed.initialAnalysis, status: 'SUCCEEDED',
+        stages: { ...failed.initialAnalysis.stages, overall: { status: 'SUCCEEDED' } } }) : failed;
+    },
+    runInitial: async run => {
+      assert.equal(run.operation, 'SYNTHESIZE_OVERALL');
+      assert.equal(run.continuationRequestId, requestId);
+      saved = true;
+      return { outcome: 'CANDIDATE_ONLY' };
+    },
+  });
+  assert.equal(result.status, 'INITIAL_STAGE_SAVED');
+  assert.equal(result.operation, 'SYNTHESIZE_OVERALL');
+});
+
+test('automatic retry rejects changed Host attempt before any model work', async t => {
+  const input = await options(t);
+  await assert.rejects(consumeHostedWorkItem({
+    ...input,
+    autoRetry: { operation: 'SYNTHESIZE_OVERALL', attemptRef: 'AQ-old',
+      requestId: 'auto-retry-wrong' },
+  }, {
+    callTool: async () => status({ status: 'FAILED', nextOperation: null,
+      stages: { translation: { status: 'PENDING' },
+        applicability: { status: 'WAITING_INPUT' }, jobAid: { status: 'SUCCEEDED' },
+        overall: { status: 'FAILED', attemptStatus: 'CANCELLED',
+          attemptRef: 'AQ-new', requestId: 'original-1' } } }),
+    runInitial: async () => assert.fail('changed attempt must not start'),
+  }), /AUTO_WORK_ITEM_RETRY_STATUS_CHANGED/u);
+});
+
+test('second continuation rechecks saved progress through the exact Host attempt', async t => {
+  const input = await options(t);
+  const attemptRef = 'AQ-FIRST-RETRY';
+  const requestId = `auto-resume-2-${createHash('sha256')
+    .update(`WI-new:DV-new:jobAid:${attemptRef}`).digest('hex').slice(0, 32)}`;
+  const failed = status({ status: 'FAILED', nextOperation: null,
+    stages: { translation: { status: 'SUCCEEDED' },
+      applicability: { status: 'WAITING_INPUT' },
+      jobAid: { status: 'FAILED', attemptStatus: 'CANCELLED', attemptRef,
+        requestId: `auto-retry-${'b'.repeat(32)}`, terminalCode: 'CANCELLED_BY_REQUEST' },
+      overall: { status: 'PENDING' } } });
+  let started = false;
+  const result = await consumeHostedWorkItem({ ...input, initialStageOnly: true,
+    autoRetry: { operation: 'EVALUATE_JOBAID', attemptRef, requestId } }, {
+    callTool: async (name, args) => {
+      if (name === 'get_parse_status') return failed;
+      assert.equal(name, 'read_assessment_work');
+      assert.deepEqual(args, { attemptRef, workItemId: 'WI-new' });
+      return { schemaVersion: 'wiselink.jobaid-work-read.v2',
+        executionStatus: 'CANCELLED', attemptId: 'ATT-FIRST-RETRY',
+        inputWorkRevision: 1,
+        revision: { actionAttemptId: 'ATT-FIRST-RETRY', workRevision: 2,
+          workItemId: 'WI-new', documentVersionId: 'DV-new',
+          basedOnWorkItemRevision: 2 } };
+    },
+    runInitial: async run => {
+      assert.equal(run.continuationRequestId, requestId);
+      started = true;
+      return { outcome: 'CANDIDATE_ONLY' };
+    },
+  });
+  assert.equal(started, true);
+  assert.equal(result.operation, 'EVALUATE_JOBAID');
+});
 
 test('CLI stage limit accepts only one WorkItem initial stage', () => {
   assert.deepEqual(initialStageLimit([], 'WI-new'), {});

@@ -26,6 +26,7 @@ test('bounded initial continuation sends an issue index while Host work and sour
     workRevisionRef: 'JAWR-prior', workRevision: 3,
     content: { schemaVersion: 'wiselink.jobaid-problem-work.v3', headline: '当前认识',
       listBrief: '仍待核对最终措施', roundCompletion: 'IN_PROGRESS',
+      readSourceRefs: ['SOURCE-ALREADY-READ'],
       issues: [{ issueKey: 'issue-1', question: '最终措施是什么？', body: '长篇既有正文'.repeat(10000),
         openQuestions: [{ question: '是否有正式计划？', nextEvidence: 'Final Action', affects: '实施时点' }] }],
     },
@@ -38,9 +39,13 @@ test('bounded initial continuation sends an issue index while Host work and sour
   assert.equal(projected.previousWork.workRevisionRef, 'JAWR-prior');
   assert.equal(projected.previousWork.projectionKind, 'HOST_SAVED_ISSUE_INDEX');
   assert.equal(projected.previousWork.omittedIssueBodiesRetainedByHost, true);
+  assert.deepEqual(projected.previousWork.content.readSourceRefs, ['SOURCE-ALREADY-READ']);
   assert.deepEqual(projected.previousWork.content.issues, [{ issueKey: 'issue-1',
     question: '最终措施是什么？', openQuestions: [{ question: '是否有正式计划？', nextEvidence: 'Final Action' }] }]);
   assert.ok(JSON.stringify(projected).length < JSON.stringify(input).length / 4);
+  input.previousWork.content.issues[0].body = '已保存的触发条件与措施限制。';
+  assert.equal(projectBoundedInitialJobAidInput(input).previousWork.content.issues[0].body,
+    '已保存的触发条件与措施限制。');
 });
 
 test('explicit revisit conditions preserve both discriminated forms without leaking unknown values', async () => {
@@ -335,7 +340,10 @@ test('a completed text-only correction resumes from its durable response and pre
   const corrected = structuredClone(invalid);
   corrected.issues[0].riskScenarios[0].likelihood = null;
   const f = fixture([{ action: 'SAVE_WORK', work: invalid }, { action: 'SAVE_WORK', work: corrected }, { action: 'FINISH' }],
-    { assessmentCheckpoint: checkpoint });
+    { assessmentCheckpoint: checkpoint,
+      executionModel: { modelRef: 'm3probe/minimax-m3', displayName: 'M3 Probe Large',
+        providerKind: 'CUSTOM', settingsRevision: 1, selectedAt: '2026-09-25T00:00:00.000Z' },
+      registeredModelRefs: ['m3probe/minimax-m3'] });
   const save = f.options.saveAssessmentWork;
   let saves = 0;
   f.options.saveAssessmentWork = async args => {
@@ -361,6 +369,7 @@ test('a completed text-only correction resumes from its durable response and pre
   await f.run(input);
   assert.deepEqual(await checkpoint.readOptional('assessment-round-2.result'), recorded);
   assert.equal(generations, 4, 'completed text-only response is reused, not generated again');
+  assert.ok(f.calls.every(call => call.tool_choice === 'auto'));
   assert.equal(saves, 2, 'the original rejected SAVE is not repeated');
   assert.equal(f.reads.length, 0);
   const rejection = JSON.parse(f.calls[1].messages.at(-1).content);
@@ -1231,6 +1240,7 @@ test('scoped Matter overview correction saves only synthesis and may retain an i
   assert.deepEqual(JSON.parse(f.saves[0].workJson), work);
   assert.match(f.calls[0].messages[0].content, /综合更正/);
   assert.equal(f.calls[0].max_completion_tokens, undefined);
+  assert.ok(f.calls.every(call => call.tool_choice === 'auto'));
 });
 
 

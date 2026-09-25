@@ -76,9 +76,10 @@ node <installed-skill-path>/scripts/consume-hosted-work-item.mjs --auto-queue
 消费者保留旧 claim 和所有阶段 checkpoint 并停止本轮，不把另一条待办交给模型。未知模型或提交结果也按既有 checkpoint
 恢复规则停止，不重放不确定步骤。
 
-只有 Host fresh-read 满足初始分析完成条件（含 JobAid 和 Overall 成功）时才 ACK。Host fresh-read 确认终态
-FAILED/CONFLICT 时消费者才提交带当前租约的 block 请求；其他 consumer attention 不 ACK、不 block、不自动重试，
-保留 claim 交给运维处理。Host 的 enrollment、身份、来源权限、当前原件、状态 CAS 和正式采用仍是权威；模型结果
+只有 Host fresh-read 满足初始分析完成条件（含 JobAid 和 Overall 成功）时才 ACK。c145 对已确认取消、超时或准备失败的
+JobAid/Overall 尝试最多发起一次新的幂等请求，继续使用 Host 已保存工作；原文版本、尝试身份和活动租约仍需实时核对。
+再次失败或其他无法安全接续的状态不 ACK、不自动 BLOCK，保留 claim 和已保存工作供诊断。旧版留下的未确认 BLOCK 意图
+也不会重发。Host 的 enrollment、身份、来源权限、当前原件、状态 CAS 和正式采用仍是权威；模型结果
 不能选择队列事项或自动确认工程结论。
 
 自动队列与 `--work-item-id` 静态入口互斥。升级并启用前继续用既有静态 job 验收；启用后保留一个不重叠的原生队列

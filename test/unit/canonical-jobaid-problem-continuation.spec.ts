@@ -44,6 +44,27 @@ const scope = {
 };
 
 describe('JobAid continuation requests', () => {
+  it('reads the exact attempt identity and starting revision for bounded recovery', async () => {
+    const h = harness();
+    h.work.listForRuntime.mockResolvedValue([{
+      ...savedWork(), actionAttemptId: 'ATT-PRIOR',
+    }]);
+    const started = await h.service.begin(h.current(), scope, 'INITIAL_PROBLEM_ASSESSMENT');
+    h.work.listForRuntime.mockResolvedValue([{
+      ...savedWork(), actionAttemptId: 'ATT-CONTINUATION-1',
+      workRevisionRef: 'JAWR-PERSISTED-4', workRevision: 4,
+      previousWorkRevisionRef: savedWork().workRevisionRef,
+    }, savedWork()]);
+    const read = await h.service.readAttemptWork(started.attemptRef, undefined,
+      scope.workItemId);
+    expect(read).toMatchObject({
+      schemaVersion: 'wiselink.jobaid-work-read.v2',
+      attemptId: 'ATT-CONTINUATION-1', inputWorkRevision: 3,
+      revision: { actionAttemptId: 'ATT-CONTINUATION-1', workRevision: 4 },
+      executionStatus: 'RUNNING',
+    });
+  });
+
   it('prepares all pages with one plan and independently revalidates before returning the task', async () => {
     const h = harness();
     const loaded = await h.originalReader.readDocumentOriginal();
@@ -805,6 +826,13 @@ function harness(knowledge?: { binding: jest.Mock }, initialAilySessionId?: stri
     hasActiveOfficialActorMapping: jest.fn(async () => true),
   };
   const attempts = {
+    readScoped: jest.fn(async (input: {attemptRef:string}) => {
+      const row = rows.get(input.attemptRef)!;
+      const envelope = task(input.attemptRef);
+      return { ...row, attemptId: envelope.actionAttemptId,
+        tenantId: envelope.tenantId, workItemId: envelope.workItemId,
+        actionType: envelope.taskType };
+    }),
     readScopedById: jest.fn(async (input: {attemptId:string}) => {
       const row = [...rows.values()].find((item) =>
         parseTaskEnvelope(item.taskEnvelopeJson!).actionAttemptId === input.attemptId);
@@ -898,7 +926,7 @@ function harness(knowledge?: { binding: jest.Mock }, initialAilySessionId?: stri
   const service = new CanonicalJobAidProblemService(
     registrar as never,
     artifactStore as never,
-    {} as never,
+    { authorizeOpenClawAttempt: jest.fn(async () => scope) } as never,
     {} as never,
     {} as never,
     attempts as never,

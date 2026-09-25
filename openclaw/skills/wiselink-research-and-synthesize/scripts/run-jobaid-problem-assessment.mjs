@@ -146,7 +146,7 @@ export function projectJobAidModelInput(input) {
   };
 }
 
-/** Keep the Host's full revision, but send only its issue index during bounded initial source work. */
+/** Keep the Host's full revision; carry short saved issue bodies into each bounded continuation. */
 export function projectBoundedInitialJobAidInput(input) {
   const projected = projectJobAidModelInput(input);
   const previous = projected.previousWork;
@@ -163,9 +163,12 @@ export function projectBoundedInitialJobAidInput(input) {
         listBrief: previous.content.listBrief,
         roundCompletion: previous.content.roundCompletion,
         completionReason: previous.content.completionReason,
+        readSourceRefs: previous.content.readSourceRefs ?? [],
         issues: previous.content.issues.map(issue => ({
           issueKey: issue.issueKey,
           question: issue.question,
+          ...(typeof issue.body === 'string' && issue.body.length <= 4000
+            ? { body: issue.body } : {}),
           openQuestions: (issue.openQuestions ?? []).map(item => ({
             question: item.question,
             nextEvidence: item.nextEvidence,
@@ -228,6 +231,7 @@ function projectSavedJobAidWorkContent(content) {
     completionReason: content.completionReason,
     changeSummary: content.changeSummary,
     unchangedExplanation: content.unchangedExplanation,
+    readSourceRefs: content.readSourceRefs,
     issues: content.issues.map(issue => {
       const { issueRef: _issueRef, sourceDependencies: _sourceDependencies,
         premiseRefs: _premiseRefs, legacyCriterionRefs: _legacyCriterionRefs,
@@ -334,7 +338,13 @@ export async function invokeHostedJobAidProblemModel(
     !options.sessionDiscriminator
   )
     throw new Error('JOBAID_PROBLEM_RUNTIME_CAPABILITY_REQUIRED');
-  const toolChoice = { type: 'function', function: { name: FUNCTION } };
+  // The custom M3 Probe route can return a completed text response instead of
+  // the named function. Its gateway rejects that response as HTTP 502 when
+  // the function is forced, so allow the existing bounded text correction to
+  // request the exact function step without losing the model's first response.
+  const toolChoice = options.executionModel?.modelRef === 'm3probe/minimax-m3'
+    ? 'auto'
+    : { type: 'function', function: { name: FUNCTION } };
   let startedAt = Date.now();
   const timeoutMs = options.timeoutMs ?? 30 * 60_000;
   const boundedInitialJobAid = operation === 'EVALUATE_JOBAID' &&
@@ -346,7 +356,7 @@ export async function invokeHostedJobAidProblemModel(
     systemMessage.content += '\n本轮是明确指定的工程事项综合更正。以 overviewCorrection.expectedWorkRef 对应的 previousWork 为准确基线，按 correctionReason 核对已保存的全部问题、当前综合及完成说明。问题正文只是比较语境，不自动重新认证为原文。只使用 overviewCorrection.evidenceRefs 所指本轮已交付证据作新综合的引用；缺少决定性依据时保留限制。新的 overview 面向工程师，用简短段落给出主要判断、决定性条件、下一步或尚缺资料；过程与展开的论证留在问题正文和依据中，关键限制仍须在综合里说清。SAVE_WORK 只提交一个完整的综合更正：issues:[]、新的 overview、completionReason、changeSummary，roundCompletion 与 previousWork.content 相同；不得提交问题正文、摘要或其他工作字段。即使旧综合标记 STALE，也要实际核对后形成综合，不把状态本身当作结论。保存回执后 FINISH；本轮不作正式采用。';
   }
   if (boundedInitialJobAid) {
-    systemMessage.content += `\n本次初始 JobAid 执行按可核验批次推进：每次 SAVE_WORK 前最多执行 ${INITIAL_JOBAID_READS_PER_SAVE} 个 READ_SOURCES 动作，每个动作最多 ${INITIAL_JOBAID_SOURCE_REFS_PER_READ} 个 sourceRefs。READ_SOURCES 的每个 sourceRef 必须逐字复制 availableSources[].ref；不能从 sourceRefId、页码或解析单元编号自行拼接。首次保存工程问题前先成功读取原文，不能将来源读取失败写成工程结论。previousWork 在模型输入中仅展示 Host 已保存问题的目录，正文仍由 Host 完整保留；目录不是重新核验的原文，不能据此声称已复核被省略的问题正文。每批只提交有新原文支持的改动，未变问题由 Host 保留；保存后读回精确修订，后续批次继续。保存有价值的完整增量时用 IN_PROGRESS 或 COMPLETE_WITH_OPEN_QUESTIONS，并保留未读范围；不要声称未读来源已经核验。必要原文已覆盖、问题已保存时，先检查 headline、listBrief、changeSummary 是否仍把已读章节说成未交付；如有过期表述，提交 issues:[] 的简短概览修订，保留 Host 已保存的问题正文。方法资料只在影响当前判断时补读，不为凑齐目录而延长执行。完成必要原文覆盖与概览一致性检查后 FINISH；未连接的外部资料列为待确认，不阻止候选阶段结束。`;
+    systemMessage.content += `\n本次初始 JobAid 执行按可核验批次推进：每次 SAVE_WORK 前最多执行 ${INITIAL_JOBAID_READS_PER_SAVE} 个 READ_SOURCES 动作，每个动作最多 ${INITIAL_JOBAID_SOURCE_REFS_PER_READ} 个 sourceRefs。READ_SOURCES 的每个 sourceRef 必须逐字复制 availableSources[].ref；不能从 sourceRefId、页码或解析单元编号自行拼接。首次保存工程问题前先成功读取原文，不能将来源读取失败写成工程结论。previousWork 展示 Host 已保存的问题目录和较短正文；省略的正文仍由 Host 完整保留。readSourceRefs 表示已保存的来源读取记录，不等于本会话已重新取得原文。优先继续未完成的问题和决定性未读来源，不因新会话重读已保存的同一批，也不重写未变问题。每批只提交有新原文支持的改动，保存后读回精确修订。headline 和 listBrief 必须写工程问题、措施、当前判断及关键限制，不能写“本批已读”“u10—u13”或工作修订号等过程日志；过程留在 changeSummary。保存有价值的完整增量时用 IN_PROGRESS 或 COMPLETE_WITH_OPEN_QUESTIONS，并说明尚未完成范围；不要声称未读来源已经核验。必要原文已覆盖、问题已保存时，检查概览与正文一致；如有过期表述，提交 issues:[] 的简短概览修订。方法资料只在影响当前判断时补读，不为凑齐目录而延长执行。完成必要原文覆盖与概览一致性检查后 FINISH；未连接的外部资料列为待确认，不阻止候选阶段结束。`;
   }
   const projectForModel = boundedInitialJobAid
     ? projectBoundedInitialJobAidInput
@@ -361,7 +371,8 @@ export async function invokeHostedJobAidProblemModel(
   let expectedWorkRevision = modelInput.expectedWorkRevision;
   let sessionWorkRevision = modelInput.expectedWorkRevision;
   let readsSinceSave = 0;
-  let savedReadSourceRefs = [];
+  let savedReadSourceRefs = Array.isArray(modelInput.previousWork?.content?.readSourceRefs)
+    ? [...modelInput.previousWork.content.readSourceRefs] : [];
   let nativeSessionSegment = 0;
   let forceSaveBeforeRead = false;
   // Host accepts a prior attempt's completed work only for Overall consistency.
@@ -935,7 +946,7 @@ export async function invokeHostedJobAidProblemModel(
         workRevision: saved.workRevision,
         roundCompletion: saved.roundCompletion,
         readSourceRefs: savedReadSourceRefs,
-        instruction: `这是同一 Host attempt 在确认保存后的续段。previousWork 是刚读回工作修订的精确问题目录；完整正文由 Host 保留，但没有送入本模型回合，不能声称已重新核验省略正文。继续检查未覆盖范围并保留已有问题；本条 readSourceRefs 只证明先前已保存的来源读取，不是本新会话中可直接引用的正文。若新判断需要原文，先用 READ_SOURCES；每次只读一个不超过 ${INITIAL_JOBAID_SOURCE_REFS_PER_READ} refs 的批次，再保存一项完整且简洁的增量，不重写未变化的问题。不得重放先前 SAVE_WORK。`,
+        instruction: `这是同一 Host attempt 在确认保存后的续段。previousWork 包含刚读回的准确问题目录及较短正文；完整工作由 Host 保留。继续检查未覆盖范围并保留已有问题；readSourceRefs 只证明先前已保存的来源读取，不是本新会话中可直接引用的原文。若新判断需要原文，先用 READ_SOURCES；每次只读一个不超过 ${INITIAL_JOBAID_SOURCE_REFS_PER_READ} refs 的批次，再保存一项完整且简洁的增量，不重写未变化的问题。headline 和 listBrief 只写工程认识，过程放在 changeSummary。不得重放先前 SAVE_WORK。`,
       }) },
     ] : [
       systemMessage,

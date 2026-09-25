@@ -12,11 +12,14 @@ description: Orchestrate the single official hosted WiseLink engineering profile
 - hosted app：`app_17c3zn24kv2`
 - logical profile：`wiselink-engineering`
 - model policy：`official-hosted-profile-config`（任务可绑定已登记的内置或用户授权自定义模型；仍经唯一官方 Hosted profile/Gateway）
-- Skill：`wiselink-research-and-synthesize@r09.c144`
+- Skill：`wiselink-research-and-synthesize@r09.c147`
 - Skill compatibility：`wiselink-research-and-synthesize@r09`（历史任务最低接受 `r09.c10`，翻译 v2 必须为 `r09.c44` 或更新兼容包）
 - Host MCP：`wiselink-openclaw-engineering-assessment@1.2.0`（保留既有工具，新增语义翻译工作与 JobAid 来源/工作工具）
 - Host 集成提交：以本次发布包清单记录的实际提交为准
 
+c145 在自动队列中对取消、超时和准备失败的 JobAid/Overall 尝试生成至多一次新请求；复用 Host 已保存工作，核对原文版本与尝试身份。失败仍需关注，运行故障不再自动 BLOCK 正常文档。
+c146 对 M3 Probe Large 的 JobAid/Overall 使用自动工具选择，允许既有有界协议校正处理完整纯文本回应；保存仍须经过结构、来源、工作版本与 Host 校验。
+c147 仅在首次自动重试确实保存新工作且 Host 身份、版本和来源仍一致时，再允许一个有界后继；短正文和已读来源随工作修订接续，默认摘要聚焦工程认识。
 c137 修复同一 JobAid 执行中更正次数归零后检查点重名的问题；取消的执行转为人工关注，不自动将队列任务标为业务终态失败。
 c138 在初始 JobAid 读取前核对模型所选来源是否属于确切目录，指出可核对的同单元候选；原文尚未成功送达时拒绝保存仅描述流程状态的问题。
 c139 将初始 JobAid 每次原文读取限制为四个精确引用，随后仅保存一个完整问题或一组小范围相关问题。
@@ -108,7 +111,7 @@ Host 新任务若为 `wiselink.jobaid-problem-task.v2`，执行问题分析协�
 该状态来自现有 projection 与 ActionAttempt，
 不是消费者另建业务状态机。独立资料读取可有限并行；依赖分析与同一 WorkItem 的 CAS 写回保持有序。
 页面显式接续产生新的 Host requestId。阶段带 requestId 时，消费者将其原样传入相应 begin，并使用 requests/requestId 下的独立检查点；不能用旧失败检查点代替新请求，也不能为同一终态请求重新生成。
-`NOT_READY/BUSY` 不调用模型，失败阶段不自动重试，未知结果停止并报告。启用英文评估路径后，Host 可保留翻译失败并继续已授权的其他初始阶段；消费者只执行 Host 新读回的 nextOperation。普通 applicability 的
+`NOT_READY/BUSY` 不调用模型；普通失败不重放同一请求，未知结果停止并报告。自动队列对确切取消、超时或准备失败的 JobAid/Overall 可发起至多一次新请求，见下节。启用英文评估路径后，Host 可保留翻译失败并继续已授权的其他初始阶段；消费者只执行 Host 新读回的 nextOperation。普通 applicability 的
 `WAITING_INPUT` 保持缺口，可继续 Host 指定的 JobAid/Overall；它不自动启动 P0B 重算。
 新 Host 未提供该字段时统一入口明确停止，原有单 operation 与 Review 入口仍兼容。
 运行范围只取已授权的 `--work-item-id`；新事项尚无 applicability context 时使用与 Host 配置一致的
@@ -124,7 +127,7 @@ checkpoint；模型和业务工具仍复用现有消费者、官方 Gateway、�
 
 租约过期后仅发送之前 checkpoint 的精确 `resumeWorkItemId`。Host 不返回同一事项时，本地 claim 与阶段 checkpoint
 全部保留并返回 `REQUIRES_ATTENTION`；绝不接着消费其他排队项。消费者只在 Host fresh status 确认初始 JobAid 和
-Overall 完成后 ACK；Host fresh status 确认终态失败后才调用 lease-fenced block。模型结果不决定发现、续领或正式采用。
+Overall 完成后 ACK。c145 对取消、超时或准备失败的 JobAid/Overall，按旧 attempt 与确切原文版本派生稳定的新请求，最多接续一次；再次失败或授权/版本变化则保留成果并报告关注。运行故障不再自动 BLOCK 文档；既有未确认 BLOCK 意图也不重发。模型结果不决定发现、续领或正式采用。
 静态 `--work-item-id`、Matter 和 DocumentVersion 命令仍使用原入口，不与 `--auto-queue` 混用。
 
 ### 共同背景（兼容增量）
@@ -590,7 +593,7 @@ Interactive Review 的复杂 ResultEnvelope 必须由 `sealResultEnvelope` 生�
 当前 validator 强制：
 
 - `modelVersion` 优先取响应中可读实际模型；绑定任务未回报实际模型时使用 `configured-route:<modelRef>`，旧无绑定任务使用无 fallback 的 configured endpoint。后两者只证明路由，不代表已暴露下游具体模型，也不做具体版本等值判断
-- `skillVersion=wiselink-research-and-synthesize@r09.c144`
+- `skillVersion=wiselink-research-and-synthesize@r09.c147`
 - `toolVersions.wiselink-openclaw-engineering-assessment=1.2.0`
 - `promptVersion` 非空并来自当前运行
 - task/result exact binding、SourceRef allowlist 和 canonical hash 一致
