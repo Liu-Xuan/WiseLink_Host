@@ -1376,7 +1376,7 @@ test('requires 35 MCP capabilities, six review tools, and hosted provenance', ()
   assert.ok(HOST_MCP_TOOLS.includes('commit_applicability_candidate'));
   assert.equal(
     WISELINK_SKILL_VERSION,
-    'wiselink-research-and-synthesize@r09.c125',
+    'wiselink-research-and-synthesize@r09.c126',
   );
   assert.equal(
     WISELINK_SKILL_COMPATIBILITY_REF,
@@ -7620,6 +7620,16 @@ test('native v3 candidate preserves exact original and controlled Host bindings'
   assert.deepEqual(candidate.unitDispositions,output.unitDispositions);
   output.expressions[0].original.quote.text='mutated';
   assert.equal(candidate.expressions[0].original.quote.text,'Applicable to model B737-8.');
+});
+
+test('native v3 accepts JSONB key reordering but rejects ambiguous or changed original context',async()=>{
+  const {input,output}=await originalApplicabilityPair();
+  input.originalInput.source.units[0].payload={level:1,text:'Effectivity'};
+  assert.doesNotThrow(()=>validatePayload('applicability-pair',{input,output}));
+  input.sourceContext[0].sourceText='{"text":"Effectivity","text":"Changed","level":1}';
+  assert.throws(()=>validatePayload('applicability-pair',{input,output}),/APPLICABILITY_ORIGINAL_CONTEXT_BINDING_INVALID/u);
+  input.sourceContext[0].sourceText='{"text":"Changed","level":1}';
+  assert.throws(()=>validatePayload('applicability-pair',{input,output}),/APPLICABILITY_ORIGINAL_CONTEXT_BINDING_INVALID/u);
 });
 
 for (const change of ['quote','omission','target','legacy','controlled-fields','context','preasserted']) {
