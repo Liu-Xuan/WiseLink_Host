@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 
-import { randomUUID } from 'node:crypto';
+import { createHash, randomUUID } from 'node:crypto';
 import { homedir } from 'node:os';
 import { join } from 'node:path';
 import process from 'node:process';
@@ -66,6 +66,20 @@ export async function consumeHostedWorkItem(options, dependencies) {
   });
   let initial = readInitialStatus(statusResult, options.workItemId);
   assertExpectedInitialOperationStatus(options.expectedInitialOperation, initial);
+  if (options.autoRetry) {
+    const retry = automaticRetryPlan(initial, options.workItemId);
+    if (!retry || retry.operation !== options.autoRetry.operation ||
+        retry.requestId !== options.autoRetry.requestId ||
+        retry.attemptRef !== options.autoRetry.attemptRef) {
+      throw new Error('AUTO_WORK_ITEM_RETRY_STATUS_CHANGED');
+    }
+    return runHostedInitialStage({
+      ...options,
+      operation: retry.operation,
+      initial,
+      autoRetryRequestId: retry.requestId,
+    }, dependencies);
+  }
   if (!options.initialStageOnly && initial.status !== 'BUSY' && initial.status !== 'NOT_READY') {
     // An explicit Review is an independent request. In particular, a Matter
     // review can assess parsed material before JobAid/Overall are available.
@@ -150,7 +164,6 @@ export async function consumeAutomaticWorkItemQueueTick(options, dependencies) {
       typeof checkpoint.write !== 'function' ||
       typeof dependencies.nextWorkItem !== 'function' ||
       typeof dependencies.acknowledgeWorkItem !== 'function' ||
-      typeof dependencies.blockWorkItem !== 'function' ||
       typeof dependencies.consumeWorkItem !== 'function' ||
       typeof dependencies.readInitialStatus !== 'function') {
     throw new Error('AUTO_WORK_ITEM_QUEUE_DEPENDENCIES_INVALID');
@@ -164,12 +177,10 @@ export async function consumeAutomaticWorkItemQueueTick(options, dependencies) {
   }
 
   if (claim?.blockReady) {
-    return blockAndClearAutoClaim(
-      claim,
-      claim.blockReady,
-      checkpoint,
-      dependencies,
-    );
+    // Older consumers may have persisted an intent to BLOCK a runtime failure.
+    // Its response might already have committed, so never send that mutation
+    // again without a read-only receipt. Preserve the exact claim for review.
+    return automaticWorkItemAttention(claim, 'AUTO_WORK_ITEM_PRIOR_BLOCK_RECEIPT_UNCERTAIN');
   }
 
   if (!claim || Date.parse(claim.leaseExpiresAt) <= currentTime.getTime()) {
@@ -226,32 +237,27 @@ export async function consumeAutomaticWorkItemQueueTick(options, dependencies) {
   }
 
   let statusValue = await dependencies.readInitialStatus(claim.workItemId);
+  assertAutomaticClaimStatusBinding(claim, statusValue);
   if (isAutomaticWorkItemDone(statusValue)) {
     claim = { ...claim, completionReady: true };
     await checkpoint.write('active-claim', claim);
     return acknowledgeAndClearAutoClaim(claim, checkpoint, dependencies);
   }
-  const terminalFailure = terminalFailedAutomaticWorkItem(statusValue);
-  if (terminalFailure) {
-    claim = { ...claim, blockReady: terminalFailure };
-    await checkpoint.write('active-claim', claim);
-    return blockAndClearAutoClaim(
-      claim,
-      terminalFailure,
-      checkpoint,
-      dependencies,
-    );
-  }
+  const retry = automaticRetryPlan(statusValue, claim.workItemId);
   if (claim.completionReady) {
     claim = { ...claim, completionReady: false };
     await checkpoint.write('active-claim', claim);
   }
-  if (claim.consumerStopped) {
+  if (claim.consumerStopped && !retry) {
     return automaticWorkItemAttention(
       claim,
       claim.attentionCode ?? 'AUTO_WORK_ITEM_CONSUMER_STOPPED',
       statusValue,
     );
+  }
+  if (retry && claim.consumerStopped) {
+    claim = { ...claim, consumerStopped: false, attentionCode: null };
+    await checkpoint.write('active-claim', claim);
   }
 
   const report = await dependencies.consumeWorkItem({
@@ -262,26 +268,15 @@ export async function consumeAutomaticWorkItemQueueTick(options, dependencies) {
     // New items must use the context returned by Host status; a static
     // WorkItem's context reference cannot be inherited by a queued item.
     applicabilityContextRef: undefined,
+    ...(retry ? { autoRetry: retry } : {}),
   });
   statusValue = await dependencies.readInitialStatus(claim.workItemId);
+  assertAutomaticClaimStatusBinding(claim, statusValue);
   if (isAutomaticWorkItemDone(statusValue)) {
     claim = { ...claim, completionReady: true };
     await checkpoint.write('active-claim', claim);
     return acknowledgeAndClearAutoClaim(claim, checkpoint, dependencies, report);
   }
-  const failedAfterConsumption = terminalFailedAutomaticWorkItem(statusValue);
-  if (failedAfterConsumption) {
-    claim = { ...claim, blockReady: failedAfterConsumption };
-    await checkpoint.write('active-claim', claim);
-    return blockAndClearAutoClaim(
-      claim,
-      failedAfterConsumption,
-      checkpoint,
-      dependencies,
-      report,
-    );
-  }
-
   if (report?.status === 'REQUIRES_ATTENTION') {
     claim = {
       ...claim,
@@ -417,66 +412,39 @@ function isAutomaticWorkItemDone(initial) {
   return initialComplete(initial);
 }
 
-function terminalFailedAutomaticWorkItem(initial) {
-  if (!isRecord(initial) ||
-      !['FAILED', 'CONFLICT'].includes(initial.status) ||
-      initial.nextOperation !== null || !isRecord(initial.stages)) return null;
-  for (const stage of ['translation', 'applicability', 'jobAid', 'overall']) {
+function assertAutomaticClaimStatusBinding(claim, initial) {
+  if (!isRecord(initial) || initial.documentVersionId !== claim.documentVersionId) {
+    throw new Error('AUTO_WORK_ITEM_STATUS_SOURCE_CHANGED');
+  }
+}
+
+function automaticRetryPlan(initial, workItemId) {
+  if (!isRecord(initial) || initial.status !== 'FAILED' ||
+      initial.nextOperation !== null || !isRecord(initial.stages) ||
+      typeof initial.documentVersionId !== 'string') return null;
+  for (const [stage, operation] of [
+    ['jobAid', 'EVALUATE_JOBAID'],
+    ['overall', 'SYNTHESIZE_OVERALL'],
+  ]) {
     const observation = initial.stages[stage];
-    // A cancelled attempt records an execution interruption, not a confirmed
-    // irreversible business failure. Keep its exact claim for attention.
-    if (observation?.attemptStatus === 'CANCELLED') continue;
-    const status = observation?.status;
-    if (status === 'FAILED' || status === 'CONFLICT') return { stage, status };
+    if (observation?.status !== 'FAILED' ||
+        typeof observation.attemptRef !== 'string' || !observation.attemptRef ||
+        observation.requestId?.startsWith('auto-retry-')) continue;
+    const interrupted = ['CANCELLED', 'TIMED_OUT'].includes(observation.attemptStatus);
+    const preparationFailed = observation.attemptStatus === 'FAILED' &&
+      observation.terminalCode === 'ACTION_ATTEMPT_INITIAL_PREPARATION_FAILED';
+    if (!interrupted && !preparationFailed) continue;
+    // A failed authorization or changed source requires Host/user resolution,
+    // even when the attempt was interrupted before commit.
+    if (/(?:ACL|AUTH|PERMISSION|SOURCE_REVOKED|BINDING_CHANGED|VERSION_DRIFT)/u
+      .test(observation.terminalCode ?? '')) continue;
+    const identity = [workItemId, initial.documentVersionId, stage,
+      observation.attemptRef].join(':');
+    const requestId = `auto-retry-${createHash('sha256').update(identity)
+      .digest('hex').slice(0, 32)}`;
+    return { operation, attemptRef: observation.attemptRef, requestId };
   }
   return null;
-}
-
-async function blockAndClearAutoClaim(
-  claim,
-  failure,
-  checkpoint,
-  dependencies,
-  report,
-) {
-  const blocked = validateAutoBlock(
-    await dependencies.blockWorkItem({
-      workItemId: claim.workItemId,
-      leaseToken: claim.leaseToken,
-      leaseGeneration: claim.leaseGeneration,
-    }),
-    claim.workItemId,
-  );
-  const expectedCode = `AUTO_WORK_ITEM_STAGE_${failure.stage.toUpperCase()}_${failure.status}`;
-  if (blocked.blockedCode !== expectedCode) {
-    throw new Error('AUTO_WORK_ITEM_BLOCKED_CODE_MISMATCH');
-  }
-  await checkpoint.write('active-claim', null);
-  return {
-    status: 'REQUIRES_ATTENTION',
-    workItemId: claim.workItemId,
-    errorCode: blocked.blockedCode,
-    blockedAt: blocked.blockedAt,
-    consumerStatus: typeof report?.status === 'string' ? report.status : 'FAILED',
-  };
-}
-
-function validateAutoBlock(value, workItemId) {
-  if (!isRecord(value)) throw new Error('AUTO_WORK_ITEM_BLOCK_RESPONSE_INVALID');
-  assertExactKeys(
-    value,
-    ['status', 'workItemId', 'blockedCode', 'replayed', 'blockedAt'],
-    [],
-    'AUTO_WORK_ITEM_BLOCK_RESPONSE',
-  );
-  if (value.status !== 'BLOCKED' || value.workItemId !== workItemId ||
-      typeof value.blockedCode !== 'string' ||
-      !/^AUTO_WORK_ITEM_STAGE_(TRANSLATION|APPLICABILITY|JOBAID|OVERALL)_(FAILED|CONFLICT)$/u.test(value.blockedCode) ||
-      typeof value.replayed !== 'boolean' ||
-      typeof value.blockedAt !== 'string' || !Number.isFinite(Date.parse(value.blockedAt))) {
-    throw new Error('AUTO_WORK_ITEM_BLOCK_RESPONSE_INVALID');
-  }
-  return value;
 }
 
 function isAutomaticBlockBinding(value) {
@@ -527,7 +495,8 @@ function assertExactKeys(value, required, optional, code) {
 export async function runHostedInitialStage(options, dependencies) {
   const { operation, initial } = options;
   if (!INITIAL_ANALYSIS_OPERATIONS.includes(operation)) throw new Error('INITIAL_OPERATION_INVALID');
-  const continuationRequestId = initial.stages[STAGE_BY_OPERATION[operation]]?.requestId;
+  const continuationRequestId = options.autoRetryRequestId ??
+    initial.stages[STAGE_BY_OPERATION[operation]]?.requestId;
   const initialWorkItemRevision=operation === 'EXTRACT_APPLICABILITY'
     ? (options.assessmentRecovery?.initialWorkItemRevision ?? initial.workItemRevision) : undefined;
   const checkpoint = await createCheckpointStore(initialStageCheckpointPath(

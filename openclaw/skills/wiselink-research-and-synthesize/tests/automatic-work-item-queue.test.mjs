@@ -313,7 +313,21 @@ test('expired resume cannot silently change the original request or DocumentVers
   assert.equal(checkpoint.writes.length, 0);
 });
 
-test('terminal failure is Host-blocked and is never acknowledged', async () => {
+test('a changed Host document version cannot be retried or acknowledged under the old claim', async () => {
+  const checkpoint = memoryCheckpoint(storedClaim());
+  await assert.rejects(consumeAutomaticWorkItemQueueTick({}, {
+    checkpoint,
+    now: () => new Date(START),
+    nextWorkItem: async () => assert.fail('claim is still live'),
+    acknowledgeWorkItem: async () => assert.fail('changed source cannot ACK'),
+    blockWorkItem: async () => assert.fail('changed source cannot BLOCK'),
+    readInitialStatus: async () => ({ ...completeStatus(), documentVersionId: 'DV-NEW' }),
+    consumeWorkItem: async () => assert.fail('changed source cannot run'),
+  }), /AUTO_WORK_ITEM_STATUS_SOURCE_CHANGED/u);
+  assert.deepEqual(checkpoint.values.get('active-claim'), storedClaim());
+});
+
+test('unclassified stage failure stays available for diagnosis instead of blocking the document', async () => {
   const checkpoint = memoryCheckpoint(null);
   const failed = status({
     overallStatus: 'FAILED', nextOperation: null,
@@ -321,34 +335,22 @@ test('terminal failure is Host-blocked and is never acknowledged', async () => {
     jobAid: 'FAILED', overall: 'PENDING',
   });
   let acked = false;
-  let blocked = false;
   const result = await consumeAutomaticWorkItemQueueTick({}, {
     checkpoint,
     now: () => new Date(START),
     nextWorkItem: async () => lease(1, '2026-09-25T01:00:00.000Z'),
     acknowledgeWorkItem: async () => { acked = true; },
-    blockWorkItem: async input => {
-      blocked = true;
-      assert.deepEqual(input, {
-        workItemId: 'WI-QUEUE', leaseToken: TOKEN_1, leaseGeneration: 1,
-      });
-      return {
-        status: 'BLOCKED', workItemId: 'WI-QUEUE',
-        blockedCode: 'AUTO_WORK_ITEM_STAGE_JOBAID_FAILED', replayed: false,
-        blockedAt: '2026-09-25T00:01:00.000Z',
-      };
-    },
+    blockWorkItem: async () => assert.fail('run failure is not a business block'),
     readInitialStatus: async () => failed,
-    consumeWorkItem: async () => assert.fail('terminal Host failure must not retry model work'),
+    consumeWorkItem: async () => ({ status: 'REQUIRES_ATTENTION', errorCode: 'JOBAID_WORK_FAILED' }),
   });
   assert.equal(result.status, 'REQUIRES_ATTENTION');
-  assert.equal(result.errorCode, 'AUTO_WORK_ITEM_STAGE_JOBAID_FAILED');
+  assert.equal(result.errorCode, 'JOBAID_WORK_FAILED');
   assert.equal(acked, false);
-  assert.equal(blocked, true);
-  assert.equal(checkpoint.values.get('active-claim'), null);
+  assert.equal(checkpoint.values.get('active-claim').consumerStopped, true);
 });
 
-test('cancelled execution asks for attention without blocking its queue grant', async () => {
+test('cancelled execution gets one exact automatic continuation and retains the queue grant', async () => {
   const checkpoint = memoryCheckpoint(null);
   const failed = status({
     overallStatus: 'FAILED', nextOperation: null,
@@ -356,62 +358,134 @@ test('cancelled execution asks for attention without blocking its queue grant', 
     jobAid: 'FAILED', overall: 'PENDING',
   });
   failed.stages.jobAid.attemptStatus = 'CANCELLED';
+  failed.stages.jobAid.attemptRef = 'AQ-FAILED-FIRST';
+  failed.stages.jobAid.requestId = 'original-1';
   failed.stages.jobAid.terminalCode = 'REVIEW_CHECKPOINT_ALREADY_EXISTS';
-  let blocked = false;
+  let retry;
   const result = await consumeAutomaticWorkItemQueueTick({}, {
     checkpoint,
     now: () => new Date(START),
     nextWorkItem: async () => lease(1, '2026-09-25T01:00:00.000Z'),
     acknowledgeWorkItem: async () => assert.fail('cancelled attempt cannot ACK'),
-    blockWorkItem: async () => { blocked = true; },
+    blockWorkItem: async () => assert.fail('cancelled attempt is not a business block'),
     readInitialStatus: async () => failed,
-    consumeWorkItem: async () => ({ status: 'REQUIRES_ATTENTION', errorCode: 'REVIEW_CHECKPOINT_ALREADY_EXISTS' }),
+    consumeWorkItem: async input => {
+      retry = input.autoRetry;
+      return { status: 'REQUIRES_ATTENTION', errorCode: 'JOBAID_GATEWAY_HTTP_502' };
+    },
   });
   assert.equal(result.status, 'REQUIRES_ATTENTION');
-  assert.equal(blocked, false);
+  assert.equal(retry.operation, 'EVALUATE_JOBAID');
+  assert.equal(retry.attemptRef, failed.stages.jobAid.attemptRef);
+  assert.match(retry.requestId, /^auto-retry-[0-9a-f]{32}$/u);
   assert.equal(checkpoint.values.get('active-claim').consumerStopped, true);
 });
 
-test('a lost terminal block response is replayed from the persisted exact claim', async () => {
-  const checkpoint = memoryCheckpoint(null);
+test('a stopped claim resumes a recoverable failure on the next tick', async () => {
+  const checkpoint = memoryCheckpoint({ ...storedClaim(),
+    consumerStopped: true, attentionCode: 'JOBAID_GATEWAY_HTTP_502' });
+  const failed = status({ overallStatus: 'FAILED', nextOperation: null,
+    translation: 'PENDING', applicability: 'WAITING_INPUT',
+    jobAid: 'SUCCEEDED', overall: 'FAILED' });
+  failed.stages.overall = { status: 'FAILED', attemptStatus: 'CANCELLED',
+    attemptRef: 'AQ-CANCELLED', requestId: 'original-1',
+    terminalCode: 'JOBAID_GATEWAY_HTTP_502' };
+  const result = await consumeAutomaticWorkItemQueueTick({}, {
+    checkpoint,
+    now: () => new Date(START),
+    nextWorkItem: async () => assert.fail('claim is still live'),
+    acknowledgeWorkItem: async () => assert.fail('not yet complete'),
+    blockWorkItem: async () => assert.fail('runtime failure cannot BLOCK'),
+    readInitialStatus: async () => failed,
+    consumeWorkItem: async input => {
+      assert.equal(input.autoRetry.operation, 'SYNTHESIZE_OVERALL');
+      return { status: 'BUSY' };
+    },
+  });
+  assert.equal(result.status, 'IN_PROGRESS');
+  assert.equal(checkpoint.values.get('active-claim').consumerStopped, false);
+});
+
+test('failed retry is not retried again or BLOCKed', async () => {
+  const checkpoint = memoryCheckpoint(storedClaim());
   const failed = status({
     overallStatus: 'FAILED', nextOperation: null,
     translation: 'SUCCEEDED', applicability: 'WAITING_INPUT',
-    jobAid: 'FAILED', overall: 'PENDING',
+    jobAid: 'SUCCEEDED', overall: 'FAILED',
   });
-  await assert.rejects(consumeAutomaticWorkItemQueueTick({}, {
+  failed.stages.overall = {
+    status: 'FAILED', attemptStatus: 'CANCELLED',
+    attemptRef: 'AQ-RETRY-FAILED', requestId: 'auto-retry-1234',
+    terminalCode: 'JOBAID_GATEWAY_HTTP_502',
+  };
+  const result = await consumeAutomaticWorkItemQueueTick({}, {
     checkpoint,
     now: () => new Date(START),
-    nextWorkItem: async () => lease(1, '2026-09-25T01:00:00.000Z'),
-    acknowledgeWorkItem: async () => assert.fail('terminal failure must not ACK'),
-    blockWorkItem: async () => { throw new Error('simulated response loss'); },
+    nextWorkItem: async () => assert.fail('claim is still live'),
+    acknowledgeWorkItem: async () => assert.fail('failed work cannot ACK'),
+    blockWorkItem: async () => assert.fail('runtime failure cannot BLOCK'),
     readInitialStatus: async () => failed,
-    consumeWorkItem: async () => assert.fail('terminal failure must not retry model work'),
-  }), /simulated response loss/);
-  assert.deepEqual(checkpoint.values.get('active-claim').blockReady, {
-    stage: 'jobAid', status: 'FAILED',
+    consumeWorkItem: async input => {
+      assert.equal(input.autoRetry, undefined);
+      return { status: 'REQUIRES_ATTENTION', errorCode: 'JOBAID_GATEWAY_HTTP_502' };
+    },
   });
+  assert.equal(result.status, 'REQUIRES_ATTENTION');
+  assert.equal(checkpoint.values.get('active-claim').consumerStopped, true);
+});
 
+test('failed preparation receives a stable new request and recovers saved JobAid work', async () => {
+  const checkpoint = memoryCheckpoint(storedClaim());
+  const failed = status({
+    overallStatus: 'FAILED', nextOperation: null,
+    translation: 'PENDING', applicability: 'WAITING_INPUT',
+    jobAid: 'SUCCEEDED', overall: 'FAILED',
+  });
+  failed.stages.overall = {
+    status: 'FAILED', attemptStatus: 'FAILED',
+    attemptRef: 'AQ-PREP-FAILED', requestId: 'original-1',
+    terminalCode: 'ACTION_ATTEMPT_INITIAL_PREPARATION_FAILED',
+  };
+  let observed = failed;
+  let requestId;
+  const dependencies = {
+    checkpoint,
+    now: () => new Date(START),
+    nextWorkItem: async () => assert.fail('claim is still live'),
+    acknowledgeWorkItem: async () => ({
+      status: 'ACKNOWLEDGED', workItemId: 'WI-QUEUE', replayed: false,
+      acknowledgedAt: '2026-09-25T00:02:00.000Z',
+    }),
+    blockWorkItem: async () => assert.fail('recoverable failure cannot BLOCK'),
+    readInitialStatus: async () => observed,
+    consumeWorkItem: async input => {
+      assert.equal(input.autoRetry.operation, 'SYNTHESIZE_OVERALL');
+      requestId = input.autoRetry.requestId;
+      observed = completeStatus();
+      return { status: 'INITIAL_STAGE_SAVED', operation: 'SYNTHESIZE_OVERALL' };
+    },
+  };
+  const result = await consumeAutomaticWorkItemQueueTick({}, dependencies);
+  assert.match(requestId, /^auto-retry-[0-9a-f]{32}$/u);
+  assert.equal(result.status, 'ACKNOWLEDGED');
+  assert.equal(checkpoint.values.get('active-claim'), null);
+});
+
+test('an old uncertain block intent is kept for review without another mutation', async () => {
+  const checkpoint = memoryCheckpoint({
+    ...storedClaim(), blockReady: { stage: 'jobAid', status: 'FAILED' },
+  });
   const result = await consumeAutomaticWorkItemQueueTick({}, {
     checkpoint,
     now: () => new Date('2026-09-25T02:00:00.000Z'),
     nextWorkItem: async () => assert.fail('block replay must not claim any WorkItem'),
     acknowledgeWorkItem: async () => assert.fail('block replay must not ACK'),
-    blockWorkItem: async input => {
-      assert.deepEqual(input, {
-        workItemId: 'WI-QUEUE', leaseToken: TOKEN_1, leaseGeneration: 1,
-      });
-      return {
-        status: 'BLOCKED', workItemId: 'WI-QUEUE',
-        blockedCode: 'AUTO_WORK_ITEM_STAGE_JOBAID_FAILED', replayed: true,
-        blockedAt: '2026-09-25T00:01:00.000Z',
-      };
-    },
-    readInitialStatus: async () => assert.fail('Host block endpoint owns replay verification'),
-    consumeWorkItem: async () => assert.fail('block replay must not run model work'),
+    blockWorkItem: async () => assert.fail('unknown old receipt cannot be resent'),
+    readInitialStatus: async () => assert.fail('uncertain block must stop before status work'),
+    consumeWorkItem: async () => assert.fail('uncertain block must not run model work'),
   });
-  assert.equal(result.errorCode, 'AUTO_WORK_ITEM_STAGE_JOBAID_FAILED');
-  assert.equal(checkpoint.values.get('active-claim'), null);
+  assert.equal(result.errorCode, 'AUTO_WORK_ITEM_PRIOR_BLOCK_RECEIPT_UNCERTAIN');
+  assert.equal(checkpoint.values.get('active-claim').workItemId, 'WI-QUEUE');
 });
 
 test('queue REST client sends exact resume body and exposes ACK and terminal block routes', async () => {
