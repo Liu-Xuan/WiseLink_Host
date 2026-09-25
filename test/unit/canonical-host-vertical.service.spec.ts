@@ -251,7 +251,7 @@ describe('CanonicalHostVerticalService', () => {
     await expect(service.browserInitialAnalysisStatus('WI-progress', TEST_ACTOR)).resolves.toEqual({ status: 'FAILED' });
     expect(authorize).toHaveBeenCalledWith(expect.objectContaining({ action: 'READ_DOCUMENT_PARSING', workItemId: 'WI-progress', actor: TEST_ACTOR }));
     expect(registrar.getTenantScopedByWorkItemId).toHaveBeenCalledWith({ workItemId: 'WI-progress', tenantId: TEST_ACTOR.tenantId });
-    expect(initialStatus.projectForBrowser).toHaveBeenCalledWith({ workItem: projection, tenantId: TEST_ACTOR.tenantId });
+    expect(initialStatus.projectForBrowser).toHaveBeenCalledWith({ workItem: projection, tenantId: TEST_ACTOR.tenantId, actorUserId: TEST_ACTOR.userId });
     expect(store.readActualBytes).not.toHaveBeenCalled();
     authorize.mockRejectedValueOnce(new Error('ACCESS_DENIED'));
     await expect(service.browserInitialAnalysisStatus('WI-other', TEST_ACTOR)).rejects.toThrow('ACCESS_DENIED');
@@ -1009,7 +1009,7 @@ describe('CanonicalHostVerticalService', () => {
     });
   });
 
-  it('records actual-byte drift during idempotent Reader readback', async () => {
+  it('reports replay readback drift without replacing the saved parse result', async () => {
     const request = await realRequest();
     const bytes = await realPackageBytes();
     const registrar = new InMemoryRegistrar();
@@ -1054,20 +1054,18 @@ describe('CanonicalHostVerticalService', () => {
     expect(artifact).toBeDefined();
     store.overwrite(artifact!, new TextEncoder().encode('{"drift":true}\n'));
 
-    const second = await service.runPdf(request, TEST_ACTOR);
-
-    expect(second).toMatchObject({
-      status: 'FAILED',
-      workItem: {
-        phase: 'FAILED',
-        revision: 4,
-        failure: {
-          failureCode: 'ARTIFACT_READBACK_MISMATCH',
-          message: 'The persisted artifact failed exact actual-byte readback.',
-          artifact: { sha256: expect.stringMatching(/^[0-9a-f]{64}$/u) },
-        },
-      },
+    await expect(service.runPdf(request, TEST_ACTOR)).rejects.toThrow(
+      /ARTIFACT_READBACK_MISMATCH/u,
+    );
+    expect(await registrar.getByWorkItemId(request.workItemId)).toMatchObject({
+      phase: 'CANDIDATE_READBACK_VERIFIED',
+      revision: 3,
+      failure: null,
     });
+    store.overwrite(artifact!, bytes);
+    const recovered = await service.runPdf(request, TEST_ACTOR);
+    expect(recovered.status).toBe('CANDIDATE_VERTICAL_VERIFIED');
+    expect(recovered.workItem.revision).toBe(3);
     expect(producer.producePdf).toHaveBeenCalledTimes(1);
   });
 
