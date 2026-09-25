@@ -1376,7 +1376,7 @@ test('requires 35 MCP capabilities, six review tools, and hosted provenance', ()
   assert.ok(HOST_MCP_TOOLS.includes('commit_applicability_candidate'));
   assert.equal(
     WISELINK_SKILL_VERSION,
-    'wiselink-research-and-synthesize@r09.c128',
+    'wiselink-research-and-synthesize@r09.c129',
   );
   assert.equal(
     WISELINK_SKILL_COMPATIBILITY_REF,
@@ -7697,7 +7697,9 @@ test('original applicability collects bounded output windows before validating o
     windows.push(window);
     if(windows.length===1) assert.deepEqual(JSON.parse(request.messages[1].content),input);
     else assert.equal(request.messages.length,3);
-    const ids=new Set(input.originalInput.source.units.slice(window.startUnitIndex,window.endUnitIndexExclusive).map(unit=>unit.unitId));
+    const selectedUnits=input.originalInput.source.units.slice(window.startUnitIndex,window.endUnitIndexExclusive);
+    if(windows.length===1) selectedUnits.pop();
+    const ids=new Set(selectedUnits.map(unit=>unit.unitId));
     const selectedExpressions=output.expressions.filter(expression=>ids.has(expression.original.quote.unitId));
     return Response.json({choices:[{message:{content:null,tool_calls:[{id:`window-${windows.length}`,type:'function',
       function:{name:'return_wiselink_initial_candidate',arguments:JSON.stringify({candidate:{
@@ -7709,11 +7711,11 @@ test('original applicability collects bounded output windows before validating o
   }});
   assert.equal(windows.length,3);
   assert.equal(heartbeats,3);
-  assert.deepEqual(windows.map(window=>[window.startUnitIndex,window.endUnitIndexExclusive]),[[0,8],[8,16],[16,20]]);
+  assert.deepEqual(windows.map(window=>[window.startUnitIndex,window.endUnitIndexExclusive]),[[0,8],[7,15],[15,20]]);
   assert.deepEqual(result.output,output);
 });
 
-test('original applicability rejects a missing window unit before advancing',async()=>{
+test('original applicability rejects a noncontiguous window before advancing',async()=>{
   const {input,output}=await originalApplicabilityPair();
   let calls=0;
   await assert.rejects(invokeInitialWithTransport({operation:'EXTRACT_APPLICABILITY',modelInput:input},{
@@ -7724,7 +7726,7 @@ test('original applicability rejects a missing window unit before advancing',asy
     calls++;
     return Response.json({choices:[{message:{content:null,tool_calls:[{id:'missing-unit',type:'function',
       function:{name:'return_wiselink_initial_candidate',arguments:JSON.stringify({candidate:{...output,
-        unitDispositions:output.unitDispositions.slice(0,-1)}})}}]}}]});
+        unitDispositions:[output.unitDispositions[0],output.unitDispositions[2]]}})}}]}}]});
   }}),/INITIAL_APPLICABILITY_WINDOW_COVERAGE_INVALID/u);
   assert.equal(calls,1);
 });
