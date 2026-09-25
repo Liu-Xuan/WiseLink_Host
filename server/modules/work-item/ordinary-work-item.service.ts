@@ -448,6 +448,7 @@ export class OrdinaryWorkItemService {
         origin,
         runKey,
         normalizedFamily: classification.normalizedFamily,
+        oauthSessionCreate,
         developmentScope,
         retryTarget,
       })
@@ -707,13 +708,15 @@ function eligibleForAutomaticProcessing(input: {
   origin: 'MIAODA' | 'AILY';
   runKey: string;
   normalizedFamily: string;
+  oauthSessionCreate: boolean;
   developmentScope?: CanonicalVerifiedDevelopmentCreateScope;
   retryTarget?: ExistingParseRunTarget;
 }): boolean {
   const identity = input.actor.objectAccessActor;
   return Boolean(
     input.origin === 'MIAODA' &&
-      input.runKey === 'canonical' &&
+      (input.runKey === 'canonical' ||
+        (input.oauthSessionCreate && input.runKey.startsWith('dev:'))) &&
       !input.developmentScope &&
       !input.retryTarget &&
       AUTOMATIC_ENGINEERING_PDF_FAMILIES.has(input.normalizedFamily) &&
