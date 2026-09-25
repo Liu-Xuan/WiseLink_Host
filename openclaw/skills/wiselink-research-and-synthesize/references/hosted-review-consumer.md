@@ -58,7 +58,7 @@ Host 缺少受控适用性事实时，保留 WAITING_INPUT 并允许后续 JobAi
 remote-step checkpoint 保存在 `.openclaw/wiselink-work-item-runs/<WorkItem>/initial/<operation>`，权限沿用
 0700/0600；已开始的模型步骤不会因原生 tick 或重启再次运行。完成记录与 Host 当前投影不一致时报告漂移，不覆盖旧记录。
 
-## c129 Host 登记事项自动队列
+## c136 Host 登记事项自动队列
 
 只有配套 Host 已运行自动登记迁移、受理写入 enrollment grant，且固定 queue service scope/开关已在目标环境启用后，
 才可将一个原生 command cron 配置为：
