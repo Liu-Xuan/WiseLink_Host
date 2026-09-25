@@ -135,6 +135,22 @@ describe('owner-requested initial continuation', () => {
     },
   );
 
+  it('continues an exact enrolled browser task and rejects an unenrolled task with the same run key', async () => {
+    const h = harness();
+    process.env.WL_OPENCLAW_SERVICE_WORK_ITEM_ID = 'WI-other';
+    h.initial.hasExactAutoProcessingGrant.mockResolvedValueOnce(true);
+    await expect(h.send({ ...request, operation: 'EVALUATE_JOBAID' })).resolves.toMatchObject({ status: 'QUEUED' });
+    expect(h.initial.hasExactAutoProcessingGrant).toHaveBeenCalledWith({
+      tenantId: actor.tenantId,
+      actorUserId: actor.userId,
+      workItem: h.workItem,
+    });
+    expect(h.jobAid.enqueueContinuation).toHaveBeenCalledTimes(1);
+    h.initial.hasExactAutoProcessingGrant.mockResolvedValueOnce(false);
+    await expect(h.send({ ...request, operation: 'EVALUATE_JOBAID' })).rejects.toThrow('AUTOMATIC_SCOPE_UNAVAILABLE');
+    expect(h.jobAid.enqueueContinuation).toHaveBeenCalledTimes(1);
+  });
+
   it.each(['SUCCEEDED', 'CANCELLED', 'FAILED', 'WAITING_INPUT'])(
     'reads the same terminal %s receipt after the work item advances, without claiming or reserving again',
     async (status) => {
@@ -336,7 +352,10 @@ function harness() {
       .mockResolvedValue(null),
     readScoped: jest.fn<Promise<ReturnType<typeof savedAttempt>>, [unknown]>(),
   };
-  const initial = { project: jest.fn(async () => status) };
+  const initial = {
+    project: jest.fn(async () => status),
+    hasExactAutoProcessingGrant: jest.fn(async () => false),
+  };
   const translation = {
     enqueueContinuation: jest.fn(async () => ({
       status: 'QUEUED',

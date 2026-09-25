@@ -269,10 +269,13 @@ export class CanonicalHostController {
     @Param('workItemId') workItemId: string,
     @Req() httpRequest: Request,
   ) {
-    return this.service.browserInitialAnalysisStatus(
+    const operation = () => this.service.browserInitialAnalysisStatus(
       requiredText(workItemId, 'workItemId'),
       hostActor(httpRequest),
     );
+    return this.sessions
+      ? this.sessions.withRequestSession(httpRequest, operation)
+      : operation();
   }
 
   @Get('work-items/:workItemId/status')
