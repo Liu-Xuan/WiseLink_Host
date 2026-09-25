@@ -664,7 +664,7 @@ export default function DocumentParsingPage() {
     overallCandidate?.engineeringSummary ?? null;
   const overallReadingResult = overallCandidate?.readingResult ?? null;
   const overallLead =
-    overallReadingResult?.content.lead ??
+    overallReadingResult?.content.headline ??
     overallEngineeringSummary?.conclusion.text ??
     '';
   const overallEngineeringStatements = overallEngineeringSummary

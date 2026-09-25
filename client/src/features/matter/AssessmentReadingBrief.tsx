@@ -12,6 +12,7 @@ import {
   type AssessmentClaimGroups,
   type AssessmentClaimSelection,
 } from './assessment-reading';
+import { compactReadingSummary } from './compact-reading-summary';
 
 interface AssessmentReadingBriefProps {
   result: AssessmentReadingResult;
@@ -81,8 +82,17 @@ const AssessmentReadingBrief: FC<AssessmentReadingBriefProps> = ({
             {result.content.headline}
           </h2>
           <p className="whitespace-pre-wrap break-words text-sm leading-7">
-            {depth === 'list' ? result.content.listBrief : result.content.lead}
+            {depth === 'full'
+              ? result.content.lead
+              : compactReadingSummary(result.content.headline, result.content.listBrief)}
           </p>
+          {depth === 'brief' && result.content.lead &&
+            result.content.lead !== compactReadingSummary(result.content.headline, result.content.listBrief) ? (
+              <details className="text-sm leading-7">
+                <summary className="cursor-pointer">展开完整概览与条件</summary>
+                <p className="whitespace-pre-wrap break-words">{result.content.lead}</p>
+              </details>
+            ) : null}
         </header>
       ) : null}
       {presentation === 'claims' ? (

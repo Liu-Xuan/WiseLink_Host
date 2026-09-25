@@ -5,6 +5,7 @@ import type {
 } from '@shared/assessment-reading.interface';
 
 import { assessmentClaimGroups } from './assessment-reading';
+import { compactReadingSummary } from './compact-reading-summary';
 
 export function savedReadingSummary(
   result: AssessmentReadingResult,
@@ -38,8 +39,8 @@ const AssessmentReadingListSummary: FC<{
       <small>分析进行中 · 已保存工作</small>
     ) : null}
     <strong className="library-saved-list-brief">{summary.headline}</strong>
-    {summary.listBrief !== summary.headline ? (
-      <small className="library-saved-list-brief">{summary.listBrief}</small>
+    {compactReadingSummary(summary.headline, summary.listBrief) !== summary.headline ? (
+      <small className="library-saved-list-brief">{compactReadingSummary(summary.headline, summary.listBrief)}</small>
     ) : null}
   </span>
 );
