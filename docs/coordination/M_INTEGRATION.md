@@ -2,6 +2,8 @@
 
 ## 2026-09-26 浏览器事项归集的真实 RLS 阻断（C150 未发布）
 
+17b online 只读汇总 `dm_acquisition` 中 `document_library_upload` 的已提交/确切链接来源有 3 个不同 DocumentVersion：1 个既无当前 Matter 材料关联也无 WorkItem，1 个有 WorkItem 但无当前 Matter 材料关联，1 个有当前 Matter 材料关联但无 WorkItem。Matter 统计只检查当前修订。该查询不改变任何记录，也不能仅凭关联缺失认定每次历史请求的响应原因；它证明两条入口分裂和既有结果未统一关联已影响线上对象，后续修复应按确切用户、来源及已有工作逐项接续，不批量补写权限或重新解析。
+
 独立 PostgreSQL 16 容器 `wiselink_engineering_matter_test` 的现有 `v5 direct family materials` 测试 1/1 通过：`authenticated` 用户直接调用原有 `ensureFamilyMatter` 能创建/复用同族事项，原有租户、来源与 owner 限制生效。新增浏览器入口回归测试则确切复现 `EngineeringMatterService.organizeDocumentIntake` 返回 `ENGINEERING_MATTER_RUNTIME_AUTHORIZATION_UNAVAILABLE`：该方法错误使用只接受 `service_role_*` 的 `withActorTransaction`，而资料库上传和 OAuth 工程事项上传均是浏览器用户入口。由此，上一个提交 `7af4a2a52` 的新关联在真实浏览器上下文无法通过，不能发布或计为 Wiki 闭环。线上最近 17b release `7689586170108169172` 仍是 `caec4b3ad404c72b581808e3da71c43c686bec3b`，未包含 C150。
 
 拟修复范围是仅让浏览器上传归集沿已认证用户的 SQL 身份进入既有 `ensureFamilyMatter`；仓储函数继续在同一事务核对 `app.user_id`、租户、提交版本和来源 owner，服务消费者自己的角色切换规则不改。自动审批两次拒绝这项改动，认为移除显式服务角色/Actor 绑定在所有调用方身份隔离未证实时有越权或身份错配风险。已提出明确范围的用户授权请求；在取得授权并用上述隔离测试验证之前，不发布 C150。测试中的失败是已定位的代码阻断，不把它写成 PDF 业务失败。
