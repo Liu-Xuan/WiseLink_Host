@@ -175,14 +175,17 @@ function KnowledgeCatalogue() {
           <small>{read.entry.subjectKind === 'ENGINEERING_MATTER' ? '工程事项' : '文档工作'} · {displayDate(read.entry.createdAt)}</small>
           {!read.entry.current && <div className="knowledge-notice">当前显示当时保存的解释；查看当前事项是独立导航，不替换本条历史内容。</div>}
           {read.entry.overviewStatus !== 'CURRENT' && <div className="knowledge-notice">{read.entry.overviewStatus === 'STALE' ? '问题已更新，综合尚未覆盖。本页保留各部分的确切保存范围。' : '当前已保存问题解释，综合认识尚未形成。'}</div>}
-          {read.content.understanding && <section className="knowledge-prose"><h2>本工作的问题理解</h2><EngineeringIssueBody body={read.content.understanding} evidence={read.content.evidence} onLocateDocument={locate} /></section>}
-          {read.content.issues.map(issue => <section className="knowledge-prose" key={issue.issueKey}><JobAidIssueArticle issue={issue} evidence={read.content.evidence} onLocateDocument={locate} /></section>)}
-          {read.entry.subjectKind === 'ENGINEERING_MATTER' && <>
-            <OverviewSourceWork matterId={read.entry.subjectId} source={read.overviewSourceWork} overviewStatus={read.entry.overviewStatus} />
-            <OverviewCorrectionNotices matterId={read.entry.subjectId} notices={read.overviewCorrectionNotices} />
-          </>}
-          {read.correctionNotices?.map(notice => <p role="note" key={`${notice.issueKey}:${notice.attemptRef}`}>{notice.unchanged ? '已核对并保留原认识：' : notice.correctedWorkRef ? '已有后继更正：' : '仍有待核更正：'}{notice.reason}</p>)}
-          <ReferenceWorkNotices notices={read.referenceWorkNotices} />
+          <details className="knowledge-work-details" key={keyOf(read.entry)}>
+            <summary>展开问题分析、依据与过程{read.content.issues.length ? `（${read.content.issues.length} 项）` : ''}</summary>
+            {read.content.understanding && <section className="knowledge-prose"><h2>本工作的问题理解</h2><EngineeringIssueBody body={read.content.understanding} evidence={read.content.evidence} onLocateDocument={locate} /></section>}
+            {read.content.issues.map(issue => <section className="knowledge-prose" key={issue.issueKey}><JobAidIssueArticle issue={issue} evidence={read.content.evidence} onLocateDocument={locate} /></section>)}
+            {read.entry.subjectKind === 'ENGINEERING_MATTER' && <>
+              <OverviewSourceWork matterId={read.entry.subjectId} source={read.overviewSourceWork} overviewStatus={read.entry.overviewStatus} />
+              <OverviewCorrectionNotices matterId={read.entry.subjectId} notices={read.overviewCorrectionNotices} />
+            </>}
+            {read.correctionNotices?.map(notice => <p role="note" key={`${notice.issueKey}:${notice.attemptRef}`}>{notice.unchanged ? '已核对并保留原认识：' : notice.correctedWorkRef ? '已有后继更正：' : '仍有待核更正：'}{notice.reason}</p>)}
+            <ReferenceWorkNotices notices={read.referenceWorkNotices} />
+          </details>
           <div className="knowledge-actions">{read.entry.subjectKind === 'ENGINEERING_MATTER' ? <>
             <Link to={matterWorkRoute(read.entry.subjectId, read.entry.workRef)}><BookOpen size={16} />打开对应工作 Wiki</Link>
             {!read.entry.current && <Link to={`/matters/${encodeURIComponent(read.entry.subjectId)}`}>查看事项当前认识</Link>}

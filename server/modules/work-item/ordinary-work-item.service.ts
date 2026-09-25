@@ -30,6 +30,7 @@ import {
   type HostedRequestContext,
 } from '../document-management/src/hosted/nest';
 import { MiaodaDocumentVersionSourceResolver } from './miaoda-document-version-source.resolver';
+import { isHostedCanonicalFinalUserActor } from './miaoda-hosted-canonical-object-access.adapter';
 import { MiaodaWorkItemRepository } from './miaoda-work-item.repository';
 import { assertProductionMiaodaBrowserIdentityAvailable } from './production-miaoda-browser-ingress';
 
@@ -91,6 +92,15 @@ interface ExistingParseRunTarget {
 const DEVELOPMENT_RUN_TOKEN_PATTERN =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/iu;
 const CANONICAL_APP_ID = 'app_17bzc551rsg';
+const AUTOMATIC_ENGINEERING_PDF_FAMILIES = new Set([
+  'AD',
+  'AEO',
+  'FTD',
+  'MT',
+  'SB',
+  'SIL',
+  'SL',
+]);
 @Injectable()
 export class OrdinaryWorkItemService {
   constructor(
@@ -432,6 +442,17 @@ export class OrdinaryWorkItemService {
       resolved.family.issuerAuthority,
       hostNativePdfAdapterIdFromDmPreflight(resolved.preflight),
     );
+    const autoProcessingGrant =
+      eligibleForAutomaticProcessing({
+        actor,
+        origin,
+        runKey,
+        normalizedFamily: classification.normalizedFamily,
+        developmentScope,
+        retryTarget,
+      })
+        ? 'MIAODA_CANONICAL_PARSE_REQUEST' as const
+        : undefined;
     const reservationInput = {
       tenantId: actor.tenantId,
       actorUserId: actor.userId,
@@ -443,6 +464,7 @@ export class OrdinaryWorkItemService {
       normalizedFamily: classification.normalizedFamily,
       requestOrigin: origin,
       runKey,
+      ...(autoProcessingGrant ? { autoProcessingGrant } : {}),
       // Explicit parse recovery preserves the original WorkItem's selection.
       ...(retryTarget
         ? {}
@@ -678,6 +700,29 @@ function hostedRequestContext(
       sessionProvenance: 'SERVER_OPAQUE_SESSION',
     },
   };
+}
+
+function eligibleForAutomaticProcessing(input: {
+  actor: CanonicalHostActor;
+  origin: 'MIAODA' | 'AILY';
+  runKey: string;
+  normalizedFamily: string;
+  developmentScope?: CanonicalVerifiedDevelopmentCreateScope;
+  retryTarget?: ExistingParseRunTarget;
+}): boolean {
+  const identity = input.actor.objectAccessActor;
+  return Boolean(
+    input.origin === 'MIAODA' &&
+      input.runKey === 'canonical' &&
+      !input.developmentScope &&
+      !input.retryTarget &&
+      AUTOMATIC_ENGINEERING_PDF_FAMILIES.has(input.normalizedFamily) &&
+      identity &&
+      isHostedCanonicalFinalUserActor(identity) &&
+      identity.canonicalSubject.id === input.actor.userId &&
+      identity.tenantId === input.actor.tenantId &&
+      identity.applicationScopeId === input.actor.appId,
+  );
 }
 
 function assertDevelopmentCreateScope(

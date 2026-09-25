@@ -1,6 +1,6 @@
 import { createHash } from 'node:crypto';
 
-import { Injectable } from '@nestjs/common';
+import { Inject, Injectable, Optional } from '@nestjs/common';
 
 import {
   canonicalServiceScopeUnavailable,
@@ -12,8 +12,13 @@ import {
   type CanonicalVerifiedOpenClawAttemptScope,
   type CanonicalVerifiedServiceScope,
 } from './canonical-service-scope.authorization';
+import {
+  AUTOMATIC_WORK_ITEM_LEASE_AUTHORIZATION,
+  type AutomaticWorkItemLeaseAuthorizationPort,
+} from './automatic-work-item-lease-authorization.port';
 
 const CANONICAL_APP_ID = 'app_17bzc551rsg';
+const OPENCLAW_QUEUE_PRINCIPAL_ID = 'service:openclaw-main';
 
 /**
  * Explicitly opt-in DEV/UAT service scope for one isolated WorkItem.
@@ -32,11 +37,45 @@ const CANONICAL_APP_ID = 'app_17bzc551rsg';
 // Supplied as the executor/service delegate through CanonicalHostModule.forRoot().
 // eslint-disable-next-line @darraghor/nestjs-typed/injectable-should-be-provided
 export class ConfiguredDevelopmentCanonicalServiceScopeAuthorization implements CanonicalServiceScopeAuthorizationPort {
+  constructor(
+    @Optional()
+    @Inject(AUTOMATIC_WORK_ITEM_LEASE_AUTHORIZATION)
+    private readonly automaticLeaseAuthorization?: AutomaticWorkItemLeaseAuthorizationPort,
+  ) {}
+
   async authorizeDocumentWork(input: { documentVersionId: string }) {
     const config = requiredDocumentConfig();
-    if (!config.documentVersionIds.includes(input.documentVersionId)) throw Object.assign(new Error('DOCUMENT_WORK_NOT_FOUND'), { statusCode: 404 });
-    return { principalId: config.principalId, appId: CANONICAL_APP_ID, tenantId: config.tenantId,
-      actorUserId: config.actorUserId, documentVersionId: input.documentVersionId };
+    if (!config.documentVersionIds.includes(input.documentVersionId))
+      throw Object.assign(new Error('DOCUMENT_WORK_NOT_FOUND'), {
+        statusCode: 404,
+      });
+    return {
+      principalId: config.principalId,
+      appId: CANONICAL_APP_ID,
+      tenantId: config.tenantId,
+      actorUserId: config.actorUserId,
+      documentVersionId: input.documentVersionId,
+    };
+  }
+
+  async authorizeOpenClawAutoWorkItemQueue() {
+    const config = requiredAutoWorkItemQueueConfig();
+    return {
+      principalId: config.principalId,
+      appId: CANONICAL_APP_ID,
+      tenantId: config.tenantId,
+      authorizationFingerprint: fingerprint([
+        'openclaw-auto-work-item-queue.v1',
+        config.environment,
+        CANONICAL_APP_ID,
+        config.principalId,
+        config.tenantId,
+      ]),
+    };
+  }
+
+  async assertAutoWorkItemQueueTransport(): Promise<void> {
+    requiredAutoWorkItemQueueConfig();
   }
 
   async authorizeWorkItemRead(input: {
@@ -44,11 +83,25 @@ export class ConfiguredDevelopmentCanonicalServiceScopeAuthorization implements 
     operation: 'READ_STATUS' | 'QUERY_PARSED_PACKAGE' | 'READ_DEEP_LINK';
     workItemId: string;
   }): Promise<CanonicalVerifiedServiceScope> {
-    const config = requiredConfig();
-    if (input.workItemId !== config.workItemId &&
-      !['READ_STATUS', 'READ_DEEP_LINK'].includes(input.operation))
+    const config = configuredStaticWorkItemScope();
+    if (config) {
+      const isStaticAllowed =
+        input.workItemId === config.workItemId ||
+        (['READ_STATUS', 'READ_DEEP_LINK'].includes(input.operation) &&
+          additionalWorkItemIds(config.workItemId).includes(input.workItemId));
+      if (isStaticAllowed) return exactWorkItemScope(config, input.workItemId);
+    }
+    if (
+      !['READ_STATUS', 'QUERY_PARSED_PACKAGE', 'READ_DEEP_LINK'].includes(
+        input.operation,
+      )
+    ) {
       throw scopeNotFound();
-    return exactWorkItemScope(config, input.workItemId);
+    }
+    return this.authorizeAutomaticQueueWorkItem(
+      input.workItemId,
+      config !== null,
+    );
   }
 
   async authorizeDevelopmentCreate(input: {
@@ -84,26 +137,50 @@ export class ConfiguredDevelopmentCanonicalServiceScopeAuthorization implements 
   async assertTransport(input: {
     transport: 'READONLY_MCP' | 'OPENCLAW_MCP';
   }): Promise<void> {
-    if (input.transport === 'OPENCLAW_MCP' && !process.env.WL_OPENCLAW_SERVICE_WORK_ITEM_ID) {
-      if (process.env.WL_OPENCLAW_SERVICE_MATTER_ID || process.env.WL_OPENCLAW_SERVICE_MATTER_IDS !== undefined) requiredMatterConfig();
+    if (
+      input.transport === 'OPENCLAW_MCP' &&
+      !process.env.WL_OPENCLAW_SERVICE_WORK_ITEM_ID
+    ) {
+      if (
+        process.env.WL_OPENCLAW_SERVICE_MATTER_ID ||
+        process.env.WL_OPENCLAW_SERVICE_MATTER_IDS !== undefined
+      )
+        requiredMatterConfig();
+      else if (process.env.WL_OPENCLAW_SERVICE_AUTO_QUEUE_ENABLED === '1')
+        requiredAutoWorkItemQueueConfig();
       else requiredDocumentConfig();
     } else requiredConfig();
   }
 
-  async authorizeOpenClawMatterAttempt(input: CanonicalMatterAttemptAuthorization): Promise<CanonicalVerifiedMatterAttemptScope> {
+  async authorizeOpenClawMatterAttempt(
+    input: CanonicalMatterAttemptAuthorization,
+  ): Promise<CanonicalVerifiedMatterAttemptScope> {
     const scope = await this.authorizeOpenClawMatterRequest(input);
-    if (!input.attemptRef.trim()) throw Object.assign(new Error('ACTION_ATTEMPT_NOT_FOUND'), { code: 'ACTION_ATTEMPT_NOT_FOUND', statusCode: 404 });
+    if (!input.attemptRef.trim())
+      throw Object.assign(new Error('ACTION_ATTEMPT_NOT_FOUND'), {
+        code: 'ACTION_ATTEMPT_NOT_FOUND',
+        statusCode: 404,
+      });
     return { ...scope, attemptRef: input.attemptRef };
   }
 
-  async authorizeOpenClawMatterRequest(input: { matterId: string }): Promise<Omit<CanonicalVerifiedMatterAttemptScope, 'attemptRef'>> {
+  async authorizeOpenClawMatterRequest(input: {
+    matterId: string;
+  }): Promise<Omit<CanonicalVerifiedMatterAttemptScope, 'attemptRef'>> {
     const config = requiredMatterConfig();
     if (!config.matterIds.includes(input.matterId)) {
-      throw Object.assign(new Error('ACTION_ATTEMPT_NOT_FOUND'), { code: 'ACTION_ATTEMPT_NOT_FOUND', statusCode: 404 });
+      throw Object.assign(new Error('ACTION_ATTEMPT_NOT_FOUND'), {
+        code: 'ACTION_ATTEMPT_NOT_FOUND',
+        statusCode: 404,
+      });
     }
-    return { principalId: config.principalId, appId: CANONICAL_APP_ID,
-      tenantId: config.tenantId, actorUserId: config.actorUserId,
-      matterId: input.matterId };
+    return {
+      principalId: config.principalId,
+      appId: CANONICAL_APP_ID,
+      tenantId: config.tenantId,
+      actorUserId: config.actorUserId,
+      matterId: input.matterId,
+    };
   }
 
   async authorizeOpenClawWorkItem(input: {
@@ -115,13 +192,23 @@ export class ConfiguredDevelopmentCanonicalServiceScopeAuthorization implements 
       | 'BEGIN_TRANSLATE';
     workItemId: string;
   }): Promise<CanonicalVerifiedServiceScope> {
-    const config = requiredConfig();
-    if (input.workItemId !== config.workItemId &&
-      !['BEGIN_DYNAMIC', 'BEGIN_OVERALL'].includes(input.operation) &&
-      !(input.operation === 'GET_PENDING_REVIEW_TURN' &&
-        additionalWorkItemIds(config.workItemId).includes(input.workItemId)))
-      throw scopeNotFound();
-    return exactWorkItemScope(config, input.workItemId);
+    const config = configuredStaticWorkItemScope();
+    if (config) {
+      const staticAllowed =
+        input.workItemId === config.workItemId ||
+        (['BEGIN_DYNAMIC', 'BEGIN_OVERALL'].includes(input.operation) &&
+          additionalWorkItemIds(config.workItemId).includes(
+            input.workItemId,
+          )) ||
+        (input.operation === 'GET_PENDING_REVIEW_TURN' &&
+          additionalWorkItemIds(config.workItemId).includes(input.workItemId));
+      if (staticAllowed) return exactWorkItemScope(config, input.workItemId);
+    }
+    if (input.operation === 'GET_PENDING_REVIEW_TURN') throw scopeNotFound();
+    return this.authorizeAutomaticQueueWorkItem(
+      input.workItemId,
+      config !== null,
+    );
   }
 
   async authorizeOpenClawReview(input: {
@@ -134,9 +221,12 @@ export class ConfiguredDevelopmentCanonicalServiceScopeAuthorization implements 
     }
     const config = requiredConfig();
     const additional = additionalReviewConversation(config);
-    return exactWorkItemScope(config,
+    return exactWorkItemScope(
+      config,
       additional?.reviewConversationRef === input.reviewConversationRef
-        ? additional.workItemId : config.workItemId);
+        ? additional.workItemId
+        : config.workItemId,
+    );
   }
 
   async authorizeOpenClawApplicabilityContext(input: {
@@ -154,7 +244,10 @@ export class ConfiguredDevelopmentCanonicalServiceScopeAuthorization implements 
         requestId: input.requestId,
       };
     const additional = additionalApplicabilityContext(config);
-    if (!additional || input.applicabilityContextRef !== additional.applicabilityContextRef)
+    if (
+      !additional ||
+      input.applicabilityContextRef !== additional.applicabilityContextRef
+    )
       throw scopeNotFound();
     return {
       ...exactWorkItemScope(config, additional.workItemId),
@@ -176,7 +269,8 @@ export class ConfiguredDevelopmentCanonicalServiceScopeAuthorization implements 
       throw scopeNotFound();
     const additional = additionalApplicabilityContext(config);
     return additional?.workItemId === input.workItemId
-      ? additional.applicabilityContextRef : null;
+      ? additional.applicabilityContextRef
+      : null;
   }
 
   async authorizeOpenClawAttempt(input: {
@@ -198,31 +292,172 @@ export class ConfiguredDevelopmentCanonicalServiceScopeAuthorization implements 
     attemptRef: string;
     workItemId?: string;
   }): Promise<CanonicalVerifiedOpenClawAttemptScope> {
-    const config = requiredConfig();
     if (!input.attemptRef.trim()) throw scopeNotFound();
-    const selectedWorkItemId = input.workItemId === undefined
-      ? config.workItemId : input.workItemId;
-    if (selectedWorkItemId !== config.workItemId && ![
-      'COMMIT_DYNAMIC', 'RESUME_OVERALL', 'COMMIT_OVERALL',
-      'COMMIT_APPLICABILITY',
-      'GET_REVIEW_CONTEXT', 'READ_REVIEW_SOURCE_REFS', 'COMMIT_REVIEW',
-      'READ_ASSESSMENT_SOURCES', 'SAVE_ASSESSMENT_WORK',
-      'READ_ASSESSMENT_WORK', 'GET_ACTION_ATTEMPT_STATUS',
-      'HEARTBEAT_ATTEMPT', 'CANCEL_ATTEMPT',
-    ].includes(input.operation)) throw scopeNotFound();
-    if (selectedWorkItemId !== config.workItemId &&
-      input.operation === 'COMMIT_APPLICABILITY' &&
-      additionalApplicabilityContext(config)?.workItemId !== selectedWorkItemId)
+    const config = configuredStaticWorkItemScope();
+    if (config) {
+      const selectedWorkItemId = input.workItemId ?? config.workItemId;
+      const staticAllowed =
+        selectedWorkItemId === config.workItemId ||
+        ([
+          'COMMIT_DYNAMIC',
+          'RESUME_OVERALL',
+          'COMMIT_OVERALL',
+          'COMMIT_APPLICABILITY',
+          'GET_REVIEW_CONTEXT',
+          'READ_REVIEW_SOURCE_REFS',
+          'COMMIT_REVIEW',
+          'READ_ASSESSMENT_SOURCES',
+          'SAVE_ASSESSMENT_WORK',
+          'READ_ASSESSMENT_WORK',
+          'GET_ACTION_ATTEMPT_STATUS',
+          'HEARTBEAT_ATTEMPT',
+          'CANCEL_ATTEMPT',
+        ].includes(input.operation) &&
+          additionalWorkItemIds(config.workItemId).includes(
+            selectedWorkItemId,
+          ));
+      const applicabilityAllowed =
+        input.operation !== 'COMMIT_APPLICABILITY' ||
+        selectedWorkItemId === config.workItemId ||
+        additionalApplicabilityContext(config)?.workItemId ===
+          selectedWorkItemId;
+      const reviewAllowed =
+        ![
+          'GET_REVIEW_CONTEXT',
+          'READ_REVIEW_SOURCE_REFS',
+          'COMMIT_REVIEW',
+        ].includes(input.operation) ||
+        selectedWorkItemId === config.workItemId ||
+        additionalReviewConversation(config)?.workItemId === selectedWorkItemId;
+      if (staticAllowed && applicabilityAllowed && reviewAllowed) {
+        return {
+          ...exactWorkItemScope(config, selectedWorkItemId),
+          attemptRef: input.attemptRef,
+        };
+      }
+    }
+    if (
+      input.workItemId === undefined ||
+      !isAutomaticQueueAttemptOperation(input.operation)
+    ) {
       throw scopeNotFound();
-    if (selectedWorkItemId !== config.workItemId &&
-      ['GET_REVIEW_CONTEXT', 'READ_REVIEW_SOURCE_REFS', 'COMMIT_REVIEW'].includes(input.operation) &&
-      additionalReviewConversation(config)?.workItemId !== selectedWorkItemId)
-      throw scopeNotFound();
+    }
     return {
-      ...exactWorkItemScope(config, selectedWorkItemId),
+      ...(await this.authorizeAutomaticQueueWorkItem(
+        input.workItemId,
+        config !== null,
+      )),
       attemptRef: input.attemptRef,
     };
   }
+
+  private async authorizeAutomaticQueueWorkItem(
+    workItemId: string,
+    staticScopeConfigured: boolean,
+  ): Promise<CanonicalVerifiedServiceScope> {
+    let config: AutoWorkItemQueueScopeConfig;
+    try {
+      config = requiredAutoWorkItemQueueConfig();
+    } catch (error) {
+      if (staticScopeConfigured && isServiceScopeUnavailable(error)) {
+        throw scopeNotFound();
+      }
+      throw error;
+    }
+    if (!this.automaticLeaseAuthorization) {
+      throw canonicalServiceScopeUnavailable();
+    }
+    const lease = await this.automaticLeaseAuthorization.authorizeActiveLease({
+      tenantId: config.tenantId,
+      principalId: config.principalId,
+      workItemId,
+    });
+    if (
+      lease.principalId !== config.principalId ||
+      lease.tenantId !== config.tenantId ||
+      lease.workItemId !== workItemId ||
+      !lease.requestId.trim() ||
+      !lease.actorUserId.trim() ||
+      !lease.documentId.trim() ||
+      !lease.documentVersionId.trim() ||
+      !lease.sourceArtifactId.trim() ||
+      !/^[0-9a-f]{64}$/u.test(lease.sourceFileSha256) ||
+      !Number.isSafeInteger(lease.sourceByteLength) ||
+      lease.sourceByteLength < 1 ||
+      !Number.isSafeInteger(lease.leaseGeneration) ||
+      lease.leaseGeneration < 1 ||
+      !Number.isFinite(Date.parse(lease.leaseExpiresAt)) ||
+      Date.parse(lease.leaseExpiresAt) <= Date.now()
+    ) {
+      throw scopeNotFound();
+    }
+    return {
+      principalId: config.principalId,
+      appId: CANONICAL_APP_ID,
+      tenantId: config.tenantId,
+      workItemId,
+      authorizationFingerprint: fingerprint([
+        'openclaw-auto-work-item-lease.v1',
+        config.environment,
+        CANONICAL_APP_ID,
+        config.principalId,
+        config.tenantId,
+        lease.workItemId,
+        lease.requestId,
+        lease.actorUserId,
+        lease.documentId,
+        lease.documentVersionId,
+        lease.sourceArtifactId,
+        lease.sourceFileSha256,
+        String(lease.sourceByteLength),
+        String(lease.leaseGeneration),
+        lease.leaseExpiresAt,
+      ]),
+      automaticWorkItemLease: {
+        requestId: lease.requestId,
+        actorUserId: lease.actorUserId,
+        documentId: lease.documentId,
+        documentVersionId: lease.documentVersionId,
+        sourceArtifactId: lease.sourceArtifactId,
+        sourceFileSha256: lease.sourceFileSha256,
+        sourceByteLength: lease.sourceByteLength,
+        leaseGeneration: lease.leaseGeneration,
+        leaseExpiresAt: lease.leaseExpiresAt,
+      },
+    };
+  }
+}
+
+function configuredStaticWorkItemScope(): DevelopmentServiceScopeConfig | null {
+  try {
+    return requiredConfig();
+  } catch (error) {
+    if (isServiceScopeUnavailable(error)) return null;
+    throw error;
+  }
+}
+
+function isServiceScopeUnavailable(error: unknown): boolean {
+  return (
+    error instanceof Error &&
+    'code' in error &&
+    error.code === 'CANONICAL_SERVICE_SCOPE_UNAVAILABLE'
+  );
+}
+
+function isAutomaticQueueAttemptOperation(operation: string): boolean {
+  return [
+    'COMMIT_DYNAMIC',
+    'RESUME_OVERALL',
+    'COMMIT_OVERALL',
+    'COMMIT_TRANSLATE',
+    'READ_ASSESSMENT_SOURCES',
+    'SAVE_ASSESSMENT_WORK',
+    'READ_ASSESSMENT_WORK',
+    'GET_ACTION_ATTEMPT_STATUS',
+    'HEARTBEAT_ATTEMPT',
+    'CANCEL_ATTEMPT',
+  ].includes(operation);
 }
 
 interface DevelopmentServiceScopeConfig {
@@ -230,6 +465,12 @@ interface DevelopmentServiceScopeConfig {
   principalId: string;
   tenantId: string;
   workItemId: string;
+}
+
+interface AutoWorkItemQueueScopeConfig {
+  environment: 'DEV' | 'UAT';
+  principalId: string;
+  tenantId: string;
 }
 
 /** Project the existing executor scope; do not expose its service identity/config. */
@@ -240,8 +481,10 @@ export function isOpenClawAutomaticReviewConfigured(input: {
 }): boolean {
   try {
     const config = requiredConfig();
-    const additional = input.reviewConversationId === undefined
-      ? null : additionalReviewConversation(config);
+    const additional =
+      input.reviewConversationId === undefined
+        ? null
+        : additionalReviewConversation(config);
     return (
       config.tenantId === input.tenantId &&
       (config.workItemId === input.workItemId ||
@@ -290,6 +533,17 @@ function requiredBaseConfig(): Omit<
   };
 }
 
+function requiredAutoWorkItemQueueConfig(): AutoWorkItemQueueScopeConfig {
+  const base = requiredBaseConfig();
+  if (
+    process.env.WL_OPENCLAW_SERVICE_AUTO_QUEUE_ENABLED !== '1' ||
+    base.principalId !== OPENCLAW_QUEUE_PRINCIPAL_ID
+  ) {
+    throw canonicalServiceScopeUnavailable();
+  }
+  return base;
+}
+
 function requiredConfig(): DevelopmentServiceScopeConfig {
   const base = requiredBaseConfig();
   const workItemId = process.env.WL_OPENCLAW_SERVICE_WORK_ITEM_ID;
@@ -306,34 +560,54 @@ function additionalWorkItemIds(legacyWorkItemId: string): string[] {
   const raw = process.env.WL_OPENCLAW_SERVICE_ADDITIONAL_WORK_ITEM_IDS;
   if (raw === undefined) return [];
   let parsed: unknown;
-  try { parsed = JSON.parse(raw); }
-  catch { throw canonicalServiceScopeUnavailable(); }
-  if (!Array.isArray(parsed) || parsed.length !== 1 ||
-    !parsed.every((id): id is string =>
-      typeof id === 'string' && /^WI-[A-Za-z0-9_-]{1,93}$/u.test(id)) ||
-    new Set(parsed).size !== parsed.length || parsed.includes(legacyWorkItemId))
+  try {
+    parsed = JSON.parse(raw);
+  } catch {
+    throw canonicalServiceScopeUnavailable();
+  }
+  if (
+    !Array.isArray(parsed) ||
+    parsed.length !== 1 ||
+    !parsed.every(
+      (id): id is string =>
+        typeof id === 'string' && /^WI-[A-Za-z0-9_-]{1,93}$/u.test(id),
+    ) ||
+    new Set(parsed).size !== parsed.length ||
+    parsed.includes(legacyWorkItemId)
+  )
     throw canonicalServiceScopeUnavailable();
   return parsed;
 }
 
-function additionalApplicabilityContext(config: DevelopmentServiceScopeConfig): {
+function additionalApplicabilityContext(
+  config: DevelopmentServiceScopeConfig,
+): {
   workItemId: string;
   applicabilityContextRef: string;
 } | null {
   const raw = process.env.WL_OPENCLAW_APPLICABILITY_ADDITIONAL_CONTEXT_BINDING;
   if (raw === undefined) return null;
   let parsed: unknown;
-  try { parsed = JSON.parse(raw); }
-  catch { throw canonicalServiceScopeUnavailable(); }
-  if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed) ||
+  try {
+    parsed = JSON.parse(raw);
+  } catch {
+    throw canonicalServiceScopeUnavailable();
+  }
+  if (
+    !parsed ||
+    typeof parsed !== 'object' ||
+    Array.isArray(parsed) ||
     JSON.stringify(Object.keys(parsed).sort()) !==
       JSON.stringify(['applicabilityContextRef', 'workItemId']) ||
-    !('workItemId' in parsed) || typeof parsed.workItemId !== 'string' ||
+    !('workItemId' in parsed) ||
+    typeof parsed.workItemId !== 'string' ||
     !additionalWorkItemIds(config.workItemId).includes(parsed.workItemId) ||
     !('applicabilityContextRef' in parsed) ||
     typeof parsed.applicabilityContextRef !== 'string' ||
     !/^APCTX-[A-Za-z0-9_-]{1,154}$/u.test(parsed.applicabilityContextRef) ||
-    parsed.applicabilityContextRef === process.env.WL_OPENCLAW_APPLICABILITY_CONTEXT_REF)
+    parsed.applicabilityContextRef ===
+      process.env.WL_OPENCLAW_APPLICABILITY_CONTEXT_REF
+  )
     throw canonicalServiceScopeUnavailable();
   return {
     workItemId: parsed.workItemId,
@@ -353,14 +627,19 @@ function additionalReviewConversation(config: DevelopmentServiceScopeConfig): {
   } catch {
     throw canonicalServiceScopeUnavailable();
   }
-  if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed) ||
+  if (
+    !parsed ||
+    typeof parsed !== 'object' ||
+    Array.isArray(parsed) ||
     JSON.stringify(Object.keys(parsed).sort()) !==
       JSON.stringify(['reviewConversationRef', 'workItemId']) ||
-    !('workItemId' in parsed) || typeof parsed.workItemId !== 'string' ||
+    !('workItemId' in parsed) ||
+    typeof parsed.workItemId !== 'string' ||
     !additionalWorkItemIds(config.workItemId).includes(parsed.workItemId) ||
     !('reviewConversationRef' in parsed) ||
     typeof parsed.reviewConversationRef !== 'string' ||
-    !/^[A-Za-z0-9_-]{1,96}$/u.test(parsed.reviewConversationRef))
+    !/^[A-Za-z0-9_-]{1,96}$/u.test(parsed.reviewConversationRef)
+  )
     throw canonicalServiceScopeUnavailable();
   return {
     workItemId: parsed.workItemId,
@@ -372,9 +651,13 @@ function requiredDocumentConfig() {
   const base = requiredBaseConfig();
   const documentVersionId = process.env.WL_OPENCLAW_SERVICE_DOCUMENT_VERSION_ID;
   const actorUserId = process.env.WL_OPENCLAW_SERVICE_DOCUMENT_ACTOR_ID;
-  if (process.env.WL_OPENCLAW_DOCUMENT_SCOPE_ENABLED !== '1' ||
-      !actorUserId?.trim()) throw canonicalServiceScopeUnavailable();
-  const configuredVersions = process.env.WL_OPENCLAW_SERVICE_DOCUMENT_VERSION_IDS;
+  if (
+    process.env.WL_OPENCLAW_DOCUMENT_SCOPE_ENABLED !== '1' ||
+    !actorUserId?.trim()
+  )
+    throw canonicalServiceScopeUnavailable();
+  const configuredVersions =
+    process.env.WL_OPENCLAW_SERVICE_DOCUMENT_VERSION_IDS;
   if (configuredVersions === undefined) {
     if (!documentVersionId?.trim()) throw canonicalServiceScopeUnavailable();
     return { ...base, documentVersionIds: [documentVersionId], actorUserId };
@@ -382,11 +665,23 @@ function requiredDocumentConfig() {
   // An explicit list replaces the single-version setting. Invalid configuration
   // must not silently fall back to a different authorization scope.
   let versions: unknown;
-  try { versions = JSON.parse(configuredVersions); }
-  catch { throw canonicalServiceScopeUnavailable(); }
-  if (!Array.isArray(versions) || !versions.length || !versions.every((version): version is string =>
-    typeof version === 'string' && version.length <= 96 && /^[A-Za-z0-9][A-Za-z0-9_-]*$/u.test(version)) ||
-    new Set(versions).size !== versions.length) throw canonicalServiceScopeUnavailable();
+  try {
+    versions = JSON.parse(configuredVersions);
+  } catch {
+    throw canonicalServiceScopeUnavailable();
+  }
+  if (
+    !Array.isArray(versions) ||
+    !versions.length ||
+    !versions.every(
+      (version): version is string =>
+        typeof version === 'string' &&
+        version.length <= 96 &&
+        /^[A-Za-z0-9][A-Za-z0-9_-]*$/u.test(version),
+    ) ||
+    new Set(versions).size !== versions.length
+  )
+    throw canonicalServiceScopeUnavailable();
   return { ...base, documentVersionIds: versions, actorUserId };
 }
 
@@ -394,8 +689,11 @@ function requiredMatterConfig() {
   const base = requiredBaseConfig();
   const matterId = process.env.WL_OPENCLAW_SERVICE_MATTER_ID;
   const actorUserId = process.env.WL_OPENCLAW_SERVICE_MATTER_ACTOR_ID;
-  if (process.env.WL_OPENCLAW_MATTER_SCOPE_ENABLED !== '1' ||
-      !actorUserId?.trim()) throw canonicalServiceScopeUnavailable();
+  if (
+    process.env.WL_OPENCLAW_MATTER_SCOPE_ENABLED !== '1' ||
+    !actorUserId?.trim()
+  )
+    throw canonicalServiceScopeUnavailable();
   const configuredMatters = process.env.WL_OPENCLAW_SERVICE_MATTER_IDS;
   if (configuredMatters === undefined) {
     if (!matterId?.startsWith('MAT-')) throw canonicalServiceScopeUnavailable();
@@ -404,11 +702,23 @@ function requiredMatterConfig() {
   // Like document scopes, an explicit list replaces the legacy single object.
   // It never grants a tenant-wide scope or permits fallback on invalid input.
   let matters: unknown;
-  try { matters = JSON.parse(configuredMatters); }
-  catch { throw canonicalServiceScopeUnavailable(); }
-  if (!Array.isArray(matters) || !matters.length || !matters.every((matter): matter is string =>
-    typeof matter === 'string' && matter.length <= 96 && /^MAT-[A-Za-z0-9_-]+$/u.test(matter)) ||
-    new Set(matters).size !== matters.length) throw canonicalServiceScopeUnavailable();
+  try {
+    matters = JSON.parse(configuredMatters);
+  } catch {
+    throw canonicalServiceScopeUnavailable();
+  }
+  if (
+    !Array.isArray(matters) ||
+    !matters.length ||
+    !matters.every(
+      (matter): matter is string =>
+        typeof matter === 'string' &&
+        matter.length <= 96 &&
+        /^MAT-[A-Za-z0-9_-]+$/u.test(matter),
+    ) ||
+    new Set(matters).size !== matters.length
+  )
+    throw canonicalServiceScopeUnavailable();
   return { ...base, matterIds: matters, actorUserId };
 }
 
@@ -438,8 +748,11 @@ function exactWorkItemScope(
   config: DevelopmentServiceScopeConfig,
   requestedWorkItemId: string,
 ): CanonicalVerifiedServiceScope {
-  if (requestedWorkItemId !== config.workItemId &&
-    !additionalWorkItemIds(config.workItemId).includes(requestedWorkItemId)) throw scopeNotFound();
+  if (
+    requestedWorkItemId !== config.workItemId &&
+    !additionalWorkItemIds(config.workItemId).includes(requestedWorkItemId)
+  )
+    throw scopeNotFound();
   return {
     principalId: config.principalId,
     appId: CANONICAL_APP_ID,

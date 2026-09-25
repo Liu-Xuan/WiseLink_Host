@@ -1279,8 +1279,7 @@ export interface ConfigureCanonicalApplicabilitySelectionRequest {
 }
 
 /** Explicit engineer ReviewAction; preview and confirmation bind the same Fleet revision. */
-export interface PreviewCanonicalApplicabilitySelectionRequest
-  extends ConfigureCanonicalApplicabilitySelectionRequest {
+export interface PreviewCanonicalApplicabilitySelectionRequest extends ConfigureCanonicalApplicabilitySelectionRequest {
   expectedWorkItemRevision: number;
 }
 
@@ -1339,7 +1338,9 @@ export interface CanonicalApplicabilitySelectionReadModel {
  * resolved by service authorization before the WorkItem is fresh-read.
  */
 export interface CanonicalApplicabilityInputProjection {
-  schemaVersion: 'wiselink.3_1.applicability_input_projection.v1' | 'wiselink.3_1.applicability_input_projection.v2';
+  schemaVersion:
+    | 'wiselink.3_1.applicability_input_projection.v1'
+    | 'wiselink.3_1.applicability_input_projection.v2';
   applicabilityContextRef: string;
   /** Host-derived exact WorkItem/DocumentVersion/package binding. */
   workItemId: string;
@@ -1348,7 +1349,13 @@ export interface CanonicalApplicabilityInputProjection {
   sourcePackageContentHash: string | null;
   sourcePackageArtifactSha256: string | null;
   /** v2 binds the real original and its verified manifest, never a synthetic package. */
-  originalSource?: { binding: DocumentOriginalBinding; artifact: Pick<UnifiedPackageArtifactDescriptor, 'ref' | 'sha256' | 'byteLength' | 'mediaType'> };
+  originalSource?: {
+    binding: DocumentOriginalBinding;
+    artifact: Pick<
+      UnifiedPackageArtifactDescriptor,
+      'ref' | 'sha256' | 'byteLength' | 'mediaType'
+    >;
+  };
   /** Canonical hash of frozen.2 sourceExpressions + assignments.target. */
   targetBindingHash: string;
   /** Revision of the server-private controlled aircraft/Fleet selection. */
@@ -1420,7 +1427,9 @@ export type CanonicalApplicabilityCandidateProjection =
           schemaVersion: 'wiselink.3_1.applicability_candidate_projection.v3';
           sourcePackageId: null;
           sourcePackageContentHash: null;
-          originalSource: NonNullable<CanonicalApplicabilityInputProjection['originalSource']>;
+          originalSource: NonNullable<
+            CanonicalApplicabilityInputProjection['originalSource']
+          >;
           translationActionAttemptId: null;
           sourceReadingMode: 'VERIFIED_ENGLISH';
         }
@@ -2985,7 +2994,11 @@ export interface DocumentMetadataReextractResponse extends DocumentMetadataReadR
 export interface CanonicalLibraryDocumentVersionSummary {
   /** Exact published source reading, never an arbitrary matter assessment. */
   documentReading?: import('./document-reading.interface').DocumentReadingPreview;
-  parsing?: { status: import('./document-parsing.interface').DocumentParseStatus; latestRevision: number; publishedRevision: number | null } | null;
+  parsing?: {
+    status: import('./document-parsing.interface').DocumentParseStatus;
+    latestRevision: number;
+    publishedRevision: number | null;
+  } | null;
   metadataRevision?: number | null;
   extractedMetadata?: DocumentExtractedMetadata | null;
   documentVersionId: string;
@@ -3200,7 +3213,9 @@ export interface EngineeringMatterCatalogEntry {
  * server-side session value.
  */
 export interface EngineeringMatterReadModel {
-  schemaVersion: 'wiselink.3_1.engineering_matter_catalog.v1' | 'wiselink.3_1.engineering_matter_catalog.v2';
+  schemaVersion:
+    | 'wiselink.3_1.engineering_matter_catalog.v1'
+    | 'wiselink.3_1.engineering_matter_catalog.v2';
   materials?: import('./matter-material.interface').MatterMaterialLink[];
   matterId: string;
   title: string;
@@ -3237,6 +3252,32 @@ export interface LinkEngineeringMatterWorkItemResponse {
   matter: EngineeringMatterReadModel;
   linked: boolean;
   replayed: boolean;
+}
+
+export type AutomaticWorkItemClaimResult =
+  | { status: 'IDLE' }
+  | {
+      status: 'CLAIMED';
+      workItemId: string;
+      requestId: string;
+      documentVersionId: string;
+      workItemRevision: number;
+      leaseToken: string;
+      leaseGeneration: number;
+      leaseExpiresAt: string;
+    };
+
+export interface AcknowledgeAutomaticWorkItemRequest {
+  workItemId: string;
+  leaseToken: string;
+  leaseGeneration: number;
+}
+
+export interface AcknowledgeAutomaticWorkItemResponse {
+  status: 'ACKNOWLEDGED';
+  workItemId: string;
+  replayed: boolean;
+  acknowledgedAt: string;
 }
 
 export type CanonicalRelatedDocumentRelationRole =

@@ -77,6 +77,28 @@ function modelInput() {
   };
 }
 
+function initialChunkModelInput() {
+  const input = modelInput();
+  input.documentOverview = { title: 'Synthetic FTD', sections: [] };
+  input.availableSources = Array.from({ length: 31 }, (_, index) => ({
+    ref: `source:ftd:${index + 1}`, kind: 'DOCUMENT_PASSAGE', title: `第 ${index + 1} 页`,
+    versionLabel: 'R1', locator: { page: index + 1 },
+  }));
+  return input;
+}
+
+function completeSavedJobAidContent(candidate, readSourceRefs) {
+  return {
+    ...candidate,
+    headline: candidate.headline ?? 'Synthetic engineering topic',
+    listBrief: candidate.listBrief ?? 'Synthetic concise reading copy.',
+    understanding: candidate.overview ?? 'Synthetic saved engineering view.',
+    overviewStatus: 'STALE',
+    readSourceRefs,
+    issues: candidate.issues ?? [],
+  };
+}
+
 test('native gateway failures retain only fixed categories and do not replay ambiguous model execution', async () => {
   for (const [message, category, suffix] of [
     ['dli/gpt-5.6-sol ended with an incomplete terminal response', 'INCOMPLETE_TERMINAL_RESPONSE', ':INCOMPLETE_TERMINAL_RESPONSE'],
@@ -103,6 +125,34 @@ test('native gateway failures retain only fixed categories and do not replay amb
     assert.equal(JSON.stringify(shapes).includes('fixture-private-token'), false);
     assert.equal(JSON.stringify(shapes).includes(message), false);
   }
+});
+
+test('M3 Probe incomplete HTTP 400 remains an explicit incomplete response, never inferred as length', async () => {
+  const shapes = [];
+  const f = fixture([], {
+    executionModel: { modelRef: 'm3probe/minimax-m3', displayName: 'M3 Probe Large',
+      providerKind: 'CUSTOM', settingsRevision: 1, selectedAt: '2026-09-25T00:00:00.000Z' },
+    registeredModelRefs: ['m3probe/minimax-m3'],
+    observeModelOutput: async shape => shapes.push(shape),
+  });
+  f.dependencies.requestGateway = async (_url, request) => {
+    f.calls.push(JSON.parse(request.body));
+    return new Response(JSON.stringify({ error: { message: 'm3probe/minimax-m3 ended with an incomplete terminal response' } }),
+      { status: 400 });
+  };
+  await assert.rejects(f.run(initialChunkModelInput()), error => {
+    assert.equal(error.message, 'JOBAID_GATEWAY_HTTP_400:INCOMPLETE_TERMINAL_RESPONSE');
+    assert.equal(error.terminalAssessmentFailure?.errorCode, 'JOBAID_INCOMPLETE_TERMINAL_RESPONSE');
+    assert.notEqual(error.terminalAssessmentFailure?.errorCode, 'JOBAID_MODEL_OUTPUT_LENGTH');
+    return true;
+  });
+  assert.equal(f.calls.length, 1);
+  assert.equal(f.calls[0].max_completion_tokens, undefined,
+    'do not guess an uncontracted completion limit for the M3 Probe route');
+  assert.equal(shapes[0].requestMaxCompletionTokens, null);
+  assert.equal(shapes[0].finishReason, null);
+  assert.equal(f.reads.length, 0);
+  assert.equal(f.saves.length, 0);
 });
 function fixture(steps, overrides = {}) {
   const calls = [];
@@ -815,6 +865,128 @@ test('overlapping source batches cannot silently replace different source conten
   })), /JOBAID_SOURCE_READ_FAILED:INCONSISTENT_EVIDENCE/);
 });
 
+test('initial JobAid bounds reads before save, then rotates only with exact saved-work readback', async () => {
+  const input = initialChunkModelInput();
+  const refs = input.availableSources.map(source => source.ref);
+  const firstWork = { schemaVersion: 'wiselink.jobaid-problem-work.v3', headline: 'First batch',
+    listBrief: 'Conditional finding.', overview: 'One finding, remaining pages unread.',
+    roundCompletion: 'IN_PROGRESS', completionReason: 'Continue reading.', changeSummary: 'Saved first batch.',
+    issues: [{ issueKey: 'condition-a', question: 'When does A apply?', body: 'Only if A [[source:ftd:1]].' }] };
+  const secondWork = { ...firstWork, overview: 'A applies conditionally; other pages remain open.',
+    roundCompletion: 'COMPLETE_WITH_OPEN_QUESTIONS', completionReason: 'Unverified pages remain.',
+    changeSummary: 'Added the next read batch.', issues: [...firstWork.issues,
+      { issueKey: 'condition-b', question: 'Does B apply?', body: 'B remains unresolved [[source:ftd:11]].' }] };
+  const f = fixture([
+    { action: 'READ_SOURCES', sourceRefs: refs.slice(0, 11), purpose: 'select relevant source units', context: 'PAGE' },
+    { action: 'READ_SOURCES', sourceRefs: refs.slice(0, 10), purpose: 'read first batch', context: 'PAGE' },
+    { action: 'READ_SOURCES', sourceRefs: refs.slice(10, 12), purpose: 'read more', context: 'PAGE' },
+    { action: 'SAVE_WORK', work: firstWork },
+    { action: 'READ_SOURCES', sourceRefs: refs.slice(10, 11), purpose: 'read next batch', context: 'PAGE' },
+    { action: 'SAVE_WORK', work: secondWork },
+    { action: 'FINISH' },
+  ]);
+  f.options.readAssessmentSources = async request => {
+    f.reads.push(request);
+    return { status: 'AVAILABLE', scope: request.context, completeRequestedScope: true,
+      sourceRefs: [...request.sourceRefs], evidence: request.sourceRefs.map(evidenceRef => ({ evidenceRef,
+        kind: 'DOCUMENT_PASSAGE', excerpt: `Source passage ${evidenceRef}` })) };
+  };
+  const save = f.options.saveAssessmentWork;
+  f.options.saveAssessmentWork = async request => {
+    const result = await save(request);
+    const revision = f.store.get(request.requestId);
+    revision.content = completeSavedJobAidContent(revision.content,
+      f.reads.flatMap(read => read.sourceRefs));
+    return result;
+  };
+
+  const result = await f.run(input);
+  assert.equal(result.output.workRevisionRef, 'JAWR-2');
+  assert.deepEqual(f.reads.map(read => read.sourceRefs.length), [10, 1]);
+  assert.deepEqual(f.reads.map(read => read.sourceRefs[0]), [refs[0], refs[10]]);
+  assert.equal(f.saves.length, 2);
+  const tooLargeReceipt = JSON.parse(f.calls[1].messages.at(-1).content);
+  assert.equal(tooLargeReceipt.errorCode, 'JOBAID_SOURCE_BATCH_TOO_LARGE');
+  assert.equal(tooLargeReceipt.sourceReadPolicy.hostReadExecuted, false);
+  assert.match(tooLargeReceipt.instruction, /Host 未执行任何读取/u);
+  const saveRequiredReceipt = JSON.parse(f.calls[3].messages.at(-1).content);
+  assert.equal(saveRequiredReceipt.errorCode, 'JOBAID_SOURCE_BATCH_SAVE_REQUIRED');
+  assert.equal(saveRequiredReceipt.sourceReadPolicy.hostReadExecuted, false);
+  assert.match(saveRequiredReceipt.instruction, /先基于当前已交付正文保存/u);
+
+  const firstSession = new Set(f.calls.slice(0, 4).map(call => call.user));
+  assert.equal(firstSession.size, 1);
+  assert.equal(f.calls[4].user, f.calls[5].user,
+    'a source read and its following save remain in the same OpenClaw session');
+  assert.notEqual(f.calls[4].user, f.calls[6].user,
+    'each exact saved revision begins the next native session');
+  const resumedInput = JSON.parse(f.calls[4].messages[1].content);
+  const continuationReceipt = JSON.parse(f.calls[4].messages[2].content);
+  assert.equal(resumedInput.expectedWorkRevision, 1);
+  assert.equal(resumedInput.previousWork.workRevisionRef, 'JAWR-1');
+  assert.equal(resumedInput.previousWork.content.issues[0].issueKey, 'condition-a');
+  assert.equal(resumedInput.previousWork.content.evidence, undefined);
+  assert.deepEqual(continuationReceipt.readSourceRefs, refs.slice(0, 10));
+  assert.equal(continuationReceipt.workRevisionRef, 'JAWR-1');
+  assert.equal(continuationReceipt.status, 'HOST_SAVE_CONFIRMED');
+  assert.equal(f.calls[4].messages.some(message => message.role === 'assistant'), false,
+    'new native session starts from the exact Host readback instead of an orphaned old-session tool call');
+});
+
+test('an oversized READ_SOURCES response is checkpointed once and the same attempt can correct it', () => persisted(async checkpoint => {
+  const input = initialChunkModelInput();
+  const work = { schemaVersion: 'wiselink.jobaid-problem-work.v3', headline: 'Partial work',
+    listBrief: 'One conditional point.', overview: 'More sources remain.', roundCompletion: 'COMPLETE_WITH_OPEN_QUESTIONS',
+    completionReason: 'Some pages not read.', changeSummary: 'Saved partial work.', issues: [] };
+  const f = fixture([
+    { action: 'READ_SOURCES', sourceRefs: input.availableSources.slice(0, 11).map(source => source.ref),
+      purpose: 'read selected pages', context: 'PAGE' },
+    { action: 'SAVE_WORK', work },
+    { action: 'FINISH' },
+  ], { assessmentCheckpoint: checkpoint });
+  f.options.readAssessmentSources = async request => {
+    f.reads.push(request);
+    return { status: 'AVAILABLE', scope: request.context, completeRequestedScope: true,
+      sourceRefs: request.sourceRefs, evidence: request.sourceRefs.map(evidenceRef => ({ evidenceRef, excerpt: 'read' })) };
+  };
+  const save = f.options.saveAssessmentWork;
+  f.options.saveAssessmentWork = async request => {
+    const result = await save(request);
+    const revision = f.store.get(request.requestId);
+    revision.content = completeSavedJobAidContent(revision.content, []);
+    return result;
+  };
+  let interrupted = false;
+  f.options.observeCandidateRejection = async () => {
+    if (!interrupted) { interrupted = true; throw new Error('interrupt after durable model response'); }
+  };
+
+  const run = () => f.run(input);
+  await assert.rejects(run(), /interrupt after durable model response/u);
+  const durable = await checkpoint.readOptional('assessment-round-1.result');
+  assert.ok(durable, 'the exact READ_SOURCES function response is durably recorded');
+  await run();
+  assert.deepEqual(await checkpoint.readOptional('assessment-round-1.result'), durable);
+  assert.equal(f.calls.length, 3, 'reentry reuses the same result and proceeds to new model rounds');
+  assert.equal(f.reads.length, 0, 'the over-limit selection never reaches the Host reader');
+  assert.equal(f.saves.length, 1);
+  assert.equal((await checkpoint.readOptional('assessment-state')).expectedWorkRevision, 1);
+}));
+
+test('repeated source-policy refusal ends as an explicit policy failure without source reads', async () => {
+  const input = initialChunkModelInput();
+  const oversized = { action: 'READ_SOURCES', sourceRefs: input.availableSources.slice(0, 11).map(source => source.ref),
+    purpose: 'read selected pages', context: 'PAGE' };
+  const f = fixture(Array.from({ length: 8 }, () => oversized));
+  await assert.rejects(f.run(input), error => {
+    assert.equal(error.terminalAssessmentFailure?.errorCode, 'JOBAID_SOURCE_BATCH_POLICY_NOT_FOLLOWED');
+    return true;
+  });
+  assert.equal(f.calls.length, 5);
+  assert.equal(f.reads.length, 0);
+  assert.equal(f.saves.length, 0);
+});
+
 test('WorkItem reassessment cannot finish with previous completed work before saving this round', async () => {
   const input = { ...modelInput(), expectedWorkRevision: 3,
     previousWork: { workRevisionRef: 'JAWR-3', workRevision: 3, content: completed } };
@@ -924,7 +1096,7 @@ test('new requests stop on explicit length without replay; saved A remains reada
   assert.equal([...f.store.values()][0].workRevisionRef, 'JAWR-1');
   assert.ok(f.calls.every(call => call.max_completion_tokens === 16000));
   assert.equal((await checkpoint.readOptional('assessment-state')).scopeAdjustments, 0);
-  assert.equal((await checkpoint.readOptional('assessment-enabled')).generationPolicy.version, 'continuous-body-batches-v3');
+  assert.equal((await checkpoint.readOptional('assessment-enabled')).generationPolicy.version, 'continuous-body-batches-v4');
   assert.ok(await checkpoint.readOptional('assessment-round-2.result'), 'partial response stays durable but never saved');
 }));
 

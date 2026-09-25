@@ -31,6 +31,9 @@
 /* EngineeringIssueBody renders div/span, not paragraph nodes. */
 .wl-knowledge-suite .knowledge-prose .whitespace-pre-wrap{font-size:15px;line-height:1.85;color:var(--dim)}
 .wl-knowledge-suite .knowledge-preview .article-lead{font-size:19px;line-height:1.85;color:var(--ink);margin-bottom:20px}
+.wl-knowledge-suite .knowledge-work-details{margin-top:24px;border-top:1px solid var(--line);padding-top:16px}
+.wl-knowledge-suite .knowledge-work-details>summary{cursor:pointer;color:var(--blue);font-size:14px;font-weight:600;line-height:1.7}
+.wl-knowledge-suite .knowledge-work-details>section{margin:25px 0}
 .wl-knowledge-suite .knowledge-notice{margin:24px 0;padding:15px 18px;border:1px solid color-mix(in srgb,#b68134 25%,var(--line));border-radius:10px;background:color-mix(in srgb,#b68134 8%,var(--surface));font-size:12px;line-height:1.9}
 .wl-knowledge-suite .knowledge-actions{display:flex;gap:8px;flex-wrap:wrap;margin-top:25px}
 .wl-knowledge-suite .knowledge-actions a{display:inline-flex;gap:6px;align-items:center;color:var(--blue)}

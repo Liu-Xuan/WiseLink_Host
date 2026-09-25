@@ -25,6 +25,11 @@ import { CanonicalHostMcpService } from './canonical-host-mcp.service';
 import { CanonicalHostOpenClawMcpOpenApiController } from './canonical-host-openclaw-mcp.openapi.controller';
 import { OauthSessionDevelopmentWorkItemController } from './oauth-session-development-work-item.controller';
 import { CanonicalHostOpenClawMcpService } from './canonical-host-openclaw-mcp.service';
+import { AutomaticWorkItemDispatchService } from './automatic-work-item-dispatch.service';
+import { MiaodaAutomaticWorkItemLeaseAuthorizationAdapter } from './miaoda-automatic-work-item-lease-authorization.adapter';
+import { AUTOMATIC_WORK_ITEM_LEASE_AUTHORIZATION } from './automatic-work-item-lease-authorization.port';
+import { MiaodaAutomaticWorkItemSourceAuthorizationAdapter } from './miaoda-automatic-work-item-source-authorization.adapter';
+import { AUTOMATIC_WORK_ITEM_SOURCE_AUTHORIZATION } from './automatic-work-item-source-authorization.port';
 import { CanonicalHostOpenClawDynamicEvaluationService } from './canonical-host-openclaw-dynamic-evaluation.service';
 import { CanonicalHostOpenClawDiscoveryService } from './canonical-host-openclaw-discovery.service';
 import { CanonicalHostOpenClawOverallService } from './canonical-host-openclaw-overall.service';
@@ -237,6 +242,7 @@ export interface CanonicalHostModuleOptions {
     CanonicalPdfPreviewService,
     CanonicalHostMcpService,
     CanonicalHostOpenClawMcpService,
+    AutomaticWorkItemDispatchService,
     CanonicalHostOpenClawDynamicEvaluationService,
     CanonicalHostOpenClawDiscoveryService,
     CanonicalHostOpenClawOverallService,
@@ -511,6 +517,15 @@ export class CanonicalHostModule {
         CanonicalPdfPreviewService,
         CanonicalHostMcpService,
         CanonicalHostOpenClawMcpService,
+        AutomaticWorkItemDispatchService,
+        {
+          provide: AUTOMATIC_WORK_ITEM_SOURCE_AUTHORIZATION,
+          useClass: MiaodaAutomaticWorkItemSourceAuthorizationAdapter,
+        },
+        {
+          provide: AUTOMATIC_WORK_ITEM_LEASE_AUTHORIZATION,
+          useClass: MiaodaAutomaticWorkItemLeaseAuthorizationAdapter,
+        },
         CanonicalHostOpenClawDynamicEvaluationService,
         CanonicalHostOpenClawDiscoveryService,
         CanonicalHostOpenClawOverallService,
@@ -537,7 +552,7 @@ export class CanonicalHostModule {
         DialogueRepository,
         DialogueContextService,
         ReviewAilyService,
-    InitialAssessmentKnowledgeService,
+        InitialAssessmentKnowledgeService,
         CanonicalHostCommonContextService,
         EngineeringIssueSearchService,
         CanonicalJobAidProblemService,

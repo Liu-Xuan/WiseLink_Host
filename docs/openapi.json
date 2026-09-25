@@ -400,6 +400,187 @@
         }
       }
     },
+    "/openapi/wiselink/next-work-item": {
+      "post": {
+        "operationId": "nextWorkItem",
+        "summary": "领取一个已登记且可执行的工程 WorkItem",
+        "description": "只发现 Host 在正常受理时持久登记的新请求；旧 WorkItem 不自动纳管。固定 service:openclaw-main 队列身份与 DEV/UAT 租户必须显式启用。Host 每项重验租户、原提交人、DocumentVersion、来源权限、当前原件及候选解析投影；坏对象隔离后继续查找。无任务返回 IDLE，不触发模型或制造 WorkItem。成功返回的 leaseToken/leaseGeneration 仅交可信消费者编排层，勿写入模型输入或日志。",
+        "responses": {
+          "200": {
+            "description": "空队列，或一个成功领取的精确 WorkItem 和短时租约",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "oneOf": [
+                    {
+                      "type": "object",
+                      "required": ["status"],
+                      "properties": {
+                        "status": {
+                          "type": "string",
+                          "enum": ["IDLE"],
+                          "description": "当前没有符合条件的已登记任务",
+                          "example": "IDLE"
+                        }
+                      }
+                    },
+                    {
+                      "type": "object",
+                      "required": [
+                        "status",
+                        "workItemId",
+                        "requestId",
+                        "documentVersionId",
+                        "workItemRevision",
+                        "leaseToken",
+                        "leaseGeneration",
+                        "leaseExpiresAt"
+                      ],
+                      "properties": {
+                        "status": {
+                          "type": "string",
+                          "enum": ["CLAIMED"],
+                          "description": "已由 Host 原子领取",
+                          "example": "CLAIMED"
+                        },
+                        "workItemId": {
+                          "type": "string",
+                          "description": "租约唯一绑定的 WorkItem",
+                          "example": "WI-3d41f7"
+                        },
+                        "requestId": {
+                          "type": "string",
+                          "description": "受理请求 ID",
+                          "example": "REQ-d72c1b"
+                        },
+                        "documentVersionId": {
+                          "type": "string",
+                          "description": "已授权且当前的原件版本",
+                          "example": "DV-7a12ce"
+                        },
+                        "workItemRevision": {
+                          "type": "integer",
+                          "description": "领取时已核对的 WorkItem 修订",
+                          "example": 1
+                        },
+                        "leaseToken": {
+                          "type": "string",
+                          "format": "uuid",
+                          "description": "消费者 ack 使用的租约凭证；敏感值",
+                          "example": "0f8fad5b-d9cb-469f-a165-70867728950e"
+                        },
+                        "leaseGeneration": {
+                          "type": "integer",
+                          "description": "防止旧租约回写的递增代次",
+                          "example": 1
+                        },
+                        "leaseExpiresAt": {
+                          "type": "string",
+                          "format": "date-time",
+                          "description": "租约过期时间",
+                          "example": "2026-09-25T09:00:00.000Z"
+                        }
+                      }
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "固定自动队列 service scope 未显式配置或 Host 依赖不可用"
+          }
+        }
+      }
+    },
+    "/openapi/wiselink/ack-work-item": {
+      "post": {
+        "operationId": "acknowledgeWorkItem",
+        "summary": "确认可信消费者已完成一个租约任务",
+        "description": "仅由可信消费者编排层在候选处理成功后调用，不注册为模型 MCP 工具。Host 重新验证原 active lease、固定租约 owner、租户、WorkItem、原 actor、DocumentVersion、当前来源权限与原件，再以 leaseToken+leaseGeneration 原子完成；重复提交同一已完成租约幂等成功。过期、代次不匹配或来源权限失效均拒绝。",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": ["workItemId", "leaseToken", "leaseGeneration"],
+                "additionalProperties": false,
+                "properties": {
+                  "workItemId": {
+                    "type": "string",
+                    "description": "本次领取的唯一 WorkItem",
+                    "example": "WI-3d41f7"
+                  },
+                  "leaseToken": {
+                    "type": "string",
+                    "format": "uuid",
+                    "description": "next-work-item 返回的租约凭证",
+                    "example": "0f8fad5b-d9cb-469f-a165-70867728950e"
+                  },
+                  "leaseGeneration": {
+                    "type": "integer",
+                    "minimum": 1,
+                    "description": "next-work-item 返回的租约代次",
+                    "example": 1
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Host 已完成队列项；重试时 replayed=true",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "status",
+                    "workItemId",
+                    "replayed",
+                    "acknowledgedAt"
+                  ],
+                  "properties": {
+                    "status": {
+                      "type": "string",
+                      "enum": ["ACKNOWLEDGED"],
+                      "description": "确认状态",
+                      "example": "ACKNOWLEDGED"
+                    },
+                    "workItemId": {
+                      "type": "string",
+                      "description": "完成的 WorkItem",
+                      "example": "WI-3d41f7"
+                    },
+                    "replayed": {
+                      "type": "boolean",
+                      "description": "是否为相同租约的幂等重试",
+                      "example": false
+                    },
+                    "acknowledgedAt": {
+                      "type": "string",
+                      "format": "date-time",
+                      "description": "Host 首次确认时间",
+                      "example": "2026-09-25T08:42:17.000Z"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": { "description": "WorkItem 或租约字段格式无效" },
+          "404": {
+            "description": "租约、登记授权、来源或 owner binding 不匹配"
+          },
+          "409": { "description": "租约在校验后过期、丢失或已被新代次领取" },
+          "503": {
+            "description": "自动队列 service scope 未显式配置或 Host 依赖不可用"
+          }
+        }
+      }
+    },
     "/openapi/wiselink/mcp": {
       "post": {
         "operationId": "handleWiseLinkMcp",
@@ -445,8 +626,25 @@
       "post": {
         "operationId": "handleOpenClawMcp",
         "summary": "OpenClaw 专用 ActionAttempt 队列与候选评估 MCP 入口",
-        "x-wiselink-document-work": {"tool":"document_work","actions":["STATUS","STEP","CANCEL","INDEX"],"indexing":"INDEX每次最多20个原文单元，正常来源授权后同事务保存索引与进度，索引完成同事务确认pending；事项消费者按持久已发布原文修订与已保存coverage比较变化并幂等登记后继任务","originalReader":"read_document_original：确切parseRun的完整原文单元分页，附真实manifest ref/hash、定位和覆盖限制，正常来源授权每次重验","scope":"独立精确 documentVersionId/tenant/actor 配置授权；不继承 WorkItem/Matter 范围","execution":"Host 持久领取现有 parseRun，租约不进入模型；有界插件步骤在事务外执行，保存和发布事务内检查租约；状态读取不触发运行"},
-        "x-wiselink-document-translation": {"tool":"document_translation","actions":["START","STATUS","STEP","CANCEL"],"subject":"真实DocumentVersion与parseRun；不创建WorkItem","execution":"复用Translation V2和ActionAttempt，官方插件每次一个持久步骤，原生文档consumer按STATUS推进；失败保留恢复状态"},
+        "x-wiselink-automatic-work-item-queue": {
+          "discover": "POST /openapi/wiselink/next-work-item",
+          "acknowledge": "POST /openapi/wiselink/ack-work-item",
+          "behavior": "每次下游 WorkItem-bound MCP 操作重新核验固定 service owner 的有效租约、持久 grant、租户、原 actor、DocumentVersion、来源读取权限与当前原件。可信消费者在候选流程结束后单独调用 ack；ack 不暴露给模型。已配置的静态 exact WorkItem scope 仍按旧路径工作。"
+        },
+        "x-wiselink-document-work": {
+          "tool": "document_work",
+          "actions": ["STATUS", "STEP", "CANCEL", "INDEX"],
+          "indexing": "INDEX每次最多20个原文单元，正常来源授权后同事务保存索引与进度，索引完成同事务确认pending；事项消费者按持久已发布原文修订与已保存coverage比较变化并幂等登记后继任务",
+          "originalReader": "read_document_original：确切parseRun的完整原文单元分页，附真实manifest ref/hash、定位和覆盖限制，正常来源授权每次重验",
+          "scope": "独立精确 documentVersionId/tenant/actor 配置授权；不继承 WorkItem/Matter 范围",
+          "execution": "Host 持久领取现有 parseRun，租约不进入模型；有界插件步骤在事务外执行，保存和发布事务内检查租约；状态读取不触发运行"
+        },
+        "x-wiselink-document-translation": {
+          "tool": "document_translation",
+          "actions": ["START", "STATUS", "STEP", "CANCEL"],
+          "subject": "真实DocumentVersion与parseRun；不创建WorkItem",
+          "execution": "复用Translation V2和ActionAttempt，官方插件每次一个持久步骤，原生文档consumer按STATUS推进；失败保留恢复状态"
+        },
         "x-wiselink-common-context": {
           "location": "JobAid / Overall modelInput.commonContext；Review modelInput.context.commonContext",
           "behavior": "评估前复用主文件章节、当前身份可见的关联背景片段与普通讨论，存入现有 Task 输入。关联资料仍是 BACKGROUND_ONLY；施工引用默认只入目录。最近 12 个历史回合按顺序传入并报告省略数，旧 revision 的工作回答单独标记，不冒充正式采用。RAG 尚未连接时明确 NOT_CONNECTED。",
@@ -467,13 +665,27 @@
           "location": "TaskEnvelope.executionModel；翻译分批交付时为 taskBinding.executionModel",
           "schema": {
             "type": "object",
-            "required": ["modelRef", "displayName", "providerKind", "settingsRevision", "selectedAt"],
+            "required": [
+              "modelRef",
+              "displayName",
+              "providerKind",
+              "settingsRevision",
+              "selectedAt"
+            ],
             "properties": {
               "modelRef": { "type": "string", "example": "dli/gpt-5.6-sol" },
               "displayName": { "type": "string", "example": "GPT 5.6 Sol" },
-              "providerKind": { "type": "string", "enum": ["BUILT_IN", "CUSTOM"], "example": "CUSTOM" },
+              "providerKind": {
+                "type": "string",
+                "enum": ["BUILT_IN", "CUSTOM"],
+                "example": "CUSTOM"
+              },
               "settingsRevision": { "type": "integer", "example": 1 },
-              "selectedAt": { "type": "string", "format": "date-time", "example": "2026-09-06T09:00:00.000Z" }
+              "selectedAt": {
+                "type": "string",
+                "format": "date-time",
+                "example": "2026-09-06T09:00:00.000Z"
+              }
             }
           },
           "behavior": "Host 在新 ActionAttempt 排队时保存租户全局选择，再纳入已有 TaskEnvelope inputHash；上下文准备、续租、恢复与重试不重新读取默认值。Skill c24 只把受控 modelRef 放进 x-openclaw-model，保持工程 profile、原会话与 MCP 授权；不把路由元数据放进模型业务输入，不传凭据或 URL。历史无字段任务保持原路由。",

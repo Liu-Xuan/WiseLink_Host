@@ -8,7 +8,11 @@ export const CANONICAL_EXECUTOR_SERVICE_SCOPE_AUTHORIZATION = Symbol(
 );
 
 export interface CanonicalVerifiedDocumentWorkScope {
-  principalId: string; appId: string; tenantId: string; actorUserId: string; documentVersionId: string;
+  principalId: string;
+  appId: string;
+  tenantId: string;
+  actorUserId: string;
+  documentVersionId: string;
 }
 
 export interface CanonicalVerifiedServiceScope {
@@ -16,6 +20,24 @@ export interface CanonicalVerifiedServiceScope {
   appId: string;
   tenantId: string;
   workItemId: string;
+  authorizationFingerprint: string;
+  automaticWorkItemLease?: {
+    requestId: string;
+    actorUserId: string;
+    documentId: string;
+    documentVersionId: string;
+    sourceArtifactId: string;
+    sourceFileSha256: string;
+    sourceByteLength: number;
+    leaseGeneration: number;
+    leaseExpiresAt: string;
+  };
+}
+
+export interface CanonicalVerifiedAutoWorkItemQueueScope {
+  principalId: string;
+  appId: string;
+  tenantId: string;
   authorizationFingerprint: string;
 }
 
@@ -34,8 +56,20 @@ export interface CanonicalVerifiedOpenClawAttemptScope extends CanonicalVerified
 }
 
 export interface CanonicalMatterAttemptAuthorization {
-  operation: 'CLAIM' | 'STATUS' | 'HEARTBEAT' | 'CANCEL' | 'READ_SAVED_WORK' | 'READ_SOURCES' | 'READ_ORIGINAL' | 'READ_REGISTERED' | 'SAVE_WORK' | 'FINISH' |
-    'GENERATE_ISSUE_CORRECTION' | 'SAVE_ISSUE_CORRECTION' | 'FINISH_ISSUE_CORRECTION';
+  operation:
+    | 'CLAIM'
+    | 'STATUS'
+    | 'HEARTBEAT'
+    | 'CANCEL'
+    | 'READ_SAVED_WORK'
+    | 'READ_SOURCES'
+    | 'READ_ORIGINAL'
+    | 'READ_REGISTERED'
+    | 'SAVE_WORK'
+    | 'FINISH'
+    | 'GENERATE_ISSUE_CORRECTION'
+    | 'SAVE_ISSUE_CORRECTION'
+    | 'FINISH_ISSUE_CORRECTION';
   matterId: string;
   attemptRef: string;
 }
@@ -57,10 +91,18 @@ export interface CanonicalVerifiedApplicabilityContextScope extends CanonicalVer
 }
 
 export interface CanonicalServiceScopeAuthorizationPort {
-  authorizeDocumentWork?(input: { documentVersionId: string }): Promise<CanonicalVerifiedDocumentWorkScope>;
-  authorizeOpenClawMatterRequest?(input: { matterId: string }): Promise<Omit<CanonicalVerifiedMatterAttemptScope, 'attemptRef'>>;
+  authorizeOpenClawAutoWorkItemQueue(): Promise<CanonicalVerifiedAutoWorkItemQueueScope>;
+  assertAutoWorkItemQueueTransport(): Promise<void>;
+  authorizeDocumentWork?(input: {
+    documentVersionId: string;
+  }): Promise<CanonicalVerifiedDocumentWorkScope>;
+  authorizeOpenClawMatterRequest?(input: {
+    matterId: string;
+  }): Promise<Omit<CanonicalVerifiedMatterAttemptScope, 'attemptRef'>>;
   /** Older adapters have no Matter authority; consumers must fail closed. */
-  authorizeOpenClawMatterAttempt?(input: CanonicalMatterAttemptAuthorization): Promise<CanonicalVerifiedMatterAttemptScope>;
+  authorizeOpenClawMatterAttempt?(
+    input: CanonicalMatterAttemptAuthorization,
+  ): Promise<CanonicalVerifiedMatterAttemptScope>;
   authorizeWorkItemRead(input: {
     transport: 'OPENAPI_REST' | 'READONLY_MCP';
     operation: 'READ_STATUS' | 'QUERY_PARSED_PACKAGE' | 'READ_DEEP_LINK';
@@ -119,6 +161,14 @@ export interface CanonicalServiceScopeAuthorizationPort {
 
 @Injectable()
 export class UnavailableCanonicalServiceScopeAuthorization implements CanonicalServiceScopeAuthorizationPort {
+  assertAutoWorkItemQueueTransport(): Promise<void> {
+    return Promise.reject(canonicalServiceScopeUnavailable());
+  }
+
+  authorizeOpenClawAutoWorkItemQueue(): Promise<CanonicalVerifiedAutoWorkItemQueueScope> {
+    return Promise.reject(canonicalServiceScopeUnavailable());
+  }
+
   authorizeWorkItemRead(): Promise<CanonicalVerifiedServiceScope> {
     return Promise.reject(canonicalServiceScopeUnavailable());
   }
