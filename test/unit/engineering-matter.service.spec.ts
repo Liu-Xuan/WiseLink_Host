@@ -35,6 +35,107 @@ const snapshot: EngineeringMatterSnapshot = {
 };
 
 describe('EngineeringMatterService', () => {
+  it('links a verified uploaded WorkItem to its family Matter only once', async () => {
+    const linked: string[] = [];
+    const matters = {
+      ensureFamilyMatter: jest
+        .fn()
+        .mockResolvedValue({ matterId: 'MAT-1', created: false }),
+      loadCurrent: jest.fn().mockImplementation(() =>
+        Promise.resolve({
+          ...snapshot,
+          links: linked.map((workItemId) => ({
+            workItemId,
+            ordinal: 1,
+            relationRole: 'RELATED',
+            linkedAtWorkItemRevision: 5,
+          })),
+        }),
+      ),
+      linkWorkItem: jest.fn().mockImplementation(({ workItemId }) => {
+        linked.push(workItemId);
+        return Promise.resolve({ linked: true, replayed: false });
+      }),
+    };
+    const workItems = {
+      loadTenantScopedProjection: jest
+        .fn()
+        .mockResolvedValue(workItem('WI-FTD')),
+    };
+    const documentVersions = {
+      resolve: jest.fn().mockResolvedValue(documentVersion('DV-FTD')),
+    };
+    const objectAccess = {
+      freshRead: jest.fn().mockResolvedValue({
+        allowed: true,
+        workItemId: 'WI-FTD',
+        documentVersionId: 'DV-FTD',
+      }),
+    };
+    const actorTransactions = {
+      withActorTransaction: jest
+        .fn()
+        .mockImplementation((_, work) => work({ database: {} })),
+    };
+    const service = new EngineeringMatterService(
+      matters as unknown as EngineeringMatterRepository,
+      workItems as unknown as MiaodaWorkItemRepository,
+      documentVersions as unknown as MiaodaDocumentVersionSourceResolver,
+      objectAccess as unknown as CanonicalObjectAccessPort,
+      actorTransactions as never,
+    );
+    const input = {
+      actor: nativeActor(),
+      documentVersionId: 'DV-FTD',
+      workItemId: 'WI-FTD',
+    };
+    await service.organizeWorkItemIntake(input);
+    await service.organizeWorkItemIntake(input);
+    expect(matters.linkWorkItem).toHaveBeenCalledTimes(1);
+    expect(matters.linkWorkItem).toHaveBeenCalledWith(
+      expect.objectContaining({
+        requestId: 'intake:WI-FTD',
+        workItemRevision: 5,
+      }),
+    );
+    expect(matters.ensureFamilyMatter).toHaveBeenCalledTimes(2);
+  });
+
+  it('rejects an intake source that differs from the authorized WorkItem', async () => {
+    const matters = { ensureFamilyMatter: jest.fn() };
+    const workItems = {
+      loadTenantScopedProjection: jest
+        .fn()
+        .mockResolvedValue(workItem('WI-FTD')),
+    };
+    const documentVersions = {
+      resolve: jest.fn().mockResolvedValue(documentVersion('DV-FTD')),
+    };
+    const objectAccess = {
+      freshRead: jest.fn().mockResolvedValue({
+        allowed: true,
+        workItemId: 'WI-FTD',
+        documentVersionId: 'DV-FTD',
+      }),
+    };
+    const service = new EngineeringMatterService(
+      matters as unknown as EngineeringMatterRepository,
+      workItems as unknown as MiaodaWorkItemRepository,
+      documentVersions as unknown as MiaodaDocumentVersionSourceResolver,
+      objectAccess as unknown as CanonicalObjectAccessPort,
+    );
+    await expect(
+      service.organizeWorkItemIntake({
+        actor: nativeActor(),
+        documentVersionId: 'DV-SB',
+        workItemId: 'WI-FTD',
+      }),
+    ).rejects.toMatchObject({
+      code: 'ENGINEERING_MATTER_WORK_ITEM_DOCUMENT_CONFLICT',
+    });
+    expect(matters.ensureFamilyMatter).not.toHaveBeenCalled();
+  });
+
   it('returns a browser-safe catalog while fresh-reading each WorkItem and DocumentVersion owner', async () => {
     const matters = {
       loadCurrent: jest.fn().mockResolvedValue(snapshot),
@@ -244,5 +345,36 @@ function actor(): CanonicalHostActor {
     objectAccessActor: {} as NonNullable<
       CanonicalHostActor['objectAccessActor']
     >,
+  };
+}
+
+function nativeActor(): CanonicalHostActor {
+  const value = actor();
+  return {
+    ...value,
+    objectAccessActor: {
+      principalKind: 'FINAL_USER',
+      transport: 'MIAODA_AUTHENTICATED_HTTP',
+      canonicalSubject: { namespace: 'MIAODA_USER_ID', id: value.userId },
+      subjectDecision: {
+        source: 'MIAODA_GATEWAY_USER_CONTEXT',
+        applicationScopeId: value.appId,
+        tenantId: value.tenantId,
+        version: 'miaoda-hosted-native-sso.v1',
+      },
+      tenantId: value.tenantId,
+      applicationScopeId: value.appId,
+      applicationScopeProvenance: 'MIAODA_GATEWAY_APP_CONTEXT',
+      workspaceId: null,
+      workspaceProvenance: 'UNAVAILABLE',
+      env: 'runtime',
+      identityProvenance: 'MIAODA_GATEWAY_USER_CONTEXT',
+      feishuUserId: null,
+      feishuOpenId: null,
+      feishuIdentityProvenance: 'UNAVAILABLE',
+      sessionId: null,
+      sessionRevision: null,
+      sessionProvenance: 'UNAVAILABLE',
+    } as NonNullable<CanonicalHostActor['objectAccessActor']>,
   };
 }

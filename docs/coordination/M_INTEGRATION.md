@@ -1,5 +1,11 @@
 # M 主控集成交接
 
+## 2026-09-26 两条上传入口与事项 Wiki 的接线核对（本地待发布）
+
+现行 17b 首页有两条不同上传路径。资料库中的“上传文档到资料库”调用 `POST /api/document-management/uploads/file-service`：保存确切 DocumentVersion 并按 family 建立/延续 Matter，但回执明确“不创建评估任务”，没有 WorkItem 或自动队列授权。另一条“选择或上传 PDF 并新建工程事项”调用 `POST /api/canonical-host/work-items/development-runs`：经官方 OAuth 会话与妙搭开发角色核验后创建 WorkItem、解析及逐任务自动授权；此前没有将该 WorkItem 归入 family Matter。17b online 只读核对发现 787 的 `WI-a5ffd931-840b-40eb-b534-c05777b30706` 在 `engineering_matter_revision_work_item` 与其 DocumentVersion 的 `engineering_matter_material_link` 均无对应记录，故既有资料库/工程知识读回不等于事项 Wiki 已验收。
+
+本地变更将当前已获准的 OAuth 上传所得 WorkItem，在解析返回后通过原有 owner/source 校验、`ensureFamilyMatter` 与 Matter 版本 CAS 关联到同一 family；同一 WorkItem 重试不重复加链接。定向 Jest 44/44、前后端 TypeScript、定向 lint 与差异检查通过；本机没有 `ENGINEERING_MATTER_TEST_DATABASE_URL`，这条新接线的真实数据库/RLS 执行尚未核验。此变更未扩大上传或评估角色，尚未发布，也不会自动回填 787。资料库普通上传自动评估仍缺接线；直接让其创建 WorkItem 将扩大普通用户的评估权限，需先明确该权限范围并验证确切上传回执、来源绑定、幂等与失败恢复。C136 默认定时消费仍未获准恢复，不能把本地接线或旧任务完成视为无人值守闭环。
+
 ## 2026-09-26 自动队列线上待领状态核对
 
 通过妙搭官方 `apps +db-execute` 以用户身份对 17b **online** 数据库作只读查询：`auto_work_item_authorization` 当前共 4 条，`COMPLETED=3`、`BLOCKED=1`，没有 `WAITING` 或 `LEASED`。真实 787 工程文档 `WI-a5ffd931-840b-40eb-b534-c05777b30706` 的授权为 `COMPLETED`，租约代次 3，完成时间 2026-09-26 04:36:40 +08。唯一阻断项 `WI-2c7a3b03-93ef-45a6-a99e-7dfa0321230e` 是 `dev:*` FTD 样本，`blocked_code=AUTO_WORK_ITEM_STAGE_JOBAID_FAILED`；其解析尝试成功，JobAid 尝试为 `CANCELLED_BY_REQUEST`。这些记录没有被修改，不把阻断样本重新入队冒充新上传。
