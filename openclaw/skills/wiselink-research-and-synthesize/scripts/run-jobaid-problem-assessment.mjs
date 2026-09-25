@@ -21,7 +21,7 @@ export const JOBAID_PROBLEM_TASK_SCHEMA = 'wiselink.jobaid-problem-task.v2';
 export const MATTER_JOBAID_TASK_SCHEMA = 'wiselink.matter-jobaid-task.v2';
 const FUNCTION = 'return_wiselink_assessment_step';
 const INITIAL_JOBAID_READS_PER_SAVE = 1;
-const INITIAL_JOBAID_SOURCE_REFS_PER_READ = 10;
+const INITIAL_JOBAID_SOURCE_REFS_PER_READ = 4;
 export const JOBAID_GENERATION_POLICY = Object.freeze({
   version: 'continuous-body-batches-v5', requestMaxCompletionTokens: 16000,
   payloadTargetTokens: [2000, 4000], maxScopeAdjustments: 0,
@@ -447,7 +447,7 @@ export async function invokeHostedJobAidProblemModel(
       ? 'Reduce the amount delivered in this unfinished batch while retaining the full engineering context. Choose one or several complete, meaningful issue updates; do not split conditions or reasoning fragments. Preserve saved work and do not continue a truncated JSON string.'
       : boundedInitialJobAid
         ? forceSaveBeforeRead
-          ? 'The Host has delivered one successful source-read receipt in this fresh native session. Submit a substantive, complete SAVE_WORK now. The required function schema permits only SAVE_WORK until Host confirms the save; preserve unread scopes and do not claim them verified.'
+          ? 'The Host has delivered one successful source-read receipt in this fresh native session. Submit a substantive SAVE_WORK for one coherent issue or one small related group now. Supply only changed issues and necessary summary fields; Host retains unchanged issues. Keep the workJson concise while preserving every condition, uncertainty, and citation needed for this increment. The required function schema permits only SAVE_WORK until Host confirms the save; preserve unread scopes and do not claim them verified.'
           : 'Save each meaningful initial-analysis increment after one bounded source-read action. After a successful Host source read, the runtime starts a fresh native session with that exact evidence and requires SAVE_WORK. After a Host-confirmed SAVE_WORK, it starts another fresh native session containing the exact Host-read-back work and revision receipt. Do not accumulate more source reads before saving or claim unread scopes were verified.'
         : 'Keep the shared engineering context and investigate across relevant sections and sources. Choose the number of complete issues that can be delivered in this batch; save substantive results promptly without first exhausting every issue. After SAVE_WORK continue automatically in this same session. Do not rewrite unchanged issues or summary fields. Before completion check cross-issue consistency and save only necessary synthesis or corrections.';
     const requestStepShape = forceSaveBeforeRead ? {
@@ -850,7 +850,7 @@ export async function invokeHostedJobAidProblemModel(
         workRevision: saved.workRevision,
         roundCompletion: saved.roundCompletion,
         readSourceRefs: savedReadSourceRefs,
-        instruction: '这是同一 Host attempt 在确认保存后的续段。previousWork 是同一 attempt 刚读回的完整工作基线。继续检查未覆盖范围并保留已有问题；本条 readSourceRefs 只证明先前已保存的来源读取，不是本新会话中可直接引用的正文。若新判断需要原文，先用 READ_SOURCES；每次只读一个不超过 10 refs 的批次，再保存增量。不得重放先前 SAVE_WORK。',
+        instruction: `这是同一 Host attempt 在确认保存后的续段。previousWork 是同一 attempt 刚读回的完整工作基线。继续检查未覆盖范围并保留已有问题；本条 readSourceRefs 只证明先前已保存的来源读取，不是本新会话中可直接引用的正文。若新判断需要原文，先用 READ_SOURCES；每次只读一个不超过 ${INITIAL_JOBAID_SOURCE_REFS_PER_READ} refs 的批次，再保存一项完整且简洁的增量，不重写未变化的问题。不得重放先前 SAVE_WORK。`,
       }) },
     ] : [
       systemMessage,
