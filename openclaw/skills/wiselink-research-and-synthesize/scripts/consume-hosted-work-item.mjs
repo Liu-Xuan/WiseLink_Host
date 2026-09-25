@@ -227,7 +227,8 @@ export async function runHostedInitialStage(options, dependencies) {
           `model.translation-fidelity-${round}`, report,
         ),
         observeCandidateRejection: (report) => checkpoint.writeOnce(
-          `model.candidate-rejection-${report.correctionNo}`, report,
+          `model.candidate-rejection-${Number.isSafeInteger(report.modelRound)
+            ? `${report.modelRound}-${report.correctionNo}` : report.correctionNo}`, report,
         ),
       });
     };
