@@ -537,7 +537,7 @@ test('official initial model adapter validates all four operation outputs withou
       assert.equal(JSON.stringify(request.messages).includes('control-session-only'), false);
       return new Response(JSON.stringify({ model: 'actual-official-model', choices: [{ message: {
         role: 'assistant', content: null,
-        tool_calls: [{ type: 'function', function: { name: 'return_wiselink_initial_candidate', arguments: JSON.stringify(operation === 'EVALUATE_JOBAID' ? { candidateJson: JSON.stringify(generated) } : { candidate: generated }) } }],
+        tool_calls: [{ type: 'function', function: { name: 'return_wiselink_initial_candidate', arguments: JSON.stringify(['EVALUATE_JOBAID', 'SYNTHESIZE_OVERALL'].includes(operation) ? { candidateJson: JSON.stringify(generated) } : { candidate: generated }) } }],
       } }] }), { status: 200 });
     };
     const result = await invokeHostedInitialModel({ operation, modelInput }, {
@@ -1376,7 +1376,7 @@ test('requires 35 MCP capabilities, six review tools, and hosted provenance', ()
   assert.ok(HOST_MCP_TOOLS.includes('commit_applicability_candidate'));
   assert.equal(
     WISELINK_SKILL_VERSION,
-    'wiselink-research-and-synthesize@r09.c144',
+    'wiselink-research-and-synthesize@r09.c145',
   );
   assert.equal(
     WISELINK_SKILL_COMPATIBILITY_REF,
@@ -3199,12 +3199,23 @@ test('official initial model adapter selects the Overall v2 contract and sends t
     assert.match(guidance, /overall_engineering_summary\.v2/u);
     assert.doesNotMatch(guidance, /overall_engineering_summary\.v1/u);
     assert.match(guidance, /no implementation decision/u);
-    assert.match(request.tools[0].function.parameters.properties.candidate.description, /decisiveClaimIds/u);
+    assert.deepEqual(request.tools[0].function.parameters.required, ['candidateJson']);
+    assert.deepEqual(Object.keys(request.tools[0].function.parameters.properties), ['candidateJson']);
+    assert.equal(request.tools[0].function.parameters.properties.candidateJson.type, 'string');
     assert.deepEqual(JSON.parse(request.messages[1].content), modelInput);
     assert.doesNotMatch(JSON.stringify(request.messages), /"workItemId"/u);
-    return Response.json({ model: 'actual-official-model', choices: [{ message: { content: null, tool_calls: [{ type: 'function', function: { name: 'return_wiselink_initial_candidate', arguments: JSON.stringify({ candidate }) } }] } }] });
+    return Response.json({ model: 'actual-official-model', choices: [{ message: { content: null, tool_calls: [{ type: 'function', function: { name: 'return_wiselink_initial_candidate', arguments: JSON.stringify({ candidateJson: JSON.stringify(candidate) }) } }] } }] });
   } });
   assert.deepEqual(result.output, candidate);
+});
+
+test('Overall string transport rejects incomplete or non-object candidates before Host commit', async () => {
+  const modelInput = readingSynthesisInput();
+  for (const argumentsJson of [JSON.stringify({ candidateJson: '{' }), JSON.stringify({ candidateJson: '[]' }), JSON.stringify({ candidate: readingSynthesisOutput(modelInput) })]) {
+    await assert.rejects(invokeInitialWithTransport({ operation: 'SYNTHESIZE_OVERALL', modelInput }, {
+      gatewayChatCompletionsEnabled: true, gatewayUrl: 'https://official.invalid', gatewayToken: 'fixture-only', configuredModelVersion: 'miaoda/miaoda-model-auto', sessionDiscriminator: 'overall-wire-test',
+    }, { requestGateway: async () => Response.json({ model: 'actual-official-model', choices: [{ message: { content: null, tool_calls: [{ type: 'function', function: { name: 'return_wiselink_initial_candidate', arguments: argumentsJson } }] } }] }) }), /INITIAL_OVERALL_CANDIDATE_JSON_(?:INVALID|REQUIRED)/u);
+  }
 });
 
 test('Matter Review accepts full issue work and keeps read coverage and registered evidence boundaries', async () => {
