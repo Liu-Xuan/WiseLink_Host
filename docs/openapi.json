@@ -411,7 +411,6 @@
             "application/json": {
               "schema": {
                 "type": "object",
-                "required": ["resumeWorkItemId"],
                 "additionalProperties": false,
                 "properties": {
                   "resumeWorkItemId": {

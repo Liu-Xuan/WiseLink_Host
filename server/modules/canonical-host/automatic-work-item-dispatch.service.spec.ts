@@ -35,6 +35,8 @@ describe('AutomaticWorkItemDispatchService', () => {
     const service = dispatchService(workItems, sources);
 
     await expect(service.nextWorkItem()).resolves.toEqual({ status: 'IDLE' });
+    // Express may deserialize an empty optional JSON body as `{}`.
+    await expect(service.nextWorkItem({})).resolves.toEqual({ status: 'IDLE' });
     expect(sources.resolve).not.toHaveBeenCalled();
     expect(workItems.claimAutoProcessingCandidate).not.toHaveBeenCalled();
   });

@@ -520,6 +520,12 @@ function assertNextWorkItemInput(
 ): void {
   if (input === undefined) return;
   if (
+    typeof input === 'object' &&
+    input !== null &&
+    !Array.isArray(input) &&
+    Object.keys(input).length === 0
+  ) return;
+  if (
     !input ||
     typeof input !== 'object' ||
     Array.isArray(input) ||
