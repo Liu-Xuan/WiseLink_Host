@@ -154,8 +154,6 @@ export class AutomaticWorkItemDispatchService {
         sourceArtifactId: authorization.sourceArtifactId,
         sourceFileSha256: authorization.sourceFileSha256,
         sourceByteLength: Number(authorization.sourceByteLength),
-        queuePrincipalId: OPENCLAW_QUEUE_PRINCIPAL_ID,
-        queueAuthorizationFingerprint: scope.authorizationFingerprint,
       },
     );
     if (sourcePermission.allowed === false) {
@@ -163,6 +161,7 @@ export class AutomaticWorkItemDispatchService {
     }
     if (
       sourcePermission.action !== 'DOCUMENT_READ' ||
+      sourcePermission.authorizationPolicy !== 'MIAODA_HOST_DOCUMENT_READ' ||
       sourcePermission.tenantId !== scope.tenantId ||
       sourcePermission.actorUserId !== authorization.actorUserId ||
       sourcePermission.documentId !== authorization.documentId ||
@@ -170,8 +169,7 @@ export class AutomaticWorkItemDispatchService {
       sourcePermission.sourceArtifactId !== authorization.sourceArtifactId ||
       sourcePermission.sourceFileSha256 !== authorization.sourceFileSha256 ||
       sourcePermission.sourceByteLength !==
-        Number(authorization.sourceByteLength) ||
-      !/^sha256:[0-9a-f]{64}$/u.test(sourcePermission.authorizationFingerprint)
+        Number(authorization.sourceByteLength)
     ) {
       return 'AUTO_WORK_ITEM_SOURCE_ACL_BINDING_INVALID';
     }

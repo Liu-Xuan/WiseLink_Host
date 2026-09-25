@@ -58,7 +58,14 @@ export class DocumentManagementHostedModule {
         FeishuDriveApplicationPageFetcher,
         DriveSourceScanAutomation,
       ],
-      exports: [DocumentOfficialPluginService, DocumentStepLeaseRepository, DocumentManagementHostedService, DocumentParsingHostedService, DriveSourceScanService],
+      exports: [
+        DOCUMENT_MANAGEMENT_INGEST_AUTHORIZER,
+        DocumentOfficialPluginService,
+        DocumentStepLeaseRepository,
+        DocumentManagementHostedService,
+        DocumentParsingHostedService,
+        DriveSourceScanService,
+      ],
     };
   }
 }

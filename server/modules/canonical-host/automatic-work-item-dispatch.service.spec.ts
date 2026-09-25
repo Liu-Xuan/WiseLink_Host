@@ -372,6 +372,7 @@ function sourceAuthorizationDouble() {
         ) => ({
           allowed: true as const,
           action: 'DOCUMENT_READ' as const,
+          authorizationPolicy: 'MIAODA_HOST_DOCUMENT_READ' as const,
           tenantId: input.tenantId,
           actorUserId: input.actorUserId,
           documentId: input.documentId,
@@ -379,7 +380,6 @@ function sourceAuthorizationDouble() {
           sourceArtifactId: input.sourceArtifactId,
           sourceFileSha256: input.sourceFileSha256,
           sourceByteLength: input.sourceByteLength,
-          authorizationFingerprint: `sha256:${'d'.repeat(64)}`,
         }),
       ),
   } as jest.Mocked<

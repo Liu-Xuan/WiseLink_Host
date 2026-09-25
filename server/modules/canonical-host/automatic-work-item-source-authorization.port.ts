@@ -13,14 +13,13 @@ export interface AutomaticWorkItemSourceAuthorizationInput {
   sourceArtifactId: string;
   sourceFileSha256: string;
   sourceByteLength: number;
-  queuePrincipalId: 'service:openclaw-main';
-  queueAuthorizationFingerprint: string;
 }
 
 export type AutomaticWorkItemSourceAuthorizationResult =
   | {
       allowed: true;
       action: 'DOCUMENT_READ';
+      authorizationPolicy: 'MIAODA_HOST_DOCUMENT_READ';
       tenantId: string;
       actorUserId: string;
       documentId: string;
@@ -28,15 +27,15 @@ export type AutomaticWorkItemSourceAuthorizationResult =
       sourceArtifactId: string;
       sourceFileSha256: string;
       sourceByteLength: number;
-      authorizationFingerprint: string;
     }
   | { allowed: false; code: string };
 
 /**
- * Implementations must ask the authoritative Document Management ACL for a
- * fresh decision over this exact source identity. They must not synthesize a
- * user session from actorUserId or treat creator ownership, hashes, or
- * currentness as source-read authorization.
+ * Implementations must ask the configured Host Document Management read
+ * policy over this exact persisted source identity. They must not synthesize
+ * a user session from actorUserId or treat source hashes/currentness as
+ * authorization. The current policy is creator/owned-acquisition based and
+ * does not claim to verify provider-level ACL or immediate external revocation.
  */
 export interface AutomaticWorkItemSourceAuthorizationPort {
   authorizeSourceRead(
