@@ -1,5 +1,11 @@
 # M 主控集成交接
 
+## 2026-09-26 旧固定目标轮询已停用
+
+17c OpenClaw Cron 控制台现有 16 条调度定义。此前仅四条固定 Matter/DocumentVersion 旧任务启用、每分钟各运行一次，最近多轮分别返回 `REQUIRES_ATTENTION`（777 Review 已失败、777 文档翻译期限已过）、`IDLE`（SB Review）和 `DOCUMENT_READY/NO_PENDING`（787 文档），没有推进新工作。停用前官方 `cron list --all --json` 回读四项 `enabled=true`、`runningAtMs=null`，进程列表无 `consume-hosted-work-item.mjs` 在途进程。
+
+依既有用户启停授权，逐项停用 777 Review `355f0161-15c1-45c4-9060-0336f1bfaf5f`、777 文档 `5c430aac-b355-4ec2-8ff1-73d7b9e10673`、SB Review `efc2b938-2bab-4f6d-ab8d-14ca3de9fa70`、787 文档 `436ae83c-2c83-49de-aac9-31668075dd31`。每项命令返回 `enabled=false`；最终读回 `total=16 enabled=0`，四项及 C136 自动队列均为 `false`、`runningAtMs=null`。只停用调度定义，未删除定义、历史、checkpoint 或 Host 业务记录。旧固定目标任务不再每分钟空转，也不能充当正常上传后自动闭环的验收证据。C136 仍需在真实自动链路获准且通过验证后单独启用。
+
 ## 2026-09-26 C151 解析回执重读不再覆盖已保存工作（独立发布）
 
 核对 `CanonicalHostVerticalService.runPdfAuthorized` 发现：同一请求重放已完成的解析时，`reuseCompleted` 若遇到 Reader/存储读回失败，原代码会调用 `recordUnexpectedFailure`，把已经 `CANDIDATE_READBACK_VERIFIED` 的 WorkItem 改成 `FAILED` 或 `RECORDING_FAILED`。修订让重放读取错误直接报告给调用者，保留原 WorkItem 修订和解析器结果；原件恢复可读后再次同请求读取成功，解析器只调用一次。真实字节漂移仍抛 `ARTIFACT_READBACK_MISMATCH`，不假装成功。以线上原提交 `caec4b3ad404c72b581808e3da71c43c686bec3b` 建立隔离分支 `codex/wl-c151-replay-only`，只携带本修复的生产代码与单元测试；定向 Jest 54/54、server TypeScript、定向 ESLint 和差异检查通过。提交 `65309c7d4a0a5ddfb45d5e87e2709b73fa894b19` 已推送至 origin 同名分支，17b release `7689600388007316437` 已 `finished`，平台读回的精确 `commit_id` 与该提交一致，`error_logs=[]`。这证明技术发布，不等于已在生产触发读回故障并验证恢复。开发分支仍包含 C150 已知浏览器事项归集 RLS 阻断，不能直接以该分支发布新版本。
