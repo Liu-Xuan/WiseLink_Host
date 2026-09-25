@@ -1,4 +1,4 @@
-import { Fragment, useState } from 'react';
+import { Fragment } from 'react';
 import { useLibraryPaneScroll } from './useLibraryPaneScroll';
 import { ChevronDown, ChevronRight, FileText } from 'lucide-react';
 import type { CanonicalLibraryDocumentSummary } from '@shared/api.interface';
@@ -32,7 +32,6 @@ export default function LibraryDocumentRows({
   onToggleFamily(familyId: string): void;
 }) {
   const scroll = useLibraryPaneScroll<HTMLDivElement>('listY', true, sessionGeneration);
-  const [expandedBriefKeys, setExpandedBriefKeys] = useState<Record<string, boolean>>({});
   return (
     <div {...scroll} className={`suite-library-table-wrap${compact ? ' is-compact' : ''}`}>
       <table className="suite-library-table">
@@ -52,60 +51,35 @@ export default function LibraryDocumentRows({
                   <td className="meaning">
                     {currentReading?.brief ? (
                       <div
-                        className={`suite-reading${compact && !expandedBriefKeys[document.familyId] ? ' is-folded' : ''}`}
+                        className="suite-reading"
                         data-reading-run-ref={currentReading.readingRunRef ?? undefined}
                         data-reading-revision={currentReading.readingRevision ?? undefined}
                       >
                         <b className="suite-reading-headline">{currentReading.headline}</b>
-                        <span className="suite-reading-brief">{currentReading.brief}</span>
+                        <details onClick={(event) => event.stopPropagation()}>
+                          <summary className="suite-reading-toggle">展开完整解读</summary>
+                          <span className="suite-reading-brief">{currentReading.brief}</span>
+                        </details>
                       </div>
                     ) : (
                       <span className="suite-reading-note">{currentReading?.note ?? '当前版本未返回，暂无版本解读'}</span>
                     )}
-                    {compact && currentReading?.brief ? (
-                      <button
-                        type="button"
-                        className="suite-reading-toggle"
-                        onClick={(event) => {
-                          event.stopPropagation();
-                          setExpandedBriefKeys((prior) => ({
-                            ...prior,
-                            [document.familyId]: !prior[document.familyId],
-                          }));
-                        }}
-                      >
-                        {expandedBriefKeys[document.familyId] ? '收起' : '展开全文'}
-                      </button>
-                    ) : null}
                   </td>
                   <td>
                     {currentReading && currentReading.conditionLines.length ? (
-                      <div
-                        className={`suite-conditions${compact && !expandedBriefKeys[`conditions:${document.familyId}`] ? ' is-folded' : ''}`}
-                      >
-                        {currentReading.conditionLines.map((line) => (
-                          <span key={line}>{line}</span>
-                        ))}
-                      </div>
+                      <details onClick={(event) => event.stopPropagation()}>
+                        <summary className="suite-reading-toggle">
+                          {currentReading.conditionLines.length} 项条件与限制
+                        </summary>
+                        <div className="suite-conditions">
+                          {currentReading.conditionLines.map((line) => (
+                            <span key={line}>{line}</span>
+                          ))}
+                        </div>
+                      </details>
                     ) : (
                       <span>—</span>
                     )}
-                    {compact && currentReading && currentReading.conditionLines.length > 2 ? (
-                      <button
-                        type="button"
-                        className="suite-reading-toggle"
-                        onClick={(event) => {
-                          event.stopPropagation();
-                          setExpandedBriefKeys((prior) => ({
-                            ...prior,
-                            [`conditions:${document.familyId}`]:
-                              !prior[`conditions:${document.familyId}`],
-                          }));
-                        }}
-                      >
-                        {expandedBriefKeys[`conditions:${document.familyId}`] ? '收起' : '展开全部条件'}
-                      </button>
-                    ) : null}
                     <small>{document.workItemCount} 个评估任务</small>
                   </td>
                   <td>{current ? <DocumentVersionLink version={current} familyId={document.familyId}>打开</DocumentVersionLink> : null}</td>
@@ -126,7 +100,10 @@ export default function LibraryDocumentRows({
                           data-reading-revision={versionReading.readingRevision ?? undefined}
                         >
                           <b className="suite-reading-headline">{versionReading.headline}</b>
-                          <span className="suite-reading-brief">{versionReading.brief}</span>
+                          <details onClick={(event) => event.stopPropagation()}>
+                            <summary className="suite-reading-toggle">展开完整解读</summary>
+                            <span className="suite-reading-brief">{versionReading.brief}</span>
+                          </details>
                         </div>
                       ) : (
                         <span className="suite-reading-note">{versionReading.note}</span>
@@ -134,32 +111,19 @@ export default function LibraryDocumentRows({
                     </td>
                     <td>
                       {versionReading.conditionLines.length ? (
-                        <div
-                          className={`suite-conditions${compact && !expandedBriefKeys[`conditions:${version.documentVersionId}`] ? ' is-folded' : ''}`}
-                        >
-                          {versionReading.conditionLines.map((line) => (
-                            <span key={line}>{line}</span>
-                          ))}
-                        </div>
+                        <details onClick={(event) => event.stopPropagation()}>
+                          <summary className="suite-reading-toggle">
+                            {versionReading.conditionLines.length} 项条件与限制
+                          </summary>
+                          <div className="suite-conditions">
+                            {versionReading.conditionLines.map((line) => (
+                              <span key={line}>{line}</span>
+                            ))}
+                          </div>
+                        </details>
                       ) : (
                         <span>—</span>
                       )}
-                      {compact && versionReading.conditionLines.length > 2 ? (
-                        <button
-                          type="button"
-                          className="suite-reading-toggle"
-                          onClick={(event) => {
-                            event.stopPropagation();
-                            setExpandedBriefKeys((prior) => ({
-                              ...prior,
-                              [`conditions:${version.documentVersionId}`]:
-                                !prior[`conditions:${version.documentVersionId}`],
-                            }));
-                          }}
-                        >
-                          {expandedBriefKeys[`conditions:${version.documentVersionId}`] ? '收起' : '展开全部条件'}
-                        </button>
-                      ) : null}
                       <small>{version.workItemCount} 个评估任务</small>
                     </td>
                     <td><DocumentVersionLink version={version} familyId={document.familyId}>打开</DocumentVersionLink></td>

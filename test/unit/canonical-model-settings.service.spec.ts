@@ -131,11 +131,11 @@ describe('tenant global model selection', () => {
     }
   });
 
-  it('exposes the explicitly selected initial M3 and registered built-in / DLI options, with no credentials', async () => {
+  it('defaults new tasks to registered M3 Probe Large without exposing credentials', async () => {
     const { service, repository } = setup();
     const result = await service.read(actor());
     expect(result).toMatchObject({
-      selectedModelRef: 'miaoda/minimax-m3',
+      selectedModelRef: 'm3probe/minimax-m3',
       revision: 0,
       canManage: true,
       effectiveFor: 'NEW_ANALYSIS_TASKS_ONLY',
@@ -173,7 +173,7 @@ describe('tenant global model selection', () => {
       new Date('2026-09-06T02:00:00Z'),
     );
     expect(old).toMatchObject({
-      modelRef: 'miaoda/minimax-m3',
+      modelRef: 'm3probe/minimax-m3',
       settingsRevision: 0,
     });
     expect(next).toMatchObject({

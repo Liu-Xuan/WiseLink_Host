@@ -51,8 +51,8 @@ export const CANONICAL_REGISTERED_MODELS: readonly CanonicalModelOption[] = [
   },
 ];
 
-// The explicit user-selected deployment default, not a failure fallback.
-export const CANONICAL_INITIAL_MODEL_REF = 'miaoda/minimax-m3';
+// New tasks use the registered large Hosted profile; saved task choices stay pinned.
+export const CANONICAL_INITIAL_MODEL_REF = 'm3probe/minimax-m3';
 export const CANONICAL_MODEL_MANAGER_ROLE_ENV =
   'WL_CANONICAL_MODEL_MANAGER_ROLE_ID';
 

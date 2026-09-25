@@ -38,16 +38,9 @@ const AssessmentReadingListSummary: FC<{
       <small>分析进行中 · 已保存工作</small>
     ) : null}
     <strong className="library-saved-list-brief">{summary.headline}</strong>
-    <small className="library-saved-list-brief">{summary.listBrief}</small>
-    {summary.decisiveClaims.map((claim) => (
-      <small
-        className="library-saved-list-brief"
-        data-claim-id={claim.claimId}
-        key={claim.claimId}
-      >
-        {claim.text}
-      </small>
-    ))}
+    {summary.listBrief !== summary.headline ? (
+      <small className="library-saved-list-brief">{summary.listBrief}</small>
+    ) : null}
   </span>
 );
 
