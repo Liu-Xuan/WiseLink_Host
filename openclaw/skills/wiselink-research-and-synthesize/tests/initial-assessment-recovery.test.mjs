@@ -261,3 +261,106 @@ test('fresh begin authorization denial never consumes saved context or cancels a
   assert.equal((await f.checkpoint.readOptional('assessment-current-claim')).leaseGeneration, 1);
   assert.equal(await f.checkpoint.readOptional('run-result'), null);
 });
+
+test('an exact applicability begin with a lost receipt can reconcile only before model or commit starts', async () => {
+  const f = fixture();
+  f.input.operation = 'EXTRACT_APPLICABILITY';
+  f.input.initial.stages = { applicability: {
+    status: 'BUSY', attemptStatus: 'RUNNING', attemptRef: 'attempt-one',
+  } };
+  f.values.set('binding', { workItemId: 'WI-one', documentVersionId: 'DV-one',
+    operation: 'EXTRACT_APPLICABILITY', requestId: 'request-one' });
+  f.values.set('begin_applicability_evaluation-1.started', { argsHash: 'frozen-hash' });
+  assert.deepEqual(await inspectInitialAssessmentRecovery(f.input), {
+    status: 'RECOVERY_BEGIN', operation: 'EXTRACT_APPLICABILITY', previousAttemptRef: 'attempt-one',
+  });
+  f.values.set('model.started', {});
+  assert.equal((await inspectInitialAssessmentRecovery(f.input)).errorCode,
+    'INITIAL_APPLICABILITY_BEGIN_MODEL_ALREADY_STARTED');
+  f.values.delete('model.started');
+  f.values.set('commit_applicability_candidate-1.started', {});
+  assert.equal(await inspectInitialAssessmentRecovery(f.input), null);
+});
+
+test('an ambiguous pending applicability begin replays its frozen request without duplicating model work', async t => {
+  const checkpointRoot = await mkdtemp(join(tmpdir(), 'wiselink-applicability-begin-replay-'));
+  t.after(() => rm(checkpointRoot, { recursive: true, force: true }));
+  const options = { checkpointRoot, workItemId: 'WI-one', maxInitialStages: 1,
+    initialStageOnly: true, expectedInitialOperation: 'EXTRACT_APPLICABILITY' };
+  const initialWorkItemRevision = 2;
+  const checkpoint = await createCheckpointStore(initialStageCheckpointPath(
+    { ...options, initialWorkItemRevision }, 'EXTRACT_APPLICABILITY'));
+  const args = { applicabilityContextRef: 'APCTX-one', requestId: 'request-one' };
+  await checkpoint.writeOnce('binding', { workItemId: 'WI-one', documentVersionId: 'DV-one',
+    operation: 'EXTRACT_APPLICABILITY', requestId: args.requestId });
+  await assert.rejects(checkpoint.remoteStep({ step: 'begin_applicability_evaluation-1', args,
+    ambiguousCommit: false, perform: async () => { throw new Error('gateway disconnected'); } }), /gateway disconnected/u);
+
+  const pending = { candidateOnly: true, workItemId: 'WI-one', workItemRevision: initialWorkItemRevision,
+    documentVersionId: 'DV-one', status: 'REQUIRED', nextOperation: 'EXTRACT_APPLICABILITY',
+    applicabilityContextRef: args.applicabilityContextRef, stages: {
+      translation: { status: 'SUCCEEDED' }, applicability: { status: 'PENDING' },
+      jobAid: { status: 'PENDING' }, overall: { status: 'PENDING' },
+    } };
+  const saved = { ...pending, workItemRevision: 3, nextOperation: 'EVALUATE_JOBAID', stages: {
+    ...pending.stages, applicability: { status: 'SUCCEEDED' } } };
+  const claim = { status: 'RUNNING', attemptRef: 'attempt-one', leaseToken: 'lease-one',
+    leaseGeneration: 1, leaseExpiresAt: new Date(Date.now() + 60_000).toISOString(),
+    task: { workItemId: 'WI-one', documentVersionId: 'DV-one', deadline: new Date(Date.now() + 600_000).toISOString() },
+    modelInput: { schemaVersion: 'fixture.applicability.v1' } };
+  let statusReads = 0;
+  let beginCalls = 0;
+  let modelCalls = 0;
+  const result = await consumeHostedWorkItem(options, {
+    callTool: async (name, observedArgs) => {
+      if (name === 'get_parse_status') {
+        statusReads += 1;
+        return { entry: { workItemId: 'WI-one' }, initialAnalysis: statusReads === 1 ? pending : saved };
+      }
+      if (name === 'begin_applicability_evaluation') {
+        beginCalls += 1;
+        assert.deepEqual(observedArgs, args);
+        return claim;
+      }
+      assert.fail(`unexpected tool ${name}`);
+    },
+    runInitial: async run => {
+      await run.callTool('begin_applicability_evaluation', args);
+      return { outcome: 'CANDIDATE_READY' };
+    },
+    invokeInitialModel: async () => { modelCalls += 1; assert.fail('model dispatch is not part of begin recovery'); },
+  });
+  assert.equal(result.status, 'INITIAL_STAGE_SAVED');
+  assert.equal(beginCalls, 1);
+  assert.equal(modelCalls, 0);
+  assert.deepEqual((await checkpoint.readOptional('begin_applicability_evaluation-1.result')).value, claim);
+});
+
+test('begin replay requires the frozen argument hash and cannot replay a model or commit', async t => {
+  const checkpointRoot = await mkdtemp(join(tmpdir(), 'wiselink-exact-begin-replay-'));
+  t.after(() => rm(checkpointRoot, { recursive: true, force: true }));
+  const checkpoint = await createCheckpointStore(checkpointRoot);
+  const args = { applicabilityContextRef: 'APCTX-one', requestId: 'request-one' };
+  let beginCalls = 0;
+  const begin = (step, input = args) => checkpoint.remoteStep({ step, args: input,
+    ambiguousCommit: false, allowExactReplay: true,
+    perform: async () => { beginCalls += 1; return { attemptRef: 'attempt-one' }; } });
+  await assert.rejects(checkpoint.remoteStep({ step: 'begin_applicability_evaluation-1', args,
+    ambiguousCommit: false, perform: async () => { throw new Error('gateway disconnected'); } }), /gateway disconnected/u);
+  await assert.rejects(begin('begin_applicability_evaluation-1', { ...args, requestId: 'changed' }),
+    /ARGUMENT_MISMATCH/u);
+  assert.deepEqual(await begin('begin_applicability_evaluation-1'), { attemptRef: 'attempt-one' });
+  assert.equal(beginCalls, 1);
+
+  let otherCalls = 0;
+  const commit = () => checkpoint.remoteStep({ step: 'commit_applicability_candidate-1', args,
+    ambiguousCommit: true, allowExactReplay: true,
+    perform: async () => { otherCalls += 1; throw new Error('commit receipt lost'); } });
+  await assert.rejects(commit(), /commit receipt lost/u);
+  await assert.rejects(commit(), /COMMIT_OUTCOME_UNKNOWN/u);
+  const model = () => checkpoint.remoteStep({ step: 'model', args, ambiguousCommit: false,
+    allowExactReplay: true, perform: async () => { otherCalls += 1; throw new Error('model response lost'); } });
+  await assert.rejects(model(), /model response lost/u);
+  await assert.rejects(model(), /MODEL_OUTCOME_UNKNOWN/u);
+  assert.equal(otherCalls, 2);
+});

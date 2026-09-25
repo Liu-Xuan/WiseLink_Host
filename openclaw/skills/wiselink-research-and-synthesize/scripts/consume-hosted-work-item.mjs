@@ -183,18 +183,34 @@ export async function runHostedInitialStage(options, dependencies) {
     callCounts.set(name, count);
     if (name.startsWith('commit_') && args.phase !== 'UPLOAD_PART') finalCommitStarted = true;
     const freshAssessmentCall = problemAssessment && !name.startsWith('commit_');
-    const value = freshAssessmentCall || (options.assessmentRecovery && name.startsWith('begin_'))
+    const recoveryBegin = options.assessmentRecovery?.status === 'RECOVERY_BEGIN';
+    const exactApplicabilityBeginReplay = operation === 'EXTRACT_APPLICABILITY' &&
+      name === 'begin_applicability_evaluation' &&
+      (recoveryBegin ||
+        (['REQUIRED', 'WAITING_INPUT'].includes(initial.status) &&
+          initial.nextOperation === 'EXTRACT_APPLICABILITY' &&
+          initial.stages.applicability?.status === 'PENDING')) &&
+      await checkpoint.readOptional('begin_applicability_evaluation-1.started') &&
+      !await checkpoint.readOptional('begin_applicability_evaluation-1.result') &&
+      !await checkpoint.readOptional('model.started') &&
+      !await checkpoint.readOptional('commit_applicability_candidate-1.started');
+    const value = freshAssessmentCall ||
+      (options.assessmentRecovery && name.startsWith('begin_') && !recoveryBegin)
       ? await dependencies.callTool(name, scopedArgs) : await checkpoint.remoteStep({
       // Keep c114 checkpoint identity stable for an already-started JobAid run.
       // The exact WorkItem is also frozen in the enclosing checkpoint binding.
       step: `${name}-${count}`, args,
       ambiguousCommit: name.startsWith('commit_'),
+      allowExactReplay: exactApplicabilityBeginReplay,
       perform: () => dependencies.callTool(name, scopedArgs),
     });
     if (name.startsWith('begin_') && options.assessmentRecovery?.status === 'RECOVERY_COMMITTING')
       assertCommittingInitialClaim(options.assessmentRecovery.previousClaim,value);
+    if (name === 'begin_applicability_evaluation' && recoveryBegin &&
+      value.attemptRef !== options.assessmentRecovery.previousAttemptRef)
+      throw new Error('INITIAL_APPLICABILITY_BEGIN_ATTEMPT_MISMATCH');
     if (name.startsWith('begin_') && value.status === 'RUNNING') {
-      if (options.assessmentRecovery)
+      if (options.assessmentRecovery?.status === 'RECOVERY_CANDIDATE')
         assertFreshInitialAssessmentClaim(options.assessmentRecovery.previousClaim, value);
       problemAssessment = value.modelInput?.schemaVersion === 'wiselink.jobaid-problem-task.v2';
       if (problemAssessment) {

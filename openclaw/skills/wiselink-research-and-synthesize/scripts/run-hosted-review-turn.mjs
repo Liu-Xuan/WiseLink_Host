@@ -41,6 +41,10 @@ import {
 } from './validate-payload.mjs';
 
 const DRIVER_SCHEMA = 'wiselink.3_1.hosted_review_driver.v1';
+const EXACT_IDEMPOTENT_REPLAY_STEPS = new Set([
+  'begin_applicability_evaluation-1',
+]);
+const MAX_EXACT_IDEMPOTENT_REPLAYS = 3;
 const MODEL_OUTPUT_SHAPE_SCHEMA = 'wiselink.3_1.review_model_output_shape.v2';
 const KNOWN_MODEL_NONDISPATCH_CODES = new Set([
   'REVIEW_GATEWAY_INVALID_JSON_HTTP_404',
@@ -87,9 +91,9 @@ export const M3_MAX_COMPLETION_TOKENS = 524_288;
 
 /**
  * Execute one review turn with durable, model-external control-plane state.
- * A completed step is replayed only from its 0600 checkpoint. An ambiguous
- * mutating commit is recovered through one read-only status call; no other
- * ambiguous remote step is retried.
+ * A completed step is replayed only from its 0600 checkpoint. Ambiguous
+ * commits use read-only status recovery. Only the exact applicability begin
+ * can be retried, when its caller has confirmed the model has not started.
  */
 export async function runHostedReviewTurn(options, dependencies = {}) {
   const normalized = normalizeRunOptions(options);
@@ -1105,7 +1109,7 @@ export async function createCheckpointStore(directory) {
     readOptional: (step) => readCheckpointOptional(root, step),
     write: (step, value) => writeCheckpoint(root, step, value),
     writeOnce: (step, value) => writeCheckpointOnce(root, step, value),
-    remoteStep: async ({ step, args, ambiguousCommit, perform }) => {
+    remoteStep: async ({ step, args, ambiguousCommit, allowExactReplay = false, perform }) => {
       const argsHash = canonicalSha256(args);
       const completed = await readCheckpointOptional(root, `${step}.result`);
       if (completed) {
@@ -1118,7 +1122,51 @@ export async function createCheckpointStore(directory) {
         if (ambiguousCommit) {
           throw new Error('REVIEW_COMMIT_OUTCOME_UNKNOWN');
         }
-        throw new Error(`REVIEW_${step.toUpperCase()}_OUTCOME_UNKNOWN`);
+        if (!allowExactReplay || !EXACT_IDEMPOTENT_REPLAY_STEPS.has(step)) {
+          throw new Error(`REVIEW_${step.toUpperCase()}_OUTCOME_UNKNOWN`);
+        }
+        for (let replay = 1; replay <= MAX_EXACT_IDEMPOTENT_REPLAYS; replay += 1) {
+          const replayStep = `${step}.replay-${replay}`;
+          const replayResult = await readCheckpointOptional(root, `${replayStep}.result`);
+          if (replayResult) {
+            assertCheckpointHash(replayResult, argsHash, replayStep);
+            await writeCheckpoint(root, `${step}.result`, { ...replayResult, step });
+            return structuredClone(replayResult.value);
+          }
+          const replayStarted = await readCheckpointOptional(root, `${replayStep}.started`);
+          if (replayStarted) {
+            assertCheckpointHash(replayStarted, argsHash, replayStep);
+            continue;
+          }
+          try {
+            await writeCheckpointOnce(root, `${replayStep}.started`, {
+              schemaVersion: DRIVER_SCHEMA,
+              step: replayStep,
+              argsHash,
+              startedAt: new Date().toISOString(),
+            });
+          } catch (error) {
+            if (error?.message !== `REVIEW_CHECKPOINT_ALREADY_EXISTS:${replayStep}`) {
+              throw error;
+            }
+            const raced = await readCheckpointOptional(root, `${replayStep}.started`);
+            if (!raced) throw error;
+            assertCheckpointHash(raced, argsHash, replayStep);
+            continue;
+          }
+          const value = await perform();
+          const result = {
+            schemaVersion: DRIVER_SCHEMA,
+            step: replayStep,
+            argsHash,
+            finishedAt: new Date().toISOString(),
+            value,
+          };
+          await writeCheckpoint(root, `${replayStep}.result`, result);
+          await writeCheckpoint(root, `${step}.result`, { ...result, step });
+          return structuredClone(value);
+        }
+        throw new Error('INITIAL_APPLICABILITY_BEGIN_REPLAY_LIMIT_REACHED');
       }
       await writeCheckpoint(root, `${step}.started`, {
         schemaVersion: DRIVER_SCHEMA,
