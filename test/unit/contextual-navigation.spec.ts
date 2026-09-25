@@ -40,7 +40,7 @@ describe('R05.9 contextual navigation', () => {
     );
     expect(quicklook).toMatchObject({
       authorityLabel: '已保存候选意见',
-      freshnessLabel: '原文未在本次核验',
+      freshnessLabel: '来源范围见依据',
       currentJudgment: '需结合当前构型评估维修计划。',
       applicabilitySummary: '适用于资料列出的构型。 当前机队匹配尚待核对。',
       recommendedActions: ['核对飞机号与部件号。'],
@@ -62,7 +62,7 @@ describe('R05.9 contextual navigation', () => {
       '尚需当前机队构型',
     ]);
     const markdown = quicklookMarkdown('737-34-3830', quicklook);
-    expect(markdown).toContain('本次未读取原文或解析包');
+    expect(markdown).toContain('打开依据可核对其来源与范围');
     expect(markdown).not.toContain('source-1');
     expect(markdown).not.toContain('当前有效');
   });

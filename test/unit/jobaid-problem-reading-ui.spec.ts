@@ -91,6 +91,17 @@ describe('problem-oriented JobAid reading', () => {
     expect(html).not.toContain('逐项评估尚未形成');
     expect(html).not.toMatch(/<details[^>]*>\s*<summary[^>]*>措施是否/u);
   });
+  it('does not contradict a succeeded attempt beside its saved work', () => {
+    const data = jobAidReadingFixture();
+    data.executionStatus = 'SUCCEEDED';
+    data.latestAttempt!.status = 'SUCCEEDED';
+    const html = renderToStaticMarkup(createElement(JobAidProblemReading, {
+      data, onLocateDocument: jest.fn(),
+    }));
+    expect(html).toContain('当前运行：执行完成');
+    expect(html).not.toContain('不表示本轮执行已完成');
+    expect(html).toContain('data-work-revision-ref="work-current-test"');
+  });
   it('uses the assessment presentation without changing the saved work identity', () => {
     const data = jobAidReadingFixture();
     const html = renderToStaticMarkup(
