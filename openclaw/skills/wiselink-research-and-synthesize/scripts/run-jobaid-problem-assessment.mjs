@@ -176,6 +176,45 @@ export function projectBoundedInitialJobAidInput(input) {
   };
 }
 
+/** Repair only two observed citation spellings when the Host catalog has one exact match. */
+export function canonicalizeKnownJobAidSourceAliases(work, availableSources) {
+  const aliases = new Map();
+  const register = (alias, exact) => {
+    if (!alias || alias === exact) return;
+    if (aliases.has(alias) && aliases.get(alias) !== exact) aliases.set(alias, null);
+    else if (!aliases.has(alias)) aliases.set(alias, exact);
+  };
+  for (const { ref } of availableSources) {
+    register(`evidenceRef:${ref}`, ref);
+    const original = /^(DOCUMENT_ORIGINAL:[^:]+):(PRUN-[A-Za-z0-9-]+):\2:(u\d+:p\d+)$/u.exec(ref);
+    if (original) {
+      const short = `${original[1]}:${original[2]}:${original[3]}`;
+      register(short, ref);
+      register(`evidenceRef:${short}`, ref);
+    }
+  }
+  const repaired = new Map();
+  const exact = (ref) => {
+    const replacement = aliases.get(ref);
+    if (!replacement) return ref;
+    repaired.set(ref, replacement);
+    return replacement;
+  };
+  const visit = (value, key = '') => {
+    if (typeof value === 'string') {
+      const withCitations = value.replace(/\[\[([^\[\]\r\n]+)\]\]/gu,
+        (whole, ref) => `[[${exact(ref)}]]`);
+      return ['basisRefs', 'checkedEvidenceRefs'].includes(key)
+        ? exact(withCitations) : withCitations;
+    }
+    if (Array.isArray(value)) return value.map(item => visit(item, key));
+    if (value && typeof value === 'object')
+      return Object.fromEntries(Object.entries(value).map(([field, item]) => [field, visit(item, field)]));
+    return value;
+  };
+  return { work: visit(work), repairs: [...repaired].map(([from, to]) => ({ from, to })) };
+}
+
 function projectSavedJobAidWorkContent(content) {
   if (content?.schemaVersion !== 'wiselink.jobaid-problem-work.v3' ||
       !Array.isArray(content.issues))
@@ -751,6 +790,16 @@ export async function invokeHostedJobAidProblemModel(
             throw new Error('JOBAID_PRIMARY_SOURCE_READ_REQUIRED');
           const priorWorkRevision = expectedWorkRevision;
           submittedWork = parseJobAidWorkJson(step.workJson);
+          if (boundedInitialJobAid) {
+            const normalized = canonicalizeKnownJobAidSourceAliases(
+              submittedWork,
+              sessionModelInput.availableSources,
+            );
+            submittedWork = normalized.work;
+            if (normalized.repairs.length)
+              await checkpoint?.write(`assessment-${round}-source-ref-normalizations`,
+                { repairs: normalized.repairs });
+          }
           receipt = await save(submittedWork);
           if (boundedInitialJobAid && expectedWorkRevision > priorWorkRevision) {
             readsSinceSave = 0;
@@ -920,6 +969,9 @@ function priorRejectedRatingCorrection(messages, modelInput) {
 
 function workShapeCorrection(code, work, modelInput) {
   if (!work) return {};
+  if (code === 'JOBAID_BODY_CITATIONS_REQUIRED') {
+    return { instruction: 'Every submitted issue body must contain at least one inline citation in the exact form [[ACTUAL_DELIVERED_REF_VALUE]]. A prose label such as u32 or a citation only in another field is insufficient. Copy the complete evidenceRef value from the Host source receipt or availableSources catalog, including both repeated parse-run segments when present. Cite only source text actually delivered in this attempt or retained from saved work; the Host will verify both the identifier and delivery.' };
+  }
   if (['JOBAID_READING_SUMMARY_REQUIRED', 'JOBAID_READING_SUMMARY_PAIR_REQUIRED'].includes(code)) {
     return { instruction: 'The Host requires headline and listBrief together for the initial saved work or an explicit summary revision. Supply a concise engineering topic and a short explanation of the actual saved understanding, preserving decisive conditions and uncertainty. Do not copy the first issue question, invent a conclusion, or rerun source reading. Preserve the complete issue bodies and evidence. Later updates may omit both fields only to retain an existing saved summary.' };
   }

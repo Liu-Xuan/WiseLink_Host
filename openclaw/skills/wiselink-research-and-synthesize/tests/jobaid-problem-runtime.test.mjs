@@ -4,7 +4,21 @@ import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { createCheckpointStore } from '../scripts/run-hosted-review-turn.mjs';
-import { invokeHostedJobAidProblemModel, projectJobAidModelInput, projectBoundedInitialJobAidInput } from '../scripts/run-jobaid-problem-assessment.mjs';
+import { invokeHostedJobAidProblemModel, projectJobAidModelInput, projectBoundedInitialJobAidInput, canonicalizeKnownJobAidSourceAliases } from '../scripts/run-jobaid-problem-assessment.mjs';
+
+test('source spelling repair uses only unique exact Host catalog refs and preserves the candidate', () => {
+  const exact = 'DOCUMENT_ORIGINAL:document_version_example:PRUN-example:PRUN-example:u32:p1';
+  const short = 'DOCUMENT_ORIGINAL:document_version_example:PRUN-example:u32:p1';
+  const unknown = 'DOCUMENT_ORIGINAL:document_version_other:PRUN-example:u32:p1';
+  const candidate = { issues: [{ body: `读取 [[${short}]]；未知 [[${unknown}]]。`,
+    measures: [{ basisRefs: [`evidenceRef:${exact}`, unknown] }] }] };
+  const result = canonicalizeKnownJobAidSourceAliases(candidate, [{ ref: exact }]);
+  assert.equal(result.work.issues[0].body, `读取 [[${exact}]]；未知 [[${unknown}]]。`);
+  assert.deepEqual(result.work.issues[0].measures[0].basisRefs, [exact, unknown]);
+  assert.deepEqual(result.repairs, [{ from: short, to: exact }, { from: `evidenceRef:${exact}`, to: exact }]);
+  assert.equal(candidate.issues[0].body, `读取 [[${short}]]；未知 [[${unknown}]]。`);
+  assert.equal(canonicalizeKnownJobAidSourceAliases(candidate, []).repairs.length, 0);
+});
 
 test('bounded initial continuation sends an issue index while Host work and source bindings stay intact', () => {
   const input = initialChunkModelInput();
