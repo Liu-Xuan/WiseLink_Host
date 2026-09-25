@@ -171,7 +171,7 @@ export class CanonicalHostInitialAnalysisStatusService {
     if (published?.[0] && savedIds.length) {
       const bases = await this.db.select({
         attemptId: actionAttempt.attemptId,
-        parseRunId: sql<string | null>`case when ${actionAttempt.taskEnvelopeJson} #>> '{modelInput,schemaVersion}' = 'wiselink.3_1.applicability_task.v3' then ${actionAttempt.taskEnvelopeJson} #>> '{modelInput,originalInput,binding,parseRunId}' else ${actionAttempt.taskEnvelopeJson} #>> '{modelInput,modelInput,documentOverview,original,binding,parseRunId}' end`,
+        parseRunId: sql<string | null>`case when ${actionAttempt.taskEnvelopeJson}::jsonb #>> '{modelInput,schemaVersion}' = 'wiselink.3_1.applicability_task.v3' then ${actionAttempt.taskEnvelopeJson}::jsonb #>> '{modelInput,originalInput,binding,parseRunId}' else ${actionAttempt.taskEnvelopeJson}::jsonb #>> '{modelInput,modelInput,documentOverview,original,binding,parseRunId}' end`,
       }).from(actionAttempt).where(and(eq(actionAttempt.tenantId, input.tenantId),
         eq(actionAttempt.workItemId, input.workItem.workItemId),
         eq(actionAttempt.documentVersionId, input.workItem.source.documentVersionId),
