@@ -1062,7 +1062,9 @@ export function readHostMcpJsonResult(result, name, args) {
     error.hostErrorCode = hostErrorCode;
     error.hostToolName = /^[a-z]+(?:_[a-z]+)*$/u.test(name) && name.length <= 80 ? name : null;
     error.receivedHostToolError = result?.isError === true;
-    if (hostErrorCode === 'JOBAID_SOURCE_NOT_DELIVERED' && name === 'matter_action_attempt' && args?.operation === 'SAVE_WORK') {
+    if (hostErrorCode === 'JOBAID_SOURCE_NOT_DELIVERED' &&
+        ((name === 'matter_action_attempt' && args?.operation === 'SAVE_WORK') ||
+         name === 'save_assessment_work')) {
       const ref = textBlocks[0].text.match(/^(?:Error:\s*)?JOBAID_SOURCE_NOT_DELIVERED:([^\s]{1,512})$/u)?.[1];
       // Return only an identifier already present in this model's submitted
       // candidate. Never expose arbitrary Host exception text or other IDs.

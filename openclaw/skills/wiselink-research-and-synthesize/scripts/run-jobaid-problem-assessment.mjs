@@ -180,6 +180,7 @@ export async function invokeHostedJobAidProblemModel(
   dependencies = {},
 ) {
   validateJobAidProblemInput(modelInput);
+  const maxCorrections = modelInput.schemaVersion === MATTER_JOBAID_TASK_SCHEMA ? 2 : 4;
   if ((modelInput.schemaVersion === MATTER_JOBAID_TASK_SCHEMA) !== (operation === 'ASSESS_MATTER'))
     throw new Error('JOBAID_PROBLEM_OPERATION_MISMATCH');
   assertHostedModelGatewayReady(options);
@@ -468,7 +469,7 @@ export async function invokeHostedJobAidProblemModel(
     if (choice.finish_reason === 'stop' && message?.role === 'assistant' &&
         typeof message.content === 'string' && message.content.trim() &&
         (message.tool_calls == null || (Array.isArray(message.tool_calls) && message.tool_calls.length === 0)) &&
-        message.function_call == null && corrections < 2) {
+        message.function_call == null && corrections < maxCorrections) {
       outputUnits += Buffer.byteLength(message.content);
       corrections += 1;
       messages = [...messages, { role: 'user', content: JSON.stringify({
@@ -484,7 +485,7 @@ export async function invokeHostedJobAidProblemModel(
     if (choice.finish_reason === 'stop' && message?.role === 'assistant' &&
         typeof message.content === 'string' && message.content.trim() &&
         (message.tool_calls == null || (Array.isArray(message.tool_calls) && message.tool_calls.length === 0)) &&
-        message.function_call == null && corrections >= 2) {
+        message.function_call == null && corrections >= maxCorrections) {
       const error = new Error('JOBAID_MODEL_OUTPUT_FUNCTION_INVALID');
       // All responses are durably complete and the bounded corrections are exhausted.
       // Reuse the existing failed-result lifecycle instead of leaving a live lease
@@ -609,7 +610,7 @@ export async function invokeHostedJobAidProblemModel(
     } catch (error) {
       const code = error?.hostErrorCode ?? error?.message ?? '';
       const invalidWorkJson = code === 'JOBAID_WORK_JSON_INVALID' && !submittedWork;
-      if (corrections >= 2 && (invalidWorkJson || (submittedWork && error?.hostErrorCode &&
+      if (corrections >= maxCorrections && (invalidWorkJson || (submittedWork && error?.hostErrorCode &&
           /^JOBAID_[A-Z_]+(?::[A-Za-z0-9:_-]+)?$/u.test(code) &&
           !/AUTHORIZATION|LEASE|REVISION_CONFLICT|VERSION_CHANGED|BUDGET|GATEWAY|READ_FAILED|ATTEMPT/.test(code)))) {
         // Invalid JSON never reaches SAVE. Together with explicit Host rejection,
@@ -626,7 +627,7 @@ export async function invokeHostedJobAidProblemModel(
         /AUTHORIZATION|LEASE|REVISION_CONFLICT|VERSION_CHANGED|BUDGET|GATEWAY|READ_FAILED|ATTEMPT/.test(
           code,
         ) ||
-        corrections >= 2
+        corrections >= maxCorrections
       )
         throw error;
       corrections += 1;
