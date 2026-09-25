@@ -12,7 +12,7 @@ description: Orchestrate the single official hosted WiseLink engineering profile
 - hosted app：`app_17c3zn24kv2`
 - logical profile：`wiselink-engineering`
 - model policy：`official-hosted-profile-config`（任务可绑定已登记的内置或用户授权自定义模型；仍经唯一官方 Hosted profile/Gateway）
-- Skill：`wiselink-research-and-synthesize@r09.c135`
+- Skill：`wiselink-research-and-synthesize@r09.c136`
 - Skill compatibility：`wiselink-research-and-synthesize@r09`（历史任务最低接受 `r09.c10`，翻译 v2 必须为 `r09.c44` 或更新兼容包）
 - Host MCP：`wiselink-openclaw-engineering-assessment@1.2.0`（保留既有工具，新增语义翻译工作与 JobAid 来源/工作工具）
 - Host 集成提交：以本次发布包清单记录的实际提交为准
@@ -109,6 +109,18 @@ Host 新任务若为 `wiselink.jobaid-problem-task.v2`，执行问题分析协�
 运行范围只取已授权的 `--work-item-id`；新事项尚无 applicability context 时使用与 Host 配置一致的
 `--applicability-context-ref`，该控制引用和本轮 requestId 不进入模型。部署见
 [Hosted 自动领取](references/hosted-review-consumer.md)。
+
+### Host 登记事项自动消费（c136）
+
+在 Host 队列迁移和自动受理登记已发布、固定 service queue scope 已启用后，原生单一 command cron 可使用
+`consume-hosted-work-item.mjs --auto-queue`。每个 tick 只领取并推进一个 Host 已登记事项；空队列返回 IDLE，不检查静态
+WorkItem、不调用模型。新事项的 applicability context 从 Host fresh status 读取，租约保存在 endpoint 专属、私有
+checkpoint；模型和业务工具仍复用现有消费者、官方 Gateway、阶段级 checkpoint 与 Host CAS。
+
+租约过期后仅发送之前 checkpoint 的精确 `resumeWorkItemId`。Host 不返回同一事项时，本地 claim 与阶段 checkpoint
+全部保留并返回 `REQUIRES_ATTENTION`；绝不接着消费其他排队项。消费者只在 Host fresh status 确认初始 JobAid 和
+Overall 完成后 ACK；Host fresh status 确认终态失败后才调用 lease-fenced block。模型结果不决定发现、续领或正式采用。
+静态 `--work-item-id`、Matter 和 DocumentVersion 命令仍使用原入口，不与 `--auto-queue` 混用。
 
 ### 共同背景（兼容增量）
 
@@ -573,7 +585,7 @@ Interactive Review 的复杂 ResultEnvelope 必须由 `sealResultEnvelope` 生�
 当前 validator 强制：
 
 - `modelVersion` 优先取响应中可读实际模型；绑定任务未回报实际模型时使用 `configured-route:<modelRef>`，旧无绑定任务使用无 fallback 的 configured endpoint。后两者只证明路由，不代表已暴露下游具体模型，也不做具体版本等值判断
-- `skillVersion=wiselink-research-and-synthesize@r09.c135`
+- `skillVersion=wiselink-research-and-synthesize@r09.c136`
 - `toolVersions.wiselink-openclaw-engineering-assessment=1.2.0`
 - `promptVersion` 非空并来自当前运行
 - task/result exact binding、SourceRef allowlist 和 canonical hash 一致

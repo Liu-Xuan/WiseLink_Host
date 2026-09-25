@@ -3267,6 +3267,10 @@ export type AutomaticWorkItemClaimResult =
       leaseExpiresAt: string;
     };
 
+export interface NextAutomaticWorkItemRequest {
+  resumeWorkItemId?: string;
+}
+
 export interface AcknowledgeAutomaticWorkItemRequest {
   workItemId: string;
   leaseToken: string;
@@ -3278,6 +3282,20 @@ export interface AcknowledgeAutomaticWorkItemResponse {
   workItemId: string;
   replayed: boolean;
   acknowledgedAt: string;
+}
+
+export interface BlockAutomaticWorkItemRequest {
+  workItemId: string;
+  leaseToken: string;
+  leaseGeneration: number;
+}
+
+export interface BlockAutomaticWorkItemResponse {
+  status: 'BLOCKED';
+  workItemId: string;
+  blockedCode: string;
+  replayed: boolean;
+  blockedAt: string;
 }
 
 export type CanonicalRelatedDocumentRelationRole =

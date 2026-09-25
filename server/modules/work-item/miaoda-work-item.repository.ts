@@ -354,6 +354,7 @@ export class MiaodaWorkItemRepository {
     tenantId: string;
     now: Date;
     limit?: number;
+    workItemId?: string;
   }): Promise<AutoWorkItemQueueCandidate[]> {
     const limit = Math.min(Math.max(input.limit ?? 32, 1), 100);
     return this.db
@@ -372,6 +373,9 @@ export class MiaodaWorkItemRepository {
       .where(
         and(
           eq(autoWorkItemAuthorization.tenantId, input.tenantId),
+          ...(input.workItemId
+            ? [eq(autoWorkItemAuthorization.workItemId, input.workItemId)]
+            : []),
           or(
             eq(autoWorkItemAuthorization.status, 'WAITING'),
             and(
@@ -555,6 +559,7 @@ export class MiaodaWorkItemRepository {
     leaseOwner: string;
     leaseToken: string;
     leaseGeneration: number;
+    expectedWorkItemRevision: number;
     now: Date;
   }): Promise<{ acknowledgedAt: Date; replayed: boolean } | null> {
     const leaseTokenHash = createHash('sha256')
@@ -599,6 +604,23 @@ export class MiaodaWorkItemRepository {
               AND wi.action_type = 'PARSE_PDF'
               AND wi.status = 'CANDIDATE_READBACK_VERIFIED'
               AND wi.package_id IS NOT NULL
+              AND wi.revision = ${input.expectedWorkItemRevision}
+              AND NOT EXISTS (
+                SELECT 1 FROM action_attempt aa
+                WHERE aa.tenant_id = ${input.tenantId}
+                  AND aa.work_item_id = ${input.workItemId}
+                  AND aa.document_version_id = ${autoWorkItemAuthorization.documentVersionId}
+                  AND aa.request_origin = 'OPENCLAW_MCP_V1'
+                  AND aa.action_type IN (
+                    'OPENCLAW_TRANSLATE',
+                    'OPENCLAW_APPLICABILITY_EVALUATION',
+                    'OPENCLAW_DYNAMIC_EVALUATION',
+                    'OPENCLAW_OVERALL_SYNTHESIS'
+                  )
+                  AND aa.status IN (
+                    'QUEUED', 'RUNNING', 'RETRY_SCHEDULED', 'COMMITTING'
+                  )
+              )
           )`,
         ),
       )
@@ -625,6 +647,210 @@ export class MiaodaWorkItemRepository {
       .limit(1);
     if (!completed?.completedAt) return null;
     return { acknowledgedAt: completed.completedAt, replayed: true };
+  }
+
+  async readCompletedAutoProcessingLeaseReceipt(input: {
+    tenantId: string;
+    workItemId: string;
+    leaseToken: string;
+    leaseGeneration: number;
+  }): Promise<{ acknowledgedAt: Date; replayed: true } | null> {
+    const leaseTokenHash = createHash('sha256')
+      .update(input.leaseToken)
+      .digest('hex');
+    const [completed] = await this.db
+      .select({ completedAt: autoWorkItemAuthorization.completedAt })
+      .from(autoWorkItemAuthorization)
+      .where(
+        and(
+          eq(autoWorkItemAuthorization.tenantId, input.tenantId),
+          eq(autoWorkItemAuthorization.workItemId, input.workItemId),
+          eq(autoWorkItemAuthorization.status, 'COMPLETED'),
+          eq(autoWorkItemAuthorization.completedLeaseTokenHash, leaseTokenHash),
+          eq(
+            autoWorkItemAuthorization.completedLeaseGeneration,
+            input.leaseGeneration,
+          ),
+        ),
+      )
+      .limit(1);
+    return completed?.completedAt
+      ? { acknowledgedAt: completed.completedAt, replayed: true }
+      : null;
+  }
+
+  /** Blocks only the exact active lease after Host verifies terminal failure. */
+  async blockAutoProcessingLease(input: {
+    tenantId: string;
+    workItemId: string;
+    requestId: string;
+    actorUserId: string;
+    documentId: string;
+    documentVersionId: string;
+    sourceArtifactId: string;
+    sourceFileSha256: string;
+    sourceByteLength: number;
+    expectedWorkItemRevision: number;
+    leaseOwner: string;
+    leaseToken: string;
+    leaseGeneration: number;
+    blockedCode: string;
+    now: Date;
+  }): Promise<{ blockedAt: Date; blockedCode: string; replayed: boolean } | null> {
+    const leaseTokenHash = createHash('sha256')
+      .update(input.leaseToken)
+      .digest('hex');
+    const [updated] = await this.db
+      .update(autoWorkItemAuthorization)
+      .set({
+        status: 'BLOCKED',
+        leaseOwner: null,
+        leaseToken: null,
+        leaseExpiresAt: null,
+        blockedCode: input.blockedCode,
+        blockedLeaseTokenHash: leaseTokenHash,
+        blockedLeaseGeneration: input.leaseGeneration,
+        blockedAt: input.now,
+        updatedAt: input.now,
+      })
+      .where(
+        and(
+          eq(autoWorkItemAuthorization.tenantId, input.tenantId),
+          eq(autoWorkItemAuthorization.workItemId, input.workItemId),
+          eq(autoWorkItemAuthorization.requestId, input.requestId),
+          eq(autoWorkItemAuthorization.actorUserId, input.actorUserId),
+          eq(autoWorkItemAuthorization.documentId, input.documentId),
+          eq(
+            autoWorkItemAuthorization.documentVersionId,
+            input.documentVersionId,
+          ),
+          eq(
+            autoWorkItemAuthorization.sourceArtifactId,
+            input.sourceArtifactId,
+          ),
+          eq(
+            autoWorkItemAuthorization.sourceFileSha256,
+            input.sourceFileSha256,
+          ),
+          eq(
+            autoWorkItemAuthorization.sourceByteLength,
+            input.sourceByteLength,
+          ),
+          eq(autoWorkItemAuthorization.status, 'LEASED'),
+          eq(autoWorkItemAuthorization.leaseOwner, input.leaseOwner),
+          eq(autoWorkItemAuthorization.leaseToken, input.leaseToken),
+          eq(
+            autoWorkItemAuthorization.leaseGeneration,
+            input.leaseGeneration,
+          ),
+          gt(autoWorkItemAuthorization.leaseExpiresAt, input.now),
+          sql`EXISTS (
+            SELECT 1 FROM work_item wi
+            WHERE wi.tenant_id = ${input.tenantId}
+              AND wi.work_item_id = ${input.workItemId}
+              AND wi.request_id = ${input.requestId}
+              AND wi.requested_by_user_id = ${input.actorUserId}
+              AND wi.document_id = ${input.documentId}
+              AND wi.document_version_id = ${input.documentVersionId}
+              AND wi.source_artifact_id = ${input.sourceArtifactId}
+              AND wi.source_file_sha256 = ${input.sourceFileSha256}
+              AND wi.source_byte_length = ${input.sourceByteLength}
+              AND wi.action_type = 'PARSE_PDF'
+              AND wi.status = 'CANDIDATE_READBACK_VERIFIED'
+              AND wi.package_id IS NOT NULL
+              AND wi.revision = ${input.expectedWorkItemRevision}
+              AND NOT EXISTS (
+                SELECT 1 FROM action_attempt aa
+                WHERE aa.tenant_id = ${input.tenantId}
+                  AND aa.work_item_id = ${input.workItemId}
+                  AND aa.document_version_id = ${autoWorkItemAuthorization.documentVersionId}
+                  AND aa.request_origin = 'OPENCLAW_MCP_V1'
+                  AND aa.action_type IN (
+                    'OPENCLAW_TRANSLATE',
+                    'OPENCLAW_APPLICABILITY_EVALUATION',
+                    'OPENCLAW_DYNAMIC_EVALUATION',
+                    'OPENCLAW_OVERALL_SYNTHESIS'
+                  )
+                  AND aa.status IN (
+                    'QUEUED', 'RUNNING', 'RETRY_SCHEDULED', 'COMMITTING'
+                  )
+              )
+          )`,
+        ),
+      )
+      .returning({
+        blockedAt: autoWorkItemAuthorization.blockedAt,
+        blockedCode: autoWorkItemAuthorization.blockedCode,
+      });
+    if (updated?.blockedAt && updated.blockedCode) {
+      return {
+        blockedAt: updated.blockedAt,
+        blockedCode: updated.blockedCode,
+        replayed: false,
+      };
+    }
+
+    const [blocked] = await this.db
+      .select({
+        blockedAt: autoWorkItemAuthorization.blockedAt,
+        blockedCode: autoWorkItemAuthorization.blockedCode,
+      })
+      .from(autoWorkItemAuthorization)
+      .where(
+        and(
+          eq(autoWorkItemAuthorization.tenantId, input.tenantId),
+          eq(autoWorkItemAuthorization.workItemId, input.workItemId),
+          eq(autoWorkItemAuthorization.status, 'BLOCKED'),
+          eq(
+            autoWorkItemAuthorization.blockedLeaseTokenHash,
+            leaseTokenHash,
+          ),
+          eq(
+            autoWorkItemAuthorization.blockedLeaseGeneration,
+            input.leaseGeneration,
+          ),
+        ),
+      )
+      .limit(1);
+    if (!blocked?.blockedAt || !blocked.blockedCode) return null;
+    return {
+      blockedAt: blocked.blockedAt,
+      blockedCode: blocked.blockedCode,
+      replayed: true,
+    };
+  }
+
+  async readBlockedAutoProcessingLeaseReceipt(input: {
+    tenantId: string;
+    workItemId: string;
+    leaseToken: string;
+    leaseGeneration: number;
+  }): Promise<{ blockedAt: Date; blockedCode: string } | null> {
+    const leaseTokenHash = createHash('sha256')
+      .update(input.leaseToken)
+      .digest('hex');
+    const [blocked] = await this.db
+      .select({
+        blockedAt: autoWorkItemAuthorization.blockedAt,
+        blockedCode: autoWorkItemAuthorization.blockedCode,
+      })
+      .from(autoWorkItemAuthorization)
+      .where(
+        and(
+          eq(autoWorkItemAuthorization.tenantId, input.tenantId),
+          eq(autoWorkItemAuthorization.workItemId, input.workItemId),
+          eq(autoWorkItemAuthorization.status, 'BLOCKED'),
+          eq(autoWorkItemAuthorization.blockedLeaseTokenHash, leaseTokenHash),
+          eq(
+            autoWorkItemAuthorization.blockedLeaseGeneration,
+            input.leaseGeneration,
+          ),
+        ),
+      )
+      .limit(1);
+    return blocked?.blockedAt && blocked.blockedCode
+      ? { blockedAt: blocked.blockedAt, blockedCode: blocked.blockedCode }
+      : null;
   }
 
   /** Excludes one authorization whose current Host binding no longer matches. */

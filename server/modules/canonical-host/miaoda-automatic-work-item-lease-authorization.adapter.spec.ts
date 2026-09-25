@@ -18,7 +18,7 @@ const DOCUMENT_VERSION_ID = 'DV-01';
 const ARTIFACT_ID = 'ART-01';
 const SHA256 = 'a'.repeat(64);
 const TOKEN = 'b1686364-7ee9-4ca1-a3aa-0b62794cb436';
-const LEASE_EXPIRES_AT = new Date('2026-09-25T09:00:00.000Z');
+const LEASE_EXPIRES_AT = new Date('2099-01-01T00:00:00.000Z');
 
 describe('MiaodaAutomaticWorkItemLeaseAuthorizationAdapter', () => {
   it('revalidates the active grant, original owner, source read policy and current source', async () => {

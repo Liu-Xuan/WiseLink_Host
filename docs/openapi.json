@@ -405,6 +405,24 @@
         "operationId": "nextWorkItem",
         "summary": "领取一个已登记且可执行的工程 WorkItem",
         "description": "只发现 Host 在正常受理时持久登记的新请求；旧 WorkItem 不自动纳管。固定 service:openclaw-main 队列身份与 DEV/UAT 租户必须显式启用。Host 每项重验租户、原提交人、DocumentVersion、来源权限、当前原件及候选解析投影；坏对象隔离后继续查找。无任务返回 IDLE，不触发模型或制造 WorkItem。成功返回的 leaseToken/leaseGeneration 仅交可信消费者编排层，勿写入模型输入或日志。",
+        "requestBody": {
+          "required": false,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "additionalProperties": false,
+                "properties": {
+                  "resumeWorkItemId": {
+                    "type": "string",
+                    "description": "仅在过期续跑时重领该 exact WorkItem；队列不会退而领取其他事项",
+                    "example": "WI-3d41f7"
+                  }
+                }
+              }
+            }
+          }
+        },
         "responses": {
           "200": {
             "description": "空队列，或一个成功领取的精确 WorkItem 和短时租约",
@@ -497,7 +515,7 @@
       "post": {
         "operationId": "acknowledgeWorkItem",
         "summary": "确认可信消费者已完成一个租约任务",
-        "description": "仅由可信消费者编排层在候选处理成功后调用，不注册为模型 MCP 工具。Host 重新验证原 active lease、固定租约 owner、租户、WorkItem、原 actor、DocumentVersion、当前来源权限与原件，再以 leaseToken+leaseGeneration 原子完成；重复提交同一已完成租约幂等成功。过期、代次不匹配或来源权限失效均拒绝。",
+        "description": "仅由可信消费者编排层在候选处理成功后调用，不注册为模型 MCP 工具。Host 重新验证原 active lease、固定租约 owner、租户、WorkItem、原 actor、DocumentVersion、当前来源权限与原件，并按最新 WorkItem 修订读取 Host 初始分析状态；只有 applicability 为 SUCCEEDED/WAITING_INPUT，JobAid 与 Overall 均为 SUCCEEDED 且无 nextOperation 时才原子完成。重复提交同一已完成租约幂等成功。过期、代次不匹配、未完成或来源权限失效均拒绝。",
         "requestBody": {
           "required": true,
           "content": {
@@ -574,10 +592,58 @@
           "404": {
             "description": "租约、登记授权、来源或 owner binding 不匹配"
           },
-          "409": { "description": "租约在校验后过期、丢失或已被新代次领取" },
+          "409": { "description": "初始分析未完成，或租约/WorkItem 修订在校验后漂移" },
           "503": {
             "description": "自动队列 service scope 未显式配置或 Host 依赖不可用"
           }
+        }
+      }
+    },
+    "/openapi/wiselink/block-work-item": {
+      "post": {
+        "operationId": "blockWorkItem",
+        "summary": "将 Host 已确认的失败队列事项转入需处理状态",
+        "description": "仅由可信消费者编排层调用，不注册为模型 MCP 工具。Host 复核固定 service scope、active lease、租户、原 actor、DocumentVersion、来源权限和原件，再按最新 WorkItem 修订读取 Host 状态；只有当前初始分析明确 FAILED/CONFLICT 且没有 nextOperation 时，才以租约 token/generation CAS 将授权登记转为 BLOCKED。Host 返回失败的阶段码并阻止定时任务每轮重试；同一租约重试幂等。消费者不能自报失败来封锁仍可继续的事项。",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": ["workItemId", "leaseToken", "leaseGeneration"],
+                "additionalProperties": false,
+                "properties": {
+                  "workItemId": { "type": "string", "example": "WI-3d41f7" },
+                  "leaseToken": { "type": "string", "format": "uuid", "example": "0f8fad5b-d9cb-469f-a165-70867728950e" },
+                  "leaseGeneration": { "type": "integer", "minimum": 1, "example": 1 }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "事项已阻止后续自动领取；replayed 表示相同租约的幂等重试",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": ["status", "workItemId", "blockedCode", "replayed", "blockedAt"],
+                  "properties": {
+                    "status": { "type": "string", "enum": ["BLOCKED"] },
+                    "workItemId": { "type": "string" },
+                    "blockedCode": { "type": "string", "example": "AUTO_WORK_ITEM_STAGE_JOBAID_FAILED" },
+                    "replayed": { "type": "boolean" },
+                    "blockedAt": { "type": "string", "format": "date-time" }
+                  }
+                }
+              }
+            }
+          },
+          "400": { "description": "WorkItem 或租约字段格式无效" },
+          "404": { "description": "活动租约或精确授权绑定不存在" },
+          "409": { "description": "Host 当前状态未确认终态失败，或租约/修订发生漂移" },
+          "503": { "description": "自动队列 service scope 或状态读取依赖不可用" }
         }
       }
     },
@@ -628,8 +694,10 @@
         "summary": "OpenClaw 专用 ActionAttempt 队列与候选评估 MCP 入口",
         "x-wiselink-automatic-work-item-queue": {
           "discover": "POST /openapi/wiselink/next-work-item",
+          "resumeExpiredLease": "POST /openapi/wiselink/next-work-item {resumeWorkItemId}",
           "acknowledge": "POST /openapi/wiselink/ack-work-item",
-          "behavior": "每次下游 WorkItem-bound MCP 操作重新核验固定 service owner 的有效租约、持久 grant、租户、原 actor、DocumentVersion、来源读取权限与当前原件。可信消费者在候选流程结束后单独调用 ack；ack 不暴露给模型。已配置的静态 exact WorkItem scope 仍按旧路径工作。"
+          "blockTerminalFailure": "POST /openapi/wiselink/block-work-item",
+          "behavior": "每次下游 WorkItem-bound MCP 操作重新核验固定 service owner 的有效租约、持久 grant、租户、原 actor、DocumentVersion、来源读取权限与当前原件。Host 根据当前初始分析状态限制 ack，并仅允许对终态 FAILED/CONFLICT 的事项执行 lease-fenced block；两者都不暴露给模型。已配置的静态 exact WorkItem scope 仍按旧路径工作。"
         },
         "x-wiselink-document-work": {
           "tool": "document_work",

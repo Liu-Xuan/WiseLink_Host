@@ -215,7 +215,7 @@ function s1000dVerticalResult() {
 }
 
 describe('OrdinaryWorkItemService run identity', () => {
-  it('stores the requested model at normal OAuth task creation without requiring a global manager role', async () => {
+  it('stores the requested model and enrolls verified OAuth intake without requiring a global manager role', async () => {
     const instance = target();
     await instance.service.createOauthSessionDevelopmentRun(
       {
@@ -234,8 +234,9 @@ describe('OrdinaryWorkItemService run identity', () => {
       }),
     );
     expect(instance.repository.reserve).toHaveBeenCalledWith(
-      expect.not.objectContaining({
-        autoProcessingGrant: expect.anything(),
+      expect.objectContaining({
+        runKey: 'dev:22222222-2222-4222-8222-222222222222',
+        autoProcessingGrant: 'MIAODA_CANONICAL_PARSE_REQUEST',
       }),
     );
   });
@@ -676,6 +677,11 @@ describe('OrdinaryWorkItemService run identity', () => {
           sourceFileSha256: 'a'.repeat(64),
           sourceByteLength: 1024,
           runKey: 'dev:7c9e6679-7425-40de-944b-e07fc1f90ae7',
+        }),
+      );
+      expect(targetValue.repository.reserve).toHaveBeenCalledWith(
+        expect.not.objectContaining({
+          autoProcessingGrant: expect.anything(),
         }),
       );
       expect(

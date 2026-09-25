@@ -21,6 +21,7 @@ import { INITIAL_ANALYSIS_OPERATIONS, parseConfigurationEvidenceReevaluationStat
 import {
   assertHostedModelGatewayReady,
   createCheckpointStore,
+  createHostAutoWorkItemQueueClient,
   createHostMcpConnection,
   invokeHostedReviewModel,
   resolveRuntimeConfig,
@@ -136,6 +137,387 @@ export async function consumeHostedWorkItem(options, dependencies) {
     statusResult = next;
   }
   return { ...report, completedStages };
+}
+
+/**
+ * One native cron tick for the Host-owned automatic queue. The lease token is
+ * checkpointed locally for the trusted consumer's ACK only; it is never added
+ * to model input, MCP arguments, or returned diagnostics.
+ */
+export async function consumeAutomaticWorkItemQueueTick(options, dependencies) {
+  const { checkpoint, now = () => new Date() } = dependencies;
+  if (!checkpoint || typeof checkpoint.readOptional !== 'function' ||
+      typeof checkpoint.write !== 'function' ||
+      typeof dependencies.nextWorkItem !== 'function' ||
+      typeof dependencies.acknowledgeWorkItem !== 'function' ||
+      typeof dependencies.blockWorkItem !== 'function' ||
+      typeof dependencies.consumeWorkItem !== 'function' ||
+      typeof dependencies.readInitialStatus !== 'function') {
+    throw new Error('AUTO_WORK_ITEM_QUEUE_DEPENDENCIES_INVALID');
+  }
+
+  const stored = await checkpoint.readOptional('active-claim');
+  let claim = stored === null ? null : validateStoredAutoClaim(stored);
+  const currentTime = now();
+  if (!(currentTime instanceof Date) || !Number.isFinite(currentTime.getTime())) {
+    throw new Error('AUTO_WORK_ITEM_QUEUE_CLOCK_INVALID');
+  }
+
+  if (claim?.blockReady) {
+    return blockAndClearAutoClaim(
+      claim,
+      claim.blockReady,
+      checkpoint,
+      dependencies,
+    );
+  }
+
+  if (!claim || Date.parse(claim.leaseExpiresAt) <= currentTime.getTime()) {
+    const previous = claim;
+    const next = validateAutoClaimResult(
+      await dependencies.nextWorkItem(
+        previous ? { resumeWorkItemId: previous.workItemId } : undefined,
+      ),
+      currentTime,
+    );
+    if (next.status === 'IDLE') {
+      if (previous) {
+        if (previous.completionReady) {
+          return acknowledgeAndClearAutoClaim(
+            previous,
+            checkpoint,
+            dependencies,
+          );
+        }
+        return automaticWorkItemAttention(
+          previous,
+          'AUTO_WORK_ITEM_EXPIRED_RECLAIM_UNAVAILABLE',
+        );
+      }
+      await checkpoint.write('active-claim', null);
+      return { status: 'IDLE' };
+    }
+    if (previous && next.workItemId !== previous.workItemId) {
+      throw new Error('AUTO_WORK_ITEM_RECLAIM_SCOPE_MISMATCH');
+    }
+    if (previous && (next.requestId !== previous.requestId ||
+        next.documentVersionId !== previous.documentVersionId)) {
+      throw new Error('AUTO_WORK_ITEM_RECLAIM_BINDING_MISMATCH');
+    }
+    if (previous && (next.leaseGeneration <= previous.leaseGeneration ||
+        next.leaseToken === previous.leaseToken)) {
+      throw new Error('AUTO_WORK_ITEM_RECLAIM_FENCE_INVALID');
+    }
+    claim = {
+      schemaVersion: 'wiselink.auto_work_item_claim.v1',
+      workItemId: next.workItemId,
+      requestId: next.requestId,
+      documentVersionId: next.documentVersionId,
+      workItemRevision: next.workItemRevision,
+      leaseToken: next.leaseToken,
+      leaseGeneration: next.leaseGeneration,
+      leaseExpiresAt: next.leaseExpiresAt,
+      completionReady: previous?.completionReady ?? false,
+      consumerStopped: previous?.consumerStopped ?? false,
+      attentionCode: previous?.attentionCode ?? null,
+      blockReady: previous?.blockReady ?? null,
+    };
+    await checkpoint.write('active-claim', claim);
+  }
+
+  let statusValue = await dependencies.readInitialStatus(claim.workItemId);
+  if (isAutomaticWorkItemDone(statusValue)) {
+    claim = { ...claim, completionReady: true };
+    await checkpoint.write('active-claim', claim);
+    return acknowledgeAndClearAutoClaim(claim, checkpoint, dependencies);
+  }
+  const terminalFailure = terminalFailedAutomaticWorkItem(statusValue);
+  if (terminalFailure) {
+    claim = { ...claim, blockReady: terminalFailure };
+    await checkpoint.write('active-claim', claim);
+    return blockAndClearAutoClaim(
+      claim,
+      terminalFailure,
+      checkpoint,
+      dependencies,
+    );
+  }
+  if (claim.completionReady) {
+    claim = { ...claim, completionReady: false };
+    await checkpoint.write('active-claim', claim);
+  }
+  if (claim.consumerStopped) {
+    return automaticWorkItemAttention(
+      claim,
+      claim.attentionCode ?? 'AUTO_WORK_ITEM_CONSUMER_STOPPED',
+      statusValue,
+    );
+  }
+
+  const report = await dependencies.consumeWorkItem({
+    ...options,
+    workItemId: claim.workItemId,
+    initialStageOnly: true,
+    maxInitialStages: 1,
+    // New items must use the context returned by Host status; a static
+    // WorkItem's context reference cannot be inherited by a queued item.
+    applicabilityContextRef: undefined,
+  });
+  statusValue = await dependencies.readInitialStatus(claim.workItemId);
+  if (isAutomaticWorkItemDone(statusValue)) {
+    claim = { ...claim, completionReady: true };
+    await checkpoint.write('active-claim', claim);
+    return acknowledgeAndClearAutoClaim(claim, checkpoint, dependencies, report);
+  }
+  const failedAfterConsumption = terminalFailedAutomaticWorkItem(statusValue);
+  if (failedAfterConsumption) {
+    claim = { ...claim, blockReady: failedAfterConsumption };
+    await checkpoint.write('active-claim', claim);
+    return blockAndClearAutoClaim(
+      claim,
+      failedAfterConsumption,
+      checkpoint,
+      dependencies,
+      report,
+    );
+  }
+
+  if (report?.status === 'REQUIRES_ATTENTION') {
+    claim = {
+      ...claim,
+      consumerStopped: true,
+      attentionCode: safeAutomaticAttentionCode(report.errorCode),
+    };
+    await checkpoint.write('active-claim', claim);
+    return automaticWorkItemAttention(
+      claim,
+      claim.attentionCode,
+      statusValue,
+      report,
+    );
+  }
+
+  return {
+    status: 'IN_PROGRESS',
+    workItemId: claim.workItemId,
+    requestId: claim.requestId,
+    documentVersionId: claim.documentVersionId,
+    leaseGeneration: claim.leaseGeneration,
+    leaseExpiresAt: claim.leaseExpiresAt,
+    nextOperation: statusValue.nextOperation,
+    stages: statusValue.stages,
+    consumerStatus: typeof report?.status === 'string' ? report.status : 'UNKNOWN',
+  };
+}
+
+async function acknowledgeAndClearAutoClaim(
+  claim,
+  checkpoint,
+  dependencies,
+  report,
+) {
+  const acknowledgement = validateAutoAcknowledgement(
+    await dependencies.acknowledgeWorkItem({
+      workItemId: claim.workItemId,
+      leaseToken: claim.leaseToken,
+      leaseGeneration: claim.leaseGeneration,
+    }),
+    claim.workItemId,
+  );
+  await checkpoint.write('active-claim', null);
+  return {
+    status: 'ACKNOWLEDGED',
+    workItemId: claim.workItemId,
+    replayed: acknowledgement.replayed,
+    acknowledgedAt: acknowledgement.acknowledgedAt,
+    consumerStatus: typeof report?.status === 'string' ? report.status : 'COMPLETED',
+  };
+}
+
+function validateStoredAutoClaim(value) {
+  if (!isRecord(value)) throw new Error('AUTO_WORK_ITEM_CLAIM_CHECKPOINT_INVALID');
+  assertExactKeys(
+    value,
+    [
+      'schemaVersion', 'workItemId', 'requestId', 'documentVersionId',
+      'workItemRevision', 'leaseToken', 'leaseGeneration', 'leaseExpiresAt',
+      'completionReady', 'consumerStopped', 'attentionCode', 'blockReady',
+    ],
+    [],
+    'AUTO_WORK_ITEM_CLAIM_CHECKPOINT',
+  );
+  if (value.schemaVersion !== 'wiselink.auto_work_item_claim.v1' ||
+      typeof value.completionReady !== 'boolean' ||
+      typeof value.consumerStopped !== 'boolean' ||
+      (value.attentionCode !== null &&
+        (typeof value.attentionCode !== 'string' ||
+          !/^[A-Z][A-Z0-9_:.-]{0,199}$/u.test(value.attentionCode))) ||
+      (value.blockReady !== null && !isAutomaticBlockBinding(value.blockReady))) {
+    throw new Error('AUTO_WORK_ITEM_CLAIM_CHECKPOINT_INVALID');
+  }
+  validateClaimFields(value);
+  return value;
+}
+
+function validateAutoClaimResult(value, now) {
+  if (!isRecord(value)) throw new Error('AUTO_WORK_ITEM_CLAIM_RESPONSE_INVALID');
+  if (value.status === 'IDLE') {
+    assertExactKeys(value, ['status'], [], 'AUTO_WORK_ITEM_CLAIM_RESPONSE');
+    return value;
+  }
+  assertExactKeys(
+    value,
+    [
+      'status', 'workItemId', 'requestId', 'documentVersionId',
+      'workItemRevision', 'leaseToken', 'leaseGeneration', 'leaseExpiresAt',
+    ],
+    [],
+    'AUTO_WORK_ITEM_CLAIM_RESPONSE',
+  );
+  if (value.status !== 'CLAIMED') {
+    throw new Error('AUTO_WORK_ITEM_CLAIM_RESPONSE_INVALID');
+  }
+  validateClaimFields(value);
+  if (Date.parse(value.leaseExpiresAt) <= now.getTime()) {
+    throw new Error('AUTO_WORK_ITEM_CLAIM_RESPONSE_EXPIRED');
+  }
+  return value;
+}
+
+function validateClaimFields(value) {
+  if (!/^WI-[A-Za-z0-9_-]{1,93}$/u.test(value.workItemId) ||
+      !/^REQ-[A-Za-z0-9_-]{1,92}$/u.test(value.requestId) ||
+      !/^[A-Za-z0-9][A-Za-z0-9_-]{0,95}$/u.test(value.documentVersionId) ||
+      !Number.isSafeInteger(value.workItemRevision) || value.workItemRevision < 0 ||
+      !/^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/iu.test(value.leaseToken) ||
+      !Number.isSafeInteger(value.leaseGeneration) || value.leaseGeneration < 1 ||
+      typeof value.leaseExpiresAt !== 'string' || !Number.isFinite(Date.parse(value.leaseExpiresAt))) {
+    throw new Error('AUTO_WORK_ITEM_CLAIM_RESPONSE_INVALID');
+  }
+}
+
+function validateAutoAcknowledgement(value, workItemId) {
+  if (!isRecord(value)) throw new Error('AUTO_WORK_ITEM_ACK_RESPONSE_INVALID');
+  assertExactKeys(
+    value,
+    ['status', 'workItemId', 'replayed', 'acknowledgedAt'],
+    [],
+    'AUTO_WORK_ITEM_ACK_RESPONSE',
+  );
+  if (value.status !== 'ACKNOWLEDGED' || value.workItemId !== workItemId ||
+      typeof value.replayed !== 'boolean' ||
+      typeof value.acknowledgedAt !== 'string' ||
+      !Number.isFinite(Date.parse(value.acknowledgedAt))) {
+    throw new Error('AUTO_WORK_ITEM_ACK_RESPONSE_INVALID');
+  }
+  return value;
+}
+
+function isAutomaticWorkItemDone(initial) {
+  return initialComplete(initial);
+}
+
+function terminalFailedAutomaticWorkItem(initial) {
+  if (!isRecord(initial) ||
+      !['FAILED', 'CONFLICT'].includes(initial.status) ||
+      initial.nextOperation !== null || !isRecord(initial.stages)) return null;
+  for (const stage of ['translation', 'applicability', 'jobAid', 'overall']) {
+    const status = initial.stages[stage]?.status;
+    if (status === 'FAILED' || status === 'CONFLICT') return { stage, status };
+  }
+  return null;
+}
+
+async function blockAndClearAutoClaim(
+  claim,
+  failure,
+  checkpoint,
+  dependencies,
+  report,
+) {
+  const blocked = validateAutoBlock(
+    await dependencies.blockWorkItem({
+      workItemId: claim.workItemId,
+      leaseToken: claim.leaseToken,
+      leaseGeneration: claim.leaseGeneration,
+    }),
+    claim.workItemId,
+  );
+  const expectedCode = `AUTO_WORK_ITEM_STAGE_${failure.stage.toUpperCase()}_${failure.status}`;
+  if (blocked.blockedCode !== expectedCode) {
+    throw new Error('AUTO_WORK_ITEM_BLOCKED_CODE_MISMATCH');
+  }
+  await checkpoint.write('active-claim', null);
+  return {
+    status: 'REQUIRES_ATTENTION',
+    workItemId: claim.workItemId,
+    errorCode: blocked.blockedCode,
+    blockedAt: blocked.blockedAt,
+    consumerStatus: typeof report?.status === 'string' ? report.status : 'FAILED',
+  };
+}
+
+function validateAutoBlock(value, workItemId) {
+  if (!isRecord(value)) throw new Error('AUTO_WORK_ITEM_BLOCK_RESPONSE_INVALID');
+  assertExactKeys(
+    value,
+    ['status', 'workItemId', 'blockedCode', 'replayed', 'blockedAt'],
+    [],
+    'AUTO_WORK_ITEM_BLOCK_RESPONSE',
+  );
+  if (value.status !== 'BLOCKED' || value.workItemId !== workItemId ||
+      typeof value.blockedCode !== 'string' ||
+      !/^AUTO_WORK_ITEM_STAGE_(TRANSLATION|APPLICABILITY|JOBAID|OVERALL)_(FAILED|CONFLICT)$/u.test(value.blockedCode) ||
+      typeof value.replayed !== 'boolean' ||
+      typeof value.blockedAt !== 'string' || !Number.isFinite(Date.parse(value.blockedAt))) {
+    throw new Error('AUTO_WORK_ITEM_BLOCK_RESPONSE_INVALID');
+  }
+  return value;
+}
+
+function isAutomaticBlockBinding(value) {
+  return isRecord(value) &&
+    JSON.stringify(Object.keys(value).sort()) ===
+      JSON.stringify(['stage', 'status']) &&
+    ['translation', 'applicability', 'jobAid', 'overall'].includes(value.stage) &&
+    ['FAILED', 'CONFLICT'].includes(value.status);
+}
+
+function automaticWorkItemAttention(claim, errorCode, initial, report) {
+  return {
+    status: 'REQUIRES_ATTENTION',
+    workItemId: claim.workItemId,
+    requestId: claim.requestId,
+    documentVersionId: claim.documentVersionId,
+    leaseGeneration: claim.leaseGeneration,
+    errorCode,
+    ...(initial ? {
+      initialStatus: initial.status,
+      nextOperation: initial.nextOperation,
+      stages: initial.stages,
+    } : {}),
+    ...(typeof report?.status === 'string' ? { consumerStatus: report.status } : {}),
+  };
+}
+
+function safeAutomaticAttentionCode(value) {
+  return typeof value === 'string' && /^[A-Z][A-Z0-9_:.-]{0,199}$/u.test(value)
+    ? value : 'AUTO_WORK_ITEM_CONSUMER_STOPPED';
+}
+
+function isRecord(value) {
+  return Boolean(value) && typeof value === 'object' && !Array.isArray(value);
+}
+
+function assertExactKeys(value, required, optional, code) {
+  if (!isRecord(value)) throw new Error(`${code}_INVALID`);
+  const allowed = new Set([...required, ...optional]);
+  if (Object.keys(value).some(key => !allowed.has(key))) {
+    throw new Error(`${code}_UNKNOWN_FIELD`);
+  }
+  if (required.some(key => !Object.hasOwn(value, key))) {
+    throw new Error(`${code}_MISSING_FIELD`);
+  }
 }
 
 export async function runHostedInitialStage(options, dependencies) {
@@ -377,6 +759,28 @@ export function initialStageLimit(argv, workItemId, matterId, documentVersionId)
     ...(expectedOccurrences ? { expectedInitialOperation: option(argv, '--expected-initial-operation') } : {}) };
 }
 
+export function automaticWorkItemQueueMode(argv) {
+  const occurrences = argv.filter(arg => arg === '--auto-queue').length;
+  if (!occurrences) return false;
+  if (occurrences !== 1) throw new Error('AUTO_WORK_ITEM_QUEUE_OPTIONS_INVALID');
+  const valueOptions = new Set([
+    '--checkpoint-root', '--openclaw-config',
+  ]);
+  for (let index = 0; index < argv.length; index += 1) {
+    const arg = argv[index];
+    if (arg === '--auto-queue') continue;
+    if (!valueOptions.has(arg)) {
+      throw new Error('AUTO_WORK_ITEM_QUEUE_OPTION_NOT_ALLOWED');
+    }
+    const value = argv[index + 1];
+    if (typeof value !== 'string' || !value.trim() || value.startsWith('--')) {
+      throw new Error('AUTO_WORK_ITEM_QUEUE_OPTIONS_INVALID');
+    }
+    index += 1;
+  }
+  return true;
+}
+
 function assertExpectedInitialOperationMode(options) {
   if (options.expectedInitialOperation === undefined) return;
   if (!['EVALUATE_JOBAID', 'SYNTHESIZE_OVERALL', 'EXTRACT_APPLICABILITY'].includes(options.expectedInitialOperation) || !options.workItemId ||
@@ -572,17 +976,28 @@ export function matterPreflightMode(argv, matterId) {
 
 async function main(argv, env) {
   if (argv.includes('--help')) {
-    process.stdout.write('Usage: node consume-hosted-work-item.mjs [--work-item-id WI-...] [--matter-id MAT-...] [--document-version-id DV] [--matter-preflight-only | --matter-expected-snapshot SHA256] [--max-initial-stages 1] [--expected-initial-operation EVALUATE_JOBAID|SYNTHESIZE_OVERALL] [--applicability-context-ref REF] [--checkpoint-root PATH] [--openclaw-config PATH] [--native-session-store PATH] [--document-translation-recovery ID] [--activity-run-ref ID] [--reading-run-ref ID] [--lease-owner ID]\nOne native job per authorized subject. Choose exactly one WorkItem, Matter or DocumentVersion; independent jobs use native cron concurrency. --matter-preflight-only reads current Matter work without dispatch; --matter-expected-snapshot checks that read again before dispatch and stops on a changed snapshot. --max-initial-stages 1 is WorkItem-only and consumes at most the current initial stage, without Review or original-impact work. --expected-initial-operation requires that limit and refuses any entry stage other than the named JobAid or Overall stage.\n');
+    process.stdout.write('Usage: node consume-hosted-work-item.mjs [--auto-queue] [--work-item-id WI-...] [--matter-id MAT-...] [--document-version-id DV] [--matter-preflight-only | --matter-expected-snapshot SHA256] [--max-initial-stages 1] [--expected-initial-operation EVALUATE_JOBAID|SYNTHESIZE_OVERALL] [--applicability-context-ref REF] [--checkpoint-root PATH] [--openclaw-config PATH] [--native-session-store PATH] [--document-translation-recovery ID] [--activity-run-ref ID] [--reading-run-ref ID] [--lease-owner ID]\nOne native job per authorized subject. Choose exactly one WorkItem, Matter or DocumentVersion; independent jobs use native cron concurrency. --auto-queue is one native cron tick for the Host-enrolled automatic WorkItem queue; it accepts no static subject or stage-specific options. --matter-preflight-only reads current Matter work without dispatch; --matter-expected-snapshot checks that read again before dispatch and stops on a changed snapshot. --max-initial-stages 1 is WorkItem-only and consumes at most the current initial stage, without Review or original-impact work. --expected-initial-operation requires that limit and refuses any entry stage other than the named JobAid or Overall stage.\n');
     return;
   }
+  const autoQueue = automaticWorkItemQueueMode(argv);
   const workItemId = option(argv, '--work-item-id');
   const matterId = option(argv, '--matter-id');
   const documentVersionId = option(argv, '--document-version-id');
-  assertSingleConsumerSubject({ workItemId, matterId, documentVersionId });
-  const { matterPreflightOnly, matterExpectedSnapshot } = matterPreflightMode(argv, matterId);
-  const stageLimit = initialStageLimit(argv, workItemId, matterId, documentVersionId);
+  if (autoQueue) {
+    if (workItemId || matterId || documentVersionId) {
+      throw new Error('AUTO_WORK_ITEM_QUEUE_STATIC_SUBJECT_FORBIDDEN');
+    }
+  } else {
+    assertSingleConsumerSubject({ workItemId, matterId, documentVersionId });
+  }
+  const { matterPreflightOnly, matterExpectedSnapshot } = autoQueue
+    ? { matterPreflightOnly: false, matterExpectedSnapshot: undefined }
+    : matterPreflightMode(argv, matterId);
+  const stageLimit = autoQueue
+    ? {}
+    : initialStageLimit(argv, workItemId, matterId, documentVersionId);
   const runtime = await resolveRuntimeConfig(argv, env);
-  if (!matterPreflightOnly) assertHostedModelGatewayReady(runtime);
+  if (!autoQueue && !matterPreflightOnly) assertHostedModelGatewayReady(runtime);
   const activityRunRef = option(argv, '--activity-run-ref');
   if (activityRunRef !== undefined && !/^[A-Za-z0-9_-]{1,96}$/u.test(activityRunRef))
     throw new Error('ACTIVITY_RUN_REF_INVALID');
@@ -615,19 +1030,7 @@ async function main(argv, env) {
   } : undefined;
   const connection = await createHostMcpConnection(runtime);
   try {
-    const result = await consumeHostedWorkItem({
-      workItemId,
-      matterId,
-      matterPreflightOnly,
-      matterExpectedSnapshot,
-      documentVersionId,
-      ...stageLimit,
-      applicabilityContextRef: option(argv, '--applicability-context-ref'),
-      checkpointRoot,
-      activityRunRef,
-      readingRunRef,
-      leaseOwner,
-    }, {
+    const consumerDependencies = {
       callTool: connection.callTool,
       documentTranslationCheckpoint,
       activityCheckpoint,
@@ -647,7 +1050,37 @@ async function main(argv, env) {
         toolVersions: { [WISELINK_HOST_MCP_NAME]: WISELINK_HOST_MCP_VERSION },
         runMetrics: { durationMs: 0, inputUnits: 0, outputUnits: 0 },
       },
-    });
+    };
+    const result = autoQueue
+      ? await consumeAutomaticWorkItemQueueTick({ checkpointRoot }, {
+        checkpoint: await createCheckpointStore(join(
+          checkpointRoot,
+          'automatic-work-item-queue',
+          encodeURIComponent(endpoint.origin + endpoint.pathname),
+        )),
+        ...createHostAutoWorkItemQueueClient(runtime),
+        readInitialStatus: async id => readInitialStatus(
+          await connection.callTool('get_parse_status', { workItemId: id }),
+          id,
+        ),
+        consumeWorkItem: async item => {
+          assertHostedModelGatewayReady(runtime);
+          return consumeHostedWorkItem(item, consumerDependencies);
+        },
+      })
+      : await consumeHostedWorkItem({
+        workItemId,
+        matterId,
+        matterPreflightOnly,
+        matterExpectedSnapshot,
+        documentVersionId,
+        ...stageLimit,
+        applicabilityContextRef: option(argv, '--applicability-context-ref'),
+        checkpointRoot,
+        activityRunRef,
+        readingRunRef,
+        leaseOwner,
+      }, consumerDependencies);
     process.stdout.write(`${JSON.stringify(result)}\n`);
   } finally {
     await connection.close();

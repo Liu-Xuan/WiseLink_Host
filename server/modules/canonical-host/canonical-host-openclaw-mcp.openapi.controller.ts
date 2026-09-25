@@ -3,7 +3,10 @@ import type { Request, Response } from 'express';
 import type {
   AcknowledgeAutomaticWorkItemRequest,
   AcknowledgeAutomaticWorkItemResponse,
+  BlockAutomaticWorkItemRequest,
+  BlockAutomaticWorkItemResponse,
   AutomaticWorkItemClaimResult,
+  NextAutomaticWorkItemRequest,
 } from '@shared/api.interface';
 
 import { CanonicalHostOpenClawMcpService } from './canonical-host-openclaw-mcp.service';
@@ -33,9 +36,11 @@ export class CanonicalHostOpenClawMcpOpenApiController {
   }
 
   @Post('next-work-item')
-  async nextWorkItem(): Promise<AutomaticWorkItemClaimResult> {
+  async nextWorkItem(
+    @Body() body?: NextAutomaticWorkItemRequest,
+  ): Promise<AutomaticWorkItemClaimResult> {
     await this.serviceScope.assertAutoWorkItemQueueTransport();
-    return this.autoWorkItems.nextWorkItem();
+    return this.autoWorkItems.nextWorkItem(body);
   }
 
   @Post('ack-work-item')
@@ -44,5 +49,13 @@ export class CanonicalHostOpenClawMcpOpenApiController {
   ): Promise<AcknowledgeAutomaticWorkItemResponse> {
     await this.serviceScope.assertAutoWorkItemQueueTransport();
     return this.autoWorkItems.acknowledgeWorkItem(body);
+  }
+
+  @Post('block-work-item')
+  async blockWorkItem(
+    @Body() body: BlockAutomaticWorkItemRequest,
+  ): Promise<BlockAutomaticWorkItemResponse> {
+    await this.serviceScope.assertAutoWorkItemQueueTransport();
+    return this.autoWorkItems.blockWorkItem(body);
   }
 }

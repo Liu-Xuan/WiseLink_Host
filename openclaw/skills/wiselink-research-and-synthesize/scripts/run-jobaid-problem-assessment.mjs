@@ -23,7 +23,7 @@ const FUNCTION = 'return_wiselink_assessment_step';
 const INITIAL_JOBAID_READS_PER_SAVE = 1;
 const INITIAL_JOBAID_SOURCE_REFS_PER_READ = 10;
 export const JOBAID_GENERATION_POLICY = Object.freeze({
-  version: 'continuous-body-batches-v4', requestMaxCompletionTokens: 16000,
+  version: 'continuous-body-batches-v5', requestMaxCompletionTokens: 16000,
   payloadTargetTokens: [2000, 4000], maxScopeAdjustments: 0,
   basis: 'Application budget; 16000 is an observation on one Hosted M3 request, not a universal model limit.',
 });
@@ -199,7 +199,7 @@ function sourceBatchPolicyFeedback(code, requestedCount, readsSinceSave) {
       readActionsSinceSave: readsSinceSave,
       hostReadExecuted: false,
     },
-    instruction: '自上次 Host 确认保存后已完成一个来源读取动作。本次未执行新的读取。先基于当前已交付正文保存一项有价值的完整工作增量，标记未覆盖范围；保存后运行器将读回完整工作并在新 OpenClaw 会话继续。',
+    instruction: '自上次 Host 确认保存后已完成一个来源读取动作。本次未执行新的读取。无论本次 sourceRef 是否有效或已登记，都不得再次 READ_SOURCES；必须基于当前已交付正文保存一项有价值的完整工作增量，标记未覆盖范围；保存后运行器将读回完整工作并在新 OpenClaw 会话继续。',
   };
   return {};
 }
@@ -264,7 +264,7 @@ export async function invokeHostedJobAidProblemModel(
     systemMessage.content += '\n本轮是明确指定的工程事项综合更正。以 overviewCorrection.expectedWorkRef 对应的 previousWork 为准确基线，按 correctionReason 核对已保存的全部问题、当前综合及完成说明。问题正文只是比较语境，不自动重新认证为原文。只使用 overviewCorrection.evidenceRefs 所指本轮已交付证据作新综合的引用；缺少决定性依据时保留限制。新的 overview 面向工程师，用简短段落给出主要判断、决定性条件、下一步或尚缺资料；过程与展开的论证留在问题正文和依据中，关键限制仍须在综合里说清。SAVE_WORK 只提交一个完整的综合更正：issues:[]、新的 overview、completionReason、changeSummary，roundCompletion 与 previousWork.content 相同；不得提交问题正文、摘要或其他工作字段。即使旧综合标记 STALE，也要实际核对后形成综合，不把状态本身当作结论。保存回执后 FINISH；本轮不作正式采用。';
   }
   if (boundedInitialJobAid) {
-    systemMessage.content += `\n本次初始 JobAid 执行按可核验批次推进：每次 SAVE_WORK 前最多执行 ${INITIAL_JOBAID_READS_PER_SAVE} 个 READ_SOURCES 动作，每个动作最多 ${INITIAL_JOBAID_SOURCE_REFS_PER_READ} 个 sourceRefs。保存有价值的完整增量时用 IN_PROGRESS 或 COMPLETE_WITH_OPEN_QUESTIONS，并保留未读范围；不要声称未读来源已经核验。Host 确认并读回保存后，运行器会在独立 OpenClaw 会话中提供完整已保存工作和版本回执，再继续下一批。只有完整复核后才 FINISH。`;
+    systemMessage.content += `\n本次初始 JobAid 执行按可核验批次推进：每次 SAVE_WORK 前最多执行 ${INITIAL_JOBAID_READS_PER_SAVE} 个 READ_SOURCES 动作，每个动作最多 ${INITIAL_JOBAID_SOURCE_REFS_PER_READ} 个 sourceRefs。保存有价值的完整增量时用 IN_PROGRESS 或 COMPLETE_WITH_OPEN_QUESTIONS，并保留未读范围；不要声称未读来源已经核验。Host 成功读取后，运行器会在独立 OpenClaw 会话中提供完整来源回执，并将工具Schema限制为必须 SAVE_WORK；Host 确认并读回保存后，再在新会话中提供完整已保存工作和版本回执，继续下一批。只有完整复核后才 FINISH。`;
   }
   let messages = [
     systemMessage,
@@ -277,6 +277,8 @@ export async function invokeHostedJobAidProblemModel(
   let sessionWorkRevision = modelInput.expectedWorkRevision;
   let readsSinceSave = 0;
   let savedReadSourceRefs = [];
+  let nativeSessionSegment = 0;
+  let forceSaveBeforeRead = false;
   // Host accepts a prior attempt's completed work only for Overall consistency.
   // Ordinary reassessment must save under this attempt, even if unchanged.
   const canReusePreviousWork = (operation === 'SYNTHESIZE_OVERALL' && modelInput.purpose === 'OVERALL_CONSISTENCY') ||
@@ -295,6 +297,11 @@ export async function invokeHostedJobAidProblemModel(
   const generationPolicy = JOBAID_GENERATION_POLICY;
   let scopeAdjustments = 0;
   let sourceMetadata = [];
+  const persistAssessmentState = (nextRound) => checkpoint?.write('assessment-state', {
+    round: nextRound, messages, expectedWorkRevision, saved, corrections, inputUnits, outputUnits,
+    scopeAdjustments, sourceMetadata, sessionModelInput, sessionWorkRevision, readsSinceSave,
+    savedReadSourceRefs, nativeSessionSegment, forceSaveBeforeRead,
+  });
   if (checkpoint) {
     const binding = { operation, modelInput, sessionDiscriminator: options.sessionDiscriminator,
       executionModel: options.executionModel ?? null };
@@ -311,14 +318,15 @@ export async function invokeHostedJobAidProblemModel(
   if (restored) {
     ({ round, messages, expectedWorkRevision, saved, corrections, inputUnits, outputUnits } = restored);
     sessionModelInput = restored.sessionModelInput ?? modelInput;
+    initialContextMessage = { role: 'user', content: JSON.stringify(projectJobAidModelInput(sessionModelInput)) };
     sessionWorkRevision = restored.sessionWorkRevision ?? modelInput.expectedWorkRevision;
     readsSinceSave = restored.readsSinceSave ?? 0;
     savedReadSourceRefs = restored.savedReadSourceRefs ?? [];
+    nativeSessionSegment = restored.nativeSessionSegment ?? 0;
+    forceSaveBeforeRead = restored.forceSaveBeforeRead ?? false;
     scopeAdjustments = restored.scopeAdjustments ?? 0;
     sourceMetadata = restored.sourceMetadata ?? [];
-  } else await checkpoint?.write('assessment-state', { round, messages,
-    expectedWorkRevision, saved, corrections, inputUnits, outputUnits, scopeAdjustments, sourceMetadata,
-    sessionModelInput, sessionWorkRevision, readsSinceSave, savedReadSourceRefs });
+  } else await persistAssessmentState(round);
   const taskDeadlineMs = options.taskDeadline === undefined ? Infinity : Date.parse(options.taskDeadline);
   if (Number.isNaN(taskDeadlineMs)) throw new Error('JOBAID_TASK_DEADLINE_INVALID');
   // A checkpointed assessment with an absolute Host deadline measures
@@ -416,14 +424,24 @@ export async function invokeHostedJobAidProblemModel(
       throw new Error('JOBAID_MODEL_BUDGET_EXHAUSTED');
     inputUnits += Buffer.byteLength(JSON.stringify(messages));
     const requestedModel = `openclaw/${WISELINK_PROFILE_REF}`;
-    const nativeSessionDiscriminator = sessionWorkRevision === modelInput.expectedWorkRevision
-      ? options.sessionDiscriminator
-      : `${options.sessionDiscriminator}:work:${sessionWorkRevision}`;
+    const nativeSessionDiscriminator = boundedInitialJobAid && nativeSessionSegment > 0
+      ? `${options.sessionDiscriminator}:work:${sessionWorkRevision}:segment:${nativeSessionSegment}`
+      : sessionWorkRevision === modelInput.expectedWorkRevision
+        ? options.sessionDiscriminator
+        : `${options.sessionDiscriminator}:work:${sessionWorkRevision}`;
     const focus = scopeAdjustments
       ? 'Reduce the amount delivered in this unfinished batch while retaining the full engineering context. Choose one or several complete, meaningful issue updates; do not split conditions or reasoning fragments. Preserve saved work and do not continue a truncated JSON string.'
       : boundedInitialJobAid
-        ? 'Save each meaningful initial-analysis increment after one bounded source-read action. After a Host-confirmed SAVE_WORK, the runtime starts a fresh native session containing the exact Host-read-back work and revision receipt; continue the same Host attempt from that baseline. Do not accumulate more source reads before saving or claim unread scopes were verified.'
+        ? forceSaveBeforeRead
+          ? 'The Host has delivered one successful source-read receipt in this fresh native session. Submit a substantive, complete SAVE_WORK now. The required function schema permits only SAVE_WORK until Host confirms the save; preserve unread scopes and do not claim them verified.'
+          : 'Save each meaningful initial-analysis increment after one bounded source-read action. After a successful Host source read, the runtime starts a fresh native session with that exact evidence and requires SAVE_WORK. After a Host-confirmed SAVE_WORK, it starts another fresh native session containing the exact Host-read-back work and revision receipt. Do not accumulate more source reads before saving or claim unread scopes were verified.'
         : 'Keep the shared engineering context and investigate across relevant sections and sources. Choose the number of complete issues that can be delivered in this batch; save substantive results promptly without first exhausting every issue. After SAVE_WORK continue automatically in this same session. Do not rewrite unchanged issues or summary fields. Before completion check cross-issue consistency and save only necessary synthesis or corrections.';
+    const requestStepShape = forceSaveBeforeRead ? {
+      ...transportStepShape,
+      required: ['action', 'workJson'],
+      properties: { ...transportStepShape.properties, action: { type: 'string', enum: ['SAVE_WORK'] } },
+    } : transportStepShape;
+    const requestToolSchema = jobAidFunctionSchema(requestStepShape);
     const performRequest = async () => {
       if (round === 1 && options.recoveredInitialResponse) return options.recoveredInitialResponse;
       const response = await (
@@ -448,13 +466,14 @@ export async function invokeHostedJobAidProblemModel(
               type: 'function',
               function: {
                 name: FUNCTION,
-                description:
-                  'Return one source-read, substantive-work-save, or finish intent. The deterministic Host caller executes it.',
+                description: forceSaveBeforeRead
+                  ? 'Return one substantive SAVE_WORK intent. The deterministic Host caller executes and validates it.'
+                  : 'Return one source-read, substantive-work-save, or finish intent. The deterministic Host caller executes it.',
                 parameters: {
                   type: 'object',
                   additionalProperties: false,
                   required: ['step'],
-                  properties: { step: jobAidFunctionSchema(transportStepShape) },
+                  properties: { step: requestToolSchema },
                 },
               },
             },
@@ -478,7 +497,9 @@ export async function invokeHostedJobAidProblemModel(
     // response remains unknown; a failed Host read can reuse this exact result.
     const response = checkpoint ? await checkpoint.remoteStep({
       step: `assessment-round-${round}`, args: { operation, messages, executionModel: options.executionModel ?? null,
-        sessionDiscriminator: nativeSessionDiscriminator, generationPolicy, scopeAdjustments }, ambiguousCommit: false, perform: performRequest,
+        sessionDiscriminator: nativeSessionDiscriminator, generationPolicy, scopeAdjustments,
+        ...(boundedInitialJobAid ? { nativeSessionSegment, forceSaveBeforeRead, requestToolSchema } : {}) },
+      ambiguousCommit: false, perform: performRequest,
     }) : await performRequest();
     await accountRound(round);
     const { raw } = response;
@@ -536,8 +557,7 @@ export async function invokeHostedJobAidProblemModel(
       // Retain the latest source/save receipt. The native session holds earlier
       // complete context; the incomplete output is never resubmitted as a tool.
       await options.observeCandidateRejection?.({ correctionNo: scopeAdjustments, code: 'JOBAID_MODEL_OUTPUT_LENGTH' });
-      await checkpoint?.write('assessment-state', { round: round + 1, messages,
-        expectedWorkRevision, saved, corrections, inputUnits, outputUnits, scopeAdjustments, sourceMetadata });
+      await persistAssessmentState(round + 1);
       continue;
     }
     // The native profile can have tools. An outer candidate function does not
@@ -579,8 +599,7 @@ export async function invokeHostedJobAidProblemModel(
         ...priorRejectedRatingCorrection(messages, modelInput),
       }) }];
       await options.observeCandidateRejection?.({ correctionNo: corrections, code: 'JOBAID_MODEL_OUTPUT_FUNCTION_REQUIRED' });
-      await checkpoint?.write('assessment-state', { round: round + 1, messages,
-        expectedWorkRevision, saved, corrections, inputUnits, outputUnits, scopeAdjustments, sourceMetadata });
+      await persistAssessmentState(round + 1);
       continue;
     }
     if (choice.finish_reason === 'stop' && message?.role === 'assistant' &&
@@ -615,7 +634,7 @@ export async function invokeHostedJobAidProblemModel(
     outputUnits += Buffer.byteLength(call.function.arguments);
     let receipt;
     let submittedWork;
-    let sessionRotated = false;
+    let sessionResetKind = null;
     let requestedSourceRefCount = null;
     try {
       const args = parseStrictJsonObject(call.function.arguments);
@@ -625,6 +644,8 @@ export async function invokeHostedJobAidProblemModel(
         throw new Error('JOBAID_STEP_FIELD_INVALID');
       const step = decodeJobAidStep(args.step);
       if (step.action === 'READ_SOURCES') {
+        if (boundedInitialJobAid && readsSinceSave >= INITIAL_JOBAID_READS_PER_SAVE)
+          throw new Error('JOBAID_SOURCE_BATCH_SAVE_REQUIRED');
         if (
           !Array.isArray(step.sourceRefs) ||
           !step.sourceRefs.length ||
@@ -635,8 +656,6 @@ export async function invokeHostedJobAidProblemModel(
         requestedSourceRefCount = step.sourceRefs.length;
         if (boundedInitialJobAid && step.sourceRefs.length > INITIAL_JOBAID_SOURCE_REFS_PER_READ)
           throw new Error('JOBAID_SOURCE_BATCH_TOO_LARGE');
-        if (boundedInitialJobAid && readsSinceSave >= INITIAL_JOBAID_READS_PER_SAVE)
-          throw new Error('JOBAID_SOURCE_BATCH_SAVE_REQUIRED');
         receipt = await readJobAidSourceBatches({
           sourceRefs: step.sourceRefs,
           purpose: step.purpose,
@@ -644,7 +663,12 @@ export async function invokeHostedJobAidProblemModel(
         }, options.readAssessmentSources);
         if (receipt?.status !== 'AVAILABLE' || !Array.isArray(receipt.evidence))
           throw new Error('JOBAID_SOURCE_READ_FAILED');
-        if (boundedInitialJobAid) readsSinceSave++;
+        if (boundedInitialJobAid) {
+          readsSinceSave++;
+          forceSaveBeforeRead = true;
+          nativeSessionSegment++;
+          sessionResetKind = 'SOURCE_READ';
+        }
       } else if (step.action === 'QUERY_KNOWLEDGE') {
         if (typeof step.query !== 'string' || !step.query.trim() || step.query.length > 4000)
           throw new Error('JOBAID_KNOWLEDGE_QUERY_INVALID');
@@ -674,7 +698,9 @@ export async function invokeHostedJobAidProblemModel(
           receipt = await save(submittedWork);
           if (boundedInitialJobAid && expectedWorkRevision > priorWorkRevision) {
             readsSinceSave = 0;
-            sessionRotated = true;
+            forceSaveBeforeRead = false;
+            nativeSessionSegment++;
+            sessionResetKind = 'SAVE';
           }
         }
         else if (step.action === 'SAVE_WORK')
@@ -773,7 +799,17 @@ export async function invokeHostedJobAidProblemModel(
     }
     // The configured Gateway resumes this native session's history. Keep one
     // copy of the context and earlier source bodies in that history.
-    messages = sessionRotated ? [
+    messages = sessionResetKind === 'SOURCE_READ' ? [
+      systemMessage,
+      initialContextMessage,
+      { role: 'user', content: JSON.stringify({
+        schemaVersion: 'wiselink.jobaid-source-read-continuation.v1',
+        status: 'HOST_SOURCE_READ_CONFIRMED',
+        expectedWorkRevision,
+        sourceReadReceipt: projectJobAidReadReceipt(receipt, sourceMetadata),
+        instruction: '这是一次成功且已由 Host 确认的来源读取。当前新 OpenClaw 会话已收到完整 Host 回执和来源正文。请立即基于已交付材料提交一项有价值、完整的 SAVE_WORK，明确保留尚未读取的范围和问题。当前工具只允许 SAVE_WORK；不得再读来源、不得声称未读来源已核验。保存成功后运行器会精确读回 Host 工作并在下一新会话继续。',
+      }) },
+    ] : sessionResetKind === 'SAVE' ? [
       systemMessage,
       initialContextMessage,
       { role: 'user', content: JSON.stringify({
@@ -796,9 +832,7 @@ export async function invokeHostedJobAidProblemModel(
         content: JSON.stringify(projectJobAidReadReceipt(receipt, sourceMetadata)),
       },
     ];
-    await checkpoint?.write('assessment-state', { round: round + 1, messages,
-      expectedWorkRevision, saved, corrections, inputUnits, outputUnits, scopeAdjustments, sourceMetadata,
-      sessionModelInput, sessionWorkRevision, readsSinceSave, savedReadSourceRefs });
+    await persistAssessmentState(round + 1);
   }
   throw new Error('JOBAID_MODEL_BUDGET_EXHAUSTED');
 }

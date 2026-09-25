@@ -268,6 +268,10 @@ describe('PdfjsOcrCompositeLayoutExtractor', () => {
         ],
       }),
     ]);
+    // Frozen.2 U0 hashes figure semantics and linked asset content, not IDs.
+    expect(pipeline.pkg.integrity.semanticHash).toBe(
+      'sha256:f22bbae249f4a122855e8f522f125300ad11ae58a30c1c1032c4bd0b502eaaf4',
+    );
     expect(pipeline.pkg.result).toMatchObject({
       status: 'complete',
       contentPreserved: true,
