@@ -20,6 +20,7 @@ export interface ExistingStoragePdfVisibleText {
 }
 
 export type ExistingStoragePdfListErrorCode =
+  | 'OAUTH_REQUIRED'
   | 'AUTH_REQUIRED'
   | 'BUCKET_UNAVAILABLE'
   | 'LIST_FAILED';
@@ -50,6 +51,9 @@ export function toExistingStoragePdfListError(
 ): ExistingStoragePdfListError {
   const message =
     reason instanceof Error ? reason.message : String(reason ?? '');
+  if (message === 'OFFICIAL_OAUTH_SESSION_REQUIRED') {
+    return new ExistingStoragePdfListError('OAUTH_REQUIRED');
+  }
   if (/401|unauthorized|login|oauth|session/iu.test(message)) {
     return new ExistingStoragePdfListError('AUTH_REQUIRED');
   }

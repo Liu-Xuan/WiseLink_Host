@@ -362,10 +362,8 @@ export async function listDevelopmentExistingPdfs(input: {
       signal: input.signal,
     });
     if (response.status === 401) {
-      throw clientLoginRequired(
-        'CANONICAL_EXISTING_PDF_LIST_FAILED',
-        requestGeneration,
-      );
+      throw reviewOauthSessionRequired(response.data, requestGeneration) ??
+        clientLoginRequired('CANONICAL_EXISTING_PDF_LIST_FAILED', requestGeneration);
     }
     if (response.status < 200 || response.status >= 300) {
       throw backendResponseError(
@@ -375,6 +373,15 @@ export async function listDevelopmentExistingPdfs(input: {
     }
     return response.data;
   } catch (error) {
+    const response =
+      isRecord(error) && isRecord(error.response) ? error.response : null;
+    if (response) {
+      const sessionError = reviewOauthSessionRequired(
+        response.data,
+        requestGeneration,
+      );
+      if (sessionError) throw sessionError;
+    }
     markRejectedCanonicalLogin(error, requestGeneration);
     logCanonicalRequestFailure('读取受控的现有 PDF 列表失败', error);
     throw error;
