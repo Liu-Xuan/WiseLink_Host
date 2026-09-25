@@ -1,8 +1,8 @@
 # M 主控集成交接
 
-## 2026-09-26 C151 解析回执重读不再覆盖已保存工作（本地待发布）
+## 2026-09-26 C151 解析回执重读不再覆盖已保存工作（独立发布）
 
-核对 `CanonicalHostVerticalService.runPdfAuthorized` 发现：同一请求重放已完成的解析时，`reuseCompleted` 若遇到 Reader/存储读回失败，原代码会调用 `recordUnexpectedFailure`，把已经 `CANDIDATE_READBACK_VERIFIED` 的 WorkItem 改成 `FAILED` 或 `RECORDING_FAILED`。本地修订让重放读取错误直接报告给调用者，保留原 WorkItem 修订和解析器结果；原件恢复可读后再次同请求读取成功，解析器只调用一次。真实字节漂移仍抛 `ARTIFACT_READBACK_MISMATCH`，不假装成功。定向 Jest 54/54、server TypeScript、定向 ESLint 和差异检查通过。此变更尚未发布；当前开发分支还包含 C150 已知浏览器事项归集 RLS 阻断，不得直接以该分支发布新版本。
+核对 `CanonicalHostVerticalService.runPdfAuthorized` 发现：同一请求重放已完成的解析时，`reuseCompleted` 若遇到 Reader/存储读回失败，原代码会调用 `recordUnexpectedFailure`，把已经 `CANDIDATE_READBACK_VERIFIED` 的 WorkItem 改成 `FAILED` 或 `RECORDING_FAILED`。修订让重放读取错误直接报告给调用者，保留原 WorkItem 修订和解析器结果；原件恢复可读后再次同请求读取成功，解析器只调用一次。真实字节漂移仍抛 `ARTIFACT_READBACK_MISMATCH`，不假装成功。以线上原提交 `caec4b3ad404c72b581808e3da71c43c686bec3b` 建立隔离分支 `codex/wl-c151-replay-only`，只携带本修复的生产代码与单元测试；定向 Jest 54/54、server TypeScript、定向 ESLint 和差异检查通过。提交 `65309c7d4a0a5ddfb45d5e87e2709b73fa894b19` 已推送至 origin 同名分支，17b release `7689600388007316437` 已 `finished`，平台读回的精确 `commit_id` 与该提交一致，`error_logs=[]`。这证明技术发布，不等于已在生产触发读回故障并验证恢复。开发分支仍包含 C150 已知浏览器事项归集 RLS 阻断，不能直接以该分支发布新版本。
 
 ## 2026-09-26 浏览器事项归集的真实 RLS 阻断（C150 未发布）
 
