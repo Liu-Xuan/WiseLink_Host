@@ -543,7 +543,7 @@ export class CanonicalJobAidProblemService {
       purpose === 'OVERALL_CONSISTENCY' && isJobAidProblemProjection(base)
         ? base.workRevisionRef
         : history[0]?.workRevisionRef;
-    const previousWork = previousWorkRef
+    let previousWork = previousWorkRef
       ? await this.work.readByRefForRuntime({
           tenantId,
           workItemId: workItem.workItemId,
@@ -562,12 +562,16 @@ export class CanonicalJobAidProblemService {
         throw new Error('JOBAID_OVERALL_EXACT_WORK_REQUIRED');
       if (
         !previousWork ||
-        previousWork.workRevisionRef !== history[0]?.workRevisionRef ||
         previousWork.workRevision !== base.workRevision ||
         previousWork.documentVersionId !== workItem.source.documentVersionId ||
         previousWork.content.roundCompletion === 'IN_PROGRESS'
       )
         throw new Error('JOBAID_OVERALL_EXACT_WORK_REQUIRED');
+      if (previousWork.workRevisionRef !== history[0]?.workRevisionRef)
+        previousWork = await this.recoverCancelledOverallWork({
+          workItem, tenantId, actorUserId, baseWork: previousWork,
+          latestWorkRevisionRef: history[0]?.workRevisionRef,
+        });
     }
     // Authorize the complete new input inside buildModelInput, before the
     // lifecycle persists or claims an attempt. begin also rechecks replays.
@@ -630,6 +634,62 @@ export class CanonicalJobAidProblemService {
         };
     }
     return taskInput;
+  }
+
+  private async recoverCancelledOverallWork(input: {
+    workItem: CanonicalWorkItemProjection;
+    tenantId: string;
+    actorUserId: string;
+    baseWork: JobAidWorkRevision;
+    latestWorkRevisionRef: string | undefined;
+  }): Promise<JobAidWorkRevision> {
+    const invalid = () => new Error('JOBAID_OVERALL_EXACT_WORK_REQUIRED');
+    if (!input.latestWorkRevisionRef) throw invalid();
+    const chain = new Map<string, JobAidWorkRevision>();
+    const attemptIds = new Set<string>();
+    let cursor: string | null = input.latestWorkRevisionRef;
+    let expectedRevision: number | null = null;
+    while (cursor !== input.baseWork.workRevisionRef) {
+      if (!cursor || chain.has(cursor) || chain.size >= 64) throw invalid();
+      const revision = await this.work.readByRefForRuntime({
+        tenantId: input.tenantId,
+        workItemId: input.workItem.workItemId,
+        actorUserId: input.actorUserId,
+        workRevisionRef: cursor,
+      });
+      if (!revision || revision.workRevisionRef !== cursor ||
+        revision.workItemId !== input.workItem.workItemId ||
+        revision.documentVersionId !== input.workItem.source.documentVersionId ||
+        revision.basedOnWorkItemRevision !== input.workItem.revision ||
+        revision.workRevision <= input.baseWork.workRevision ||
+        (expectedRevision !== null && revision.workRevision !== expectedRevision))
+        throw invalid();
+      chain.set(cursor, revision);
+      attemptIds.add(revision.actionAttemptId);
+      expectedRevision = revision.workRevision - 1;
+      cursor = revision.previousWorkRevisionRef;
+    }
+    if (expectedRevision !== input.baseWork.workRevision) throw invalid();
+    const allowedPriorRefs = new Set([...chain.keys(), input.baseWork.workRevisionRef]);
+    for (const attemptId of attemptIds) {
+      const row = await this.attempts.readScopedById({
+        attemptId, tenantId: input.tenantId, workItemId: input.workItem.workItemId,
+      }).catch(() => null);
+      if (!row || row.status !== 'CANCELLED' ||
+        row.actionType !== 'OPENCLAW_OVERALL_SYNTHESIS' ||
+        row.documentVersionId !== input.workItem.source.documentVersionId ||
+        row.baseRevision !== input.workItem.revision || !row.taskEnvelopeJson)
+        throw invalid();
+      let prior: JobAidProblemTaskInput;
+      try { prior = parseJobAidProblemTask(parseTaskEnvelope(row.taskEnvelopeJson)); }
+      catch { throw invalid(); }
+      if (prior.modelInput.purpose !== 'OVERALL_CONSISTENCY' ||
+        !prior.previousWork || !allowedPriorRefs.has(prior.previousWork.workRevisionRef))
+        throw invalid();
+    }
+    const latest = chain.get(input.latestWorkRevisionRef);
+    if (!latest || latest.content.roundCompletion === 'IN_PROGRESS') throw invalid();
+    return latest;
   }
 
   async readCurrentWorkForRuntime(input: {
