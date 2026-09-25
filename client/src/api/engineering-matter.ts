@@ -1,4 +1,5 @@
 import type { MatterAssessmentActivityPage, MatterAssessmentActivityQuery } from '@shared/matter-assessment-activity.interface';
+import type { MatterExecutionSummary } from '@shared/matter-execution-summary.interface';
 import { axiosForBackend } from '@lark-apaas/client-toolkit/utils/getAxiosForBackend';
 
 import type {
@@ -289,4 +290,11 @@ export async function getMatterAssessmentActivity(matterId: string, query: Matte
       page.selection !== (query.workRef ? 'EXACT_WORK' : query.attemptRef ? 'EXACT_ATTEMPT' : 'CURRENT') ||
       (query.attemptRef && page.attempt?.attemptRef !== query.attemptRef)) throw invalidMatterReadback();
   return page;
+}
+
+export async function getMatterExecutionSummary(matterId: string, signal?: AbortSignal): Promise<MatterExecutionSummary> {
+  const summary: MatterExecutionSummary = await requestEngineeringMatter(
+    `${matterPath(matterId)}/execution-summary`, 'GET', undefined, signal);
+  if (summary.matterId !== matterId) throw invalidMatterReadback();
+  return summary;
 }

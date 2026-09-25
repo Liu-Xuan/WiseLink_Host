@@ -14,6 +14,7 @@ import {
   getEngineeringMatter,
   getEngineeringMatterDirectory,
   getMatterAssessmentActivity,
+  getMatterExecutionSummary,
   getEngineeringMatterWorkspace,
   linkEngineeringMatterWorkItem,
   reviseEngineeringMatterMaterials,
@@ -49,6 +50,17 @@ describe('engineering matter browser API bindings', () => {
     }
     request.mockResolvedValue({ status: 200, data: { ...data, workRef: null, selection: 'EXACT_ATTEMPT', attempt: { attemptRef: 'other' } } });
     await expect(getMatterAssessmentActivity('M/1', { attemptRef: 'a' })).rejects.toMatchObject({ statusCode: 403 });
+  });
+  it('reads the bounded execution summary for the exact matter', async () => {
+    const signal = new AbortController().signal;
+    const summary = { matterId: 'M/1', matterRevisionId: 'MR-1', workingRevision: 2, state: 'IDLE' };
+    request.mockResolvedValue({ status: 200, data: summary });
+    expect(await getMatterExecutionSummary('M/1', signal)).toBe(summary);
+    expect(request).toHaveBeenCalledWith(expect.objectContaining({
+      url: '/api/canonical-host/engineering-matters/M%2F1/execution-summary', method: 'GET', signal,
+    }));
+    request.mockResolvedValue({ status: 200, data: { ...summary, matterId: 'other' } });
+    await expect(getMatterExecutionSummary('M/1')).rejects.toMatchObject({ statusCode: 403 });
   });
   it('reads a real directory without creating matters or reading member sources', async () => {
     const data = { items: [], nextCursor: null, fileReadPerformed: false };
