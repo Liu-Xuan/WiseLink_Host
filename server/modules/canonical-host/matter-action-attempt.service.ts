@@ -449,14 +449,22 @@ export class MatterActionAttemptService {
           throw failure('ENGINEERING_OVERVIEW_CORRECTION_SOURCE_NOT_DELIVERED');
         jobAid.overviewCorrection = structuredClone(overviewCorrection);
         jobAid.modelInput.overviewCorrection = structuredClone(overviewCorrection);
-        // New explicit overview corrections use the bounded official plugin. A sealed
-        // legacy investigation/recovery keeps its original execution route.
+        const recoveredJobAid = recoveryTask?.modelInput as ReturnType<typeof buildMatterJobAidTask> | undefined;
+        if (recoveredJobAid?.correction?.kind === 'ENGINEERING_OVERVIEW_CORRECTION')
+          jobAid.correction = structuredClone(recoveredJobAid.correction);
+        if (recoveredJobAid?.overviewCorrectionProtocol === 'OPENCLAW_SCOPED_V1') {
+          jobAid.overviewCorrectionProtocol = 'OPENCLAW_SCOPED_V1';
+          jobAid.modelInput.overviewCorrectionProtocol = 'OPENCLAW_SCOPED_V1';
+        }
+        // New requests use the captured OpenClaw model and the ordinary Host
+        // save protocol. A recovery keeps its original execution route.
         if (!recoveryTask) {
           buildEngineeringOverviewCorrectionContext({ current, ...overviewCorrection,
             expectedWorkRevision: input.expectedWorkingRevision,
             deliveredEvidence: overviewCorrection.evidenceRefs.map(ref => jobAid.sourceCatalog.find(item => item.evidenceRef === ref)!),
             limitations: [] });
-          jobAid.correction = structuredClone(overviewCorrection);
+          jobAid.overviewCorrectionProtocol = 'OPENCLAW_SCOPED_V1';
+          jobAid.modelInput.overviewCorrectionProtocol = 'OPENCLAW_SCOPED_V1';
         }
       }
       if (correction) {
@@ -1270,6 +1278,8 @@ export class MatterActionAttemptService {
       assertRunningSourceLease(row, input);
       const previous = await executor.loadCurrent(input);
       if ((previous?.workingRevision ?? 0) !== input.expectedWorkRevision) throw failure('ENGINEERING_MATTER_WORKING_CAS_CONFLICT');
+      if (taskInput.overviewCorrection && taskInput.overviewCorrectionProtocol === 'OPENCLAW_SCOPED_V1')
+        assertOpenClawOverviewCorrectionProposal(proposal, taskInput.overviewCorrection, previous);
       const registry = new Map<string, AssessmentEvidence>();
       const add = (evidence: AssessmentEvidence) => {
         const prior = registry.get(evidence.evidenceRef);
@@ -1504,7 +1514,8 @@ export class MatterActionAttemptService {
         (!savedByThisAttempt ||
           !current?.state.problemWork ||
           (current.state.problemWork.roundCompletion === 'IN_PROGRESS' &&
-            !(task.modelInput as ReturnType<typeof buildMatterJobAidTask>).correction))
+            !(task.modelInput as ReturnType<typeof buildMatterJobAidTask>).correction &&
+            (task.modelInput as ReturnType<typeof buildMatterJobAidTask>).overviewCorrectionProtocol !== 'OPENCLAW_SCOPED_V1'))
       )
         throw failure('JOBAID_FINISH_EXACT_COMPLETED_WORK_REQUIRED');
       if (
@@ -1837,6 +1848,34 @@ function assertRunningSourceLease(row: MatterActionAttemptRow, input: ActionAtte
   if (row.status !== 'RUNNING' || !row.leaseExpiresAt || row.leaseExpiresAt <= now ||
     !row.deadlineAt || row.deadlineAt <= now || row.cancelRequestedAt)
     throw failure('MATTER_SOURCE_READ_FENCE_REJECTED');
+}
+
+export function assertOpenClawOverviewCorrectionProposal(
+  proposal: unknown,
+  purpose: MatterOverviewCorrectionPurpose,
+  previous: { matterWorkRevisionId: string; state: { problemWork?: { roundCompletion: string } | null } } | null,
+): void {
+  if (previous?.matterWorkRevisionId !== purpose.expectedWorkRef || !previous.state.problemWork)
+    throw failure('ENGINEERING_OVERVIEW_CORRECTION_WORK_BINDING_CHANGED');
+  if (!proposal || typeof proposal !== 'object' || Array.isArray(proposal))
+    throw failure('ENGINEERING_OVERVIEW_CORRECTION_PROPOSAL_INVALID', 400);
+  const work = proposal as Record<string, unknown>;
+  const allowed = new Set(['schemaVersion', 'issues', 'overview', 'roundCompletion',
+    'completionReason', 'changeSummary']);
+  if (Object.keys(work).some(key => !allowed.has(key)) ||
+      work.schemaVersion !== JOBAID_PROBLEM_WORK_SCHEMA ||
+      !Array.isArray(work.issues) || work.issues.length !== 0 ||
+      work.roundCompletion !== previous.state.problemWork.roundCompletion ||
+      typeof work.overview !== 'string' || !work.overview.trim() ||
+      typeof work.completionReason !== 'string' || !work.completionReason.trim() ||
+      typeof work.changeSummary !== 'string' || !work.changeSummary.trim())
+    throw failure('ENGINEERING_OVERVIEW_CORRECTION_PROPOSAL_INVALID', 400);
+  const body = `${work.overview}\n${work.completionReason}`;
+  const refs = [...body.matchAll(/\[\[([^\[\]\r\n]+)\]\]/gu)].map(match => match[1]);
+  const stripped = body.replace(/\[\[([^\[\]\r\n]+)\]\]/gu, '');
+  if (!refs.length || stripped.includes('[[') || stripped.includes(']]') ||
+      refs.some(ref => !purpose.evidenceRefs.includes(ref)))
+    throw failure('ENGINEERING_OVERVIEW_CORRECTION_SOURCE_NOT_DELIVERED', 400);
 }
 
 function correctionProposalFromReceipts(started: Record<string, unknown>, completed: Record<string, unknown>) {

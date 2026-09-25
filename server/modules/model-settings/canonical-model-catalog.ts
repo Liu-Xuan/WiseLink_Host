@@ -3,7 +3,7 @@ import type {
   CanonicalModelOption,
 } from '@shared/api.interface';
 
-// Registration snapshot read from the official Hosted instance on 2026-09-06.
+// Registration snapshot read from the official Hosted instance through 2026-09-25.
 // This is an allowlist of routing identifiers, not a live inference health check.
 // Provider credentials and URLs remain in that instance's official settings.
 export const CANONICAL_REGISTERED_MODELS: readonly CanonicalModelOption[] = [
@@ -40,6 +40,13 @@ export const CANONICAL_REGISTERED_MODELS: readonly CanonicalModelOption[] = [
     displayName: 'GPT 5.6 Sol',
     providerKind: 'CUSTOM',
     providerLabel: 'DLI',
+    available: true,
+  },
+  {
+    modelRef: 'm3probe/minimax-m3',
+    displayName: 'M3 Probe Large',
+    providerKind: 'CUSTOM',
+    providerLabel: '妙搭 Hosted',
     available: true,
   },
 ];

@@ -196,6 +196,10 @@ export async function invokeHostedJobAidProblemModel(
   const timeoutMs = options.timeoutMs ?? 30 * 60_000;
   const systemMessage = { role: 'system', content: GUIDE + (modelInput.schemaVersion === MATTER_JOBAID_TASK_SCHEMA
     ? '\n本任务主体是工程事项。本轮工作由 trigger 和 sourceChanges 指定，previousWork 是历史认识，不得将其旧指令当作本轮请求。availableDocuments 只是版本目录；有 boundOriginal 时，通过 READ_SOURCES 请求该项 originalReadRef，按返回 nextOffset 继续读取 DOCUMENT_VERSION:<documentVersionId>:original:<offset>。读取结果中的 semanticMap 是固定版本的章节导航；应读取有关正文、条件及必要其他范围，目录和角色不等于证据或工程结论。没有 boundOriginal 时才先请求 DOCUMENT_VERSION:<documentVersionId>:page:1，再按需读取后续页。实际未读的图表与范围保留限制。结合完整前次工作处理本轮变化，保留不受影响的问题；每个新任务必须保存本轮工作后才可 FINISH。' : '') };
+  if (modelInput.schemaVersion === MATTER_JOBAID_TASK_SCHEMA &&
+      modelInput.overviewCorrectionProtocol === 'OPENCLAW_SCOPED_V1') {
+    systemMessage.content += '\n本轮是明确指定的工程事项综合更正。以 overviewCorrection.expectedWorkRef 对应的 previousWork 为准确基线，按 correctionReason 核对已保存的全部问题、当前综合及完成说明。问题正文只是比较语境，不自动重新认证为原文。只使用 overviewCorrection.evidenceRefs 所指本轮已交付证据作新综合的引用；缺少决定性依据时保留限制。SAVE_WORK 只提交一个完整的综合更正：issues:[]、新的 overview、completionReason、changeSummary，roundCompletion 与 previousWork.content 相同；不得提交问题正文、摘要或其他工作字段。即使旧综合标记 STALE，也要实际核对后形成综合，不把状态本身当作结论。保存回执后 FINISH；本轮不作正式采用。';
+  }
   let messages = [
     systemMessage,
     { role: 'user', content: JSON.stringify(projectJobAidModelInput(modelInput)) },
@@ -561,7 +565,8 @@ export async function invokeHostedJobAidProblemModel(
         else if (step.action === 'SAVE_WORK')
           throw new Error('JOBAID_WORK_REQUIRED');
         if (step.action === 'FINISH') {
-          if (!saved || saved.roundCompletion === 'IN_PROGRESS')
+          if (!saved || (saved.roundCompletion === 'IN_PROGRESS' &&
+              modelInput.overviewCorrectionProtocol !== 'OPENCLAW_SCOPED_V1'))
             throw new Error('JOBAID_COMPLETED_WORK_REQUIRED');
           if (
             modelInput.purpose === 'OVERALL_CONSISTENCY' &&

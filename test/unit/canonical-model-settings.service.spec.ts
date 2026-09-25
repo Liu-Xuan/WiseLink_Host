@@ -146,6 +146,10 @@ describe('tenant global model selection', () => {
           modelRef: 'dli/gpt-5.6-sol',
           providerKind: 'CUSTOM',
         }),
+        expect.objectContaining({
+          modelRef: 'm3probe/minimax-m3',
+          providerKind: 'CUSTOM',
+        }),
       ]),
     );
     expect(repository.read).toHaveBeenCalledWith('tenant-model-fixture');

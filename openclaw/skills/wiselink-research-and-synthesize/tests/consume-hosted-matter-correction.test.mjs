@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import { callJsonTool } from '../scripts/run-hosted-review-turn.mjs';
 import { consumeHostedMatter } from '../scripts/consume-hosted-matter.mjs';
+import { WISELINK_SKILL_VERSION, WISELINK_HOST_MCP_NAME, WISELINK_HOST_MCP_VERSION } from '../scripts/validate-payload.mjs';
 
 function fixture(overview = false) {
   const task = { schemaVersion: 'wiselink.3_1.openclaw_task_envelope.v2', taskType: 'OPENCLAW_MATTER_ASSESSMENT',
@@ -12,6 +13,7 @@ function fixture(overview = false) {
   let mode = 'RUNNING'; let failSave = false; let failGeneration = false; let badFinish = false; let unchanged = false;
   const dependencies = {
     createCheckpoint: async () => ({ readOptional: async key => checkpoints.get(key),
+      remoteStep: async ({ perform }) => perform(),
       writeOnce: async (key, value) => { assert.equal(checkpoints.has(key), false); checkpoints.set(key, value); } }),
     invokeMatterModel: async () => assert.fail('Correction must not invoke the Hosted investigation model'),
     callTool: async (name, input, requestOptions) => {
@@ -36,7 +38,7 @@ function fixture(overview = false) {
       assert.fail(`Unexpected operation ${input.operation}`);
     },
   };
-  return { task, calls, run: () => consumeHostedMatter({ matterId: 'MAT-c', checkpointRoot: '/unused' }, dependencies),
+  return { task, calls, dependencies, run: () => consumeHostedMatter({ matterId: 'MAT-c', checkpointRoot: '/unused' }, dependencies),
     setMode: value => { mode = value; }, loseSave: () => { failSave = true; },
     blockGeneration: () => { failGeneration = true; }, wrongFinish: () => { badFinish = true; },
     markUnchanged: () => { unchanged = true; } };
@@ -58,6 +60,38 @@ test('explicit overview correction uses its own plugin receipt and resumes the s
   assert.equal(saves.length, 2); assert.equal(saves[0].requestId, saves[1].requestId);
   const unchanged = fixture(true); unchanged.markUnchanged();
   assert.equal((await unchanged.run()).status, 'MATTER_OVERVIEW_CORRECTION_UNCHANGED');
+});
+
+test('new scoped overview correction invokes the captured OpenClaw model and normal Host finish', async () => {
+  const h = fixture(true);
+  h.task.modelInput.correction = null;
+  h.task.modelInput.overviewCorrectionProtocol = 'OPENCLAW_SCOPED_V1';
+  h.task.modelInput.modelInput = { schemaVersion: 'wiselink.matter-jobaid-task.v2',
+    overviewCorrectionProtocol: 'OPENCLAW_SCOPED_V1', expectedWorkRevision: 11 };
+  h.task.executionModel = { modelRef: 'm3probe/minimax-m3' };
+  let modelCalls = 0;
+  h.dependencies.invokeMatterModel = async (_request, options) => {
+    modelCalls++;
+    assert.equal(options.executionModel.modelRef, 'm3probe/minimax-m3');
+    return { output: { workRevisionRef: 'MWR-12' }, provenance: {
+      modelVersion: 'm3probe/minimax-m3', promptVersion: 'scoped-overview-test',
+      skillVersion: WISELINK_SKILL_VERSION,
+      toolVersions: { [WISELINK_HOST_MCP_NAME]: WISELINK_HOST_MCP_VERSION },
+      runMetrics: { durationMs: 1, inputUnits: 1, outputUnits: 1 },
+    } };
+  };
+  h.dependencies.callTool = async (name, input) => {
+    if (name === 'next_matter_assessment') return { matterId: 'MAT-c', next: { attemptRef: 'AQ-c', status: 'RUNNING' } };
+    h.calls.push(input);
+    if (input.operation === 'CLAIM') return { attemptRef: 'AQ-c', status: 'RUNNING', task: h.task,
+      leaseToken: 'lease', leaseGeneration: 1 };
+    if (input.operation === 'FINISH') return { attemptRef: 'AQ-c', status: 'SUCCEEDED', workRevisionRef: 'MWR-12' };
+    assert.fail(`Unexpected operation ${input.operation}`);
+  };
+  const result = await h.run();
+  assert.equal(result.status, 'MATTER_OVERVIEW_CORRECTION_SAVED');
+  assert.equal(modelCalls, 1);
+  assert.deepEqual(h.calls.map(call => call.operation), ['CLAIM', 'FINISH']);
 });
 
 test('unchanged correction finishes against the base work without advancing revision', async () => {
