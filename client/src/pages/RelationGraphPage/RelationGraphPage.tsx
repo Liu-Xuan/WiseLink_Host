@@ -26,7 +26,6 @@ import { useCurrentUserSession } from '@client/src/app/providers/CurrentUserSess
 import { Button } from '@client/src/components/ui/button';
 import { ButtonGroup } from '@client/src/components/ui/button-group';
 import RelationGraphCanvas from './RelationGraphCanvas';
-import { resolveWorkItemMatter } from './work-item-matter-resolver';
 import { resolveDefaultGraphMatter } from './default-matter-resolver';
 import {
   buildGraphElements,
@@ -48,6 +47,10 @@ export interface RelationGraphPageProps {
   onNodeSelect?: (node: RelationGraphNodeData) => void;
   /** 隔离样本复用：外部指定高亮节点。 */
   highlightedNodeId?: string;
+  /** WorkItem entry starts with the saved work relation projection. */
+  initialMode?: RelationGraphMode;
+  /** Exact work identity supplied by a WorkItem deep link. */
+  pinnedWorkRef?: string | null;
 }
 
 type LibraryStatus = 'IDLE' | 'LOADING' | 'READY' | 'NOT_FOUND' | 'BLOCKED';
@@ -83,7 +86,7 @@ export function RelationGraphPage(props: RelationGraphPageProps) {
     return <SuiteMatterGraphPage matterId={identity.matterId} />;
   }
   if (identity.kind === 'work-item') {
-    return <WorkItemMatterResolver workItemId={identity.workItemId} />;
+    return <LegacyRelationGraphPage {...props} initialMode="workItem" pinnedWorkRef={identity.workRef} />;
   }
   if (identity.kind === 'matter-dv') {
     return (
@@ -115,7 +118,7 @@ type GraphIdentityState =
       activityQuery: string;
     }
   | { kind: 'legacy' }
-  | { kind: 'work-item'; workItemId: string }
+  | { kind: 'work-item'; workItemId: string; workRef: string | null }
   | { kind: 'activity-dv'; activityQuery: string }
   | { kind: 'bare' };
 
@@ -152,8 +155,8 @@ function graphIdentityState(params: URLSearchParams): GraphIdentityState {
       message: '工作事项与文档版本不能在此入口混用，请从准确对象重新进入。',
     };
   }
-  if (workRefPin.state === 'ok' && matterPin.state !== 'ok') {
-    return { kind: 'invalid', message: '工作身份缺少所属事项，请从准确事项入口重新进入。' };
+  if (workRefPin.state === 'ok' && matterPin.state !== 'ok' && workItemPin.state !== 'ok') {
+    return { kind: 'invalid', message: '工作身份缺少所属对象，请从准确工作入口重新进入。' };
   }
   if (workRefPin.state === 'ok' && documentPin.state === 'ok') {
     return {
@@ -196,7 +199,11 @@ function graphIdentityState(params: URLSearchParams): GraphIdentityState {
     return { kind: 'legacy' };
   }
   if (workItemPin.state === 'ok') {
-    return { kind: 'work-item', workItemId: workItemPin.value };
+    return {
+      kind: 'work-item',
+      workItemId: workItemPin.value,
+      workRef: workRefPin.state === 'ok' ? workRefPin.value : null,
+    };
   }
   if (documentPin.state === 'ok') {
     return {
@@ -312,63 +319,6 @@ function MatterGraphDvAssociation({
   return <Navigate to={`/activity-graph?${activityQuery}`} replace />;
 }
 
-function WorkItemMatterResolver({ workItemId }: { workItemId: string }) {
-  const navigate = useNavigate();
-  const { sessionGeneration, authenticationRequired } = useCurrentUserSession();
-  const [state, setState] = useState<'loading' | 'empty' | 'ambiguous' | 'error'>('loading');
-  const [reloadKey, setReloadKey] = useState(0);
-
-  useEffect(() => {
-    if (authenticationRequired) return;
-    const controller = new AbortController();
-    setState('loading');
-    void (async () => {
-      try {
-        const resolution = await resolveWorkItemMatter(
-          workItemId,
-          getEngineeringMatterDirectory,
-          controller.signal,
-        );
-        if (controller.signal.aborted) return;
-        if (resolution.kind === 'ambiguous') {
-          setState('ambiguous');
-          return;
-        }
-        if (resolution.kind === 'unique') {
-          const matterId = resolution.matterId;
-          navigate(`/graph?${new URLSearchParams({ matterId })}`, { replace: true });
-          return;
-        }
-        setState('empty');
-      } catch (reason) {
-        if (controller.signal.aborted) return;
-        logger.error('按工作事项解析工程事项失败', reason);
-        setState('error');
-      }
-    })();
-    return () => controller.abort();
-  }, [authenticationRequired, navigate, reloadKey, sessionGeneration, workItemId]);
-
-  if (authenticationRequired) {
-    return <section className="rg-panel"><h2 className="rg-panel-title">请先登录</h2>
-      <p className="rg-panel-note">登录后才能核对该工作事项所属的工程事项。</p></section>;
-  }
-  if (state === 'loading') {
-    return <section className="rg-panel" role="status"><span className="rg-loading">正在核对工作事项所属的工程事项…</span></section>;
-  }
-  if (state === 'empty') {
-    return <section className="rg-panel" role="alert"><h2 className="rg-panel-title">工作事项尚未登记到工程事项</h2>
-      <p className="rg-panel-note">没有取得明确的事项绑定，图谱不会猜测归属。请从资料库或已登记事项入口重新进入。</p></section>;
-  }
-  if (state === 'ambiguous') {
-    return <section className="rg-panel" role="alert"><h2 className="rg-panel-title">工作事项对应多个工程事项</h2>
-      <p className="rg-panel-note">当前入口无法唯一确定事项归属，图谱已停止读取。请从明确的 matterId 入口进入。</p></section>;
-  }
-  return <section className="rg-panel rg-status-panel"><h2 className="rg-panel-title">事项归属核对受阻</h2>
-    <p className="rg-panel-note">无法确认工作事项与工程事项的登记关系。</p>
-    <Button variant="outline" onClick={() => setReloadKey((value) => value + 1)}>重试</Button></section>;
-}
-
 function GraphDefaultMatterResolver() {
   const navigate = useNavigate();
   const { sessionGeneration, authenticationRequired } =
@@ -461,6 +411,8 @@ function LegacyRelationGraphPage({
   injectedProjection,
   onNodeSelect,
   highlightedNodeId,
+  initialMode,
+  pinnedWorkRef,
 }: RelationGraphPageProps) {
   if (injectedProjection) {
     return (
@@ -468,6 +420,8 @@ function LegacyRelationGraphPage({
         injectedProjection={injectedProjection}
         onNodeSelect={onNodeSelect}
         highlightedNodeId={highlightedNodeId}
+        initialMode={initialMode}
+        pinnedWorkRef={pinnedWorkRef}
         sessionGeneration={0}
         authenticationRequired={false}
       />
@@ -477,6 +431,8 @@ function LegacyRelationGraphPage({
     <SessionBoundLegacyRelationGraphPage
       onNodeSelect={onNodeSelect}
       highlightedNodeId={highlightedNodeId}
+      initialMode={initialMode}
+      pinnedWorkRef={pinnedWorkRef}
     />
   );
 }
@@ -504,6 +460,8 @@ function LegacyRelationGraphContent({
   injectedProjection,
   onNodeSelect,
   highlightedNodeId,
+  initialMode,
+  pinnedWorkRef,
   sessionGeneration,
   authenticationRequired,
 }: LegacyRelationGraphContentProps) {
@@ -512,7 +470,7 @@ function LegacyRelationGraphContent({
   /* 与 WorkspaceHomePage 相同的取值方式：query 参数 workItemId */
   const workItemId: string = searchParams.get('workItemId')?.trim() ?? '';
 
-  const [mode, setMode] = useState<RelationGraphMode>('document');
+  const [mode, setMode] = useState<RelationGraphMode>(initialMode ?? 'document');
   const [projectionState, setProjectionState] =
     useState<LegacyProjectionState | null>(null);
   const [status, setStatus] = useState<LibraryStatus>('IDLE');
@@ -587,8 +545,9 @@ function LegacyRelationGraphContent({
 
   const elements: ElementDefinition[] = useMemo<ElementDefinition[]>(() => {
     if (!response) return [];
+    if (pinnedWorkRef && response.workItem.currentJobAidWorkRevisionRef !== pinnedWorkRef) return [];
     return buildGraphElements(response, mode);
-  }, [response, mode]);
+  }, [response, mode, pinnedWorkRef]);
 
   const effectiveWorkItemId: string = response?.workItem.workItemId ?? workItemId;
 
@@ -712,6 +671,18 @@ function LegacyRelationGraphContent({
           <Button onClick={() => navigate('/library')}>打开资料库</Button>
         </section>
       );
+    }
+    if (pinnedWorkRef && response.workItem.currentJobAidWorkRevisionRef !== pinnedWorkRef) {
+      const query = new URLSearchParams({
+        subjectKind: 'WORK_ITEM',
+        subjectId: workItemId,
+        workRef: pinnedWorkRef,
+      });
+      return <section className="rg-panel" role="status">
+        <h2 className="rg-panel-title">这是历史工作修订</h2>
+        <p className="rg-panel-note">当前图谱只读取 Host 的当前工作投影。历史认识可在工程知识中按准确修订阅读。</p>
+        <a href={`/knowledge?${query.toString()}`}>阅读确切历史工作</a>
+      </section>;
     }
     if (elements.length === 0) {
       return (

@@ -38,6 +38,7 @@ export const GRAPH_RELATION_SAMPLE_PROJECTION: CanonicalLibraryIndexReadResponse
       workItemId: GRAPH_RELATION_SAMPLE_WORK_ITEM_ID,
       revision: 1,
       phase: 'SAMPLE',
+      currentJobAidWorkRevisionRef: null,
     },
     document: {
       documentId: 'doc-sample-graph-a',

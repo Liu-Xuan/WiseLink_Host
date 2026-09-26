@@ -1,6 +1,7 @@
 import { Injectable, Inject } from '@nestjs/common';
 
 import type { CanonicalLibraryIndexReadResponse } from '@shared/api.interface';
+import { isJobAidProblemProjection } from '@shared/jobaid-problem-assessment.interface';
 import {
   CANONICAL_AUTHORIZATION,
   CANONICAL_PERMISSION_SNAPSHOT,
@@ -112,6 +113,9 @@ export class CanonicalHostLibraryIndexService {
         workItemId: projection.workItemId,
         revision: projection.revision,
         phase: projection.phase,
+        currentJobAidWorkRevisionRef: isJobAidProblemProjection(
+          projection.integratedAssessment?.baseRules,
+        ) ? projection.integratedAssessment.baseRules.workRevisionRef : null,
       },
       document: {
         documentId: source.version.documentId,
