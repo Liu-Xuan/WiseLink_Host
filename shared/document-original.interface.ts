@@ -28,10 +28,11 @@ export interface DocumentOriginalResult {
   schemaVersion: 'wiselink.document.original.v1';
   binding: DocumentOriginalBinding;
   producer: {
-    kind: 'OFFICIAL_PLUGIN_HYBRID' | 'MINERU_LOCAL';
+    kind: 'OFFICIAL_PLUGIN_HYBRID' | 'MINERU_LOCAL' | 'MINERU_LOCAL_PDFJS';
     instanceId: string;
     /** Legacy version slot; MINERU_LOCAL records its actual engine version here. */
     pluginVersion: string;
+    supplementaryExtraction?: 'PDFJS_TEXT_LAYER';
     engine?: { name: 'MinerU'; version: string; backend: string };
     actionKey: string;
     concreteModel: string | null;

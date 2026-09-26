@@ -1,3 +1,4 @@
+import { reconcileMineruTextCoverage } from './document-mineru-text-coverage';
 import { CanonicalDocumentParsingSettingsService } from '../../../../model-settings/canonical-document-parsing-settings.service';
 import { enhanceMineruTitles } from '../../../../professional-input/mineru/mineru-title-enhancer';
 import { readMineruArtifacts } from '../../../../professional-input/mineru/mineru-artifacts';
@@ -123,7 +124,6 @@ export class DocumentParsingHostedService {
 
   async executeStep(parseRunId: string, context: ReadScope & { documentVersionId: string }, fence: DocumentStepFence): Promise<DocumentOriginalStepResult> {
     const executionStartedAt = performance.now();
-    let pdfSession: DocumentPdfSession | undefined;
     if (fence.parseRunId !== parseRunId) throw documentParseError('DOCUMENT_STEP_LEASE_REJECTED');
     const scope = { ...context };
     await this.leases.check(scope, fence);
@@ -176,13 +176,17 @@ export class DocumentParsingHostedService {
           else if (!rawDocument.blocks.some(block => block.type === 'title')) titleEnhancement = { status: 'NOT_APPLICABLE' };
           else titleEnhancement = { status: 'FAILED', code: 'TITLE_RESULT_MISSING' };
         }
-        const result = documentMineruOriginal({ binding, documentVersion: run.sourceBinding, result: candidate, validatedTitleLevels });
+        const mineruOriginal = documentMineruOriginal({ binding, documentVersion: run.sourceBinding, result: candidate, validatedTitleLevels });
+        const checkpoint = await this.checkpointPdfPages(run, original, assertActive, record, executionStartedAt);
+        if (checkpoint.status === 'STAGING') return stepResult(run, checkpoint.coverage, 'STAGING');
+        const result = reconcileMineruTextCoverage({ original: mineruOriginal, extraction: checkpoint.extraction,
+          rawMiddle: candidate.rawArtifacts.middle, rawContentListV2: candidate.rawArtifacts.contentListV2 });
         await assertActive();
         const rawMineruCandidate = await this.store.save(storage, 'MANIFEST', selected.bytes, record, 'raw/mineru-candidate.json');
         const rawMarkdown = await this.store.save(storage, 'RAW_MARKDOWN', Buffer.from(candidate.rawArtifacts.markdown), record);
         const change = await this.originalChange(run, result, context);
         const bundle: DocumentOriginalBundle = { schemaVersion: 'wiselink.document.bundle.v1', original: result,
-          rawPdfArtifacts: [], rawMineruCandidate, rawMarkdown, change, titleEnhancement };
+          rawPdfArtifacts: checkpoint.pageArtifacts, rawMineruCandidate, rawMarkdown, change, titleEnhancement };
         const manifest = await this.store.save(storage, 'MANIFEST', Buffer.from(JSON.stringify(bundle)), record);
         await this.store.load(storage, manifest, binding);
         await assertActive();
@@ -215,74 +219,11 @@ export class DocumentParsingHostedService {
         const bytes = Buffer.from(parsed.markdown);
         raw = { bytes, artifact: await this.store.save(storage, 'RAW_MARKDOWN', bytes, record) };
       } else await record(raw.artifact);
-      // DB progress stores verified immutable descriptors. Normal continuation needs only
-      // the last page group, not every preceding group or a recomposed prefix.
-      const pageArtifacts = run.artifactProgress
-        .filter(item => item.readback === 'VERIFIED' && item.role === 'MANIFEST' && /^original\/pages-[0-9]+\.json$/.test(item.relativePath))
-        .map(originalArtifact)
-        .sort((a, b) => pageArtifactStart(a) - pageArtifactStart(b));
-      if (pageArtifacts.some((artifact, index) => pageArtifactStart(artifact) !== index * PAGE_GROUP_SIZE))
-        throw documentParseError('DOCUMENT_ORIGINAL_PAGE_CHECKPOINT_INVALID');
-      const currentPages = new Map<number, DocumentPdfExtraction>();
-      let pageCount: number | null = null;
-      let pageStart = 0;
-      const last = pageArtifacts.at(-1);
-      if (last) {
-        const start = pageArtifactStart(last);
-        const chunk: DocumentPdfExtraction = JSON.parse(Buffer.from(await this.store.read(storage, last)).toString('utf8'));
-        assertPageChunk(chunk, start, null);
-        currentPages.set(start, chunk); pageCount = chunk.pageCount; pageStart = start + chunk.pages.length;
-      }
-      let groupsProcessed = 0;
-      // Continue only a bounded amount of ready local work. Every group is saved
-      // before another begins; no PDF/bytes survive this request or lease scope.
-      while (pageCount === null || pageStart < pageCount) {
-        await assertActive();
-        const path = `original/pages-${pageStart}.json`;
-        // Recover a lost upload/progress response at exactly the next path before extracting again.
-        let recovered = await this.store.recover(storage, 'MANIFEST', path);
-        const reusablePage = reusable?.bundle.rawPdfArtifacts.find(item => item.relativePath === path);
-        if (!recovered && reusable && reusablePage) {
-          const bytes = new Uint8Array(await this.store.read(reusable.scope, reusablePage));
-          recovered = { bytes, artifact: await this.store.save(storage, 'MANIFEST', bytes, record, path) };
-        }
-        if (!recovered && !pdfSession) pdfSession = await openDocumentPdfSession({ bytes: original.bytes, assertActive });
-        const chunk: DocumentPdfExtraction = recovered
-          ? JSON.parse(Buffer.from(recovered.bytes).toString('utf8'))
-          : await pdfSession!.extract({ pageStart, pageCount: PAGE_GROUP_SIZE });
-        assertPageChunk(chunk, pageStart, pageCount);
-        const artifact = recovered ? recovered.artifact
-          : await this.store.save(storage, 'MANIFEST', Buffer.from(JSON.stringify(chunk)), record, path);
-        if (recovered) await record(artifact);
-        currentPages.set(pageStart, chunk); pageArtifacts.push(artifact);
-        pageCount = chunk.pageCount; pageStart += chunk.pages.length;
-        groupsProcessed += 1;
-        if (groupsProcessed >= MAX_PAGE_GROUPS_PER_STEP || original.byteLength > MAX_CONTINUATION_SOURCE_BYTES ||
-            performance.now() - executionStartedAt >= STEP_CONTINUATION_BUDGET_MS) break;
-      }
-      // Drop the decoder before final assembly loads the remaining saved groups.
-      if (pdfSession) { await pdfSession.destroy(); pdfSession = undefined; }
-      if (pageStart < pageCount!) return stepResult(run, {
-        knownPageCount: pageCount,
-        readPageIndexes: Array.from({ length: pageStart }, (_, index) => index),
-        unresolvedRanges: [
-          { reason: 'UNREAD', unitIds: [], pageIndexes: Array.from({ length: pageCount! - pageStart }, (_, index) => pageStart + index),
-            message: 'These pages have not been extracted yet.' },
-          { reason: 'STRUCTURE_UNCERTAIN', unitIds: [], pageIndexes: Array.from({ length: pageStart }, (_, index) => index),
-            message: 'Page text is checkpointed; full document structure and figure coverage have not been assembled.' },
-        ],
-      }, 'STAGING');
-      // One final assembly reuses this tick's groups and loads each older group once.
-      const pages: DocumentPdfExtraction['pages'] = [];
-      for (const artifact of pageArtifacts) {
-        await assertActive();
-        const start = pageArtifactStart(artifact);
-        const chunk = currentPages.get(start) ?? JSON.parse(Buffer.from(await this.store.read(storage, artifact)).toString('utf8')) as DocumentPdfExtraction;
-        assertPageChunk(chunk, pages.length, pageCount);
-        pages.push(...chunk.pages);
-      }
+      const checkpoint = await this.checkpointPdfPages(run, original, assertActive, record, executionStartedAt, reusable);
+      if (checkpoint.status === 'STAGING') return stepResult(run, checkpoint.coverage, 'STAGING');
+      const { pageArtifacts, extraction } = checkpoint;
       const markdown = Buffer.from(raw.bytes).toString('utf8');
-      const result = composeDocumentOriginal({ binding, extraction: { pageCount: pageCount!, pages }, markdown,
+      const result = composeDocumentOriginal({ binding, extraction, markdown,
         producer: { kind: 'OFFICIAL_PLUGIN_HYBRID', instanceId: 'wl-document-parser', pluginVersion: '1.0.16',
           actionKey: 'parseDocToMarkdown', concreteModel: null, extractedAt: null } });
       documentOriginalStructuredSource(result, binding);
@@ -299,7 +240,7 @@ export class DocumentParsingHostedService {
       try { await this.repository.recordStepFailure(scope, fence, code); }
       catch { this.logger.error(`Document step ${parseRunId} failure record rejected; durable lease/deadline remains authoritative.`); }
       throw error;
-    } finally { await pdfSession?.destroy(); }
+    }
   }
 
   async read(documentVersionId: string, parseRunId: string | undefined, context: ReadScope): Promise<DocumentParsedReading> {
@@ -316,7 +257,7 @@ export class DocumentParsingHostedService {
       }
       await this.assertRead(documentVersionId, context);
       return { documentVersionId, parseRunId: run.parseRunId, parseRevision: run.parseRevision,
-        originalFilename: source.version.originalFilename, parser: bundle.original.producer.kind === 'MINERU_LOCAL'
+        originalFilename: source.version.originalFilename, parser: bundle.original.producer.kind === 'MINERU_LOCAL' || bundle.original.producer.kind === 'MINERU_LOCAL_PDFJS'
           ? { name: 'MinerU', version: bundle.original.producer.engine!.version, backend: bundle.original.producer.engine!.backend }
           : { name: 'OfficialPluginHybrid', version: bundle.original.producer.pluginVersion, backend: 'Host' },
         titleEnhancement: bundle.titleEnhancement ?? { status: 'DISABLED' }, markdown: bundle.original.markdown, assets: localAssets, original: { ...bundle.original, coverage: documentOriginalReadingCoverage(bundle.original) },
@@ -379,6 +320,84 @@ export class DocumentParsingHostedService {
     await this.assertRead(documentVersionId, context);
     return { bytes, mediaType: matches[0].mediaType };
   }
+  private async checkpointPdfPages(run: DocumentParseRow, original: { bytes: Uint8Array; byteLength: number },
+    assertActive: () => Promise<void>, record: (artifact: DocumentOriginalArtifact) => Promise<void>, executionStartedAt: number,
+    reusable: { bundle: DocumentOriginalBundle; scope: ReturnType<typeof storageScope> } | null = null,
+  ): Promise<{ status: 'STAGING'; coverage: DocumentOriginalStepResult['coverage'] } |
+    { status: 'COMPLETE'; extraction: DocumentPdfExtraction; pageArtifacts: DocumentOriginalArtifact[] }> {
+    const storage = storageScope(run);
+    let pdfSession: DocumentPdfSession | undefined;
+    try {
+      // DB progress stores verified immutable descriptors. Normal continuation needs only
+      // the last page group, not every preceding group or a recomposed prefix.
+      const pageArtifacts = run.artifactProgress
+        .filter(item => item.readback === 'VERIFIED' && item.role === 'MANIFEST' && /^original\/pages-[0-9]+\.json$/.test(item.relativePath))
+        .map(originalArtifact)
+        .sort((a, b) => pageArtifactStart(a) - pageArtifactStart(b));
+      if (pageArtifacts.some((artifact, index) => pageArtifactStart(artifact) !== index * PAGE_GROUP_SIZE))
+        throw documentParseError('DOCUMENT_ORIGINAL_PAGE_CHECKPOINT_INVALID');
+      const currentPages = new Map<number, DocumentPdfExtraction>();
+      let pageCount: number | null = null;
+      let pageStart = 0;
+      const last = pageArtifacts.at(-1);
+      if (last) {
+        const start = pageArtifactStart(last);
+        const chunk: DocumentPdfExtraction = JSON.parse(Buffer.from(await this.store.read(storage, last)).toString('utf8'));
+        assertPageChunk(chunk, start, null);
+        currentPages.set(start, chunk); pageCount = chunk.pageCount; pageStart = start + chunk.pages.length;
+      }
+      let groupsProcessed = 0;
+      // Continue only a bounded amount of ready local work. Every group is saved
+      // before another begins; no PDF/bytes survive this request or lease scope.
+      while (pageCount === null || pageStart < pageCount) {
+        await assertActive();
+        const path = `original/pages-${pageStart}.json`;
+        // Recover a lost upload/progress response at exactly the next path before extracting again.
+        let recovered = await this.store.recover(storage, 'MANIFEST', path);
+        const reusablePage = reusable?.bundle.rawPdfArtifacts.find(item => item.relativePath === path);
+        if (!recovered && reusable && reusablePage) {
+          const bytes = new Uint8Array(await this.store.read(reusable.scope, reusablePage));
+          recovered = { bytes, artifact: await this.store.save(storage, 'MANIFEST', bytes, record, path) };
+        }
+        if (!recovered && !pdfSession) pdfSession = await openDocumentPdfSession({ bytes: original.bytes, assertActive });
+        const chunk: DocumentPdfExtraction = recovered
+          ? JSON.parse(Buffer.from(recovered.bytes).toString('utf8'))
+          : await pdfSession!.extract({ pageStart, pageCount: PAGE_GROUP_SIZE });
+        assertPageChunk(chunk, pageStart, pageCount);
+        const artifact = recovered ? recovered.artifact
+          : await this.store.save(storage, 'MANIFEST', Buffer.from(JSON.stringify(chunk)), record, path);
+        if (recovered) await record(artifact);
+        currentPages.set(pageStart, chunk); pageArtifacts.push(artifact);
+        pageCount = chunk.pageCount; pageStart += chunk.pages.length;
+        groupsProcessed += 1;
+        if (groupsProcessed >= MAX_PAGE_GROUPS_PER_STEP || original.byteLength > MAX_CONTINUATION_SOURCE_BYTES ||
+            performance.now() - executionStartedAt >= STEP_CONTINUATION_BUDGET_MS) break;
+      }
+      // Drop the decoder before final assembly loads the remaining saved groups.
+      if (pdfSession) { await pdfSession.destroy(); pdfSession = undefined; }
+      if (pageStart < pageCount!) return { status: 'STAGING', coverage: {
+        knownPageCount: pageCount,
+        readPageIndexes: Array.from({ length: pageStart }, (_, index) => index),
+        unresolvedRanges: [
+          { reason: 'UNREAD', unitIds: [], pageIndexes: Array.from({ length: pageCount! - pageStart }, (_, index) => pageStart + index),
+            message: 'These pages have not been extracted yet.' },
+          { reason: 'STRUCTURE_UNCERTAIN', unitIds: [], pageIndexes: Array.from({ length: pageStart }, (_, index) => index),
+            message: 'Page text is checkpointed; full document structure and figure coverage have not been assembled.' },
+        ],
+      } };
+      // One final assembly reuses this tick's groups and loads each older group once.
+      const pages: DocumentPdfExtraction['pages'] = [];
+      for (const artifact of pageArtifacts) {
+        await assertActive();
+        const start = pageArtifactStart(artifact);
+        const chunk = currentPages.get(start) ?? JSON.parse(Buffer.from(await this.store.read(storage, artifact)).toString('utf8')) as DocumentPdfExtraction;
+        assertPageChunk(chunk, pages.length, pageCount);
+        pages.push(...chunk.pages);
+      }
+      return { status: 'COMPLETE', extraction: { pageCount: pageCount!, pages }, pageArtifacts };
+    } finally { await pdfSession?.destroy(); }
+  }
+
   private async executeLocalImport(run: DocumentParseRow, context: ReadScope): Promise<void> {
     const scope = { ...context, documentVersionId: run.documentVersionId };
     const fence = await this.leases.claim(scope, run.parseRunId, `local-import:${randomUUID()}`, 120_000);

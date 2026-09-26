@@ -79,4 +79,17 @@ describe('document FileService recovery (isolated storage double)', () => {
     content.set(page.filePath, Buffer.from('{"pages":01}'));
     await expect(store.load(readingScope, manifest, original.binding)).rejects.toThrow('DOCUMENT_ORIGINAL_READBACK_DIGEST_MISMATCH');
   });
+  it.each(['MINERU_LOCAL', 'MINERU_LOCAL_PDFJS'] as const)('preserves legacy MinerU while requiring PDF checkpoints for hybrid producer %s', async kind => {
+    const { store } = setup();
+    const original = originalFixture(); original.producer.kind = kind;
+    const localScope = { ...scope, documentVersionId: original.binding.documentVersionId, parseRunId: original.binding.parseRunId };
+    const rawMarkdown = await store.save(localScope, 'RAW_MARKDOWN', Buffer.from('Raw OCR'), async () => undefined);
+    const rawMineruCandidate = await store.save(localScope, 'MANIFEST', Buffer.from('{"raw":"retained"}'), async () => undefined, 'raw/mineru-candidate.json');
+    const manifest = await store.save(localScope, 'MANIFEST', Buffer.from(JSON.stringify({
+      schemaVersion: 'wiselink.document.bundle.v1', original, rawMarkdown, rawMineruCandidate, rawPdfArtifacts: [],
+    })), async () => undefined);
+    if (kind === 'MINERU_LOCAL') await expect(store.load(localScope, manifest, original.binding)).resolves.toMatchObject({ original: { producer: { kind } } });
+    else await expect(store.load(localScope, manifest, original.binding)).rejects.toThrow('DOCUMENT_ORIGINAL_RAW_PAGES_REQUIRED');
+  });
+
 });

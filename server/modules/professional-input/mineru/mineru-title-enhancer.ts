@@ -227,7 +227,8 @@ function validateLevels(raw: unknown, titles: MineruReadingBlock[]): number[] {
     Object.keys(output).some((key) => key !== 'levels')
   )
     throw new Error('TITLE_OUTPUT_INVALID');
-  let previous = 0;
+  // Markdown supports levels 1..6. Source excerpts may begin below level 1
+  // or omit intermediate headings; preserve those levels without normalization.
   return output.levels.map((value, index) => {
     if (!value || typeof value !== 'object' || Array.isArray(value))
       throw new Error('TITLE_OUTPUT_INVALID');
@@ -238,12 +239,10 @@ function validateLevels(raw: unknown, titles: MineruReadingBlock[]): number[] {
       typeof level !== 'number' ||
       !Number.isInteger(level) ||
       level < 1 ||
-      level > 4 ||
-      level > previous + 1 ||
+      level > 6 ||
       Object.keys(row).some((key) => key !== 'id' && key !== 'level')
     )
       throw new Error('TITLE_OUTPUT_INVALID');
-    previous = level;
     return level;
   });
 }

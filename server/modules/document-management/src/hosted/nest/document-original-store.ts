@@ -106,7 +106,7 @@ export class DocumentOriginalStore {
         throw new Error('DOCUMENT_ORIGINAL_RAW_PAGES_INVALID');
       assertDescriptor(scope, descriptor);
     }
-    if (bundle.original.producer.kind === 'MINERU_LOCAL') {
+    if (bundle.original.producer.kind === 'MINERU_LOCAL' || bundle.original.producer.kind === 'MINERU_LOCAL_PDFJS') {
       const candidate = bundle.rawMineruCandidate;
       if (!candidate || candidate.role !== 'MANIFEST' || candidate.relativePath !== 'raw/mineru-candidate.json' || candidate.readback !== 'VERIFIED')
         throw new Error('DOCUMENT_ORIGINAL_MINERU_CANDIDATE_REQUIRED');

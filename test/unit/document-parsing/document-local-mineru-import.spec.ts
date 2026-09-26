@@ -1,3 +1,5 @@
+import { openDocumentPdfSession } from '../../../server/modules/document-management/src/hosted/nest/document-original-pdf';
+jest.mock('../../../server/modules/document-management/src/hosted/nest/document-original-pdf', () => ({ openDocumentPdfSession: jest.fn() }));
 import { createHash } from 'node:crypto';
 import { DocumentParsingHostedService } from '../../../server/modules/document-management/src/hosted/nest/document-parsing-hosted.service';
 import { readLocalMineruCandidate } from '../../../server/modules/document-management/src/hosted/nest/document-mineru-local-candidate';
@@ -14,6 +16,9 @@ const digest = (bytes: Uint8Array) => createHash('sha256').update(bytes).digest(
 const context = { actorUserId: 'actor', tenantId: 'tenant', roles: [], appId: 'app_17bzc551rsg', env: 'production' };
 const request = { mode: 'LOCAL_MINERU_IMPORT', selection: { bucketId: 'bucket', filePath: '/candidate.json' }, requestId: 'local-request', expectedPublishedRevision: 0 };
 function fixture() {
+  const extract = jest.fn(async () => ({ pageCount: 1, pages: [{ pageIndex: 0, text: 'Exact original text.', width: 600, height: 800, rotation: 0,
+    items: [{ text: 'Exact original text.', transform: [10, 0, 0, 10, 10, 770], width: 100, height: 10, hasEOL: true }] }] }));
+  jest.mocked(openDocumentPdfSession).mockImplementation(async () => ({ extract, destroy: jest.fn(async () => undefined) }));
   const bytes = encode(candidate());
   const binding = { documentVersionId: 'DV', documentId: 'DOC', familyId: 'FAM', sourceArtifactId: 'ART', pdfSha256: 'a'.repeat(64), byteLength: 1 };
   const selection = { bucketId: 'bucket', filePath: 'candidate.json', providerObjectId: 'candidate-object', sha256: digest(bytes), byteLength: bytes.length, bytes, readbackVerified: true };
@@ -46,7 +51,7 @@ function fixture() {
   const service = new DocumentParsingHostedService({ from: () => scoped } as never, { readMetadataSource: async () => source } as never,
     repository as never, plugins as never, leases as never, authorizer, settings as never);
   jest.spyOn(authority, 'mintDocumentUploadAuthority').mockReturnValue({} as never);
-  return { service, repository, authorizer, plugins, leases, scoped, content, run, selection, readSelection, settings };
+  return { service, repository, authorizer, plugins, leases, scoped, content, run, selection, readSelection, settings, extract };
 }
 afterEach(() => jest.restoreAllMocks());
 it('publishes exact local original without calling exhausted plugin, then replays without duplication', async () => {
@@ -55,7 +60,7 @@ it('publishes exact local original without calling exhausted plugin, then replay
   expect(f.authorizer.assertCanIngest).toHaveBeenCalledTimes(2);
   expect(f.plugins.parseOriginal).not.toHaveBeenCalled();
   expect(f.run.sourceBinding.parserInput).toMatchObject({ providerObjectId: 'candidate-object', sha256: f.selection.sha256 });
-  expect(await f.service.read('DV', 'PR', context)).toMatchObject({ parser: { name: 'MinerU', version: '3.4.5', backend: 'pipeline' }, original: { producer: { kind: 'MINERU_LOCAL' } } });
+  expect(await f.service.read('DV', 'PR', context)).toMatchObject({ parser: { name: 'MinerU', version: '3.4.5', backend: 'pipeline' }, original: { producer: { kind: 'MINERU_LOCAL_PDFJS' } } });
   await f.service.start('DV', request, context);
   expect(f.repository.reserve).toHaveBeenCalledTimes(1); expect(f.repository.publish).toHaveBeenCalledTimes(1);
 });
@@ -98,7 +103,8 @@ it('recovers a lost upload receipt on the same run despite recorded transient er
   expect(f.run.errorCode).toBe('CONSTRUCTED_UPLOAD_RESPONSE_LOST');
   expect(await f.service.start('DV', request, context)).toMatchObject({ status: 'PUBLISHED' });
   expect(f.repository.reserve).toHaveBeenCalledTimes(1);
-  expect(f.scoped.upload).toHaveBeenCalledTimes(3);
+  expect(f.scoped.upload).toHaveBeenCalledTimes(4);
+  expect(f.extract).toHaveBeenCalledTimes(1);
 });
 it('captures settings once; disabling later blocks new imports while exact published replay remains readable', async () => {
   const f = fixture(); await f.service.start('DV', request, context);

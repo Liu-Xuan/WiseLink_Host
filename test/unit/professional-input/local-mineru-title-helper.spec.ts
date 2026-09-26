@@ -18,6 +18,8 @@ describe('local title-only proxy helper (no network)', () => {
     const body = JSON.parse(String(options?.body));
     expect(JSON.parse(body.messages[1].content)).toEqual(titles);
     expect(body.model).toBe(config.model);
+    expect(body.messages[0].content).toContain('integers 1 through 6');
+    expect(body.messages[0].content).not.toContain('First level is 1');
   });
   it('rejects disabled or changed provider configuration before making a request', () => {
     expect(() => localMineruTitleCall({ ...config, enable: false })).toThrow('DISABLED');
