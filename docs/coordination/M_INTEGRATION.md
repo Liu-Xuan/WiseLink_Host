@@ -1,5 +1,21 @@
 # M 主控集成交接
 
+## 2026-09-27 C166：新任务受理与空结果表达
+
+刘轩本人在 17b 资料库的“选择已上传 PDF 并新建工程事项”入口，选择名称为 `260c665aa340752898c0958c7015df5fa8f6f5ead9317d0b37908af6c30d53b5.pdf` 的已有对象与 M3 Probe Large，建立 `WI-d368f79e-4a5a-4615-ac00-7594b3ee5c53`。Host 将其识别为 787-FTD-46-26002；该文件名与此前两页原件的已核验 SHA256 一致，但本轮尚未独立读回对象字节哈希，不能仅凭文件名断定内容相同。未再次上传本机 PDF。创建后本人逐项页读回：全文翻译等待中、适用性匹配等待补充、JobAid 等待中、整体综合等待中，尚无候选意见与已保存问题分析。17c 操作员先核对确切可领取范围，再决定是否可做单次受控消费；未启用无人值守定时任务。
+
+空任务的概览页此前固定写“当前评估任务 · 已保存结果”，并提供“重新生成工程摘要”按钮，易误导工程师以为已有结论。提交 `cf8b51ebdb34caf410a547df7b83add3ffb96893`（父 `eb314b20d7f6aa0fc7256e5371093ae11d5e9112`）按实际快览结果显示“等待分析结果”或“已保存工作”，无结果时隐藏重生按钮，并将范围说明改为不预设已存在结论。已快进同步 origin 同名开发分支；前端类型检查、定向 ESLint 与 precommit 通过。17b release `7689941438373596092` 最终 `finished`、准确提交匹配、`error_logs=[]`。刘轩本人从新任务概览读回“当前评估任务 · 等待分析结果”，页面不再显示重生按钮；没有把空结果误称成功。
+
+## 2026-09-27 C165：短原文完整交付与 JobAid 读取修订
+
+在同一两页 PDF 上定位到默认读取机制：Host 已登记全部原文证据，旧 JobAid 初始任务却只交付目录；17c 每次最多读 4 个引用并先保存，模型仍可在未覆盖相关正文时结束。C165 对确切文档版本及已核验 parseRun 的当前原文，只有在全部引用不超过 64 条且完整模型证据不超过 64 KiB 时，才一次性交付全部正文；超限则整体保持原按需读取，不把一部分误称完整。Skill 使用已交付正文而不重复调用读取，并明确独立日期、目标里程碑与 TBD 不推出先后或依赖。已封存任务仍按原输入读取，不改写历史成果。
+
+提交 `eb314b20d7f6aa0fc7256e5371093ae11d5e9112`（父项 `26ab5601b92779c2ca963c1f29ecdcb00a3c794c`）已快进同步 `origin/codex/wl-c125-auto-engineering-flow`；17b release `7689929985133661162` 最终 `finished`、准确提交匹配、`error_logs=[]`。Skill 包 r09.c165 为 61 文件、507208 bytes、SHA256 `5450827efd82f24ad0554ca8d847cabdd1c05dea1d283d80bac19e8e952b62b2`；17c 官方 `openclaw skills install` 安装读回版本 r09.c165、来源提交准确，61/61 文件 byteLength/SHA256 匹配，`skills info` 为 Ready。安装器另外生成 `.openclaw/source-origin.json` 元数据。安装前后 16 个 cron 均 disabled、running0、`nextWakeAtMs=null`；调度服务 enabled 不代表任一任务启用。本批没有运行消费者或业务任务。Host 定向 Jest 35/35、server TypeScript、定向 ESLint、Skill 552/552、打包检查与 ZIP 完整性通过。独立只读审查未见授权或版本边界放宽。真实新任务的模型行为尚未验证，本次发布没有自动更正旧 JobAid rev9。
+
+工程师本人在 17b 线上逐项评估页再次读到旧 rev9 的无据 SB 时序断言；页面仍显示候选当前有效。随后逐页核对本次已发布的两页 PDF 原件：第 1 页 Applicability 明写 `All 787 Aircraft`，第 2 页 Final Action、Milestones、Related Categories 都有完整正文；Milestones 只有 Production Incorporation 3Q 2027 (Target) 与 Service Bulletin Available (TBD) 两项，未给两者先后。原件没有独立的 Compliance Interval 或 References 段。旧 rev9 多处称已存在的完整段落“未读”，还预设原件并不存在的后续里程碑与章节；把 `Service Bulletin Available: (TBD)` 解作“SB 尚未颁发”也超出该字段字面证据。旧结果须建立可追溯的后继修订，按确切原文校正范围、时序和未知，再按新 JobAid 修订更新 Overall。按当前代码，`initial-analysis/continue` 会对已成功的 JobAid 阶段拒绝并给出 `INITIAL_CONTINUATION_STAGE_ALREADY_COMPLETE`；复核入口则要求同范围已回答讨论。不能通过重命名原任务、静默覆盖 rev9 或修改来源版本绕过该合同。
+
+本人资料库文档行仍写“该版本尚无已保存解读”，同时显示 1 个评估任务；这反映文档级解读为空而 WorkItem 级 JobAid/Overall 已保存，不能误报为分析结果不存在。后续应让资料库默认快览能明确指向对应工作结论并保留层级，不把 WorkItem 评估冒充独立文档解读。
+
 ## 2026-09-26 C164：JobAid 时点断言与原文复核
 
 刘轩本人在受控 PDF 第 2 页读到 `Production Incorporation: 3Q 2027 (Target)` 与 `Service Bulletin Available: (TBD)`，原文没有给出两者的先后关系。当前 JobAid rev9 的 `AID-OBEDS-TIMELINE` 正文却称 SB 颁发在 Production Incorporation 之后或同一时点，同时该 issue 的“仍需确认”又要求核查两者关系，属于同一保存结果内部的依据矛盾。不能把这条时序当成工程事实，也不能靠修改图谱或 Overall 摘要掩盖正文问题。
