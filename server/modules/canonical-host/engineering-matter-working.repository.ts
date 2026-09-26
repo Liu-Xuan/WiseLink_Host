@@ -222,13 +222,16 @@ export class EngineeringMatterWorkingRepository {
   ): Promise<T> {
     if (!/^[A-Za-z0-9_-]{1,255}$/u.test(actorUserId))
       throw browserAuthorizationUnavailable();
+    const roleSchema = this.databaseConfig.roleSchema;
+    if (!roleSchema || !/^[A-Za-z0-9_]{1,255}$/u.test(roleSchema))
+      throw browserAuthorizationUnavailable();
     return this.db.transaction(async (transaction) => {
       const database = transaction as PostgresJsDatabase;
       const [identity] = await database.execute<{
         isAuthenticated: boolean;
         isActor: boolean;
       }>(sql`
-        SELECT current_user = 'authenticated' AS "isAuthenticated",
+        SELECT current_user = ${`authenticated_${roleSchema}`} AS "isAuthenticated",
           current_setting('app.user_id', true) = ${actorUserId} AS "isActor"`);
       if (identity?.isAuthenticated !== true || identity.isActor !== true)
         throw browserAuthorizationUnavailable();

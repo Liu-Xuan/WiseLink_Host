@@ -1,8 +1,14 @@
 # M 主控集成交接
 
-## 2026-09-26 工程事项上传的解析后关联故障接续（待发布）
+## 2026-09-26 真实 PDF 受理揭示浏览器 SQL 角色误拒（修复待发布）
 
-在已授权的 OAuth 工程事项上传路径中，`runPdf` 成功后才关联 Matter。原实现若关联阶段因临时存储/服务错误失败，只向页面返回笼统“创建失败”，没有说明 WorkItem 解析结果已经保存。现在将该阶段的非 4xx 故障标记为 `MATTER_INTAKE_PENDING`，页面说明事项关联待接续并保留原选择；同一请求令牌重试复用原 WorkItem，再做原授权与来源核验。4xx 授权、来源及冲突拒绝仍原样返回，不归类为临时故障；浏览器事项身份核验的 403 也有准确提示。定向 Jest 43/43、前后端 TypeScript、定向 ESLint 和差异检查通过。尚未发布，也未以模拟故障声称生产恢复已验证。
+通过妙搭官方文件存储以刘轩用户身份放入原始两页 `787-FTD-46-26002_Doc_02092026.pdf`，应用路径 `/1877351719846947.pdf`，57,434 字节；下载读回 SHA-256 `260c665aa340752898c0958c7015df5fa8f6f5ead9317d0b37908af6c30d53b5` 与本地原件一致。登录的 17b 工程评估页面从“选择已上传 PDF”实际选中并提交；未使用浏览器本地文件选择，因此本地上传入口仍未验证。线上提交已持久化 `document_version_3f1bf2fb1736c0e12e5bae2a` 和 `WI-4db598a0-33b8-4abd-a64d-df2aac9f29c5`，修订 3 为 `CANDIDATE_READBACK_VERIFIED`、失败码空，逐任务授权 `WAITING`、租约代次 0。页面返回 `ENGINEERING_MATTER_BROWSER_AUTHORIZATION_UNAVAILABLE`，同一请求仍留在页面待接续，没有重新提交或删除已保存工作。
+
+线上 trace `e524bd0810867a6bb5b123b7fd770f3d` 定位到 Matter 浏览器事务内的 SQL 身份比较。核对已安装的妙搭官方 `SqlExecutionContextMiddleware` 源码：登录用户使用确切角色 `authenticated_${roleSchema}`，而 C150 误写为字面值 `authenticated`；旧隔离测试也只模拟该字面值。修复从已有 `DATAPAAS_CONFIG.roleSchema` 构造并精确比较该角色，同时继续核对 `app.user_id=actorUserId`，不允许服务角色、无 schema、另一 actor 或来源权限不足者进入。隔离 PG16 的真实 Document/WorkItem 关联、同请求重放、跨用户、跨租户、错版本、无 schema 角色与服务角色拒绝已通过（定向 1/1）；server TypeScript、定向 ESLint、差异检查通过。尚需发布此修复并在页面用原请求重试，确认已有 WorkItem 不重复、Matter 链接和工程师读回。
+
+## 2026-09-26 工程事项上传的解析后关联故障接续（技术发布）
+
+在已授权的 OAuth 工程事项上传路径中，`runPdf` 成功后才关联 Matter。原实现若关联阶段因临时存储/服务错误失败，只向页面返回笼统“创建失败”，没有说明 WorkItem 解析结果已经保存。现在将该阶段的非 4xx 故障标记为 `MATTER_INTAKE_PENDING`，页面说明事项关联待接续并保留原选择；同一请求令牌重试复用原 WorkItem，再做原授权与来源核验。4xx 授权、来源及冲突拒绝仍原样返回，不归类为临时故障；浏览器事项身份核验的 403 也有准确提示。定向 Jest 43/43、前后端 TypeScript、定向 ESLint 和差异检查通过。代码提交 `dc94e48d5434cec59cebfc7f2548b24ff362ae73`，并正常合并当前妙搭 `main` 至 `4d04a4297efb38aa8b3c84a02301b12aa627d753`；origin 同名分支已读回该 SHA。17b release `7689636288839977922` 已读回 `finished`、确切部署提交 `4d04a4297efb38aa8b3c84a02301b12aa627d753`、`error_logs=[]`。这证明技术发布；真实上传仍受浏览器文件选择权限限制，生产关联故障接续与完整自动闭环均未验证。
 
 ## 2026-09-26 C150 浏览器事项归集已技术发布，真实上传待接续
 

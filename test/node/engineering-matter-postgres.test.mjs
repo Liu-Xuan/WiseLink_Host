@@ -400,8 +400,8 @@ test(
       await resetDatabase(sql);
       await seedRealDocumentWorkItems(sql, fixtures);
       await sql`UPDATE dm_publication_family SET canonical_identity_key = 'tenant:tenant-A:family:' || canonical_identity_key`;
-      owner = await reserveActorService('actor-A');
-      outsider = await reserveActorService('actor-B');
+      owner = await reserveActorService('actor-A', 'tenant-A', 'authenticated_wiselink_r10_test');
+      outsider = await reserveActorService('actor-B', 'tenant-A', 'authenticated_wiselink_r10_test');
       const source = {
         tenantId: 'tenant-A',
         actorUserId: 'actor-A',
@@ -444,6 +444,16 @@ test(
       await assert.rejects(
         owner.service.organizeDocumentIntake({ ...source, tenantId: 'tenant-B' }),
       );
+      try {
+        await owner.database.execute(drizzleSql`SET ROLE authenticated`);
+        await assert.rejects(
+          owner.service.organizeDocumentIntake(source),
+          /ENGINEERING_MATTER_BROWSER_AUTHORIZATION_UNAVAILABLE/u,
+          'the unscoped authenticated role cannot impersonate this app role',
+        );
+      } finally {
+        await owner.database.execute(drizzleSql`SET ROLE authenticated_wiselink_r10_test`);
+      }
       try {
         await owner.database.execute(
           drizzleSql`SET ROLE service_role_wiselink_r10_test`,
@@ -1423,6 +1433,8 @@ async function resetDatabase(sql) {
     BEGIN
       IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'authenticated')
       THEN CREATE ROLE authenticated NOLOGIN; END IF;
+      IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'authenticated_wiselink_r10_test')
+      THEN CREATE ROLE authenticated_wiselink_r10_test NOLOGIN IN ROLE authenticated; END IF;
       IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'service_role')
       THEN CREATE ROLE service_role NOLOGIN; END IF;
       IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'service_role_wiselink_r10_test')
@@ -1995,10 +2007,10 @@ async function profileSavedRead(owner, name, operation) {
   return result;
 }
 
-async function reserveActorService(actorId, tenantId = 'tenant-A') {
+async function reserveActorService(actorId, tenantId = 'tenant-A', databaseRole = 'authenticated') {
   const connection = postgres(databaseUrl, { max: 1, onnotice: () => {} });
   try {
-    await connection.unsafe('SET ROLE authenticated');
+    await connection.unsafe(`SET ROLE ${databaseRole}`);
     await connection`SELECT set_config('app.user_id', ${actorId}, false)`;
     const queryMetrics = { noticeSaveQueries: 0, queries: [] };
     const db = drizzle(connection, { logger: { logQuery(query) {
