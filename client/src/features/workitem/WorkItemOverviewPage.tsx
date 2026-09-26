@@ -234,19 +234,21 @@ export default function WorkItemOverviewPage() {
       <header className="flex flex-wrap items-center justify-between gap-4">
         <div>
           <p className="text-xs text-muted-foreground">
-            当前评估任务 · 已保存结果
+            当前评估任务 · {visibleView.result ? '已保存工作' : '等待分析结果'}
           </p>
           <h1 className="text-2xl font-semibold">
             {visibleView.document.documentCode || '文档编号待核'}
           </h1>
         </div>
-        <Button
-          variant="outline"
-          disabled={loading || overallRegeneration.disabled}
-          onClick={overallRegeneration.run}
-        >
-          {overallRegeneration.label}
-        </Button>
+        {visibleView.result ? (
+          <Button
+            variant="outline"
+            disabled={loading || overallRegeneration.disabled}
+            onClick={overallRegeneration.run}
+          >
+            {overallRegeneration.label}
+          </Button>
+        ) : null}
       </header>
       {loading ? (
         <p className="wl-projection-refresh" role="status">
@@ -295,7 +297,7 @@ export default function WorkItemOverviewPage() {
             </li>
           </ul>
           <p className="wl-side-empty">
-            当前结果只属于此评估任务。相同文档的其他任务、不同对象和跨资料事项的认识分别保存。
+            此任务的分析工作单独保存；相同文档的其他任务、不同对象和跨资料事项的认识分别保存。
           </p>
           <TaskMatterActions
             workItemId={workItemId}
