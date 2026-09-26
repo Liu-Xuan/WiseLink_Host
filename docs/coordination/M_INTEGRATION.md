@@ -10,9 +10,15 @@ Host 提交 `9654f1c242d41fa950b07fa71fc9bb9dde1b59ae`（父提交 `76077dcae837
 
 用户刘轩在 C153 发布后通过正常资料库进入新事项 `MAT-83ff4ae5-d576-4cab-b8c5-96b981072bbb`，读到 787-FTD-46-26002、“尚未形成事项综合认识”、工作修订 0、无关联自动执行轮，关联材料明确尚未纳入本轮核查。线上只读查询未找到当前 Matter 成员与已保存评估的匹配行，因此新成员评估面板的正向正文仅有本地 DOM 证据，不能声明生产正向样本通过。再经应用内检索旧 WorkItem `WI-a5ffd931-840b-40eb-b534-c05777b30706`，准确 `JAWR-06d64556-29a3-4782-858f-5334617d9bbf` / 修订 18 的标题和保存正文摘要仍可读；没有重跑或制造数据关联。
 
-C153 Skill 已打包：61 文件、504496 bytes、SHA256 `70f9004b1ad1fbcf9914307e7cacf9babbcbfb2652f5b99c159f8a290fccef0b`，来源同一 `9654f1c`，本机路径 `/private/tmp/wl-c153-publish/wiselink-research-and-synthesize-r09.c153.zip`，完整 package validation 通过。17c 页面显示额度耗尽及“系统启动失败”；一次官方“重试”后仍启动失败，终端无 shell，未重复重启、未上传或安装本包。最后已验证安装仍是 C152，最后官方 cron 读回 16 项停用；本轮无法重新取得命令级进程/cron 状态，不以启动失败推断无在途消费者。
+C153 Skill 已安装。包为 61 文件、504496 bytes、SHA256 `70f9004b1ad1fbcf9914307e7cacf9babbcbfb2652f5b99c159f8a290fccef0b`，来源同一 `9654f1c`，本机路径 `/private/tmp/wl-c153-publish/wiselink-research-and-synthesize-r09.c153.zip`，17c 私有存储路径 `/1877357207665668.zip`。安装前已核对真实 shell、Gateway Online、16 项 cron 全部 disabled/runningAtMs=null 和消费子进程 0；C152 备份于 `/home/gem/workspace/agent/tmp/c153-install/backup-c152`，随后用官方 `openclaw skills install` 替换。安装目录 `/home/gem/workspace/agent/workspace/skills/wiselink-research-and-synthesize` 的 61 个包内文件逐 SHA 完全一致、无缺失或内容差异；另有官方安装器生成的 `.openclaw/source-origin.json`，作为安装元数据保留。版本按 SKILL 正文及 validator 导出核对为 r09.c153；原合同没有 frontmatter version 字段，不额外要求该字段。
 
-回退边界：Host 可从已核验 C152 树建立精确恢复提交后经原发布路径回退（此轮未执行）；17c 尚未替换 Skill，无需回退安装。后续优先在平台恢复后核对在途、安装并读回 C153，再从 Host 保存状态接续。当前真实原文仍受官方额度阻断，备用导入/标题辅助/设置权限保持未上线；全自动闭环尚未验收。
+本机完整 package validation 通过。云端新增全量测试为 545/546，唯一失败是原有 45ms deadline/5ms heartbeat 用例在 `ACTIVITY_DEADLINE_EXCEEDED` 与 `ACTIVITY_LEASE_LOST` 两个终止之间的毫秒边界竞争；相应产品脚本与 C152 完全相同，两分支均 abort。仅重跑该用例 1/1 通过，未修改包，不宣称第一次全量测试全部通过。以后的同包安装复用打包验证，云端重点核对实际部署文件及运行状态，避免无关全量测试循环。
+
+安装后仅执行一次获准 `--auto-queue` 受控 tick，准确命中 `WI-4db598a0-33b8-4abd-a64d-df2aac9f29c5`，回包 `REQUIRES_ATTENTION / DOCUMENT_PARSE_FAILED`，队列租约代次由 1 升至 2；没有重试或 BLOCK，回包未提供模型调用数。随后官方读回 16 个 cron 全停用、运行中 0、消费子进程 0。Host 10:50:53 +08 只读复核：原 `PRUN-dbdb8cfd-0af4-4b3f-a9fa-cf2e2c7f230a` / revision 1 仍 STAGING、0 产物、原错误码不变、deadline=10:11:59.94 +08；队列 LEASED/gen2、blocked_code=null。没有新建或删除业务结果。
+
+代码路径已定位：`document-work-runtime.service.ts` 对已有 errorCode/过期 deadline 直接返回 attention，原错误优先；本次未进入 STEP/插件调用，所以不能据此判断当前官方解析额度已恢复。底层 reserve 已有同 actor 过期收尾与新修订预约，但同 requestId 提前重放，自动准备固定 requestId 因而不能进入后继。后续最小方向是复用既有事务及来源/代次核验，以前驱 run 派生稳定后继请求并保存旧诊断；必须明确恢复资格，已知 quota 仍未解除时不得每次到期自动新建重试。此后继修复尚未实施，不用改旧 run 或重传原件绕过。
+
+回退边界：Host 可从已核验 C152 树建立精确恢复提交后经原发布路径回退；Skill 有上述 C152 原目录备份，恢复前仍需核对无在途。本轮未执行回退、未启用定时消费。备用导入/标题辅助/设置权限继续按用户“暂不增加权限，保留实现”保持未上线，全自动闭环尚未验收。
 
 ## 2026-09-26 新上传自动原文准备缺口（C152 待发布）
 
