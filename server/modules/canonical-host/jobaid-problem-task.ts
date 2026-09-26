@@ -33,6 +33,28 @@ export interface JobAidSourceBinding {
   artifactRef: string;
 }
 
+// A short, verified primary original is cheaper and safer to deliver as one
+// complete reading scope than to make the model choose a few catalog entries.
+// Large originals keep the existing on-demand source reader.
+const INLINE_PRIMARY_ORIGINAL_MAX_REFS = 64;
+const INLINE_PRIMARY_ORIGINAL_MAX_BYTES = 64 * 1024;
+
+function inlinePrimaryOriginalRefs(
+  sourceCatalog: AssessmentEvidence[],
+  documentVersionId: string,
+  parseRunId: string | undefined,
+): string[] {
+  if (!parseRunId) return [];
+  const primary = sourceCatalog.filter(item => item.kind === 'DOCUMENT_PASSAGE' &&
+    item.documentVersionId === documentVersionId &&
+    item.versionLabel === parseRunId &&
+    item.evidenceRef.startsWith(`DOCUMENT_ORIGINAL:${documentVersionId}:${parseRunId}:`));
+  if (!primary.length || primary.length > INLINE_PRIMARY_ORIGINAL_MAX_REFS ||
+    Buffer.byteLength(JSON.stringify(overallModelEvidenceRegistry(primary))) > INLINE_PRIMARY_ORIGINAL_MAX_BYTES)
+    return [];
+  return primary.map(item => item.evidenceRef);
+}
+
 export function jobAidSourceFileReference(item: CanonicalWorkItemProjection) {
   const sha256 = canonicalHostBareSha256(item.source.sourceFileSha256);
   if (!item.source.sourceArtifactId || !sha256)
@@ -189,6 +211,7 @@ export function buildJobAidProblemTask(input: {
   permissionSnapshotVersion: string;
   purpose: JobAidProblemModelInput['purpose'];
   sourceCatalog: AssessmentEvidence[];
+  originalParseRunId?: string;
   sourceBindings: JobAidSourceBinding[];
   common: CanonicalCommonAssessmentContext;
   previousWork: JobAidWorkRevision | null;
@@ -216,6 +239,8 @@ export function buildJobAidProblemTask(input: {
   const initiallyDeliveredRefs = [
     ...new Set([
       ...JOBAID_CORE_METHOD_REFS,
+      ...inlinePrimaryOriginalRefs(input.sourceCatalog, input.workItem.source.documentVersionId,
+        input.originalParseRunId),
       ...catalog
         .filter(
           (item) =>
