@@ -407,13 +407,31 @@ test(
         actorUserId: 'actor-A',
         documentVersionId: fixtures.ftd.documentVersionId,
       };
-      assert.equal(
-        (await owner.service.organizeDocumentIntake(source)).created,
-        true,
-      );
+      const created = await owner.service.organizeDocumentIntake(source);
+      assert.equal(created.created, true);
       assert.equal(
         (await owner.service.organizeDocumentIntake(source)).created,
         false,
+      );
+      const intake = {
+        actor: owner.actor,
+        documentVersionId: fixtures.ftd.documentVersionId,
+        workItemId: fixtures.ftd.workItemId,
+      };
+      assert.equal((await owner.service.organizeWorkItemIntake(intake)).matterId, created.matterId);
+      assert.equal((await owner.service.organizeWorkItemIntake(intake)).matterId, created.matterId);
+      const [linkCount] = await sql`SELECT count(*)::int AS count
+        FROM engineering_matter_revision_work_item
+        WHERE matter_id = ${created.matterId} AND work_item_id = ${fixtures.ftd.workItemId}`;
+      assert.equal(linkCount.count, 1, 'browser WorkItem replay keeps one family link');
+      await assert.rejects(
+        outsider.service.organizeWorkItemIntake({ ...intake, actor: outsider.actor }),
+        'another user cannot link the owner WorkItem',
+      );
+      await assert.rejects(
+        owner.service.organizeWorkItemIntake({ ...intake, documentVersionId: fixtures.sb.documentVersionId }),
+        { code: 'ENGINEERING_MATTER_WORK_ITEM_DOCUMENT_CONFLICT' },
+        'the WorkItem cannot be attached under a different source version',
       );
       await assert.rejects(
         outsider.service.organizeDocumentIntake({ ...source, actorUserId: 'actor-B' }),
