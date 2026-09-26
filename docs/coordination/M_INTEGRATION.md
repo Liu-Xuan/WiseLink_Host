@@ -18,9 +18,9 @@ C159实现提交 `80ee9624d`（父 `0cd03f6c5`），普通合入平台 main 后�
 
 刘轩本人正式阅读页只点击一次该入口，Host创建rev3 `PRUN-03d3cb61-bebc-4122-90ff-a8fd266ff0f0`，mode=LOCAL_MINERU_WORKER，冻结settings revision0/local=true/title=false，deadline13:47:47.562+08；原official rev2在同一正常受理事务收尾FAILED并保留quota/0产物，未改其输入/错误。页面准确显示等待本机解析。
 
-真实worker随后的单次领取仍返回IDLE。只读确认新run无lease（generation0）、无error、无产物，服务租户63849986及原主体配置正确。定位0038既有RLS要求actor-owned，而新列表/按ID查询在进入withActorScope之前执行，导致服务上下文看不到run；早期空队列IDLE证据只能证明入口，不证明有效任务发现。正在改为通过现有逐任务授权确定精确actor/文档后进入既有SQL上下文，不放宽RLS或固定样本；补真实非owner服务角色PG测试。当前尚无候选上传或解析成功，17c恢复控制也尚未完成新鲜进程快照。
+真实worker随后的单次领取仍返回IDLE。只读确认新run无lease（generation0）、无error、无产物，服务租户63849986及原主体配置正确。定位0038既有RLS要求actor-owned，而新列表/按ID查询在进入withActorScope之前执行，导致服务上下文看不到run；早期空队列IDLE证据只能证明入口，不证明有效任务发现。随后已修复为通过现有逐任务授权确定精确actor/文档后进入既有SQL上下文，不放宽RLS或固定样本，并补真实非owner服务角色PG测试。当前尚无候选上传或解析成功，17c恢复控制也尚未完成新鲜进程快照。
 
-领取修复已实现：先从0062既有服务可读委托发现，再进入对应actor查同WI/DV/来源；WorkItem自身也有actor RLS，因此其JOIN留在actor上下文内。本机lease owner含父WI与generation，旧token不能换绑新代次。浏览器run的可信委托带入每次事务，持久已有委托仍严格相等。独立真实PG使用nonowner/NOSUPERUSER/NOBYPASSRLS服务角色，实际0019/0038/0044/0062-64策略下1/1通过、零跳过；无actor查不到WorkItem/parse，授权后CLAIMED，跨actor/source/父代次与撤权零写入均验证。API32/32、解析及runtime55/55与server类型通过，无生产RLS修改。该修复待发布。
+领取修复已实现：先从0062既有服务可读委托发现，再进入对应actor查同WI/DV/来源；WorkItem自身也有actor RLS，因此其JOIN留在actor上下文内。本机lease owner含父WI与generation，旧token不能换绑新代次。浏览器run的可信委托带入每次事务，持久已有委托仍严格相等。独立真实PG使用nonowner/NOSUPERUSER/NOBYPASSRLS服务角色，实际0019/0038/0044/0062-64策略下1/1通过、零跳过；无actor查不到WorkItem/parse，授权后CLAIMED，跨actor/source/父代次与撤权零写入均验证。API32/32、解析及runtime55/55与server类型通过，无生产RLS修改。修复提交 `77a843ebb` 正常合入平台 main 后为 `8577beb91a81f8556b38c0a50d07f4854ec78ea3`，两树相同、origin 同名分支已读回。17b release `7689708581558242273` 已 finished，commit_id 精确匹配、error_logs=[]。
 
 ## 历史：2026-09-26 C158 授权范围更正与当前阻断分离
 
