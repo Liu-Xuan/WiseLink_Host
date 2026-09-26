@@ -441,3 +441,48 @@ it('shows waiting for the local parser without implying saved or running work', 
   expect(button?.disabled).toBe(true);
   expect(mockStart).not.toHaveBeenCalled();
 });
+
+
+it.each(['FAILED', 'STAGING'])('explicit current-settings restart creates a stable new request for %s and keeps saved reading', async status => {
+  mockStatus.mockResolvedValue({ ...statusPayload(), latestRun: {
+    parseRunId: 'PRUN-00000000-0000-0000-0000-000000000018', status,
+    deadlineAt: '2000-01-01T00:00:00Z', errorCode: 'DOCUMENT_PLUGIN_QUOTA_EXHAUSTED',
+  } });
+  mockStart.mockRejectedValueOnce(new Error('响应丢失')).mockResolvedValueOnce({});
+  await mount();
+  const restart = [...container.querySelectorAll('button')].find(item => item.textContent === '按当前设置重新解析');
+  expect(restart?.closest('details')).not.toBeNull();
+  expect(mockStart).not.toHaveBeenCalled();
+  await act(async () => restart?.click());
+  const first = mockStart.mock.calls[0];
+  expect(first).toEqual(['DV1', { requestId: expect.stringMatching(/^parse-[a-f0-9-]+$/), expectedPublishedRevision: 3 }]);
+  expect(first[1].requestId).not.toMatch(/^parse-resume-/);
+  expect([...container.querySelectorAll('button')].find(item => item.textContent === '重新解析')?.disabled).toBe(true);
+  await act(async () => [...container.querySelectorAll('button')].find(item => item.textContent === '核对当前设置请求')?.click());
+  expect(mockStart.mock.calls[1]).toEqual(first);
+  expect(container.textContent).toContain('constructed');
+});
+
+it('hides current-settings restart for published or still-active runs', async () => {
+  await mount();
+  expect(container.textContent).not.toContain('按当前设置重新解析');
+  mockStatus.mockResolvedValue({ ...statusPayload(), latestRun: { parseRunId: 'ACTIVE', status: 'STAGING', deadlineAt: '2030-01-01T00:00:00Z' } });
+  await act(async () => [...container.querySelectorAll('button')].find(item => item.textContent === '刷新')?.click());
+  expect(container.textContent).not.toContain('按当前设置重新解析');
+});
+
+it('clears the pending current-settings request on session change and ignores its late rejection', async () => {
+  mockStatus.mockResolvedValue({ ...statusPayload(), latestRun: { parseRunId: 'FAILED', status: 'FAILED', deadlineAt: '2000-01-01T00:00:00Z' } });
+  let rejectStart!: (error: Error) => void;
+  mockStart.mockImplementationOnce(() => new Promise((_resolve, reject) => { rejectStart = reject; }));
+  await mount();
+  await act(async () => [...container.querySelectorAll('button')].find(item => item.textContent === '按当前设置重新解析')?.click());
+  const oldRequest = mockStart.mock.calls[0][1].requestId;
+  await act(async () => mockSessionCallbacks[0]!());
+  await act(async () => rejectStart(new Error('OLD_SESSION_RESPONSE')));
+  expect(container.textContent).not.toContain('OLD_SESSION_RESPONSE');
+  const restart = [...container.querySelectorAll('button')].find(item => item.textContent === '按当前设置重新解析');
+  expect(restart?.disabled).toBe(false);
+  await act(async () => restart?.click());
+  expect(mockStart.mock.calls[1][1].requestId).not.toBe(oldRequest);
+});

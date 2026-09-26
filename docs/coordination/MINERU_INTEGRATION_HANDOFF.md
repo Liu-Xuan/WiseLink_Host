@@ -1,6 +1,27 @@
 # 给主控：MinerU 实际接线与联合测试交接
 
-## 2026-09-26 现行定位：旧路径可复用范围
+## 2026-09-26 C159 现行定位：默认本机 MinerU，仅出站 worker 已实现
+
+当前以本节、`WISELINK_R10_CURRENT.md` 和 `M_INTEGRATION.md` 顶部为准。用户已明确默认本机 MinerU，并批准仅出站 worker、四条精确 POST 路由专用密钥及受控发布真实验证。源码接线已完成，不再将 C158 的“浏览器与本机之间没有桥接”作为当前实现缺口；本批不启用常驻进程或 cron。旧云端 Worker 和 C158 定位保留在下方历史，不作为并行执行方案。
+
+| 现有部分 | C159 已实现职责 | 尚待验证的边界 |
+| --- | --- | --- |
+| `scripts/local-mineru-worker.ts` / `MineruRunner` | 显式运行一次受控领取，从 Host 取得确切原件和设置，执行本机解析并回传候选 | 真实离线单次约 17.6 秒；尚未完成发布后的 Host—本机—Host 闭环 |
+| Host `local-mineru/{claim,source,renew,result}` | 四条 POST 路由已接实际 service/controller；从持久 parseRun 恢复 actor/tenant，核验来源、自动任务授权、租约及候选字节 | 本地 Nest/Express 已验证 HTTP 200 与二进制字节；平台线上网关和真实专用密钥已完成IDLE领取；源读取/回传等待真实任务 |
+| 候选存储与原文接续 | 复用现有 FileService、artifactProgress、PDF.js 页块、租约和事务发布；已保存回执可按确切身份及字节重放 | 未把本地测试计为生产原文发布、阅读或完整业务成功 |
+| 解析设置与标题辅助 | 无已存设置时默认启用本机解析，既有显式值保持；标题辅助默认关闭，后继沿用原快照 | 设置管理角色及 RLS 变更仍暂缓；`https://api.dli.li/v1` 标题目的地尚未获准 |
+
+专用 API Key 记录 `1877292677787683` 已创建并独立读回：仅允许 `POST /openapi/wiselink/local-mineru/claim`、`source`、`renew`、`result` 四条精确路由，`pvw=false`，无其他路由权限。本文只记录非秘密标识，不包含密钥值；该 transport key 不替代 Host 的文档、租户、actor、自动任务授权或租约核验。
+
+两列相关迁移共 4 项已进入 online；未新增角色、RLS 或扩大业务权限。代码提交 `80ee9624d` 已合入平台 main `7a9eb4d59`，origin 已同步。release `7689703020196662253` 已 finished，准确部署提交为 `7a9eb4d59256948eef252df521ec527f82cf21f3`、error_logs=[]。真实一次性worker领取返回IDLE/exit0；空队列领取可用，真实原文与候选传输仍待后续受控验证。
+
+本地验证已收齐：Host API 29 项、UI 21 项、设置 13 项及独立解析/worker 批次 77 项通过；独立真实 PostgreSQL 1/1 通过、0 跳过，build 与 precommit 通过。各组计数不相加宣称不重复总数。API 测试中的真实 Nest/Express 保留默认 body-parser，只隔离 worker 边界，未装载平台 SDK 网关；离线 MinerU 结果不替代真实服务间传输验证。
+
+后续由主控按已获授权继续受控真实领取、解析、回传和持久读回；发布回执及全流程结果单独补记。不启常驻或 cron，不夹带设置管理员/RLS 调整或尚未获准的标题外发。
+
+## 历史：2026-09-26 C158 旧路径可复用范围
+
+以下记录是 C159 实施前的代码定位；其中未接通、默认关闭及待决定表述仅描述当时状态，已由上方 C159 更新。
 
 以 `WISELINK_R10_CURRENT.md` 和 `M_INTEGRATION.md` 顶部为准；下方 9 月 11–12 日内容是历史运行记录，不是当前自动解析接线。当前代码核对结果：
 
@@ -14,7 +35,7 @@
 
 后续接线应复用已有 Host 任务/租约和本机 runner，不另建一套队列。必须先确定实际消费者如何在已有可信授权下取得确切原件、设置与候选上传能力，再把标题调用放到该消费者的受控回调中。既有浏览器 settings GET 和 Host 内部 `readForTenant/capture` 可复用；裸 boolean、环境变量或自填 settings JSON 不能冒充可信 Host 决定。当前无现成桥接，不新增路由、身份或权限来掩盖这一缺口。
 
-### C158 实际传输定位
+### 历史 C158 实际传输定位
 
 浏览器已有来源身份读取 `readDocumentVersionOriginalIdentity`、原件读取 `readDocumentVersionOriginal` 和设置读取 `getDocumentParsingSettings`，分别受 17b 现有登录/来源授权保护。本机已有 `MineruRunner`、CLI 和候选打包；浏览器也已有 `LocalMineruImport` 的 Dataloom 上传与 `startDocumentParsing` 受理。两处真实缺口为浏览器把获准原件/设置交给本机进程，以及本机把生成候选回传浏览器；现有文件选择器只支持人工导入，17c 没有连接 Mac 的执行通道。
 
