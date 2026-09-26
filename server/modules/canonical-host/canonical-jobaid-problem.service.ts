@@ -587,6 +587,7 @@ export class CanonicalJobAidProblemService {
       permissionSnapshotVersion: permissionSnapshotVersion,
       purpose,
       sourceCatalog,
+      originalParseRunId: original.original.binding.parseRunId,
       sourceBindings,
       common: common.common,
       previousWork,

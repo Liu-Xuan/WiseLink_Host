@@ -306,6 +306,22 @@ const completed = {
   overview: 'The source condition remains; reliability is unqueried.',
 };
 
+test('a short original already delivered by Host can be saved without a duplicate source read', async () => {
+  const input = initialChunkModelInput();
+  input.availableSources = input.availableSources.slice(0, 2);
+  input.deliveredEvidence = input.availableSources.map(source => ({
+    evidenceRef: source.ref, kind: 'DOCUMENT_PASSAGE', title: source.title,
+    versionLabel: source.versionLabel, locator: source.locator,
+    excerpt: source.ref.endsWith(':1') ? 'Production target: 3Q 2027.' : 'Service bulletin: TBD.',
+  }));
+  const f = fixture([{ action: 'SAVE_WORK', work: completed }, { action: 'FINISH' }]);
+  const result = await f.run(input);
+  assert.equal(result.output.workRevisionRef, 'JAWR-1');
+  assert.equal(f.reads.length, 0);
+  assert.equal(f.saves.length, 1);
+  assert.deepEqual(JSON.parse(f.calls[0].messages[1].content).deliveredEvidence, input.deliveredEvidence);
+});
+
 test('repeated correction number after a successful source read keeps distinct round checkpoints', () => persisted(async checkpoint => {
   const rejectionRounds = [];
   const f = fixture([

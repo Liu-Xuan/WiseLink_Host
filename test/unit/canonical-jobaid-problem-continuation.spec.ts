@@ -169,12 +169,54 @@ describe('JobAid continuation requests', () => {
     previousWork.content.readSourceRefs = [prior.evidenceRef];
     const task = buildJobAidProblemTask({ workItem, actorUserId: OWNER, permissionSnapshotVersion: 'permission',
       purpose: 'INITIAL_PROBLEM_ASSESSMENT', sourceCatalog: [current], sourceBindings: [], common,
+      originalParseRunId: 'PR-2',
       previousWork, expectedWorkRevision: previousWork.workRevision, priorAssessmentRefs: [previousWork.workRevisionRef] });
     expect(task.sourceCatalog).toEqual(expect.arrayContaining([current, prior]));
     expect(task.modelInput.documentOverview.sections[0].sourceRefs).toEqual([current.evidenceRef]);
     expect(task.initiallyDeliveredRefs).toContain(prior.evidenceRef);
-    expect(task.initiallyDeliveredRefs).not.toContain(current.evidenceRef);
+    expect(task.initiallyDeliveredRefs).toContain(current.evidenceRef);
+    expect(task.modelInput.deliveredEvidence.find(item => item.evidenceRef === current.evidenceRef)?.excerpt)
+      .toBe('Corrected condition.');
     expect(assertJobAidProblemTaskBinding(task)).toBe(task);
+  });
+  it('delivers a complete short current original without treating a large original as partly read', () => {
+    const workItem = projection();
+    const common = projectCommonAssessmentContext(workItem, {
+      context: { status: 'AVAILABLE' }, documentReadingStatus: 'AVAILABLE',
+      items: [], sections: [], resourceRefs: [],
+    }, []);
+    const passage = (index: number, excerpt: string): AssessmentEvidence => ({
+      kind: 'DOCUMENT_PASSAGE', workItemId: workItem.workItemId,
+      documentVersionId: workItem.source.documentVersionId,
+      evidenceRef: `DOCUMENT_ORIGINAL:${workItem.source.documentVersionId}:PRUN-2:SR-${index}`,
+      sourceRefId: `SR-${index}`, title: 'Current original', versionLabel: 'PRUN-2',
+      locator: `page ${index}`, excerpt,
+    });
+    const short = [passage(1, 'Production target: 3Q 2027.'),
+      passage(2, 'Service bulletin availability: TBD.')];
+    const older = { ...passage(3, 'Superseded milestone.'),
+      evidenceRef: `DOCUMENT_ORIGINAL:${workItem.source.documentVersionId}:PRUN-1:SR-3`,
+      versionLabel: 'PRUN-1' };
+    const base = { workItem, actorUserId: OWNER, permissionSnapshotVersion: 'permission',
+      purpose: 'INITIAL_PROBLEM_ASSESSMENT' as const, sourceBindings: [], common,
+      originalParseRunId: 'PRUN-2',
+      previousWork: null, expectedWorkRevision: 0, priorAssessmentRefs: [] };
+    const task = buildJobAidProblemTask({ ...base, sourceCatalog: [...short, older] });
+    expect(task.initiallyDeliveredRefs).toEqual(expect.arrayContaining(short.map(item => item.evidenceRef)));
+    expect(task.initiallyDeliveredRefs).not.toContain(older.evidenceRef);
+    expect(task.modelInput.deliveredEvidence.filter(item => item.kind === 'DOCUMENT_PASSAGE')
+      .map(item => item.evidenceRef)).toEqual(short.map(item => item.evidenceRef));
+    expect(assertJobAidProblemTaskBinding(task)).toBe(task);
+
+    const large = [passage(1, 'x'.repeat(65 * 1024)), passage(2, 'TBD')];
+    const largeTask = buildJobAidProblemTask({ ...base, sourceCatalog: large });
+    expect(largeTask.initiallyDeliveredRefs).not.toContain(large[0].evidenceRef);
+    expect(largeTask.initiallyDeliveredRefs).not.toContain(large[1].evidenceRef);
+    expect(largeTask.modelInput.deliveredEvidence.some(item => item.kind === 'DOCUMENT_PASSAGE')).toBe(false);
+
+    const many = Array.from({ length: 65 }, (_, index) => passage(index + 1, 'Short passage.'));
+    const manyTask = buildJobAidProblemTask({ ...base, sourceCatalog: many });
+    expect(manyTask.modelInput.deliveredEvidence.some(item => item.kind === 'DOCUMENT_PASSAGE')).toBe(false);
   });
   it('recovers the sealed method version after a release and rejects an unbacked method binding', async () => {
     const h = harness();
