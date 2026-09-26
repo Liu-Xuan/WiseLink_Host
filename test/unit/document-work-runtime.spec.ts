@@ -5,7 +5,10 @@ import { GENERIC_SEMANTIC_PROFILE } from '../../server/modules/document-manageme
 import { originalFixture } from './document-parsing/fixtures/document-original.fixture';
 
 function fixture() {
-  const authorization = { authorizeDocumentWork: jest.fn().mockResolvedValue({
+  const automaticScope = { workItemId: 'WI', appId: 'app_17bzc551rsg', tenantId: 'tenant', principalId: 'service',
+    automaticWorkItemLease: { requestId: 'REQ-one', actorUserId: 'actor', documentId: 'DOC', documentVersionId: 'DV',
+      sourceArtifactId: 'ART', sourceFileSha256: 'a'.repeat(64), sourceByteLength: 123, leaseGeneration: 3 } };
+  const authorization = { authorizeOpenClawWorkItem: jest.fn().mockResolvedValue(automaticScope), authorizeDocumentWork: jest.fn().mockResolvedValue({
     tenantId: 'tenant', actorUserId: 'actor', documentVersionId: 'DV',
   }) };
   const actors = { withActorScope: jest.fn(async (_actor, fn) => fn()) };
@@ -13,6 +16,9 @@ function fixture() {
     status: jest.fn().mockResolvedValue({ latestRun: { parseRunId: 'run', status: 'STAGING' } }),
     executeStep: jest.fn().mockResolvedValue({ parseRunId: 'run', status: 'STAGING' }),
     loadPublished: jest.fn(),
+    start: jest.fn().mockResolvedValue({ parseRunId: 'run' }),
+    inspectPublishedIdentity: jest.fn().mockResolvedValue({ binding: { sourceArtifactId: 'ART',
+      sourceSha256: 'a'.repeat(64), sourceByteLength: 123 } }),
   };
   const fence = { parseRunId: 'run', leaseOwner: 'worker', leaseToken: 'token', leaseGeneration: 2 };
   const leases = { claim: jest.fn().mockResolvedValue(fence), renew: jest.fn().mockResolvedValue(true),
@@ -21,7 +27,7 @@ function fixture() {
   const semantics = { read: jest.fn().mockResolvedValue(null) };
   const revisions = { read: jest.fn().mockResolvedValue({}) };
   const service = new DocumentWorkRuntimeService(authorization as never, actors as never, parsing as never, leases as never, reader as never, {} as never, semantics as never, revisions as never);
-  return { service, authorization, actors, parsing, leases, fence, semantics, revisions };
+  return { service, authorization, actors, parsing, leases, fence, semantics, revisions, automaticScope };
 }
 
 describe('authorized document step runtime', () => {
@@ -151,4 +157,77 @@ describe('authorized document step runtime', () => {
     expect(f.leases.renew).toHaveBeenCalledTimes(2);
     expect(f.leases.release).toHaveBeenCalledTimes(1);
   });
+});
+
+
+describe('automatic WorkItem original preparation', () => {
+  it('reserves one stable parse request under the queue owner and source fence', async () => {
+    const f = fixture();
+    f.parsing.status.mockResolvedValue({ documentVersionId: 'DV', latestRun: null });
+    await expect(f.service.prepareAutomaticOriginal('WI')).resolves.toEqual({
+      status: 'ORIGINAL_PREPARING', documentVersionId: 'DV', parseRunId: 'run' });
+    expect(f.parsing.start).toHaveBeenCalledWith('DV', { requestId: 'auto-original-REQ-one', expectedPublishedRevision: 0 },
+      expect.objectContaining({ actorUserId: 'actor', tenantId: 'tenant', automaticWorkItem: {
+        workItemId: 'WI', requestId: 'REQ-one', principalId: 'service', documentId: 'DOC', sourceArtifactId: 'ART',
+        sourceFileSha256: 'a'.repeat(64), sourceByteLength: 123, leaseGeneration: 3 } }));
+    expect(f.parsing.executeStep).not.toHaveBeenCalled();
+    expect(f.authorization.authorizeDocumentWork).not.toHaveBeenCalled();
+  });
+
+  it('continues the same checkpoint with the new queue generation and bounded document lease', async () => {
+    const f = fixture();
+    f.parsing.status.mockResolvedValue({ documentVersionId: 'DV', latestRun: {
+      parseRunId: 'run', status: 'STAGING', deadlineAt: new Date(Date.now() + 60_000).toISOString(), errorCode: null } });
+    f.parsing.executeStep.mockResolvedValue({ parseRunId: 'run', status: 'PUBLISHED' });
+    await expect(f.service.prepareAutomaticOriginal('WI')).resolves.toMatchObject({ status: 'ORIGINAL_READY', parseRunId: 'run' });
+    expect(f.parsing.start).not.toHaveBeenCalled();
+    expect(f.parsing.executeStep).toHaveBeenCalledTimes(1);
+    expect(f.parsing.executeStep).toHaveBeenCalledWith('run', expect.objectContaining({
+      automaticWorkItem: expect.objectContaining({ leaseGeneration: 3 }) }), f.fence);
+  });
+
+  it('reuses exact published original without parsing and rejects mismatched source', async () => {
+    const f = fixture();
+    f.parsing.status.mockResolvedValue({ documentVersionId: 'DV', latestRun: { parseRunId: 'run', status: 'PUBLISHED' } });
+    await expect(f.service.prepareAutomaticOriginal('WI')).resolves.toMatchObject({ status: 'ORIGINAL_READY' });
+    f.parsing.inspectPublishedIdentity.mockResolvedValue({ binding: { sourceArtifactId: 'wrong' } });
+    await expect(f.service.prepareAutomaticOriginal('WI')).rejects.toThrow('DOCUMENT_ORIGINAL_EXACT_BINDING_MISMATCH');
+    expect(f.parsing.start).not.toHaveBeenCalled();
+    expect(f.parsing.executeStep).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    { status: 'FAILED', errorCode: 'DOCUMENT_PARSE_INTERRUPTED' },
+    { status: 'STAGING', errorCode: 'PLUGIN_TIMEOUT' },
+    { status: 'STAGING', errorCode: null, deadlineAt: '2000-01-01T00:00:00Z' },
+  ])('preserves failed or interrupted results without creating a replacement: %j', async run => {
+    const f = fixture();
+    f.parsing.status.mockResolvedValue({ documentVersionId: 'DV', latestRun: { parseRunId: 'run', ...run } });
+    await expect(f.service.prepareAutomaticOriginal('WI')).resolves.toMatchObject({ status: 'REQUIRES_ATTENTION', parseRunId: 'run' });
+    expect(f.parsing.start).not.toHaveBeenCalled();
+    expect(f.leases.claim).not.toHaveBeenCalled();
+  });
+
+  it('rejects static scope, a different WorkItem and revoked authorization before writes', async () => {
+    const f = fixture();
+    f.authorization.authorizeOpenClawWorkItem.mockResolvedValueOnce({ ...f.automaticScope, automaticWorkItemLease: undefined });
+    await expect(f.service.prepareAutomaticOriginal('WI')).rejects.toThrow('DOCUMENT_AUTOMATIC_LEASE_REQUIRED');
+    await expect(f.service.prepareAutomaticOriginal('OTHER')).rejects.toThrow('DOCUMENT_AUTOMATIC_LEASE_REQUIRED');
+    f.authorization.authorizeOpenClawWorkItem.mockRejectedValueOnce(new Error('SOURCE_REVOKED'));
+    await expect(f.service.prepareAutomaticOriginal('WI')).rejects.toThrow('SOURCE_REVOKED');
+    expect(f.parsing.status).not.toHaveBeenCalled();
+    expect(f.parsing.start).not.toHaveBeenCalled();
+  });
+});
+
+
+it('preserves both a published result and the original step failure if lease cleanup fails', async () => {
+  const f = fixture();
+  f.leases.release.mockRejectedValue(new Error('CLEANUP_FAILED'));
+  f.parsing.executeStep.mockResolvedValueOnce({ status: 'PUBLISHED', parseRunId: 'run' });
+  await expect(f.service.run({ action: 'STEP', documentVersionId: 'DV', parseRunId: 'run' }))
+    .resolves.toMatchObject({ status: 'PUBLISHED' });
+  f.parsing.executeStep.mockRejectedValueOnce(new Error('ORIGINAL_PLUGIN_FAILURE'));
+  await expect(f.service.run({ action: 'STEP', documentVersionId: 'DV', parseRunId: 'run' }))
+    .rejects.toThrow('ORIGINAL_PLUGIN_FAILURE');
 });

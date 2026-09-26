@@ -8,10 +8,22 @@ import { dmDocumentVersion } from '@server/database/schema';
 import { dmDocumentParseRun } from '@server/database/document-parsing.schema';
 import type { MineruDocumentVersionBinding, MineruStoredArtifact } from '../../../../professional-input/mineru/mineru-artifact-store';
 
+export interface DocumentAutomaticWorkItemFence {
+  workItemId: string;
+  requestId: string;
+  principalId: string;
+  documentId: string;
+  sourceArtifactId: string;
+  sourceFileSha256: string;
+  sourceByteLength: number;
+  leaseGeneration: number;
+}
+
 export interface DocumentParseScope {
   tenantId: string;
   actorUserId: string;
   documentVersionId: string;
+  automaticWorkItem?: DocumentAutomaticWorkItemFence;
 }
 export type DocumentParseRow = typeof dmDocumentParseRun.$inferSelect;
 const ACTIVE = ['RUNNING', 'STAGING'] as const;
@@ -52,9 +64,14 @@ export class DocumentParsingRepository {
     requestId: string; expectedPublishedRevision: number; bucketId: string; sourceBinding: MineruDocumentVersionBinding;
   }) {
     return this.db.transaction(async tx => {
+      if (scope.automaticWorkItem) await this.leases.assertAutomaticWorkItem(tx, scope);
       const [version] = await tx.select(sourceColumns).from(dmDocumentVersion)
         .where(eq(dmDocumentVersion.documentVersionId, scope.documentVersionId)).for('update');
       if (!version || !sameSource(version, input.sourceBinding)) throw documentParseError('DOCUMENT_PARSE_SOURCE_CHANGED');
+      const grant = scope.automaticWorkItem;
+      if (grant && (version.documentVersionId !== scope.documentVersionId || version.documentId !== grant.documentId ||
+          version.sourceArtifactId !== grant.sourceArtifactId || version.pdfSha256 !== grant.sourceFileSha256 ||
+          Number(version.byteLength) !== grant.sourceByteLength)) throw documentParseError('DOCUMENT_PARSE_SOURCE_CHANGED');
       const [replay] = await tx.select().from(dmDocumentParseRun).where(and(scoped(scope),
         eq(dmDocumentParseRun.actorUserId, scope.actorUserId), eq(dmDocumentParseRun.requestId, input.requestId))).limit(1);
       if (replay) {
@@ -101,6 +118,7 @@ export class DocumentParsingRepository {
 
   async publish(scope: DocumentParseScope, parseRunId: string, manifestArtifact: MineruStoredArtifact, fence: DocumentStepFence) {
     return this.db.transaction(async tx => {
+      if (scope.automaticWorkItem) await this.leases.assertAutomaticWorkItem(tx, scope);
       const [version] = await tx.select(sourceColumns).from(dmDocumentVersion)
         .where(eq(dmDocumentVersion.documentVersionId, scope.documentVersionId)).for('update');
       assertFenceRun(parseRunId, fence);

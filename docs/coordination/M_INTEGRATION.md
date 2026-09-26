@@ -1,5 +1,13 @@
 # M 主控集成交接
 
+## 2026-09-26 新上传自动原文准备缺口（C152 待发布）
+
+17b 当前部署为 `d833dc39aa792774502964ab2dd69abf2f35a4ae`，release `7689644679608110058` 已 `finished`、`error_logs=[]`。该版移除浏览器只读执行状态对静态 Matter 服务名单的误用，仍保留 NeedLogin、原生用户入口及来源读权限；该批定向测试 21/21。刘轩本人在新事项 Wiki 读回“当前没有关联的自动执行轮 · 工作修订 0”“尚未形成事项综合认识”，原 404 已消除。
+
+17c Gateway 曾停止，官方 `scripts/restart.sh` 于 09:14 +08 正常恢复；官方 cron 读回 16 项全部停用、无在途消费者。受控消费唯一待领 `WI-4db598a0-33b8-4abd-a64d-df2aac9f29c5` 后取得租约代次 1，但 Host 返回 `NOT_READY`，未开始模型。online 只读查询确证 `document_version_3f1bf2fb1736c0e12e5bae2a` 的 `dm_document_parse_run` 没有记录。代码核对确认：工程上传只生成旧 package，当前原文模式初评则要求精确发布的 `original/manifest.json`；自动 WorkItem 消费未预约或推进该原文路径。
+
+C152 在已有 `next_original_assessment` 中衔接已授权自动 WorkItem 的原文预约/单步准备；复用官方解析、原生 parseRun、分页检查点及文档租约。每项写入在事务内核对自动队列的主体、用户、租户、确切来源与代次，旧代次也不能记录错误污染后继；状态读取保持只读。消费者仅在自动队列的 `NOT_READY` 中每 tick 准备一次并重读状态，成功后继续原初评阶段；故障保留任务及诊断，不直接 BLOCK。未增加路由、数据库权限、静态文档名单或新的调度定义；16 项调度继续停用。定向 Host 测试 34/34、事务约束测试 20/20（其中 7 项独立 PostgreSQL）、消费者相关 67/67、server TypeScript、定向 ESLint 与差异检查通过；PG 使用隔离 schema 并已清理。审查另修复原文刚发布时自动回包不一致，以及 lease release 异常覆盖已确认解析结果/真实错误的问题。当前是修订与本地验证，发布/安装/真实接续另据回执补充。
+
 ## 2026-09-26 已保存解析的原请求重放已恢复
 
 浏览器 SQL 角色修复提交 `5712924e9` 经普通 main 合并为 `0ea541145070b7005657bbe73503eade0a98934a`，origin 已读回该 SHA；17b release `7689639564386536427` 已 `finished`，实际部署 SHA 相同、`error_logs=[]`。在保留原 PDF、原 `dev:cf41a4ad-bfd9-4f22-852d-90fec67dbb8f` 请求令牌和原模型的页面上重试时，出现另一个前置故障 `WORK_ITEM_AUTHORIZATION_IDEMPOTENCY_COLLISION`，HTTP 500；所以本次重试未到 Matter 写入，不能据此判断浏览器角色修复的真实关联效果。线上日志 trace `b4b9c1cc39585744115ec6ae1d1c85b5` 显示同次请求曾遇到受控文件空间的临时读取失败，随后 `CanonicalHostVerticalService.runPdfAuthorized` 因授权哈希碰撞拒绝。线上原 WorkItem 仍是已保存的解析结果，未重建业务任务。

@@ -246,6 +246,50 @@ export async function consumeAutomaticWorkItemQueueTick(options, dependencies) {
     await checkpoint.write('active-claim', claim);
     return acknowledgeAndClearAutoClaim(claim, checkpoint, dependencies);
   }
+  if (statusValue.status === 'NOT_READY') {
+    let preparation;
+    try {
+      if (typeof dependencies.prepareOriginal !== 'function') {
+        throw new Error('AUTO_WORK_ITEM_ORIGINAL_PREPARATION_UNAVAILABLE');
+      }
+      // Only the WorkItem identity reaches MCP. The Host validates its active
+      // queue lease; lease tokens remain in the private claim/REST boundary.
+      preparation = await dependencies.prepareOriginal(claim.workItemId);
+    } catch (error) {
+      preparation = { status: 'REQUIRES_ATTENTION',
+        documentVersionId: claim.documentVersionId, errorCode: errorCode(error) };
+    }
+    if (!isRecord(preparation) || !['ORIGINAL_PREPARING', 'ORIGINAL_READY',
+      'BUSY', 'REQUIRES_ATTENTION'].includes(preparation.status)) {
+      throw new Error('AUTO_WORK_ITEM_ORIGINAL_PREPARATION_INVALID');
+    }
+    if (preparation.documentVersionId !== claim.documentVersionId) {
+      throw new Error('AUTO_WORK_ITEM_STATUS_SOURCE_CHANGED');
+    }
+    const report = { status: preparation.status, workItemId: claim.workItemId,
+      documentVersionId: claim.documentVersionId,
+      ...(typeof preparation.parseRunId === 'string' ? { parseRunId: preparation.parseRunId } : {}),
+      ...(preparation.status === 'REQUIRES_ATTENTION'
+        ? { errorCode: safeAutomaticAttentionCode(preparation.errorCode) } : {}) };
+    await checkpoint.write('last-original-preparation', report);
+    statusValue = await dependencies.readInitialStatus(claim.workItemId);
+    assertAutomaticClaimStatusBinding(claim, statusValue);
+    if (report.status === 'REQUIRES_ATTENTION') {
+      return automaticWorkItemAttention(claim, report.errorCode, statusValue, report);
+    }
+    if (statusValue.status === 'NOT_READY' || report.status === 'BUSY') {
+      return { status: 'IN_PROGRESS', workItemId: claim.workItemId,
+        requestId: claim.requestId, documentVersionId: claim.documentVersionId,
+        leaseGeneration: claim.leaseGeneration, leaseExpiresAt: claim.leaseExpiresAt,
+        nextOperation: statusValue.nextOperation, stages: statusValue.stages,
+        consumerStatus: report.status };
+    }
+    if (isAutomaticWorkItemDone(statusValue)) {
+      claim = { ...claim, completionReady: true };
+      await checkpoint.write('active-claim', claim);
+      return acknowledgeAndClearAutoClaim(claim, checkpoint, dependencies, report);
+    }
+  }
   const retry = await automaticRetryPlan(statusValue, claim.workItemId,
     dependencies.readSavedWork);
   if (claim.completionReady) {
@@ -1056,6 +1100,9 @@ async function main(argv, env) {
         readInitialStatus: async id => readInitialStatus(
           await connection.callTool('get_parse_status', { workItemId: id }),
           id,
+        ),
+        prepareOriginal: workItemId => connection.callTool(
+          'next_original_assessment', { workItemId },
         ),
         readSavedWork: async (attemptRef, workItemId) => connection.callTool(
           'read_assessment_work', { attemptRef, workItemId },

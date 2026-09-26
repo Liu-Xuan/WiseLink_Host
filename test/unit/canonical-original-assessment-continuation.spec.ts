@@ -11,10 +11,11 @@ function harness(overrides: Record<string, unknown> = {}) {
   const applicability={enqueueOriginal:jest.fn(async()=>({status:'QUEUED',requestId:'original-2'}))};
   const problem = {enabledForNewTasks:() => true,readOriginalContinuationBinding:jest.fn(async () => original),
     enqueueOriginalContinuation:jest.fn(async () => ({status:'QUEUED',requestId:'original-2'}))};
+  const preparation = { prepareAutomaticOriginal: jest.fn(async () => ({ status: 'ORIGINAL_PREPARING', documentVersionId: 'DV' })) };
   const service = new CanonicalHostOpenClawDynamicEvaluationService(
     {getTenantScopedByWorkItemId:async () => workItem} as never,{} as never,{} as never,{} as never,
-    {} as never,{} as never,{} as never,authorization as never,{} as never,{} as never,problem as never,{project} as never,applicability as never);
-  return {service,problem,authorization,project,workItem,applicability};
+    {} as never,{} as never,{} as never,authorization as never,{} as never,{} as never,problem as never,{project} as never,applicability as never,preparation as never);
+  return {service,problem,authorization,project,workItem,applicability,preparation};
 }
 
 describe('Hosted original assessment continuation admission', () => {
@@ -53,4 +54,25 @@ describe('Hosted original assessment continuation admission', () => {
     await expect(h.service.nextOriginalAssessment(scope.workItemId)).rejects.toThrow('JOBAID_ORIGINAL_REQUEST_CHANGED');
     expect(h.problem.enqueueOriginalContinuation).not.toHaveBeenCalled();
   });
+});
+
+
+it('prepares a leased automatic item before trying to read a missing published original', async () => {
+  const h = harness();
+  h.authorization.authorizeOpenClawWorkItem.mockResolvedValue({ ...scope, automaticWorkItemLease: { leaseGeneration: 1 } } as never);
+  h.project.mockResolvedValue({ status: 'NOT_READY', stages: {}, applicabilityContextRef: null } as never);
+  await expect(h.service.nextOriginalAssessment(scope.workItemId)).resolves.toMatchObject({ status: 'ORIGINAL_PREPARING' });
+  expect(h.preparation.prepareAutomaticOriginal).toHaveBeenCalledWith(scope.workItemId);
+  expect(h.problem.readOriginalContinuationBinding).not.toHaveBeenCalled();
+  expect(h.problem.enqueueOriginalContinuation).not.toHaveBeenCalled();
+});
+
+
+it('keeps automatic preparation responses stable when publication and another stage race', async () => {
+  const h = harness({ jobAid: { status: 'BUSY', attemptStatus: 'RUNNING' } });
+  h.authorization.authorizeOpenClawWorkItem.mockResolvedValue({ ...scope, automaticWorkItemLease: { leaseGeneration: 1 } } as never);
+  await expect(h.service.nextOriginalAssessment(scope.workItemId)).resolves.toMatchObject({
+    status: 'ORIGINAL_PREPARING', documentVersionId: 'DV' });
+  expect(h.problem.enqueueOriginalContinuation).not.toHaveBeenCalled();
+  expect(h.problem.readOriginalContinuationBinding).not.toHaveBeenCalled();
 });
