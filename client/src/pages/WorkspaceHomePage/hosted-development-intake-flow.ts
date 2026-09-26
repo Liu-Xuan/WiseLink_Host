@@ -154,6 +154,8 @@ export function hostedIntakeError(reason: unknown): string {
   const code = typeof error.code === 'string' ? error.code : '';
   if (code === 'MATTER_INTAKE_PENDING')
     return '文档和评估任务已登记，事项关联尚未完成。请保留当前选择并用同一请求重试，系统会核对已保存结果。';
+  if (code === 'ENGINEERING_MATTER_BROWSER_AUTHORIZATION_UNAVAILABLE')
+    return '评估任务已登记，但系统未能完成事项身份核验。请保留当前选择并用同一请求重试；不会跳过授权核验。';
   if (
     code === 'CANONICAL_INTAKE_RECORDING_FAILED' ||
     code === 'CANONICAL_INTAKE_PARSE_FAILED'
