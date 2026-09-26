@@ -455,7 +455,7 @@ export const canonicalModelSetting = pgTable("canonical_model_setting", {
   tenantId: varchar("tenant_id", { length: 128 }).notNull().unique(),
   revision: integer("revision").notNull(),
   modelRef: varchar("model_ref", { length: 255 }).notNull(),
-  localMineruFallbackEnabled: boolean("local_mineru_fallback_enabled").notNull().default(false),
+  localMineruFallbackEnabled: boolean("local_mineru_fallback_enabled").notNull().default(true),
   titleEnhancementEnabled: boolean("title_enhancement_enabled").notNull().default(false),
   changedByUserId: varchar("changed_by_user_id", { length: 255 }).notNull(),
   // System field: Creation time (auto-filled, do not modify)

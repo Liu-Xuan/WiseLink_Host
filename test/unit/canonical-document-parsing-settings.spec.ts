@@ -50,12 +50,12 @@ beforeEach(() => {
 afterEach(() => {
   process.env = { ...originalEnv };
 });
-it('defaults off and reports missing manager configuration without enabling writes', async () => {
+it('defaults to local MinerU while retaining the missing-manager write restriction', async () => {
   delete process.env[DOCUMENT_PARSING_SETTINGS_MANAGER_ROLE_ENV];
   const { service, repository } = setup();
   expect(await service.read(actor())).toMatchObject({
     revision: 0,
-    localMineruFallbackEnabled: false,
+    localMineruFallbackEnabled: true,
     titleEnhancementEnabled: false,
     canManage: false,
     managementStatus: 'ROLE_NOT_CONFIGURED',
@@ -123,6 +123,11 @@ it.each([
     'DOCUMENT_PARSING_SETTINGS_INPUT_INVALID',
   );
   expect(repository.compareAndSet).not.toHaveBeenCalled();
+});
+it('preserves an explicitly saved disabled parser choice', async () => {
+  const { service, repository } = setup();
+  repository.read.mockResolvedValue({ revision: 4, localMineruFallbackEnabled: false, titleEnhancementEnabled: false, updatedAt: new Date() });
+  expect(await service.capture('tenant')).toEqual({ revision: 4, localMineruFallbackEnabled: false, titleEnhancementEnabled: false });
 });
 it('does not silently default settings on storage failure', async () => {
   const { service, repository } = setup();

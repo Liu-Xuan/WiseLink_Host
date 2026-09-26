@@ -284,7 +284,7 @@ export default function DocumentVersionReadingPage() {
         <summary>文档处理</summary>
         <div className="document-reading-actions">
           <Button onClick={() => { void start(); }} disabled={!currentStatus?.runtimeAvailable || busy || sending}>
-            {sending ? '正在受理…' : request.current ? '核对解析请求' : busy ? (parseFailure ? '等待接续' : '正在解析…') : currentStatus?.publishedRun ? '重新解析' : '解析文档'}
+            {sending ? '正在受理…' : request.current ? '核对解析请求' : busy ? (parseFailure ? '等待接续' : latest?.waitingForLocalWorker ? '等待本机解析' : '正在解析…') : currentStatus?.publishedRun ? '重新解析' : '解析文档'}
           </Button>
           <Button variant="outline" onClick={() => setRefresh(value => value + 1)}>刷新</Button>
           <DocumentOriginalPreview documentVersionId={documentVersionId}>打开原件</DocumentOriginalPreview>
@@ -300,7 +300,7 @@ export default function DocumentVersionReadingPage() {
       </p>}
       {latest && <p role="status">{parseFailure ?? (latest.status === 'PUBLISHED' ? `解析版本 ${latest.parseRevision} 已发布。` :
         latest.status === 'FAILED' ? `解析未完成：${latest.errorCode ?? '请重试或联系维护人员'}` :
-        expired ? '执行期限已过，可重新发起解析。' : latest.status === 'STAGING' ? `正在保存并核验产物，已核验 ${latest.verifiedArtifacts} 个文件。` : '正在解析原件，可离开页面后回来查看。')}</p>}
+        expired ? '执行期限已过，可重新发起解析。' : latest.waitingForLocalWorker ? '等待本机解析器接续。可以离开页面，任务会保留。' : latest.status === 'STAGING' ? `正在保存并核验产物，已核验 ${latest.verifiedArtifacts} 个文件。` : '正在解析原件，可离开页面后回来查看。')}</p>}
     </header>
     {currentReading ? <>
       {requestedRun && <p role="status">{currentStatus?.publishedRun?.parseRunId !== requestedRun ? '历史解析版本' : '指定解析版本'}：固定读取此版本，刷新不会切换到最新版本。 <Link to={`/document-versions/${encodeURIComponent(documentVersionId)}`}>查看最新版本</Link></p>}

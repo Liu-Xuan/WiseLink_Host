@@ -13,6 +13,8 @@ export interface MineruRuntimeOptions {
   /** Fixed deployment executable and verified model config; never request data. */
   executable: string;
   configPath: string;
+  /** Fixed local entry script when executable is the selected virtualenv Python. */
+  entryScript?: string;
   /** Verified, isolated Linux support libraries from the deployment archive. */
   libraryPath?: string;
   timeoutMs?: number;
@@ -33,7 +35,8 @@ export class MineruRunner {
   private running = false;
   constructor(private readonly options: MineruRuntimeOptions) {}
 
-  async parse(pdf: Uint8Array) {
+  async parse(pdf: Uint8Array, execution: { signal?: AbortSignal } = {}) {
+    if (execution.signal?.aborted) throw new Error('MINERU_ABORTED');
     if (this.running) throw new Error('MINERU_BUSY');
     if (
       pdf.length > 100 * 1024 * 1024 ||
@@ -45,6 +48,7 @@ export class MineruRunner {
     if (
       !isAbsolute(executable) ||
       !isAbsolute(configPath) ||
+      (this.options.entryScript !== undefined && !isAbsolute(this.options.entryScript)) ||
       (this.options.libraryPath !== undefined && (!isAbsolute(this.options.libraryPath) || this.options.libraryPath.includes(':'))) ||
       !Number.isSafeInteger(timeoutMs) ||
       timeoutMs < 1 ||
@@ -68,10 +72,11 @@ export class MineruRunner {
       await writeFile(input, pdf, { flag: 'wx' });
       await execute(
         executable,
-        ['-p', input, '-o', output, '-b', 'pipeline'],
+        [...(this.options.entryScript ? [this.options.entryScript] : []), '-p', input, '-o', output, '-b', 'pipeline'],
         timeoutMs,
         configPath,
         this.options.libraryPath,
+        execution.signal,
       );
       const candidates: string[] = [];
       async function locate(path: string, depth: number) {
@@ -89,7 +94,9 @@ export class MineruRunner {
       if (candidates.length !== 1)
         throw new Error('MINERU_OUTPUT_BUNDLE_MISSING_OR_AMBIGUOUS');
       const parsed = await readMineruArtifactFiles(candidates[0], 'document');
+      if (execution.signal?.aborted) throw new Error('MINERU_ABORTED');
       const result = await enhanceMineruTitles(parsed, this.options.titleCall);
+      if (execution.signal?.aborted) throw new Error('MINERU_ABORTED');
       return {
         ...result,
         // Keep the parser's unenhanced output; title enhancement produces a separate view.
@@ -117,17 +124,25 @@ function execute(
   timeoutMs: number,
   configPath: string,
   libraryPath?: string,
+  abortSignal?: AbortSignal,
 ): Promise<void> {
   return new Promise((resolve, reject) => {
+    if (abortSignal?.aborted) { reject(new Error('MINERU_ABORTED')); return; }
+    const childEnvironment: NodeJS.ProcessEnv = { ...process.env };
+    for (const name of Object.keys(childEnvironment)) {
+      if (/(?:^|_)(?:API_KEY|ACCESS_KEY_ID|SECRET_ACCESS_KEY|TOKEN|PASSWORD|SECRET)$/u.test(name)) delete childEnvironment[name];
+    }
     const grouped = process.platform !== 'win32';
     const child = spawn(executable, args, {
       detached: grouped,
       stdio: ['ignore', 'pipe', 'pipe'],
       env: {
-        ...process.env,
+        ...childEnvironment,
         ...(libraryPath ? { LD_LIBRARY_PATH: [libraryPath, process.env.LD_LIBRARY_PATH].filter(Boolean).join(':') } : {}),
         MINERU_TOOLS_CONFIG_JSON: configPath,
         MINERU_MODEL_SOURCE: 'local',
+        HF_HUB_OFFLINE: '1',
+        TRANSFORMERS_OFFLINE: '1',
         CUDA_VISIBLE_DEVICES: '',
         OMP_NUM_THREADS: '2',
         MKL_NUM_THREADS: '2',
@@ -157,6 +172,9 @@ function execute(
       kill('SIGTERM');
       hardKill = setTimeout(() => kill('SIGKILL'), 1000);
     }
+    const onAbort = () => stop('MINERU_ABORTED');
+    abortSignal?.addEventListener('abort', onAbort, { once: true });
+    if (abortSignal?.aborted) onAbort();
     const timeout = setTimeout(() => stop('MINERU_TIMEOUT'), timeoutMs);
     function capture(data: Buffer, isError: boolean) {
       outputBytes += data.length;
@@ -166,11 +184,13 @@ function execute(
     child.stdout.on('data', (data: Buffer) => capture(data, false));
     child.stderr.on('data', (data: Buffer) => capture(data, true));
     child.once('error', (error) => {
+      abortSignal?.removeEventListener('abort', onAbort);
       clearTimeout(timeout);
       if (hardKill) clearTimeout(hardKill);
       reject(error);
     });
     child.once('close', (code, signal) => {
+      abortSignal?.removeEventListener('abort', onAbort);
       clearTimeout(timeout);
       if (hardKill) clearTimeout(hardKill);
       kill('SIGKILL'); // Also clean up a temporary MinerU API left by the owned process.

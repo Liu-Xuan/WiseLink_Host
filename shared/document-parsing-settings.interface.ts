@@ -1,6 +1,7 @@
 /** Persisted tenant choices, captured once when a local parse is admitted. */
 export interface DocumentParsingSettingsSnapshot {
   revision: number;
+  /** Existing field name retained: local MinerU is now the default parser when enabled. */
   localMineruFallbackEnabled: boolean;
   titleEnhancementEnabled: boolean;
 }
@@ -13,6 +14,7 @@ export interface DocumentParsingSettingsReadModel extends DocumentParsingSetting
 }
 export interface UpdateDocumentParsingSettingsRequest {
   expectedRevision: number;
+  /** Existing field name retained: local MinerU is now the default parser when enabled. */
   localMineruFallbackEnabled: boolean;
   titleEnhancementEnabled: boolean;
 }

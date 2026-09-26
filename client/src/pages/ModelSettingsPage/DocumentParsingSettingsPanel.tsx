@@ -100,13 +100,13 @@ function DocumentParsingSettingsEditor({
       <p>保存后用于新受理的本地解析；已有解析沿用受理时的设置。</p>
       <div className="wl-document-parsing-setting">
         <div>
-          <label htmlFor="local-mineru-enabled">启用本机 MinerU 备用解析</label>
+          <label htmlFor="local-mineru-enabled">默认使用本机 MinerU 解析</label>
           <p>
-            允许导入本机 MinerU 的解析结果，作为官方解析不可用时的备用；当前需要显式导入，不会自动启动本机服务。
+            新文档默认交给本机解析。需要本机工作进程在线；未连接时保留待处理状态，不自动改用其他解析器。
           </p>
           <small>
             {saved
-              ? `已保存：${saved.localMineruFallbackEnabled ? '开启' : '关闭'}`
+              ? `${saved.revision === 0 ? '默认' : '已保存'}：${saved.localMineruFallbackEnabled ? '开启' : '关闭'}`
               : '尚未读取已保存状态'}
           </small>
         </div>

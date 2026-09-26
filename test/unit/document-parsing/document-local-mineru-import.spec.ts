@@ -1,3 +1,6 @@
+import type { DocumentParseProgressArtifact, DocumentParseSourceBinding } from '../../../server/database/document-parsing.schema';
+import type { DocumentOriginalArtifact } from '../../../shared/document-original.interface';
+import type { DocumentStepFence } from '../../../server/modules/document-management/src/hosted/nest/document-step-lease.repository';
 import { openDocumentPdfSession } from '../../../server/modules/document-management/src/hosted/nest/document-original-pdf';
 jest.mock('../../../server/modules/document-management/src/hosted/nest/document-original-pdf', () => ({ openDocumentPdfSession: jest.fn() }));
 import { createHash } from 'node:crypto';
@@ -205,6 +208,7 @@ it.each([true, false])('reuses exact PDF pages but not raw Markdown across produ
   f.plugins.parseOriginal.mockResolvedValue({ markdown: 'Official parser text.' });
   if (localFirst) await f.service.start('DV', request, context);
   else {
+    f.settings.capture.mockResolvedValueOnce({ revision: 1, localMineruFallbackEnabled: false, titleEnhancementEnabled: false });
     await f.service.start('DV', { requestId: 'official-first', expectedPublishedRevision: 0 }, context);
     await f.service.executeStep('PR', { ...context, documentVersionId: 'DV' },
       { parseRunId: 'PR', leaseOwner: 'local', leaseToken: 'lease', leaseGeneration: 1 });
@@ -214,6 +218,7 @@ it.each([true, false])('reuses exact PDF pages but not raw Markdown across produ
   Object.assign(f.run, { parseRunId: 'NEXT', parseRevision: 3, expectedPublishedRevision: 2, status: 'RUNNING', artifactProgress: [], manifestArtifact: null });
   f.leases.claim.mockResolvedValue({ parseRunId: 'NEXT', leaseOwner: 'local', leaseToken: 'lease', leaseGeneration: 1 });
   if (localFirst) {
+    f.settings.capture.mockResolvedValueOnce({ revision: 1, localMineruFallbackEnabled: false, titleEnhancementEnabled: false });
     await f.service.start('DV', { requestId: 'official-next', expectedPublishedRevision: 2 }, context);
     await f.service.executeStep('NEXT', { ...context, documentVersionId: 'DV' },
       { parseRunId: 'NEXT', leaseOwner: 'local', leaseToken: 'lease', leaseGeneration: 1 });
@@ -283,4 +288,123 @@ it('keeps ordinary no-mode replay from changing the meaning of a local request',
   await expect(f.service.start('DV', { requestId: request.requestId, expectedPublishedRevision: 0 }, context))
     .rejects.toThrow('DOCUMENT_PARSE_REQUEST_CONFLICT');
   expect(f.readSelection).not.toHaveBeenCalled();
+});
+
+
+const workerScope = { actorUserId: 'actor', tenantId: 'tenant', roles: [], documentVersionId: 'DV' };
+const workerFence = { parseRunId: 'PR', leaseOwner: 'local-worker', leaseToken: 'worker-token', leaseGeneration: 1 };
+async function workerFixture() {
+  const f = fixture();
+  const assertScope = jest.fn(async () => undefined);
+  const record = jest.fn(async (_scope: unknown, fence: DocumentStepFence, artifact: DocumentOriginalArtifact) => {
+    const receipt = (f.run.artifactProgress as DocumentParseProgressArtifact[]).find(item => item.relativePath === artifact.relativePath)?.localWorkerReceipt;
+    if (receipt && (receipt.sha256 !== artifact.sha256 || receipt.byteLength !== artifact.byteLength)) throw new Error('DOCUMENT_LOCAL_WORKER_CANDIDATE_CONFLICT');
+    const localWorkerReceipt = receipt ?? { sha256: artifact.sha256, byteLength: artifact.byteLength,
+      leaseOwner: fence.leaseOwner, leaseToken: fence.leaseToken, leaseGeneration: fence.leaseGeneration };
+    f.run.artifactProgress = [...f.run.artifactProgress.filter(item => (item as DocumentOriginalArtifact).relativePath !== artifact.relativePath), { ...artifact, localWorkerReceipt }];
+  });
+  Object.assign(f.repository, { assertLocalWorkerScope: assertScope, recordLocalWorkerCandidate: record });
+  const started = await f.service.start('DV', { requestId: 'worker-request', expectedPublishedRevision: 0 }, workerScope);
+  return { ...f, assertScope, record, started };
+}
+it('defaults ordinary admissions to a persisted local worker and waits without invoking official parsing or browser upload', async () => {
+  const f = await workerFixture();
+  expect(f.started).toMatchObject({ status: 'RUNNING', executionMode: 'LOCAL_MINERU_WORKER', waitingForLocalWorker: true });
+  expect(f.run.sourceBinding.parserInput).toEqual({ mode: 'LOCAL_MINERU_WORKER', settings: { revision: 1, localMineruFallbackEnabled: true, titleEnhancementEnabled: false } });
+  expect(await f.service.executeStep('PR', workerScope, workerFence)).toMatchObject({ status: 'STAGING', coverage: { knownPageCount: null, readPageIndexes: [] } });
+  expect(f.plugins.parseOriginal).not.toHaveBeenCalled(); expect(f.extract).not.toHaveBeenCalled();
+  expect(authority.mintDocumentUploadAuthority).not.toHaveBeenCalled();
+  expect(f.authorizer.assertCanReadLocalCandidate).not.toHaveBeenCalled();
+});
+it('returns exact source and frozen settings, accepts only output, then bounded STEP publishes without leaking private receipt', async () => {
+  const f = await workerFixture();
+  f.settings.capture.mockResolvedValue({ revision: 2, localMineruFallbackEnabled: false, titleEnhancementEnabled: true });
+  expect(await f.service.readLocalWorkerOriginal('PR', workerScope, workerFence)).toMatchObject({ candidateReady: false,
+    bytes: new Uint8Array([1]), sha256: 'a'.repeat(64), byteLength: 1, settings: { revision: 1, titleEnhancementEnabled: false } });
+  const accepted = await f.service.acceptLocalWorkerCandidate('PR', workerScope, workerFence, f.selection.bytes);
+  expect(accepted).toMatchObject({ status: 'STAGING', waitingForLocalWorker: false });
+  expect(f.extract).not.toHaveBeenCalled();
+  expect(await f.service.readLocalWorkerOriginal('PR', workerScope, workerFence)).toMatchObject({ candidateReady: true });
+  await f.service.executeStep('PR', workerScope, workerFence);
+  expect(f.run.status).toBe('PUBLISHED');
+  const calls = f.scoped.upload.mock.calls.length;
+  f.leases.check.mockRejectedValue(new Error('EXPIRED_FENCE'));
+  expect(await f.service.acceptLocalWorkerCandidate('PR', workerScope, workerFence, f.selection.bytes)).toMatchObject({ status: 'PUBLISHED' });
+  expect(f.scoped.upload).toHaveBeenCalledTimes(calls);
+  expect(f.repository.publish).toHaveBeenCalledTimes(1);
+  await expect(f.service.acceptLocalWorkerCandidate('PR', workerScope, { ...workerFence, leaseToken: 'other' }, f.selection.bytes)).rejects.toThrow('DOCUMENT_LOCAL_WORKER_RECEIPT_MISMATCH');
+  const publicArtifacts = [...f.content.values()].map(value => Buffer.from(value.bytes).toString()).join('');
+  expect(publicArtifacts).not.toContain('worker-token'); expect(JSON.stringify(accepted)).not.toContain('worker-token');
+});
+it('recovers candidate upload response loss without repeating upload or producing a false source download', async () => {
+  const f = await workerFixture(); const upload = f.scoped.upload.getMockImplementation()!;
+  f.scoped.upload.mockImplementationOnce(async (bytes, options) => { await upload(bytes, options); throw new Error('LOST_UPLOAD_RECEIPT'); });
+  await expect(f.service.acceptLocalWorkerCandidate('PR', workerScope, workerFence, f.selection.bytes)).rejects.toThrow('LOST_UPLOAD_RECEIPT');
+  f.readSelection.mockClear();
+  expect(await f.service.readLocalWorkerOriginal('PR', workerScope, workerFence)).toMatchObject({ candidateReady: true });
+  expect(f.readSelection).not.toHaveBeenCalled(); expect(f.scoped.upload).toHaveBeenCalledTimes(1);
+  await f.service.acceptLocalWorkerCandidate('PR', workerScope, workerFence, f.selection.bytes);
+  expect(f.scoped.upload).toHaveBeenCalledTimes(1);
+});
+it('recovers candidate verified-progress response loss and rejects changed duplicate bytes', async () => {
+  const f = await workerFixture(); const record = f.record.getMockImplementation()!;
+  f.record.mockImplementationOnce(record).mockRejectedValueOnce(new Error('LOST_VERIFIED_PROGRESS'));
+  await expect(f.service.acceptLocalWorkerCandidate('PR', workerScope, workerFence, f.selection.bytes)).rejects.toThrow('LOST_VERIFIED_PROGRESS');
+  await f.service.acceptLocalWorkerCandidate('PR', workerScope, workerFence, f.selection.bytes);
+  await f.service.executeStep('PR', workerScope, workerFence);
+  expect((f.run.artifactProgress as DocumentOriginalArtifact[]).every(item => item.readback === 'VERIFIED')).toBe(true);
+  const changed = candidate(); changed.raw.markdown = 'changed';
+  await expect(f.service.acceptLocalWorkerCandidate('PR', workerScope, workerFence, encode(changed))).rejects.toThrow('DOCUMENT_LOCAL_WORKER_RECEIPT_MISMATCH');
+  expect(f.repository.publish).toHaveBeenCalledTimes(1);
+});
+it('worker source and result fail closed for actor, source, revoked grant, missing settings and fence changes', async () => {
+  const f = await workerFixture();
+  await expect(f.service.readLocalWorkerOriginal('PR', { ...workerScope, actorUserId: 'other' }, workerFence)).rejects.toThrow('DOCUMENT_LOCAL_WORKER_BINDING_MISMATCH');
+  const other = candidate(); other.source.sha256 = 'b'.repeat(64);
+  await expect(f.service.acceptLocalWorkerCandidate('PR', workerScope, workerFence, encode(other))).rejects.toThrow('DOCUMENT_PARSE_ORIGINAL_MISMATCH');
+  f.assertScope.mockRejectedValueOnce(new Error('DOCUMENT_AUTOMATIC_LEASE_REJECTED'));
+  await expect(f.service.readLocalWorkerOriginal('PR', workerScope, workerFence)).rejects.toThrow('DOCUMENT_AUTOMATIC_LEASE_REJECTED');
+  f.leases.check.mockRejectedValueOnce(new Error('DOCUMENT_STEP_LEASE_REJECTED'));
+  await expect(f.service.acceptLocalWorkerCandidate('PR', workerScope, workerFence, f.selection.bytes)).rejects.toThrow('DOCUMENT_STEP_LEASE_REJECTED');
+  delete (f.run.sourceBinding as DocumentParseSourceBinding).parserInput!.settings;
+  await expect(f.service.readLocalWorkerRun('PR', workerScope)).rejects.toThrow('DOCUMENT_PARSING_SETTINGS_SNAPSHOT_REQUIRED');
+  expect(f.scoped.upload).not.toHaveBeenCalled();
+});
+it('worker request replay keeps captured mode and does not accept a new browser candidate selection', async () => {
+  const f = await workerFixture(); f.settings.capture.mockResolvedValue({ revision: 2, localMineruFallbackEnabled: false, titleEnhancementEnabled: false });
+  expect(await f.service.start('DV', { requestId: 'worker-request', expectedPublishedRevision: 0 }, workerScope)).toMatchObject({ executionMode: 'LOCAL_MINERU_WORKER' });
+  expect(f.settings.capture).toHaveBeenCalledTimes(1);
+  await expect(f.service.start('DV', { ...request, requestId: 'worker-request' }, context)).rejects.toThrow('DOCUMENT_PARSE_REQUEST_CONFLICT');
+  expect(f.repository.reserve).toHaveBeenCalledTimes(1);
+});
+
+it('acknowledges an exact accepted STAGING result after lease release without writes, but rejects another token', async () => {
+  const f = await workerFixture();
+  await f.service.acceptLocalWorkerCandidate('PR', workerScope, workerFence, f.selection.bytes);
+  const writes = f.record.mock.calls.length;
+  f.leases.check.mockRejectedValue(new Error('DOCUMENT_STEP_LEASE_REJECTED'));
+  await expect(f.service.acceptLocalWorkerCandidate('PR', workerScope, workerFence, f.selection.bytes)).resolves.toMatchObject({ status: 'STAGING' });
+  await expect(f.service.acceptLocalWorkerCandidate('PR', workerScope, { ...workerFence, leaseToken: 'wrong' }, f.selection.bytes)).rejects.toThrow('DOCUMENT_LOCAL_WORKER_RECEIPT_MISMATCH');
+  expect(f.record).toHaveBeenCalledTimes(writes); expect(f.scoped.upload).toHaveBeenCalledTimes(1);
+});
+
+it('resumes a saved worker candidate across expiry and lost copy response without downloading source for another parse', async () => {
+  const f = await workerFixture();
+  const oldId = 'PRUN-00000000-0000-4000-8000-000000000091';
+  f.run.parseRunId = oldId;
+  await f.service.acceptLocalWorkerCandidate(oldId, workerScope, { ...workerFence, parseRunId: oldId }, f.selection.bytes);
+  const predecessor = structuredClone(f.run); predecessor.status = 'FAILED';
+  f.predecessors.set(oldId, predecessor);
+  Object.assign(f.run, { parseRunId: 'PR', parseRevision: 3, requestId: `parse-resume-${oldId}`, sourceBinding: predecessor.sourceBinding, status: 'RUNNING', artifactProgress: [] });
+  const upload = f.scoped.upload.getMockImplementation()!;
+  f.scoped.upload.mockImplementationOnce(async (bytes, options) => { await upload(bytes, options); throw new Error('LOST_COPY_RECEIPT'); });
+  await expect(f.service.readLocalWorkerOriginal('PR', workerScope, workerFence)).rejects.toThrow('LOST_COPY_RECEIPT');
+  f.readSelection.mockClear();
+  expect(await f.service.readLocalWorkerOriginal('PR', workerScope, workerFence)).toMatchObject({ candidateReady: true });
+  expect(f.readSelection).not.toHaveBeenCalled(); expect(f.scoped.upload).toHaveBeenCalledTimes(2);
+  expect(Buffer.from(f.content.get('wiselink/parsed/DV/PR/raw/mineru-candidate.json')!.bytes)).toEqual(f.selection.bytes);
+  await f.service.executeStep('PR', workerScope, workerFence);
+  expect(f.run.status).toBe('PUBLISHED'); expect(f.extract).toHaveBeenCalledTimes(1);
+  expect(f.plugins.parseOriginal).not.toHaveBeenCalled();
+  expect(f.predecessors.get(oldId)).toEqual(predecessor);
 });

@@ -149,7 +149,7 @@ export class DocumentWorkRuntimeService {
         // A lost reservation response is recovered by the same durable request.
         const reserved = await this.parsing.start(scope.documentVersionId,
           { requestId: `auto-original-${lease.requestId}`, expectedPublishedRevision: 0 }, scope);
-        return { ...identity, status: 'ORIGINAL_PREPARING', parseRunId: reserved.parseRunId };
+        return { ...identity, status: 'ORIGINAL_PREPARING', parseRunId: reserved.parseRunId, waitingForLocalWorker: reserved.waitingForLocalWorker };
       }
       if (run.status === 'PUBLISHED') {
         const published = await this.parsing.inspectPublishedIdentity(scope.documentVersionId, run.parseRunId, scope);
@@ -166,11 +166,12 @@ export class DocumentWorkRuntimeService {
           requestId: documentParseRecoveryRequestId(run.parseRunId),
           expectedPublishedRevision: state.publishedRun?.parseRevision ?? 0,
         }, scope);
-        return { ...identity, status: 'ORIGINAL_PREPARING', parseRunId: reserved.parseRunId };
+        return { ...identity, status: 'ORIGINAL_PREPARING', parseRunId: reserved.parseRunId, waitingForLocalWorker: reserved.waitingForLocalWorker };
       }
       if (run.status === 'FAILED' || run.errorCode || Date.parse(run.deadlineAt) <= Date.now())
         return { ...identity, status: 'REQUIRES_ATTENTION', parseRunId: run.parseRunId,
           errorCode: run.errorCode ?? (run.status === 'FAILED' ? 'DOCUMENT_PARSE_FAILED' : 'DOCUMENT_PARSE_DEADLINE_EXCEEDED') };
+      if (run.waitingForLocalWorker) return { ...identity, status: 'ORIGINAL_PREPARING', parseRunId: run.parseRunId, waitingForLocalWorker: true };
       const result = await this.executeStep(scope, run.parseRunId);
       return { ...identity, status: result.status === 'PUBLISHED' ? 'ORIGINAL_READY'
         : result.status === 'BUSY' ? 'BUSY' : 'ORIGINAL_PREPARING', parseRunId: run.parseRunId };

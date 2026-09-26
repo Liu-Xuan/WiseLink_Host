@@ -126,3 +126,12 @@ it('keeps persisted state visibly off until CAS save succeeds and preserves draf
   expect(container.querySelector('small')!.textContent).toBe('已保存：开启');
   expect(container.textContent).not.toContain('有未保存更改');
 });
+
+it('shows the local default separately from a persisted tenant choice', async () => {
+  read.mockResolvedValue({ ...saved, revision: 0, localMineruFallbackEnabled: true, canManage: false, managementStatus: 'ROLE_NOT_CONFIGURED' });
+  await render();
+  expect(container.textContent).toContain('默认使用本机 MinerU 解析');
+  expect(container.querySelector('small')!.textContent).toBe('默认：开启');
+  expect(container.querySelector<HTMLButtonElement>('#local-mineru-enabled')!.disabled).toBe(true);
+  expect(update).not.toHaveBeenCalled();
+});

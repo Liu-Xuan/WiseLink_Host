@@ -3512,3 +3512,5 @@ export interface ExternalDiscoverySelectionResponse {
   reviewedAt: string;
   documentManagementIoPerformed: false;
 }
+
+export type { LocalMineruWorkerLease, LocalMineruWorkerIdentity, LocalMineruWorkerClaim, LocalMineruWorkerClaimResult, LocalMineruWorkerRenewResult, LocalMineruWorkerSourceReady, LocalMineruWorkerResult } from './local-mineru-worker.interface';

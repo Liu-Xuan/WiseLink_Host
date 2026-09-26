@@ -108,7 +108,7 @@ export class CanonicalDocumentParsingSettingsService {
 function snapshot(saved: StoredSettings): DocumentParsingSettingsSnapshot {
   return {
     revision: saved?.revision ?? 0,
-    localMineruFallbackEnabled: saved?.localMineruFallbackEnabled ?? false,
+    localMineruFallbackEnabled: saved?.localMineruFallbackEnabled ?? true,
     titleEnhancementEnabled: saved?.titleEnhancementEnabled ?? false,
   };
 }

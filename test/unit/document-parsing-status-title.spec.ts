@@ -137,3 +137,15 @@ describe('document parsing status title boundary', () => {
     });
   });
 });
+
+
+it('keeps normal parsing available when local default is enabled and the official plugin is not configured', async () => {
+  const settings = { capture: jest.fn().mockResolvedValue({ revision: 0, localMineruFallbackEnabled: true, titleEnhancementEnabled: false }) };
+  const service = new DocumentParsingHostedService({ from: jest.fn() } as never,
+    { readMetadataSource: jest.fn().mockResolvedValue(sourceRow(null)) } as never,
+    { current: jest.fn().mockResolvedValue({ latest: null, published: null }) } as never,
+    { configured: jest.fn(() => false) } as never, {} as never,
+    { assertCanRead: jest.fn().mockResolvedValue(undefined) } as never, settings as never);
+  expect(await service.status('DV-1', context)).toMatchObject({ runtimeAvailable: true, runtime: { state: 'CONFIGURED_UNVERIFIED', errorCode: null } });
+  expect(settings.capture).toHaveBeenCalledWith(context.tenantId);
+});

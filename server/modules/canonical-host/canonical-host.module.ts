@@ -1,3 +1,5 @@
+import { LocalMineruWorkerService } from './local-mineru-worker.service';
+import { LocalMineruWorkerOpenApiController } from './local-mineru-worker.openapi.controller';
 import { MatterAssessmentActivityController } from './matter-assessment-activity.controller';
 import { EngineeringIssueSearchService } from './engineering-issue-search.service';
 import { EngineeringIssueSearchController } from './engineering-issue-search.controller';
@@ -220,6 +222,7 @@ export interface CanonicalHostModuleOptions {
     CanonicalHostOpenApiController,
     CanonicalHostMcpOpenApiController,
     CanonicalHostOpenClawMcpOpenApiController,
+    LocalMineruWorkerOpenApiController,
     OauthSessionDevelopmentWorkItemController,
     CanonicalHostReviewActionController,
     CanonicalHostApplicabilitySelectionController,
@@ -475,6 +478,7 @@ export class CanonicalHostModule {
         CanonicalHostOpenApiController,
         CanonicalHostMcpOpenApiController,
         CanonicalHostOpenClawMcpOpenApiController,
+    LocalMineruWorkerOpenApiController,
         OauthSessionDevelopmentWorkItemController,
         CanonicalHostReviewActionController,
         CanonicalHostApplicabilitySelectionController,
@@ -559,6 +563,7 @@ export class CanonicalHostModule {
         JobAidWorkRepository,
         EngineeringSearchProjectionWriter,
         DocumentWorkRuntimeService,
+        LocalMineruWorkerService,
         DocumentSourceProjectionService,
         DocumentRevisionReadingService,
         DocumentActivityRunRepository,
