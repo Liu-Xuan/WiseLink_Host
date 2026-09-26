@@ -626,6 +626,8 @@ export async function runHostedInitialStage(options, dependencies) {
     const recoveryBegin = options.assessmentRecovery?.status === 'RECOVERY_BEGIN';
     const sealedCommitReplay = options.assessmentRecovery?.status === 'RECOVERY_COMMITTING' &&
       name === INITIAL_ASSESSMENT_OPERATIONS[operation].commit;
+    const sealedStatusRead = options.assessmentRecovery?.status === 'RECOVERY_COMMITTING' &&
+      name === 'get_action_attempt_status';
     const exactApplicabilityBeginReplay = operation === 'EXTRACT_APPLICABILITY' &&
       name === 'begin_applicability_evaluation' &&
       (recoveryBegin ||
@@ -636,7 +638,7 @@ export async function runHostedInitialStage(options, dependencies) {
       !await checkpoint.readOptional('begin_applicability_evaluation-1.result') &&
       !await checkpoint.readOptional('model.started') &&
       !await checkpoint.readOptional('commit_applicability_candidate-1.started');
-    const value = freshAssessmentCall || sealedCommitReplay ||
+    const value = freshAssessmentCall || sealedCommitReplay || sealedStatusRead ||
       (options.assessmentRecovery && name.startsWith('begin_') && !recoveryBegin)
       ? await dependencies.callTool(name, scopedArgs) : await checkpoint.remoteStep({
       // Keep c114 checkpoint identity stable for an already-started JobAid run.

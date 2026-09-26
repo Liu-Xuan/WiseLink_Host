@@ -20,6 +20,7 @@ import {
   canonicalSha256,
   reviewCandidateArtifactRefs,
   sealResultEnvelope,
+  validateRuntimeProvenance,
   validateApplicabilityModelInput,
   validatePayload,
   validateReviewCandidate,
@@ -1376,7 +1377,7 @@ test('requires 35 MCP capabilities, six review tools, and hosted provenance', ()
   assert.ok(HOST_MCP_TOOLS.includes('commit_applicability_candidate'));
   assert.equal(
     WISELINK_SKILL_VERSION,
-    'wiselink-research-and-synthesize@r09.c161',
+    'wiselink-research-and-synthesize@r09.c162',
   );
   assert.equal(
     WISELINK_SKILL_COMPATIBILITY_REF,
@@ -3070,8 +3071,11 @@ test('replays only the Host-sealed Overall result to finish COMMITTING', async (
   const task = makeTask('OPENCLAW_OVERALL_SYNTHESIS', {
     modelInput: input, selectedDiscoveryRefs: [], providerCodes: [],
   });
-  const recoveryResult = sealResultEnvelope({ task,
+  const newlySealed = sealResultEnvelope({ task,
     modelOutput: synthesisOutput(input), provenance: provenance() });
+  const { contentHash: _currentHash, ...historical } = newlySealed;
+  historical.skillVersion = `${WISELINK_SKILL_COMPATIBILITY_REF}.c${153}`;
+  const recoveryResult = { ...historical, contentHash: canonicalSha256(historical) };
   const begin = { ...runningBegin(task, { modelInput: input, selectedDiscoveryRefs: [] }),
     status: 'COMMITTING', recoveryResult };
   const calls = [];
@@ -3097,6 +3101,20 @@ test('replays only the Host-sealed Overall result to finish COMMITTING', async (
   assert.equal(result.outcome, 'COMMITTING_REPLAYED');
   assert.deepEqual(calls, ['get_parse_status', 'begin_overall_synthesis',
     'get_action_attempt_status', 'commit_overall_candidate']);
+});
+
+test('historical skill provenance is allowed only for a sealed compatible recovery', () => {
+  const old = provenance({ skillVersion: `${WISELINK_SKILL_COMPATIBILITY_REF}.c${153}` });
+  assert.throws(() => validateRuntimeProvenance(old), /RUNTIME_SKILL_VERSION_POLICY_MISMATCH/);
+  assert.doesNotThrow(() => validateRuntimeProvenance(old, { allowHistoricalSkillVersion: true }));
+  for (const skillVersion of [
+    'wiselink-research-and-synthesize@r08.c153',
+    `${WISELINK_SKILL_COMPATIBILITY_REF}.c${9}`,
+    `${WISELINK_SKILL_COMPATIBILITY_REF}.c${999}`,
+  ]) {
+    assert.throws(() => validateRuntimeProvenance({ ...old, skillVersion },
+      { allowHistoricalSkillVersion: true }), /RUNTIME_SKILL_VERSION_POLICY_MISMATCH/);
+  }
 });
 
 test('binds Overall applicability status to the Host current candidate', () => {

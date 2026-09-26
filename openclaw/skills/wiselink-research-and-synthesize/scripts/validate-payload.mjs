@@ -5,7 +5,7 @@ import { readFile } from 'node:fs/promises';
 import { pathToFileURL } from 'node:url';
 
 export const WISELINK_SKILL_VERSION =
-  'wiselink-research-and-synthesize@r09.c161';
+  'wiselink-research-and-synthesize@r09.c162';
 export const WISELINK_SKILL_COMPATIBILITY_REF =
   'wiselink-research-and-synthesize@r09';
 export const WISELINK_HOST_MCP_NAME =
@@ -3407,9 +3407,9 @@ export function validateExecutionModelSelection(value) {
   return value;
 }
 
-export function validateResultEnvelope(task, result) {
+export function validateResultEnvelope(task, result, options = {}) {
   validateTaskEnvelope(task);
-  validateResultEnvelopeBinding(task, result);
+  validateResultEnvelopeBinding(task, result, options);
   assertEnvelopeSourceSubset(task.sourceRefs, result.sourceRefs);
   const requiredMissing = new Set(
     task.hostResolvedMissingInputs.map(({ code }) => code),
@@ -3501,7 +3501,7 @@ export function validateTranslationDeliveryResultEnvelope(taskBinding, result) {
   return result;
 }
 
-function validateResultEnvelopeBinding(task, result) {
+function validateResultEnvelopeBinding(task, result, options = {}) {
   exactKeys(
     result,
     [
@@ -3596,7 +3596,7 @@ function validateResultEnvelopeBinding(task, result) {
     skillVersion: result.skillVersion,
     toolVersions: result.toolVersions,
     runMetrics: result.runMetrics,
-  });
+  }, options);
   nullableText(result.errorCode, 'RESULT_ENVELOPE_ERROR_CODE_INVALID');
   nullableText(result.errorDetail, 'RESULT_ENVELOPE_ERROR_DETAIL_INVALID');
   if (result.status === 'SUCCEEDED') {
@@ -3651,7 +3651,7 @@ function validateResultEnvelopeBinding(task, result) {
   return result;
 }
 
-export function validateRuntimeProvenance(value) {
+export function validateRuntimeProvenance(value, options = {}) {
   exactKeys(
     value,
     [
@@ -3674,11 +3674,16 @@ export function validateRuntimeProvenance(value) {
     fail('RUNTIME_MODEL_PROVENANCE_UNREADABLE');
   }
   nonEmpty(value.promptVersion, 'RUNTIME_PROMPT_VERSION_REQUIRED');
-  equal(
-    value.skillVersion,
-    WISELINK_SKILL_VERSION,
-    'RUNTIME_SKILL_VERSION_POLICY_MISMATCH',
-  );
+  if (options.allowHistoricalSkillVersion) {
+    const escapedRef = WISELINK_SKILL_COMPATIBILITY_REF.replace(/[.*+?^${}()|[\]\\]/gu, '\\$&');
+    const historical = new RegExp(`^${escapedRef}\\.c([0-9]+)$`, 'u').exec(value.skillVersion);
+    const current = Number(WISELINK_SKILL_VERSION.split('.c').at(-1));
+    const revision = historical ? Number(historical[1]) : NaN;
+    if (!Number.isSafeInteger(revision) || revision < 10 || revision > current)
+      fail('RUNTIME_SKILL_VERSION_POLICY_MISMATCH');
+  } else {
+    equal(value.skillVersion, WISELINK_SKILL_VERSION, 'RUNTIME_SKILL_VERSION_POLICY_MISMATCH');
+  }
   assertObject(value.toolVersions, 'runtime tool versions');
   for (const [name, version] of Object.entries(value.toolVersions)) {
     nonEmpty(name, 'RUNTIME_TOOL_NAME_INVALID');
