@@ -479,6 +479,20 @@ export class MiaodaWorkItemRepository {
     };
   }
 
+  /** Service-readable grant discovery only. WorkItem and parse rows are rechecked under its actor. */
+  async listActiveLocalWorkerDelegations(input: {
+    tenantId: string; principalId: string; documentVersionId?: string; limit?: number;
+  }) {
+    return this.db.select().from(autoWorkItemAuthorization).where(and(
+      eq(autoWorkItemAuthorization.tenantId, input.tenantId),
+      eq(autoWorkItemAuthorization.grantKind, 'MIAODA_CANONICAL_PARSE_REQUEST'),
+      eq(autoWorkItemAuthorization.status, 'LEASED'),
+      eq(autoWorkItemAuthorization.leaseOwner, input.principalId),
+      gt(autoWorkItemAuthorization.leaseExpiresAt, new Date()),
+      ...(input.documentVersionId ? [eq(autoWorkItemAuthorization.documentVersionId, input.documentVersionId)] : []),
+    )).orderBy(autoWorkItemAuthorization.createdAt).limit(Math.min(Math.max(input.limit ?? 50, 1), 100));
+  }
+
   /** Loads the exact active, service-owned lease that gates downstream tools. */
   async loadActiveAutoProcessingLease(input: {
     tenantId: string;

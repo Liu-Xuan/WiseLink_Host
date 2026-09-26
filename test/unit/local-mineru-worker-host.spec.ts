@@ -9,10 +9,11 @@ import type { CanonicalServiceScopeAuthorizationPort } from '../../server/module
 import type { EngineeringMatterWorkingRepository } from '../../server/modules/canonical-host/engineering-matter-working.repository';
 import type { DocumentParsingRepository } from '../../server/modules/document-management/src/hosted/nest/document-parsing.repository';
 import type { DocumentParsingHostedService } from '../../server/modules/document-management/src/hosted/nest/document-parsing-hosted.service';
+import type { MiaodaWorkItemRepository } from '../../server/modules/work-item/miaoda-work-item.repository';
 import type { DocumentStepLeaseRepository } from '../../server/modules/document-management/src/hosted/nest/document-step-lease.repository';
 
 const identity = { parseRunId: 'PRUN-test', documentVersionId: 'DV-test', lease: {
-  leaseOwner: 'mineru:configured-principal', leaseToken: 'lease-secret', leaseGeneration: 2,
+  leaseOwner: 'mineru:configured-principal:WI-test:g3', leaseToken: 'lease-secret', leaseGeneration: 2,
 } };
 const fence = { parseRunId: identity.parseRunId, ...identity.lease };
 const denied = Object.assign(new Error('DOCUMENT_STEP_LEASE_REJECTED'), { statusCode: 409 });
@@ -20,14 +21,21 @@ const denied = Object.assign(new Error('DOCUMENT_STEP_LEASE_REJECTED'), { status
 function setup() {
   const serviceScope = { appId: 'app_17bzc551rsg', tenantId: 'configured-tenant',
     principalId: 'configured-principal', authorizationFingerprint: 'verified' };
-  const row = { parseRunId: identity.parseRunId, documentVersionId: identity.documentVersionId,
-    actorUserId: 'persisted-user' };
-  const scope = { tenantId: serviceScope.tenantId, actorUserId: row.actorUserId,
-    documentVersionId: row.documentVersionId, roles: [], automaticWorkItem: { principalId: serviceScope.principalId } };
-  const sourceBinding: { pdfSha256: string; byteLength: number; parserInput: object } = {
-    pdfSha256: 'a'.repeat(64), byteLength: 10,
+  const grant = { workItemId: 'WI-test', requestId: 'REQ-test', actorUserId: 'persisted-user',
+    documentVersionId: identity.documentVersionId, documentId: 'DOC-test', sourceArtifactId: 'ART-test',
+    sourceFileSha256: 'a'.repeat(64), sourceByteLength: 10, leaseGeneration: 3 };
+  const scope = { tenantId: serviceScope.tenantId, actorUserId: grant.actorUserId,
+    documentVersionId: grant.documentVersionId, roles: [], automaticWorkItem: {
+      principalId: serviceScope.principalId, workItemId: grant.workItemId, requestId: grant.requestId,
+      documentId: grant.documentId, sourceArtifactId: grant.sourceArtifactId, sourceFileSha256: grant.sourceFileSha256,
+      sourceByteLength: grant.sourceByteLength, leaseGeneration: grant.leaseGeneration,
+    } };
+  const sourceBinding = { documentId: grant.documentId, sourceArtifactId: grant.sourceArtifactId,
+    pdfSha256: grant.sourceFileSha256, byteLength: grant.sourceByteLength,
     parserInput: { mode: 'LOCAL_MINERU_WORKER', settings: { localMineruFallbackEnabled: true } },
   };
+  const row = { parseRunId: identity.parseRunId, documentVersionId: identity.documentVersionId,
+    actorUserId: grant.actorUserId, sourceBinding };
   const artifactProgress: Array<{ relativePath: string; localWorkerReceipt?: typeof identity.lease }> = [];
   const loaded = { scope, run: { sourceBinding, artifactProgress, deadlineAt: new Date('2026-09-27T00:00:00Z') } };
   const authorization = { assertAutoWorkItemQueueTransport: jest.fn().mockResolvedValue(undefined),
@@ -40,11 +48,14 @@ function setup() {
     acceptLocalWorkerCandidate: jest.fn().mockResolvedValue({ status: 'STAGING' }) };
   const leases = { claim: jest.fn().mockResolvedValue(fence), renew: jest.fn().mockResolvedValue(true),
     check: jest.fn().mockResolvedValue(undefined), release: jest.fn().mockResolvedValue(undefined) };
+  const workItems = { listActiveLocalWorkerDelegations: jest.fn().mockResolvedValue([grant]),
+    loadActiveAutoProcessingLease: jest.fn().mockResolvedValue({ authorization: grant }) };
   const worker = new LocalMineruWorkerService(authorization as unknown as CanonicalServiceScopeAuthorizationPort,
     actors as unknown as EngineeringMatterWorkingRepository, repository as unknown as DocumentParsingRepository,
-    parsing as unknown as DocumentParsingHostedService, leases as unknown as DocumentStepLeaseRepository);
+    parsing as unknown as DocumentParsingHostedService, leases as unknown as DocumentStepLeaseRepository,
+    workItems as unknown as MiaodaWorkItemRepository);
   return { worker, controller: new LocalMineruWorkerOpenApiController(worker), authorization, actors,
-    repository, parsing, leases, loaded, serviceScope, scope };
+    repository, parsing, leases, loaded, serviceScope, scope, workItems, grant, row };
 }
 
 function upload(headers: Record<string, string> = {}, chunks: Buffer[] = [Buffer.from('{}')]) {
@@ -64,11 +75,13 @@ describe('local MinerU Host dispatcher', () => {
     const h = setup();
     await expect(h.worker.claim({})).resolves.toMatchObject({ status: 'CLAIMED', ...identity });
     expect(h.authorization.assertAutoWorkItemQueueTransport).toHaveBeenCalledTimes(1);
-    expect(h.repository.listLocalWorkerCandidates).toHaveBeenCalledWith('configured-tenant', 50);
+    expect(h.workItems.listActiveLocalWorkerDelegations).toHaveBeenCalledWith({
+      tenantId: 'configured-tenant', principalId: 'configured-principal', limit: 50 });
+    expect(h.repository.listLocalWorkerCandidates).toHaveBeenCalledWith('configured-tenant', 50, h.scope);
+    expect(h.actors.withActorScope.mock.invocationCallOrder[0]).toBeLessThan(h.workItems.loadActiveAutoProcessingLease.mock.invocationCallOrder[0]);
+    expect(h.workItems.loadActiveAutoProcessingLease.mock.invocationCallOrder[0]).toBeLessThan(h.repository.listLocalWorkerCandidates.mock.invocationCallOrder[0]);
     expect(h.actors.withActorScope).toHaveBeenCalledWith('persisted-user', expect.any(Function));
-    expect(h.parsing.readLocalWorkerRun).toHaveBeenCalledWith(identity.parseRunId, {
-      tenantId: 'configured-tenant', actorUserId: 'persisted-user', documentVersionId: identity.documentVersionId, roles: [],
-    });
+    expect(h.parsing.readLocalWorkerRun).toHaveBeenCalledWith(identity.parseRunId, h.scope);
     expect(h.leases.claim).toHaveBeenCalledWith(h.scope, identity.parseRunId, identity.lease.leaseOwner, 120_000);
   });
 
@@ -82,10 +95,10 @@ describe('local MinerU Host dispatcher', () => {
 
   it('skips an expired automatic grant and claims the next eligible durable run', async () => {
     const h = setup();
-    h.repository.listLocalWorkerCandidates.mockResolvedValue([
-      { parseRunId: 'PRUN-expired', documentVersionId: 'DV-expired', actorUserId: 'expired-user' },
-      { parseRunId: identity.parseRunId, documentVersionId: identity.documentVersionId, actorUserId: 'persisted-user' },
+    h.workItems.listActiveLocalWorkerDelegations.mockResolvedValue([
+      { ...h.grant, workItemId: 'WI-expired', actorUserId: 'expired-user' }, h.grant,
     ]);
+    h.workItems.loadActiveAutoProcessingLease.mockResolvedValueOnce({ authorization: { ...h.grant, workItemId: 'WI-expired', actorUserId: 'expired-user' } });
     h.parsing.readLocalWorkerRun.mockRejectedValueOnce(new Error('DOCUMENT_AUTOMATIC_LEASE_REJECTED'));
     await expect(h.worker.claim({})).resolves.toMatchObject({ status: 'CLAIMED', ...identity });
     expect(h.leases.claim).toHaveBeenCalledTimes(1);
@@ -111,11 +124,31 @@ describe('local MinerU Host dispatcher', () => {
     expect(h.parsing.readLocalWorkerOriginal).not.toHaveBeenCalled();
   });
 
-  it('rejects an owner outside the configured principal before lookup', async () => {
+  it('rejects an owner outside the current delegated lease before parse lookup', async () => {
     const h = setup();
     await expect(h.worker.source({ ...identity, lease: { ...identity.lease, leaseOwner: 'mineru:attacker' } }))
       .rejects.toThrow('DOCUMENT_STEP_LEASE_REJECTED');
     expect(h.repository.readLocalWorkerById).not.toHaveBeenCalled();
+  });
+
+  it('rejects an old local owner after the automatic work-item generation changes', async () => {
+    const h = setup(); h.grant.leaseGeneration += 1;
+    await expect(h.worker.renew(identity)).rejects.toThrow('LOCAL_MINERU_RUN_NOT_FOUND');
+    expect(h.repository.readLocalWorkerById).not.toHaveBeenCalled();
+    expect(h.leases.renew).not.toHaveBeenCalled();
+  });
+
+  it('returns idle without parse access when no active delegation is visible', async () => {
+    const h = setup(); h.workItems.listActiveLocalWorkerDelegations.mockResolvedValue([]);
+    await expect(h.worker.claim({})).resolves.toEqual({ status: 'IDLE' });
+    expect(h.actors.withActorScope).not.toHaveBeenCalled();
+    expect(h.repository.listLocalWorkerCandidates).not.toHaveBeenCalled();
+  });
+
+  it('rejects a source-mismatched run before reading original bytes', async () => {
+    const h = setup(); h.row.sourceBinding.sourceArtifactId = 'ART-other';
+    await expect(h.worker.source(identity)).rejects.toThrow('LOCAL_MINERU_RUN_NOT_FOUND');
+    expect(h.parsing.readLocalWorkerOriginal).not.toHaveBeenCalled();
   });
 
   it('does not return source bytes or acknowledge renewal when the lease is rejected', async () => {

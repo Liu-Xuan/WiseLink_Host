@@ -311,7 +311,7 @@ test('document parse publication preserves immutable source, readback, replay, C
     // Receipt storage must not update source_binding (0038 forbids that update).
     const workerSource = { ...input.sourceBinding, parserInput: { mode: 'LOCAL_MINERU_WORKER', settings: parserInput.settings } };
     const worker = await repo.reserve(scope, { ...input, sourceBinding: workerSource, requestId: 'LOCAL-WORKER', expectedPublishedRevision: 1 });
-    assert.equal((await repo.listLocalWorkerCandidates(scope.tenantId, 10)).some(row => row.parseRunId === worker.row.parseRunId), true);
+    assert.equal((await repo.listLocalWorkerCandidates(scope.tenantId, 10, scope)).some(row => row.parseRunId === worker.row.parseRunId), true);
     assert.equal(await repo.readLocalWorkerById('OTHER-TENANT', worker.row.parseRunId), null);
     await other.unsafe("SET ROLE authenticated; SELECT set_config('app.user_id', 'ACTOR-2', false)");
     assert.equal(await otherRepo.readLocalWorkerById(scope.tenantId, worker.row.parseRunId), null);
@@ -331,7 +331,7 @@ test('document parse publication preserves immutable source, readback, replay, C
     assert.equal(received.artifactProgress[0].localWorkerReceipt.leaseToken, workerFence.leaseToken);
     assert.deepEqual(received.sourceBinding, workerSource);
     await assert.rejects(repo.recordLocalWorkerCandidate(scope, workerFence, { ...candidateArtifact, sha256: 'f'.repeat(64) }), /DOCUMENT_LOCAL_WORKER_CANDIDATE_CONFLICT/);
-    assert.equal((await repo.listLocalWorkerCandidates(scope.tenantId, 10)).some(row => row.parseRunId === worker.row.parseRunId), false);
+    assert.equal((await repo.listLocalWorkerCandidates(scope.tenantId, 10, scope)).some(row => row.parseRunId === worker.row.parseRunId), false);
     await leases.release(scope, workerFence);
     await assert.rejects(repo.recordLocalWorkerCandidate(scope, workerFence, candidateArtifact), /DOCUMENT_STEP_LEASE_REJECTED/);
     await leases.cancel(scope, worker.row.parseRunId);

@@ -14,7 +14,13 @@ C159实现提交 `80ee9624d`（父 `0cd03f6c5`），普通合入平台 main 后�
 
 专用key `1877292677787683` 已创建并脱敏读回：仅四项指定POST、allow_all=false、preview=false；秘密存仓库外0600文件。发布后真实一次性worker领取返回IDLE、exit0，无解析或模型调用；证明专用入口与Host空队列可用，尚未证明真实候选回传和发布。17c终端因加载状态未取得新鲜ps/cron，旧缓冲未当作现态；操作员正在正常重连。新真实任务验收继续，常驻/cron保持未启用。
 
-旧官方rev2已过期并保留quota/0产物；现有页面重试有意继承旧producer，无法显式使用新默认设置。已补现有展开区的通用“按当前设置重新解析”入口（相关25/25 UI测试通过，待补丁发布），以稳定新请求建立后继解析输入，保留原重试与历史，不使用样本专用API或修改业务记录。
+恢复入口补丁实现 `ac38d4860`，普通合入平台main后部署提交 `6d9fb4cd4a3c41ea9e09029dd993476e0a1357b2`。release `7689704465054485470` 已finished、精确SHA匹配、error_logs=[]。新增“按当前设置重新解析”UI测试25/25，完整precommit通过。
+
+刘轩本人正式阅读页只点击一次该入口，Host创建rev3 `PRUN-03d3cb61-bebc-4122-90ff-a8fd266ff0f0`，mode=LOCAL_MINERU_WORKER，冻结settings revision0/local=true/title=false，deadline13:47:47.562+08；原official rev2在同一正常受理事务收尾FAILED并保留quota/0产物，未改其输入/错误。页面准确显示等待本机解析。
+
+真实worker随后的单次领取仍返回IDLE。只读确认新run无lease（generation0）、无error、无产物，服务租户63849986及原主体配置正确。定位0038既有RLS要求actor-owned，而新列表/按ID查询在进入withActorScope之前执行，导致服务上下文看不到run；早期空队列IDLE证据只能证明入口，不证明有效任务发现。正在改为通过现有逐任务授权确定精确actor/文档后进入既有SQL上下文，不放宽RLS或固定样本；补真实非owner服务角色PG测试。当前尚无候选上传或解析成功，17c恢复控制也尚未完成新鲜进程快照。
+
+领取修复已实现：先从0062既有服务可读委托发现，再进入对应actor查同WI/DV/来源；WorkItem自身也有actor RLS，因此其JOIN留在actor上下文内。本机lease owner含父WI与generation，旧token不能换绑新代次。浏览器run的可信委托带入每次事务，持久已有委托仍严格相等。独立真实PG使用nonowner/NOSUPERUSER/NOBYPASSRLS服务角色，实际0019/0038/0044/0062-64策略下1/1通过、零跳过；无actor查不到WorkItem/parse，授权后CLAIMED，跨actor/source/父代次与撤权零写入均验证。API32/32、解析及runtime55/55与server类型通过，无生产RLS修改。该修复待发布。
 
 ## 历史：2026-09-26 C158 授权范围更正与当前阻断分离
 
