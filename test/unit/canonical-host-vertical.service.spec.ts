@@ -1069,6 +1069,81 @@ describe('CanonicalHostVerticalService', () => {
     expect(producer.producePdf).toHaveBeenCalledTimes(1);
   });
 
+  it('reuses a completed parse after a fresh revision-bound authorization changes', async () => {
+    const request = await realRequest();
+    const bytes = await realPackageBytes();
+    const registrar = new InMemoryRegistrar();
+    const store = new InMemoryArtifactStore();
+    const producer = {
+      producePdf: jest.fn().mockResolvedValue({
+        kind: 'PACKAGE' as const,
+        packageId:
+          'urn:techpub:package:v1:sha256:9e734a0de1c37c368b954662e9bb11036cc24b430468a073b31da127380df622',
+        contractId: 'techpub.parsed-package.v1' as const,
+        contractRevision: 'frozen.2' as const,
+        bytes,
+        strictReaderValidated: true as const,
+        executionRoute: 'test-revision-bound-replay',
+      }),
+    };
+    const auth = authorization();
+    const snapshots = permissionSnapshots();
+    const service = new CanonicalHostVerticalService(
+      registrar,
+      producer,
+      auth,
+      snapshots,
+      store,
+      new UnifiedReaderService(
+        store,
+        new Frozen2CandidateReaderService(),
+        fullValidator(),
+        {
+          mode: 'HOST_CONFIGURED',
+          artifactStoreConfigured: true,
+          fullU0ValidatorConfigured: true,
+          immutableAcceptanceReceiptOwnerConfigured: false,
+          aeoSpecialistReaderConfigured: false,
+          authority: 'COMPOSITION_STATE_NOT_ACTIVATION_NOT_WRITE_AUTHORIZATION',
+        },
+      ),
+      entryFacade(),
+      failureReports(store, fullValidator()),
+      null,
+    );
+    const first = await service.runPdf(request, TEST_ACTOR);
+    const originalDecision = await auth.authorize({
+      actor: TEST_ACTOR,
+      action: 'PARSE_PDF',
+    });
+    const renewedDecision = {
+      ...originalDecision,
+      decisionHash: `sha256:${'a'.repeat(64)}`,
+      permissionSnapshotVersion: `permission-snapshot:sha256:${'b'.repeat(64)}`,
+    };
+    const authorize = jest.spyOn(auth, 'authorize').mockResolvedValue(renewedDecision);
+    jest.spyOn(snapshots, 'freshRead').mockResolvedValue({
+      permissionSnapshotVersion: renewedDecision.permissionSnapshotVersion,
+    });
+
+    const replay = await service.runPdf(request, TEST_ACTOR);
+    expect(replay.workItem.revision).toBe(first.workItem.revision);
+    expect(replay.workItem.package?.artifact).toEqual(first.workItem.package?.artifact);
+    expect(producer.producePdf).toHaveBeenCalledTimes(1);
+    authorize.mockResolvedValueOnce({
+      ...renewedDecision,
+      actorFingerprint: `sha256:${'c'.repeat(64)}`,
+    });
+    await expect(service.runPdf(request, TEST_ACTOR)).rejects.toThrow(
+      'WORK_ITEM_AUTHORIZATION_IDEMPOTENCY_COLLISION',
+    );
+    authorize.mockRejectedValueOnce(new Error('SOURCE_ACCESS_REVOKED'));
+    await expect(service.runPdf(request, TEST_ACTOR)).rejects.toThrow(
+      'SOURCE_ACCESS_REVOKED',
+    );
+    expect(producer.producePdf).toHaveBeenCalledTimes(1);
+  });
+
   it('ends RECORDING_FAILED when immutable FailureReport persistence fails', async () => {
     const request = await realRequest();
     const bytes = await realPackageBytes();

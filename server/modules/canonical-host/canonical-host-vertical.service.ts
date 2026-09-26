@@ -183,12 +183,15 @@ export class CanonicalHostVerticalService {
     let projection: CanonicalWorkItemProjection =
       await this.registrar.loadOrCreate(seedProjection(request, actionContext));
     assertSameRequest(projection, request);
-    assertSameAuthorization(projection, actionContext);
     if (projection.phase === 'CANDIDATE_READBACK_VERIFIED') {
+      // Fresh authorization was checked before loading the saved result. Its
+      // fingerprint can change when the WorkItem revision advances on save.
+      assertSameActor(projection, actionContext);
       // A replay reads the saved package. Its read failure must not replace
       // the already verified WorkItem result with a new parsing failure.
       return this.reuseCompleted(request, projection);
     }
+    assertSameAuthorization(projection, actionContext);
     if (projection.phase !== 'PARSE_REQUESTED') {
       throw new Error(`WORK_ITEM_NOT_RUNNABLE:${projection.phase}`);
     }
@@ -313,10 +316,11 @@ export class CanonicalHostVerticalService {
       seedProjection(request, actionContext),
     );
     assertSameRequest(projection, request);
-    assertSameAuthorization(projection, actionContext);
     if (projection.phase === 'CANDIDATE_READBACK_VERIFIED') {
+      assertSameActor(projection, actionContext);
       return this.reuseCompletedS1000d(request, projection);
     }
+    assertSameAuthorization(projection, actionContext);
     if (projection.phase !== 'PARSE_REQUESTED') {
       throw new Error(`WORK_ITEM_NOT_RUNNABLE:${projection.phase}`);
     }
@@ -1998,6 +2002,18 @@ function assertSameAuthorization(
       actionContext.decision.decisionHash ||
     projection.permissionSnapshotVersion !==
       actionContext.decision.permissionSnapshotVersion
+  ) {
+    throw new Error('WORK_ITEM_AUTHORIZATION_IDEMPOTENCY_COLLISION');
+  }
+}
+
+function assertSameActor(
+  projection: CanonicalWorkItemProjection,
+  actionContext: CanonicalHostActionContext,
+): void {
+  if (
+    projection.parseAuthorization.actorFingerprint !==
+    actionContext.decision.actorFingerprint
   ) {
     throw new Error('WORK_ITEM_AUTHORIZATION_IDEMPOTENCY_COLLISION');
   }
