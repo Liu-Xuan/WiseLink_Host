@@ -1,3 +1,4 @@
+import { DocumentWorkRuntimeService } from './document-work-runtime.service';
 import { CanonicalHostOpenClawApplicabilityService } from './canonical-host-openclaw-applicability.service';
 import { CanonicalHostInitialAnalysisStatusService, canContinueInitialStage } from './canonical-host-initial-analysis-status.service';
 import { Inject, Injectable, Optional } from '@nestjs/common';
@@ -117,6 +118,7 @@ export class CanonicalHostOpenClawDynamicEvaluationService {
     private readonly problemAssessment?: CanonicalJobAidProblemService,
     @Optional() private readonly initialStatus?: CanonicalHostInitialAnalysisStatusService,
     @Optional() private readonly originalApplicability?: CanonicalHostOpenClawApplicabilityService,
+    @Optional() private readonly originalPreparation?: DocumentWorkRuntimeService,
   ) {}
 
   async nextOriginalAssessment(workItemId: string) {
@@ -125,6 +127,10 @@ export class CanonicalHostOpenClawDynamicEvaluationService {
     if (!this.problemAssessment?.enabledForNewTasks() || !this.initialStatus)
       throw new Error('JOBAID_ORIGINAL_CONTINUATION_UNAVAILABLE');
     const workItem = await this.requiredAssessmentWorkItem(workItemId, scope.tenantId, true);
+    if (scope.automaticWorkItemLease) {
+      if (!this.originalPreparation) throw new Error('DOCUMENT_AUTOMATIC_PREPARATION_UNAVAILABLE');
+      return this.originalPreparation.prepareAutomaticOriginal(workItemId);
+    }
     if (activeConfigurationEvidenceReevaluation(workItem))
       return {status:'WAITING_INPUT',reason:'CONFIGURATION_REEVALUATION_ACTIVE'};
     const original = await this.problemAssessment.readOriginalContinuationBinding(workItem, scope);

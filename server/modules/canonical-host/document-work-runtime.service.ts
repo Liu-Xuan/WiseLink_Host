@@ -1,6 +1,6 @@
 import type { DocumentRevisionReadingRequest } from '@shared/document-revision-reading.interface';
 import { DocumentRevisionReadingService } from './document-revision-reading.service';
-import { Inject, Injectable, Optional } from '@nestjs/common';
+import { Inject, Injectable, Logger, Optional } from '@nestjs/common';
 import { DocumentReadingRunRepository } from './document-reading-run.repository';
 import { DocumentActivityRunRepository } from './document-activity-run.repository';
 import { randomUUID } from 'node:crypto';
@@ -8,6 +8,7 @@ import { DocumentSourceProjectionService } from './document-source-projection.se
 import { UnifiedReaderService } from '../unified-reader/unified-reader.service';
 import { DocumentParsingHostedService } from '../document-management/src/hosted/nest/document-parsing-hosted.service';
 import { DocumentStepLeaseRepository } from '../document-management/src/hosted/nest/document-step-lease.repository';
+import type { DocumentParseScope } from '../document-management/src/hosted/nest/document-parsing.repository';
 import { EngineeringMatterWorkingRepository } from './engineering-matter-working.repository';
 import { DocumentSemanticService } from './document-semantic.service';
 import { documentOriginalReadingCoverage } from '../document-management/src/hosted/nest/document-original-adapter';
@@ -19,6 +20,7 @@ import { CANONICAL_SERVICE_SCOPE_AUTHORIZATION, canonicalServiceScopeUnavailable
 // CanonicalHostModule.forRoot dynamic registration.
 // eslint-disable-next-line @darraghor/nestjs-typed/injectable-should-be-provided
 export class DocumentWorkRuntimeService {
+  private readonly logger = new Logger(DocumentWorkRuntimeService.name);
   constructor(
     @Inject(CANONICAL_SERVICE_SCOPE_AUTHORIZATION) private readonly authorization: CanonicalServiceScopeAuthorizationPort,
     private readonly actors: EngineeringMatterWorkingRepository,
@@ -118,8 +120,56 @@ export class DocumentWorkRuntimeService {
         return this.parsing.status(scope.documentVersionId, scope);
       }
       if (!['RUNNING', 'STAGING'].includes(run.status)) return { status: run.status, parseRunId: run.parseRunId };
-      const fence = await this.leases.claim(scope, run.parseRunId, `document:${randomUUID()}`, 120_000);
-      if (!fence) return { status: 'BUSY', parseRunId: run.parseRunId };
+      return this.executeStep(scope, run.parseRunId);
+    });
+  }
+
+  /** Only an already delegated queue item may prepare its exact original. */
+  async prepareAutomaticOriginal(workItemId: string) {
+    const authorized = await this.authorization.authorizeOpenClawWorkItem({ operation: 'BEGIN_DYNAMIC', workItemId });
+    const lease = authorized.automaticWorkItemLease;
+    if (!lease || authorized.workItemId !== workItemId || authorized.appId !== 'app_17bzc551rsg')
+      throw new Error('DOCUMENT_AUTOMATIC_LEASE_REQUIRED');
+    const scope: DocumentParseScope & { roles: string[] } = {
+      tenantId: authorized.tenantId, actorUserId: lease.actorUserId,
+      documentVersionId: lease.documentVersionId, roles: [],
+      automaticWorkItem: { workItemId, requestId: lease.requestId, principalId: authorized.principalId,
+        documentId: lease.documentId, sourceArtifactId: lease.sourceArtifactId,
+        sourceFileSha256: lease.sourceFileSha256, sourceByteLength: lease.sourceByteLength,
+        leaseGeneration: lease.leaseGeneration },
+    };
+    return this.actors.withActorScope(scope.actorUserId, async () => {
+      const state = await this.parsing.status(scope.documentVersionId, scope);
+      const identity = { documentVersionId: scope.documentVersionId };
+      if (state.documentVersionId !== scope.documentVersionId)
+        throw new Error('DOCUMENT_ORIGINAL_EXACT_BINDING_MISMATCH');
+      const run = state.latestRun;
+      if (!run) {
+        // A lost reservation response is recovered by the same durable request.
+        const reserved = await this.parsing.start(scope.documentVersionId,
+          { requestId: `auto-original-${lease.requestId}`, expectedPublishedRevision: 0 }, scope);
+        return { ...identity, status: 'ORIGINAL_PREPARING', parseRunId: reserved.parseRunId };
+      }
+      if (run.status === 'PUBLISHED') {
+        const published = await this.parsing.inspectPublishedIdentity(scope.documentVersionId, run.parseRunId, scope);
+        if (published.binding.sourceArtifactId !== lease.sourceArtifactId ||
+            published.binding.sourceSha256 !== lease.sourceFileSha256 ||
+            published.binding.sourceByteLength !== lease.sourceByteLength)
+          throw new Error('DOCUMENT_ORIGINAL_EXACT_BINDING_MISMATCH');
+        return { ...identity, status: 'ORIGINAL_READY', parseRunId: run.parseRunId };
+      }
+      if (run.status === 'FAILED' || run.errorCode || Date.parse(run.deadlineAt) <= Date.now())
+        return { ...identity, status: 'REQUIRES_ATTENTION', parseRunId: run.parseRunId,
+          errorCode: run.errorCode ?? (run.status === 'FAILED' ? 'DOCUMENT_PARSE_FAILED' : 'DOCUMENT_PARSE_DEADLINE_EXCEEDED') };
+      const result = await this.executeStep(scope, run.parseRunId);
+      return { ...identity, status: result.status === 'PUBLISHED' ? 'ORIGINAL_READY'
+        : result.status === 'BUSY' ? 'BUSY' : 'ORIGINAL_PREPARING', parseRunId: run.parseRunId };
+    });
+  }
+
+  private async executeStep(scope: DocumentParseScope & { roles: string[] }, parseRunId: string) {
+      const fence = await this.leases.claim(scope, parseRunId, `document:${randomUUID()}`, 120_000);
+      if (!fence) return { status: 'BUSY', parseRunId: parseRunId };
       let renewal: Promise<void> = Promise.resolve();
       let renewalFailed = false;
       const timer = setInterval(() => {
@@ -130,14 +180,14 @@ export class DocumentWorkRuntimeService {
       try {
         // The plugin execution is awaited. No database transaction spans the
         // external call; P locks and checks this fence in each persistence step.
-        const result = await this.parsing.executeStep(run.parseRunId, scope, fence);
+        const result = await this.parsing.executeStep(parseRunId, scope, fence);
         if (renewalFailed && result.status !== 'PUBLISHED') throw new Error('DOCUMENT_STEP_RENEWAL_FAILED');
         return result;
       } finally {
         clearInterval(timer);
         await renewal;
-        await this.leases.release(scope, fence);
+        try { await this.leases.release(scope, fence); }
+        catch { this.logger.warn(`Document step ${parseRunId} lease release failed; the recorded outcome is preserved and the lease expires normally.`); }
       }
-    });
   }
 }

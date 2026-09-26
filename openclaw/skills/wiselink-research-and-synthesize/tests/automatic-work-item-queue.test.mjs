@@ -4,6 +4,7 @@ import test from 'node:test';
 import {
   automaticWorkItemQueueMode,
   consumeAutomaticWorkItemQueueTick,
+  consumeHostedWorkItem,
 } from '../scripts/consume-hosted-work-item.mjs';
 import { createHostAutoWorkItemQueueClient } from '../scripts/run-hosted-review-turn.mjs';
 
@@ -574,4 +575,126 @@ test('queue REST client sends exact resume body and exposes ACK and terminal blo
   ]);
   assert.deepEqual(JSON.parse(requests[0].init.body), { resumeWorkItemId: 'WI-QUEUE' });
   assert.equal(requests[0].init.headers.authorization, 'Bearer test');
+});
+
+function originalPreparationDependencies(checkpoint, overrides = {}) {
+  return {
+    checkpoint,
+    now: () => new Date(START),
+    nextWorkItem: async () => assert.fail('claim is still live'),
+    acknowledgeWorkItem: async () => assert.fail('preparation cannot ACK'),
+    blockWorkItem: async () => assert.fail('preparation cannot BLOCK'),
+    readInitialStatus: async () => status({ overallStatus: 'NOT_READY', nextOperation: null }),
+    consumeWorkItem: async () => assert.fail('unprepared source cannot run a model'),
+    ...overrides,
+  };
+}
+
+for (const parseRunId of [undefined, 'PARSE-PARTIAL']) {
+  test(`automatic original preparation advances one bounded step (${parseRunId ?? 'missing'})`, async () => {
+    const checkpoint = memoryCheckpoint(storedClaim());
+    let preparations = 0;
+    let reads = 0;
+    const result = await consumeAutomaticWorkItemQueueTick({}, originalPreparationDependencies(checkpoint, {
+      prepareOriginal: async (...args) => {
+        assert.deepEqual(args, ['WI-QUEUE'], 'lease token must not reach the MCP preparation call');
+        preparations += 1;
+        return { status: 'ORIGINAL_PREPARING', documentVersionId: 'DV-QUEUE',
+          ...(parseRunId ? { parseRunId } : {}) };
+      },
+      readInitialStatus: async () => {
+        reads += 1;
+        return status({ overallStatus: 'NOT_READY', nextOperation: null });
+      },
+    }));
+    assert.equal(result.status, 'IN_PROGRESS');
+    assert.equal(result.consumerStatus, 'ORIGINAL_PREPARING');
+    assert.equal(preparations, 1);
+    assert.equal(reads, 2);
+    assert.deepEqual(checkpoint.values.get('active-claim'), storedClaim());
+    assert.equal(checkpoint.values.get('last-original-preparation').parseRunId, parseRunId);
+  });
+}
+
+test('newly ready original continues at most one analysis stage in the same tick', async () => {
+  const checkpoint = memoryCheckpoint(storedClaim());
+  let prepared = false;
+  let consumed = 0;
+  const result = await consumeAutomaticWorkItemQueueTick({}, originalPreparationDependencies(checkpoint, {
+    prepareOriginal: async () => {
+      assert.equal(prepared, false);
+      prepared = true;
+      return { status: 'ORIGINAL_READY', documentVersionId: 'DV-QUEUE', parseRunId: 'PARSE-READY' };
+    },
+    readInitialStatus: async () => prepared ? status()
+      : status({ overallStatus: 'NOT_READY', nextOperation: null }),
+    consumeWorkItem: async input => {
+      consumed += 1;
+      assert.equal(input.initialStageOnly, true);
+      assert.equal(input.maxInitialStages, 1);
+      assert.equal(input.leaseToken, undefined);
+      return { status: 'INITIAL_STAGE_SAVED' };
+    },
+  }));
+  assert.equal(consumed, 1);
+  assert.equal(result.status, 'IN_PROGRESS');
+  assert.equal(result.consumerStatus, 'INITIAL_STAGE_SAVED');
+});
+
+for (const failure of ['attention', 'throw', 'busy']) {
+  test(`original preparation ${failure} preserves claim and diagnostic report`, async () => {
+    const checkpoint = memoryCheckpoint(storedClaim());
+    const result = await consumeAutomaticWorkItemQueueTick({}, originalPreparationDependencies(checkpoint, {
+      prepareOriginal: async () => {
+        if (failure === 'throw') throw new Error('DOCUMENT_PARSE_STEP_FAILED');
+        return { status: failure === 'busy' ? 'BUSY' : 'REQUIRES_ATTENTION',
+          documentVersionId: 'DV-QUEUE', errorCode: 'DOCUMENT_PARSE_STEP_FAILED' };
+      },
+    }));
+    assert.equal(result.status, failure === 'busy' ? 'IN_PROGRESS' : 'REQUIRES_ATTENTION');
+    assert.deepEqual(checkpoint.values.get('active-claim'), storedClaim());
+    assert.equal(checkpoint.values.get('last-original-preparation').status,
+      failure === 'busy' ? 'BUSY' : 'REQUIRES_ATTENTION');
+    if (failure !== 'busy') assert.equal(result.errorCode, 'DOCUMENT_PARSE_STEP_FAILED');
+  });
+}
+
+for (const drift of ['before', 'preparation', 'after']) {
+  test(`source version drift ${drift} preparation rejects analysis`, async () => {
+    const checkpoint = memoryCheckpoint(storedClaim());
+    let reads = 0;
+    await assert.rejects(consumeAutomaticWorkItemQueueTick({}, originalPreparationDependencies(checkpoint, {
+      readInitialStatus: async () => {
+        reads += 1;
+        return { ...status({ overallStatus: 'NOT_READY', nextOperation: null }),
+          documentVersionId: drift === 'before' || (drift === 'after' && reads > 1)
+            ? 'DV-CHANGED' : 'DV-QUEUE' };
+      },
+      prepareOriginal: async () => {
+        assert.notEqual(drift, 'before');
+        return { status: 'ORIGINAL_READY',
+          documentVersionId: drift === 'preparation' ? 'DV-CHANGED' : 'DV-QUEUE' };
+      },
+    })), /AUTO_WORK_ITEM_STATUS_SOURCE_CHANGED/u);
+    assert.deepEqual(checkpoint.values.get('active-claim'), storedClaim());
+  });
+}
+
+test('static NOT_READY WorkItem remains read-only and never prepares an original', async () => {
+  const calls = [];
+  const result = await consumeHostedWorkItem({ workItemId: 'WI-QUEUE',
+    checkpointRoot: '/private/tmp/wiselink-static-not-ready', maxInitialStages: 1 }, {
+    callTool: async name => {
+      calls.push(name);
+      assert.equal(name, 'get_parse_status');
+      return { entry: { workItemId: 'WI-QUEUE' }, initialAnalysis: {
+        ...status({ overallStatus: 'NOT_READY', nextOperation: null }),
+        candidateOnly: true, applicabilityContextRef: null,
+      } };
+    },
+    prepareOriginal: async () => assert.fail('static mode cannot prepare originals'),
+    invokeInitialModel: async () => assert.fail('static NOT_READY cannot run a model'),
+  });
+  assert.equal(result.status, 'NOT_READY');
+  assert.deepEqual(calls, ['get_parse_status']);
 });
