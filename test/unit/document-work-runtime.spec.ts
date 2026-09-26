@@ -262,3 +262,12 @@ it('preserves both a published result and the original step failure if lease cle
   await expect(f.service.run({ action: 'STEP', documentVersionId: 'DV', parseRunId: 'run' }))
     .rejects.toThrow('ORIGINAL_PLUGIN_FAILURE');
 });
+
+
+it('automatic preparation leaves a waiting local worker run available for its dedicated claim', async () => {
+  const f = fixture();
+  f.parsing.status.mockResolvedValue({ documentVersionId: 'DV', latestRun: { parseRunId: 'run', status: 'STAGING',
+    deadlineAt: new Date(Date.now() + 60_000).toISOString(), waitingForLocalWorker: true } });
+  expect(await f.service.prepareAutomaticOriginal('WI')).toMatchObject({ status: 'ORIGINAL_PREPARING', waitingForLocalWorker: true });
+  expect(f.leases.claim).not.toHaveBeenCalled(); expect(f.parsing.executeStep).not.toHaveBeenCalled();
+});

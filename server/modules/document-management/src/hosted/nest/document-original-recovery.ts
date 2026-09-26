@@ -1,3 +1,4 @@
+import { sameParserInput } from './document-parsing.repository';
 import { createHash } from 'node:crypto';
 import { documentParseRecoveryPredecessor } from '@shared/document-parsing-recovery';
 import type { DocumentOriginalArtifact } from '@shared/document-original.interface';
@@ -27,7 +28,8 @@ export class DocumentOriginalRecovery {
           parent.documentVersionId !== run.documentVersionId ||
           !Number.isSafeInteger(parent.parseRevision) || parent.parseRevision >= child.parseRevision ||
           parent.expectedPublishedRevision !== run.expectedPublishedRevision ||
-          !sameSource(run.sourceBinding, parent.sourceBinding)) throw new Error('DOCUMENT_PARSE_RECOVERY_CHAIN_INVALID');
+          !sameSource(run.sourceBinding, parent.sourceBinding) ||
+          !sameParserInput(run.sourceBinding, parent.sourceBinding)) throw new Error('DOCUMENT_PARSE_RECOVERY_CHAIN_INVALID');
       assertPageDescriptors(parent);
       ancestors.push(parent); seen.add(id); child = parent;
       id = documentParseRecoveryPredecessor(parent.requestId);
@@ -40,6 +42,7 @@ export class DocumentOriginalRecovery {
       await this.assertActive();
       const bytes = await readArtifact(this.store, ancestor, role, relativePath);
       if (role === 'RAW_MARKDOWN') {
+        if (ancestor.sourceBinding.parserInput) throw new Error('DOCUMENT_PARSE_RECOVERY_PROVENANCE_INVALID');
         const marker = await readArtifact(this.store, ancestor, 'MANIFEST', PROVENANCE_PATH);
         if (!bytes) {
           // A new attempt may recompute output that never reached storage. A declared
@@ -78,6 +81,7 @@ export class DocumentOriginalRecovery {
     // In deployed history, legacy MinerU did not write original page checkpoints.
     // An explicit manifest producer always takes precedence over this historical evidence.
     // Undeployed alternative producers must provide their own recovery semantics before integration.
+    if (run.sourceBinding.parserInput) throw new Error('DOCUMENT_PARSE_RECOVERY_PROVENANCE_INVALID');
     const page = await readArtifact(this.store, run, 'MANIFEST', 'original/pages-0.json');
     if (page) {
       const chunk = JSON.parse(Buffer.from(page).toString('utf8')) as {

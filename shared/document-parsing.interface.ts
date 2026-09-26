@@ -5,6 +5,8 @@ export type DocumentParseStatus = 'RUNNING' | 'STAGING' | 'PUBLISHED' | 'FAILED'
 
 export interface DocumentParseRunSummary {
   parseRunId: string;
+  executionMode?: 'LOCAL_MINERU_WORKER' | 'LOCAL_MINERU_IMPORT' | 'OFFICIAL_PLUGIN';
+  waitingForLocalWorker?: boolean;
   documentVersionId: string;
   parseRevision: number;
   status: DocumentParseStatus;
@@ -37,6 +39,8 @@ export interface DocumentParsingStatus {
 export interface StartDocumentParseRequest {
   requestId: string;
   expectedPublishedRevision: number;
+  mode?: 'LOCAL_MINERU_IMPORT';
+  selection?: { bucketId: string; filePath: string };
 }
 
 export interface DocumentParsedReading {

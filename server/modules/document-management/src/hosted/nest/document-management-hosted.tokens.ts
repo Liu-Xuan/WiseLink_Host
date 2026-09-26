@@ -4,6 +4,18 @@ export const DOCUMENT_MANAGEMENT_INGEST_AUTHORIZER = Symbol(
 );
 
 export interface DocumentManagementIngestAuthorizer {
+  /** Admit a new JSON candidate using native browser upload authority and current source access. */
+  assertCanImportLocalCandidate?(input: {
+    actorUserId: string; tenantId: string; roles: string[]; documentVersionId: string;
+    selection: { bucketId: string; filePath: string };
+    runtimeIngestAuthority?: DocumentUploadAuthority;
+  }): Promise<void>;
+
+  /** Read only the persisted candidate; grants no new admission or caller selection. Service checks the lease. */
+  assertCanReadLocalCandidate?(input: {
+    actorUserId: string; tenantId: string; roles: string[]; documentVersionId: string; parseRunId: string;
+  }): Promise<void>;
+
   assertCanIngest(input: {
     actorUserId: string;
     tenantId: string;

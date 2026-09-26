@@ -47,6 +47,7 @@ import { DocumentManagementRuntimeModule } from '../../server/modules/document-m
 import { DOCUMENT_MANAGEMENT_INGEST_AUTHORIZER } from '../../server/modules/document-management/src/hosted/nest/document-management-hosted.tokens';
 import { DocumentManagementHostedService } from '../../server/modules/document-management/src/hosted/nest/document-management-hosted.service';
 import { OrdinaryDocumentManagementAuthorizer } from '../../server/modules/document-management-runtime/ordinary-document-management-authorizer';
+import { DocumentParsingRepository } from '../../server/modules/document-management/src/hosted/nest/document-parsing.repository';
 
 const fakeFileService = {
   from: jest.fn(),
@@ -78,6 +79,12 @@ describe('DocumentManagementRuntimeModule composition', () => {
     expect(moduleRef.get(DOCUMENT_MANAGEMENT_INGEST_AUTHORIZER)).toBeInstanceOf(
       OrdinaryDocumentManagementAuthorizer,
     );
+
+    const authorizer = moduleRef.get<OrdinaryDocumentManagementAuthorizer>(DOCUMENT_MANAGEMENT_INGEST_AUTHORIZER);
+    const read = jest.spyOn(moduleRef.get(DocumentParsingRepository), 'read').mockResolvedValue(null);
+    const scope = { actorUserId: 'actor', tenantId: 'tenant', roles: [], documentVersionId: 'DV', parseRunId: 'absent' };
+    await expect(authorizer.assertCanReadLocalCandidate(scope)).rejects.toMatchObject({ code: 'DOCUMENT_ACTION_FORBIDDEN' });
+    expect(read).toHaveBeenCalledWith(scope, scope.parseRunId);
 
     await moduleRef.close();
   });

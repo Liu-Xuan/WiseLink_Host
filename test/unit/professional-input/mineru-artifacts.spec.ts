@@ -167,3 +167,80 @@ describe('MinerU artifact reading', () => {
     ]);
   });
 });
+
+
+/** Geometry and field shapes from the two-page offline 3.0.9 pipeline run.
+ * Text and asset names are synthetic; no source document content is committed. */
+const localPipelineFixture = () => ({
+  markdown: '# Local example\n\n<table><tr><td colspan="2">Condition</td></tr><tr><td>A</td><td>B</td></tr></table>\n\nFirst paragraph.\n\nSecond page paragraph.\n\n1\n\n2\n',
+  middle: { _version_name: '3.0.9', _backend: 'pipeline', pdf_info: [0, 1].map(page_idx => ({
+    page_idx, page_size: [595, 841],
+    para_blocks: [{ type: 'text', bbox: [36, 365, 534, 406],
+      lines: [{ spans: [{ type: 'text', content: 'Preserved source span.' }] }] }],
+    discarded_blocks: [],
+  })) },
+  contentListV2: [[
+    { type: 'title', bbox: [314, 61, 682, 91],
+      content: { title_content: [{ type: 'text', content: 'Local example' }], level: 1 } },
+    { type: 'table', bbox: [58, 104, 939, 340], content: {
+      image_source: { path: 'images/local-table.jpg' }, table_caption: [], table_footnote: [],
+      html: '<table><tr><td colspan="2">Condition</td></tr><tr><td>A</td><td>B</td></tr></table>',
+      table_type: 'complex_table', table_nest_level: 1,
+    } },
+    { type: 'paragraph', bbox: [60, 434, 897, 483],
+      content: { paragraph_content: [{ type: 'text', content: 'First paragraph.' }] } },
+    { type: 'page_number', bbox: [480, 958, 517, 970],
+      content: { page_number_content: [{ type: 'text', content: '1' }] } },
+  ], [
+    { type: 'paragraph', bbox: [62, 131, 781, 164],
+      content: { paragraph_content: [{ type: 'text', content: 'Second page paragraph.' }] } },
+    { type: 'page_number', bbox: [480, 958, 517, 970],
+      content: { page_number_content: [{ type: 'text', content: '2' }] } },
+  ]], assetPaths: ['images/local-table.jpg'],
+});
+
+describe('explicit local MinerU 3.0.9 pipeline compatibility', () => {
+  it('preserves producer, page identities, complex table HTML, image binding and source spans', () => {
+    const input = localPipelineFixture();
+    const before = structuredClone(input);
+    const result = readMineruArtifacts(input);
+    expect(result.version).toBe('3.0.9');
+    expect(result.backend).toBe('pipeline');
+    expect(result.pages).toEqual([0, 1].map(pageIndex => ({
+      pageIndex, width: 595, height: 841, middlePointer: `/pdf_info/${pageIndex}`,
+    })));
+    expect(result.blocks.map(block => [block.pageIndex, block.type, block.sourcePointer]))
+      .toEqual([[0, 'title', '/0/0'], [0, 'table', '/0/1'], [0, 'paragraph', '/0/2'], [1, 'paragraph', '/1/0']]);
+    const table = result.blocks[1];
+    expect(table.content).toEqual(input.contentListV2[0][1].content);
+    expect(table.assetPath).toBe('images/local-table.jpg');
+    expect(table.bbox).toEqual([58, 104, 939, 340]);
+    expect(result.blocks[2].content.paragraph_content).toEqual([{ type: 'text', content: 'First paragraph.' }]);
+    expect(result.middle).toEqual(input.middle);
+    expect(result.middle).not.toBe(input.middle);
+    expect(result.markdown).toContain('colspan="2"');
+    expect(result.markdown).not.toMatch(/\n[12]\n/);
+    expect(result.diagnostics).toEqual([]);
+    expect(input).toEqual(before);
+  });
+  it('retains missing-asset, path traversal, flat-v1 and page-geometry rejection for 3.0.9', () => {
+    const input = localPipelineFixture();
+    expect(() => readMineruArtifacts({ ...input, assetPaths: [] })).toThrow('MINERU_ASSET_MISSING');
+    expect(() => readMineruArtifacts({ ...input, contentListV2: input.contentListV2.flat() }))
+      .toThrow('MINERU_PAGE_COUNT_MISMATCH');
+    const drift = structuredClone(input);
+    drift.middle.pdf_info[1].page_idx = 0;
+    expect(() => readMineruArtifacts(drift)).toThrow('MINERU_PAGE_GEOMETRY_INVALID:1');
+    const traversal = structuredClone(input);
+    traversal.contentListV2[0][1].content.image_source = { path: 'images/../outside.jpg' };
+    expect(() => readMineruArtifacts(traversal)).toThrow('MINERU_ASSET_PATH_INVALID');
+  });
+  it('rejects unverified versions and unverified 3.0.9 backends without relabeling', () => {
+    for (const version of ['3.0.8', '3.0.10', '3.4.6', '4.0.0']) {
+      const input = localPipelineFixture(); input.middle._version_name = version;
+      expect(() => readMineruArtifacts(input)).toThrow(`MINERU_VERSION_UNSUPPORTED:${version}`);
+    }
+    const input = localPipelineFixture(); input.middle._backend = 'vlm';
+    expect(() => readMineruArtifacts(input)).toThrow('MINERU_BACKEND_UNSUPPORTED:3.0.9:vlm');
+  });
+});

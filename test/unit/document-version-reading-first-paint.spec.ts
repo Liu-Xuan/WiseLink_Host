@@ -14,6 +14,9 @@ jest.mock('@client/src/components/ui/button', () => ({
 jest.mock('@client/src/components/ui/dialog', () => ({
   Dialog: () => null, DialogContent: () => null, DialogHeader: () => null, DialogTitle: () => null,
 }));
+jest.mock('@client/src/components/business-ui/api/files/service', () => ({
+  uploadFile: jest.fn(() => { throw new Error('Unexpected upload during reading'); }),
+}));
 jest.mock('@client/src/pages/WorkspaceHomePage/DocumentOriginalPreview', () => ({
   DocumentOriginalPreview: ({ children }: { children: ReactNode }) => createElement('span', null, children),
 }));
@@ -421,4 +424,20 @@ it('shows a persisted quota pause instead of progress and stops status polling w
     expect(mockReading).toHaveBeenCalledTimes(1);
     expect(mockStart).not.toHaveBeenCalled();
   } finally { jest.useRealTimers(); }
+});
+
+it('shows waiting for the local parser without implying saved or running work', async () => {
+  mockStatus.mockResolvedValue({ ...statusPayload(), latestRun: {
+    parseRunId: 'PRUN-00000000-0000-0000-0000-000000000017', status: 'RUNNING',
+    deadlineAt: '2030-01-01T00:00:00Z', errorCode: null, verifiedArtifacts: 0,
+    executionMode: 'LOCAL_MINERU_WORKER', waitingForLocalWorker: true,
+  } });
+  await mount();
+  expect(container.textContent).toContain('等待本机解析器接续。可以离开页面，任务会保留。');
+  expect(container.textContent).not.toContain('正在保存并核验产物');
+  expect(container.textContent).not.toContain('正在解析原件');
+  expect(container.textContent).toContain('constructed');
+  const button = [...container.querySelectorAll('button')].find(item => item.textContent === '等待本机解析');
+  expect(button?.disabled).toBe(true);
+  expect(mockStart).not.toHaveBeenCalled();
 });

@@ -5,6 +5,7 @@ import { useCurrentUserSession } from '@client/src/app/providers/CurrentUserSess
 import { useCurrentObjectContext } from '@client/src/app/providers/CurrentObjectContextProvider';
 import { Button } from '@client/src/components/ui/button';
 import { useTaskModelOptions } from '@client/src/features/review/TaskModelPicker';
+import { DocumentParsingSettingsPanel } from './DocumentParsingSettingsPanel';
 import './model-settings.css';
 
 export default function ModelSettingsPage() {
@@ -16,8 +17,8 @@ export default function ModelSettingsPage() {
     <main className="wl-model-settings" aria-labelledby="model-settings-title">
       <header className="wl-model-settings-heading">
         <div>
-          <p className="wl-model-settings-eyebrow">模型目录</p>
-          <h1 id="model-settings-title">按任务选择分析模型</h1>
+          <p className="wl-model-settings-eyebrow">系统设置</p>
+          <h1 id="model-settings-title">系统设置</h1>
         </div>
         <Button
           variant="outline"
@@ -83,6 +84,7 @@ export default function ModelSettingsPage() {
           </p>
         </>
       ) : null}
+      <DocumentParsingSettingsPanel />
     </main>
   );
 }

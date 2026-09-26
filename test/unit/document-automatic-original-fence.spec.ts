@@ -192,6 +192,26 @@ const localDatabaseUrl = process.env.WL_AUTOMATIC_ORIGINAL_TEST_DATABASE_URL;
     expect(await client`SELECT parse_run_id FROM dm_document_parse_run`).toHaveLength(0);
   });
 
+  it('only supersedes an errored parse after its active lease is released, preserving the original error', async () => {
+    const browserScope = { tenantId: scope.tenantId, actorUserId: scope.actorUserId, documentVersionId: scope.documentVersionId };
+    const prior = await parses.reserve(browserScope, request);
+    const claim = await leases.claim(browserScope, prior.row.parseRunId, 'official-worker');
+    await parses.stage(browserScope, prior.row.parseRunId, claim!);
+    await parses.recordStepFailure(browserScope, claim!, 'DOCUMENT_PLUGIN_QUOTA_EXHAUSTED');
+    const localRequest = { ...request, requestId: 'local-recovery', sourceBinding: { ...source,
+      parserInput: { mode: 'LOCAL_MINERU_IMPORT' as const, bucketId: 'bucket-test', filePath: 'candidate.json',
+        providerObjectId: 'candidate-object', sha256: 'b'.repeat(64), byteLength: 900 } } };
+    await expect(parses.reserve(browserScope, localRequest)).rejects.toThrow('DOCUMENT_PARSE_ALREADY_RUNNING');
+    expect((await parses.read(browserScope, prior.row.parseRunId))?.status).toBe('STAGING');
+    await leases.release(browserScope, claim!);
+    const next = await parses.reserve(browserScope, localRequest);
+    expect(next.row.parseRevision).toBe(2);
+    expect(await parses.read(browserScope, prior.row.parseRunId)).toMatchObject({ status: 'FAILED', errorCode: 'DOCUMENT_PLUGIN_QUOTA_EXHAUSTED' });
+    expect((await parses.reserve(browserScope, localRequest)).row.parseRunId).toBe(next.row.parseRunId);
+    await expect(parses.reserve(browserScope, { ...localRequest, sourceBinding: { ...localRequest.sourceBinding,
+      parserInput: { ...localRequest.sourceBinding.parserInput, sha256: 'c'.repeat(64) } } })).rejects.toThrow('DOCUMENT_PARSE_REQUEST_CONFLICT');
+  });
+
   it('holds the grant row lock until the document transaction completes', async () => {
     await contender`SET lock_timeout='150ms'`;
     await database.transaction(async transaction => {

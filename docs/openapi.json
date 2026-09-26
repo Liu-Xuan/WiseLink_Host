@@ -1,5 +1,502 @@
 {
   "paths": {
+  "/openapi/wiselink/local-mineru/claim": {
+      "post": {
+        "operationId": "claimLocalMineru",
+        "summary": "领取已受理的本机解析运行",
+        "description": "沿用可信服务主体；租户和actor从Host持久解析记录解析。仅处理已有逐任务委托、来源权限和有效租约的确切原件。不授予正式采用或审批能力。",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [],
+                "properties": {}
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Host验证后的回执",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "oneOf": [
+                    {
+                      "type": "object",
+                      "additionalProperties": false,
+                      "required": [
+                        "status"
+                      ],
+                      "properties": {
+                        "status": {
+                          "type": "string",
+                          "enum": [
+                            "IDLE"
+                          ],
+                          "example": "IDLE"
+                        }
+                      }
+                    },
+                    {
+                      "type": "object",
+                      "additionalProperties": false,
+                      "required": [
+                        "status",
+                        "parseRunId",
+                        "documentVersionId",
+                        "lease",
+                        "sourceSha256",
+                        "sourceByteLength",
+                        "settings",
+                        "deadlineAt"
+                      ],
+                      "properties": {
+                        "status": {
+                          "type": "string",
+                          "enum": [
+                            "CLAIMED"
+                          ],
+                          "example": "CLAIMED"
+                        },
+                        "parseRunId": {
+                          "type": "string",
+                          "description": "确切解析运行",
+                          "example": "PRUN-12345678-1234-4234-8234-123456789abc"
+                        },
+                        "documentVersionId": {
+                          "type": "string",
+                          "description": "确切文档版本",
+                          "example": "document_version_12345678"
+                        },
+                        "lease": {
+                          "type": "object",
+                          "additionalProperties": false,
+                          "required": [
+                            "leaseOwner",
+                            "leaseToken",
+                            "leaseGeneration"
+                          ],
+                          "properties": {
+                            "leaseOwner": {
+                              "type": "string",
+                              "description": "Host服务主体绑定的执行者",
+                              "example": "mineru:service:configured"
+                            },
+                            "leaseToken": {
+                              "type": "string",
+                              "description": "敏感租约凭据，不得进入日志或模型",
+                              "example": "00000000-0000-4000-8000-000000000001"
+                            },
+                            "leaseGeneration": {
+                              "type": "integer",
+                              "minimum": 1,
+                              "example": 1,
+                              "description": "本次执行代次"
+                            }
+                          }
+                        },
+                        "sourceSha256": {
+                          "type": "string",
+                          "description": "确切原PDF的SHA256",
+                          "example": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+                        },
+                        "sourceByteLength": {
+                          "type": "integer",
+                          "minimum": 5,
+                          "maximum": 104857600,
+                          "example": 57434,
+                          "description": "确切原PDF字节数"
+                        },
+                        "settings": {
+                          "type": "object",
+                          "additionalProperties": false,
+                          "required": [
+                            "revision",
+                            "localMineruFallbackEnabled",
+                            "titleEnhancementEnabled"
+                          ],
+                          "properties": {
+                            "revision": {
+                              "type": "integer",
+                              "minimum": 0,
+                              "example": 0,
+                              "description": "受理时设置修订"
+                            },
+                            "localMineruFallbackEnabled": {
+                              "type": "boolean",
+                              "example": true,
+                              "description": "已有字段，表示选择本机解析"
+                            },
+                            "titleEnhancementEnabled": {
+                              "type": "boolean",
+                              "example": false,
+                              "description": "本次是否允许外部标题增强"
+                            }
+                          }
+                        },
+                        "deadlineAt": {
+                          "type": "string",
+                          "description": "本次运行最晚完成时间",
+                          "example": "2026-09-26T10:00:00.000Z"
+                        }
+                      }
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "主体、任务或来源权限不匹配"
+          },
+          "409": {
+            "description": "版本、来源或租约冲突"
+          },
+          "503": {
+            "description": "配置或存储依赖不可用"
+          }
+        }
+      }
+    },
+    "/openapi/wiselink/local-mineru/source": {
+      "post": {
+        "operationId": "readLocalMineruSource",
+        "summary": "读取该解析运行的确切原件",
+        "description": "沿用可信服务主体；租户和actor从Host持久解析记录解析。仅处理已有逐任务委托、来源权限和有效租约的确切原件。不授予正式采用或审批能力。",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                  "parseRunId",
+                  "documentVersionId",
+                  "lease"
+                ],
+                "properties": {
+                  "parseRunId": {
+                    "type": "string",
+                    "description": "确切解析运行",
+                    "example": "PRUN-12345678-1234-4234-8234-123456789abc"
+                  },
+                  "documentVersionId": {
+                    "type": "string",
+                    "description": "确切文档版本",
+                    "example": "document_version_12345678"
+                  },
+                  "lease": {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "required": [
+                      "leaseOwner",
+                      "leaseToken",
+                      "leaseGeneration"
+                    ],
+                    "properties": {
+                      "leaseOwner": {
+                        "type": "string",
+                        "description": "Host服务主体绑定的执行者",
+                        "example": "mineru:service:configured"
+                      },
+                      "leaseToken": {
+                        "type": "string",
+                        "description": "敏感租约凭据，不得进入日志或模型",
+                        "example": "00000000-0000-4000-8000-000000000001"
+                      },
+                      "leaseGeneration": {
+                        "type": "integer",
+                        "minimum": 1,
+                        "example": 1,
+                        "description": "本次执行代次"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Host验证后的回执",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": [
+                    "status",
+                    "parseRunId"
+                  ],
+                  "properties": {
+                    "status": {
+                      "type": "string",
+                      "enum": [
+                        "CANDIDATE_READY"
+                      ],
+                      "example": "CANDIDATE_READY"
+                    },
+                    "parseRunId": {
+                      "type": "string",
+                      "description": "确切解析运行",
+                      "example": "PRUN-12345678-1234-4234-8234-123456789abc"
+                    }
+                  }
+                }
+              },
+              "application/pdf": {
+                "schema": {
+                  "type": "string",
+                  "format": "binary"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "主体、任务或来源权限不匹配"
+          },
+          "409": {
+            "description": "版本、来源或租约冲突"
+          },
+          "503": {
+            "description": "配置或存储依赖不可用"
+          }
+        }
+      }
+    },
+    "/openapi/wiselink/local-mineru/renew": {
+      "post": {
+        "operationId": "renewLocalMineru",
+        "summary": "续租本机解析运行",
+        "description": "沿用可信服务主体；租户和actor从Host持久解析记录解析。仅处理已有逐任务委托、来源权限和有效租约的确切原件。不授予正式采用或审批能力。",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                  "parseRunId",
+                  "documentVersionId",
+                  "lease"
+                ],
+                "properties": {
+                  "parseRunId": {
+                    "type": "string",
+                    "description": "确切解析运行",
+                    "example": "PRUN-12345678-1234-4234-8234-123456789abc"
+                  },
+                  "documentVersionId": {
+                    "type": "string",
+                    "description": "确切文档版本",
+                    "example": "document_version_12345678"
+                  },
+                  "lease": {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "required": [
+                      "leaseOwner",
+                      "leaseToken",
+                      "leaseGeneration"
+                    ],
+                    "properties": {
+                      "leaseOwner": {
+                        "type": "string",
+                        "description": "Host服务主体绑定的执行者",
+                        "example": "mineru:service:configured"
+                      },
+                      "leaseToken": {
+                        "type": "string",
+                        "description": "敏感租约凭据，不得进入日志或模型",
+                        "example": "00000000-0000-4000-8000-000000000001"
+                      },
+                      "leaseGeneration": {
+                        "type": "integer",
+                        "minimum": 1,
+                        "example": 1,
+                        "description": "本次执行代次"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Host验证后的回执",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": [
+                    "status",
+                    "deadlineAt"
+                  ],
+                  "properties": {
+                    "status": {
+                      "type": "string",
+                      "enum": [
+                        "RENEWED"
+                      ],
+                      "example": "RENEWED"
+                    },
+                    "deadlineAt": {
+                      "type": "string",
+                      "description": "运行期限；续租不会延长此期限",
+                      "example": "2026-09-26T10:00:00.000Z"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "主体、任务或来源权限不匹配"
+          },
+          "409": {
+            "description": "版本、来源或租约冲突"
+          },
+          "503": {
+            "description": "配置或存储依赖不可用"
+          }
+        }
+      }
+    },
+    "/openapi/wiselink/local-mineru/result": {
+      "post": {
+        "operationId": "acceptLocalMineruResult",
+        "summary": "提交并核验本机候选产物",
+        "description": "沿用可信服务主体；租户和actor从Host持久解析记录解析。仅处理已有逐任务委托、来源权限和有效租约的确切原件。不授予正式采用或审批能力。",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/octet-stream": {
+              "schema": {
+                "type": "string",
+                "format": "binary",
+                "description": "完整wiselink.mineru.local-candidate.v1 JSON的UTF-8字节，最大64 MiB"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Host验证后的回执",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": [
+                    "status",
+                    "parseRunId",
+                    "candidateSha256"
+                  ],
+                  "properties": {
+                    "status": {
+                      "type": "string",
+                      "enum": [
+                        "ACCEPTED",
+                        "PUBLISHED"
+                      ],
+                      "example": "ACCEPTED"
+                    },
+                    "parseRunId": {
+                      "type": "string",
+                      "description": "确切解析运行",
+                      "example": "PRUN-12345678-1234-4234-8234-123456789abc"
+                    },
+                    "candidateSha256": {
+                      "type": "string",
+                      "description": "Host已接收并核验的候选SHA256",
+                      "example": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "主体、任务或来源权限不匹配"
+          },
+          "409": {
+            "description": "版本、来源或租约冲突"
+          },
+          "503": {
+            "description": "配置或存储依赖不可用"
+          },
+          "413": {
+            "description": "候选超过64 MiB"
+          },
+          "415": {
+            "description": "不是application/octet-stream"
+          }
+        },
+        "parameters": [
+          {
+            "in": "header",
+            "name": "x-wiselink-parse-run-id",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "description": "确切解析运行",
+              "example": "PRUN-12345678-1234-4234-8234-123456789abc"
+            }
+          },
+          {
+            "in": "header",
+            "name": "x-wiselink-document-version-id",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "description": "确切文档版本",
+              "example": "document_version_12345678"
+            }
+          },
+          {
+            "in": "header",
+            "name": "x-wiselink-lease-owner",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "description": "Host服务主体绑定的执行者",
+              "example": "mineru:service:configured"
+            }
+          },
+          {
+            "in": "header",
+            "name": "x-wiselink-lease-token",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "description": "敏感租约凭据，不得进入日志或模型",
+              "example": "00000000-0000-4000-8000-000000000001"
+            }
+          },
+          {
+            "in": "header",
+            "name": "x-wiselink-lease-generation",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "example": 1,
+              "description": "本次执行代次"
+            }
+          }
+        ]
+      }
+    },
     "/openapi/wiselink/development-work-items": {
       "post": {
         "operationId": "createDevelopmentWorkItem",

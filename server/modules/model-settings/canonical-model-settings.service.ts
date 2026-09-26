@@ -144,7 +144,7 @@ export class CanonicalModelSettingsService {
   }
 }
 
-function assertModelSettingsActor(actor: CanonicalHostActor): void {
+export function assertModelSettingsActor(actor: CanonicalHostActor): void {
   const identity = actor.objectAccessActor;
   if (
     !identity ||

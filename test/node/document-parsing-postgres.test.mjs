@@ -263,7 +263,90 @@ test('document parse publication preserves immutable source, readback, replay, C
     await repo.reserve(scope, { ...input, requestId: 'CLOSE-FORGED-ACTIVE', expectedPublishedRevision: 1 })
       .then(result => leases.cancel(scope, result.row.parseRunId));
     const interrupted = await seedPredecessor();
-    assert.equal((await adminRepo.reserve(automaticScope, recoveryInput(interrupted))).created, true);
+    const automaticRecovery = await adminRepo.reserve(automaticScope, recoveryInput(interrupted));
+    assert.equal(automaticRecovery.created, true);
+    await leases.cancel(scope, automaticRecovery.row.parseRunId);
+
+    const parserInput = { mode: 'LOCAL_MINERU_IMPORT', bucketId: 'LOCAL-BUCKET', filePath: 'candidates/one.json',
+      providerObjectId: 'LOCAL-OBJECT-1', sha256: 'd'.repeat(64), byteLength: 456,
+      settings: { revision: 3, localMineruFallbackEnabled: true, titleEnhancementEnabled: false } };
+    const localSource = { ...input.sourceBinding, parserInput };
+    const officialPredecessor = await seedPredecessor();
+    await assert.rejects(repo.reserve(scope, { ...recoveryInput(officialPredecessor), sourceBinding: localSource }),
+      /DOCUMENT_PARSE_RECOVERY_BINDING_MISMATCH/);
+    const localPredecessor = await seedPredecessor({ sourceBinding: localSource });
+    const localRecoveryInput = { ...recoveryInput(localPredecessor), sourceBinding: localSource };
+    await assert.rejects(repo.reserve(scope, recoveryInput(localPredecessor)), /DOCUMENT_PARSE_RECOVERY_BINDING_MISMATCH/);
+    for (const patch of [
+      { mode: 'OFFICIAL' }, { bucketId: 'OTHER-BUCKET' }, { filePath: 'candidates/two.json' },
+      { providerObjectId: 'LOCAL-OBJECT-2' }, { sha256: 'e'.repeat(64) }, { byteLength: 457 },
+      { settings: undefined }, { settings: { ...parserInput.settings, revision: 4 } },
+      { settings: { ...parserInput.settings, titleEnhancementEnabled: true } },
+      { settings: { ...parserInput.settings, localMineruFallbackEnabled: false } },
+    ]) {
+      await assert.rejects(repo.reserve(scope, { ...localRecoveryInput,
+        sourceBinding: { ...localSource, parserInput: { ...parserInput, ...patch } } }), /DOCUMENT_PARSE_RECOVERY_BINDING_MISMATCH/);
+    }
+    assert.deepEqual(await repo.read(scope, localPredecessor.parseRunId), localPredecessor);
+    // PostgreSQL jsonb may reorder snapshot keys; identical settings still recover.
+    const localRecovered = await repo.reserve(scope, { ...localRecoveryInput, sourceBinding: { ...localSource,
+      parserInput: { ...parserInput, settings: { titleEnhancementEnabled: false, localMineruFallbackEnabled: true, revision: 3 } } } });
+    assert.deepEqual(localRecovered.row.sourceBinding, localSource);
+    assert.equal((await repo.reserve(scope, localRecoveryInput)).created, false);
+    await assert.rejects(repo.reserve(scope, { ...localRecoveryInput, sourceBinding: input.sourceBinding }),
+      /DOCUMENT_PARSE_RECOVERY_BINDING_MISMATCH/);
+    await leases.cancel(scope, localRecovered.row.parseRunId);
+    // Producer changes remain an explicit new request, never a recovery identity.
+    const ordinaryOfficial = await repo.reserve(scope, { ...input, requestId: 'EXPLICIT-OFFICIAL', expectedPublishedRevision: 1 });
+    assert.equal(ordinaryOfficial.row.sourceBinding.parserInput, undefined);
+    await leases.cancel(scope, ordinaryOfficial.row.parseRunId);
+    const ordinaryLocalInput = { ...input, sourceBinding: localSource, requestId: 'EXPLICIT-LOCAL', expectedPublishedRevision: 1 };
+    const ordinaryLocal = await repo.reserve(scope, ordinaryLocalInput);
+    assert.equal(ordinaryLocal.created, true);
+    await assert.rejects(repo.reserve(scope, { ...ordinaryLocalInput, sourceBinding: { ...localSource,
+      parserInput: { ...parserInput, settings: { ...parserInput.settings, revision: 4 } } } }), /DOCUMENT_PARSE_REQUEST_CONFLICT/);
+    assert.equal((await repo.reserve(scope, ordinaryLocalInput)).created, false);
+    await leases.cancel(scope, ordinaryLocal.row.parseRunId);
+    // The worker uses this same immutable source row and existing progress JSON.
+    // Receipt storage must not update source_binding (0038 forbids that update).
+    const workerSource = { ...input.sourceBinding, parserInput: { mode: 'LOCAL_MINERU_WORKER', settings: parserInput.settings } };
+    const worker = await repo.reserve(scope, { ...input, sourceBinding: workerSource, requestId: 'LOCAL-WORKER', expectedPublishedRevision: 1 });
+    assert.equal((await repo.listLocalWorkerCandidates(scope.tenantId, 10)).some(row => row.parseRunId === worker.row.parseRunId), true);
+    assert.equal(await repo.readLocalWorkerById('OTHER-TENANT', worker.row.parseRunId), null);
+    await other.unsafe("SET ROLE authenticated; SELECT set_config('app.user_id', 'ACTOR-2', false)");
+    assert.equal(await otherRepo.readLocalWorkerById(scope.tenantId, worker.row.parseRunId), null);
+    const workerFence = await leases.claim(scope, worker.row.parseRunId, 'LOCAL-WORKER');
+    await repo.stage(scope, worker.row.parseRunId, workerFence);
+    const candidateArtifact = { ...manifest, relativePath: 'raw/mineru-candidate.json',
+      filePath: `wiselink/parsed/DV-1/${worker.row.parseRunId}/raw/mineru-candidate.json` };
+    await assert.rejects(repo.recordLocalWorkerCandidate(scope, { ...workerFence, leaseGeneration: workerFence.leaseGeneration + 1 }, candidateArtifact), /DOCUMENT_STEP_LEASE_REJECTED/);
+    await db`UPDATE dm_document_version SET pdf_sha256=${'c'.repeat(64)} WHERE document_version_id='DV-1'`;
+    await assert.rejects(repo.recordLocalWorkerCandidate(scope, workerFence, candidateArtifact), /DOCUMENT_PARSE_SOURCE_CHANGED/);
+    await db`UPDATE dm_document_version SET pdf_sha256=${input.sourceBinding.pdfSha256} WHERE document_version_id='DV-1'`;
+    await repo.recordLocalWorkerCandidate(scope, workerFence, { ...candidateArtifact, readback: 'UPLOADED' });
+    await repo.recordLocalWorkerCandidate(scope, workerFence, candidateArtifact);
+    await repo.recordLocalWorkerCandidate(scope, workerFence, candidateArtifact);
+    const received = await repo.read(scope, worker.row.parseRunId);
+    assert.equal(received.artifactProgress.length, 1);
+    assert.equal(received.artifactProgress[0].localWorkerReceipt.leaseToken, workerFence.leaseToken);
+    assert.deepEqual(received.sourceBinding, workerSource);
+    await assert.rejects(repo.recordLocalWorkerCandidate(scope, workerFence, { ...candidateArtifact, sha256: 'f'.repeat(64) }), /DOCUMENT_LOCAL_WORKER_CANDIDATE_CONFLICT/);
+    assert.equal((await repo.listLocalWorkerCandidates(scope.tenantId, 10)).some(row => row.parseRunId === worker.row.parseRunId), false);
+    await leases.release(scope, workerFence);
+    await assert.rejects(repo.recordLocalWorkerCandidate(scope, workerFence, candidateArtifact), /DOCUMENT_STEP_LEASE_REJECTED/);
+    await leases.cancel(scope, worker.row.parseRunId);
+
+    const grantSource = { ...workerSource, automaticWorkItem: automaticScope.automaticWorkItem };
+    const granted = await adminRepo.reserve(automaticScope, { ...input, sourceBinding: grantSource, requestId: 'LOCAL-WORKER-GRANT', expectedPublishedRevision: 1 });
+    const adminLeases = new DocumentStepLeaseRepository(drizzle(db));
+    const grantFence = await adminLeases.claim(automaticScope, granted.row.parseRunId, 'LOCAL-WORKER');
+    await adminRepo.stage(automaticScope, granted.row.parseRunId, grantFence);
+    const grantArtifact = { ...candidateArtifact, filePath: `wiselink/parsed/DV-1/${granted.row.parseRunId}/raw/mineru-candidate.json` };
+    await assert.rejects(adminRepo.recordLocalWorkerCandidate(scope, grantFence, grantArtifact), /DOCUMENT_AUTOMATIC_LEASE_REJECTED/);
+    await db`UPDATE auto_work_item_authorization SET lease_generation=lease_generation+1 WHERE work_item_id='WI-1'`;
+    await assert.rejects(adminRepo.recordLocalWorkerCandidate(automaticScope, grantFence, grantArtifact), /DOCUMENT_AUTOMATIC_LEASE_REJECTED/);
+    assert.deepEqual((await adminRepo.read(automaticScope, granted.row.parseRunId)).artifactProgress, []);
+
   } finally {
     await Promise.all([actor.end(), concurrentActor.end(), other.end(), db.end()]);
   }

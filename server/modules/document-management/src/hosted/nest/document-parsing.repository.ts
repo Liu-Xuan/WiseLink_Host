@@ -1,11 +1,12 @@
 import { DocumentStepLeaseRepository, type DocumentStepFence } from './document-step-lease.repository';
 import { registerPublishedDocumentOriginal } from './document-original-pending';
 import { randomUUID } from 'node:crypto';
+import { isDeepStrictEqual } from 'node:util';
 import { Inject, Injectable } from '@nestjs/common';
 import { DRIZZLE_DATABASE, type PostgresJsDatabase } from '@lark-apaas/fullstack-nestjs-core';
-import { and, desc, eq, inArray, lte, sql } from 'drizzle-orm';
+import { and, asc, desc, eq, gt, inArray, lte, isNull, or, isNotNull, sql } from 'drizzle-orm';
 import { dmDocumentVersion } from '@server/database/schema';
-import { dmDocumentParseRun } from '@server/database/document-parsing.schema';
+import { dmDocumentParseRun, type DocumentParseSourceBinding } from '@server/database/document-parsing.schema';
 import { canAutomaticallyRecoverDocumentParse, documentParseRecoveryPredecessor } from '@shared/document-parsing-recovery';
 import type { MineruDocumentVersionBinding, MineruStoredArtifact } from '../../../../professional-input/mineru/mineru-artifact-store';
 
@@ -27,6 +28,10 @@ export interface DocumentParseScope {
   automaticWorkItem?: DocumentAutomaticWorkItemFence;
 }
 export type DocumentParseRow = typeof dmDocumentParseRun.$inferSelect;
+/** Internal only: never expose this receipt in artifact or reading projections. */
+export function documentLocalWorkerReceipt(run: DocumentParseRow) {
+  return run.artifactProgress.find(item => item.relativePath === 'raw/mineru-candidate.json')?.localWorkerReceipt;
+}
 const ACTIVE = ['RUNNING', 'STAGING'] as const;
 const sourceColumns = {
   documentVersionId: dmDocumentVersion.documentVersionId, documentId: dmDocumentVersion.documentId,
@@ -43,6 +48,65 @@ export function documentParseError(code: string, statusCode = 409) {
 // eslint-disable-next-line @darraghor/nestjs-typed/injectable-should-be-provided
 export class DocumentParsingRepository {
   constructor(@Inject(DRIZZLE_DATABASE) private readonly db: PostgresJsDatabase, private readonly leases: DocumentStepLeaseRepository) {}
+
+  async listLocalWorkerCandidates(tenantId: string, limit = 10): Promise<DocumentParseRow[]> {
+    if (!tenantId.trim() || !Number.isSafeInteger(limit) || limit < 1 || limit > 100)
+      throw documentParseError('DOCUMENT_LOCAL_WORKER_ARGUMENT_INVALID', 400);
+    const now = new Date();
+    return this.db.select().from(dmDocumentParseRun).where(and(
+      eq(dmDocumentParseRun.tenantId, tenantId), inArray(dmDocumentParseRun.status, [...ACTIVE]),
+      sql`${dmDocumentParseRun.sourceBinding}->'parserInput'->>'mode' = 'LOCAL_MINERU_WORKER'`,
+      gt(dmDocumentParseRun.deadlineAt, now), isNull(dmDocumentParseRun.cancelRequestedAt), isNull(dmDocumentParseRun.errorCode),
+      or(isNull(dmDocumentParseRun.leaseExpiresAt), lte(dmDocumentParseRun.leaseExpiresAt, now)),
+      sql`not exists (select 1 from jsonb_array_elements(${dmDocumentParseRun.artifactProgress}) artifact
+        where artifact->>'relativePath' = 'raw/mineru-candidate.json')`,
+    )).orderBy(asc(dmDocumentParseRun.startedAt)).limit(limit);
+  }
+
+  async readLocalWorkerById(tenantId: string, parseRunId: string): Promise<DocumentParseRow | null> {
+    const [run] = await this.db.select().from(dmDocumentParseRun).where(and(
+      eq(dmDocumentParseRun.tenantId, tenantId), eq(dmDocumentParseRun.parseRunId, parseRunId),
+      sql`${dmDocumentParseRun.sourceBinding}->'parserInput'->>'mode' = 'LOCAL_MINERU_WORKER'`,
+    )).limit(1);
+    return run ?? null;
+  }
+
+  async assertLocalWorkerScope(scope: DocumentParseScope, run: DocumentParseRow): Promise<void> {
+    await this.db.transaction(async tx => {
+      if (!isDeepStrictEqual(scope.automaticWorkItem, run.sourceBinding.automaticWorkItem))
+        throw documentParseError('DOCUMENT_AUTOMATIC_LEASE_REJECTED');
+      if (scope.automaticWorkItem) await this.leases.assertAutomaticWorkItem(tx, scope);
+      const [version] = await tx.select(sourceColumns).from(dmDocumentVersion)
+        .where(eq(dmDocumentVersion.documentVersionId, scope.documentVersionId)).for('update');
+      if (!version || !sameSource(version, run.sourceBinding)) throw documentParseError('DOCUMENT_PARSE_SOURCE_CHANGED');
+    });
+  }
+
+  async recordLocalWorkerCandidate(scope: DocumentParseScope, fence: DocumentStepFence, artifact: MineruStoredArtifact): Promise<void> {
+    await this.db.transaction(async tx => {
+      if (scope.automaticWorkItem) await this.leases.assertAutomaticWorkItem(tx, scope);
+      const [version] = await tx.select(sourceColumns).from(dmDocumentVersion)
+        .where(eq(dmDocumentVersion.documentVersionId, scope.documentVersionId)).for('update');
+      await this.leases.assertValid(tx, scope, fence);
+      const [run] = await tx.select().from(dmDocumentParseRun).where(owned(scope, fence.parseRunId)).for('update');
+      if (!run || run.status !== 'STAGING' || run.sourceBinding.parserInput?.mode !== 'LOCAL_MINERU_WORKER' ||
+          artifact.role !== 'MANIFEST' || artifact.relativePath !== 'raw/mineru-candidate.json' || artifact.bucketId !== run.bucketId ||
+          artifact.filePath !== `wiselink/parsed/${run.documentVersionId}/${run.parseRunId}/raw/mineru-candidate.json`)
+        throw documentParseError('DOCUMENT_LOCAL_WORKER_CANDIDATE_INVALID');
+      if (!isDeepStrictEqual(scope.automaticWorkItem, run.sourceBinding.automaticWorkItem))
+        throw documentParseError('DOCUMENT_AUTOMATIC_LEASE_REJECTED');
+      if (!version || !sameSource(version, run.sourceBinding)) throw documentParseError('DOCUMENT_PARSE_SOURCE_CHANGED');
+      const receipt = documentLocalWorkerReceipt(run);
+      if (receipt && (receipt.sha256 !== artifact.sha256 || receipt.byteLength !== artifact.byteLength))
+        throw documentParseError('DOCUMENT_LOCAL_WORKER_CANDIDATE_CONFLICT');
+      const progress = run.artifactProgress.filter(item => item.relativePath !== artifact.relativePath);
+      progress.push({ ...artifact, localWorkerReceipt: receipt ?? {
+        sha256: artifact.sha256, byteLength: artifact.byteLength, leaseOwner: fence.leaseOwner,
+        leaseToken: fence.leaseToken, leaseGeneration: fence.leaseGeneration,
+      } });
+      await tx.update(dmDocumentParseRun).set({ artifactProgress: progress }).where(owned(scope, run.parseRunId));
+    });
+  }
 
   async current(scope: DocumentParseScope) {
     const rows = await this.db.select().from(dmDocumentParseRun).where(scoped(scope))
@@ -62,7 +126,7 @@ export class DocumentParsingRepository {
   }
 
   async reserve(scope: DocumentParseScope, input: {
-    requestId: string; expectedPublishedRevision: number; bucketId: string; sourceBinding: MineruDocumentVersionBinding;
+    requestId: string; expectedPublishedRevision: number; bucketId: string; sourceBinding: DocumentParseSourceBinding;
   }) {
     let predecessorId: string | null;
     try { predecessorId = documentParseRecoveryPredecessor(input.requestId); }
@@ -81,12 +145,14 @@ export class DocumentParsingRepository {
       if (predecessorId) {
         const [predecessor] = await tx.select().from(dmDocumentParseRun)
           .where(owned(scope, predecessorId)).for('update');
-        if (!predecessor || predecessor.bucketId !== input.bucketId || !sameSource(predecessor.sourceBinding, input.sourceBinding)) {
+        if (!predecessor || predecessor.bucketId !== input.bucketId || !sameSource(predecessor.sourceBinding, input.sourceBinding) ||
+            !sameParserInput(predecessor.sourceBinding, input.sourceBinding)) {
           throw documentParseError('DOCUMENT_PARSE_RECOVERY_BINDING_MISMATCH');
         }
         if (replay) {
           if (predecessor.status !== 'FAILED' || predecessor.parseRevision >= replay.parseRevision ||
-              replay.bucketId !== input.bucketId || !sameSource(replay.sourceBinding, input.sourceBinding)) {
+              replay.bucketId !== input.bucketId || !sameSource(replay.sourceBinding, input.sourceBinding) ||
+              !sameParserInput(replay.sourceBinding, input.sourceBinding)) {
             throw documentParseError('DOCUMENT_PARSE_RECOVERY_BINDING_MISMATCH');
           }
         } else {
@@ -104,8 +170,17 @@ export class DocumentParsingRepository {
         }
       }
       if (replay) {
-        if (replay.expectedPublishedRevision !== input.expectedPublishedRevision) throw documentParseError('DOCUMENT_PARSE_REQUEST_CONFLICT');
+        if (replay.expectedPublishedRevision !== input.expectedPublishedRevision ||
+            !sameParserInput(replay.sourceBinding, input.sourceBinding)) throw documentParseError('DOCUMENT_PARSE_REQUEST_CONFLICT');
         return { row: replay, created: false };
+      }
+      // Explicit alternate input may supersede an errored attempt only after its executing lease is absent/expired.
+      // Keep the original failure code; never rewrite quota failures as cancellations.
+      if (input.sourceBinding.parserInput?.mode === 'LOCAL_MINERU_IMPORT') {
+        await tx.update(dmDocumentParseRun).set({ status: 'FAILED', completedAt: new Date() })
+          .where(and(scoped(scope), eq(dmDocumentParseRun.actorUserId, scope.actorUserId),
+            inArray(dmDocumentParseRun.status, [...ACTIVE]), isNotNull(dmDocumentParseRun.errorCode),
+            or(isNull(dmDocumentParseRun.leaseExpiresAt), lte(dmDocumentParseRun.leaseExpiresAt, new Date()))));
       }
       // A hard processing deadline bounds interrupted runs. It is never extended by retrying a request.
       await tx.update(dmDocumentParseRun).set({ status: 'FAILED',
@@ -209,4 +284,14 @@ function sameSource(version: Pick<typeof dmDocumentVersion.$inferSelect, keyof t
 
 function assertFenceRun(parseRunId: string, fence: DocumentStepFence) {
   if (!fence || fence.parseRunId !== parseRunId) throw documentParseError('DOCUMENT_STEP_LEASE_REJECTED');
+}
+
+export function sameParserInput(left: DocumentParseSourceBinding, right: DocumentParseSourceBinding): boolean {
+  const a = left.parserInput; const b = right.parserInput;
+  if (!a || !b) return !a && !b;
+  if (a.mode !== b.mode || !isDeepStrictEqual(a.settings, b.settings)) return false;
+  if (a.mode === 'LOCAL_MINERU_WORKER' && b.mode === 'LOCAL_MINERU_WORKER') return true;
+  return a.mode === 'LOCAL_MINERU_IMPORT' && b.mode === 'LOCAL_MINERU_IMPORT' &&
+    a.bucketId === b.bucketId && a.filePath === b.filePath && a.providerObjectId === b.providerObjectId &&
+    a.sha256 === b.sha256 && a.byteLength === b.byteLength;
 }
