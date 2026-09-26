@@ -45,7 +45,8 @@ function fixture() {
     recordStepFailure: jest.fn(async (_scope: unknown, _fence: unknown, code: string) => { run.errorCode = code; }), current: jest.fn(async () => ({ published: run.status === 'PUBLISHED' ? run : null })) };
   const source = { version: { ...binding, originalFilename: 'original.pdf' }, source: { bucketId: 'bucket', filePath: 'original.pdf', sha256: binding.pdfSha256, byteLength: 1,
     providerObjectId: 'original-object', providerVersionId: 'original-version' } };
-  const authorizer = { assertCanRead: jest.fn(async () => undefined), assertCanIngest: jest.fn(async () => undefined) };
+  const authorizer = { assertCanRead: jest.fn(async () => undefined), assertCanIngest: jest.fn(async () => undefined),
+    assertCanImportLocalCandidate: jest.fn(async () => undefined), assertCanReadLocalCandidate: jest.fn(async () => undefined) };
   const plugins = { configured: jest.fn(() => false), parseOriginal: jest.fn() };
   const leases = { claim: jest.fn(async () => ({ parseRunId: 'PR', leaseOwner: 'local', leaseToken: 'lease', leaseGeneration: 1 })), check: jest.fn(async () => undefined), release: jest.fn(async () => undefined) };
   const settings = { capture: jest.fn(async () => ({ revision: 1, localMineruFallbackEnabled: true, titleEnhancementEnabled: false })) };
@@ -58,7 +59,9 @@ afterEach(() => jest.restoreAllMocks());
 it('publishes exact local original without calling exhausted plugin, then replays without duplication', async () => {
   const f = fixture();
   expect(await f.service.start('DV', request, context)).toMatchObject({ status: 'PUBLISHED', parseRevision: 2 });
-  expect(f.authorizer.assertCanIngest.mock.calls.length).toBeGreaterThan(2);
+  expect(f.authorizer.assertCanImportLocalCandidate).toHaveBeenCalledTimes(2);
+  expect(f.authorizer.assertCanReadLocalCandidate.mock.calls.length).toBeGreaterThan(2);
+  expect(f.authorizer.assertCanIngest).not.toHaveBeenCalled();
   expect(f.plugins.parseOriginal).not.toHaveBeenCalled();
   expect(f.run.sourceBinding.parserInput).toMatchObject({ providerObjectId: 'candidate-object', sha256: f.selection.sha256 });
   expect(await f.service.read('DV', 'PR', context)).toMatchObject({ parser: { name: 'MinerU', version: '3.4.5', backend: 'pipeline' }, original: { producer: { kind: 'MINERU_LOCAL_PDFJS' } } });
@@ -66,7 +69,7 @@ it('publishes exact local original without calling exhausted plugin, then replay
   expect(f.repository.reserve).toHaveBeenCalledTimes(1); expect(f.repository.publish).toHaveBeenCalledTimes(1);
 });
 it('refuses candidate ingest before downloading files or reserving', async () => {
-  const f = fixture(); f.authorizer.assertCanIngest.mockRejectedValue(new Error('DOCUMENT_ACTION_FORBIDDEN'));
+  const f = fixture(); f.authorizer.assertCanImportLocalCandidate.mockRejectedValue(new Error('DOCUMENT_ACTION_FORBIDDEN'));
   await expect(f.service.start('DV', request, context)).rejects.toThrow('DOCUMENT_ACTION_FORBIDDEN');
   expect(f.readSelection).not.toHaveBeenCalled(); expect(f.repository.reserve).not.toHaveBeenCalled();
 });
@@ -159,7 +162,7 @@ it('resumes pinned local input and original settings without mode while current 
 });
 it.each(['candidate', 'source', 'changed', 'missing-snapshot'])('rejects local recovery boundary: %s', async boundary => {
   const f = recoveryFixture();
-  if (boundary === 'candidate') f.authorizer.assertCanIngest.mockRejectedValue(new Error('DOCUMENT_ACTION_FORBIDDEN'));
+  if (boundary === 'candidate') f.authorizer.assertCanReadLocalCandidate.mockRejectedValue(new Error('DOCUMENT_ACTION_FORBIDDEN'));
   if (boundary === 'source') f.authorizer.assertCanRead.mockRejectedValue(new Error('DOCUMENT_ACTION_FORBIDDEN'));
   if (boundary === 'changed') f.selection.providerObjectId = 'replaced';
   if (boundary === 'missing-snapshot') Reflect.deleteProperty(f.predecessor.sourceBinding.parserInput, 'settings');
@@ -171,7 +174,7 @@ it.each(['candidate', 'source', 'changed', 'missing-snapshot'])('rejects local r
 it('rechecks candidate authorization before publishing a recovered completed manifest', async () => {
   const f = fixture(); await f.service.start('DV', request, context);
   f.run.status = 'STAGING';
-  f.authorizer.assertCanIngest.mockRejectedValue(new Error('DOCUMENT_ACTION_FORBIDDEN'));
+  f.authorizer.assertCanReadLocalCandidate.mockRejectedValue(new Error('DOCUMENT_ACTION_FORBIDDEN'));
   await expect(f.service.executeStep('PR', { ...context, documentVersionId: 'DV' },
     { parseRunId: 'PR', leaseOwner: 'local', leaseToken: 'lease', leaseGeneration: 1 })).rejects.toThrow('DOCUMENT_ACTION_FORBIDDEN');
   expect(f.repository.publish).toHaveBeenCalledTimes(1);
@@ -221,15 +224,63 @@ it.each([true, false])('reuses exact PDF pages but not raw Markdown across produ
     .toBe(localFirst ? 'Official parser text.' : 'Exact original text.');
 });
 
-it('fails closed with the original identity error when a local consumer lacks browser context', async () => {
+it('continues an admitted local run without minting browser identity for its background consumer', async () => {
   const f = fixture();
-  jest.mocked(authority.mintDocumentUploadAuthority).mockRestore();
+  jest.mocked(authority.mintDocumentUploadAuthority).mockImplementation(() => { throw new Error('BROWSER_MINT_MUST_NOT_RUN'); });
   await expect(f.service.executeStep('PR', { documentVersionId: 'DV', actorUserId: context.actorUserId,
     tenantId: context.tenantId, roles: [] },
-  { parseRunId: 'PR', leaseOwner: 'consumer', leaseToken: 'lease', leaseGeneration: 1 }))
-    .rejects.toMatchObject({ message: 'CANONICAL_IDENTITY_HANDOFF_UNAVAILABLE', code: 'CANONICAL_IDENTITY_HANDOFF_UNAVAILABLE',
-      statusCode: 503, denialSource: 'MIAODA_BROWSER_UNAVAILABLE_ADAPTER' });
+  { parseRunId: 'PR', leaseOwner: 'consumer', leaseToken: 'lease', leaseGeneration: 1 })).resolves.toMatchObject({ status: 'PUBLISHED' });
+  expect(authority.mintDocumentUploadAuthority).not.toHaveBeenCalled();
+  expect(f.authorizer.assertCanReadLocalCandidate.mock.calls.length).toBeGreaterThan(1);
+  expect(f.authorizer.assertCanImportLocalCandidate).not.toHaveBeenCalled();
+  expect(f.authorizer.assertCanIngest).not.toHaveBeenCalled();
+  expect(f.plugins.parseOriginal).not.toHaveBeenCalled();
+});
+
+it.each(['admission', 'continuation'])('fails closed without the dedicated %s authorizer method', async operation => {
+  const f = fixture();
+  if (operation === 'admission') {
+    Reflect.deleteProperty(f.authorizer, 'assertCanImportLocalCandidate');
+    await expect(f.service.start('DV', request, context)).rejects.toThrow('DOCUMENT_LOCAL_MINERU_AUTHORIZATION_UNAVAILABLE');
+  } else {
+    Reflect.deleteProperty(f.authorizer, 'assertCanReadLocalCandidate');
+    await expect(f.service.executeStep('PR', { ...context, documentVersionId: 'DV' },
+      { parseRunId: 'PR', leaseOwner: 'consumer', leaseToken: 'lease', leaseGeneration: 1 }))
+      .rejects.toThrow('DOCUMENT_LOCAL_MINERU_AUTHORIZATION_UNAVAILABLE');
+  }
+  expect(f.authorizer.assertCanIngest).not.toHaveBeenCalled();
   expect(f.readSelection).not.toHaveBeenCalled(); expect(f.repository.publish).not.toHaveBeenCalled();
-  expect(f.plugins.parseOriginal).not.toHaveBeenCalled(); expect(f.authorizer.assertCanIngest).not.toHaveBeenCalled();
-  expect(f.run.errorCode).toBe('CANONICAL_IDENTITY_HANDOFF_UNAVAILABLE');
+});
+
+it.each(['replay', 'recovery'])('cannot substitute another candidate selection using a persisted %s', async operation => {
+  const f = recoveryFixture();
+  if (operation === 'replay') {
+    f.settings.capture.mockResolvedValue({ revision: 1, localMineruFallbackEnabled: true, titleEnhancementEnabled: false });
+    await f.service.start('DV', request, context);
+  }
+  f.readSelection.mockClear();
+  f.authorizer.assertCanImportLocalCandidate.mockClear();
+  await expect(f.service.start('DV', { ...(operation === 'replay' ? request : f.resume), mode: 'LOCAL_MINERU_IMPORT',
+    selection: { bucketId: 'bucket', filePath: 'other.json' } }, context))
+    .rejects.toThrow(operation === 'replay' ? 'DOCUMENT_PARSE_REQUEST_CONFLICT' : 'DOCUMENT_PARSE_RECOVERY_BINDING_MISMATCH');
+  expect(f.readSelection).not.toHaveBeenCalled(); expect(f.authorizer.assertCanImportLocalCandidate).not.toHaveBeenCalled();
+});
+
+it('replays a pinned local run without browser mint or capturing current settings', async () => {
+  const f = fixture(); await f.service.start('DV', request, context);
+  jest.mocked(authority.mintDocumentUploadAuthority).mockClear();
+  jest.mocked(authority.mintDocumentUploadAuthority).mockImplementation(() => { throw new Error('BROWSER_MINT_MUST_NOT_RUN'); });
+  f.settings.capture.mockClear(); f.authorizer.assertCanImportLocalCandidate.mockClear();
+  await expect(f.service.start('DV', request,
+    { actorUserId: context.actorUserId, tenantId: context.tenantId, roles: [] })).resolves.toMatchObject({ status: 'PUBLISHED' });
+  expect(authority.mintDocumentUploadAuthority).not.toHaveBeenCalled();
+  expect(f.settings.capture).not.toHaveBeenCalled(); expect(f.authorizer.assertCanImportLocalCandidate).not.toHaveBeenCalled();
+});
+
+it('keeps ordinary no-mode replay from changing the meaning of a local request', async () => {
+  const f = fixture(); await f.service.start('DV', request, context);
+  f.readSelection.mockClear();
+  await expect(f.service.start('DV', { requestId: request.requestId, expectedPublishedRevision: 0 }, context))
+    .rejects.toThrow('DOCUMENT_PARSE_REQUEST_CONFLICT');
+  expect(f.readSelection).not.toHaveBeenCalled();
 });

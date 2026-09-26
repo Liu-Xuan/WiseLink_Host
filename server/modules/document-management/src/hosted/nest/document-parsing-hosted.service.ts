@@ -90,13 +90,29 @@ export class DocumentParsingHostedService {
     const predecessor = predecessorId ? await this.repository.read(scope, predecessorId) : null;
     if (predecessorId && (!predecessor || predecessor.actorUserId !== context.actorUserId))
       throw documentParseError('DOCUMENT_PARSE_RECOVERY_BINDING_MISMATCH');
-    const pinned = predecessor?.sourceBinding.parserInput;
+    const admitted = existing ?? predecessor;
+    const pinned = admitted?.sourceBinding.parserInput;
     if (pinned && !pinned.settings) throw documentParseError('DOCUMENT_PARSING_SETTINGS_SNAPSHOT_REQUIRED');
-    const selection = input.mode === 'LOCAL_MINERU_IMPORT' ? input.selection : pinned;
+    if (existing && !predecessorId && pinned && input.mode !== 'LOCAL_MINERU_IMPORT')
+      throw documentParseError('DOCUMENT_PARSE_REQUEST_CONFLICT');
+    if (admitted && input.mode === 'LOCAL_MINERU_IMPORT' && (!pinned ||
+        input.selection.bucketId.trim() !== pinned.bucketId ||
+        input.selection.filePath.trim().replace(/^\/+/, '') !== pinned.filePath)) {
+      throw documentParseError(predecessorId ? 'DOCUMENT_PARSE_RECOVERY_BINDING_MISMATCH' : 'DOCUMENT_PARSE_REQUEST_CONFLICT');
+    }
+    const selection = admitted ? pinned : input.mode === 'LOCAL_MINERU_IMPORT' ? input.selection : undefined;
     let parserInput: DocumentLocalMineruInput | undefined;
     if (selection) {
-      const runtimeIngestAuthority = mintDocumentUploadAuthority({ ...context, appId: context.appId ?? '', env: context.env ?? '' });
-      await this.authorizer.assertCanIngest({ ...context, action: 'DOCUMENT_INGEST', selection, runtimeIngestAuthority });
+      if ((!admitted && !this.authorizer.assertCanImportLocalCandidate) ||
+          (admitted && !this.authorizer.assertCanReadLocalCandidate))
+        throw documentParseError('DOCUMENT_LOCAL_MINERU_AUTHORIZATION_UNAVAILABLE', 503);
+      const runtimeIngestAuthority = admitted ? undefined
+        : mintDocumentUploadAuthority({ ...context, appId: context.appId ?? '', env: context.env ?? '' });
+      const assertCandidate = async () => {
+        if (admitted) await this.assertLocalCandidateRead(admitted, context);
+        else await this.authorizer.assertCanImportLocalCandidate!({ ...context, documentVersionId, selection, runtimeIngestAuthority });
+      };
+      await assertCandidate();
       const selected = await this.originals.readSelection(selection);
       const candidate = readLocalMineruCandidate(selected.bytes);
       const original = await this.originals.readSelection({ bucketId: source.source.bucketId, filePath: source.source.filePath });
@@ -106,11 +122,11 @@ export class DocumentParsingHostedService {
           candidate.sourceSha256 !== original.sha256 || candidate.sourceByteLength !== original.byteLength)
         throw documentParseError('DOCUMENT_PARSE_ORIGINAL_MISMATCH');
       await this.assertRead(documentVersionId, context);
-      await this.authorizer.assertCanIngest({ ...context, action: 'DOCUMENT_INGEST', selection, runtimeIngestAuthority });
+      await assertCandidate();
       parserInput = { mode: 'LOCAL_MINERU_IMPORT', bucketId: selected.bucketId, filePath: selected.filePath.replace(/^\/+/, ''),
         providerObjectId: selected.providerObjectId, sha256: selected.sha256, byteLength: selected.byteLength };
 
-      const snapshot = predecessor ? pinned?.settings : existing?.sourceBinding.parserInput?.settings;
+      const snapshot = pinned?.settings;
       if (snapshot) parserInput.settings = snapshot;
     }
     const sourceBinding: DocumentParseSourceBinding = { documentVersionId, documentId: source.version.documentId, familyId: source.version.familyId,
@@ -145,12 +161,10 @@ export class DocumentParsingHostedService {
     const run = await this.repository.read(scope, parseRunId);
     if (!run) throw documentParseError('DOCUMENT_PARSE_NOT_FOUND', 404);
     const assertActive = async () => {
-      await this.assertRead(run.documentVersionId, context);
       if (run.sourceBinding.parserInput) {
         if (!run.sourceBinding.parserInput.settings) throw documentParseError('DOCUMENT_PARSING_SETTINGS_SNAPSHOT_REQUIRED');
-        const runtimeIngestAuthority = mintDocumentUploadAuthority({ ...context, appId: context.appId ?? '', env: context.env ?? '' });
-        await this.authorizer.assertCanIngest({ ...context, action: 'DOCUMENT_INGEST', selection: run.sourceBinding.parserInput, runtimeIngestAuthority });
-      }
+        await this.assertLocalCandidateRead(run, context);
+      } else await this.assertRead(run.documentVersionId, context);
       await this.leases.check(scope, fence);
     };
     const binding = originalBinding(run);
@@ -443,6 +457,12 @@ export class DocumentParsingHostedService {
       }
       return { status: 'COMPLETE', extraction: { pageCount: pageCount!, pages }, pageArtifacts };
     } finally { await pdfSession?.destroy(); }
+  }
+
+  private async assertLocalCandidateRead(run: DocumentParseRow, context: ReadScope): Promise<void> {
+    if (!this.authorizer.assertCanReadLocalCandidate)
+      throw documentParseError('DOCUMENT_LOCAL_MINERU_AUTHORIZATION_UNAVAILABLE', 503);
+    await this.authorizer.assertCanReadLocalCandidate({ ...context, documentVersionId: run.documentVersionId, parseRunId: run.parseRunId });
   }
 
   private async executeLocalImport(run: DocumentParseRow, context: ReadScope): Promise<void> {

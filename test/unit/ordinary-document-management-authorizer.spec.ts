@@ -1,3 +1,4 @@
+import { mintDocumentUploadAuthority } from '../../server/modules/document-management/src/hosted/nest/document-upload-authority';
 jest.mock(
   '../../server/modules/document-management/src/hosted/documentManagementHostedCore.js',
   () => ({ DocumentManagementHostedCore: jest.fn() }),
@@ -682,3 +683,86 @@ function restoreProcessEnv(key: string, value: string | undefined): void {
   if (value === undefined) delete process.env[key];
   else process.env[key] = value;
 }
+
+describe('local MinerU candidate authorization with real native upload authority', () => {
+  let oldSandbox: string | undefined;
+  let oldLocal: string | undefined;
+  beforeEach(() => {
+    oldSandbox = process.env.SANDBOX_ID; oldLocal = process.env.MIAODA_LOCAL_DEV;
+    process.env.SANDBOX_ID = 'unit-candidate-authorization'; delete process.env.MIAODA_LOCAL_DEV;
+  });
+  afterEach(() => {
+    restoreProcessEnv('SANDBOX_ID', oldSandbox); restoreProcessEnv('MIAODA_LOCAL_DEV', oldLocal);
+  });
+  function candidateFixture() {
+    const selection = { bucketId: 'bucket-default', filePath: '/1876604059672731.json' };
+    const metadata = { id: 'candidate-object', bucketID: selection.bucketId, filePath: selection.filePath,
+      createdBy: { userID: creatorContext.actorUserId }, metadata: { contentLength: 20 } };
+    const files = fileServiceTarget(metadata);
+    const workItems = { loadTenantDocumentAuthorizationBinding: jest.fn().mockResolvedValue(binding()) };
+    const run = { parseRunId: 'PRUN-owned', actorUserId: creatorContext.actorUserId, tenantId: creatorContext.tenantId,
+      documentVersionId: 'DV-1', sourceBinding: { documentVersionId: 'DV-1', parserInput: {
+        mode: 'LOCAL_MINERU_IMPORT', ...selection, providerObjectId: metadata.id, sha256: 'a'.repeat(64), byteLength: 20,
+        settings: { revision: 1, localMineruFallbackEnabled: true, titleEnhancementEnabled: false } } } };
+    const parsing = { read: jest.fn().mockResolvedValue(run) };
+    const authorizer = new OrdinaryDocumentManagementAuthorizer(workItems as never, files as never, undefined, parsing as never);
+    const scope = { actorUserId: creatorContext.actorUserId, tenantId: creatorContext.tenantId, roles: [], documentVersionId: 'DV-1' };
+    return { selection, metadata, files, workItems, run, parsing, authorizer, scope };
+  }
+  it('admits numeric provider JSON paths using actual minted authority and preserves PDF-only ingestion', async () => {
+    const f = candidateFixture();
+    const runtimeIngestAuthority = mintDocumentUploadAuthority(creatorContext);
+    await expect(f.authorizer.assertCanImportLocalCandidate({ ...f.scope, selection: f.selection, runtimeIngestAuthority }))
+      .resolves.toBeUndefined();
+    expect(f.files.getFileMetadata).toHaveBeenCalledWith('1876604059672731.json');
+    await expect(f.authorizer.assertCanIngest({ ...f.scope, action: 'DOCUMENT_INGEST', selection: f.selection, runtimeIngestAuthority }))
+      .rejects.toMatchObject({ code: 'DOCUMENT_ACTION_FORBIDDEN' });
+  });
+  it('rejects a copied authority object even with development role', async () => {
+    const f = candidateFixture();
+    const runtimeIngestAuthority = { ...mintDocumentUploadAuthority(creatorContext) };
+    await expect(f.authorizer.assertCanImportLocalCandidate({ ...f.scope, roles: ['wiselink_development'], selection: f.selection, runtimeIngestAuthority }))
+      .rejects.toMatchObject({ code: 'DOCUMENT_ACTION_FORBIDDEN' });
+    expect(f.files.getFileMetadata).not.toHaveBeenCalled();
+  });
+  it.each(['../candidate.json', 'folder/../candidate.json', 'folder//candidate.json', 'folder\\candidate.json', 'candidate.pdf'])
+    ('rejects unsafe or non-JSON path %s', async filePath => {
+      const f = candidateFixture();
+      await expect(f.authorizer.assertCanImportLocalCandidate({ ...f.scope, selection: { ...f.selection, filePath },
+        runtimeIngestAuthority: mintDocumentUploadAuthority(creatorContext) })).rejects.toMatchObject({ code: 'DOCUMENT_ACTION_FORBIDDEN' });
+      expect(f.files.getFileMetadata).not.toHaveBeenCalled();
+    });
+  it('reads only the owned persisted candidate without browser context', async () => {
+    const f = candidateFixture();
+    await expect(f.authorizer.assertCanReadLocalCandidate({ ...f.scope, parseRunId: f.run.parseRunId })).resolves.toBeUndefined();
+    expect(f.parsing.read).toHaveBeenCalledWith({ ...f.scope, parseRunId: f.run.parseRunId }, f.run.parseRunId);
+    expect(f.files.getFileMetadata).toHaveBeenCalledWith('1876604059672731.json');
+  });
+  it.each(['actor', 'tenant', 'document', 'mode', 'snapshot', 'disabled', 'revision', 'owner', 'object', 'length', 'bucket', 'source'])
+    ('rejects changed persisted candidate boundary %s', async boundary => {
+      const f = candidateFixture(); const pinned = f.run.sourceBinding.parserInput;
+      if (boundary === 'actor') f.run.actorUserId = 'other';
+      if (boundary === 'tenant') f.run.tenantId = 'other';
+      if (boundary === 'document') f.run.documentVersionId = 'other';
+      if (boundary === 'mode') pinned.mode = 'OFFICIAL_PLUGIN';
+      if (boundary === 'snapshot') Reflect.deleteProperty(pinned, 'settings');
+      if (boundary === 'disabled') pinned.settings.localMineruFallbackEnabled = false;
+      if (boundary === 'revision') pinned.settings.revision = -1;
+      if (boundary === 'owner') f.metadata.createdBy.userID = 'other';
+      if (boundary === 'object') f.metadata.id = 'other';
+      if (boundary === 'length') f.metadata.metadata.contentLength++;
+      if (boundary === 'bucket') pinned.bucketId = 'other';
+      if (boundary === 'source') f.workItems.loadTenantDocumentAuthorizationBinding.mockResolvedValue(null);
+      await expect(f.authorizer.assertCanReadLocalCandidate({ ...f.scope, parseRunId: f.run.parseRunId }))
+        .rejects.toMatchObject({ code: boundary === 'source' ? 'DOCUMENT_VERSION_NOT_FOUND' : 'DOCUMENT_ACTION_FORBIDDEN' });
+    });
+  it('denies unavailable persistence and preserves current FileService permission failures', async () => {
+    const f = candidateFixture();
+    const unavailable = new OrdinaryDocumentManagementAuthorizer(f.workItems as never, f.files as never);
+    await expect(unavailable.assertCanReadLocalCandidate({ ...f.scope, parseRunId: f.run.parseRunId }))
+      .rejects.toMatchObject({ code: 'DOCUMENT_LOCAL_MINERU_AUTHORIZATION_UNAVAILABLE', statusCode: 503 });
+    f.files.getFileMetadata.mockRejectedValue({ status: 403 });
+    await expect(f.authorizer.assertCanReadLocalCandidate({ ...f.scope, parseRunId: f.run.parseRunId }))
+      .rejects.toMatchObject({ code: 'DOCUMENT_ACTION_FORBIDDEN', statusCode: 403 });
+  });
+});
