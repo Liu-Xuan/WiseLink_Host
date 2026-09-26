@@ -1,5 +1,11 @@
 # M 主控集成交接
 
+## 2026-09-26 C164：JobAid 时点断言与原文复核
+
+刘轩本人在受控 PDF 第 2 页读到 `Production Incorporation: 3Q 2027 (Target)` 与 `Service Bulletin Available: (TBD)`，原文没有给出两者的先后关系。当前 JobAid rev9 的 `AID-OBEDS-TIMELINE` 正文却称 SB 颁发在 Production Incorporation 之后或同一时点，同时该 issue 的“仍需确认”又要求核查两者关系，属于同一保存结果内部的依据矛盾。不能把这条时序当成工程事实，也不能靠修改图谱或 Overall 摘要掩盖正文问题。
+
+17b 持续工程复核入口需要同范围、已回答的新讨论才能启用“更新评估”；本轮只核对该合同，未发送讨论、未调用模型、未更新 JobAid/Overall。为检查输入而开始的空复核已结束，页面显示 0 条已保存对话、WorkItem 版本仍为 5。下一项高价值工作是从该原文确切范围建立后继 JobAid 更正，撤回无据时序并保持 SB 日期未知；随后让 Overall 基于新的确切 JobAid 修订更新并读回。应同时检查为何两页 PDF 已可读而当前问题工作仍把同页相关段落列为“未读”，避免仅为本样本打补丁。
+
 ## 2026-09-26 C163：工作图谱准确入口与版本绑定
 
 修复工作 Wiki／侧栏的 `workItemId` 图谱入口误转事项图谱的问题。事项图谱仍按明确 `matterId` 读取；工作任务入口直接读取 Host 已授权的当前 WorkItem LibraryIndex，初始显示工作关系。Host 在同一授权投影回执中携带当前 JobAid `workRevisionRef`；带 `workRef` 的图谱链接先与该回执核对，历史修订只给出准确工程知识入口，不把当前图谱冒充历史图谱。未增加模型生成、权限、数据库结构或自动调度。
