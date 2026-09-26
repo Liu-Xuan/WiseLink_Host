@@ -6,9 +6,9 @@
 
 | 现有部分 | C159 已实现职责 | 尚待验证的边界 |
 | --- | --- | --- |
-| `scripts/local-mineru-worker.ts` / `MineruRunner` | 显式运行一次受控领取，从 Host 取得确切原件和设置，执行本机解析并回传候选 | 真实离线单次约 17.6 秒；尚未完成发布后的 Host—本机—Host 闭环 |
-| Host `local-mineru/{claim,source,renew,result}` | 四条 POST 路由已接实际 service/controller；从持久 parseRun 恢复 actor/tenant，核验来源、自动任务授权、租约及候选字节 | 本地 Nest/Express 已验证 HTTP 200 与二进制字节；平台线上网关和真实专用密钥已完成IDLE领取；源读取/回传等待真实任务 |
-| 候选存储与原文接续 | 复用现有 FileService、artifactProgress、PDF.js 页块、租约和事务发布；已保存回执可按确切身份及字节重放 | 未把本地测试计为生产原文发布、阅读或完整业务成功 |
+| `scripts/local-mineru-worker.ts` / `MineruRunner` | 显式运行一次受控领取，从 Host 取得确切原件和设置，执行本机解析并回传候选 | 真实 Host→本机→Host 单次 24.697 秒、exit0/ACCEPTED；原文rev4已PUBLISHED；本人rev4正文和受控2页PDF已读回；后续工程阶段仍待验收 |
+| Host `local-mineru/{claim,source,renew,result}` | 四条 POST 路由已接实际 service/controller；从持久 parseRun 恢复 actor/tenant，核验来源、自动任务授权、租约及候选字节 | 平台线上专用密钥实际完成领取、原件读取、续租及候选回传；原件摘要与冻结设置读回一致 |
+| 候选存储与原文接续 | 复用现有 FileService、artifactProgress、PDF.js 页块、租约和事务发布；已保存回执可按确切身份及字节重放 | 候选超时后6.359秒无重算复用至rev4；Host已PUBLISHED/4产物/error=null，本人原文读取已通过，8条限制保留；完整工程流程仍待验收 |
 | 解析设置与标题辅助 | 无已存设置时默认启用本机解析，既有显式值保持；标题辅助默认关闭，后继沿用原快照 | 设置管理角色及 RLS 变更仍暂缓；`https://api.dli.li/v1` 标题目的地尚未获准 |
 
 专用 API Key 记录 `1877292677787683` 已创建并独立读回：仅允许 `POST /openapi/wiselink/local-mineru/claim`、`source`、`renew`、`result` 四条精确路由，`pvw=false`，无其他路由权限。本文只记录非秘密标识，不包含密钥值；该 transport key 不替代 Host 的文档、租户、actor、自动任务授权或租约核验。
@@ -17,7 +17,9 @@
 
 本地验证已收齐：Host API 29 项、UI 21 项、设置 13 项及独立解析/worker 批次 77 项通过；独立真实 PostgreSQL 1/1 通过、0 跳过，build 与 precommit 通过。各组计数不相加宣称不重复总数。API 测试中的真实 Nest/Express 保留默认 body-parser，只隔离 worker 边界，未装载平台 SDK 网关；离线 MinerU 结果不替代真实服务间传输验证。
 
-后续由主控按已获授权继续受控真实领取、解析、回传和持久读回；发布回执及全流程结果单独补记。不启常驻或 cron，不夹带设置管理员/RLS 调整或尚未获准的标题外发。
+后续真实浏览器创建 rev3 本机 worker 任务后，首次领取仍为 IDLE，发现原实现进入 actor 上下文前查询 parseRun/WorkItem，被既有 RLS 隐去。现已修为先从既有有效逐任务委托发现精确 actor/DV，再按 actor 核对任务、来源和解析行；本机租约归属绑定父任务代次，不新增策略或角色。API 32/32、核心 55/55、真实非 owner RLS PostgreSQL 1/1（零跳过）通过。当前发布提交 `8577beb91a81f8556b38c0a50d07f4854ec78ea3`，release `7689708581558242273` finished、精确 SHA 匹配、error_logs=[]。父自动队列租约已过期，仍需 17c 正常受控重领；截至该回执尚未进行线上原件读取、候选回传或原文发布。
+
+17c通过官方单次cron run将父任务重领为gen3（至14:44:14.655）；本机ONCE实际领取、读取57,434bytes原件、离线解析并回传，24.697秒返回ACCEPTED/exit0。Host读回候选SHA256 `c1358eecfb6ec141a5b8c93a2505625c02abcefbb8a594d26ad52086ed745e25`，内部回执存在。本轮自然超时后，17c正常创建同输入rev4，本机再次ONCE以6.359秒返回CANDIDATE_READY；Host已登记同一候选长度/SHA，未重跑MinerU，原rev3候选和错误历史保留。第三次受控Run已完成rev4原文发布（4产物/PUBLISHED/error=null），并在14:00:51自动进入JobAid问题评估；本人页面已核对rev4正文及同一2页受控PDF，保留8条覆盖/定位限制；事项Wiki尚无保存评估/综合认识，继续该次运行结果验收，不把运行中当作完整工程流程成功。不启常驻或 cron，不夹带设置管理员/RLS 调整或尚未获准的标题外发。
 
 ## 历史：2026-09-26 C158 旧路径可复用范围
 

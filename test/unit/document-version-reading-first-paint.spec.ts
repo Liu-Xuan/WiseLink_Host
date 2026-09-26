@@ -154,6 +154,46 @@ it('renders the pinned body before the status read resolves and never requests t
   expect(container.textContent).toContain('constructed.pdf');
 });
 
+it('keeps a published body in loading state until it arrives with document processing collapsed', async () => {
+  let resolveStatus!: (value: unknown) => void;
+  let resolveReading!: (value: unknown) => void;
+  mockStatus.mockImplementationOnce(() => new Promise(resolve => { resolveStatus = resolve; }));
+  mockReading.mockImplementationOnce(() => new Promise(resolve => { resolveReading = resolve; }));
+  await mount();
+  expect(container.textContent).toContain('正在读取文档状态…');
+  expect(container.textContent).not.toContain('尚无已发布的解析内容');
+  expect(mockReading).not.toHaveBeenCalled();
+  await act(async () => { resolveStatus(statusPayload()); });
+  expect(container.querySelector('details')?.open).toBe(false);
+  expect(mockReading).toHaveBeenCalledWith('DV1', 'PR1', expect.anything());
+  expect(container.textContent).toContain('正在读取已发布的解析内容…');
+  expect(container.textContent).not.toContain('尚无已发布的解析内容');
+  await act(async () => { resolveReading(readingPayload()); });
+  expect(container.querySelector('details')?.open).toBe(false);
+  expect(container.textContent).toContain('阅读版本 3');
+  expect(container.querySelector('[data-mode="dual"]')).not.toBeNull();
+  expect(container.textContent).not.toContain('正在读取已发布的解析内容');
+});
+
+it('shows an empty state only after status confirms there is no published run', async () => {
+  mockStatus.mockResolvedValueOnce({ ...statusPayload(), publishedRun: null, latestRun: null });
+  await mount();
+  expect(container.textContent).toContain('尚无已发布的解析内容');
+  expect(mockReading).not.toHaveBeenCalled();
+});
+
+it('replaces the published loading state with a read error when the body request fails', async () => {
+  let rejectReading!: (error: Error) => void;
+  mockReading.mockImplementationOnce(() => new Promise((_resolve, reject) => { rejectReading = reject; }));
+  await mount();
+  expect(container.textContent).toContain('正在读取已发布的解析内容…');
+  await act(async () => { rejectReading(new Error('正文读取失败')); });
+  expect(container.querySelector('[role="alert"]')?.textContent).toBe('正文读取失败');
+  expect(container.textContent).toContain('内容未能读回，请查看上方错误或刷新重试。');
+  expect(container.textContent).not.toContain('尚无已发布的解析内容');
+  expect(container.textContent).not.toContain('正在读取已发布的解析内容');
+});
+
 it('explains when direct evidence has no task-bound paragraph location', async () => {
   await mount('parseRunId=PR1&unboundEvidence=1');
   expect(container.textContent).toContain('没有工作项执行身份');

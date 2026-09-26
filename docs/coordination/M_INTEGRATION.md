@@ -2,6 +2,8 @@
 
 ## 2026-09-26 本机 MinerU 默认路线与仅出站 worker：当前集成态
 
+**当前结果：** 四接口与专用精确路由密钥已发布；真实原件已由本机 MinerU 解析并回传，Host 读回已保存候选，单次24.697秒/ACCEPTED。原文rev4已PUBLISHED（4个持久产物，无错误）；6.359秒恢复握手复用同一候选、没有重跑MinerU。本人原文页面及2页受控PDF已读回通过（8条限制保留）；第三次受控Run已自动进入JobAid，后续综合结果仍在验收。下文空队列及误IDLE为修复前的验证顺序，不是当前结论。
+
 用户最新已明确本机 MinerU 为新受理默认解析路线，并批准仅出站 worker、专用精确路由密钥和受控发布真实验证。当前只采用 `POST /openapi/wiselink/local-mineru/claim`、`source`、`renew`、`result` 四条路由完成领取、原件读取、续租与候选回传；不在本机开放公网服务，不启常驻或 cron。此前“暂不增加权限，保留实现”仅暂缓解析设置管理员、本人赋权及两项设置的 RLS 写权限，本轮不新增角色或 RLS。该早期答复不阻止已另行明确授权的 worker 和发布验证；下方 C158 及更早记录保留为当时历史。
 
 Host 从持久 parseRun 恢复 actor、tenant、确切原件、自动任务授权和设置快照，专用密钥只访问这四条精确路由。新解析缺少已存设置时默认本机 MinerU，已有显式设置仍有效；标题辅助默认关闭，具体 `https://api.dli.li/v1` 目的地尚未获准，尚未进行该外发。历史官方运行和同输入后继沿用原 producer、原快照与来源验证，不改写旧失败。
@@ -18,9 +20,23 @@ C159实现提交 `80ee9624d`（父 `0cd03f6c5`），普通合入平台 main 后�
 
 刘轩本人正式阅读页只点击一次该入口，Host创建rev3 `PRUN-03d3cb61-bebc-4122-90ff-a8fd266ff0f0`，mode=LOCAL_MINERU_WORKER，冻结settings revision0/local=true/title=false，deadline13:47:47.562+08；原official rev2在同一正常受理事务收尾FAILED并保留quota/0产物，未改其输入/错误。页面准确显示等待本机解析。
 
-真实worker随后的单次领取仍返回IDLE。只读确认新run无lease（generation0）、无error、无产物，服务租户63849986及原主体配置正确。定位0038既有RLS要求actor-owned，而新列表/按ID查询在进入withActorScope之前执行，导致服务上下文看不到run；早期空队列IDLE证据只能证明入口，不证明有效任务发现。正在改为通过现有逐任务授权确定精确actor/文档后进入既有SQL上下文，不放宽RLS或固定样本；补真实非owner服务角色PG测试。当前尚无候选上传或解析成功，17c恢复控制也尚未完成新鲜进程快照。
+真实worker随后的单次领取仍返回IDLE。只读确认新run无lease（generation0）、无error、无产物，服务租户63849986及原主体配置正确。定位0038既有RLS要求actor-owned，而新列表/按ID查询在进入withActorScope之前执行，导致服务上下文看不到run；早期空队列IDLE证据只能证明入口，不证明有效任务发现。随后已修复为通过现有逐任务授权确定精确actor/文档后进入既有SQL上下文，不放宽RLS或固定样本，并补真实非owner服务角色PG测试。当前尚无候选上传或解析成功，17c恢复控制也尚未完成新鲜进程快照。
 
-领取修复已实现：先从0062既有服务可读委托发现，再进入对应actor查同WI/DV/来源；WorkItem自身也有actor RLS，因此其JOIN留在actor上下文内。本机lease owner含父WI与generation，旧token不能换绑新代次。浏览器run的可信委托带入每次事务，持久已有委托仍严格相等。独立真实PG使用nonowner/NOSUPERUSER/NOBYPASSRLS服务角色，实际0019/0038/0044/0062-64策略下1/1通过、零跳过；无actor查不到WorkItem/parse，授权后CLAIMED，跨actor/source/父代次与撤权零写入均验证。API32/32、解析及runtime55/55与server类型通过，无生产RLS修改。该修复待发布。
+领取修复已实现：先从0062既有服务可读委托发现，再进入对应actor查同WI/DV/来源；WorkItem自身也有actor RLS，因此其JOIN留在actor上下文内。本机lease owner含父WI与generation，旧token不能换绑新代次。浏览器run的可信委托带入每次事务，持久已有委托仍严格相等。独立真实PG使用nonowner/NOSUPERUSER/NOBYPASSRLS服务角色，实际0019/0038/0044/0062-64策略下1/1通过、零跳过；无actor查不到WorkItem/parse，授权后CLAIMED，跨actor/source/父代次与撤权零写入均验证。API32/32、解析及runtime55/55与server类型通过，无生产RLS修改。修复提交 `77a843ebb` 正常合入平台 main 后为 `8577beb91a81f8556b38c0a50d07f4854ec78ea3`，两树相同、origin 同名分支已读回。17b release `7689708581558242273` 已 finished，commit_id 精确匹配、error_logs=[]。
+
+13:38:45 +08，17c 新终端实际执行只读命令：消费者0、16 cron 全disabled/running0。随后仅提交一次官方 `openclaw cron run 38f1cc05-4a5e-4ec0-863c-e5b3d579048b`，CUA工具30秒超时，未把超时当成运行失败重发。终端随后读回 `ok=true/enqueued=true`、runId=`manual:38f1cc05-4a5e-4ec0-863c-e5b3d579048b:1790401449967:1`；Host读回父任务gen3、租约至14:44:14.655，证明该轮确已领取。原妙搭cloud-dev +chat虽ack成功，但返回failed/null turn且没有执行证据，已停止通过该入口重发。
+
+本机单次真实worker24.697秒、exit0、ACCEPTED，无错误：从新四路由读取原件57,434bytes并验证原SHA，离线MinerU生成候选，实际续租并回传。Host rev3为STAGING/error=null，唯一产物 `raw/mineru-candidate.json` 112,168bytes、SHA256 `c1358eecfb6ec141a5b8c93a2505625c02abcefbb8a594d26ad52086ed745e25`，内部回执存在。来源与settings revision0/local=true/title=false均读回一致。该证据证明Host→本机→Host候选链路，不等于原文已发布、JobAid/Overall或Wiki完成；下一受控tick按既有状态继续原文保存/发布。未启常驻或cron。
+
+首次cron精确运行记录为finished/status=ok、8,907ms，业务摘要为IN_PROGRESS/ORIGINAL_PREPARING（不等于工程完成）。13:55 fresh核对消费者0、16cron全停用无在途后，只追加一次runId=`manual:38f1cc05-4a5e-4ec0-863c-e5b3d579048b:1790402238369:2`。Host按正常恢复创建rev4 `PRUN-e3e971e5-9232-4c85-bdd1-4888788cc6fd`，requestId精确为`parse-resume-<rev3>`，deadline14:37:21.856；rev3收尾FAILED/DOCUMENT_PARSE_INTERRUPTED，原candidate保留。
+
+再一次本机ONCE恢复握手6.359秒返回CANDIDATE_READY/exit0。Host将同一112,168bytes/SHA候选读回、复制并登记到rev4，状态STAGING/error=null；后继没有新建本机缓存，实际代码在runner之前返回，未重跑MinerU或候选上传。该真实自然超时证明candidate-only成果可经同输入后继复用；下一受控tick继续PDF页块/manifest发布。
+
+第三次单次Run回执 `manual:38f1cc05-4a5e-4ec0-863c-e5b3d579048b:1790402432648:3`。Host确认rev4 PUBLISHED/error=null，持久产物4个：候选112,168bytes、original/pages-0.json 167,053bytes、raw/document.md 4,048bytes、original/manifest.json 60,922bytes。随后同一Run自动创建问题评估 `ATT-f0b4dff8-5989-4fac-ac7a-ed6618ba6f3f` / OPENCLAW_DYNAMIC_EVALUATION，14:00:51.767启动、RUNNING/error=null，WorkItem rev3 CANDIDATE_READBACK_VERIFIED；尚无保存工作。不把运行中或原文发布当作工程初评完成。17c 14:02:29仍有一个consumer，cron保持16项全停用，没有触发第四次Run。
+
+17b本人刘轩正常阅读页验收：文档787-FTD-46-26002 / TLS1.0 Obsolescence显示“解析版本4已发布”“阅读版本4 · MinerU 3.0.9”，内容块绑定rev4准确PRUN。两页目录及正文可读，受控原件成功打开同一DV的2页PDF；刷新后仍可读。8条原文覆盖/定位限制在第1页保留，业务主题目录因读取合同未提供而明确不可用，不声称已完整语义理解。发现整页刷新时折叠区短暂误报“尚无已发布的解析内容”，已安排独立本地定位，当前不阻断展开读取。
+
+同一本人资料库→事项Wiki读回：MAT-83ff4ae5-d576-4cab-b8c5-96b981072bbb仍“尚未形成事项综合认识”、工作修订0、成员资料无已保存评估；当时JobAid仍运行。此处不将原文阅读成功计为JobAid/Overall或事项知识交付完成。读取过程中未触发解析、生成或保存操作。
 
 ## 历史：2026-09-26 C158 授权范围更正与当前阻断分离
 
