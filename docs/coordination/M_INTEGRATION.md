@@ -4,7 +4,11 @@
 
 刘轩本人在 17b 资料库的“选择已上传 PDF 并新建工程事项”入口，选择名称为 `260c665aa340752898c0958c7015df5fa8f6f5ead9317d0b37908af6c30d53b5.pdf` 的已有对象与 M3 Probe Large，建立 `WI-d368f79e-4a5a-4615-ac00-7594b3ee5c53`。Host 将其识别为 787-FTD-46-26002；该文件名与此前两页原件的已核验 SHA256 一致，但本轮尚未独立读回对象字节哈希，不能仅凭文件名断定内容相同。未再次上传本机 PDF。创建后本人逐项页读回：全文翻译等待中、适用性匹配等待补充、JobAid 等待中、整体综合等待中，尚无候选意见与已保存问题分析。17c 操作员先核对确切可领取范围，再决定是否可做单次受控消费；未启用无人值守定时任务。
 
+随后通过官方 17b 在线数据库只读查询确认：该 WorkItem 为 `dev:9a49b8cd-64df-4c88-9240-e4c40c0bd35e`、`CANDIDATE_READBACK_VERIFIED`、revision 3；其逐任务授权行 `WAITING`、generation 0、`MIAODA_CANONICAL_PARSE_REQUEST`，确切 `document_version_3f1bf2fb1736c0e12e5bae2a`、源 SHA256 `260c665aa340752898c0958c7015df5fa8f6f5ead9317d0b37908af6c30d53b5`、长度 57434 字节，均与 WorkItem 行一致。当前授权表汇总为 WAITING 1、LEASED 0、COMPLETED 4、BLOCKED 1；唯一 WAITING 为该任务。没有查询或输出租约令牌。`dev:*` 仅是运行键，实际逐任务授权由独立授权行和 Host 后续新鲜核验承担。
+
 空任务的概览页此前固定写“当前评估任务 · 已保存结果”，并提供“重新生成工程摘要”按钮，易误导工程师以为已有结论。提交 `cf8b51ebdb34caf410a547df7b83add3ffb96893`（父 `eb314b20d7f6aa0fc7256e5371093ae11d5e9112`）按实际快览结果显示“等待分析结果”或“已保存工作”，无结果时隐藏重生按钮，并将范围说明改为不预设已存在结论。已快进同步 origin 同名开发分支；前端类型检查、定向 ESLint 与 precommit 通过。17b release `7689941438373596092` 最终 `finished`、准确提交匹配、`error_logs=[]`。刘轩本人从新任务概览读回“当前评估任务 · 等待分析结果”，页面不再显示重生按钮；没有把空结果误称成功。
+
+17c 已核对 C165 消费脚本：`--auto-queue` 只走 Host 自动队列、每 tick 最多处理一个初始阶段，并拒绝与固定 WorkItem 参数混用。但 17c 操作端 Mac 锁屏，自动解锁失败，无法读回该环境的 `active-claim` checkpoint；其他终端读取接口无附加会话。为避免先恢复旧任务，本轮停在领取前，尚未调用 `next-work-item`、MCP 或模型。解锁后先核对 checkpoint，再继续单次动态队列 tick；当前材料只证明受理与入队，不能宣称 C165 真实模型质量或全流程完成。
 
 ## 2026-09-27 C165：短原文完整交付与 JobAid 读取修订
 
