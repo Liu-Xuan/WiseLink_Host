@@ -352,7 +352,11 @@ export default function DocumentVersionReadingPage() {
         <DocumentOriginalPreview documentVersionId={documentVersionId} page={source.pageIndex + 1}>打开对应原件页</DocumentOriginalPreview>
         <Button variant="ghost" onClick={() => setSource(null)}>关闭来源</Button>
       </aside>}
-    </> : <p role="status">{error ? '内容未能读回，请查看上方错误或刷新重试。' : currentStatus ? requestedRun ? '指定解析版本尚未读回；请查看读取状态或刷新重试。' : '尚无已发布的解析内容。可以先查看原件。' : '正在读取文档状态…'}</p>}
+    </> : <p role="status">{error ? '内容未能读回，请查看上方错误或刷新重试。'
+      : currentStatus ? requestedRun ? '指定解析版本尚未读回；请查看读取状态或刷新重试。'
+        : currentStatus.publishedRun ? '正在读取已发布的解析内容…'
+          : '尚无已发布的解析内容。可以先查看原件。'
+        : '正在读取文档状态…'}</p>}
   </main>;
 }
 
