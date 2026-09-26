@@ -1,6 +1,8 @@
 # M 主控集成交接
 
-## 2026-09-26 C154：过期解析后继与已保存原文复用（待发布）
+## 2026-09-26 C154 已发布：过期解析后继与已保存原文复用
+
+代码提交 `562c8d6162bbbcf3a6e44a7d04025d850e1beba9` 经正常合入已发布 main `05b395c0b8a9d901c99023eca831fd3d885f9545`，部署提交为 `60e2b8fd87d5a8f37b6f6578261a1b746899c83d`（两者文件树相同）。origin 同名 `codex/wl-c154-original-recovery` 已推送并读回该 SHA；17b release `7689677493373127668` 已 `finished`、commit_id 准确匹配、error_logs=[]。完整 precommit 通过。本批没有 GitHub 同步。
 
 接续 C153，不改变工程输入、旧运行期限或旧诊断。自动原文准备只对已过期且无错误/明确 `DOCUMENT_PARSE_INTERRUPTED` 的尝试，使用 `parse-resume-<前驱 PRUN>` 预约一个稳定后继；已知 quota、generic failure、来源与数据错误仍要求处理，不自动循环。正常阅读页的显式解析重试使用同一规则承载前驱，因此丢受理响应后仍重放同一请求。
 
@@ -10,9 +12,17 @@
 
 新增一个 raw 来源伴随文件，绑定已有 producer、run/source、raw 摘要与长度，解决官方插件和历史 MinerU 使用相同 raw 路径的歧义。已声明存在的 raw 下载失败不降级；无 raw 描述符且存储明确不存在的新后继可以查更早前驱，确无产物才重新解析。同一次尝试只有来源伴随文件而正文未保存时明确报错，不伪装已保存。历史 raw 若没有可核验 producer 或已知官方页块证据，仍报 `PROVENANCE_UNVERIFIED`；不猜测来源。
 
-本地定向单元测试 82 项通过（runtime 19、页面 19、恢复格式 2、execute/store 29、自动 fence 13）；自动 fence 的另外 7 项 PG 用例本轮未配置而跳过，不计为通过。独立真实 PG14 测试 1 项通过/0 跳过，包含并发单后继、旧代次、跨用户、错误保留、响应丢失和额度写入行锁竞争。多级前驱、复制回执丢失、损坏/缺页/重复、来源伴随 VERIFIED 回执丢失的两条发布路径均有定向验证。前后端类型、定向 ESLint、production build 和差异检查通过；构建只有既有大 chunk 提示。本地隔离 PG14 已正常停止。提交、发布及受控运行回执完成后补充。
+本地定向单元测试 82 项通过（runtime 19、页面 19、恢复格式 2、execute/store 29、自动 fence 13）；自动 fence 的另外 7 项 PG 用例本轮未配置而跳过，不计为通过。独立真实 PG14 测试 1 项通过/0 跳过，包含并发单后继、旧代次、跨用户、错误保留、响应丢失和额度写入行锁竞争。多级前驱、复制回执丢失、损坏/缺页/重复、来源伴随 VERIFIED 回执丢失的两条发布路径均有定向验证。前后端类型、定向 ESLint、production build 和差异检查通过；构建只有既有大 chunk 提示。本地隔离 PG14 已正常停止。
 
-本批基于已发布 C153 的独立 `codex/wl-c154-original-recovery`，不混入保留的 MinerU/设置权限实现。保留分支上的 `MINERU_LOCAL_PDFJS` 也会生成 original 页块，后续整合必须按确切 producer 接续，不能直接将其视为官方插件产物。没有更改 17c Skill 或启用 cron；官方额度是否恢复尚未重测，真实全自动闭环仍未完成。
+本批基于已发布 C153 的独立 `codex/wl-c154-original-recovery`，不混入保留的 MinerU/设置权限实现。保留分支上的 `MINERU_LOCAL_PDFJS` 也会生成 original 页块，后续整合必须按确切 producer 接续，不能直接将其视为官方插件产物。没有更改 17c Skill 或启用 cron；本次已实际重测并确认官方额度仍未恢复，真实全自动闭环仍未完成。
+
+17b 本人刘轩从正常任务列表进入目标文档 `document_version_3f1bf2fb1736c0e12e5bae2a`，刷新 C154 后只单击一次“解析文档”。11:23:32 +08 Host 只读确认：旧 `PRUN-dbdb8cfd-0af4-4b3f-a9fa-cf2e2c7f230a` / rev1 已 FAILED，原 `DOCUMENT_PARSE_FAILED`、0 产物和 10:11:59.94 deadline 保留；唯一后继 `PRUN-b1ee8bb5-af18-4077-b3f9-dbd94ea4035a` / rev2 RUNNING、无错误、deadline 12:02:59.159，requestId=`parse-resume-<旧PRUN>`。没有新建 WorkItem、改原件或清理历史。
+
+17c 原 Gateway Online，16 cron 全停用且无消费者后，只运行一次 C153 `--auto-queue` tick。回包命中 `WI-4db598a0-33b8-4abd-a64d-df2aac9f29c5`、leaseGeneration=2，结果 `REQUIRES_ATTENTION / REVIEW_HOST_MCP_TOOL_FAILED:next_original_assessment:DOCUMENT_PLUGIN_QUOTA_EXHAUSTED`。回包未提供模型调用数/parseRun 字段，不声称调用数0。Host 11:25:01 +08 读回新 rev2 为 STAGING、0 产物、明确 `DOCUMENT_PLUGIN_QUOTA_EXHAUSTED`，旧记录仍 FAILED/原码；队列 LEASED/gen2、blocked_code=null。没有重复消费或 BLOCK；最终 16 cron enabled/running 均0、consumer0。
+
+本次页面实际仍显示“正在保存并核验产物，已核验 0 个文件。”和禁用“正在解析…”，未显示已持久化额度错误。随后的最小展示修复使持久错误优先显示“文档解析服务额度已用尽，待服务恢复后接续。”，技术码位于现有展开区，按钮显示“等待接续”；错误或过期后停止每5秒状态轮询。DOM定向20/20，包括15秒内状态读取仅1次、无解析写入且旧正文仍可读；这是隔离测试计数，不声称生产总体性能已测量。该显示补丁的发布/本人读回待补充。
+
+回退保留 C153 精确提交 `9654f1c242d41fa950b07fa71fc9bb9dde1b59ae`；新旧解析行均保留，不回滚/删除数据或重置代次。若回退前有在途，应先按既有授权核对并停新领取，让既有调用结束，再由正常发布恢复代码；Skill 无变化。
 
 ## 2026-09-26 C153 已发布：准确错误和已保存成员阅读
 
