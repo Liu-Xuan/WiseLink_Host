@@ -1,3 +1,4 @@
+import { documentParseRecoveryRequestId } from '@shared/document-parsing-recovery';
 import type { DocumentTranslationReadingResponse } from '@shared/document-translation-reading.interface';
 import { SemanticBilingualReader } from './SemanticBilingualReader';
 import { useCallback, useEffect, useRef, useState } from 'react';
@@ -246,7 +247,11 @@ export default function DocumentVersionReadingPage() {
     const version = documentVersionId;
     const navigation = readingIdentity;
     const generation = epoch.current;
-    request.current ??= { requestId: `parse-${crypto.randomUUID()}`, expectedPublishedRevision: currentStatus.publishedRun?.parseRevision ?? 0 };
+    request.current ??= {
+      requestId: latest && (latest.status === 'FAILED' || (latest.status !== 'PUBLISHED' && expired))
+        ? documentParseRecoveryRequestId(latest.parseRunId) : `parse-${crypto.randomUUID()}`,
+      expectedPublishedRevision: currentStatus.publishedRun?.parseRevision ?? 0,
+    };
     setSending(true); setError(null);
     try {
       await startDocumentParsing(version, request.current);
@@ -255,7 +260,7 @@ export default function DocumentVersionReadingPage() {
     } catch (reason) {
       if (identity.current !== navigation || epoch.current !== generation) return;
       const code = reason && typeof reason === 'object' && 'code' in reason ? reason.code : null;
-      if (['DOCUMENT_PARSE_REVISION_CONFLICT', 'DOCUMENT_PARSE_ALREADY_RUNNING'].includes(String(code))) request.current = null;
+      if (['DOCUMENT_PARSE_REVISION_CONFLICT', 'DOCUMENT_PARSE_ALREADY_RUNNING', 'DOCUMENT_PARSE_RECOVERY_NOT_LATEST'].includes(String(code))) request.current = null;
       setError(reason instanceof Error ? reason.message : '请求结果尚未确认，重试会核对同一请求。');
     } finally { if (identity.current === navigation && epoch.current === generation) setSending(false); }
   }

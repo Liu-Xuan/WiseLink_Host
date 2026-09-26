@@ -1,3 +1,4 @@
+import { canAutomaticallyRecoverDocumentParse, documentParseRecoveryRequestId } from '@shared/document-parsing-recovery';
 import type { DocumentRevisionReadingRequest } from '@shared/document-revision-reading.interface';
 import { DocumentRevisionReadingService } from './document-revision-reading.service';
 import { Inject, Injectable, Logger, Optional } from '@nestjs/common';
@@ -157,6 +158,15 @@ export class DocumentWorkRuntimeService {
             published.binding.sourceByteLength !== lease.sourceByteLength)
           throw new Error('DOCUMENT_ORIGINAL_EXACT_BINDING_MISMATCH');
         return { ...identity, status: 'ORIGINAL_READY', parseRunId: run.parseRunId };
+      }
+      if (canAutomaticallyRecoverDocumentParse(run)) {
+        // One durable successor per interrupted attempt. The repository repeats
+        // eligibility under its lock; a newly recorded quota error must stop here.
+        const reserved = await this.parsing.start(scope.documentVersionId, {
+          requestId: documentParseRecoveryRequestId(run.parseRunId),
+          expectedPublishedRevision: state.publishedRun?.parseRevision ?? 0,
+        }, scope);
+        return { ...identity, status: 'ORIGINAL_PREPARING', parseRunId: reserved.parseRunId };
       }
       if (run.status === 'FAILED' || run.errorCode || Date.parse(run.deadlineAt) <= Date.now())
         return { ...identity, status: 'REQUIRES_ATTENTION', parseRunId: run.parseRunId,

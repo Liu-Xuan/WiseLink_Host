@@ -3,9 +3,10 @@ import { registerPublishedDocumentOriginal } from './document-original-pending';
 import { randomUUID } from 'node:crypto';
 import { Inject, Injectable } from '@nestjs/common';
 import { DRIZZLE_DATABASE, type PostgresJsDatabase } from '@lark-apaas/fullstack-nestjs-core';
-import { and, desc, eq, inArray, lte } from 'drizzle-orm';
+import { and, desc, eq, inArray, lte, sql } from 'drizzle-orm';
 import { dmDocumentVersion } from '@server/database/schema';
 import { dmDocumentParseRun } from '@server/database/document-parsing.schema';
+import { canAutomaticallyRecoverDocumentParse, documentParseRecoveryPredecessor } from '@shared/document-parsing-recovery';
 import type { MineruDocumentVersionBinding, MineruStoredArtifact } from '../../../../professional-input/mineru/mineru-artifact-store';
 
 export interface DocumentAutomaticWorkItemFence {
@@ -63,6 +64,9 @@ export class DocumentParsingRepository {
   async reserve(scope: DocumentParseScope, input: {
     requestId: string; expectedPublishedRevision: number; bucketId: string; sourceBinding: MineruDocumentVersionBinding;
   }) {
+    let predecessorId: string | null;
+    try { predecessorId = documentParseRecoveryPredecessor(input.requestId); }
+    catch { throw documentParseError('DOCUMENT_PARSE_RECOVERY_REQUEST_INVALID', 400); }
     return this.db.transaction(async tx => {
       if (scope.automaticWorkItem) await this.leases.assertAutomaticWorkItem(tx, scope);
       const [version] = await tx.select(sourceColumns).from(dmDocumentVersion)
@@ -74,12 +78,38 @@ export class DocumentParsingRepository {
           Number(version.byteLength) !== grant.sourceByteLength)) throw documentParseError('DOCUMENT_PARSE_SOURCE_CHANGED');
       const [replay] = await tx.select().from(dmDocumentParseRun).where(and(scoped(scope),
         eq(dmDocumentParseRun.actorUserId, scope.actorUserId), eq(dmDocumentParseRun.requestId, input.requestId))).limit(1);
+      if (predecessorId) {
+        const [predecessor] = await tx.select().from(dmDocumentParseRun)
+          .where(owned(scope, predecessorId)).for('update');
+        if (!predecessor || predecessor.bucketId !== input.bucketId || !sameSource(predecessor.sourceBinding, input.sourceBinding)) {
+          throw documentParseError('DOCUMENT_PARSE_RECOVERY_BINDING_MISMATCH');
+        }
+        if (replay) {
+          if (predecessor.status !== 'FAILED' || predecessor.parseRevision >= replay.parseRevision ||
+              replay.bucketId !== input.bucketId || !sameSource(replay.sourceBinding, input.sourceBinding)) {
+            throw documentParseError('DOCUMENT_PARSE_RECOVERY_BINDING_MISMATCH');
+          }
+        } else {
+          const [latest] = await tx.select({ parseRunId: dmDocumentParseRun.parseRunId }).from(dmDocumentParseRun)
+            .where(scoped(scope)).orderBy(desc(dmDocumentParseRun.parseRevision)).limit(1);
+          if (latest?.parseRunId !== predecessorId) throw documentParseError('DOCUMENT_PARSE_RECOVERY_NOT_LATEST');
+          const now = Date.now();
+          if (predecessor.status !== 'FAILED' &&
+              !(ACTIVE.includes(predecessor.status as typeof ACTIVE[number]) && predecessor.deadlineAt.getTime() <= now)) {
+            throw documentParseError('DOCUMENT_PARSE_RECOVERY_NOT_ELIGIBLE');
+          }
+          if (scope.automaticWorkItem && !canAutomaticallyRecoverDocumentParse({
+            ...predecessor, deadlineAt: predecessor.deadlineAt.toISOString(),
+          }, now)) throw documentParseError('DOCUMENT_PARSE_RECOVERY_NOT_ELIGIBLE');
+        }
+      }
       if (replay) {
         if (replay.expectedPublishedRevision !== input.expectedPublishedRevision) throw documentParseError('DOCUMENT_PARSE_REQUEST_CONFLICT');
         return { row: replay, created: false };
       }
       // A hard processing deadline bounds interrupted runs. It is never extended by retrying a request.
-      await tx.update(dmDocumentParseRun).set({ status: 'FAILED', errorCode: 'DOCUMENT_PARSE_INTERRUPTED', completedAt: new Date() })
+      await tx.update(dmDocumentParseRun).set({ status: 'FAILED',
+        errorCode: sql`coalesce(${dmDocumentParseRun.errorCode}, 'DOCUMENT_PARSE_INTERRUPTED')`, completedAt: new Date() })
         .where(and(scoped(scope), eq(dmDocumentParseRun.actorUserId, scope.actorUserId),
           inArray(dmDocumentParseRun.status, [...ACTIVE]), lte(dmDocumentParseRun.deadlineAt, new Date())));
       const rows = await tx.select().from(dmDocumentParseRun).where(scoped(scope)).orderBy(desc(dmDocumentParseRun.parseRevision));
