@@ -1,3 +1,4 @@
+import MemberSavedAssessmentReading from './MemberSavedAssessmentReading';
 import { useCallback, useEffect, useRef, useState, type FC } from 'react';
 import {
   Link,
@@ -447,6 +448,8 @@ const MatterWorkspace: FC<MatterWorkspaceProps> = ({
                 ) : null}
               </div>
             )}
+            {!requestedWorkRef && !workspaceRevoked ? <MemberSavedAssessmentReading matterId={matterId}
+              members={data.matter.catalog.entries} sessionGeneration={sessionGeneration} /> : null}
             {displayedRevision &&
             result &&
             !displayedRevision.state.problemWork ? (

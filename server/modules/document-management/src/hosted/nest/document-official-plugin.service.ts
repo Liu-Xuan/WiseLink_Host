@@ -44,7 +44,7 @@ export class DocumentOfficialPluginService {
       this.logger.warn({ event: 'DOCUMENT_PLUGIN_CALL_ERROR', invocationId, instanceId, actionKey,
         elapsedMs: Math.round(performance.now() - started), rssAfterBytes: process.memoryUsage().rss,
         processLifetimeMaxRssKiB: process.resourceUsage().maxRSS });
-      throw error;
+      throw normalizeDocumentPluginError(error);
     }
   }
 
@@ -135,4 +135,14 @@ function translationReviewContext(value: unknown): unknown {
     !['blockId', 'anchorId', 'anchorIds', 'sourceUnitId', 'sourceUnitIds', 'sourceRefIds', 'sourceIssues',
       'contextBlockIds', 'requiredTogetherBlockIds', 'conditionAnchorIds', 'definitionAnchorIds', 'sourceFindingId'].includes(key))
     .map(([key, item]) => [key, translationReviewContext(item)]));
+}
+
+/** The SDK retains these structured codes even when it formats a localized message. */
+function normalizeDocumentPluginError(error: unknown): unknown {
+  if (!error || typeof error !== 'object' || !('code' in error) || error.code !== 'RATE_LIMIT_EXCEEDED') return error;
+  // This exact platform code was observed for exhausted application quota.
+  // Other rate limits remain distinct; neither is a received invalid model output.
+  const code = 'rateLimitCode' in error && error.rateLimitCode === 'k_st_ec_400002688'
+    ? 'DOCUMENT_PLUGIN_QUOTA_EXHAUSTED' : 'DOCUMENT_PLUGIN_RATE_LIMITED';
+  return new Error(code);
 }

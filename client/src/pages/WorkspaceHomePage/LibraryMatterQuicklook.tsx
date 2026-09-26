@@ -1,3 +1,5 @@
+import MemberSavedAssessmentReading from '@client/src/features/matter/MemberSavedAssessmentReading';
+import { getCanonicalHostClientSessionGeneration } from '@client/src/api/canonical-host';
 import { useLibraryPaneScroll } from './useLibraryPaneScroll';
 import { useEffect } from 'react';
 import { ArrowRight, BookOpen } from 'lucide-react';
@@ -50,6 +52,8 @@ export function LibraryMatterQuicklookContent({
           <p>尚无已保存的事项综合认识。</p>
         )}
       </section>
+      <MemberSavedAssessmentReading matterId={data.matter.matterId} members={data.matter.catalog.entries}
+        sessionGeneration={getCanonicalHostClientSessionGeneration()} />
       <ReferenceWorkNotices notices={current?.referenceWorkNotices} />
       <div className="atlas-library-inspector-actions">
         <Button asChild><Link to={`/matters/${encodeURIComponent(data.matter.matterId)}/posture`}>工程态势</Link></Button>

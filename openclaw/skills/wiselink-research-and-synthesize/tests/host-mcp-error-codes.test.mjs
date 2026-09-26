@@ -111,3 +111,31 @@ test('retains initial-analysis Host error codes while filtering error bodies and
     });
   }
 });
+
+for (const code of ['DOCUMENT_PLUGIN_QUOTA_EXHAUSTED', 'DOCUMENT_PLUGIN_RATE_LIMITED']) {
+  test(`preserves only the known plugin quota code ${code} through MCP`, () => {
+    for (const text of [code, `Error: ${code}:k_st_ec_400002688 token=fixture-private-token`]) {
+      assert.throws(() => readHostMcpJsonResult({ isError: true, content: [{ type: 'text', text }] },
+        'next_original_assessment'), error => {
+        assert.equal(error.hostErrorCode, code);
+        assert.equal(errorCode(error), `REVIEW_HOST_MCP_TOOL_FAILED:next_original_assessment:${code}`);
+        assert.equal(JSON.stringify(error).includes('fixture-private-token'), false);
+        assert.equal(JSON.stringify(error).includes('k_st_ec_400002688'), false);
+        return true;
+      });
+    }
+  });
+}
+
+test('does not expand plugin error admission to unknown DOCUMENT codes or private prose', () => {
+  for (const text of ['DOCUMENT_PLUGIN_UNKNOWN:private-value', 'DOCUMENT_PARSE_FAILED:private-value',
+    'DOCUMENT_PLUGIN_QUOTA_EXHAUSTED_EXTRA', 'DOCUMENT_PLUGIN_QUOTA_EXHAUSTED private-value',
+    'private-value DOCUMENT_PLUGIN_RATE_LIMITED', 'DOCUMENT_PLUGIN_rate_limited']) {
+    assert.throws(() => readHostMcpJsonResult({ isError: true, content: [{ type: 'text', text }] },
+      'next_original_assessment'), error => {
+      assert.equal(error.hostErrorCode, null);
+      assert.equal(errorCode(error), 'REVIEW_HOST_MCP_TOOL_FAILED:next_original_assessment');
+      return true;
+    });
+  }
+});
