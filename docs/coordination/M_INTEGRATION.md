@@ -1,16 +1,16 @@
 # M 主控集成交接
 
-## 2026-09-26 已保存解析的原请求重放授权碰撞（待发布）
+## 2026-09-26 已保存解析的原请求重放已恢复
 
 浏览器 SQL 角色修复提交 `5712924e9` 经普通 main 合并为 `0ea541145070b7005657bbe73503eade0a98934a`，origin 已读回该 SHA；17b release `7689639564386536427` 已 `finished`，实际部署 SHA 相同、`error_logs=[]`。在保留原 PDF、原 `dev:cf41a4ad-bfd9-4f22-852d-90fec67dbb8f` 请求令牌和原模型的页面上重试时，出现另一个前置故障 `WORK_ITEM_AUTHORIZATION_IDEMPOTENCY_COLLISION`，HTTP 500；所以本次重试未到 Matter 写入，不能据此判断浏览器角色修复的真实关联效果。线上日志 trace `b4b9c1cc39585744115ec6ae1d1c85b5` 显示同次请求曾遇到受控文件空间的临时读取失败，随后 `CanonicalHostVerticalService.runPdfAuthorized` 因授权哈希碰撞拒绝。线上原 WorkItem 仍是已保存的解析结果，未重建业务任务。
 
-根因是首次解析后 WorkItem 修订从 1 前进到 3，而 `OrdinaryCanonicalAuthorizationAdapter` 将确切修订纳入新鲜授权指纹；重放已完成结果时，原代码把新指纹与首次解析保存的指纹要求逐字相同。修订仅对 `CANDIDATE_READBACK_VERIFIED` 的读取重放使用新鲜授权、确切请求/来源和同 actor 指纹核对，再读取原包；待解析阶段仍使用原严格授权同一性检查。PDF 与 S1000D 同类重放共用此规则，来源撤权或跨 actor 不得利用已保存包。定向 Jest 57/57、server TypeScript、定向 ESLint 与差异检查通过；仍需发布并在原页面接续，核对未重复解析和 Matter 实际读回。
+根因是首次解析后 WorkItem 修订从 1 前进到 3，而 `OrdinaryCanonicalAuthorizationAdapter` 将确切修订纳入新鲜授权指纹；重放已完成结果时，原代码把新指纹与首次解析保存的指纹要求逐字相同。修订仅对 `CANDIDATE_READBACK_VERIFIED` 的读取重放使用新鲜授权、确切请求/来源和同 actor 指纹核对，再读取原包；待解析阶段仍使用原严格授权同一性检查。PDF 与 S1000D 同类重放共用此规则，来源撤权或跨 actor 不得利用已保存包。定向 Jest 57/57、server TypeScript、定向 ESLint 与差异检查通过。代码提交 `c7436fdb7` 合并当前妙搭 main 后为 `a6badd561033506534d0129a18e5f46b701a754e`；origin 同名分支已推送，17b release `7689641171697699771` 读回 `finished`、确切部署 SHA 相同且 `error_logs=[]`。同一浏览器页面保留原 PDF、原请求令牌、原模型再试成功，直接进入原 WorkItem；线上只读核对仍只有一条同来源 WorkItem、修订 3 未变，Matter 关联已保存。这是解析后关联故障的真实接续证据，不表示后续自动分析已经完成。
 
-## 2026-09-26 真实 PDF 受理揭示浏览器 SQL 角色误拒（技术发布，业务接续未验）
+## 2026-09-26 真实 PDF 受理的浏览器 SQL 角色误拒已修复
 
 通过妙搭官方文件存储以刘轩用户身份放入原始两页 `787-FTD-46-26002_Doc_02092026.pdf`，应用路径 `/1877351719846947.pdf`，57,434 字节；下载读回 SHA-256 `260c665aa340752898c0958c7015df5fa8f6f5ead9317d0b37908af6c30d53b5` 与本地原件一致。登录的 17b 工程评估页面从“选择已上传 PDF”实际选中并提交；未使用浏览器本地文件选择，因此本地上传入口仍未验证。线上提交已持久化 `document_version_3f1bf2fb1736c0e12e5bae2a` 和 `WI-4db598a0-33b8-4abd-a64d-df2aac9f29c5`，修订 3 为 `CANDIDATE_READBACK_VERIFIED`、失败码空，逐任务授权 `WAITING`、租约代次 0。页面返回 `ENGINEERING_MATTER_BROWSER_AUTHORIZATION_UNAVAILABLE`，同一请求仍留在页面待接续，没有重新提交或删除已保存工作。
 
-线上 trace `e524bd0810867a6bb5b123b7fd770f3d` 定位到 Matter 浏览器事务内的 SQL 身份比较。核对已安装的妙搭官方 `SqlExecutionContextMiddleware` 源码：登录用户使用确切角色 `authenticated_${roleSchema}`，而 C150 误写为字面值 `authenticated`；旧隔离测试也只模拟该字面值。修复从已有 `DATAPAAS_CONFIG.roleSchema` 构造并精确比较该角色，同时继续核对 `app.user_id=actorUserId`，不允许服务角色、无 schema、另一 actor 或来源权限不足者进入。隔离 PG16 的真实 Document/WorkItem 关联、同请求重放、跨用户、跨租户、错版本、无 schema 角色与服务角色拒绝已通过（定向 1/1）；server TypeScript、定向 ESLint、差异检查通过。尚需发布此修复并在页面用原请求重试，确认已有 WorkItem 不重复、Matter 链接和工程师读回。
+线上 trace `e524bd0810867a6bb5b123b7fd770f3d` 定位到 Matter 浏览器事务内的 SQL 身份比较。核对已安装的妙搭官方 `SqlExecutionContextMiddleware` 源码：登录用户使用确切角色 `authenticated_${roleSchema}`，而 C150 误写为字面值 `authenticated`；旧隔离测试也只模拟该字面值。修复从已有 `DATAPAAS_CONFIG.roleSchema` 构造并精确比较该角色，同时继续核对 `app.user_id=actorUserId`，不允许服务角色、无 schema、另一 actor 或来源权限不足者进入。隔离 PG16 的真实 Document/WorkItem 关联、同请求重放、跨用户、跨租户、错版本、无 schema 角色与服务角色拒绝已通过（定向 1/1）；server TypeScript、定向 ESLint、差异检查通过。代码提交 `5712924e9` 合并当前妙搭 main 后为 `0ea541145070b7005657bbe73503eade0a98934a`；17b release `7689639564386536427` 已 `finished`、部署 SHA 相同且 `error_logs=[]`。后续同请求重放在上述授权指纹修复发布后成功：`WI-4db598a0-33b8-4abd-a64d-df2aac9f29c5` 仍为修订 3、同来源只一条；`MAT-83ff4ae5-d576-4cab-b8c5-96b981072bbb` 当前修订 2，关联该 WorkItem 一条、原文版本一条。刘轩以本人身份从工作页进入资料库并阅读对应 Wiki；目前事项工作修订为 0，页面准确显示尚无综合认识。Wiki 的执行状态另报 `ACTION_ATTEMPT_NOT_FOUND`：该只读入口误用了旧固定 Matter 服务名单，新浏览器事项不在名单，属独立显示缺陷；自动队列仍 `WAITING`、租约代次 0。
 
 ## 2026-09-26 工程事项上传的解析后关联故障接续（技术发布）
 
