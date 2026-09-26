@@ -1,14 +1,16 @@
 # M 主控集成交接
 
-## 2026-09-26 C160 接续：综合评估封存提交恢复（实施中）
+## 2026-09-26 C162：综合评估接续与本人阅读结果
 
-14:32 的单次受控队列运行领取原任务，Host 已保存 Overall 工作修订 9、`overviewStatus=CURRENT`；准确 ActionAttempt `ATT-f25f3623-d86c-4142-8c29-ff258e591037` 在 14:34:58 进入 `COMMITTING`，14:45 只读复核仍为 `COMMITTING`、结果已封存、未标记完成。消费者于 14:35 返回 `REQUIRES_ATTENTION/AUTO_WORK_ITEM_CONSUMER_STOPPED`，没有 ACK；不能将修订 9 当成已完成的综合评估。
+C160 Host 修订 `60d80a7f1535d55d038df1da43bb1a142c89d325` 已发布到 17b：release `7689731840768953323` 为 finished、准确 commit 匹配、`error_logs=[]`。它修复了动态适用性上下文读取误报 404 和工程师首屏使用通用状态句覆盖已保存摘要。C161/C162 只修改 17c Skill，无需 Host 再发布。C162 源提交 `9b94034222d33a96ccc42f74821dedd067fa3a62`，61 文件包 SHA256 `d4a024ea3563b311f6e3a85e14f78ea3ea3b0dd1dc724d093a760238cc9d930a`；17c 安装文件与包逐项一致，仅多官方 `.openclaw` 元数据。完整 Skill 测试 551/551。
 
-本地定位：消费者仅识别适用性阶段的 `COMMITTING` checkpoint；JobAid/Overall 会被当作一般 BUSY，且队列的停止标记阻止后续自然接续。C160 修订允许经确切请求、WorkItem、文档版本、attemptRef 和 Host 封存结果哈希核验后，以同一尝试租约重放 JobAid/Overall 已存 ResultEnvelope，交给 Host 幂等完成投影；不重跑模型或新建业务结果。原关注回执保留，新恢复结果单独记录。动态适用性上下文读取误报 404、工程师首屏被通用状态句覆盖的修正也在本地；均待发布及真实读回。16 项 cron 保持停用，不启无人值守调度。
+原 Overall 尝试 `ATT-f25f3623-d86c-4142-8c29-ff258e591037` 曾因消费者只恢复适用性 `COMMITTING`、本地 checkpoint 已标记 started、历史 C153 封存结果被新版本精确比较拒绝而停滞。C160—C162 先核对 Host 封存结果、确切请求/任务/版本/attemptRef/哈希，再对兼容历史 Skill 结果执行同一尝试提交；新结果仍要求准确版本。C162 的唯一受控运行 `manual:38f1cc05-4a5e-4ec0-863c-e5b3d579048b:1790406619130:6` 于 15:10:34 +08 finished/status=ok，返回 `ACKNOWLEDGED`。原尝试于 15:10:30 从 COMMITTING 转为 SUCCEEDED，未产生第二次模型结果或新的 Overall 尝试；WorkItem `WI-4db598a0-33b8-4abd-a64d-df2aac9f29c5` 为 `CANDIDATE_READBACK_VERIFIED`、revision 5，integratedAssessment 为 `OVERALL_CANDIDATE_READY`，基于 JobAid 工作修订 `JAWR-6aee6eff-193d-4eeb-a62a-3b2e8fd01eda`（rev9、`overviewStatus=CURRENT`）。正式采用未发生。
+
+刘轩本人在 17b 资料库评估任务、工程知识（`subjectKind=WORK_ITEM`、准确 `workRef=JAWR-6aee6eff-193d-4eeb-a62a-3b2e8fd01eda`）和工作 Wiki `/work-items/WI-4db598a0-33b8-4abd-a64d-df2aac9f29c5` 已读到同一简要结论，问题分析与依据按需展开，页面标为候选而非实施决定。原文 rev4 为 MinerU 3.0.9 PUBLISHED，受控 PDF 已可读。文档级独立解读仍显示暂无保存；事项级 Overall 仍为空，不能把 WorkItem Overall 混作 Matter Overall。事项图谱因此仍显示空事项认识；从工作 Wiki 的图谱入口跳转到该事项图谱时也没有呈现这次 WorkItem 的结论，图谱交付仍待接续。展开正文中“SB 颁发时点位于 Production Incorporation 之后或与之一致”超出当前已读原文支持的范围，应在后继工作中按准确原文更正，不把这句话作为已核实工程事实。15:17 后官方 `openclaw cron list --json --all` 读回 16 项全部 disabled、running 0；没有启用无人值守消费。标题辅助外部目的地、设置管理员和无人值守调度仍未授权/启用；本次仅证明一个真实任务的受控接续，不能据此宣称正常上传后长期自动运行稳定。
 
 ## 2026-09-26 本机 MinerU 默认路线与仅出站 worker：当前集成态
 
-**当前结果：** 四接口与专用精确路由密钥已发布；真实原件已由本机 MinerU 解析并回传，Host 读回已保存候选，单次24.697秒/ACCEPTED。原文rev4已PUBLISHED（4个持久产物，无错误）；6.359秒恢复握手复用同一候选、没有重跑MinerU。本人原文页面及2页受控PDF已读回通过（8条限制保留）；第三次受控Run已自动进入JobAid，后续综合结果仍在验收。下文空队列及误IDLE为修复前的验证顺序，不是当前结论。
+**当前结果：** 四接口与专用精确路由密钥已发布；真实原件已由本机 MinerU 解析并回传，Host 读回已保存候选，单次24.697秒/ACCEPTED。原文rev4已PUBLISHED（4个持久产物，无错误）；6.359秒恢复握手复用同一候选、没有重跑MinerU。本人原文页面及2页受控PDF已读回通过（8条限制保留）；后续 JobAid/Overall 与页面的最新结果以上节为准。下文空队列及误IDLE为修复前的验证顺序，不是当前结论。
 
 用户最新已明确本机 MinerU 为新受理默认解析路线，并批准仅出站 worker、专用精确路由密钥和受控发布真实验证。当前只采用 `POST /openapi/wiselink/local-mineru/claim`、`source`、`renew`、`result` 四条路由完成领取、原件读取、续租与候选回传；不在本机开放公网服务，不启常驻或 cron。此前“暂不增加权限，保留实现”仅暂缓解析设置管理员、本人赋权及两项设置的 RLS 写权限，本轮不新增角色或 RLS。该早期答复不阻止已另行明确授权的 worker 和发布验证；下方 C158 及更早记录保留为当时历史。
 
