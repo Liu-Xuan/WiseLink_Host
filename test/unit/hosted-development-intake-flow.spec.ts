@@ -127,6 +127,18 @@ describe('hosted development intake source flow', () => {
     ).toContain('评估任务已登记');
   });
 
+  it('identifies a browser Matter identity refusal after the assessment was registered', () => {
+    const message = hostedIntakeError(
+      Object.assign(new Error('private identity details'), {
+        code: 'ENGINEERING_MATTER_BROWSER_AUTHORIZATION_UNAVAILABLE',
+        statusCode: 403,
+      }),
+    );
+    expect(message).toContain('系统未能完成事项身份核验');
+    expect(message).toContain('不会跳过授权核验');
+    expect(message).not.toContain('private');
+  });
+
   it('submits an existing object selection without uploading bytes', async () => {
     const upload = jest.fn();
     const existing = {

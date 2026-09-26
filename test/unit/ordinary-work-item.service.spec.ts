@@ -223,6 +223,83 @@ function s1000dVerticalResult() {
 }
 
 describe('OrdinaryWorkItemService run identity', () => {
+  it('reports saved parsing as pending when Matter intake fails and resumes the same request', async () => {
+    const instance = target();
+    const intakeFailure = new Error('temporary persistence failure');
+    instance.matters.organizeWorkItemIntake
+      .mockRejectedValueOnce(intakeFailure)
+      .mockResolvedValueOnce({ matterId: 'MAT-SB' });
+    instance.repository.reserve
+      .mockResolvedValueOnce({
+        workItemId: 'WI-NEW-SB',
+        requestId: 'REQ-NEW-SB',
+        attemptId: 'ATT-NEW-SB',
+        created: true,
+      })
+      .mockResolvedValueOnce({
+        workItemId: 'WI-NEW-SB',
+        requestId: 'REQ-NEW-SB',
+        attemptId: 'ATT-NEW-SB',
+        created: false,
+      });
+    instance.repository.loadTenantScopedProjection.mockResolvedValue({
+      row: { workItemId: 'WI-NEW-SB' },
+      projection: { phase: 'CANDIDATE_READBACK_VERIFIED', failure: null },
+    });
+    const input = {
+      documentVersionId: 'document-version-sb',
+      developmentRunToken: '22222222-2222-4222-8222-222222222222',
+    };
+
+    await expect(
+      instance.service.createOauthSessionDevelopmentRun(
+        input,
+        OAUTH_SESSION_ACTOR,
+        GATEWAY_ACTOR,
+      ),
+    ).rejects.toMatchObject({
+      code: 'MATTER_INTAKE_PENDING',
+      statusCode: 503,
+      cause: intakeFailure,
+    });
+    await expect(
+      instance.service.createOauthSessionDevelopmentRun(
+        input,
+        OAUTH_SESSION_ACTOR,
+        GATEWAY_ACTOR,
+      ),
+    ).resolves.toMatchObject({
+      workItemCreated: false,
+      workItemReused: true,
+      result: { workItem: { workItemId: 'WI-NEW-SB' } },
+    });
+    expect(instance.repository.reserve).toHaveBeenCalledTimes(2);
+    expect(instance.repository.reserve.mock.calls[0][0].runKey).toBe(
+      instance.repository.reserve.mock.calls[1][0].runKey,
+    );
+    expect(instance.matters.organizeWorkItemIntake).toHaveBeenCalledTimes(2);
+  });
+
+  it('preserves a Matter authorization or input conflict instead of calling it retryable', async () => {
+    const instance = target();
+    const refusal = Object.assign(new Error('source binding changed'), {
+      code: 'ENGINEERING_MATTER_WORK_ITEM_DOCUMENT_CONFLICT',
+      statusCode: 409,
+    });
+    instance.matters.organizeWorkItemIntake.mockRejectedValue(refusal);
+
+    await expect(
+      instance.service.createOauthSessionDevelopmentRun(
+        {
+          documentVersionId: 'document-version-sb',
+          developmentRunToken: '22222222-2222-4222-8222-222222222222',
+        },
+        OAUTH_SESSION_ACTOR,
+        GATEWAY_ACTOR,
+      ),
+    ).rejects.toBe(refusal);
+  });
+
   it('stores the requested model and enrolls verified OAuth intake without requiring a global manager role', async () => {
     const instance = target();
     await instance.service.createOauthSessionDevelopmentRun(

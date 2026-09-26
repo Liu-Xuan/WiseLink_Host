@@ -310,19 +310,18 @@ export class OrdinaryWorkItemService {
       initialAilySessionId,
     );
     if (!this.matters) {
-      throw Object.assign(
-        new Error('Matter intake is unavailable after WorkItem parsing.'),
-        {
-          code: 'MATTER_INTAKE_PENDING',
-          statusCode: 503,
-        },
-      );
+      throw matterIntakePending();
     }
-    await this.matters.organizeWorkItemIntake({
-      actor,
-      documentVersionId: result.result.workItem.source.documentVersionId,
-      workItemId: result.result.workItem.workItemId,
-    });
+    try {
+      await this.matters.organizeWorkItemIntake({
+        actor,
+        documentVersionId: result.result.workItem.source.documentVersionId,
+        workItemId: result.result.workItem.workItemId,
+      });
+    } catch (cause: unknown) {
+      if (isMatterIntakeDenial(cause)) throw cause;
+      throw matterIntakePending(cause);
+    }
     return result;
   }
 
@@ -825,6 +824,21 @@ function canonicalWorkItemNotFound(): Error & {
     code: 'CANONICAL_WORK_ITEM_NOT_FOUND',
     statusCode: 404,
   });
+}
+
+function isMatterIntakeDenial(error: unknown): boolean {
+  const statusCode = (error as { statusCode?: unknown } | null)?.statusCode;
+  return typeof statusCode === 'number' && statusCode >= 400 && statusCode < 500;
+}
+
+function matterIntakePending(cause?: unknown): Error & {
+  code: string;
+  statusCode: number;
+} {
+  return Object.assign(
+    new Error('WorkItem parsing was saved, but Matter intake is pending.'),
+    { code: 'MATTER_INTAKE_PENDING', statusCode: 503, cause },
+  );
 }
 
 function workItemRetryNotAvailable(): Error & {

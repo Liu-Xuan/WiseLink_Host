@@ -1,5 +1,17 @@
 # M 主控集成交接
 
+## 2026-09-26 工程事项上传的解析后关联故障接续（待发布）
+
+在已授权的 OAuth 工程事项上传路径中，`runPdf` 成功后才关联 Matter。原实现若关联阶段因临时存储/服务错误失败，只向页面返回笼统“创建失败”，没有说明 WorkItem 解析结果已经保存。现在将该阶段的非 4xx 故障标记为 `MATTER_INTAKE_PENDING`，页面说明事项关联待接续并保留原选择；同一请求令牌重试复用原 WorkItem，再做原授权与来源核验。4xx 授权、来源及冲突拒绝仍原样返回，不归类为临时故障；浏览器事项身份核验的 403 也有准确提示。定向 Jest 43/43、前后端 TypeScript、定向 ESLint 和差异检查通过。尚未发布，也未以模拟故障声称生产恢复已验证。
+
+## 2026-09-26 C150 浏览器事项归集已技术发布，真实上传待接续
+
+17b release `7689631016391019457` 已读回 `finished`、`error_logs=[]`、确切部署提交 `b29f23a642ec6d73140bc6d10af6012476d098c0`。首次发布请求因开发分支未包含最新 `main` 被平台拒绝，没有 release；随后以非强制 merge 纳入 `main` 的 C151 解析重读提交，候选文件内容未改变，origin 同名分支 SHA 与部署提交一致。此版只为已授权的 OAuth 工程事项上传补齐同族 Matter 关联，并在浏览器事务核对真实 `authenticated` SQL 身份与 `app.user_id`；不增加数据库权限、开放接口或无人值守调度。
+
+上线后以刘轩的 Chrome 会话打开正常 17b 资料库，身份与既有 787 工作页可读。选定尚未入库的真实两页 `787-FTD-46-26002` 作为新样本：上线只读文号查询无现有版本或 WorkItem；但 Chrome 的 ChatGPT 扩展在文件选择时返回 `Not allowed`，工具文档要求用户开启扩展的 “Allow access to file URLs”。页面读回仍显示“上传并创建工程事项”禁用，**没有上传、没有新 WorkItem，也没有验证此次 Matter 关联的线上写入**。C136 自动队列与四项旧固定轮询继续保持停用；待浏览器文件权限恢复后从同一正常页面上传，核对确切 DocumentVersion、WorkItem、自动授权、Matter 链接和工程师读回，再决定后续全流程运行。
+
+随后复核普通“上传文档到资料库”的实际链路：它保存 DocumentVersion 并归入 Matter，但其回执和页面均明确不创建 WorkItem。现有自动队列只接受已解析、`CANDIDATE_READBACK_VERIFIED` 且带有效逐任务授权的 WorkItem；只给普通上传补一条队列授权或在前端追加一次可丢失的调用，均不能形成可恢复的自动评估。若要让普通上传也自动分析，需要在 Host 侧对获准的确切上传建立持久 WorkItem、完成解析与读回后入队，并在故障后从已保存结果接续；该入口的新增评估权限范围仍待用户明确授权，不从旧 `dev:*` 或固定任务权限继承。
+
 ## 2026-09-26 旧固定目标轮询已停用
 
 17c OpenClaw Cron 控制台现有 16 条调度定义。此前仅四条固定 Matter/DocumentVersion 旧任务启用、每分钟各运行一次，最近多轮分别返回 `REQUIRES_ATTENTION`（777 Review 已失败、777 文档翻译期限已过）、`IDLE`（SB Review）和 `DOCUMENT_READY/NO_PENDING`（787 文档），没有推进新工作。停用前官方 `cron list --all --json` 回读四项 `enabled=true`、`runningAtMs=null`，进程列表无 `consume-hosted-work-item.mjs` 在途进程。
@@ -16,7 +28,7 @@
 
 独立 PostgreSQL 16 容器 `wiselink_engineering_matter_test` 的现有 `v5 direct family materials` 测试 1/1 通过：`authenticated` 用户直接调用原有 `ensureFamilyMatter` 能创建/复用同族事项，原有租户、来源与 owner 限制生效。新增浏览器入口回归测试则确切复现 `EngineeringMatterService.organizeDocumentIntake` 返回 `ENGINEERING_MATTER_RUNTIME_AUTHORIZATION_UNAVAILABLE`：该方法错误使用只接受 `service_role_*` 的 `withActorTransaction`，而资料库上传和 OAuth 工程事项上传均是浏览器用户入口。由此，上一个提交 `7af4a2a52` 的新关联在真实浏览器上下文无法通过，不能发布或计为 Wiki 闭环。线上最近 17b release `7689586170108169172` 仍是 `caec4b3ad404c72b581808e3da71c43c686bec3b`，未包含 C150。
 
-直接移除服务角色检查的修法曾两次被自动审批拒绝，理由是在所有调用方身份隔离未证实时可能越权或错配。当前本地候选保留原 `withActorTransaction` 服务角色规则，新增独立的浏览器事务入口：在同一 SQL 事务核对实际 `current_user='authenticated'` 且 `app.user_id` 与 Host 传入的 actor 精确一致，才调用原 `ensureFamilyMatter`；后者继续核对租户、提交版本、来源 owner 和 RLS。独立 PostgreSQL 16 中浏览器归集与原材料规则 2/2 通过；获准 owner 创建/重放有效，跨 actor 冒用、跨租户、无来源权限及服务角色进入浏览器入口均拒绝，拒绝后没有多建 Matter。另已把完整 `organizeWorkItemIntake` 加入隔离数据库回归，确认关联重放只有一条、跨用户和错版本关联均拒绝；测试 1/1 通过，回归提交 `996b36ad58471e58bad17db98c98fbcdb03c9061` 与 origin 同名分支 SHA 一致。相关单元 45/45、server TypeScript 和定向 ESLint 无错误。本候选仍未发布，既有授权请求尚待回复；测试中的旧失败是代码阻断，不把它写成 PDF 业务失败。
+直接移除服务角色检查的修法曾两次被自动审批拒绝，理由是在所有调用方身份隔离未证实时可能越权或错配。修订保留原 `withActorTransaction` 服务角色规则，新增独立的浏览器事务入口：在同一 SQL 事务核对实际 `current_user='authenticated'` 且 `app.user_id` 与 Host 传入的 actor 精确一致，才调用原 `ensureFamilyMatter`；后者继续核对租户、提交版本、来源 owner 和 RLS。独立 PostgreSQL 16 中浏览器归集与原材料规则 2/2 通过；获准 owner 创建/重放有效，跨 actor 冒用、跨租户、无来源权限及服务角色进入浏览器入口均拒绝，拒绝后没有多建 Matter。另已把完整 `organizeWorkItemIntake` 加入隔离数据库回归，确认关联重放只有一条、跨用户和错版本关联均拒绝；测试 1/1 通过，回归提交 `996b36ad58471e58bad17db98c98fbcdb03c9061`。相关单元 45/45、server TypeScript 和定向 ESLint 无错误。发布状态与线上验证限制见本文件顶部；测试中的旧失败是代码阻断，不把它写成 PDF 业务失败。
 
 ## 2026-09-26 两条上传入口与事项 Wiki 的接线核对（本地待发布）
 
