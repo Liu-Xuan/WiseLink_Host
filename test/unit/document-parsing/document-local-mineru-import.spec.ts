@@ -22,8 +22,8 @@ function fixture() {
   const bytes = encode(candidate());
   const binding = { documentVersionId: 'DV', documentId: 'DOC', familyId: 'FAM', sourceArtifactId: 'ART', pdfSha256: 'a'.repeat(64), byteLength: 1 };
   const selection = { bucketId: 'bucket', filePath: 'candidate.json', providerObjectId: 'candidate-object', sha256: digest(bytes), byteLength: bytes.length, bytes, readbackVerified: true };
-  const run = { parseRunId: 'PR', documentVersionId: 'DV', parseRevision: 2, status: 'RUNNING', startedAt: new Date(), deadlineAt: new Date(Date.now() + 240000), completedAt: null as Date | null,
-    sourceBinding: { ...binding, parserInput: { mode: 'LOCAL_MINERU_IMPORT', ...selection } }, bucketId: 'bucket', expectedPublishedRevision: 0,
+  const run = { requestId: request.requestId, actorUserId: context.actorUserId, tenantId: context.tenantId, parseRunId: 'PR', documentVersionId: 'DV', parseRevision: 2, status: 'RUNNING', startedAt: new Date(), deadlineAt: new Date(Date.now() + 240000), completedAt: null as Date | null,
+    sourceBinding: { ...binding, parserInput: { mode: 'LOCAL_MINERU_IMPORT' as const, ...selection, settings: { revision: 1, localMineruFallbackEnabled: true, titleEnhancementEnabled: false } } }, bucketId: 'bucket', expectedPublishedRevision: 0,
     artifactProgress: [] as unknown[], manifestArtifact: null as unknown, errorCode: null as string | null };
   let reserved = false;
   const content = new Map<string, { bytes: Uint8Array; mediaType: string }>();
@@ -37,11 +37,12 @@ function fixture() {
   const readSelection = jest.spyOn(MiaodaFileServiceArtifactStore.prototype, 'readSelection').mockImplementation(async (input: { filePath?: string }) =>
     input.filePath?.endsWith('candidate.json') ? selection as never : { bytes: new Uint8Array([1]), readbackVerified: true, sha256: binding.pdfSha256, byteLength: 1,
       providerObjectId: 'original-object', providerVersionId: 'original-version' } as never);
-  const repository = { readRequest: jest.fn(async (_scope: unknown, id: string) => reserved && id === request.requestId ? { ...run } : null), read: async () => ({ ...run }),
-    reserve: jest.fn(async (_scope: unknown, input: { sourceBinding: typeof run.sourceBinding }) => { reserved = true; run.sourceBinding = input.sourceBinding; return { row: run, created: true }; }),
+  const predecessors = new Map<string, typeof run>();
+  const repository = { readRequest: jest.fn(async (_scope: unknown, id: string) => reserved && id === run.requestId ? { ...run } : null), read: jest.fn(async (_scope: unknown, id: string) => predecessors.get(id) ?? ({ ...run })),
+    reserve: jest.fn(async (_scope: unknown, input: { sourceBinding: typeof run.sourceBinding; requestId: string }) => { reserved = true; run.requestId = input.requestId; run.sourceBinding = input.sourceBinding; return { row: run, created: true }; }),
     stage: async () => { run.status = 'STAGING'; }, progress: async (_scope: unknown, _id: string, artifacts: unknown[]) => { run.artifactProgress = structuredClone(artifacts); },
     publish: jest.fn(async (_scope: unknown, _id: string, artifact: unknown) => { run.status = 'PUBLISHED'; run.manifestArtifact = artifact; run.completedAt = new Date(); }),
-    recordStepFailure: jest.fn(async (_scope: unknown, _fence: unknown, code: string) => { run.errorCode = code; }), current: async () => ({ published: run.status === 'PUBLISHED' ? run : null }) };
+    recordStepFailure: jest.fn(async (_scope: unknown, _fence: unknown, code: string) => { run.errorCode = code; }), current: jest.fn(async () => ({ published: run.status === 'PUBLISHED' ? run : null })) };
   const source = { version: { ...binding, originalFilename: 'original.pdf' }, source: { bucketId: 'bucket', filePath: 'original.pdf', sha256: binding.pdfSha256, byteLength: 1,
     providerObjectId: 'original-object', providerVersionId: 'original-version' } };
   const authorizer = { assertCanRead: jest.fn(async () => undefined), assertCanIngest: jest.fn(async () => undefined) };
@@ -51,13 +52,13 @@ function fixture() {
   const service = new DocumentParsingHostedService({ from: () => scoped } as never, { readMetadataSource: async () => source } as never,
     repository as never, plugins as never, leases as never, authorizer, settings as never);
   jest.spyOn(authority, 'mintDocumentUploadAuthority').mockReturnValue({} as never);
-  return { service, repository, authorizer, plugins, leases, scoped, content, run, selection, readSelection, settings, extract };
+  return { service, repository, authorizer, plugins, leases, scoped, content, run, selection, readSelection, settings, extract, predecessors };
 }
 afterEach(() => jest.restoreAllMocks());
 it('publishes exact local original without calling exhausted plugin, then replays without duplication', async () => {
   const f = fixture();
   expect(await f.service.start('DV', request, context)).toMatchObject({ status: 'PUBLISHED', parseRevision: 2 });
-  expect(f.authorizer.assertCanIngest).toHaveBeenCalledTimes(2);
+  expect(f.authorizer.assertCanIngest.mock.calls.length).toBeGreaterThan(2);
   expect(f.plugins.parseOriginal).not.toHaveBeenCalled();
   expect(f.run.sourceBinding.parserInput).toMatchObject({ providerObjectId: 'candidate-object', sha256: f.selection.sha256 });
   expect(await f.service.read('DV', 'PR', context)).toMatchObject({ parser: { name: 'MinerU', version: '3.4.5', backend: 'pipeline' }, original: { producer: { kind: 'MINERU_LOCAL_PDFJS' } } });
@@ -136,4 +137,99 @@ it.each([true, false])('validates title levels against raw views and respects ca
   expect(reading.original!.source.units.filter(unit => unit.kind === 'heading').map(unit => unit.payload.level)).toEqual(enabled ? [1, 2] : [1, 1]);
   const rawSaved = [...f.content].find(([path]) => path.endsWith('raw/mineru-candidate.json'))![1].bytes;
   expect(Buffer.from(rawSaved)).toEqual(f.selection.bytes);
+});
+
+function recoveryFixture() {
+  const f = fixture();
+  const predecessor = structuredClone(f.run);
+  predecessor.parseRunId = 'PRUN-00000000-0000-4000-8000-000000000001';
+  predecessor.status = 'FAILED'; predecessor.parseRevision = 1;
+  f.predecessors.set(predecessor.parseRunId, predecessor);
+  f.settings.capture.mockResolvedValue({ revision: 2, localMineruFallbackEnabled: false, titleEnhancementEnabled: true });
+  const resume = { requestId: `parse-resume-${predecessor.parseRunId}`, expectedPublishedRevision: 0 };
+  return { ...f, predecessor, resume };
+}
+it('resumes pinned local input and original settings without mode while current switch is disabled', async () => {
+  const f = recoveryFixture();
+  await expect(f.service.start('DV', f.resume, context)).resolves.toMatchObject({ status: 'PUBLISHED' });
+  expect(f.run.sourceBinding.parserInput.settings).toEqual(f.predecessor.sourceBinding.parserInput.settings);
+  expect(f.settings.capture).not.toHaveBeenCalled(); expect(f.plugins.parseOriginal).not.toHaveBeenCalled();
+  await f.service.start('DV', f.resume, context);
+  expect(f.repository.publish).toHaveBeenCalledTimes(1);
+});
+it.each(['candidate', 'source', 'changed', 'missing-snapshot'])('rejects local recovery boundary: %s', async boundary => {
+  const f = recoveryFixture();
+  if (boundary === 'candidate') f.authorizer.assertCanIngest.mockRejectedValue(new Error('DOCUMENT_ACTION_FORBIDDEN'));
+  if (boundary === 'source') f.authorizer.assertCanRead.mockRejectedValue(new Error('DOCUMENT_ACTION_FORBIDDEN'));
+  if (boundary === 'changed') f.selection.providerObjectId = 'replaced';
+  if (boundary === 'missing-snapshot') Reflect.deleteProperty(f.predecessor.sourceBinding.parserInput, 'settings');
+  await expect(f.service.start('DV', f.resume, context)).rejects.toThrow(boundary === 'changed'
+    ? 'DOCUMENT_PARSE_RECOVERY_BINDING_MISMATCH' : boundary === 'missing-snapshot'
+      ? 'DOCUMENT_PARSING_SETTINGS_SNAPSHOT_REQUIRED' : 'DOCUMENT_ACTION_FORBIDDEN');
+  expect(f.repository.reserve).not.toHaveBeenCalled(); expect(f.plugins.parseOriginal).not.toHaveBeenCalled();
+});
+it('rechecks candidate authorization before publishing a recovered completed manifest', async () => {
+  const f = fixture(); await f.service.start('DV', request, context);
+  f.run.status = 'STAGING';
+  f.authorizer.assertCanIngest.mockRejectedValue(new Error('DOCUMENT_ACTION_FORBIDDEN'));
+  await expect(f.service.executeStep('PR', { ...context, documentVersionId: 'DV' },
+    { parseRunId: 'PR', leaseOwner: 'local', leaseToken: 'lease', leaseGeneration: 1 })).rejects.toThrow('DOCUMENT_ACTION_FORBIDDEN');
+  expect(f.repository.publish).toHaveBeenCalledTimes(1);
+});
+it('recovers local predecessor page checkpoints without extracting the same PDF again', async () => {
+  const f = fixture(); const upload = f.scoped.upload.getMockImplementation()!;
+  f.scoped.upload.mockImplementation(async (bytes, options) => {
+    if (options.filePath.endsWith('raw/mineru-candidate.json')) throw new Error('CONSTRUCTED_UPLOAD_FAILED');
+    return upload(bytes, options);
+  });
+  await expect(f.service.start('DV', request, context)).rejects.toThrow('CONSTRUCTED_UPLOAD_FAILED');
+  // Use an exact predecessor namespace so deterministic paths and descriptors agree.
+  const oldId = 'PRUN-00000000-0000-4000-8000-000000000001';
+  const predecessor = structuredClone(f.run); predecessor.parseRunId = oldId; predecessor.status = 'FAILED'; predecessor.parseRevision = 1;
+  const serialized = JSON.stringify(predecessor.artifactProgress).replaceAll('/PR/', `/${oldId}/`);
+  predecessor.artifactProgress = JSON.parse(serialized);
+  for (const [path, value] of [...f.content]) f.content.set(path.replace('/PR/', `/${oldId}/`), value);
+  f.predecessors.set(oldId, predecessor);
+  f.run.parseRunId = 'NEXT'; f.run.artifactProgress = []; f.run.status = 'RUNNING';
+  f.leases.claim.mockResolvedValue({ parseRunId: 'NEXT', leaseOwner: 'local', leaseToken: 'lease', leaseGeneration: 1 });
+  f.scoped.upload.mockImplementation(upload);
+  await expect(f.service.start('DV', { requestId: `parse-resume-${oldId}`, expectedPublishedRevision: 0 }, context)).resolves.toMatchObject({ status: 'PUBLISHED' });
+  expect(f.extract).toHaveBeenCalledTimes(1); expect(f.plugins.parseOriginal).not.toHaveBeenCalled();
+});
+
+it.each([true, false])('reuses exact PDF pages but not raw Markdown across producer switch localFirst=%s', async localFirst => {
+  const f = fixture(); f.plugins.configured.mockReturnValue(true);
+  f.plugins.parseOriginal.mockResolvedValue({ markdown: 'Official parser text.' });
+  if (localFirst) await f.service.start('DV', request, context);
+  else {
+    await f.service.start('DV', { requestId: 'official-first', expectedPublishedRevision: 0 }, context);
+    await f.service.executeStep('PR', { ...context, documentVersionId: 'DV' },
+      { parseRunId: 'PR', leaseOwner: 'local', leaseToken: 'lease', leaseGeneration: 1 });
+  }
+  const previous = structuredClone(f.run);
+  f.repository.current.mockResolvedValue({ published: previous });
+  Object.assign(f.run, { parseRunId: 'NEXT', parseRevision: 3, expectedPublishedRevision: 2, status: 'RUNNING', artifactProgress: [], manifestArtifact: null });
+  f.leases.claim.mockResolvedValue({ parseRunId: 'NEXT', leaseOwner: 'local', leaseToken: 'lease', leaseGeneration: 1 });
+  if (localFirst) {
+    await f.service.start('DV', { requestId: 'official-next', expectedPublishedRevision: 2 }, context);
+    await f.service.executeStep('NEXT', { ...context, documentVersionId: 'DV' },
+      { parseRunId: 'NEXT', leaseOwner: 'local', leaseToken: 'lease', leaseGeneration: 1 });
+  } else await f.service.start('DV', { ...request, requestId: 'local-next', expectedPublishedRevision: 2 }, context);
+  expect(f.run.status).toBe('PUBLISHED'); expect(f.extract).toHaveBeenCalledTimes(1);
+  expect(f.plugins.parseOriginal).toHaveBeenCalledTimes(1);
+  expect(Buffer.from(f.content.get('wiselink/parsed/DV/NEXT/raw/document.md')!.bytes).toString())
+    .toBe(localFirst ? 'Official parser text.' : 'Exact original text.');
+});
+
+it('fails closed with the original identity error when a local consumer lacks browser context', async () => {
+  const f = fixture();
+  jest.mocked(authority.mintDocumentUploadAuthority).mockRestore();
+  await expect(f.service.executeStep('PR', { documentVersionId: 'DV', actorUserId: context.actorUserId,
+    tenantId: context.tenantId, roles: [] },
+  { parseRunId: 'PR', leaseOwner: 'consumer', leaseToken: 'lease', leaseGeneration: 1 }))
+    .rejects.toMatchObject({ message: 'CANONICAL_IDENTITY_HANDOFF_UNAVAILABLE', code: 'CANONICAL_IDENTITY_HANDOFF_UNAVAILABLE',
+      statusCode: 503, denialSource: 'MIAODA_BROWSER_UNAVAILABLE_ADAPTER' });
+  expect(f.readSelection).not.toHaveBeenCalled(); expect(f.repository.publish).not.toHaveBeenCalled();
+  expect(f.plugins.parseOriginal).not.toHaveBeenCalled(); expect(f.authorizer.assertCanIngest).not.toHaveBeenCalled();
+  expect(f.run.errorCode).toBe('CANONICAL_IDENTITY_HANDOFF_UNAVAILABLE');
 });

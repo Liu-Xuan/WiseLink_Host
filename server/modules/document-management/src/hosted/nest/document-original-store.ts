@@ -146,7 +146,8 @@ async function optionalMetadata(read: () => Promise<FileMeta | null>) {
 function entry(role: DocumentOriginalArtifact['role'], relativePath?: string) {
   const rule = entries[role];
   if (!rule || (relativePath && relativePath !== rule.relativePath &&
-      !(role === 'MANIFEST' && (/^original\/pages-[0-9]+\.json$/.test(relativePath) || relativePath === 'raw/mineru-candidate.json'))))
+      !(role === 'MANIFEST' && (relativePath === 'original/raw-provenance.json' ||
+        relativePath === 'raw/mineru-candidate.json' || /^original\/pages-[0-9]+\.json$/.test(relativePath)))))
     throw new Error('DOCUMENT_ORIGINAL_ARTIFACT_PATH_INVALID');
   return { ...rule, relativePath: relativePath ?? rule.relativePath };
 }

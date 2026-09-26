@@ -8,6 +8,7 @@ export interface DocumentParsingSettingsReadModel extends DocumentParsingSetting
   updatedAt: string | null;
   canManage: boolean;
   managementStatus: 'CONFIGURED' | 'ROLE_NOT_CONFIGURED';
+  /** New admissions only; an exact parse-resume successor retains the admitted snapshot. */
   effectiveFor: 'NEW_LOCAL_DOCUMENT_PARSE_RUNS_ONLY';
 }
 export interface UpdateDocumentParsingSettingsRequest {

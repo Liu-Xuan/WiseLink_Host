@@ -1,3 +1,4 @@
+import { documentParseRecoveryRequestId } from '@shared/document-parsing-recovery';
 import type { DocumentTranslationReadingResponse } from '@shared/document-translation-reading.interface';
 import LocalMineruImport from './LocalMineruImport';
 import { SemanticBilingualReader } from './SemanticBilingualReader';
@@ -123,7 +124,8 @@ export default function DocumentVersionReadingPage() {
               throw new Error('读取结果与指定解析版本不一致。');
             loaded.current = result.parseRunId; setReadingNavigation(readingIdentity); setReading(result); setSource(null);
           }
-          if (next.latestRun && ['RUNNING', 'STAGING'].includes(next.latestRun.status) && current())
+          if (next.latestRun && ['RUNNING', 'STAGING'].includes(next.latestRun.status) &&
+              !next.latestRun.errorCode && Date.parse(next.latestRun.deadlineAt) > Date.now() && current())
             timer = setTimeout(() => { void load(); }, 5000);
         }
       } catch (reason) {
@@ -232,6 +234,10 @@ export default function DocumentVersionReadingPage() {
   const documentVersionLabel = currentStatus ? libraryVersionLabel(currentStatus) : '版本未标注';
   const expired = latest ? Date.parse(latest.deadlineAt) <= Date.now() : false;
   const busy = Boolean(latest && ['RUNNING', 'STAGING'].includes(latest.status) && !expired);
+  const parseFailure = latest?.errorCode === 'DOCUMENT_PLUGIN_QUOTA_EXHAUSTED'
+    ? '文档解析服务额度已用尽，待服务恢复后接续。'
+    : latest && (latest.errorCode || latest.status === 'FAILED')
+      ? '文档解析暂未完成，已保存的内容仍可读取。' : null;
   // The activity entry is only available when the original reading exists for this exact
   // version and parse run; it pins the same parse run instead of the latest one.
   const activityEntryRoute = currentReading?.original ? (() => {
@@ -247,7 +253,11 @@ export default function DocumentVersionReadingPage() {
     const version = documentVersionId;
     const navigation = readingIdentity;
     const generation = epoch.current;
-    request.current ??= { requestId: `parse-${crypto.randomUUID()}`, expectedPublishedRevision: currentStatus.publishedRun?.parseRevision ?? 0 };
+    request.current ??= {
+      requestId: latest && (latest.status === 'FAILED' || (latest.status !== 'PUBLISHED' && expired))
+        ? documentParseRecoveryRequestId(latest.parseRunId) : `parse-${crypto.randomUUID()}`,
+      expectedPublishedRevision: currentStatus.publishedRun?.parseRevision ?? 0,
+    };
     setSending(true); setError(null);
     try {
       await startDocumentParsing(version, request.current);
@@ -256,7 +266,7 @@ export default function DocumentVersionReadingPage() {
     } catch (reason) {
       if (identity.current !== navigation || epoch.current !== generation) return;
       const code = reason && typeof reason === 'object' && 'code' in reason ? reason.code : null;
-      if (['DOCUMENT_PARSE_REVISION_CONFLICT', 'DOCUMENT_PARSE_ALREADY_RUNNING'].includes(String(code))) request.current = null;
+      if (['DOCUMENT_PARSE_REVISION_CONFLICT', 'DOCUMENT_PARSE_ALREADY_RUNNING', 'DOCUMENT_PARSE_RECOVERY_NOT_LATEST'].includes(String(code))) request.current = null;
       setError(reason instanceof Error ? reason.message : '请求结果尚未确认，重试会核对同一请求。');
     } finally { if (identity.current === navigation && epoch.current === generation) setSending(false); }
   }
@@ -274,22 +284,23 @@ export default function DocumentVersionReadingPage() {
         <summary>文档处理</summary>
         <div className="document-reading-actions">
           <Button onClick={() => { void start(); }} disabled={!currentStatus?.runtimeAvailable || busy || sending}>
-            {sending ? '正在受理…' : request.current ? '核对解析请求' : busy ? '正在解析…' : currentStatus?.publishedRun ? '重新解析' : '解析文档'}
+            {sending ? '正在受理…' : request.current ? '核对解析请求' : busy ? (parseFailure ? '等待接续' : '正在解析…') : currentStatus?.publishedRun ? '重新解析' : '解析文档'}
           </Button>
           <Button variant="outline" onClick={() => setRefresh(value => value + 1)}>刷新</Button>
           <DocumentOriginalPreview documentVersionId={documentVersionId}>打开原件</DocumentOriginalPreview>
         </div>
         {currentStatus ? <LocalMineruImport key={documentVersionId} documentVersionId={documentVersionId}
           expectedPublishedRevision={currentStatus.publishedRun?.parseRevision ?? 0} onImported={() => setRefresh(value => value + 1)} /> : null}
+        {latest?.errorCode && <p>处理原因：{latest.errorCode}</p>}
       </details>
       {error && <p role="alert">{error}</p>}
       {unboundEvidence ? <p role="status">此保存依据没有工作项执行身份。已打开它绑定的确切文档版本，未猜测任务或具体段落位置。</p> : null}
       {currentStatus && !currentStatus.runtimeAvailable && <p role="status">
         {currentStatus.runtime?.state === 'FAILED' ? '最近的文档处理未完成，已保存的范围仍可读取。' : '官方文档解析插件尚未配置。'}
       </p>}
-      {latest && <p role="status">{latest.status === 'PUBLISHED' ? `解析版本 ${latest.parseRevision} 已发布。` :
+      {latest && <p role="status">{parseFailure ?? (latest.status === 'PUBLISHED' ? `解析版本 ${latest.parseRevision} 已发布。` :
         latest.status === 'FAILED' ? `解析未完成：${latest.errorCode ?? '请重试或联系维护人员'}` :
-        expired ? '执行期限已过，可重新发起解析。' : latest.status === 'STAGING' ? `正在保存并核验产物，已核验 ${latest.verifiedArtifacts} 个文件。` : '正在解析原件，可离开页面后回来查看。'}</p>}
+        expired ? '执行期限已过，可重新发起解析。' : latest.status === 'STAGING' ? `正在保存并核验产物，已核验 ${latest.verifiedArtifacts} 个文件。` : '正在解析原件，可离开页面后回来查看。')}</p>}
     </header>
     {currentReading ? <>
       {requestedRun && <p role="status">{currentStatus?.publishedRun?.parseRunId !== requestedRun ? '历史解析版本' : '指定解析版本'}：固定读取此版本，刷新不会切换到最新版本。 <Link to={`/document-versions/${encodeURIComponent(documentVersionId)}`}>查看最新版本</Link></p>}

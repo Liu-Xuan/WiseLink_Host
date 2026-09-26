@@ -8,6 +8,8 @@ import { readLocalMineruCandidate } from './document-mineru-local-candidate';
 import { documentMineruOriginal } from './document-mineru-original-adapter';
 import type { DocumentLocalMineruInput, DocumentParseSourceBinding } from '@server/database/document-parsing.schema';
 import { sameParserInput } from './document-parsing.repository';
+import { documentParseRecoveryPredecessor } from '@shared/document-parsing-recovery';
+import { DocumentOriginalRecovery, saveOriginalRaw, checkCurrentRawProvenance } from './document-original-recovery';
 import { compareDocumentOriginal, type DocumentOriginalChange } from './document-original-change';
 import { Inject, Injectable, Logger, Optional } from '@nestjs/common';
 import { FileService } from '@lark-apaas/fullstack-nestjs-core';
@@ -83,11 +85,19 @@ export class DocumentParsingHostedService {
     const input = startInput(request);
     const source = await this.authorizedSource(documentVersionId, context);
     const scope = { ...context, documentVersionId };
+    const predecessorId = documentParseRecoveryPredecessor(input.requestId);
+    const existing = await this.repository.readRequest(scope, input.requestId);
+    const predecessor = predecessorId ? await this.repository.read(scope, predecessorId) : null;
+    if (predecessorId && (!predecessor || predecessor.actorUserId !== context.actorUserId))
+      throw documentParseError('DOCUMENT_PARSE_RECOVERY_BINDING_MISMATCH');
+    const pinned = predecessor?.sourceBinding.parserInput;
+    if (pinned && !pinned.settings) throw documentParseError('DOCUMENT_PARSING_SETTINGS_SNAPSHOT_REQUIRED');
+    const selection = input.mode === 'LOCAL_MINERU_IMPORT' ? input.selection : pinned;
     let parserInput: DocumentLocalMineruInput | undefined;
-    if (input.mode === 'LOCAL_MINERU_IMPORT') {
+    if (selection) {
       const runtimeIngestAuthority = mintDocumentUploadAuthority({ ...context, appId: context.appId ?? '', env: context.env ?? '' });
-      await this.authorizer.assertCanIngest({ ...context, action: 'DOCUMENT_INGEST', selection: input.selection!, runtimeIngestAuthority });
-      const selected = await this.originals.readSelection(input.selection!);
+      await this.authorizer.assertCanIngest({ ...context, action: 'DOCUMENT_INGEST', selection, runtimeIngestAuthority });
+      const selected = await this.originals.readSelection(selection);
       const candidate = readLocalMineruCandidate(selected.bytes);
       const original = await this.originals.readSelection({ bucketId: source.source.bucketId, filePath: source.source.filePath });
       if (!selected.readbackVerified || !original.readbackVerified || original.sha256 !== source.version.pdfSha256 || original.byteLength !== source.version.byteLength ||
@@ -96,29 +106,34 @@ export class DocumentParsingHostedService {
           candidate.sourceSha256 !== original.sha256 || candidate.sourceByteLength !== original.byteLength)
         throw documentParseError('DOCUMENT_PARSE_ORIGINAL_MISMATCH');
       await this.assertRead(documentVersionId, context);
-      await this.authorizer.assertCanIngest({ ...context, action: 'DOCUMENT_INGEST', selection: input.selection!, runtimeIngestAuthority });
+      await this.authorizer.assertCanIngest({ ...context, action: 'DOCUMENT_INGEST', selection, runtimeIngestAuthority });
       parserInput = { mode: 'LOCAL_MINERU_IMPORT', bucketId: selected.bucketId, filePath: selected.filePath.replace(/^\/+/, ''),
         providerObjectId: selected.providerObjectId, sha256: selected.sha256, byteLength: selected.byteLength };
+
+      const snapshot = predecessor ? pinned?.settings : existing?.sourceBinding.parserInput?.settings;
+      if (snapshot) parserInput.settings = snapshot;
     }
     const sourceBinding: DocumentParseSourceBinding = { documentVersionId, documentId: source.version.documentId, familyId: source.version.familyId,
       sourceArtifactId: source.version.sourceArtifactId, pdfSha256: source.version.pdfSha256, byteLength: source.version.byteLength,
       ...(parserInput ? { parserInput } : {}) };
-    const existing = await this.repository.readRequest(scope, input.requestId);
-    if (existing) {
+    if (predecessor && !sameParserInput(predecessor.sourceBinding, sourceBinding))
+      throw documentParseError('DOCUMENT_PARSE_RECOVERY_BINDING_MISMATCH');
+    if (existing && !predecessorId) {
       if (existing.expectedPublishedRevision !== input.expectedPublishedRevision || !sameParserInput(existing.sourceBinding, sourceBinding))
         throw documentParseError('DOCUMENT_PARSE_REQUEST_CONFLICT');
       if (parserInput && ['RUNNING', 'STAGING'].includes(existing.status)) await this.executeLocalImport(existing, context);
       return summary(await this.repository.read(scope, existing.parseRunId) ?? existing);
     }
-    if (parserInput) {
+    // Recovery continues the admitted attempt; only new admissions capture current settings.
+    if (parserInput && !predecessorId) {
       if (!this.parsingSettings) throw documentParseError('DOCUMENT_PARSING_SETTINGS_UNAVAILABLE', 503);
       const settings = await this.parsingSettings.capture(context.tenantId);
       if (!settings.localMineruFallbackEnabled) throw documentParseError('DOCUMENT_LOCAL_MINERU_DISABLED', 409);
       parserInput.settings = settings;
     }
-    if (!parserInput && !this.plugins.configured()) throw documentParseError('DOCUMENT_PLUGIN_NOT_CONFIGURED', 503);
+    if (!existing && !parserInput && !this.plugins.configured()) throw documentParseError('DOCUMENT_PLUGIN_NOT_CONFIGURED', 503);
     const reservation = await this.repository.reserve(scope, { requestId: input.requestId, expectedPublishedRevision: input.expectedPublishedRevision, bucketId: source.source.bucketId, sourceBinding });
-    if (parserInput) await this.executeLocalImport(reservation.row, context);
+    if (parserInput && ['RUNNING', 'STAGING'].includes(reservation.row.status)) await this.executeLocalImport(reservation.row, context);
     return summary(await this.repository.read(scope, reservation.row.parseRunId) ?? reservation.row);
   }
 
@@ -129,7 +144,15 @@ export class DocumentParsingHostedService {
     await this.leases.check(scope, fence);
     const run = await this.repository.read(scope, parseRunId);
     if (!run) throw documentParseError('DOCUMENT_PARSE_NOT_FOUND', 404);
-    const assertActive = async () => { await this.assertRead(run.documentVersionId, context); await this.leases.check(scope, fence); };
+    const assertActive = async () => {
+      await this.assertRead(run.documentVersionId, context);
+      if (run.sourceBinding.parserInput) {
+        if (!run.sourceBinding.parserInput.settings) throw documentParseError('DOCUMENT_PARSING_SETTINGS_SNAPSHOT_REQUIRED');
+        const runtimeIngestAuthority = mintDocumentUploadAuthority({ ...context, appId: context.appId ?? '', env: context.env ?? '' });
+        await this.authorizer.assertCanIngest({ ...context, action: 'DOCUMENT_INGEST', selection: run.sourceBinding.parserInput, runtimeIngestAuthority });
+      }
+      await this.leases.check(scope, fence);
+    };
     const binding = originalBinding(run);
     const storage = storageScope(run);
     const progress = [...run.artifactProgress];
@@ -140,10 +163,14 @@ export class DocumentParsingHostedService {
       await this.repository.progress(scope, parseRunId, progress, fence);
     };
     try {
+      await assertActive();
       if (run.status === 'RUNNING') await this.repository.stage(scope, parseRunId, fence);
       const completed = await this.store.recover(storage, 'MANIFEST');
       if (completed) {
         const bundle = await this.store.load(storage, completed.artifact, binding);
+        const localProducer = ['MINERU_LOCAL', 'MINERU_LOCAL_PDFJS'].includes(bundle.original.producer.kind);
+        if (localProducer !== Boolean(run.sourceBinding.parserInput)) throw documentParseError('DOCUMENT_ORIGINAL_PRODUCER_MISMATCH');
+        if (!localProducer) await checkCurrentRawProvenance(this.store, run, await this.store.read(storage, bundle.rawMarkdown), record);
         const change = bundle.change ?? await this.originalChange(run, bundle.original, context);
         await record(completed.artifact);
         await assertActive();
@@ -156,12 +183,30 @@ export class DocumentParsingHostedService {
           original.sha256 !== source.source.sha256 || original.byteLength !== source.source.byteLength ||
           original.providerObjectId !== source.source.providerObjectId || original.providerVersionId !== source.source.providerVersionId)
         throw documentParseError('DOCUMENT_PARSE_ORIGINAL_MISMATCH');
+      // A derived parse revision may reuse verified inputs from the same immutable PDF.
+      // Descriptors are copied into this run's namespace; no previous history is overwritten.
+      let reusable: { bundle: DocumentOriginalBundle; scope: ReturnType<typeof storageScope> } | null = null;
+      if (run.expectedPublishedRevision > 0) {
+        const previous = (await this.repository.current(scope)).published;
+        if (previous && previous.parseRunId !== run.parseRunId && previous.parseRevision === run.expectedPublishedRevision &&
+            previous.manifestArtifact?.relativePath === 'original/manifest.json' &&
+            previous.sourceBinding.sourceArtifactId === run.sourceBinding.sourceArtifactId &&
+            previous.sourceBinding.pdfSha256 === run.sourceBinding.pdfSha256 &&
+            previous.sourceBinding.byteLength === run.sourceBinding.byteLength) {
+          const priorScope = storageScope(previous);
+          const priorBundle = await this.store.load(priorScope, originalArtifact(previous.manifestArtifact), originalBinding(previous));
+          reusable = { scope: priorScope, bundle: priorBundle };
+        }
+      }
+      const recovery = await DocumentOriginalRecovery.load(run, id => this.repository.read(scope, id), this.store, assertActive);
       if (run.sourceBinding.parserInput?.mode === 'LOCAL_MINERU_IMPORT') {
         const selected = await this.originals.readSelection(run.sourceBinding.parserInput);
         const pinned = run.sourceBinding.parserInput;
-        if (selected.providerObjectId !== pinned.providerObjectId || selected.sha256 !== pinned.sha256 || selected.byteLength !== pinned.byteLength)
+        if (!selected.readbackVerified || selected.providerObjectId !== pinned.providerObjectId || selected.sha256 !== pinned.sha256 || selected.byteLength !== pinned.byteLength)
           throw documentParseError('DOCUMENT_MINERU_CANDIDATE_CHANGED');
         const candidate = readLocalMineruCandidate(selected.bytes);
+        if (candidate.sourceSha256 !== original.sha256 || candidate.sourceByteLength !== original.byteLength)
+          throw documentParseError('DOCUMENT_PARSE_ORIGINAL_MISMATCH');
         let titleEnhancement: DocumentParsedReading['titleEnhancement'] = { status: 'DISABLED' };
         let validatedTitleLevels: Array<{ id: string; level: number }> | undefined;
         if (pinned.settings?.titleEnhancementEnabled) {
@@ -177,7 +222,7 @@ export class DocumentParsingHostedService {
           else titleEnhancement = { status: 'FAILED', code: 'TITLE_RESULT_MISSING' };
         }
         const mineruOriginal = documentMineruOriginal({ binding, documentVersion: run.sourceBinding, result: candidate, validatedTitleLevels });
-        const checkpoint = await this.checkpointPdfPages(run, original, assertActive, record, executionStartedAt);
+        const checkpoint = await this.checkpointPdfPages(run, original, assertActive, record, executionStartedAt, reusable, recovery);
         if (checkpoint.status === 'STAGING') return stepResult(run, checkpoint.coverage, 'STAGING');
         const result = reconcileMineruTextCoverage({ original: mineruOriginal, extraction: checkpoint.extraction,
           rawMiddle: candidate.rawArtifacts.middle, rawContentListV2: candidate.rawArtifacts.contentListV2 });
@@ -193,33 +238,26 @@ export class DocumentParsingHostedService {
         await this.repository.publish(scope, parseRunId, manifest, fence);
         return stepResult(run, result.coverage, 'PUBLISHED', change);
       }
-      // A derived parse revision may reuse verified inputs from the same immutable PDF.
-      // Descriptors are copied into this run's namespace; no previous history is overwritten.
-      let reusable: { bundle: DocumentOriginalBundle; scope: ReturnType<typeof storageScope> } | null = null;
-      if (run.expectedPublishedRevision > 0) {
-        const previous = (await this.repository.current(scope)).published;
-        if (previous && previous.parseRunId !== run.parseRunId && previous.parseRevision === run.expectedPublishedRevision &&
-            previous.manifestArtifact?.relativePath === 'original/manifest.json' &&
-            previous.sourceBinding.sourceArtifactId === run.sourceBinding.sourceArtifactId &&
-            previous.sourceBinding.pdfSha256 === run.sourceBinding.pdfSha256 &&
-            previous.sourceBinding.byteLength === run.sourceBinding.byteLength) {
-          const priorScope = storageScope(previous);
-          const priorBundle = await this.store.load(priorScope, originalArtifact(previous.manifestArtifact), originalBinding(previous));
-          if (priorBundle.original.producer.kind === 'OFFICIAL_PLUGIN_HYBRID') reusable = { scope: priorScope, bundle: priorBundle };
-        }
-      }
       let raw = await this.store.recover(storage, 'RAW_MARKDOWN');
-      if (!raw && reusable) {
-        const bytes = new Uint8Array(await this.store.read(reusable.scope, reusable.bundle.rawMarkdown));
-        raw = { bytes, artifact: await this.store.save(storage, 'RAW_MARKDOWN', bytes, record) };
+      const recoveredRaw = await recovery.read('RAW_MARKDOWN', 'raw/document.md');
+      if (raw && recoveredRaw && !Buffer.from(raw.bytes).equals(Buffer.from(recoveredRaw)))
+        throw documentParseError('DOCUMENT_PARSE_RECOVERY_COPY_MISMATCH');
+      if (!raw && recoveredRaw) {
+        const bytes = new Uint8Array(recoveredRaw);
+        raw = { bytes, artifact: await saveOriginalRaw(this.store, run, bytes, record) };
       }
+      if (!raw && reusable?.bundle.original.producer.kind === 'OFFICIAL_PLUGIN_HYBRID') {
+        const bytes = new Uint8Array(await this.store.read(reusable.scope, reusable.bundle.rawMarkdown));
+        raw = { bytes, artifact: await saveOriginalRaw(this.store, run, bytes, record) };
+      }
+      await checkCurrentRawProvenance(this.store, run, raw?.bytes ?? null, record);
       if (!raw) {
         const parsed = await this.plugins.parseOriginal({ assertActive,
           originalUrl: async () => this.files.from(source.source.bucketId).createSignedUrl(source.source.filePath, 600) });
         const bytes = Buffer.from(parsed.markdown);
-        raw = { bytes, artifact: await this.store.save(storage, 'RAW_MARKDOWN', bytes, record) };
+        raw = { bytes, artifact: await saveOriginalRaw(this.store, run, bytes, record) };
       } else await record(raw.artifact);
-      const checkpoint = await this.checkpointPdfPages(run, original, assertActive, record, executionStartedAt, reusable);
+      const checkpoint = await this.checkpointPdfPages(run, original, assertActive, record, executionStartedAt, reusable, recovery);
       if (checkpoint.status === 'STAGING') return stepResult(run, checkpoint.coverage, 'STAGING');
       const { pageArtifacts, extraction } = checkpoint;
       const markdown = Buffer.from(raw.bytes).toString('utf8');
@@ -322,7 +360,8 @@ export class DocumentParsingHostedService {
   }
   private async checkpointPdfPages(run: DocumentParseRow, original: { bytes: Uint8Array; byteLength: number },
     assertActive: () => Promise<void>, record: (artifact: DocumentOriginalArtifact) => Promise<void>, executionStartedAt: number,
-    reusable: { bundle: DocumentOriginalBundle; scope: ReturnType<typeof storageScope> } | null = null,
+    reusable: { bundle: DocumentOriginalBundle; scope: ReturnType<typeof storageScope> } | null,
+    recovery: DocumentOriginalRecovery,
   ): Promise<{ status: 'STAGING'; coverage: DocumentOriginalStepResult['coverage'] } |
     { status: 'COMPLETE'; extraction: DocumentPdfExtraction; pageArtifacts: DocumentOriginalArtifact[] }> {
     const storage = storageScope(run);
@@ -354,6 +393,14 @@ export class DocumentParsingHostedService {
         const path = `original/pages-${pageStart}.json`;
         // Recover a lost upload/progress response at exactly the next path before extracting again.
         let recovered = await this.store.recover(storage, 'MANIFEST', path);
+        const recoveredPage = await recovery.read('MANIFEST', path);
+        if (recovered && recoveredPage && !Buffer.from(recovered.bytes).equals(Buffer.from(recoveredPage)))
+          throw documentParseError('DOCUMENT_PARSE_RECOVERY_COPY_MISMATCH');
+        if (!recovered && recoveredPage) {
+          const bytes = new Uint8Array(recoveredPage);
+          assertPageChunk(JSON.parse(Buffer.from(bytes).toString('utf8')), pageStart, pageCount);
+          recovered = { bytes, artifact: await this.store.save(storage, 'MANIFEST', bytes, record, path) };
+        }
         const reusablePage = reusable?.bundle.rawPdfArtifacts.find(item => item.relativePath === path);
         if (!recovered && reusable && reusablePage) {
           const bytes = new Uint8Array(await this.store.read(reusable.scope, reusablePage));
@@ -455,6 +502,8 @@ function startInput(value: unknown): StartDocumentParseRequest {
       !Number.isSafeInteger(input.expectedPublishedRevision) || Number(input.expectedPublishedRevision) < 0) {
     throw documentParseError('DOCUMENT_PARSE_INPUT_INVALID', 400);
   }
+  try { documentParseRecoveryPredecessor(input.requestId); }
+  catch { throw documentParseError('DOCUMENT_PARSE_RECOVERY_REQUEST_INVALID', 400); }
   if (local) {
     const selection = input.selection;
     if (!selection || typeof selection !== 'object' || Array.isArray(selection) ||

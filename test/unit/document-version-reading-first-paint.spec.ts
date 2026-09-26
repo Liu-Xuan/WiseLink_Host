@@ -14,6 +14,9 @@ jest.mock('@client/src/components/ui/button', () => ({
 jest.mock('@client/src/components/ui/dialog', () => ({
   Dialog: () => null, DialogContent: () => null, DialogHeader: () => null, DialogTitle: () => null,
 }));
+jest.mock('@client/src/components/business-ui/api/files/service', () => ({
+  uploadFile: jest.fn(() => { throw new Error('Unexpected upload during reading'); }),
+}));
 jest.mock('@client/src/pages/WorkspaceHomePage/DocumentOriginalPreview', () => ({
   DocumentOriginalPreview: ({ children }: { children: ReactNode }) => createElement('span', null, children),
 }));
@@ -43,12 +46,13 @@ jest.mock('@client/src/pages/DocumentParsingPage/DocumentSourceReadingWorkspace'
 const mockStatus = jest.fn();
 const mockReading = jest.fn();
 const mockTranslation = jest.fn();
+const mockStart = jest.fn();
 const mockSessionCallbacks: Array<() => void> = [];
 jest.mock('@client/src/api/canonical-host', () => ({
   readDocumentParsingStatus: (...args: unknown[]) => mockStatus(...args),
   readParsedDocument: (...args: unknown[]) => mockReading(...args),
   readDocumentTranslationReading: (...args: unknown[]) => mockTranslation(...args),
-  startDocumentParsing: jest.fn(),
+  startDocumentParsing: (...args: unknown[]) => mockStart(...args),
   subscribeCanonicalHostClientSession: (callback: () => void) => {
     mockSessionCallbacks.push(callback);
     return () => undefined;
@@ -112,6 +116,8 @@ beforeEach(() => {
   container = dom.window.document.getElementById('root');
   jest.clearAllMocks();
   mockSessionCallbacks.length = 0;
+  mockStart.mockReset();
+  mockStart.mockResolvedValue({});
   mockStatus.mockResolvedValue(statusPayload());
   mockReading.mockResolvedValue(readingPayload());
   mockTranslation.mockResolvedValue({
@@ -370,4 +376,52 @@ it('records the selected registered page of a multi-page unit and rejects an unr
   await act(async () => container.querySelector<HTMLButtonElement>('#select-original-source')!.click());
   expect(new URLSearchParams(router.state.location.search).get('sourceRef')).toBe('SR-TEST-P2');
   expect(mockReading).toHaveBeenCalledTimes(1);
+});
+
+
+it('an explicit failed-parse retry keeps one predecessor request after a lost response', async () => {
+  const predecessor = 'PRUN-00000000-0000-0000-0000-000000000015';
+  mockStatus.mockResolvedValue({ ...statusPayload(), latestRun: {
+    parseRunId: predecessor, status: 'FAILED', deadlineAt: '2000-01-01T00:00:00Z',
+    errorCode: 'HOSTED_MODEL_QUOTA_EXHAUSTED',
+  } });
+  mockStart.mockRejectedValueOnce(new Error('响应丢失')).mockResolvedValueOnce({});
+  await mount();
+  expect(mockStart).not.toHaveBeenCalled(); // Displaying an error is never automatic retry authorization.
+  await act(async () => {
+    [...container.querySelectorAll('button')].find(item => item.textContent === '重新解析')?.click();
+  });
+  expect(container.querySelector('[role="alert"]')?.textContent).toContain('响应丢失');
+  await act(async () => {
+    [...container.querySelectorAll('button')].find(item => item.textContent === '核对解析请求')?.click();
+  });
+  expect(mockStart).toHaveBeenCalledTimes(2);
+  expect(mockStart.mock.calls[0]).toEqual(['DV1', {
+    requestId: `parse-resume-${predecessor}`, expectedPublishedRevision: 3,
+  }]);
+  expect(mockStart.mock.calls[1]).toEqual(mockStart.mock.calls[0]);
+  expect(container.textContent).toContain('constructed');
+});
+
+
+it('shows a persisted quota pause instead of progress and stops status polling while retaining saved reading', async () => {
+  jest.useFakeTimers();
+  try {
+    mockStatus.mockResolvedValue({ ...statusPayload(), latestRun: {
+      parseRunId: 'PRUN-00000000-0000-0000-0000-000000000016', status: 'STAGING',
+      deadlineAt: '2030-01-01T00:00:00Z', errorCode: 'DOCUMENT_PLUGIN_QUOTA_EXHAUSTED', verifiedArtifacts: 0,
+    } });
+    await mount();
+    expect(container.textContent).toContain('文档解析服务额度已用尽，待服务恢复后接续。');
+    expect(container.textContent).not.toContain('正在保存并核验产物');
+    expect(container.textContent).not.toContain('正在解析原件');
+    expect(container.textContent).toContain('constructed');
+    const button = [...container.querySelectorAll('button')].find(item => item.textContent === '等待接续');
+    expect(button?.disabled).toBe(true);
+    expect(container.querySelector('details')?.textContent).toContain('DOCUMENT_PLUGIN_QUOTA_EXHAUSTED');
+    await act(async () => { jest.advanceTimersByTime(15000); });
+    expect(mockStatus).toHaveBeenCalledTimes(1);
+    expect(mockReading).toHaveBeenCalledTimes(1);
+    expect(mockStart).not.toHaveBeenCalled();
+  } finally { jest.useRealTimers(); }
 });

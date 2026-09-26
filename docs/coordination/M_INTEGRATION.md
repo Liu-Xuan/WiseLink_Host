@@ -1,5 +1,45 @@
 # M 主控集成交接
 
+## 2026-09-26 C155 本地保留：MinerU 与 C154 恢复兼容
+
+本轮把已发布 C154 分支 `9ea7520033be36105a0fdc300901f5c13d60a32a` 合入保留分支 `codex/wl-c125-auto-engineering-flow`（合并前 `8a564a44f`），仅作本地集成。生产仍为 C154 `16800d51a224b1b69d04f04b42953ce55b19e614` / release `7689680011880221645`；没有发布本轮 MinerU、设置、数据库列或权限草案，没有调用外部标题模型。
+
+`parse-resume-*` 表示同一已受理输入的后继执行：本机任务省略 mode/selection 时继承原候选对象、摘要、长度与完整设置快照；显式更换候选或 producer 必须用普通新受理，不能冒充恢复。repository 在既有锁内核对上述绑定；普通请求重放也保留原快照，不读新设置替换。缺失快照的历史本机任务明确拒绝恢复，不合成开启状态。当前开关继续限制新受理，已受理任务按原快照接续，来源与候选权限每次仍重新检查。
+
+页块复用接入两种解析器的实际 checkpoint 路径；确切 PDF 相同且已有描述符/字节核验通过时可复用页块。raw Markdown 仍按 producer 分离，本机 raw 从固定候选重建，带本机 parserInput 的 page-0 不作为官方 raw 来源证据。保留 C154 多代恢复、复制回执丢失、错误历史和最新版本规则。阅读页同时保留备用导入展开区与 C154 准确错误提示；设置字段注释明确“新受理”不包括同输入恢复。
+
+独立审查确认的发布前限制：当前本机候选的授权入口是原生浏览器上传能力，需要真实 appId/env；后台 document-work scope 只有既有文档/任务委托，不包含候选上传的浏览器上下文。超过单次 bounded tick 的本机导入可由浏览器用原请求接续，但后台 STEP 会明确拒绝，不能补写 appId/env 冒充浏览器身份。后续自动备用需要接通实际获准的候选读取/委托合同；本轮不新增权限、路由或无人值守执行器。
+
+本地定向单元测试共98/98通过：local import 21、official execute 24、store/导入界面12、阅读页20、runtime/恢复请求21。新增缺浏览器上下文负测明确原权限错误，并核对零候选读取/发布/插件调用。真实隔离 PostgreSQL 14 测试1项通过、0失败、0跳过，覆盖输入/设置变化矩阵及已有行锁、并发、代次、重放边界；测试实例已停止。阅读页首跑因真实新增导入组件引入平台 Dataloom ESM 导致测试加载失败，后仅隔离上传API依赖，保留真实导入组件，20项重新通过；未改变生产依赖或降低断言。前端类型检查通过，服务定向 ESLint 零错误；未运行线上 MinerU 导入，也未把隔离测试计为生产验收。
+
+用户称“17c应该可以了”后，11:40 +08 重新通过正常浏览器核对：应用已登录，Gateway Snapshot STATUS OK，chat startup 的 activeRunId=null，Cron Jobs 列表16项均 disabled；没有发送模型消息或重试额度插件。终端可见上次受控消费仍为 `DOCUMENT_PLUGIN_QUOTA_EXHAUSTED`，不是本轮新的配额测试；未把旧进程快照冒充本轮 fresh ps。
+
+## 2026-09-26 C154 已发布：过期解析后继与已保存原文复用
+
+代码提交 `562c8d6162bbbcf3a6e44a7d04025d850e1beba9` 经正常合入已发布 main `05b395c0b8a9d901c99023eca831fd3d885f9545`，部署提交为 `60e2b8fd87d5a8f37b6f6578261a1b746899c83d`（两者文件树相同）。origin 同名 `codex/wl-c154-original-recovery` 已推送并读回该 SHA；17b release `7689677493373127668` 已 `finished`、commit_id 准确匹配、error_logs=[]。完整 precommit 通过。本批没有 GitHub 同步。
+
+接续 C153，不改变工程输入、旧运行期限或旧诊断。自动原文准备只对已过期且无错误/明确 `DOCUMENT_PARSE_INTERRUPTED` 的尝试，使用 `parse-resume-<前驱 PRUN>` 预约一个稳定后继；已知 quota、generic failure、来源与数据错误仍要求处理，不自动循环。正常阅读页的显式解析重试使用同一规则承载前驱，因此丢受理响应后仍重放同一请求。
+
+既有 reserve 事务在文档版本锁和前驱行锁内核对租户、actor、确切 source/bucket、前驱最新性、状态、published revision 和自动队列代次；同请求重放先核对绑定后读回原后继。过期收尾以 `coalesce` 保留已有错误，只有未记录原因的过期尝试补 `DOCUMENT_PARSE_INTERRUPTED`。无数据库列、角色、权限或路由新增。
+
+后继沿不可变请求关系读取更早前驱的 raw Markdown 与连续 PDF 页块，使用既有 FileService 元数据、摘要与字节读回校验后复制到自己的 namespace；部分复制的中间尝试不遮蔽更早成果。manifest 与结果绑定重新计算，旧 manifest 和工程认识不复制为新结论。损坏、缺页/重复描述符、跨 actor/source、目标复制内容不一致均明确拒绝。
+
+新增一个 raw 来源伴随文件，绑定已有 producer、run/source、raw 摘要与长度，解决官方插件和历史 MinerU 使用相同 raw 路径的歧义。已声明存在的 raw 下载失败不降级；无 raw 描述符且存储明确不存在的新后继可以查更早前驱，确无产物才重新解析。同一次尝试只有来源伴随文件而正文未保存时明确报错，不伪装已保存。历史 raw 若没有可核验 producer 或已知官方页块证据，仍报 `PROVENANCE_UNVERIFIED`；不猜测来源。
+
+本地定向单元测试 82 项通过（runtime 19、页面 19、恢复格式 2、execute/store 29、自动 fence 13）；自动 fence 的另外 7 项 PG 用例本轮未配置而跳过，不计为通过。独立真实 PG14 测试 1 项通过/0 跳过，包含并发单后继、旧代次、跨用户、错误保留、响应丢失和额度写入行锁竞争。多级前驱、复制回执丢失、损坏/缺页/重复、来源伴随 VERIFIED 回执丢失的两条发布路径均有定向验证。前后端类型、定向 ESLint、production build 和差异检查通过；构建只有既有大 chunk 提示。本地隔离 PG14 已正常停止。
+
+本批基于已发布 C153 的独立 `codex/wl-c154-original-recovery`，不混入保留的 MinerU/设置权限实现。保留分支上的 `MINERU_LOCAL_PDFJS` 也会生成 original 页块，后续整合必须按确切 producer 接续，不能直接将其视为官方插件产物。没有更改 17c Skill 或启用 cron；本次已实际重测并确认官方额度仍未恢复，真实全自动闭环仍未完成。
+
+17b 本人刘轩从正常任务列表进入目标文档 `document_version_3f1bf2fb1736c0e12e5bae2a`，刷新 C154 后只单击一次“解析文档”。11:23:32 +08 Host 只读确认：旧 `PRUN-dbdb8cfd-0af4-4b3f-a9fa-cf2e2c7f230a` / rev1 已 FAILED，原 `DOCUMENT_PARSE_FAILED`、0 产物和 10:11:59.94 deadline 保留；唯一后继 `PRUN-b1ee8bb5-af18-4077-b3f9-dbd94ea4035a` / rev2 RUNNING、无错误、deadline 12:02:59.159，requestId=`parse-resume-<旧PRUN>`。没有新建 WorkItem、改原件或清理历史。
+
+17c 原 Gateway Online，16 cron 全停用且无消费者后，只运行一次 C153 `--auto-queue` tick。回包命中 `WI-4db598a0-33b8-4abd-a64d-df2aac9f29c5`、leaseGeneration=2，结果 `REQUIRES_ATTENTION / REVIEW_HOST_MCP_TOOL_FAILED:next_original_assessment:DOCUMENT_PLUGIN_QUOTA_EXHAUSTED`。回包未提供模型调用数/parseRun 字段，不声称调用数0。Host 11:25:01 +08 读回新 rev2 为 STAGING、0 产物、明确 `DOCUMENT_PLUGIN_QUOTA_EXHAUSTED`，旧记录仍 FAILED/原码；队列 LEASED/gen2、blocked_code=null。没有重复消费或 BLOCK；最终 16 cron enabled/running 均0、consumer0。
+
+本次页面实际仍显示“正在保存并核验产物，已核验 0 个文件。”和禁用“正在解析…”，未显示已持久化额度错误。随后的最小展示修复使持久错误优先显示“文档解析服务额度已用尽，待服务恢复后接续。”，技术码位于现有展开区，按钮显示“等待接续”；错误或过期后停止每5秒状态轮询。DOM定向20/20，包括15秒内状态读取仅1次、无解析写入且旧正文仍可读；这是隔离测试计数，不声称生产总体性能已测量。显示补丁提交 `4440ae52af21e818da91eb910f2b67595495c626`，正常合入平台 main 后为 `16800d51a224b1b69d04f04b42953ce55b19e614`，两者文件树相同；origin 同名分支已推送并读回，17b release `7689680011880221645` 为 finished、准确 commit_id 匹配、error_logs=[]。完整 precommit、client production build 通过。刘轩本人仅刷新同一 DV 后，正文确切显示上述额度提示，展开区为禁用“等待接续”、错误码 `DOCUMENT_PLUGIN_QUOTA_EXHAUSTED` 和原件预览入口；原“正在保存/正在解析”误报已消失，没有再次触发解析。
+
+当前批次已收口：17c 可执行，Host 恢复与页面错误呈现已验证；真正业务阻断是已重测的官方解析额度。下一项有价值的工作是在保持“暂不增加权限，保留实现”及外部标题目的地尚未获准的边界下，核对保留的 MinerU 备用路径可独立交付的范围；不将设置管理员/RLS、外部标题调用或无人值守启用夹带上线。旧 raw-only provenance 缺失及保留分支不同 producer 的整合仍为已说明限制。
+
+回退保留 C153 精确提交 `9654f1c242d41fa950b07fa71fc9bb9dde1b59ae`；新旧解析行均保留，不回滚/删除数据或重置代次。若回退前有在途，应先按既有授权核对并停新领取，让既有调用结束，再由正常发布恢复代码；Skill 无变化。
+
 ## 2026-09-26 C153 已发布：准确错误和已保存成员阅读
 
 Host 提交 `9654f1c242d41fa950b07fa71fc9bb9dde1b59ae`（父提交 `76077dcae837330144edff4691655d2dbb486d0d`，其树与 C152 `7458b572ef76325411e760a6a6ffee5b0eea6c7a` 相同）已普通推送并读回 `origin/codex/wl-c153-reading-errors`。17b release `7689660478222601170` 已 `finished`，准确 commit_id 为该提交，error_logs=[]。本批没有 GitHub 同步。
@@ -16,7 +56,7 @@ C153 Skill 已安装。包为 61 文件、504496 bytes、SHA256 `70f9004b1ad1fbc
 
 安装后仅执行一次获准 `--auto-queue` 受控 tick，准确命中 `WI-4db598a0-33b8-4abd-a64d-df2aac9f29c5`，回包 `REQUIRES_ATTENTION / DOCUMENT_PARSE_FAILED`，队列租约代次由 1 升至 2；没有重试或 BLOCK，回包未提供模型调用数。随后官方读回 16 个 cron 全停用、运行中 0、消费子进程 0。Host 10:50:53 +08 只读复核：原 `PRUN-dbdb8cfd-0af4-4b3f-a9fa-cf2e2c7f230a` / revision 1 仍 STAGING、0 产物、原错误码不变、deadline=10:11:59.94 +08；队列 LEASED/gen2、blocked_code=null。没有新建或删除业务结果。
 
-代码路径已定位：`document-work-runtime.service.ts` 对已有 errorCode/过期 deadline 直接返回 attention，原错误优先；本次未进入 STEP/插件调用，所以不能据此判断当前官方解析额度已恢复。底层 reserve 已有同 actor 过期收尾与新修订预约，但同 requestId 提前重放，自动准备固定 requestId 因而不能进入后继。后续最小方向是复用既有事务及来源/代次核验，以前驱 run 派生稳定后继请求并保存旧诊断；必须明确恢复资格，已知 quota 仍未解除时不得每次到期自动新建重试。此后继修复尚未实施，不用改旧 run 或重传原件绕过。
+代码路径已定位：`document-work-runtime.service.ts` 对已有 errorCode/过期 deadline 直接返回 attention，原错误优先；本次未进入 STEP/插件调用，所以不能据此判断当前官方解析额度已恢复。底层 reserve 已有同 actor 过期收尾与新修订预约，但同 requestId 提前重放，自动准备固定 requestId 因而不能进入后继。后续最小方向是复用既有事务及来源/代次核验，以前驱 run 派生稳定后继请求并保存旧诊断；必须明确恢复资格，已知 quota 仍未解除时不得每次到期自动新建重试。该后继修复现由本文件顶部 C154 批次承接，不改旧 run 或重传原件绕过。
 
 回退边界：Host 可从已核验 C152 树建立精确恢复提交后经原发布路径回退；Skill 有上述 C152 原目录备份，恢复前仍需核对无在途。本轮未执行回退、未启用定时消费。备用导入/标题辅助/设置权限继续按用户“暂不增加权限，保留实现”保持未上线，全自动闭环尚未验收。
 
