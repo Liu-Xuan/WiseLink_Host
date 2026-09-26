@@ -15,18 +15,20 @@ export async function inspectInitialAssessmentRecovery({ checkpoint, initial, wo
   const spec = INITIAL_ASSESSMENT_OPERATIONS[operation];
   const stage = initial.stages?.[spec?.stage];
   if (!spec || initial.status !== 'BUSY' || stage?.status !== 'BUSY' ||
-    (stage.attemptStatus !== 'RUNNING' && !(operation === 'EXTRACT_APPLICABILITY' && stage.attemptStatus === 'COMMITTING'))) return null;
+    !['RUNNING', 'COMMITTING'].includes(stage.attemptStatus)) return null;
   const binding = await checkpoint.readOptional('binding');
   if (!binding || binding.workItemId !== workItemId || binding.documentVersionId !== initial.documentVersionId ||
     binding.operation !== operation || (stage.requestId !== undefined && stage.requestId !== binding.requestId)) return null;
-  if (await checkpoint.readOptional('run-result')) return null;
-  if (operation === 'EXTRACT_APPLICABILITY' && stage.attemptStatus === 'COMMITTING') {
-    const claim=(await checkpoint.readOptional(`${spec.begin}-1.result`))?.value;
+  if (stage.attemptStatus === 'COMMITTING') {
+    const claim=(await checkpoint.readOptional(`${spec.begin}-1.result`))?.value ??
+      await checkpoint.readOptional('assessment-current-claim');
     if (claim?.status !== 'RUNNING' || claim.attemptRef !== stage.attemptRef ||
-      claim.task?.workItemId !== workItemId || claim.task?.documentVersionId !== initial.documentVersionId)
+      claim.task?.workItemId !== workItemId || claim.task?.documentVersionId !== initial.documentVersionId ||
+      !Number.isSafeInteger(claim.leaseGeneration) || claim.leaseGeneration < 1)
       return null;
     return {status:'RECOVERY_COMMITTING',operation,previousClaim:claim};
   }
+  if (await checkpoint.readOptional('run-result')) return null;
   if (operation === 'EXTRACT_APPLICABILITY' && stage.attemptStatus === 'RUNNING') {
     const begin = await checkpoint.readOptional(`${spec.begin}-1.result`);
     if (!begin) {
@@ -115,8 +117,7 @@ export async function findInitialAssessmentRecovery(options, initial) {
   if (initial.status !== 'BUSY') return null;
   for (const [operation, spec] of Object.entries(INITIAL_ASSESSMENT_OPERATIONS)) {
     const stage = initial.stages[spec.stage];
-    if (stage.status !== 'BUSY' || (stage.attemptStatus !== 'RUNNING' &&
-      !(operation === 'EXTRACT_APPLICABILITY' && stage.attemptStatus === 'COMMITTING'))) continue;
+    if (stage.status !== 'BUSY' || !['RUNNING', 'COMMITTING'].includes(stage.attemptStatus)) continue;
     let checkpointOptions=options;
     let requestId=stage.requestId;
     let initialWorkItemRevision;

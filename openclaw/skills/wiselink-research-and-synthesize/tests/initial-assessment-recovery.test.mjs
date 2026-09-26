@@ -41,8 +41,27 @@ test('live, expired-deadline, wrong-request, completed and commit-started record
     f => { f.input.initial.stages.jobAid.requestId = 'different'; },
     f => { f.values.set('run-result', { status: 'REQUIRES_ATTENTION' }); },
     f => { f.values.set('commit_dynamic_evaluation_candidate-1.started', {}); },
-    f => { f.input.initial.stages.jobAid.attemptStatus = 'COMMITTING'; },
   ]) { const f = fixture(); change(f); assert.equal(await inspectInitialAssessmentRecovery(f.input), null); }
+});
+
+test('sealed JobAid and Overall attempts recover the exact result after an attention receipt', async () => {
+  for (const [operation, stage, begin] of [
+    ['EVALUATE_JOBAID', 'jobAid', 'begin_dynamic_evaluation'],
+    ['SYNTHESIZE_OVERALL', 'overall', 'begin_overall_synthesis'],
+  ]) {
+    const f = fixture();
+    f.input.operation = operation;
+    f.input.initial.stages = { [stage]: { status: 'BUSY', attemptStatus: 'COMMITTING',
+      attemptRef: f.claim.attemptRef, requestId: 'request-one' } };
+    f.values.set('binding', { workItemId: 'WI-one', documentVersionId: 'DV-one', operation,
+      requestId: 'request-one' });
+    f.values.set(`${begin}-1.result`, { value: f.claim });
+    f.values.set('run-result', { status: 'REQUIRES_ATTENTION', stageStatus: 'BUSY' });
+    f.values.set('commit_overall_candidate-1.started', {});
+    assert.equal((await inspectInitialAssessmentRecovery(f.input)).status, 'RECOVERY_COMMITTING');
+    f.input.initial.stages[stage].attemptRef = 'different';
+    assert.equal(await inspectInitialAssessmentRecovery(f.input), null);
+  }
 });
 
 test('fresh Host claim must advance the generation with the identical task binding', () => {
@@ -77,6 +96,43 @@ test('a sealed applicability commit is only a read-only recovery candidate',asyn
   f.values.set('begin_applicability_evaluation-1.result',{value:f.claim});
   f.values.set('commit_applicability_candidate-1.started',{});
   assert.equal((await inspectInitialAssessmentRecovery(f.input)).status,'RECOVERY_COMMITTING');
+});
+
+test('Overall recovery preserves an earlier attention receipt and saves the new readback', async t => {
+  const checkpointRoot = await mkdtemp(join(tmpdir(), 'wiselink-overall-committing-'));
+  t.after(() => rm(checkpointRoot, { recursive: true, force: true }));
+  const options = { checkpointRoot, workItemId: 'WI-one', maxInitialStages: 1,
+    initialStageOnly: true, expectedInitialOperation: 'SYNTHESIZE_OVERALL' };
+  const f = fixture();
+  const checkpoint = await createCheckpointStore(initialStageCheckpointPath(
+    options, 'SYNTHESIZE_OVERALL', 'request-one'));
+  await checkpoint.write('binding', { workItemId: 'WI-one', documentVersionId: 'DV-one',
+    operation: 'SYNTHESIZE_OVERALL', requestId: 'request-one' });
+  await checkpoint.write('begin_overall_synthesis-1.result', { value: f.claim });
+  await checkpoint.write('run-result', { status: 'REQUIRES_ATTENTION',
+    operation: 'SYNTHESIZE_OVERALL', stageStatus: 'BUSY' });
+  const busy = { status: 'BUSY', workItemRevision: 3, documentVersionId: 'DV-one',
+    candidateOnly: true, nextOperation: null, stages: {
+      translation: { status: 'SUCCEEDED' }, applicability: { status: 'WAITING_INPUT' },
+      jobAid: { status: 'SUCCEEDED' }, overall: { status: 'BUSY', attemptStatus: 'COMMITTING',
+        attemptRef: 'attempt-one', requestId: 'request-one' } } };
+  const done = { ...busy, status: 'SUCCEEDED', workItemRevision: 4,
+    stages: { ...busy.stages, overall: { status: 'SUCCEEDED' } } };
+  let reads = 0;
+  const report = await consumeHostedWorkItem(options, {
+    callTool: async name => {
+      if (name === 'get_parse_status') return { entry: { workItemId: 'WI-one' },
+        initialAnalysis: reads++ === 0 ? busy : done };
+      if (name === 'begin_overall_synthesis') return { ...f.claim, status: 'COMMITTING' };
+      assert.fail(name);
+    },
+    runInitial: async run => { await run.callTool('begin_overall_synthesis', {});
+      return { outcome: 'COMMITTING_REPLAYED' }; },
+    invokeInitialModel: async () => assert.fail('sealed recovery must not rerun the model'),
+  });
+  assert.equal(report.status, 'INITIAL_STAGE_SAVED');
+  assert.equal((await checkpoint.readOptional('run-result')).status, 'REQUIRES_ATTENTION');
+  assert.equal((await checkpoint.readOptional('committing-recovery-result')).status, 'INITIAL_STAGE_SAVED');
 });
 
 test('applicability active pointer stays on the admission revision while Host revision advances',async t=>{

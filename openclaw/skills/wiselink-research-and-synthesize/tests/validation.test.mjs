@@ -1376,7 +1376,7 @@ test('requires 35 MCP capabilities, six review tools, and hosted provenance', ()
   assert.ok(HOST_MCP_TOOLS.includes('commit_applicability_candidate'));
   assert.equal(
     WISELINK_SKILL_VERSION,
-    'wiselink-research-and-synthesize@r09.c153',
+    'wiselink-research-and-synthesize@r09.c160',
   );
   assert.equal(
     WISELINK_SKILL_COMPATIBILITY_REF,
@@ -3063,6 +3063,40 @@ test('runs no-discovery overall from complete persisted dynamic N', async () => 
     calls.find(({ name }) => name === 'begin_overall_synthesis').args.providers,
     [],
   );
+});
+
+test('replays only the Host-sealed Overall result to finish COMMITTING', async () => {
+  const input = synthesisInput();
+  const task = makeTask('OPENCLAW_OVERALL_SYNTHESIS', {
+    modelInput: input, selectedDiscoveryRefs: [], providerCodes: [],
+  });
+  const recoveryResult = sealResultEnvelope({ task,
+    modelOutput: synthesisOutput(input), provenance: provenance() });
+  const begin = { ...runningBegin(task, { modelInput: input, selectedDiscoveryRefs: [] }),
+    status: 'COMMITTING', recoveryResult };
+  const calls = [];
+  const result = await runOverallSynthesis({ workItemId: WORK_ITEM_ID, providers: [],
+    callTool: async (name, args) => {
+      calls.push(name);
+      if (name === 'get_parse_status') return statusWithDynamic(WORK_ITEM_ID, 'REQ-DYNAMIC');
+      if (name === 'begin_overall_synthesis') return begin;
+      if (name === 'get_action_attempt_status') return attemptStatus(task, 'COMMITTING', recoveryResult);
+      if (name === 'commit_overall_candidate') {
+        assert.equal(args.attemptRef, begin.attemptRef);
+        assert.equal(args.leaseGeneration, begin.leaseGeneration);
+        assert.deepEqual(args.result, recoveryResult);
+        return { workItemId: WORK_ITEM_ID, workItemRevision: 8,
+          status: 'OVERALL_CANDIDATE_READY', overallSynthesis: {
+            status: 'CANDIDATE_ONLY', authorityLevel: 'candidate_only',
+            externalDiscoveryIsEvidence: false } };
+      }
+      throw new Error(`UNEXPECTED_TOOL:${name}`);
+    },
+    synthesizeOverall: async () => assert.fail('sealed recovery must not call the model'),
+  });
+  assert.equal(result.outcome, 'COMMITTING_REPLAYED');
+  assert.deepEqual(calls, ['get_parse_status', 'begin_overall_synthesis',
+    'get_action_attempt_status', 'commit_overall_candidate']);
 });
 
 test('binds Overall applicability status to the Host current candidate', () => {

@@ -302,18 +302,21 @@ export async function consumeAutomaticWorkItemQueueTick(options, dependencies) {
   }
   const retry = await automaticRetryPlan(statusValue, claim.workItemId,
     dependencies.readSavedWork);
+  const committingRecovery = claim.consumerStopped && statusValue.status === 'BUSY'
+    ? await findInitialAssessmentRecovery({ ...options, workItemId: claim.workItemId }, statusValue)
+    : null;
   if (claim.completionReady) {
     claim = { ...claim, completionReady: false };
     await checkpoint.write('active-claim', claim);
   }
-  if (claim.consumerStopped && !retry) {
+  if (claim.consumerStopped && !retry && committingRecovery?.status !== 'RECOVERY_COMMITTING') {
     return automaticWorkItemAttention(
       claim,
       claim.attentionCode ?? 'AUTO_WORK_ITEM_CONSUMER_STOPPED',
       statusValue,
     );
   }
-  if (retry && claim.consumerStopped) {
+  if ((retry || committingRecovery?.status === 'RECOVERY_COMMITTING') && claim.consumerStopped) {
     claim = { ...claim, consumerStopped: false, attentionCode: null };
     await checkpoint.write('active-claim', claim);
   }
@@ -595,7 +598,11 @@ export async function runHostedInitialStage(options, dependencies) {
   const runBinding = binding ?? { ...exactBinding, requestId: continuationRequestId ?? randomUUID() };
   if (!binding) await checkpoint.writeOnce('binding', runBinding);
   // A completed initial stage is not an instruction to rerun it if Host state drifts.
-  if (await checkpoint.readOptional('run-result')) throw new Error('INITIAL_COMPLETED_STAGE_HOST_DRIFT');
+  const priorRun = await checkpoint.readOptional('run-result');
+  if (priorRun && !(options.assessmentRecovery?.status === 'RECOVERY_COMMITTING' &&
+    priorRun.status === 'REQUIRES_ATTENTION' && priorRun.operation === operation &&
+    priorRun.stageStatus === 'BUSY'))
+    throw new Error('INITIAL_COMPLETED_STAGE_HOST_DRIFT');
   const contextRef = initial.applicabilityContextRef ?? options.applicabilityContextRef;
   if (operation === 'EXTRACT_APPLICABILITY' && !contextRef?.trim()) {
     throw new Error('INITIAL_APPLICABILITY_CONTEXT_REQUIRED');
@@ -714,7 +721,9 @@ export async function runHostedInitialStage(options, dependencies) {
       candidateOnly: true,
     };
     // An uncertain result is retained as attention, never converted into a retry.
-    await checkpoint.writeOnce('run-result', report);
+    if (options.assessmentRecovery?.status === 'RECOVERY_COMMITTING')
+      await checkpoint.write('committing-recovery-result', report);
+    else await checkpoint.writeOnce('run-result', report);
     return report;
   } catch (error) {
     if (error?.message === 'INITIAL_ASSESSMENT_STILL_OWNED')

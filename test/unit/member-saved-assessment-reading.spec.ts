@@ -53,13 +53,22 @@ describe('member saved assessment reading', () => {
     readWork.mockResolvedValue(saved);
     await render('matter-a', [member(), member('member-b')]);
     expect(readWork).toHaveBeenCalledTimes(1);
-    expect(container.textContent).toContain(compactReadingSummary(saved.current!.content.headline, saved.current!.content.understanding));
+    expect(container.textContent).toContain(compactReadingSummary(saved.current!.content.headline, saved.current!.content.listBrief));
     expect(container.querySelector('[data-work-revision-ref]')?.getAttribute('data-work-revision-ref'))
       .toBe(saved.current!.workRevisionRef);
     const link = new URL(container.querySelector('a')!.href);
     expect(link.pathname).toBe('/knowledge');
     expect(link.searchParams.get('workRef')).toBe(saved.current!.workRevisionRef);
     expect(container.querySelector('details')?.open).toBe(false);
+  });
+  it('shows the saved engineering brief when the overall explanation is still unavailable', async () => {
+    const saved = jobAidReadingFixture();
+    saved.current!.content.understanding = '问题正文已保存；综合认识尚未形成。';
+    saved.current!.content.listBrief = 'Gatelink 的 TLS 1.0 保留影响无线连接；升级时点仍需按原件核对。';
+    readWork.mockResolvedValue(saved);
+    await render();
+    expect(container.textContent).toContain(saved.current!.content.listBrief);
+    expect(container.textContent).not.toContain(saved.current!.content.understanding);
   });
   it('reports no saved result and explicit permission rejection without retained content', async () => {
     readWork.mockResolvedValue({ ...jobAidReadingFixture(), current: null });

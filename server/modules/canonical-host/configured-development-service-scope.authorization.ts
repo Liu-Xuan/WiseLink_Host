@@ -260,16 +260,23 @@ export class ConfiguredDevelopmentCanonicalServiceScopeAuthorization implements 
     tenantId: string;
     workItemId: string;
   }): Promise<string | null> {
-    const config = requiredConfig();
-    if (input.tenantId !== config.tenantId) throw scopeNotFound();
-    if (input.workItemId === config.workItemId)
-      return process.env.WL_OPENCLAW_APPLICABILITY_CONTEXT_REF?.trim() || null;
-    if (!additionalWorkItemIds(config.workItemId).includes(input.workItemId))
-      throw scopeNotFound();
-    const additional = additionalApplicabilityContext(config);
-    return additional?.workItemId === input.workItemId
-      ? additional.applicabilityContextRef
-      : null;
+    const config = configuredStaticWorkItemScope();
+    if (config && input.tenantId === config.tenantId) {
+      if (input.workItemId === config.workItemId)
+        return process.env.WL_OPENCLAW_APPLICABILITY_CONTEXT_REF?.trim() || null;
+      if (additionalWorkItemIds(config.workItemId).includes(input.workItemId)) {
+        const additional = additionalApplicabilityContext(config);
+        return additional?.workItemId === input.workItemId
+          ? additional.applicabilityContextRef
+          : null;
+      }
+    }
+    // A queued WorkItem may be authorized without a configured fleet target.
+    // Confirm its active lease before reporting the missing context; never
+    // inherit the fixed WorkItem's applicability context.
+    const scope = await this.authorizeAutomaticQueueWorkItem(input.workItemId, config !== null);
+    if (scope.tenantId !== input.tenantId) throw scopeNotFound();
+    return null;
   }
 
   async authorizeOpenClawAttempt(input: {

@@ -1,5 +1,8 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
+import { mkdtemp, rm } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 
 import {
   automaticWorkItemQueueMode,
@@ -7,6 +10,8 @@ import {
   consumeHostedWorkItem,
 } from '../scripts/consume-hosted-work-item.mjs';
 import { createHostAutoWorkItemQueueClient } from '../scripts/run-hosted-review-turn.mjs';
+import { createCheckpointStore } from '../scripts/run-hosted-review-turn.mjs';
+import { initialStageCheckpointPath } from '../scripts/initial-assessment-recovery.mjs';
 
 const START = Date.parse('2026-09-25T00:00:00.000Z');
 const TOKEN_1 = 'b1686364-7ee9-4ca1-a3aa-0b62794cb436';
@@ -86,6 +91,40 @@ function completeStatus() {
     overall: 'SUCCEEDED',
   });
 }
+
+test('a stopped queue claim resumes only an exact sealed Overall attempt', async t => {
+  const checkpointRoot = await mkdtemp(join(tmpdir(), 'wiselink-queue-committing-'));
+  t.after(() => rm(checkpointRoot, { recursive: true, force: true }));
+  const claim = memoryCheckpoint({ ...storedClaim(), consumerStopped: true,
+    attentionCode: 'AUTO_WORK_ITEM_CONSUMER_STOPPED' });
+  const stageStore = await createCheckpointStore(initialStageCheckpointPath(
+    { checkpointRoot, workItemId: 'WI-QUEUE' }, 'SYNTHESIZE_OVERALL', 'REQ-OVERALL'));
+  const exact = { attemptRef: 'ATT-OVERALL', status: 'RUNNING', leaseGeneration: 2,
+    leaseToken: 'frozen', task: { workItemId: 'WI-QUEUE', documentVersionId: 'DV-QUEUE' } };
+  await stageStore.write('binding', { workItemId: 'WI-QUEUE', documentVersionId: 'DV-QUEUE',
+    operation: 'SYNTHESIZE_OVERALL', requestId: 'REQ-OVERALL' });
+  await stageStore.write('begin_overall_synthesis-1.result', { value: exact });
+  let current = status({ overallStatus: 'BUSY', nextOperation: null, translation: 'SUCCEEDED',
+    applicability: 'WAITING_INPUT', jobAid: 'SUCCEEDED', overall: 'BUSY' });
+  current.stages.overall = { status: 'BUSY', attemptStatus: 'COMMITTING',
+    attemptRef: 'ATT-OVERALL', requestId: 'REQ-OVERALL' };
+  let consumed = 0;
+  const dependencies = { checkpoint: claim, now: () => new Date(START),
+    nextWorkItem: async () => assert.fail('lease is live'),
+    acknowledgeWorkItem: async () => ({ status: 'ACKNOWLEDGED', workItemId: 'WI-QUEUE',
+      replayed: false, acknowledgedAt: new Date(START).toISOString() }),
+    readInitialStatus: async () => current,
+    consumeWorkItem: async input => { consumed += 1;
+      assert.equal(input.workItemId, 'WI-QUEUE');
+      current = completeStatus();
+      return { status: 'INITIAL_STAGE_SAVED' };
+    },
+  };
+  const result = await consumeAutomaticWorkItemQueueTick({ checkpointRoot }, dependencies);
+  assert.equal(result.status, 'ACKNOWLEDGED');
+  assert.equal(consumed, 1);
+  assert.equal(claim.values.get('active-claim'), null);
+});
 
 test('automatic queue mode accepts only the exact queue flags', () => {
   assert.equal(automaticWorkItemQueueMode([]), false);
