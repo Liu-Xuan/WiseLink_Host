@@ -111,6 +111,8 @@ test('Overall recovery preserves an earlier attention receipt and saves the new 
   await checkpoint.write('begin_overall_synthesis-1.result', { value: f.claim });
   await checkpoint.write('run-result', { status: 'REQUIRES_ATTENTION',
     operation: 'SYNTHESIZE_OVERALL', stageStatus: 'BUSY' });
+  await checkpoint.write('commit_overall_candidate-1.started', { argsHash: 'old-response-unknown' });
+  await checkpoint.write('commit_overall_candidate-1.error', { code: 'TRANSPORT_RESPONSE_LOST' });
   const busy = { status: 'BUSY', workItemRevision: 3, documentVersionId: 'DV-one',
     candidateOnly: true, nextOperation: null, stages: {
       translation: { status: 'SUCCEEDED' }, applicability: { status: 'WAITING_INPUT' },
@@ -119,18 +121,22 @@ test('Overall recovery preserves an earlier attention receipt and saves the new 
   const done = { ...busy, status: 'SUCCEEDED', workItemRevision: 4,
     stages: { ...busy.stages, overall: { status: 'SUCCEEDED' } } };
   let reads = 0;
+  let commits = 0;
   const report = await consumeHostedWorkItem(options, {
     callTool: async name => {
       if (name === 'get_parse_status') return { entry: { workItemId: 'WI-one' },
-        initialAnalysis: reads++ === 0 ? busy : done };
+        initialAnalysis: reads++ === 0 || commits === 0 ? busy : done };
       if (name === 'begin_overall_synthesis') return { ...f.claim, status: 'COMMITTING' };
+      if (name === 'commit_overall_candidate') { commits += 1; return { status: 'OVERALL_CANDIDATE_READY' }; }
       assert.fail(name);
     },
     runInitial: async run => { await run.callTool('begin_overall_synthesis', {});
+      await run.callTool('commit_overall_candidate', { attemptRef: 'attempt-one', phase: 'COMMIT' });
       return { outcome: 'COMMITTING_REPLAYED' }; },
     invokeInitialModel: async () => assert.fail('sealed recovery must not rerun the model'),
   });
   assert.equal(report.status, 'INITIAL_STAGE_SAVED');
+  assert.equal(commits, 1);
   assert.equal((await checkpoint.readOptional('run-result')).status, 'REQUIRES_ATTENTION');
   assert.equal((await checkpoint.readOptional('committing-recovery-result')).status, 'INITIAL_STAGE_SAVED');
 });
