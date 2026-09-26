@@ -1,5 +1,11 @@
 # M 主控集成交接
 
+## 2026-09-26 C160 接续：综合评估封存提交恢复（实施中）
+
+14:32 的单次受控队列运行领取原任务，Host 已保存 Overall 工作修订 9、`overviewStatus=CURRENT`；准确 ActionAttempt `ATT-f25f3623-d86c-4142-8c29-ff258e591037` 在 14:34:58 进入 `COMMITTING`，14:45 只读复核仍为 `COMMITTING`、结果已封存、未标记完成。消费者于 14:35 返回 `REQUIRES_ATTENTION/AUTO_WORK_ITEM_CONSUMER_STOPPED`，没有 ACK；不能将修订 9 当成已完成的综合评估。
+
+本地定位：消费者仅识别适用性阶段的 `COMMITTING` checkpoint；JobAid/Overall 会被当作一般 BUSY，且队列的停止标记阻止后续自然接续。C160 修订允许经确切请求、WorkItem、文档版本、attemptRef 和 Host 封存结果哈希核验后，以同一尝试租约重放 JobAid/Overall 已存 ResultEnvelope，交给 Host 幂等完成投影；不重跑模型或新建业务结果。原关注回执保留，新恢复结果单独记录。动态适用性上下文读取误报 404、工程师首屏被通用状态句覆盖的修正也在本地；均待发布及真实读回。16 项 cron 保持停用，不启无人值守调度。
+
 ## 2026-09-26 本机 MinerU 默认路线与仅出站 worker：当前集成态
 
 **当前结果：** 四接口与专用精确路由密钥已发布；真实原件已由本机 MinerU 解析并回传，Host 读回已保存候选，单次24.697秒/ACCEPTED。原文rev4已PUBLISHED（4个持久产物，无错误）；6.359秒恢复握手复用同一候选、没有重跑MinerU。本人原文页面及2页受控PDF已读回通过（8条限制保留）；第三次受控Run已自动进入JobAid，后续综合结果仍在验收。下文空队列及误IDLE为修复前的验证顺序，不是当前结论。

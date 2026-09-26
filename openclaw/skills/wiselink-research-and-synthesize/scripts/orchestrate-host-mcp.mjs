@@ -1112,13 +1112,23 @@ async function recoverReviewCommitting(begin, callTool) {
 }
 
 async function recoverInitialCommitting({ stage, before, begin, callTool }) {
-  return recoverCommitting({
+  const observed = await recoverCommitting({
     mode: 'INITIAL_ANALYSIS',
     operation: stage,
     before,
     begin,
     callTool,
   });
+  if (!['EVALUATE_JOBAID', 'SYNTHESIZE_OVERALL'].includes(stage)) return observed;
+  // The Host has already sealed this exact ResultEnvelope. Replaying it with
+  // the same attempt fence finishes an interrupted projection without a model
+  // call or a new business result. The Host rejects a changed result or owner.
+  const tool = stage === 'EVALUATE_JOBAID'
+    ? 'commit_dynamic_evaluation_candidate' : 'commit_overall_candidate';
+  const committed = await callTool(tool, commitArgs(begin, observed.status.recoveryResult));
+  if (stage === 'EVALUATE_JOBAID') assertDynamicCommit(committed, begin.task.workItemId);
+  else assertOverallCommit(committed, begin.task.workItemId);
+  return { ...observed, outcome: 'COMMITTING_REPLAYED', committed };
 }
 
 async function recoverCommitting({ mode, operation, before, begin, callTool }) {

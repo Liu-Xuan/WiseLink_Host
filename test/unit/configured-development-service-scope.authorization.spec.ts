@@ -7,6 +7,7 @@ const KEYS = [
   'WL_OPENCLAW_SERVICE_PRINCIPAL_ID',
   'WL_OPENCLAW_SERVICE_TENANT_ID',
   'WL_OPENCLAW_SERVICE_WORK_ITEM_ID',
+  'WL_OPENCLAW_SERVICE_AUTO_QUEUE_ENABLED',
   'WL_OPENCLAW_SERVICE_ADDITIONAL_WORK_ITEM_IDS',
   'WL_OPENCLAW_DOCUMENT_SCOPE_ENABLED',
   'WL_OPENCLAW_SERVICE_DOCUMENT_VERSION_ID',
@@ -97,6 +98,32 @@ describe('ConfiguredDevelopmentCanonicalServiceScopeAuthorization', () => {
       .rejects.toMatchObject({statusCode:503});
     await expect(service.authorizeOpenClawApplicabilityContext({operation:'BEGIN_APPLICABILITY',
       applicabilityContextRef:'APCTX-legacy',requestId:'request-1'})).resolves.toMatchObject({workItemId:'WI-legacy'});
+  });
+
+  it('reports missing applicability context only after authorizing a queued WorkItem', async () => {
+    for (const key of KEYS) delete process.env[key];
+    Object.assign(process.env, { WL_OPENCLAW_SERVICE_SCOPE_ENABLED:'1', WL_OPENCLAW_GATEWAY_AUTH_MODE:'API_KEY',
+      WL_OPENCLAW_SERVICE_SCOPE_ENV:'UAT', WL_OPENCLAW_SERVICE_PRINCIPAL_ID:'service:openclaw-main',
+      WL_OPENCLAW_SERVICE_TENANT_ID:'tenant-1', WL_OPENCLAW_SERVICE_WORK_ITEM_ID:'WI-legacy',
+      WL_OPENCLAW_SERVICE_AUTO_QUEUE_ENABLED:'1', WL_OPENCLAW_APPLICABILITY_CONTEXT_REF:'APCTX-legacy' });
+    const authorizeActiveLease=jest.fn(async ({workItemId}: {workItemId:string}) => {
+      if (workItemId !== 'WI-queued') throw Object.assign(new Error('CANONICAL_WORK_ITEM_NOT_FOUND'),
+        {code:'CANONICAL_WORK_ITEM_NOT_FOUND',statusCode:404});
+      return {tenantId:'tenant-1',principalId:'service:openclaw-main',workItemId,
+        requestId:'request-queued',actorUserId:'actor-1',documentId:'DOC-1',documentVersionId:'DV-1',
+        sourceArtifactId:'file-1',sourceFileSha256:'a'.repeat(64),sourceByteLength:100,
+        leaseGeneration:2,leaseExpiresAt:new Date(Date.now()+60_000).toISOString()};
+    });
+    const service=new ConfiguredDevelopmentCanonicalServiceScopeAuthorization({authorizeActiveLease} as never);
+    await expect(service.resolveOpenClawApplicabilityContextRef({tenantId:'tenant-1',workItemId:'WI-queued'}))
+      .resolves.toBeNull();
+    await expect(service.resolveOpenClawApplicabilityContextRef({tenantId:'tenant-1',workItemId:'WI-legacy'}))
+      .resolves.toBe('APCTX-legacy');
+    await expect(service.resolveOpenClawApplicabilityContextRef({tenantId:'tenant-1',workItemId:'WI-other'}))
+      .rejects.toMatchObject({code:'CANONICAL_WORK_ITEM_NOT_FOUND'});
+    await expect(service.resolveOpenClawApplicabilityContextRef({tenantId:'other',workItemId:'WI-queued'}))
+      .rejects.toMatchObject({code:'CANONICAL_WORK_ITEM_NOT_FOUND'});
+    expect(authorizeActiveLease).toHaveBeenCalledTimes(3);
   });
 
   it('authorizes one document independently without granting engineering WorkItem or Matter access', async () => {

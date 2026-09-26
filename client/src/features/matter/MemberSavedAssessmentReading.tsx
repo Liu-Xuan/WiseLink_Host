@@ -81,7 +81,7 @@ export default function MemberSavedAssessmentReading({ matterId, members, sessio
     {data && !current ? <p>这份资料尚无已保存的评估。稍后可重新读取。</p> : null}
     {current && data ? <div className="space-y-3" data-work-revision-ref={current.workRevisionRef}>
       <h4 className="font-medium">{current.content.headline}</h4>
-      <p className="whitespace-pre-wrap text-sm leading-7">{compactReadingSummary(current.content.headline, current.content.understanding || current.content.listBrief)}</p>
+      <p className="whitespace-pre-wrap text-sm leading-7">{compactReadingSummary(current.content.headline, current.content.listBrief)}</p>
       <p className="text-sm text-muted-foreground">{data.overallStatus === 'CURRENT' ? '该成员综合已覆盖当前保存工作'
         : data.overallStatus === 'STALE' ? '该成员综合待更新' : '该成员问题分析已保存，综合尚未形成'}
         {current.content.roundCompletion === 'IN_PROGRESS' ? ' · 分析仍在进行' : ''}</p>
