@@ -49,12 +49,19 @@ export function documentParseError(code: string, statusCode = 409) {
 export class DocumentParsingRepository {
   constructor(@Inject(DRIZZLE_DATABASE) private readonly db: PostgresJsDatabase, private readonly leases: DocumentStepLeaseRepository) {}
 
-  async listLocalWorkerCandidates(tenantId: string, limit = 10): Promise<DocumentParseRow[]> {
-    if (!tenantId.trim() || !Number.isSafeInteger(limit) || limit < 1 || limit > 100)
+  async listLocalWorkerCandidates(tenantId: string, limit: number, scope: DocumentParseScope): Promise<DocumentParseRow[]> {
+    if (!scope || scope.tenantId !== tenantId || !scope.actorUserId || !scope.documentVersionId || !tenantId.trim() || !Number.isSafeInteger(limit) || limit < 1 || limit > 100)
       throw documentParseError('DOCUMENT_LOCAL_WORKER_ARGUMENT_INVALID', 400);
     const now = new Date();
     return this.db.select().from(dmDocumentParseRun).where(and(
-      eq(dmDocumentParseRun.tenantId, tenantId), inArray(dmDocumentParseRun.status, [...ACTIVE]),
+      eq(dmDocumentParseRun.tenantId, tenantId), eq(dmDocumentParseRun.actorUserId, scope.actorUserId),
+      eq(dmDocumentParseRun.documentVersionId, scope.documentVersionId), inArray(dmDocumentParseRun.status, [...ACTIVE]),
+      ...(scope.automaticWorkItem ? [
+        sql`${dmDocumentParseRun.sourceBinding}->>'documentId' = ${scope.automaticWorkItem.documentId}`,
+        sql`${dmDocumentParseRun.sourceBinding}->>'sourceArtifactId' = ${scope.automaticWorkItem.sourceArtifactId}`,
+        sql`${dmDocumentParseRun.sourceBinding}->>'pdfSha256' = ${scope.automaticWorkItem.sourceFileSha256}`,
+        sql`${dmDocumentParseRun.sourceBinding}->>'byteLength' = ${String(scope.automaticWorkItem.sourceByteLength)}`,
+      ] : []),
       sql`${dmDocumentParseRun.sourceBinding}->'parserInput'->>'mode' = 'LOCAL_MINERU_WORKER'`,
       gt(dmDocumentParseRun.deadlineAt, now), isNull(dmDocumentParseRun.cancelRequestedAt), isNull(dmDocumentParseRun.errorCode),
       or(isNull(dmDocumentParseRun.leaseExpiresAt), lte(dmDocumentParseRun.leaseExpiresAt, now)),
@@ -73,8 +80,7 @@ export class DocumentParsingRepository {
 
   async assertLocalWorkerScope(scope: DocumentParseScope, run: DocumentParseRow): Promise<void> {
     await this.db.transaction(async tx => {
-      if (!isDeepStrictEqual(scope.automaticWorkItem, run.sourceBinding.automaticWorkItem))
-        throw documentParseError('DOCUMENT_AUTOMATIC_LEASE_REJECTED');
+      assertLocalWorkerGrantBinding(scope, run);
       if (scope.automaticWorkItem) await this.leases.assertAutomaticWorkItem(tx, scope);
       const [version] = await tx.select(sourceColumns).from(dmDocumentVersion)
         .where(eq(dmDocumentVersion.documentVersionId, scope.documentVersionId)).for('update');
@@ -93,8 +99,7 @@ export class DocumentParsingRepository {
           artifact.role !== 'MANIFEST' || artifact.relativePath !== 'raw/mineru-candidate.json' || artifact.bucketId !== run.bucketId ||
           artifact.filePath !== `wiselink/parsed/${run.documentVersionId}/${run.parseRunId}/raw/mineru-candidate.json`)
         throw documentParseError('DOCUMENT_LOCAL_WORKER_CANDIDATE_INVALID');
-      if (!isDeepStrictEqual(scope.automaticWorkItem, run.sourceBinding.automaticWorkItem))
-        throw documentParseError('DOCUMENT_AUTOMATIC_LEASE_REJECTED');
+      assertLocalWorkerGrantBinding(scope, run);
       if (!version || !sameSource(version, run.sourceBinding)) throw documentParseError('DOCUMENT_PARSE_SOURCE_CHANGED');
       const receipt = documentLocalWorkerReceipt(run);
       if (receipt && (receipt.sha256 !== artifact.sha256 || receipt.byteLength !== artifact.byteLength))
@@ -294,4 +299,16 @@ export function sameParserInput(left: DocumentParseSourceBinding, right: Documen
   return a.mode === 'LOCAL_MINERU_IMPORT' && b.mode === 'LOCAL_MINERU_IMPORT' &&
     a.bucketId === b.bucketId && a.filePath === b.filePath && a.providerObjectId === b.providerObjectId &&
     a.sha256 === b.sha256 && a.byteLength === b.byteLength;
+}
+
+/** A browser-created worker run can consume an existing exact-source delegation;
+ * an automatic run keeps the generation captured at admission. */
+function assertLocalWorkerGrantBinding(scope: DocumentParseScope, run: DocumentParseRow): void {
+  const persisted = run.sourceBinding.automaticWorkItem;
+  const grant = scope.automaticWorkItem;
+  if ((persisted && !isDeepStrictEqual(grant, persisted)) ||
+      scope.tenantId !== run.tenantId || scope.actorUserId !== run.actorUserId || scope.documentVersionId !== run.documentVersionId ||
+      (grant && (grant.documentId !== run.sourceBinding.documentId || grant.sourceArtifactId !== run.sourceBinding.sourceArtifactId ||
+        grant.sourceFileSha256 !== run.sourceBinding.pdfSha256 || grant.sourceByteLength !== run.sourceBinding.byteLength)))
+    throw documentParseError('DOCUMENT_AUTOMATIC_LEASE_REJECTED');
 }

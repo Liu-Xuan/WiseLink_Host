@@ -173,7 +173,7 @@ export class DocumentParsingHostedService {
     if (!settings || settings.localMineruFallbackEnabled !== true || typeof settings.titleEnhancementEnabled !== 'boolean' ||
         !Number.isSafeInteger(settings.revision) || settings.revision < 0)
       throw documentParseError('DOCUMENT_PARSING_SETTINGS_SNAPSHOT_REQUIRED');
-    const scope = { ...context, automaticWorkItem: run.sourceBinding.automaticWorkItem };
+    const scope = { ...context, automaticWorkItem: context.automaticWorkItem ?? run.sourceBinding.automaticWorkItem };
     await this.assertRead(run.documentVersionId, scope);
     await this.repository.assertLocalWorkerScope(scope, run);
     return { run, scope };
@@ -263,7 +263,7 @@ export class DocumentParsingHostedService {
     const scope = { ...context };
     const run = await this.repository.read(scope, parseRunId);
     if (!run || run.actorUserId !== scope.actorUserId) throw documentParseError('DOCUMENT_PARSE_NOT_FOUND', 404);
-    if (run.sourceBinding.parserInput?.mode === 'LOCAL_MINERU_WORKER') scope.automaticWorkItem = run.sourceBinding.automaticWorkItem;
+    if (run.sourceBinding.parserInput?.mode === 'LOCAL_MINERU_WORKER') scope.automaticWorkItem ??= run.sourceBinding.automaticWorkItem;
     await this.leases.check(scope, fence);
     const assertActive = async () => {
       if (run.sourceBinding.parserInput) {

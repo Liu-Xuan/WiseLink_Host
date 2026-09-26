@@ -1,3 +1,4 @@
+import { MiaodaWorkItemRepository } from '../work-item/miaoda-work-item.repository';
 import { createHash } from 'node:crypto';
 import { Inject, Injectable, Logger } from '@nestjs/common';
 import type {
@@ -23,40 +24,43 @@ export class LocalMineruWorkerService {
     private readonly repository: DocumentParsingRepository,
     private readonly parsing: DocumentParsingHostedService,
     private readonly leases: DocumentStepLeaseRepository,
+    private readonly workItems: MiaodaWorkItemRepository,
   ) {}
 
   async claim(input: unknown): Promise<LocalMineruWorkerClaimResult> {
     if (input !== undefined && (!isRecord(input) || Object.keys(input).length !== 0))
       throw documentParseError('LOCAL_MINERU_CLAIM_INPUT_INVALID', 400);
     const service = await this.serviceScope();
-    const candidates = await this.repository.listLocalWorkerCandidates(service.tenantId, 50);
-    for (const row of candidates) {
+    const delegations = await this.workItems.listActiveLocalWorkerDelegations({ tenantId: service.tenantId, principalId: service.principalId, limit: 50 });
+    for (const delegation of delegations) {
       try {
-        const claimed = await this.actors.withActorScope(row.actorUserId, async () => {
-          const loaded = await this.parsing.readLocalWorkerRun(row.parseRunId, {
-            tenantId: service.tenantId, actorUserId: row.actorUserId,
-            documentVersionId: row.documentVersionId, roles: [],
-          });
-          this.assertPrincipal(service, loaded.scope);
-          const parser = loaded.run.sourceBinding.parserInput;
-          if (parser?.mode !== 'LOCAL_MINERU_WORKER' || !parser.settings?.localMineruFallbackEnabled)
-            throw documentParseError('LOCAL_MINERU_RUN_BINDING_INVALID');
-          const fence = await this.leases.claim(loaded.scope, row.parseRunId, owner(service), 120_000);
-          if (!fence) return null;
-          return {
-            status: 'CLAIMED' as const, parseRunId: row.parseRunId, documentVersionId: row.documentVersionId,
-            sourceSha256: loaded.run.sourceBinding.pdfSha256,
-            sourceByteLength: loaded.run.sourceBinding.byteLength,
-            settings: { ...parser.settings }, deadlineAt: loaded.run.deadlineAt.toISOString(),
-            lease: { leaseOwner: fence.leaseOwner, leaseToken: fence.leaseToken, leaseGeneration: fence.leaseGeneration },
-          };
+        const claimed = await this.actors.withActorScope(delegation.actorUserId, async () => {
+          const scope = await this.delegatedScope(service, delegation.workItemId, delegation.actorUserId, delegation.documentVersionId);
+          if (!scope) return null;
+          const candidates = await this.repository.listLocalWorkerCandidates(service.tenantId, 50, scope);
+          for (const row of candidates) {
+            const loaded = await this.parsing.readLocalWorkerRun(row.parseRunId, scope);
+            this.assertPrincipal(service, loaded.scope);
+            const parser = loaded.run.sourceBinding.parserInput;
+            if (parser?.mode !== 'LOCAL_MINERU_WORKER' || !parser.settings?.localMineruFallbackEnabled)
+              throw documentParseError('LOCAL_MINERU_RUN_BINDING_INVALID');
+            const fence = await this.leases.claim(loaded.scope, row.parseRunId, owner(service, loaded.scope.automaticWorkItem!), 120_000);
+            if (!fence) continue;
+            return {
+              status: 'CLAIMED' as const, parseRunId: row.parseRunId, documentVersionId: row.documentVersionId,
+              sourceSha256: loaded.run.sourceBinding.pdfSha256, sourceByteLength: loaded.run.sourceBinding.byteLength,
+              settings: { ...parser.settings }, deadlineAt: loaded.run.deadlineAt.toISOString(),
+              lease: { leaseOwner: fence.leaseOwner, leaseToken: fence.leaseToken, leaseGeneration: fence.leaseGeneration },
+            };
+          }
+          return null;
         });
         if (claimed) return claimed;
       } catch (error) {
         const status = error && typeof error === 'object' && 'statusCode' in error ? error.statusCode : null;
         const automaticLeaseLost = error instanceof Error && error.message === 'DOCUMENT_AUTOMATIC_LEASE_REJECTED';
         if (status !== 403 && status !== 404 && !automaticLeaseLost) throw error;
-        this.logger.warn(`Local MinerU skipped an inaccessible parse run ${row.parseRunId}.`);
+        this.logger.warn(`Local MinerU skipped an inaccessible document delegation ${delegation.workItemId}.`);
       }
     }
     return { status: 'IDLE' };
@@ -113,17 +117,40 @@ export class LocalMineruWorkerService {
   ) => Promise<T>): Promise<T> {
     const identity = localMineruWorkerIdentity(input);
     const service = await this.serviceScope();
-    if (identity.lease.leaseOwner !== owner(service)) throw documentParseError('DOCUMENT_STEP_LEASE_REJECTED');
-    const row = await this.repository.readLocalWorkerById(service.tenantId, identity.parseRunId);
-    if (!row || row.documentVersionId !== identity.documentVersionId)
-      throw documentParseError('LOCAL_MINERU_RUN_NOT_FOUND', 404);
-    return this.actors.withActorScope(row.actorUserId, async () => {
-      const loaded = await this.parsing.readLocalWorkerRun(row.parseRunId, {
-        tenantId: service.tenantId, actorUserId: row.actorUserId, documentVersionId: row.documentVersionId, roles: [],
+    if (!identity.lease.leaseOwner.startsWith(`mineru:${service.principalId}:`)) throw documentParseError('DOCUMENT_STEP_LEASE_REJECTED');
+    const delegations = await this.workItems.listActiveLocalWorkerDelegations({ tenantId: service.tenantId,
+      principalId: service.principalId, documentVersionId: identity.documentVersionId, limit: 100 });
+    for (const delegation of delegations) {
+      const result = await this.actors.withActorScope(delegation.actorUserId, async () => {
+        const scope = await this.delegatedScope(service, delegation.workItemId, delegation.actorUserId, identity.documentVersionId);
+        if (!scope || identity.lease.leaseOwner !== owner(service, scope.automaticWorkItem)) return null;
+        const row = await this.repository.readLocalWorkerById(service.tenantId, identity.parseRunId);
+        if (!row || row.actorUserId !== scope.actorUserId || row.documentVersionId !== scope.documentVersionId ||
+            row.sourceBinding.documentId !== scope.automaticWorkItem.documentId ||
+            row.sourceBinding.sourceArtifactId !== scope.automaticWorkItem.sourceArtifactId ||
+            row.sourceBinding.pdfSha256 !== scope.automaticWorkItem.sourceFileSha256 ||
+            row.sourceBinding.byteLength !== scope.automaticWorkItem.sourceByteLength) return null;
+        const loaded = await this.parsing.readLocalWorkerRun(row.parseRunId, scope);
+        this.assertPrincipal(service, loaded.scope);
+        return { value: await action(identity, loaded) };
       });
-      this.assertPrincipal(service, loaded.scope);
-      return action(identity, loaded);
-    });
+      if (result) return result.value;
+    }
+    throw documentParseError('LOCAL_MINERU_RUN_NOT_FOUND', 404);
+  }
+
+  private async delegatedScope(service: CanonicalVerifiedAutoWorkItemQueueScope, workItemId: string, actorUserId: string, documentVersionId: string) {
+    // The discovery table is service-readable; the WorkItem JOIN must run after
+    // actor entry because its ordinary RLS is also actor-bound.
+    const binding = await this.workItems.loadActiveAutoProcessingLease({ tenantId: service.tenantId,
+      workItemId, leaseOwner: service.principalId, now: new Date() });
+    const grant = binding?.authorization;
+    if (!grant || grant.actorUserId !== actorUserId || grant.documentVersionId !== documentVersionId) return null;
+    return { tenantId: service.tenantId, actorUserId, documentVersionId, roles: [] as string[], automaticWorkItem: {
+      workItemId: grant.workItemId, requestId: grant.requestId, principalId: service.principalId, documentId: grant.documentId,
+      sourceArtifactId: grant.sourceArtifactId, sourceFileSha256: grant.sourceFileSha256,
+      sourceByteLength: Number(grant.sourceByteLength), leaseGeneration: grant.leaseGeneration,
+    } };
   }
 
   private assertPrincipal(service: CanonicalVerifiedAutoWorkItemQueueScope, scope: DocumentParseScope): void {
@@ -142,7 +169,12 @@ export class LocalMineruWorkerService {
   }
 }
 
-function owner(scope: CanonicalVerifiedAutoWorkItemQueueScope): string { return `mineru:${scope.principalId}`; }
+function owner(scope: CanonicalVerifiedAutoWorkItemQueueScope, grant: NonNullable<DocumentParseScope['automaticWorkItem']>): string {
+  const value = `mineru:${scope.principalId}:${grant.workItemId}:g${grant.leaseGeneration}`;
+  if (!/^[A-Za-z0-9_-]{1,96}$/u.test(grant.workItemId) || !Number.isSafeInteger(grant.leaseGeneration) || grant.leaseGeneration < 1 ||
+      !/^[A-Za-z0-9:_-]{1,160}$/u.test(value)) throw documentParseError('LOCAL_MINERU_LEASE_OWNER_INVALID', 503);
+  return value;
+}
 function fenceOf(input: LocalMineruWorkerIdentity): DocumentStepFence { return { parseRunId: input.parseRunId, ...input.lease }; }
 function isRecord(input: unknown): input is Record<string, unknown> {
   return input !== null && typeof input === 'object' && !Array.isArray(input);
