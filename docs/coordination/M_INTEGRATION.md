@@ -1,5 +1,15 @@
 # M 主控集成交接
 
+## 2026-09-26 C163：工作图谱准确入口与版本绑定
+
+修复工作 Wiki／侧栏的 `workItemId` 图谱入口误转事项图谱的问题。事项图谱仍按明确 `matterId` 读取；工作任务入口直接读取 Host 已授权的当前 WorkItem LibraryIndex，初始显示工作关系。Host 在同一授权投影回执中携带当前 JobAid `workRevisionRef`；带 `workRef` 的图谱链接先与该回执核对，历史修订只给出准确工程知识入口，不把当前图谱冒充历史图谱。未增加模型生成、权限、数据库结构或自动调度。
+
+实现提交 `1e3d29655891ae65583e14f4bf8faa1413a179bd`（父 `e8e5dd77ff1446af0a33bc469703460911e72e22`），首次 17b release `7689743412240976855` finished、提交匹配、`error_logs=[]`。真实页面验证发现历史修订返回链接落到站点根路径，随后修复为应用内 Link：最终提交 `5b77705daa1a922c0089af06b932c587e241bdbb`（父 `1e3d29655891ae65583e14f4bf8faa1413a179bd`），17b release `7689744419675343820` finished、提交匹配、`error_logs=[]`。两提交均推送至 origin 同名 `codex/wl-c125-auto-engineering-flow` 分支；无 GitHub 同步。
+
+定向测试 32/32、前端 TypeScript、生产前后端构建和两次 precommit 通过；Link 修复后前端测试 27/27、类型及生产前端构建再次通过。刘轩本人从工作 Wiki 的关系图谱入口读回 WorkItem `WI-4db598a0-33b8-4abd-a64d-df2aac9f29c5` 的 4 个对象、2 条 LibraryIndex 父子关系，含问题评估与整体综合；携当前 `JAWR-6aee6eff-193d-4eeb-a62a-3b2e8fd01eda` 的链接亦显示同一当前图谱。带不匹配 `workRef` 时只显示历史工作提示，应用内工程知识链接已读回正确路径；未用伪造历史 ref 点击知识详情。当前图谱是本工作结构投影，不表示事项级 Overall、跨资料因果图或正式采用已形成。
+
+仍需处理：已保存 JobAid 正文中的“SB 颁发时点位于 Production Incorporation 之后或与之一致”超出已读原文支持范围，不能当成已核实事实；需要按确切来源走后继工作更正，并让 Overall 对应新工作修订。正常上传后的无人值守全自动稳定性尚未验收，原 16 项 cron 的 15:17 +08 停用／running0 快照未因本次页面发布而改变，但本轮未重新读取其最新状态。
+
 ## 2026-09-26 C162：综合评估接续与本人阅读结果
 
 C160 Host 修订 `60d80a7f1535d55d038df1da43bb1a142c89d325` 已发布到 17b：release `7689731840768953323` 为 finished、准确 commit 匹配、`error_logs=[]`。它修复了动态适用性上下文读取误报 404 和工程师首屏使用通用状态句覆盖已保存摘要。C161/C162 只修改 17c Skill，无需 Host 再发布。C162 源提交 `9b94034222d33a96ccc42f74821dedd067fa3a62`，61 文件包 SHA256 `d4a024ea3563b311f6e3a85e14f78ea3ea3b0dd1dc724d093a760238cc9d930a`；17c 安装文件与包逐项一致，仅多官方 `.openclaw` 元数据。完整 Skill 测试 551/551。
