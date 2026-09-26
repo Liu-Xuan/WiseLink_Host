@@ -1,3 +1,4 @@
+import type { DocumentParsingSettingsReadModel, UpdateDocumentParsingSettingsRequest } from '@shared/document-parsing-settings.interface';
 import type { DocumentRevisionReadingRequest, DocumentRevisionReadingResponse } from '@shared/document-revision-reading.interface';
 import type { DocumentSemanticReadingRequest, DocumentSemanticReadingResponse } from '@shared/document-semantic-map.interface';
 import type { DocumentActivityReadingRequest, DocumentActivityReadingResponse } from '@shared/document-activity.interface';
@@ -790,6 +791,14 @@ async function requestDocumentUpload(url: string, data?: DocumentUploadRequest |
   return receipt;
 }
 
+export function getDocumentParsingSettings(): Promise<DocumentParsingSettingsReadModel> {
+  return requestCanonicalModelSettings('GET', undefined, '/api/canonical-host/settings/document-parsing');
+}
+
+export function updateDocumentParsingSettings(input: UpdateDocumentParsingSettingsRequest): Promise<DocumentParsingSettingsReadModel> {
+  return requestCanonicalModelSettings('POST', input, '/api/canonical-host/settings/document-parsing');
+}
+
 export function getCanonicalModelSettings(): Promise<CanonicalModelSettingsReadModel> {
   return requestCanonicalModelSettings('GET');
 }
@@ -812,7 +821,7 @@ async function requestCanonicalModelSettings<
   T = CanonicalModelSettingsReadModel,
 >(
   method: 'GET' | 'POST',
-  data?: UpdateCanonicalModelSettingsRequest,
+  data?: UpdateCanonicalModelSettingsRequest | UpdateDocumentParsingSettingsRequest,
   url = '/api/canonical-host/settings/models',
 ): Promise<T> {
   const requestGeneration = clientSessionGeneration;

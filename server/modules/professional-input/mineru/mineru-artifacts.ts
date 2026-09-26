@@ -55,8 +55,14 @@ export function readMineruArtifacts(input: {
 }): MineruDocumentArtifacts {
   const middle = object(input.middle, 'middle');
   const version = nonempty(middle._version_name, 'middle._version_name');
-  if (version !== '3.4.5') {
+  if (version !== '3.4.5' && version !== '3.0.9') {
     throw new Error(`MINERU_VERSION_UNSUPPORTED:${version}`);
+  }
+  const backend = nonempty(middle._backend, 'middle._backend');
+  // The local 3.0.9 pipeline emits the same page-nested v2 table/span/asset
+  // contract. Keep its producer identity; other old backends remain unverified.
+  if (version === '3.0.9' && backend !== 'pipeline') {
+    throw new Error(`MINERU_BACKEND_UNSUPPORTED:${version}:${backend}`);
   }
   if (typeof input.markdown !== 'string' || !input.markdown.trim()) {
     throw new Error('MINERU_MARKDOWN_EMPTY');
@@ -70,7 +76,7 @@ export function readMineruArtifacts(input: {
   const furniture = mineruPageFurniture(pageBlocks);
   const document: MineruDocumentArtifacts = {
     version,
-    backend: nonempty(middle._backend, 'middle._backend'),
+    backend,
     markdown: input.markdown,
     pages: [],
     blocks: [],

@@ -1,3 +1,4 @@
+import { CanonicalModelSettingsModule } from '../../../../model-settings/canonical-model-settings.module';
 import {
   DynamicModule,
   Module,
@@ -42,7 +43,7 @@ export class DocumentManagementHostedModule {
     }
     return {
       module: DocumentManagementHostedModule,
-      imports: options.imports ?? [],
+      imports: [CanonicalModelSettingsModule, ...(options.imports ?? [])],
       controllers: [DocumentManagementHostedController, DocumentParsingHostedController],
       providers: [
         provider,

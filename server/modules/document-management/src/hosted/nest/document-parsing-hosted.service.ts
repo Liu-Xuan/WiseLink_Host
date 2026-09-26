@@ -1,5 +1,14 @@
+import { CanonicalDocumentParsingSettingsService } from '../../../../model-settings/canonical-document-parsing-settings.service';
+import { enhanceMineruTitles } from '../../../../professional-input/mineru/mineru-title-enhancer';
+import { readMineruArtifacts } from '../../../../professional-input/mineru/mineru-artifacts';
+import { randomUUID } from 'node:crypto';
+import { mintDocumentUploadAuthority } from './document-upload-authority';
+import { readLocalMineruCandidate } from './document-mineru-local-candidate';
+import { documentMineruOriginal } from './document-mineru-original-adapter';
+import type { DocumentLocalMineruInput, DocumentParseSourceBinding } from '@server/database/document-parsing.schema';
+import { sameParserInput } from './document-parsing.repository';
 import { compareDocumentOriginal, type DocumentOriginalChange } from './document-original-change';
-import { Inject, Injectable, Logger } from '@nestjs/common';
+import { Inject, Injectable, Logger, Optional } from '@nestjs/common';
 import { FileService } from '@lark-apaas/fullstack-nestjs-core';
 import type { DocumentParsedReading, DocumentParsingStatus, DocumentParseRunSummary, StartDocumentParseRequest } from '@shared/document-parsing.interface';
 import type { DocumentOriginalArtifact, DocumentOriginalBinding, DocumentOriginalStepResult } from '@shared/document-original.interface';
@@ -17,7 +26,7 @@ import { openDocumentPdfSession, type DocumentPdfSession, type DocumentPdfExtrac
 import { composeDocumentOriginal } from './document-original-compose';
 import { documentOriginalStructuredSource, documentOriginalReadingCoverage } from './document-original-adapter';
 
-type ReadScope = { actorUserId: string; tenantId: string; roles: string[] };
+type ReadScope = { actorUserId: string; tenantId: string; roles: string[]; appId?: string; env?: string };
 const PAGE_GROUP_SIZE = 8;
 const MAX_PAGE_GROUPS_PER_STEP = 2;
 const STEP_CONTINUATION_BUDGET_MS = 10_000;
@@ -38,6 +47,7 @@ export class DocumentParsingHostedService {
     private readonly plugins: DocumentOfficialPluginService,
     private readonly leases: DocumentStepLeaseRepository,
     @Inject(DOCUMENT_MANAGEMENT_INGEST_AUTHORIZER) private readonly authorizer: DocumentManagementIngestAuthorizer,
+    @Optional() private readonly parsingSettings?: CanonicalDocumentParsingSettingsService,
   ) {
     this.store = new DocumentOriginalStore(files);
     this.legacyStore = new MineruArtifactStore(files);
@@ -47,7 +57,7 @@ export class DocumentParsingHostedService {
   async status(documentVersionId: string, context: ReadScope): Promise<DocumentParsingStatus> {
     const source = await this.authorizedSource(documentVersionId, context);
     const state = await this.repository.current({ ...context, documentVersionId });
-    const configured = this.plugins.configured();
+    const configured = this.plugins.configured() || state.latest?.sourceBinding.parserInput?.mode === 'LOCAL_MINERU_IMPORT';
     const officialPublished = state.published?.manifestArtifact?.relativePath === 'original/manifest.json';
     const extractedMetadata = source.metadata?.extractedMetadata;
     const documentTitle = extractedMetadata == null ? null
@@ -67,21 +77,48 @@ export class DocumentParsingHostedService {
         lastCompletedAt: officialPublished ? state.published!.completedAt?.toISOString() ?? null : null } };
   }
 
-  /** Reservation only. M's registered durable consumer owns claiming and continuation. */
+  /** Official parses use the durable consumer; explicit local imports complete under the same document lease. */
   async start(documentVersionId: string, request: unknown, context: ReadScope): Promise<DocumentParseRunSummary> {
     const input = startInput(request);
     const source = await this.authorizedSource(documentVersionId, context);
     const scope = { ...context, documentVersionId };
+    let parserInput: DocumentLocalMineruInput | undefined;
+    if (input.mode === 'LOCAL_MINERU_IMPORT') {
+      const runtimeIngestAuthority = mintDocumentUploadAuthority({ ...context, appId: context.appId ?? '', env: context.env ?? '' });
+      await this.authorizer.assertCanIngest({ ...context, action: 'DOCUMENT_INGEST', selection: input.selection!, runtimeIngestAuthority });
+      const selected = await this.originals.readSelection(input.selection!);
+      const candidate = readLocalMineruCandidate(selected.bytes);
+      const original = await this.originals.readSelection({ bucketId: source.source.bucketId, filePath: source.source.filePath });
+      if (!selected.readbackVerified || !original.readbackVerified || original.sha256 !== source.version.pdfSha256 || original.byteLength !== source.version.byteLength ||
+          original.sha256 !== source.source.sha256 || original.byteLength !== source.source.byteLength ||
+          original.providerObjectId !== source.source.providerObjectId || original.providerVersionId !== source.source.providerVersionId ||
+          candidate.sourceSha256 !== original.sha256 || candidate.sourceByteLength !== original.byteLength)
+        throw documentParseError('DOCUMENT_PARSE_ORIGINAL_MISMATCH');
+      await this.assertRead(documentVersionId, context);
+      await this.authorizer.assertCanIngest({ ...context, action: 'DOCUMENT_INGEST', selection: input.selection!, runtimeIngestAuthority });
+      parserInput = { mode: 'LOCAL_MINERU_IMPORT', bucketId: selected.bucketId, filePath: selected.filePath.replace(/^\/+/, ''),
+        providerObjectId: selected.providerObjectId, sha256: selected.sha256, byteLength: selected.byteLength };
+    }
+    const sourceBinding: DocumentParseSourceBinding = { documentVersionId, documentId: source.version.documentId, familyId: source.version.familyId,
+      sourceArtifactId: source.version.sourceArtifactId, pdfSha256: source.version.pdfSha256, byteLength: source.version.byteLength,
+      ...(parserInput ? { parserInput } : {}) };
     const existing = await this.repository.readRequest(scope, input.requestId);
     if (existing) {
-      if (existing.expectedPublishedRevision !== input.expectedPublishedRevision) throw documentParseError('DOCUMENT_PARSE_REQUEST_CONFLICT');
-      return summary(existing);
+      if (existing.expectedPublishedRevision !== input.expectedPublishedRevision || !sameParserInput(existing.sourceBinding, sourceBinding))
+        throw documentParseError('DOCUMENT_PARSE_REQUEST_CONFLICT');
+      if (parserInput && ['RUNNING', 'STAGING'].includes(existing.status)) await this.executeLocalImport(existing, context);
+      return summary(await this.repository.read(scope, existing.parseRunId) ?? existing);
     }
-    if (!this.plugins.configured()) throw documentParseError('DOCUMENT_PLUGIN_NOT_CONFIGURED', 503);
-    const reservation = await this.repository.reserve(scope, { ...input, bucketId: source.source.bucketId,
-      sourceBinding: { documentVersionId, documentId: source.version.documentId, familyId: source.version.familyId,
-        sourceArtifactId: source.version.sourceArtifactId, pdfSha256: source.version.pdfSha256, byteLength: source.version.byteLength } });
-    return summary(reservation.row);
+    if (parserInput) {
+      if (!this.parsingSettings) throw documentParseError('DOCUMENT_PARSING_SETTINGS_UNAVAILABLE', 503);
+      const settings = await this.parsingSettings.capture(context.tenantId);
+      if (!settings.localMineruFallbackEnabled) throw documentParseError('DOCUMENT_LOCAL_MINERU_DISABLED', 409);
+      parserInput.settings = settings;
+    }
+    if (!parserInput && !this.plugins.configured()) throw documentParseError('DOCUMENT_PLUGIN_NOT_CONFIGURED', 503);
+    const reservation = await this.repository.reserve(scope, { requestId: input.requestId, expectedPublishedRevision: input.expectedPublishedRevision, bucketId: source.source.bucketId, sourceBinding });
+    if (parserInput) await this.executeLocalImport(reservation.row, context);
+    return summary(await this.repository.read(scope, reservation.row.parseRunId) ?? reservation.row);
   }
 
   async executeStep(parseRunId: string, context: ReadScope & { documentVersionId: string }, fence: DocumentStepFence): Promise<DocumentOriginalStepResult> {
@@ -119,6 +156,39 @@ export class DocumentParsingHostedService {
           original.sha256 !== source.source.sha256 || original.byteLength !== source.source.byteLength ||
           original.providerObjectId !== source.source.providerObjectId || original.providerVersionId !== source.source.providerVersionId)
         throw documentParseError('DOCUMENT_PARSE_ORIGINAL_MISMATCH');
+      if (run.sourceBinding.parserInput?.mode === 'LOCAL_MINERU_IMPORT') {
+        const selected = await this.originals.readSelection(run.sourceBinding.parserInput);
+        const pinned = run.sourceBinding.parserInput;
+        if (selected.providerObjectId !== pinned.providerObjectId || selected.sha256 !== pinned.sha256 || selected.byteLength !== pinned.byteLength)
+          throw documentParseError('DOCUMENT_MINERU_CANDIDATE_CHANGED');
+        const candidate = readLocalMineruCandidate(selected.bytes);
+        let titleEnhancement: DocumentParsedReading['titleEnhancement'] = { status: 'DISABLED' };
+        let validatedTitleLevels: Array<{ id: string; level: number }> | undefined;
+        if (pinned.settings?.titleEnhancementEnabled) {
+          const receipt = candidate.titleEnhancement;
+          const rawDocument = readMineruArtifacts({ ...candidate.rawArtifacts, assetPaths: candidate.assets.map(asset => asset.path) });
+          if (receipt?.status === 'APPLIED') {
+            const enhanced = await enhanceMineruTitles({ document: rawDocument, assets: candidate.assets,
+              contentListV2: candidate.rawArtifacts.contentListV2, middle: candidate.rawArtifacts.middle }, async () => ({ levels: receipt.levels }));
+            titleEnhancement = enhanced.titleEnhancement;
+            if (titleEnhancement.status === 'APPLIED') validatedTitleLevels = receipt.levels;
+          } else if (receipt?.status === 'FAILED') titleEnhancement = receipt;
+          else if (!rawDocument.blocks.some(block => block.type === 'title')) titleEnhancement = { status: 'NOT_APPLICABLE' };
+          else titleEnhancement = { status: 'FAILED', code: 'TITLE_RESULT_MISSING' };
+        }
+        const result = documentMineruOriginal({ binding, documentVersion: run.sourceBinding, result: candidate, validatedTitleLevels });
+        await assertActive();
+        const rawMineruCandidate = await this.store.save(storage, 'MANIFEST', selected.bytes, record, 'raw/mineru-candidate.json');
+        const rawMarkdown = await this.store.save(storage, 'RAW_MARKDOWN', Buffer.from(candidate.rawArtifacts.markdown), record);
+        const change = await this.originalChange(run, result, context);
+        const bundle: DocumentOriginalBundle = { schemaVersion: 'wiselink.document.bundle.v1', original: result,
+          rawPdfArtifacts: [], rawMineruCandidate, rawMarkdown, change, titleEnhancement };
+        const manifest = await this.store.save(storage, 'MANIFEST', Buffer.from(JSON.stringify(bundle)), record);
+        await this.store.load(storage, manifest, binding);
+        await assertActive();
+        await this.repository.publish(scope, parseRunId, manifest, fence);
+        return stepResult(run, result.coverage, 'PUBLISHED', change);
+      }
       // A derived parse revision may reuse verified inputs from the same immutable PDF.
       // Descriptors are copied into this run's namespace; no previous history is overwritten.
       let reusable: { bundle: DocumentOriginalBundle; scope: ReturnType<typeof storageScope> } | null = null;
@@ -130,8 +200,8 @@ export class DocumentParsingHostedService {
             previous.sourceBinding.pdfSha256 === run.sourceBinding.pdfSha256 &&
             previous.sourceBinding.byteLength === run.sourceBinding.byteLength) {
           const priorScope = storageScope(previous);
-          reusable = { scope: priorScope, bundle: await this.store.load(priorScope,
-            originalArtifact(previous.manifestArtifact), originalBinding(previous)) };
+          const priorBundle = await this.store.load(priorScope, originalArtifact(previous.manifestArtifact), originalBinding(previous));
+          if (priorBundle.original.producer.kind === 'OFFICIAL_PLUGIN_HYBRID') reusable = { scope: priorScope, bundle: priorBundle };
         }
       }
       let raw = await this.store.recover(storage, 'RAW_MARKDOWN');
@@ -238,13 +308,21 @@ export class DocumentParsingHostedService {
     if (run.manifestArtifact!.relativePath === 'original/manifest.json') {
       const artifact = originalArtifact(run.manifestArtifact!);
       const bundle = await this.store.loadForReading(storageScope(run), artifact, originalBinding(run));
+      let localAssets: Record<string, string> = {};
+      if (bundle.rawMineruCandidate) {
+        const candidate = readLocalMineruCandidate(await this.store.read(storageScope(run), bundle.rawMineruCandidate));
+        localAssets = Object.fromEntries(candidate.assets.map(asset => [asset.path,
+          `/api/document-management/document-versions/${encodeURIComponent(documentVersionId)}/parse-runs/${encodeURIComponent(run.parseRunId)}/asset?path=${encodeURIComponent(asset.path)}`]));
+      }
       await this.assertRead(documentVersionId, context);
       return { documentVersionId, parseRunId: run.parseRunId, parseRevision: run.parseRevision,
-        originalFilename: source.version.originalFilename, parser: { name: 'OfficialPluginHybrid', version: bundle.original.producer.pluginVersion, backend: 'Host' },
-        titleEnhancement: { status: 'DISABLED' }, markdown: bundle.original.markdown, assets: {}, original: { ...bundle.original, coverage: documentOriginalReadingCoverage(bundle.original) },
+        originalFilename: source.version.originalFilename, parser: bundle.original.producer.kind === 'MINERU_LOCAL'
+          ? { name: 'MinerU', version: bundle.original.producer.engine!.version, backend: bundle.original.producer.engine!.backend }
+          : { name: 'OfficialPluginHybrid', version: bundle.original.producer.pluginVersion, backend: 'Host' },
+        titleEnhancement: bundle.titleEnhancement ?? { status: 'DISABLED' }, markdown: bundle.original.markdown, assets: localAssets, original: { ...bundle.original, coverage: documentOriginalReadingCoverage(bundle.original) },
         projection: { documentVersionId, parseRunId: run.parseRunId, sources: [], notes: [], issues: [] } };
     }
-    // Historical published MinerU artifacts remain readable; no new MinerU producer.
+    // Historical MinerU manifests remain readable alongside the current neutral-original bundles.
     const loaded = await this.legacyStore.loadReading({ scope: storageScope(run), documentVersion: run.sourceBinding, manifestArtifact: run.manifestArtifact! });
     await this.assertRead(documentVersionId, context);
     return { documentVersionId, parseRunId: run.parseRunId, parseRevision: run.parseRevision,
@@ -286,12 +364,32 @@ export class DocumentParsingHostedService {
   async asset(documentVersionId: string, parseRunId: string, path: unknown, context: ReadScope) {
     await this.authorizedSource(documentVersionId, context);
     const run = await this.publishedRun(documentVersionId, parseRunId, context);
+    if (run.manifestArtifact?.relativePath === 'original/manifest.json' && run.sourceBinding.parserInput?.mode === 'LOCAL_MINERU_IMPORT') {
+      const bundle = await this.store.loadForReading(storageScope(run), originalArtifact(run.manifestArtifact), originalBinding(run));
+      if (!bundle.rawMineruCandidate || typeof path !== 'string') throw documentParseError('DOCUMENT_PARSE_ASSET_NOT_FOUND', 404);
+      const candidate = readLocalMineruCandidate(await this.store.read(storageScope(run), bundle.rawMineruCandidate));
+      const asset = candidate.assets.find(item => item.path === path);
+      if (!asset) throw documentParseError('DOCUMENT_PARSE_ASSET_NOT_FOUND', 404);
+      await this.assertRead(documentVersionId, context);
+      return { bytes: asset.bytes, mediaType: asset.mediaType };
+    }
     const matches = run.artifactProgress.filter(item => item.role === 'IMAGE' && item.relativePath === path && item.readback === 'VERIFIED');
     if (matches.length !== 1) throw documentParseError('DOCUMENT_PARSE_ASSET_NOT_FOUND', 404);
     const bytes = await this.legacyStore.read(storageScope(run), matches[0]);
     await this.assertRead(documentVersionId, context);
     return { bytes, mediaType: matches[0].mediaType };
   }
+  private async executeLocalImport(run: DocumentParseRow, context: ReadScope): Promise<void> {
+    const scope = { ...context, documentVersionId: run.documentVersionId };
+    const fence = await this.leases.claim(scope, run.parseRunId, `local-import:${randomUUID()}`, 120_000);
+    if (!fence) return;
+    try { await this.executeStep(run.parseRunId, scope, fence); }
+    finally {
+      try { await this.leases.release(scope, fence); }
+      catch { this.logger.warn(`Document import ${run.parseRunId} lease release failed; lease expiry remains authoritative.`); }
+    }
+  }
+
   private async originalChange(run: DocumentParseRow, original: DocumentOriginalBundle['original'], context: ReadScope) {
     if (run.expectedPublishedRevision === 0) return compareDocumentOriginal(null, original);
     const previous = (await this.repository.current({ ...context, documentVersionId: run.documentVersionId })).published;
@@ -331,10 +429,22 @@ function storageScope(row: DocumentParseRow) {
 function startInput(value: unknown): StartDocumentParseRequest {
   if (!value || typeof value !== 'object' || Array.isArray(value)) throw documentParseError('DOCUMENT_PARSE_INPUT_INVALID', 400);
   const input = value as Record<string, unknown>;
-  if (Object.keys(input).some(key => !['requestId', 'expectedPublishedRevision'].includes(key)) ||
+  const local = input.mode === 'LOCAL_MINERU_IMPORT';
+  const keys = local ? ['requestId', 'expectedPublishedRevision', 'mode', 'selection'] : ['requestId', 'expectedPublishedRevision'];
+  if (Object.keys(input).some(key => !keys.includes(key)) ||
       typeof input.requestId !== 'string' || !/^[A-Za-z0-9_-]{1,128}$/.test(input.requestId) ||
       !Number.isSafeInteger(input.expectedPublishedRevision) || Number(input.expectedPublishedRevision) < 0) {
     throw documentParseError('DOCUMENT_PARSE_INPUT_INVALID', 400);
+  }
+  if (local) {
+    const selection = input.selection;
+    if (!selection || typeof selection !== 'object' || Array.isArray(selection) ||
+        Object.keys(selection).some(key => !['bucketId', 'filePath'].includes(key))) throw documentParseError('DOCUMENT_PARSE_INPUT_INVALID', 400);
+    const item = selection as Record<string, unknown>;
+    if (typeof item.bucketId !== 'string' || !item.bucketId.trim() || typeof item.filePath !== 'string' || !item.filePath.trim())
+      throw documentParseError('DOCUMENT_PARSE_INPUT_INVALID', 400);
+    return { requestId: input.requestId, expectedPublishedRevision: Number(input.expectedPublishedRevision), mode: 'LOCAL_MINERU_IMPORT',
+      selection: { bucketId: item.bucketId.trim(), filePath: item.filePath.trim() } };
   }
   return { requestId: input.requestId, expectedPublishedRevision: Number(input.expectedPublishedRevision) };
 }

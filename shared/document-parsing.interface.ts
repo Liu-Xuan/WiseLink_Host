@@ -37,6 +37,8 @@ export interface DocumentParsingStatus {
 export interface StartDocumentParseRequest {
   requestId: string;
   expectedPublishedRevision: number;
+  mode?: 'LOCAL_MINERU_IMPORT';
+  selection?: { bucketId: string; filePath: string };
 }
 
 export interface DocumentParsedReading {

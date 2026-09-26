@@ -1,9 +1,18 @@
+import type { DocumentParsingSettingsSnapshot } from '@shared/document-parsing-settings.interface';
 import { sql } from 'drizzle-orm';
 import { integer, jsonb, pgTable, text, uniqueIndex, uuid, varchar } from 'drizzle-orm/pg-core';
 import type { DocumentParseStatus } from '@shared/document-parsing.interface';
 import type { DocumentOriginalArtifact } from '@shared/document-original.interface';
 import type { MineruDocumentVersionBinding, MineruStoredArtifact } from '../modules/professional-input/mineru/mineru-artifact-store';
 import { customTimestamptz, dmDocumentVersion } from './schema';
+
+export interface DocumentLocalMineruInput {
+  mode: 'LOCAL_MINERU_IMPORT';
+  bucketId: string; filePath: string; providerObjectId: string;
+  sha256: string; byteLength: number;
+  settings?: DocumentParsingSettingsSnapshot;
+}
+export type DocumentParseSourceBinding = MineruDocumentVersionBinding & { parserInput?: DocumentLocalMineruInput };
 
 /** Derived parse runs belong to the existing DM version; they never move family currentness. */
 export const dmDocumentParseRun = pgTable('dm_document_parse_run', {
@@ -17,7 +26,7 @@ export const dmDocumentParseRun = pgTable('dm_document_parse_run', {
   expectedPublishedRevision: integer('expected_published_revision').notNull(),
   status: varchar('status', { length: 32 }).$type<DocumentParseStatus>().notNull(),
   bucketId: varchar('bucket_id', { length: 255 }).notNull(),
-  sourceBinding: jsonb('source_binding').$type<MineruDocumentVersionBinding>().notNull(),
+  sourceBinding: jsonb('source_binding').$type<DocumentParseSourceBinding>().notNull(),
   artifactProgress: jsonb('artifact_progress').$type<Array<DocumentOriginalArtifact | MineruStoredArtifact>>().notNull().default([]),
   pendingObject: jsonb('pending_object').$type<{ bucketId: string; filePath: string } | null>(),
   manifestArtifact: jsonb('manifest_artifact').$type<DocumentOriginalArtifact | MineruStoredArtifact | null>(),

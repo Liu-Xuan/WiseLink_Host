@@ -85,3 +85,28 @@
     grid-template-columns: 1fr;
   }
 }
+
+.wl-document-parsing-settings {
+  border-top: 1px solid var(--wl-border);
+  margin-top: 32px;
+  padding-top: 24px;
+}
+.wl-document-parsing-setting {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 24px;
+  margin: 16px 0;
+  padding: 18px;
+  border: 1px solid var(--wl-border);
+  border-radius: 14px;
+}
+.wl-document-parsing-setting label { font-weight: 600; }
+.wl-document-parsing-setting p { margin: 8px 0; }
+.wl-document-parsing-settings-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 12px;
+  margin-top: 20px;
+}

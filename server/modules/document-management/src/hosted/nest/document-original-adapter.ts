@@ -66,7 +66,10 @@ export function documentOriginalReadingCoverage(result: DocumentOriginalResult) 
     .map(finding => String(finding.findingId)));
   return { ...structuredClone(result.coverage), unresolvedRanges: result.coverage.unresolvedRanges.filter((_range, index) =>
     limitationIds.has(`${result.binding.parseRunId}:coverage:${index}`)).map(range => ({ ...structuredClone(range),
-      message: range.reason === 'UNREAD' ? '本页尚无可读文字，请查看原页。' : '此处表格关系尚未可靠重建，请查看原页。',
+      message: range.reason === 'UNREAD' ? '本页尚无可读文字，请查看原页。'
+        : range.reason === 'FIGURE_UNINTERPRETED' ? '图示内的信息尚未完整解释或核验，请查看原页。'
+          : range.reason === 'TEXT_CONFLICT' ? '此处文字读取存在冲突，请核对原页。'
+            : '此处结构或定位尚未可靠确认，请查看原页。',
     })) };
 }
 

@@ -1,3 +1,4 @@
+import type { DocumentParsedReading } from '@shared/document-parsing.interface';
 import type { DocumentOriginalChange } from './document-original-change';
 import { createHash } from 'node:crypto';
 import type { FileService } from '@lark-apaas/fullstack-nestjs-core';
@@ -13,6 +14,8 @@ export interface DocumentOriginalBundle {
   rawPdfArtifacts: DocumentOriginalArtifact[];
   change?: DocumentOriginalChange;
   rawMarkdown: DocumentOriginalArtifact;
+  rawMineruCandidate?: DocumentOriginalArtifact;
+  titleEnhancement?: DocumentParsedReading['titleEnhancement'];
 }
 const entries = {
   RAW_MARKDOWN: { relativePath: 'raw/document.md', mediaType: 'text/markdown' },
@@ -82,6 +85,7 @@ export class DocumentOriginalStore {
     const bundle = await this.loadForReading(scope, artifact, expected);
     await this.read(scope, bundle.rawMarkdown);
     for (const descriptor of bundle.rawPdfArtifacts) await this.read(scope, descriptor);
+    if (bundle.rawMineruCandidate) await this.read(scope, bundle.rawMineruCandidate);
     return bundle;
   }
 
@@ -96,12 +100,18 @@ export class DocumentOriginalStore {
     if (bundle.rawMarkdown.role !== 'RAW_MARKDOWN' || bundle.rawMarkdown.readback !== 'VERIFIED')
       throw new Error('DOCUMENT_ORIGINAL_RAW_REQUIRED');
     assertDescriptor(scope, bundle.rawMarkdown);
-    if (!Array.isArray(bundle.rawPdfArtifacts) || !bundle.rawPdfArtifacts.length) throw new Error('DOCUMENT_ORIGINAL_RAW_PAGES_REQUIRED');
+    if (!Array.isArray(bundle.rawPdfArtifacts) || (!bundle.rawPdfArtifacts.length && bundle.original.producer.kind !== 'MINERU_LOCAL')) throw new Error('DOCUMENT_ORIGINAL_RAW_PAGES_REQUIRED');
     for (const descriptor of bundle.rawPdfArtifacts) {
       if (descriptor.role !== 'MANIFEST' || !/^original\/pages-[0-9]+\.json$/.test(descriptor.relativePath) || descriptor.readback !== 'VERIFIED')
         throw new Error('DOCUMENT_ORIGINAL_RAW_PAGES_INVALID');
       assertDescriptor(scope, descriptor);
     }
+    if (bundle.original.producer.kind === 'MINERU_LOCAL') {
+      const candidate = bundle.rawMineruCandidate;
+      if (!candidate || candidate.role !== 'MANIFEST' || candidate.relativePath !== 'raw/mineru-candidate.json' || candidate.readback !== 'VERIFIED')
+        throw new Error('DOCUMENT_ORIGINAL_MINERU_CANDIDATE_REQUIRED');
+      assertDescriptor(scope, candidate);
+    } else if (bundle.rawMineruCandidate) throw new Error('DOCUMENT_ORIGINAL_PRODUCER_MISMATCH');
     return bundle;
   }
 }
@@ -136,7 +146,7 @@ async function optionalMetadata(read: () => Promise<FileMeta | null>) {
 function entry(role: DocumentOriginalArtifact['role'], relativePath?: string) {
   const rule = entries[role];
   if (!rule || (relativePath && relativePath !== rule.relativePath &&
-      !(role === 'MANIFEST' && /^original\/pages-[0-9]+\.json$/.test(relativePath))))
+      !(role === 'MANIFEST' && (/^original\/pages-[0-9]+\.json$/.test(relativePath) || relativePath === 'raw/mineru-candidate.json'))))
     throw new Error('DOCUMENT_ORIGINAL_ARTIFACT_PATH_INVALID');
   return { ...rule, relativePath: relativePath ?? rule.relativePath };
 }

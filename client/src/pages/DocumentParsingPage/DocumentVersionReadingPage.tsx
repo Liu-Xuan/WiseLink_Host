@@ -1,4 +1,5 @@
 import type { DocumentTranslationReadingResponse } from '@shared/document-translation-reading.interface';
+import LocalMineruImport from './LocalMineruImport';
 import { SemanticBilingualReader } from './SemanticBilingualReader';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { Link, useParams, useSearchParams } from 'react-router-dom';
@@ -278,6 +279,8 @@ export default function DocumentVersionReadingPage() {
           <Button variant="outline" onClick={() => setRefresh(value => value + 1)}>刷新</Button>
           <DocumentOriginalPreview documentVersionId={documentVersionId}>打开原件</DocumentOriginalPreview>
         </div>
+        {currentStatus ? <LocalMineruImport key={documentVersionId} documentVersionId={documentVersionId}
+          expectedPublishedRevision={currentStatus.publishedRun?.parseRevision ?? 0} onImported={() => setRefresh(value => value + 1)} /> : null}
       </details>
       {error && <p role="alert">{error}</p>}
       {unboundEvidence ? <p role="status">此保存依据没有工作项执行身份。已打开它绑定的确切文档版本，未猜测任务或具体段落位置。</p> : null}

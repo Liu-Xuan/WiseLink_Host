@@ -698,3 +698,48 @@ test('static NOT_READY WorkItem remains read-only and never prepares an original
   assert.equal(result.status, 'NOT_READY');
   assert.deepEqual(calls, ['get_parse_status']);
 });
+
+for (const code of ['DOCUMENT_PLUGIN_QUOTA_EXHAUSTED', 'DOCUMENT_PLUGIN_RATE_LIMITED']) {
+  test(`original preparation preserves safe MCP ${code} in result and checkpoint`, async () => {
+    const checkpoint = memoryCheckpoint(storedClaim());
+    const result = await consumeAutomaticWorkItemQueueTick({}, originalPreparationDependencies(checkpoint, {
+      prepareOriginal: async () => {
+        throw Object.assign(new Error('private provider text token=fixture-private-token'), {
+          receivedHostToolError: true, hostToolName: 'next_original_assessment', hostErrorCode: code,
+        });
+      },
+    }));
+    const expected = `REVIEW_HOST_MCP_TOOL_FAILED:next_original_assessment:${code}`;
+    assert.equal(result.status, 'REQUIRES_ATTENTION');
+    assert.equal(result.errorCode, expected);
+    assert.equal(checkpoint.values.get('last-original-preparation').errorCode, expected);
+    assert.deepEqual(checkpoint.values.get('active-claim'), storedClaim());
+    assert.equal(JSON.stringify([...checkpoint.values]).includes('fixture-private-token'), false);
+  });
+}
+
+for (const unsafe of [
+  'REVIEW_HOST_MCP_TOOL_FAILED:private_tool:SECRET_TOKEN',
+  'REVIEW_HOST_MCP_TOOL_FAILED:next_original_assessment:DOCUMENT_PLUGIN_RATE_LIMITED:SECRET_TOKEN',
+  'REVIEW_HOST_MCP_TOOL_FAILED:next_original_assessment:DOCUMENT_PLUGIN_RATE_LIMITED token=fixture-private-token',
+  'REVIEW_HOST_MCP_TOOL_FAILED:next_original_assessment:lowercase-secret',
+]) {
+  test(`original attention discards unsafe tool diagnostic ${unsafe.split(':')[1]}`, async () => {
+    const checkpoint = memoryCheckpoint(storedClaim());
+    const result = await consumeAutomaticWorkItemQueueTick({}, originalPreparationDependencies(checkpoint, {
+      prepareOriginal: async () => ({ status: 'REQUIRES_ATTENTION', documentVersionId: 'DV-QUEUE', errorCode: unsafe }),
+    }));
+    assert.equal(result.errorCode, 'AUTO_WORK_ITEM_CONSUMER_STOPPED');
+    assert.equal(checkpoint.values.get('last-original-preparation').errorCode, 'AUTO_WORK_ITEM_CONSUMER_STOPPED');
+  });
+}
+
+test('a known MCP tool without a retained host code still preserves its safe call site', async () => {
+  const checkpoint = memoryCheckpoint(storedClaim());
+  const result = await consumeAutomaticWorkItemQueueTick({}, originalPreparationDependencies(checkpoint, {
+    prepareOriginal: async () => { throw Object.assign(new Error('private provider text'), {
+      receivedHostToolError: true, hostToolName: 'next_original_assessment', hostErrorCode: null,
+    }); },
+  }));
+  assert.equal(result.errorCode, 'REVIEW_HOST_MCP_TOOL_FAILED:next_original_assessment');
+});

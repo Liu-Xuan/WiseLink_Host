@@ -3,9 +3,9 @@ import { registerPublishedDocumentOriginal } from './document-original-pending';
 import { randomUUID } from 'node:crypto';
 import { Inject, Injectable } from '@nestjs/common';
 import { DRIZZLE_DATABASE, type PostgresJsDatabase } from '@lark-apaas/fullstack-nestjs-core';
-import { and, desc, eq, inArray, lte } from 'drizzle-orm';
+import { and, desc, eq, inArray, lte, isNull, or, isNotNull } from 'drizzle-orm';
 import { dmDocumentVersion } from '@server/database/schema';
-import { dmDocumentParseRun } from '@server/database/document-parsing.schema';
+import { dmDocumentParseRun, type DocumentParseSourceBinding } from '@server/database/document-parsing.schema';
 import type { MineruDocumentVersionBinding, MineruStoredArtifact } from '../../../../professional-input/mineru/mineru-artifact-store';
 
 export interface DocumentAutomaticWorkItemFence {
@@ -61,7 +61,7 @@ export class DocumentParsingRepository {
   }
 
   async reserve(scope: DocumentParseScope, input: {
-    requestId: string; expectedPublishedRevision: number; bucketId: string; sourceBinding: MineruDocumentVersionBinding;
+    requestId: string; expectedPublishedRevision: number; bucketId: string; sourceBinding: DocumentParseSourceBinding;
   }) {
     return this.db.transaction(async tx => {
       if (scope.automaticWorkItem) await this.leases.assertAutomaticWorkItem(tx, scope);
@@ -75,8 +75,17 @@ export class DocumentParsingRepository {
       const [replay] = await tx.select().from(dmDocumentParseRun).where(and(scoped(scope),
         eq(dmDocumentParseRun.actorUserId, scope.actorUserId), eq(dmDocumentParseRun.requestId, input.requestId))).limit(1);
       if (replay) {
-        if (replay.expectedPublishedRevision !== input.expectedPublishedRevision) throw documentParseError('DOCUMENT_PARSE_REQUEST_CONFLICT');
+        if (replay.expectedPublishedRevision !== input.expectedPublishedRevision ||
+            !sameParserInput(replay.sourceBinding, input.sourceBinding)) throw documentParseError('DOCUMENT_PARSE_REQUEST_CONFLICT');
         return { row: replay, created: false };
+      }
+      // Explicit alternate input may supersede an errored attempt only after its executing lease is absent/expired.
+      // Keep the original failure code; never rewrite quota failures as cancellations.
+      if (input.sourceBinding.parserInput?.mode === 'LOCAL_MINERU_IMPORT') {
+        await tx.update(dmDocumentParseRun).set({ status: 'FAILED', completedAt: new Date() })
+          .where(and(scoped(scope), eq(dmDocumentParseRun.actorUserId, scope.actorUserId),
+            inArray(dmDocumentParseRun.status, [...ACTIVE]), isNotNull(dmDocumentParseRun.errorCode),
+            or(isNull(dmDocumentParseRun.leaseExpiresAt), lte(dmDocumentParseRun.leaseExpiresAt, new Date()))));
       }
       // A hard processing deadline bounds interrupted runs. It is never extended by retrying a request.
       await tx.update(dmDocumentParseRun).set({ status: 'FAILED', errorCode: 'DOCUMENT_PARSE_INTERRUPTED', completedAt: new Date() })
@@ -179,4 +188,11 @@ function sameSource(version: Pick<typeof dmDocumentVersion.$inferSelect, keyof t
 
 function assertFenceRun(parseRunId: string, fence: DocumentStepFence) {
   if (!fence || fence.parseRunId !== parseRunId) throw documentParseError('DOCUMENT_STEP_LEASE_REJECTED');
+}
+
+export function sameParserInput(left: DocumentParseSourceBinding, right: DocumentParseSourceBinding): boolean {
+  const a = left.parserInput; const b = right.parserInput;
+  if (!a || !b) return !a && !b;
+  return a.mode === b.mode && a.bucketId === b.bucketId && a.filePath === b.filePath &&
+    a.providerObjectId === b.providerObjectId && a.sha256 === b.sha256 && a.byteLength === b.byteLength;
 }

@@ -51,6 +51,27 @@ describe('official document adapter (isolated provider doubles)', () => {
     await expect(service.translateProse('Original.', async () => undefined)).rejects.toBe(unknown);
   });
 
+  it.each([
+    ['k_st_ec_400002688', 'DOCUMENT_PLUGIN_QUOTA_EXHAUSTED'],
+    ['another_limit', 'DOCUMENT_PLUGIN_RATE_LIMITED'],
+    [undefined, 'DOCUMENT_PLUGIN_RATE_LIMITED'],
+  ])('preserves structured rate limit %s as a safe stable code', async (rateLimitCode, expected) => {
+    call.mockRejectedValue(Object.assign(new Error('PRIVATE_LOCALIZED_QUOTA_MESSAGE'), {
+      code: 'RATE_LIMIT_EXCEEDED', rateLimitCode, rateLimitMessage: 'PRIVATE_PROVIDER_DETAIL',
+    }));
+    await expect(service.parseOriginal({ assertActive: async () => undefined,
+      originalUrl: async () => 'https://example.invalid/private-source' })).rejects.toThrow(expected);
+    expect(call).toHaveBeenCalledTimes(1);
+    expect(JSON.stringify((Logger.prototype.warn as jest.Mock).mock.calls)).not.toContain('PRIVATE_');
+  });
+  it('does not infer exhausted quota from text or an unrelated structured error', async () => {
+    const unknown = Object.assign(new Error('当前应用额度已用尽'), {
+      code: 'UNKNOWN_PROVIDER_ERROR', rateLimitCode: 'k_st_ec_400002688',
+    });
+    call.mockRejectedValue(unknown);
+    await expect(service.translateProse('Original.', async () => undefined)).rejects.toBe(unknown);
+  });
+
   it('records one timed call without its sensitive input or returned body', async () => {
     call.mockResolvedValue({ translation: 'PRIVATE_TRANSLATED_BODY' });
     await service.translateProse('PRIVATE_ORIGINAL_BODY', async () => undefined);
