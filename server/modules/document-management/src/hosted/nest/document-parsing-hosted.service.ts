@@ -1,3 +1,5 @@
+import { documentParseRecoveryPredecessor } from '@shared/document-parsing-recovery';
+import { DocumentOriginalRecovery, saveOriginalRaw, checkCurrentRawProvenance } from './document-original-recovery';
 import { compareDocumentOriginal, type DocumentOriginalChange } from './document-original-change';
 import { Inject, Injectable, Logger } from '@nestjs/common';
 import { FileService } from '@lark-apaas/fullstack-nestjs-core';
@@ -73,11 +75,12 @@ export class DocumentParsingHostedService {
     const source = await this.authorizedSource(documentVersionId, context);
     const scope = { ...context, documentVersionId };
     const existing = await this.repository.readRequest(scope, input.requestId);
-    if (existing) {
+    if (existing && !documentParseRecoveryPredecessor(input.requestId)) {
       if (existing.expectedPublishedRevision !== input.expectedPublishedRevision) throw documentParseError('DOCUMENT_PARSE_REQUEST_CONFLICT');
       return summary(existing);
     }
-    if (!this.plugins.configured()) throw documentParseError('DOCUMENT_PLUGIN_NOT_CONFIGURED', 503);
+    // Reserved identities always pass the repository's predecessor/replay checks.
+    if (!existing && !this.plugins.configured()) throw documentParseError('DOCUMENT_PLUGIN_NOT_CONFIGURED', 503);
     const reservation = await this.repository.reserve(scope, { ...input, bucketId: source.source.bucketId,
       sourceBinding: { documentVersionId, documentId: source.version.documentId, familyId: source.version.familyId,
         sourceArtifactId: source.version.sourceArtifactId, pdfSha256: source.version.pdfSha256, byteLength: source.version.byteLength } });
@@ -107,6 +110,7 @@ export class DocumentParsingHostedService {
       const completed = await this.store.recover(storage, 'MANIFEST');
       if (completed) {
         const bundle = await this.store.load(storage, completed.artifact, binding);
+        await checkCurrentRawProvenance(this.store, run, await this.store.read(storage, bundle.rawMarkdown), record);
         const change = bundle.change ?? await this.originalChange(run, bundle.original, context);
         await record(completed.artifact);
         await assertActive();
@@ -134,16 +138,25 @@ export class DocumentParsingHostedService {
             originalArtifact(previous.manifestArtifact), originalBinding(previous)) };
         }
       }
+      const recovery = await DocumentOriginalRecovery.load(run, id => this.repository.read(scope, id), this.store, assertActive);
       let raw = await this.store.recover(storage, 'RAW_MARKDOWN');
+      const recoveredRaw = await recovery.read('RAW_MARKDOWN', 'raw/document.md');
+      if (raw && recoveredRaw && !Buffer.from(raw.bytes).equals(Buffer.from(recoveredRaw)))
+        throw documentParseError('DOCUMENT_PARSE_RECOVERY_COPY_MISMATCH');
+      if (!raw && recoveredRaw) {
+        const bytes = new Uint8Array(recoveredRaw);
+        raw = { bytes, artifact: await saveOriginalRaw(this.store, run, bytes, record) };
+      }
       if (!raw && reusable) {
         const bytes = new Uint8Array(await this.store.read(reusable.scope, reusable.bundle.rawMarkdown));
-        raw = { bytes, artifact: await this.store.save(storage, 'RAW_MARKDOWN', bytes, record) };
+        raw = { bytes, artifact: await saveOriginalRaw(this.store, run, bytes, record) };
       }
+      await checkCurrentRawProvenance(this.store, run, raw?.bytes ?? null, record);
       if (!raw) {
         const parsed = await this.plugins.parseOriginal({ assertActive,
           originalUrl: async () => this.files.from(source.source.bucketId).createSignedUrl(source.source.filePath, 600) });
         const bytes = Buffer.from(parsed.markdown);
-        raw = { bytes, artifact: await this.store.save(storage, 'RAW_MARKDOWN', bytes, record) };
+        raw = { bytes, artifact: await saveOriginalRaw(this.store, run, bytes, record) };
       } else await record(raw.artifact);
       // DB progress stores verified immutable descriptors. Normal continuation needs only
       // the last page group, not every preceding group or a recomposed prefix.
@@ -171,6 +184,14 @@ export class DocumentParsingHostedService {
         const path = `original/pages-${pageStart}.json`;
         // Recover a lost upload/progress response at exactly the next path before extracting again.
         let recovered = await this.store.recover(storage, 'MANIFEST', path);
+        const recoveredPage = await recovery.read('MANIFEST', path);
+        if (recovered && recoveredPage && !Buffer.from(recovered.bytes).equals(Buffer.from(recoveredPage)))
+          throw documentParseError('DOCUMENT_PARSE_RECOVERY_COPY_MISMATCH');
+        if (!recovered && recoveredPage) {
+          const bytes = new Uint8Array(recoveredPage);
+          assertPageChunk(JSON.parse(Buffer.from(bytes).toString('utf8')), pageStart, pageCount);
+          recovered = { bytes, artifact: await this.store.save(storage, 'MANIFEST', bytes, record, path) };
+        }
         const reusablePage = reusable?.bundle.rawPdfArtifacts.find(item => item.relativePath === path);
         if (!recovered && reusable && reusablePage) {
           const bytes = new Uint8Array(await this.store.read(reusable.scope, reusablePage));
@@ -336,6 +357,8 @@ function startInput(value: unknown): StartDocumentParseRequest {
       !Number.isSafeInteger(input.expectedPublishedRevision) || Number(input.expectedPublishedRevision) < 0) {
     throw documentParseError('DOCUMENT_PARSE_INPUT_INVALID', 400);
   }
+  try { documentParseRecoveryPredecessor(input.requestId); }
+  catch { throw documentParseError('DOCUMENT_PARSE_RECOVERY_REQUEST_INVALID', 400); }
   return { requestId: input.requestId, expectedPublishedRevision: Number(input.expectedPublishedRevision) };
 }
 function safeErrorCode(error: unknown) {

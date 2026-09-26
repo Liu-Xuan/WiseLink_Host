@@ -43,12 +43,13 @@ jest.mock('@client/src/pages/DocumentParsingPage/DocumentSourceReadingWorkspace'
 const mockStatus = jest.fn();
 const mockReading = jest.fn();
 const mockTranslation = jest.fn();
+const mockStart = jest.fn();
 const mockSessionCallbacks: Array<() => void> = [];
 jest.mock('@client/src/api/canonical-host', () => ({
   readDocumentParsingStatus: (...args: unknown[]) => mockStatus(...args),
   readParsedDocument: (...args: unknown[]) => mockReading(...args),
   readDocumentTranslationReading: (...args: unknown[]) => mockTranslation(...args),
-  startDocumentParsing: jest.fn(),
+  startDocumentParsing: (...args: unknown[]) => mockStart(...args),
   subscribeCanonicalHostClientSession: (callback: () => void) => {
     mockSessionCallbacks.push(callback);
     return () => undefined;
@@ -112,6 +113,8 @@ beforeEach(() => {
   container = dom.window.document.getElementById('root');
   jest.clearAllMocks();
   mockSessionCallbacks.length = 0;
+  mockStart.mockReset();
+  mockStart.mockResolvedValue({});
   mockStatus.mockResolvedValue(statusPayload());
   mockReading.mockResolvedValue(readingPayload());
   mockTranslation.mockResolvedValue({
@@ -370,4 +373,29 @@ it('records the selected registered page of a multi-page unit and rejects an unr
   await act(async () => container.querySelector<HTMLButtonElement>('#select-original-source')!.click());
   expect(new URLSearchParams(router.state.location.search).get('sourceRef')).toBe('SR-TEST-P2');
   expect(mockReading).toHaveBeenCalledTimes(1);
+});
+
+
+it('an explicit failed-parse retry keeps one predecessor request after a lost response', async () => {
+  const predecessor = 'PRUN-00000000-0000-0000-0000-000000000015';
+  mockStatus.mockResolvedValue({ ...statusPayload(), latestRun: {
+    parseRunId: predecessor, status: 'FAILED', deadlineAt: '2000-01-01T00:00:00Z',
+    errorCode: 'HOSTED_MODEL_QUOTA_EXHAUSTED',
+  } });
+  mockStart.mockRejectedValueOnce(new Error('响应丢失')).mockResolvedValueOnce({});
+  await mount();
+  expect(mockStart).not.toHaveBeenCalled(); // Displaying an error is never automatic retry authorization.
+  await act(async () => {
+    [...container.querySelectorAll('button')].find(item => item.textContent === '重新解析')?.click();
+  });
+  expect(container.querySelector('[role="alert"]')?.textContent).toContain('响应丢失');
+  await act(async () => {
+    [...container.querySelectorAll('button')].find(item => item.textContent === '核对解析请求')?.click();
+  });
+  expect(mockStart).toHaveBeenCalledTimes(2);
+  expect(mockStart.mock.calls[0]).toEqual(['DV1', {
+    requestId: `parse-resume-${predecessor}`, expectedPublishedRevision: 3,
+  }]);
+  expect(mockStart.mock.calls[1]).toEqual(mockStart.mock.calls[0]);
+  expect(container.textContent).toContain('constructed');
 });

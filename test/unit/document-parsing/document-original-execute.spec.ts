@@ -9,7 +9,7 @@ function fixture(loseReceipt = false) {
   const compose = jest.spyOn(composition, 'composeDocumentOriginal');
   let receiptLost = false;
   const binding = { documentVersionId: 'DV', documentId: 'DOC', familyId: 'FAM', sourceArtifactId: 'ART', pdfSha256: 'a'.repeat(64), byteLength: 1 };
-  const run = { parseRunId: 'PR', documentVersionId: 'DV', parseRevision: 1, status: 'RUNNING',
+  const run = { requestId: 'initial', actorUserId: 'actor', tenantId: 'tenant', parseRunId: 'PR', documentVersionId: 'DV', parseRevision: 1, status: 'RUNNING',
     sourceBinding: binding, bucketId: 'bucket', expectedPublishedRevision: 0, artifactProgress: [] as unknown[], manifestArtifact: null as unknown };
   const content = new Map<string, { bytes: Uint8Array; mediaType: string }>();
   const metadata = (path: string) => ({ id: `object:${path}`, bucketID: 'bucket', filePath: path,
@@ -33,7 +33,8 @@ function fixture(loseReceipt = false) {
     pages: Array.from({ length: Math.min(8, 25 - input.pageStart) }, (_, offset) => ({
     pageIndex: input.pageStart + offset, text: text(input.pageStart + offset), items: [], width: 600, height: 800, rotation: 0,
     })) }));
-  const repository = { current: jest.fn(async () => ({ published: null as typeof run | null })), read: async () => ({ ...run }), stage: async () => { run.status = 'STAGING'; },
+  const predecessors = new Map<string, typeof run>();
+  const repository = { current: jest.fn(async () => ({ published: null as typeof run | null })), read: async (_scope: unknown, id: string) => predecessors.get(id) ?? ({ ...run }), stage: async () => { run.status = 'STAGING'; },
     progress: async (_scope: unknown, _id: string, artifacts: Array<{ relativePath: string; readback: string }>) => {
     if (loseReceipt && !receiptLost && artifacts.some(item => item.relativePath === 'original/pages-0.json' && item.readback === 'UPLOADED')) {
       receiptLost = true; throw new Error('CONSTRUCTED_PROGRESS_RECEIPT_LOST');
@@ -58,7 +59,7 @@ function fixture(loseReceipt = false) {
     { assertCanRead: authorize } as never);
   const scope = { documentVersionId: 'DV', actorUserId: 'actor', tenantId: 'tenant', roles: [] };
   const fence = { parseRunId: 'PR', leaseOwner: 'consumer', leaseToken: 'token', leaseGeneration: 1 };
-  return { service, scope, fence, run, repository, source, binding, content, scoped, compose, parser,
+  return { service, scope, fence, run, repository, predecessors, source, binding, content, scoped, compose, parser,
     extract, sessions, readOriginal, authorize, checkLease, text };
 }
 
@@ -173,4 +174,200 @@ describe('bounded original execute and persisted Reader (isolated source and plu
     expect(f.extract.mock.calls.map(([input]) => input.pageStart)).toEqual([0, 8, 8, 16]);
     expect(f.parser).toHaveBeenCalledTimes(1);
   });
+
+  function advance(f: ReturnType<typeof fixture>, suffix: number) {
+    const predecessor = structuredClone(f.run);
+    predecessor.status = 'FAILED';
+    f.predecessors.set(predecessor.parseRunId, predecessor);
+    const parseRunId = `PRUN-00000000-0000-0000-0000-${String(suffix).padStart(12, '0')}`;
+    Object.assign(f.run, { parseRunId, requestId: `parse-resume-${predecessor.parseRunId}`,
+      parseRevision: predecessor.parseRevision + 1, artifactProgress: [], status: 'RUNNING', manifestArtifact: null });
+    f.fence.parseRunId = parseRunId;
+    return predecessor;
+  }
+  function recoveryFixture() {
+    const f = fixture();
+    f.run.parseRunId = 'PRUN-00000000-0000-0000-0000-000000000001';
+    f.fence.parseRunId = f.run.parseRunId;
+    return f;
+  }
+
+  it('reuses ancestors beyond a partially copied predecessor and rebuilds the final manifest', async () => {
+    jest.useFakeTimers();
+    const f = recoveryFixture();
+    await f.service.executeStep(f.run.parseRunId, f.scope, f.fence);
+    const first = advance(f, 2);
+    const progress = f.repository.progress;
+    f.repository.progress = async (...args) => {
+      await progress(...args);
+      if (args[2].some(item => item.relativePath === 'original/pages-0.json' && item.readback === 'VERIFIED'))
+        jest.advanceTimersByTime(10_001);
+    };
+    expect((await f.service.executeStep(f.run.parseRunId, f.scope, f.fence)).coverage.readPageIndexes).toHaveLength(8);
+    f.repository.progress = progress;
+    advance(f, 3);
+    await f.service.executeStep(f.run.parseRunId, f.scope, f.fence);
+    expect((await f.service.executeStep(f.run.parseRunId, f.scope, f.fence)).status).toBe('PUBLISHED');
+    expect(f.parser).toHaveBeenCalledTimes(1);
+    expect(f.extract.mock.calls.map(([input]) => input.pageStart)).toEqual([0, 8, 16, 24]);
+    expect(f.predecessors.get(first.parseRunId)?.artifactProgress).toEqual(first.artifactProgress);
+    const reading = await f.service.read('DV', f.run.parseRunId, f.scope);
+    expect(reading.original?.binding.parseRunId).toBe(f.run.parseRunId);
+  });
+
+  it('recovers raw-only output and a lost progress receipt without repeating the plugin', async () => {
+    const f = recoveryFixture();
+    const progress = f.repository.progress;
+    f.repository.progress = async (...args) => {
+      if (args[2].some(item => item.relativePath === 'raw/document.md')) throw new Error('LOST_RAW_RECEIPT');
+      await progress(...args);
+    };
+    await expect(f.service.executeStep(f.run.parseRunId, f.scope, f.fence)).rejects.toThrow('LOST_RAW_RECEIPT');
+    expect(f.run.artifactProgress.some((item: any) => item.relativePath === 'raw/document.md')).toBe(false);
+    f.repository.progress = progress;
+    advance(f, 2);
+    await f.service.executeStep(f.run.parseRunId, f.scope, f.fence);
+    expect(f.parser).toHaveBeenCalledTimes(1);
+  });
+
+  it('blocks same-attempt repetition of an unpersisted output but permits a new recovery attempt', async () => {
+    const f = recoveryFixture();
+    const progress = f.repository.progress;
+    f.repository.progress = async (...args) => {
+      await progress(...args);
+      if (args[2].some(item => item.relativePath === 'original/raw-provenance.json' && item.readback === 'VERIFIED'))
+        throw new Error('INTERRUPTED_BEFORE_RAW');
+    };
+    await expect(f.service.executeStep(f.run.parseRunId, f.scope, f.fence)).rejects.toThrow('INTERRUPTED_BEFORE_RAW');
+    f.repository.progress = progress;
+    await expect(f.service.executeStep(f.run.parseRunId, f.scope, f.fence)).rejects.toThrow('DOCUMENT_PARSE_RECOVERY_RAW_NOT_PERSISTED');
+    expect(f.parser).toHaveBeenCalledTimes(1);
+    advance(f, 2);
+    await f.service.executeStep(f.run.parseRunId, f.scope, f.fence);
+    expect(f.parser).toHaveBeenCalledTimes(2);
+  });
+
+  it.each(['actor', 'source', 'revision'])('rejects an invalid %s in the immutable recovery chain', async kind => {
+    const f = recoveryFixture();
+    await f.service.executeStep(f.run.parseRunId, f.scope, f.fence);
+    const previous = advance(f, 2);
+    if (kind === 'actor') previous.actorUserId = 'other';
+    if (kind === 'source') previous.sourceBinding.pdfSha256 = 'b'.repeat(64);
+    if (kind === 'revision') previous.parseRevision = f.run.parseRevision;
+    await expect(f.service.executeStep(f.run.parseRunId, f.scope, f.fence)).rejects.toThrow('DOCUMENT_PARSE_RECOVERY_CHAIN_INVALID');
+    expect(f.parser).toHaveBeenCalledTimes(1);
+  });
+
+  it('fails on damaged saved raw rather than falling back to another plugin call', async () => {
+    const f = recoveryFixture();
+    await f.service.executeStep(f.run.parseRunId, f.scope, f.fence);
+    const previous = advance(f, 2);
+    const path = `wiselink/parsed/DV/${previous.parseRunId}/raw/document.md`;
+    f.content.get(path)!.bytes[0] ^= 1;
+    await expect(f.service.executeStep(f.run.parseRunId, f.scope, f.fence)).rejects.toThrow('DOCUMENT_ORIGINAL_READBACK_DIGEST_MISMATCH');
+    expect(f.parser).toHaveBeenCalledTimes(1);
+  });
+
+  it('does not identify an old raw-only MinerU checkpoint as official output', async () => {
+    const f = recoveryFixture();
+    await f.service.executeStep(f.run.parseRunId, f.scope, f.fence);
+    const previous = advance(f, 2);
+    previous.artifactProgress = previous.artifactProgress.filter((item: any) => item.relativePath === 'raw/document.md');
+    for (const path of f.content.keys()) {
+      if (path.startsWith(`wiselink/parsed/DV/${previous.parseRunId}/original/`)) f.content.delete(path);
+    }
+    await expect(f.service.executeStep(f.run.parseRunId, f.scope, f.fence)).rejects.toThrow('DOCUMENT_PARSE_RECOVERY_PROVENANCE_UNVERIFIED');
+    expect(f.parser).toHaveBeenCalledTimes(1);
+  });
+
+
+  it('recovers the legacy official raw using verified page evidence without a provenance marker', async () => {
+    const f = recoveryFixture();
+    await f.service.executeStep(f.run.parseRunId, f.scope, f.fence);
+    const previous = advance(f, 2);
+    previous.artifactProgress = previous.artifactProgress.filter((item: any) => item.relativePath !== 'original/raw-provenance.json');
+    f.content.delete(`wiselink/parsed/DV/${previous.parseRunId}/original/raw-provenance.json`);
+    await f.service.executeStep(f.run.parseRunId, f.scope, f.fence);
+    expect(f.parser).toHaveBeenCalledTimes(1);
+    expect(f.extract).toHaveBeenCalledTimes(2);
+  });
+
+  it.each(['missing', 'duplicate'])('rejects %s ancestor page descriptors instead of filling the hole by extraction', async kind => {
+    const f = recoveryFixture();
+    await f.service.executeStep(f.run.parseRunId, f.scope, f.fence);
+    const previous = advance(f, 2);
+    const page = previous.artifactProgress.find((item: any) => item.relativePath === 'original/pages-0.json');
+    if (kind === 'missing') previous.artifactProgress = previous.artifactProgress.filter(item => item !== page);
+    else previous.artifactProgress.push(structuredClone(page));
+    await expect(f.service.executeStep(f.run.parseRunId, f.scope, f.fence)).rejects.toThrow('DOCUMENT_PARSE_RECOVERY_CHECKPOINT_INVALID');
+    expect(f.extract).toHaveBeenCalledTimes(2);
+  });
+
+  it('rejects an orphan target copy whose valid JSON differs from the selected ancestor', async () => {
+    const f = recoveryFixture();
+    await f.service.executeStep(f.run.parseRunId, f.scope, f.fence);
+    const previous = advance(f, 2);
+    const original = f.content.get(`wiselink/parsed/DV/${previous.parseRunId}/original/pages-0.json`)!;
+    const chunk = JSON.parse(Buffer.from(original.bytes).toString('utf8'));
+    chunk.pages[0].text = 'Unexpected target text';
+    f.content.set(`wiselink/parsed/DV/${f.run.parseRunId}/original/pages-0.json`, {
+      bytes: Buffer.from(JSON.stringify(chunk)), mediaType: original.mediaType,
+    });
+    await expect(f.service.executeStep(f.run.parseRunId, f.scope, f.fence)).rejects.toThrow('DOCUMENT_PARSE_RECOVERY_COPY_MISMATCH');
+    expect(f.extract).toHaveBeenCalledTimes(2);
+  });
+
+  it('continues a lost target-copy receipt without overwriting or repeating original extraction', async () => {
+    const f = recoveryFixture();
+    await f.service.executeStep(f.run.parseRunId, f.scope, f.fence);
+    advance(f, 2);
+    const progress = f.repository.progress;
+    f.repository.progress = async (...args) => {
+      if (args[2].some(item => item.relativePath === 'original/pages-0.json')) throw new Error('LOST_COPY_RECEIPT');
+      await progress(...args);
+    };
+    await expect(f.service.executeStep(f.run.parseRunId, f.scope, f.fence)).rejects.toThrow('LOST_COPY_RECEIPT');
+    f.repository.progress = progress;
+    await f.service.executeStep(f.run.parseRunId, f.scope, f.fence);
+    expect(f.extract).toHaveBeenCalledTimes(2);
+    expect(f.parser).toHaveBeenCalledTimes(1);
+  });
+
+
+  it.each([false, true])('promotes current provenance receipt before publishing with completed manifest=%s', async completed => {
+    const f = recoveryFixture();
+    await f.service.executeStep(f.run.parseRunId, f.scope, f.fence);
+    if (completed) {
+      await f.service.executeStep(f.run.parseRunId, f.scope, f.fence);
+      f.run.status = 'STAGING';
+    }
+    const marker = f.run.artifactProgress.find((item: any) => item.relativePath === 'original/raw-provenance.json') as { readback: string };
+    marker.readback = 'UPLOADED';
+    f.repository.publish.mockImplementation(async (_scope, _id, artifact) => {
+      if (f.run.artifactProgress.some((item: any) => item.readback !== 'VERIFIED'))
+        throw new Error('DOCUMENT_PARSE_READBACK_REQUIRED');
+      f.run.status = 'PUBLISHED'; f.run.manifestArtifact = artifact;
+    });
+    expect((await f.service.executeStep(f.run.parseRunId, f.scope, f.fence)).status).toBe('PUBLISHED');
+    expect(f.run.artifactProgress.find((item: any) => item.relativePath === 'original/raw-provenance.json'))
+      .toEqual(expect.objectContaining({ readback: 'VERIFIED' }));
+    expect(f.parser).toHaveBeenCalledTimes(1);
+  });
+
+  it('rejects an explicit nonofficial manifest producer even when page and marker evidence exist', async () => {
+    const f = recoveryFixture();
+    await f.service.executeStep(f.run.parseRunId, f.scope, f.fence);
+    await f.service.executeStep(f.run.parseRunId, f.scope, f.fence);
+    const previous = advance(f, 2);
+    // Model an orphan manifest whose upload committed before its DB descriptor.
+    previous.artifactProgress = previous.artifactProgress.filter((item: any) => item.relativePath !== 'original/manifest.json');
+    const path = `wiselink/parsed/DV/${previous.parseRunId}/original/manifest.json`;
+    const stored = f.content.get(path)!;
+    const bundle = JSON.parse(Buffer.from(stored.bytes).toString('utf8'));
+    bundle.original.producer.kind = 'MINERU_LOCAL_PDFJS';
+    stored.bytes = Buffer.from(JSON.stringify(bundle));
+    await expect(f.service.executeStep(f.run.parseRunId, f.scope, f.fence)).rejects.toThrow('DOCUMENT_PARSE_RECOVERY_PROVENANCE_INVALID');
+    expect(f.parser).toHaveBeenCalledTimes(1);
+  });
+
 });

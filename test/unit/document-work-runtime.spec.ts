@@ -197,15 +197,46 @@ describe('automatic WorkItem original preparation', () => {
   });
 
   it.each([
-    { status: 'FAILED', errorCode: 'DOCUMENT_PARSE_INTERRUPTED' },
+    { status: 'FAILED', errorCode: 'DOCUMENT_PARSE_INTERRUPTED', deadlineAt: '2030-01-01T00:00:00Z' },
     { status: 'STAGING', errorCode: 'PLUGIN_TIMEOUT' },
-    { status: 'STAGING', errorCode: null, deadlineAt: '2000-01-01T00:00:00Z' },
+    { status: 'STAGING', errorCode: 'HOSTED_MODEL_QUOTA_EXHAUSTED', deadlineAt: '2000-01-01T00:00:00Z' },
+    { status: 'STAGING', errorCode: 'DOCUMENT_PARSE_FAILED', deadlineAt: '2000-01-01T00:00:00Z' },
   ])('preserves failed or interrupted results without creating a replacement: %j', async run => {
     const f = fixture();
     f.parsing.status.mockResolvedValue({ documentVersionId: 'DV', latestRun: { parseRunId: 'run', ...run } });
     await expect(f.service.prepareAutomaticOriginal('WI')).resolves.toMatchObject({ status: 'REQUIRES_ATTENTION', parseRunId: 'run' });
     expect(f.parsing.start).not.toHaveBeenCalled();
     expect(f.leases.claim).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    { status: 'STAGING', errorCode: null },
+    { status: 'FAILED', errorCode: 'DOCUMENT_PARSE_INTERRUPTED' },
+  ])('reserves a stable successor for an expired interrupted attempt: %j', async run => {
+    const f = fixture();
+    const predecessor = 'PRUN-00000000-0000-0000-0000-000000000001';
+    f.parsing.status.mockResolvedValue({ documentVersionId: 'DV', publishedRun: { parseRevision: 2 },
+      latestRun: { parseRunId: predecessor, deadlineAt: '2000-01-01T00:00:00Z', ...run } });
+    f.parsing.start.mockResolvedValue({ parseRunId: 'successor' });
+    await expect(f.service.prepareAutomaticOriginal('WI')).resolves.toMatchObject({
+      status: 'ORIGINAL_PREPARING', parseRunId: 'successor' });
+    await f.service.prepareAutomaticOriginal('WI');
+    expect(f.parsing.start).toHaveBeenCalledTimes(2);
+    expect(f.parsing.start).toHaveBeenLastCalledWith('DV', {
+      requestId: `parse-resume-${predecessor}`, expectedPublishedRevision: 2,
+    }, expect.objectContaining({ automaticWorkItem: expect.objectContaining({ leaseGeneration: 3 }) }));
+    expect(f.parsing.executeStep).not.toHaveBeenCalled();
+    expect(f.leases.claim).not.toHaveBeenCalled();
+  });
+
+  it('preserves a locked recovery rejection without executing the old attempt', async () => {
+    const f = fixture();
+    f.parsing.status.mockResolvedValue({ documentVersionId: 'DV', latestRun: {
+      parseRunId: 'PRUN-00000000-0000-0000-0000-000000000002', status: 'STAGING',
+      deadlineAt: '2000-01-01T00:00:00Z', errorCode: null } });
+    f.parsing.start.mockRejectedValue(new Error('DOCUMENT_PARSE_RECOVERY_NOT_ELIGIBLE'));
+    await expect(f.service.prepareAutomaticOriginal('WI')).rejects.toThrow('DOCUMENT_PARSE_RECOVERY_NOT_ELIGIBLE');
+    expect(f.parsing.executeStep).not.toHaveBeenCalled();
   });
 
   it('rejects static scope, a different WorkItem and revoked authorization before writes', async () => {

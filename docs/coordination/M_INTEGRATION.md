@@ -1,5 +1,19 @@
 # M 主控集成交接
 
+## 2026-09-26 C154：过期解析后继与已保存原文复用（待发布）
+
+接续 C153，不改变工程输入、旧运行期限或旧诊断。自动原文准备只对已过期且无错误/明确 `DOCUMENT_PARSE_INTERRUPTED` 的尝试，使用 `parse-resume-<前驱 PRUN>` 预约一个稳定后继；已知 quota、generic failure、来源与数据错误仍要求处理，不自动循环。正常阅读页的显式解析重试使用同一规则承载前驱，因此丢受理响应后仍重放同一请求。
+
+既有 reserve 事务在文档版本锁和前驱行锁内核对租户、actor、确切 source/bucket、前驱最新性、状态、published revision 和自动队列代次；同请求重放先核对绑定后读回原后继。过期收尾以 `coalesce` 保留已有错误，只有未记录原因的过期尝试补 `DOCUMENT_PARSE_INTERRUPTED`。无数据库列、角色、权限或路由新增。
+
+后继沿不可变请求关系读取更早前驱的 raw Markdown 与连续 PDF 页块，使用既有 FileService 元数据、摘要与字节读回校验后复制到自己的 namespace；部分复制的中间尝试不遮蔽更早成果。manifest 与结果绑定重新计算，旧 manifest 和工程认识不复制为新结论。损坏、缺页/重复描述符、跨 actor/source、目标复制内容不一致均明确拒绝。
+
+新增一个 raw 来源伴随文件，绑定已有 producer、run/source、raw 摘要与长度，解决官方插件和历史 MinerU 使用相同 raw 路径的歧义。已声明存在的 raw 下载失败不降级；无 raw 描述符且存储明确不存在的新后继可以查更早前驱，确无产物才重新解析。同一次尝试只有来源伴随文件而正文未保存时明确报错，不伪装已保存。历史 raw 若没有可核验 producer 或已知官方页块证据，仍报 `PROVENANCE_UNVERIFIED`；不猜测来源。
+
+本地定向单元测试 82 项通过（runtime 19、页面 19、恢复格式 2、execute/store 29、自动 fence 13）；自动 fence 的另外 7 项 PG 用例本轮未配置而跳过，不计为通过。独立真实 PG14 测试 1 项通过/0 跳过，包含并发单后继、旧代次、跨用户、错误保留、响应丢失和额度写入行锁竞争。多级前驱、复制回执丢失、损坏/缺页/重复、来源伴随 VERIFIED 回执丢失的两条发布路径均有定向验证。前后端类型、定向 ESLint、production build 和差异检查通过；构建只有既有大 chunk 提示。本地隔离 PG14 已正常停止。提交、发布及受控运行回执完成后补充。
+
+本批基于已发布 C153 的独立 `codex/wl-c154-original-recovery`，不混入保留的 MinerU/设置权限实现。保留分支上的 `MINERU_LOCAL_PDFJS` 也会生成 original 页块，后续整合必须按确切 producer 接续，不能直接将其视为官方插件产物。没有更改 17c Skill 或启用 cron；官方额度是否恢复尚未重测，真实全自动闭环仍未完成。
+
 ## 2026-09-26 C153 已发布：准确错误和已保存成员阅读
 
 Host 提交 `9654f1c242d41fa950b07fa71fc9bb9dde1b59ae`（父提交 `76077dcae837330144edff4691655d2dbb486d0d`，其树与 C152 `7458b572ef76325411e760a6a6ffee5b0eea6c7a` 相同）已普通推送并读回 `origin/codex/wl-c153-reading-errors`。17b release `7689660478222601170` 已 `finished`，准确 commit_id 为该提交，error_logs=[]。本批没有 GitHub 同步。
@@ -16,7 +30,7 @@ C153 Skill 已安装。包为 61 文件、504496 bytes、SHA256 `70f9004b1ad1fbc
 
 安装后仅执行一次获准 `--auto-queue` 受控 tick，准确命中 `WI-4db598a0-33b8-4abd-a64d-df2aac9f29c5`，回包 `REQUIRES_ATTENTION / DOCUMENT_PARSE_FAILED`，队列租约代次由 1 升至 2；没有重试或 BLOCK，回包未提供模型调用数。随后官方读回 16 个 cron 全停用、运行中 0、消费子进程 0。Host 10:50:53 +08 只读复核：原 `PRUN-dbdb8cfd-0af4-4b3f-a9fa-cf2e2c7f230a` / revision 1 仍 STAGING、0 产物、原错误码不变、deadline=10:11:59.94 +08；队列 LEASED/gen2、blocked_code=null。没有新建或删除业务结果。
 
-代码路径已定位：`document-work-runtime.service.ts` 对已有 errorCode/过期 deadline 直接返回 attention，原错误优先；本次未进入 STEP/插件调用，所以不能据此判断当前官方解析额度已恢复。底层 reserve 已有同 actor 过期收尾与新修订预约，但同 requestId 提前重放，自动准备固定 requestId 因而不能进入后继。后续最小方向是复用既有事务及来源/代次核验，以前驱 run 派生稳定后继请求并保存旧诊断；必须明确恢复资格，已知 quota 仍未解除时不得每次到期自动新建重试。此后继修复尚未实施，不用改旧 run 或重传原件绕过。
+代码路径已定位：`document-work-runtime.service.ts` 对已有 errorCode/过期 deadline 直接返回 attention，原错误优先；本次未进入 STEP/插件调用，所以不能据此判断当前官方解析额度已恢复。底层 reserve 已有同 actor 过期收尾与新修订预约，但同 requestId 提前重放，自动准备固定 requestId 因而不能进入后继。后续最小方向是复用既有事务及来源/代次核验，以前驱 run 派生稳定后继请求并保存旧诊断；必须明确恢复资格，已知 quota 仍未解除时不得每次到期自动新建重试。该后继修复现由本文件顶部 C154 批次承接，不改旧 run 或重传原件绕过。
 
 回退边界：Host 可从已核验 C152 树建立精确恢复提交后经原发布路径回退；Skill 有上述 C152 原目录备份，恢复前仍需核对无在途。本轮未执行回退、未启用定时消费。备用导入/标题辅助/设置权限继续按用户“暂不增加权限，保留实现”保持未上线，全自动闭环尚未验收。
 
