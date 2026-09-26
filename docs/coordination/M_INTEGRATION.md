@@ -6,6 +6,8 @@
 
 上线后以刘轩的 Chrome 会话打开正常 17b 资料库，身份与既有 787 工作页可读。选定尚未入库的真实两页 `787-FTD-46-26002` 作为新样本：上线只读文号查询无现有版本或 WorkItem；但 Chrome 的 ChatGPT 扩展在文件选择时返回 `Not allowed`，工具文档要求用户开启扩展的 “Allow access to file URLs”。页面读回仍显示“上传并创建工程事项”禁用，**没有上传、没有新 WorkItem，也没有验证此次 Matter 关联的线上写入**。C136 自动队列与四项旧固定轮询继续保持停用；待浏览器文件权限恢复后从同一正常页面上传，核对确切 DocumentVersion、WorkItem、自动授权、Matter 链接和工程师读回，再决定后续全流程运行。
 
+随后复核普通“上传文档到资料库”的实际链路：它保存 DocumentVersion 并归入 Matter，但其回执和页面均明确不创建 WorkItem。现有自动队列只接受已解析、`CANDIDATE_READBACK_VERIFIED` 且带有效逐任务授权的 WorkItem；只给普通上传补一条队列授权或在前端追加一次可丢失的调用，均不能形成可恢复的自动评估。若要让普通上传也自动分析，需要在 Host 侧对获准的确切上传建立持久 WorkItem、完成解析与读回后入队，并在故障后从已保存结果接续；该入口的新增评估权限范围仍待用户明确授权，不从旧 `dev:*` 或固定任务权限继承。
+
 ## 2026-09-26 旧固定目标轮询已停用
 
 17c OpenClaw Cron 控制台现有 16 条调度定义。此前仅四条固定 Matter/DocumentVersion 旧任务启用、每分钟各运行一次，最近多轮分别返回 `REQUIRES_ATTENTION`（777 Review 已失败、777 文档翻译期限已过）、`IDLE`（SB Review）和 `DOCUMENT_READY/NO_PENDING`（787 文档），没有推进新工作。停用前官方 `cron list --all --json` 回读四项 `enabled=true`、`runningAtMs=null`，进程列表无 `consume-hosted-work-item.mjs` 在途进程。
