@@ -399,3 +399,26 @@ it('an explicit failed-parse retry keeps one predecessor request after a lost re
   expect(mockStart.mock.calls[1]).toEqual(mockStart.mock.calls[0]);
   expect(container.textContent).toContain('constructed');
 });
+
+
+it('shows a persisted quota pause instead of progress and stops status polling while retaining saved reading', async () => {
+  jest.useFakeTimers();
+  try {
+    mockStatus.mockResolvedValue({ ...statusPayload(), latestRun: {
+      parseRunId: 'PRUN-00000000-0000-0000-0000-000000000016', status: 'STAGING',
+      deadlineAt: '2030-01-01T00:00:00Z', errorCode: 'DOCUMENT_PLUGIN_QUOTA_EXHAUSTED', verifiedArtifacts: 0,
+    } });
+    await mount();
+    expect(container.textContent).toContain('文档解析服务额度已用尽，待服务恢复后接续。');
+    expect(container.textContent).not.toContain('正在保存并核验产物');
+    expect(container.textContent).not.toContain('正在解析原件');
+    expect(container.textContent).toContain('constructed');
+    const button = [...container.querySelectorAll('button')].find(item => item.textContent === '等待接续');
+    expect(button?.disabled).toBe(true);
+    expect(container.querySelector('details')?.textContent).toContain('DOCUMENT_PLUGIN_QUOTA_EXHAUSTED');
+    await act(async () => { jest.advanceTimersByTime(15000); });
+    expect(mockStatus).toHaveBeenCalledTimes(1);
+    expect(mockReading).toHaveBeenCalledTimes(1);
+    expect(mockStart).not.toHaveBeenCalled();
+  } finally { jest.useRealTimers(); }
+});
