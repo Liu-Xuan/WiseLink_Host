@@ -13,7 +13,6 @@ import { MatterAssessmentActivityController } from '../../server/modules/canonic
 import { EngineeringMatterWorkingRepository } from '../../server/modules/canonical-host/engineering-matter-working.repository';
 import { EngineeringMatterWorkingService } from '../../server/modules/canonical-host/engineering-matter-working.service';
 import { CanonicalModelSettingsService } from '../../server/modules/model-settings/canonical-model-settings.service';
-import type { CanonicalServiceScopeAuthorizationPort } from '../../server/modules/canonical-host/canonical-service-scope.authorization';
 import type { CanonicalHostActor } from '../../server/modules/canonical-host/canonical-host.types';
 import {
   canonicalJson,
@@ -432,24 +431,13 @@ describe('Matter activity GET handler', () => {
     const working = { readWorking: jest.fn(), readWorkingRevision: jest.fn() };
     const attempts = {
       readActivityForBrowser: jest.fn().mockResolvedValue({ items: [] }),
+      readExecutionSummaryForBrowser: jest.fn().mockResolvedValue({ state: 'IDLE' }),
     };
-    const authorize = jest
-      .fn()
-      .mockImplementation(async ({ matterId }: { matterId: string }) => ({
-        appId: actor.appId,
-        tenantId: actor.tenantId,
-        actorUserId: actor.userId,
-        principalId: 'p',
-        matterId,
-      }));
     const controller = new MatterAssessmentActivityController(
       working as unknown as EngineeringMatterWorkingService,
       attempts as unknown as MatterActionAttemptService,
-      {
-        authorizeOpenClawMatterRequest: authorize,
-      } as unknown as CanonicalServiceScopeAuthorizationPort,
     );
-    return { working, attempts, authorize, controller };
+    return { working, attempts, controller };
   }
   it('declares a GET behind the existing production browser ingress guard', () => {
     expect(
@@ -472,22 +460,26 @@ describe('Matter activity GET handler', () => {
     ).toContain(ProductionMiaodaBrowserObjectIngressGuard);
   });
   const request = { userContext: {} } as unknown as Request;
-  it('uses fresh exact-work authorization and passes a fail-closed reference callback', async () => {
+  it('uses fresh exact-work authorization and checks referenced Matters through the browser actor', async () => {
     const f = setup();
     await f.controller.read('m', { workRef: 'w', limit: '10' }, request);
     expect(f.working.readWorkingRevision).toHaveBeenCalledWith('m', 'w', actor);
     expect(f.working.readWorking).not.toHaveBeenCalled();
     const passed = f.attempts.readActivityForBrowser.mock.calls[0][0];
-    f.authorize.mockResolvedValue({
-      appId: actor.appId,
-      tenantId: 'other',
-      actorUserId: actor.userId,
-      principalId: 'p',
-      matterId: 'ref',
-    });
+    await passed.authorizeReferenceMatter('ref');
+    expect(f.working.readWorking).toHaveBeenCalledWith('ref', actor);
+    f.working.readWorking.mockRejectedValue(new Error('SOURCE_ACCESS_DENIED'));
     await expect(passed.authorizeReferenceMatter('ref')).rejects.toThrow();
   });
-  it('rejects caller authority, malformed pagination and service identity mismatches before activity read', async () => {
+  it('allows a newly linked browser Matter to read its idle execution summary', async () => {
+    const f = setup();
+    await f.controller.summary('m', request);
+    expect(f.working.readWorking).toHaveBeenCalledWith('m', actor);
+    expect(f.attempts.readExecutionSummaryForBrowser).toHaveBeenCalledWith(
+      expect.objectContaining(scope), actor,
+    );
+  });
+  it('rejects malformed pagination and source denial before activity read', async () => {
     const f = setup();
     for (const query of [
       { actor: 'fake' },
@@ -496,13 +488,7 @@ describe('Matter activity GET handler', () => {
       { workRef: 'w', attemptRef: 'a' },
     ])
       await expect(f.controller.read('m', query, request)).rejects.toThrow();
-    f.authorize.mockResolvedValue({
-      appId: actor.appId,
-      tenantId: 'other',
-      actorUserId: actor.userId,
-      principalId: 'p',
-      matterId: 'm',
-    });
+    f.working.readWorking.mockRejectedValue(new Error('SOURCE_ACCESS_DENIED'));
     await expect(f.controller.read('m', {}, request)).rejects.toThrow();
     expect(f.attempts.readActivityForBrowser).not.toHaveBeenCalled();
   });

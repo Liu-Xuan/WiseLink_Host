@@ -1,7 +1,6 @@
 import {
   Controller,
   Get,
-  Inject,
   Param,
   Query,
   Req,
@@ -17,11 +16,6 @@ import { EngineeringMatterWorkingService } from './engineering-matter-working.se
 import { MatterActionAttemptService } from './matter-action-attempt.service';
 import type { MatterAttemptScope } from './matter-action-attempt.service';
 import type { CanonicalHostActor } from './canonical-host.types';
-import {
-  CANONICAL_SERVICE_SCOPE_AUTHORIZATION,
-  canonicalServiceScopeUnavailable,
-  type CanonicalServiceScopeAuthorizationPort,
-} from './canonical-service-scope.authorization';
 import { validateActivityQuery } from './matter-assessment-activity';
 
 @NeedLogin()
@@ -31,8 +25,6 @@ export class MatterAssessmentActivityController {
   constructor(
     private readonly working: EngineeringMatterWorkingService,
     private readonly attempts: MatterActionAttemptService,
-    @Inject(CANONICAL_SERVICE_SCOPE_AUTHORIZATION)
-    private readonly authorization: CanonicalServiceScopeAuthorizationPort,
   ) {}
 
   @Get(':matterId/execution-summary')
@@ -40,7 +32,7 @@ export class MatterAssessmentActivityController {
     this.validateMatterId(matterId);
     const actor = hostActor(request);
     await this.working.readWorking(matterId, actor);
-    const scope = await this.browserScope(matterId, actor);
+    const scope = this.browserScope(matterId, actor);
     return this.attempts.readExecutionSummaryForBrowser(scope, actor);
   }
 
@@ -68,11 +60,11 @@ export class MatterAssessmentActivityController {
     };
     validateActivityQuery(query);
     const actor = hostActor(request);
-    // Same browser/object + service-scope chain as the existing reference-status endpoint.
+    // The browser actor must freshly read the exact Matter or work revision.
     if (query.workRef)
       await this.working.readWorkingRevision(matterId, query.workRef, actor);
     else await this.working.readWorking(matterId, actor);
-    const scope = await this.browserScope(matterId, actor);
+    const scope = this.browserScope(matterId, actor);
     return this.attempts.readActivityForBrowser(scope, query, actor);
   }
 
@@ -81,32 +73,11 @@ export class MatterAssessmentActivityController {
       throw new BadRequestException('MATTER_ACTIVITY_QUERY_INVALID');
   }
 
-  private async browserScope(matterId: string, actor: CanonicalHostActor): Promise<MatterAttemptScope> {
-    const target = await this.authorization.authorizeOpenClawMatterRequest?.({
-      matterId,
-    });
-    if (
-      !target ||
-      target.appId !== actor.appId ||
-      target.tenantId !== actor.tenantId ||
-      target.actorUserId !== actor.userId ||
-      target.matterId !== matterId ||
-      !target.principalId
-    )
-      throw canonicalServiceScopeUnavailable();
+  private browserScope(matterId: string, actor: CanonicalHostActor): MatterAttemptScope {
+    // This read-only browser projection uses native identity and fresh member/source
+    // checks. The OpenClaw service allowlist applies to service execution only.
     const authorizeReferenceMatter = async (referenceMatterId: string) => {
-      const source = await this.authorization.authorizeOpenClawMatterRequest?.({
-        matterId: referenceMatterId,
-      });
-      if (
-        !source ||
-        source.appId !== target.appId ||
-        source.tenantId !== target.tenantId ||
-        source.actorUserId !== target.actorUserId ||
-        source.principalId !== target.principalId ||
-        source.matterId !== referenceMatterId
-      )
-        throw canonicalServiceScopeUnavailable();
+      await this.working.readWorking(referenceMatterId, actor);
     };
     return {
       tenantId: actor.tenantId,

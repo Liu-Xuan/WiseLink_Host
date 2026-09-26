@@ -5,7 +5,6 @@ import { GlobalExceptionFilter } from '../../server/common/filters/exception.fil
 import { MatterAssessmentActivityController } from '../../server/modules/canonical-host/matter-assessment-activity.controller';
 import { EngineeringMatterWorkingService } from '../../server/modules/canonical-host/engineering-matter-working.service';
 import { MatterActionAttemptService } from '../../server/modules/canonical-host/matter-action-attempt.service';
-import { CANONICAL_SERVICE_SCOPE_AUTHORIZATION } from '../../server/modules/canonical-host/canonical-service-scope.authorization';
 
 // A real loopback HTTP rejection probe, not a Hosted identity/business test.
 describe('Matter activity local HTTP ingress', () => {
@@ -14,7 +13,6 @@ describe('Matter activity local HTTP ingress', () => {
   const readWorking = jest.fn();
   const readActivityForBrowser = jest.fn();
   const readExecutionSummaryForBrowser = jest.fn();
-  const authorizeOpenClawMatterRequest = jest.fn();
   const previousLocal = process.env.MIAODA_LOCAL_DEV;
 
   beforeAll(async () => {
@@ -26,10 +24,6 @@ describe('Matter activity local HTTP ingress', () => {
         {
           provide: MatterActionAttemptService,
           useValue: { readActivityForBrowser, readExecutionSummaryForBrowser },
-        },
-        {
-          provide: CANONICAL_SERVICE_SCOPE_AUTHORIZATION,
-          useValue: { authorizeOpenClawMatterRequest },
         },
       ],
     }).compile();
@@ -57,7 +51,6 @@ describe('Matter activity local HTTP ingress', () => {
       });
       expect(readWorking).not.toHaveBeenCalled();
       expect(readActivityForBrowser).not.toHaveBeenCalled();
-      expect(authorizeOpenClawMatterRequest).not.toHaveBeenCalled();
     },
   );
 
