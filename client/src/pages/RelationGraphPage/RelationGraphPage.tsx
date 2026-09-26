@@ -1,6 +1,6 @@
 import SuiteMatterGraphPage from './SuiteMatterGraphPage';
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { Navigate, useNavigate, useSearchParams } from 'react-router-dom';
+import { Link, Navigate, useNavigate, useSearchParams } from 'react-router-dom';
 import type {
   CanonicalLibraryIndexNodeKind,
   CanonicalLibraryIndexReadResponse,
@@ -681,7 +681,7 @@ function LegacyRelationGraphContent({
       return <section className="rg-panel" role="status">
         <h2 className="rg-panel-title">这是历史工作修订</h2>
         <p className="rg-panel-note">当前图谱只读取 Host 的当前工作投影。历史认识可在工程知识中按准确修订阅读。</p>
-        <a href={`/knowledge?${query.toString()}`}>阅读确切历史工作</a>
+        <Link to={`/knowledge?${query.toString()}`}>阅读确切历史工作</Link>
       </section>;
     }
     if (elements.length === 0) {
