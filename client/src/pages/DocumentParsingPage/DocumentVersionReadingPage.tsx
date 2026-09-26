@@ -55,6 +55,7 @@ export default function DocumentVersionReadingPage() {
   const [refresh, setRefresh] = useState(0);
   const loaded = useRef('');
   const request = useRef<StartDocumentParseRequest | null>(null);
+  const currentSettingsRequest = useRef<StartDocumentParseRequest | null>(null);
   const identity = useRef(readingIdentity);
   identity.current = readingIdentity;
 
@@ -63,12 +64,12 @@ export default function DocumentVersionReadingPage() {
     setStatus(null); setReading(null); setSource(null); setError(null); setSending(false);
     setTranslation(null); setTranslationPage(null); setTranslationUnitId(null); setTranslationSourceContext(requestedSource); setTranslationError(null); setView('dual');
     setTranslationLocationRequest(0);
-    loaded.current = ''; request.current = null;
+    loaded.current = ''; request.current = null; currentSettingsRequest.current = null;
     return subscribeCanonicalHostClientSession(() => {
       epoch.current++;
       rejectedRef.current = false;
       setStatus(null); setReading(null); setSource(null); setTranslation(null); setTranslationPage(null); setTranslationUnitId(null); setTranslationSourceContext(requestedSource); setTranslationError(null);
-      loaded.current = ''; request.current = null; setRefresh(value => value + 1);
+      loaded.current = ''; request.current = null; currentSettingsRequest.current = null; setSending(false); setRefresh(value => value + 1);
     });
   }, [readingIdentity]);
 
@@ -233,6 +234,7 @@ export default function DocumentVersionReadingPage() {
     documentTitle: currentStatus?.documentTitle });
   const documentVersionLabel = currentStatus ? libraryVersionLabel(currentStatus) : '版本未标注';
   const expired = latest ? Date.parse(latest.deadlineAt) <= Date.now() : false;
+  const canRestartWithCurrentSettings = Boolean(latest && (latest.status === 'FAILED' || (latest.status !== 'PUBLISHED' && expired)));
   const busy = Boolean(latest && ['RUNNING', 'STAGING'].includes(latest.status) && !expired);
   const parseFailure = latest?.errorCode === 'DOCUMENT_PLUGIN_QUOTA_EXHAUSTED'
     ? '文档解析服务额度已用尽，待服务恢复后接续。'
@@ -248,25 +250,27 @@ export default function DocumentVersionReadingPage() {
     return `/document-versions/${encodeURIComponent(documentVersionId)}/activities?${query.toString()}`;
   })() : null;
 
-  async function start() {
-    if (!currentStatus || sending) return;
+  async function start(withCurrentSettings = false) {
+    if (!currentStatus || sending || (withCurrentSettings ? request.current : currentSettingsRequest.current)) return;
+    if (withCurrentSettings && !canRestartWithCurrentSettings && !currentSettingsRequest.current) return;
+    const pendingRequest = withCurrentSettings ? currentSettingsRequest : request;
     const version = documentVersionId;
     const navigation = readingIdentity;
     const generation = epoch.current;
-    request.current ??= {
-      requestId: latest && (latest.status === 'FAILED' || (latest.status !== 'PUBLISHED' && expired))
+    pendingRequest.current ??= {
+      requestId: !withCurrentSettings && latest && (latest.status === 'FAILED' || (latest.status !== 'PUBLISHED' && expired))
         ? documentParseRecoveryRequestId(latest.parseRunId) : `parse-${crypto.randomUUID()}`,
       expectedPublishedRevision: currentStatus.publishedRun?.parseRevision ?? 0,
     };
     setSending(true); setError(null);
     try {
-      await startDocumentParsing(version, request.current);
+      await startDocumentParsing(version, pendingRequest.current);
       if (identity.current !== navigation || epoch.current !== generation) return;
-      request.current = null; setRefresh(value => value + 1);
+      pendingRequest.current = null; setRefresh(value => value + 1);
     } catch (reason) {
       if (identity.current !== navigation || epoch.current !== generation) return;
       const code = reason && typeof reason === 'object' && 'code' in reason ? reason.code : null;
-      if (['DOCUMENT_PARSE_REVISION_CONFLICT', 'DOCUMENT_PARSE_ALREADY_RUNNING', 'DOCUMENT_PARSE_RECOVERY_NOT_LATEST'].includes(String(code))) request.current = null;
+      if (['DOCUMENT_PARSE_REVISION_CONFLICT', 'DOCUMENT_PARSE_ALREADY_RUNNING', 'DOCUMENT_PARSE_RECOVERY_NOT_LATEST'].includes(String(code))) pendingRequest.current = null;
       setError(reason instanceof Error ? reason.message : '请求结果尚未确认，重试会核对同一请求。');
     } finally { if (identity.current === navigation && epoch.current === generation) setSending(false); }
   }
@@ -283,14 +287,19 @@ export default function DocumentVersionReadingPage() {
       <details className="document-reading-maintenance">
         <summary>文档处理</summary>
         <div className="document-reading-actions">
-          <Button onClick={() => { void start(); }} disabled={!currentStatus?.runtimeAvailable || busy || sending}>
+          <Button onClick={() => { void start(); }} disabled={!currentStatus?.runtimeAvailable || busy || sending || Boolean(currentSettingsRequest.current)}>
             {sending ? '正在受理…' : request.current ? '核对解析请求' : busy ? (parseFailure ? '等待接续' : latest?.waitingForLocalWorker ? '等待本机解析' : '正在解析…') : currentStatus?.publishedRun ? '重新解析' : '解析文档'}
           </Button>
+          {(canRestartWithCurrentSettings || currentSettingsRequest.current) && <Button variant="outline"
+            onClick={() => { void start(true); }} disabled={!currentStatus?.runtimeAvailable || sending || Boolean(request.current)}>
+            {currentSettingsRequest.current ? '核对当前设置请求' : '按当前设置重新解析'}
+          </Button>}
           <Button variant="outline" onClick={() => setRefresh(value => value + 1)}>刷新</Button>
           <DocumentOriginalPreview documentVersionId={documentVersionId}>打开原件</DocumentOriginalPreview>
         </div>
         {currentStatus ? <LocalMineruImport key={documentVersionId} documentVersionId={documentVersionId}
           expectedPublishedRevision={currentStatus.publishedRun?.parseRevision ?? 0} onImported={() => setRefresh(value => value + 1)} /> : null}
+        {canRestartWithCurrentSettings && <p>按当前设置重新解析会创建新的解析版本，保留旧输入及已保存的历史。</p>}
         {latest?.errorCode && <p>处理原因：{latest.errorCode}</p>}
       </details>
       {error && <p role="alert">{error}</p>}
