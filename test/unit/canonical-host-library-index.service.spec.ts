@@ -134,8 +134,40 @@ describe('CanonicalHostLibraryIndexService', () => {
       }),
     );
     expect(result.currentness.selectedVersionIsCurrent).toBe(true);
+    expect(result.workItem.currentJobAidWorkRevisionRef).toBeNull();
     expect(result.readAuthorization.action).toBe('READ_LIBRARY_INDEX');
     expect(resolver.resolve).toHaveBeenCalledTimes(1);
+  });
+
+  it('binds the graph read to the JobAid identity saved in the same WorkItem projection', async () => {
+    const withJobAid = {
+      ...projection,
+      integratedAssessment: {
+        baseRules: {
+          schemaVersion: 'wiselink.jobaid-problem-result.v2',
+          workRevisionRef: 'JAWR-EXACT-7',
+          status: 'CANDIDATE_ONLY',
+          revision: 7,
+          issueCount: 1,
+          openQuestionCount: 0,
+          artifact: { ref: 'artifact-7', sha256: 'a'.repeat(64) },
+          actionAttemptId: 'attempt-7',
+        },
+      },
+    } as unknown as CanonicalWorkItemProjection;
+    const { service } = target({
+      scoped: {
+        row: {
+          workItemId: projection.workItemId,
+          tenantId: actor.tenantId,
+          documentId: projection.source.documentId,
+          documentVersionId: projection.source.documentVersionId,
+        },
+        projection: withJobAid,
+      },
+    });
+    const result = await service.read({ workItemId: projection.workItemId, actor });
+    expect(result.workItem.currentJobAidWorkRevisionRef).toBe('JAWR-EXACT-7');
   });
 
   it('returns the same 404 boundary for a missing or cross-tenant WorkItem', async () => {

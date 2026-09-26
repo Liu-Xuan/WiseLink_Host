@@ -2888,6 +2888,8 @@ export interface CanonicalLibraryIndexReadResponse {
     workItemId: string;
     revision: number;
     phase: string;
+    /** Exact current JobAid work identity in this authorized projection. */
+    currentJobAidWorkRevisionRef: string | null;
   };
   document: {
     documentId: string;

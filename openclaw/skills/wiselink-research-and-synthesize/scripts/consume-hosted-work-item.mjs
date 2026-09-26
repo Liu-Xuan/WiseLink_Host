@@ -11,7 +11,7 @@ import { consumeHostedMatter } from './consume-hosted-matter.mjs';
 import { recoverNativeMatterResponse } from './recover-native-matter-response.mjs';
 import { invokeHostedJobAidProblemModel } from './run-jobaid-problem-assessment.mjs';
 import { invokeHostedInitialModel } from './invoke-hosted-initial-model.mjs';
-import { findInitialAssessmentRecovery, initialStageCheckpointPath, initialApplicabilityCheckpointPointerPath,
+import { INITIAL_ASSESSMENT_OPERATIONS, findInitialAssessmentRecovery, initialStageCheckpointPath, initialApplicabilityCheckpointPointerPath,
   assertFreshInitialAssessmentClaim, assertCommittingInitialClaim } from './initial-assessment-recovery.mjs';
 import { invokeHostedDocumentActivityModel } from './invoke-hosted-document-activity-model.mjs';
 import { consumeHostedDocumentReading } from './consume-hosted-document-reading.mjs';
@@ -624,6 +624,10 @@ export async function runHostedInitialStage(options, dependencies) {
     if (name.startsWith('commit_') && args.phase !== 'UPLOAD_PART') finalCommitStarted = true;
     const freshAssessmentCall = problemAssessment && !name.startsWith('commit_');
     const recoveryBegin = options.assessmentRecovery?.status === 'RECOVERY_BEGIN';
+    const sealedCommitReplay = options.assessmentRecovery?.status === 'RECOVERY_COMMITTING' &&
+      name === INITIAL_ASSESSMENT_OPERATIONS[operation].commit;
+    const sealedStatusRead = options.assessmentRecovery?.status === 'RECOVERY_COMMITTING' &&
+      name === 'get_action_attempt_status';
     const exactApplicabilityBeginReplay = operation === 'EXTRACT_APPLICABILITY' &&
       name === 'begin_applicability_evaluation' &&
       (recoveryBegin ||
@@ -634,7 +638,7 @@ export async function runHostedInitialStage(options, dependencies) {
       !await checkpoint.readOptional('begin_applicability_evaluation-1.result') &&
       !await checkpoint.readOptional('model.started') &&
       !await checkpoint.readOptional('commit_applicability_candidate-1.started');
-    const value = freshAssessmentCall ||
+    const value = freshAssessmentCall || sealedCommitReplay || sealedStatusRead ||
       (options.assessmentRecovery && name.startsWith('begin_') && !recoveryBegin)
       ? await dependencies.callTool(name, scopedArgs) : await checkpoint.remoteStep({
       // Keep c114 checkpoint identity stable for an already-started JobAid run.

@@ -1132,13 +1132,15 @@ async function recoverInitialCommitting({ stage, before, begin, callTool }) {
 }
 
 async function recoverCommitting({ mode, operation, before, begin, callTool }) {
+  const sealedOptions = { allowHistoricalSkillVersion: mode === 'INITIAL_ANALYSIS' &&
+    ['EVALUATE_JOBAID', 'SYNTHESIZE_OVERALL'].includes(operation) };
   const expectedContentHash =
     begin.recoveryResult?.contentHash ?? begin.recoveryResultContentHash;
   if (!expectedContentHash) {
     throw new Error('HOST_MCP_COMMITTING_RECOVERY_UNAVAILABLE');
   }
   if (begin.recoveryResult) {
-    validateResultForBegin(begin, begin.recoveryResult);
+    validateResultForBegin(begin, begin.recoveryResult, sealedOptions);
   }
   const status = await callTool('get_action_attempt_status', {
     attemptRef: begin.attemptRef,
@@ -1151,7 +1153,7 @@ async function recoverCommitting({ mode, operation, before, begin, callTool }) {
   ) {
     throw new Error('HOST_MCP_COMMITTING_RECOVERY_UNAVAILABLE');
   }
-  validateResultForBegin(begin, status.recoveryResult);
+  validateResultForBegin(begin, status.recoveryResult, sealedOptions);
   if (
     status.resultContentHash !== expectedContentHash ||
     status.recoveryResult.contentHash !== expectedContentHash
@@ -1554,8 +1556,8 @@ function translationDeliveryControl(value) {
   };
 }
 
-function validateResultForBegin(begin, result) {
-  if (begin.task) return validateResultEnvelope(begin.task, result);
+function validateResultForBegin(begin, result, options) {
+  if (begin.task) return validateResultEnvelope(begin.task, result, options);
   return validateTranslationDeliveryResultEnvelope(begin.taskBinding, result);
 }
 

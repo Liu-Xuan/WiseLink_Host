@@ -287,32 +287,55 @@ it('keeps the explicit sample-object action inside the isolated preview', async 
   expect(network).not.toHaveBeenCalled();
 });
 
-it('resolves a unique work item to the Suite matter graph', async () => {
-  (getEngineeringMatterDirectory as jest.Mock).mockResolvedValue({
-    items: [{ matterId: 'matter-for-work-item' }],
-    nextCursor: null,
+it('shows the authorized current WorkItem result in its graph', async () => {
+  (getLibraryIndex as jest.Mock).mockResolvedValue({
+    workItem: { workItemId: 'wi-sample-graph-a', revision: 5, currentJobAidWorkRevisionRef: 'JAWR-CURRENT' },
+    document: { documentCode: 'FTD-1', businessRevision: '', documentVersionId: 'dv-1' },
+    libraryIndex: {
+      rootLabel: 'FTD-1',
+      nodes: [
+        { id: 'work-item', parentId: null, kind: 'WORK_ITEM', label: 'FTD-1', detail: '', state: 'CANDIDATE_READBACK_VERIFIED' },
+        { id: 'overall', parentId: 'work-item', kind: 'OVERALL_SYNTHESIS', label: '综合意见', detail: '已保存', state: 'CURRENT' },
+      ],
+    },
   });
   await mountProduction();
   await act(async () => undefined);
-  expect(getEngineeringMatterDirectory).toHaveBeenCalledWith(
-    { workItemId: 'wi-sample-graph-a', limit: 20 },
-    expect.anything(),
-  );
-  expect(router.state.location.search).toContain('matterId=matter-for-work-item');
-  expect(container.querySelector('[data-testid="matter-graph"]')?.getAttribute('data-matter')).toBe('matter-for-work-item');
-  expect(getLibraryIndex).not.toHaveBeenCalled();
+  expect(router.state.location.search).toContain('workItemId=wi-sample-graph-a');
+  expect(container.textContent).toContain('整体综合');
+  expect(container.textContent).toContain('2 个对象');
+  expect(getLibraryIndex).toHaveBeenCalledWith('wi-sample-graph-a');
+  expect(getEngineeringMatterDirectory).not.toHaveBeenCalled();
 });
 
-it('stops a work item entry when its matter binding is ambiguous', async () => {
-  (getEngineeringMatterDirectory as jest.Mock).mockResolvedValue({
-    items: [{ matterId: 'matter-a' }, { matterId: 'matter-b' }],
-    nextCursor: null,
+it('checks a pinned WorkItem revision before showing the current graph', async () => {
+  (getLibraryIndex as jest.Mock).mockResolvedValue({
+    workItem: { workItemId: 'wi-sample-graph-a', revision: 5, currentJobAidWorkRevisionRef: 'JAWR-CURRENT' },
+    document: { documentCode: 'FTD-1', businessRevision: '', documentVersionId: 'dv-1' },
+    libraryIndex: { rootLabel: 'FTD-1', nodes: [
+      { id: 'work-item', parentId: null, kind: 'WORK_ITEM', label: 'FTD-1', detail: '', state: 'CURRENT' },
+    ] },
   });
-  await mountProduction();
+  await mountProduction('/graph?workItemId=wi-sample-graph-a&workRef=JAWR-OLD');
   await act(async () => undefined);
-  expect(container.textContent).toContain('工作事项对应多个工程事项');
-  expect(router.state.location.search).toContain('workItemId=wi-sample-graph-a');
-  expect(getLibraryIndex).not.toHaveBeenCalled();
+  expect(container.textContent).toContain('这是历史工作修订');
+  expect(container.querySelector('a[href*="workRef=JAWR-OLD"]')).not.toBeNull();
+  expect(getLibraryIndex).toHaveBeenCalledWith('wi-sample-graph-a');
+  expect(container.textContent).not.toContain('1 个对象');
+});
+
+it('shows the WorkItem graph when the pin matches the authorized projection', async () => {
+  (getLibraryIndex as jest.Mock).mockResolvedValue({
+    workItem: { workItemId: 'wi-sample-graph-a', revision: 5, currentJobAidWorkRevisionRef: 'JAWR-CURRENT' },
+    document: { documentCode: 'FTD-1', businessRevision: '', documentVersionId: 'dv-1' },
+    libraryIndex: { rootLabel: 'FTD-1', nodes: [
+      { id: 'work-item', parentId: null, kind: 'WORK_ITEM', label: 'FTD-1', detail: '', state: 'CURRENT' },
+    ] },
+  });
+  await mountProduction('/graph?workItemId=wi-sample-graph-a&workRef=JAWR-CURRENT');
+  await act(async () => undefined);
+  expect(container.textContent).toContain('1 个对象');
+  expect(container.textContent).not.toContain('这是历史工作修订');
 });
 
 it('does not request a work item binding while authentication is required', async () => {
@@ -363,7 +386,7 @@ describe('graph object entry gates', () => {
 
   it('rejects an orphan work identity that lacks its matter', async () => {
     await mountEntry('/graph?workRef=wr-1');
-    expect(container.textContent).toContain('工作身份缺少所属事项');
+    expect(container.textContent).toContain('工作身份缺少所属对象');
     expect(getEngineeringMatterDirectory).not.toHaveBeenCalled();
   });
 
