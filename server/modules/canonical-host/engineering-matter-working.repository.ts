@@ -215,6 +215,27 @@ export class EngineeringMatterWorkingRepository {
     );
   }
 
+  /** Use the existing authenticated SQL identity for browser-owned intake. */
+  async withBrowserActorTransaction<T>(
+    actorUserId: string,
+    operation: (executor: EngineeringMatterWorkingTransactionExecutor) => Promise<T>,
+  ): Promise<T> {
+    if (!/^[A-Za-z0-9_-]{1,255}$/u.test(actorUserId))
+      throw browserAuthorizationUnavailable();
+    return this.db.transaction(async (transaction) => {
+      const database = transaction as PostgresJsDatabase;
+      const [identity] = await database.execute<{
+        isAuthenticated: boolean;
+        isActor: boolean;
+      }>(sql`
+        SELECT current_user = 'authenticated' AS "isAuthenticated",
+          current_setting('app.user_id', true) = ${actorUserId} AS "isActor"`);
+      if (identity?.isAuthenticated !== true || identity.isActor !== true)
+        throw browserAuthorizationUnavailable();
+      return operation(this.executor(database));
+    });
+  }
+
   /** Bind the verified Host actor for every query of this Hosted transaction. */
   async withActorTransaction<T>(
     actorUserId: string,
@@ -1521,6 +1542,13 @@ function runtimeAuthorizationUnavailable(): Error & {
   statusCode: number;
 } {
   return coded('ENGINEERING_MATTER_RUNTIME_AUTHORIZATION_UNAVAILABLE', 404);
+}
+
+function browserAuthorizationUnavailable(): Error & {
+  code: string;
+  statusCode: number;
+} {
+  return coded('ENGINEERING_MATTER_BROWSER_AUTHORIZATION_UNAVAILABLE', 403);
 }
 
 function coded(

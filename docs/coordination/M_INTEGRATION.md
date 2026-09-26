@@ -1,5 +1,41 @@
 # M 主控集成交接
 
+## 2026-09-26 旧固定目标轮询已停用
+
+17c OpenClaw Cron 控制台现有 16 条调度定义。此前仅四条固定 Matter/DocumentVersion 旧任务启用、每分钟各运行一次，最近多轮分别返回 `REQUIRES_ATTENTION`（777 Review 已失败、777 文档翻译期限已过）、`IDLE`（SB Review）和 `DOCUMENT_READY/NO_PENDING`（787 文档），没有推进新工作。停用前官方 `cron list --all --json` 回读四项 `enabled=true`、`runningAtMs=null`，进程列表无 `consume-hosted-work-item.mjs` 在途进程。
+
+依既有用户启停授权，逐项停用 777 Review `355f0161-15c1-45c4-9060-0336f1bfaf5f`、777 文档 `5c430aac-b355-4ec2-8ff1-73d7b9e10673`、SB Review `efc2b938-2bab-4f6d-ab8d-14ca3de9fa70`、787 文档 `436ae83c-2c83-49de-aac9-31668075dd31`。每项命令返回 `enabled=false`；最终读回 `total=16 enabled=0`，四项及 C136 自动队列均为 `false`、`runningAtMs=null`。只停用调度定义，未删除定义、历史、checkpoint 或 Host 业务记录。旧固定目标任务不再每分钟空转，也不能充当正常上传后自动闭环的验收证据。C136 仍需在真实自动链路获准且通过验证后单独启用。
+
+## 2026-09-26 C151 解析回执重读不再覆盖已保存工作（独立发布）
+
+核对 `CanonicalHostVerticalService.runPdfAuthorized` 发现：同一请求重放已完成的解析时，`reuseCompleted` 若遇到 Reader/存储读回失败，原代码会调用 `recordUnexpectedFailure`，把已经 `CANDIDATE_READBACK_VERIFIED` 的 WorkItem 改成 `FAILED` 或 `RECORDING_FAILED`。修订让重放读取错误直接报告给调用者，保留原 WorkItem 修订和解析器结果；原件恢复可读后再次同请求读取成功，解析器只调用一次。真实字节漂移仍抛 `ARTIFACT_READBACK_MISMATCH`，不假装成功。以线上原提交 `caec4b3ad404c72b581808e3da71c43c686bec3b` 建立隔离分支 `codex/wl-c151-replay-only`，只携带本修复的生产代码与单元测试；定向 Jest 54/54、server TypeScript、定向 ESLint 和差异检查通过。提交 `65309c7d4a0a5ddfb45d5e87e2709b73fa894b19` 已推送至 origin 同名分支，17b release `7689600388007316437` 已 `finished`，平台读回的精确 `commit_id` 与该提交一致，`error_logs=[]`。这证明技术发布，不等于已在生产触发读回故障并验证恢复。开发分支仍包含 C150 已知浏览器事项归集 RLS 阻断，不能直接以该分支发布新版本。
+
+## 2026-09-26 浏览器事项归集的真实 RLS 阻断（C150 未发布）
+
+17b online 只读汇总 `dm_acquisition` 中 `document_library_upload` 的已提交/确切链接来源有 3 个不同 DocumentVersion：1 个既无当前 Matter 材料关联也无 WorkItem，1 个有 WorkItem 但无当前 Matter 材料关联，1 个有当前 Matter 材料关联但无 WorkItem。Matter 统计只检查当前修订。该查询不改变任何记录，也不能仅凭关联缺失认定每次历史请求的响应原因；它证明两条入口分裂和既有结果未统一关联已影响线上对象，后续修复应按确切用户、来源及已有工作逐项接续，不批量补写权限或重新解析。
+
+独立 PostgreSQL 16 容器 `wiselink_engineering_matter_test` 的现有 `v5 direct family materials` 测试 1/1 通过：`authenticated` 用户直接调用原有 `ensureFamilyMatter` 能创建/复用同族事项，原有租户、来源与 owner 限制生效。新增浏览器入口回归测试则确切复现 `EngineeringMatterService.organizeDocumentIntake` 返回 `ENGINEERING_MATTER_RUNTIME_AUTHORIZATION_UNAVAILABLE`：该方法错误使用只接受 `service_role_*` 的 `withActorTransaction`，而资料库上传和 OAuth 工程事项上传均是浏览器用户入口。由此，上一个提交 `7af4a2a52` 的新关联在真实浏览器上下文无法通过，不能发布或计为 Wiki 闭环。线上最近 17b release `7689586170108169172` 仍是 `caec4b3ad404c72b581808e3da71c43c686bec3b`，未包含 C150。
+
+直接移除服务角色检查的修法曾两次被自动审批拒绝，理由是在所有调用方身份隔离未证实时可能越权或错配。当前本地候选保留原 `withActorTransaction` 服务角色规则，新增独立的浏览器事务入口：在同一 SQL 事务核对实际 `current_user='authenticated'` 且 `app.user_id` 与 Host 传入的 actor 精确一致，才调用原 `ensureFamilyMatter`；后者继续核对租户、提交版本、来源 owner 和 RLS。独立 PostgreSQL 16 中浏览器归集与原材料规则 2/2 通过；获准 owner 创建/重放有效，跨 actor 冒用、跨租户、无来源权限及服务角色进入浏览器入口均拒绝，拒绝后没有多建 Matter。另已把完整 `organizeWorkItemIntake` 加入隔离数据库回归，确认关联重放只有一条、跨用户和错版本关联均拒绝；测试 1/1 通过，回归提交 `996b36ad58471e58bad17db98c98fbcdb03c9061` 与 origin 同名分支 SHA 一致。相关单元 45/45、server TypeScript 和定向 ESLint 无错误。本候选仍未发布，既有授权请求尚待回复；测试中的旧失败是代码阻断，不把它写成 PDF 业务失败。
+
+## 2026-09-26 两条上传入口与事项 Wiki 的接线核对（本地待发布）
+
+现行 17b 首页有两条不同上传路径。资料库中的“上传文档到资料库”调用 `POST /api/document-management/uploads/file-service`：保存确切 DocumentVersion 并按 family 建立/延续 Matter，但回执明确“不创建评估任务”，没有 WorkItem 或自动队列授权。另一条“选择或上传 PDF 并新建工程事项”调用 `POST /api/canonical-host/work-items/development-runs`：经官方 OAuth 会话与妙搭开发角色核验后创建 WorkItem、解析及逐任务自动授权；此前没有将该 WorkItem 归入 family Matter。17b online 只读核对发现 787 的 `WI-a5ffd931-840b-40eb-b534-c05777b30706` 在 `engineering_matter_revision_work_item` 与其 DocumentVersion 的 `engineering_matter_material_link` 均无对应记录，故既有资料库/工程知识读回不等于事项 Wiki 已验收。
+
+本地变更将当前已获准的 OAuth 上传所得 WorkItem，在解析返回后通过原有 owner/source 校验、`ensureFamilyMatter` 与 Matter 版本 CAS 关联到同一 family；同一 WorkItem 重试不重复加链接。定向 Jest 44/44、前后端 TypeScript、定向 lint 与差异检查通过；随后隔离 PostgreSQL/RLS 测试发现上述浏览器归集入口仍被错误的服务角色检查拒绝，详见本文件顶部 C150 阻断。这项变更没有扩大上传或评估角色，尚未发布，也不会自动回填 787。资料库普通上传自动评估仍缺接线；直接让其创建 WorkItem 将扩大普通用户的评估权限，需先明确该权限范围并验证确切上传回执、来源绑定、幂等与失败恢复。C136 默认定时消费仍未获准恢复，不能把本地接线或旧任务完成视为无人值守闭环。
+
+## 2026-09-26 自动队列线上待领状态核对
+
+通过妙搭官方 `apps +db-execute` 以用户身份对 17b **online** 数据库作只读查询：`auto_work_item_authorization` 当前共 4 条，`COMPLETED=3`、`BLOCKED=1`，没有 `WAITING` 或 `LEASED`。真实 787 工程文档 `WI-a5ffd931-840b-40eb-b534-c05777b30706` 的授权为 `COMPLETED`，租约代次 3，完成时间 2026-09-26 04:36:40 +08。唯一阻断项 `WI-2c7a3b03-93ef-45a6-a99e-7dfa0321230e` 是 `dev:*` FTD 样本，`blocked_code=AUTO_WORK_ITEM_STAGE_JOBAID_FAILED`；其解析尝试成功，JobAid 尝试为 `CANCELLED_BY_REQUEST`。这些记录没有被修改，不把阻断样本重新入队冒充新上传。
+
+当前不存在可供 C136 直接领取的待处理样本。四条记录的 `runKey` 均为 `dev:*`；这**不表示四份都绕开了默认页面**：现行首页 `HostedDevelopmentIntake` 的上传按钮确实调用 `/development-runs`，787 曾通过该页面上传并读回。`canonical` 后端入口没有线上队列样本，不应把内部命名误当成产品入口的验收标准。17c Chrome 被扩展弹窗占用，Codex 内部浏览器的飞书登录已过期，本轮未取得 C136 定时任务的**当前**运行配置读回；上一次可确认的 C148 回执是 C136 停用、四项旧固定目标任务启用。后续无人值守验收须在浏览器恢复后，从正常上传页面产生新的有效授权，并先核对 C136 实际启停、命令与重叠调度行为；不得把一次受控消费或旧完成记录算作默认调度证明。
+
+## 2026-09-26 C149 既存工作首屏保留决定性条件
+
+Host 提交 `caec4b3ad404c72b581808e3da71c43c686bec3b`（父项 `87758fef0`）已推送 `origin/codex/wl-c125-auto-engineering-flow`；17b release `7689586170108169172` 回读 `finished`、`commit_id=caec4b3ad404c72b581808e3da71c43c686bec3b`、`error_logs=[]`。本地定向 Jest 13/13、前端 TypeScript 与 `git diff --check` 通过。短保存摘要现在整体呈现，避免把“构型仍待核实、不可据此实施”等第二分句藏掉；旧的元数据开头长摘要从已保存原句中选取工程问题与限制，完整原文仍在展开区。综合阅读中的决定性条件也移到首个折叠区之前。
+
+上传工程师刘轩在新发布的资料库及工程知识页读回同一 `WI-a5ffd931-840b-40eb-b534-c05777b30706` 修订 18：首屏已显示 OSS 禁用系统上行导致 CMCF 报告锁死或重复下链、整套系统配置上行不受影响，以及 FTD 属性、装机版本和机队适用性仍未核实；不再仅显示文件编号与日期。展开入口仍可读完整保存摘要、问题分析和依据。此次只改变前端阅读投影，未重写工作修订或模型结果。它尚不能证明未来新生成的摘要质量、Wiki 专页或无人值守队列；C136 仍停用。
+
 ## 2026-09-26 C148 已发布安装，固定样本调度已恢复
 
 Host 提交 `a17422960149009092abb358f9c96a5fe21efd8f`（父项 `36bfc4603`）已推送 `origin/codex/wl-c125-auto-engineering-flow`；17b release `7689572843991108557` 回读 `finished`、指向该提交且 `error_logs=[]`。本地验证：前端 Jest 19/19、前端 TypeScript、Skill 526/526、发布包检查通过。C148 修正成功运行时的矛盾提示、资料库来源范围文案，并对后续新生成的 JobAid/Overall 简洁摘要增加明确要求与有界纠正。

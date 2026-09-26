@@ -1,6 +1,6 @@
 import { createHash } from 'node:crypto';
 
-import { Injectable } from '@nestjs/common';
+import { Injectable, Optional } from '@nestjs/common';
 import { taskModelSelection } from '../model-settings/canonical-model-catalog';
 import { FileService } from '@lark-apaas/fullstack-nestjs-core';
 
@@ -15,6 +15,7 @@ import type {
 import { isRetryableParseFailureCode } from '@shared/parse-retry-policy';
 import { CanonicalHostVerticalService } from '../canonical-host/canonical-host-vertical.service';
 import { CANONICAL_DEVELOPMENT_ROLE_ID } from '../canonical-host/canonical-host.constants';
+import { EngineeringMatterService } from '../canonical-host/engineering-matter.service';
 import type {
   CanonicalHostActionContext,
   CanonicalHostActor,
@@ -109,6 +110,7 @@ export class OrdinaryWorkItemService {
     private readonly repository: MiaodaWorkItemRepository,
     private readonly vertical: CanonicalHostVerticalService,
     private readonly fileService?: FileService,
+    @Optional() private readonly matters?: EngineeringMatterService,
   ) {}
 
   async listOauthSessionDevelopmentPdfs(
@@ -285,7 +287,7 @@ export class OrdinaryWorkItemService {
       input.developmentRunToken,
     );
     const actor = oauthSessionDevelopmentActor(sessionActor, gatewayActor);
-    return this.runPdf(
+    const result = await this.runPdf(
       input.documentVersionId
         ? {
             documentVersionId: input.documentVersionId,
@@ -307,6 +309,21 @@ export class OrdinaryWorkItemService {
       undefined,
       initialAilySessionId,
     );
+    if (!this.matters) {
+      throw Object.assign(
+        new Error('Matter intake is unavailable after WorkItem parsing.'),
+        {
+          code: 'MATTER_INTAKE_PENDING',
+          statusCode: 503,
+        },
+      );
+    }
+    await this.matters.organizeWorkItemIntake({
+      actor,
+      documentVersionId: result.result.workItem.source.documentVersionId,
+      workItemId: result.result.workItem.workItemId,
+    });
+    return result;
   }
 
   async retryOauthSessionDevelopmentRun(

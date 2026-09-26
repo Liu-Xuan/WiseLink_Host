@@ -57,10 +57,61 @@ export class EngineeringMatterService {
   }) {
     if (!this.actorTransactions)
       throw new Error('MATTER_MATERIAL_RUNTIME_UNAVAILABLE');
-    return this.actorTransactions.withActorTransaction(
+    return this.actorTransactions.withBrowserActorTransaction(
       input.actorUserId,
       ({ database }) => this.matters.ensureFamilyMatter(input, database),
     );
+  }
+
+  /** Attach a persisted browser WorkItem to its owner-scoped family Matter. */
+  async organizeWorkItemIntake(input: {
+    actor: CanonicalHostActor;
+    documentVersionId: string;
+    workItemId: string;
+  }): Promise<{ matterId: string }> {
+    const { actor, documentVersionId, workItemId } = input;
+    requireNativeMaterialActor(actor);
+    const authorized = await this.requireWorkItem(workItemId, actor);
+    if (authorized.scoped.row.documentVersionId !== documentVersionId)
+      throw workItemDocumentConflict();
+    const { matterId } = await this.organizeDocumentIntake({
+      tenantId: actor.tenantId,
+      actorUserId: actor.userId,
+      documentVersionId,
+    });
+    for (let attempt = 0; attempt < 2; attempt += 1) {
+      const current = await this.matters.loadCurrent({
+        tenantId: actor.tenantId,
+        matterId,
+      });
+      if (!current) throw matterNotFound();
+      if (current.links.some((link) => link.workItemId === workItemId))
+        return { matterId };
+      try {
+        await this.linkWorkItem(
+          matterId,
+          {
+            requestId: `intake:${workItemId}`,
+            expectedMatterRevision: current.currentRevisionNo,
+            workItemId,
+            changeSummary: '关联已受理文件的工程评估。',
+          },
+          actor,
+        );
+        return { matterId };
+      } catch (error: unknown) {
+        if (
+          attempt === 0 &&
+          [
+            'ENGINEERING_MATTER_CAS_CONFLICT',
+            'ENGINEERING_MATTER_WORK_ITEM_ALREADY_LINKED',
+          ].includes((error as { code?: string }).code ?? '')
+        )
+          continue;
+        throw error;
+      }
+    }
+    throw new Error('ENGINEERING_MATTER_INTAKE_LINK_UNAVAILABLE');
   }
 
   async readMaterials(matterId: string, actor: CanonicalHostActor) {

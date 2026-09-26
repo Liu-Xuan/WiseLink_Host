@@ -388,6 +388,87 @@ test('cross Matter references save exact lineage and reauthorize scopes and root
   });
 
 test(
+  'browser document intake organizes only its own committed family source under authenticated RLS',
+  { skip: !databaseUrl, concurrency: false },
+  async () => {
+    assertSafeIsolatedDatabase(databaseUrl);
+    const sql = postgres(databaseUrl, { max: 8, onnotice() {} });
+    let owner;
+    let outsider;
+    try {
+      const fixtures = await loadRealDocumentFixtures();
+      await resetDatabase(sql);
+      await seedRealDocumentWorkItems(sql, fixtures);
+      await sql`UPDATE dm_publication_family SET canonical_identity_key = 'tenant:tenant-A:family:' || canonical_identity_key`;
+      owner = await reserveActorService('actor-A');
+      outsider = await reserveActorService('actor-B');
+      const source = {
+        tenantId: 'tenant-A',
+        actorUserId: 'actor-A',
+        documentVersionId: fixtures.ftd.documentVersionId,
+      };
+      const created = await owner.service.organizeDocumentIntake(source);
+      assert.equal(created.created, true);
+      assert.equal(
+        (await owner.service.organizeDocumentIntake(source)).created,
+        false,
+      );
+      const intake = {
+        actor: owner.actor,
+        documentVersionId: fixtures.ftd.documentVersionId,
+        workItemId: fixtures.ftd.workItemId,
+      };
+      assert.equal((await owner.service.organizeWorkItemIntake(intake)).matterId, created.matterId);
+      assert.equal((await owner.service.organizeWorkItemIntake(intake)).matterId, created.matterId);
+      const [linkCount] = await sql`SELECT count(*)::int AS count
+        FROM engineering_matter_revision_work_item
+        WHERE matter_id = ${created.matterId} AND work_item_id = ${fixtures.ftd.workItemId}`;
+      assert.equal(linkCount.count, 1, 'browser WorkItem replay keeps one family link');
+      await assert.rejects(
+        outsider.service.organizeWorkItemIntake({ ...intake, actor: outsider.actor }),
+        'another user cannot link the owner WorkItem',
+      );
+      await assert.rejects(
+        owner.service.organizeWorkItemIntake({ ...intake, documentVersionId: fixtures.sb.documentVersionId }),
+        { code: 'ENGINEERING_MATTER_WORK_ITEM_DOCUMENT_CONFLICT' },
+        'the WorkItem cannot be attached under a different source version',
+      );
+      await assert.rejects(
+        outsider.service.organizeDocumentIntake({ ...source, actorUserId: 'actor-B' }),
+      );
+      await assert.rejects(
+        outsider.service.organizeDocumentIntake(source),
+        /ENGINEERING_MATTER_BROWSER_AUTHORIZATION_UNAVAILABLE/u,
+        'a browser SQL session cannot claim another authenticated actor',
+      );
+      await assert.rejects(
+        owner.service.organizeDocumentIntake({ ...source, tenantId: 'tenant-B' }),
+      );
+      try {
+        await owner.database.execute(
+          drizzleSql`SET ROLE service_role_wiselink_r10_test`,
+        );
+        await assert.rejects(
+          owner.service.organizeDocumentIntake(source),
+          /ENGINEERING_MATTER_BROWSER_AUTHORIZATION_UNAVAILABLE/u,
+          'the service SQL role cannot enter browser-owned intake',
+        );
+      } finally {
+        await owner.database.execute(drizzleSql`SET ROLE authenticated`);
+      }
+      const [matterCount] = await sql`SELECT count(*)::int AS count
+        FROM engineering_matter WHERE tenant_id = 'tenant-A'
+          AND created_by_user_id = 'actor-A'`;
+      assert.equal(matterCount.count, 1, 'replay and rejected identities add no Matter');
+    } finally {
+      if (outsider) await outsider.release();
+      if (owner) await owner.release();
+      await sql.end();
+    }
+  },
+);
+
+test(
   'v5 direct family materials preserve scope, expectations, replay and full-source authorization',
   { skip: !databaseUrl, concurrency: false },
   async () => {
@@ -1933,12 +2014,6 @@ async function reserveActorService(actorId, tenantId = 'tenant-A') {
     const objectAccess = new MiaodaHostedCanonicalObjectAccessAdapter(
       workItems,
     );
-    const service = new EngineeringMatterService(
-      new EngineeringMatterRepository(db),
-      workItems,
-      new MiaodaDocumentVersionSourceResolver(db),
-      objectAccess,
-    );
     const matters = new EngineeringMatterRepository(db);
     const sqlContext = new SqlExecutionContextMiddleware({
       roleSchema: 'wiselink_r10_test',
@@ -1946,6 +2021,13 @@ async function reserveActorService(actorId, tenantId = 'tenant-A') {
     const working = new EngineeringMatterWorkingRepository(db, sqlContext, {
       roleSchema: 'wiselink_r10_test',
     }, new EngineeringSearchProjectionWriter(db));
+    const service = new EngineeringMatterService(
+      matters,
+      workItems,
+      new MiaodaDocumentVersionSourceResolver(db),
+      objectAccess,
+      working,
+    );
     const workingService = new EngineeringMatterWorkingService(
       matters,
       working,

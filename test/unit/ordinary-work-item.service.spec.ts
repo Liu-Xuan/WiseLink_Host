@@ -155,6 +155,9 @@ function target() {
     getDefaultBucket: jest.fn().mockResolvedValue('bucket-default'),
     from: jest.fn().mockReturnValue(fileServiceBucket),
   };
+  const matters = {
+    organizeWorkItemIntake: jest.fn().mockResolvedValue({ matterId: 'MAT-SB' }),
+  };
   return {
     documentManagement,
     resolver,
@@ -162,12 +165,14 @@ function target() {
     vertical,
     fileService,
     fileServiceBucket,
+    matters,
     service: new OrdinaryWorkItemService(
       documentManagement as never,
       resolver as never,
       repository as never,
       vertical as never,
       fileService as never,
+      matters as never,
     ),
   };
 }
@@ -176,7 +181,10 @@ function verticalResult() {
   return {
     schemaVersion: 'wiselink.3_1.canonical_pdf_vertical_response.v0.candidate',
     status: 'CANDIDATE_VERTICAL_VERIFIED',
-    workItem: { workItemId: 'WI-NEW-SB' },
+    workItem: {
+      workItemId: 'WI-NEW-SB',
+      source: { documentVersionId: 'document-version-sb' },
+    },
     readback: null,
     entry: {},
     authority: {
@@ -237,6 +245,12 @@ describe('OrdinaryWorkItemService run identity', () => {
       expect.objectContaining({
         runKey: 'dev:22222222-2222-4222-8222-222222222222',
         autoProcessingGrant: 'MIAODA_CANONICAL_PARSE_REQUEST',
+      }),
+    );
+    expect(instance.matters.organizeWorkItemIntake).toHaveBeenCalledWith(
+      expect.objectContaining({
+        documentVersionId: 'document-version-sb',
+        workItemId: 'WI-NEW-SB',
       }),
     );
   });

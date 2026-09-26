@@ -116,6 +116,17 @@ describe('hosted development intake source flow', () => {
     ).toContain('不会跳过授权核验');
   });
 
+  it('explains a saved assessment whose Matter association is pending', () => {
+    expect(
+      hostedIntakeError(
+        Object.assign(new Error('private details'), {
+          code: 'MATTER_INTAKE_PENDING',
+          statusCode: 503,
+        }),
+      ),
+    ).toContain('评估任务已登记');
+  });
+
   it('submits an existing object selection without uploading bytes', async () => {
     const upload = jest.fn();
     const existing = {
