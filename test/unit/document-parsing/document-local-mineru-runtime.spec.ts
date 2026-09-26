@@ -1,4 +1,10 @@
 import { createHash } from 'node:crypto';
+import { readFile } from 'node:fs/promises';
+import { readLocalMineruCandidate } from '../../../server/modules/document-management/src/hosted/nest/document-mineru-local-candidate';
+import { UnifiedReaderService } from '../../../server/modules/unified-reader/unified-reader.service';
+import { buildDocumentSemanticMap, assertDocumentSemanticMap, semanticTranslationSource } from '../../../server/modules/document-management/src/hosted/nest/document-semantic-map';
+import { documentOriginalReadingCoverage, documentOriginalRangeReadingImpact } from '../../../server/modules/document-management/src/hosted/nest/document-original-adapter';
+import { BOEING_FTD_SEMANTIC_PROFILE } from '../../../server/modules/document-management/src/hosted/nest/document-semantic-profile';
 import { openDocumentPdfSession } from '../../../server/modules/document-management/src/hosted/nest/document-original-pdf';
 jest.mock('../../../server/modules/document-management/src/hosted/nest/document-original-pdf', () => ({ openDocumentPdfSession: jest.fn() }));
 import { DocumentParsingHostedService } from '../../../server/modules/document-management/src/hosted/nest/document-parsing-hosted.service';
@@ -22,12 +28,12 @@ afterEach(() => {
   }
 });
 
-function fixture() {
-  const pdf = Buffer.from('%PDF-isolated-25-page-fixture');
+function fixture(sample?: { pdf: Buffer; candidate: Buffer }) {
+  const pdf = sample?.pdf ?? Buffer.from('%PDF-isolated-25-page-fixture');
   const binding = { documentVersionId: 'DV', documentId: 'DOC', familyId: 'FAM', sourceArtifactId: 'ART', pdfSha256: digest(pdf), byteLength: pdf.length };
   const pageText = (index: number) => `Exact original text for page ${index + 1}.`;
   const pageIndexes = Array.from({ length: 25 }, (_, index) => index);
-  const candidate = Buffer.from(JSON.stringify({ schemaVersion: 'wiselink.mineru.local-candidate.v1',
+  const candidate = sample?.candidate ?? Buffer.from(JSON.stringify({ schemaVersion: 'wiselink.mineru.local-candidate.v1',
     source: { sha256: binding.pdfSha256, byteLength: pdf.length }, parser: { version: '3.4.5', backend: 'pipeline' },
     raw: { markdown: pageIndexes.map(pageText).join('\n\n'),
       middle: { _version_name: '3.4.5', _backend: 'pipeline', pdf_info: pageIndexes.map(page_idx => ({ page_idx, page_size: [600, 800] })) },
@@ -87,6 +93,11 @@ function fixture() {
     pages: pageIndexes.slice(pageStart, pageStart + pageCount).map(pageIndex => ({ pageIndex, text: pageText(pageIndex), width: 600, height: 800,
       rotation: 0, imagePaintOperations: 0, items: [{ text: pageText(pageIndex), transform: [10, 0, 0, 10, 10, 770], width: 180, height: 10, hasEOL: true }] })) }));
   jest.mocked(openDocumentPdfSession).mockImplementation(async ({ assertActive }) => { await assertActive(); return { extract, destroy: jest.fn(async () => undefined) }; });
+  if (sample) {
+    const actualPdf = jest.requireActual<typeof import('../../../server/modules/document-management/src/hosted/nest/document-original-pdf')>(
+      '../../../server/modules/document-management/src/hosted/nest/document-original-pdf');
+    jest.mocked(openDocumentPdfSession).mockImplementation(actualPdf.openDocumentPdfSession);
+  }
   const settings = { capture: jest.fn(async () => ({ revision: 1, localMineruFallbackEnabled: true, titleEnhancementEnabled: false })) };
   const service = new DocumentParsingHostedService(files as never, catalog as never, repository as never, plugins as never, leases as never, authorizer, settings as never);
   const authorizeDocumentWork = jest.fn(async () => ({ tenantId: browser.tenantId, actorUserId: browser.actorUserId, documentVersionId: 'DV' }));
@@ -144,3 +155,68 @@ it('requires real browser provenance for a new local admission', async () => {
     .rejects.toMatchObject({ code: 'CANONICAL_IDENTITY_HANDOFF_UNAVAILABLE' });
   expect(f.repository.reserve).not.toHaveBeenCalled(); expect(f.scoped.download).not.toHaveBeenCalled();
 });
+
+
+// Opt-in local compatibility evidence only. Paths and business bytes stay outside the repository.
+const realPdfPath = process.env.WL_LOCAL_MINERU_TEST_PDF;
+const realCandidatePath = process.env.WL_LOCAL_MINERU_TEST_CANDIDATE;
+(realPdfPath || realCandidatePath ? it : it.skip)('reads an existing Boeing FTD sample through PDF.js, Host storage and semantic translation input', async () => {
+  if (!realPdfPath || !realCandidatePath) throw new Error('REAL_LOCAL_MINERU_REQUIRES_PDF_AND_CANDIDATE');
+  const [pdf, candidate] = await Promise.all([readFile(realPdfPath), readFile(realCandidatePath)]);
+  const parsed = readLocalMineruCandidate(candidate);
+  expect(parsed.sourceSha256).toBe(digest(pdf));
+  expect(parsed.sourceByteLength).toBe(pdf.length);
+  const f = fixture({ pdf, candidate });
+  let state = await f.service.start('DV', request, browser);
+  // Each tick remains bounded; a real document need not have the synthetic fixture's 25 pages.
+  for (let tick = 0; state.status !== 'PUBLISHED' && tick < 100; tick++) {
+    await f.runtime.run({ action: 'STEP', documentVersionId: 'DV', parseRunId: f.run.parseRunId });
+    state = (await f.service.status('DV', browser)).latestRun!;
+  }
+  expect(state.status).toBe('PUBLISHED');
+  expect(f.extract).not.toHaveBeenCalled();
+  expect(f.plugins.parseOriginal).not.toHaveBeenCalled();
+  const context = { actorUserId: browser.actorUserId, tenantId: browser.tenantId, roles: [] };
+  const reading = await f.service.read('DV', f.run.parseRunId, context);
+  const reader = new UnifiedReaderService({} as never, {} as never, {} as never, {} as never, f.service);
+  const loaded = await reader.readDocumentOriginal('DV', f.run.parseRunId, context);
+  expect(loaded.original.binding.sourceSha256).toBe(digest(pdf));
+  expect(loaded.original.producer.kind).toBe('MINERU_LOCAL_PDFJS');
+  const rawSaved = f.content.get(`wiselink/parsed/DV/${f.run.parseRunId}/raw/mineru-candidate.json`)!;
+  expect(Buffer.from(rawSaved.bytes)).toEqual(candidate);
+  const pages = [...f.content].filter(([path]) => /original\/pages-[0-9]+[.]json$/u.test(path))
+    .flatMap(([, item]) => (JSON.parse(Buffer.from(item.bytes).toString('utf8')) as { pages: Array<{ pageIndex: number }> }).pages);
+  expect(pages.length).toBeGreaterThan(0);
+  expect(new Set(pages.map(page => page.pageIndex)).size).toBe(pages.length);
+  expect(reading.original?.coverage.knownPageCount).toBe(pages.length);
+  expect(reading.original?.coverage.readPageIndexes).toEqual(pages.map(page => page.pageIndex));
+  const map = buildDocumentSemanticMap({ original: loaded.original, semanticRevision: 1, profile: BOEING_FTD_SEMANTIC_PROFILE });
+  expect(() => assertDocumentSemanticMap(map, loaded.original)).not.toThrow();
+  const translation = semanticTranslationSource(loaded.original, map);
+  expect(translation.units.length).toBeGreaterThan(0);
+  expect(translation.units.map(unit => unit.unitId)).toEqual(loaded.structuredSource.units.map(unit => unit.unitId));
+  expect(translation.sourceLocators).toEqual(loaded.structuredSource.sourceLocators);
+  expect(translation.dateOrder).toBe('MDY');
+  expect(map.sections.length).toBeGreaterThan(0);
+  const engineeringCoverage = documentOriginalReadingCoverage(loaded.original);
+  expect(reading.original!.coverage).toEqual(engineeringCoverage);
+  expect(engineeringCoverage.unresolvedRanges.every(range => documentOriginalRangeReadingImpact(loaded.original, range) === 'LIMITATION')).toBe(true);
+  const engineeringLimitationCounts: Record<string, number> = {};
+  const rawRangeImpactCounts: Record<string, number> = {};
+  for (const range of engineeringCoverage.unresolvedRanges) engineeringLimitationCounts[range.reason] = (engineeringLimitationCounts[range.reason] ?? 0) + 1;
+  for (const range of loaded.original.coverage.unresolvedRanges) {
+    const key = `${range.reason}:${documentOriginalRangeReadingImpact(loaded.original, range)}`;
+    rawRangeImpactCounts[key] = (rawRangeImpactCounts[key] ?? 0) + 1;
+  }
+  const engineeringRangeMetadata = engineeringCoverage.unresolvedRanges.map(range => ({ reason: range.reason,
+    impact: documentOriginalRangeReadingImpact(loaded.original, range), pageIndexes: range.pageIndexes,
+    unitKinds: range.unitIds.map(id => loaded.original.source.units.find(unit => unit.unitId === id)?.kind ?? 'missing'),
+    origin: range.message.startsWith('PDF 文本层') ? 'PDF_GEOMETRY_UNCERTAIN'
+      : range.message.startsWith('MinerU 范围外') ? 'OUTSIDE_MINERU_REGION'
+        : range.reason === 'TEXT_CONFLICT' ? 'TEXT_CONFLICT' : 'OTHER_STRUCTURE' }));
+  process.stdout.write(JSON.stringify({ evidence: 'LOCAL_BOEING_FTD_COMPATIBILITY_NOT_PRODUCTION',
+    producer: loaded.original.producer.kind, parser: reading.parser, pageCount: pages.length,
+    sourceUnitCount: loaded.structuredSource.units.length, semanticSectionCount: map.sections.length,
+    semanticRoles: map.sections.map(section => section.roleKey), translationUnitCount: translation.units.length,
+    rawRangeImpactCounts, engineeringLimitationCounts, engineeringRangeMetadata, assetCount: parsed.assets.length }) + '\n');
+}, 60_000);

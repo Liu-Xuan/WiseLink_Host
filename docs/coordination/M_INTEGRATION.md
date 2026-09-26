@@ -1,5 +1,19 @@
 # M 主控集成交接
 
+## 2026-09-26 C157 本地真实产物读回与自动接线缺口
+
+承接本地 C156 `6f44a3c6641c3515ef25d4dac9a3320a6cc3fd8a`；本批只补真实数据回归和现行记录，没有产品代码、线上发布或运行配置变更。旧 MinerU 路径定点核对结论已覆盖写入 `MINERU_INTEGRATION_HANDOFF.md` 顶部：runner/本机 CLI 可复用，但当前没有实际自动消费者；旧 RemoteWorkerClient 面向云端 Worker，并非用户本机桥接。标题 helper 没有可信 Host 设置读取，前端开关目前只控制导入后采用，不能宣称已控制模型外发。当前不以裸设置文件、自报身份、新路由或新权限补上这一缺口。
+
+使用已存在的真实两页 PDF（57,434 bytes、SHA256 `260c665aa340752898c0958c7015df5fa8f6f5ead9317d0b37908af6c30d53b5`）及原候选（112,127 bytes、SHA256 `e2fa2294f509369f4a8680ab288a73b833829eda72accf4a7191d53980056718`）完成一次本地组合验证，没有重跑 MinerU 或调用标题/翻译模型。真实 PDF.js、实际解析服务/授权器/产物存储逻辑、UnifiedReader 原文入口、Boeing FTD 语义映射和翻译输入构建均执行；文件存储、数据库、租约及 actor 委托仍是隔离 fixture，不计为生产验证。2 页原文为 `MINERU_LOCAL_PDFJS` / MinerU 3.0.9 pipeline，26 个来源单元及 locator 全部进入翻译输入，候选含 1 个图片资源；原候选存储后字节相等。Boeing profile 在测试中显式选定，不证明线上 profile 选择或实际翻译已通过。
+
+原产物目录中的 `_origin.pdf` 与上传原件哈希不同，已查明实际 3.0.9 `do_parse` 会先经 PDFium 重写，再保存该派生文件；现存执行脚本明确传入上传原件字节。独立只读 PDFium 比较两份文件的两页尺寸、文本摘要与 72 dpi 渲染像素摘要均完全一致。Host 始终绑定上传原件，不改绑派生 PDF，也不从文件名推断相同输入。
+
+**质量回报更正：** 真实工程阅读限制共 8 项：1 项 `TABLE_LAYOUT_NOT_VERIFIED` 的结构不确定、7 项文本冲突（3 个表格行关系、4 个 OCR 词差异）。新测试和此前 `/private/tmp/wl-mineru-coverage-review-20260926.json` 的原结果一致；先前“最终 7 条限制”漏计了原有表格结构项。原始与工程投影均为 LIMITATION，没有把 DIAGNOSTIC 混入。8 个语义章节仍缺少 Description/Status 角色；PDF.js 补回的文字保留为段落，未凭词名自行升为作者标题。已读页面、可保存与完整理解分别表述。
+
+新增 opt-in 真实样本通过环境变量 `WL_LOCAL_MINERU_TEST_PDF`、`WL_LOCAL_MINERU_TEST_CANDIDATE` 提供输入，需 Node ESM 支持；仓库不保存私有样本或绝对路径。第一次运行发现测试把页产物路径写成不存在的 `raw/pdf-pages-*`，按实际 `original/pages-*.json` 修正后原 8 项与真实样本共 9/9 通过。针对限制计数疑点仅再运行真实项 1/1（另 8 项按筛选跳过），核对原始/工程投影一致，不把跳过计为通过。定向 ESLint、差异检查和独立只读审查通过；完整 precommit 在本地提交时执行。未重复 C156 的全量回归或既有数据库测试。
+
+下一项有效动作是补齐实际本机执行与受控传输的接线决定，或在官方额度恢复后继续原有线上受控流程；当前没有已运行的任务可等待，也没有新额度恢复证据。设置管理仍按用户“暂不增加权限，保留实现”处理，外部标题目的地和无人值守启用仍未获准。真实自动上传闭环、线上工程师资料库/Wiki 结果与故障接续验收仍未完成，不以此本地兼容结果替代。
+
 ## 2026-09-26 C156 本地保留：真实 JSON 受理与后台接续
 
 承接 C155 `1ab80d14ef4810eb225c1eb78bf1765aeb65a885`，本批仅修订保留分支 `codex/wl-c125-auto-engineering-flow`。生产仍以 C154 发布回执为准；没有发布 MinerU/设置，没有修改角色、RLS、数据库结构、路由、开关、定时任务或外部模型目的地。
@@ -76,7 +90,7 @@ C153 Skill 已安装。包为 61 文件、504496 bytes、SHA256 `70f9004b1ad1fbc
 
 对真实两页 PDF 的渲染逐页核对后确认：MinerU 原始 Markdown、content-list、middle/model 均漏掉第一页的 `All 787 Aircraft`、`Description`、`Status`，并非 Host 过滤造成。标题辅助只能处理已有标题，不能补回未进入其输入的内容。
 
-本地实现复用 Host 现有 8 页 PDF.js 检查点，仅对可定位且位于所有 MinerU 区域外的单列文字补充独立阅读单元；每个单元保留 PDF 文本项、页、坐标和来源路径。OCR 内容及原始候选包不改写；表内或区域内差异、多列、旋转和坐标不确定时保留具体限制。新产物明确标为 `MINERU_LOCAL_PDFJS`，保存真实 PDF 页组；历史纯 `MINERU_LOCAL` 包继续可读。真实样本仅补上述 3 处，最终保留 7 条真实限制：3 条表格行关系差异及 4 条 OCR 词差异（fleets→feets、traffic→trafc 两处、certification→certifcation），不宣称原文已完整读取。补回的章节词暂作为独立文字，不据此宣称标题层级已经正确。
+本地实现复用 Host 现有 8 页 PDF.js 检查点，仅对可定位且位于所有 MinerU 区域外的单列文字补充独立阅读单元；每个单元保留 PDF 文本项、页、坐标和来源路径。OCR 内容及原始候选包不改写；表内或区域内差异、多列、旋转和坐标不确定时保留具体限制。新产物明确标为 `MINERU_LOCAL_PDFJS`，保存真实 PDF 页组；历史纯 `MINERU_LOCAL` 包继续可读。真实样本仅补上述 3 处，最终保留 8 条真实限制：1 条表格结构未核验、3 条表格行关系差异及 4 条 OCR 词差异（fleets→feets、traffic→trafc 两处、certification→certifcation；C157 回读纠正此前漏计表格结构项的“7 条”回报），不宣称原文已完整读取。补回的章节词暂作为独立文字，不据此宣称标题层级已经正确。
 
 标题输出格式修正为 Markdown 支持的 1–6 级，允许片段从较低级开始或跳过中间层；仍逐项核对 ID、顺序、数量与唯一字段，原始正文不变。此前 `FAILED/TITLE_OUTPUT_INVALID` 回执保持不变，新格式接受旧层级不代表其语义正确；外部标题-only 调用仍未获目的地授权，不重试。
 
