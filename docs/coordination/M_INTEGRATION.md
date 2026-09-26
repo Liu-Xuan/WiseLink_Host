@@ -20,7 +20,9 @@
 
 17c 原 Gateway Online，16 cron 全停用且无消费者后，只运行一次 C153 `--auto-queue` tick。回包命中 `WI-4db598a0-33b8-4abd-a64d-df2aac9f29c5`、leaseGeneration=2，结果 `REQUIRES_ATTENTION / REVIEW_HOST_MCP_TOOL_FAILED:next_original_assessment:DOCUMENT_PLUGIN_QUOTA_EXHAUSTED`。回包未提供模型调用数/parseRun 字段，不声称调用数0。Host 11:25:01 +08 读回新 rev2 为 STAGING、0 产物、明确 `DOCUMENT_PLUGIN_QUOTA_EXHAUSTED`，旧记录仍 FAILED/原码；队列 LEASED/gen2、blocked_code=null。没有重复消费或 BLOCK；最终 16 cron enabled/running 均0、consumer0。
 
-本次页面实际仍显示“正在保存并核验产物，已核验 0 个文件。”和禁用“正在解析…”，未显示已持久化额度错误。随后的最小展示修复使持久错误优先显示“文档解析服务额度已用尽，待服务恢复后接续。”，技术码位于现有展开区，按钮显示“等待接续”；错误或过期后停止每5秒状态轮询。DOM定向20/20，包括15秒内状态读取仅1次、无解析写入且旧正文仍可读；这是隔离测试计数，不声称生产总体性能已测量。该显示补丁的发布/本人读回待补充。
+本次页面实际仍显示“正在保存并核验产物，已核验 0 个文件。”和禁用“正在解析…”，未显示已持久化额度错误。随后的最小展示修复使持久错误优先显示“文档解析服务额度已用尽，待服务恢复后接续。”，技术码位于现有展开区，按钮显示“等待接续”；错误或过期后停止每5秒状态轮询。DOM定向20/20，包括15秒内状态读取仅1次、无解析写入且旧正文仍可读；这是隔离测试计数，不声称生产总体性能已测量。显示补丁提交 `4440ae52af21e818da91eb910f2b67595495c626`，正常合入平台 main 后为 `16800d51a224b1b69d04f04b42953ce55b19e614`，两者文件树相同；origin 同名分支已推送并读回，17b release `7689680011880221645` 为 finished、准确 commit_id 匹配、error_logs=[]。完整 precommit、client production build 通过。刘轩本人仅刷新同一 DV 后，正文确切显示上述额度提示，展开区为禁用“等待接续”、错误码 `DOCUMENT_PLUGIN_QUOTA_EXHAUSTED` 和原件预览入口；原“正在保存/正在解析”误报已消失，没有再次触发解析。
+
+当前批次已收口：17c 可执行，Host 恢复与页面错误呈现已验证；真正业务阻断是已重测的官方解析额度。下一项有价值的工作是在保持“暂不增加权限，保留实现”及外部标题目的地尚未获准的边界下，核对保留的 MinerU 备用路径可独立交付的范围；不将设置管理员/RLS、外部标题调用或无人值守启用夹带上线。旧 raw-only provenance 缺失及保留分支不同 producer 的整合仍为已说明限制。
 
 回退保留 C153 精确提交 `9654f1c242d41fa950b07fa71fc9bb9dde1b59ae`；新旧解析行均保留，不回滚/删除数据或重置代次。若回退前有在途，应先按既有授权核对并停新领取，让既有调用结束，再由正常发布恢复代码；Skill 无变化。
 
