@@ -1168,6 +1168,8 @@ function safeHostErrorCode(value) {
   if (value === 'Canonical API-key service scope is unavailable.' ||
       value === 'Error: Canonical API-key service scope is unavailable.')
     return 'CANONICAL_SERVICE_SCOPE_UNAVAILABLE';
+  const pluginQuotaCode = value.match(/^(?:Error:\s*)?(DOCUMENT_PLUGIN_QUOTA_EXHAUSTED|DOCUMENT_PLUGIN_RATE_LIMITED)(?=:|$)/u)?.[1];
+  if (pluginQuotaCode) return pluginQuotaCode;
   const code = value.match(/^(?:Error:\s*)?((?:CANONICAL|AILY|REVIEW|ACTION_ATTEMPT|OPENCLAW|ENGINEERING_MATTER|OVERALL|JOBAID|DYNAMIC_EVALUATION|CONFIGURATION_REEVALUATION|TRANSLATION|COMMON_CONTEXT|PACKAGE_ARTIFACT|SOURCE_CONTEXT|SOURCE_PAGE|DOCUMENT_READING)_[A-Z0-9_]+)(?=:|$)/u)?.[1];
   return code && code.length <= 160 ? code : null;
 }

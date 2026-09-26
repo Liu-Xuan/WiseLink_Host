@@ -46,11 +46,10 @@ jest.mock('@client/src/features/matter/SavedAssessmentReading', () => ({
     onLocateDocument: typeof mockLocateDocument;
   }) => {
     mockLocateDocument = onLocateDocument;
-    return createElement(
-      'section',
-      { 'data-result-ref': result.resultRef },
-      result.content.lead,
-    );
+    const ActualReader = jest.requireActual(
+      '@client/src/features/matter/SavedAssessmentReading',
+    ).default;
+    return createElement(ActualReader, { result, onLocateDocument });
   },
 }));
 
@@ -157,6 +156,32 @@ describe('Guided Atlas library uses saved business reading', () => {
     expect(html).not.toContain('实施与故障：未核实');
     expect(renderQuicklook(libraryMatterFixture())).toContain('不能判断已完成、未实施或无故障');
     expect(html).toContain('/matters/ui-test-matter');
+  });
+  it('retains the same saved Matter claim with and without the independent member panel', () => {
+    const data = libraryMatterFixture();
+    const result = data.working.current!.state.substantiveResult!;
+    const claim = result.content.claims[0];
+    data.matter.catalog.entries = [{
+      workItemId: 'member-fixture', relationRole: 'PRIMARY', linkedAtWorkItemRevision: 1,
+      currentWorkItemRevision: 1, workItemChangedSinceLink: false, workItemStatus: 'OPEN',
+      document: { documentId: 'doc-fixture', documentVersionId: 'dv-fixture',
+        documentCode: '成员资料', businessRevision: 'R1', normalizedFamily: 'SB' },
+      documentCurrentness: { familyId: 'family-fixture', currentDocumentVersionId: 'dv-fixture',
+        currentGeneration: 1, selectedVersionIsCurrent: true },
+      sourceNavigation: { status: 'NOT_PARSED', sourceRefCount: 0, structuredContentPath: null },
+    }];
+    const withMembers = renderQuicklook(data);
+    data.matter.catalog.entries = [];
+    const withoutMembers = renderQuicklook(data);
+    expect(withMembers).toContain('成员资料已保存评估');
+    expect(withoutMembers).not.toContain('成员资料已保存评估');
+    for (const html of [withMembers, withoutMembers]) {
+      expect(html).toContain(`data-result-ref="${result.resultRef}"`);
+      expect(html).toContain(`data-claim-id="${claim.claimId}"`);
+      expect(html).toContain(claim.text);
+      expect(html).toContain(`核对 ${claim.premises.length} 项前提`);
+      expect(html).toContain('展开完整工作、依据与后续关注');
+    }
   });
   it('reads the same substantive result and separates absent source measures and implementation', () => {
     const data = libraryMatterFixture();

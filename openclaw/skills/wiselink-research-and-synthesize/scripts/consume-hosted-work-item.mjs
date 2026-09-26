@@ -50,6 +50,16 @@ const INITIAL_TOOLS = new Set([
   'begin_overall_synthesis', 'commit_overall_candidate',
 ]);
 
+// Only registered tools used by these consumers may appear in a diagnostic.
+// Tool names are lowercase protocol identifiers, not arbitrary exception text.
+const HOST_ERROR_TOOLS = new Set([...INITIAL_TOOLS,
+  'next_original_assessment', 'next_matter_assessment', 'begin_matter_assessment',
+  'matter_action_attempt', 'read_matter_current_work', 'resume_overall_synthesis',
+  'document_work', 'document_reading', 'read_document_original', 'document_translation',
+  'cancel_action_attempt', 'get_pending_review_turn', 'begin_review_turn',
+  'get_review_turn_context', 'read_source_refs', 'commit_review_turn_candidate',
+]);
+
 /** One native job owns one subject; OpenClaw schedules independent jobs concurrently.
  * Dependencies within a WorkItem and shared-work commits remain ordered. */
 export async function consumeHostedWorkItem(options, dependencies) {
@@ -538,6 +548,9 @@ function automaticWorkItemAttention(claim, errorCode, initial, report) {
 }
 
 function safeAutomaticAttentionCode(value) {
+  const toolFailure = typeof value === 'string'
+    ? value.match(/^REVIEW_HOST_MCP_TOOL_FAILED:([a-z_]+)(?::([A-Z][A-Z0-9_]{0,159}))?$/u) : null;
+  if (toolFailure && value.length <= 200 && HOST_ERROR_TOOLS.has(toolFailure[1])) return value;
   return typeof value === 'string' && /^[A-Z][A-Z0-9_:.-]{0,199}$/u.test(value)
     ? value : 'AUTO_WORK_ITEM_CONSUMER_STOPPED';
 }
@@ -761,7 +774,7 @@ export function errorCode(error) {
   // Preserve the actual internal call site in cron output. The generic code
   // filter below deliberately rejects lowercase prose and used to erase it.
   if (error?.receivedHostToolError === true && typeof error.hostToolName === 'string' &&
-      /^[a-z]+(?:_[a-z]+)*$/u.test(error.hostToolName) && error.hostToolName.length <= 80) {
+      HOST_ERROR_TOOLS.has(error.hostToolName)) {
     const hostCode = typeof error.hostErrorCode === 'string' && /^[A-Z][A-Z0-9_]{0,159}$/u.test(error.hostErrorCode)
       ? error.hostErrorCode : null;
     return `REVIEW_HOST_MCP_TOOL_FAILED:${error.hostToolName}${hostCode ? ':' + hostCode : ''}`;
