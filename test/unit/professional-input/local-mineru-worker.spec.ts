@@ -170,6 +170,11 @@ describe('outbound local worker, isolated transports only', () => {
     const controller = new AbortController();
     controller.abort();
     await expect(transport.claim(controller.signal)).rejects.toThrow('fetch failed');
+    const interruptedBody = jest.fn(async () => new Response(new ReadableStream({
+      pull(stream) { stream.error(new TypeError('connection reset')); },
+    }), { headers: { 'content-type': 'application/json' } }));
+    const streamed = new LocalMineruHttpTransport({ origin: 'https://host.test', apiKey: 'private-test-key' }, interruptedBody as typeof fetch);
+    await expect(streamed.claim(new AbortController().signal)).rejects.toThrow('LOCAL_MINERU_TRANSPORT_UNAVAILABLE');
   });
 
 });

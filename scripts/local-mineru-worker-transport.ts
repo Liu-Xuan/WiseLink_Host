@@ -105,6 +105,10 @@ export class LocalMineruHttpTransport implements LocalMineruTransport {
         if (size > bodyLimit) { await reader.cancel(); throw new Error('LOCAL_MINERU_RESPONSE_TOO_LARGE'); }
         chunks.push(part.value);
       }
+    } catch (error) {
+      if (!signal.aborted && (bounded.aborted || error instanceof TypeError))
+        throw new Error('LOCAL_MINERU_TRANSPORT_UNAVAILABLE');
+      throw error;
     } finally { reader.releaseLock(); }
     return { bytes: Buffer.concat(chunks), type: actualType };
   }
