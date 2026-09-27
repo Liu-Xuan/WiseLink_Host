@@ -19,6 +19,7 @@ const { JSDOM } = require('jsdom');
 
 const mockCatalogue = jest.fn();
 const mockReadWork = jest.fn();
+const mockJobAidWork = jest.fn();
 const mockDocuments = jest.mocked(getCanonicalLibraryDocuments);
 let sessionGeneration = 1;
 let queryClient: QueryClient;
@@ -87,6 +88,7 @@ jest.mock('@client/src/api/engineering-matter', () => ({}));
 jest.mock('@client/src/api/canonical-host', () => ({
   readEngineeringKnowledgeCatalogue: (...args: unknown[]) => mockCatalogue(...args),
   readEngineeringKnowledgeWork: (...args: unknown[]) => mockReadWork(...args),
+  readJobAidAssessmentWork: (...args: unknown[]) => mockJobAidWork(...args),
   getCanonicalLibraryDocuments: jest.fn(),
   subscribeCanonicalHostClientSession: () => () => undefined,
   getCanonicalHostClientSessionGeneration: () => sessionGeneration,
@@ -131,6 +133,9 @@ const entry = (id: string, current = true, workRef = `WR-${id}`): EngineeringKno
   listBrief: `简明认识 ${id}`,
   createdAt: '2026-09-17T00:00:00.000Z',
   overviewStatus: 'CURRENT',
+});
+const workEntry = (id: string, workRef = `JAWR-${id}`): EngineeringKnowledgeEntry => ({
+  ...entry(id, true, workRef), subjectKind: 'WORK_ITEM',
 });
 
 const page = (...entries: EngineeringKnowledgeEntry[]): EngineeringKnowledgePage => ({
@@ -217,6 +222,9 @@ beforeEach(() => {
   jest.clearAllMocks();
   mockCatalogue.mockResolvedValue(page(entry('A'), entry('B')));
   mockReadWork.mockImplementation((identity: { subjectId: string }) => Promise.resolve(read(entry(identity.subjectId))));
+  mockJobAidWork.mockImplementation((id: string) => Promise.resolve({
+    current: { workItemId: id, workRevisionRef: `JAWR-${id}` },
+  }));
 });
 
 afterEach(async () => {
@@ -243,6 +251,82 @@ describe('knowledge catalogue identity and reading lifecycle', () => {
     );
     expect(router.state.location.search).toContain('subjectId=A');
     expect(container.textContent).toContain('主题 A');
+  });
+
+  it('opens the exact saved WorkItem from a deep link even when the catalogue starts with an older matter', async () => {
+    mockReadWork.mockImplementation((identity: EngineeringKnowledgeEntry) =>
+      Promise.resolve(read(identity.subjectKind === 'WORK_ITEM'
+        ? workEntry(identity.subjectId, identity.workRef) : entry(identity.subjectId))));
+    await mount('?workItemId=WI-TARGET');
+    await settle();
+    await settle();
+
+    expect(mockJobAidWork).toHaveBeenCalledWith('WI-TARGET', expect.anything());
+    expect(mockReadWork).toHaveBeenCalledWith(
+      { subjectKind: 'WORK_ITEM', subjectId: 'WI-TARGET', workRef: 'JAWR-WI-TARGET' },
+      expect.anything(),
+    );
+    expect(router.state.location.search).toContain('subjectId=WI-TARGET');
+    expect(router.state.location.search).not.toContain('workItemId=');
+    expect(container.querySelector('.knowledge-preview')?.textContent).toContain('主题 WI-TARGET');
+  });
+
+  it('keeps an exact historical work pin instead of replacing it with the current WorkItem revision', async () => {
+    await mount('?workItemId=WI-TARGET&subjectKind=WORK_ITEM&subjectId=WI-TARGET&workRef=JAWR-OLD');
+    await settle();
+
+    expect(mockJobAidWork).not.toHaveBeenCalled();
+    expect(mockReadWork).toHaveBeenCalledWith(
+      { subjectKind: 'WORK_ITEM', subjectId: 'WI-TARGET', workRef: 'JAWR-OLD' },
+      expect.anything(),
+    );
+    expect(router.state.location.search).toContain('workRef=JAWR-OLD');
+  });
+
+  it('does not select unrelated catalogue work when a requested WorkItem has no saved revision', async () => {
+    mockJobAidWork.mockResolvedValue({ current: null });
+    await mount('?workItemId=WI-EMPTY');
+    await settle();
+
+    expect(mockReadWork).not.toHaveBeenCalled();
+    expect(container.querySelector('.knowledge-preview')?.textContent).toContain('尚无可读的已保存工作');
+    expect(router.state.location.search).toBe('?workItemId=WI-EMPTY');
+  });
+
+  it('does not let a late WorkItem lookup replace a newer deep link', async () => {
+    const pendingA = deferred<{ current: { workItemId: string; workRevisionRef: string } }>();
+    const pendingB = deferred<{ current: { workItemId: string; workRevisionRef: string } }>();
+    mockJobAidWork.mockImplementation((id: string) =>
+      id === 'WI-A' ? pendingA.promise : pendingB.promise);
+    mockReadWork.mockImplementation((identity: EngineeringKnowledgeEntry) =>
+      Promise.resolve(read(workEntry(identity.subjectId, identity.workRef))));
+    await mount('?workItemId=WI-A');
+    await settle();
+    await navigate('/knowledge?workItemId=WI-B');
+    await act(async () => pendingA.resolve({
+      current: { workItemId: 'WI-A', workRevisionRef: 'JAWR-WI-A' },
+    }));
+    await settle();
+    expect(router.state.location.search).toBe('?workItemId=WI-B');
+    expect(mockReadWork).not.toHaveBeenCalled();
+    await act(async () => pendingB.resolve({
+      current: { workItemId: 'WI-B', workRevisionRef: 'JAWR-WI-B' },
+    }));
+    await settle();
+    await settle();
+    expect(router.state.location.search).toContain('subjectId=WI-B');
+    expect(mockReadWork).toHaveBeenCalledWith(
+      { subjectKind: 'WORK_ITEM', subjectId: 'WI-B', workRef: 'JAWR-WI-B' },
+      expect.anything(),
+    );
+  });
+
+  it('rejects a duplicate WorkItem deep link without selecting catalogue content', async () => {
+    await mount('?workItemId=WI-A&workItemId=WI-B');
+    await settle();
+    expect(mockJobAidWork).not.toHaveBeenCalled();
+    expect(mockReadWork).not.toHaveBeenCalled();
+    expect(container.querySelector('[role="alert"]')?.textContent).toContain('身份无效');
   });
 
   it.each([

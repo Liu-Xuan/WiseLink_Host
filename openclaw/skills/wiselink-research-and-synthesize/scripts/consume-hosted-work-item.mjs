@@ -76,11 +76,33 @@ export async function consumeHostedWorkItem(options, dependencies) {
   });
   let initial = readInitialStatus(statusResult, options.workItemId);
   assertExpectedInitialOperationStatus(options.expectedInitialOperation, initial);
+  if (options.repairingRecovery) {
+    const operation = options.repairExpectedOperation;
+    const stage = STAGE_BY_OPERATION[operation];
+    const observation = initial.stages?.[stage];
+    if (!options.repairStoppedClaim || !['EVALUATE_JOBAID', 'SYNTHESIZE_OVERALL'].includes(operation) ||
+        initial.status !== 'BUSY' ||
+        initial.workItemRevision !== options.repairWorkItemRevision ||
+        observation?.status !== 'BUSY' ||
+        observation.requestId !== options.repairRequestId ||
+        observation.attemptRef !== options.repairActiveAttemptRef) {
+      throw new Error('AUTO_WORK_ITEM_REPAIR_RECOVERY_CHANGED');
+    }
+    const recovery = await findInitialAssessmentRecovery(options, initial);
+    if (!recovery || recovery.operation !== operation ||
+        !['RECOVERY_CANDIDATE', 'RECOVERY_COMMITTING'].includes(recovery.status)) {
+      throw new Error('AUTO_WORK_ITEM_REPAIR_RECOVERY_CHANGED');
+    }
+    return runHostedInitialStage({ ...options, operation, initial,
+      assessmentRecovery: recovery }, dependencies);
+  }
   if (options.autoRetry) {
-    const retry = await automaticRetryPlan(initial, options.workItemId,
+    const retry = await (options.repairStoppedClaim ? repairedRetryPlan : automaticRetryPlan)(
+      initial, options.workItemId,
       attemptRef => dependencies.callTool('read_assessment_work', {
         attemptRef, workItemId: options.workItemId,
-      }));
+      }), options.repairAttentionCode, options.repairWorkItemRevision,
+      options.repairAttemptRef);
     if (!retry || retry.operation !== options.autoRetry.operation ||
         retry.requestId !== options.autoRetry.requestId ||
         retry.attemptRef !== options.autoRetry.attemptRef) {
@@ -184,6 +206,12 @@ export async function consumeAutomaticWorkItemQueueTick(options, dependencies) {
 
   const stored = await checkpoint.readOptional('active-claim');
   let claim = stored === null ? null : validateStoredAutoClaim(stored);
+  if (options.repairStoppedClaim &&
+      (!claim?.consumerStopped || claim.completionReady || claim.blockReady ||
+        claim.workItemId !== options.repairWorkItemId ||
+        !/^AQ-[A-Za-z0-9-]{1,93}$/u.test(options.repairAttemptRef ?? ''))) {
+    throw new Error('AUTO_WORK_ITEM_REPAIR_CLAIM_UNAVAILABLE');
+  }
   const currentTime = now();
   if (!(currentTime instanceof Date) || !Number.isFinite(currentTime.getTime())) {
     throw new Error('AUTO_WORK_ITEM_QUEUE_CLOCK_INVALID');
@@ -228,6 +256,10 @@ export async function consumeAutomaticWorkItemQueueTick(options, dependencies) {
         next.documentVersionId !== previous.documentVersionId)) {
       throw new Error('AUTO_WORK_ITEM_RECLAIM_BINDING_MISMATCH');
     }
+    if (options.repairStoppedClaim && previous &&
+        next.workItemRevision !== previous.workItemRevision) {
+      throw new Error('AUTO_WORK_ITEM_REPAIR_REVISION_CHANGED');
+    }
     if (previous && (next.leaseGeneration <= previous.leaseGeneration ||
         next.leaseToken === previous.leaseToken)) {
       throw new Error('AUTO_WORK_ITEM_RECLAIM_FENCE_INVALID');
@@ -251,6 +283,14 @@ export async function consumeAutomaticWorkItemQueueTick(options, dependencies) {
 
   let statusValue = await dependencies.readInitialStatus(claim.workItemId);
   assertAutomaticClaimStatusBinding(claim, statusValue);
+  if (options.repairStoppedClaim &&
+      statusValue.workItemRevision !== claim.workItemRevision) {
+    throw new Error('AUTO_WORK_ITEM_REPAIR_REVISION_CHANGED');
+  }
+  if (options.repairStoppedClaim &&
+      !['FAILED', 'BUSY'].includes(statusValue.status)) {
+    throw new Error('AUTO_WORK_ITEM_REPAIR_STAGE_CHANGED');
+  }
   if (isAutomaticWorkItemDone(statusValue)) {
     claim = { ...claim, completionReady: true };
     await checkpoint.write('active-claim', claim);
@@ -300,23 +340,38 @@ export async function consumeAutomaticWorkItemQueueTick(options, dependencies) {
       return acknowledgeAndClearAutoClaim(claim, checkpoint, dependencies, report);
     }
   }
-  const retry = await automaticRetryPlan(statusValue, claim.workItemId,
-    dependencies.readSavedWork);
+  const retry = options.repairStoppedClaim ? null
+    : await automaticRetryPlan(statusValue, claim.workItemId,
+      dependencies.readSavedWork);
+  const repair = options.repairStoppedClaim && claim.consumerStopped && !retry
+    ? await repairedRetryPlan(statusValue, claim.workItemId,
+      dependencies.readSavedWork, claim.attentionCode, claim.workItemRevision,
+      options.repairAttemptRef)
+    : null;
+  const repairAttentionCode = repair ? claim.attentionCode : null;
   const committingRecovery = claim.consumerStopped && statusValue.status === 'BUSY'
     ? await findInitialAssessmentRecovery({ ...options, workItemId: claim.workItemId }, statusValue)
     : null;
+  const repairingRecovery = options.repairStoppedClaim &&
+    ['RECOVERY_CANDIDATE', 'RECOVERY_COMMITTING'].includes(committingRecovery?.status) &&
+    ['EVALUATE_JOBAID', 'SYNTHESIZE_OVERALL'].includes(committingRecovery.operation) &&
+    statusValue.stages?.[STAGE_BY_OPERATION[committingRecovery.operation]]?.requestId ===
+      repairRequestId(claim.workItemId, claim.documentVersionId,
+        STAGE_BY_OPERATION[committingRecovery.operation], options.repairAttemptRef);
   if (claim.completionReady) {
     claim = { ...claim, completionReady: false };
     await checkpoint.write('active-claim', claim);
   }
-  if (claim.consumerStopped && !retry && committingRecovery?.status !== 'RECOVERY_COMMITTING') {
+  if (claim.consumerStopped && !retry && !repair && !repairingRecovery &&
+      !(committingRecovery?.status === 'RECOVERY_COMMITTING' && !options.repairStoppedClaim)) {
     return automaticWorkItemAttention(
       claim,
       claim.attentionCode ?? 'AUTO_WORK_ITEM_CONSUMER_STOPPED',
       statusValue,
     );
   }
-  if ((retry || committingRecovery?.status === 'RECOVERY_COMMITTING') && claim.consumerStopped) {
+  if ((retry || (committingRecovery?.status === 'RECOVERY_COMMITTING' &&
+      !options.repairStoppedClaim)) && claim.consumerStopped) {
     claim = { ...claim, consumerStopped: false, attentionCode: null };
     await checkpoint.write('active-claim', claim);
   }
@@ -329,7 +384,15 @@ export async function consumeAutomaticWorkItemQueueTick(options, dependencies) {
     // New items must use the context returned by Host status; a static
     // WorkItem's context reference cannot be inherited by a queued item.
     applicabilityContextRef: undefined,
-    ...(retry ? { autoRetry: retry } : {}),
+    ...(retry || repair ? { autoRetry: retry ?? repair } : {}),
+    ...(repair ? { repairStoppedClaim: true, repairAttentionCode,
+      repairWorkItemRevision: claim.workItemRevision,
+      repairAttemptRef: options.repairAttemptRef } : {}),
+    ...(repairingRecovery ? { repairingRecovery: true, repairStoppedClaim: true,
+      repairWorkItemRevision: claim.workItemRevision,
+      repairExpectedOperation: committingRecovery.operation,
+      repairRequestId: statusValue.stages[STAGE_BY_OPERATION[committingRecovery.operation]].requestId,
+      repairActiveAttemptRef: statusValue.stages[STAGE_BY_OPERATION[committingRecovery.operation]].attemptRef } : {}),
   });
   statusValue = await dependencies.readInitialStatus(claim.workItemId);
   assertAutomaticClaimStatusBinding(claim, statusValue);
@@ -351,6 +414,11 @@ export async function consumeAutomaticWorkItemQueueTick(options, dependencies) {
       statusValue,
       report,
     );
+  }
+
+  if ((repair || repairingRecovery) && claim.consumerStopped) {
+    claim = { ...claim, consumerStopped: false, attentionCode: null };
+    await checkpoint.write('active-claim', claim);
   }
 
   return {
@@ -523,6 +591,49 @@ async function automaticRetryPlan(initial, workItemId, readSavedWork) {
     return { operation, attemptRef: observation.attemptRef, requestId };
   }
   return null;
+}
+
+// A repaired consumer may make one operator-triggered successor after the
+// automatic no-work retry was exhausted. The Host remains authoritative for
+// the exact task, current source, authorization, stage and new attempt.
+async function repairedRetryPlan(
+  initial, workItemId, readSavedWork, attentionCode, workItemRevision,
+  expectedAttemptRef,
+) {
+  if (attentionCode !== 'JOBAID_GATEWAY_HTTP_400:INCOMPLETE_TERMINAL_RESPONSE' ||
+      initial?.status !== 'FAILED' || initial.nextOperation !== null ||
+      initial.workItemRevision !== workItemRevision ||
+      typeof initial.documentVersionId !== 'string' ||
+      !isRecord(initial.stages) || typeof readSavedWork !== 'function') return null;
+  for (const [stage, operation] of [
+    ['jobAid', 'EVALUATE_JOBAID'],
+    ['overall', 'SYNTHESIZE_OVERALL'],
+  ]) {
+    const observation = initial.stages[stage];
+    if (observation?.status !== 'FAILED' ||
+        !['CANCELLED', 'TIMED_OUT'].includes(observation.attemptStatus) ||
+        observation.attemptRef !== expectedAttemptRef ||
+        !/^auto-retry-[0-9a-f]{32}$/u.test(observation.requestId ?? '') ||
+        observation.terminalCode !==
+          'JOBAID_GATEWAY_HTTP_400:INCOMPLETE_TERMINAL_RESPONSE') continue;
+    const saved = await readSavedWork(observation.attemptRef, workItemId);
+    if (saved?.schemaVersion !== 'wiselink.jobaid-work-read.v2' ||
+        saved.executionStatus !== observation.attemptStatus ||
+        typeof saved.attemptId !== 'string' || !saved.attemptId ||
+        !Number.isSafeInteger(saved.inputWorkRevision) ||
+        saved.inputWorkRevision < 0 || saved.revision !== null) continue;
+    return { operation, attemptRef: observation.attemptRef,
+      requestId: repairRequestId(workItemId, initial.documentVersionId,
+        stage, observation.attemptRef) };
+  }
+  return null;
+}
+
+function repairRequestId(workItemId, documentVersionId, stage, attemptRef) {
+  const identity = [workItemId, documentVersionId, stage,
+    attemptRef, WISELINK_SKILL_VERSION].join(':');
+  return `auto-repair-${createHash('sha256').update(identity)
+    .digest('hex').slice(0, 32)}`;
 }
 
 function isAutomaticBlockBinding(value) {
@@ -825,14 +936,26 @@ export function initialStageLimit(argv, workItemId, matterId, documentVersionId)
 
 export function automaticWorkItemQueueMode(argv) {
   const occurrences = argv.filter(arg => arg === '--auto-queue').length;
-  if (!occurrences) return false;
+  const repairs = argv.filter(arg => arg === '--repair-stopped-claim').length;
+  const repairWorkItems = argv.filter(arg => arg === '--repair-work-item-id').length;
+  const repairAttempts = argv.filter(arg => arg === '--repair-attempt-ref').length;
+  if (!occurrences) {
+    if (repairs || repairWorkItems || repairAttempts)
+      throw new Error('AUTO_WORK_ITEM_QUEUE_OPTIONS_INVALID');
+    return false;
+  }
   if (occurrences !== 1) throw new Error('AUTO_WORK_ITEM_QUEUE_OPTIONS_INVALID');
+  if (repairs > 1) throw new Error('AUTO_WORK_ITEM_QUEUE_OPTIONS_INVALID');
+  if (repairWorkItems !== repairs || repairAttempts !== repairs) {
+    throw new Error('AUTO_WORK_ITEM_QUEUE_OPTIONS_INVALID');
+  }
   const valueOptions = new Set([
     '--checkpoint-root', '--openclaw-config',
+    '--repair-work-item-id', '--repair-attempt-ref',
   ]);
   for (let index = 0; index < argv.length; index += 1) {
     const arg = argv[index];
-    if (arg === '--auto-queue') continue;
+    if (arg === '--auto-queue' || arg === '--repair-stopped-claim') continue;
     if (!valueOptions.has(arg)) {
       throw new Error('AUTO_WORK_ITEM_QUEUE_OPTION_NOT_ALLOWED');
     }
@@ -841,6 +964,11 @@ export function automaticWorkItemQueueMode(argv) {
       throw new Error('AUTO_WORK_ITEM_QUEUE_OPTIONS_INVALID');
     }
     index += 1;
+  }
+  if (repairs &&
+      (!/^WI-[A-Za-z0-9_-]{1,93}$/u.test(option(argv, '--repair-work-item-id') ?? '') ||
+        !/^AQ-[A-Za-z0-9-]{1,93}$/u.test(option(argv, '--repair-attempt-ref') ?? ''))) {
+    throw new Error('AUTO_WORK_ITEM_QUEUE_OPTIONS_INVALID');
   }
   return true;
 }
@@ -1040,10 +1168,13 @@ export function matterPreflightMode(argv, matterId) {
 
 async function main(argv, env) {
   if (argv.includes('--help')) {
-    process.stdout.write('Usage: node consume-hosted-work-item.mjs [--auto-queue] [--work-item-id WI-...] [--matter-id MAT-...] [--document-version-id DV] [--matter-preflight-only | --matter-expected-snapshot SHA256] [--max-initial-stages 1] [--expected-initial-operation EVALUATE_JOBAID|SYNTHESIZE_OVERALL] [--applicability-context-ref REF] [--checkpoint-root PATH] [--openclaw-config PATH] [--native-session-store PATH] [--document-translation-recovery ID] [--activity-run-ref ID] [--reading-run-ref ID] [--lease-owner ID]\nOne native job per authorized subject. Choose exactly one WorkItem, Matter or DocumentVersion; independent jobs use native cron concurrency. --auto-queue is one native cron tick for the Host-enrolled automatic WorkItem queue; it accepts no static subject or stage-specific options. --matter-preflight-only reads current Matter work without dispatch; --matter-expected-snapshot checks that read again before dispatch and stops on a changed snapshot. --max-initial-stages 1 is WorkItem-only and consumes at most the current initial stage, without Review or original-impact work. --expected-initial-operation requires that limit and refuses any entry stage other than the named JobAid or Overall stage.\n');
+    process.stdout.write('Usage: node consume-hosted-work-item.mjs [--auto-queue [--repair-stopped-claim --repair-work-item-id WI-... --repair-attempt-ref AQ-...]] [--work-item-id WI-...] [--matter-id MAT-...] [--document-version-id DV] [--matter-preflight-only | --matter-expected-snapshot SHA256] [--max-initial-stages 1] [--expected-initial-operation EVALUATE_JOBAID|SYNTHESIZE_OVERALL] [--applicability-context-ref REF] [--checkpoint-root PATH] [--openclaw-config PATH] [--native-session-store PATH] [--document-translation-recovery ID] [--activity-run-ref ID] [--reading-run-ref ID] [--lease-owner ID]\nOne native job per authorized subject. Choose exactly one WorkItem, Matter or DocumentVersion; independent jobs use native cron concurrency. --auto-queue is one native cron tick for the Host-enrolled automatic WorkItem queue; it accepts no static subject or stage-specific options. --repair-stopped-claim with both exact identity flags permits one operator-triggered successor only for a stopped claim with a failed no-work JobAid/Overall auto-retry after a bounded gateway change; it is never a cron option. --matter-preflight-only reads current Matter work without dispatch; --matter-expected-snapshot checks that read again before dispatch and stops on a changed snapshot. --max-initial-stages 1 is WorkItem-only and consumes at most the current initial stage, without Review or original-impact work. --expected-initial-operation requires that limit and refuses any entry stage other than the named JobAid or Overall stage.\n');
     return;
   }
   const autoQueue = automaticWorkItemQueueMode(argv);
+  const repairStoppedClaim = argv.includes('--repair-stopped-claim');
+  const repairWorkItemId = repairStoppedClaim ? option(argv, '--repair-work-item-id') : undefined;
+  const repairAttemptRef = repairStoppedClaim ? option(argv, '--repair-attempt-ref') : undefined;
   const workItemId = option(argv, '--work-item-id');
   const matterId = option(argv, '--matter-id');
   const documentVersionId = option(argv, '--document-version-id');
@@ -1116,7 +1247,8 @@ async function main(argv, env) {
       },
     };
     const result = autoQueue
-      ? await consumeAutomaticWorkItemQueueTick({ checkpointRoot }, {
+      ? await consumeAutomaticWorkItemQueueTick({ checkpointRoot, repairStoppedClaim,
+        repairWorkItemId, repairAttemptRef }, {
         checkpoint: await createCheckpointStore(join(
           checkpointRoot,
           'automatic-work-item-queue',

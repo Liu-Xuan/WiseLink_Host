@@ -1,5 +1,63 @@
 # M 主控集成交接
 
+## 2026-09-27 C168 受控恢复：JobAid 已保存，Overall 待接续
+
+C168 私有 ZIP 与 manifest 在 17c 核验版本、源提交、61/61 payload SHA 后通过官方 `openclaw skills install` 安装，`skills info` 为 Ready；额外 `.openclaw/source-origin.json` 是平台元数据。安装后消费者 0、cron 16 项全部停用。旧 claim 精确指向 WI `WI-d368f79e-4a5a-4615-ac00-7594b3ee5c53`、request `REQ-b5526e71-8a10-44d2-8bc9-dde3867044f6`、revision 3、generation 1、旧 Gateway 错误与 `consumerStopped=true`。17c 仅运行一次 C168 精确修复命令，绑定旧失败 attempt `AQ-d5ed83270aef4c02a439fd790fe8fbb4`；没有开启普通 tick 或 cron。
+
+刘轩本人 17b 页面见 JobAid 逐步保存工作修订 1→2→3→4，最终在 2026-09-27 14:11:45 +08 显示“候选待复核”“执行完成”，七个问题及来源依据可读；Overall 仍等待。17c 只读 Host 回执确认当前 WorkItem revision 4、`WAITING_INPUT`、`nextOperation=SYNTHESIZE_OVERALL`，JobAid attempt `AQ-195f73672fde4f8dae11deb51f39126f` / SUCCEEDED。`read_assessment_work` 对该 attempt 返回 SUCCEEDED、workRevision 4、basedOnWorkItemRevision 3、同一 WorkItem 与文档版本、同一 actionAttemptId。工作修订的 `requestId=JA-save-aec9b65c-ef71-42f9-ac02-335eb328daf9` 是保存请求身份，不是阶段修复请求。17c 最新本地 claim 为 generation 2、revision 3、`consumerStopped=false`、`completionReady=false`，租约到期 2026-09-27T07:04:46.848Z；初次观察到的 stopped=true 是过程状态，最终无需额外清除。原终端 stdout/stderr/退出码不可读，但 Host 和检查点读回证明这次 JobAid 已保存并可以继续 Overall。
+
+曾准备 C169 来清除看似未解除的停止标记；进一步回读否定其前提，且证明保存 `requestId` 不能作阶段身份。因此 C169 私有包虽已生成并上传，但**未在 17c 安装或运行**；草案提交 `dce6936cc8e17d0f9ddd0e93e76d18d785168406` 已由 `af07c71de` 撤销。当前运行版本仍为 C168。普通受控 Overall tick 尚未发出：17c 标签被旧浏览器自动化 session 占用，终端暂不可确认，且 gen2 租约临近 07:04:46.848Z 到期；先恢复可读终端，到期后只对原 WorkItem 精确重领。随后从 Host 下一阶段 Overall 接续，再读回综合候选、资料库与 Wiki；无人值守 cron 保持停用。JobAid 成功只是局部证据，不代表全流程验收。
+
+## 2026-09-27 C168：限定旧失败尝试的队列恢复，真实接续待核验
+
+从 17c 两次失败 JobAid 的原生 session 元数据确认：每次均有两条 assistant 记录，`stopReason=length`、`output=16000`、`contentTypes=[]`、`errorCode=null`；对应 MCP 回执为 `JOBAID_GATEWAY_HTTP_400:INCOMPLETE_TERMINAL_RESPONSE`，Host 未保存 JobAid 工作。此证据说明兼容层得到不完整终态；尚未证明 16000 限额来自哪一层，也未读取模型正文。C167 在确切 M3 Probe JobAid 路径显式发送 `max_completion_tokens=32768`，保留其他路径原策略；本地测试、打包和审查通过，提交 `f9bf33a0d1737f542950774197b4738bccecc184`，已快进到 origin 同名分支。17c 私有 ZIP SHA256 `93776a51ba85722a871cf4442a90a6ea3a1bd409340c38617a9afc26bc58a4b0`，安装后官方 `skills info` 为 Ready，安装目录 61/61 payload 文件 SHA 一致；Gateway Online，消费者进程 0、16 个 cron 全停用。尚未进行 C167 真实模型调用，不能宣称故障已解决。
+
+原自动队列 `active-claim` 只读读回仍为 `WI-d368f79e-4a5a-4615-ac00-7594b3ee5c53`、原 requestId、WorkItem revision 3、generation 1、租约已过期、`consumerStopped=true`、同一 Gateway attentionCode，未读取或输出 leaseToken。普通自动重试已耗尽，直接重新运行普通 tick 不会安全接续。C168 增加仅供操作员单次调用的 `--auto-queue --repair-stopped-claim --repair-work-item-id WI-... --repair-attempt-ref AQ-...`，要求旧停止 claim、确切失败尝试、无保存工作、相同来源与修订；过期租约接管先核对修订，第二次 Host 状态读回再核对相同阶段/request/attempt。崩溃保留停止标记和稳定后继 requestId，状态变化则拒绝，普通 cron 不带修复参数。代码经独立复核，完整 Skill 测试 561/561、发布检查、precommit 通过。提交 `8b632e2f3cb710bd4586937607440fc2cc7421af`（父 C167），已快进至 origin 同名分支；C168 包 61 文件、511207 bytes、SHA256 `66f246cea3ded562af2a110075f3ae1a36b941df2ba4af5903c273bbd6699333`。仅有包与代码，不代表 17c 已安装或真实恢复成功。含私有资料的祖先提交未推公开 GitHub。
+
+Host 当前阶段精确读回尚未完成：17c 官方 17b 数据库 CLI 缺 `spark:app:write`，未申请扩权；一次原生 agent 名称错误立即退出，未运行模型；随后 direct MCP 只读调用返回未分类 `Error`，安全错误分类前 Mac 再次锁屏。C168 安装及任何业务恢复均未启动。解锁后先完成安全分类和 Host/保存工作读回，安装核对 C168，确认仍是 `AQ-d5ed83270aef4c02a439fd790fe8fbb4`、revision 3 且无工作，再执行一次受控修复；任一绑定不符则停在原 claim 并按真实状态处理。无人值守 cron 保持停用。
+
+## 2026-09-27 C167：真实自动队列 JobAid 网关失败，保留任务接续
+
+刘轩解锁 17c 后，唯一操作员在原终端核对 C165 Skill Ready、消费者进程 0、16 个 cron 全停用且无运行项、`active-claim.json=null`；17b online 只读核对新任务 `WI-d368f79e-4a5a-4615-ac00-7594b3ee5c53` 授权 WAITING/gen0、WorkItem revision 3、尚无 JobAid/Overall。仅执行一次不带固定 WorkItem 参数的动态 `--auto-queue` tick，Host 准确领取该任务为 LEASED/gen1，原 PARSE_PDF 尝试保持 SUCCEEDED、没有重跑原文。
+
+本次 JobAid `OPENCLAW_DYNAMIC_EVALUATION` 尝试 1 为 `AQ-ed4271bcea5e401094b3d3e3da59b661`，08:28:32 +08 RUNNING、08:30:59 +08 CANCELLED；`cancelReason=HOSTED_INITIAL_EXECUTION_FAILED:JOBAID_GATEWAY_HTTP_400:INCOMPLETE_TERMINAL_RESPONSE`，`projectionApplied=false`。Host 保存的 executionModel 确认为 `M3 Probe Large` / `m3probe/minimax-m3`。17c 私有 checkpoint 的安全响应形态为 HTTP 400、142 bytes、`gatewayFailure=INCOMPLETE_TERMINAL_RESPONSE`，无 finishReason 或 usage；不能据此认定模型达到输出长度。`active-claim` 保留目标任务/gen1，`consumerStopped=true`。Host 只读确认 WorkItem revision 3 未变、`assessment_work_revision` 0 条、没有 Overall。
+
+在明确无消费者进程、原尝试已结束且无保存结果后，仅按现有自动恢复规则执行第二次动态 tick。后继尝试 2 `AQ-d5ed83270aef4c02a439fd790fe8fbb4` 使用同任务、同文档版本的 `auto-retry-04f04eb08343f6da76aac64e98e80e73` 幂等身份，08:48:08 +08 RUNNING、08:50:10 +08 同样 CANCELLED，原因与安全响应形态完全相同，`projectionApplied=false`、已保存工作仍为 0。第二次 node 进程已退出；没有第三次 tick，没有 ACK/BLOCK，也没有启用 cron。队列仍 LEASED/gen1、blockedCode 为空；此处是运行故障，不是工程资料不足或工程结论。
+
+线上任务封装 89,714 bytes；其中嵌套 JobAid 模型输入 54,330 bytes，`deliveredEvidence` 20,801 bytes（30 个已交付引用）、`availableSources` 15,195 bytes、`contextPackage` 8,003 bytes。独立 `sourceCatalog` 31,345 bytes 为任务授权/读取目录的一部分，不等于已证实的模型请求体积。代码已采用分批 `SAVE_WORK` 与简化 function schema；现有诊断尚不能证明请求过大、模型输出截断或工具 schema 不兼容。需核查实际 JobAid 请求字节数、M3 路由配置和原生上下文计量，再根据证据修订交互；不能删原文、盲目调大 token 或原样重复第三次。旧错误工作 rev9 的准确更正仍是独立后继问题。
+
+17c 解锁后原终端一度停在启动页，正常刷新后恢复 Gateway Online。再次确认消费者进程 0、16 个 cron 全停用且无运行项、原 checkpoint 仍为目标任务/gen1/`consumerStopped=true`。经已安装 Skill 的配置解析确认路由已登记、Gateway 本机地址及凭据可用；凭据未输出。使用不同的独立诊断 `user` 身份、同一 `/v1/chat/completions` 和 `x-openclaw-model=m3probe/minimax-m3`，无工程资料的纯文本 `OK` 探针得到 HTTP 200、`finish_reason=stop`、精确 `OK`，耗时 46,597 ms；无副作用单函数 `return_ok({result:"OK"})` 探针得到 HTTP 200、`finish_reason=tool_calls`、正确函数与参数，耗时 25,012 ms。两次报告的 prompt tokens 分别为 49,393、49,462，明显高于显式短消息；其计量来源和会话上下文仍待确认，不能直接归因 Skill 正文或认定真实 JobAid 已超模型窗口。探针没有触发第三次业务尝试，不能代替真实 JobAid 验收。
+
+17c 通用模型目录与状态接口未列出 M3 Probe，但官方 `openclaw config get` 对确切 `models.providers.m3probe` 的安全字段读回确认 `minimax-m3`：`api=openai-completions`、`reasoning=true`、`contextWindow=1,000,000`、`maxTokens=131,072`；agent 默认模型条目仅有别名。4.9 万 token 的短探针明显低于已配置上下文窗口，但提供商实际执行限制仍不能只由配置推定。`sessions` 最近两小时列表未列出两次兼容层探针，且与 status 的 session 总数口径不同，不能据此证明或否认独立 native session。首次失败 JobAid 的私有 checkpoint 本轮未取得可用于重建请求的文件读回，因此实际 request/messages/system/tools 字节拆分仍未测得。已准备的本地安全计数代码尚未安装，不能把其测试结果写成线上测量。
+
+目标两次失败时窗的 OpenClaw 原生日志未取得：官方日志命令只给当前尾部，浅层本机日志文件扫描无目标记录；provider/agent/Gateway timeout 数值也未成功读回。两次约 122/147 秒的耗时接近官方云模型 120 秒无响应片段看门狗，只是待验证线索，不构成超时定因。没有通过修改超时、切换模型或第三次相同生成来掩盖此缺口。
+
+为下一次真实请求提供安全尺寸证据，提交 `71269e054c5fe12646d8e9d7e84afab8b40346b6`（父 `74e05ccdb6fb35462d4cfc7b761ff86a552ebeb9`）将 JobAid Gateway 请求 JSON 构造一次，并仅记录 `requestBytes/messagesBytes/systemBytes/toolsBytes`；请求语义、内容、授权与重试条件不变。Skill 升为兼容修订 `r09.c166`；受影响测试 325/325、版本检查、完整 Skill 打包自测及 precommit 通过。包 61 文件、507,511 bytes、SHA256 `cbdd5e848be71bfa4967aee27a72bcd41f124cb30b59851ae4648374c2df85dc`。源提交分别快进推至 origin/github 同名 `codex/wl-c125-auto-engineering-flow`，两端实际 ref 均读回该 SHA。17c 私有存储 `/1877446867351603.zip` 下载后远端 SHA 精确相同；安装前消费者 0、cron 16 项全 disabled，官方 `openclaw skills install <解压目录> --force` 成功。安装目录 61 个源文件逐一 SHA 匹配（额外 `.openclaw` 为安装元数据），`skills info` 读回 `r09.c166` / Ready；Gateway UI 最终 Online、安装后 cron 仍 16 项全 disabled、无 Node 消费者。未触发业务请求或第三次 JobAid；因此新的字节计数尚无线上样本，不能宣称网关故障已修复。
+
+随后从 17b online 的同一 `operation_ref` 只读取出 Host 已持久封装，用 C166 的真实 `invokeHostedJobAidProblemModel` 代码及模拟 Gateway 在本地重建首轮请求；模拟回执不触达模型/Host 写入。以同长度 UUID 会话标识测得完整请求 74,307 UTF-8 bytes，其中 messages 72,797、system 20,069、tools 1,324；输入含 30 条已交付证据、34 个可用来源。此值是基于确切任务输入的**离线重建**，不是 17c 原生请求记录，不能据此证明提供商收到的 token 数、超时或上下文溢出；它说明候选请求规模约 74 KB，而非把 89.7 KB 的 Host 封装全数送给模型。
+
+## 2026-09-27 C166：新任务受理与空结果表达
+
+刘轩本人在 17b 资料库的“选择已上传 PDF 并新建工程事项”入口，选择名称为 `260c665aa340752898c0958c7015df5fa8f6f5ead9317d0b37908af6c30d53b5.pdf` 的已有对象与 M3 Probe Large，建立 `WI-d368f79e-4a5a-4615-ac00-7594b3ee5c53`。Host 将其识别为 787-FTD-46-26002；该文件名与此前两页原件的已核验 SHA256 一致，但本轮尚未独立读回对象字节哈希，不能仅凭文件名断定内容相同。未再次上传本机 PDF。创建后本人逐项页读回：全文翻译等待中、适用性匹配等待补充、JobAid 等待中、整体综合等待中，尚无候选意见与已保存问题分析。17c 操作员先核对确切可领取范围，再决定是否可做单次受控消费；未启用无人值守定时任务。
+
+随后通过官方 17b 在线数据库只读查询确认：该 WorkItem 为 `dev:9a49b8cd-64df-4c88-9240-e4c40c0bd35e`、`CANDIDATE_READBACK_VERIFIED`、revision 3；其逐任务授权行 `WAITING`、generation 0、`MIAODA_CANONICAL_PARSE_REQUEST`，确切 `document_version_3f1bf2fb1736c0e12e5bae2a`、源 SHA256 `260c665aa340752898c0958c7015df5fa8f6f5ead9317d0b37908af6c30d53b5`、长度 57434 字节，均与 WorkItem 行一致。当前授权表汇总为 WAITING 1、LEASED 0、COMPLETED 4、BLOCKED 1；唯一 WAITING 为该任务。没有查询或输出租约令牌。`dev:*` 仅是运行键，实际逐任务授权由独立授权行和 Host 后续新鲜核验承担。
+
+空任务的概览页此前固定写“当前评估任务 · 已保存结果”，并提供“重新生成工程摘要”按钮，易误导工程师以为已有结论。提交 `cf8b51ebdb34caf410a547df7b83add3ffb96893`（父 `eb314b20d7f6aa0fc7256e5371093ae11d5e9112`）按实际快览结果显示“等待分析结果”或“已保存工作”，无结果时隐藏重生按钮，并将范围说明改为不预设已存在结论。已快进同步 origin 同名开发分支；前端类型检查、定向 ESLint 与 precommit 通过。17b release `7689941438373596092` 最终 `finished`、准确提交匹配、`error_logs=[]`。刘轩本人从新任务概览读回“当前评估任务 · 等待分析结果”，页面不再显示重生按钮；没有把空结果误称成功。
+
+17c 已核对 C165 消费脚本：`--auto-queue` 只走 Host 自动队列、每 tick 最多处理一个初始阶段，并拒绝与固定 WorkItem 参数混用。但 17c 操作端 Mac 锁屏，自动解锁失败，无法读回该环境的 `active-claim` checkpoint；其他终端读取接口无附加会话。为避免先恢复旧任务，本轮停在领取前，尚未调用 `next-work-item`、MCP 或模型。解锁后先核对 checkpoint，再继续单次动态队列 tick；当前材料只证明受理与入队，不能宣称 C165 真实模型质量或全流程完成。
+
+旧任务的准确更正还存在第二道合同限制：`initial-analysis/continue` 除拒绝已 `SUCCEEDED` 的 JobAid 阶段外，其动态授权查询只接受 `WAITING`/`LEASED` 的确切队列授权；旧任务授权已为 `COMPLETED`。单独去掉阶段检查并不能形成合法更正，也不应借固定 WorkItem 配置回退。后继更正需在本人及来源权限、确切原文和工作修订下另立可追溯的工作意图；新 JobAid 保存后由现有版本关系使旧 Overall 过时，再按新修订综合。此处仅记录代码和在线授权状态的核对结果，尚未实施更正接口或生成后继结果。
+
+## 2026-09-27 C165：短原文完整交付与 JobAid 读取修订
+
+在同一两页 PDF 上定位到默认读取机制：Host 已登记全部原文证据，旧 JobAid 初始任务却只交付目录；17c 每次最多读 4 个引用并先保存，模型仍可在未覆盖相关正文时结束。C165 对确切文档版本及已核验 parseRun 的当前原文，只有在全部引用不超过 64 条且完整模型证据不超过 64 KiB 时，才一次性交付全部正文；超限则整体保持原按需读取，不把一部分误称完整。Skill 使用已交付正文而不重复调用读取，并明确独立日期、目标里程碑与 TBD 不推出先后或依赖。已封存任务仍按原输入读取，不改写历史成果。
+
+提交 `eb314b20d7f6aa0fc7256e5371093ae11d5e9112`（父项 `26ab5601b92779c2ca963c1f29ecdcb00a3c794c`）已快进同步 `origin/codex/wl-c125-auto-engineering-flow`；17b release `7689929985133661162` 最终 `finished`、准确提交匹配、`error_logs=[]`。Skill 包 r09.c165 为 61 文件、507208 bytes、SHA256 `5450827efd82f24ad0554ca8d847cabdd1c05dea1d283d80bac19e8e952b62b2`；17c 官方 `openclaw skills install` 安装读回版本 r09.c165、来源提交准确，61/61 文件 byteLength/SHA256 匹配，`skills info` 为 Ready。安装器另外生成 `.openclaw/source-origin.json` 元数据。安装前后 16 个 cron 均 disabled、running0、`nextWakeAtMs=null`；调度服务 enabled 不代表任一任务启用。本批没有运行消费者或业务任务。Host 定向 Jest 35/35、server TypeScript、定向 ESLint、Skill 552/552、打包检查与 ZIP 完整性通过。独立只读审查未见授权或版本边界放宽。真实新任务的模型行为尚未验证，本次发布没有自动更正旧 JobAid rev9。
+
+工程师本人在 17b 线上逐项评估页再次读到旧 rev9 的无据 SB 时序断言；页面仍显示候选当前有效。随后逐页核对本次已发布的两页 PDF 原件：第 1 页 Applicability 明写 `All 787 Aircraft`，第 2 页 Final Action、Milestones、Related Categories 都有完整正文；Milestones 只有 Production Incorporation 3Q 2027 (Target) 与 Service Bulletin Available (TBD) 两项，未给两者先后。原件没有独立的 Compliance Interval 或 References 段。旧 rev9 多处称已存在的完整段落“未读”，还预设原件并不存在的后续里程碑与章节；把 `Service Bulletin Available: (TBD)` 解作“SB 尚未颁发”也超出该字段字面证据。旧结果须建立可追溯的后继修订，按确切原文校正范围、时序和未知，再按新 JobAid 修订更新 Overall。按当前代码，`initial-analysis/continue` 会对已成功的 JobAid 阶段拒绝并给出 `INITIAL_CONTINUATION_STAGE_ALREADY_COMPLETE`；复核入口则要求同范围已回答讨论。不能通过重命名原任务、静默覆盖 rev9 或修改来源版本绕过该合同。
+
+本人资料库文档行仍写“该版本尚无已保存解读”，同时显示 1 个评估任务；这反映文档级解读为空而 WorkItem 级 JobAid/Overall 已保存，不能误报为分析结果不存在。后续应让资料库默认快览能明确指向对应工作结论并保留层级，不把 WorkItem 评估冒充独立文档解读。
+
 ## 2026-09-26 C164：JobAid 时点断言与原文复核
 
 刘轩本人在受控 PDF 第 2 页读到 `Production Incorporation: 3Q 2027 (Target)` 与 `Service Bulletin Available: (TBD)`，原文没有给出两者的先后关系。当前 JobAid rev9 的 `AID-OBEDS-TIMELINE` 正文却称 SB 颁发在 Production Incorporation 之后或同一时点，同时该 issue 的“仍需确认”又要求核查两者关系，属于同一保存结果内部的依据矛盾。不能把这条时序当成工程事实，也不能靠修改图谱或 Overall 摘要掩盖正文问题。

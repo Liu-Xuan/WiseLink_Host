@@ -130,6 +130,11 @@ test('automatic queue mode accepts only the exact queue flags', () => {
   assert.equal(automaticWorkItemQueueMode([]), false);
   assert.equal(automaticWorkItemQueueMode(['--auto-queue']), true);
   assert.equal(automaticWorkItemQueueMode([
+    '--auto-queue', '--repair-stopped-claim',
+    '--repair-work-item-id', 'WI-QUEUE',
+    '--repair-attempt-ref', 'AQ-RETRY-NO-WORK',
+  ]), true);
+  assert.equal(automaticWorkItemQueueMode([
     '--auto-queue', '--checkpoint-root', '/private/checkpoints',
     '--openclaw-config', '/private/openclaw.json',
   ]), true);
@@ -147,6 +152,23 @@ test('automatic queue mode accepts only the exact queue flags', () => {
   );
   assert.throws(
     () => automaticWorkItemQueueMode(['--auto-queue', '--auto-queue']),
+    /AUTO_WORK_ITEM_QUEUE_OPTIONS_INVALID/,
+  );
+  assert.throws(
+    () => automaticWorkItemQueueMode(['--repair-stopped-claim']),
+    /AUTO_WORK_ITEM_QUEUE_OPTIONS_INVALID/,
+  );
+  assert.throws(
+    () => automaticWorkItemQueueMode(['--repair-work-item-id', 'WI-QUEUE']),
+    /AUTO_WORK_ITEM_QUEUE_OPTIONS_INVALID/,
+  );
+  assert.throws(
+    () => automaticWorkItemQueueMode(['--auto-queue', '--repair-stopped-claim',
+      '--repair-stopped-claim']),
+    /AUTO_WORK_ITEM_QUEUE_OPTIONS_INVALID/,
+  );
+  assert.throws(
+    () => automaticWorkItemQueueMode(['--auto-queue', '--repair-stopped-claim']),
     /AUTO_WORK_ITEM_QUEUE_OPTIONS_INVALID/,
   );
 });
@@ -472,6 +494,164 @@ test('failed retry is not retried again or BLOCKed', async () => {
   });
   assert.equal(result.status, 'REQUIRES_ATTENTION');
   assert.equal(checkpoint.values.get('active-claim').consumerStopped, true);
+});
+
+test('operator repair admits one exact stopped no-work retry without BLOCK or implicit replay', async () => {
+  const stopped = { ...storedClaim(), workItemRevision: 4, consumerStopped: true,
+    attentionCode: 'JOBAID_GATEWAY_HTTP_400:INCOMPLETE_TERMINAL_RESPONSE' };
+  const failed = status({ overallStatus: 'FAILED', nextOperation: null,
+    translation: 'SUCCEEDED', applicability: 'WAITING_INPUT',
+    jobAid: 'FAILED', overall: 'PENDING' });
+  failed.stages.jobAid = { status: 'FAILED', attemptStatus: 'CANCELLED',
+    attemptRef: 'AQ-RETRY-NO-WORK', requestId: `auto-retry-${'a'.repeat(32)}`,
+    terminalCode: 'JOBAID_GATEWAY_HTTP_400:INCOMPLETE_TERMINAL_RESPONSE' };
+  const saved = { schemaVersion: 'wiselink.jobaid-work-read.v2',
+    executionStatus: 'CANCELLED', attemptId: 'ATT-RETRY-NO-WORK',
+    inputWorkRevision: 0, revision: null };
+  const checkpoint = memoryCheckpoint(stopped);
+  const makeDependencies = overrides => ({
+    checkpoint, now: () => new Date(START),
+    nextWorkItem: async () => assert.fail('stopped live claim cannot take another item'),
+    acknowledgeWorkItem: async () => assert.fail('failed work cannot ACK'),
+    blockWorkItem: async () => assert.fail('runtime failure cannot BLOCK'),
+    readInitialStatus: async () => failed,
+    readSavedWork: async () => saved,
+    consumeWorkItem: async () => assert.fail('repair must be explicit'),
+    ...overrides,
+  });
+  const ordinary = await consumeAutomaticWorkItemQueueTick({}, makeDependencies());
+  assert.equal(ordinary.status, 'REQUIRES_ATTENTION');
+  assert.deepEqual(checkpoint.values.get('active-claim'), stopped);
+  let repair;
+  const repairOptions = { repairStoppedClaim: true, repairWorkItemId: 'WI-QUEUE',
+    repairAttemptRef: 'AQ-RETRY-NO-WORK' };
+  const resumed = await consumeAutomaticWorkItemQueueTick(repairOptions,
+    makeDependencies({ consumeWorkItem: async input => {
+      repair = input;
+      return { status: 'REQUIRES_ATTENTION', errorCode: 'JOBAID_GATEWAY_HTTP_400:INCOMPLETE_TERMINAL_RESPONSE' };
+    } }));
+  assert.equal(resumed.status, 'REQUIRES_ATTENTION');
+  assert.equal(repair.autoRetry.operation, 'EVALUATE_JOBAID');
+  assert.equal(repair.autoRetry.attemptRef, 'AQ-RETRY-NO-WORK');
+  assert.match(repair.autoRetry.requestId, /^auto-repair-[0-9a-f]{32}$/u);
+  assert.equal(repair.repairStoppedClaim, true);
+  assert.equal(repair.repairAttentionCode, stopped.attentionCode);
+  assert.equal(repair.repairWorkItemRevision, 4);
+  assert.equal(repair.repairAttemptRef, 'AQ-RETRY-NO-WORK');
+  assert.equal(checkpoint.values.get('active-claim').consumerStopped, true);
+  failed.stages.jobAid.requestId = repair.autoRetry.requestId;
+  const exhausted = await consumeAutomaticWorkItemQueueTick(repairOptions,
+    makeDependencies());
+  assert.equal(exhausted.status, 'REQUIRES_ATTENTION');
+});
+
+test('repair never claims another item or changes an unrelated stopped claim', async () => {
+  for (const initialClaim of [null, storedClaim(),
+    { ...storedClaim(), consumerStopped: true }]) {
+    const checkpoint = memoryCheckpoint(initialClaim);
+    await assert.rejects(() => consumeAutomaticWorkItemQueueTick({
+      repairStoppedClaim: true, repairWorkItemId: 'WI-OTHER',
+      repairAttemptRef: 'AQ-RETRY-NO-WORK',
+    }, {
+      checkpoint, now: () => new Date(START),
+      nextWorkItem: async () => assert.fail('repair cannot claim another item'),
+      acknowledgeWorkItem: async () => assert.fail('repair cannot ACK'),
+      readInitialStatus: async () => assert.fail('repair cannot read another item'),
+      consumeWorkItem: async () => assert.fail('repair cannot consume another item'),
+    }), /AUTO_WORK_ITEM_REPAIR_CLAIM_UNAVAILABLE/u);
+    assert.deepEqual(checkpoint.values.get('active-claim'), initialClaim);
+  }
+});
+
+test('repair rejects a changed revision during lease reclaim before checkpoint mutation', async () => {
+  const stopped = { ...storedClaim(1, '2026-09-24T23:00:00.000Z'),
+    consumerStopped: true,
+    attentionCode: 'JOBAID_GATEWAY_HTTP_400:INCOMPLETE_TERMINAL_RESPONSE' };
+  const checkpoint = memoryCheckpoint(stopped);
+  await assert.rejects(() => consumeAutomaticWorkItemQueueTick({
+    repairStoppedClaim: true, repairWorkItemId: 'WI-QUEUE',
+    repairAttemptRef: 'AQ-RETRY-NO-WORK',
+  }, {
+    checkpoint, now: () => new Date(START),
+    nextWorkItem: async () => ({ ...lease(2, '2026-09-25T02:00:00.000Z'),
+      workItemRevision: 5 }),
+    acknowledgeWorkItem: async () => assert.fail('repair cannot ACK'),
+    readInitialStatus: async () => assert.fail('changed revision cannot be read'),
+    consumeWorkItem: async () => assert.fail('changed revision cannot run'),
+  }), /AUTO_WORK_ITEM_REPAIR_REVISION_CHANGED/u);
+  assert.deepEqual(checkpoint.values.get('active-claim'), stopped);
+  assert.equal(checkpoint.writes.length, 0);
+});
+
+test('repair interruption preserves the stopped claim and its stable successor request', async () => {
+  const stopped = { ...storedClaim(), workItemRevision: 4, consumerStopped: true,
+    attentionCode: 'JOBAID_GATEWAY_HTTP_400:INCOMPLETE_TERMINAL_RESPONSE' };
+  const failed = status({ overallStatus: 'FAILED', nextOperation: null,
+    translation: 'SUCCEEDED', applicability: 'WAITING_INPUT',
+    jobAid: 'FAILED', overall: 'PENDING' });
+  failed.stages.jobAid = { status: 'FAILED', attemptStatus: 'CANCELLED',
+    attemptRef: 'AQ-RETRY-NO-WORK', requestId: `auto-retry-${'d'.repeat(32)}`,
+    terminalCode: stopped.attentionCode };
+  const checkpoint = memoryCheckpoint(stopped);
+  const ids = [];
+  const run = () => consumeAutomaticWorkItemQueueTick({
+    repairStoppedClaim: true, repairWorkItemId: 'WI-QUEUE',
+    repairAttemptRef: 'AQ-RETRY-NO-WORK',
+  }, {
+    checkpoint, now: () => new Date(START),
+    nextWorkItem: async () => assert.fail('active lease must be retained'),
+    acknowledgeWorkItem: async () => assert.fail('no completed result'),
+    readInitialStatus: async () => failed,
+    readSavedWork: async () => ({ schemaVersion: 'wiselink.jobaid-work-read.v2',
+      executionStatus: 'CANCELLED', attemptId: 'ATT-RETRY-NO-WORK',
+      inputWorkRevision: 0, revision: null }),
+    consumeWorkItem: async input => {
+      ids.push(input.autoRetry.requestId);
+      throw new Error('SIMULATED_PROCESS_EXIT');
+    },
+  });
+  await assert.rejects(run, /SIMULATED_PROCESS_EXIT/u);
+  assert.deepEqual(checkpoint.values.get('active-claim'), stopped);
+  await assert.rejects(run, /SIMULATED_PROCESS_EXIT/u);
+  assert.equal(ids.length, 2);
+  assert.equal(ids[0], ids[1]);
+});
+
+test('repair refuses saved work, changed revision and authorization failure', async () => {
+  const failed = status({ overallStatus: 'FAILED', nextOperation: null,
+    translation: 'SUCCEEDED', applicability: 'WAITING_INPUT',
+    jobAid: 'FAILED', overall: 'PENDING' });
+  failed.stages.jobAid = { status: 'FAILED', attemptStatus: 'CANCELLED',
+    attemptRef: 'AQ-RETRY-NO-WORK', requestId: `auto-retry-${'b'.repeat(32)}`,
+    terminalCode: 'JOBAID_GATEWAY_HTTP_400:INCOMPLETE_TERMINAL_RESPONSE' };
+  const saved = { schemaVersion: 'wiselink.jobaid-work-read.v2',
+    executionStatus: 'CANCELLED', attemptId: 'ATT-RETRY-NO-WORK',
+    inputWorkRevision: 0, revision: null };
+  for (const change of [
+    { saved: { ...saved, revision: { workRevision: 1 } } },
+    { initial: { ...failed, workItemRevision: 5 } },
+    { initial: { ...failed, stages: { ...failed.stages,
+      jobAid: { ...failed.stages.jobAid, terminalCode: 'SOURCE_REVOKED' } } } },
+  ]) {
+    const checkpoint = memoryCheckpoint({ ...storedClaim(), workItemRevision: 4,
+      consumerStopped: true,
+      attentionCode: 'JOBAID_GATEWAY_HTTP_400:INCOMPLETE_TERMINAL_RESPONSE' });
+    const run = () => consumeAutomaticWorkItemQueueTick({ repairStoppedClaim: true,
+      repairWorkItemId: 'WI-QUEUE', repairAttemptRef: 'AQ-RETRY-NO-WORK' }, {
+      checkpoint, now: () => new Date(START),
+      nextWorkItem: async () => assert.fail('claim remains live'),
+      acknowledgeWorkItem: async () => assert.fail('cannot ACK'),
+      readInitialStatus: async () => change.initial ?? failed,
+      readSavedWork: async () => change.saved ?? saved,
+      consumeWorkItem: async () => assert.fail('ineligible repair cannot execute'),
+    });
+    if (change.initial?.workItemRevision === 5) {
+      await assert.rejects(run, /AUTO_WORK_ITEM_REPAIR_REVISION_CHANGED/u);
+    } else {
+      assert.equal((await run()).status, 'REQUIRES_ATTENTION');
+    }
+    assert.equal(checkpoint.values.get('active-claim').consumerStopped, true);
+  }
 });
 
 test('a failed first retry with newly saved work gets one bounded successor', async () => {
