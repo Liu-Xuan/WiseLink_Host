@@ -8,6 +8,8 @@
 
 本机 `com.wiselink.mineru` 是旧的 localhost API 进程，不是仅出站 worker。用户重新登录 17c 内部浏览器后，原终端现场只读回执：`pgrep` 无 `consume-hosted-work-item.mjs` 进程；官方 `openclaw cron list --all --json` 返回 16 条、启用 0、运行 0，动态队列 C136 `38f1cc05-4a5e-4ec0-863c-e5b3d579048b` 为 disabled、`runningAtMs=null`。自动队列目录仅有一个 0600 的 5 字节 `active-claim.json`，内容为 JSON `null`，不是活动租约；目标 787 WorkItem 无活动 claim。此前 Host 队列终态仍是上次核验时点，本轮未再次调用 Host MCP。用户尚未回复常驻 worker 与单一动态 17c cron 的启用授权；新的正常上传默认闭环仍待该范围确认、启用后观察与真实上传验证。
 
+后续只读核对 C136 定义：原生 `everyMs=60000`、`sessionTarget=isolated`；payload 含 `consume-hosted-work-item.mjs --auto-queue`，不含固定 `--work-item-id`、`--matter-id` 或 `--document-version-id`。这证实 C136 指向动态队列且当前每分钟触发一次；尚未验证启用后的实际重叠调度行为。本机 `launchctl` 重新读回的 `com.wiselink.mineru` 仍是旧 localhost API（PID 792），与仅出站 worker 不同；受限进程列表接口本轮不能独立列出本机 Node worker，因此不能把该失败当作进程不存在的证据。
+
 ## 2026-09-27 C173：工作事项图谱复用确切工程认识
 
 真实 787 工作图谱的节点和右侧检查器原来只显示 LibraryIndex 的技术身份与状态，工程师需另开知识页才能知道这份工作得出了什么判断。当前工作事项视图现在按 Host 返回的 `currentJobAidWorkRevisionRef` 调用现有 `readEngineeringKnowledgeWork`，在事项、JobAid、Overall 节点旁显示同一修订的简短问题认识或当前综合候选，并提供准确知识链接。旧综合为 `STALE` 时只显示当前问题认识和滞后提示；历史 `workRef` 与当前不符时保持原来的历史入口，不误读当前摘要。来源授权失败明确显示受阻和重试；隔离样例不发生产读取。没有新增结论存储、权限、接口或正式采用动作。
