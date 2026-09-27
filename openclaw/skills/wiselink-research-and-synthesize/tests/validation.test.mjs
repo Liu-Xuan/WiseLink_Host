@@ -51,6 +51,7 @@ import {
   isChatCompletionsEnabled,
   openClawConfigCandidates,
   prepareKnownModelNonDispatchRecovery,
+  projectJobAidUpdateInput,
   readHostMcpJsonResult,
   resolveConfiguredModelVersion,
   runHostedReviewTurn,
@@ -1379,7 +1380,7 @@ test('requires 35 MCP capabilities, six review tools, and hosted provenance', ()
   assert.ok(HOST_MCP_TOOLS.includes('commit_applicability_candidate'));
   assert.equal(
     WISELINK_SKILL_VERSION,
-    'wiselink-research-and-synthesize@r09.c172',
+    'wiselink-research-and-synthesize@r09.c173',
   );
   assert.equal(
     WISELINK_SKILL_COMPATIBILITY_REF,
@@ -7562,6 +7563,61 @@ async function emptyJobAidReviewFixture() {
     reviewActionDraft: null, affectedItemIds: [], jobAidWorkingDelta: null };
   return { task, candidate };
 }
+
+test('JobAid update projection keeps exact source bindings and saved work while removing repeated document previews', () => {
+  const input = { context: { purpose: 'UPDATE_ASSESSMENT', problemAssessment: {
+    documentOverview: { title: 'Original PDF', sections: [{ title: 'Scope' }] },
+    availableSources: [{ ref: 'doc:one', kind: 'DOCUMENT_PASSAGE', locator: 'p1' }],
+    deliveredEvidence: [
+      { evidenceRef: 'doc:one', kind: 'DOCUMENT_PASSAGE', excerpt: 'long repeated passage' },
+      { evidenceRef: 'method:one', kind: 'METHOD_CLAUSE', excerpt: 'Keep conditions' },
+    ],
+    previousWork: { workRevision: 7, content: { issues: [{ issueKey: 'sb-order' }] } },
+  } }, availableSourceRefIds: ['read:one'] };
+  const before = structuredClone(input);
+  const projected = projectJobAidUpdateInput(input);
+  assert.equal(projected.context.problemAssessment.documentOverview, undefined);
+  assert.deepEqual(projected.context.problemAssessment.deliveredEvidence, [before.context.problemAssessment.deliveredEvidence[1]]);
+  assert.deepEqual(projected.context.problemAssessment.availableSources, before.context.problemAssessment.availableSources);
+  assert.deepEqual(projected.context.problemAssessment.previousWork, before.context.problemAssessment.previousWork);
+  assert.deepEqual(projected.availableSourceRefIds, before.availableSourceRefIds);
+  assert.deepEqual(input, before);
+  assert.throws(() => projectJobAidUpdateInput({ ...input, context: { ...input.context,
+    problemAssessment: { ...input.context.problemAssessment, availableSources: [] } } }),
+  /REVIEW_JOBAID_SOURCE_PROJECTION_MISMATCH/u);
+});
+
+test('JobAid update first reads an authorized document before exposing the candidate channel', async () => {
+  const requests = [];
+  const reads = [];
+  const input = { input: { context: { purpose: 'UPDATE_ASSESSMENT', problemAssessment: {
+    availableSources: [{ ref: 'doc:one', kind: 'DOCUMENT_PASSAGE' }],
+  } }, availableSourceRefIds: ['read:one'], attachmentRefs: [] } };
+  const result = await invokeReviewWithTransport(input, {
+    gatewayUrl: 'https://official.invalid', gatewayToken: 'fixture-only',
+    configuredModelVersion: 'fixture/provider',
+    readSourceRefs: async (ids) => { reads.push(ids); return [{ sourceRefId: 'read:one', evidenceRef: 'doc:one', excerpt: 'Actual source' }]; },
+  }, { requestGateway: async (_url, init) => {
+    const body = JSON.parse(init.body);
+    requests.push(body);
+    const first = requests.length === 1;
+    return Response.json({ model: 'fixture/provider', choices: [{ message: { content: null,
+      tool_calls: [{ id: `call-${requests.length}`, type: 'function', function: {
+        name: first ? 'read_wiselink_review_sources' : 'return_wiselink_review_candidate',
+        arguments: JSON.stringify(first ? { sourceRefIds: ['read:one'] } : {
+          answer: '已核对原文并提议局部更正', jobAidWorkingDelta: { issues: [], unchangedIssueKeys: ['other'] },
+        }),
+      } }],
+    } }] });
+  } });
+  assert.deepEqual(reads, [['read:one']]);
+  assert.deepEqual(requests[0].tools.map((tool) => tool.function.name), ['read_wiselink_review_sources']);
+  assert.equal(requests[0].tool_choice, 'required');
+  assert.match(requests[0].messages[1].content, /First call read_wiselink_review_sources/u);
+  assert.equal(requests[1].tools[0].function.name, 'return_wiselink_review_candidate');
+  assert.match(requests[1].messages[2].content, /Actual source/u);
+  assert.equal(result.output.answer, '已核对原文并提议局部更正');
+});
 
 test('JobAid omitted collections propose no entries while supplied malformed values remain rejected', async () => {
   const { task, candidate } = await emptyJobAidReviewFixture();
