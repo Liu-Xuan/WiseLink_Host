@@ -8,11 +8,14 @@ import type {
   EngineeringMatterDirectoryResponse,
 } from '@shared/api.interface';
 import type { ElementDefinition } from 'cytoscape';
+import type { EngineeringKnowledgeRead } from '@shared/engineering-issue-search.interface';
 import { logger } from '@lark-apaas/client-toolkit/logger';
 import {
   getLibraryIndex,
   isCanonicalObjectNotFound,
+  readEngineeringKnowledgeWork,
 } from '@client/src/api/canonical-host';
+import { compactReadingSummary } from '@client/src/features/matter/compact-reading-summary';
 import { getEngineeringMatter, getEngineeringMatterDirectory } from '@client/src/api/engineering-matter';
 import {
   activityReadingParams,
@@ -54,6 +57,53 @@ export interface RelationGraphPageProps {
 }
 
 type LibraryStatus = 'IDLE' | 'LOADING' | 'READY' | 'NOT_FOUND' | 'BLOCKED';
+
+function GraphSavedUnderstanding({ workItemId, workRef, kind }: {
+  workItemId: string;
+  workRef: string;
+  kind: CanonicalLibraryIndexNodeKind;
+}) {
+  const [retry, setRetry] = useState(0);
+  const [state, setState] = useState<{
+    status: 'LOADING' | 'READY' | 'BLOCKED';
+    read: EngineeringKnowledgeRead | null;
+  }>({ status: 'LOADING', read: null });
+  useEffect(() => {
+    const controller = new AbortController();
+    setState({ status: 'LOADING', read: null });
+    void readEngineeringKnowledgeWork({ subjectKind: 'WORK_ITEM', subjectId: workItemId, workRef }, controller.signal)
+      .then(read => { if (!controller.signal.aborted) setState({ status: 'READY', read }); })
+      .catch(reason => {
+        if (controller.signal.aborted) return;
+        logger.error('关系图谱读取确切工程认识失败', reason);
+        setState({ status: 'BLOCKED', read: null });
+      });
+    return () => controller.abort();
+  }, [workItemId, workRef, retry]);
+
+  if (!['WORK_ITEM', 'DYNAMIC_EVALUATION', 'OVERALL_SYNTHESIS'].includes(kind)) return null;
+  if (state.status === 'LOADING') return <p className="rg-inspector-note" role="status">正在读取已保存工程认识…</p>;
+  if (state.status === 'BLOCKED') return <div className="rg-inspector-understanding" role="alert">
+    <p>工程认识读取受阻；图谱节点仍只表示已保存对象关系。</p>
+    <Button size="sm" variant="outline" onClick={() => setRetry(value => value + 1)}>重试读取</Button>
+  </div>;
+  const read = state.read;
+  if (!read) return null;
+  const currentOverall = read.overall?.status === 'CANDIDATE_ONLY' ? read.overall.readingResult : null;
+  const showOverall = kind !== 'DYNAMIC_EVALUATION' && currentOverall !== null;
+  const content = showOverall ? currentOverall.content : read.content;
+  const summary = compactReadingSummary(content.headline, content.listBrief);
+  return <section className="rg-inspector-understanding" aria-label="已保存工程认识">
+    <strong>{showOverall ? '当前综合候选' : '已保存问题认识'}</strong>
+    {kind === 'OVERALL_SYNTHESIS' && !currentOverall
+      ? <p>当前工作尚无可展示的综合意见；问题分析仍可阅读。</p> : null}
+    <p>{summary || '当前工作尚未保存简短认识。'}</p>
+    {read.overall?.status === 'STALE' && kind !== 'DYNAMIC_EVALUATION'
+      ? <small>此前综合未覆盖当前问题工作，此处显示当前问题认识。</small> : null}
+    {showOverall ? <small>已保存候选，尚非正式采用。</small> : null}
+    <Link to={`/knowledge?${new URLSearchParams({ subjectKind: 'WORK_ITEM', subjectId: workItemId, workRef })}`}>阅读完整分析与来源</Link>
+  </section>;
+}
 
 interface LegacyProjectionState {
   sessionGeneration: number;
@@ -718,6 +768,13 @@ function LegacyRelationGraphContent({
         {inspectedNode ? <>
           <h2>{inspectedNode.label}</h2>
           <p className="rg-inspector-lead">{inspectedNode.detail || '当前投影没有补充说明。'}</p>
+          {!injectedProjection && mode === 'workItem' && response.workItem.currentJobAidWorkRevisionRef
+            ? <GraphSavedUnderstanding
+                key={`${sessionGeneration}:${effectiveWorkItemId}:${response.workItem.currentJobAidWorkRevisionRef}`}
+                workItemId={effectiveWorkItemId}
+                workRef={response.workItem.currentJobAidWorkRevisionRef}
+                kind={inspectedNode.kind}
+              /> : null}
           <dl>
             <dt>对象类型</dt><dd>{RELATION_GRAPH_KIND_LABELS[inspectedNode.kind]}</dd>
             <dt>对象标识</dt><dd>{inspectedNode.id}</dd>
