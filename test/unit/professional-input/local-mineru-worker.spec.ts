@@ -1,7 +1,7 @@
-import { mkdtemp, readFile, rm, stat } from 'node:fs/promises';
+import { chmod, mkdtemp, readFile, rm, stat, symlink, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
-import { LocalMineruWorker, pollLocalMineruWorker } from '../../../scripts/local-mineru-worker';
+import { LocalMineruWorker, pollLocalMineruWorker, readLocalMineruCredential } from '../../../scripts/local-mineru-worker';
 import { LocalMineruHttpTransport, validateClaim, sha256 } from '../../../scripts/local-mineru-worker-transport';
 import { readMineruArtifacts } from '../../../server/modules/professional-input/mineru/mineru-artifacts';
 import type { LocalMineruWorkerClaim } from '../../../shared/local-mineru-worker.interface';
@@ -184,6 +184,28 @@ describe('outbound local worker, isolated transports only', () => {
     }), { headers: { 'content-type': 'application/json' } }));
     const streamed = new LocalMineruHttpTransport({ origin: 'https://host.test', apiKey: 'private-test-key' }, interruptedBody as typeof fetch);
     await expect(streamed.claim(new AbortController().signal)).rejects.toThrow('LOCAL_MINERU_TRANSPORT_UNAVAILABLE');
+  });
+
+  it('reads the dedicated key from a private file without putting it in launch configuration', async () => {
+    const path = join(directory, 'credentials.json');
+    await writeFile(path, JSON.stringify({ api_key: 'private-test-key' }), { mode: 0o600 });
+    await expect(readLocalMineruCredential({ filePath: path })).resolves.toBe('private-test-key');
+    await expect(readLocalMineruCredential({ apiKey: 'other-key', filePath: path }))
+      .rejects.toThrow('LOCAL_MINERU_CREDENTIAL_AMBIGUOUS');
+    await expect(readLocalMineruCredential({ filePath: 'credentials.json' }))
+      .rejects.toThrow('LOCAL_MINERU_CREDENTIAL_PATH_INVALID');
+  });
+  it('rejects a broadly readable or linked credential file', async () => {
+    const path = join(directory, 'credentials.json');
+    await writeFile(path, JSON.stringify({ api_key: 'private-test-key' }), { mode: 0o600 });
+    await chmod(path, 0o644);
+    await expect(readLocalMineruCredential({ filePath: path }))
+      .rejects.toThrow('LOCAL_MINERU_CREDENTIAL_PERMISSIONS_INVALID');
+    await chmod(path, 0o600);
+    const linked = join(directory, 'linked.json');
+    await symlink(path, linked);
+    await expect(readLocalMineruCredential({ filePath: linked }))
+      .rejects.toThrow('LOCAL_MINERU_CREDENTIAL_FILE_UNAVAILABLE');
   });
 
 });

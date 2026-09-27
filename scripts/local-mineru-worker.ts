@@ -1,5 +1,6 @@
 /** Outbound local worker. Running this file explicitly performs one bounded claim; --loop opts into polling. */
-import { mkdir, lstat, readFile, writeFile, rename, rm } from 'node:fs/promises';
+import { mkdir, lstat, readFile, writeFile, rename, rm, open } from 'node:fs/promises';
+import { constants } from 'node:fs';
 import { resolve, join, isAbsolute } from 'node:path';
 import { randomUUID } from 'node:crypto';
 import { setTimeout as sleep } from 'node:timers/promises';
@@ -225,10 +226,36 @@ export async function pollLocalMineruWorker(
     }
   }
 }
+export async function readLocalMineruCredential(input: { apiKey?: string; filePath?: string }): Promise<string> {
+  if (input.apiKey && input.filePath) throw new Error('LOCAL_MINERU_CREDENTIAL_AMBIGUOUS');
+  if (input.filePath) {
+    if (!isAbsolute(input.filePath)) throw new Error('LOCAL_MINERU_CREDENTIAL_PATH_INVALID');
+    let handle;
+    try { handle = await open(input.filePath, constants.O_RDONLY | constants.O_NOFOLLOW); }
+    catch { throw new Error('LOCAL_MINERU_CREDENTIAL_FILE_UNAVAILABLE'); }
+    try {
+      const info = await handle.stat();
+      if (!info.isFile() || (info.mode & 0o077) !== 0 || info.size > 4096 ||
+          (typeof process.getuid === 'function' && info.uid !== process.getuid()))
+        throw new Error('LOCAL_MINERU_CREDENTIAL_PERMISSIONS_INVALID');
+      let parsed: unknown;
+      try { parsed = JSON.parse(await handle.readFile('utf8')); }
+      catch { throw new Error('LOCAL_MINERU_CREDENTIAL_INVALID'); }
+      const key = (parsed as { api_key?: unknown } | null)?.api_key;
+      if (typeof key !== 'string' || !key || /[\r\n]/u.test(key)) throw new Error('LOCAL_MINERU_CREDENTIAL_INVALID');
+      return key;
+    } finally { await handle.close(); }
+  }
+  if (!input.apiKey || /[\r\n]/u.test(input.apiKey)) throw new Error('LOCAL_MINERU_CREDENTIAL_INVALID');
+  return input.apiKey;
+}
 async function main() {
   if (process.argv.slice(2).some(argument => argument !== '--loop')) throw new Error('LOCAL_MINERU_ARGUMENT_INVALID');
-  const key = process.env.WL_LOCAL_MINERU_API_KEY ?? '';
+  const keyFromEnvironment = process.env.WL_LOCAL_MINERU_API_KEY;
+  const keyFile = process.env.WL_LOCAL_MINERU_API_KEY_FILE;
   delete process.env.WL_LOCAL_MINERU_API_KEY; // Keep Host credential out of the parser child environment.
+  delete process.env.WL_LOCAL_MINERU_API_KEY_FILE;
+  const key = await readLocalMineruCredential({ apiKey: keyFromEnvironment, filePath: keyFile });
   const transport = new LocalMineruHttpTransport({ origin: process.env.WL_LOCAL_MINERU_HOST_ORIGIN ?? '',
     basePath: process.env.WL_LOCAL_MINERU_HOST_BASE_PATH, apiKey: key });
   const worker = new LocalMineruWorker({ transport, cacheNamespace: transport.cacheNamespace,

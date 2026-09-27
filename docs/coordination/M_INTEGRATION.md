@@ -1,5 +1,11 @@
 # M 主控集成交接
 
+## 2026-09-27 C174：本机 worker 凭据文件与 17c 登录核对
+
+本机仅出站 MinerU worker 原先只接受环境变量中的 API key；要作为后台进程运行会迫使启动配置携带明文密钥。现增加 `WL_LOCAL_MINERU_API_KEY_FILE`，从绝对路径的本机私有 JSON 文件读取现有 `api_key`，要求普通文件、当前用户持有、权限不开放给组或其他用户、大小不超过 4 KiB，并拒绝符号链接及同时提供环境变量密钥。读取后移除两种凭据环境变量，再启动解析子进程；四条 Host 路由、逐任务授权及租约合同不变。现有仓库外 0600 凭据文件实读成功，只输出非空布尔结果；定向 worker 单测 20/20、独立 TypeScript 检查和差异检查通过。此改动仅为后台启动准备，未安装或启动新的常驻 worker。
+
+本机 `com.wiselink.mineru` 是旧的 localhost API 进程，不是仅出站 worker。用户重新登录 17c 内部浏览器后，原终端现场只读回执：`pgrep` 无 `consume-hosted-work-item.mjs` 进程；官方 `openclaw cron list --all --json` 返回 16 条、启用 0、运行 0，动态队列 C136 `38f1cc05-4a5e-4ec0-863c-e5b3d579048b` 为 disabled、`runningAtMs=null`。自动队列目录仅有一个 0600 的 5 字节 `active-claim.json`，内容为 JSON `null`，不是活动租约；目标 787 WorkItem 无活动 claim。此前 Host 队列终态仍是上次核验时点，本轮未再次调用 Host MCP。用户尚未回复常驻 worker 与单一动态 17c cron 的启用授权；新的正常上传默认闭环仍待该范围确认、启用后观察与真实上传验证。
+
 ## 2026-09-27 C173：工作事项图谱复用确切工程认识
 
 真实 787 工作图谱的节点和右侧检查器原来只显示 LibraryIndex 的技术身份与状态，工程师需另开知识页才能知道这份工作得出了什么判断。当前工作事项视图现在按 Host 返回的 `currentJobAidWorkRevisionRef` 调用现有 `readEngineeringKnowledgeWork`，在事项、JobAid、Overall 节点旁显示同一修订的简短问题认识或当前综合候选，并提供准确知识链接。旧综合为 `STALE` 时只显示当前问题认识和滞后提示；历史 `workRef` 与当前不符时保持原来的历史入口，不误读当前摘要。来源授权失败明确显示受阻和重试；隔离样例不发生产读取。没有新增结论存储、权限、接口或正式采用动作。
