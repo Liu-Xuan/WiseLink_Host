@@ -81,6 +81,7 @@ const WISELINK_HOST_MCP_CONFIG_KEYS = new Set([
 const MAX_SOURCE_REFS = 100;
 const MAX_GATEWAY_BYTES = 4 * 1024 * 1024;
 const MAX_REVIEW_MODEL_CORRECTIONS = 2;
+const MAX_JOBAID_UPDATE_MODEL_CORRECTIONS = 3;
 const JOBAID_OPTIONAL_COLLECTIONS = ['sourceRefs', 'missingInputs', 'candidateEvidenceRefs', 'warnings'];
 const GATEWAY_IDLE_TIMEOUT_TEXT = 'LLM request timed out.\n\nThe model did not produce a response before the model idle timeout. Please try again, or increase `models.providers.<id>.timeoutSeconds` for slow local or self-hosted providers. If `agents.defaults.timeoutSeconds` or a run-specific timeout is lower, raise that ceiling too; provider timeouts cannot extend the whole agent run.';
 const GATEWAY_REVIEW_FAILURE_BANNER = '⚠️ 🧩 Return Wiselink Review Candidate failed\n\n';
@@ -369,6 +370,8 @@ export async function invokeHostedReviewModel(input, options = {}, dependencies 
   const isJobAid = isRecord(input.input?.context?.problemAssessment);
   const isChat = input.input?.context?.purpose === 'CHAT';
   const isAssessmentUpdate = input.input?.context?.purpose === 'UPDATE_ASSESSMENT';
+  const maxModelCorrections = isJobAid && isAssessmentUpdate
+    ? MAX_JOBAID_UPDATE_MODEL_CORRECTIONS : MAX_REVIEW_MODEL_CORRECTIONS;
   const sourceReadFirst = isJobAid && isAssessmentUpdate &&
     input.input?.context?.problemAssessment?.availableSources?.some(
       (source) => source.kind === 'DOCUMENT_PASSAGE') === true &&
@@ -556,7 +559,7 @@ export async function invokeHostedReviewModel(input, options = {}, dependencies 
       } catch (error) {
         const errorCode = candidateValidationErrorCode(error);
         if (!(isMatter || isJobAid || isChat) || typeof options.validateCandidate !== 'function' || !errorCode ||
-          candidateCorrections >= MAX_REVIEW_MODEL_CORRECTIONS ||
+          candidateCorrections >= maxModelCorrections ||
           typeof toolCall.id !== 'string' || toolCall.id.trim() === '') throw error;
         candidateCorrections += 1;
         if (typeof options.observeCandidateRejection === 'function') {
@@ -645,7 +648,7 @@ export async function invokeHostedReviewModel(input, options = {}, dependencies 
     ) {
       const errorCode = 'REVIEW_MODEL_SOURCE_REQUEST_INVALID';
       if (!(isMatter || isJobAid) || typeof options.readSourceRefs !== 'function' ||
-        candidateCorrections >= MAX_REVIEW_MODEL_CORRECTIONS ||
+        candidateCorrections >= maxModelCorrections ||
         typeof toolCall.id !== 'string' || toolCall.id.trim() === '') throw new Error(errorCode);
       // Reject the entire batch before any Host read. Let the same model correct
       // its handles; never filter, translate or silently treat them as read.

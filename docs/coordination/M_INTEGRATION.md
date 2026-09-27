@@ -1,5 +1,15 @@
 # M 主控集成交接
 
+## 2026-09-28 C178：旧 FTD 后继更正仍未保存，候选提交前补引用校验
+
+目标 `WI-4db598a0-33b8-4abd-a64d-df2aac9f29c5` 的旧后继 Review turn 4 保存 JobAid 修订 11，纠正 SB 时序，但又把已读章节误写为“未读”；Overall 仍基于修订 9。后续 Overall 尝试因确切工作变化失败，已终态 attempt 不能复用。Host `f1384fced` 与 17c C175 消费者修复了终态 Overall 的重复领取及本地指针清理；17b release `7690303772124695502` 精确部署该提交，C175 安装与 61 文件校验完成。17c 唯一 C136 动态 cron 保持启用，其余 15 项停用。
+
+Turn 5 在首轮原文读取后收到模型网关 HTTP 400 `INCOMPLETE_TERMINAL_RESPONSE`，未保存。17c C176 `f945603be` 加入同一原生会话的一次有界补答；61 文件安装校验完成。Turn 6 `RT-9d988ff3-dbc8-4226-aeeb-3d84a5186854` 实际触发这条补答，并生成候选，但 Host 以 `JOBAID_BODY_CITATIONS_REQUIRED` 拒绝；attempt 已取消，没有新工作修订，也未运行新的 Overall。候选还误建一个与定点更正无关的问题键，显示模型需要更准确的旧问题键提示。
+
+17c C177 提交 `e6cea62fa06ff6e6df160b4ab97f53e7150773c3`（父 `f945603be`），在模型候选提交 Host 前检查每个更新问题正文含合法形式的内联 `[[evidenceRef]]`，缺失时让模型在原会话内纠正；有界反馈列出已有问题键，提示在更正时复用受影响键。Host 仍负责引用是否已登记、已读及是否支持结论，Skill 不填造引用。本地 Skill 测试 576/576、ESLint、预提交及发布包校验通过；已快进推送 origin 同名开发分支，61 文件包 SHA256 `8ce7a650af2b296d49276334eb642595a1043ae66f3d9f832c1919112a6a2db7` 已上传 17c 私有路径 `/1877516697711667.zip`，但未安装。
+
+复查 Turn 6 轮次发现前两次格式纠正已耗尽原上限，C177 单独安装不能保证模型有机会补正文引用。因此 C178 在同一 Host 租约和原生会话内仅为 JobAid `UPDATE_ASSESSMENT` 多给一次候选纠正（3 次；其他 Review 仍为 2 次），并加入“两次格式错误后第三次正文缺引用、第四轮成功”的定向测试。本地 Skill 测试 577/577、ESLint、包声明及差异检查通过；尚待提交、打包与远端安装。Mac 锁屏中断 17c 浏览器操作；暂停 C136 的命令已发出，但回执尚未读到。恢复后先核对调度原状态和在途，再安装/核验 C178 并恢复原状态，随后通过正常后继 Review 验证新的 JobAid 保存、请求触发的 Overall 和资料库/Wiki 读回；目前不能宣称更正闭环完成。
+
 ## 2026-09-27 C182：本机 MinerU 暂时存储失败后复用候选并完成真实自动闭环
 
 刘轩从 17b 正常上传 `737MAX-FTD-34-17005_Doc_07092025.pdf`，形成 `WI-3859b827-399e-414a-adbb-e1c694cafd59`、`document_version_9b81b46f046074af25107544` 和唯一解析 run `PRUN-eea79f38-6f96-4bb5-924d-b082302f96cd`。本机仅出站 MinerU 已提交并核验解析候选；Host 首次上传 `original/pages-0.json` 遇文件服务 `fetch failed`，run 停在 `STAGING` / `DOCUMENT_PARSE_FAILED`，自动消费者没有把它冒充工程信息不足。修订 `0725ae31f656014707ba82ed19a663b6d477c2f1`（父 `0ad000d7d7665b501b2a2606c23779df9327d840`）让相同来源、有效候选、未过期的本机解析 run 在下一次自动处理时继续发布；连续第二次同类存储故障则按现有 fenced fail 合同终止，避免无限重试。合并当前 `origin/main` 后提交 `6bf764afadd478a38b6ea1a3493939c86fe5f53f`，已推送 origin 同名开发分支。定向 Jest 56 项通过、1 项既有跳过，server TypeScript、ESLint、差异与提交前检查通过。17b release `7690186214209096646` 为 `finished`、部署 SHA 精确为 `6bf764afa`、`error_logs=[]`。

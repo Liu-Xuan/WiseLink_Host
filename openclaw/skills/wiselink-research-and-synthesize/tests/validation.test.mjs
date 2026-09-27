@@ -1381,7 +1381,7 @@ test('requires 35 MCP capabilities, six review tools, and hosted provenance', ()
   assert.ok(HOST_MCP_TOOLS.includes('commit_applicability_candidate'));
   assert.equal(
     WISELINK_SKILL_VERSION,
-    'wiselink-research-and-synthesize@r09.c177',
+    'wiselink-research-and-synthesize@r09.c178',
   );
   assert.equal(
     WISELINK_SKILL_COMPATIBILITY_REF,
@@ -7271,6 +7271,41 @@ test('invalid source requests stop after two model corrections without any Host 
     assert.equal(requests, 3);
     assert.equal(rejections.length, 2);
   }
+});
+
+test('JobAid assessment update permits one bounded citation correction after two format corrections', async () => {
+  let requests = 0;
+  const rejections = [];
+  const result = await invokeReviewWithTransport({ input: {
+    availableSourceRefIds: ['read:one'], attachmentRefs: [],
+    context: { purpose: 'UPDATE_ASSESSMENT', problemAssessment: {
+      previousWork: { content: { issues: [{ issueKey: 'existing-issue' }] } },
+    } },
+  } }, {
+    gatewayUrl: 'https://official.invalid', gatewayToken: 'fixture-only', configuredModelVersion: 'fixture/provider',
+    readSourceRefs: () => assert.fail('Invalid reads must not reach the Host'),
+    validateCandidate: validateJobAidUpdatedIssueBodies,
+    observeCandidateRejection: async (value) => rejections.push(value.errorCode),
+  }, { requestGateway: async (_url, init) => {
+    requests++;
+    if (requests === 4) {
+      const feedback = JSON.parse(JSON.parse(init.body).messages.at(-1).content);
+      assert.deepEqual(feedback.previousIssueKeys, ['existing-issue']);
+      assert.equal(feedback.validationError, 'REVIEW_JOBAID_BODY_CITATIONS_REQUIRED');
+    }
+    const name = requests <= 2 ? 'read_wiselink_review_sources' : 'return_wiselink_review_candidate';
+    const args = requests <= 2 ? { sourceRefIds: ['unread-handle'] } : {
+      answer: '定点更正', jobAidWorkingDelta: { issues: [{ issueKey: 'existing-issue',
+        body: requests === 3 ? '原文没有支持该顺序。' : '原文没有支持该顺序。[[evidence:read-one]]' }] },
+    };
+    return Response.json({ choices: [{ message: { content: null, tool_calls: [{ id: `correction-${requests}`,
+      type: 'function', function: { name, arguments: JSON.stringify(args) },
+    }] } }] });
+  } });
+  assert.equal(requests, 4);
+  assert.deepEqual(rejections, ['REVIEW_MODEL_SOURCE_REQUEST_INVALID',
+    'REVIEW_MODEL_SOURCE_REQUEST_INVALID', 'REVIEW_JOBAID_BODY_CITATIONS_REQUIRED']);
+  assert.equal(result.output.jobAidWorkingDelta.issues[0].issueKey, 'existing-issue');
 });
 
 test('gateway required-tool contract failure is reported once without transient retries', async () => {
