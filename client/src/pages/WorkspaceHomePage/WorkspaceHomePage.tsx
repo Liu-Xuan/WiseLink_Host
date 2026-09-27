@@ -193,6 +193,21 @@ function WorkspaceHomeContent() {
   const selectedDocument = directory.items.find(
     (item) => item.kind === 'DOCUMENT' && item.familyId === familyId,
   );
+  const selectedDocumentVersion = selectedDocument?.kind === 'DOCUMENT'
+    ? searchParams.has('selectedDocumentVersionId')
+      ? searchParams.getAll('selectedDocumentVersionId').length === 1
+        ? selectedDocument.versions.find((version) =>
+          version.documentVersionId === searchParams.get('selectedDocumentVersionId'))
+        : undefined
+      : selectedDocument.versions.find((version) => version.selectedVersionIsCurrent)
+    : undefined;
+  const documentAssessmentQuicklook = useLibraryQuicklook(
+    treeMode === 'document' && selectedDocumentVersion?.documentReading?.status !== 'AVAILABLE'
+      ? selectedDocumentVersion?.readerWorkItemId ?? '' : '',
+    sessionGeneration,
+    authenticationRequired,
+    refreshRevision,
+  );
   const currentObject = useMemo(
     () =>
       projection
@@ -715,6 +730,7 @@ function WorkspaceHomeContent() {
               {treeMode === 'document' ? (
                 <LibraryDocumentDetails
                   key={`${sessionGeneration}:${familyId}`}
+                  assessmentQuicklook={documentAssessmentQuicklook}
                   linkMatterId={linkMatterId}
                   selectionPending={Boolean(
                     (familyId || searchParams.get('selectedDocumentVersionId')) &&

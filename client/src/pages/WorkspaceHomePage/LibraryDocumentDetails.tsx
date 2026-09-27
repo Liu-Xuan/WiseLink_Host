@@ -1,6 +1,6 @@
 import { ArrowRight, FileSearch2, History } from 'lucide-react';
 import { useEffect, useState } from 'react';
-import { useNavigate, useSearchParams } from 'react-router-dom';
+import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import type { CanonicalLibraryDocumentSummary } from '@shared/api.interface';
 import { Button } from '@client/src/components/ui/button';
 import { getCanonicalHostClientSessionGeneration } from '@client/src/api/canonical-host';
@@ -13,6 +13,7 @@ import {
 import { captureReadingLocation } from '@client/src/features/matter/useReadingLocation';
 import { DocumentVersionLink } from './DocumentVersionLink';
 import { LibraryMetadata } from './LibraryMetadata';
+import type { useLibraryQuicklook } from './useLibraryQuicklook';
 import LinkDocumentMatterMaterial from '@client/src/features/matter/LinkDocumentMatterMaterial';
 import { useLibraryPaneScroll } from './useLibraryPaneScroll';
 import {
@@ -25,6 +26,7 @@ import {
 
 interface LibraryDocumentDetailsProps {
   document: CanonicalLibraryDocumentSummary | null;
+  assessmentQuicklook: ReturnType<typeof useLibraryQuicklook>;
   onRefresh: () => void;
   onViewTasks: (familyId: string) => void;
   linkMatterId?: string;
@@ -33,6 +35,7 @@ interface LibraryDocumentDetailsProps {
 
 export function LibraryDocumentDetails({
   document,
+  assessmentQuicklook,
   onRefresh,
   onViewTasks,
   linkMatterId,
@@ -53,6 +56,12 @@ export function LibraryDocumentDetails({
   const selectedReading = selectedVersion
     ? projectLibraryDocumentReading(selectedVersion)
     : null;
+  const matchingAssessment = selectedVersion &&
+    assessmentQuicklook.data?.document.documentVersionId === selectedVersion.documentVersionId &&
+    assessmentQuicklook.data.document.workItemId === selectedVersion.readerWorkItemId
+      ? assessmentQuicklook.data
+      : null;
+  const assessmentBrief = matchingAssessment?.result?.readingResult?.content.listBrief?.trim() ?? '';
   const readingConditionCount = selectedReading
     ? selectedReading.criticalConditions.length +
       selectedReading.limitations.length +
@@ -132,7 +141,7 @@ export function LibraryDocumentDetails({
           </header>
           {selectedVersion && selectedReading ? <section className="library-selected-version" data-document-version-id={selectedVersion.documentVersionId}>
             <p>{libraryVersionLabel(selectedVersion)} · {selectedVersion.selectedVersionIsCurrent ? '库内当前版本' : '历史版本'} · 原始文件 {selectedVersion.originalFilename || '未标注'}</p>
-            <h4>简明解读</h4>
+            <h4>{!selectedReading.brief && assessmentBrief ? '关联评估短认识' : '简明解读'}</h4>
             {selectedReading.brief ? (
               <div
                 className="library-quicklook-reading"
@@ -147,9 +156,37 @@ export function LibraryDocumentDetails({
                   </p>
                 ) : null}
               </div>
-            ) : (
+            ) : !assessmentBrief ? (
               <p>{selectedReading.note}</p>
-            )}
+            ) : null}
+            {!selectedReading.brief && selectedVersion.readerWorkItemId ? (
+              <section className="library-quicklook-assessment" aria-label="同版本已保存评估">
+                {!assessmentBrief ? <h4>关联工程评估</h4> : null}
+                {assessmentQuicklook.error ? (
+                  <div role="alert">
+                    <p>{assessmentQuicklook.error.message}</p>
+                    <Button type="button" variant="outline" size="sm" onClick={onRefresh}>重试读取</Button>
+                  </div>
+                ) : assessmentQuicklook.loading ? (
+                  <p role="status">正在核对同版本已保存工作…</p>
+                ) : assessmentBrief && matchingAssessment ? (
+                  <>
+                    <p>{matchingAssessment.result?.jobAidRoundCompletion === 'IN_PROGRESS'
+                      ? '已保存的部分问题工作；综合结论尚待完成。'
+                      : matchingAssessment.result?.overallStatus === 'CURRENT'
+                        ? '已保存的问题工作；综合候选当前有效。'
+                        : '已保存的问题工作；综合状态请进入工作台核对。'}</p>
+                    <p>{assessmentBrief}</p>
+                    <Link to={`/work-items/${encodeURIComponent(matchingAssessment.document.workItemId)}/analysis?panel=assessment`}>查看完整评估与来源</Link>
+                  </>
+                ) : (
+                  <p>该版本已有评估任务，尚无可显示的已保存问题摘要。</p>
+                )}
+              </section>
+            ) : null}
+            {!selectedReading.brief && assessmentBrief ? (
+              <p className="library-quicklook-note">文档自身解读尚未生成；上方为此版本关联任务的已保存评估。</p>
+            ) : null}
             {readingConditionCount > 0 ? (
               <details
                 key={selectedVersion.documentVersionId}
