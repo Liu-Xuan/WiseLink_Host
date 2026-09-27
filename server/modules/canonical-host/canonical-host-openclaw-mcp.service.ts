@@ -625,7 +625,7 @@ export class CanonicalHostOpenClawMcpService {
       {
         title: '开始整体候选综合',
         description:
-          'Host 按已绑定 schema 使用当前 JobAid 工作与核实来源；新问题评估只检查最新工作的一致性，历史逐项结果仍兼容。显式 requestId 领取同一新请求，COMMITTING 只恢复已存结果。',
+          'Host 按已绑定 schema 使用当前 JobAid 工作与核实来源；新问题评估只检查最新工作的一致性，历史逐项结果仍兼容。显式 requestId 领取同一新请求；受托的后继 Review 可用 successorReviewTurnRef 对确切已保存工作执行 Overall。COMMITTING 只恢复已存结果。',
         inputSchema: z
           .object({
             workItemId: mcpWorkItemId,
@@ -637,13 +637,14 @@ export class CanonicalHostOpenClawMcpService {
               .array(z.enum(['AIRBUS', 'BOEING', 'COMAC']))
               .max(3)
               .optional(),
+            successorReviewTurnRef: z.string().regex(/^RT-[A-Za-z0-9_-]{1,93}$/u).optional(),
           })
           .strict(),
         annotations: beginAnnotations,
       },
-      async ({ workItemId, providers, requestId }) =>
+      async ({ workItemId, providers, requestId, successorReviewTurnRef }) =>
         textResult(
-          await this.overall.begin(workItemId, providers ?? [], requestId),
+          await this.overall.begin(workItemId, providers ?? [], requestId, successorReviewTurnRef),
         ),
     );
 
