@@ -1,5 +1,11 @@
 # M 主控集成交接
 
+## 2026-09-28：Turn 7 揭示空更正与完成范围冲突，C179 本地修复
+
+17b 旧版 SB 事项 `WI-4db598a0-33b8-4abd-a64d-df2aac9f29c5` 的正常后继 Review Turn 7（本地检查点 `RT-0875b830-2330-4ef5-9178-be15e1da2fcc`）由 C136 自动领取，Host 读回 11 个确切原文片段。模型先后提交一次无效工作 schema 和一次重复问题分区，C178 在原会话内有界纠正；第三次候选却是 `issues:[]`、四个既有问题键均列为 unchanged，只有完成说明/变化摘要，并把 `roundCompletion` 改成 `COMPLETE`。旧问题仍有开放问题，Host 因 `JOBAID_OPEN_QUESTIONS_REQUIRE_QUALIFIED_COMPLETION` 拒绝并取消该 attempt。没有 JobAid 新修订，也没有 Overall 更新；这不是原文资料不足。
+
+C179 在 Skill 的提交前校验中拒绝没有实质工作、阅读摘要或其他有效增量的 `UPDATE_ASSESSMENT`，并按 Host 已有规则检查最终问题集合：保留的开放问题或未解决条款与 `COMPLETE` 冲突时，在模型候选阶段返回明确纠正提示，不能删除未知项以求通过。Host 的保存与权限校验不变。新增两项定向测试，全 Skill 579/579、ESLint、包声明和差异检查通过；尚未提交、安装或生产复验。下一步在核对没有在途消费者后按既有窗口安装，再由正常后继入口重试受影响范围，不手改旧工作或重置原任务。
+
 ## 2026-09-28：C178 已安装，唯一动态消费者恢复原状态
 
 17c 受控安装前，`openclaw cron list --all --json` 读回 16 项定时任务全部停用，均无 `runningAtMs`。私有包 `/1877518814119976.zip` 下载后 SHA256 为 `8ba68f62e7f57b919e56d2e316ae5d78ee8c6b07d790cdb7c18b6aac0c039b0c`，ZIP 完整性检查通过，展开为 61 个文件；原 Skill 已在 17c 本地备份。`openclaw skills install` 使用绝对路径安装 C178，`openclaw skills info wiselink-research-and-synthesize` 显示 `Ready`，安装目录与包展开目录的差异仅有 OpenClaw 自身的 `.openclaw` 元数据。随后仅恢复原先启用的 C136 动态任务 `38f1cc05-4a5e-4ec0-863c-e5b3d579048b`；再次读回仅该项 `enabled=true` 且无在途运行，其余 15 项仍停用。

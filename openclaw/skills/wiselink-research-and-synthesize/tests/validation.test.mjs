@@ -1381,7 +1381,7 @@ test('requires 35 MCP capabilities, six review tools, and hosted provenance', ()
   assert.ok(HOST_MCP_TOOLS.includes('commit_applicability_candidate'));
   assert.equal(
     WISELINK_SKILL_VERSION,
-    'wiselink-research-and-synthesize@r09.c178',
+    'wiselink-research-and-synthesize@r09.c179',
   );
   assert.equal(
     WISELINK_SKILL_COMPATIBILITY_REF,
@@ -7695,6 +7695,53 @@ test('JobAid update rejects uncited issue bodies before Host commit while leavin
   assert.doesNotThrow(() => validateJobAidUpdatedIssueBodies(delta));
   delta.jobAidWorkingDelta.issues[0].body += ' [[broken';
   assert.throws(() => validateJobAidUpdatedIssueBodies(delta), /REVIEW_JOBAID_BODY_CITATION_MALFORMED/u);
+});
+
+test('JobAid update rejects a status-only delta and COMPLETE while retained questions remain open', async () => {
+  const { task, candidate } = await emptyJobAidReviewFixture();
+  task.context.purpose = 'UPDATE_ASSESSMENT';
+  task.jobAidContext.previousWork.content.issues = [{ issueKey: 'existing',
+    openQuestions: [{ question: 'Which aircraft are affected?' }], requirementHandling: [] }];
+  const delta = { schemaVersion: 'wiselink.jobaid-problem-work.v3', issues: [],
+    unchangedIssueKeys: ['existing'], roundCompletion: 'COMPLETE',
+    completionReason: '源文件已核对', changeSummary: '未修改任何问题' };
+  const validate = (work) => validateReviewCandidate(task, { ...candidate, jobAidWorkingDelta: work });
+  assert.throws(() => validate(delta), /REVIEW_JOBAID_SUBSTANTIVE_DELTA_REQUIRED/u);
+  assert.throws(() => validate({ ...delta, overview: '仍需确认机队范围' }),
+    /REVIEW_JOBAID_OPEN_QUESTIONS_REQUIRE_QUALIFIED_COMPLETION/u);
+  assert.doesNotThrow(() => validate({ ...delta, overview: '仍需确认机队范围',
+    roundCompletion: 'COMPLETE_WITH_OPEN_QUESTIONS' }));
+});
+
+test('JobAid update gives specific correction for an empty assessment delta', async () => {
+  let requests = 0;
+  const result = await invokeReviewWithTransport({ input: { context: {
+    purpose: 'UPDATE_ASSESSMENT', problemAssessment: { previousWork: { content: {
+      issues: [{ issueKey: 'existing', openQuestions: [{ question: 'Scope?' }] }],
+    } } },
+  } } }, {
+    gatewayUrl: 'https://official.invalid', gatewayToken: 'fixture-only', configuredModelVersion: 'fixture/provider',
+    validateCandidate: (value) => {
+      if (value.jobAidWorkingDelta?.issues.length === 0)
+        throw new Error('REVIEW_JOBAID_SUBSTANTIVE_DELTA_REQUIRED');
+    },
+  }, { requestGateway: async (_url, init) => {
+    const request = JSON.parse(init.body);
+    if (++requests === 2) {
+      const feedback = JSON.parse(request.messages.at(-1).content);
+      assert.equal(feedback.validationError, 'REVIEW_JOBAID_SUBSTANTIVE_DELTA_REQUIRED');
+      assert.match(feedback.instruction, /changes no issue/u);
+      assert.deepEqual(feedback.previousIssueKeys, ['existing']);
+    }
+    return Response.json({ choices: [{ message: { content: null, tool_calls: [{
+      id: `candidate-${requests}`, type: 'function', function: {
+        name: 'return_wiselink_review_candidate',
+        arguments: JSON.stringify({ answer: '局部更正', jobAidWorkingDelta: { issues: requests === 1 ? [] : [{ issueKey: 'existing' }] } }),
+      },
+    }] } }] });
+  } });
+  assert.equal(requests, 2);
+  assert.deepEqual(result.output.jobAidWorkingDelta.issues, [{ issueKey: 'existing' }]);
 });
 
 test('JobAid update first reads an authorized document before exposing the candidate channel', async () => {
