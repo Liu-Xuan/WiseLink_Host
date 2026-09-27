@@ -1,5 +1,13 @@
 # M 主控集成交接
 
+## 2026-09-27 C168 受控恢复：JobAid 已保存，Overall 待接续
+
+C168 私有 ZIP 与 manifest 在 17c 核验版本、源提交、61/61 payload SHA 后通过官方 `openclaw skills install` 安装，`skills info` 为 Ready；额外 `.openclaw/source-origin.json` 是平台元数据。安装后消费者 0、cron 16 项全部停用。旧 claim 精确指向 WI `WI-d368f79e-4a5a-4615-ac00-7594b3ee5c53`、request `REQ-b5526e71-8a10-44d2-8bc9-dde3867044f6`、revision 3、generation 1、旧 Gateway 错误与 `consumerStopped=true`。17c 仅运行一次 C168 精确修复命令，绑定旧失败 attempt `AQ-d5ed83270aef4c02a439fd790fe8fbb4`；没有开启普通 tick 或 cron。
+
+刘轩本人 17b 页面见 JobAid 逐步保存工作修订 1→2→3→4，最终在 2026-09-27 14:11:45 +08 显示“候选待复核”“执行完成”，七个问题及来源依据可读；Overall 仍等待。17c 只读 Host 回执确认当前 WorkItem revision 4、`WAITING_INPUT`、`nextOperation=SYNTHESIZE_OVERALL`，JobAid attempt `AQ-195f73672fde4f8dae11deb51f39126f` / SUCCEEDED。`read_assessment_work` 对该 attempt 返回 SUCCEEDED、workRevision 4、basedOnWorkItemRevision 3、同一 WorkItem 与文档版本、同一 actionAttemptId。工作修订的 `requestId=JA-save-aec9b65c-ef71-42f9-ac02-335eb328daf9` 是保存请求身份，不是阶段修复请求。17c 最新本地 claim 为 generation 2、revision 3、`consumerStopped=false`、`completionReady=false`，租约到期 2026-09-27T07:04:46.848Z；初次观察到的 stopped=true 是过程状态，最终无需额外清除。原终端 stdout/stderr/退出码不可读，但 Host 和检查点读回证明这次 JobAid 已保存并可以继续 Overall。
+
+曾准备 C169 来清除看似未解除的停止标记；进一步回读否定其前提，且证明保存 `requestId` 不能作阶段身份。因此 C169 私有包虽已生成并上传，但**未在 17c 安装或运行**；草案提交 `dce6936cc8e17d0f9ddd0e93e76d18d785168406` 已由 `af07c71de` 撤销。当前运行版本仍为 C168。普通受控 Overall tick 尚未发出：17c 标签被旧浏览器自动化 session 占用，终端暂不可确认，且 gen2 租约临近 07:04:46.848Z 到期；先恢复可读终端，到期后只对原 WorkItem 精确重领。随后从 Host 下一阶段 Overall 接续，再读回综合候选、资料库与 Wiki；无人值守 cron 保持停用。JobAid 成功只是局部证据，不代表全流程验收。
+
 ## 2026-09-27 C168：限定旧失败尝试的队列恢复，真实接续待核验
 
 从 17c 两次失败 JobAid 的原生 session 元数据确认：每次均有两条 assistant 记录，`stopReason=length`、`output=16000`、`contentTypes=[]`、`errorCode=null`；对应 MCP 回执为 `JOBAID_GATEWAY_HTTP_400:INCOMPLETE_TERMINAL_RESPONSE`，Host 未保存 JobAid 工作。此证据说明兼容层得到不完整终态；尚未证明 16000 限额来自哪一层，也未读取模型正文。C167 在确切 M3 Probe JobAid 路径显式发送 `max_completion_tokens=32768`，保留其他路径原策略；本地测试、打包和审查通过，提交 `f9bf33a0d1737f542950774197b4738bccecc184`，已快进到 origin 同名分支。17c 私有 ZIP SHA256 `93776a51ba85722a871cf4442a90a6ea3a1bd409340c38617a9afc26bc58a4b0`，安装后官方 `skills info` 为 Ready，安装目录 61/61 payload 文件 SHA 一致；Gateway Online，消费者进程 0、16 个 cron 全停用。尚未进行 C167 真实模型调用，不能宣称故障已解决。
