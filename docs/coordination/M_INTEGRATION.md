@@ -1,5 +1,23 @@
 # M 主控集成交接
 
+## 2026-09-27 C167：真实自动队列 JobAid 网关失败，保留任务接续
+
+刘轩解锁 17c 后，唯一操作员在原终端核对 C165 Skill Ready、消费者进程 0、16 个 cron 全停用且无运行项、`active-claim.json=null`；17b online 只读核对新任务 `WI-d368f79e-4a5a-4615-ac00-7594b3ee5c53` 授权 WAITING/gen0、WorkItem revision 3、尚无 JobAid/Overall。仅执行一次不带固定 WorkItem 参数的动态 `--auto-queue` tick，Host 准确领取该任务为 LEASED/gen1，原 PARSE_PDF 尝试保持 SUCCEEDED、没有重跑原文。
+
+本次 JobAid `OPENCLAW_DYNAMIC_EVALUATION` 尝试 1 为 `AQ-ed4271bcea5e401094b3d3e3da59b661`，08:28:32 +08 RUNNING、08:30:59 +08 CANCELLED；`cancelReason=HOSTED_INITIAL_EXECUTION_FAILED:JOBAID_GATEWAY_HTTP_400:INCOMPLETE_TERMINAL_RESPONSE`，`projectionApplied=false`。Host 保存的 executionModel 确认为 `M3 Probe Large` / `m3probe/minimax-m3`。17c 私有 checkpoint 的安全响应形态为 HTTP 400、142 bytes、`gatewayFailure=INCOMPLETE_TERMINAL_RESPONSE`，无 finishReason 或 usage；不能据此认定模型达到输出长度。`active-claim` 保留目标任务/gen1，`consumerStopped=true`。Host 只读确认 WorkItem revision 3 未变、`assessment_work_revision` 0 条、没有 Overall。
+
+在明确无消费者进程、原尝试已结束且无保存结果后，仅按现有自动恢复规则执行第二次动态 tick。后继尝试 2 `AQ-d5ed83270aef4c02a439fd790fe8fbb4` 使用同任务、同文档版本的 `auto-retry-04f04eb08343f6da76aac64e98e80e73` 幂等身份，08:48:08 +08 RUNNING、08:50:10 +08 同样 CANCELLED，原因与安全响应形态完全相同，`projectionApplied=false`、已保存工作仍为 0。第二次 node 进程已退出；没有第三次 tick，没有 ACK/BLOCK，也没有启用 cron。队列仍 LEASED/gen1、blockedCode 为空；此处是运行故障，不是工程资料不足或工程结论。
+
+线上任务封装 89,714 bytes；其中嵌套 JobAid 模型输入 54,330 bytes，`deliveredEvidence` 20,801 bytes（30 个已交付引用）、`availableSources` 15,195 bytes、`contextPackage` 8,003 bytes。独立 `sourceCatalog` 31,345 bytes 为任务授权/读取目录的一部分，不等于已证实的模型请求体积。代码已采用分批 `SAVE_WORK` 与简化 function schema；现有诊断尚不能证明请求过大、模型输出截断或工具 schema 不兼容。需核查实际 JobAid 请求字节数、M3 路由配置和原生上下文计量，再根据证据修订交互；不能删原文、盲目调大 token 或原样重复第三次。旧错误工作 rev9 的准确更正仍是独立后继问题。
+
+17c 解锁后原终端一度停在启动页，正常刷新后恢复 Gateway Online。再次确认消费者进程 0、16 个 cron 全停用且无运行项、原 checkpoint 仍为目标任务/gen1/`consumerStopped=true`。经已安装 Skill 的配置解析确认路由已登记、Gateway 本机地址及凭据可用；凭据未输出。使用不同的独立诊断 `user` 身份、同一 `/v1/chat/completions` 和 `x-openclaw-model=m3probe/minimax-m3`，无工程资料的纯文本 `OK` 探针得到 HTTP 200、`finish_reason=stop`、精确 `OK`，耗时 46,597 ms；无副作用单函数 `return_ok({result:"OK"})` 探针得到 HTTP 200、`finish_reason=tool_calls`、正确函数与参数，耗时 25,012 ms。两次报告的 prompt tokens 分别为 49,393、49,462，明显高于显式短消息；其计量来源和会话上下文仍待确认，不能直接归因 Skill 正文或认定真实 JobAid 已超模型窗口。探针没有触发第三次业务尝试，不能代替真实 JobAid 验收。
+
+17c 通用模型目录与状态接口未列出 M3 Probe，但官方 `openclaw config get` 对确切 `models.providers.m3probe` 的安全字段读回确认 `minimax-m3`：`api=openai-completions`、`reasoning=true`、`contextWindow=1,000,000`、`maxTokens=131,072`；agent 默认模型条目仅有别名。4.9 万 token 的短探针明显低于已配置上下文窗口，但提供商实际执行限制仍不能只由配置推定。`sessions` 最近两小时列表未列出两次兼容层探针，且与 status 的 session 总数口径不同，不能据此证明或否认独立 native session。首次失败 JobAid 的私有 checkpoint 本轮未取得可用于重建请求的文件读回，因此实际 request/messages/system/tools 字节拆分仍未测得。已准备的本地安全计数代码尚未安装，不能把其测试结果写成线上测量。
+
+目标两次失败时窗的 OpenClaw 原生日志未取得：官方日志命令只给当前尾部，浅层本机日志文件扫描无目标记录；provider/agent/Gateway timeout 数值也未成功读回。两次约 122/147 秒的耗时接近官方云模型 120 秒无响应片段看门狗，只是待验证线索，不构成超时定因。没有通过修改超时、切换模型或第三次相同生成来掩盖此缺口。
+
+为下一次真实请求提供安全尺寸证据，提交 `71269e054c5fe12646d8e9d7e84afab8b40346b6`（父 `74e05ccdb6fb35462d4cfc7b761ff86a552ebeb9`）将 JobAid Gateway 请求 JSON 构造一次，并仅记录 `requestBytes/messagesBytes/systemBytes/toolsBytes`；请求语义、内容、授权与重试条件不变。Skill 升为兼容修订 `r09.c166`；受影响测试 325/325、版本检查、完整 Skill 打包自测及 precommit 通过。包 61 文件、507,511 bytes、SHA256 `cbdd5e848be71bfa4967aee27a72bcd41f124cb30b59851ae4648374c2df85dc`。源提交分别快进推至 origin/github 同名 `codex/wl-c125-auto-engineering-flow`，两端实际 ref 均读回该 SHA。17c 私有存储 `/1877446867351603.zip` 下载后远端 SHA 精确相同；安装前消费者 0、cron 16 项全 disabled，官方 `openclaw skills install <解压目录> --force` 成功。安装目录 61 个源文件逐一 SHA 匹配（额外 `.openclaw` 为安装元数据），`skills info` 读回 `r09.c166` / Ready；Gateway UI 最终 Online、安装后 cron 仍 16 项全 disabled、无 Node 消费者。未触发业务请求或第三次 JobAid；因此新的字节计数尚无线上样本，不能宣称网关故障已修复。
+
 ## 2026-09-27 C166：新任务受理与空结果表达
 
 刘轩本人在 17b 资料库的“选择已上传 PDF 并新建工程事项”入口，选择名称为 `260c665aa340752898c0958c7015df5fa8f6f5ead9317d0b37908af6c30d53b5.pdf` 的已有对象与 M3 Probe Large，建立 `WI-d368f79e-4a5a-4615-ac00-7594b3ee5c53`。Host 将其识别为 787-FTD-46-26002；该文件名与此前两页原件的已核验 SHA256 一致，但本轮尚未独立读回对象字节哈希，不能仅凭文件名断定内容相同。未再次上传本机 PDF。创建后本人逐项页读回：全文翻译等待中、适用性匹配等待补充、JobAid 等待中、整体综合等待中，尚无候选意见与已保存问题分析。17c 操作员先核对确切可领取范围，再决定是否可做单次受控消费；未启用无人值守定时任务。
