@@ -1,5 +1,13 @@
 # M 主控集成交接
 
+## 2026-09-27 C170：工程摘要首屏与并发修订读回
+
+17b 线上首次 Wiki 正文 404 的 trace `a68647f54dd6b96618d53ecc661ec88c` 显示：本人、租户、确切 WorkItem 与 workRef 相同，两次 owner 查询均返回 1 行；错误发生在 `authorizeAndLoadCanonicalWorkItem` 两次新鲜授权快照版本比较处。之后同一确切链接成功读取。该失配与 Overall 保存窗口的 WorkItem 修订并发相符；日志没有保存两个版本值，因此不把并发原因写成已直接证明。Host 现在只在两次授权快照版本不一致时重新执行一次完整授权链；持续失配或第二次撤权仍拒绝，匹配前不加载正文。没有改动角色、RLS、来源授权或任务调度。
+
+综合评估页面在已有持久候选时，默认先显示短工程摘要、当前有效性和限制，把解析、翻译及评估进度放在可展开区；完整分析仍在原页面。代码提交 `3480865e1ca29329c51357e095672c1c66abd514`，合入线上 main 快照的发布提交 `88c3f513d46e59af2a921c15691083563a942c9a` 已快进至 origin 同名开发分支。17b release `7690117055228185566` 为 `finished`、部署提交准确为 `88c3f513d46e59af2a921c15691083563a942c9a`、`error_logs=[]`。定向 Jest 9/9、前后端 TypeScript、定向 ESLint/Stylelint 与 diff 检查通过；统一 precommit 因隔离工作树不能写默认 TypeScript 增量文件而未完成，等价类型检查改用 `/tmp` 增量文件通过。
+
+刘轩本人重新打开生产综合评估页，默认首屏已显示同一 787 FTD 的短判断和未知，进度初始折叠并可用键盘展开；重新打开确切 Wiki 链接，读取 `WORK_ITEM` / `JAWR-23f7289f-07ea-440f-82ec-b2d07cef0b2c` 的工作修订 4、短摘要与八项可展开分析。未在真实并发写入期间重复触发 404 场景；生产结果验证的是当前稳定读回，授权重试行为由隔离测试覆盖。无人值守 cron 未因此启用，正常上传后全自动稳定性仍未验收。
+
 ## 2026-09-27 C168 接续验收：Overall 已保存，知识页准确直达
 
 17c 独立终端17确认同一 `/home/gem` 检查点仅有目标 `WI-d368f79e-4a5a-4615-ac00-7594b3ee5c53` 的 gen2/rev3 claim，旧租约过期、`consumerStopped=false`、无在途消费者；16 项 cron 全部停用。只提交一次已安装 C168 的普通动态 `--auto-queue` tick，终端准确回执 `ACKNOWLEDGED`、`replayed=false`、`consumerStatus=INITIAL_STAGE_SAVED`、时间 `2026-09-27T07:26:37.253Z`。结束后消费者 0、目标 active-claim 已清除、cron 仍为 16/16 停用；没有运行第二次 tick 或 C169。

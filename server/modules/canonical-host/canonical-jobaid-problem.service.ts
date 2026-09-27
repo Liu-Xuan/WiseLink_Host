@@ -1360,7 +1360,44 @@ export class CanonicalJobAidProblemService {
     workRevisionRef: string,
     actor: CanonicalHostActor,
   ): Promise<JobAidWorkRevision> {
-    await authorizeAndLoadCanonicalWorkItem({
+    return (await this.readAuthorizedBrowserRevision(workItemId, workRevisionRef, actor)).revision;
+  }
+
+  async readBrowserKnowledgeRevision(
+    workItemId: string,
+    workRevisionRef: string,
+    actor: CanonicalHostActor,
+  ): Promise<{
+    revision: JobAidWorkRevision;
+    overall: { status: 'CANDIDATE_ONLY' | 'STALE';
+      readingResult: NonNullable<CanonicalOpenClawOverallProjection['readingResult']> } | null;
+  }> {
+    const { workItem, revision } = await this.readAuthorizedBrowserRevision(
+      workItemId, workRevisionRef, actor,
+    );
+    const overall = workItem.integratedAssessment?.overallSynthesis;
+    const readingResult = overall?.readingResult;
+    if (!overall || !readingResult ||
+      overall.basedOnJobAidWorkRevisionRef !== workRevisionRef) {
+      return { revision, overall: null };
+    }
+    if (readingResult.scope.kind !== 'WORK_ITEM' ||
+      readingResult.scope.workItemId !== workItemId ||
+      readingResult.scope.documentVersionId !== workItem.source.documentVersionId) {
+      throw new Error('JOBAID_OVERALL_SOURCE_BINDING_INVALID');
+    }
+    await this.assertEvidenceOwned(
+      readingResult.evidence, actor.tenantId, actor.userId, workItemId,
+    );
+    return { revision, overall: { status: overall.status, readingResult } };
+  }
+
+  private async readAuthorizedBrowserRevision(
+    workItemId: string,
+    workRevisionRef: string,
+    actor: CanonicalHostActor,
+  ): Promise<{ workItem: CanonicalWorkItemProjection; revision: JobAidWorkRevision }> {
+    const { workItem } = await authorizeAndLoadCanonicalWorkItem({
       authorization: this.authorization,
       permissionSnapshots: this.permissionSnapshots,
       registrar: this.registrar,
@@ -1373,7 +1410,7 @@ export class CanonicalJobAidProblemService {
     });
     if (!revision) throw Object.assign(new Error('JOBAID_WORK_NOT_FOUND'), { statusCode: 404 });
     await this.assertEvidenceOwned(revision.content.evidence, actor.tenantId, actor.userId, workItemId);
-    return revision;
+    return { workItem, revision };
   }
 
   async readBrowser(
