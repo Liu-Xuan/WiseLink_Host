@@ -1,5 +1,11 @@
 # M 主控集成交接
 
+## 2026-09-28：C182 内容质量与默认文档交付核对（只读）
+
+以确切原件 `737MAX-FTD-34-17005_Doc_07092025.pdf`（3 页，SHA256 `32e30215fb2412a7ab8445872739da86339b11afcb04ef9a2c6168635b0da61e`）核对正常上传任务 `WI-3859b827-399e-414a-adbb-e1c694cafd59` 的 JobAid 修订 6（`JAWR-323772de-10f0-4b20-9c01-6fa69b25f061`）与 Overall 页面投影。原件支持 LRRA 同轴连接问题、Databus 1/2 差别、进近告警和所列生产措施；它没有提供措施后的机队发生率、措施有效性量化、当前目标机队状态或 AD/SB/SL 全集核查。已保存风险问题却把生产措施推成“后续机队基础发生率明显下降”和“不大可能”，还以事后 FIM 排故及 FTD 关闭作为可能性理由；严重性正文断言机组可恢复及“不构成严重/灾难”，没有相应运行事实或评定依据。“本 FTD 不构成新的执行性 SB/SL 或 AD”紧邻“现行 AD/SB/SL 未匹配”，容易被读成已排除其他义务。`listBrief` 的语法把 FIM 排故与生产端措施一并归为“仅作用于新机”，与 FIM 作为故障排查指引的范围不符。Overall 的 `lead` 和 `listBrief` 已重复上述判断，故这不是局部措辞问题，受影响阅读面会一致传播。下一步应通过已授权的正常后继 Review 局部修正风险、执行义务与摘要，再以确切新 JobAid 修订触发 Overall 并读回资料库/Wiki/检索；旧工作保留，不直接改库中候选或重置已完成任务。该任务仍显示 `COMPLETED`，当前保存结果不应被当作内容质量验收通过。
+
+在线只读查询另外确认：三份正常上传样本的 `dm_document_reading_run` 均无记录，对应三项 WorkItem 的 `translation_workspace` 也均无记录。17b 当前 `WL_OPENCLAW_DOCUMENT_SCOPE_ENABLED=1`，但固定 `WL_OPENCLAW_SERVICE_DOCUMENT_VERSION_IDS` 四项均不包含这三份正常上传版本。代码中 DocumentReading/Translation 依赖 `authorizeDocumentWork` 的固定文档范围和已有 `READING_BEGIN`/翻译工作区；C136 `--auto-queue` 只领取 WorkItem，不能替文档自动受理。因而资料库的“无独立解读”与中文未交付是调度和授权接线缺口，不能用关联 JobAid 摘要冒充完成。将可信上传的逐任务委托安全地扩展到同一确切文档版本的文档工作，是新增有效权限范围；本轮仅定位，未修改权限、未受理文档运行。
+
 ## 2026-09-28 C178：旧 FTD 后继更正仍未保存，候选提交前补引用校验
 
 目标 `WI-4db598a0-33b8-4abd-a64d-df2aac9f29c5` 的旧后继 Review turn 4 保存 JobAid 修订 11，纠正 SB 时序，但又把已读章节误写为“未读”；Overall 仍基于修订 9。后续 Overall 尝试因确切工作变化失败，已终态 attempt 不能复用。Host `f1384fced` 与 17c C175 消费者修复了终态 Overall 的重复领取及本地指针清理；17b release `7690303772124695502` 精确部署该提交，C175 安装与 61 文件校验完成。17c 唯一 C136 动态 cron 保持启用，其余 15 项停用。
