@@ -11,6 +11,7 @@ export async function committedSuccessorRevision(
     tenantId: string;
     principalId: string;
     workItemId: string;
+    actorUserId: string;
   },
   turn: import('../review-persistence/review-conversation.repository').PersistedReviewTurn,
   currentRevision: number,
@@ -35,6 +36,7 @@ export async function committedSuccessorRevision(
     row.tenantId !== input.tenantId ||
     row.workItemId !== input.workItemId ||
     row.actionType !== 'OPENCLAW_OVERALL_SYNTHESIS' ||
+    row.actorUserId !== 'service:openclaw-main' ||
     !['COMMITTING', 'SUCCEEDED'].includes(row.status) ||
     row.baseRevision !== turn.inputRevision ||
     row.inputRevision !== turn.inputRevision ||
@@ -67,7 +69,7 @@ export async function committedSuccessorRevision(
   return Boolean(
     current &&
     current.row.revision === currentRevision &&
-    current.row.requestedByUserId === row.actorUserId &&
+    current.row.requestedByUserId === input.actorUserId &&
     current.projection?.revision === currentRevision &&
     overall?.actionAttemptId === row.attemptId &&
     overall.basedOnJobAidWorkRevisionRef === receipt.workRevisionRef,

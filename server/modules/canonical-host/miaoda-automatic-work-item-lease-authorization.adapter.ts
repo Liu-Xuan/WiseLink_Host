@@ -124,7 +124,7 @@ export class MiaodaAutomaticWorkItemLeaseAuthorizationAdapter implements Automat
       turn.inputRevision === row.revision ||
       (allowCommittedOverall &&
         (await committedSuccessorRevision(
-          input,
+          { ...input, actorUserId: grant.actorUserId },
           turn,
           row.revision,
           this.workItems,
@@ -296,7 +296,9 @@ export class MiaodaAutomaticWorkItemLeaseAuthorizationAdapter implements Automat
       )
         throw workItemNotFound();
       if (
-        row.actorUserId !== delegation.actorUserId ||
+        // The Overall attempt executes as the existing service actor. The
+        // engineer remains bound through the persisted turn and source grant.
+        row.actorUserId !== 'service:openclaw-main' ||
         row.documentVersionId !== delegation.documentVersionId ||
         row.inputRevision !== delegation.inputRevision ||
         (row.leaseOwner !== null && row.leaseOwner !== input.principalId)
