@@ -188,6 +188,30 @@ export async function consumeHostedWorkItem(options, dependencies) {
   return { ...report, completedStages };
 }
 
+async function consumeSuccessorOverallPointer(pointer, checkpoint, consume) {
+  let result;
+  try {
+    result = await consume(pointer);
+  } catch (error) {
+    const terminalCode = error?.hostToolName === 'begin_overall_synthesis' &&
+      ['ACTION_ATTEMPT_ALREADY_FAILED', 'ACTION_ATTEMPT_ALREADY_CANCELLED',
+        'ACTION_ATTEMPT_ALREADY_CONFLICT', 'ACTION_ATTEMPT_ALREADY_OBSOLETE',
+        'ACTION_ATTEMPT_ALREADY_TIMED_OUT'].includes(error?.hostErrorCode)
+      ? error.hostErrorCode : null;
+    if (!terminalCode) throw error;
+    // The Host has definitively closed this exact attempt. Keep its failure
+    // record there, then release only the local pointer so later work can run.
+    await checkpoint.write('review-cursor', pointer.reviewAfterWorkItemId);
+    await checkpoint.write('active-successor-overall', null);
+    return { status: 'REQUIRES_ATTENTION', workItemId: pointer.workItemId,
+      reviewTurnRef: pointer.reviewTurnRef, errorCode: terminalCode };
+  }
+  await checkpoint.write('review-cursor', pointer.reviewAfterWorkItemId);
+  await checkpoint.write('active-successor-overall', null);
+  return { status: 'OVERALL_DISPATCHED', workItemId: pointer.workItemId,
+    reviewTurnRef: pointer.reviewTurnRef, overall: result };
+}
+
 /**
  * One native cron tick for the Host-owned automatic queue. The lease token is
  * checkpointed locally for the trusted consumer's ACK only; it is never added
@@ -227,11 +251,7 @@ export async function consumeAutomaticWorkItemQueueTick(options, dependencies) {
   if (activeSuccessor) {
     if (claim || options.repairStoppedClaim || typeof dependencies.consumeSuccessorOverall !== 'function')
       throw new Error('AUTO_WORK_ITEM_SUCCESSOR_CHECKPOINT_CONFLICT');
-    const result = await dependencies.consumeSuccessorOverall(activeSuccessor);
-    await checkpoint.write('review-cursor', activeSuccessor.reviewAfterWorkItemId);
-    await checkpoint.write('active-successor-overall', null);
-    return { status: 'OVERALL_DISPATCHED', workItemId: activeSuccessor.workItemId,
-      reviewTurnRef: activeSuccessor.reviewTurnRef, overall: result };
+    return consumeSuccessorOverallPointer(activeSuccessor, checkpoint, dependencies.consumeSuccessorOverall);
   }
 
   if (claim?.blockReady) {
@@ -257,12 +277,13 @@ export async function consumeAutomaticWorkItemQueueTick(options, dependencies) {
       if (previous || typeof consumer !== 'function')
         throw new Error('AUTO_WORK_ITEM_SUCCESSOR_DISPATCH_INVALID');
       if (next.status === 'OVERALL_PENDING') await checkpoint.write('active-successor-overall', next);
-      const result = await consumer(next.status === 'REVIEW_PENDING' ? next.workItemId : next);
+      if (next.status === 'OVERALL_PENDING')
+        return consumeSuccessorOverallPointer(next, checkpoint, consumer);
+      const result = await consumer(next.workItemId);
       await checkpoint.write('review-cursor', next.reviewAfterWorkItemId);
-      if (next.status === 'OVERALL_PENDING') await checkpoint.write('active-successor-overall', null);
-      return { status: next.status === 'REVIEW_PENDING' ? 'REVIEW_DISPATCHED' : 'OVERALL_DISPATCHED',
+      return { status: 'REVIEW_DISPATCHED',
         workItemId: next.workItemId, reviewTurnRef: next.reviewTurnRef,
-        ...(next.status === 'REVIEW_PENDING' ? { review: result } : { overall: result }) };
+        review: result };
     }
     if (next.status === 'IDLE') {
       if (previous) {
