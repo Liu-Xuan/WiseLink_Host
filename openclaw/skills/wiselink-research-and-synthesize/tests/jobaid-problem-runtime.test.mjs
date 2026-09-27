@@ -433,6 +433,53 @@ test('a completed text-only correction resumes from its durable response and pre
   assert.deepEqual(f.saves[0] && JSON.parse(f.saves[0].workJson), corrected);
 }));
 
+test('text-only replies after a confirmed JobAid save rotate compact native sessions without resaving', () => persisted(async checkpoint => {
+  const input = initialChunkModelInput();
+  input.availableSources = input.availableSources.slice(0, 1);
+  input.deliveredEvidence = [{ evidenceRef: input.availableSources[0].ref,
+    kind: 'DOCUMENT_PASSAGE', excerpt: 'The original states the exact condition.' }];
+  const f = fixture([{ action: 'SAVE_WORK', work: completed }, { action: 'FINISH' }], {
+    assessmentCheckpoint: checkpoint,
+    executionModel: { modelRef: 'm3probe/minimax-m3', displayName: 'M3 Probe Large',
+      providerKind: 'CUSTOM', settingsRevision: 1, selectedAt: '2026-09-25T00:00:00.000Z' },
+    registeredModelRefs: ['m3probe/minimax-m3'],
+  });
+  const save = f.options.saveAssessmentWork;
+  f.options.saveAssessmentWork = async request => {
+    const result = await save(request);
+    f.store.get(request.requestId).content = completeSavedJobAidContent(
+      JSON.parse(request.workJson), [input.availableSources[0].ref]);
+    return result;
+  };
+  const gateway = f.dependencies.requestGateway;
+  let generations = 0;
+  f.dependencies.requestGateway = async (url, request) => {
+    if (++generations !== 2 && generations !== 3) return gateway(url, request);
+    f.calls.push(JSON.parse(request.body));
+    return new Response(JSON.stringify({ choices: [{ finish_reason: 'stop', message: {
+      role: 'assistant', content: 'A long completed explanation instead of the required function.',
+    } }] }), { status: 200 });
+  };
+  const result = await f.run(input);
+  assert.equal(result.output.workRevisionRef, 'JAWR-1');
+  const state = await checkpoint.readOptional('assessment-state');
+  assert.equal(state.round, 4);
+  assert.equal(state.nativeSessionSegment, 3);
+  assert.equal(state.saved.workRevisionRef, 'JAWR-1');
+  assert.equal(state.messages.length, 4);
+  assert.equal(generations, 4);
+  assert.equal(f.saves.length, 1);
+  assert.equal(f.reads.length, 0);
+  assert.notEqual(f.calls[1].user, f.calls[2].user);
+  assert.notEqual(f.calls[2].user, f.calls[3].user);
+  assert.equal(f.calls[2].messages.length, 4);
+  assert.equal(f.calls[3].messages.length, 4);
+  assert.equal(JSON.parse(f.calls[3].messages[1].content).previousWork.workRevisionRef, 'JAWR-1');
+  assert.equal(JSON.parse(f.calls[3].messages[2].content).status, 'HOST_SAVE_CONFIRMED');
+  assert.equal(JSON.parse(f.calls[3].messages[3].content).errorCode, 'JOBAID_MODEL_OUTPUT_FUNCTION_REQUIRED');
+  assert.equal(JSON.stringify(f.calls[3].messages).includes('A long completed explanation'), false);
+}));
+
 test('text-only protocol corrections are bounded and truncated or foreign calls are not repaired', async () => {
   for (const mode of ['text', 'truncated', 'foreign-call']) {
     const f = fixture([]); let calls = 0;

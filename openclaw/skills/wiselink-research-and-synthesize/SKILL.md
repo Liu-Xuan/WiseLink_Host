@@ -12,12 +12,14 @@ description: Orchestrate the single official hosted WiseLink engineering profile
 - hosted app：`app_17c3zn24kv2`
 - logical profile：`wiselink-engineering`
 - model policy：`official-hosted-profile-config`（任务可绑定已登记的内置或用户授权自定义模型；仍经唯一官方 Hosted profile/Gateway）
-- Skill：`wiselink-research-and-synthesize@r09.c168`
+- Skill：`wiselink-research-and-synthesize@r09.c169`
 - Skill compatibility：`wiselink-research-and-synthesize@r09`（历史任务最低接受 `r09.c10`，翻译 v2 必须为 `r09.c44` 或更新兼容包）
 - Host MCP：`wiselink-openclaw-engineering-assessment@1.2.0`（保留既有工具，新增语义翻译工作与 JobAid 来源/工作工具）
 - Host 集成提交：以本次发布包清单记录的实际提交为准
 
-c153 仅保留已知、无敏感正文的官方解析额度错误码，消费者明确呈现阻断原因；不重跑已失败插件、不将配置或额度故障直接 BLOCK。Host 的资料库和 Wiki 同时支持读取已经有效保存的成员问题评估。未启用 MinerU、解析设置或无人值守调度。
+c169 在 Host 确认保存工作后，若 M3 Probe 连续返回完整纯文本而不调用函数，初始 JobAid 以确切保存修订和回执开启较短新会话继续纠正；已有来源读取或候选被拒绝时保留原证据与反馈上下文。仍不接受纯文本为已保存工作，不自动 FINISH，也不增加模型重试次数。
+
+c153 仅保留已知、无敏感正文的官方解析额度错误码，消费者明确呈现阻断原因；不重跑已失败插件、不将配置或额度故障直接 BLOCK。Host 的资料库和 Wiki 同时支持读取已经有效保存的成员问题评估。
 
 c152 为已有逐任务授权的自动队列补齐原文准备：缺少发布原文时，Host 幂等预约并有界执行官方解析，保存分页成果后接续分析；失败保留原因与原任务，不自动 BLOCK。普通状态读取仍只读，旧固定任务不继承自动授权。
 
@@ -603,7 +605,7 @@ Interactive Review 的复杂 ResultEnvelope 必须由 `sealResultEnvelope` 生�
 当前 validator 强制：
 
 - `modelVersion` 优先取响应中可读实际模型；绑定任务未回报实际模型时使用 `configured-route:<modelRef>`，旧无绑定任务使用无 fallback 的 configured endpoint。后两者只证明路由，不代表已暴露下游具体模型，也不做具体版本等值判断
-- `skillVersion=wiselink-research-and-synthesize@r09.c168`
+- `skillVersion=wiselink-research-and-synthesize@r09.c169`
 - `toolVersions.wiselink-openclaw-engineering-assessment=1.2.0`
 - `promptVersion` 非空并来自当前运行
 - task/result exact binding、SourceRef allowlist 和 canonical hash 一致
