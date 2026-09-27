@@ -164,6 +164,7 @@ describe('local MinerU Host dispatcher', () => {
     expect(h.workItems.loadCompletedLocalWorkerDiscovery).toHaveBeenCalledWith({
       tenantId: 'configured-tenant', workItemId: 'WI-test', actorUserId: 'persisted-user', documentVersionId: 'DV-test',
     });
+    expect(h.repository.listLocalWorkerCandidates).toHaveBeenCalledWith('configured-tenant', 50, browserScope, true);
     expect(h.parsing.readLocalWorkerRun).toHaveBeenCalledWith(identity.parseRunId, browserScope);
     expect(h.leases.claim).toHaveBeenCalledWith(browserScope, identity.parseRunId,
       browserLease.leaseOwner, 120_000);

@@ -77,7 +77,7 @@ export class LocalMineruWorkerService {
               documentVersionId: discovery.documentVersionId });
             if (!verified) return null;
             const scope = browserScope(service, verified);
-            const candidates = await this.repository.listLocalWorkerCandidates(service.tenantId, 50, scope);
+            const candidates = await this.repository.listLocalWorkerCandidates(service.tenantId, 50, scope, true);
             for (const row of candidates) {
               if (!matchesBrowserRun(verified, row)) continue;
               const loaded = await this.parsing.readLocalWorkerRun(row.parseRunId, scope);
