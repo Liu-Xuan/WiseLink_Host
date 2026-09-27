@@ -1,5 +1,13 @@
 # M 主控集成交接
 
+## 2026-09-27 C172：本机解析轮询的临时故障恢复
+
+默认新解析已有仅出站 MinerU worker 的真实受控链路，但 `--loop` 原来在一次临时 Host 网络/网关错误后直接退出。本轮只修订现有本机 worker：对连接/读取响应中断，以及 408、429、500、502、503、504 最多连续尝试三次，间隔 5 秒、10 秒；持续失败即非零退出并留下错误码，成功 tick 后恢复常规 5 秒空闲轮询。401/403、来源/候选/租约校验或解析错误继续明确失败；不带 `--loop` 的单次受控运行仍不自动重试。候选在提交前仍按原合同落入私有缓存，响应不明时由 Host 的确切租约及回执决定是否复用，未增加队列、接口、身份或权限。
+
+实现提交 `239041bfe7181f87839804655a5f17fb2aa83930`，响应流中断补充提交 `90542cc99`；连续失败上限在后续提交补齐。这里是本地代码验证，未启动新解析、未安装常驻进程，也未启用 17c 原生 cron。当前 Codex 进程环境没有本机 worker 所需的 Host origin、专用密钥、Python/config 路径；`launchctl list` 未列出 WiseLink/MinerU 作业，本机进程列表接口不可用，因此不据此断言系统没有其他在途 worker。17c 内置浏览器本轮仍重定向飞书扫码页，无法新鲜核对 Hosted cron；上次已读回 16 项全部停用。要验证正常上传后的无人值守闭环，需先在可读运行环境核对无在途及唯一动态队列 job，再在明确授权下启用本机 worker 的安全凭据来源与后台启动、以及该 Hosted job；不扩大四条 MinerU 路由或 Host 逐任务授权。
+
+最终定向 Jest 18/18、worker 文件独立 TypeScript 检查与差异检查通过；提交前钩子以最终提交回执为准。
+
 ## 2026-09-27 C171：确切 Overall 进入 Wiki，Host 终态读回
 
 17b 在线数据库只读核对 `WI-d368f79e-4a5a-4615-ac00-7594b3ee5c53`：WorkItem revision 5、`CANDIDATE_READBACK_VERIFIED`；Overall 为 `CANDIDATE_ONLY`，确切绑定 JobAid `JAWR-23f7289f-07ea-440f-82ec-b2d07cef0b2c` / revision 4。Overall ActionAttempt `AQ-b36077e839364b24b7e906879df6eeea` 为 `SUCCEEDED`，基于输入 revision 4，`projection_applied=true`。对应自动队列授权 `REQ-b5526e71-8a10-44d2-8bc9-dde3867044f6` 为 `COMPLETED`，领取与完成 generation 均为 3，已无 active owner/token，`blocked_code` 为空。这补齐了此前终端 ACK 以外的 Host 持久终态证据；不把候选当作正式采用。

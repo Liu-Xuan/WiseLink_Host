@@ -191,6 +191,7 @@ const transientTransportCodes = new Set([
   'LOCAL_MINERU_HTTP_503',
   'LOCAL_MINERU_HTTP_504',
 ]);
+const MAX_CONSECUTIVE_TRANSPORT_FAILURES = 3;
 function workerErrorCode(error: unknown): string {
   return error instanceof Error && /^[A-Z][A-Z0-9_]{1,120}$/u.test(error.message)
     ? error.message : 'LOCAL_MINERU_WORKER_FAILED';
@@ -202,18 +203,22 @@ export async function pollLocalMineruWorker(
   const pause = options.pause ?? ((milliseconds: number, signal: AbortSignal) =>
     sleep(milliseconds, undefined, { signal }));
   let retryDelayMs = 5_000;
+  let transientFailures = 0;
   while (!options.signal.aborted) {
     try {
       const result = await worker.once(options.signal);
       options.report?.(result);
       if (!options.loop) return;
       retryDelayMs = 5_000;
+      transientFailures = 0;
       await pause(5_000, options.signal);
     } catch (error) {
       if (options.signal.aborted) return;
       const code = workerErrorCode(error);
       if (!options.loop || !transientTransportCodes.has(code)) throw error;
       options.reportTransient?.(code);
+      transientFailures += 1;
+      if (transientFailures >= MAX_CONSECUTIVE_TRANSPORT_FAILURES) throw error;
       try { await pause(retryDelayMs, options.signal); }
       catch (pauseError) { if (options.signal.aborted) return; throw pauseError; }
       retryDelayMs = Math.min(retryDelayMs * 2, 60_000);

@@ -155,6 +155,15 @@ describe('outbound local worker, isolated transports only', () => {
       .rejects.toThrow('LOCAL_MINERU_HTTP_503');
     expect(temporary.once).toHaveBeenCalledTimes(1);
   });
+  it('reports a persistent Host transport outage after three consecutive attempts', async () => {
+    const worker = { once: jest.fn(async () => { throw new Error('LOCAL_MINERU_HTTP_503'); }) };
+    const delays: number[] = [];
+    await expect(pollLocalMineruWorker(worker, { loop: true, signal: new AbortController().signal,
+      pause: async milliseconds => { delays.push(milliseconds); } }))
+      .rejects.toThrow('LOCAL_MINERU_HTTP_503');
+    expect(worker.once).toHaveBeenCalledTimes(3);
+    expect(delays).toEqual([5_000, 10_000]);
+  });
   it('ends cleanly when the loop is stopped during transient backoff', async () => {
     const controller = new AbortController();
     const worker = { once: jest.fn(async () => { throw new Error('LOCAL_MINERU_HTTP_503'); }) };
