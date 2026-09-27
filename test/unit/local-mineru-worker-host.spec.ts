@@ -45,7 +45,8 @@ function setup() {
     readLocalWorkerById: jest.fn().mockResolvedValue(row) };
   const parsing = { readLocalWorkerRun: jest.fn().mockResolvedValue(loaded),
     readLocalWorkerOriginal: jest.fn().mockResolvedValue({ candidateReady: false, bytes: Buffer.from('%PDF-test') }),
-    acceptLocalWorkerCandidate: jest.fn().mockResolvedValue({ status: 'STAGING' }) };
+    acceptLocalWorkerCandidate: jest.fn().mockResolvedValue({ status: 'STAGING' }),
+    executeStep: jest.fn().mockResolvedValue({ status: 'PUBLISHED' }) };
   const leases = { claim: jest.fn().mockResolvedValue(fence), renew: jest.fn().mockResolvedValue(true),
     check: jest.fn().mockResolvedValue(undefined), release: jest.fn().mockResolvedValue(undefined) };
   const workItems = { listActiveLocalWorkerDelegations: jest.fn().mockResolvedValue([grant]),
@@ -240,6 +241,23 @@ describe('local MinerU Host dispatcher', () => {
     expect(response.send).not.toHaveBeenCalled();
     expect(response.setHeader).toHaveBeenCalledWith('Cache-Control', 'private, no-store');
     expect(h.leases.release).toHaveBeenCalledWith(h.scope, fence);
+    expect(h.parsing.executeStep).not.toHaveBeenCalled();
+  });
+
+  it('continues a browser candidate to publication under its current fence', async () => {
+    const h = setup();
+    h.workItems.listActiveLocalWorkerDelegations.mockResolvedValue([]);
+    h.workItems.listCompletedLocalWorkerDiscovery.mockResolvedValue([h.grant]);
+    const browserScope = { tenantId: h.serviceScope.tenantId, actorUserId: h.grant.actorUserId,
+      documentVersionId: h.grant.documentVersionId, roles: [] };
+    h.parsing.readLocalWorkerRun.mockResolvedValue({ scope: browserScope, run: h.loaded.run });
+    h.parsing.readLocalWorkerOriginal.mockResolvedValue({ candidateReady: true });
+    const browserLease = { leaseOwner: 'mineru:configured-principal:PRUN-test', leaseToken: 'browser-token', leaseGeneration: 1 };
+    const browserIdentity = { parseRunId: identity.parseRunId, documentVersionId: identity.documentVersionId, lease: browserLease };
+    await expect(h.worker.source(browserIdentity)).resolves.toEqual({ status: 'CANDIDATE_READY', parseRunId: identity.parseRunId });
+    expect(h.parsing.executeStep).toHaveBeenCalledWith(identity.parseRunId, browserScope,
+      { parseRunId: identity.parseRunId, ...browserLease });
+    expect(h.leases.release.mock.invocationCallOrder[0]).toBeGreaterThan(h.parsing.executeStep.mock.invocationCallOrder[0]);
   });
 
   it('propagates a rejected candidate without releasing its lease or reporting acceptance', async () => {
