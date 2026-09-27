@@ -1,5 +1,13 @@
 # M 主控集成交接
 
+## 2026-09-27 C179：资料库显示同版本已保存评估
+
+正常上传闭环形成的 JobAid/Overall 已保存工作原先只在“最近任务”可见；工程师在“工程文档”视图选择当前文件时，右侧仍只有独立 DocumentReading 的“尚无解读”。本轮复用现有 `getCanonicalLibraryQuicklook` 的本人授权及来源读回，仅在选中具体文档版本、独立解读未生成且版本带有 `readerWorkItemId` 时读取同版本工作摘要。右侧明确标记“关联评估短认识”，显示已保存状态、原有 `listBrief` 与完整评估/来源链接；保持独立文档解读与事项评估的区别，避免全目录逐项取数或新增模型调用。版本或 WorkItem 不匹配时不显示摘要，读取错误显式提示重试。
+
+实现 `6f32d7b25f57bc246f30062153006b69e80019eb`（父 `c43571afdd65fc23cb235d5623cc12be0f5a351d`）和窄栏排版修订 `58f20e9a00945272d260f1d938ecb6e5fabaec04`（父 `6f32d7b25f57bc246f30062153006b69e80019eb`）已快进同步 origin 同名开发分支；因祖先提交含私有运营资料未推公开 GitHub。首次 17b release `7690172266584345549`、排版 release `7690174398997990350` 均为 `finished`，最终部署 SHA 为 `58f20e9a0`、`error_logs=[]`。定向组件测试、前端 TypeScript、ESLint、提交前检查通过；Host 队列恢复测试 13/13、消费者恢复测试 39/39 通过，后两者为隔离验证。
+
+刘轩本人在线打开资料库所选 `document_version_0de2207a41f354cf6bac485c`：右侧读回 787-FTD-46-26002 的短意见、综合候选当前有效、链接精确指向 `WI-be6e7fd2-0065-4bbc-aec0-d04f89dc2420` 的完整评估与来源，并说明非正式采用或放行。列表中的“该版本尚无已保存解读”仍指独立 DocumentReading；右侧已清楚区分关联事项评估。此轮没有生成独立文档解读，也没有新的真实 ACK 丢失/租约接管故障注入；无人值守长期稳定性仍需持续运行证据，不能由一次闭环与隔离测试推定。
+
 ## 2026-09-27 C178：启用默认自动执行并完成一次正常上传闭环
 
 用户明确授权启用本机仅出站 MinerU 后台 worker 与 17c 唯一动态自动队列 C136。安装 `com.wiselink.local-mineru-worker` 用户 LaunchAgent，单次执行间隔 60 秒；启动配置只含现有 0600 专用凭据文件的路径，不含密钥值。本机初次启动因 macOS TCC 拒绝在可移动卷创建 stdout 日志而退出 78；将 stdout/stderr 改至用户 `~/Library/Logs/WiseLink/` 后，`launchctl` 显示注册成功、运行间隔 60 秒、末次退出 0。配置文件位于 `~/Library/LaunchAgents/com.wiselink.local-mineru-worker.plist`，最终候选 SHA256 为 `db1c81f19b9fc0f1e53b515110bb1f4997c6e29d2663781a114a50c57816b037`。日志已出现一次 `ACCEPTED`，后续连续 `IDLE`，stderr 为空；本机旧 localhost MinerU 服务与此出站 worker 不混用。
