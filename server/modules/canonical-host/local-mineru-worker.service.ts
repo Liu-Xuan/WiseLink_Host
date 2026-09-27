@@ -114,6 +114,11 @@ export class LocalMineruWorkerService {
     return this.withRun(input, async (identity, loaded) => {
       const source = await this.parsing.readLocalWorkerOriginal(identity.parseRunId, loaded.scope, fenceOf(identity));
       if (source.candidateReady) {
+        // Automatic WorkItems are advanced by their consumer. A browser parse
+        // has no such consumer, so the next worker tick continues the saved
+        // candidate under the same fenced actor scope.
+        if (!loaded.scope.automaticWorkItem)
+          await this.parsing.executeStep(identity.parseRunId, loaded.scope, fenceOf(identity));
         await this.release(loaded.scope, fenceOf(identity));
         return { status: 'CANDIDATE_READY', parseRunId: identity.parseRunId };
       }
