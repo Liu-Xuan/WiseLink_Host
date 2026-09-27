@@ -90,9 +90,11 @@ it('hides page furniture in the reading projection but keeps it in the saved sou
   expect(original).toEqual(before);
 });
 
-it('keeps unresolved coverage visible as a concise local list', () => {
+it('keeps unresolved coverage behind a visible count and source warning', () => {
   const original = originalFixture(); // fixture default has unresolved ranges
   const html = renderToStaticMarkup(createElement(DocumentOriginalReader, { original }));
+  expect(html).toContain('<details class="document-original-reading-limits">');
+  expect(html).toContain(`原文核对提示（${original.coverage.unresolvedRanges.length} 项）· 关键内容请对照 PDF 原页`);
   expect(html).toContain('原文覆盖与定位限制');
   expect(html).toContain('Constructed unread page.');
 });

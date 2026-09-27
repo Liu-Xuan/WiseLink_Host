@@ -49,7 +49,9 @@
 .source-reader-primary { min-width: 0; overflow: auto; background: var(--wl-sheet, #fff); }
 .document-original-reader { padding: 28px 34px 40px; }
 .document-original-reader > [role="status"] { margin: 0 0 16px; color: var(--wl-muted, #70777d); font-size: 11px; line-height: 1.7; }
-.document-original-reading-limits { margin: 0 0 18px; padding: 12px 14px; border: 1px solid var(--wl-border, #e1e4e5); border-radius: 10px; background: var(--wl-canvas, #f4f5f5); color: var(--wl-muted, #596268); font-size: 11px; line-height: 1.7; list-style: none; }
+.document-original-reading-limits { margin: 0 0 18px; padding: 12px 14px; border: 1px solid var(--wl-border, #e1e4e5); border-radius: 10px; background: var(--wl-canvas, #f4f5f5); color: var(--wl-muted, #596268); font-size: 11px; line-height: 1.7; }
+.document-original-reading-limits summary { cursor: pointer; font-weight: 600; }
+.document-original-reading-limits ul { margin: 10px 0 0; padding-left: 18px; }
 .document-original-reader > article { margin: 0 0 16px; scroll-margin-top: 18px; }
 .document-original-reader > article h3 { margin: 20px 0 8px; font-size: 14px; line-height: 1.6; }
 .document-original-reader > article h3:first-child { margin-top: 0; }

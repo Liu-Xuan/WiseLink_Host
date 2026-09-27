@@ -73,11 +73,14 @@ export function DocumentOriginalReader({
   }
 
   return <section className="document-original-reader" aria-label="已保存原文">
-    {coverage.unresolvedRanges.length > 0 && <ul className="document-original-reading-limits" aria-label="原文覆盖与定位限制">
-      {coverage.unresolvedRanges.map((range, index) => <li key={index}>
-        {range.pageIndexes.length ? `第 ${range.pageIndexes.map(page => page + 1).join('、')} 页：` : ''}{range.message}
-      </li>)}
-    </ul>}
+    {coverage.unresolvedRanges.length > 0 && <details className="document-original-reading-limits">
+      <summary>原文核对提示（{coverage.unresolvedRanges.length} 项）· 关键内容请对照 PDF 原页</summary>
+      <ul aria-label="原文覆盖与定位限制">
+        {coverage.unresolvedRanges.map((range, index) => <li key={index}>
+          {range.pageIndexes.length ? `第 ${range.pageIndexes.map(page => page + 1).join('、')} 页：` : ''}{range.message}
+        </li>)}
+      </ul>
+    </details>}
     {notice && <p role="status" className="document-original-notice">{notice}</p>}
     {choice && <div className="document-original-page-choice" role="group" aria-label="此段跨越多页，选择要定位的原件页">
       <span>此段跨越多页，选择定位页：</span>
