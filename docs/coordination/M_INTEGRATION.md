@@ -1,5 +1,11 @@
 # M 主控集成交接
 
+## 2026-09-28：C181 局部问题补全已提交并打包，Hosted 安装待 17c 登录
+
+针对 Turn 7–9 的 Review 失败，C181 在 JobAid Review 候选中增加仅供模型编写的 `issuePatches`：只能指定 Host 固定上一修订中的既有 `issueKey` 和实际变化字段；外部驱动保留未提供字段的原值，展开成完整 `issues` 后仍经过现有 Skill/Host 的来源、问题结构、授权与工作修订校验。显式 `[]` 才变更旧集合；未知/重复/无变化问题键、混用非空 `issues` 均拒绝。新增问题仍用完整 `issues`；没有新增路由、角色或正式业务权限。
+
+提交 `4d1837ea49f7927b80b796f5274ddb7142660036` 已快进同步到私有 origin 同名分支。全 Skill 583/583、定向测试、ESLint、发布清单及差异检查通过。61 文件包 `wiselink-research-and-synthesize@r09.c181` 的 SHA256 为 `85151758de1cfb14c0f27aa9d819bd690f66429f6ab03b8d722d4b253e046078`，manifest 验证通过，已上传 17c 私有文件 `/1877522661301300.zip` 与 `/1877522661302340.json`。Mac 已解锁；本会话原内部浏览器页不可连接，新开的 Chrome 17c 页要求飞书扫码登录。**尚未暂停调度、安装 C181 或进行真实后继 Review**。登录后先核对无在途消费者与原 cron 状态，再短时安装并按原状态恢复，最后从正常页面验证定点更正。
+
 ## 2026-09-28：C180 真实复验仍失败，后继 Review 需缩小模型输出合同
 
 17b 本人从旧版 SB `WI-4db598a0-33b8-4abd-a64d-df2aac9f29c5` 正常复核页提交 Turn 9，明确仅更新 `FTD-26002-NATURE` 的完整问题对象，其他三项保持原样，不请求 Overall。C136 在 C180 安装后自动领取，读取两批来源，期间只有一个在途消费者。候选曾被 Skill 校验拒绝并在原会话继续；最终模型未按函数工具合同返回，Host 于 06:34:48 +08 取消，错误 `HOSTED_REVIEW_EXECUTION_FAILED:REVIEW_TOOL_CHOICE_NOT_SATISFIED`。没有新 JobAid 修订，旧修订 11 和旧 Overall 均保留；不能将 C180 安装和测试通过写作业务更正成功。
