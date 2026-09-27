@@ -1,5 +1,11 @@
 # M 主控集成交接
 
+## 2026-09-27 C180：后台续跑与 ACK 响应丢失隔离验证
+
+19:31–19:34 +08 新鲜核对：本机 `com.wiselink.local-mineru-worker` 仍注册为每 60 秒执行一次，累计 48 次、末次退出 0，stdout 最近均为 `IDLE`、stderr 空；17c 原生调度页显示唯一动态 C136 `38f1cc05-4a5e-4ec0-863c-e5b3d579048b` 已启用、每分钟执行，其他 15 项停用。C136 最近 19:31–19:34 连续成功并返回 `IDLE`，没有新待领任务。此窗口说明两端自动调度持续工作，不推定长期稳定或新上传必然成功。
+
+消费者隔离测试新增连续故障场景：Host 已提交 ACK 但响应丢失时，私有 checkpoint 保留 `completionReady`；下一 tick 用原 WorkItem、lease token 与 generation 获取 `replayed=true` 回执后清理 checkpoint，不重跑已保存工作、不 BLOCK。`automatic-work-item-queue.test.mjs` 40/40 通过；Host dispatch 与租约授权测试合计 19/19 通过，覆盖 ACK 前成果确认、完成回执重放、错误 token/generation 拒绝。该验证没有向生产注入故障或更改业务数据；生产 ACK 响应丢失和旧租约写入的实际故障仍未发生，本轮不把隔离测试写成线上实证。
+
 ## 2026-09-27 C179：资料库显示同版本已保存评估
 
 正常上传闭环形成的 JobAid/Overall 已保存工作原先只在“最近任务”可见；工程师在“工程文档”视图选择当前文件时，右侧仍只有独立 DocumentReading 的“尚无解读”。本轮复用现有 `getCanonicalLibraryQuicklook` 的本人授权及来源读回，仅在选中具体文档版本、独立解读未生成且版本带有 `readerWorkItemId` 时读取同版本工作摘要。右侧明确标记“关联评估短认识”，显示已保存状态、原有 `listBrief` 与完整评估/来源链接；保持独立文档解读与事项评估的区别，避免全目录逐项取数或新增模型调用。版本或 WorkItem 不匹配时不显示摘要，读取错误显式提示重试。
