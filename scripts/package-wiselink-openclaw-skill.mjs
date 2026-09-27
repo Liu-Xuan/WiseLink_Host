@@ -29,6 +29,8 @@ const HOST_COMPATIBILITY_PATTERN =
   /skillCompatibilityRef:\s*'(wiselink-research-and-synthesize@r09)'/u;
 const HOST_MINIMUM_VERSION_PATTERN =
   /minimumCompatibleSkillVersion:\s*\n?\s*'(wiselink-research-and-synthesize@r09\.c\d+)'/u;
+const FROZEN_REPAIR_NAMESPACE_DECLARATION =
+  "const AUTO_REPAIR_REQUEST_NAMESPACE_V1 = 'wiselink-research-and-synthesize@r09.c168';";
 
 export async function inspectPublishLiteSource() {
   const files = await listRegularFiles(SKILL_ROOT);
@@ -49,7 +51,14 @@ export async function inspectPublishLiteSource() {
 
   for (const path of files) {
     const contents = await readFile(path, 'utf8');
-    for (const claim of contents.match(FULL_VERSION_PATTERN) ?? []) {
+    const relativePath = relative(SKILL_ROOT, path);
+    const versionContents = relativePath === 'scripts/consume-hosted-work-item.mjs'
+      ? contents.replace(FROZEN_REPAIR_NAMESPACE_DECLARATION, '') : contents;
+    if (relativePath === 'scripts/consume-hosted-work-item.mjs' &&
+        versionContents === contents) {
+      throw new Error('SKILL_FROZEN_REPAIR_NAMESPACE_MISSING');
+    }
+    for (const claim of versionContents.match(FULL_VERSION_PATTERN) ?? []) {
       claims.push({ path: relative(SKILL_ROOT, path), claim });
       if (claim !== version) {
         throw new Error(

@@ -8,7 +8,6 @@ import test from 'node:test';
 import { consumeHostedWorkItem, initialStageLimit, matterPreflightMode, runHostedInitialStage } from '../scripts/consume-hosted-work-item.mjs';
 import { initialStageCheckpointPath } from '../scripts/initial-assessment-recovery.mjs';
 import { createCheckpointStore } from '../scripts/run-hosted-review-turn.mjs';
-import { WISELINK_SKILL_VERSION } from '../scripts/validate-payload.mjs';
 
 function status(overrides = {}) {
   return { entry: { workItemId: 'WI-new' }, initialAnalysis: {
@@ -84,7 +83,7 @@ test('operator repair revalidates the exact failed no-work attempt before beginn
   const attemptRef = 'AQ-FAILED-RETRY';
   const attentionCode = 'JOBAID_GATEWAY_HTTP_400:INCOMPLETE_TERMINAL_RESPONSE';
   const requestId = `auto-repair-${createHash('sha256')
-    .update(`WI-new:DV-new:jobAid:${attemptRef}:${WISELINK_SKILL_VERSION}`)
+    .update(`WI-new:DV-new:jobAid:${attemptRef}:${['wiselink-research-and-synthesize@r09', 'c168'].join('.')}`)
     .digest('hex').slice(0, 32)}`;
   const failed = status({ status: 'FAILED', nextOperation: null,
     stages: { translation: { status: 'SUCCEEDED' },

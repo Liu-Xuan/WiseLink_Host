@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import { createHash } from 'node:crypto';
 import test from 'node:test';
 import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
@@ -615,6 +616,60 @@ test('repair interruption preserves the stopped claim and its stable successor r
   await assert.rejects(run, /SIMULATED_PROCESS_EXIT/u);
   assert.equal(ids.length, 2);
   assert.equal(ids[0], ids[1]);
+});
+
+test('a saved C168 repair is reconciled after the consumer exits before clearing its claim', async () => {
+  const stopped = { ...storedClaim(), workItemRevision: 4, consumerStopped: true,
+    attentionCode: 'JOBAID_GATEWAY_HTTP_400:INCOMPLETE_TERMINAL_RESPONSE' };
+  const priorAttemptRef = 'AQ-RETRY-NO-WORK';
+  const requestId = `auto-repair-${createHash('sha256').update([
+    'WI-QUEUE', 'DV-QUEUE', 'jobAid', priorAttemptRef,
+    ['wiselink-research-and-synthesize@r09', 'c168'].join('.'),
+  ].join(':')).digest('hex').slice(0, 32)}`;
+  const current = status({ nextOperation: 'SYNTHESIZE_OVERALL',
+    translation: 'SUCCEEDED', applicability: 'WAITING_INPUT',
+    jobAid: 'SUCCEEDED', overall: 'PENDING' });
+  current.stages.jobAid = { status: 'SUCCEEDED', attemptStatus: 'SUCCEEDED',
+    attemptRef: 'AQ-REPAIR-SAVED' };
+  const saved = { schemaVersion: 'wiselink.jobaid-work-read.v2',
+    executionStatus: 'SUCCEEDED', attemptId: 'ATT-REPAIR-SAVED',
+    inputWorkRevision: 0,
+    revision: { actionAttemptId: 'ATT-REPAIR-SAVED', requestId, workRevision: 4,
+      workItemId: 'WI-QUEUE', documentVersionId: 'DV-QUEUE',
+      basedOnWorkItemRevision: 4 } };
+  const options = { repairStoppedClaim: true, repairWorkItemId: 'WI-QUEUE',
+    repairAttemptRef: priorAttemptRef };
+  for (const change of [
+    {},
+    { saved: { ...saved, revision: { ...saved.revision,
+      requestId: 'auto-repair-other' } } },
+    { saved: { ...saved, revision: { ...saved.revision,
+      basedOnWorkItemRevision: 5 } } },
+  ]) {
+    const checkpoint = memoryCheckpoint(stopped);
+    const result = () => consumeAutomaticWorkItemQueueTick(options, {
+      checkpoint, now: () => new Date(START),
+      nextWorkItem: async () => assert.fail('lease is still active'),
+      acknowledgeWorkItem: async () => assert.fail('Overall is pending'),
+      readInitialStatus: async () => change.current ?? current,
+      readSavedWork: async (attemptRef, workItemId) => {
+        assert.equal(attemptRef, 'AQ-REPAIR-SAVED');
+        assert.equal(workItemId, 'WI-QUEUE');
+        return change.saved ?? saved;
+      },
+      consumeWorkItem: async () => assert.fail('saved JobAid must not rerun'),
+    });
+    if (change.current || change.saved) {
+      await assert.rejects(result, /AUTO_WORK_ITEM_REPAIR_STAGE_CHANGED/u);
+      assert.deepEqual(checkpoint.values.get('active-claim'), stopped);
+    } else {
+      const receipt = await result();
+      assert.equal(receipt.consumerStatus, 'SAVED_STAGE_RECONCILED');
+      assert.equal(receipt.nextOperation, 'SYNTHESIZE_OVERALL');
+      assert.equal(checkpoint.values.get('active-claim').consumerStopped, false);
+      assert.equal(checkpoint.values.get('active-claim').attentionCode, null);
+    }
+  }
 });
 
 test('repair refuses saved work, changed revision and authorization failure', async () => {
