@@ -27,6 +27,13 @@ export const JOBAID_GENERATION_POLICY = Object.freeze({
   payloadTargetTokens: [2000, 4000], maxScopeAdjustments: 0,
   basis: 'Application budget; 16000 is an observation on one Hosted M3 request, not a universal model limit.',
 });
+const M3_PROBE_WORK_ITEM_GENERATION_POLICY = Object.freeze({
+  ...JOBAID_GENERATION_POLICY,
+  version: 'continuous-body-batches-v6', probeRequestMaxCompletionTokens: 32768,
+  basis: 'The M3 Probe WorkItem route ended four native generations ' +
+    'at 16000 tokens with length; request 32768 below its registered 131072 model maximum. ' +
+    'This does not prove the provider accepts 32768.',
+});
 
 // Drop only byte-equivalent repeated metadata within this exact native session.
 // Persist the registry with the messages; a new task/session starts with full data.
@@ -390,7 +397,9 @@ export async function invokeHostedJobAidProblemModel(
   let inputUnits = 0;
   let outputUnits = 0;
   const checkpoint = options.assessmentCheckpoint;
-  const generationPolicy = JOBAID_GENERATION_POLICY;
+  const generationPolicy = modelInput.schemaVersion === JOBAID_PROBLEM_TASK_SCHEMA &&
+    options.executionModel?.modelRef === 'm3probe/minimax-m3'
+    ? M3_PROBE_WORK_ITEM_GENERATION_POLICY : JOBAID_GENERATION_POLICY;
   let scopeAdjustments = 0;
   let sourceMetadata = [];
   let sourceSelectionError = null;
@@ -539,6 +548,11 @@ export async function invokeHostedJobAidProblemModel(
       properties: { ...transportStepShape.properties, action: { type: 'string', enum: ['SAVE_WORK'] } },
     } : transportStepShape;
     const requestToolSchema = jobAidFunctionSchema(requestStepShape);
+    const requestMaxCompletionTokens = options.executionModel?.modelRef === 'miaoda/minimax-m3'
+      ? generationPolicy.requestMaxCompletionTokens
+      : modelInput.schemaVersion === JOBAID_PROBLEM_TASK_SCHEMA &&
+        options.executionModel?.modelRef === 'm3probe/minimax-m3'
+        ? generationPolicy.probeRequestMaxCompletionTokens : null;
     let requestMetrics = null;
     const performRequest = async () => {
       if (round === 1 && options.recoveredInitialResponse) return options.recoveredInitialResponse;
@@ -570,9 +584,8 @@ export async function invokeHostedJobAidProblemModel(
         parallel_tool_calls: false,
         n: 1,
         stream: false,
-        ...(options.executionModel?.modelRef === 'miaoda/minimax-m3'
-          ? { max_completion_tokens: generationPolicy.requestMaxCompletionTokens }
-          : {}),
+        ...(requestMaxCompletionTokens
+          ? { max_completion_tokens: requestMaxCompletionTokens } : {}),
       };
       const requestBody = JSON.stringify(requestPayload);
       requestMetrics = {
@@ -628,7 +641,7 @@ export async function invokeHostedJobAidProblemModel(
         operation,
         round,
         requestedToolChoice: toolChoice,
-        requestMaxCompletionTokens: options.executionModel?.modelRef === 'miaoda/minimax-m3' ? (generationPolicy.requestMaxCompletionTokens) : null,
+        requestMaxCompletionTokens,
         generationPolicyVersion: generationPolicy.version,
         scopeAdjustments,
         ...(requestMetrics ?? {}),

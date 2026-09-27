@@ -4,7 +4,7 @@ import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { createCheckpointStore } from '../scripts/run-hosted-review-turn.mjs';
-import { invokeHostedJobAidProblemModel, projectJobAidModelInput, projectBoundedInitialJobAidInput, canonicalizeKnownJobAidSourceAliases } from '../scripts/run-jobaid-problem-assessment.mjs';
+import { invokeHostedJobAidProblemModel, projectJobAidModelInput, projectBoundedInitialJobAidInput, canonicalizeKnownJobAidSourceAliases, JOBAID_GENERATION_POLICY } from '../scripts/run-jobaid-problem-assessment.mjs';
 
 test('source spelling repair uses only unique exact Host catalog refs and preserves the candidate', () => {
   const exact = 'DOCUMENT_ORIGINAL:document_version_example:PRUN-example:PRUN-example:u32:p1';
@@ -169,7 +169,7 @@ test('native gateway failures retain only fixed categories and do not replay amb
   }
 });
 
-test('M3 Probe incomplete HTTP 400 remains an explicit incomplete response, never inferred as length', async () => {
+test('M3 Probe incomplete HTTP 400 records its bounded request without inferring length', async () => {
   const shapes = [];
   const f = fixture([], {
     executionModel: { modelRef: 'm3probe/minimax-m3', displayName: 'M3 Probe Large',
@@ -192,9 +192,10 @@ test('M3 Probe incomplete HTTP 400 remains an explicit incomplete response, neve
     return true;
   });
   assert.equal(f.calls.length, 1);
-  assert.equal(f.calls[0].max_completion_tokens, undefined,
-    'do not guess an uncontracted completion limit for the M3 Probe route');
-  assert.equal(shapes[0].requestMaxCompletionTokens, null);
+  assert.equal(f.calls[0].max_completion_tokens, 32768,
+    'the installed M3 route previously ended four native generations at 16000 tokens');
+  assert.equal(shapes[0].requestMaxCompletionTokens, 32768);
+  assert.equal(shapes[0].generationPolicyVersion, 'continuous-body-batches-v6');
   assert.equal(shapes[0].finishReason, null);
   assert.equal(shapes[0].requestBytes, Buffer.byteLength(JSON.stringify(f.calls[0])));
   assert.equal(shapes[0].messagesBytes, Buffer.byteLength(JSON.stringify(f.calls[0].messages)));
@@ -329,6 +330,28 @@ test('a short original already delivered by Host can be saved without a duplicat
   assert.equal(f.reads.length, 0);
   assert.equal(f.saves.length, 1);
   assert.deepEqual(JSON.parse(f.calls[0].messages[1].content).deliveredEvidence, input.deliveredEvidence);
+});
+
+test('M3 Probe WorkItem keeps its bounded request through save and finish', async () => {
+  const input = initialChunkModelInput();
+  input.availableSources = input.availableSources.slice(0, 1);
+  input.deliveredEvidence = [{ evidenceRef: input.availableSources[0].ref,
+    kind: 'DOCUMENT_PASSAGE', excerpt: 'One exact original condition.' }];
+  const shapes = [];
+  const f = fixture([{ action: 'SAVE_WORK', work: completed }, { action: 'FINISH' }], {
+    executionModel: { modelRef: 'm3probe/minimax-m3', displayName: 'M3 Probe Large',
+      providerKind: 'CUSTOM', settingsRevision: 1, selectedAt: '2026-09-25T00:00:00.000Z' },
+    registeredModelRefs: ['m3probe/minimax-m3'],
+    observeModelOutput: async shape => shapes.push(shape),
+  });
+  const result = await f.run(input);
+  assert.equal(result.output.workRevisionRef, 'JAWR-1');
+  assert.equal(f.saves.length, 1);
+  assert.equal(f.reads.length, 0);
+  assert.equal(f.calls.length, 2);
+  assert.ok(f.calls.every(call => call.max_completion_tokens === 32768));
+  assert.ok(shapes.every(shape => shape.requestMaxCompletionTokens === 32768 &&
+    shape.generationPolicyVersion === 'continuous-body-batches-v6'));
 });
 
 test('repeated correction number after a successful source read keeps distinct round checkpoints', () => persisted(async checkpoint => {
@@ -1355,6 +1378,22 @@ test('superseded checkpoint cannot silently resume under a different generation 
     executionModel: f.options.executionModel,
   } });
   await assert.rejects(f.run(), /JOBAID_CHECKPOINT_POLICY_CHANGED/);
+  assert.equal(f.calls.length, 0);
+}));
+
+test('M3 Probe WorkItem refuses a v5 checkpoint before another model call', () => persisted(async checkpoint => {
+  const executionModel = { modelRef: 'm3probe/minimax-m3', displayName: 'M3 Probe Large',
+    providerKind: 'CUSTOM', settingsRevision: 1, selectedAt: '2026-09-25T00:00:00.000Z' };
+  const f = fixture([], { assessmentCheckpoint: checkpoint, executionModel,
+    registeredModelRefs: ['m3probe/minimax-m3'] });
+  const input = initialChunkModelInput();
+  await checkpoint.writeOnce('assessment-enabled', {
+    version: 1, startedAt: Date.now(),
+    binding: { operation: 'EVALUATE_JOBAID', modelInput: input,
+      sessionDiscriminator: f.options.sessionDiscriminator, executionModel },
+    generationPolicy: JOBAID_GENERATION_POLICY,
+  });
+  await assert.rejects(f.run(input), /JOBAID_CHECKPOINT_POLICY_CHANGED/);
   assert.equal(f.calls.length, 0);
 }));
 
