@@ -1,5 +1,11 @@
 # M 主控集成交接
 
+## 2026-09-27 C176：仅出站本机自动启动配置已准备，未启用
+
+依现有已通过真实空队列调用的 worker 环境，在 `/private/tmp/wl-local-mineru-worker.prepared.plist` 生成候选 LaunchAgent（SHA256 `dfeb9f598fdc5bbacc3f28704079040f3a4f2f787766082343cdad95fdacb8ce`，0600）。标签 `com.wiselink.local-mineru-worker`，`RunAtLoad=true`、`StartInterval=60`，每次只运行不带 `--loop` 的单次 worker；环境仅存现有专用凭据文件路径与必要 Host/离线解析路径，不存密钥值。`plutil -lint` 通过、程序与配置路径均存在；`launchctl print` 返回该标签不存在，证明本轮没有注册启动。macOS 本机 `launchd.plist` 手册说明 `StartInterval` 触发时如果该 job 仍在运行，该次触发会跳过，因此一次长解析期间同一 job 不会叠加启动。此配置位于临时目录，正式安装前须再次核对路径和 SHA，并在获准后复制到用户 LaunchAgents、启动与读回；旧 `com.wiselink.mineru` localhost API 不在此配置范围。
+
+当前启用范围的用户答复仍未收到；17c C136 也仍停用。此准备不构成后台可用性或默认闭环验收。
+
 ## 2026-09-27 C175：新凭据文件模式的真实空队列调用
 
 启用无人值守前，17b online 数据库通过官方只读 SQL 新鲜回读 `auto_work_item_authorization` 为 `COMPLETED=5`、`BLOCKED=1`，没有 `WAITING/LEASED`。在该快照后用 `WL_LOCAL_MINERU_API_KEY_FILE` 指向现有仓库外 0600 专用凭据，带确切 Host origin、应用 base path、离线 MinerU 配置与本机 Python，对 `scripts/local-mineru-worker.ts` 执行一次不带 `--loop` 的受控调用：实际返回 `{"status":"IDLE"}`、退出码 0。这验证了新文件读取方式在真实专用入口上完成一次空队列领取；没有解析、回传或后台进程。首次启动把 `$PWD` 单引号包裹，ts-node 在本地装载前因字面路径报 TS5083，未触达 Host；修正为可展开路径后一次成功，不计首次为业务失败。
