@@ -1,5 +1,11 @@
 # M 主控集成交接
 
+## 2026-09-28：Turn 8 暴露局部问题覆盖缺字段，C180 修复候选前校验
+
+17b 旧版 SB 事项 `WI-4db598a0-33b8-4abd-a64d-df2aac9f29c5` 从正常复核页提交 Turn 8，仅请求修改 `FTD-26002-NATURE`，未请求 Overall。C136 自动领取并取回来源，但本轮最终候选把另一个旧问题 `ATA-46-GATELINK-SCOPE` 以只有 `issueKey` 和 `body` 的局部对象提交。Host 把更新问题视为完整覆盖，因缺 `question` 返回 `JOBAID_ISSUE_QUESTION_INVALID`，attempt 于 05:56:42 +08 取消。此前两个候选分别因未登记证据和缺少 `issues` 被 Skill 拒绝；本轮没有新工作修订，原修订 11 和旧 Overall 保留。
+
+C180 在 Host 提交前要求每个更新问题包含非空 `issueKey`、`question`、`body`，以及 `riskScenarios`、`measures`、`otherClassifications`、`openQuestions`、`requirementHandling` 五个显式数组；缺项在同一模型会话内反馈完整覆盖合同，并强调只改工程师指定的问题键、从已保存工作复制未变字段。该校验针对真实失败和省略集合可能清空旧开放问题的风险，不替模型补字段，也不改 Host 授权或正式采用。定向复现与反馈测试通过，全 Skill 580/580、ESLint、61 文件包声明检查通过。尚未安装与线上复验，不能宣称旧 SB 已更正。
+
 ## 2026-09-28：Turn 7 揭示空更正与完成范围冲突，C179 已安装
 
 17b 旧版 SB 事项 `WI-4db598a0-33b8-4abd-a64d-df2aac9f29c5` 的正常后继 Review Turn 7（本地检查点 `RT-0875b830-2330-4ef5-9178-be15e1da2fcc`）由 C136 自动领取，Host 读回 11 个确切原文片段。模型先后提交一次无效工作 schema 和一次重复问题分区，C178 在原会话内有界纠正；第三次候选却是 `issues:[]`、四个既有问题键均列为 unchanged，只有完成说明/变化摘要，并把 `roundCompletion` 改成 `COMPLETE`。旧问题仍有开放问题，Host 因 `JOBAID_OPEN_QUESTIONS_REQUIRE_QUALIFIED_COMPLETION` 拒绝并取消该 attempt。没有 JobAid 新修订，也没有 Overall 更新；这不是原文资料不足。

@@ -1381,7 +1381,7 @@ test('requires 35 MCP capabilities, six review tools, and hosted provenance', ()
   assert.ok(HOST_MCP_TOOLS.includes('commit_applicability_candidate'));
   assert.equal(
     WISELINK_SKILL_VERSION,
-    'wiselink-research-and-synthesize@r09.c179',
+    'wiselink-research-and-synthesize@r09.c180',
   );
   assert.equal(
     WISELINK_SKILL_COMPATIBILITY_REF,
@@ -7296,7 +7296,9 @@ test('JobAid assessment update permits one bounded citation correction after two
     const name = requests <= 2 ? 'read_wiselink_review_sources' : 'return_wiselink_review_candidate';
     const args = requests <= 2 ? { sourceRefIds: ['unread-handle'] } : {
       answer: '定点更正', jobAidWorkingDelta: { issues: [{ issueKey: 'existing-issue',
-        body: requests === 3 ? '原文没有支持该顺序。' : '原文没有支持该顺序。[[evidence:read-one]]' }] },
+        question: 'SB 与产线装机是否存在既定先后关系？',
+        body: requests === 3 ? '原文没有支持该顺序。' : '原文没有支持该顺序。[[evidence:read-one]]',
+        riskScenarios: [], measures: [], otherClassifications: [], openQuestions: [], requirementHandling: [] }] },
     };
     return Response.json({ choices: [{ message: { content: null, tool_calls: [{ id: `correction-${requests}`,
       type: 'function', function: { name, arguments: JSON.stringify(args) },
@@ -7688,11 +7690,19 @@ test('JobAid update projection keeps exact source bindings and saved work while 
 });
 
 test('JobAid update rejects uncited issue bodies before Host commit while leaving prior work untouched', () => {
-  const delta = { jobAidWorkingDelta: { issues: [{ issueKey: 'existing', body: '原文说明措施仍受条件限制。' }] } };
+  const issue = { issueKey: 'existing', question: '措施有哪些条件？', body: '原文说明措施仍受条件限制。',
+    riskScenarios: [], measures: [], otherClassifications: [], openQuestions: [], requirementHandling: [] };
+  const delta = { jobAidWorkingDelta: { issues: [issue] } };
   assert.throws(() => validateJobAidUpdatedIssueBodies(delta), /REVIEW_JOBAID_BODY_CITATIONS_REQUIRED/u);
   assert.equal(delta.jobAidWorkingDelta.issues[0].body, '原文说明措施仍受条件限制。');
   delta.jobAidWorkingDelta.issues[0].body = '原文说明措施仍受条件限制。[[source:read-1]]';
   assert.doesNotThrow(() => validateJobAidUpdatedIssueBodies(delta));
+  delete issue.question;
+  assert.throws(() => validateJobAidUpdatedIssueBodies(delta), /REVIEW_JOBAID_ISSUE_FULL_CONTENT_REQUIRED/u);
+  issue.question = '措施有哪些条件？';
+  delete issue.openQuestions;
+  assert.throws(() => validateJobAidUpdatedIssueBodies(delta), /REVIEW_JOBAID_ISSUE_FULL_CONTENT_REQUIRED/u);
+  issue.openQuestions = [];
   delta.jobAidWorkingDelta.issues[0].body += ' [[broken';
   assert.throws(() => validateJobAidUpdatedIssueBodies(delta), /REVIEW_JOBAID_BODY_CITATION_MALFORMED/u);
 });
@@ -7742,6 +7752,37 @@ test('JobAid update gives specific correction for an empty assessment delta', as
   } });
   assert.equal(requests, 2);
   assert.deepEqual(result.output.jobAidWorkingDelta.issues, [{ issueKey: 'existing' }]);
+});
+
+test('JobAid review corrects a partial issue before Host can clear saved collections', async () => {
+  let requests = 0;
+  const result = await invokeReviewWithTransport({ input: { context: {
+    purpose: 'UPDATE_ASSESSMENT', problemAssessment: { previousWork: { content: {
+      issues: [{ issueKey: 'existing', question: '原问题', openQuestions: [{ question: '仍待核？' }] }],
+    } } },
+  } } }, {
+    gatewayUrl: 'https://official.invalid', gatewayToken: 'fixture-only', configuredModelVersion: 'fixture/provider',
+    validateCandidate: validateJobAidUpdatedIssueBodies,
+  }, { requestGateway: async (_url, init) => {
+    const request = JSON.parse(init.body);
+    if (++requests === 2) {
+      const feedback = JSON.parse(request.messages.at(-1).content);
+      assert.equal(feedback.validationError, 'REVIEW_JOBAID_ISSUE_FULL_CONTENT_REQUIRED');
+      assert.match(feedback.instruction, /complete replacement/u);
+    }
+    const issue = { issueKey: 'existing', body: '已读原文。[[source:read-1]]',
+      ...(requests === 2 ? { question: '原问题', riskScenarios: [], measures: [],
+        otherClassifications: [], openQuestions: [{ question: '仍待核？', affects: '适用范围',
+          nextEvidence: '确切装机记录', reason: '当前未取得' }], requirementHandling: [] } : {}) };
+    return Response.json({ choices: [{ message: { content: null, tool_calls: [{
+      id: `candidate-${requests}`, type: 'function', function: {
+        name: 'return_wiselink_review_candidate',
+        arguments: JSON.stringify({ answer: '定点更正', jobAidWorkingDelta: { issues: [issue] } }),
+      },
+    }] } }] });
+  } });
+  assert.equal(requests, 2);
+  assert.equal(result.output.jobAidWorkingDelta.issues[0].openQuestions.length, 1);
 });
 
 test('JobAid update first reads an authorized document before exposing the candidate channel', async () => {
