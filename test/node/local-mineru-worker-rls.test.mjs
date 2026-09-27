@@ -154,5 +154,37 @@ test('local worker discovers existing delegation before actor-owned parse access
       lease: claimed.lease }), /LOCAL_MINERU_RUN_NOT_FOUND|LOCAL_MINERU.*MISMATCH|DOCUMENT_AUTOMATIC_LEASE_REJECTED/);
     const [unchanged] = await admin`SELECT lease_owner,lease_token FROM dm_document_parse_run WHERE parse_run_id='PRUN-rls'`;
     assert.deepEqual(unchanged, saved);
+
+    // A later browser request uses the immutable parse admission plus a completed
+    // grant only to recover its actor. No automatic WorkItem lease is resurrected.
+    await admin`UPDATE dm_document_parse_run SET status='FAILED',error_code='TEST_SUPERSEDED',
+      completed_at=now(),lease_owner=NULL,lease_token=NULL,lease_expires_at=NULL WHERE parse_run_id='PRUN-rls'`;
+    await admin`UPDATE work_item SET source_artifact_id='ART-RLS' WHERE work_item_id='WI-RLS'`;
+    await admin`UPDATE auto_work_item_authorization SET status='COMPLETED',lease_owner=NULL,
+      lease_token=NULL,lease_expires_at=NULL,completed_lease_token_hash=${'b'.repeat(64)},
+      completed_lease_generation=3,completed_at=now() WHERE work_item_id='WI-RLS'`;
+    await admin`INSERT INTO dm_document_parse_run(parse_run_id,document_version_id,tenant_id,actor_user_id,request_id,
+      parse_revision,expected_published_revision,status,bucket_id,source_binding,deadline_at)
+      VALUES ('PRUN-browser','DV-RLS','TENANT-RLS','ACTOR-RLS','BROWSER-RLS',2,0,'RUNNING','BUCKET-RLS',
+        ${admin.json(binding)},now()+interval '10 minutes')`;
+    assert.equal((await runtime`SELECT * FROM dm_document_parse_run`).length, 0);
+    assert.equal((await workItems.listCompletedLocalWorkerDiscovery({ tenantId: 'TENANT-RLS' })).length, 1);
+    const browser = await worker.claim({});
+    assert.equal(browser.status, 'CLAIMED');
+    assert.equal(browser.parseRunId, 'PRUN-browser');
+    assert.equal(browser.lease.leaseOwner, 'mineru:P-RLS:PRUN-browser');
+    const browserScope = { tenantId: 'TENANT-RLS', actorUserId: 'ACTOR-RLS', documentVersionId: 'DV-RLS' };
+    await actors.withActorScope('ACTOR-RLS', async () => {
+      await leases.check(browserScope, { parseRunId: browser.parseRunId, ...browser.lease });
+      await assert.rejects(leases.check(browserScope, { parseRunId: browser.parseRunId,
+        ...browser.lease, leaseGeneration: browser.lease.leaseGeneration + 1 }), /DOCUMENT_STEP_LEASE_REJECTED/);
+    });
+    await admin`UPDATE work_item SET source_artifact_id='ART-CHANGED' WHERE work_item_id='WI-RLS'`;
+    await assert.rejects(worker.renew({ parseRunId: browser.parseRunId, documentVersionId: browser.documentVersionId,
+      lease: browser.lease }), /LOCAL_MINERU_RUN_NOT_FOUND/);
+    await admin`UPDATE work_item SET source_artifact_id='ART-RLS' WHERE work_item_id='WI-RLS'`;
+    await admin`UPDATE dm_document_version SET owner_id='ACTOR-FOREIGN' WHERE document_version_id='DV-RLS'`;
+    await assert.rejects(worker.renew({ parseRunId: browser.parseRunId, documentVersionId: browser.documentVersionId,
+      lease: browser.lease }));
   } finally { await runtime.end(); await admin.end(); }
 });
