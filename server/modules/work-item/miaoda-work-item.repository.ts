@@ -493,6 +493,51 @@ export class MiaodaWorkItemRepository {
     )).orderBy(autoWorkItemAuthorization.createdAt).limit(Math.min(Math.max(input.limit ?? 50, 1), 100));
   }
 
+  /** Discovery seed for a browser-admitted parse only. A completed WorkItem grant
+   * does not authorize a new automatic execution or revive its old lease. */
+  async listCompletedLocalWorkerDiscovery(input: {
+    tenantId: string; documentVersionId?: string; beforeWorkItemId?: string; limit?: number;
+  }) {
+    return this.db.select().from(autoWorkItemAuthorization).where(and(
+        eq(autoWorkItemAuthorization.tenantId, input.tenantId),
+        eq(autoWorkItemAuthorization.grantKind, 'MIAODA_CANONICAL_PARSE_REQUEST'),
+        eq(autoWorkItemAuthorization.status, 'COMPLETED'),
+        isNotNull(autoWorkItemAuthorization.completedAt),
+        ...(input.documentVersionId ? [eq(autoWorkItemAuthorization.documentVersionId, input.documentVersionId)] : []),
+        ...(input.beforeWorkItemId ? [lt(autoWorkItemAuthorization.workItemId, input.beforeWorkItemId)] : []),
+      )).orderBy(desc(autoWorkItemAuthorization.workItemId)).limit(Math.min(Math.max(input.limit ?? 50, 1), 100));
+  }
+
+  /** Recheck the WorkItem join only after entering the actor's ordinary RLS scope. */
+  async loadCompletedLocalWorkerDiscovery(input: {
+    tenantId: string; workItemId: string; actorUserId: string; documentVersionId: string;
+  }) {
+    const [row] = await this.db.select({ authorization: autoWorkItemAuthorization }).from(autoWorkItemAuthorization)
+      .innerJoin(workItem, and(
+        eq(workItem.tenantId, autoWorkItemAuthorization.tenantId),
+        eq(workItem.workItemId, autoWorkItemAuthorization.workItemId),
+        eq(workItem.requestId, autoWorkItemAuthorization.requestId),
+        eq(workItem.requestedByUserId, autoWorkItemAuthorization.actorUserId),
+        eq(workItem.documentId, autoWorkItemAuthorization.documentId),
+        eq(workItem.documentVersionId, autoWorkItemAuthorization.documentVersionId),
+        eq(workItem.sourceArtifactId, autoWorkItemAuthorization.sourceArtifactId),
+        eq(workItem.sourceFileSha256, autoWorkItemAuthorization.sourceFileSha256),
+        eq(workItem.sourceByteLength, autoWorkItemAuthorization.sourceByteLength),
+      )).where(and(
+        eq(autoWorkItemAuthorization.tenantId, input.tenantId),
+        eq(autoWorkItemAuthorization.workItemId, input.workItemId),
+        eq(autoWorkItemAuthorization.actorUserId, input.actorUserId),
+        eq(autoWorkItemAuthorization.documentVersionId, input.documentVersionId),
+        eq(autoWorkItemAuthorization.grantKind, 'MIAODA_CANONICAL_PARSE_REQUEST'),
+        eq(autoWorkItemAuthorization.status, 'COMPLETED'),
+        isNotNull(autoWorkItemAuthorization.completedAt),
+        eq(workItem.actionType, ACTION_TYPE),
+        eq(workItem.status, 'CANDIDATE_READBACK_VERIFIED'),
+        isNotNull(workItem.packageId),
+      )).limit(1);
+    return row?.authorization ?? null;
+  }
+
   /** Loads the exact active, service-owned lease that gates downstream tools. */
   async loadActiveAutoProcessingLease(input: {
     tenantId: string;

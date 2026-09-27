@@ -8,7 +8,7 @@ import type {
 import { CANONICAL_SERVICE_SCOPE_AUTHORIZATION, type CanonicalServiceScopeAuthorizationPort,
   type CanonicalVerifiedAutoWorkItemQueueScope } from './canonical-service-scope.authorization';
 import { EngineeringMatterWorkingRepository } from './engineering-matter-working.repository';
-import { DocumentParsingRepository, documentParseError, documentLocalWorkerReceipt, type DocumentParseScope } from '../document-management/src/hosted/nest/document-parsing.repository';
+import { DocumentParsingRepository, documentParseError, documentLocalWorkerReceipt, type DocumentParseRow, type DocumentParseScope } from '../document-management/src/hosted/nest/document-parsing.repository';
 import { DocumentParsingHostedService } from '../document-management/src/hosted/nest/document-parsing-hosted.service';
 import { DocumentStepLeaseRepository, type DocumentStepFence } from '../document-management/src/hosted/nest/document-step-lease.repository';
 
@@ -62,6 +62,50 @@ export class LocalMineruWorkerService {
         if (status !== 403 && status !== 404 && !automaticLeaseLost) throw error;
         this.logger.warn(`Local MinerU skipped an inaccessible document delegation ${delegation.workItemId}.`);
       }
+    }
+    // A browser-admitted parse has its own actor request and no automatic WorkItem
+    // lease. A completed grant is only a service-readable actor/source directory.
+    let beforeWorkItemId: string | undefined;
+    for (let page = 0; page < 100; page++) {
+      const completed = await this.workItems.listCompletedLocalWorkerDiscovery({ tenantId: service.tenantId,
+        beforeWorkItemId, limit: 50 });
+      for (const discovery of completed) {
+        try {
+          const claimed = await this.actors.withActorScope(discovery.actorUserId, async () => {
+            const verified = await this.workItems.loadCompletedLocalWorkerDiscovery({ tenantId: service.tenantId,
+              workItemId: discovery.workItemId, actorUserId: discovery.actorUserId,
+              documentVersionId: discovery.documentVersionId });
+            if (!verified) return null;
+            const scope = browserScope(service, verified);
+            const candidates = await this.repository.listLocalWorkerCandidates(service.tenantId, 50, scope);
+            for (const row of candidates) {
+              if (!matchesBrowserRun(verified, row)) continue;
+              const loaded = await this.parsing.readLocalWorkerRun(row.parseRunId, scope);
+              if (!matchesBrowserRun(verified, loaded.run)) continue;
+              this.assertPrincipal(service, loaded.scope);
+              const fence = await this.leases.claim(loaded.scope, row.parseRunId,
+                browserOwner(service, row.parseRunId), 120_000);
+              if (!fence) continue;
+              return { status: 'CLAIMED' as const, parseRunId: row.parseRunId,
+                documentVersionId: row.documentVersionId, sourceSha256: loaded.run.sourceBinding.pdfSha256,
+                sourceByteLength: loaded.run.sourceBinding.byteLength,
+                settings: { ...loaded.run.sourceBinding.parserInput!.settings! },
+                deadlineAt: loaded.run.deadlineAt.toISOString(),
+                lease: { leaseOwner: fence.leaseOwner, leaseToken: fence.leaseToken,
+                  leaseGeneration: fence.leaseGeneration } };
+            }
+            return null;
+          });
+          if (claimed) return claimed;
+        } catch (error) {
+          const status = error && typeof error === 'object' && 'statusCode' in error ? error.statusCode : null;
+          if (status !== 403 && status !== 404) throw error;
+          this.logger.warn(`Local MinerU skipped an inaccessible browser parse for ${discovery.documentVersionId}.`);
+        }
+      }
+      if (completed.length < 50) break;
+      beforeWorkItemId = completed.at(-1)!.workItemId;
+      if (page === 99) throw documentParseError('LOCAL_MINERU_BROWSER_DISCOVERY_LIMIT', 503);
     }
     return { status: 'IDLE' };
   }
@@ -136,6 +180,32 @@ export class LocalMineruWorkerService {
       });
       if (result) return result.value;
     }
+    if (identity.lease.leaseOwner === browserOwner(service, identity.parseRunId)) {
+      let beforeWorkItemId: string | undefined;
+      for (let page = 0; page < 100; page++) {
+        const completed = await this.workItems.listCompletedLocalWorkerDiscovery({ tenantId: service.tenantId,
+          documentVersionId: identity.documentVersionId, beforeWorkItemId, limit: 50 });
+        for (const discovery of completed) {
+          const result = await this.actors.withActorScope(discovery.actorUserId, async () => {
+            const verified = await this.workItems.loadCompletedLocalWorkerDiscovery({ tenantId: service.tenantId,
+              workItemId: discovery.workItemId, actorUserId: discovery.actorUserId,
+              documentVersionId: discovery.documentVersionId });
+            if (!verified) return null;
+            const scope = browserScope(service, verified);
+            const row = await this.repository.readLocalWorkerById(service.tenantId, identity.parseRunId);
+            if (!row || !matchesBrowserRun(verified, row)) return null;
+            const loaded = await this.parsing.readLocalWorkerRun(row.parseRunId, scope);
+            if (!matchesBrowserRun(verified, loaded.run)) return null;
+            this.assertPrincipal(service, loaded.scope);
+            return { value: await action(identity, loaded) };
+          });
+          if (result) return result.value;
+        }
+        if (completed.length < 50) break;
+        beforeWorkItemId = completed.at(-1)!.workItemId;
+        if (page === 99) throw documentParseError('LOCAL_MINERU_BROWSER_DISCOVERY_LIMIT', 503);
+      }
+    }
     throw documentParseError('LOCAL_MINERU_RUN_NOT_FOUND', 404);
   }
 
@@ -173,6 +243,26 @@ function owner(scope: CanonicalVerifiedAutoWorkItemQueueScope, grant: NonNullabl
   const value = `mineru:${scope.principalId}:${grant.workItemId}:g${grant.leaseGeneration}`;
   if (!/^[A-Za-z0-9_-]{1,96}$/u.test(grant.workItemId) || !Number.isSafeInteger(grant.leaseGeneration) || grant.leaseGeneration < 1 ||
       !/^[A-Za-z0-9:_-]{1,160}$/u.test(value)) throw documentParseError('LOCAL_MINERU_LEASE_OWNER_INVALID', 503);
+  return value;
+}
+type CompletedDiscovery = Awaited<ReturnType<MiaodaWorkItemRepository['listCompletedLocalWorkerDiscovery']>>[number];
+function browserScope(service: CanonicalVerifiedAutoWorkItemQueueScope, discovery: CompletedDiscovery) {
+  return { tenantId: service.tenantId, actorUserId: discovery.actorUserId,
+    documentVersionId: discovery.documentVersionId, roles: [] as string[] };
+}
+function matchesBrowserRun(discovery: CompletedDiscovery, run: DocumentParseRow): boolean {
+  const binding = run.sourceBinding;
+  return !binding.automaticWorkItem && run.tenantId === discovery.tenantId &&
+    run.actorUserId === discovery.actorUserId && run.documentVersionId === discovery.documentVersionId &&
+    binding.documentVersionId === discovery.documentVersionId && binding.documentId === discovery.documentId &&
+    binding.sourceArtifactId === discovery.sourceArtifactId && binding.pdfSha256 === discovery.sourceFileSha256 &&
+    binding.byteLength === discovery.sourceByteLength && binding.parserInput?.mode === 'LOCAL_MINERU_WORKER' &&
+    binding.parserInput.settings?.localMineruFallbackEnabled === true;
+}
+function browserOwner(service: CanonicalVerifiedAutoWorkItemQueueScope, parseRunId: string): string {
+  const value = `mineru:${service.principalId}:${parseRunId}`;
+  if (!/^PRUN-[A-Za-z0-9-]{1,90}$/u.test(parseRunId) || !/^[A-Za-z0-9:_-]{1,160}$/u.test(value))
+    throw documentParseError('LOCAL_MINERU_LEASE_OWNER_INVALID', 503);
   return value;
 }
 function fenceOf(input: LocalMineruWorkerIdentity): DocumentStepFence { return { parseRunId: input.parseRunId, ...input.lease }; }

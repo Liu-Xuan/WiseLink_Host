@@ -21,7 +21,7 @@ const denied = Object.assign(new Error('DOCUMENT_STEP_LEASE_REJECTED'), { status
 function setup() {
   const serviceScope = { appId: 'app_17bzc551rsg', tenantId: 'configured-tenant',
     principalId: 'configured-principal', authorizationFingerprint: 'verified' };
-  const grant = { workItemId: 'WI-test', requestId: 'REQ-test', actorUserId: 'persisted-user',
+  const grant = { tenantId: serviceScope.tenantId, workItemId: 'WI-test', requestId: 'REQ-test', actorUserId: 'persisted-user',
     documentVersionId: identity.documentVersionId, documentId: 'DOC-test', sourceArtifactId: 'ART-test',
     sourceFileSha256: 'a'.repeat(64), sourceByteLength: 10, leaseGeneration: 3 };
   const scope = { tenantId: serviceScope.tenantId, actorUserId: grant.actorUserId,
@@ -30,14 +30,14 @@ function setup() {
       documentId: grant.documentId, sourceArtifactId: grant.sourceArtifactId, sourceFileSha256: grant.sourceFileSha256,
       sourceByteLength: grant.sourceByteLength, leaseGeneration: grant.leaseGeneration,
     } };
-  const sourceBinding = { documentId: grant.documentId, sourceArtifactId: grant.sourceArtifactId,
+  const sourceBinding = { documentVersionId: grant.documentVersionId, documentId: grant.documentId, sourceArtifactId: grant.sourceArtifactId,
     pdfSha256: grant.sourceFileSha256, byteLength: grant.sourceByteLength,
     parserInput: { mode: 'LOCAL_MINERU_WORKER', settings: { localMineruFallbackEnabled: true } },
   };
-  const row = { parseRunId: identity.parseRunId, documentVersionId: identity.documentVersionId,
+  const row = { tenantId: serviceScope.tenantId, parseRunId: identity.parseRunId, documentVersionId: identity.documentVersionId,
     actorUserId: grant.actorUserId, sourceBinding };
   const artifactProgress: Array<{ relativePath: string; localWorkerReceipt?: typeof identity.lease }> = [];
-  const loaded = { scope, run: { sourceBinding, artifactProgress, deadlineAt: new Date('2026-09-27T00:00:00Z') } };
+  const loaded = { scope, run: { ...row, artifactProgress, deadlineAt: new Date('2026-09-27T00:00:00Z') } };
   const authorization = { assertAutoWorkItemQueueTransport: jest.fn().mockResolvedValue(undefined),
     authorizeOpenClawAutoWorkItemQueue: jest.fn().mockResolvedValue(serviceScope) };
   const actors = { withActorScope: jest.fn(async (_actor: string, action: () => Promise<unknown>) => action()) };
@@ -49,6 +49,8 @@ function setup() {
   const leases = { claim: jest.fn().mockResolvedValue(fence), renew: jest.fn().mockResolvedValue(true),
     check: jest.fn().mockResolvedValue(undefined), release: jest.fn().mockResolvedValue(undefined) };
   const workItems = { listActiveLocalWorkerDelegations: jest.fn().mockResolvedValue([grant]),
+    listCompletedLocalWorkerDiscovery: jest.fn().mockResolvedValue([]),
+    loadCompletedLocalWorkerDiscovery: jest.fn().mockResolvedValue(grant),
     loadActiveAutoProcessingLease: jest.fn().mockResolvedValue({ authorization: grant }) };
   const worker = new LocalMineruWorkerService(authorization as unknown as CanonicalServiceScopeAuthorizationPort,
     actors as unknown as EngineeringMatterWorkingRepository, repository as unknown as DocumentParsingRepository,
@@ -143,6 +145,69 @@ describe('local MinerU Host dispatcher', () => {
     await expect(h.worker.claim({})).resolves.toEqual({ status: 'IDLE' });
     expect(h.actors.withActorScope).not.toHaveBeenCalled();
     expect(h.repository.listLocalWorkerCandidates).not.toHaveBeenCalled();
+  });
+
+  it('claims and reads a browser-admitted run using a completed grant only for actor discovery', async () => {
+    const h = setup();
+    const browserScope = { tenantId: h.serviceScope.tenantId, actorUserId: h.grant.actorUserId,
+      documentVersionId: h.grant.documentVersionId, roles: [] };
+    const browserLease = { leaseOwner: 'mineru:configured-principal:PRUN-test',
+      leaseToken: 'browser-token', leaseGeneration: 1 };
+    h.workItems.listActiveLocalWorkerDelegations.mockResolvedValue([]);
+    h.workItems.listCompletedLocalWorkerDiscovery.mockResolvedValue([h.grant]);
+    h.parsing.readLocalWorkerRun.mockResolvedValue({ scope: browserScope, run: h.loaded.run });
+    h.leases.claim.mockResolvedValue({ parseRunId: identity.parseRunId, ...browserLease });
+    await expect(h.worker.claim({})).resolves.toMatchObject({ status: 'CLAIMED',
+      parseRunId: identity.parseRunId, lease: browserLease });
+    expect(h.workItems.loadActiveAutoProcessingLease).not.toHaveBeenCalled();
+    expect(h.workItems.loadCompletedLocalWorkerDiscovery).toHaveBeenCalledWith({
+      tenantId: 'configured-tenant', workItemId: 'WI-test', actorUserId: 'persisted-user', documentVersionId: 'DV-test',
+    });
+    expect(h.parsing.readLocalWorkerRun).toHaveBeenCalledWith(identity.parseRunId, browserScope);
+    expect(h.leases.claim).toHaveBeenCalledWith(browserScope, identity.parseRunId,
+      browserLease.leaseOwner, 120_000);
+    const browserIdentity = { parseRunId: identity.parseRunId, documentVersionId: identity.documentVersionId,
+      lease: browserLease };
+    await expect(h.worker.source(browserIdentity)).resolves.toEqual({ bytes: Buffer.from('%PDF-test') });
+    expect(h.parsing.readLocalWorkerOriginal).toHaveBeenCalledWith(identity.parseRunId, browserScope,
+      { parseRunId: identity.parseRunId, ...browserLease });
+    await expect(h.worker.renew(browserIdentity)).resolves.toMatchObject({ status: 'RENEWED' });
+    await expect(h.worker.result(browserIdentity, Buffer.from('{}'))).resolves.toMatchObject({ status: 'ACCEPTED' });
+  });
+
+  it('rejects browser discovery with a mismatched source or actor', async () => {
+    const h = setup();
+    h.workItems.listActiveLocalWorkerDelegations.mockResolvedValue([]);
+    h.workItems.listCompletedLocalWorkerDiscovery.mockResolvedValue([{ ...h.grant, sourceFileSha256: 'b'.repeat(64) }]);
+    h.workItems.loadCompletedLocalWorkerDiscovery.mockResolvedValueOnce({ ...h.grant, sourceFileSha256: 'b'.repeat(64) });
+    await expect(h.worker.claim({})).resolves.toEqual({ status: 'IDLE' });
+    h.workItems.listCompletedLocalWorkerDiscovery.mockResolvedValue([{ ...h.grant, actorUserId: 'other-user' }]);
+    h.workItems.loadCompletedLocalWorkerDiscovery.mockResolvedValueOnce({ ...h.grant, actorUserId: 'other-user' });
+    await expect(h.worker.claim({})).resolves.toEqual({ status: 'IDLE' });
+    expect(h.leases.claim).not.toHaveBeenCalled();
+  });
+
+  it('never downgrades a persisted automatic run to browser authority after its lease ends', async () => {
+    const h = setup();
+    h.workItems.listActiveLocalWorkerDelegations.mockResolvedValue([]);
+    h.workItems.listCompletedLocalWorkerDiscovery.mockResolvedValue([h.grant]);
+    Object.assign(h.row.sourceBinding, { automaticWorkItem: h.scope.automaticWorkItem });
+    await expect(h.worker.claim({})).resolves.toEqual({ status: 'IDLE' });
+    await expect(h.worker.source({ ...identity, lease: { ...identity.lease,
+      leaseOwner: 'mineru:configured-principal:PRUN-test' } })).rejects.toThrow('LOCAL_MINERU_RUN_NOT_FOUND');
+    expect(h.leases.claim).not.toHaveBeenCalled();
+    expect(h.parsing.readLocalWorkerOriginal).not.toHaveBeenCalled();
+  });
+
+  it('stops browser dispatch when current actor source access is revoked', async () => {
+    const h = setup();
+    h.workItems.listActiveLocalWorkerDelegations.mockResolvedValue([]);
+    h.workItems.listCompletedLocalWorkerDiscovery.mockResolvedValue([h.grant]);
+    h.parsing.readLocalWorkerRun.mockRejectedValue(Object.assign(new Error('DOCUMENT_ACCESS_DENIED'), { statusCode: 403 }));
+    await expect(h.worker.claim({})).resolves.toEqual({ status: 'IDLE' });
+    expect(h.leases.claim).not.toHaveBeenCalled();
+    await expect(h.worker.source({ ...identity, lease: { ...identity.lease,
+      leaseOwner: 'mineru:configured-principal:PRUN-test' } })).rejects.toThrow('DOCUMENT_ACCESS_DENIED');
   });
 
   it('rejects a source-mismatched run before reading original bytes', async () => {
