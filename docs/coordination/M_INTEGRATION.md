@@ -1,5 +1,13 @@
 # M 主控集成交接
 
+## 2026-09-27 C168：限定旧失败尝试的队列恢复，真实接续待核验
+
+从 17c 两次失败 JobAid 的原生 session 元数据确认：每次均有两条 assistant 记录，`stopReason=length`、`output=16000`、`contentTypes=[]`、`errorCode=null`；对应 MCP 回执为 `JOBAID_GATEWAY_HTTP_400:INCOMPLETE_TERMINAL_RESPONSE`，Host 未保存 JobAid 工作。此证据说明兼容层得到不完整终态；尚未证明 16000 限额来自哪一层，也未读取模型正文。C167 在确切 M3 Probe JobAid 路径显式发送 `max_completion_tokens=32768`，保留其他路径原策略；本地测试、打包和审查通过，提交 `f9bf33a0d1737f542950774197b4738bccecc184`，已快进到 origin 同名分支。17c 私有 ZIP SHA256 `93776a51ba85722a871cf4442a90a6ea3a1bd409340c38617a9afc26bc58a4b0`，安装后官方 `skills info` 为 Ready，安装目录 61/61 payload 文件 SHA 一致；Gateway Online，消费者进程 0、16 个 cron 全停用。尚未进行 C167 真实模型调用，不能宣称故障已解决。
+
+原自动队列 `active-claim` 只读读回仍为 `WI-d368f79e-4a5a-4615-ac00-7594b3ee5c53`、原 requestId、WorkItem revision 3、generation 1、租约已过期、`consumerStopped=true`、同一 Gateway attentionCode，未读取或输出 leaseToken。普通自动重试已耗尽，直接重新运行普通 tick 不会安全接续。C168 增加仅供操作员单次调用的 `--auto-queue --repair-stopped-claim --repair-work-item-id WI-... --repair-attempt-ref AQ-...`，要求旧停止 claim、确切失败尝试、无保存工作、相同来源与修订；过期租约接管先核对修订，第二次 Host 状态读回再核对相同阶段/request/attempt。崩溃保留停止标记和稳定后继 requestId，状态变化则拒绝，普通 cron 不带修复参数。代码经独立复核，完整 Skill 测试 561/561、发布检查、precommit 通过。提交 `8b632e2f3cb710bd4586937607440fc2cc7421af`（父 C167），已快进至 origin 同名分支；C168 包 61 文件、511207 bytes、SHA256 `66f246cea3ded562af2a110075f3ae1a36b941df2ba4af5903c273bbd6699333`。仅有包与代码，不代表 17c 已安装或真实恢复成功。含私有资料的祖先提交未推公开 GitHub。
+
+Host 当前阶段精确读回尚未完成：17c 官方 17b 数据库 CLI 缺 `spark:app:write`，未申请扩权；一次原生 agent 名称错误立即退出，未运行模型；随后 direct MCP 只读调用返回未分类 `Error`，安全错误分类前 Mac 再次锁屏。C168 安装及任何业务恢复均未启动。解锁后先完成安全分类和 Host/保存工作读回，安装核对 C168，确认仍是 `AQ-d5ed83270aef4c02a439fd790fe8fbb4`、revision 3 且无工作，再执行一次受控修复；任一绑定不符则停在原 claim 并按真实状态处理。无人值守 cron 保持停用。
+
 ## 2026-09-27 C167：真实自动队列 JobAid 网关失败，保留任务接续
 
 刘轩解锁 17c 后，唯一操作员在原终端核对 C165 Skill Ready、消费者进程 0、16 个 cron 全停用且无运行项、`active-claim.json=null`；17b online 只读核对新任务 `WI-d368f79e-4a5a-4615-ac00-7594b3ee5c53` 授权 WAITING/gen0、WorkItem revision 3、尚无 JobAid/Overall。仅执行一次不带固定 WorkItem 参数的动态 `--auto-queue` tick，Host 准确领取该任务为 LEASED/gen1，原 PARSE_PDF 尝试保持 SUCCEEDED、没有重跑原文。
