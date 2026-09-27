@@ -1,5 +1,15 @@
 # M 主控集成交接
 
+## 2026-09-27 C178：启用默认自动执行并完成一次正常上传闭环
+
+用户明确授权启用本机仅出站 MinerU 后台 worker 与 17c 唯一动态自动队列 C136。安装 `com.wiselink.local-mineru-worker` 用户 LaunchAgent，单次执行间隔 60 秒；启动配置只含现有 0600 专用凭据文件的路径，不含密钥值。本机初次启动因 macOS TCC 拒绝在可移动卷创建 stdout 日志而退出 78；将 stdout/stderr 改至用户 `~/Library/Logs/WiseLink/` 后，`launchctl` 显示注册成功、运行间隔 60 秒、末次退出 0。配置文件位于 `~/Library/LaunchAgents/com.wiselink.local-mineru-worker.plist`，最终候选 SHA256 为 `db1c81f19b9fc0f1e53b515110bb1f4997c6e29d2663781a114a50c57816b037`。日志已出现一次 `ACCEPTED`，后续连续 `IDLE`，stderr 为空；本机旧 localhost MinerU 服务与此出站 worker 不混用。
+
+17c 仅启用动态 cron `38f1cc05-4a5e-4ec0-863c-e5b3d579048b`，命令为 `consume-hosted-work-item.mjs --auto-queue`，没有固定 WorkItem、Matter 或文档参数；其余 15 项仍停用。OpenClaw 页面读回调度已启用、最近多次成功且返回 `IDLE`，没有持续运行中的消费者。旧 C176 的“未启用”仅是启用前的历史快照，不再代表当前状态。
+
+刘轩本人经 17b 正常上传入口创建 `WI-be6e7fd2-0065-4bbc-aec0-d04f89dc2420`，确切文档版本 `document_version_0de2207a41f354cf6bac485c`。Host 登记的源文件哈希与 57,966 字节长度和本机原件一致；自动授权从 `WAITING` 经 generation 1 `LEASED` 到 `COMPLETED`，无 BLOCK。C136 自动领取，MinerU 对 `PRUN-6a96c063-bcf6-45b4-b62e-625fb67b68aa` 返回 `ACCEPTED`，Host 在 18:48:18 发布 78 个内容单元、61 个来源引用。第一次 JobAid 模型网关返回 `INCOMPLETE_TERMINAL_RESPONSE`，尝试取消；自动接续的第二次尝试保存六项问题工作，WorkItem 修订从 3 到 4，没有重跑解析。Overall 基于该确切工作修订自动保存，WorkItem 达修订 5、`CANDIDATE_READBACK_VERIFIED`，授权于 18:58:51 完成 ACK。没有人工逐阶段命令、正式采用或审批。
+
+工程师本人已在工作台读到短综合意见与可展开的问题、依据及限制；工程知识页按该 WorkItem 准确选中工作修订 2，首屏为简短综合意见，完整综合和六项问题分析收在展开项，并标记“已保存候选，尚非实施决定”。原件逐页校对支持主要协议、临时措施及里程碑表述；目标机队、可靠性及外部知识能力仍未连接，页面明确保留限制。资料库“最近任务”准确显示该版本的已保存简短评估，但默认“工程文档”行仍写“该版本尚无已保存解读”：这是独立 DocumentReading 尚未生成，不能把工作事项评估冒充文件通用解读；默认资料库交付尚有此缺口。后续优先让正常上传能产生或清楚呈现可追溯的文档简明解读，同时验证 ACK 丢失、旧租约及后继修订等隔离恢复路径。一次真实成功和一次网关自动接续不等于长期无人值守稳定性已经证明。
+
 ## 2026-09-27 C176：仅出站本机自动启动配置已准备，未启用
 
 依现有已通过真实空队列调用的 worker 环境，在 `/private/tmp/wl-local-mineru-worker.prepared.plist` 生成候选 LaunchAgent（SHA256 `dfeb9f598fdc5bbacc3f28704079040f3a4f2f787766082343cdad95fdacb8ce`，0600）。标签 `com.wiselink.local-mineru-worker`，`RunAtLoad=true`、`StartInterval=60`，每次只运行不带 `--loop` 的单次 worker；环境仅存现有专用凭据文件路径与必要 Host/离线解析路径，不存密钥值。`plutil -lint` 通过、程序与配置路径均存在；`launchctl print` 返回该标签不存在，证明本轮没有注册启动。macOS 本机 `launchd.plist` 手册说明 `StartInterval` 触发时如果该 job 仍在运行，该次触发会跳过，因此一次长解析期间同一 job 不会叠加启动。此配置位于临时目录，正式安装前须再次核对路径和 SHA，并在获准后复制到用户 LaunchAgents、启动与读回；旧 `com.wiselink.mineru` localhost API 不在此配置范围。
