@@ -1,5 +1,15 @@
 # M 主控集成交接
 
+## 2026-09-27 C182：本机 MinerU 暂时存储失败后复用候选并完成真实自动闭环
+
+刘轩从 17b 正常上传 `737MAX-FTD-34-17005_Doc_07092025.pdf`，形成 `WI-3859b827-399e-414a-adbb-e1c694cafd59`、`document_version_9b81b46f046074af25107544` 和唯一解析 run `PRUN-eea79f38-6f96-4bb5-924d-b082302f96cd`。本机仅出站 MinerU 已提交并核验解析候选；Host 首次上传 `original/pages-0.json` 遇文件服务 `fetch failed`，run 停在 `STAGING` / `DOCUMENT_PARSE_FAILED`，自动消费者没有把它冒充工程信息不足。修订 `0725ae31f656014707ba82ed19a663b6d477c2f1`（父 `0ad000d7d7665b501b2a2606c23779df9327d840`）让相同来源、有效候选、未过期的本机解析 run 在下一次自动处理时继续发布；连续第二次同类存储故障则按现有 fenced fail 合同终止，避免无限重试。合并当前 `origin/main` 后提交 `6bf764afadd478a38b6ea1a3493939c86fe5f53f`，已推送 origin 同名开发分支。定向 Jest 56 项通过、1 项既有跳过，server TypeScript、ESLint、差异与提交前检查通过。17b release `7690186214209096646` 为 `finished`、部署 SHA 精确为 `6bf764afa`、`error_logs=[]`。
+
+线上同一解析 run 随后从 1 个候选 artifact 接续到发布，没有新建解析 run、没有重跑本机 MinerU；20:14:31 +08 发布解析修订 1。文件元数据读取途中也曾短暂 `fetch failed`，下一次继续成功。工程师本人在精读页读到 3 页原文及 `MinerU 3.0.9` 阅读版本；页级 PDF/MinerU 文本比对仍列出多项差异，需单独核对关键表格与图示，不以“已发布”宣称所有内容完整覆盖。
+
+17c 唯一动态 C136 消费者自动领取后，JobAid 第一次尝试在保存 5 个工作修订后因 `JOBAID_MODEL_OUTPUT_FUNCTION_INVALID` 取消；已保存修订没有被删除或覆盖。第二次尝试于 20:30:50 +08 成功提交工作修订 6，六项问题保持可读；Overall 于 20:31:59 +08 基于确切 `JAWR-323772de-10f0-4b20-9c01-6fa69b25f061` 保存候选，WorkItem 修订 5、状态 `CANDIDATE_READBACK_VERIFIED`；队列于 20:32:03 +08 ACK 为 `COMPLETED`，无 BLOCK。`overallSynthesis.authorityLevel=candidate_only`，没有正式采用、审批或放行。C136 跑长任务期间页面的下一次调度时间一度显示旧值，但 17c 实际 Node 消费进程在运行；未因此启动第二个消费者。
+
+刘轩本人在 17b 评估工作台读到短综合意见、当前有效候选与可展开的六项问题及来源；资料库选中此文档版本时，右侧“关联评估短认识”显示同版本已保存评估、短意见与完整评估链接，并明确文档自身独立解读尚未生成；工程知识页自动选中工作修订 6，首屏显示短意见，完整综合与六项问题按需展开。此轮证明一次正常上传在解析暂时存储故障、JobAid 模型输出故障后无需人工逐阶段干预仍能完成；不证明长期无人值守稳定。剩余重点：核对 MinerU 与 PDF 比对差异对关键事实的影响，并定位 `JOBAID_MODEL_OUTPUT_FUNCTION_INVALID` 的输出契约或分块行为，避免 14 分钟后再取消与接续；风险/可能性判断也应检查是否超出已读依据。
+
 ## 2026-09-27 C181：旧执行租约不得保存新问题工作
 
 按旧消费者在新的 ActionAttempt 租约代次出现后恢复执行的场景，隔离测试走到 `JobAidWorkRepository.save` 的实际数据库查询与保存入口：新鲜任务行持有 generation 2；分别以旧 token 或 generation 1 提交新的 JobAid 工作修订，均得到 `JOBAID_WORK_LEASE_FENCE_REJECTED`，插入入口调用 0 次。测试保留来源锁和尝试行读取流程，不以单独调用纯校验函数代替业务保存边界。自动队列服务作用域和授权适配器的现有测试也确认逐任务来源核验及队列租约 token/generation 拒绝；两层代次各守其边界。定向 Jest 14/14、仅含本测试及其真实依赖的 TypeScript 检查、差异检查通过。
