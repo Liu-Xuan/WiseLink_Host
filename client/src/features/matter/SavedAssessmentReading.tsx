@@ -20,7 +20,7 @@ import {
 
 interface SavedAssessmentReadingProps {
   result: AssessmentReadingResult;
-  depth?: 'brief' | 'full';
+  depth?: 'list' | 'brief' | 'full';
   presentation?: 'complete' | 'claims';
   locationSuffix?: string;
   onLocateDocument: (evidence: DocumentAssessmentEvidence) => void;

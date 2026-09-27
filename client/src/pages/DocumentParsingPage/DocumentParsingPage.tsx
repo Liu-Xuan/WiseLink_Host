@@ -955,24 +955,11 @@ export default function DocumentParsingPage() {
           open={activeNode !== 'package' && activeNode !== 'reader'}
         >
           <summary>
-            文档状态与分析进度
+            当前工程认识与分析状态
             <span>展开查看 · 候选意见仍需工程师确认</span>
           </summary>
           {/* 阅读态只折叠展示，保留状态读取、权限与候选确认边界。 */}
           <AuthorityStrip view={workItemView} />
-          <InitialAnalysisProgress
-            key={`${sessionGeneration}:${workItemId}`}
-            workItemId={workItemId}
-            sessionGeneration={sessionGeneration}
-            initial={data.initialAnalysis}
-            timeline={data.timeline}
-            onRevisionChanged={() => {
-              void load(activeQuery);
-            }}
-            onAccessLost={() => {
-              void load(activeQuery);
-            }}
-          />
           {integratedAssessment ? (
             <details
               className={`parse-overall-bar${
@@ -982,13 +969,13 @@ export default function DocumentParsingPage() {
                   ? ' wl-stale-flash is-stale'
                   : ''
               }`}
-              open={searchParams.get('obar') === '1'}
+              open={searchParams.get('obar') !== '0'}
             >
               <summary
                 onClick={(event) => {
                   event.preventDefault();
                   updateDeepLink({
-                    obar: searchParams.get('obar') === '1' ? null : '1',
+                    obar: searchParams.get('obar') === '0' ? null : '0',
                   });
                 }}
               >
@@ -1013,7 +1000,7 @@ export default function DocumentParsingPage() {
               {overallReadingResult ? (
                 <SavedAssessmentReading
                   result={overallReadingResult}
-                  depth="brief"
+                  depth="list"
                   locationSuffix="overall-bar"
                   onLocateDocument={locateAssessmentDocument}
                 />
@@ -1048,6 +1035,22 @@ export default function DocumentParsingPage() {
               )}
             </details>
           ) : null}
+          <details className="parse-progress-detail" open={!overallReadingResult}>
+            <summary>查看解析、翻译与评估进度</summary>
+            <InitialAnalysisProgress
+              key={`${sessionGeneration}:${workItemId}`}
+              workItemId={workItemId}
+              sessionGeneration={sessionGeneration}
+              initial={data.initialAnalysis}
+              timeline={data.timeline}
+              onRevisionChanged={() => {
+                void load(activeQuery);
+              }}
+              onAccessLost={() => {
+                void load(activeQuery);
+              }}
+            />
+          </details>
         </details>
         {loading ? (
           <p className="wl-projection-refresh" role="status">

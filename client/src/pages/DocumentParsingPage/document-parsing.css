@@ -750,6 +750,18 @@
   font-size: 11px;
 }
 
+.parse-progress-detail {
+  margin: 0 auto 12px;
+  width: min(1440px, 100%);
+}
+
+.parse-progress-detail > summary {
+  padding: 8px 12px;
+  color: var(--wl-muted);
+  font-size: 12px;
+  cursor: pointer;
+}
+
 .wl-workbench-main:not(.is-workspace) > .parse-reading-context > summary {
   display: none;
 }

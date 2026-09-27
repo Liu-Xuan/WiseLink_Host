@@ -78,4 +78,104 @@ describe('authorizeAndLoadCanonicalWorkItem', () => {
 
     expect(order).toEqual(['authorize', 'snapshot', 'projection']);
   });
+
+  it('rechecks a changed grant from the beginning before loading content', async () => {
+    const order: string[] = [];
+    const authorization = {
+      authorize: jest.fn().mockImplementation(async () => {
+        order.push('authorize');
+        const version = order.filter(step => step === 'authorize').length;
+        return {
+          action: 'READ_DOCUMENT_PARSING',
+          allowed: true,
+          permissionSnapshotVersion: `permission-${version}`,
+        };
+      }),
+    };
+    const permissionSnapshots = {
+      freshRead: jest.fn().mockImplementation(async () => {
+        order.push('snapshot');
+        return { permissionSnapshotVersion: 'permission-2' };
+      }),
+    };
+    const registrar = {
+      getTenantScopedByWorkItemId: jest.fn().mockImplementation(async () => {
+        order.push('projection');
+        return { workItemId: 'WI-1' };
+      }),
+    };
+
+    const result = await authorizeAndLoadCanonicalWorkItem({
+      authorization: authorization as never,
+      permissionSnapshots: permissionSnapshots as never,
+      registrar: registrar as never,
+      actor,
+      action: 'READ_DOCUMENT_PARSING',
+      workItemId: 'WI-1',
+    });
+
+    expect(order).toEqual(['authorize', 'snapshot', 'authorize', 'snapshot', 'projection']);
+    expect(result.permissionSnapshotVersion).toBe('permission-2');
+  });
+
+  it('rejects a persistent grant mismatch without loading content', async () => {
+    const authorization = {
+      authorize: jest.fn().mockResolvedValue({
+        action: 'READ_DOCUMENT_PARSING',
+        allowed: true,
+        permissionSnapshotVersion: 'permission-1',
+      }),
+    };
+    const permissionSnapshots = {
+      freshRead: jest.fn().mockResolvedValue({
+        permissionSnapshotVersion: 'permission-2',
+      }),
+    };
+    const registrar = { getTenantScopedByWorkItemId: jest.fn() };
+
+    await expect(authorizeAndLoadCanonicalWorkItem({
+      authorization: authorization as never,
+      permissionSnapshots: permissionSnapshots as never,
+      registrar: registrar as never,
+      actor,
+      action: 'READ_DOCUMENT_PARSING',
+      workItemId: 'WI-1',
+    })).rejects.toMatchObject({ code: 'CANONICAL_WORK_ITEM_NOT_FOUND' });
+
+    expect(authorization.authorize).toHaveBeenCalledTimes(2);
+    expect(permissionSnapshots.freshRead).toHaveBeenCalledTimes(2);
+    expect(registrar.getTenantScopedByWorkItemId).not.toHaveBeenCalled();
+  });
+
+  it('does not load content if permission is revoked before the second check', async () => {
+    const authorization = {
+      authorize: jest.fn()
+        .mockResolvedValueOnce({
+          action: 'READ_DOCUMENT_PARSING',
+          allowed: true,
+          permissionSnapshotVersion: 'permission-1',
+        })
+        .mockRejectedValueOnce(Object.assign(new Error('CANONICAL_WORK_ITEM_NOT_FOUND'), {
+          code: 'CANONICAL_WORK_ITEM_NOT_FOUND',
+          statusCode: 404,
+        })),
+    };
+    const permissionSnapshots = {
+      freshRead: jest.fn().mockResolvedValue({
+        permissionSnapshotVersion: 'permission-2',
+      }),
+    };
+    const registrar = { getTenantScopedByWorkItemId: jest.fn() };
+
+    await expect(authorizeAndLoadCanonicalWorkItem({
+      authorization: authorization as never,
+      permissionSnapshots: permissionSnapshots as never,
+      registrar: registrar as never,
+      actor,
+      action: 'READ_DOCUMENT_PARSING',
+      workItemId: 'WI-1',
+    })).rejects.toMatchObject({ code: 'CANONICAL_WORK_ITEM_NOT_FOUND' });
+
+    expect(registrar.getTenantScopedByWorkItemId).not.toHaveBeenCalled();
+  });
 });
