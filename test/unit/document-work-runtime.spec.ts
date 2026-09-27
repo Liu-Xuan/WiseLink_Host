@@ -186,6 +186,31 @@ describe('automatic WorkItem original preparation', () => {
       automaticWorkItem: expect.objectContaining({ leaseGeneration: 3 }) }), f.fence);
   });
 
+  it('reenters one verified local worker candidate after a transient parse storage failure', async () => {
+    const f = fixture();
+    f.parsing.status.mockResolvedValue({ documentVersionId: 'DV', latestRun: {
+      parseRunId: 'run', status: 'STAGING', executionMode: 'LOCAL_MINERU_WORKER',
+      errorCode: 'DOCUMENT_PARSE_FAILED', verifiedArtifacts: 1, waitingForLocalWorker: false,
+      deadlineAt: new Date(Date.now() + 60_000).toISOString() } });
+    f.parsing.executeStep.mockResolvedValue({ parseRunId: 'run', status: 'PUBLISHED' });
+    await expect(f.service.prepareAutomaticOriginal('WI')).resolves.toMatchObject({
+      status: 'ORIGINAL_READY', parseRunId: 'run' });
+    expect(f.parsing.start).not.toHaveBeenCalled();
+    expect(f.parsing.executeStep).toHaveBeenCalledTimes(1);
+  });
+
+  it.each([
+    { executionMode: 'OFFICIAL_PLUGIN', verifiedArtifacts: 1, waitingForLocalWorker: false },
+    { executionMode: 'LOCAL_MINERU_WORKER', verifiedArtifacts: 0, waitingForLocalWorker: true },
+  ])('does not retry an unverified or non-worker parse failure: %j', async fields => {
+    const f = fixture();
+    f.parsing.status.mockResolvedValue({ documentVersionId: 'DV', latestRun: {
+      parseRunId: 'run', status: 'STAGING', errorCode: 'DOCUMENT_PARSE_FAILED',
+      deadlineAt: new Date(Date.now() + 60_000).toISOString(), ...fields } });
+    await expect(f.service.prepareAutomaticOriginal('WI')).resolves.toMatchObject({ status: 'REQUIRES_ATTENTION' });
+    expect(f.leases.claim).not.toHaveBeenCalled();
+  });
+
   it('reuses exact published original without parsing and rejects mismatched source', async () => {
     const f = fixture();
     f.parsing.status.mockResolvedValue({ documentVersionId: 'DV', latestRun: { parseRunId: 'run', status: 'PUBLISHED' } });

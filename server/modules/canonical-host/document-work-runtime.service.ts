@@ -168,6 +168,15 @@ export class DocumentWorkRuntimeService {
         }, scope);
         return { ...identity, status: 'ORIGINAL_PREPARING', parseRunId: reserved.parseRunId, waitingForLocalWorker: reserved.waitingForLocalWorker };
       }
+      if (run.status === 'STAGING' && run.executionMode === 'LOCAL_MINERU_WORKER' &&
+          run.errorCode === 'DOCUMENT_PARSE_FAILED' && !run.waitingForLocalWorker &&
+          run.verifiedArtifacts > 0 && Date.parse(run.deadlineAt) > Date.now()) {
+        // The worker candidate is durable. Reenter the same run once under a
+        // fresh document lease; executeStep rechecks source and candidate bytes.
+        const result = await this.executeStep(scope, run.parseRunId);
+        return { ...identity, status: result.status === 'PUBLISHED' ? 'ORIGINAL_READY'
+          : result.status === 'BUSY' ? 'BUSY' : 'ORIGINAL_PREPARING', parseRunId: run.parseRunId };
+      }
       if (run.status === 'FAILED' || run.errorCode || Date.parse(run.deadlineAt) <= Date.now())
         return { ...identity, status: 'REQUIRES_ATTENTION', parseRunId: run.parseRunId,
           errorCode: run.errorCode ?? (run.status === 'FAILED' ? 'DOCUMENT_PARSE_FAILED' : 'DOCUMENT_PARSE_DEADLINE_EXCEEDED') };

@@ -78,6 +78,11 @@ function fixture(sample?: { pdf: Buffer; candidate: Buffer }) {
       run.status = 'PUBLISHED'; run.manifestArtifact = structuredClone(artifact); run.completedAt = new Date();
     }),
     recordStepFailure: jest.fn(async (_scope: unknown, _fence: unknown, code: string) => { run.errorCode = code; }),
+    assertLocalWorkerScope: jest.fn(async () => undefined),
+    recordLocalWorkerCandidate: jest.fn(async () => undefined),
+    fail: jest.fn(async (_scope: unknown, _id: string, input: { errorCode: string }) => {
+      run.status = 'FAILED'; run.errorCode = input.errorCode; run.completedAt = new Date();
+    }),
   };
   const workItems = { loadTenantDocumentAuthorizationBinding: jest.fn(async () => ({ documentVersionId: 'DV' })) };
   const source = { version: { ...binding, originalFilename: 'source.pdf', businessRevision: '1', revisionDate: '2026-09-26', sourceGeneratedDate: '2026-09-26' },
@@ -128,6 +133,31 @@ it.each(['STEP', 'AUTOMATIC'])('publishes 25 pages from numeric JSON through rea
   expect(new Set(reading.original?.coverage.readPageIndexes).size).toBe(25);
 });
 
+it('ends a local worker run after the one bounded retry also loses its storage upload', async () => {
+  const f = fixture();
+  await f.service.start('DV', request, browser);
+  f.run.sourceBinding.parserInput = { mode: 'LOCAL_MINERU_WORKER',
+    settings: { revision: 1, localMineruFallbackEnabled: true, titleEnhancementEnabled: false } };
+  f.run.errorCode = 'DOCUMENT_PARSE_FAILED';
+  f.content.set(`wiselink/parsed/DV/${f.run.parseRunId}/raw/mineru-candidate.json`,
+    { ...f.content.get(candidatePath)! });
+  for (const path of f.content.keys()) if (/\/original\/pages-[0-9]+[.]json$/u.test(path)) f.content.delete(path);
+  f.run.artifactProgress = f.run.artifactProgress.filter(item => !/^original\/pages-[0-9]+[.]json$/u.test(item.relativePath));
+  const upload = f.scoped.upload.getMockImplementation()!;
+  f.scoped.upload.mockImplementation(async (bytes, options) => {
+    if (options.filePath.endsWith('/original/pages-0.json')) throw new Error('fetch failed');
+    return upload(bytes, options);
+  });
+  await expect(f.service.executeStep(f.run.parseRunId, {
+    tenantId: browser.tenantId, actorUserId: browser.actorUserId, documentVersionId: 'DV', roles: [],
+  }, { parseRunId: f.run.parseRunId, leaseOwner: 'worker', leaseToken: 'token', leaseGeneration: 1 }))
+    .rejects.toThrow('fetch failed');
+  expect(f.repository.fail).toHaveBeenCalledWith(expect.any(Object), f.run.parseRunId,
+    { errorCode: 'DOCUMENT_PARSE_FAILED' }, expect.any(Object));
+  expect(f.run.status).toBe('FAILED');
+  expect(f.repository.publish).not.toHaveBeenCalled();
+});
+
 it.each(['owner', 'hash', 'actor', 'source', 'lease'])('refuses backend continuation after %s changes', async boundary => {
   const f = fixture(); await f.service.start('DV', request, browser);
   const priorUploads = f.scoped.upload.mock.calls.length;
@@ -143,7 +173,8 @@ it.each(['owner', 'hash', 'actor', 'source', 'lease'])('refuses backend continua
   const rejected = expect(f.runtime.run({ action: 'STEP', documentVersionId: 'DV', parseRunId: f.run.parseRunId })).rejects;
   if (boundary === 'lease') await rejected.toThrow('DOCUMENT_STEP_LEASE_REJECTED');
   else await rejected.toMatchObject({ code: boundary === 'hash' ? 'DOCUMENT_MINERU_CANDIDATE_CHANGED'
-    : boundary === 'source' ? 'DOCUMENT_VERSION_NOT_FOUND' : 'DOCUMENT_ACTION_FORBIDDEN' });
+    : boundary === 'source' ? 'DOCUMENT_VERSION_NOT_FOUND'
+      : boundary === 'actor' ? 'DOCUMENT_PARSE_NOT_FOUND' : 'DOCUMENT_ACTION_FORBIDDEN' });
   expect(f.repository.publish).not.toHaveBeenCalled();
   expect(f.scoped.upload).toHaveBeenCalledTimes(priorUploads);
   expect(f.extract.mock.calls.map(([input]) => input.pageStart)).toEqual([0, 8]);
