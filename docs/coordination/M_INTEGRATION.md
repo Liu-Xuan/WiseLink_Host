@@ -8,6 +8,8 @@
 
 最终定向 Jest 18/18、worker 文件独立 TypeScript 检查与差异检查通过；提交前钩子以最终提交回执为准。
 
+进一步按确切 launchd label 核对发现：`com.wiselink.mineru` 实际为 running（PID 792），执行旧仓库的本机 `mineru.cli.fast_api`、监听 `127.0.0.1:8888`；它不是本轮仅出站 `local-mineru-worker.ts`，也不从 Host 领取任务。前述通用 `launchctl list` 文本过滤没有列出它，不能用该过滤结果声称本机无 MinerU 进程；新 worker 没有找到对应的 LaunchAgent 文件，是否还有其他方式启动须在启用前核对。
+
 ## 2026-09-27 C171：确切 Overall 进入 Wiki，Host 终态读回
 
 17b 在线数据库只读核对 `WI-d368f79e-4a5a-4615-ac00-7594b3ee5c53`：WorkItem revision 5、`CANDIDATE_READBACK_VERIFIED`；Overall 为 `CANDIDATE_ONLY`，确切绑定 JobAid `JAWR-23f7289f-07ea-440f-82ec-b2d07cef0b2c` / revision 4。Overall ActionAttempt `AQ-b36077e839364b24b7e906879df6eeea` 为 `SUCCEEDED`，基于输入 revision 4，`projection_applied=true`。对应自动队列授权 `REQ-b5526e71-8a10-44d2-8bc9-dde3867044f6` 为 `COMPLETED`，领取与完成 generation 均为 3，已无 active owner/token，`blocked_code` 为空。这补齐了此前终端 ACK 以外的 Host 持久终态证据；不把候选当作正式采用。
