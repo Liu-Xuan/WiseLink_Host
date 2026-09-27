@@ -31,6 +31,17 @@ const displayDate = (value: string) => {
   const date = new Date(value);
   return Number.isNaN(date.getTime()) ? '保存时间待核' : date.toLocaleDateString('zh-CN');
 };
+const workItemPin = (params: URLSearchParams):
+  | { state: 'absent' | 'invalid' }
+  | { state: 'ok'; workItemId: string } => {
+  const values = params.getAll('workItemId');
+  if (!values.length) return { state: 'absent' };
+  const value = values[0];
+  if (values.length !== 1 || !value || value !== value.trim() ||
+    value.length > 255 || /[\u0000-\u001f\u007f]/u.test(value))
+    return { state: 'invalid' };
+  return { state: 'ok', workItemId: value };
+};
 
 export default function KnowledgeLookupPage() {
   const { sessionGeneration, authenticationRequired } = useCurrentUserSession();
@@ -50,9 +61,13 @@ function KnowledgeCatalogue() {
   const after = params.get('after') ?? undefined;
   const identityPin = knowledgeReadingIdentity(params);
   const identity = identityPin.state === 'ok' ? identityPin.identity : null;
+  const itemPin = workItemPin(params);
+  const resolveWorkItemId = kind === 'works' && identityPin.state === 'absent' &&
+    itemPin.state === 'ok' ? itemPin.workItemId : null;
   const selection = identity ? keyOf(identity) : '';
   const listKey = JSON.stringify([query, scope, kind, after]);
-  const knowledge = useKnowledgeResources(query, scope, after, identity, kind === 'works');
+  const knowledge = useKnowledgeResources(query, scope, after, identity,
+    resolveWorkItemId, kind === 'works');
   const [loadedDocuments, setDocuments] = useState<CanonicalLibraryDocumentsResponse | null>(null);
   const [documentsLoading, setDocumentsLoading] = useState(true);
   const [documentsError, setDocumentsError] = useState('');
@@ -79,11 +94,11 @@ function KnowledgeCatalogue() {
   }
   function select(entry: EngineeringKnowledgeEntry) {
     clearPendingScroll();
-    setParams(prior => { const next = new URLSearchParams(prior); next.set('subjectKind', entry.subjectKind); next.set('subjectId', entry.subjectId); next.set('workRef', entry.workRef); next.delete('articleY'); return next; }, { replace: true });
+    setParams(prior => { const next = new URLSearchParams(prior); next.set('subjectKind', entry.subjectKind); next.set('subjectId', entry.subjectId); next.set('workRef', entry.workRef); next.delete('workItemId'); next.delete('articleY'); return next; }, { replace: true });
   }
   function change(key: string, value: string) {
     clearPendingScroll();
-    setParams(prior => { const next = new URLSearchParams(prior); next.set(key, value); ['after', 'subjectKind', 'subjectId', 'workRef', 'listY', 'articleY'].forEach(name => next.delete(name)); return next; }, { replace: true });
+    setParams(prior => { const next = new URLSearchParams(prior); next.set(key, value); ['after', 'subjectKind', 'subjectId', 'workRef', 'workItemId', 'listY', 'articleY'].forEach(name => next.delete(name)); return next; }, { replace: true });
   }
   function rememberScroll(key: 'listY' | 'articleY', top: number) {
     pendingScroll.current[key] = String(Math.min(9999999, Math.max(0, Math.round(top))));
@@ -102,8 +117,30 @@ function KnowledgeCatalogue() {
 
   useEffect(() => {
     if (kind !== 'works' || !page) return;
-    if (knowledgeReadingIdentity(currentParams.current).state === 'absent' && page.entries[0]) select(page.entries[0]);
+    if (knowledgeReadingIdentity(currentParams.current).state === 'absent' &&
+      workItemPin(currentParams.current).state === 'absent' && page.entries[0])
+      select(page.entries[0]);
   }, [page, kind, selection, identityPin.state]);
+
+  useEffect(() => {
+    if (kind !== 'works' || identityPin.state !== 'absent' ||
+      itemPin.state !== 'ok' || !knowledge.currentWork ||
+      knowledge.currentWork.workItemId !== itemPin.workItemId) return;
+    const current = knowledge.currentWork;
+    setParams(prior => {
+      if (knowledgeReadingIdentity(prior).state !== 'absent' ||
+        workItemPin(prior).state !== 'ok' ||
+        prior.get('workItemId') !== current.workItemId) return prior;
+      const next = new URLSearchParams(prior);
+      next.set('subjectKind', 'WORK_ITEM');
+      next.set('subjectId', current.workItemId);
+      next.set('workRef', current.workRevisionRef);
+      next.delete('workItemId');
+      next.delete('articleY');
+      return next;
+    }, { replace: true });
+  }, [kind, identityPin.state, itemPin.state,
+    itemPin.state === 'ok' ? itemPin.workItemId : null, knowledge.currentWork, setParams]);
 
   useEffect(() => {
     if (kind !== 'sources') return;
@@ -157,6 +194,10 @@ function KnowledgeCatalogue() {
       {kind === 'works' && <select aria-label="知识版本范围" value={scope} onChange={event => change('scope', event.target.value)}><option value="CURRENT">当前工作</option><option value="ALL">包含历史工作</option><option value="HISTORICAL">仅历史工作</option></select>}
     </div>
     {identityPin.state === 'invalid' && <p role="alert">知识工作身份不完整或有重复参数，请重新选择确切工作。</p>}
+    {kind === 'works' && identityPin.state === 'absent' && itemPin.state === 'invalid' &&
+      <p role="alert">文档工作身份无效，请重新打开确切事项。</p>}
+    {resolveWorkItemId && knowledge.workItemError &&
+      <p role="alert">{failure(knowledge.workItemError)} <button onClick={retryRead}>重试</button></p>}
     {error && <p role="alert">{error} <button onClick={retryRead}>重试</button></p>}
     {kind === 'works' ? <div className="knowledge-layout">
       <section className="panel knowledge-results" aria-label="已有工程认识" ref={listRef} onScroll={event => rememberScroll('listY', event.currentTarget.scrollTop)}>
@@ -170,7 +211,10 @@ function KnowledgeCatalogue() {
         {!loading && !error && !page?.entries.length && <p className="knowledge-empty">没有匹配的已保存认识，可调整关键词或版本范围。</p>}{pagination}
       </section>
       <section className="panel knowledge-preview" aria-label="完整工程认识" ref={articleRef} onScroll={event => rememberScroll('articleY', event.currentTarget.scrollTop)}>
-        {reading ? <p role="status">正在读取确切工作…</p> : readError ? <p role="alert">{readError} <button onClick={retryRead}>重试</button></p> : read ? <>
+        {resolveWorkItemId && knowledge.workItemLoading ? <p role="status">正在定位该事项的当前工作…</p> :
+        resolveWorkItemId && knowledge.workItemResolved && !knowledge.currentWork ? <p role="alert">该事项尚无可读的已保存工作。</p> :
+        resolveWorkItemId && knowledge.currentWork?.workItemId !== resolveWorkItemId ? <p role="alert">当前工作与所请求事项不一致。</p> :
+        reading ? <p role="status">正在读取确切工作…</p> : readError ? <p role="alert">{readError} <button onClick={retryRead}>重试</button></p> : read ? <>
           <div className="article-kicker">{read.entry.current ? '已保存的工程认识' : '当时的工程认识'} · 工作修订 {read.entry.workRevision}</div>
           <h1>{read.entry.headline || '已保存的工程认识'}</h1>{compactReadingSummary(read.entry.headline, read.entry.listBrief) !== read.entry.headline && <p className="article-lead">{compactReadingSummary(read.entry.headline, read.entry.listBrief)}</p>}
           <small>{read.entry.subjectKind === 'ENGINEERING_MATTER' ? '工程事项' : '文档工作'} · {displayDate(read.entry.createdAt)}</small>
