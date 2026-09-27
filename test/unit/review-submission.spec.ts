@@ -83,6 +83,16 @@ describe('explicit assessment update scope', () => {
     );
     expect(request.overallRequested).toBe(true);
     expect(request.userMessage).toContain('核对整体综合');
+    const direct = assessmentUpdateRequest(
+      'REQ-direct', view, [], undefined, undefined, null, true,
+      '  核对旧版原文与已保存时序，撤回无依据先后。  ',
+    );
+    expect(direct).toMatchObject({
+      userMessage: '核对旧版原文与已保存时序，撤回无依据先后。',
+      includedDiscussionTurnIds: [],
+      overallRequested: true,
+      expectedInputRevision: view.currentWorkItemRevision,
+    });
     expect(() =>
       assessmentUpdateRequest(
         'REQ-matter',

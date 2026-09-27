@@ -41,11 +41,13 @@ interface Preview {
   modelLabel: string;
   selectedEvaluationItemId: string | null;
   overallRequested: boolean;
+  directRequest: string;
 }
 
 export default function AssessmentUpdateControl(props: Props) {
   const [open, setOpen] = useState(false);
   const [overallRequested, setOverallRequested] = useState(false);
+  const [directRequest, setDirectRequest] = useState('');
   const overallOptionId = useId();
   const [preview, setPreview] = useState<Preview | null>(null);
   const [pending, setPending] = useState<AppendReviewTextTurnRequest | null>(
@@ -72,6 +74,7 @@ export default function AssessmentUpdateControl(props: Props) {
       setPending(null);
       setPreview(null);
       setOverallRequested(false);
+      setDirectRequest('');
       setOpen(false);
     }
   }, [pending, props.conversation]);
@@ -84,7 +87,8 @@ export default function AssessmentUpdateControl(props: Props) {
   );
 
   function buildPreview(): Preview {
-    const turns = assessmentDiscussionTurns(props.conversation);
+    const request = directRequest.trim();
+    const turns = request ? [] : assessmentDiscussionTurns(props.conversation);
     return {
       conversation: props.conversation,
       turns,
@@ -94,6 +98,7 @@ export default function AssessmentUpdateControl(props: Props) {
       modelLabel: props.modelLabel,
       selectedEvaluationItemId: props.selectedEvaluationItemId,
       overallRequested: !props.reviewScope && overallRequested,
+      directRequest: request,
     };
   }
 
@@ -111,6 +116,12 @@ export default function AssessmentUpdateControl(props: Props) {
     if (currentPreview.ids.length > 100) {
       setPreview(currentPreview);
       setNotice('待纳入讨论超过单次 100 条上限；本次未提交，也未截断内容。');
+      setOpen(true);
+      return;
+    }
+    if (!currentPreview.directRequest && currentPreview.ids.length === 0) {
+      setPreview(currentPreview);
+      setNotice('请填写明确的更正请求，或先保存一条已回答的同范围讨论。');
       setOpen(true);
       return;
     }
@@ -136,6 +147,7 @@ export default function AssessmentUpdateControl(props: Props) {
           currentPreview.scope,
           currentPreview.selectedEvaluationItemId,
           currentPreview.overallRequested,
+          currentPreview.directRequest,
         );
       setPending(request);
       const response = await canonicalHost.appendReviewTextTurn(
@@ -153,6 +165,7 @@ export default function AssessmentUpdateControl(props: Props) {
       setPending(null);
       setPreview(null);
       setOverallRequested(false);
+      setDirectRequest('');
       setOpen(false);
     } catch (reason) {
       if (current()) {
@@ -182,6 +195,20 @@ export default function AssessmentUpdateControl(props: Props) {
 
   return (
     <div className="grid gap-2">
+      {!props.reviewScope ? (
+        <label className="grid gap-1 text-sm">
+          定点更正请求（可直接提交，无需先与 Aily 对话）
+          <textarea
+            className="min-h-24 rounded-md border bg-background px-3 py-2"
+            value={directRequest}
+            maxLength={10000}
+            disabled={props.disabled || submitting || Boolean(pending)}
+            onChange={(event) => setDirectRequest(event.target.value)}
+            placeholder="指出需要核对的已保存判断、原文依据和预期更正范围；Host 将固定原文版本并重新核验。"
+          />
+          <span className="text-muted-foreground">填写后仅使用此请求，不自动纳入 Aily 的自由讨论答复。</span>
+        </label>
+      ) : null}
       {!props.reviewScope ? (
         <div className="grid gap-1 text-sm">
           <label htmlFor={overallOptionId} className="flex items-center gap-2">
@@ -249,6 +276,7 @@ export default function AssessmentUpdateControl(props: Props) {
             pending?.overallRequested ??
             (!props.reviewScope && overallRequested)
           }
+          directRequest={preview.directRequest}
           hasUnsentDraft={props.hasUnsentDraft}
           pending={Boolean(pending)}
           notice={
