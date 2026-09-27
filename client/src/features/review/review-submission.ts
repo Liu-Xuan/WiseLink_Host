@@ -55,6 +55,7 @@ export function assessmentUpdateRequest(
   reviewScope?: AppendMatterReviewScope,
   selectedEvaluationItemId?: string | null,
   overallRequested = false,
+  directRequest = '',
 ): AppendReviewTextTurnRequest {
   if (overallRequested && reviewScope)
     throw new Error('REVIEW_SUCCESSOR_OVERALL_SCOPE_INVALID');
@@ -62,9 +63,9 @@ export function assessmentUpdateRequest(
     requestId,
     purpose: 'UPDATE_ASSESSMENT',
     executionMode: 'AUTOMATIC',
-    userMessage: overallRequested
+    userMessage: directRequest.trim() || (overallRequested
       ? '请基于已确认的对话与资料范围更新问题评估，并在有实质更正后核对整体综合。'
-      : '请基于已确认的对话与资料范围更新评估。',
+      : '请基于已确认的对话与资料范围更新评估。'),
     overallRequested,
     includedDiscussionTurnIds: [...ids],
     expectedInputRevision: conversation.currentWorkItemRevision,

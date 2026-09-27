@@ -21,6 +21,7 @@ interface AssessmentUpdatePreviewProps {
   focusLabel?: string;
   hasUnsentDraft: boolean;
   overallRequested?: boolean;
+  directRequest?: string;
   pending: boolean;
   notice?: string;
   disabled: boolean;
@@ -56,6 +57,13 @@ export default function AssessmentUpdatePreview(
         {props.overallRequested ? (
           <p>本次请求包含：有实质更正后，基于新问题评估核对整体综合。</p>
         ) : null}
+        {props.directRequest ? (
+          <section aria-label="本次定点更正请求">
+            <p>本次直接提交的更正请求：</p>
+            <p className="whitespace-pre-wrap break-words">{props.directRequest}</p>
+            <p>不纳入 Aily 自由讨论答复；Host 仍须核对固定原文和已保存工作。</p>
+          </section>
+        ) : null}
         <p>将纳入以下已保存的对话及其附件。原件性质和来源保持不变。</p>
         <section aria-label="待纳入的已保存对话" className="grid gap-3">
           <p>
@@ -88,7 +96,7 @@ export default function AssessmentUpdatePreview(
               </details>
             </article>
           ))}
-          {!props.turns.length ? <p>尚无同范围、已回答的新对话。</p> : null}
+          {!props.turns.length && !props.directRequest ? <p>尚无同范围、已回答的新对话。</p> : null}
         </section>
         {props.hasUnsentDraft ? (
           <p role="status">
