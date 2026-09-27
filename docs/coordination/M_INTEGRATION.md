@@ -1,5 +1,13 @@
 # M 主控集成交接
 
+## 2026-09-27 C171：确切 Overall 进入 Wiki，Host 终态读回
+
+17b 在线数据库只读核对 `WI-d368f79e-4a5a-4615-ac00-7594b3ee5c53`：WorkItem revision 5、`CANDIDATE_READBACK_VERIFIED`；Overall 为 `CANDIDATE_ONLY`，确切绑定 JobAid `JAWR-23f7289f-07ea-440f-82ec-b2d07cef0b2c` / revision 4。Overall ActionAttempt `AQ-b36077e839364b24b7e906879df6eeea` 为 `SUCCEEDED`，基于输入 revision 4，`projection_applied=true`。对应自动队列授权 `REQ-b5526e71-8a10-44d2-8bc9-dde3867044f6` 为 `COMPLETED`，领取与完成 generation 均为 3，已无 active owner/token，`blocked_code` 为空。这补齐了此前终端 ACK 以外的 Host 持久终态证据；不把候选当作正式采用。
+
+工程知识页原先只显示 JobAid。提交 `d7e1deadc1b3c86370be038abc3e6d6cbf8f85a8` 增加确切 WorkItem Overall 读取：复用当前用户/租户与来源授权，要求 Overall 绑定所选 JobAid 修订，核对 WorkItem、文档版本和证据归属；无匹配 Overall 时如实显示待综合。首屏只展示综合短意见，完整判断与来源可展开。生产首轮读回发现 JobAid 与 Overall 同一句摘要在首屏重复；提交 `987dfcb0c` 去除重复，过时 Overall 时仍以当前问题工作摘要为首屏。
+
+最终开发分支提交 `dd95ff87210360aba81d846ea03ef31990bce68a` 已快进推至 origin 同名分支；17b release `7690124373747076066` 为 `finished`，部署提交准确相同，`error_logs=[]`。定向 Jest 63/63、前后端 TypeScript、定向 ESLint 与 diff 检查通过。刘轩本人在线 Wiki 按 `WORK_ITEM` / 上述 `JAWR` 读取工作修订 4：默认首屏综合短意见只出现一次，综合内容与八项问题分析均折叠可展开；展开综合内容显示“已保存候选，尚非实施决定”。17c 本轮内置浏览器仍重定向飞书扫码页，未重新独立读回其本地 checkpoint；Host 队列终态已独立确认。无人值守定时消费仍停用，正常上传后的稳定自动运行尚未由本样本证明。
+
 ## 2026-09-27 C170：工程摘要首屏与并发修订读回
 
 17b 线上首次 Wiki 正文 404 的 trace `a68647f54dd6b96618d53ecc661ec88c` 显示：本人、租户、确切 WorkItem 与 workRef 相同，两次 owner 查询均返回 1 行；错误发生在 `authorizeAndLoadCanonicalWorkItem` 两次新鲜授权快照版本比较处。之后同一确切链接成功读取。该失配与 Overall 保存窗口的 WorkItem 修订并发相符；日志没有保存两个版本值，因此不把并发原因写成已直接证明。Host 现在只在两次授权快照版本不一致时重新执行一次完整授权链；持续失配或第二次撤权仍拒绝，匹配前不加载正文。没有改动角色、RLS、来源授权或任务调度。
