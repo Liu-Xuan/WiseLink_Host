@@ -405,6 +405,7 @@ export async function invokeHostedReviewModel(input, options = {}, dependencies 
   });
   let round = 0;
   let candidateCorrections = 0;
+  let incompleteResponseCorrections = 0;
   let inputUnits = 0;
   let outputUnits = 0;
   // All read/analysis rounds share the Host-scoped native session (or the
@@ -437,8 +438,8 @@ export async function invokeHostedReviewModel(input, options = {}, dependencies 
             ? [reviewSourceFunctionTool()]
             : [reviewCandidateFunctionTool(isMatter, isJobAid, input.input?.attachmentRefs ?? [], isChat, isAssessmentUpdate), reviewSourceFunctionTool(),
               ...(isChat && input.input?.context?.aily?.available === true ? [reviewAilyFunctionTool()] : [])],
-          tool_choice: sourceReadFirst && sourceCache.size === 0 ? 'required' :
-            isJobAid ? 'auto' : 'required',
+          tool_choice: sourceReadFirst && (sourceCache.size === 0 || incompleteResponseCorrections > 0)
+            ? 'required' : isJobAid ? 'auto' : 'required',
           parallel_tool_calls: false,
           n: 1,
           stream: false,
@@ -475,6 +476,17 @@ export async function invokeHostedReviewModel(input, options = {}, dependencies 
     if (observeOutputShape) await observeOutputShape(outputShape, round);
     if (!response.ok) {
       const failure = classifyHostedGatewayFailure(payload);
+      if (sourceReadFirst && nativeSessionKey && sourceCache.size > 0 &&
+          response.status === 400 && failure === 'INCOMPLETE_TERMINAL_RESPONSE' &&
+          outputShape.choiceCount === 0 && incompleteResponseCorrections === 0) {
+        // The Gateway explicitly returned no candidate/tool call. One new,
+        // shorter request may finish the same native discussion; never replay
+        // a Host mutation or retry an unknown/partially received response.
+        incompleteResponseCorrections += 1;
+        messages = [systemMessage, { role: 'user', content:
+          `The preceding model response ended before any tool call. Continue this same Review using the sources already read. Call ${REVIEW_OUTPUT_FUNCTION_NAME} with one complete, concise candidate that changes only the engineer's requested findings and preserves all other saved work. Read another authorized fragment only if essential. Do not repeat a long analysis or claim a candidate was saved.` }];
+        continue;
+      }
       throw new Error(`REVIEW_GATEWAY_HTTP_${response.status}${failure === 'UNCLASSIFIED' ? '' : `:${failure}`}`);
     }
     if (outputShape.hasAnalysis) throw new Error('REVIEW_MODEL_ANALYSIS_FORBIDDEN');

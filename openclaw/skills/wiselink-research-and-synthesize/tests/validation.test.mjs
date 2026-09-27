@@ -1380,7 +1380,7 @@ test('requires 35 MCP capabilities, six review tools, and hosted provenance', ()
   assert.ok(HOST_MCP_TOOLS.includes('commit_applicability_candidate'));
   assert.equal(
     WISELINK_SKILL_VERSION,
-    'wiselink-research-and-synthesize@r09.c175',
+    'wiselink-research-and-synthesize@r09.c176',
   );
   assert.equal(
     WISELINK_SKILL_COMPATIBILITY_REF,
@@ -7295,6 +7295,70 @@ test('review HTTP 400 reports only a known incomplete-response category', async 
     return Response.json({ error: { message: 'Agent run ended with an incomplete terminal response.' } }, { status: 400 });
   } }), /REVIEW_GATEWAY_HTTP_400:INCOMPLETE_TERMINAL_RESPONSE/u);
   assert.equal(requests, 1);
+});
+
+test('source-read JobAid Review makes one compact correction after a proven empty incomplete response', async () => {
+  let requests = 0;
+  const candidate = { answer: '只更正无据的未读断言。', sourceRefs: ['page1'],
+    jobAidWorkingDelta: { schemaVersion: 'wiselink.jobaid-problem-work.v3',
+      issues: [], unchangedIssueKeys: ['existing'] } };
+  const result = await invokeReviewWithTransport({ input: {
+    availableSourceRefIds: ['page1'],
+    context: { purpose: 'UPDATE_ASSESSMENT', problemAssessment: {
+      availableSources: [{ kind: 'DOCUMENT_PASSAGE' }],
+    } },
+  } }, {
+    gatewayUrl: 'https://official.invalid', gatewayToken: 'fixture-only',
+    configuredModelVersion: 'fixture/provider',
+    nativeSessionKey: 'agent:wiselink-engineering:review:ACTX-RS-incomplete-correction',
+    readSourceRefs: async ids => ids.map(sourceRefId => ({ sourceRefId,
+      evidenceRef: sourceRefId, excerpt: 'Fixture passage.' })),
+    validateCandidate: async value => assert.deepEqual(value.sourceRefs, ['page1']),
+  }, { requestGateway: async (_url, init) => {
+    requests += 1;
+    const body = JSON.parse(init.body);
+    if (requests === 1) return Response.json({ choices: [{ message: {
+      content: null, tool_calls: [{ id: 'read1', type: 'function', function: {
+        name: 'read_wiselink_review_sources', arguments: JSON.stringify({ sourceRefIds: ['page1'] }),
+      } }],
+    } }] });
+    if (requests === 2) return Response.json({ error: {
+      message: 'miaoda/minimax-m3 ended with an incomplete terminal response',
+    } }, { status: 400 });
+    assert.equal(body.tool_choice, 'required');
+    assert.match(body.messages.at(-1).content, /complete, concise candidate/u);
+    return Response.json({ choices: [{ message: { content: null, tool_calls: [{
+      id: 'candidate3', type: 'function', function: {
+        name: 'return_wiselink_review_candidate', arguments: JSON.stringify(candidate),
+      },
+    }] } }] });
+  } });
+  assert.equal(requests, 3);
+  assert.equal(result.output.answer, candidate.answer);
+});
+
+test('source-read JobAid Review stops after a second incomplete response', async () => {
+  let requests = 0;
+  await assert.rejects(invokeReviewWithTransport({ input: {
+    availableSourceRefIds: ['page1'], context: { purpose: 'UPDATE_ASSESSMENT',
+      problemAssessment: { availableSources: [{ kind: 'DOCUMENT_PASSAGE' }] } },
+  } }, {
+    gatewayUrl: 'https://official.invalid', gatewayToken: 'fixture-only',
+    configuredModelVersion: 'fixture/provider',
+    nativeSessionKey: 'agent:wiselink-engineering:review:ACTX-RS-incomplete-limit',
+    readSourceRefs: async ids => ids.map(sourceRefId => ({ sourceRefId,
+      evidenceRef: sourceRefId, excerpt: 'Fixture passage.' })),
+  }, { requestGateway: async () => {
+    requests += 1;
+    return requests === 1
+      ? Response.json({ choices: [{ message: { content: null, tool_calls: [{
+        id: 'read1', type: 'function', function: { name: 'read_wiselink_review_sources',
+          arguments: JSON.stringify({ sourceRefIds: ['page1'] }) },
+      }] } }] })
+      : Response.json({ error: { message: 'Agent run ended with an incomplete terminal response.' } },
+        { status: 400 });
+  } }), /REVIEW_GATEWAY_HTTP_400:INCOMPLETE_TERMINAL_RESPONSE/u);
+  assert.equal(requests, 3);
 });
 
 test('leased JobAid review spans the former 8-minute cutoff with bounded responses and stops on lease loss', async (t) => {
