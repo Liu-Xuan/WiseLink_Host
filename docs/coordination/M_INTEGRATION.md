@@ -4,7 +4,7 @@
 
 17b 旧版 SB 事项 `WI-4db598a0-33b8-4abd-a64d-df2aac9f29c5` 从正常复核页提交 Turn 8，仅请求修改 `FTD-26002-NATURE`，未请求 Overall。C136 自动领取并取回来源，但本轮最终候选把另一个旧问题 `ATA-46-GATELINK-SCOPE` 以只有 `issueKey` 和 `body` 的局部对象提交。Host 把更新问题视为完整覆盖，因缺 `question` 返回 `JOBAID_ISSUE_QUESTION_INVALID`，attempt 于 05:56:42 +08 取消。此前两个候选分别因未登记证据和缺少 `issues` 被 Skill 拒绝；本轮没有新工作修订，原修订 11 和旧 Overall 保留。
 
-C180 在 Host 提交前要求每个更新问题包含非空 `issueKey`、`question`、`body`，以及 `riskScenarios`、`measures`、`otherClassifications`、`openQuestions`、`requirementHandling` 五个显式数组；缺项在同一模型会话内反馈完整覆盖合同，并强调只改工程师指定的问题键、从已保存工作复制未变字段。该校验针对真实失败和省略集合可能清空旧开放问题的风险，不替模型补字段，也不改 Host 授权或正式采用。定向复现与反馈测试通过，全 Skill 580/580、ESLint、61 文件包声明检查通过。尚未安装与线上复验，不能宣称旧 SB 已更正。
+C180 在 Host 提交前要求每个更新问题包含非空 `issueKey`、`question`、`body`，以及 `riskScenarios`、`measures`、`otherClassifications`、`openQuestions`、`requirementHandling` 五个显式数组；缺项在同一模型会话内反馈完整覆盖合同，并强调只改工程师指定的问题键、从已保存工作复制未变字段。该校验针对真实失败和省略集合可能清空旧开放问题的风险，不替模型补字段，也不改 Host 授权或正式采用。提交 `fb271c183cd3f21409ed6381c9446e95a8342584` 已快进推送私有 origin 同名分支；定向复现与反馈测试通过，全 Skill 580/580、ESLint、61 文件包声明检查通过。发布包 SHA256 `871b82726d51b315ce86686a7cefb2b486686dbfb3971a0415139f3a486f7305`，17c 私有路径 `/1877522600822787.zip`，下载后哈希与 ZIP 完整性核对通过；17c 原 C179 已备份，C180 安装后 `openclaw skills info` 可见、与包展开目录仅差 `.openclaw` 元数据。安装前无在途消费者，C136 暂停后安装、再恢复；最终 16 项 cron 中仅 C136 启用且无在途，其他 15 项保持停用。尚无 C180 线上业务更正成功证据。
 
 ## 2026-09-28：Turn 7 揭示空更正与完成范围冲突，C179 已安装
 
