@@ -1,5 +1,15 @@
 # M 主控集成交接
 
+## 2026-09-28：旧 SB 原页与已保存修订的内容质量核对
+
+从 17b 既有上传的私有原件路径下载 57,434 字节 PDF；SHA256 `260c665aa340752898c0958c7015df5fa8f6f5ead9317d0b37908af6c30d53b5` 与上传记录一致。原件共两页，已逐页渲染并与 PDF 文本层、当前已发布 MinerU/PDF.js manifest 和 JobAid 修订 11 对照。此处仅记录差异，不修改历史工作或原件。
+
+- 第 1 页原件的 Applicability 栏只有 `All 787 Aircraft`；紧随其后是独立的 Description 栏，说明使用 Gatelink/Wi-Fi 的运营方在相应地面 TLS 条件下受影响。MinerU markdown 遗漏了 `All 787 Aircraft`、Description 和 Status 三处可见标题/内容；Host 的 PDF.js 补充保留了这些行，但将 Description/Status 作为普通段落单元。因此修订 11 把 Description 正文错称为 Applicability 正文，并把实际上已经完整呈现的适用栏写成“后续正文未读”。这不是仅靠缩短摘要能修复的问题。
+- 第 2 页原件的 Final Action 只有一段，Milestones 只有两条并列值，Related Categories 只有一条 Obsolescence。两页原件没有独立 Compliance Interval、References 或后续装机清单。修订 11 四个问题正文/开放问题均仍以“后续块未读”“其他类别未读”“Compliance Interval/References 待读”等表述暗示同版原件还有未读内容。应把“本版未载明”与“未来 SB、目标机队事实或发布方最新状态尚待外部核查”分开，保留真正未知，不制造缺页。
+- 元数据表在 MinerU markdown 的列关系错位，发布 manifest 已标 `TABLE_LAYOUT_NOT_VERIFIED` / `TEXT_CONFLICT`；视觉原页可确认机型、ATA、日期等字段。本次发现说明需要对决定性字段核对原页，而不能把 MinerU 表格或 PDF.js 单一路径当作天然裁判。
+
+当前修订 11 的四个问题键为 `FTD-26002-NATURE`、`ATA-46-GATELINK-SCOPE`、`TLS-MISMECHANISM`、`AID-OBEDS-TIMELINE`，都含上述错位或虚假“未读”；已有 WorkItem Overall 仍基于更早工作修订。后继 Review 应按四个受影响问题的实际范围修订，并在保存后以确切新修订按请求执行 Overall，再核对资料库、Wiki、检索及相关投影。不得将本次只读人工核对冒充系统已完成更正。
+
 ## 2026-09-28：C181 局部问题补全已提交并打包，Hosted 安装待 17c 登录
 
 针对 Turn 7–9 的 Review 失败，C181 在 JobAid Review 候选中增加仅供模型编写的 `issuePatches`：只能指定 Host 固定上一修订中的既有 `issueKey` 和实际变化字段；外部驱动保留未提供字段的原值，展开成完整 `issues` 后仍经过现有 Skill/Host 的来源、问题结构、授权与工作修订校验。显式 `[]` 才变更旧集合；未知/重复/无变化问题键、混用非空 `issues` 均拒绝。新增问题仍用完整 `issues`；没有新增路由、角色或正式业务权限。

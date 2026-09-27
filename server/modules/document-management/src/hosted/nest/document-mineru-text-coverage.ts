@@ -23,10 +23,12 @@ export function reconcileMineruTextCoverage(input: {
   const furniture = mineruPageFurniture(input.rawContentListV2);
   const additions: TranslationStructuredSourceUnit[] = [];
   const insertionSlots = new Map<string, number>();
+  const layouts = input.extraction.pages.map(page => originalPageLayout(page));
+  const headingAnchors = originalHeadingAnchors(original.source.units, input.extraction.pages, layouts);
   for (let pageIndex = 0; pageIndex < input.extraction.pageCount; pageIndex++) {
     const page = input.extraction.pages[pageIndex];
     if (page.pageIndex !== pageIndex) throw new Error('DOCUMENT_MINERU_COVERAGE_PAGE_MISMATCH');
-    const layout = originalPageLayout(page);
+    const layout = layouts[pageIndex];
     const rawPage = record(middle.pdf_info[pageIndex]);
     const regions = pageRegions(rawPage, input.rawContentListV2[pageIndex], page, furniture.omitted);
     if (!page.text.trim()) continue; // No text layer: retain all original OCR and its own limitations.
@@ -68,12 +70,17 @@ export function reconcileMineruTextCoverage(input: {
       }
       const unitId = `${original.binding.parseRunId}:pdfjs:p${pageIndex}:l${lineIndex}`;
       const ref = `${unitId}:source`;
-      const unit: TranslationStructuredSourceUnit = { unitId, kind: 'paragraph', moduleId: 'body', parentUnitId: null,
+      const heading = supplementedHeading(line, lineIndex, layout.lines, page, headingAnchors);
+      if (heading.plausible && !heading.level)
+        limit('STRUCTURE_UNCERTAIN', pageIndex, [unitId],
+          `PDF 文本“${line.text}”具有标题外观，但原件中没有足够一致的已识别标题来确认层级；按正文保留，请核对原页。`);
+      const unit: TranslationStructuredSourceUnit = { unitId, kind: heading.level ? 'heading' : 'paragraph', moduleId: 'body', parentUnitId: null,
         order: 0, depth: 0, continuityKey: unitId, sourceRefIds: [ref], sourceSegmentIds: [ref],
         mapping: { extraction: 'PDFJS_TEXT_LAYER', supplementation: 'OUTSIDE_MINERU_REGIONS', pageIndex,
           sourceArtifactPath: `original/pages-${Math.floor(pageIndex / 8) * 8}.json`,
           textItems: [{ pageIndex, itemIndexes: [...line.itemIndexes] }], pdfTop: box[1], pdfLeft: box[0] },
-        payload: { text: line.text } };
+        payload: { text: line.text, ...(heading.level ? { level: heading.level } : {}) } };
+      if (heading.level) unit.mapping.headingRecovery = { method: 'MATCHED_PDF_GEOMETRY', anchorUnitIds: heading.anchorUnitIds };
       additions.push(unit);
       insertionSlots.set(unitId, slot);
       original.source.sourceLocators.push({ sourceRefId: ref, kind: 'PDF_PAGE', artifactId: original.binding.sourceArtifactId,
@@ -220,6 +227,55 @@ function sharedPhrase(left: string[], right: string[], length: number): boolean 
 }
 function lineBox(line: OriginalLayoutLine, page: DocumentPdfPage): Box {
   return [line.x, page.height - line.y - line.height, line.x + line.width, page.height - line.y];
+}
+type HeadingAnchor = { unitId: string; lineKey: string; level: number; size: number; x: number; width: number; height: number };
+function originalHeadingAnchors(units: TranslationStructuredSourceUnit[], pages: DocumentPdfPage[],
+  layouts: Array<{ lines: OriginalLayoutLine[] }>): HeadingAnchor[] {
+  const anchors: HeadingAnchor[] = [];
+  for (const unit of units) {
+    if (unit.kind !== 'heading' || unit.parentUnitId) continue;
+    const pageIndex = Number(unit.mapping.pageIndex);
+    const page = pages[pageIndex];
+    const level = Number(unit.payload.level);
+    const box = page && scaledBox(unit.mapping.nativeBbox, page);
+    if (!box || !Number.isInteger(level) || level < 1 || level > 6 || typeof unit.payload.text !== 'string') continue;
+    const matches = layouts[pageIndex].lines.filter(line =>
+      normalizeOriginalWhitespace(line.text) === normalizeOriginalWhitespace(String(unit.payload.text)) &&
+      overlaps(lineBox(line, page), box) && uniformLineSize(line, page) !== null);
+    if (matches.length !== 1) continue;
+    const line = matches[0];
+    if (!contains(box, lineBox(line, page))) continue;
+    anchors.push({ unitId: unit.unitId, lineKey: `${pageIndex}:${line.itemIndexes.join(',')}`,
+      level, size: line.height, x: line.x, width: page.width, height: page.height });
+  }
+  return anchors.filter(anchor => anchors.filter(other => other.lineKey === anchor.lineKey).length === 1);
+}
+function uniformLineSize(line: OriginalLayoutLine, page: DocumentPdfPage): number | null {
+  if (!line.itemIndexes.length) return null;
+  const sizes = line.itemIndexes.map(index => page.items[index]?.transform[3]);
+  return sizes.every(size => typeof size === 'number' && Number.isFinite(size) &&
+    Math.abs(size - line.height) <= 0.5) ? line.height : null;
+}
+function supplementedHeading(line: OriginalLayoutLine, index: number, lines: OriginalLayoutLine[],
+  page: DocumentPdfPage, anchors: HeadingAnchor[]): { plausible: boolean; level?: number; anchorUnitIds: string[] } {
+  const size = uniformLineSize(line, page);
+  const text = line.text.trim();
+  const bodySizes = lines.map(entry => entry.height).filter(value => Number.isFinite(value) && value > 0)
+    .sort((left, right) => left - right);
+  // The lower quartile is a conservative body-size reference on short pages
+  // where known headings can otherwise dominate a median.
+  const bodySize = bodySizes[Math.floor((bodySizes.length - 1) / 4)] ?? Infinity;
+  const next = lines[index + 1];
+  const plausible = size !== null && size >= bodySize * 1.2 && line.breakBefore &&
+    text.length <= 120 && (text.match(/[\p{L}\p{N}]+/gu)?.length ?? 0) <= 12 &&
+    !/[.;:。；：!?！？]$/u.test(text) && next !== undefined && !next.breakBefore &&
+    next.height < size * 0.9 && Math.abs(next.x - line.x) <= 12;
+  if (!plausible) return { plausible: false, anchorUnitIds: [] };
+  const matches = anchors.filter(anchor => anchor.width === page.width && anchor.height === page.height &&
+    Math.abs(anchor.size - size) <= 0.5 && Math.abs(anchor.x - line.x) <= 2);
+  const levels = new Set(matches.map(anchor => anchor.level));
+  if (matches.length < 2 || levels.size !== 1) return { plausible: true, anchorUnitIds: [] };
+  return { plausible: true, level: matches[0].level, anchorUnitIds: matches.map(anchor => anchor.unitId) };
 }
 function pageRegions(middle: Record<string, unknown>, rawV2: unknown, page: DocumentPdfPage, omitted: (block: Record<string, unknown>) => boolean): Region[] | null {
   if (page.rotation !== 0 || !Array.isArray(middle.page_size) || middle.page_size.length !== 2 || !Array.isArray(rawV2) ||
