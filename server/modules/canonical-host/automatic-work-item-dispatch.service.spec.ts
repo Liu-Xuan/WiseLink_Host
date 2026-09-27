@@ -14,6 +14,7 @@ import type { CanonicalServiceScopeAuthorizationPort } from './canonical-service
 import type { AutomaticWorkItemSourceAuthorizationPort } from './automatic-work-item-source-authorization.port';
 import type { CanonicalHostInitialAnalysisStatusService } from './canonical-host-initial-analysis-status.service';
 import type { ReviewConversationRepository } from '../review-persistence/review-conversation.repository';
+import type { JobAidWorkRepository } from './jobaid-work.repository';
 import {
   AutomaticWorkItemDispatchService,
   automaticAuthorizationBindingMismatch,
@@ -70,6 +71,7 @@ describe('AutomaticWorkItemDispatchService', () => {
           requestId: 'REQ-REVIEW', turnNo: 1, inputRevision: 7,
         }),
       };
+      const jobAidWork = { latestForRuntime: jest.fn() };
       const serviceScope = {
         authorizeOpenClawAutoWorkItemQueue: jest.fn().mockResolvedValue({
           principalId: 'service:openclaw-main', appId: 'app_17bzc551rsg',
@@ -86,6 +88,7 @@ describe('AutomaticWorkItemDispatchService', () => {
         serviceScope as unknown as CanonicalServiceScopeAuthorizationPort,
         undefined, undefined, undefined,
         conversations as unknown as ReviewConversationRepository,
+        jobAidWork as unknown as JobAidWorkRepository,
       );
       await expect(service.nextWorkItem()).resolves.toEqual({
         status: 'REVIEW_PENDING', workItemId: WORK_ITEM_ID,
@@ -93,12 +96,69 @@ describe('AutomaticWorkItemDispatchService', () => {
       });
       expect(conversations.loadPendingOpenClawTurn).toHaveBeenCalledWith({
         tenantId: TENANT_ID, actorId: ACTOR_ID, workItemId: WORK_ITEM_ID,
+        requireSuccessorDelegation: true,
       });
       expect(serviceScope.authorizeOpenClawReview).toHaveBeenCalledWith({
         operation: 'BEGIN_REVIEW', workItemId: WORK_ITEM_ID,
         reviewConversationRef: 'RC-EXPLICIT', requestId: 'REQ-REVIEW',
       });
       expect(workItems.claimAutoProcessingCandidate).not.toHaveBeenCalled();
+    } finally {
+      if (previous === undefined) delete process.env.WL_OPENCLAW_SERVICE_SUCCESSOR_REVIEW_ENABLED;
+      else process.env.WL_OPENCLAW_SERVICE_SUCCESSOR_REVIEW_ENABLED = previous;
+    }
+  });
+
+  it('dispatches requested Overall only for the exact saved Review work revision', async () => {
+    const previous = process.env.WL_OPENCLAW_SERVICE_SUCCESSOR_REVIEW_ENABLED;
+    process.env.WL_OPENCLAW_SERVICE_SUCCESSOR_REVIEW_ENABLED = '1';
+    try {
+      const workItems = repositoryDouble([]);
+      workItems.listCompletedAutoProcessingReviewSubjects.mockResolvedValue([
+        { authorization: authorization({ status: 'COMPLETED' }), workItem: workItemRow() },
+      ] as never);
+      workItems.loadTenantScopedProjection.mockResolvedValue({
+        projection: { integratedAssessment: { overallSynthesis: {
+          basedOnJobAidWorkRevisionRef: 'JAWR-OLD',
+        } } },
+      } as never);
+      const conversations = {
+        loadPendingOpenClawTurn: jest.fn().mockResolvedValue(null),
+        listSuccessorOverallTurnBindings: jest.fn().mockResolvedValue([{ turn: {
+          reviewTurnId: 'RT-EXPLICIT', assistantCandidate: { jobAidWorkingUpdate: {
+            status: 'APPLIED', workRevisionRef: 'JAWR-NEW',
+          } },
+        } }]),
+      };
+      const jobAidWork = { latestForRuntime: jest.fn().mockResolvedValue({
+        workRevisionRef: 'JAWR-NEW', content: { roundCompletion: 'COMPLETE' },
+      }) };
+      const serviceScope = {
+        authorizeOpenClawAutoWorkItemQueue: jest.fn().mockResolvedValue({
+          principalId: 'service:openclaw-main', appId: 'app_17bzc551rsg',
+          tenantId: TENANT_ID, authorizationFingerprint: `sha256:${'c'.repeat(64)}`,
+        }),
+        authorizeOpenClawWorkItem: jest.fn().mockResolvedValue({
+          principalId: 'service:openclaw-main', tenantId: TENANT_ID, workItemId: WORK_ITEM_ID,
+        }),
+      };
+      const service = new AutomaticWorkItemDispatchService(
+        workItems as unknown as MiaodaWorkItemRepository,
+        sourceDouble() as unknown as MiaodaDocumentVersionSourceResolver,
+        serviceScope as unknown as CanonicalServiceScopeAuthorizationPort,
+        undefined, undefined, undefined,
+        conversations as unknown as ReviewConversationRepository,
+        jobAidWork as unknown as JobAidWorkRepository,
+      );
+      await expect(service.nextWorkItem()).resolves.toEqual({
+        status: 'OVERALL_PENDING', workItemId: WORK_ITEM_ID,
+        reviewTurnRef: 'RT-EXPLICIT', workRevisionRef: 'JAWR-NEW',
+        reviewAfterWorkItemId: WORK_ITEM_ID,
+      });
+      expect(serviceScope.authorizeOpenClawWorkItem).toHaveBeenCalledWith({
+        operation: 'BEGIN_OVERALL', workItemId: WORK_ITEM_ID,
+        successorReviewTurnRef: 'RT-EXPLICIT',
+      });
     } finally {
       if (previous === undefined) delete process.env.WL_OPENCLAW_SERVICE_SUCCESSOR_REVIEW_ENABLED;
       else process.env.WL_OPENCLAW_SERVICE_SUCCESSOR_REVIEW_ENABLED = previous;
@@ -616,6 +676,7 @@ function repositoryDouble(candidates: AutoWorkItemQueueCandidate[]) {
   const double = {
     listAutoProcessingCandidates: jest.fn().mockResolvedValue(candidates),
     listCompletedAutoProcessingReviewSubjects: jest.fn().mockResolvedValue([]),
+    loadTenantScopedProjection: jest.fn(),
     loadAuthorizationBinding: jest.fn(),
     loadAutoProcessingProjection: jest.fn(),
     claimAutoProcessingCandidate: jest.fn(),
@@ -630,6 +691,7 @@ function repositoryDouble(candidates: AutoWorkItemQueueCandidate[]) {
       MiaodaWorkItemRepository,
       | 'listAutoProcessingCandidates'
       | 'listCompletedAutoProcessingReviewSubjects'
+      | 'loadTenantScopedProjection'
       | 'loadAuthorizationBinding'
       | 'loadAutoProcessingProjection'
       | 'claimAutoProcessingCandidate'
@@ -670,6 +732,7 @@ function dispatchService(
       MiaodaWorkItemRepository,
       | 'listAutoProcessingCandidates'
       | 'listCompletedAutoProcessingReviewSubjects'
+      | 'loadTenantScopedProjection'
       | 'loadAuthorizationBinding'
       | 'loadAutoProcessingProjection'
       | 'claimAutoProcessingCandidate'

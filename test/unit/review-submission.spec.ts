@@ -67,6 +67,39 @@ describe('explicit assessment update scope', () => {
       assessmentDiscussionTurns(view).map((turn) => turn.reviewTurnId),
     ).toEqual(['TURN-1']);
   });
+  it('requests successor Overall only when explicitly selected for this WorkItem update', () => {
+    const view = conversation(true);
+    expect(
+      assessmentUpdateRequest('REQ-default', view, []).overallRequested,
+    ).toBe(false);
+    const request = assessmentUpdateRequest(
+      'REQ-overall',
+      view,
+      [],
+      undefined,
+      undefined,
+      null,
+      true,
+    );
+    expect(request.overallRequested).toBe(true);
+    expect(request.userMessage).toContain('核对整体综合');
+    expect(() =>
+      assessmentUpdateRequest(
+        'REQ-matter',
+        view,
+        [],
+        undefined,
+        {
+          kind: 'ENGINEERING_MATTER',
+          matterId: 'MAT-1',
+          expectedWorkingRevision: 1,
+        },
+        null,
+        true,
+      ),
+    ).toThrow('REVIEW_SUCCESSOR_OVERALL_SCOPE_INVALID');
+  });
+
   it('copies reviewed IDs, version, scope and model without consuming a draft', () => {
     const view = conversation(true);
     const ids = ['TURN-3'];

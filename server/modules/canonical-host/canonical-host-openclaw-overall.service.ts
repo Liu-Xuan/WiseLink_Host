@@ -98,6 +98,7 @@ export class CanonicalHostOpenClawOverallService {
     workItemId: string,
     providers: string[],
     requestId?: string,
+    successorReviewTurnRef?: string,
   ): Promise<{
     attemptRef: string;
     status: 'RUNNING' | 'COMMITTING';
@@ -112,8 +113,15 @@ export class CanonicalHostOpenClawOverallService {
     const scope = await this.serviceScope.authorizeOpenClawWorkItem({
       operation: 'BEGIN_OVERALL',
       workItemId,
+      ...(successorReviewTurnRef ? { successorReviewTurnRef } : {}),
     });
     assertWorkItemScope(scope, workItemId);
+    if (successorReviewTurnRef !== undefined) {
+      if (!successorReviewTurnRef.trim() || requestId !== undefined || providers.length)
+        throw new Error('JOBAID_SUCCESSOR_OVERALL_INPUT_INVALID');
+      if (!this.problemAssessment) throw new Error('JOBAID_PROBLEM_RUNTIME_UNAVAILABLE');
+      return this.problemAssessment.beginSuccessorOverall(workItemId, scope, successorReviewTurnRef);
+    }
     if (requestId !== undefined) {
       if (!this.problemAssessment)
         throw new Error('JOBAID_PROBLEM_RUNTIME_UNAVAILABLE');

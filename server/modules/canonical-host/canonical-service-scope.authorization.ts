@@ -109,6 +109,7 @@ export interface CanonicalServiceScopeAuthorizationPort {
     transport: 'OPENAPI_REST' | 'READONLY_MCP';
     operation: 'READ_STATUS' | 'QUERY_PARSED_PACKAGE' | 'READ_DEEP_LINK';
     workItemId: string;
+    successorReviewTurnRef?: string;
   }): Promise<CanonicalVerifiedServiceScope>;
   authorizeDevelopmentCreate(input: {
     documentVersionId: string;
@@ -125,6 +126,7 @@ export interface CanonicalServiceScopeAuthorizationPort {
       | 'GET_PENDING_REVIEW_TURN'
       | 'BEGIN_TRANSLATE';
     workItemId: string;
+    successorReviewTurnRef?: string;
   }): Promise<CanonicalVerifiedServiceScope>;
   authorizeOpenClawReview(input: {
     operation: 'BEGIN_REVIEW';

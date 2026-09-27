@@ -25,14 +25,20 @@ export function registerCanonicalHostReadonlyMcpTools(
       title: '读取工程文件处理状态',
       description:
         '读取同一 WiseLink WorkItem 的最新状态、解析包摘要、候选评估摘要、初始分析下一阶段，以及配置证据采纳触发的脱敏全量重算进度。',
-      inputSchema: z.object({ workItemId: mcpWorkItemId }).strict(),
+      inputSchema: z
+        .object({
+          workItemId: mcpWorkItemId,
+          successorReviewTurnRef: z.string().trim().min(1).max(96).optional(),
+        })
+        .strict(),
       annotations: readOnlyAnnotations,
     },
-    async ({ workItemId }) => {
+    async ({ workItemId, successorReviewTurnRef }) => {
       const scope = await serviceScope.authorizeWorkItemRead({
         transport: 'READONLY_MCP',
         operation: 'READ_STATUS',
         workItemId,
+        ...(successorReviewTurnRef ? { successorReviewTurnRef } : {}),
       });
       return textResult(await vertical.openApiStatus(workItemId, scope));
     },
@@ -66,14 +72,20 @@ export function registerCanonicalHostReadonlyMcpTools(
     {
       title: '打开工程文件工作项',
       description: '读取由 WiseLink 服务端派生的同一 WorkItem 妙搭页面地址。',
-      inputSchema: z.object({ workItemId: mcpWorkItemId }).strict(),
+      inputSchema: z
+        .object({
+          workItemId: mcpWorkItemId,
+          successorReviewTurnRef: z.string().trim().min(1).max(96).optional(),
+        })
+        .strict(),
       annotations: readOnlyAnnotations,
     },
-    async ({ workItemId }) => {
+    async ({ workItemId, successorReviewTurnRef }) => {
       const scope = await serviceScope.authorizeWorkItemRead({
         transport: 'READONLY_MCP',
         operation: 'READ_DEEP_LINK',
         workItemId,
+        ...(successorReviewTurnRef ? { successorReviewTurnRef } : {}),
       });
       return textResult(await vertical.openApiDeepLink(workItemId, scope));
     },

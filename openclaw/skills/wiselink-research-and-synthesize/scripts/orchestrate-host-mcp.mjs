@@ -853,6 +853,8 @@ export async function runDynamicEvaluation({
 export async function runOverallSynthesis({
   workItemId,
   continuationRequestId,
+  successorReviewTurnRef,
+  successorWorkRevisionRef,
   providers = [],
   callTool,
   synthesizeOverall,
@@ -860,8 +862,16 @@ export async function runOverallSynthesis({
 }) {
   assertCallbacks(workItemId, callTool, synthesizeOverall);
   const selectedProviders = validateProviders(providers);
-  const before = await callTool('get_parse_status', { workItemId });
-  if (configurationEvidenceReevaluation === undefined) {
+  if (successorReviewTurnRef && (continuationRequestId || selectedProviders.length || configurationEvidenceReevaluation))
+    throw new Error('HOST_MCP_SUCCESSOR_OVERALL_MODE_AMBIGUOUS');
+  if (successorReviewTurnRef && (!/^RT-[A-Za-z0-9_-]{1,93}$/u.test(successorReviewTurnRef) ||
+      !/^JAWR-[A-Za-z0-9_-]{1,93}$/u.test(successorWorkRevisionRef ?? '')))
+    throw new Error('HOST_MCP_SUCCESSOR_OVERALL_BINDING_INVALID');
+  const before = await callTool('get_parse_status', { workItemId,
+    ...(successorReviewTurnRef ? { successorReviewTurnRef } : {}) });
+  if (successorReviewTurnRef) {
+    // The Host validates the saved Review request and exact work revision.
+  } else if (configurationEvidenceReevaluation === undefined) {
     assertOverallSynthesisReady(before);
   } else {
     const freshReevaluation =
@@ -882,10 +892,15 @@ export async function runOverallSynthesis({
   const begin = await callTool('begin_overall_synthesis', {
     workItemId,
     providers: selectedProviders,
+    ...(successorReviewTurnRef ? { successorReviewTurnRef } : {}),
     ...(continuationRequestId ? { requestId: continuationRequestId } : {}),
   });
   assertBegin(begin, 'OPENCLAW_OVERALL_SYNTHESIS');
   assertOverallInput(begin, selectedProviders);
+  if (successorReviewTurnRef &&
+      (begin.task?.modelInput?.successorOverallBinding?.workRevisionRef !== successorWorkRevisionRef ||
+       begin.task?.modelInput?.successorReviewTurnRef !== successorReviewTurnRef))
+    throw new Error('HOST_MCP_SUCCESSOR_OVERALL_WORK_CHANGED');
   if (begin.status === 'COMMITTING') {
     return recoverInitialCommitting({
       stage: 'SYNTHESIZE_OVERALL',
@@ -901,6 +916,8 @@ export async function runOverallSynthesis({
     begin,
     callTool,
     synthesizeOverall,
+    successorWorkRevisionRef,
+    successorReviewTurnRef,
   });
 }
 
@@ -932,6 +949,8 @@ async function completeOverall({
   callTool,
   synthesizeOverall,
   resumed = false,
+  successorWorkRevisionRef,
+  successorReviewTurnRef,
 }) {
   const problemV2 = begin.modelInput?.schemaVersion === 'wiselink.jobaid-problem-task.v2';
   if (!problemV2) validatePayload('synthesis-input', begin.modelInput);
@@ -960,6 +979,9 @@ async function completeOverall({
       commitArgs(begin, result),
     );
     assertOverallCommit(committed, workItemId);
+    if (successorWorkRevisionRef &&
+        committed.overallSynthesis.basedOnJobAidWorkRevisionRef !== successorWorkRevisionRef)
+      throw new Error('HOST_MCP_SUCCESSOR_OVERALL_COMMIT_WORK_MISMATCH');
   } catch (error) {
     return recoverCommitResponseLoss({
       mode: 'INITIAL_ANALYSIS',
@@ -971,8 +993,10 @@ async function completeOverall({
       cause: error,
     });
   }
-  after ??= await callTool('get_parse_status', { workItemId });
-  const deepLink = await callTool('get_deep_link', { workItemId });
+  after ??= await callTool('get_parse_status', { workItemId,
+    ...(successorReviewTurnRef ? { successorReviewTurnRef } : {}) });
+  const deepLink = await callTool('get_deep_link', { workItemId,
+    ...(successorReviewTurnRef ? { successorReviewTurnRef } : {}) });
   return {
     ...completedResult({
       mode: 'INITIAL_ANALYSIS',

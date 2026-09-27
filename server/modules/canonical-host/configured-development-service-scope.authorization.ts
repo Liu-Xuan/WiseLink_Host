@@ -15,6 +15,7 @@ import {
 import {
   AUTOMATIC_WORK_ITEM_LEASE_AUTHORIZATION,
   type AutomaticWorkItemLeaseAuthorizationPort,
+  type AuthorizedSuccessorReviewDelegation,
 } from './automatic-work-item-lease-authorization.port';
 
 const CANONICAL_APP_ID = 'app_17bzc551rsg';
@@ -81,7 +82,25 @@ export class ConfiguredDevelopmentCanonicalServiceScopeAuthorization implements 
     transport: 'OPENAPI_REST' | 'READONLY_MCP';
     operation: 'READ_STATUS' | 'QUERY_PARSED_PACKAGE' | 'READ_DEEP_LINK';
     workItemId: string;
+    successorReviewTurnRef?: string;
   }): Promise<CanonicalVerifiedServiceScope> {
+    if (input.successorReviewTurnRef !== undefined) {
+      if (
+        !input.successorReviewTurnRef.trim() ||
+        !['READ_STATUS', 'READ_DEEP_LINK'].includes(input.operation)
+      )
+        throw scopeNotFound();
+      const config = requiredSuccessorReviewConfig();
+      if (!this.automaticLeaseAuthorization?.authorizeSuccessorOverall)
+        throw scopeNotFound();
+      return successorReviewScope(
+        await this.automaticLeaseAuthorization.authorizeSuccessorOverall({
+          ...config,
+          workItemId: input.workItemId,
+          reviewTurnRef: input.successorReviewTurnRef,
+        }),
+      );
+    }
     const config = configuredStaticWorkItemScope();
     if (config) {
       const isStaticAllowed =
@@ -190,7 +209,20 @@ export class ConfiguredDevelopmentCanonicalServiceScopeAuthorization implements 
       | 'GET_PENDING_REVIEW_TURN'
       | 'BEGIN_TRANSLATE';
     workItemId: string;
+    successorReviewTurnRef?: string;
   }): Promise<CanonicalVerifiedServiceScope> {
+    if (input.operation === 'BEGIN_OVERALL' && input.successorReviewTurnRef) {
+      const config = requiredSuccessorReviewConfig();
+      if (!this.automaticLeaseAuthorization?.authorizeSuccessorOverall)
+        throw scopeNotFound();
+      return successorReviewScope(
+        await this.automaticLeaseAuthorization.authorizeSuccessorOverall({
+          ...config,
+          workItemId: input.workItemId,
+          reviewTurnRef: input.successorReviewTurnRef,
+        }),
+      );
+    }
     const config = configuredStaticWorkItemScope();
     if (config) {
       const staticAllowed =
@@ -203,7 +235,17 @@ export class ConfiguredDevelopmentCanonicalServiceScopeAuthorization implements 
           additionalWorkItemIds(config.workItemId).includes(input.workItemId));
       if (staticAllowed) return exactWorkItemScope(config, input.workItemId);
     }
-    if (input.operation === 'GET_PENDING_REVIEW_TURN') throw scopeNotFound();
+    if (input.operation === 'GET_PENDING_REVIEW_TURN') {
+      const config = requiredSuccessorReviewConfig();
+      if (!this.automaticLeaseAuthorization?.authorizePendingReview)
+        throw scopeNotFound();
+      return successorReviewScope(
+        await this.automaticLeaseAuthorization.authorizePendingReview({
+          ...config,
+          workItemId: input.workItemId,
+        }),
+      );
+    }
     return this.authorizeAutomaticQueueWorkItem(
       input.workItemId,
       config !== null,
@@ -212,20 +254,44 @@ export class ConfiguredDevelopmentCanonicalServiceScopeAuthorization implements 
 
   async authorizeOpenClawReview(input: {
     operation: 'BEGIN_REVIEW';
+    workItemId?: string;
     reviewConversationRef: string;
     requestId: string;
   }): Promise<CanonicalVerifiedServiceScope> {
     if (!input.reviewConversationRef.trim() || !input.requestId.trim()) {
       throw scopeNotFound();
     }
+    const configured = configuredStaticWorkItemScope();
+    if (
+      input.workItemId &&
+      (!configured ||
+        (input.workItemId !== configured.workItemId &&
+          additionalReviewConversation(configured)?.workItemId !==
+            input.workItemId))
+    ) {
+      const config = requiredSuccessorReviewConfig();
+      if (!this.automaticLeaseAuthorization?.authorizeReviewDelegation)
+        throw scopeNotFound();
+      return successorReviewScope(
+        await this.automaticLeaseAuthorization.authorizeReviewDelegation({
+          ...config,
+          workItemId: input.workItemId,
+          reviewConversationRef: input.reviewConversationRef,
+          requestId: input.requestId,
+        }),
+      );
+    }
     const config = requiredConfig();
     const additional = additionalReviewConversation(config);
-    return exactWorkItemScope(
+    const scope = exactWorkItemScope(
       config,
       additional?.reviewConversationRef === input.reviewConversationRef
         ? additional.workItemId
         : config.workItemId,
     );
+    if (input.workItemId !== undefined && scope.workItemId !== input.workItemId)
+      throw scopeNotFound();
+    return scope;
   }
 
   async authorizeOpenClawApplicabilityContext(input: {
@@ -263,7 +329,9 @@ export class ConfiguredDevelopmentCanonicalServiceScopeAuthorization implements 
     const config = configuredStaticWorkItemScope();
     if (config && input.tenantId === config.tenantId) {
       if (input.workItemId === config.workItemId)
-        return process.env.WL_OPENCLAW_APPLICABILITY_CONTEXT_REF?.trim() || null;
+        return (
+          process.env.WL_OPENCLAW_APPLICABILITY_CONTEXT_REF?.trim() || null
+        );
       if (additionalWorkItemIds(config.workItemId).includes(input.workItemId)) {
         const additional = additionalApplicabilityContext(config);
         return additional?.workItemId === input.workItemId
@@ -274,7 +342,10 @@ export class ConfiguredDevelopmentCanonicalServiceScopeAuthorization implements 
     // A queued WorkItem may be authorized without a configured fleet target.
     // Confirm its active lease before reporting the missing context; never
     // inherit the fixed WorkItem's applicability context.
-    const scope = await this.authorizeAutomaticQueueWorkItem(input.workItemId, config !== null);
+    const scope = await this.authorizeAutomaticQueueWorkItem(
+      input.workItemId,
+      config !== null,
+    );
     if (scope.tenantId !== input.tenantId) throw scopeNotFound();
     return null;
   }
@@ -341,6 +412,38 @@ export class ConfiguredDevelopmentCanonicalServiceScopeAuthorization implements 
           attemptRef: input.attemptRef,
         };
       }
+    }
+    if (
+      input.workItemId &&
+      isOpenClawSuccessorReviewConfigured() &&
+      [
+        'GET_REVIEW_CONTEXT',
+        'READ_REVIEW_SOURCE_REFS',
+        'COMMIT_REVIEW',
+        'RESUME_OVERALL',
+        'COMMIT_OVERALL',
+        'READ_ASSESSMENT_SOURCES',
+        'SAVE_ASSESSMENT_WORK',
+        'READ_ASSESSMENT_WORK',
+        'GET_ACTION_ATTEMPT_STATUS',
+        'HEARTBEAT_ATTEMPT',
+        'CANCEL_ATTEMPT',
+      ].includes(input.operation)
+    ) {
+      const successorConfig = requiredSuccessorReviewConfig();
+      if (!this.automaticLeaseAuthorization?.authorizeReviewAttempt)
+        throw scopeNotFound();
+      const delegation =
+        await this.automaticLeaseAuthorization.authorizeReviewAttempt({
+          ...successorConfig,
+          workItemId: input.workItemId,
+          attemptRef: input.attemptRef,
+        });
+      if (delegation)
+        return {
+          ...successorReviewScope(delegation),
+          attemptRef: input.attemptRef,
+        };
     }
     if (
       input.workItemId === undefined ||
@@ -781,4 +884,57 @@ function scopeNotFound(): Error & { code: string; statusCode: number } {
     code: 'CANONICAL_WORK_ITEM_NOT_FOUND',
     statusCode: 404,
   });
+}
+
+export function isOpenClawSuccessorReviewConfigured(
+  tenantId?: string,
+): boolean {
+  try {
+    const config = requiredSuccessorReviewConfig();
+    return tenantId === undefined || tenantId === config.tenantId;
+  } catch (error) {
+    if (isServiceScopeUnavailable(error)) return false;
+    throw error;
+  }
+}
+function requiredSuccessorReviewConfig(): AutoWorkItemQueueScopeConfig {
+  const config = requiredAutoWorkItemQueueConfig();
+  if (process.env.WL_OPENCLAW_SERVICE_SUCCESSOR_REVIEW_ENABLED !== '1')
+    throw canonicalServiceScopeUnavailable();
+  return config;
+}
+function successorReviewScope(
+  delegation: AuthorizedSuccessorReviewDelegation,
+): CanonicalVerifiedServiceScope {
+  const config = requiredSuccessorReviewConfig();
+  if (
+    delegation.tenantId !== config.tenantId ||
+    delegation.principalId !== config.principalId ||
+    !delegation.workItemId?.startsWith('WI-') ||
+    !delegation.actorUserId?.trim() ||
+    !delegation.reviewConversationRef?.trim() ||
+    !delegation.reviewTurnRef?.trim() ||
+    !delegation.requestId?.trim() ||
+    !delegation.documentId?.trim() ||
+    !delegation.documentVersionId?.trim() ||
+    !delegation.sourceArtifactId?.trim() ||
+    !/^[0-9a-f]{64}$/u.test(delegation.sourceFileSha256) ||
+    !Number.isSafeInteger(delegation.sourceByteLength) ||
+    delegation.sourceByteLength < 1 ||
+    !Number.isSafeInteger(delegation.inputRevision) ||
+    delegation.inputRevision < 0 ||
+    typeof delegation.overallRequested !== 'boolean'
+  )
+    throw scopeNotFound();
+  return {
+    principalId: delegation.principalId,
+    tenantId: delegation.tenantId,
+    appId: CANONICAL_APP_ID,
+    workItemId: delegation.workItemId,
+    successorReviewDelegation: delegation,
+    authorizationFingerprint: fingerprint([
+      'successor-review-delegation.v1',
+      JSON.stringify(delegation),
+    ]),
+  };
 }

@@ -18,7 +18,11 @@ import { ReviewAttemptDispatchService } from '../action-attempt/review-attempt-d
 import { CanonicalModelSettingsService } from '../model-settings/canonical-model-settings.service';
 import { taskModelSelection } from '../model-settings/canonical-model-catalog';
 import { readStoredExecutionModel } from '../model-settings/canonical-execution-model';
-import { isOpenClawAutomaticReviewConfigured } from '../canonical-host/configured-development-service-scope.authorization';
+import { MiaodaWorkItemRepository } from '../work-item/miaoda-work-item.repository';
+import {
+  isOpenClawAutomaticReviewConfigured,
+  isOpenClawSuccessorReviewConfigured,
+} from '../canonical-host/configured-development-service-scope.authorization';
 import type { ResolvedSession } from '../identity/session-resolver.service';
 import {
   CANONICAL_OBJECT_ACCESS,
@@ -54,6 +58,7 @@ export class ReviewConversationService {
     private readonly modelSettings: CanonicalModelSettingsService,
     @Optional()
     private readonly matterWorking?: EngineeringMatterWorkingService,
+    @Optional() private readonly workItems?: MiaodaWorkItemRepository,
   ) {}
 
   async createOrResume(
@@ -177,7 +182,11 @@ export class ReviewConversationService {
 
     if (
       input.executionMode === 'AUTOMATIC' &&
-      !isOpenClawAutomaticReviewConfigured(existing.conversation)
+      !(await this.automaticExecutionAvailable(
+        existing.conversation,
+        authorized.grant.workItemRevision,
+        input.reviewScope != null,
+      ))
     ) {
       throw Object.assign(
         new Error('Automatic review is not available for this work item.'),
@@ -187,6 +196,24 @@ export class ReviewConversationService {
         },
       );
     }
+
+    if (
+      input.overallRequested === true &&
+      !(await this.successorExecutionAvailable(
+        existing.conversation,
+        authorized.grant.workItemRevision,
+        input.reviewScope != null,
+      ))
+    )
+      throw Object.assign(
+        new Error(
+          'Automatic successor overall is not available for this work item.',
+        ),
+        {
+          code: 'REVIEW_AUTOMATIC_EXECUTION_UNAVAILABLE',
+          statusCode: 503,
+        },
+      );
 
     if (input.purpose === 'UPDATE_ASSESSMENT') {
       if (input.expectedInputRevision !== authorized.grant.workItemRevision)
@@ -372,7 +399,18 @@ export class ReviewConversationService {
     const conversation = aggregate.conversation;
     model.automaticExecutionAvailable =
       conversation.status === 'ACTIVE' &&
-      isOpenClawAutomaticReviewConfigured(conversation);
+      (await this.automaticExecutionAvailable(
+        conversation,
+        currentRevision,
+        selected.kind !== 'WORK_ITEM',
+      ));
+    model.overallExecutionAvailable =
+      conversation.status === 'ACTIVE' &&
+      (await this.successorExecutionAvailable(
+        conversation,
+        currentRevision,
+        selected.kind !== 'WORK_ITEM',
+      ));
     model.turns = await Promise.all(
       aggregate.turns.map(async (turn) => ({
         ...reviewTurnReadModel(turn),
@@ -497,6 +535,34 @@ export class ReviewConversationService {
       conversation.workItemId,
       new Date(),
     );
+  }
+
+  private async automaticExecutionAvailable(
+    conversation: PersistedReviewConversation,
+    revision: number,
+    matter: boolean,
+  ): Promise<boolean> {
+    if (isOpenClawAutomaticReviewConfigured(conversation)) return true;
+    return this.successorExecutionAvailable(conversation, revision, matter);
+  }
+
+  private async successorExecutionAvailable(
+    conversation: PersistedReviewConversation,
+    revision: number,
+    matter: boolean,
+  ): Promise<boolean> {
+    if (
+      matter ||
+      !isOpenClawSuccessorReviewConfigured(conversation.tenantId) ||
+      !this.workItems
+    )
+      return false;
+    return this.workItems.hasReadableAutoProcessingCompletion({
+      tenantId: conversation.tenantId,
+      actorUserId: conversation.actorId,
+      workItemId: conversation.workItemId,
+      revision,
+    });
   }
 
   private async authorize(

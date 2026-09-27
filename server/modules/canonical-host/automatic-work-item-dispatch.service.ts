@@ -34,6 +34,7 @@ import {
 import { CanonicalHostInitialAnalysisStatusService } from './canonical-host-initial-analysis-status.service';
 import { canonicalHostBareSha256 } from './canonical-host-sha256';
 import { ReviewConversationRepository } from '../review-persistence/review-conversation.repository';
+import { JobAidWorkRepository } from './jobaid-work.repository';
 
 const CANONICAL_APP_ID = 'app_17bzc551rsg';
 const AUTO_WORK_ITEM_LEASE_MILLISECONDS = 60 * 60 * 1000;
@@ -57,6 +58,8 @@ export class AutomaticWorkItemDispatchService {
     private readonly initialAnalysisStatus?: CanonicalHostInitialAnalysisStatusService,
     @Optional()
     private readonly reviewConversations?: ReviewConversationRepository,
+    @Optional()
+    private readonly jobAidWork?: JobAidWorkRepository,
   ) {}
 
   async nextWorkItem(
@@ -138,7 +141,7 @@ export class AutomaticWorkItemDispatchService {
 
     if (input?.resumeWorkItemId || process.env.WL_OPENCLAW_SERVICE_SUCCESSOR_REVIEW_ENABLED !== '1')
       return { status: 'IDLE' };
-    if (!this.reviewConversations)
+    if (!this.reviewConversations || !this.jobAidWork)
       throw new Error('AUTO_WORK_ITEM_REVIEW_DISCOVERY_UNAVAILABLE');
     const subjects = await this.workItems.listCompletedAutoProcessingReviewSubjects({
       tenantId: scope.tenantId,
@@ -153,22 +156,55 @@ export class AutomaticWorkItemDispatchService {
         tenantId: scope.tenantId,
         actorId: subject.authorization.actorUserId,
         workItemId,
+        requireSuccessorDelegation: true,
       });
-      if (!turn) continue;
-      const reviewScope = await this.serviceScope.authorizeOpenClawReview({
-        operation: 'BEGIN_REVIEW',
+      if (turn) {
+        const reviewScope = await this.serviceScope.authorizeOpenClawReview({
+          operation: 'BEGIN_REVIEW', workItemId,
+          reviewConversationRef: turn.reviewConversationId,
+          requestId: turn.requestId,
+        });
+        if (reviewScope.tenantId !== scope.tenantId ||
+            reviewScope.principalId !== scope.principalId ||
+            reviewScope.workItemId !== workItemId)
+          throw new Error('AUTO_WORK_ITEM_REVIEW_SCOPE_MISMATCH');
+        return {
+          status: 'REVIEW_PENDING', workItemId,
+          reviewTurnRef: turn.reviewTurnId,
+          reviewAfterWorkItemId: workItemId,
+        };
+      }
+      const latestWork = await this.jobAidWork.latestForRuntime({
+        tenantId: scope.tenantId,
+        actorUserId: subject.authorization.actorUserId,
         workItemId,
-        reviewConversationRef: turn.reviewConversationId,
-        requestId: turn.requestId,
       });
-      if (reviewScope.tenantId !== scope.tenantId ||
-          reviewScope.principalId !== scope.principalId ||
-          reviewScope.workItemId !== workItemId)
-        throw new Error('AUTO_WORK_ITEM_REVIEW_SCOPE_MISMATCH');
+      if (!latestWork || latestWork.content.roundCompletion === 'IN_PROGRESS') continue;
+      const turns = await this.reviewConversations.listSuccessorOverallTurnBindings({
+        tenantId: scope.tenantId,
+        actorId: subject.authorization.actorUserId,
+        workItemId,
+      });
+      const selected = turns.find(binding =>
+        binding.turn.assistantCandidate?.jobAidWorkingUpdate?.status === 'APPLIED' &&
+        binding.turn.assistantCandidate.jobAidWorkingUpdate.workRevisionRef === latestWork.workRevisionRef);
+      if (!selected) continue;
+      const projection = await this.workItems.loadTenantScopedProjection(workItemId, scope.tenantId);
+      if (!projection?.projection ||
+          projection.projection.integratedAssessment?.overallSynthesis?.basedOnJobAidWorkRevisionRef === latestWork.workRevisionRef)
+        continue;
+      const overallScope = await this.serviceScope.authorizeOpenClawWorkItem({
+        operation: 'BEGIN_OVERALL', workItemId,
+        successorReviewTurnRef: selected.turn.reviewTurnId,
+      });
+      if (overallScope.tenantId !== scope.tenantId ||
+          overallScope.principalId !== scope.principalId ||
+          overallScope.workItemId !== workItemId)
+        throw new Error('AUTO_WORK_ITEM_OVERALL_SCOPE_MISMATCH');
       return {
-        status: 'REVIEW_PENDING',
-        workItemId,
-        reviewTurnRef: turn.reviewTurnId,
+        status: 'OVERALL_PENDING', workItemId,
+        reviewTurnRef: selected.turn.reviewTurnId,
+        workRevisionRef: latestWork.workRevisionRef,
         reviewAfterWorkItemId: workItemId,
       };
     }

@@ -23,6 +23,7 @@ export class MiaodaCanonicalWorkItemRegistrarAdapter implements CanonicalWorkIte
     next: Omit<CanonicalWorkItemProjection, 'revision'>;
     syncPrimaryAttempt?: boolean;
     applicabilityInputGuard?: { tenantId: string };
+    jobAidWorkRevisionGuard?: { tenantId: string; workRevisionRef: string };
   }): Promise<CanonicalWorkItemProjection> {
     return this.repository.compareAndSet(input);
   }

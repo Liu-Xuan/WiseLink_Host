@@ -180,6 +180,7 @@ export class CanonicalHostOpenClawReviewService {
       tenantId: scope.tenantId,
       actorId: loaded.row.requestedByUserId,
       workItemId,
+      ...(scope.successorReviewDelegation ? { requireSuccessorDelegation: true } : {}),
     });
     if (!turn) return { next: null, busy: false };
     await this.assertCurrentConversationScope(

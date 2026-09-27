@@ -921,7 +921,7 @@ async function insertScopedTurn(sql, input) {
     ) VALUES (
       ${input.turnId}, ${input.reviewConversationId}, ${input.inputId},
       ${input.tenantId}, ${input.actorId}, ${input.workItemId}, 0,
-      ${input.requestId}, ${input.revision}, 'Engineer review input',
+      ${input.requestId}, ${input.revision}, ${input.userMessage ?? 'Engineer review input'},
       'ENGINEER_TEXT',
       'CANDIDATE_UNADOPTED', '2026-08-26T11:01:00.000Z'
     )
@@ -1135,3 +1135,109 @@ function databaseCode(error) {
   }
   return undefined;
 }
+
+test(
+  'C187 successor Overall discovery retains actual service-role actor RLS',
+  { skip: !databaseUrl },
+  async () => {
+    assertSafeIsolatedDatabase(databaseUrl);
+    const sql = postgres(databaseUrl, { max: 4, onnotice: () => {} });
+    let runtimeSql;
+    try {
+      await resetDatabase(sql);
+      await seedC1Turn(sql);
+      const payload =
+        'WLR7:' +
+        JSON.stringify({
+          schemaVersion: 'wiselink.3_1.review_engineer_input.v1.c7',
+          userMessage: 'Update and check overall',
+          purpose: 'UPDATE_ASSESSMENT',
+          executionRequested: true,
+          overallRequested: true,
+          expectedInputRevision: 7,
+          includedDiscussionTurnIds: [],
+          attachments: [],
+        });
+      await insertScopedTurn(sql, {
+        reviewConversationId: 'RC-C2',
+        turnId: 'RT-C187',
+        inputId: 'ESI-C187',
+        tenantId: 'tenant-C2',
+        actorId: 'actor-C2',
+        workItemId: 'WI-C2',
+        requestId: 'REQ-C187',
+        revision: 7,
+        userMessage: payload,
+      });
+      const host = new ReviewConversationRepository(drizzle(sql));
+      const aggregate = await host.loadById('RC-C2');
+      const turn = aggregate.turns.find(
+        (entry) => entry.reviewTurnId === 'RT-C187',
+      );
+      await host.persistAssistantCandidate({
+        conversation: aggregate.conversation,
+        turn,
+        actionAttemptId: 'ATT-C2',
+        candidate: {
+          ...candidate('AQ-C2', 'a'.repeat(64)),
+          jobAidWorkingUpdate: {
+            status: 'APPLIED',
+            workRevisionRef: 'WORK-C187',
+            workRevision: 2,
+            affectedIssueKeys: ['ISSUE-1'],
+          },
+        },
+        completedAt: new Date('2026-09-27T12:00:00.000Z'),
+      });
+      const runtimeUrl = new URL(databaseUrl);
+      runtimeUrl.username = 'review_c2_hosted_runtime_sim';
+      runtimeUrl.password = 'review-c2-hosted-password';
+      runtimeSql = postgres(runtimeUrl.toString(), {
+        max: 1,
+        onnotice: () => {},
+      });
+      const repository = new ReviewConversationRepository(drizzle(runtimeSql));
+      const input = {
+        tenantId: 'tenant-C2',
+        actorId: 'actor-C2',
+        workItemId: 'WI-C2',
+      };
+      const found = await repository.listSuccessorOverallTurnBindings(input);
+      assert.equal(found.length, 1);
+      assert.equal(found[0].turn.reviewTurnId, 'RT-C187');
+      assert.equal(
+        found[0].turn.assistantCandidate.jobAidWorkingUpdate.workRevisionRef,
+        'WORK-C187',
+      );
+      assert.deepEqual(
+        await repository.listSuccessorOverallTurnBindings({
+          ...input,
+          actorId: 'actor-other',
+        }),
+        [],
+      );
+      assert.deepEqual(
+        await repository.listSuccessorOverallTurnBindings({
+          ...input,
+          tenantId: 'tenant-other',
+        }),
+        [],
+      );
+      assert.deepEqual(
+        await repository.listSuccessorOverallTurnBindings({
+          ...input,
+          reviewTurnRef: 'RT-C2',
+        }),
+        [],
+      );
+      await sql`UPDATE work_item SET revision=8 WHERE work_item_id='WI-C2'`;
+      assert.deepEqual(
+        await repository.listSuccessorOverallTurnBindings(input),
+        [],
+      );
+    } finally {
+      await runtimeSql?.end({ timeout: 5 });
+      await sql.end({ timeout: 5 });
+    }
+  },
+);

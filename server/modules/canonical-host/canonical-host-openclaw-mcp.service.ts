@@ -713,14 +713,14 @@ export class CanonicalHostOpenClawMcpService {
       {
         title: '开始已持久评审轮次',
         description:
-          '输入仅含 C1 reviewConversationRef 与 requestId。Host 从持久会话、官方 OAuth subject 映射、WorkItem owner/current revision 派生 tenant、actor、WorkItem、turn 与 opaque actorContextRef，并在既有 durable ActionAttempt 上领取租约；客户端不能提供或覆盖 actor、tenant、WorkItem 或 sessionKey。',
+          '输入为 reviewConversationRef、requestId；动态后继须同时提供 workItemId 指针。Host 从持久会话、官方 OAuth subject 映射、WorkItem owner/current revision 派生 tenant、actor、WorkItem、turn 与 opaque actorContextRef，并在既有 durable ActionAttempt 上领取租约；客户端不能覆盖 actor、tenant 或 sessionKey；WorkItem 指针须经持久委托重新核验。',
         inputSchema: z
-          .object({ reviewConversationRef, requestId: reviewRequestId })
+          .object({ reviewConversationRef, requestId: reviewRequestId, workItemId: mcpWorkItemId.optional() })
           .strict(),
         annotations: beginAnnotations,
       },
-      async ({ reviewConversationRef: conversationRef, requestId }) =>
-        textResult(await this.review.begin(conversationRef, requestId)),
+      async ({ reviewConversationRef: conversationRef, requestId, workItemId }) =>
+        textResult(await this.review.begin(conversationRef, requestId, workItemId)),
     );
 
     server.registerTool(

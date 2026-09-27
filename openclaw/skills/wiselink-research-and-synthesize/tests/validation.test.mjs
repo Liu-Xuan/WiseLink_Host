@@ -3066,6 +3066,44 @@ test('runs no-discovery overall from complete persisted dynamic N', async () => 
   );
 });
 
+test('successor Overall binds an explicit Review turn and exact saved work without initial-stage readiness', async () => {
+  const input = synthesisInput();
+  const task = makeTask('OPENCLAW_OVERALL_SYNTHESIS', {
+    ...input, successorReviewTurnRef: 'RT-EXPLICIT',
+    successorOverallBinding: { workRevisionRef: 'JAWR-EXACT' },
+  });
+  const begin = runningBegin(task, { modelInput: input, selectedDiscoveryRefs: [] });
+  const calls = [];
+  const result = await runOverallSynthesis({
+    workItemId: WORK_ITEM_ID, successorReviewTurnRef: 'RT-EXPLICIT',
+    successorWorkRevisionRef: 'JAWR-EXACT', callTool: async (name, args) => {
+      calls.push({ name, args });
+      if (name === 'get_parse_status') return { entry: { workItemId: WORK_ITEM_ID } };
+      if (name === 'begin_overall_synthesis') return begin;
+      if (name === 'heartbeat_action_attempt') return heartbeatResult(task, args);
+      if (name === 'commit_overall_candidate') return {
+        workItemId: WORK_ITEM_ID, workItemRevision: 8,
+        status: 'OVERALL_CANDIDATE_READY', overallSynthesis: {
+          status: 'CANDIDATE_ONLY', authorityLevel: 'candidate_only',
+          externalDiscoveryIsEvidence: false,
+          basedOnJobAidWorkRevisionRef: 'JAWR-EXACT',
+        },
+      };
+      if (name === 'get_deep_link') return { workItemId: WORK_ITEM_ID, deepLink: '/work-item/fixture' };
+      throw new Error(`UNEXPECTED_TOOL:${name}`);
+    },
+    synthesizeOverall: async () => ({ output: synthesisOutput(input), provenance: provenance() }),
+  });
+  assert.equal(result.ok, true);
+  assert.deepEqual(calls.find(({ name }) => name === 'begin_overall_synthesis').args, {
+    workItemId: WORK_ITEM_ID, providers: [], successorReviewTurnRef: 'RT-EXPLICIT',
+  });
+  assert.ok(calls.filter(({ name }) => name === 'get_parse_status').every(({ args }) =>
+    args.successorReviewTurnRef === 'RT-EXPLICIT'));
+  assert.equal(calls.find(({ name }) => name === 'get_deep_link').args.successorReviewTurnRef,
+    'RT-EXPLICIT');
+});
+
 test('replays only the Host-sealed Overall result to finish COMMITTING', async () => {
   const input = synthesisInput();
   const task = makeTask('OPENCLAW_OVERALL_SYNTHESIS', {
@@ -5362,7 +5400,8 @@ async function rejectedReviewCheckpoint(t) {
   const unprepared = { attemptRef: task.operationRef, taskType: task.taskType, status: 'RUNNING',
     commitStartedAt: null, resultContentHash: null, recoveryAvailable: false,
     projectionApplied: false, terminalReason: null };
-  await assert.rejects(runHostedReviewTurn({ reviewConversationRef: reviewTask.reviewConversationRef,
+  await assert.rejects(runHostedReviewTurn({ workItemId: task.workItemId,
+    reviewConversationRef: reviewTask.reviewConversationRef,
     requestId: reviewTask.requestId, checkpointDir }, {
     callTool: async (name, args) => {
       if (name === 'begin_review_turn') return runningBegin(task);

@@ -29,11 +29,15 @@ describe('reviewed assessment update boundary', () => {
         modelLabel: 'actual-model',
         hasUnsentDraft: true,
         pending: false,
+        overallRequested: true,
         disabled: false,
         onConfirm: () => undefined,
       }),
     );
     expect(html).toContain('本次评估输入');
+    expect(html).toContain(
+      '本次请求包含：有实质更正后，基于新问题评估核对整体综合。',
+    );
     expect(html).toContain('DV-exact');
     expect(html).toContain('工作版本 2');
     expect(html).toContain('actual-model');

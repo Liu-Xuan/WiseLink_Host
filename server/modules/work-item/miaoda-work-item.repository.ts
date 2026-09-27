@@ -29,7 +29,11 @@ import {
   sourceIdentityQuery,
 } from './document-version-source-identity';
 import { autoWorkItemAuthorization } from '../../database/auto-work-item-authorization.schema';
-import { actionAttempt, workItem } from '../../database/schema';
+import {
+  actionAttempt,
+  assessmentWorkRevision,
+  workItem,
+} from '../../database/schema';
 import { readStoredExecutionModel } from '../model-settings/canonical-execution-model';
 import { canonicalModelError } from '../model-settings/canonical-model-catalog';
 
@@ -390,6 +394,45 @@ export class MiaodaWorkItemRepository {
       )
       .orderBy(autoWorkItemAuthorization.createdAt)
       .limit(limit);
+  }
+
+  /** Browser path uses only WorkItem's own read policy, never the service-only grant table. */
+  async hasReadableAutoProcessingCompletion(input: {
+    tenantId: string;
+    actorUserId: string;
+    workItemId: string;
+    revision: number;
+  }): Promise<boolean> {
+    const loaded = await this.loadTenantScopedProjection(
+      input.workItemId,
+      input.tenantId,
+    );
+    const receipt = loaded?.projection?.autoProcessingCompletionReceipt;
+    const row = loaded?.row;
+    return Boolean(
+      receipt &&
+      row &&
+      row.tenantId === input.tenantId &&
+      row.workItemId === input.workItemId &&
+      row.requestedByUserId === input.actorUserId &&
+      row.revision === input.revision &&
+      loaded?.projection?.revision === input.revision &&
+      row.actionType === ACTION_TYPE &&
+      row.status === 'CANDIDATE_READBACK_VERIFIED' &&
+      row.packageId &&
+      receipt.tenantId === row.tenantId &&
+      receipt.workItemId === row.workItemId &&
+      receipt.actorUserId === row.requestedByUserId &&
+      receipt.requestId === row.requestId &&
+      receipt.documentId === row.documentId &&
+      receipt.documentVersionId === row.documentVersionId &&
+      receipt.sourceArtifactId === row.sourceArtifactId &&
+      receipt.sourceFileSha256 === row.sourceFileSha256 &&
+      receipt.sourceByteLength === Number(row.sourceByteLength) &&
+      /^[0-9a-f]{64}$/u.test(receipt.sourceFileSha256) &&
+      receipt.sourceByteLength > 0 &&
+      Number.isFinite(Date.parse(receipt.completedAt)),
+    );
   }
 
   /** Discovery only: completion is not a successor execution delegation. */
@@ -1695,7 +1738,65 @@ export class MiaodaWorkItemRepository {
     next: Omit<CanonicalWorkItemProjection, 'revision'>;
     syncPrimaryAttempt?: boolean;
     applicabilityInputGuard?: { tenantId: string };
+    jobAidWorkRevisionGuard?: { tenantId: string; workRevisionRef: string };
   }): Promise<CanonicalWorkItemProjection> {
+    if (input.jobAidWorkRevisionGuard) {
+      const guard = input.jobAidWorkRevisionGuard;
+      if (
+        !guard.tenantId.trim() ||
+        !/^JAWR-[A-Za-z0-9-]{1,91}$/u.test(guard.workRevisionRef) ||
+        input.syncPrimaryAttempt !== false ||
+        input.applicabilityInputGuard
+      )
+        throw new Error('JOBAID_OVERALL_WORK_CAS_GUARD_INVALID');
+      return this.db.transaction(async (transaction) => {
+        const [owner] = await transaction
+          .select({
+            revision: workItem.revision,
+            documentVersionId: workItem.documentVersionId,
+            requestedByUserId: workItem.requestedByUserId,
+          })
+          .from(workItem)
+          .where(
+            and(
+              eq(workItem.workItemId, input.workItemId),
+              eq(workItem.tenantId, guard.tenantId),
+            ),
+          )
+          .limit(1)
+          .for('update');
+        if (
+          !owner ||
+          owner.revision !== input.expectedRevision ||
+          owner.documentVersionId !== input.next.source.documentVersionId
+        )
+          throw new Error('WORK_ITEM_CAS_CONFLICT');
+        await transaction.execute(
+          sql`SELECT set_config('app.user_id', ${owner.requestedByUserId}, true)`,
+        );
+        const [latest] = await transaction
+          .select({
+            workRevisionRef: assessmentWorkRevision.assessmentWorkRevisionId,
+            documentVersionId: assessmentWorkRevision.documentVersionId,
+          })
+          .from(assessmentWorkRevision)
+          .where(
+            and(
+              eq(assessmentWorkRevision.tenantId, guard.tenantId),
+              eq(assessmentWorkRevision.workItemId, input.workItemId),
+            ),
+          )
+          .orderBy(desc(assessmentWorkRevision.workRevision))
+          .limit(1);
+        if (
+          !latest ||
+          latest.workRevisionRef !== guard.workRevisionRef ||
+          latest.documentVersionId !== owner.documentVersionId
+        )
+          throw new Error('JOBAID_OVERALL_EXACT_WORK_CHANGED');
+        return this.persistProjectionCas(input, transaction);
+      });
+    }
     if (input.applicabilityInputGuard) {
       if (
         !input.applicabilityInputGuard.tenantId.trim() ||

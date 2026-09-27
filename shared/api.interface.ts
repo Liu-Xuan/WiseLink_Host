@@ -255,6 +255,8 @@ export interface ReviewTurnReadModel {
  * session identifiers are deliberately absent from this contract.
  */
 export interface ReviewConversationReadModel {
+  /** Host-verified ability to accept an explicit successor Overall request. */
+  overallExecutionAvailable?: boolean;
   schemaVersion: 'wiselink.3_1.review_conversation.v1.c1';
   reviewConversationId: string;
   workItemId: string;
@@ -3280,6 +3282,13 @@ export type AutomaticWorkItemClaimResult =
       status: 'REVIEW_PENDING';
       workItemId: string;
       reviewTurnRef: string;
+      reviewAfterWorkItemId: string;
+    }
+  | {
+      status: 'OVERALL_PENDING';
+      workItemId: string;
+      reviewTurnRef: string;
+      workRevisionRef: string;
       reviewAfterWorkItemId: string;
     }
   | {

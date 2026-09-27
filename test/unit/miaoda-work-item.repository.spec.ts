@@ -664,3 +664,69 @@ describe('MiaodaWorkItemRepository readable completion receipt', () => {
     ).rejects.toThrow('AUTO_PROCESSING_COMPLETION_RECEIPT_WRITE_FAILED');
   });
 });
+
+describe('browser readable completion eligibility', () => {
+  const receipt = {
+    tenantId: 'tenant-A',
+    workItemId: 'WI-A',
+    actorUserId: 'actor-A',
+    requestId: 'REQ-A',
+    documentId: 'DOC-A',
+    documentVersionId: 'DV-A',
+    sourceArtifactId: 'SA-A',
+    sourceFileSha256: 'a'.repeat(64),
+    sourceByteLength: 100,
+    completedAt: '2026-09-27T00:00:00.000Z',
+  };
+  const row = {
+    ...receipt,
+    requestedByUserId: 'actor-A',
+    revision: 7,
+    actionType: 'PARSE_PDF',
+    status: 'CANDIDATE_READBACK_VERIFIED',
+    packageId: 'PKG-A',
+  };
+  it('accepts only matching owner and source receipt without reading the service-only enrollment table', async () => {
+    const target = new MiaodaWorkItemRepository({} as never);
+    const load = jest
+      .spyOn(target, 'loadTenantScopedProjection')
+      .mockResolvedValue({
+        row,
+        projection: { revision: 7, autoProcessingCompletionReceipt: receipt },
+      } as never);
+    const input = {
+      tenantId: 'tenant-A',
+      workItemId: 'WI-A',
+      actorUserId: 'actor-A',
+      revision: 7,
+    };
+    await expect(
+      target.hasReadableAutoProcessingCompletion(input),
+    ).resolves.toBe(true);
+    for (const override of [
+      { actorUserId: 'actor-other' },
+      { tenantId: 'other' },
+      { revision: 8 },
+    ])
+      await expect(
+        target.hasReadableAutoProcessingCompletion({ ...input, ...override }),
+      ).resolves.toBe(false);
+    load.mockResolvedValue({ row, projection: { revision: 7 } } as never);
+    await expect(
+      target.hasReadableAutoProcessingCompletion(input),
+    ).resolves.toBe(false);
+    load.mockResolvedValue({
+      row,
+      projection: {
+        revision: 7,
+        autoProcessingCompletionReceipt: {
+          ...receipt,
+          sourceFileSha256: 'b'.repeat(64),
+        },
+      },
+    } as never);
+    await expect(
+      target.hasReadableAutoProcessingCompletion(input),
+    ).resolves.toBe(false);
+  });
+});

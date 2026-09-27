@@ -1,3 +1,7 @@
+import type { ReviewConversationRepository } from '../review-persistence/review-conversation.repository';
+import type { ActionAttemptRepository } from '../action-attempt/action-attempt.repository';
+import * as runtimePolicy from './canonical-host-openclaw-runtime-policy';
+import * as reviewContract from './canonical-host-openclaw-review.contract';
 import type { MiaodaDocumentVersionSourceResolver } from '../work-item/miaoda-document-version-source.resolver';
 import type {
   AutoWorkItemLeaseBinding,
@@ -316,6 +320,8 @@ function fixture(
   >;
 
   return {
+    authorization,
+    row,
     adapter: new MiaodaAutomaticWorkItemLeaseAuthorizationAdapter(
       workItems as unknown as MiaodaWorkItemRepository,
       sourceResolver as unknown as MiaodaDocumentVersionSourceResolver,
@@ -326,3 +332,265 @@ function fixture(
     sourceAuthorization,
   };
 }
+
+function successorFixture() {
+  const original = fixture();
+  const grant = { ...original.authorization, status: 'COMPLETED' as const };
+  const binding = { authorization: grant, workItem: { ...original.row } };
+  const turnBinding = {
+    conversation: {
+      status: 'ACTIVE',
+      actorId: ACTOR_ID,
+      tenantId: TENANT_ID,
+      workItemId: WORK_ITEM_ID,
+      reviewConversationId: 'RC-new',
+    },
+    turn: {
+      reviewTurnId: 'RT-new',
+      reviewConversationId: 'RC-new',
+      requestId: 'REQ-review',
+      executionRequested: true,
+      overallRequested: true,
+      purpose: 'UPDATE_ASSESSMENT',
+      expectedInputRevision: 7,
+      inputRevision: 7,
+      reviewScope: null,
+      assistantCandidate: {
+        jobAidWorkingUpdate: { status: 'APPLIED', workRevisionRef: 'WORK-new' },
+      },
+    },
+  };
+  const workItems = {
+    ...original.workItems,
+    loadTenantScopedProjection: jest.fn(),
+    listCompletedAutoProcessingReviewSubjects: jest
+      .fn()
+      .mockResolvedValue([binding]),
+  };
+  const conversations = {
+    loadOpenClawTurnBinding: jest.fn().mockResolvedValue(turnBinding),
+    loadPendingOpenClawTurn: jest.fn().mockResolvedValue({
+      reviewConversationId: 'RC-new',
+      requestId: 'REQ-review',
+    }),
+    listSuccessorOverallTurnBindings: jest
+      .fn()
+      .mockResolvedValue([turnBinding]),
+  };
+  const attempts = {
+    readByOperationRef: jest.fn(),
+    readLatestByExactIdempotency: jest.fn(),
+  };
+  const adapter = new MiaodaAutomaticWorkItemLeaseAuthorizationAdapter(
+    workItems as unknown as MiaodaWorkItemRepository,
+    original.sourceResolver as unknown as MiaodaDocumentVersionSourceResolver,
+    original.sourceAuthorization,
+    conversations as unknown as ReviewConversationRepository,
+    attempts as unknown as ActionAttemptRepository,
+  );
+  return {
+    ...original,
+    adapter,
+    binding,
+    turnBinding,
+    workItems,
+    conversations,
+    attempts,
+  };
+}
+const successorInput = {
+  tenantId: TENANT_ID,
+  principalId: PRINCIPAL_ID,
+  workItemId: WORK_ITEM_ID,
+  reviewConversationRef: 'RC-new',
+  requestId: 'REQ-review',
+};
+
+describe('successor Review exact delegation', () => {
+  afterEach(() => jest.restoreAllMocks());
+  it('authorizes the new explicit turn and rechecks source ACL without using the initial lease', async () => {
+    const state = successorFixture();
+    await expect(
+      state.adapter.authorizeReviewDelegation(successorInput),
+    ).resolves.toMatchObject({
+      ...successorInput,
+      actorUserId: ACTOR_ID,
+      reviewTurnRef: 'RT-new',
+      inputRevision: 7,
+      overallRequested: true,
+    });
+    expect(
+      state.workItems.loadActiveAutoProcessingLease,
+    ).not.toHaveBeenCalled();
+    expect(state.sourceAuthorization.authorizeSourceRead).toHaveBeenCalledTimes(
+      1,
+    );
+    expect(state.binding.authorization.status).toBe('COMPLETED');
+    expect(state.binding.authorization.leaseGeneration).toBe(3);
+  });
+  it.each([
+    ['old payload', { overallRequested: undefined }],
+    ['no delegation', { executionRequested: false }],
+    ['wrong request', { requestId: 'REQ-other' }],
+    ['wrong conversation', { reviewConversationId: 'RC-other' }],
+    ['stale input', { inputRevision: 6 }],
+    ['stale requested revision', { expectedInputRevision: 6 }],
+    ['Matter', { reviewScope: { kind: 'ENGINEERING_MATTER' } }],
+    ['chat cannot request Overall', { purpose: 'CHAT' }],
+  ])('rejects %s', async (_name, overrides) => {
+    const state = successorFixture();
+    state.conversations.loadOpenClawTurnBinding.mockResolvedValue({
+      ...state.turnBinding,
+      turn: { ...state.turnBinding.turn, ...overrides },
+    });
+    await expect(
+      state.adapter.authorizeReviewDelegation(successorInput),
+    ).rejects.toMatchObject({ statusCode: 404 });
+  });
+  it.each([
+    ['closed', { status: 'CLOSED' }],
+    ['wrong actor', { actorId: 'other' }],
+    ['wrong tenant', { tenantId: 'other' }],
+    ['wrong WorkItem', { workItemId: 'WI-other' }],
+  ])('rejects conversation %s', async (_name, overrides) => {
+    const state = successorFixture();
+    state.conversations.loadOpenClawTurnBinding.mockResolvedValue({
+      ...state.turnBinding,
+      conversation: { ...state.turnBinding.conversation, ...overrides },
+    });
+    await expect(
+      state.adapter.authorizeReviewDelegation(successorInput),
+    ).rejects.toMatchObject({ statusCode: 404 });
+  });
+  it('rejects absent enrollment, changed source binding, and revoked source ACL', async () => {
+    const missing = successorFixture();
+    missing.workItems.listCompletedAutoProcessingReviewSubjects.mockResolvedValue(
+      [],
+    );
+    await expect(
+      missing.adapter.authorizeReviewDelegation(successorInput),
+    ).rejects.toMatchObject({ statusCode: 404 });
+    const changed = successorFixture();
+    changed.binding.workItem.sourceFileSha256 = 'b'.repeat(64);
+    await expect(
+      changed.adapter.authorizeReviewDelegation(successorInput),
+    ).rejects.toMatchObject({ statusCode: 404 });
+    const denied = successorFixture();
+    denied.sourceAuthorization.authorizeSourceRead.mockResolvedValue({
+      allowed: false,
+    } as never);
+    await expect(
+      denied.adapter.authorizeReviewDelegation(successorInput),
+    ).rejects.toMatchObject({ statusCode: 404 });
+  });
+  it('recovers only the exact committed +1 Overall projection and never a newer unrelated revision', async () => {
+    const state = successorFixture();
+    state.binding.workItem.revision = 8;
+    state.attempts.readLatestByExactIdempotency.mockResolvedValue({
+      tenantId: TENANT_ID,
+      workItemId: WORK_ITEM_ID,
+      actionType: 'OPENCLAW_OVERALL_SYNTHESIS',
+      actorUserId: ACTOR_ID,
+      status: 'COMMITTING',
+      inputRevision: 7,
+      baseRevision: 7,
+      leaseOwner: PRINCIPAL_ID,
+      attemptId: 'AA-overall',
+    });
+    jest
+      .spyOn(runtimePolicy, 'parseCanonicalHostOpenClawAttemptTask')
+      .mockReturnValue({
+        modelInput: {
+          successorReviewTurnRef: 'RT-new',
+          successorOverallBinding: {
+            reviewConversationRef: 'RC-new',
+            requestId: 'REQ-review',
+            inputRevision: 7,
+            workRevisionRef: 'WORK-new',
+          },
+        },
+      } as never);
+    jest
+      .spyOn(runtimePolicy, 'parseCanonicalHostOpenClawStoredResult')
+      .mockReturnValue({} as never);
+    const current = {
+      row: { revision: 8, requestedByUserId: ACTOR_ID },
+      projection: {
+        revision: 8,
+        integratedAssessment: {
+          overallSynthesis: {
+            actionAttemptId: 'AA-overall',
+            basedOnJobAidWorkRevisionRef: 'WORK-new',
+          },
+        },
+      },
+    };
+    state.workItems.loadTenantScopedProjection.mockResolvedValue(current);
+    const input = { ...successorInput, reviewTurnRef: 'RT-new' };
+    await expect(
+      state.adapter.authorizeSuccessorOverall(input),
+    ).resolves.toMatchObject({ inputRevision: 7 });
+    await expect(
+      state.adapter.authorizeReviewDelegation(successorInput),
+    ).rejects.toMatchObject({ statusCode: 404 });
+    current.projection.integratedAssessment.overallSynthesis.actionAttemptId =
+      'AA-unrelated';
+    await expect(
+      state.adapter.authorizeSuccessorOverall(input),
+    ).rejects.toMatchObject({ statusCode: 404 });
+    current.projection.integratedAssessment.overallSynthesis.actionAttemptId =
+      'AA-overall';
+    state.binding.workItem.revision = 9;
+    await expect(
+      state.adapter.authorizeSuccessorOverall(input),
+    ).rejects.toMatchObject({ statusCode: 404 });
+  });
+
+  it('requires the same persisted turn, actor and independent Review attempt for subsequent calls', async () => {
+    const state = successorFixture();
+    const row = {
+      actionType: 'OPENCLAW_INTERACTIVE_REVIEW',
+      tenantId: TENANT_ID,
+      workItemId: WORK_ITEM_ID,
+      actorUserId: ACTOR_ID,
+      inputRevision: 7,
+      documentVersionId: DOCUMENT_VERSION_ID,
+      leaseOwner: PRINCIPAL_ID,
+    };
+    state.attempts.readByOperationRef.mockResolvedValue(row);
+    jest
+      .spyOn(runtimePolicy, 'parseCanonicalHostOpenClawAttemptTask')
+      .mockReturnValue({ modelInput: {} } as never);
+    jest.spyOn(reviewContract, 'parseReviewTurnTaskContract').mockReturnValue({
+      reviewConversationRef: 'RC-new',
+      reviewTurnRef: 'RT-new',
+      requestId: 'REQ-review',
+    } as never);
+    await expect(
+      state.adapter.authorizeReviewAttempt({
+        ...successorInput,
+        attemptRef: 'OP-review',
+      }),
+    ).resolves.toMatchObject({ reviewTurnRef: 'RT-new' });
+    state.attempts.readByOperationRef.mockResolvedValue({
+      ...row,
+      actorUserId: 'other',
+    });
+    await expect(
+      state.adapter.authorizeReviewAttempt({
+        ...successorInput,
+        attemptRef: 'OP-review',
+      }),
+    ).rejects.toMatchObject({ statusCode: 404 });
+    state.attempts.readByOperationRef.mockResolvedValue({
+      ...row,
+      actionType: 'OPENCLAW_DYNAMIC_EVALUATION',
+    });
+    await expect(
+      state.adapter.authorizeReviewAttempt({
+        ...successorInput,
+        attemptRef: 'OP-initial',
+      }),
+    ).resolves.toBeNull();
+  });
+});

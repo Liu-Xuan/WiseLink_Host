@@ -72,6 +72,7 @@ export default function ReviewConversationTurn(
         <ReviewEngineerInput text={props.turn.engineerSuppliedInput.text} />
         <small>
           {props.readOnly ? '已保存的工程师输入' : '候选输入，尚未采纳'}
+          {props.turn.overallRequested ? ' · 已请求更正后核对整体综合' : ''}
           {props.turn.engineerSuppliedInput.attachmentRefs.length
             ? ` · 已附 ${props.turn.engineerSuppliedInput.attachmentRefs.length} 份受控资料`
             : ''}

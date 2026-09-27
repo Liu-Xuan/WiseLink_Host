@@ -1096,6 +1096,34 @@ test(
           },
         );
 
+      await t.test('successor Overall CAS fences the latest saved JobAid revision', async () => {
+        const workItems = new MiaodaWorkItemRepository(db);
+        const initial = initialProjection(scope.workItemId);
+        const { revision: _revision, ...next } = initial;
+        const [prior] = await sql`SELECT assessment_work_revision_id AS ref
+          FROM assessment_work_revision WHERE work_item_id=${scope.workItemId}
+          ORDER BY work_revision DESC OFFSET 1 LIMIT 1`;
+        assert.ok(prior?.ref && prior.ref !== saved.workRevisionRef);
+        try {
+          await assert.rejects(workItems.compareAndSet({
+            workItemId: scope.workItemId, expectedRevision: 1, next,
+            syncPrimaryAttempt: false,
+            jobAidWorkRevisionGuard: { tenantId: scope.tenantId, workRevisionRef: prior.ref },
+          }), /JOBAID_OVERALL_EXACT_WORK_CHANGED/u);
+          assert.equal((await sql`SELECT revision FROM work_item WHERE work_item_id=${scope.workItemId}`)[0].revision, 1);
+          const committed = await workItems.compareAndSet({
+            workItemId: scope.workItemId, expectedRevision: 1, next,
+            syncPrimaryAttempt: false,
+            jobAidWorkRevisionGuard: { tenantId: scope.tenantId, workRevisionRef: saved.workRevisionRef },
+          });
+          assert.equal(committed.revision, 2);
+          assert.equal((await sql`SELECT revision FROM work_item WHERE work_item_id=${scope.workItemId}`)[0].revision, 2);
+        } finally {
+          await sql`UPDATE work_item SET revision=1, projection_json=${JSON.stringify(initial)}
+            WHERE work_item_id=${scope.workItemId}`;
+        }
+      });
+
       await t.test(
         'browser owner reads the same latest work; no role can update/delete a saved work row through RLS',
         async () => {
