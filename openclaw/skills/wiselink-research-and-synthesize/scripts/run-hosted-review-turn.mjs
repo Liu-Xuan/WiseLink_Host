@@ -220,6 +220,8 @@ export async function runHostedReviewTurn(options, dependencies = {}) {
             },
             validateCandidate: (output) => {
               validateModelCandidateOutput(output, readSourceRefBatches.flat(), input.attachmentRefs, isMatter, isJobAid);
+              if (isJobAid && input.context?.purpose === 'UPDATE_ASSESSMENT')
+                validateJobAidUpdatedIssueBodies(output);
               validateCandidate(bindHostedReviewCandidate(beginResult, output, isMatter, isJobAid));
             },
             candidateSourceRefIds: (output) => reviewCandidateSourceRefIds(
@@ -483,8 +485,9 @@ export async function invokeHostedReviewModel(input, options = {}, dependencies 
         // shorter request may finish the same native discussion; never replay
         // a Host mutation or retry an unknown/partially received response.
         incompleteResponseCorrections += 1;
+        const previousIssueKeys = jobAidPreviousIssueKeys(input.input);
         messages = [systemMessage, { role: 'user', content:
-          `The preceding model response ended before any tool call. Continue this same Review using the sources already read. Call ${REVIEW_OUTPUT_FUNCTION_NAME} with one complete, concise candidate that changes only the engineer's requested findings and preserves all other saved work. Read another authorized fragment only if essential. Do not repeat a long analysis or claim a candidate was saved.` }];
+          `The preceding model response ended before any tool call. Continue this same Review using the sources already read. Call ${REVIEW_OUTPUT_FUNCTION_NAME} with one complete, concise candidate that changes only the engineer's requested findings. Existing issue keys: ${canonicalJson(previousIssueKeys)}. Use an affected existing key for a correction; create a new key only for a distinct new problem. Omitted issues remain saved. Every updated issue body needs an inline [[evidenceRef]] copied from actually read, supporting evidence. Read another authorized fragment only if essential. Do not repeat a long analysis or claim a candidate was saved.` }];
         continue;
       }
       throw new Error(`REVIEW_GATEWAY_HTTP_${response.status}${failure === 'UNCLASSIFIED' ? '' : `:${failure}`}`);
@@ -611,10 +614,11 @@ export async function invokeHostedReviewModel(input, options = {}, dependencies 
               } } : {}),
             ...(citedSourceFeedback ? { citedSourceFeedback } : {}),
             availableEvidenceRefs: candidateFeedbackEvidenceRefs(input, sourceCache),
+            ...(isJobAid && isAssessmentUpdate ? { previousIssueKeys: jobAidPreviousIssueKeys(input.input) } : {}),
             instruction: isChat
               ? 'Correct this discussion answer using the same question and actually read sources. Ordinary document SourceRefs belong only in sourceRefs. For ANSWER, SOURCE_LINK, CLARIFYING_QUESTION, INPUT_REQUEST or TASK_STATUS, candidateEvidenceRefs must be []; this field only accepts current attachmentRefs for CANDIDATE_EVIDENCE. Keep reviewActionDraft=null and affectedItemIds=[]; do not add a working delta or change the assessment. Return the complete corrected candidate through the declared output function, using candidateJson only when the Matter contract requires it. Never invent sources or claim that a rejected answer was saved.'
               : isJobAid
-              ? 'Return the complete corrected JobAid candidate directly as the declared function arguments, without a candidate wrapper. Keep the original question, unaffected issues and their premises. candidateEvidenceRefs may contain only current input.attachmentRefs actually read this turn; ordinary document SourceRefs belong in sourceRefs or working-delta evidence fields, never candidateEvidenceRefs. Omit empty sourceRefs, missingInputs, candidateEvidenceRefs and warnings; omission means no entries, never [""] or a placeholder object. Omit retiredIssues when retiring none. Omit reviewActionDraft and affectedItemIds; the driver owns their fixed no-formal-action values. For UPDATE_ASSESSMENT, jobAidWorkingDelta is mandatory and non-null: propose the actual local update and preserve unknowns. Only ordinary review answers may omit it when no work changes. Read any additional passage through the read function. Never invent references, drop findings merely to pass validation, or claim the rejected candidate was saved.'
+              ? 'Return the complete corrected JobAid candidate directly as the declared function arguments, without a candidate wrapper. Use an affected existing key from previousIssueKeys for a correction; create a new key only for a distinct new problem. Omitted previous issues remain saved. Every updated issue body must contain an inline [[evidenceRef]] copied from evidence actually read this turn and supporting that body. Keep the original question, unaffected issues and their premises. candidateEvidenceRefs may contain only current input.attachmentRefs actually read this turn; ordinary document SourceRefs belong in sourceRefs or working-delta evidence fields, never candidateEvidenceRefs. Omit empty sourceRefs, missingInputs, candidateEvidenceRefs and warnings; omission means no entries, never [""] or a placeholder object. Omit retiredIssues when retiring none. Omit reviewActionDraft and affectedItemIds; the driver owns their fixed no-formal-action values. For UPDATE_ASSESSMENT, jobAidWorkingDelta is mandatory and non-null: propose the actual local update and preserve unknowns. Only ordinary review answers may omit it when no work changes. Read any additional passage through the read function. Never invent references, drop findings merely to pass validation, or claim the rejected candidate was saved.'
               : 'Correct the candidate using the current contract and registered evidence. Keep the original question, unchanged claims and source meaning. Read any additional passage through the read function. Every document premise in the resulting reading must be included in that input\'s checked coverage; an updated coverage entry replaces its old checked range, so include every cited passage for that input, not just representative anchors. Return the complete corrected candidate; do not invent evidence or coverage, remove a substantive finding merely to pass validation, or claim that anything was saved.',
           }) },
         ];
@@ -1391,6 +1395,25 @@ function candidateValidationErrorCode(error) {
   // Unknown-field names originate in model output. Return only a bounded
   // identifier, never arbitrary text from that output or a runtime exception.
   return field && /^[A-Za-z_][A-Za-z0-9_.]{0,127}$/u.test(field) ? `${code}:${field}` : code;
+}
+
+function jobAidPreviousIssueKeys(input) {
+  const issues = input?.context?.problemAssessment?.previousWork?.content?.issues;
+  return Array.isArray(issues) ? issues.map((issue) => issue?.issueKey)
+    .filter((key) => typeof key === 'string' && key.trim()).slice(0, 64) : [];
+}
+
+export function validateJobAidUpdatedIssueBodies(output) {
+  const issues = output?.jobAidWorkingDelta?.issues;
+  if (!Array.isArray(issues)) return;
+  for (const issue of issues) {
+    if (!isRecord(issue) || typeof issue.body !== 'string') continue;
+    const citations = [...issue.body.matchAll(/\[\[([^\[\]\r\n]+)\]\]/gu)];
+    if (citations.length === 0) throw new Error('REVIEW_JOBAID_BODY_CITATIONS_REQUIRED');
+    const withoutCitations = issue.body.replace(/\[\[([^\[\]\r\n]+)\]\]/gu, '');
+    if (withoutCitations.includes('[[') || withoutCitations.includes(']]'))
+      throw new Error('REVIEW_JOBAID_BODY_CITATION_MALFORMED');
+  }
 }
 
 function candidateFeedbackEvidenceRefs(input, sourceCache) {

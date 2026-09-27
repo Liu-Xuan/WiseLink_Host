@@ -57,6 +57,7 @@ import {
   runHostedReviewTurn,
   summarizeHostedReviewModelOutputShape,
   validateHostToolMetadata,
+  validateJobAidUpdatedIssueBodies,
 } from '../scripts/run-hosted-review-turn.mjs';
 
 // Protocol tests explicitly inject their synthetic response transport. The
@@ -1380,7 +1381,7 @@ test('requires 35 MCP capabilities, six review tools, and hosted provenance', ()
   assert.ok(HOST_MCP_TOOLS.includes('commit_applicability_candidate'));
   assert.equal(
     WISELINK_SKILL_VERSION,
-    'wiselink-research-and-synthesize@r09.c176',
+    'wiselink-research-and-synthesize@r09.c177',
   );
   assert.equal(
     WISELINK_SKILL_COMPATIBILITY_REF,
@@ -7649,6 +7650,16 @@ test('JobAid update projection keeps exact source bindings and saved work while 
   assert.throws(() => projectJobAidUpdateInput({ ...input, context: { ...input.context,
     problemAssessment: { ...input.context.problemAssessment, availableSources: [] } } }),
   /REVIEW_JOBAID_SOURCE_PROJECTION_MISMATCH/u);
+});
+
+test('JobAid update rejects uncited issue bodies before Host commit while leaving prior work untouched', () => {
+  const delta = { jobAidWorkingDelta: { issues: [{ issueKey: 'existing', body: '原文说明措施仍受条件限制。' }] } };
+  assert.throws(() => validateJobAidUpdatedIssueBodies(delta), /REVIEW_JOBAID_BODY_CITATIONS_REQUIRED/u);
+  assert.equal(delta.jobAidWorkingDelta.issues[0].body, '原文说明措施仍受条件限制。');
+  delta.jobAidWorkingDelta.issues[0].body = '原文说明措施仍受条件限制。[[source:read-1]]';
+  assert.doesNotThrow(() => validateJobAidUpdatedIssueBodies(delta));
+  delta.jobAidWorkingDelta.issues[0].body += ' [[broken';
+  assert.throws(() => validateJobAidUpdatedIssueBodies(delta), /REVIEW_JOBAID_BODY_CITATION_MALFORMED/u);
 });
 
 test('JobAid update first reads an authorized document before exposing the candidate channel', async () => {
