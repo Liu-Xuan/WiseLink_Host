@@ -4,6 +4,8 @@
 
 本机仅出站 MinerU worker 原先只接受环境变量中的 API key；要作为后台进程运行会迫使启动配置携带明文密钥。现增加 `WL_LOCAL_MINERU_API_KEY_FILE`，从绝对路径的本机私有 JSON 文件读取现有 `api_key`，要求普通文件、当前用户持有、权限不开放给组或其他用户、大小不超过 4 KiB，并拒绝符号链接及同时提供环境变量密钥。读取后移除两种凭据环境变量，再启动解析子进程；四条 Host 路由、逐任务授权及租约合同不变。现有仓库外 0600 凭据文件实读成功，只输出非空布尔结果；定向 worker 单测 20/20、独立 TypeScript 检查和差异检查通过。此改动仅为后台启动准备，未安装或启动新的常驻 worker。
 
+实现及本段首次记录提交 `671d16cc0a482a62ad97de6da4504b23070a955a`（父 `4cf855229861b3ab7947a06f79e100b208c0466a`），提交前检查通过，已快进同步 origin 同名开发分支并读回精确 SHA；不推送公开 GitHub，也没有触发 17b 发布。
+
 本机 `com.wiselink.mineru` 是旧的 localhost API 进程，不是仅出站 worker。用户重新登录 17c 内部浏览器后，原终端现场只读回执：`pgrep` 无 `consume-hosted-work-item.mjs` 进程；官方 `openclaw cron list --all --json` 返回 16 条、启用 0、运行 0，动态队列 C136 `38f1cc05-4a5e-4ec0-863c-e5b3d579048b` 为 disabled、`runningAtMs=null`。自动队列目录仅有一个 0600 的 5 字节 `active-claim.json`，内容为 JSON `null`，不是活动租约；目标 787 WorkItem 无活动 claim。此前 Host 队列终态仍是上次核验时点，本轮未再次调用 Host MCP。用户尚未回复常驻 worker 与单一动态 17c cron 的启用授权；新的正常上传默认闭环仍待该范围确认、启用后观察与真实上传验证。
 
 ## 2026-09-27 C173：工作事项图谱复用确切工程认识
