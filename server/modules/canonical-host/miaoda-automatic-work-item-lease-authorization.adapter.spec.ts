@@ -494,7 +494,7 @@ describe('successor Review exact delegation', () => {
       tenantId: TENANT_ID,
       workItemId: WORK_ITEM_ID,
       actionType: 'OPENCLAW_OVERALL_SYNTHESIS',
-      actorUserId: ACTOR_ID,
+      actorUserId: 'service:openclaw-main',
       status: 'COMMITTING',
       inputRevision: 7,
       baseRevision: 7,
@@ -600,5 +600,30 @@ describe('successor Review exact delegation', () => {
         attemptRef: 'OP-initial',
       }),
     ).resolves.toBeNull();
+  });
+
+  it('keeps a delegated Overall heartbeat bound to its service attempt and engineer turn', async () => {
+    const state = successorFixture();
+    const row = {
+      actionType: 'OPENCLAW_OVERALL_SYNTHESIS', tenantId: TENANT_ID,
+      workItemId: WORK_ITEM_ID, actorUserId: 'service:openclaw-main',
+      inputRevision: 7, documentVersionId: DOCUMENT_VERSION_ID,
+      leaseOwner: PRINCIPAL_ID,
+    };
+    state.attempts.readByOperationRef.mockResolvedValue(row);
+    jest.spyOn(runtimePolicy, 'parseCanonicalHostOpenClawAttemptTask').mockReturnValue({
+      modelInput: {
+        successorReviewTurnRef: 'RT-new',
+        successorOverallBinding: {
+          reviewConversationRef: 'RC-new', requestId: 'REQ-review', inputRevision: 7,
+        },
+      },
+    } as never);
+    const input = { ...successorInput, attemptRef: 'OP-overall' };
+    await expect(state.adapter.authorizeReviewAttempt(input)).resolves.toMatchObject({
+      actorUserId: ACTOR_ID, reviewTurnRef: 'RT-new', overallRequested: true,
+    });
+    state.attempts.readByOperationRef.mockResolvedValue({ ...row, actorUserId: ACTOR_ID });
+    await expect(state.adapter.authorizeReviewAttempt(input)).rejects.toMatchObject({ statusCode: 404 });
   });
 });
