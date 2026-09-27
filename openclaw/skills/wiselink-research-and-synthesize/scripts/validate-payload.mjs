@@ -5,7 +5,7 @@ import { readFile } from 'node:fs/promises';
 import { pathToFileURL } from 'node:url';
 
 export const WISELINK_SKILL_VERSION =
-  'wiselink-research-and-synthesize@r09.c175';
+  'wiselink-research-and-synthesize@r09.c181';
 export const WISELINK_SKILL_COMPATIBILITY_REF =
   'wiselink-research-and-synthesize@r09';
 export const WISELINK_HOST_MCP_NAME =
@@ -4870,6 +4870,11 @@ function validateFrozenJobAidReviewContext(task) {
 }
 function validateJobAidReviewDelta(task, delta) {
   if (delta === null) return;
+  if (task.context.purpose === 'UPDATE_ASSESSMENT' && Array.isArray(delta?.issues) &&
+      delta.issues.length === 0 && (delta.retiredIssues ?? []).length === 0 &&
+      ['overview', 'headline', 'listBrief', 'reviewConditionDelta', 'inputDispositions']
+        .every((field) => !Object.hasOwn(delta, field)))
+    fail('REVIEW_JOBAID_SUBSTANTIVE_DELTA_REQUIRED');
   return validateJobAidWorkDelta(delta, task.jobAidContext.previousWork?.content ?? null, task.jobAidContext.sourceCatalog);
 }
 
@@ -4888,6 +4893,16 @@ function validateJobAidWorkDelta(delta, previousContent, sourceCatalog) {
   const keys = [...delta.issues.map((issue) => issue.issueKey), ...unchanged, ...retired.map((issue) => issue.issueKey)];
   uniqueTextArray(keys, 'REVIEW_JOBAID_ISSUE_PARTITION_INVALID');
   if ([...unchanged, ...retired.map((issue) => issue.issueKey)].some((key) => !prior.includes(key))) fail('REVIEW_JOBAID_PRIOR_ISSUE_OMITTED');
+  if (delta.roundCompletion === 'COMPLETE') {
+    const effective = new Map((previousContent?.issues ?? []).map((issue) => [issue.issueKey, issue]));
+    for (const item of retired) effective.delete(item.issueKey);
+    for (const issue of delta.issues) effective.set(issue.issueKey, issue);
+    if ([...effective.values()].some((issue) =>
+      (issue.openQuestions ?? []).length > 0 ||
+      (issue.requirementHandling ?? []).some((item) =>
+        ['CONDITIONS_UNCONFIRMED', 'NOT_YET_ADDRESSED'].includes(item.treatment))))
+      fail('REVIEW_JOBAID_OPEN_QUESTIONS_REQUIRE_QUALIFIED_COMPLETION');
+  }
   const allowed = new Set(sourceCatalog.map((item) => item.evidenceRef));
   const invalid = jobAidDeltaEvidenceEntries(delta).filter((entry) => !allowed.has(entry.evidenceRef));
   if (invalid.length) {

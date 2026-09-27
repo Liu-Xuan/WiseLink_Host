@@ -1,5 +1,61 @@
 # M 主控集成交接
 
+## 2026-09-28：旧 SB 原页与已保存修订的内容质量核对
+
+从 17b 既有上传的私有原件路径下载 57,434 字节 PDF；SHA256 `260c665aa340752898c0958c7015df5fa8f6f5ead9317d0b37908af6c30d53b5` 与上传记录一致。原件共两页，已逐页渲染并与 PDF 文本层、当前已发布 MinerU/PDF.js manifest 和 JobAid 修订 11 对照。此处仅记录差异，不修改历史工作或原件。
+
+- 第 1 页原件的 Applicability 栏只有 `All 787 Aircraft`；紧随其后是独立的 Description 栏，说明使用 Gatelink/Wi-Fi 的运营方在相应地面 TLS 条件下受影响。MinerU markdown 遗漏了 `All 787 Aircraft`、Description 和 Status 三处可见标题/内容；Host 的 PDF.js 补充保留了这些行，但将 Description/Status 作为普通段落单元。因此修订 11 把 Description 正文错称为 Applicability 正文，并把实际上已经完整呈现的适用栏写成“后续正文未读”。这不是仅靠缩短摘要能修复的问题。
+- 第 2 页原件的 Final Action 只有一段，Milestones 只有两条并列值，Related Categories 只有一条 Obsolescence。两页原件没有独立 Compliance Interval、References 或后续装机清单。修订 11 四个问题正文/开放问题均仍以“后续块未读”“其他类别未读”“Compliance Interval/References 待读”等表述暗示同版原件还有未读内容。应把“本版未载明”与“未来 SB、目标机队事实或发布方最新状态尚待外部核查”分开，保留真正未知，不制造缺页。
+- 元数据表在 MinerU markdown 的列关系错位，发布 manifest 已标 `TABLE_LAYOUT_NOT_VERIFIED` / `TEXT_CONFLICT`；视觉原页可确认机型、ATA、日期等字段。本次发现说明需要对决定性字段核对原页，而不能把 MinerU 表格或 PDF.js 单一路径当作天然裁判。
+
+当前修订 11 的四个问题键为 `FTD-26002-NATURE`、`ATA-46-GATELINK-SCOPE`、`TLS-MISMECHANISM`、`AID-OBEDS-TIMELINE`，都含上述错位或虚假“未读”；已有 WorkItem Overall 仍基于更早工作修订。后继 Review 应按四个受影响问题的实际范围修订，并在保存后以确切新修订按请求执行 Overall，再核对资料库、Wiki、检索及相关投影。不得将本次只读人工核对冒充系统已完成更正。
+
+## 2026-09-28：C181 局部问题补全已提交并打包，Hosted 安装待 17c 登录
+
+针对 Turn 7–9 的 Review 失败，C181 在 JobAid Review 候选中增加仅供模型编写的 `issuePatches`：只能指定 Host 固定上一修订中的既有 `issueKey` 和实际变化字段；外部驱动保留未提供字段的原值，展开成完整 `issues` 后仍经过现有 Skill/Host 的来源、问题结构、授权与工作修订校验。显式 `[]` 才变更旧集合；未知/重复/无变化问题键、混用非空 `issues` 均拒绝。新增问题仍用完整 `issues`；没有新增路由、角色或正式业务权限。
+
+提交 `4d1837ea49f7927b80b796f5274ddb7142660036` 已快进同步到私有 origin 同名分支。全 Skill 583/583、定向测试、ESLint、发布清单及差异检查通过。61 文件包 `wiselink-research-and-synthesize@r09.c181` 的 SHA256 为 `85151758de1cfb14c0f27aa9d819bd690f66429f6ab03b8d722d4b253e046078`，manifest 验证通过，已上传 17c 私有文件 `/1877522661301300.zip` 与 `/1877522661302340.json`。Mac 已解锁；本会话原内部浏览器页不可连接，新开的 Chrome 17c 页要求飞书扫码登录。**尚未暂停调度、安装 C181 或进行真实后继 Review**。登录后先核对无在途消费者与原 cron 状态，再短时安装并按原状态恢复，最后从正常页面验证定点更正。
+
+## 2026-09-28：C180 真实复验仍失败，后继 Review 需缩小模型输出合同
+
+17b 本人从旧版 SB `WI-4db598a0-33b8-4abd-a64d-df2aac9f29c5` 正常复核页提交 Turn 9，明确仅更新 `FTD-26002-NATURE` 的完整问题对象，其他三项保持原样，不请求 Overall。C136 在 C180 安装后自动领取，读取两批来源，期间只有一个在途消费者。候选曾被 Skill 校验拒绝并在原会话继续；最终模型未按函数工具合同返回，Host 于 06:34:48 +08 取消，错误 `HOSTED_REVIEW_EXECUTION_FAILED:REVIEW_TOOL_CHOICE_NOT_SATISFIED`。没有新 JobAid 修订，旧修订 11 和旧 Overall 均保留；不能将 C180 安装和测试通过写作业务更正成功。
+
+Turn 7、8、9 分别卡在空更新/错误完成范围、局部问题缺字段、纠正后没有工具调用。当前 Review 模型函数要求重述一个完整旧问题及多个长集合；即使本次只需改一段正文，输出成本和格式失败仍高。下一步应沿现有 Host 已保存工作与确切来源，设计并验证“模型只提交受影响字段，受控代码按旧修订合成完整工作”的明确合同，保留未变问题、开放问题和依据，不静默清空字段；必须核对旧引用的来源授权与本轮新增引用的实际读取，随后再通过正常页面验收，而非继续提交相同长提示碰运气。该方向尚未实现或发布。
+
+## 2026-09-28：Turn 8 暴露局部问题覆盖缺字段，C180 修复候选前校验
+
+17b 旧版 SB 事项 `WI-4db598a0-33b8-4abd-a64d-df2aac9f29c5` 从正常复核页提交 Turn 8，仅请求修改 `FTD-26002-NATURE`，未请求 Overall。C136 自动领取并取回来源，但本轮最终候选把另一个旧问题 `ATA-46-GATELINK-SCOPE` 以只有 `issueKey` 和 `body` 的局部对象提交。Host 把更新问题视为完整覆盖，因缺 `question` 返回 `JOBAID_ISSUE_QUESTION_INVALID`，attempt 于 05:56:42 +08 取消。此前两个候选分别因未登记证据和缺少 `issues` 被 Skill 拒绝；本轮没有新工作修订，原修订 11 和旧 Overall 保留。
+
+C180 在 Host 提交前要求每个更新问题包含非空 `issueKey`、`question`、`body`，以及 `riskScenarios`、`measures`、`otherClassifications`、`openQuestions`、`requirementHandling` 五个显式数组；缺项在同一模型会话内反馈完整覆盖合同，并强调只改工程师指定的问题键、从已保存工作复制未变字段。该校验针对真实失败和省略集合可能清空旧开放问题的风险，不替模型补字段，也不改 Host 授权或正式采用。提交 `fb271c183cd3f21409ed6381c9446e95a8342584` 已快进推送私有 origin 同名分支；定向复现与反馈测试通过，全 Skill 580/580、ESLint、61 文件包声明检查通过。发布包 SHA256 `871b82726d51b315ce86686a7cefb2b486686dbfb3971a0415139f3a486f7305`，17c 私有路径 `/1877522600822787.zip`，下载后哈希与 ZIP 完整性核对通过；17c 原 C179 已备份，C180 安装后 `openclaw skills info` 可见、与包展开目录仅差 `.openclaw` 元数据。安装前无在途消费者，C136 暂停后安装、再恢复；最终 16 项 cron 中仅 C136 启用且无在途，其他 15 项保持停用。尚无 C180 线上业务更正成功证据。
+
+## 2026-09-28：Turn 7 揭示空更正与完成范围冲突，C179 已安装
+
+17b 旧版 SB 事项 `WI-4db598a0-33b8-4abd-a64d-df2aac9f29c5` 的正常后继 Review Turn 7（本地检查点 `RT-0875b830-2330-4ef5-9178-be15e1da2fcc`）由 C136 自动领取，Host 读回 11 个确切原文片段。模型先后提交一次无效工作 schema 和一次重复问题分区，C178 在原会话内有界纠正；第三次候选却是 `issues:[]`、四个既有问题键均列为 unchanged，只有完成说明/变化摘要，并把 `roundCompletion` 改成 `COMPLETE`。旧问题仍有开放问题，Host 因 `JOBAID_OPEN_QUESTIONS_REQUIRE_QUALIFIED_COMPLETION` 拒绝并取消该 attempt。没有 JobAid 新修订，也没有 Overall 更新；这不是原文资料不足。
+
+C179 在 Skill 的提交前校验中拒绝没有实质工作、阅读摘要或其他有效增量的 `UPDATE_ASSESSMENT`，并按 Host 已有规则检查最终问题集合：保留的开放问题或未解决条款与 `COMPLETE` 冲突时，在模型候选阶段返回明确纠正提示，不能删除未知项以求通过。Host 的保存与权限校验不变。新增两项定向测试，全 Skill 579/579、ESLint、包声明和差异检查通过。提交 `dd65112a41f56c1452b6b3ff8021666914236578` 已快进推送私有 origin 同名分支。61 文件发布包 SHA256 `45cd437f6c4af828dd031a41dbacba49be81ea44e38de55fab99a948957acbd1`，17c 私有路径 `/1877519983822963.zip`；17c 下载后哈希与 ZIP 完整性核对通过，原 C178 安装目录已备份，C179 安装后 `openclaw skills info` 可见、与包展开目录仅差 OpenClaw 的 `.openclaw` 元数据。安装前 16 项 cron 全停用、无在途执行；安装后仅恢复原 C136 动态消费者 `38f1cc05-4a5e-4ec0-863c-e5b3d579048b`，读回其启用、其余 15 项停用且无在途执行。下一步由正常后继入口重试受影响范围并核对确切持久工作，不手改旧工作或重置原任务；目前仍无 C179 业务更正成功证据。
+
+## 2026-09-28：C178 已安装，唯一动态消费者恢复原状态
+
+17c 受控安装前，`openclaw cron list --all --json` 读回 16 项定时任务全部停用，均无 `runningAtMs`。私有包 `/1877518814119976.zip` 下载后 SHA256 为 `8ba68f62e7f57b919e56d2e316ae5d78ee8c6b07d790cdb7c18b6aac0c039b0c`，ZIP 完整性检查通过，展开为 61 个文件；原 Skill 已在 17c 本地备份。`openclaw skills install` 使用绝对路径安装 C178，`openclaw skills info wiselink-research-and-synthesize` 显示 `Ready`，安装目录与包展开目录的差异仅有 OpenClaw 自身的 `.openclaw` 元数据。随后仅恢复原先启用的 C136 动态任务 `38f1cc05-4a5e-4ec0-863c-e5b3d579048b`；再次读回仅该项 `enabled=true` 且无在途运行，其余 15 项仍停用。
+
+刘轩本人从 17b `WI-4db598a0-33b8-4abd-a64d-df2aac9f29c5` 的复核页提交 Turn 7，定点纠正 JobAid 修订 11 中关于已读章节仍被称为未读的错误，限定沿用四个既有问题键，并勾选实质更正后核对 Overall。页面 2026-09-28 05:12:26 +08 读回“已请求执行，等待开始”，候选尚未读回。安装与调度恢复不等于业务更正完成，仍须核对新工作保存、Overall 确切依据及资料库/Wiki/检索投影。
+
+## 2026-09-28：C182 内容质量与默认文档交付核对（只读）
+
+以确切原件 `737MAX-FTD-34-17005_Doc_07092025.pdf`（3 页，SHA256 `32e30215fb2412a7ab8445872739da86339b11afcb04ef9a2c6168635b0da61e`）核对正常上传任务 `WI-3859b827-399e-414a-adbb-e1c694cafd59` 的 JobAid 修订 6（`JAWR-323772de-10f0-4b20-9c01-6fa69b25f061`）与 Overall 页面投影。原件支持 LRRA 同轴连接问题、Databus 1/2 差别、进近告警和所列生产措施；它没有提供措施后的机队发生率、措施有效性量化、当前目标机队状态或 AD/SB/SL 全集核查。已保存风险问题却把生产措施推成“后续机队基础发生率明显下降”和“不大可能”，还以事后 FIM 排故及 FTD 关闭作为可能性理由；严重性正文断言机组可恢复及“不构成严重/灾难”，没有相应运行事实或评定依据。“本 FTD 不构成新的执行性 SB/SL 或 AD”紧邻“现行 AD/SB/SL 未匹配”，容易被读成已排除其他义务。`listBrief` 的语法把 FIM 排故与生产端措施一并归为“仅作用于新机”，与 FIM 作为故障排查指引的范围不符。Overall 的 `lead` 和 `listBrief` 已重复上述判断，故这不是局部措辞问题，受影响阅读面会一致传播。下一步应通过已授权的正常后继 Review 局部修正风险、执行义务与摘要，再以确切新 JobAid 修订触发 Overall 并读回资料库/Wiki/检索；旧工作保留，不直接改库中候选或重置已完成任务。该任务仍显示 `COMPLETED`，当前保存结果不应被当作内容质量验收通过。
+
+在线只读查询另外确认：三份正常上传样本的 `dm_document_reading_run` 均无记录，对应三项 WorkItem 的 `translation_workspace` 也均无记录。17b 当前 `WL_OPENCLAW_DOCUMENT_SCOPE_ENABLED=1`，但固定 `WL_OPENCLAW_SERVICE_DOCUMENT_VERSION_IDS` 四项均不包含这三份正常上传版本。代码中 DocumentReading/Translation 依赖 `authorizeDocumentWork` 的固定文档范围和已有 `READING_BEGIN`/翻译工作区；C136 `--auto-queue` 只领取 WorkItem，不能替文档自动受理。因而资料库的“无独立解读”与中文未交付是调度和授权接线缺口，不能用关联 JobAid 摘要冒充完成。将可信上传的逐任务委托安全地扩展到同一确切文档版本的文档工作，是新增有效权限范围；本轮仅定位，未修改权限、未受理文档运行。
+
+## 2026-09-28 C178：旧 FTD 后继更正仍未保存，候选提交前补引用校验
+
+目标 `WI-4db598a0-33b8-4abd-a64d-df2aac9f29c5` 的旧后继 Review turn 4 保存 JobAid 修订 11，纠正 SB 时序，但又把已读章节误写为“未读”；Overall 仍基于修订 9。后续 Overall 尝试因确切工作变化失败，已终态 attempt 不能复用。Host `f1384fced` 与 17c C175 消费者修复了终态 Overall 的重复领取及本地指针清理；17b release `7690303772124695502` 精确部署该提交，C175 安装与 61 文件校验完成。17c 唯一 C136 动态 cron 保持启用，其余 15 项停用。
+
+Turn 5 在首轮原文读取后收到模型网关 HTTP 400 `INCOMPLETE_TERMINAL_RESPONSE`，未保存。17c C176 `f945603be` 加入同一原生会话的一次有界补答；61 文件安装校验完成。Turn 6 `RT-9d988ff3-dbc8-4226-aeeb-3d84a5186854` 实际触发这条补答，并生成候选，但 Host 以 `JOBAID_BODY_CITATIONS_REQUIRED` 拒绝；attempt 已取消，没有新工作修订，也未运行新的 Overall。候选还误建一个与定点更正无关的问题键，显示模型需要更准确的旧问题键提示。
+
+17c C177 提交 `e6cea62fa06ff6e6df160b4ab97f53e7150773c3`（父 `f945603be`），在模型候选提交 Host 前检查每个更新问题正文含合法形式的内联 `[[evidenceRef]]`，缺失时让模型在原会话内纠正；有界反馈列出已有问题键，提示在更正时复用受影响键。Host 仍负责引用是否已登记、已读及是否支持结论，Skill 不填造引用。本地 Skill 测试 576/576、ESLint、预提交及发布包校验通过；已快进推送 origin 同名开发分支，61 文件包 SHA256 `8ce7a650af2b296d49276334eb642595a1043ae66f3d9f832c1919112a6a2db7` 已上传 17c 私有路径 `/1877516697711667.zip`，但未安装。
+
+复查 Turn 6 轮次发现前两次格式纠正已耗尽原上限，C177 单独安装不能保证模型有机会补正文引用。因此 C178 在同一 Host 租约和原生会话内仅为 JobAid `UPDATE_ASSESSMENT` 多给一次候选纠正（3 次；其他 Review 仍为 2 次），并加入“两次格式错误后第三次正文缺引用、第四轮成功”的定向测试。本地 Skill 测试 577/577、ESLint、包声明、差异检查及预提交通过；提交 `3bc3742a2dbf41f1c983bf20c116f2dad27b3883`（父 `e6cea62fa`）已快进推送 origin 同名分支。61 文件包 SHA256 `8ba68f62e7f57b919e56d2e316ae5d78ee8c6b07d790cdb7c18b6aac0c039b0c` 已上传 17c 私有路径 `/1877518814119976.zip`；安装与调度读回见本记录顶部。后续仍需通过正常后继 Review 验证新的 JobAid 保存、请求触发的 Overall 和资料库/Wiki 读回；目前不能宣称更正闭环完成。
+
 ## 2026-09-27 C182：本机 MinerU 暂时存储失败后复用候选并完成真实自动闭环
 
 刘轩从 17b 正常上传 `737MAX-FTD-34-17005_Doc_07092025.pdf`，形成 `WI-3859b827-399e-414a-adbb-e1c694cafd59`、`document_version_9b81b46f046074af25107544` 和唯一解析 run `PRUN-eea79f38-6f96-4bb5-924d-b082302f96cd`。本机仅出站 MinerU 已提交并核验解析候选；Host 首次上传 `original/pages-0.json` 遇文件服务 `fetch failed`，run 停在 `STAGING` / `DOCUMENT_PARSE_FAILED`，自动消费者没有把它冒充工程信息不足。修订 `0725ae31f656014707ba82ed19a663b6d477c2f1`（父 `0ad000d7d7665b501b2a2606c23779df9327d840`）让相同来源、有效候选、未过期的本机解析 run 在下一次自动处理时继续发布；连续第二次同类存储故障则按现有 fenced fail 合同终止，避免无限重试。合并当前 `origin/main` 后提交 `6bf764afadd478a38b6ea1a3493939c86fe5f53f`，已推送 origin 同名开发分支。定向 Jest 56 项通过、1 项既有跳过，server TypeScript、ESLint、差异与提交前检查通过。17b release `7690186214209096646` 为 `finished`、部署 SHA 精确为 `6bf764afa`、`error_logs=[]`。

@@ -49,6 +49,7 @@ import {
   findMcpConfig,
   invokeHostedReviewModel as invokeReviewWithTransport,
   isChatCompletionsEnabled,
+  materializeJobAidReviewIssuePatches,
   openClawConfigCandidates,
   prepareKnownModelNonDispatchRecovery,
   projectJobAidUpdateInput,
@@ -57,6 +58,7 @@ import {
   runHostedReviewTurn,
   summarizeHostedReviewModelOutputShape,
   validateHostToolMetadata,
+  validateJobAidUpdatedIssueBodies,
 } from '../scripts/run-hosted-review-turn.mjs';
 
 // Protocol tests explicitly inject their synthetic response transport. The
@@ -1380,7 +1382,7 @@ test('requires 35 MCP capabilities, six review tools, and hosted provenance', ()
   assert.ok(HOST_MCP_TOOLS.includes('commit_applicability_candidate'));
   assert.equal(
     WISELINK_SKILL_VERSION,
-    'wiselink-research-and-synthesize@r09.c175',
+    'wiselink-research-and-synthesize@r09.c181',
   );
   assert.equal(
     WISELINK_SKILL_COMPATIBILITY_REF,
@@ -5022,7 +5024,7 @@ test('offers source reading and one final candidate function with blank assistan
   assert.equal(result.provenance.modelVersion, 'openai-codex/gpt-5.4');
   assert.equal(
     result.provenance.promptVersion,
-    'wiselink.3_1.review_prompt.v1.c47',
+    'wiselink.3_1.review_prompt.v1.c48',
   );
 });
 
@@ -5075,7 +5077,7 @@ test('falls back to the configured model and records only output shape v2', asyn
   assert.equal(result.provenance.modelVersion, 'provider/configured');
   assert.equal(
     result.provenance.promptVersion,
-    'wiselink.3_1.review_prompt.v1.c47',
+    'wiselink.3_1.review_prompt.v1.c48',
   );
   assert.equal(
     outputShape.schemaVersion,
@@ -7272,6 +7274,43 @@ test('invalid source requests stop after two model corrections without any Host 
   }
 });
 
+test('JobAid assessment update permits one bounded citation correction after two format corrections', async () => {
+  let requests = 0;
+  const rejections = [];
+  const result = await invokeReviewWithTransport({ input: {
+    availableSourceRefIds: ['read:one'], attachmentRefs: [],
+    context: { purpose: 'UPDATE_ASSESSMENT', problemAssessment: {
+      previousWork: { content: { issues: [{ issueKey: 'existing-issue' }] } },
+    } },
+  } }, {
+    gatewayUrl: 'https://official.invalid', gatewayToken: 'fixture-only', configuredModelVersion: 'fixture/provider',
+    readSourceRefs: () => assert.fail('Invalid reads must not reach the Host'),
+    validateCandidate: validateJobAidUpdatedIssueBodies,
+    observeCandidateRejection: async (value) => rejections.push(value.errorCode),
+  }, { requestGateway: async (_url, init) => {
+    requests++;
+    if (requests === 4) {
+      const feedback = JSON.parse(JSON.parse(init.body).messages.at(-1).content);
+      assert.deepEqual(feedback.previousIssueKeys, ['existing-issue']);
+      assert.equal(feedback.validationError, 'REVIEW_JOBAID_BODY_CITATIONS_REQUIRED');
+    }
+    const name = requests <= 2 ? 'read_wiselink_review_sources' : 'return_wiselink_review_candidate';
+    const args = requests <= 2 ? { sourceRefIds: ['unread-handle'] } : {
+      answer: '定点更正', jobAidWorkingDelta: { issues: [{ issueKey: 'existing-issue',
+        question: 'SB 与产线装机是否存在既定先后关系？',
+        body: requests === 3 ? '原文没有支持该顺序。' : '原文没有支持该顺序。[[evidence:read-one]]',
+        riskScenarios: [], measures: [], otherClassifications: [], openQuestions: [], requirementHandling: [] }] },
+    };
+    return Response.json({ choices: [{ message: { content: null, tool_calls: [{ id: `correction-${requests}`,
+      type: 'function', function: { name, arguments: JSON.stringify(args) },
+    }] } }] });
+  } });
+  assert.equal(requests, 4);
+  assert.deepEqual(rejections, ['REVIEW_MODEL_SOURCE_REQUEST_INVALID',
+    'REVIEW_MODEL_SOURCE_REQUEST_INVALID', 'REVIEW_JOBAID_BODY_CITATIONS_REQUIRED']);
+  assert.equal(result.output.jobAidWorkingDelta.issues[0].issueKey, 'existing-issue');
+});
+
 test('gateway required-tool contract failure is reported once without transient retries', async () => {
   let requests = 0;
   const progress = [];
@@ -7295,6 +7334,70 @@ test('review HTTP 400 reports only a known incomplete-response category', async 
     return Response.json({ error: { message: 'Agent run ended with an incomplete terminal response.' } }, { status: 400 });
   } }), /REVIEW_GATEWAY_HTTP_400:INCOMPLETE_TERMINAL_RESPONSE/u);
   assert.equal(requests, 1);
+});
+
+test('source-read JobAid Review makes one compact correction after a proven empty incomplete response', async () => {
+  let requests = 0;
+  const candidate = { answer: '只更正无据的未读断言。', sourceRefs: ['page1'],
+    jobAidWorkingDelta: { schemaVersion: 'wiselink.jobaid-problem-work.v3',
+      issues: [], unchangedIssueKeys: ['existing'] } };
+  const result = await invokeReviewWithTransport({ input: {
+    availableSourceRefIds: ['page1'],
+    context: { purpose: 'UPDATE_ASSESSMENT', problemAssessment: {
+      availableSources: [{ kind: 'DOCUMENT_PASSAGE' }],
+    } },
+  } }, {
+    gatewayUrl: 'https://official.invalid', gatewayToken: 'fixture-only',
+    configuredModelVersion: 'fixture/provider',
+    nativeSessionKey: 'agent:wiselink-engineering:review:ACTX-RS-incomplete-correction',
+    readSourceRefs: async ids => ids.map(sourceRefId => ({ sourceRefId,
+      evidenceRef: sourceRefId, excerpt: 'Fixture passage.' })),
+    validateCandidate: async value => assert.deepEqual(value.sourceRefs, ['page1']),
+  }, { requestGateway: async (_url, init) => {
+    requests += 1;
+    const body = JSON.parse(init.body);
+    if (requests === 1) return Response.json({ choices: [{ message: {
+      content: null, tool_calls: [{ id: 'read1', type: 'function', function: {
+        name: 'read_wiselink_review_sources', arguments: JSON.stringify({ sourceRefIds: ['page1'] }),
+      } }],
+    } }] });
+    if (requests === 2) return Response.json({ error: {
+      message: 'miaoda/minimax-m3 ended with an incomplete terminal response',
+    } }, { status: 400 });
+    assert.equal(body.tool_choice, 'required');
+    assert.match(body.messages.at(-1).content, /complete, concise candidate/u);
+    return Response.json({ choices: [{ message: { content: null, tool_calls: [{
+      id: 'candidate3', type: 'function', function: {
+        name: 'return_wiselink_review_candidate', arguments: JSON.stringify(candidate),
+      },
+    }] } }] });
+  } });
+  assert.equal(requests, 3);
+  assert.equal(result.output.answer, candidate.answer);
+});
+
+test('source-read JobAid Review stops after a second incomplete response', async () => {
+  let requests = 0;
+  await assert.rejects(invokeReviewWithTransport({ input: {
+    availableSourceRefIds: ['page1'], context: { purpose: 'UPDATE_ASSESSMENT',
+      problemAssessment: { availableSources: [{ kind: 'DOCUMENT_PASSAGE' }] } },
+  } }, {
+    gatewayUrl: 'https://official.invalid', gatewayToken: 'fixture-only',
+    configuredModelVersion: 'fixture/provider',
+    nativeSessionKey: 'agent:wiselink-engineering:review:ACTX-RS-incomplete-limit',
+    readSourceRefs: async ids => ids.map(sourceRefId => ({ sourceRefId,
+      evidenceRef: sourceRefId, excerpt: 'Fixture passage.' })),
+  }, { requestGateway: async () => {
+    requests += 1;
+    return requests === 1
+      ? Response.json({ choices: [{ message: { content: null, tool_calls: [{
+        id: 'read1', type: 'function', function: { name: 'read_wiselink_review_sources',
+          arguments: JSON.stringify({ sourceRefIds: ['page1'] }) },
+      }] } }] })
+      : Response.json({ error: { message: 'Agent run ended with an incomplete terminal response.' } },
+        { status: 400 });
+  } }), /REVIEW_GATEWAY_HTTP_400:INCOMPLETE_TERMINAL_RESPONSE/u);
+  assert.equal(requests, 3);
 });
 
 test('leased JobAid review spans the former 8-minute cutoff with bounded responses and stops on lease loss', async (t) => {
@@ -7585,6 +7688,175 @@ test('JobAid update projection keeps exact source bindings and saved work while 
   assert.throws(() => projectJobAidUpdateInput({ ...input, context: { ...input.context,
     problemAssessment: { ...input.context.problemAssessment, availableSources: [] } } }),
   /REVIEW_JOBAID_SOURCE_PROJECTION_MISMATCH/u);
+});
+
+test('JobAid update rejects uncited issue bodies before Host commit while leaving prior work untouched', () => {
+  const issue = { issueKey: 'existing', question: '措施有哪些条件？', body: '原文说明措施仍受条件限制。',
+    riskScenarios: [], measures: [], otherClassifications: [], openQuestions: [], requirementHandling: [] };
+  const delta = { jobAidWorkingDelta: { issues: [issue] } };
+  assert.throws(() => validateJobAidUpdatedIssueBodies(delta), /REVIEW_JOBAID_BODY_CITATIONS_REQUIRED/u);
+  assert.equal(delta.jobAidWorkingDelta.issues[0].body, '原文说明措施仍受条件限制。');
+  delta.jobAidWorkingDelta.issues[0].body = '原文说明措施仍受条件限制。[[source:read-1]]';
+  assert.doesNotThrow(() => validateJobAidUpdatedIssueBodies(delta));
+  delete issue.question;
+  assert.throws(() => validateJobAidUpdatedIssueBodies(delta), /REVIEW_JOBAID_ISSUE_FULL_CONTENT_REQUIRED/u);
+  issue.question = '措施有哪些条件？';
+  delete issue.openQuestions;
+  assert.throws(() => validateJobAidUpdatedIssueBodies(delta), /REVIEW_JOBAID_ISSUE_FULL_CONTENT_REQUIRED/u);
+  issue.openQuestions = [];
+  delta.jobAidWorkingDelta.issues[0].body += ' [[broken';
+  assert.throws(() => validateJobAidUpdatedIssueBodies(delta), /REVIEW_JOBAID_BODY_CITATION_MALFORMED/u);
+});
+
+test('JobAid Review issue patches preserve omitted prior fields and distinguish explicit clearing', () => {
+  const prior = { issues: [{ issueKey: 'existing', question: '原问题',
+    body: '旧判断。[[source:prior]]', riskScenarios: [{ scenario: '原风险' }],
+    measures: [{ text: '原措施' }], otherClassifications: [{ value: '原分类' }],
+    openQuestions: [{ question: '仍待核？' }], requirementHandling: [{ requirement: '原要求' }] }] };
+  const before = structuredClone(prior);
+  const delta = { schemaVersion: 'wiselink.jobaid-problem-work.v3',
+    issuePatches: [{ issueKey: 'existing', body: '已核对。[[source:read-1]]' }] };
+  const result = materializeJobAidReviewIssuePatches(delta, prior);
+  assert.equal(Object.hasOwn(result, 'issuePatches'), false);
+  assert.equal(result.issues[0].body, '已核对。[[source:read-1]]');
+  for (const field of ['question', 'riskScenarios', 'measures', 'otherClassifications',
+    'openQuestions', 'requirementHandling']) {
+    assert.deepEqual(result.issues[0][field], prior.issues[0][field]);
+  }
+  assert.deepEqual(prior, before);
+  assert.deepEqual(delta.issuePatches, [{ issueKey: 'existing', body: '已核对。[[source:read-1]]' }]);
+  result.issues[0].measures[0].text = '变动';
+  assert.equal(prior.issues[0].measures[0].text, '原措施');
+  const cleared = materializeJobAidReviewIssuePatches({
+    issuePatches: [{ issueKey: 'existing', openQuestions: [] }],
+  }, prior);
+  assert.deepEqual(cleared.issues[0].openQuestions, []);
+  assert.deepEqual(prior.issues[0].openQuestions, [{ question: '仍待核？' }]);
+});
+
+test('JobAid Review issue patches reject unknown, duplicate, ambiguous and no-op edits', () => {
+  const issue = { issueKey: 'existing', question: '原问题', body: '旧判断。[[source:prior]]',
+    riskScenarios: [], measures: [], otherClassifications: [], openQuestions: [], requirementHandling: [] };
+  const prior = { issues: [issue] };
+  const check = (delta, code) => assert.throws(
+    () => materializeJobAidReviewIssuePatches(delta, prior), new RegExp(code, 'u'));
+  check({ issuePatches: [{ issueKey: 'new', body: '新问题' }] }, 'REVIEW_JOBAID_PATCH_ISSUE_UNKNOWN');
+  check({ issuePatches: [{ issueKey: 'existing', body: '变动' },
+    { issueKey: 'existing', body: '再次变动' }] }, 'REVIEW_JOBAID_PATCH_ISSUE_DUPLICATE');
+  check({ issues: [issue], issuePatches: [{ issueKey: 'existing', body: '变动' }] },
+    'REVIEW_JOBAID_PATCH_ISSUES_AMBIGUOUS');
+  check({ issuePatches: [{ issueKey: 'existing', body: issue.body }] },
+    'REVIEW_JOBAID_PATCH_CHANGE_REQUIRED');
+  check({ issuePatches: [{ issueKey: 'existing', invented: 'x' }] },
+    'REVIEW_JOBAID_PATCH_FIELD_UNKNOWN');
+  check({ issuePatches: [{ issueKey: 'existing' }] }, 'REVIEW_JOBAID_PATCH_CHANGE_REQUIRED');
+});
+
+test('JobAid Review materializes a model patch before candidate validation', async () => {
+  const issue = { issueKey: 'existing', question: '原问题', body: '旧判断。[[source:prior]]',
+    riskScenarios: [], measures: [{ text: '保留的措施' }], otherClassifications: [],
+    openQuestions: [{ question: '原待核？' }], requirementHandling: [] };
+  const result = await invokeReviewWithTransport({ input: {
+    context: { purpose: 'UPDATE_ASSESSMENT', problemAssessment: {
+      previousWork: { content: { issues: [issue] } },
+    } },
+  } }, {
+    gatewayUrl: 'https://official.invalid', gatewayToken: 'fixture-only',
+    configuredModelVersion: 'fixture/provider',
+    validateCandidate: (candidate) => {
+      validateJobAidUpdatedIssueBodies(candidate);
+      assert.equal(Object.hasOwn(candidate.jobAidWorkingDelta, 'issuePatches'), false);
+      assert.equal(candidate.jobAidWorkingDelta.issues[0].question, '原问题');
+      assert.deepEqual(candidate.jobAidWorkingDelta.issues[0].openQuestions, issue.openQuestions);
+    },
+  }, { requestGateway: async () => Response.json({ choices: [{ message: {
+    content: null, tool_calls: [{ id: 'patch-1', type: 'function',
+      function: { name: 'return_wiselink_review_candidate', arguments: JSON.stringify({
+        answer: '局部更正', jobAidWorkingDelta: {
+          issuePatches: [{ issueKey: 'existing', body: '新判断。[[source:read-1]]' }],
+        },
+      }) },
+    }],
+  } }] }) });
+  assert.equal(result.output.jobAidWorkingDelta.issues[0].measures[0].text, '保留的措施');
+});
+
+test('JobAid update rejects a status-only delta and COMPLETE while retained questions remain open', async () => {
+  const { task, candidate } = await emptyJobAidReviewFixture();
+  task.context.purpose = 'UPDATE_ASSESSMENT';
+  task.jobAidContext.previousWork.content.issues = [{ issueKey: 'existing',
+    openQuestions: [{ question: 'Which aircraft are affected?' }], requirementHandling: [] }];
+  const delta = { schemaVersion: 'wiselink.jobaid-problem-work.v3', issues: [],
+    unchangedIssueKeys: ['existing'], roundCompletion: 'COMPLETE',
+    completionReason: '源文件已核对', changeSummary: '未修改任何问题' };
+  const validate = (work) => validateReviewCandidate(task, { ...candidate, jobAidWorkingDelta: work });
+  assert.throws(() => validate(delta), /REVIEW_JOBAID_SUBSTANTIVE_DELTA_REQUIRED/u);
+  assert.throws(() => validate({ ...delta, overview: '仍需确认机队范围' }),
+    /REVIEW_JOBAID_OPEN_QUESTIONS_REQUIRE_QUALIFIED_COMPLETION/u);
+  assert.doesNotThrow(() => validate({ ...delta, overview: '仍需确认机队范围',
+    roundCompletion: 'COMPLETE_WITH_OPEN_QUESTIONS' }));
+});
+
+test('JobAid update gives specific correction for an empty assessment delta', async () => {
+  let requests = 0;
+  const result = await invokeReviewWithTransport({ input: { context: {
+    purpose: 'UPDATE_ASSESSMENT', problemAssessment: { previousWork: { content: {
+      issues: [{ issueKey: 'existing', openQuestions: [{ question: 'Scope?' }] }],
+    } } },
+  } } }, {
+    gatewayUrl: 'https://official.invalid', gatewayToken: 'fixture-only', configuredModelVersion: 'fixture/provider',
+    validateCandidate: (value) => {
+      if (value.jobAidWorkingDelta?.issues.length === 0)
+        throw new Error('REVIEW_JOBAID_SUBSTANTIVE_DELTA_REQUIRED');
+    },
+  }, { requestGateway: async (_url, init) => {
+    const request = JSON.parse(init.body);
+    if (++requests === 2) {
+      const feedback = JSON.parse(request.messages.at(-1).content);
+      assert.equal(feedback.validationError, 'REVIEW_JOBAID_SUBSTANTIVE_DELTA_REQUIRED');
+      assert.match(feedback.instruction, /changes no issue/u);
+      assert.deepEqual(feedback.previousIssueKeys, ['existing']);
+    }
+    return Response.json({ choices: [{ message: { content: null, tool_calls: [{
+      id: `candidate-${requests}`, type: 'function', function: {
+        name: 'return_wiselink_review_candidate',
+        arguments: JSON.stringify({ answer: '局部更正', jobAidWorkingDelta: { issues: requests === 1 ? [] : [{ issueKey: 'existing' }] } }),
+      },
+    }] } }] });
+  } });
+  assert.equal(requests, 2);
+  assert.deepEqual(result.output.jobAidWorkingDelta.issues, [{ issueKey: 'existing' }]);
+});
+
+test('JobAid review corrects a partial issue before Host can clear saved collections', async () => {
+  let requests = 0;
+  const result = await invokeReviewWithTransport({ input: { context: {
+    purpose: 'UPDATE_ASSESSMENT', problemAssessment: { previousWork: { content: {
+      issues: [{ issueKey: 'existing', question: '原问题', openQuestions: [{ question: '仍待核？' }] }],
+    } } },
+  } } }, {
+    gatewayUrl: 'https://official.invalid', gatewayToken: 'fixture-only', configuredModelVersion: 'fixture/provider',
+    validateCandidate: validateJobAidUpdatedIssueBodies,
+  }, { requestGateway: async (_url, init) => {
+    const request = JSON.parse(init.body);
+    if (++requests === 2) {
+      const feedback = JSON.parse(request.messages.at(-1).content);
+      assert.equal(feedback.validationError, 'REVIEW_JOBAID_ISSUE_FULL_CONTENT_REQUIRED');
+      assert.match(feedback.instruction, /issuePatches/u);
+    }
+    const issue = { issueKey: 'existing', body: '已读原文。[[source:read-1]]',
+      ...(requests === 2 ? { question: '原问题', riskScenarios: [], measures: [],
+        otherClassifications: [], openQuestions: [{ question: '仍待核？', affects: '适用范围',
+          nextEvidence: '确切装机记录', reason: '当前未取得' }], requirementHandling: [] } : {}) };
+    return Response.json({ choices: [{ message: { content: null, tool_calls: [{
+      id: `candidate-${requests}`, type: 'function', function: {
+        name: 'return_wiselink_review_candidate',
+        arguments: JSON.stringify({ answer: '定点更正', jobAidWorkingDelta: { issues: [issue] } }),
+      },
+    }] } }] });
+  } });
+  assert.equal(requests, 2);
+  assert.equal(result.output.jobAidWorkingDelta.issues[0].openQuestions.length, 1);
 });
 
 test('JobAid update first reads an authorized document before exposing the candidate channel', async () => {

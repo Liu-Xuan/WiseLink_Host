@@ -1,12 +1,15 @@
 import { documentMineruOriginal } from '../../../server/modules/document-management/src/hosted/nest/document-mineru-original-adapter';
 import { reconcileMineruTextCoverage } from '../../../server/modules/document-management/src/hosted/nest/document-mineru-text-coverage';
 import { documentOriginalReadingCoverage } from '../../../server/modules/document-management/src/hosted/nest/document-original-adapter';
+import { buildDocumentSemanticMap } from '../../../server/modules/document-management/src/hosted/nest/document-semantic-map';
 import type { DocumentPdfPage } from '../../../server/modules/document-management/src/hosted/nest/document-original-pdf';
 const binding = { documentVersionId: 'DV', parseRunId: 'PR', parseRevision: 1, sourceArtifactId: 'SRC', sourceSha256: 'a'.repeat(64), sourceByteLength: 12 };
 function paragraph(text: string, bbox: number[]) { return { type: 'paragraph', bbox, content: { paragraph_content: [{ type: 'text', content: text }] } }; }
-function page(lines: Array<{ text: string; top: number; x?: number }>, pageIndex = 0): DocumentPdfPage {
+function title(text: string, bbox: number[], level = 1) { return { type: 'title', bbox, content: { level, title_content: [{ type: 'text', content: text }] } }; }
+function page(lines: Array<{ text: string; top: number; x?: number; size?: number }>, pageIndex = 0): DocumentPdfPage {
   return { pageIndex, width: 1000, height: 1000, rotation: 0, text: lines.map(line => line.text).join('\n'),
-    items: lines.map(line => ({ text: line.text, transform: [10, 0, 0, 10, line.x ?? 10, 1000 - line.top - 10], width: 100, height: 10, hasEOL: true })) };
+    items: lines.map(line => ({ text: line.text, transform: [line.size ?? 10, 0, 0, line.size ?? 10,
+      line.x ?? 10, 1000 - line.top - (line.size ?? 10)], width: 100, height: line.size ?? 10, hasEOL: true })) };
 }
 function fixture(blocks: unknown[][], pages: DocumentPdfPage[], extra: Record<string, unknown> = {}) {
   const middle = { _version_name: '3.4.5', _backend: 'pipeline', pdf_info: blocks.map((_p, page_idx) => ({ page_idx, page_size: [1000, 1000], ...extra })) };
@@ -27,6 +30,58 @@ it('preserves repeated text by physical occurrence, inserts only outside-region 
   expect(result.locations.filter(location => location.precision === 'TEXT_ITEM')).toHaveLength(2);
   expect(supplements[0].mapping.textItems).toEqual([{ pageIndex: 0, itemIndexes: [1] }]);
   expect(input).toEqual(before);
+});
+it('recovers only a geometrically corroborated missing heading and preserves its source binding', () => {
+  const input = fixture([[
+    title('Scope', [10, 100, 130, 114]), paragraph('All aircraft', [10, 130, 130, 142]),
+    title('Background', [10, 200, 130, 214]), paragraph('Existing context', [10, 230, 130, 242]),
+    paragraph('Description body', [10, 320, 130, 332]),
+  ]], [page([
+    { text: 'Scope', top: 100, size: 12 }, { text: 'All aircraft', top: 130, size: 9 },
+    { text: 'Background', top: 200, size: 12 }, { text: 'Existing context', top: 230, size: 9 },
+    { text: 'Description', top: 300, size: 12 }, { text: 'Description body', top: 320, size: 9 },
+  ])]);
+  const result = reconcileMineruTextCoverage(input);
+  const recovered = result.source.units.find(unit => unit.payload.text === 'Description');
+  expect(recovered).toMatchObject({ kind: 'heading', payload: { level: 1 }, mapping: {
+    headingRecovery: { method: 'MATCHED_PDF_GEOMETRY' }, extraction: 'PDFJS_TEXT_LAYER' } });
+  expect(recovered?.sourceRefIds).toEqual([`${recovered?.unitId}:source`]);
+  expect(result.markdown).toContain('# Description');
+  const map = buildDocumentSemanticMap({ original: result, semanticRevision: 1,
+    profile: { profileRef: 'test', roles: [{ roleKey: 'APPLICABILITY', aliases: ['Scope'] },
+      { roleKey: 'DESCRIPTION', aliases: ['Description'] }] } });
+  const scope = map.sections.find(section => section.titleRaw === 'Scope');
+  const description = map.sections.find(section => section.titleRaw === 'Description');
+  expect(scope?.bodyUnitIds.map(id => result.source.units.find(unit => unit.unitId === id)?.payload.text)).toEqual(['All aircraft']);
+  expect(description?.bodyUnitIds.map(id => result.source.units.find(unit => unit.unitId === id)?.payload.text)).toEqual(['Description body']);
+  expect(input.original.source.units.some(unit => unit.payload.text === 'Description')).toBe(false);
+});
+it('does not promote a short body line or infer a heading without two matching anchors', () => {
+  const blocks = [title('Scope', [10, 100, 130, 114]), paragraph('All aircraft', [10, 130, 130, 142]),
+    paragraph('Description body', [10, 320, 130, 332])];
+  const result = reconcileMineruTextCoverage(fixture([blocks], [page([
+    { text: 'Scope', top: 100, size: 12 }, { text: 'All aircraft', top: 130, size: 9 },
+    { text: 'Short body', top: 260, size: 9 },
+    { text: 'Description', top: 300, size: 12 }, { text: 'Description body', top: 320, size: 9 },
+  ])]));
+  expect(result.source.units.find(unit => unit.payload.text === 'Short body')?.kind).toBe('paragraph');
+  expect(result.source.units.find(unit => unit.payload.text === 'Description')?.kind).toBe('paragraph');
+  expect(result.coverage.unresolvedRanges).toContainEqual(expect.objectContaining({
+    reason: 'STRUCTURE_UNCERTAIN', message: expect.stringContaining('Description') }));
+});
+it('keeps a title-like supplement as text when matching headings disagree on level', () => {
+  const result = reconcileMineruTextCoverage(fixture([[
+    title('First', [10, 100, 130, 114], 1), paragraph('First body', [10, 130, 130, 142]),
+    title('Second', [10, 200, 130, 214], 2), paragraph('Second body', [10, 230, 130, 242]),
+    paragraph('Third body', [10, 320, 130, 332]),
+  ]], [page([
+    { text: 'First', top: 100, size: 12 }, { text: 'First body', top: 130, size: 9 },
+    { text: 'Second', top: 200, size: 12 }, { text: 'Second body', top: 230, size: 9 },
+    { text: 'Third', top: 300, size: 12 }, { text: 'Third body', top: 320, size: 9 },
+  ])]));
+  expect(result.source.units.find(unit => unit.payload.text === 'Third')?.kind).toBe('paragraph');
+  expect(result.coverage.unresolvedRanges).toContainEqual(expect.objectContaining({
+    reason: 'STRUCTURE_UNCERTAIN', message: expect.stringContaining('Third') }));
 });
 it('retains a table without injecting a partly unmatched physical line into its relationships', () => {
   const table = { type: 'table', bbox: [10, 100, 200, 200], content: { html: '<table><tr><td>Covered</td></tr></table>' } };
