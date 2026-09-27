@@ -15,6 +15,7 @@ import type { AutomaticWorkItemSourceAuthorizationPort } from './automatic-work-
 import type { CanonicalHostInitialAnalysisStatusService } from './canonical-host-initial-analysis-status.service';
 import type { ReviewConversationRepository } from '../review-persistence/review-conversation.repository';
 import type { JobAidWorkRepository } from './jobaid-work.repository';
+import type { ActionAttemptRepository } from '../action-attempt/action-attempt.repository';
 import {
   AutomaticWorkItemDispatchService,
   automaticAuthorizationBindingMismatch,
@@ -133,6 +134,7 @@ describe('AutomaticWorkItemDispatchService', () => {
       const jobAidWork = { latestForRuntime: jest.fn().mockResolvedValue({
         workRevisionRef: 'JAWR-NEW', content: { roundCompletion: 'COMPLETE' },
       }) };
+      const attempts = { readLatestByExactIdempotency: jest.fn().mockResolvedValue(null) };
       const serviceScope = {
         authorizeOpenClawAutoWorkItemQueue: jest.fn().mockResolvedValue({
           principalId: 'service:openclaw-main', appId: 'app_17bzc551rsg',
@@ -149,6 +151,7 @@ describe('AutomaticWorkItemDispatchService', () => {
         undefined, undefined, undefined,
         conversations as unknown as ReviewConversationRepository,
         jobAidWork as unknown as JobAidWorkRepository,
+        attempts as unknown as ActionAttemptRepository,
       );
       await expect(service.nextWorkItem()).resolves.toEqual({
         status: 'OVERALL_PENDING', workItemId: WORK_ITEM_ID,
@@ -159,6 +162,8 @@ describe('AutomaticWorkItemDispatchService', () => {
         operation: 'BEGIN_OVERALL', workItemId: WORK_ITEM_ID,
         successorReviewTurnRef: 'RT-EXPLICIT',
       });
+      attempts.readLatestByExactIdempotency.mockResolvedValue({ status: 'FAILED' });
+      await expect(service.nextWorkItem()).resolves.toEqual({ status: 'IDLE' });
     } finally {
       if (previous === undefined) delete process.env.WL_OPENCLAW_SERVICE_SUCCESSOR_REVIEW_ENABLED;
       else process.env.WL_OPENCLAW_SERVICE_SUCCESSOR_REVIEW_ENABLED = previous;

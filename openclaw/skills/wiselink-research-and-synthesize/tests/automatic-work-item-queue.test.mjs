@@ -255,6 +255,33 @@ test('requested successor Overall uses the exact Review work and advances the cu
   assert.equal(discoveries, 1, 'a saved successor pointer resumes before fresh discovery');
 });
 
+test('terminal successor Overall clears only its local pointer and reports attention', async () => {
+  const pointer = { status: 'OVERALL_PENDING', workItemId: 'WI-REVIEW',
+    reviewTurnRef: 'RT-EXPLICIT', workRevisionRef: 'JAWR-EXACT',
+    reviewAfterWorkItemId: 'WI-REVIEW' };
+  const checkpoint = memoryCheckpoint(null, { 'active-successor-overall': pointer });
+  const dependencies = {
+    checkpoint, now: () => new Date(START),
+    nextWorkItem: async () => assert.fail('saved pointer must be handled first'),
+    acknowledgeWorkItem: async () => assert.fail('no initial lease'),
+    readInitialStatus: async () => assert.fail('no initial stage'),
+    consumeWorkItem: async () => assert.fail('no initial work'),
+    consumeSuccessorOverall: async () => {
+      throw Object.assign(new Error('terminal'), { hostToolName: 'begin_overall_synthesis',
+        hostErrorCode: 'ACTION_ATTEMPT_ALREADY_FAILED' });
+    },
+  };
+  await expectTerminalSuccessorAttention(dependencies, checkpoint);
+});
+
+async function expectTerminalSuccessorAttention(dependencies, checkpoint) {
+  const result = await consumeAutomaticWorkItemQueueTick({}, dependencies);
+  assert.deepEqual(result, { status: 'REQUIRES_ATTENTION', workItemId: 'WI-REVIEW',
+    reviewTurnRef: 'RT-EXPLICIT', errorCode: 'ACTION_ATTEMPT_ALREADY_FAILED' });
+  assert.equal(checkpoint.values.get('active-successor-overall'), null);
+  assert.equal(checkpoint.values.get('review-cursor'), 'WI-REVIEW');
+}
+
 test('successor Overall readback finishes an already succeeded exact attempt without model execution', async t => {
   const checkpointRoot = await mkdtemp(join(tmpdir(), 'wiselink-successor-overall-'));
   t.after(() => rm(checkpointRoot, { recursive: true, force: true }));

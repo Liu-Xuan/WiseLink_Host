@@ -35,6 +35,7 @@ import { CanonicalHostInitialAnalysisStatusService } from './canonical-host-init
 import { canonicalHostBareSha256 } from './canonical-host-sha256';
 import { ReviewConversationRepository } from '../review-persistence/review-conversation.repository';
 import { JobAidWorkRepository } from './jobaid-work.repository';
+import { ActionAttemptRepository } from '../action-attempt/action-attempt.repository';
 
 const CANONICAL_APP_ID = 'app_17bzc551rsg';
 const AUTO_WORK_ITEM_LEASE_MILLISECONDS = 60 * 60 * 1000;
@@ -60,6 +61,8 @@ export class AutomaticWorkItemDispatchService {
     private readonly reviewConversations?: ReviewConversationRepository,
     @Optional()
     private readonly jobAidWork?: JobAidWorkRepository,
+    @Optional()
+    private readonly attempts?: ActionAttemptRepository,
   ) {}
 
   async nextWorkItem(
@@ -189,6 +192,13 @@ export class AutomaticWorkItemDispatchService {
         binding.turn.assistantCandidate?.jobAidWorkingUpdate?.status === 'APPLIED' &&
         binding.turn.assistantCandidate.jobAidWorkingUpdate.workRevisionRef === latestWork.workRevisionRef);
       if (!selected) continue;
+      if (!this.attempts) throw new Error('AUTO_WORK_ITEM_REVIEW_DISCOVERY_UNAVAILABLE');
+      const attempt = await this.attempts.readLatestByExactIdempotency({
+        tenantId: scope.tenantId,
+        idempotencyKey: `openclaw-successor-overall:${workItemId}:${selected.turn.reviewTurnId}`,
+      });
+      if (attempt && ['FAILED', 'CANCELLED', 'CONFLICT', 'OBSOLETE', 'TIMED_OUT'].includes(attempt.status))
+        continue;
       const projection = await this.workItems.loadTenantScopedProjection(workItemId, scope.tenantId);
       if (!projection?.projection ||
           projection.projection.integratedAssessment?.overallSynthesis?.basedOnJobAidWorkRevisionRef === latestWork.workRevisionRef)
