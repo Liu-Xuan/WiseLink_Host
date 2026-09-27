@@ -1235,6 +1235,16 @@ test(
         await repository.listSuccessorOverallTurnBindings(input),
         [],
       );
+      assert.equal((await repository.listSuccessorOverallTurnBindings({
+        ...input, reviewTurnRef: 'RT-C187', allowCommittedRevision: true,
+      })).length, 1);
+      assert.deepEqual(await repository.listSuccessorOverallTurnBindings({
+        ...input, reviewTurnRef: 'RT-C2', allowCommittedRevision: true,
+      }), []);
+      await sql`UPDATE work_item SET revision=9 WHERE work_item_id='WI-C2'`;
+      assert.deepEqual(await repository.listSuccessorOverallTurnBindings({
+        ...input, reviewTurnRef: 'RT-C187', allowCommittedRevision: true,
+      }), []);
     } finally {
       await runtimeSql?.end({ timeout: 5 });
       await sql.end({ timeout: 5 });

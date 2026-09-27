@@ -530,6 +530,10 @@ describe('successor Review exact delegation', () => {
     await expect(
       state.adapter.authorizeSuccessorOverall(input),
     ).resolves.toMatchObject({ inputRevision: 7 });
+    expect(state.conversations.listSuccessorOverallTurnBindings).toHaveBeenCalledWith({
+      tenantId: TENANT_ID, actorId: ACTOR_ID, workItemId: WORK_ITEM_ID,
+      reviewTurnRef: 'RT-new', allowCommittedRevision: true, limit: 1,
+    });
     await expect(
       state.adapter.authorizeReviewDelegation(successorInput),
     ).rejects.toMatchObject({ statusCode: 404 });

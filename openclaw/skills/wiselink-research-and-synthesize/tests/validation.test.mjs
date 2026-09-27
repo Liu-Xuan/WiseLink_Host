@@ -8,6 +8,7 @@ import test from 'node:test';
 import { bindWholeDocumentTranslation, invokeHostedInitialModel as invokeInitialWithTransport } from '../scripts/invoke-hosted-initial-model.mjs';
 import { requestHostedGateway } from '../scripts/request-hosted-gateway.mjs';
 import { consumePendingReviewTurn } from '../scripts/consume-hosted-review-turn.mjs';
+import { runHostedSuccessorOverall } from '../scripts/consume-hosted-work-item.mjs';
 
 import {
   WISELINK_HOST_MCP_NAME,
@@ -3139,6 +3140,46 @@ test('replays only the Host-sealed Overall result to finish COMMITTING', async (
   assert.equal(result.outcome, 'COMMITTING_REPLAYED');
   assert.deepEqual(calls, ['get_parse_status', 'begin_overall_synthesis',
     'get_action_attempt_status', 'commit_overall_candidate']);
+});
+
+test('a successor Overall tick finishes its sealed COMMITTING attempt without another model call', async t => {
+  const checkpointRoot = await mkdtemp(join(tmpdir(), 'wiselink-successor-committing-'));
+  t.after(() => rm(checkpointRoot, { recursive: true, force: true }));
+  const input = synthesisInput();
+  const task = makeTask('OPENCLAW_OVERALL_SYNTHESIS', {
+    ...input, successorReviewTurnRef: 'RT-EXPLICIT',
+    successorOverallBinding: { workRevisionRef: 'JAWR-EXACT' },
+  });
+  const recoveryResult = sealResultEnvelope({ task,
+    modelOutput: synthesisOutput(input), provenance: provenance() });
+  const begin = { ...runningBegin(task, { modelInput: input, selectedDiscoveryRefs: [] }),
+    status: 'COMMITTING', recoveryResult };
+  let committed = false;
+  let commits = 0;
+  const pointer = { workItemId: WORK_ITEM_ID, reviewTurnRef: 'RT-EXPLICIT',
+    workRevisionRef: 'JAWR-EXACT', checkpointRoot };
+  const dependencies = { callTool: async (name, args) => {
+    if (name === 'get_parse_status') return { integratedAssessmentSummary: { overallSynthesis:
+      committed ? { basedOnJobAidWorkRevisionRef: 'JAWR-EXACT' } : null } };
+    if (name === 'begin_overall_synthesis') return begin;
+    if (name === 'get_action_attempt_status') return attemptStatus(task, 'COMMITTING', recoveryResult);
+    if (name === 'commit_overall_candidate') {
+      assert.equal(args.attemptRef, begin.attemptRef);
+      assert.deepEqual(args.result, recoveryResult);
+      committed = true; commits += 1;
+      return { workItemId: WORK_ITEM_ID, workItemRevision: 8,
+        status: 'OVERALL_CANDIDATE_READY', overallSynthesis: {
+          status: 'CANDIDATE_ONLY', authorityLevel: 'candidate_only',
+          externalDiscoveryIsEvidence: false } };
+    }
+    throw new Error(`UNEXPECTED_TOOL:${name}`);
+  }, invokeInitialModel: async () => assert.fail('sealed recovery must not call the model') };
+  const first = await runHostedSuccessorOverall(pointer, dependencies);
+  assert.equal(first.status, 'SUCCESSOR_OVERALL_SAVED');
+  assert.equal(commits, 1);
+  const replay = await runHostedSuccessorOverall(pointer, dependencies);
+  assert.deepEqual(replay, first);
+  assert.equal(commits, 1);
 });
 
 test('historical skill provenance is allowed only for a sealed compatible recovery', () => {

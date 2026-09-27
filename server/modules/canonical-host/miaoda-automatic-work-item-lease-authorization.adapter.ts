@@ -233,6 +233,7 @@ export class MiaodaAutomaticWorkItemLeaseAuthorizationAdapter implements Automat
         actorId: subject.authorization.actorUserId,
         workItemId: input.workItemId,
         reviewTurnRef: input.reviewTurnRef,
+        allowCommittedRevision: true,
         limit: 1,
       },
     );

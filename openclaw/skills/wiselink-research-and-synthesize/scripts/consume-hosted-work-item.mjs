@@ -222,6 +222,17 @@ export async function consumeAutomaticWorkItemQueueTick(options, dependencies) {
   if (!(currentTime instanceof Date) || !Number.isFinite(currentTime.getTime())) {
     throw new Error('AUTO_WORK_ITEM_QUEUE_CLOCK_INVALID');
   }
+  const savedSuccessor = await checkpoint.readOptional('active-successor-overall');
+  const activeSuccessor = savedSuccessor === null ? null : validateStoredSuccessorOverall(savedSuccessor, currentTime);
+  if (activeSuccessor) {
+    if (claim || options.repairStoppedClaim || typeof dependencies.consumeSuccessorOverall !== 'function')
+      throw new Error('AUTO_WORK_ITEM_SUCCESSOR_CHECKPOINT_CONFLICT');
+    const result = await dependencies.consumeSuccessorOverall(activeSuccessor);
+    await checkpoint.write('review-cursor', activeSuccessor.reviewAfterWorkItemId);
+    await checkpoint.write('active-successor-overall', null);
+    return { status: 'OVERALL_DISPATCHED', workItemId: activeSuccessor.workItemId,
+      reviewTurnRef: activeSuccessor.reviewTurnRef, overall: result };
+  }
 
   if (claim?.blockReady) {
     // Older consumers may have persisted an intent to BLOCK a runtime failure.
@@ -245,8 +256,10 @@ export async function consumeAutomaticWorkItemQueueTick(options, dependencies) {
         ? dependencies.consumeReview : dependencies.consumeSuccessorOverall;
       if (previous || typeof consumer !== 'function')
         throw new Error('AUTO_WORK_ITEM_SUCCESSOR_DISPATCH_INVALID');
+      if (next.status === 'OVERALL_PENDING') await checkpoint.write('active-successor-overall', next);
       const result = await consumer(next.status === 'REVIEW_PENDING' ? next.workItemId : next);
       await checkpoint.write('review-cursor', next.reviewAfterWorkItemId);
+      if (next.status === 'OVERALL_PENDING') await checkpoint.write('active-successor-overall', null);
       return { status: next.status === 'REVIEW_PENDING' ? 'REVIEW_DISPATCHED' : 'OVERALL_DISPATCHED',
         workItemId: next.workItemId, reviewTurnRef: next.reviewTurnRef,
         ...(next.status === 'REVIEW_PENDING' ? { review: result } : { overall: result }) };
@@ -544,6 +557,14 @@ function validateAutoClaimResult(value, now) {
   return value;
 }
 
+function validateStoredSuccessorOverall(value, now) {
+  try {
+    const pointer = validateAutoClaimResult(value, now);
+    if (pointer.status === 'OVERALL_PENDING') return pointer;
+  } catch { /* A malformed checkpoint cannot select a different task. */ }
+  throw new Error('AUTO_WORK_ITEM_SUCCESSOR_CHECKPOINT_INVALID');
+}
+
 function validateClaimFields(value) {
   if (!/^WI-[A-Za-z0-9_-]{1,93}$/u.test(value.workItemId) ||
       !/^REQ-[A-Za-z0-9_-]{1,92}$/u.test(value.requestId) ||
@@ -744,9 +765,11 @@ export async function runHostedSuccessorOverall(pointer, dependencies) {
     });
     return status?.integratedAssessmentSummary?.overallSynthesis?.basedOnJobAidWorkRevisionRef === pointer.workRevisionRef;
   };
-  if (await current()) return { status: 'SUCCESSOR_OVERALL_SAVED', ...binding, recoveredByReadback: true };
-  if (await checkpoint.readOptional('run-result'))
-    throw new Error('HOSTED_SUCCESSOR_OVERALL_RESULT_DRIFT');
+  const savedResult = await checkpoint.readOptional('run-result');
+  if (savedResult) {
+    if (!await current()) throw new Error('HOSTED_SUCCESSOR_OVERALL_RESULT_DRIFT');
+    return savedResult;
+  }
   let executionModel;
   let taskDeadline;
   const callTool = async (name, args) => {
@@ -760,7 +783,8 @@ export async function runHostedSuccessorOverall(pointer, dependencies) {
   };
   // A transient failure before commit keeps the exact Host attempt claim
   // recoverable. The Host owns its bounded lease/deadline and terminal status.
-  const result = await runOverallSynthesis({
+  let result;
+  try { result = await runOverallSynthesis({
       ...binding,
       successorReviewTurnRef: pointer.reviewTurnRef,
       successorWorkRevisionRef: pointer.workRevisionRef,
@@ -779,8 +803,17 @@ export async function runHostedSuccessorOverall(pointer, dependencies) {
           observeCandidateRejection: report => checkpoint.writeOnce(
             `model.candidate-rejection-${report.correctionNo}`, report) },
       ),
-  });
-  if (!result.ok || !await current())
+  }); }
+  catch (error) {
+    // The exact idempotent attempt may have finished after our last response
+    // was lost. Host authorization still checks the turn and saved revision.
+    if (error?.hostToolName !== 'begin_overall_synthesis' ||
+        error.hostErrorCode !== 'ACTION_ATTEMPT_ALREADY_SUCCEEDED' || !await current()) throw error;
+    const recovered = { status: 'SUCCESSOR_OVERALL_SAVED', ...binding, recoveredByReadback: true };
+    await checkpoint.writeOnce('run-result', recovered);
+    return recovered;
+  }
+  if ((!result.ok && result.outcome !== 'COMMITTING_REPLAYED') || !await current())
     throw new Error('HOSTED_SUCCESSOR_OVERALL_RESULT_NOT_CURRENT');
   const report = { status: 'SUCCESSOR_OVERALL_SAVED', ...binding,
     recoveredByReadback: result.outcome === 'COMMIT_RESPONSE_LOSS_RECOVERED_READ_ONLY' };
