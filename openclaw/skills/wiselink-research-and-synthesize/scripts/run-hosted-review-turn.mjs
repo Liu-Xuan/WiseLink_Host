@@ -18,7 +18,7 @@ import { homedir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
 import process from 'node:process';
 import { pathToFileURL } from 'node:url';
-import { createHostedReviewRequester, requestHostedGateway } from './request-hosted-gateway.mjs';
+import { classifyHostedGatewayFailure, createHostedReviewRequester, requestHostedGateway } from './request-hosted-gateway.mjs';
 
 import {
   HOST_MCP_TOOLS,
@@ -88,6 +88,7 @@ const GATEWAY_REVIEW_FAILURE_BANNER = '⚠️ 🧩 Return Wiselink Review Candid
 // MiniMax Chat Completions documents a 524288-token maximum (2026-09-08).
 // This is an output allowance, not a target length or actual usage claim.
 export const M3_MAX_COMPLETION_TOKENS = 524_288;
+export const M3_PROBE_REVIEW_MAX_COMPLETION_TOKENS = 32_768;
 
 /**
  * Execute one review turn with durable, model-external control-plane state.
@@ -336,7 +337,9 @@ export function isUnpreparedReviewAttempt(value, attemptRef) {
 export async function invokeHostedReviewModel(input, options = {}, dependencies = {}) {
   const modelHeaders = executionModelHeaders(options);
   const maxCompletionTokens = options.executionModel?.modelRef === 'miaoda/minimax-m3'
-    ? M3_MAX_COMPLETION_TOKENS : undefined;
+    ? M3_MAX_COMPLETION_TOKENS
+    : options.executionModel?.modelRef === 'm3probe/minimax-m3'
+      ? M3_PROBE_REVIEW_MAX_COMPLETION_TOKENS : undefined;
   const gatewayUrl = requiredUrl(
     options.gatewayUrl,
     'REVIEW_GATEWAY_URL_REQUIRED',
@@ -463,7 +466,10 @@ export async function invokeHostedReviewModel(input, options = {}, dependencies 
       payload,
     });
     if (observeOutputShape) await observeOutputShape(outputShape, round);
-    if (!response.ok) throw new Error(`REVIEW_GATEWAY_HTTP_${response.status}`);
+    if (!response.ok) {
+      const failure = classifyHostedGatewayFailure(payload);
+      throw new Error(`REVIEW_GATEWAY_HTTP_${response.status}${failure === 'UNCLASSIFIED' ? '' : `:${failure}`}`);
+    }
     if (outputShape.hasAnalysis) throw new Error('REVIEW_MODEL_ANALYSIS_FORBIDDEN');
     // This exact public Gateway error was returned as HTTP 200 with no calls.
     // Report the upstream timeout, rather than a misleading function-count

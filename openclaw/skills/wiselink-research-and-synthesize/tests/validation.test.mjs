@@ -324,14 +324,14 @@ function modelSelection(modelRef) {
     providerKind: modelRef.startsWith('dli/') ? 'CUSTOM' : 'BUILT_IN', settingsRevision: 2, selectedAt: '2026-09-06T00:00:00.000Z' };
 }
 
-test('routes both registered models for Initial and Review without changing profile or reporting the old default', async (t) => {
+test('routes registered models for Initial and Review with the selected output budget', async (t) => {
   const originalFetch = globalThis.fetch;
   t.after(() => { globalThis.fetch = originalFetch; });
-  for (const modelRef of ['miaoda/minimax-m3', 'dli/gpt-5.6-sol']) {
+  for (const modelRef of ['miaoda/minimax-m3', 'm3probe/minimax-m3', 'dli/gpt-5.6-sol']) {
     const runtime = {
       gatewayUrl: 'http://127.0.0.1:18789', gatewayToken: 'fixture-only', gatewayChatCompletionsEnabled: true,
       configuredModelVersion: 'miaoda/minimax-m3', sessionDiscriminator: 'routing-fixture',
-      executionModel: modelSelection(modelRef), registeredModelRefs: ['miaoda/minimax-m3', 'dli/gpt-5.6-sol'],
+      executionModel: modelSelection(modelRef), registeredModelRefs: ['miaoda/minimax-m3', 'm3probe/minimax-m3', 'dli/gpt-5.6-sol'],
     };
     let review = false;
     globalThis.fetch = async (_url, init) => {
@@ -340,7 +340,8 @@ test('routes both registered models for Initial and Review without changing prof
       assert.equal(body.model, 'openclaw/wiselink-engineering');
       assert.equal(JSON.stringify(body.messages).includes('settingsRevision'), false);
       assert.equal(body.max_completion_tokens,
-        modelRef === 'miaoda/minimax-m3' ? 524_288 : undefined);
+        modelRef === 'miaoda/minimax-m3' ? 524_288
+          : review && modelRef === 'm3probe/minimax-m3' ? 32_768 : undefined);
       if (review) assert.equal(init.headers['x-openclaw-session-key'], 'agent:wiselink-engineering:review:ACTX-RS-fixture');
       return Response.json({ model: 'openclaw/wiselink-engineering', choices: [{ message: {
         content: null, tool_calls: [{ type: 'function', function: {
@@ -1378,7 +1379,7 @@ test('requires 35 MCP capabilities, six review tools, and hosted provenance', ()
   assert.ok(HOST_MCP_TOOLS.includes('commit_applicability_candidate'));
   assert.equal(
     WISELINK_SKILL_VERSION,
-    'wiselink-research-and-synthesize@r09.c171',
+    'wiselink-research-and-synthesize@r09.c172',
   );
   assert.equal(
     WISELINK_SKILL_COMPATIBILITY_REF,
@@ -7282,6 +7283,17 @@ test('gateway required-tool contract failure is reported once without transient 
   }, wait: async () => { assert.fail('contract failure must not retry'); } }), /REVIEW_TOOL_CHOICE_NOT_SATISFIED/u);
   assert.equal(requests, 1);
   assert.deepEqual(progress.map((event) => event.kind), ['MODEL_REQUEST']);
+});
+
+test('review HTTP 400 reports only a known incomplete-response category', async () => {
+  let requests = 0;
+  await assert.rejects(invokeReviewWithTransport({ input: {} }, {
+    gatewayUrl: 'https://official.invalid', gatewayToken: 'fixture-only', configuredModelVersion: 'fixture/provider',
+  }, { requestGateway: async () => {
+    requests++;
+    return Response.json({ error: { message: 'Agent run ended with an incomplete terminal response.' } }, { status: 400 });
+  } }), /REVIEW_GATEWAY_HTTP_400:INCOMPLETE_TERMINAL_RESPONSE/u);
+  assert.equal(requests, 1);
 });
 
 test('leased JobAid review spans the former 8-minute cutoff with bounded responses and stops on lease loss', async (t) => {
