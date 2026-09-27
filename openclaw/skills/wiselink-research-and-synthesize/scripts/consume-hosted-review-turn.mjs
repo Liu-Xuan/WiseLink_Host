@@ -27,6 +27,7 @@ export async function consumePendingReviewTurn(options, dependencies) {
   try {
     const result = await (dependencies.runTurn ?? runHostedReviewTurn)(
       {
+        workItemId: options.workItemId,
         reviewConversationRef: next.reviewConversationRef,
         requestId: next.requestId,
         checkpointDir: join(

@@ -27,7 +27,37 @@ export interface AuthorizedAutomaticWorkItemLease {
 }
 
 export interface AutomaticWorkItemLeaseAuthorizationPort {
+  authorizeReviewDelegation?(input: {
+    tenantId: string;
+    principalId: string;
+    workItemId: string;
+    reviewConversationRef: string;
+    requestId: string;
+  }): Promise<AuthorizedSuccessorReviewDelegation>;
+  authorizeReviewAttempt?(input: {
+    tenantId: string;
+    principalId: string;
+    workItemId: string;
+    attemptRef: string;
+  }): Promise<AuthorizedSuccessorReviewDelegation>;
   authorizeActiveLease(
     input: AutomaticWorkItemLeaseAuthorizationInput,
   ): Promise<AuthorizedAutomaticWorkItemLease>;
+}
+
+export interface AuthorizedSuccessorReviewDelegation {
+  tenantId: string;
+  principalId: string;
+  workItemId: string;
+  actorUserId: string;
+  documentId: string;
+  documentVersionId: string;
+  sourceArtifactId: string;
+  sourceFileSha256: string;
+  sourceByteLength: number;
+  reviewConversationRef: string;
+  reviewTurnRef: string;
+  requestId: string;
+  inputRevision: number;
+  overallRequested: boolean;
 }

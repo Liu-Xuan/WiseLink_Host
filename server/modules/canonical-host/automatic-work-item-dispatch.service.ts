@@ -33,9 +33,11 @@ import {
 } from './automatic-work-item-source-authorization.port';
 import { CanonicalHostInitialAnalysisStatusService } from './canonical-host-initial-analysis-status.service';
 import { canonicalHostBareSha256 } from './canonical-host-sha256';
+import { ReviewConversationRepository } from '../review-persistence/review-conversation.repository';
 
 const CANONICAL_APP_ID = 'app_17bzc551rsg';
 const AUTO_WORK_ITEM_LEASE_MILLISECONDS = 60 * 60 * 1000;
+const REVIEW_DISCOVERY_PAGE_SIZE = 32;
 
 export type NextAutoWorkItemResult = AutomaticWorkItemClaimResult;
 
@@ -53,6 +55,8 @@ export class AutomaticWorkItemDispatchService {
     @Inject(AUTOMATIC_WORK_ITEM_LEASE_AUTHORIZATION)
     private readonly leaseAuthorization?: AutomaticWorkItemLeaseAuthorizationPort,
     private readonly initialAnalysisStatus?: CanonicalHostInitialAnalysisStatusService,
+    @Optional()
+    private readonly reviewConversations?: ReviewConversationRepository,
   ) {}
 
   async nextWorkItem(
@@ -132,7 +136,45 @@ export class AutomaticWorkItemDispatchService {
       };
     }
 
-    return { status: 'IDLE' };
+    if (input?.resumeWorkItemId || process.env.WL_OPENCLAW_SERVICE_SUCCESSOR_REVIEW_ENABLED !== '1')
+      return { status: 'IDLE' };
+    if (!this.reviewConversations)
+      throw new Error('AUTO_WORK_ITEM_REVIEW_DISCOVERY_UNAVAILABLE');
+    const subjects = await this.workItems.listCompletedAutoProcessingReviewSubjects({
+      tenantId: scope.tenantId,
+      ...(input?.reviewAfterWorkItemId
+        ? { afterWorkItemId: input.reviewAfterWorkItemId }
+        : {}),
+      limit: REVIEW_DISCOVERY_PAGE_SIZE,
+    });
+    for (const subject of subjects) {
+      const workItemId = subject.authorization.workItemId;
+      const turn = await this.reviewConversations.loadPendingOpenClawTurn({
+        tenantId: scope.tenantId,
+        actorId: subject.authorization.actorUserId,
+        workItemId,
+      });
+      if (!turn) continue;
+      const reviewScope = await this.serviceScope.authorizeOpenClawReview({
+        operation: 'BEGIN_REVIEW',
+        workItemId,
+        reviewConversationRef: turn.reviewConversationId,
+        requestId: turn.requestId,
+      });
+      if (reviewScope.tenantId !== scope.tenantId ||
+          reviewScope.principalId !== scope.principalId ||
+          reviewScope.workItemId !== workItemId)
+        throw new Error('AUTO_WORK_ITEM_REVIEW_SCOPE_MISMATCH');
+      return {
+        status: 'REVIEW_PENDING',
+        workItemId,
+        reviewTurnRef: turn.reviewTurnId,
+        reviewAfterWorkItemId: workItemId,
+      };
+    }
+    return subjects.length === REVIEW_DISCOVERY_PAGE_SIZE
+      ? { status: 'IDLE', reviewAfterWorkItemId: subjects[subjects.length - 1].authorization.workItemId }
+      : { status: 'IDLE' };
   }
 
   async acknowledgeWorkItem(
@@ -530,10 +572,14 @@ function assertNextWorkItemInput(
     !input ||
     typeof input !== 'object' ||
     Array.isArray(input) ||
-    JSON.stringify(Object.keys(input).sort()) !==
-      JSON.stringify(['resumeWorkItemId']) ||
-    typeof input.resumeWorkItemId !== 'string' ||
-    !/^WI-[A-Za-z0-9_-]{1,93}$/u.test(input.resumeWorkItemId)
+    Object.keys(input).some(key => !['resumeWorkItemId', 'reviewAfterWorkItemId'].includes(key)) ||
+    Object.keys(input).length !== 1 ||
+    (Object.prototype.hasOwnProperty.call(input, 'resumeWorkItemId') &&
+      (typeof input.resumeWorkItemId !== 'string' ||
+        !/^WI-[A-Za-z0-9_-]{1,93}$/u.test(input.resumeWorkItemId))) ||
+    (Object.prototype.hasOwnProperty.call(input, 'reviewAfterWorkItemId') &&
+      (typeof input.reviewAfterWorkItemId !== 'string' ||
+        !/^WI-[A-Za-z0-9_-]{1,93}$/u.test(input.reviewAfterWorkItemId)))
   ) {
     throw Object.assign(new Error('AUTO_WORK_ITEM_NEXT_INPUT_INVALID'), {
       code: 'AUTO_WORK_ITEM_NEXT_INPUT_INVALID',

@@ -13,6 +13,7 @@ import type { AutomaticWorkItemLeaseAuthorizationPort } from './automatic-work-i
 import type { CanonicalServiceScopeAuthorizationPort } from './canonical-service-scope.authorization';
 import type { AutomaticWorkItemSourceAuthorizationPort } from './automatic-work-item-source-authorization.port';
 import type { CanonicalHostInitialAnalysisStatusService } from './canonical-host-initial-analysis-status.service';
+import type { ReviewConversationRepository } from '../review-persistence/review-conversation.repository';
 import {
   AutomaticWorkItemDispatchService,
   automaticAuthorizationBindingMismatch,
@@ -53,6 +54,55 @@ describe('AutomaticWorkItemDispatchService', () => {
     await expect(service.nextWorkItem({})).resolves.toEqual({ status: 'IDLE' });
     expect(sources.resolve).not.toHaveBeenCalled();
     expect(workItems.claimAutoProcessingCandidate).not.toHaveBeenCalled();
+  });
+
+  it('discovers only an explicit pending Review on a registered completed task', async () => {
+    const previous = process.env.WL_OPENCLAW_SERVICE_SUCCESSOR_REVIEW_ENABLED;
+    process.env.WL_OPENCLAW_SERVICE_SUCCESSOR_REVIEW_ENABLED = '1';
+    try {
+      const workItems = repositoryDouble([]);
+      workItems.listCompletedAutoProcessingReviewSubjects.mockResolvedValue([
+        { authorization: authorization({ status: 'COMPLETED' }), workItem: workItemRow() },
+      ] as never);
+      const conversations = {
+        loadPendingOpenClawTurn: jest.fn().mockResolvedValue({
+          reviewConversationId: 'RC-EXPLICIT', reviewTurnId: 'RT-EXPLICIT',
+          requestId: 'REQ-REVIEW', turnNo: 1, inputRevision: 7,
+        }),
+      };
+      const serviceScope = {
+        authorizeOpenClawAutoWorkItemQueue: jest.fn().mockResolvedValue({
+          principalId: 'service:openclaw-main', appId: 'app_17bzc551rsg',
+          tenantId: TENANT_ID, authorizationFingerprint: `sha256:${'c'.repeat(64)}`,
+        }),
+        authorizeOpenClawReview: jest.fn().mockResolvedValue({
+          principalId: 'service:openclaw-main', tenantId: TENANT_ID,
+          workItemId: WORK_ITEM_ID,
+        }),
+      };
+      const service = new AutomaticWorkItemDispatchService(
+        workItems as unknown as MiaodaWorkItemRepository,
+        sourceDouble() as unknown as MiaodaDocumentVersionSourceResolver,
+        serviceScope as unknown as CanonicalServiceScopeAuthorizationPort,
+        undefined, undefined, undefined,
+        conversations as unknown as ReviewConversationRepository,
+      );
+      await expect(service.nextWorkItem()).resolves.toEqual({
+        status: 'REVIEW_PENDING', workItemId: WORK_ITEM_ID,
+        reviewTurnRef: 'RT-EXPLICIT', reviewAfterWorkItemId: WORK_ITEM_ID,
+      });
+      expect(conversations.loadPendingOpenClawTurn).toHaveBeenCalledWith({
+        tenantId: TENANT_ID, actorId: ACTOR_ID, workItemId: WORK_ITEM_ID,
+      });
+      expect(serviceScope.authorizeOpenClawReview).toHaveBeenCalledWith({
+        operation: 'BEGIN_REVIEW', workItemId: WORK_ITEM_ID,
+        reviewConversationRef: 'RC-EXPLICIT', requestId: 'REQ-REVIEW',
+      });
+      expect(workItems.claimAutoProcessingCandidate).not.toHaveBeenCalled();
+    } finally {
+      if (previous === undefined) delete process.env.WL_OPENCLAW_SERVICE_SUCCESSOR_REVIEW_ENABLED;
+      else process.env.WL_OPENCLAW_SERVICE_SUCCESSOR_REVIEW_ENABLED = previous;
+    }
   });
 
   it('restricts expired-lease recovery to that exact WorkItem', async () => {
@@ -565,6 +615,7 @@ function candidate(
 function repositoryDouble(candidates: AutoWorkItemQueueCandidate[]) {
   const double = {
     listAutoProcessingCandidates: jest.fn().mockResolvedValue(candidates),
+    listCompletedAutoProcessingReviewSubjects: jest.fn().mockResolvedValue([]),
     loadAuthorizationBinding: jest.fn(),
     loadAutoProcessingProjection: jest.fn(),
     claimAutoProcessingCandidate: jest.fn(),
@@ -578,6 +629,7 @@ function repositoryDouble(candidates: AutoWorkItemQueueCandidate[]) {
     Pick<
       MiaodaWorkItemRepository,
       | 'listAutoProcessingCandidates'
+      | 'listCompletedAutoProcessingReviewSubjects'
       | 'loadAuthorizationBinding'
       | 'loadAutoProcessingProjection'
       | 'claimAutoProcessingCandidate'
@@ -617,6 +669,7 @@ function dispatchService(
     Pick<
       MiaodaWorkItemRepository,
       | 'listAutoProcessingCandidates'
+      | 'listCompletedAutoProcessingReviewSubjects'
       | 'loadAuthorizationBinding'
       | 'loadAutoProcessingProjection'
       | 'claimAutoProcessingCandidate'

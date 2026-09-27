@@ -136,6 +136,7 @@ export async function runHostedReviewTurn(options, dependencies = {}) {
 
   const result = await runInteractiveReviewTurn({
     mode: 'INTERACTIVE_REVIEW',
+    workItemId: normalized.workItemId,
     reviewConversationRef: normalized.reviewConversationRef,
     requestId: normalized.requestId,
     callTool,
@@ -298,6 +299,7 @@ async function reconcileRejectedReviewCheckpoint(checkpoint, options, callTool) 
   assertCheckpointHash(rejection, started.argsHash, 'commit');
   assertCheckpointHash(receipt, canonicalSha256({
     reviewConversationRef: options.reviewConversationRef, requestId: options.requestId,
+    ...(options.workItemId ? { workItemId: options.workItemId } : {}),
   }), 'begin');
   const begin = receipt.value;
   validateTaskEnvelope(begin?.task);
@@ -1977,6 +1979,7 @@ function isReadableActualModel(value) {
 function normalizeRunOptions(value) {
   if (!isRecord(value)) throw new Error('REVIEW_DRIVER_OPTIONS_REQUIRED');
   return {
+    ...(value.workItemId ? { workItemId: requiredText(value.workItemId, 'REVIEW_WORK_ITEM_ID_REQUIRED') } : {}),
     reviewConversationRef: requiredText(
       value.reviewConversationRef,
       'REVIEW_CONVERSATION_REF_REQUIRED',
@@ -1991,6 +1994,7 @@ function normalizeRunOptions(value) {
 
 function runBinding(options) {
   return {
+    ...(options.workItemId ? { workItemIdHash: sha256(options.workItemId) } : {}),
     reviewConversationRefHash: sha256(options.reviewConversationRef),
     requestIdHash: sha256(options.requestId),
   };

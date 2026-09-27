@@ -604,3 +604,63 @@ function completedReparseRepository(input?: {
     set,
   };
 }
+
+describe('MiaodaWorkItemRepository readable completion receipt', () => {
+  const now = new Date('2026-09-27T00:00:00.000Z');
+  const grant = {
+    tenantId: 'tenant-A',
+    workItemId: 'WI-A',
+    requestId: 'REQ-A',
+    actorUserId: 'actor-A',
+    documentId: 'DOC-A',
+    documentVersionId: 'DV-A',
+    sourceArtifactId: 'SA-A',
+    sourceFileSha256: 'a'.repeat(64),
+    sourceByteLength: 200,
+    completedAt: now,
+  };
+  function setup(receiptRows: Array<{ workItemId: string }>) {
+    const returning = jest
+      .fn()
+      .mockResolvedValueOnce([grant])
+      .mockResolvedValueOnce(receiptRows);
+    const where = jest.fn().mockReturnValue({ returning });
+    const set = jest.fn().mockReturnValue({ where });
+    const update = jest.fn().mockReturnValue({ set });
+    const executor = { update };
+    const transaction = jest.fn(async (run: (db: typeof executor) => unknown) =>
+      run(executor),
+    );
+    const target = new MiaodaWorkItemRepository({ transaction } as never);
+    return { target, transaction, update, set };
+  }
+  const input = {
+    tenantId: 'tenant-A',
+    workItemId: 'WI-A',
+    leaseOwner: 'service:worker',
+    leaseToken: '15b5fa83-83f7-41ba-9414-9062bc180b1b',
+    leaseGeneration: 1,
+    expectedWorkItemRevision: 9,
+    now,
+  };
+  it('writes the readable receipt inside the completion transaction', async () => {
+    const fixture = setup([{ workItemId: 'WI-A' }]);
+    await expect(
+      fixture.target.acknowledgeAutoProcessingLease(input),
+    ).resolves.toEqual({ acknowledgedAt: now, replayed: false });
+    expect(fixture.transaction).toHaveBeenCalledTimes(1);
+    expect(fixture.update.mock.calls.map(([table]) => table)).toEqual([
+      autoWorkItemAuthorization,
+      workItem,
+    ]);
+    expect(fixture.set.mock.calls[1][0]).toEqual({
+      projectionJson: expect.anything(),
+    });
+  });
+  it('fails the transaction when the exact revision cannot receive the receipt', async () => {
+    const fixture = setup([]);
+    await expect(
+      fixture.target.acknowledgeAutoProcessingLease(input),
+    ).rejects.toThrow('AUTO_PROCESSING_COMPLETION_RECEIPT_WRITE_FAILED');
+  });
+});

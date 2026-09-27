@@ -206,6 +206,12 @@ export async function consumeAutomaticWorkItemQueueTick(options, dependencies) {
 
   const stored = await checkpoint.readOptional('active-claim');
   let claim = stored === null ? null : validateStoredAutoClaim(stored);
+  const storedReviewCursor = claim ? null : await checkpoint.readOptional('review-cursor');
+  if (storedReviewCursor !== null &&
+      (typeof storedReviewCursor !== 'string' ||
+        !/^WI-[A-Za-z0-9_-]{1,93}$/u.test(storedReviewCursor))) {
+    throw new Error('AUTO_WORK_ITEM_REVIEW_CURSOR_INVALID');
+  }
   if (options.repairStoppedClaim &&
       (!claim?.consumerStopped || claim.completionReady || claim.blockReady ||
         claim.workItemId !== options.repairWorkItemId ||
@@ -227,11 +233,21 @@ export async function consumeAutomaticWorkItemQueueTick(options, dependencies) {
   if (!claim || Date.parse(claim.leaseExpiresAt) <= currentTime.getTime()) {
     const previous = claim;
     const next = validateAutoClaimResult(
-      await dependencies.nextWorkItem(
-        previous ? { resumeWorkItemId: previous.workItemId } : undefined,
-      ),
+      await dependencies.nextWorkItem(previous
+        ? { resumeWorkItemId: previous.workItemId }
+        : storedReviewCursor
+          ? { reviewAfterWorkItemId: storedReviewCursor }
+          : undefined),
       currentTime,
     );
+    if (next.status === 'REVIEW_PENDING') {
+      if (previous || typeof dependencies.consumeReview !== 'function')
+        throw new Error('AUTO_WORK_ITEM_REVIEW_DISPATCH_INVALID');
+      const review = await dependencies.consumeReview(next.workItemId);
+      await checkpoint.write('review-cursor', next.reviewAfterWorkItemId);
+      return { status: 'REVIEW_DISPATCHED', workItemId: next.workItemId,
+        reviewTurnRef: next.reviewTurnRef, review };
+    }
     if (next.status === 'IDLE') {
       if (previous) {
         if (previous.completionReady) {
@@ -246,6 +262,8 @@ export async function consumeAutomaticWorkItemQueueTick(options, dependencies) {
           'AUTO_WORK_ITEM_EXPIRED_RECLAIM_UNAVAILABLE',
         );
       }
+      if (next.reviewAfterWorkItemId !== undefined || storedReviewCursor !== null)
+        await checkpoint.write('review-cursor', next.reviewAfterWorkItemId ?? null);
       await checkpoint.write('active-claim', null);
       return { status: 'IDLE' };
     }
@@ -486,7 +504,20 @@ function validateStoredAutoClaim(value) {
 function validateAutoClaimResult(value, now) {
   if (!isRecord(value)) throw new Error('AUTO_WORK_ITEM_CLAIM_RESPONSE_INVALID');
   if (value.status === 'IDLE') {
-    assertExactKeys(value, ['status'], [], 'AUTO_WORK_ITEM_CLAIM_RESPONSE');
+    assertExactKeys(value, ['status'], ['reviewAfterWorkItemId'], 'AUTO_WORK_ITEM_CLAIM_RESPONSE');
+    if (value.reviewAfterWorkItemId !== undefined &&
+        !/^WI-[A-Za-z0-9_-]{1,93}$/u.test(value.reviewAfterWorkItemId))
+      throw new Error('AUTO_WORK_ITEM_CLAIM_RESPONSE_INVALID');
+    return value;
+  }
+  if (value.status === 'REVIEW_PENDING') {
+    assertExactKeys(value,
+      ['status', 'workItemId', 'reviewTurnRef', 'reviewAfterWorkItemId'], [],
+      'AUTO_WORK_ITEM_CLAIM_RESPONSE');
+    if (!/^WI-[A-Za-z0-9_-]{1,93}$/u.test(value.workItemId) ||
+        !/^RT-[A-Za-z0-9_-]{1,93}$/u.test(value.reviewTurnRef) ||
+        value.reviewAfterWorkItemId !== value.workItemId)
+      throw new Error('AUTO_WORK_ITEM_CLAIM_RESPONSE_INVALID');
     return value;
   }
   assertExactKeys(
@@ -1268,6 +1299,14 @@ async function main(argv, env) {
         consumeWorkItem: async item => {
           assertHostedModelGatewayReady(runtime);
           return consumeHostedWorkItem(item, consumerDependencies);
+        },
+        consumeReview: async reviewWorkItemId => {
+          assertHostedModelGatewayReady(runtime);
+          return consumePendingReviewTurn({ workItemId: reviewWorkItemId,
+            checkpointRoot: join(checkpointRoot, 'review') }, {
+            callTool: connection.callTool,
+            invokeModel: (input, hooks) => invokeHostedReviewModel(input, { ...runtime, ...hooks }),
+          });
         },
       })
       : await consumeHostedWorkItem({

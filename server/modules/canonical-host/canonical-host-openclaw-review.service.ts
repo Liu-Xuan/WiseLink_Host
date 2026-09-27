@@ -183,7 +183,9 @@ export class CanonicalHostOpenClawReviewService {
     });
     if (!turn) return { next: null, busy: false };
     await this.assertCurrentConversationScope(
-      scope, turn.reviewConversationId, turn.requestId,
+      scope,
+      turn.reviewConversationId,
+      turn.requestId,
     );
     const busy = await this.dispatch.isBusy({
       ...turn,
@@ -207,11 +209,13 @@ export class CanonicalHostOpenClawReviewService {
   async begin(
     reviewConversationRef: string,
     requestId: string,
+    workItemId?: string,
   ): Promise<BeginReviewTurnResult> {
     requiredText(reviewConversationRef, 'REVIEW_CONVERSATION_REF_REQUIRED');
     requiredText(requestId, 'REVIEW_REQUEST_ID_REQUIRED');
     const scope = await this.serviceScope.authorizeOpenClawReview({
       operation: 'BEGIN_REVIEW',
+      workItemId,
       reviewConversationRef,
       requestId,
     });
@@ -314,11 +318,15 @@ export class CanonicalHostOpenClawReviewService {
     });
   }
 
-  async context(attemptRef: string, workItemId?: string): Promise<ReviewTurnContextResult> {
+  async context(
+    attemptRef: string,
+    workItemId?: string,
+  ): Promise<ReviewTurnContextResult> {
     const attempt = await this.requiredReviewAttempt(
       attemptRef,
       'GET_REVIEW_CONTEXT',
-      true, workItemId,
+      true,
+      workItemId,
     );
     await this.dispatch.recordEvidenceActivity(attempt.row, {
       kind: 'CONTEXT_PREPARED',
@@ -355,7 +363,8 @@ export class CanonicalHostOpenClawReviewService {
     const attempt = await this.requiredReviewAttempt(
       attemptRef,
       'READ_REVIEW_SOURCE_REFS',
-      true, workItemId,
+      true,
+      workItemId,
     );
     const allowlist = new Map(
       attempt.contract.resourceRefs.map((resource) => [
@@ -399,7 +408,8 @@ export class CanonicalHostOpenClawReviewService {
     const attempt = await this.requiredReviewAttempt(
       attemptRef,
       'READ_REVIEW_SOURCE_REFS',
-      true, workItemId,
+      true,
+      workItemId,
     );
     if (
       attempt.turn.purpose !== 'CHAT' ||
@@ -428,7 +438,8 @@ export class CanonicalHostOpenClawReviewService {
     const authorized = await this.requiredReviewAttempt(
       attemptRef,
       'COMMIT_REVIEW',
-      true, workItemId,
+      true,
+      workItemId,
     );
     const { result } = preflightCanonicalHostOpenClawResult({
       row: authorized.row,
@@ -890,7 +901,9 @@ export class CanonicalHostOpenClawReviewService {
     const task = parseTaskEnvelope(row.taskEnvelopeJson);
     const contract = parseReviewTurnTaskContract(task.modelInput);
     await this.assertCurrentConversationScope(
-      scope, contract.reviewConversationRef, contract.requestId,
+      scope,
+      contract.reviewConversationRef,
+      contract.requestId,
     );
     const binding = await this.conversations.loadOpenClawTurnByIdBinding({
       reviewConversationId: contract.reviewConversationRef,
@@ -941,10 +954,16 @@ export class CanonicalHostOpenClawReviewService {
     requestId: string,
   ): Promise<void> {
     const current = await this.serviceScope.authorizeOpenClawReview({
-      operation: 'BEGIN_REVIEW', reviewConversationRef, requestId,
+      operation: 'BEGIN_REVIEW',
+      reviewConversationRef,
+      requestId,
+      workItemId: scope.workItemId,
     });
     assertWorkItemScope(current, scope.workItemId);
-    if (current.tenantId !== scope.tenantId || current.principalId !== scope.principalId)
+    if (
+      current.tenantId !== scope.tenantId ||
+      current.principalId !== scope.principalId
+    )
       throw reviewNotFound();
   }
 

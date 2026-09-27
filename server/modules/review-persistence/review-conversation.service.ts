@@ -120,6 +120,13 @@ export class ReviewConversationService {
     input: AppendReviewTextTurnRequest,
     request: Request,
   ): Promise<AppendReviewTextTurnResponse> {
+    if (
+      input.overallRequested === true &&
+      (input.purpose !== 'UPDATE_ASSESSMENT' ||
+        input.executionMode !== 'AUTOMATIC' ||
+        input.reviewScope)
+    )
+      throw reviewConflict('REVIEW_SUCCESSOR_OVERALL_SCOPE_INVALID');
     if (input.reviewScope && input.selectedEvaluationItemId != null)
       throw reviewConflict('REVIEW_MATTER_EVALUATION_SCOPE_INVALID');
     const authorized: AuthorizedReviewAccess = await this.authorize(
@@ -161,6 +168,7 @@ export class ReviewConversationService {
         includedDiscussionTurnIds: input.includedDiscussionTurnIds,
         expectedInputRevision: input.expectedInputRevision,
         executionRequested: input.executionMode === 'AUTOMATIC',
+        overallRequested: input.overallRequested,
         attachmentBindings: replay.attachmentBindings,
         requestedModel: replay.requestedModel,
         reviewScope: replay.reviewScope ?? null,
@@ -250,6 +258,7 @@ export class ReviewConversationService {
       includedDiscussionTurnIds: input.includedDiscussionTurnIds,
       expectedInputRevision: input.expectedInputRevision,
       executionRequested: input.executionMode === 'AUTOMATIC',
+      overallRequested: input.overallRequested,
       attachmentBindings,
       requestedModel,
       reviewScope: input.reviewScope
@@ -268,6 +277,7 @@ export class ReviewConversationService {
     includedDiscussionTurnIds?: string[];
     expectedInputRevision?: number;
     executionRequested: boolean;
+    overallRequested?: boolean;
     attachmentBindings: ReviewAttachmentBinding[];
     requestedModel?: CanonicalExecutionModelSelection;
     reviewScope?: PersistedMatterReviewScope | null;
@@ -281,6 +291,7 @@ export class ReviewConversationService {
       includedDiscussionTurnIds: input.includedDiscussionTurnIds,
       expectedInputRevision: input.expectedInputRevision,
       executionRequested: input.executionRequested,
+      overallRequested: input.overallRequested,
       ailySessionId:
         input.purpose === 'CHAT' || input.purpose === 'UPDATE_ASSESSMENT'
           ? input.authorized.session.session.id
@@ -605,6 +616,7 @@ export function reviewTurnReadModel(
     (attachment: ReviewAttachmentBinding) => attachment.attachmentRef,
   );
   return {
+    overallRequested: turn.overallRequested,
     reviewTurnId: turn.reviewTurnId,
     turnNo: turn.turnNo,
     requestId: turn.requestId,

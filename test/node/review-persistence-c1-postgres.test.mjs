@@ -118,6 +118,16 @@ async function resetDatabase(sql) {
   } finally {
     migrationSql.release();
   }
+  // Current repository reads nullable fields added after C1; preserve C1 RLS and
+  // triggers while making this fixture compatible with the current read model.
+  await sql.unsafe(`ALTER TABLE review_turn
+    ADD COLUMN review_scope_json jsonb,
+    ADD COLUMN response_type varchar(48), ADD COLUMN assistant_response text,
+    ADD COLUMN source_refs_json text, ADD COLUMN missing_inputs_json text,
+    ADD COLUMN candidate_evidence_refs_json text, ADD COLUMN review_action_draft_json text,
+    ADD COLUMN affected_item_ids_json text, ADD COLUMN warnings_json text,
+    ADD COLUMN result_provenance_json text, ADD COLUMN result_content_hash varchar(64),
+    ADD COLUMN action_attempt_id varchar(96), ADD COLUMN assistant_completed_at timestamptz(3)`);
   await sql.unsafe('GRANT USAGE ON SCHEMA public TO authenticated');
   await sql.unsafe('GRANT SELECT ON identity_subject_mapping TO authenticated');
   await sql.unsafe('GRANT SELECT ON work_item TO authenticated');
@@ -441,12 +451,22 @@ async function assertRepositoryRoundTrip(sql) {
         conversation,
         requestId: 'REQ-REPOSITORY-REPLAY',
         userMessage: 'Repository persisted engineer text',
+        purpose: 'UPDATE_ASSESSMENT',
+        executionRequested: true,
+        overallRequested: true,
+        expectedInputRevision: 9,
+        includedDiscussionTurnIds: [],
         currentRevision: 9,
       }),
       second.repository.appendTextTurn({
         conversation,
         requestId: 'REQ-REPOSITORY-REPLAY',
         userMessage: 'Repository persisted engineer text',
+        purpose: 'UPDATE_ASSESSMENT',
+        executionRequested: true,
+        overallRequested: true,
+        expectedInputRevision: 9,
+        includedDiscussionTurnIds: [],
         currentRevision: 9,
       }),
     ]);
@@ -461,6 +481,21 @@ async function assertRepositoryRoundTrip(sql) {
     assert.ok(reloaded);
     assert.equal(reloaded.conversation.lastSyncedRevision, 9);
     assert.equal(reloaded.turns.length, 1);
+    assert.equal(reloaded.turns[0].overallRequested, true);
+    await assert.rejects(
+      first.repository.appendTextTurn({
+        conversation,
+        requestId: 'REQ-REPOSITORY-REPLAY',
+        userMessage: 'Repository persisted engineer text',
+        purpose: 'UPDATE_ASSESSMENT',
+        executionRequested: true,
+        overallRequested: false,
+        expectedInputRevision: 9,
+        includedDiscussionTurnIds: [],
+        currentRevision: 9,
+      }),
+      (error) => error.code === 'REVIEW_TURN_IDEMPOTENCY_CONFLICT',
+    );
     assert.deepEqual(
       {
         turnNo: reloaded.turns[0].turnNo,

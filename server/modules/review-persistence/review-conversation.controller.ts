@@ -117,6 +117,7 @@ function reviewTextBody(body: unknown): AppendReviewTextTurnRequest {
     'userMessage',
     'selectedEvaluationItemId',
     'executionMode',
+    'overallRequested',
     'attachmentSelection',
     'modelRef',
     'reviewScope',
@@ -136,6 +137,17 @@ function reviewTextBody(body: unknown): AppendReviewTextTurnRequest {
     throw badRequest('REVIEW_TURN_MESSAGE_INVALID');
   }
   const input: AppendReviewTextTurnRequest = { requestId, userMessage };
+  if (value.overallRequested !== undefined) {
+    if (
+      typeof value.overallRequested !== 'boolean' ||
+      (value.overallRequested &&
+        (value.purpose !== 'UPDATE_ASSESSMENT' ||
+          value.executionMode !== 'AUTOMATIC' ||
+          value.reviewScope !== undefined))
+    )
+      throw badRequest('REVIEW_SUCCESSOR_OVERALL_SCOPE_INVALID');
+    input.overallRequested = value.overallRequested;
+  }
   if (value.purpose !== undefined) {
     if (value.purpose !== 'CHAT' && value.purpose !== 'UPDATE_ASSESSMENT')
       throw badRequest('REVIEW_TURN_PURPOSE_INVALID');

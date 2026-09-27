@@ -991,6 +991,7 @@ async function completeOverall({
 
 export async function runInteractiveReviewTurn({
   mode,
+  workItemId,
   reviewConversationRef,
   requestId,
   callTool,
@@ -1007,6 +1008,7 @@ export async function runInteractiveReviewTurn({
   const begin = await callTool('begin_review_turn', {
     reviewConversationRef,
     requestId,
+    ...(workItemId ? { workItemId } : {}),
   });
   assertBegin(begin, 'OPENCLAW_INTERACTIVE_REVIEW');
   const task = validateReviewTask(begin.task.modelInput);

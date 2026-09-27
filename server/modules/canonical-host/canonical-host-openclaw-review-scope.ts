@@ -19,6 +19,7 @@ export async function assertCurrentReviewAttemptScope(input: {
   const contract = parseReviewTurnTaskContract(task.modelInput);
   const current = await serviceScope.authorizeOpenClawReview({
     operation: 'BEGIN_REVIEW',
+    workItemId: row.workItemId,
     reviewConversationRef: contract.reviewConversationRef,
     requestId: contract.requestId,
   });

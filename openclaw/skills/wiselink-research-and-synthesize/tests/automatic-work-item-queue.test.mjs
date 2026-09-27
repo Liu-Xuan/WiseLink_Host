@@ -191,6 +191,36 @@ test('empty automatic queue returns IDLE without status reads or model calls', a
   assert.deepEqual(checkpoint.writes, [['active-claim', null]]);
 });
 
+test('completed-task review uses its own turn and cursor without an initial lease ACK', async () => {
+  const checkpoint = memoryCheckpoint(null);
+  const requests = [];
+  const dependencies = {
+    checkpoint,
+    now: () => new Date(START),
+    nextWorkItem: async input => {
+      requests.push(input);
+      if (requests.length === 1)
+        return { status: 'IDLE', reviewAfterWorkItemId: 'WI-EARLIER' };
+      return { status: 'REVIEW_PENDING', workItemId: 'WI-REVIEW',
+        reviewTurnRef: 'RT-EXPLICIT', reviewAfterWorkItemId: 'WI-REVIEW' };
+    },
+    acknowledgeWorkItem: async () => assert.fail('review must not ACK an initial lease'),
+    readInitialStatus: async () => assert.fail('review must not read initial-stage status'),
+    consumeWorkItem: async () => assert.fail('review must not rerun initial analysis'),
+    consumeReview: async workItemId => {
+      assert.equal(workItemId, 'WI-REVIEW');
+      return { status: 'CANDIDATE_SAVED', reviewTurnRef: 'RT-EXPLICIT' };
+    },
+  };
+  assert.deepEqual(await consumeAutomaticWorkItemQueueTick({}, dependencies), { status: 'IDLE' });
+  const result = await consumeAutomaticWorkItemQueueTick({}, dependencies);
+  assert.equal(result.status, 'REVIEW_DISPATCHED');
+  assert.equal(result.review.status, 'CANDIDATE_SAVED');
+  assert.deepEqual(requests, [undefined, { reviewAfterWorkItemId: 'WI-EARLIER' }]);
+  assert.equal(checkpoint.values.get('review-cursor'), 'WI-REVIEW');
+  assert.equal(checkpoint.values.get('active-claim'), null);
+});
+
 test('cross-tick work resumes the same lease scope and ACK waits for full initial completion', async () => {
   const checkpoint = memoryCheckpoint(null, { 'jobaid-model.output': { retained: true } });
   const initial = status();

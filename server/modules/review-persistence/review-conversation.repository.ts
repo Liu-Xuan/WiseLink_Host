@@ -97,6 +97,7 @@ export interface PersistedReviewTurn {
   includedDiscussionTurnIds?: string[];
   expectedInputRevision?: number;
   executionRequested?: boolean;
+  overallRequested?: boolean;
   requestedModel?: CanonicalExecutionModelSelection;
   inputType: string;
   adoptionStatus: string;
@@ -1025,6 +1026,7 @@ export class ReviewConversationRepository {
     includedDiscussionTurnIds?: string[];
     expectedInputRevision?: number;
     executionRequested?: boolean;
+    overallRequested?: boolean;
     requestedModel?: CanonicalExecutionModelSelection;
     currentRevision: number;
     attachmentBindings?: ReviewAttachmentBinding[];
@@ -1063,6 +1065,7 @@ export class ReviewConversationRepository {
         : {}),
       selectedEvaluationItemId: input.selectedEvaluationItemId ?? null,
       executionRequested: input.executionRequested === true,
+      overallRequested: input.overallRequested === true,
       ...(input.requestedModel
         ? { requestedModel: structuredClone(input.requestedModel) }
         : {}),
@@ -1821,6 +1824,7 @@ function persistedTurn(row: SelectedReviewTurn): PersistedReviewTurn {
     reviewScope: parsePersistedMatterReviewScope(row.reviewScopeJson),
     selectedEvaluationItemId: turnInput.selectedEvaluationItemId ?? null,
     executionRequested: turnInput.executionRequested === true,
+    overallRequested: turnInput.overallRequested,
     ...(turnInput.requestedModel
       ? { requestedModel: structuredClone(turnInput.requestedModel) }
       : {}),
@@ -2071,10 +2075,14 @@ function assertIdempotentReplay(
   reviewScope?: PersistedMatterReviewScope | null,
   intent?: Pick<
     ReviewEngineerInputPayload,
-    'purpose' | 'includedDiscussionTurnIds' | 'expectedInputRevision'
+    | 'purpose'
+    | 'includedDiscussionTurnIds'
+    | 'expectedInputRevision'
+    | 'overallRequested'
   >,
 ): void {
   if (
+    (turn.overallRequested === true) !== (intent?.overallRequested === true) ||
     turn.purpose !== intent?.purpose ||
     turn.expectedInputRevision !== intent?.expectedInputRevision ||
     canonicalJson(turn.includedDiscussionTurnIds ?? null) !==
@@ -2142,6 +2150,11 @@ function validateEngineerInput(value: unknown): void {
     (record.expectedInputRevision !== undefined &&
       (!Number.isSafeInteger(record.expectedInputRevision) ||
         Number(record.expectedInputRevision) < 0)) ||
+    (record.overallRequested !== undefined &&
+      typeof record.overallRequested !== 'boolean') ||
+    (record.overallRequested === true &&
+      (record.purpose !== 'UPDATE_ASSESSMENT' ||
+        record.executionRequested !== true)) ||
     typeof record.userMessage !== 'string' ||
     !record.userMessage.trim() ||
     (record.executionRequested !== undefined &&

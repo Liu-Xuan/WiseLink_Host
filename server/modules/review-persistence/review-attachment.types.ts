@@ -23,6 +23,7 @@ export interface ReviewEngineerInputPayload {
   userMessage: string;
   selectedEvaluationItemId?: string | null;
   executionRequested?: boolean;
+  overallRequested?: boolean;
   requestedModel?: CanonicalExecutionModelSelection;
   attachments: ReviewAttachmentBinding[];
 }
