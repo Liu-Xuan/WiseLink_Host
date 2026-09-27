@@ -539,8 +539,48 @@ export async function invokeHostedJobAidProblemModel(
       properties: { ...transportStepShape.properties, action: { type: 'string', enum: ['SAVE_WORK'] } },
     } : transportStepShape;
     const requestToolSchema = jobAidFunctionSchema(requestStepShape);
+    let requestMetrics = null;
     const performRequest = async () => {
       if (round === 1 && options.recoveredInitialResponse) return options.recoveredInitialResponse;
+      const requestPayload = {
+        model: requestedModel,
+        user: `initial:${nativeSessionDiscriminator}`,
+        messages: messages.map(message => message.role !== 'system' ? message : ({ ...message, content: message.content + '\n' + JSON.stringify({
+          generationPolicy, scopeAdjustment: scopeAdjustments, expectedWorkRevision, savedWork: saved,
+          focus,
+        }) })),
+        tools: [
+          {
+            type: 'function',
+            function: {
+              name: FUNCTION,
+              description: forceSaveBeforeRead
+                ? 'Return one substantive SAVE_WORK intent. The deterministic Host caller executes and validates it.'
+                : 'Return one source-read, substantive-work-save, or finish intent. The deterministic Host caller executes it.',
+              parameters: {
+                type: 'object',
+                additionalProperties: false,
+                required: ['step'],
+                properties: { step: requestToolSchema },
+              },
+            },
+          },
+        ],
+        tool_choice: toolChoice,
+        parallel_tool_calls: false,
+        n: 1,
+        stream: false,
+        ...(options.executionModel?.modelRef === 'miaoda/minimax-m3'
+          ? { max_completion_tokens: generationPolicy.requestMaxCompletionTokens }
+          : {}),
+      };
+      const requestBody = JSON.stringify(requestPayload);
+      requestMetrics = {
+        requestBytes: Buffer.byteLength(requestBody),
+        messagesBytes: Buffer.byteLength(JSON.stringify(requestPayload.messages)),
+        systemBytes: Buffer.byteLength(requestPayload.messages[0].content),
+        toolsBytes: Buffer.byteLength(JSON.stringify(requestPayload.tools)),
+      };
       const response = await (
         dependencies.requestGateway ?? requestHostedGateway
       )(new URL('/v1/chat/completions', options.gatewayUrl), {
@@ -551,38 +591,7 @@ export async function invokeHostedJobAidProblemModel(
           authorization: `Bearer ${options.gatewayToken}`,
           ...executionModelHeaders(options),
         },
-        body: JSON.stringify({
-          model: requestedModel,
-          user: `initial:${nativeSessionDiscriminator}`,
-          messages: messages.map(message => message.role !== 'system' ? message : ({ ...message, content: message.content + '\n' + JSON.stringify({
-            generationPolicy, scopeAdjustment: scopeAdjustments, expectedWorkRevision, savedWork: saved,
-            focus,
-          }) })),
-          tools: [
-            {
-              type: 'function',
-              function: {
-                name: FUNCTION,
-                description: forceSaveBeforeRead
-                  ? 'Return one substantive SAVE_WORK intent. The deterministic Host caller executes and validates it.'
-                  : 'Return one source-read, substantive-work-save, or finish intent. The deterministic Host caller executes it.',
-                parameters: {
-                  type: 'object',
-                  additionalProperties: false,
-                  required: ['step'],
-                  properties: { step: requestToolSchema },
-                },
-              },
-            },
-          ],
-          tool_choice: toolChoice,
-          parallel_tool_calls: false,
-          n: 1,
-          stream: false,
-          ...(options.executionModel?.modelRef === 'miaoda/minimax-m3'
-            ? { max_completion_tokens: generationPolicy.requestMaxCompletionTokens }
-            : {}),
-        }),
+        body: requestBody,
         signal: AbortSignal.timeout(Math.min(remainingMs, 15 * 60_000)),
       });
       const raw = await response.text();
@@ -622,6 +631,7 @@ export async function invokeHostedJobAidProblemModel(
         requestMaxCompletionTokens: options.executionModel?.modelRef === 'miaoda/minimax-m3' ? (generationPolicy.requestMaxCompletionTokens) : null,
         generationPolicyVersion: generationPolicy.version,
         scopeAdjustments,
+        ...(requestMetrics ?? {}),
         functionArgumentsBytes: typeof payload?.choices?.[0]?.message?.tool_calls?.[0]?.function?.arguments === 'string'
           ? Buffer.byteLength(payload.choices[0].message.tool_calls[0].function.arguments) : null,
         httpStatus: response.status,

@@ -182,7 +182,10 @@ test('M3 Probe incomplete HTTP 400 remains an explicit incomplete response, neve
     return new Response(JSON.stringify({ error: { message: 'm3probe/minimax-m3 ended with an incomplete terminal response' } }),
       { status: 400 });
   };
-  await assert.rejects(f.run(initialChunkModelInput()), error => {
+  const input = initialChunkModelInput();
+  input.deliveredEvidence = [{ evidenceRef: input.availableSources[0].ref,
+    kind: 'DOCUMENT_PASSAGE', excerpt: '含中文的原文条件：适用于全部目标飞机。' }];
+  await assert.rejects(f.run(input), error => {
     assert.equal(error.message, 'JOBAID_GATEWAY_HTTP_400:INCOMPLETE_TERMINAL_RESPONSE');
     assert.equal(error.terminalAssessmentFailure?.errorCode, 'JOBAID_INCOMPLETE_TERMINAL_RESPONSE');
     assert.notEqual(error.terminalAssessmentFailure?.errorCode, 'JOBAID_MODEL_OUTPUT_LENGTH');
@@ -193,6 +196,12 @@ test('M3 Probe incomplete HTTP 400 remains an explicit incomplete response, neve
     'do not guess an uncontracted completion limit for the M3 Probe route');
   assert.equal(shapes[0].requestMaxCompletionTokens, null);
   assert.equal(shapes[0].finishReason, null);
+  assert.equal(shapes[0].requestBytes, Buffer.byteLength(JSON.stringify(f.calls[0])));
+  assert.equal(shapes[0].messagesBytes, Buffer.byteLength(JSON.stringify(f.calls[0].messages)));
+  assert.equal(shapes[0].systemBytes, Buffer.byteLength(f.calls[0].messages[0].content));
+  assert.equal(shapes[0].toolsBytes, Buffer.byteLength(JSON.stringify(f.calls[0].tools)));
+  assert.equal(JSON.stringify(shapes[0]).includes('含中文的原文条件'), false);
+  assert.equal(JSON.stringify(shapes[0]).includes('synthetic-only'), false);
   assert.equal(f.reads.length, 0);
   assert.equal(f.saves.length, 0);
 });
