@@ -218,7 +218,7 @@ function KnowledgeCatalogue() {
         resolveWorkItemId && knowledge.currentWork?.workItemId !== resolveWorkItemId ? <p role="alert">当前工作与所请求事项不一致。</p> :
         reading ? <p role="status">正在读取确切工作…</p> : readError ? <p role="alert">{readError} <button onClick={retryRead}>重试</button></p> : read ? <>
           <div className="article-kicker">{read.entry.current ? '已保存的工程认识' : '当时的工程认识'} · 工作修订 {read.entry.workRevision}</div>
-          <h1>{read.entry.headline || '已保存的工程认识'}</h1>{compactReadingSummary(read.entry.headline, read.entry.listBrief) !== read.entry.headline && <p className="article-lead">{compactReadingSummary(read.entry.headline, read.entry.listBrief)}</p>}
+          <h1>{read.entry.headline || '已保存的工程认识'}</h1>{read.overall?.status !== 'CANDIDATE_ONLY' && compactReadingSummary(read.entry.headline, read.entry.listBrief) !== read.entry.headline && <p className="article-lead">{compactReadingSummary(read.entry.headline, read.entry.listBrief)}</p>}
           <small>{read.entry.subjectKind === 'ENGINEERING_MATTER' ? '工程事项' : '文档工作'} · {displayDate(read.entry.createdAt)}</small>
           {!read.entry.current && <div className="knowledge-notice">当前显示当时保存的解释；查看当前事项是独立导航，不替换本条历史内容。</div>}
           {read.entry.subjectKind === 'ENGINEERING_MATTER' && read.entry.overviewStatus !== 'CURRENT' &&
@@ -226,7 +226,7 @@ function KnowledgeCatalogue() {
           {read.entry.subjectKind === 'WORK_ITEM' && (read.overall ? <section className="knowledge-prose" aria-label="确切综合意见">
             <h2>综合意见</h2>
             {read.overall.status === 'STALE' && <p className="knowledge-notice">这份综合意见已过时，保留当时的判断和来源供核对。</p>}
-            <p>{compactReadingSummary(read.overall.readingResult.content.headline, read.overall.readingResult.content.listBrief)}</p>
+            {read.overall.status === 'CANDIDATE_ONLY' && <p>{compactReadingSummary(read.overall.readingResult.content.headline, read.overall.readingResult.content.listBrief)}</p>}
             <details className="knowledge-work-details"><summary>展开综合判断与依据</summary>
               <SavedAssessmentReading result={read.overall.readingResult} depth="brief" onLocateDocument={locate} />
             </details>
