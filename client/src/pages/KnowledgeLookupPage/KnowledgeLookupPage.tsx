@@ -16,6 +16,7 @@ import {
 } from '@client/src/pages/WorkspaceHomePage/library-document-presentation';
 import type { DocumentAssessmentEvidence } from '@client/src/features/matter/assessment-reading';
 import MatterDocumentSourceDialog from '@client/src/features/matter/MatterDocumentSourceDialog';
+import SavedAssessmentReading from '@client/src/features/matter/SavedAssessmentReading';
 import OverviewCorrectionNotices from '@client/src/features/matter/OverviewCorrectionNotices';
 import ReferenceWorkNotices from '@client/src/features/matter/ReferenceWorkNotices';
 import OverviewSourceWork from '@client/src/features/matter/OverviewSourceWork';
@@ -206,7 +207,8 @@ function KnowledgeCatalogue() {
           <small className={entry.current ? 'knowledge-badge' : 'knowledge-badge historical'}>{entry.current ? '当前工作' : '历史工作'} · 修订 {entry.workRevision}</small>
           <h2>{entry.headline || '认识主题待补齐'}</h2>{compactReadingSummary(entry.headline, entry.listBrief) !== entry.headline && <p>{compactReadingSummary(entry.headline, entry.listBrief)}</p>}
           <small>{entry.subjectKind === 'ENGINEERING_MATTER' ? '工程事项' : '文档工作'} · {displayDate(entry.createdAt)}</small>
-          {entry.overviewStatus === 'STALE' && <span className="coverage-hint">综合尚未覆盖本轮问题</span>}
+          {entry.subjectKind === 'ENGINEERING_MATTER' && entry.overviewStatus === 'STALE' &&
+            <span className="coverage-hint">综合尚未覆盖本轮问题</span>}
         </button>)}
         {!loading && !error && !page?.entries.length && <p className="knowledge-empty">没有匹配的已保存认识，可调整关键词或版本范围。</p>}{pagination}
       </section>
@@ -219,7 +221,16 @@ function KnowledgeCatalogue() {
           <h1>{read.entry.headline || '已保存的工程认识'}</h1>{compactReadingSummary(read.entry.headline, read.entry.listBrief) !== read.entry.headline && <p className="article-lead">{compactReadingSummary(read.entry.headline, read.entry.listBrief)}</p>}
           <small>{read.entry.subjectKind === 'ENGINEERING_MATTER' ? '工程事项' : '文档工作'} · {displayDate(read.entry.createdAt)}</small>
           {!read.entry.current && <div className="knowledge-notice">当前显示当时保存的解释；查看当前事项是独立导航，不替换本条历史内容。</div>}
-          {read.entry.overviewStatus !== 'CURRENT' && <div className="knowledge-notice">{read.entry.overviewStatus === 'STALE' ? '问题已更新，综合尚未覆盖。本页保留各部分的确切保存范围。' : '当前已保存问题解释，综合认识尚未形成。'}</div>}
+          {read.entry.subjectKind === 'ENGINEERING_MATTER' && read.entry.overviewStatus !== 'CURRENT' &&
+            <div className="knowledge-notice">{read.entry.overviewStatus === 'STALE' ? '问题已更新，综合尚未覆盖。本页保留各部分的确切保存范围。' : '当前已保存问题解释，综合认识尚未形成。'}</div>}
+          {read.entry.subjectKind === 'WORK_ITEM' && (read.overall ? <section className="knowledge-prose" aria-label="确切综合意见">
+            <h2>综合意见</h2>
+            {read.overall.status === 'STALE' && <p className="knowledge-notice">这份综合意见已过时，保留当时的判断和来源供核对。</p>}
+            <p>{compactReadingSummary(read.overall.readingResult.content.headline, read.overall.readingResult.content.listBrief)}</p>
+            <details className="knowledge-work-details"><summary>展开综合判断与依据</summary>
+              <SavedAssessmentReading result={read.overall.readingResult} depth="brief" onLocateDocument={locate} />
+            </details>
+          </section> : <div className="knowledge-notice">这份问题分析尚无与该修订绑定的综合意见。</div>)}
           <details className="knowledge-work-details" key={keyOf(read.entry)}>
             <summary>展开问题分析、依据与过程{read.content.issues.length ? `（${read.content.issues.length} 项）` : ''}</summary>
             {read.entry.listBrief && <section className="knowledge-prose"><h2>完整保存摘要</h2><p>{read.entry.listBrief}</p></section>}

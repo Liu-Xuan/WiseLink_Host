@@ -85,6 +85,11 @@ function sourceDocuments(): CanonicalLibraryDocumentsResponse {
 }
 
 jest.mock('@client/src/api/engineering-matter', () => ({}));
+jest.mock('@client/src/features/matter/SavedAssessmentReading', () => ({
+  __esModule: true,
+  default: ({ result }: { result: { content: { headline: string } } }) =>
+    require('react').createElement('div', null, result.content.headline),
+}));
 jest.mock('@client/src/api/canonical-host', () => ({
   readEngineeringKnowledgeCatalogue: (...args: unknown[]) => mockCatalogue(...args),
   readEngineeringKnowledgeWork: (...args: unknown[]) => mockReadWork(...args),
@@ -251,6 +256,30 @@ describe('knowledge catalogue identity and reading lifecycle', () => {
     );
     expect(router.state.location.search).toContain('subjectId=A');
     expect(container.textContent).toContain('主题 A');
+  });
+
+  it('shows the exact saved Overall briefly and keeps its detail folded', async () => {
+    const item = workEntry('WI-TARGET');
+    const knowledge = read(item);
+    knowledge.overall = {
+      status: 'CANDIDATE_ONLY',
+      readingResult: {
+        resultRef: 'OVERALL-1', resultRevision: 1,
+        scope: { kind: 'WORK_ITEM', workItemId: 'WI-TARGET', documentVersionId: 'DV-1' },
+        content: { schemaVersion: 'wiselink.3_1.assessment_reading.v1',
+          headline: '综合主题', listBrief: '综合短意见', lead: '完整综合概览',
+          claims: [], decisiveClaimIds: [] },
+        evidence: [], candidateOnly: true,
+      },
+    };
+    mockReadWork.mockResolvedValue(knowledge);
+    await mount('?subjectKind=WORK_ITEM&subjectId=WI-TARGET&workRef=JAWR-WI-TARGET');
+    await settle();
+    const overall = container.querySelector('[aria-label="确切综合意见"]')!;
+    expect(overall.textContent).toContain('综合短意见');
+    expect(overall.querySelector('details')?.open).toBe(false);
+    expect(container.querySelector('.knowledge-preview')?.textContent)
+      .not.toContain('尚无与该修订绑定的综合意见');
   });
 
   it('opens the exact saved WorkItem from a deep link even when the catalogue starts with an older matter', async () => {

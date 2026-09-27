@@ -211,8 +211,14 @@ export class EngineeringIssueSearchService {
     let completed = false;
     try {
       return await observeEngineeringRead(observation, 'knowledge_total', async () => {
-        const revision = await observeEngineeringRead(observation, 'knowledge_load_work', () =>
-          this.loadWork({ ...exact, issueKey: '' }, actor, observation));
+        const workItemRead = exact.subjectKind === 'WORK_ITEM'
+          ? await observeEngineeringRead(observation, 'knowledge_load_work', () =>
+              this.jobAid.readBrowserKnowledgeRevision(exact.subjectId, exact.workRef, actor))
+          : null;
+        const revision = workItemRead?.revision ?? await observeEngineeringRead(
+          observation, 'knowledge_load_work', () =>
+            this.loadWork({ ...exact, issueKey: '' }, actor, observation),
+        );
         const rows = await observeEngineeringRead(observation, 'knowledge_current_flag', () =>
           exact.subjectKind === 'WORK_ITEM'
             ? this.db.execute<{ current: boolean }>(sql`SELECT NOT EXISTS (
@@ -227,6 +233,7 @@ export class EngineeringIssueSearchService {
           AND w.matter_id=${exact.subjectId} AND w.matter_work_revision_id=${exact.workRef}`));
         if (!rows.length) throw new NotFoundException('ENGINEERING_KNOWLEDGE_WORK_NOT_FOUND');
         const result = this.knowledgeFromWork(exact, revision, rows[0].current);
+        if (workItemRead) result.overall = workItemRead.overall;
         completed = true;
         return result;
       });

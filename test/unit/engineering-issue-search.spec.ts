@@ -55,6 +55,13 @@ function setup() {
         });
       return saved;
     }),
+    readBrowserKnowledgeRevision: jest.fn().mockImplementation(async (_id, ref) => {
+      if (ref !== saved.workRevisionRef)
+        throw Object.assign(new Error('JOBAID_WORK_NOT_FOUND'), {
+          statusCode: 404,
+        });
+      return { revision: saved, overall: null };
+    }),
   };
   const matters = { readWorkingRevision: jest.fn(), createSavedReadBatch: jest.fn() };
   return {
@@ -396,6 +403,29 @@ describe('saved knowledge catalogue', () => {
     expect(page.nextCursor).toBeNull();
     const read = await h.service.readKnowledge({ subjectKind: 'WORK_ITEM', subjectId: h.saved.workItemId, workRef: h.saved.workRevisionRef }, actor);
     expect(read.content).toBe(h.saved.content);
+    expect(read.overall).toBeNull();
+    expect(h.jobAid.readBrowserKnowledgeRevision).toHaveBeenCalledWith(
+      h.saved.workItemId, h.saved.workRevisionRef, actor,
+    );
+  });
+
+  it('returns the Host saved Overall alongside the exact JobAid revision', async () => {
+    const h = setup();
+    const reading = (await h.service.read(h.identity, actor)).reading!;
+    h.jobAid.readBrowserRevision.mockClear();
+    const overall = { status: 'CANDIDATE_ONLY' as const,
+      readingResult: { ...reading, resultRef: 'OVERALL-1', resultRevision: 1 } };
+    h.jobAid.readBrowserKnowledgeRevision.mockResolvedValue({
+      revision: h.saved, overall,
+    });
+    h.db.execute.mockResolvedValue([{ ...h.identity, current: true }]);
+    const read = await h.service.readKnowledge({
+      subjectKind: 'WORK_ITEM', subjectId: h.saved.workItemId,
+      workRef: h.saved.workRevisionRef,
+    }, actor);
+    expect(read.overall).toBe(overall);
+    expect(read.content).toBe(h.saved.content);
+    expect(h.jobAid.readBrowserRevision).not.toHaveBeenCalled();
   });
 
   it('continues across denied work and never exposes denied identity metadata', async () => {
@@ -432,7 +462,7 @@ describe('saved knowledge catalogue', () => {
     const h = setup();
     h.jobAid.readBrowserRevision.mockRejectedValue(new Error('CORRUPT_SAVED_WORK'));
     await expect(h.service.catalogue('', 'CURRENT', undefined, actor)).rejects.toThrow('CORRUPT_SAVED_WORK');
-    h.jobAid.readBrowserRevision.mockRejectedValue(Object.assign(new Error('REVOKED'), { statusCode: 403 }));
+    h.jobAid.readBrowserKnowledgeRevision.mockRejectedValue(Object.assign(new Error('REVOKED'), { statusCode: 403 }));
     await expect(h.service.readKnowledge({ subjectKind: 'WORK_ITEM', subjectId: h.saved.workItemId, workRef: h.saved.workRevisionRef }, actor)).rejects.toThrow('REVOKED');
   });
 

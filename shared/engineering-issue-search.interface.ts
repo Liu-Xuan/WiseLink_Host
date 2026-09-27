@@ -56,6 +56,11 @@ export interface EngineeringKnowledgeRead {
   entry: EngineeringKnowledgeEntry;
   content: JobAidProblemWorkContent;
   reading: AssessmentReadingResult | null;
+  /** Saved Overall for this exact WorkItem work revision, when present. */
+  overall?: {
+    status: 'CANDIDATE_ONLY' | 'STALE';
+    readingResult: AssessmentReadingResult;
+  } | null;
   correctionNotices?: EngineeringMatterCorrectionNotice[];
   overviewCorrectionNotices?: EngineeringMatterOverviewCorrectionNotice[];
   referenceWorkNotices?: EngineeringMatterReferenceWorkNotice[];
