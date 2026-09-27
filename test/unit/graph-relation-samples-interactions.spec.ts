@@ -5,7 +5,7 @@ import GraphRelationPreviewPage from '../../client/src/pages/GraphRelationPrevie
 import RelationGraphPage from '../../client/src/pages/RelationGraphPage/RelationGraphPage';
 import { GRAPH_RELATION_SAMPLE_ENTRIES } from '../../client/src/features/review/graph-samples';
 import { claimKey } from '../../client/src/features/review/GraphRelationSamplesView';
-import { getLibraryIndex } from '@client/src/api/canonical-host';
+import { getLibraryIndex, readEngineeringKnowledgeWork } from '@client/src/api/canonical-host';
 import {
   getEngineeringMatter,
   getEngineeringMatterDirectory,
@@ -26,6 +26,7 @@ jest.mock('@client/src/components/ui/button-group', () => ({
 jest.mock('@client/src/api/canonical-host', () => ({
   getLibraryIndex: jest.fn(),
   isCanonicalObjectNotFound: jest.fn(),
+  readEngineeringKnowledgeWork: jest.fn(),
 }));
 jest.mock('@lark-apaas/client-toolkit/logger', () => ({
   logger: { error: jest.fn() },
@@ -166,6 +167,7 @@ beforeEach(() => {
   dom.window.XMLHttpRequest = network;
   container = dom.window.document.getElementById('root');
   jest.clearAllMocks();
+  (readEngineeringKnowledgeWork as jest.Mock).mockResolvedValue(null);
   mockSessionState = {
     sessionGeneration: 1,
     authenticationRequired: false,
@@ -336,6 +338,66 @@ it('shows the WorkItem graph when the pin matches the authorized projection', as
   await act(async () => undefined);
   expect(container.textContent).toContain('1 个对象');
   expect(container.textContent).not.toContain('这是历史工作修订');
+});
+
+it('shows the exact saved Overall brief in the WorkItem graph and links to its source work', async () => {
+  (getLibraryIndex as jest.Mock).mockResolvedValue({
+    workItem: { workItemId: 'wi-sample-graph-a', revision: 5, currentJobAidWorkRevisionRef: 'JAWR-CURRENT' },
+    document: { documentCode: 'FTD-1', businessRevision: '', documentVersionId: 'dv-1' },
+    libraryIndex: { rootLabel: 'FTD-1', nodes: [
+      { id: 'work-item', parentId: null, kind: 'WORK_ITEM', label: 'FTD-1', detail: '', state: 'CURRENT' },
+    ] },
+  });
+  (readEngineeringKnowledgeWork as jest.Mock).mockResolvedValue({
+    entry: { subjectKind: 'WORK_ITEM', subjectId: 'wi-sample-graph-a', workRef: 'JAWR-CURRENT' },
+    content: { headline: '报告故障', listBrief: '问题分析摘要' },
+    overall: { status: 'CANDIDATE_ONLY', readingResult: { content: {
+      headline: '综合判断', listBrief: '上行故障导致报告锁死；现有措施可恢复报告；机队适用性仍待确认。',
+    } } },
+  });
+  await mountProduction('/graph?workItemId=wi-sample-graph-a&workRef=JAWR-CURRENT');
+  await act(async () => undefined);
+  expect(readEngineeringKnowledgeWork).toHaveBeenCalledWith(
+    { subjectKind: 'WORK_ITEM', subjectId: 'wi-sample-graph-a', workRef: 'JAWR-CURRENT' },
+    expect.anything(),
+  );
+  expect(container.textContent).toContain('上行故障导致报告锁死');
+  expect(container.textContent).toContain('已保存候选，尚非正式采用');
+  expect(container.querySelector('a[href*="workRef=JAWR-CURRENT"]')).not.toBeNull();
+});
+
+it('shows current problem understanding when the saved Overall is stale', async () => {
+  (getLibraryIndex as jest.Mock).mockResolvedValue({
+    workItem: { workItemId: 'wi-sample-graph-a', revision: 5, currentJobAidWorkRevisionRef: 'JAWR-CURRENT' },
+    document: { documentCode: 'FTD-1', businessRevision: '', documentVersionId: 'dv-1' },
+    libraryIndex: { rootLabel: 'FTD-1', nodes: [
+      { id: 'work-item', parentId: null, kind: 'WORK_ITEM', label: 'FTD-1', detail: '', state: 'CURRENT' },
+    ] },
+  });
+  (readEngineeringKnowledgeWork as jest.Mock).mockResolvedValue({
+    entry: { subjectKind: 'WORK_ITEM', subjectId: 'wi-sample-graph-a', workRef: 'JAWR-CURRENT' },
+    content: { headline: '新问题', listBrief: '新资料显示报告故障仍需核对。' },
+    overall: { status: 'STALE', readingResult: { content: {
+      headline: '旧综合', listBrief: '旧综合不能覆盖新资料。',
+    } } },
+  });
+  await mountProduction('/graph?workItemId=wi-sample-graph-a&workRef=JAWR-CURRENT');
+  expect(container.textContent).toContain('新资料显示报告故障仍需核对');
+  expect(container.textContent).toContain('此前综合未覆盖当前问题工作');
+  expect(container.textContent).not.toContain('旧综合不能覆盖新资料');
+});
+
+it('does not read a current summary for a historical WorkItem pin', async () => {
+  (getLibraryIndex as jest.Mock).mockResolvedValue({
+    workItem: { workItemId: 'wi-sample-graph-a', revision: 5, currentJobAidWorkRevisionRef: 'JAWR-CURRENT' },
+    document: { documentCode: 'FTD-1', businessRevision: '', documentVersionId: 'dv-1' },
+    libraryIndex: { rootLabel: 'FTD-1', nodes: [
+      { id: 'work-item', parentId: null, kind: 'WORK_ITEM', label: 'FTD-1', detail: '', state: 'CURRENT' },
+    ] },
+  });
+  await mountProduction('/graph?workItemId=wi-sample-graph-a&workRef=JAWR-OLD');
+  expect(container.textContent).toContain('这是历史工作修订');
+  expect(readEngineeringKnowledgeWork).not.toHaveBeenCalled();
 });
 
 it('does not request a work item binding while authentication is required', async () => {

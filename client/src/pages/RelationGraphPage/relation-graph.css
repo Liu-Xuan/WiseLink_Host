@@ -189,6 +189,19 @@
   line-height: 1.75;
 }
 
+.rg-inspector-understanding {
+  width: 100%;
+  border-left: 3px solid var(--wl-accent);
+  padding: var(--wl-space-3) var(--wl-space-4);
+  background: var(--wl-glass-content);
+  font-size: 12px;
+  line-height: 1.7;
+}
+
+.rg-inspector-understanding p { margin: var(--wl-space-2) 0; }
+.rg-inspector-understanding small { display: block; color: var(--wl-muted); }
+.rg-inspector-understanding a { display: inline-block; margin-top: var(--wl-space-2); }
+
 .rg-inspector dl {
   width: 100%;
   margin: 0;

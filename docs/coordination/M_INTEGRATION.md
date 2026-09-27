@@ -1,5 +1,23 @@
 # M 主控集成交接
 
+## 2026-09-27 C172：本机解析轮询的临时故障恢复
+
+默认新解析已有仅出站 MinerU worker 的真实受控链路，但 `--loop` 原来在一次临时 Host 网络/网关错误后直接退出。本轮只修订现有本机 worker：对连接/读取响应中断，以及 408、429、500、502、503、504 最多连续尝试三次，间隔 5 秒、10 秒；持续失败即非零退出并留下错误码，成功 tick 后恢复常规 5 秒空闲轮询。401/403、来源/候选/租约校验或解析错误继续明确失败；不带 `--loop` 的单次受控运行仍不自动重试。候选在提交前仍按原合同落入私有缓存，响应不明时由 Host 的确切租约及回执决定是否复用，未增加队列、接口、身份或权限。
+
+实现提交 `239041bfe7181f87839804655a5f17fb2aa83930`，响应流中断补充提交 `90542cc99`；连续失败上限在后续提交补齐。这里是本地代码验证，未启动新解析、未安装常驻进程，也未启用 17c 原生 cron。当前 Codex 进程环境没有本机 worker 所需的 Host origin、专用密钥、Python/config 路径；`launchctl list` 未列出 WiseLink/MinerU 作业，本机进程列表接口不可用，因此不据此断言系统没有其他在途 worker。17c 内置浏览器本轮仍重定向飞书扫码页，无法新鲜核对 Hosted cron；上次已读回 16 项全部停用。要验证正常上传后的无人值守闭环，需先在可读运行环境核对无在途及唯一动态队列 job，再在明确授权下启用本机 worker 的安全凭据来源与后台启动、以及该 Hosted job；不扩大四条 MinerU 路由或 Host 逐任务授权。
+
+最终定向 Jest 18/18、worker 文件独立 TypeScript 检查与差异检查通过；提交前钩子以最终提交回执为准。
+
+进一步按确切 launchd label 核对发现：`com.wiselink.mineru` 实际为 running（PID 792），执行旧仓库的本机 `mineru.cli.fast_api`、监听 `127.0.0.1:8888`；它不是本轮仅出站 `local-mineru-worker.ts`，也不从 Host 领取任务。前述通用 `launchctl list` 文本过滤没有列出它，不能用该过滤结果声称本机无 MinerU 进程；新 worker 没有找到对应的 LaunchAgent 文件，是否还有其他方式启动须在启用前核对。
+
+## 2026-09-27 C171：确切 Overall 进入 Wiki，Host 终态读回
+
+17b 在线数据库只读核对 `WI-d368f79e-4a5a-4615-ac00-7594b3ee5c53`：WorkItem revision 5、`CANDIDATE_READBACK_VERIFIED`；Overall 为 `CANDIDATE_ONLY`，确切绑定 JobAid `JAWR-23f7289f-07ea-440f-82ec-b2d07cef0b2c` / revision 4。Overall ActionAttempt `AQ-b36077e839364b24b7e906879df6eeea` 为 `SUCCEEDED`，基于输入 revision 4，`projection_applied=true`。对应自动队列授权 `REQ-b5526e71-8a10-44d2-8bc9-dde3867044f6` 为 `COMPLETED`，领取与完成 generation 均为 3，已无 active owner/token，`blocked_code` 为空。这补齐了此前终端 ACK 以外的 Host 持久终态证据；不把候选当作正式采用。
+
+工程知识页原先只显示 JobAid。提交 `d7e1deadc1b3c86370be038abc3e6d6cbf8f85a8` 增加确切 WorkItem Overall 读取：复用当前用户/租户与来源授权，要求 Overall 绑定所选 JobAid 修订，核对 WorkItem、文档版本和证据归属；无匹配 Overall 时如实显示待综合。首屏只展示综合短意见，完整判断与来源可展开。生产首轮读回发现 JobAid 与 Overall 同一句摘要在首屏重复；提交 `987dfcb0c` 去除重复，过时 Overall 时仍以当前问题工作摘要为首屏。
+
+最终开发分支提交 `dd95ff87210360aba81d846ea03ef31990bce68a` 已快进推至 origin 同名分支；17b release `7690124373747076066` 为 `finished`，部署提交准确相同，`error_logs=[]`。定向 Jest 63/63、前后端 TypeScript、定向 ESLint 与 diff 检查通过。刘轩本人在线 Wiki 按 `WORK_ITEM` / 上述 `JAWR` 读取工作修订 4：默认首屏综合短意见只出现一次，综合内容与八项问题分析均折叠可展开；展开综合内容显示“已保存候选，尚非实施决定”。17c 本轮内置浏览器仍重定向飞书扫码页，未重新独立读回其本地 checkpoint；Host 队列终态已独立确认。无人值守定时消费仍停用，正常上传后的稳定自动运行尚未由本样本证明。
+
 ## 2026-09-27 C170：工程摘要首屏与并发修订读回
 
 17b 线上首次 Wiki 正文 404 的 trace `a68647f54dd6b96618d53ecc661ec88c` 显示：本人、租户、确切 WorkItem 与 workRef 相同，两次 owner 查询均返回 1 行；错误发生在 `authorizeAndLoadCanonicalWorkItem` 两次新鲜授权快照版本比较处。之后同一确切链接成功读取。该失配与 Overall 保存窗口的 WorkItem 修订并发相符；日志没有保存两个版本值，因此不把并发原因写成已直接证明。Host 现在只在两次授权快照版本不一致时重新执行一次完整授权链；持续失配或第二次撤权仍拒绝，匹配前不加载正文。没有改动角色、RLS、来源授权或任务调度。

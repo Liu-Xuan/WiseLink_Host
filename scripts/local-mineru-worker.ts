@@ -2,6 +2,7 @@
 import { mkdir, lstat, readFile, writeFile, rename, rm } from 'node:fs/promises';
 import { resolve, join, isAbsolute } from 'node:path';
 import { randomUUID } from 'node:crypto';
+import { setTimeout as sleep } from 'node:timers/promises';
 import { MineruRunner } from '../server/modules/professional-input/mineru/mineru-runner';
 import { enhanceMineruTitles, type MineruTitleInput } from '../server/modules/professional-input/mineru/mineru-title-enhancer';
 import { readMineruArtifacts } from '../server/modules/professional-input/mineru/mineru-artifacts';
@@ -173,6 +174,57 @@ async function abortable<T>(promise: Promise<T>, signal: AbortSignal): Promise<T
   try { return await Promise.race([promise, aborted]); }
   finally { signal.removeEventListener('abort', listener!); }
 }
+type WorkerTick = Awaited<ReturnType<LocalMineruWorker['once']>>;
+interface PollingOptions {
+  loop: boolean;
+  signal: AbortSignal;
+  pause?: (milliseconds: number, signal: AbortSignal) => Promise<void>;
+  report?: (result: WorkerTick) => void;
+  reportTransient?: (code: string) => void;
+}
+const transientTransportCodes = new Set([
+  'LOCAL_MINERU_TRANSPORT_UNAVAILABLE',
+  'LOCAL_MINERU_HTTP_408',
+  'LOCAL_MINERU_HTTP_429',
+  'LOCAL_MINERU_HTTP_500',
+  'LOCAL_MINERU_HTTP_502',
+  'LOCAL_MINERU_HTTP_503',
+  'LOCAL_MINERU_HTTP_504',
+]);
+const MAX_CONSECUTIVE_TRANSPORT_FAILURES = 3;
+function workerErrorCode(error: unknown): string {
+  return error instanceof Error && /^[A-Z][A-Z0-9_]{1,120}$/u.test(error.message)
+    ? error.message : 'LOCAL_MINERU_WORKER_FAILED';
+}
+export async function pollLocalMineruWorker(
+  worker: Pick<LocalMineruWorker, 'once'>,
+  options: PollingOptions,
+): Promise<void> {
+  const pause = options.pause ?? ((milliseconds: number, signal: AbortSignal) =>
+    sleep(milliseconds, undefined, { signal }));
+  let retryDelayMs = 5_000;
+  let transientFailures = 0;
+  while (!options.signal.aborted) {
+    try {
+      const result = await worker.once(options.signal);
+      options.report?.(result);
+      if (!options.loop) return;
+      retryDelayMs = 5_000;
+      transientFailures = 0;
+      await pause(5_000, options.signal);
+    } catch (error) {
+      if (options.signal.aborted) return;
+      const code = workerErrorCode(error);
+      if (!options.loop || !transientTransportCodes.has(code)) throw error;
+      options.reportTransient?.(code);
+      transientFailures += 1;
+      if (transientFailures >= MAX_CONSECUTIVE_TRANSPORT_FAILURES) throw error;
+      try { await pause(retryDelayMs, options.signal); }
+      catch (pauseError) { if (options.signal.aborted) return; throw pauseError; }
+      retryDelayMs = Math.min(retryDelayMs * 2, 60_000);
+    }
+  }
+}
 async function main() {
   if (process.argv.slice(2).some(argument => argument !== '--loop')) throw new Error('LOCAL_MINERU_ARGUMENT_INVALID');
   const key = process.env.WL_LOCAL_MINERU_API_KEY ?? '';
@@ -187,15 +239,12 @@ async function main() {
   const stop = () => controller.abort(new Error('LOCAL_MINERU_STOPPED'));
   process.once('SIGINT', stop); process.once('SIGTERM', stop);
   try {
-    do {
-      const result = await worker.once(controller.signal);
-      process.stdout.write(JSON.stringify({ status: result.status }) + '\n');
-      if (!process.argv.includes('--loop')) break;
-      await abortable(new Promise(resolveDelay => setTimeout(resolveDelay, 5000)), controller.signal);
-    } while (!controller.signal.aborted);
+    await pollLocalMineruWorker(worker, { loop: process.argv.includes('--loop'), signal: controller.signal,
+      report: result => process.stdout.write(JSON.stringify({ status: result.status }) + '\n'),
+      reportTransient: code => process.stderr.write(code + '\n') });
   } finally { process.removeListener('SIGINT', stop); process.removeListener('SIGTERM', stop); }
 }
 if (require.main === module) main().catch((error: unknown) => {
-  const code = error instanceof Error && /^[A-Z][A-Z0-9_]{1,120}$/u.test(error.message) ? error.message : 'LOCAL_MINERU_WORKER_FAILED';
+  const code = workerErrorCode(error);
   process.stderr.write(code + '\n'); process.exitCode = 1;
 });
