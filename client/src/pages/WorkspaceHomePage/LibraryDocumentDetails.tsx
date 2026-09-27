@@ -171,12 +171,12 @@ export function LibraryDocumentDetails({
                   <p role="status">正在核对同版本已保存工作…</p>
                 ) : assessmentBrief && matchingAssessment ? (
                   <>
-                    <p>{matchingAssessment.result?.jobAidRoundCompletion === 'IN_PROGRESS'
+                    <p className="library-quicklook-assessment-status">{matchingAssessment.result?.jobAidRoundCompletion === 'IN_PROGRESS'
                       ? '已保存的部分问题工作；综合结论尚待完成。'
                       : matchingAssessment.result?.overallStatus === 'CURRENT'
                         ? '已保存的问题工作；综合候选当前有效。'
                         : '已保存的问题工作；综合状态请进入工作台核对。'}</p>
-                    <p>{assessmentBrief}</p>
+                    <p className="library-quicklook-assessment-brief">{assessmentBrief}</p>
                     <Link to={`/work-items/${encodeURIComponent(matchingAssessment.document.workItemId)}/analysis?panel=assessment`}>查看完整评估与来源</Link>
                   </>
                 ) : (
