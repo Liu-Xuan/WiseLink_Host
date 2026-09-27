@@ -1,7 +1,7 @@
 import { mkdtemp, readFile, rm, stat } from 'node:fs/promises';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
-import { LocalMineruWorker } from '../../../scripts/local-mineru-worker';
+import { LocalMineruWorker, pollLocalMineruWorker } from '../../../scripts/local-mineru-worker';
 import { LocalMineruHttpTransport, validateClaim, sha256 } from '../../../scripts/local-mineru-worker-transport';
 import { readMineruArtifacts } from '../../../server/modules/professional-input/mineru/mineru-artifacts';
 import type { LocalMineruWorkerClaim } from '../../../shared/local-mineru-worker.interface';
@@ -126,6 +126,50 @@ describe('outbound local worker, isolated transports only', () => {
     await expect(transport.claim(new AbortController().signal)).rejects.toThrow('LOCAL_MINERU_RESPONSE_TOO_LARGE');
     request.mockResolvedValue(new Response(JSON.stringify({ status: 'CANDIDATE_READY', parseRunId: 'foreign' }), { headers: { 'content-type': 'application/json' } }));
     await expect(transport.source(fixture(directory).claim, new AbortController().signal)).rejects.toThrow('LOCAL_MINERU_SOURCE_REPLY_INVALID');
+  });
+
+  it('continues the opt-in loop after transient Host errors with bounded backoff', async () => {
+    const controller = new AbortController();
+    const worker = { once: jest.fn()
+      .mockRejectedValueOnce(new Error('LOCAL_MINERU_HTTP_503'))
+      .mockRejectedValueOnce(new Error('LOCAL_MINERU_TRANSPORT_UNAVAILABLE'))
+      .mockResolvedValueOnce({ status: 'IDLE' as const }) };
+    const delays: number[] = [];
+    const transient: string[] = [];
+    await pollLocalMineruWorker(worker, { loop: true, signal: controller.signal,
+      pause: async milliseconds => { delays.push(milliseconds); if (delays.length === 3) controller.abort(); },
+      reportTransient: code => transient.push(code) });
+    expect(worker.once).toHaveBeenCalledTimes(3);
+    expect(delays).toEqual([5_000, 10_000, 5_000]);
+    expect(transient).toEqual(['LOCAL_MINERU_HTTP_503', 'LOCAL_MINERU_TRANSPORT_UNAVAILABLE']);
+  });
+  it('stops on denied authority and preserves one-shot failure behavior', async () => {
+    const denied = { once: jest.fn(async () => { throw new Error('LOCAL_MINERU_HTTP_403'); }) };
+    const pause = jest.fn(async () => undefined);
+    await expect(pollLocalMineruWorker(denied, { loop: true, signal: new AbortController().signal, pause }))
+      .rejects.toThrow('LOCAL_MINERU_HTTP_403');
+    expect(denied.once).toHaveBeenCalledTimes(1);
+    expect(pause).not.toHaveBeenCalled();
+    const temporary = { once: jest.fn(async () => { throw new Error('LOCAL_MINERU_HTTP_503'); }) };
+    await expect(pollLocalMineruWorker(temporary, { loop: false, signal: new AbortController().signal, pause }))
+      .rejects.toThrow('LOCAL_MINERU_HTTP_503');
+    expect(temporary.once).toHaveBeenCalledTimes(1);
+  });
+  it('ends cleanly when the loop is stopped during transient backoff', async () => {
+    const controller = new AbortController();
+    const worker = { once: jest.fn(async () => { throw new Error('LOCAL_MINERU_HTTP_503'); }) };
+    await expect(pollLocalMineruWorker(worker, { loop: true, signal: controller.signal,
+      pause: async (_milliseconds, signal) => { controller.abort(); throw signal.reason; } }))
+      .resolves.toBeUndefined();
+    expect(worker.once).toHaveBeenCalledTimes(1);
+  });
+  it('classifies a network failure without replacing a caller cancellation', async () => {
+    const failed = jest.fn(async () => { throw new TypeError('fetch failed'); });
+    const transport = new LocalMineruHttpTransport({ origin: 'https://host.test', apiKey: 'private-test-key' }, failed as typeof fetch);
+    await expect(transport.claim(new AbortController().signal)).rejects.toThrow('LOCAL_MINERU_TRANSPORT_UNAVAILABLE');
+    const controller = new AbortController();
+    controller.abort();
+    await expect(transport.claim(controller.signal)).rejects.toThrow('fetch failed');
   });
 
 });

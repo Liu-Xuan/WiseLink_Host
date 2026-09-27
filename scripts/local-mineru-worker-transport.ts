@@ -73,9 +73,16 @@ export class LocalMineruHttpTransport implements LocalMineruTransport {
   }
   private async post(path: string, body: string | Buffer, headers: Record<string, string>, signal: AbortSignal, max: number, type: string | string[]) {
     const bounded = AbortSignal.any([signal, AbortSignal.timeout(this.config.timeoutMs)]);
-    const response = await this.request(this.base + path, { method: 'POST', redirect: 'error', signal: bounded,
-      headers: { ...headers, Authorization: `Bearer ${this.config.apiKey}` },
-      body: typeof body === 'string' ? body : new Uint8Array(body).buffer });
+    let response: Response;
+    try {
+      response = await this.request(this.base + path, { method: 'POST', redirect: 'error', signal: bounded,
+        headers: { ...headers, Authorization: `Bearer ${this.config.apiKey}` },
+        body: typeof body === 'string' ? body : new Uint8Array(body).buffer });
+    } catch (error) {
+      if (!signal.aborted && (bounded.aborted || error instanceof TypeError))
+        throw new Error('LOCAL_MINERU_TRANSPORT_UNAVAILABLE');
+      throw error;
+    }
     if (!response.ok) { await response.body?.cancel(); throw new Error(`LOCAL_MINERU_HTTP_${response.status}`); }
     const actualType = response.headers.get('content-type')?.split(';')[0].trim() ?? '';
     if (!(Array.isArray(type) ? type : [type]).includes(actualType)) {
