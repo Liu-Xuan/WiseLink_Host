@@ -8,6 +8,7 @@ import test from 'node:test';
 import { consumeHostedWorkItem, initialStageLimit, matterPreflightMode, runHostedInitialStage } from '../scripts/consume-hosted-work-item.mjs';
 import { initialStageCheckpointPath } from '../scripts/initial-assessment-recovery.mjs';
 import { createCheckpointStore } from '../scripts/run-hosted-review-turn.mjs';
+import { WISELINK_SKILL_VERSION } from '../scripts/validate-payload.mjs';
 
 function status(overrides = {}) {
   return { entry: { workItemId: 'WI-new' }, initialAnalysis: {
@@ -76,6 +77,76 @@ test('automatic retry rejects changed Host attempt before any model work', async
           attemptRef: 'AQ-new', requestId: 'original-1' } } }),
     runInitial: async () => assert.fail('changed attempt must not start'),
   }), /AUTO_WORK_ITEM_RETRY_STATUS_CHANGED/u);
+});
+
+test('operator repair revalidates the exact failed no-work attempt before beginning', async t => {
+  const input = await options(t);
+  const attemptRef = 'AQ-FAILED-RETRY';
+  const attentionCode = 'JOBAID_GATEWAY_HTTP_400:INCOMPLETE_TERMINAL_RESPONSE';
+  const requestId = `auto-repair-${createHash('sha256')
+    .update(`WI-new:DV-new:jobAid:${attemptRef}:${WISELINK_SKILL_VERSION}`)
+    .digest('hex').slice(0, 32)}`;
+  const failed = status({ status: 'FAILED', nextOperation: null,
+    stages: { translation: { status: 'SUCCEEDED' },
+      applicability: { status: 'WAITING_INPUT' },
+      jobAid: { status: 'FAILED', attemptStatus: 'CANCELLED', attemptRef,
+        requestId: `auto-retry-${'c'.repeat(32)}`, terminalCode: attentionCode },
+      overall: { status: 'PENDING' } } });
+  let saved = false;
+  const result = await consumeHostedWorkItem({ ...input, initialStageOnly: true,
+    repairStoppedClaim: true, repairAttentionCode: attentionCode,
+    repairWorkItemRevision: 2, repairAttemptRef: attemptRef,
+    autoRetry: { operation: 'EVALUATE_JOBAID', attemptRef, requestId } }, {
+    callTool: async (name, args) => {
+      if (name === 'get_parse_status') return saved ? status({ ...failed.initialAnalysis,
+        status: 'SUCCEEDED', stages: { ...failed.initialAnalysis.stages,
+          jobAid: { status: 'SUCCEEDED' } } }) : failed;
+      assert.equal(name, 'read_assessment_work');
+      assert.deepEqual(args, { attemptRef, workItemId: 'WI-new' });
+      return { schemaVersion: 'wiselink.jobaid-work-read.v2',
+        executionStatus: 'CANCELLED', attemptId: 'ATT-FAILED-RETRY',
+        inputWorkRevision: 0, revision: null };
+    },
+    runInitial: async run => {
+      assert.equal(run.continuationRequestId, requestId);
+      saved = true;
+      return { outcome: 'CANDIDATE_ONLY' };
+    },
+  });
+  assert.equal(result.status, 'INITIAL_STAGE_SAVED');
+});
+
+test('repair recovery rejects a second status read that advances or changes ownership', async t => {
+  const input = await options(t);
+  const requestId = `auto-repair-${'a'.repeat(32)}`;
+  const expected = { ...input, initialStageOnly: true,
+    repairingRecovery: true, repairStoppedClaim: true,
+    repairWorkItemRevision: 2, repairExpectedOperation: 'EVALUATE_JOBAID',
+    repairRequestId: requestId, repairActiveAttemptRef: 'AQ-ACTIVE' };
+  const busy = status({ status: 'BUSY', nextOperation: null,
+    stages: { translation: { status: 'SUCCEEDED' },
+      applicability: { status: 'WAITING_INPUT' },
+      jobAid: { status: 'BUSY', attemptStatus: 'RUNNING',
+        requestId, attemptRef: 'AQ-ACTIVE' },
+      overall: { status: 'PENDING' } } });
+  for (const changed of [
+    status({ status: 'REQUIRED', nextOperation: 'SYNTHESIZE_OVERALL',
+      stages: { ...busy.initialAnalysis.stages,
+        jobAid: { status: 'SUCCEEDED' } } }),
+    status({ ...busy.initialAnalysis,
+      stages: { ...busy.initialAnalysis.stages,
+        jobAid: { ...busy.initialAnalysis.stages.jobAid,
+          requestId: `auto-repair-${'b'.repeat(32)}` } } }),
+    status({ ...busy.initialAnalysis, workItemRevision: 3 }),
+  ]) {
+    await assert.rejects(consumeHostedWorkItem(expected, {
+      callTool: async name => {
+        assert.equal(name, 'get_parse_status');
+        return changed;
+      },
+      runInitial: async () => assert.fail('changed recovery cannot run'),
+    }), /AUTO_WORK_ITEM_REPAIR_RECOVERY_CHANGED/u);
+  }
 });
 
 test('second continuation rechecks saved progress through the exact Host attempt', async t => {

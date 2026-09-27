@@ -12,7 +12,7 @@ description: Orchestrate the single official hosted WiseLink engineering profile
 - hosted app：`app_17c3zn24kv2`
 - logical profile：`wiselink-engineering`
 - model policy：`official-hosted-profile-config`（任务可绑定已登记的内置或用户授权自定义模型；仍经唯一官方 Hosted profile/Gateway）
-- Skill：`wiselink-research-and-synthesize@r09.c167`
+- Skill：`wiselink-research-and-synthesize@r09.c168`
 - Skill compatibility：`wiselink-research-and-synthesize@r09`（历史任务最低接受 `r09.c10`，翻译 v2 必须为 `r09.c44` 或更新兼容包）
 - Host MCP：`wiselink-openclaw-engineering-assessment@1.2.0`（保留既有工具，新增语义翻译工作与 JobAid 来源/工作工具）
 - Host 集成提交：以本次发布包清单记录的实际提交为准
@@ -27,6 +27,8 @@ c147 仅在首次自动重试确实保存新工作且 Host 身份、版本和来
 c148 将新 JobAid/Overall 的首屏摘要明确限定为工程问题、措施和决定性条件；Overall 对超长标题或列表摘要在保存前同会话有界要求模型更正，不截断来源和正文。
 c165 对 Host 已完整交付的短篇原文直接开展 JobAid，不重复请求来源；独立日期和 TBD 不得推断先后关系，长文档仍按需分批读取。
 c166 仅增加 JobAid Hosted Gateway 请求的 UTF-8 字节数诊断（完整请求、messages、system、tools），不记录正文或凭据，不改变请求、业务判断或失败重试边界。
+c167 对 WorkItem 的 M3 Probe JobAid/Overall 请求显式申请 32768 完成 token；既有四条原生生成均在 16000/length 结束。该值只是受控验证请求，实际模型上限须由原生终态读回确认。
+c168 提供手动 `--auto-queue --repair-stopped-claim --repair-work-item-id WI-... --repair-attempt-ref AQ-...`，仅对同一队列租约下、自动重试已取消且没有保存工作的 Gateway 不完整终态派生一次稳定后继；普通 cron 不带此参数，授权和版本仍由 Host 再核验。
 c137 修复同一 JobAid 执行中更正次数归零后检查点重名的问题；取消的执行转为人工关注，不自动将队列任务标为业务终态失败。
 c138 在初始 JobAid 读取前核对模型所选来源是否属于确切目录，指出可核对的同单元候选；原文尚未成功送达时拒绝保存仅描述流程状态的问题。
 c139 将初始 JobAid 每次原文读取限制为四个精确引用，随后仅保存一个完整问题或一组小范围相关问题。
@@ -135,6 +137,7 @@ checkpoint；模型和业务工具仍复用现有消费者、官方 Gateway、�
 租约过期后仅发送之前 checkpoint 的精确 `resumeWorkItemId`。Host 不返回同一事项时，本地 claim 与阶段 checkpoint
 全部保留并返回 `REQUIRES_ATTENTION`；绝不接着消费其他排队项。消费者只在 Host fresh status 确认初始 JobAid 和
 Overall 完成后 ACK。c145 对取消、超时或准备失败的 JobAid/Overall，按旧 attempt 与确切原文版本派生稳定的新请求，最多接续一次；再次失败或授权/版本变化则保留成果并报告关注。运行故障不再自动 BLOCK 文档；既有未确认 BLOCK 意图也不重发。模型结果不决定发现、续领或正式采用。
+修复部署后，操作员可在无其他消费者时单次使用 `--auto-queue --repair-stopped-claim --repair-work-item-id WI-... --repair-attempt-ref AQ-...` 接续已停止的精确 claim。它只接受自动重试后的无保存 Gateway 不完整终态，依据旧 attempt 与当前 Skill 版本派生稳定 requestId；普通定时命令不带此参数，失败后不能循环重放。
 静态 `--work-item-id`、Matter 和 DocumentVersion 命令仍使用原入口，不与 `--auto-queue` 混用。
 
 ### 共同背景（兼容增量）
@@ -600,7 +603,7 @@ Interactive Review 的复杂 ResultEnvelope 必须由 `sealResultEnvelope` 生�
 当前 validator 强制：
 
 - `modelVersion` 优先取响应中可读实际模型；绑定任务未回报实际模型时使用 `configured-route:<modelRef>`，旧无绑定任务使用无 fallback 的 configured endpoint。后两者只证明路由，不代表已暴露下游具体模型，也不做具体版本等值判断
-- `skillVersion=wiselink-research-and-synthesize@r09.c167`
+- `skillVersion=wiselink-research-and-synthesize@r09.c168`
 - `toolVersions.wiselink-openclaw-engineering-assessment=1.2.0`
 - `promptVersion` 非空并来自当前运行
 - task/result exact binding、SourceRef allowlist 和 canonical hash 一致
