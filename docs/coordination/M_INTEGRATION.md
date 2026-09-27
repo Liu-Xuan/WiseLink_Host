@@ -1,10 +1,18 @@
 # M 主控集成交接
 
+## 2026-09-27 C168 接续验收：Overall 已保存，知识页准确直达
+
+17c 独立终端17确认同一 `/home/gem` 检查点仅有目标 `WI-d368f79e-4a5a-4615-ac00-7594b3ee5c53` 的 gen2/rev3 claim，旧租约过期、`consumerStopped=false`、无在途消费者；16 项 cron 全部停用。只提交一次已安装 C168 的普通动态 `--auto-queue` tick，终端准确回执 `ACKNOWLEDGED`、`replayed=false`、`consumerStatus=INITIAL_STAGE_SAVED`、时间 `2026-09-27T07:26:37.253Z`。结束后消费者 0、目标 active-claim 已清除、cron 仍为 16/16 停用；没有运行第二次 tick 或 C169。
+
+刘轩本人 17b 页面读回同一事项的 JobAid 工作修订 4、八项问题与来源仍在，整体综合从等待变为“候选待复核”，工程摘要显示“已保存判断与依据”，状态为当前有效且绑定原文版本。这证明本样本的 JobAid 结果得到复用，并已形成可读综合候选；不等于正式采用。17c 一次额外 `get_parse_status` 只读 MCP 调用在 call 阶段返回通用 `Error`，未重试，因此本次 Overall 的确切 attempt/ref、最终 WorkItem revision 与队列授权数据库终态尚未独立读回；终端 ACK、本地 claim 清理及工程师页面共同支持阶段完成，不把未取得的字段编造为已验收。
+
+工程知识入口原先仅带 `workItemId`，页面会误选目录首条旧事项。提交 `97b7ccb695d3c610cc3a79d89bd1b8b2b9583bd0` 让入口按本人授权读取当前 JobAid `workRevisionRef`，再走现有确切知识读取；无工作、非法身份和迟到响应均不回退目录首条。定向交互测试 24/24、TypeScript、ESLint、precommit 通过。纳入最新 main 发布快照后的提交 `11f6df26fe4f057e21414604816b56645e86dcc1` 已快进到 origin 同名开发分支；17b release `7690111728060107755` 为 `finished`，部署提交准确相同，`error_logs=[]`。本人生产知识页从目标 `workItemId` 自动归一为 `WORK_ITEM` / `JAWR-23f7289f-07ea-440f-82ec-b2d07cef0b2c`，读到工作修订 4 的短摘要和可展开八项依据。发布窗口首次正文读取曾返回 `CANONICAL_WORK_ITEM_NOT_FOUND`，同一确切身份重试成功；记录为瞬时读回异常，不删除来源或伪造首次成功。整体综合的知识页覆盖及无人值守自动消费稳定性仍需后续正常样本验证；cron 保持停用。
+
 ## 2026-09-27 C168 受控恢复：JobAid 已保存，Overall 待接续
 
 C168 私有 ZIP 与 manifest 在 17c 核验版本、源提交、61/61 payload SHA 后通过官方 `openclaw skills install` 安装，`skills info` 为 Ready；额外 `.openclaw/source-origin.json` 是平台元数据。安装后消费者 0、cron 16 项全部停用。旧 claim 精确指向 WI `WI-d368f79e-4a5a-4615-ac00-7594b3ee5c53`、request `REQ-b5526e71-8a10-44d2-8bc9-dde3867044f6`、revision 3、generation 1、旧 Gateway 错误与 `consumerStopped=true`。17c 仅运行一次 C168 精确修复命令，绑定旧失败 attempt `AQ-d5ed83270aef4c02a439fd790fe8fbb4`；没有开启普通 tick 或 cron。
 
-刘轩本人 17b 页面见 JobAid 逐步保存工作修订 1→2→3→4，最终在 2026-09-27 14:11:45 +08 显示“候选待复核”“执行完成”，七个问题及来源依据可读；Overall 仍等待。17c 只读 Host 回执确认当前 WorkItem revision 4、`WAITING_INPUT`、`nextOperation=SYNTHESIZE_OVERALL`，JobAid attempt `AQ-195f73672fde4f8dae11deb51f39126f` / SUCCEEDED。`read_assessment_work` 对该 attempt 返回 SUCCEEDED、workRevision 4、basedOnWorkItemRevision 3、同一 WorkItem 与文档版本、同一 actionAttemptId。工作修订的 `requestId=JA-save-aec9b65c-ef71-42f9-ac02-335eb328daf9` 是保存请求身份，不是阶段修复请求。17c 最新本地 claim 为 generation 2、revision 3、`consumerStopped=false`、`completionReady=false`，租约到期 2026-09-27T07:04:46.848Z；初次观察到的 stopped=true 是过程状态，最终无需额外清除。原终端 stdout/stderr/退出码不可读，但 Host 和检查点读回证明这次 JobAid 已保存并可以继续 Overall。
+刘轩本人 17b 页面见 JobAid 逐步保存工作修订 1→2→3→4，最终在 2026-09-27 14:11:45 +08 显示“候选待复核”“执行完成”，八项问题及来源依据可读；Overall 当时仍等待。17c 只读 Host 回执确认当前 WorkItem revision 4、`WAITING_INPUT`、`nextOperation=SYNTHESIZE_OVERALL`，JobAid attempt `AQ-195f73672fde4f8dae11deb51f39126f` / SUCCEEDED。`read_assessment_work` 对该 attempt 返回 SUCCEEDED、workRevision 4、basedOnWorkItemRevision 3、同一 WorkItem 与文档版本、同一 actionAttemptId。工作修订的 `requestId=JA-save-aec9b65c-ef71-42f9-ac02-335eb328daf9` 是保存请求身份，不是阶段修复请求。17c 最新本地 claim 为 generation 2、revision 3、`consumerStopped=false`、`completionReady=false`，租约到期 2026-09-27T07:04:46.848Z；初次观察到的 stopped=true 是过程状态，最终无需额外清除。原终端 stdout/stderr/退出码不可读，但 Host 和检查点读回证明这次 JobAid 已保存并可以继续 Overall。
 
 曾准备 C169 来清除看似未解除的停止标记；进一步回读否定其前提，且证明保存 `requestId` 不能作阶段身份。因此 C169 私有包虽已生成并上传，但**未在 17c 安装或运行**；草案提交 `dce6936cc8e17d0f9ddd0e93e76d18d785168406` 已由 `af07c71de` 撤销。当前运行版本仍为 C168。普通受控 Overall tick 尚未发出：17c 标签被旧浏览器自动化 session 占用，终端暂不可确认，且 gen2 租约临近 07:04:46.848Z 到期；先恢复可读终端，到期后只对原 WorkItem 精确重领。随后从 Host 下一阶段 Overall 接续，再读回综合候选、资料库与 Wiki；无人值守 cron 保持停用。JobAid 成功只是局部证据，不代表全流程验收。
 
