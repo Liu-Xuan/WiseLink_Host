@@ -713,11 +713,28 @@ export async function invokeHostedJobAidProblemModel(
         message.function_call == null && corrections < maxCorrections) {
       outputUnits += Buffer.byteLength(message.content);
       corrections += 1;
-      messages = [...messages, { role: 'user', content: JSON.stringify({
+      const correction = { role: 'user', content: JSON.stringify({
         accepted: false, errorCode: 'JOBAID_MODEL_OUTPUT_FUNCTION_REQUIRED', expectedWorkRevision,
-        instruction: `Your completed text-only response did not submit any step. Return exactly one ${FUNCTION} function call. Continue the existing investigation and correct the prior rejected work using its evidence and receipt; do not restart the assessment or treat prose as saved work.`,
+        instruction: `Your completed text-only response did not submit any step. Return exactly one ${FUNCTION} function call. Continue the existing investigation and correct the prior rejected work using its evidence and receipt; do not restart the assessment or treat prose as saved work. If the Host-saved work is complete and needs no further evidence or correction, call FINISH; otherwise call READ_SOURCES or SAVE_WORK as appropriate.`,
         ...priorRejectedRatingCorrection(messages, modelInput),
-      }) }];
+      }) };
+      // A confirmed SAVE has already been read back from Host. If this native
+      // segment has only produced text-only replies since that SAVE, rotate to
+      // a fresh segment with the exact saved-work context and receipt. Keeping
+      // the same native session repeatedly replays a growing model history.
+      // A source read or rejected work must stay in its original segment so its
+      // evidence and correction receipt are not lost.
+      const saveReceipt = messages[2]?.role === 'user'
+        ? parseStrictJsonObject(messages[2].content) : null;
+      const canRotateSavedText = boundedInitialJobAid && saved && !forceSaveBeforeRead &&
+        saveReceipt?.status === 'HOST_SAVE_CONFIRMED' &&
+        saveReceipt.workRevisionRef === saved.workRevisionRef &&
+        messages.slice(3).every(item => item.role === 'user' &&
+          parseStrictJsonObject(item.content)?.errorCode === 'JOBAID_MODEL_OUTPUT_FUNCTION_REQUIRED');
+      if (canRotateSavedText) {
+        nativeSessionSegment++;
+        messages = [systemMessage, initialContextMessage, messages[2], correction];
+      } else messages = [...messages, correction];
       await options.observeCandidateRejection?.({ modelRound: round, correctionNo: corrections, code: 'JOBAID_MODEL_OUTPUT_FUNCTION_REQUIRED' });
       await persistAssessmentState(round + 1);
       continue;

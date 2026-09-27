@@ -200,7 +200,7 @@ function startActivityLease({ call, fence, documentVersionId, runRef, deadline, 
     busy = true;
     const sentAt = Date.now();
     const requestSignal = AbortSignal.any([
-      controller.signal, AbortSignal.timeout(Math.max(1, Math.min(HOST_ACTIVITY_LEASE_MS / 2, deadlineAt - sentAt, leaseExpiresAt - sentAt))),
+      controller.signal, AbortSignal.timeout(Math.max(1, Math.min(HOST_ACTIVITY_LEASE_MS / 2, leaseExpiresAt - sentAt))),
     ]);
     busyDone = withActivitySignal(() => call('ACTIVITY_HEARTBEAT',
       { ...fence, documentVersionId, runRef }, { signal: requestSignal, timeout: HOST_ACTIVITY_LEASE_MS }), requestSignal)
