@@ -2,14 +2,14 @@ import type { DocumentOriginalResult } from '@shared/document-original.interface
 import type { TranslationStructuredSourceUnit } from '@shared/canonical-translation-v2.interface';
 import type { DocumentPdfExtraction, DocumentPdfPage } from './document-original-pdf';
 import { mineruPageFurniture } from '../../../../professional-input/mineru/mineru-page-furniture';
-import { originalPageLayout } from './document-original-layout';
+import { originalPageLayout, type OriginalLayoutLine } from './document-original-layout';
 import { normalizeOriginalWhitespace, originalMarkdownText } from './document-original-text';
 import { documentOriginalStructuredSource } from './document-original-adapter';
 
 type Box = [number, number, number, number];
 type Region = { box: Box; discardedFurniture: boolean; native: boolean };
-/** Preserve OCR; add only independently located text outside every known MinerU region.
- * Text inside an uncertain/incorrect region is reported, never spliced into its structure. */
+/** Preserve OCR; add independently located text outside MinerU regions. A narrowly
+ * evidenced, single-column prose table may be replaced by its PDF text layer. */
 export function reconcileMineruTextCoverage(input: {
   original: DocumentOriginalResult; extraction: DocumentPdfExtraction; rawMiddle: unknown; rawContentListV2: unknown;
 }): DocumentOriginalResult {
@@ -34,6 +34,7 @@ export function reconcileMineruTextCoverage(input: {
       limit('STRUCTURE_UNCERTAIN', pageIndex, [], 'PDF 文本层与 MinerU 的位置无法可靠对应；未自动补入文字，请核对原页。');
       continue;
     }
+    recoverProseTables(original, page, layout.lines, input.rawContentListV2[pageIndex]);
     for (const [lineIndex, line] of layout.lines.entries()) {
       const box: Box = [line.x, page.height - line.y - line.height, line.x + line.width, page.height - line.y];
       const touched = regions.filter(region => overlaps(box, region.box));
@@ -112,6 +113,113 @@ export function reconcileMineruTextCoverage(input: {
   function limit(reason: 'TEXT_CONFLICT' | 'STRUCTURE_UNCERTAIN', pageIndex: number, unitIds: string[], message: string) {
     original.coverage.unresolvedRanges.push({ reason, pageIndexes: [pageIndex], unitIds, readingImpact: 'LIMITATION', message });
   }
+}
+function recoverProseTables(original: DocumentOriginalResult, page: DocumentPdfPage,
+  lines: OriginalLayoutLine[], rawPage: unknown): void {
+  if (!Array.isArray(rawPage)) return;
+  for (const unit of original.source.units) {
+    if (unit.kind !== 'table' || Number(unit.mapping.pageIndex) !== page.pageIndex) continue;
+    const pointer = unit.mapping.sourcePointer;
+    const match = typeof pointer === 'string' && /^\/raw\/contentListV2\/\d+\/\d+$/u.exec(pointer);
+    if (!match) continue;
+    const parts = pointer.split('/');
+    if (Number(parts[3]) !== page.pageIndex) continue;
+    const rawIndex = Number(parts[4]);
+    const raw = rawPage[rawIndex];
+    if (!raw || typeof raw !== 'object' || Array.isArray(raw)) continue;
+    const entry = raw as Record<string, unknown>;
+    if (entry.type !== 'table' || !singleColumnProseTable(unit, entry)) continue;
+    const box = scaledBox(unit.mapping.nativeBbox, page);
+    if (!box) continue;
+    // Reader may omit furniture from source.units, but its raw region still blocks recovery.
+    if (rawPage.some((other, index) => {
+      if (index === rawIndex) return false;
+      const otherBox = scaledBox(record(other).bbox, page);
+      return otherBox !== null && overlaps(otherBox, box);
+    })) continue;
+    const touched = lines.filter(line => overlaps(lineBox(line, page), box));
+    if (touched.length < 4 || touched.some(line => line.runs.length !== 1 ||
+        !contains(box, lineBox(line, page)) || !line.text.trim())) continue;
+    // All text in the candidate region must form one continuous, left-aligned run.
+    const lefts = touched.map(line => line.x);
+    if (Math.max(...lefts) - Math.min(...lefts) > 12 ||
+        lineBox(touched[0], page)[1] - box[1] > touched[0].height * 1.5 ||
+        box[3] - lineBox(touched.at(-1)!, page)[3] > touched.at(-1)!.height * 1.5 ||
+        lines.some(line => lineBox(line, page)[1] < box[3] &&
+          lineBox(line, page)[3] > box[1] && !touched.includes(line)) ||
+        touched.some((line, index) => index > 0 &&
+          touched[index - 1].y - line.y > Math.max(line.height, touched[index - 1].height) * 2)) continue;
+    if (original.source.units.some(other => {
+      if (other.unitId === unit.unitId || Number(other.mapping.pageIndex) !== page.pageIndex) return false;
+      const otherBox = scaledBox(other.mapping.nativeBbox, page);
+      return otherBox !== null && overlaps(otherBox, box);
+    })) continue;
+    const pdfText = touched.map(line => line.text).join(' ');
+    const ocrText = tableRows(unit).join(' ');
+    const pdfWords = words(pdfText), ocrWords = words(ocrText);
+    if (pdfWords.length < 35 || ocrWords.length < 12 ||
+        pdfText.length < ocrText.length * 1.2 || !sharedPhrase(pdfWords, ocrWords, 5) ||
+        !touched.some(line => line.text.length >= 35 &&
+          words(line.text).filter(word => ocrWords.includes(word)).length < words(line.text).length * 0.55)) continue;
+    unit.kind = 'paragraph';
+    unit.mapping = { ...unit.mapping, extraction: 'PDFJS_TEXT_LAYER',
+      supplementation: 'INSIDE_MINERU_PROSE_TABLE',
+      textItems: touched.map(line => ({ pageIndex: page.pageIndex, itemIndexes: [...line.itemIndexes] })) };
+    unit.payload = { rawMineruContent: unit.payload.rawMineruContent,
+      originalBlockType: unit.payload.originalBlockType, text: pdfText };
+    const ref = unit.sourceRefIds[0];
+    const locator = original.source.sourceLocators.find(item => item.sourceRefId === ref);
+    if (locator) locator.quote = pdfText;
+    const location = original.locations.find(item => item.sourceRefId === ref);
+    if (location) Object.assign(location, { precision: 'TEXT_ITEM', coordinateSpace: 'PDF_VIEWPORT_TOP_LEFT',
+      viewportWidth: page.width, viewportHeight: page.height,
+      boxes: touched.map(line => {
+        const bounds = lineBox(line, page);
+        return [bounds[0], bounds[1], line.width, line.height];
+      }) });
+    original.source.findings.push({ findingId: `${unit.unitId}:pdf-prose-recovery`,
+      code: 'PDF_TEXT_REGION_RECOVERY', severity: 'warning', readingImpact: 'DIAGNOSTIC', blocking: false,
+      message: 'MinerU 将单栏连续正文识别为一列表格；同源 PDF 文本层提供局部阅读恢复，原始块及指针已保留。决定性工程判断仍须核对 PDF 原页。',
+      affectedUnitIds: [unit.unitId], sourceRefIds: [ref], pageIndexes: [page.pageIndex] });
+  }
+}
+function singleColumnProseTable(unit: TranslationStructuredSourceUnit, raw: Record<string, unknown>): boolean {
+  const content = raw.content;
+  if (!content || typeof content !== 'object' || Array.isArray(content)) return false;
+  const table = content as Record<string, unknown>;
+  if (table.table_nest_level !== 1 || table.table_type !== 'simple_table' ||
+      (table.table_caption !== undefined &&
+        (!Array.isArray(table.table_caption) || table.table_caption.length > 0)) ||
+      (table.table_footnote !== undefined &&
+        (!Array.isArray(table.table_footnote) || table.table_footnote.length > 0)) ||
+      (typeof unit.payload.caption === 'string' && unit.payload.caption.trim()) ||
+      (typeof unit.payload.rawText === 'string' && unit.payload.rawText.trim()) ||
+      unit.payload.columnCount !== 1) return false;
+  const rows = unit.payload.rowGroups;
+  if (!Array.isArray(rows) || rows.length !== 1 || !Array.isArray(rows[0]?.rows) ||
+      rows[0].rows.length < 3) return false;
+  return rows[0].rows.every((row: { cells?: Array<{ rowSpan?: number; colSpan?: number; isHeader?: boolean }> }) =>
+    Array.isArray(row.cells) && row.cells.length === 1 && row.cells[0].rowSpan === 1 &&
+    row.cells[0].colSpan === 1 && row.cells[0].isHeader === false);
+}
+function tableRows(unit: TranslationStructuredSourceUnit): string[] {
+  const groups = unit.payload.rowGroups as Array<{ rows: Array<{ cells: Array<{
+    inlineContent: Array<{ text: string }> }> }> }>;
+  return groups[0].rows.map(row => row.cells[0].inlineContent.map(item => item.text).join(''));
+}
+function words(value: string): string[] {
+  return value.toLocaleLowerCase('en').match(/[\p{L}\p{N}]+/gu) ?? [];
+}
+function sharedPhrase(left: string[], right: string[], length: number): boolean {
+  const phrases = new Set<string>();
+  for (let index = 0; index <= right.length - length; index++)
+    phrases.add(right.slice(index, index + length).join(' '));
+  for (let index = 0; index <= left.length - length; index++)
+    if (phrases.has(left.slice(index, index + length).join(' '))) return true;
+  return false;
+}
+function lineBox(line: OriginalLayoutLine, page: DocumentPdfPage): Box {
+  return [line.x, page.height - line.y - line.height, line.x + line.width, page.height - line.y];
 }
 function pageRegions(middle: Record<string, unknown>, rawV2: unknown, page: DocumentPdfPage, omitted: (block: Record<string, unknown>) => boolean): Region[] | null {
   if (page.rotation !== 0 || !Array.isArray(middle.page_size) || middle.page_size.length !== 2 || !Array.isArray(rawV2) ||

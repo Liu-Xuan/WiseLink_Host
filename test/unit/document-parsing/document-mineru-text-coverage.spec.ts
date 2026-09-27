@@ -36,6 +36,84 @@ it('retains a table without injecting a partly unmatched physical line into its 
   expect(result.coverage.unresolvedRanges).toContainEqual(expect.objectContaining({ reason: 'TEXT_CONFLICT', readingImpact: 'LIMITATION' }));
   expect(documentOriginalReadingCoverage(result).unresolvedRanges.some(range => range.message.includes('Covered extra limit'))).toBe(true);
 });
+it('recovers a continuous single-column prose region with PDF item provenance and retained raw pointer', () => {
+  const table = { type: 'table', bbox: [10, 100, 400, 190], content: {
+    table_type: 'simple_table', table_nest_level: 1, table_caption: [], table_footnote: [],
+    html: '<table><tr><td>Aircraft certified for fail operational autoland may see warning messages.</td></tr>' +
+      '<tr><td>Operators have also experienced warning status during approach.</td></tr>' +
+      '<tr><td>Displayed on the maintenance page for the crew to review.</td></tr></table>',
+  } };
+  const lines = [
+    'Some operators have experienced a loss of guidance and autopilot disconnects on approach.',
+    'Aircraft certified for fail operational autoland may see warning messages.',
+    'Operators have also experienced warning status during approach.',
+    'Displayed on the maintenance page for the crew to review.',
+    'In addition, the flight crew should review the indicated condition before departure.',
+  ].map((text, index) => ({ text, top: 105 + index * 18 }));
+  const input = fixture([[table]], [page(lines)]);
+  const result = reconcileMineruTextCoverage(input);
+  const unit = result.source.units[0];
+  expect(result.source.units).toHaveLength(1);
+  expect(unit.kind).toBe('paragraph');
+  expect(unit.payload.text).toContain('Some operators');
+  expect(unit.payload.text).toContain('In addition');
+  expect(unit.payload.rawMineruContent).toEqual(table.content);
+  expect(unit.mapping.sourcePointer).toBe('/raw/contentListV2/0/0');
+  expect(unit.mapping.textItems).toHaveLength(5);
+  expect(result.locations[0].precision).toBe('TEXT_ITEM');
+  expect(result.source.findings).toContainEqual(expect.objectContaining({
+    code: 'PDF_TEXT_REGION_RECOVERY', message: expect.stringContaining('决定性工程判断仍须核对 PDF 原页') }));
+  expect(result.coverage.unresolvedRanges.filter(range => range.reason === 'TEXT_CONFLICT')).toEqual([]);
+  expect(input.original.source.units[0].kind).toBe('table');
+});
+it('refuses prose recovery when an omitted raw furniture block overlaps the candidate', () => {
+  const table = { type: 'table', bbox: [10, 100, 400, 190], content: {
+    table_type: 'simple_table', table_nest_level: 1, table_caption: [], table_footnote: [],
+    html: '<table><tr><td>Aircraft certified for fail operational autoland may see warning messages.</td></tr>' +
+      '<tr><td>Operators have also experienced warning status during approach.</td></tr>' +
+      '<tr><td>Displayed on the maintenance page for the crew to review.</td></tr></table>',
+  } };
+  const footer = { type: 'page_footer', bbox: [10, 160, 200, 185],
+    content: { page_footer_content: [{ type: 'text', content: 'Publication footer' }] } };
+  const lines = [
+    'Some operators have experienced a loss of guidance and autopilot disconnects on approach.',
+    'Aircraft certified for fail operational autoland may see warning messages.',
+    'Operators have also experienced warning status during approach.',
+    'Displayed on the maintenance page for the crew to review.',
+    'In addition, the flight crew should review the indicated condition before departure.',
+  ].map((text, index) => ({ text, top: 105 + index * 18 }));
+  const input = fixture([[table, footer]], [page(lines)]);
+  expect(input.original.source.units).toHaveLength(1);
+  const result = reconcileMineruTextCoverage(input);
+  expect(result.source.units[0].kind).toBe('table');
+  expect(result.source.findings.some(finding => finding.code === 'PDF_TEXT_REGION_RECOVERY')).toBe(false);
+  expect(result.coverage.unresolvedRanges).toContainEqual(expect.objectContaining({
+    reason: 'TEXT_CONFLICT', readingImpact: 'LIMITATION' }));
+});
+it('keeps a one-column table when its rows have a header or the PDF has separate columns', () => {
+  const table = { type: 'table', bbox: [10, 100, 700, 205], content: {
+    table_type: 'simple_table', table_nest_level: 1,
+    html: '<table><tr><th>Aircraft certified for fail operational autoland</th></tr>' +
+      '<tr><td>Operators have also experienced warning status</td></tr>' +
+      '<tr><td>Displayed on the maintenance page</td></tr></table>',
+  } };
+  const lines = [
+    { text: 'Missing explanation about the condition', top: 105 },
+    { text: 'Aircraft certified for fail operational autoland', top: 123 },
+    { text: 'Operators have also experienced warning status', top: 141 },
+    { text: 'Displayed on the maintenance page', top: 159 },
+  ];
+  const header = reconcileMineruTextCoverage(fixture([[table]], [page(lines)]));
+  expect(header.source.units[0].kind).toBe('table');
+  expect(header.coverage.unresolvedRanges).toContainEqual(expect.objectContaining({
+    reason: 'TEXT_CONFLICT', readingImpact: 'LIMITATION' }));
+  const noHeader = structuredClone(table);
+  noHeader.content.html = noHeader.content.html.replace('<th>', '<td>').replace('</th>', '</td>');
+  const columns = reconcileMineruTextCoverage(fixture([[noHeader]],
+    [page([...lines, { text: 'Another column', top: 141, x: 500 }])]));
+  expect(columns.source.units[0].kind).toBe('table');
+  expect(columns.source.findings.some(finding => finding.code === 'PDF_TEXT_REGION_RECOVERY')).toBe(false);
+});
 it('honors discarded/preprocessing regions and keeps geometry-uncertain text as a limitation', () => {
   const result = reconcileMineruTextCoverage(fixture([[paragraph('Body', [10, 300, 120, 315])]], [page([{ text: 'Discarded header', top: 20 }, { text: 'Body', top: 300 }])],
     { discarded_blocks: [{ type: 'header', bbox: [0, 0, 200, 60], lines: [{ spans: [{ content: 'Discarded header' }] }] }] }));
