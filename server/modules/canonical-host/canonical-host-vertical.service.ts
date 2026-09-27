@@ -68,6 +68,7 @@ import { CanonicalEntryFacadeService } from './canonical-entry-facade.service';
 import { projectConfigurationEvidenceReevaluationStatus } from './configuration-evidence/configuration-evidence-reevaluation.state';
 import { CanonicalFailureRecordingService } from './canonical-failure-recording.service';
 import { CanonicalHostInitialAnalysisStatusService } from './canonical-host-initial-analysis-status.service';
+import { CanonicalLibraryRepository } from './canonical-library.repository';
 import {
   deriveTranslationConsumptionAxes,
   type CanonicalTranslationConsumptionBinding,
@@ -137,6 +138,8 @@ export class CanonicalHostVerticalService {
     private readonly initialAnalysisStatus?: CanonicalHostInitialAnalysisStatusService,
     @Optional()
     private readonly semanticTranslation?: CanonicalTranslationV2Service,
+    @Optional()
+    private readonly library?: CanonicalLibraryRepository,
   ) {}
 
   async runPdf(
@@ -681,6 +684,13 @@ export class CanonicalHostVerticalService {
       schemaVersion: CANONICAL_HOST.documentParsingPageSchemaVersion,
       status: 'FRESH_READ',
       workItem: projection,
+      documentCurrentness: this.library
+        ? await this.library.readWorkItemDocumentCurrentness({
+            tenantId: actor.tenantId,
+            actorUserId: actor.userId,
+            workItemId: projection.workItemId,
+          })
+        : null,
       entry: this.entryFacade.status(projection),
       queryResults,
       readerProjection: buildReaderProjection(

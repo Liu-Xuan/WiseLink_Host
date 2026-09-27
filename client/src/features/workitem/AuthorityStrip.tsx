@@ -61,7 +61,7 @@ export default function AuthorityStrip({ view }: { view: WorkItemView }) {
 
       <span className="wl-authority-chip is-muted">
         <Clock3 aria-hidden="true" />
-        当前文件版本已绑定
+        {view.documentCurrent === false ? '历史文件版本已绑定' : '当前文件版本已绑定'}
       </span>
 
       <span className="wl-authority-meta">

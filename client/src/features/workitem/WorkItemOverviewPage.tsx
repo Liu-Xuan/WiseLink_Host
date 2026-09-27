@@ -261,6 +261,11 @@ export default function WorkItemOverviewPage() {
           {overallRegeneration.message}
         </p>
       ) : null}
+      {!visibleView.document.selectedVersionIsCurrent ? (
+        <p className="wl-projection-refresh" role="status">
+          这份评估绑定历史文件版本；同一文档已有更新版本。以下结论保留供追溯，不能直接作为当前版本的判断。
+        </p>
+      ) : null}
       <EngineeringQuicklook
         title={
           visibleView.document.documentCode || '文档编号待核'

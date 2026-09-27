@@ -178,7 +178,9 @@ export class MiaodaAutomaticWorkItemLeaseAuthorizationAdapter implements Automat
     >;
     try {
       source = await this.sourceResolver.resolve(grant.documentVersionId, {
-        requireCurrent: true,
+        // A completed WorkItem may be corrected after a later document version
+        // arrives. Keep the immutable source pinned to this historical task.
+        requireCurrent: false,
         expectedCreatorUserId: grant.actorUserId,
       });
     } catch (error) {
