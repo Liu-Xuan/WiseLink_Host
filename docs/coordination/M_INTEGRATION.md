@@ -1,5 +1,45 @@
 # M 主控集成交接
 
+## 2026-09-27 C178：启用默认自动执行并完成一次正常上传闭环
+
+用户明确授权启用本机仅出站 MinerU 后台 worker 与 17c 唯一动态自动队列 C136。安装 `com.wiselink.local-mineru-worker` 用户 LaunchAgent，单次执行间隔 60 秒；启动配置只含现有 0600 专用凭据文件的路径，不含密钥值。本机初次启动因 macOS TCC 拒绝在可移动卷创建 stdout 日志而退出 78；将 stdout/stderr 改至用户 `~/Library/Logs/WiseLink/` 后，`launchctl` 显示注册成功、运行间隔 60 秒、末次退出 0。配置文件位于 `~/Library/LaunchAgents/com.wiselink.local-mineru-worker.plist`，最终候选 SHA256 为 `db1c81f19b9fc0f1e53b515110bb1f4997c6e29d2663781a114a50c57816b037`。日志已出现一次 `ACCEPTED`，后续连续 `IDLE`，stderr 为空；本机旧 localhost MinerU 服务与此出站 worker 不混用。
+
+17c 仅启用动态 cron `38f1cc05-4a5e-4ec0-863c-e5b3d579048b`，命令为 `consume-hosted-work-item.mjs --auto-queue`，没有固定 WorkItem、Matter 或文档参数；其余 15 项仍停用。OpenClaw 页面读回调度已启用、最近多次成功且返回 `IDLE`，没有持续运行中的消费者。旧 C176 的“未启用”仅是启用前的历史快照，不再代表当前状态。
+
+刘轩本人经 17b 正常上传入口创建 `WI-be6e7fd2-0065-4bbc-aec0-d04f89dc2420`，确切文档版本 `document_version_0de2207a41f354cf6bac485c`。Host 登记的源文件哈希与 57,966 字节长度和本机原件一致；自动授权从 `WAITING` 经 generation 1 `LEASED` 到 `COMPLETED`，无 BLOCK。C136 自动领取，MinerU 对 `PRUN-6a96c063-bcf6-45b4-b62e-625fb67b68aa` 返回 `ACCEPTED`，Host 在 18:48:18 发布 78 个内容单元、61 个来源引用。第一次 JobAid 模型网关返回 `INCOMPLETE_TERMINAL_RESPONSE`，尝试取消；自动接续的第二次尝试保存六项问题工作，WorkItem 修订从 3 到 4，没有重跑解析。Overall 基于该确切工作修订自动保存，WorkItem 达修订 5、`CANDIDATE_READBACK_VERIFIED`，授权于 18:58:51 完成 ACK。没有人工逐阶段命令、正式采用或审批。
+
+工程师本人已在工作台读到短综合意见与可展开的问题、依据及限制；工程知识页按该 WorkItem 准确选中工作修订 2，首屏为简短综合意见，完整综合和六项问题分析收在展开项，并标记“已保存候选，尚非实施决定”。原件逐页校对支持主要协议、临时措施及里程碑表述；目标机队、可靠性及外部知识能力仍未连接，页面明确保留限制。资料库“最近任务”准确显示该版本的已保存简短评估，但默认“工程文档”行仍写“该版本尚无已保存解读”：这是独立 DocumentReading 尚未生成，不能把工作事项评估冒充文件通用解读；默认资料库交付尚有此缺口。后续优先让正常上传能产生或清楚呈现可追溯的文档简明解读，同时验证 ACK 丢失、旧租约及后继修订等隔离恢复路径。一次真实成功和一次网关自动接续不等于长期无人值守稳定性已经证明。
+
+## 2026-09-27 C176：仅出站本机自动启动配置已准备，未启用
+
+依现有已通过真实空队列调用的 worker 环境，在 `/private/tmp/wl-local-mineru-worker.prepared.plist` 生成候选 LaunchAgent（SHA256 `dfeb9f598fdc5bbacc3f28704079040f3a4f2f787766082343cdad95fdacb8ce`，0600）。标签 `com.wiselink.local-mineru-worker`，`RunAtLoad=true`、`StartInterval=60`，每次只运行不带 `--loop` 的单次 worker；环境仅存现有专用凭据文件路径与必要 Host/离线解析路径，不存密钥值。`plutil -lint` 通过、程序与配置路径均存在；`launchctl print` 返回该标签不存在，证明本轮没有注册启动。macOS 本机 `launchd.plist` 手册说明 `StartInterval` 触发时如果该 job 仍在运行，该次触发会跳过，因此一次长解析期间同一 job 不会叠加启动。此配置位于临时目录，正式安装前须再次核对路径和 SHA，并在获准后复制到用户 LaunchAgents、启动与读回；旧 `com.wiselink.mineru` localhost API 不在此配置范围。
+
+当前启用范围的用户答复仍未收到；17c C136 也仍停用。此准备不构成后台可用性或默认闭环验收。
+
+## 2026-09-27 C175：新凭据文件模式的真实空队列调用
+
+启用无人值守前，17b online 数据库通过官方只读 SQL 新鲜回读 `auto_work_item_authorization` 为 `COMPLETED=5`、`BLOCKED=1`，没有 `WAITING/LEASED`。在该快照后用 `WL_LOCAL_MINERU_API_KEY_FILE` 指向现有仓库外 0600 专用凭据，带确切 Host origin、应用 base path、离线 MinerU 配置与本机 Python，对 `scripts/local-mineru-worker.ts` 执行一次不带 `--loop` 的受控调用：实际返回 `{"status":"IDLE"}`、退出码 0。这验证了新文件读取方式在真实专用入口上完成一次空队列领取；没有解析、回传或后台进程。首次启动把 `$PWD` 单引号包裹，ts-node 在本地装载前因字面路径报 TS5083，未触达 Host；修正为可展开路径后一次成功，不计首次为业务失败。
+
+17c C136 仍停用，本机仅出站 worker 未常驻。需待先前提出的明确启用范围答复，才能安装后台自动运行、启用唯一动态 cron 并以正常上传文档验收默认闭环；本次 `IDLE` 只证明凭据/入口可达，不证明未来新任务的自动处理。
+
+## 2026-09-27 C174：本机 worker 凭据文件与 17c 登录核对
+
+本机仅出站 MinerU worker 原先只接受环境变量中的 API key；要作为后台进程运行会迫使启动配置携带明文密钥。现增加 `WL_LOCAL_MINERU_API_KEY_FILE`，从绝对路径的本机私有 JSON 文件读取现有 `api_key`，要求普通文件、当前用户持有、权限不开放给组或其他用户、大小不超过 4 KiB，并拒绝符号链接及同时提供环境变量密钥。读取后移除两种凭据环境变量，再启动解析子进程；四条 Host 路由、逐任务授权及租约合同不变。现有仓库外 0600 凭据文件实读成功，只输出非空布尔结果；定向 worker 单测 20/20、独立 TypeScript 检查和差异检查通过。此改动仅为后台启动准备，未安装或启动新的常驻 worker。
+
+实现及本段首次记录提交 `671d16cc0a482a62ad97de6da4504b23070a955a`（父 `4cf855229861b3ab7947a06f79e100b208c0466a`），提交前检查通过，已快进同步 origin 同名开发分支并读回精确 SHA；不推送公开 GitHub，也没有触发 17b 发布。
+
+本机 `com.wiselink.mineru` 是旧的 localhost API 进程，不是仅出站 worker。用户重新登录 17c 内部浏览器后，原终端现场只读回执：`pgrep` 无 `consume-hosted-work-item.mjs` 进程；官方 `openclaw cron list --all --json` 返回 16 条、启用 0、运行 0，动态队列 C136 `38f1cc05-4a5e-4ec0-863c-e5b3d579048b` 为 disabled、`runningAtMs=null`。自动队列目录仅有一个 0600 的 5 字节 `active-claim.json`，内容为 JSON `null`，不是活动租约；目标 787 WorkItem 无活动 claim。此前 Host 队列终态仍是上次核验时点，本轮未再次调用 Host MCP。用户尚未回复常驻 worker 与单一动态 17c cron 的启用授权；新的正常上传默认闭环仍待该范围确认、启用后观察与真实上传验证。
+
+后续只读核对 C136 定义：原生 `everyMs=60000`、`sessionTarget=isolated`；payload 含 `consume-hosted-work-item.mjs --auto-queue`，不含固定 `--work-item-id`、`--matter-id` 或 `--document-version-id`。这证实 C136 指向动态队列且当前每分钟触发一次；尚未验证启用后的实际重叠调度行为。本机 `launchctl` 重新读回的 `com.wiselink.mineru` 仍是旧 localhost API（PID 792），与仅出站 worker 不同；受限进程列表接口本轮不能独立列出本机 Node worker，因此不能把该失败当作进程不存在的证据。
+
+## 2026-09-27 C173：工作事项图谱复用确切工程认识
+
+真实 787 工作图谱的节点和右侧检查器原来只显示 LibraryIndex 的技术身份与状态，工程师需另开知识页才能知道这份工作得出了什么判断。当前工作事项视图现在按 Host 返回的 `currentJobAidWorkRevisionRef` 调用现有 `readEngineeringKnowledgeWork`，在事项、JobAid、Overall 节点旁显示同一修订的简短问题认识或当前综合候选，并提供准确知识链接。旧综合为 `STALE` 时只显示当前问题认识和滞后提示；历史 `workRef` 与当前不符时保持原来的历史入口，不误读当前摘要。来源授权失败明确显示受阻和重试；隔离样例不发生产读取。没有新增结论存储、权限、接口或正式采用动作。
+
+本地交互测试 30/30、前端 TypeScript、源码 ESLint、CSS Stylelint、差异检查和提交前检查通过。源码提交 `e231e0bb8fdf1c39fda57a3653f4673d52fc84b1` 已快进推至 origin 同名开发分支；17b release `7690132193729629142` 最终为 `finished`、部署 commit 准确为该提交、`error_logs=[]`。刘轩本人在线打开 `WI-d368f79e-4a5a-4615-ac00-7594b3ee5c53` / `JAWR-23f7289f-07ea-440f-82ec-b2d07cef0b2c` 的图谱：默认工程事项视图 4 节点、2 条投影关系，右侧显示 TLS 1.0/1.2 故障机制、过渡措施和机队数据限制的已保存综合短意见，明确“已保存候选，尚非正式采用”，链接指向同一 `workRef` 的完整分析与来源。图谱边仍只表示 Host 保存的投影关系，不推断因果或正式采用。
+
+同轮在线只读核对自动队列为 `COMPLETED=5`、`BLOCKED=1`、无 `WAITING/LEASED`；目标授权仍 `COMPLETED`、generation 3、无 lease owner/期限。17c Chrome 已登录，但浏览器控制被另一个扩展弹窗占用，未取得新的 cron/消费者运行读回。仅出站本机 worker 与 C136 无人值守调度仍未启用；新上传默认自动闭环继续待批准启用与真实样本验证，不以该图谱改进替代。
+
 ## 2026-09-27 C172：本机解析轮询的临时故障恢复
 
 默认新解析已有仅出站 MinerU worker 的真实受控链路，但 `--loop` 原来在一次临时 Host 网络/网关错误后直接退出。本轮只修订现有本机 worker：对连接/读取响应中断，以及 408、429、500、502、503、504 最多连续尝试三次，间隔 5 秒、10 秒；持续失败即非零退出并留下错误码，成功 tick 后恢复常规 5 秒空闲轮询。401/403、来源/候选/租约校验或解析错误继续明确失败；不带 `--loop` 的单次受控运行仍不自动重试。候选在提交前仍按原合同落入私有缓存，响应不明时由 Host 的确切租约及回执决定是否复用，未增加队列、接口、身份或权限。
