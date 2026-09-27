@@ -18,7 +18,7 @@ import { homedir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
 import process from 'node:process';
 import { pathToFileURL } from 'node:url';
-import { createHostedReviewRequester, requestHostedGateway } from './request-hosted-gateway.mjs';
+import { classifyHostedGatewayFailure, createHostedReviewRequester, requestHostedGateway } from './request-hosted-gateway.mjs';
 
 import {
   HOST_MCP_TOOLS,
@@ -88,6 +88,7 @@ const GATEWAY_REVIEW_FAILURE_BANNER = '⚠️ 🧩 Return Wiselink Review Candid
 // MiniMax Chat Completions documents a 524288-token maximum (2026-09-08).
 // This is an output allowance, not a target length or actual usage claim.
 export const M3_MAX_COMPLETION_TOKENS = 524_288;
+export const M3_PROBE_REVIEW_MAX_COMPLETION_TOKENS = 32_768;
 
 /**
  * Execute one review turn with durable, model-external control-plane state.
@@ -144,7 +145,7 @@ export async function runHostedReviewTurn(options, dependencies = {}) {
       // A saved dialogue may quote the current task id in prose. Keep the Host
       // record intact, but project that exact reference out of model text too.
       const projected = projectCurrentTaskMentions(input, beginResult?.task?.workItemId);
-      input = projected.input;
+      input = projectJobAidUpdateInput(projected.input);
       assertModelInputHasNoControlPlane(input, normalized, beginResult);
       const nativeSessionKey = hostNativeSessionKey(beginResult);
       const isMatter = beginResult.task.modelInput.schemaVersion === REVIEW_MATTER_TASK_SCHEMA;
@@ -336,7 +337,9 @@ export function isUnpreparedReviewAttempt(value, attemptRef) {
 export async function invokeHostedReviewModel(input, options = {}, dependencies = {}) {
   const modelHeaders = executionModelHeaders(options);
   const maxCompletionTokens = options.executionModel?.modelRef === 'miaoda/minimax-m3'
-    ? M3_MAX_COMPLETION_TOKENS : undefined;
+    ? M3_MAX_COMPLETION_TOKENS
+    : options.executionModel?.modelRef === 'm3probe/minimax-m3'
+      ? M3_PROBE_REVIEW_MAX_COMPLETION_TOKENS : undefined;
   const gatewayUrl = requiredUrl(
     options.gatewayUrl,
     'REVIEW_GATEWAY_URL_REQUIRED',
@@ -360,11 +363,15 @@ export async function invokeHostedReviewModel(input, options = {}, dependencies 
   ) {
     throw new Error('REVIEW_MODEL_OUTPUT_SHAPE_OBSERVER_INVALID');
   }
-  const prompt = buildReviewPrompt(input);
   const isMatter = isRecord(input.input?.context?.matterWorking);
   const isJobAid = isRecord(input.input?.context?.problemAssessment);
   const isChat = input.input?.context?.purpose === 'CHAT';
   const isAssessmentUpdate = input.input?.context?.purpose === 'UPDATE_ASSESSMENT';
+  const sourceReadFirst = isJobAid && isAssessmentUpdate &&
+    input.input?.context?.problemAssessment?.availableSources?.some(
+      (source) => source.kind === 'DOCUMENT_PASSAGE') === true &&
+    Array.isArray(input.input?.availableSourceRefIds) && input.input.availableSourceRefIds.length > 0;
+  const prompt = buildReviewPrompt(input, { sourceReadFirst });
   // The live JobAid review was still producing output when the legacy 8-minute
   // budget aborted it. Match initial problem analysis's 30-minute total only
   // when the caller renews the exact Host lease before each request. One
@@ -426,9 +433,12 @@ export async function invokeHostedReviewModel(input, options = {}, dependencies 
           model: `openclaw/${agentId}`,
           ...(nativeSessionKey ? {} : { user: `review-driver:${sha256(sessionDiscriminator).slice(0, 24)}` }),
           messages,
-          tools: [reviewCandidateFunctionTool(isMatter, isJobAid, input.input?.attachmentRefs ?? [], isChat, isAssessmentUpdate), reviewSourceFunctionTool(),
-            ...(isChat && input.input?.context?.aily?.available === true ? [reviewAilyFunctionTool()] : [])],
-          tool_choice: isJobAid ? 'auto' : 'required',
+          tools: sourceReadFirst && sourceCache.size === 0
+            ? [reviewSourceFunctionTool()]
+            : [reviewCandidateFunctionTool(isMatter, isJobAid, input.input?.attachmentRefs ?? [], isChat, isAssessmentUpdate), reviewSourceFunctionTool(),
+              ...(isChat && input.input?.context?.aily?.available === true ? [reviewAilyFunctionTool()] : [])],
+          tool_choice: sourceReadFirst && sourceCache.size === 0 ? 'required' :
+            isJobAid ? 'auto' : 'required',
           parallel_tool_calls: false,
           n: 1,
           stream: false,
@@ -463,7 +473,10 @@ export async function invokeHostedReviewModel(input, options = {}, dependencies 
       payload,
     });
     if (observeOutputShape) await observeOutputShape(outputShape, round);
-    if (!response.ok) throw new Error(`REVIEW_GATEWAY_HTTP_${response.status}`);
+    if (!response.ok) {
+      const failure = classifyHostedGatewayFailure(payload);
+      throw new Error(`REVIEW_GATEWAY_HTTP_${response.status}${failure === 'UNCLASSIFIED' ? '' : `:${failure}`}`);
+    }
     if (outputShape.hasAnalysis) throw new Error('REVIEW_MODEL_ANALYSIS_FORBIDDEN');
     // This exact public Gateway error was returned as HTTP 200 with no calls.
     // Report the upstream timeout, rather than a misleading function-count
@@ -643,6 +656,11 @@ export async function invokeHostedReviewModel(input, options = {}, dependencies 
         throw new Error('REVIEW_MODEL_SOURCE_READER_REQUIRED');
       }
       const sources = await options.readSourceRefs(unread);
+      if (!Array.isArray(sources) || sources.length !== unread.length ||
+        new Set(sources.map((source) => source?.sourceRefId)).size !== unread.length ||
+        sources.some((source) => !unread.includes(source?.sourceRefId))) {
+        throw new Error('REVIEW_SOURCE_READBACK_INCOMPLETE');
+      }
       for (const source of sources) sourceCache.set(source.sourceRefId, source);
     }
     // The Gateway resumes its native history. Send only the new tool exchange,
@@ -1494,6 +1512,37 @@ function projectCurrentTaskMentions(input, workItemId) {
   return { input: project(input), changed };
 }
 
+// The Host validates the complete frozen task after generation. The model
+// receives the source directory and can read exact passages on demand, so
+// repeating every document excerpt and overview here wastes its finite output
+// budget on a correction to saved work.
+export function projectJobAidUpdateInput(input) {
+  const context = input?.context;
+  const assessment = context?.problemAssessment;
+  if (context?.purpose !== 'UPDATE_ASSESSMENT' || !isRecord(assessment) ||
+    !Array.isArray(assessment.deliveredEvidence) ||
+    !Array.isArray(assessment.availableSources)) return input;
+  const sourceRefs = new Set(assessment.availableSources.map((source) => source.ref));
+  const documentEvidence = assessment.deliveredEvidence.filter(
+    (entry) => entry.kind === 'DOCUMENT_PASSAGE');
+  if (documentEvidence.some((entry) => !sourceRefs.has(entry.evidenceRef))) {
+    throw new Error('REVIEW_JOBAID_SOURCE_PROJECTION_MISMATCH');
+  }
+  const { documentOverview: _overview, ...rest } = assessment;
+  return {
+    ...input,
+    context: {
+      ...context,
+      problemAssessment: {
+        ...rest,
+        deliveredEvidence: assessment.deliveredEvidence.filter(
+          (entry) => entry.kind !== 'DOCUMENT_PASSAGE'),
+        documentPreviewProjection: 'DOCUMENT_PASSAGE excerpts omitted from model prompt; exact refs and locators remain in availableSources. Read relevant authorized passages this turn before citing or changing their premises. Host retains the full task and validates the proposed update.',
+      },
+    },
+  };
+}
+
 function assertModelInputHasNoControlPlane(value, options, begin) {
   const serialized = JSON.stringify(value);
   const forbidden = [
@@ -1878,6 +1927,7 @@ function jobAidReviewGuidance() {
     'Omit retiredIssues when retiring no issue. unchangedIssueKeys may be omitted only when every previous issue is explicitly updated or retired; omission never drops a previous issue. Other work fields remain governed by the complete work contract.',
     'sourceRefs are document or attachment resources actually read this turn. candidateEvidenceRefs is a different field: use only current input.attachmentRefs that were actually read. With no current attachments omit candidateEvidenceRefs; if explicitly supplied, only [] is valid. Never put ordinary document SourceRefs, method references or working-delta source dependencies in candidateEvidenceRefs.',
     'context.problemAssessment is the actual saved JobAid problem work, method material, available source catalog and earlier discussion. Omit jobAidWorkingDelta for explanations and questions that change no working understanding. For a correction or new material, include a local work update preserving every unaffected issue and source/premise identity. Host saves the complete revised understanding and this reply atomically with CAS; this is an ordinary candidate update, not formal adoption. Never reconstruct a criterion checklist or generate replacement reasoning from an abbreviated brief.',
+    'For UPDATE_ASSESSMENT, reconcile every affected prior "unread" statement and open question with source fragments actually returned this turn. When the relevant heading and its body were read, do not retain a claim that they were unread; update that issue and its question scope. A source directory alone does not establish reading, and parsed text alone does not prove that no hidden or graphical content exists. State that limitation precisely rather than inventing an absent section. Preserve previousWork.content.roundCompletion when the correction leaves its prior completion scope intact. Open questions can remain under COMPLETE_WITH_OPEN_QUESTIONS; use IN_PROGRESS only when newly identified unfinished investigation materially prevents completing this round, and say what it is. An engineer request for later Overall does not justify falsely marking work complete.',
     'Read relevant DOCUMENT_PASSAGE and ENGINEER_ATTACHMENT resources through the current source-read function. The catalog is not a read receipt. Previously saved sources freshly supplied in deliveredEvidence may support retained work; new citations require actual current delivery. Keep sourceRefs limited to resources read this turn; method evidence remains METHOD_CLAUSE in the working update and never pretends to be a document SourceRef. ENGINEER_ATTACHMENT proves only what the uploaded material reports, not implemented controls or controlled Host facts.',
     JOBAID_WORK_GUIDANCE,
   ];
@@ -1890,13 +1940,15 @@ function reviewAilyFunctionTool() {
       properties: { query: { type: 'string', minLength: 1, maxLength: 4000 } } } } };
 }
 
-function buildReviewPrompt(input) {
+function buildReviewPrompt(input, { sourceReadFirst = false } = {}) {
   const isMatter = isRecord(input.input?.context?.matterWorking);
   const isJobAid = isRecord(input.input?.context?.problemAssessment);
   const isChat = input.input?.context?.purpose === 'CHAT';
   return [
     'Generate one candidate-only WiseLink engineering review response from the engineer message and the current Host-frozen context.',
-    `Call ${REVIEW_OUTPUT_FUNCTION_NAME} exactly once. It is only a serialization channel and will not be executed. Emit no prose outside its arguments.`,
+    sourceReadFirst
+      ? `First call ${REVIEW_READ_FUNCTION_NAME} for only the relevant authorized document fragments. Then call ${REVIEW_OUTPUT_FUNCTION_NAME} exactly once in the following response. It is only a serialization channel and will not be executed. Emit no prose outside function arguments.`
+      : `Call ${REVIEW_OUTPUT_FUNCTION_NAME} exactly once. It is only a serialization channel and will not be executed. Emit no prose outside its arguments.`,
     'Use sourceRefs and candidateEvidenceRefs only from SOURCE_REFS read this turn. Never invent facts, IDs, evidence, adoption, approval, publication, confirmation, current changes, or gap closure.',
     'When the engineer asks to locate, cite, or return a SourceRef, use SOURCE_LINK and include at least one relevant sourceRefs entry read this turn. SOURCE_LINK with an empty sourceRefs array is invalid.',
     ...(isChat ? [
@@ -1915,7 +1967,7 @@ function buildReviewPrompt(input) {
       'decisionSnapshot must contain exactly: assessmentAsOf, evidenceHorizon, currentBestJudgment, alternativeJudgments, decisionMaturity, decisiveFacts, assumptions, residualUncertainties, uncertaintyDispositions, controlsAndMitigations, monitoringPlan, validUntil, reviewBy, reopenTriggers, whatWouldChangeDecision, candidateOnly. Its uncertaintyDispositions must exactly equal the draft list and candidateOnly must be true.',
       'Copy only allowed revision, evaluation item, adopted input, source, attachment, and gap refs from INPUT. A draft proposes change but never confirms or executes it.',
     ]),
-    ...(input.input?.context?.purpose === 'UPDATE_ASSESSMENT' ? ['This explicit Update Assessment action consumes the selected discussion in context.discussion and the current saved assessment. Return a non-null jobAidWorkingDelta (JobAid) or matterWorkingDelta (Matter) containing the actual proposed work changes. An answer that merely describes changes is not an assessment update and will be rejected. Preserve unaffected work and record unknowns/open questions in the delta; never invent facts to complete it. Assistant replies are candidates to evaluate, never authoritative facts. Do not import unselected native conversation memory or later messages.'] : []),
+    ...(input.input?.context?.purpose === 'UPDATE_ASSESSMENT' ? ['This explicit Update Assessment action consumes the selected discussion in context.discussion and the current saved assessment. Return a non-null jobAidWorkingDelta (JobAid) or matterWorkingDelta (Matter) containing the actual proposed work changes. An answer that merely describes changes is not an assessment update and will be rejected. For JobAid, update only affected issues and list other saved issue keys as unchangedIssueKeys; do not rewrite unaffected issue bodies, measures or premises. Preserve unknowns/open questions and never invent facts to complete the delta. Assistant replies are candidates to evaluate, never authoritative facts. Do not import unselected native conversation memory or later messages.'] : []),
     'State the current best bounded judgment, remaining uncertainty, and what would change the judgment when relevant.',
     'Use context.commonContext when supplied: continue prior discussion and later engineer corrections, distinguishing historical working answers from adopted inputs and current evidence. Report omitted history or unavailable RAG honestly. Procedural-reference catalogs and historical attachment names do not mean their contents were read.',
     `Use ${REVIEW_READ_FUNCTION_NAME} as needed, then continue your analysis from the returned fragments. Start from ${isChat ? 'the engineer question and saved understanding' : isJobAid ? 'the saved issue and current question' : isMatter ? 'the Matter working focus' : 'the selected criterion'} and current question; read relevant engineer attachments as well when they affect the question. Do not read every available source just because it is listed.`,
