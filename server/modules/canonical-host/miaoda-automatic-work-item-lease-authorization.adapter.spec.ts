@@ -427,6 +427,10 @@ describe('successor Review exact delegation', () => {
     );
     expect(state.binding.authorization.status).toBe('COMPLETED');
     expect(state.binding.authorization.leaseGeneration).toBe(3);
+    expect(state.sourceResolver.resolve).toHaveBeenCalledWith(DOCUMENT_VERSION_ID, {
+      requireCurrent: false,
+      expectedCreatorUserId: ACTOR_ID,
+    });
   });
   it.each([
     ['old payload', { overallRequested: undefined }],

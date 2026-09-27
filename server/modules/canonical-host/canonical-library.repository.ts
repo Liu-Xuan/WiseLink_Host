@@ -72,6 +72,27 @@ export class CanonicalLibraryRepository {
     @Inject(DRIZZLE_DATABASE) private readonly db: PostgresJsDatabase,
   ) {}
 
+  /** Lightweight currentness read for the version-bound workbench header. */
+  async readWorkItemDocumentCurrentness(
+    input: CanonicalLibraryQueryScope & { workItemId: string },
+  ): Promise<boolean | null> {
+    const [row] = await this.db
+      .select({ selectedVersionIsCurrent: summaryColumns.selectedVersionIsCurrent })
+      .from(workItem)
+      .innerJoin(dmDocumentVersion, and(
+        eq(dmDocumentVersion.documentVersionId, workItem.documentVersionId),
+        eq(dmDocumentVersion.documentId, workItem.documentId),
+      ))
+      .innerJoin(dmPublicationFamily, eq(dmPublicationFamily.familyId, dmDocumentVersion.familyId))
+      .where(and(
+        eq(workItem.tenantId, input.tenantId),
+        eq(workItem.requestedByUserId, input.actorUserId),
+        eq(workItem.workItemId, input.workItemId),
+      ))
+      .limit(1);
+    return row?.selectedVersionIsCurrent ?? null;
+  }
+
   listDocuments(
     input: CanonicalLibraryQueryScope & {
       normalizedFamily?: string;

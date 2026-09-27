@@ -3472,6 +3472,8 @@ export interface CanonicalDocumentParsingPageResponse {
   schemaVersion: 'wiselink.3_1.document_parsing_page.v0.candidate';
   status: 'FRESH_READ';
   workItem: CanonicalWorkItemProjection;
+  /** Currentness of this task's exact document version in its publication family. */
+  documentCurrentness?: boolean | null;
   entry: CanonicalEntryFacadeResponse;
   queryResults: UnifiedReaderQueryResult[];
   readerProjection?: CanonicalReaderProjection | null;
