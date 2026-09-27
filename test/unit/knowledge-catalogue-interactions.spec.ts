@@ -260,6 +260,7 @@ describe('knowledge catalogue identity and reading lifecycle', () => {
 
   it('shows the exact saved Overall briefly and keeps its detail folded', async () => {
     const item = workEntry('WI-TARGET');
+    item.listBrief = '综合短意见';
     const knowledge = read(item);
     knowledge.overall = {
       status: 'CANDIDATE_ONLY',
@@ -278,6 +279,8 @@ describe('knowledge catalogue identity and reading lifecycle', () => {
     const overall = container.querySelector('[aria-label="确切综合意见"]')!;
     expect(overall.textContent).toContain('综合短意见');
     expect(overall.querySelector('details')?.open).toBe(false);
+    expect(container.querySelector('.knowledge-preview .article-lead')).toBeNull();
+    expect(overall.querySelector('p')?.textContent).toBe('综合短意见');
     expect(container.querySelector('.knowledge-preview')?.textContent)
       .not.toContain('尚无与该修订绑定的综合意见');
   });
