@@ -49,6 +49,7 @@ import {
   findMcpConfig,
   invokeHostedReviewModel as invokeReviewWithTransport,
   isChatCompletionsEnabled,
+  materializeJobAidReviewIssuePatches,
   openClawConfigCandidates,
   prepareKnownModelNonDispatchRecovery,
   projectJobAidUpdateInput,
@@ -1381,7 +1382,7 @@ test('requires 35 MCP capabilities, six review tools, and hosted provenance', ()
   assert.ok(HOST_MCP_TOOLS.includes('commit_applicability_candidate'));
   assert.equal(
     WISELINK_SKILL_VERSION,
-    'wiselink-research-and-synthesize@r09.c180',
+    'wiselink-research-and-synthesize@r09.c181',
   );
   assert.equal(
     WISELINK_SKILL_COMPATIBILITY_REF,
@@ -5023,7 +5024,7 @@ test('offers source reading and one final candidate function with blank assistan
   assert.equal(result.provenance.modelVersion, 'openai-codex/gpt-5.4');
   assert.equal(
     result.provenance.promptVersion,
-    'wiselink.3_1.review_prompt.v1.c47',
+    'wiselink.3_1.review_prompt.v1.c48',
   );
 });
 
@@ -5076,7 +5077,7 @@ test('falls back to the configured model and records only output shape v2', asyn
   assert.equal(result.provenance.modelVersion, 'provider/configured');
   assert.equal(
     result.provenance.promptVersion,
-    'wiselink.3_1.review_prompt.v1.c47',
+    'wiselink.3_1.review_prompt.v1.c48',
   );
   assert.equal(
     outputShape.schemaVersion,
@@ -7707,6 +7708,79 @@ test('JobAid update rejects uncited issue bodies before Host commit while leavin
   assert.throws(() => validateJobAidUpdatedIssueBodies(delta), /REVIEW_JOBAID_BODY_CITATION_MALFORMED/u);
 });
 
+test('JobAid Review issue patches preserve omitted prior fields and distinguish explicit clearing', () => {
+  const prior = { issues: [{ issueKey: 'existing', question: '原问题',
+    body: '旧判断。[[source:prior]]', riskScenarios: [{ scenario: '原风险' }],
+    measures: [{ text: '原措施' }], otherClassifications: [{ value: '原分类' }],
+    openQuestions: [{ question: '仍待核？' }], requirementHandling: [{ requirement: '原要求' }] }] };
+  const before = structuredClone(prior);
+  const delta = { schemaVersion: 'wiselink.jobaid-problem-work.v3',
+    issuePatches: [{ issueKey: 'existing', body: '已核对。[[source:read-1]]' }] };
+  const result = materializeJobAidReviewIssuePatches(delta, prior);
+  assert.equal(Object.hasOwn(result, 'issuePatches'), false);
+  assert.equal(result.issues[0].body, '已核对。[[source:read-1]]');
+  for (const field of ['question', 'riskScenarios', 'measures', 'otherClassifications',
+    'openQuestions', 'requirementHandling']) {
+    assert.deepEqual(result.issues[0][field], prior.issues[0][field]);
+  }
+  assert.deepEqual(prior, before);
+  assert.deepEqual(delta.issuePatches, [{ issueKey: 'existing', body: '已核对。[[source:read-1]]' }]);
+  result.issues[0].measures[0].text = '变动';
+  assert.equal(prior.issues[0].measures[0].text, '原措施');
+  const cleared = materializeJobAidReviewIssuePatches({
+    issuePatches: [{ issueKey: 'existing', openQuestions: [] }],
+  }, prior);
+  assert.deepEqual(cleared.issues[0].openQuestions, []);
+  assert.deepEqual(prior.issues[0].openQuestions, [{ question: '仍待核？' }]);
+});
+
+test('JobAid Review issue patches reject unknown, duplicate, ambiguous and no-op edits', () => {
+  const issue = { issueKey: 'existing', question: '原问题', body: '旧判断。[[source:prior]]',
+    riskScenarios: [], measures: [], otherClassifications: [], openQuestions: [], requirementHandling: [] };
+  const prior = { issues: [issue] };
+  const check = (delta, code) => assert.throws(
+    () => materializeJobAidReviewIssuePatches(delta, prior), new RegExp(code, 'u'));
+  check({ issuePatches: [{ issueKey: 'new', body: '新问题' }] }, 'REVIEW_JOBAID_PATCH_ISSUE_UNKNOWN');
+  check({ issuePatches: [{ issueKey: 'existing', body: '变动' },
+    { issueKey: 'existing', body: '再次变动' }] }, 'REVIEW_JOBAID_PATCH_ISSUE_DUPLICATE');
+  check({ issues: [issue], issuePatches: [{ issueKey: 'existing', body: '变动' }] },
+    'REVIEW_JOBAID_PATCH_ISSUES_AMBIGUOUS');
+  check({ issuePatches: [{ issueKey: 'existing', body: issue.body }] },
+    'REVIEW_JOBAID_PATCH_CHANGE_REQUIRED');
+  check({ issuePatches: [{ issueKey: 'existing', invented: 'x' }] },
+    'REVIEW_JOBAID_PATCH_FIELD_UNKNOWN');
+  check({ issuePatches: [{ issueKey: 'existing' }] }, 'REVIEW_JOBAID_PATCH_CHANGE_REQUIRED');
+});
+
+test('JobAid Review materializes a model patch before candidate validation', async () => {
+  const issue = { issueKey: 'existing', question: '原问题', body: '旧判断。[[source:prior]]',
+    riskScenarios: [], measures: [{ text: '保留的措施' }], otherClassifications: [],
+    openQuestions: [{ question: '原待核？' }], requirementHandling: [] };
+  const result = await invokeReviewWithTransport({ input: {
+    context: { purpose: 'UPDATE_ASSESSMENT', problemAssessment: {
+      previousWork: { content: { issues: [issue] } },
+    } },
+  } }, {
+    gatewayUrl: 'https://official.invalid', gatewayToken: 'fixture-only',
+    configuredModelVersion: 'fixture/provider',
+    validateCandidate: (candidate) => {
+      validateJobAidUpdatedIssueBodies(candidate);
+      assert.equal(Object.hasOwn(candidate.jobAidWorkingDelta, 'issuePatches'), false);
+      assert.equal(candidate.jobAidWorkingDelta.issues[0].question, '原问题');
+      assert.deepEqual(candidate.jobAidWorkingDelta.issues[0].openQuestions, issue.openQuestions);
+    },
+  }, { requestGateway: async () => Response.json({ choices: [{ message: {
+    content: null, tool_calls: [{ id: 'patch-1', type: 'function',
+      function: { name: 'return_wiselink_review_candidate', arguments: JSON.stringify({
+        answer: '局部更正', jobAidWorkingDelta: {
+          issuePatches: [{ issueKey: 'existing', body: '新判断。[[source:read-1]]' }],
+        },
+      }) },
+    }],
+  } }] }) });
+  assert.equal(result.output.jobAidWorkingDelta.issues[0].measures[0].text, '保留的措施');
+});
+
 test('JobAid update rejects a status-only delta and COMPLETE while retained questions remain open', async () => {
   const { task, candidate } = await emptyJobAidReviewFixture();
   task.context.purpose = 'UPDATE_ASSESSMENT';
@@ -7768,7 +7842,7 @@ test('JobAid review corrects a partial issue before Host can clear saved collect
     if (++requests === 2) {
       const feedback = JSON.parse(request.messages.at(-1).content);
       assert.equal(feedback.validationError, 'REVIEW_JOBAID_ISSUE_FULL_CONTENT_REQUIRED');
-      assert.match(feedback.instruction, /complete replacement/u);
+      assert.match(feedback.instruction, /issuePatches/u);
     }
     const issue = { issueKey: 'existing', body: '已读原文。[[source:read-1]]',
       ...(requests === 2 ? { question: '原问题', riskScenarios: [], measures: [],
