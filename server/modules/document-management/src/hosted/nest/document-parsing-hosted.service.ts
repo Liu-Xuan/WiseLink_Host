@@ -404,7 +404,12 @@ export class DocumentParsingHostedService {
       return stepResult(run, result.coverage, 'PUBLISHED', change);
     } catch (error) {
       const code = safeErrorCode(error);
-      try { await this.repository.recordStepFailure(scope, fence, code); }
+      try {
+        if (run.sourceBinding.parserInput?.mode === 'LOCAL_MINERU_WORKER' &&
+            run.errorCode === 'DOCUMENT_PARSE_FAILED' && code === 'DOCUMENT_PARSE_FAILED')
+          await this.repository.fail(scope, parseRunId, { errorCode: code }, fence);
+        else await this.repository.recordStepFailure(scope, fence, code);
+      }
       catch { this.logger.error(`Document step ${parseRunId} failure record rejected; durable lease/deadline remains authoritative.`); }
       throw error;
     }

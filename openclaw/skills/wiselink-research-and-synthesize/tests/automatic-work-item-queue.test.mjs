@@ -339,6 +339,48 @@ test('expired completion checkpoint replays its exact ACK receipt before clearin
   assert.equal(checkpoint.values.get('active-claim'), null);
 });
 
+test('lost ACK response retains completion and resumes from the Host receipt', async () => {
+  const checkpoint = memoryCheckpoint(storedClaim());
+  const ackInputs = [];
+  let responseLost = true;
+  const dependencies = {
+    checkpoint,
+    now: () => new Date(START),
+    nextWorkItem: async () => assert.fail('the existing lease is still active'),
+    acknowledgeWorkItem: async input => {
+      ackInputs.push(input);
+      if (responseLost) {
+        responseLost = false;
+        // The Host commits, but this response never reaches the consumer.
+        throw new Error('SIMULATED_ACK_RESPONSE_LOST');
+      }
+      return {
+        status: 'ACKNOWLEDGED', workItemId: 'WI-QUEUE', replayed: true,
+        acknowledgedAt: '2026-09-25T00:00:00.000Z',
+      };
+    },
+    blockWorkItem: async () => assert.fail('transport failure must not block'),
+    readInitialStatus: async () => completeStatus(),
+    consumeWorkItem: async () => assert.fail('saved work must not be regenerated'),
+  };
+
+  await assert.rejects(
+    consumeAutomaticWorkItemQueueTick({}, dependencies),
+    /SIMULATED_ACK_RESPONSE_LOST/u,
+  );
+  assert.equal(checkpoint.values.get('active-claim').completionReady, true);
+  assert.equal(ackInputs.length, 1);
+
+  const resumed = await consumeAutomaticWorkItemQueueTick({}, dependencies);
+  assert.equal(resumed.status, 'ACKNOWLEDGED');
+  assert.equal(resumed.replayed, true);
+  assert.deepEqual(ackInputs, [
+    { workItemId: 'WI-QUEUE', leaseToken: TOKEN_1, leaseGeneration: 1 },
+    { workItemId: 'WI-QUEUE', leaseToken: TOKEN_1, leaseGeneration: 1 },
+  ]);
+  assert.equal(checkpoint.values.get('active-claim'), null);
+});
+
 test('expired resume fails closed if a different item is returned', async () => {
   const previous = storedClaim(1, '2026-09-25T00:59:00.000Z');
   const checkpoint = memoryCheckpoint(previous);
