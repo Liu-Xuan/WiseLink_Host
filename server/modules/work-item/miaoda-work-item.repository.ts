@@ -31,7 +31,6 @@ import {
 import { autoWorkItemAuthorization } from '../../database/auto-work-item-authorization.schema';
 import {
   actionAttempt,
-  assessmentWorkRevision,
   workItem,
 } from '../../database/schema';
 import { readStoredExecutionModel } from '../model-settings/canonical-execution-model';
@@ -1771,23 +1770,27 @@ export class MiaodaWorkItemRepository {
           owner.documentVersionId !== input.next.source.documentVersionId
         )
           throw new Error('WORK_ITEM_CAS_CONFLICT');
-        await transaction.execute(
-          sql`SELECT set_config('app.user_id', ${owner.requestedByUserId}, true)`,
-        );
-        const [latest] = await transaction
-          .select({
-            workRevisionRef: assessmentWorkRevision.assessmentWorkRevisionId,
-            documentVersionId: assessmentWorkRevision.documentVersionId,
-          })
-          .from(assessmentWorkRevision)
-          .where(
-            and(
-              eq(assessmentWorkRevision.tenantId, guard.tenantId),
-              eq(assessmentWorkRevision.workItemId, input.workItemId),
-            ),
+        // The hosted SQL middleware reapplies identity before each query.
+        // Keep actor binding and the RLS-protected latest-work read in one
+        // statement; a preceding standalone set_config is overwritten.
+        const [latest] = await transaction.execute<{
+          workRevisionRef: string;
+          documentVersionId: string;
+        }>(sql`
+          WITH actor_context AS MATERIALIZED (
+            SELECT set_config('app.user_id', ${owner.requestedByUserId}, TRUE) AS actor_id
           )
-          .orderBy(desc(assessmentWorkRevision.workRevision))
-          .limit(1);
+          SELECT latest.assessment_work_revision_id AS "workRevisionRef",
+            latest.document_version_id AS "documentVersionId"
+          FROM actor_context CROSS JOIN LATERAL (
+            SELECT revision.assessment_work_revision_id, revision.document_version_id
+            FROM assessment_work_revision AS revision
+            WHERE revision.tenant_id=${guard.tenantId}
+              AND revision.work_item_id=${input.workItemId}
+              AND revision.created_by_user_id=actor_context.actor_id
+            ORDER BY revision.work_revision DESC LIMIT 1
+          ) latest
+        `);
         if (
           !latest ||
           latest.workRevisionRef !== guard.workRevisionRef ||
