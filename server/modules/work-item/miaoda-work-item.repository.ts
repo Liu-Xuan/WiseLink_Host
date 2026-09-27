@@ -29,7 +29,11 @@ import {
   sourceIdentityQuery,
 } from './document-version-source-identity';
 import { autoWorkItemAuthorization } from '../../database/auto-work-item-authorization.schema';
-import { actionAttempt, workItem } from '../../database/schema';
+import {
+  actionAttempt,
+  assessmentWorkRevision,
+  workItem,
+} from '../../database/schema';
 import { readStoredExecutionModel } from '../model-settings/canonical-execution-model';
 import { canonicalModelError } from '../model-settings/canonical-model-catalog';
 
@@ -392,6 +396,105 @@ export class MiaodaWorkItemRepository {
       .limit(limit);
   }
 
+  /** Browser path uses only WorkItem's own read policy, never the service-only grant table. */
+  async hasReadableAutoProcessingCompletion(input: {
+    tenantId: string;
+    actorUserId: string;
+    workItemId: string;
+    revision: number;
+  }): Promise<boolean> {
+    const loaded = await this.loadTenantScopedProjection(
+      input.workItemId,
+      input.tenantId,
+    );
+    const receipt = loaded?.projection?.autoProcessingCompletionReceipt;
+    const row = loaded?.row;
+    return Boolean(
+      receipt &&
+      row &&
+      row.tenantId === input.tenantId &&
+      row.workItemId === input.workItemId &&
+      row.requestedByUserId === input.actorUserId &&
+      row.revision === input.revision &&
+      loaded?.projection?.revision === input.revision &&
+      row.actionType === ACTION_TYPE &&
+      row.status === 'CANDIDATE_READBACK_VERIFIED' &&
+      row.packageId &&
+      receipt.tenantId === row.tenantId &&
+      receipt.workItemId === row.workItemId &&
+      receipt.actorUserId === row.requestedByUserId &&
+      receipt.requestId === row.requestId &&
+      receipt.documentId === row.documentId &&
+      receipt.documentVersionId === row.documentVersionId &&
+      receipt.sourceArtifactId === row.sourceArtifactId &&
+      receipt.sourceFileSha256 === row.sourceFileSha256 &&
+      receipt.sourceByteLength === Number(row.sourceByteLength) &&
+      /^[0-9a-f]{64}$/u.test(receipt.sourceFileSha256) &&
+      receipt.sourceByteLength > 0 &&
+      Number.isFinite(Date.parse(receipt.completedAt)),
+    );
+  }
+
+  /** Discovery only: completion is not a successor execution delegation. */
+  async listCompletedAutoProcessingReviewSubjects(input: {
+    tenantId: string;
+    afterWorkItemId?: string;
+    workItemId?: string;
+    limit?: number;
+  }): Promise<AutoWorkItemLeaseBinding[]> {
+    return this.db
+      .select({ authorization: autoWorkItemAuthorization, workItem })
+      .from(autoWorkItemAuthorization)
+      .innerJoin(
+        workItem,
+        and(
+          eq(workItem.tenantId, autoWorkItemAuthorization.tenantId),
+          eq(workItem.workItemId, autoWorkItemAuthorization.workItemId),
+          eq(workItem.requestId, autoWorkItemAuthorization.requestId),
+          eq(workItem.requestedByUserId, autoWorkItemAuthorization.actorUserId),
+          eq(workItem.documentId, autoWorkItemAuthorization.documentId),
+          eq(
+            workItem.documentVersionId,
+            autoWorkItemAuthorization.documentVersionId,
+          ),
+          eq(
+            workItem.sourceArtifactId,
+            autoWorkItemAuthorization.sourceArtifactId,
+          ),
+          eq(
+            workItem.sourceFileSha256,
+            autoWorkItemAuthorization.sourceFileSha256,
+          ),
+          eq(
+            workItem.sourceByteLength,
+            autoWorkItemAuthorization.sourceByteLength,
+          ),
+        ),
+      )
+      .where(
+        and(
+          eq(autoWorkItemAuthorization.tenantId, input.tenantId),
+          eq(
+            autoWorkItemAuthorization.grantKind,
+            'MIAODA_CANONICAL_PARSE_REQUEST',
+          ),
+          eq(autoWorkItemAuthorization.status, 'COMPLETED'),
+          isNotNull(autoWorkItemAuthorization.completedAt),
+          eq(workItem.actionType, ACTION_TYPE),
+          eq(workItem.status, 'CANDIDATE_READBACK_VERIFIED'),
+          isNotNull(workItem.packageId),
+          ...(input.afterWorkItemId
+            ? [gt(workItem.workItemId, input.afterWorkItemId)]
+            : []),
+          ...(input.workItemId
+            ? [eq(workItem.workItemId, input.workItemId)]
+            : []),
+        ),
+      )
+      .orderBy(workItem.workItemId)
+      .limit(Math.min(Math.max(input.limit ?? 32, 1), 100));
+  }
+
   /** One conditional UPDATE elects a single queue consumer for each lease. */
   async claimAutoProcessingCandidate(input: {
     tenantId: string;
@@ -481,16 +584,36 @@ export class MiaodaWorkItemRepository {
 
   /** Service-readable grant discovery only. WorkItem and parse rows are rechecked under its actor. */
   async listActiveLocalWorkerDelegations(input: {
-    tenantId: string; principalId: string; documentVersionId?: string; limit?: number;
+    tenantId: string;
+    principalId: string;
+    documentVersionId?: string;
+    limit?: number;
   }) {
-    return this.db.select().from(autoWorkItemAuthorization).where(and(
-      eq(autoWorkItemAuthorization.tenantId, input.tenantId),
-      eq(autoWorkItemAuthorization.grantKind, 'MIAODA_CANONICAL_PARSE_REQUEST'),
-      eq(autoWorkItemAuthorization.status, 'LEASED'),
-      eq(autoWorkItemAuthorization.leaseOwner, input.principalId),
-      gt(autoWorkItemAuthorization.leaseExpiresAt, new Date()),
-      ...(input.documentVersionId ? [eq(autoWorkItemAuthorization.documentVersionId, input.documentVersionId)] : []),
-    )).orderBy(autoWorkItemAuthorization.createdAt).limit(Math.min(Math.max(input.limit ?? 50, 1), 100));
+    return this.db
+      .select()
+      .from(autoWorkItemAuthorization)
+      .where(
+        and(
+          eq(autoWorkItemAuthorization.tenantId, input.tenantId),
+          eq(
+            autoWorkItemAuthorization.grantKind,
+            'MIAODA_CANONICAL_PARSE_REQUEST',
+          ),
+          eq(autoWorkItemAuthorization.status, 'LEASED'),
+          eq(autoWorkItemAuthorization.leaseOwner, input.principalId),
+          gt(autoWorkItemAuthorization.leaseExpiresAt, new Date()),
+          ...(input.documentVersionId
+            ? [
+                eq(
+                  autoWorkItemAuthorization.documentVersionId,
+                  input.documentVersionId,
+                ),
+              ]
+            : []),
+        ),
+      )
+      .orderBy(autoWorkItemAuthorization.createdAt)
+      .limit(Math.min(Math.max(input.limit ?? 50, 1), 100));
   }
 
   /** Discovery seed for a browser-admitted parse only. A completed WorkItem grant
@@ -621,35 +744,39 @@ export class MiaodaWorkItemRepository {
     expectedWorkItemRevision: number;
     now: Date;
   }): Promise<{ acknowledgedAt: Date; replayed: boolean } | null> {
-    const leaseTokenHash = createHash('sha256')
-      .update(input.leaseToken)
-      .digest('hex');
-    const [updated] = await this.db
-      .update(autoWorkItemAuthorization)
-      .set({
-        status: 'COMPLETED',
-        leaseOwner: null,
-        leaseToken: null,
-        leaseExpiresAt: null,
-        completedLeaseTokenHash: leaseTokenHash,
-        completedLeaseGeneration: input.leaseGeneration,
-        completedAt: input.now,
-        updatedAt: input.now,
-      })
-      .where(
-        and(
-          eq(autoWorkItemAuthorization.tenantId, input.tenantId),
-          eq(autoWorkItemAuthorization.workItemId, input.workItemId),
-          eq(
-            autoWorkItemAuthorization.grantKind,
-            'MIAODA_CANONICAL_PARSE_REQUEST',
-          ),
-          eq(autoWorkItemAuthorization.status, 'LEASED'),
-          eq(autoWorkItemAuthorization.leaseOwner, input.leaseOwner),
-          eq(autoWorkItemAuthorization.leaseToken, input.leaseToken),
-          eq(autoWorkItemAuthorization.leaseGeneration, input.leaseGeneration),
-          gt(autoWorkItemAuthorization.leaseExpiresAt, input.now),
-          sql`EXISTS (
+    return this.db.transaction(async (transaction) => {
+      const leaseTokenHash = createHash('sha256')
+        .update(input.leaseToken)
+        .digest('hex');
+      const [updated] = await transaction
+        .update(autoWorkItemAuthorization)
+        .set({
+          status: 'COMPLETED',
+          leaseOwner: null,
+          leaseToken: null,
+          leaseExpiresAt: null,
+          completedLeaseTokenHash: leaseTokenHash,
+          completedLeaseGeneration: input.leaseGeneration,
+          completedAt: input.now,
+          updatedAt: input.now,
+        })
+        .where(
+          and(
+            eq(autoWorkItemAuthorization.tenantId, input.tenantId),
+            eq(autoWorkItemAuthorization.workItemId, input.workItemId),
+            eq(
+              autoWorkItemAuthorization.grantKind,
+              'MIAODA_CANONICAL_PARSE_REQUEST',
+            ),
+            eq(autoWorkItemAuthorization.status, 'LEASED'),
+            eq(autoWorkItemAuthorization.leaseOwner, input.leaseOwner),
+            eq(autoWorkItemAuthorization.leaseToken, input.leaseToken),
+            eq(
+              autoWorkItemAuthorization.leaseGeneration,
+              input.leaseGeneration,
+            ),
+            gt(autoWorkItemAuthorization.leaseExpiresAt, input.now),
+            sql`EXISTS (
             SELECT 1 FROM work_item wi
             WHERE wi.tenant_id = ${input.tenantId}
               AND wi.work_item_id = ${input.workItemId}
@@ -681,31 +808,63 @@ export class MiaodaWorkItemRepository {
                   )
               )
           )`,
-        ),
-      )
-      .returning({ completedAt: autoWorkItemAuthorization.completedAt });
-    if (updated?.completedAt) {
-      return { acknowledgedAt: updated.completedAt, replayed: false };
-    }
-
-    const [completed] = await this.db
-      .select({ completedAt: autoWorkItemAuthorization.completedAt })
-      .from(autoWorkItemAuthorization)
-      .where(
-        and(
-          eq(autoWorkItemAuthorization.tenantId, input.tenantId),
-          eq(autoWorkItemAuthorization.workItemId, input.workItemId),
-          eq(autoWorkItemAuthorization.status, 'COMPLETED'),
-          eq(autoWorkItemAuthorization.completedLeaseTokenHash, leaseTokenHash),
-          eq(
-            autoWorkItemAuthorization.completedLeaseGeneration,
-            input.leaseGeneration,
           ),
-        ),
-      )
-      .limit(1);
-    if (!completed?.completedAt) return null;
-    return { acknowledgedAt: completed.completedAt, replayed: true };
+        )
+        .returning();
+      if (updated?.completedAt) {
+        const receipt = {
+          tenantId: updated.tenantId,
+          workItemId: updated.workItemId,
+          requestId: updated.requestId,
+          actorUserId: updated.actorUserId,
+          documentId: updated.documentId,
+          documentVersionId: updated.documentVersionId,
+          sourceArtifactId: updated.sourceArtifactId,
+          sourceFileSha256: updated.sourceFileSha256,
+          sourceByteLength: Number(updated.sourceByteLength),
+          completedAt: updated.completedAt.toISOString(),
+        };
+        const readableReceipt = await transaction
+          .update(workItem)
+          .set({
+            projectionJson: sql`jsonb_set(${workItem.projectionJson}::jsonb, '{autoProcessingCompletionReceipt}', ${JSON.stringify(receipt)}::jsonb)::text`,
+          })
+          .where(
+            and(
+              eq(workItem.tenantId, input.tenantId),
+              eq(workItem.workItemId, input.workItemId),
+              eq(workItem.revision, input.expectedWorkItemRevision),
+              isNotNull(workItem.projectionJson),
+            ),
+          )
+          .returning({ workItemId: workItem.workItemId });
+        if (readableReceipt.length !== 1)
+          throw new Error('AUTO_PROCESSING_COMPLETION_RECEIPT_WRITE_FAILED');
+        return { acknowledgedAt: updated.completedAt, replayed: false };
+      }
+
+      const [completed] = await transaction
+        .select({ completedAt: autoWorkItemAuthorization.completedAt })
+        .from(autoWorkItemAuthorization)
+        .where(
+          and(
+            eq(autoWorkItemAuthorization.tenantId, input.tenantId),
+            eq(autoWorkItemAuthorization.workItemId, input.workItemId),
+            eq(autoWorkItemAuthorization.status, 'COMPLETED'),
+            eq(
+              autoWorkItemAuthorization.completedLeaseTokenHash,
+              leaseTokenHash,
+            ),
+            eq(
+              autoWorkItemAuthorization.completedLeaseGeneration,
+              input.leaseGeneration,
+            ),
+          ),
+        )
+        .limit(1);
+      if (!completed?.completedAt) return null;
+      return { acknowledgedAt: completed.completedAt, replayed: true };
+    });
   }
 
   async readCompletedAutoProcessingLeaseReceipt(input: {
@@ -755,7 +914,11 @@ export class MiaodaWorkItemRepository {
     leaseGeneration: number;
     blockedCode: string;
     now: Date;
-  }): Promise<{ blockedAt: Date; blockedCode: string; replayed: boolean } | null> {
+  }): Promise<{
+    blockedAt: Date;
+    blockedCode: string;
+    replayed: boolean;
+  } | null> {
     const leaseTokenHash = createHash('sha256')
       .update(input.leaseToken)
       .digest('hex');
@@ -798,10 +961,7 @@ export class MiaodaWorkItemRepository {
           eq(autoWorkItemAuthorization.status, 'LEASED'),
           eq(autoWorkItemAuthorization.leaseOwner, input.leaseOwner),
           eq(autoWorkItemAuthorization.leaseToken, input.leaseToken),
-          eq(
-            autoWorkItemAuthorization.leaseGeneration,
-            input.leaseGeneration,
-          ),
+          eq(autoWorkItemAuthorization.leaseGeneration, input.leaseGeneration),
           gt(autoWorkItemAuthorization.leaseExpiresAt, input.now),
           sql`EXISTS (
             SELECT 1 FROM work_item wi
@@ -860,10 +1020,7 @@ export class MiaodaWorkItemRepository {
           eq(autoWorkItemAuthorization.tenantId, input.tenantId),
           eq(autoWorkItemAuthorization.workItemId, input.workItemId),
           eq(autoWorkItemAuthorization.status, 'BLOCKED'),
-          eq(
-            autoWorkItemAuthorization.blockedLeaseTokenHash,
-            leaseTokenHash,
-          ),
+          eq(autoWorkItemAuthorization.blockedLeaseTokenHash, leaseTokenHash),
           eq(
             autoWorkItemAuthorization.blockedLeaseGeneration,
             input.leaseGeneration,
@@ -1581,7 +1738,65 @@ export class MiaodaWorkItemRepository {
     next: Omit<CanonicalWorkItemProjection, 'revision'>;
     syncPrimaryAttempt?: boolean;
     applicabilityInputGuard?: { tenantId: string };
+    jobAidWorkRevisionGuard?: { tenantId: string; workRevisionRef: string };
   }): Promise<CanonicalWorkItemProjection> {
+    if (input.jobAidWorkRevisionGuard) {
+      const guard = input.jobAidWorkRevisionGuard;
+      if (
+        !guard.tenantId.trim() ||
+        !/^JAWR-[A-Za-z0-9-]{1,91}$/u.test(guard.workRevisionRef) ||
+        input.syncPrimaryAttempt !== false ||
+        input.applicabilityInputGuard
+      )
+        throw new Error('JOBAID_OVERALL_WORK_CAS_GUARD_INVALID');
+      return this.db.transaction(async (transaction) => {
+        const [owner] = await transaction
+          .select({
+            revision: workItem.revision,
+            documentVersionId: workItem.documentVersionId,
+            requestedByUserId: workItem.requestedByUserId,
+          })
+          .from(workItem)
+          .where(
+            and(
+              eq(workItem.workItemId, input.workItemId),
+              eq(workItem.tenantId, guard.tenantId),
+            ),
+          )
+          .limit(1)
+          .for('update');
+        if (
+          !owner ||
+          owner.revision !== input.expectedRevision ||
+          owner.documentVersionId !== input.next.source.documentVersionId
+        )
+          throw new Error('WORK_ITEM_CAS_CONFLICT');
+        await transaction.execute(
+          sql`SELECT set_config('app.user_id', ${owner.requestedByUserId}, true)`,
+        );
+        const [latest] = await transaction
+          .select({
+            workRevisionRef: assessmentWorkRevision.assessmentWorkRevisionId,
+            documentVersionId: assessmentWorkRevision.documentVersionId,
+          })
+          .from(assessmentWorkRevision)
+          .where(
+            and(
+              eq(assessmentWorkRevision.tenantId, guard.tenantId),
+              eq(assessmentWorkRevision.workItemId, input.workItemId),
+            ),
+          )
+          .orderBy(desc(assessmentWorkRevision.workRevision))
+          .limit(1);
+        if (
+          !latest ||
+          latest.workRevisionRef !== guard.workRevisionRef ||
+          latest.documentVersionId !== owner.documentVersionId
+        )
+          throw new Error('JOBAID_OVERALL_EXACT_WORK_CHANGED');
+        return this.persistProjectionCas(input, transaction);
+      });
+    }
     if (input.applicabilityInputGuard) {
       if (
         !input.applicabilityInputGuard.tenantId.trim() ||

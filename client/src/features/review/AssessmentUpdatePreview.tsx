@@ -20,6 +20,7 @@ interface AssessmentUpdatePreviewProps {
   modelLabel: string;
   focusLabel?: string;
   hasUnsentDraft: boolean;
+  overallRequested?: boolean;
   pending: boolean;
   notice?: string;
   disabled: boolean;
@@ -52,6 +53,9 @@ export default function AssessmentUpdatePreview(
           </p>
         ) : null}
         {props.focusLabel ? <p>本次评估范围：{props.focusLabel}</p> : null}
+        {props.overallRequested ? (
+          <p>本次请求包含：有实质更正后，基于新问题评估核对整体综合。</p>
+        ) : null}
         <p>将纳入以下已保存的对话及其附件。原件性质和来源保持不变。</p>
         <section aria-label="待纳入的已保存对话" className="grid gap-3">
           <p>

@@ -221,6 +221,7 @@ export interface PendingReviewTurnResponse {
 }
 
 export interface ReviewTurnReadModel {
+  overallRequested?: boolean;
   /** Absent on historical turns, which retain their original review semantics. */
   purpose?: 'CHAT' | 'UPDATE_ASSESSMENT';
   includedDiscussionTurnIds?: string[];
@@ -254,6 +255,8 @@ export interface ReviewTurnReadModel {
  * session identifiers are deliberately absent from this contract.
  */
 export interface ReviewConversationReadModel {
+  /** Host-verified ability to accept an explicit successor Overall request. */
+  overallExecutionAvailable?: boolean;
   schemaVersion: 'wiselink.3_1.review_conversation.v1.c1';
   reviewConversationId: string;
   workItemId: string;
@@ -296,6 +299,8 @@ export interface AppendMatterReviewScope {
 }
 
 export interface AppendReviewTextTurnRequest {
+  /** Explicit successor synthesis request; never inferred from historical turns. */
+  overallRequested?: boolean;
   purpose?: 'CHAT' | 'UPDATE_ASSESSMENT';
   /** Explicitly selected, saved discussion turns from this conversation and scope. */
   includedDiscussionTurnIds?: string[];
@@ -2447,7 +2452,22 @@ export type CanonicalConfigurationEvidenceReevaluationProjection =
   | CanonicalConfigurationEvidenceReevaluationLegacyProjection
   | CanonicalConfigurationEvidenceReevaluationV2Projection;
 
+export interface CanonicalAutoProcessingCompletionReceipt {
+  tenantId: string;
+  workItemId: string;
+  requestId: string;
+  actorUserId: string;
+  documentId: string;
+  documentVersionId: string;
+  sourceArtifactId: string;
+  sourceFileSha256: string;
+  sourceByteLength: number;
+  completedAt: string;
+}
+
 export interface CanonicalWorkItemProjection {
+  /** Host receipt for browser display/acceptance; executor still rechecks the enrollment row. */
+  autoProcessingCompletionReceipt?: CanonicalAutoProcessingCompletionReceipt;
   schemaVersion: 'wiselink.3_1.canonical_work_item_projection.v0.candidate';
   workItemId: string;
   requestId: string;
@@ -3257,7 +3277,20 @@ export interface LinkEngineeringMatterWorkItemResponse {
 }
 
 export type AutomaticWorkItemClaimResult =
-  | { status: 'IDLE' }
+  | { status: 'IDLE'; reviewAfterWorkItemId?: string }
+  | {
+      status: 'REVIEW_PENDING';
+      workItemId: string;
+      reviewTurnRef: string;
+      reviewAfterWorkItemId: string;
+    }
+  | {
+      status: 'OVERALL_PENDING';
+      workItemId: string;
+      reviewTurnRef: string;
+      workRevisionRef: string;
+      reviewAfterWorkItemId: string;
+    }
   | {
       status: 'CLAIMED';
       workItemId: string;
@@ -3271,6 +3304,7 @@ export type AutomaticWorkItemClaimResult =
 
 export interface NextAutomaticWorkItemRequest {
   resumeWorkItemId?: string;
+  reviewAfterWorkItemId?: string;
 }
 
 export interface AcknowledgeAutomaticWorkItemRequest {

@@ -17,7 +17,7 @@ import { invokeHostedDocumentActivityModel } from './invoke-hosted-document-acti
 import { consumeHostedDocumentReading } from './consume-hosted-document-reading.mjs';
 import { invokeHostedDocumentReadingModel } from './invoke-hosted-document-reading-model.mjs';
 import { consumeHostedDocumentActivity } from './consume-hosted-document-activity.mjs';
-import { INITIAL_ANALYSIS_OPERATIONS, parseConfigurationEvidenceReevaluationStatus, runInitialAnalysis } from './orchestrate-host-mcp.mjs';
+import { INITIAL_ANALYSIS_OPERATIONS, parseConfigurationEvidenceReevaluationStatus, runInitialAnalysis, runOverallSynthesis } from './orchestrate-host-mcp.mjs';
 import {
   assertHostedModelGatewayReady,
   createCheckpointStore,
@@ -206,6 +206,12 @@ export async function consumeAutomaticWorkItemQueueTick(options, dependencies) {
 
   const stored = await checkpoint.readOptional('active-claim');
   let claim = stored === null ? null : validateStoredAutoClaim(stored);
+  const storedReviewCursor = claim ? null : await checkpoint.readOptional('review-cursor');
+  if (storedReviewCursor !== null &&
+      (typeof storedReviewCursor !== 'string' ||
+        !/^WI-[A-Za-z0-9_-]{1,93}$/u.test(storedReviewCursor))) {
+    throw new Error('AUTO_WORK_ITEM_REVIEW_CURSOR_INVALID');
+  }
   if (options.repairStoppedClaim &&
       (!claim?.consumerStopped || claim.completionReady || claim.blockReady ||
         claim.workItemId !== options.repairWorkItemId ||
@@ -215,6 +221,17 @@ export async function consumeAutomaticWorkItemQueueTick(options, dependencies) {
   const currentTime = now();
   if (!(currentTime instanceof Date) || !Number.isFinite(currentTime.getTime())) {
     throw new Error('AUTO_WORK_ITEM_QUEUE_CLOCK_INVALID');
+  }
+  const savedSuccessor = await checkpoint.readOptional('active-successor-overall');
+  const activeSuccessor = savedSuccessor === null ? null : validateStoredSuccessorOverall(savedSuccessor, currentTime);
+  if (activeSuccessor) {
+    if (claim || options.repairStoppedClaim || typeof dependencies.consumeSuccessorOverall !== 'function')
+      throw new Error('AUTO_WORK_ITEM_SUCCESSOR_CHECKPOINT_CONFLICT');
+    const result = await dependencies.consumeSuccessorOverall(activeSuccessor);
+    await checkpoint.write('review-cursor', activeSuccessor.reviewAfterWorkItemId);
+    await checkpoint.write('active-successor-overall', null);
+    return { status: 'OVERALL_DISPATCHED', workItemId: activeSuccessor.workItemId,
+      reviewTurnRef: activeSuccessor.reviewTurnRef, overall: result };
   }
 
   if (claim?.blockReady) {
@@ -227,11 +244,26 @@ export async function consumeAutomaticWorkItemQueueTick(options, dependencies) {
   if (!claim || Date.parse(claim.leaseExpiresAt) <= currentTime.getTime()) {
     const previous = claim;
     const next = validateAutoClaimResult(
-      await dependencies.nextWorkItem(
-        previous ? { resumeWorkItemId: previous.workItemId } : undefined,
-      ),
+      await dependencies.nextWorkItem(previous
+        ? { resumeWorkItemId: previous.workItemId }
+        : storedReviewCursor
+          ? { reviewAfterWorkItemId: storedReviewCursor }
+          : undefined),
       currentTime,
     );
+    if (next.status === 'REVIEW_PENDING' || next.status === 'OVERALL_PENDING') {
+      const consumer = next.status === 'REVIEW_PENDING'
+        ? dependencies.consumeReview : dependencies.consumeSuccessorOverall;
+      if (previous || typeof consumer !== 'function')
+        throw new Error('AUTO_WORK_ITEM_SUCCESSOR_DISPATCH_INVALID');
+      if (next.status === 'OVERALL_PENDING') await checkpoint.write('active-successor-overall', next);
+      const result = await consumer(next.status === 'REVIEW_PENDING' ? next.workItemId : next);
+      await checkpoint.write('review-cursor', next.reviewAfterWorkItemId);
+      if (next.status === 'OVERALL_PENDING') await checkpoint.write('active-successor-overall', null);
+      return { status: next.status === 'REVIEW_PENDING' ? 'REVIEW_DISPATCHED' : 'OVERALL_DISPATCHED',
+        workItemId: next.workItemId, reviewTurnRef: next.reviewTurnRef,
+        ...(next.status === 'REVIEW_PENDING' ? { review: result } : { overall: result }) };
+    }
     if (next.status === 'IDLE') {
       if (previous) {
         if (previous.completionReady) {
@@ -246,6 +278,8 @@ export async function consumeAutomaticWorkItemQueueTick(options, dependencies) {
           'AUTO_WORK_ITEM_EXPIRED_RECLAIM_UNAVAILABLE',
         );
       }
+      if (next.reviewAfterWorkItemId !== undefined || storedReviewCursor !== null)
+        await checkpoint.write('review-cursor', next.reviewAfterWorkItemId ?? null);
       await checkpoint.write('active-claim', null);
       return { status: 'IDLE' };
     }
@@ -486,7 +520,22 @@ function validateStoredAutoClaim(value) {
 function validateAutoClaimResult(value, now) {
   if (!isRecord(value)) throw new Error('AUTO_WORK_ITEM_CLAIM_RESPONSE_INVALID');
   if (value.status === 'IDLE') {
-    assertExactKeys(value, ['status'], [], 'AUTO_WORK_ITEM_CLAIM_RESPONSE');
+    assertExactKeys(value, ['status'], ['reviewAfterWorkItemId'], 'AUTO_WORK_ITEM_CLAIM_RESPONSE');
+    if (value.reviewAfterWorkItemId !== undefined &&
+        !/^WI-[A-Za-z0-9_-]{1,93}$/u.test(value.reviewAfterWorkItemId))
+      throw new Error('AUTO_WORK_ITEM_CLAIM_RESPONSE_INVALID');
+    return value;
+  }
+  if (value.status === 'REVIEW_PENDING' || value.status === 'OVERALL_PENDING') {
+    assertExactKeys(value,
+      ['status', 'workItemId', 'reviewTurnRef', 'reviewAfterWorkItemId'],
+      value.status === 'OVERALL_PENDING' ? ['workRevisionRef'] : [],
+      'AUTO_WORK_ITEM_CLAIM_RESPONSE');
+    if (!/^WI-[A-Za-z0-9_-]{1,93}$/u.test(value.workItemId) ||
+        !/^RT-[A-Za-z0-9_-]{1,93}$/u.test(value.reviewTurnRef) ||
+        (value.status === 'OVERALL_PENDING' && !/^JAWR-[A-Za-z0-9_-]{1,93}$/u.test(value.workRevisionRef)) ||
+        value.reviewAfterWorkItemId !== value.workItemId)
+      throw new Error('AUTO_WORK_ITEM_CLAIM_RESPONSE_INVALID');
     return value;
   }
   assertExactKeys(
@@ -506,6 +555,14 @@ function validateAutoClaimResult(value, now) {
     throw new Error('AUTO_WORK_ITEM_CLAIM_RESPONSE_EXPIRED');
   }
   return value;
+}
+
+function validateStoredSuccessorOverall(value, now) {
+  try {
+    const pointer = validateAutoClaimResult(value, now);
+    if (pointer.status === 'OVERALL_PENDING') return pointer;
+  } catch { /* A malformed checkpoint cannot select a different task. */ }
+  throw new Error('AUTO_WORK_ITEM_SUCCESSOR_CHECKPOINT_INVALID');
 }
 
 function validateClaimFields(value) {
@@ -682,6 +739,86 @@ function assertExactKeys(value, required, optional, code) {
   if (required.some(key => !Object.hasOwn(value, key))) {
     throw new Error(`${code}_MISSING_FIELD`);
   }
+}
+
+/** A completed WorkItem may receive a separately authorized Review update.
+ * Its Overall uses the Review's saved work revision, never the initial-stage cursor. */
+export async function runHostedSuccessorOverall(pointer, dependencies) {
+  if (!/^WI-[A-Za-z0-9_-]{1,93}$/u.test(pointer?.workItemId ?? '') ||
+      !/^RT-[A-Za-z0-9_-]{1,93}$/u.test(pointer?.reviewTurnRef ?? '') ||
+      !/^JAWR-[A-Za-z0-9_-]{1,93}$/u.test(pointer?.workRevisionRef ?? '') ||
+      typeof pointer.checkpointRoot !== 'string' ||
+      typeof dependencies?.callTool !== 'function' ||
+      typeof dependencies?.invokeInitialModel !== 'function')
+    throw new Error('HOSTED_SUCCESSOR_OVERALL_INPUT_INVALID');
+  const checkpoint = await createCheckpointStore(join(pointer.checkpointRoot,
+    'successor-overall', pointer.workItemId, pointer.reviewTurnRef));
+  const binding = { workItemId: pointer.workItemId, reviewTurnRef: pointer.reviewTurnRef,
+    workRevisionRef: pointer.workRevisionRef };
+  const stored = await checkpoint.readOptional('binding');
+  if (stored && Object.entries(binding).some(([key, value]) => stored[key] !== value))
+    throw new Error('HOSTED_SUCCESSOR_OVERALL_CHECKPOINT_BINDING_CHANGED');
+  if (!stored) await checkpoint.writeOnce('binding', binding);
+  const current = async () => {
+    const status = await dependencies.callTool('get_parse_status', {
+      workItemId: pointer.workItemId, successorReviewTurnRef: pointer.reviewTurnRef,
+    });
+    return status?.integratedAssessmentSummary?.overallSynthesis?.basedOnJobAidWorkRevisionRef === pointer.workRevisionRef;
+  };
+  const savedResult = await checkpoint.readOptional('run-result');
+  if (savedResult) {
+    if (!await current()) throw new Error('HOSTED_SUCCESSOR_OVERALL_RESULT_DRIFT');
+    return savedResult;
+  }
+  let executionModel;
+  let taskDeadline;
+  const callTool = async (name, args) => {
+    if (!INITIAL_TOOLS.has(name)) throw new Error('HOSTED_SUCCESSOR_OVERALL_TOOL_NOT_ALLOWED');
+    const value = await dependencies.callTool(name, { ...args, workItemId: pointer.workItemId });
+    if (name === 'begin_overall_synthesis') {
+      executionModel = value.task?.executionModel;
+      taskDeadline = value.task?.deadline;
+    }
+    return value;
+  };
+  // A transient failure before commit keeps the exact Host attempt claim
+  // recoverable. The Host owns its bounded lease/deadline and terminal status.
+  let result;
+  try { result = await runOverallSynthesis({
+      ...binding,
+      successorReviewTurnRef: pointer.reviewTurnRef,
+      successorWorkRevisionRef: pointer.workRevisionRef,
+      callTool,
+      synthesizeOverall: (modelInput, hooks = {}) => dependencies.invokeInitialModel(
+        { operation: 'SYNTHESIZE_OVERALL', modelInput },
+        { executionModel, taskDeadline, assessmentCheckpoint: checkpoint,
+          sessionDiscriminator: pointer.reviewTurnRef,
+          heartbeat: hooks.heartbeat, timeoutMs: hooks.timeoutMs,
+          readAssessmentSources: hooks.readAssessmentSources,
+          queryAssessmentKnowledge: hooks.queryAssessmentKnowledge,
+          saveAssessmentWork: hooks.saveAssessmentWork,
+          readAssessmentWork: hooks.readAssessmentWork,
+          observeModelOutput: (shape, round = 1) => checkpoint.writeOnce(
+            `model.output-shape${round === 1 ? '' : '-' + round}`, shape),
+          observeCandidateRejection: report => checkpoint.writeOnce(
+            `model.candidate-rejection-${report.correctionNo}`, report) },
+      ),
+  }); }
+  catch (error) {
+    // The exact idempotent attempt may have finished after our last response
+    // was lost. Host authorization still checks the turn and saved revision.
+    if (error?.hostToolName !== 'begin_overall_synthesis' ||
+        error.hostErrorCode !== 'ACTION_ATTEMPT_ALREADY_SUCCEEDED' || !await current()) throw error;
+    const recovered = { status: 'SUCCESSOR_OVERALL_SAVED', ...binding, recoveredByReadback: true };
+    await checkpoint.writeOnce('run-result', recovered);
+    return recovered;
+  }
+  if ((!result.ok && result.outcome !== 'COMMITTING_REPLAYED') || !await current())
+    throw new Error('HOSTED_SUCCESSOR_OVERALL_RESULT_NOT_CURRENT');
+  const report = { status: 'SUCCESSOR_OVERALL_SAVED', ...binding,
+    recoveredByReadback: result.outcome === 'COMMIT_RESPONSE_LOSS_RECOVERED_READ_ONLY' };
+  await checkpoint.writeOnce('run-result', report);
+  return report;
 }
 
 export async function runHostedInitialStage(options, dependencies) {
@@ -1268,6 +1405,21 @@ async function main(argv, env) {
         consumeWorkItem: async item => {
           assertHostedModelGatewayReady(runtime);
           return consumeHostedWorkItem(item, consumerDependencies);
+        },
+        consumeReview: async reviewWorkItemId => {
+          assertHostedModelGatewayReady(runtime);
+          return consumePendingReviewTurn({ workItemId: reviewWorkItemId,
+            checkpointRoot: join(checkpointRoot, 'review') }, {
+            callTool: connection.callTool,
+            invokeModel: (input, hooks) => invokeHostedReviewModel(input, { ...runtime, ...hooks }),
+          });
+        },
+        consumeSuccessorOverall: async pointer => {
+          assertHostedModelGatewayReady(runtime);
+          return runHostedSuccessorOverall({ ...pointer, checkpointRoot }, {
+            callTool: connection.callTool,
+            invokeInitialModel: (input, hooks) => invokeHostedInitialModel(input, { ...runtime, ...hooks }),
+          });
         },
       })
       : await consumeHostedWorkItem({

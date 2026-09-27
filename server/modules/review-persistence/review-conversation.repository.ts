@@ -97,6 +97,7 @@ export interface PersistedReviewTurn {
   includedDiscussionTurnIds?: string[];
   expectedInputRevision?: number;
   executionRequested?: boolean;
+  overallRequested?: boolean;
   requestedModel?: CanonicalExecutionModelSelection;
   inputType: string;
   adoptionStatus: string;
@@ -208,6 +209,7 @@ export class ReviewConversationRepository {
     tenantId: string;
     actorId: string;
     workItemId: string;
+    requireSuccessorDelegation?: boolean;
   }): Promise<{
     reviewConversationId: string;
     reviewTurnId: string;
@@ -291,6 +293,13 @@ export class ReviewConversationRepository {
           eq(reviewConversation.status, ACTIVE_STATUS),
           like(reviewTurn.userMessage, 'WLR7:%'),
           like(reviewTurn.userMessage, '%"executionRequested":true%'),
+          ...(input.requireSuccessorDelegation
+            ? [
+                like(reviewTurn.userMessage, '%"overallRequested":%'),
+                isNull(reviewTurn.reviewScopeJson),
+                sql`${reviewTurn.inputRevision} = (SELECT wi.revision FROM work_item wi WHERE wi.work_item_id=${input.workItemId} AND wi.tenant_id=${input.tenantId})`,
+              ]
+            : []),
           notExists(finishedAttempt),
         ),
       )
@@ -310,6 +319,68 @@ export class ReviewConversationRepository {
       .from(actorContext)
       .innerJoinLateral(pendingTurn, sql`true`);
     return turn ?? null;
+  }
+
+  /** Actor-bound pointers only; parsed persisted bindings remain the execution authority. */
+  async listSuccessorOverallTurnBindings(input: {
+    tenantId: string;
+    actorId: string;
+    workItemId: string;
+    reviewTurnRef?: string;
+    allowCommittedRevision?: boolean;
+    limit?: number;
+  }): Promise<
+    Array<{
+      conversation: PersistedReviewConversation;
+      turn: PersistedReviewTurn;
+    }>
+  > {
+    assertOpenClawActorContext(input.actorId);
+    const pointers = await this.db.execute<{
+      reviewConversationId: string;
+      requestId: string;
+    }>(sql`
+      WITH actor_context AS MATERIALIZED (
+        SELECT set_config('app.user_id', ${input.actorId}, TRUE) AS actor_id
+        FROM work_item WHERE tenant_id=${input.tenantId} AND work_item_id=${input.workItemId}
+          AND requested_by_user_id=${input.actorId}
+      )
+      SELECT selected.review_conversation_id AS "reviewConversationId", selected.request_id AS "requestId"
+      FROM actor_context CROSS JOIN LATERAL (
+        SELECT rt.review_conversation_id, rt.request_id
+        FROM review_turn rt
+        JOIN review_conversation rc ON rc.review_conversation_id=rt.review_conversation_id
+        JOIN work_item wi ON wi.work_item_id=rt.work_item_id AND wi.tenant_id=rt.tenant_id
+        WHERE rt.tenant_id=${input.tenantId} AND rt.work_item_id=${input.workItemId}
+          AND rt.actor_id=actor_context.actor_id AND rc.actor_id=actor_context.actor_id
+          AND rc.tenant_id=rt.tenant_id AND rc.work_item_id=rt.work_item_id AND rc.status='ACTIVE'
+          AND (rt.input_revision=wi.revision ${input.allowCommittedRevision && input.reviewTurnRef ? sql`OR rt.input_revision+1=wi.revision` : sql``}) AND rt.review_scope_json IS NULL
+          AND rt.user_message LIKE '%"overallRequested":true%'
+          ${input.reviewTurnRef ? sql`AND rt.review_turn_id=${input.reviewTurnRef}` : sql``}
+        ORDER BY rt.created_at DESC, rt.turn_no DESC
+        LIMIT ${Math.min(Math.max(input.limit ?? 100, 1), 100)}
+      ) selected`);
+    const results: Array<{
+      conversation: PersistedReviewConversation;
+      turn: PersistedReviewTurn;
+    }> = [];
+    for (const pointer of pointers) {
+      const binding = await this.loadOpenClawTurnBinding({
+        ...input,
+        reviewConversationId: pointer.reviewConversationId,
+        requestId: pointer.requestId,
+      });
+      if (
+        binding &&
+        binding.turn.executionRequested === true &&
+        binding.turn.overallRequested === true &&
+        binding.turn.purpose === 'UPDATE_ASSESSMENT' &&
+        !binding.turn.reviewScope &&
+        binding.turn.assistantCandidate?.jobAidWorkingUpdate?.workRevisionRef
+      )
+        results.push(binding);
+    }
+    return results;
   }
 
   async loadOpenClawTurnBinding(input: {
@@ -1025,6 +1096,7 @@ export class ReviewConversationRepository {
     includedDiscussionTurnIds?: string[];
     expectedInputRevision?: number;
     executionRequested?: boolean;
+    overallRequested?: boolean;
     requestedModel?: CanonicalExecutionModelSelection;
     currentRevision: number;
     attachmentBindings?: ReviewAttachmentBinding[];
@@ -1063,6 +1135,7 @@ export class ReviewConversationRepository {
         : {}),
       selectedEvaluationItemId: input.selectedEvaluationItemId ?? null,
       executionRequested: input.executionRequested === true,
+      overallRequested: input.overallRequested === true,
       ...(input.requestedModel
         ? { requestedModel: structuredClone(input.requestedModel) }
         : {}),
@@ -1821,6 +1894,7 @@ function persistedTurn(row: SelectedReviewTurn): PersistedReviewTurn {
     reviewScope: parsePersistedMatterReviewScope(row.reviewScopeJson),
     selectedEvaluationItemId: turnInput.selectedEvaluationItemId ?? null,
     executionRequested: turnInput.executionRequested === true,
+    overallRequested: turnInput.overallRequested,
     ...(turnInput.requestedModel
       ? { requestedModel: structuredClone(turnInput.requestedModel) }
       : {}),
@@ -2071,10 +2145,14 @@ function assertIdempotentReplay(
   reviewScope?: PersistedMatterReviewScope | null,
   intent?: Pick<
     ReviewEngineerInputPayload,
-    'purpose' | 'includedDiscussionTurnIds' | 'expectedInputRevision'
+    | 'purpose'
+    | 'includedDiscussionTurnIds'
+    | 'expectedInputRevision'
+    | 'overallRequested'
   >,
 ): void {
   if (
+    (turn.overallRequested === true) !== (intent?.overallRequested === true) ||
     turn.purpose !== intent?.purpose ||
     turn.expectedInputRevision !== intent?.expectedInputRevision ||
     canonicalJson(turn.includedDiscussionTurnIds ?? null) !==
@@ -2142,6 +2220,11 @@ function validateEngineerInput(value: unknown): void {
     (record.expectedInputRevision !== undefined &&
       (!Number.isSafeInteger(record.expectedInputRevision) ||
         Number(record.expectedInputRevision) < 0)) ||
+    (record.overallRequested !== undefined &&
+      typeof record.overallRequested !== 'boolean') ||
+    (record.overallRequested === true &&
+      (record.purpose !== 'UPDATE_ASSESSMENT' ||
+        record.executionRequested !== true)) ||
     typeof record.userMessage !== 'string' ||
     !record.userMessage.trim() ||
     (record.executionRequested !== undefined &&

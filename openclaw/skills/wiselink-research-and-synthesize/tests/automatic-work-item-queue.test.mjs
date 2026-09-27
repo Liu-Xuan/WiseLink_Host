@@ -8,6 +8,7 @@ import {
   automaticWorkItemQueueMode,
   consumeAutomaticWorkItemQueueTick,
   consumeHostedWorkItem,
+  runHostedSuccessorOverall,
 } from '../scripts/consume-hosted-work-item.mjs';
 import { createHostAutoWorkItemQueueClient } from '../scripts/run-hosted-review-turn.mjs';
 import { createCheckpointStore } from '../scripts/run-hosted-review-turn.mjs';
@@ -189,6 +190,97 @@ test('empty automatic queue returns IDLE without status reads or model calls', a
   });
   assert.deepEqual(result, { status: 'IDLE' });
   assert.deepEqual(checkpoint.writes, [['active-claim', null]]);
+});
+
+test('completed-task review uses its own turn and cursor without an initial lease ACK', async () => {
+  const checkpoint = memoryCheckpoint(null);
+  const requests = [];
+  const dependencies = {
+    checkpoint,
+    now: () => new Date(START),
+    nextWorkItem: async input => {
+      requests.push(input);
+      if (requests.length === 1)
+        return { status: 'IDLE', reviewAfterWorkItemId: 'WI-EARLIER' };
+      return { status: 'REVIEW_PENDING', workItemId: 'WI-REVIEW',
+        reviewTurnRef: 'RT-EXPLICIT', reviewAfterWorkItemId: 'WI-REVIEW' };
+    },
+    acknowledgeWorkItem: async () => assert.fail('review must not ACK an initial lease'),
+    readInitialStatus: async () => assert.fail('review must not read initial-stage status'),
+    consumeWorkItem: async () => assert.fail('review must not rerun initial analysis'),
+    consumeReview: async workItemId => {
+      assert.equal(workItemId, 'WI-REVIEW');
+      return { status: 'CANDIDATE_SAVED', reviewTurnRef: 'RT-EXPLICIT' };
+    },
+  };
+  assert.deepEqual(await consumeAutomaticWorkItemQueueTick({}, dependencies), { status: 'IDLE' });
+  const result = await consumeAutomaticWorkItemQueueTick({}, dependencies);
+  assert.equal(result.status, 'REVIEW_DISPATCHED');
+  assert.equal(result.review.status, 'CANDIDATE_SAVED');
+  assert.deepEqual(requests, [undefined, { reviewAfterWorkItemId: 'WI-EARLIER' }]);
+  assert.equal(checkpoint.values.get('review-cursor'), 'WI-REVIEW');
+  assert.equal(checkpoint.values.get('active-claim'), null);
+});
+
+test('requested successor Overall uses the exact Review work and advances the cursor only after success', async () => {
+  const checkpoint = memoryCheckpoint(null);
+  let shouldFail = true;
+  let calls = 0;
+  let discoveries = 0;
+  const dependencies = {
+    checkpoint, now: () => new Date(START),
+    nextWorkItem: async () => { discoveries += 1; return { status: 'OVERALL_PENDING', workItemId: 'WI-REVIEW',
+      reviewTurnRef: 'RT-EXPLICIT', workRevisionRef: 'JAWR-EXACT',
+      reviewAfterWorkItemId: 'WI-REVIEW' }; },
+    acknowledgeWorkItem: async () => assert.fail('successor Overall has no initial lease ACK'),
+    readInitialStatus: async () => assert.fail('successor Overall has no initial-stage status'),
+    consumeWorkItem: async () => assert.fail('successor Overall must not rerun initial stages'),
+    consumeSuccessorOverall: async pointer => {
+      calls += 1;
+      assert.equal(pointer.workRevisionRef, 'JAWR-EXACT');
+      if (shouldFail) throw new Error('TRANSIENT_OVERALL_FAILURE');
+      return { status: 'SUCCESSOR_OVERALL_SAVED' };
+    },
+  };
+  await assert.rejects(consumeAutomaticWorkItemQueueTick({}, dependencies), /TRANSIENT_OVERALL_FAILURE/);
+  assert.equal(checkpoint.values.get('review-cursor'), undefined);
+  assert.equal(checkpoint.values.get('active-successor-overall').reviewTurnRef, 'RT-EXPLICIT');
+  shouldFail = false;
+  const result = await consumeAutomaticWorkItemQueueTick({}, dependencies);
+  assert.equal(result.status, 'OVERALL_DISPATCHED');
+  assert.equal(result.overall.status, 'SUCCESSOR_OVERALL_SAVED');
+  assert.equal(checkpoint.values.get('review-cursor'), 'WI-REVIEW');
+  assert.equal(checkpoint.values.get('active-successor-overall'), null);
+  assert.equal(calls, 2);
+  assert.equal(discoveries, 1, 'a saved successor pointer resumes before fresh discovery');
+});
+
+test('successor Overall readback finishes an already succeeded exact attempt without model execution', async t => {
+  const checkpointRoot = await mkdtemp(join(tmpdir(), 'wiselink-successor-overall-'));
+  t.after(() => rm(checkpointRoot, { recursive: true, force: true }));
+  let statusReads = 0;
+  const pointer = { workItemId: 'WI-REVIEW', reviewTurnRef: 'RT-EXPLICIT',
+    workRevisionRef: 'JAWR-EXACT', checkpointRoot };
+  const result = await runHostedSuccessorOverall(pointer, {
+    callTool: async (name, args) => {
+      if (name === 'get_parse_status') {
+        assert.deepEqual(args, { workItemId: 'WI-REVIEW', successorReviewTurnRef: 'RT-EXPLICIT' });
+        statusReads += 1;
+        return { integratedAssessmentSummary: { overallSynthesis: {
+          basedOnJobAidWorkRevisionRef: 'JAWR-EXACT',
+        } } };
+      }
+      assert.equal(name, 'begin_overall_synthesis');
+      const error = new Error('REVIEW_HOST_MCP_TOOL_FAILED:begin_overall_synthesis:ACTION_ATTEMPT_ALREADY_SUCCEEDED');
+      error.hostToolName = name;
+      error.hostErrorCode = 'ACTION_ATTEMPT_ALREADY_SUCCEEDED';
+      throw error;
+    },
+    invokeInitialModel: async () => assert.fail('saved work must not regenerate'),
+  });
+  assert.equal(result.status, 'SUCCESSOR_OVERALL_SAVED');
+  assert.equal(result.recoveredByReadback, true);
+  assert.equal(statusReads, 2);
 });
 
 test('cross-tick work resumes the same lease scope and ACK waits for full initial completion', async () => {

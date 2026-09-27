@@ -12,6 +12,10 @@ import { ReviewAttemptDispatchService } from './review-attempt-dispatch.service'
     ActionAttemptLifecycleService,
     ReviewAttemptDispatchService,
   ],
-  exports: [ActionAttemptLifecycleService, ReviewAttemptDispatchService],
+  exports: [
+    ActionAttemptRepository,
+    ActionAttemptLifecycleService,
+    ReviewAttemptDispatchService,
+  ],
 })
 export class ActionAttemptModule {}

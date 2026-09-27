@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useId, useRef, useState } from 'react';
 import type {
   AppendMatterReviewScope,
   AppendReviewTextTurnRequest,
@@ -7,6 +7,7 @@ import type {
 } from '@shared/api.interface';
 import { canonicalHost } from '@client/src/api';
 import { Button } from '@client/src/components/ui/button';
+import { Checkbox } from '@client/src/components/ui/checkbox';
 import { createRequestCorrelationId } from '@client/src/utils/request-correlation-id';
 import { assertReviewConversationScope } from './review-scope';
 import {
@@ -39,10 +40,13 @@ interface Preview {
   modelRef?: string;
   modelLabel: string;
   selectedEvaluationItemId: string | null;
+  overallRequested: boolean;
 }
 
 export default function AssessmentUpdateControl(props: Props) {
   const [open, setOpen] = useState(false);
+  const [overallRequested, setOverallRequested] = useState(false);
+  const overallOptionId = useId();
   const [preview, setPreview] = useState<Preview | null>(null);
   const [pending, setPending] = useState<AppendReviewTextTurnRequest | null>(
     null,
@@ -67,6 +71,7 @@ export default function AssessmentUpdateControl(props: Props) {
     ) {
       setPending(null);
       setPreview(null);
+      setOverallRequested(false);
       setOpen(false);
     }
   }, [pending, props.conversation]);
@@ -88,6 +93,7 @@ export default function AssessmentUpdateControl(props: Props) {
       modelRef: props.modelRef,
       modelLabel: props.modelLabel,
       selectedEvaluationItemId: props.selectedEvaluationItemId,
+      overallRequested: !props.reviewScope && overallRequested,
     };
   }
 
@@ -129,6 +135,7 @@ export default function AssessmentUpdateControl(props: Props) {
           currentPreview.modelRef,
           currentPreview.scope,
           currentPreview.selectedEvaluationItemId,
+          currentPreview.overallRequested,
         );
       setPending(request);
       const response = await canonicalHost.appendReviewTextTurn(
@@ -145,6 +152,7 @@ export default function AssessmentUpdateControl(props: Props) {
       props.onResult(response.conversation);
       setPending(null);
       setPreview(null);
+      setOverallRequested(false);
       setOpen(false);
     } catch (reason) {
       if (current()) {
@@ -174,17 +182,38 @@ export default function AssessmentUpdateControl(props: Props) {
 
   return (
     <div className="grid gap-2">
+      {!props.reviewScope ? (
+        <div className="grid gap-1 text-sm">
+          <label htmlFor={overallOptionId} className="flex items-center gap-2">
+            <Checkbox
+              id={overallOptionId}
+              checked={pending?.overallRequested ?? overallRequested}
+              disabled={
+                props.disabled ||
+                submitting ||
+                Boolean(pending) ||
+                props.conversation.overallExecutionAvailable !== true
+              }
+              onCheckedChange={(checked) =>
+                setOverallRequested(checked === true)
+              }
+            />
+            更新后核对整体综合
+          </label>
+          <span className="text-muted-foreground">
+            {props.conversation.overallExecutionAvailable === true
+              ? '有实质更正时，基于新问题评估更新整体综合。'
+              : '当前任务尚不支持自动核对整体综合。'}
+          </span>
+        </div>
+      ) : null}
       <Button
         type="button"
         variant="outline"
         disabled={props.disabled || submitting}
         onClick={() => void submit()}
       >
-        {submitting
-          ? '正在请求更新…'
-          : pending
-            ? '重试更新评估'
-            : '更新评估'}
+        {submitting ? '正在请求更新…' : pending ? '重试更新评估' : '更新评估'}
       </Button>
       <div className="flex items-center gap-3 text-sm">
         <span>已保存的新讨论自动汇集。正式采用仍须单独确认。</span>
@@ -215,6 +244,10 @@ export default function AssessmentUpdateControl(props: Props) {
             preview.scope
               ? `事项 ${preview.scope.matterId}${preview.scope.targetClaimId ? ` · 问题 ${preview.scope.targetClaimId}` : ' · 当前事项'}`
               : `${preview.conversation.workItemId}${preview.selectedEvaluationItemId ? ` · 评估项 ${preview.selectedEvaluationItemId}` : ' · 当前任务'}`
+          }
+          overallRequested={
+            pending?.overallRequested ??
+            (!props.reviewScope && overallRequested)
           }
           hasUnsentDraft={props.hasUnsentDraft}
           pending={Boolean(pending)}

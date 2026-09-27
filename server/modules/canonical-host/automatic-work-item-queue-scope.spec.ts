@@ -9,6 +9,7 @@ const CONFIG_KEYS = [
   'WL_OPENCLAW_SERVICE_TENANT_ID',
   'WL_OPENCLAW_SERVICE_WORK_ITEM_ID',
   'WL_OPENCLAW_SERVICE_AUTO_QUEUE_ENABLED',
+  'WL_OPENCLAW_SERVICE_SUCCESSOR_REVIEW_ENABLED',
 ] as const;
 
 describe('OpenClaw automatic WorkItem queue scope', () => {
@@ -159,6 +160,100 @@ describe('OpenClaw automatic WorkItem queue scope', () => {
     expect(leaseAuthorization.authorizeActiveLease).not.toHaveBeenCalled();
   });
 
+  it('requires explicit successor opt-in and never falls back from a rejected Review to the initial lease', async () => {
+    setBaseScope();
+    process.env.WL_OPENCLAW_SERVICE_AUTO_QUEUE_ENABLED = '1';
+    const delegate = {
+      authorizeActiveLease: jest.fn(),
+      authorizeSuccessorOverall: jest.fn(),
+      authorizeReviewDelegation: jest.fn().mockResolvedValue({
+        principalId: 'service:openclaw-g2-dev-20260826',
+        tenantId: 'tenant-01',
+        workItemId: 'WI-dynamic',
+        reviewConversationRef: 'RC-new',
+        requestId: 'REQ-new',
+        actorUserId: 'actor-1',
+        reviewTurnRef: 'RT-new',
+        inputRevision: 7,
+        overallRequested: true,
+        documentId: 'DOC-1',
+        documentVersionId: 'DV-1',
+        sourceArtifactId: 'SA-1',
+        sourceFileSha256: 'a'.repeat(64),
+        sourceByteLength: 100,
+      }),
+      authorizeReviewAttempt: jest.fn().mockRejectedValue(
+        Object.assign(new Error('CANONICAL_WORK_ITEM_NOT_FOUND'), {
+          code: 'CANONICAL_WORK_ITEM_NOT_FOUND',
+          statusCode: 404,
+        }),
+      ),
+    };
+    const authorization =
+      new ConfiguredDevelopmentCanonicalServiceScopeAuthorization(delegate);
+    const begin = {
+      operation: 'BEGIN_REVIEW' as const,
+      workItemId: 'WI-dynamic',
+      reviewConversationRef: 'RC-new',
+      requestId: 'REQ-new',
+    };
+    await expect(
+      authorization.authorizeOpenClawReview(begin),
+    ).rejects.toMatchObject({ statusCode: 503 });
+    process.env.WL_OPENCLAW_SERVICE_SUCCESSOR_REVIEW_ENABLED = '1';
+    await expect(
+      authorization.authorizeOpenClawReview(begin),
+    ).resolves.toMatchObject({
+      workItemId: 'WI-dynamic',
+      successorReviewDelegation: { reviewConversationRef: 'RC-new' },
+    });
+    await expect(
+      authorization.authorizeOpenClawAttempt({
+        operation: 'HEARTBEAT_ATTEMPT',
+        workItemId: 'WI-dynamic',
+        attemptRef: 'OP-review',
+      }),
+    ).rejects.toMatchObject({ statusCode: 404 });
+    delegate.authorizeSuccessorOverall.mockResolvedValue(
+      await delegate.authorizeReviewDelegation(),
+    );
+    for (const operation of ['READ_STATUS', 'READ_DEEP_LINK'] as const) {
+      await expect(
+        authorization.authorizeWorkItemRead({
+          transport: 'READONLY_MCP',
+          operation,
+          workItemId: 'WI-dynamic',
+          successorReviewTurnRef: 'RT-new',
+        }),
+      ).resolves.toMatchObject({
+        successorReviewDelegation: { reviewTurnRef: 'RT-new' },
+      });
+    }
+    await expect(
+      authorization.authorizeWorkItemRead({
+        transport: 'READONLY_MCP',
+        operation: 'QUERY_PARSED_PACKAGE',
+        workItemId: 'WI-dynamic',
+        successorReviewTurnRef: 'RT-new',
+      }),
+    ).rejects.toMatchObject({ statusCode: 404 });
+    expect(delegate.authorizeSuccessorOverall).toHaveBeenCalledWith(
+      expect.objectContaining({
+        tenantId: 'tenant-01',
+        workItemId: 'WI-dynamic',
+        reviewTurnRef: 'RT-new',
+      }),
+    );
+    expect(delegate.authorizeActiveLease).not.toHaveBeenCalled();
+    await expect(
+      authorization.authorizeOpenClawReview({
+        operation: 'BEGIN_REVIEW',
+        reviewConversationRef: 'RC-new',
+        requestId: 'REQ-new',
+      }),
+    ).rejects.toMatchObject({ statusCode: 503 });
+  });
+
   it('preserves the configured exact WorkItem scope without queue configuration', async () => {
     setBaseScope();
     process.env.WL_OPENCLAW_SERVICE_WORK_ITEM_ID = 'WI-static';
@@ -182,6 +277,7 @@ function setBaseScope(): void {
   process.env.WL_OPENCLAW_SERVICE_SCOPE_ENABLED = '1';
   process.env.WL_OPENCLAW_GATEWAY_AUTH_MODE = 'API_KEY';
   process.env.WL_OPENCLAW_SERVICE_SCOPE_ENV = 'DEV';
-  process.env.WL_OPENCLAW_SERVICE_PRINCIPAL_ID = 'service:openclaw-g2-dev-20260826';
+  process.env.WL_OPENCLAW_SERVICE_PRINCIPAL_ID =
+    'service:openclaw-g2-dev-20260826';
   process.env.WL_OPENCLAW_SERVICE_TENANT_ID = 'tenant-01';
 }

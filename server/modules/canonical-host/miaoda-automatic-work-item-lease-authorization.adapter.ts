@@ -1,4 +1,15 @@
-import { Inject, Injectable } from '@nestjs/common';
+import {
+  assertInput,
+  isObjectLocalSourceFailure,
+  workItemNotFound,
+} from './automatic-work-item-authorization-input';
+import { committedSuccessorRevision } from './successor-overall-recovery-authorization';
+import { ReviewConversationRepository } from '../review-persistence/review-conversation.repository';
+import { ActionAttemptRepository } from '../action-attempt/action-attempt.repository';
+import { parseCanonicalHostOpenClawAttemptTask } from './canonical-host-openclaw-runtime-policy';
+import { parseReviewTurnTaskContract } from './canonical-host-openclaw-review.contract';
+import type { AuthorizedSuccessorReviewDelegation } from './automatic-work-item-lease-authorization.port';
+import { Inject, Injectable, Optional } from '@nestjs/common';
 
 import { MiaodaDocumentVersionSourceResolver } from '../work-item/miaoda-document-version-source.resolver';
 import { MiaodaWorkItemRepository } from '../work-item/miaoda-work-item.repository';
@@ -21,7 +32,295 @@ export class MiaodaAutomaticWorkItemLeaseAuthorizationAdapter implements Automat
     private readonly sourceResolver: MiaodaDocumentVersionSourceResolver,
     @Inject(AUTOMATIC_WORK_ITEM_SOURCE_AUTHORIZATION)
     private readonly sourceAuthorization: AutomaticWorkItemSourceAuthorizationPort,
+    @Optional() private readonly conversations?: ReviewConversationRepository,
+    @Optional() private readonly attempts?: ActionAttemptRepository,
   ) {}
+
+  async authorizePendingReview(input: {
+    tenantId: string;
+    principalId: string;
+    workItemId: string;
+  }) {
+    const [binding] =
+      await this.workItems.listCompletedAutoProcessingReviewSubjects({
+        tenantId: input.tenantId,
+        workItemId: input.workItemId,
+        limit: 1,
+      });
+    if (!binding || !this.conversations) throw workItemNotFound();
+    const pending = await this.conversations.loadPendingOpenClawTurn({
+      tenantId: input.tenantId,
+      workItemId: input.workItemId,
+      actorId: binding.authorization.actorUserId,
+      requireSuccessorDelegation: true,
+    });
+    if (!pending) throw workItemNotFound();
+    return this.authorizeReviewDelegation({
+      ...input,
+      reviewConversationRef: pending.reviewConversationId,
+      requestId: pending.requestId,
+    });
+  }
+
+  async authorizeReviewDelegation(
+    input: {
+      tenantId: string;
+      principalId: string;
+      workItemId: string;
+      reviewConversationRef: string;
+      requestId: string;
+    },
+    allowCommittedOverall = false,
+  ): Promise<AuthorizedSuccessorReviewDelegation> {
+    if (
+      !this.conversations ||
+      !input.principalId.startsWith('service:') ||
+      !input.reviewConversationRef.trim() ||
+      !input.requestId.trim()
+    )
+      throw workItemNotFound();
+    const [binding] =
+      await this.workItems.listCompletedAutoProcessingReviewSubjects({
+        tenantId: input.tenantId,
+        workItemId: input.workItemId,
+        limit: 1,
+      });
+    if (!binding) throw workItemNotFound();
+    const { authorization: grant, workItem: row } = binding;
+    if (
+      grant.status !== 'COMPLETED' ||
+      grant.grantKind !== 'MIAODA_CANONICAL_PARSE_REQUEST' ||
+      grant.tenantId !== input.tenantId ||
+      grant.workItemId !== input.workItemId ||
+      !grant.actorUserId.trim() ||
+      grant.actorUserId.startsWith('service:') ||
+      !/^[0-9a-f]{64}$/u.test(grant.sourceFileSha256) ||
+      !Number.isSafeInteger(Number(grant.sourceByteLength)) ||
+      Number(grant.sourceByteLength) < 1 ||
+      row.tenantId !== grant.tenantId ||
+      row.workItemId !== grant.workItemId ||
+      row.requestedByUserId !== grant.actorUserId ||
+      row.requestId !== grant.requestId ||
+      row.documentId !== grant.documentId ||
+      row.documentVersionId !== grant.documentVersionId ||
+      row.sourceArtifactId !== grant.sourceArtifactId ||
+      row.sourceFileSha256 !== grant.sourceFileSha256 ||
+      Number(row.sourceByteLength) !== Number(grant.sourceByteLength) ||
+      row.actionType !== 'PARSE_PDF' ||
+      row.status !== 'CANDIDATE_READBACK_VERIFIED' ||
+      !row.packageId
+    )
+      throw workItemNotFound();
+    const bindingTurn = await this.conversations.loadOpenClawTurnBinding({
+      tenantId: input.tenantId,
+      actorId: grant.actorUserId,
+      workItemId: input.workItemId,
+      reviewConversationId: input.reviewConversationRef,
+      requestId: input.requestId,
+    });
+    if (!bindingTurn) throw workItemNotFound();
+    const { conversation, turn } = bindingTurn;
+    const revisionMatches =
+      turn.inputRevision === row.revision ||
+      (allowCommittedOverall &&
+        (await committedSuccessorRevision(
+          input,
+          turn,
+          row.revision,
+          this.workItems,
+          this.attempts,
+        )));
+    // Historical payloads lack overallRequested. Never turn them into new delegation.
+    if (
+      conversation.status !== 'ACTIVE' ||
+      conversation.actorId !== grant.actorUserId ||
+      conversation.tenantId !== input.tenantId ||
+      conversation.workItemId !== input.workItemId ||
+      conversation.reviewConversationId !== input.reviewConversationRef ||
+      turn.reviewConversationId !== input.reviewConversationRef ||
+      turn.requestId !== input.requestId ||
+      turn.executionRequested !== true ||
+      turn.overallRequested === undefined ||
+      turn.reviewScope ||
+      !revisionMatches ||
+      (turn.purpose !== 'CHAT' && turn.purpose !== 'UPDATE_ASSESSMENT') ||
+      (turn.purpose === 'UPDATE_ASSESSMENT' &&
+        turn.expectedInputRevision !== turn.inputRevision) ||
+      (turn.overallRequested && turn.purpose !== 'UPDATE_ASSESSMENT')
+    )
+      throw workItemNotFound();
+    const permission = await this.sourceAuthorization.authorizeSourceRead({
+      tenantId: grant.tenantId,
+      actorUserId: grant.actorUserId,
+      workItemId: grant.workItemId,
+      requestId: grant.requestId,
+      documentId: grant.documentId,
+      documentVersionId: grant.documentVersionId,
+      sourceArtifactId: grant.sourceArtifactId,
+      sourceFileSha256: grant.sourceFileSha256,
+      sourceByteLength: Number(grant.sourceByteLength),
+    });
+    if (
+      !permission.allowed ||
+      permission.action !== 'DOCUMENT_READ' ||
+      permission.authorizationPolicy !== 'MIAODA_HOST_DOCUMENT_READ' ||
+      permission.tenantId !== grant.tenantId ||
+      permission.actorUserId !== grant.actorUserId ||
+      permission.documentId !== grant.documentId ||
+      permission.documentVersionId !== grant.documentVersionId ||
+      permission.sourceArtifactId !== grant.sourceArtifactId ||
+      permission.sourceFileSha256 !== grant.sourceFileSha256 ||
+      permission.sourceByteLength !== Number(grant.sourceByteLength)
+    )
+      throw workItemNotFound();
+    let source: Awaited<
+      ReturnType<MiaodaDocumentVersionSourceResolver['resolve']>
+    >;
+    try {
+      source = await this.sourceResolver.resolve(grant.documentVersionId, {
+        requireCurrent: true,
+        expectedCreatorUserId: grant.actorUserId,
+      });
+    } catch (error) {
+      if (isObjectLocalSourceFailure(error)) throw workItemNotFound();
+      throw error;
+    }
+    if (
+      source.version.documentId !== grant.documentId ||
+      source.version.documentVersionId !== grant.documentVersionId ||
+      source.version.sourceArtifactId !== grant.sourceArtifactId ||
+      source.artifact.sourceArtifactId !== grant.sourceArtifactId ||
+      source.version.pdfSha256 !== grant.sourceFileSha256 ||
+      source.artifact.sha256 !== grant.sourceFileSha256 ||
+      Number(source.version.byteLength) !== Number(grant.sourceByteLength) ||
+      Number(source.artifact.byteLength) !== Number(grant.sourceByteLength)
+    )
+      throw workItemNotFound();
+    return {
+      tenantId: input.tenantId,
+      principalId: input.principalId,
+      workItemId: input.workItemId,
+      actorUserId: grant.actorUserId,
+      documentId: grant.documentId,
+      documentVersionId: grant.documentVersionId,
+      sourceArtifactId: grant.sourceArtifactId,
+      sourceFileSha256: grant.sourceFileSha256,
+      sourceByteLength: Number(grant.sourceByteLength),
+      reviewConversationRef: input.reviewConversationRef,
+      reviewTurnRef: turn.reviewTurnId,
+      requestId: input.requestId,
+      inputRevision: turn.inputRevision,
+      overallRequested: turn.overallRequested === true,
+    };
+  }
+
+  async authorizeSuccessorOverall(input: {
+    tenantId: string;
+    principalId: string;
+    workItemId: string;
+    reviewTurnRef: string;
+  }): Promise<AuthorizedSuccessorReviewDelegation> {
+    const [subject] =
+      await this.workItems.listCompletedAutoProcessingReviewSubjects({
+        tenantId: input.tenantId,
+        workItemId: input.workItemId,
+        limit: 1,
+      });
+    if (!subject || !this.conversations) throw workItemNotFound();
+    const [binding] = await this.conversations.listSuccessorOverallTurnBindings(
+      {
+        tenantId: input.tenantId,
+        actorId: subject.authorization.actorUserId,
+        workItemId: input.workItemId,
+        reviewTurnRef: input.reviewTurnRef,
+        allowCommittedRevision: true,
+        limit: 1,
+      },
+    );
+    if (
+      !binding ||
+      binding.turn.reviewTurnId !== input.reviewTurnRef ||
+      binding.turn.overallRequested !== true ||
+      !binding.turn.assistantCandidate?.jobAidWorkingUpdate?.workRevisionRef
+    )
+      throw workItemNotFound();
+    return this.authorizeReviewDelegation(
+      {
+        ...input,
+        reviewConversationRef: binding.conversation.reviewConversationId,
+        requestId: binding.turn.requestId,
+      },
+      true,
+    );
+  }
+
+  async authorizeReviewAttempt(input: {
+    tenantId: string;
+    principalId: string;
+    workItemId: string;
+    attemptRef: string;
+  }): Promise<AuthorizedSuccessorReviewDelegation | null> {
+    if (!this.attempts) throw workItemNotFound();
+    const row = await this.attempts.readByOperationRef(input.attemptRef);
+    if (
+      !row ||
+      row.tenantId !== input.tenantId ||
+      row.workItemId !== input.workItemId
+    )
+      throw workItemNotFound();
+    // A non-Review attempt may use its own existing initial lease path. A rejected
+    // Review must never fall back to that lease, including generic heartbeat/read.
+    if (row.actionType === 'OPENCLAW_OVERALL_SYNTHESIS') {
+      const task = parseCanonicalHostOpenClawAttemptTask(row);
+      const pointer = task.modelInput.successorReviewTurnRef;
+      if (pointer === undefined) return null;
+      if (typeof pointer !== 'string' || !pointer.trim())
+        throw workItemNotFound();
+      const delegation = await this.authorizeSuccessorOverall({
+        ...input,
+        reviewTurnRef: pointer,
+      });
+      const successor = task.modelInput.successorOverallBinding;
+      if (
+        !successor ||
+        typeof successor !== 'object' ||
+        Array.isArray(successor) ||
+        !('reviewConversationRef' in successor) ||
+        successor.reviewConversationRef !== delegation.reviewConversationRef ||
+        !('requestId' in successor) ||
+        successor.requestId !== delegation.requestId ||
+        !('inputRevision' in successor) ||
+        successor.inputRevision !== delegation.inputRevision
+      )
+        throw workItemNotFound();
+      if (
+        row.actorUserId !== delegation.actorUserId ||
+        row.documentVersionId !== delegation.documentVersionId ||
+        row.inputRevision !== delegation.inputRevision ||
+        (row.leaseOwner !== null && row.leaseOwner !== input.principalId)
+      )
+        throw workItemNotFound();
+      return delegation;
+    }
+    if (row.actionType !== 'OPENCLAW_INTERACTIVE_REVIEW') return null;
+    const task = parseCanonicalHostOpenClawAttemptTask(row);
+    const contract = parseReviewTurnTaskContract(task.modelInput);
+    const delegation = await this.authorizeReviewDelegation({
+      ...input,
+      reviewConversationRef: contract.reviewConversationRef,
+      requestId: contract.requestId,
+    });
+    if (
+      delegation.reviewTurnRef !== contract.reviewTurnRef ||
+      row.actorUserId !== delegation.actorUserId ||
+      row.inputRevision !== delegation.inputRevision ||
+      row.documentVersionId !== delegation.documentVersionId ||
+      contract.matterContext ||
+      (row.leaseOwner !== null && row.leaseOwner !== input.principalId)
+    )
+      throw workItemNotFound();
+    return delegation;
+  }
 
   async authorizeActiveLease(
     input: AutomaticWorkItemLeaseAuthorizationInput,
@@ -176,45 +475,4 @@ export class MiaodaAutomaticWorkItemLeaseAuthorizationAdapter implements Automat
       leaseExpiresAt: authorization.leaseExpiresAt.toISOString(),
     };
   }
-}
-
-function assertInput(input: AutomaticWorkItemLeaseAuthorizationInput): void {
-  if (
-    !input.tenantId.trim() ||
-    !input.workItemId.trim() ||
-    !input.principalId.trim() ||
-    (input.leaseToken === undefined) !==
-      (input.leaseGeneration === undefined) ||
-    (input.leaseToken !== undefined &&
-      !/^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/iu.test(
-        input.leaseToken,
-      )) ||
-    (input.leaseGeneration !== undefined &&
-      (!Number.isSafeInteger(input.leaseGeneration) ||
-        input.leaseGeneration < 1))
-  ) {
-    throw workItemNotFound();
-  }
-}
-
-function isObjectLocalSourceFailure(error: unknown): boolean {
-  const code =
-    error instanceof Error && 'code' in error && typeof error.code === 'string'
-      ? error.code
-      : error instanceof Error
-        ? error.message
-        : '';
-  return new Set([
-    'DOCUMENT_VERSION_NOT_FOUND',
-    'DOCUMENT_VERSION_NOT_CURRENT',
-    'DOCUMENT_VERSION_CURRENTNESS_UNVERIFIED',
-    'DOCUMENT_VERSION_SOURCE_IDENTITY_INVALID',
-  ]).has(code);
-}
-
-function workItemNotFound(): Error & { code: string; statusCode: number } {
-  return Object.assign(new Error('CANONICAL_WORK_ITEM_NOT_FOUND'), {
-    code: 'CANONICAL_WORK_ITEM_NOT_FOUND',
-    statusCode: 404,
-  });
 }

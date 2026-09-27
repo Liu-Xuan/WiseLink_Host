@@ -8,6 +8,7 @@ import test from 'node:test';
 import { bindWholeDocumentTranslation, invokeHostedInitialModel as invokeInitialWithTransport } from '../scripts/invoke-hosted-initial-model.mjs';
 import { requestHostedGateway } from '../scripts/request-hosted-gateway.mjs';
 import { consumePendingReviewTurn } from '../scripts/consume-hosted-review-turn.mjs';
+import { runHostedSuccessorOverall } from '../scripts/consume-hosted-work-item.mjs';
 
 import {
   WISELINK_HOST_MCP_NAME,
@@ -3066,6 +3067,44 @@ test('runs no-discovery overall from complete persisted dynamic N', async () => 
   );
 });
 
+test('successor Overall binds an explicit Review turn and exact saved work without initial-stage readiness', async () => {
+  const input = synthesisInput();
+  const task = makeTask('OPENCLAW_OVERALL_SYNTHESIS', {
+    ...input, successorReviewTurnRef: 'RT-EXPLICIT',
+    successorOverallBinding: { workRevisionRef: 'JAWR-EXACT' },
+  });
+  const begin = runningBegin(task, { modelInput: input, selectedDiscoveryRefs: [] });
+  const calls = [];
+  const result = await runOverallSynthesis({
+    workItemId: WORK_ITEM_ID, successorReviewTurnRef: 'RT-EXPLICIT',
+    successorWorkRevisionRef: 'JAWR-EXACT', callTool: async (name, args) => {
+      calls.push({ name, args });
+      if (name === 'get_parse_status') return { entry: { workItemId: WORK_ITEM_ID } };
+      if (name === 'begin_overall_synthesis') return begin;
+      if (name === 'heartbeat_action_attempt') return heartbeatResult(task, args);
+      if (name === 'commit_overall_candidate') return {
+        workItemId: WORK_ITEM_ID, workItemRevision: 8,
+        status: 'OVERALL_CANDIDATE_READY', overallSynthesis: {
+          status: 'CANDIDATE_ONLY', authorityLevel: 'candidate_only',
+          externalDiscoveryIsEvidence: false,
+          basedOnJobAidWorkRevisionRef: 'JAWR-EXACT',
+        },
+      };
+      if (name === 'get_deep_link') return { workItemId: WORK_ITEM_ID, deepLink: '/work-item/fixture' };
+      throw new Error(`UNEXPECTED_TOOL:${name}`);
+    },
+    synthesizeOverall: async () => ({ output: synthesisOutput(input), provenance: provenance() }),
+  });
+  assert.equal(result.ok, true);
+  assert.deepEqual(calls.find(({ name }) => name === 'begin_overall_synthesis').args, {
+    workItemId: WORK_ITEM_ID, providers: [], successorReviewTurnRef: 'RT-EXPLICIT',
+  });
+  assert.ok(calls.filter(({ name }) => name === 'get_parse_status').every(({ args }) =>
+    args.successorReviewTurnRef === 'RT-EXPLICIT'));
+  assert.equal(calls.find(({ name }) => name === 'get_deep_link').args.successorReviewTurnRef,
+    'RT-EXPLICIT');
+});
+
 test('replays only the Host-sealed Overall result to finish COMMITTING', async () => {
   const input = synthesisInput();
   const task = makeTask('OPENCLAW_OVERALL_SYNTHESIS', {
@@ -3101,6 +3140,46 @@ test('replays only the Host-sealed Overall result to finish COMMITTING', async (
   assert.equal(result.outcome, 'COMMITTING_REPLAYED');
   assert.deepEqual(calls, ['get_parse_status', 'begin_overall_synthesis',
     'get_action_attempt_status', 'commit_overall_candidate']);
+});
+
+test('a successor Overall tick finishes its sealed COMMITTING attempt without another model call', async t => {
+  const checkpointRoot = await mkdtemp(join(tmpdir(), 'wiselink-successor-committing-'));
+  t.after(() => rm(checkpointRoot, { recursive: true, force: true }));
+  const input = synthesisInput();
+  const task = makeTask('OPENCLAW_OVERALL_SYNTHESIS', {
+    ...input, successorReviewTurnRef: 'RT-EXPLICIT',
+    successorOverallBinding: { workRevisionRef: 'JAWR-EXACT' },
+  });
+  const recoveryResult = sealResultEnvelope({ task,
+    modelOutput: synthesisOutput(input), provenance: provenance() });
+  const begin = { ...runningBegin(task, { modelInput: input, selectedDiscoveryRefs: [] }),
+    status: 'COMMITTING', recoveryResult };
+  let committed = false;
+  let commits = 0;
+  const pointer = { workItemId: WORK_ITEM_ID, reviewTurnRef: 'RT-EXPLICIT',
+    workRevisionRef: 'JAWR-EXACT', checkpointRoot };
+  const dependencies = { callTool: async (name, args) => {
+    if (name === 'get_parse_status') return { integratedAssessmentSummary: { overallSynthesis:
+      committed ? { basedOnJobAidWorkRevisionRef: 'JAWR-EXACT' } : null } };
+    if (name === 'begin_overall_synthesis') return begin;
+    if (name === 'get_action_attempt_status') return attemptStatus(task, 'COMMITTING', recoveryResult);
+    if (name === 'commit_overall_candidate') {
+      assert.equal(args.attemptRef, begin.attemptRef);
+      assert.deepEqual(args.result, recoveryResult);
+      committed = true; commits += 1;
+      return { workItemId: WORK_ITEM_ID, workItemRevision: 8,
+        status: 'OVERALL_CANDIDATE_READY', overallSynthesis: {
+          status: 'CANDIDATE_ONLY', authorityLevel: 'candidate_only',
+          externalDiscoveryIsEvidence: false } };
+    }
+    throw new Error(`UNEXPECTED_TOOL:${name}`);
+  }, invokeInitialModel: async () => assert.fail('sealed recovery must not call the model') };
+  const first = await runHostedSuccessorOverall(pointer, dependencies);
+  assert.equal(first.status, 'SUCCESSOR_OVERALL_SAVED');
+  assert.equal(commits, 1);
+  const replay = await runHostedSuccessorOverall(pointer, dependencies);
+  assert.deepEqual(replay, first);
+  assert.equal(commits, 1);
 });
 
 test('historical skill provenance is allowed only for a sealed compatible recovery', () => {
@@ -5362,7 +5441,8 @@ async function rejectedReviewCheckpoint(t) {
   const unprepared = { attemptRef: task.operationRef, taskType: task.taskType, status: 'RUNNING',
     commitStartedAt: null, resultContentHash: null, recoveryAvailable: false,
     projectionApplied: false, terminalReason: null };
-  await assert.rejects(runHostedReviewTurn({ reviewConversationRef: reviewTask.reviewConversationRef,
+  await assert.rejects(runHostedReviewTurn({ workItemId: task.workItemId,
+    reviewConversationRef: reviewTask.reviewConversationRef,
     requestId: reviewTask.requestId, checkpointDir }, {
     callTool: async (name, args) => {
       if (name === 'begin_review_turn') return runningBegin(task);

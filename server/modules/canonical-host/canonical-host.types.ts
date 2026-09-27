@@ -133,6 +133,8 @@ export interface CanonicalWorkItemRegistrarPort {
     next: Omit<CanonicalWorkItemProjection, 'revision'>;
     syncPrimaryAttempt?: boolean;
     applicabilityInputGuard?: { tenantId: string };
+    /** Fences a successor Overall against a newer saved JobAid revision. */
+    jobAidWorkRevisionGuard?: { tenantId: string; workRevisionRef: string };
   }): Promise<CanonicalWorkItemProjection>;
   getExact(input: {
     workItemId: string;

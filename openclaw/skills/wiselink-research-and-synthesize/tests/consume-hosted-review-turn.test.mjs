@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { consumePendingReviewTurn } from '../scripts/consume-hosted-review-turn.mjs';
+import { runInteractiveReviewTurn } from '../scripts/orchestrate-host-mcp.mjs';
 
 const options = {
   workItemId: 'WI-1',
@@ -35,6 +36,7 @@ test('one tick dispatches exactly the persisted next turn with its own checkpoin
     runTurn: async (input) => {
       runs += 1;
       assert.deepEqual(input, {
+        workItemId: 'WI-1',
         reviewConversationRef: 'RC-1',
         requestId: 'request-2',
         checkpointDir: '/tmp/review-consumer-test/RT-2',
@@ -44,6 +46,22 @@ test('one tick dispatches exactly the persisted next turn with its own checkpoin
   });
   assert.equal(runs, 1);
   assert.equal(result.status, 'CANDIDATE_SAVED');
+});
+
+test('dynamic Review BEGIN carries the exact WorkItem outside the model', async () => {
+  const seen = [];
+  await assert.rejects(runInteractiveReviewTurn({
+    mode: 'INTERACTIVE_REVIEW', workItemId: 'WI-1',
+    reviewConversationRef: 'RC-1', requestId: 'request-2',
+    callTool: async (name, args) => {
+      seen.push({ name, args });
+      throw new Error('TEST_STOP_BEFORE_MODEL');
+    },
+    respond: async () => assert.fail('model must not be called'),
+  }), /TEST_STOP_BEFORE_MODEL/u);
+  assert.deepEqual(seen, [{ name: 'begin_review_turn', args: {
+    reviewConversationRef: 'RC-1', requestId: 'request-2', workItemId: 'WI-1',
+  } }]);
 });
 
 test('pre-commit failure stops the exact attempt; an uncertain commit is never cancelled', async () => {

@@ -64,7 +64,7 @@ import {
   type CanonicalVerifiedOpenClawAttemptScope,
   type CanonicalVerifiedServiceScope,
 } from './canonical-service-scope.authorization';
-import { preflightCanonicalHostOpenClawResult } from './canonical-host-openclaw-runtime-policy';
+import { preflightCanonicalHostOpenClawResult, parseCanonicalHostOpenClawAttemptTask, parseCanonicalHostOpenClawStoredResult } from './canonical-host-openclaw-runtime-policy';
 import {
   overallModelEvidenceRegistry,
 } from './overall-assessment-reading';
@@ -249,6 +249,100 @@ export class CanonicalJobAidProblemService {
         : {}),
       modelInput: structuredClone(input.modelInput),
       selectedDiscoveryRefs: [],
+    };
+  }
+
+  /** A caller supplies only a persisted turn pointer; the Host chooses the work. */
+  async beginSuccessorOverall(
+    workItemId: string,
+    scope: CanonicalVerifiedServiceScope,
+    successorReviewTurnRef: string,
+  ): Promise<BeginJobAidProblemResult> {
+    const delegated = scope.successorReviewDelegation;
+    if (!delegated || delegated.workItemId !== workItemId ||
+      delegated.tenantId !== scope.tenantId ||
+      delegated.principalId !== scope.principalId ||
+      delegated.reviewTurnRef !== successorReviewTurnRef || !delegated.overallRequested)
+      throw new Error('JOBAID_SUCCESSOR_OVERALL_DELEGATION_REQUIRED');
+    const binding = await this.conversations.loadOpenClawTurnByIdBinding({
+      tenantId: scope.tenantId, actorId: delegated.actorUserId, workItemId,
+      reviewConversationId: delegated.reviewConversationRef,
+      reviewTurnId: successorReviewTurnRef,
+    });
+    const turn = binding?.turn;
+    const receipt = turn?.assistantCandidate?.jobAidWorkingUpdate;
+    if (!turn || turn.requestId !== delegated.requestId ||
+      turn.inputRevision !== delegated.inputRevision || !turn.overallRequested ||
+      turn.purpose !== 'UPDATE_ASSESSMENT' || turn.reviewScope)
+      throw new Error('JOBAID_SUCCESSOR_OVERALL_TURN_CHANGED');
+    if (!receipt?.workRevisionRef || receipt.status !== 'APPLIED')
+      throw new Error('JOBAID_SUCCESSOR_OVERALL_NO_WORK');
+    const workItem = await this.registrar.getTenantScopedByWorkItemId({tenantId: scope.tenantId, workItemId});
+    if (workItem.source.documentVersionId !== delegated.documentVersionId ||
+      workItem.source.sourceArtifactId !== delegated.sourceArtifactId ||
+      canonicalHostBareSha256(workItem.source.sourceFileSha256) !== canonicalHostBareSha256(delegated.sourceFileSha256) ||
+      workItem.source.sourceByteLength !== delegated.sourceByteLength)
+      throw new Error('JOBAID_SUCCESSOR_OVERALL_SOURCE_CHANGED');
+    const history = await this.work.listForRuntime({tenantId: scope.tenantId, workItemId,
+      actorUserId: delegated.actorUserId});
+    const exact = history[0];
+    if (!exact || exact.workRevisionRef !== receipt.workRevisionRef ||
+      exact.workRevision !== receipt.workRevision ||
+      exact.documentVersionId !== delegated.documentVersionId ||
+      exact.content.roundCompletion === 'IN_PROGRESS')
+      throw new Error('JOBAID_SUCCESSOR_OVERALL_WORK_CHANGED');
+    const idempotencyKey = `openclaw-successor-overall:${workItemId}:${successorReviewTurnRef}`;
+    const existing = await this.attempts.readRequest({tenantId: scope.tenantId,workItemId,
+      taskType: 'OPENCLAW_OVERALL_SYNTHESIS',documentVersionId: delegated.documentVersionId,idempotencyKey});
+    if (existing && !['QUEUED','RUNNING','RETRY_SCHEDULED','COMMITTING'].includes(existing.status))
+      throw new Error(`ACTION_ATTEMPT_ALREADY_${existing.status}`);
+    // Projection CAS can succeed before the terminal acknowledgement. Return the
+    // same sealed result and execution fence, without reserving against the new revision.
+    if (existing?.status === 'COMMITTING') {
+      if (existing.leaseOwner !== scope.principalId || !existing.leaseToken || !existing.leaseExpiresAt)
+        throw new Error('JOBAID_SUCCESSOR_OVERALL_RECOVERY_FENCE_INVALID');
+      const recoveryTask = parseCanonicalHostOpenClawAttemptTask(existing);
+      const recoveryInput = parseJobAidProblemTask(recoveryTask);
+      if (recoveryInput.successorReviewTurnRef !== successorReviewTurnRef ||
+        recoveryInput.previousWork?.workRevisionRef !== exact.workRevisionRef)
+        throw new Error('JOBAID_SUCCESSOR_OVERALL_ATTEMPT_CHANGED');
+      await this.assertSourcesAuthorized(recoveryInput.sourceCatalog,recoveryInput,scope.tenantId,workItemId);
+      return {attemptRef: recoveryTask.operationRef,status:'COMMITTING',
+        leaseToken:existing.leaseToken,leaseGeneration:existing.leaseGeneration,
+        leaseExpiresAt:existing.leaseExpiresAt.toISOString(),task:recoveryTask,
+        recoveryResult:parseCanonicalHostOpenClawStoredResult({row:existing,task:recoveryTask}),
+        modelInput:structuredClone(recoveryInput.modelInput),selectedDiscoveryRefs:[]};
+    }
+    if (!existing && workItem.integratedAssessment?.overallSynthesis?.status === 'CANDIDATE_ONLY' &&
+      workItem.integratedAssessment.overallSynthesis.basedOnJobAidWorkRevisionRef === exact.workRevisionRef)
+      throw new Error('JOBAID_SUCCESSOR_OVERALL_ALREADY_CURRENT');
+    const claim = await this.attempts.reserveAndClaim({
+      workItemId, taskType: 'OPENCLAW_OVERALL_SYNTHESIS', actorUserId: 'service:openclaw-main',
+      tenantId: scope.tenantId, leaseOwner: scope.principalId,
+      documentVersionId: delegated.documentVersionId,
+      inputRevision: workItem.revision, baseRevision: workItem.revision, idempotencyKey,
+      sourceRefs: [jobAidSourceFileReference(workItem)], allowedConnectors: [],
+      buildModelInput: async identity => ({
+        ...await this.buildInput(workItem, scope.tenantId, delegated.actorUserId,
+          scope.authorizationFingerprint, 'OVERALL_CONSISTENCY', identity.createdAt.toISOString(),
+          [], undefined, undefined, exact),
+        successorReviewTurnRef,
+        successorOverallBinding: {
+          reviewConversationRef: delegated.reviewConversationRef, requestId: delegated.requestId,
+          inputRevision: delegated.inputRevision, workRevisionRef: exact.workRevisionRef,
+          workRevision: exact.workRevision, workItemRevision: workItem.revision,
+        },
+      }),
+    });
+    const task = parseJobAidProblemTask(claim.task);
+    if (task.successorReviewTurnRef !== successorReviewTurnRef ||
+      task.previousWork?.workRevisionRef !== exact.workRevisionRef)
+      throw new Error('JOBAID_SUCCESSOR_OVERALL_ATTEMPT_CHANGED');
+    await this.assertSourcesAuthorized(task.sourceCatalog,task,scope.tenantId,workItemId);
+    return { attemptRef: claim.attemptRef, status: claim.status, leaseToken: claim.leaseToken,
+      leaseGeneration: claim.leaseGeneration, leaseExpiresAt: claim.leaseExpiresAt,
+      task: structuredClone(claim.task), selectedDiscoveryRefs: [], modelInput: structuredClone(task.modelInput),
+      ...(claim.status === 'COMMITTING' ? {recoveryResult: structuredClone(claim.recoveryResult)} : {}),
     };
   }
 
@@ -489,6 +583,7 @@ export class CanonicalJobAidProblemService {
       includedDiscussionTurnIds: string[];
     },
     originalParseRunId?: string,
+    successorWork?: JobAidWorkRevision,
   ): Promise<JobAidProblemTaskInput> {
     const readScope = new UnifiedArtifactReadScope(this.artifactStore);
     if (!this.originalReader) throw new Error('DOCUMENT_ORIGINAL_READER_UNAVAILABLE');
@@ -539,10 +634,10 @@ export class CanonicalJobAidProblemService {
     const base = workItem.integratedAssessment?.baseRules;
     if (purpose === 'OVERALL_CONSISTENCY' && !isJobAidProblemProjection(base))
       throw new Error('JOBAID_OVERALL_EXACT_WORK_REQUIRED');
-    const previousWorkRef =
+    const previousWorkRef = successorWork?.workRevisionRef ?? (
       purpose === 'OVERALL_CONSISTENCY' && isJobAidProblemProjection(base)
         ? base.workRevisionRef
-        : history[0]?.workRevisionRef;
+        : history[0]?.workRevisionRef);
     let previousWork = previousWorkRef
       ? await this.work.readByRefForRuntime({
           tenantId,
@@ -562,11 +657,13 @@ export class CanonicalJobAidProblemService {
         throw new Error('JOBAID_OVERALL_EXACT_WORK_REQUIRED');
       if (
         !previousWork ||
-        previousWork.workRevision !== base.workRevision ||
+        previousWork.workRevision !== (successorWork?.workRevision ?? base.workRevision) ||
         previousWork.documentVersionId !== workItem.source.documentVersionId ||
         previousWork.content.roundCompletion === 'IN_PROGRESS'
       )
         throw new Error('JOBAID_OVERALL_EXACT_WORK_REQUIRED');
+      if (successorWork && previousWork.workRevisionRef !== history[0]?.workRevisionRef)
+        throw new Error('JOBAID_SUCCESSOR_OVERALL_WORK_CHANGED');
       if (previousWork.workRevisionRef !== history[0]?.workRevisionRef)
         previousWork = await this.recoverCancelledOverallWork({
           workItem, tenantId, actorUserId, baseWork: previousWork,
@@ -951,6 +1048,8 @@ export class CanonicalJobAidProblemService {
       'SAVE_ASSESSMENT_WORK',
       input.workItemId,
     );
+    if (taskInput.successorReviewTurnRef)
+      throw new Error('JOBAID_SUCCESSOR_OVERALL_EXACT_WORK_READ_ONLY');
     await this.assertSourcesAuthorized(
       taskInput.sourceCatalog,
       taskInput,
@@ -1139,6 +1238,9 @@ export class CanonicalJobAidProblemService {
       const revision = history.find(
         (item) => item.workRevisionRef === output.workRevisionRef,
       );
+      if (taskInput.successorReviewTurnRef &&
+        revision?.workRevisionRef !== taskInput.previousWork?.workRevisionRef)
+        throw new Error('JOBAID_SUCCESSOR_OVERALL_WORK_CHANGED');
       const allowedPriorForOverall =
         isOverall &&
         revision?.workRevisionRef === taskInput.previousWork?.workRevisionRef;
@@ -1344,6 +1446,9 @@ export class CanonicalJobAidProblemService {
       workItemId: workItem.workItemId,
       expectedRevision: prepared.task.baseRevision,
       syncPrimaryAttempt: false,
+      ...(parseJobAidProblemTask(prepared.task).successorReviewTurnRef ? {
+        jobAidWorkRevisionGuard: { tenantId: prepared.row.tenantId, workRevisionRef: revision.workRevisionRef },
+      } : {}),
       next: withoutRevision(next),
     });
     await this.attempts.finishProjectionSuccess(prepared);

@@ -290,6 +290,37 @@ describe('ReviewConversationService session and ACL boundary', () => {
     expect(result.conversation.automaticExecutionAvailable).toBe(true);
   });
 
+  it('shows dynamic execution only for the current owner readable completion receipt', async () => {
+    jest
+      .spyOn(executorScope, 'isOpenClawAutomaticReviewConfigured')
+      .mockReturnValue(false);
+    jest
+      .spyOn(executorScope, 'isOpenClawSuccessorReviewConfigured')
+      .mockReturnValue(true);
+    const setup = makeService();
+    setup.conversations.createOrResume.mockResolvedValue({
+      aggregate: { conversation, turns: [] },
+      created: true,
+    });
+    expect(
+      (await setup.service.createOrResume('WI-1', {} as never)).conversation
+        .automaticExecutionAvailable,
+    ).toBe(false);
+    setup.workItems.hasReadableAutoProcessingCompletion.mockResolvedValue(true);
+    expect(
+      (await setup.service.createOrResume('WI-1', {} as never)).conversation
+        .automaticExecutionAvailable,
+    ).toBe(true);
+    expect(
+      setup.workItems.hasReadableAutoProcessingCompletion,
+    ).toHaveBeenLastCalledWith({
+      tenantId: 'tenant-1',
+      actorUserId: 'actor-1',
+      workItemId: 'WI-1',
+      revision: 7,
+    });
+  });
+
   it('derives tenant, actor and revision only from session + fresh ACL', async () => {
     const setup = makeService();
     setup.conversations.createOrResume.mockResolvedValue({
@@ -751,6 +782,9 @@ function makeService() {
     readExecution: jest.fn().mockResolvedValue(null),
   };
   const models = fixedModelSettings();
+  const workItems = {
+    hasReadableAutoProcessingCompletion: jest.fn().mockResolvedValue(false),
+  };
   return {
     service: new ReviewConversationService(
       sessions as never,
@@ -759,6 +793,8 @@ function makeService() {
       attachments as never,
       dispatch as never,
       models,
+      undefined,
+      workItems as never,
     ),
     sessions,
     objectAccess,
@@ -766,5 +802,6 @@ function makeService() {
     attachments,
     dispatch,
     models,
+    workItems,
   };
 }

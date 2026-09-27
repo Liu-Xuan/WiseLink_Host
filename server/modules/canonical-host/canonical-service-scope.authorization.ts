@@ -1,3 +1,4 @@
+import type { AuthorizedSuccessorReviewDelegation } from './automatic-work-item-lease-authorization.port';
 import { Injectable } from '@nestjs/common';
 
 export const CANONICAL_SERVICE_SCOPE_AUTHORIZATION = Symbol(
@@ -21,6 +22,7 @@ export interface CanonicalVerifiedServiceScope {
   tenantId: string;
   workItemId: string;
   authorizationFingerprint: string;
+  successorReviewDelegation?: AuthorizedSuccessorReviewDelegation;
   automaticWorkItemLease?: {
     requestId: string;
     actorUserId: string;
@@ -107,6 +109,7 @@ export interface CanonicalServiceScopeAuthorizationPort {
     transport: 'OPENAPI_REST' | 'READONLY_MCP';
     operation: 'READ_STATUS' | 'QUERY_PARSED_PACKAGE' | 'READ_DEEP_LINK';
     workItemId: string;
+    successorReviewTurnRef?: string;
   }): Promise<CanonicalVerifiedServiceScope>;
   authorizeDevelopmentCreate(input: {
     documentVersionId: string;
@@ -123,9 +126,11 @@ export interface CanonicalServiceScopeAuthorizationPort {
       | 'GET_PENDING_REVIEW_TURN'
       | 'BEGIN_TRANSLATE';
     workItemId: string;
+    successorReviewTurnRef?: string;
   }): Promise<CanonicalVerifiedServiceScope>;
   authorizeOpenClawReview(input: {
     operation: 'BEGIN_REVIEW';
+    workItemId?: string;
     reviewConversationRef: string;
     requestId: string;
   }): Promise<CanonicalVerifiedServiceScope>;

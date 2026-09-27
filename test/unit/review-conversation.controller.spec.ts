@@ -50,6 +50,42 @@ describe('ReviewConversationController request boundary', () => {
       ).rejects.toMatchObject({ statusCode: 400 });
   });
 
+  it('accepts overall delegation only for an explicit WorkItem update', async () => {
+    const setup = makeController();
+    const update = {
+      requestId: 'overall-1',
+      userMessage: '更新问题并核对综合',
+      purpose: 'UPDATE_ASSESSMENT',
+      executionMode: 'AUTOMATIC',
+      expectedInputRevision: 7,
+      includedDiscussionTurnIds: [],
+      overallRequested: true,
+    };
+    await setup.controller.appendTextTurn('WI-1', 'RC-1', update, {} as never);
+    expect(setup.service.appendTextTurn).toHaveBeenCalledWith(
+      'WI-1',
+      'RC-1',
+      update,
+      expect.anything(),
+    );
+    for (const invalid of [
+      { ...update, overallRequested: 'true' },
+      { ...update, purpose: 'CHAT' },
+      { ...update, executionMode: undefined },
+      {
+        ...update,
+        reviewScope: {
+          kind: 'ENGINEERING_MATTER',
+          matterId: 'MAT-1',
+          expectedWorkingRevision: 1,
+        },
+      },
+    ])
+      await expect(
+        setup.controller.appendTextTurn('WI-1', 'RC-1', invalid, {} as never),
+      ).rejects.toMatchObject({ statusCode: 400 });
+  });
+
   it('accepts only a registered model reference for the new turn', async () => {
     const setup = makeController();
     const input = {

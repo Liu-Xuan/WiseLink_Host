@@ -1,3 +1,4 @@
+import * as runtimePolicy from '../../server/modules/canonical-host/canonical-host-openclaw-runtime-policy';
 import * as sourcePlanning from '../../server/modules/canonical-host/canonical-translation-source-plan';
 import type { CanonicalWorkItemProjection } from '@shared/api.interface';
 import { originalFixture } from './document-parsing/fixtures/document-original.fixture';
@@ -44,6 +45,120 @@ const scope = {
 };
 
 describe('JobAid continuation requests', () => {
+  it('derives successor Overall from the persisted receipt, keeps the prior projection, and replays one attempt', async () => {
+    const h = successorHarness();
+    const before = structuredClone(h.current());
+    const first = await h.service.beginSuccessorOverall(scope.workItemId,h.delegated,'TURN-SUCCESSOR');
+    const replay = await h.service.beginSuccessorOverall(scope.workItemId,h.delegated,'TURN-SUCCESSOR');
+    expect(replay.attemptRef).toBe(first.attemptRef);
+    expect(h.attempts.reserve).toHaveBeenCalledTimes(1);
+    expect(h.current()).toEqual(before);
+    const input = parseJobAidProblemTask(first.task);
+    expect(input.previousWork?.workRevisionRef).toBe('JAWR-PERSISTED-3');
+    expect(input.successorOverallBinding).toEqual({reviewConversationRef:'CONV-SUCCESSOR',
+      requestId:'REQUEST-SUCCESSOR',inputRevision:5,workRevisionRef:'JAWR-PERSISTED-3',
+      workRevision:3,workItemRevision:5});
+    expect(first.task.sourceRefs).toEqual([{ref:'ART-TEST',sha256:'a'.repeat(64)}]);
+    expect(first.task.baseRevision).toBe(5);
+    expect(h.conversations.loadOpenClawTurnByIdBinding).toHaveBeenCalledWith({
+      tenantId:TENANT,actorId:OWNER,workItemId:scope.workItemId,
+      reviewConversationId:'CONV-SUCCESSOR',reviewTurnId:'TURN-SUCCESSOR'});
+  });
+
+  it.each(['no-grant','no-overall','different-turn','no-work','unchanged','newer-work','unfinished','source-change'])(
+    'fails closed before reserving successor Overall for %s', async reason => {
+      const h = successorHarness();
+      if (reason === 'no-grant') delete h.delegated.successorReviewDelegation;
+      if (reason === 'no-overall') h.turn.overallRequested=false;
+      if (reason === 'different-turn') h.turn.requestId='OTHER';
+      if (reason === 'no-work') h.turn.assistantCandidate.jobAidWorkingUpdate.workRevisionRef=null;
+      if (reason === 'unchanged') h.turn.assistantCandidate.jobAidWorkingUpdate.status='UNCHANGED';
+      if (reason === 'newer-work') h.work.listForRuntime.mockResolvedValue([{...savedWork(),workRevisionRef:'OTHER',workRevision:4}]);
+      if (reason === 'unfinished') {const work=savedWork();work.content.roundCompletion='IN_PROGRESS';h.work.listForRuntime.mockResolvedValue([work]);}
+      if (reason === 'source-change') h.current().source.sourceArtifactId='OTHER';
+      await expect(h.service.beginSuccessorOverall(scope.workItemId,h.delegated,'TURN-SUCCESSOR')).rejects.toThrow('JOBAID_SUCCESSOR_OVERALL_');
+      expect(h.attempts.reserveAndClaim).not.toHaveBeenCalled();
+    });
+
+  it('does not duplicate a terminal successor Overall after a lost response', async () => {
+    const h=successorHarness();
+    const first=await h.service.beginSuccessorOverall(scope.workItemId,h.delegated,'TURN-SUCCESSOR');
+    h.rows.get(first.attemptRef)!.status='SUCCEEDED';
+    await expect(h.service.beginSuccessorOverall(scope.workItemId,h.delegated,'TURN-SUCCESSOR'))
+      .rejects.toThrow('ACTION_ATTEMPT_ALREADY_SUCCEEDED');
+    expect(h.attempts.reserve).toHaveBeenCalledTimes(1);
+  });
+
+  it('recovers the same COMMITTING fence after projection CAS advanced the WorkItem revision', async () => {
+    const h=successorHarness();
+    const started=await h.service.beginSuccessorOverall(scope.workItemId,h.delegated,'TURN-SUCCESSOR');
+    const task=started.task;
+    Object.assign(h.rows.get(started.attemptRef)!, {status:'COMMITTING',attemptId:task.actionAttemptId,
+      actionType:task.taskType,tenantId:task.tenantId,workItemId:task.workItemId,
+      inputRevision:task.inputRevision,baseRevision:task.baseRevision,documentVersionId:task.documentVersionId,
+      idempotencyKey:task.idempotencyKey,taskInputHash:task.inputHash,
+      leaseOwner:scope.principalId,leaseToken:started.leaseToken,leaseGeneration:started.leaseGeneration,
+      leaseExpiresAt:new Date(started.leaseExpiresAt)});
+    h.advanceRevision();
+    const stored=jest.spyOn(runtimePolicy,'parseCanonicalHostOpenClawStoredResult').mockReturnValue({status:'SUCCEEDED'} as never);
+    try {
+      const recovered=await h.service.beginSuccessorOverall(scope.workItemId,h.delegated,'TURN-SUCCESSOR');
+      expect(recovered).toMatchObject({attemptRef:started.attemptRef,status:'COMMITTING',
+        leaseToken:started.leaseToken,leaseGeneration:started.leaseGeneration,recoveryResult:{status:'SUCCEEDED'}});
+      expect(recovered.task.baseRevision).toBe(5);
+      expect(h.attempts.reserveAndClaim).toHaveBeenCalledTimes(1);
+    } finally {stored.mockRestore();}
+  });
+
+  it.each([false,true])('commits only the exact successor work with a transactional latest guard; CAS race=%s', async race => {
+    const h=successorHarness();
+    const started=await h.service.beginSuccessorOverall(scope.workItemId,h.delegated,'TURN-SUCCESSOR');
+    const prepared={task:started.task,row:{...h.rows.get(started.attemptRef),attemptId:started.task.actionAttemptId,
+      tenantId:TENANT,workItemId:scope.workItemId,status:'COMMITTING',triggerRequestId:'TRIGGER'},
+      result:{toolVersions:{'jobaid-problem-protocol':'2'},promptVersion:'wiselink-jobaid-problem@v2',
+        modelOutput:JSON.stringify({workRevisionRef:savedWork().workRevisionRef,consistencyCheck:'Reviewed exact saved work.'})}};
+    const preflight=jest.spyOn(runtimePolicy,'preflightCanonicalHostOpenClawResult').mockReturnValue({
+      task:prepared.task,result:prepared.result} as never);
+    h.attempts.prepareCommit.mockResolvedValue(prepared);
+    h.current().integratedAssessment!.baseRules={...h.current().integratedAssessment!.baseRules,
+      revision:1,artifact:{ref:'OLD',sha256:'a'.repeat(64)}} as never;
+    if(race) h.registrar.compareAndSet.mockRejectedValueOnce(new Error('JOBAID_OVERALL_EXACT_WORK_CHANGED'));
+    const commitInput={row:prepared.row,scope:{...h.delegated,attemptRef:started.attemptRef},
+      leaseToken:started.leaseToken,leaseGeneration:started.leaseGeneration,result:prepared.result};
+    try {
+      const result=await h.service.commit(commitInput as never);
+      expect(h.registrar.compareAndSet).toHaveBeenCalledWith(expect.objectContaining({
+        expectedRevision:5,syncPrimaryAttempt:false,
+        jobAidWorkRevisionGuard:{tenantId:TENANT,workRevisionRef:'JAWR-PERSISTED-3'}}));
+      if(race) {
+        expect(h.attempts.finishResultGateFailure).toHaveBeenCalled();
+        expect(h.current().integratedAssessment!.overallSynthesis!.status).toBe('STALE');
+      } else {
+        expect(result).toMatchObject({overallSynthesis:{basedOnJobAidWorkRevisionRef:'JAWR-PERSISTED-3',status:'CANDIDATE_ONLY'}});
+        await h.service.commit(commitInput as never);
+        expect(h.registrar.compareAndSet).toHaveBeenCalledTimes(1);
+      }
+    } finally {preflight.mockRestore();}
+  });
+
+  it('rejects a model-selected successor work ref and never publishes it', async () => {
+    const h=successorHarness();
+    const started=await h.service.beginSuccessorOverall(scope.workItemId,h.delegated,'TURN-SUCCESSOR');
+    const prepared={task:started.task,row:{...h.rows.get(started.attemptRef),attemptId:started.task.actionAttemptId,
+      tenantId:TENANT,workItemId:scope.workItemId,status:'COMMITTING'},result:{
+        toolVersions:{'jobaid-problem-protocol':'2'},promptVersion:'wiselink-jobaid-problem@v2',
+        modelOutput:JSON.stringify({workRevisionRef:'MODEL-CHOSEN',consistencyCheck:'done'})}};
+    h.work.listForRuntime.mockResolvedValue([{...savedWork(),workRevisionRef:'MODEL-CHOSEN',workRevision:4}]);
+    h.attempts.prepareCommit.mockResolvedValue(prepared);
+    const preflight=jest.spyOn(runtimePolicy,'preflightCanonicalHostOpenClawResult').mockReturnValue({task:prepared.task,result:prepared.result} as never);
+    try {
+      await h.service.commit({row:prepared.row,scope:{...h.delegated,attemptRef:started.attemptRef},
+        leaseToken:started.leaseToken,leaseGeneration:started.leaseGeneration,result:prepared.result} as never);
+      expect(h.attempts.finishResultGateFailure).toHaveBeenCalledWith(prepared,expect.objectContaining({message:'JOBAID_SUCCESSOR_OVERALL_WORK_CHANGED'}));
+      expect(h.registrar.compareAndSet).not.toHaveBeenCalled();
+    } finally {preflight.mockRestore();}
+  });
+
   it('reads the exact attempt identity and starting revision for bounded recovery', async () => {
     const h = harness();
     h.work.listForRuntime.mockResolvedValue([{
@@ -810,6 +925,7 @@ function harness(knowledge?: { binding: jest.Mock }, initialAilySessionId?: stri
     ),
   };
   const artifactStore = {
+    persistAndReadback: jest.fn(async () => ({artifact:{ref:'NEW',sha256:'b'.repeat(64),byteLength:100,mediaType:'application/json',storeRole:'U0_PARSED_PACKAGE'}})),
     readActualBytes: jest.fn(async () =>
       new TextEncoder().encode(
         JSON.stringify({
@@ -865,9 +981,14 @@ function harness(knowledge?: { binding: jest.Mock }, initialAilySessionId?: stri
     })),
   };
   const conversations = {
+    loadOpenClawTurnByIdBinding: jest.fn(),
     hasActiveOfficialActorMapping: jest.fn(async () => true),
   };
   const attempts = {
+    prepareCommit: jest.fn(),
+    finishProjectionSuccess: jest.fn(),
+    finishProjectionConflict: jest.fn(),
+    finishResultGateFailure: jest.fn(),
     readScoped: jest.fn(async (input: {attemptRef:string}) => {
       const row = rows.get(input.attemptRef)!;
       const envelope = task(input.attemptRef);
@@ -1024,6 +1145,26 @@ function harness(knowledge?: { binding: jest.Mock }, initialAilySessionId?: stri
         purpose,
       ),
   };
+}
+
+function successorHarness() {
+  const h=harness();
+  const exact=savedWork();
+  h.work.listForRuntime.mockResolvedValue([exact]);
+  h.current().integratedAssessment={status:'OVERALL_CANDIDATE_STALE',baseRules:{
+    schemaVersion:JOBAID_PROBLEM_RESULT_SCHEMA,workRevisionRef:'JAWR-PERSISTED-2',workRevision:2,
+  },overallSynthesis:{status:'STALE',basedOnJobAidWorkRevisionRef:'JAWR-PERSISTED-2'}} as never;
+  const turn={requestId:'REQUEST-SUCCESSOR',inputRevision:5,overallRequested:true,
+    purpose:'UPDATE_ASSESSMENT',reviewScope:null,
+    assistantCandidate:{jobAidWorkingUpdate:{status:'APPLIED',workRevisionRef:'JAWR-PERSISTED-3' as string|null,workRevision:3}}};
+  h.conversations.loadOpenClawTurnByIdBinding.mockResolvedValue({turn});
+  const delegated: import('../../server/modules/canonical-host/canonical-service-scope.authorization').CanonicalVerifiedServiceScope={
+    ...scope,successorReviewDelegation:{...scope,actorUserId:OWNER,
+      documentId:'DOC-JOBAID',documentVersionId:'DV-JOBAID',sourceArtifactId:'ART-TEST',
+      sourceFileSha256:'a'.repeat(64),sourceByteLength:1234,
+      reviewConversationRef:'CONV-SUCCESSOR',reviewTurnRef:'TURN-SUCCESSOR',
+      requestId:'REQUEST-SUCCESSOR',inputRevision:5,overallRequested:true}};
+  return {...h,turn,delegated};
 }
 
 function projection(): CanonicalWorkItemProjection {
