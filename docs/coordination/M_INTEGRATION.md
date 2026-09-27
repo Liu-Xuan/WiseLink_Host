@@ -18,6 +18,8 @@
 
 为下一次真实请求提供安全尺寸证据，提交 `71269e054c5fe12646d8e9d7e84afab8b40346b6`（父 `74e05ccdb6fb35462d4cfc7b761ff86a552ebeb9`）将 JobAid Gateway 请求 JSON 构造一次，并仅记录 `requestBytes/messagesBytes/systemBytes/toolsBytes`；请求语义、内容、授权与重试条件不变。Skill 升为兼容修订 `r09.c166`；受影响测试 325/325、版本检查、完整 Skill 打包自测及 precommit 通过。包 61 文件、507,511 bytes、SHA256 `cbdd5e848be71bfa4967aee27a72bcd41f124cb30b59851ae4648374c2df85dc`。源提交分别快进推至 origin/github 同名 `codex/wl-c125-auto-engineering-flow`，两端实际 ref 均读回该 SHA。17c 私有存储 `/1877446867351603.zip` 下载后远端 SHA 精确相同；安装前消费者 0、cron 16 项全 disabled，官方 `openclaw skills install <解压目录> --force` 成功。安装目录 61 个源文件逐一 SHA 匹配（额外 `.openclaw` 为安装元数据），`skills info` 读回 `r09.c166` / Ready；Gateway UI 最终 Online、安装后 cron 仍 16 项全 disabled、无 Node 消费者。未触发业务请求或第三次 JobAid；因此新的字节计数尚无线上样本，不能宣称网关故障已修复。
 
+随后从 17b online 的同一 `operation_ref` 只读取出 Host 已持久封装，用 C166 的真实 `invokeHostedJobAidProblemModel` 代码及模拟 Gateway 在本地重建首轮请求；模拟回执不触达模型/Host 写入。以同长度 UUID 会话标识测得完整请求 74,307 UTF-8 bytes，其中 messages 72,797、system 20,069、tools 1,324；输入含 30 条已交付证据、34 个可用来源。此值是基于确切任务输入的**离线重建**，不是 17c 原生请求记录，不能据此证明提供商收到的 token 数、超时或上下文溢出；它说明候选请求规模约 74 KB，而非把 89.7 KB 的 Host 封装全数送给模型。
+
 ## 2026-09-27 C166：新任务受理与空结果表达
 
 刘轩本人在 17b 资料库的“选择已上传 PDF 并新建工程事项”入口，选择名称为 `260c665aa340752898c0958c7015df5fa8f6f5ead9317d0b37908af6c30d53b5.pdf` 的已有对象与 M3 Probe Large，建立 `WI-d368f79e-4a5a-4615-ac00-7594b3ee5c53`。Host 将其识别为 787-FTD-46-26002；该文件名与此前两页原件的已核验 SHA256 一致，但本轮尚未独立读回对象字节哈希，不能仅凭文件名断定内容相同。未再次上传本机 PDF。创建后本人逐项页读回：全文翻译等待中、适用性匹配等待补充、JobAid 等待中、整体综合等待中，尚无候选意见与已保存问题分析。17c 操作员先核对确切可领取范围，再决定是否可做单次受控消费；未启用无人值守定时任务。
