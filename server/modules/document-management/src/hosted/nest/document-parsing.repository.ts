@@ -49,7 +49,8 @@ export function documentParseError(code: string, statusCode = 409) {
 export class DocumentParsingRepository {
   constructor(@Inject(DRIZZLE_DATABASE) private readonly db: PostgresJsDatabase, private readonly leases: DocumentStepLeaseRepository) {}
 
-  async listLocalWorkerCandidates(tenantId: string, limit: number, scope: DocumentParseScope): Promise<DocumentParseRow[]> {
+  async listLocalWorkerCandidates(tenantId: string, limit: number, scope: DocumentParseScope,
+    includeSavedCandidate = false): Promise<DocumentParseRow[]> {
     if (!scope || scope.tenantId !== tenantId || !scope.actorUserId || !scope.documentVersionId || !tenantId.trim() || !Number.isSafeInteger(limit) || limit < 1 || limit > 100)
       throw documentParseError('DOCUMENT_LOCAL_WORKER_ARGUMENT_INVALID', 400);
     const now = new Date();
@@ -65,8 +66,8 @@ export class DocumentParsingRepository {
       sql`${dmDocumentParseRun.sourceBinding}->'parserInput'->>'mode' = 'LOCAL_MINERU_WORKER'`,
       gt(dmDocumentParseRun.deadlineAt, now), isNull(dmDocumentParseRun.cancelRequestedAt), isNull(dmDocumentParseRun.errorCode),
       or(isNull(dmDocumentParseRun.leaseExpiresAt), lte(dmDocumentParseRun.leaseExpiresAt, now)),
-      sql`not exists (select 1 from jsonb_array_elements(${dmDocumentParseRun.artifactProgress}) artifact
-        where artifact->>'relativePath' = 'raw/mineru-candidate.json')`,
+      ...(!includeSavedCandidate ? [sql`not exists (select 1 from jsonb_array_elements(${dmDocumentParseRun.artifactProgress}) artifact
+        where artifact->>'relativePath' = 'raw/mineru-candidate.json')`] : []),
     )).orderBy(asc(dmDocumentParseRun.startedAt)).limit(limit);
   }
 

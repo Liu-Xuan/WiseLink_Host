@@ -186,5 +186,15 @@ test('local worker discovers existing delegation before actor-owned parse access
     await admin`UPDATE dm_document_version SET owner_id='ACTOR-FOREIGN' WHERE document_version_id='DV-RLS'`;
     await assert.rejects(worker.renew({ parseRunId: browser.parseRunId, documentVersionId: browser.documentVersionId,
       lease: browser.lease }));
+    await admin`UPDATE dm_document_version SET owner_id='ACTOR-RLS' WHERE document_version_id='DV-RLS'`;
+    // The automatic consumer skips accepted candidates; browser continuation
+    // must be able to reclaim the same persisted run after its fence is free.
+    await admin`UPDATE dm_document_parse_run SET status='STAGING',lease_owner=NULL,lease_token=NULL,
+      lease_expires_at=NULL,artifact_progress=${admin.json([{ relativePath: 'raw/mineru-candidate.json' }])}
+      WHERE parse_run_id='PRUN-browser'`;
+    await actors.withActorScope('ACTOR-RLS', async () => {
+      assert.equal((await repository.listLocalWorkerCandidates('TENANT-RLS', 50, browserScope)).length, 0);
+      assert.equal((await repository.listLocalWorkerCandidates('TENANT-RLS', 50, browserScope, true)).length, 1);
+    });
   } finally { await runtime.end(); await admin.end(); }
 });
