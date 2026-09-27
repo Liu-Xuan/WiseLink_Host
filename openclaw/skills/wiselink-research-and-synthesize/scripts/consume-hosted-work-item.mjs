@@ -33,10 +33,6 @@ import {
   WISELINK_SKILL_VERSION,
 } from './validate-payload.mjs';
 
-// Request identity is durable across Skill upgrades; C168 introduced this
-// namespace and existing Host attempts must remain discoverable after upgrade.
-const AUTO_REPAIR_REQUEST_NAMESPACE_V1 = 'wiselink-research-and-synthesize@r09.c168';
-
 const STAGE_BY_OPERATION = {
   TRANSLATE: 'translation',
   EXTRACT_APPLICABILITY: 'applicability',
@@ -291,23 +287,9 @@ export async function consumeAutomaticWorkItemQueueTick(options, dependencies) {
       statusValue.workItemRevision !== claim.workItemRevision) {
     throw new Error('AUTO_WORK_ITEM_REPAIR_REVISION_CHANGED');
   }
-  const completedRepair = options.repairStoppedClaim && claim.consumerStopped
-    ? await savedRepairStageReceipt(statusValue, claim, options.repairAttemptRef,
-      dependencies.readSavedWork) : false;
   if (options.repairStoppedClaim &&
-      !['FAILED', 'BUSY'].includes(statusValue.status) && !completedRepair) {
+      !['FAILED', 'BUSY'].includes(statusValue.status)) {
     throw new Error('AUTO_WORK_ITEM_REPAIR_STAGE_CHANGED');
-  }
-  if (completedRepair) {
-    claim = { ...claim, consumerStopped: false, attentionCode: null };
-    await checkpoint.write('active-claim', claim);
-    return {
-      status: 'IN_PROGRESS', workItemId: claim.workItemId,
-      requestId: claim.requestId, documentVersionId: claim.documentVersionId,
-      leaseGeneration: claim.leaseGeneration, leaseExpiresAt: claim.leaseExpiresAt,
-      nextOperation: statusValue.nextOperation, stages: statusValue.stages,
-      consumerStatus: 'SAVED_STAGE_RECONCILED',
-    };
   }
   if (isAutomaticWorkItemDone(statusValue)) {
     claim = { ...claim, completionReady: true };
@@ -649,42 +631,9 @@ async function repairedRetryPlan(
 
 function repairRequestId(workItemId, documentVersionId, stage, attemptRef) {
   const identity = [workItemId, documentVersionId, stage,
-    attemptRef, AUTO_REPAIR_REQUEST_NAMESPACE_V1].join(':');
+    attemptRef, WISELINK_SKILL_VERSION].join(':');
   return `auto-repair-${createHash('sha256').update(identity)
     .digest('hex').slice(0, 32)}`;
-}
-
-async function savedRepairStageReceipt(initial, claim, previousAttemptRef, readSavedWork) {
-  if (typeof readSavedWork !== 'function' ||
-      initial.workItemRevision !== claim.workItemRevision ||
-      initial.documentVersionId !== claim.documentVersionId ||
-      !isRecord(initial.stages)) return false;
-  for (const stage of ['jobAid', 'overall']) {
-    if (stage === 'jobAid' &&
-        (initial.nextOperation !== 'SYNTHESIZE_OVERALL' ||
-          initial.stages.overall?.status !== 'PENDING')) continue;
-    if (stage === 'overall' && !initialComplete(initial)) continue;
-    const observed = initial.stages[stage];
-    if (observed?.status !== 'SUCCEEDED' || observed.attemptStatus !== 'SUCCEEDED' ||
-        typeof observed.attemptRef !== 'string' || !observed.attemptRef) continue;
-    const saved = await readSavedWork(observed.attemptRef, claim.workItemId);
-    const revision = saved?.revision;
-    if (saved?.schemaVersion !== 'wiselink.jobaid-work-read.v2' ||
-        saved.executionStatus !== 'SUCCEEDED' ||
-        typeof saved.attemptId !== 'string' || !saved.attemptId ||
-        !Number.isSafeInteger(saved.inputWorkRevision) ||
-        saved.inputWorkRevision < 0 ||
-        revision?.actionAttemptId !== saved.attemptId ||
-        revision.requestId !== repairRequestId(claim.workItemId,
-          claim.documentVersionId, stage, previousAttemptRef) ||
-        revision.workItemId !== claim.workItemId ||
-        revision.documentVersionId !== claim.documentVersionId ||
-        revision.basedOnWorkItemRevision !== claim.workItemRevision ||
-        !Number.isSafeInteger(revision.workRevision) ||
-        revision.workRevision <= saved.inputWorkRevision) continue;
-    return true;
-  }
-  return false;
 }
 
 function isAutomaticBlockBinding(value) {

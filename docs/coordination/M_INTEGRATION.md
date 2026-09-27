@@ -1,13 +1,5 @@
 # M 主控集成交接
 
-## 2026-09-27 C168 真实 JobAid 保存与 C169 接续修订
-
-17c 私有 C168 包按 ZIP、manifest、61/61 payload 文件逐项 SHA 核验后由官方 `openclaw skills install` 安装，`skills info` 为 Ready；额外 `.openclaw/source-origin.json` 是平台安装元数据。安装后消费者 0、16 项 cron 全停用。旧 `active-claim` 精确绑定 WI `WI-d368f79e-4a5a-4615-ac00-7594b3ee5c53`、request `REQ-b5526e71-8a10-44d2-8bc9-dde3867044f6`、revision 3、generation 1、`consumerStopped=true` 与 `JOBAID_GATEWAY_HTTP_400:INCOMPLETE_TERMINAL_RESPONSE`。17c 只执行一次 C168 精确修复命令，旧失败 attempt 为 `AQ-d5ed83270aef4c02a439fd790fe8fbb4`；未启用 cron、未提交普通 tick。
-
-刘轩本人 17b 页面读回：JobAid 从进行中逐步保存工作修订 1→2→3→4，修订 4 时间 2026-09-27 14:11:45 +08，阶段为“候选待复核”、执行“完成”，七个问题及依据按钮可读；Overall 仍等待、任务首页仍无综合候选。17c 原 node 命令已结束，但终端 stdout/stderr/退出码不可读；本地 claim 最后安全读回为 generation 2、revision 3、`consumerStopped=true`、旧 attentionCode、`completionReady=false`，租约到期 2026-09-27T07:04:46.848Z。不能仅因 Host 成功就假定消费者本地已接续。17c 后续只读页跳飞书扫码、备用终端“系统启动失败”；用户登录恢复前没有新消费者动作。
-
-C169 本地修订针对“Host 已保存修复阶段，但消费者未清除停止标记”的通用空隙：读回同一活动租约下的 Host 阶段、确切修复请求对应的保存工作、尝试与来源/WorkItem 修订后，只清除本地停止状态；此步不执行模型，下一次普通 tick 才继续后续阶段。C168 的修复请求身份固定为 v1 命名空间，跨 Skill 版本可核对。隔离队列测试与完整 Skill 测试 562/562、发布静态检查通过；Astra 独立只读审查通过，无阻断。真实 Host 的新 attemptRef、保存回执与 C169 适用性仍待 17c 登录恢复后核对，打包发布尚未完成。本轮 C168 JobAid 保存是局部闭环证据，不能称全流程完成。
-
 ## 2026-09-27 C168：限定旧失败尝试的队列恢复，真实接续待核验
 
 从 17c 两次失败 JobAid 的原生 session 元数据确认：每次均有两条 assistant 记录，`stopReason=length`、`output=16000`、`contentTypes=[]`、`errorCode=null`；对应 MCP 回执为 `JOBAID_GATEWAY_HTTP_400:INCOMPLETE_TERMINAL_RESPONSE`，Host 未保存 JobAid 工作。此证据说明兼容层得到不完整终态；尚未证明 16000 限额来自哪一层，也未读取模型正文。C167 在确切 M3 Probe JobAid 路径显式发送 `max_completion_tokens=32768`，保留其他路径原策略；本地测试、打包和审查通过，提交 `f9bf33a0d1737f542950774197b4738bccecc184`，已快进到 origin 同名分支。17c 私有 ZIP SHA256 `93776a51ba85722a871cf4442a90a6ea3a1bd409340c38617a9afc26bc58a4b0`，安装后官方 `skills info` 为 Ready，安装目录 61/61 payload 文件 SHA 一致；Gateway Online，消费者进程 0、16 个 cron 全停用。尚未进行 C167 真实模型调用，不能宣称故障已解决。
