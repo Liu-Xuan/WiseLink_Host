@@ -27,4 +27,14 @@ describe('saved work reading summary', () => {
     const brief = '文件编号与版次已登记；ATA 章节已登记；创建日期已登记。';
     expect(compactReadingSummary(headline, brief)).toBe(headline);
   });
+
+  it('surfaces engineering facts instead of repeating the title for a long saved brief', () => {
+    const brief = '依据 PRUN-example 两页原文恢复四项既有事项的实质工程分析：FTD 信息类通报、Applicability=All 787 Aircraft、Gatelink 受 TLS 1.0 阻断两种地面情景、AID 已为 TLS 1.2 与 OBEDS TLS 1.0 的链路差异、Interim 保持地面 TLS 1.0 + TWLU 有线连接、Final CSM BP v7.1 增加 OBEDS TLS 1.2 支持；Production Incorporation 3Q 2027 (Target) 与 Service Bulletin Available (TBD) 并列，SB 实际编号、装机清单与正式合规间隔属真实外部未知。';
+    const summary = compactReadingSummary('787 文件标题', brief);
+    expect(summary).toContain('Gatelink 受 TLS 1.0 阻断');
+    expect(summary).toContain('All 787 Aircraft');
+    expect(summary).toContain('正式合规间隔属真实外部未知');
+    expect(summary).not.toContain('PRUN-example');
+    expect(summary.length).toBeLessThanOrEqual(260);
+  });
 });
