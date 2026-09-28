@@ -523,7 +523,9 @@ export async function invokeHostedReviewModel(input, options = {}, dependencies 
               'The preceding model response ended before any tool call.',
               `Continue this same Review using the sources already read. Call ${REVIEW_OUTPUT_FUNCTION_NAME} with one concise candidate containing answer and non-null jobAidWorkingDelta.`,
               `Correct existing issues through jobAidWorkingDelta.issuePatches: use the exact prior issueKey from ${canonicalJson(previousIssueKeys)} and only fields that actually change, without restating the complete issue or adding nonempty issues beside patches.`,
-              `This turn permits changes only to issue keys ${canonicalJson(targetIssueKeys)}. Put every other prior issue key in unchangedIssueKeys; do not patch or retire it.`,
+              ...(targetIssueKeys.length ? [
+                `This turn permits changes only to issue keys ${canonicalJson(targetIssueKeys)}. Put every other prior issue key in unchangedIssueKeys; do not patch or retire it.`,
+              ] : []),
               'Put all other prior issue keys in unchangedIssueKeys.',
               `For a revised body, cite supporting evidence inline as [[evidenceRef]] copied exactly from the read evidence refs ${canonicalJson(readEvidenceRefs)}.`,
               'Write a changed issue body as a standalone engineering judgment with its supporting premises and limits; put the process or change summary in answer or changeSummary, not in place of the body.',

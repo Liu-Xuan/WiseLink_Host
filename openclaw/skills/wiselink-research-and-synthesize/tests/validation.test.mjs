@@ -1435,7 +1435,7 @@ test('requires 35 MCP capabilities, six review tools, and hosted provenance', ()
   assert.ok(HOST_MCP_TOOLS.includes('commit_applicability_candidate'));
   assert.equal(
     WISELINK_SKILL_VERSION,
-    'wiselink-research-and-synthesize@r09.c189',
+    'wiselink-research-and-synthesize@r09.c190',
   );
   assert.equal(
     WISELINK_SKILL_COMPATIBILITY_REF,
@@ -7556,6 +7556,7 @@ test('source-read JobAid Review corrects one empty required-tool 502 in the same
     assert.equal(body.tool_choice, 'required');
     assert.match(body.messages.at(-1).content, /schemaVersion wiselink\.jobaid-problem-work\.v3/u);
     assert.match(body.messages.at(-1).content, /source:page1/u);
+    assert.doesNotMatch(body.messages.at(-1).content, /permits changes only to issue keys \[\]/u);
     return Response.json({ choices: [{ message: { content: null, tool_calls: [{
       id: 'candidate3', type: 'function', function: {
         name: 'return_wiselink_review_candidate', arguments: JSON.stringify(candidate),
