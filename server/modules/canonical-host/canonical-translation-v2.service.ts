@@ -39,6 +39,7 @@ import {
   buildTranslationWorkspaceReadingV2,
   checkTranslationBlockV2,
 } from './canonical-translation-v2-quality';
+import { documentTranslationRepairableBlockIds } from './document-translation-repair-scope';
 import {
   CanonicalTranslationWorkspaceRepository,
   type TranslationWorkspaceFence,
@@ -312,10 +313,9 @@ export class CanonicalTranslationV2Service {
       throw new Error('DOCUMENT_TRANSLATION_PROGRESS_SCOPE_INVALID');
     const { workspace, revisions } = await this.workspaces.readSnapshot(scope);
     const reading = buildTranslationWorkspaceReadingV2(workspace, revisions);
+    const repairableBlockIds = documentTranslationRepairableBlockIds(reading);
     return { completeness: reading.completeness, coverage: reading.coverage,
-      repairableBlockCount: reading.blocks.filter(block => block.readingStatus === 'BLOCKED' &&
-        !block.source.sourceIssues.some(issue => issue.severity === 'BLOCK') &&
-        block.issues.some(issue => issue.severity === 'BLOCK' && issue.origin !== 'SOURCE')).length };
+      repairableBlockCount: repairableBlockIds.length, repairableBlockIds };
   }
 
   private async executeScoped(input: WorkspaceCommand, scoped: {
@@ -337,7 +337,6 @@ export class CanonicalTranslationV2Service {
     const requestedBlockIds =
       z
         .array(id)
-        .max(64)
         .optional()
         .parse('retranslateBlockIds' in task.modelInput ? task.modelInput.retranslateBlockIds : undefined) ?? [];
     const nextWork = () =>
@@ -352,13 +351,18 @@ export class CanonicalTranslationV2Service {
             input.phase === 'NEXT' && input.batchSemanticChecks === true,
         },
       );
-    if (input.phase === 'READ') return { ...summary(state.reading),
+    if (input.phase === 'READ') {
+      const currentRequests = state.workspace.generationRequests.filter(request =>
+        request.attemptId === task.actionAttemptId);
+      return { ...summary(state.reading),
+      // Keep the cumulative count used by existing runner batch request IDs.
       generationRequestCount: state.workspace.generationRequests.length,
-      retryableFailureCount: state.workspace.generationRequests.filter(request =>
+      retryableFailureCount: currentRequests.filter(request =>
         request.status === 'FAILED' && request.error?.retryable).length,
-      terminalFailureCode: state.workspace.generationRequests.find(request =>
+      terminalFailureCode: currentRequests.find(request =>
         request.status === 'FAILED' && request.error?.outcome === 'KNOWN_FAILURE' &&
         !request.error.retryable && request.error.code !== 'TRANSLATION_BATCH_PREFIX_ONLY')?.error?.code ?? null };
+    }
     if (input.phase === 'RECORD_FAILURE')
       return this.workspaces.recordGenerationFailure({
         ...fence,

@@ -7,10 +7,14 @@ const schema = z.strictObject({
   actionAttemptId: id, operationRef: z.string().min(1).max(128),
   tenantId: z.string().min(1).max(128), documentVersionId: id,
   parseRunId: id, parseRevision: z.number().int().positive(), workspaceId: id,
+  recoveryOf: z.strictObject({ operationRef: z.string().min(1).max(128),
+    inputHash: z.string().regex(/^[a-f0-9]{64}$/) }).optional(),
   modelInput: z.strictObject({
     schemaVersion: z.literal('wiselink.3_1.translation_task.v2'),
     workspaceId: id, planRevision: z.number().int().positive(), contextRevision: z.number().int().positive(),
     methodVersion: z.string().min(1), documentProducer: z.enum(['OFFICIAL_PLUGIN', 'HOSTED_M3']),
+    retranslateBlockIds: z.array(id).min(1)
+      .refine((ids) => new Set(ids).size === ids.length).optional(),
     source: z.strictObject({ documentVersionId: id, packageId: id,
       originalBinding: z.strictObject({ documentVersionId: id, parseRunId: id, parseRevision: z.number().int().positive(),
         sourceArtifactId: z.string().min(1), sourceSha256: z.string().regex(/^[a-f0-9]{64}$/),

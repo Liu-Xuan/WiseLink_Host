@@ -32,4 +32,24 @@ describe('document translation task binding', () => {
     expect(() => parseDocumentTranslationTaskEnvelope(JSON.stringify({ ...changed, inputHash: canonicalSha256(changed) })))
       .toThrow('DOCUMENT_TRANSLATION_TASK_SOURCE_MISMATCH');
   });
+  it('binds a unique nonempty repair scope in the sealed model input', () => {
+    const repair = sealDocumentTranslationTaskEnvelope({ ...input,
+      modelInput: { ...input.modelInput, retranslateBlockIds: ['block-1'] } });
+    expect(parseDocumentTranslationTaskEnvelope(JSON.stringify(repair)).modelInput.retranslateBlockIds)
+      .toEqual(['block-1']);
+    expect(() => sealDocumentTranslationTaskEnvelope({ ...input,
+      modelInput: { ...input.modelInput, retranslateBlockIds: [] } })).toThrow('DOCUMENT_TRANSLATION_TASK_INVALID');
+    expect(() => sealDocumentTranslationTaskEnvelope({ ...input,
+      modelInput: { ...input.modelInput, retranslateBlockIds: ['block-1', 'block-1'] } }))
+      .toThrow('DOCUMENT_TRANSLATION_TASK_INVALID');
+    const allBlocks = Array.from({ length: 65 }, (_, index) => `block-${index}`);
+    const large = sealDocumentTranslationTaskEnvelope({ ...input,
+      modelInput: { ...input.modelInput, retranslateBlockIds: allBlocks } });
+    expect(parseDocumentTranslationTaskEnvelope(JSON.stringify(large)).modelInput.retranslateBlockIds)
+      .toEqual(allBlocks);
+    const compensated = sealDocumentTranslationTaskEnvelope({ ...input,
+      recoveryOf: { operationRef: 'prior', inputHash: repair.inputHash },
+      modelInput: { ...input.modelInput, retranslateBlockIds: ['block-1'] } });
+    expect(compensated.recoveryOf?.inputHash).toBe(repair.inputHash);
+  });
 });

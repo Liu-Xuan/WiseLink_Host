@@ -20,11 +20,18 @@ function setup() {
           sha256: 'a'.repeat(64), byteLength: 100, mediaType: 'application/json' } } }),
     executeStep: jest.fn().mockResolvedValue({ status: 'PROGRESSED' }) };
   let row: Record<string, unknown> | null = null;
-  const attempts = { readRequest: jest.fn(async () => row), latest: jest.fn(async () => row),
+  const attempts = { readRequest: jest.fn(async (_scope, requestId) =>
+    row?.triggerRequestId === requestId ? row : null), latest: jest.fn(async () => row),
     reserve: jest.fn(async (_scope, task, requestId, executionModel) => { row = { status: 'QUEUED', documentVersionId, producerRunId: parseRunId,
       attemptId: task.actionAttemptId, operationRef: task.operationRef, taskEnvelopeJson: JSON.stringify(task),
       triggerRequestId: requestId, executionModelJson: JSON.stringify(executionModel),
       deadlineAt: new Date(task.deadline), errorCode: null }; return row; }),
+    recoverPartialInput: jest.fn(async (_scope, task, requestId) => { row = {
+      status: 'QUEUED', documentVersionId, producerRunId: parseRunId,
+      attemptId: task.actionAttemptId, operationRef: task.operationRef,
+      taskEnvelopeJson: JSON.stringify(task), triggerRequestId: `${requestId}:partial-repair-v2`,
+      deadlineAt: new Date(task.deadline), errorCode: null,
+    }; return row; }),
     claim: jest.fn(async (_scope, attemptRef, principalId) => ({ attemptRef, principalId, leaseToken: 'token', leaseGeneration: 1 })),
     renew: jest.fn().mockResolvedValue(true), release: jest.fn().mockResolvedValue(true),
     cancel: jest.fn(), finish: jest.fn(), fail: jest.fn(), expire: jest.fn(),
@@ -33,7 +40,8 @@ function setup() {
   const semantics = { readReady: jest.fn().mockResolvedValue(null), read: jest.fn().mockResolvedValue({ profileRef: 'generic.author-sections.v1' }) };
   const v2 = { executeDocument: jest.fn(), assembleDocument: jest.fn(),
     documentHasInterruptedGeneration: jest.fn().mockResolvedValue(false),
-    readDocumentProgress: jest.fn().mockResolvedValue({ completeness: 'PARTIAL', repairableBlockCount: 1 }) };
+    readDocumentProgress: jest.fn().mockResolvedValue({ completeness: 'PARTIAL', repairableBlockCount: 1,
+      repairableBlockIds: ['repairable-block'] }) };
   const service = new DocumentTranslationRuntimeService(authorization as never, actors as never, reader as never,
     plugins as never, attempts as never, semantics as never, parsing as never, v2 as never);
   const legacy = () => {
@@ -90,7 +98,7 @@ describe('independent document translation runtime', () => {
     const requestId = documentDeliveryRequestId('translation', deliveryRef);
     const first = await f.service.run({ action: 'START', ...f.binding, deliveryRef, requestId });
     if (!('attemptRef' in first)) throw new Error('expected first attempt');
-    const prior = await f.attempts.readRequest();
+    const prior = await f.attempts.readRequest({}, requestId);
     Object.assign(prior!, { status: 'SUCCEEDED', terminalReason: 'REMAINING_LIMITATIONS' });
     const status = await f.service.run({ action: 'STATUS', ...f.binding, deliveryRef });
     expect(status).toMatchObject({ status: 'SUCCEEDED', partialRepairAvailable: true });
@@ -101,9 +109,40 @@ describe('independent document translation runtime', () => {
     expect(continued).toMatchObject({ status: 'QUEUED' });
     expect(f.attempts.reserve.mock.calls[1].slice(2)).toMatchObject([
       `${requestId}:partial-repair`, { modelRef: 'm3probe/minimax-m3' }, first.attemptRef, 'PARTIAL']);
+    expect(f.attempts.reserve.mock.calls[1][1].modelInput.retranslateBlockIds).toEqual(['repairable-block']);
+    f.v2.readDocumentProgress.mockResolvedValueOnce({ completeness: 'COMPLETE', repairableBlockCount: 0,
+      repairableBlockIds: [] });
+    await f.service.run({ action: 'CONTINUE_PARTIAL', ...f.binding,
+      deliveryRef, attemptRef: first.attemptRef! });
+    expect(f.attempts.reserve.mock.calls[2][1].modelInput.retranslateBlockIds).toEqual(['repairable-block']);
+    expect(f.v2.readDocumentProgress).toHaveBeenCalledTimes(2);
     expect(prior).toMatchObject({ status: 'SUCCEEDED', terminalReason: 'REMAINING_LIMITATIONS' });
     expect(f.authorization.authorizeDocumentWork).toHaveBeenCalledWith({ documentVersionId: f.binding.documentVersionId,
       deliveryRef, purpose: 'TRANSLATION' });
+  });
+  it('uses a separate exact recovery action without requesting CANCEL authority', async () => {
+    const f = setup();
+    const deliveryRef = 'acquisition:sample';
+    const requestId = documentDeliveryRequestId('translation', deliveryRef);
+    const old = await f.service.run({ action: 'START', ...f.binding, deliveryRef, requestId });
+    if (!('attemptRef' in old)) throw new Error('expected attempt');
+    const prior = await f.attempts.readRequest({}, requestId);
+    if (!prior) throw new Error('expected prior');
+    prior.triggerRequestId = `${requestId}:partial-repair`;
+    const oldHash = JSON.parse(String(prior.taskEnvelopeJson)).inputHash;
+    await expect(f.service.run({ action: 'RECOVER_PARTIAL_INPUT', ...f.binding,
+      attemptRef: old.attemptRef! })).rejects.toThrow('RECOVERY_SCOPE_INVALID');
+    const recovered = await f.service.run({ action: 'RECOVER_PARTIAL_INPUT', ...f.binding,
+      deliveryRef, attemptRef: old.attemptRef! });
+    expect(recovered).toMatchObject({ status: 'QUEUED' });
+    expect(f.attempts.recoverPartialInput.mock.calls[0].slice(2))
+      .toMatchObject([requestId, old.attemptRef, { modelRef: 'm3probe/minimax-m3' }]);
+    const recoveryTask = f.attempts.recoverPartialInput.mock.calls[0][1];
+    expect(recoveryTask.recoveryOf).toEqual({ operationRef: old.attemptRef, inputHash: oldHash });
+    expect(recoveryTask.modelInput.retranslateBlockIds).toEqual(['repairable-block']);
+    expect(f.authorization.authorizeDocumentWork).toHaveBeenLastCalledWith({
+      documentVersionId: f.binding.documentVersionId, deliveryRef, purpose: 'TRANSLATION' });
+    expect(f.attempts.cancel).not.toHaveBeenCalled();
   });
   it('executes one official step using the document fence and releases failure without replay', async () => {
     const f = setup();

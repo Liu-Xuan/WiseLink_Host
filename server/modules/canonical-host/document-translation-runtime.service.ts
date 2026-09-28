@@ -24,7 +24,7 @@ export class DocumentTranslationRuntimeService {
     private readonly plugins: CanonicalTranslationV2PluginService, private readonly attempts: DocumentTranslationAttemptRepository, private readonly semantics: DocumentSemanticService, private readonly parsing: DocumentParsingHostedService,
     private readonly v2: CanonicalTranslationV2Service) {}
 
-  async run(input: { action: 'START' | 'RECOVER' | 'CONTINUE_PARTIAL' | 'STATUS' | 'STEP' | 'CANCEL' | 'CLAIM' | 'HEARTBEAT' | 'RELEASE' | 'WORKSPACE' | 'FINISH' | 'FAIL'; documentVersionId: string;
+  async run(input: { action: 'START' | 'RECOVER' | 'CONTINUE_PARTIAL' | 'RECOVER_PARTIAL_INPUT' | 'STATUS' | 'STEP' | 'CANCEL' | 'CLAIM' | 'HEARTBEAT' | 'RELEASE' | 'WORKSPACE' | 'FINISH' | 'FAIL'; documentVersionId: string;
     parseRunId: string; deliveryRef?: string; requestId?: string; attemptRef?: string;
     leaseToken?: string; leaseGeneration?: number; phase?: string; workspaceCommand?: unknown; errorCode?: string }) {
     if (!this.authorization.authorizeDocumentWork) throw canonicalServiceScopeUnavailable();
@@ -42,19 +42,23 @@ export class DocumentTranslationRuntimeService {
       // semantic hydration. A successful status is not a content-health proof.
       await this.parsing.status(scope.documentVersionId, { ...scope, roles: [] });
       const assertAuthorized = async () => { await read(); };
-      if (input.action === 'START' || input.action === 'RECOVER' || input.action === 'CONTINUE_PARTIAL') {
+      if (input.action === 'START' || input.action === 'RECOVER' || input.action === 'CONTINUE_PARTIAL' ||
+          input.action === 'RECOVER_PARTIAL_INPUT') {
         const requestId = input.action === 'CONTINUE_PARTIAL' && expectedRequestId
-          ? `${expectedRequestId}:partial-repair` : input.requestId;
+          ? `${expectedRequestId}:partial-repair` : input.action === 'RECOVER_PARTIAL_INPUT' && expectedRequestId
+            ? `${expectedRequestId}:partial-repair-v2` : input.requestId;
         if (input.action === 'CONTINUE_PARTIAL' && (!expectedRequestId || !input.attemptRef || input.requestId))
           throw new Error('DOCUMENT_TRANSLATION_PARTIAL_SCOPE_INVALID');
+        if (input.action === 'RECOVER_PARTIAL_INPUT' && (!expectedRequestId || !input.attemptRef || input.requestId))
+          throw new Error('DOCUMENT_TRANSLATION_PARTIAL_INPUT_RECOVERY_SCOPE_INVALID');
         if (!requestId) throw new Error('DOCUMENT_TRANSLATION_REQUEST_REQUIRED');
         if (input.action === 'RECOVER') {
           if (!input.attemptRef || !expectedRequestId || requestId !== `${expectedRequestId}:hosted-m3`)
             throw new Error('DOCUMENT_TRANSLATION_RECOVERY_SCOPE_INVALID');
           await this.attempts.assertQuotaSuccessor(scope, expectedRequestId, input.attemptRef, input.parseRunId);
         }
-        await this.attempts.expire(scope);
-        if (input.action !== 'CONTINUE_PARTIAL') {
+        if (input.action !== 'RECOVER_PARTIAL_INPUT') await this.attempts.expire(scope);
+        if (input.action !== 'CONTINUE_PARTIAL' && input.action !== 'RECOVER_PARTIAL_INPUT') {
           const prior = await this.attempts.readRequest(scope, requestId);
           if (prior) {
             if (prior.producerRunId !== input.parseRunId) throw new Error('DOCUMENT_TRANSLATION_REQUEST_CONFLICT');
@@ -70,16 +74,39 @@ export class DocumentTranslationRuntimeService {
         const workspace = await this.plugins.prepareOriginal({ tenantId: scope.tenantId, original: original.original, semanticMap,
           artifact: { storeRole: 'UnifiedArtifactStoreCandidate', ref: `document-original://${encodeURIComponent(scope.documentVersionId)}/${encodeURIComponent(input.parseRunId)}`,
             sha256: artifact.sha256, byteLength: artifact.byteLength, mediaType: 'application/json' }, assertAuthorized });
+        const existingPartial = input.action === 'CONTINUE_PARTIAL' || input.action === 'RECOVER_PARTIAL_INPUT'
+          ? await this.attempts.readRequest(scope, requestId) : null;
+        const retranslateBlockIds = input.action === 'CONTINUE_PARTIAL' || input.action === 'RECOVER_PARTIAL_INPUT'
+          ? existingPartial
+            ? parseDocumentTranslationTaskEnvelope(existingPartial.taskEnvelopeJson ?? '').modelInput.retranslateBlockIds
+            : (await this.v2.readDocumentProgress({ tenantId: scope.tenantId, workItemId: null,
+              documentVersionId: scope.documentVersionId, workspaceId: workspace.workspaceId })).repairableBlockIds
+          : undefined;
+        if ((input.action === 'CONTINUE_PARTIAL' || input.action === 'RECOVER_PARTIAL_INPUT') &&
+            !retranslateBlockIds?.length)
+          throw new Error('DOCUMENT_TRANSLATION_PARTIAL_SUCCESSOR_INELIGIBLE');
+        const recoveryPrior = input.action === 'RECOVER_PARTIAL_INPUT'
+          ? await this.attempts.readRequest(scope, `${expectedRequestId}:partial-repair`) : null;
+        if (input.action === 'RECOVER_PARTIAL_INPUT' &&
+            (!recoveryPrior || recoveryPrior.operationRef !== input.attemptRef))
+          throw new Error('DOCUMENT_TRANSLATION_PARTIAL_INPUT_RECOVERY_INELIGIBLE');
+        const recoveryOf = recoveryPrior ? { operationRef: recoveryPrior.operationRef,
+          inputHash: parseDocumentTranslationTaskEnvelope(recoveryPrior.taskEnvelopeJson ?? '').inputHash } : undefined;
         const modelInput = this.plugins.taskInput(workspace);
         const task = sealDocumentTranslationTaskEnvelope({ schemaVersion: 'wiselink.document.translation_task.v1',
           actionAttemptId: `DTA-${randomUUID()}`, operationRef: `DTQ-${randomUUID()}`, tenantId: scope.tenantId,
           documentVersionId: scope.documentVersionId, parseRunId: input.parseRunId,
           parseRevision: original.original.binding.parseRevision, workspaceId: workspace.workspaceId,
-          modelInput: { ...modelInput, schemaVersion: 'wiselink.3_1.translation_task.v2',
+          ...(recoveryOf ? { recoveryOf } : {}),
+          modelInput: { ...modelInput, ...(retranslateBlockIds ? { retranslateBlockIds } : {}),
+          schemaVersion: 'wiselink.3_1.translation_task.v2',
           source: { ...modelInput.source, originalBinding: original.original.binding }, documentProducer: 'HOSTED_M3' },
           deadline: new Date(Date.now() + 12 * 60 * 60_000).toISOString(),
           idempotencyKey: `document-translation:${scope.documentVersionId}:${requestId}` });
         try {
+          if (input.action === 'RECOVER_PARTIAL_INPUT')
+            return summary(await this.attempts.recoverPartialInput(scope, task, expectedRequestId!,
+              input.attemptRef!, taskModelSelection()));
           return summary(await this.attempts.reserve(scope, task, requestId,
             taskModelSelection(), input.action === 'START' ? undefined : input.attemptRef,
             input.action === 'CONTINUE_PARTIAL' ? 'PARTIAL' : 'QUOTA'));
@@ -110,7 +137,8 @@ export class DocumentTranslationRuntimeService {
           partialRepairAvailable: Boolean(expectedRequestId && row.terminalReason === 'REMAINING_LIMITATIONS' &&
             progress.completeness === 'PARTIAL' &&
             progress.repairableBlockCount > 0 &&
-            row.triggerRequestId !== `${expectedRequestId}:partial-repair`) };
+            row.triggerRequestId !== `${expectedRequestId}:partial-repair` &&
+            row.triggerRequestId !== `${expectedRequestId}:partial-repair-v2`) };
       }
       if (!input.attemptRef || row.operationRef !== input.attemptRef) throw new Error('DOCUMENT_TRANSLATION_ATTEMPT_NOT_FOUND');
       if (input.action === 'CANCEL') { await this.attempts.cancel(scope, input.attemptRef); return summary((await this.attempts.latest(scope, expectedRequestId))!); }
