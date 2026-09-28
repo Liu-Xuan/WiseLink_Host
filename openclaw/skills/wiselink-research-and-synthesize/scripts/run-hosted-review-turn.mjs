@@ -73,7 +73,7 @@ const REVIEW_RESPONSE_TYPES = [
   'AFFECTED_ITEMS_PREVIEW',
   'TASK_STATUS',
 ];
-const REVIEW_PROMPT_VERSION = 'wiselink.3_1.review_prompt.v1.c49';
+const REVIEW_PROMPT_VERSION = 'wiselink.3_1.review_prompt.v1.c50';
 const WISELINK_HOST_MCP_CONFIG_KEYS = new Set([
   WISELINK_HOST_MCP_NAME,
   'wiselink_host_controller',
@@ -627,10 +627,14 @@ export async function invokeHostedReviewModel(input, options = {}, dependencies 
         const expectedJobAidSchemaVersion = isJobAid && isAssessmentUpdate &&
           errorCode === 'REVIEW_JOBAID_WORK_SCHEMA_INVALID'
           ? 'wiselink.jobaid-problem-work.v3' : null;
+        const requirementConditionsFeedback = isJobAid && isAssessmentUpdate &&
+          errorCode === 'REVIEW_JOBAID_REQUIREMENT_CONDITIONS_INVALID'
+          ? error.requirementConditionsFeedback : null;
         if (typeof options.observeCandidateRejection === 'function') {
           await options.observeCandidateRejection({ modelRound: round, correctionNo: candidateCorrections, errorCode,
             ...(invalidEvidenceRefs === null ? {} : { invalidEvidenceRefs, invalidEvidenceRefCount }),
-            ...(expectedJobAidSchemaVersion === null ? {} : { expectedJobAidSchemaVersion }) });
+            ...(expectedJobAidSchemaVersion === null ? {} : { expectedJobAidSchemaVersion }),
+            ...(requirementConditionsFeedback === null ? {} : { requirementConditionsFeedback }) });
         }
         let citedSourceFeedback;
         if (isJobAid && isAssessmentUpdate && ['REVIEW_MODEL_SOURCE_REF_NOT_READ', 'REVIEW_CANDIDATE_SOURCE_REF_NOT_READ_THIS_TURN'].includes(errorCode) &&
@@ -684,6 +688,7 @@ export async function invokeHostedReviewModel(input, options = {}, dependencies 
               expected: expectedJobAidSchemaVersion,
               instruction: 'Use this exact schemaVersion literal in the complete new JobAid candidate. Do not change issue content, scope or evidence merely to repair the protocol field. The rejected candidate was not saved.',
             } }),
+            ...(requirementConditionsFeedback === null ? {} : { requirementConditionsFeedback }),
             ...(citedSourceFeedback ? { citedSourceFeedback } : {}),
             availableEvidenceRefs: candidateFeedbackEvidenceRefs(input, sourceCache),
             ...(isJobAid && isAssessmentUpdate ? { previousIssueKeys: jobAidPreviousIssueKeys(input.input) } : {}),
@@ -709,6 +714,8 @@ export async function invokeHostedReviewModel(input, options = {}, dependencies 
               ? 'The JobAid working delta must use schemaVersion wiselink.jobaid-problem-work.v3 exactly. Return a complete new candidate with the same supported engineering correction and valid references; do not silently rewrite the rejected candidate or claim it was saved.'
               : isJobAid && errorCode === 'REVIEW_JOBAID_ISSUE_FULL_CONTENT_REQUIRED'
               ? 'For an existing issue, use jobAidWorkingDelta.issuePatches with its exact issueKey and only supported changed fields. Omitted fields retain the Host-frozen previousWork content. An explicit [] changes that collection and must be justified. List other prior issues in unchangedIssueKeys. A new issue requires a full entry in issues. Do not switch issueKey merely to pass validation.'
+              : requirementConditionsFeedback !== null
+              ? 'Correct the reported requirementHandling.conditions field in the complete new candidate: supply an array of distinct, nonempty condition strings. Preserve the supported requirement, treatment and evidence; do not invent conditions or claim the rejected candidate was saved.'
               : isJobAid && /^JOBAID_(SEVERITY|LIKELIHOOD|IMPORTANT_EVENT|MEASURE|OTHER|REQUIREMENT)_BASIS_(INVALID|DUPLICATE|EMPTY)$/u.test(errorCode)
               ? 'A professional record has invalid basisRefs. Supply a unique array of exact evidenceRef strings for that record, each supported by evidence delivered in this turn or retained work. Severity, likelihood, important event, measure and other classification records each require at least one basisRef; requirement handling may use an empty array. If the evidence is insufficient, revise the unsupported record honestly instead of inventing or copying a reference. The rejected candidate was not saved; submit a complete corrected candidate.'
               : isJobAid && errorCode?.startsWith('REVIEW_JOBAID_PATCH_')
@@ -1575,7 +1582,7 @@ export function validateJobAidIssueEditScope(output, issueEditScope, previousCon
 export function validateJobAidUpdatedIssueBodies(output) {
   const issues = output?.jobAidWorkingDelta?.issues;
   if (!Array.isArray(issues)) return;
-  for (const issue of issues) {
+  for (const [issueIndex, issue] of issues.entries()) {
     // Host treats each supplied issue as a complete replacement. Missing
     // collections would otherwise clear saved questions and premises.
     if (!isRecord(issue) ||
@@ -1589,6 +1596,20 @@ export function validateJobAidUpdatedIssueBodies(output) {
     const withoutCitations = issue.body.replace(/\[\[([^\[\]\r\n]+)\]\]/gu, '');
     if (withoutCitations.includes('[[') || withoutCitations.includes(']]'))
       throw new Error('REVIEW_JOBAID_BODY_CITATION_MALFORMED');
+    for (const [requirementIndex, handling] of issue.requirementHandling.entries()) {
+      const conditions = handling?.conditions;
+      if (Array.isArray(conditions) && conditions.every((item) =>
+        typeof item === 'string' && item.trim()) &&
+        new Set(conditions.map((item) => item.trim())).size === conditions.length) continue;
+      const error = new Error('REVIEW_JOBAID_REQUIREMENT_CONDITIONS_INVALID');
+      error.requirementConditionsFeedback = {
+        field: `jobAidWorkingDelta.issues[${issueIndex}].requirementHandling[${requirementIndex}].conditions`,
+        expected: 'array of distinct, nonempty strings',
+        received: Array.isArray(conditions) ? 'invalid array items' :
+          conditions === null ? 'null' : typeof conditions,
+      };
+      throw error;
+    }
   }
 }
 

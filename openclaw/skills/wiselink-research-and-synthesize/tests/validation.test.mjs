@@ -1435,7 +1435,7 @@ test('requires 35 MCP capabilities, six review tools, and hosted provenance', ()
   assert.ok(HOST_MCP_TOOLS.includes('commit_applicability_candidate'));
   assert.equal(
     WISELINK_SKILL_VERSION,
-    'wiselink-research-and-synthesize@r09.c192',
+    'wiselink-research-and-synthesize@r09.c193',
   );
   assert.equal(
     WISELINK_SKILL_COMPATIBILITY_REF,
@@ -5077,7 +5077,7 @@ test('offers source reading and one final candidate function with blank assistan
   assert.equal(result.provenance.modelVersion, 'openai-codex/gpt-5.4');
   assert.equal(
     result.provenance.promptVersion,
-    'wiselink.3_1.review_prompt.v1.c49',
+    'wiselink.3_1.review_prompt.v1.c50',
   );
 });
 
@@ -5130,7 +5130,7 @@ test('falls back to the configured model and records only output shape v2', asyn
   assert.equal(result.provenance.modelVersion, 'provider/configured');
   assert.equal(
     result.provenance.promptVersion,
-    'wiselink.3_1.review_prompt.v1.c49',
+    'wiselink.3_1.review_prompt.v1.c50',
   );
   assert.equal(
     outputShape.schemaVersion,
@@ -7364,6 +7364,59 @@ test('JobAid assessment update permits one bounded citation correction after two
   assert.equal(result.output.jobAidWorkingDelta.issues[0].issueKey, 'existing-issue');
 });
 
+test('JobAid Review gives the exact requirement conditions field in the same correction round', async () => {
+  const issue = { issueKey: 'existing-issue', question: '适用条件是什么？',
+    body: '条件仍须按原文核对。[[method:risk]]', riskScenarios: [], measures: [],
+    otherClassifications: [], openQuestions: [], requirementHandling: [{
+      methodRef: 'method:risk', requirement: '核对适用范围', conditions: '实际模型返回的敏感条件',
+      treatment: 'CONDITIONS_UNCONFIRMED', basisRefs: [], explanation: '范围待核',
+    }] };
+  let requests = 0;
+  const rejections = [];
+  const result = await invokeReviewWithTransport({ input: {
+    availableSourceRefIds: [], attachmentRefs: [],
+    context: { purpose: 'UPDATE_ASSESSMENT', problemAssessment: {
+      previousWork: { content: { issues: [{ issueKey: 'existing-issue' }] } },
+    } },
+  } }, {
+    gatewayUrl: 'https://official.invalid', gatewayToken: 'fixture-only', configuredModelVersion: 'fixture/provider',
+    validateCandidate: validateJobAidUpdatedIssueBodies,
+    observeCandidateRejection: async (value) => rejections.push(value),
+  }, { requestGateway: async (_url, init) => {
+    requests++;
+    if (requests === 2) {
+      const feedback = JSON.parse(JSON.parse(init.body).messages.at(-1).content);
+      assert.equal(feedback.candidateAccepted, false);
+      assert.equal(feedback.validationError, 'REVIEW_JOBAID_REQUIREMENT_CONDITIONS_INVALID');
+      assert.deepEqual(feedback.requirementConditionsFeedback, {
+        field: 'jobAidWorkingDelta.issues[0].requirementHandling[0].conditions',
+        expected: 'array of distinct, nonempty strings', received: 'string',
+      });
+      assert.match(feedback.instruction, /complete new candidate/u);
+      assert.equal(JSON.stringify(feedback).includes('实际模型返回的敏感条件'), false);
+    }
+    return Response.json({ choices: [{ message: { content: null, tool_calls: [{
+      id: `candidate-${requests}`, type: 'function', function: {
+        name: 'return_wiselink_review_candidate',
+        arguments: JSON.stringify({ answer: '核对条件', jobAidWorkingDelta: { issues: [{
+          ...issue, requirementHandling: [{ ...issue.requirementHandling[0],
+            conditions: requests === 1 ? issue.requirementHandling[0].conditions : ['待核适用范围'],
+          }],
+        }] } }),
+      },
+    }] } }] });
+  } });
+  assert.equal(requests, 2);
+  assert.deepEqual(rejections, [{ modelRound: 1, correctionNo: 1,
+    errorCode: 'REVIEW_JOBAID_REQUIREMENT_CONDITIONS_INVALID', requirementConditionsFeedback: {
+      field: 'jobAidWorkingDelta.issues[0].requirementHandling[0].conditions',
+      expected: 'array of distinct, nonempty strings', received: 'string',
+    } }]);
+  assert.deepEqual(result.output.jobAidWorkingDelta.issues[0].requirementHandling[0].conditions,
+    ['待核适用范围']);
+  assert.equal(issue.requirementHandling[0].conditions, '实际模型返回的敏感条件');
+});
+
 test('gateway required-tool contract failure is reported once without transient retries', async () => {
   let requests = 0;
   const progress = [];
@@ -7899,6 +7952,32 @@ test('JobAid update rejects uncited issue bodies before Host commit while leavin
   issue.openQuestions = [];
   delta.jobAidWorkingDelta.issues[0].body += ' [[broken';
   assert.throws(() => validateJobAidUpdatedIssueBodies(delta), /REVIEW_JOBAID_BODY_CITATION_MALFORMED/u);
+});
+
+test('JobAid candidate validates requirement conditions as distinct nonempty strings', () => {
+  const issue = { issueKey: 'existing', question: '适用条件？', body: '按条款核对。[[method:risk]]',
+    riskScenarios: [], measures: [], otherClassifications: [], openQuestions: [],
+    requirementHandling: [{ conditions: ['范围待核'] }] };
+  const candidate = { jobAidWorkingDelta: { issues: [issue] } };
+  for (const [conditions, received] of [
+    ['范围待核', 'string'], [null, 'null'], [['范围待核', 1], 'invalid array items'],
+    [[' '], 'invalid array items'], [['范围待核', ' 范围待核 '], 'invalid array items'],
+  ]) {
+    issue.requirementHandling[0].conditions = conditions;
+    assert.throws(() => validateJobAidUpdatedIssueBodies(candidate), (error) => {
+      assert.equal(error.message, 'REVIEW_JOBAID_REQUIREMENT_CONDITIONS_INVALID');
+      assert.deepEqual(error.requirementConditionsFeedback, {
+        field: 'jobAidWorkingDelta.issues[0].requirementHandling[0].conditions',
+        expected: 'array of distinct, nonempty strings', received,
+      });
+      return true;
+    });
+    assert.equal(issue.requirementHandling[0].conditions, conditions);
+  }
+  issue.requirementHandling[0].conditions = [];
+  assert.doesNotThrow(() => validateJobAidUpdatedIssueBodies(candidate));
+  issue.requirementHandling[0].conditions = ['范围待核'];
+  assert.doesNotThrow(() => validateJobAidUpdatedIssueBodies(candidate));
 });
 
 test('JobAid Review catches out-of-scope issue replacements and retirements before Host commit', () => {
