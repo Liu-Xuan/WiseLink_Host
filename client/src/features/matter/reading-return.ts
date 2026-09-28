@@ -30,13 +30,13 @@ export function knowledgeReadingIdentity(params: URLSearchParams):
 
 export function knowledgeReadingParams(params: URLSearchParams): URLSearchParams {
   const result = new URLSearchParams();
-  for (const key of ['query', 'subjectKind', 'subjectId', 'workRef', 'scope', 'kind', 'after', 'listY', 'articleY']) {
+  for (const key of ['query', 'subjectKind', 'subjectId', 'workRef', 'documentVersionId', 'scope', 'kind', 'after', 'listY', 'articleY']) {
     if (params.getAll(key).length !== 1) continue;
     const value = params.get(key) ?? '';
     const limit = key === 'after' ? 2400 : key === 'query' ? 200 : 255;
     if (value.length > limit || /[\u0000-\u001f\u007f]/u.test(value)) continue;
     if (key === 'scope' && !['CURRENT', 'ALL', 'HISTORICAL'].includes(value)) continue;
-    if (key === 'kind' && !['works', 'sources'].includes(value)) continue;
+    if (key === 'kind' && !['works', 'sources', 'matters'].includes(value)) continue;
     if (key === 'subjectKind' && !['WORK_ITEM', 'ENGINEERING_MATTER'].includes(value)) continue;
     if ((key === 'listY' || key === 'articleY') && !/^\d{1,7}$/.test(value)) continue;
     if (value) result.set(key, value);
@@ -712,6 +712,9 @@ export function readingReturnTarget(
     const nested = new URLSearchParams(query);
     const identity = knowledgeReadingIdentity(nested);
     if (identity.state === 'invalid') return null;
+    const documentPin = nested.getAll('documentVersionId');
+    if (documentPin.length > 1 ||
+      (documentPin.length === 1 && documentPin[0] !== binding)) return null;
     if (!binding) {
       // A graph return is bound to the exact saved matter work, not a document.
       if (documentVersionId !== undefined || identity.state !== 'ok' ||

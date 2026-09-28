@@ -43,6 +43,12 @@
 .wl-knowledge-suite .knowledge-source[tabindex]{cursor:pointer}
 .wl-knowledge-suite .knowledge-source[tabindex]:hover{background:color-mix(in srgb,var(--blue) 4%,var(--surface))}
 .wl-knowledge-suite .knowledge-source[tabindex]:focus-visible{outline:2px solid var(--blue);outline-offset:-2px}
+.wl-knowledge-suite .knowledge-source.selected{box-shadow:inset 3px 0 var(--blue);background:color-mix(in srgb,var(--blue) 5%,var(--surface))}
+.wl-knowledge-suite .knowledge-catalog-link{text-decoration:none;cursor:pointer}
+.wl-knowledge-suite .knowledge-catalog-link:hover{background:color-mix(in srgb,var(--blue) 4%,var(--surface))}
+.wl-knowledge-suite .knowledge-catalog-link:focus-visible{outline:2px solid var(--blue);outline-offset:-2px}
+.wl-knowledge-suite .knowledge-preview ul{padding-left:22px;font-size:14px;line-height:1.9;color:var(--dim)}
+.wl-knowledge-suite .knowledge-preview a{color:var(--blue);text-decoration:underline;text-underline-offset:3px}
 .wl-knowledge-suite .knowledge-source>span{flex:none;color:var(--blue);font-size:12px}
 .wl-knowledge-suite .knowledge-source>div{min-width:0}
 .wl-knowledge-suite .knowledge-source-toggle{flex:none;display:inline-flex;align-items:center;justify-content:center;width:22px;height:22px;padding:2px;border:0;background:none;color:var(--dim)}

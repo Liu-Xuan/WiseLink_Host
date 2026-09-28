@@ -1,6 +1,20 @@
 # M 主控集成交接
 
-## 2026-09-28：C183 Review 协议与范围修复准备（未发布）
+## 2026-09-28：工程知识改为文档／事项 Wiki 入口（界面实现与定向验证）
+
+用户指出工程知识首页应按工程文档和事项组织。本人页面核对确认 `/knowledge` 原先默认列出 12 条当前工作，混合 Matter 和 WorkItem，以模型工作 headline 为目录标题，包含“依据本轮页 1/2 证据定向修订”等过程文字；这属于目录组织问题，不能通过删除测试数据或重生成工程结论代替修复。本批接续 `e9b0ff874`，最新线上发布仍为 `7690404159778196455` / `f65384a8`。
+
+本批默认目录改为真实文档，以独立入口浏览真实事项；工作与历史保留确切修订阅读。复用现有授权文档目录、DocumentReading、事项及 Host 已登记关联，不按标题猜测归属，不新增 Wiki 结论存储、模型调用、权限或数据库变更。独立文档解读未生成时如实显示；关联评估不冒充文件解读。原文跳转及返回、确切历史 workRef 深链列为定向验证范围。已完成前端类型检查、定向 ESLint、知识目录交互与阅读 UI 两组 33 项 Jest、前端生产构建和独立只读审查；新增文档版本选择/关联结果绑定、历史深链和原文返回均纳入检查。扩展尝试 reading-return-context.spec.ts 时，该文件既有 LibraryDocumentDetails fixture 缺 assessmentQuicklook prop 导致编译失败，未把它记作通过。发布及本人页面验收待回执补齐。
+
+## 2026-09-28：PDF.js 对 MinerU 补强的边界与 Turn 13 实证
+
+同一份旧版 787 FTD 两页原件已核对：MinerU 原始 Markdown 漏了可见的 `All 787 Aircraft`、`Description`、`Status`；PDF.js 文本层补回了文字，但早期合成把后两个标题当作正文，导致 JobAid 把 Description 误归到 Applicability，并推断原件后续仍有未读内容。PDF.js 未改写 MinerU 原始 OCR；影响发生在 Host 合成阅读结构及后续模型判断。C194 `c017d26fbfbf632d22191399f18d4653f61784d1` 以多个可信的 MinerU/PDF 几何锚点恢复这类标题，17b 发布 `7690356461112904678` 已完成；旧解析修订 4 与依赖它的历史 JobAid 不被自动改写。现行策略保留 MinerU 为默认，只在同源 PDF 文本层文字可定位、区域与顺序可靠时补入，保留 `PDFJS_TEXT_LAYER` 来源；冲突、表格关系、多列或图示不机械合并，标为限制并回原件核对。
+
+C183 Skill `2867127d87c4d4f1901a0603ce328db26cbda24a` 已安装在 17c，安装包 61/61 文件逐项哈希匹配，已安装测试 584/584 通过。安装前后 16 项 cron 的启停、调度和 payload 精确比对一致：仅 C136 `38f1cc05-4a5e-4ec0-863c-e5b3d579048b` 启用，其余 15 项继续停用。Host 的显式 JobAid 问题编辑范围提交 `e216b224cf8164021d61a22f0e26b1b4de7bc30c` 已随 17b 发布 `7690404159778196455` 上线，发布 SHA `f65384a8adaf6a45a1b105dc4a74f56db693483e`。
+
+刘轩本人从 17b 旧 787 FTD 正常复核页提交 Turn 13 `RT-fa3055e8-c02e-4f30-b479-4474aa3789ba`，仅允许改 `AID-OBEDS-TIMELINE`，未请求 Overall。唯一 C136 消费者自动领取，读取原文；模型返回工具调用，Host 在 10:57:49 +08 保存 JobAid 修订 13，attempt `AQ-96acb6d562d54cdb9cd826e7aef60581`，页面读回 `wiselink-research-and-synthesize@r09.c183` 与“问题评估工作已更新至修订 13”。该问题正文撤回 SB 与 Production Incorporation 的无据先后关系，开放问题不再把本版 Final Action、Milestones 后续块及独立 Compliance Interval/References 写成未读。新正文仍将 `Service Bulletin Available: (TBD)` 简化为“SB 颁发日为 TBD”，还带有“本 FTD 不构成强制性改装即时生效条件”等需要独立依据的判断，不能仅因保存而视为准确。页面读回其他三项正文与工作级摘要仍保持修订 12 内容；它们仍有同类不实“未读”问题，旧 Overall 仍基于较早工作。因此这是局部真实更正和范围约束实证，尚非整个事项内容质量验收；后续应核对新正文并逐项更正另外三项，再按请求更新 Overall 与相关阅读面。
+
+## 2026-09-28：C183 Review 协议与范围修复准备（历史发布前记录）
 
 C183 Skill `2867127d87c4d4f1901a0603ce328db26cbda24a`（父 `00d09aceb`）已快进到私有 origin 同名分支，未同步公开 GitHub。它让来源已读取的 JobAid `UPDATE_ASSESSMENT` 继续要求工具调用，并统一 `issuePatches` 指令、独立可读问题正文与已读证据下的开放问题修订。文件级 226/226、precommit、Skill 打包校验通过；61 文件包 SHA256 `eb6adc340154e82cd98a79d3d1c2b4964fab012f4d1ae3655a0136f62f8bb98d`。**尚未安装 17c 或用真实 Review 验证**，因此不能把它记为内容质量修复。
 

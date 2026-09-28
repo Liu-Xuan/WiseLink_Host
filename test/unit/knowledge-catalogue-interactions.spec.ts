@@ -8,9 +8,10 @@ import type {
   EngineeringKnowledgeRead,
   EngineeringKnowledgeScope,
 } from '@shared/engineering-issue-search.interface';
-import type { CanonicalLibraryDocumentsResponse } from '@shared/api.interface';
+import type { CanonicalLibraryDocumentsResponse, EngineeringMatterDirectoryResponse } from '@shared/api.interface';
 import type { DocumentReadingPreview } from '@shared/document-reading.interface';
 import { getCanonicalLibraryDocuments } from '@client/src/api/canonical-host';
+import { getEngineeringMatterDirectory } from '@client/src/api/engineering-matter';
 import { clearEngineeringMatterQueries, ENGINEERING_MATTER_QUERY_ROOT } from '@client/src/features/matter/useEngineeringMatter';
 import KnowledgeLookupPage from '@client/src/pages/KnowledgeLookupPage/KnowledgeLookupPage';
 import { libraryDocuments } from './fixtures/canonical-library';
@@ -21,6 +22,7 @@ const mockCatalogue = jest.fn();
 const mockReadWork = jest.fn();
 const mockJobAidWork = jest.fn();
 const mockDocuments = jest.mocked(getCanonicalLibraryDocuments);
+const mockMatters = jest.mocked(getEngineeringMatterDirectory);
 let sessionGeneration = 1;
 let queryClient: QueryClient;
 let currentActor = 'actor-test';
@@ -84,7 +86,9 @@ function sourceDocuments(): CanonicalLibraryDocumentsResponse {
   return response;
 }
 
-jest.mock('@client/src/api/engineering-matter', () => ({}));
+jest.mock('@client/src/api/engineering-matter', () => ({
+  getEngineeringMatterDirectory: jest.fn(),
+}));
 jest.mock('@client/src/features/matter/SavedAssessmentReading', () => ({
   __esModule: true,
   default: ({ result }: { result: { content: { headline: string } } }) =>
@@ -180,7 +184,7 @@ async function settle(ms = 10) {
   });
 }
 
-async function mount(search = '') {
+async function mount(search = '?kind=works') {
   router = createMemoryRouter(
     [
       { path: '/knowledge', element: createElement(KnowledgeLookupPage) },
@@ -230,6 +234,10 @@ beforeEach(() => {
   mockJobAidWork.mockImplementation((id: string) => Promise.resolve({
     current: { workItemId: id, workRevisionRef: `JAWR-${id}` },
   }));
+  mockDocuments.mockResolvedValue(sourceDocuments());
+  mockMatters.mockResolvedValue({
+    items: [], nextCursor: null, fileReadPerformed: false,
+  });
 });
 
 afterEach(async () => {
@@ -465,6 +473,53 @@ describe('knowledge catalogue identity and reading lifecycle', () => {
 });
 
 describe('knowledge source documents reading', () => {
+  it('defaults to the document Wiki and shows registered matters by exact work item', async () => {
+    const related: EngineeringMatterDirectoryResponse = {
+      items: [{
+        matterId: 'MAT-1', title: '液压故障事项', primaryWorkItemId: 'WI-NEW',
+        createdAt: '2026-09-17T00:00:00.000Z', updatedAt: '2026-09-18T00:00:00.000Z',
+        currentMatterRevisionId: 'MW-1', workingRevision: 1,
+        result: null, overallStatus: 'NOT_AVAILABLE',
+      }],
+      nextCursor: null, fileReadPerformed: false,
+    };
+    mockMatters.mockResolvedValue(related);
+    await mount('?');
+    await settle();
+    expect(mockCatalogue).not.toHaveBeenCalled();
+    expect(container.querySelector('[aria-label="文档 Wiki"]')?.textContent)
+      .toContain('现行版主题');
+    expect(container.querySelector('.knowledge-source[aria-current="true"]')?.textContent)
+      .toContain('现行版主题');
+    expect(mockMatters).toHaveBeenCalledWith(
+      { workItemId: 'WI-NEW', limit: 24 }, expect.anything(),
+    );
+    expect(container.querySelector<HTMLAnchorElement>('a[href="/matters/MAT-1"]')
+      ?.textContent).toContain('液压故障事项');
+    await act(async () => container.querySelector<HTMLButtonElement>(
+      '.knowledge-actions button',
+    )!.dispatchEvent(new dom.window.MouseEvent('click', { bubbles: true })));
+    const returned = new URLSearchParams(router.state.location.search);
+    expect(new URLSearchParams(returned.get('returnKnowledgeQuery') ?? '')
+      .get('documentVersionId')).toBe('DV-FAM-1-2');
+  });
+
+  it('lists matters by matter ID and opens the existing matter Wiki', async () => {
+    mockMatters.mockResolvedValue({
+      items: [{ matterId: 'MAT-2', title: '真实事项', primaryWorkItemId: null,
+        createdAt: '2026-09-17T00:00:00.000Z', updatedAt: '2026-09-18T00:00:00.000Z',
+        currentMatterRevisionId: 'MW-2', workingRevision: 3,
+        result: null }],
+      nextCursor: null, fileReadPerformed: false,
+    });
+    await mount('?kind=matters');
+    await settle();
+    expect(container.querySelector('[aria-label="工程事项目录"]')?.textContent)
+      .toContain('真实事项');
+    expect(container.querySelector<HTMLAnchorElement>('a[href="/matters/MAT-2"]')
+      ?.textContent).toContain('打开事项 Wiki');
+  });
+
   it('shows the current version and expandable family history, each with its own saved reading', async () => {
     mockDocuments.mockResolvedValue(sourceDocuments());
     await mount('?kind=sources');
@@ -498,7 +553,7 @@ describe('knowledge source documents reading', () => {
     expect(router.state.location.pathname).toBe('/knowledge');
   });
 
-  it('opens the exact historical document version for close reading', async () => {
+  it('reads a historical document version in the Wiki before close reading', async () => {
     mockDocuments.mockResolvedValue(sourceDocuments());
     await mount('?kind=sources');
     await settle();
@@ -514,6 +569,15 @@ describe('knowledge source documents reading', () => {
       historicalRow.dispatchEvent(
         new dom.window.MouseEvent('click', { bubbles: true }),
       ),
+    );
+    expect(router.state.location.pathname).toBe('/knowledge');
+    expect(router.state.location.search).toContain('documentVersionId=DV-FAM-1-1');
+    expect(container.querySelector('.knowledge-source-history[aria-current="true"]')?.textContent)
+      .toContain('旧版主题');
+    expect(container.querySelector('[aria-label="文档 Wiki"]')?.textContent).toContain('旧版主题');
+    await act(async () =>
+      container.querySelector<HTMLButtonElement>('.knowledge-actions button')!
+        .dispatchEvent(new dom.window.MouseEvent('click', { bubbles: true })),
     );
     expect(router.state.location.pathname).toBe('/document-versions/DV-FAM-1-1');
     expect(router.state.location.search).toContain(
@@ -631,7 +695,7 @@ test('expired knowledge resources reread instead of treating retained data as fr
 test('clearing an invalid pin can select the first authorized cached catalogue entry', async () => {
   await mount('?subjectId=A'); await settle();
   expect(mockReadWork).not.toHaveBeenCalled();
-  await navigate('/knowledge'); await settle();
+  await navigate('/knowledge?kind=works'); await settle();
   expect(router.state.location.search).toContain('workRef=WR-A');
   expect(mockCatalogue).toHaveBeenCalledTimes(1);
   expect(mockReadWork).toHaveBeenCalledTimes(1);
