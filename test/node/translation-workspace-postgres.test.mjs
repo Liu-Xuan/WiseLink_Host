@@ -864,6 +864,10 @@ test('document quota failure has one Hosted successor with fenced blocks and ful
         ${legacyTask.deadline},${canonicalJson(model)},1,1,false)`;
     await sql`UPDATE translation_workspace SET active_attempt_id=${legacyTask.actionAttemptId}
       WHERE workspace_id=${workspace.workspaceId}`;
+    const [legacyScope] = await sql`SELECT jsonb_exists(task_envelope_json::jsonb->'modelInput',
+      'retranslateBlockIds') AS "hasRepairScope" FROM action_attempt
+      WHERE attempt_id=${legacyTask.actionAttemptId}`;
+    assert.equal(legacyScope.hasRepairScope, false);
     const legacyDispatch = await dispatch.documentDeliveryDispatchState({ tenantId: scope.tenantId,
       actorUserId: scope.actorUserId, documentVersionId: scope.documentVersionId,
       readingRequestId: 'reading-unused', translationRequestId: recoveryRoot,
@@ -925,6 +929,10 @@ test('document quota failure has one Hosted successor with fenced blocks and ful
     assert.equal(cancelledLegacy.terminal_reason, 'DOCUMENT_TRANSLATION_PARTIAL_INPUT_SUPERSEDED');
     assert.equal(cancelledLegacy.task_input_hash, legacyTask.inputHash);
     assert.equal((await attempts.latest(scope, recoveryRoot)).attemptId, recoveryAttempt.attemptId);
+    const [recoveredScope] = await sql`SELECT jsonb_exists(task_envelope_json::jsonb->'modelInput',
+      'retranslateBlockIds') AS "hasRepairScope" FROM action_attempt
+      WHERE attempt_id=${recoveryTask.actionAttemptId}`;
+    assert.equal(recoveredScope.hasRepairScope, true);
     const recoveryDispatch = await dispatch.documentDeliveryDispatchState({ tenantId: scope.tenantId,
       actorUserId: scope.actorUserId, documentVersionId: scope.documentVersionId,
       readingRequestId: 'reading-unused', translationRequestId: recoveryRoot,
