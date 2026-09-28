@@ -355,7 +355,8 @@ export class CanonicalTranslationV2Service {
       const currentRequests = state.workspace.generationRequests.filter(request =>
         request.attemptId === task.actionAttemptId);
       return { ...summary(state.reading),
-      generationRequestCount: currentRequests.length,
+      // Keep the cumulative count used by existing runner batch request IDs.
+      generationRequestCount: state.workspace.generationRequests.length,
       retryableFailureCount: currentRequests.filter(request =>
         request.status === 'FAILED' && request.error?.retryable).length,
       terminalFailureCode: currentRequests.find(request =>

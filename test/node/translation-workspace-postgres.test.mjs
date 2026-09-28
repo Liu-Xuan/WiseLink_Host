@@ -930,7 +930,7 @@ test('document quota failure has one Hosted successor with fenced blocks and ful
       readingRequestId: 'reading-unused', translationRequestId: recoveryRoot,
       readingSelected: false, translationSelected: true });
     assert.deepEqual(recoveryDispatch, { pending: true, missing: false });
-    let recoveryLease, recoveryRead, nextRepair;
+    let recoveryLease, recoveryRead, nextRepair, nextRequestId;
     const runnerCalls = [];
     const runnerResult = await runDocumentSemanticTranslationStep({ documentVersionId: scope.documentVersionId,
       parseRunId: recoveryTask.parseRunId, attemptRef: recoveryTask.operationRef }, {
@@ -947,6 +947,7 @@ test('document quota failure has one Hosted successor with fenced blocks and ful
         if (input.action === 'RELEASE') return { released: await attempts.release(scope, recoveryLease),
           attemptRef: recoveryTask.operationRef };
         if (input.action === 'WORKSPACE') {
+          if (input.workspaceCommand.phase === 'NEXT') nextRequestId = input.workspaceCommand.requestId;
           const fence = { ...recoveryLease, tenantId: scope.tenantId, workItemId: null,
             documentVersionId: scope.documentVersionId, workspaceId: workspace.workspaceId };
           const response = await v2.executeDocument(input.workspaceCommand, fence,
@@ -962,9 +963,11 @@ test('document quota failure has one Hosted successor with fenced blocks and ful
           outcome: 'KNOWN_FAILURE', retryable: true },
       }); },
     });
-    assert.equal(recoveryRead.generationRequestCount, 0);
+    assert.equal(recoveryRead.generationRequestCount, 1,
+      'the runner retains its cumulative batch request numbering');
     assert.equal(recoveryRead.retryableFailureCount, 0);
     assert.equal(recoveryRead.terminalFailureCode, null);
+    assert.equal(nextRequestId, `document:${recoveryTask.operationRef}:batch-1`);
     assert.equal(nextRepair.action, 'GENERATE');
     assert.deepEqual(nextRepair.blockIds, [selected.block_id]);
     assert.equal(runnerResult.status, 'RUNNING');
