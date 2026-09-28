@@ -166,12 +166,14 @@ export class DocumentTranslationAttemptRepository {
     if (rows.length !== 1) throw new Error('DOCUMENT_TRANSLATION_FINISH_FENCE_REJECTED');
   }
 
-  async fail(scope: DocumentTranslationScope, fence: DocumentTranslationFence, error: unknown): Promise<void> {
+  async fail(scope: DocumentTranslationScope, fence: DocumentTranslationFence, error: unknown): Promise<boolean> {
     const candidate = error instanceof Error ? error.message : '';
     const code = /^[A-Z][A-Z0-9_]{1,159}$/.test(candidate) ? candidate : 'DOCUMENT_TRANSLATION_STEP_FAILED';
     const now = new Date();
-    await this.db.update(actionAttempt).set({ status: 'FAILED', errorCode: code, terminalReason: code,
-      completedAt: now, updatedAt: now }).where(and(owned(scope), fenced(fence), active(now), gt(actionAttempt.leaseExpiresAt, now)));
+    const rows = await this.db.update(actionAttempt).set({ status: 'FAILED', errorCode: code, terminalReason: code,
+      completedAt: now, updatedAt: now }).where(and(owned(scope), fenced(fence), active(now), gt(actionAttempt.leaseExpiresAt, now)))
+      .returning({ id: actionAttempt.attemptId });
+    return rows.length === 1;
   }
 }
 

@@ -1,7 +1,7 @@
 -- Document translation can now record the selected Hosted execution model.
 -- Legacy official-plugin attempts retain a NULL execution_model_json.
 BEGIN;
-ALTER TABLE action_attempt DROP CONSTRAINT ck_action_attempt_subject;
+ALTER TABLE action_attempt DROP CONSTRAINT IF EXISTS ck_action_attempt_subject;
 ALTER TABLE action_attempt ADD CONSTRAINT ck_action_attempt_subject CHECK (
   (subject_kind = 'WORK_ITEM' AND work_item_id IS NOT NULL
     AND matter_id IS NULL AND matter_revision_id IS NULL

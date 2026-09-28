@@ -22,7 +22,7 @@ function delivery() {
     targetRowVersion: null, delivery: { partIndex: 0, partCount: 1,
       byteLength: bytes.length, payloadBase64: bytes.toString('base64') } };
 }
-function harness({ next, translate }) {
+function harness({ next, translate, terminalFailureCode = null }) {
   const calls = [];
   const callTool = async (name, input) => {
     assert.equal(name, 'document_translation'); calls.push(input);
@@ -30,8 +30,10 @@ function harness({ next, translate }) {
     if (input.action === 'HEARTBEAT') return { renewed: true, attemptRef: identity.attemptRef };
     if (input.action === 'RELEASE') return { released: true, attemptRef: identity.attemptRef };
     if (input.action === 'FINISH') return { ...identity, status: 'SUCCEEDED', progress: { completeness: 'COMPLETE' } };
+    if (input.action === 'FAIL') return { ...identity, status: 'FAILED', errorCode: input.errorCode };
     if (input.action === 'WORKSPACE') {
-      if (input.workspaceCommand.phase === 'READ') return { generationRequestCount: 0, retryableFailureCount: 0 };
+      if (input.workspaceCommand.phase === 'READ') return { generationRequestCount: 0,
+        retryableFailureCount: 0, terminalFailureCode };
       if (input.workspaceCommand.phase === 'NEXT') return next();
       if (input.workspaceCommand.phase === 'SAVE') return { generationRequestRef: batch.generationRequestRef,
         blocks: input.workspaceCommand.candidates.map(candidate => ({ blockId: candidate.blockId })) };
@@ -81,4 +83,26 @@ test('known retryable model failure keeps attempt active for the next tick', asy
   assert.equal(result.status, 'RUNNING');
   assert.equal(h.calls.some(call => call.action === 'FAIL' || call.action === 'FINISH'), false);
   assert.equal(h.calls.at(-1).action, 'RELEASE');
+});
+
+test('nonretryable known failure records a terminal Host attempt without another model dispatch', async () => {
+  let modelCalls = 0;
+  const code = 'TRANSLATION_OUTPUT_CONTRACT_INVALID';
+  const h = harness({ next: delivery, translate: async () => {
+    modelCalls++;
+    throw Object.assign(new Error('invalid model output'), { translationFailure: { origin: 'OUTPUT_CONTRACT',
+      code, outcome: 'KNOWN_FAILURE', retryable: false } });
+  } });
+  const result = await runDocumentSemanticTranslationStep(identity, h);
+  assert.equal(result.status, 'REQUIRES_ATTENTION');
+  assert.equal(result.errorCode, code);
+  assert.equal(modelCalls, 1);
+  assert.deepEqual(h.calls.filter(call => ['RECORD_FAILURE','FAIL','RELEASE'].includes(call.action === 'WORKSPACE'
+    ? call.workspaceCommand.phase : call.action)).map(call => call.action === 'WORKSPACE'
+    ? call.workspaceCommand.phase : call.action), ['RECORD_FAILURE','FAIL']);
+  const recovered = harness({ next: () => { throw new Error('must not open new request'); },
+    translate: async () => { throw new Error('must not call model'); }, terminalFailureCode: code });
+  assert.equal((await runDocumentSemanticTranslationStep(identity, recovered)).status, 'REQUIRES_ATTENTION');
+  assert.equal(recovered.calls.some(call => call.workspaceCommand?.phase === 'NEXT'), false);
+  assert.equal(recovered.calls.some(call => call.action === 'FAIL'), true);
 });

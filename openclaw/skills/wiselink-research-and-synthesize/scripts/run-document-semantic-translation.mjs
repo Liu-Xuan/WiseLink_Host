@@ -43,6 +43,14 @@ export async function runDocumentSemanticTranslationStep(summary, { callTool, tr
       if (!Number.isSafeInteger(progress?.generationRequestCount) || progress.generationRequestCount < 0 ||
           !Number.isSafeInteger(progress.retryableFailureCount))
         throw new Error('DOCUMENT_TRANSLATION_PROGRESS_INVALID');
+      if (progress.terminalFailureCode) {
+        await assertLease();
+        finished = true;
+        const failed = await callTool('document_translation', { action: 'FAIL', ...binding,
+          errorCode: progress.terminalFailureCode });
+        if (failed?.status !== 'FAILED') throw new Error('DOCUMENT_TRANSLATION_FAIL_READBACK_MISMATCH');
+        return { ...summary, status: 'REQUIRES_ATTENTION', errorCode: progress.terminalFailureCode };
+      }
       if (progress.retryableFailureCount >= 3)
         return { ...summary, status: 'REQUIRES_ATTENTION', errorCode: 'DOCUMENT_TRANSLATION_RETRY_LIMIT' };
       const next = await workspace({ phase: 'NEXT',
@@ -70,6 +78,12 @@ export async function runDocumentSemanticTranslationStep(summary, { callTool, tr
           code: 'DOCUMENT_TRANSLATION_GENERATION_OUTCOME_UNKNOWN', outcome: 'GENERATION_UNKNOWN', retryable: false };
         await assertLease();
         await workspace({ phase: 'RECORD_FAILURE', generationRequestRef: batch.generationRequestRef, error: failure });
+        if (failure.outcome === 'KNOWN_FAILURE' && !failure.retryable) {
+          finished = true;
+          const failed = await callTool('document_translation', { action: 'FAIL', ...binding,
+            errorCode: failure.code });
+          if (failed?.status !== 'FAILED') throw new Error('DOCUMENT_TRANSLATION_FAIL_READBACK_MISMATCH');
+        }
         return { ...summary, status: failure.outcome === 'KNOWN_FAILURE' && failure.retryable
           ? 'RUNNING' : 'REQUIRES_ATTENTION', errorCode: failure.code };
       }

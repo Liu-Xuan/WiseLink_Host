@@ -141,7 +141,8 @@ export class DocumentTranslationRuntimeService {
           scope.actorUserId, assertAuthorized, parseDocumentTranslationTaskEnvelope(row.taskEnvelopeJson ?? ''),
           readStoredExecutionModel(row.executionModelJson)!);
         if (input.action === 'FAIL') {
-          await this.attempts.fail(scope, fence, new Error(input.errorCode ?? 'DOCUMENT_TRANSLATION_HOSTED_FAILED'));
+          if (!await this.attempts.fail(scope, fence, new Error(input.errorCode ?? 'DOCUMENT_TRANSLATION_HOSTED_FAILED')))
+            throw new Error('DOCUMENT_TRANSLATION_FAIL_FENCE_REJECTED');
           await this.attempts.release(scope, fence);
           return summary((await this.attempts.latest(scope, expectedRequestId))!);
         }

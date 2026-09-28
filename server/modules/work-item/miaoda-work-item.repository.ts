@@ -341,11 +341,25 @@ export class MiaodaWorkItemRepository {
         OR EXISTS (SELECT 1 FROM ${actionAttempt} t
           WHERE t.tenant_id=${input.tenantId} AND t.actor_user_id=${input.actorUserId}
             AND t.document_version_id=${input.documentVersionId}
-            AND t.trigger_request_id=${input.translationRequestId}
+            AND t.trigger_request_id IN (${input.translationRequestId},${`${input.translationRequestId}:hosted-m3`})
             AND t.subject_kind='DOCUMENT_VERSION' AND t.action_type='DOCUMENT_TRANSLATE'
             AND t.status IN ('QUEUED','RUNNING','RETRY_SCHEDULED')
             AND t.deadline_at>CURRENT_TIMESTAMP
             AND (t.lease_expires_at IS NULL OR t.lease_expires_at<=CURRENT_TIMESTAMP))
+        OR EXISTS (SELECT 1 FROM ${actionAttempt} t
+          WHERE t.tenant_id=${input.tenantId} AND t.actor_user_id=${input.actorUserId}
+            AND t.document_version_id=${input.documentVersionId}
+            AND t.trigger_request_id=${input.translationRequestId}
+            AND t.subject_kind='DOCUMENT_VERSION' AND t.action_type='DOCUMENT_TRANSLATE'
+            AND t.status='FAILED' AND t.error_code='DOCUMENT_PLUGIN_QUOTA_EXHAUSTED'
+            AND t.started_at IS NULL AND t.projection_applied=false
+            AND t.result_envelope_json IS NULL
+            AND t.task_envelope_json::jsonb->'modelInput'->>'documentProducer'='OFFICIAL_PLUGIN'
+            AND NOT EXISTS (SELECT 1 FROM ${actionAttempt} successor
+              WHERE successor.tenant_id=t.tenant_id AND successor.actor_user_id=t.actor_user_id
+                AND successor.document_version_id=t.document_version_id
+                AND successor.subject_kind='DOCUMENT_VERSION' AND successor.action_type='DOCUMENT_TRANSLATE'
+                AND successor.trigger_request_id=${`${input.translationRequestId}:hosted-m3`}))
       ) AS pending,
       (
         (${input.readingSelected} AND NOT EXISTS (SELECT 1 FROM ${dmDocumentReadingRun} r
@@ -355,7 +369,7 @@ export class MiaodaWorkItemRepository {
         OR (${input.translationSelected} AND NOT EXISTS (SELECT 1 FROM ${actionAttempt} t
           WHERE t.tenant_id=${input.tenantId} AND t.actor_user_id=${input.actorUserId}
             AND t.document_version_id=${input.documentVersionId}
-            AND t.trigger_request_id=${input.translationRequestId}
+            AND t.trigger_request_id IN (${input.translationRequestId},${`${input.translationRequestId}:hosted-m3`})
             AND t.subject_kind='DOCUMENT_VERSION' AND t.action_type='DOCUMENT_TRANSLATE'))
       ) AS missing`);
     return { pending: rows[0]?.pending === true, missing: rows[0]?.missing === true };
