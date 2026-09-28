@@ -59,6 +59,7 @@ import {
   runHostedReviewTurn,
   summarizeHostedReviewModelOutputShape,
   validateHostToolMetadata,
+  validateJobAidIssueEditScope,
   validateJobAidUpdatedIssueBodies,
 } from '../scripts/run-hosted-review-turn.mjs';
 
@@ -1434,7 +1435,7 @@ test('requires 35 MCP capabilities, six review tools, and hosted provenance', ()
   assert.ok(HOST_MCP_TOOLS.includes('commit_applicability_candidate'));
   assert.equal(
     WISELINK_SKILL_VERSION,
-    'wiselink-research-and-synthesize@r09.c188',
+    'wiselink-research-and-synthesize@r09.c189',
   );
   assert.equal(
     WISELINK_SKILL_COMPATIBILITY_REF,
@@ -7897,6 +7898,55 @@ test('JobAid update rejects uncited issue bodies before Host commit while leavin
   issue.openQuestions = [];
   delta.jobAidWorkingDelta.issues[0].body += ' [[broken';
   assert.throws(() => validateJobAidUpdatedIssueBodies(delta), /REVIEW_JOBAID_BODY_CITATION_MALFORMED/u);
+});
+
+test('JobAid Review catches out-of-scope issue replacements and retirements before Host commit', () => {
+  const scope = { targetIssueKeys: ['ja_ac_risk_and_measures'] };
+  const candidate = { jobAidWorkingDelta: { issues: [
+    { issueKey: 'applicability_and_scope' },
+    { issueKey: 'ja_ac_risk_and_measures' },
+  ], unchangedIssueKeys: ['failure_mechanism'] } };
+  const before = structuredClone(candidate);
+  assert.throws(() => validateJobAidIssueEditScope(candidate, scope), /REVIEW_ISSUE_OUT_OF_SCOPE/u);
+  assert.deepEqual(candidate, before);
+  candidate.jobAidWorkingDelta.issues = [{ issueKey: 'ja_ac_risk_and_measures' }];
+  assert.doesNotThrow(() => validateJobAidIssueEditScope(candidate, scope));
+  candidate.jobAidWorkingDelta.retiredIssues = [{ issueKey: 'failure_mechanism' }];
+  assert.throws(() => validateJobAidIssueEditScope(candidate, scope), /REVIEW_ISSUE_OUT_OF_SCOPE/u);
+  assert.doesNotThrow(() => validateJobAidIssueEditScope(candidate, null));
+});
+
+test('JobAid Review feeds a rejected out-of-scope candidate back to the same model turn', async () => {
+  let requests = 0;
+  const result = await invokeReviewWithTransport({ input: { context: {
+    purpose: 'UPDATE_ASSESSMENT',
+    issueEditScope: { targetIssueKeys: ['ja_ac_risk_and_measures'] },
+    problemAssessment: { previousWork: { content: { issues: [
+      { issueKey: 'applicability_and_scope' }, { issueKey: 'ja_ac_risk_and_measures' },
+    ] } } },
+  } } }, {
+    gatewayUrl: 'https://official.invalid', gatewayToken: 'fixture-only', configuredModelVersion: 'fixture/provider',
+    validateCandidate: (candidate) => validateJobAidIssueEditScope(candidate, { targetIssueKeys: ['ja_ac_risk_and_measures'] }),
+  }, { requestGateway: async (_url, init) => {
+    const request = JSON.parse(init.body);
+    if (++requests === 2) {
+      const feedback = JSON.parse(request.messages.at(-1).content);
+      assert.equal(feedback.validationError, 'REVIEW_ISSUE_OUT_OF_SCOPE');
+      assert.match(feedback.instruction, /ja_ac_risk_and_measures/u);
+    }
+    return Response.json({ choices: [{ message: { content: null, tool_calls: [{
+      id: `candidate-${requests}`, type: 'function', function: {
+        name: 'return_wiselink_review_candidate', arguments: JSON.stringify({
+          answer: '定点更正', jobAidWorkingDelta: { issues: requests === 1
+            ? [{ issueKey: 'applicability_and_scope' }, { issueKey: 'ja_ac_risk_and_measures' }]
+            : [{ issueKey: 'ja_ac_risk_and_measures' }],
+          unchangedIssueKeys: ['applicability_and_scope'] },
+        }),
+      },
+    }] } }] });
+  } });
+  assert.equal(requests, 2);
+  assert.deepEqual(result.output.jobAidWorkingDelta.issues.map((issue) => issue.issueKey), ['ja_ac_risk_and_measures']);
 });
 
 test('JobAid Review issue patches preserve omitted prior fields and distinguish explicit clearing', () => {

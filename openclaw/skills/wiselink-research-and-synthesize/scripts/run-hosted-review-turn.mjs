@@ -235,8 +235,10 @@ export async function runHostedReviewTurn(options, dependencies = {}) {
             },
             validateCandidate: (output) => {
               validateModelCandidateOutput(output, readSourceRefBatches.flat(), input.attachmentRefs, isMatter, isJobAid);
-              if (isJobAid && input.context?.purpose === 'UPDATE_ASSESSMENT')
+              if (isJobAid && input.context?.purpose === 'UPDATE_ASSESSMENT') {
+                validateJobAidIssueEditScope(output, input.context.issueEditScope);
                 validateJobAidUpdatedIssueBodies(output);
+              }
               validateCandidate(bindHostedReviewCandidate(beginResult, output, isMatter, isJobAid));
             },
             candidateSourceRefIds: (output) => reviewCandidateSourceRefIds(
@@ -512,6 +514,7 @@ export async function invokeHostedReviewModel(input, options = {}, dependencies 
         // a Host mutation or retry an unknown/partially received response.
         incompleteResponseCorrections += 1;
         const previousIssueKeys = jobAidPreviousIssueKeys(input.input);
+        const targetIssueKeys = input.input?.context?.issueEditScope?.targetIssueKeys ?? [];
         const readEvidenceRefs = [...new Set([...sourceCache.values()]
           .map((source) => source?.evidenceRef)
           .filter((ref) => typeof ref === 'string' && ref.trim()))];
@@ -520,6 +523,7 @@ export async function invokeHostedReviewModel(input, options = {}, dependencies 
               'The preceding model response ended before any tool call.',
               `Continue this same Review using the sources already read. Call ${REVIEW_OUTPUT_FUNCTION_NAME} with one concise candidate containing answer and non-null jobAidWorkingDelta.`,
               `Correct existing issues through jobAidWorkingDelta.issuePatches: use the exact prior issueKey from ${canonicalJson(previousIssueKeys)} and only fields that actually change, without restating the complete issue or adding nonempty issues beside patches.`,
+              `This turn permits changes only to issue keys ${canonicalJson(targetIssueKeys)}. Put every other prior issue key in unchangedIssueKeys; do not patch or retire it.`,
               'Put all other prior issue keys in unchangedIssueKeys.',
               `For a revised body, cite supporting evidence inline as [[evidenceRef]] copied exactly from the read evidence refs ${canonicalJson(readEvidenceRefs)}.`,
               'Write a changed issue body as a standalone engineering judgment with its supporting premises and limits; put the process or change summary in answer or changeSummary, not in place of the body.',
@@ -684,6 +688,8 @@ export async function invokeHostedReviewModel(input, options = {}, dependencies 
               ? 'Include a nonempty jobAidWorkingDelta.changeSummary that states the concrete engineering judgment changed in this round. Do not use the issue body as a process log or invent a change; keep the supported issue correction and submit a complete new candidate.'
               : isJobAid && errorCode === 'REVIEW_JOBAID_SUBSTANTIVE_DELTA_REQUIRED'
               ? 'The proposed JobAid update changes no issue, reading summary, overview, review condition or input disposition. This requested assessment correction must revise the affected existing issues using actually read evidence, or accurately explain why the requested correction cannot be made; do not claim an unchanged delta was saved. Keep unrelated issues unchanged and preserve the prior completion scope and open questions.'
+              : isJobAid && errorCode === 'REVIEW_ISSUE_OUT_OF_SCOPE'
+              ? `The Host permits changes only to issue keys ${canonicalJson(input.input?.context?.issueEditScope?.targetIssueKeys ?? [])}. Submit only those keys in issuePatches or issues; put other prior keys in unchangedIssueKeys. Do not retire or rewrite an unrelated issue. Preserve supported findings and exact registered evidence refs; the rejected candidate was not saved.`
               : isJobAid && errorCode === 'REVIEW_JOBAID_OPEN_QUESTIONS_REQUIRE_QUALIFIED_COMPLETION'
               ? 'COMPLETE conflicts with openQuestions or unresolved requirementHandling in the resulting saved issues, including unchanged prior issues. Preserve those real unknowns and use COMPLETE_WITH_OPEN_QUESTIONS when the requested investigation is complete with bounded open questions; use IN_PROGRESS only if this round still has substantive unfinished investigation. Do not remove questions or mark requirements addressed merely to pass validation. Correct the affected existing issue content using the read sources.'
               : isJobAid && errorCode === 'JOBAID_READING_SUMMARY_PAIR_REQUIRED'
@@ -1536,6 +1542,19 @@ export function materializeJobAidReviewIssuePatches(delta, previousContent) {
   });
   const { issuePatches: _patches, ...rest } = delta;
   return { ...rest, issues };
+}
+
+export function validateJobAidIssueEditScope(output, issueEditScope) {
+  const targets = issueEditScope?.targetIssueKeys;
+  if (!Array.isArray(targets) || targets.length === 0) return;
+  const delta = output?.jobAidWorkingDelta;
+  if (!isRecord(delta)) return;
+  const allowed = new Set(targets);
+  const changed = Array.isArray(delta.issues) ? delta.issues : [];
+  const retired = Array.isArray(delta.retiredIssues) ? delta.retiredIssues : [];
+  if ([...changed, ...retired]
+    .some((issue) => !allowed.has(issue?.issueKey)))
+    throw new Error('REVIEW_ISSUE_OUT_OF_SCOPE');
 }
 
 export function validateJobAidUpdatedIssueBodies(output) {
