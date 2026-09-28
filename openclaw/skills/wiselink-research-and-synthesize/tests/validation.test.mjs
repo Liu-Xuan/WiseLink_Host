@@ -7572,28 +7572,33 @@ test('JobAid Review corrects missing completion reason and change summary before
   assert.equal(result.output.jobAidWorkingDelta.changeSummary, '撤回无据判断');
 });
 
-function m3ProbeFirstReadReviewInput() {
-  return { input: { availableSourceRefIds: ['page1'],
-    context: { purpose: 'UPDATE_ASSESSMENT', problemAssessment: {
-      availableSources: [{ kind: 'DOCUMENT_PASSAGE' }],
-      previousWork: { content: { issues: [], roundCompletion: 'IN_PROGRESS',
-        completionReason: '仍须核对来源' } },
-    } } } };
-}
-
-test('M3 Probe first-read required-tool 502 gets one read-only correction before a validated candidate', async () => {
+function turn21RejectedCandidateFixture({ fourth = 'exact', fifth = 'candidate' } = {}) {
   const calls = [];
+  const rejections = [];
   let reads = 0;
   let validations = 0;
-  const sessionKey = 'agent:wiselink-engineering:review:ACTX-RS-first-read-tool-choice';
-  const candidate = { answer: '已核对原文并更正。', sourceRefs: ['page1'],
+  const sessionKey = 'agent:wiselink-engineering:review:ACTX-RS-turn21';
+  const previousIssue = { issueKey: 'existing', question: '原问题',
+    body: '旧判断。[[source:prior]]', riskScenarios: [], measures: [],
+    otherClassifications: [], openQuestions: [], requirementHandling: [] };
+  const invalid = { answer: '待更正', sourceRefs: ['page1'],
     jobAidWorkingDelta: { schemaVersion: 'wiselink.jobaid-problem-work.v3',
-      issues: [{ issueKey: 'risk', question: '风险依据是什么？',
-        body: '原文仅支持有界风险判断。[[source:page1]]', riskScenarios: [],
-        measures: [], otherClassifications: [], openQuestions: [], requirementHandling: [] }],
-      roundCompletion: 'IN_PROGRESS', completionReason: '仍须核对来源',
-      changeSummary: '核对原文并更正风险判断' } };
-  const result = await invokeReviewWithTransport(m3ProbeFirstReadReviewInput(), {
+      issues: [{ issueKey: 'existing', body: '已核对原文。[[source:page1]]' }],
+      roundCompletion: 'IN_PROGRESS', completionReason: '保留原范围',
+      changeSummary: '更正既有问题' } };
+  const corrected = { answer: '已更正既有问题。', sourceRefs: ['page1'],
+    jobAidWorkingDelta: { schemaVersion: 'wiselink.jobaid-problem-work.v3',
+      issuePatches: [{ issueKey: 'existing', body: '已核对原文。[[source:page1]]' }],
+      roundCompletion: 'IN_PROGRESS', completionReason: '保留原范围',
+      changeSummary: '更正既有问题' } };
+  const result = invokeReviewWithTransport({ input: {
+    availableSourceRefIds: ['page1'],
+    context: { purpose: 'UPDATE_ASSESSMENT', problemAssessment: {
+      availableSources: [{ kind: 'DOCUMENT_PASSAGE' }],
+      previousWork: { content: { issues: [previousIssue],
+        roundCompletion: 'IN_PROGRESS', completionReason: '保留原范围' } },
+    } },
+  } }, {
     gatewayUrl: 'https://official.invalid', gatewayToken: 'fixture-only',
     configuredModelVersion: 'fixture/provider',
     executionModel: modelSelection('m3probe/minimax-m3'),
@@ -7601,60 +7606,91 @@ test('M3 Probe first-read required-tool 502 gets one read-only correction before
     readSourceRefs: async ids => { reads++; return ids.map(sourceRefId => ({ sourceRefId,
       evidenceRef: `source:${sourceRefId}`, excerpt: 'Fixture passage.' })); },
     validateCandidate: value => { validations++; validateJobAidUpdatedIssueBodies(value); },
+    observeCandidateRejection: event => { rejections.push(event.errorCode); },
   }, { requestGateway: async (_url, init) => {
     calls.push({ sessionKey: init.headers['x-openclaw-session-key'], ...JSON.parse(init.body) });
-    if (calls.length === 1) return Response.json({ error: {
-      message: 'tool_choice=required was not satisfied by the agent response',
-    } }, { status: 502 });
-    if (calls.length === 2) return Response.json({ choices: [{ message: { content: null,
-      tool_calls: [{ id: 'read2', type: 'function', function: {
+    if (calls.length === 1) return Response.json({ choices: [{ message: { content: null,
+      tool_calls: [{ id: 'read1', type: 'function', function: {
         name: 'read_wiselink_review_sources', arguments: JSON.stringify({ sourceRefIds: ['page1'] }),
       } }] } }] });
-    return Response.json({ choices: [{ message: { content: null, tool_calls: [{
-      id: 'candidate3', type: 'function', function: {
-        name: 'return_wiselink_review_candidate', arguments: JSON.stringify(candidate),
-      },
-    }] } }] });
+    if (calls.length === 2) return Response.json({ error: {
+      message: 'm3probe/minimax-m3 ended with an incomplete terminal response',
+    } }, { status: 400 });
+    if (calls.length === 3) return Response.json({ choices: [{ message: { content: null,
+      tool_calls: [{ id: 'candidate3', type: 'function', function: {
+        name: 'return_wiselink_review_candidate', arguments: JSON.stringify(invalid),
+      } }] } }] });
+    if (calls.length === 4) return Response.json({ error: { message: fourth === 'exact'
+      ? 'tool_choice=required was not satisfied by the agent response'
+      : 'upstream unavailable' } }, { status: 502 });
+    if (calls.length === 5 && fifth === 'read') return Response.json({ choices: [{ message: {
+      content: null, tool_calls: [{ id: 'read5', type: 'function', function: {
+        name: 'read_wiselink_review_sources', arguments: JSON.stringify({ sourceRefIds: ['page1'] }),
+      } }],
+    } }] });
+    if (fifth === 'prose') return Response.json({ choices: [{ message: {
+      content: 'Unvalidated prose is not a candidate.', tool_calls: [],
+    } }] });
+    if (fifth === 'repeat') return Response.json({ error: {
+      message: 'tool_choice=required was not satisfied by the agent response',
+    } }, { status: 502 });
+    return Response.json({ choices: [{ message: { content: null,
+      tool_calls: [{ id: 'candidate5', type: 'function', function: {
+        name: 'return_wiselink_review_candidate', arguments: JSON.stringify(corrected),
+      } }] } }] });
   } });
-  assert.equal(calls.length, 3);
-  assert.ok(calls.every(call => call.sessionKey === sessionKey));
-  assert.deepEqual(calls.map(call => call.tool_choice), ['required', 'auto', 'required']);
-  assert.deepEqual(calls.slice(0, 2).map(call => call.tools.map(tool => tool.function.name)),
-    [['read_wiselink_review_sources'], ['read_wiselink_review_sources']]);
-  assert.match(calls[1].messages.at(-1).content, /read_wiselink_review_sources/u);
-  assert.match(calls[1].messages.at(-1).content, /availableSourceRefIds=\["page1"\]/u);
-  assert.doesNotMatch(JSON.stringify(calls[1].messages), /Fixture passage/u);
-  assert.deepEqual(calls[2].tools.map(tool => tool.function.name),
+  return { result, calls, rejections, sessionKey,
+    get reads() { return reads; }, get validations() { return validations; } };
+}
+
+test('M3 Probe recovers exact Turn21 post-rejection 502 with one auto candidate request', async () => {
+  const fixture = turn21RejectedCandidateFixture();
+  const result = await fixture.result;
+  assert.equal(fixture.calls.length, 5);
+  assert.ok(fixture.calls.every(call => call.sessionKey === fixture.sessionKey));
+  assert.deepEqual(fixture.calls.map(call => call.tool_choice),
+    ['required', 'required', 'required', 'required', 'auto']);
+  assert.deepEqual(fixture.rejections, ['REVIEW_JOBAID_ISSUE_FULL_CONTENT_REQUIRED']);
+  assert.equal(fixture.reads, 1);
+  assert.equal(fixture.validations, 2);
+  assert.match(fixture.calls[4].messages.at(-1).content,
+    /REVIEW_JOBAID_ISSUE_FULL_CONTENT_REQUIRED/u);
+  assert.match(fixture.calls[4].messages.at(-1).content, /source:page1/u);
+  assert.deepEqual(fixture.calls[4].messages.map(message => message.role),
+    ['system', 'assistant', 'tool', 'user']);
+  const rejectionFeedback = JSON.parse(fixture.calls[4].messages[2].content);
+  assert.equal(rejectionFeedback.candidateAccepted, false);
+  assert.equal(rejectionFeedback.validationError, 'REVIEW_JOBAID_ISSUE_FULL_CONTENT_REQUIRED');
+  assert.deepEqual(fixture.calls[4].tools.map(tool => tool.function.name),
     ['return_wiselink_review_candidate', 'read_wiselink_review_sources']);
-  assert.equal(reads, 1);
-  assert.equal(validations, 1);
-  assert.equal(result.output.answer, candidate.answer);
+  assert.equal(result.output.jobAidWorkingDelta.issues[0].body,
+    '已核对原文。[[source:page1]]');
 });
 
-test('M3 Probe first-read correction stops after one exact failure and never retries generic 502', async () => {
-  for (const generic of [false, true]) {
-    const choices = [];
-    const progress = [];
-    let businessCalls = 0;
-    await assert.rejects(invokeReviewWithTransport(m3ProbeFirstReadReviewInput(), {
-      gatewayUrl: 'https://official.invalid', gatewayToken: 'fixture-only',
-      configuredModelVersion: 'fixture/provider',
-      executionModel: modelSelection('m3probe/minimax-m3'),
-      registeredModelRefs: ['m3probe/minimax-m3'],
-      nativeSessionKey: 'agent:wiselink-engineering:review:ACTX-RS-first-read-limit',
-      observeProgress: event => { progress.push(event.kind); },
-      readSourceRefs: async () => { businessCalls++; },
-      validateCandidate: () => { businessCalls++; },
-    }, { requestGateway: async (_url, init) => {
-      choices.push(JSON.parse(init.body).tool_choice);
-      return Response.json({ error: { message: generic
-        ? 'upstream unavailable'
-        : 'tool_choice=required was not satisfied by the agent response' } }, { status: 502 });
-    }, wait: async () => { assert.fail('first-read 502 must not use transient retry'); } }),
-    generic ? /REVIEW_GATEWAY_HTTP_502/u : /REVIEW_TOOL_CHOICE_NOT_SATISFIED/u);
-    assert.deepEqual(choices, generic ? ['required'] : ['required', 'auto']);
-    assert.deepEqual(progress, generic ? ['MODEL_REQUEST'] : ['MODEL_REQUEST', 'MODEL_REQUEST']);
-    assert.equal(businessCalls, 0);
+test('Turn21 auto choice lasts one request even when the model reads a cached source', async () => {
+  const fixture = turn21RejectedCandidateFixture({ fifth: 'read' });
+  const result = await fixture.result;
+  assert.deepEqual(fixture.calls.map(call => call.tool_choice),
+    ['required', 'required', 'required', 'required', 'auto', 'required']);
+  assert.equal(fixture.reads, 1);
+  assert.equal(fixture.validations, 2);
+  assert.equal(result.output.jobAidWorkingDelta.issues[0].body,
+    '已核对原文。[[source:page1]]');
+});
+
+test('Turn21 protocol recovery rejects prose, repeated exact 502, and generic 502', async () => {
+  for (const scenario of [
+    { fourth: 'exact', fifth: 'prose', error: /REVIEW_GATEWAY_OUTPUT_FUNCTION_COUNT_INVALID/u, calls: 5 },
+    { fourth: 'exact', fifth: 'repeat', error: /REVIEW_TOOL_CHOICE_NOT_SATISFIED/u, calls: 5 },
+    { fourth: 'generic', fifth: 'candidate', error: /REVIEW_GATEWAY_HTTP_502/u, calls: 4 },
+  ]) {
+    const fixture = turn21RejectedCandidateFixture(scenario);
+    await assert.rejects(fixture.result, scenario.error);
+    assert.equal(fixture.calls.length, scenario.calls);
+    assert.deepEqual(fixture.rejections, ['REVIEW_JOBAID_ISSUE_FULL_CONTENT_REQUIRED']);
+    assert.equal(fixture.reads, 1);
+    assert.equal(fixture.validations, 1);
+    if (scenario.fourth === 'exact') assert.equal(fixture.calls[4].tool_choice, 'auto');
   }
 });
 

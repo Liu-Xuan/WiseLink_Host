@@ -426,13 +426,13 @@ export async function invokeHostedReviewModel(input, options = {}, dependencies 
     requestGateway: dependencies.requestGateway ?? requestHostedGateway,
     observeProgress: options.observeProgress,
     wait: dependencies.wait,
-    retryHttp502: () => !(sourceReadFirst && sourceCache.size === 0 &&
-      options.executionModel?.modelRef === 'm3probe/minimax-m3'),
   });
   let round = 0;
   let candidateCorrections = 0;
   let incompleteResponseCorrections = 0;
-  let initialSourceReadToolChoice = 'required';
+  let postRejectionProtocolCorrections = 0;
+  let pendingRejectedValidationCode = null;
+  let autoChoiceNextRequest = false;
   let consecutiveCachedReads = 0;
   let inputUnits = 0;
   let outputUnits = 0;
@@ -444,6 +444,8 @@ export async function invokeHostedReviewModel(input, options = {}, dependencies 
     const remainingMs = timeoutMs - (Date.now() - startedAt);
     if (remainingMs <= 0) throw new Error('REVIEW_MODEL_TIMEOUT');
     round += 1;
+    const autoChoiceThisRequest = autoChoiceNextRequest;
+    autoChoiceNextRequest = false;
     inputUnits += Buffer.byteLength(JSON.stringify(messages));
     const signal = AbortSignal.timeout(leasedJobAid ? Math.min(remainingMs, 15 * 60_000) : remainingMs);
     let response;
@@ -466,8 +468,7 @@ export async function invokeHostedReviewModel(input, options = {}, dependencies 
             ? [reviewSourceFunctionTool()]
             : [reviewCandidateFunctionTool(isMatter, isJobAid, input.input?.attachmentRefs ?? [], isChat, isAssessmentUpdate), reviewSourceFunctionTool(),
               ...(isChat && input.input?.context?.aily?.available === true ? [reviewAilyFunctionTool()] : [])],
-          tool_choice: sourceReadFirst && sourceCache.size === 0
-            ? initialSourceReadToolChoice : sourceReadFirst ? 'required' : isJobAid ? 'auto' : 'required',
+          tool_choice: autoChoiceThisRequest ? 'auto' : sourceReadFirst ? 'required' : isJobAid ? 'auto' : 'required',
           parallel_tool_calls: false,
           n: 1,
           stream: false,
@@ -509,19 +510,6 @@ export async function invokeHostedReviewModel(input, options = {}, dependencies 
     if (observeOutputShape) await observeOutputShape(outputShape, round);
     if (!response.ok) {
       const failure = classifyHostedGatewayFailure(payload);
-      if (sourceReadFirst && options.executionModel?.modelRef === 'm3probe/minimax-m3' &&
-          nativeSessionKey && sourceCache.size === 0 && outputShape.choiceCount === 0 &&
-          incompleteResponseCorrections === 0 && response.status === 502 &&
-          failure === 'TOOL_CHOICE_NOT_SATISFIED') {
-        // This exact Gateway contract failure produced no source read or
-        // candidate. Keep the read-only tool set and original native session;
-        // one auto-choice correction can still request an authorized passage.
-        incompleteResponseCorrections += 1;
-        initialSourceReadToolChoice = 'auto';
-        messages = [systemMessage, { role: 'user', content:
-          `The preceding response made no source-read tool call. Continue this same Review by calling ${REVIEW_READ_FUNCTION_NAME} with relevant IDs from the current Host-provided availableSourceRefIds=${canonicalJson(input.input.availableSourceRefIds)}. Use only these IDs. Read the authorized passage before proposing any candidate. Do not emit prose, invent references or claim a source was read.` }];
-        continue;
-      }
       if (sourceReadFirst && nativeSessionKey && sourceCache.size > 0 &&
           outputShape.choiceCount === 0 && incompleteResponseCorrections === 0 &&
           ((response.status === 400 && failure === 'INCOMPLETE_TERMINAL_RESPONSE') ||
@@ -554,10 +542,33 @@ export async function invokeHostedReviewModel(input, options = {}, dependencies 
         messages = [systemMessage, { role: 'user', content: correction }];
         continue;
       }
+      if (sourceReadFirst && options.executionModel?.modelRef === 'm3probe/minimax-m3' &&
+          nativeSessionKey && sourceCache.size > 0 &&
+          pendingRejectedValidationCode === 'REVIEW_JOBAID_ISSUE_FULL_CONTENT_REQUIRED' &&
+          postRejectionProtocolCorrections === 0 && response.status === 502 &&
+          outputShape.choiceCount === 0 && failure === 'TOOL_CHOICE_NOT_SATISFIED') {
+        // A validated source read preceded a rejected candidate, and this
+        // Gateway response contains no new candidate. One protocol correction
+        // may continue the same native session without changing Host state.
+        postRejectionProtocolCorrections += 1;
+        pendingRejectedValidationCode = null;
+        autoChoiceNextRequest = true;
+        const readEvidenceRefs = [...new Set([...sourceCache.values()]
+          .map((source) => source?.evidenceRef)
+          .filter((ref) => typeof ref === 'string' && ref.trim()))];
+        messages = [...messages, { role: 'user', content: [
+          `The previous candidate was rejected with REVIEW_JOBAID_ISSUE_FULL_CONTENT_REQUIRED and was not saved. Call ${REVIEW_OUTPUT_FUNCTION_NAME} with one corrected candidate.`,
+          `For an existing issue use issuePatches with an exact key from ${canonicalJson(jobAidPreviousIssueKeys(input.input))}; a new issue requires full content.`,
+          `Cite only supporting evidence already read in this turn: ${canonicalJson(readEvidenceRefs)}. Keep the original question, scope and unaffected work.`,
+          'Emit no prose outside the function arguments and do not claim the rejected candidate was saved.',
+        ].join(' ') }];
+        continue;
+      }
       if (failure === 'TOOL_CHOICE_NOT_SATISFIED')
         throw new Error('REVIEW_TOOL_CHOICE_NOT_SATISFIED');
       throw new Error(`REVIEW_GATEWAY_HTTP_${response.status}${failure === 'UNCLASSIFIED' ? '' : `:${failure}`}`);
     }
+    pendingRejectedValidationCode = null;
     if (outputShape.hasAnalysis) throw new Error('REVIEW_MODEL_ANALYSIS_FORBIDDEN');
     // This exact public Gateway error was returned as HTTP 200 with no calls.
     // Report the upstream timeout, rather than a misleading function-count
@@ -587,6 +598,7 @@ export async function invokeHostedReviewModel(input, options = {}, dependencies 
       // native function channel. Transport the candidate as one JSON string;
       // never repair its content or skip the existing candidate validators.
       let candidate;
+      let rejectedByCandidateValidator = false;
       try {
         candidate = output;
         if (isJobAid) {
@@ -622,13 +634,21 @@ export async function invokeHostedReviewModel(input, options = {}, dependencies 
           }
           candidate = parseStrictJsonObject(output.candidateJson);
         }
-        if (typeof options.validateCandidate === 'function') await options.validateCandidate(candidate);
+        if (typeof options.validateCandidate === 'function') {
+          try {
+            await options.validateCandidate(candidate);
+          } catch (error) {
+            rejectedByCandidateValidator = true;
+            throw error;
+          }
+        }
       } catch (error) {
         const errorCode = candidateValidationErrorCode(error);
         if (!(isMatter || isJobAid || isChat) || typeof options.validateCandidate !== 'function' || !errorCode ||
           candidateCorrections >= maxModelCorrections ||
           typeof toolCall.id !== 'string' || toolCall.id.trim() === '') throw error;
         candidateCorrections += 1;
+        pendingRejectedValidationCode = rejectedByCandidateValidator ? errorCode : null;
         const invalidEvidenceRefs = isJobAid && isAssessmentUpdate &&
           errorCode === 'REVIEW_JOBAID_EVIDENCE_NOT_REGISTERED'
           ? (Array.isArray(error.invalidEvidenceRefs) ? error.invalidEvidenceRefs : [])
