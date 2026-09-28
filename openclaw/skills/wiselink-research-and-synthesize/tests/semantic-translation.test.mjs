@@ -38,6 +38,10 @@ test('M3 Probe uses the configured Hosted route, bounded completion budget and t
     return { ok: true, status: 200, text: async () => JSON.stringify(payload) };
   } });
   assert.equal(request.max_completion_tokens, 32_768);
+  assert.match(request.messages[0].content, /trustworthy same-position PDF comparison for an ordinary-word OCR error/u);
+  assert.match(request.messages[0].content, /retaining that SOURCE doubt as a limitation/u);
+  assert.match(request.messages[0].content, /Preserve portions of previousCandidate that were already correct/u);
+  assert.match(request.messages[0].content, /never regress them into untranslated OCR fragments/u);
   assert.equal(result.actualExecution.modelRef, configured.modelRef);
   assert.deepEqual(result.output, output);
 });

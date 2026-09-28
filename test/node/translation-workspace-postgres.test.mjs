@@ -734,6 +734,75 @@ test('document quota failure has one Hosted successor with fenced blocks and ful
     assert.equal((await attempts.latest(scope, oldRequest)).status, 'SUCCEEDED');
     const reading = buildTranslationWorkspaceReadingV2(...Object.values(await workspaces.readSnapshot(fence)));
     assert.ok(reading.blocks.every(block => block.selected?.provenance.executionModel?.modelRef === model.modelRef));
+    // Persist a second, synthetic checked revision to exercise a previously
+    // completed partial result without altering its original candidate body.
+    const [selected] = await sql`SELECT block_revision_id,block_id,check_json,provenance_json FROM translation_block_revision
+      WHERE workspace_id=${workspace.workspaceId} AND selected_for_reading=true LIMIT 1`;
+    assert.ok(selected);
+    const checked = JSON.parse(selected.check_json);
+    checked.issues = [{ code: 'SYNTHETIC_TRANSLATION_GAP', severity: 'BLOCK', origin: 'TRANSLATION',
+      message: 'Synthetic checked meaning gap', blockIds: [selected.block_id],
+      anchorIds: workspace.plan.blocks.find(block => block.blockId === selected.block_id).anchorIds }];
+    const correctedProvenance = { ...JSON.parse(selected.provenance_json), generationRequestRef: 'TG-partial-fixture' };
+    await sql`UPDATE translation_block_revision SET selected_for_reading=false
+      WHERE block_revision_id=${selected.block_revision_id}`;
+    await sql`INSERT INTO translation_block_revision (block_revision_id,tenant_id,work_item_id,workspace_id,
+      block_id,plan_revision,content_revision,generation_request_ref,origin_attempt_id,author_kind,
+      author_user_id,candidate_json,dependencies_json,provenance_json,generated_at,saved_at,
+      check_status,check_json,checked_at,selected_for_reading,row_version)
+      SELECT 'TB-partial-fixture',tenant_id,work_item_id,workspace_id,block_id,plan_revision,
+        content_revision+1,'TG-partial-fixture',origin_attempt_id,author_kind,author_user_id,
+        candidate_json,dependencies_json,${canonicalJson(correctedProvenance)},generated_at,saved_at,
+        'CHECKED',${canonicalJson(checked)},now(),false,1
+      FROM translation_block_revision WHERE block_revision_id=${selected.block_revision_id}`;
+    const partialResult = { schemaVersion: 'wiselink.document.translation_result.v1',
+      workspaceId: workspace.workspaceId, status: 'REMAINING_LIMITATIONS',
+      artifact: { ...final, completeness: 'PARTIAL' } };
+    await sql`UPDATE action_attempt SET terminal_reason='REMAINING_LIMITATIONS',
+      result_envelope_json=${canonicalJson(partialResult)} WHERE attempt_id=${hosted.actionAttemptId}`;
+    const partialProgress = await v2.readDocumentProgress({ tenantId: scope.tenantId, workItemId: null,
+      documentVersionId: scope.documentVersionId, workspaceId: workspace.workspaceId });
+    assert.equal(partialProgress.completeness, 'PARTIAL');
+    assert.equal(partialProgress.repairableBlockCount, 1);
+    assert.deepEqual(await dispatchState(), { pending: true, missing: false },
+      'a completed repairable partial result is discoverable without a manual request ID');
+    const partialRequestId = `${oldRequest}:partial-repair`;
+    const partialTask = task('partial-repair', 'HOSTED_M3', partialRequestId);
+    await assert.rejects(attempts.reserve(scope, partialTask, partialRequestId, model,
+      old.operationRef, 'PARTIAL'), /PARTIAL_SUCCESSOR_INELIGIBLE/u);
+    await assert.rejects(attempts.reserve({ ...scope, actorUserId: 'wrong' }, partialTask,
+      partialRequestId, model, hosted.operationRef, 'PARTIAL'), /RECOVERY_INELIGIBLE|row-level security/u);
+    await assert.rejects(attempts.reserve(scope, partialTask, `${oldRequest}-wrong:partial-repair`,
+      model, hosted.operationRef, 'PARTIAL'), /PARTIAL_SUCCESSOR_INELIGIBLE/u);
+    const partialAttempt = await attempts.reserve(scope, partialTask, partialRequestId, model,
+      hosted.operationRef, 'PARTIAL');
+    assert.equal((await attempts.reserve(scope, partialTask, partialRequestId, model,
+      hosted.operationRef, 'PARTIAL')).attemptId, partialAttempt.attemptId);
+    assert.equal((await attempts.latest(scope, oldRequest)).attemptId, partialAttempt.attemptId);
+    assert.deepEqual(await dispatchState(), { pending: true, missing: false });
+    const repairLease = await attempts.claim(scope, partialTask.operationRef, 'partial-repair-principal');
+    assert.ok(repairLease);
+    const repairFence = { ...repairLease, tenantId: scope.tenantId, workItemId: null,
+      documentVersionId: scope.documentVersionId, workspaceId: workspace.workspaceId };
+    const repairNext = await v2.executeDocument({ phase: 'NEXT', attemptRef: repairFence.attemptRef,
+      leaseToken: repairFence.leaseToken, leaseGeneration: repairFence.leaseGeneration,
+      requestId: 'partial-repair-next' }, repairFence, scope.actorUserId, async () => {}, partialTask, model);
+    assert.equal(repairNext.action, 'CORRECT');
+    assert.equal(repairNext.targetBlockRevisionId, 'TB-partial-fixture');
+    assert.equal((await attempts.reserve(scope, partialTask, partialRequestId, model,
+      hosted.operationRef, 'PARTIAL')).attemptId, partialAttempt.attemptId,
+    'a lost continuation receipt reads back the running successor');
+    assert.equal(await attempts.release(scope, repairLease), true);
+    await sql`UPDATE translation_block_revision SET check_json=${canonicalJson({ ...checked, issues: [] })}
+      WHERE block_revision_id='TB-partial-fixture'`;
+    const replayed = await Promise.all([0, 1].map(() => attempts.reserve(scope, partialTask,
+      partialRequestId, model, hosted.operationRef, 'PARTIAL')));
+    assert.deepEqual(replayed.map(row => row.attemptId), [partialAttempt.attemptId, partialAttempt.attemptId],
+      'delayed concurrent receipts read back one successor after repairability clears');
+    await sql`UPDATE action_attempt SET status='SUCCEEDED', terminal_reason='REMAINING_LIMITATIONS',
+      result_envelope_json=${canonicalJson(partialResult)} WHERE attempt_id=${partialAttempt.attemptId}`;
+    assert.deepEqual(await dispatchState(), { pending: false, missing: false },
+      'one bounded partial successor is the limit for this delivery');
   } finally { await sql.end({ timeout: 5 }); }
 });
 

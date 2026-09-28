@@ -24,7 +24,7 @@ export class DocumentTranslationRuntimeService {
     private readonly plugins: CanonicalTranslationV2PluginService, private readonly attempts: DocumentTranslationAttemptRepository, private readonly semantics: DocumentSemanticService, private readonly parsing: DocumentParsingHostedService,
     private readonly v2: CanonicalTranslationV2Service) {}
 
-  async run(input: { action: 'START' | 'RECOVER' | 'STATUS' | 'STEP' | 'CANCEL' | 'CLAIM' | 'HEARTBEAT' | 'RELEASE' | 'WORKSPACE' | 'FINISH' | 'FAIL'; documentVersionId: string;
+  async run(input: { action: 'START' | 'RECOVER' | 'CONTINUE_PARTIAL' | 'STATUS' | 'STEP' | 'CANCEL' | 'CLAIM' | 'HEARTBEAT' | 'RELEASE' | 'WORKSPACE' | 'FINISH' | 'FAIL'; documentVersionId: string;
     parseRunId: string; deliveryRef?: string; requestId?: string; attemptRef?: string;
     leaseToken?: string; leaseGeneration?: number; phase?: string; workspaceCommand?: unknown; errorCode?: string }) {
     if (!this.authorization.authorizeDocumentWork) throw canonicalServiceScopeUnavailable();
@@ -42,18 +42,24 @@ export class DocumentTranslationRuntimeService {
       // semantic hydration. A successful status is not a content-health proof.
       await this.parsing.status(scope.documentVersionId, { ...scope, roles: [] });
       const assertAuthorized = async () => { await read(); };
-      if (input.action === 'START' || input.action === 'RECOVER') {
-        if (!input.requestId) throw new Error('DOCUMENT_TRANSLATION_REQUEST_REQUIRED');
+      if (input.action === 'START' || input.action === 'RECOVER' || input.action === 'CONTINUE_PARTIAL') {
+        const requestId = input.action === 'CONTINUE_PARTIAL' && expectedRequestId
+          ? `${expectedRequestId}:partial-repair` : input.requestId;
+        if (input.action === 'CONTINUE_PARTIAL' && (!expectedRequestId || !input.attemptRef || input.requestId))
+          throw new Error('DOCUMENT_TRANSLATION_PARTIAL_SCOPE_INVALID');
+        if (!requestId) throw new Error('DOCUMENT_TRANSLATION_REQUEST_REQUIRED');
         if (input.action === 'RECOVER') {
-          if (!input.attemptRef || !expectedRequestId || input.requestId !== `${expectedRequestId}:hosted-m3`)
+          if (!input.attemptRef || !expectedRequestId || requestId !== `${expectedRequestId}:hosted-m3`)
             throw new Error('DOCUMENT_TRANSLATION_RECOVERY_SCOPE_INVALID');
           await this.attempts.assertQuotaSuccessor(scope, expectedRequestId, input.attemptRef, input.parseRunId);
         }
         await this.attempts.expire(scope);
-        const prior = await this.attempts.readRequest(scope, input.requestId);
-        if (prior) {
-          if (prior.producerRunId !== input.parseRunId) throw new Error('DOCUMENT_TRANSLATION_REQUEST_CONFLICT');
-          return summary(prior);
+        if (input.action !== 'CONTINUE_PARTIAL') {
+          const prior = await this.attempts.readRequest(scope, requestId);
+          if (prior) {
+            if (prior.producerRunId !== input.parseRunId) throw new Error('DOCUMENT_TRANSLATION_REQUEST_CONFLICT');
+            return summary(prior);
+          }
         }
         const original = await read();
         const artifact = original.run.manifestArtifact;
@@ -72,10 +78,11 @@ export class DocumentTranslationRuntimeService {
           modelInput: { ...modelInput, schemaVersion: 'wiselink.3_1.translation_task.v2',
           source: { ...modelInput.source, originalBinding: original.original.binding }, documentProducer: 'HOSTED_M3' },
           deadline: new Date(Date.now() + 12 * 60 * 60_000).toISOString(),
-          idempotencyKey: `document-translation:${scope.documentVersionId}:${input.requestId}` });
+          idempotencyKey: `document-translation:${scope.documentVersionId}:${requestId}` });
         try {
-          return summary(await this.attempts.reserve(scope, task, input.requestId,
-            taskModelSelection(), input.action === 'RECOVER' ? input.attemptRef : undefined));
+          return summary(await this.attempts.reserve(scope, task, requestId,
+            taskModelSelection(), input.action === 'START' ? undefined : input.attemptRef,
+            input.action === 'CONTINUE_PARTIAL' ? 'PARTIAL' : 'QUOTA'));
         } catch (error) {
           // A confirmed DB permission rejection is distinct from an unknown
           // reservation outcome. Never expose Drizzle SQL/parameters to callers.
@@ -96,9 +103,14 @@ export class DocumentTranslationRuntimeService {
       if (input.action === 'STATUS') {
         if (row.status !== 'SUCCEEDED') return summary(row);
         const task = parseDocumentTranslationTaskEnvelope(row.taskEnvelopeJson ?? '');
-        return { ...summary(row), progress: await this.v2.readDocumentProgress({
+        const progress = await this.v2.readDocumentProgress({
           tenantId: scope.tenantId, workItemId: null, documentVersionId: scope.documentVersionId,
-          workspaceId: task.workspaceId }) };
+          workspaceId: task.workspaceId });
+        return { ...summary(row), progress,
+          partialRepairAvailable: Boolean(expectedRequestId && row.terminalReason === 'REMAINING_LIMITATIONS' &&
+            progress.completeness === 'PARTIAL' &&
+            progress.repairableBlockCount > 0 &&
+            row.triggerRequestId !== `${expectedRequestId}:partial-repair`) };
       }
       if (!input.attemptRef || row.operationRef !== input.attemptRef) throw new Error('DOCUMENT_TRANSLATION_ATTEMPT_NOT_FOUND');
       if (input.action === 'CANCEL') { await this.attempts.cancel(scope, input.attemptRef); return summary((await this.attempts.latest(scope, expectedRequestId))!); }

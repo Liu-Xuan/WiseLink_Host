@@ -1357,9 +1357,20 @@ async function advanceDocumentTranslation(documentVersionId, run, callTool, befo
     }
     if (translation.errorCode || ['FAILED','CANCELLED'].includes(translation.status))
       return { ...translation, status: 'REQUIRES_ATTENTION' };
-    if (translation.status === 'SUCCEEDED') return { ...translation,
-      status: translation.progress?.completeness && translation.progress.completeness !== 'COMPLETE'
-        ? 'DOCUMENT_READY_WITH_LIMITATIONS' : 'DOCUMENT_READY' };
+    if (translation.status === 'SUCCEEDED') {
+      if (deliveryRef && translation.progress?.completeness === 'PARTIAL' &&
+          translation.partialRepairAvailable === true) {
+        const continued = await callTool('document_translation', { action: 'CONTINUE_PARTIAL', ...binding,
+          attemptRef: translation.attemptRef });
+        if (continued?.documentVersionId !== documentVersionId || continued.parseRunId !== run.parseRunId ||
+            !continued.attemptRef || continued.attemptRef === translation.attemptRef)
+          throw new Error('DOCUMENT_TRANSLATION_PARTIAL_SUCCESSOR_MISMATCH');
+        return continued;
+      }
+      return { ...translation,
+        status: translation.progress?.completeness && translation.progress.completeness !== 'COMPLETE'
+          ? 'DOCUMENT_READY_WITH_LIMITATIONS' : 'DOCUMENT_READY' };
+    }
     if (!['QUEUED','RUNNING','RETRY_SCHEDULED'].includes(translation.status)) throw new Error('DOCUMENT_TRANSLATION_STATUS_INVALID');
     const result = await runDocumentSemanticTranslationStep(translation, { callTool,
       translate: invokeTranslationModel });

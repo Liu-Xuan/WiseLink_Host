@@ -45,6 +45,34 @@ test('published original advances independent translation once and completed tra
     assert.equal(result.status, status === 'SUCCEEDED' ? 'DOCUMENT_READY' : status === 'FAILED' ? 'REQUIRES_ATTENTION' : status === 'RUNNING' ? 'BUSY' : 'RUNNING');
   }
 });
+test('one selected partial translation gets a Host-authorized successor and a second partial stays visible', async () => {
+  const current = state(); current.latestRun.status = 'PUBLISHED';
+  current.documentDelivery = { reading: false, translation: 'ZH_FULL' };
+  const calls = [];
+  let partialRepairAvailable = true;
+  const callTool = async (name, args) => {
+    calls.push([name, args]);
+    if (name === 'document_work') return args.action === 'INDEX'
+      ? { documentVersionId: 'DV-test', parseRunId: 'PRUN-test', status: 'INDEXED' } : current;
+    if (args.action === 'STATUS') return { documentVersionId: 'DV-test', parseRunId: 'PRUN-test',
+      attemptRef: partialRepairAvailable ? 'DTQ-first' : 'DTQ-repair', status: 'SUCCEEDED',
+      progress: { completeness: 'PARTIAL' }, partialRepairAvailable };
+    if (args.action === 'CONTINUE_PARTIAL') return { documentVersionId: 'DV-test', parseRunId: 'PRUN-test',
+      attemptRef: 'DTQ-repair', status: 'QUEUED' };
+    throw new Error(`UNEXPECTED_${args.action}`);
+  };
+  const input = { documentVersionId: 'DV-test', deliveryRef: 'acquisition:test' };
+  const first = await consumeHostedWorkItem(input, { callTool });
+  assert.equal(first.status, 'QUEUED');
+  assert.deepEqual(calls.filter(([name]) => name === 'document_translation').map(([, args]) => args.action),
+    ['STATUS','CONTINUE_PARTIAL']);
+  assert.equal(calls.find(([, args]) => args.action === 'CONTINUE_PARTIAL')[1].deliveryRef, input.deliveryRef);
+  partialRepairAvailable = false;
+  calls.length = 0;
+  const second = await consumeHostedWorkItem(input, { callTool });
+  assert.equal(second.status, 'DOCUMENT_READY_WITH_LIMITATIONS');
+  assert.deepEqual(calls.filter(([name]) => name === 'document_translation').map(([, args]) => args.action), ['STATUS']);
+});
 test('selected reading without translation never starts Chinese generation', async () => {
   const current = state(); current.latestRun.status = 'PUBLISHED';
   current.documentDelivery = { reading: true, translation: 'NONE' };
