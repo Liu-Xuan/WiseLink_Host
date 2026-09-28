@@ -288,4 +288,62 @@ describePg('0067 new-version Catalog transaction on isolated PostgreSQL', () => 
       afterAcquisitionId: 'ACQ-other-tenant', limit: 10 })).toEqual([]);
   });
 
+  it('links an exact deduplicated version while keeping the new selection and canonical source distinct', async () => {
+    expectedServiceActor = actorUserId;
+    await client`SELECT set_config('app.user_id',${actorUserId},false)`;
+    await client`INSERT INTO dm_acquisition(acquisition_id,source_artifact_id,
+      source_channel,source_ref,selection_bucket_id,selection_file_path,
+      provider_object_id,provider_version_id,acquired_by,acquired_at,
+      idempotency_key,source_descriptor_json,status)
+      VALUES ('ACQ-exact','SRC-selected','document_library_upload',
+        'DOCUMENT_UPLOAD:actor-new:exact','bucket','/new-upload.pdf',
+        'object-new-upload','version-new-upload','actor-new',CURRENT_TIMESTAMP,
+        'tenant:t1:request:document-upload:actor-new:exact',
+        ${JSON.stringify({ documentDeliveryIntent: { reading: true, translation: 'ZH_FULL' },
+          sourceStorageKey: 'bucket:/selected.pdf' })},'ACQUIRED_READBACK_VERIFIED')`;
+    await client`INSERT INTO dm_ingress_preflight(preflight_id,acquisition_id,
+      decision,branch,execution_authorized,observed_current_generation,
+      observed_current_document_version_id,normalized_descriptor_json,
+      decision_payload_json,status,created_at)
+      VALUES ('PF-exact','ACQ-exact','REUSE_EXACT','EXACT_MATCH',false,1,
+        'DV-selected',${JSON.stringify({ sha256: 'a'.repeat(64), sizeBytes: 100 })},
+        '{}','READY',CURRENT_TIMESTAMP)`;
+    const input = {
+      acquisitionId: 'ACQ-exact', documentVersionId: 'DV-selected',
+      preflightId: 'PF-exact', idempotencyKey: 'catalog:ACQ-exact',
+      uploadCommit: {
+        actorUserId, tenantId, selection: { bucketId: 'bucket', filePath: '/new-upload.pdf' },
+        selectedProviderObjectId: 'object-new-upload',
+        selectedProviderVersionId: 'version-new-upload',
+        immutableSource: { bucketId: 'bucket', filePath: '/selected.pdf',
+          providerObjectId: 'object-selected', providerVersionId: 'v1' },
+        sourceArtifactId: 'SRC-selected', sha256: 'a'.repeat(64), byteLength: 100,
+        decision: 'REUSE_EXACT', documentDelivery: { reading: true, translation: 'ZH_FULL' },
+      },
+    };
+    for (const uploadCommit of [
+      { ...input.uploadCommit, selectedProviderObjectId: 'other-object' },
+      { ...input.uploadCommit, immutableSource: { ...input.uploadCommit.immutableSource,
+        filePath: '/wrong-canonical.pdf' } },
+      { ...input.uploadCommit, tenantId: 't2' },
+      { ...input.uploadCommit, sha256: 'b'.repeat(64) },
+      { ...input.uploadCommit, decision: 'RESUME_EXISTING_PROCESS' },
+    ]) {
+      await expect(catalog.linkAcquisitionToVersion({ ...input, uploadCommit }))
+        .rejects.toMatchObject({ code: 'DOCUMENT_UPLOAD_EXACT_COMMIT_SCOPE_MISMATCH' });
+    }
+    expect((await client`SELECT status FROM dm_acquisition WHERE acquisition_id='ACQ-exact'`)[0].status)
+      .toBe('ACQUIRED_READBACK_VERIFIED');
+    await catalog.linkAcquisitionToVersion(input);
+    const [linked] = await client`SELECT a.status AS acquisition_status,
+      a.document_version_id,p.status AS preflight_status,
+      p.commit_idempotency_key,auth.status AS authorization_status
+      FROM dm_acquisition a JOIN dm_ingress_preflight p ON p.acquisition_id=a.acquisition_id
+      JOIN auto_document_delivery_authorization auth ON auth.acquisition_id=a.acquisition_id
+      WHERE a.acquisition_id='ACQ-exact'`;
+    expect(linked).toEqual({ acquisition_status: 'LINKED_EXACT_DOCUMENT_VERSION',
+      document_version_id: 'DV-selected', preflight_status: 'COMMITTED',
+      commit_idempotency_key: 'catalog:ACQ-exact', authorization_status: 'WAITING' });
+  });
+
 });

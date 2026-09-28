@@ -1321,15 +1321,18 @@ export class MiaodaHostedDocumentCatalog {
         || !current.idempotencyKey.startsWith(`tenant:${encodeURIComponent(uploadCommit.tenantId)}:request:`)
         || current.selectionBucketId !== uploadCommit.selection.bucketId
         || current.selectionFilePath !== uploadCommit.selection.filePath
+        || current.providerObjectId !== uploadCommit.selectedProviderObjectId
+        || current.providerVersionId !== uploadCommit.selectedProviderVersionId
         || current.sourceArtifactId !== uploadCommit.sourceArtifactId
         || stableJson(descriptor.documentDeliveryIntent ?? null)
           !== stableJson(uploadCommit.documentDelivery ?? null)
         || !source?.readbackVerified || source.sha256 !== uploadCommit.sha256
         || Number(source.byteLength) !== uploadCommit.byteLength
-        || source.bucketId !== current.selectionBucketId
-        || source.filePath !== current.selectionFilePath
-        || source.providerObjectId !== current.providerObjectId
-        || source.providerVersionId !== current.providerVersionId
+        || source.bucketId !== uploadCommit.immutableSource?.bucketId
+        || source.filePath !== uploadCommit.immutableSource?.filePath
+        || source.providerObjectId !== uploadCommit.immutableSource?.providerObjectId
+        || source.providerVersionId !== uploadCommit.immutableSource?.providerVersionId
+        || descriptor.sourceStorageKey !== `${source.bucketId}:${source.filePath}`
         || !version || version.lifecycleStatus !== 'COMMITTED_IMMUTABLE'
         || version.sourceArtifactId !== source.sourceArtifactId
         || version.pdfSha256 !== source.sha256
