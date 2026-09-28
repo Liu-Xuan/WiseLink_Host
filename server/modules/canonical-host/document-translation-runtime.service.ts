@@ -9,6 +9,7 @@ import { EngineeringMatterWorkingRepository } from './engineering-matter-working
 import { CanonicalTranslationV2PluginService } from './canonical-translation-v2-plugin.service';
 import { CANONICAL_SERVICE_SCOPE_AUTHORIZATION, canonicalServiceScopeUnavailable,
   type CanonicalServiceScopeAuthorizationPort } from './canonical-service-scope.authorization';
+import { documentDeliveryRequestId } from './document-delivery-ref';
 
 @Injectable()
 // Registered by CanonicalHostModule.forRoot.
@@ -19,12 +20,17 @@ export class DocumentTranslationRuntimeService {
     private readonly plugins: CanonicalTranslationV2PluginService, private readonly attempts: DocumentTranslationAttemptRepository, private readonly semantics: DocumentSemanticService, private readonly parsing: DocumentParsingHostedService) {}
 
   async run(input: { action: 'START' | 'STATUS' | 'STEP' | 'CANCEL'; documentVersionId: string;
-    parseRunId: string; requestId?: string; attemptRef?: string }) {
+    parseRunId: string; deliveryRef?: string; requestId?: string; attemptRef?: string }) {
     if (!this.authorization.authorizeDocumentWork) throw canonicalServiceScopeUnavailable();
-    const auth = await this.authorization.authorizeDocumentWork({ documentVersionId: input.documentVersionId });
+    const auth = await this.authorization.authorizeDocumentWork({ documentVersionId: input.documentVersionId,
+      deliveryRef: input.deliveryRef, purpose: input.action === 'CANCEL' ? 'CANCEL' : 'TRANSLATION' });
     if (auth.documentVersionId !== input.documentVersionId) throw new Error('DOCUMENT_TRANSLATION_AUTHORIZATION_SCOPE_MISMATCH');
     const scope: DocumentTranslationScope = { tenantId: auth.tenantId, actorUserId: auth.actorUserId, documentVersionId: auth.documentVersionId };
     return this.actors.withActorScope(scope.actorUserId, async () => {
+      const expectedRequestId = input.deliveryRef
+        ? documentDeliveryRequestId('translation', input.deliveryRef) : undefined;
+      if (expectedRequestId && input.action === 'START' && input.requestId !== expectedRequestId)
+        throw new Error('DOCUMENT_TRANSLATION_DELIVERY_REQUEST_MISMATCH');
       const read = () => this.reader.readDocumentOriginal(scope.documentVersionId, input.parseRunId, { ...scope, roles: [] });
       // Control requires fresh source ACL/catalog access, not original bytes or
       // semantic hydration. A successful status is not a content-health proof.
@@ -66,7 +72,7 @@ export class DocumentTranslationRuntimeService {
         }
       }
       if (input.action === 'STEP') await this.attempts.expire(scope);
-      const row = await this.attempts.latest(scope);
+      const row = await this.attempts.latest(scope, expectedRequestId);
       const idle = async () => ({ status: 'IDLE', documentVersionId: scope.documentVersionId,
         parseRunId: input.parseRunId,
         semanticReady: Boolean(await this.semantics.readReady({ ...scope, roles: [] }, input.parseRunId)) });
@@ -77,7 +83,7 @@ export class DocumentTranslationRuntimeService {
       }
       if (input.action === 'STATUS') return summary(row);
       if (!input.attemptRef || row.operationRef !== input.attemptRef) throw new Error('DOCUMENT_TRANSLATION_ATTEMPT_NOT_FOUND');
-      if (input.action === 'CANCEL') { await this.attempts.cancel(scope, input.attemptRef); return summary((await this.attempts.latest(scope))!); }
+      if (input.action === 'CANCEL') { await this.attempts.cancel(scope, input.attemptRef); return summary((await this.attempts.latest(scope, expectedRequestId))!); }
       if (!['QUEUED','RUNNING','RETRY_SCHEDULED'].includes(row.status)) return summary(row);
       const task = parseDocumentTranslationTaskEnvelope(row.taskEnvelopeJson ?? '');
       const lease = await this.attempts.claim(scope, input.attemptRef, `document-translation:${randomUUID()}`);
@@ -100,7 +106,7 @@ export class DocumentTranslationRuntimeService {
           await assertAuthorized();
           await this.attempts.finish(scope, lease, { workspaceId: task.workspaceId, status: result.status, artifact: result.result });
         } else if (result.status === 'NEEDS_RECOVERY') throw new Error('DOCUMENT_TRANSLATION_NEEDS_RECOVERY');
-        return { ...summary((await this.attempts.latest(scope))!), stepStatus: result.status };
+        return { ...summary((await this.attempts.latest(scope, expectedRequestId))!), stepStatus: result.status };
       } catch (error) { await this.attempts.fail(scope, lease, error); throw error; }
       finally { clearInterval(timer); await renewal; await this.attempts.release(scope, lease); }
     });

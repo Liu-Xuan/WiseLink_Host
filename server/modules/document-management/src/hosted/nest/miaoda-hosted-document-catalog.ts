@@ -1,4 +1,4 @@
-import { Inject, Injectable } from '@nestjs/common';
+import { Inject, Injectable, Optional } from '@nestjs/common';
 import {
   DRIZZLE_DATABASE,
   type PostgresJsDatabase,
@@ -24,6 +24,7 @@ import {
   documentIngressIdentityFromDescriptor,
 } from '../../migrated/ingress/documentIngressPreflight.js';
 import { deterministicId } from '../../runtime/valueTools.js';
+import { SessionResolver } from '../../../../identity/session-resolver.service';
 
 interface HistoricalImportScope {
   preflightId: string;
@@ -31,6 +32,7 @@ interface HistoricalImportScope {
   tenantId: string;
 }
 interface HistoricalImportCommand extends HistoricalImportScope {
+  uploadCommit?: boolean;
   expectedCurrentGeneration: number;
   expectedCurrentDocumentVersionId: string;
   documentVersionId: string;
@@ -704,10 +706,11 @@ export function classifyReviewAttachmentResidualReuseState(
 export class MiaodaHostedDocumentCatalog {
   constructor(
     @Inject(DRIZZLE_DATABASE) private readonly db: PostgresJsDatabase,
+    @Optional() private readonly sessions?: SessionResolver,
   ) {}
 
-  private async finalizeCatalogLinks(command) {
-    const acquisitionUpdate = await this.db.update(dmAcquisition).set({
+  private async finalizeCatalogLinks(command, database = this.db) {
+    const acquisitionUpdate = await database.update(dmAcquisition).set({
       documentVersionId: command.documentVersion.documentVersionId,
       status: 'COMMITTED_CANONICAL',
     }).where(and(
@@ -715,14 +718,14 @@ export class MiaodaHostedDocumentCatalog {
       isNull(dmAcquisition.documentVersionId),
     )).returning({ acquisitionId: dmAcquisition.acquisitionId });
     if (acquisitionUpdate.length !== 1) {
-      const [freshAcquisition] = await this.db.select().from(dmAcquisition).where(
+      const [freshAcquisition] = await database.select().from(dmAcquisition).where(
         eq(dmAcquisition.acquisitionId, command.documentVersion.acquisitionId),
       ).limit(1);
       if (freshAcquisition?.documentVersionId !== command.documentVersion.documentVersionId) {
         fail('ACQUISITION_VERSION_CONFLICT', 'Acquisition did not link to committed DocumentVersion.');
       }
     }
-    const preflightUpdate = await this.db.update(dmIngressPreflight).set({
+    const preflightUpdate = await database.update(dmIngressPreflight).set({
       status: 'COMMITTED',
       documentVersionId: command.documentVersion.documentVersionId,
       commitIdempotencyKey: command.idempotencyKey,
@@ -732,7 +735,7 @@ export class MiaodaHostedDocumentCatalog {
       eq(dmIngressPreflight.status, 'READY'),
     )).returning({ preflightId: dmIngressPreflight.preflightId });
     if (preflightUpdate.length !== 1) {
-      const [freshPreflight] = await this.db.select().from(dmIngressPreflight).where(
+      const [freshPreflight] = await database.select().from(dmIngressPreflight).where(
         eq(dmIngressPreflight.preflightId, command.preflightId),
       ).limit(1);
       if (
@@ -750,6 +753,7 @@ export class MiaodaHostedDocumentCatalog {
     sourceChannel,
     sourceRef,
     selection,
+    documentDeliveryIntent = undefined,
     tenantId = '',
     actorUserId = '',
   }) {
@@ -778,6 +782,12 @@ export class MiaodaHostedDocumentCatalog {
       || acquisition.selectionFilePath !== selectionFilePath
     ) {
       fail('ACQUISITION_IDEMPOTENCY_CONFLICT', 'Idempotency key was reused for another selection.');
+    }
+    const savedIntent = recordJson(acquisition.sourceDescriptorJson)
+      .documentDeliveryIntent;
+    if (stableJson(savedIntent ?? null) !== stableJson(documentDeliveryIntent ?? null)) {
+      fail('ACQUISITION_IDEMPOTENCY_CONFLICT',
+        'Idempotency key was reused for another document delivery choice.');
     }
     if (!acquisition.documentVersionId) {
       // A lost upload response must recover the pending review, never route a
@@ -1280,15 +1290,65 @@ export class MiaodaHostedDocumentCatalog {
     documentVersionId,
     preflightId,
     idempotencyKey,
+    uploadCommit,
   }) {
-    const [current] = await this.db.select().from(dmAcquisition).where(
+    const commit = () => this.db.transaction(async (transaction) => {
+    const [current] = await transaction.select().from(dmAcquisition).where(
       eq(dmAcquisition.acquisitionId, acquisitionId),
-    ).limit(1);
+    ).limit(1).for('update');
     if (!current) fail('ACQUISITION_NOT_FOUND', `Acquisition not found: ${acquisitionId}`);
     if (current.documentVersionId && current.documentVersionId !== documentVersionId) {
       fail('ACQUISITION_VERSION_CONFLICT', 'Acquisition is already linked to another DocumentVersion.');
     }
-    const [updated] = await this.db.update(dmAcquisition).set({
+    if (uploadCommit) {
+      const [source] = await transaction.select().from(dmSourceArtifact).where(
+        eq(dmSourceArtifact.sourceArtifactId, current.sourceArtifactId),
+      ).limit(1).for('share');
+      const [version] = await transaction.select().from(dmDocumentVersion).where(
+        eq(dmDocumentVersion.documentVersionId, documentVersionId),
+      ).limit(1);
+      const [family] = version ? await transaction.select().from(dmPublicationFamily).where(
+        eq(dmPublicationFamily.familyId, version.familyId),
+      ).limit(1).for('share') : [];
+      const [preflight] = await transaction.select().from(dmIngressPreflight).where(
+        eq(dmIngressPreflight.preflightId, preflightId),
+      ).limit(1).for('update');
+      const descriptor = parseJson(current.sourceDescriptorJson);
+      const observation = preflight ? parseJson(preflight.normalizedDescriptorJson) : null;
+      if (current.sourceChannel !== 'document_library_upload'
+        || current.acquiredBy !== uploadCommit.actorUserId
+        || !current.sourceRef.startsWith(`DOCUMENT_UPLOAD:${uploadCommit.actorUserId}:`)
+        || !current.idempotencyKey.startsWith(`tenant:${encodeURIComponent(uploadCommit.tenantId)}:request:`)
+        || current.selectionBucketId !== uploadCommit.selection.bucketId
+        || current.selectionFilePath !== uploadCommit.selection.filePath
+        || current.sourceArtifactId !== uploadCommit.sourceArtifactId
+        || stableJson(descriptor.documentDeliveryIntent ?? null)
+          !== stableJson(uploadCommit.documentDelivery ?? null)
+        || !source?.readbackVerified || source.sha256 !== uploadCommit.sha256
+        || Number(source.byteLength) !== uploadCommit.byteLength
+        || source.bucketId !== current.selectionBucketId
+        || source.filePath !== current.selectionFilePath
+        || source.providerObjectId !== current.providerObjectId
+        || source.providerVersionId !== current.providerVersionId
+        || !version || version.lifecycleStatus !== 'COMMITTED_IMMUTABLE'
+        || version.sourceArtifactId !== source.sourceArtifactId
+        || version.pdfSha256 !== source.sha256
+        || Number(version.byteLength) !== Number(source.byteLength)
+        || !family || !family.canonicalIdentityKey.startsWith(tenantFamilyIdentityPrefix(uploadCommit.tenantId))
+        || !preflight || preflight.acquisitionId !== acquisitionId
+        || preflight.decision !== uploadCommit.decision
+        || !['REUSE_EXACT', 'RESUME_EXISTING_PROCESS'].includes(preflight.decision)
+        || preflight.executionAuthorized !== false
+        || observation?.sha256 !== source.sha256
+        || Number(observation?.sizeBytes) !== Number(source.byteLength)
+        || (preflight.status !== 'READY' && !(preflight.status === 'COMMITTED'
+          && preflight.documentVersionId === documentVersionId
+          && preflight.commitIdempotencyKey === idempotencyKey))) {
+        fail('DOCUMENT_UPLOAD_EXACT_COMMIT_SCOPE_MISMATCH',
+          'The verified upload commit no longer matches the selected source and preflight.');
+      }
+    }
+    const [updated] = await transaction.update(dmAcquisition).set({
       documentVersionId,
       status: 'LINKED_EXACT_DOCUMENT_VERSION',
     }).where(and(
@@ -1300,7 +1360,7 @@ export class MiaodaHostedDocumentCatalog {
     if (!updated && current.documentVersionId !== documentVersionId) {
       fail('ACQUISITION_LINK_CAS_CONFLICT', 'Acquisition link changed concurrently.');
     }
-    const preflightUpdate = await this.db.update(dmIngressPreflight).set({
+    const preflightUpdate = await transaction.update(dmIngressPreflight).set({
       status: 'COMMITTED',
       documentVersionId,
       commitIdempotencyKey: idempotencyKey,
@@ -1311,7 +1371,7 @@ export class MiaodaHostedDocumentCatalog {
       eq(dmIngressPreflight.status, 'READY'),
     )).returning({ preflightId: dmIngressPreflight.preflightId });
     if (preflightUpdate.length !== 1) {
-      const [freshPreflight] = await this.db.select().from(dmIngressPreflight).where(
+      const [freshPreflight] = await transaction.select().from(dmIngressPreflight).where(
         eq(dmIngressPreflight.preflightId, preflightId),
       ).limit(1);
       if (
@@ -1322,6 +1382,10 @@ export class MiaodaHostedDocumentCatalog {
       }
     }
     return updated || current;
+    });
+    if (!uploadCommit) return commit();
+    if (!this.sessions) fail('VERIFIED_SQL_CONTEXT_UNAVAILABLE', 'Verified upload SQL context is unavailable.');
+    return this.sessions!.withVerifiedServiceSql(commit, uploadCommit.actorUserId);
   }
 
   async readHistoricalImportCandidate(input: HistoricalImportScope) {
@@ -1380,7 +1444,7 @@ export class MiaodaHostedDocumentCatalog {
   }
 
   async commitHistoricalVersion(command: HistoricalImportCommand) {
-    return this.db.transaction(async (transaction) => {
+    const commit = () => this.db.transaction(async (transaction) => {
       const initial = await this.loadHistoricalImportCandidate(command, transaction);
       // Serialize with new-revision CAS updates without changing the head or generation.
       await transaction.select().from(dmPublicationFamily).where(
@@ -1391,6 +1455,21 @@ export class MiaodaHostedDocumentCatalog {
       ).for('update');
       const candidate = await this.loadHistoricalImportCandidate(command, transaction);
       const { preflight, acquisition, artifact, family, document, normalizedDescriptor, sourceDescriptor } = candidate;
+      const [lockedArtifact] = await transaction.select().from(dmSourceArtifact).where(
+        eq(dmSourceArtifact.sourceArtifactId, artifact.sourceArtifactId),
+      ).limit(1).for('share');
+      if (!lockedArtifact || lockedArtifact.sha256 !== artifact.sha256
+        || Number(lockedArtifact.byteLength) !== Number(artifact.byteLength)
+        || lockedArtifact.readbackVerified !== true) {
+        fail('HISTORICAL_IMPORT_SOURCE_CHANGED', 'The verified upload source changed during commit.');
+      }
+      if (command.uploadCommit && (acquisition.sourceChannel !== 'document_library_upload'
+        || acquisition.acquiredBy !== command.actorUserId
+        || !acquisition.sourceRef.startsWith(`DOCUMENT_UPLOAD:${command.actorUserId}:`)
+        || !acquisition.idempotencyKey.startsWith(`tenant:${encodeURIComponent(command.tenantId)}:request:`))) {
+        fail('DOCUMENT_UPLOAD_HISTORICAL_COMMIT_SCOPE_MISMATCH',
+          'The historical import is not bound to this verified upload actor and tenant.');
+      }
       const commitIdempotencyKey = `catalog:${acquisition.acquisitionId}`;
       if (preflight.observedCurrentGeneration !== command.expectedCurrentGeneration
         || preflight.observedCurrentDocumentVersionId !== command.expectedCurrentDocumentVersionId
@@ -1501,13 +1580,59 @@ export class MiaodaHostedDocumentCatalog {
       ));
       return { version, family, replayed: false };
     });
+    if (!command.uploadCommit) return commit();
+    if (!this.sessions) fail('VERIFIED_SQL_CONTEXT_UNAVAILABLE', 'Verified upload SQL context is unavailable.');
+    return this.sessions!.withVerifiedServiceSql(commit, command.actorUserId);
   }
 
   async commitNewVersion(command) {
-    const [storedPreflight] = await this.db.select().from(dmIngressPreflight).where(
+    const commit = () => this.db.transaction(async (transaction) => {
+    const [uploadAcquisition] = command.uploadCommit
+      ? await transaction.select().from(dmAcquisition).where(
+        eq(dmAcquisition.acquisitionId, command.documentVersion.acquisitionId),
+      ).limit(1).for('update')
+      : [];
+    const [storedPreflight] = await transaction.select().from(dmIngressPreflight).where(
       eq(dmIngressPreflight.preflightId, command.preflightId),
-    ).limit(1);
+    ).limit(1).for('update');
     if (!storedPreflight) fail('PREFLIGHT_NOT_FOUND', `Preflight not found: ${command.preflightId}`);
+    if (command.uploadCommit) {
+      const scope = command.uploadCommit;
+      const acquisition = uploadAcquisition;
+      const [source] = acquisition ? await transaction.select().from(dmSourceArtifact).where(
+        eq(dmSourceArtifact.sourceArtifactId, acquisition.sourceArtifactId),
+      ).limit(1).for('share') : [];
+      const descriptor = acquisition ? parseJson(acquisition.sourceDescriptorJson) : null;
+      const observation = parseJson(storedPreflight.normalizedDescriptorJson);
+      if (!acquisition || acquisition.sourceChannel !== 'document_library_upload'
+        || acquisition.acquiredBy !== scope.actorUserId
+        || !acquisition.sourceRef.startsWith(`DOCUMENT_UPLOAD:${scope.actorUserId}:`)
+        || !acquisition.idempotencyKey.startsWith(`tenant:${encodeURIComponent(scope.tenantId)}:request:`)
+        || acquisition.selectionBucketId !== scope.selection.bucketId
+        || acquisition.selectionFilePath !== scope.selection.filePath
+        || acquisition.sourceArtifactId !== scope.sourceArtifactId
+        || stableJson(descriptor?.documentDeliveryIntent ?? null)
+          !== stableJson(scope.documentDelivery ?? null)
+        || !source?.readbackVerified || source.sha256 !== scope.sha256
+        || Number(source.byteLength) !== scope.byteLength
+        || source.bucketId !== acquisition.selectionBucketId
+        || source.filePath !== acquisition.selectionFilePath
+        || source.providerObjectId !== acquisition.providerObjectId
+        || source.providerVersionId !== acquisition.providerVersionId
+        || storedPreflight.acquisitionId !== acquisition.acquisitionId
+        || storedPreflight.decision !== scope.decision
+        || observation.sha256 !== source.sha256
+        || Number(observation.sizeBytes) !== Number(source.byteLength)
+        || command.idempotencyKey !== `catalog:${acquisition.acquisitionId}`
+        || command.documentVersion.sourceArtifactId !== source.sourceArtifactId
+        || command.documentVersion.pdfSha256 !== source.sha256
+        || Number(command.documentVersion.byteLength) !== Number(source.byteLength)
+        || command.documentVersion.committedBy !== scope.actorUserId
+        || !command.family.canonicalIdentityKey.startsWith(tenantFamilyIdentityPrefix(scope.tenantId))) {
+        fail('DOCUMENT_UPLOAD_NEW_VERSION_SCOPE_MISMATCH',
+          'The verified upload commit no longer matches the selected source and preflight.');
+      }
+    }
     if (
       storedPreflight.decision !== command.preflightDecision
       || storedPreflight.observedCurrentGeneration !== command.observedCurrentGeneration
@@ -1520,8 +1645,12 @@ export class MiaodaHostedDocumentCatalog {
       fail('PREFLIGHT_AUTHORITY_VIOLATION', 'Preflight cannot authorize its own execution.');
     }
     if (storedPreflight.status === 'COMMITTED' && storedPreflight.documentVersionId) {
-      const version = await this.readDocumentVersion(storedPreflight.documentVersionId);
-      const family = version ? await this.readFamily(version.familyId) : null;
+      const [version] = await transaction.select().from(dmDocumentVersion).where(
+        eq(dmDocumentVersion.documentVersionId, storedPreflight.documentVersionId),
+      ).limit(1);
+      const [family] = version ? await transaction.select().from(dmPublicationFamily).where(
+        eq(dmPublicationFamily.familyId, version.familyId),
+      ).limit(1) : [];
       if (!version || !family) fail('CATALOG_REPLAY_READ_FAILED', 'Committed replay lacks fresh Catalog rows.');
       return {
         disposition: 'IDEMPOTENT_REPLAY',
@@ -1533,13 +1662,13 @@ export class MiaodaHostedDocumentCatalog {
       };
     }
 
-    let [familyBefore] = await this.db.select().from(dmPublicationFamily).where(
+    let [familyBefore] = await transaction.select().from(dmPublicationFamily).where(
       eq(dmPublicationFamily.familyId, command.family.familyId),
     ).limit(1);
     if (familyBefore && familyBefore.canonicalIdentityKey !== command.family.canonicalIdentityKey) {
       fail('FAMILY_IDENTITY_CONFLICT', 'Family ID resolved to another canonical identity.');
     }
-    const [sameRevision] = await this.db.select().from(dmDocumentVersion).where(and(
+    const [sameRevision] = await transaction.select().from(dmDocumentVersion).where(and(
       eq(dmDocumentVersion.familyId, command.family.familyId),
       eq(
         dmDocumentVersion.canonicalRevisionIdentity,
@@ -1556,7 +1685,16 @@ export class MiaodaHostedDocumentCatalog {
       fail('SAME_REVISION_CONTENT_CONFLICT', 'Exact revision already has different actual bytes.');
     }
     if (sameRevision) {
-      const [currentness] = await this.db.select().from(dmCurrentnessDecision).where(
+      if (command.uploadCommit && (
+        sameRevision.acquisitionId !== command.documentVersion.acquisitionId
+        || sameRevision.committedBy !== command.uploadCommit.actorUserId
+        || sameRevision.sourceArtifactId !== command.documentVersion.sourceArtifactId
+        || sameRevision.lifecycleStatus !== 'COMMITTED_IMMUTABLE'
+      )) {
+        fail('DOCUMENT_UPLOAD_SAME_REVISION_REPLAY_MISMATCH',
+          'A version from another acquisition cannot complete this upload commit.');
+      }
+      const [currentness] = await transaction.select().from(dmCurrentnessDecision).where(
         eq(
           dmCurrentnessDecision.currentnessDecisionId,
           command.currentnessDecision.currentnessDecisionId,
@@ -1575,7 +1713,7 @@ export class MiaodaHostedDocumentCatalog {
           'Exact revision exists but is not the currentness commit owned by this preflight.',
         );
       }
-      await this.finalizeCatalogLinks(command);
+      await this.finalizeCatalogLinks(command, transaction);
       return {
         disposition: 'IDEMPOTENT_REPLAY',
         familyId: command.family.familyId,
@@ -1586,7 +1724,6 @@ export class MiaodaHostedDocumentCatalog {
       };
     }
     const familyCreatedInCommand = !familyBefore;
-    await this.db.transaction(async (transaction) => {
       if (familyCreatedInCommand) {
         const createdFamily = await transaction.insert(dmPublicationFamily).values({
           ...command.family,
@@ -1677,9 +1814,7 @@ export class MiaodaHostedDocumentCatalog {
       if (currentnessRows.length !== 1) {
         fail('CURRENTNESS_COMMIT_CONFLICT', 'Currentness decision was not created in the hosted transaction.');
       }
-    });
-
-    [familyBefore] = await this.db.select().from(dmPublicationFamily).where(
+    [familyBefore] = await transaction.select().from(dmPublicationFamily).where(
       eq(dmPublicationFamily.familyId, command.family.familyId),
     ).limit(1);
     if (
@@ -1690,7 +1825,7 @@ export class MiaodaHostedDocumentCatalog {
       fail('CURRENTNESS_READBACK_CONFLICT', 'Hosted Family currentness failed fresh readback.');
     }
 
-    await this.finalizeCatalogLinks(command);
+    await this.finalizeCatalogLinks(command, transaction);
     return {
       disposition: command.preflightDecision,
       familyId: command.family.familyId,
@@ -1699,9 +1834,14 @@ export class MiaodaHostedDocumentCatalog {
       currentnessChanged: true,
       currentGeneration: command.observedCurrentGeneration + 1,
     };
+    });
+    if (!command.uploadCommit) return commit();
+    if (!this.sessions) fail('VERIFIED_SQL_CONTEXT_UNAVAILABLE', 'Verified upload SQL context is unavailable.');
+    return this.sessions!.withVerifiedServiceSql(commit, command.uploadCommit.actorUserId);
   }
 
-  async readOwnedAcquisitionVersionBinding(input: { documentVersionId: string; tenantId: string; actorUserId: string }): Promise<boolean> {
+  async readOwnedAcquisitionVersionBinding(input: { documentVersionId: string; tenantId: string;
+    actorUserId: string; acquisitionId?: string }): Promise<boolean> {
     const [row] = await this.db.select({ documentVersionId: dmDocumentVersion.documentVersionId })
       .from(dmDocumentVersion)
       .innerJoin(dmPublicationFamily, eq(dmPublicationFamily.familyId, dmDocumentVersion.familyId))
@@ -1709,10 +1849,80 @@ export class MiaodaHostedDocumentCatalog {
         eq(dmAcquisition.sourceArtifactId, dmDocumentVersion.sourceArtifactId)))
       .where(and(eq(dmDocumentVersion.documentVersionId, input.documentVersionId),
         eq(dmAcquisition.acquiredBy, input.actorUserId),
+        input.acquisitionId ? eq(dmAcquisition.acquisitionId, input.acquisitionId) : undefined,
         inArray(dmAcquisition.status, ['COMMITTED_CANONICAL', 'LINKED_EXACT_DOCUMENT_VERSION']),
         sql`starts_with(${dmPublicationFamily.canonicalIdentityKey}, ${tenantFamilyIdentityPrefix(input.tenantId)})`,
         sql`starts_with(${dmAcquisition.idempotencyKey}, ${`tenant:${encodeURIComponent(input.tenantId)}:request:`})`)).limit(1);
     return Boolean(row);
+  }
+
+  /** Only committed upload acquisitions can authorize selected document work. */
+  async readDocumentUploadDeliveryIntents(input: {
+    documentVersionId: string;
+    tenantId: string;
+  }): Promise<Array<{
+    actorUserId: string;
+    acquisitionId: string;
+    documentVersionId: string;
+    delivery: { reading: boolean; translation: 'NONE' | 'ZH_FULL' };
+  }>> {
+    const rows = await this.db.execute<{ acquisitionId: string; actorUserId: string;
+      documentVersionId: string; reading: boolean; translation: 'NONE' | 'ZH_FULL' }>(sql`
+      SELECT d.acquisition_id AS "acquisitionId",d.actor_user_id AS "actorUserId",
+        d.document_version_id AS "documentVersionId",d.reading,d.translation
+      FROM auto_document_delivery_authorization d
+      JOIN ${dmAcquisition} a ON a.acquisition_id=d.acquisition_id
+        AND a.acquired_by=d.actor_user_id AND a.document_version_id=d.document_version_id
+        AND a.source_artifact_id=d.source_artifact_id
+      JOIN ${dmDocumentVersion} v ON v.document_version_id=d.document_version_id
+        AND v.source_artifact_id=d.source_artifact_id
+      JOIN ${dmPublicationFamily} f ON f.family_id=v.family_id
+      WHERE d.document_version_id=${input.documentVersionId}
+        AND d.tenant_key=${encodeURIComponent(input.tenantId)}
+        AND a.source_channel='document_library_upload'
+        AND a.status IN ('COMMITTED_CANONICAL','LINKED_EXACT_DOCUMENT_VERSION')
+        AND starts_with(f.canonical_identity_key,${tenantFamilyIdentityPrefix(input.tenantId)})
+        AND starts_with(a.idempotency_key,${`tenant:${encodeURIComponent(input.tenantId)}:request:`})`);
+    return rows.map((row) => ({ acquisitionId: row.acquisitionId,
+      actorUserId: row.actorUserId, documentVersionId: row.documentVersionId,
+      delivery: { reading: row.reading, translation: row.translation } }));
+  }
+
+  async listDocumentUploadDeliveryCandidates(input: { tenantId: string;
+    afterAcquisitionId?: string; limit: number }): Promise<Array<{
+    acquisitionId: string; documentVersionId: string; actorUserId: string;
+    status: 'WAITING' | 'ADMITTED';
+  }>> {
+    return this.db.execute(sql`
+      SELECT acquisition_id AS "acquisitionId",document_version_id AS "documentVersionId",
+        actor_user_id AS "actorUserId",status
+      FROM auto_document_delivery_authorization
+      WHERE tenant_key=${encodeURIComponent(input.tenantId)}
+        AND (${input.afterAcquisitionId ?? null}::text IS NULL OR
+          (created_at,acquisition_id) > (SELECT cursor.created_at,cursor.acquisition_id
+            FROM auto_document_delivery_authorization cursor
+            WHERE cursor.acquisition_id=${input.afterAcquisitionId ?? null}
+              AND cursor.tenant_key=${encodeURIComponent(input.tenantId)}))
+      ORDER BY created_at,acquisition_id LIMIT ${input.limit}`);
+  }
+
+  async markDocumentUploadDeliveryAdmitted(input: {
+    acquisitionId: string; documentVersionId: string; actorUserId: string;
+  }): Promise<void> {
+    const rows = await this.db.execute<{ status: string }>(sql`
+      UPDATE auto_document_delivery_authorization
+      SET status='ADMITTED',admitted_at=CURRENT_TIMESTAMP
+      WHERE acquisition_id=${input.acquisitionId}
+        AND document_version_id=${input.documentVersionId}
+        AND actor_user_id=${input.actorUserId} AND status='WAITING'
+      RETURNING status`);
+    if (rows.length === 1) return;
+    const existing = await this.db.execute<{ status: string }>(sql`
+      SELECT status FROM auto_document_delivery_authorization
+      WHERE acquisition_id=${input.acquisitionId}
+        AND document_version_id=${input.documentVersionId}
+        AND actor_user_id=${input.actorUserId}`);
+    if (existing[0]?.status !== 'ADMITTED') throw new Error('DOCUMENT_DELIVERY_ADMISSION_LOST');
   }
 
   /** Immutable identity only; warm byte reuse does not consume extracted metadata. */
@@ -1720,6 +1930,7 @@ export class MiaodaHostedDocumentCatalog {
     const [row] = await this.db.select({
       version: {
         documentVersionId: dmDocumentVersion.documentVersionId,
+        sourceArtifactId: dmDocumentVersion.sourceArtifactId,
         pdfSha256: dmDocumentVersion.pdfSha256,
         byteLength: dmDocumentVersion.byteLength,
       },

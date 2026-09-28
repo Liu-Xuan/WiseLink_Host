@@ -150,6 +150,25 @@ describe('MiaodaHostedDocumentCatalog tenant-scoped listing', () => {
 });
 
 describe('MiaodaHostedDocumentCatalog exact-version acquisition replay', () => {
+  it('binds an explicit delivery choice to the original upload request', async () => {
+    const fixture = replayCatalogFixture();
+    const choice = { reading: true, translation: 'ZH_FULL' };
+    fixture.acquisition.sourceDescriptorJson = JSON.stringify({
+      ...fixture.acquisition.sourceDescriptor,
+      documentDeliveryIntent: choice,
+    });
+    const catalog = new MiaodaHostedDocumentCatalog(fixture.db as never);
+    await expect(catalog.findIngestionByIdempotency({
+      ...fixture.input,
+      documentDeliveryIntent: choice,
+    })).resolves.toMatchObject({ documentVersionId: 'DV-1' });
+    await expect(catalog.findIngestionByIdempotency({
+      ...fixture.input,
+      documentDeliveryIntent: { reading: false, translation: 'NONE' },
+    })).rejects.toMatchObject({ code: 'ACQUISITION_IDEMPOTENCY_CONFLICT' });
+    await expect(catalog.findIngestionByIdempotency(fixture.input))
+      .rejects.toMatchObject({ code: 'ACQUISITION_IDEMPOTENCY_CONFLICT' });
+  });
   it.each(['REUSE_EXACT', 'RESUME_EXISTING_PROCESS'])(
     'reads an already linked %s acquisition while preserving the original version',
     async (decision) => {
@@ -206,6 +225,7 @@ function replayCatalogFixture() {
   const recorded = recordAcquisitionInput();
   const acquisition = {
     ...recorded.acquisition,
+    sourceDescriptorJson: JSON.stringify(recorded.acquisition.sourceDescriptor),
     documentVersionId: 'DV-1',
     status: 'LINKED_EXACT_DOCUMENT_VERSION',
   };

@@ -1,6 +1,7 @@
 import type { CanonicalWorkItemProjection } from '@shared/api.interface';
 
 import { actionAttempt, workItem } from '../../server/database/schema';
+import { PgDialect } from 'drizzle-orm/pg-core';
 import { autoWorkItemAuthorization } from '../../server/database/auto-work-item-authorization.schema';
 import { MiaodaWorkItemRepository } from '../../server/modules/work-item/miaoda-work-item.repository';
 
@@ -94,6 +95,106 @@ describe('MiaodaWorkItemRepository assessment CAS audit isolation', () => {
       actorUserId: 'service:openclaw-main',
       tenantId: 'tenant-audit',
       createdAt,
+    });
+  });
+});
+
+describe('MiaodaWorkItemRepository development document delivery admission', () => {
+  it('enumerates only selected document delivery intents, excluding null and NONE', async () => {
+    const execute = jest.fn().mockResolvedValue([]);
+    const target = new MiaodaWorkItemRepository({ execute } as never);
+    await expect(target.listDocumentDeliveryCandidates({ tenantId: 'tenant-1', limit: 100 }))
+      .resolves.toEqual([]);
+    const query = new PgDialect().sqlToQuery(execute.mock.calls[0][0]);
+    expect(query.sql).toContain("task_envelope_json::jsonb->'documentDelivery'->>'reading'='true'");
+    expect(query.sql).toContain("task_envelope_json::jsonb->'documentDelivery'->>'translation'='ZH_FULL'");
+    expect(query.sql).toContain('ORDER BY i.created_at,i.attempt_id LIMIT');
+  });
+  it('rejects reuse of a development token for another source version', async () => {
+    const insert = jest.fn();
+    const target = new MiaodaWorkItemRepository({
+      transaction: async (run: (tx: unknown) => Promise<unknown>) => run({
+        execute: async () => undefined,
+        select: () => ({ from: () => ({ where: () => ({
+          limit: async () => [{
+            documentVersionId: 'DV-OLD', requestedByUserId: 'engineer-1',
+          }],
+        }) }) }),
+        insert,
+      }),
+    } as never);
+    await expect(target.reserve({
+      developmentIntake: true,
+      documentDelivery: { reading: true, translation: 'NONE' },
+      tenantId: 'tenant-1', actorUserId: 'engineer-1',
+      documentId: 'DOC-1', documentVersionId: 'DV-NEW',
+      sourceArtifactId: 'SOURCE-1', sourceFileSha256: 'a'.repeat(64),
+      sourceByteLength: 1024, normalizedFamily: 'SB',
+      requestOrigin: 'MIAODA', runKey: 'dev:token-1',
+    })).rejects.toThrow('DEVELOPMENT_RUN_REQUEST_IDENTITY_CONFLICT');
+    expect(insert).not.toHaveBeenCalled();
+  });
+  it('records the exact intake choice with the reserved WorkItem in one transaction', async () => {
+    const inserted: Array<{ table: unknown; value: Record<string, unknown> }> = [];
+    const stored = {
+      workItemId: 'WI-DELIVERY-1', requestId: 'REQ-DELIVERY-1',
+      tenantId: 'tenant-1', requestedByUserId: 'engineer-1',
+      documentId: 'DOC-1', documentVersionId: 'DV-1',
+      sourceArtifactId: 'SOURCE-1', sourceFileSha256: 'a'.repeat(64),
+      sourceByteLength: 1024, normalizedFamily: 'SB',
+      runKey: 'dev:token-1', analysisModelJson: null,
+    };
+    let attemptRead = 0;
+    let workItemRead = 0;
+    const db = {
+      transaction: async (run: (tx: unknown) => Promise<unknown>) => run({
+        execute: async () => undefined,
+        insert: (table: unknown) => ({
+          values: (value: Record<string, unknown>) => {
+            inserted.push({ table, value });
+            return {
+              onConflictDoNothing: () => ({
+                returning: async () => [{ workItemId: stored.workItemId }],
+                then: (resolve: (value: unknown) => void) => resolve(undefined),
+              }),
+              then: (resolve: (value: unknown) => void) => resolve(undefined),
+            };
+          },
+        }),
+        select: () => ({ from: (table: unknown) => ({
+          where: () => ({ limit: async () => {
+            if (table === workItem) {
+              workItemRead += 1;
+              return workItemRead === 1 ? [] : [stored];
+            }
+            attemptRead += 1;
+            return [inserted.filter((entry) => entry.table === actionAttempt)
+              [attemptRead - 1]?.value];
+          } }),
+        }) }),
+      }),
+    };
+    const target = new MiaodaWorkItemRepository(db as never);
+    await expect(target.reserve({
+      developmentIntake: true,
+      documentDelivery: { reading: true, translation: 'ZH_FULL' },
+      tenantId: 'tenant-1', actorUserId: 'engineer-1',
+      documentId: 'DOC-1', documentVersionId: 'DV-1',
+      sourceArtifactId: 'SOURCE-1', sourceFileSha256: 'a'.repeat(64),
+      sourceByteLength: 1024, normalizedFamily: 'SB',
+      requestOrigin: 'MIAODA', runKey: 'dev:token-1',
+    })).resolves.toMatchObject({ workItemId: 'WI-DELIVERY-1', created: true });
+    const intent = inserted.find((entry) =>
+      entry.table === actionAttempt &&
+      entry.value.actionType === 'DOCUMENT_DELIVERY_INTENT');
+    expect(intent?.value).toMatchObject({
+      workItemId: 'WI-DELIVERY-1', documentVersionId: 'DV-1',
+      tenantId: 'tenant-1', actorUserId: 'engineer-1',
+      triggerRequestId: 'REQ-DELIVERY-1', status: 'RECORDED',
+    });
+    expect(JSON.parse(String(intent?.value.taskEnvelopeJson))).toMatchObject({
+      documentVersionId: 'DV-1',
+      documentDelivery: { reading: true, translation: 'ZH_FULL' },
     });
   });
 });

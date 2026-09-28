@@ -34,6 +34,17 @@ function setup() {
 }
 
 describe('independent document translation runtime', () => {
+  it('requires separate cancellation authority for a selected delivery', async () => {
+    const f = setup();
+    f.authorization.authorizeDocumentWork.mockRejectedValue(new Error('DYNAMIC_CANCEL_DENIED'));
+    await expect(f.service.run({ action: 'CANCEL', ...f.binding,
+      deliveryRef: 'work-item:WI-one', attemptRef: 'DTQ-one' }))
+      .rejects.toThrow('DYNAMIC_CANCEL_DENIED');
+    expect(f.authorization.authorizeDocumentWork).toHaveBeenCalledWith({
+      documentVersionId: f.binding.documentVersionId,
+      deliveryRef: 'work-item:WI-one', purpose: 'CANCEL' });
+    expect(f.attempts.cancel).not.toHaveBeenCalled();
+  });
   it('reserves from the actual original without a WorkItem and reuses the same request', async () => {
     const f = setup();
     const start = { action: 'START' as const, ...f.binding, requestId: 'request' };

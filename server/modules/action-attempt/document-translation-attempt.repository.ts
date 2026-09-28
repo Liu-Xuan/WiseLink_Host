@@ -16,8 +16,10 @@ export interface DocumentTranslationFence { attemptRef: string; principalId: str
 export class DocumentTranslationAttemptRepository {
   constructor(@Inject(DRIZZLE_DATABASE) private readonly db: PostgresJsDatabase) {}
 
-  async latest(scope: DocumentTranslationScope) {
-    const [row] = await this.db.select().from(actionAttempt).where(owned(scope)).orderBy(desc(actionAttempt.attemptNo)).limit(1);
+  async latest(scope: DocumentTranslationScope, requestId?: string) {
+    const [row] = await this.db.select().from(actionAttempt).where(and(owned(scope),
+      requestId ? eq(actionAttempt.triggerRequestId, requestId) : undefined))
+      .orderBy(desc(actionAttempt.attemptNo)).limit(1);
     return row ?? null;
   }
 

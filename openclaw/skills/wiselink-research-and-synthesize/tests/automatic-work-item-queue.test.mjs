@@ -7,6 +7,7 @@ import { join } from 'node:path';
 import {
   automaticWorkItemQueueMode,
   consumeAutomaticWorkItemQueueTick,
+  consumeHostedDocument,
   consumeHostedWorkItem,
   runHostedSuccessorOverall,
 } from '../scripts/consume-hosted-work-item.mjs';
@@ -92,6 +93,110 @@ function completeStatus() {
     overall: 'SUCCEEDED',
   });
 }
+
+test('automatic queue dispatches an admitted document without inventing a WorkItem claim', async () => {
+  const checkpoint = memoryCheckpoint();
+  const calls = [];
+  const result = await consumeAutomaticWorkItemQueueTick({}, {
+    checkpoint,
+    now: () => new Date(START),
+    nextWorkItem: async () => ({ status: 'DOCUMENT_PENDING', documentVersionId: 'DV-document',
+      deliveryRef: 'work-item:WI-document' }),
+    acknowledgeWorkItem: async () => { throw new Error('UNEXPECTED_ACK'); },
+    consumeWorkItem: async () => { throw new Error('UNEXPECTED_WORK_ITEM'); },
+    readInitialStatus: async () => { throw new Error('UNEXPECTED_STATUS'); },
+    consumeDocument: async (documentVersionId, deliveryRef) => {
+      calls.push({ documentVersionId, deliveryRef });
+      return { status: 'DOCUMENT_READY', documentVersionId };
+    },
+  });
+  assert.deepEqual(calls, [{ documentVersionId: 'DV-document', deliveryRef: 'work-item:WI-document' }]);
+  assert.deepEqual(result, { status: 'DOCUMENT_DISPATCHED',
+    documentVersionId: 'DV-document', deliveryRef: 'work-item:WI-document',
+    document: { status: 'DOCUMENT_READY', documentVersionId: 'DV-document' } });
+  assert.equal(checkpoint.values.get('active-claim'), null);
+});
+test('document discovery advances a bounded cursor across idle ticks', async () => {
+  const checkpoint = memoryCheckpoint();
+  const inputs = [];
+  const dependencies = {
+    checkpoint, now: () => new Date(START),
+    nextWorkItem: async input => {
+      inputs.push(input);
+      return inputs.length === 1
+        ? { status: 'IDLE', documentAfterRef: 'attempt:ATT-one' }
+        : { status: 'DOCUMENT_PENDING', documentVersionId: 'DV-document',
+          deliveryRef: 'work-item:WI-document' };
+    },
+    acknowledgeWorkItem: async () => { throw new Error('UNEXPECTED_ACK'); },
+    consumeWorkItem: async () => { throw new Error('UNEXPECTED_WORK_ITEM'); },
+    readInitialStatus: async () => { throw new Error('UNEXPECTED_STATUS'); },
+    consumeDocument: async () => ({ status: 'DOCUMENT_READY' }),
+  };
+  assert.equal((await consumeAutomaticWorkItemQueueTick({}, dependencies)).status, 'IDLE');
+  assert.equal(checkpoint.values.get('document-cursor'), 'attempt:ATT-one');
+  assert.equal((await consumeAutomaticWorkItemQueueTick({}, dependencies)).status,
+    'DOCUMENT_DISPATCHED');
+  assert.deepEqual(inputs, [undefined, { documentAfterRef: 'attempt:ATT-one' }]);
+});
+
+test('a preparing upload still gets STEP while its cursor rotates to later acquisitions and wraps', async () => {
+  const checkpoint = memoryCheckpoint();
+  const inputs = [];
+  const steps = [];
+  const dependencies = {
+    checkpoint, now: () => new Date(START),
+    nextWorkItem: async input => {
+      inputs.push(input);
+      const after = input?.documentAfterRef;
+      if (after === 'acquisition:ACQ-two') return { status: 'IDLE' };
+      const acquisitionId = after ? 'ACQ-two' : 'ACQ-one';
+      return { status: 'DOCUMENT_PENDING', documentVersionId: `DV-${acquisitionId}`,
+        deliveryRef: `acquisition:${acquisitionId}`,
+        documentAfterRef: `acquisition:${acquisitionId}` };
+    },
+    acknowledgeWorkItem: async () => { throw new Error('UNEXPECTED_ACK'); },
+    consumeWorkItem: async () => { throw new Error('UNEXPECTED_WORK_ITEM'); },
+    readInitialStatus: async () => { throw new Error('UNEXPECTED_STATUS'); },
+    consumeDocument: (documentVersionId, deliveryRef) => consumeHostedDocument(
+      { documentVersionId, deliveryRef }, { callTool: async (name, args) => {
+        assert.equal(name, 'document_work');
+        assert.equal(args.deliveryRef, deliveryRef);
+        if (args.action === 'STATUS') return { documentVersionId, runtimeAvailable: true,
+          latestRun: { documentVersionId, parseRunId: `PRUN-${documentVersionId}`,
+            status: 'RUNNING', deadlineAt: new Date(Date.now() + 60_000).toISOString() } };
+        assert.equal(args.action, 'STEP');
+        assert.equal(checkpoint.values.get('document-cursor'), deliveryRef,
+          'cursor is durable before document STEP');
+        steps.push(deliveryRef);
+        return { parseRunId: `PRUN-${documentVersionId}`, status: 'STAGING' };
+      } }),
+  };
+  assert.equal((await consumeAutomaticWorkItemQueueTick({}, dependencies)).status, 'DOCUMENT_DISPATCHED');
+  assert.equal((await consumeAutomaticWorkItemQueueTick({}, dependencies)).status, 'DOCUMENT_DISPATCHED');
+  assert.equal((await consumeAutomaticWorkItemQueueTick({}, dependencies)).status, 'IDLE');
+  assert.equal(checkpoint.values.get('document-cursor'), null);
+  assert.equal((await consumeAutomaticWorkItemQueueTick({}, dependencies)).status, 'DOCUMENT_DISPATCHED');
+  assert.deepEqual(steps, ['acquisition:ACQ-one', 'acquisition:ACQ-two', 'acquisition:ACQ-one']);
+  assert.deepEqual(inputs, [undefined,
+    { documentAfterRef: 'acquisition:ACQ-one' },
+    { documentAfterRef: 'acquisition:ACQ-two' }, undefined]);
+});
+
+test('document cursor must exactly bind to the pending acquisition', async () => {
+  const checkpoint = memoryCheckpoint();
+  await assert.rejects(consumeAutomaticWorkItemQueueTick({}, {
+    checkpoint, now: () => new Date(START),
+    nextWorkItem: async () => ({ status: 'DOCUMENT_PENDING',
+      documentVersionId: 'DV-one', deliveryRef: 'acquisition:ACQ-one',
+      documentAfterRef: 'acquisition:ACQ-other' }),
+    acknowledgeWorkItem: async () => assert.fail('invalid cursor must not acknowledge'),
+    consumeWorkItem: async () => assert.fail('invalid cursor must not consume WorkItem'),
+    readInitialStatus: async () => assert.fail('invalid cursor must not read status'),
+    consumeDocument: async () => assert.fail('invalid cursor must not dispatch'),
+  }), /AUTO_WORK_ITEM_CLAIM_RESPONSE_INVALID/u);
+  assert.equal(checkpoint.values.get('document-cursor'), undefined);
+});
 
 test('a stopped queue claim resumes only an exact sealed Overall attempt', async t => {
   const checkpointRoot = await mkdtemp(join(tmpdir(), 'wiselink-queue-committing-'));

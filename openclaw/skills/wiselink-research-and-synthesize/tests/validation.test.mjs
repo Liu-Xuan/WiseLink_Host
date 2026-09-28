@@ -1435,7 +1435,7 @@ test('requires 35 MCP capabilities, six review tools, and hosted provenance', ()
   assert.ok(HOST_MCP_TOOLS.includes('commit_applicability_candidate'));
   assert.equal(
     WISELINK_SKILL_VERSION,
-    'wiselink-research-and-synthesize@r09.c195',
+    'wiselink-research-and-synthesize@r09.c196',
   );
   assert.equal(
     WISELINK_SKILL_COMPATIBILITY_REF,
@@ -5077,7 +5077,7 @@ test('offers source reading and one final candidate function with blank assistan
   assert.equal(result.provenance.modelVersion, 'openai-codex/gpt-5.4');
   assert.equal(
     result.provenance.promptVersion,
-    'wiselink.3_1.review_prompt.v1.c50',
+    'wiselink.3_1.review_prompt.v1.c51',
   );
 });
 
@@ -5130,7 +5130,7 @@ test('falls back to the configured model and records only output shape v2', asyn
   assert.equal(result.provenance.modelVersion, 'provider/configured');
   assert.equal(
     result.provenance.promptVersion,
-    'wiselink.3_1.review_prompt.v1.c50',
+    'wiselink.3_1.review_prompt.v1.c51',
   );
   assert.equal(
     outputShape.schemaVersion,

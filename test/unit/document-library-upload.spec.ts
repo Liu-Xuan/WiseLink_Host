@@ -141,6 +141,28 @@ describe('ordinary document library upload', () => {
       identityProvenance: 'MIAODA_GATEWAY_USER_CONTEXT',
     });
   });
+  it('records an explicit reading choice without changing the upload authority', async () => {
+    const target = service();
+    await target.service.ingestDocumentLibraryUpload({
+      ...request,
+      documentDelivery: { reading: true, translation: 'ZH_FULL' },
+    }, context);
+    expect(target.ingest.mock.calls[0][0]).toMatchObject({
+      descriptor: {
+        documentDeliveryIntent: { reading: true, translation: 'ZH_FULL' },
+      },
+    });
+    expect(target.ingest.mock.calls[0][1].runtimeIngestAuthority)
+      .toMatchObject({ mode: 'HOSTED_MIAODA_DOCUMENT_UPLOAD' });
+  });
+  it('rejects malformed reading choices before ingestion', async () => {
+    const target = service();
+    await expect(target.service.ingestDocumentLibraryUpload({
+      ...request,
+      documentDelivery: { reading: true, translation: 'EN_FULL' },
+    }, context)).rejects.toMatchObject({ status: 400 });
+    expect(target.ingest).not.toHaveBeenCalled();
+  });
   it.each([
     'actorUserId',
     'tenantId',

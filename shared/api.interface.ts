@@ -2581,6 +2581,13 @@ export interface CanonicalDevelopmentWorkItemRunRequest {
   query?: string;
   /** One choice for all initial-analysis stages; no endpoint or credentials. */
   modelRef?: string;
+  /** Explicit document reading choices for this intake; absence retains legacy behavior. */
+  documentDelivery?: DocumentDeliverySelection;
+}
+
+export interface DocumentDeliverySelection {
+  reading: boolean;
+  translation: 'NONE' | 'ZH_FULL';
 }
 
 export interface CanonicalOrdinaryWorkItemRunResponse {
@@ -3057,6 +3064,8 @@ export interface CanonicalLibraryDocumentSummary {
 export interface DocumentLibraryUploadRequest {
   requestId: string;
   selection: { bucketId: string; filePath: string };
+  /** Explicit document reading choices; absence retains registration-only behavior. */
+  documentDelivery?: DocumentDeliverySelection;
 }
 
 export interface DocumentHistoricalImportRequest {
@@ -3281,7 +3290,9 @@ export interface LinkEngineeringMatterWorkItemResponse {
 }
 
 export type AutomaticWorkItemClaimResult =
-  | { status: 'IDLE'; reviewAfterWorkItemId?: string }
+  | { status: 'IDLE'; reviewAfterWorkItemId?: string; documentAfterRef?: string }
+  | { status: 'DOCUMENT_PENDING'; documentVersionId: string; deliveryRef: string;
+      documentAfterRef?: string }
   | {
       status: 'REVIEW_PENDING';
       workItemId: string;
@@ -3309,6 +3320,7 @@ export type AutomaticWorkItemClaimResult =
 export interface NextAutomaticWorkItemRequest {
   resumeWorkItemId?: string;
   reviewAfterWorkItemId?: string;
+  documentAfterRef?: string;
 }
 
 export interface AcknowledgeAutomaticWorkItemRequest {

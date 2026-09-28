@@ -158,6 +158,12 @@ function target() {
   const matters = {
     organizeWorkItemIntake: jest.fn().mockResolvedValue({ matterId: 'MAT-SB' }),
   };
+  const sessions = {
+    withVerifiedServiceSql: jest.fn((operation: () => Promise<unknown>, actorId: string) => {
+      expect(actorId).toBe(ACTOR.userId);
+      return operation();
+    }),
+  };
   return {
     documentManagement,
     resolver,
@@ -166,6 +172,7 @@ function target() {
     fileService,
     fileServiceBucket,
     matters,
+    sessions,
     service: new OrdinaryWorkItemService(
       documentManagement as never,
       resolver as never,
@@ -173,6 +180,7 @@ function target() {
       vertical as never,
       fileService as never,
       matters as never,
+      sessions as never,
     ),
   };
 }
@@ -787,6 +795,16 @@ describe('OrdinaryWorkItemService run identity', () => {
 
   it('uses only the verified OAuth session actor for a same-user FileService selection', async () => {
     const targetValue = target();
+    let serviceSqlActive = false;
+    targetValue.sessions.withVerifiedServiceSql.mockImplementation(async (operation, actorId) => {
+      expect(actorId).toBe(ACTOR.userId);
+      serviceSqlActive = true;
+      try { return await operation(); } finally { serviceSqlActive = false; }
+    });
+    targetValue.repository.reserve.mockImplementation(async () => {
+      expect(serviceSqlActive).toBe(true);
+      return { workItemId: 'WI-NEW-SB', requestId: 'REQ-NEW-SB', attemptId: 'ATT-NEW-SB', created: true };
+    });
     targetValue.documentManagement.ingestFileServiceSelection.mockResolvedValue(
       { documentVersionId: 'document-version-sb' },
     );
@@ -853,10 +871,30 @@ describe('OrdinaryWorkItemService run identity', () => {
           runKey: 'dev:22222222-2222-4222-8222-222222222222',
         }),
       );
+      expect(targetValue.sessions.withVerifiedServiceSql).toHaveBeenCalledTimes(1);
+      expect(serviceSqlActive).toBe(false);
     } finally {
       restoreProcessEnv('SANDBOX_ID', previousSandbox);
       restoreProcessEnv('MIAODA_LOCAL_DEV', previousLocal);
     }
+  });
+
+  it('does not reserve a development WorkItem when the verified SQL session disagrees', async () => {
+    const targetValue = target();
+    targetValue.documentManagement.ingestFileServiceSelection.mockResolvedValue(
+      { documentVersionId: 'document-version-sb' },
+    );
+    targetValue.sessions.withVerifiedServiceSql.mockRejectedValue(
+      new Error('DIALOGUE_BROWSER_IDENTITY_MISMATCH'),
+    );
+    await expect(targetValue.service.createOauthSessionDevelopmentRun({
+      selection: {
+        bucketId: 'bucket-default',
+        filePath: 'wiselink/dev-intake/22222222-2222-4222-8222-222222222222/source.pdf',
+      },
+      developmentRunToken: '22222222-2222-4222-8222-222222222222',
+    }, OAUTH_SESSION_ACTOR, GATEWAY_ACTOR)).rejects.toThrow('DIALOGUE_BROWSER_IDENTITY_MISMATCH');
+    expect(targetValue.repository.reserve).not.toHaveBeenCalled();
   });
 
   it('reopens only a previously classified retryable parse failure on the same WorkItem', async () => {

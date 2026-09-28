@@ -33,6 +33,49 @@ import { DocumentManagementHostedController } from '../../server/modules/documen
 import { DocumentManagementHostedService } from '../../server/modules/document-management/src/hosted/nest/document-management-hosted.service';
 
 describe('DocumentManagementHostedController direct-call defense', () => {
+  it.each(['upload', 'historical confirmation', 'historical refresh'] as const)(
+    'returns the stable 401 response when %s loses its OAuth session',
+    async (operation) => {
+      const service = {
+        ingestDocumentLibraryUpload: jest.fn(),
+        confirmUploadedHistoricalImport: jest.fn(),
+        refreshUploadedHistoricalImport: jest.fn(),
+      };
+      const sessions = {
+        withRequestSession: jest.fn(async (_request, callback) => callback(null)),
+      };
+      const controller = new DocumentManagementHostedController(
+        service as never, sessions as never,
+      );
+      const previousSandboxId = process.env.SANDBOX_ID;
+      process.env.SANDBOX_ID = 'unit-hosted-sandbox';
+      const request = {
+        userContext: {
+          userId: '1812345678901234567', tenantId: '7283059256756502547',
+          appId: 'app_17bzc551rsg', env: 'preview', roles: ['authenticated'],
+        },
+      } as unknown as Request;
+      try {
+        const result = operation === 'upload'
+          ? controller.ingestDocumentLibraryUpload({}, request)
+          : operation === 'historical confirmation'
+            ? controller.confirmUploadedHistoricalImport('P/1', {}, request)
+            : controller.refreshUploadedHistoricalImport('P/1', request);
+        await expect(result).rejects.toMatchObject({
+          status: 401,
+          response: { code: 'SESSION_REQUIRED', statusCode: 401 },
+        });
+      } finally {
+        if (previousSandboxId === undefined) delete process.env.SANDBOX_ID;
+        else process.env.SANDBOX_ID = previousSandboxId;
+      }
+      expect(sessions.withRequestSession).toHaveBeenCalledTimes(1);
+      expect(service.ingestDocumentLibraryUpload).not.toHaveBeenCalled();
+      expect(service.confirmUploadedHistoricalImport).not.toHaveBeenCalled();
+      expect(service.refreshUploadedHistoricalImport).not.toHaveBeenCalled();
+    },
+  );
+
   it.each(['ingest', 'read'] as const)(
     'rejects direct %s before body, request context, or service access',
     (operation) => {

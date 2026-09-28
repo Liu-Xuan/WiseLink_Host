@@ -38,6 +38,10 @@ import {
   listExistingStoragePdfs,
 } from './existing-storage-pdfs';
 import {
+  DocumentDeliveryChoice,
+  type DocumentDeliveryChoiceValue,
+} from './DocumentDeliveryChoice';
+import {
   beginHostedIntakeSubmission,
   developmentWorkItemRequest,
   endHostedIntakeSubmission,
@@ -64,6 +68,13 @@ export function HostedDevelopmentIntake() {
   const models = useTaskModelOptions();
   const [modelRef, setModelRef] = useState('');
   const [pendingModelRef, setPendingModelRef] = useState<string | null>(null);
+  const [documentDelivery, setDocumentDelivery] =
+    useState<DocumentDeliveryChoiceValue>({
+      reading: true,
+      translation: 'NONE',
+    });
+  const [pendingDocumentDelivery, setPendingDocumentDelivery] =
+    useState<DocumentDeliveryChoiceValue | null>(null);
   const [failedWorkItemId, setFailedWorkItemId] = useState<string | null>(null);
   const [file, setFile] = useState<File | null>(null);
   const [uploaded, setUploaded] = useState<HostedUploadSelection | null>(null);
@@ -96,6 +107,8 @@ export function HostedDevelopmentIntake() {
     setFile(null);
     setModelRef('');
     setPendingModelRef(null);
+    setPendingDocumentDelivery(null);
+    setDocumentDelivery({ reading: true, translation: 'NONE' });
     setFailedWorkItemId(null);
     setUploaded(null);
     setExistingPdf(null);
@@ -156,6 +169,7 @@ export function HostedDevelopmentIntake() {
     const next = acceptedFiles[0] ?? null;
     setUploaded(null);
     setPendingModelRef(null);
+    setPendingDocumentDelivery(null);
     setFailedWorkItemId(null);
     setExistingPdf(null);
     setPickerOpen(false);
@@ -241,9 +255,15 @@ export function HostedDevelopmentIntake() {
 
       setPhase('creating');
       const submittedModel = pendingModelRef ?? modelRef;
+      const submittedDelivery = pendingDocumentDelivery ?? documentDelivery;
       setPendingModelRef(submittedModel);
+      setPendingDocumentDelivery(submittedDelivery);
       const created = await createDevelopmentWorkItem(
-        developmentWorkItemRequest(resolved.selection, submittedModel),
+        developmentWorkItemRequest(
+          resolved.selection,
+          submittedModel,
+          submittedDelivery,
+        ),
       );
       const workItemId = created.result.workItem.workItemId;
       setPhase('readback');
@@ -286,6 +306,7 @@ export function HostedDevelopmentIntake() {
 
   function selectExistingPdf(option: ExistingStoragePdfOption): void {
     setPendingModelRef(null);
+    setPendingDocumentDelivery(null);
     setFailedWorkItemId(null);
     setExistingPdf({
       ...option,
@@ -333,13 +354,23 @@ export function HostedDevelopmentIntake() {
           disabled={busy || pendingModelRef !== null}
         />
         <small>
-          初始翻译、适用性、Job-Aid 和综合评估沿用此模型；Review 新回合可另选。
+          此模型用于事项评估；文件解读与翻译由文档任务处理。Review 新回合可另选。
         </small>
         {pendingModelRef && !busy ? (
           <small>
             本次请求已提交，重试保留原模型。要新建不同模型的事项，请重新选择
             PDF。
           </small>
+        ) : null}
+        <DocumentDeliveryChoice
+          idPrefix="intake-document-delivery"
+          context="matter"
+          value={pendingDocumentDelivery ?? documentDelivery}
+          onChange={setDocumentDelivery}
+          disabled={busy || pendingDocumentDelivery !== null}
+        />
+        {pendingDocumentDelivery && !busy ? (
+          <small>本次阅读选择已提交；重试继续使用相同选择。</small>
         ) : null}
         <div
           {...getRootProps({

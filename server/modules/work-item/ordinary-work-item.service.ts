@@ -11,6 +11,7 @@ import type {
   CanonicalPdfVerticalRunRequest,
   CanonicalS1000dOrdinaryRunResponse,
   CanonicalS1000dVerticalRunRequest,
+  DocumentDeliverySelection,
 } from '@shared/api.interface';
 import { isRetryableParseFailureCode } from '@shared/parse-retry-policy';
 import { CanonicalHostVerticalService } from '../canonical-host/canonical-host-vertical.service';
@@ -33,6 +34,7 @@ import {
 import { MiaodaDocumentVersionSourceResolver } from './miaoda-document-version-source.resolver';
 import { isHostedCanonicalFinalUserActor } from './miaoda-hosted-canonical-object-access.adapter';
 import { MiaodaWorkItemRepository } from './miaoda-work-item.repository';
+import { SessionResolver } from '../identity/session-resolver.service';
 import { assertProductionMiaodaBrowserIdentityAvailable } from './production-miaoda-browser-ingress';
 
 const FTD_CLASSIFICATION: CanonicalClassificationSelection = {
@@ -81,6 +83,8 @@ export interface OrdinaryPdfParseInput {
     filePath?: unknown;
   };
   query?: unknown;
+  documentDelivery?: DocumentDeliverySelection;
+  developmentIntake?: boolean;
 }
 
 interface ExistingParseRunTarget {
@@ -111,6 +115,7 @@ export class OrdinaryWorkItemService {
     private readonly vertical: CanonicalHostVerticalService,
     private readonly fileService?: FileService,
     @Optional() private readonly matters?: EngineeringMatterService,
+    @Optional() private readonly sessions?: SessionResolver,
   ) {}
 
   async listOauthSessionDevelopmentPdfs(
@@ -293,11 +298,15 @@ export class OrdinaryWorkItemService {
             documentVersionId: input.documentVersionId,
             query: input.query,
             modelRef: input.modelRef,
+            documentDelivery: input.documentDelivery,
+            developmentIntake: true,
           }
         : {
             selection: input.selection,
             query: input.query,
             modelRef: input.modelRef,
+            documentDelivery: input.documentDelivery,
+            developmentIntake: true,
           },
       actor,
       'MIAODA',
@@ -401,11 +410,15 @@ export class OrdinaryWorkItemService {
             documentVersionId: input.documentVersionId,
             query: input.query,
             modelRef: input.modelRef,
+            documentDelivery: input.documentDelivery,
+            developmentIntake: true,
           }
         : {
             selection: input.selection,
             query: input.query,
             modelRef: input.modelRef,
+            documentDelivery: input.documentDelivery,
+            developmentIntake: true,
           },
       actor,
       'MIAODA',
@@ -481,6 +494,9 @@ export class OrdinaryWorkItemService {
       normalizedFamily: classification.normalizedFamily,
       requestOrigin: origin,
       runKey,
+      ...(input.developmentIntake
+        ? { developmentIntake: true, documentDelivery: input.documentDelivery }
+        : {}),
       ...(autoProcessingGrant ? { autoProcessingGrant } : {}),
       // Explicit parse recovery preserves the original WorkItem's selection.
       ...(retryTarget
@@ -498,7 +514,9 @@ export class OrdinaryWorkItemService {
           attemptId: '',
           created: false,
         }
-      : await this.repository.reserve(reservationInput);
+      : oauthSessionCreate
+        ? await this.verifiedDevelopmentReservation(reservationInput, actor.userId)
+        : await this.repository.reserve(reservationInput);
     let retryAuthorization = existingAuthorization;
     if (!reservation.created && !developmentScope && !retryAuthorization) {
       const retryState = await this.repository.loadTenantScopedProjection(
@@ -595,6 +613,18 @@ export class OrdinaryWorkItemService {
         },
       },
     };
+  }
+
+  private verifiedDevelopmentReservation(
+    input: Parameters<MiaodaWorkItemRepository['reserve']>[0],
+    actorUserId: string,
+  ) {
+    if (!this.sessions) throw new Error('VERIFIED_SQL_CONTEXT_UNAVAILABLE');
+    // Only the exact reserve transaction gets service SQL. The OAuth cookie,
+    // native gateway actor, tenant and app were checked by SessionResolver.
+    return this.sessions.withVerifiedServiceSql(
+      () => this.repository.reserve(input), actorUserId,
+    );
   }
 
   private async ingestSelection(

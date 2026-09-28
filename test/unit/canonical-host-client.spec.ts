@@ -180,9 +180,16 @@ describe('canonical host assessment client', () => {
 
   it('uses ordinary upload and exact explicit historical confirmation, without auto-retry', async () => {
     const receipt = { status: 'REVIEW_REQUIRED', historicalImport: null };
-    request.mockResolvedValue({ status: 200, data: receipt });
+    request.mockImplementation(async ({ url }: { url: string }) => ({
+      status: 200,
+      data: url === '/api/identity/whoami'
+        ? { authenticated: true, verifiedIdentity: { provenance: 'FEISHU_OAUTH_USER_ACCESS_TOKEN' },
+          session: { provenance: 'SERVER_OPAQUE_SESSION' } }
+        : receipt,
+    }));
     const upload = { requestId: 'upload-1', selection: { bucketId: 'private', filePath: 'document.pdf' } };
     await expect(uploadLibraryDocument(upload)).resolves.toEqual(receipt);
+    expect(request.mock.calls[0][0]).toEqual({ url: '/api/identity/whoami', method: 'GET' });
     expect(request).toHaveBeenLastCalledWith({ url: '/api/document-management/uploads/file-service', method: 'POST', data: upload });
     const confirmation = { confirmed: true as const, expectedCurrentGeneration: 4, expectedCurrentDocumentVersionId: 'DV-current' };
     await confirmLibraryHistoricalImport('P/1', confirmation);
@@ -191,12 +198,72 @@ describe('canonical host assessment client', () => {
     expect(request).toHaveBeenLastCalledWith({ url: '/api/document-management/uploads/ingress-preflights/P%2F1/refresh-historical', method: 'POST' });
     request.mockRejectedValueOnce(new Error('HISTORICAL_IMPORT_CONFIRMATION_STALE'));
     await expect(confirmLibraryHistoricalImport('P/1', confirmation)).rejects.toThrow('STALE');
-    expect(request).toHaveBeenCalledTimes(4);
+    expect(request).toHaveBeenCalledTimes(5);
   });
 
   it('rejects upload success without a registered version ID', async () => {
-    request.mockResolvedValue({ status: 200, data: { status: 'COMMITTED', documentVersionId: null } });
+    request.mockResolvedValueOnce({ status: 200, data: {
+      authenticated: true, verifiedIdentity: { provenance: 'FEISHU_OAUTH_USER_ACCESS_TOKEN' },
+      session: { provenance: 'SERVER_OPAQUE_SESSION' },
+    } }).mockResolvedValueOnce({ status: 200, data: { status: 'COMMITTED', documentVersionId: null } });
     await expect(uploadLibraryDocument({ requestId: 'one', selection: { bucketId: 'private', filePath: 'one.pdf' } })).rejects.toThrow('DOCUMENT_UPLOAD_RECEIPT_INVALID');
+  });
+
+  it('rejects upload and historical mutation before POST when the official session is absent', async () => {
+    request.mockResolvedValue({ status: 401, data: { code: 'OFFICIAL_OAUTH_SESSION_REQUIRED' } });
+    const upload = { requestId: 'same-request', selection: { bucketId: 'private', filePath: 'one.pdf' } };
+    await expect(uploadLibraryDocument(upload)).rejects.toThrow();
+    await expect(confirmLibraryHistoricalImport('P/1', {
+      confirmed: true, expectedCurrentGeneration: 4, expectedCurrentDocumentVersionId: 'DV-current',
+    })).rejects.toThrow();
+    await expect(refreshLibraryHistoricalImport('P/1')).rejects.toThrow();
+    expect(request.mock.calls.every(([call]) => call.method === 'GET' && call.url === '/api/identity/whoami')).toBe(true);
+    expect(upload.requestId).toBe('same-request');
+  });
+
+  it.each([
+    ['upload', () => uploadLibraryDocument({
+      requestId: 'upload-expired', selection: { bucketId: 'private', filePath: 'one.pdf' },
+    }), '/api/document-management/uploads/file-service'],
+    ['historical confirmation', () => confirmLibraryHistoricalImport('P/1', {
+      confirmed: true, expectedCurrentGeneration: 4,
+      expectedCurrentDocumentVersionId: 'DV-current',
+    }), '/api/document-management/uploads/ingress-preflights/P%2F1/import-historical'],
+    ['historical refresh', () => refreshLibraryHistoricalImport('P/1'),
+      '/api/document-management/uploads/ingress-preflights/P%2F1/refresh-historical'],
+  ] as const)('clears only OAuth after %s POST reports expired session', async (_name, post, url) => {
+    const whoami = {
+      authenticated: true,
+      verifiedIdentity: { provenance: 'FEISHU_OAUTH_USER_ACCESS_TOKEN' },
+      session: { provenance: 'SERVER_OPAQUE_SESSION' },
+    };
+    for (const mode of ['resolved', 'rejected']) {
+      invalidateCanonicalHostClientSession();
+      request.mockReset();
+      request.mockResolvedValueOnce({ status: 200, data: whoami });
+      await requireOfficialOauthSession();
+      const identity = { userId: 'engineer', tenantId: 'tenant' };
+      request.mockResolvedValueOnce({ status: 200, data: identity });
+      await expect(getCanonicalHostIdentityContext()).resolves.toEqual(identity);
+      const generation = getCanonicalHostClientSessionGeneration();
+      const expired = { status: 401, data: { code: 'SESSION_REQUIRED' } };
+      if (mode === 'resolved') request.mockResolvedValueOnce(expired);
+      else request.mockRejectedValueOnce({ response: expired });
+      await expect(post()).rejects.toMatchObject({
+        code: 'OFFICIAL_OAUTH_SESSION_REQUIRED', statusCode: 401,
+      });
+      expect(isCanonicalHostClientSessionAuthenticationRequired()).toBe(false);
+      expect(getCanonicalHostClientSessionGeneration()).toBe(generation);
+      expect(request.mock.calls[2][0]).toMatchObject({ url, method: 'POST' });
+      await expect(getCanonicalHostIdentityContext()).resolves.toEqual(identity);
+      expect(request).toHaveBeenCalledTimes(3);
+      request.mockResolvedValueOnce({ status: 200, data: whoami });
+      await requireOfficialOauthSession();
+      expect(request).toHaveBeenCalledTimes(4);
+      expect(request.mock.calls[3][0]).toEqual({
+        url: '/api/identity/whoami', method: 'GET',
+      });
+    }
   });
 
   it('submits metadata enrichment for the exact version without a fabricated body', async () => {
