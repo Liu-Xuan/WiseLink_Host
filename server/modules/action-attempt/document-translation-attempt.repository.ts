@@ -10,6 +10,12 @@ import { parseExecutionModel } from '../model-settings/canonical-execution-model
 import { readTranslationWorkspaceSnapshot } from '../canonical-host/canonical-translation-workspace.repository';
 import { buildTranslationWorkspaceReadingV2 } from '../canonical-host/canonical-translation-v2-quality';
 import { documentTranslationRepairableBlockIds } from '../canonical-host/document-translation-repair-scope';
+import { translationManifestSchemaV2 } from '../canonical-host/canonical-translation-v2.contract';
+import { z } from 'zod/v4';
+
+const partialResult = z.object({ status: z.literal('REMAINING_LIMITATIONS'), artifact: z.object({
+  completeness: z.literal('PARTIAL'), manifest: translationManifestSchemaV2,
+}) });
 
 export interface DocumentTranslationScope { tenantId: string; actorUserId: string; documentVersionId: string }
 export interface DocumentTranslationFence { attemptRef: string; principalId: string; leaseToken: string; leaseGeneration: number }
@@ -24,7 +30,8 @@ export class DocumentTranslationAttemptRepository {
   async latest(scope: DocumentTranslationScope, requestId?: string) {
     const [row] = await this.db.select().from(actionAttempt).where(and(owned(scope),
       requestId ? inArray(actionAttempt.triggerRequestId,
-        [requestId, `${requestId}:hosted-m3`, `${requestId}:partial-repair`]) : undefined))
+        [requestId, `${requestId}:hosted-m3`, `${requestId}:partial-repair`,
+          `${requestId}:partial-repair-v2`]) : undefined))
       .orderBy(desc(actionAttempt.attemptNo)).limit(1);
     return row ?? null;
   }
@@ -157,6 +164,145 @@ export class DocumentTranslationAttemptRepository {
         executionModelJson: executionModel ? canonicalJson(executionModel) : null,
         idempotencyKey: parsed.idempotencyKey, deadlineAt: new Date(parsed.deadline),
         packageArtifactRef: parsed.modelInput.source.parsedArtifact.ref,
+        packageArtifactSha256: parsed.modelInput.source.parsedArtifact.sha256,
+      }).returning();
+      return row;
+    });
+  }
+
+  /** Explicit compensation for a sealed partial successor with no repair scope or output. */
+  async recoverPartialInput(scope: DocumentTranslationScope, task: DocumentTranslationTaskEnvelope,
+    rootRequestId: string, predecessorRef: string, executionModel: CanonicalExecutionModelSelection) {
+    const parsed = parseDocumentTranslationTaskEnvelope(canonicalJson(task));
+    const model = parseExecutionModel(executionModel);
+    const oldRequestId = `${rootRequestId}:partial-repair`;
+    const requestId = `${rootRequestId}:partial-repair-v2`;
+    if (model.modelRef !== 'm3probe/minimax-m3' ||
+        parsed.tenantId !== scope.tenantId || parsed.documentVersionId !== scope.documentVersionId ||
+        parsed.modelInput.documentProducer !== 'HOSTED_M3' ||
+        parsed.idempotencyKey !== `document-translation:${scope.documentVersionId}:${requestId}` ||
+        !parsed.modelInput.retranslateBlockIds?.length ||
+        parsed.recoveryOf?.operationRef !== predecessorRef)
+      throw new Error('DOCUMENT_TRANSLATION_PARTIAL_INPUT_RECOVERY_SCOPE_INVALID');
+    return this.db.transaction(async tx => {
+      const locked = await tx.execute(sql`SELECT document_version_id FROM dm_document_version
+        WHERE document_version_id=${scope.documentVersionId} FOR UPDATE`);
+      if (!locked.length) throw new Error('DOCUMENT_VERSION_NOT_FOUND');
+      const [prior] = await tx.select().from(actionAttempt).where(and(owned(scope),
+        eq(actionAttempt.operationRef, predecessorRef))).limit(1).for('update');
+      if (!prior || prior.triggerRequestId !== oldRequestId ||
+          prior.producerRunId !== parsed.parseRunId || prior.inputRevision !== parsed.parseRevision)
+        throw new Error('DOCUMENT_TRANSLATION_PARTIAL_INPUT_RECOVERY_INELIGIBLE');
+      const priorTask = parseDocumentTranslationTaskEnvelope(prior.taskEnvelopeJson ?? '');
+      if (priorTask.modelInput.retranslateBlockIds ||
+          priorTask.modelInput.documentProducer !== 'HOSTED_M3' ||
+          parsed.recoveryOf?.inputHash !== priorTask.inputHash ||
+          priorTask.workspaceId !== parsed.workspaceId ||
+          canonicalJson(priorTask.modelInput.source) !== canonicalJson(parsed.modelInput.source) ||
+          priorTask.modelInput.planRevision !== parsed.modelInput.planRevision ||
+          priorTask.modelInput.contextRevision !== parsed.modelInput.contextRevision ||
+          priorTask.modelInput.methodVersion !== parsed.modelInput.methodVersion)
+        throw new Error('DOCUMENT_TRANSLATION_PARTIAL_INPUT_RECOVERY_INELIGIBLE');
+      const [existing] = await tx.select().from(actionAttempt).where(and(owned(scope),
+        eq(actionAttempt.triggerRequestId, requestId))).limit(1);
+      if (existing) {
+        const saved = parseDocumentTranslationTaskEnvelope(existing.taskEnvelopeJson ?? '');
+        if (prior.status !== 'CANCELLED' ||
+            prior.terminalReason !== 'DOCUMENT_TRANSLATION_PARTIAL_INPUT_SUPERSEDED' ||
+            saved.recoveryOf?.operationRef !== predecessorRef ||
+            saved.recoveryOf.inputHash !== priorTask.inputHash ||
+            saved.parseRunId !== parsed.parseRunId || saved.parseRevision !== parsed.parseRevision ||
+            canonicalJson(saved.modelInput) !== canonicalJson(parsed.modelInput))
+          throw new Error('DOCUMENT_TRANSLATION_REQUEST_CONFLICT');
+        return existing;
+      }
+      const noLease = prior.leaseOwner === null && prior.leaseToken === null && prior.leaseExpiresAt === null;
+      const expiredLease = prior.leaseOwner !== null && prior.leaseToken !== null &&
+        prior.leaseExpiresAt !== null && prior.leaseExpiresAt <= new Date();
+      if (!['QUEUED','RUNNING','RETRY_SCHEDULED','FAILED'].includes(prior.status) ||
+          (!noLease && !expiredLease) ||
+          prior.resultEnvelopeJson !== null || prior.resultContentHash !== null ||
+          prior.projectionApplied || prior.commitStartedAt !== null)
+        throw new Error('DOCUMENT_TRANSLATION_PARTIAL_INPUT_RECOVERY_INELIGIBLE');
+      const [latest] = await tx.select().from(actionAttempt).where(and(
+        eq(actionAttempt.tenantId, scope.tenantId),
+        eq(actionAttempt.documentVersionId, scope.documentVersionId),
+        eq(actionAttempt.subjectKind, 'DOCUMENT_VERSION'),
+        eq(actionAttempt.actionType, 'DOCUMENT_TRANSLATE')))
+        .orderBy(desc(actionAttempt.attemptNo)).limit(1);
+      if (latest?.attemptId !== prior.attemptId) throw new Error('DOCUMENT_TRANSLATION_PARTIAL_INPUT_RECOVERY_INELIGIBLE');
+      const [otherActive] = await tx.select({ id: actionAttempt.attemptId }).from(actionAttempt)
+        .where(and(owned(scope), inArray(actionAttempt.status,
+          ['QUEUED','RUNNING','RETRY_SCHEDULED','COMMITTING']),
+        sql`${actionAttempt.attemptId} <> ${prior.attemptId}`)).limit(1);
+      if (otherActive) throw new Error('DOCUMENT_TRANSLATION_PARTIAL_INPUT_RECOVERY_INELIGIBLE');
+      const predecessorRequestId = `${rootRequestId}:hosted-m3`;
+      const [successful] = await tx.select().from(actionAttempt).where(and(owned(scope),
+        inArray(actionAttempt.triggerRequestId, [rootRequestId, predecessorRequestId]),
+        eq(actionAttempt.status, 'SUCCEEDED'))).orderBy(desc(actionAttempt.attemptNo)).limit(1);
+      if (!successful || successful.attemptNo + 1 !== prior.attemptNo ||
+          successful.producerRunId !== parsed.parseRunId ||
+          successful.terminalReason !== 'REMAINING_LIMITATIONS' || !successful.resultEnvelopeJson)
+        throw new Error('DOCUMENT_TRANSLATION_PARTIAL_INPUT_RECOVERY_INELIGIBLE');
+      const successfulTask = parseDocumentTranslationTaskEnvelope(successful.taskEnvelopeJson ?? '');
+      const result = partialResult.safeParse(JSON.parse(successful.resultEnvelopeJson));
+      if (!result.success || successfulTask.workspaceId !== parsed.workspaceId ||
+          canonicalJson(successfulTask.modelInput.source) !== canonicalJson(parsed.modelInput.source) ||
+          result.data.artifact.manifest.workspaceId !== parsed.workspaceId ||
+          result.data.artifact.manifest.planRevision !== parsed.modelInput.planRevision ||
+          result.data.artifact.manifest.contextRevision !== parsed.modelInput.contextRevision)
+        throw new Error('DOCUMENT_TRANSLATION_PARTIAL_INPUT_RECOVERY_INELIGIBLE');
+      const [workspace] = await tx.select({ result: translationWorkspace.resultArtifactJson,
+        manifest: translationWorkspace.resultManifestJson })
+        .from(translationWorkspace).where(and(eq(translationWorkspace.tenantId, scope.tenantId),
+          eq(translationWorkspace.documentVersionId, scope.documentVersionId),
+          eq(translationWorkspace.workspaceId, parsed.workspaceId))).limit(1).for('update');
+      if (!workspace?.result || !workspace.manifest ||
+          canonicalJson(JSON.parse(workspace.manifest)) !==
+            canonicalJson(result.data.artifact.manifest))
+        throw new Error('DOCUMENT_TRANSLATION_PARTIAL_INPUT_RECOVERY_INELIGIBLE');
+      const snapshot = await readTranslationWorkspaceSnapshot(tx, { tenantId: scope.tenantId,
+        workItemId: null, documentVersionId: scope.documentVersionId, workspaceId: parsed.workspaceId });
+      const reading = buildTranslationWorkspaceReadingV2(snapshot.workspace, snapshot.revisions);
+      const selected = reading.blocks.flatMap(block => block.selected ? [{ blockId: block.source.blockId,
+        blockRevisionId: block.selected.blockRevisionId, contentRevision: block.selected.contentRevision }] : []);
+      const [produced] = await tx.select({ id: translationBlockRevision.blockRevisionId })
+        .from(translationBlockRevision).where(and(eq(translationBlockRevision.tenantId, scope.tenantId),
+          eq(translationBlockRevision.workspaceId, parsed.workspaceId),
+          eq(translationBlockRevision.originAttemptId, prior.attemptId))).limit(1);
+      if (!selected.length || snapshot.workspace.activeAttemptId !== prior.attemptId ||
+          canonicalJson(selected) !== canonicalJson(result.data.artifact.manifest.blockRevisions) ||
+          produced ||
+          snapshot.workspace.generationRequests.some(request => request.attemptId === prior.attemptId &&
+            (request.status !== 'FAILED' || request.error?.outcome !== 'KNOWN_FAILURE')) ||
+          canonicalJson(documentTranslationRepairableBlockIds(reading)) !==
+            canonicalJson(parsed.modelInput.retranslateBlockIds))
+        throw new Error('DOCUMENT_TRANSLATION_PARTIAL_INPUT_RECOVERY_INELIGIBLE');
+      const current = await tx.execute<{ parseRunId: string; parseRevision: number; sha256: string; byteLength: number }>(sql`
+        SELECT parse_run_id AS "parseRunId",parse_revision AS "parseRevision",
+          manifest_artifact->>'sha256' AS sha256,(manifest_artifact->>'byteLength')::bigint AS "byteLength"
+        FROM dm_document_parse_run WHERE tenant_id=${scope.tenantId} AND document_version_id=${scope.documentVersionId}
+          AND status='PUBLISHED' ORDER BY parse_revision DESC LIMIT 1 FOR SHARE`);
+      if (current[0]?.parseRunId !== parsed.parseRunId || current[0].parseRevision !== parsed.parseRevision ||
+          current[0].sha256 !== parsed.modelInput.source.parsedArtifact.sha256 ||
+          Number(current[0].byteLength) !== parsed.modelInput.source.parsedArtifact.byteLength)
+        throw new Error('DOCUMENT_TRANSLATION_RESERVATION_SOURCE_CHANGED');
+      const now = new Date();
+      await tx.update(actionAttempt).set({ status: 'CANCELLED', cancelRequestedAt: now,
+        cancelReason: 'RECOVER_PARTIAL_INPUT: sealed task omitted repair block IDs',
+        terminalReason: 'DOCUMENT_TRANSLATION_PARTIAL_INPUT_SUPERSEDED',
+        leaseOwner: null, leaseToken: null, leaseExpiresAt: null,
+        completedAt: now, updatedAt: now }).where(and(owned(scope), eq(actionAttempt.attemptId, prior.attemptId)));
+      const [row] = await tx.insert(actionAttempt).values({
+        attemptId: parsed.actionAttemptId, operationRef: parsed.operationRef,
+        subjectKind: 'DOCUMENT_VERSION', workItemId: null, documentVersionId: scope.documentVersionId,
+        tenantId: scope.tenantId, actorUserId: scope.actorUserId, producerRunId: parsed.parseRunId,
+        actionType: 'DOCUMENT_TRANSLATE', attemptNo: prior.attemptNo + 1,
+        triggerRequestId: requestId, requestOrigin: 'HOST_DOCUMENT', status: 'QUEUED',
+        leaseGeneration: 0, claimCount: 0, retryCount: 0, maxAttempts: 3,
+        inputRevision: parsed.parseRevision, taskEnvelopeJson: canonicalJson(parsed), taskInputHash: parsed.inputHash,
+        executionModelJson: canonicalJson(model), idempotencyKey: parsed.idempotencyKey,
+        deadlineAt: new Date(parsed.deadline), packageArtifactRef: parsed.modelInput.source.parsedArtifact.ref,
         packageArtifactSha256: parsed.modelInput.source.parsedArtifact.sha256,
       }).returning();
       return row;

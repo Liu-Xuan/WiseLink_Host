@@ -149,6 +149,20 @@ function workspace(
 }
 
 describe('translation v2 quality and actual reading coverage', () => {
+  it('keeps a 65-block repair scope while scheduling bounded generation batches', () => {
+    const sourcePlan = plan(Array.from({ length: 65 }, () =>
+      'Inspect the synthetic component and record its status. '.repeat(12)), true);
+    expect(sourcePlan.blocks).toHaveLength(65);
+    const work = workspace(sourcePlan);
+    const ids = sourcePlan.blocks.map(block => block.blockId);
+    const next = nextTranslationWorkV2(work, [], buildTranslationWorkspaceReadingV2(work, []),
+      undefined, { retranslateBlockIds: ids });
+    expect(next.kind).toBe('GENERATE');
+    if (next.kind !== 'GENERATE') throw new Error('expected generation batch');
+    expect(next.blockIds.length).toBeGreaterThan(0);
+    expect(next.blockIds.length).toBeLessThan(65);
+    expect(next.blockIds).toEqual(ids.slice(0, next.blockIds.length));
+  });
   it('permits two corrections per attempt, binds each to the latest issues, and stops after the second checked failure', () => {
     const sourcePlan = plan(['Keep the component installed.']);
     const work = workspace(sourcePlan);

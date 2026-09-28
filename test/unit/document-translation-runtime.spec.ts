@@ -26,6 +26,12 @@ function setup() {
       attemptId: task.actionAttemptId, operationRef: task.operationRef, taskEnvelopeJson: JSON.stringify(task),
       triggerRequestId: requestId, executionModelJson: JSON.stringify(executionModel),
       deadlineAt: new Date(task.deadline), errorCode: null }; return row; }),
+    recoverPartialInput: jest.fn(async (_scope, task, requestId) => { row = {
+      status: 'QUEUED', documentVersionId, producerRunId: parseRunId,
+      attemptId: task.actionAttemptId, operationRef: task.operationRef,
+      taskEnvelopeJson: JSON.stringify(task), triggerRequestId: `${requestId}:partial-repair-v2`,
+      deadlineAt: new Date(task.deadline), errorCode: null,
+    }; return row; }),
     claim: jest.fn(async (_scope, attemptRef, principalId) => ({ attemptRef, principalId, leaseToken: 'token', leaseGeneration: 1 })),
     renew: jest.fn().mockResolvedValue(true), release: jest.fn().mockResolvedValue(true),
     cancel: jest.fn(), finish: jest.fn(), fail: jest.fn(), expire: jest.fn(),
@@ -113,6 +119,30 @@ describe('independent document translation runtime', () => {
     expect(prior).toMatchObject({ status: 'SUCCEEDED', terminalReason: 'REMAINING_LIMITATIONS' });
     expect(f.authorization.authorizeDocumentWork).toHaveBeenCalledWith({ documentVersionId: f.binding.documentVersionId,
       deliveryRef, purpose: 'TRANSLATION' });
+  });
+  it('uses a separate exact recovery action without requesting CANCEL authority', async () => {
+    const f = setup();
+    const deliveryRef = 'acquisition:sample';
+    const requestId = documentDeliveryRequestId('translation', deliveryRef);
+    const old = await f.service.run({ action: 'START', ...f.binding, deliveryRef, requestId });
+    if (!('attemptRef' in old)) throw new Error('expected attempt');
+    const prior = await f.attempts.readRequest({}, requestId);
+    if (!prior) throw new Error('expected prior');
+    prior.triggerRequestId = `${requestId}:partial-repair`;
+    const oldHash = JSON.parse(String(prior.taskEnvelopeJson)).inputHash;
+    await expect(f.service.run({ action: 'RECOVER_PARTIAL_INPUT', ...f.binding,
+      attemptRef: old.attemptRef! })).rejects.toThrow('RECOVERY_SCOPE_INVALID');
+    const recovered = await f.service.run({ action: 'RECOVER_PARTIAL_INPUT', ...f.binding,
+      deliveryRef, attemptRef: old.attemptRef! });
+    expect(recovered).toMatchObject({ status: 'QUEUED' });
+    expect(f.attempts.recoverPartialInput.mock.calls[0].slice(2))
+      .toMatchObject([requestId, old.attemptRef, { modelRef: 'm3probe/minimax-m3' }]);
+    const recoveryTask = f.attempts.recoverPartialInput.mock.calls[0][1];
+    expect(recoveryTask.recoveryOf).toEqual({ operationRef: old.attemptRef, inputHash: oldHash });
+    expect(recoveryTask.modelInput.retranslateBlockIds).toEqual(['repairable-block']);
+    expect(f.authorization.authorizeDocumentWork).toHaveBeenLastCalledWith({
+      documentVersionId: f.binding.documentVersionId, deliveryRef, purpose: 'TRANSLATION' });
+    expect(f.attempts.cancel).not.toHaveBeenCalled();
   });
   it('executes one official step using the document fence and releases failure without replay', async () => {
     const f = setup();

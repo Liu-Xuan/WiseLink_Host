@@ -42,5 +42,14 @@ describe('document translation task binding', () => {
     expect(() => sealDocumentTranslationTaskEnvelope({ ...input,
       modelInput: { ...input.modelInput, retranslateBlockIds: ['block-1', 'block-1'] } }))
       .toThrow('DOCUMENT_TRANSLATION_TASK_INVALID');
+    const allBlocks = Array.from({ length: 65 }, (_, index) => `block-${index}`);
+    const large = sealDocumentTranslationTaskEnvelope({ ...input,
+      modelInput: { ...input.modelInput, retranslateBlockIds: allBlocks } });
+    expect(parseDocumentTranslationTaskEnvelope(JSON.stringify(large)).modelInput.retranslateBlockIds)
+      .toEqual(allBlocks);
+    const compensated = sealDocumentTranslationTaskEnvelope({ ...input,
+      recoveryOf: { operationRef: 'prior', inputHash: repair.inputHash },
+      modelInput: { ...input.modelInput, retranslateBlockIds: ['block-1'] } });
+    expect(compensated.recoveryOf?.inputHash).toBe(repair.inputHash);
   });
 });

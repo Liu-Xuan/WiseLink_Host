@@ -812,6 +812,134 @@ test('document quota failure has one Hosted successor with fenced blocks and ful
       result_envelope_json=${canonicalJson(partialResult)} WHERE attempt_id=${partialAttempt.attemptId}`;
     assert.deepEqual(await dispatchState(), { pending: false, missing: false },
       'one bounded partial successor is the limit for this delivery');
+
+    // A separate delivery reproduces a sealed legacy partial attempt that
+    // registered one known failure but never wrote a candidate revision.
+    await sql`UPDATE translation_block_revision SET check_json=${canonicalJson(checked)}
+      WHERE block_revision_id='TB-partial-fixture'`;
+    const recoveryRoot = 'auto-translation-recovery-test';
+    const successfulTask = task('recovery-source', 'HOSTED_M3', `${recoveryRoot}:hosted-m3`);
+    const legacyTask = task('recovery-legacy', 'HOSTED_M3', `${recoveryRoot}:partial-repair`);
+    const beforeRecovery = await workspaces.readSnapshot({ tenantId: scope.tenantId, workItemId: null,
+      documentVersionId: scope.documentVersionId, workspaceId: workspace.workspaceId });
+    const selectedBefore = buildTranslationWorkspaceReadingV2(beforeRecovery.workspace, beforeRecovery.revisions)
+      .blocks.flatMap(block => block.selected ? [{ blockId: block.source.blockId,
+        blockRevisionId: block.selected.blockRevisionId, contentRevision: block.selected.contentRevision }] : []);
+    const recoveryManifest = { ...final.manifest, blockRevisions: selectedBefore };
+    const recoveryResult = { ...partialResult, artifact: { ...final,
+      completeness: 'PARTIAL', manifest: recoveryManifest } };
+    await sql`UPDATE translation_workspace SET result_manifest_json=${canonicalJson(recoveryManifest)}
+      WHERE workspace_id=${workspace.workspaceId}`;
+    const existingRequest = beforeRecovery.workspace.generationRequests.find(request =>
+      request.attemptId === partialTask.actionAttemptId);
+    assert.ok(existingRequest);
+    const failedRequest = { ...existingRequest, attemptId: legacyTask.actionAttemptId,
+      generationRequestRef: 'TG-recovery-known-failure', status: 'FAILED',
+      error: { origin: 'UPSTREAM', code: 'SYNTHETIC_KNOWN_FAILURE',
+        outcome: 'KNOWN_FAILURE', retryable: false }, finishedAt: new Date().toISOString() };
+    await sql`UPDATE translation_workspace SET generation_requests_json=${canonicalJson([
+      ...beforeRecovery.workspace.generationRequests.filter(request => request.status !== 'REGISTERED'), failedRequest,
+    ])} WHERE workspace_id=${workspace.workspaceId}`;
+    const [lastAttempt] = await sql`SELECT max(attempt_no)::int n FROM action_attempt
+      WHERE document_version_id=${scope.documentVersionId}`;
+    await sql`INSERT INTO action_attempt (attempt_id,operation_ref,subject_kind,document_version_id,
+      producer_run_id,action_type,attempt_no,trigger_request_id,request_origin,status,actor_user_id,
+      tenant_id,input_revision,task_envelope_json,task_input_hash,idempotency_key,deadline_at,
+      execution_model_json,terminal_reason,result_envelope_json,completed_at,projection_applied)
+      VALUES (${successfulTask.actionAttemptId},${successfulTask.operationRef},'DOCUMENT_VERSION',
+        ${scope.documentVersionId},${successfulTask.parseRunId},'DOCUMENT_TRANSLATE',${lastAttempt.n + 1},
+        ${`${recoveryRoot}:hosted-m3`},'HOST_DOCUMENT','SUCCEEDED',${scope.actorUserId},${scope.tenantId},1,
+        ${canonicalJson(successfulTask)},${successfulTask.inputHash},${successfulTask.idempotencyKey},
+        ${successfulTask.deadline},${canonicalJson(model)},'REMAINING_LIMITATIONS',
+        ${canonicalJson(recoveryResult)},now(),false)`;
+    await sql`INSERT INTO action_attempt (attempt_id,operation_ref,subject_kind,document_version_id,
+      producer_run_id,action_type,attempt_no,trigger_request_id,request_origin,status,actor_user_id,
+      tenant_id,input_revision,task_envelope_json,task_input_hash,idempotency_key,deadline_at,
+      execution_model_json,lease_generation,claim_count,projection_applied)
+      VALUES (${legacyTask.actionAttemptId},${legacyTask.operationRef},'DOCUMENT_VERSION',
+        ${scope.documentVersionId},${legacyTask.parseRunId},'DOCUMENT_TRANSLATE',${lastAttempt.n + 2},
+        ${`${recoveryRoot}:partial-repair`},'HOST_DOCUMENT','RUNNING',${scope.actorUserId},${scope.tenantId},1,
+        ${canonicalJson(legacyTask)},${legacyTask.inputHash},${legacyTask.idempotencyKey},
+        ${legacyTask.deadline},${canonicalJson(model)},1,1,false)`;
+    await sql`UPDATE translation_workspace SET active_attempt_id=${legacyTask.actionAttemptId}
+      WHERE workspace_id=${workspace.workspaceId}`;
+    const legacyDispatch = await dispatch.documentDeliveryDispatchState({ tenantId: scope.tenantId,
+      actorUserId: scope.actorUserId, documentVersionId: scope.documentVersionId,
+      readingRequestId: 'reading-unused', translationRequestId: recoveryRoot,
+      readingSelected: false, translationSelected: true });
+    assert.deepEqual(legacyDispatch, { pending: false, missing: false },
+      'automatic dispatch must not redispatch the malformed sealed legacy attempt');
+    const { inputHash: _legacyHash, ...unsealedLegacy } = legacyTask;
+    const recoveryTask = sealDocumentTranslationTaskEnvelope({ ...unsealedLegacy,
+      actionAttemptId: 'ATT-recovery-v2', operationRef: 'AQ-recovery-v2',
+      recoveryOf: { operationRef: legacyTask.operationRef, inputHash: legacyTask.inputHash },
+      modelInput: { ...legacyTask.modelInput, retranslateBlockIds: [selected.block_id] },
+      idempotencyKey: `document-translation:${scope.documentVersionId}:${recoveryRoot}:partial-repair-v2` });
+    const recover = () => attempts.recoverPartialInput(scope, recoveryTask, recoveryRoot,
+      legacyTask.operationRef, model);
+    await sql`UPDATE action_attempt SET lease_owner='busy',lease_token=${randomUUID()},
+      lease_expires_at=now()+interval '1 minute' WHERE attempt_id=${legacyTask.actionAttemptId}`;
+    await assert.rejects(recover(), /RECOVERY_INELIGIBLE/u);
+    await sql`UPDATE action_attempt SET lease_expires_at=now()-interval '1 minute'
+      WHERE attempt_id=${legacyTask.actionAttemptId}`;
+    await sql`UPDATE translation_workspace SET generation_requests_json=${canonicalJson([
+      { ...failedRequest, error: { ...failedRequest.error, outcome: 'GENERATION_UNKNOWN' } },
+    ])} WHERE workspace_id=${workspace.workspaceId}`;
+    await assert.rejects(recover(), /RECOVERY_INELIGIBLE/u);
+    await sql`UPDATE translation_workspace SET generation_requests_json=${canonicalJson([failedRequest])}
+      WHERE workspace_id=${workspace.workspaceId}`;
+    await sql`UPDATE translation_block_revision SET selected_for_reading=false
+      WHERE block_revision_id=${selectedBefore[0].blockRevisionId}`;
+    await assert.rejects(recover(), /RECOVERY_INELIGIBLE/u,
+      'a changed selected reading cannot be attributed to the successful predecessor');
+    await sql`UPDATE translation_block_revision SET selected_for_reading=true
+      WHERE block_revision_id=${selectedBefore[0].blockRevisionId}`;
+    const legacyProvenance = { ...correctedProvenance, originAttemptId: legacyTask.actionAttemptId,
+      generationRequestRef: 'TG-recovery-known-failure' };
+    await sql`INSERT INTO translation_block_revision (block_revision_id,tenant_id,work_item_id,workspace_id,
+      block_id,plan_revision,content_revision,generation_request_ref,origin_attempt_id,author_kind,
+      author_user_id,candidate_json,dependencies_json,provenance_json,generated_at,saved_at,
+      check_status,check_json,checked_at,selected_for_reading,row_version)
+      SELECT 'TB-recovery-output-fixture',tenant_id,work_item_id,workspace_id,block_id,plan_revision,
+        content_revision+1,'TG-recovery-known-failure',${legacyTask.actionAttemptId},author_kind,author_user_id,
+        candidate_json,dependencies_json,${canonicalJson(legacyProvenance)},generated_at,saved_at,
+        check_status,check_json,checked_at,false,1
+      FROM translation_block_revision WHERE block_revision_id='TB-partial-fixture'`;
+    await assert.rejects(recover(), /RECOVERY_INELIGIBLE/u,
+      'a saved revision from the legacy attempt forbids compensating recovery');
+    await sql.unsafe('RESET ROLE');
+    await sql`DELETE FROM translation_block_revision WHERE block_revision_id='TB-recovery-output-fixture'`;
+    await sql.unsafe("SET ROLE service_role; SELECT set_config('app.user_id','engineer-test',false)");
+    const recoveryAttempt = await recover();
+    assert.equal(recoveryAttempt.triggerRequestId, `${recoveryRoot}:partial-repair-v2`);
+    assert.equal((await recover()).attemptId, recoveryAttempt.attemptId);
+    const { inputHash: _recoveryHash, ...unsealedRecovery } = recoveryTask;
+    const changedRecovery = sealDocumentTranslationTaskEnvelope({ ...unsealedRecovery,
+      modelInput: { ...recoveryTask.modelInput, retranslateBlockIds: ['wrong-block'] } });
+    await assert.rejects(attempts.recoverPartialInput(scope, changedRecovery, recoveryRoot,
+      legacyTask.operationRef, model), /REQUEST_CONFLICT/u);
+    const [cancelledLegacy] = await sql`SELECT status,terminal_reason,task_input_hash FROM action_attempt
+      WHERE attempt_id=${legacyTask.actionAttemptId}`;
+    assert.equal(cancelledLegacy.status, 'CANCELLED');
+    assert.equal(cancelledLegacy.terminal_reason, 'DOCUMENT_TRANSLATION_PARTIAL_INPUT_SUPERSEDED');
+    assert.equal(cancelledLegacy.task_input_hash, legacyTask.inputHash);
+    assert.equal((await attempts.latest(scope, recoveryRoot)).attemptId, recoveryAttempt.attemptId);
+    const recoveryDispatch = await dispatch.documentDeliveryDispatchState({ tenantId: scope.tenantId,
+      actorUserId: scope.actorUserId, documentVersionId: scope.documentVersionId,
+      readingRequestId: 'reading-unused', translationRequestId: recoveryRoot,
+      readingSelected: false, translationSelected: true });
+    assert.deepEqual(recoveryDispatch, { pending: true, missing: false });
+    const recoveryLease = await attempts.claim(scope, recoveryTask.operationRef, 'recovery-principal');
+    assert.ok(recoveryLease);
+    const recoveryFence = { ...recoveryLease, tenantId: scope.tenantId, workItemId: null,
+      documentVersionId: scope.documentVersionId, workspaceId: workspace.workspaceId };
+    const nextRepair = await v2.executeDocument({ phase: 'NEXT', attemptRef: recoveryFence.attemptRef,
+      leaseToken: recoveryFence.leaseToken, leaseGeneration: recoveryFence.leaseGeneration,
+      requestId: 'recovery-next' }, recoveryFence, scope.actorUserId, async () => {}, recoveryTask, model);
+    assert.equal(nextRepair.action, 'GENERATE');
+    assert.deepEqual(nextRepair.blockIds, [selected.block_id]);
+    assert.equal((await recover()).attemptId, recoveryAttempt.attemptId,
+      'a replay keeps the original sealed scope after the successor starts');
   } finally { await sql.end({ timeout: 5 }); }
 });
 

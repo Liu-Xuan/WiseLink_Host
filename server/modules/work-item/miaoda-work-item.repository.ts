@@ -343,9 +343,11 @@ export class MiaodaWorkItemRepository {
           WHERE t.tenant_id=${input.tenantId} AND t.actor_user_id=${input.actorUserId}
             AND t.document_version_id=${input.documentVersionId}
             AND t.trigger_request_id IN (${input.translationRequestId},${`${input.translationRequestId}:hosted-m3`},
-              ${`${input.translationRequestId}:partial-repair`})
+              ${`${input.translationRequestId}:partial-repair`},${`${input.translationRequestId}:partial-repair-v2`})
             AND t.subject_kind='DOCUMENT_VERSION' AND t.action_type='DOCUMENT_TRANSLATE'
             AND t.status IN ('QUEUED','RUNNING','RETRY_SCHEDULED')
+            AND (t.trigger_request_id<>${`${input.translationRequestId}:partial-repair`}
+              OR t.task_envelope_json::jsonb->'modelInput' ? 'retranslateBlockIds')
             AND t.deadline_at>CURRENT_TIMESTAMP
             AND (t.lease_expires_at IS NULL OR t.lease_expires_at<=CURRENT_TIMESTAMP))
         OR EXISTS (SELECT 1 FROM ${actionAttempt} t
@@ -395,7 +397,7 @@ export class MiaodaWorkItemRepository {
           WHERE t.tenant_id=${input.tenantId} AND t.actor_user_id=${input.actorUserId}
             AND t.document_version_id=${input.documentVersionId}
             AND t.trigger_request_id IN (${input.translationRequestId},${`${input.translationRequestId}:hosted-m3`},
-              ${`${input.translationRequestId}:partial-repair`})
+              ${`${input.translationRequestId}:partial-repair`},${`${input.translationRequestId}:partial-repair-v2`})
             AND t.subject_kind='DOCUMENT_VERSION' AND t.action_type='DOCUMENT_TRANSLATE'))
       ) AS missing`);
     return { pending: rows[0]?.pending === true, missing: rows[0]?.missing === true };

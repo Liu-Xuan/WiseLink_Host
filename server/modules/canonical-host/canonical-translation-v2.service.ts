@@ -337,7 +337,6 @@ export class CanonicalTranslationV2Service {
     const requestedBlockIds =
       z
         .array(id)
-        .max(64)
         .optional()
         .parse('retranslateBlockIds' in task.modelInput ? task.modelInput.retranslateBlockIds : undefined) ?? [];
     const nextWork = () =>
