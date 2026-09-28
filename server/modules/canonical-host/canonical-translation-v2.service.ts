@@ -351,13 +351,17 @@ export class CanonicalTranslationV2Service {
             input.phase === 'NEXT' && input.batchSemanticChecks === true,
         },
       );
-    if (input.phase === 'READ') return { ...summary(state.reading),
-      generationRequestCount: state.workspace.generationRequests.length,
-      retryableFailureCount: state.workspace.generationRequests.filter(request =>
+    if (input.phase === 'READ') {
+      const currentRequests = state.workspace.generationRequests.filter(request =>
+        request.attemptId === task.actionAttemptId);
+      return { ...summary(state.reading),
+      generationRequestCount: currentRequests.length,
+      retryableFailureCount: currentRequests.filter(request =>
         request.status === 'FAILED' && request.error?.retryable).length,
-      terminalFailureCode: state.workspace.generationRequests.find(request =>
+      terminalFailureCode: currentRequests.find(request =>
         request.status === 'FAILED' && request.error?.outcome === 'KNOWN_FAILURE' &&
         !request.error.retryable && request.error.code !== 'TRANSLATION_BATCH_PREFIX_ONLY')?.error?.code ?? null };
+    }
     if (input.phase === 'RECORD_FAILURE')
       return this.workspaces.recordGenerationFailure({
         ...fence,

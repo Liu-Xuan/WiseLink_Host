@@ -4,6 +4,7 @@ import { readFile } from 'node:fs/promises';
 import { createRequire } from 'node:module';
 import test from 'node:test';
 import postgres from 'postgres';
+import { runDocumentSemanticTranslationStep } from '../../openclaw/skills/wiselink-research-and-synthesize/scripts/run-document-semantic-translation.mjs';
 import { sealResultEnvelope as sealSkillResultEnvelope, WISELINK_SKILL_VERSION, WISELINK_HOST_MCP_NAME, WISELINK_HOST_MCP_VERSION } from '../../openclaw/skills/wiselink-research-and-synthesize/scripts/validate-payload.mjs';
 
 process.env.TS_NODE_COMPILER_OPTIONS = JSON.stringify({ module: 'CommonJS', moduleResolution: 'node' });
@@ -929,15 +930,53 @@ test('document quota failure has one Hosted successor with fenced blocks and ful
       readingRequestId: 'reading-unused', translationRequestId: recoveryRoot,
       readingSelected: false, translationSelected: true });
     assert.deepEqual(recoveryDispatch, { pending: true, missing: false });
-    const recoveryLease = await attempts.claim(scope, recoveryTask.operationRef, 'recovery-principal');
-    assert.ok(recoveryLease);
-    const recoveryFence = { ...recoveryLease, tenantId: scope.tenantId, workItemId: null,
-      documentVersionId: scope.documentVersionId, workspaceId: workspace.workspaceId };
-    const nextRepair = await v2.executeDocument({ phase: 'NEXT', attemptRef: recoveryFence.attemptRef,
-      leaseToken: recoveryFence.leaseToken, leaseGeneration: recoveryFence.leaseGeneration,
-      requestId: 'recovery-next' }, recoveryFence, scope.actorUserId, async () => {}, recoveryTask, model);
+    let recoveryLease, recoveryRead, nextRepair;
+    const runnerCalls = [];
+    const runnerResult = await runDocumentSemanticTranslationStep({ documentVersionId: scope.documentVersionId,
+      parseRunId: recoveryTask.parseRunId, attemptRef: recoveryTask.operationRef }, {
+      callTool: async (name, input) => {
+        assert.equal(name, 'document_translation');
+        runnerCalls.push(input.action === 'WORKSPACE' ? input.workspaceCommand.phase : input.action);
+        if (input.action === 'CLAIM') {
+          recoveryLease = await attempts.claim(scope, recoveryTask.operationRef, 'recovery-principal');
+          assert.ok(recoveryLease);
+          return { status: 'RUNNING', fence: recoveryLease, task: recoveryTask, executionModel: model };
+        }
+        if (input.action === 'HEARTBEAT') return { renewed: await attempts.renew(scope, recoveryLease),
+          attemptRef: recoveryTask.operationRef };
+        if (input.action === 'RELEASE') return { released: await attempts.release(scope, recoveryLease),
+          attemptRef: recoveryTask.operationRef };
+        if (input.action === 'WORKSPACE') {
+          const fence = { ...recoveryLease, tenantId: scope.tenantId, workItemId: null,
+            documentVersionId: scope.documentVersionId, workspaceId: workspace.workspaceId };
+          const response = await v2.executeDocument(input.workspaceCommand, fence,
+            scope.actorUserId, async () => {}, recoveryTask, model);
+          if (input.workspaceCommand.phase === 'READ') recoveryRead = response;
+          if (input.workspaceCommand.phase === 'NEXT') nextRepair = response;
+          return response;
+        }
+        throw new Error(`UNEXPECTED_RUNNER_ACTION_${input.action}`);
+      },
+      translate: async () => { throw Object.assign(new Error('synthetic retry'), {
+        translationFailure: { origin: 'UPSTREAM', code: 'SYNTHETIC_RETRY',
+          outcome: 'KNOWN_FAILURE', retryable: true },
+      }); },
+    });
+    assert.equal(recoveryRead.generationRequestCount, 0);
+    assert.equal(recoveryRead.retryableFailureCount, 0);
+    assert.equal(recoveryRead.terminalFailureCode, null);
     assert.equal(nextRepair.action, 'GENERATE');
     assert.deepEqual(nextRepair.blockIds, [selected.block_id]);
+    assert.equal(runnerResult.status, 'RUNNING');
+    assert.ok(runnerCalls.indexOf('READ') < runnerCalls.indexOf('NEXT'));
+    assert.ok(!runnerCalls.includes('FAIL'));
+    const afterRunner = await workspaces.readSnapshot({ tenantId: scope.tenantId, workItemId: null,
+      documentVersionId: scope.documentVersionId, workspaceId: workspace.workspaceId });
+    assert.ok(afterRunner.workspace.generationRequests.some(request =>
+      request.attemptId === legacyTask.actionAttemptId && request.status === 'FAILED' &&
+      request.error?.outcome === 'KNOWN_FAILURE'), 'legacy failure remains auditable');
+    assert.equal(afterRunner.workspace.generationRequests.filter(request =>
+      request.attemptId === recoveryTask.actionAttemptId).length, 1);
     assert.equal((await recover()).attemptId, recoveryAttempt.attemptId,
       'a replay keeps the original sealed scope after the successor starts');
   } finally { await sql.end({ timeout: 5 }); }
