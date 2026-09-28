@@ -1435,7 +1435,7 @@ test('requires 35 MCP capabilities, six review tools, and hosted provenance', ()
   assert.ok(HOST_MCP_TOOLS.includes('commit_applicability_candidate'));
   assert.equal(
     WISELINK_SKILL_VERSION,
-    'wiselink-research-and-synthesize@r09.c190',
+    'wiselink-research-and-synthesize@r09.c191',
   );
   assert.equal(
     WISELINK_SKILL_COMPATIBILITY_REF,
@@ -8566,6 +8566,50 @@ test('JobAid reference rejection returns exact paths and requires a fresh valida
     invalidEvidenceRefCount: 1 }]);
   assert.equal(result.output.answer, '重新核对');
   assert.deepEqual(work, before);
+});
+
+test('JobAid Review identifies a risk method code misused as requirement methodRef', async () => {
+  const { task, candidate } = await emptyJobAidReviewFixture();
+  task.context.purpose = 'UPDATE_ASSESSMENT';
+  const evidence = { evidenceRef: 'method:risk', kind: 'METHOD_CLAUSE', title: '风险方法',
+    versionLabel: 'R01', excerpt: '核对风险判断', locator: null };
+  task.jobAidContext.sourceCatalog = [evidence];
+  task.jobAidContext.initiallyDeliveredRefs = [evidence.evidenceRef];
+  task.jobAidContext.modelInput.deliveredEvidence = [evidence];
+  let requests = 0;
+  const result = await invokeReviewWithTransport({ input: { context: task.context } }, {
+    gatewayUrl: 'https://official.invalid', gatewayToken: 'fixture-only', configuredModelVersion: 'fixture/provider',
+    validateCandidate: (value) => validateReviewCandidate(task, { ...candidate, ...value }),
+  }, { requestGateway: async (_url, init) => {
+    if (++requests === 2) {
+      const feedback = JSON.parse(JSON.parse(init.body).messages.at(-1).content);
+      assert.equal(feedback.validationError, 'REVIEW_JOBAID_EVIDENCE_NOT_REGISTERED');
+      assert.deepEqual(feedback.evidenceReferenceFeedback.invalidReferences, [{
+        path: 'jobAidWorkingDelta.issues[0].requirementHandling[0].methodRef', evidenceRef: 'JA_AC_R01',
+      }]);
+      assert.match(feedback.evidenceReferenceFeedback.methodRefInstruction, /method:risk/u);
+      assert.match(feedback.evidenceReferenceFeedback.methodRefInstruction, /JA_AC_R01/u);
+    }
+    return Response.json({ choices: [{ message: { content: null, tool_calls: [{
+      id: `method-${requests}`, type: 'function', function: {
+        name: 'return_wiselink_review_candidate', arguments: JSON.stringify({ answer: '核对方法来源',
+          jobAidWorkingDelta: { schemaVersion: 'wiselink.jobaid-problem-work.v3',
+            headline: '风险依据', listBrief: '方法条件待核', completionReason: '保留未知',
+            changeSummary: '撤回无据分级', issues: [{ issueKey: 'one', question: '风险依据是什么？',
+              body: '风险依据待核。[[method:risk]]', riskScenarios: [], measures: [], otherClassifications: [],
+              openQuestions: [], requirementHandling: [{
+                methodRef: requests === 1 ? 'JA_AC_R01' : 'method:risk',
+                requirement: '核对方法条件', conditions: [], treatment: 'NOT_YET_ADDRESSED',
+                basisRefs: [], explanation: '待核',
+              }],
+            }],
+          },
+        }),
+      },
+    }] } }] });
+  } });
+  assert.equal(requests, 2);
+  assert.equal(result.output.jobAidWorkingDelta.issues[0].requirementHandling[0].methodRef, 'method:risk');
 });
 
 test('JobAid schema rejection identifies the exact protocol literal before saving', async () => {
