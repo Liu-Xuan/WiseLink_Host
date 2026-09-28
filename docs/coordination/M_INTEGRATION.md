@@ -5,8 +5,11 @@
 - 旧 787 `document_version_3f1bf2fb1736c0e12e5bae2a` 的已存 MinerU 候选经来源 SHA/长度与候选 SHA 核对后，通过现有 `LOCAL_MINERU_IMPORT` 发布解析修订 5 `PRUN-b500ba95-50d4-467a-b380-a090f99afe85`；旧修订 4 及其历史工作未改写。Description/Status 标题已恢复。新旧 manifest 对比为来源内容变化，不冒充厂家换版。
 - 修订 5 曾触发浏览器读取工作台 404：原文影响比较在浏览器路径误用服务身份。修复提交 `5ed25dc9c24f1664abbf76bd8eef85fbbf690669`，17b 发布 `7690434330866731969` finished，本人工作台读回成功。定向测试 40 通过、8 跳过，server 类型及 ESLint 通过。
 - 旧 787 由本人提交整个评估范围的后继 Turn 14 `RT-f3789b0f-2318-4927-9e08-54db932b1468`，请求基于解析修订 5 修四个问题、工作级字段及 Overall。Review 保存 JobAid 修订 14 `JAWR-a2f147aa-5157-4fab-b8ea-41226d1981a9`；后继 Overall attempt `ATT-57d24995-f31e-4a1d-8a9d-2e45f81f9593` 为 SUCCEEDED，WorkItem 投影 `basedOnJobAidWorkRevisionRef` 精确等于修订 14，本人重载工作台后已显示最新摘要。内容仍需审查：修订 14 有“需待 SB 颁发后再核”等把 TBD 推成未颁发的措辞，快览的短摘要回退为重复标题，不能宣称质量验收通过。
+- 后继 Turn 15 `RT-987e39c9-93f1-4e1c-9d89-227daf48a5a7` 在解析修订 5 上保存 JobAid 修订 15 `JAWR-a629c885-2400-4f23-8aad-0c489f2a4b45`；其 Overall 幂等请求已于 13:02 `SUCCEEDED`，本人页面显示“对应工作修订 15”。主认识与正文将 `Service Bulletin Available (TBD)` 限定为占位值。逐字段核对仍发现 `otherClassifications.reason` 肯定“本版不构成 AD 强制条件”、适用性及时间线的 `requirementHandling.explanation` 预设“SB 颁发后再核”、下一证据预设未来 References 段；因此 Turn 15 不能作为完整内容更正通过。13:06 已通过本人正常入口提交 Turn 16 `RT-47400604-90d5-4ac7-9abc-3051254fc773`，仅修这些深层残留并请求新工作后更新 Overall；Attempt `ATT-eb56fb66-798e-411f-8432-f091f849a7bb` 13:06 被服务领取且续租，但 13:16 因 `HOSTED_REVIEW_EXECUTION_FAILED:REVIEW_JOBAID_WORK_SCHEMA_INVALID` 主动取消，未保存新工作。现行校验要求 delta `schemaVersion=wiselink.jobaid-problem-work.v3`，通用纠错反馈未明确该字面值；本地已增精确反馈与回归测试，尚未安装，旧历史不改写。
 - 737MAX `WI-3859b827-399e-414a-adbb-e1c694cafd59` 的已完成逐任务授权原有确切来源与完成租约证明，但旧任务缺少浏览器可读完成回执，致后继 Review 误拒。`migrations/0066_completed_auto_work_item_receipt_backfill.sql` 仅从原有 `COMPLETED` 授权、租约证明和一致的 WorkItem 来源绑定补投影；不新增授权。在线执行后只读验证 7/7 已完成授权均有回执，737MAX 本人页面恢复后继入口。CLI 的 `rows_affected=0` 与实际读回不一致，以最终逐项读回为准。
-- 本人已为 737MAX 提交整份问题后继 Turn 1 `RT-abf4c9bc-65eb-4174-8c5d-171421deff07`，明确纠正无据概率/严重度、and/or 与 potentially、FIM 范围及工作级短述，并请求按确切新工作更新 Overall；截至本节记录仍在执行，无新保存结果可宣布。
+- 本人已为 737MAX 提交整份问题后继 Turn 1 `RT-abf4c9bc-65eb-4174-8c5d-171421deff07`，明确纠正无据概率/严重度、and/or 与 potentially、FIM 范围及工作级短述，并请求按确切新工作更新 Overall。Attempt `ATT-cfd56fe5-2224-490f-be1f-ae1d53694286` 已取消，原因 `HOSTED_REVIEW_EXECUTION_FAILED:REVIEW_JOBAID_EVIDENCE_NOT_REGISTERED`；Host 活动记录显示 125 条来源目录、原文片段读取成功、6 次模型请求，提交前证据引用校验未过，没有新工作修订或 Overall。旧工作 62 条已存 evidenceRef 全在本轮目录内，不能据此归因旧引用失效；现有 Host 记录和本机可访问检查点没有具体无效字段，不能盲目重提相同请求。
+- 17c 远端检查点当前无法在本机直接读取，Host DB 也未保存失败候选或具体错误字段；因此不能从上述失败反推出哪个引用无效。本地已为未来同类拒绝在原有权限 0600 的 `candidate-rejection` 检查点增加限长字段路径、确切 evidenceRef、计数及 Turn/Attempt 绑定；不保存候选正文、原文或放宽白名单。定向校验与 Skill 打包合同检查通过，尚未安装到 17c，不能拿它解释已发生的 737MAX 失败。
+- 前端快览 `compactReadingSummary` 已修复标题重复与过程前缀；定向 4/4 测试、前端类型检查通过，提交 `d83baf3518b018e4ffca7f7ef7609319c460036b` 快进推送私有 origin，17b 发布 `7690440633941707740` finished 且精确提交一致。刘轩本人重载旧 787 工作台读回短摘要，显示 TLS 两情景、`Applicability=All 787 Aircraft`、Interim 措施及 SB／装机／合规间隔未知；此为阅读呈现修复，不代替正文准确性验收。
 - 文档解读／翻译入口的选择与持久意图代码已在工作树并通过本地定向验证，尚未提交、发布。它不包含动态文档委托或派发，不能把记录选择当作已受理交付；该权限与运行接线继续开发，发布前按当前 Goal 核对新增范围。
 
 ## 2026-09-28：采用新版 Goal，收敛入口交付与已知错误全链更正
@@ -2334,3 +2337,29 @@ Host release `7686289702877760745` 已 `finished`，精确 `commit_id=d0009e6958
 后端提交 `118903524ca81e40b853bcfdcf951b827c952e82`（父提交 `64f85201f0ab093fe47c5ed1d715f85fd2272585`）和前端提交 `f1cfb43147885d96476fb7acad91c7ff80e1a5e1`（父提交 `118903524ca81e40b853bcfdcf951b827c952e82`）已分别按精确文件范围提交；origin/github 同名开发分支均回读 `f1cfb43147885d96476fb7acad91c7ff80e1a5e1`。Host release `7686300155057933252` 已 `finished`，精确 `commit_id=f1cfb43147885d96476fb7acad91c7ff80e1a5e1`，`error_logs=[]`。
 
 发布后通过已登录外部 Chrome 读取线上生产页面：FTD revision 12 在“改进与复看”准确显示 0 项及“当前已保存工作未单独保存复看条件”；SB revision 16 显示 2 条已保存条件、完整条件正文和各自保存的依据引用标识，并继续标明候选内容未必已经触发或逾期。点击“打开所属工作修订”实际进入同一 SB 事项的 `MWREV-75632e5d-e5f4-4cd2-8ace-a254f99f5874` / revision 16，页面明确说明指定版本不会被最新工作替换。该读回验证已发布读取与准确导航，不证明条件真实触发，也不补齐计划、实施或效果合同。
+
+## 2026-09-28：文档解读与翻译正常受理接线（本地待审，禁止发布）
+
+本地未提交增量将 WorkItem 的持久 `DOCUMENT_DELIVERY_INTENT` 和上传 acquisition 的选项接到 C136 文档发现。`deliveryRef` 只选择 Host 已保存的 WorkItem/acquisition；每次仍重验服务 principal、tenant、actor、DocumentVersion、所选阅读/中文以及原文来源。WorkItem 原文发布只返回 `ORIGINAL_READY`，不再同步受理解读/翻译而阻塞 JobAid。C136 从持久 intent 独立发现缺失的 reading run 或 translation attempt，以稳定 requestId 重试并读回；已创建的任务按现有 run/attempt 状态推进。候选查询只枚举真正选择阅读或中文的 intent，合法 null/NONE 不会挡住后续分发。动态文档委托不能执行换版读取、文档取消、阅读撤回/取消或翻译取消。已有固定文档范围另按原合同。相同 DocumentVersion 的两个 actor 暂不支持：精确 admission 报 409，队列记录告警并继续其他文档候选，不把其一授权转授另一人。
+
+本地 6 套定向 Jest 91/91、server TypeScript、相关服务端 ESLint 和 `git diff --check` 通过。故障回归覆盖原文已发布而文档 admission 存储失败后 JobAid 仍就绪、下一轮 C136 按同一持久请求重试，及阅读修订非零时 Host 读回并幂等复用。以上是构造服务和静态迁移检查，不是实际数据库权限或线上消费者运行证明。
+
+`migrations/0067_document_upload_delivery_authorization.sql` **仅是审查草案，绝不可应用或随当前接线发布**。它拟新增 upload authorization 表、受限注册触发器、actor 范围的 WAITING→ADMITTED 更新，以及收紧 `action_attempt` 上 authenticated 对 `DOCUMENT_DELIVERY_INTENT` 的 INSERT/UPDATE/DELETE 和 TRUNCATE；TRUNCATE 收紧可能影响既有 authenticated 调用，须先核对。当前草案有两个独立 P1 阻断：其一，要求 `dm_document_version.acquisition_id` 等于新 acquisition，合法 `LINKED_EXACT_DOCUMENT_VERSION` 重用既有版本会被拒绝；两次以 actor/tenant/source hash/bytes 核对的例外修改均被 auto-review 以持久授权完整性风险拒绝，未绕过。其二，可信 Host 的 `WorkItem.reserve` 当前也在 authenticated actor 事务直接 INSERT `DOCUMENT_DELIVERY_INTENT`，0067 的 restrictive INSERT 会使所有新建开发事项回滚，含未选文档任务；必须先建立仅 Host 能调用的精确写入合同并证明浏览器不能伪造。上线前还须以真实 PG authenticated/service_role 负例验证 intent 不能伪造、改写、删除或 TRUNCATE，并核对 trigger、RLS、实际 Host DB role 与迁移平台差异。当前不得发布文档接线、安装其消费者或据本地测试宣称正常业务闭环。
+
+## 2026-09-28：C184 Review 修复安装与已知错误后继请求
+
+Review 候选被 Host 拒绝时，C184 在准确 Turn/Attempt 检查点记录有限的字段与引用反馈，并将 schemaVersion 要求交回模型。命令行消费者现复用同一套验证、来源注册和拒绝观察回调，避免 cron 路径跳过反馈。提交依次为 `30c2ea2db`、`9b1522aff`、`f3c697857`、`88645a992`；该批不含尚未发布的文档受理接线。
+
+从精确提交 `88645a992262867652dee7c7a2f1b974ecfb4812` 打包的 `wiselink-research-and-synthesize@r09.c184`，ZIP SHA-256 为 `01f798509edcfb342b3e9bef7d48a1ddcb72caa902efda3b1d5852899038ec8f`，61 文件。17c 上先确认无在途消费者、仅 C136 启用，暂停 C136 并私有备份旧 Skill（`/tmp/wl-c184-install/installed-before-c184.tar.gz`，SHA-256 `49ed51c2230524c4065f1fbe492c04ab9c167a6f33b8b5437c9b950b4b3a8340`）；通过私有应用存储下载、逐文件哈希核对后，使用 OpenClaw 官方 install 更新现有 Skill。安装目录 61/61 哈希一致，目录内 Node 测试 587/587 通过。随后恢复 C136；`cron list --all --json` 读回 16 项中仅 C136 启用。
+
+上传工程师本人从正常“定点更正请求”入口提交旧 787 后继 Review 回合 17（事项版本 7，2026-09-28 14:17；针对 JobAid rev15 深层 SB/AD 无据前提，已勾选必要 Overall），以及 737MAX 后继 Review 回合 2（事项版本 5，14:19；针对无据可能性、严重性与强制属性，已勾选必要 Overall）。两次均读回“执行请求已保存”；本记录不把受理当作新工作、Overall 或 Wiki 更正完成。页面后续读取间歇出现讨论超时并保留旧投影，后继结果需以 Host 持久回执和本人页面的新鲜读回再核对。
+
+## 2026-09-28：C185 Review 摘要配对校验与后继质量复核
+
+C184 在旧 787 回合 17 实际触发两次 JobAid schema 纠错反馈，最终 Host 以 `JOBAID_READING_SUMMARY_PAIR_REQUIRED` 拒绝候选；页面读回回合已取消，旧 JobAid rev15 与 Overall 未被覆盖。原因是 Review 候选只提交 `headline` 或 `listBrief` 其中一项，Host 要求二者同时提供或同时省略。C185 在候选提交前按 Host 同一规则校验：有 previousWork 时允许双项省略并沿用原摘要，首次工作要求双项齐备；不自动补造标题或短述，而在原回合纠错预算内将准确错误反馈模型。该修复提交 `51b0b7104`，版本一致性提交 `e1263f2ff1146274fbcd09ca5863894fc9530a1e`；本地 Skill 全量测试 594/594、定向 ESLint、打包一致性与预提交检查通过。另一个既有 Host 协议测试因 fixture 含未声明 `understanding` 字段在初始化失败，未把它记为本次修复验证通过。
+
+从精确提交 `e1263f2ff1146274fbcd09ca5863894fc9530a1e` 的洁净工作树打包 `wiselink-research-and-synthesize@r09.c185`，ZIP SHA-256 `587ac01531df70ff914131fbdbd3f39865d3abe5f0e3aaec63514ad730ef55e2`，61 文件。17c 上先确认 C136 停用且无在途消费者，备份已装 C184 至 `/tmp/wl-c185-install/installed-before-c185.tar.gz`（SHA-256 `50ec8fe27eb174838052d0063d022ca128e16c5471f3a8bf815bd9702eb58af5`）；经私有应用存储传输后，远端 ZIP、清单及 61 个文件哈希均与打包源一致，使用官方 `openclaw skills install --force` 更新。安装目录 61/61 哈希读回一致；按绝对安装路径运行 Node 测试 589/589，通过且失败 0。随后恢复 C136，17c 控制台读到已启用、其余旧固定任务禁用，并在 15:00–15:03 记录连续四次 `IDLE` 成功。一次额外 CLI 列表查询发生本地 OpenClaw 网关 `1000 normal closure`，因此该次查询不作为启停证据；控制台的启用状态与后续成功周期为实际读回。错误分类和网关稳定性仍需随任务继续观察。
+
+737MAX 正常后继 Review 回合 2 于 14:46:42 保存 JobAid 修订 7；页面读回六个问题正文、工作级 `overview/headline/listBrief` 更新，撤回以生产改进、FIM 和 FTD closed 推导低可能性及无强制义务的合并断言。随后页面从“整体意见仍基于较早工作”转为无该提示，但尚未取得确切 Overall 修订及知识页、检索的独立读回，不能把页面提示消失等同全链更正。质量核对又发现 rev7 风险正文保留“不会达到严重/灾难”与“不能无依据否定严重/灾难”的矛盾、“飞机仍可控”的不足依据，以及把可能性档位和 `0–19` 乘积区间混写。已在当前事项版本 6 同步 Review 上下文后，从正常入口提交回合 3（15:08:39），限定校正这些措辞、生产改进适用范围与工作级过程化标题，勾选必要 Overall；读回“执行请求已保存，等待开始”。
+
+旧 787 未重置任务或重传旧文件；C185 安装后从正常入口提交回合 18（15:04:45，旧版解析 `PRUN-b500ba95-50d4-467a-b380-a090f99afe85`、JobAid rev15），针对先前回合 17 未保存的深层 SB/AD 无据前提，勾选必要 Overall；读回“执行请求已保存，等待开始”。两条新请求仍须核对准确 JobAid/Overall 持久修订、本人资料库与 Wiki、检索及受影响关系。C185 的实际纠错分支是否在回合 18 触发，须以安装后的私有检查点或 Host 回执证明，不能用请求受理代替。
