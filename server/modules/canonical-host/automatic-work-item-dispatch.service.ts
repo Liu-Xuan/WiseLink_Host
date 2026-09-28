@@ -1,6 +1,6 @@
 import { randomUUID } from 'node:crypto';
 
-import { Inject, Injectable, Optional } from '@nestjs/common';
+import { Inject, Injectable, Logger, Optional } from '@nestjs/common';
 
 import type {
   AilyInitialAnalysisStatus,
@@ -36,15 +36,20 @@ import { canonicalHostBareSha256 } from './canonical-host-sha256';
 import { ReviewConversationRepository } from '../review-persistence/review-conversation.repository';
 import { JobAidWorkRepository } from './jobaid-work.repository';
 import { ActionAttemptRepository } from '../action-attempt/action-attempt.repository';
+import { MiaodaHostedDocumentCatalog } from '../document-management/src/hosted/nest/miaoda-hosted-document-catalog';
+import { DocumentWorkRuntimeService } from './document-work-runtime.service';
+import { documentDeliveryRequestId } from './document-delivery-ref';
 
 const CANONICAL_APP_ID = 'app_17bzc551rsg';
 const AUTO_WORK_ITEM_LEASE_MILLISECONDS = 60 * 60 * 1000;
 const REVIEW_DISCOVERY_PAGE_SIZE = 32;
+const DOCUMENT_DISCOVERY_PAGE_SIZE = 100;
 
 export type NextAutoWorkItemResult = AutomaticWorkItemClaimResult;
 
 @Injectable()
 export class AutomaticWorkItemDispatchService {
+  private readonly logger = new Logger(AutomaticWorkItemDispatchService.name);
   constructor(
     private readonly workItems: MiaodaWorkItemRepository,
     private readonly sources: MiaodaDocumentVersionSourceResolver,
@@ -63,6 +68,10 @@ export class AutomaticWorkItemDispatchService {
     private readonly jobAidWork?: JobAidWorkRepository,
     @Optional()
     private readonly attempts?: ActionAttemptRepository,
+    @Optional()
+    private readonly documentCatalog?: MiaodaHostedDocumentCatalog,
+    @Optional()
+    private readonly documentWork?: DocumentWorkRuntimeService,
   ) {}
 
   async nextWorkItem(
@@ -142,8 +151,9 @@ export class AutomaticWorkItemDispatchService {
       };
     }
 
-    if (input?.resumeWorkItemId || process.env.WL_OPENCLAW_SERVICE_SUCCESSOR_REVIEW_ENABLED !== '1')
-      return { status: 'IDLE' };
+    if (input?.resumeWorkItemId) return { status: 'IDLE' };
+    if (process.env.WL_OPENCLAW_SERVICE_SUCCESSOR_REVIEW_ENABLED !== '1')
+      return this.nextDocumentDelivery(scope, input?.documentAfterRef);
     if (!this.reviewConversations || !this.jobAidWork)
       throw new Error('AUTO_WORK_ITEM_REVIEW_DISCOVERY_UNAVAILABLE');
     const subjects = await this.workItems.listCompletedAutoProcessingReviewSubjects({
@@ -220,7 +230,110 @@ export class AutomaticWorkItemDispatchService {
     }
     return subjects.length === REVIEW_DISCOVERY_PAGE_SIZE
       ? { status: 'IDLE', reviewAfterWorkItemId: subjects[subjects.length - 1].authorization.workItemId }
+      : this.nextDocumentDelivery(scope, input?.documentAfterRef);
+  }
+
+  private async nextDocumentDelivery(scope: CanonicalVerifiedAutoWorkItemQueueScope,
+    afterRef?: string):
+    Promise<NextAutoWorkItemResult> {
+    const afterAttemptId = afterRef?.startsWith('attempt:') ? afterRef.slice(8) : undefined;
+    const afterAcquisitionId = afterRef?.startsWith('acquisition:') ? afterRef.slice(12) : undefined;
+    const candidates = afterAcquisitionId ? [] :
+      await this.workItems.listDocumentDeliveryCandidates({
+        tenantId: scope.tenantId, afterAttemptId, limit: DOCUMENT_DISCOVERY_PAGE_SIZE });
+    if (candidates.length && (!this.jobAidWork || !this.serviceScope.authorizeDocumentWork))
+      throw new Error('AUTO_DOCUMENT_SCOPE_UNAVAILABLE');
+    for (const { workItemId, documentVersionId, actorUserId } of candidates) {
+      const deliveryRef = `work-item:${workItemId}`;
+      const intent = await this.jobAidWork.withActorScope(actorUserId, async () =>
+        (await this.workItems.readDocumentDeliveryIntents({
+          tenantId: scope.tenantId, documentVersionId })).find((item) =>
+          item.workItemId === workItemId && item.actorUserId === actorUserId));
+      if (!intent || (!intent.delivery.reading && intent.delivery.translation !== 'ZH_FULL'))
+        throw new Error('AUTO_DOCUMENT_INTENT_MISMATCH');
+      const state = await this.jobAidWork.withActorScope(actorUserId, () =>
+        this.workItems.documentDeliveryDispatchState({
+          tenantId: scope.tenantId, documentVersionId, actorUserId,
+          readingRequestId: documentDeliveryRequestId('reading', deliveryRef),
+          translationRequestId: documentDeliveryRequestId('translation', deliveryRef),
+          readingSelected: intent.delivery.reading,
+          translationSelected: intent.delivery.translation === 'ZH_FULL' }));
+      if (!state.pending && !state.missing) continue;
+      const authorized = await this.authorizeDocumentCandidate(documentVersionId, deliveryRef);
+      if (!authorized) continue;
+      if (authorized.tenantId !== scope.tenantId ||
+          authorized.documentVersionId !== documentVersionId ||
+          authorized.actorUserId !== actorUserId ||
+          authorized.principalId !== scope.principalId)
+        throw new Error('AUTO_DOCUMENT_SCOPE_MISMATCH');
+      if (state.missing) {
+        if (!this.documentWork) throw new Error('AUTO_DOCUMENT_WORK_RUNTIME_UNAVAILABLE');
+        let prepared: Awaited<ReturnType<DocumentWorkRuntimeService['prepareAutomaticWorkItemDelivery']>>;
+        try {
+          prepared = await this.documentWork.prepareAutomaticWorkItemDelivery({
+            workItemId, documentVersionId, actorUserId });
+        } catch (error) {
+          if (!this.skipUnsupportedMultiActor(error, deliveryRef)) throw error;
+          continue;
+        }
+        if (prepared.status === 'ORIGINAL_PREPARING') continue;
+      }
+      return { status: 'DOCUMENT_PENDING', documentVersionId, deliveryRef };
+    }
+    if (candidates.length === DOCUMENT_DISCOVERY_PAGE_SIZE)
+      return { status: 'IDLE', documentAfterRef: `attempt:${candidates[candidates.length - 1].attemptId}` };
+    const uploads = this.documentCatalog
+      ? await this.documentCatalog.listDocumentUploadDeliveryCandidates({
+        tenantId: scope.tenantId, afterAcquisitionId, limit: DOCUMENT_DISCOVERY_PAGE_SIZE }) : [];
+    if (uploads.length && (!this.jobAidWork || !this.serviceScope.authorizeDocumentWork))
+      throw new Error('AUTO_DOCUMENT_SCOPE_UNAVAILABLE');
+    for (const upload of uploads) {
+      const { documentVersionId, actorUserId } = upload;
+      const deliveryRef = `acquisition:${upload.acquisitionId}`;
+      const authorized = await this.authorizeDocumentCandidate(documentVersionId, deliveryRef);
+      if (!authorized) continue;
+      if (authorized.tenantId !== scope.tenantId ||
+          authorized.documentVersionId !== documentVersionId ||
+          authorized.actorUserId !== actorUserId ||
+          authorized.principalId !== scope.principalId)
+        throw new Error('AUTO_DOCUMENT_SCOPE_MISMATCH');
+      if (upload.status === 'WAITING') {
+        if (!this.documentWork) throw new Error('AUTO_DOCUMENT_UPLOAD_RUNTIME_UNAVAILABLE');
+        try { await this.documentWork.prepareAutomaticUpload(upload); }
+        catch (error) {
+          if (!this.skipUnsupportedMultiActor(error, deliveryRef)) throw error;
+          continue;
+        }
+        return { status: 'DOCUMENT_PENDING', documentVersionId, deliveryRef };
+      }
+      const pending = await this.jobAidWork.withActorScope(actorUserId, () =>
+        this.workItems.documentDeliveryDispatchState({
+          tenantId: scope.tenantId, documentVersionId, actorUserId,
+          readingRequestId: documentDeliveryRequestId('reading', deliveryRef),
+          translationRequestId: documentDeliveryRequestId('translation', deliveryRef),
+          readingSelected: false, translationSelected: false }));
+      if (pending.pending) return { status: 'DOCUMENT_PENDING', documentVersionId, deliveryRef };
+    }
+    return uploads.length === DOCUMENT_DISCOVERY_PAGE_SIZE
+      ? { status: 'IDLE', documentAfterRef: `acquisition:${uploads[uploads.length - 1].acquisitionId}` }
       : { status: 'IDLE' };
+  }
+
+  private async authorizeDocumentCandidate(documentVersionId: string, deliveryRef: string) {
+    try {
+      return await this.serviceScope.authorizeDocumentWork!({
+        documentVersionId, deliveryRef, purpose: 'SOURCE' });
+    } catch (error) {
+      if (!this.skipUnsupportedMultiActor(error, deliveryRef)) throw error;
+      return null;
+    }
+  }
+
+  private skipUnsupportedMultiActor(error: unknown, deliveryRef: string): boolean {
+    if (!(error instanceof Error) || error.message !== 'DOCUMENT_DELIVERY_MULTI_ACTOR_UNSUPPORTED')
+      return false;
+    this.logger.warn(`Document delivery ${deliveryRef} has multiple authorized actors; admission remains blocked.`);
+    return true;
   }
 
   async acknowledgeWorkItem(
@@ -618,14 +731,17 @@ function assertNextWorkItemInput(
     !input ||
     typeof input !== 'object' ||
     Array.isArray(input) ||
-    Object.keys(input).some(key => !['resumeWorkItemId', 'reviewAfterWorkItemId'].includes(key)) ||
+    Object.keys(input).some(key => !['resumeWorkItemId', 'reviewAfterWorkItemId', 'documentAfterRef'].includes(key)) ||
     Object.keys(input).length !== 1 ||
     (Object.prototype.hasOwnProperty.call(input, 'resumeWorkItemId') &&
       (typeof input.resumeWorkItemId !== 'string' ||
         !/^WI-[A-Za-z0-9_-]{1,93}$/u.test(input.resumeWorkItemId))) ||
     (Object.prototype.hasOwnProperty.call(input, 'reviewAfterWorkItemId') &&
       (typeof input.reviewAfterWorkItemId !== 'string' ||
-        !/^WI-[A-Za-z0-9_-]{1,93}$/u.test(input.reviewAfterWorkItemId)))
+        !/^WI-[A-Za-z0-9_-]{1,93}$/u.test(input.reviewAfterWorkItemId))) ||
+    (Object.prototype.hasOwnProperty.call(input, 'documentAfterRef') &&
+      (typeof input.documentAfterRef !== 'string' ||
+        !/^(?:attempt|acquisition):[A-Za-z0-9_-]{1,96}$/u.test(input.documentAfterRef)))
   ) {
     throw Object.assign(new Error('AUTO_WORK_ITEM_NEXT_INPUT_INVALID'), {
       code: 'AUTO_WORK_ITEM_NEXT_INPUT_INVALID',

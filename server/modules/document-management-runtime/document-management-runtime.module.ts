@@ -7,11 +7,12 @@ import {
 import { OrdinaryDocumentManagementAuthorizer } from './ordinary-document-management-authorizer';
 import { WorkItemRuntimeModule } from '../work-item/work-item-runtime.module';
 import { EngineeringMatterModule } from '../canonical-host/engineering-matter.module';
+import { IdentityModule } from '../identity/identity.module';
 
 @Module({
   imports: [
     DocumentManagementHostedModule.register({
-      imports: [WorkItemRuntimeModule, EngineeringMatterModule],
+      imports: [WorkItemRuntimeModule, EngineeringMatterModule, IdentityModule],
       authorizerProvider: {
         provide: DOCUMENT_MANAGEMENT_INGEST_AUTHORIZER,
         useClass: OrdinaryDocumentManagementAuthorizer,

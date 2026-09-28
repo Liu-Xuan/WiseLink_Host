@@ -3,6 +3,7 @@ import { DocumentWorkRuntimeService } from '../../server/modules/canonical-host/
 import { buildDocumentSemanticMap } from '../../server/modules/document-management/src/hosted/nest/document-semantic-map';
 import { GENERIC_SEMANTIC_PROFILE } from '../../server/modules/document-management/src/hosted/nest/document-semantic-profile';
 import { originalFixture } from './document-parsing/fixtures/document-original.fixture';
+import { documentDeliveryRequestId } from '../../server/modules/canonical-host/document-delivery-ref';
 
 function fixture() {
   const automaticScope = { workItemId: 'WI', appId: 'app_17bzc551rsg', tenantId: 'tenant', principalId: 'service',
@@ -24,10 +25,23 @@ function fixture() {
   const leases = { claim: jest.fn().mockResolvedValue(fence), renew: jest.fn().mockResolvedValue(true),
     release: jest.fn().mockResolvedValue(true), cancel: jest.fn().mockResolvedValue(true) };
   const reader = { readDocumentOriginal: parsing.loadPublished };
-  const semantics = { read: jest.fn().mockResolvedValue(null) };
+  const semantics = { read: jest.fn().mockResolvedValue(null),
+    ensure: jest.fn().mockResolvedValue({ semanticRevision: 1 }) };
   const revisions = { read: jest.fn().mockResolvedValue({}) };
-  const service = new DocumentWorkRuntimeService(authorization as never, actors as never, parsing as never, leases as never, reader as never, {} as never, semantics as never, revisions as never);
-  return { service, authorization, actors, parsing, leases, fence, semantics, revisions, automaticScope };
+  const deliveryWorkItems = { readDocumentDeliveryIntents: jest.fn().mockResolvedValue([]) };
+  const deliveryCatalog = { readDocumentUploadDeliveryIntents: jest.fn().mockResolvedValue([]),
+    readOwnedAcquisitionVersionBinding: jest.fn().mockResolvedValue(true),
+    readOriginalRegistryIdentity: jest.fn().mockResolvedValue({
+      version: { sourceArtifactId: 'ART' }, source: { sha256: 'a'.repeat(64), byteLength: 123 },
+    }),
+    markDocumentUploadDeliveryAdmitted: jest.fn() };
+  const readingRuntime = { run: jest.fn() };
+  const translationRuntime = { run: jest.fn() };
+  const service = new DocumentWorkRuntimeService(authorization as never, actors as never, parsing as never, leases as never, reader as never, {} as never, semantics as never, revisions as never,
+    deliveryWorkItems as never, deliveryCatalog as never,
+    readingRuntime as never, translationRuntime as never);
+  return { service, authorization, actors, parsing, leases, fence, semantics, revisions, automaticScope,
+    deliveryWorkItems, deliveryCatalog, readingRuntime, translationRuntime };
 }
 
 describe('authorized document step runtime', () => {
@@ -41,12 +55,56 @@ describe('authorized document step runtime', () => {
       tenantId: 'tenant', actorUserId: 'actor', documentVersionId }));
     await f.service.readRevision(input);
     expect(f.authorization.authorizeDocumentWork.mock.calls.map(call => call[0])).toEqual([
-      { documentVersionId: 'old' }, { documentVersionId: 'new' }]);
+      { documentVersionId: 'old', purpose: 'REVISION' },
+      { documentVersionId: 'new', purpose: 'REVISION' }]);
     expect(f.revisions.read).toHaveBeenCalledWith(input, { tenantId: 'tenant', actorUserId: 'actor', roles: [] });
     f.authorization.authorizeDocumentWork.mockImplementation(async ({ documentVersionId }) => ({
       tenantId: 'tenant', actorUserId: documentVersionId, documentVersionId }));
     await expect(f.service.readRevision(input)).rejects.toThrow('AUTHORIZATION_SCOPE_MISMATCH');
     expect(f.revisions.read).toHaveBeenCalledTimes(1);
+  });
+
+  it('admits a selected upload only after exact acquisition/source readback', async () => {
+    const f = fixture();
+    const input = { acquisitionId: 'ACQ-one', documentVersionId: 'DV', actorUserId: 'actor' };
+    f.deliveryCatalog.readDocumentUploadDeliveryIntents.mockResolvedValue([{
+      ...input, delivery: { reading: true, translation: 'NONE' },
+    }]);
+    f.parsing.status.mockResolvedValue({ documentVersionId: 'DV', latestRun: {
+      parseRunId: 'run', status: 'PUBLISHED',
+    } });
+    f.parsing.loadPublished.mockResolvedValue({ run: { status: 'PUBLISHED' },
+      original: { binding: { documentVersionId: 'DV', parseRunId: 'run' } } });
+    await expect(f.service.prepareAutomaticUpload(input)).resolves.toMatchObject({
+      status: 'ADMITTED', documentVersionId: 'DV', parseRunId: 'run',
+    });
+    expect(f.deliveryCatalog.readOwnedAcquisitionVersionBinding).toHaveBeenCalledWith(
+      expect.objectContaining({ ...input, tenantId: 'tenant' }));
+    expect(f.readingRuntime.run).toHaveBeenCalledWith(expect.objectContaining({
+      action: 'READING_BEGIN', deliveryRef: 'acquisition:ACQ-one',
+      requestId: documentDeliveryRequestId('reading', 'acquisition:ACQ-one'),
+    }));
+    expect(f.translationRuntime.run).not.toHaveBeenCalled();
+    expect(f.deliveryCatalog.markDocumentUploadDeliveryAdmitted).toHaveBeenCalledWith(input);
+    await f.service.prepareAutomaticUpload(input);
+    expect(f.readingRuntime.run.mock.calls[0][0].requestId)
+      .toBe(f.readingRuntime.run.mock.calls[1][0].requestId);
+    f.deliveryCatalog.readOwnedAcquisitionVersionBinding.mockResolvedValue(false);
+    await expect(f.service.prepareAutomaticUpload(input))
+      .rejects.toThrow('DOCUMENT_UPLOAD_DELIVERY_SOURCE_DENIED');
+    expect(f.deliveryCatalog.markDocumentUploadDeliveryAdmitted).toHaveBeenCalledTimes(2);
+  });
+
+  it('asks for separate cancellation authority before touching a document run', async () => {
+    const f = fixture();
+    f.authorization.authorizeDocumentWork.mockRejectedValue(new Error('DYNAMIC_CANCEL_DENIED'));
+    await expect(f.service.run({ action: 'CANCEL', documentVersionId: 'DV', parseRunId: 'run' }))
+      .rejects.toThrow('DYNAMIC_CANCEL_DENIED');
+    expect(f.authorization.authorizeDocumentWork).toHaveBeenCalledWith({
+      documentVersionId: 'DV', deliveryRef: undefined, purpose: 'CANCEL',
+    });
+    expect(f.parsing.status).not.toHaveBeenCalled();
+    expect(f.leases.cancel).not.toHaveBeenCalled();
   });
 
   it('reads exact published original units with coverage and refuses identity drift', async () => {
@@ -161,6 +219,61 @@ describe('authorized document step runtime', () => {
 
 
 describe('automatic WorkItem original preparation', () => {
+  it('publishes exact original independently, then admits selected work through C136', async () => {
+    const f = fixture();
+    const original = originalFixture();
+    Object.assign(original.binding, { documentVersionId: 'DV', parseRunId: 'run',
+      sourceArtifactId: 'ART', sourceSha256: 'a'.repeat(64), sourceByteLength: 123 });
+    f.parsing.status.mockResolvedValue({ documentVersionId: 'DV', latestRun: {
+      parseRunId: 'run', status: 'PUBLISHED' } });
+    f.parsing.loadPublished.mockResolvedValue({ original,
+      run: { parseRunId: 'run', status: 'PUBLISHED' } });
+    f.deliveryWorkItems.readDocumentDeliveryIntents.mockResolvedValue([{
+      workItemId: 'WI', requestId: 'REQ-one', actorUserId: 'actor',
+      documentVersionId: 'DV', sourceArtifactId: 'ART', sourceFileSha256: 'a'.repeat(64),
+      sourceByteLength: 123, delivery: { reading: true, translation: 'NONE' },
+    }]);
+    f.readingRuntime.run.mockResolvedValue({ runRef: 'DRR-one', status: 'QUEUED' });
+
+    await expect(f.service.prepareAutomaticOriginal('WI')).resolves.toMatchObject({ status: 'ORIGINAL_READY' });
+    expect(f.readingRuntime.run).not.toHaveBeenCalled();
+    await expect(f.service.prepareAutomaticWorkItemDelivery({ workItemId: 'WI', documentVersionId: 'DV',
+      actorUserId: 'actor' })).resolves.toMatchObject({ status: 'ADMITTED',
+      reading: { runRef: 'DRR-one' }, translation: null });
+    expect(f.readingRuntime.run).toHaveBeenCalledWith({ action: 'READING_BEGIN',
+      documentVersionId: 'DV', deliveryRef: 'work-item:WI', parseRunId: 'run', semanticRevision: 1,
+      requestId: documentDeliveryRequestId('reading', 'work-item:WI'), expectedRevision: 0 });
+    expect(f.translationRuntime.run).not.toHaveBeenCalled();
+  });
+
+  it('keeps the published JobAid path ready when admission fails, and retries the durable request', async () => {
+    const f = fixture();
+    const original = originalFixture();
+    Object.assign(original.binding, { documentVersionId: 'DV', parseRunId: 'run',
+      sourceArtifactId: 'ART', sourceSha256: 'a'.repeat(64), sourceByteLength: 123 });
+    f.parsing.status.mockResolvedValue({ documentVersionId: 'DV', latestRun: {
+      parseRunId: 'run', status: 'PUBLISHED' } });
+    f.parsing.loadPublished.mockResolvedValue({ original,
+      run: { parseRunId: 'run', status: 'PUBLISHED' } });
+    f.deliveryWorkItems.readDocumentDeliveryIntents.mockResolvedValue([{
+      workItemId: 'WI', requestId: 'REQ-one', actorUserId: 'actor', documentVersionId: 'DV',
+      sourceArtifactId: 'ART', sourceFileSha256: 'a'.repeat(64), sourceByteLength: 123,
+      delivery: { reading: true, translation: 'ZH_FULL' },
+    }]);
+    f.readingRuntime.run.mockResolvedValue({ runRef: 'DRR-one', status: 'QUEUED' });
+    f.translationRuntime.run.mockRejectedValueOnce(new Error('ADMISSION_STORAGE_UNAVAILABLE'))
+      .mockResolvedValue({ status: 'QUEUED' });
+    await expect(f.service.prepareAutomaticOriginal('WI')).resolves.toMatchObject({ status: 'ORIGINAL_READY' });
+    await expect(f.service.prepareAutomaticWorkItemDelivery({ workItemId: 'WI', documentVersionId: 'DV',
+      actorUserId: 'actor' })).rejects.toThrow('ADMISSION_STORAGE_UNAVAILABLE');
+    await expect(f.service.prepareAutomaticWorkItemDelivery({ workItemId: 'WI', documentVersionId: 'DV',
+      actorUserId: 'actor' })).resolves.toMatchObject({ status: 'ADMITTED' });
+    expect(f.readingRuntime.run.mock.calls[0][0].requestId)
+      .toBe(f.readingRuntime.run.mock.calls[1][0].requestId);
+    expect(f.translationRuntime.run.mock.calls[0][0].requestId)
+      .toBe(f.translationRuntime.run.mock.calls[1][0].requestId);
+  });
+
   it('reserves one stable parse request under the queue owner and source fence', async () => {
     const f = fixture();
     f.parsing.status.mockResolvedValue({ documentVersionId: 'DV', latestRun: null });

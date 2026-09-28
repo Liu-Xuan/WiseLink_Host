@@ -169,6 +169,20 @@ function fixture() {
 }
 
 describe('exact-byte reuse across the date-to-business-revision transition', () => {
+  it('stores a document upload delivery choice in its acquisition and replay scope', async () => {
+    const f = fixture();
+    const documentDeliveryIntent = { reading: true, translation: 'ZH_FULL' };
+    await f.core.ingestFileServiceSelection({
+      ...request,
+      descriptor: { documentDeliveryIntent },
+    }, context);
+    expect(f.state().acquisition?.sourceDescriptor).toMatchObject({
+      documentDeliveryIntent,
+    });
+    expect(f.catalog.findIngestionByIdempotency).toHaveBeenCalledWith(
+      expect.objectContaining({ documentDeliveryIntent }),
+    );
+  });
   it('reuses the actual legacy ISSUE 001 publication without changing its DATE key or immutable IDs', async () => {
     const f = fixture();
     const before = structuredClone(f.version);

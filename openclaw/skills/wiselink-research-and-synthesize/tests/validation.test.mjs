@@ -7413,7 +7413,7 @@ test('source-read JobAid Review makes one compact correction after a proven empt
     jobAidWorkingDelta: { schemaVersion: 'wiselink.jobaid-problem-work.v3',
       issuePatches: [{ issueKey: 'existing', body: '已核对原文。[[source:page1]]' }],
       unchangedIssueKeys: ['other'], roundCompletion: 'COMPLETE_WITH_OPEN_QUESTIONS',
-      completionReason: '保留原完成范围' } };
+      completionReason: '保留原完成范围', changeSummary: '核对原文并修正既有问题' } };
   const result = await invokeReviewWithTransport({ input: {
     availableSourceRefIds: ['page1'],
     context: { purpose: 'UPDATE_ASSESSMENT', problemAssessment: {
@@ -7453,6 +7453,7 @@ test('source-read JobAid Review makes one compact correction after a proven empt
     assert.equal(body.tool_choice, 'required');
     assert.equal(body.tools[0].function.name, 'return_wiselink_review_candidate');
     assert.ok(body.tools[0].function.parameters.properties.jobAidWorkingDelta.properties.issuePatches);
+    assert.deepEqual(body.tools[0].function.parameters.properties.jobAidWorkingDelta.required, ['schemaVersion', 'completionReason', 'changeSummary']);
     const correction = body.messages.at(-1).content;
     assert.match(correction, /jobAidWorkingDelta\.issuePatches/u);
     assert.match(correction, /"existing","other"/u);
@@ -7471,6 +7472,50 @@ test('source-read JobAid Review makes one compact correction after a proven empt
   assert.equal(requests, 3);
   assert.equal(validations, 1);
   assert.equal(result.output.answer, candidate.answer);
+});
+
+test('JobAid Review corrects missing completion reason and change summary before save', async () => {
+  let requests = 0;
+  let validations = 0;
+  const errors = [];
+  const work = { schemaVersion: 'wiselink.jobaid-problem-work.v3', issues: [],
+    roundCompletion: 'COMPLETE_WITH_OPEN_QUESTIONS' };
+  const result = await invokeReviewWithTransport({ input: { context: { purpose: 'UPDATE_ASSESSMENT',
+    problemAssessment: { previousWork: { content: { issues: [],
+      completionReason: '保留原完成范围' } } } } } }, {
+    gatewayUrl: 'https://official.invalid', gatewayToken: 'fixture-only',
+    configuredModelVersion: 'fixture/provider',
+    validateCandidate: async candidate => {
+      validations++;
+      const delta = candidate.jobAidWorkingDelta;
+      if (!delta.completionReason) throw new Error('REVIEW_JOBAID_COMPLETIONREASON_REQUIRED');
+      if (!delta.changeSummary) throw new Error('REVIEW_JOBAID_CHANGESUMMARY_REQUIRED');
+    },
+    observeCandidateRejection: event => { errors.push(event.errorCode); },
+  }, { requestGateway: async (_url, init) => {
+    requests++;
+    const body = JSON.parse(init.body);
+    assert.deepEqual(body.tools[0].function.parameters.properties.jobAidWorkingDelta.required,
+      ['schemaVersion', 'completionReason', 'changeSummary']);
+    if (requests > 1) {
+      const feedback = JSON.parse(body.messages.at(-1).content);
+      assert.equal(feedback.candidateAccepted, false);
+      assert.match(feedback.instruction, requests === 2 ? /completionReason/u : /changeSummary/u);
+    }
+    const delta = { ...work,
+      ...(requests >= 2 ? { completionReason: '保留原完成范围' } : {}),
+      ...(requests >= 3 ? { changeSummary: '撤回无据判断' } : {}) };
+    return Response.json({ choices: [{ message: { content: null, tool_calls: [{
+      id: `candidate-${requests}`, type: 'function', function: {
+        name: 'return_wiselink_review_candidate',
+        arguments: JSON.stringify({ answer: '核对原文后修正', jobAidWorkingDelta: delta }),
+      },
+    }] } }] });
+  } });
+  assert.equal(requests, 3);
+  assert.equal(validations, 3);
+  assert.deepEqual(errors, ['REVIEW_JOBAID_COMPLETIONREASON_REQUIRED', 'REVIEW_JOBAID_CHANGESUMMARY_REQUIRED']);
+  assert.equal(result.output.jobAidWorkingDelta.changeSummary, '撤回无据判断');
 });
 
 test('source-read JobAid Review stops after a second incomplete response', async () => {

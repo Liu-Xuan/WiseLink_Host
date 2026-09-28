@@ -4,7 +4,11 @@ import type { DocumentLibraryUploadRequest } from '@shared/api.interface';
 import { Button } from '@client/src/components/ui/button';
 import { uploadFile } from '@client/src/components/business-ui/api/files/service';
 import { createRequestCorrelationId } from '@client/src/utils/request-correlation-id';
-import { getCanonicalHostClientSessionGeneration } from '@client/src/api/canonical-host';
+import { getCanonicalHostClientSessionGeneration, requireOfficialOauthSession } from '@client/src/api/canonical-host';
+import {
+  DocumentDeliveryChoice,
+  type DocumentDeliveryChoiceValue,
+} from './DocumentDeliveryChoice';
 
 interface DocumentUploadPickerProps {
   disabled: boolean;
@@ -19,6 +23,13 @@ export function DocumentUploadPicker({
 }: DocumentUploadPickerProps) {
   const [file, setFile] = useState<File | null>(null);
   const [requestId, setRequestId] = useState('');
+  const [documentDelivery, setDocumentDelivery] =
+    useState<DocumentDeliveryChoiceValue>({
+      reading: false,
+      translation: 'NONE',
+    });
+  const [submittedDelivery, setSubmittedDelivery] =
+    useState<DocumentDeliveryChoiceValue | null>(null);
   const [selection, setSelection] = useState<
     DocumentLibraryUploadRequest['selection'] | null
   >(null);
@@ -47,6 +58,8 @@ export function DocumentUploadPicker({
       if (inFlight.current) return;
       onReset();
       setSelection(null);
+      setSubmittedDelivery(null);
+      setDocumentDelivery({ reading: false, translation: 'NONE' });
       setPhase('idle');
       const next = files[0];
       if (
@@ -74,6 +87,8 @@ export function DocumentUploadPicker({
       generation === getCanonicalHostClientSessionGeneration();
     setError(null);
     try {
+      await requireOfficialOauthSession();
+      if (!current()) return;
       let selected = selection;
       if (!selected) {
         setPhase('uploading');
@@ -90,7 +105,13 @@ export function DocumentUploadPicker({
         setSelection(selected);
       }
       setPhase('registering');
-      await onSubmit({ requestId, selection: selected });
+      const requestedDelivery = submittedDelivery ?? documentDelivery;
+      setSubmittedDelivery(requestedDelivery);
+      await onSubmit({
+        requestId,
+        selection: selected,
+        documentDelivery: requestedDelivery,
+      });
       if (current()) setPhase('received');
     } catch (reason: unknown) {
       if (!current()) return;
@@ -111,8 +132,32 @@ export function DocumentUploadPicker({
       >
         <input {...getInputProps()} aria-label="选择资料库 PDF" />
         <strong>{file ? file.name : '选择或拖入 PDF'}</strong>
-        <p>仅上传并登记到文档管理；不创建评估任务。原件不会被覆盖。</p>
+        <p>
+          默认只保存并登记原件；下方可另选文件解读和中文翻译，不创建评估任务。
+        </p>
       </div>
+      <DocumentDeliveryChoice
+        idPrefix="library-document-delivery"
+        context="library"
+        value={submittedDelivery ?? documentDelivery}
+        onChange={setDocumentDelivery}
+        disabled={
+          disabled || busy || submittedDelivery !== null || phase === 'received'
+        }
+      />
+      {submittedDelivery && phase === 'failed' ? (
+        <p className="library-classification-note">
+          同一次登记请求保留原阅读选择；更换 PDF 可发起新请求。
+        </p>
+      ) : null}
+      {submittedDelivery &&
+      phase === 'received' &&
+      (submittedDelivery.reading ||
+        submittedDelivery.translation === 'ZH_FULL') ? (
+        <p className="library-classification-note">
+          所选阅读服务已随登记请求提交；请在文档页核对实际受理和交付。
+        </p>
+      ) : null}
       <div className="library-grouping-controls">
         <Button
           disabled={disabled || busy || !file || phase === 'received'}
@@ -125,7 +170,7 @@ export function DocumentUploadPicker({
             : phase === 'registering'
               ? '正在识别与登记…'
               : phase === 'received'
-                ? '已取得处理回执'
+                ? '已取得登记回执'
                 : selection
                   ? '重试同一次登记'
                   : '上传并登记文档'}

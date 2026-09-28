@@ -3,8 +3,11 @@ import {
   Controller,
   Get,
   Header,
+  HttpException,
+  HttpStatus,
   StreamableFile,
   Param,
+  Optional,
   Post,
   Req,
   Query,
@@ -18,6 +21,7 @@ import {
   ProductionMiaodaBrowserObjectIngressGuard,
 } from '../../../../work-item/production-miaoda-browser-ingress';
 import { DocumentManagementHostedService } from './document-management-hosted.service';
+import { SessionResolver } from '../../../../identity/session-resolver.service';
 
 export function contextFromRequest(request: Request) {
   const user = request.userContext;
@@ -45,7 +49,21 @@ export function contextFromRequest(request: Request) {
 // cannot follow DynamicModule metadata.
 // eslint-disable-next-line @darraghor/nestjs-typed/injectable-should-be-provided
 export class DocumentManagementHostedController {
-  constructor(private readonly service: DocumentManagementHostedService) {}
+  constructor(private readonly service: DocumentManagementHostedService,
+    @Optional() private readonly sessions?: SessionResolver) {}
+
+  private withUploadSession<T>(request: Request, operation: () => Promise<T>): Promise<T> {
+    if (!this.sessions) throw new Error('VERIFIED_SQL_CONTEXT_UNAVAILABLE');
+    return this.sessions.withRequestSession(request, async (session) => {
+      if (!session) {
+        throw new HttpException(
+          { code: 'SESSION_REQUIRED', statusCode: 401 },
+          HttpStatus.UNAUTHORIZED,
+        );
+      }
+      return operation();
+    });
+  }
 
   @Post('ingestions/file-service')
   ingestFileServiceSelection(@Body() body: unknown, @Req() request: Request) {
@@ -60,19 +78,22 @@ export class DocumentManagementHostedController {
   @Post('uploads/file-service')
   ingestDocumentLibraryUpload(@Body() body: unknown, @Req() request: Request) {
     assertProductionMiaodaBrowserIdentityAvailable(request.userContext);
-    return this.service.ingestDocumentLibraryUpload(body, contextFromRequest(request));
+    return this.withUploadSession(request, () =>
+      this.service.ingestDocumentLibraryUpload(body, contextFromRequest(request)));
   }
 
   @Post('uploads/ingress-preflights/:preflightId/import-historical')
   confirmUploadedHistoricalImport(@Param('preflightId') preflightId: string, @Body() body: unknown, @Req() request: Request) {
     assertProductionMiaodaBrowserIdentityAvailable(request.userContext);
-    return this.service.confirmUploadedHistoricalImport(preflightId, body, contextFromRequest(request));
+    return this.withUploadSession(request, () =>
+      this.service.confirmUploadedHistoricalImport(preflightId, body, contextFromRequest(request)));
   }
 
   @Post('uploads/ingress-preflights/:preflightId/refresh-historical')
   refreshUploadedHistoricalImport(@Param('preflightId') preflightId: string, @Req() request: Request) {
     assertProductionMiaodaBrowserIdentityAvailable(request.userContext);
-    return this.service.refreshUploadedHistoricalImport(preflightId, contextFromRequest(request));
+    return this.withUploadSession(request, () =>
+      this.service.refreshUploadedHistoricalImport(preflightId, contextFromRequest(request)));
   }
 
   @Post('ingress-preflights/:preflightId/import-historical')

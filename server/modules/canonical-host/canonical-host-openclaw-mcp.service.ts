@@ -250,9 +250,11 @@ export class CanonicalHostOpenClawMcpService {
       title: '推进已授权的文档原文步骤',
       description: 'STATUS读取精确文档状态及已明确受理的活动候选请求；STEP推进原文解析，INDEX只组织原文。ACTIVITY_BEGIN显式受理独立来源声明候选，CLAIM/READ/HEARTBEAT/SAVE/FAIL/CANCEL管理其读取与保存；模型由获授权Hosted生产者调用，Host保留准确来源、租约和版本校验。候选不是正式采用。',
       inputSchema: z.discriminatedUnion('action', [
-        z.strictObject({ action: z.literal('STATUS'), documentVersionId: z.string().trim().min(1).max(96) }),
+        z.strictObject({ action: z.literal('STATUS'), documentVersionId: z.string().trim().min(1).max(96),
+          deliveryRef: z.string().regex(/^(?:work-item:WI(?:-[A-Za-z0-9_-]{1,93})?|acquisition:[A-Za-z0-9_-]{1,96})$/u).optional() }),
         z.strictObject({ action: z.enum(['STEP', 'CANCEL', 'INDEX']), documentVersionId: z.string().trim().min(1).max(96),
-          parseRunId: z.string().trim().min(1).max(96) }),
+          parseRunId: z.string().trim().min(1).max(96),
+          deliveryRef: z.string().regex(/^(?:work-item:WI(?:-[A-Za-z0-9_-]{1,93})?|acquisition:[A-Za-z0-9_-]{1,96})$/u).optional() }),
         ...documentActivityActionSchemas,
       ]),
     }, async input => {
@@ -272,6 +274,7 @@ export class CanonicalHostOpenClawMcpService {
       title: '读取确切版本原文',
       description: '按documentVersionId和parseRunId重新校验来源授权，返回有界完整原文单元、真实定位和覆盖限制。提供compareWith、semanticRevision和roleKey时读取同family两版说明及所选文本比较；该模式不接受分页或sectionId。读取不代表已评估全文、版本相邻或正式采用。',
       inputSchema: z.strictObject({ documentVersionId: z.string().trim().min(1).max(96),
+        deliveryRef: z.string().regex(/^(?:work-item:WI(?:-[A-Za-z0-9_-]{1,93})?|acquisition:[A-Za-z0-9_-]{1,96})$/u).optional(),
         parseRunId: z.string().trim().min(1).max(96), offset: z.number().int().min(0).optional(),
         limit: z.number().int().min(1).max(50).optional(),
         semanticRevision: z.number().int().min(1).optional(), sectionId: z.string().min(1).max(160).optional(),
@@ -280,6 +283,7 @@ export class CanonicalHostOpenClawMcpService {
         roleKey: z.string().regex(/^[A-Za-z0-9_.-]{1,120}$/).optional() }),
     }, async input => {
       if (input.compareWith) {
+        if (input.deliveryRef) throw new Error('DOCUMENT_REVISION_DELIVERY_SCOPE_DENIED');
         if (input.semanticRevision === undefined || !input.roleKey || input.sectionId !== undefined ||
           input.offset !== undefined || input.limit !== undefined) throw new Error('DOCUMENT_REVISION_READING_SELECTION_INVALID');
         return textResult(await this.documentWork!.readRevision({ before: input.compareWith,
@@ -295,10 +299,13 @@ export class CanonicalHostOpenClawMcpService {
       description: '以确切DV/parseRun为主体使用现有Translation V2和ActionAttempt，每次执行一个官方插件步骤；没有WorkItem或工程模型前置。',
       inputSchema: z.discriminatedUnion('action', [
         z.strictObject({ action: z.literal('START'), documentVersionId: z.string().min(1).max(96),
-          parseRunId: z.string().min(1).max(96), requestId: z.string().min(1).max(96) }),
-        z.strictObject({ action: z.literal('STATUS'), documentVersionId: z.string().min(1).max(96), parseRunId: z.string().min(1).max(96) }),
+          parseRunId: z.string().min(1).max(96), requestId: z.string().min(1).max(96),
+          deliveryRef: z.string().regex(/^(?:work-item:WI(?:-[A-Za-z0-9_-]{1,93})?|acquisition:[A-Za-z0-9_-]{1,96})$/u).optional() }),
+        z.strictObject({ action: z.literal('STATUS'), documentVersionId: z.string().min(1).max(96), parseRunId: z.string().min(1).max(96),
+          deliveryRef: z.string().regex(/^(?:work-item:WI(?:-[A-Za-z0-9_-]{1,93})?|acquisition:[A-Za-z0-9_-]{1,96})$/u).optional() }),
         z.strictObject({ action: z.enum(['STEP','CANCEL']), documentVersionId: z.string().min(1).max(96),
-          parseRunId: z.string().min(1).max(96), attemptRef: z.string().min(1).max(128) }),
+          parseRunId: z.string().min(1).max(96), attemptRef: z.string().min(1).max(128),
+          deliveryRef: z.string().regex(/^(?:work-item:WI(?:-[A-Za-z0-9_-]{1,93})?|acquisition:[A-Za-z0-9_-]{1,96})$/u).optional() }),
       ]),
     }, async input => textResult(await this.documentTranslation!.run(input)));
 

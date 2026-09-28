@@ -97,6 +97,8 @@ export interface CanonicalServiceScopeAuthorizationPort {
   assertAutoWorkItemQueueTransport(): Promise<void>;
   authorizeDocumentWork?(input: {
     documentVersionId: string;
+    deliveryRef?: string;
+    purpose?: 'SOURCE' | 'READING' | 'TRANSLATION' | 'ACTIVITY' | 'REVISION' | 'CANCEL';
   }): Promise<CanonicalVerifiedDocumentWorkScope>;
   authorizeOpenClawMatterRequest?(input: {
     matterId: string;

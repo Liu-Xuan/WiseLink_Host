@@ -38,6 +38,30 @@ describe('canonical hosted development-run input', () => {
     });
   });
 
+  it('keeps omitted delivery legacy and validates an explicit choice', () => {
+    const base = {
+      selection,
+      developmentRunToken: '7c9e6679-7425-40de-944b-e07fc1f90ae7',
+    };
+    expect(developmentRunBody(base).documentDelivery).toBeUndefined();
+    expect(developmentRunBody({
+      ...base,
+      documentDelivery: { reading: true, translation: 'ZH_FULL' },
+    }).documentDelivery).toEqual({ reading: true, translation: 'ZH_FULL' });
+    for (const invalid of [
+      { reading: 'true', translation: 'NONE' },
+      { reading: true, translation: 'EN_FULL' },
+      { reading: true, translation: 'ZH_FULL', tenantId: 'spoof' },
+    ]) {
+      expect(() => developmentRunBody({ ...base, documentDelivery: invalid }))
+        .toThrow(expect.objectContaining({
+          response: expect.objectContaining({
+            code: 'DOCUMENT_DELIVERY_SELECTION_INVALID',
+          }),
+        }));
+    }
+  });
+
   it.each([
     ['neither source', {}],
     ['both sources', { selection, documentVersionId: 'DV-1' }],

@@ -50,7 +50,8 @@ export class DocumentActivityRuntimeService {
   async run(raw: unknown) {
     const input = commandSchema.parse(raw);
     if (!this.authorization.authorizeDocumentWork) throw canonicalServiceScopeUnavailable();
-    const auth = await this.authorization.authorizeDocumentWork({ documentVersionId: input.documentVersionId });
+    const auth = await this.authorization.authorizeDocumentWork({ documentVersionId: input.documentVersionId,
+      purpose: 'ACTIVITY' });
     if (auth.documentVersionId !== input.documentVersionId) throw new Error('DOCUMENT_ACTIVITY_AUTHORIZATION_SCOPE_MISMATCH');
     const scope: DocumentActivityScope = { tenantId: auth.tenantId, actorUserId: auth.actorUserId, documentVersionId: auth.documentVersionId };
     const context = { ...scope, roles: [] as string[] };

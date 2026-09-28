@@ -10,6 +10,10 @@ const CONFIG_KEYS = [
   'WL_OPENCLAW_SERVICE_WORK_ITEM_ID',
   'WL_OPENCLAW_SERVICE_AUTO_QUEUE_ENABLED',
   'WL_OPENCLAW_SERVICE_SUCCESSOR_REVIEW_ENABLED',
+  'WL_OPENCLAW_DOCUMENT_SCOPE_ENABLED',
+  'WL_OPENCLAW_SERVICE_DOCUMENT_VERSION_ID',
+  'WL_OPENCLAW_SERVICE_DOCUMENT_VERSION_IDS',
+  'WL_OPENCLAW_SERVICE_DOCUMENT_ACTOR_ID',
 ] as const;
 
 describe('OpenClaw automatic WorkItem queue scope', () => {
@@ -51,6 +55,48 @@ describe('OpenClaw automatic WorkItem queue scope', () => {
       tenantId: 'tenant-01',
       authorizationFingerprint: expect.stringMatching(/^sha256:[0-9a-f]{64}$/u),
     });
+  });
+
+  it('grants only selected document work to one exact intake actor', async () => {
+    setBaseScope();
+    process.env.WL_OPENCLAW_SERVICE_AUTO_QUEUE_ENABLED = '1';
+    const workItems = { readDocumentDeliveryIntents: jest.fn().mockResolvedValue([{
+      workItemId: 'WI-one', actorUserId: 'engineer-1', delivery: { reading: true, translation: 'NONE' },
+    }]) };
+    const uploads = { readDocumentUploadDeliveryIntents: jest.fn().mockResolvedValue([]) };
+    const authorization = new ConfiguredDevelopmentCanonicalServiceScopeAuthorization(
+      undefined, workItems as never, uploads as never);
+
+    await expect(authorization.authorizeDocumentWork({ documentVersionId: 'DV-1',
+      deliveryRef: 'work-item:WI-one', purpose: 'READING' })).resolves.toMatchObject({
+      tenantId: 'tenant-01', actorUserId: 'engineer-1', documentVersionId: 'DV-1',
+    });
+    await expect(authorization.authorizeDocumentWork({ documentVersionId: 'DV-1',
+      deliveryRef: 'work-item:WI-one', purpose: 'TRANSLATION' })).rejects.toMatchObject({ statusCode: 404 });
+    await expect(authorization.authorizeDocumentWork({ documentVersionId: 'DV-1',
+      deliveryRef: 'work-item:WI-one', purpose: 'ACTIVITY' })).rejects.toMatchObject({ statusCode: 404 });
+    await expect(authorization.authorizeDocumentWork({ documentVersionId: 'DV-1',
+      deliveryRef: 'work-item:WI-one', purpose: 'REVISION' })).rejects.toMatchObject({ statusCode: 404 });
+    await expect(authorization.authorizeDocumentWork({ documentVersionId: 'DV-1',
+      deliveryRef: 'work-item:WI-one', purpose: 'CANCEL' })).rejects.toMatchObject({ statusCode: 404 });
+    await expect(authorization.authorizeDocumentWork({ documentVersionId: 'DV-1',
+      deliveryRef: 'work-item:WI-forged', purpose: 'READING' }))
+      .rejects.toMatchObject({ statusCode: 404 });
+    expect(workItems.readDocumentDeliveryIntents).toHaveBeenCalledWith({
+      tenantId: 'tenant-01', documentVersionId: 'DV-1',
+    });
+    uploads.readDocumentUploadDeliveryIntents.mockResolvedValue([{
+      acquisitionId: 'ACQ-two', actorUserId: 'engineer-2',
+      delivery: { reading: true, translation: 'NONE' },
+    }]);
+    await expect(authorization.authorizeDocumentWork({ documentVersionId: 'DV-1',
+      deliveryRef: 'work-item:WI-one', purpose: 'READING' }))
+      .rejects.toMatchObject({ code: 'DOCUMENT_DELIVERY_MULTI_ACTOR_UNSUPPORTED' });
+    await expect(authorization.authorizeDocumentWork({ documentVersionId: 'DV-1',
+      deliveryRef: 'acquisition:ACQ-two', purpose: 'READING' }))
+      .rejects.toMatchObject({ code: 'DOCUMENT_DELIVERY_MULTI_ACTOR_UNSUPPORTED' });
+    await expect(authorization.authorizeDocumentWork({ documentVersionId: 'DV-1',
+      purpose: 'READING' })).rejects.toMatchObject({ statusCode: 404 });
   });
 
   it('rejects a malformed configured service principal', async () => {

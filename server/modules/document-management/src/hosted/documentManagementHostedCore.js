@@ -203,6 +203,12 @@ function operationalCallerDescriptor(descriptor = {}, sourceChannel = '') {
     );
   }
   const operational = {};
+  if (sourceChannel === 'document_library_upload' &&
+      Object.hasOwn(descriptor, 'documentDeliveryIntent')) {
+    operational.documentDeliveryIntent = structuredClone(
+      descriptor.documentDeliveryIntent,
+    );
+  }
   for (const key of ['accessControl', 'runtimeTraceContext']) {
     if (Object.hasOwn(descriptor, key)) {
       operational[key] = structuredClone(descriptor[key]);
@@ -555,6 +561,8 @@ export class DocumentManagementHostedCore {
     );
     const result = await this.catalog.commitHistoricalVersion({
       preflightId, actorUserId, tenantId,
+      ...(serverContext.runtimeIngestAuthority?.mode === 'HOSTED_MIAODA_DOCUMENT_UPLOAD'
+        ? { uploadCommit: true } : {}),
       expectedCurrentGeneration: request.expectedCurrentGeneration,
       expectedCurrentDocumentVersionId: request.expectedCurrentDocumentVersionId,
       documentVersionId,
@@ -644,6 +652,7 @@ export class DocumentManagementHostedCore {
       sourceChannel: request.sourceChannel,
       sourceRef: request.sourceRef,
       selection: request.selection,
+      documentDeliveryIntent: request.descriptor?.documentDeliveryIntent,
     });
     if (!existingIngestion) {
       const legacyIngestion = await this.catalog.findIngestionByIdempotency({
@@ -653,6 +662,7 @@ export class DocumentManagementHostedCore {
         sourceChannel: request.sourceChannel,
         sourceRef: request.sourceRef,
         selection: request.selection,
+        documentDeliveryIntent: request.descriptor?.documentDeliveryIntent,
       });
       if (legacyIngestion?.acquisitionId === legacyAcquisitionId) {
         existingIngestion = legacyIngestion;
@@ -1000,6 +1010,16 @@ export class DocumentManagementHostedCore {
         documentVersionId: exactVersion.documentVersionId,
         preflightId,
         idempotencyKey: commitIdempotencyKey,
+        ...(request.sourceChannel === 'document_library_upload' &&
+          serverContext.runtimeIngestAuthority?.mode === 'HOSTED_MIAODA_DOCUMENT_UPLOAD'
+          ? { uploadCommit: {
+              actorUserId, tenantId, selection,
+              sourceArtifactId, sha256: actualSha256,
+              byteLength: selected.bytes.byteLength,
+              decision: decision.decision,
+              documentDelivery: request.descriptor?.documentDeliveryIntent ?? null,
+            } }
+          : {}),
       });
       const linkedVersion = await this.catalog.readDocumentVersion(
         exactVersion.documentVersionId,
@@ -1134,6 +1154,16 @@ export class DocumentManagementHostedCore {
     const committedAt = this.now();
     const commit = await this.catalog.commitNewVersion({
       idempotencyKey: commitIdempotencyKey,
+      ...(request.sourceChannel === 'document_library_upload' &&
+        serverContext.runtimeIngestAuthority?.mode === 'HOSTED_MIAODA_DOCUMENT_UPLOAD'
+        ? { uploadCommit: {
+            actorUserId, tenantId, selection,
+            sourceArtifactId, sha256: actualSha256,
+            byteLength: selected.bytes.byteLength,
+            decision: decision.decision,
+            documentDelivery: request.descriptor?.documentDeliveryIntent ?? null,
+          } }
+        : {}),
       preflightId,
       preflightDecision: decision.decision,
       observedCurrentGeneration: observedFamily?.currentGeneration || 0,

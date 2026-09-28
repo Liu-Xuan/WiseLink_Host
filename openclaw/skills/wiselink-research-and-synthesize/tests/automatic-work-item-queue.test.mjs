@@ -93,6 +93,52 @@ function completeStatus() {
   });
 }
 
+test('automatic queue dispatches an admitted document without inventing a WorkItem claim', async () => {
+  const checkpoint = memoryCheckpoint();
+  const calls = [];
+  const result = await consumeAutomaticWorkItemQueueTick({}, {
+    checkpoint,
+    now: () => new Date(START),
+    nextWorkItem: async () => ({ status: 'DOCUMENT_PENDING', documentVersionId: 'DV-document',
+      deliveryRef: 'work-item:WI-document' }),
+    acknowledgeWorkItem: async () => { throw new Error('UNEXPECTED_ACK'); },
+    consumeWorkItem: async () => { throw new Error('UNEXPECTED_WORK_ITEM'); },
+    readInitialStatus: async () => { throw new Error('UNEXPECTED_STATUS'); },
+    consumeDocument: async (documentVersionId, deliveryRef) => {
+      calls.push({ documentVersionId, deliveryRef });
+      return { status: 'DOCUMENT_READY', documentVersionId };
+    },
+  });
+  assert.deepEqual(calls, [{ documentVersionId: 'DV-document', deliveryRef: 'work-item:WI-document' }]);
+  assert.deepEqual(result, { status: 'DOCUMENT_DISPATCHED',
+    documentVersionId: 'DV-document', deliveryRef: 'work-item:WI-document',
+    document: { status: 'DOCUMENT_READY', documentVersionId: 'DV-document' } });
+  assert.equal(checkpoint.values.get('active-claim'), null);
+});
+test('document discovery advances a bounded cursor across idle ticks', async () => {
+  const checkpoint = memoryCheckpoint();
+  const inputs = [];
+  const dependencies = {
+    checkpoint, now: () => new Date(START),
+    nextWorkItem: async input => {
+      inputs.push(input);
+      return inputs.length === 1
+        ? { status: 'IDLE', documentAfterRef: 'attempt:ATT-one' }
+        : { status: 'DOCUMENT_PENDING', documentVersionId: 'DV-document',
+          deliveryRef: 'work-item:WI-document' };
+    },
+    acknowledgeWorkItem: async () => { throw new Error('UNEXPECTED_ACK'); },
+    consumeWorkItem: async () => { throw new Error('UNEXPECTED_WORK_ITEM'); },
+    readInitialStatus: async () => { throw new Error('UNEXPECTED_STATUS'); },
+    consumeDocument: async () => ({ status: 'DOCUMENT_READY' }),
+  };
+  assert.equal((await consumeAutomaticWorkItemQueueTick({}, dependencies)).status, 'IDLE');
+  assert.equal(checkpoint.values.get('document-cursor'), 'attempt:ATT-one');
+  assert.equal((await consumeAutomaticWorkItemQueueTick({}, dependencies)).status,
+    'DOCUMENT_DISPATCHED');
+  assert.deepEqual(inputs, [undefined, { documentAfterRef: 'attempt:ATT-one' }]);
+});
+
 test('a stopped queue claim resumes only an exact sealed Overall attempt', async t => {
   const checkpointRoot = await mkdtemp(join(tmpdir(), 'wiselink-queue-committing-'));
   t.after(() => rm(checkpointRoot, { recursive: true, force: true }));

@@ -49,13 +49,18 @@ export class DocumentReadingRunRepository {
     return rows[0] ?? null;
   }
 
+  async currentRevision(scope: DocumentReadingScope, parseRunId: string, semanticRevision: number): Promise<number> {
+    return currentRevision(this.db, scope, parseRunId, semanticRevision);
+  }
+
   async readRun(scope: DocumentReadingScope, runRef: string): Promise<DocumentReadingRun | null> {
     return readRun(this.db, scope, runRef);
   }
 
-  async nextPending(scope: DocumentReadingScope): Promise<string | null> {
+  async nextPending(scope: DocumentReadingScope, requestId?: string): Promise<string | null> {
     const rows = await this.db.execute<{ runRef: string }>(sql`SELECT run_ref AS "runRef" FROM ${dmDocumentReadingRun}
       WHERE tenant_id=${scope.tenantId} AND actor_user_id=${scope.actorUserId} AND document_version_id=${scope.documentVersionId}
+        AND (${requestId ?? null}::text IS NULL OR request_id=${requestId ?? null})
         AND status IN ('QUEUED','RUNNING')
         AND (lease_expires_at IS NULL OR lease_expires_at<=CURRENT_TIMESTAMP)
       ORDER BY _created_at,run_ref LIMIT 1`);

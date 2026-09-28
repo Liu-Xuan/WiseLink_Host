@@ -12,13 +12,15 @@ import { materializeDocumentReading, validateDocumentReading } from './document-
 import { DocumentReadingRunRepository, type DocumentReadingRun, type DocumentReadingScope } from './document-reading-run.repository';
 import { CANONICAL_SERVICE_SCOPE_AUTHORIZATION, canonicalServiceScopeUnavailable,
   type CanonicalServiceScopeAuthorizationPort } from './canonical-service-scope.authorization';
+import { documentDeliveryRequestId } from './document-delivery-ref';
 
 const id = z.string().regex(/^[A-Za-z0-9_-]{1,96}$/u);
-const run = { documentVersionId: id, runRef: id };
+const delivery = { deliveryRef: z.string().regex(/^(?:work-item:WI(?:-[A-Za-z0-9_-]{1,93})?|acquisition:[A-Za-z0-9_-]{1,96})$/u).optional() };
+const run = { documentVersionId: id, runRef: id, ...delivery };
 const fenced = { ...run, leaseOwner: z.string().regex(/^[A-Za-z0-9:_-]{1,160}$/u),
   leaseToken: z.string().uuid(), leaseGeneration: z.number().int().positive() };
 export const documentReadingActionSchemas = [
-  z.strictObject({ action: z.literal('READING_BEGIN'), documentVersionId: id, parseRunId: id,
+  z.strictObject({ action: z.literal('READING_BEGIN'), documentVersionId: id, parseRunId: id, ...delivery,
     semanticRevision: z.number().int().positive(), requestId: z.string().regex(/^[A-Za-z0-9:_-]{1,160}$/u),
     expectedRevision: z.number().int().nonnegative() }),
   z.strictObject({ action: z.literal('READING_STATUS'), ...run }),
@@ -53,16 +55,28 @@ export class DocumentReadingRuntimeService {
   async run(raw: unknown) {
     const input = commandSchema.parse(raw);
     if (!this.authorization.authorizeDocumentWork) throw canonicalServiceScopeUnavailable();
-    const auth = await this.authorization.authorizeDocumentWork({ documentVersionId: input.documentVersionId });
+    const auth = await this.authorization.authorizeDocumentWork({ documentVersionId: input.documentVersionId,
+      deliveryRef: input.deliveryRef,
+      purpose: input.action === 'READING_CANCEL' || input.action === 'READING_RETRACT' ? 'CANCEL' : 'READING' });
     if (auth.documentVersionId !== input.documentVersionId) throw new Error('DOCUMENT_READING_AUTHORIZATION_SCOPE_MISMATCH');
     const scope: DocumentReadingScope = { tenantId: auth.tenantId, actorUserId: auth.actorUserId, documentVersionId: auth.documentVersionId };
     const context = { ...scope, roles: [] as string[] };
     return this.actors.withActorScope(scope.actorUserId, async () => {
+      const expectedRequestId = input.deliveryRef
+        ? documentDeliveryRequestId('reading', input.deliveryRef) : null;
       if (input.action === 'READING_BEGIN') {
+        if (expectedRequestId && input.requestId !== expectedRequestId)
+          throw new Error('DOCUMENT_READING_DELIVERY_REQUEST_MISMATCH');
+        if (expectedRequestId && input.expectedRevision !== 0)
+          throw new Error('DOCUMENT_READING_DELIVERY_REVISION_MISMATCH');
         const source = await this.load(scope.documentVersionId, input.parseRunId, input.semanticRevision, context);
+        const expectedRevision = expectedRequestId
+          ? (await this.runs.readRequest(scope, input.requestId))?.expectedRevision ??
+            await this.runs.currentRevision(scope, input.parseRunId, input.semanticRevision)
+          : input.expectedRevision;
         const row = await this.runs.begin(scope, { requestId: input.requestId, parseRunId: input.parseRunId,
           parseRevision: source.loaded.original.binding.parseRevision, semanticRevision: input.semanticRevision,
-          manifestSha256: source.artifact.sha256, expectedRevision: input.expectedRevision });
+          manifestSha256: source.artifact.sha256, expectedRevision });
         const retraction = row.status === 'SAVED' ? await this.runs.readRetraction(scope, row.runRef) : null;
         return summary(row, retraction);
       }
@@ -73,6 +87,8 @@ export class DocumentReadingRuntimeService {
       // run keeps the exact source/parse registration recorded at BEGIN.
       const row = await this.runs.readRun(scope, input.runRef);
       if (!row) throw new Error('DOCUMENT_READING_RUN_NOT_FOUND');
+      if (expectedRequestId && row.requestId !== expectedRequestId)
+        throw new Error('DOCUMENT_READING_DELIVERY_RUN_MISMATCH');
       if (input.action !== 'READING_READ' && input.action !== 'READING_SAVE') {
         await this.parsing.status(scope.documentVersionId, context);
       }
