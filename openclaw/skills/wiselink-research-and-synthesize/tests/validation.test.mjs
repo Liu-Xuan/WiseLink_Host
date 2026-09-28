@@ -7572,7 +7572,8 @@ test('JobAid Review corrects missing completion reason and change summary before
   assert.equal(result.output.jobAidWorkingDelta.changeSummary, '撤回无据判断');
 });
 
-function turn21RejectedCandidateFixture({ fourth = 'exact', fifth = 'candidate' } = {}) {
+function turn21RejectedCandidateFixture({ fourth = 'exact', fifth = 'candidate',
+  rejectionCode = 'REVIEW_JOBAID_ISSUE_FULL_CONTENT_REQUIRED' } = {}) {
   const calls = [];
   const rejections = [];
   let reads = 0;
@@ -7605,7 +7606,13 @@ function turn21RejectedCandidateFixture({ fourth = 'exact', fifth = 'candidate' 
     registeredModelRefs: ['m3probe/minimax-m3'], nativeSessionKey: sessionKey,
     readSourceRefs: async ids => { reads++; return ids.map(sourceRefId => ({ sourceRefId,
       evidenceRef: `source:${sourceRefId}`, excerpt: 'Fixture passage.' })); },
-    validateCandidate: value => { validations++; validateJobAidUpdatedIssueBodies(value); },
+    validateCandidate: value => {
+      validations++;
+      if (validations === 1 && rejectionCode !== 'REVIEW_JOBAID_ISSUE_FULL_CONTENT_REQUIRED') {
+        throw new Error(rejectionCode);
+      }
+      validateJobAidUpdatedIssueBodies(value);
+    },
     observeCandidateRejection: event => { rejections.push(event.errorCode); },
   }, { requestGateway: async (_url, init) => {
     calls.push({ sessionKey: init.headers['x-openclaw-session-key'], ...JSON.parse(init.body) });
@@ -7692,6 +7699,18 @@ test('Turn21 protocol recovery rejects prose, repeated exact 502, and generic 50
     assert.equal(fixture.validations, 1);
     if (scenario.fourth === 'exact') assert.equal(fixture.calls[4].tool_choice, 'auto');
   }
+});
+
+test('Turn21 exact 502 after another candidate validation error does not get auto correction', async () => {
+  const fixture = turn21RejectedCandidateFixture({
+    rejectionCode: 'REVIEW_JOBAID_WORK_SCHEMA_INVALID',
+  });
+  await assert.rejects(fixture.result, /REVIEW_TOOL_CHOICE_NOT_SATISFIED/u);
+  assert.deepEqual(fixture.rejections, ['REVIEW_JOBAID_WORK_SCHEMA_INVALID']);
+  assert.deepEqual(fixture.calls.map(call => call.tool_choice),
+    ['required', 'required', 'required', 'required']);
+  assert.equal(fixture.reads, 1);
+  assert.equal(fixture.validations, 1);
 });
 
 test('source-read JobAid Review corrects one empty required-tool 502 in the same session', async () => {
