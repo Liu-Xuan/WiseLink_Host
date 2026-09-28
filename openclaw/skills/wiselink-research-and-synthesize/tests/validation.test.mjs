@@ -1434,7 +1434,7 @@ test('requires 35 MCP capabilities, six review tools, and hosted provenance', ()
   assert.ok(HOST_MCP_TOOLS.includes('commit_applicability_candidate'));
   assert.equal(
     WISELINK_SKILL_VERSION,
-    'wiselink-research-and-synthesize@r09.c187',
+    'wiselink-research-and-synthesize@r09.c188',
   );
   assert.equal(
     WISELINK_SKILL_COMPATIBILITY_REF,
@@ -7516,6 +7516,55 @@ test('JobAid Review corrects missing completion reason and change summary before
   assert.equal(validations, 3);
   assert.deepEqual(errors, ['REVIEW_JOBAID_COMPLETIONREASON_REQUIRED', 'REVIEW_JOBAID_CHANGESUMMARY_REQUIRED']);
   assert.equal(result.output.jobAidWorkingDelta.changeSummary, '撤回无据判断');
+});
+
+test('source-read JobAid Review corrects one empty required-tool 502 in the same session', async () => {
+  let requests = 0;
+  let validations = 0;
+  const shapes = [];
+  const candidate = { answer: '核对原文后更正风险判断。', sourceRefs: ['page1'],
+    jobAidWorkingDelta: { schemaVersion: 'wiselink.jobaid-problem-work.v3',
+      issues: [{ issueKey: 'risk', question: '风险依据是什么？',
+        body: '原文支持的情景与未知应分开。[[source:page1]]', riskScenarios: [],
+        measures: [], otherClassifications: [], openQuestions: [], requirementHandling: [] }],
+      roundCompletion: 'COMPLETE_WITH_OPEN_QUESTIONS', completionReason: '保留原完成范围',
+      changeSummary: '撤回无据风险等级' } };
+  const result = await invokeReviewWithTransport({ input: {
+    availableSourceRefIds: ['page1'], context: { purpose: 'UPDATE_ASSESSMENT',
+      problemAssessment: { availableSources: [{ kind: 'DOCUMENT_PASSAGE' }],
+        previousWork: { content: { issues: [], roundCompletion: 'COMPLETE_WITH_OPEN_QUESTIONS',
+          completionReason: '保留原完成范围' } } } },
+  } }, {
+    gatewayUrl: 'https://official.invalid', gatewayToken: 'fixture-only',
+    configuredModelVersion: 'fixture/provider',
+    nativeSessionKey: 'agent:wiselink-engineering:review:ACTX-RS-tool-choice-correction',
+    readSourceRefs: async ids => ids.map(sourceRefId => ({ sourceRefId,
+      evidenceRef: `source:${sourceRefId}`, excerpt: 'Fixture passage.' })),
+    observeOutputShape: shape => { shapes.push(shape); },
+    validateCandidate: value => { validations++; validateJobAidUpdatedIssueBodies(value); },
+  }, { requestGateway: async (_url, init) => {
+    requests++;
+    const body = JSON.parse(init.body);
+    if (requests === 1) return Response.json({ choices: [{ message: { content: null,
+      tool_calls: [{ id: 'read1', type: 'function', function: {
+        name: 'read_wiselink_review_sources', arguments: JSON.stringify({ sourceRefIds: ['page1'] }),
+      } }] } }] });
+    if (requests === 2) return Response.json({ error: {
+      message: 'tool_choice=required was not satisfied by the agent response',
+    } }, { status: 502 });
+    assert.equal(body.tool_choice, 'required');
+    assert.match(body.messages.at(-1).content, /schemaVersion wiselink\.jobaid-problem-work\.v3/u);
+    assert.match(body.messages.at(-1).content, /source:page1/u);
+    return Response.json({ choices: [{ message: { content: null, tool_calls: [{
+      id: 'candidate3', type: 'function', function: {
+        name: 'return_wiselink_review_candidate', arguments: JSON.stringify(candidate),
+      },
+    }] } }] });
+  } });
+  assert.equal(requests, 3);
+  assert.equal(validations, 1);
+  assert.equal(shapes[1].gatewayFailure, 'TOOL_CHOICE_NOT_SATISFIED');
+  assert.equal(result.output.jobAidWorkingDelta.changeSummary, '撤回无据风险等级');
 });
 
 test('source-read JobAid Review stops after a second incomplete response', async () => {

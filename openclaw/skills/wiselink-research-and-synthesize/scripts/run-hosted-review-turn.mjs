@@ -501,14 +501,12 @@ export async function invokeHostedReviewModel(input, options = {}, dependencies 
       outputShape.gatewayFailure = gatewayFailure;
     }
     if (observeOutputShape) await observeOutputShape(outputShape, round);
-    if (gatewayFailure === 'TOOL_CHOICE_NOT_SATISFIED') {
-      throw new Error('REVIEW_TOOL_CHOICE_NOT_SATISFIED');
-    }
     if (!response.ok) {
       const failure = classifyHostedGatewayFailure(payload);
       if (sourceReadFirst && nativeSessionKey && sourceCache.size > 0 &&
-          response.status === 400 && failure === 'INCOMPLETE_TERMINAL_RESPONSE' &&
-          outputShape.choiceCount === 0 && incompleteResponseCorrections === 0) {
+          outputShape.choiceCount === 0 && incompleteResponseCorrections === 0 &&
+          ((response.status === 400 && failure === 'INCOMPLETE_TERMINAL_RESPONSE') ||
+            (response.status === 502 && failure === 'TOOL_CHOICE_NOT_SATISFIED'))) {
         // The Gateway explicitly returned no candidate/tool call. One new,
         // shorter request may finish the same native discussion; never replay
         // a Host mutation or retry an unknown/partially received response.
@@ -526,12 +524,14 @@ export async function invokeHostedReviewModel(input, options = {}, dependencies 
               `For a revised body, cite supporting evidence inline as [[evidenceRef]] copied exactly from the read evidence refs ${canonicalJson(readEvidenceRefs)}.`,
               'Write a changed issue body as a standalone engineering judgment with its supporting premises and limits; put the process or change summary in answer or changeSummary, not in place of the body.',
               'Reassess affected openQuestions and requirementHandling against the actually read evidence. Revise or resolve questions now answered by that evidence; preserve only unresolved questions. Retaining the prior roundCompletion does not require retaining a superseded open question.',
-              'Preserve the prior roundCompletion and completionReason unless the evidence justifies a specific completion-scope change. Keep the engineer\'s requested findings and the existing validation contract. Read another authorized fragment only if essential. Do not repeat a long analysis or claim a candidate was saved.',
+              'Use schemaVersion wiselink.jobaid-problem-work.v3 exactly and include nonempty completionReason and changeSummary. Preserve the prior roundCompletion and completionReason unless the evidence justifies a specific completion-scope change. Keep the engineer\'s requested findings and the existing validation contract. Read another authorized fragment only if essential. Do not repeat a long analysis or claim a candidate was saved.',
             ].join(' ')
           : `The preceding model response ended before any tool call. Continue this same Review using the sources already read. Call ${REVIEW_OUTPUT_FUNCTION_NAME} with one complete, concise candidate that changes only the engineer's requested findings. Existing issue keys: ${canonicalJson(previousIssueKeys)}. Use an affected existing key for a correction; create a new key only for a distinct new problem. Omitted issues remain saved. Every updated issue body needs an inline [[evidenceRef]] copied from actually read, supporting evidence. Read another authorized fragment only if essential. Do not repeat a long analysis or claim a candidate was saved.`;
         messages = [systemMessage, { role: 'user', content: correction }];
         continue;
       }
+      if (failure === 'TOOL_CHOICE_NOT_SATISFIED')
+        throw new Error('REVIEW_TOOL_CHOICE_NOT_SATISFIED');
       throw new Error(`REVIEW_GATEWAY_HTTP_${response.status}${failure === 'UNCLASSIFIED' ? '' : `:${failure}`}`);
     }
     if (outputShape.hasAnalysis) throw new Error('REVIEW_MODEL_ANALYSIS_FORBIDDEN');
