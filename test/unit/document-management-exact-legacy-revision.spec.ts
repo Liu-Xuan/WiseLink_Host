@@ -199,6 +199,22 @@ describe('exact-byte reuse across the date-to-business-revision transition', () 
     );
     expect(f.catalog.commitNewVersion).not.toHaveBeenCalled();
   });
+  it('passes separate verified selection and immutable locators to the hosted exact commit', async () => {
+    const f = fixture();
+    await f.core.ingestFileServiceSelection(request, {
+      ...context, runtimeIngestAuthority: { mode: 'HOSTED_MIAODA_DOCUMENT_UPLOAD' },
+    });
+    expect(f.catalog.linkAcquisitionToVersion).toHaveBeenCalledWith(
+      expect.objectContaining({ uploadCommit: expect.objectContaining({
+        selection: { bucketId: 'bucket', filePath: '/selected.pdf' },
+        selectedProviderObjectId: 'selected-object',
+        selectedProviderVersionId: 'selected-version',
+        immutableSource: { bucketId: 'bucket', filePath: '/immutable.pdf',
+          providerObjectId: 'immutable-object', providerVersionId: 'immutable-version' },
+        sourceArtifactId, sha256, byteLength: bytes.length,
+      }) }),
+    );
+  });
   it.each([
     ['canonicalRevisionIdentity', 'DATE:2020-09-23'],
     ['canonicalRevisionIdentity', 'ISSUE:00000002'],
