@@ -34,6 +34,11 @@ describe('document upload delivery authorization migration', () => {
     expect(migration).not.toMatch(/FOR (?:INSERT|DELETE) TO service_role_workspace_aadkpkjef3slu/u);
     expect(migration).toMatch(/SECURITY DEFINER SET search_path = pg_catalog/u);
     expect(migration).toMatch(/REVOKE ALL ON FUNCTION auto_document_delivery_register_upload\(\) FROM PUBLIC/u);
+    for (const column of ['_created_at', '_created_by', '_updated_at', '_updated_by']) {
+      expect(migration).toContain(column);
+    }
+    expect(migration).toMatch(/NEW\._updated_at := CURRENT_TIMESTAMP/u);
+    expect(migration).toMatch(/NEW\._updated_by := CASE WHEN current_setting\('app\.user_id',true\)/u);
   });
 
   it('blocks native writes and TRUNCATE on the WorkItem delivery intent source', () => {

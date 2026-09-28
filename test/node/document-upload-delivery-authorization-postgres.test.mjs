@@ -22,6 +22,7 @@ test('draft upload authorization: exact legacy link works, actor intent remains 
         DROP FUNCTION IF EXISTS auto_document_delivery_freeze_upload() CASCADE;
         DROP FUNCTION IF EXISTS auto_document_delivery_freeze_upload_preflight() CASCADE;
         DROP FUNCTION IF EXISTS auto_document_delivery_preserve() CASCADE;
+        DROP TYPE IF EXISTS user_profile CASCADE;
         DO $$ BEGIN
           IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname='authenticated') THEN
             CREATE ROLE authenticated NOLOGIN;
@@ -39,6 +40,7 @@ test('draft upload authorization: exact legacy link works, actor intent remains 
             CREATE ROLE service_role_workspace_other NOLOGIN;
           END IF;
         END $$;
+        CREATE TYPE user_profile AS (user_id text);
         CREATE TABLE action_attempt (action_type text NOT NULL, task_envelope_json text);
         CREATE TABLE work_item (work_item_id text PRIMARY KEY);
         CREATE TABLE dm_source_artifact (source_artifact_id text PRIMARY KEY,
@@ -217,6 +219,12 @@ test('draft upload authorization: exact legacy link works, actor intent remains 
         document_version_id: 'DV-1', source_artifact_id: 'SRC-1',
         reading: true, translation: 'NONE',
       });
+      const [audit] = await db`SELECT _created_at IS NOT NULL AS created_at_present,
+        _updated_at IS NOT NULL AS updated_at_present,
+        (_created_by).user_id AS created_by,(_updated_by).user_id AS updated_by
+        FROM auto_document_delivery_authorization WHERE acquisition_id='ACQ-NEW'`;
+      assert.deepEqual(audit, { created_at_present: true, updated_at_present: true,
+        created_by: 'actor-new', updated_by: 'actor-new' });
       assert.equal((await db`SELECT status FROM dm_ingress_preflight
         WHERE preflight_id='PF-NEW'`)[0].status, 'COMMITTED');
       await assert.rejects(asService((tx) => tx`UPDATE dm_acquisition
@@ -253,6 +261,10 @@ test('draft upload authorization: exact legacy link works, actor intent remains 
       assert.equal((await asService((tx) => tx`UPDATE auto_document_delivery_authorization
         SET status='ADMITTED',admitted_at=CURRENT_TIMESTAMP
         WHERE acquisition_id='ACQ-NEW' RETURNING acquisition_id`)).length, 1);
+      const [admittedAudit] = await db`SELECT _updated_at>=_created_at AS updated,
+        (_updated_by).user_id AS updated_by FROM auto_document_delivery_authorization
+        WHERE acquisition_id='ACQ-NEW'`;
+      assert.deepEqual(admittedAudit, { updated: true, updated_by: 'actor-new' });
       assert.equal((await asService((tx) => tx`UPDATE auto_document_delivery_authorization
         SET status='ADMITTED',admitted_at=CURRENT_TIMESTAMP
         WHERE acquisition_id='ACQ-NEW' RETURNING acquisition_id`)).length, 0);

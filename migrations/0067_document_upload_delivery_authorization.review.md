@@ -34,6 +34,9 @@ also share one transaction. Historical confirmation was already transactional;
 it now uses the verified service scope and checks upload actor/tenant binding.
 The selected authorization row is written by the acquisition trigger in that
 same transaction. Other Catalog callers do not enter service SQL.
+The draft authorization table also has the platform's four `_created/_updated`
+audit columns. Its admission trigger maintains the update pair without adding
+those columns to the service role's UPDATE grant.
 
 The upload, historical-confirmation, and historical-refresh HTTP entries now
 return the existing `SESSION_REQUIRED` / HTTP 401 response when an opaque OAuth
@@ -54,9 +57,20 @@ automatically replayed.
   target service role can read and admit only the selected actor's row; it
   cannot INSERT, DELETE, or alter immutable columns. Generic roles and an
   unrelated workspace service role cannot read authorization rows. The test
-  also covers wrong-schema and PUBLIC TRUNCATE rejection, exact-link rollback, selected and
-  `NONE` reserve rollback/success, and source mismatch. The fixture is
-  smaller than the application schema and does not run the Nest/Drizzle chain.
+  also covers wrong-schema and PUBLIC TRUNCATE rejection, exact-link rollback,
+  selected and `NONE` reserve rollback/success, source mismatch, and populated
+  audit columns. The fixture is smaller than the application schema and does
+  not run the Nest/Drizzle chain.
+- `DOCUMENT_DELIVERY_SESSION_TEST_DATABASE_URL=<separate disposable
+  wl_delivery_test_session_* database> node --test
+  test/node/document-delivery-verified-intake-postgres.test.mjs` passes through
+  the actual `SessionResolver.withRequestSession` / `withVerifiedServiceSql`,
+  SQL middleware, Drizzle repository reserve, and 0067 exact workspace service
+  role. It verifies selected and `NONE` new intake, stable replay, rejected
+  changed selection, no grant or intent on a pre-migration legacy WorkItem,
+  browser denial, expired OAuth session and actor/tenant mismatch, and full
+  transaction rollback when the intent insert fails. This remains a local
+  application-column fixture, not a hosted middleware or deployed-client run.
 - Server build and focused Jest tests compile and exercise the request/service
   scope and session rejection. With the same disposable database, run
   `DOCUMENT_DELIVERY_TEST_DATABASE_URL=<disposable wl_delivery_test database>
@@ -91,11 +105,11 @@ automatically replayed.
   non-BYPASSRLS roles before DDL. Only the target service role receives
   authorization-table SELECT and UPDATE of `status` and `admitted_at`, with
   actor RLS. PUBLIC, generic roles, and browser receive no table grant.
-- Before applying 0067, review the installed grants/RLS and run a disposable
-  application-schema integration test through the actual `withVerifiedServiceSql`
-  middleware for exact, new, historical, replay, rollback, and actor/tenant
-  mismatch with the target hosted role. The upload picker now obtains the
-  official OAuth session before FileService upload, and its API checks before
+- Before applying 0067, review the installed grants/RLS and exercise the
+  hosted middleware and real application schema. The local integration tests
+  above use isolated databases and the exact hosted role but cannot establish
+  the deployed platform's grants or session injection. The upload picker now
+  obtains the official OAuth session before FileService upload, and its API checks before
   each upload, historical confirmation, and refresh POST. Local client tests
   cover missing session and preserved request ID. The deployed client and
   hosted middleware have not been exercised end to end.

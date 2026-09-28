@@ -70,6 +70,12 @@ CREATE TABLE auto_document_delivery_authorization (
   status varchar(16) NOT NULL DEFAULT 'WAITING' CHECK (status IN ('WAITING','ADMITTED')),
   created_at timestamptz NOT NULL DEFAULT CURRENT_TIMESTAMP,
   admitted_at timestamptz,
+  _created_at timestamptz NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  _created_by user_profile DEFAULT CASE WHEN current_setting('app.user_id',true) = '' THEN NULL
+    ELSE concat('(',current_setting('app.user_id',true),')')::user_profile END,
+  _updated_at timestamptz NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  _updated_by user_profile DEFAULT CASE WHEN current_setting('app.user_id',true) = '' THEN NULL
+    ELSE concat('(',current_setting('app.user_id',true),')')::user_profile END,
   CHECK (reading OR translation='ZH_FULL'),
   CHECK ((status='ADMITTED') = (admitted_at IS NOT NULL))
 );
@@ -241,14 +247,19 @@ CREATE FUNCTION auto_document_delivery_preserve() RETURNS trigger
 LANGUAGE plpgsql AS $$
 BEGIN
   IF ROW(OLD.acquisition_id,OLD.tenant_key,OLD.actor_user_id,OLD.document_version_id,
-      OLD.source_artifact_id,OLD.reading,OLD.translation,OLD.created_at)
+      OLD.source_artifact_id,OLD.reading,OLD.translation,OLD.created_at,
+      OLD._created_at,OLD._created_by)
     IS DISTINCT FROM ROW(NEW.acquisition_id,NEW.tenant_key,NEW.actor_user_id,
-      NEW.document_version_id,NEW.source_artifact_id,NEW.reading,NEW.translation,NEW.created_at)
+      NEW.document_version_id,NEW.source_artifact_id,NEW.reading,NEW.translation,NEW.created_at,
+      NEW._created_at,NEW._created_by)
     OR (OLD.status='ADMITTED' AND
         (NEW.status<>'ADMITTED' OR NEW.admitted_at IS DISTINCT FROM OLD.admitted_at))
     OR (OLD.status='WAITING' AND NEW.status<>'ADMITTED') THEN
     RAISE EXCEPTION 'DOCUMENT_DELIVERY_IDENTITY_IMMUTABLE' USING ERRCODE='23514';
   END IF;
+  NEW._updated_at := CURRENT_TIMESTAMP;
+  NEW._updated_by := CASE WHEN current_setting('app.user_id',true) = '' THEN NULL
+    ELSE concat('(',current_setting('app.user_id',true),')')::user_profile END;
   RETURN NEW;
 END;
 $$;
