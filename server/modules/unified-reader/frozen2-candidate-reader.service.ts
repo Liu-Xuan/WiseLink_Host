@@ -105,9 +105,6 @@ export class Frozen2CandidateReaderService {
       sourcePackage.units,
       normalizedQuery,
     );
-    if (queryResults.length === 0) {
-      throw new Error('READER_QUERY_NO_RESULTS');
-    }
     return { ...sourcePackage.inspection, queryResults };
   }
 

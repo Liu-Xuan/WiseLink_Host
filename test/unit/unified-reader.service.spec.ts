@@ -181,7 +181,7 @@ describe('UnifiedReaderService hosted candidate loop', () => {
     },
   );
 
-  it('rejects exact-byte drift and empty query results explicitly', async () => {
+  it('allows an exact empty search result without weakening required probes or byte checks', async () => {
     const { bytes, packageId } = makeCandidatePackage('pdf');
     const persisted: ImmutableArtifactPersistResult =
       await store.persistAndReadback(bytes);
@@ -202,11 +202,30 @@ describe('UnifiedReaderService hosted candidate loop', () => {
     await expect(service.readback(request)).rejects.toThrow(
       'READER_QUERY_NO_RESULTS',
     );
+    const noMatch = await service.readback(request, undefined, {
+      allowEmptyResults: true,
+    });
+    expect(noMatch).toMatchObject({
+      status: 'CANDIDATE_READBACK_VERIFIED',
+      package: { packageId, contentUnitCount: 2, sourceRefCount: 1 },
+      queryResults: [],
+      receipt: {
+        packageId,
+        validationStatus: 'CONSUMER_READBACK_VERIFIED',
+        queryProbe: {
+          query: 'value-does-not-exist',
+          resultCount: 0,
+          allResultsHaveSourceRefs: true,
+        },
+      },
+    });
     request.package.artifact = {
       ...request.package.artifact,
       sha256: '0'.repeat(64),
     };
-    await expect(service.readback(request)).rejects.toThrow(
+    await expect(service.readback(request, undefined, {
+      allowEmptyResults: true,
+    })).rejects.toThrow(
       'ARTIFACT_READBACK_MISMATCH',
     );
   });

@@ -73,7 +73,7 @@ const REVIEW_RESPONSE_TYPES = [
   'AFFECTED_ITEMS_PREVIEW',
   'TASK_STATUS',
 ];
-const REVIEW_PROMPT_VERSION = 'wiselink.3_1.review_prompt.v1.c48';
+const REVIEW_PROMPT_VERSION = 'wiselink.3_1.review_prompt.v1.c49';
 const WISELINK_HOST_MCP_CONFIG_KEYS = new Set([
   WISELINK_HOST_MCP_NAME,
   'wiselink_host_controller',
@@ -243,6 +243,8 @@ export async function runHostedReviewTurn(options, dependencies = {}) {
             observeCandidateRejection: (value) => checkpoint.writeOnce(
               `candidate-rejection-${value.correctionNo}`,
               { schemaVersion: 'wiselink.3_1.review_candidate_validation.v1', argsHash: modelArgsHash,
+                reviewTurnRef: beginResult.task.modelInput.reviewTurnRef,
+                attemptRef: beginResult.attemptRef,
                 observedAt: new Date().toISOString(), ...value },
             ),
             observeOutputShape: async (value, round = 1) =>
@@ -600,8 +602,24 @@ export async function invokeHostedReviewModel(input, options = {}, dependencies 
           candidateCorrections >= maxModelCorrections ||
           typeof toolCall.id !== 'string' || toolCall.id.trim() === '') throw error;
         candidateCorrections += 1;
+        const invalidEvidenceRefs = isJobAid && isAssessmentUpdate &&
+          errorCode === 'REVIEW_JOBAID_EVIDENCE_NOT_REGISTERED'
+          ? (Array.isArray(error.invalidEvidenceRefs) ? error.invalidEvidenceRefs : [])
+            .filter((entry) => typeof entry?.path === 'string' && entry.path.length <= 256 &&
+              /^[A-Za-z0-9_.@\[\]]+$/u.test(entry.path))
+            .slice(0, 32).map((entry) => ({ path: entry.path,
+              ...(typeof entry.evidenceRef === 'string' && entry.evidenceRef.length <= 1024
+                ? { evidenceRef: entry.evidenceRef } : { invalidValue: true }) }))
+          : null;
+        const invalidEvidenceRefCount = Number.isSafeInteger(error.invalidEvidenceRefCount)
+          ? error.invalidEvidenceRefCount : null;
+        const expectedJobAidSchemaVersion = isJobAid && isAssessmentUpdate &&
+          errorCode === 'REVIEW_JOBAID_WORK_SCHEMA_INVALID'
+          ? 'wiselink.jobaid-problem-work.v3' : null;
         if (typeof options.observeCandidateRejection === 'function') {
-          await options.observeCandidateRejection({ modelRound: round, correctionNo: candidateCorrections, errorCode });
+          await options.observeCandidateRejection({ modelRound: round, correctionNo: candidateCorrections, errorCode,
+            ...(invalidEvidenceRefs === null ? {} : { invalidEvidenceRefs, invalidEvidenceRefCount }),
+            ...(expectedJobAidSchemaVersion === null ? {} : { expectedJobAidSchemaVersion }) });
         }
         let citedSourceFeedback;
         if (isJobAid && isAssessmentUpdate && ['REVIEW_MODEL_SOURCE_REF_NOT_READ', 'REVIEW_CANDIDATE_SOURCE_REF_NOT_READ_THIS_TURN'].includes(errorCode) &&
@@ -641,18 +659,17 @@ export async function invokeHostedReviewModel(input, options = {}, dependencies 
             candidateAccepted: false, validationError: errorCode,
             ...(isJobAid && isAssessmentUpdate && errorCode === 'REVIEW_JOBAID_EVIDENCE_NOT_REGISTERED'
               ? { evidenceReferenceFeedback: {
-                invalidReferences: (Array.isArray(error.invalidEvidenceRefs) ? error.invalidEvidenceRefs : [])
-                  .filter((entry) => typeof entry?.path === 'string' && entry.path.length <= 256 &&
-                    /^[A-Za-z0-9_.@\[\]]+$/u.test(entry.path))
-                  .slice(0, 32).map((entry) => ({ path: entry.path,
-                    ...(typeof entry.evidenceRef === 'string' && entry.evidenceRef.length <= 1024
-                      ? { evidenceRef: entry.evidenceRef } : { invalidValue: true }) })),
-                invalidReferenceCount: Number.isSafeInteger(error.invalidEvidenceRefCount)
-                  ? error.invalidEvidenceRefCount : null,
+                invalidReferences: invalidEvidenceRefs,
+                invalidReferenceCount: invalidEvidenceRefCount,
                 readEvidenceRefs: [...new Set([...sourceCache.values()].map((source) => source.evidenceRef)
                   .filter((ref) => typeof ref === 'string' && ref.trim()))],
                 instruction: 'These exact fields cite unregistered evidence identifiers. Compare them with readEvidenceRefs and availableEvidenceRefs, and copy the exact registered identifier only when its evidence supports the premise. Do not reconstruct, shorten or alter an identifier. No replacement is inferred for you. Preserve the substantive findings, read additional authorized sources if needed, and submit a complete new candidate; the rejected candidate remains unsaved.',
               } } : {}),
+            ...(expectedJobAidSchemaVersion === null ? {} : { jobAidSchemaFeedback: {
+              field: 'jobAidWorkingDelta.schemaVersion',
+              expected: expectedJobAidSchemaVersion,
+              instruction: 'Use this exact schemaVersion literal in the complete new JobAid candidate. Do not change issue content, scope or evidence merely to repair the protocol field. The rejected candidate was not saved.',
+            } }),
             ...(citedSourceFeedback ? { citedSourceFeedback } : {}),
             availableEvidenceRefs: candidateFeedbackEvidenceRefs(input, sourceCache),
             ...(isJobAid && isAssessmentUpdate ? { previousIssueKeys: jobAidPreviousIssueKeys(input.input) } : {}),
@@ -662,6 +679,12 @@ export async function invokeHostedReviewModel(input, options = {}, dependencies 
               ? 'The proposed JobAid update changes no issue, reading summary, overview, review condition or input disposition. This requested assessment correction must revise the affected existing issues using actually read evidence, or accurately explain why the requested correction cannot be made; do not claim an unchanged delta was saved. Keep unrelated issues unchanged and preserve the prior completion scope and open questions.'
               : isJobAid && errorCode === 'REVIEW_JOBAID_OPEN_QUESTIONS_REQUIRE_QUALIFIED_COMPLETION'
               ? 'COMPLETE conflicts with openQuestions or unresolved requirementHandling in the resulting saved issues, including unchanged prior issues. Preserve those real unknowns and use COMPLETE_WITH_OPEN_QUESTIONS when the requested investigation is complete with bounded open questions; use IN_PROGRESS only if this round still has substantive unfinished investigation. Do not remove questions or mark requirements addressed merely to pass validation. Correct the affected existing issue content using the read sources.'
+              : isJobAid && errorCode === 'JOBAID_READING_SUMMARY_PAIR_REQUIRED'
+              ? 'jobAidWorkingDelta.headline and jobAidWorkingDelta.listBrief must be supplied together or both omitted. With previousWork, omitting both retains the exact saved reading summary. If revising it, supply both accurate texts based on the work and evidence. The rejected candidate was not saved; submit a complete corrected candidate without an inferred or placeholder summary.'
+              : isJobAid && errorCode === 'JOBAID_READING_SUMMARY_REQUIRED'
+              ? 'This first JobAid work revision has no previous reading summary. Supply both jobAidWorkingDelta.headline and jobAidWorkingDelta.listBrief as accurate, nonempty texts. The rejected candidate was not saved; submit a complete corrected candidate without a placeholder summary.'
+              : expectedJobAidSchemaVersion !== null
+              ? 'The JobAid working delta must use schemaVersion wiselink.jobaid-problem-work.v3 exactly. Return a complete new candidate with the same supported engineering correction and valid references; do not silently rewrite the rejected candidate or claim it was saved.'
               : isJobAid && errorCode === 'REVIEW_JOBAID_ISSUE_FULL_CONTENT_REQUIRED'
               ? 'For an existing issue, use jobAidWorkingDelta.issuePatches with its exact issueKey and only supported changed fields. Omitted fields retain the Host-frozen previousWork content. An explicit [] changes that collection and must be justified. List other prior issues in unchangedIssueKeys. A new issue requires a full entry in issues. Do not switch issueKey merely to pass validation.'
               : isJobAid && errorCode?.startsWith('REVIEW_JOBAID_PATCH_')
@@ -1440,7 +1463,7 @@ function bindHostedReviewCandidate(begin, output, isMatter, isJobAid = false) {
 function candidateValidationErrorCode(error) {
   if (!(error instanceof Error)) return null;
   const [code, field] = error.message.split(':');
-  if (!/^(?:REVIEW|OVERALL)_[A-Z0-9_]+$/u.test(code)) return null;
+  if (!/^(?:REVIEW|OVERALL|JOBAID)_[A-Z0-9_]+$/u.test(code)) return null;
   // Unknown-field names originate in model output. Return only a bounded
   // identifier, never arbitrary text from that output or a runtime exception.
   return field && /^[A-Za-z_][A-Za-z0-9_.]{0,127}$/u.test(field) ? `${code}:${field}` : code;
@@ -2056,7 +2079,7 @@ function jobAidReviewGuidance() {
     `Return answer and any proposed candidate fields directly at the function-argument root. answer is required; sourceRefs, missingInputs, candidateEvidenceRefs and warnings are optional collections. Omit them when proposing no entries; never represent an empty collection as [""], null or a placeholder object. Explicitly supplied values are still fully validated. Do not wrap them in candidate or candidateJson, JSON.stringify them, or repeat them inside jobAidWorkingDelta. Include jobAidWorkingDelta when updating work; work fields belong only there and issue fields belong inside its issues or issuePatches. Use ordinary JSON arrays, with strings as string elements, not item objects. A nullable limitation or unknown classification is JSON null, never an empty string. responseType is optional display metadata: if omitted, the driver labels a work update RESYNTHESIS_RESULT and an ordinary reply ANSWER. When supplied, use ANSWER, CLARIFYING_QUESTION, SOURCE_LINK, INPUT_REQUEST, TASK_STATUS or RESYNTHESIS_RESULT as appropriate. Never emit reviewActionDraft or affectedItemIds: the driver binds the fixed no-formal-action values null and [] and rejects model-supplied formal fields.`,
     'Omit retiredIssues when retiring no issue. unchangedIssueKeys may be omitted only when every previous issue is explicitly updated or retired; omission never drops a previous issue. Other work fields remain governed by the complete work contract.',
     'sourceRefs are document or attachment resources actually read this turn. candidateEvidenceRefs is a different field: use only current input.attachmentRefs that were actually read. With no current attachments omit candidateEvidenceRefs; if explicitly supplied, only [] is valid. Never put ordinary document SourceRefs, method references or working-delta source dependencies in candidateEvidenceRefs.',
-    'context.problemAssessment is the actual saved JobAid problem work, method material, available source catalog and earlier discussion. Omit jobAidWorkingDelta for explanations and questions that change no working understanding. For a correction or new material, include a local work update preserving every unaffected issue and source/premise identity. Host saves the complete revised understanding and this reply atomically with CAS; this is an ordinary candidate update, not formal adoption. Never reconstruct a criterion checklist or generate replacement reasoning from an abbreviated brief.',
+    'context.problemAssessment is the actual saved JobAid problem work, method material, available source catalog and earlier discussion. Omit jobAidWorkingDelta for explanations and questions that change no working understanding. For a correction or new material, include a local work update preserving every unaffected issue and source/premise identity. In jobAidWorkingDelta, headline and listBrief must appear together; with previousWork, omit both to retain the saved reading summary, while first work requires both. Host saves the complete revised understanding and this reply atomically with CAS; this is an ordinary candidate update, not formal adoption. Never reconstruct a criterion checklist or generate replacement reasoning from an abbreviated brief.',
     'For UPDATE_ASSESSMENT, reconcile every affected prior "unread" statement and open question with source fragments actually returned this turn. When the relevant heading and its body were read, do not retain a claim that they were unread; update that issue and its question scope. A source directory alone does not establish reading, and parsed text alone does not prove that no hidden or graphical content exists. State that limitation precisely rather than inventing an absent section. Preserve previousWork.content.roundCompletion when the correction leaves its prior completion scope intact. Open questions can remain under COMPLETE_WITH_OPEN_QUESTIONS; use IN_PROGRESS only when newly identified unfinished investigation materially prevents completing this round, and say what it is. An engineer request for later Overall does not justify falsely marking work complete.',
     'Read relevant DOCUMENT_PASSAGE and ENGINEER_ATTACHMENT resources through the current source-read function. The catalog is not a read receipt. Previously saved sources freshly supplied in deliveredEvidence may support retained work; new citations require actual current delivery. Keep sourceRefs limited to resources read this turn; method evidence remains METHOD_CLAUSE in the working update and never pretends to be a document SourceRef. ENGINEER_ATTACHMENT proves only what the uploaded material reports, not implemented controls or controlled Host facts.',
     JOBAID_WORK_GUIDANCE,
@@ -2398,6 +2421,30 @@ function usage() {
   ].join('\n');
 }
 
+export function reviewCliModelOptions(runtime, hooks, argv) {
+  const requestedTimeout = option(argv, '--timeout-ms');
+  return {
+    gatewayUrl: runtime.gatewayUrl,
+    gatewayToken: runtime.gatewayToken,
+    agentId: option(argv, '--agent') || WISELINK_PROFILE_REF,
+    configuredModelVersion: runtime.configuredModelVersion,
+    registeredModelRefs: runtime.registeredModelRefs,
+    executionModel: hooks.executionModel,
+    sessionDiscriminator: hooks.sessionDiscriminator,
+    nativeSessionKey: hooks.nativeSessionKey,
+    observeProgress: hooks.observeProgress,
+    readSourceRefs: hooks.readSourceRefs,
+    queryAily: hooks.queryAily,
+    validateCandidate: hooks.validateCandidate,
+    candidateSourceRefIds: hooks.candidateSourceRefIds,
+    observeCandidateRejection: hooks.observeCandidateRejection,
+    timeoutMs: requestedTimeout
+      ? positiveInteger(Number.parseInt(requestedTimeout, 10), 480_000)
+      : undefined,
+    observeOutputShape: hooks.observeOutputShape,
+  };
+}
+
 async function main(argv, env) {
   if (argv.includes('--help')) {
     process.stdout.write(`${usage()}\n`);
@@ -2423,21 +2470,7 @@ async function main(argv, env) {
     const result = await runHostedReviewTurn(options, {
       callTool: connection.callTool,
       invokeModel: (input, hooks = {}) =>
-        invokeHostedReviewModel(input, {
-          gatewayUrl: runtime.gatewayUrl,
-          gatewayToken: runtime.gatewayToken,
-          agentId: option(argv, '--agent') || WISELINK_PROFILE_REF,
-          configuredModelVersion: runtime.configuredModelVersion,
-          sessionDiscriminator: hooks.sessionDiscriminator,
-          nativeSessionKey: hooks.nativeSessionKey,
-          readSourceRefs: hooks.readSourceRefs,
-          queryAily: hooks.queryAily,
-          timeoutMs: positiveInteger(
-            Number.parseInt(option(argv, '--timeout-ms'), 10) || undefined,
-            480_000,
-          ),
-          observeOutputShape: hooks.observeOutputShape,
-        }),
+        invokeHostedReviewModel(input, reviewCliModelOptions(runtime, hooks, argv)),
     });
     process.stdout.write(`${canonicalJson(result)}\n`);
   } finally {
