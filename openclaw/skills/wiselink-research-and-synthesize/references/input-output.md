@@ -431,7 +431,7 @@ listBrief 是供列表行显示的短文本，不能按字段名误解为项目�
 c39 在提交前以现有完整候选与实际来源校验检查 Matter 输出。模型需要纠正时，驱动向同一原生工具会话返回
 `candidateAccepted=false`、安全 `validationError` 和仅包含本轮已读/已提供依据的 `availableEvidenceRefs`；
 最多两次纠正，共享原总时限，每次模型请求照常续租与重新授权。模型重新输出，驱动不改写或自动补齐候选。
-安全拒绝记录写入私有 `candidate-rejection-N.json`（modelRound/correctionNo/errorCode 与绑定摘要），不作业务
+安全拒绝记录写入私有 `candidate-rejection-N.json`（轮次、错误码、确切 Turn/Attempt 绑定；JobAid 引用错误另含最多 32 条限长字段路径与无效引用，版本错误含预期字面值），不作业务
 结果或来源证明。未知错误、预算耗尽及租约失效停止；通过全部校验后仍只有一次 Host commit。
 CHAT/Matter 使用 `tool_choice=required`，JobAid 使用指定 `return_wiselink_assessment_step` 的函数通道（仍由step选择READ/QUERY/SAVE/FINISH）；均为 `parallel_tool_calls=false`、`n=1`。每次响应只有一个 choice 和一个上述 function call，
 arguments 为 strict JSON object。assistant content 可为 null、空白或官方 Gateway 附带的纯文本说明；只有工具参数
