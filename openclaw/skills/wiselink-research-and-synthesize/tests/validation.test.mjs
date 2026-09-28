@@ -54,6 +54,7 @@ import {
   prepareKnownModelNonDispatchRecovery,
   projectJobAidUpdateInput,
   readHostMcpJsonResult,
+  reviewCliModelOptions,
   resolveConfiguredModelVersion,
   runHostedReviewTurn,
   summarizeHostedReviewModelOutputShape,
@@ -66,6 +67,57 @@ import {
 const fakeGateway = { requestGateway: (...args) => globalThis.fetch(...args) };
 const invokeHostedInitialModel = (input, options) => invokeInitialWithTransport(input, options, fakeGateway);
 const invokeHostedReviewModel = (input, options) => invokeReviewWithTransport(input, options, fakeGateway);
+
+test('direct Review CLI forwards Host validation, lease and diagnostic hooks', () => {
+  const callbacks = Object.fromEntries([
+    'observeProgress', 'readSourceRefs', 'queryAily', 'validateCandidate',
+    'candidateSourceRefIds', 'observeCandidateRejection', 'observeOutputShape',
+  ].map((name) => [name, () => {}]));
+  const runtime = { gatewayUrl: 'https://official.invalid', gatewayToken: 'fixture-only',
+    configuredModelVersion: 'fixture/provider', registeredModelRefs: ['miaoda/minimax-m3'] };
+  const model = { modelRef: 'miaoda/minimax-m3' };
+  const options = reviewCliModelOptions(runtime, { ...callbacks, executionModel: model,
+    nativeSessionKey: 'agent:wiselink-engineering:review:ACTX-RS-fixture',
+    sessionDiscriminator: 'fixture-session' }, []);
+  for (const [name, callback] of Object.entries(callbacks)) assert.equal(options[name], callback);
+  assert.equal(options.executionModel, model);
+  assert.equal(options.registeredModelRefs, runtime.registeredModelRefs);
+  assert.equal(options.timeoutMs, undefined);
+  assert.equal(reviewCliModelOptions(runtime, callbacks, ['--timeout-ms', '900000']).timeoutMs, 900000);
+});
+
+test('JobAid rejection writes an exact private checkpoint before candidate save', async (t) => {
+  const { task: reviewTask } = await emptyJobAidReviewFixture();
+  reviewTask.context.purpose = 'UPDATE_ASSESSMENT';
+  const task = makeTask('OPENCLAW_INTERACTIVE_REVIEW', reviewTask);
+  const checkpointDir = await mkdtemp(join(tmpdir(), 'wiselink-jobaid-rejection-'));
+  t.after(() => rm(checkpointDir, { recursive: true, force: true }));
+  let commits = 0;
+  await assert.rejects(runHostedReviewTurn({ reviewConversationRef: reviewTask.reviewConversationRef,
+    requestId: reviewTask.requestId, checkpointDir }, {
+    callTool: async (name) => {
+      if (name === 'begin_review_turn') return runningBegin(task);
+      if (name === 'get_review_turn_context') return reviewContext(task, reviewTask);
+      if (name === 'commit_review_turn_candidate') commits++;
+      throw new Error(`UNEXPECTED_TOOL:${name}`);
+    },
+    invokeModel: async (_input, hooks) => {
+      await hooks.observeCandidateRejection({ modelRound: 1, correctionNo: 1,
+        errorCode: 'REVIEW_JOBAID_EVIDENCE_NOT_REGISTERED',
+        invalidEvidenceRefs: [{ path: 'jobAidWorkingDelta.issues[0].body@0',
+          evidenceRef: 'method:mistyped' }], invalidEvidenceRefCount: 1 });
+      throw new Error('FIXTURE_STOP_AFTER_REJECTION');
+    },
+  }), /FIXTURE_STOP_AFTER_REJECTION/u);
+  assert.equal(commits, 0);
+  const path = join(checkpointDir, 'candidate-rejection-1.json');
+  const saved = JSON.parse(await readFile(path, 'utf8'));
+  assert.equal(saved.reviewTurnRef, reviewTask.reviewTurnRef);
+  assert.equal(saved.attemptRef, task.operationRef);
+  assert.deepEqual(saved.invalidEvidenceRefs, [{ path: 'jobAidWorkingDelta.issues[0].body@0',
+    evidenceRef: 'method:mistyped' }]);
+  assert.equal((await stat(path)).mode & 0o077, 0);
+});
 
 test('retains a bounded Host rejection code without exposing the MCP error body or replaying a commit', async (t) => {
   const checkpointDir = await mkdtemp(join(tmpdir(), 'wiselink-review-host-error-'));

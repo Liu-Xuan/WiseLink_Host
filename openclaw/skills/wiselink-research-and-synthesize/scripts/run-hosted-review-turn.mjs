@@ -2417,6 +2417,30 @@ function usage() {
   ].join('\n');
 }
 
+export function reviewCliModelOptions(runtime, hooks, argv) {
+  const requestedTimeout = option(argv, '--timeout-ms');
+  return {
+    gatewayUrl: runtime.gatewayUrl,
+    gatewayToken: runtime.gatewayToken,
+    agentId: option(argv, '--agent') || WISELINK_PROFILE_REF,
+    configuredModelVersion: runtime.configuredModelVersion,
+    registeredModelRefs: runtime.registeredModelRefs,
+    executionModel: hooks.executionModel,
+    sessionDiscriminator: hooks.sessionDiscriminator,
+    nativeSessionKey: hooks.nativeSessionKey,
+    observeProgress: hooks.observeProgress,
+    readSourceRefs: hooks.readSourceRefs,
+    queryAily: hooks.queryAily,
+    validateCandidate: hooks.validateCandidate,
+    candidateSourceRefIds: hooks.candidateSourceRefIds,
+    observeCandidateRejection: hooks.observeCandidateRejection,
+    timeoutMs: requestedTimeout
+      ? positiveInteger(Number.parseInt(requestedTimeout, 10), 480_000)
+      : undefined,
+    observeOutputShape: hooks.observeOutputShape,
+  };
+}
+
 async function main(argv, env) {
   if (argv.includes('--help')) {
     process.stdout.write(`${usage()}\n`);
@@ -2442,21 +2466,7 @@ async function main(argv, env) {
     const result = await runHostedReviewTurn(options, {
       callTool: connection.callTool,
       invokeModel: (input, hooks = {}) =>
-        invokeHostedReviewModel(input, {
-          gatewayUrl: runtime.gatewayUrl,
-          gatewayToken: runtime.gatewayToken,
-          agentId: option(argv, '--agent') || WISELINK_PROFILE_REF,
-          configuredModelVersion: runtime.configuredModelVersion,
-          sessionDiscriminator: hooks.sessionDiscriminator,
-          nativeSessionKey: hooks.nativeSessionKey,
-          readSourceRefs: hooks.readSourceRefs,
-          queryAily: hooks.queryAily,
-          timeoutMs: positiveInteger(
-            Number.parseInt(option(argv, '--timeout-ms'), 10) || undefined,
-            480_000,
-          ),
-          observeOutputShape: hooks.observeOutputShape,
-        }),
+        invokeHostedReviewModel(input, reviewCliModelOptions(runtime, hooks, argv)),
     });
     process.stdout.write(`${canonicalJson(result)}\n`);
   } finally {
