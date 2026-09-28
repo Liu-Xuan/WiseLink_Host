@@ -2,11 +2,12 @@ import type {
   TranslationBlockCandidateV2,
   TranslationBlockProvenanceV2,
   TranslationBlockRevisionV2,
+  TranslationGenerationRequestV2,
   TranslationSourcePlanV2,
   TranslationWorkspaceV2,
 } from '@shared/canonical-translation-v2.interface';
 import { buildTranslationSourcePlan } from '../../server/modules/canonical-host/canonical-translation-source-plan';
-import { nextTranslationWorkV2 } from '../../server/modules/canonical-host/canonical-translation-v2-batch';
+import { buildTranslationBatchV2, nextTranslationWorkV2 } from '../../server/modules/canonical-host/canonical-translation-v2-batch';
 import {
   buildTranslationWorkspaceReadingV2,
   checkTranslationBlockV2,
@@ -148,6 +149,47 @@ function workspace(
 }
 
 describe('translation v2 quality and actual reading coverage', () => {
+  it('permits two corrections per attempt, binds each to the latest issues, and stops after the second checked failure', () => {
+    const sourcePlan = plan(['Keep the component installed.']);
+    const work = workspace(sourcePlan);
+    const blockId = sourcePlan.blocks[0].blockId;
+    const blocked = (text: string, code: string, revisionId: string, contentRevision: number): TranslationBlockRevisionV2 => {
+      const value = candidate(sourcePlan, text);
+      return { ...revision(sourcePlan, value), blockRevisionId: revisionId, contentRevision,
+        check: checkTranslationBlockV2({ plan: sourcePlan, candidate: value,
+          semanticReview: { result: { blockId, issues: [{ code, severity: 'BLOCK',
+            message: `Synthetic ${code}`, anchorIds: sourcePlan.blocks[0].anchorIds }] }, provenance } }),
+        checkedAt: '2026-09-09T00:01:00.000Z' };
+    };
+    const request = (ref: string, targetBlockRevisionId: string, status: TranslationGenerationRequestV2['status']): TranslationGenerationRequestV2 => ({
+      generationRequestRef: ref, clientRequestId: ref, attemptId: 'ATT-new', leaseGeneration: 1,
+      blockIds: [blockId], dependencies: revision(sourcePlan, candidate(sourcePlan, '保持组件安装。')).dependencies,
+      purpose: 'CORRECT', targetBlockRevisionId, status, registeredAt: '2026-09-09T00:00:00.000Z',
+      finishedAt: status === 'REGISTERED' ? null : '2026-09-09T00:01:00.000Z', error: null });
+    const first = blocked('保持组件安装。', 'FIRST_ISSUE', 'TB-first', 1);
+    const firstWork = nextTranslationWorkV2(work, [first], buildTranslationWorkspaceReadingV2(work, [first]));
+    expect(firstWork).toMatchObject({ kind: 'CORRECT', targetBlockRevisionId: 'TB-first' });
+    work.generationRequests.push(request('TG-first', 'TB-first', 'SAVED'));
+    const second = blocked('使组件保持安装状态。', 'SECOND_ISSUE', 'TB-second', 2);
+    const revisions = [first, second];
+    const secondWork = nextTranslationWorkV2(work, revisions, buildTranslationWorkspaceReadingV2(work, revisions));
+    expect(secondWork).toMatchObject({ kind: 'CORRECT', targetBlockRevisionId: 'TB-second' });
+    const secondRequest = request('TG-second', 'TB-second', 'REGISTERED');
+    const batch = buildTranslationBatchV2(work, secondRequest, revisions);
+    expect(batch.previousBlockRevisionId).toBe('TB-second');
+    expect(batch.correctionIssues.map(issue => issue.code)).toEqual(['SECOND_ISSUE']);
+    work.generationRequests.push(secondRequest);
+    expect(nextTranslationWorkV2(work, revisions, buildTranslationWorkspaceReadingV2(work, revisions)))
+      .toMatchObject({ kind: 'UNRESOLVED_GENERATION', request: { generationRequestRef: 'TG-second' } });
+    secondRequest.status = 'SAVED';
+    const third = blocked('组件应维持安装。', 'THIRD_ISSUE', 'TB-third', 3);
+    const checked = [first, second, third];
+    expect(nextTranslationWorkV2(work, checked, buildTranslationWorkspaceReadingV2(work, checked)))
+      .toEqual({ kind: 'DONE' });
+    work.activeAttemptId = 'ATT-successor';
+    expect(nextTranslationWorkV2(work, checked, buildTranslationWorkspaceReadingV2(work, checked)))
+      .toMatchObject({ kind: 'CORRECT', targetBlockRevisionId: 'TB-third' });
+  });
   it('batches complete pending checks within source and count bounds only for a capable caller', () => {
     const sourcePlan = plan(
       Array.from(

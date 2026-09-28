@@ -95,13 +95,13 @@ export function nextTranslationWorkV2(
       (issue) => issue.severity === 'BLOCK',
     );
     if (blocked) {
-      const alreadyCorrected = workspace.generationRequests.some(
+      const correctionCount = workspace.generationRequests.filter(
         (request) =>
           request.attemptId === workspace.activeAttemptId &&
           request.purpose === 'CORRECT' &&
           request.blockIds.includes(latest.blockId),
-      );
-      if (!alreadyCorrected)
+      ).length;
+      if (correctionCount < 2)
         return {
           kind: 'CORRECT',
           blockIds: [latest.blockId],

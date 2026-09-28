@@ -312,7 +312,10 @@ export class CanonicalTranslationV2Service {
       throw new Error('DOCUMENT_TRANSLATION_PROGRESS_SCOPE_INVALID');
     const { workspace, revisions } = await this.workspaces.readSnapshot(scope);
     const reading = buildTranslationWorkspaceReadingV2(workspace, revisions);
-    return { completeness: reading.completeness, coverage: reading.coverage };
+    return { completeness: reading.completeness, coverage: reading.coverage,
+      repairableBlockCount: reading.blocks.filter(block => block.readingStatus === 'BLOCKED' &&
+        !block.source.sourceIssues.some(issue => issue.severity === 'BLOCK') &&
+        block.issues.some(issue => issue.severity === 'BLOCK' && issue.origin !== 'SOURCE')).length };
   }
 
   private async executeScoped(input: WorkspaceCommand, scoped: {

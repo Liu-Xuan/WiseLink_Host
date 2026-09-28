@@ -20,7 +20,8 @@ export class DocumentTranslationAttemptRepository {
 
   async latest(scope: DocumentTranslationScope, requestId?: string) {
     const [row] = await this.db.select().from(actionAttempt).where(and(owned(scope),
-      requestId ? inArray(actionAttempt.triggerRequestId, [requestId, `${requestId}:hosted-m3`]) : undefined))
+      requestId ? inArray(actionAttempt.triggerRequestId,
+        [requestId, `${requestId}:hosted-m3`, `${requestId}:partial-repair`]) : undefined))
       .orderBy(desc(actionAttempt.attemptNo)).limit(1);
     return row ?? null;
   }
@@ -38,7 +39,8 @@ export class DocumentTranslationAttemptRepository {
   }
 
   async reserve(scope: DocumentTranslationScope, task: DocumentTranslationTaskEnvelope, requestId: string,
-    executionModel: CanonicalExecutionModelSelection | null = null, predecessorRef?: string) {
+    executionModel: CanonicalExecutionModelSelection | null = null, predecessorRef?: string,
+    successorKind: 'QUOTA' | 'PARTIAL' = 'QUOTA') {
     const parsed = parseDocumentTranslationTaskEnvelope(canonicalJson(task));
     if (parsed.modelInput.documentProducer === 'HOSTED_M3') {
       if (!executionModel || parseExecutionModel(executionModel).modelRef !== 'm3probe/minimax-m3')
@@ -54,20 +56,68 @@ export class DocumentTranslationAttemptRepository {
       if (predecessorRef) {
         const [prior] = await tx.select().from(actionAttempt).where(and(owned(scope),
           eq(actionAttempt.operationRef, predecessorRef))).limit(1).for('update');
-        if (!prior || prior.triggerRequestId === null || requestId !== `${prior.triggerRequestId}:hosted-m3` ||
-            prior.status !== 'FAILED' || prior.errorCode !== 'DOCUMENT_PLUGIN_QUOTA_EXHAUSTED' ||
-            prior.producerRunId !== parsed.parseRunId || prior.startedAt !== null ||
-            prior.projectionApplied || prior.resultEnvelopeJson !== null ||
-            parseDocumentTranslationTaskEnvelope(prior.taskEnvelopeJson ?? '').modelInput.documentProducer !== 'OFFICIAL_PLUGIN')
+        if (!prior || prior.triggerRequestId === null || prior.producerRunId !== parsed.parseRunId)
           throw new Error('DOCUMENT_TRANSLATION_RECOVERY_INELIGIBLE');
-        const [saved] = await tx.select({ id: translationBlockRevision.blockRevisionId })
-          .from(translationBlockRevision).where(and(eq(translationBlockRevision.tenantId, scope.tenantId),
-            eq(translationBlockRevision.originAttemptId, prior.attemptId))).limit(1);
-        const [workspace] = await tx.select({ result: translationWorkspace.resultArtifactJson })
-          .from(translationWorkspace).where(and(eq(translationWorkspace.tenantId, scope.tenantId),
-            eq(translationWorkspace.workspaceId,
-              parseDocumentTranslationTaskEnvelope(prior.taskEnvelopeJson ?? '').workspaceId))).limit(1);
-        if (saved || workspace?.result !== null) throw new Error('DOCUMENT_TRANSLATION_RECOVERY_HAS_OUTPUT');
+        const priorTask = parseDocumentTranslationTaskEnvelope(prior.taskEnvelopeJson ?? '');
+        if (successorKind === 'PARTIAL') {
+          const rootRequestId = prior.triggerRequestId.endsWith(':hosted-m3')
+            ? prior.triggerRequestId.slice(0, -':hosted-m3'.length) : prior.triggerRequestId;
+          if (requestId !== `${rootRequestId}:partial-repair` ||
+              prior.triggerRequestId.endsWith(':partial-repair') || prior.status !== 'SUCCEEDED' ||
+              prior.terminalReason !== 'REMAINING_LIMITATIONS' || !prior.resultEnvelopeJson ||
+              priorTask.workspaceId !== parsed.workspaceId ||
+              priorTask.parseRevision !== parsed.parseRevision ||
+              canonicalJson(priorTask.modelInput.source) !== canonicalJson(parsed.modelInput.source) ||
+              priorTask.modelInput.planRevision !== parsed.modelInput.planRevision ||
+              priorTask.modelInput.contextRevision !== parsed.modelInput.contextRevision ||
+              priorTask.modelInput.methodVersion !== parsed.modelInput.methodVersion)
+            throw new Error('DOCUMENT_TRANSLATION_PARTIAL_SUCCESSOR_INELIGIBLE');
+          const result = JSON.parse(prior.resultEnvelopeJson) as { status?: string; artifact?: { completeness?: string } };
+          if (result.status !== 'REMAINING_LIMITATIONS' || result.artifact?.completeness !== 'PARTIAL')
+            throw new Error('DOCUMENT_TRANSLATION_PARTIAL_SUCCESSOR_INELIGIBLE');
+          // A lost CONTINUE_PARTIAL receipt must read back the fixed successor
+          // even after its first repair has changed the workspace state.
+          const [existing] = await tx.select().from(actionAttempt).where(and(owned(scope),
+            eq(actionAttempt.idempotencyKey, parsed.idempotencyKey))).limit(1);
+          if (existing) {
+            const savedTask = parseDocumentTranslationTaskEnvelope(existing.taskEnvelopeJson ?? '');
+            if (existing.triggerRequestId !== requestId || existing.producerRunId !== parsed.parseRunId ||
+                savedTask.parseRevision !== parsed.parseRevision || savedTask.workspaceId !== parsed.workspaceId ||
+                canonicalJson(savedTask.modelInput) !== canonicalJson(parsed.modelInput))
+              throw new Error('DOCUMENT_TRANSLATION_REQUEST_CONFLICT');
+            return existing;
+          }
+          const [workspace] = await tx.select({ result: translationWorkspace.resultArtifactJson })
+            .from(translationWorkspace).where(and(eq(translationWorkspace.tenantId, scope.tenantId),
+              eq(translationWorkspace.documentVersionId, scope.documentVersionId),
+              eq(translationWorkspace.workspaceId, priorTask.workspaceId))).limit(1).for('update');
+          if (!workspace?.result) throw new Error('DOCUMENT_TRANSLATION_PARTIAL_SUCCESSOR_INELIGIBLE');
+          const [repairable] = await tx.execute<{ repairable: boolean }>(sql`SELECT EXISTS (
+            SELECT 1 FROM ${translationBlockRevision} r
+            WHERE r.tenant_id=${scope.tenantId} AND r.workspace_id=${priorTask.workspaceId}
+              AND r.selected_for_reading=false AND r.check_json IS NOT NULL
+              AND r.content_revision=(SELECT max(newer.content_revision) FROM ${translationBlockRevision} newer
+                WHERE newer.tenant_id=r.tenant_id AND newer.workspace_id=r.workspace_id AND newer.block_id=r.block_id)
+              AND jsonb_path_exists(r.check_json::jsonb,
+                '$.issues[*] ? (@.severity == "BLOCK" && @.origin != "SOURCE")')
+              AND NOT jsonb_path_exists(r.check_json::jsonb,
+                '$.issues[*] ? (@.severity == "BLOCK" && @.origin == "SOURCE")')
+          ) AS repairable`);
+          if (!repairable?.repairable) throw new Error('DOCUMENT_TRANSLATION_PARTIAL_SUCCESSOR_INELIGIBLE');
+        } else {
+          if (requestId !== `${prior.triggerRequestId}:hosted-m3` ||
+              prior.status !== 'FAILED' || prior.errorCode !== 'DOCUMENT_PLUGIN_QUOTA_EXHAUSTED' ||
+              prior.startedAt !== null || prior.projectionApplied || prior.resultEnvelopeJson !== null ||
+              priorTask.modelInput.documentProducer !== 'OFFICIAL_PLUGIN')
+            throw new Error('DOCUMENT_TRANSLATION_RECOVERY_INELIGIBLE');
+          const [saved] = await tx.select({ id: translationBlockRevision.blockRevisionId })
+            .from(translationBlockRevision).where(and(eq(translationBlockRevision.tenantId, scope.tenantId),
+              eq(translationBlockRevision.originAttemptId, prior.attemptId))).limit(1);
+          const [workspace] = await tx.select({ result: translationWorkspace.resultArtifactJson })
+            .from(translationWorkspace).where(and(eq(translationWorkspace.tenantId, scope.tenantId),
+              eq(translationWorkspace.workspaceId, priorTask.workspaceId))).limit(1);
+          if (saved || workspace?.result !== null) throw new Error('DOCUMENT_TRANSLATION_RECOVERY_HAS_OUTPUT');
+        }
       }
       const current = await tx.execute<{ parseRunId: string; parseRevision: number; sha256: string; byteLength: number }>(sql`
         SELECT parse_run_id AS "parseRunId",parse_revision AS "parseRevision",

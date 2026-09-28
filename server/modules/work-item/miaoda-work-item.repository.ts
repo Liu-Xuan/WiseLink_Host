@@ -33,6 +33,7 @@ import { autoWorkItemAuthorization } from '../../database/auto-work-item-authori
 import { dmDocumentReadingRun } from '../../database/document-reading.schema';
 import {
   actionAttempt,
+  translationBlockRevision,
   workItem,
 } from '../../database/schema';
 import { readStoredExecutionModel } from '../model-settings/canonical-execution-model';
@@ -341,7 +342,8 @@ export class MiaodaWorkItemRepository {
         OR EXISTS (SELECT 1 FROM ${actionAttempt} t
           WHERE t.tenant_id=${input.tenantId} AND t.actor_user_id=${input.actorUserId}
             AND t.document_version_id=${input.documentVersionId}
-            AND t.trigger_request_id IN (${input.translationRequestId},${`${input.translationRequestId}:hosted-m3`})
+            AND t.trigger_request_id IN (${input.translationRequestId},${`${input.translationRequestId}:hosted-m3`},
+              ${`${input.translationRequestId}:partial-repair`})
             AND t.subject_kind='DOCUMENT_VERSION' AND t.action_type='DOCUMENT_TRANSLATE'
             AND t.status IN ('QUEUED','RUNNING','RETRY_SCHEDULED')
             AND t.deadline_at>CURRENT_TIMESTAMP
@@ -360,6 +362,29 @@ export class MiaodaWorkItemRepository {
                 AND successor.document_version_id=t.document_version_id
                 AND successor.subject_kind='DOCUMENT_VERSION' AND successor.action_type='DOCUMENT_TRANSLATE'
                 AND successor.trigger_request_id=${`${input.translationRequestId}:hosted-m3`}))
+        OR EXISTS (SELECT 1 FROM ${actionAttempt} t
+          WHERE t.tenant_id=${input.tenantId} AND t.actor_user_id=${input.actorUserId}
+            AND t.document_version_id=${input.documentVersionId}
+            AND t.trigger_request_id IN (${input.translationRequestId},${`${input.translationRequestId}:hosted-m3`})
+            AND t.subject_kind='DOCUMENT_VERSION' AND t.action_type='DOCUMENT_TRANSLATE'
+            AND t.status='SUCCEEDED' AND t.terminal_reason='REMAINING_LIMITATIONS'
+            AND t.result_envelope_json::jsonb->'artifact'->>'completeness'='PARTIAL'
+            AND NOT EXISTS (SELECT 1 FROM ${actionAttempt} successor
+              WHERE successor.tenant_id=t.tenant_id AND successor.actor_user_id=t.actor_user_id
+                AND successor.document_version_id=t.document_version_id
+                AND successor.subject_kind='DOCUMENT_VERSION' AND successor.action_type='DOCUMENT_TRANSLATE'
+                AND successor.trigger_request_id=${`${input.translationRequestId}:partial-repair`})
+            AND EXISTS (SELECT 1 FROM ${translationBlockRevision} r
+              WHERE r.tenant_id=t.tenant_id
+                AND r.workspace_id=t.task_envelope_json::jsonb->>'workspaceId'
+                AND r.selected_for_reading=false AND r.check_json IS NOT NULL
+                AND r.content_revision=(SELECT max(newer.content_revision) FROM ${translationBlockRevision} newer
+                  WHERE newer.tenant_id=r.tenant_id AND newer.workspace_id=r.workspace_id
+                    AND newer.block_id=r.block_id)
+                AND jsonb_path_exists(r.check_json::jsonb,
+                  '$.issues[*] ? (@.severity == "BLOCK" && @.origin != "SOURCE")')
+                AND NOT jsonb_path_exists(r.check_json::jsonb,
+                  '$.issues[*] ? (@.severity == "BLOCK" && @.origin == "SOURCE")')))
       ) AS pending,
       (
         (${input.readingSelected} AND NOT EXISTS (SELECT 1 FROM ${dmDocumentReadingRun} r
@@ -369,7 +394,8 @@ export class MiaodaWorkItemRepository {
         OR (${input.translationSelected} AND NOT EXISTS (SELECT 1 FROM ${actionAttempt} t
           WHERE t.tenant_id=${input.tenantId} AND t.actor_user_id=${input.actorUserId}
             AND t.document_version_id=${input.documentVersionId}
-            AND t.trigger_request_id IN (${input.translationRequestId},${`${input.translationRequestId}:hosted-m3`})
+            AND t.trigger_request_id IN (${input.translationRequestId},${`${input.translationRequestId}:hosted-m3`},
+              ${`${input.translationRequestId}:partial-repair`})
             AND t.subject_kind='DOCUMENT_VERSION' AND t.action_type='DOCUMENT_TRANSLATE'))
       ) AS missing`);
     return { pending: rows[0]?.pending === true, missing: rows[0]?.missing === true };

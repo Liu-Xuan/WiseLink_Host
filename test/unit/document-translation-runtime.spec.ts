@@ -1,6 +1,7 @@
 import { DocumentTranslationRuntimeService } from '../../server/modules/canonical-host/document-translation-runtime.service';
 import { originalFixture } from './document-parsing/fixtures/document-original.fixture';
 import { sealDocumentTranslationTaskEnvelope } from '../../server/modules/action-attempt/document-translation-task-envelope';
+import { documentDeliveryRequestId } from '../../server/modules/canonical-host/document-delivery-ref';
 
 function setup() {
   const original = originalFixture();
@@ -20,9 +21,10 @@ function setup() {
     executeStep: jest.fn().mockResolvedValue({ status: 'PROGRESSED' }) };
   let row: Record<string, unknown> | null = null;
   const attempts = { readRequest: jest.fn(async () => row), latest: jest.fn(async () => row),
-    reserve: jest.fn(async (_scope, task, _requestId, executionModel) => { row = { status: 'QUEUED', documentVersionId, producerRunId: parseRunId,
+    reserve: jest.fn(async (_scope, task, requestId, executionModel) => { row = { status: 'QUEUED', documentVersionId, producerRunId: parseRunId,
       attemptId: task.actionAttemptId, operationRef: task.operationRef, taskEnvelopeJson: JSON.stringify(task),
-      executionModelJson: JSON.stringify(executionModel), deadlineAt: new Date(task.deadline), errorCode: null }; return row; }),
+      triggerRequestId: requestId, executionModelJson: JSON.stringify(executionModel),
+      deadlineAt: new Date(task.deadline), errorCode: null }; return row; }),
     claim: jest.fn(async (_scope, attemptRef, principalId) => ({ attemptRef, principalId, leaseToken: 'token', leaseGeneration: 1 })),
     renew: jest.fn().mockResolvedValue(true), release: jest.fn().mockResolvedValue(true),
     cancel: jest.fn(), finish: jest.fn(), fail: jest.fn(), expire: jest.fn(),
@@ -30,7 +32,8 @@ function setup() {
   const parsing = { status: jest.fn().mockResolvedValue({ documentVersionId }) };
   const semantics = { readReady: jest.fn().mockResolvedValue(null), read: jest.fn().mockResolvedValue({ profileRef: 'generic.author-sections.v1' }) };
   const v2 = { executeDocument: jest.fn(), assembleDocument: jest.fn(),
-    documentHasInterruptedGeneration: jest.fn().mockResolvedValue(false) };
+    documentHasInterruptedGeneration: jest.fn().mockResolvedValue(false),
+    readDocumentProgress: jest.fn().mockResolvedValue({ completeness: 'PARTIAL', repairableBlockCount: 1 }) };
   const service = new DocumentTranslationRuntimeService(authorization as never, actors as never, reader as never,
     plugins as never, attempts as never, semantics as never, parsing as never, v2 as never);
   const legacy = () => {
@@ -80,6 +83,27 @@ describe('independent document translation runtime', () => {
       errorCode: 'DOCUMENT_TRANSLATION_GENERATION_OUTCOME_UNKNOWN' });
     expect(f.attempts.release).toHaveBeenCalledTimes(1);
     expect(f.v2.executeDocument).not.toHaveBeenCalled();
+  });
+  it('derives one partial successor from the exact delivery and leaves the completed attempt intact', async () => {
+    const f = setup();
+    const deliveryRef = 'acquisition:sample';
+    const requestId = documentDeliveryRequestId('translation', deliveryRef);
+    const first = await f.service.run({ action: 'START', ...f.binding, deliveryRef, requestId });
+    if (!('attemptRef' in first)) throw new Error('expected first attempt');
+    const prior = await f.attempts.readRequest();
+    Object.assign(prior!, { status: 'SUCCEEDED', terminalReason: 'REMAINING_LIMITATIONS' });
+    const status = await f.service.run({ action: 'STATUS', ...f.binding, deliveryRef });
+    expect(status).toMatchObject({ status: 'SUCCEEDED', partialRepairAvailable: true });
+    await expect(f.service.run({ action: 'CONTINUE_PARTIAL', ...f.binding,
+      attemptRef: first.attemptRef! })).rejects.toThrow('DOCUMENT_TRANSLATION_PARTIAL_SCOPE_INVALID');
+    const continued = await f.service.run({ action: 'CONTINUE_PARTIAL', ...f.binding,
+      deliveryRef, attemptRef: first.attemptRef! });
+    expect(continued).toMatchObject({ status: 'QUEUED' });
+    expect(f.attempts.reserve.mock.calls[1].slice(2)).toMatchObject([
+      `${requestId}:partial-repair`, { modelRef: 'm3probe/minimax-m3' }, first.attemptRef, 'PARTIAL']);
+    expect(prior).toMatchObject({ status: 'SUCCEEDED', terminalReason: 'REMAINING_LIMITATIONS' });
+    expect(f.authorization.authorizeDocumentWork).toHaveBeenCalledWith({ documentVersionId: f.binding.documentVersionId,
+      deliveryRef, purpose: 'TRANSLATION' });
   });
   it('executes one official step using the document fence and releases failure without replay', async () => {
     const f = setup();
