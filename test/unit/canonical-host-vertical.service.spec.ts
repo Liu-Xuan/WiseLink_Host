@@ -1359,6 +1359,32 @@ describe('CanonicalHostVerticalService', () => {
     expect(browseOnly.queryResults).toEqual([]);
     expect(browseOnly.readerProjection).toMatchObject({ query: '', units: [] });
 
+    sourceReads.mockClear();
+    const noMatch = await service.page(
+      {
+        workItemId: request.workItemId,
+        query: 'NO-SUCH-STRUCTURED-PASSAGE',
+      },
+      TEST_ACTOR,
+    );
+    expect(noMatch).toMatchObject({
+      status: 'FRESH_READ',
+      workItem: { revision: page.workItem.revision, phase: 'CANDIDATE_READBACK_VERIFIED' },
+      entry: { workItemId: request.workItemId },
+      queryResults: [],
+      readerProjection: {
+        query: 'NO-SUCH-STRUCTURED-PASSAGE',
+        sourceKind: 'pdf',
+        structuredUnitCount: 311,
+        sourceRefCount: 239,
+        units: [],
+        pdfPreview: { status: 'AVAILABLE' },
+      },
+    });
+    expect(noMatch.workbenchAudit.candidateFormationSteps.find((step) =>
+      step.id === 'query-reader')).toMatchObject({ status: 'NO_RESULTS' });
+    expect(sourceReads).toHaveBeenCalledTimes(1);
+
     const firstStructuredPage = await service.browseStructuredContent(
       {
         workItemId: request.workItemId,

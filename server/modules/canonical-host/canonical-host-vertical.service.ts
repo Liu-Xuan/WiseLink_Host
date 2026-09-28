@@ -1384,7 +1384,7 @@ export class CanonicalHostVerticalService {
         artifact: projection.package.artifact,
       },
       query,
-    });
+    }, undefined, { allowEmptyResults: true });
   }
 
   private async authorizeAction(input: {

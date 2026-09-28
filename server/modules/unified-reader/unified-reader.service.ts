@@ -176,6 +176,7 @@ export class UnifiedReaderService {
   async readback(
     request: UnifiedPackageReadbackRequest,
     readScope?: UnifiedArtifactReadScope,
+    options: { allowEmptyResults?: boolean } = {},
   ): Promise<UnifiedPackageReadbackResponse> {
     this.validateRequest(request);
     const artifact: UnifiedPackageArtifactDescriptor = request.package.artifact;
@@ -190,6 +191,11 @@ export class UnifiedReaderService {
       sourcePackage,
       request.query,
     );
+    // Initial acceptance and assessment probes still require a hit. Only
+    // explicit search callers may read a verified package with zero matches.
+    if (!options.allowEmptyResults && summary.queryResults.length === 0) {
+      throw new Error('READER_QUERY_NO_RESULTS');
+    }
     if (
       summary.packageId !== request.package.packageId ||
       summary.contractId !== request.package.contractId ||
