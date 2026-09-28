@@ -159,8 +159,15 @@ export class DocumentWorkRuntimeService {
           expectedPublishedRevision: state.publishedRun?.parseRevision ?? 0,
         }, scope);
       }
-      if (run.status !== 'PUBLISHED') return { status: 'ORIGINAL_PREPARING' as const,
-        documentVersionId: scope.documentVersionId, parseRunId: run.parseRunId };
+      if (run.status !== 'PUBLISHED') {
+        if (run.status === 'FAILED' || run.errorCode || Date.parse(run.deadlineAt) <= Date.now())
+          return { status: 'REQUIRES_ATTENTION' as const,
+            documentVersionId: scope.documentVersionId, parseRunId: run.parseRunId,
+            errorCode: run.errorCode ?? (run.status === 'FAILED'
+              ? 'DOCUMENT_PARSE_FAILED' : 'DOCUMENT_PARSE_DEADLINE_EXCEEDED') };
+        return { status: 'ORIGINAL_PREPARING' as const,
+          documentVersionId: scope.documentVersionId, parseRunId: run.parseRunId };
+      }
       const published = await this.parsing.inspectPublishedIdentity(
         scope.documentVersionId, run.parseRunId, scope);
       const source = await this.deliveryCatalog.readOriginalRegistryIdentity(

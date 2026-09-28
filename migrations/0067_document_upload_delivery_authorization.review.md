@@ -37,6 +37,12 @@ same transaction. Other Catalog callers do not enter service SQL.
 The draft authorization table also has the platform's four `_created/_updated`
 audit columns. Its admission trigger maintains the update pair without adding
 those columns to the service role's UPDATE grant.
+For queued uploads, a running original remains `DOCUMENT_PENDING` so the
+consumer can advance its parse `STEP`. That response carries the exact
+acquisition cursor, which the consumer saves before work; the next tick scans
+later acquisitions and an empty tail page clears the cursor to revisit earlier
+work. A terminal parse needing human attention stays `WAITING`, is logged, and
+is skipped for that discovery tick without being admitted.
 
 The upload, historical-confirmation, and historical-refresh HTTP entries now
 return the existing `SESSION_REQUIRED` / HTTP 401 response when an opaque OAuth
@@ -95,6 +101,10 @@ automatically replayed.
   skipped; the two automatic-dispatch suites passed 29 tests. Three affected
   OpenClaw Node test files passed 305 tests. These are local checks, not a
   hosted middleware or deployed-client result.
+- Focused dispatch/runtime Jest and OpenClaw queue tests verify that a RUNNING
+  upload still receives a parse `STEP`, the next tick scans a later acquisition,
+  the tail page wraps to the first, and terminal parses leave the authorization
+  waiting while later work proceeds. These are local scheduling checks.
 - Online 17b read-only inspection established `current_schema()` and DM
   tables in `workspace_aadkpkjef3slu`. The hosted SQL service and browser
   roles are `service_role_workspace_aadkpkjef3slu` and

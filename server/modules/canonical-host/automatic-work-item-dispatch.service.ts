@@ -299,12 +299,18 @@ export class AutomaticWorkItemDispatchService {
         throw new Error('AUTO_DOCUMENT_SCOPE_MISMATCH');
       if (upload.status === 'WAITING') {
         if (!this.documentWork) throw new Error('AUTO_DOCUMENT_UPLOAD_RUNTIME_UNAVAILABLE');
-        try { await this.documentWork.prepareAutomaticUpload(upload); }
+        let prepared: Awaited<ReturnType<DocumentWorkRuntimeService['prepareAutomaticUpload']>>;
+        try { prepared = await this.documentWork.prepareAutomaticUpload(upload); }
         catch (error) {
           if (!this.skipUnsupportedMultiActor(error, deliveryRef)) throw error;
           continue;
         }
-        return { status: 'DOCUMENT_PENDING', documentVersionId, deliveryRef };
+        if (prepared.status === 'REQUIRES_ATTENTION') {
+          this.logger.warn(`Document delivery ${deliveryRef} still waits for original ${prepared.parseRunId}: ${prepared.errorCode}.`);
+          continue;
+        }
+        return { status: 'DOCUMENT_PENDING', documentVersionId, deliveryRef,
+          documentAfterRef: deliveryRef };
       }
       const pending = await this.jobAidWork.withActorScope(actorUserId, () =>
         this.workItems.documentDeliveryDispatchState({
@@ -312,7 +318,8 @@ export class AutomaticWorkItemDispatchService {
           readingRequestId: documentDeliveryRequestId('reading', deliveryRef),
           translationRequestId: documentDeliveryRequestId('translation', deliveryRef),
           readingSelected: false, translationSelected: false }));
-      if (pending.pending) return { status: 'DOCUMENT_PENDING', documentVersionId, deliveryRef };
+      if (pending.pending) return { status: 'DOCUMENT_PENDING', documentVersionId, deliveryRef,
+        documentAfterRef: deliveryRef };
     }
     return uploads.length === DOCUMENT_DISCOVERY_PAGE_SIZE
       ? { status: 'IDLE', documentAfterRef: `acquisition:${uploads[uploads.length - 1].acquisitionId}` }

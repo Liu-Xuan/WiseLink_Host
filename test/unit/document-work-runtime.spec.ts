@@ -95,6 +95,32 @@ describe('authorized document step runtime', () => {
     expect(f.deliveryCatalog.markDocumentUploadDeliveryAdmitted).toHaveBeenCalledTimes(2);
   });
 
+  it('distinguishes a running upload original from a terminal parse that needs attention', async () => {
+    const f = fixture();
+    const input = { acquisitionId: 'ACQ-one', documentVersionId: 'DV', actorUserId: 'actor' };
+    f.deliveryCatalog.readDocumentUploadDeliveryIntents.mockResolvedValue([{
+      ...input, delivery: { reading: true, translation: 'NONE' },
+    }]);
+    f.parsing.status.mockResolvedValueOnce({ documentVersionId: 'DV', latestRun: {
+      parseRunId: 'PRUN-FAILED', status: 'FAILED',
+      errorCode: 'DOCUMENT_PARSE_QUOTA_EXCEEDED',
+      deadlineAt: new Date(Date.now() - 60_000).toISOString(),
+    } }).mockResolvedValueOnce({ documentVersionId: 'DV', latestRun: {
+      parseRunId: 'PRUN-RUNNING', status: 'RUNNING', errorCode: null,
+      deadlineAt: new Date(Date.now() + 60_000).toISOString(),
+    } });
+    await expect(f.service.prepareAutomaticUpload(input)).resolves.toEqual({
+      status: 'REQUIRES_ATTENTION', documentVersionId: 'DV',
+      parseRunId: 'PRUN-FAILED', errorCode: 'DOCUMENT_PARSE_QUOTA_EXCEEDED',
+    });
+    await expect(f.service.prepareAutomaticUpload(input)).resolves.toEqual({
+      status: 'ORIGINAL_PREPARING', documentVersionId: 'DV', parseRunId: 'PRUN-RUNNING',
+    });
+    expect(f.parsing.start).not.toHaveBeenCalled();
+    expect(f.deliveryCatalog.markDocumentUploadDeliveryAdmitted).not.toHaveBeenCalled();
+    expect(f.readingRuntime.run).not.toHaveBeenCalled();
+  });
+
   it('asks for separate cancellation authority before touching a document run', async () => {
     const f = fixture();
     f.authorization.authorizeDocumentWork.mockRejectedValue(new Error('DYNAMIC_CANCEL_DENIED'));

@@ -3291,7 +3291,8 @@ export interface LinkEngineeringMatterWorkItemResponse {
 
 export type AutomaticWorkItemClaimResult =
   | { status: 'IDLE'; reviewAfterWorkItemId?: string; documentAfterRef?: string }
-  | { status: 'DOCUMENT_PENDING'; documentVersionId: string; deliveryRef: string }
+  | { status: 'DOCUMENT_PENDING'; documentVersionId: string; deliveryRef: string;
+      documentAfterRef?: string }
   | {
       status: 'REVIEW_PENDING';
       workItemId: string;
