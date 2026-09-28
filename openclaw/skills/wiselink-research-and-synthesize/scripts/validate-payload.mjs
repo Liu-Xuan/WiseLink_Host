@@ -5,7 +5,7 @@ import { readFile } from 'node:fs/promises';
 import { pathToFileURL } from 'node:url';
 
 export const WISELINK_SKILL_VERSION =
-  'wiselink-research-and-synthesize@r09.c185';
+  'wiselink-research-and-synthesize@r09.c192';
 export const WISELINK_SKILL_COMPATIBILITY_REF =
   'wiselink-research-and-synthesize@r09';
 export const WISELINK_HOST_MCP_NAME =
@@ -4908,6 +4908,25 @@ function validateJobAidWorkDelta(delta, previousContent, sourceCatalog) {
       (issue.requirementHandling ?? []).some((item) =>
         ['CONDITIONS_UNCONFIRMED', 'NOT_YET_ADDRESSED'].includes(item.treatment))))
       fail('REVIEW_JOBAID_OPEN_QUESTIONS_REQUIRE_QUALIFIED_COMPLETION');
+  }
+  // Host refs() requires a nonempty array for every authored professional
+  // premise except requirement handling, where an empty basis is permitted.
+  const basisRefs = (value, name, allowEmpty = false) => {
+    arrayOfText(value, `JOBAID_${name}_BASIS_INVALID`);
+    const normalized = value.map((ref) => ref.trim());
+    if (new Set(normalized).size !== value.length) fail(`JOBAID_${name}_BASIS_DUPLICATE`);
+    if (!allowEmpty && value.length === 0) fail(`JOBAID_${name}_BASIS_EMPTY`);
+  };
+  for (const issue of delta.issues) {
+    for (const risk of issue.riskScenarios ?? []) {
+      for (const name of ['severity', 'likelihood', 'importantEvent']) {
+        if (risk[name] != null) basisRefs(risk[name].basisRefs, name.toUpperCase());
+      }
+    }
+    for (const measure of issue.measures ?? []) basisRefs(measure.basisRefs, 'MEASURE');
+    for (const other of issue.otherClassifications ?? []) basisRefs(other.basisRefs, 'OTHER');
+    for (const requirement of issue.requirementHandling ?? [])
+      basisRefs(requirement.basisRefs, 'REQUIREMENT', true);
   }
   const allowed = new Set(sourceCatalog.map((item) => item.evidenceRef));
   const invalid = jobAidDeltaEvidenceEntries(delta).filter((entry) => !allowed.has(entry.evidenceRef));

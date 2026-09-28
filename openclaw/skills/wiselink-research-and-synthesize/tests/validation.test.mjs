@@ -59,6 +59,7 @@ import {
   runHostedReviewTurn,
   summarizeHostedReviewModelOutputShape,
   validateHostToolMetadata,
+  validateJobAidIssueEditScope,
   validateJobAidUpdatedIssueBodies,
 } from '../scripts/run-hosted-review-turn.mjs';
 
@@ -1434,7 +1435,7 @@ test('requires 35 MCP capabilities, six review tools, and hosted provenance', ()
   assert.ok(HOST_MCP_TOOLS.includes('commit_applicability_candidate'));
   assert.equal(
     WISELINK_SKILL_VERSION,
-    'wiselink-research-and-synthesize@r09.c185',
+    'wiselink-research-and-synthesize@r09.c192',
   );
   assert.equal(
     WISELINK_SKILL_COMPATIBILITY_REF,
@@ -7413,7 +7414,7 @@ test('source-read JobAid Review makes one compact correction after a proven empt
     jobAidWorkingDelta: { schemaVersion: 'wiselink.jobaid-problem-work.v3',
       issuePatches: [{ issueKey: 'existing', body: '已核对原文。[[source:page1]]' }],
       unchangedIssueKeys: ['other'], roundCompletion: 'COMPLETE_WITH_OPEN_QUESTIONS',
-      completionReason: '保留原完成范围' } };
+      completionReason: '保留原完成范围', changeSummary: '核对原文并修正既有问题' } };
   const result = await invokeReviewWithTransport({ input: {
     availableSourceRefIds: ['page1'],
     context: { purpose: 'UPDATE_ASSESSMENT', problemAssessment: {
@@ -7453,6 +7454,7 @@ test('source-read JobAid Review makes one compact correction after a proven empt
     assert.equal(body.tool_choice, 'required');
     assert.equal(body.tools[0].function.name, 'return_wiselink_review_candidate');
     assert.ok(body.tools[0].function.parameters.properties.jobAidWorkingDelta.properties.issuePatches);
+    assert.deepEqual(body.tools[0].function.parameters.properties.jobAidWorkingDelta.required, ['schemaVersion', 'completionReason', 'changeSummary']);
     const correction = body.messages.at(-1).content;
     assert.match(correction, /jobAidWorkingDelta\.issuePatches/u);
     assert.match(correction, /"existing","other"/u);
@@ -7471,6 +7473,100 @@ test('source-read JobAid Review makes one compact correction after a proven empt
   assert.equal(requests, 3);
   assert.equal(validations, 1);
   assert.equal(result.output.answer, candidate.answer);
+});
+
+test('JobAid Review corrects missing completion reason and change summary before save', async () => {
+  let requests = 0;
+  let validations = 0;
+  const errors = [];
+  const work = { schemaVersion: 'wiselink.jobaid-problem-work.v3', issues: [],
+    roundCompletion: 'COMPLETE_WITH_OPEN_QUESTIONS' };
+  const result = await invokeReviewWithTransport({ input: { context: { purpose: 'UPDATE_ASSESSMENT',
+    problemAssessment: { previousWork: { content: { issues: [],
+      completionReason: '保留原完成范围' } } } } } }, {
+    gatewayUrl: 'https://official.invalid', gatewayToken: 'fixture-only',
+    configuredModelVersion: 'fixture/provider',
+    validateCandidate: async candidate => {
+      validations++;
+      const delta = candidate.jobAidWorkingDelta;
+      if (!delta.completionReason) throw new Error('REVIEW_JOBAID_COMPLETIONREASON_REQUIRED');
+      if (!delta.changeSummary) throw new Error('REVIEW_JOBAID_CHANGESUMMARY_REQUIRED');
+    },
+    observeCandidateRejection: event => { errors.push(event.errorCode); },
+  }, { requestGateway: async (_url, init) => {
+    requests++;
+    const body = JSON.parse(init.body);
+    assert.deepEqual(body.tools[0].function.parameters.properties.jobAidWorkingDelta.required,
+      ['schemaVersion', 'completionReason', 'changeSummary']);
+    if (requests > 1) {
+      const feedback = JSON.parse(body.messages.at(-1).content);
+      assert.equal(feedback.candidateAccepted, false);
+      assert.match(feedback.instruction, requests === 2 ? /completionReason/u : /changeSummary/u);
+    }
+    const delta = { ...work,
+      ...(requests >= 2 ? { completionReason: '保留原完成范围' } : {}),
+      ...(requests >= 3 ? { changeSummary: '撤回无据判断' } : {}) };
+    return Response.json({ choices: [{ message: { content: null, tool_calls: [{
+      id: `candidate-${requests}`, type: 'function', function: {
+        name: 'return_wiselink_review_candidate',
+        arguments: JSON.stringify({ answer: '核对原文后修正', jobAidWorkingDelta: delta }),
+      },
+    }] } }] });
+  } });
+  assert.equal(requests, 3);
+  assert.equal(validations, 3);
+  assert.deepEqual(errors, ['REVIEW_JOBAID_COMPLETIONREASON_REQUIRED', 'REVIEW_JOBAID_CHANGESUMMARY_REQUIRED']);
+  assert.equal(result.output.jobAidWorkingDelta.changeSummary, '撤回无据判断');
+});
+
+test('source-read JobAid Review corrects one empty required-tool 502 in the same session', async () => {
+  let requests = 0;
+  let validations = 0;
+  const shapes = [];
+  const candidate = { answer: '核对原文后更正风险判断。', sourceRefs: ['page1'],
+    jobAidWorkingDelta: { schemaVersion: 'wiselink.jobaid-problem-work.v3',
+      issues: [{ issueKey: 'risk', question: '风险依据是什么？',
+        body: '原文支持的情景与未知应分开。[[source:page1]]', riskScenarios: [],
+        measures: [], otherClassifications: [], openQuestions: [], requirementHandling: [] }],
+      roundCompletion: 'COMPLETE_WITH_OPEN_QUESTIONS', completionReason: '保留原完成范围',
+      changeSummary: '撤回无据风险等级' } };
+  const result = await invokeReviewWithTransport({ input: {
+    availableSourceRefIds: ['page1'], context: { purpose: 'UPDATE_ASSESSMENT',
+      problemAssessment: { availableSources: [{ kind: 'DOCUMENT_PASSAGE' }],
+        previousWork: { content: { issues: [], roundCompletion: 'COMPLETE_WITH_OPEN_QUESTIONS',
+          completionReason: '保留原完成范围' } } } },
+  } }, {
+    gatewayUrl: 'https://official.invalid', gatewayToken: 'fixture-only',
+    configuredModelVersion: 'fixture/provider',
+    nativeSessionKey: 'agent:wiselink-engineering:review:ACTX-RS-tool-choice-correction',
+    readSourceRefs: async ids => ids.map(sourceRefId => ({ sourceRefId,
+      evidenceRef: `source:${sourceRefId}`, excerpt: 'Fixture passage.' })),
+    observeOutputShape: shape => { shapes.push(shape); },
+    validateCandidate: value => { validations++; validateJobAidUpdatedIssueBodies(value); },
+  }, { requestGateway: async (_url, init) => {
+    requests++;
+    const body = JSON.parse(init.body);
+    if (requests === 1) return Response.json({ choices: [{ message: { content: null,
+      tool_calls: [{ id: 'read1', type: 'function', function: {
+        name: 'read_wiselink_review_sources', arguments: JSON.stringify({ sourceRefIds: ['page1'] }),
+      } }] } }] });
+    if (requests === 2) return Response.json({ error: {
+      message: 'tool_choice=required was not satisfied by the agent response',
+    } }, { status: 502 });
+    assert.equal(body.tool_choice, 'required');
+    assert.match(body.messages.at(-1).content, /schemaVersion wiselink\.jobaid-problem-work\.v3/u);
+    assert.match(body.messages.at(-1).content, /source:page1/u);
+    assert.doesNotMatch(body.messages.at(-1).content, /permits changes only to issue keys \[\]/u);
+    return Response.json({ choices: [{ message: { content: null, tool_calls: [{
+      id: 'candidate3', type: 'function', function: {
+        name: 'return_wiselink_review_candidate', arguments: JSON.stringify(candidate),
+      },
+    }] } }] });
+  } });
+  assert.equal(requests, 3);
+  assert.equal(validations, 1);
+  assert.equal(shapes[1].gatewayFailure, 'TOOL_CHOICE_NOT_SATISFIED');
+  assert.equal(result.output.jobAidWorkingDelta.changeSummary, '撤回无据风险等级');
 });
 
 test('source-read JobAid Review stops after a second incomplete response', async () => {
@@ -7805,6 +7901,70 @@ test('JobAid update rejects uncited issue bodies before Host commit while leavin
   assert.throws(() => validateJobAidUpdatedIssueBodies(delta), /REVIEW_JOBAID_BODY_CITATION_MALFORMED/u);
 });
 
+test('JobAid Review catches out-of-scope issue replacements and retirements before Host commit', () => {
+  const scope = { targetIssueKeys: ['ja_ac_risk_and_measures'] };
+  const candidate = { jobAidWorkingDelta: { issues: [
+    { issueKey: 'applicability_and_scope' },
+    { issueKey: 'ja_ac_risk_and_measures' },
+  ], unchangedIssueKeys: ['failure_mechanism'] } };
+  const before = structuredClone(candidate);
+  assert.throws(() => validateJobAidIssueEditScope(candidate, scope), /REVIEW_ISSUE_OUT_OF_SCOPE/u);
+  assert.deepEqual(candidate, before);
+  candidate.jobAidWorkingDelta.issues = [{ issueKey: 'ja_ac_risk_and_measures' }];
+  assert.doesNotThrow(() => validateJobAidIssueEditScope(candidate, scope));
+  candidate.jobAidWorkingDelta.retiredIssues = [{ issueKey: 'failure_mechanism' }];
+  assert.throws(() => validateJobAidIssueEditScope(candidate, scope), /REVIEW_ISSUE_OUT_OF_SCOPE/u);
+  assert.doesNotThrow(() => validateJobAidIssueEditScope(candidate, null));
+});
+
+test('scoped JobAid Review preserves completion scope while correcting the reading summary', () => {
+  const scope = { targetIssueKeys: ['ja_ac_risk_and_measures'] };
+  const previous = { roundCompletion: 'COMPLETE_WITH_OPEN_QUESTIONS',
+    completionReason: '仍有构型与实施状态待核。' };
+  const candidate = { jobAidWorkingDelta: {
+    issues: [{ issueKey: 'ja_ac_risk_and_measures' }],
+    headline: '更正后的标题', listBrief: '更正后的简述。',
+    ...previous,
+  } };
+  assert.doesNotThrow(() => validateJobAidIssueEditScope(candidate, scope, previous));
+  candidate.jobAidWorkingDelta.completionReason = '擅自改为已闭合。';
+  assert.throws(() => validateJobAidIssueEditScope(candidate, scope, previous),
+    /REVIEW_WORK_OUT_OF_SCOPE:completionReason/u);
+});
+
+test('JobAid Review feeds a rejected out-of-scope candidate back to the same model turn', async () => {
+  let requests = 0;
+  const result = await invokeReviewWithTransport({ input: { context: {
+    purpose: 'UPDATE_ASSESSMENT',
+    issueEditScope: { targetIssueKeys: ['ja_ac_risk_and_measures'] },
+    problemAssessment: { previousWork: { content: { issues: [
+      { issueKey: 'applicability_and_scope' }, { issueKey: 'ja_ac_risk_and_measures' },
+    ] } } },
+  } } }, {
+    gatewayUrl: 'https://official.invalid', gatewayToken: 'fixture-only', configuredModelVersion: 'fixture/provider',
+    validateCandidate: (candidate) => validateJobAidIssueEditScope(candidate, { targetIssueKeys: ['ja_ac_risk_and_measures'] }),
+  }, { requestGateway: async (_url, init) => {
+    const request = JSON.parse(init.body);
+    if (++requests === 2) {
+      const feedback = JSON.parse(request.messages.at(-1).content);
+      assert.equal(feedback.validationError, 'REVIEW_ISSUE_OUT_OF_SCOPE');
+      assert.match(feedback.instruction, /ja_ac_risk_and_measures/u);
+    }
+    return Response.json({ choices: [{ message: { content: null, tool_calls: [{
+      id: `candidate-${requests}`, type: 'function', function: {
+        name: 'return_wiselink_review_candidate', arguments: JSON.stringify({
+          answer: '定点更正', jobAidWorkingDelta: { issues: requests === 1
+            ? [{ issueKey: 'applicability_and_scope' }, { issueKey: 'ja_ac_risk_and_measures' }]
+            : [{ issueKey: 'ja_ac_risk_and_measures' }],
+          unchangedIssueKeys: ['applicability_and_scope'] },
+        }),
+      },
+    }] } }] });
+  } });
+  assert.equal(requests, 2);
+  assert.deepEqual(result.output.jobAidWorkingDelta.issues.map((issue) => issue.issueKey), ['ja_ac_risk_and_measures']);
+});
+
 test('JobAid Review issue patches preserve omitted prior fields and distinguish explicit clearing', () => {
   const prior = { issues: [{ issueKey: 'existing', question: '原问题',
     body: '旧判断。[[source:prior]]', riskScenarios: [{ scenario: '原风险' }],
@@ -8046,6 +8206,120 @@ test('JobAid update first reads an authorized document before exposing the candi
   assert.equal(result.output.answer, '已核对原文并提议局部更正');
 });
 
+test('repeated Review source read reuses evidence and asks for a candidate or a new source', async () => {
+  const reads = [];
+  let requests = 0;
+  const result = await invokeReviewWithTransport({ input: {
+    availableSourceRefIds: ['page1', 'page2'], context: { purpose: 'UPDATE_ASSESSMENT',
+      problemAssessment: { availableSources: [{ kind: 'DOCUMENT_PASSAGE' }] } },
+  } }, {
+    gatewayUrl: 'https://official.invalid', gatewayToken: 'fixture-only',
+    configuredModelVersion: 'fixture/provider',
+    readSourceRefs: async (ids) => { reads.push(ids); return ids.map((sourceRefId) => ({
+      sourceRefId, evidenceRef: `source:${sourceRefId}`, excerpt: 'Fixture passage.',
+    })); },
+  }, { requestGateway: async (_url, init) => {
+    requests++;
+    const body = JSON.parse(init.body);
+    if (requests === 3) {
+      const feedback = JSON.parse(body.messages.at(-1).content);
+      assert.equal(feedback.sourceReadCached, true);
+      assert.deepEqual(feedback.sourceRefs, [{ sourceRefId: 'page1',
+        evidenceRef: 'source:page1', excerpt: 'Fixture passage.' }]);
+      assert.match(feedback.instruction, /already read in this Review/u);
+      assert.match(feedback.instruction, /return_wiselink_review_candidate/u);
+      assert.match(feedback.instruction, /different authorized source/u);
+    }
+    const name = requests < 3 ? 'read_wiselink_review_sources' : 'return_wiselink_review_candidate';
+    return Response.json({ choices: [{ message: { content: null, tool_calls: [{
+      id: `read-repeat-${requests}`, type: 'function', function: {
+        name, arguments: JSON.stringify(requests < 3 ? { sourceRefIds: ['page1'] } : {
+          answer: '根据已读片段提出候选。', sourceRefs: ['page1'],
+          jobAidWorkingDelta: { issues: [] },
+        }),
+      },
+    }] } }] });
+  } });
+  assert.equal(requests, 3);
+  assert.deepEqual(reads, [['page1']]);
+  assert.equal(result.output.answer, '根据已读片段提出候选。');
+});
+
+test('Review stops after a second consecutive cached-only source read', async () => {
+  let requests = 0;
+  let reads = 0;
+  let validations = 0;
+  await assert.rejects(invokeReviewWithTransport({ input: {
+    availableSourceRefIds: ['page1'], context: { purpose: 'UPDATE_ASSESSMENT',
+      problemAssessment: { availableSources: [{ kind: 'DOCUMENT_PASSAGE' }] } },
+  } }, {
+    gatewayUrl: 'https://official.invalid', gatewayToken: 'fixture-only',
+    configuredModelVersion: 'fixture/provider',
+    readSourceRefs: async (ids) => { reads++; return ids.map((sourceRefId) => ({
+      sourceRefId, evidenceRef: `source:${sourceRefId}`, excerpt: 'Fixture passage.',
+    })); },
+    validateCandidate: async () => { validations++; },
+  }, { requestGateway: async () => {
+    requests++;
+    return Response.json({ choices: [{ message: { content: null, tool_calls: [{
+      id: `stuck-read-${requests}`, type: 'function', function: {
+        name: 'read_wiselink_review_sources',
+        arguments: JSON.stringify({ sourceRefIds: ['page1'] }),
+      },
+    }] } }] });
+  } }), /REVIEW_MODEL_SOURCE_READ_NO_PROGRESS/u);
+  assert.equal(requests, 3);
+  assert.equal(reads, 1);
+  assert.equal(validations, 0);
+});
+
+test('a rejected candidate resets the consecutive cached-read limit', async () => {
+  let requests = 0;
+  let reads = 0;
+  let validations = 0;
+  const result = await invokeReviewWithTransport({ input: {
+    availableSourceRefIds: ['page1'], context: { purpose: 'UPDATE_ASSESSMENT',
+      problemAssessment: { availableSources: [{ kind: 'DOCUMENT_PASSAGE' }] } },
+  } }, {
+    gatewayUrl: 'https://official.invalid', gatewayToken: 'fixture-only',
+    configuredModelVersion: 'fixture/provider',
+    readSourceRefs: async (ids) => { reads++; return ids.map((sourceRefId) => ({
+      sourceRefId, evidenceRef: `source:${sourceRefId}`, excerpt: 'Fixture passage.',
+    })); },
+    validateCandidate: async () => {
+      validations++;
+      if (validations === 1) throw new Error('REVIEW_JOBAID_BODY_CITATIONS_REQUIRED');
+    },
+  }, { requestGateway: async (_url, init) => {
+    requests++;
+    const body = JSON.parse(init.body);
+    if (requests === 4) {
+      const feedback = JSON.parse(body.messages.at(-1).content);
+      assert.equal(feedback.candidateAccepted, false);
+      assert.equal(feedback.validationError, 'REVIEW_JOBAID_BODY_CITATIONS_REQUIRED');
+    }
+    if (requests === 5) {
+      const feedback = JSON.parse(body.messages.at(-1).content);
+      assert.equal(feedback.sourceReadCached, true);
+      assert.match(feedback.instruction, /return_wiselink_review_candidate/u);
+    }
+    const reading = [1, 2, 4].includes(requests);
+    return Response.json({ choices: [{ message: { content: null, tool_calls: [{
+      id: `candidate-between-reads-${requests}`, type: 'function', function: {
+        name: reading ? 'read_wiselink_review_sources' : 'return_wiselink_review_candidate',
+        arguments: JSON.stringify(reading ? { sourceRefIds: ['page1'] } : {
+          answer: requests === 3 ? '待修订候选' : '已修订候选', sourceRefs: ['page1'],
+          jobAidWorkingDelta: { issues: [] },
+        }),
+      },
+    }] } }] });
+  } });
+  assert.equal(requests, 5);
+  assert.equal(reads, 1);
+  assert.equal(validations, 2);
+  assert.equal(result.output.answer, '已修订候选');
+});
+
 test('JobAid omitted collections propose no entries while supplied malformed values remain rejected', async () => {
   const { task, candidate } = await emptyJobAidReviewFixture();
   for (const extra of [{}, { sourceRefs: [''] }, { missingInputs: [{}] },
@@ -8189,6 +8463,82 @@ test('JobAid invalid evidence feedback identifies every validated field without 
   });
 });
 
+test('JobAid basis refs follow Host nonempty and duplicate rules before commit', async () => {
+  const { task, candidate } = await emptyJobAidReviewFixture();
+  const evidence = { evidenceRef: 'method:scope', kind: 'METHOD_CLAUSE', title: '范围',
+    versionLabel: 'v1', excerpt: '核对措施依据', locator: null };
+  task.jobAidContext.sourceCatalog = [evidence];
+  task.jobAidContext.initiallyDeliveredRefs = [evidence.evidenceRef];
+  task.jobAidContext.modelInput.deliveredEvidence = [evidence];
+  const issue = { issueKey: 'one', question: '措施依据', body: '需复核。[[method:scope]]',
+    riskScenarios: [], measures: [{ text: '复核', addresses: '解决问题', limitations: [],
+      status: 'PROPOSED', basisRefs: ['method:scope'] }], otherClassifications: [],
+    openQuestions: [], requirementHandling: [{ methodRef: 'method:scope', requirement: '核对',
+      conditions: [], treatment: 'NOT_YET_ADDRESSED', basisRefs: [], explanation: '待核' }] };
+  const work = { schemaVersion: 'wiselink.jobaid-problem-work.v3', headline: '待核', listBrief: '措施依据',
+    completionReason: '待核', changeSummary: '新增措施', issues: [issue] };
+  const validate = () => validateReviewCandidate(task, { ...candidate, jobAidWorkingDelta: work });
+  assert.doesNotThrow(validate);
+  for (const [basis, code] of [
+    [[], 'JOBAID_MEASURE_BASIS_EMPTY'],
+    [undefined, 'JOBAID_MEASURE_BASIS_INVALID'],
+    [{ item: ['method:scope'] }, 'JOBAID_MEASURE_BASIS_INVALID'],
+    [['method:scope', ' method:scope '], 'JOBAID_MEASURE_BASIS_DUPLICATE'],
+  ]) {
+    issue.measures[0].basisRefs = basis;
+    assert.throws(validate, new RegExp(code, 'u'));
+  }
+  issue.measures[0].basisRefs = ['method:scope'];
+  issue.riskScenarios = [{ severity: { basisRefs: [] }, likelihood: null, importantEvent: null }];
+  assert.throws(validate, /JOBAID_SEVERITY_BASIS_EMPTY/u);
+  issue.riskScenarios = [];
+  issue.otherClassifications = [{ basisRefs: [] }];
+  assert.throws(validate, /JOBAID_OTHER_BASIS_EMPTY/u);
+  issue.otherClassifications = [];
+  issue.requirementHandling[0].basisRefs = null;
+  assert.throws(validate, /JOBAID_REQUIREMENT_BASIS_INVALID/u);
+});
+
+test('JobAid missing measure basis is returned to the model for a fresh candidate', async () => {
+  const { task, candidate } = await emptyJobAidReviewFixture();
+  task.context.purpose = 'UPDATE_ASSESSMENT';
+  const evidence = { evidenceRef: 'method:scope', kind: 'METHOD_CLAUSE', title: '范围',
+    versionLabel: 'v1', excerpt: '核对措施依据', locator: null };
+  task.jobAidContext.sourceCatalog = [evidence];
+  task.jobAidContext.initiallyDeliveredRefs = [evidence.evidenceRef];
+  task.jobAidContext.modelInput.deliveredEvidence = [evidence];
+  const issue = { issueKey: 'one', question: '措施依据', body: '需复核。[[method:scope]]',
+    riskScenarios: [], measures: [{ text: '复核', addresses: '解决问题', limitations: [],
+      status: 'PROPOSED', basisRefs: [] }], otherClassifications: [],
+    openQuestions: [], requirementHandling: [] };
+  const work = { schemaVersion: 'wiselink.jobaid-problem-work.v3', headline: '待核', listBrief: '措施依据',
+    completionReason: '待核', changeSummary: '新增措施', issues: [issue] };
+  let requests = 0;
+  const result = await invokeReviewWithTransport({ input: { context: task.context } }, {
+    gatewayUrl: 'https://official.invalid', gatewayToken: 'fixture-only', configuredModelVersion: 'fixture/provider',
+    validateCandidate: (value) => validateReviewCandidate(task, { ...candidate, ...value }),
+  }, { requestGateway: async (_url, init) => {
+    requests++;
+    if (requests === 2) {
+      const feedback = JSON.parse(JSON.parse(init.body).messages.at(-1).content);
+      assert.equal(feedback.candidateAccepted, false);
+      assert.equal(feedback.validationError, 'JOBAID_MEASURE_BASIS_EMPTY');
+      assert.match(feedback.instruction, /measure and other classification records each require at least one basisRef/u);
+      assert.deepEqual(work.issues[0].measures[0].basisRefs, []);
+    }
+    const authored = structuredClone(work);
+    if (requests === 2) authored.issues[0].measures[0].basisRefs = ['method:scope'];
+    return Response.json({ choices: [{ message: { content: null, tool_calls: [{
+      id: `measure-${requests}`, type: 'function', function: {
+        name: 'return_wiselink_review_candidate',
+        arguments: JSON.stringify({ answer: '措施依据待复核', jobAidWorkingDelta: authored }),
+      },
+    }] } }] });
+  } });
+  assert.equal(requests, 2);
+  assert.deepEqual(result.output.jobAidWorkingDelta.issues[0].measures[0].basisRefs, ['method:scope']);
+});
+
 test('JobAid reference rejection returns exact paths and requires a fresh validated candidate', async () => {
   const { task, candidate } = await emptyJobAidReviewFixture();
   task.context.purpose = 'UPDATE_ASSESSMENT';
@@ -8231,6 +8581,50 @@ test('JobAid reference rejection returns exact paths and requires a fresh valida
     invalidEvidenceRefCount: 1 }]);
   assert.equal(result.output.answer, '重新核对');
   assert.deepEqual(work, before);
+});
+
+test('JobAid Review identifies a risk method code misused as requirement methodRef', async () => {
+  const { task, candidate } = await emptyJobAidReviewFixture();
+  task.context.purpose = 'UPDATE_ASSESSMENT';
+  const evidence = { evidenceRef: 'method:risk', kind: 'METHOD_CLAUSE', title: '风险方法',
+    versionLabel: 'R01', excerpt: '核对风险判断', locator: null };
+  task.jobAidContext.sourceCatalog = [evidence];
+  task.jobAidContext.initiallyDeliveredRefs = [evidence.evidenceRef];
+  task.jobAidContext.modelInput.deliveredEvidence = [evidence];
+  let requests = 0;
+  const result = await invokeReviewWithTransport({ input: { context: task.context } }, {
+    gatewayUrl: 'https://official.invalid', gatewayToken: 'fixture-only', configuredModelVersion: 'fixture/provider',
+    validateCandidate: (value) => validateReviewCandidate(task, { ...candidate, ...value }),
+  }, { requestGateway: async (_url, init) => {
+    if (++requests === 2) {
+      const feedback = JSON.parse(JSON.parse(init.body).messages.at(-1).content);
+      assert.equal(feedback.validationError, 'REVIEW_JOBAID_EVIDENCE_NOT_REGISTERED');
+      assert.deepEqual(feedback.evidenceReferenceFeedback.invalidReferences, [{
+        path: 'jobAidWorkingDelta.issues[0].requirementHandling[0].methodRef', evidenceRef: 'JA_AC_R01',
+      }]);
+      assert.match(feedback.evidenceReferenceFeedback.methodRefInstruction, /method:risk/u);
+      assert.match(feedback.evidenceReferenceFeedback.methodRefInstruction, /JA_AC_R01/u);
+    }
+    return Response.json({ choices: [{ message: { content: null, tool_calls: [{
+      id: `method-${requests}`, type: 'function', function: {
+        name: 'return_wiselink_review_candidate', arguments: JSON.stringify({ answer: '核对方法来源',
+          jobAidWorkingDelta: { schemaVersion: 'wiselink.jobaid-problem-work.v3',
+            headline: '风险依据', listBrief: '方法条件待核', completionReason: '保留未知',
+            changeSummary: '撤回无据分级', issues: [{ issueKey: 'one', question: '风险依据是什么？',
+              body: '风险依据待核。[[method:risk]]', riskScenarios: [], measures: [], otherClassifications: [],
+              openQuestions: [], requirementHandling: [{
+                methodRef: requests === 1 ? 'JA_AC_R01' : 'method:risk',
+                requirement: '核对方法条件', conditions: [], treatment: 'NOT_YET_ADDRESSED',
+                basisRefs: [], explanation: '待核',
+              }],
+            }],
+          },
+        }),
+      },
+    }] } }] });
+  } });
+  assert.equal(requests, 2);
+  assert.equal(result.output.jobAidWorkingDelta.issues[0].requirementHandling[0].methodRef, 'method:risk');
 });
 
 test('JobAid schema rejection identifies the exact protocol literal before saving', async () => {

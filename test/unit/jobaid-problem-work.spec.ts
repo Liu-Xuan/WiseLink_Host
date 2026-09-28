@@ -125,8 +125,15 @@ test('Turn 12 scoped to NATURE rejects a four-issue model update before saving',
   }),{...context,previous});
   expect(()=>assertJobAidIssueEditScope(previous,retired,[keys[0]]))
     .toThrow('REVIEW_ISSUE_OUT_OF_SCOPE:FTD-26002-TIMING');
-  expect(()=>assertJobAidIssueEditScope(previous,{...focused,headline:'整体结论被改写'},[keys[0]]))
-    .toThrow('REVIEW_WORK_OUT_OF_SCOPE:headline');
+  expect(()=>assertJobAidIssueEditScope(previous,{
+    ...focused,headline:'性质判断已更正',listBrief:'性质判断对应的新短述。',
+  },[keys[0]])).not.toThrow();
+  expect(()=>assertJobAidIssueEditScope(previous,{
+    ...previous,headline:'未修改问题却改写标题',
+  },[keys[0]])).toThrow('REVIEW_WORK_OUT_OF_SCOPE:headline');
+  expect(()=>assertJobAidIssueEditScope(previous,{
+    ...focused,completionReason:'擅自改写完成范围',
+  },[keys[0]])).toThrow('REVIEW_WORK_OUT_OF_SCOPE:completionReason');
 });
 test('normal Matter command materializes, validates and reads the same body with exact coverage',()=>{
   const input={matterId:'MAT-test',matterRevisionId:'MR1',attemptRef:'AQ1',requestId:'save1',expectedWorkRevision:0,previous:null,

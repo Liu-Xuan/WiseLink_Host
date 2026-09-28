@@ -86,6 +86,7 @@ const JOBAID_OPTIONAL_COLLECTIONS = ['sourceRefs', 'missingInputs', 'candidateEv
 const JOBAID_ISSUE_FIELDS = Object.keys(JOBAID_WORK_UPDATE_SHAPE.properties.issues.items.properties);
 const JOBAID_REVIEW_WORK_SHAPE = {
   ...JOBAID_WORK_UPDATE_SHAPE,
+  required: ['schemaVersion', 'completionReason', 'changeSummary'],
   properties: {
     ...JOBAID_WORK_UPDATE_SHAPE.properties,
     // Review-only authoring form. The driver materializes existing issue
@@ -234,8 +235,11 @@ export async function runHostedReviewTurn(options, dependencies = {}) {
             },
             validateCandidate: (output) => {
               validateModelCandidateOutput(output, readSourceRefBatches.flat(), input.attachmentRefs, isMatter, isJobAid);
-              if (isJobAid && input.context?.purpose === 'UPDATE_ASSESSMENT')
+              if (isJobAid && input.context?.purpose === 'UPDATE_ASSESSMENT') {
+                validateJobAidIssueEditScope(output, input.context.issueEditScope,
+                  input.context.problemAssessment?.previousWork?.content);
                 validateJobAidUpdatedIssueBodies(output);
+              }
               validateCandidate(bindHostedReviewCandidate(beginResult, output, isMatter, isJobAid));
             },
             candidateSourceRefIds: (output) => reviewCandidateSourceRefIds(
@@ -426,6 +430,7 @@ export async function invokeHostedReviewModel(input, options = {}, dependencies 
   let round = 0;
   let candidateCorrections = 0;
   let incompleteResponseCorrections = 0;
+  let consecutiveCachedReads = 0;
   let inputUnits = 0;
   let outputUnits = 0;
   // All read/analysis rounds share the Host-scoped native session (or the
@@ -499,19 +504,18 @@ export async function invokeHostedReviewModel(input, options = {}, dependencies 
       outputShape.gatewayFailure = gatewayFailure;
     }
     if (observeOutputShape) await observeOutputShape(outputShape, round);
-    if (gatewayFailure === 'TOOL_CHOICE_NOT_SATISFIED') {
-      throw new Error('REVIEW_TOOL_CHOICE_NOT_SATISFIED');
-    }
     if (!response.ok) {
       const failure = classifyHostedGatewayFailure(payload);
       if (sourceReadFirst && nativeSessionKey && sourceCache.size > 0 &&
-          response.status === 400 && failure === 'INCOMPLETE_TERMINAL_RESPONSE' &&
-          outputShape.choiceCount === 0 && incompleteResponseCorrections === 0) {
+          outputShape.choiceCount === 0 && incompleteResponseCorrections === 0 &&
+          ((response.status === 400 && failure === 'INCOMPLETE_TERMINAL_RESPONSE') ||
+            (response.status === 502 && failure === 'TOOL_CHOICE_NOT_SATISFIED'))) {
         // The Gateway explicitly returned no candidate/tool call. One new,
         // shorter request may finish the same native discussion; never replay
         // a Host mutation or retry an unknown/partially received response.
         incompleteResponseCorrections += 1;
         const previousIssueKeys = jobAidPreviousIssueKeys(input.input);
+        const targetIssueKeys = input.input?.context?.issueEditScope?.targetIssueKeys ?? [];
         const readEvidenceRefs = [...new Set([...sourceCache.values()]
           .map((source) => source?.evidenceRef)
           .filter((ref) => typeof ref === 'string' && ref.trim()))];
@@ -520,16 +524,22 @@ export async function invokeHostedReviewModel(input, options = {}, dependencies 
               'The preceding model response ended before any tool call.',
               `Continue this same Review using the sources already read. Call ${REVIEW_OUTPUT_FUNCTION_NAME} with one concise candidate containing answer and non-null jobAidWorkingDelta.`,
               `Correct existing issues through jobAidWorkingDelta.issuePatches: use the exact prior issueKey from ${canonicalJson(previousIssueKeys)} and only fields that actually change, without restating the complete issue or adding nonempty issues beside patches.`,
+              ...(targetIssueKeys.length ? [
+                `This turn permits changes only to issue keys ${canonicalJson(targetIssueKeys)}. Put every other prior issue key in unchangedIssueKeys; do not patch or retire it.`,
+              ] : []),
               'Put all other prior issue keys in unchangedIssueKeys.',
               `For a revised body, cite supporting evidence inline as [[evidenceRef]] copied exactly from the read evidence refs ${canonicalJson(readEvidenceRefs)}.`,
               'Write a changed issue body as a standalone engineering judgment with its supporting premises and limits; put the process or change summary in answer or changeSummary, not in place of the body.',
               'Reassess affected openQuestions and requirementHandling against the actually read evidence. Revise or resolve questions now answered by that evidence; preserve only unresolved questions. Retaining the prior roundCompletion does not require retaining a superseded open question.',
-              'Preserve the prior roundCompletion and completionReason unless the evidence justifies a specific completion-scope change. Keep the engineer\'s requested findings and the existing validation contract. Read another authorized fragment only if essential. Do not repeat a long analysis or claim a candidate was saved.',
+              'For any requirementHandling row, methodRef must be an exact delivered METHOD_CLAUSE evidenceRef such as method:risk when that clause supports the requirement. JA_AC_R01 is only the riskScenarios.method enum, never a methodRef. Omit an unsupported new row.',
+              'Use schemaVersion wiselink.jobaid-problem-work.v3 exactly and include nonempty completionReason and changeSummary. For this scoped Review, copy the prior roundCompletion and completionReason exactly. Update headline and listBrief together only when the authorized issue change makes the old summary inaccurate. Keep the engineer\'s requested findings and the existing validation contract. Read another authorized fragment only if essential. Do not repeat a long analysis or claim a candidate was saved.',
             ].join(' ')
           : `The preceding model response ended before any tool call. Continue this same Review using the sources already read. Call ${REVIEW_OUTPUT_FUNCTION_NAME} with one complete, concise candidate that changes only the engineer's requested findings. Existing issue keys: ${canonicalJson(previousIssueKeys)}. Use an affected existing key for a correction; create a new key only for a distinct new problem. Omitted issues remain saved. Every updated issue body needs an inline [[evidenceRef]] copied from actually read, supporting evidence. Read another authorized fragment only if essential. Do not repeat a long analysis or claim a candidate was saved.`;
         messages = [systemMessage, { role: 'user', content: correction }];
         continue;
       }
+      if (failure === 'TOOL_CHOICE_NOT_SATISFIED')
+        throw new Error('REVIEW_TOOL_CHOICE_NOT_SATISFIED');
       throw new Error(`REVIEW_GATEWAY_HTTP_${response.status}${failure === 'UNCLASSIFIED' ? '' : `:${failure}`}`);
     }
     if (outputShape.hasAnalysis) throw new Error('REVIEW_MODEL_ANALYSIS_FORBIDDEN');
@@ -556,6 +566,7 @@ export async function invokeHostedReviewModel(input, options = {}, dependencies 
       continue;
     }
     if (toolCall.function.name === REVIEW_OUTPUT_FUNCTION_NAME) {
+      consecutiveCachedReads = 0;
       // M3 repeatedly emitted {item: [...]} for nested Matter arrays in the
       // native function channel. Transport the candidate as one JSON string;
       // never repair its content or skip the existing candidate validators.
@@ -663,6 +674,9 @@ export async function invokeHostedReviewModel(input, options = {}, dependencies 
                 invalidReferenceCount: invalidEvidenceRefCount,
                 readEvidenceRefs: [...new Set([...sourceCache.values()].map((source) => source.evidenceRef)
                   .filter((ref) => typeof ref === 'string' && ref.trim()))],
+                ...(invalidEvidenceRefs?.some((entry) => entry.path.endsWith('.methodRef')) ? {
+                  methodRefInstruction: 'A requirementHandling.methodRef must copy an exact registered METHOD_CLAUSE evidenceRef from availableEvidenceRefs, such as method:risk when that clause supports this requirement. JA_AC_R01 is only the riskScenarios.method enum and is not an evidenceRef. If the method clause does not support a proposed new requirement row, omit that row; do not guess or silently replace an identifier.',
+                } : {}),
                 instruction: 'These exact fields cite unregistered evidence identifiers. Compare them with readEvidenceRefs and availableEvidenceRefs, and copy the exact registered identifier only when its evidence supports the premise. Do not reconstruct, shorten or alter an identifier. No replacement is inferred for you. Preserve the substantive findings, read additional authorized sources if needed, and submit a complete new candidate; the rejected candidate remains unsaved.',
               } } : {}),
             ...(expectedJobAidSchemaVersion === null ? {} : { jobAidSchemaFeedback: {
@@ -675,8 +689,16 @@ export async function invokeHostedReviewModel(input, options = {}, dependencies 
             ...(isJobAid && isAssessmentUpdate ? { previousIssueKeys: jobAidPreviousIssueKeys(input.input) } : {}),
             instruction: isChat
               ? 'Correct this discussion answer using the same question and actually read sources. Ordinary document SourceRefs belong only in sourceRefs. For ANSWER, SOURCE_LINK, CLARIFYING_QUESTION, INPUT_REQUEST or TASK_STATUS, candidateEvidenceRefs must be []; this field only accepts current attachmentRefs for CANDIDATE_EVIDENCE. Keep reviewActionDraft=null and affectedItemIds=[]; do not add a working delta or change the assessment. Return the complete corrected candidate through the declared output function, using candidateJson only when the Matter contract requires it. Never invent sources or claim that a rejected answer was saved.'
+              : isJobAid && errorCode === 'REVIEW_JOBAID_COMPLETIONREASON_REQUIRED'
+              ? 'Include a nonempty jobAidWorkingDelta.completionReason. If the completion scope is unchanged, copy the prior completion reason exactly from previousWork; if it changes, explain the new completion scope using the evidence. Keep the substantive correction and do not claim the rejected candidate was saved.'
+              : isJobAid && errorCode === 'REVIEW_JOBAID_CHANGESUMMARY_REQUIRED'
+              ? 'Include a nonempty jobAidWorkingDelta.changeSummary that states the concrete engineering judgment changed in this round. Do not use the issue body as a process log or invent a change; keep the supported issue correction and submit a complete new candidate.'
               : isJobAid && errorCode === 'REVIEW_JOBAID_SUBSTANTIVE_DELTA_REQUIRED'
               ? 'The proposed JobAid update changes no issue, reading summary, overview, review condition or input disposition. This requested assessment correction must revise the affected existing issues using actually read evidence, or accurately explain why the requested correction cannot be made; do not claim an unchanged delta was saved. Keep unrelated issues unchanged and preserve the prior completion scope and open questions.'
+              : isJobAid && errorCode === 'REVIEW_ISSUE_OUT_OF_SCOPE'
+              ? `The Host permits changes only to issue keys ${canonicalJson(input.input?.context?.issueEditScope?.targetIssueKeys ?? [])}. Submit only those keys in issuePatches or issues; put other prior keys in unchangedIssueKeys. Do not retire or rewrite an unrelated issue. Preserve supported findings and exact registered evidence refs; the rejected candidate was not saved.`
+              : isJobAid && errorCode?.startsWith('REVIEW_WORK_OUT_OF_SCOPE:')
+              ? `The scoped Review cannot change ${errorCode.split(':')[1]}. Copy the exact value from previousWork, including roundCompletion and completionReason. Headline and listBrief may change together only when an authorized issue is substantively corrected. Preserve the corrected issue and registered evidence; the rejected candidate was not saved.`
               : isJobAid && errorCode === 'REVIEW_JOBAID_OPEN_QUESTIONS_REQUIRE_QUALIFIED_COMPLETION'
               ? 'COMPLETE conflicts with openQuestions or unresolved requirementHandling in the resulting saved issues, including unchanged prior issues. Preserve those real unknowns and use COMPLETE_WITH_OPEN_QUESTIONS when the requested investigation is complete with bounded open questions; use IN_PROGRESS only if this round still has substantive unfinished investigation. Do not remove questions or mark requirements addressed merely to pass validation. Correct the affected existing issue content using the read sources.'
               : isJobAid && errorCode === 'JOBAID_READING_SUMMARY_PAIR_REQUIRED'
@@ -687,6 +709,8 @@ export async function invokeHostedReviewModel(input, options = {}, dependencies 
               ? 'The JobAid working delta must use schemaVersion wiselink.jobaid-problem-work.v3 exactly. Return a complete new candidate with the same supported engineering correction and valid references; do not silently rewrite the rejected candidate or claim it was saved.'
               : isJobAid && errorCode === 'REVIEW_JOBAID_ISSUE_FULL_CONTENT_REQUIRED'
               ? 'For an existing issue, use jobAidWorkingDelta.issuePatches with its exact issueKey and only supported changed fields. Omitted fields retain the Host-frozen previousWork content. An explicit [] changes that collection and must be justified. List other prior issues in unchangedIssueKeys. A new issue requires a full entry in issues. Do not switch issueKey merely to pass validation.'
+              : isJobAid && /^JOBAID_(SEVERITY|LIKELIHOOD|IMPORTANT_EVENT|MEASURE|OTHER|REQUIREMENT)_BASIS_(INVALID|DUPLICATE|EMPTY)$/u.test(errorCode)
+              ? 'A professional record has invalid basisRefs. Supply a unique array of exact evidenceRef strings for that record, each supported by evidence delivered in this turn or retained work. Severity, likelihood, important event, measure and other classification records each require at least one basisRef; requirement handling may use an empty array. If the evidence is insufficient, revise the unsupported record honestly instead of inventing or copying a reference. The rejected candidate was not saved; submit a complete corrected candidate.'
               : isJobAid && errorCode?.startsWith('REVIEW_JOBAID_PATCH_')
               ? 'Use issuePatches only for existing issueKeys in previousIssueKeys, with one or more actual changed fields per patch. Do not also submit nonempty issues. Omitted fields preserve prior values; explicit [] changes a collection. New issues require complete entries in issues. Keep every other prior issue in unchangedIssueKeys.'
               : isJobAid
@@ -739,6 +763,14 @@ export async function invokeHostedReviewModel(input, options = {}, dependencies 
     }
     const callId = requiredText(toolCall.id, 'REVIEW_MODEL_TOOL_CALL_ID_REQUIRED');
     const unread = ids.filter((id) => !sourceCache.has(id));
+    if (unread.length === 0) {
+      consecutiveCachedReads += 1;
+      if (consecutiveCachedReads > 1) {
+        throw new Error('REVIEW_MODEL_SOURCE_READ_NO_PROGRESS');
+      }
+    } else {
+      consecutiveCachedReads = 0;
+    }
     if (unread.length > 0) {
       if (typeof options.readSourceRefs !== 'function') {
         throw new Error('REVIEW_MODEL_SOURCE_READER_REQUIRED');
@@ -758,7 +790,17 @@ export async function invokeHostedReviewModel(input, options = {}, dependencies 
       { role: 'assistant', content: null, tool_calls: [toolCall] },
       {
         role: 'tool', tool_call_id: callId,
-        content: canonicalJson({ sourceRefs: ids.map((id) => sourceCache.get(id)) }),
+        content: canonicalJson({ sourceRefs: ids.map((id) => sourceCache.get(id)),
+          ...(unread.length === 0 ? {
+            sourceReadCached: true,
+            instruction: [
+              'These exact source fragments were already read in this Review; this request added no evidence.',
+              `Use the returned fragments to call ${REVIEW_OUTPUT_FUNCTION_NAME} with a supported candidate,`,
+              `or call ${REVIEW_READ_FUNCTION_NAME} only for a different authorized source necessary to answer the engineer.`,
+              'Do not repeat a cached-only read or claim a candidate was saved.',
+            ].join(' '),
+          } : {}),
+        }),
       },
     ];
   }
@@ -1511,6 +1553,25 @@ export function materializeJobAidReviewIssuePatches(delta, previousContent) {
   return { ...rest, issues };
 }
 
+export function validateJobAidIssueEditScope(output, issueEditScope, previousContent) {
+  const targets = issueEditScope?.targetIssueKeys;
+  if (!Array.isArray(targets) || targets.length === 0) return;
+  const delta = output?.jobAidWorkingDelta;
+  if (!isRecord(delta)) return;
+  const allowed = new Set(targets);
+  const changed = Array.isArray(delta.issues) ? delta.issues : [];
+  const retired = Array.isArray(delta.retiredIssues) ? delta.retiredIssues : [];
+  if ([...changed, ...retired]
+    .some((issue) => !allowed.has(issue?.issueKey)))
+    throw new Error('REVIEW_ISSUE_OUT_OF_SCOPE');
+  if (isRecord(previousContent)) {
+    for (const field of ['roundCompletion', 'completionReason']) {
+      if (Object.hasOwn(delta, field) && delta[field] !== previousContent[field])
+        throw new Error(`REVIEW_WORK_OUT_OF_SCOPE:${field}`);
+    }
+  }
+}
+
 export function validateJobAidUpdatedIssueBodies(output) {
   const issues = output?.jobAidWorkingDelta?.issues;
   if (!Array.isArray(issues)) return;
@@ -2074,16 +2135,20 @@ function matterReviewGuidance(input) {
   ];
 }
 
-function jobAidReviewGuidance() {
+function jobAidReviewGuidance(input) {
   return [
     `Return answer and any proposed candidate fields directly at the function-argument root. answer is required; sourceRefs, missingInputs, candidateEvidenceRefs and warnings are optional collections. Omit them when proposing no entries; never represent an empty collection as [""], null or a placeholder object. Explicitly supplied values are still fully validated. Do not wrap them in candidate or candidateJson, JSON.stringify them, or repeat them inside jobAidWorkingDelta. Include jobAidWorkingDelta when updating work; work fields belong only there and issue fields belong inside its issues or issuePatches. Use ordinary JSON arrays, with strings as string elements, not item objects. A nullable limitation or unknown classification is JSON null, never an empty string. responseType is optional display metadata: if omitted, the driver labels a work update RESYNTHESIS_RESULT and an ordinary reply ANSWER. When supplied, use ANSWER, CLARIFYING_QUESTION, SOURCE_LINK, INPUT_REQUEST, TASK_STATUS or RESYNTHESIS_RESULT as appropriate. Never emit reviewActionDraft or affectedItemIds: the driver binds the fixed no-formal-action values null and [] and rejects model-supplied formal fields.`,
     'Omit retiredIssues when retiring no issue. unchangedIssueKeys may be omitted only when every previous issue is explicitly updated or retired; omission never drops a previous issue. Other work fields remain governed by the complete work contract.',
     'sourceRefs are document or attachment resources actually read this turn. candidateEvidenceRefs is a different field: use only current input.attachmentRefs that were actually read. With no current attachments omit candidateEvidenceRefs; if explicitly supplied, only [] is valid. Never put ordinary document SourceRefs, method references or working-delta source dependencies in candidateEvidenceRefs.',
     'context.problemAssessment is the actual saved JobAid problem work, method material, available source catalog and earlier discussion. Omit jobAidWorkingDelta for explanations and questions that change no working understanding. For a correction or new material, include a local work update preserving every unaffected issue and source/premise identity. In jobAidWorkingDelta, headline and listBrief must appear together; with previousWork, omit both to retain the saved reading summary, while first work requires both. Host saves the complete revised understanding and this reply atomically with CAS; this is an ordinary candidate update, not formal adoption. Never reconstruct a criterion checklist or generate replacement reasoning from an abbreviated brief.',
+    ...(input.input?.context?.issueEditScope?.targetIssueKeys?.length ? [
+      `This scoped Review may change only issues ${canonicalJson(input.input.context.issueEditScope.targetIssueKeys)}. Preserve other issue keys. Copy previousWork.content.roundCompletion and completionReason exactly. Change headline and listBrief together only if the authorized issue correction makes the saved summary inaccurate; do not rewrite the work-level understanding or method binding.`,
+    ] : []),
     'For UPDATE_ASSESSMENT, reconcile every affected prior "unread" statement and open question with source fragments actually returned this turn. When the relevant heading and its body were read, do not retain a claim that they were unread; update that issue and its question scope. A source directory alone does not establish reading, and parsed text alone does not prove that no hidden or graphical content exists. State that limitation precisely rather than inventing an absent section. Preserve previousWork.content.roundCompletion when the correction leaves its prior completion scope intact. Open questions can remain under COMPLETE_WITH_OPEN_QUESTIONS; use IN_PROGRESS only when newly identified unfinished investigation materially prevents completing this round, and say what it is. An engineer request for later Overall does not justify falsely marking work complete.',
     'Read relevant DOCUMENT_PASSAGE and ENGINEER_ATTACHMENT resources through the current source-read function. The catalog is not a read receipt. Previously saved sources freshly supplied in deliveredEvidence may support retained work; new citations require actual current delivery. Keep sourceRefs limited to resources read this turn; method evidence remains METHOD_CLAUSE in the working update and never pretends to be a document SourceRef. ENGINEER_ATTACHMENT proves only what the uploaded material reports, not implemented controls or controlled Host facts.',
     JOBAID_WORK_GUIDANCE,
     'Review-only authoring form: for an existing issue correction, use issuePatches with its exact prior issueKey and only fields that truly change. The driver copies omitted fields from Host-frozen previousWork before the complete Host save; an explicit empty array changes and clears that collection. Do not restate old riskScenarios, measures, openQuestions or requirementHandling merely to preserve them. Do not include nonempty issues together with issuePatches. For a distinct new issue, use a complete entry in issues. Every revised body must be a standalone engineering judgment with a supporting inline [[evidenceRef]]; put the process or change summary in answer or changeSummary. Revise affected openQuestions when actually read evidence answers them, even if roundCompletion stays the same; preserve unresolved questions.',
+    'For every non-null jobAidWorkingDelta include the exact schemaVersion and nonempty completionReason and changeSummary. Preserve the previous completionReason when the completion scope is unchanged; describe the actual correction in changeSummary. These fields are required even when issuePatches contain the only substantive change.',
   ];
 }
 
@@ -2111,7 +2176,7 @@ function buildReviewPrompt(input, { sourceReadFirst = false } = {}) {
       'This is free discussion, not an assessment update. Answer the question, clarify premises and read relevant available sources as needed. Do not regenerate the assessment, produce a working delta, or propose a formal ReviewAction, even when the message requests a correction or contains new material. Explain the correction in the conversation and leave incorporation to the separate Update Assessment action.',
       'For an ordinary answer, explanation or source link, set candidateEvidenceRefs=[]. Put actually read document citations in sourceRefs only; candidateEvidenceRefs is reserved for current attachmentRefs when responseType=CANDIDATE_EVIDENCE. With no current attachments it must be [].',
       'Set reviewActionDraft=null and affectedItemIds=[]. Do not use RESYNTHESIS_RESULT or claim that saved understanding has changed. Earlier engineer statements and assistant replies are discussion candidates, not verified facts. savedUnderstanding is the current saved reading, not proof that any cited source was read this turn. Use source reads for citations. If Aily is unavailable in the Host context, say so when relevant; never claim to search Feishu spaces or chats without an actual tool result.',
-    ] : isJobAid ? jobAidReviewGuidance() : isMatter ? matterReviewGuidance(input) : [
+    ] : isJobAid ? jobAidReviewGuidance(input) : isMatter ? matterReviewGuidance(input) : [
       'For an explanation, source link, clarification, input request, or task status, set candidateEvidenceRefs and affectedItemIds to [] and reviewActionDraft to null.',
       'Use CANDIDATE_EVIDENCE only when the engineer asks to analyze supplied or Host-authorized evidence; keep reviewActionDraft null and include every proposed evidence ref in candidateEvidenceRefs.',
       'Ordinary questions, corrections, additional material, or revisions to a working judgment do not require a ReviewAction. Return an answer or candidate evidence and continue the discussion.',
