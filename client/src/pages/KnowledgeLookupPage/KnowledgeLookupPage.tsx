@@ -1,9 +1,10 @@
 import { Fragment, useEffect, useRef, useState } from 'react';
 import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import { BookOpen, ChevronDown, ChevronRight, Search } from 'lucide-react';
-import type { CanonicalLibraryDocumentsResponse, CanonicalLibraryDocumentVersionSummary } from '@shared/api.interface';
+import type { CanonicalLibraryDocumentsResponse, CanonicalLibraryDocumentVersionSummary, EngineeringMatterDirectoryResponse } from '@shared/api.interface';
 import type { EngineeringKnowledgeEntry, EngineeringKnowledgeIdentity, EngineeringKnowledgeScope } from '@shared/engineering-issue-search.interface';
 import { getCanonicalLibraryDocuments } from '@client/src/api/canonical-host';
+import { getEngineeringMatterDirectory } from '@client/src/api/engineering-matter';
 import { useCurrentUserSession } from '@client/src/app/providers/CurrentUserSessionProvider';
 import EngineeringIssueBody from '@client/src/features/matter/EngineeringIssueBody';
 import { compactReadingSummary } from '@client/src/features/matter/compact-reading-summary';
@@ -43,11 +44,18 @@ const workItemPin = (params: URLSearchParams):
     return { state: 'invalid' };
   return { state: 'ok', workItemId: value };
 };
+const knowledgeKind = (params: URLSearchParams): 'works' | 'matters' | 'sources' => {
+  const requestedKind = params.get('kind');
+  const hasWorkPin = ['subjectKind', 'subjectId', 'workRef', 'workItemId']
+    .some(key => params.has(key));
+  return hasWorkPin || requestedKind === 'works' ? 'works'
+    : requestedKind === 'matters' ? 'matters' : 'sources';
+};
 
 export default function KnowledgeLookupPage() {
   const { sessionGeneration, authenticationRequired } = useCurrentUserSession();
   return <main className="wl-knowledge-suite" aria-label="工程知识">
-    <header className="page-heading"><div><h1>工程知识</h1><p>先找到已有解释，再核对它的条件、来源和确切工作范围。</p></div><small>直接读取已保存工作</small></header>
+    <header className="page-heading"><div><h1>工程知识</h1><p>从工程文档或事项进入 Wiki，阅读已保存的认识、条件与来源。</p></div><small>按文档与事项组织</small></header>
     {authenticationRequired ? <p role="alert">请先登录，再读取当前账户有权查看的工程知识。</p>
       : <KnowledgeCatalogue key={sessionGeneration} />}
   </main>;
@@ -58,7 +66,7 @@ function KnowledgeCatalogue() {
   const [params, setParams] = useSearchParams();
   const query = params.get('query') ?? '';
   const scope: EngineeringKnowledgeScope = params.get('scope') === 'ALL' ? 'ALL' : params.get('scope') === 'HISTORICAL' ? 'HISTORICAL' : 'CURRENT';
-  const kind = params.get('kind') === 'sources' ? 'sources' : 'works';
+  const kind = knowledgeKind(params);
   const after = params.get('after') ?? undefined;
   const identityPin = knowledgeReadingIdentity(params);
   const identity = identityPin.state === 'ok' ? identityPin.identity : null;
@@ -73,10 +81,32 @@ function KnowledgeCatalogue() {
   const [documentsLoading, setDocumentsLoading] = useState(true);
   const [documentsError, setDocumentsError] = useState('');
   const [loadedKey, setLoadedKey] = useState('');
+  const [matters, setMatters] = useState<EngineeringMatterDirectoryResponse | null>(null);
+  const [mattersLoading, setMattersLoading] = useState(false);
+  const [mattersError, setMattersError] = useState('');
+  const [relatedMatters, setRelatedMatters] = useState<EngineeringMatterDirectoryResponse | null>(null);
+  const [relatedLoading, setRelatedLoading] = useState(false);
+  const [relatedError, setRelatedError] = useState('');
+  const [relatedKey, setRelatedKey] = useState('');
   const documents = loadedKey === listKey ? loadedDocuments : null;
+  const versionPin = params.getAll('documentVersionId');
+  const selectedVersion = versionPin.length === 1
+    ? documents?.items.flatMap(document => document.versions).find(version =>
+      version.documentVersionId === versionPin[0]) ?? null
+    : versionPin.length === 0
+      ? documents?.items.flatMap(document => document.versions).find(version =>
+        version.selectedVersionIsCurrent) ?? null
+      : null;
+  const selectedRelatedKey = selectedVersion
+    ? `${selectedVersion.documentVersionId}:${selectedVersion.readerWorkItemId}` : '';
+  const visibleRelated = relatedKey === selectedRelatedKey ? relatedMatters : null;
+  const visibleRelatedError = relatedKey === selectedRelatedKey ? relatedError : '';
+  const visibleRelatedLoading = Boolean(selectedVersion?.readerWorkItemId) &&
+    (relatedKey !== selectedRelatedKey || relatedLoading);
   const page = knowledge.page, read = knowledge.read;
-  const loading = kind === 'works' ? knowledge.loading : documentsLoading;
-  const error = kind === 'works' ? knowledge.catalogueError ? failure(knowledge.catalogueError) : '' : documentsError;
+  const loading = kind === 'works' ? knowledge.loading : kind === 'matters' ? mattersLoading : documentsLoading;
+  const error = kind === 'works' ? knowledge.catalogueError ? failure(knowledge.catalogueError) : ''
+    : kind === 'matters' ? mattersError : documentsError;
   const reading = knowledge.reading;
   const readError = knowledge.workError ? failure(knowledge.workError) : '';
   const [retry, setRetry] = useState(0);
@@ -99,7 +129,7 @@ function KnowledgeCatalogue() {
   }
   function change(key: string, value: string) {
     clearPendingScroll();
-    setParams(prior => { const next = new URLSearchParams(prior); next.set(key, value); ['after', 'subjectKind', 'subjectId', 'workRef', 'workItemId', 'listY', 'articleY'].forEach(name => next.delete(name)); return next; }, { replace: true });
+    setParams(prior => { const next = new URLSearchParams(prior); next.set(key, value); ['after', 'subjectKind', 'subjectId', 'workRef', 'workItemId', 'documentVersionId', 'listY', 'articleY'].forEach(name => next.delete(name)); return next; }, { replace: true });
   }
   function rememberScroll(key: 'listY' | 'articleY', top: number) {
     pendingScroll.current[key] = String(Math.min(9999999, Math.max(0, Math.round(top))));
@@ -108,7 +138,7 @@ function KnowledgeCatalogue() {
     scrollTimer.current = setTimeout(() => {
       const pin = knowledgeReadingIdentity(currentParams.current);
       const actualIdentity = pin.state === 'ok' ? keyOf(pin.identity) : '';
-      const actualList = JSON.stringify([currentParams.current.get('query') ?? '', currentParams.current.get('scope') ?? 'CURRENT', currentParams.current.get('kind') ?? 'works', currentParams.current.get('after') ?? undefined]);
+      const actualList = JSON.stringify([currentParams.current.get('query') ?? '', currentParams.current.get('scope') ?? 'CURRENT', knowledgeKind(currentParams.current), currentParams.current.get('after') ?? undefined]);
       if (expectedIdentity !== actualIdentity || expectedList !== actualList) { pendingScroll.current = {}; return; }
       const values = pendingScroll.current; pendingScroll.current = {};
       setParams(prior => { const next = new URLSearchParams(prior); Object.entries(values).forEach(([name, value]) => next.set(name, value)); return next; }, { replace: true });
@@ -156,14 +186,45 @@ function KnowledgeCatalogue() {
     return () => { clearTimeout(timer); controller.abort(); };
   }, [query, scope, kind, after, retry]);
 
+  useEffect(() => {
+    if (kind !== 'matters') return;
+    const controller = new AbortController();
+    setMatters(null); setMattersError(''); setMattersLoading(true);
+    const timer = setTimeout(() => {
+      void getEngineeringMatterDirectory({ search: query, cursor: after, limit: 24 }, controller.signal)
+        .then(value => { if (!controller.signal.aborted) setMatters(value); })
+        .catch(cause => { if (!controller.signal.aborted) setMattersError(failure(cause)); })
+        .finally(() => { if (!controller.signal.aborted) setMattersLoading(false); });
+    }, query ? 250 : 0);
+    return () => { clearTimeout(timer); controller.abort(); };
+  }, [query, kind, after, retry]);
+
+  useEffect(() => {
+    if (kind !== 'sources' || !selectedVersion?.readerWorkItemId) {
+      setRelatedMatters(null); setRelatedError(''); setRelatedLoading(false); setRelatedKey('');
+      return;
+    }
+    const controller = new AbortController();
+    setRelatedMatters(null); setRelatedError(''); setRelatedLoading(true);
+    void getEngineeringMatterDirectory({
+      workItemId: selectedVersion.readerWorkItemId, limit: 24,
+    }, controller.signal).then(value => {
+      if (!controller.signal.aborted) { setRelatedMatters(value); setRelatedKey(selectedRelatedKey); }
+    }).catch(cause => {
+      if (!controller.signal.aborted) { setRelatedError(failure(cause)); setRelatedKey(selectedRelatedKey); }
+    }).finally(() => { if (!controller.signal.aborted) setRelatedLoading(false); });
+    return () => controller.abort();
+  }, [kind, selectedRelatedKey, selectedVersion?.readerWorkItemId, retry]);
+
   useEffect(() => { setSource(null); }, [selection, kind]);
 
   useEffect(() => {
     if (!loading && listRef.current) listRef.current.scrollTop = Number(currentParams.current.get('listY') ?? 0);
   }, [loading, page, documents]);
   useEffect(() => {
-    if (read && articleRef.current) articleRef.current.scrollTop = Number(currentParams.current.get('articleY') ?? 0);
-  }, [read]);
+    if ((read || selectedVersion) && articleRef.current)
+      articleRef.current.scrollTop = Number(currentParams.current.get('articleY') ?? 0);
+  }, [read, selectedVersion]);
 
   function openDocument(route: string, documentVersionId: string) {
     if (kind === 'works' && (!read || keyOf(read.entry) !== selection)) return;
@@ -173,6 +234,7 @@ function KnowledgeCatalogue() {
     const raw = queryStart === -1 ? '' : route.slice(queryStart + 1);
     const next = new URLSearchParams(raw);
     const state = knowledgeReadingParams(currentParams.current);
+    if (kind === 'sources') state.set('documentVersionId', documentVersionId);
     state.set('listY', String(Math.round(listRef.current?.scrollTop ?? 0)));
     state.set('articleY', String(Math.round(articleRef.current?.scrollTop ?? 0)));
     next.set('returnKnowledgeQuery', state.toString()); next.set('returnDocumentVersionId', documentVersionId);
@@ -183,15 +245,16 @@ function KnowledgeCatalogue() {
     if (exact) openDocument(exact, evidence.documentVersionId);
     else setSource({ documentVersionId: evidence.documentVersionId, sourceRef: evidence.sourceRefId ?? null });
   }
-  const nextCursor = kind === 'works' ? page?.nextCursor : documents?.nextCursor;
+  const nextCursor = kind === 'works' ? page?.nextCursor
+    : kind === 'matters' ? matters?.nextCursor : documents?.nextCursor;
   const pagination = <div className="knowledge-pagination">
     {after && <button onClick={() => change('kind', kind)}>回到首批</button>}
-    {nextCursor && <button onClick={() => { clearPendingScroll(); setParams(prior => { const next = new URLSearchParams(prior); next.set('after', nextCursor); ['subjectKind', 'subjectId', 'workRef', 'listY', 'articleY'].forEach(key => next.delete(key)); return next; }); }}>下一批</button>}
+    {nextCursor && <button onClick={() => { clearPendingScroll(); setParams(prior => { const next = new URLSearchParams(prior); next.set('after', nextCursor); ['subjectKind', 'subjectId', 'workRef', 'documentVersionId', 'listY', 'articleY'].forEach(key => next.delete(key)); return next; }); }}>下一批</button>}
   </div>;
   return <>
     <div className="knowledge-toolbar">
-      <div className="tabs" role="group" aria-label="知识类型"><button aria-pressed={kind === 'works'} onClick={() => change('kind', 'works')}>工程认识</button><button aria-pressed={kind === 'sources'} onClick={() => change('kind', 'sources')}>来源资料</button></div>
-      <label className="knowledge-search"><Search size={18} /><input aria-label="搜索工程知识" maxLength={200} placeholder="问题、对象、条件或来源标识…" value={query} onChange={event => change('query', event.target.value)} /></label>
+      <div className="tabs" role="group" aria-label="知识类型"><button aria-pressed={kind === 'sources'} onClick={() => change('kind', 'sources')}>工程文档</button><button aria-pressed={kind === 'matters'} onClick={() => change('kind', 'matters')}>工程事项</button><button aria-pressed={kind === 'works'} onClick={() => change('kind', 'works')}>工作与历史</button></div>
+      <label className="knowledge-search"><Search size={18} /><input aria-label="搜索工程知识" maxLength={200} placeholder="搜索文档、事项或已保存工作…" value={query} onChange={event => change('query', event.target.value)} /></label>
       {kind === 'works' && <select aria-label="知识版本范围" value={scope} onChange={event => change('scope', event.target.value)}><option value="CURRENT">当前工作</option><option value="ALL">包含历史工作</option><option value="HISTORICAL">仅历史工作</option></select>}
     </div>
     {identityPin.state === 'invalid' && <p role="alert">知识工作身份不完整或有重复参数，请重新选择确切工作。</p>}
@@ -249,8 +312,22 @@ function KnowledgeCatalogue() {
           </> : <Link to={`/work-items/${encodeURIComponent(read.entry.subjectId)}`}>查看文档工作</Link>}</div>
         </> : <p className="knowledge-empty">选择一条已有认识，阅读完整解释与来源。</p>}
       </section>
-    </div> : <section className="panel knowledge-sources" aria-label="来源资料">
-      <div className="panel-head"><h2>资料标题与确切版本</h2></div>
+    </div> : kind === 'matters' ? <section className="panel knowledge-sources" aria-label="工程事项目录">
+      <div className="panel-head"><h2>工程事项 Wiki</h2></div>
+      {loading ? <p role="status">正在读取工程事项…</p> : matters?.items.map(matter =>
+        <Link className="knowledge-source knowledge-catalog-link" key={matter.matterId}
+          to={`/matters/${encodeURIComponent(matter.matterId)}`}>
+          <div><small>工程事项 · {displayDate(matter.updatedAt)}</small>
+            <h2>{matter.title}</h2>
+            <p>{matter.result?.listBrief || '尚无已保存的事项综合认识。'}</p>
+            {matter.overallStatus === 'STALE' && <small className="coverage-hint">问题已更新，综合尚未覆盖</small>}
+          </div><span>打开事项 Wiki →</span>
+        </Link>)}
+      {!loading && !error && !matters?.items.length && <p className="knowledge-empty">没有匹配的可读事项。</p>}{pagination}
+    </section> : <div className="knowledge-layout">
+    <section className="panel knowledge-sources" aria-label="工程文档目录" ref={listRef}
+      onScroll={event => rememberScroll('listY', event.currentTarget.scrollTop)}>
+      <div className="panel-head"><h2>工程文档与确切版本</h2></div>
       {loading ? <p role="status">正在读取来源资料…</p> : documents?.items.map(document => {
         const current = document.versions.find(item => item.selectedVersionIsCurrent);
         const historical = document.versions.filter(item => !item.selectedVersionIsCurrent);
@@ -317,15 +394,24 @@ function KnowledgeCatalogue() {
             </div>
           );
         };
-        const openVersion = (version: CanonicalLibraryDocumentVersionSummary) => openDocument(`/document-versions/${encodeURIComponent(version.documentVersionId)}`, version.documentVersionId);
+        const selectVersion = (version: CanonicalLibraryDocumentVersionSummary) => {
+          clearPendingScroll();
+          setParams(prior => {
+            const next = new URLSearchParams(prior);
+            next.set('documentVersionId', version.documentVersionId);
+            next.delete('articleY');
+            return next;
+          }, { replace: true });
+        };
         return (
           <Fragment key={document.familyId}>
             {current ? (
               <div
-                className="knowledge-source"
+                className={`knowledge-source${selectedVersion?.documentVersionId === current.documentVersionId ? ' selected' : ''}`}
+                aria-current={selectedVersion?.documentVersionId === current.documentVersionId ? 'true' : undefined}
                 tabIndex={0}
-                onClick={() => openVersion(current)}
-                onKeyDown={(event) => event.target === event.currentTarget && event.key === 'Enter' && openVersion(current)}
+                onClick={() => selectVersion(current)}
+                onKeyDown={(event) => event.target === event.currentTarget && event.key === 'Enter' && selectVersion(current)}
               >
                 {historical.length ? (
                   <button
@@ -342,7 +428,7 @@ function KnowledgeCatalogue() {
                   </button>
                 ) : null}
                 {sourceBody(current)}
-                <span aria-hidden="true">精读 →</span>
+                <span aria-hidden="true">阅读 →</span>
               </div>
             ) : (
               <div className="knowledge-source">
@@ -366,21 +452,64 @@ function KnowledgeCatalogue() {
             )}
             {expanded ? historical.map((version) => (
               <div
-                className="knowledge-source knowledge-source-history"
+                className={`knowledge-source knowledge-source-history${selectedVersion?.documentVersionId === version.documentVersionId ? ' selected' : ''}`}
+                aria-current={selectedVersion?.documentVersionId === version.documentVersionId ? 'true' : undefined}
                 key={version.documentVersionId}
                 tabIndex={0}
-                onClick={() => openVersion(version)}
-                onKeyDown={(event) => event.target === event.currentTarget && event.key === 'Enter' && openVersion(version)}
+                onClick={() => selectVersion(version)}
+                onKeyDown={(event) => event.target === event.currentTarget && event.key === 'Enter' && selectVersion(version)}
               >
                 {sourceBody(version)}
-                <span aria-hidden="true">精读 →</span>
+                <span aria-hidden="true">阅读 →</span>
               </div>
             )) : null}
           </Fragment>
         );
       })}
       {!loading && !error && !documents?.items.length && <p className="knowledge-empty">没有匹配的可读资料。</p>}{pagination}
-    </section>}
+    </section>
+    <section className="panel knowledge-preview" aria-label="文档 Wiki" ref={articleRef}
+      onScroll={event => rememberScroll('articleY', event.currentTarget.scrollTop)}>
+      {versionPin.length > 1 ? <p role="alert">文档版本身份有重复参数，请重新选择确切版本。</p>
+        : versionPin.length === 1 && !loading && !selectedVersion
+          ? <p role="alert">指定版本不在当前可读目录结果，请调整筛选或重新选择。</p>
+        : selectedVersion ? <>
+        <div className="article-kicker">工程文档 · {libraryVersionLabel(selectedVersion)} · {selectedVersion.selectedVersionIsCurrent ? '当前版本' : '历史版本'}</div>
+        <h1>{documents?.items.find(document => document.versions.some(version =>
+          version.documentVersionId === selectedVersion.documentVersionId))?.documentCode ?? '文档版本'}</h1>
+        {(() => {
+          const reading = projectLibraryDocumentReading(selectedVersion);
+          return <>
+            <h2>{reading.headline || reading.fileTitle}</h2>
+            <p className="article-lead">{reading.brief ?? reading.note}</p>
+            {reading.conditionLines.length > 0 && <section className="knowledge-prose">
+              <h2>关键条件与阅读限制</h2><ul>{reading.conditionLines.map(line => <li key={line}>{line}</li>)}</ul>
+            </section>}
+            {!selectedVersion.documentReading?.reading &&
+              <p className="knowledge-notice">该版本尚无独立保存的文档简明解读；关联评估不能代替文档解读。</p>}
+          </>;
+        })()}
+        <section className="knowledge-prose"><h2>关联工程事项</h2>
+          {visibleRelatedLoading ? <p role="status">正在核对已登记关联…</p>
+            : visibleRelatedError ? <p role="alert">{visibleRelatedError} <button onClick={retryRead}>重试</button></p>
+            : visibleRelated?.items.length ? visibleRelated.items.map(matter =>
+              <p key={matter.matterId}><Link to={`/matters/${encodeURIComponent(matter.matterId)}`}>{matter.title}</Link>
+                {matter.result?.listBrief ? ` · ${matter.result.listBrief}` : ' · 尚无已保存综合认识'}</p>)
+            : <p>没有通过该版本的文档工作登记的可读事项。</p>}
+          {visibleRelated?.nextCursor && <p>还有其他关联事项，可在事项目录按名称查找。</p>}
+        </section>
+        {selectedVersion.readerWorkItemId && <section className="knowledge-prose">
+          <h2>该版本的评估工作</h2>
+          <p>这是对该文档版本的已保存评估，阅读范围与独立文档解读不同。</p>
+          <Link to={`/knowledge?${new URLSearchParams({
+            kind: 'works', workItemId: selectedVersion.readerWorkItemId,
+          })}`}>查看该版本评估</Link>
+        </section>}
+        <div className="knowledge-actions"><button onClick={() => openDocument(
+          `/document-versions/${encodeURIComponent(selectedVersion.documentVersionId)}`,
+          selectedVersion.documentVersionId)}>精读该文档版本与原文</button></div>
+      </> : <p className="knowledge-empty">选择一份工程文档，阅读其简明解读、条件和已登记关联事项。</p>}
+    </section></div>}
     {source && <MatterDocumentSourceDialog key={`${source.documentVersionId}:${source.sourceRef}`} {...source} onClose={() => setSource(null)} />}
   </>;
 }

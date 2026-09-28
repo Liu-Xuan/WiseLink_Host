@@ -28,11 +28,15 @@ jest.mock('@client/src/pages/DocumentParsingPage/jobaid-problem-workspace.css', 
 jest.mock('../../client/src/pages/KnowledgeLookupPage/knowledge-lookup.css', () => ({}));
 jest.mock('../../client/src/pages/KnowledgeLookupPage/knowledge-suite.css', () => ({}));
 
-test('knowledge defaults to saved explanation catalogue without process cards or write actions', () => {
+test('knowledge defaults to the document Wiki without process cards or write actions', () => {
   const html = renderKnowledge('/knowledge?referenceAttemptRef=must-not-run');
-  expect(html).toContain('已有工程认识');
-  expect(html).toContain('完整工程认识');
-  expect(html).toContain('仅历史工作');
+  expect(html).toContain('工程文档与确切版本');
+  expect(html).toContain('文档 Wiki');
+  expect(html).toContain('工程事项');
+  expect(html).toContain('工作与历史');
+  const work = renderKnowledge('/knowledge?kind=works');
+  expect(work).toContain('已有工程认识');
+  expect(work).toContain('仅历史工作');
   expect(html).not.toContain('知识读取口径');
   expect(html).not.toContain('解析单元');
   expect(html).not.toContain('引用比较处理状态');
@@ -50,6 +54,20 @@ test('knowledge identity refuses partial, empty and duplicated history pins', ()
   expect(readingReturnTarget(params, 'DV')!.route).toContain('workRef=old');
   expect(readingReturnTarget(params, 'DV')!.route).toContain('articleY=123');
   expect(readingReturnTarget(params, 'other')).toBeNull();
+});
+
+test('document Wiki return keeps the exact version and rejects a changed binding', () => {
+  const query = 'kind=sources&documentVersionId=DV-current&listY=120&articleY=45';
+  const params = new URLSearchParams({
+    returnDocumentVersionId: 'DV-current', returnKnowledgeQuery: query,
+  });
+  const route = readingReturnTarget(params, 'DV-current')?.route;
+  expect(route).toContain('documentVersionId=DV-current');
+  expect(route).toContain('listY=120');
+  expect(route).toContain('articleY=45');
+  expect(readingReturnTarget(params, 'DV-other')).toBeNull();
+  params.set('returnKnowledgeQuery', 'kind=sources&documentVersionId=DV-other');
+  expect(readingReturnTarget(params, 'DV-current')).toBeNull();
 });
 
 test('authentication-required knowledge does not retain either result surface', () => {
