@@ -250,6 +250,22 @@ test('draft upload authorization: exact legacy link works, actor intent remains 
         return work(tx);
       });
       const authTable = 'auto_document_delivery_authorization';
+      assert.equal((await asService((tx) => tx`SELECT acquisition_id
+        FROM auto_document_delivery_authorization`)).length, 1);
+      // Dev C198 exposed a platform rewrite: TO service_role became the exact
+      // workspace service role. Reproduce that installed policy and prove the
+      // small corrective migration restores service access without new grants.
+      await db.unsafe(`CREATE POLICY auto_document_delivery_no_generic_service
+        ON ${authTable} AS RESTRICTIVE FOR ALL
+        TO service_role_workspace_aadkpkjef3slu USING (false) WITH CHECK (false)`);
+      assert.equal((await asService((tx) => tx`SELECT acquisition_id
+        FROM auto_document_delivery_authorization`)).length, 0);
+      const repair = await readFile(resolve('migrations/0068_document_delivery_service_policy_repair.sql'), 'utf8');
+      assert.doesNotMatch(repair, /^(?:GRANT|REVOKE)\b/gmu);
+      await db.unsafe(repair);
+      await db.unsafe(repair);
+      assert.equal((await asService((tx) => tx`SELECT acquisition_id
+        FROM auto_document_delivery_authorization`)).length, 1);
       for (const role of ['authenticated', 'authenticated_workspace_aadkpkjef3slu',
         'service_role', 'anon_workspace_aadkpkjef3slu']) {
         assert.equal((await asSqlRole(role, 'actor-new',

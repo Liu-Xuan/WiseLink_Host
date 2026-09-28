@@ -4,6 +4,8 @@ import { resolve } from 'node:path';
 describe('document upload delivery authorization migration', () => {
   const migration = readFileSync(resolve(process.cwd(),
     'migrations/0067_document_upload_delivery_authorization.sql'), 'utf8');
+  const repair = readFileSync(resolve(process.cwd(),
+    'migrations/0068_document_delivery_service_policy_repair.sql'), 'utf8');
 
   it('registers only an exact committed source and freezes its selected intake', () => {
     expect(migration).toMatch(/NEW\.source_channel <> 'document_library_upload'/u);
@@ -26,7 +28,9 @@ describe('document upload delivery authorization migration', () => {
     expect(migration).toMatch(/rolname='service_role_workspace_aadkpkjef3slu'[\s\S]*?NOT rolsuper AND NOT rolbypassrls/u);
     expect(migration).toMatch(/rolname='authenticated_workspace_aadkpkjef3slu'[\s\S]*?NOT rolsuper AND NOT rolbypassrls/u);
     expect(migration).toMatch(/auto_document_delivery_no_browser[\s\S]*?AS RESTRICTIVE FOR ALL TO authenticated,authenticated_workspace_aadkpkjef3slu/u);
-    expect(migration).toMatch(/auto_document_delivery_no_generic_service[\s\S]*?AS RESTRICTIVE FOR ALL TO service_role/u);
+    expect(migration).not.toContain('auto_document_delivery_no_generic_service');
+    expect(repair).toMatch(/DROP POLICY IF EXISTS auto_document_delivery_no_generic_service/u);
+    expect(repair).not.toMatch(/^\s*(?:GRANT|REVOKE)\b/gmu);
     expect(migration).toMatch(/has_table_privilege\('service_role_workspace_aadkpkjef3slu',[\s\S]*?'SELECT'\)/u);
     expect(migration).toMatch(/has_table_privilege\('service_role_workspace_aadkpkjef3slu',[\s\S]*?'UPDATE'\)/u);
     expect(migration).toMatch(/FOR SELECT TO service_role_workspace_aadkpkjef3slu USING \(true\)/u);

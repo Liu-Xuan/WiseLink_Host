@@ -1,10 +1,16 @@
-# 0067 controlled rollout candidate: verified delivery writes
+# 0067 controlled rollout and 0068 dev policy correction: verified delivery writes
 
 The user authorized a staged dev-to-online application of
 `0067_document_upload_delivery_authorization.sql` on 2026-09-28, with a short
-pause of new 17b uploads and C136 during the change. This source commit does
-not apply the migration. Exact role/schema checks, controlled execution, and
-readback remain required before either environment is recorded as migrated.
+pause of new 17b uploads and C136 during the change. C198 0067 was applied
+on dev; online remains untouched. The platform rewrote its generic
+`service_role` restrictive policy target to the exact workspace service role.
+That false policy blocks exact service SELECT and UPDATE despite their positive
+policies. C199 removes it from the 0067 source and supplies the idempotent
+`0068_document_delivery_service_policy_repair.sql` to repair the already migrated
+dev database; 0068 has not yet been applied there. The generic service role has no permissive authorization-table
+policy and therefore remains denied by RLS. Controlled execution and exact
+role readback remain required before either environment is recorded as ready.
 
 The exact-link trigger accepts a newly acquired copy of an existing immutable
 DocumentVersion. It compares the new acquisition's source ID and verified
@@ -39,8 +45,9 @@ it now uses the verified service scope and checks upload actor/tenant binding.
 The selected authorization row is written by the acquisition trigger in that
 same transaction. Other Catalog callers do not enter service SQL.
 The draft authorization table also has the platform's four `_created/_updated`
-audit columns. Its admission trigger maintains the update pair without adding
-those columns to the service role's UPDATE grant.
+audit columns. Its admission trigger maintains the update pair while the
+effective update scope comes from the actor-bound RLS policy and immutable
+column trigger.
 For queued WorkItems and uploads, a pending document remains
 `DOCUMENT_PENDING` so the consumer can advance its parse `STEP`. The Host
 returns the exact selected attempt or acquisition cursor, which the consumer
@@ -71,7 +78,9 @@ automatically replayed.
   then binds each candidate to the exact source and actor before dispatch.
   Admission UPDATE remains actor-scoped; the role cannot INSERT, DELETE, or
   alter immutable columns. Generic roles and an unrelated workspace service
-  role cannot read authorization rows. The test
+  role cannot read authorization rows. The test also reproduces the observed
+  platform role-target rewrite, verifies it blocks exact service reads, then
+  applies 0068 twice and verifies access is restored without a new grant. It
   also covers wrong-schema rejection, exact-link rollback, selected and
   `NONE` reserve rollback/success, source mismatch, and populated
   audit columns. The fixture is smaller than the application schema and does
@@ -127,17 +136,20 @@ automatically replayed.
   On dev, `dataloom_user`'s workspace default ACL grants new tables broad
   privileges to generic and exact service/browser roles and workspace anon;
   the exact service role does not inherit those other roles. None is superuser
-  or BYPASSRLS. The dev 0067 attempt was rejected by the platform on a
-  GRANT/REVOKE statement before any SQL applied. This revised candidate
-  contains no GRANT/REVOKE. It checks the exact schema and roles, then uses
-  restrictive RLS to deny browser, anon, and generic service access to the
-  new table. The exact service role can SELECT all rows and UPDATE only its
+  or BYPASSRLS. The first dev attempt was rejected by the platform on a
+  GRANT/REVOKE statement before any SQL applied. C198 0067 then applied on
+  dev, where readback exposed the generic service policy role rewrite. C199
+  0067 omits that policy, and 0068 is the pending repair for migrated dev.
+  Both contain no GRANT/REVOKE. 0067 checks the exact schema and roles, then uses
+  restrictive RLS to deny browser and anon access to the new table. Generic
+  service has no permissive policy, so PostgreSQL's default RLS deny applies.
+  The exact service role can SELECT all rows and UPDATE only its
   selected actor's `WAITING` row to `ADMITTED`; an unconditional trigger denies
   TRUNCATE. The service role's table privileges still include other verbs,
   but RLS and the trigger deny those operations. Tenant isolation during
   discovery comes from the Host selector and exact source/actor authorization,
   not from SELECT RLS.
-- Before applying 0067, review the installed grants/RLS and exercise the
+- Before applying 0067 online or 0068 dev, review the installed grants/RLS and exercise the
   hosted middleware and real application schema. The local integration tests
   above use isolated databases and the exact hosted role but cannot establish
   the deployed platform's grants or session injection. The upload picker now

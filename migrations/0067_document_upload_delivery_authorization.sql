@@ -278,9 +278,6 @@ ALTER TABLE auto_document_delivery_authorization ENABLE ROW LEVEL SECURITY;
 CREATE POLICY auto_document_delivery_no_browser ON auto_document_delivery_authorization
 AS RESTRICTIVE FOR ALL TO authenticated,authenticated_workspace_aadkpkjef3slu,
   anon,anon_workspace_aadkpkjef3slu USING (false) WITH CHECK (false);
-CREATE POLICY auto_document_delivery_no_generic_service
-ON auto_document_delivery_authorization
-AS RESTRICTIVE FOR ALL TO service_role USING (false) WITH CHECK (false);
 CREATE POLICY auto_document_delivery_service_read ON auto_document_delivery_authorization
 FOR SELECT TO service_role_workspace_aadkpkjef3slu USING (true);
 CREATE POLICY auto_document_delivery_service_admit ON auto_document_delivery_authorization
