@@ -5076,7 +5076,7 @@ test('offers source reading and one final candidate function with blank assistan
   assert.equal(result.provenance.modelVersion, 'openai-codex/gpt-5.4');
   assert.equal(
     result.provenance.promptVersion,
-    'wiselink.3_1.review_prompt.v1.c48',
+    'wiselink.3_1.review_prompt.v1.c49',
   );
 });
 
@@ -5129,7 +5129,7 @@ test('falls back to the configured model and records only output shape v2', asyn
   assert.equal(result.provenance.modelVersion, 'provider/configured');
   assert.equal(
     result.provenance.promptVersion,
-    'wiselink.3_1.review_prompt.v1.c48',
+    'wiselink.3_1.review_prompt.v1.c49',
   );
   assert.equal(
     outputShape.schemaVersion,
@@ -7892,6 +7892,61 @@ test('JobAid update rejects a status-only delta and COMPLETE while retained ques
     /REVIEW_JOBAID_OPEN_QUESTIONS_REQUIRE_QUALIFIED_COMPLETION/u);
   assert.doesNotThrow(() => validate({ ...delta, overview: '仍需确认机队范围',
     roundCompletion: 'COMPLETE_WITH_OPEN_QUESTIONS' }));
+});
+
+test('JobAid Review checks the reading summary pair against Host omission rules', async () => {
+  const { task, candidate } = await emptyJobAidReviewFixture();
+  const delta = { schemaVersion: 'wiselink.jobaid-problem-work.v3', issues: [],
+    roundCompletion: 'IN_PROGRESS', completionReason: '仍需核对', changeSummary: '修订理解' };
+  const validate = (work) => validateReviewCandidate(task, { ...candidate, jobAidWorkingDelta: work });
+  assert.doesNotThrow(() => validate(delta));
+  for (const half of [{ headline: '条件判断' }, { listBrief: '持续条件待核。' }]) {
+    assert.throws(() => validate({ ...delta, ...half }),
+      /JOBAID_READING_SUMMARY_PAIR_REQUIRED/u);
+  }
+  assert.doesNotThrow(() => validate({ ...delta, headline: '条件判断',
+    listBrief: '持续条件待核。' }));
+  task.jobAidContext.previousWork = null;
+  assert.throws(() => validate(delta), /JOBAID_READING_SUMMARY_REQUIRED/u);
+  assert.doesNotThrow(() => validate({ ...delta, headline: '条件判断',
+    listBrief: '持续条件待核。' }));
+});
+
+test('JobAid Review returns the pair error after two earlier corrections before save', async () => {
+  const { task, candidate } = await emptyJobAidReviewFixture();
+  let requests = 0;
+  const delta = { schemaVersion: 'wiselink.jobaid-problem-work.v3', issues: [],
+    roundCompletion: 'IN_PROGRESS', completionReason: '仍需核对', changeSummary: '修订理解' };
+  const result = await invokeReviewWithTransport({ input: { context: {
+    purpose: 'UPDATE_ASSESSMENT', problemAssessment: { previousWork: task.jobAidContext.previousWork },
+  } } }, {
+    gatewayUrl: 'https://official.invalid', gatewayToken: 'fixture-only',
+    configuredModelVersion: 'fixture/provider',
+    validateCandidate: (output) => {
+      if (requests <= 2) throw new Error('REVIEW_JOBAID_BODY_CITATIONS_REQUIRED');
+      validateReviewCandidate(task,
+        { ...candidate, jobAidWorkingDelta: output.jobAidWorkingDelta });
+    },
+  }, { requestGateway: async (_url, init) => {
+    const request = JSON.parse(init.body);
+    requests += 1;
+    if (requests === 4) {
+      assert.deepEqual(request.messages.map((message) => message.role), ['system', 'assistant', 'tool']);
+      const feedback = JSON.parse(request.messages.at(-1).content);
+      assert.equal(feedback.validationError, 'JOBAID_READING_SUMMARY_PAIR_REQUIRED');
+      assert.match(feedback.instruction, /headline and jobAidWorkingDelta\.listBrief/u);
+      assert.equal(feedback.candidateAccepted, false);
+    }
+    return Response.json({ choices: [{ message: { content: null, tool_calls: [{
+      id: `summary-${requests}`, type: 'function', function: {
+        name: 'return_wiselink_review_candidate',
+        arguments: JSON.stringify({ answer: '局部更正', jobAidWorkingDelta:
+          requests === 3 ? { ...delta, headline: '单独标题' } : delta }),
+      },
+    }] } }] });
+  } });
+  assert.equal(requests, 4);
+  assert.deepEqual(result.output.jobAidWorkingDelta, delta);
 });
 
 test('JobAid update gives specific correction for an empty assessment delta', async () => {

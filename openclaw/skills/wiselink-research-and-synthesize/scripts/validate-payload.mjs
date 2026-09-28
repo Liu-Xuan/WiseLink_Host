@@ -4881,6 +4881,12 @@ function validateJobAidReviewDelta(task, delta) {
 function validateJobAidWorkDelta(delta, previousContent, sourceCatalog) {
   assertObject(delta, 'REVIEW_JOBAID_DELTA_INVALID');
   equal(delta.schemaVersion, 'wiselink.jobaid-problem-work.v3', 'REVIEW_JOBAID_WORK_SCHEMA_INVALID');
+  // Match materializeJobAidWork: a saved reading summary is one pair. A
+  // previous revision permits omitting both fields to retain its exact copy.
+  if (Object.hasOwn(delta, 'headline') !== Object.hasOwn(delta, 'listBrief'))
+    fail('JOBAID_READING_SUMMARY_PAIR_REQUIRED');
+  if (!previousContent && !Object.hasOwn(delta, 'headline'))
+    fail('JOBAID_READING_SUMMARY_REQUIRED');
   for (const key of ['completionReason', 'changeSummary']) nonEmpty(delta[key], `REVIEW_JOBAID_${key.toUpperCase()}_REQUIRED`);
   array(delta.issues, 'REVIEW_JOBAID_ISSUES_REQUIRED');
   // Match Host's existing omission semantics, without normalizing a supplied
