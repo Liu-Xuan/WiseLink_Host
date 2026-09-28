@@ -347,7 +347,7 @@ export class MiaodaWorkItemRepository {
             AND t.subject_kind='DOCUMENT_VERSION' AND t.action_type='DOCUMENT_TRANSLATE'
             AND t.status IN ('QUEUED','RUNNING','RETRY_SCHEDULED')
             AND (t.trigger_request_id<>${`${input.translationRequestId}:partial-repair`}
-              OR t.task_envelope_json::jsonb->'modelInput' ? 'retranslateBlockIds')
+              OR jsonb_exists(t.task_envelope_json::jsonb->'modelInput','retranslateBlockIds'))
             AND t.deadline_at>CURRENT_TIMESTAMP
             AND (t.lease_expires_at IS NULL OR t.lease_expires_at<=CURRENT_TIMESTAMP))
         OR EXISTS (SELECT 1 FROM ${actionAttempt} t
