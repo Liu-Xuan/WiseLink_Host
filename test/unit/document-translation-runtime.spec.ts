@@ -1,5 +1,6 @@
 import { DocumentTranslationRuntimeService } from '../../server/modules/canonical-host/document-translation-runtime.service';
 import { originalFixture } from './document-parsing/fixtures/document-original.fixture';
+import { sealDocumentTranslationTaskEnvelope } from '../../server/modules/action-attempt/document-translation-task-envelope';
 
 function setup() {
   const original = originalFixture();
@@ -19,18 +20,28 @@ function setup() {
     executeStep: jest.fn().mockResolvedValue({ status: 'PROGRESSED' }) };
   let row: Record<string, unknown> | null = null;
   const attempts = { readRequest: jest.fn(async () => row), latest: jest.fn(async () => row),
-    reserve: jest.fn(async (_scope, task) => { row = { status: 'QUEUED', documentVersionId, producerRunId: parseRunId,
+    reserve: jest.fn(async (_scope, task, _requestId, executionModel) => { row = { status: 'QUEUED', documentVersionId, producerRunId: parseRunId,
       attemptId: task.actionAttemptId, operationRef: task.operationRef, taskEnvelopeJson: JSON.stringify(task),
-      deadlineAt: new Date(task.deadline), errorCode: null }; return row; }),
+      executionModelJson: JSON.stringify(executionModel), deadlineAt: new Date(task.deadline), errorCode: null }; return row; }),
     claim: jest.fn(async (_scope, attemptRef, principalId) => ({ attemptRef, principalId, leaseToken: 'token', leaseGeneration: 1 })),
-    renew: jest.fn().mockResolvedValue(true), release: jest.fn().mockResolvedValue(undefined),
+    renew: jest.fn().mockResolvedValue(true), release: jest.fn().mockResolvedValue(true),
     cancel: jest.fn(), finish: jest.fn(), fail: jest.fn(), expire: jest.fn(),
   };
   const parsing = { status: jest.fn().mockResolvedValue({ documentVersionId }) };
   const semantics = { readReady: jest.fn().mockResolvedValue(null), read: jest.fn().mockResolvedValue({ profileRef: 'generic.author-sections.v1' }) };
+  const v2 = { executeDocument: jest.fn(), assembleDocument: jest.fn(),
+    documentHasInterruptedGeneration: jest.fn().mockResolvedValue(false) };
   const service = new DocumentTranslationRuntimeService(authorization as never, actors as never, reader as never,
-    plugins as never, attempts as never, semantics as never, parsing as never);
-  return { service, reader, plugins, attempts, authorization, parsing, semantics, binding: { documentVersionId, parseRunId } };
+    plugins as never, attempts as never, semantics as never, parsing as never, v2 as never);
+  const legacy = () => {
+    if (!row) throw new Error('expected row');
+    const task = JSON.parse(String(row.taskEnvelopeJson));
+    const { inputHash: _hash, ...unsealed } = task;
+    row.taskEnvelopeJson = JSON.stringify(sealDocumentTranslationTaskEnvelope({ ...unsealed,
+      modelInput: { ...unsealed.modelInput, documentProducer: 'OFFICIAL_PLUGIN' } }));
+  };
+  return { service, reader, plugins, attempts, authorization, parsing, semantics, v2, legacy,
+    binding: { documentVersionId, parseRunId } };
 }
 
 describe('independent document translation runtime', () => {
@@ -54,11 +65,27 @@ describe('independent document translation runtime', () => {
     expect(f.plugins.prepareOriginal.mock.calls[0][0]).not.toHaveProperty('workItemId');
     expect(f.attempts.reserve.mock.calls[0][1]).not.toHaveProperty('workItemId');
     expect(f.plugins.executeStep).not.toHaveBeenCalled();
+    expect(f.attempts.reserve.mock.calls[0][3].modelRef).toBe('m3probe/minimax-m3');
+  });
+  it('claims only a stored Hosted M3 route and stops an interrupted generation before dispatch', async () => {
+    const f = setup();
+    const started = await f.service.run({ action: 'START', ...f.binding, requestId: 'request' });
+    if (!('attemptRef' in started)) throw new Error('expected attempt');
+    const claimed = await f.service.run({ action: 'CLAIM', ...f.binding, attemptRef: started.attemptRef! });
+    expect(claimed).toMatchObject({ fence: { leaseGeneration: 1 },
+      executionModel: { modelRef: 'm3probe/minimax-m3' }, task: { modelInput: { documentProducer: 'HOSTED_M3' } } });
+    f.v2.documentHasInterruptedGeneration.mockResolvedValueOnce(true);
+    const stopped = await f.service.run({ action: 'CLAIM', ...f.binding, attemptRef: started.attemptRef! });
+    expect(stopped).toMatchObject({ status: 'REQUIRES_ATTENTION',
+      errorCode: 'DOCUMENT_TRANSLATION_GENERATION_OUTCOME_UNKNOWN' });
+    expect(f.attempts.release).toHaveBeenCalledTimes(1);
+    expect(f.v2.executeDocument).not.toHaveBeenCalled();
   });
   it('executes one official step using the document fence and releases failure without replay', async () => {
     const f = setup();
     const state = await f.service.run({ action: 'START', ...f.binding, requestId: 'request' });
     if (!('attemptRef' in state)) throw new Error('expected reserved attempt');
+    f.legacy();
     const input = { action: 'STEP' as const, ...f.binding, attemptRef: state.attemptRef! };
     await f.service.run(input);
     expect(f.plugins.executeStep).toHaveBeenCalledWith(expect.objectContaining({ fence: expect.objectContaining({
@@ -111,6 +138,7 @@ describe('independent document translation runtime', () => {
     expect(f.reader.readDocumentOriginal).not.toHaveBeenCalled();
     const state = await f.service.run({ action: 'START', ...f.binding, requestId: 'request' });
     if (!('attemptRef' in state)) throw new Error('expected attempt');
+    f.legacy();
     f.reader.readDocumentOriginal.mockClear();
     const step = { action: 'STEP' as const, ...f.binding, attemptRef: state.attemptRef! };
     await expect(f.service.run({ ...step, parseRunId: 'other' })).rejects.toThrow('SOURCE_CHANGED');
@@ -123,7 +151,7 @@ describe('independent document translation runtime', () => {
     await expect(f.service.run(step)).resolves.toMatchObject({ status: 'COMPLETED' });
     expect(f.reader.readDocumentOriginal).not.toHaveBeenCalled();
     expect(f.plugins.executeStep).not.toHaveBeenCalled();
-    expect(f.attempts.expire).toHaveBeenCalledTimes(5);
+    expect(f.attempts.expire).toHaveBeenCalledTimes(6);
   });
 
   it('rejects withdrawn access and mismatched authorized scope before controlling an attempt', async () => {
@@ -141,6 +169,7 @@ describe('independent document translation runtime', () => {
     const f = setup();
     const state = await f.service.run({ action: 'START', ...f.binding, requestId: 'request' });
     if (!('attemptRef' in state)) throw new Error('expected attempt');
+    f.legacy();
     f.reader.readDocumentOriginal.mockRejectedValue(new Error('ORIGINAL_INTEGRITY_FAILED'));
     await expect(f.service.run({ action: 'STEP', ...f.binding, attemptRef: state.attemptRef! })).rejects.toThrow('ORIGINAL_INTEGRITY_FAILED');
     expect(f.attempts.fail).toHaveBeenCalledTimes(1);
@@ -156,6 +185,7 @@ describe('independent document translation runtime', () => {
     const f = setup();
     const state = await f.service.run({ action: 'START', ...f.binding, requestId: 'request' });
     if (!('attemptRef' in state)) throw new Error('expected attempt');
+    f.legacy();
     f.plugins.executeStep.mockImplementationOnce(async (input) => {
       f.reader.readDocumentOriginal.mockRejectedValueOnce(new Error('SOURCE_REVOKED'));
       await input.assertAuthorized();

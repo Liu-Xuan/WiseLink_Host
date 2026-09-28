@@ -89,7 +89,7 @@ export async function runSemanticTranslation({ begin, callTool, translate, reque
   return { result, completeness: assembled.completeness, modelRequestCount: executions.length };
 }
 
-async function collectBatch(first, workspace) {
+export async function collectBatch(first, workspace) {
   if (first.schemaVersion !== 'wiselink.3_1.translation_batch_delivery.v2' || first.delivery?.partIndex !== 0 ||
     !['GENERATE', 'CORRECT', 'CHECK', 'CHECK_BATCH'].includes(first.action)) throw new Error('TRANSLATION_BATCH_DELIVERY_INVALID');
   const buffers = [];

@@ -16,6 +16,7 @@ import { INITIAL_ASSESSMENT_OPERATIONS, findInitialAssessmentRecovery, initialSt
 import { invokeHostedDocumentActivityModel } from './invoke-hosted-document-activity-model.mjs';
 import { consumeHostedDocumentReading } from './consume-hosted-document-reading.mjs';
 import { invokeHostedDocumentReadingModel } from './invoke-hosted-document-reading-model.mjs';
+import { runDocumentSemanticTranslationStep } from './run-document-semantic-translation.mjs';
 import { consumeHostedDocumentActivity } from './consume-hosted-document-activity.mjs';
 import { INITIAL_ANALYSIS_OPERATIONS, parseConfigurationEvidenceReevaluationStatus, runInitialAnalysis, runOverallSynthesis } from './orchestrate-host-mcp.mjs';
 import {
@@ -1188,7 +1189,7 @@ function assertExpectedInitialOperationStatus(expected, initial) {
 
 export async function consumeHostedDocument(
   { documentVersionId, deliveryRef, activityRunRef, readingRunRef, leaseOwner },
-  { callTool, documentTranslationCheckpoint, activityCheckpoint, invokeActivityModel, readingCheckpoint, invokeReadingModel }) {
+  { callTool, documentTranslationCheckpoint, activityCheckpoint, invokeActivityModel, readingCheckpoint, invokeReadingModel, invokeTranslationModel }) {
   const startedAt = Date.now();
   if (deliveryRef && (!/^(?:work-item:WI(?:-[A-Za-z0-9_-]{1,93})?|acquisition:[A-Za-z0-9_-]{1,96})$/u.test(deliveryRef)
       || activityRunRef)) throw new Error('DOCUMENT_DELIVERY_REF_INVALID');
@@ -1226,7 +1227,7 @@ export async function consumeHostedDocument(
   if (!run) return { status: 'IDLE', documentVersionId };
   if (run.documentVersionId !== documentVersionId || !run.parseRunId) throw new Error('DOCUMENT_CONSUMER_RUN_MISMATCH');
   if (run.status === 'PUBLISHED') return advancePublishedDocument(state, run, documentVersionId,
-    callTool, documentTranslationCheckpoint, deliveryRef);
+    callTool, documentTranslationCheckpoint, deliveryRef, invokeTranslationModel);
 
   if (run.errorCode || run.status === 'FAILED' || !state.runtimeAvailable || Date.parse(run.deadlineAt) <= Date.now()) {
     return { status: 'REQUIRES_ATTENTION', documentVersionId, parseRunId: run.parseRunId,
@@ -1249,13 +1250,13 @@ export async function consumeHostedDocument(
         fresh.latestRun?.documentVersionId === documentVersionId &&
         fresh.latestRun.parseRunId === run.parseRunId && fresh.latestRun.status === 'PUBLISHED') {
       return advancePublishedDocument(fresh, fresh.latestRun, documentVersionId,
-        callTool, documentTranslationCheckpoint, deliveryRef);
+        callTool, documentTranslationCheckpoint, deliveryRef, invokeTranslationModel);
     }
   }
   return { ...result, documentVersionId };
 }
 
-async function advancePublishedDocument(state, run, documentVersionId, callTool, documentTranslationCheckpoint, deliveryRef) {
+async function advancePublishedDocument(state, run, documentVersionId, callTool, documentTranslationCheckpoint, deliveryRef, invokeTranslationModel) {
     const indexRun = state.nextSourceProjectionRunId ?? run.parseRunId;
     if (typeof indexRun !== 'string' || !/^[A-Za-z0-9_-]{1,96}$/.test(indexRun)) throw new Error('DOCUMENT_SOURCE_PROJECTION_RUN_INVALID');
     const projectionPromise = Promise.resolve().then(() =>
@@ -1291,7 +1292,7 @@ async function advancePublishedDocument(state, run, documentVersionId, callTool,
     const outcomes = await Promise.allSettled([
       projectionPromise,
       advanceDocumentTranslationWithRecovery(documentVersionId, run, callTool,
-        documentTranslationCheckpoint, beforeStart, deliveryRef),
+        documentTranslationCheckpoint, beforeStart, deliveryRef, invokeTranslationModel),
     ]);
     const [projection, translation] = outcomes;
     if (translation.status === 'rejected') throw translation.reason;
@@ -1310,7 +1311,7 @@ function assertSourceProjection(indexed, documentVersionId, parseRunId) {
 
 // This checkpoint records an operation stop, not a Host task or a successful
 // translation. A new parse run can still advance through the branch above.
-async function advanceDocumentTranslationWithRecovery(documentVersionId, run, callTool, checkpointFactory, beforeStart, deliveryRef) {
+async function advanceDocumentTranslationWithRecovery(documentVersionId, run, callTool, checkpointFactory, beforeStart, deliveryRef, invokeTranslationModel) {
   const checkpoint = await checkpointFactory?.(run.parseRunId);
   const blocked = await checkpoint?.readOptional('admission-blocked');
   if (blocked) {
@@ -1320,7 +1321,7 @@ async function advanceDocumentTranslationWithRecovery(documentVersionId, run, ca
       translation: blocked };
   }
   try {
-    return await advanceDocumentTranslation(documentVersionId, run, callTool, beforeStart, deliveryRef);
+    return await advanceDocumentTranslation(documentVersionId, run, callTool, beforeStart, deliveryRef, invokeTranslationModel);
   } catch (error) {
     if (error?.receivedHostToolError !== true || error.hostToolName !== 'document_translation' ||
         error.hostErrorCode !== 'DOCUMENT_TRANSLATION_ADMISSION_DENIED' || !checkpoint) throw error;
@@ -1332,7 +1333,7 @@ async function advanceDocumentTranslationWithRecovery(documentVersionId, run, ca
   }
 }
 
-async function advanceDocumentTranslation(documentVersionId, run, callTool, beforeStart, deliveryRef) {
+async function advanceDocumentTranslation(documentVersionId, run, callTool, beforeStart, deliveryRef, invokeTranslationModel) {
     const binding = { documentVersionId, parseRunId: run.parseRunId };
     const translation = await callTool('document_translation', { action: 'STATUS', ...binding });
     if (translation?.documentVersionId !== documentVersionId) throw new Error('DOCUMENT_TRANSLATION_SCOPE_MISMATCH');
@@ -1349,11 +1350,19 @@ async function advanceDocumentTranslation(documentVersionId, run, callTool, befo
       return started;
     }
     if (translation.parseRunId !== run.parseRunId || !translation.attemptRef) throw new Error('DOCUMENT_TRANSLATION_RUN_MISMATCH');
+    if (translation.status === 'FAILED' && translation.errorCode === 'DOCUMENT_PLUGIN_QUOTA_EXHAUSTED' && deliveryRef) {
+      const requestId = `auto-translation-${createHash('sha256').update(deliveryRef).digest('hex').slice(0, 32)}:hosted-m3`;
+      return callTool('document_translation', { action: 'RECOVER', ...binding,
+        attemptRef: translation.attemptRef, requestId });
+    }
     if (translation.errorCode || ['FAILED','CANCELLED'].includes(translation.status))
       return { ...translation, status: 'REQUIRES_ATTENTION' };
-    if (translation.status === 'SUCCEEDED') return { ...translation, status: 'DOCUMENT_READY' };
+    if (translation.status === 'SUCCEEDED') return { ...translation,
+      status: translation.progress?.completeness && translation.progress.completeness !== 'COMPLETE'
+        ? 'DOCUMENT_READY_WITH_LIMITATIONS' : 'DOCUMENT_READY' };
     if (!['QUEUED','RUNNING','RETRY_SCHEDULED'].includes(translation.status)) throw new Error('DOCUMENT_TRANSLATION_STATUS_INVALID');
-    const result = await callTool('document_translation', { action: 'STEP', ...binding, attemptRef: translation.attemptRef });
+    const result = await runDocumentSemanticTranslationStep(translation, { callTool,
+      translate: invokeTranslationModel });
     if (result?.documentVersionId !== documentVersionId || result.parseRunId !== run.parseRunId ||
         result.attemptRef !== translation.attemptRef) throw new Error('DOCUMENT_TRANSLATION_STEP_MISMATCH');
     return result;
@@ -1452,6 +1461,8 @@ async function main(argv, env) {
       activityCheckpoint,
       readingCheckpoint,
       invokeReadingModel: (input, hooks) => invokeHostedDocumentReadingModel(input, { ...runtime, ...hooks }),
+      invokeTranslationModel: (input, hooks) => invokeHostedInitialModel({ operation: 'TRANSLATE', modelInput: input },
+        { ...runtime, ...hooks }),
       invokeActivityModel: (input, hooks) => invokeHostedDocumentActivityModel(input, { ...runtime, ...hooks }),
       ...(option(argv, '--native-session-store') ? { recoverNativeMatterResponse: input => recoverNativeMatterResponse({
         ...input, storePath: option(argv, '--native-session-store'),

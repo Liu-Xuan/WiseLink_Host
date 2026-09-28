@@ -2,9 +2,11 @@ import { Inject, Injectable } from '@nestjs/common';
 import { randomUUID } from 'node:crypto';
 import { DRIZZLE_DATABASE, type PostgresJsDatabase } from '@lark-apaas/fullstack-nestjs-core';
 import { and, desc, eq, gt, inArray, isNull, lte, or, sql } from 'drizzle-orm';
-import { actionAttempt } from '@server/database/schema';
+import { actionAttempt, translationBlockRevision, translationWorkspace } from '../../database/schema';
+import type { CanonicalExecutionModelSelection } from '@shared/api.interface';
 import { canonicalJson, canonicalSha256 } from './action-attempt-envelope';
 import { parseDocumentTranslationTaskEnvelope, type DocumentTranslationTaskEnvelope } from './document-translation-task-envelope';
+import { parseExecutionModel } from '../model-settings/canonical-execution-model';
 
 export interface DocumentTranslationScope { tenantId: string; actorUserId: string; documentVersionId: string }
 export interface DocumentTranslationFence { attemptRef: string; principalId: string; leaseToken: string; leaseGeneration: number }
@@ -18,7 +20,7 @@ export class DocumentTranslationAttemptRepository {
 
   async latest(scope: DocumentTranslationScope, requestId?: string) {
     const [row] = await this.db.select().from(actionAttempt).where(and(owned(scope),
-      requestId ? eq(actionAttempt.triggerRequestId, requestId) : undefined))
+      requestId ? inArray(actionAttempt.triggerRequestId, [requestId, `${requestId}:hosted-m3`]) : undefined))
       .orderBy(desc(actionAttempt.attemptNo)).limit(1);
     return row ?? null;
   }
@@ -35,8 +37,13 @@ export class DocumentTranslationAttemptRepository {
       .where(and(owned(scope), inArray(actionAttempt.status, ['QUEUED','RUNNING','RETRY_SCHEDULED']), lte(actionAttempt.deadlineAt, now)));
   }
 
-  async reserve(scope: DocumentTranslationScope, task: DocumentTranslationTaskEnvelope, requestId: string) {
+  async reserve(scope: DocumentTranslationScope, task: DocumentTranslationTaskEnvelope, requestId: string,
+    executionModel: CanonicalExecutionModelSelection | null = null, predecessorRef?: string) {
     const parsed = parseDocumentTranslationTaskEnvelope(canonicalJson(task));
+    if (parsed.modelInput.documentProducer === 'HOSTED_M3') {
+      if (!executionModel || parseExecutionModel(executionModel).modelRef !== 'm3probe/minimax-m3')
+        throw new Error('DOCUMENT_TRANSLATION_HOSTED_MODEL_INVALID');
+    } else if (executionModel) throw new Error('DOCUMENT_TRANSLATION_OFFICIAL_MODEL_INVALID');
     if (parsed.tenantId !== scope.tenantId || parsed.documentVersionId !== scope.documentVersionId ||
         !requestId || requestId.length > 96) throw new Error('DOCUMENT_TRANSLATION_RESERVATION_SCOPE_INVALID');
     return this.db.transaction(async tx => {
@@ -44,6 +51,24 @@ export class DocumentTranslationAttemptRepository {
       const locked = await tx.execute(sql`SELECT document_version_id FROM dm_document_version
         WHERE document_version_id=${scope.documentVersionId} FOR UPDATE`);
       if (!locked.length) throw new Error('DOCUMENT_VERSION_NOT_FOUND');
+      if (predecessorRef) {
+        const [prior] = await tx.select().from(actionAttempt).where(and(owned(scope),
+          eq(actionAttempt.operationRef, predecessorRef))).limit(1).for('update');
+        if (!prior || prior.triggerRequestId === null || requestId !== `${prior.triggerRequestId}:hosted-m3` ||
+            prior.status !== 'FAILED' || prior.errorCode !== 'DOCUMENT_PLUGIN_QUOTA_EXHAUSTED' ||
+            prior.producerRunId !== parsed.parseRunId || prior.startedAt !== null ||
+            prior.projectionApplied || prior.resultEnvelopeJson !== null ||
+            parseDocumentTranslationTaskEnvelope(prior.taskEnvelopeJson ?? '').modelInput.documentProducer !== 'OFFICIAL_PLUGIN')
+          throw new Error('DOCUMENT_TRANSLATION_RECOVERY_INELIGIBLE');
+        const [saved] = await tx.select({ id: translationBlockRevision.blockRevisionId })
+          .from(translationBlockRevision).where(and(eq(translationBlockRevision.tenantId, scope.tenantId),
+            eq(translationBlockRevision.originAttemptId, prior.attemptId))).limit(1);
+        const [workspace] = await tx.select({ result: translationWorkspace.resultArtifactJson })
+          .from(translationWorkspace).where(and(eq(translationWorkspace.tenantId, scope.tenantId),
+            eq(translationWorkspace.workspaceId,
+              parseDocumentTranslationTaskEnvelope(prior.taskEnvelopeJson ?? '').workspaceId))).limit(1);
+        if (saved || workspace?.result !== null) throw new Error('DOCUMENT_TRANSLATION_RECOVERY_HAS_OUTPUT');
+      }
       const current = await tx.execute<{ parseRunId: string; parseRevision: number; sha256: string; byteLength: number }>(sql`
         SELECT parse_run_id AS "parseRunId",parse_revision AS "parseRevision",
           manifest_artifact->>'sha256' AS sha256,(manifest_artifact->>'byteLength')::bigint AS "byteLength"
@@ -77,7 +102,9 @@ export class DocumentTranslationAttemptRepository {
         tenantId: scope.tenantId, actorUserId: scope.actorUserId, producerRunId: parsed.parseRunId,
         actionType: 'DOCUMENT_TRANSLATE', attemptNo: (latest?.attemptNo ?? 0) + 1,
         triggerRequestId: requestId, requestOrigin: 'HOST_DOCUMENT', status: 'QUEUED',
+        leaseGeneration: 0, claimCount: 0, retryCount: 0, maxAttempts: 3,
         inputRevision: parsed.parseRevision, taskEnvelopeJson: canonicalJson(parsed), taskInputHash: parsed.inputHash,
+        executionModelJson: executionModel ? canonicalJson(executionModel) : null,
         idempotencyKey: parsed.idempotencyKey, deadlineAt: new Date(parsed.deadline),
         packageArtifactRef: parsed.modelInput.source.parsedArtifact.ref,
         packageArtifactSha256: parsed.modelInput.source.parsedArtifact.sha256,
@@ -86,10 +113,19 @@ export class DocumentTranslationAttemptRepository {
     });
   }
 
+  async assertQuotaSuccessor(scope: DocumentTranslationScope, requestId: string, attemptRef: string, parseRunId: string) {
+    const prior = await this.readRequest(scope, requestId);
+    if (!prior || prior.operationRef !== attemptRef || prior.producerRunId !== parseRunId ||
+        prior.status !== 'FAILED' || prior.errorCode !== 'DOCUMENT_PLUGIN_QUOTA_EXHAUSTED' ||
+        prior.startedAt !== null || prior.projectionApplied ||
+        parseDocumentTranslationTaskEnvelope(prior.taskEnvelopeJson ?? '').modelInput.documentProducer !== 'OFFICIAL_PLUGIN')
+      throw new Error('DOCUMENT_TRANSLATION_RECOVERY_INELIGIBLE');
+  }
+
   async claim(scope: DocumentTranslationScope, attemptRef: string, principalId: string): Promise<DocumentTranslationFence | null> {
     if (!/^[A-Za-z0-9:_-]{1,160}$/.test(principalId)) throw new Error('DOCUMENT_TRANSLATION_PRINCIPAL_INVALID');
     const now = new Date();
-    const [row] = await this.db.update(actionAttempt).set({ status: 'RUNNING', leaseOwner: principalId,
+    const [row] = await this.db.update(actionAttempt).set({ status: 'RUNNING', startedAt: now, leaseOwner: principalId,
       leaseToken: randomUUID(), leaseGeneration: sql`${actionAttempt.leaseGeneration} + 1`,
       leaseExpiresAt: sql`LEAST(${actionAttempt.deadlineAt}, now()+interval '120 seconds')`,
       claimCount: sql`${actionAttempt.claimCount} + 1`, lastHeartbeatAt: now, updatedAt: now,
@@ -106,9 +142,10 @@ export class DocumentTranslationAttemptRepository {
     return rows.length === 1;
   }
 
-  async release(scope: DocumentTranslationScope, fence: DocumentTranslationFence): Promise<void> {
-    await this.db.update(actionAttempt).set({ leaseOwner: null, leaseToken: null, leaseExpiresAt: null, updatedAt: new Date() })
-      .where(and(owned(scope), fenced(fence)));
+  async release(scope: DocumentTranslationScope, fence: DocumentTranslationFence): Promise<boolean> {
+    const rows = await this.db.update(actionAttempt).set({ leaseOwner: null, leaseToken: null, leaseExpiresAt: null, updatedAt: new Date() })
+      .where(and(owned(scope), fenced(fence))).returning({ id: actionAttempt.attemptId });
+    return rows.length === 1;
   }
 
   async cancel(scope: DocumentTranslationScope, attemptRef: string): Promise<void> {

@@ -26,6 +26,21 @@ test('each registered generation has one short native session and actual provena
   assert.ok(requests.every((request) => request.messages.length === 2 && request.tools.length === 1));
   assert.ok(requests.every((request) => request.tool_choice === 'required' && request.parallel_tool_calls === false));
 });
+test('M3 Probe uses the configured Hosted route, bounded completion budget and text content blocks', async () => {
+  const configured = { ...model, modelRef: 'm3probe/minimax-m3', providerKind: 'CUSTOM' };
+  let request;
+  const result = await invokeHostedTranslationBlock(batch(), { ...options(), executionModel: configured,
+    registeredModelRefs: [configured.modelRef] }, { requestGateway: async (_url, init) => {
+    request = JSON.parse(init.body);
+    const body = await response().text();
+    const payload = JSON.parse(body);
+    payload.choices[0].message.content = [{ type: 'text', text: '' }];
+    return { ok: true, status: 200, text: async () => JSON.stringify(payload) };
+  } });
+  assert.equal(request.max_completion_tokens, 32_768);
+  assert.equal(result.actualExecution.modelRef, configured.modelRef);
+  assert.deepEqual(result.output, output);
+});
 
 test('structured function arguments preserve literal quotes, backslashes and line breaks', async () => {
   const quoted = { blocks: [{ blockId: 'b1', elements: [{ kind: 'paragraph',
