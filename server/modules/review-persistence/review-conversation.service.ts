@@ -169,6 +169,7 @@ export class ReviewConversationService {
         requestId: input.requestId,
         userMessage: input.userMessage,
         selectedEvaluationItemId: input.selectedEvaluationItemId ?? null,
+        targetIssueKeys: input.targetIssueKeys,
         purpose: input.purpose,
         includedDiscussionTurnIds: input.includedDiscussionTurnIds,
         expectedInputRevision: input.expectedInputRevision,
@@ -281,6 +282,7 @@ export class ReviewConversationService {
       requestId: input.requestId,
       userMessage: input.userMessage,
       selectedEvaluationItemId: input.selectedEvaluationItemId ?? null,
+      targetIssueKeys: input.targetIssueKeys,
       purpose: input.purpose,
       includedDiscussionTurnIds: input.includedDiscussionTurnIds,
       expectedInputRevision: input.expectedInputRevision,
@@ -300,6 +302,7 @@ export class ReviewConversationService {
     requestId: string;
     userMessage: string;
     selectedEvaluationItemId: string | null;
+    targetIssueKeys?: string[];
     purpose?: AppendReviewTextTurnRequest['purpose'];
     includedDiscussionTurnIds?: string[];
     expectedInputRevision?: number;
@@ -314,6 +317,7 @@ export class ReviewConversationService {
       requestId: input.requestId,
       userMessage: input.userMessage,
       selectedEvaluationItemId: input.selectedEvaluationItemId,
+      targetIssueKeys: input.targetIssueKeys,
       purpose: input.purpose,
       includedDiscussionTurnIds: input.includedDiscussionTurnIds,
       expectedInputRevision: input.expectedInputRevision,
@@ -692,6 +696,7 @@ export function reviewTurnReadModel(
     includedDiscussionTurnIds: turn.includedDiscussionTurnIds,
     reviewScope: reviewScopeSelection(turn.reviewScope),
     selectedEvaluationItemId: turn.selectedEvaluationItemId ?? null,
+    targetIssueKeys: turn.targetIssueKeys,
     requestedModel: turn.requestedModel
       ? structuredClone(turn.requestedModel)
       : null,

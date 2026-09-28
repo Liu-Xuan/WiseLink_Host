@@ -66,6 +66,7 @@ interface ContinuousReviewPanelProps {
   workItemRevision: number;
   workItemRefreshing?: boolean;
   selectedEvaluationItemId: string | null;
+  jobAidIssues?: Array<{ issueKey: string; question: string }>;
   confirmationReceipt: ReviewActionReceipt | null;
   onConfirmationReceipt: (receipt: ReviewActionReceipt) => void;
   onLocateSourceRef: (sourceRef: string) => void;
@@ -84,6 +85,7 @@ export default function ContinuousReviewPanel({
   workItemRevision,
   workItemRefreshing = false,
   selectedEvaluationItemId,
+  jobAidIssues,
   confirmationReceipt,
   onConfirmationReceipt,
   onLocateSourceRef,
@@ -635,6 +637,7 @@ export default function ContinuousReviewPanel({
                 conversation={conversation}
                 reviewScope={reviewScope}
                 selectedEvaluationItemId={selectedEvaluationItemId}
+                jobAidIssues={jobAidIssues}
                 modelRef={modelRef || undefined}
                 modelLabel={
                   models.data?.options.find(

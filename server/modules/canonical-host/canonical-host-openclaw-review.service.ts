@@ -50,6 +50,7 @@ import { parseBilingualTranslationArtifact } from './canonical-host-openclaw-tra
 import {
   parseReviewTurnCandidateContract,
   parseReviewTurnTaskContract,
+  reviewJobAidTargetIssueKeys,
   REVIEW_ALLOWED_OPERATIONS,
   REVIEW_MODEL_POLICY_REF,
   REVIEW_PROFILE_REF,
@@ -488,6 +489,7 @@ export class CanonicalHostOpenClawReviewService {
         authorized.row.workItemId,
         candidate.jobAidWorkingDelta,
         readRefs,
+        reviewJobAidTargetIssueKeys(authorized.contract),
       );
     assertReviewCommitFence({
       row: authorized.row,
@@ -619,6 +621,7 @@ export class CanonicalHostOpenClawReviewService {
               requestId: `review-turn:${authorized.turn.reviewTurnId}`,
               proposal: candidate.jobAidWorkingDelta,
               actualReadRefs: readRefs,
+              targetIssueKeys: reviewJobAidTargetIssueKeys(authorized.contract),
             },
             database,
           );
@@ -626,13 +629,13 @@ export class CanonicalHostOpenClawReviewService {
             status: 'APPLIED',
             workRevisionRef: saved.revision.workRevisionRef,
             workRevision: saved.revision.workRevision,
-            affectedIssueKeys: Array.isArray(
+            affectedIssueKeys: reviewJobAidTargetIssueKeys(authorized.contract) ?? (Array.isArray(
               candidate.jobAidWorkingDelta.issues,
             )
               ? candidate.jobAidWorkingDelta.issues.map((issue) =>
                   String((issue as Record<string, unknown>).issueKey),
                 )
-              : [],
+              : []),
           };
         } else {
           input.candidate.jobAidWorkingUpdate = {
@@ -919,7 +922,9 @@ export class CanonicalHostOpenClawReviewService {
       binding.turn.inputRevision !== row.inputRevision ||
       task.inputRevision !== binding.turn.inputRevision ||
       canonicalJson(contract.matterContext?.scope ?? null) !==
-        canonicalJson(binding.turn.reviewScope ?? null)
+        canonicalJson(binding.turn.reviewScope ?? null) ||
+      canonicalJson(reviewJobAidTargetIssueKeys(contract) ?? null) !==
+        canonicalJson(binding.turn.targetIssueKeys ?? null)
     ) {
       throw reviewNotFound();
     }
@@ -1163,6 +1168,9 @@ export class CanonicalHostOpenClawReviewService {
     binding: ReviewBinding,
     workItem: CanonicalWorkItemProjection,
   ): Promise<ReviewTurnTaskContract> {
+    if (binding.turn.targetIssueKeys &&
+      (binding.turn.purpose !== 'UPDATE_ASSESSMENT' || binding.turn.reviewScope))
+      throw reviewConflict('REVIEW_TARGET_ISSUES_SCOPE_INVALID');
     if (binding.turn.purpose === 'CHAT')
       return this.buildChatTaskContract(binding, workItem);
     if (binding.turn.reviewScope)
@@ -1173,6 +1181,8 @@ export class CanonicalHostOpenClawReviewService {
         this.jobAid?.enabledForNewTasks())
     )
       return this.buildJobAidTaskContract(binding, workItem);
+    if (binding.turn.targetIssueKeys)
+      throw reviewConflict('REVIEW_TARGET_ISSUES_JOBAID_REQUIRED');
     if (binding.turn.requestId.startsWith('dialogue-')) {
       if (!this.dialogueAssessments)
         throw reviewConflict('DIALOGUE_ASSESSMENT_RUNTIME_UNAVAILABLE');
@@ -1515,6 +1525,10 @@ export class CanonicalHostOpenClawReviewService {
           }
         : {}),
     });
+    if (binding.turn.targetIssueKeys?.some((key) =>
+      !jobAidContext.previousWork?.content.issues.some(
+        (issue) => issue.issueKey === key)))
+      throw reviewConflict('REVIEW_TARGET_ISSUES_NOT_FOUND');
     const resourceRefs = jobAidContext.sourceCatalog.flatMap(
       (item): FrozenReviewSourceRef[] => {
         if (
@@ -1599,6 +1613,9 @@ export class CanonicalHostOpenClawReviewService {
           candidateOnly: true,
         })),
         problemAssessment: jobAidContext.modelInput,
+        issueEditScope: binding.turn.targetIssueKeys
+          ? { targetIssueKeys: [...binding.turn.targetIssueKeys] }
+          : null,
         engineerInput: {
           text: binding.turn.candidateText,
           attachmentRefs: attachments.attachmentRefs,

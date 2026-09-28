@@ -260,10 +260,17 @@ export function parseReviewTurnTaskContract(
   }
   if (isJobAid) {
     const jobAid = assertJobAidProblemTaskBinding(record.jobAidContext);
-    const modelContext = requiredRecord(
-      record.context,
-      'REVIEW_TASK_CONTEXT_INVALID',
-    );
+    const modelContext = requiredRecord(record.context, 'REVIEW_TASK_CONTEXT_INVALID');
+    const editScope = modelContext.issueEditScope;
+    if (editScope !== undefined && editScope !== null) {
+      const scope = requiredRecord(editScope, 'REVIEW_TARGET_ISSUES_INVALID');
+      exactKeys(scope, ['targetIssueKeys']);
+      const keys = stringArray(scope.targetIssueKeys, 'REVIEW_TARGET_ISSUES_INVALID');
+      if (!keys.length || keys.length > 20 || new Set(keys).size !== keys.length ||
+        keys.some((key) => !jobAid.previousWork?.content.issues.some(
+          (issue) => issue.issueKey === key)))
+        fail('REVIEW_TARGET_ISSUES_INVALID');
+    }
     if (
       jobAid.modelInput.purpose !== 'PROBLEM_REVIEW' ||
       record.selectedEvaluationItemId !== null ||
@@ -329,6 +336,15 @@ export function parseReviewTurnTaskContract(
     fail('REVIEW_TASK_EXECUTION_POLICY_INVALID');
   }
   return structuredClone(record) as unknown as ReviewTurnTaskContract;
+}
+
+/** Call only with a parsed frozen Review task. */
+export function reviewJobAidTargetIssueKeys(
+  task: ReviewTurnTaskContract,
+): string[] | undefined {
+  const scope = task.context.issueEditScope;
+  return scope && typeof scope === 'object' && 'targetIssueKeys' in scope
+    ? [...(scope.targetIssueKeys as string[])] : undefined;
 }
 
 export function parseReviewTurnCandidateContract(input: {

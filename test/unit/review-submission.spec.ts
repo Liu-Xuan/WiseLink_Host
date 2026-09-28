@@ -109,6 +109,14 @@ describe('explicit assessment update scope', () => {
       ),
     ).toThrow('REVIEW_SUCCESSOR_OVERALL_SCOPE_INVALID');
   });
+  it('carries an explicit issue key separately from the model prompt', () => {
+    const request = assessmentUpdateRequest(
+      'REQ-nature', conversation(true), [], undefined, undefined, null,
+      true, '只核对性质判断。', ['FTD-26002-NATURE'],
+    );
+    expect(request.targetIssueKeys).toEqual(['FTD-26002-NATURE']);
+    expect(request.userMessage).toBe('只核对性质判断。');
+  });
 
   it('copies reviewed IDs, version, scope and model without consuming a draft', () => {
     const view = conversation(true);

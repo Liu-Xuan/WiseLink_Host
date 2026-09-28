@@ -72,6 +72,7 @@ describe('ReviewConversationService session and ACL boundary', () => {
         executionMode: 'AUTOMATIC',
         expectedInputRevision: 7,
         includedDiscussionTurnIds: [],
+        targetIssueKeys: ['FTD-26002-NATURE'],
       },
       {} as never,
     );
@@ -79,6 +80,7 @@ describe('ReviewConversationService session and ACL boundary', () => {
       expect.objectContaining({
         ailySessionId: 'session-1',
         purpose: 'UPDATE_ASSESSMENT',
+        targetIssueKeys: ['FTD-26002-NATURE'],
       }),
     );
   });

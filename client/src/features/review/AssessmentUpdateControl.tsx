@@ -8,6 +8,7 @@ import type {
 import { canonicalHost } from '@client/src/api';
 import { Button } from '@client/src/components/ui/button';
 import { Checkbox } from '@client/src/components/ui/checkbox';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@client/src/components/ui/select';
 import { createRequestCorrelationId } from '@client/src/utils/request-correlation-id';
 import { assertReviewConversationScope } from './review-scope';
 import {
@@ -21,6 +22,7 @@ interface Props {
   conversation: ReviewConversationReadModel;
   reviewScope?: AppendMatterReviewScope;
   selectedEvaluationItemId: string | null;
+  jobAidIssues?: Array<{ issueKey: string; question: string }>;
   modelRef?: string;
   modelLabel: string;
   disabled: boolean;
@@ -40,6 +42,7 @@ interface Preview {
   modelRef?: string;
   modelLabel: string;
   selectedEvaluationItemId: string | null;
+  targetIssueKeys?: string[];
   overallRequested: boolean;
   directRequest: string;
 }
@@ -48,6 +51,7 @@ export default function AssessmentUpdateControl(props: Props) {
   const [open, setOpen] = useState(false);
   const [overallRequested, setOverallRequested] = useState(false);
   const [directRequest, setDirectRequest] = useState('');
+  const [targetIssueKey, setTargetIssueKey] = useState<string | null>(null);
   const overallOptionId = useId();
   const [preview, setPreview] = useState<Preview | null>(null);
   const [pending, setPending] = useState<AppendReviewTextTurnRequest | null>(
@@ -97,6 +101,7 @@ export default function AssessmentUpdateControl(props: Props) {
       modelRef: props.modelRef,
       modelLabel: props.modelLabel,
       selectedEvaluationItemId: props.selectedEvaluationItemId,
+      targetIssueKeys: targetIssueKey ? [targetIssueKey] : undefined,
       overallRequested: !props.reviewScope && overallRequested,
       directRequest: request,
     };
@@ -148,6 +153,7 @@ export default function AssessmentUpdateControl(props: Props) {
           currentPreview.selectedEvaluationItemId,
           currentPreview.overallRequested,
           currentPreview.directRequest,
+          currentPreview.targetIssueKeys,
         );
       setPending(request);
       const response = await canonicalHost.appendReviewTextTurn(
@@ -195,6 +201,31 @@ export default function AssessmentUpdateControl(props: Props) {
 
   return (
     <div className="grid gap-2">
+      {!props.reviewScope ? (
+        props.jobAidIssues?.length ? (
+          <div className="grid gap-1 text-sm">
+            <label htmlFor="review-issue-scope">本次允许修改的问题</label>
+            <Select
+              value={targetIssueKey === null ? 'all' : `issue:${targetIssueKey}`}
+              onValueChange={(value) => setTargetIssueKey(
+                value === 'all' ? null : value.slice('issue:'.length),
+              )}
+              disabled={props.disabled || submitting || Boolean(pending)}
+            >
+              <SelectTrigger id="review-issue-scope"><SelectValue /></SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">整个问题评估</SelectItem>
+                {props.jobAidIssues.map((issue) => (
+                  <SelectItem key={issue.issueKey} value={`issue:${issue.issueKey}`}>
+                    {issue.issueKey} · {issue.question}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            <span className="text-muted-foreground">选定问题后，Host 拒绝保存对其他问题的新增、修改或撤回。</span>
+          </div>
+        ) : null
+      ) : null}
       {!props.reviewScope ? (
         <label className="grid gap-1 text-sm">
           定点更正请求（可直接提交，无需先与 Aily 对话）
@@ -270,6 +301,8 @@ export default function AssessmentUpdateControl(props: Props) {
           focusLabel={
             preview.scope
               ? `事项 ${preview.scope.matterId}${preview.scope.targetClaimId ? ` · 问题 ${preview.scope.targetClaimId}` : ' · 当前事项'}`
+              : preview.targetIssueKeys?.length
+                ? `JobAid 问题 ${preview.targetIssueKeys.join('、')}`
               : `${preview.conversation.workItemId}${preview.selectedEvaluationItemId ? ` · 评估项 ${preview.selectedEvaluationItemId}` : ' · 当前任务'}`
           }
           overallRequested={

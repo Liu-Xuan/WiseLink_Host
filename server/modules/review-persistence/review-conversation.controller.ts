@@ -116,6 +116,7 @@ function reviewTextBody(body: unknown): AppendReviewTextTurnRequest {
     'requestId',
     'userMessage',
     'selectedEvaluationItemId',
+    'targetIssueKeys',
     'executionMode',
     'overallRequested',
     'attachmentSelection',
@@ -226,6 +227,20 @@ function reviewTextBody(body: unknown): AppendReviewTextTurnRequest {
             value.selectedEvaluationItemId,
             'REVIEW_SELECTED_EVALUATION_ITEM_INVALID',
           );
+  }
+  if (value.targetIssueKeys !== undefined) {
+    if (
+      value.purpose !== 'UPDATE_ASSESSMENT' ||
+      value.reviewScope !== undefined ||
+      !Array.isArray(value.targetIssueKeys) ||
+      value.targetIssueKeys.length < 1 ||
+      value.targetIssueKeys.length > 20
+    ) throw badRequest('REVIEW_TARGET_ISSUES_INVALID');
+    input.targetIssueKeys = value.targetIssueKeys.map((key) =>
+      requiredIdentifier(key, 'REVIEW_TARGET_ISSUES_INVALID'),
+    );
+    if (new Set(input.targetIssueKeys).size !== input.targetIssueKeys.length)
+      throw badRequest('REVIEW_TARGET_ISSUES_INVALID');
   }
   if (value.attachmentSelection === undefined) return input;
   const selection: Record<string, unknown> = objectBody(
