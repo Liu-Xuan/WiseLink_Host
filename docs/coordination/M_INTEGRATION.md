@@ -2,6 +2,9 @@
 
 ## 2026-09-29：来源驱动交接已接收，P0 现场核对进行中
 
+- 来源读取实测：使用本机现有产品应用配置取得 tenant token 成功，但 technical-library、operations 两个既有根目录的只读 list 均返回 HTTP 400 / 99991672，未取得文件、未下载或写入原目录。官方权限台显示 metadata 只读权限已开通，不能替代列表权限；精确所需项为 `space:document:retrieve`（目录清单，需审核）及 `drive:file:download`（下载，免审）。`drive:drive:readonly` 的官方能力包含评论，不作为最小选择。本轮未开通新权限；权限台另有既有待发布的 Aily 权限，后续发布不得无意捆绑。此证据来自本机当前产品凭据，不冒充云端运行时探针。
+- 17c 本轮重新访问跳转飞书扫码登录，未取得当前 Skill/C136 的新读回；下方 C202 与唯一 C136 启用为上一轮历史证据。本轮没有改变任何定时任务。P1 在隔离工作树复用 ActionAttempt/RECORDED 实现原件级意图，0070 仅为待审草案，尚未迁移、接扫描或发布。
+- 本机精确 LaunchAgent `com.wiselink.local-mineru-worker` 本轮读回：已登记，60 秒间隔，累计 1322 次运行，末次退出 0，快照时 not running。stdout 文件最近五项为 IDLE（修改时间 09-29 07:52:59），stderr 最近五项为 LOCAL_MINERU_TRANSPORT_UNAVAILABLE（修改时间 07:42:32）。未以旧 localhost MinerU PID 替代该 worker；空闲返回和日志时间不能证明有任务时稳定，运输错误仍须在具体任务恢复验收中关联。
 - 用户交接 ZIP 中设计、计划、Goal 三份文件已按原路径导入，SHA256 分别为 `dc829dfd854a9f8510b0a96f5b5c25a764cc13c554ed6426f6c72870323d2900`、`ae0415d5f5349c6f75d2a4ccf44d904e47c55f2b72820ee4a2aa06e6db000211`、`a5abb6627c6ad29df31ba09ccfa988d45ad0b64b198db026d27658ca671fe9da`，均与 ZIP manifest 一致。当前规则及执行计划已指向新设计；Goal 管理器已创建“来源驱动自动文档管理与持续工程评估”，状态 active。文档导入和 Goal 启动不改变生产调度。
 - 实现基线为同名集成分支 `7ee86130e2051bbf7cf56bc7521e56b03a6f482e`，包含已发布 `4deb62ed1aa9ba58dc7966e67eb659a5ffd647b9`。本轮只读 `release-get` 再确认 17b 发布 `7690678016649399279` finished、精确 commit 为 4deb62ed、error_logs 为空。交接包引用的 0c7bb234 仅作历史定位。
 - 本轮分别读取 dev/online：授权表的 no_browser restrictive false、精确 service_read true、service_admit 按 actor 的 WAITING→ADMITTED 策略一致；错误 no_generic_service policy 均不存在。两环境八个交付/不可变/TRUNCATE 触发器均启用。现状符合 0068 修复后的对象效果，不能继续写“online 未应用 0067”或重复创建表；尚未取得完整迁移执行账本，当前证据是实际对象读回。服务 SELECT 仍是既有获准的全表读取加 Host 可信租户过滤，不声称数据库已实现租户限定 SELECT。
