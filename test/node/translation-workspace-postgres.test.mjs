@@ -626,11 +626,12 @@ test('document quota failure has one Hosted successor with fenced blocks and ful
       translationRequestId: 'auto-translation-test', readingSelected: false, translationSelected: true });
     const workspace = await workspaces.prepare({ tenantId: 'tenant-test', workItemId: null,
       documentVersionId: 'dv-test', plan });
-    const task = (suffix, documentProducer, requestId) => sealDocumentTranslationTaskEnvelope({
+    const task = (suffix, documentProducer, requestId, retranslateBlockIds) => sealDocumentTranslationTaskEnvelope({
       schemaVersion: 'wiselink.document.translation_task.v1', actionAttemptId: `ATT-${suffix}`,
       operationRef: `AQ-${suffix}`, tenantId: 'tenant-test', documentVersionId: 'dv-test',
       parseRunId: 'parse-document-hosted', parseRevision: 1, workspaceId: workspace.workspaceId,
       modelInput: { schemaVersion: 'wiselink.3_1.translation_task.v2', documentProducer,
+        ...(retranslateBlockIds ? { retranslateBlockIds } : {}),
         workspaceId: workspace.workspaceId, planRevision: 1, contextRevision: 1,
         methodVersion: workspace.methodVersion, source: workspace.plan.source },
       deadline: new Date(Date.now() + 3600000).toISOString(), idempotencyKey: `document-translation:dv-test:${requestId}` });
@@ -764,10 +765,18 @@ test('document quota failure has one Hosted successor with fenced blocks and ful
       documentVersionId: scope.documentVersionId, workspaceId: workspace.workspaceId });
     assert.equal(partialProgress.completeness, 'PARTIAL');
     assert.equal(partialProgress.repairableBlockCount, 1);
+    assert.deepEqual(partialProgress.repairableBlockIds, [selected.block_id]);
     assert.deepEqual(await dispatchState(), { pending: true, missing: false },
       'a completed repairable partial result is discoverable without a manual request ID');
     const partialRequestId = `${oldRequest}:partial-repair`;
-    const partialTask = task('partial-repair', 'HOSTED_M3', partialRequestId);
+    const partialTask = task('partial-repair', 'HOSTED_M3', partialRequestId,
+      partialProgress.repairableBlockIds);
+    await assert.rejects(attempts.reserve(scope,
+      task('missing-repair-scope', 'HOSTED_M3', partialRequestId), partialRequestId, model,
+      hosted.operationRef, 'PARTIAL'), /PARTIAL_SUCCESSOR_INELIGIBLE/u);
+    await assert.rejects(attempts.reserve(scope,
+      task('wrong-repair-scope', 'HOSTED_M3', partialRequestId, ['wrong-block']), partialRequestId,
+      model, hosted.operationRef, 'PARTIAL'), /PARTIAL_SUCCESSOR_INELIGIBLE/u);
     await assert.rejects(attempts.reserve(scope, partialTask, partialRequestId, model,
       old.operationRef, 'PARTIAL'), /PARTIAL_SUCCESSOR_INELIGIBLE/u);
     await assert.rejects(attempts.reserve({ ...scope, actorUserId: 'wrong' }, partialTask,
@@ -787,8 +796,8 @@ test('document quota failure has one Hosted successor with fenced blocks and ful
     const repairNext = await v2.executeDocument({ phase: 'NEXT', attemptRef: repairFence.attemptRef,
       leaseToken: repairFence.leaseToken, leaseGeneration: repairFence.leaseGeneration,
       requestId: 'partial-repair-next' }, repairFence, scope.actorUserId, async () => {}, partialTask, model);
-    assert.equal(repairNext.action, 'CORRECT');
-    assert.equal(repairNext.targetBlockRevisionId, 'TB-partial-fixture');
+    assert.equal(repairNext.action, 'GENERATE');
+    assert.deepEqual(repairNext.blockIds, [selected.block_id]);
     assert.equal((await attempts.reserve(scope, partialTask, partialRequestId, model,
       hosted.operationRef, 'PARTIAL')).attemptId, partialAttempt.attemptId,
     'a lost continuation receipt reads back the running successor');

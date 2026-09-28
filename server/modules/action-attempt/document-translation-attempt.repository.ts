@@ -7,6 +7,9 @@ import type { CanonicalExecutionModelSelection } from '@shared/api.interface';
 import { canonicalJson, canonicalSha256 } from './action-attempt-envelope';
 import { parseDocumentTranslationTaskEnvelope, type DocumentTranslationTaskEnvelope } from './document-translation-task-envelope';
 import { parseExecutionModel } from '../model-settings/canonical-execution-model';
+import { readTranslationWorkspaceSnapshot } from '../canonical-host/canonical-translation-workspace.repository';
+import { buildTranslationWorkspaceReadingV2 } from '../canonical-host/canonical-translation-v2-quality';
+import { documentTranslationRepairableBlockIds } from '../canonical-host/document-translation-repair-scope';
 
 export interface DocumentTranslationScope { tenantId: string; actorUserId: string; documentVersionId: string }
 export interface DocumentTranslationFence { attemptRef: string; principalId: string; leaseToken: string; leaseGeneration: number }
@@ -92,18 +95,15 @@ export class DocumentTranslationAttemptRepository {
               eq(translationWorkspace.documentVersionId, scope.documentVersionId),
               eq(translationWorkspace.workspaceId, priorTask.workspaceId))).limit(1).for('update');
           if (!workspace?.result) throw new Error('DOCUMENT_TRANSLATION_PARTIAL_SUCCESSOR_INELIGIBLE');
-          const [repairable] = await tx.execute<{ repairable: boolean }>(sql`SELECT EXISTS (
-            SELECT 1 FROM ${translationBlockRevision} r
-            WHERE r.tenant_id=${scope.tenantId} AND r.workspace_id=${priorTask.workspaceId}
-              AND r.selected_for_reading=false AND r.check_json IS NOT NULL
-              AND r.content_revision=(SELECT max(newer.content_revision) FROM ${translationBlockRevision} newer
-                WHERE newer.tenant_id=r.tenant_id AND newer.workspace_id=r.workspace_id AND newer.block_id=r.block_id)
-              AND jsonb_path_exists(r.check_json::jsonb,
-                '$.issues[*] ? (@.severity == "BLOCK" && @.origin != "SOURCE")')
-              AND NOT jsonb_path_exists(r.check_json::jsonb,
-                '$.issues[*] ? (@.severity == "BLOCK" && @.origin == "SOURCE")')
-          ) AS repairable`);
-          if (!repairable?.repairable) throw new Error('DOCUMENT_TRANSLATION_PARTIAL_SUCCESSOR_INELIGIBLE');
+          const snapshot = await readTranslationWorkspaceSnapshot(tx, {
+            tenantId: scope.tenantId, workItemId: null,
+            documentVersionId: scope.documentVersionId, workspaceId: priorTask.workspaceId,
+          });
+          const repairableBlockIds = documentTranslationRepairableBlockIds(
+            buildTranslationWorkspaceReadingV2(snapshot.workspace, snapshot.revisions));
+          if (!repairableBlockIds.length ||
+              canonicalJson(repairableBlockIds) !== canonicalJson(parsed.modelInput.retranslateBlockIds ?? []))
+            throw new Error('DOCUMENT_TRANSLATION_PARTIAL_SUCCESSOR_INELIGIBLE');
         } else {
           if (requestId !== `${prior.triggerRequestId}:hosted-m3` ||
               prior.status !== 'FAILED' || prior.errorCode !== 'DOCUMENT_PLUGIN_QUOTA_EXHAUSTED' ||

@@ -234,42 +234,7 @@ export class CanonicalTranslationWorkspaceRepository {
   }
 
   async readSnapshot(input: TranslationWorkspaceScope) {
-    // One SELECT provides one snapshot without UPDATE-only row locks or a
-    // transaction-mode switch rejected by Hosted. Aggregate the small block
-    // rows so the complete source plan is transmitted only once.
-    const fields = sql.join(
-      Object.entries(blockSnapshotColumns).flatMap(([key, column]) => [
-        sql`${key}::text`,
-        sql`${column}`,
-      ]),
-      sql`, `,
-    );
-    const [snapshot] = await this.db
-      .select({
-        workspace: translationWorkspace,
-        revisions: sql<Record<string, unknown>[]>`(
-          SELECT coalesce(jsonb_agg(jsonb_build_object(${fields})
-            ORDER BY ${translationBlockRevision.blockId}, ${translationBlockRevision.contentRevision} DESC), '[]'::jsonb)
-          FROM ${translationBlockRevision} WHERE ${blockScope(input)}
-        )`,
-      })
-      .from(translationWorkspace)
-      .where(workspaceScope(input))
-      .limit(1);
-    if (!snapshot) throw new Error('TRANSLATION_WORKSPACE_NOT_FOUND');
-    return {
-      workspace: workspaceFromRow(snapshot.workspace),
-      revisions: snapshot.revisions.map((row) =>
-        blockFromRow(
-          Object.fromEntries(
-            Object.entries(blockSnapshotColumns).map(([key, column]) => [
-              key,
-              row[key] === null ? null : column.mapFromDriverValue(row[key]),
-            ]),
-          ) as SnapshotBlockRow,
-        ),
-      ),
-    };
+    return readTranslationWorkspaceSnapshot(this.db, input);
   }
 
   async readSemanticScope(input: {
@@ -1320,6 +1285,32 @@ export class CanonicalTranslationWorkspaceRepository {
       return operation(transaction, attempt, workspace);
     });
   }
+}
+
+/** Read the same Host snapshot inside a reservation transaction. */
+export async function readTranslationWorkspaceSnapshot(db: Database, input: TranslationWorkspaceScope) {
+  const fields = sql.join(
+    Object.entries(blockSnapshotColumns).flatMap(([key, column]) => [
+      sql`${key}::text`, sql`${column}`,
+    ]), sql`, `,
+  );
+  const [snapshot] = await db.select({
+    workspace: translationWorkspace,
+    revisions: sql<Record<string, unknown>[]>`(
+      SELECT coalesce(jsonb_agg(jsonb_build_object(${fields})
+        ORDER BY ${translationBlockRevision.blockId}, ${translationBlockRevision.contentRevision} DESC), '[]'::jsonb)
+      FROM ${translationBlockRevision} WHERE ${blockScope(input)}
+    )`,
+  }).from(translationWorkspace).where(workspaceScope(input)).limit(1);
+  if (!snapshot) throw new Error('TRANSLATION_WORKSPACE_NOT_FOUND');
+  return {
+    workspace: workspaceFromRow(snapshot.workspace),
+    revisions: snapshot.revisions.map((row) => blockFromRow(
+      Object.fromEntries(Object.entries(blockSnapshotColumns).map(([key, column]) => [
+        key, row[key] === null ? null : column.mapFromDriverValue(row[key]),
+      ])) as SnapshotBlockRow,
+    )),
+  };
 }
 
 function modelProvenance(

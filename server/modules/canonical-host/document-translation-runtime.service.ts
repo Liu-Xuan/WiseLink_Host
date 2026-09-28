@@ -70,12 +70,23 @@ export class DocumentTranslationRuntimeService {
         const workspace = await this.plugins.prepareOriginal({ tenantId: scope.tenantId, original: original.original, semanticMap,
           artifact: { storeRole: 'UnifiedArtifactStoreCandidate', ref: `document-original://${encodeURIComponent(scope.documentVersionId)}/${encodeURIComponent(input.parseRunId)}`,
             sha256: artifact.sha256, byteLength: artifact.byteLength, mediaType: 'application/json' }, assertAuthorized });
+        const existingPartial = input.action === 'CONTINUE_PARTIAL'
+          ? await this.attempts.readRequest(scope, requestId) : null;
+        const retranslateBlockIds = input.action === 'CONTINUE_PARTIAL'
+          ? existingPartial
+            ? parseDocumentTranslationTaskEnvelope(existingPartial.taskEnvelopeJson ?? '').modelInput.retranslateBlockIds
+            : (await this.v2.readDocumentProgress({ tenantId: scope.tenantId, workItemId: null,
+              documentVersionId: scope.documentVersionId, workspaceId: workspace.workspaceId })).repairableBlockIds
+          : undefined;
+        if (input.action === 'CONTINUE_PARTIAL' && !retranslateBlockIds?.length)
+          throw new Error('DOCUMENT_TRANSLATION_PARTIAL_SUCCESSOR_INELIGIBLE');
         const modelInput = this.plugins.taskInput(workspace);
         const task = sealDocumentTranslationTaskEnvelope({ schemaVersion: 'wiselink.document.translation_task.v1',
           actionAttemptId: `DTA-${randomUUID()}`, operationRef: `DTQ-${randomUUID()}`, tenantId: scope.tenantId,
           documentVersionId: scope.documentVersionId, parseRunId: input.parseRunId,
           parseRevision: original.original.binding.parseRevision, workspaceId: workspace.workspaceId,
-          modelInput: { ...modelInput, schemaVersion: 'wiselink.3_1.translation_task.v2',
+          modelInput: { ...modelInput, ...(retranslateBlockIds ? { retranslateBlockIds } : {}),
+          schemaVersion: 'wiselink.3_1.translation_task.v2',
           source: { ...modelInput.source, originalBinding: original.original.binding }, documentProducer: 'HOSTED_M3' },
           deadline: new Date(Date.now() + 12 * 60 * 60_000).toISOString(),
           idempotencyKey: `document-translation:${scope.documentVersionId}:${requestId}` });

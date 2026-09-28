@@ -20,7 +20,8 @@ function setup() {
           sha256: 'a'.repeat(64), byteLength: 100, mediaType: 'application/json' } } }),
     executeStep: jest.fn().mockResolvedValue({ status: 'PROGRESSED' }) };
   let row: Record<string, unknown> | null = null;
-  const attempts = { readRequest: jest.fn(async () => row), latest: jest.fn(async () => row),
+  const attempts = { readRequest: jest.fn(async (_scope, requestId) =>
+    row?.triggerRequestId === requestId ? row : null), latest: jest.fn(async () => row),
     reserve: jest.fn(async (_scope, task, requestId, executionModel) => { row = { status: 'QUEUED', documentVersionId, producerRunId: parseRunId,
       attemptId: task.actionAttemptId, operationRef: task.operationRef, taskEnvelopeJson: JSON.stringify(task),
       triggerRequestId: requestId, executionModelJson: JSON.stringify(executionModel),
@@ -33,7 +34,8 @@ function setup() {
   const semantics = { readReady: jest.fn().mockResolvedValue(null), read: jest.fn().mockResolvedValue({ profileRef: 'generic.author-sections.v1' }) };
   const v2 = { executeDocument: jest.fn(), assembleDocument: jest.fn(),
     documentHasInterruptedGeneration: jest.fn().mockResolvedValue(false),
-    readDocumentProgress: jest.fn().mockResolvedValue({ completeness: 'PARTIAL', repairableBlockCount: 1 }) };
+    readDocumentProgress: jest.fn().mockResolvedValue({ completeness: 'PARTIAL', repairableBlockCount: 1,
+      repairableBlockIds: ['repairable-block'] }) };
   const service = new DocumentTranslationRuntimeService(authorization as never, actors as never, reader as never,
     plugins as never, attempts as never, semantics as never, parsing as never, v2 as never);
   const legacy = () => {
@@ -90,7 +92,7 @@ describe('independent document translation runtime', () => {
     const requestId = documentDeliveryRequestId('translation', deliveryRef);
     const first = await f.service.run({ action: 'START', ...f.binding, deliveryRef, requestId });
     if (!('attemptRef' in first)) throw new Error('expected first attempt');
-    const prior = await f.attempts.readRequest();
+    const prior = await f.attempts.readRequest({}, requestId);
     Object.assign(prior!, { status: 'SUCCEEDED', terminalReason: 'REMAINING_LIMITATIONS' });
     const status = await f.service.run({ action: 'STATUS', ...f.binding, deliveryRef });
     expect(status).toMatchObject({ status: 'SUCCEEDED', partialRepairAvailable: true });
@@ -101,6 +103,13 @@ describe('independent document translation runtime', () => {
     expect(continued).toMatchObject({ status: 'QUEUED' });
     expect(f.attempts.reserve.mock.calls[1].slice(2)).toMatchObject([
       `${requestId}:partial-repair`, { modelRef: 'm3probe/minimax-m3' }, first.attemptRef, 'PARTIAL']);
+    expect(f.attempts.reserve.mock.calls[1][1].modelInput.retranslateBlockIds).toEqual(['repairable-block']);
+    f.v2.readDocumentProgress.mockResolvedValueOnce({ completeness: 'COMPLETE', repairableBlockCount: 0,
+      repairableBlockIds: [] });
+    await f.service.run({ action: 'CONTINUE_PARTIAL', ...f.binding,
+      deliveryRef, attemptRef: first.attemptRef! });
+    expect(f.attempts.reserve.mock.calls[2][1].modelInput.retranslateBlockIds).toEqual(['repairable-block']);
+    expect(f.v2.readDocumentProgress).toHaveBeenCalledTimes(2);
     expect(prior).toMatchObject({ status: 'SUCCEEDED', terminalReason: 'REMAINING_LIMITATIONS' });
     expect(f.authorization.authorizeDocumentWork).toHaveBeenCalledWith({ documentVersionId: f.binding.documentVersionId,
       deliveryRef, purpose: 'TRANSLATION' });
