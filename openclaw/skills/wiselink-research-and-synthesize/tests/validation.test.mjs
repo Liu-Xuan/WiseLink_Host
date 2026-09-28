@@ -7622,6 +7622,8 @@ test('M3 Probe first-read required-tool 502 gets one read-only correction before
   assert.deepEqual(calls.slice(0, 2).map(call => call.tools.map(tool => tool.function.name)),
     [['read_wiselink_review_sources'], ['read_wiselink_review_sources']]);
   assert.match(calls[1].messages.at(-1).content, /read_wiselink_review_sources/u);
+  assert.match(calls[1].messages.at(-1).content, /availableSourceRefIds=\["page1"\]/u);
+  assert.doesNotMatch(JSON.stringify(calls[1].messages), /Fixture passage/u);
   assert.deepEqual(calls[2].tools.map(tool => tool.function.name),
     ['return_wiselink_review_candidate', 'read_wiselink_review_sources']);
   assert.equal(reads, 1);

@@ -519,7 +519,7 @@ export async function invokeHostedReviewModel(input, options = {}, dependencies 
         incompleteResponseCorrections += 1;
         initialSourceReadToolChoice = 'auto';
         messages = [systemMessage, { role: 'user', content:
-          `The preceding response made no source-read tool call. Continue this same Review by calling ${REVIEW_READ_FUNCTION_NAME} with relevant IDs from the Host-provided availableSourceRefIds. Read the authorized passage before proposing any candidate. Do not emit prose, invent references or claim a source was read.` }];
+          `The preceding response made no source-read tool call. Continue this same Review by calling ${REVIEW_READ_FUNCTION_NAME} with relevant IDs from the current Host-provided availableSourceRefIds=${canonicalJson(input.input.availableSourceRefIds)}. Use only these IDs. Read the authorized passage before proposing any candidate. Do not emit prose, invent references or claim a source was read.` }];
         continue;
       }
       if (sourceReadFirst && nativeSessionKey && sourceCache.size > 0 &&
