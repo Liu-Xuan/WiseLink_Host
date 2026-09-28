@@ -16,7 +16,8 @@ ALTER TABLE action_attempt ADD CONSTRAINT ck_action_attempt_subject CHECK (
     AND action_type = 'DOCUMENT_TRANSLATE'
     AND (execution_model_json IS NULL OR (
       jsonb_typeof(execution_model_json::jsonb) = 'object'
-      AND execution_model_json::jsonb ?& ARRAY['modelRef','displayName','providerKind','settingsRevision','selectedAt']
+      AND jsonb_exists_all(execution_model_json::jsonb,
+        ARRAY['modelRef','displayName','providerKind','settingsRevision','selectedAt']::text[])
       AND execution_model_json::jsonb ->> 'modelRef' = 'm3probe/minimax-m3'
       AND execution_model_json::jsonb ->> 'providerKind' = 'CUSTOM'
       AND jsonb_typeof(execution_model_json::jsonb -> 'displayName') = 'string'
