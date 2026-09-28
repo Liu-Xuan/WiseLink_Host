@@ -37,7 +37,6 @@ export default function DocumentVersionReadingPage() {
   const [source, setSource] = useState<MineruReaderSource | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [translation, setTranslation] = useState<DocumentTranslationReadingResponse | null>(null);
-  const [waitingForTranslationStart, setWaitingForTranslationStart] = useState(false);
   const [translationPage, setTranslationPage] = useState<number | null>(null);
   const [translationUnitId, setTranslationUnitId] = useState<string | null>(null);
   const [translationSourceContext, setTranslationSourceContext] = useState<string | null>(requestedSource);
@@ -147,7 +146,7 @@ export default function DocumentVersionReadingPage() {
     const parseRunId = currentReading?.parseRunId;
     // Chinese loads on demand only: the default dual mode never requests translation.
     if (!parseRunId || !currentReading?.original || (view !== 'bilingual' && view !== 'translation')) { setTranslation(null); return; }
-    setTranslationPage(null); setTranslationError(null); setWaitingForTranslationStart(false);
+    setTranslationPage(null); setTranslationError(null);
     let unstartedChecks = 0;
     const controller = new AbortController();
     const generation = epoch.current;
@@ -159,7 +158,6 @@ export default function DocumentVersionReadingPage() {
         if (!current()) return;
         setTranslation(result); setTranslationError(null);
         const waiting = !result.execution && ++unstartedChecks < 6;
-        setWaitingForTranslationStart(waiting);
         if (waiting || (result.execution && ['PENDING', 'QUEUED', 'RUNNING', 'COMMITTING', 'RETRY_SCHEDULED'].includes(result.execution.status)))
           timer = setTimeout(() => { void load(); }, 5000);
       } catch (reason) {
@@ -337,11 +335,12 @@ export default function DocumentVersionReadingPage() {
           onLocationSelect={persistOriginalLocation}
           bilingualContent={<section aria-label="已保存中文阅读">
             {translationError && <p role="alert">{translationError}</p>}
-            {currentTranslation && !currentTranslation.execution && <p role="status">{waitingForTranslationStart ? '正在等待中文任务启动…' : '尚未检测到中文任务启动，可稍后刷新。'}</p>}
+            {currentTranslation && !currentTranslation.execution && currentTranslation.translation.status === 'UNAVAILABLE' &&
+              <p role="status">此解析版本尚无中文任务记录；如已选择中文交付，当前尚未受理。</p>}
             {currentTranslation?.execution && <p role="status">{translationExecutionLabel(currentTranslation.execution.status)}{currentTranslation.execution.errorCode ? `（${currentTranslation.execution.errorCode}）` : ''}</p>}
             {currentTranslation ? <SemanticBilingualReader translation={currentTranslation.translation} onSourceRefSelect={locateTranslationSource}
               mode={view === 'translation' ? 'translation' : 'bilingual'} />
-              : <p role="status">正在读取已保存译文…</p>}
+              : <p role="status">正在核对中文交付状态…</p>}
           </section>}
         />
         {activityEntryRoute ? <p className="document-reading-related"><Link to={activityEntryRoute}>查看同一解析版本的活动阅读</Link></p> : null}
