@@ -30,6 +30,7 @@ export function classifyHostedGatewayFailure(payload) {
  */
 export function createHostedReviewRequester({ requestGateway = requestHostedGateway,
   observeProgress, wait = (ms, signal) => delay(ms, undefined, { signal }),
+  retryHttp502 = () => true,
 }) {
   let retryNo = 0;
   let requestNo = 0;
@@ -53,6 +54,7 @@ export function createHostedReviewRequester({ requestGateway = requestHostedGate
           const failure = classifyHostedGatewayFailure(payload);
           if (failure === 'TOOL_CHOICE_NOT_SATISFIED') return response;
           if (failure !== 'UNCLASSIFIED') return response;
+          if (!retryHttp502(init)) return response;
         }
         retryCode = `REVIEW_GATEWAY_HTTP_${response.status}`;
       } catch (cause) {

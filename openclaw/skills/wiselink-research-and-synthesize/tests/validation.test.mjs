@@ -7572,6 +7572,90 @@ test('JobAid Review corrects missing completion reason and change summary before
   assert.equal(result.output.jobAidWorkingDelta.changeSummary, '撤回无据判断');
 });
 
+function m3ProbeFirstReadReviewInput() {
+  return { input: { availableSourceRefIds: ['page1'],
+    context: { purpose: 'UPDATE_ASSESSMENT', problemAssessment: {
+      availableSources: [{ kind: 'DOCUMENT_PASSAGE' }],
+      previousWork: { content: { issues: [], roundCompletion: 'IN_PROGRESS',
+        completionReason: '仍须核对来源' } },
+    } } } };
+}
+
+test('M3 Probe first-read required-tool 502 gets one read-only correction before a validated candidate', async () => {
+  const calls = [];
+  let reads = 0;
+  let validations = 0;
+  const sessionKey = 'agent:wiselink-engineering:review:ACTX-RS-first-read-tool-choice';
+  const candidate = { answer: '已核对原文并更正。', sourceRefs: ['page1'],
+    jobAidWorkingDelta: { schemaVersion: 'wiselink.jobaid-problem-work.v3',
+      issues: [{ issueKey: 'risk', question: '风险依据是什么？',
+        body: '原文仅支持有界风险判断。[[source:page1]]', riskScenarios: [],
+        measures: [], otherClassifications: [], openQuestions: [], requirementHandling: [] }],
+      roundCompletion: 'IN_PROGRESS', completionReason: '仍须核对来源',
+      changeSummary: '核对原文并更正风险判断' } };
+  const result = await invokeReviewWithTransport(m3ProbeFirstReadReviewInput(), {
+    gatewayUrl: 'https://official.invalid', gatewayToken: 'fixture-only',
+    configuredModelVersion: 'fixture/provider',
+    executionModel: modelSelection('m3probe/minimax-m3'),
+    registeredModelRefs: ['m3probe/minimax-m3'], nativeSessionKey: sessionKey,
+    readSourceRefs: async ids => { reads++; return ids.map(sourceRefId => ({ sourceRefId,
+      evidenceRef: `source:${sourceRefId}`, excerpt: 'Fixture passage.' })); },
+    validateCandidate: value => { validations++; validateJobAidUpdatedIssueBodies(value); },
+  }, { requestGateway: async (_url, init) => {
+    calls.push({ sessionKey: init.headers['x-openclaw-session-key'], ...JSON.parse(init.body) });
+    if (calls.length === 1) return Response.json({ error: {
+      message: 'tool_choice=required was not satisfied by the agent response',
+    } }, { status: 502 });
+    if (calls.length === 2) return Response.json({ choices: [{ message: { content: null,
+      tool_calls: [{ id: 'read2', type: 'function', function: {
+        name: 'read_wiselink_review_sources', arguments: JSON.stringify({ sourceRefIds: ['page1'] }),
+      } }] } }] });
+    return Response.json({ choices: [{ message: { content: null, tool_calls: [{
+      id: 'candidate3', type: 'function', function: {
+        name: 'return_wiselink_review_candidate', arguments: JSON.stringify(candidate),
+      },
+    }] } }] });
+  } });
+  assert.equal(calls.length, 3);
+  assert.ok(calls.every(call => call.sessionKey === sessionKey));
+  assert.deepEqual(calls.map(call => call.tool_choice), ['required', 'auto', 'required']);
+  assert.deepEqual(calls.slice(0, 2).map(call => call.tools.map(tool => tool.function.name)),
+    [['read_wiselink_review_sources'], ['read_wiselink_review_sources']]);
+  assert.match(calls[1].messages.at(-1).content, /read_wiselink_review_sources/u);
+  assert.deepEqual(calls[2].tools.map(tool => tool.function.name),
+    ['return_wiselink_review_candidate', 'read_wiselink_review_sources']);
+  assert.equal(reads, 1);
+  assert.equal(validations, 1);
+  assert.equal(result.output.answer, candidate.answer);
+});
+
+test('M3 Probe first-read correction stops after one exact failure and never retries generic 502', async () => {
+  for (const generic of [false, true]) {
+    const choices = [];
+    const progress = [];
+    let businessCalls = 0;
+    await assert.rejects(invokeReviewWithTransport(m3ProbeFirstReadReviewInput(), {
+      gatewayUrl: 'https://official.invalid', gatewayToken: 'fixture-only',
+      configuredModelVersion: 'fixture/provider',
+      executionModel: modelSelection('m3probe/minimax-m3'),
+      registeredModelRefs: ['m3probe/minimax-m3'],
+      nativeSessionKey: 'agent:wiselink-engineering:review:ACTX-RS-first-read-limit',
+      observeProgress: event => { progress.push(event.kind); },
+      readSourceRefs: async () => { businessCalls++; },
+      validateCandidate: () => { businessCalls++; },
+    }, { requestGateway: async (_url, init) => {
+      choices.push(JSON.parse(init.body).tool_choice);
+      return Response.json({ error: { message: generic
+        ? 'upstream unavailable'
+        : 'tool_choice=required was not satisfied by the agent response' } }, { status: 502 });
+    }, wait: async () => { assert.fail('first-read 502 must not use transient retry'); } }),
+    generic ? /REVIEW_GATEWAY_HTTP_502/u : /REVIEW_TOOL_CHOICE_NOT_SATISFIED/u);
+    assert.deepEqual(choices, generic ? ['required'] : ['required', 'auto']);
+    assert.deepEqual(progress, generic ? ['MODEL_REQUEST'] : ['MODEL_REQUEST', 'MODEL_REQUEST']);
+    assert.equal(businessCalls, 0);
+  }
+});
+
 test('source-read JobAid Review corrects one empty required-tool 502 in the same session', async () => {
   let requests = 0;
   let validations = 0;

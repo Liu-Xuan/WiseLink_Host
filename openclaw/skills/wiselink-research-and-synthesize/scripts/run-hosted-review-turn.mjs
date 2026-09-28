@@ -426,10 +426,13 @@ export async function invokeHostedReviewModel(input, options = {}, dependencies 
     requestGateway: dependencies.requestGateway ?? requestHostedGateway,
     observeProgress: options.observeProgress,
     wait: dependencies.wait,
+    retryHttp502: () => !(sourceReadFirst && sourceCache.size === 0 &&
+      options.executionModel?.modelRef === 'm3probe/minimax-m3'),
   });
   let round = 0;
   let candidateCorrections = 0;
   let incompleteResponseCorrections = 0;
+  let initialSourceReadToolChoice = 'required';
   let consecutiveCachedReads = 0;
   let inputUnits = 0;
   let outputUnits = 0;
@@ -463,8 +466,8 @@ export async function invokeHostedReviewModel(input, options = {}, dependencies 
             ? [reviewSourceFunctionTool()]
             : [reviewCandidateFunctionTool(isMatter, isJobAid, input.input?.attachmentRefs ?? [], isChat, isAssessmentUpdate), reviewSourceFunctionTool(),
               ...(isChat && input.input?.context?.aily?.available === true ? [reviewAilyFunctionTool()] : [])],
-          tool_choice: sourceReadFirst
-            ? 'required' : isJobAid ? 'auto' : 'required',
+          tool_choice: sourceReadFirst && sourceCache.size === 0
+            ? initialSourceReadToolChoice : sourceReadFirst ? 'required' : isJobAid ? 'auto' : 'required',
           parallel_tool_calls: false,
           n: 1,
           stream: false,
@@ -506,6 +509,19 @@ export async function invokeHostedReviewModel(input, options = {}, dependencies 
     if (observeOutputShape) await observeOutputShape(outputShape, round);
     if (!response.ok) {
       const failure = classifyHostedGatewayFailure(payload);
+      if (sourceReadFirst && options.executionModel?.modelRef === 'm3probe/minimax-m3' &&
+          nativeSessionKey && sourceCache.size === 0 && outputShape.choiceCount === 0 &&
+          incompleteResponseCorrections === 0 && response.status === 502 &&
+          failure === 'TOOL_CHOICE_NOT_SATISFIED') {
+        // This exact Gateway contract failure produced no source read or
+        // candidate. Keep the read-only tool set and original native session;
+        // one auto-choice correction can still request an authorized passage.
+        incompleteResponseCorrections += 1;
+        initialSourceReadToolChoice = 'auto';
+        messages = [systemMessage, { role: 'user', content:
+          `The preceding response made no source-read tool call. Continue this same Review by calling ${REVIEW_READ_FUNCTION_NAME} with relevant IDs from the Host-provided availableSourceRefIds. Read the authorized passage before proposing any candidate. Do not emit prose, invent references or claim a source was read.` }];
+        continue;
+      }
       if (sourceReadFirst && nativeSessionKey && sourceCache.size > 0 &&
           outputShape.choiceCount === 0 && incompleteResponseCorrections === 0 &&
           ((response.status === 400 && failure === 'INCOMPLETE_TERMINAL_RESPONSE') ||
