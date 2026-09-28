@@ -13,9 +13,10 @@ original acquisition and committer. The migration targets both legacy
 `authenticated` and the exact 17b browser role
 `authenticated_workspace_aadkpkjef3slu` for delivery-intent DML, upload
 acquisition terminal updates/deletes, and preflight finalization edits. It
-revokes TRUNCATE on those three source tables from the exact browser role.
-A remaining inherited or PUBLIC TRUNCATE grant aborts the migration.
-A browser-set `app.user_id` alone cannot make those terminal transitions.
+adds BEFORE TRUNCATE guards to those three source tables for browser roles.
+Platform-managed table privileges include TRUNCATE and cannot be changed by
+application SQL; RLS handles row DML while the statement triggers handle
+TRUNCATE. A browser-set `app.user_id` alone cannot make terminal transitions.
 
 The server candidate now uses the existing `SessionResolver.withRequestSession`
 at the OAuth development-create and document-upload HTTP entries. The
@@ -62,16 +63,17 @@ automatically replayed.
   node --test test/node/document-upload-delivery-authorization-postgres.test.mjs`
   passes against isolated PostgreSQL. It models the exact 17b browser and
   service roles without generic-role inheritance, giving the browser broad
-  permissive policies and grants before applying 0067. PostgreSQL rejects
-  browser terminal/preflight edits, delivery-intent INSERT, and TRUNCATE. The
+  permissive policies and platform-like default grants before applying 0067.
+  PostgreSQL rejects browser terminal/preflight edits, delivery-intent INSERT,
+  and TRUNCATE through the RLS and statement-trigger guards. The
   exact workspace service role can read all rows of the new authorization
   table under its SELECT policy. The Host selector filters by verified tenant,
   then binds each candidate to the exact source and actor before dispatch.
   Admission UPDATE remains actor-scoped; the role cannot INSERT, DELETE, or
   alter immutable columns. Generic roles and an unrelated workspace service
   role cannot read authorization rows. The test
-  also covers wrong-schema and PUBLIC TRUNCATE rejection, exact-link rollback,
-  selected and `NONE` reserve rollback/success, source mismatch, and populated
+  also covers wrong-schema rejection, exact-link rollback, selected and
+  `NONE` reserve rollback/success, source mismatch, and populated
   audit columns. The fixture is smaller than the application schema and does
   not run the Nest/Drizzle chain.
 - `DOCUMENT_DELIVERY_SESSION_TEST_DATABASE_URL=<separate disposable
@@ -122,13 +124,19 @@ automatically replayed.
   `authenticated_workspace_aadkpkjef3slu`; neither inherits its generic
   counterpart. The service role is not superuser and does not bypass RLS. The
   browser has broad grants and permissive policies on the source tables.
-  This local 0067 checks the exact schema and two exact, non-superuser,
-  non-BYPASSRLS roles before DDL. Only the target service role receives
-  authorization-table SELECT across all rows and UPDATE of `status` and
-  `admitted_at` under actor-scoped UPDATE RLS. SELECT uses `USING (true)`;
-  tenant isolation during discovery comes from the Host selector and exact
-  source/actor authorization, not from SELECT RLS. PUBLIC, generic roles,
-  and browser receive no table grant.
+  On dev, `dataloom_user`'s workspace default ACL grants new tables broad
+  privileges to generic and exact service/browser roles and workspace anon;
+  the exact service role does not inherit those other roles. None is superuser
+  or BYPASSRLS. The dev 0067 attempt was rejected by the platform on a
+  GRANT/REVOKE statement before any SQL applied. This revised candidate
+  contains no GRANT/REVOKE. It checks the exact schema and roles, then uses
+  restrictive RLS to deny browser, anon, and generic service access to the
+  new table. The exact service role can SELECT all rows and UPDATE only its
+  selected actor's `WAITING` row to `ADMITTED`; an unconditional trigger denies
+  TRUNCATE. The service role's table privileges still include other verbs,
+  but RLS and the trigger deny those operations. Tenant isolation during
+  discovery comes from the Host selector and exact source/actor authorization,
+  not from SELECT RLS.
 - Before applying 0067, review the installed grants/RLS and exercise the
   hosted middleware and real application schema. The local integration tests
   above use isolated databases and the exact hosted role but cannot establish

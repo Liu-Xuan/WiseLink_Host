@@ -25,7 +25,10 @@ describe('document upload delivery authorization migration', () => {
     expect(migration).toMatch(/current_schema\(\) IS DISTINCT FROM 'workspace_aadkpkjef3slu'/u);
     expect(migration).toMatch(/rolname='service_role_workspace_aadkpkjef3slu'[\s\S]*?NOT rolsuper AND NOT rolbypassrls/u);
     expect(migration).toMatch(/rolname='authenticated_workspace_aadkpkjef3slu'[\s\S]*?NOT rolsuper AND NOT rolbypassrls/u);
-    expect(migration).toMatch(/GRANT UPDATE\(status,admitted_at\) ON auto_document_delivery_authorization\s+TO service_role_workspace_aadkpkjef3slu/u);
+    expect(migration).toMatch(/auto_document_delivery_no_browser[\s\S]*?AS RESTRICTIVE FOR ALL TO authenticated,authenticated_workspace_aadkpkjef3slu/u);
+    expect(migration).toMatch(/auto_document_delivery_no_generic_service[\s\S]*?AS RESTRICTIVE FOR ALL TO service_role/u);
+    expect(migration).toMatch(/has_table_privilege\('service_role_workspace_aadkpkjef3slu',[\s\S]*?'SELECT'\)/u);
+    expect(migration).toMatch(/has_table_privilege\('service_role_workspace_aadkpkjef3slu',[\s\S]*?'UPDATE'\)/u);
     expect(migration).toMatch(/FOR SELECT TO service_role_workspace_aadkpkjef3slu USING \(true\)/u);
     expect(migration).toMatch(/FOR UPDATE TO service_role_workspace_aadkpkjef3slu/u);
     expect(migration).toMatch(/status='WAITING' AND actor_user_id=current_setting\('app\.user_id',true\)/u);
@@ -33,7 +36,7 @@ describe('document upload delivery authorization migration', () => {
     expect(migration).not.toMatch(/FOR ALL TO service_role_workspace_aadkpkjef3slu USING \(true\)/u);
     expect(migration).not.toMatch(/FOR (?:INSERT|DELETE) TO service_role_workspace_aadkpkjef3slu/u);
     expect(migration).toMatch(/SECURITY DEFINER SET search_path = pg_catalog/u);
-    expect(migration).toMatch(/REVOKE ALL ON FUNCTION auto_document_delivery_register_upload\(\) FROM PUBLIC/u);
+    expect(migration).toMatch(/auto_document_delivery_no_truncate[\s\S]*?BEFORE TRUNCATE ON auto_document_delivery_authorization/u);
     for (const column of ['_created_at', '_created_by', '_updated_at', '_updated_by']) {
       expect(migration).toContain(column);
     }
@@ -42,8 +45,11 @@ describe('document upload delivery authorization migration', () => {
   });
 
   it('blocks native writes and TRUNCATE on the WorkItem delivery intent source', () => {
-    expect(migration).toMatch(/REVOKE TRUNCATE ON action_attempt FROM authenticated_workspace_aadkpkjef3slu/u);
-    expect(migration).toMatch(/REVOKE TRUNCATE ON dm_acquisition,dm_ingress_preflight\s+FROM authenticated_workspace_aadkpkjef3slu/u);
+    expect(migration).not.toMatch(/^\s*(?:GRANT|REVOKE)\b/gmu);
+    for (const table of ['action_attempt', 'dm_acquisition', 'dm_ingress_preflight']) {
+      expect(migration).toMatch(new RegExp(`BEFORE TRUNCATE ON ${table}`, 'u'));
+    }
+    expect(migration).toMatch(/DOCUMENT_DELIVERY_BROWSER_TRUNCATE_DENIED/u);
     expect(migration).toMatch(/action_attempt_delivery_no_native_insert[\s\S]*?FOR INSERT TO authenticated,authenticated_workspace_aadkpkjef3slu\s+WITH CHECK \(action_type <> 'DOCUMENT_DELIVERY_INTENT'\)/u);
     expect(migration).toMatch(/action_attempt_delivery_no_native_update[\s\S]*?FOR UPDATE TO authenticated,authenticated_workspace_aadkpkjef3slu\s+USING \(action_type <> 'DOCUMENT_DELIVERY_INTENT'\)[\s\S]*?WITH CHECK \(action_type <> 'DOCUMENT_DELIVERY_INTENT'\)/u);
     expect(migration).toMatch(/action_attempt_delivery_no_native_delete[\s\S]*?FOR DELETE TO authenticated,authenticated_workspace_aadkpkjef3slu\s+USING \(action_type <> 'DOCUMENT_DELIVERY_INTENT'\)/u);

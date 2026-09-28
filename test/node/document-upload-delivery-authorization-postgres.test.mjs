@@ -22,6 +22,8 @@ test('draft upload authorization: exact legacy link works, actor intent remains 
         DROP FUNCTION IF EXISTS auto_document_delivery_freeze_upload() CASCADE;
         DROP FUNCTION IF EXISTS auto_document_delivery_freeze_upload_preflight() CASCADE;
         DROP FUNCTION IF EXISTS auto_document_delivery_preserve() CASCADE;
+        DROP FUNCTION IF EXISTS auto_document_delivery_reject_browser_truncate() CASCADE;
+        DROP FUNCTION IF EXISTS auto_document_delivery_reject_truncate() CASCADE;
         DROP TYPE IF EXISTS user_profile CASCADE;
         DO $$ BEGIN
           IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname='authenticated') THEN
@@ -38,6 +40,12 @@ test('draft upload authorization: exact legacy link works, actor intent remains 
           END IF;
           IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname='service_role_workspace_other') THEN
             CREATE ROLE service_role_workspace_other NOLOGIN;
+          END IF;
+          IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname='anon') THEN
+            CREATE ROLE anon NOLOGIN;
+          END IF;
+          IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname='anon_workspace_aadkpkjef3slu') THEN
+            CREATE ROLE anon_workspace_aadkpkjef3slu NOLOGIN;
           END IF;
         END $$;
         CREATE TYPE user_profile AS (user_id text);
@@ -95,7 +103,7 @@ test('draft upload authorization: exact legacy link works, actor intent remains 
           WITH CHECK (true);
         GRANT USAGE ON SCHEMA workspace_aadkpkjef3slu TO authenticated,service_role,
           authenticated_workspace_aadkpkjef3slu,service_role_workspace_aadkpkjef3slu,
-          service_role_workspace_other;
+          anon_workspace_aadkpkjef3slu,service_role_workspace_other;
         GRANT SELECT,INSERT,UPDATE,DELETE,TRUNCATE ON action_attempt TO authenticated;
         GRANT SELECT,INSERT,UPDATE,DELETE,TRUNCATE ON action_attempt TO authenticated_workspace_aadkpkjef3slu;
         GRANT SELECT,INSERT,UPDATE,DELETE ON work_item TO authenticated;
@@ -134,11 +142,14 @@ test('draft upload authorization: exact legacy link works, actor intent remains 
             '{"documentDeliveryIntent":{"reading":true,"translation":"NONE"}}',
             'ACQUIRED_READBACK_VERIFIED');
       `);
+      // Match dev pg_default_acl: the platform grants new workspace tables
+      // broadly, so the migration must enforce its boundary through RLS and triggers.
+      await db.unsafe(`ALTER DEFAULT PRIVILEGES IN SCHEMA workspace_aadkpkjef3slu
+        GRANT ALL ON TABLES TO service_role,authenticated,
+          service_role_workspace_aadkpkjef3slu,authenticated_workspace_aadkpkjef3slu,
+          anon_workspace_aadkpkjef3slu`);
       const migration = await readFile(resolve('migrations/0067_document_upload_delivery_authorization.sql'), 'utf8');
-      await db.unsafe('GRANT TRUNCATE ON action_attempt TO PUBLIC');
-      await assert.rejects(db.unsafe(migration), /DOCUMENT_DELIVERY_BROWSER_TRUNCATE_REMAINS/u);
-      await db.unsafe('ROLLBACK');
-      await db.unsafe('REVOKE TRUNCATE ON action_attempt FROM PUBLIC');
+      assert.doesNotMatch(migration, /^(?:GRANT|REVOKE)\b/gmu);
       await db.unsafe('SET search_path TO public');
       await assert.rejects(db.unsafe(migration), /DOCUMENT_DELIVERY_APP_SCHEMA_OR_ROLE_MISMATCH/u);
       await db.unsafe('ROLLBACK');
@@ -176,7 +187,7 @@ test('draft upload authorization: exact legacy link works, actor intent remains 
       assert.equal((await db`SELECT count(*)::int AS count
         FROM auto_document_delivery_authorization`)[0].count, 0);
       for (const table of ['action_attempt', 'dm_acquisition', 'dm_ingress_preflight']) {
-        await assert.rejects(asActor((tx) => tx.unsafe(`TRUNCATE ${table}`)),
+        await assert.rejects(asActor((tx) => tx.unsafe(`TRUNCATE ${table} CASCADE`)),
           (error) => error.code === '42501');
       }
       assert.equal((await db`SELECT status,decision FROM dm_ingress_preflight
@@ -240,19 +251,34 @@ test('draft upload authorization: exact legacy link works, actor intent remains 
       });
       const authTable = 'auto_document_delivery_authorization';
       for (const role of ['authenticated', 'authenticated_workspace_aadkpkjef3slu',
-        'service_role', 'service_role_workspace_other']) {
+        'service_role', 'anon_workspace_aadkpkjef3slu']) {
+        assert.equal((await asSqlRole(role, 'actor-new',
+          (tx) => tx.unsafe(`SELECT * FROM ${authTable}`))).length, 0);
+        assert.equal((await asSqlRole(role, 'actor-new',
+          (tx) => tx.unsafe(`DELETE FROM ${authTable}`))).length, 0);
         await assert.rejects(asSqlRole(role, 'actor-new',
-          (tx) => tx.unsafe(`SELECT * FROM ${authTable}`)),
-        (error) => error.code === '42501');
+          (tx) => tx.unsafe(`TRUNCATE ${authTable}`)),
+          (error) => error.code === '42501');
       }
+      await assert.rejects(asSqlRole('service_role_workspace_other', 'actor-new',
+        (tx) => tx.unsafe(`SELECT * FROM ${authTable}`)),
+        (error) => error.code === '42501');
+      assert.equal((await asActor((tx) => tx`UPDATE auto_document_delivery_authorization
+        SET status='ADMITTED',admitted_at=CURRENT_TIMESTAMP
+        WHERE acquisition_id='ACQ-NEW' RETURNING acquisition_id`)).length, 0);
+      await assert.rejects(asActor((tx) => tx`INSERT INTO auto_document_delivery_authorization
+        (acquisition_id,tenant_key,actor_user_id,document_version_id,source_artifact_id,reading,translation)
+        VALUES ('ACQ-BAD','t1','actor-new','DV-1','SRC-BAD',true,'NONE')`),
+        (error) => error.code === '42501');
       await assert.rejects(asService((tx) => tx`INSERT INTO auto_document_delivery_authorization
         (acquisition_id,tenant_key,actor_user_id,document_version_id,source_artifact_id,reading,translation)
         VALUES ('ACQ-BAD','t1','actor-new','DV-1','SRC-BAD',true,'NONE')`),
       (error) => error.code === '42501');
-      await assert.rejects(asService((tx) => tx`DELETE FROM auto_document_delivery_authorization
-        WHERE acquisition_id='ACQ-NEW'`), (error) => error.code === '42501');
+      assert.equal((await asService((tx) => tx`DELETE FROM auto_document_delivery_authorization
+        WHERE acquisition_id='ACQ-NEW' RETURNING acquisition_id`)).length, 0);
       await assert.rejects(asService((tx) => tx`UPDATE auto_document_delivery_authorization
-        SET reading=false WHERE acquisition_id='ACQ-NEW'`), (error) => error.code === '42501');
+        SET reading=false WHERE acquisition_id='ACQ-NEW'`),
+        /DOCUMENT_DELIVERY_IDENTITY_IMMUTABLE/u);
       assert.equal((await asSqlRole('service_role_workspace_aadkpkjef3slu', 'actor-other',
         (tx) => tx`UPDATE auto_document_delivery_authorization SET status='ADMITTED',
           admitted_at=CURRENT_TIMESTAMP WHERE acquisition_id='ACQ-NEW' RETURNING acquisition_id`)).length, 0);

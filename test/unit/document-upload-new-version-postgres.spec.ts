@@ -29,6 +29,8 @@ describePg('0067 new-version Catalog transaction on isolated PostgreSQL', () => 
       DROP FUNCTION IF EXISTS auto_document_delivery_freeze_upload() CASCADE;
       DROP FUNCTION IF EXISTS auto_document_delivery_freeze_upload_preflight() CASCADE;
       DROP FUNCTION IF EXISTS auto_document_delivery_preserve() CASCADE;
+        DROP FUNCTION IF EXISTS auto_document_delivery_reject_browser_truncate() CASCADE;
+        DROP FUNCTION IF EXISTS auto_document_delivery_reject_truncate() CASCADE;
       DROP FUNCTION IF EXISTS dm_reject_immutable_row_mutation() CASCADE;
       DROP TYPE IF EXISTS user_profile CASCADE;
       DO $$ BEGIN
@@ -43,6 +45,12 @@ describePg('0067 new-version Catalog transaction on isolated PostgreSQL', () => 
         END IF;
         IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname='service_role_workspace_aadkpkjef3slu') THEN
           CREATE ROLE service_role_workspace_aadkpkjef3slu NOLOGIN;
+        END IF;
+        IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname='anon') THEN
+          CREATE ROLE anon NOLOGIN;
+        END IF;
+        IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname='anon_workspace_aadkpkjef3slu') THEN
+          CREATE ROLE anon_workspace_aadkpkjef3slu NOLOGIN;
         END IF;
       END $$;
       CREATE TYPE user_profile AS (user_id text);
@@ -81,6 +89,10 @@ describePg('0067 new-version Catalog transaction on isolated PostgreSQL', () => 
       GRANT SELECT,INSERT,UPDATE,DELETE,TRUNCATE ON dm_acquisition,dm_ingress_preflight TO authenticated;
       GRANT SELECT,INSERT,UPDATE,DELETE,TRUNCATE ON dm_acquisition,dm_ingress_preflight TO authenticated_workspace_aadkpkjef3slu;
       GRANT SELECT ON dm_source_artifact,dm_publication_family,dm_document_version TO authenticated;`);
+    await client.unsafe(`ALTER DEFAULT PRIVILEGES IN SCHEMA workspace_aadkpkjef3slu
+      GRANT ALL ON TABLES TO service_role,authenticated,
+        service_role_workspace_aadkpkjef3slu,authenticated_workspace_aadkpkjef3slu,
+        anon_workspace_aadkpkjef3slu`);
     await client.unsafe(await readFile(resolve('migrations/0067_document_upload_delivery_authorization.sql'), 'utf8'));
     for (const choice of [
       { suffix: 'selected', sha: 'a'.repeat(64), byteLength: 100,

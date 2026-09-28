@@ -116,6 +116,58 @@ test('automatic queue dispatches an admitted document without inventing a WorkIt
     document: { status: 'DOCUMENT_READY', documentVersionId: 'DV-document' } });
   assert.equal(checkpoint.values.get('active-claim'), null);
 });
+test('a later natural queue tick uses a new recovery ID to recheck Host admission', async () => {
+  const directory = await mkdtemp(join(tmpdir(), 'document-queue-recovery-'));
+  try {
+    const checkpoint = memoryCheckpoint();
+    const deliveryRef = 'work-item:WI-document';
+    let recovery = 'initial';
+    let repaired = false;
+    let starts = 0;
+    const dependencies = {
+      checkpoint, now: () => new Date(START),
+      nextWorkItem: async () => ({ status: 'DOCUMENT_PENDING', documentVersionId: 'DV-document',
+        deliveryRef, documentAfterRef: 'attempt:ATT-document' }),
+      acknowledgeWorkItem: async () => assert.fail('document is not a WorkItem claim'),
+      consumeWorkItem: async () => assert.fail('document is not a WorkItem claim'),
+      readInitialStatus: async () => assert.fail('document is not a WorkItem claim'),
+      consumeDocument: (documentVersionId, selectedRef) => consumeHostedDocument(
+        { documentVersionId, deliveryRef: selectedRef }, {
+          documentTranslationCheckpoint: parseRunId => createCheckpointStore(join(
+            directory, documentVersionId, encodeURIComponent(selectedRef), parseRunId, recovery)),
+          callTool: async (name, args) => {
+            assert.equal(args.deliveryRef, deliveryRef);
+            if (name === 'document_work') return args.action === 'INDEX'
+              ? { documentVersionId, parseRunId: 'PRUN-document', status: 'INDEXED' }
+              : { documentVersionId, latestRun: { documentVersionId,
+                parseRunId: 'PRUN-document', status: 'PUBLISHED' },
+                documentDelivery: { reading: false, translation: 'ZH_FULL' } };
+            if (args.action === 'STATUS') return { documentVersionId,
+              parseRunId: 'PRUN-document', status: 'IDLE', semanticReady: true };
+            assert.equal(args.action, 'START');
+            starts += 1;
+            if (!repaired) throw Object.assign(new Error('denied'), {
+              receivedHostToolError: true, hostToolName: name,
+              hostErrorCode: 'DOCUMENT_TRANSLATION_ADMISSION_DENIED',
+            });
+            return { documentVersionId, parseRunId: 'PRUN-document',
+              attemptRef: 'DTQ-document', status: 'QUEUED' };
+          },
+        }),
+    };
+    assert.equal((await consumeAutomaticWorkItemQueueTick({}, dependencies)).document.status,
+      'REQUIRES_ATTENTION');
+    assert.equal(starts, 1);
+    repaired = true;
+    assert.equal((await consumeAutomaticWorkItemQueueTick({}, dependencies)).document.status,
+      'REQUIRES_ATTENTION');
+    assert.equal(starts, 1, 'unchanged recovery ID keeps the prior admission stop');
+    recovery = 'fixed-host-admission-1';
+    assert.equal((await consumeAutomaticWorkItemQueueTick({}, dependencies)).document.status,
+      'QUEUED');
+    assert.equal(starts, 2, 'the next natural tick rechecks Host with its saved request ID');
+  } finally { await rm(directory, { recursive: true, force: true }); }
+});
 test('document discovery advances a bounded cursor across idle ticks', async () => {
   const checkpoint = memoryCheckpoint();
   const inputs = [];
@@ -315,6 +367,9 @@ test('automatic queue mode accepts only the exact queue flags', () => {
   assert.equal(automaticWorkItemQueueMode([]), false);
   assert.equal(automaticWorkItemQueueMode(['--auto-queue']), true);
   assert.equal(automaticWorkItemQueueMode([
+    '--auto-queue', '--document-translation-recovery', 'fixed-host-admission-1',
+  ]), true);
+  assert.equal(automaticWorkItemQueueMode([
     '--auto-queue', '--repair-stopped-claim',
     '--repair-work-item-id', 'WI-QUEUE',
     '--repair-attempt-ref', 'AQ-RETRY-NO-WORK',
@@ -331,6 +386,14 @@ test('automatic queue mode accepts only the exact queue flags', () => {
     () => automaticWorkItemQueueMode(['--auto-queue', '--checkpoint-root']),
     /AUTO_WORK_ITEM_QUEUE_OPTIONS_INVALID/,
   );
+  for (const args of [
+    ['--document-translation-recovery'],
+    ['--document-translation-recovery', '../unsafe'],
+    ['--document-translation-recovery', 'fixed-1', '--document-translation-recovery', 'fixed-2'],
+  ]) {
+    assert.throws(() => automaticWorkItemQueueMode(['--auto-queue', ...args]),
+      /AUTO_WORK_ITEM_QUEUE_OPTIONS_INVALID/);
+  }
   assert.throws(
     () => automaticWorkItemQueueMode(['--auto-queue', '--agent', 'other-profile']),
     /AUTO_WORK_ITEM_QUEUE_OPTION_NOT_ALLOWED/,

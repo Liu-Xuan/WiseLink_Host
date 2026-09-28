@@ -1131,12 +1131,16 @@ export function automaticWorkItemQueueMode(argv) {
   const repairs = argv.filter(arg => arg === '--repair-stopped-claim').length;
   const repairWorkItems = argv.filter(arg => arg === '--repair-work-item-id').length;
   const repairAttempts = argv.filter(arg => arg === '--repair-attempt-ref').length;
+  const recoveries = argv.filter(arg => arg === '--document-translation-recovery').length;
   if (!occurrences) {
     if (repairs || repairWorkItems || repairAttempts)
       throw new Error('AUTO_WORK_ITEM_QUEUE_OPTIONS_INVALID');
     return false;
   }
   if (occurrences !== 1) throw new Error('AUTO_WORK_ITEM_QUEUE_OPTIONS_INVALID');
+  if (recoveries > 1 || (recoveries && !/^[A-Za-z0-9_-]{1,96}$/u.test(
+    option(argv, '--document-translation-recovery') ?? '')))
+    throw new Error('AUTO_WORK_ITEM_QUEUE_OPTIONS_INVALID');
   if (repairs > 1) throw new Error('AUTO_WORK_ITEM_QUEUE_OPTIONS_INVALID');
   if (repairWorkItems !== repairs || repairAttempts !== repairs) {
     throw new Error('AUTO_WORK_ITEM_QUEUE_OPTIONS_INVALID');
@@ -1144,6 +1148,7 @@ export function automaticWorkItemQueueMode(argv) {
   const valueOptions = new Set([
     '--checkpoint-root', '--openclaw-config',
     '--repair-work-item-id', '--repair-attempt-ref',
+    '--document-translation-recovery',
   ]);
   for (let index = 0; index < argv.length; index += 1) {
     const arg = argv[index];
@@ -1384,7 +1389,7 @@ export function matterPreflightMode(argv, matterId) {
 
 async function main(argv, env) {
   if (argv.includes('--help')) {
-    process.stdout.write('Usage: node consume-hosted-work-item.mjs [--auto-queue [--repair-stopped-claim --repair-work-item-id WI-... --repair-attempt-ref AQ-...]] [--work-item-id WI-...] [--matter-id MAT-...] [--document-version-id DV] [--matter-preflight-only | --matter-expected-snapshot SHA256] [--max-initial-stages 1] [--expected-initial-operation EVALUATE_JOBAID|SYNTHESIZE_OVERALL] [--applicability-context-ref REF] [--checkpoint-root PATH] [--openclaw-config PATH] [--native-session-store PATH] [--document-translation-recovery ID] [--activity-run-ref ID] [--reading-run-ref ID] [--lease-owner ID]\nOne native job per authorized subject. Choose exactly one WorkItem, Matter or DocumentVersion; independent jobs use native cron concurrency. --auto-queue is one native cron tick for the Host-enrolled automatic WorkItem queue; it accepts no static subject or stage-specific options. --repair-stopped-claim with both exact identity flags permits one operator-triggered successor only for a stopped claim with a failed no-work JobAid/Overall auto-retry after a bounded gateway change; it is never a cron option. --matter-preflight-only reads current Matter work without dispatch; --matter-expected-snapshot checks that read again before dispatch and stops on a changed snapshot. --max-initial-stages 1 is WorkItem-only and consumes at most the current initial stage, without Review or original-impact work. --expected-initial-operation requires that limit and refuses any entry stage other than the named JobAid or Overall stage.\n');
+    process.stdout.write('Usage: node consume-hosted-work-item.mjs [--auto-queue [--document-translation-recovery ID] [--repair-stopped-claim --repair-work-item-id WI-... --repair-attempt-ref AQ-...]] [--work-item-id WI-...] [--matter-id MAT-...] [--document-version-id DV] [--matter-preflight-only | --matter-expected-snapshot SHA256] [--max-initial-stages 1] [--expected-initial-operation EVALUATE_JOBAID|SYNTHESIZE_OVERALL] [--applicability-context-ref REF] [--checkpoint-root PATH] [--openclaw-config PATH] [--native-session-store PATH] [--activity-run-ref ID] [--reading-run-ref ID] [--lease-owner ID]\nOne native job per authorized subject. Choose exactly one WorkItem, Matter or DocumentVersion; independent jobs use native cron concurrency. --auto-queue is one native cron tick for the Host-enrolled automatic WorkItem queue; it accepts no static subject or stage-specific options. After Host admission repair, one document translation recovery ID may be added to the existing cron so the next natural tick checks Host again without clearing the old checkpoint. --repair-stopped-claim with both exact identity flags permits one operator-triggered successor only for a stopped claim with a failed no-work JobAid/Overall auto-retry after a bounded gateway change; it is never a cron option. --matter-preflight-only reads current Matter work without dispatch; --matter-expected-snapshot checks that read again before dispatch and stops on a changed snapshot. --max-initial-stages 1 is WorkItem-only and consumes at most the current initial stage, without Review or original-impact work. --expected-initial-operation requires that limit and refuses any entry stage other than the named JobAid or Overall stage.\n');
     return;
   }
   const autoQueue = automaticWorkItemQueueMode(argv);

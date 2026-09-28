@@ -49,6 +49,15 @@ test('0067 verified service SQL admits only new development intake in its exact 
           IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname='service_role_workspace_aadkpkjef3slu') THEN
             CREATE ROLE service_role_workspace_aadkpkjef3slu NOLOGIN;
           END IF;
+          IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname='service_role') THEN
+            CREATE ROLE service_role NOLOGIN;
+          END IF;
+          IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname='anon') THEN
+            CREATE ROLE anon NOLOGIN;
+          END IF;
+          IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname='anon_workspace_aadkpkjef3slu') THEN
+            CREATE ROLE anon_workspace_aadkpkjef3slu NOLOGIN;
+          END IF;
         END $$;
         DROP SCHEMA IF EXISTS ${schema} CASCADE;
         CREATE SCHEMA ${schema};
@@ -181,6 +190,10 @@ test('0067 verified service SQL admits only new development intake in its exact 
           }
         }
       }
+      await pool.unsafe(`ALTER DEFAULT PRIVILEGES IN SCHEMA ${schema}
+        GRANT ALL ON TABLES TO service_role,authenticated,
+          service_role_workspace_aadkpkjef3slu,authenticated_workspace_aadkpkjef3slu,
+          anon_workspace_aadkpkjef3slu`);
       await pool.unsafe(await readFile(resolve('migrations/0067_document_upload_delivery_authorization.sql'), 'utf8'));
       await pool.end();
       pool = postgres(databaseUrl, {

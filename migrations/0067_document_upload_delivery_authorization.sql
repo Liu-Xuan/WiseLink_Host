@@ -8,7 +8,7 @@
 BEGIN;
 
 -- This draft is bound to the verified 17b application schema and its two
--- concrete SQL identities. Fail before any grant or DDL if run elsewhere.
+-- concrete SQL identities. Fail before any DDL if run elsewhere.
 DO $$
 BEGIN
   IF current_schema() IS DISTINCT FROM 'workspace_aadkpkjef3slu'
@@ -26,28 +26,30 @@ BEGIN
 END;
 $$;
 
--- The WorkItem selection is stored in action_attempt. Existing platform-wide
--- authenticated grants/policies otherwise let a browser forge or change it.
--- TRUNCATE bypasses RLS, so remove that table privilege as well. Review old
--- callers of authenticated TRUNCATE before applying this migration.
-REVOKE TRUNCATE ON action_attempt FROM authenticated;
-REVOKE TRUNCATE ON dm_acquisition,dm_ingress_preflight FROM authenticated;
-REVOKE TRUNCATE ON action_attempt FROM authenticated_workspace_aadkpkjef3slu;
-REVOKE TRUNCATE ON dm_acquisition,dm_ingress_preflight
-  FROM authenticated_workspace_aadkpkjef3slu;
-DO $$
+-- Platform-managed table privileges include browser TRUNCATE. RLS cannot
+-- constrain TRUNCATE, so reject it before any row is removed, including when
+-- reached through a CASCADE from another table. Service transactions retain
+-- their existing table privileges and the row-level policies below.
+CREATE FUNCTION auto_document_delivery_reject_browser_truncate() RETURNS trigger
+LANGUAGE plpgsql SET search_path = pg_catalog AS $$
 BEGIN
-  IF has_table_privilege('authenticated_workspace_aadkpkjef3slu',
-       'workspace_aadkpkjef3slu.action_attempt','TRUNCATE')
-      OR has_table_privilege('authenticated_workspace_aadkpkjef3slu',
-       'workspace_aadkpkjef3slu.dm_acquisition','TRUNCATE')
-      OR has_table_privilege('authenticated_workspace_aadkpkjef3slu',
-       'workspace_aadkpkjef3slu.dm_ingress_preflight','TRUNCATE') THEN
-    RAISE EXCEPTION 'DOCUMENT_DELIVERY_BROWSER_TRUNCATE_REMAINS'
+  IF current_user IN ('authenticated','authenticated_workspace_aadkpkjef3slu',
+      'anon','anon_workspace_aadkpkjef3slu') THEN
+    RAISE EXCEPTION 'DOCUMENT_DELIVERY_BROWSER_TRUNCATE_DENIED'
       USING ERRCODE='42501';
   END IF;
+  RETURN NULL;
 END;
 $$;
+CREATE TRIGGER action_attempt_delivery_no_browser_truncate
+BEFORE TRUNCATE ON action_attempt FOR EACH STATEMENT
+EXECUTE FUNCTION auto_document_delivery_reject_browser_truncate();
+CREATE TRIGGER dm_acquisition_delivery_no_browser_truncate
+BEFORE TRUNCATE ON dm_acquisition FOR EACH STATEMENT
+EXECUTE FUNCTION auto_document_delivery_reject_browser_truncate();
+CREATE TRIGGER dm_ingress_preflight_delivery_no_browser_truncate
+BEFORE TRUNCATE ON dm_ingress_preflight FOR EACH STATEMENT
+EXECUTE FUNCTION auto_document_delivery_reject_browser_truncate();
 CREATE POLICY action_attempt_delivery_no_native_insert ON action_attempt AS RESTRICTIVE
 FOR INSERT TO authenticated,authenticated_workspace_aadkpkjef3slu
 WITH CHECK (action_type <> 'DOCUMENT_DELIVERY_INTENT');
@@ -155,7 +157,6 @@ BEGIN
   RETURN NEW;
 END;
 $$;
-REVOKE ALL ON FUNCTION auto_document_delivery_register_upload() FROM PUBLIC;
 CREATE TRIGGER auto_document_delivery_register_upload
 AFTER INSERT OR UPDATE OF status,document_version_id ON dm_acquisition
 FOR EACH ROW EXECUTE FUNCTION auto_document_delivery_register_upload();
@@ -269,16 +270,17 @@ CREATE TRIGGER auto_document_delivery_preserve
 BEFORE UPDATE ON auto_document_delivery_authorization
 FOR EACH ROW EXECUTE FUNCTION auto_document_delivery_preserve();
 
+-- The platform grants broad table privileges by default. RLS, not table
+-- grants, is the effective row boundary: only the exact workspace service
+-- role may SELECT or advance its selected actor's WAITING row. Other roles
+-- remain denied even if platform defaults later add permissive policies.
 ALTER TABLE auto_document_delivery_authorization ENABLE ROW LEVEL SECURITY;
-REVOKE ALL ON auto_document_delivery_authorization FROM PUBLIC;
-REVOKE ALL ON auto_document_delivery_authorization FROM authenticated;
-REVOKE ALL ON auto_document_delivery_authorization
-  FROM authenticated_workspace_aadkpkjef3slu,service_role,
-    service_role_workspace_aadkpkjef3slu;
-GRANT SELECT ON auto_document_delivery_authorization
-  TO service_role_workspace_aadkpkjef3slu;
-GRANT UPDATE(status,admitted_at) ON auto_document_delivery_authorization
-  TO service_role_workspace_aadkpkjef3slu;
+CREATE POLICY auto_document_delivery_no_browser ON auto_document_delivery_authorization
+AS RESTRICTIVE FOR ALL TO authenticated,authenticated_workspace_aadkpkjef3slu,
+  anon,anon_workspace_aadkpkjef3slu USING (false) WITH CHECK (false);
+CREATE POLICY auto_document_delivery_no_generic_service
+ON auto_document_delivery_authorization
+AS RESTRICTIVE FOR ALL TO service_role USING (false) WITH CHECK (false);
 CREATE POLICY auto_document_delivery_service_read ON auto_document_delivery_authorization
 FOR SELECT TO service_role_workspace_aadkpkjef3slu USING (true);
 CREATE POLICY auto_document_delivery_service_admit ON auto_document_delivery_authorization
@@ -286,19 +288,26 @@ FOR UPDATE TO service_role_workspace_aadkpkjef3slu
 USING (status='WAITING' AND actor_user_id=current_setting('app.user_id',true))
 WITH CHECK (status='ADMITTED' AND actor_user_id=current_setting('app.user_id',true));
 
-DO $$
-DECLARE
-  role_name text;
+CREATE FUNCTION auto_document_delivery_reject_truncate() RETURNS trigger
+LANGUAGE plpgsql SET search_path = pg_catalog AS $$
 BEGIN
-  FOREACH role_name IN ARRAY ARRAY['authenticated',
-      'authenticated_workspace_aadkpkjef3slu'] LOOP
-    IF has_table_privilege(role_name,
-        'workspace_aadkpkjef3slu.auto_document_delivery_authorization',
-        'SELECT,INSERT,UPDATE,DELETE,TRUNCATE') THEN
-      RAISE EXCEPTION 'DOCUMENT_DELIVERY_BROWSER_AUTHORIZATION_PRIVILEGE_REMAINS'
-        USING ERRCODE='42501';
-    END IF;
-  END LOOP;
+  RAISE EXCEPTION 'DOCUMENT_DELIVERY_AUTHORIZATION_TRUNCATE_DENIED'
+    USING ERRCODE='42501';
+END;
+$$;
+CREATE TRIGGER auto_document_delivery_no_truncate
+BEFORE TRUNCATE ON auto_document_delivery_authorization FOR EACH STATEMENT
+EXECUTE FUNCTION auto_document_delivery_reject_truncate();
+
+DO $$
+BEGIN
+  IF NOT has_table_privilege('service_role_workspace_aadkpkjef3slu',
+       'workspace_aadkpkjef3slu.auto_document_delivery_authorization','SELECT')
+      OR NOT has_table_privilege('service_role_workspace_aadkpkjef3slu',
+       'workspace_aadkpkjef3slu.auto_document_delivery_authorization','UPDATE') THEN
+    RAISE EXCEPTION 'DOCUMENT_DELIVERY_SERVICE_DEFAULT_PRIVILEGE_MISSING'
+      USING ERRCODE='42501';
+  END IF;
 END;
 $$;
 
