@@ -296,8 +296,7 @@ export async function consumeAutomaticWorkItemQueueTick(options, dependencies) {
       if (previous || options.repairStoppedClaim ||
           typeof dependencies.consumeDocument !== 'function')
         throw new Error('AUTO_DOCUMENT_DISPATCH_INVALID');
-      if (next.documentAfterRef !== undefined)
-        await checkpoint.write('document-cursor', next.documentAfterRef);
+      await checkpoint.write('document-cursor', next.documentAfterRef);
       const result = await dependencies.consumeDocument(next.documentVersionId, next.deliveryRef);
       return { status: 'DOCUMENT_DISPATCHED',
         documentVersionId: next.documentVersionId, deliveryRef: next.deliveryRef, document: result };
@@ -560,14 +559,15 @@ function validateStoredAutoClaim(value) {
 function validateAutoClaimResult(value, now) {
   if (!isRecord(value)) throw new Error('AUTO_WORK_ITEM_CLAIM_RESPONSE_INVALID');
   if (value.status === 'DOCUMENT_PENDING') {
-    assertExactKeys(value, ['status', 'documentVersionId', 'deliveryRef'], ['documentAfterRef'],
+    assertExactKeys(value, ['status', 'documentVersionId', 'deliveryRef', 'documentAfterRef'], [],
       'AUTO_WORK_ITEM_CLAIM_RESPONSE');
     if (!/^[A-Za-z0-9][A-Za-z0-9_-]{0,95}$/u.test(value.documentVersionId))
       throw new Error('AUTO_WORK_ITEM_CLAIM_RESPONSE_INVALID');
     if (!/^(?:work-item:WI(?:-[A-Za-z0-9_-]{1,93})?|acquisition:[A-Za-z0-9_-]{1,96})$/u.test(value.deliveryRef))
       throw new Error('AUTO_WORK_ITEM_CLAIM_RESPONSE_INVALID');
-    if (value.documentAfterRef !== undefined &&
-        (!value.deliveryRef.startsWith('acquisition:') || value.documentAfterRef !== value.deliveryRef))
+    if (value.deliveryRef.startsWith('acquisition:')
+      ? value.documentAfterRef !== value.deliveryRef
+      : !/^attempt:[A-Za-z0-9_-]{1,96}$/u.test(value.documentAfterRef))
       throw new Error('AUTO_WORK_ITEM_CLAIM_RESPONSE_INVALID');
     return value;
   }

@@ -1,7 +1,10 @@
-# 0067 review draft: verified delivery writes
+# 0067 controlled rollout candidate: verified delivery writes
 
-Do not apply `0067_document_upload_delivery_authorization.sql` yet. This is a
-local candidate, not a production migration or an authorization change.
+The user authorized a staged dev-to-online application of
+`0067_document_upload_delivery_authorization.sql` on 2026-09-28, with a short
+pause of new 17b uploads and C136 during the change. This source commit does
+not apply the migration. Exact role/schema checks, controlled execution, and
+readback remain required before either environment is recorded as migrated.
 
 The exact-link trigger accepts a newly acquired copy of an existing immutable
 DocumentVersion. It compares the new acquisition's source ID and verified
@@ -37,11 +40,12 @@ same transaction. Other Catalog callers do not enter service SQL.
 The draft authorization table also has the platform's four `_created/_updated`
 audit columns. Its admission trigger maintains the update pair without adding
 those columns to the service role's UPDATE grant.
-For queued uploads, a running original remains `DOCUMENT_PENDING` so the
-consumer can advance its parse `STEP`. That response carries the exact
-acquisition cursor, which the consumer saves before work; the next tick scans
-later acquisitions and an empty tail page clears the cursor to revisit earlier
-work. A terminal parse needing human attention stays `WAITING`, is logged, and
+For queued WorkItems and uploads, a pending document remains
+`DOCUMENT_PENDING` so the consumer can advance its parse `STEP`. The Host
+returns the exact selected attempt or acquisition cursor, which the consumer
+validates and saves before work; the next tick scans later WorkItems and then
+uploads. An empty tail page clears the cursor to revisit earlier work. A
+terminal upload parse needing human attention stays `WAITING`, is logged, and
 is skipped for that discovery tick without being admitted.
 
 The upload, historical-confirmation, and historical-refresh HTTP entries now
@@ -60,9 +64,12 @@ automatically replayed.
   service roles without generic-role inheritance, giving the browser broad
   permissive policies and grants before applying 0067. PostgreSQL rejects
   browser terminal/preflight edits, delivery-intent INSERT, and TRUNCATE. The
-  target service role can read and admit only the selected actor's row; it
-  cannot INSERT, DELETE, or alter immutable columns. Generic roles and an
-  unrelated workspace service role cannot read authorization rows. The test
+  exact workspace service role can read all rows of the new authorization
+  table under its SELECT policy. The Host selector filters by verified tenant,
+  then binds each candidate to the exact source and actor before dispatch.
+  Admission UPDATE remains actor-scoped; the role cannot INSERT, DELETE, or
+  alter immutable columns. Generic roles and an unrelated workspace service
+  role cannot read authorization rows. The test
   also covers wrong-schema and PUBLIC TRUNCATE rejection, exact-link rollback,
   selected and `NONE` reserve rollback/success, source mismatch, and populated
   audit columns. The fixture is smaller than the application schema and does
@@ -88,7 +95,11 @@ automatically replayed.
   and repeated idempotency read reuse the same version and authorization;
   changing the choice under the same key is rejected. The isolated test uses
   the exact workspace service role; it does not prove hosted middleware
-  session behavior.
+  session behavior. On a separate isolated `wl_delivery_test_c197` PostgreSQL
+  database, the same Catalog suite passes four tests including selected uploads
+  from two tenants: the service role's direct SELECT sees both rows, each
+  tenant selector returns only its own candidate, and a wrong tenant or
+  cross-tenant cursor returns none.
 - Focused client and hosted-controller Jest suites passed locally: 2 suites,
   95 tests. They cover all three upload POSTs after a successful whoami read,
   both resolved and rejected HTTP 401 responses, retained platform identity,
@@ -113,8 +124,11 @@ automatically replayed.
   browser has broad grants and permissive policies on the source tables.
   This local 0067 checks the exact schema and two exact, non-superuser,
   non-BYPASSRLS roles before DDL. Only the target service role receives
-  authorization-table SELECT and UPDATE of `status` and `admitted_at`, with
-  actor RLS. PUBLIC, generic roles, and browser receive no table grant.
+  authorization-table SELECT across all rows and UPDATE of `status` and
+  `admitted_at` under actor-scoped UPDATE RLS. SELECT uses `USING (true)`;
+  tenant isolation during discovery comes from the Host selector and exact
+  source/actor authorization, not from SELECT RLS. PUBLIC, generic roles,
+  and browser receive no table grant.
 - Before applying 0067, review the installed grants/RLS and exercise the
   hosted middleware and real application schema. The local integration tests
   above use isolated databases and the exact hosted role but cannot establish

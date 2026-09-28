@@ -83,7 +83,7 @@ describe('AutomaticWorkItemDispatchService', () => {
       undefined, undefined, actorScope as never);
     await expect(service.nextWorkItem()).resolves.toEqual({
       status: 'DOCUMENT_PENDING', documentVersionId: DOCUMENT_VERSION_ID,
-      deliveryRef: `work-item:${WORK_ITEM_ID}`,
+      deliveryRef: `work-item:${WORK_ITEM_ID}`, documentAfterRef: 'attempt:ATT-01',
     });
     expect(scope.authorizeDocumentWork).toHaveBeenCalledWith({
       documentVersionId: DOCUMENT_VERSION_ID, deliveryRef: `work-item:${WORK_ITEM_ID}`,
@@ -117,7 +117,7 @@ describe('AutomaticWorkItemDispatchService', () => {
     await expect(service.nextWorkItem()).rejects.toThrow('ADMISSION_STORAGE_UNAVAILABLE');
     await expect(service.nextWorkItem()).resolves.toEqual({
       status: 'DOCUMENT_PENDING', documentVersionId: DOCUMENT_VERSION_ID,
-      deliveryRef: `work-item:${WORK_ITEM_ID}`,
+      deliveryRef: `work-item:${WORK_ITEM_ID}`, documentAfterRef: 'attempt:ATT-01',
     });
     expect(documentWork.prepareAutomaticWorkItemDelivery).toHaveBeenCalledTimes(2);
     expect(documentWork.prepareAutomaticWorkItemDelivery).toHaveBeenCalledWith({
@@ -151,7 +151,63 @@ describe('AutomaticWorkItemDispatchService', () => {
       sourceDouble() as never, scope as never, undefined, undefined,
       undefined, undefined, { withActorScope: jest.fn((_actor, operation) => operation()) } as never);
     await expect(service.nextWorkItem()).resolves.toEqual({ status: 'DOCUMENT_PENDING',
-      documentVersionId: 'DV-02', deliveryRef: 'work-item:WI-02' });
+      documentVersionId: 'DV-02', deliveryRef: 'work-item:WI-02',
+      documentAfterRef: 'attempt:ATT-02' });
+  });
+
+  it('rotates pending WorkItems through an upload and wraps after the tail', async () => {
+    const workItems = repositoryDouble([]);
+    const entries = [
+      { attemptId: 'ATT-01', workItemId: WORK_ITEM_ID,
+        documentVersionId: DOCUMENT_VERSION_ID, actorUserId: ACTOR_ID },
+      { attemptId: 'ATT-02', workItemId: 'WI-02',
+        documentVersionId: 'DV-02', actorUserId: ACTOR_ID },
+    ];
+    workItems.listDocumentDeliveryCandidates.mockImplementation(async ({ afterAttemptId }) =>
+      afterAttemptId ? entries.filter(item => item.attemptId > afterAttemptId) : entries);
+    workItems.readDocumentDeliveryIntents.mockImplementation(async ({ documentVersionId }) => [{
+      workItemId: documentVersionId === DOCUMENT_VERSION_ID ? WORK_ITEM_ID : 'WI-02',
+      actorUserId: ACTOR_ID, delivery: { reading: true, translation: 'NONE' },
+    }] as never);
+    workItems.documentDeliveryDispatchState.mockResolvedValue({ pending: true, missing: false });
+    const catalog = { listDocumentUploadDeliveryCandidates: jest.fn(async ({ afterAcquisitionId }) =>
+      afterAcquisitionId ? [] : [{ acquisitionId: 'ACQ-01', documentVersionId: 'DV-UPLOAD',
+        actorUserId: ACTOR_ID, status: 'WAITING' }]) };
+    const scope = {
+      authorizeOpenClawAutoWorkItemQueue: jest.fn().mockResolvedValue({
+        principalId: 'service:openclaw-main', appId: 'app_17bzc551rsg',
+        tenantId: TENANT_ID, authorizationFingerprint: `sha256:${'c'.repeat(64)}`,
+      }),
+      authorizeDocumentWork: jest.fn(async ({ documentVersionId }) => ({
+        principalId: 'service:openclaw-main', tenantId: TENANT_ID,
+        actorUserId: ACTOR_ID, documentVersionId,
+      })),
+    };
+    const documentWork = { prepareAutomaticUpload: jest.fn().mockResolvedValue({
+      status: 'ADMITTED', documentVersionId: 'DV-UPLOAD',
+    }) };
+    const service = new AutomaticWorkItemDispatchService(workItems as never,
+      sourceDouble() as never, scope as never, undefined, undefined,
+      undefined, undefined,
+      { withActorScope: jest.fn((_actor, operation) => operation()) } as never,
+      undefined, catalog as never, documentWork as never);
+    await expect(service.nextWorkItem()).resolves.toEqual({ status: 'DOCUMENT_PENDING',
+      documentVersionId: DOCUMENT_VERSION_ID, deliveryRef: `work-item:${WORK_ITEM_ID}`,
+      documentAfterRef: 'attempt:ATT-01' });
+    await expect(service.nextWorkItem({ documentAfterRef: 'attempt:ATT-01' }))
+      .resolves.toEqual({ status: 'DOCUMENT_PENDING', documentVersionId: 'DV-02',
+        deliveryRef: 'work-item:WI-02', documentAfterRef: 'attempt:ATT-02' });
+    await expect(service.nextWorkItem({ documentAfterRef: 'attempt:ATT-02' }))
+      .resolves.toEqual({ status: 'DOCUMENT_PENDING', documentVersionId: 'DV-UPLOAD',
+        deliveryRef: 'acquisition:ACQ-01', documentAfterRef: 'acquisition:ACQ-01' });
+    await expect(service.nextWorkItem({ documentAfterRef: 'acquisition:ACQ-01' }))
+      .resolves.toEqual({ status: 'IDLE' });
+    await expect(service.nextWorkItem()).resolves.toMatchObject({
+      status: 'DOCUMENT_PENDING', documentAfterRef: 'attempt:ATT-01' });
+    expect(workItems.listDocumentDeliveryCandidates.mock.calls.map(([input]) =>
+      input.afterAttemptId)).toEqual([undefined, 'ATT-01', 'ATT-02', undefined]);
+    expect(catalog.listDocumentUploadDeliveryCandidates.mock.calls.map(([input]) =>
+      input.afterAcquisitionId)).toEqual([undefined, 'ACQ-01']);
   });
 
   it('resumes a committed upload task before handing it to the document consumer', async () => {

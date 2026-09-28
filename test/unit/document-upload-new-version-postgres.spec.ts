@@ -14,6 +14,7 @@ describePg('0067 new-version Catalog transaction on isolated PostgreSQL', () => 
   let client: ReturnType<typeof postgres>;
   let catalog: MiaodaHostedDocumentCatalog;
   let sessions: { withVerifiedServiceSql: jest.Mock };
+  let expectedServiceActor = actorUserId;
 
   beforeAll(async () => {
     expect(new URL(databaseUrl!).pathname).toMatch(/^\/wl_delivery_test(?:_[a-z0-9_]+)?$/u);
@@ -83,9 +84,12 @@ describePg('0067 new-version Catalog transaction on isolated PostgreSQL', () => 
     await client.unsafe(await readFile(resolve('migrations/0067_document_upload_delivery_authorization.sql'), 'utf8'));
     for (const choice of [
       { suffix: 'selected', sha: 'a'.repeat(64), byteLength: 100,
-        delivery: { reading: true, translation: 'ZH_FULL' } },
+        actorUserId, tenantId, delivery: { reading: true, translation: 'ZH_FULL' } },
       { suffix: 'none', sha: 'b'.repeat(64), byteLength: 101,
-        delivery: { reading: false, translation: 'NONE' } },
+        actorUserId, tenantId, delivery: { reading: false, translation: 'NONE' } },
+      { suffix: 'other-tenant', sha: 'c'.repeat(64), byteLength: 102,
+        actorUserId: 'actor-other', tenantId: 't2',
+        delivery: { reading: true, translation: 'NONE' } },
     ]) {
       await client`INSERT INTO dm_source_artifact(source_artifact_id,sha256,byte_length,
         media_type,bucket_id,file_path,provider_object_id,provider_version_id,
@@ -98,10 +102,10 @@ describePg('0067 new-version Catalog transaction on isolated PostgreSQL', () => 
         provider_object_id,provider_version_id,acquired_by,acquired_at,
         idempotency_key,source_descriptor_json,status)
         VALUES (${`ACQ-${choice.suffix}`},${`SRC-${choice.suffix}`},
-          'document_library_upload',${`DOCUMENT_UPLOAD:${actorUserId}:${choice.suffix}`},
+          'document_library_upload',${`DOCUMENT_UPLOAD:${choice.actorUserId}:${choice.suffix}`},
           'bucket',${`/${choice.suffix}.pdf`},${`object-${choice.suffix}`},'v1',
-          ${actorUserId},CURRENT_TIMESTAMP,
-          ${`tenant:t1:request:document-upload:${actorUserId}:${choice.suffix}`},
+          ${choice.actorUserId},CURRENT_TIMESTAMP,
+          ${`tenant:${choice.tenantId}:request:document-upload:${choice.actorUserId}:${choice.suffix}`},
           ${JSON.stringify({ documentDeliveryIntent: choice.delivery })},
           'ACQUIRED_READBACK_VERIFIED')`;
       await client`INSERT INTO dm_ingress_preflight(preflight_id,acquisition_id,
@@ -122,7 +126,7 @@ describePg('0067 new-version Catalog transaction on isolated PostgreSQL', () => 
     await client`SELECT set_config('app.user_id',${actorUserId},false)`;
     sessions = {
       withVerifiedServiceSql: jest.fn((operation: () => Promise<unknown>, expectedActorId: string) => {
-        expect(expectedActorId).toBe(actorUserId);
+        expect(expectedActorId).toBe(expectedServiceActor);
         return operation();
       }),
     };
@@ -137,7 +141,10 @@ describePg('0067 new-version Catalog transaction on isolated PostgreSQL', () => 
   });
 
   function command(choice: { suffix: string; sha: string; byteLength: number;
+    actorUserId?: string; tenantId?: string;
     delivery: { reading: boolean; translation: 'ZH_FULL' | 'NONE' } }) {
+    const actor = choice.actorUserId ?? actorUserId;
+    const tenant = choice.tenantId ?? tenantId;
     const now = '2026-09-28T00:00:00.000Z';
     const familyId = `FAM-${choice.suffix}`;
     const documentVersionId = `DV-${choice.suffix}`;
@@ -149,13 +156,13 @@ describePg('0067 new-version Catalog transaction on isolated PostgreSQL', () => 
       preflightId, preflightDecision: 'INGEST_NEW_FAMILY',
       observedCurrentGeneration: 0, observedCurrentDocumentVersionId: null,
       uploadCommit: {
-        actorUserId, tenantId,
+        actorUserId: actor, tenantId: tenant,
         selection: { bucketId: 'bucket', filePath: `/${choice.suffix}.pdf` },
         sourceArtifactId, sha256: choice.sha, byteLength: choice.byteLength,
         decision: 'INGEST_NEW_FAMILY', documentDelivery: choice.delivery,
       },
       family: {
-        familyId, canonicalIdentityKey: `tenant:t1:family:${choice.suffix}`,
+        familyId, canonicalIdentityKey: `tenant:${tenant}:family:${choice.suffix}`,
         documentFamily: 'SB', issuerAuthority: 'BOEING',
         canonicalDocumentNumber: `DOC-${choice.suffix}`,
         status: 'ACTIVE', createdAt: now,
@@ -170,12 +177,12 @@ describePg('0067 new-version Catalog transaction on isolated PostgreSQL', () => 
         sourceGeneratedDate: '', originalFilename: `${choice.suffix}.pdf`,
         extractedMetadata: null, sourceArtifactId, acquisitionId,
         pdfSha256: choice.sha, byteLength: choice.byteLength,
-        mediaType: 'application/pdf', committedAt: now, committedBy: actorUserId,
+        mediaType: 'application/pdf', committedAt: now, committedBy: actor,
       },
       currentnessDecision: {
         currentnessDecisionId: `CD-${choice.suffix}`, familyId,
         reason: 'INGEST_NEW_FAMILY', decidedAt: now,
-        decidedBy: actorUserId, preflightId,
+        decidedBy: actor, preflightId,
       },
     };
   }
@@ -243,4 +250,30 @@ describePg('0067 new-version Catalog transaction on isolated PostgreSQL', () => 
       preflight_status: 'COMMITTED', commit_idempotency_key: `catalog:ACQ-${choice.suffix}`,
       acquisition_version: `DV-${choice.suffix}`, preflight_version: `DV-${choice.suffix}` });
   });
+  it('selects only the trusted tenant candidates despite service SELECT visibility', async () => {
+    const other = { suffix: 'other-tenant', sha: 'c'.repeat(64), byteLength: 102,
+      actorUserId: 'actor-other', tenantId: 't2',
+      delivery: { reading: true, translation: 'NONE' as const } };
+    expectedServiceActor = other.actorUserId;
+    await client`SELECT set_config('app.user_id',${other.actorUserId},false)`;
+    const committed = await catalog.commitNewVersion(command(other));
+    expect(committed.documentVersionId).toBe('DV-other-tenant');
+    const all = await client`SELECT acquisition_id,tenant_key,actor_user_id
+      FROM auto_document_delivery_authorization ORDER BY acquisition_id`;
+    expect(all).toEqual([
+      { acquisition_id: 'ACQ-other-tenant', tenant_key: 't2', actor_user_id: 'actor-other' },
+      { acquisition_id: 'ACQ-selected', tenant_key: 't1', actor_user_id: actorUserId },
+    ]);
+    expect(await catalog.listDocumentUploadDeliveryCandidates({ tenantId: 't1', limit: 10 }))
+      .toEqual([{ acquisitionId: 'ACQ-selected', documentVersionId: 'DV-selected',
+        actorUserId, status: 'WAITING' }]);
+    expect(await catalog.listDocumentUploadDeliveryCandidates({ tenantId: 't2', limit: 10 }))
+      .toEqual([{ acquisitionId: 'ACQ-other-tenant', documentVersionId: 'DV-other-tenant',
+        actorUserId: other.actorUserId, status: 'WAITING' }]);
+    expect(await catalog.listDocumentUploadDeliveryCandidates({ tenantId: 'wrong', limit: 10 }))
+      .toEqual([]);
+    expect(await catalog.listDocumentUploadDeliveryCandidates({ tenantId: 't1',
+      afterAcquisitionId: 'ACQ-other-tenant', limit: 10 })).toEqual([]);
+  });
+
 });

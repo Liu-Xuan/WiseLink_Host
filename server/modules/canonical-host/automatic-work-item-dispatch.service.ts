@@ -243,8 +243,9 @@ export class AutomaticWorkItemDispatchService {
         tenantId: scope.tenantId, afterAttemptId, limit: DOCUMENT_DISCOVERY_PAGE_SIZE });
     if (candidates.length && (!this.jobAidWork || !this.serviceScope.authorizeDocumentWork))
       throw new Error('AUTO_DOCUMENT_SCOPE_UNAVAILABLE');
-    for (const { workItemId, documentVersionId, actorUserId } of candidates) {
+    for (const { attemptId, workItemId, documentVersionId, actorUserId } of candidates) {
       const deliveryRef = `work-item:${workItemId}`;
+      const documentAfterRef = `attempt:${attemptId}`;
       const intent = await this.jobAidWork.withActorScope(actorUserId, async () =>
         (await this.workItems.readDocumentDeliveryIntents({
           tenantId: scope.tenantId, documentVersionId })).find((item) =>
@@ -278,7 +279,8 @@ export class AutomaticWorkItemDispatchService {
         }
         if (prepared.status === 'ORIGINAL_PREPARING') continue;
       }
-      return { status: 'DOCUMENT_PENDING', documentVersionId, deliveryRef };
+      return { status: 'DOCUMENT_PENDING', documentVersionId, deliveryRef,
+        documentAfterRef };
     }
     if (candidates.length === DOCUMENT_DISCOVERY_PAGE_SIZE)
       return { status: 'IDLE', documentAfterRef: `attempt:${candidates[candidates.length - 1].attemptId}` };

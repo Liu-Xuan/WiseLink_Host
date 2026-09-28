@@ -101,7 +101,7 @@ test('automatic queue dispatches an admitted document without inventing a WorkIt
     checkpoint,
     now: () => new Date(START),
     nextWorkItem: async () => ({ status: 'DOCUMENT_PENDING', documentVersionId: 'DV-document',
-      deliveryRef: 'work-item:WI-document' }),
+      deliveryRef: 'work-item:WI-document', documentAfterRef: 'attempt:ATT-document' }),
     acknowledgeWorkItem: async () => { throw new Error('UNEXPECTED_ACK'); },
     consumeWorkItem: async () => { throw new Error('UNEXPECTED_WORK_ITEM'); },
     readInitialStatus: async () => { throw new Error('UNEXPECTED_STATUS'); },
@@ -126,7 +126,7 @@ test('document discovery advances a bounded cursor across idle ticks', async () 
       return inputs.length === 1
         ? { status: 'IDLE', documentAfterRef: 'attempt:ATT-one' }
         : { status: 'DOCUMENT_PENDING', documentVersionId: 'DV-document',
-          deliveryRef: 'work-item:WI-document' };
+          deliveryRef: 'work-item:WI-document', documentAfterRef: 'attempt:ATT-document' };
     },
     acknowledgeWorkItem: async () => { throw new Error('UNEXPECTED_ACK'); },
     consumeWorkItem: async () => { throw new Error('UNEXPECTED_WORK_ITEM'); },
@@ -181,6 +181,85 @@ test('a preparing upload still gets STEP while its cursor rotates to later acqui
   assert.deepEqual(inputs, [undefined,
     { documentAfterRef: 'acquisition:ACQ-one' },
     { documentAfterRef: 'acquisition:ACQ-two' }, undefined]);
+});
+
+test('pending WorkItems persist attempt cursors before STEP, then reach uploads and wrap', async () => {
+  const checkpoint = memoryCheckpoint();
+  const inputs = [];
+  const steps = [];
+  const pending = [
+    { status: 'DOCUMENT_PENDING', documentVersionId: 'DV-one',
+      deliveryRef: 'work-item:WI-one', documentAfterRef: 'attempt:ATT-one' },
+    { status: 'DOCUMENT_PENDING', documentVersionId: 'DV-two',
+      deliveryRef: 'work-item:WI-two', documentAfterRef: 'attempt:ATT-two' },
+    { status: 'DOCUMENT_PENDING', documentVersionId: 'DV-upload',
+      deliveryRef: 'acquisition:ACQ-upload', documentAfterRef: 'acquisition:ACQ-upload' },
+  ];
+  const dependencies = {
+    checkpoint, now: () => new Date(START),
+    nextWorkItem: async input => {
+      inputs.push(input);
+      const after = input?.documentAfterRef;
+      if (after === 'attempt:ATT-one') return pending[1];
+      if (after === 'attempt:ATT-two') return pending[2];
+      if (after === 'acquisition:ACQ-upload') return { status: 'IDLE' };
+      return pending[0];
+    },
+    acknowledgeWorkItem: async () => assert.fail('document dispatch must not ACK a WorkItem'),
+    consumeWorkItem: async () => assert.fail('document dispatch must not claim a WorkItem'),
+    readInitialStatus: async () => assert.fail('document dispatch must not read initial status'),
+    consumeDocument: (documentVersionId, deliveryRef) => consumeHostedDocument(
+      { documentVersionId, deliveryRef }, { callTool: async (name, args) => {
+        assert.equal(name, 'document_work');
+        assert.equal(args.deliveryRef, deliveryRef);
+        if (args.action === 'STATUS') return { documentVersionId, runtimeAvailable: true,
+          latestRun: { documentVersionId, parseRunId: `PRUN-${documentVersionId}`,
+            status: 'RUNNING', deadlineAt: new Date(Date.now() + 60_000).toISOString() } };
+        assert.equal(args.action, 'STEP');
+        const expectedCursor = pending.find(item => item.deliveryRef === deliveryRef).documentAfterRef;
+        assert.equal(checkpoint.values.get('document-cursor'), expectedCursor,
+          'exact cursor is durable before document STEP');
+        steps.push(deliveryRef);
+        return { parseRunId: `PRUN-${documentVersionId}`, status: 'STAGING' };
+      } }),
+  };
+  for (let index = 0; index < 3; index++)
+    assert.equal((await consumeAutomaticWorkItemQueueTick({}, dependencies)).status,
+      'DOCUMENT_DISPATCHED');
+  assert.equal((await consumeAutomaticWorkItemQueueTick({}, dependencies)).status, 'IDLE');
+  assert.equal(checkpoint.values.get('document-cursor'), null);
+  assert.equal((await consumeAutomaticWorkItemQueueTick({}, dependencies)).status,
+    'DOCUMENT_DISPATCHED');
+  assert.deepEqual(steps, ['work-item:WI-one', 'work-item:WI-two',
+    'acquisition:ACQ-upload', 'work-item:WI-one']);
+  assert.deepEqual(inputs, [undefined, { documentAfterRef: 'attempt:ATT-one' },
+    { documentAfterRef: 'attempt:ATT-two' },
+    { documentAfterRef: 'acquisition:ACQ-upload' }, undefined]);
+});
+
+test('pending WorkItem rejects a cursor from another source kind before dispatch', async () => {
+  const checkpoint = memoryCheckpoint();
+  await assert.rejects(consumeAutomaticWorkItemQueueTick({}, {
+    checkpoint, now: () => new Date(START),
+    nextWorkItem: async () => ({ status: 'DOCUMENT_PENDING',
+      documentVersionId: 'DV-one', deliveryRef: 'work-item:WI-one',
+      documentAfterRef: 'acquisition:ACQ-other' }),
+    acknowledgeWorkItem: async () => assert.fail('invalid cursor must not acknowledge'),
+    consumeWorkItem: async () => assert.fail('invalid cursor must not consume WorkItem'),
+    readInitialStatus: async () => assert.fail('invalid cursor must not read status'),
+    consumeDocument: async () => assert.fail('invalid cursor must not dispatch'),
+  }), /AUTO_WORK_ITEM_CLAIM_RESPONSE_INVALID/u);
+  assert.equal(checkpoint.values.get('document-cursor'), undefined);
+  await assert.rejects(consumeAutomaticWorkItemQueueTick({}, {
+    checkpoint, now: () => new Date(START),
+    nextWorkItem: async () => ({ status: 'DOCUMENT_PENDING',
+      documentVersionId: 'DV-one', deliveryRef: 'work-item:WI-one' }),
+    acknowledgeWorkItem: async () => assert.fail('missing cursor must not acknowledge'),
+    consumeWorkItem: async () => assert.fail('missing cursor must not claim'),
+    readInitialStatus: async () => assert.fail('missing cursor must not read status'),
+    consumeDocument: async () => assert.fail('missing cursor must not dispatch'),
+  }), /AUTO_WORK_ITEM_CLAIM_RESPONSE_MISSING_FIELD/u);
+  assert.equal(checkpoint.values.get('document-cursor'), undefined);
 });
 
 test('document cursor must exactly bind to the pending acquisition', async () => {

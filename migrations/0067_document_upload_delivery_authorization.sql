@@ -1,5 +1,7 @@
--- REVIEW DRAFT: do not apply. The exact-link guard accepts the immutable
--- version's original acquisition while checking this acquisition's source
+-- CONTROLLED ROLLOUT CANDIDATE: user-authorized 2026-09-28 for staged
+-- dev-to-online migration, subject to pre-application checks. This source
+-- commit does not apply the migration. The exact-link guard accepts the
+-- immutable version's original acquisition while checking this acquisition's source
 -- bytes and READY preflight. The local server candidate has narrow verified
 -- service transactions. Hosted execution evidence is recorded in
 -- 0067_document_upload_delivery_authorization.review.md.
