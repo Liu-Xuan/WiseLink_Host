@@ -1,6 +1,6 @@
 # WiseLink R10 当前产品与技术规则
 
-**2026-09-28 当前 Goal 与执行范围：** [按入口完整交付，完成已知错误的全链更正](WISELINK_GOAL_20260928.md)为本阶段最新约束，替代此前 Goal 的实施优先级与验收口径。首批并行推进旧 787／737MAX 的受影响认识及下游更正、DocumentReading／Translation V2 的入口授权与受理接线；继承已发布的文档／事项／历史 Wiki 导航。以下历史恢复点、旧调度与旧解析配置仅供追溯，实时状态以 `docs/coordination/M_INTEGRATION.md` 顶部核对结果为准。正式换版全链等列为后续里程碑，不扩成本阶段前置。
+**2026-09-29 当前 Goal 与执行范围：** 采用[来源驱动设计](coordination/WL_SOURCE_DRIVEN_DESIGN_20260929.md)、[P0—P7 开发与验收计划](coordination/WL_SOURCE_DRIVEN_PLAN_20260929.md)及[配套 Goal](coordination/WL_SOURCE_DRIVEN_GOAL_20260929.md)，替代 9 月 28 日 Goal 的优先级和完成范围。指定工程云盘只读取得与手工上传进入统一受理；按实际身份、版本及用途复用阅读成果、开展初评或后继更新。保留已发布的 OpenClaw 翻译、MinerU、Review 与三类 Wiki 入口，独立推进已知错误更正。新设计要求的正式换版实证现列入本阶段验收。下文冲突的历史入口选择、固定逐文档授权及旧运行路线以该设计明确规则为准；实际部署和核验状态统一见 `docs/coordination/M_INTEGRATION.md`，设计中的旧基线不代表当前环境。
 
 **修订日期：2026-09-16（Asia/Shanghai）**
 **性质：现行设计修订稿，用于完整替换同名文件；不是运行报告，也不是云文档原样镜像。**
