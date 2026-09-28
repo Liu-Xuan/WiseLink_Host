@@ -426,6 +426,7 @@ export async function invokeHostedReviewModel(input, options = {}, dependencies 
   let round = 0;
   let candidateCorrections = 0;
   let incompleteResponseCorrections = 0;
+  let consecutiveCachedReads = 0;
   let inputUnits = 0;
   let outputUnits = 0;
   // All read/analysis rounds share the Host-scoped native session (or the
@@ -556,6 +557,7 @@ export async function invokeHostedReviewModel(input, options = {}, dependencies 
       continue;
     }
     if (toolCall.function.name === REVIEW_OUTPUT_FUNCTION_NAME) {
+      consecutiveCachedReads = 0;
       // M3 repeatedly emitted {item: [...]} for nested Matter arrays in the
       // native function channel. Transport the candidate as one JSON string;
       // never repair its content or skip the existing candidate validators.
@@ -687,6 +689,8 @@ export async function invokeHostedReviewModel(input, options = {}, dependencies 
               ? 'The JobAid working delta must use schemaVersion wiselink.jobaid-problem-work.v3 exactly. Return a complete new candidate with the same supported engineering correction and valid references; do not silently rewrite the rejected candidate or claim it was saved.'
               : isJobAid && errorCode === 'REVIEW_JOBAID_ISSUE_FULL_CONTENT_REQUIRED'
               ? 'For an existing issue, use jobAidWorkingDelta.issuePatches with its exact issueKey and only supported changed fields. Omitted fields retain the Host-frozen previousWork content. An explicit [] changes that collection and must be justified. List other prior issues in unchangedIssueKeys. A new issue requires a full entry in issues. Do not switch issueKey merely to pass validation.'
+              : isJobAid && /^JOBAID_(SEVERITY|LIKELIHOOD|IMPORTANT_EVENT|MEASURE|OTHER|REQUIREMENT)_BASIS_(INVALID|DUPLICATE|EMPTY)$/u.test(errorCode)
+              ? 'A professional record has invalid basisRefs. Supply a unique array of exact evidenceRef strings for that record, each supported by evidence delivered in this turn or retained work. Severity, likelihood, important event, measure and other classification records each require at least one basisRef; requirement handling may use an empty array. If the evidence is insufficient, revise the unsupported record honestly instead of inventing or copying a reference. The rejected candidate was not saved; submit a complete corrected candidate.'
               : isJobAid && errorCode?.startsWith('REVIEW_JOBAID_PATCH_')
               ? 'Use issuePatches only for existing issueKeys in previousIssueKeys, with one or more actual changed fields per patch. Do not also submit nonempty issues. Omitted fields preserve prior values; explicit [] changes a collection. New issues require complete entries in issues. Keep every other prior issue in unchangedIssueKeys.'
               : isJobAid
@@ -739,6 +743,14 @@ export async function invokeHostedReviewModel(input, options = {}, dependencies 
     }
     const callId = requiredText(toolCall.id, 'REVIEW_MODEL_TOOL_CALL_ID_REQUIRED');
     const unread = ids.filter((id) => !sourceCache.has(id));
+    if (unread.length === 0) {
+      consecutiveCachedReads += 1;
+      if (consecutiveCachedReads > 1) {
+        throw new Error('REVIEW_MODEL_SOURCE_READ_NO_PROGRESS');
+      }
+    } else {
+      consecutiveCachedReads = 0;
+    }
     if (unread.length > 0) {
       if (typeof options.readSourceRefs !== 'function') {
         throw new Error('REVIEW_MODEL_SOURCE_READER_REQUIRED');
@@ -758,7 +770,17 @@ export async function invokeHostedReviewModel(input, options = {}, dependencies 
       { role: 'assistant', content: null, tool_calls: [toolCall] },
       {
         role: 'tool', tool_call_id: callId,
-        content: canonicalJson({ sourceRefs: ids.map((id) => sourceCache.get(id)) }),
+        content: canonicalJson({ sourceRefs: ids.map((id) => sourceCache.get(id)),
+          ...(unread.length === 0 ? {
+            sourceReadCached: true,
+            instruction: [
+              'These exact source fragments were already read in this Review; this request added no evidence.',
+              `Use the returned fragments to call ${REVIEW_OUTPUT_FUNCTION_NAME} with a supported candidate,`,
+              `or call ${REVIEW_READ_FUNCTION_NAME} only for a different authorized source necessary to answer the engineer.`,
+              'Do not repeat a cached-only read or claim a candidate was saved.',
+            ].join(' '),
+          } : {}),
+        }),
       },
     ];
   }

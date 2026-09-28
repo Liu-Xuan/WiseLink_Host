@@ -1434,7 +1434,7 @@ test('requires 35 MCP capabilities, six review tools, and hosted provenance', ()
   assert.ok(HOST_MCP_TOOLS.includes('commit_applicability_candidate'));
   assert.equal(
     WISELINK_SKILL_VERSION,
-    'wiselink-research-and-synthesize@r09.c185',
+    'wiselink-research-and-synthesize@r09.c186',
   );
   assert.equal(
     WISELINK_SKILL_COMPATIBILITY_REF,
@@ -8046,6 +8046,120 @@ test('JobAid update first reads an authorized document before exposing the candi
   assert.equal(result.output.answer, '已核对原文并提议局部更正');
 });
 
+test('repeated Review source read reuses evidence and asks for a candidate or a new source', async () => {
+  const reads = [];
+  let requests = 0;
+  const result = await invokeReviewWithTransport({ input: {
+    availableSourceRefIds: ['page1', 'page2'], context: { purpose: 'UPDATE_ASSESSMENT',
+      problemAssessment: { availableSources: [{ kind: 'DOCUMENT_PASSAGE' }] } },
+  } }, {
+    gatewayUrl: 'https://official.invalid', gatewayToken: 'fixture-only',
+    configuredModelVersion: 'fixture/provider',
+    readSourceRefs: async (ids) => { reads.push(ids); return ids.map((sourceRefId) => ({
+      sourceRefId, evidenceRef: `source:${sourceRefId}`, excerpt: 'Fixture passage.',
+    })); },
+  }, { requestGateway: async (_url, init) => {
+    requests++;
+    const body = JSON.parse(init.body);
+    if (requests === 3) {
+      const feedback = JSON.parse(body.messages.at(-1).content);
+      assert.equal(feedback.sourceReadCached, true);
+      assert.deepEqual(feedback.sourceRefs, [{ sourceRefId: 'page1',
+        evidenceRef: 'source:page1', excerpt: 'Fixture passage.' }]);
+      assert.match(feedback.instruction, /already read in this Review/u);
+      assert.match(feedback.instruction, /return_wiselink_review_candidate/u);
+      assert.match(feedback.instruction, /different authorized source/u);
+    }
+    const name = requests < 3 ? 'read_wiselink_review_sources' : 'return_wiselink_review_candidate';
+    return Response.json({ choices: [{ message: { content: null, tool_calls: [{
+      id: `read-repeat-${requests}`, type: 'function', function: {
+        name, arguments: JSON.stringify(requests < 3 ? { sourceRefIds: ['page1'] } : {
+          answer: '根据已读片段提出候选。', sourceRefs: ['page1'],
+          jobAidWorkingDelta: { issues: [] },
+        }),
+      },
+    }] } }] });
+  } });
+  assert.equal(requests, 3);
+  assert.deepEqual(reads, [['page1']]);
+  assert.equal(result.output.answer, '根据已读片段提出候选。');
+});
+
+test('Review stops after a second consecutive cached-only source read', async () => {
+  let requests = 0;
+  let reads = 0;
+  let validations = 0;
+  await assert.rejects(invokeReviewWithTransport({ input: {
+    availableSourceRefIds: ['page1'], context: { purpose: 'UPDATE_ASSESSMENT',
+      problemAssessment: { availableSources: [{ kind: 'DOCUMENT_PASSAGE' }] } },
+  } }, {
+    gatewayUrl: 'https://official.invalid', gatewayToken: 'fixture-only',
+    configuredModelVersion: 'fixture/provider',
+    readSourceRefs: async (ids) => { reads++; return ids.map((sourceRefId) => ({
+      sourceRefId, evidenceRef: `source:${sourceRefId}`, excerpt: 'Fixture passage.',
+    })); },
+    validateCandidate: async () => { validations++; },
+  }, { requestGateway: async () => {
+    requests++;
+    return Response.json({ choices: [{ message: { content: null, tool_calls: [{
+      id: `stuck-read-${requests}`, type: 'function', function: {
+        name: 'read_wiselink_review_sources',
+        arguments: JSON.stringify({ sourceRefIds: ['page1'] }),
+      },
+    }] } }] });
+  } }), /REVIEW_MODEL_SOURCE_READ_NO_PROGRESS/u);
+  assert.equal(requests, 3);
+  assert.equal(reads, 1);
+  assert.equal(validations, 0);
+});
+
+test('a rejected candidate resets the consecutive cached-read limit', async () => {
+  let requests = 0;
+  let reads = 0;
+  let validations = 0;
+  const result = await invokeReviewWithTransport({ input: {
+    availableSourceRefIds: ['page1'], context: { purpose: 'UPDATE_ASSESSMENT',
+      problemAssessment: { availableSources: [{ kind: 'DOCUMENT_PASSAGE' }] } },
+  } }, {
+    gatewayUrl: 'https://official.invalid', gatewayToken: 'fixture-only',
+    configuredModelVersion: 'fixture/provider',
+    readSourceRefs: async (ids) => { reads++; return ids.map((sourceRefId) => ({
+      sourceRefId, evidenceRef: `source:${sourceRefId}`, excerpt: 'Fixture passage.',
+    })); },
+    validateCandidate: async () => {
+      validations++;
+      if (validations === 1) throw new Error('REVIEW_JOBAID_BODY_CITATIONS_REQUIRED');
+    },
+  }, { requestGateway: async (_url, init) => {
+    requests++;
+    const body = JSON.parse(init.body);
+    if (requests === 4) {
+      const feedback = JSON.parse(body.messages.at(-1).content);
+      assert.equal(feedback.candidateAccepted, false);
+      assert.equal(feedback.validationError, 'REVIEW_JOBAID_BODY_CITATIONS_REQUIRED');
+    }
+    if (requests === 5) {
+      const feedback = JSON.parse(body.messages.at(-1).content);
+      assert.equal(feedback.sourceReadCached, true);
+      assert.match(feedback.instruction, /return_wiselink_review_candidate/u);
+    }
+    const reading = [1, 2, 4].includes(requests);
+    return Response.json({ choices: [{ message: { content: null, tool_calls: [{
+      id: `candidate-between-reads-${requests}`, type: 'function', function: {
+        name: reading ? 'read_wiselink_review_sources' : 'return_wiselink_review_candidate',
+        arguments: JSON.stringify(reading ? { sourceRefIds: ['page1'] } : {
+          answer: requests === 3 ? '待修订候选' : '已修订候选', sourceRefs: ['page1'],
+          jobAidWorkingDelta: { issues: [] },
+        }),
+      },
+    }] } }] });
+  } });
+  assert.equal(requests, 5);
+  assert.equal(reads, 1);
+  assert.equal(validations, 2);
+  assert.equal(result.output.answer, '已修订候选');
+});
+
 test('JobAid omitted collections propose no entries while supplied malformed values remain rejected', async () => {
   const { task, candidate } = await emptyJobAidReviewFixture();
   for (const extra of [{}, { sourceRefs: [''] }, { missingInputs: [{}] },
@@ -8187,6 +8301,82 @@ test('JobAid invalid evidence feedback identifies every validated field without 
     assert.equal(error.invalidEvidenceRefs.length, 32);
     return true;
   });
+});
+
+test('JobAid basis refs follow Host nonempty and duplicate rules before commit', async () => {
+  const { task, candidate } = await emptyJobAidReviewFixture();
+  const evidence = { evidenceRef: 'method:scope', kind: 'METHOD_CLAUSE', title: '范围',
+    versionLabel: 'v1', excerpt: '核对措施依据', locator: null };
+  task.jobAidContext.sourceCatalog = [evidence];
+  task.jobAidContext.initiallyDeliveredRefs = [evidence.evidenceRef];
+  task.jobAidContext.modelInput.deliveredEvidence = [evidence];
+  const issue = { issueKey: 'one', question: '措施依据', body: '需复核。[[method:scope]]',
+    riskScenarios: [], measures: [{ text: '复核', addresses: '解决问题', limitations: [],
+      status: 'PROPOSED', basisRefs: ['method:scope'] }], otherClassifications: [],
+    openQuestions: [], requirementHandling: [{ methodRef: 'method:scope', requirement: '核对',
+      conditions: [], treatment: 'NOT_YET_ADDRESSED', basisRefs: [], explanation: '待核' }] };
+  const work = { schemaVersion: 'wiselink.jobaid-problem-work.v3', headline: '待核', listBrief: '措施依据',
+    completionReason: '待核', changeSummary: '新增措施', issues: [issue] };
+  const validate = () => validateReviewCandidate(task, { ...candidate, jobAidWorkingDelta: work });
+  assert.doesNotThrow(validate);
+  for (const [basis, code] of [
+    [[], 'JOBAID_MEASURE_BASIS_EMPTY'],
+    [undefined, 'JOBAID_MEASURE_BASIS_INVALID'],
+    [{ item: ['method:scope'] }, 'JOBAID_MEASURE_BASIS_INVALID'],
+    [['method:scope', ' method:scope '], 'JOBAID_MEASURE_BASIS_DUPLICATE'],
+  ]) {
+    issue.measures[0].basisRefs = basis;
+    assert.throws(validate, new RegExp(code, 'u'));
+  }
+  issue.measures[0].basisRefs = ['method:scope'];
+  issue.riskScenarios = [{ severity: { basisRefs: [] }, likelihood: null, importantEvent: null }];
+  assert.throws(validate, /JOBAID_SEVERITY_BASIS_EMPTY/u);
+  issue.riskScenarios = [];
+  issue.otherClassifications = [{ basisRefs: [] }];
+  assert.throws(validate, /JOBAID_OTHER_BASIS_EMPTY/u);
+  issue.otherClassifications = [];
+  issue.requirementHandling[0].basisRefs = null;
+  assert.throws(validate, /JOBAID_REQUIREMENT_BASIS_INVALID/u);
+});
+
+test('JobAid missing measure basis is returned to the model for a fresh candidate', async () => {
+  const { task, candidate } = await emptyJobAidReviewFixture();
+  task.context.purpose = 'UPDATE_ASSESSMENT';
+  const evidence = { evidenceRef: 'method:scope', kind: 'METHOD_CLAUSE', title: '范围',
+    versionLabel: 'v1', excerpt: '核对措施依据', locator: null };
+  task.jobAidContext.sourceCatalog = [evidence];
+  task.jobAidContext.initiallyDeliveredRefs = [evidence.evidenceRef];
+  task.jobAidContext.modelInput.deliveredEvidence = [evidence];
+  const issue = { issueKey: 'one', question: '措施依据', body: '需复核。[[method:scope]]',
+    riskScenarios: [], measures: [{ text: '复核', addresses: '解决问题', limitations: [],
+      status: 'PROPOSED', basisRefs: [] }], otherClassifications: [],
+    openQuestions: [], requirementHandling: [] };
+  const work = { schemaVersion: 'wiselink.jobaid-problem-work.v3', headline: '待核', listBrief: '措施依据',
+    completionReason: '待核', changeSummary: '新增措施', issues: [issue] };
+  let requests = 0;
+  const result = await invokeReviewWithTransport({ input: { context: task.context } }, {
+    gatewayUrl: 'https://official.invalid', gatewayToken: 'fixture-only', configuredModelVersion: 'fixture/provider',
+    validateCandidate: (value) => validateReviewCandidate(task, { ...candidate, ...value }),
+  }, { requestGateway: async (_url, init) => {
+    requests++;
+    if (requests === 2) {
+      const feedback = JSON.parse(JSON.parse(init.body).messages.at(-1).content);
+      assert.equal(feedback.candidateAccepted, false);
+      assert.equal(feedback.validationError, 'JOBAID_MEASURE_BASIS_EMPTY');
+      assert.match(feedback.instruction, /measure and other classification records each require at least one basisRef/u);
+      assert.deepEqual(work.issues[0].measures[0].basisRefs, []);
+    }
+    const authored = structuredClone(work);
+    if (requests === 2) authored.issues[0].measures[0].basisRefs = ['method:scope'];
+    return Response.json({ choices: [{ message: { content: null, tool_calls: [{
+      id: `measure-${requests}`, type: 'function', function: {
+        name: 'return_wiselink_review_candidate',
+        arguments: JSON.stringify({ answer: '措施依据待复核', jobAidWorkingDelta: authored }),
+      },
+    }] } }] });
+  } });
+  assert.equal(requests, 2);
+  assert.deepEqual(result.output.jobAidWorkingDelta.issues[0].measures[0].basisRefs, ['method:scope']);
 });
 
 test('JobAid reference rejection returns exact paths and requires a fresh validated candidate', async () => {
