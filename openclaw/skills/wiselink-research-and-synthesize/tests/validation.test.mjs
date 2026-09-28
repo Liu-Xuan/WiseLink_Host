@@ -1382,7 +1382,7 @@ test('requires 35 MCP capabilities, six review tools, and hosted provenance', ()
   assert.ok(HOST_MCP_TOOLS.includes('commit_applicability_candidate'));
   assert.equal(
     WISELINK_SKILL_VERSION,
-    'wiselink-research-and-synthesize@r09.c182',
+    'wiselink-research-and-synthesize@r09.c183',
   );
   assert.equal(
     WISELINK_SKILL_COMPATIBILITY_REF,
@@ -7406,7 +7406,9 @@ test('source-read JobAid Review makes one compact correction after a proven empt
     assert.match(correction, /"existing","other"/u);
     assert.match(correction, /"source:page1"/u);
     assert.match(correction, /unchangedIssueKeys/u);
-    assert.match(correction, /roundCompletion, completionReason/u);
+    assert.match(correction, /roundCompletion and completionReason/u);
+    assert.match(correction, /standalone engineering judgment/u);
+    assert.match(correction, /Revise or resolve questions now answered/u);
     assert.doesNotMatch(correction, /one complete, concise candidate/u);
     return Response.json({ choices: [{ message: { content: null, tool_calls: [{
       id: 'candidate3', type: 'function', function: {
@@ -7929,7 +7931,10 @@ test('JobAid update first reads an authorized document before exposing the candi
   assert.deepEqual(requests[0].tools.map((tool) => tool.function.name), ['read_wiselink_review_sources']);
   assert.equal(requests[0].tool_choice, 'required');
   assert.match(requests[0].messages[1].content, /First call read_wiselink_review_sources/u);
+  assert.match(requests[0].messages[1].content, /Correct an existing JobAid issue through issuePatches/u);
+  assert.doesNotMatch(requests[0].messages[1].content, /Every updated issue is a complete replacement/u);
   assert.equal(requests[1].tools[0].function.name, 'return_wiselink_review_candidate');
+  assert.equal(requests[1].tool_choice, 'required');
   assert.match(requests[1].messages[2].content, /Actual source/u);
   assert.equal(result.output.answer, '已核对原文并提议局部更正');
 });
