@@ -689,7 +689,7 @@ test('document quota failure has one Hosted successor with fenced blocks and ful
       }
       const batch = JSON.parse(Buffer.concat(parts).toString('utf8'));
       const execution = { modelRef: model.modelRef, modelVersion: `configured-route:${model.modelRef}`,
-        skillVersion: WISELINK_SKILL_VERSION, promptVersion: 'wiselink-translation-block@r09.c49',
+        skillVersion: WISELINK_SKILL_VERSION, promptVersion: 'wiselink-translation-block@r09.c202',
         providerRequestId: `synthetic-${index}`, generatedAt: null,
         usage: { inputTokens: 100, outputTokens: 30 } };
       if (batch.purpose === 'CHECK_BATCH') await command({ phase: 'CHECK_BATCH', generationRequestRef: batch.generationRequestRef,

@@ -1360,6 +1360,7 @@ function modelProvenance(
     Number(actual.skillVersion.split('.c').at(-1)) < 44 ||
     ![
       TRANSLATION_V2_PROMPT_VERSION,
+      'wiselink-translation-block@r09.c202',
       'wiselink-translation-block@r09.c48',
       'wiselink-translation-block@r09.c47',
       'wiselink-translation-block@r09.c46',
