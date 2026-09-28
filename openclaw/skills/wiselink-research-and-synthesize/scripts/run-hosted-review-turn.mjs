@@ -86,6 +86,7 @@ const JOBAID_OPTIONAL_COLLECTIONS = ['sourceRefs', 'missingInputs', 'candidateEv
 const JOBAID_ISSUE_FIELDS = Object.keys(JOBAID_WORK_UPDATE_SHAPE.properties.issues.items.properties);
 const JOBAID_REVIEW_WORK_SHAPE = {
   ...JOBAID_WORK_UPDATE_SHAPE,
+  required: ['schemaVersion', 'completionReason', 'changeSummary'],
   properties: {
     ...JOBAID_WORK_UPDATE_SHAPE.properties,
     // Review-only authoring form. The driver materializes existing issue
@@ -677,6 +678,10 @@ export async function invokeHostedReviewModel(input, options = {}, dependencies 
             ...(isJobAid && isAssessmentUpdate ? { previousIssueKeys: jobAidPreviousIssueKeys(input.input) } : {}),
             instruction: isChat
               ? 'Correct this discussion answer using the same question and actually read sources. Ordinary document SourceRefs belong only in sourceRefs. For ANSWER, SOURCE_LINK, CLARIFYING_QUESTION, INPUT_REQUEST or TASK_STATUS, candidateEvidenceRefs must be []; this field only accepts current attachmentRefs for CANDIDATE_EVIDENCE. Keep reviewActionDraft=null and affectedItemIds=[]; do not add a working delta or change the assessment. Return the complete corrected candidate through the declared output function, using candidateJson only when the Matter contract requires it. Never invent sources or claim that a rejected answer was saved.'
+              : isJobAid && errorCode === 'REVIEW_JOBAID_COMPLETIONREASON_REQUIRED'
+              ? 'Include a nonempty jobAidWorkingDelta.completionReason. If the completion scope is unchanged, copy the prior completion reason exactly from previousWork; if it changes, explain the new completion scope using the evidence. Keep the substantive correction and do not claim the rejected candidate was saved.'
+              : isJobAid && errorCode === 'REVIEW_JOBAID_CHANGESUMMARY_REQUIRED'
+              ? 'Include a nonempty jobAidWorkingDelta.changeSummary that states the concrete engineering judgment changed in this round. Do not use the issue body as a process log or invent a change; keep the supported issue correction and submit a complete new candidate.'
               : isJobAid && errorCode === 'REVIEW_JOBAID_SUBSTANTIVE_DELTA_REQUIRED'
               ? 'The proposed JobAid update changes no issue, reading summary, overview, review condition or input disposition. This requested assessment correction must revise the affected existing issues using actually read evidence, or accurately explain why the requested correction cannot be made; do not claim an unchanged delta was saved. Keep unrelated issues unchanged and preserve the prior completion scope and open questions.'
               : isJobAid && errorCode === 'REVIEW_JOBAID_OPEN_QUESTIONS_REQUIRE_QUALIFIED_COMPLETION'
@@ -2106,6 +2111,7 @@ function jobAidReviewGuidance() {
     'Read relevant DOCUMENT_PASSAGE and ENGINEER_ATTACHMENT resources through the current source-read function. The catalog is not a read receipt. Previously saved sources freshly supplied in deliveredEvidence may support retained work; new citations require actual current delivery. Keep sourceRefs limited to resources read this turn; method evidence remains METHOD_CLAUSE in the working update and never pretends to be a document SourceRef. ENGINEER_ATTACHMENT proves only what the uploaded material reports, not implemented controls or controlled Host facts.',
     JOBAID_WORK_GUIDANCE,
     'Review-only authoring form: for an existing issue correction, use issuePatches with its exact prior issueKey and only fields that truly change. The driver copies omitted fields from Host-frozen previousWork before the complete Host save; an explicit empty array changes and clears that collection. Do not restate old riskScenarios, measures, openQuestions or requirementHandling merely to preserve them. Do not include nonempty issues together with issuePatches. For a distinct new issue, use a complete entry in issues. Every revised body must be a standalone engineering judgment with a supporting inline [[evidenceRef]]; put the process or change summary in answer or changeSummary. Revise affected openQuestions when actually read evidence answers them, even if roundCompletion stays the same; preserve unresolved questions.',
+    'For every non-null jobAidWorkingDelta include the exact schemaVersion and nonempty completionReason and changeSummary. Preserve the previous completionReason when the completion scope is unchanged; describe the actual correction in changeSummary. These fields are required even when issuePatches contain the only substantive change.',
   ];
 }
 
