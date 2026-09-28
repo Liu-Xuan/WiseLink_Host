@@ -1,5 +1,26 @@
 # M 主控集成交接
 
+## 2026-09-28：采用新版 Goal，收敛入口交付与已知错误全链更正
+
+已逐字读取用户文件 `/Users/liuxuan/Downloads/WiseLink_Goal_20260928.md`，原文归档至 `docs/WISELINK_GOAL_20260928.md`，现行规则、执行计划和整合表均指向该最新约束。Goal 工具本次实际返回 `goal:null`（与早先 paused 快照不同）；已按用户明确的新 Goal 请求创建 active 目标，未设置 token 预算。此动作不启停 C136、worker 或其他生产任务。本次本地基线 `11e43ddaf`，继承最新 Wiki 发布 `7690422229750222003` / `a2268395b` 的上一轮本人验证；本轮再次读取该 release 为 finished、commit_id 为 `a2268395ba123203543d4ece496007d37ee69de2`。本机 LaunchAgent 已登记，累计 197 次运行、末次退出 0，读取时未在执行；stdout 最近五条为 IDLE，stderr 尾部仍有 `LOCAL_MINERU_TRANSPORT_UNAVAILABLE`，无时间戳的尾部记录不能判定本次或持续故障。17c Skill/C136 尚待下一次运行前只读核对；不以这些空闲记录声称业务稳定。
+
+首批分工：Astra medium 定向核对旧 787／737MAX 的新解析/语义与后继 Review→Overall 持久接续合同；另一 Astra medium 核对两种入口、文档级授权、READING_BEGIN 与 Translation V2 的受理/派发。此两项当前只读，不竞争同一工作修订。主控负责统一方案和共享接口集成，确定范围后由 Sol high 编码，Luna max 承担测试与运行验证。已知旧错误、缺失解读/翻译、有限多来源与有界自然恢复七类验收均保持未完成，不以新增 ACK 或本次 Goal 建档替代。
+
+实施前固定最小样本组：复用旧 787 与 737MAX 做更正；两种入口各一个有区分度的受理验证，可复用已有合法版本以避免无关重传；有限多源材料须先核对真实用途及取得条件。自然观察窗口须在任务能实际受理后以明确起止时段登记，覆盖空闲到有任务及一次必要恢复，未开始观察不宣称稳定性。此前 HTTP400 补答上下文外发的自动审批拒绝仍是独立边界，本次 Goal 不能被当作自动新增授权；如实际需要，先整理确切载荷、目的地和可审阅实现范围。
+
+### 新 Goal 首批定向核对结论（只读，不是已实施）
+
+| 工作线 | 已确认合同 | 下一最小增量及边界 |
+| --- | --- | --- |
+| 旧 787 正确依据 | `DocumentParsingHostedService.start/executeStep` 的 `LOCAL_MINERU_IMPORT` 可验证同源候选并经 C194 重新合成新 parseRevision；旧解析不覆盖。普通 start 默认 worker，不自动复用旧候选。 | 先定位完整候选并核对实际新解析/语义，再串行提交新 Review。没有独立公开“重建语义”入口，不以改语义替代原文标题修复。 |
+| 后继工作及 Overall | 新 Review 的 buildInput 从同 tenant/DV 的最高 PUBLISHED parse 构建并封存任务；已有 attempt 不改绑。整个评估范围可更新工作级字段，`overallRequested` 已持久化，APPLIED workRef 可由现有 `OVERALL_PENDING` 恢复发现。 | 不扩大 Turn13；用新的整体更正范围修实际影响并请求 Overall。先发布/核对解析，再创建 Review 并核对封存绑定；不声称 Turn 创建时固定了不存在的 expectedParseRunId。 |
+| 737MAX | 可沿同一整体 Review→Overall 路径修正无据风险及短述；无需默认重解析。 | 先按确切原件核对关键事实与推断边界，再建立合法后继请求；保留有依据风险，不全部删成待核。 |
+| 阅读／翻译受理 | 两上传 UI 当前都无交付选项；READING_BEGIN 与 Translation V2 已有实现。固定 DV allowlist 尚无动态文档委托；这不等于已观察到本批生产403。C136 auto-queue 无文档分支，独立 document 消费器也不自行BEGIN。 | 首批设计现有请求的显式交付选择及可恢复持久意图；仅上传默认只登记，历史缺字段不自动补授权；先列具体代码/权限范围再实施，不把Goal自动视为扩大服务权限的授权。 |
+| 自动派发与策略 | 可复用现有 next 接口和 document executor；现有独立 document 分支会在原文发布后自动 START 翻译。 | 必须改成按持久选择运行，不新增第二消费者。动态操作仅限已选 parsing/index/reading/translation，不扩 activity、retract、换版或任意DV。是否需要新增窄用途请求存储由现有receipt合同核对后决定。 |
+| 页面状态 | 无translation execution时现页仍提示等待，缺少请求事实支持。 | 先修“未请求/未受理”与真实排队差异，GET不得创建任务；有run/workspace后才能投影执行和覆盖。 |
+
+此轮没有提交新 Review、重解析、模型请求、权限变更或消费器发布。首批实现与受控验证继续按以上顺序推进；中文初案为显式选择、不追认旧请求默认，具体入口交付语义及动态委托范围在实现前形成可审阅说明。
+
 ## 2026-09-28：工程知识改为文档／事项 Wiki 入口（已发布并本人读回）
 
 用户指出工程知识首页应按工程文档和事项组织。本人页面核对确认 `/knowledge` 原先默认列出 12 条当前工作，混合 Matter 和 WorkItem，以模型工作 headline 为目录标题，包含“依据本轮页 1/2 证据定向修订”等过程文字；这属于目录组织问题，不能通过删除测试数据或重生成工程结论代替修复。本批接续 `e9b0ff874`，最新线上发布仍为 `7690404159778196455` / `f65384a8`。

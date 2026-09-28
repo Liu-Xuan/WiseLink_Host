@@ -1,5 +1,7 @@
 # WiseLink R10 当前执行计划
 
+**2026-09-28 当前 Goal 与执行范围：** [按入口完整交付，完成已知错误的全链更正](WISELINK_GOAL_20260928.md)为本阶段最新约束，替代此前 Goal 的实施优先级与验收口径。首批并行推进旧 787／737MAX 的受影响认识及下游更正、DocumentReading／Translation V2 的入口授权与受理接线；继承已发布的文档／事项／历史 Wiki 导航。以下历史恢复点、旧调度与旧解析配置仅供追溯，实时状态以 `docs/coordination/M_INTEGRATION.md` 顶部核对结果为准。正式换版全链等列为后续里程碑，不扩成本阶段前置。
+
 **修订日期：2026-09-16（Asia/Shanghai）**
 **性质：替换原同名文件的完整现行计划，不是本轮实施或发布回执。**
 **产品依据：[当前产品与技术规则](WISELINK_R10_CURRENT.md)｜[修订与交接说明](WISELINK_R10_REVISION_NOTES_20260916.md)**
