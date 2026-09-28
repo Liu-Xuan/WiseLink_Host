@@ -54,7 +54,8 @@ export async function invokeHostedTranslationBlock(modelInput, options, dependen
   assertHostedModelGatewayReady(options);
   if (options.agentId !== undefined && options.agentId !== WISELINK_PROFILE_REF) throw new Error('TRANSLATION_PROFILE_MISMATCH');
   if (!options.executionModel || typeof options.gatewayToken !== 'string' || !options.gatewayToken.trim()) throw new Error('TRANSLATION_RUNTIME_BINDING_REQUIRED');
-  const maxCompletionTokens = options.executionModel.modelRef === 'miaoda/minimax-m3' ? M3_MAX_COMPLETION_TOKENS : undefined;
+  const maxCompletionTokens = options.executionModel.modelRef === 'miaoda/minimax-m3' ? M3_MAX_COMPLETION_TOKENS
+    : options.executionModel.modelRef === 'm3probe/minimax-m3' ? 32_768 : undefined;
   const semanticCheck = ['CHECK', 'CHECK_BATCH'].includes(modelInput.purpose);
   let modelView;
   try { modelView = buildTranslationModelView(modelInput); }
@@ -128,8 +129,9 @@ export async function invokeHostedTranslationBlock(modelInput, options, dependen
   try {
     if (shape.hasAnalysis || !Array.isArray(payload.choices) || payload.choices.length !== 1) throw new Error('TRANSLATION_OUTPUT_CHANNEL_INVALID');
     const choice = payload.choices[0];
+    if (choice.finish_reason === 'length') throw new Error('TRANSLATION_OUTPUT_TRUNCATED');
     const message = choice?.message;
-    if (!message || !isFunctionResponseContentSupported(message.content) || !Array.isArray(message.tool_calls) || message.tool_calls.length !== 1)
+    if (!message || !translationContentSupported(message.content) || !Array.isArray(message.tool_calls) || message.tool_calls.length !== 1)
       throw new Error('TRANSLATION_OUTPUT_CHANNEL_INVALID');
     const call = message.tool_calls[0];
     if (call?.type !== 'function' || call.function?.name !== OUTPUT_FUNCTION) throw new Error('TRANSLATION_OUTPUT_FUNCTION_INVALID');
@@ -158,6 +160,15 @@ export async function invokeHostedTranslationBlock(modelInput, options, dependen
     }, 2);
     throw translationFailure(boundedCode(cause?.message) ?? 'TRANSLATION_OUTPUT_CONTRACT_INVALID', 'OUTPUT_CONTRACT', 'KNOWN_FAILURE', false, cause);
   }
+}
+
+function translationContentSupported(value) {
+  if (isFunctionResponseContentSupported(value)) return true;
+  // Some native completions wrap harmless assistant text in content blocks.
+  // Only the separate exact tool arguments are parsed or persisted.
+  return Array.isArray(value) && value.every((block) => record(block) &&
+    Object.keys(block).every((key) => ['type', 'text'].includes(key)) &&
+    block.type === 'text' && typeof block.text === 'string');
 }
 
 function parseTranslationJsonObject(value, path) {

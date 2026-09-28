@@ -1,6 +1,7 @@
 import { Inject, Injectable } from '@nestjs/common';
 import { z } from 'zod/v4';
 import type { CanonicalWorkItemProjection } from '@shared/api.interface';
+import type { CanonicalExecutionModelSelection } from '@shared/api.interface';
 import type {
   BilingualTranslationArtifactV2,
   TranslationBlockRevisionV2,
@@ -14,6 +15,7 @@ import {
 } from '../action-attempt/action-attempt-envelope';
 import { ActionAttemptLifecycleService } from '../action-attempt/action-attempt-lifecycle.service';
 import type { OpenClawTaskEnvelope } from '../action-attempt/action-attempt-envelope.types';
+import type { DocumentTranslationTaskEnvelope } from '../action-attempt/document-translation-task-envelope';
 import { parseExecutionModel } from '../model-settings/canonical-execution-model';
 import { UNIFIED_ARTIFACT_STORE } from '../unified-reader/unified-reader.constants';
 import { UnifiedReaderService } from '../unified-reader/unified-reader.service';
@@ -272,8 +274,52 @@ export class CanonicalTranslationV2Service {
   /** One existing authenticated MCP boundary; the Host chooses scope and checks. */
   async execute(raw: WorkspaceCommand) {
     const input = translationWorkspaceCommandSchemaV2.parse(raw);
-    const { fence, task, actorUserId, executionModel } =
-      await this.scope(input);
+    return this.executeScoped(input, await this.scope(input));
+  }
+
+  async executeDocument(raw: unknown, fence: TranslationWorkspaceFence, actorUserId: string,
+    assertAuthorized: () => Promise<void>, task: DocumentTranslationTaskEnvelope,
+    executionModel: CanonicalExecutionModelSelection) {
+    const input = translationWorkspaceCommandSchemaV2.parse(raw);
+    if (input.attemptRef !== fence.attemptRef || input.leaseToken !== fence.leaseToken ||
+        input.leaseGeneration !== fence.leaseGeneration || task.workspaceId !== fence.workspaceId ||
+        task.modelInput.documentProducer !== 'HOSTED_M3' || executionModel.modelRef !== 'm3probe/minimax-m3')
+      throw new Error('DOCUMENT_TRANSLATION_WORKSPACE_SCOPE_INVALID');
+    await assertAuthorized();
+    await this.workspaces.attachAttempt(fence);
+    const result = await this.executeScoped(input, { fence, task, actorUserId, executionModel });
+    await assertAuthorized();
+    return result;
+  }
+
+  async assembleDocument(fence: TranslationWorkspaceFence, assertAuthorized: () => Promise<void>) {
+    await assertAuthorized();
+    await this.workspaces.attachAttempt(fence);
+    const { workspace, revisions } = await this.workspaces.readSnapshot(fence);
+    return this.assembleSavedState(fence, { workspace,
+      reading: buildTranslationWorkspaceReadingV2(workspace, revisions) }, assertAuthorized);
+  }
+
+  async documentHasInterruptedGeneration(fence: TranslationWorkspaceFence, attemptId: string): Promise<boolean> {
+    const { workspace } = await this.workspaces.readSnapshot(fence);
+    return workspace.generationRequests.some(request => request.attemptId === attemptId &&
+      request.status === 'REGISTERED' && request.leaseGeneration !== fence.leaseGeneration);
+  }
+
+  async readDocumentProgress(scope: { tenantId: string; workItemId: string | null;
+    documentVersionId?: string; workspaceId: string }) {
+    if (scope.workItemId !== null || !scope.documentVersionId)
+      throw new Error('DOCUMENT_TRANSLATION_PROGRESS_SCOPE_INVALID');
+    const { workspace, revisions } = await this.workspaces.readSnapshot(scope);
+    const reading = buildTranslationWorkspaceReadingV2(workspace, revisions);
+    return { completeness: reading.completeness, coverage: reading.coverage };
+  }
+
+  private async executeScoped(input: WorkspaceCommand, scoped: {
+    fence: TranslationWorkspaceFence; task: OpenClawTaskEnvelope | DocumentTranslationTaskEnvelope;
+    actorUserId: string; executionModel: CanonicalExecutionModelSelection;
+  }) {
+    const { fence, task, actorUserId, executionModel } = scoped;
     if (input.phase !== 'READ') await this.workspaces.attachAttempt(fence);
     const load = async () => {
       const { workspace, revisions } =
@@ -290,7 +336,7 @@ export class CanonicalTranslationV2Service {
         .array(id)
         .max(64)
         .optional()
-        .parse(task.modelInput.retranslateBlockIds) ?? [];
+        .parse('retranslateBlockIds' in task.modelInput ? task.modelInput.retranslateBlockIds : undefined) ?? [];
     const nextWork = () =>
       nextTranslationWorkV2(
         state.workspace,
@@ -303,7 +349,13 @@ export class CanonicalTranslationV2Service {
             input.phase === 'NEXT' && input.batchSemanticChecks === true,
         },
       );
-    if (input.phase === 'READ') return summary(state.reading);
+    if (input.phase === 'READ') return { ...summary(state.reading),
+      generationRequestCount: state.workspace.generationRequests.length,
+      retryableFailureCount: state.workspace.generationRequests.filter(request =>
+        request.status === 'FAILED' && request.error?.retryable).length,
+      terminalFailureCode: state.workspace.generationRequests.find(request =>
+        request.status === 'FAILED' && request.error?.outcome === 'KNOWN_FAILURE' &&
+        !request.error.retryable && request.error.code !== 'TRANSLATION_BATCH_PREFIX_ONLY')?.error?.code ?? null };
     if (input.phase === 'RECORD_FAILURE')
       return this.workspaces.recordGenerationFailure({
         ...fence,

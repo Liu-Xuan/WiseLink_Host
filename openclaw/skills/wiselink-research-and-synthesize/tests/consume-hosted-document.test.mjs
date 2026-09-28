@@ -36,12 +36,13 @@ test('published original advances independent translation once and completed tra
       if (name === 'document_work') return args.action === 'INDEX' ? {
         documentVersionId: 'DV-test', parseRunId: 'PRUN-test', status: 'INDEXED',
       } : current;
-      return args.action === 'STATUS' ? translation : { ...translation, status: 'RUNNING' };
+      return args.action === 'STATUS' ? translation : args.action === 'CLAIM'
+        ? { ...translation, status: 'BUSY' } : { ...translation, status: 'RUNNING' };
     } });
     assert.equal(calls.filter(([name]) => name === 'document_work').length, 2);
     assert.deepEqual(calls.filter(([name]) => name === 'document_translation').map(([,args]) => args.action), status === 'IDLE' ? ['STATUS','START'] :
-      status === 'RUNNING' ? ['STATUS','STEP'] : ['STATUS']);
-    assert.equal(result.status, status === 'SUCCEEDED' ? 'DOCUMENT_READY' : status === 'FAILED' ? 'REQUIRES_ATTENTION' : 'RUNNING');
+      status === 'RUNNING' ? ['STATUS','CLAIM'] : ['STATUS']);
+    assert.equal(result.status, status === 'SUCCEEDED' ? 'DOCUMENT_READY' : status === 'FAILED' ? 'REQUIRES_ATTENTION' : status === 'RUNNING' ? 'BUSY' : 'RUNNING');
   }
 });
 test('selected reading without translation never starts Chinese generation', async () => {
@@ -235,9 +236,10 @@ test('failed current preparation prevents START while status and cancelled trans
       if (name === 'document_work' && args.action === 'STATUS') return current;
       if (name === 'document_work') throw new Error('PREPARATION_UNAVAILABLE');
       actions.push(args.action);
-      return { documentVersionId: 'DV-test', parseRunId: 'PRUN-test', attemptRef: 'DTQ', status };
+      return { documentVersionId: 'DV-test', parseRunId: 'PRUN-test', attemptRef: 'DTQ',
+        status: args.action === 'CLAIM' ? 'BUSY' : status };
     } });
-    assert.deepEqual(actions, status === 'RUNNING' ? ['STATUS','STEP'] : status === 'IDLE' ? ['STATUS','STATUS'] : ['STATUS']);
+    assert.deepEqual(actions, status === 'RUNNING' ? ['STATUS','CLAIM'] : status === 'IDLE' ? ['STATUS','STATUS'] : ['STATUS']);
     assert.equal(result.status, 'REQUIRES_ATTENTION');
     assert.equal(result.sourceProjection.status, 'FAILED');
     if (status === 'IDLE') assert.equal(result.semanticPreparation.status, 'FAILED');

@@ -23,6 +23,10 @@ const { CanonicalHostOpenClawTranslationService } = require('../../server/module
 const { fixedModelSettings } = require('../support/fixed-model-settings.ts');
 const { ACTION_ATTEMPT_REQUEST_ORIGIN } = require('../../server/modules/action-attempt/action-attempt.types.ts');
 const { CanonicalTranslationV2Service } = require('../../server/modules/canonical-host/canonical-translation-v2.service.ts');
+const { DocumentTranslationAttemptRepository } = require('../../server/modules/action-attempt/document-translation-attempt.repository.ts');
+const { MiaodaWorkItemRepository } = require('../../server/modules/work-item/miaoda-work-item.repository.ts');
+const { sealDocumentTranslationTaskEnvelope } = require('../../server/modules/action-attempt/document-translation-task-envelope.ts');
+const { taskModelSelection } = require('../../server/modules/model-settings/canonical-model-catalog.ts');
 const { buildTranslationSourcePlan } = require('../../server/modules/canonical-host/canonical-translation-source-plan.ts');
 const { translationBatchDependenciesV2 } = require('../../server/modules/canonical-host/canonical-translation-v2-batch.ts');
 const { checkTranslationBlockV2, buildTranslationWorkspaceReadingV2 } = require('../../server/modules/canonical-host/canonical-translation-v2-quality.ts');
@@ -577,6 +581,162 @@ test('real PostgreSQL translation work survives bounded requests and enforces sc
   } finally { await sql.end({ timeout: 5 }); }
 });
 
+test('document quota failure has one Hosted successor with fenced blocks and full assembly',
+  { skip: !databaseUrl, concurrency: false }, async () => {
+  const url = new URL(databaseUrl);
+  assert.equal(url.hostname, '127.0.0.1');
+  const sql = postgres(databaseUrl, { max: 1, onnotice() {} });
+  try {
+    await reset(sql);
+    await sql.unsafe(`DROP FUNCTION IF EXISTS action_attempt_check_document_original() CASCADE;
+      DROP FUNCTION IF EXISTS action_attempt_preserve_document_subject() CASCADE;
+      DROP FUNCTION IF EXISTS document_translation_attempt_owned(varchar,varchar,varchar,varchar,integer) CASCADE;
+      ALTER TABLE action_attempt ADD CONSTRAINT ck_action_attempt_subject CHECK (true);
+      CREATE TABLE IF NOT EXISTS engineering_matter (tenant_id varchar, matter_id varchar, current_matter_revision_id varchar);
+      CREATE OR REPLACE FUNCTION engineering_matter_owned_by_actor(t varchar, m varchar) RETURNS boolean LANGUAGE sql STABLE AS $$ SELECT false $$;
+      CREATE OR REPLACE FUNCTION engineering_matter_all_links_owned_by_actor(t varchar, m varchar) RETURNS boolean LANGUAGE sql STABLE AS $$ SELECT false $$;
+      CREATE POLICY action_attempt_matter_subject_boundary ON action_attempt AS RESTRICTIVE FOR ALL TO PUBLIC USING (true);`);
+    await sql.unsafe(await readFile(new URL('../../migrations/0048_document_translation_attempt_subject.sql', import.meta.url), 'utf8'));
+    await sql.unsafe(await readFile(new URL('../../migrations/0052_document_subject_explicit_platform_roles.sql', import.meta.url), 'utf8'));
+    await sql.unsafe(await readFile(new URL('../../migrations/0069_document_translation_hosted_model.sql', import.meta.url), 'utf8'));
+    await sql.unsafe(`CREATE TABLE dm_document_reading_run (tenant_id text, actor_user_id text,
+      document_version_id text, request_id text, status text, deadline_at timestamptz,
+      lease_expires_at timestamptz);
+      GRANT SELECT ON dm_document_reading_run TO service_role;`);
+    const plan = fixturePlan();
+    plan.source.packageId = 'parse-document-hosted';
+    plan.source.parsedArtifact.ref = 'document-original://dv-test/parse-document-hosted';
+    plan.source.originalBinding = { documentVersionId: 'dv-test', parseRunId: 'parse-document-hosted',
+      parseRevision: 1, sourceArtifactId: 'pdf-test', sourceSha256: 'a'.repeat(64), sourceByteLength: 123 };
+    const sourceBinding = { documentVersionId: 'dv-test', sourceArtifactId: 'pdf-test', pdfSha256: 'a'.repeat(64), byteLength: 123 };
+    const manifest = { role: 'MANIFEST', relativePath: 'original/manifest.json', readback: 'VERIFIED',
+      sha256: plan.source.parsedArtifact.sha256, byteLength: 1, mediaType: 'application/json' };
+    const [{ publicationValid }] = await sql`SELECT (${sql.json(manifest)}::jsonb @> '{"role":"MANIFEST","readback":"VERIFIED"}'::jsonb) AS "publicationValid"`;
+    assert.equal(publicationValid, true);
+    await sql`INSERT INTO dm_document_version VALUES ('dv-test','pdf-test',${'a'.repeat(64)},123)`;
+    await sql`INSERT INTO dm_document_parse_run (parse_run_id,document_version_id,tenant_id,actor_user_id,request_id,
+      parse_revision,expected_published_revision,status,bucket_id,source_binding,manifest_artifact,deadline_at,completed_at)
+      VALUES ('parse-document-hosted','dv-test','tenant-test','engineer-test','request-hosted',1,0,'PUBLISHED','test',
+        ${sql.json(sourceBinding)}::jsonb,${sql.json(manifest)}::jsonb,now()+interval '1 hour',now())`;
+    await sql.unsafe("SET ROLE service_role; SELECT set_config('app.user_id','engineer-test',false)");
+    const db = drizzle(sql), workspaces = new CanonicalTranslationWorkspaceRepository(db);
+    const dispatch = new MiaodaWorkItemRepository(db);
+    const dispatchState = () => dispatch.documentDeliveryDispatchState({ tenantId: 'tenant-test',
+      actorUserId: 'engineer-test', documentVersionId: 'dv-test', readingRequestId: 'reading-unused',
+      translationRequestId: 'auto-translation-test', readingSelected: false, translationSelected: true });
+    const workspace = await workspaces.prepare({ tenantId: 'tenant-test', workItemId: null,
+      documentVersionId: 'dv-test', plan });
+    const task = (suffix, documentProducer, requestId) => sealDocumentTranslationTaskEnvelope({
+      schemaVersion: 'wiselink.document.translation_task.v1', actionAttemptId: `ATT-${suffix}`,
+      operationRef: `AQ-${suffix}`, tenantId: 'tenant-test', documentVersionId: 'dv-test',
+      parseRunId: 'parse-document-hosted', parseRevision: 1, workspaceId: workspace.workspaceId,
+      modelInput: { schemaVersion: 'wiselink.3_1.translation_task.v2', documentProducer,
+        workspaceId: workspace.workspaceId, planRevision: 1, contextRevision: 1,
+        methodVersion: workspace.methodVersion, source: workspace.plan.source },
+      deadline: new Date(Date.now() + 3600000).toISOString(), idempotencyKey: `document-translation:dv-test:${requestId}` });
+    const oldRequest = 'auto-translation-test', old = task('old-quota', 'OFFICIAL_PLUGIN', oldRequest);
+    await sql`INSERT INTO action_attempt (attempt_id,operation_ref,subject_kind,document_version_id,producer_run_id,
+      action_type,attempt_no,trigger_request_id,request_origin,status,actor_user_id,tenant_id,input_revision,
+      task_envelope_json,task_input_hash,idempotency_key,deadline_at,error_code,terminal_reason,completed_at,projection_applied)
+      VALUES (${old.actionAttemptId},${old.operationRef},'DOCUMENT_VERSION','dv-test','parse-document-hosted',
+        'DOCUMENT_TRANSLATE',1,${oldRequest},'HOST_DOCUMENT','FAILED','engineer-test','tenant-test',1,
+        ${canonicalJson(old)},${old.inputHash},${old.idempotencyKey},${old.deadline},
+        'DOCUMENT_PLUGIN_QUOTA_EXHAUSTED','DOCUMENT_PLUGIN_QUOTA_EXHAUSTED',now(),false)`;
+    assert.deepEqual(await dispatchState(), { pending: true, missing: false },
+      'the exact pre-execution quota failure remains discoverable for recovery');
+    await assert.rejects(sql`UPDATE action_attempt SET execution_model_json='[]' WHERE attempt_id=${old.actionAttemptId}`,
+      /ck_action_attempt_subject/u);
+    await assert.rejects(sql`UPDATE action_attempt SET execution_model_json='{"modelRef":"other/model"}' WHERE attempt_id=${old.actionAttemptId}`,
+      /ck_action_attempt_subject/u);
+    const attempts = new DocumentTranslationAttemptRepository(db);
+    const scope = { tenantId: 'tenant-test', actorUserId: 'engineer-test', documentVersionId: 'dv-test' };
+    const requestId = `${oldRequest}:hosted-m3`, hosted = task('hosted', 'HOSTED_M3', requestId);
+    const model = taskModelSelection();
+    assert.equal(model.modelRef, 'm3probe/minimax-m3');
+    await assert.rejects(attempts.reserve({ ...scope, actorUserId: 'wrong' }, hosted, requestId,
+      model, old.operationRef), /RECOVERY_INELIGIBLE|row-level security/u);
+    const savedAttempt = await attempts.reserve(scope, hosted, requestId, model, old.operationRef);
+    assert.deepEqual(await dispatchState(), { pending: true, missing: false },
+      'the Hosted successor enters the natural pending queue');
+    assert.equal(savedAttempt.executionModelJson && JSON.parse(savedAttempt.executionModelJson).modelRef, 'm3probe/minimax-m3');
+    assert.equal((await attempts.reserve(scope, hosted, requestId, model, old.operationRef)).attemptId, savedAttempt.attemptId);
+    assert.equal((await sql`SELECT status,started_at,projection_applied FROM action_attempt WHERE attempt_id=${old.actionAttemptId}`)[0].status, 'FAILED');
+    let lease = await attempts.claim(scope, hosted.operationRef, 'service-principal');
+    assert.ok(lease);
+    let fence = { ...lease, tenantId: scope.tenantId, workItemId: null,
+      documentVersionId: scope.documentVersionId, workspaceId: workspace.workspaceId };
+    const artifacts = new Map();
+    const v2 = new CanonicalTranslationV2Service(workspaces, {}, {}, { persistAndReadback: async bytes => {
+      const ref = `artifact://synthetic/${createHash('sha256').update(bytes).digest('hex')}`;
+      artifacts.set(ref, Buffer.from(bytes)); return { artifact: { storeRole: 'UnifiedArtifactStoreCandidate', ref,
+        sha256: createHash('sha256').update(bytes).digest('hex'), byteLength: bytes.length,
+        mediaType: 'application/json' }, bytes };
+    } }, {});
+    const command = (fields, selectedFence = fence) => v2.executeDocument({ attemptRef: selectedFence.attemptRef,
+      leaseToken: selectedFence.leaseToken, leaseGeneration: selectedFence.leaseGeneration, ...fields },
+      selectedFence, scope.actorUserId, async () => {}, hosted, model);
+    await assert.rejects(command({ phase: 'READ' }, { ...fence, leaseGeneration: fence.leaseGeneration + 1 }), /LEASE_FENCE_REJECTED/u);
+    await assert.rejects(command({ phase: 'READ' }, { ...fence, documentVersionId: 'another-dv' }), /LEASE_FENCE_REJECTED/u);
+    let generated = 0;
+    for (let index = 0; index < 16; index++) {
+      const next = await command({ phase: 'NEXT', requestId: `hosted-step-${index}`, batchSemanticChecks: true });
+      if (next.action === 'DONE') break;
+      const parts = [];
+      for (let partIndex = 0; partIndex < next.delivery.partCount; partIndex++) {
+        const part = partIndex === 0 ? next : await command({ phase: 'READ_BATCH',
+          generationRequestRef: next.generationRequestRef, partIndex });
+        parts.push(Buffer.from(part.delivery.payloadBase64, 'base64'));
+      }
+      const batch = JSON.parse(Buffer.concat(parts).toString('utf8'));
+      const execution = { modelRef: model.modelRef, modelVersion: `configured-route:${model.modelRef}`,
+        skillVersion: WISELINK_SKILL_VERSION, promptVersion: 'wiselink-translation-block@r09.c49',
+        providerRequestId: `synthetic-${index}`, generatedAt: null,
+        usage: { inputTokens: 100, outputTokens: 30 } };
+      if (batch.purpose === 'CHECK_BATCH') await command({ phase: 'CHECK_BATCH', generationRequestRef: batch.generationRequestRef,
+        semanticReviews: batch.blocks.map(block => ({ blockId: block.blockId, issues: [] })), actualExecution: execution });
+      else if (batch.purpose === 'CHECK') await command({ phase: 'CHECK', generationRequestRef: batch.generationRequestRef,
+        expectedRowVersion: next.targetRowVersion, semanticReview: { blockId: batch.blocks[0].blockId, issues: [] },
+        actualExecution: execution });
+      else {
+        generated++;
+        const candidates = batch.blocks.map(block => ({ blockId: block.blockId, elements: [{
+          kind: block.kind === 'heading' ? 'heading' : 'paragraph',
+          translatedText: block.kind === 'heading' ? '构造测试说明' : '除非指示在 5 秒后仍然存在，否则不要更换该组件。',
+          anchorIds: block.anchorIds }] }));
+        const saved = await command({ phase: 'SAVE', generationRequestRef: batch.generationRequestRef,
+          candidates, actualExecution: execution });
+        assert.equal((await command({ phase: 'SAVE', generationRequestRef: batch.generationRequestRef,
+          candidates, actualExecution: execution })).blocks[0].blockRevisionId, saved.blocks[0].blockRevisionId);
+        await assert.rejects(command({ phase: 'SAVE', generationRequestRef: batch.generationRequestRef,
+          candidates: candidates.map(candidate => ({ ...candidate, elements: candidate.elements.map(element => ({
+            ...element, translatedText: '伪造的改写' })) })), actualExecution: execution }), /IDEMPOTENCY_CONFLICT/u);
+      }
+    }
+    assert.ok(generated > 0);
+    const staleFence = fence;
+    assert.equal(await attempts.release(scope, lease), true);
+    assert.equal(await attempts.release(scope, lease), false);
+    assert.deepEqual(await dispatchState(), { pending: true, missing: false },
+      'a released Hosted lease resumes on a natural tick');
+    lease = await attempts.claim(scope, hosted.operationRef, 'service-principal-new');
+    assert.ok(lease);
+    fence = { ...lease, tenantId: scope.tenantId, workItemId: null,
+      documentVersionId: scope.documentVersionId, workspaceId: workspace.workspaceId };
+    await assert.rejects(v2.executeDocument({ phase: 'READ', attemptRef: staleFence.attemptRef,
+      leaseToken: staleFence.leaseToken, leaseGeneration: staleFence.leaseGeneration }, staleFence,
+      scope.actorUserId, async () => {}, hosted, model), /LEASE_FENCE_REJECTED/u);
+    const final = await v2.assembleDocument(fence, async () => {});
+    assert.equal(final.completeness, 'COMPLETE');
+    assert.ok(artifacts.has(final.artifact.ref));
+    await attempts.finish(scope, lease, { workspaceId: workspace.workspaceId, status: 'DONE', artifact: final });
+    assert.deepEqual(await dispatchState(), { pending: false, missing: false },
+      'a completed successor is not redispatched through the old failed record');
+    assert.equal((await attempts.latest(scope, oldRequest)).status, 'SUCCEEDED');
+    const reading = buildTranslationWorkspaceReadingV2(...Object.values(await workspaces.readSnapshot(fence)));
+    assert.ok(reading.blocks.every(block => block.selected?.provenance.executionModel?.modelRef === model.modelRef));
+  } finally { await sql.end({ timeout: 5 }); }
+});
+
 function afterQueryResult(query, operation) {
   return new Proxy(query, { get(target, property) {
     if (property === 'then') return (resolve, reject) => Promise.resolve(target)
@@ -590,7 +750,7 @@ function afterQueryResult(query, operation) {
 
 async function reset(sql) {
   await sql.unsafe(`DROP TABLE IF EXISTS translation_knowledge_governance_event, translation_knowledge_import_request_item, translation_knowledge_source_ref,
-    translation_knowledge_candidate, translation_block_revision, translation_workspace, action_attempt, work_item, identity_subject_mapping, dm_document_parse_run, dm_document_version CASCADE;
+    translation_knowledge_candidate, translation_block_revision, translation_workspace, action_attempt, work_item, identity_subject_mapping, dm_document_reading_run, dm_document_parse_run, dm_document_version CASCADE;
     DROP FUNCTION IF EXISTS translation_block_guard_subject() CASCADE;
     DROP FUNCTION IF EXISTS dm_guard_parse_run() CASCADE;
     DO $$ BEGIN IF NOT EXISTS (SELECT 1 FROM pg_type WHERE typname='user_profile') THEN CREATE TYPE user_profile AS (user_id text); END IF; END $$;

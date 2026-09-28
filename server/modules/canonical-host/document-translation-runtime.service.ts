@@ -10,6 +10,10 @@ import { CanonicalTranslationV2PluginService } from './canonical-translation-v2-
 import { CANONICAL_SERVICE_SCOPE_AUTHORIZATION, canonicalServiceScopeUnavailable,
   type CanonicalServiceScopeAuthorizationPort } from './canonical-service-scope.authorization';
 import { documentDeliveryRequestId } from './document-delivery-ref';
+import { taskModelSelection } from '../model-settings/canonical-model-catalog';
+import { readStoredExecutionModel } from '../model-settings/canonical-execution-model';
+import { CanonicalTranslationV2Service } from './canonical-translation-v2.service';
+import type { TranslationWorkspaceFence } from './canonical-translation-workspace.repository';
 
 @Injectable()
 // Registered by CanonicalHostModule.forRoot.
@@ -17,10 +21,12 @@ import { documentDeliveryRequestId } from './document-delivery-ref';
 export class DocumentTranslationRuntimeService {
   constructor(@Inject(CANONICAL_SERVICE_SCOPE_AUTHORIZATION) private readonly authorization: CanonicalServiceScopeAuthorizationPort,
     private readonly actors: EngineeringMatterWorkingRepository, private readonly reader: UnifiedReaderService,
-    private readonly plugins: CanonicalTranslationV2PluginService, private readonly attempts: DocumentTranslationAttemptRepository, private readonly semantics: DocumentSemanticService, private readonly parsing: DocumentParsingHostedService) {}
+    private readonly plugins: CanonicalTranslationV2PluginService, private readonly attempts: DocumentTranslationAttemptRepository, private readonly semantics: DocumentSemanticService, private readonly parsing: DocumentParsingHostedService,
+    private readonly v2: CanonicalTranslationV2Service) {}
 
-  async run(input: { action: 'START' | 'STATUS' | 'STEP' | 'CANCEL'; documentVersionId: string;
-    parseRunId: string; deliveryRef?: string; requestId?: string; attemptRef?: string }) {
+  async run(input: { action: 'START' | 'RECOVER' | 'STATUS' | 'STEP' | 'CANCEL' | 'CLAIM' | 'HEARTBEAT' | 'RELEASE' | 'WORKSPACE' | 'FINISH' | 'FAIL'; documentVersionId: string;
+    parseRunId: string; deliveryRef?: string; requestId?: string; attemptRef?: string;
+    leaseToken?: string; leaseGeneration?: number; phase?: string; workspaceCommand?: unknown; errorCode?: string }) {
     if (!this.authorization.authorizeDocumentWork) throw canonicalServiceScopeUnavailable();
     const auth = await this.authorization.authorizeDocumentWork({ documentVersionId: input.documentVersionId,
       deliveryRef: input.deliveryRef, purpose: input.action === 'CANCEL' ? 'CANCEL' : 'TRANSLATION' });
@@ -36,8 +42,13 @@ export class DocumentTranslationRuntimeService {
       // semantic hydration. A successful status is not a content-health proof.
       await this.parsing.status(scope.documentVersionId, { ...scope, roles: [] });
       const assertAuthorized = async () => { await read(); };
-      if (input.action === 'START') {
+      if (input.action === 'START' || input.action === 'RECOVER') {
         if (!input.requestId) throw new Error('DOCUMENT_TRANSLATION_REQUEST_REQUIRED');
+        if (input.action === 'RECOVER') {
+          if (!input.attemptRef || !expectedRequestId || input.requestId !== `${expectedRequestId}:hosted-m3`)
+            throw new Error('DOCUMENT_TRANSLATION_RECOVERY_SCOPE_INVALID');
+          await this.attempts.assertQuotaSuccessor(scope, expectedRequestId, input.attemptRef, input.parseRunId);
+        }
         await this.attempts.expire(scope);
         const prior = await this.attempts.readRequest(scope, input.requestId);
         if (prior) {
@@ -59,11 +70,12 @@ export class DocumentTranslationRuntimeService {
           documentVersionId: scope.documentVersionId, parseRunId: input.parseRunId,
           parseRevision: original.original.binding.parseRevision, workspaceId: workspace.workspaceId,
           modelInput: { ...modelInput, schemaVersion: 'wiselink.3_1.translation_task.v2',
-            source: { ...modelInput.source, originalBinding: original.original.binding } },
-          deadline: new Date(Date.now() + 60 * 60_000).toISOString(),
+          source: { ...modelInput.source, originalBinding: original.original.binding }, documentProducer: 'HOSTED_M3' },
+          deadline: new Date(Date.now() + 12 * 60 * 60_000).toISOString(),
           idempotencyKey: `document-translation:${scope.documentVersionId}:${input.requestId}` });
         try {
-          return summary(await this.attempts.reserve(scope, task, input.requestId));
+          return summary(await this.attempts.reserve(scope, task, input.requestId,
+            taskModelSelection(), input.action === 'RECOVER' ? input.attemptRef : undefined));
         } catch (error) {
           // A confirmed DB permission rejection is distinct from an unknown
           // reservation outcome. Never expose Drizzle SQL/parameters to callers.
@@ -71,7 +83,7 @@ export class DocumentTranslationRuntimeService {
           throw error;
         }
       }
-      if (input.action === 'STEP') await this.attempts.expire(scope);
+      await this.attempts.expire(scope);
       const row = await this.attempts.latest(scope, expectedRequestId);
       const idle = async () => ({ status: 'IDLE', documentVersionId: scope.documentVersionId,
         parseRunId: input.parseRunId,
@@ -81,9 +93,68 @@ export class DocumentTranslationRuntimeService {
         if (input.action === 'STATUS') return { ...await idle(), previousAttempt: summary(row) };
         throw new Error('DOCUMENT_TRANSLATION_SOURCE_CHANGED');
       }
-      if (input.action === 'STATUS') return summary(row);
+      if (input.action === 'STATUS') {
+        if (row.status !== 'SUCCEEDED') return summary(row);
+        const task = parseDocumentTranslationTaskEnvelope(row.taskEnvelopeJson ?? '');
+        return { ...summary(row), progress: await this.v2.readDocumentProgress({
+          tenantId: scope.tenantId, workItemId: null, documentVersionId: scope.documentVersionId,
+          workspaceId: task.workspaceId }) };
+      }
       if (!input.attemptRef || row.operationRef !== input.attemptRef) throw new Error('DOCUMENT_TRANSLATION_ATTEMPT_NOT_FOUND');
       if (input.action === 'CANCEL') { await this.attempts.cancel(scope, input.attemptRef); return summary((await this.attempts.latest(scope, expectedRequestId))!); }
+      if (input.action === 'CLAIM') {
+        if (parseDocumentTranslationTaskEnvelope(row.taskEnvelopeJson ?? '').modelInput.documentProducer !== 'HOSTED_M3')
+          throw new Error('DOCUMENT_TRANSLATION_HOSTED_TASK_REQUIRED');
+        const executionModel = readStoredExecutionModel(row.executionModelJson);
+        if (executionModel?.modelRef !== 'm3probe/minimax-m3') throw new Error('DOCUMENT_TRANSLATION_HOSTED_MODEL_INVALID');
+        const fence = await this.attempts.claim(scope, input.attemptRef, `document-translation:${randomUUID()}`);
+        if (fence && await this.v2.documentHasInterruptedGeneration({ ...fence, tenantId: scope.tenantId,
+          workItemId: null, documentVersionId: scope.documentVersionId,
+          workspaceId: parseDocumentTranslationTaskEnvelope(row.taskEnvelopeJson ?? '').workspaceId },
+          parseDocumentTranslationTaskEnvelope(row.taskEnvelopeJson ?? '').actionAttemptId)) {
+          await this.attempts.release(scope, fence);
+          return { ...summary(row), status: 'REQUIRES_ATTENTION',
+            errorCode: 'DOCUMENT_TRANSLATION_GENERATION_OUTCOME_UNKNOWN' };
+        }
+        return fence ? { ...summary(row), fence, task: parseDocumentTranslationTaskEnvelope(row.taskEnvelopeJson ?? ''),
+          executionModel } : { ...summary(row), status: 'BUSY' };
+      }
+      if (['HEARTBEAT','RELEASE','WORKSPACE','FINISH','FAIL'].includes(input.action)) {
+        if (!input.leaseToken || !input.leaseGeneration) throw new Error('DOCUMENT_TRANSLATION_FENCE_REQUIRED');
+        const principalId = row.leaseOwner;
+        if (!principalId) throw new Error('DOCUMENT_TRANSLATION_LEASE_NOT_FOUND');
+        const fence = { attemptRef: input.attemptRef, principalId, leaseToken: input.leaseToken,
+          leaseGeneration: input.leaseGeneration };
+        if (input.action === 'HEARTBEAT') {
+          if (!await this.attempts.renew(scope, fence)) throw new Error('DOCUMENT_TRANSLATION_LEASE_REJECTED');
+          return { renewed: true, attemptRef: input.attemptRef };
+        }
+        if (input.action === 'RELEASE') {
+          if (!await this.attempts.release(scope, fence)) throw new Error('DOCUMENT_TRANSLATION_LEASE_REJECTED');
+          return { released: true, attemptRef: input.attemptRef };
+        }
+        await read();
+        const workspaceFence: TranslationWorkspaceFence = { ...fence, tenantId: scope.tenantId,
+          workItemId: null, documentVersionId: scope.documentVersionId,
+          workspaceId: parseDocumentTranslationTaskEnvelope(row.taskEnvelopeJson ?? '').workspaceId };
+        if (input.action === 'WORKSPACE') return this.v2.executeDocument(input.workspaceCommand, workspaceFence,
+          scope.actorUserId, assertAuthorized, parseDocumentTranslationTaskEnvelope(row.taskEnvelopeJson ?? ''),
+          readStoredExecutionModel(row.executionModelJson)!);
+        if (input.action === 'FAIL') {
+          if (!await this.attempts.fail(scope, fence, new Error(input.errorCode ?? 'DOCUMENT_TRANSLATION_HOSTED_FAILED')))
+            throw new Error('DOCUMENT_TRANSLATION_FAIL_FENCE_REJECTED');
+          await this.attempts.release(scope, fence);
+          return summary((await this.attempts.latest(scope, expectedRequestId))!);
+        }
+        const assembled = await this.v2.assembleDocument(workspaceFence, assertAuthorized);
+        await this.attempts.finish(scope, fence, { workspaceId: workspaceFence.workspaceId,
+          status: assembled.completeness === 'PARTIAL' ? 'REMAINING_LIMITATIONS' : 'DONE', artifact: assembled });
+        await this.attempts.release(scope, fence);
+        return { ...summary((await this.attempts.latest(scope, expectedRequestId))!),
+          progress: await this.v2.readDocumentProgress(workspaceFence) };
+      }
+      if (parseDocumentTranslationTaskEnvelope(row.taskEnvelopeJson ?? '').modelInput.documentProducer !== 'OFFICIAL_PLUGIN')
+        throw new Error('DOCUMENT_TRANSLATION_HOSTED_STEP_REQUIRED');
       if (!['QUEUED','RUNNING','RETRY_SCHEDULED'].includes(row.status)) return summary(row);
       const task = parseDocumentTranslationTaskEnvelope(row.taskEnvelopeJson ?? '');
       const lease = await this.attempts.claim(scope, input.attemptRef, `document-translation:${randomUUID()}`);
