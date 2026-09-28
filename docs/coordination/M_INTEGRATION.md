@@ -1,5 +1,14 @@
 # M 主控集成交接
 
+## 2026-09-28 12:31：C194 旧原文修订与两份后继更正（进行中）
+
+- 旧 787 `document_version_3f1bf2fb1736c0e12e5bae2a` 的已存 MinerU 候选经来源 SHA/长度与候选 SHA 核对后，通过现有 `LOCAL_MINERU_IMPORT` 发布解析修订 5 `PRUN-b500ba95-50d4-467a-b380-a090f99afe85`；旧修订 4 及其历史工作未改写。Description/Status 标题已恢复。新旧 manifest 对比为来源内容变化，不冒充厂家换版。
+- 修订 5 曾触发浏览器读取工作台 404：原文影响比较在浏览器路径误用服务身份。修复提交 `5ed25dc9c24f1664abbf76bd8eef85fbbf690669`，17b 发布 `7690434330866731969` finished，本人工作台读回成功。定向测试 40 通过、8 跳过，server 类型及 ESLint 通过。
+- 旧 787 由本人提交整个评估范围的后继 Turn 14 `RT-f3789b0f-2318-4927-9e08-54db932b1468`，请求基于解析修订 5 修四个问题、工作级字段及 Overall。Review 保存 JobAid 修订 14 `JAWR-a2f147aa-5157-4fab-b8ea-41226d1981a9`；后继 Overall attempt `ATT-57d24995-f31e-4a1d-8a9d-2e45f81f9593` 为 SUCCEEDED，WorkItem 投影 `basedOnJobAidWorkRevisionRef` 精确等于修订 14，本人重载工作台后已显示最新摘要。内容仍需审查：修订 14 有“需待 SB 颁发后再核”等把 TBD 推成未颁发的措辞，快览的短摘要回退为重复标题，不能宣称质量验收通过。
+- 737MAX `WI-3859b827-399e-414a-adbb-e1c694cafd59` 的已完成逐任务授权原有确切来源与完成租约证明，但旧任务缺少浏览器可读完成回执，致后继 Review 误拒。`migrations/0066_completed_auto_work_item_receipt_backfill.sql` 仅从原有 `COMPLETED` 授权、租约证明和一致的 WorkItem 来源绑定补投影；不新增授权。在线执行后只读验证 7/7 已完成授权均有回执，737MAX 本人页面恢复后继入口。CLI 的 `rows_affected=0` 与实际读回不一致，以最终逐项读回为准。
+- 本人已为 737MAX 提交整份问题后继 Turn 1 `RT-abf4c9bc-65eb-4174-8c5d-171421deff07`，明确纠正无据概率/严重度、and/or 与 potentially、FIM 范围及工作级短述，并请求按确切新工作更新 Overall；截至本节记录仍在执行，无新保存结果可宣布。
+- 文档解读／翻译入口的选择与持久意图代码已在工作树并通过本地定向验证，尚未提交、发布。它不包含动态文档委托或派发，不能把记录选择当作已受理交付；该权限与运行接线继续开发，发布前按当前 Goal 核对新增范围。
+
 ## 2026-09-28：采用新版 Goal，收敛入口交付与已知错误全链更正
 
 已逐字读取用户文件 `/Users/liuxuan/Downloads/WiseLink_Goal_20260928.md`，原文归档至 `docs/WISELINK_GOAL_20260928.md`，现行规则、执行计划和整合表均指向该最新约束。Goal 工具本次实际返回 `goal:null`（与早先 paused 快照不同）；已按用户明确的新 Goal 请求创建 active 目标，未设置 token 预算。此动作不启停 C136、worker 或其他生产任务。本次本地基线 `11e43ddaf`，继承最新 Wiki 发布 `7690422229750222003` / `a2268395b` 的上一轮本人验证；本轮再次读取该 release 为 finished、commit_id 为 `a2268395ba123203543d4ece496007d37ee69de2`。本机 LaunchAgent 已登记，累计 197 次运行、末次退出 0，读取时未在执行；stdout 最近五条为 IDLE，stderr 尾部仍有 `LOCAL_MINERU_TRANSPORT_UNAVAILABLE`，无时间戳的尾部记录不能判定本次或持续故障。17c Skill/C136 尚待下一次运行前只读核对；不以这些空闲记录声称业务稳定。
