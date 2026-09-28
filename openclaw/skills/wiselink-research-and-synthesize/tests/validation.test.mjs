@@ -1382,7 +1382,7 @@ test('requires 35 MCP capabilities, six review tools, and hosted provenance', ()
   assert.ok(HOST_MCP_TOOLS.includes('commit_applicability_candidate'));
   assert.equal(
     WISELINK_SKILL_VERSION,
-    'wiselink-research-and-synthesize@r09.c183',
+    'wiselink-research-and-synthesize@r09.c184',
   );
   assert.equal(
     WISELINK_SKILL_COMPATIBILITY_REF,
@@ -8095,9 +8095,11 @@ test('JobAid reference rejection returns exact paths and requires a fresh valida
   const before = structuredClone(work);
   let requests = 0;
   let validations = 0;
+  const rejections = [];
   const result = await invokeReviewWithTransport({ input: { context: task.context, availableSourceRefIds: [], attachmentRefs: [] } }, {
     gatewayUrl: 'https://official.invalid', gatewayToken: 'fixture-only', configuredModelVersion: 'fixture/provider',
     validateCandidate: (value) => { validations++; validateReviewCandidate(task, { ...candidate, ...value }); },
+    observeCandidateRejection: (value) => rejections.push(value),
   }, { requestGateway: async (_url, init) => {
     requests++;
     if (requests === 2) {
@@ -8116,8 +8118,53 @@ test('JobAid reference rejection returns exact paths and requires a fresh valida
   } });
   assert.equal(requests, 2);
   assert.equal(validations, 2);
+  assert.deepEqual(rejections, [{ modelRound: 1, correctionNo: 1,
+    errorCode: 'REVIEW_JOBAID_EVIDENCE_NOT_REGISTERED',
+    invalidEvidenceRefs: [{ path: 'jobAidWorkingDelta.issues[0].body@0', evidenceRef: 'method:scoope' }],
+    invalidEvidenceRefCount: 1 }]);
   assert.equal(result.output.answer, '重新核对');
   assert.deepEqual(work, before);
+});
+
+test('JobAid schema rejection identifies the exact protocol literal before saving', async () => {
+  const { task, candidate } = await emptyJobAidReviewFixture();
+  task.context.purpose = 'UPDATE_ASSESSMENT';
+  const work = { schemaVersion: 'wiselink.jobaid-problem-work.v3',
+    headline: '当前认识', listBrief: '待核', understanding: '保留未知',
+    completionReason: '本轮已核对', changeSummary: '纠正范围',
+    unchangedExplanation: '保留其余', issues: [] };
+  let requests = 0;
+  const rejections = [];
+  const result = await invokeReviewWithTransport({ input: {
+    context: task.context, availableSourceRefIds: [], attachmentRefs: [],
+  } }, {
+    gatewayUrl: 'https://official.invalid', gatewayToken: 'fixture-only',
+    configuredModelVersion: 'fixture/provider',
+    validateCandidate: (value) => validateReviewCandidate(task, { ...candidate, ...value }),
+    observeCandidateRejection: (value) => rejections.push(value),
+  }, { requestGateway: async (_url, init) => {
+    requests++;
+    if (requests === 2) {
+      const feedback = JSON.parse(JSON.parse(init.body).messages.at(-1).content);
+      assert.equal(feedback.validationError, 'REVIEW_JOBAID_WORK_SCHEMA_INVALID');
+      assert.equal(feedback.jobAidSchemaFeedback.field, 'jobAidWorkingDelta.schemaVersion');
+      assert.equal(feedback.jobAidSchemaFeedback.expected, work.schemaVersion);
+    }
+    const authored = structuredClone(work);
+    if (requests === 1) authored.schemaVersion = 'wiselink.jobaid-problem-work.v2';
+    return Response.json({ choices: [{ message: { content: null, tool_calls: [{
+      id: `schema-${requests}`, type: 'function', function: {
+        name: 'return_wiselink_review_candidate',
+        arguments: JSON.stringify({ answer: requests === 1 ? '未保存' : '已纠正',
+          jobAidWorkingDelta: authored }),
+      },
+    }] } }] });
+  } });
+  assert.equal(requests, 2);
+  assert.deepEqual(rejections, [{ modelRound: 1, correctionNo: 1,
+    errorCode: 'REVIEW_JOBAID_WORK_SCHEMA_INVALID',
+    expectedJobAidSchemaVersion: 'wiselink.jobaid-problem-work.v3' }]);
+  assert.equal(result.output.answer, '已纠正');
 });
 
 
