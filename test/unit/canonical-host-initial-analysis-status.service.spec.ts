@@ -62,6 +62,7 @@ describe('CanonicalHost initial-analysis status projection', () => {
     {contentChanged:true, jobAidRun:'PR-TEST-2', overallRun:'PR-TEST-3', jobAid:'CONFLICT', overall:'CONFLICT'},
     {contentChanged:true, jobAidRun:'PR-TEST-3', overallRun:'PR-TEST-3', jobAid:'SUCCEEDED', overall:'SUCCEEDED'},
     {contentChanged:true, jobAidRun:null, overallRun:'PR-TEST-3', jobAid:'CONFLICT', overall:'CONFLICT'},
+    {contentChanged:true, jobAidRun:'PR-TEST-2', overallRun:'PR-TEST-2', jobAid:'CONFLICT', overall:'CONFLICT', serviceSql:true},
   ])('keeps each saved stage bound to its own original: %j', async (example) => {
     const savedMode=process.env.WL_JOBAID_PROBLEM_V2_ENABLED;
     process.env.WL_JOBAID_PROBLEM_V2_ENABLED='1';
@@ -71,23 +72,29 @@ describe('CanonicalHost initial-analysis status projection', () => {
       current.binding.parseRunId='PR-TEST-3'; current.binding.parseRevision=3;
       if (example.contentChanged) current.source.units[0].payload={text:'Do not use method M under any condition.'};
       const needsReader=example.jobAidRun==='PR-TEST-2' || example.overallRun==='PR-TEST-2';
-      const results: unknown[][]=[[{id:'PR-TEST-3'}], [
+      const serviceSql='serviceSql' in example && example.serviceSql===true;
+      const results: unknown[][]=[...(serviceSql ? [[{actor:'owner-test'}]] : []),[{id:'PR-TEST-3'}], [
         {attemptId:'attempt-job-aid',parseRunId:example.jobAidRun},
         {attemptId:'attempt-overall',parseRunId:example.overallRun},
-      ], ...(needsReader ? [[{actor:'owner-test'}]] : [])];
+      ], ...(serviceSql && needsReader ? [[{actor:'owner-test'}]] : [])];
       const limit=jest.fn().mockImplementation(async () => results.shift());
       const chain={where:jest.fn(),orderBy:jest.fn(),limit};
       chain.where.mockReturnValue(chain); chain.orderBy.mockReturnValue(chain);
       const withActorScope=jest.fn(async (_actor,operation) => operation());
-      const readDocumentOriginal=jest.fn(async (_dv,run) => ({original:run==='PR-TEST-2'?previous:current}));
+      const readDocumentOriginal=jest.fn(async (_dv:string,run:string,_scope:{actorUserId:string}) =>
+        ({original:run==='PR-TEST-2'?previous:current}));
       const service=new CanonicalHostInitialAnalysisStatusService({
-        execute:async () => [{service:false}],select:() => ({from:() => chain}),
+        execute:async () => [{service:serviceSql}],select:() => ({from:() => chain}),
         selectDistinctOn:() => ({from:() => ({where:() => ({orderBy:async () => []})})}),
       } as never,{} as never,{withActorScope} as never,{readDocumentOriginal} as never);
-      const value=await service.project({workItem:source,tenantId:'tenant-test'});
+      const value=await service.project({workItem:source,tenantId:'tenant-test',
+        ...(serviceSql ? {} : {browserActorUserId:'owner-test'})});
       // Distinct old revisions are read once, regardless of the stage count.
       expect(readDocumentOriginal.mock.calls.map(call => call[1])).toEqual(needsReader ? ['PR-TEST-3','PR-TEST-2'] : []);
-      if (needsReader) expect(withActorScope).toHaveBeenCalledWith('owner-test',expect.any(Function));
+      if (serviceSql) expect(withActorScope).toHaveBeenCalledWith('owner-test',expect.any(Function));
+      else expect(withActorScope).not.toHaveBeenCalled();
+      if (needsReader) expect(readDocumentOriginal.mock.calls.map(call => call[2].actorUserId))
+        .toEqual(['owner-test','owner-test']);
       expect(value.stages.jobAid.status).toBe(example.jobAid);
       expect(value.stages.overall.status).toBe(example.overall);
       expect(results).toEqual([]);

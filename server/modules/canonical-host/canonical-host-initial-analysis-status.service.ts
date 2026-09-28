@@ -95,6 +95,8 @@ export class CanonicalHostInitialAnalysisStatusService {
     workItem: CanonicalWorkItemProjection;
     tenantId: string;
     expectedOriginalParseRunId?: string;
+    /** Verified HTTP actor; omitted for service-side projections. */
+    browserActorUserId?: string;
   }): Promise<AilyInitialAnalysisStatus> {
     const originalMode=process.env.WL_JOBAID_PROBLEM_V2_ENABLED === '1';
     const readPublished=() => this.db.select({id:dmDocumentParseRun.parseRunId}).from(dmDocumentParseRun)
@@ -106,9 +108,11 @@ export class CanonicalHostInitialAnalysisStatusService {
         sql`${dmDocumentParseRun.sourceBinding}->>'byteLength' = ${String(input.workItem.source.sourceByteLength)}`))
       .orderBy(desc(dmDocumentParseRun.parseRevision)).limit(1);
     let published: Array<{id:string}> | null=null;
+    let hostedServiceSql=false;
     if (originalMode) {
       const [role]=await this.db.execute<{service:boolean}>(sql`SELECT starts_with(current_user::text,'service_role_') AS service`);
-      if (role?.service) {
+      hostedServiceSql=role?.service===true;
+      if (hostedServiceSql) {
         if (!this.originalWork) throw new Error('ORIGINAL_STATUS_RUNTIME_UNAVAILABLE');
         const [owner]=await this.db.select({actor:workItem.requestedByUserId}).from(workItem)
           .where(and(eq(workItem.workItemId,input.workItem.workItemId),eq(workItem.tenantId,input.tenantId))).limit(1);
@@ -183,18 +187,22 @@ export class CanonicalHostInitialAnalysisStatusService {
       const differentRuns = [...new Set(bases.map(basis => basis.parseRunId)
         .filter((id): id is string => !!id && id !== published[0].id))];
       if (differentRuns.length) {
-        if (!this.originalWork || !this.originalReader) throw new Error('ORIGINAL_STATUS_RUNTIME_UNAVAILABLE');
-        const [owner] = await this.db.select({actor: workItem.requestedByUserId}).from(workItem)
-          .where(and(eq(workItem.workItemId, input.workItem.workItemId), eq(workItem.tenantId, input.tenantId))).limit(1);
-        if (!owner?.actor) throw new Error('JOBAID_SOURCE_AUTHORIZATION_CHANGED');
-        const scope = {tenantId: input.tenantId, actorUserId: owner.actor, roles: [] as string[]};
-        await this.originalWork.withActorScope(owner.actor, async () => {
+        if (!this.originalReader || (hostedServiceSql && !this.originalWork))
+          throw new Error('ORIGINAL_STATUS_RUNTIME_UNAVAILABLE');
+        const [owner] = hostedServiceSql ? await this.db.select({actor: workItem.requestedByUserId}).from(workItem)
+          .where(and(eq(workItem.workItemId, input.workItem.workItemId), eq(workItem.tenantId, input.tenantId))).limit(1) : [];
+        const actorUserId=hostedServiceSql ? owner?.actor : input.browserActorUserId;
+        if (!actorUserId) throw new Error('JOBAID_SOURCE_AUTHORIZATION_CHANGED');
+        const scope = {tenantId: input.tenantId, actorUserId, roles: [] as string[]};
+        const compareOriginals=async () => {
           const current = await this.originalReader!.readDocumentOriginal(input.workItem.source.documentVersionId, published[0].id, scope);
           for (const runId of differentRuns) {
             const previous = await this.originalReader!.readDocumentOriginal(input.workItem.source.documentVersionId, runId, scope);
             changedByRun.set(runId, compareDocumentOriginal(previous.original, current.original).kind !== 'LOCATOR_ONLY');
           }
-        });
+        };
+        if (hostedServiceSql) await this.originalWork!.withActorScope(actorUserId,compareOriginals);
+        else await compareOriginals();
       }
       for (const stage of ORIGINAL_ENGINEERING_STAGES) {
         const attemptId = savedAttempts[stage];
@@ -299,7 +307,7 @@ export class CanonicalHostInitialAnalysisStatusService {
     tenantId: string;
     actorUserId: string;
   }): Promise<CanonicalInitialAnalysisReadModel> {
-    const status = await this.project(input);
+    const status = await this.project({...input,browserActorUserId:input.actorUserId});
     const execution = activeConfigurationEvidenceReevaluation(input.workItem)
       ? configurationEvidenceShadow(input.workItem)
       : input.workItem;
