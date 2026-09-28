@@ -7,6 +7,7 @@ import test from 'node:test';
 import {
   runHostedReviewTurn,
   invokeHostedReviewModel,
+  projectJobAidUpdateInput,
 } from '../../openclaw/skills/wiselink-research-and-synthesize/scripts/run-hosted-review-turn.mjs';
 import { validateReviewTask } from '../../openclaw/skills/wiselink-research-and-synthesize/scripts/validate-payload.mjs';
 
@@ -242,6 +243,14 @@ test('actual JobAid Host task and native Review driver preserve initial work thr
       },
     });
     validateReviewTask(contract);
+    if (turn === 1) {
+      const scoped = parseReviewTurnTaskContract({ ...contract,
+        context: { ...contract.context, purpose: 'UPDATE_ASSESSMENT',
+          issueEditScope: { targetIssueKeys: [original.issueKey] } } });
+      validateReviewTask(scoped);
+      assert.deepEqual(projectJobAidUpdateInput({ context: scoped.context })
+        .context.issueEditScope, { targetIssueKeys: [original.issueKey] });
+    }
     const task = sealTaskEnvelope({
       schemaVersion: 'wiselink.3_1.openclaw_task_envelope.v1',
       actionAttemptId: `ATT-private-${turn}`,
@@ -461,4 +470,46 @@ test('actual JobAid Host task and native Review driver preserve initial work thr
     );
   }
   assert.equal(current.workRevision, 3);
+});
+
+test('frozen issue edit scope passes Host and native task validation and reaches model input', async () => {
+  const legacy = JSON.parse(await readFile(new URL(
+    '../../openclaw/skills/wiselink-research-and-synthesize/tests/fixtures/review-turn-task.c2.json',
+    import.meta.url), 'utf8'));
+  const content = materializeJobAidWork({
+    schemaVersion: 'wiselink.jobaid-problem-work.v3',
+    headline: '条件判断', listBrief: '持续条件待核。',
+    issues: [{ issueKey: 'FTD-26002-NATURE', question: '性质？',
+      body: `持续条件待核。 [[${doc.evidenceRef}]]` },
+      { issueKey: 'FTD-26002-TIMING', question: '时序？',
+        body: `时序条件待核。 [[${doc.evidenceRef}]]` }],
+    roundCompletion: 'IN_PROGRESS', completionReason: '留待核查。',
+    changeSummary: '初步分析。',
+  }, validation);
+  const previousWork = revision(content, 1);
+  const jobAidContext = buildJobAidProblemTask({ workItem,
+    actorUserId: 'actor-private', permissionSnapshotVersion: 'synthetic-scope',
+    purpose: 'PROBLEM_REVIEW', sourceCatalog: [doc], sourceBindings: [binding],
+    common, previousWork, expectedWorkRevision: 1,
+    priorAssessmentRefs: [previousWork.workRevisionRef] });
+  const resourceRefs = [{ sourceRefId: doc.evidenceRef,
+    resourceArtifactRef: binding.artifactRef,
+    resourceArtifactSha256: binding.artifactSha256,
+    value: { ...overallModelEvidenceRegistry([doc])[0], sourceRefId: doc.evidenceRef } }];
+  const scope = { targetIssueKeys: ['FTD-26002-NATURE'] };
+  const contract = parseReviewTurnTaskContract({ ...legacy,
+    schemaVersion: 'wiselink.3_1.review_turn_task.v1.c5',
+    selectedEvaluationItemId: null, allowedEvaluationItemIds: [],
+    allowedAdoptedInputRefs: [], attachmentRefs: [], resourceRefs,
+    jobAidContext, context: { purpose: 'UPDATE_ASSESSMENT',
+      problemAssessment: jobAidContext.modelInput, issueEditScope: scope },
+    executionPolicy: { ...legacy.executionPolicy,
+      toolPolicyRef: REVIEW_JOBAID_TOOL_POLICY_REF } });
+  validateReviewTask(contract);
+  assert.deepEqual(projectJobAidUpdateInput({ context: contract.context })
+    .context.issueEditScope, scope);
+  assert.throws(() => parseReviewTurnTaskContract({ ...contract,
+    context: { ...contract.context,
+      issueEditScope: { targetIssueKeys: ['FTD-26002-UNKNOWN'] } } }),
+  /REVIEW_TARGET_ISSUES_INVALID/);
 });

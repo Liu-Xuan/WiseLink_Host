@@ -56,6 +56,7 @@ export function assessmentUpdateRequest(
   selectedEvaluationItemId?: string | null,
   overallRequested = false,
   directRequest = '',
+  targetIssueKeys?: string[],
 ): AppendReviewTextTurnRequest {
   if (overallRequested && reviewScope)
     throw new Error('REVIEW_SUCCESSOR_OVERALL_SCOPE_INVALID');
@@ -72,6 +73,7 @@ export function assessmentUpdateRequest(
     ...(modelRef ? { modelRef } : {}),
     ...(reviewScope ? { reviewScope: { ...reviewScope } } : {}),
     selectedEvaluationItemId,
+    ...(targetIssueKeys ? { targetIssueKeys: [...targetIssueKeys] } : {}),
   };
 }
 

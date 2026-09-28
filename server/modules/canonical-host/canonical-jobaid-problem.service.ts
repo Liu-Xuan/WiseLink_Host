@@ -82,6 +82,7 @@ import {
 import {
   jobAidReadingResult,
   materializeJobAidWork,
+  assertJobAidIssueEditScope,
 } from './jobaid-problem-work';
 import {
   JobAidWorkRepository,
@@ -851,8 +852,9 @@ export class CanonicalJobAidProblemService {
     workItemId: string,
     proposal: unknown,
     actualReadRefs: Set<string>,
+    targetIssueKeys?: string[],
   ) {
-    return materializeJobAidWork(proposal, {
+    const content = materializeJobAidWork(proposal, {
       methodBinding: task.modelInput.methodBinding,
       workItemId,
       previous: task.previousWork?.content ?? null,
@@ -863,6 +865,10 @@ export class CanonicalJobAidProblemService {
       capabilities: task.modelInput.capabilities,
       history: task.modelInput.historyReview,
     });
+    assertJobAidIssueEditScope(
+      task.previousWork?.content ?? null, content, targetIssueKeys,
+    );
+    return content;
   }
 
   saveReviewWork(
@@ -873,6 +879,7 @@ export class CanonicalJobAidProblemService {
       requestId: string;
       proposal: unknown;
       actualReadRefs: Set<string>;
+      targetIssueKeys?: string[];
     },
     database: PostgresJsDatabase,
   ) {
@@ -893,6 +900,7 @@ export class CanonicalJobAidProblemService {
           input.row.workItemId,
           input.proposal,
           input.actualReadRefs,
+          input.targetIssueKeys,
         ),
       },
       database,

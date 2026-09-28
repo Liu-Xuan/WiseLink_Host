@@ -92,6 +92,7 @@ export interface PersistedReviewTurn {
   userMessage: string;
   reviewScope?: PersistedMatterReviewScope | null;
   selectedEvaluationItemId?: string | null;
+  targetIssueKeys?: string[];
   purpose?: ReviewEngineerInputPayload['purpose'];
   ailySessionId?: string;
   includedDiscussionTurnIds?: string[];
@@ -1091,6 +1092,7 @@ export class ReviewConversationRepository {
     userMessage: string;
     reviewScope?: PersistedMatterReviewScope | null;
     selectedEvaluationItemId?: string | null;
+    targetIssueKeys?: string[];
     purpose?: ReviewEngineerInputPayload['purpose'];
     ailySessionId?: string;
     includedDiscussionTurnIds?: string[];
@@ -1134,6 +1136,7 @@ export class ReviewConversationRepository {
         ? { expectedInputRevision: input.expectedInputRevision }
         : {}),
       selectedEvaluationItemId: input.selectedEvaluationItemId ?? null,
+      ...(input.targetIssueKeys ? { targetIssueKeys: [...input.targetIssueKeys] } : {}),
       executionRequested: input.executionRequested === true,
       overallRequested: input.overallRequested === true,
       ...(input.requestedModel
@@ -1893,6 +1896,7 @@ function persistedTurn(row: SelectedReviewTurn): PersistedReviewTurn {
     expectedInputRevision: turnInput.expectedInputRevision,
     reviewScope: parsePersistedMatterReviewScope(row.reviewScopeJson),
     selectedEvaluationItemId: turnInput.selectedEvaluationItemId ?? null,
+    targetIssueKeys: turnInput.targetIssueKeys,
     executionRequested: turnInput.executionRequested === true,
     overallRequested: turnInput.overallRequested,
     ...(turnInput.requestedModel
@@ -2149,6 +2153,7 @@ function assertIdempotentReplay(
     | 'includedDiscussionTurnIds'
     | 'expectedInputRevision'
     | 'overallRequested'
+    | 'targetIssueKeys'
   >,
 ): void {
   if (
@@ -2157,6 +2162,8 @@ function assertIdempotentReplay(
     turn.expectedInputRevision !== intent?.expectedInputRevision ||
     canonicalJson(turn.includedDiscussionTurnIds ?? null) !==
       canonicalJson(intent?.includedDiscussionTurnIds ?? null) ||
+    canonicalJson(turn.targetIssueKeys ?? null) !==
+      canonicalJson(intent?.targetIssueKeys ?? null) ||
     turn.userMessage !== userMessage ||
     canonicalJson(turn.reviewScope ?? null) !==
       canonicalJson(reviewScope ?? null) ||
@@ -2233,6 +2240,14 @@ function validateEngineerInput(value: unknown): void {
       record.selectedEvaluationItemId !== null &&
       (typeof record.selectedEvaluationItemId !== 'string' ||
         !record.selectedEvaluationItemId.trim())) ||
+    (record.targetIssueKeys !== undefined &&
+      (record.purpose !== 'UPDATE_ASSESSMENT' ||
+        !Array.isArray(record.targetIssueKeys) ||
+        record.targetIssueKeys.length < 1 ||
+        record.targetIssueKeys.length > 20 ||
+        record.targetIssueKeys.some((key) =>
+          typeof key !== 'string' || !key.trim() || key.length > 96) ||
+        new Set(record.targetIssueKeys).size !== record.targetIssueKeys.length)) ||
     !Array.isArray(record.attachments) ||
     record.attachments.length > 1
   ) {

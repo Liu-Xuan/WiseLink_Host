@@ -1452,9 +1452,29 @@ test('Review requester does not retry either known missing-function signature as
     const request = createHostedReviewRequester({ requestGateway: async () => {
       requests++; return new Response(JSON.stringify({ error: { type: 'api_error', message } }), { status: 502 });
     }, observeProgress: async () => {}, wait: async () => assert.fail('must not retry') });
-    await assert.rejects(request('http://localhost', { signal: new AbortController().signal }), /REVIEW_TOOL_CHOICE_NOT_SATISFIED/);
+    const response = await request('http://localhost', { signal: new AbortController().signal });
+    assert.equal(response.status, 502);
     assert.equal(requests, 1);
   }
+});
+
+test('Review requester retains transient retry for an unknown 502', async () => {
+  const { createHostedReviewRequester } = await import('../scripts/request-hosted-gateway.mjs');
+  let requests = 0;
+  let waits = 0;
+  const progress = [];
+  const request = createHostedReviewRequester({ requestGateway: async () => {
+    requests++;
+    return requests === 1
+      ? Response.json({ error: { message: 'unknown gateway failure' } }, { status: 502 })
+      : Response.json({ choices: [] }, { status: 200 });
+  }, observeProgress: async (event) => progress.push(event),
+  wait: async () => { waits++; } });
+  const response = await request('http://localhost', { signal: new AbortController().signal });
+  assert.equal(response.status, 200);
+  assert.equal(requests, 2);
+  assert.equal(waits, 1);
+  assert.deepEqual(progress.map((event) => event.kind), ['MODEL_REQUEST', 'MODEL_RETRY', 'MODEL_REQUEST']);
 });
 
 

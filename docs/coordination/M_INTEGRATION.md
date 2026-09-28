@@ -1,5 +1,25 @@
 # M 主控集成交接
 
+## 2026-09-28：C183 Review 协议与范围修复准备（未发布）
+
+C183 Skill `2867127d87c4d4f1901a0603ce328db26cbda24a`（父 `00d09aceb`）已快进到私有 origin 同名分支，未同步公开 GitHub。它让来源已读取的 JobAid `UPDATE_ASSESSMENT` 继续要求工具调用，并统一 `issuePatches` 指令、独立可读问题正文与已读证据下的开放问题修订。文件级 226/226、precommit、Skill 打包校验通过；61 文件包 SHA256 `eb6adc340154e82cd98a79d3d1c2b4964fab012f4d1ae3655a0136f62f8bb98d`。**尚未安装 17c 或用真实 Review 验证**，因此不能把它记为内容质量修复。
+
+自动审批两次拒绝在 HTTP 400 补答中重新发送工程师原请求、旧工作和已读原文片段到既有 Hosted 模型，要求对具体载荷和目的地明确授权；这些改动未落盘，不能绕开。C183 不增加外发内容，可减少进入丢上下文补答的机会，但若仍触发补答，原问题仍可能存在。显式 JobAid 问题编辑范围的 Host 约束已在 `e216b224cf8164021d61a22f0e26b1b4de7bc30c` 集成（原工作树提交 `a6608838e`，父 `00d09aceb`）：页面明确选择现有 issueKey，范围随 Turn 冻结、Host 任务合同核对，在预校验和事务保存前拒绝范围外问题或顶层结论变化；历史未带范围 Turn 兼容。84 项定向 Jest、双端类型、ESLint、实际 Skill 任务协议定向测试及集成后 precommit 通过。尚未发布 17b 或进行真实后继 Review；旧 `test/node/jobaid-review-protocol.test.mjs` 的 v2 用例仍有本次改动前即存在的 `JOBAID_UNDECLARED_FIELD:understanding` 失败，不把新增用例通过冒充全文件通过。
+
+## 2026-09-28：C182 解除 Review 工具失败，但 Turn 12 内容质量未通过
+
+C182 `00d09aceb750e3c0466e593223d18807f2555754`（父 `c017d26f`）已快进同步私有 origin 同名开发分支；61 文件 Skill 包 SHA256 `85a91b71ba5e87bd2e3c65ec3f53481cecba86fb0b7e06260686a809e71f216d`，17c 私有 ZIP `/1877535869064196.zip`、manifest `/1877536831016980.json`。安装前 C136 是 16 项中唯一启用任务，`runningAtMs` 全为空、消费者进程 0；短时暂停后托管端逐文件核验包、备份 C181、官方安装 C182。安装目录 61/61 字节与 manifest 一致，已安装测试 584/584 通过；仅恢复 C136，最终 16 项仅它启用，静态配置与安装前对比无差异，其他 15 项保持停用。
+
+刘轩本人从旧 787 FTD 正常复核页提交 Turn 12，仅要求修 `FTD-26002-NATURE` 并保留其余问题。17c 固定形状回执显示先 HTTP 200 函数调用、后 HTTP 400 无候选，再经 C182 一次补答取得 HTTP 200 函数调用；不再落入此前的 502 工具调用失败。Host 于 09:45:31 +08 保存 JobAid 修订 12，attempt `AQ-b6133e72066040839b6877a37801addd`，Skill 标记 `r09.c182`；未运行 Overall，也未正式采用。
+
+**内容验收失败：**模型超出请求改写四个既有问题的 body 为“依据某块修正”的过程摘要，仍保留旧 openQuestions 中“原件后续块未读”“其他 Related Categories 未读”“Compliance Interval/References 待读”等不实陈述。页面明确显示当前 JobAid rev12、Overall 仍基于更早工作，旧综合没有被新工作替代。不能将“保存成功”写成工程认识已更正；本轮修订保留供追溯。下一步须修 Review 补答中的原请求/旧工作/已读来源上下文丢失及初始提示的完整对象与 issuePatches 冲突，并用正常后继工作更正，不直接改写历史修订。
+
+## 2026-09-28：C181 安装后真实 Review 失败及 C182 修复候选
+
+C181 的 61 文件包已在 17c 正式安装并逐文件读回，唯一动态 C136 调度恢复启用，其余 15 项保持停用。旧 787 FTD 的正常后继 Review Turn 10（`AQ-077dc4a00a4d4bc28849bc3088c145cf`）及 Turn 11（`AQ-775b46747cd3463d95bfe1d6353efc42`）都以 `HOSTED_REVIEW_EXECUTION_FAILED:REVIEW_TOOL_CHOICE_NOT_SATISFIED` 取消；Turn 11 已明确要求仅用 `issuePatches`，仍未保存新 JobAid。旧修订 11 和旧 Overall 保留。
+
+17c 私有检查点的非内容形状记录显示：两次先有 HTTP 200、单个函数调用；之后 HTTP 400 `INCOMPLETE_TERMINAL_RESPONSE`、无 choice；一次既有有界补答后收到 HTTP 502 `TOOL_CHOICE_NOT_SATISFIED`。502 原先在输出形状观察前抛出，因此不能从现有记录推断模型配额、输出长度或该响应细节。C182 本地候选让已知 502 留下固定类别的形状记录，同时把 JobAid 更新的 400 补答明确限定为现有问题的 `issuePatches` 与已读依据，不改未知 502 重试、Host 校验或其他 Review 路径。定向测试通过；提交、包装、17c 安装和真实 Turn 12 尚待完成，不能记作线上修复成功。
+
 ## 2026-09-28：旧 SB 原页与已保存修订的内容质量核对
 
 从 17b 既有上传的私有原件路径下载 57,434 字节 PDF；SHA256 `260c665aa340752898c0958c7015df5fa8f6f5ead9317d0b37908af6c30d53b5` 与上传记录一致。原件共两页，已逐页渲染并与 PDF 文本层、当前已发布 MinerU/PDF.js manifest 和 JobAid 修订 11 对照。此处仅记录差异，不修改历史工作或原件。
@@ -10,7 +30,7 @@
 
 当前修订 11 的四个问题键为 `FTD-26002-NATURE`、`ATA-46-GATELINK-SCOPE`、`TLS-MISMECHANISM`、`AID-OBEDS-TIMELINE`，都含上述错位或虚假“未读”；已有 WorkItem Overall 仍基于更早工作修订。后继 Review 应按四个受影响问题的实际范围修订，并在保存后以确切新修订按请求执行 Overall，再核对资料库、Wiki、检索及相关投影。不得将本次只读人工核对冒充系统已完成更正。
 
-## 2026-09-28：C181 局部问题补全已提交并打包，Hosted 安装待 17c 登录
+## 2026-09-28：C181 局部问题补全的发布准备（历史时点）
 
 针对 Turn 7–9 的 Review 失败，C181 在 JobAid Review 候选中增加仅供模型编写的 `issuePatches`：只能指定 Host 固定上一修订中的既有 `issueKey` 和实际变化字段；外部驱动保留未提供字段的原值，展开成完整 `issues` 后仍经过现有 Skill/Host 的来源、问题结构、授权与工作修订校验。显式 `[]` 才变更旧集合；未知/重复/无变化问题键、混用非空 `issues` 均拒绝。新增问题仍用完整 `issues`；没有新增路由、角色或正式业务权限。
 

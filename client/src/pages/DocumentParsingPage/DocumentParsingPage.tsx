@@ -1745,6 +1745,10 @@ export default function DocumentParsingPage() {
             workItemRevision={data.workItem.revision}
             workItemRefreshing={loading}
             selectedEvaluationItemId={selectedReviewCriterion || null}
+            jobAidIssues={isJobAidProblemProjection(integratedAssessment?.baseRules)
+              ? integratedAssessment.baseRules.readingResult.content.issueArticles?.map(
+                  ({ issueKey, question }) => ({ issueKey, question }),
+                ) : undefined}
             confirmationReceipt={continuousReviewReceipt}
             onConfirmationReceipt={setContinuousReviewReceipt}
             onLocateSourceRef={(sourceRef) => locateSourceRef(null, sourceRef)}

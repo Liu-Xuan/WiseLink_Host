@@ -86,6 +86,27 @@ describe('ReviewConversationController request boundary', () => {
       ).rejects.toMatchObject({ statusCode: 400 });
   });
 
+  it('accepts only distinct structured issue keys on an explicit WorkItem update', async () => {
+    const setup = makeController();
+    const update = {
+      requestId: 'scope-nature', userMessage: '核对性质判断',
+      purpose: 'UPDATE_ASSESSMENT', executionMode: 'AUTOMATIC',
+      expectedInputRevision: 7, includedDiscussionTurnIds: [],
+      targetIssueKeys: ['FTD-26002-NATURE'],
+    };
+    await setup.controller.appendTextTurn('WI-1', 'RC-1', update, {} as never);
+    expect(setup.service.appendTextTurn).toHaveBeenCalledWith(
+      'WI-1', 'RC-1', update, expect.anything(),
+    );
+    for (const invalid of [
+      { ...update, targetIssueKeys: [] },
+      { ...update, targetIssueKeys: ['FTD-26002-NATURE', 'FTD-26002-NATURE'] },
+      { ...update, purpose: 'CHAT' },
+      { ...update, reviewScope: { kind: 'ENGINEERING_MATTER', matterId: 'MAT-1', expectedWorkingRevision: 1 } },
+    ]) await expect(setup.controller.appendTextTurn('WI-1','RC-1',invalid,{} as never))
+      .rejects.toMatchObject({ statusCode: 400 });
+  });
+
   it('accepts only a registered model reference for the new turn', async () => {
     const setup = makeController();
     const input = {

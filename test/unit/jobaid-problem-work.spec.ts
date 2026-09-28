@@ -1,7 +1,7 @@
 import { JOBAID_PROBLEM_WORK_SCHEMA, jobAidReadingResult } from '@shared/jobaid-problem-assessment.interface';
 import type { AssessmentEvidence } from '@shared/assessment-reading.interface';
 import { collectEvidenceUses } from '@shared/jobaid-evidence-uses';
-import { materializeJobAidWork, calculateJaAcRisk } from '../../server/modules/canonical-host/jobaid-problem-work';
+import { materializeJobAidWork, calculateJaAcRisk, assertJobAidIssueEditScope } from '../../server/modules/canonical-host/jobaid-problem-work';
 import { JOBAID_METHOD_BINDING } from '../../server/modules/canonical-host/jobaid-method-pack';
 import { materializeMatterJobAidCommand } from '../../server/modules/canonical-host/matter-jobaid-save';
 import { engineeringMatterPendingInputs, engineeringMatterWorkingChangeFromCommand, materializeEngineeringMatterWorkingState, parseEngineeringMatterWorkingState } from '../../server/modules/canonical-host/engineering-matter-working-state';
@@ -102,6 +102,31 @@ test('optional risk still uses JA-AC and is not inherited after an issue replace
   expect(calculateJaAcRisk('严重','可能')).toMatchObject({score:70,riskGrade:5});
   const b=materializeJobAidWork(update([issue('A','前提已更正，原评级不沿用。')]),{...context,previous:a});
   expect(b.issues[0].riskScenarios).toEqual([]);
+});
+
+test('Turn 12 scoped to NATURE rejects a four-issue model update before saving',()=>{
+  const keys=['FTD-26002-NATURE','FTD-26002-TIMING','FTD-26002-COVERAGE','FTD-26002-ACTION'];
+  const previous=materializeJobAidWork(update(keys.map(key=>issue(key))),context);
+  const proposed=materializeJobAidWork(update(keys.map(key=>issue(key,`更正 ${key} 的判断。`))),
+    {...context,previous});
+  expect(()=>assertJobAidIssueEditScope(previous,proposed,['FTD-26002-NATURE']))
+    .toThrow('REVIEW_ISSUE_OUT_OF_SCOPE:FTD-26002-TIMING');
+  const focused=materializeJobAidWork(update([issue(keys[0],'仅更正性质判断。')]),
+    {...context,previous});
+  expect(focused.issues.map((item)=>item.issueKey)).toEqual(keys);
+  expect(()=>assertJobAidIssueEditScope(previous,focused,[keys[0]])).not.toThrow();
+  expect(()=>assertJobAidIssueEditScope(previous,focused)).not.toThrow();
+  const added=materializeJobAidWork(update([issue('FTD-26002-NEW')]),
+    {...context,previous});
+  expect(()=>assertJobAidIssueEditScope(previous,added,[keys[0]]))
+    .toThrow('REVIEW_ISSUE_OUT_OF_SCOPE:FTD-26002-NEW');
+  const retired=materializeJobAidWork(update([],{
+    retiredIssues:[{issueKey:keys[1],reason:'模型建议撤回。'}],
+  }),{...context,previous});
+  expect(()=>assertJobAidIssueEditScope(previous,retired,[keys[0]]))
+    .toThrow('REVIEW_ISSUE_OUT_OF_SCOPE:FTD-26002-TIMING');
+  expect(()=>assertJobAidIssueEditScope(previous,{...focused,headline:'整体结论被改写'},[keys[0]]))
+    .toThrow('REVIEW_WORK_OUT_OF_SCOPE:headline');
 });
 test('normal Matter command materializes, validates and reads the same body with exact coverage',()=>{
   const input={matterId:'MAT-test',matterRevisionId:'MR1',attemptRef:'AQ1',requestId:'save1',expectedWorkRevision:0,previous:null,

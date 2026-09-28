@@ -51,7 +51,7 @@ export function createHostedReviewRequester({ requestGateway = requestHostedGate
           let payload;
           try { payload = JSON.parse(body); } catch { /* Existing HTTP handling owns malformed bodies. */ }
           const failure = classifyHostedGatewayFailure(payload);
-          if (failure === 'TOOL_CHOICE_NOT_SATISFIED') throw new Error('REVIEW_TOOL_CHOICE_NOT_SATISFIED');
+          if (failure === 'TOOL_CHOICE_NOT_SATISFIED') return response;
           if (failure !== 'UNCLASSIFIED') return response;
         }
         retryCode = `REVIEW_GATEWAY_HTTP_${response.status}`;

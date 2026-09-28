@@ -10,6 +10,35 @@ import {
 } from '@shared/jobaid-problem-assessment.interface';
 import { isJobAidMethodBinding } from './jobaid-method-pack';
 import { collectIssueEvidenceUses } from '@shared/jobaid-evidence-uses';
+import { canonicalJson } from '../action-attempt/action-attempt-envelope';
+
+/** Reject any issue addition, retirement or edit outside the explicit turn scope. */
+export function assertJobAidIssueEditScope(
+  previous: JobAidProblemWorkContent | null,
+  next: JobAidProblemWorkContent,
+  targetIssueKeys?: string[],
+): void {
+  if (targetIssueKeys === undefined) return; // historical unscoped turns
+  const allowed = new Set(targetIssueKeys);
+  if (!previous || !allowed.size ||
+    [...allowed].some((key) => !previous.issues.some((issue) => issue.issueKey === key)))
+    throw new Error('REVIEW_TARGET_ISSUES_INVALID');
+  const before = new Map(previous.issues.map((issue) => [issue.issueKey, issue]));
+  const after = new Map(next.issues.map((issue) => [issue.issueKey, issue]));
+  for (const key of new Set([...before.keys(), ...after.keys()])) {
+    if (!allowed.has(key) &&
+      canonicalJson(before.get(key) ?? null) !== canonicalJson(after.get(key) ?? null))
+      throw new Error(`REVIEW_ISSUE_OUT_OF_SCOPE:${key}`);
+  }
+  // A scoped issue edit cannot silently replace the work-level reading.
+  for (const field of [
+    'headline', 'listBrief', 'understanding',
+    'roundCompletion', 'completionReason', 'methodBinding',
+  ] as const) {
+    if (canonicalJson(previous[field]) !== canonicalJson(next[field]))
+      throw new Error(`REVIEW_WORK_OUT_OF_SCOPE:${field}`);
+  }
+}
 
 const severityValues = new Map([
   ['轻微', 3],

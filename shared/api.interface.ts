@@ -234,6 +234,8 @@ export interface ReviewTurnReadModel {
   reviewScope?: ReviewScopeSelection | null;
   /** The engineer's focus for this turn; absent in older responses. */
   selectedEvaluationItemId?: string | null;
+  /** Explicit JobAid issue edit scope frozen with this turn; absent for legacy turns. */
+  targetIssueKeys?: string[];
   /** Host-resolved choice captured when this turn was submitted. */
   requestedModel?: CanonicalExecutionModelSelection | null;
   /** Absent on older Hosts; null means no recorded execution request/attempt. */
@@ -311,6 +313,8 @@ export interface AppendReviewTextTurnRequest {
   /** Host reauthorizes the full Matter and freezes its actual inputs. */
   reviewScope?: AppendMatterReviewScope;
   selectedEvaluationItemId?: string | null;
+  /** Only these existing JobAid issues may change in this update. */
+  targetIssueKeys?: string[];
   /** Explicit opt-in; existing saved turns are never picked up implicitly. */
   executionMode?: 'AUTOMATIC';
   /** A registered model identifier only; omission inherits this discussion's choice. */
