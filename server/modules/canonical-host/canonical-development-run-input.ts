@@ -1,6 +1,7 @@
 import { BadRequestException } from '@nestjs/common';
 
 import type { CanonicalDevelopmentWorkItemRunRequest } from '@shared/api.interface';
+import { optionalDocumentDeliverySelection } from '../../common/document-delivery-selection';
 import { taskModelSelection } from '../model-settings/canonical-model-catalog';
 
 const ALLOWED_KEYS = new Set([
@@ -9,6 +10,7 @@ const ALLOWED_KEYS = new Set([
   'developmentRunToken',
   'query',
   'modelRef',
+  'documentDelivery',
 ]);
 
 const FORBIDDEN_AUTHORITY_KEYS = new Set([
@@ -47,11 +49,15 @@ export function developmentRunBody(
     value.modelRef === undefined
       ? undefined
       : taskModelSelection(value.modelRef).modelRef;
+  const documentDelivery = optionalDocumentDeliverySelection(
+    value.documentDelivery,
+  );
   if ((documentVersionId ? 1 : 0) + (selection ? 1 : 0) !== 1) {
     throw badRequest('DEVELOPMENT_RUN_SOURCE_EXACTLY_ONE_REQUIRED');
   }
   return {
     ...(modelRef ? { modelRef } : {}),
+    ...(documentDelivery ? { documentDelivery } : {}),
     ...(documentVersionId ? { documentVersionId } : { selection }),
     developmentRunToken: requiredText(
       value.developmentRunToken,

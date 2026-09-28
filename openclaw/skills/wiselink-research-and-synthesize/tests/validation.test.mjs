@@ -1435,7 +1435,7 @@ test('requires 35 MCP capabilities, six review tools, and hosted provenance', ()
   assert.ok(HOST_MCP_TOOLS.includes('commit_applicability_candidate'));
   assert.equal(
     WISELINK_SKILL_VERSION,
-    'wiselink-research-and-synthesize@r09.c192',
+    'wiselink-research-and-synthesize@r09.c198',
   );
   assert.equal(
     WISELINK_SKILL_COMPATIBILITY_REF,
@@ -5077,7 +5077,7 @@ test('offers source reading and one final candidate function with blank assistan
   assert.equal(result.provenance.modelVersion, 'openai-codex/gpt-5.4');
   assert.equal(
     result.provenance.promptVersion,
-    'wiselink.3_1.review_prompt.v1.c49',
+    'wiselink.3_1.review_prompt.v1.c51',
   );
 });
 
@@ -5130,7 +5130,7 @@ test('falls back to the configured model and records only output shape v2', asyn
   assert.equal(result.provenance.modelVersion, 'provider/configured');
   assert.equal(
     result.provenance.promptVersion,
-    'wiselink.3_1.review_prompt.v1.c49',
+    'wiselink.3_1.review_prompt.v1.c51',
   );
   assert.equal(
     outputShape.schemaVersion,
@@ -7364,6 +7364,59 @@ test('JobAid assessment update permits one bounded citation correction after two
   assert.equal(result.output.jobAidWorkingDelta.issues[0].issueKey, 'existing-issue');
 });
 
+test('JobAid Review gives the exact requirement conditions field in the same correction round', async () => {
+  const issue = { issueKey: 'existing-issue', question: '适用条件是什么？',
+    body: '条件仍须按原文核对。[[method:risk]]', riskScenarios: [], measures: [],
+    otherClassifications: [], openQuestions: [], requirementHandling: [{
+      methodRef: 'method:risk', requirement: '核对适用范围', conditions: '实际模型返回的敏感条件',
+      treatment: 'CONDITIONS_UNCONFIRMED', basisRefs: [], explanation: '范围待核',
+    }] };
+  let requests = 0;
+  const rejections = [];
+  const result = await invokeReviewWithTransport({ input: {
+    availableSourceRefIds: [], attachmentRefs: [],
+    context: { purpose: 'UPDATE_ASSESSMENT', problemAssessment: {
+      previousWork: { content: { issues: [{ issueKey: 'existing-issue' }] } },
+    } },
+  } }, {
+    gatewayUrl: 'https://official.invalid', gatewayToken: 'fixture-only', configuredModelVersion: 'fixture/provider',
+    validateCandidate: validateJobAidUpdatedIssueBodies,
+    observeCandidateRejection: async (value) => rejections.push(value),
+  }, { requestGateway: async (_url, init) => {
+    requests++;
+    if (requests === 2) {
+      const feedback = JSON.parse(JSON.parse(init.body).messages.at(-1).content);
+      assert.equal(feedback.candidateAccepted, false);
+      assert.equal(feedback.validationError, 'REVIEW_JOBAID_REQUIREMENT_CONDITIONS_INVALID');
+      assert.deepEqual(feedback.requirementConditionsFeedback, {
+        field: 'jobAidWorkingDelta.issues[0].requirementHandling[0].conditions',
+        expected: 'array of distinct, nonempty strings', received: 'string',
+      });
+      assert.match(feedback.instruction, /complete new candidate/u);
+      assert.equal(JSON.stringify(feedback).includes('实际模型返回的敏感条件'), false);
+    }
+    return Response.json({ choices: [{ message: { content: null, tool_calls: [{
+      id: `candidate-${requests}`, type: 'function', function: {
+        name: 'return_wiselink_review_candidate',
+        arguments: JSON.stringify({ answer: '核对条件', jobAidWorkingDelta: { issues: [{
+          ...issue, requirementHandling: [{ ...issue.requirementHandling[0],
+            conditions: requests === 1 ? issue.requirementHandling[0].conditions : ['待核适用范围'],
+          }],
+        }] } }),
+      },
+    }] } }] });
+  } });
+  assert.equal(requests, 2);
+  assert.deepEqual(rejections, [{ modelRound: 1, correctionNo: 1,
+    errorCode: 'REVIEW_JOBAID_REQUIREMENT_CONDITIONS_INVALID', requirementConditionsFeedback: {
+      field: 'jobAidWorkingDelta.issues[0].requirementHandling[0].conditions',
+      expected: 'array of distinct, nonempty strings', received: 'string',
+    } }]);
+  assert.deepEqual(result.output.jobAidWorkingDelta.issues[0].requirementHandling[0].conditions,
+    ['待核适用范围']);
+  assert.equal(issue.requirementHandling[0].conditions, '实际模型返回的敏感条件');
+});
+
 test('gateway required-tool contract failure is reported once without transient retries', async () => {
   let requests = 0;
   const progress = [];
@@ -7517,6 +7570,147 @@ test('JobAid Review corrects missing completion reason and change summary before
   assert.equal(validations, 3);
   assert.deepEqual(errors, ['REVIEW_JOBAID_COMPLETIONREASON_REQUIRED', 'REVIEW_JOBAID_CHANGESUMMARY_REQUIRED']);
   assert.equal(result.output.jobAidWorkingDelta.changeSummary, '撤回无据判断');
+});
+
+function turn21RejectedCandidateFixture({ fourth = 'exact', fifth = 'candidate',
+  rejectionCode = 'REVIEW_JOBAID_ISSUE_FULL_CONTENT_REQUIRED' } = {}) {
+  const calls = [];
+  const rejections = [];
+  let reads = 0;
+  let validations = 0;
+  const sessionKey = 'agent:wiselink-engineering:review:ACTX-RS-turn21';
+  const previousIssue = { issueKey: 'existing', question: '原问题',
+    body: '旧判断。[[source:prior]]', riskScenarios: [], measures: [],
+    otherClassifications: [], openQuestions: [], requirementHandling: [] };
+  const invalid = { answer: '待更正', sourceRefs: ['page1'],
+    jobAidWorkingDelta: { schemaVersion: 'wiselink.jobaid-problem-work.v3',
+      issues: [{ issueKey: 'existing', body: '已核对原文。[[source:page1]]' }],
+      roundCompletion: 'IN_PROGRESS', completionReason: '保留原范围',
+      changeSummary: '更正既有问题' } };
+  const corrected = { answer: '已更正既有问题。', sourceRefs: ['page1'],
+    jobAidWorkingDelta: { schemaVersion: 'wiselink.jobaid-problem-work.v3',
+      issuePatches: [{ issueKey: 'existing', body: '已核对原文。[[source:page1]]' }],
+      roundCompletion: 'IN_PROGRESS', completionReason: '保留原范围',
+      changeSummary: '更正既有问题' } };
+  const result = invokeReviewWithTransport({ input: {
+    availableSourceRefIds: ['page1'],
+    context: { purpose: 'UPDATE_ASSESSMENT', problemAssessment: {
+      availableSources: [{ kind: 'DOCUMENT_PASSAGE' }],
+      previousWork: { content: { issues: [previousIssue],
+        roundCompletion: 'IN_PROGRESS', completionReason: '保留原范围' } },
+    } },
+  } }, {
+    gatewayUrl: 'https://official.invalid', gatewayToken: 'fixture-only',
+    configuredModelVersion: 'fixture/provider',
+    executionModel: modelSelection('m3probe/minimax-m3'),
+    registeredModelRefs: ['m3probe/minimax-m3'], nativeSessionKey: sessionKey,
+    readSourceRefs: async ids => { reads++; return ids.map(sourceRefId => ({ sourceRefId,
+      evidenceRef: `source:${sourceRefId}`, excerpt: 'Fixture passage.' })); },
+    validateCandidate: value => {
+      validations++;
+      if (validations === 1 && rejectionCode !== 'REVIEW_JOBAID_ISSUE_FULL_CONTENT_REQUIRED') {
+        throw new Error(rejectionCode);
+      }
+      validateJobAidUpdatedIssueBodies(value);
+    },
+    observeCandidateRejection: event => { rejections.push(event.errorCode); },
+  }, { requestGateway: async (_url, init) => {
+    calls.push({ sessionKey: init.headers['x-openclaw-session-key'], ...JSON.parse(init.body) });
+    if (calls.length === 1) return Response.json({ choices: [{ message: { content: null,
+      tool_calls: [{ id: 'read1', type: 'function', function: {
+        name: 'read_wiselink_review_sources', arguments: JSON.stringify({ sourceRefIds: ['page1'] }),
+      } }] } }] });
+    if (calls.length === 2) return Response.json({ error: {
+      message: 'm3probe/minimax-m3 ended with an incomplete terminal response',
+    } }, { status: 400 });
+    if (calls.length === 3) return Response.json({ choices: [{ message: { content: null,
+      tool_calls: [{ id: 'candidate3', type: 'function', function: {
+        name: 'return_wiselink_review_candidate', arguments: JSON.stringify(invalid),
+      } }] } }] });
+    if (calls.length === 4) return Response.json({ error: { message: fourth === 'exact'
+      ? 'tool_choice=required was not satisfied by the agent response'
+      : 'upstream unavailable' } }, { status: 502 });
+    if (calls.length === 5 && fifth === 'read') return Response.json({ choices: [{ message: {
+      content: null, tool_calls: [{ id: 'read5', type: 'function', function: {
+        name: 'read_wiselink_review_sources', arguments: JSON.stringify({ sourceRefIds: ['page1'] }),
+      } }],
+    } }] });
+    if (fifth === 'prose') return Response.json({ choices: [{ message: {
+      content: 'Unvalidated prose is not a candidate.', tool_calls: [],
+    } }] });
+    if (fifth === 'repeat') return Response.json({ error: {
+      message: 'tool_choice=required was not satisfied by the agent response',
+    } }, { status: 502 });
+    return Response.json({ choices: [{ message: { content: null,
+      tool_calls: [{ id: 'candidate5', type: 'function', function: {
+        name: 'return_wiselink_review_candidate', arguments: JSON.stringify(corrected),
+      } }] } }] });
+  } });
+  return { result, calls, rejections, sessionKey,
+    get reads() { return reads; }, get validations() { return validations; } };
+}
+
+test('M3 Probe recovers exact Turn21 post-rejection 502 with one auto candidate request', async () => {
+  const fixture = turn21RejectedCandidateFixture();
+  const result = await fixture.result;
+  assert.equal(fixture.calls.length, 5);
+  assert.ok(fixture.calls.every(call => call.sessionKey === fixture.sessionKey));
+  assert.deepEqual(fixture.calls.map(call => call.tool_choice),
+    ['required', 'required', 'required', 'required', 'auto']);
+  assert.deepEqual(fixture.rejections, ['REVIEW_JOBAID_ISSUE_FULL_CONTENT_REQUIRED']);
+  assert.equal(fixture.reads, 1);
+  assert.equal(fixture.validations, 2);
+  assert.match(fixture.calls[4].messages.at(-1).content,
+    /REVIEW_JOBAID_ISSUE_FULL_CONTENT_REQUIRED/u);
+  assert.match(fixture.calls[4].messages.at(-1).content, /source:page1/u);
+  assert.deepEqual(fixture.calls[4].messages.map(message => message.role),
+    ['system', 'assistant', 'tool', 'user']);
+  const rejectionFeedback = JSON.parse(fixture.calls[4].messages[2].content);
+  assert.equal(rejectionFeedback.candidateAccepted, false);
+  assert.equal(rejectionFeedback.validationError, 'REVIEW_JOBAID_ISSUE_FULL_CONTENT_REQUIRED');
+  assert.deepEqual(fixture.calls[4].tools.map(tool => tool.function.name),
+    ['return_wiselink_review_candidate', 'read_wiselink_review_sources']);
+  assert.equal(result.output.jobAidWorkingDelta.issues[0].body,
+    '已核对原文。[[source:page1]]');
+});
+
+test('Turn21 auto choice lasts one request even when the model reads a cached source', async () => {
+  const fixture = turn21RejectedCandidateFixture({ fifth: 'read' });
+  const result = await fixture.result;
+  assert.deepEqual(fixture.calls.map(call => call.tool_choice),
+    ['required', 'required', 'required', 'required', 'auto', 'required']);
+  assert.equal(fixture.reads, 1);
+  assert.equal(fixture.validations, 2);
+  assert.equal(result.output.jobAidWorkingDelta.issues[0].body,
+    '已核对原文。[[source:page1]]');
+});
+
+test('Turn21 protocol recovery rejects prose, repeated exact 502, and generic 502', async () => {
+  for (const scenario of [
+    { fourth: 'exact', fifth: 'prose', error: /REVIEW_GATEWAY_OUTPUT_FUNCTION_COUNT_INVALID/u, calls: 5 },
+    { fourth: 'exact', fifth: 'repeat', error: /REVIEW_TOOL_CHOICE_NOT_SATISFIED/u, calls: 5 },
+    { fourth: 'generic', fifth: 'candidate', error: /REVIEW_GATEWAY_HTTP_502/u, calls: 4 },
+  ]) {
+    const fixture = turn21RejectedCandidateFixture(scenario);
+    await assert.rejects(fixture.result, scenario.error);
+    assert.equal(fixture.calls.length, scenario.calls);
+    assert.deepEqual(fixture.rejections, ['REVIEW_JOBAID_ISSUE_FULL_CONTENT_REQUIRED']);
+    assert.equal(fixture.reads, 1);
+    assert.equal(fixture.validations, 1);
+    if (scenario.fourth === 'exact') assert.equal(fixture.calls[4].tool_choice, 'auto');
+  }
+});
+
+test('Turn21 exact 502 after another candidate validation error does not get auto correction', async () => {
+  const fixture = turn21RejectedCandidateFixture({
+    rejectionCode: 'REVIEW_JOBAID_WORK_SCHEMA_INVALID',
+  });
+  await assert.rejects(fixture.result, /REVIEW_TOOL_CHOICE_NOT_SATISFIED/u);
+  assert.deepEqual(fixture.rejections, ['REVIEW_JOBAID_WORK_SCHEMA_INVALID']);
+  assert.deepEqual(fixture.calls.map(call => call.tool_choice),
+    ['required', 'required', 'required', 'required']);
+  assert.equal(fixture.reads, 1);
+  assert.equal(fixture.validations, 1);
 });
 
 test('source-read JobAid Review corrects one empty required-tool 502 in the same session', async () => {
@@ -7899,6 +8093,32 @@ test('JobAid update rejects uncited issue bodies before Host commit while leavin
   issue.openQuestions = [];
   delta.jobAidWorkingDelta.issues[0].body += ' [[broken';
   assert.throws(() => validateJobAidUpdatedIssueBodies(delta), /REVIEW_JOBAID_BODY_CITATION_MALFORMED/u);
+});
+
+test('JobAid candidate validates requirement conditions as distinct nonempty strings', () => {
+  const issue = { issueKey: 'existing', question: '适用条件？', body: '按条款核对。[[method:risk]]',
+    riskScenarios: [], measures: [], otherClassifications: [], openQuestions: [],
+    requirementHandling: [{ conditions: ['范围待核'] }] };
+  const candidate = { jobAidWorkingDelta: { issues: [issue] } };
+  for (const [conditions, received] of [
+    ['范围待核', 'string'], [null, 'null'], [['范围待核', 1], 'invalid array items'],
+    [[' '], 'invalid array items'], [['范围待核', ' 范围待核 '], 'invalid array items'],
+  ]) {
+    issue.requirementHandling[0].conditions = conditions;
+    assert.throws(() => validateJobAidUpdatedIssueBodies(candidate), (error) => {
+      assert.equal(error.message, 'REVIEW_JOBAID_REQUIREMENT_CONDITIONS_INVALID');
+      assert.deepEqual(error.requirementConditionsFeedback, {
+        field: 'jobAidWorkingDelta.issues[0].requirementHandling[0].conditions',
+        expected: 'array of distinct, nonempty strings', received,
+      });
+      return true;
+    });
+    assert.equal(issue.requirementHandling[0].conditions, conditions);
+  }
+  issue.requirementHandling[0].conditions = [];
+  assert.doesNotThrow(() => validateJobAidUpdatedIssueBodies(candidate));
+  issue.requirementHandling[0].conditions = ['范围待核'];
+  assert.doesNotThrow(() => validateJobAidUpdatedIssueBodies(candidate));
 });
 
 test('JobAid Review catches out-of-scope issue replacements and retirements before Host commit', () => {

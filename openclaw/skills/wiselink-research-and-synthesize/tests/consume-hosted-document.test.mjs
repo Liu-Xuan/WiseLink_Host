@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import { createHash } from 'node:crypto';
 import test from 'node:test';
 import { consumeHostedWorkItem } from '../scripts/consume-hosted-work-item.mjs';
 const state = () => ({ documentVersionId: 'DV-test', runtimeAvailable: true, latestRun: {
@@ -42,6 +43,60 @@ test('published original advances independent translation once and completed tra
       status === 'RUNNING' ? ['STATUS','STEP'] : ['STATUS']);
     assert.equal(result.status, status === 'SUCCEEDED' ? 'DOCUMENT_READY' : status === 'FAILED' ? 'REQUIRES_ATTENTION' : 'RUNNING');
   }
+});
+test('selected reading without translation never starts Chinese generation', async () => {
+  const current = state(); current.latestRun.status = 'PUBLISHED';
+  current.documentDelivery = { reading: true, translation: 'NONE' };
+  const calls = [];
+  const result = await consumeHostedWorkItem({ documentVersionId: 'DV-test' }, {
+    callTool: async (name, args) => {
+      calls.push([name, args.action]);
+      if (name !== 'document_work') throw new Error('UNREQUESTED_TRANSLATION');
+      return args.action === 'INDEX'
+        ? { documentVersionId: 'DV-test', parseRunId: 'PRUN-test', status: 'INDEXED' }
+        : current;
+    },
+  });
+  assert.deepEqual(calls, [['document_work', 'STATUS'], ['document_work', 'INDEX']]);
+  assert.equal(result.status, 'DOCUMENT_READY');
+  assert.equal(result.translation.status, 'NOT_REQUESTED');
+});
+test('queue delivery selector reaches every document tool without becoming an actor claim', async () => {
+  const current = state(); current.latestRun.status = 'PUBLISHED';
+  current.documentDelivery = { reading: false, translation: 'NONE' };
+  const calls = [];
+  await consumeHostedWorkItem({ documentVersionId: 'DV-test', deliveryRef: 'work-item:WI-test' }, {
+    callTool: async (name, args) => {
+      calls.push([name, args]);
+      return args.action === 'INDEX'
+        ? { documentVersionId: 'DV-test', parseRunId: 'PRUN-test', status: 'INDEXED' }
+        : current;
+    },
+  });
+  assert.deepEqual(calls.map(([, args]) => args.deliveryRef),
+    ['work-item:WI-test', 'work-item:WI-test']);
+});
+test('selected translation uses one request derived from its persisted delivery selector', async () => {
+  const current = state(); current.latestRun.status = 'PUBLISHED';
+  current.documentDelivery = { reading: false, translation: 'ZH_FULL' };
+  const deliveryRef = 'acquisition:ACQ-test';
+  const calls = [];
+  await consumeHostedWorkItem({ documentVersionId: 'DV-test', deliveryRef }, {
+    callTool: async (name, args) => {
+      calls.push([name, args]);
+      if (name === 'document_work') return args.action === 'INDEX'
+        ? { documentVersionId: 'DV-test', parseRunId: 'PRUN-test', status: 'INDEXED' }
+        : current;
+      if (args.action === 'STATUS') return { documentVersionId: 'DV-test', status: 'IDLE',
+        parseRunId: 'PRUN-test', semanticReady: true };
+      return { documentVersionId: 'DV-test', parseRunId: 'PRUN-test',
+        attemptRef: 'DTQ-test', status: 'QUEUED' };
+    },
+  });
+  const start = calls.find(([name, args]) => name === 'document_translation' && args.action === 'START');
+  assert.equal(start[1].requestId,
+    `auto-translation-${createHash('sha256').update(deliveryRef).digest('hex').slice(0, 32)}`);
+  assert.ok(calls.every(([, args]) => args.deliveryRef === deliveryRef));
 });
 test('source indexing failure is visible without preventing independent translation progress', async () => {
   const current = state(); current.latestRun.status = 'PUBLISHED';

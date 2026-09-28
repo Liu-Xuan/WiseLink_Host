@@ -512,15 +512,17 @@ async function readCanonicalLibrary<T>(input: {
   signal?: AbortSignal;
   method?: 'GET' | 'POST';
   data?: DocumentUploadRequest | DocumentHistoricalImportRequest | DocumentMetadataReextractRequest | StartDocumentParseRequest;
+  oauthProtected?: boolean;
 }): Promise<T> {
   const requestGeneration = clientSessionGeneration;
   try {
+    const { oauthProtected, ...requestInput } = input;
     const response = await axiosForBackend<T>({
-      ...input,
+      ...requestInput,
       method: input.method ?? 'GET',
     });
     if (response.status === 401) {
-      throw clientLoginRequired(
+      throw (oauthProtected ? reviewOauthSessionRequired(response.data, requestGeneration) : null) ?? clientLoginRequired(
         'CANONICAL_LIBRARY_LOGIN_REQUIRED',
         requestGeneration,
       );
@@ -546,7 +548,9 @@ async function readCanonicalLibrary<T>(input: {
         traceId,
       });
     }
-    throw normalizedDirectObjectError(error, requestGeneration);
+    throw input.oauthProtected
+      ? normalizedOauthProtectedError(error, requestGeneration)
+      : normalizedDirectObjectError(error, requestGeneration);
   }
 }
 
@@ -783,7 +787,10 @@ export function refreshLibraryHistoricalImport(preflightId: string): Promise<Doc
 }
 
 async function requestDocumentUpload(url: string, data?: DocumentUploadRequest | DocumentHistoricalImportRequest): Promise<DocumentUploadResponse> {
-  const receipt = await readCanonicalLibrary<DocumentUploadResponse>({ url, method: 'POST', ...(data ? { data } : {}) });
+  await requireOfficialOauthSession();
+  const receipt = await readCanonicalLibrary<DocumentUploadResponse>({
+    url, method: 'POST', oauthProtected: true, ...(data ? { data } : {}),
+  });
   if (!receipt || !['COMMITTED', 'REVIEW_REQUIRED'].includes(receipt.status) ||
     (receipt.status === 'COMMITTED' && !receipt.documentVersionId)) {
     throw new Error('DOCUMENT_UPLOAD_RECEIPT_INVALID');

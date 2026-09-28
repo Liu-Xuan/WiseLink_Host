@@ -87,7 +87,7 @@ function fixture(sample?: { pdf: Buffer; candidate: Buffer }) {
   const workItems = { loadTenantDocumentAuthorizationBinding: jest.fn(async () => ({ documentVersionId: 'DV' })) };
   const source = { version: { ...binding, originalFilename: 'source.pdf', businessRevision: '1', revisionDate: '2026-09-26', sourceGeneratedDate: '2026-09-26' },
     family: { familyId: 'FAM', canonicalDocumentNumber: 'TEST', documentFamily: 'AMM', issuerAuthority: 'TEST', currentDocumentVersionId: 'DV' },
-    source: { bucketId: 'bucket', filePath: '/source.pdf', sha256: binding.pdfSha256, byteLength: pdf.length,
+    source: { sourceArtifactId: 'ART', bucketId: 'bucket', filePath: '/source.pdf', sha256: binding.pdfSha256, byteLength: pdf.length,
       providerObjectId: 'object:source.pdf', providerVersionId: 'object:source.pdf' } };
   const catalog = { readMetadataSource: jest.fn(async () => source), readOwnedAcquisitionVersionBinding: jest.fn(async () => null) };
   const authorizer = new OrdinaryDocumentManagementAuthorizer(workItems as never, files as never, catalog as never, repository as never);
@@ -111,7 +111,10 @@ function fixture(sample?: { pdf: Buffer; candidate: Buffer }) {
       documentId: 'DOC', sourceArtifactId: 'ART', sourceFileSha256: binding.pdfSha256, sourceByteLength: pdf.length, leaseGeneration: 1 } })) };
   const runtime = new DocumentWorkRuntimeService(authorization as never,
     { withActorScope: async (_actor: string, callback: () => Promise<unknown>) => callback() } as never,
-    service, leases as never, {} as never, {} as never, {} as never, {} as never);
+    service, leases as never, {} as never, {} as never, {} as never, {} as never,
+    { readDocumentDeliveryIntents: async () => [] } as never,
+    { readDocumentUploadDeliveryIntents: async () => [] } as never,
+    { run: async () => null } as never, { run: async () => null } as never);
   return { service, runtime, run, repository, content, scoped, extract, plugins, leases, workItems, authorizeDocumentWork };
 }
 

@@ -22,6 +22,7 @@ import type {
   CanonicalParseAuthorizationProjection,
   CanonicalWorkItemProjection,
   CanonicalExecutionModelSelection,
+  DocumentDeliverySelection,
 } from '@shared/api.interface';
 import { isRetryableParseFailureCode } from '@shared/parse-retry-policy';
 import {
@@ -29,6 +30,7 @@ import {
   sourceIdentityQuery,
 } from './document-version-source-identity';
 import { autoWorkItemAuthorization } from '../../database/auto-work-item-authorization.schema';
+import { dmDocumentReadingRun } from '../../database/document-reading.schema';
 import {
   actionAttempt,
   workItem,
@@ -37,8 +39,12 @@ import { readStoredExecutionModel } from '../model-settings/canonical-execution-
 import { canonicalModelError } from '../model-settings/canonical-model-catalog';
 
 const ACTION_TYPE = 'PARSE_PDF';
+const DELIVERY_INTENT_ACTION_TYPE = 'DOCUMENT_DELIVERY_INTENT';
 
 export interface WorkItemReservationInput {
+  /** Records the caller's intake choice without scheduling document work. */
+  developmentIntake?: boolean;
+  documentDelivery?: DocumentDeliverySelection;
   autoProcessingGrant?: 'MIAODA_CANONICAL_PARSE_REQUEST';
   analysisModel?: CanonicalExecutionModelSelection;
   /** Server-resolved session from this task's creation request; never client JSON. */
@@ -228,8 +234,153 @@ export class MiaodaWorkItemRepository {
     @Inject(DRIZZLE_DATABASE) private readonly db: PostgresJsDatabase,
   ) {}
 
+  /** An intake choice is authority only for its original actor and exact version. */
+  async readDocumentDeliveryIntents(input: {
+    tenantId: string;
+    documentVersionId: string;
+  }): Promise<Array<{
+    workItemId: string;
+    requestId: string;
+    actorUserId: string;
+    documentVersionId: string;
+    sourceArtifactId: string;
+    sourceFileSha256: string;
+    sourceByteLength: number;
+    delivery: DocumentDeliverySelection;
+  }>> {
+    const rows = await this.db.select({
+      workItemId: workItem.workItemId,
+      requestId: workItem.requestId,
+      actorUserId: workItem.requestedByUserId,
+      documentVersionId: workItem.documentVersionId,
+      sourceArtifactId: workItem.sourceArtifactId,
+      sourceFileSha256: workItem.sourceFileSha256,
+      sourceByteLength: workItem.sourceByteLength,
+      envelope: actionAttempt.taskEnvelopeJson,
+    }).from(workItem).innerJoin(actionAttempt, and(
+      eq(actionAttempt.workItemId, workItem.workItemId),
+      eq(actionAttempt.tenantId, workItem.tenantId),
+      eq(actionAttempt.actorUserId, workItem.requestedByUserId),
+      eq(actionAttempt.documentVersionId, workItem.documentVersionId),
+      eq(actionAttempt.triggerRequestId, workItem.requestId),
+      eq(actionAttempt.actionType, DELIVERY_INTENT_ACTION_TYPE),
+      eq(actionAttempt.status, 'RECORDED'),
+    )).where(and(
+      eq(workItem.tenantId, input.tenantId),
+      eq(workItem.documentVersionId, input.documentVersionId),
+      eq(workItem.actionType, ACTION_TYPE),
+    ));
+    return rows.flatMap((row) => {
+      let envelope: unknown;
+      try { envelope = JSON.parse(row.envelope ?? ''); }
+      catch { throw new Error('DOCUMENT_DELIVERY_INTENT_CORRUPT'); }
+      if (!envelope || typeof envelope !== 'object' || Array.isArray(envelope))
+        throw new Error('DOCUMENT_DELIVERY_INTENT_CORRUPT');
+      const stored = envelope as Record<string, unknown>;
+      if (stored.schemaVersion !== 'wiselink.document_delivery_intent.v1' ||
+          stored.documentVersionId !== row.documentVersionId)
+        throw new Error('DOCUMENT_DELIVERY_INTENT_CORRUPT');
+      if (stored.documentDelivery === null) return [];
+      const delivery = stored.documentDelivery;
+      if (!delivery || typeof delivery !== 'object' || Array.isArray(delivery))
+        throw new Error('DOCUMENT_DELIVERY_INTENT_CORRUPT');
+      const choice = delivery as Record<string, unknown>;
+      if (Object.keys(choice).length !== 2 || typeof choice.reading !== 'boolean' ||
+          (choice.translation !== 'NONE' && choice.translation !== 'ZH_FULL'))
+        throw new Error('DOCUMENT_DELIVERY_INTENT_CORRUPT');
+      return [{ workItemId: row.workItemId, requestId: row.requestId,
+        actorUserId: row.actorUserId, documentVersionId: row.documentVersionId,
+        sourceArtifactId: row.sourceArtifactId, sourceFileSha256: row.sourceFileSha256,
+        sourceByteLength: row.sourceByteLength,
+        delivery: { reading: choice.reading, translation: choice.translation } }];
+    });
+  }
+
+  /** Enumerate persisted intake identities; pending producer state is checked in actor scope. */
+  async listDocumentDeliveryCandidates(input: { tenantId: string; afterAttemptId?: string;
+    limit: number }): Promise<Array<{
+    attemptId: string; workItemId: string; documentVersionId: string; actorUserId: string;
+  }>> {
+    const rows = await this.db.execute<{ attemptId: string; workItemId: string;
+      documentVersionId: string; actorUserId: string }>(sql`
+      SELECT i.attempt_id AS "attemptId",i.work_item_id AS "workItemId",
+        i.document_version_id AS "documentVersionId",
+        i.actor_user_id AS "actorUserId"
+      FROM ${actionAttempt} i JOIN ${workItem} w
+        ON w.work_item_id=i.work_item_id AND w.tenant_id=i.tenant_id
+        AND w.document_version_id=i.document_version_id
+        AND w.request_id=i.trigger_request_id
+        AND w.requested_by_user_id=i.actor_user_id
+      WHERE i.tenant_id=${input.tenantId}
+        AND i.action_type=${DELIVERY_INTENT_ACTION_TYPE}
+        AND i.status='RECORDED'
+        AND (i.task_envelope_json::jsonb->'documentDelivery'->>'reading'='true'
+          OR i.task_envelope_json::jsonb->'documentDelivery'->>'translation'='ZH_FULL')
+        AND (${input.afterAttemptId ?? null}::text IS NULL OR
+          (i.created_at,i.attempt_id) > (SELECT cursor.created_at,cursor.attempt_id
+            FROM ${actionAttempt} cursor WHERE cursor.attempt_id=${input.afterAttemptId ?? null}
+              AND cursor.tenant_id=${input.tenantId}))
+      ORDER BY i.created_at,i.attempt_id LIMIT ${input.limit}`);
+    return rows;
+  }
+
+  /** Called only after binding the verified actor to the Hosted SQL context. */
+  async documentDeliveryDispatchState(input: {
+    tenantId: string; documentVersionId: string; actorUserId: string;
+    readingRequestId: string; translationRequestId: string;
+    readingSelected: boolean; translationSelected: boolean;
+  }): Promise<{ pending: boolean; missing: boolean }> {
+    const rows = await this.db.execute<{ pending: boolean; missing: boolean }>(sql`
+      SELECT (
+        EXISTS (SELECT 1 FROM ${dmDocumentReadingRun} r
+          WHERE r.tenant_id=${input.tenantId} AND r.actor_user_id=${input.actorUserId}
+            AND r.document_version_id=${input.documentVersionId}
+            AND r.request_id=${input.readingRequestId}
+            AND r.status IN ('QUEUED','RUNNING') AND r.deadline_at>CURRENT_TIMESTAMP
+            AND (r.lease_expires_at IS NULL OR r.lease_expires_at<=CURRENT_TIMESTAMP))
+        OR EXISTS (SELECT 1 FROM ${actionAttempt} t
+          WHERE t.tenant_id=${input.tenantId} AND t.actor_user_id=${input.actorUserId}
+            AND t.document_version_id=${input.documentVersionId}
+            AND t.trigger_request_id=${input.translationRequestId}
+            AND t.subject_kind='DOCUMENT_VERSION' AND t.action_type='DOCUMENT_TRANSLATE'
+            AND t.status IN ('QUEUED','RUNNING','RETRY_SCHEDULED')
+            AND t.deadline_at>CURRENT_TIMESTAMP
+            AND (t.lease_expires_at IS NULL OR t.lease_expires_at<=CURRENT_TIMESTAMP))
+      ) AS pending,
+      (
+        (${input.readingSelected} AND NOT EXISTS (SELECT 1 FROM ${dmDocumentReadingRun} r
+          WHERE r.tenant_id=${input.tenantId} AND r.actor_user_id=${input.actorUserId}
+            AND r.document_version_id=${input.documentVersionId}
+            AND r.request_id=${input.readingRequestId}))
+        OR (${input.translationSelected} AND NOT EXISTS (SELECT 1 FROM ${actionAttempt} t
+          WHERE t.tenant_id=${input.tenantId} AND t.actor_user_id=${input.actorUserId}
+            AND t.document_version_id=${input.documentVersionId}
+            AND t.trigger_request_id=${input.translationRequestId}
+            AND t.subject_kind='DOCUMENT_VERSION' AND t.action_type='DOCUMENT_TRANSLATE'))
+      ) AS missing`);
+    return { pending: rows[0]?.pending === true, missing: rows[0]?.missing === true };
+  }
+
   async reserve(input: WorkItemReservationInput): Promise<WorkItemReservation> {
     return this.db.transaction(async (transaction) => {
+      if (input.developmentIntake) {
+        // The request token identifies one actor and one source version, even
+        // when two submissions race for different DocumentVersions.
+        await transaction.execute(sql`select pg_advisory_xact_lock(
+          hashtext(${input.tenantId}), hashtext(${input.runKey})
+        )`);
+        const [existingRun] = await transaction.select().from(workItem)
+          .where(and(
+            eq(workItem.tenantId, input.tenantId),
+            eq(workItem.runKey, input.runKey),
+          )).limit(1);
+        if (existingRun && (
+          existingRun.documentVersionId !== input.documentVersionId ||
+          existingRun.requestedByUserId !== input.actorUserId
+        )) {
+          throw canonicalModelError('DEVELOPMENT_RUN_REQUEST_IDENTITY_CONFLICT', 409);
+        }
+      }
       const now = new Date();
       const candidate = {
         workItemId: `WI-${randomUUID()}`,
@@ -340,6 +491,51 @@ export class MiaodaWorkItemRepository {
         )
         .limit(1);
       if (!attempt) throw new Error('ACTION_ATTEMPT_READBACK_FAILED');
+      if (input.developmentIntake) {
+        const intent = {
+          schemaVersion: 'wiselink.document_delivery_intent.v1',
+          documentVersionId: stored.documentVersionId,
+          documentDelivery: input.documentDelivery ?? null,
+        };
+        if (created) {
+          await transaction.insert(actionAttempt).values({
+            attemptId: `ATT-${randomUUID()}`,
+            workItemId: stored.workItemId,
+            subjectKind: 'WORK_ITEM',
+            documentVersionId: stored.documentVersionId,
+            actionType: DELIVERY_INTENT_ACTION_TYPE,
+            attemptNo: 1,
+            triggerRequestId: stored.requestId,
+            requestOrigin: input.requestOrigin,
+            status: 'RECORDED',
+            actorUserId: input.actorUserId,
+            tenantId: input.tenantId,
+            taskEnvelopeJson: JSON.stringify(intent),
+            idempotencyKey: `document-delivery-intent:${stored.workItemId}`,
+            createdAt: now,
+            updatedAt: now,
+          });
+        }
+        const [savedIntent] = await transaction.select().from(actionAttempt)
+          .where(and(
+            eq(actionAttempt.workItemId, stored.workItemId),
+            eq(actionAttempt.actionType, DELIVERY_INTENT_ACTION_TYPE),
+            eq(actionAttempt.attemptNo, 1),
+          )).limit(1);
+        if (!savedIntent) {
+          if (input.documentDelivery) {
+            throw canonicalModelError('DOCUMENT_DELIVERY_LEGACY_REPLAY_CONFLICT', 409);
+          }
+        } else if (
+          savedIntent.tenantId !== input.tenantId ||
+          savedIntent.actorUserId !== input.actorUserId ||
+          savedIntent.documentVersionId !== stored.documentVersionId ||
+          savedIntent.triggerRequestId !== stored.requestId ||
+          savedIntent.taskEnvelopeJson !== JSON.stringify(intent)
+        ) {
+          throw canonicalModelError('DOCUMENT_DELIVERY_IDEMPOTENCY_CONFLICT', 409);
+        }
+      }
       return {
         workItemId: stored.workItemId,
         requestId: stored.requestId,

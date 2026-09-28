@@ -231,11 +231,16 @@ export async function consumeAutomaticWorkItemQueueTick(options, dependencies) {
   const stored = await checkpoint.readOptional('active-claim');
   let claim = stored === null ? null : validateStoredAutoClaim(stored);
   const storedReviewCursor = claim ? null : await checkpoint.readOptional('review-cursor');
+  const storedDocumentCursor = claim ? null : await checkpoint.readOptional('document-cursor');
   if (storedReviewCursor !== null &&
       (typeof storedReviewCursor !== 'string' ||
         !/^WI-[A-Za-z0-9_-]{1,93}$/u.test(storedReviewCursor))) {
     throw new Error('AUTO_WORK_ITEM_REVIEW_CURSOR_INVALID');
   }
+  if (storedDocumentCursor !== null &&
+      (typeof storedDocumentCursor !== 'string' ||
+        !/^(?:attempt|acquisition):[A-Za-z0-9_-]{1,96}$/u.test(storedDocumentCursor)))
+    throw new Error('AUTO_WORK_ITEM_DOCUMENT_CURSOR_INVALID');
   if (options.repairStoppedClaim &&
       (!claim?.consumerStopped || claim.completionReady || claim.blockReady ||
         claim.workItemId !== options.repairWorkItemId ||
@@ -268,6 +273,8 @@ export async function consumeAutomaticWorkItemQueueTick(options, dependencies) {
         ? { resumeWorkItemId: previous.workItemId }
         : storedReviewCursor
           ? { reviewAfterWorkItemId: storedReviewCursor }
+          : storedDocumentCursor
+            ? { documentAfterRef: storedDocumentCursor }
           : undefined),
       currentTime,
     );
@@ -285,6 +292,15 @@ export async function consumeAutomaticWorkItemQueueTick(options, dependencies) {
         workItemId: next.workItemId, reviewTurnRef: next.reviewTurnRef,
         review: result };
     }
+    if (next.status === 'DOCUMENT_PENDING') {
+      if (previous || options.repairStoppedClaim ||
+          typeof dependencies.consumeDocument !== 'function')
+        throw new Error('AUTO_DOCUMENT_DISPATCH_INVALID');
+      await checkpoint.write('document-cursor', next.documentAfterRef);
+      const result = await dependencies.consumeDocument(next.documentVersionId, next.deliveryRef);
+      return { status: 'DOCUMENT_DISPATCHED',
+        documentVersionId: next.documentVersionId, deliveryRef: next.deliveryRef, document: result };
+    }
     if (next.status === 'IDLE') {
       if (previous) {
         if (previous.completionReady) {
@@ -301,6 +317,8 @@ export async function consumeAutomaticWorkItemQueueTick(options, dependencies) {
       }
       if (next.reviewAfterWorkItemId !== undefined || storedReviewCursor !== null)
         await checkpoint.write('review-cursor', next.reviewAfterWorkItemId ?? null);
+      if (next.documentAfterRef !== undefined || storedDocumentCursor !== null)
+        await checkpoint.write('document-cursor', next.documentAfterRef ?? null);
       await checkpoint.write('active-claim', null);
       return { status: 'IDLE' };
     }
@@ -540,10 +558,26 @@ function validateStoredAutoClaim(value) {
 
 function validateAutoClaimResult(value, now) {
   if (!isRecord(value)) throw new Error('AUTO_WORK_ITEM_CLAIM_RESPONSE_INVALID');
+  if (value.status === 'DOCUMENT_PENDING') {
+    assertExactKeys(value, ['status', 'documentVersionId', 'deliveryRef', 'documentAfterRef'], [],
+      'AUTO_WORK_ITEM_CLAIM_RESPONSE');
+    if (!/^[A-Za-z0-9][A-Za-z0-9_-]{0,95}$/u.test(value.documentVersionId))
+      throw new Error('AUTO_WORK_ITEM_CLAIM_RESPONSE_INVALID');
+    if (!/^(?:work-item:WI(?:-[A-Za-z0-9_-]{1,93})?|acquisition:[A-Za-z0-9_-]{1,96})$/u.test(value.deliveryRef))
+      throw new Error('AUTO_WORK_ITEM_CLAIM_RESPONSE_INVALID');
+    if (value.deliveryRef.startsWith('acquisition:')
+      ? value.documentAfterRef !== value.deliveryRef
+      : !/^attempt:[A-Za-z0-9_-]{1,96}$/u.test(value.documentAfterRef))
+      throw new Error('AUTO_WORK_ITEM_CLAIM_RESPONSE_INVALID');
+    return value;
+  }
   if (value.status === 'IDLE') {
-    assertExactKeys(value, ['status'], ['reviewAfterWorkItemId'], 'AUTO_WORK_ITEM_CLAIM_RESPONSE');
+    assertExactKeys(value, ['status'], ['reviewAfterWorkItemId', 'documentAfterRef'], 'AUTO_WORK_ITEM_CLAIM_RESPONSE');
     if (value.reviewAfterWorkItemId !== undefined &&
         !/^WI-[A-Za-z0-9_-]{1,93}$/u.test(value.reviewAfterWorkItemId))
+      throw new Error('AUTO_WORK_ITEM_CLAIM_RESPONSE_INVALID');
+    if (value.documentAfterRef !== undefined &&
+        !/^(?:attempt|acquisition):[A-Za-z0-9_-]{1,96}$/u.test(value.documentAfterRef))
       throw new Error('AUTO_WORK_ITEM_CLAIM_RESPONSE_INVALID');
     return value;
   }
@@ -1097,12 +1131,16 @@ export function automaticWorkItemQueueMode(argv) {
   const repairs = argv.filter(arg => arg === '--repair-stopped-claim').length;
   const repairWorkItems = argv.filter(arg => arg === '--repair-work-item-id').length;
   const repairAttempts = argv.filter(arg => arg === '--repair-attempt-ref').length;
+  const recoveries = argv.filter(arg => arg === '--document-translation-recovery').length;
   if (!occurrences) {
     if (repairs || repairWorkItems || repairAttempts)
       throw new Error('AUTO_WORK_ITEM_QUEUE_OPTIONS_INVALID');
     return false;
   }
   if (occurrences !== 1) throw new Error('AUTO_WORK_ITEM_QUEUE_OPTIONS_INVALID');
+  if (recoveries > 1 || (recoveries && !/^[A-Za-z0-9_-]{1,96}$/u.test(
+    option(argv, '--document-translation-recovery') ?? '')))
+    throw new Error('AUTO_WORK_ITEM_QUEUE_OPTIONS_INVALID');
   if (repairs > 1) throw new Error('AUTO_WORK_ITEM_QUEUE_OPTIONS_INVALID');
   if (repairWorkItems !== repairs || repairAttempts !== repairs) {
     throw new Error('AUTO_WORK_ITEM_QUEUE_OPTIONS_INVALID');
@@ -1110,6 +1148,7 @@ export function automaticWorkItemQueueMode(argv) {
   const valueOptions = new Set([
     '--checkpoint-root', '--openclaw-config',
     '--repair-work-item-id', '--repair-attempt-ref',
+    '--document-translation-recovery',
   ]);
   for (let index = 0; index < argv.length; index += 1) {
     const arg = argv[index];
@@ -1148,9 +1187,16 @@ function assertExpectedInitialOperationStatus(expected, initial) {
 }
 
 export async function consumeHostedDocument(
-  { documentVersionId, activityRunRef, readingRunRef, leaseOwner },
+  { documentVersionId, deliveryRef, activityRunRef, readingRunRef, leaseOwner },
   { callTool, documentTranslationCheckpoint, activityCheckpoint, invokeActivityModel, readingCheckpoint, invokeReadingModel }) {
   const startedAt = Date.now();
+  if (deliveryRef && (!/^(?:work-item:WI(?:-[A-Za-z0-9_-]{1,93})?|acquisition:[A-Za-z0-9_-]{1,96})$/u.test(deliveryRef)
+      || activityRunRef)) throw new Error('DOCUMENT_DELIVERY_REF_INVALID');
+  const unscopedTool = callTool;
+  const scopedTool = deliveryRef ? (name, args) => unscopedTool(name,
+    ['document_work', 'document_reading', 'document_translation', 'read_document_original'].includes(name)
+      ? { ...args, deliveryRef } : args) : callTool;
+  callTool = scopedTool;
   if (activityRunRef && readingRunRef) throw new Error('DOCUMENT_CONSUMER_RUN_AMBIGUOUS');
   const consumeReading = runRef => consumeHostedDocumentReading(
     { documentVersionId, runRef, leaseOwner },
@@ -1158,12 +1204,17 @@ export async function consumeHostedDocument(
   if (readingRunRef) return consumeReading(readingRunRef);
   const state = await callTool('document_work', { action: 'STATUS', documentVersionId });
   if (state?.documentVersionId !== documentVersionId) throw new Error('DOCUMENT_CONSUMER_SCOPE_MISMATCH');
+  if (state.documentDelivery !== undefined && state.documentDelivery !== null &&
+      (!isRecord(state.documentDelivery) ||
+        typeof state.documentDelivery.reading !== 'boolean' ||
+        !['NONE', 'ZH_FULL'].includes(state.documentDelivery.translation)))
+    throw new Error('DOCUMENT_DELIVERY_SELECTION_INVALID');
   // An already-accepted activity run is consumed first: state.nextActivityRunRef
   // is the only discovery of a run an explicit ACTIVITY_BEGIN created, and an
   // explicit recovery ref addresses that old run directly. The consumer never
   // generates work and never sends ACTIVITY_BEGIN; a null discovery with no
   // parse run stays idle with zero model calls.
-  const runRef = activityRunRef ?? state.nextActivityRunRef ?? null;
+  const runRef = deliveryRef ? null : activityRunRef ?? state.nextActivityRunRef ?? null;
   if (runRef) {
     return consumeHostedDocumentActivity(
       { documentVersionId, runRef, leaseOwner },
@@ -1174,7 +1225,8 @@ export async function consumeHostedDocument(
   const run = state.latestRun;
   if (!run) return { status: 'IDLE', documentVersionId };
   if (run.documentVersionId !== documentVersionId || !run.parseRunId) throw new Error('DOCUMENT_CONSUMER_RUN_MISMATCH');
-  if (run.status === 'PUBLISHED') return advancePublishedDocument(state, run, documentVersionId, callTool, documentTranslationCheckpoint);
+  if (run.status === 'PUBLISHED') return advancePublishedDocument(state, run, documentVersionId,
+    callTool, documentTranslationCheckpoint, deliveryRef);
 
   if (run.errorCode || run.status === 'FAILED' || !state.runtimeAvailable || Date.parse(run.deadlineAt) <= Date.now()) {
     return { status: 'REQUIRES_ATTENTION', documentVersionId, parseRunId: run.parseRunId,
@@ -1196,17 +1248,25 @@ export async function consumeHostedDocument(
     if (Date.now() - startedAt < 10_000 && !fresh.nextActivityRunRef && !fresh.nextReadingRunRef &&
         fresh.latestRun?.documentVersionId === documentVersionId &&
         fresh.latestRun.parseRunId === run.parseRunId && fresh.latestRun.status === 'PUBLISHED') {
-      return advancePublishedDocument(fresh, fresh.latestRun, documentVersionId, callTool, documentTranslationCheckpoint);
+      return advancePublishedDocument(fresh, fresh.latestRun, documentVersionId,
+        callTool, documentTranslationCheckpoint, deliveryRef);
     }
   }
   return { ...result, documentVersionId };
 }
 
-async function advancePublishedDocument(state, run, documentVersionId, callTool, documentTranslationCheckpoint) {
+async function advancePublishedDocument(state, run, documentVersionId, callTool, documentTranslationCheckpoint, deliveryRef) {
     const indexRun = state.nextSourceProjectionRunId ?? run.parseRunId;
     if (typeof indexRun !== 'string' || !/^[A-Za-z0-9_-]{1,96}$/.test(indexRun)) throw new Error('DOCUMENT_SOURCE_PROJECTION_RUN_INVALID');
     const projectionPromise = Promise.resolve().then(() =>
       callTool('document_work', { action: 'INDEX', documentVersionId, parseRunId: indexRun }));
+    if (state.documentDelivery?.translation === 'NONE') {
+      const indexed = await projectionPromise;
+      assertSourceProjection(indexed, documentVersionId, indexRun);
+      return { status: 'DOCUMENT_READY', documentVersionId,
+        parseRunId: run.parseRunId, sourceProjection: indexed,
+        translation: { status: 'NOT_REQUESTED' } };
+    }
     // STATUS and existing-work recovery remain independent of derived indexing.
     // Only a new START depends on semantics for this exact current parse, not
     // whichever historical pending run the index queue selected.
@@ -1230,7 +1290,8 @@ async function advancePublishedDocument(state, run, documentVersionId, callTool,
     };
     const outcomes = await Promise.allSettled([
       projectionPromise,
-      advanceDocumentTranslationWithRecovery(documentVersionId, run, callTool, documentTranslationCheckpoint, beforeStart),
+      advanceDocumentTranslationWithRecovery(documentVersionId, run, callTool,
+        documentTranslationCheckpoint, beforeStart, deliveryRef),
     ]);
     const [projection, translation] = outcomes;
     if (translation.status === 'rejected') throw translation.reason;
@@ -1249,7 +1310,7 @@ function assertSourceProjection(indexed, documentVersionId, parseRunId) {
 
 // This checkpoint records an operation stop, not a Host task or a successful
 // translation. A new parse run can still advance through the branch above.
-async function advanceDocumentTranslationWithRecovery(documentVersionId, run, callTool, checkpointFactory, beforeStart) {
+async function advanceDocumentTranslationWithRecovery(documentVersionId, run, callTool, checkpointFactory, beforeStart, deliveryRef) {
   const checkpoint = await checkpointFactory?.(run.parseRunId);
   const blocked = await checkpoint?.readOptional('admission-blocked');
   if (blocked) {
@@ -1259,7 +1320,7 @@ async function advanceDocumentTranslationWithRecovery(documentVersionId, run, ca
       translation: blocked };
   }
   try {
-    return await advanceDocumentTranslation(documentVersionId, run, callTool, beforeStart);
+    return await advanceDocumentTranslation(documentVersionId, run, callTool, beforeStart, deliveryRef);
   } catch (error) {
     if (error?.receivedHostToolError !== true || error.hostToolName !== 'document_translation' ||
         error.hostErrorCode !== 'DOCUMENT_TRANSLATION_ADMISSION_DENIED' || !checkpoint) throw error;
@@ -1271,7 +1332,7 @@ async function advanceDocumentTranslationWithRecovery(documentVersionId, run, ca
   }
 }
 
-async function advanceDocumentTranslation(documentVersionId, run, callTool, beforeStart) {
+async function advanceDocumentTranslation(documentVersionId, run, callTool, beforeStart, deliveryRef) {
     const binding = { documentVersionId, parseRunId: run.parseRunId };
     const translation = await callTool('document_translation', { action: 'STATUS', ...binding });
     if (translation?.documentVersionId !== documentVersionId) throw new Error('DOCUMENT_TRANSLATION_SCOPE_MISMATCH');
@@ -1280,7 +1341,9 @@ async function advanceDocumentTranslation(documentVersionId, run, callTool, befo
         throw new Error('DOCUMENT_TRANSLATION_RUN_MISMATCH');
       if (translation.semanticReady !== true && !await beforeStart()) return { status: 'REQUIRES_ATTENTION', ...binding,
         semanticPreparation: { status: 'FAILED', errorCode: 'DOCUMENT_SEMANTIC_NOT_READY' } };
-      const started = await callTool('document_translation', { action: 'START', ...binding, requestId: `translation-${run.parseRunId}` });
+      const requestId = deliveryRef ? `auto-translation-${createHash('sha256').update(deliveryRef).digest('hex').slice(0, 32)}`
+        : `translation-${run.parseRunId}`;
+      const started = await callTool('document_translation', { action: 'START', ...binding, requestId });
       if (started?.documentVersionId !== documentVersionId || started.parseRunId !== run.parseRunId || !started.attemptRef)
         throw new Error('DOCUMENT_TRANSLATION_START_MISMATCH');
       return started;
@@ -1326,7 +1389,7 @@ export function matterPreflightMode(argv, matterId) {
 
 async function main(argv, env) {
   if (argv.includes('--help')) {
-    process.stdout.write('Usage: node consume-hosted-work-item.mjs [--auto-queue [--repair-stopped-claim --repair-work-item-id WI-... --repair-attempt-ref AQ-...]] [--work-item-id WI-...] [--matter-id MAT-...] [--document-version-id DV] [--matter-preflight-only | --matter-expected-snapshot SHA256] [--max-initial-stages 1] [--expected-initial-operation EVALUATE_JOBAID|SYNTHESIZE_OVERALL] [--applicability-context-ref REF] [--checkpoint-root PATH] [--openclaw-config PATH] [--native-session-store PATH] [--document-translation-recovery ID] [--activity-run-ref ID] [--reading-run-ref ID] [--lease-owner ID]\nOne native job per authorized subject. Choose exactly one WorkItem, Matter or DocumentVersion; independent jobs use native cron concurrency. --auto-queue is one native cron tick for the Host-enrolled automatic WorkItem queue; it accepts no static subject or stage-specific options. --repair-stopped-claim with both exact identity flags permits one operator-triggered successor only for a stopped claim with a failed no-work JobAid/Overall auto-retry after a bounded gateway change; it is never a cron option. --matter-preflight-only reads current Matter work without dispatch; --matter-expected-snapshot checks that read again before dispatch and stops on a changed snapshot. --max-initial-stages 1 is WorkItem-only and consumes at most the current initial stage, without Review or original-impact work. --expected-initial-operation requires that limit and refuses any entry stage other than the named JobAid or Overall stage.\n');
+    process.stdout.write('Usage: node consume-hosted-work-item.mjs [--auto-queue [--document-translation-recovery ID] [--repair-stopped-claim --repair-work-item-id WI-... --repair-attempt-ref AQ-...]] [--work-item-id WI-...] [--matter-id MAT-...] [--document-version-id DV] [--matter-preflight-only | --matter-expected-snapshot SHA256] [--max-initial-stages 1] [--expected-initial-operation EVALUATE_JOBAID|SYNTHESIZE_OVERALL] [--applicability-context-ref REF] [--checkpoint-root PATH] [--openclaw-config PATH] [--native-session-store PATH] [--activity-run-ref ID] [--reading-run-ref ID] [--lease-owner ID]\nOne native job per authorized subject. Choose exactly one WorkItem, Matter or DocumentVersion; independent jobs use native cron concurrency. --auto-queue is one native cron tick for the Host-enrolled automatic WorkItem queue; it accepts no static subject or stage-specific options. After Host admission repair, one document translation recovery ID may be added to the existing cron so the next natural tick checks Host again without clearing the old checkpoint. --repair-stopped-claim with both exact identity flags permits one operator-triggered successor only for a stopped claim with a failed no-work JobAid/Overall auto-retry after a bounded gateway change; it is never a cron option. --matter-preflight-only reads current Matter work without dispatch; --matter-expected-snapshot checks that read again before dispatch and stops on a changed snapshot. --max-initial-stages 1 is WorkItem-only and consumes at most the current initial stage, without Review or original-impact work. --expected-initial-operation requires that limit and refuses any entry stage other than the named JobAid or Overall stage.\n');
     return;
   }
   const autoQueue = automaticWorkItemQueueMode(argv);
@@ -1426,6 +1489,35 @@ async function main(argv, env) {
         consumeWorkItem: async item => {
           assertHostedModelGatewayReady(runtime);
           return consumeHostedWorkItem(item, consumerDependencies);
+        },
+        consumeDocument: async (selectedVersionId, deliveryRef) => {
+          assertHostedModelGatewayReady(runtime);
+          const endpointKey = encodeURIComponent(endpoint.origin + endpoint.pathname);
+          return consumeHostedDocument({ documentVersionId: selectedVersionId, deliveryRef,
+            leaseOwner }, { ...consumerDependencies,
+            documentTranslationCheckpoint: parseRunId => {
+              if (!/^[A-Za-z0-9_-]{1,96}$/u.test(parseRunId))
+                throw new Error('DOCUMENT_TRANSLATION_RUN_INVALID');
+              return createCheckpointStore(join(checkpointRoot,
+                'document-translation', endpointKey, selectedVersionId,
+                encodeURIComponent(deliveryRef),
+                parseRunId, recovery));
+            },
+            activityCheckpoint: ({ runRef }) => {
+              if (!/^[A-Za-z0-9_-]{1,96}$/u.test(runRef))
+                throw new Error('ACTIVITY_RUN_REF_INVALID');
+              return createCheckpointStore(join(checkpointRoot,
+                'document-activity', endpointKey, selectedVersionId,
+                encodeURIComponent(deliveryRef), runRef));
+            },
+            readingCheckpoint: ({ runRef }) => {
+              if (!/^[A-Za-z0-9_-]{1,96}$/u.test(runRef))
+                throw new Error('READING_RUN_REF_INVALID');
+              return createCheckpointStore(join(checkpointRoot,
+                'document-reading', endpointKey, selectedVersionId,
+                encodeURIComponent(deliveryRef), runRef));
+            },
+          });
         },
         consumeReview: async reviewWorkItemId => {
           assertHostedModelGatewayReady(runtime);

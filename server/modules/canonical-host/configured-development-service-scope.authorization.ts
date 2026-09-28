@@ -1,4 +1,6 @@
 import { createHash } from 'node:crypto';
+import { MiaodaWorkItemRepository } from '../work-item/miaoda-work-item.repository';
+import { MiaodaHostedDocumentCatalog } from '../document-management/src/hosted/nest/miaoda-hosted-document-catalog';
 
 import { Inject, Injectable, Optional } from '@nestjs/common';
 
@@ -41,21 +43,57 @@ export class ConfiguredDevelopmentCanonicalServiceScopeAuthorization implements 
     @Optional()
     @Inject(AUTOMATIC_WORK_ITEM_LEASE_AUTHORIZATION)
     private readonly automaticLeaseAuthorization?: AutomaticWorkItemLeaseAuthorizationPort,
+    @Optional() private readonly documentIntakeWorkItems?: MiaodaWorkItemRepository,
+    @Optional() private readonly documentIntakeCatalog?: MiaodaHostedDocumentCatalog,
   ) {}
 
-  async authorizeDocumentWork(input: { documentVersionId: string }) {
-    const config = requiredDocumentConfig();
-    if (!config.documentVersionIds.includes(input.documentVersionId))
-      throw Object.assign(new Error('DOCUMENT_WORK_NOT_FOUND'), {
-        statusCode: 404,
-      });
-    return {
-      principalId: config.principalId,
-      appId: CANONICAL_APP_ID,
-      tenantId: config.tenantId,
-      actorUserId: config.actorUserId,
-      documentVersionId: input.documentVersionId,
-    };
+  async authorizeDocumentWork(input: { documentVersionId: string; deliveryRef?: string;
+    purpose?: 'SOURCE' | 'READING' | 'TRANSLATION' | 'ACTIVITY' | 'REVISION' | 'CANCEL' }) {
+    if (!input.deliveryRef) {
+      try {
+        const config = requiredDocumentConfig();
+        if (config.documentVersionIds.includes(input.documentVersionId)) {
+          return { principalId: config.principalId, appId: CANONICAL_APP_ID,
+            tenantId: config.tenantId, actorUserId: config.actorUserId,
+            documentVersionId: input.documentVersionId };
+        }
+      } catch (error) {
+        if (!isServiceScopeUnavailable(error) ||
+            process.env.WL_OPENCLAW_DOCUMENT_SCOPE_ENABLED === '1') throw error;
+      }
+    }
+    if (!this.documentIntakeWorkItems || !this.documentIntakeCatalog ||
+        !input.deliveryRef ||
+        !['SOURCE', 'READING', 'TRANSLATION'].includes(input.purpose ?? ''))
+      throw scopeNotFound();
+    const workItemRef = /^work-item:(WI(?:-[A-Za-z0-9_-]{1,93})?)$/u.exec(input.deliveryRef);
+    const uploadRef = /^acquisition:([A-Za-z0-9_-]{1,96})$/u.exec(input.deliveryRef);
+    if (!workItemRef && !uploadRef) throw scopeNotFound();
+    const config = requiredAutoWorkItemQueueConfig();
+    const [workItems, uploads] = await Promise.all([
+      this.documentIntakeWorkItems.readDocumentDeliveryIntents({
+        tenantId: config.tenantId, documentVersionId: input.documentVersionId }),
+      this.documentIntakeCatalog.readDocumentUploadDeliveryIntents({
+        tenantId: config.tenantId, documentVersionId: input.documentVersionId }),
+    ]);
+    const activeActors = new Set([...workItems, ...uploads]
+      .filter((intent) => intent.delivery.reading || intent.delivery.translation === 'ZH_FULL')
+      .map((intent) => intent.actorUserId));
+    if (activeActors.size > 1) throw Object.assign(
+      new Error('DOCUMENT_DELIVERY_MULTI_ACTOR_UNSUPPORTED'),
+      { code: 'DOCUMENT_DELIVERY_MULTI_ACTOR_UNSUPPORTED', statusCode: 409 });
+    const selected = workItemRef
+      ? workItems.filter((intent) => intent.workItemId === workItemRef[1])
+      : uploads.filter((intent) => intent.acquisitionId === uploadRef![1]);
+    const requested = selected.filter((intent) =>
+      input.purpose === 'READING' ? intent.delivery.reading :
+      input.purpose === 'TRANSLATION' ? intent.delivery.translation === 'ZH_FULL' :
+      intent.delivery.reading || intent.delivery.translation === 'ZH_FULL');
+    const actors = [...new Set(requested.map((intent) => intent.actorUserId))];
+    if (actors.length !== 1) throw scopeNotFound();
+    return { principalId: config.principalId, appId: CANONICAL_APP_ID,
+      tenantId: config.tenantId, actorUserId: actors[0],
+      documentVersionId: input.documentVersionId };
   }
 
   async authorizeOpenClawAutoWorkItemQueue() {

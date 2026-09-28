@@ -245,7 +245,10 @@ describe('official OAuth -> persistent session G0', () => {
         .mockResolvedValue({ ok: true }),
     };
     const controller = new OauthSessionDevelopmentWorkItemController(
-      { resolve: jest.fn().mockResolvedValue({ actor, session: { id: "11111111-1111-4111-8111-111111111111" } }) } as never,
+      { resolve: jest.fn().mockResolvedValue({ actor, session: { id: '11111111-1111-4111-8111-111111111111' } }),
+        withRequestSession: jest.fn((_request, operation) => operation({
+          actor, session: { id: '11111111-1111-4111-8111-111111111111' },
+        })) } as never,
       workItems as never,
     );
     const previousSandbox = process.env.SANDBOX_ID;

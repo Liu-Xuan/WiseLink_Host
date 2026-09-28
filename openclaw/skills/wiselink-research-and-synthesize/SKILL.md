@@ -12,10 +12,12 @@ description: Orchestrate the single official hosted WiseLink engineering profile
 - hosted app：`app_17c3zn24kv2`
 - logical profile：`wiselink-engineering`
 - model policy：`official-hosted-profile-config`（任务可绑定已登记的内置或用户授权自定义模型；仍经唯一官方 Hosted profile/Gateway）
-- Skill：`wiselink-research-and-synthesize@r09.c192`
+- Skill：`wiselink-research-and-synthesize@r09.c198`
 - Skill compatibility：`wiselink-research-and-synthesize@r09`（历史任务最低接受 `r09.c10`，翻译 v2 必须为 `r09.c44` 或更新兼容包）
 - Host MCP：`wiselink-openclaw-engineering-assessment@1.2.0`（保留既有工具，新增语义翻译工作与 JobAid 来源/工作工具）
 - Host 集成提交：以本次发布包清单记录的实际提交为准
+
+c198 允许自动队列 cron 附带一个经校验的 `--document-translation-recovery ID`，在 Host 修复中文准入后由下一次自然 tick 重新核验；旧阻塞 checkpoint 保留。c197 对已授权的文档交付队列，在返回待处理 WorkItem 时附带所选解析尝试的精确游标；消费者先持久化游标再执行文档 STEP，使后续 WorkItem 与上传任务获得轮转机会，尾页回绕。仍逐项执行 Host 来源、actor、tenant 与正式保存校验。
 
 c181 的 JobAid Review 对已有问题允许 `issuePatches`：模型只提交确切问题键和实际更改字段；外部驱动从 Host 固定的上一修订补全遗漏字段后仍执行完整候选、来源和 Host 校验。显式空数组才清空旧集合；新增问题继续使用完整 `issues`。这只改变 Review 候选的编写形式，不改变 Host 保存合同、正式采用或授权范围。
 
@@ -607,7 +609,7 @@ Interactive Review 的复杂 ResultEnvelope 必须由 `sealResultEnvelope` 生�
 当前 validator 强制：
 
 - `modelVersion` 优先取响应中可读实际模型；绑定任务未回报实际模型时使用 `configured-route:<modelRef>`，旧无绑定任务使用无 fallback 的 configured endpoint。后两者只证明路由，不代表已暴露下游具体模型，也不做具体版本等值判断
-- `skillVersion=wiselink-research-and-synthesize@r09.c192`
+- `skillVersion=wiselink-research-and-synthesize@r09.c198`
 - `toolVersions.wiselink-openclaw-engineering-assessment=1.2.0`
 - `promptVersion` 非空并来自当前运行
 - task/result exact binding、SourceRef allowlist 和 canonical hash 一致

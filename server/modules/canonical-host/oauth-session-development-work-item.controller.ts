@@ -45,20 +45,21 @@ export class OauthSessionDevelopmentWorkItemController {
 
   @Post('work-items/development-runs')
   async create(@Body() body: unknown, @Req() request: Request) {
-    const session = await this.sessions.resolve(request);
-    if (!session) {
-      throw new HttpException(
-        { code: 'SESSION_REQUIRED', statusCode: 401 },
-        HttpStatus.UNAUTHORIZED,
+    return this.sessions.withRequestSession(request, async (session) => {
+      if (!session) {
+        throw new HttpException(
+          { code: 'SESSION_REQUIRED', statusCode: 401 },
+          HttpStatus.UNAUTHORIZED,
+        );
+      }
+      const input = developmentRunBody(body);
+      return this.workItems.createOauthSessionDevelopmentRun(
+        input,
+        session.actor,
+        miaodaHostedFinalUserActor(request.userContext),
+        session.session.id,
       );
-    }
-    const input = developmentRunBody(body);
-    return this.workItems.createOauthSessionDevelopmentRun(
-      input,
-      session.actor,
-      miaodaHostedFinalUserActor(request.userContext),
-      session.session.id,
-    );
+    });
   }
 
   @Post('work-items/:workItemId/retry-development-run')

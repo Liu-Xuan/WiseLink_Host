@@ -11,6 +11,7 @@ import { extractActualPdfMetadata } from '../../migrated/ingress/pdfDocumentMeta
 import { HttpException, Inject, Injectable, Optional } from '@nestjs/common';
 import { EngineeringMatterService } from '../../../../canonical-host/engineering-matter.service';
 import { FileService } from '@lark-apaas/fullstack-nestjs-core';
+import { optionalDocumentDeliverySelection } from '../../../../../common/document-delivery-selection';
 
 import { DocumentManagementHostedCore } from '../documentManagementHostedCore.js';
 import { MiaodaFileServiceArtifactStore } from '../miaodaFileServiceArtifactStore.js';
@@ -91,7 +92,9 @@ export class DocumentManagementHostedService {
         selection: input.selection,
         sourceChannel: 'document_library_upload',
         sourceRef: `DOCUMENT_UPLOAD:${context.actorUserId}:${input.requestId}`,
-        descriptor: {},
+        descriptor: input.documentDelivery
+          ? { documentDeliveryIntent: input.documentDelivery }
+          : {},
       }, { ...context, runtimeIngestAuthority: mintDocumentUploadAuthority(context) });
       return this.uploadResponseWithCurrent(receipt, context);
     });
@@ -388,6 +391,7 @@ const PUBLIC_DM_REJECTIONS: Readonly<Record<string, { status: number; message: s
   FAMILY_IDENTITY_CONFLICT: { status: 409, message: '出版身份与已有文档不一致。' },
   HOSTED_INGEST_INPUT_INVALID: { status: 400, message: '上传请求缺少必要信息。' },
   DOCUMENT_UPLOAD_INPUT_INVALID: { status: 400, message: '上传请求格式不正确。' },
+  ACQUISITION_IDEMPOTENCY_CONFLICT: { status: 409, message: '该上传请求已用于不同文件或阅读选项，请重新发起。' },
   IDENTITY_NOT_COMMITTABLE: { status: 422, message: '原文尚不足以确认可登记的出版身份与修订。' },
   INVALID_PDF_INPUT: { status: 422, message: '所选文件不是可读取的 PDF。' },
   DM_PDF_TEXT_IDENTITY_UNAVAILABLE: { status: 422, message: 'PDF 原文文本不足以识别出版身份。' },
@@ -537,14 +541,17 @@ function hasOauthSessionDevelopmentRunAuthority(
 }
 
 function documentLibraryUploadInput(request: unknown): DocumentLibraryUploadRequest {
-  const fail = (): never => { throw Object.assign(new Error('Document upload requires only requestId and an owned FileService selection.'), { code: 'DOCUMENT_UPLOAD_INPUT_INVALID', statusCode: 400 }); };
+  const fail = (): never => { throw Object.assign(new Error('Document upload requires requestId, an owned FileService selection, and optional documentDelivery.'), { code: 'DOCUMENT_UPLOAD_INPUT_INVALID', statusCode: 400 }); };
   if (!request || typeof request !== 'object' || Array.isArray(request)) return fail();
   const input = request as Record<string, unknown>;
-  if (Object.keys(input).some(key => !['requestId','selection'].includes(key)) || typeof input.requestId !== 'string' || !/^[a-zA-Z0-9_-]{8,96}$/u.test(input.requestId)) return fail();
+  if (Object.keys(input).some(key => !['requestId','selection','documentDelivery'].includes(key)) || typeof input.requestId !== 'string' || !/^[a-zA-Z0-9_-]{8,96}$/u.test(input.requestId)) return fail();
   if (!input.selection || typeof input.selection !== 'object' || Array.isArray(input.selection)) return fail();
   const selection = input.selection as Record<string, unknown>;
   if (Object.keys(selection).some(key => !['bucketId','filePath'].includes(key)) || typeof selection.bucketId !== 'string' || !selection.bucketId.trim() || typeof selection.filePath !== 'string' || !selection.filePath.trim()) return fail();
-  return { requestId: input.requestId, selection: { bucketId: selection.bucketId, filePath: selection.filePath } };
+  const documentDelivery = optionalDocumentDeliverySelection(input.documentDelivery);
+  return { requestId: input.requestId,
+    selection: { bucketId: selection.bucketId, filePath: selection.filePath },
+    ...(documentDelivery ? { documentDelivery } : {}) };
 }
 
 function documentUploadResponse(receipt: Record<string, unknown>): DocumentUploadResponse {

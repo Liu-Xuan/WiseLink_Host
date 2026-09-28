@@ -29,7 +29,7 @@ const enabled = process.env.WL_DM_ORIGINAL_IDENTITY_LOCAL_PG === '1';
   it('reads only registered digest/length with exact version and tenant family binding', async () => {
     queries.length = 0;
     expect(await catalog.readOriginalRegistryIdentity('V1', 'tenant-1')).toEqual({
-      version: { documentVersionId: 'V1', pdfSha256: 'a'.repeat(64), byteLength: 1234 },
+      version: { documentVersionId: 'V1', sourceArtifactId: 'S1', pdfSha256: 'a'.repeat(64), byteLength: 1234 },
       source: { sha256: 'a'.repeat(64), byteLength: 1234 },
     });
     expect(queries).toHaveLength(1);

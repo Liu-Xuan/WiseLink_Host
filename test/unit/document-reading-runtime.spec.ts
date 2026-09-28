@@ -3,6 +3,7 @@ import type { DocumentReadingRun } from '../../server/modules/canonical-host/doc
 import { buildDocumentSemanticMap } from '../../server/modules/document-management/src/hosted/nest/document-semantic-map';
 import { GENERIC_SEMANTIC_PROFILE } from '../../server/modules/document-management/src/hosted/nest/document-semantic-profile';
 import { originalFixture } from './document-parsing/fixtures/document-original.fixture';
+import { documentDeliveryRequestId } from '../../server/modules/canonical-host/document-delivery-ref';
 
 function fixture() {
   const original = originalFixture();
@@ -24,6 +25,7 @@ function fixture() {
   const semantics = { read: jest.fn().mockResolvedValue(map), ensure: jest.fn(), readReady: jest.fn().mockResolvedValue({ semanticRevision: 1 }) };
   const parsing = { status: jest.fn().mockResolvedValue({}), inspectPublishedIdentity: jest.fn().mockResolvedValue({ familyId: 'family-test', binding: original.binding }) };
   const runs = { begin: jest.fn().mockResolvedValue(row), readRun: jest.fn().mockResolvedValue(row),
+    readRequest: jest.fn().mockResolvedValue(null), currentRevision: jest.fn().mockResolvedValue(0),
     readSavedState: jest.fn().mockResolvedValue({ status: 'NOT_GENERATED', reading: null }),
     readRetraction: jest.fn().mockResolvedValue(null), retract: jest.fn(),
     recordDelivery: jest.fn(async (_scope, _fence, range) => { row.deliveredRanges.push(range); }),
@@ -35,6 +37,38 @@ function fixture() {
 }
 
 describe('independent file reading runtime', () => {
+  it('uses Host current revision for a selected delivery and reuses its original revision on replay', async () => {
+    const f = fixture();
+    const deliveryRef = 'work-item:WI-one';
+    const request = { action: 'READING_BEGIN', documentVersionId: f.scope.documentVersionId,
+      parseRunId: f.row.parseRunId, semanticRevision: 1,
+      requestId: documentDeliveryRequestId('reading', deliveryRef),
+      deliveryRef, expectedRevision: 0 };
+    f.runs.currentRevision.mockResolvedValue(3);
+    await f.service.run(request);
+    expect(f.runs.begin).toHaveBeenCalledWith(f.scope, expect.objectContaining({ expectedRevision: 3 }));
+    f.runs.readRequest.mockResolvedValue({ ...f.row, requestId: request.requestId, expectedRevision: 3 });
+    f.runs.currentRevision.mockResolvedValue(4);
+    await f.service.run(request);
+    expect(f.runs.begin).toHaveBeenLastCalledWith(f.scope, expect.objectContaining({ expectedRevision: 3 }));
+    expect(f.runs.currentRevision).toHaveBeenCalledTimes(1);
+  });
+
+  it('requires distinct authority to cancel or retract a selected delivery', async () => {
+    const f = fixture();
+    f.authorization.authorizeDocumentWork.mockRejectedValue(new Error('DYNAMIC_CANCEL_DENIED'));
+    const deliveryRef = 'work-item:WI-one';
+    await expect(f.service.run({ action: 'READING_CANCEL', documentVersionId: f.scope.documentVersionId,
+      runRef: f.row.runRef, deliveryRef })).rejects.toThrow('DYNAMIC_CANCEL_DENIED');
+    await expect(f.service.run({ action: 'READING_RETRACT', documentVersionId: f.scope.documentVersionId,
+      runRef: f.row.runRef, deliveryRef, expectedReadingRevision: 1,
+      requestId: 'retract-one', reasonCode: 'ERROR', reviewReference: 'review' }))
+      .rejects.toThrow('DYNAMIC_CANCEL_DENIED');
+    expect(f.authorization.authorizeDocumentWork).toHaveBeenCalledWith({
+      documentVersionId: f.scope.documentVersionId, deliveryRef, purpose: 'CANCEL' });
+    expect(f.runs.cancel).not.toHaveBeenCalled();
+    expect(f.runs.retract).not.toHaveBeenCalled();
+  });
   it('admits an exact source without parsing, translation, semantic writes or an activity request', async () => {
     const f = fixture();
     const request = { action: 'READING_BEGIN', documentVersionId: f.scope.documentVersionId,

@@ -16,6 +16,7 @@ import type { CanonicalHostInitialAnalysisStatusService } from './canonical-host
 import type { ReviewConversationRepository } from '../review-persistence/review-conversation.repository';
 import type { JobAidWorkRepository } from './jobaid-work.repository';
 import type { ActionAttemptRepository } from '../action-attempt/action-attempt.repository';
+import { Logger } from '@nestjs/common';
 import {
   AutomaticWorkItemDispatchService,
   automaticAuthorizationBindingMismatch,
@@ -56,6 +57,354 @@ describe('AutomaticWorkItemDispatchService', () => {
     await expect(service.nextWorkItem({})).resolves.toEqual({ status: 'IDLE' });
     expect(sources.resolve).not.toHaveBeenCalled();
     expect(workItems.claimAutoProcessingCandidate).not.toHaveBeenCalled();
+  });
+
+  it('discovers an already admitted document only after ordinary WorkItem work', async () => {
+    const workItems = repositoryDouble([]);
+    workItems.listDocumentDeliveryCandidates.mockResolvedValue([{
+      attemptId: 'ATT-01', workItemId: WORK_ITEM_ID,
+      documentVersionId: DOCUMENT_VERSION_ID, actorUserId: ACTOR_ID,
+    }]);
+    workItems.documentDeliveryDispatchState.mockResolvedValue({ pending: true, missing: false });
+    const scope = {
+      authorizeOpenClawAutoWorkItemQueue: jest.fn().mockResolvedValue({
+        principalId: 'service:openclaw-main', appId: 'app_17bzc551rsg',
+        tenantId: TENANT_ID, authorizationFingerprint: `sha256:${'c'.repeat(64)}`,
+      }),
+      authorizeDocumentWork: jest.fn().mockResolvedValue({
+        principalId: 'service:openclaw-main', appId: 'app_17bzc551rsg',
+        tenantId: TENANT_ID, actorUserId: ACTOR_ID,
+        documentVersionId: DOCUMENT_VERSION_ID,
+      }),
+    };
+    const actorScope = { withActorScope: jest.fn((_actor, operation) => operation()) };
+    const service = new AutomaticWorkItemDispatchService(workItems as never,
+      sourceDouble() as never, scope as never, undefined, undefined,
+      undefined, undefined, actorScope as never);
+    await expect(service.nextWorkItem()).resolves.toEqual({
+      status: 'DOCUMENT_PENDING', documentVersionId: DOCUMENT_VERSION_ID,
+      deliveryRef: `work-item:${WORK_ITEM_ID}`, documentAfterRef: 'attempt:ATT-01',
+    });
+    expect(scope.authorizeDocumentWork).toHaveBeenCalledWith({
+      documentVersionId: DOCUMENT_VERSION_ID, deliveryRef: `work-item:${WORK_ITEM_ID}`,
+      purpose: 'SOURCE',
+    });
+    expect(actorScope.withActorScope).toHaveBeenCalledWith(ACTOR_ID, expect.any(Function));
+  });
+
+  it('retries a missing WorkItem admission from persisted selection after a transient failure', async () => {
+    const workItems = repositoryDouble([]);
+    workItems.listDocumentDeliveryCandidates.mockResolvedValue([{
+      attemptId: 'ATT-01', workItemId: WORK_ITEM_ID,
+      documentVersionId: DOCUMENT_VERSION_ID, actorUserId: ACTOR_ID,
+    }]);
+    workItems.documentDeliveryDispatchState.mockResolvedValue({ pending: false, missing: true });
+    const scope = { authorizeOpenClawAutoWorkItemQueue: jest.fn().mockResolvedValue({
+      principalId: 'service:openclaw-main', appId: 'app_17bzc551rsg',
+      tenantId: TENANT_ID, authorizationFingerprint: `sha256:${'c'.repeat(64)}`,
+    }), authorizeDocumentWork: jest.fn().mockResolvedValue({
+      principalId: 'service:openclaw-main', appId: 'app_17bzc551rsg',
+      tenantId: TENANT_ID, actorUserId: ACTOR_ID, documentVersionId: DOCUMENT_VERSION_ID,
+    }) };
+    const actorScope = { withActorScope: jest.fn((_actor, operation) => operation()) };
+    const documentWork = { prepareAutomaticWorkItemDelivery: jest.fn()
+      .mockRejectedValueOnce(new Error('ADMISSION_STORAGE_UNAVAILABLE'))
+      .mockResolvedValue({ status: 'ADMITTED' }) };
+    const service = new AutomaticWorkItemDispatchService(workItems as never,
+      sourceDouble() as never, scope as never, undefined, undefined,
+      undefined, undefined, actorScope as never, undefined, undefined,
+      documentWork as never);
+    await expect(service.nextWorkItem()).rejects.toThrow('ADMISSION_STORAGE_UNAVAILABLE');
+    await expect(service.nextWorkItem()).resolves.toEqual({
+      status: 'DOCUMENT_PENDING', documentVersionId: DOCUMENT_VERSION_ID,
+      deliveryRef: `work-item:${WORK_ITEM_ID}`, documentAfterRef: 'attempt:ATT-01',
+    });
+    expect(documentWork.prepareAutomaticWorkItemDelivery).toHaveBeenCalledTimes(2);
+    expect(documentWork.prepareAutomaticWorkItemDelivery).toHaveBeenCalledWith({
+      workItemId: WORK_ITEM_ID, documentVersionId: DOCUMENT_VERSION_ID, actorUserId: ACTOR_ID,
+    });
+  });
+
+  it('reports an unsupported shared version and continues to another exact candidate', async () => {
+    const workItems = repositoryDouble([]);
+    workItems.listDocumentDeliveryCandidates.mockResolvedValue([
+      { attemptId: 'ATT-01', workItemId: WORK_ITEM_ID,
+        documentVersionId: DOCUMENT_VERSION_ID, actorUserId: ACTOR_ID },
+      { attemptId: 'ATT-02', workItemId: 'WI-02',
+        documentVersionId: 'DV-02', actorUserId: ACTOR_ID },
+    ]);
+    workItems.readDocumentDeliveryIntents.mockImplementation(async ({ documentVersionId }) => [{
+      workItemId: documentVersionId === DOCUMENT_VERSION_ID ? WORK_ITEM_ID : 'WI-02',
+      actorUserId: ACTOR_ID, delivery: { reading: true, translation: 'NONE' },
+    }] as never);
+    workItems.documentDeliveryDispatchState.mockResolvedValue({ pending: true, missing: false });
+    const scope = { authorizeOpenClawAutoWorkItemQueue: jest.fn().mockResolvedValue({
+      principalId: 'service:openclaw-main', appId: 'app_17bzc551rsg',
+      tenantId: TENANT_ID, authorizationFingerprint: `sha256:${'c'.repeat(64)}`,
+    }), authorizeDocumentWork: jest.fn(async ({ documentVersionId }) => {
+      if (documentVersionId === DOCUMENT_VERSION_ID)
+        throw new Error('DOCUMENT_DELIVERY_MULTI_ACTOR_UNSUPPORTED');
+      return { principalId: 'service:openclaw-main', tenantId: TENANT_ID,
+        documentVersionId, actorUserId: ACTOR_ID };
+    }) };
+    const service = new AutomaticWorkItemDispatchService(workItems as never,
+      sourceDouble() as never, scope as never, undefined, undefined,
+      undefined, undefined, { withActorScope: jest.fn((_actor, operation) => operation()) } as never);
+    await expect(service.nextWorkItem()).resolves.toEqual({ status: 'DOCUMENT_PENDING',
+      documentVersionId: 'DV-02', deliveryRef: 'work-item:WI-02',
+      documentAfterRef: 'attempt:ATT-02' });
+  });
+
+  it('rotates pending WorkItems through an upload and wraps after the tail', async () => {
+    const workItems = repositoryDouble([]);
+    const entries = [
+      { attemptId: 'ATT-01', workItemId: WORK_ITEM_ID,
+        documentVersionId: DOCUMENT_VERSION_ID, actorUserId: ACTOR_ID },
+      { attemptId: 'ATT-02', workItemId: 'WI-02',
+        documentVersionId: 'DV-02', actorUserId: ACTOR_ID },
+    ];
+    workItems.listDocumentDeliveryCandidates.mockImplementation(async ({ afterAttemptId }) =>
+      afterAttemptId ? entries.filter(item => item.attemptId > afterAttemptId) : entries);
+    workItems.readDocumentDeliveryIntents.mockImplementation(async ({ documentVersionId }) => [{
+      workItemId: documentVersionId === DOCUMENT_VERSION_ID ? WORK_ITEM_ID : 'WI-02',
+      actorUserId: ACTOR_ID, delivery: { reading: true, translation: 'NONE' },
+    }] as never);
+    workItems.documentDeliveryDispatchState.mockResolvedValue({ pending: true, missing: false });
+    const catalog = { listDocumentUploadDeliveryCandidates: jest.fn(async ({ afterAcquisitionId }) =>
+      afterAcquisitionId ? [] : [{ acquisitionId: 'ACQ-01', documentVersionId: 'DV-UPLOAD',
+        actorUserId: ACTOR_ID, status: 'WAITING' }]) };
+    const scope = {
+      authorizeOpenClawAutoWorkItemQueue: jest.fn().mockResolvedValue({
+        principalId: 'service:openclaw-main', appId: 'app_17bzc551rsg',
+        tenantId: TENANT_ID, authorizationFingerprint: `sha256:${'c'.repeat(64)}`,
+      }),
+      authorizeDocumentWork: jest.fn(async ({ documentVersionId }) => ({
+        principalId: 'service:openclaw-main', tenantId: TENANT_ID,
+        actorUserId: ACTOR_ID, documentVersionId,
+      })),
+    };
+    const documentWork = { prepareAutomaticUpload: jest.fn().mockResolvedValue({
+      status: 'ADMITTED', documentVersionId: 'DV-UPLOAD',
+    }) };
+    const service = new AutomaticWorkItemDispatchService(workItems as never,
+      sourceDouble() as never, scope as never, undefined, undefined,
+      undefined, undefined,
+      { withActorScope: jest.fn((_actor, operation) => operation()) } as never,
+      undefined, catalog as never, documentWork as never);
+    await expect(service.nextWorkItem()).resolves.toEqual({ status: 'DOCUMENT_PENDING',
+      documentVersionId: DOCUMENT_VERSION_ID, deliveryRef: `work-item:${WORK_ITEM_ID}`,
+      documentAfterRef: 'attempt:ATT-01' });
+    await expect(service.nextWorkItem({ documentAfterRef: 'attempt:ATT-01' }))
+      .resolves.toEqual({ status: 'DOCUMENT_PENDING', documentVersionId: 'DV-02',
+        deliveryRef: 'work-item:WI-02', documentAfterRef: 'attempt:ATT-02' });
+    await expect(service.nextWorkItem({ documentAfterRef: 'attempt:ATT-02' }))
+      .resolves.toEqual({ status: 'DOCUMENT_PENDING', documentVersionId: 'DV-UPLOAD',
+        deliveryRef: 'acquisition:ACQ-01', documentAfterRef: 'acquisition:ACQ-01' });
+    await expect(service.nextWorkItem({ documentAfterRef: 'acquisition:ACQ-01' }))
+      .resolves.toEqual({ status: 'IDLE' });
+    await expect(service.nextWorkItem()).resolves.toMatchObject({
+      status: 'DOCUMENT_PENDING', documentAfterRef: 'attempt:ATT-01' });
+    expect(workItems.listDocumentDeliveryCandidates.mock.calls.map(([input]) =>
+      input.afterAttemptId)).toEqual([undefined, 'ATT-01', 'ATT-02', undefined]);
+    expect(catalog.listDocumentUploadDeliveryCandidates.mock.calls.map(([input]) =>
+      input.afterAcquisitionId)).toEqual([undefined, 'ACQ-01']);
+  });
+
+  it('resumes a committed upload task before handing it to the document consumer', async () => {
+    const workItems = repositoryDouble([]);
+    const actorScope = { withActorScope: jest.fn((_actor, operation) => operation()) };
+    const catalog = { listDocumentUploadDeliveryCandidates: jest.fn().mockResolvedValue([{
+      acquisitionId: 'ACQ-01', documentVersionId: DOCUMENT_VERSION_ID,
+      actorUserId: ACTOR_ID, status: 'WAITING',
+    }]) };
+    const documentWork = { prepareAutomaticUpload: jest.fn().mockResolvedValue({
+      status: 'ADMITTED', documentVersionId: DOCUMENT_VERSION_ID,
+    }) };
+    const scope = {
+      authorizeOpenClawAutoWorkItemQueue: jest.fn().mockResolvedValue({
+        principalId: 'service:openclaw-main', appId: 'app_17bzc551rsg',
+        tenantId: TENANT_ID, authorizationFingerprint: `sha256:${'c'.repeat(64)}`,
+      }),
+      authorizeDocumentWork: jest.fn().mockResolvedValue({
+        principalId: 'service:openclaw-main', appId: 'app_17bzc551rsg',
+        tenantId: TENANT_ID, actorUserId: ACTOR_ID,
+        documentVersionId: DOCUMENT_VERSION_ID,
+      }),
+    };
+    const service = new AutomaticWorkItemDispatchService(workItems as never,
+      sourceDouble() as never, scope as never, undefined, undefined,
+      undefined, undefined, actorScope as never, undefined,
+      catalog as never, documentWork as never);
+    await expect(service.nextWorkItem()).resolves.toEqual({
+      status: 'DOCUMENT_PENDING', documentVersionId: DOCUMENT_VERSION_ID,
+      deliveryRef: 'acquisition:ACQ-01', documentAfterRef: 'acquisition:ACQ-01',
+    });
+    expect(documentWork.prepareAutomaticUpload).toHaveBeenCalledWith({
+      acquisitionId: 'ACQ-01', documentVersionId: DOCUMENT_VERSION_ID,
+      actorUserId: ACTOR_ID, status: 'WAITING',
+    });
+  });
+
+  it('keeps a preparing upload dispatchable while rotating to the next acquisition', async () => {
+    const workItems = repositoryDouble([]);
+    const uploads = [
+      { acquisitionId: 'ACQ-01', documentVersionId: DOCUMENT_VERSION_ID,
+        actorUserId: ACTOR_ID, status: 'WAITING' },
+      { acquisitionId: 'ACQ-02', documentVersionId: 'DV-02',
+        actorUserId: ACTOR_ID, status: 'WAITING' },
+    ];
+    const catalog = { listDocumentUploadDeliveryCandidates: jest.fn(async ({ afterAcquisitionId }) =>
+      afterAcquisitionId ? uploads.slice(1) : uploads) };
+    const documentWork = { prepareAutomaticUpload: jest.fn()
+      .mockResolvedValueOnce({ status: 'ORIGINAL_PREPARING', parseRunId: 'PRUN-01',
+        documentVersionId: DOCUMENT_VERSION_ID })
+      .mockResolvedValueOnce({ status: 'ADMITTED', documentVersionId: 'DV-02' }) };
+    const scope = {
+      authorizeOpenClawAutoWorkItemQueue: jest.fn().mockResolvedValue({
+        principalId: 'service:openclaw-main', appId: 'app_17bzc551rsg',
+        tenantId: TENANT_ID, authorizationFingerprint: `sha256:${'c'.repeat(64)}`,
+      }),
+      authorizeDocumentWork: jest.fn(async ({ documentVersionId }) => ({
+        principalId: 'service:openclaw-main', tenantId: TENANT_ID,
+        actorUserId: ACTOR_ID, documentVersionId,
+      })),
+    };
+    const service = new AutomaticWorkItemDispatchService(workItems as never,
+      sourceDouble() as never, scope as never, undefined, undefined,
+      undefined, undefined, { withActorScope: jest.fn() } as never, undefined,
+      catalog as never, documentWork as never);
+    await expect(service.nextWorkItem()).resolves.toEqual({ status: 'DOCUMENT_PENDING',
+      documentVersionId: DOCUMENT_VERSION_ID, deliveryRef: 'acquisition:ACQ-01',
+      documentAfterRef: 'acquisition:ACQ-01' });
+    await expect(service.nextWorkItem({ documentAfterRef: 'acquisition:ACQ-01' }))
+      .resolves.toEqual({ status: 'DOCUMENT_PENDING',
+        documentVersionId: 'DV-02', deliveryRef: 'acquisition:ACQ-02',
+        documentAfterRef: 'acquisition:ACQ-02' });
+    expect(documentWork.prepareAutomaticUpload.mock.calls.map(([item]) => item.acquisitionId))
+      .toEqual(['ACQ-01', 'ACQ-02']);
+    expect(catalog.listDocumentUploadDeliveryCandidates).toHaveBeenNthCalledWith(2, {
+      tenantId: TENANT_ID, afterAcquisitionId: 'ACQ-01', limit: 100 });
+  });
+
+  it('skips a terminal upload for this tick and dispatches the next admitted acquisition', async () => {
+    const workItems = repositoryDouble([]);
+    const catalog = { listDocumentUploadDeliveryCandidates: jest.fn().mockResolvedValue([
+      { acquisitionId: 'ACQ-01', documentVersionId: DOCUMENT_VERSION_ID,
+        actorUserId: ACTOR_ID, status: 'WAITING' },
+      { acquisitionId: 'ACQ-02', documentVersionId: 'DV-02',
+        actorUserId: ACTOR_ID, status: 'WAITING' },
+    ]) };
+    const documentWork = { prepareAutomaticUpload: jest.fn()
+      .mockResolvedValueOnce({ status: 'REQUIRES_ATTENTION', parseRunId: 'PRUN-FAILED',
+        errorCode: 'DOCUMENT_PARSE_QUOTA_EXCEEDED' })
+      .mockResolvedValueOnce({ status: 'ADMITTED' }) };
+    const scope = {
+      authorizeOpenClawAutoWorkItemQueue: jest.fn().mockResolvedValue({
+        principalId: 'service:openclaw-main', appId: 'app_17bzc551rsg',
+        tenantId: TENANT_ID, authorizationFingerprint: `sha256:${'c'.repeat(64)}`,
+      }),
+      authorizeDocumentWork: jest.fn(async ({ documentVersionId }) => ({
+        principalId: 'service:openclaw-main', tenantId: TENANT_ID,
+        actorUserId: ACTOR_ID, documentVersionId,
+      })),
+    };
+    const service = new AutomaticWorkItemDispatchService(workItems as never,
+      sourceDouble() as never, scope as never, undefined, undefined,
+      undefined, undefined, { withActorScope: jest.fn() } as never, undefined,
+      catalog as never, documentWork as never);
+    const warn = jest.spyOn(Logger.prototype, 'warn').mockImplementation(() => undefined);
+    try {
+      await expect(service.nextWorkItem()).resolves.toEqual({ status: 'DOCUMENT_PENDING',
+        documentVersionId: 'DV-02', deliveryRef: 'acquisition:ACQ-02',
+        documentAfterRef: 'acquisition:ACQ-02' });
+      expect(warn).toHaveBeenCalledWith(expect.stringContaining('acquisition:ACQ-01'));
+    } finally { warn.mockRestore(); }
+    expect(documentWork.prepareAutomaticUpload).toHaveBeenCalledTimes(2);
+  });
+
+  it('advances the bounded page cursor after terminal uploads remain waiting', async () => {
+    const workItems = repositoryDouble([]);
+    const uploads = Array.from({ length: 100 }, (_, index) => ({
+      acquisitionId: `ACQ-${index}`, documentVersionId: `DV-${index}`,
+      actorUserId: ACTOR_ID, status: 'WAITING',
+    }));
+    const catalog = { listDocumentUploadDeliveryCandidates: jest.fn().mockResolvedValue(uploads) };
+    const documentWork = { prepareAutomaticUpload: jest.fn().mockResolvedValue({
+      status: 'REQUIRES_ATTENTION', parseRunId: 'PRUN-FAILED',
+      errorCode: 'DOCUMENT_PARSE_QUOTA_EXCEEDED',
+    }) };
+    const scope = {
+      authorizeOpenClawAutoWorkItemQueue: jest.fn().mockResolvedValue({
+        principalId: 'service:openclaw-main', appId: 'app_17bzc551rsg',
+        tenantId: TENANT_ID, authorizationFingerprint: `sha256:${'c'.repeat(64)}`,
+      }),
+      authorizeDocumentWork: jest.fn(async ({ documentVersionId }) => ({
+        principalId: 'service:openclaw-main', tenantId: TENANT_ID,
+        actorUserId: ACTOR_ID, documentVersionId,
+      })),
+    };
+    const service = new AutomaticWorkItemDispatchService(workItems as never,
+      sourceDouble() as never, scope as never, undefined, undefined,
+      undefined, undefined, { withActorScope: jest.fn() } as never, undefined,
+      catalog as never, documentWork as never);
+    const warn = jest.spyOn(Logger.prototype, 'warn').mockImplementation(() => undefined);
+    try { await expect(service.nextWorkItem()).resolves.toEqual({ status: 'IDLE',
+      documentAfterRef: 'acquisition:ACQ-99' }); }
+    finally { warn.mockRestore(); }
+    expect(documentWork.prepareAutomaticUpload).toHaveBeenCalledTimes(100);
+  });
+
+  it('rejects an upload candidate whose actor or tenant differs from the service scope', async () => {
+    const workItems = repositoryDouble([]);
+    const catalog = { listDocumentUploadDeliveryCandidates: jest.fn().mockResolvedValue([{
+      acquisitionId: 'ACQ-01', documentVersionId: DOCUMENT_VERSION_ID,
+      actorUserId: ACTOR_ID, status: 'WAITING',
+    }]) };
+    const documentWork = { prepareAutomaticUpload: jest.fn() };
+    const scope = {
+      authorizeOpenClawAutoWorkItemQueue: jest.fn().mockResolvedValue({
+        principalId: 'service:openclaw-main', appId: 'app_17bzc551rsg',
+        tenantId: TENANT_ID, authorizationFingerprint: `sha256:${'c'.repeat(64)}`,
+      }),
+      authorizeDocumentWork: jest.fn().mockResolvedValue({
+        principalId: 'service:openclaw-main', appId: 'app_17bzc551rsg',
+        tenantId: 'other-tenant', actorUserId: 'other-actor',
+        documentVersionId: DOCUMENT_VERSION_ID,
+      }),
+    };
+    const service = new AutomaticWorkItemDispatchService(workItems as never,
+      sourceDouble() as never, scope as never, undefined, undefined,
+      undefined, undefined, { withActorScope: jest.fn() } as never, undefined,
+      catalog as never, documentWork as never);
+    await expect(service.nextWorkItem()).rejects.toThrow('AUTO_DOCUMENT_SCOPE_MISMATCH');
+    expect(documentWork.prepareAutomaticUpload).not.toHaveBeenCalled();
+  });
+
+  it('returns a bounded document cursor after one full page of completed intents', async () => {
+    const workItems = repositoryDouble([]);
+    workItems.listDocumentDeliveryCandidates.mockResolvedValue(Array.from({ length: 100 }, (_, n) => ({
+      attemptId: `ATT-${n}`, workItemId: `WI-${n}`,
+      documentVersionId: DOCUMENT_VERSION_ID, actorUserId: ACTOR_ID,
+    })));
+    workItems.readDocumentDeliveryIntents.mockResolvedValue(Array.from({ length: 100 }, (_, n) => ({
+      workItemId: `WI-${n}`, actorUserId: ACTOR_ID,
+      delivery: { reading: true, translation: 'NONE' },
+    })) as never);
+    const actorScope = { withActorScope: jest.fn((_actor, operation) => operation()) };
+    const scope = { authorizeOpenClawAutoWorkItemQueue: jest.fn().mockResolvedValue({
+      principalId: 'service:openclaw-main', appId: 'app_17bzc551rsg',
+      tenantId: TENANT_ID, authorizationFingerprint: `sha256:${'c'.repeat(64)}`,
+    }), authorizeDocumentWork: jest.fn() };
+    const service = new AutomaticWorkItemDispatchService(workItems as never,
+      sourceDouble() as never, scope as never, undefined, undefined,
+      undefined, undefined, actorScope as never);
+    await expect(service.nextWorkItem()).resolves.toEqual({
+      status: 'IDLE', documentAfterRef: 'attempt:ATT-99',
+    });
+    expect(workItems.listDocumentDeliveryCandidates).toHaveBeenCalledWith({
+      tenantId: TENANT_ID, afterAttemptId: undefined, limit: 100,
+    });
+    expect(workItems.documentDeliveryDispatchState).toHaveBeenCalledTimes(100);
   });
 
   it('discovers only an explicit pending Review on a registered completed task', async () => {
@@ -680,6 +1029,12 @@ function candidate(
 function repositoryDouble(candidates: AutoWorkItemQueueCandidate[]) {
   const double = {
     listAutoProcessingCandidates: jest.fn().mockResolvedValue(candidates),
+    listDocumentDeliveryCandidates: jest.fn().mockResolvedValue([]),
+    readDocumentDeliveryIntents: jest.fn().mockResolvedValue([{
+      workItemId: WORK_ITEM_ID, actorUserId: ACTOR_ID,
+      delivery: { reading: true, translation: 'NONE' },
+    }]),
+    documentDeliveryDispatchState: jest.fn().mockResolvedValue({ pending: false, missing: false }),
     listCompletedAutoProcessingReviewSubjects: jest.fn().mockResolvedValue([]),
     loadTenantScopedProjection: jest.fn(),
     loadAuthorizationBinding: jest.fn(),
@@ -695,6 +1050,9 @@ function repositoryDouble(candidates: AutoWorkItemQueueCandidate[]) {
     Pick<
       MiaodaWorkItemRepository,
       | 'listAutoProcessingCandidates'
+      | 'listDocumentDeliveryCandidates'
+      | 'readDocumentDeliveryIntents'
+      | 'documentDeliveryDispatchState'
       | 'listCompletedAutoProcessingReviewSubjects'
       | 'loadTenantScopedProjection'
       | 'loadAuthorizationBinding'
@@ -736,6 +1094,9 @@ function dispatchService(
     Pick<
       MiaodaWorkItemRepository,
       | 'listAutoProcessingCandidates'
+      | 'listDocumentDeliveryCandidates'
+      | 'readDocumentDeliveryIntents'
+      | 'documentDeliveryDispatchState'
       | 'listCompletedAutoProcessingReviewSubjects'
       | 'loadTenantScopedProjection'
       | 'loadAuthorizationBinding'

@@ -60,6 +60,7 @@ export class DocumentManagementHostedModule {
         DriveSourceScanAutomation,
       ],
       exports: [
+        MiaodaHostedDocumentCatalog,
         DocumentParsingRepository,
         DOCUMENT_MANAGEMENT_INGEST_AUTHORIZER,
         DocumentOfficialPluginService,
