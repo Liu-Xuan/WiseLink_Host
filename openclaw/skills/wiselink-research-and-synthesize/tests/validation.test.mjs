@@ -1435,7 +1435,7 @@ test('requires 35 MCP capabilities, six review tools, and hosted provenance', ()
   assert.ok(HOST_MCP_TOOLS.includes('commit_applicability_candidate'));
   assert.equal(
     WISELINK_SKILL_VERSION,
-    'wiselink-research-and-synthesize@r09.c191',
+    'wiselink-research-and-synthesize@r09.c192',
   );
   assert.equal(
     WISELINK_SKILL_COMPATIBILITY_REF,
@@ -7915,6 +7915,21 @@ test('JobAid Review catches out-of-scope issue replacements and retirements befo
   candidate.jobAidWorkingDelta.retiredIssues = [{ issueKey: 'failure_mechanism' }];
   assert.throws(() => validateJobAidIssueEditScope(candidate, scope), /REVIEW_ISSUE_OUT_OF_SCOPE/u);
   assert.doesNotThrow(() => validateJobAidIssueEditScope(candidate, null));
+});
+
+test('scoped JobAid Review preserves completion scope while correcting the reading summary', () => {
+  const scope = { targetIssueKeys: ['ja_ac_risk_and_measures'] };
+  const previous = { roundCompletion: 'COMPLETE_WITH_OPEN_QUESTIONS',
+    completionReason: '仍有构型与实施状态待核。' };
+  const candidate = { jobAidWorkingDelta: {
+    issues: [{ issueKey: 'ja_ac_risk_and_measures' }],
+    headline: '更正后的标题', listBrief: '更正后的简述。',
+    ...previous,
+  } };
+  assert.doesNotThrow(() => validateJobAidIssueEditScope(candidate, scope, previous));
+  candidate.jobAidWorkingDelta.completionReason = '擅自改为已闭合。';
+  assert.throws(() => validateJobAidIssueEditScope(candidate, scope, previous),
+    /REVIEW_WORK_OUT_OF_SCOPE:completionReason/u);
 });
 
 test('JobAid Review feeds a rejected out-of-scope candidate back to the same model turn', async () => {

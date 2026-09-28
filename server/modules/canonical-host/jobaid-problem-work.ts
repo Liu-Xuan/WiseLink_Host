@@ -30,9 +30,18 @@ export function assertJobAidIssueEditScope(
       canonicalJson(before.get(key) ?? null) !== canonicalJson(after.get(key) ?? null))
       throw new Error(`REVIEW_ISSUE_OUT_OF_SCOPE:${key}`);
   }
-  // A scoped issue edit cannot silently replace the work-level reading.
+  const targetChanged = [...allowed].some((key) =>
+    canonicalJson(before.get(key) ?? null) !== canonicalJson(after.get(key) ?? null));
+  // The work-level reading may follow a substantive change to the authorized
+  // issue, but cannot be rewritten on its own by a scoped Review.
+  if (!targetChanged) {
+    for (const field of ['headline', 'listBrief'] as const) {
+      if (canonicalJson(previous[field]) !== canonicalJson(next[field]))
+        throw new Error(`REVIEW_WORK_OUT_OF_SCOPE:${field}`);
+    }
+  }
   for (const field of [
-    'headline', 'listBrief', 'understanding',
+    'understanding',
     'roundCompletion', 'completionReason', 'methodBinding',
   ] as const) {
     if (canonicalJson(previous[field]) !== canonicalJson(next[field]))
