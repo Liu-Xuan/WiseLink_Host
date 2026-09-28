@@ -1382,7 +1382,7 @@ test('requires 35 MCP capabilities, six review tools, and hosted provenance', ()
   assert.ok(HOST_MCP_TOOLS.includes('commit_applicability_candidate'));
   assert.equal(
     WISELINK_SKILL_VERSION,
-    'wiselink-research-and-synthesize@r09.c181',
+    'wiselink-research-and-synthesize@r09.c182',
   );
   assert.equal(
     WISELINK_SKILL_COMPATIBILITY_REF,
@@ -7314,15 +7314,30 @@ test('JobAid assessment update permits one bounded citation correction after two
 test('gateway required-tool contract failure is reported once without transient retries', async () => {
   let requests = 0;
   const progress = [];
+  const outputShapes = [];
+  let businessCalls = 0;
+  const privateText = 'PRIVATE-REVIEW-BODY-MUST-NOT-BE-RECORDED';
   await assert.rejects(invokeReviewWithTransport({ input: {} }, {
     gatewayUrl: 'https://official.invalid', gatewayToken: 'fixture-only', configuredModelVersion: 'fixture/provider',
     observeProgress: async (event) => { progress.push(event); },
+    observeOutputShape: async (shape) => { outputShapes.push(shape); },
+    readSourceRefs: async () => { businessCalls++; },
+    validateCandidate: async () => { businessCalls++; },
   }, { requestGateway: async () => {
     requests++;
-    return Response.json({ error: { type: 'api_error', message: 'tool_choice=required was not satisfied by the agent response' } }, { status: 502 });
+    return Response.json({ error: { type: 'api_error', message: 'tool_choice=required was not satisfied by the agent response', privateText } }, { status: 502 });
   }, wait: async () => { assert.fail('contract failure must not retry'); } }), /REVIEW_TOOL_CHOICE_NOT_SATISFIED/u);
   assert.equal(requests, 1);
   assert.deepEqual(progress.map((event) => event.kind), ['MODEL_REQUEST']);
+  assert.equal(outputShapes.length, 1);
+  assert.equal(outputShapes[0].http.status, 502);
+  assert.equal(outputShapes[0].choiceCount, 0);
+  assert.equal(outputShapes[0].finishReason, null);
+  assert.equal(outputShapes[0].gatewayFailure, 'TOOL_CHOICE_NOT_SATISFIED');
+  assert.equal(Object.hasOwn(outputShapes[0], 'usage'), false);
+  assert.equal(Object.hasOwn(outputShapes[0], 'stopReason'), false);
+  assert.equal(JSON.stringify(outputShapes).includes(privateText), false);
+  assert.equal(businessCalls, 0);
 });
 
 test('review HTTP 400 reports only a known incomplete-response category', async () => {
@@ -7338,21 +7353,40 @@ test('review HTTP 400 reports only a known incomplete-response category', async 
 
 test('source-read JobAid Review makes one compact correction after a proven empty incomplete response', async () => {
   let requests = 0;
+  let validations = 0;
+  const previousIssue = { issueKey: 'existing', question: '原问题', body: '旧判断。[[source:prior]]',
+    riskScenarios: [], measures: [{ text: '保留措施' }], otherClassifications: [],
+    openQuestions: [{ question: '范围仍待核？' }], requirementHandling: [] };
   const candidate = { answer: '只更正无据的未读断言。', sourceRefs: ['page1'],
     jobAidWorkingDelta: { schemaVersion: 'wiselink.jobaid-problem-work.v3',
-      issues: [], unchangedIssueKeys: ['existing'] } };
+      issuePatches: [{ issueKey: 'existing', body: '已核对原文。[[source:page1]]' }],
+      unchangedIssueKeys: ['other'], roundCompletion: 'COMPLETE_WITH_OPEN_QUESTIONS',
+      completionReason: '保留原完成范围' } };
   const result = await invokeReviewWithTransport({ input: {
     availableSourceRefIds: ['page1'],
     context: { purpose: 'UPDATE_ASSESSMENT', problemAssessment: {
       availableSources: [{ kind: 'DOCUMENT_PASSAGE' }],
+      previousWork: { content: { issues: [previousIssue, { ...previousIssue, issueKey: 'other' }],
+        roundCompletion: 'COMPLETE_WITH_OPEN_QUESTIONS', completionReason: '保留原完成范围' } },
     } },
   } }, {
     gatewayUrl: 'https://official.invalid', gatewayToken: 'fixture-only',
     configuredModelVersion: 'fixture/provider',
     nativeSessionKey: 'agent:wiselink-engineering:review:ACTX-RS-incomplete-correction',
     readSourceRefs: async ids => ids.map(sourceRefId => ({ sourceRefId,
-      evidenceRef: sourceRefId, excerpt: 'Fixture passage.' })),
-    validateCandidate: async value => assert.deepEqual(value.sourceRefs, ['page1']),
+      evidenceRef: `source:${sourceRefId}`, excerpt: 'Fixture passage.' })),
+    validateCandidate: async value => {
+      validations++;
+      validateJobAidUpdatedIssueBodies(value);
+      assert.deepEqual(value.sourceRefs, ['page1']);
+      assert.equal(Object.hasOwn(value.jobAidWorkingDelta, 'issuePatches'), false);
+      assert.deepEqual(value.jobAidWorkingDelta.issues[0], {
+        ...previousIssue, body: '已核对原文。[[source:page1]]',
+      });
+      assert.deepEqual(value.jobAidWorkingDelta.unchangedIssueKeys, ['other']);
+      assert.equal(value.jobAidWorkingDelta.roundCompletion, 'COMPLETE_WITH_OPEN_QUESTIONS');
+      assert.equal(value.jobAidWorkingDelta.completionReason, '保留原完成范围');
+    },
   }, { requestGateway: async (_url, init) => {
     requests += 1;
     const body = JSON.parse(init.body);
@@ -7365,7 +7399,15 @@ test('source-read JobAid Review makes one compact correction after a proven empt
       message: 'miaoda/minimax-m3 ended with an incomplete terminal response',
     } }, { status: 400 });
     assert.equal(body.tool_choice, 'required');
-    assert.match(body.messages.at(-1).content, /complete, concise candidate/u);
+    assert.equal(body.tools[0].function.name, 'return_wiselink_review_candidate');
+    assert.ok(body.tools[0].function.parameters.properties.jobAidWorkingDelta.properties.issuePatches);
+    const correction = body.messages.at(-1).content;
+    assert.match(correction, /jobAidWorkingDelta\.issuePatches/u);
+    assert.match(correction, /"existing","other"/u);
+    assert.match(correction, /"source:page1"/u);
+    assert.match(correction, /unchangedIssueKeys/u);
+    assert.match(correction, /roundCompletion, completionReason/u);
+    assert.doesNotMatch(correction, /one complete, concise candidate/u);
     return Response.json({ choices: [{ message: { content: null, tool_calls: [{
       id: 'candidate3', type: 'function', function: {
         name: 'return_wiselink_review_candidate', arguments: JSON.stringify(candidate),
@@ -7373,6 +7415,7 @@ test('source-read JobAid Review makes one compact correction after a proven empt
     }] } }] });
   } });
   assert.equal(requests, 3);
+  assert.equal(validations, 1);
   assert.equal(result.output.answer, candidate.answer);
 });
 

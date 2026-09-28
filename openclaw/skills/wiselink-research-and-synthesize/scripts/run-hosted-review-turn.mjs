@@ -491,7 +491,15 @@ export async function invokeHostedReviewModel(input, options = {}, dependencies 
       requestedMaxCompletionTokens: maxCompletionTokens,
       payload,
     });
+    const gatewayFailure = response.status === 502
+      ? classifyHostedGatewayFailure(payload) : 'UNCLASSIFIED';
+    if (gatewayFailure === 'TOOL_CHOICE_NOT_SATISFIED') {
+      outputShape.gatewayFailure = gatewayFailure;
+    }
     if (observeOutputShape) await observeOutputShape(outputShape, round);
+    if (gatewayFailure === 'TOOL_CHOICE_NOT_SATISFIED') {
+      throw new Error('REVIEW_TOOL_CHOICE_NOT_SATISFIED');
+    }
     if (!response.ok) {
       const failure = classifyHostedGatewayFailure(payload);
       if (sourceReadFirst && nativeSessionKey && sourceCache.size > 0 &&
@@ -502,8 +510,21 @@ export async function invokeHostedReviewModel(input, options = {}, dependencies 
         // a Host mutation or retry an unknown/partially received response.
         incompleteResponseCorrections += 1;
         const previousIssueKeys = jobAidPreviousIssueKeys(input.input);
-        messages = [systemMessage, { role: 'user', content:
-          `The preceding model response ended before any tool call. Continue this same Review using the sources already read. Call ${REVIEW_OUTPUT_FUNCTION_NAME} with one complete, concise candidate that changes only the engineer's requested findings. Existing issue keys: ${canonicalJson(previousIssueKeys)}. Use an affected existing key for a correction; create a new key only for a distinct new problem. Omitted issues remain saved. Every updated issue body needs an inline [[evidenceRef]] copied from actually read, supporting evidence. Read another authorized fragment only if essential. Do not repeat a long analysis or claim a candidate was saved.` }];
+        const readEvidenceRefs = [...new Set([...sourceCache.values()]
+          .map((source) => source?.evidenceRef)
+          .filter((ref) => typeof ref === 'string' && ref.trim()))];
+        const correction = isJobAid && isAssessmentUpdate
+          ? [
+              'The preceding model response ended before any tool call.',
+              `Continue this same Review using the sources already read. Call ${REVIEW_OUTPUT_FUNCTION_NAME} with one concise candidate containing answer and non-null jobAidWorkingDelta.`,
+              `Correct existing issues through jobAidWorkingDelta.issuePatches: use the exact prior issueKey from ${canonicalJson(previousIssueKeys)} and only fields that actually change, without restating the complete issue or adding nonempty issues beside patches.`,
+              'Put all other prior issue keys in unchangedIssueKeys.',
+              `For a revised body, cite supporting evidence inline as [[evidenceRef]] copied exactly from the read evidence refs ${canonicalJson(readEvidenceRefs)}.`,
+              'Preserve the prior roundCompletion, completionReason, open questions and requirement handling unless the read evidence justifies a specific change in completion scope; do not claim broader completion.',
+              'Keep the engineer\'s requested findings and the existing validation contract. Read another authorized fragment only if essential. Do not repeat a long analysis or claim a candidate was saved.',
+            ].join(' ')
+          : `The preceding model response ended before any tool call. Continue this same Review using the sources already read. Call ${REVIEW_OUTPUT_FUNCTION_NAME} with one complete, concise candidate that changes only the engineer's requested findings. Existing issue keys: ${canonicalJson(previousIssueKeys)}. Use an affected existing key for a correction; create a new key only for a distinct new problem. Omitted issues remain saved. Every updated issue body needs an inline [[evidenceRef]] copied from actually read, supporting evidence. Read another authorized fragment only if essential. Do not repeat a long analysis or claim a candidate was saved.`;
+        messages = [systemMessage, { role: 'user', content: correction }];
         continue;
       }
       throw new Error(`REVIEW_GATEWAY_HTTP_${response.status}${failure === 'UNCLASSIFIED' ? '' : `:${failure}`}`);
@@ -1690,6 +1711,7 @@ function validateModelOutputShape(value) {
           'outputChannel',
           'assistantContent',
           'toolCall',
+          ...(Object.hasOwn(value, 'gatewayFailure') ? ['gatewayFailure'] : []),
         ].sort(),
       ) ||
     !isRecord(value.http) ||
@@ -1725,6 +1747,8 @@ function validateModelOutputShape(value) {
     (Object.hasOwn(value, 'requestedMaxCompletionTokens') && value.requestedMaxCompletionTokens !== null &&
       (!Number.isSafeInteger(value.requestedMaxCompletionTokens) || value.requestedMaxCompletionTokens <= 0)) ||
     typeof value.http.ok !== 'boolean' ||
+    (Object.hasOwn(value, 'gatewayFailure') &&
+      (value.http.status !== 502 || value.gatewayFailure !== 'TOOL_CHOICE_NOT_SATISFIED')) ||
     !Number.isSafeInteger(value.choiceCount) ||
     value.choiceCount < 0 ||
     typeof value.hasAnalysis !== 'boolean' ||

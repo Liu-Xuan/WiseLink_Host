@@ -1,5 +1,11 @@
 # M 主控集成交接
 
+## 2026-09-28：C181 安装后真实 Review 失败及 C182 修复候选
+
+C181 的 61 文件包已在 17c 正式安装并逐文件读回，唯一动态 C136 调度恢复启用，其余 15 项保持停用。旧 787 FTD 的正常后继 Review Turn 10（`AQ-077dc4a00a4d4bc28849bc3088c145cf`）及 Turn 11（`AQ-775b46747cd3463d95bfe1d6353efc42`）都以 `HOSTED_REVIEW_EXECUTION_FAILED:REVIEW_TOOL_CHOICE_NOT_SATISFIED` 取消；Turn 11 已明确要求仅用 `issuePatches`，仍未保存新 JobAid。旧修订 11 和旧 Overall 保留。
+
+17c 私有检查点的非内容形状记录显示：两次先有 HTTP 200、单个函数调用；之后 HTTP 400 `INCOMPLETE_TERMINAL_RESPONSE`、无 choice；一次既有有界补答后收到 HTTP 502 `TOOL_CHOICE_NOT_SATISFIED`。502 原先在输出形状观察前抛出，因此不能从现有记录推断模型配额、输出长度或该响应细节。C182 本地候选让已知 502 留下固定类别的形状记录，同时把 JobAid 更新的 400 补答明确限定为现有问题的 `issuePatches` 与已读依据，不改未知 502 重试、Host 校验或其他 Review 路径。定向测试通过；提交、包装、17c 安装和真实 Turn 12 尚待完成，不能记作线上修复成功。
+
 ## 2026-09-28：旧 SB 原页与已保存修订的内容质量核对
 
 从 17b 既有上传的私有原件路径下载 57,434 字节 PDF；SHA256 `260c665aa340752898c0958c7015df5fa8f6f5ead9317d0b37908af6c30d53b5` 与上传记录一致。原件共两页，已逐页渲染并与 PDF 文本层、当前已发布 MinerU/PDF.js manifest 和 JobAid 修订 11 对照。此处仅记录差异，不修改历史工作或原件。
@@ -10,7 +16,7 @@
 
 当前修订 11 的四个问题键为 `FTD-26002-NATURE`、`ATA-46-GATELINK-SCOPE`、`TLS-MISMECHANISM`、`AID-OBEDS-TIMELINE`，都含上述错位或虚假“未读”；已有 WorkItem Overall 仍基于更早工作修订。后继 Review 应按四个受影响问题的实际范围修订，并在保存后以确切新修订按请求执行 Overall，再核对资料库、Wiki、检索及相关投影。不得将本次只读人工核对冒充系统已完成更正。
 
-## 2026-09-28：C181 局部问题补全已提交并打包，Hosted 安装待 17c 登录
+## 2026-09-28：C181 局部问题补全的发布准备（历史时点）
 
 针对 Turn 7–9 的 Review 失败，C181 在 JobAid Review 候选中增加仅供模型编写的 `issuePatches`：只能指定 Host 固定上一修订中的既有 `issueKey` 和实际变化字段；外部驱动保留未提供字段的原值，展开成完整 `issues` 后仍经过现有 Skill/Host 的来源、问题结构、授权与工作修订校验。显式 `[]` 才变更旧集合；未知/重复/无变化问题键、混用非空 `issues` 均拒绝。新增问题仍用完整 `issues`；没有新增路由、角色或正式业务权限。
 
