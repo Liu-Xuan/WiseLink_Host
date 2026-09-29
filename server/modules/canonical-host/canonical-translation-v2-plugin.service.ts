@@ -11,6 +11,7 @@ import { buildTranslationSourcePlan } from './canonical-translation-source-plan'
 import { buildTranslationBatchV2, nextTranslationWorkV2, translationBatchDependenciesV2 } from './canonical-translation-v2-batch';
 import { buildTranslationWorkspaceReadingV2, checkTranslationBlockV2 } from './canonical-translation-v2-quality';
 import { CanonicalTranslationWorkspaceRepository, type TranslationActualPluginExecution, type TranslationWorkspaceFence } from './canonical-translation-workspace.repository';
+import { canonicalJson } from '../action-attempt/action-attempt-envelope';
 
 /** M owns authorization, dispatch and lease lifecycle; this executes one saved V2 scope. */
 @Injectable()
@@ -21,7 +22,8 @@ export class CanonicalTranslationV2PluginService {
     private readonly plugins: DocumentOfficialPluginService, private readonly v2: CanonicalTranslationV2Service) {}
 
   async prepareOriginal(input: { tenantId: string; workItemId?: string | null; original: DocumentOriginalResult;
-    semanticMap?: DocumentSemanticMap; artifact: UnifiedPackageArtifactDescriptor; assertAuthorized: () => Promise<void> }) {
+    semanticMap?: DocumentSemanticMap; artifact: UnifiedPackageArtifactDescriptor; assertAuthorized: () => Promise<void>;
+    requireCurrentPlan?: boolean }) {
     await input.assertAuthorized();
     const source = input.semanticMap ? semanticTranslationSource(input.original, input.semanticMap)
       : documentOriginalStructuredSource(input.original, input.original.binding);
@@ -31,6 +33,8 @@ export class CanonicalTranslationV2PluginService {
     plan.source.originalBinding = structuredClone(input.original.binding);
     const workspace = await this.workspaces.prepare({ tenantId: input.tenantId, workItemId: input.workItemId ?? null,
       documentVersionId: input.original.binding.documentVersionId, plan });
+    if (input.requireCurrentPlan && canonicalJson(workspace.plan) !== canonicalJson(plan))
+      throw new Error('DOCUMENT_TRANSLATION_RECOVERY_PLAN_CHANGED');
     await input.assertAuthorized();
     return workspace;
   }

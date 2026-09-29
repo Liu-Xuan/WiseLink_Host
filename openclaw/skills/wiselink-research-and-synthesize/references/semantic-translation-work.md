@@ -6,11 +6,11 @@
 
 `begin_translation({workItemId,requestId})` 返回已绑定 DocumentVersion、解析产物和 TranslationWorkspace 的任务指针。驱动通过 `translation_workspace` 的 NEXT 领取完整语义块批次；分片只运输同一个批次的完整 JSON 字节，READ_BATCH 收齐并校验后才调用模型。原始片段、语义块、请求批次与阅读元素分别保留，不能反拆自然译文填回旧 unitKey。
 
-模型仅接收本批完整块、真实来源锚点、原始结构与相关上下文引文，包括定义、条件、术语及警示作用范围。段落可引用多个来源片段；列表保留项目身份；表格单元格只能引用同一真实格内的锚点。Host 保有布局和定位，模型不能猜坐标、重建表格或修补 OCR。上下文文本不是额外待翻译范围。
+GENERATE 模型接收完整英文文档的自然阅读投影，含标题、正文、列表、表格及必要的 SOURCE 疑点和警示作用范围。粗段标记用于译后定位，不携带 Host 的 anchorId、SourceRef 或逐格映射。模型只翻译指定段；其余全文供理解。Host 私有映射将中文恢复到现有块与锚点 SAVE 合同。CORRECT/CHECK 仍接收完整来源块、原始结构和相关上下文。段落可保守引用整个源段组；列表保留项目身份；表格单元格只能引用同一真实格内的锚点。Host 保有布局和定位，模型不能猜坐标、重建表格或修补 OCR。
 
 每个登记的 GENERATE、CORRECT、CHECK/CHECK_BATCH 请求使用一个新的短原生会话，最多一次远程请求，默认并发为 1。生成批次优先容纳完整块，初始调度目标不是模型上下文上限；大块不裁切。一次响应至多 15 分钟，并受原 attempt 剩余 deadline 限制；每次请求前及返回后由驱动续租。M3 仍按已有授权申请官方配置允许的最大输出额度。
 
-请求使用已支持的 `tool_choice=required`，输出只调用 `return_wiselink_translation_block`，参数为 `candidate` 结构化对象，工具 schema 明确声明对象、数组与各字段；不再在字符串里嵌套 JSON。平台已出现的数组 `{item:[...]}` 封装只在 blocks/elements/checks/issues/anchorIds 数组位置精确无损解包；额外字段、非数组 item、文本值和来源映射不修补，随后仍执行全部原校验。GENERATE/CORRECT 返回 `{blocks:[{blockId,elements:[{kind,translatedText,anchorIds}]}]}`；可以返回完整块组成的连续前缀，不能返回截断块或拼补 JSON。CHECK 只返回目标块及定位明确的 issues，不改写译文。modelVersion 优先使用网关响应中的可读模型字段；官方网关只返回 profile 别名时，沿用绑定任务的 `configured-route:<modelRef>` 路由回执，表示平台未报告模型版本，不声称已验证下游快照。观察记录分别保存已选路由、实返模型（未提供为 null）、来源种类与网关响应 ID；Host 核对路由回执和 sealed task 一致。不得因此切换模型或丢弃已收到的完整候选。
+请求使用已支持的 `tool_choice=required`，输出只调用 `return_wiselink_translation_block`，参数为 `candidate` 对象。GENERATE 返回 `{markdown:"..."}`，每个目标粗段保留唯一且有序的 `<!-- WL-SECTION:n -->` 标记；Host 对齐后生成原 SAVE 块元素，不接受缺段、增段、表格拓扑变化或无来源的新增正文。CORRECT 仍返回 `{blocks:[{blockId,elements:[{kind,translatedText,anchorIds}]}]}`；CHECK 返回目标块及定位明确的 issues，不改写译文。平台已出现的数组 `{item:[...]}` 封装只在 CORRECT/CHECK 的已声明数组位置精确无损解包；额外字段、非数组 item、文本值和来源映射不修补，随后仍执行原校验。modelVersion 优先使用网关响应中的可读模型字段；官方网关只返回 profile 别名时，沿用绑定任务的 `configured-route:<modelRef>` 路由回执，表示平台未报告模型版本，不声称已验证下游快照。观察记录分别保存已选路由、实返模型（未提供为 null）、来源种类与网关响应 ID；Host 核对路由回执和 sealed task 一致。不得因此切换模型或丢弃已收到的完整候选。
 
 新驱动在 NEXT 声明 `batchSemanticChecks=true`。Host 按完整块、6000 原文字符调度目标和最多 32 块登记 CHECK_BATCH，冻结每块 blockId、blockRevisionId、rowVersion；单块仍使用 CHECK。批量输出为 `{checks:[{blockId,issues:[{code,severity,message,anchorIds}]}]}`，与块顺序严格一致，不接受漏项、重排或跨块锚点。Host 在同一已授权、带租约与 CAS 校验的事务内保存全部检查，逐块决定可读性；任一版本变化使整批回滚。相同结果重交只读回原记录，不再调用模型。旧驱动未声明批量支持时继续使用单块协议。
 
@@ -22,7 +22,7 @@
 
 只对 CHECK/CHECK_BATCH 的已知等级 BLOCK/REVIEW/NOTE 统一字母大小写（例如 block → BLOCK）；不修改等级含义、正文、锚点或其他字段，未知等级仍拒绝。输出先在 B/A/U 别名范围内校验，再恢复 Host ID 并复核。失败时另存 `translation-<generationRequestRef>.output-shape-2.json`，只包含首个失败字段路径、固定原因、类型与数量；不保存模型字段正文、未知键名或私有思考。检查失败不补发模型、不部分采用同批检查，也不把日志缺少细节当作已定位原因。
 
-取消或到期后的迟到写入被 Host 拒绝。之后正常新 attempt 可接续同一 workspace，已保存、已检查版本按实际依赖复用，旧模型来源继续显示；不能复活旧终态、换 WorkItem 掩盖失败或冒充新模型重新生成了旧正文。块保存不推进全局 WorkItem revision。
+取消或到期后的迟到写入被 Host 拒绝。之后正常新 attempt 可接续同一 workspace，已保存、已检查版本按实际依赖复用，旧模型来源继续显示；全文依赖下任何原文改动都会使原生成候选失效，不能误用旧译。不能复活旧终态、换 WorkItem 掩盖失败或冒充新模型重新生成了旧正文。块保存不推进全局 WorkItem revision。
 
 页面的“继续中文翻译”或“重新翻译此完整块”通过 Host 保存明确的正常请求。消费者采用 Host 阶段返回的 requestId 领取同一请求，并使用该请求独立的本地检查点。回执未知时重读同一 requestId；终态只返回原回执，不再次领取。指定块的重译保留旧可读版本到新候选检查通过，最终组装必须确认指定块已由本次请求替换；未替换则明确失败，不能把旧完整正文当作本次重译成功。页面按 workspace 版本读回部分进展，不依赖块保存推进 WorkItem revision。
 
@@ -30,8 +30,8 @@
 
 Reader 从 Host 保存结果显示 PARTIAL、COMPLETE_WITH_ISSUES 或 COMPLETE，区分已保存、待检查、可读与待处理。点击自然段显示其全部实际来源；复制与导出保留完成范围及缺项。人工修订生成独立版本、明确人工来源，保留旧模型正文，仍是阅读候选。
 
-所有可做批次结束后，ASSEMBLE 由 Host 读取当前选用版本、保存最终产物并返回 manifest。模型不重印全文；最终 ResultEnvelope 仅引用 Host 产物与精确 manifest，记录实际安装的 Skill 版本和 `wiselink-translation-block@r09.c202`。即使全部复用旧块，最终组装也必须使用 v2 运行协议，且实际模型记录为 `host-assembly/no-model-call`。提交继续通过既有 `commit_translation_candidate` 字节分片与 FINALIZE，最终提交未知只查询原 attempt 的精确结果身份。
+所有可做批次结束后，ASSEMBLE 由 Host 读取当前选用版本、保存最终产物并返回 manifest。模型不重印全文；最终 ResultEnvelope 仅引用 Host 产物与精确 manifest，记录实际安装的 Skill 版本和 `wiselink-translation-block@r09.c205`。即使全部复用旧块，最终组装也必须使用 v2 运行协议，且实际模型记录为 `host-assembly/no-model-call`。提交继续通过既有 `commit_translation_candidate` 字节分片与 FINALIZE，最终提交未知只查询原 attempt 的精确结果身份。
 
 `WL_TRANSLATION_V2_ENABLED=1` 用于启用新请求；旧 v1 译文继续独立读取。已有 v2 workspace 可恢复。直接使用已验证英文的 Applicability/JobAid/Overall 保持各自真实来源与授权，不用虚构中文满足旧前置条件。知识产品导入仍要求对应最终提交和当前选用版本，部分可读范围不冒充完整或正式采用。
 
-模型输入使用本次短会话的 B/A/U 别名；适配器按确定性映射恢复 Host ID 后，仍做原有范围和结构校验。原文在 anchors 保持完整，sourceStructure 的同一文字位置改为 sourceAnchorId 引用，保留列表、表格行列/跨度/脚注及完整上下文。租约、工作区控制字段和 SourceRef 定位元数据留在调用方。任何映射不一致在请求前明确报错，不删减原文或猜测修复。
+GENERATE 的英文投影保留完整文档与表格行列、跨度、脚注结构；Host 私有保存旧块、锚点及来源定位，按粗段边界与表格结构位置恢复译文。无法无歧义对应时明确失败，不以文字相似度猜 SourceRef。旧窄范围 REGISTERED 请求不静默扩大，需经合法后继重新登记。CORRECT/CHECK 继续使用短会话的 B/A/U 别名；适配器按确定性映射恢复 Host ID 后，仍做原有范围和结构校验。租约、工作区控制字段和 SourceRef 定位元数据留在调用方。

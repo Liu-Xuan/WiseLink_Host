@@ -199,35 +199,18 @@ export function translationBatchDependenciesV2(
   );
   if (output.length !== blockIds.length)
     throw new Error('TRANSLATION_BATCH_BLOCK_SCOPE_INVALID');
-  const context = new Set(
-    completeTogetherScope(workspace, blockIds).map((block) => block.blockId),
-  );
-  for (const block of output) {
-    block.contextBlockIds.forEach((id) => context.add(id));
-    // Context regions retain the complete neighboring region when a sentence,
-    // pronoun or heading relationship can cross their structural boundary.
-    const index = plan.blocks.indexOf(block);
-    for (const neighbor of [plan.blocks[index - 1], plan.blocks[index + 1]])
-      if (neighbor) context.add(neighbor.blockId);
-  }
-  const globalAnchorIds = new Set([
-    ...plan.documentContext.conditionAnchorIds,
-    ...plan.documentContext.definitionAnchorIds,
-    ...plan.documentContext.outline.flatMap((entry) => entry.anchorIds),
-  ]);
-  for (const block of plan.blocks)
-    if (block.anchorIds.some((id) => globalAnchorIds.has(id)))
-      context.add(block.blockId);
   const sourceAnchorIds = output.flatMap((block) => block.anchorIds);
+  const sourceIds = new Set(sourceAnchorIds);
   return {
     planRevision: plan.planRevision,
     contextRevision: plan.documentContext.revision,
     methodVersion: workspace.methodVersion,
     sourceAnchorIds,
-    contextAnchorIds: plan.blocks
-      .filter((block) => context.has(block.blockId))
-      .flatMap((block) => block.anchorIds)
-      .filter((id) => !sourceAnchorIds.includes(id)),
+    // Every generation sees the exact whole document. The target is still the
+    // only writable scope; other anchors remain source quotations for context.
+    contextAnchorIds: plan.anchors
+      .filter((anchor) => !sourceIds.has(anchor.anchorId))
+      .map((anchor) => anchor.anchorId),
   };
 }
 
@@ -259,8 +242,13 @@ export function buildTranslationBatchV2(
   });
   const sourceIds = new Set(request.dependencies.sourceAnchorIds);
   const contextIds = new Set(request.dependencies.contextAnchorIds);
+  const targetBlocks = new Set(request.blockIds);
+  const fullDocumentContext = plan.anchors.every((anchor) =>
+    sourceIds.has(anchor.anchorId) || contextIds.has(anchor.anchorId),
+  );
   const contextBlocks = plan.blocks.filter((block) =>
-    block.anchorIds.some((id) => contextIds.has(id)),
+    !targetBlocks.has(block.blockId) &&
+    (fullDocumentContext || block.anchorIds.some((id) => contextIds.has(id))),
   );
   const anchorValue = (anchor: (typeof plan.anchors)[number]) => ({
     anchorId: anchor.anchorId,
@@ -274,6 +262,8 @@ export function buildTranslationBatchV2(
     workspaceId: workspace.workspaceId,
     generationRequestRef: request.generationRequestRef,
     purpose: request.purpose,
+    sourcePlanAnchorCount: plan.anchors.length,
+    sourcePlanBlockCount: plan.blocks.length,
     source: structuredClone(plan.source),
     sourceLocale: 'en',
     targetLocale: 'zh-CN',

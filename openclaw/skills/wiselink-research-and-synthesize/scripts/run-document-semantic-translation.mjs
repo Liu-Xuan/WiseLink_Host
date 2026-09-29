@@ -1,7 +1,7 @@
 import { collectBatch } from './run-semantic-translation.mjs';
 
 /** One Host-owned document attempt, bounded leased semantic batches per queue tick. */
-export async function runDocumentSemanticTranslationStep(summary, { callTool, translate }) {
+export async function runDocumentSemanticTranslationStep(summary, { callTool, translate, observeModelOutput }) {
   const identity = { documentVersionId: summary.documentVersionId, parseRunId: summary.parseRunId,
     attemptRef: summary.attemptRef };
   const claimed = await callTool('document_translation', { action: 'CLAIM', ...identity });
@@ -72,6 +72,9 @@ export async function runDocumentSemanticTranslationStep(summary, { callTool, tr
         execution = await translate(batch, { executionModel: claimed.executionModel,
           configuredModelVersion: claimed.executionModel.modelRef, heartbeat: assertLease,
           sessionDiscriminator: batch.generationRequestRef,
+          observeModelOutput: (shape, round = 1) => observeModelOutput?.({
+            attemptRef: identity.attemptRef, generationRequestRef: batch.generationRequestRef,
+            shape, round }),
           timeoutMs: Math.max(1, Math.min(15 * 60_000, Date.parse(claimed.task.deadline) - Date.now())) });
       } catch (error) {
         const failure = error?.translationFailure ?? { origin: 'TRANSPORT',

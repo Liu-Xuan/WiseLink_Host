@@ -43,10 +43,10 @@ test('locator-only parse changes reuse saved text and remap anchors to the new o
   expect(next.plan.anchors[0].sourceUnitId).not.toBe(old.plan.anchors[0].sourceUnitId);
   expect(next.plan.anchors[0].sourceLocators[0].pageStart).toBe(2);
 });
-test('a changed region invalidates itself and delivered neighbors, retaining distant saved blocks', () => {
+test('a changed region invalidates translations made with the previous full-document context', () => {
   const old = workspace(1), changed = [...texts]; changed[3] += ' Changed value 42.';
   const next = workspace(2, changed), reused = planOriginalTranslationReuse(old, next, revisions(old));
-  expect(reused.map(entry => next.plan.blocks.find(block => block.blockId === entry.candidate.blockId)!.order)).toEqual([0, 1, 5]);
+  expect(reused).toEqual([]);
 });
 test('new scoped conditions prevent copying translations made without that context', () => {
   const old = workspace(1), next = workspace(2); next.plan.documentContext.conditionAnchorIds = [next.plan.anchors[0].anchorId];
@@ -69,18 +69,18 @@ test('a superseded quality checker does not authorize copying its check result',
   expect(planOriginalTranslationReuse(old, next, saved)).toEqual([]);
 });
 
-test('the same number set with different object assignments invalidates dependent translations', () => {
+test('changed object assignments invalidate full-document dependent translations', () => {
   const before = [...texts], after = [...texts];
   before[3] += ' Valve A: 10; valve B: 20.'; after[3] += ' Valve A: 20; valve B: 10.';
   const old = workspace(1, before), next = workspace(2, after);
   const reused = planOriginalTranslationReuse(old, next, revisions(old));
-  expect(reused.map(entry => next.plan.blocks.find(block => block.blockId === entry.candidate.blockId)!.order)).toEqual([0, 1, 5]);
+  expect(reused).toEqual([]);
 });
 
-test('reordering source regions is not treated as a positioning-only improvement', () => {
+test('reordering source regions invalidates full-document dependent translations', () => {
   const old = workspace(1), reordered = [...texts]; [reordered[2], reordered[3]] = [reordered[3], reordered[2]];
   const next = workspace(2, reordered), reused = planOriginalTranslationReuse(old, next, revisions(old));
-  expect(reused.map(entry => next.plan.blocks.find(block => block.blockId === entry.candidate.blockId)!.order)).toEqual([0, 5]);
+  expect(reused).toEqual([]);
 });
 
 test('known 2.0 clean selected candidates require rechecking without relaxing source or issue scope', () => {

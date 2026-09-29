@@ -1,7 +1,10 @@
+import { buildNaturalTranslationProjection } from './translation-natural-projection.mjs';
+
 /** Lossless model-facing aliases. Host IDs, source bindings and execution
  * dependencies stay in the caller; only readable source and layout enter the
  * short native session. This does not choose, summarize or truncate context. */
 export function buildTranslationModelView(batch) {
+  if (batch.purpose === 'GENERATE') return buildNaturalTranslationProjection(batch);
   const blockAliases = new Map(); const anchorAliases = new Map(); const unitAliases = new Map();
   const alias = (map, prefix, value) => {
     if (typeof value !== 'string' || !value) throw new Error('TRANSLATION_MODEL_REFERENCE_INVALID');

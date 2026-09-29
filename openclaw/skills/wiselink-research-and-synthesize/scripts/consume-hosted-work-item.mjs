@@ -1321,7 +1321,18 @@ async function advanceDocumentTranslationWithRecovery(documentVersionId, run, ca
       translation: blocked };
   }
   try {
-    return await advanceDocumentTranslation(documentVersionId, run, callTool, beforeStart, deliveryRef, invokeTranslationModel);
+    const observeModelOutput = checkpoint ? ({ attemptRef, generationRequestRef, shape, round }) => {
+      if (![1, 2].includes(round) || shape?.operation !== 'TRANSLATE' ||
+          shape.generationRequestRef !== generationRequestRef)
+        throw new Error('DOCUMENT_TRANSLATION_MODEL_OBSERVATION_INVALID');
+      const key = createHash('sha256').update(JSON.stringify([
+        attemptRef, generationRequestRef, round])).digest('hex').slice(0, 32);
+      // The adapter supplies only bounded output shape and error codes. Never
+      // checkpoint response prose, function arguments or gateway credentials.
+      return checkpoint.writeOnce(`model.output-shape-${key}`, shape);
+    } : undefined;
+    return await advanceDocumentTranslation(documentVersionId, run, callTool, beforeStart,
+      deliveryRef, invokeTranslationModel, observeModelOutput);
   } catch (error) {
     if (error?.receivedHostToolError !== true || error.hostToolName !== 'document_translation' ||
         error.hostErrorCode !== 'DOCUMENT_TRANSLATION_ADMISSION_DENIED' || !checkpoint) throw error;
@@ -1333,7 +1344,8 @@ async function advanceDocumentTranslationWithRecovery(documentVersionId, run, ca
   }
 }
 
-async function advanceDocumentTranslation(documentVersionId, run, callTool, beforeStart, deliveryRef, invokeTranslationModel) {
+async function advanceDocumentTranslation(documentVersionId, run, callTool, beforeStart,
+  deliveryRef, invokeTranslationModel, observeModelOutput) {
     const binding = { documentVersionId, parseRunId: run.parseRunId };
     const translation = await callTool('document_translation', { action: 'STATUS', ...binding });
     if (translation?.documentVersionId !== documentVersionId) throw new Error('DOCUMENT_TRANSLATION_SCOPE_MISMATCH');
@@ -1373,7 +1385,7 @@ async function advanceDocumentTranslation(documentVersionId, run, callTool, befo
     }
     if (!['QUEUED','RUNNING','RETRY_SCHEDULED'].includes(translation.status)) throw new Error('DOCUMENT_TRANSLATION_STATUS_INVALID');
     const result = await runDocumentSemanticTranslationStep(translation, { callTool,
-      translate: invokeTranslationModel });
+      translate: invokeTranslationModel, observeModelOutput });
     if (result?.documentVersionId !== documentVersionId || result.parseRunId !== run.parseRunId ||
         result.attemptRef !== translation.attemptRef) throw new Error('DOCUMENT_TRANSLATION_STEP_MISMATCH');
     return result;

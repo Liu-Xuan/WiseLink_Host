@@ -12,6 +12,19 @@ describe('canonical Host OpenClaw Skill compatibility', () => {
       .toThrow('OPENCLAW_TRANSLATION_V2_RUNTIME_POLICY_MISMATCH');
   });
 
+  it('accepts the natural-translation prompt while retaining model and protocol checks', () => {
+    const task = { taskType: 'OPENCLAW_TRANSLATE', modelInput: { schemaVersion: 'wiselink.3_1.translation_task.v2' } } as never;
+    const result = { modelVersion: 'configured-route:miaoda/minimax-m3', skillVersion: 'wiselink-research-and-synthesize@r09.c205',
+      promptVersion: 'wiselink-translation-block@r09.c205', toolVersions: { 'wiselink-openclaw-engineering-assessment': '1.2.0' } };
+    expect(() => assertCanonicalHostOpenClawRuntimePolicy(result as never, task)).not.toThrow();
+    expect(() => assertCanonicalHostOpenClawRuntimePolicy({ ...result, promptVersion: 'wiselink-translation-block@r09.c999' } as never, task))
+      .toThrow('OPENCLAW_TRANSLATION_V2_RUNTIME_POLICY_MISMATCH');
+    expect(() => assertCanonicalHostOpenClawRuntimePolicy({ ...result, modelVersion: 'unknown' } as never, task))
+      .toThrow('OPENCLAW_RESULT_RUNTIME_POLICY_MISMATCH');
+    expect(() => assertCanonicalHostOpenClawRuntimePolicy({ ...result, toolVersions: {} } as never, task))
+      .toThrow('OPENCLAW_RESULT_RUNTIME_POLICY_MISMATCH');
+  });
+
   it.each([
     'wiselink-research-and-synthesize@r09.c10',
     'wiselink-research-and-synthesize@r09.c11',
