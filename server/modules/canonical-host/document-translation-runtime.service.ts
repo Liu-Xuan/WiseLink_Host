@@ -25,7 +25,7 @@ export class DocumentTranslationRuntimeService {
     private readonly plugins: CanonicalTranslationV2PluginService, private readonly attempts: DocumentTranslationAttemptRepository, private readonly semantics: DocumentSemanticService, private readonly parsing: DocumentParsingHostedService,
     private readonly v2: CanonicalTranslationV2Service) {}
 
-  async run(input: { action: 'START' | 'RECOVER' | 'CONTINUE_PARTIAL' | 'RECOVER_PARTIAL_INPUT' | 'RECOVER_KNOWN_FAILURE' | 'RESUME_KNOWN_FAILURE' | 'STATUS' | 'STEP' | 'CANCEL' | 'CLAIM' | 'HEARTBEAT' | 'RELEASE' | 'WORKSPACE' | 'FINISH' | 'FAIL'; documentVersionId: string;
+  async run(input: { action: 'START' | 'RECOVER' | 'RECOVER_EXPIRED' | 'CONTINUE_PARTIAL' | 'RECOVER_PARTIAL_INPUT' | 'RECOVER_KNOWN_FAILURE' | 'RESUME_KNOWN_FAILURE' | 'STATUS' | 'STEP' | 'CANCEL' | 'CLAIM' | 'HEARTBEAT' | 'RELEASE' | 'WORKSPACE' | 'FINISH' | 'FAIL'; documentVersionId: string;
     parseRunId: string; deliveryRef?: string; requestId?: string; attemptRef?: string;
     leaseToken?: string; leaseGeneration?: number; phase?: string; workspaceCommand?: unknown; errorCode?: string }) {
     if (!this.authorization.authorizeDocumentWork) throw canonicalServiceScopeUnavailable();
@@ -43,6 +43,24 @@ export class DocumentTranslationRuntimeService {
       // semantic hydration. A successful status is not a content-health proof.
       await this.parsing.status(scope.documentVersionId, { ...scope, roles: [] });
       const assertAuthorized = async () => { await read(); };
+      if (input.action === 'RECOVER_EXPIRED') {
+        if (!expectedRequestId || !input.attemptRef || input.requestId)
+          throw new Error('DOCUMENT_TRANSLATION_RECOVERY_SCOPE_INVALID');
+        const original = await read();
+        const prior = await this.attempts.readAttempt(scope, input.attemptRef);
+        if (!prior || prior.producerRunId !== input.parseRunId)
+          throw new Error('DOCUMENT_TRANSLATION_EXPIRED_PREDECESSOR_INVALID');
+        const task = parseDocumentTranslationTaskEnvelope(prior.taskEnvelopeJson ?? '');
+        if (canonicalJson(task.modelInput.source.originalBinding) !==
+            canonicalJson(original.original.binding) ||
+            original.run.manifestArtifact?.relativePath !== 'original/manifest.json' ||
+            original.run.manifestArtifact.readback !== 'VERIFIED' ||
+            original.run.manifestArtifact.sha256 !== task.modelInput.source.parsedArtifact.sha256 ||
+            original.run.manifestArtifact.byteLength !== task.modelInput.source.parsedArtifact.byteLength)
+          throw new Error('DOCUMENT_TRANSLATION_RECOVERY_SOURCE_CHANGED');
+        return summary(await this.attempts.recoverExpired(scope, input.attemptRef,
+          expectedRequestId));
+      }
       if (input.action === 'RECOVER_KNOWN_FAILURE' || input.action === 'RESUME_KNOWN_FAILURE') {
         if (!expectedRequestId || !input.attemptRef || input.requestId)
           throw new Error('DOCUMENT_TRANSLATION_RECOVERY_SCOPE_INVALID');
@@ -56,9 +74,14 @@ export class DocumentTranslationRuntimeService {
         if (!prior || prior.operationRef !== input.attemptRef ||
             (input.action === 'RESUME_KNOWN_FAILURE' && prior.triggerRequestId !== expectedRequestId &&
               prior.triggerRequestId !== `${expectedRequestId}:known-failure` &&
-              !prior.triggerRequestId?.startsWith(`${expectedRequestId}:resume-`)))
+              prior.triggerRequestId !== `${expectedRequestId}:expired-resume` &&
+              prior.triggerRequestId !== `${expectedRequestId}:resume-${prior.attemptNo}`))
           throw new Error('DOCUMENT_TRANSLATION_PREDECESSOR_NOT_FOUND');
         const priorTask = parseDocumentTranslationTaskEnvelope(prior.taskEnvelopeJson ?? '');
+        if (prior.triggerRequestId === `${expectedRequestId}:expired-resume` &&
+            (input.action !== 'RESUME_KNOWN_FAILURE' ||
+              priorTask.expiredRecovery?.rootRequestId !== expectedRequestId))
+          throw new Error('DOCUMENT_TRANSLATION_PREDECESSOR_NOT_FOUND');
         if (canonicalJson(priorTask.modelInput.source.originalBinding) !==
               canonicalJson(original.original.binding) ||
             priorTask.modelInput.source.parsedArtifact.sha256 !== artifact.sha256 ||
@@ -183,7 +206,16 @@ export class DocumentTranslationRuntimeService {
         throw new Error('DOCUMENT_TRANSLATION_SOURCE_CHANGED');
       }
       if (input.action === 'STATUS') {
-        if (row.status !== 'SUCCEEDED') return summary(row);
+        if (row.status !== 'SUCCEEDED' && row.status !== 'FAILED') return summary(row);
+        if (row.status === 'FAILED') return { ...summary(row),
+          expiredRecoveryAvailable: Boolean(expectedRequestId && row.status === 'FAILED' &&
+            row.errorCode === 'DOCUMENT_TRANSLATION_DEADLINE_EXPIRED' &&
+            row.claimCount === 0 && row.startedAt === null &&
+            row.leaseOwner === null && row.leaseToken === null &&
+            row.leaseExpiresAt === null && row.resultEnvelopeJson === null &&
+            row.resultContentHash === null && !row.projectionApplied &&
+            row.commitStartedAt === null && row.cancelRequestedAt === null &&
+            row.triggerRequestId !== `${expectedRequestId}:expired-resume`) };
         const task = parseDocumentTranslationTaskEnvelope(row.taskEnvelopeJson ?? '');
         const progress = await this.v2.readDocumentProgress({
           tenantId: scope.tenantId, workItemId: null, documentVersionId: scope.documentVersionId,
