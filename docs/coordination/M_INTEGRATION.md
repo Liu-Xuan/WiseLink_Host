@@ -1,5 +1,16 @@
 # M 主控集成交接
 
+## 2026-09-29：恢复时钟修复与指定直连空间验证
+
+- 第二热修84dfbe1e4经Astra窄审接受，集成为79edd6a91。只在恢复比较中忽略extractedMetadata.extractedAt这一重复读取观测时间，其他来源/元数据/租户/请求/预检/零下游检查保留；返回原持久acquisition，不覆盖首次观察。定向Jest2/2、类型与lint/precommit通过，待真实原请求验收。
+- 用户指定私密空间TFU ISI FTD FTAR，刷新后实际1条TFU/ISI/FTD/FTAR直连，状态学习中，子目录FTAR/ISI/TFU/FTD可见，FTD准备数据0%。空间API面板0个key，未创建。官方知识空间API手册明确只覆盖API创建知识，不支持UI添加的直连条目；无原件下载接口。直连规则说明支持子节点增删与PDF更新，但不证明Host可完整增量枚举。原云盘与空间可见范围未改，不能误称已API取得原件。
+
+## 2026-09-29：不可变绑定热修发布；同请求恢复暴露后续冲突
+
+- 17b release `7690772145568287719` finished，commit `b6da724dc263b3fe9b4dfedfa3269d0c81a11f6e`，error_logs空，创建到完成117秒。origin/github同名分支已分别读回该SHA；build:prod通过。无迁移、权限或调度变更。
+- 工程师页面保留原文件、reading=true/translation=ZH_FULL与request `e4df443e-6ccb-4b8a-b29f-f18404332c14`，只点击一次重试同一次登记。实际仍500；新trace `28092b7a21bc3923314177c8e566e85d` 明确 `INCOMPLETE_INGESTION_RECOVERY_ACQUISITION_CONFLICT`，位于classifyIncompleteIngestionRecoveryState恢复比较，不是此前commit scope错误。未重传、删除或更换请求，未宣布解析/翻译成功。Sol继续核对持久acquisition与新输入的字段差异。
+- P3候选23176ccd仍未集成：同版差异仅保留冲突、身份未明仅记录OCR_REQUIRED，尚无自动比较或原件级独立阅读，必须保留为未完成，不能默认交人工。
+
 ## 2026-09-29：原生知识现场核对与上传不可变绑定热修
 
 - 企业 Aily WiseLink 实际绑定 WiseLink知识库、WiseLink原文档；原文空间当前32条均为历史导入，不能作为目标云盘持续同步证据。添加飞书知识界面提供我的文件夹/共享文件夹入口；未提交绑定、未改可用范围。资源库首页是聊天/工作区附件，不是完整云盘清单。Host逐文件变更接入仍未证明，目录权限发布继续暂缓。
