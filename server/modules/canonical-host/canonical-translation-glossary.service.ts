@@ -105,7 +105,9 @@ export class CanonicalTranslationGlossaryService {
       const changed = await transaction.execute<{ revision: number }>(sql`
         UPDATE translation_glossary
         SET revision = revision + 1, entries_json = ${entriesJson}::jsonb,
-          updated_by = ${actorUserId}, updated_at = CURRENT_TIMESTAMP
+          updated_by = ${actorUserId}, updated_at = CURRENT_TIMESTAMP,
+          _updated_at = CURRENT_TIMESTAMP,
+          _updated_by = ROW(${actorUserId})::user_profile
         WHERE tenant_id = ${tenantId} AND revision = ${command.expectedRevision}
         RETURNING revision`);
       if (!changed[0])

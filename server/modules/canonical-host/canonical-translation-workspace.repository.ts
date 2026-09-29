@@ -469,6 +469,12 @@ export class CanonicalTranslationWorkspaceRepository {
         const attemptRequests = workspace.generationRequests.filter(
           entry => entry.attemptId === attempt.attemptId,
         );
+        // The lease, workspace and source have already been fenced in this
+        // transaction. Give RLS only that tenant for the glossary read.
+        if (!attemptRequests.length) {
+          await transaction.execute(sql`SELECT set_config(
+            'app.wiselink.translation_glossary_tenant', ${attempt.tenantId}, true)`);
+        }
         const glossary = attemptRequests.length
           ? attemptRequests[0].glossary
           : await readTranslationGlossary(transaction, input.tenantId);

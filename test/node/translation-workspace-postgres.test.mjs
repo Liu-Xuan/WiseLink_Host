@@ -1031,7 +1031,7 @@ function afterQueryResult(query, operation) {
 
 async function reset(sql) {
   await sql.unsafe(`DROP TABLE IF EXISTS translation_knowledge_governance_event, translation_knowledge_import_request_item, translation_knowledge_source_ref,
-    translation_knowledge_candidate, translation_block_revision, translation_workspace, action_attempt, work_item, identity_subject_mapping, dm_document_reading_run, dm_document_parse_run, dm_document_version CASCADE;
+    translation_knowledge_candidate, translation_block_revision, translation_workspace, translation_glossary, action_attempt, work_item, identity_subject_mapping, dm_document_reading_run, dm_document_parse_run, dm_document_version CASCADE;
     DROP FUNCTION IF EXISTS translation_block_guard_subject() CASCADE;
     DROP FUNCTION IF EXISTS dm_guard_parse_run() CASCADE;
     DO $$ BEGIN IF NOT EXISTS (SELECT 1 FROM pg_type WHERE typname='user_profile') THEN CREATE TYPE user_profile AS (user_id text); END IF; END $$;
@@ -1041,7 +1041,10 @@ async function reset(sql) {
     GRANT authenticated TO authenticated_translation_snapshot_test;
     CREATE TABLE work_item (work_item_id varchar(96) UNIQUE NOT NULL, tenant_id varchar(128) NOT NULL, document_version_id varchar(96), package_id text,
       package_artifact_ref text, package_artifact_sha256 varchar(64), requested_by_user_id varchar(255), revision integer, initial_aily_session_id text, UNIQUE(tenant_id,work_item_id));
-    CREATE TABLE identity_subject_mapping (miaoda_user_id text, miaoda_tenant_id text, expected_client_id text, status text);`);
+    CREATE TABLE identity_subject_mapping (miaoda_user_id text, miaoda_tenant_id text, expected_client_id text, status text);
+    CREATE TABLE translation_glossary (tenant_id varchar(128) PRIMARY KEY, revision integer NOT NULL,
+      entries_json jsonb NOT NULL, updated_by varchar(255) NOT NULL,
+      updated_at timestamptz NOT NULL DEFAULT CURRENT_TIMESTAMP);`);
   // Parent fixture shape follows the generated schema; assertions exercise the
   // actual new DDL, constraints, RLS and repository transactions below.
   const columns = getTableConfig(actionAttempt).columns.map((column) => `"${column.name.replaceAll('"', '""')}" ${column.getSQLType()}`);
