@@ -12,10 +12,12 @@ description: Orchestrate the single official hosted WiseLink engineering profile
 - hosted app：`app_17c3zn24kv2`
 - logical profile：`wiselink-engineering`
 - model policy：`official-hosted-profile-config`（任务可绑定已登记的内置或用户授权自定义模型；仍经唯一官方 Hosted profile/Gateway）
-- Skill：`wiselink-research-and-synthesize@r09.c204`
+- Skill：`wiselink-research-and-synthesize@r09.c205`
 - Skill compatibility：`wiselink-research-and-synthesize@r09`（历史任务最低接受 `r09.c10`，翻译 v2 必须为 `r09.c44` 或更新兼容包）
 - Host MCP：`wiselink-openclaw-engineering-assessment@1.2.0`（保留既有工具，新增语义翻译工作与 JobAid 来源/工作工具）
 - Host 集成提交：以本次发布包清单记录的实际提交为准
+
+c205 将翻译 GENERATE 的模型输入改为完整英文文档的自然阅读投影，并在译后由 Host 私有来源映射恢复现有 SAVE 候选。模型只输出带粗段边界的中文正文；CORRECT/CHECK 保留原结构协议。旧窄范围 REGISTERED 请求明确停止，不能静默扩大来源。模型路由、完成额度和正式采用边界不变。
 
 c204 将文档翻译网关的既有有界响应诊断写入私有 checkpoint，记录状态、错误码与精确生成身份，不记录正文或凭据；不改变模型路由、请求参数及失败恢复边界。
 
@@ -611,7 +613,7 @@ Interactive Review 的复杂 ResultEnvelope 必须由 `sealResultEnvelope` 生�
 当前 validator 强制：
 
 - `modelVersion` 优先取响应中可读实际模型；绑定任务未回报实际模型时使用 `configured-route:<modelRef>`，旧无绑定任务使用无 fallback 的 configured endpoint。后两者只证明路由，不代表已暴露下游具体模型，也不做具体版本等值判断
-- `skillVersion=wiselink-research-and-synthesize@r09.c204`
+- `skillVersion=wiselink-research-and-synthesize@r09.c205`
 - `toolVersions.wiselink-openclaw-engineering-assessment=1.2.0`
 - `promptVersion` 非空并来自当前运行
 - task/result exact binding、SourceRef allowlist 和 canonical hash 一致

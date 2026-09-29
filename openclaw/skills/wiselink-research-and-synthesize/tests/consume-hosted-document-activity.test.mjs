@@ -9,6 +9,7 @@ import {
   cancelHostedDocumentActivity,
   consumeHostedDocumentActivity,
 } from '../scripts/consume-hosted-document-activity.mjs';
+import { WISELINK_SKILL_VERSION } from '../scripts/validate-payload.mjs';
 
 // Host mocks below copy field-for-field from Host commit
 // 7c86becbce15960a9cb9604534f0359591629e28:
@@ -91,7 +92,7 @@ function savedRevision(overrides = {}) {
     runRef: RUN, candidateRevision: 1,
     statements: proposal().statements.map((statement, index) =>
       ({ ...statement, statementId: `DAS-${index + 1}` })),
-    producer: { skillVersion: 'wiselink-research-and-synthesize@r09.c204', modelVersion: 'test-hosted-model-1' },
+    producer: { skillVersion: WISELINK_SKILL_VERSION, modelVersion: 'test-hosted-model-1' },
     savedAt: '2026-09-16T03:04:05.000Z', ...overrides };
 }
 
@@ -184,7 +185,7 @@ test('consumes the pending run through document_work STATUS, exact ACTIVITY_STAT
   assert.deepEqual(Object.keys(save.candidate).sort(), ['schemaVersion', 'statements']);
   assert.equal(save.candidate.schemaVersion, DOCUMENT_ACTIVITY_CANDIDATE_SCHEMA);
   assert.deepEqual(save.candidate, modelInputs[0] && proposal());
-  assert.deepEqual(save.producer, { skillVersion: 'wiselink-research-and-synthesize@r09.c204', modelVersion: 'test-hosted-model-1' });
+  assert.deepEqual(save.producer, { skillVersion: WISELINK_SKILL_VERSION, modelVersion: 'test-hosted-model-1' });
   assert.deepEqual(save.producer, result.producer);
   assert.deepEqual(result.saved, savedRevision());
 });
@@ -670,7 +671,7 @@ test('a persisted model result is recovered without regeneration and saved as-is
     const save = second.calls.find(([, args]) => args.action === 'ACTIVITY_SAVE')[1];
     assert.deepEqual(save.candidate, proposal());
     assert.deepEqual(save.producer,
-      { skillVersion: 'wiselink-research-and-synthesize@r09.c204', modelVersion: 'test-hosted-model-1' });
+      { skillVersion: WISELINK_SKILL_VERSION, modelVersion: 'test-hosted-model-1' });
     assert.deepEqual(secondResult.saved, savedRevision());
   });
 });
