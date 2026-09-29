@@ -1613,15 +1613,18 @@ export class MiaodaHostedDocumentCatalog {
         || !acquisition.idempotencyKey.startsWith(`tenant:${encodeURIComponent(scope.tenantId)}:request:`)
         || acquisition.selectionBucketId !== scope.selection.bucketId
         || acquisition.selectionFilePath !== scope.selection.filePath
+        || acquisition.providerObjectId !== scope.selectedProviderObjectId
+        || acquisition.providerVersionId !== scope.selectedProviderVersionId
         || acquisition.sourceArtifactId !== scope.sourceArtifactId
         || stableJson(descriptor?.documentDeliveryIntent ?? null)
           !== stableJson(scope.documentDelivery ?? null)
         || !source?.readbackVerified || source.sha256 !== scope.sha256
         || Number(source.byteLength) !== scope.byteLength
-        || source.bucketId !== acquisition.selectionBucketId
-        || source.filePath !== acquisition.selectionFilePath
-        || source.providerObjectId !== acquisition.providerObjectId
-        || source.providerVersionId !== acquisition.providerVersionId
+        || source.bucketId !== scope.immutableSource?.bucketId
+        || source.filePath !== scope.immutableSource?.filePath
+        || source.providerObjectId !== scope.immutableSource?.providerObjectId
+        || source.providerVersionId !== scope.immutableSource?.providerVersionId
+        || descriptor?.sourceStorageKey !== `${source.bucketId}:${source.filePath}`
         || storedPreflight.acquisitionId !== acquisition.acquisitionId
         || storedPreflight.decision !== scope.decision
         || observation.sha256 !== source.sha256

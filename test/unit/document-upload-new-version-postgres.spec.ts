@@ -107,8 +107,8 @@ describePg('0067 new-version Catalog transaction on isolated PostgreSQL', () => 
         media_type,bucket_id,file_path,provider_object_id,provider_version_id,
         readback_verified,created_at)
         VALUES (${`SRC-${choice.suffix}`},${choice.sha},${choice.byteLength},
-          'application/pdf','bucket',${`/${choice.suffix}.pdf`},
-          ${`object-${choice.suffix}`},'v1',true,CURRENT_TIMESTAMP)`;
+          'application/pdf','bucket',${`/immutable-${choice.suffix}.pdf`},
+          ${`immutable-object-${choice.suffix}`},'immutable-v1',true,CURRENT_TIMESTAMP)`;
       await client`INSERT INTO dm_acquisition(acquisition_id,source_artifact_id,
         source_channel,source_ref,selection_bucket_id,selection_file_path,
         provider_object_id,provider_version_id,acquired_by,acquired_at,
@@ -118,7 +118,8 @@ describePg('0067 new-version Catalog transaction on isolated PostgreSQL', () => 
           'bucket',${`/${choice.suffix}.pdf`},${`object-${choice.suffix}`},'v1',
           ${choice.actorUserId},CURRENT_TIMESTAMP,
           ${`tenant:${choice.tenantId}:request:document-upload:${choice.actorUserId}:${choice.suffix}`},
-          ${JSON.stringify({ documentDeliveryIntent: choice.delivery })},
+          ${JSON.stringify({ documentDeliveryIntent: choice.delivery,
+            sourceStorageKey: `bucket:/immutable-${choice.suffix}.pdf` })},
           'ACQUIRED_READBACK_VERIFIED')`;
       await client`INSERT INTO dm_ingress_preflight(preflight_id,acquisition_id,
         decision,branch,execution_authorized,observed_current_generation,
@@ -170,6 +171,13 @@ describePg('0067 new-version Catalog transaction on isolated PostgreSQL', () => 
       uploadCommit: {
         actorUserId: actor, tenantId: tenant,
         selection: { bucketId: 'bucket', filePath: `/${choice.suffix}.pdf` },
+        selectedProviderObjectId: `object-${choice.suffix}`,
+        selectedProviderVersionId: 'v1',
+        immutableSource: {
+          bucketId: 'bucket', filePath: `/immutable-${choice.suffix}.pdf`,
+          providerObjectId: `immutable-object-${choice.suffix}`,
+          providerVersionId: 'immutable-v1',
+        },
         sourceArtifactId, sha256: choice.sha, byteLength: choice.byteLength,
         decision: 'INGEST_NEW_FAMILY', documentDelivery: choice.delivery,
       },
@@ -211,6 +219,21 @@ describePg('0067 new-version Catalog transaction on isolated PostgreSQL', () => 
       FROM auto_document_delivery_authorization`)[0].count).toBe(0);
     await client`UPDATE dm_ingress_preflight SET decision='INGEST_NEW_FAMILY'
       WHERE preflight_id='PF-selected'`;
+  });
+
+  it('requires both the selected upload identity and immutable readback identity', async () => {
+    const choice = { suffix: 'selected', sha: 'a'.repeat(64), byteLength: 100,
+      delivery: { reading: true, translation: 'ZH_FULL' as const } };
+    const input = command(choice);
+    for (const uploadCommit of [
+      { ...input.uploadCommit, selectedProviderObjectId: 'wrong-selected-object' },
+      { ...input.uploadCommit, immutableSource: {
+        ...input.uploadCommit.immutableSource, filePath: '/wrong-immutable.pdf' } },
+    ]) {
+      await expect(catalog.commitNewVersion({ ...input, uploadCommit }))
+        .rejects.toMatchObject({ code: 'DOCUMENT_UPLOAD_NEW_VERSION_SCOPE_MISMATCH' });
+    }
+    expect((await client`SELECT count(*)::int AS count FROM dm_document_version`)[0].count).toBe(0);
   });
 
   it.each([
@@ -300,7 +323,7 @@ describePg('0067 new-version Catalog transaction on isolated PostgreSQL', () => 
         'object-new-upload','version-new-upload','actor-new',CURRENT_TIMESTAMP,
         'tenant:t1:request:document-upload:actor-new:exact',
         ${JSON.stringify({ documentDeliveryIntent: { reading: true, translation: 'ZH_FULL' },
-          sourceStorageKey: 'bucket:/selected.pdf' })},'ACQUIRED_READBACK_VERIFIED')`;
+          sourceStorageKey: 'bucket:/immutable-selected.pdf' })},'ACQUIRED_READBACK_VERIFIED')`;
     await client`INSERT INTO dm_ingress_preflight(preflight_id,acquisition_id,
       decision,branch,execution_authorized,observed_current_generation,
       observed_current_document_version_id,normalized_descriptor_json,
@@ -315,8 +338,8 @@ describePg('0067 new-version Catalog transaction on isolated PostgreSQL', () => 
         actorUserId, tenantId, selection: { bucketId: 'bucket', filePath: '/new-upload.pdf' },
         selectedProviderObjectId: 'object-new-upload',
         selectedProviderVersionId: 'version-new-upload',
-        immutableSource: { bucketId: 'bucket', filePath: '/selected.pdf',
-          providerObjectId: 'object-selected', providerVersionId: 'v1' },
+        immutableSource: { bucketId: 'bucket', filePath: '/immutable-selected.pdf',
+          providerObjectId: 'immutable-object-selected', providerVersionId: 'immutable-v1' },
         sourceArtifactId: 'SRC-selected', sha256: 'a'.repeat(64), byteLength: 100,
         decision: 'REUSE_EXACT', documentDelivery: { reading: true, translation: 'ZH_FULL' },
       },

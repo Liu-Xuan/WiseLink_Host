@@ -1165,6 +1165,13 @@ export class DocumentManagementHostedCore {
         serverContext.runtimeIngestAuthority?.mode === 'HOSTED_MIAODA_DOCUMENT_UPLOAD'
         ? { uploadCommit: {
             actorUserId, tenantId, selection,
+            selectedProviderObjectId: selected.providerObjectId,
+            selectedProviderVersionId: selected.providerVersionId,
+            immutableSource: {
+              bucketId: immutable.bucketId, filePath: immutable.filePath,
+              providerObjectId: immutable.providerObjectId,
+              providerVersionId: immutable.providerVersionId,
+            },
             sourceArtifactId, sha256: actualSha256,
             byteLength: selected.bytes.byteLength,
             decision: decision.decision,
