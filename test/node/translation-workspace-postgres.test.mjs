@@ -990,6 +990,31 @@ test('document quota failure has one Hosted successor with fenced blocks and ful
       request.attemptId === recoveryTask.actionAttemptId).length, 1);
     assert.equal((await recover()).attemptId, recoveryAttempt.attemptId,
       'a replay keeps the original sealed scope after the successor starts');
+    await attempts.cancel(scope, recoveryTask.operationRef);
+    const knownRoot = 'auto-translation-known-discovery';
+    const knownTask = task('known-discovery', 'HOSTED_M3', `${knownRoot}:known-failure`);
+    const [latestAttempt] = await sql`SELECT max(attempt_no)::int AS n FROM action_attempt
+      WHERE document_version_id=${scope.documentVersionId}`;
+    await sql`INSERT INTO action_attempt (attempt_id,operation_ref,subject_kind,document_version_id,
+      producer_run_id,action_type,attempt_no,trigger_request_id,request_origin,status,actor_user_id,
+      tenant_id,input_revision,task_envelope_json,task_input_hash,idempotency_key,deadline_at,
+      execution_model_json,projection_applied)
+      VALUES (${knownTask.actionAttemptId},${knownTask.operationRef},'DOCUMENT_VERSION',
+        ${scope.documentVersionId},${knownTask.parseRunId},'DOCUMENT_TRANSLATE',${latestAttempt.n + 1},
+        ${`${knownRoot}:known-failure`},'HOST_DOCUMENT','QUEUED',${scope.actorUserId},${scope.tenantId},1,
+        ${canonicalJson(knownTask)},${knownTask.inputHash},${knownTask.idempotencyKey},
+        ${knownTask.deadline},${canonicalJson(model)},false)`;
+    const knownDispatch = () => dispatch.documentDeliveryDispatchState({ tenantId: scope.tenantId,
+      actorUserId: scope.actorUserId, documentVersionId: scope.documentVersionId,
+      readingRequestId: 'reading-unused', translationRequestId: knownRoot,
+      readingSelected: false, translationSelected: true });
+    assert.deepEqual(await knownDispatch(), { pending: true, missing: false },
+      'the exact known-failure successor remains discoverable by the natural queue');
+    const unrelated = await dispatch.documentDeliveryDispatchState({ tenantId: scope.tenantId,
+      actorUserId: scope.actorUserId, documentVersionId: scope.documentVersionId,
+      readingRequestId: 'reading-unused', translationRequestId: 'auto-translation-other',
+      readingSelected: false, translationSelected: false });
+    assert.deepEqual(unrelated, { pending: false, missing: false });
   } finally { await sql.end({ timeout: 5 }); }
 });
 
