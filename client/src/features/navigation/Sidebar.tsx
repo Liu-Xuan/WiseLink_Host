@@ -6,6 +6,7 @@ import {
   FileSearch2,
   LibraryBig,
   LifeBuoy,
+  Languages,
   Palette,
   Share2,
   X,
@@ -75,6 +76,7 @@ const SECONDARY_NAV: Array<{
 }> = [
   { to: '/timeline', label: '工程时间轴', icon: Clock3 },
   { to: '/external-discovery', label: '补充资料', icon: FileSearch2 },
+  { to: '/settings/translation-glossary', label: '翻译术语表', icon: Languages },
 ];
 
 const Sidebar: React.FC<SidebarProps> = ({ mobileOpen, onMobileClose }) => {
