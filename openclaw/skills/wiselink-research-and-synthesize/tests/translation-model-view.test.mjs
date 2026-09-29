@@ -21,6 +21,10 @@ function fixture() {
   };
 }
 
+function checkDocument(input) {
+  return input.document.map((entry) => entry.source).join('\n\n');
+}
+
 test('natural model view keeps full source and table topology without Host anchors', () => {
   const batch = fixture(); const original = structuredClone(batch);
   const view = buildTranslationModelView(batch); const input = view.input;
@@ -53,6 +57,252 @@ test('correction and check keep the complete previous block and restore only the
       assert.throws(() => validateTranslationBlockOutput(batch, wrong), /SEMANTIC_REVIEW_INVALID/u);
     }
   }
+});
+
+function realisticCheckBatch() {
+  const blocks = []; const anchors = [];
+  const add = (block, unitId, path, sourceText) => {
+    const anchorId = `source-anchor-${anchors.length + 1}`;
+    block.anchorIds.push(anchorId);
+    anchors.push({ anchorId, sourceUnitId: unitId, payloadPath: path,
+      sourceText, sourceRefIds: [`source-ref-${anchors.length + 1}`] });
+  };
+  for (let index = 0; index < 29; index++) {
+    const block = { blockId: `source-block-${index + 1}`, order: index,
+      kind: 'prose', anchorIds: [], sourceStructure: [] };
+    for (let part = 0; part < 3; part++) {
+      const unitId = `source-unit-${index + 1}-${part + 1}`;
+      const sourceText = `Before operating valve V-${index + 1}, verify pressure is below ${20 + part} psi and retain warning condition ${index + 1}.`;
+      block.sourceStructure.push({ sourceUnitId: unitId, kind: 'paragraph',
+        payload: { text: sourceText, sourceRefIds: [`source-ref-${anchors.length + 1}`] } });
+      add(block, unitId, '/payload/text', sourceText);
+    }
+    blocks.push(block);
+  }
+  const tableUnit = 'source-table-unit';
+  const table = { blockId: 'source-table-block', order: 29, kind: 'table',
+    anchorIds: [], sourceStructure: [] };
+  const payload = { layout: 'grid', caption: 'Operating limits [1]',
+    columns: ['Part number', 'Pressure', 'Duration', 'Action'].map((name) => ({ name })),
+    rowGroups: [{ kind: 'body', rows: [] }], continuation: { tableUnitId: tableUnit } };
+  add(table, tableUnit, '/payload/caption', payload.caption);
+  payload.columns.forEach((column, index) =>
+    add(table, tableUnit, `/payload/columns/${index}/name`, column.name));
+  for (let row = 0; row < 5; row++) {
+    const values = [`V-${row + 1}`, `${20 + row} psi`, `${5 + row} s`, 'Do not close [1]'];
+    payload.rowGroups[0].rows.push({ cells: values.map((text) => ({
+      rowSpan: 1, colSpan: 1, inlineContent: [{ text }],
+    })) });
+    values.forEach((text, column) => add(table, tableUnit,
+      `/payload/rowGroups/0/rows/${row}/cells/${column}/inlineContent/0/text`, text));
+  }
+  table.sourceStructure.push({ sourceUnitId: tableUnit, kind: 'table', payload });
+  blocks.push(table);
+  const heading = { blockId: 'source-heading-block', order: 30, kind: 'heading',
+    anchorIds: [], sourceStructure: [{ sourceUnitId: 'heading-unit', kind: 'heading',
+      payload: { text: 'Applicability', level: 2 } }] };
+  add(heading, 'heading-unit', '/payload/text', 'Applicability');
+  blocks.push(heading);
+  const advisory = { blockId: 'source-advisory-block', order: 31, kind: 'advisory',
+    anchorIds: [], sourceStructure: [] };
+  for (let index = 0; index < 2; index++) {
+    const sourceUnitId = `advisory-unit-${index + 1}`;
+    const sourceText = index === 0 ? 'WARNING: Disconnect power before servicing.'
+      : 'This condition applies only to V-1 through V-5.';
+    advisory.sourceStructure.push({ sourceUnitId, kind: 'advisory',
+      payload: { text: sourceText, warningLevel: 'WARNING' } });
+    add(advisory, sourceUnitId, '/payload/text', sourceText);
+  }
+  blocks.push(advisory);
+  blocks.push({ blockId: 'source-figure-block', order: 32, kind: 'figure',
+    anchorIds: [], sourceStructure: [{ sourceUnitId: 'figure-unit', kind: 'figure',
+      payload: { figureNumber: 7, layout: 'image-only' } }] });
+  const targets = [...blocks.slice(0, 6), table, advisory];
+  const targetIds = new Set(targets.flatMap((block) => block.anchorIds));
+  const candidate = (block) => ({ blockId: block.blockId,
+    elements: block.anchorIds.map((anchorId) => ({ kind: block.kind === 'table' ? 'table_cell' : 'paragraph',
+      translatedText: `已校核的技术译文 ${anchorId}。`, anchorIds: [anchorId] })) });
+  return { schemaVersion: 'wiselink.3_1.translation_semantic_batch.v2',
+    purpose: 'CHECK_BATCH', sourceLocale: 'en', targetLocale: 'zh-CN',
+    sourcePlanAnchorCount: anchors.length, sourcePlanBlockCount: blocks.length,
+    blocks: targets, anchors: anchors.filter((anchor) => targetIds.has(anchor.anchorId)),
+    documentContext: { title: 'Valve operating limits',
+      blocks: blocks.filter((block) => !targets.includes(block)),
+      anchors: anchors.filter((anchor) => !targetIds.has(anchor.anchorId)),
+      outline: [{ blockId: heading.blockId, anchorIds: heading.anchorIds, level: 2 }],
+      scopedConditions: [{ advisoryBlockId: advisory.blockId,
+        targetBlockIds: [table.blockId, blocks[0].blockId], anchorIds: advisory.anchorIds }],
+      conditionAnchorIds: advisory.anchorIds, definitionAnchorIds: [], references: [] },
+    terminology: { terms: [], noTranslate: ['V-1'] }, previousCandidate: null,
+    checkCandidates: targets.map((block) => ({ blockId: block.blockId,
+      candidate: candidate(block) })), correctionIssues: [] };
+}
+
+test('compact checks carry one complete annotated document, exact candidates and conditions', () => {
+  const batch = realisticCheckBatch();
+  const view = buildTranslationModelView(batch);
+  const input = view.input;
+  const document = checkDocument(input);
+  assert.deepEqual(input.document.map((entry) => entry.section),
+    Array.from({ length: 33 }, (_value, index) => index + 1));
+  assert.equal(batch.anchors.length + batch.documentContext.anchors.length, 115);
+  for (const anchor of [...batch.anchors, ...batch.documentContext.anchors]) {
+    assert.equal(document.split(anchor.sourceText).length - 1 >= 1, true);
+  }
+  const markedAliases = [...document.matchAll(/⟦WL-ANCHOR:A\d+⟧ /gu)]
+    .map((match) => match[0]);
+  assert.equal(markedAliases.length, 115);
+  assert.equal(new Set(markedAliases).size, 115);
+  assert.match(document, /<table><caption>⟦WL-ANCHOR:A\d+⟧ Operating limits \[1\]<\/caption>/u);
+  assert.match(document, /<thead><tr><th>⟦WL-ANCHOR:A\d+⟧ Part number<\/th>/u);
+  assert.match(document, /<td>⟦WL-ANCHOR:A\d+⟧ Do not close \[1\]<\/td>/u);
+  assert.deepEqual(input.documentContext.scopedConditions[0].targetBlockIds,
+    [input.blocks[6].blockId, input.blocks[0].blockId]);
+  assert.ok(input.documentContext.metadata.some((entry) =>
+    entry.units?.some((unit) => unit.payload.warningLevel === 'WARNING')));
+  const tableMetadata = input.documentContext.metadata.find((entry) =>
+    entry.blockId === input.blocks[6].blockId);
+  assert.deepEqual(Object.keys(tableMetadata.units[0].payload), ['continuation']);
+  assert.deepEqual(input.previousCandidates.map((entry) => entry.elements.length),
+    batch.blocks.map((block) => block.anchorIds.length));
+  assert.ok(!JSON.stringify(input).includes('source-ref-'));
+  assert.ok(!JSON.stringify({ ...input, document: '' }).includes('Before operating valve V-1'));
+  const compactBytes = Buffer.byteLength(JSON.stringify(input));
+  const fullBatchBytes = Buffer.byteLength(JSON.stringify(batch));
+  assert.ok(compactBytes < fullBatchBytes * 0.65,
+    `expected compact model input below 65% of Host batch: ${compactBytes}/${fullBatchBytes}`);
+  const valid = { checks: input.blocks.map((block) => ({ blockId: block.blockId, issues: [] })) };
+  validateTranslationBlockOutput(batch, view.restoreOutput(valid));
+  assert.throws(() => view.restoreOutput({ checks: [{ blockId: 'B999', issues: [] }] }),
+    /OUTPUT_REFERENCE_INVALID/u);
+});
+
+test('check table keeps empty column heading in its original position', () => {
+  const batch = fixture();
+  batch.purpose = 'CHECK';
+  const payload = batch.blocks[0].sourceStructure[0].payload;
+  payload.columns = [{ name: 'Part' }, { name: '' }, { name: 'Limit' }];
+  for (const [index, text] of [[0, 'Part'], [2, 'Limit']]) {
+    const anchorId = `column-${index}`;
+    batch.blocks[0].anchorIds.push(anchorId);
+    batch.anchors.push({ anchorId, sourceUnitId: 'source-table-long-id',
+      payloadPath: `/payload/columns/${index}/name`, sourceText: text });
+  }
+  batch.sourcePlanAnchorCount += 2;
+  const document = checkDocument(buildTranslationModelView(batch).input);
+  assert.match(document, /<thead><tr><th>⟦WL-ANCHOR:A\d+⟧ Part<\/th><th><\/th><th>⟦WL-ANCHOR:A\d+⟧ Limit<\/th><\/tr><\/thead>/u);
+});
+
+test('check projection retains literal footnotes and empty table cells with safe anchor markup', () => {
+  const batch = fixture();
+  batch.purpose = 'CHECK';
+  batch.blocks[0].sourceStructure[0].payload.rowGroups[0].rows[0].cells.push({
+    rowSpan: 1, colSpan: 1, inlineContent: [{ text: '' }],
+  });
+  batch.anchors[0].sourceText = 'Retain <P/N O-001> [1] for 5 seconds.';
+  batch.blocks[0].sourceStructure[0].payload.rowGroups[0].rows[0].cells[0].inlineContent[0].text =
+    batch.anchors[0].sourceText;
+  const view = buildTranslationModelView(batch);
+  assert.match(checkDocument(view.input), /<td rowspan="2">⟦WL-ANCHOR:A1⟧ Retain &lt;P\/N O-001&gt; \[1\] for 5 seconds\.<\/td><td><\/td>/u);
+  assert.equal(view.input.targetAnchors[0].anchorId, 'A1');
+  assert.equal(JSON.stringify(view.input).includes('synthetic-source-ref'), false);
+  batch.blocks[0].sourceStructure[0].payload.rowGroups[0].rows[0].cells[0].inlineContent[0].text =
+    'different source text';
+  assert.throws(() => buildTranslationModelView(batch), /MODEL_LAYOUT_BINDING_INVALID/u);
+});
+
+test('check projection carries source fields outside the natural table layout', () => {
+  const batch = fixture();
+  batch.purpose = 'CHECK';
+  batch.blocks[0].sourceStructure[0].payload.rawText = 'Unrendered table OCR line.';
+  batch.blocks[0].anchorIds.push('unrendered-anchor');
+  batch.anchors.push({ anchorId: 'unrendered-anchor', sourceUnitId: 'source-table-long-id',
+    payloadPath: '/payload/rawText', sourceText: 'Unrendered table OCR line.' });
+  const input = buildTranslationModelView(batch).input;
+  assert.match(checkDocument(input), /Source field \/payload\/rawText: ⟦WL-ANCHOR:A\d+⟧ Unrendered table OCR line\./u);
+  assert.equal(checkDocument(input).match(/Unrendered table OCR line\./gu).length, 1);
+});
+
+test('non-first check target resolves every context block and multiple condition scopes', () => {
+  const batch = realisticCheckBatch();
+  const allBlocks = [...batch.blocks, ...batch.documentContext.blocks]
+    .sort((left, right) => left.order - right.order);
+  const allAnchors = [...batch.anchors, ...batch.documentContext.anchors];
+  const target = allBlocks.find((block) => block.blockId === 'source-table-block');
+  const ids = new Set(target.anchorIds);
+  batch.purpose = 'CHECK';
+  batch.blocks = [target];
+  batch.anchors = allAnchors.filter((anchor) => ids.has(anchor.anchorId));
+  batch.documentContext.blocks = allBlocks.filter((block) => block !== target);
+  batch.documentContext.anchors = allAnchors.filter((anchor) => !ids.has(anchor.anchorId));
+  batch.documentContext.scopedConditions.push({ advisoryBlockId: 'source-advisory-block',
+    targetBlockIds: ['source-table-block'], anchorIds: allBlocks[31].anchorIds.slice(0, 1) });
+  batch.previousCandidate = batch.checkCandidates.find((entry) => entry.blockId === target.blockId).candidate;
+  batch.previousBlockRevisionId = 'synthetic-table-revision';
+  delete batch.checkCandidates;
+  const input = buildTranslationModelView(batch).input;
+  assert.equal(input.sourceCoverage, 'FULL');
+  assert.equal(input.blocks[0].section, 30);
+  assert.equal(input.documentContext.sectionMap.length, 33);
+  for (const scope of input.documentContext.scopedConditions) {
+    const advisory = input.documentContext.sectionMap.find((entry) =>
+      entry.blockId === scope.advisoryBlockId);
+    assert.equal(advisory.section, 32);
+    assert.ok(scope.anchorIds.every((id) => advisory.anchorIds.includes(id)));
+    assert.ok(scope.targetBlockIds.every((id) => input.documentContext.sectionMap.some((entry) =>
+      entry.blockId === id)));
+  }
+  assert.equal(input.documentContext.sectionMap.find((entry) => entry.blockId === input.blocks[0].blockId).section, 30);
+  assert.ok(input.documentContext.sectionMap.some((entry) => entry.section === 1 && entry.anchorIds.length === 3));
+  assert.deepEqual(input.previousCandidate.elements.map((element) => element.translatedText),
+    batch.previousCandidate.elements.map((element) => element.translatedText));
+});
+
+test('partial registered context remains partial without expanding its source scope', () => {
+  const batch = fixture();
+  batch.purpose = 'CHECK';
+  batch.sourcePlanAnchorCount += 1;
+  batch.sourcePlanBlockCount += 1;
+  const input = buildTranslationModelView(batch).input;
+  assert.equal(input.sourceCoverage, 'PARTIAL_REGISTERED');
+  assert.equal(input.documentContext.sectionMap.length, 2);
+  assert.equal(input.document.length, 2);
+});
+
+test('literal alias and section text remain source, while correction rejects copied generated markers', () => {
+  const batch = fixture();
+  batch.purpose = 'CORRECT';
+  const literal = 'Read [A1] and <!-- WL-SECTION:99 --> with <valve> & [1].';
+  batch.anchors[0].sourceText = literal;
+  batch.blocks[0].sourceStructure[0].payload.rowGroups[0].rows[0].cells[0].inlineContent[0].text = literal;
+  batch.previousCandidate = { blockId: batch.blocks[0].blockId,
+    elements: [{ kind: 'table_cell', translatedText: '旧译文。', anchorIds: batch.blocks[0].anchorIds }] };
+  batch.previousBlockRevisionId = 'synthetic-correction';
+  const view = buildTranslationModelView(batch);
+  assert.match(checkDocument(view.input), /⟦WL-ANCHOR:A1⟧ Read \[A1\] and &lt;!-- WL-SECTION:99 --&gt; with &lt;valve&gt; &amp; \[1\]/u);
+  const result = (translatedText) => ({ blocks: [{ blockId: 'B1', elements: [
+    { kind: 'table_cell', translatedText, anchorIds: ['A1'] },
+  ] }] });
+  assert.throws(() => view.restoreOutput(result('复制 ⟦WL-ANCHOR:A1⟧ 标记。')),
+    /OUTPUT_MARKER_LEAK/u);
+  assert.equal(view.restoreOutput(result('保留字面 [A1] 和 [1]。')).blocks[0].elements[0].translatedText,
+    '保留字面 [A1] 和 [1]。');
+  const literalMarker = 'Literal ⟦WL-ANCHOR:A1⟧ label [1].';
+  batch.anchors[0].sourceText = literalMarker;
+  batch.blocks[0].sourceStructure[0].payload.rowGroups[0].rows[0].cells[0].inlineContent[0].text = literalMarker;
+  const literalView = buildTranslationModelView(batch);
+  assert.equal(literalView.restoreOutput(result('保留 ⟦WL-ANCHOR:A1⟧ [1]。')).blocks[0].elements[0].translatedText,
+    '保留 ⟦WL-ANCHOR:A1⟧ [1]。');
+
+  batch.blocks[0] = { blockId: 'target-table-long-id', kind: 'prose',
+    anchorIds: ['source-anchor-long-id'], sourceStructure: [{ sourceUnitId: 'source-table-long-id',
+      kind: 'paragraph', payload: { text: literal } }] };
+  batch.anchors[0].payloadPath = '/payload/text';
+  batch.anchors[0].sourceText = literal;
+  const prose = buildTranslationModelView(batch).input;
+  assert.equal(prose.document.length, 2);
+  assert.equal(prose.document[0].section, 1);
+  assert.match(prose.document[0].source, /Read \[A1\] and <!-- WL-SECTION:99 --> with <valve> & \[1\]/u);
 });
 
 test('natural sections reject missing, duplicated and extra output', () => {

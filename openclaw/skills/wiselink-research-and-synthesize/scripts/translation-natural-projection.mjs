@@ -59,26 +59,41 @@ function rowGroupTag(kind) {
   return 'tbody';
 }
 
-function tableSource(block, anchors) {
-  const tables = block.sourceStructure.filter((unit) => unit.kind === 'table');
+function tableSource(block, anchors, markAnchor) {
+  const tables = (block.sourceStructure ?? []).filter((unit) => unit.kind === 'table');
   if (!tables.length || tables.some((unit) => unit.payload.layout !== 'grid'))
-    return block.anchorIds.map((id) => anchors.get(id).sourceText).join('\n');
+    return block.anchorIds.map((id) => `${markAnchor?.(id) ?? ''}${anchors.get(id).sourceText}`).join('\n');
   return tables.map((unit) => {
     const payload = unit.payload;
+    const source = (path, value) => {
+      if (!markAnchor || typeof value !== 'string' || !value.trim()) return escapeHtml(value ?? '');
+      const matching = block.anchorIds.filter((id) => {
+        const anchor = anchors.get(id);
+        return anchor.sourceUnitId === unit.sourceUnitId &&
+          anchor.payloadPath === path && anchor.sourceText === value;
+      });
+      if (matching.length !== 1) throw new Error('TRANSLATION_MODEL_LAYOUT_BINDING_INVALID');
+      return `${escapeHtml(markAnchor(matching[0]))}${escapeHtml(value)}`;
+    };
     const caption = typeof payload.caption === 'string' && payload.caption.trim()
-      ? `<caption>${escapeHtml(payload.caption)}</caption>` : '';
+      ? `<caption>${source('/payload/caption', payload.caption)}</caption>` : '';
     const columns = (payload.columns ?? []).filter((column) =>
       typeof column.name === 'string' && column.name.trim());
-    const columnHead = columns.length
-      ? `<thead><tr>${columns.map((column) => `<th>${escapeHtml(column.name)}</th>`).join('')}</tr></thead>` : '';
-    const groups = payload.rowGroups.map((group) => {
+    const columnHead = (markAnchor ? (payload.columns ?? []).length : columns.length)
+      ? `<thead><tr>${(payload.columns ?? []).map((column, index) =>
+        typeof column.name === 'string' && column.name.trim()
+          ? `<th>${source(`/payload/columns/${index}/name`, column.name)}</th>`
+          : markAnchor ? '<th></th>' : '').join('')}</tr></thead>` : '';
+    const groups = payload.rowGroups.map((group, groupIndex) => {
       const tag = rowGroupTag(group.kind);
-      const rows = group.rows.map((row) => {
-        const cells = row.cells.map((cell) => {
+      const rows = group.rows.map((row, rowIndex) => {
+        const cells = row.cells.map((cell, cellIndex) => {
           const cellTag = cell.isHeader ? 'th' : 'td';
           const spans = `${cell.rowSpan > 1 ? ` rowspan="${cell.rowSpan}"` : ''}${cell.colSpan > 1 ? ` colspan="${cell.colSpan}"` : ''}`;
-          const content = (cell.inlineContent ?? []).map((item) =>
-            typeof item.text === 'string' ? escapeHtml(item.text) : '').join('<br>');
+          const content = (cell.inlineContent ?? []).map((item, inlineIndex) =>
+            typeof item.text === 'string'
+              ? source(`/payload/rowGroups/${groupIndex}/rows/${rowIndex}/cells/${cellIndex}/inlineContent/${inlineIndex}/text`, item.text)
+              : '').join('<br>');
           return `<${cellTag}${spans}>${content}</${cellTag}>`;
         }).join('');
         return `<tr>${cells}</tr>`;
@@ -115,26 +130,52 @@ function listTree(block) {
   return visit(root, new Set());
 }
 
-function renderList(tree, block, anchors) {
+function renderList(tree, block, anchors, markAnchor) {
   return `<${tree.tag}>${tree.items.map((item) => {
     const text = block.anchorIds.filter((id) => anchors.get(id).sourceUnitId === item.unit.sourceUnitId)
-      .map((id) => anchors.get(id).sourceText).join(' ');
-    return `<li>${escapeHtml(text)}${item.nested.map((nested) => renderList(nested, block, anchors)).join('')}</li>`;
+      .map((id) => `${markAnchor?.(id) ?? ''}${anchors.get(id).sourceText}`).join(' ');
+    return `<li>${escapeHtml(text)}${item.nested.map((nested) => renderList(nested, block, anchors, markAnchor)).join('')}</li>`;
   }).join('')}</${tree.tag}>`;
 }
 
-function blockSource(block, anchors) {
-  if (block.kind === 'table') return tableSource(block, anchors);
+function blockSource(block, anchors, markAnchor) {
+  if (block.kind === 'table') return tableSource(block, anchors, markAnchor);
   if (block.kind === 'list') {
-    if (block.sourceStructure.some((unit) => unit.kind === 'list_item'))
-      return renderList(listTree(block), block, anchors);
+    if (block.sourceStructure?.some((unit) => unit.kind === 'list_item'))
+      return renderList(listTree(block), block, anchors, markAnchor);
   }
-  const text = block.anchorIds.map((id) => anchors.get(id).sourceText).join('\n');
+  const text = block.anchorIds.map((id) => `${markAnchor?.(id) ?? ''}${anchors.get(id).sourceText}`).join('\n');
   if (block.kind === 'heading') {
-    const level = Number(block.sourceStructure[0]?.payload.level);
+    const level = Number(block.sourceStructure?.[0]?.payload.level);
     return `${'#'.repeat(Number.isInteger(level) && level > 0 && level <= 6 ? level : 2)} ${text}`;
   }
   return text;
+}
+
+/** Readable source once, with optional inline alias labels for exact Host anchors. */
+export function renderNaturalSourceDocument(blocks, anchors, markAnchor) {
+  const ordered = [...blocks].sort((a, b) => a.order - b.order);
+  const byId = new Map(anchors.map((anchor) => [anchor.anchorId, anchor]));
+  if (byId.size !== anchors.length || new Set(ordered.map((block) => block.blockId)).size !== ordered.length ||
+      ordered.some((block) => block.anchorIds.some((id) => !byId.has(id))))
+    throw new Error('TRANSLATION_NATURAL_SOURCE_INVALID');
+  const sections = new Map(ordered.map((block, index) => [block.blockId, index + 1]));
+  const document = ordered.map((block) => {
+    const shown = new Set();
+    const label = markAnchor ? (id) => {
+      if (shown.has(id)) throw new Error('TRANSLATION_MODEL_SOURCE_COVERAGE_INVALID');
+      shown.add(id);
+      return markAnchor(id);
+    } : undefined;
+    const source = blockSource(block, byId, label);
+    const supplemental = markAnchor ? block.anchorIds.filter((id) => !shown.has(id))
+      .map((id) => {
+        const anchor = byId.get(id);
+        return `Source field ${anchor.payloadPath ?? 'unspecified'}: ${label(id)}${anchor.sourceText}`;
+      }) : [];
+    return { section: sections.get(block.blockId), source: [source, ...supplemental].join('\n') };
+  });
+  return { document, sections };
 }
 
 function assertProjectionCoverage(block, anchors) {
