@@ -1,5 +1,13 @@
 # M 主控集成交接
 
+## 2026-09-29：普通上传 MinerU 领取修复已集成，待发布纵向验收
+
+- Sol 独立提交 `528e03a5e153b6275490d2c191f4f0fcc1dabe78`（父 `eacc2e06402fd92f7b5ebf5359196d7afebf1032`）经 Astra 窄审接受，主控选择性集成为 `daea56c52`。仅 worker service、专用 unit 与既有 PG 测试三文件，无 schema、权限、路由或调度变更。
+- 0067 已受理的普通上传无须伪造 WorkItem：claim 从现有上传交付发现目录取得 actor 线索，Host SOURCE 授权及 actor 范围核对 acquisition/DV 后才领取。source/renew/result 从确切 acquisition/DV 重新授权，不全量扫描上传；保留原件字节读回、当前来源和租约检查。已知多 actor 不支持项明确记录并继续下一项，其他冲突不吞掉；这不是多 actor 合同已经实现。
+- `authorizeDocumentWork` 是进程内既有授权方法，不产生额外 MCP 路由调用。Catalog 已有 module 导出，未增注册或密钥范围。真实平台四路由专用密钥与新路径尚未运行验证。
+- 验证：定向 Jest 42/42、隔离 PostgreSQL RLS 1/1、server TypeScript、ESLint、diff/precommit 通过。PG 在既有非 WorkItem 解析路径上实际改变 DV SHA，验证仓储拒绝来源变化，并恢复；它不等同于真实上传或线上0067角色验收。主控核对准确提交范围，集成无冲突，不重复无改动全量测试。
+- 本轮原生知识源核查提交 `f22a54b2752984b9df1285a5cb9a84d116711f6a` 已在 origin/github 同名集成分支分别读回。上述 worker 修复尚未发布；下一步准备兼容发布并用正常仅上传入口验证解析→解读→OpenClaw翻译及本人阅读。P3身份接线仍由独立Sol实现，来源扫描仍未启用。
+
 ## 2026-09-29：原生知识源替代发现核查；普通上传 MinerU 接线进行中
 
 - 用户提出将云盘文件夹绑定原生知识库，以尽量避免新增需审核的目录权限。官方 Aily 数据预处理说明确认文件夹内支持类型的新增、修改、删除可自动同步，文档描述约 15 分钟延迟；这是平台能力说明，不是当前 Host 已绑定或真实同步验收。17b 当前原生工具菜单与集成面板未发现直接知识源入口；不能据此判定整个产品不支持。
