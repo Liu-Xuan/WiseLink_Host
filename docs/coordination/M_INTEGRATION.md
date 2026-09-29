@@ -1,5 +1,14 @@
 # M 主控集成交接
 
+## 2026-09-29 08:56：来源权限获批，目录权限待独立发布；P3 实施开始
+
+- 上轮 `c7065cf4e82993820487faef5cb7fb49d420573e` 已在 origin/github 精确同名分支分别读回。本轮接续该基线，未重建 P1/P2。Sol 在既有干净工作树新建 `codex/wl-source-identity`；保留旧 P2 分支，不 reset/cherry-pick 重复内容。
+- 用户明确授权现有应用 `cli_aadde8b579f95bc9` 的应用身份 `space:document:retrieve`、`drive:file:download` 及必要审核/发布，原云盘只读。控制台本轮确认 download 的应用身份原本已开通，本次实际新增目录 retrieve 申请。创建版本页面显示建议 1.0.5（上一版本 1.0.4），尚未保存或提交审核。
+- 发布差异同时包含原先未发布的用户身份 `aily:agent_chat:read`，无法将这项未获本轮授权的对话权限一并提交。已请求允许撤下该旧未生效申请以独立发布目录权限；未修改旧 Aily 申请。证据截图位于本机 `/private/tmp/wiselink-permission-release-scope-20260929.png`，未纳入公开仓库。控制台明确目录 retrieve 为需审核权限、download 为免审权限；即使撤下 Aily 草案，目录权限仍需企业管理员审核。用户随后询问审核对象，未授权撤下 Aily。两项读取授权不表示 0070、来源运行委托或扫描调度已获部署/启用批准。
+- P3 定向核查：旧 core 会生成新 acquisition，且身份提取先于 exact lookup；P2 取得记录已持久且 descriptor 不可变。实现将从持久 intent 读取确切原件，先查相同字节且验证责任 actor 对候选原版本的原有读取权限，再复用纯身份观察与 Catalog 事务。身份观察写 preflight，取得事实不覆盖；来源 commit 使用单独可信范围，不伪装 uploadCommit。
+- P4 接线方向：0067 的文档交付授权只接浏览器 upload，不向该表伪造来源上传行。来源交付将复用 P1 intent 联已登记 acquisition/DV 的专用读投影，并贯穿现有授权、runtime 与派发；只有真实 run/回执成立才报告排队/交付。
+- 无文字层依赖已确认：现有 parseRun 非空 DV 外键、source binding、lease 和 worker claim 都要求正式版本。后续需薄的 acquisition 范围读取能力；本批不能用假 DV 或临时 WorkItem 绕过，也不能把保存未明原因当作已交付独立阅读。P3/P4 目前实施中，尚无新增业务验收。
+
 ## 2026-09-29：P2 取得接线已集成，真实来源运行仍待权限与后续接线
 
 - 接续 `cba057d96`，上一轮已完成 P1 基础与双远端同步，本轮继续 P2 而不重做基线。用现有产品应用凭据调用官方 `POST /drive/v1/metas/batch_query`，technical-library 与 operations 两个既有根目录均 HTTP 200 / code 0，分别返回 metadata，无 failed_list 项。仅输出成功标志，未输出 token 或凭据。这证明根目录元数据可读，不证明列目录、文件下载或持续子目录权限已满足。
