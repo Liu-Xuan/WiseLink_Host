@@ -108,7 +108,9 @@ test('local worker discovers existing delegation before actor-owned parse access
     const authorization = { async assertAutoWorkItemQueueTransport() {},
       async authorizeOpenClawAutoWorkItemQueue() { return { appId: 'app_17bzc551rsg', tenantId: 'TENANT-RLS',
         principalId: 'P-RLS', authorizationFingerprint: 'verified' }; } };
-    const worker = new LocalMineruWorkerService(authorization, actors, repository, parsing, leases, workItems);
+    const catalog = { async listDocumentUploadDeliveryCandidates() { return []; } };
+    const worker = new LocalMineruWorkerService(authorization, actors, repository, parsing, leases,
+      workItems, catalog);
     const claimed = await worker.claim({});
     assert.equal(claimed.status, 'CLAIMED');
     assert.equal(claimed.parseRunId, 'PRUN-rls');
@@ -179,6 +181,10 @@ test('local worker discovers existing delegation before actor-owned parse access
       await assert.rejects(leases.check(browserScope, { parseRunId: browser.parseRunId,
         ...browser.lease, leaseGeneration: browser.lease.leaseGeneration + 1 }), /DOCUMENT_STEP_LEASE_REJECTED/);
     });
+    await admin`UPDATE dm_document_version SET pdf_sha256=${'b'.repeat(64)} WHERE document_version_id='DV-RLS'`;
+    await assert.rejects(worker.renew({ parseRunId: browser.parseRunId,
+      documentVersionId: browser.documentVersionId, lease: browser.lease }), /DOCUMENT_PARSE_SOURCE_CHANGED/);
+    await admin`UPDATE dm_document_version SET pdf_sha256=${sha} WHERE document_version_id='DV-RLS'`;
     await admin`UPDATE work_item SET source_artifact_id='ART-CHANGED' WHERE work_item_id='WI-RLS'`;
     await assert.rejects(worker.renew({ parseRunId: browser.parseRunId, documentVersionId: browser.documentVersionId,
       lease: browser.lease }), /LOCAL_MINERU_RUN_NOT_FOUND/);
