@@ -122,3 +122,57 @@ function restore(key: string, value: string | undefined): void {
   if (value === undefined) delete process.env[key];
   else process.env[key] = value;
 }
+
+const originalApp = process.env.FEISHU_OAUTH_CLIENT_ID;
+const originalSecret = process.env.FEISHU_OAUTH_CLIENT_SECRET;
+
+describe('FeishuDriveApplicationPageFetcher source bytes', () => {
+  afterEach(() => { jest.restoreAllMocks(); });
+  afterAll(() => {
+    if (originalApp === undefined) delete process.env.FEISHU_OAUTH_CLIENT_ID;
+    else process.env.FEISHU_OAUTH_CLIENT_ID = originalApp;
+    if (originalSecret === undefined) delete process.env.FEISHU_OAUTH_CLIENT_SECRET;
+    else process.env.FEISHU_OAUTH_CLIENT_SECRET = originalSecret;
+  });
+
+  it('uses exact official metadata request and bounded direct binary download', async () => {
+    process.env.FEISHU_OAUTH_CLIENT_ID = 'app1';
+    process.env.FEISHU_OAUTH_CLIENT_SECRET = 'secret';
+    const fetch = jest.spyOn(globalThis, 'fetch').mockImplementation(async (url, init) => {
+      const pathname = new URL(String(url)).pathname;
+      if (pathname.endsWith('/tenant_access_token/internal'))
+        return Response.json({ code: 0, tenant_access_token: 'token', expire: 3600 });
+      if (pathname.endsWith('/metas/batch_query')) {
+        expect(init?.method).toBe('POST');
+        expect(JSON.parse(String(init?.body))).toEqual({ request_docs: [{ doc_token: 'file1', doc_type: 'file' }] });
+        return Response.json({ code: 0, data: { metas: [{ doc_token: 'file1',
+          doc_type: 'file', title: 'Manual.pdf', latest_modify_time: '100' }], failed_list: [] } });
+      }
+      expect(pathname).toBe('/open-apis/drive/v1/files/file1/download');
+      expect(init?.redirect).toBe('manual');
+      return new Response(Buffer.from('%PDF-1.7\nbody'), { status: 200 });
+    });
+    const adapter = new FeishuDriveApplicationPageFetcher();
+    expect(await adapter.metadata('file1')).toEqual({ token: 'file1', type: 'file',
+      title: 'Manual.pdf', latestModifyTime: '100' });
+    expect(await adapter.downloadFile('file1')).toEqual(Buffer.from('%PDF-1.7\nbody'));
+    expect(fetch).toHaveBeenCalledTimes(3);
+  });
+
+  it('exposes per-document missing scope and refuses unverified redirects', async () => {
+    process.env.FEISHU_OAUTH_CLIENT_ID = 'app1';
+    process.env.FEISHU_OAUTH_CLIENT_SECRET = 'secret';
+    jest.spyOn(globalThis, 'fetch').mockImplementation(async url => {
+      const pathname = new URL(String(url)).pathname;
+      if (pathname.endsWith('/tenant_access_token/internal'))
+        return Response.json({ code: 0, tenant_access_token: 'token', expire: 3600 });
+      if (pathname.endsWith('/metas/batch_query'))
+        return Response.json({ code: 0, data: { metas: [],
+          failed_list: [{ doc_token: 'file1', code: 99991672, msg: 'missing scope' }] } });
+      return new Response(null, { status: 302, headers: { location: 'https://other.invalid/file' } });
+    });
+    const adapter = new FeishuDriveApplicationPageFetcher();
+    await expect(adapter.metadata('file1')).rejects.toMatchObject({ code: 99991672 });
+    await expect(adapter.downloadFile('file1')).rejects.toThrow('DRIVE_DOWNLOAD_REDIRECT_UNVERIFIED');
+  });
+});

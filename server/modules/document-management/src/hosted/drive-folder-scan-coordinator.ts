@@ -20,8 +20,13 @@ export async function runDriveFolderScan(input: {
 }): Promise<DriveFolderScanResult> {
   const saved = await input.checkpoints.load(input.sourceKey);
   const checkpoint = saved ? decodeDriveFolderScanCheckpoint(saved) : null;
-  const roots = checkpoint?.roots.length ? checkpoint.roots : input.roots;
-  const start = checkpoint?.continuation.length ? checkpoint.continuation : roots;
+  if (checkpoint && (checkpoint.roots.length !== input.roots.length ||
+    checkpoint.roots.some((root, index) => root.folderToken !== input.roots[index]?.folderToken)))
+    throw new Error('DRIVE_SCAN_ROOT_CHANGED');
+  const legacyFrontier = checkpoint?.roots.some(root => !root.ancestorTokens?.length) ||
+    checkpoint?.continuation.some(folder => !folder.ancestorTokens?.length);
+  const roots = legacyFrontier ? input.roots : checkpoint?.roots.length ? checkpoint.roots : input.roots;
+  const start = legacyFrontier ? roots : checkpoint?.continuation.length ? checkpoint.continuation : roots;
   let expected = saved;
   const persist = async (continuation: DriveFolderScanState[], entries: DriveFolderScanResult['entries'], blockers: DriveFolderScanResult['blockers']) => {
     const next = encodeDriveFolderScanCheckpoint(roots, continuation, new Date().toISOString(), blockers);

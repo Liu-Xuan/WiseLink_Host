@@ -20,6 +20,8 @@ import { DriveScanCheckpointRepository } from './drive-scan-checkpoint.repositor
 import { DriveSourceScanService } from './drive-source-scan.service';
 import { DriveSourceScanAutomation } from './drive-source-scan.automation';
 import { FeishuDriveApplicationPageFetcher } from './feishu-drive-application-page-fetcher';
+import { SourceIntakeRepository } from './source-intake.repository';
+import { DriveSourceAcquisitionService } from './drive-source-acquisition.service';
 
 export interface DocumentManagementHostedModuleOptions {
   imports?: ModuleMetadata['imports'];
@@ -57,6 +59,8 @@ export class DocumentManagementHostedModule {
         DriveScanCheckpointRepository,
         DriveSourceScanService,
         FeishuDriveApplicationPageFetcher,
+        SourceIntakeRepository,
+        DriveSourceAcquisitionService,
         DriveSourceScanAutomation,
       ],
       exports: [
@@ -68,6 +72,7 @@ export class DocumentManagementHostedModule {
         DocumentManagementHostedService,
         DocumentParsingHostedService,
         DriveSourceScanService,
+        SourceIntakeRepository,
       ],
     };
   }

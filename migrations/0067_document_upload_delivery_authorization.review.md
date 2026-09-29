@@ -1,5 +1,22 @@
 # 0067 controlled rollout and 0068 dev policy correction: verified delivery writes
 
+## Current readback — 2026-09-29
+
+Both dev and online now contain the authorization table and the expected eight
+delivery/immutability/TRUNCATE triggers, all enabled. Both environments have
+`auto_document_delivery_no_browser`, `auto_document_delivery_service_read`
+and `auto_document_delivery_service_admit`; neither has the erroneous
+`auto_document_delivery_no_generic_service` policy. The SELECT policy targets
+the exact workspace service role and remains `true`; the UPDATE policy binds
+WAITING → ADMITTED to `app.user_id`. This is current object/policy readback,
+not a reconstruction of the platform's migration execution ledger.
+The historical rollout narrative below predates this state; do not rerun 0067
+or treat online as unmigrated. Source-driven admission still requires its own
+reviewed successor changes. Current runtime evidence is maintained in
+`docs/coordination/M_INTEGRATION.md`.
+
+## Historical rollout narrative
+
 The user authorized a staged dev-to-online application of
 `0067_document_upload_delivery_authorization.sql` on 2026-09-28, with a short
 pause of new 17b uploads and C136 during the change. C198 0067 was applied

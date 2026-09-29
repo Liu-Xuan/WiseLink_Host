@@ -1,5 +1,71 @@
 # M 主控集成交接
 
+## 2026-09-29：普通上传 MinerU 领取修复已集成，待发布纵向验收
+
+- Sol 独立提交 `528e03a5e153b6275490d2c191f4f0fcc1dabe78`（父 `eacc2e06402fd92f7b5ebf5359196d7afebf1032`）经 Astra 窄审接受，主控选择性集成为 `daea56c52`。仅 worker service、专用 unit 与既有 PG 测试三文件，无 schema、权限、路由或调度变更。
+- 0067 已受理的普通上传无须伪造 WorkItem：claim 从现有上传交付发现目录取得 actor 线索，Host SOURCE 授权及 actor 范围核对 acquisition/DV 后才领取。source/renew/result 从确切 acquisition/DV 重新授权，不全量扫描上传；保留原件字节读回、当前来源和租约检查。已知多 actor 不支持项明确记录并继续下一项，其他冲突不吞掉；这不是多 actor 合同已经实现。
+- `authorizeDocumentWork` 是进程内既有授权方法，不产生额外 MCP 路由调用。Catalog 已有 module 导出，未增注册或密钥范围。真实平台四路由专用密钥与新路径尚未运行验证。
+- 验证：定向 Jest 42/42、隔离 PostgreSQL RLS 1/1、server TypeScript、ESLint、diff/precommit 通过。PG 在既有非 WorkItem 解析路径上实际改变 DV SHA，验证仓储拒绝来源变化，并恢复；它不等同于真实上传或线上0067角色验收。主控核对准确提交范围，集成无冲突，不重复无改动全量测试。
+- 本轮原生知识源核查提交 `f22a54b2752984b9df1285a5cb9a84d116711f6a` 已在 origin/github 同名集成分支分别读回。上述 worker 修复尚未发布；下一步准备兼容发布并用正常仅上传入口验证解析→解读→OpenClaw翻译及本人阅读。P3身份接线仍由独立Sol实现，来源扫描仍未启用。
+
+## 2026-09-29：原生知识源替代发现核查；普通上传 MinerU 接线进行中
+
+- 用户提出将云盘文件夹绑定原生知识库，以尽量避免新增需审核的目录权限。官方 Aily 数据预处理说明确认文件夹内支持类型的新增、修改、删除可自动同步，文档描述约 15 分钟延迟；这是平台能力说明，不是当前 Host 已绑定或真实同步验收。17b 当前原生工具菜单与集成面板未发现直接知识源入口；不能据此判定整个产品不支持。
+- 依官方 llms.txt → llms-aily.txt → 数据知识 API 文档核对：GET `/open-apis/aily/v1/apps/:app_id/data_assets` 及单资产 GET 支持 `with_data_asset_item`、`with_connect_status`，返回连接/增量同步/部分成功/失败状态、资产更新时间及 dataset/vector 资源标识。需要 `aily:data_asset:read`；应用身份仅支持 Aily 渠道应用，用户身份要求 Aily 应用协作者。现有妙搭应用凭据不能未经验证即当成该渠道身份。
+- 创建数据知识 API 文档支持 `source_type=lark_doc`、`type=folder` 直连，创建仅开发环境，云文档相关资源仅用户身份。尚未调用创建、绑定文件夹、申请新 scope 或改变数据接收方。公开列表合同没有证明可分页取得文件夹每个 PDF 的原件 token、内容版本和逐文件同步状态，资产 `updated_time` 也不能当成每个原文件更新时间；不得用知识问答召回冒充完整增量清单。
+- 结论：operations 原生检索方向成立；工程库自动受理仍需验证可用的逐文件变化与确切来源接口。目录权限发布继续暂停，未撤下旧 Aily 权限草案。后续应在现有获准 Aily 应用及真实身份下核对能力，不能以新知识源替换名义扩大访问范围。
+- 普通上传实际代码缺口：`prepareAutomaticUpload()` 已可创建无 WorkItem 的 parseRun，而 LocalMineruWorker 原仅发现活跃或已完成 WorkItem。Sol 在独立 `codex/wl-upload-mineru-discovery` 实现0067上传授权下领取及后续每次来源/租约复核，不新增表或权限。主控早审要求 source/renew/result 使用确切 acquisition/DV 授权读取，避免每次全量扫描上传；本项仍在实现、未测试完毕、未发布。P3来源身份接线由另一独占Catalog的Sol继续，未与上传分支竞争共享文件。
+- 官方依据：https://www.feishu.cn/content/adcbsjqc ；https://open.feishu.cn/document/aily-v1/data-knowledge/data-knowledge-management/list.md ；同目录 get.md、create.md。本轮仅文档与控制台只读能力核查，不将设计或接口存在写为已部署业务证据。
+
+## 2026-09-29 08:56：来源权限获批，目录权限待独立发布；P3 实施开始
+
+- **随后用户收敛：尽量不使用需要管理员审核的权限。** 因此本轮暂停提交目录读取权限版本；已添加 retrieve 仍为未发布草案，旧 Aily 草案未改动。正常浏览器上传之后的解析、解读、OpenClaw 翻译、评估与知识交付不应依赖 Drive.list，作为下一真实纵向推进重点。目录全量自动发现/新版发现保持未完成，不以手工样本替代其验收。官方 CLI `schema drive.files.list` 确认所接受 scope 为 drive:drive、drive:drive:readonly、space:document:retrieve；尚无已验证的免审完整替代。已知 token 的下载仍需文件读取许可，且不能单独证明该文件属于受委托根目录。
+- 上轮 `c7065cf4e82993820487faef5cb7fb49d420573e` 已在 origin/github 精确同名分支分别读回。本轮接续该基线，未重建 P1/P2。Sol 在既有干净工作树新建 `codex/wl-source-identity`；保留旧 P2 分支，不 reset/cherry-pick 重复内容。
+- 用户明确授权现有应用 `cli_aadde8b579f95bc9` 的应用身份 `space:document:retrieve`、`drive:file:download` 及必要审核/发布，原云盘只读。控制台本轮确认 download 的应用身份原本已开通，本次实际新增目录 retrieve 申请。创建版本页面显示建议 1.0.5（上一版本 1.0.4），尚未保存或提交审核。
+- 发布差异同时包含原先未发布的用户身份 `aily:agent_chat:read`，无法将这项未获本轮授权的对话权限一并提交。已请求允许撤下该旧未生效申请以独立发布目录权限；未修改旧 Aily 申请。证据截图位于本机 `/private/tmp/wiselink-permission-release-scope-20260929.png`，未纳入公开仓库。控制台明确目录 retrieve 为需审核权限、download 为免审权限；即使撤下 Aily 草案，目录权限仍需企业管理员审核。用户随后询问审核对象，未授权撤下 Aily。两项读取授权不表示 0070、来源运行委托或扫描调度已获部署/启用批准。
+- P3 定向核查：旧 core 会生成新 acquisition，且身份提取先于 exact lookup；P2 取得记录已持久且 descriptor 不可变。实现将从持久 intent 读取确切原件，先查相同字节且验证责任 actor 对候选原版本的原有读取权限，再复用纯身份观察与 Catalog 事务。身份观察写 preflight，取得事实不覆盖；来源 commit 使用单独可信范围，不伪装 uploadCommit。
+- P4 接线方向：0067 的文档交付授权只接浏览器 upload，不向该表伪造来源上传行。来源交付将复用 P1 intent 联已登记 acquisition/DV 的专用读投影，并贯穿现有授权、runtime 与派发；只有真实 run/回执成立才报告排队/交付。
+- 无文字层依赖已确认：现有 parseRun 非空 DV 外键、source binding、lease 和 worker claim 都要求正式版本。后续需薄的 acquisition 范围读取能力；本批不能用假 DV 或临时 WorkItem 绕过，也不能把保存未明原因当作已交付独立阅读。P3/P4 目前实施中，尚无新增业务验收。
+
+## 2026-09-29：P2 取得接线已集成，真实来源运行仍待权限与后续接线
+
+- 接续 `cba057d96`，上一轮已完成 P1 基础与双远端同步，本轮继续 P2 而不重做基线。用现有产品应用凭据调用官方 `POST /drive/v1/metas/batch_query`，technical-library 与 operations 两个既有根目录均 HTTP 200 / code 0，分别返回 metadata，无 failed_list 项。仅输出成功标志，未输出 token 或凭据。这证明根目录元数据可读，不证明列目录、文件下载或持续子目录权限已满足。
+- 官方 CLI schema/dry-run 确认 metadata 请求/响应：request_docs 使用 doc_token/doc_type，结果提供 latest_modify_time，不提供父目录链或正式版本；dry-run 未发请求，真实探针使用产品应用身份而非 CLI 的另一应用身份。列目录此前实测缺 scope；已向用户一次性请求 `space:document:retrieve` 与 `drive:file:download` 及对应审核/发布，答复前不改权限、不启扫描。
+- P2 身份合同：云盘文件 token/revision（允许空）及实际扫描父链保存在 sourceDescriptor；FileService provider 身份表示 Host 存储对象，不是厂家版次。复用 persistImmutableSource 的不覆盖保存和真实字节读回，云盘 acquisition 直接绑定该不可变对象。普通上传的 selected 对象与 immutable 副本可以不同，本轮不把 P1 reserve 接入上传后误称兼容，也不放宽为任意来源关联。
+- 检查点现场读回：dev 无记录；online 两个来源各一条，pending_count 均 0，checkpoint_version 1。两条 checkpoint 的 observed_at 均为 2026-09-16T19:49:39Z 附近，blockers 均为 DRIVE_SCOPE_MISSING。因此零 pending 不能解释为源目录为空或已处理完毕。查询未修改检查点或源文件。
+- 线上 P2 相关策略只读核对：action_attempt、dm_acquisition、dm_source_artifact 已有映射到精确 workspace service 的 permissive 路径；另一 action_attempt_document_subject_boundary 对非 DOCUMENT_VERSION 放行，不额外阻挡 ACQUISITION，0070 仍需调整既有 matter_or_document 分支。checkpoint 仅有精确 service 的 automation_tenant 策略。此为策略定义证据，不等于新迁移运行/来源 actor 已验证。
+- Sol 提交 `d9de0ed7abaeec113f7405d4dab52e66fa201815`（父 `cba057d96ad9c09a8e446d28b6d87e5ba64424c0`）经 Astra 最终窄审接受，选择性集成为 `7f30747f7`（同父）。16 个文件仅来源扫描/取得/受理及 Nest 组合测试；本地 6 suites/30 tests 通过，最后增加响应丢失用例后取得套件 10/10 与服务端类型检查通过，提交 precommit 的 ESLint/stylelint/前后端类型检查通过。主控检查差异、确切 ACK 和恢复合同；不重复无变化全仓测试。
+- P2 已接入既有扫描 Automation：technical-library 的 PDF pending→重新验证根目录父链→只读下载与前后 metadata 对比→Host 不可变原件及字节读回→Catalog acquisition→P1 intake→确切 pending ACK。operations 不进入取得/评估。缺少来源策略明确返回 DISABLED，服务 SQL actor 复用已有 middleware。每次至多处理 50 个 PDF；失败观察移到队尾，未支持类型单独计数。
+- 恢复合同：旧检查点缺父链则由既有 scanner 从根重扫；ACK/defer 行锁比较确切观察，不删除同时到达的新观察。目录移动进入取得身份，重复同一观察使用同一 acquisition/intake 身份。下载重定向拒绝而不携带凭据追随任意地址。最终窄审补充多页核验后、紧邻写入的委托重验，并补测已保存但响应丢失的恢复。
+- 本地候选验证与真实生产分开：目前仅根目录 metadata 是本轮实际来源调用证据；列目录权限仍缺、文件下载未验证。0070 未应用、来源委托未配置、扫描未启用，尚无新来源文档被受理。P3 身份识别、P4 文档交付和工程师授权读取投影仍待接线，不能将 RECORDED/WAITING_IDENTITY 当成文档已交付。
+
+## 2026-09-29：P1 原件级受理基础已集成，来源处理未启用
+
+- Sol 独立提交 `8b7ac85b9c42dd54128c706d40c8335bb8306f77`（父 `6d5efbcecdc8b33746a3ae3fa1dfbaf249a5c175`）经 Astra 定向审查后选择性集成为 `0efb60452`（父 `21c752a8a`）。六个文件涵盖 source-intake authority/repository、Module 注册、0070 草案及两类测试，没有增加表、消费者或来源调度。未发布 Host、未应用 0070、未改变现有 0067–0069 或 C136。
+- 初次受理复用 ActionAttempt/RECORDED，固定 `source-intake:<acquisitionId>:initial`，依靠既有 tenant/idempotency 唯一约束；重放比较实际用途与来源绑定。可信上传与来源委托分开验证，不能靠自报 sourceKey/actor/tenant 取得资格。来源策略无配置默认关闭，operations 不允许 AUTHORIZED_SCOPE。暂停新处理后仍可读取同租户、来源、actor、executor 下的控制回执；这不是正文阅读权限。
+- 实际验证：服务端类型检查、定向 Jest 5/5、隔离 PostgreSQL 真实角色套件 1/1、定向 ESLint、precommit 通过。PG 用专用 `wl_delivery_test_source_intake` 的简化 schema 和宽 permissive policy，验证精确 service 正常受理、anon/auth 拒绝、缺字段/不完整来源拒绝、并发去重与旧 acquisition 删除；不证明 0067–0069 全量兼容、生产角色继承或平台重写后的策略。审查修复了 SECURITY DEFINER 角色语义、DELETE 返回、NULL 漏检、任意请求键重复与 JSON 字段顺序误拒。
+- 接线前仍有三项：P2 必须由真实扫描/下载证明根目录成员及当前执行 principal，并进入已验证 service SQL scope，set_config 本身不会切换角色；Drive 可空 revision 与 Host 原件存储身份须分开，不伪造厂家版次或永久 unversioned 去重；P4 须接工程师授权读取投影，0070 的来源 acquisition FOR ALL 限制也影响 SELECT，不能宣称只是写边界。当前 Module 仅注册服务，没有实际扫描/上传调用入口，故 P1 是基础候选而非完整统一受理验收。
+- 下一最小增量：在上述合同上接技术文档库的真实候选→只读取得→原件受理，保持 operations 仅检索；先补来源读取权限与实际身份映射，再进行受控来源样本及迁移组合验证。待批准的精确应用 scope 和 P0 现场证据见下节，未把缺权限伪装为空目录。
+
+## 2026-09-29：来源驱动交接已接收，P0 现场核对进行中
+
+- 来源读取实测：使用本机现有产品应用配置取得 tenant token 成功，但 technical-library、operations 两个既有根目录的只读 list 均返回 HTTP 400 / 99991672，未取得文件、未下载或写入原目录。官方权限台显示 metadata 只读权限已开通，不能替代列表权限；精确所需项为 `space:document:retrieve`（目录清单，需审核）及 `drive:file:download`（下载，免审）。`drive:drive:readonly` 的官方能力包含评论，不作为最小选择。本轮未开通新权限；权限台另有既有待发布的 Aily 权限，后续发布不得无意捆绑。此证据来自本机当前产品凭据，不冒充云端运行时探针。
+- 17c 本轮重新访问跳转飞书扫码登录，未取得当前 Skill/C136 的新读回；下方 C202 与唯一 C136 启用为上一轮历史证据。本轮没有改变任何定时任务。P1 在隔离工作树复用 ActionAttempt/RECORDED 实现原件级意图，0070 仅为待审草案，尚未迁移、接扫描或发布。
+- 本机精确 LaunchAgent `com.wiselink.local-mineru-worker` 本轮读回：已登记，60 秒间隔，累计 1322 次运行，末次退出 0，快照时 not running。stdout 文件最近五项为 IDLE（修改时间 09-29 07:52:59），stderr 最近五项为 LOCAL_MINERU_TRANSPORT_UNAVAILABLE（修改时间 07:42:32）。未以旧 localhost MinerU PID 替代该 worker；空闲返回和日志时间不能证明有任务时稳定，运输错误仍须在具体任务恢复验收中关联。
+- 用户交接 ZIP 中设计、计划、Goal 三份文件已按原路径导入，SHA256 分别为 `dc829dfd854a9f8510b0a96f5b5c25a764cc13c554ed6426f6c72870323d2900`、`ae0415d5f5349c6f75d2a4ccf44d904e47c55f2b72820ee4a2aa06e6db000211`、`a5abb6627c6ad29df31ba09ccfa988d45ad0b64b198db026d27658ca671fe9da`，均与 ZIP manifest 一致。当前规则及执行计划已指向新设计；Goal 管理器已创建“来源驱动自动文档管理与持续工程评估”，状态 active。文档导入和 Goal 启动不改变生产调度。
+- 实现基线为同名集成分支 `7ee86130e2051bbf7cf56bc7521e56b03a6f482e`，包含已发布 `4deb62ed1aa9ba58dc7966e67eb659a5ffd647b9`。本轮只读 `release-get` 再确认 17b 发布 `7690678016649399279` finished、精确 commit 为 4deb62ed、error_logs 为空。交接包引用的 0c7bb234 仅作历史定位。
+- 本轮分别读取 dev/online：授权表的 no_browser restrictive false、精确 service_read true、service_admit 按 actor 的 WAITING→ADMITTED 策略一致；错误 no_generic_service policy 均不存在。两环境八个交付/不可变/TRUNCATE 触发器均启用。现状符合 0068 修复后的对象效果，不能继续写“online 未应用 0067”或重复创建表；尚未取得完整迁移执行账本，当前证据是实际对象读回。服务 SELECT 仍是既有获准的全表读取加 Host 可信租户过滤，不声称数据库已实现租户限定 SELECT。
+- 17b 来源扫描触发器 `wiselinkDriveSourceScan` 本轮读回 disabled，配置每两小时一次。代码只扫描 technical-library 与 operations 并保存 pending；尚未接取得/受理。17c 当前安装、C136 与来源应用实际列表/下载能力另行核对，不由扫描配置或本机进程存活推定可用。
+- P1 首批审查确认：浏览器上传的可信会话和云盘来源委托须分别验证；云盘不能伪装成 document_library_upload。待确定原件级受理复用现有 ActionAttempt 的方式、来源责任 actor 的合法委托及准确 pending ACK；随后接现有 Catalog。原件尚无正式身份时也必须有可恢复受理，不能先造 DocumentVersion。以上是待实现合同，未发布来源自动处理。
+
+## 2026-09-29：中文翻译切换 OpenClaw，局部失败接续与本人阅读核验
+
+- 文档翻译的默认 `START` 已使用现有 OpenClaw C136 的 Hosted M3 路径；旧官方插件尝试仅保留为历史执行记录，不再是新任务的默认翻译执行者。17c 当前安装 C202 Skill，唯一启用的定时任务为 C136，其余 15 项保持停用。此处不把产品 Hosted 模型与 Codex 开发模型混同。
+- Host 集成提交 `4deb62ed1aa9ba58dc7966e67eb659a5ffd647b9` 已在 `codex/wl-c196-document-delivery-integration` 同名分支同步 origin/github；17b online 发布 `7690678016649399279` 为 `finished`，回执提交精确对应 `4deb62ed`、`error_logs=[]`。本轮补齐精确局部重译的任务输入、一次性 `RECOVER_PARTIAL_INPUT` 接续、旧代次诊断隔离、累计批次编号及数据库 `jsonb_exists` 队列查询。隔离 PostgreSQL 翻译套件 26/26、单测 33 项及 runner 4 项通过；真实线上队列查询曾因 JSONB `?` 参数化返回 500，修复后已由同一真实文档自然领取并完成。
+- 测试文档 `787-FTD-46-26002.pdf`（`document_version_3f1bf2fb1736c0e12e5bae2a`）旧候选为 18/19 可读。一次性恢复取消零输出的旧后继 DTA3，创建确切 `b10` 局部重译 DTA4 `DTA-3ab25ffe-c900-4dd8-afb8-5e20e58e8d63`；C136 自然领取并保存 2 个新修订，DTA4 最终 `SUCCEEDED/DONE`，完整度 `COMPLETE_WITH_ISSUES`，19/19 段有中文候选。此前人工测试记录中 generation 8 的 `finishedAt` 非 ISO 时间仅作等值规范化，保留失败状态和历史记录，备份在 `/private/tmp/wl-c203-before-timestamp-normalization.json`。
+- 刘轩本人刷新 17b 文档页后，中文阅读显示“完整译文候选 · 有待复核项”、100%（2,675/2,675 原文字符）；原先缺失的 Status 段已显示“AID 认证预计将于 1Q 2026 完成，生产线装机自 LN 1340 起开始。”。该段仍提示 MinerU 与 PDF 文本的差异，元数据表等原文也有核对提示；100% 表示已有可读中文，不代表所有解析差异和工程语义已人工核实。刷新前的 95.5% 为前端旧缓存状态。
+- 本轮证明既有测试任务的 OpenClaw 局部重译、持久结果读回与工程师页面接续。尚未在本提交下另做新文档从正常上传到翻译的完整自然运行观察，也未完成所有原文差异的质量复核；后续应在新上传样本和明确质量检查中分别验收，不以覆盖率替代准确性。
+
 ## 2026-09-28 18:31：C136 Review 协议、引用与定点范围修复（真实验收进行中）
 
 - 19:38–19:43 继续核对：17b 第三次发布 `7690543602519772117` 经约 20 分钟转为 `failed`、`commit_id=e5dc2fff`、`error_logs=[]`；其等待期明显超过官方约 5 分钟发布超时说明，线上运行时错误日志没有提供该发布的构建诊断。旧发布终态后仅重试一次同一精确分支，第四次发布 `7690550086421908408` 已 `finished`，回执精确 `commit_id=98f5cf36142f3f40552c5da4abec04428b4c5667`，`origin/main=e4af995b013333d07bc96881ef7de2672a9f11b1` 为平台新发布合并提交。Host C192 已上线，17c Skill 尚未安装；不能据此宣称真实更正完成。本机 `lark-cli apps +automation-list` 对 17c 返回空表，它只列妙搭触发器，不能据此判断 OpenClaw C136；Codex 内置浏览器现有 17c 标签刷新及新开应用页均跳飞书扫码页，尚未进入 17c 读取消费者状态或安装 C192。

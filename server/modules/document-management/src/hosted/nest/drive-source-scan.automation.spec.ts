@@ -19,9 +19,12 @@ describe('DriveSourceScanAutomation', () => {
       scan: { blockers: [] },
     }));
     const fetcher = { list: jest.fn() };
+    const acquisitions = { processPending: jest.fn(async () => ({ status: 'DISABLED',
+      attempted: 0, skippedUnsupported: 0, acquired: [], blocked: [] })) };
     const automation = new DriveSourceScanAutomation(
       { scanCandidates } as never,
       fetcher as never,
+      acquisitions as never,
     );
 
     const result = await automation.scanRegisteredSources();
@@ -32,6 +35,7 @@ describe('DriveSourceScanAutomation', () => {
     expect(scanCandidates).toHaveBeenCalledWith(
       expect.objectContaining({ tenantId: 'tenant-1', fetcher }),
     );
+    expect(acquisitions.processPending).toHaveBeenCalledTimes(1);
     expect(result.sources).toEqual([
       expect.objectContaining({ sourceKey: 'technical-library', complete: true }),
       expect.objectContaining({ sourceKey: 'operations', complete: true }),
@@ -43,6 +47,7 @@ describe('DriveSourceScanAutomation', () => {
     const scanCandidates = jest.fn();
     const automation = new DriveSourceScanAutomation(
       { scanCandidates } as never,
+      {} as never,
       {} as never,
     );
     await expect(automation.scanRegisteredSources()).rejects.toThrow(

@@ -6,6 +6,7 @@ import {
 
 import { DriveSourceScanService } from './drive-source-scan.service';
 import { FeishuDriveApplicationPageFetcher } from './feishu-drive-application-page-fetcher';
+import { DriveSourceAcquisitionService } from './drive-source-acquisition.service';
 
 const INITIAL_SOURCE_KEYS = ['technical-library', 'operations'] as const;
 
@@ -18,6 +19,7 @@ export class DriveSourceScanAutomation {
   constructor(
     private readonly scans: DriveSourceScanService,
     private readonly fetcher: FeishuDriveApplicationPageFetcher,
+    private readonly acquisitions: DriveSourceAcquisitionService,
   ) {}
 
   @BindTrigger('wiselinkDriveSourceScan')
@@ -28,6 +30,10 @@ export class DriveSourceScanAutomation {
       observed: number;
       pending: number;
       blockers: string[];
+      acquired: number;
+      intakeBlocked: Array<{ providerObjectId: string; code: string }>;
+      intakeStatus: 'DISABLED' | 'PROCESSED' | 'NOT_APPLICABLE';
+      skippedUnsupported: number;
     }>;
   }> {
     const tenantId = process.env.WL_DRIVE_SCAN_TENANT_ID?.trim();
@@ -42,16 +48,24 @@ export class DriveSourceScanAutomation {
         maxPages: 50,
         maxEntries: 10_000,
       });
+      const intake = sourceKey === 'technical-library'
+        ? await this.acquisitions.processPending(tenantId)
+        : { status: 'NOT_APPLICABLE' as const, attempted: 0,
+          skippedUnsupported: 0, acquired: [], blocked: [] };
       const summary = {
         sourceKey,
         complete: result.complete,
         observed: result.candidates.length,
         pending: result.pendingCandidates.length,
         blockers: [...new Set(result.scan.blockers.map(item => item.code))],
+        acquired: intake.acquired.length,
+        intakeBlocked: intake.blocked,
+        intakeStatus: intake.status,
+        skippedUnsupported: intake.skippedUnsupported,
       };
       sources.push(summary);
       this.logger.log(
-        `Drive source scan ${sourceKey}: complete=${summary.complete} observed=${summary.observed} pending=${summary.pending} blockers=${summary.blockers.join(',') || 'none'}`,
+        `Drive source scan ${sourceKey}: complete=${summary.complete} observed=${summary.observed} pending=${summary.pending} intake=${summary.intakeStatus} acquired=${summary.acquired} unsupported=${summary.skippedUnsupported} blockers=${summary.blockers.join(',') || 'none'} intakeBlocked=${summary.intakeBlocked.map(item => `${item.providerObjectId}:${item.code}`).join(',') || 'none'}`,
       );
     }
     return { sources };

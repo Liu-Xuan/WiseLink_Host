@@ -84,6 +84,38 @@ describe('DriveSourceScanService', () => {
     expect(result.complete).toBe(true);
   });
 
+  it('records the actual traversed parent chain, including after a resumed child page', async () => {
+    let checkpoint: string | null = null;
+    const service = new DriveSourceScanService({ forTenant: () => ({
+      load: async () => checkpoint,
+      savePage: async (_key: string, value: string) => { checkpoint = value; },
+    }), listPendingCandidates: async () => [] } as never);
+    const root = 'Q6uSfDwcDlBrUldWvZccoje8nXf';
+    const fetcher = { list: jest.fn(async (folder: string, page?: string) =>
+      folder === root ? { files: [{ token: 'child', type: 'folder', name: 'child' }], hasMore: false }
+        : page ? { files: [{ token: 'file', type: 'file', name: 'Manual.pdf' }], hasMore: false }
+          : { files: [], hasMore: true, nextPageToken: 'second' }) };
+    await service.scan({ tenantId: 'tenant', sourceKey: 'technical-library',
+      fetcher, maxPages: 2 });
+    const resumed = await service.scanCandidates({ tenantId: 'tenant',
+      sourceKey: 'technical-library', fetcher, maxPages: 2 });
+    expect(resumed.candidates[0]).toEqual(expect.objectContaining({
+      observedParentToken: 'child', ancestorTokens: [root, 'child'],
+    }));
+  });
+
+  it('rejects a saved root differing from the registered source root', async () => {
+    const service = new DriveSourceScanService({ forTenant: () => ({
+      load: async () => JSON.stringify({ version: 1, roots: [{ folderToken: 'other', path: 'old', depth: 0 }],
+        continuation: [], updatedAt: new Date().toISOString() }),
+      savePage: async () => undefined,
+    }) } as never);
+    const fetcher = { list: jest.fn() };
+    await expect(service.scan({ tenantId: 'tenant', sourceKey: 'technical-library',
+      fetcher })).rejects.toThrow('DRIVE_SCAN_ROOT_CHANGED');
+    expect(fetcher.list).not.toHaveBeenCalled();
+  });
+
   it('persists observed positive candidates even before full traversal completes', async () => {
     let snapshot: string | null = null;
     const store = {

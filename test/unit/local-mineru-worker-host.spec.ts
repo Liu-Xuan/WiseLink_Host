@@ -11,6 +11,7 @@ import type { DocumentParsingRepository } from '../../server/modules/document-ma
 import type { DocumentParsingHostedService } from '../../server/modules/document-management/src/hosted/nest/document-parsing-hosted.service';
 import type { MiaodaWorkItemRepository } from '../../server/modules/work-item/miaoda-work-item.repository';
 import type { DocumentStepLeaseRepository } from '../../server/modules/document-management/src/hosted/nest/document-step-lease.repository';
+import type { MiaodaHostedDocumentCatalog } from '../../server/modules/document-management/src/hosted/nest/miaoda-hosted-document-catalog';
 
 const identity = { parseRunId: 'PRUN-test', documentVersionId: 'DV-test', lease: {
   leaseOwner: 'mineru:configured-principal:WI-test:g3', leaseToken: 'lease-secret', leaseGeneration: 2,
@@ -39,7 +40,9 @@ function setup() {
   const artifactProgress: Array<{ relativePath: string; localWorkerReceipt?: typeof identity.lease }> = [];
   const loaded = { scope, run: { ...row, artifactProgress, deadlineAt: new Date('2026-09-27T00:00:00Z') } };
   const authorization = { assertAutoWorkItemQueueTransport: jest.fn().mockResolvedValue(undefined),
-    authorizeOpenClawAutoWorkItemQueue: jest.fn().mockResolvedValue(serviceScope) };
+    authorizeOpenClawAutoWorkItemQueue: jest.fn().mockResolvedValue(serviceScope),
+    authorizeDocumentWork: jest.fn().mockResolvedValue({ ...serviceScope, actorUserId: grant.actorUserId,
+      documentVersionId: grant.documentVersionId }) };
   const actors = { withActorScope: jest.fn(async (_actor: string, action: () => Promise<unknown>) => action()) };
   const repository = { listLocalWorkerCandidates: jest.fn().mockResolvedValue([row]),
     readLocalWorkerById: jest.fn().mockResolvedValue(row) };
@@ -53,12 +56,15 @@ function setup() {
     listCompletedLocalWorkerDiscovery: jest.fn().mockResolvedValue([]),
     loadCompletedLocalWorkerDiscovery: jest.fn().mockResolvedValue(grant),
     loadActiveAutoProcessingLease: jest.fn().mockResolvedValue({ authorization: grant }) };
+  const catalog = { listDocumentUploadDeliveryCandidates: jest.fn().mockResolvedValue([]),
+    readDocumentUploadDeliveryIntents: jest.fn().mockResolvedValue([]),
+    readOwnedAcquisitionVersionBinding: jest.fn().mockResolvedValue(true) };
   const worker = new LocalMineruWorkerService(authorization as unknown as CanonicalServiceScopeAuthorizationPort,
     actors as unknown as EngineeringMatterWorkingRepository, repository as unknown as DocumentParsingRepository,
     parsing as unknown as DocumentParsingHostedService, leases as unknown as DocumentStepLeaseRepository,
-    workItems as unknown as MiaodaWorkItemRepository);
+    workItems as unknown as MiaodaWorkItemRepository, catalog as unknown as MiaodaHostedDocumentCatalog);
   return { worker, controller: new LocalMineruWorkerOpenApiController(worker), authorization, actors,
-    repository, parsing, leases, loaded, serviceScope, scope, workItems, grant, row };
+    repository, parsing, leases, loaded, serviceScope, scope, workItems, catalog, grant, row };
 }
 
 function upload(headers: Record<string, string> = {}, chunks: Buffer[] = [Buffer.from('{}')]) {
@@ -146,6 +152,138 @@ describe('local MinerU Host dispatcher', () => {
     await expect(h.worker.claim({})).resolves.toEqual({ status: 'IDLE' });
     expect(h.actors.withActorScope).not.toHaveBeenCalled();
     expect(h.repository.listLocalWorkerCandidates).not.toHaveBeenCalled();
+  });
+
+  it('claims an exact committed upload without a WorkItem and rechecks its delivery through result', async () => {
+    const h = setup();
+    const acquisitionId = 'ACQ-upload';
+    const upload = { acquisitionId, actorUserId: h.grant.actorUserId,
+      documentVersionId: h.grant.documentVersionId, status: 'WAITING' };
+    const uploadScope = { tenantId: h.serviceScope.tenantId, actorUserId: h.grant.actorUserId,
+      documentVersionId: h.grant.documentVersionId, roles: [] };
+    const uploadLease = { leaseOwner: `mineru:${h.serviceScope.principalId}:upload:${acquisitionId}`,
+      leaseToken: 'upload-token', leaseGeneration: 1 };
+    h.workItems.listActiveLocalWorkerDelegations.mockResolvedValue([]);
+    h.catalog.listDocumentUploadDeliveryCandidates.mockResolvedValue([upload]);
+    h.catalog.readDocumentUploadDeliveryIntents.mockResolvedValue([{ ...upload,
+      delivery: { reading: true, translation: 'ZH_FULL' } }]);
+    h.parsing.readLocalWorkerRun.mockResolvedValue({ scope: uploadScope, run: h.loaded.run });
+    h.leases.claim.mockResolvedValue({ parseRunId: identity.parseRunId, ...uploadLease });
+    await expect(h.worker.claim({})).resolves.toMatchObject({ status: 'CLAIMED',
+      parseRunId: identity.parseRunId, lease: uploadLease });
+    expect(h.authorization.authorizeDocumentWork).toHaveBeenCalledWith({ documentVersionId: identity.documentVersionId,
+      deliveryRef: `acquisition:${acquisitionId}`, purpose: 'SOURCE' });
+    expect(h.catalog.readOwnedAcquisitionVersionBinding).toHaveBeenCalledWith({ ...uploadScope, acquisitionId });
+    expect(h.repository.listLocalWorkerCandidates).toHaveBeenCalledWith(h.serviceScope.tenantId, 50, uploadScope, true);
+    expect(h.leases.claim).toHaveBeenCalledWith(uploadScope, identity.parseRunId, uploadLease.leaseOwner, 120_000);
+    const uploadIdentity = { parseRunId: identity.parseRunId, documentVersionId: identity.documentVersionId,
+      lease: uploadLease };
+    await expect(h.worker.source(uploadIdentity)).resolves.toEqual({ bytes: Buffer.from('%PDF-test') });
+    await expect(h.worker.renew(uploadIdentity)).resolves.toMatchObject({ status: 'RENEWED' });
+    await expect(h.worker.validateUpload(uploadIdentity)).resolves.toBeUndefined();
+    await expect(h.worker.result(uploadIdentity, Buffer.from('{}'))).resolves.toMatchObject({ status: 'ACCEPTED' });
+    expect(h.authorization.authorizeDocumentWork).toHaveBeenCalledTimes(5);
+    expect(h.catalog.readOwnedAcquisitionVersionBinding).toHaveBeenCalledTimes(5);
+    expect(h.catalog.listDocumentUploadDeliveryCandidates).toHaveBeenCalledTimes(1);
+    expect(h.actors.withActorScope.mock.invocationCallOrder[0])
+      .toBeLessThan(h.catalog.readDocumentUploadDeliveryIntents.mock.invocationCallOrder[0]);
+    expect(h.parsing.acceptLocalWorkerCandidate).toHaveBeenCalledWith(identity.parseRunId, uploadScope,
+      { parseRunId: identity.parseRunId, ...uploadLease }, Buffer.from('{}'));
+  });
+
+  it('rejects an unselected, revoked or WorkItem-bound run on the upload route', async () => {
+    const h = setup();
+    const upload = { acquisitionId: 'ACQ-upload', actorUserId: h.grant.actorUserId,
+      documentVersionId: h.grant.documentVersionId, status: 'WAITING' };
+    const uploadIdentity = { ...identity, lease: { ...identity.lease,
+      leaseOwner: `mineru:${h.serviceScope.principalId}:upload:${upload.acquisitionId}` } };
+    h.workItems.listActiveLocalWorkerDelegations.mockResolvedValue([]);
+    h.catalog.listDocumentUploadDeliveryCandidates.mockResolvedValue([upload]);
+    await expect(h.worker.claim({})).resolves.toEqual({ status: 'IDLE' });
+    expect(h.leases.claim).not.toHaveBeenCalled();
+    h.catalog.readDocumentUploadDeliveryIntents.mockResolvedValue([{ ...upload,
+      delivery: { reading: false, translation: 'NONE' } }]);
+    h.catalog.readOwnedAcquisitionVersionBinding.mockResolvedValue(false);
+    await expect(h.worker.claim({})).resolves.toEqual({ status: 'IDLE' });
+    h.catalog.readOwnedAcquisitionVersionBinding.mockResolvedValue(true);
+    Object.assign(h.row.sourceBinding, { automaticWorkItem: h.scope.automaticWorkItem });
+    await expect(h.worker.claim({})).resolves.toEqual({ status: 'IDLE' });
+    Reflect.deleteProperty(h.row.sourceBinding, 'automaticWorkItem');
+    h.authorization.authorizeDocumentWork.mockRejectedValue(denied);
+    await expect(h.worker.source(uploadIdentity)).rejects.toThrow('DOCUMENT_STEP_LEASE_REJECTED');
+    await expect(h.worker.renew(uploadIdentity)).rejects.toThrow('DOCUMENT_STEP_LEASE_REJECTED');
+    await expect(h.worker.result(uploadIdentity, Buffer.from('{}'))).rejects.toThrow('DOCUMENT_STEP_LEASE_REJECTED');
+    expect(h.parsing.readLocalWorkerOriginal).not.toHaveBeenCalled();
+    expect(h.parsing.acceptLocalWorkerCandidate).not.toHaveBeenCalled();
+  });
+
+  it('does not turn a wrong delivery or actor into source authority', async () => {
+    const h = setup();
+    const upload = { acquisitionId: 'ACQ-upload', actorUserId: h.grant.actorUserId,
+      documentVersionId: h.grant.documentVersionId, status: 'WAITING' };
+    h.workItems.listActiveLocalWorkerDelegations.mockResolvedValue([]);
+    h.catalog.listDocumentUploadDeliveryCandidates.mockResolvedValue([upload]);
+    h.catalog.readDocumentUploadDeliveryIntents.mockResolvedValue([{ ...upload,
+      delivery: { reading: true, translation: 'NONE' } }]);
+    h.authorization.authorizeDocumentWork.mockResolvedValue({ ...h.serviceScope,
+      actorUserId: 'other-actor', documentVersionId: upload.documentVersionId });
+    await expect(h.worker.claim({})).resolves.toEqual({ status: 'IDLE' });
+    const lease = { ...identity.lease, leaseOwner: `mineru:${h.serviceScope.principalId}:upload:${upload.acquisitionId}` };
+    await expect(h.worker.source({ ...identity, lease })).rejects.toThrow('LOCAL_MINERU_RUN_NOT_FOUND');
+    await expect(h.worker.source({ ...identity, lease: { ...lease,
+      leaseOwner: `mineru:${h.serviceScope.principalId}:upload:ACQ-other` } }))
+      .rejects.toThrow('LOCAL_MINERU_RUN_NOT_FOUND');
+    expect(h.repository.readLocalWorkerById).not.toHaveBeenCalled();
+    expect(h.parsing.readLocalWorkerOriginal).not.toHaveBeenCalled();
+  });
+
+  it('rejects a changed original source before upload claiming or reading bytes', async () => {
+    const h = setup();
+    const upload = { acquisitionId: 'ACQ-upload', actorUserId: h.grant.actorUserId,
+      documentVersionId: h.grant.documentVersionId, status: 'WAITING' };
+    const lease = { ...identity.lease,
+      leaseOwner: `mineru:${h.serviceScope.principalId}:upload:${upload.acquisitionId}` };
+    h.workItems.listActiveLocalWorkerDelegations.mockResolvedValue([]);
+    h.catalog.listDocumentUploadDeliveryCandidates.mockResolvedValue([upload]);
+    h.catalog.readDocumentUploadDeliveryIntents.mockResolvedValue([{ ...upload,
+      delivery: { reading: true, translation: 'NONE' } }]);
+    h.parsing.readLocalWorkerRun.mockRejectedValue(new Error('DOCUMENT_PARSE_SOURCE_CHANGED'));
+    await expect(h.worker.claim({})).rejects.toThrow('DOCUMENT_PARSE_SOURCE_CHANGED');
+    await expect(h.worker.source({ ...identity, lease })).rejects.toThrow('DOCUMENT_PARSE_SOURCE_CHANGED');
+    expect(h.leases.claim).not.toHaveBeenCalled();
+    expect(h.parsing.readLocalWorkerOriginal).not.toHaveBeenCalled();
+  });
+
+  it('skips only the known unsupported multi-actor upload and claims a later authorized delivery', async () => {
+    const h = setup();
+    const blocked = { acquisitionId: 'ACQ-multiple', actorUserId: h.grant.actorUserId,
+      documentVersionId: h.grant.documentVersionId, status: 'WAITING' };
+    const allowed = { ...blocked, acquisitionId: 'ACQ-allowed' };
+    h.workItems.listActiveLocalWorkerDelegations.mockResolvedValue([]);
+    h.catalog.listDocumentUploadDeliveryCandidates.mockResolvedValue([blocked, allowed]);
+    h.catalog.readDocumentUploadDeliveryIntents.mockResolvedValue([{ ...allowed,
+      delivery: { reading: true, translation: 'NONE' } }]);
+    h.authorization.authorizeDocumentWork.mockImplementation(async ({ deliveryRef }: { deliveryRef: string }) => {
+      if (deliveryRef === 'acquisition:ACQ-multiple') throw Object.assign(
+        new Error('DOCUMENT_DELIVERY_MULTI_ACTOR_UNSUPPORTED'), { statusCode: 409 });
+      return { ...h.serviceScope, actorUserId: h.grant.actorUserId,
+        documentVersionId: h.grant.documentVersionId };
+    });
+    const scope = { tenantId: h.serviceScope.tenantId, actorUserId: h.grant.actorUserId,
+      documentVersionId: h.grant.documentVersionId, roles: [] };
+    h.parsing.readLocalWorkerRun.mockResolvedValue({ scope, run: h.loaded.run });
+    h.leases.claim.mockResolvedValue({ parseRunId: identity.parseRunId, leaseToken: 'allowed-token',
+      leaseOwner: `mineru:${h.serviceScope.principalId}:upload:${allowed.acquisitionId}`, leaseGeneration: 1 });
+    await expect(h.worker.claim({})).resolves.toMatchObject({ status: 'CLAIMED',
+      lease: { leaseOwner: `mineru:${h.serviceScope.principalId}:upload:${allowed.acquisitionId}` } });
+    expect(h.leases.claim).toHaveBeenCalledTimes(1);
+    h.authorization.authorizeDocumentWork.mockRejectedValueOnce(Object.assign(new Error('OTHER_409'), { statusCode: 409 }));
+    await expect(h.worker.claim({})).rejects.toThrow('OTHER_409');
+    h.authorization.authorizeDocumentWork.mockRejectedValueOnce(
+      new Error('DOCUMENT_DELIVERY_MULTI_ACTOR_UNSUPPORTED'));
+    await expect(h.worker.source({ ...identity, lease: {
+      ...identity.lease, leaseOwner: `mineru:${h.serviceScope.principalId}:upload:${blocked.acquisitionId}` } }))
+      .rejects.toThrow('DOCUMENT_DELIVERY_MULTI_ACTOR_UNSUPPORTED');
   });
 
   it('claims and reads a browser-admitted run using a completed grant only for actor discovery', async () => {

@@ -11,6 +11,7 @@ import { EngineeringMatterWorkingRepository } from './engineering-matter-working
 import { DocumentParsingRepository, documentParseError, documentLocalWorkerReceipt, type DocumentParseRow, type DocumentParseScope } from '../document-management/src/hosted/nest/document-parsing.repository';
 import { DocumentParsingHostedService } from '../document-management/src/hosted/nest/document-parsing-hosted.service';
 import { DocumentStepLeaseRepository, type DocumentStepFence } from '../document-management/src/hosted/nest/document-step-lease.repository';
+import { MiaodaHostedDocumentCatalog } from '../document-management/src/hosted/nest/miaoda-hosted-document-catalog';
 
 /** Gateway authenticates transport; Host resolves actor and source from a durable delegated run. */
 @Injectable()
@@ -25,6 +26,7 @@ export class LocalMineruWorkerService {
     private readonly parsing: DocumentParsingHostedService,
     private readonly leases: DocumentStepLeaseRepository,
     private readonly workItems: MiaodaWorkItemRepository,
+    private readonly documentCatalog: MiaodaHostedDocumentCatalog,
   ) {}
 
   async claim(input: unknown): Promise<LocalMineruWorkerClaimResult> {
@@ -106,6 +108,52 @@ export class LocalMineruWorkerService {
       if (completed.length < 50) break;
       beforeWorkItemId = completed.at(-1)!.workItemId;
       if (page === 99) throw documentParseError('LOCAL_MINERU_BROWSER_DISCOVERY_LIMIT', 503);
+    }
+    // An upload delivery has no WorkItem. Its committed acquisition supplies
+    // the durable actor directory; Host reauthorizes the exact delivery and
+    // source before a parse run can be claimed.
+    let afterAcquisitionId: string | undefined;
+    for (let page = 0; page < 100; page++) {
+      const uploads = await this.documentCatalog.listDocumentUploadDeliveryCandidates({
+        tenantId: service.tenantId, afterAcquisitionId, limit: 50 });
+      for (const upload of uploads) {
+        try {
+          const scope = await this.uploadScope(service, upload);
+          const claimed = await this.actors.withActorScope(scope.actorUserId, async () => {
+            if (!await this.uploadBinding(scope, upload.acquisitionId)) return null;
+            const candidates = await this.repository.listLocalWorkerCandidates(service.tenantId, 50, scope, true);
+            for (const row of candidates) {
+              if (!matchesUploadRun(scope, row)) continue;
+              const loaded = await this.parsing.readLocalWorkerRun(row.parseRunId, scope);
+              if (!matchesUploadRun(scope, loaded.run)) continue;
+              this.assertPrincipal(service, loaded.scope);
+              const fence = await this.leases.claim(loaded.scope, row.parseRunId,
+                uploadOwner(service, upload.acquisitionId), 120_000);
+              if (!fence) continue;
+              return { status: 'CLAIMED' as const, parseRunId: row.parseRunId,
+                documentVersionId: row.documentVersionId, sourceSha256: loaded.run.sourceBinding.pdfSha256,
+                sourceByteLength: loaded.run.sourceBinding.byteLength,
+                settings: { ...loaded.run.sourceBinding.parserInput!.settings! },
+                deadlineAt: loaded.run.deadlineAt.toISOString(),
+                lease: { leaseOwner: fence.leaseOwner, leaseToken: fence.leaseToken,
+                  leaseGeneration: fence.leaseGeneration } };
+            }
+            return null;
+          });
+          if (claimed) return claimed;
+        } catch (error) {
+          const status = error && typeof error === 'object' && 'statusCode' in error ? error.statusCode : null;
+          if (error instanceof Error && error.message === 'DOCUMENT_DELIVERY_MULTI_ACTOR_UNSUPPORTED') {
+            this.logger.warn(`Local MinerU upload delivery ${upload.acquisitionId} has multiple authorized actors; claim remains blocked.`);
+            continue;
+          }
+          if (status !== 403 && status !== 404) throw error;
+          this.logger.warn(`Local MinerU skipped an inaccessible upload delivery ${upload.acquisitionId}.`);
+        }
+      }
+      if (uploads.length < 50) break;
+      afterAcquisitionId = uploads.at(-1)!.acquisitionId;
+      if (page === 99) throw documentParseError('LOCAL_MINERU_UPLOAD_DISCOVERY_LIMIT', 503);
     }
     return { status: 'IDLE' };
   }
@@ -211,7 +259,43 @@ export class LocalMineruWorkerService {
         if (page === 99) throw documentParseError('LOCAL_MINERU_BROWSER_DISCOVERY_LIMIT', 503);
       }
     }
+    const acquisitionId = uploadAcquisitionId(service, identity.lease.leaseOwner);
+    if (acquisitionId) {
+      const scope = await this.uploadScope(service, { acquisitionId,
+        documentVersionId: identity.documentVersionId });
+      const result = await this.actors.withActorScope(scope.actorUserId, async () => {
+        if (!await this.uploadBinding(scope, acquisitionId)) return null;
+        const row = await this.repository.readLocalWorkerById(service.tenantId, identity.parseRunId);
+        if (!row || !matchesUploadRun(scope, row)) return null;
+        const loaded = await this.parsing.readLocalWorkerRun(row.parseRunId, scope);
+        if (!matchesUploadRun(scope, loaded.run)) return null;
+        this.assertPrincipal(service, loaded.scope);
+        return { value: await action(identity, loaded) };
+      });
+      if (result) return result.value;
+    }
     throw documentParseError('LOCAL_MINERU_RUN_NOT_FOUND', 404);
+  }
+
+  private async uploadScope(service: CanonicalVerifiedAutoWorkItemQueueScope, upload: {
+    acquisitionId: string; documentVersionId: string; actorUserId?: string }) {
+    if (!this.authorization.authorizeDocumentWork) throw documentParseError('LOCAL_MINERU_UPLOAD_SCOPE_UNAVAILABLE', 503);
+    const authorized = await this.authorization.authorizeDocumentWork({
+      documentVersionId: upload.documentVersionId, deliveryRef: `acquisition:${upload.acquisitionId}`,
+      purpose: 'SOURCE' });
+    if (authorized.tenantId !== service.tenantId || authorized.principalId !== service.principalId ||
+        authorized.documentVersionId !== upload.documentVersionId ||
+        (upload.actorUserId && authorized.actorUserId !== upload.actorUserId))
+      throw documentParseError('LOCAL_MINERU_UPLOAD_SCOPE_MISMATCH', 403);
+    return { tenantId: service.tenantId, actorUserId: authorized.actorUserId,
+      documentVersionId: upload.documentVersionId, roles: [] as string[] };
+  }
+
+  private async uploadBinding(scope: DocumentParseScope, acquisitionId: string): Promise<boolean> {
+    const intent = (await this.documentCatalog.readDocumentUploadDeliveryIntents(scope))
+      .some(item => item.acquisitionId === acquisitionId && item.actorUserId === scope.actorUserId &&
+        item.documentVersionId === scope.documentVersionId);
+    return intent && await this.documentCatalog.readOwnedAcquisitionVersionBinding({ ...scope, acquisitionId });
   }
 
   private async delegatedScope(service: CanonicalVerifiedAutoWorkItemQueueScope, workItemId: string, actorUserId: string, documentVersionId: string) {
@@ -269,6 +353,25 @@ function browserOwner(service: CanonicalVerifiedAutoWorkItemQueueScope, parseRun
   if (!/^PRUN-[A-Za-z0-9-]{1,90}$/u.test(parseRunId) || !/^[A-Za-z0-9:_-]{1,160}$/u.test(value))
     throw documentParseError('LOCAL_MINERU_LEASE_OWNER_INVALID', 503);
   return value;
+}
+function uploadOwner(service: CanonicalVerifiedAutoWorkItemQueueScope, acquisitionId: string): string {
+  const value = `mineru:${service.principalId}:upload:${acquisitionId}`;
+  if (!/^[A-Za-z0-9_-]{1,96}$/u.test(acquisitionId) || !/^[A-Za-z0-9:_-]{1,160}$/u.test(value))
+    throw documentParseError('LOCAL_MINERU_LEASE_OWNER_INVALID', 503);
+  return value;
+}
+function uploadAcquisitionId(service: CanonicalVerifiedAutoWorkItemQueueScope, leaseOwner: string): string | null {
+  const prefix = `mineru:${service.principalId}:upload:`;
+  if (!leaseOwner.startsWith(prefix)) return null;
+  const acquisitionId = leaseOwner.slice(prefix.length);
+  return /^[A-Za-z0-9_-]{1,96}$/u.test(acquisitionId) ? acquisitionId : null;
+}
+function matchesUploadRun(scope: DocumentParseScope, run: DocumentParseRow): boolean {
+  const binding = run.sourceBinding;
+  return !binding.automaticWorkItem && run.tenantId === scope.tenantId &&
+    run.actorUserId === scope.actorUserId && run.documentVersionId === scope.documentVersionId &&
+    binding.documentVersionId === scope.documentVersionId && binding.parserInput?.mode === 'LOCAL_MINERU_WORKER' &&
+    binding.parserInput.settings?.localMineruFallbackEnabled === true;
 }
 function fenceOf(input: LocalMineruWorkerIdentity): DocumentStepFence { return { parseRunId: input.parseRunId, ...input.lease }; }
 function isRecord(input: unknown): input is Record<string, unknown> {

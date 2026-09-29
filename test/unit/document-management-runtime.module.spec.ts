@@ -48,6 +48,8 @@ import { DOCUMENT_MANAGEMENT_INGEST_AUTHORIZER } from '../../server/modules/docu
 import { DocumentManagementHostedService } from '../../server/modules/document-management/src/hosted/nest/document-management-hosted.service';
 import { OrdinaryDocumentManagementAuthorizer } from '../../server/modules/document-management-runtime/ordinary-document-management-authorizer';
 import { DocumentParsingRepository } from '../../server/modules/document-management/src/hosted/nest/document-parsing.repository';
+import { DriveSourceAcquisitionService } from '../../server/modules/document-management/src/hosted/nest/drive-source-acquisition.service';
+import { EngineeringMatterWorkingRepository } from '../../server/modules/canonical-host/engineering-matter-working.repository';
 
 const fakeFileService = {
   from: jest.fn(),
@@ -76,6 +78,8 @@ describe('DocumentManagementRuntimeModule composition', () => {
     expect(moduleRef.get(DocumentManagementHostedService)).toBeInstanceOf(
       DocumentManagementHostedService,
     );
+    expect(moduleRef.get(DriveSourceAcquisitionService)).toBeInstanceOf(DriveSourceAcquisitionService);
+    expect(moduleRef.get(EngineeringMatterWorkingRepository)).toBeInstanceOf(EngineeringMatterWorkingRepository);
     expect(moduleRef.get(DOCUMENT_MANAGEMENT_INGEST_AUTHORIZER)).toBeInstanceOf(
       OrdinaryDocumentManagementAuthorizer,
     );

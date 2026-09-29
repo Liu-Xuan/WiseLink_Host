@@ -63,7 +63,9 @@ export class DriveScanCheckpointRepository {
       for (const change of classifyDriveSourceCandidates(prior, candidates)) {
         const { change: kind, ...candidate } = change;
         observed.set(key(candidate), candidate);
-        if (kind !== 'UNCHANGED') intents.set(key(candidate), candidate);
+        // Refresh a pending legacy observation with a real list-derived chain.
+        if (kind !== 'UNCHANGED' || (intents.has(key(candidate)) &&
+          candidate.ancestorTokens?.length)) intents.set(key(candidate), candidate);
       }
       await tx.update(wiselinkDriveScanCheckpoint).set({ checkpointJson: checkpoint,
         candidateSnapshotJson: encodeDriveSourceCandidates([...observed.values()]),
@@ -80,6 +82,55 @@ export class DriveScanCheckpointRepository {
         .where(and(eq(wiselinkDriveScanCheckpoint.tenantId, tenantId), eq(wiselinkDriveScanCheckpoint.sourceKey, sourceKey)))
         .limit(1);
       return row?.candidates ?? null;
+    });
+  }
+
+  /** Remove only the exact observed pending row after durable acquisition and intake. */
+  async acknowledgeCandidate(tenantId: string, sourceKey: string,
+    observed: DriveSourceCandidate): Promise<boolean> {
+    if (!tenantId || !sourceKey || observed.sourceKey !== sourceKey)
+      throw new Error('DRIVE_SCAN_SCOPE_REQUIRED');
+    return this.db.transaction(async tx => {
+      await tx.execute(sql`SELECT set_config('app.tenant_id',${tenantId},true)`);
+      const [row] = await tx.select().from(wiselinkDriveScanCheckpoint)
+        .where(and(eq(wiselinkDriveScanCheckpoint.tenantId, tenantId),
+          eq(wiselinkDriveScanCheckpoint.sourceKey, sourceKey))).for('update');
+      if (!row) return false;
+      const pending = decodeDriveSourceCandidates(row.pendingCandidatesJson);
+      const index = pending.findIndex(item => item.sourceKey === sourceKey &&
+        item.providerObjectId === observed.providerObjectId);
+      if (index < 0 || encodeDriveSourceCandidates([pending[index]!]) !==
+        encodeDriveSourceCandidates([observed])) return false;
+      pending.splice(index, 1);
+      await tx.update(wiselinkDriveScanCheckpoint).set({
+        pendingCandidatesJson: encodeDriveSourceCandidates(pending),
+      }).where(eq(wiselinkDriveScanCheckpoint.id, row.id));
+      return true;
+    });
+  }
+
+  /** Move one failed exact observation behind its peers for bounded fair retry. */
+  async deferCandidate(tenantId: string, sourceKey: string,
+    observed: DriveSourceCandidate): Promise<boolean> {
+    if (!tenantId || !sourceKey || observed.sourceKey !== sourceKey)
+      throw new Error('DRIVE_SCAN_SCOPE_REQUIRED');
+    return this.db.transaction(async tx => {
+      await tx.execute(sql`SELECT set_config('app.tenant_id',${tenantId},true)`);
+      const [row] = await tx.select().from(wiselinkDriveScanCheckpoint)
+        .where(and(eq(wiselinkDriveScanCheckpoint.tenantId, tenantId),
+          eq(wiselinkDriveScanCheckpoint.sourceKey, sourceKey))).for('update');
+      if (!row) return false;
+      const pending = decodeDriveSourceCandidates(row.pendingCandidatesJson);
+      const index = pending.findIndex(item => item.sourceKey === sourceKey &&
+        item.providerObjectId === observed.providerObjectId);
+      if (index < 0 || encodeDriveSourceCandidates([pending[index]!]) !==
+        encodeDriveSourceCandidates([observed])) return false;
+      if (index === pending.length - 1) return true;
+      pending.push(...pending.splice(index, 1));
+      await tx.update(wiselinkDriveScanCheckpoint).set({
+        pendingCandidatesJson: encodeDriveSourceCandidates(pending),
+      }).where(eq(wiselinkDriveScanCheckpoint.id, row.id));
+      return true;
     });
   }
 

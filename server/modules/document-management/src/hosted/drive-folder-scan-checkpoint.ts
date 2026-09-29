@@ -54,7 +54,10 @@ function normalizeState(state: DriveFolderScanState): DriveFolderScanState {
     throw new Error('DRIVE_SCAN_CHECKPOINT_INVALID');
   if (state.entryOffset !== undefined && (!Number.isSafeInteger(state.entryOffset) || state.entryOffset < 0))
     throw new Error('DRIVE_SCAN_CHECKPOINT_INVALID');
-  return { folderToken: state.folderToken, path: state.path, depth: state.depth, ...(state.pageToken ? { pageToken: state.pageToken } : {}), ...(state.entryOffset ? { entryOffset: state.entryOffset } : {}) };
+  const ancestorTokens = readAncestorTokens(state.ancestorTokens, state.folderToken);
+  return { folderToken: state.folderToken, path: state.path, depth: state.depth,
+    ...(ancestorTokens ? { ancestorTokens } : {}),
+    ...(state.pageToken ? { pageToken: state.pageToken } : {}), ...(state.entryOffset ? { entryOffset: state.entryOffset } : {}) };
 }
 
 function readState(value: unknown): DriveFolderScanState {
@@ -66,7 +69,18 @@ function readState(value: unknown): DriveFolderScanState {
     throw new Error('DRIVE_SCAN_CHECKPOINT_INVALID');
   const pageToken = typeof value.pageToken === 'string' && value.pageToken ? value.pageToken : undefined;
   const entryOffset = Number(value.entryOffset);
-  return { folderToken: value.folderToken, path: value.path, depth: Number(value.depth), ...(pageToken ? { pageToken } : {}), ...(entryOffset ? { entryOffset } : {}) };
+  const ancestorTokens = readAncestorTokens(value.ancestorTokens, value.folderToken);
+  return { folderToken: value.folderToken, path: value.path, depth: Number(value.depth),
+    ...(ancestorTokens ? { ancestorTokens } : {}), ...(pageToken ? { pageToken } : {}), ...(entryOffset ? { entryOffset } : {}) };
+}
+
+function readAncestorTokens(value: unknown, folderToken: string): string[] | undefined {
+  if (value === undefined) return undefined; // legacy frontier, revalidated before intake
+  if (!Array.isArray(value) || value.length === 0 || value.length > 64 ||
+    value.some(token => typeof token !== 'string' || !token) ||
+    value[value.length - 1] !== folderToken || new Set(value).size !== value.length)
+    throw new Error('DRIVE_SCAN_CHECKPOINT_INVALID');
+  return [...value] as string[];
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
