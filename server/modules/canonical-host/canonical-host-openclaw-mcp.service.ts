@@ -296,7 +296,7 @@ export class CanonicalHostOpenClawMcpService {
 
     if (this.documentTranslation) server.registerTool('document_translation', {
       title: '推进独立文档中文阅读',
-      description: '以确切DV/parseRun为主体使用Hosted M3、现有Translation V2和ActionAttempt租约；历史官方插件失败只可依确切记录受控接续，不创建WorkItem。',
+      description: '以确切DV/parseRun为主体使用Hosted M3、现有Translation V2和ActionAttempt租约；已保存输出的已知失败使用 RESUME_KNOWN_FAILURE 继续，不创建WorkItem。',
       inputSchema: z.discriminatedUnion('action', [
         z.strictObject({ action: z.literal('START'), documentVersionId: z.string().min(1).max(96),
           parseRunId: z.string().min(1).max(96), requestId: z.string().min(1).max(96),
@@ -313,6 +313,9 @@ export class CanonicalHostOpenClawMcpService {
           parseRunId: z.string().min(1).max(96), attemptRef: z.string().min(1).max(128),
           deliveryRef: z.string().regex(/^(?:work-item:WI(?:-[A-Za-z0-9_-]{1,93})?|acquisition:[A-Za-z0-9_-]{1,96})$/u) }),
         z.strictObject({ action: z.literal('RECOVER_KNOWN_FAILURE'), documentVersionId: z.string().min(1).max(96),
+          parseRunId: z.string().min(1).max(96), attemptRef: z.string().min(1).max(128),
+          deliveryRef: z.string().regex(/^(?:work-item:WI(?:-[A-Za-z0-9_-]{1,93})?|acquisition:[A-Za-z0-9_-]{1,96})$/u) }),
+        z.strictObject({ action: z.literal('RESUME_KNOWN_FAILURE'), documentVersionId: z.string().min(1).max(96),
           parseRunId: z.string().min(1).max(96), attemptRef: z.string().min(1).max(128),
           deliveryRef: z.string().regex(/^(?:work-item:WI(?:-[A-Za-z0-9_-]{1,93})?|acquisition:[A-Za-z0-9_-]{1,96})$/u) }),
         z.strictObject({ action: z.literal('CLAIM'), documentVersionId: z.string().min(1).max(96), parseRunId: z.string().min(1).max(96),
