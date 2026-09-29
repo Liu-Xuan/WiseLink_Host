@@ -1,8 +1,9 @@
-import { buildNaturalTranslationProjection } from './translation-natural-projection.mjs';
+import {
+  buildNaturalTranslationProjection, renderNaturalSourceDocument,
+} from './translation-natural-projection.mjs';
 
-/** Lossless model-facing aliases. Host IDs, source bindings and execution
- * dependencies stay in the caller; only readable source and layout enter the
- * short native session. This does not choose, summarize or truncate context. */
+/** Host IDs and source bindings stay private; the model sees one readable
+ * document plus exact local aliases for target anchors and candidates. */
 export function buildTranslationModelView(batch) {
   if (batch.purpose === 'GENERATE') return buildNaturalTranslationProjection(batch);
   const blockAliases = new Map(); const anchorAliases = new Map(); const unitAliases = new Map();
@@ -33,39 +34,100 @@ export function buildTranslationModelView(batch) {
       typeof item === 'string' && /(?:^unitId$|UnitId$)/u.test(key) ? unitId(item)
         : Array.isArray(item) && /UnitIds$/u.test(key) ? item.map(unitId) : layout(item)]));
   };
+  const assigned = allBlocks.flatMap((entry) => entry.anchorIds);
+  if (assigned.length !== allAnchors.length || new Set(assigned).size !== assigned.length)
+    throw new Error('TRANSLATION_NATURAL_SOURCE_INVALID');
+  const sourceCoverage = batch.sourcePlanAnchorCount === allAnchors.length &&
+    batch.sourcePlanBlockCount === allBlocks.length ? 'FULL' : 'PARTIAL_REGISTERED';
+  const renderedIds = [];
+  const { document, sections } = renderNaturalSourceDocument(
+    allBlocks, allAnchors, (id) => {
+      renderedIds.push(id);
+      return `⟦WL-ANCHOR:${anchorId(id)}⟧ `;
+    },
+  );
+  if (renderedIds.length !== allAnchors.length ||
+      new Set(renderedIds).size !== allAnchors.length)
+    throw new Error('TRANSLATION_MODEL_SOURCE_COVERAGE_INVALID');
   const block = (value) => ({
-    blockId: blockId(value.blockId), kind: value.kind, anchorIds: value.anchorIds.map(anchorId),
-    contextBlockIds: (value.contextBlockIds ?? []).map(blockId),
-    requiredTogetherBlockIds: (value.requiredTogetherBlockIds ?? []).map(blockId),
-    sourceIssues: (value.sourceIssues ?? []).map(issue),
-    sourceStructure: (value.sourceStructure ?? []).map((unit) => {
+    blockId: blockId(value.blockId), section: sections.get(value.blockId),
+    kind: value.kind, anchorIds: value.anchorIds.map(anchorId),
+  });
+  const sectionMap = [...allBlocks].sort((a, b) => a.order - b.order)
+    .map((value) => ({ blockId: blockId(value.blockId),
+      section: sections.get(value.blockId), anchorIds: value.anchorIds.map(anchorId) }));
+  const anchorsByUnit = new Map();
+  for (const anchor of allAnchors) {
+    const entries = anchorsByUnit.get(anchor.sourceUnitId) ?? [];
+    entries.push(anchor);
+    anchorsByUnit.set(anchor.sourceUnitId, entries);
+  }
+  // Source text is emitted only in document. Check each pointer against the
+  // actual payload, then retain only structure that the natural rendering did
+  // not express (for example warning level or table continuation metadata).
+  const metadata = [];
+  for (const value of allBlocks) {
+    const units = [];
+    for (const unit of value.sourceStructure ?? []) {
       const payload = structuredClone(unit.payload);
-      for (const anchor of allAnchors.filter((entry) => entry.sourceUnitId === unit.sourceUnitId)) {
-        // The exact source text remains in anchors. Replace only its verified
-        // duplicate at the actual JSON pointer, preserving the complete table,
-        // list, warning, span, footnote and figure structure around it.
-        const path = anchor.payloadPath.split('/').slice(1).map((part) => part.replaceAll('~1', '/').replaceAll('~0', '~'));
+      for (const anchor of anchorsByUnit.get(unit.sourceUnitId) ?? []) {
+        if (!anchor.payloadPath) continue;
+        const path = anchor.payloadPath.split('/').slice(1)
+          .map((part) => part.replaceAll('~1', '/').replaceAll('~0', '~'));
         let parent = { payload };
         for (const key of path.slice(0, -1)) {
-          if (!parent || typeof parent !== 'object' || !Object.hasOwn(parent, key)) throw new Error('TRANSLATION_MODEL_LAYOUT_BINDING_INVALID');
+          if (!parent || typeof parent !== 'object' || !Object.hasOwn(parent, key))
+            throw new Error('TRANSLATION_MODEL_LAYOUT_BINDING_INVALID');
           parent = parent[key];
         }
         const key = path.at(-1);
-        if (!key || !parent || typeof parent !== 'object' || !Object.hasOwn(parent, key) || parent[key] !== anchor.sourceText)
+        if (!key || !parent || typeof parent !== 'object' || !Object.hasOwn(parent, key) ||
+            parent[key] !== anchor.sourceText)
           throw new Error('TRANSLATION_MODEL_LAYOUT_BINDING_INVALID');
-        Object.defineProperty(parent, key, { value: { sourceAnchorId: anchorId(anchor.anchorId) }, enumerable: true, configurable: true, writable: true });
+        delete parent[key];
       }
-      return { sourceUnitId: unitId(unit.sourceUnitId), kind: unit.kind, payload: layout(payload) };
-    }),
-  });
-  const anchor = (value) => ({ anchorId: anchorId(value.anchorId),
+      const prune = (item, path = '') => {
+        if (Array.isArray(item)) {
+          const children = item.map((child, index) => prune(child, `${path}/${index}`));
+          return children.every((child) => child === undefined) ? undefined
+            : children.map((child) => child ?? null);
+        }
+        if (!item || typeof item !== 'object') return item;
+        const fields = Object.entries(item).flatMap(([key, child]) => {
+          if (['sourceRefId', 'sourceRefIds', 'sourceSegmentIds'].includes(key)) return [];
+          // These fields are already represented by the rendered table.
+          if (unit.kind === 'table' && (
+            (path === '' && key === 'layout') ||
+            (/\/cells\/\d+$/u.test(path) && ['rowSpan', 'colSpan', 'isHeader'].includes(key)) ||
+            (/\/rowGroups\/\d+$/u.test(path) && key === 'kind')
+          )) return [];
+          const next = prune(child, `${path}/${key}`);
+          return next === undefined ? [] : [[key, next]];
+        });
+        return fields.length ? Object.fromEntries(fields) : undefined;
+      };
+      const residual = prune(payload);
+      if (residual !== undefined)
+        units.push({ sourceUnitId: unitId(unit.sourceUnitId), kind: unit.kind,
+          payload: layout(residual) });
+    }
+    if (units.length || (value.contextBlockIds ?? []).length ||
+        (value.requiredTogetherBlockIds ?? []).length || (value.sourceIssues ?? []).length)
+      metadata.push({ blockId: blockId(value.blockId),
+        ...(units.length ? { units } : {}),
+        ...((value.contextBlockIds ?? []).length ? { contextBlockIds: value.contextBlockIds.map(blockId) } : {}),
+        ...((value.requiredTogetherBlockIds ?? []).length ? { requiredTogetherBlockIds: value.requiredTogetherBlockIds.map(blockId) } : {}),
+        ...((value.sourceIssues ?? []).length ? { sourceIssues: value.sourceIssues.map(issue) } : {}),
+      });
+  }
+  const targetAnchor = (value) => ({ anchorId: anchorId(value.anchorId),
     ...(value.sourceUnitId ? { sourceUnitId: unitId(value.sourceUnitId) } : {}),
-    ...(value.payloadPath ? { payloadPath: value.payloadPath } : {}), sourceText: value.sourceText });
+    ...(value.payloadPath ? { payloadPath: value.payloadPath } : {}) });
   const candidate = (value) => value ? { blockId: blockId(value.blockId),
     elements: value.elements.map((element) => ({ kind: element.kind, translatedText: element.translatedText, anchorIds: element.anchorIds.map(anchorId) })) } : null;
   const input = {
     schemaVersion: batch.schemaVersion, purpose: batch.purpose, sourceLocale: batch.sourceLocale, targetLocale: batch.targetLocale,
-    blocks: batch.blocks.map(block), anchors: batch.anchors.map(anchor),
+    sourceCoverage, document, blocks: batch.blocks.map(block), targetAnchors: batch.anchors.map(targetAnchor),
     documentContext: {
       title: context.title,
       outline: (context.outline ?? []).map((entry) => ({ blockId: blockId(entry.blockId), anchorIds: entry.anchorIds.map(anchorId), level: entry.level })),
@@ -73,7 +135,8 @@ export function buildTranslationModelView(batch) {
       conditionAnchorIds: (context.conditionAnchorIds ?? []).map(anchorId),
       definitionAnchorIds: (context.definitionAnchorIds ?? []).map(anchorId),
       references: structuredClone(context.references ?? []),
-      blocks: (context.blocks ?? []).map(block), anchors: (context.anchors ?? []).map(anchor), conditionsAreSourceQuotations: true,
+      sectionMap,
+      ...(metadata.length ? { metadata } : {}), conditionsAreSourceQuotations: true,
     },
     terminology: structuredClone(batch.terminology), previousCandidate: candidate(batch.previousCandidate),
     ...(batch.checkCandidates ? { previousCandidates: batch.checkCandidates.map((entry) => candidate(entry.candidate)) } : {}),
@@ -81,6 +144,7 @@ export function buildTranslationModelView(batch) {
   };
   const originalBlocks = new Map([...blockAliases].map(([original, short]) => [short, original]));
   const originalAnchors = new Map([...anchorAliases].map(([original, short]) => [short, original]));
+  const sourceByAnchor = new Map(allAnchors.map((value) => [value.anchorId, value.sourceText]));
   const original = (map, value) => {
     if (!map.has(value)) throw new Error('TRANSLATION_OUTPUT_REFERENCE_INVALID');
     return map.get(value);
@@ -93,6 +157,13 @@ export function buildTranslationModelView(batch) {
     if (batch.purpose === 'CHECK') return review(output);
     if (batch.purpose === 'CHECK_BATCH') return { ...output, checks: output.checks.map(review) };
     return { ...output, blocks: output.blocks.map((entry) => ({ ...entry, blockId: original(originalBlocks, entry.blockId),
-      elements: entry.elements.map((element) => ({ ...element, anchorIds: element.anchorIds.map((id) => original(originalAnchors, id)) })) })) };
+      elements: entry.elements.map((element) => {
+        const restoredIds = element.anchorIds.map((id) => original(originalAnchors, id));
+        for (const match of element.translatedText.matchAll(/⟦WL-ANCHOR:A\d+⟧/gu)) {
+          if (!restoredIds.some((id) => sourceByAnchor.get(id)?.includes(match[0])))
+            throw new Error('TRANSLATION_OUTPUT_MARKER_LEAK');
+        }
+        return { ...element, anchorIds: restoredIds };
+      }) })) };
   } };
 }

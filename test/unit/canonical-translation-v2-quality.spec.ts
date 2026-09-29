@@ -304,6 +304,60 @@ describe('translation v2 quality and actual reading coverage', () => {
       targetBlockRevisionId: 'TB-0',
     });
   });
+  it('budgets long translated candidates and keeps an oversized check schedulable', () => {
+    const sourcePlan = plan(Array.from({ length: 4 }, () => 'Inspect the component.'), true);
+    const work = workspace(sourcePlan);
+    const revisions: TranslationBlockRevisionV2[] = sourcePlan.blocks.map((block, index) => {
+      const value: TranslationBlockCandidateV2 = {
+        blockId: block.blockId,
+        elements: [{ elementId: `e${index}`, kind: 'paragraph',
+          translatedText: '检查组件。'.repeat(1_300), anchorIds: block.anchorIds }],
+      };
+      return { ...revision(sourcePlan, value), blockRevisionId: `TB-${index}`,
+        check: { ...checkTranslationBlockV2({ plan: sourcePlan, candidate: value }),
+          issues: [], semanticCheck: 'PENDING' as const } };
+    });
+    const reading = buildTranslationWorkspaceReadingV2(work, revisions);
+    const first = nextTranslationWorkV2(work, revisions, reading, 1_000_000,
+      { batchSemanticChecks: true });
+    expect(first).toMatchObject({ kind: 'CHECK_BATCH',
+      blockIds: sourcePlan.blocks.slice(0, 2).map(block => block.blockId) });
+    revisions[0].candidate.elements[0].translatedText = '检查组件。'.repeat(3_500);
+    const oversized = nextTranslationWorkV2(work, revisions, reading, 1_000_000,
+      { batchSemanticChecks: true });
+    expect(oversized).toEqual({ kind: 'CHECK',
+      blockIds: [sourcePlan.blocks[0].blockId], targetBlockRevisionId: 'TB-0' });
+    revisions[0].check = { ...revisions[0].check!, semanticCheck: 'COMPLETED' };
+    revisions[0].selectedForReading = true;
+    const following = nextTranslationWorkV2(work, revisions,
+      buildTranslationWorkspaceReadingV2(work, revisions), 1_000_000,
+      { batchSemanticChecks: true });
+    expect(following).toMatchObject({ kind: 'CHECK_BATCH',
+      blockIds: sourcePlan.blocks.slice(1, 3).map(block => block.blockId) });
+  });
+  it('counts table structure and cell review work even with little source text', () => {
+    const sourcePlan = plan(Array.from({ length: 3 }, () => 'A B C'), true);
+    sourcePlan.blocks[0].kind = 'table';
+    sourcePlan.blocks[0].sourceStructure[0].payload = {
+      cells: Array.from({ length: 600 }, (_, index) => ({ row: index, text: `Cell ${index}` })),
+    };
+    const work = workspace(sourcePlan);
+    const revisions = sourcePlan.blocks.map((block, index) => {
+      const value: TranslationBlockCandidateV2 = {
+        blockId: block.blockId,
+        elements: [{ elementId: `e${index}`, kind: 'paragraph',
+          translatedText: '已检查。', anchorIds: block.anchorIds }],
+      };
+      return { ...revision(sourcePlan, value), blockRevisionId: `TB-${index}`,
+        check: { ...checkTranslationBlockV2({ plan: sourcePlan, candidate: value }),
+          issues: [], semanticCheck: 'PENDING' as const } };
+    });
+    const reading = buildTranslationWorkspaceReadingV2(work, revisions);
+    const first = nextTranslationWorkV2(work, revisions, reading, 1_000_000,
+      { batchSemanticChecks: true });
+    expect(first).toEqual({ kind: 'CHECK',
+      blockIds: [sourcePlan.blocks[0].blockId], targetBlockRevisionId: 'TB-0' });
+  });
   it('accepts a natural paragraph with three original anchors and equivalent full dates', () => {
     const sourcePlan = plan([
       'On September 3, 2024,',

@@ -33,6 +33,39 @@ export const TRANSLATION_INITIAL_BATCH_SOURCE_CHARACTERS = 6_000;
 // check returned incomplete_result while the preceding full-document generate
 // and corrections succeeded.
 export const TRANSLATION_SEMANTIC_CHECK_BATCH_BLOCKS = 8;
+/** Empirical scheduling target for marginal review work in one call. A
+ * 33-block source plan with projected candidates forms eight batches at this
+ * value; this is not a provider context or output token limit. */
+export const TRANSLATION_SEMANTIC_CHECK_BATCH_WORK_CHARACTERS = 16_000;
+
+function semanticCheckWorkCharacters(
+  workspace: TranslationWorkspaceV2,
+  revision: TranslationBlockRevisionV2,
+): number {
+  const block = workspace.plan.blocks.find(
+    (entry) => entry.blockId === revision.blockId,
+  );
+  if (!block) throw new Error('TRANSLATION_CHECK_BLOCK_NOT_FOUND');
+  const anchors = block.anchorIds.map((anchorId) => {
+    const anchor = workspace.plan.anchors.find(
+      (entry) => entry.anchorId === anchorId,
+    );
+    if (!anchor) throw new Error('TRANSLATION_CHECK_ANCHOR_NOT_FOUND');
+    return anchor;
+  });
+  // The complete document is sent in every call, so its fixed cost cannot be
+  // reduced by splitting. Count the target's source, structure and candidate
+  // plus room for a review per element/anchor; large tables and translations
+  // therefore get fewer peers without truncating or skipping any block.
+  return (
+    anchors.reduce((sum, anchor) => sum + anchor.sourceText.length, 0) +
+    JSON.stringify(block.sourceStructure).length +
+    JSON.stringify(revision.candidate).length +
+    160 +
+    120 * Math.max(1, revision.candidate.elements.length) +
+    40 * anchors.length
+  );
+}
 
 export function nextTranslationWorkV2(
   workspace: TranslationWorkspaceV2,
@@ -62,6 +95,7 @@ export function nextTranslationWorkV2(
   );
   const pendingChecks: TranslationBlockRevisionV2[] = [];
   let checkCharacters = 0;
+  let checkWorkCharacters = 0;
   const checkBatch = (): TranslationNextWorkV2 =>
     pendingChecks.length === 1
       ? {
@@ -114,15 +148,19 @@ export function nextTranslationWorkV2(
         };
     } else if (latest.check.semanticCheck === 'PENDING') {
       if (options.batchSemanticChecks) {
+        const workCharacters = semanticCheckWorkCharacters(workspace, latest);
         if (
           pendingChecks.length &&
           (pendingChecks.length >= TRANSLATION_SEMANTIC_CHECK_BATCH_BLOCKS ||
             checkCharacters + entry.source.sourceCharacterCount >
-              targetSourceCharacters)
+              targetSourceCharacters ||
+            checkWorkCharacters + workCharacters >
+              TRANSLATION_SEMANTIC_CHECK_BATCH_WORK_CHARACTERS)
         )
           return checkBatch();
         pendingChecks.push(latest);
         checkCharacters += entry.source.sourceCharacterCount;
+        checkWorkCharacters += workCharacters;
         continue;
       }
       return {
