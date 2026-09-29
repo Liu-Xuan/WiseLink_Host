@@ -306,6 +306,16 @@ function withoutGeneratedAt(value: Record<string, unknown>) {
   return semantic;
 }
 
+function withoutFreshMetadataExtractionTime(value: Record<string, unknown>) {
+  const metadata = value.extractedMetadata;
+  if (!metadata || typeof metadata !== 'object' || Array.isArray(metadata) ||
+    typeof (metadata as Record<string, unknown>).extractedAt !== 'string')
+    return value;
+  const { extractedAt: _extractedAt, ...observation } =
+    metadata as Record<string, unknown>;
+  return { ...value, extractedMetadata: observation };
+}
+
 export function classifyIncompleteIngestionRecoveryState(
   input: IncompleteIngestionRecoveryInput,
   state: IncompleteIngestionRecoveryState,
@@ -365,8 +375,10 @@ export function classifyIncompleteIngestionRecoveryState(
     || acquisition.idempotencyKey !== expectedAcquisition.idempotencyKey
     || acquisition.status !== 'ACQUIRED_READBACK_VERIFIED'
     || acquisition.documentVersionId !== null
-    || stableJson(parseJson(acquisition.sourceDescriptorJson))
-      !== stableJson(expectedAcquisition.sourceDescriptor)
+    || stableJson(withoutFreshMetadataExtractionTime(
+      parseJson(acquisition.sourceDescriptorJson)))
+      !== stableJson(withoutFreshMetadataExtractionTime(
+        expectedAcquisition.sourceDescriptor))
   ) {
     fail(
       'INCOMPLETE_INGESTION_RECOVERY_ACQUISITION_CONFLICT',
