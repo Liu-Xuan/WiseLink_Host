@@ -2,6 +2,7 @@
 
 ## 2026-09-29 08:56：来源权限获批，目录权限待独立发布；P3 实施开始
 
+- **随后用户收敛：尽量不使用需要管理员审核的权限。** 因此本轮暂停提交目录读取权限版本；已添加 retrieve 仍为未发布草案，旧 Aily 草案未改动。正常浏览器上传之后的解析、解读、OpenClaw 翻译、评估与知识交付不应依赖 Drive.list，作为下一真实纵向推进重点。目录全量自动发现/新版发现保持未完成，不以手工样本替代其验收。官方 CLI `schema drive.files.list` 确认所接受 scope 为 drive:drive、drive:drive:readonly、space:document:retrieve；尚无已验证的免审完整替代。已知 token 的下载仍需文件读取许可，且不能单独证明该文件属于受委托根目录。
 - 上轮 `c7065cf4e82993820487faef5cb7fb49d420573e` 已在 origin/github 精确同名分支分别读回。本轮接续该基线，未重建 P1/P2。Sol 在既有干净工作树新建 `codex/wl-source-identity`；保留旧 P2 分支，不 reset/cherry-pick 重复内容。
 - 用户明确授权现有应用 `cli_aadde8b579f95bc9` 的应用身份 `space:document:retrieve`、`drive:file:download` 及必要审核/发布，原云盘只读。控制台本轮确认 download 的应用身份原本已开通，本次实际新增目录 retrieve 申请。创建版本页面显示建议 1.0.5（上一版本 1.0.4），尚未保存或提交审核。
 - 发布差异同时包含原先未发布的用户身份 `aily:agent_chat:read`，无法将这项未获本轮授权的对话权限一并提交。已请求允许撤下该旧未生效申请以独立发布目录权限；未修改旧 Aily 申请。证据截图位于本机 `/private/tmp/wiselink-permission-release-scope-20260929.png`，未纳入公开仓库。控制台明确目录 retrieve 为需审核权限、download 为免审权限；即使撤下 Aily 草案，目录权限仍需企业管理员审核。用户随后询问审核对象，未授权撤下 Aily。两项读取授权不表示 0070、来源运行委托或扫描调度已获部署/启用批准。
