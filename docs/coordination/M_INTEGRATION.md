@@ -1,5 +1,14 @@
 # M 主控集成交接
 
+## 2026-09-29：原生知识源替代发现核查；普通上传 MinerU 接线进行中
+
+- 用户提出将云盘文件夹绑定原生知识库，以尽量避免新增需审核的目录权限。官方 Aily 数据预处理说明确认文件夹内支持类型的新增、修改、删除可自动同步，文档描述约 15 分钟延迟；这是平台能力说明，不是当前 Host 已绑定或真实同步验收。17b 当前原生工具菜单与集成面板未发现直接知识源入口；不能据此判定整个产品不支持。
+- 依官方 llms.txt → llms-aily.txt → 数据知识 API 文档核对：GET `/open-apis/aily/v1/apps/:app_id/data_assets` 及单资产 GET 支持 `with_data_asset_item`、`with_connect_status`，返回连接/增量同步/部分成功/失败状态、资产更新时间及 dataset/vector 资源标识。需要 `aily:data_asset:read`；应用身份仅支持 Aily 渠道应用，用户身份要求 Aily 应用协作者。现有妙搭应用凭据不能未经验证即当成该渠道身份。
+- 创建数据知识 API 文档支持 `source_type=lark_doc`、`type=folder` 直连，创建仅开发环境，云文档相关资源仅用户身份。尚未调用创建、绑定文件夹、申请新 scope 或改变数据接收方。公开列表合同没有证明可分页取得文件夹每个 PDF 的原件 token、内容版本和逐文件同步状态，资产 `updated_time` 也不能当成每个原文件更新时间；不得用知识问答召回冒充完整增量清单。
+- 结论：operations 原生检索方向成立；工程库自动受理仍需验证可用的逐文件变化与确切来源接口。目录权限发布继续暂停，未撤下旧 Aily 权限草案。后续应在现有获准 Aily 应用及真实身份下核对能力，不能以新知识源替换名义扩大访问范围。
+- 普通上传实际代码缺口：`prepareAutomaticUpload()` 已可创建无 WorkItem 的 parseRun，而 LocalMineruWorker 原仅发现活跃或已完成 WorkItem。Sol 在独立 `codex/wl-upload-mineru-discovery` 实现0067上传授权下领取及后续每次来源/租约复核，不新增表或权限。主控早审要求 source/renew/result 使用确切 acquisition/DV 授权读取，避免每次全量扫描上传；本项仍在实现、未测试完毕、未发布。P3来源身份接线由另一独占Catalog的Sol继续，未与上传分支竞争共享文件。
+- 官方依据：https://www.feishu.cn/content/adcbsjqc ；https://open.feishu.cn/document/aily-v1/data-knowledge/data-knowledge-management/list.md ；同目录 get.md、create.md。本轮仅文档与控制台只读能力核查，不将设计或接口存在写为已部署业务证据。
+
 ## 2026-09-29 08:56：来源权限获批，目录权限待独立发布；P3 实施开始
 
 - **随后用户收敛：尽量不使用需要管理员审核的权限。** 因此本轮暂停提交目录读取权限版本；已添加 retrieve 仍为未发布草案，旧 Aily 草案未改动。正常浏览器上传之后的解析、解读、OpenClaw 翻译、评估与知识交付不应依赖 Drive.list，作为下一真实纵向推进重点。目录全量自动发现/新版发现保持未完成，不以手工样本替代其验收。官方 CLI `schema drive.files.list` 确认所接受 scope 为 drive:drive、drive:drive:readonly、space:document:retrieve；尚无已验证的免审完整替代。已知 token 的下载仍需文件读取许可，且不能单独证明该文件属于受委托根目录。
