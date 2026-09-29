@@ -151,6 +151,56 @@ test('known-failure successor is transactional, exact and idempotent in PostgreS
       await sql`UPDATE action_attempt SET status='FAILED',error_code='HTTP_400'
         WHERE attempt_id=${first.attemptId}`;
       assert.equal((await recover()).attemptId, first.attemptId, 'failed successor cannot create a chain');
+      const blockId = plan.blocks[0].blockId;
+      const issue = { code: 'SYNTHETIC_TRANSLATION_LIMITATION', severity: 'BLOCK',
+        origin: 'TRANSLATION', message: 'Synthetic translation gap', blockIds: [blockId],
+        anchorIds: plan.blocks[0].anchorIds };
+      const provenance = { authorKind: 'MODEL', authorUserId: 'actor', executionModel: model,
+        modelVersion: `configured-route:${model.modelRef}`, skillVersion: 'synthetic',
+        promptVersion: 'synthetic', generationRequestRef: 'TG-partial', originAttemptId: first.attemptId,
+        providerRequestId: null, usage: { inputTokens: 10, outputTokens: 4 } };
+      await sql`INSERT INTO translation_block_revision (block_revision_id,tenant_id,work_item_id,
+        workspace_id,block_id,plan_revision,content_revision,generation_request_ref,origin_attempt_id,
+        author_kind,author_user_id,candidate_json,dependencies_json,provenance_json,saved_at,
+        check_status,check_json,selected_for_reading,row_version)
+        VALUES ('TB-partial','tenant',null,'TW',${blockId},1,1,'TG-partial',${first.attemptId},
+          'MODEL','actor',${canonicalJson({ blockId, elements: [{ elementId: 'e1', kind: 'heading',
+            translatedText: '合成文档', anchorIds: plan.blocks[0].anchorIds }] })},
+          ${canonicalJson(generation.dependencies)},${canonicalJson(provenance)},now(),'CHECKED',
+          ${canonicalJson({ schemaVersion: 'wiselink.3_1.translation_block_check.v2',
+            checkVersion: 'synthetic', issues: [issue], semanticCheck: 'COMPLETED',
+            semanticReview: null })},false,1)`;
+      await sql`UPDATE action_attempt SET status='SUCCEEDED',error_code=null,
+        terminal_reason='REMAINING_LIMITATIONS',
+        result_envelope_json=${canonicalJson({ status: 'REMAINING_LIMITATIONS',
+          artifact: { completeness: 'PARTIAL' } })} WHERE attempt_id=${first.attemptId}`;
+      await sql`UPDATE translation_workspace SET result_artifact_json=${canonicalJson({
+        storeRole: 'UnifiedArtifactStoreCandidate', ref: 'artifact://synthetic/partial',
+        sha256: 'd'.repeat(64), byteLength: 12, mediaType: 'application/json' })}
+        WHERE workspace_id='TW'`;
+      const partialRequestId = 'root:partial-repair';
+      const partialTask = sealDocumentTranslationTaskEnvelope({
+        schemaVersion: 'wiselink.document.translation_task.v1', actionAttemptId: 'DTA-partial',
+        operationRef: 'DTQ-partial', tenantId: 'tenant', documentVersionId: 'DV',
+        parseRunId: 'parse', parseRevision: 1, workspaceId: 'TW',
+        modelInput: { ...modelInput, retranslateBlockIds: [blockId] },
+        deadline: new Date(Date.now() + 60_000).toISOString(),
+        idempotencyKey: `document-translation:DV:${partialRequestId}` });
+      const continuePartial = () => repository.reserve(scope, partialTask, partialRequestId,
+        taskModelSelection(), first.operationRef, 'PARTIAL');
+      await sql`UPDATE action_attempt SET status='CANCELLED' WHERE attempt_id=${prior.actionAttemptId}`;
+      await assert.rejects(continuePartial(), /PARTIAL_SUCCESSOR_INELIGIBLE/u,
+        'the sealed known-failure link must still point to the failed delivery root');
+      await sql`UPDATE action_attempt SET status='FAILED' WHERE attempt_id=${prior.actionAttemptId}`;
+      const repaired = await continuePartial();
+      assert.equal(repaired.triggerRequestId, partialRequestId,
+        'known-failure successor normalizes to the fixed delivery root');
+      assert.equal((await continuePartial()).attemptId, repaired.attemptId,
+        'lost partial acceptance response reads back the same successor');
+      assert.equal((await repository.latest(scope, 'root')).attemptId, repaired.attemptId);
+      assert.equal((await sql`SELECT status FROM action_attempt WHERE attempt_id=${prior.actionAttemptId}`)[0]
+        .status, 'FAILED');
+      assert.equal((await sql`SELECT count(*)::int AS count FROM action_attempt`)[0].count, 3);
     } finally {
       await sql.end();
     }

@@ -103,6 +103,29 @@ describe('independent document translation runtime', () => {
       recoveryStatus: 'REQUIRES_RECONCILIATION', progress: { completeness: 'PARTIAL' } });
     expect(f.attempts.reserve).toHaveBeenCalledTimes(1);
   });
+  it('continues a partial known-failure successor under the original delivery', async () => {
+    const f = setup();
+    const deliveryRef = 'acquisition:sample';
+    const requestId = documentDeliveryRequestId('translation', deliveryRef);
+    const original = await f.service.run({ action: 'START', ...f.binding, deliveryRef, requestId });
+    if (!('attemptRef' in original)) throw new Error('expected original attempt');
+    const known = await f.service.run({ action: 'RECOVER_KNOWN_FAILURE', ...f.binding,
+      deliveryRef, attemptRef: original.attemptRef! });
+    if (!('attemptRef' in known)) throw new Error('expected known-failure successor');
+    const row = await f.attempts.latest();
+    if (!row) throw new Error('expected successor row');
+    Object.assign(row, { status: 'SUCCEEDED', terminalReason: 'REMAINING_LIMITATIONS' });
+    expect(await f.service.run({ action: 'STATUS', ...f.binding, deliveryRef }))
+      .toMatchObject({ attemptRef: known.attemptRef, status: 'SUCCEEDED', partialRepairAvailable: true });
+    const partial = await f.service.run({ action: 'CONTINUE_PARTIAL', ...f.binding,
+      deliveryRef, attemptRef: known.attemptRef! });
+    if (!('attemptRef' in partial)) throw new Error('expected partial successor');
+    expect(partial).toMatchObject({ status: 'QUEUED', attemptRef: expect.not.stringMatching(known.attemptRef!) });
+    expect(f.attempts.reserve.mock.lastCall?.slice(2)).toMatchObject([
+      `${requestId}:partial-repair`, { modelRef: 'm3probe/minimax-m3' }, known.attemptRef, 'PARTIAL']);
+    expect(await f.service.run({ action: 'STATUS', ...f.binding, deliveryRef }))
+      .toMatchObject({ status: 'QUEUED', attemptRef: partial.attemptRef });
+  });
   it('requires separate cancellation authority for a selected delivery', async () => {
     const f = setup();
     f.authorization.authorizeDocumentWork.mockRejectedValue(new Error('DYNAMIC_CANCEL_DENIED'));

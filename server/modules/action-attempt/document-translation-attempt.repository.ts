@@ -196,9 +196,17 @@ export class DocumentTranslationAttemptRepository {
           throw new Error('DOCUMENT_TRANSLATION_RECOVERY_INELIGIBLE');
         const priorTask = parseDocumentTranslationTaskEnvelope(prior.taskEnvelopeJson ?? '');
         if (successorKind === 'PARTIAL') {
-          const rootRequestId = prior.triggerRequestId.endsWith(':hosted-m3')
-            ? prior.triggerRequestId.slice(0, -':hosted-m3'.length) : prior.triggerRequestId;
-          if (requestId !== `${rootRequestId}:partial-repair` ||
+          const rootRequestId = partialRootRequestId(prior.triggerRequestId, priorTask);
+          if (priorTask.knownFailureRecovery) {
+            const [root] = await tx.select().from(actionAttempt).where(and(owned(scope),
+              eq(actionAttempt.attemptId, priorTask.knownFailureRecovery.predecessorAttemptId),
+              eq(actionAttempt.operationRef, priorTask.knownFailureRecovery.predecessorAttemptRef)))
+              .limit(1);
+            if (!root || root.triggerRequestId !== rootRequestId || root.status !== 'FAILED' ||
+                root.producerRunId !== parsed.parseRunId)
+              throw new Error('DOCUMENT_TRANSLATION_PARTIAL_SUCCESSOR_INELIGIBLE');
+          }
+          if (!rootRequestId || requestId !== `${rootRequestId}:partial-repair` ||
               prior.triggerRequestId.endsWith(':partial-repair') || prior.status !== 'SUCCEEDED' ||
               prior.terminalReason !== 'REMAINING_LIMITATIONS' || !prior.resultEnvelopeJson ||
               priorTask.workspaceId !== parsed.workspaceId ||
@@ -497,6 +505,15 @@ export class DocumentTranslationAttemptRepository {
       .returning({ id: actionAttempt.attemptId });
     return rows.length === 1;
   }
+}
+
+function partialRootRequestId(requestId: string, task: DocumentTranslationTaskEnvelope): string | null {
+  if (task.knownFailureRecovery) {
+    const suffix = ':known-failure';
+    return requestId.endsWith(suffix) ? requestId.slice(0, -suffix.length) : null;
+  }
+  const suffix = ':hosted-m3';
+  return requestId.endsWith(suffix) ? requestId.slice(0, -suffix.length) : requestId;
 }
 
 function owned(scope: DocumentTranslationScope) {
