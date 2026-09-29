@@ -222,6 +222,24 @@ test('a stop response without the required function remains rejected and records
   assert.ok(!JSON.stringify(observed).includes('Synthetic non-candidate response'));
 });
 
+test('gateway HTTP 400 records a bounded error shape before failing and does not ignore observer failure', async () => {
+  const observed = []; let requests = 0;
+  const gateway = async () => { requests++; return { ok: false, status: 400,
+    text: async () => JSON.stringify({ error: { code: 'invalid_request_error',
+      message: 'Private response text and credential must not be checkpointed' } }) }; };
+  await assert.rejects(invokeHostedTranslationBlock(batch(), {
+    ...options(), observeModelOutput: async shape => observed.push(shape),
+  }, { requestGateway: gateway }), /TRANSLATION_GATEWAY_HTTP_400/u);
+  assert.equal(requests, 1);
+  assert.equal(observed[0].httpStatus, 400);
+  assert.equal(observed[0].errorCode, 'invalid_request_error');
+  assert.ok(!JSON.stringify(observed).includes('Private response text'));
+  await assert.rejects(invokeHostedTranslationBlock(batch(), {
+    ...options(), observeModelOutput: async () => { throw new Error('CHECKPOINT_WRITE_FAILED'); },
+  }, { requestGateway: gateway }), /CHECKPOINT_WRITE_FAILED/u);
+  assert.equal(requests, 2);
+});
+
 test('batch-check response loss repeats exactly one save while retaining one model call', async () => {
   const source = checkBatch(); const checks = source.blocks.map((entry) => ({ blockId: entry.blockId, issues: [] }));
   let nextNo = 0; let requests = 0; const saves = [];

@@ -127,6 +127,87 @@ test('selected translation uses one request derived from its persisted delivery 
     `auto-translation-${createHash('sha256').update(deliveryRef).digest('hex').slice(0, 32)}`);
   assert.ok(calls.every(([, args]) => args.deliveryRef === deliveryRef));
 });
+test('document translation checkpoints bounded HTTP 400 shape and never reports success when saving it fails', async () => {
+  const { mkdtemp, rm } = await import('node:fs/promises');
+  const { tmpdir } = await import('node:os');
+  const { join } = await import('node:path');
+  const { createCheckpointStore } = await import('../scripts/run-hosted-review-turn.mjs');
+  const directory = await mkdtemp(join(tmpdir(), 'document-translation-shape-'));
+  const attemptRef = 'DTQ-shape', generationRequestRef = 'GEN-shape';
+  const batch = { schemaVersion: 'wiselink.3_1.translation_semantic_batch.v2',
+    workspaceId: 'TW-shape', generationRequestRef, purpose: 'GENERATE',
+    blocks: [{ blockId: 'b1', anchorIds: ['a1'] }],
+    anchors: [{ anchorId: 'a1', sourceText: 'Private source text.' }],
+    documentContext: { title: 'Private title' }, dependencies: {} };
+  const bytes = Buffer.from(JSON.stringify(batch));
+  const next = { schemaVersion: 'wiselink.3_1.translation_batch_delivery.v2',
+    action: 'GENERATE', workspaceId: batch.workspaceId, generationRequestRef,
+    blockIds: ['b1'], targetBlockRevisionId: null, targetRowVersion: null,
+    delivery: { partIndex: 0, partCount: 1, byteLength: bytes.length,
+      payloadBase64: bytes.toString('base64') } };
+  const shape = { operation: 'TRANSLATE', purpose: 'GENERATE', generationRequestRef,
+    httpStatus: 400, httpOk: false, errorCode: 'invalid_request_error',
+    choiceCount: 0, outputChannel: 'NONE', responseBytes: 123 };
+  const tick = (documentTranslationCheckpoint) => {
+    const current = state(); current.latestRun.status = 'PUBLISHED';
+    current.documentDelivery = { reading: false, translation: 'ZH_FULL' };
+    const actions = []; let modelCalls = 0;
+    return { actions, get modelCalls() { return modelCalls; }, run: () => consumeHostedWorkItem({
+      documentVersionId: 'DV-test' }, { documentTranslationCheckpoint,
+      callTool: async (name, args) => {
+        if (name === 'document_work') return args.action === 'STATUS' ? current :
+          { documentVersionId: 'DV-test', parseRunId: 'PRUN-test', status: 'INDEXED' };
+        actions.push(args.action === 'WORKSPACE' ? args.workspaceCommand.phase : args.action);
+        if (args.action === 'STATUS') return { documentVersionId: 'DV-test',
+          parseRunId: 'PRUN-test', attemptRef, status: 'RUNNING' };
+        if (args.action === 'CLAIM') return { status: 'RUNNING',
+          fence: { attemptRef, leaseToken: 'lease-token', leaseGeneration: 1 },
+          task: { documentVersionId: 'DV-test', parseRunId: 'PRUN-test',
+            workspaceId: 'TW-shape', deadline: new Date(Date.now() + 600_000).toISOString(),
+            modelInput: { documentProducer: 'HOSTED_M3', workspaceId: 'TW-shape' } },
+          executionModel: { modelRef: 'm3probe/minimax-m3' } };
+        if (args.action === 'HEARTBEAT') return { renewed: true, attemptRef };
+        if (args.action === 'RELEASE') return { released: true, attemptRef };
+        if (args.action === 'FAIL') return { status: 'FAILED', attemptRef,
+          errorCode: args.errorCode };
+        if (args.action === 'WORKSPACE') {
+          if (args.workspaceCommand.phase === 'READ') return {
+            generationRequestCount: 0, retryableFailureCount: 0 };
+          if (args.workspaceCommand.phase === 'NEXT') return next;
+          if (args.workspaceCommand.phase === 'RECORD_FAILURE') return { generationRequestRef };
+        }
+        throw new Error(`UNEXPECTED_${args.action}`);
+      },
+      invokeTranslationModel: async (_batch, hooks) => {
+        modelCalls++;
+        await hooks.observeModelOutput(shape, 1);
+        throw Object.assign(new Error('HTTP 400'), { translationFailure: {
+          origin: 'UPSTREAM', code: 'TRANSLATION_GATEWAY_HTTP_400',
+          outcome: 'KNOWN_FAILURE', retryable: false } });
+      },
+    }) };
+  };
+  try {
+    const checkpoint = await createCheckpointStore(join(directory, 'PRUN-test'));
+    const good = tick(() => checkpoint);
+    const result = await good.run();
+    assert.equal(result.status, 'REQUIRES_ATTENTION');
+    assert.equal(result.errorCode, 'TRANSLATION_GATEWAY_HTTP_400');
+    assert.equal(good.modelCalls, 1);
+    assert.equal(good.actions.includes('SAVE'), false);
+    const key = createHash('sha256').update(JSON.stringify([
+      attemptRef, generationRequestRef, 1])).digest('hex').slice(0, 32);
+    const saved = await checkpoint.readOptional(`model.output-shape-${key}`);
+    assert.deepEqual(saved, shape);
+    assert.ok(!JSON.stringify(saved).includes('Private source text.'));
+    const failed = tick(() => ({ readOptional: async () => null,
+      writeOnce: async () => { throw new Error('CHECKPOINT_WRITE_FAILED'); } }));
+    const failedResult = await failed.run();
+    assert.equal(failedResult.status, 'REQUIRES_ATTENTION');
+    assert.equal(failed.modelCalls, 1);
+    assert.equal(failed.actions.includes('SAVE'), false);
+  } finally { await rm(directory, { recursive: true, force: true }); }
+});
 test('source indexing failure is visible without preventing independent translation progress', async () => {
   const current = state(); current.latestRun.status = 'PUBLISHED';
   let translated = false;
