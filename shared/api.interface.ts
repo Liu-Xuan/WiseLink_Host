@@ -5,6 +5,26 @@ import type {
 } from './assessment-reading.interface';
 import type { TranslationWorkspaceReadingV2 } from './canonical-translation-v2.interface';
 
+/** Tenant-scoped editable terminology used by new V2 translation requests. */
+export interface TranslationGlossaryEntry {
+  entryId: string;
+  kind: 'TERM' | 'NO_TRANSLATE';
+  sourceText: string;
+  /** Empty for NO_TRANSLATE; one or more accepted renderings for TERM. */
+  targetRenderings: string[];
+  note: string | null;
+}
+
+export interface TranslationGlossarySnapshot {
+  revision: number;
+  entries: TranslationGlossaryEntry[];
+}
+
+export interface UpdateTranslationGlossaryRequest {
+  expectedRevision: number;
+  entries: TranslationGlossaryEntry[];
+}
+
 export type UnifiedPackageSourceKind = 'pdf' | 'native_s1000d';
 
 export interface OfficialOauthStartResponse {

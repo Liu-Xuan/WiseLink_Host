@@ -289,11 +289,21 @@ export function buildTranslationBatchV2(
     },
     // Retain established terminology without importing v1 one-fragment/one-
     // output rules. Context-specific definitions remain verbatim above.
-    terminology: {
+    terminology: request.glossary ? {
+      terms: request.glossary.entries.filter(entry => entry.kind === 'TERM')
+        .map(entry => ({ ruleId: entry.entryId,
+          sourceTerm: entry.sourceText,
+          targetRenderings: [...entry.targetRenderings],
+          severity: 'mandatory' as const,
+          ...(entry.note !== null ? { note: entry.note } : {}),
+        })),
+      noTranslate: request.glossary.entries.filter(entry => entry.kind === 'NO_TRANSLATE')
+        .map(entry => ({ ruleId: entry.entryId, token: entry.sourceText,
+          ...(entry.note !== null ? { note: entry.note } : {}),
+        })),
+    } : {
       terms: structuredClone(CANONICAL_TRANSLATION_RULE_SET_V1.terms),
-      noTranslate: structuredClone(
-        CANONICAL_TRANSLATION_RULE_SET_V1.noTranslate,
-      ),
+      noTranslate: structuredClone(CANONICAL_TRANSLATION_RULE_SET_V1.noTranslate),
     },
     previousCandidate: target ? structuredClone(target.candidate) : null,
     previousBlockRevisionId: target?.blockRevisionId ?? null,

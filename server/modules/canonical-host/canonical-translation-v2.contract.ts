@@ -10,6 +10,7 @@ import type {
   TranslationBlockRevisionV2,
   BilingualTranslationArtifactV2,
 } from '@shared/canonical-translation-v2.interface';
+import { translationGlossaryEntriesSchema } from './canonical-translation-glossary.service';
 
 export const TRANSLATION_V2_METHOD_VERSION = 'semantic-translation@2.0';
 export const TRANSLATION_V2_PROMPT_VERSION =
@@ -271,6 +272,10 @@ export const translationGenerationSchemaV2: z.ZodType<TranslationGenerationReque
         .min(2)
         .max(32)
         .optional(),
+      glossary: z.strictObject({
+        revision: positive,
+        entries: translationGlossaryEntriesSchema,
+      }).optional(),
       status: z.enum(['REGISTERED', 'SAVED', 'SUPERSEDED', 'FAILED']),
       registeredAt: timestamp,
       finishedAt: timestamp.nullable(),

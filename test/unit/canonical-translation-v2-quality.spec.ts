@@ -12,6 +12,10 @@ import {
   buildTranslationWorkspaceReadingV2,
   checkTranslationBlockV2,
 } from '../../server/modules/canonical-host/canonical-translation-v2-quality';
+import {
+  DEFAULT_TRANSLATION_GLOSSARY,
+  translationGlossaryEntriesSchema,
+} from '../../server/modules/canonical-host/canonical-translation-glossary.service';
 
 // Invented content used only for behavioral checks, never aircraft evidence.
 function plan(
@@ -583,4 +587,46 @@ it('normalizes confirmed source date conventions without double-counting date di
   const signed = plan(['Limit -0.25; version V18 and part AB-12.']);
   expect(checkTranslationBlockV2({ plan: signed, candidate: candidate(signed, '限制 0.25；版本 V18 和件号 AB-12。') }).issues)
     .toEqual(expect.arrayContaining([expect.objectContaining({ code: 'PROTECTED_VALUE_CHANGED' })]));
+});
+
+it('validates edited glossary entries and applies the registered snapshot to generation and checks', () => {
+  expect(DEFAULT_TRANSLATION_GLOSSARY.entries).toHaveLength(8);
+  expect(() => translationGlossaryEntriesSchema.parse([
+    { entryId: 'one', kind: 'TERM', sourceText: 'flight deck',
+      targetRenderings: ['驾驶舱'], note: null },
+    { entryId: 'two', kind: 'TERM', sourceText: 'FLIGHT DECK',
+      targetRenderings: ['飞行甲板'], note: null },
+  ])).toThrow();
+  expect(() => translationGlossaryEntriesSchema.parse([
+    { entryId: 'one', kind: 'NO_TRANSLATE', sourceText: 'AIMS-2',
+      targetRenderings: ['AIMS-2'], note: null },
+  ])).toThrow();
+
+  const sourcePlan = plan(['Inspect the flight deck and AIMS-2.']);
+  const work = workspace(sourcePlan);
+  const glossary = { revision: 2, entries: [
+    { entryId: 'deck', kind: 'TERM' as const, sourceText: 'flight deck',
+      targetRenderings: ['驾驶舱'], note: null },
+    { entryId: 'aims', kind: 'NO_TRANSLATE' as const, sourceText: 'AIMS-2',
+      targetRenderings: [], note: null },
+  ] };
+  const request: TranslationGenerationRequestV2 = {
+    generationRequestRef: 'TG-glossary', clientRequestId: 'glossary',
+    attemptId: 'ATT-new', leaseGeneration: 1,
+    blockIds: [sourcePlan.blocks[0].blockId],
+    dependencies: translationBatchDependenciesV2(work, [sourcePlan.blocks[0].blockId]),
+    purpose: 'GENERATE', targetBlockRevisionId: null,
+    status: 'REGISTERED', registeredAt: '2026-09-09T00:00:00.000Z',
+    finishedAt: null, error: null, glossary,
+  };
+  expect(buildTranslationBatchV2(work, request, []).terminology)
+    .toMatchObject({ terms: [{ sourceTerm: 'flight deck', targetRenderings: ['驾驶舱'] }],
+      noTranslate: [{ token: 'AIMS-2' }] });
+  const issues = checkTranslationBlockV2({ plan: sourcePlan,
+    candidate: candidate(sourcePlan, '检查飞行甲板。'), glossary }).issues;
+  expect(issues.map(issue => issue.code)).toEqual(expect.arrayContaining([
+    'GLOSSARY_TERM_MISSING', 'GLOSSARY_TOKEN_CHANGED',
+  ]));
+  const historical = buildTranslationBatchV2(work, { ...request, glossary: undefined }, []);
+  expect(historical.terminology.terms).toHaveLength(5);
 });

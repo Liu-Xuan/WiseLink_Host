@@ -3,6 +3,7 @@ import type {
   UnifiedPackageArtifactDescriptor,
   UnifiedReaderSourceLocator,
 } from './api.interface';
+import type { TranslationGlossarySnapshot } from './api.interface';
 
 /** The validated parsed package, before the legacy Reader flattens payloads. */
 export interface TranslationStructuredSourceUnit {
@@ -169,6 +170,8 @@ export interface TranslationGenerationRequestV2 {
     blockRevisionId: string;
     rowVersion: number;
   }[];
+  /** Frozen at first registration; absent only for historical requests. */
+  glossary?: TranslationGlossarySnapshot;
   status: 'REGISTERED' | 'SAVED' | 'SUPERSEDED' | 'FAILED';
   registeredAt: string;
   finishedAt: string | null;

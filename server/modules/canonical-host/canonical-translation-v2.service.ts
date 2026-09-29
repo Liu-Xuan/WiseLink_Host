@@ -38,6 +38,7 @@ import {
 import {
   buildTranslationWorkspaceReadingV2,
   checkTranslationBlockV2,
+  translationGlossaryForRevision,
 } from './canonical-translation-v2-quality';
 import { documentTranslationRepairableBlockIds } from './document-translation-repair-scope';
 import {
@@ -454,6 +455,7 @@ export class CanonicalTranslationV2Service {
           check: checkTranslationBlockV2({
             plan: state.workspace.plan,
             candidate: revision.candidate,
+            glossary: translationGlossaryForRevision(state.workspace, revision),
             semanticReview: { result: reviews[index], provenance },
           }),
         };
@@ -526,6 +528,7 @@ export class CanonicalTranslationV2Service {
           check: checkTranslationBlockV2({
             plan: state.workspace.plan,
             candidate: next.revision.candidate,
+            glossary: translationGlossaryForRevision(state.workspace, next.revision),
           }),
         });
         state = await load();

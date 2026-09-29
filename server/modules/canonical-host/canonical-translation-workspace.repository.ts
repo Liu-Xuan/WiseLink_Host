@@ -35,6 +35,7 @@ import {
 } from '../action-attempt/action-attempt-envelope';
 import { parseExecutionModel } from '../model-settings/canonical-execution-model';
 import { checkTranslationBlockV2 } from './canonical-translation-v2-quality';
+import { readTranslationGlossary } from './canonical-translation-glossary.service';
 import {
   TRANSLATION_V2_METHOD_VERSION,
   TRANSLATION_V2_PROMPT_VERSION,
@@ -465,6 +466,12 @@ export class CanonicalTranslationWorkspaceRepository {
           )
             throw new Error('TRANSLATION_GENERATION_TARGET_INVALID');
         }
+        const attemptRequests = workspace.generationRequests.filter(
+          entry => entry.attemptId === attempt.attemptId,
+        );
+        const glossary = attemptRequests.length
+          ? attemptRequests[0].glossary
+          : await readTranslationGlossary(transaction, input.tenantId);
         const request: TranslationGenerationRequestV2 = {
           generationRequestRef: `TG-${randomUUID()}`,
           clientRequestId: input.clientRequestId,
@@ -477,6 +484,7 @@ export class CanonicalTranslationWorkspaceRepository {
           ...(input.checkTargets
             ? { checkTargets: structuredClone(input.checkTargets) }
             : {}),
+          ...(glossary ? { glossary: structuredClone(glossary) } : {}),
           status: 'REGISTERED',
           registeredAt: new Date().toISOString(),
           finishedAt: null,

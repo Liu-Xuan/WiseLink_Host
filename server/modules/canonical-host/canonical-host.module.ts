@@ -39,6 +39,8 @@ import { CanonicalHostOverallRegenerationController } from './canonical-host-ove
 import { CanonicalHostOverallRegenerationService } from './canonical-host-overall-regeneration.service';
 import { CanonicalHostOpenClawTranslationService } from './canonical-host-openclaw-translation.service';
 import { CanonicalTranslationWorkspaceRepository } from './canonical-translation-workspace.repository';
+import { CanonicalTranslationGlossaryController } from './canonical-translation-glossary.controller';
+import { CanonicalTranslationGlossaryService } from './canonical-translation-glossary.service';
 import { CanonicalTranslationV2Service } from './canonical-translation-v2.service';
 import { CanonicalTranslationV2PluginService } from './canonical-translation-v2-plugin.service';
 import { CanonicalTranslationRevisionService } from './canonical-translation-revision.service';
@@ -232,6 +234,7 @@ export interface CanonicalHostModuleOptions {
     MatterAssessmentActivityController,
     CanonicalHostAeoEditingController,
     CanonicalTranslationKnowledgeController,
+    CanonicalTranslationGlossaryController,
     CanonicalTranslationRevisionController,
     CanonicalInitialAnalysisContinuationController,
     BatchApplicabilityController,
@@ -252,6 +255,7 @@ export interface CanonicalHostModuleOptions {
     CanonicalHostOverallRegenerationService,
     CanonicalHostOpenClawTranslationService,
     CanonicalTranslationWorkspaceRepository,
+    CanonicalTranslationGlossaryService,
     CanonicalTranslationV2Service,
     CanonicalTranslationRevisionService,
     CanonicalInitialAnalysisContinuationService,
@@ -488,6 +492,7 @@ export class CanonicalHostModule {
         MatterAssessmentActivityController,
         CanonicalHostAeoEditingController,
         CanonicalTranslationKnowledgeController,
+        CanonicalTranslationGlossaryController,
         CanonicalTranslationRevisionController,
         CanonicalInitialAnalysisContinuationController,
         BatchApplicabilityController,
@@ -536,6 +541,7 @@ export class CanonicalHostModule {
         CanonicalHostOverallRegenerationService,
         CanonicalHostOpenClawTranslationService,
         CanonicalTranslationWorkspaceRepository,
+        CanonicalTranslationGlossaryService,
         CanonicalTranslationV2Service,
         CanonicalTranslationV2PluginService,
         CanonicalTranslationRevisionService,

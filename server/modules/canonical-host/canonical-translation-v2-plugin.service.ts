@@ -9,7 +9,8 @@ import { DocumentOfficialPluginService, DocumentPluginOutputError } from '../doc
 import { documentOriginalStructuredSource } from '../document-management/src/hosted/nest/document-original-adapter';
 import { buildTranslationSourcePlan } from './canonical-translation-source-plan';
 import { buildTranslationBatchV2, nextTranslationWorkV2, translationBatchDependenciesV2 } from './canonical-translation-v2-batch';
-import { buildTranslationWorkspaceReadingV2, checkTranslationBlockV2 } from './canonical-translation-v2-quality';
+import { buildTranslationWorkspaceReadingV2, checkTranslationBlockV2,
+  translationGlossaryForRevision } from './canonical-translation-v2-quality';
 import { CanonicalTranslationWorkspaceRepository, type TranslationActualPluginExecution, type TranslationWorkspaceFence } from './canonical-translation-workspace.repository';
 import { canonicalJson } from '../action-attempt/action-attempt-envelope';
 
@@ -63,7 +64,8 @@ export class CanonicalTranslationV2PluginService {
     if (next.kind === 'LOCAL_CHECK') {
       await this.workspaces.checkAndSelect({ ...fence, blockRevisionId: next.revision.blockRevisionId,
         expectedRowVersion: next.revision.rowVersion,
-        check: checkTranslationBlockV2({ plan: state.workspace.plan, candidate: next.revision.candidate }) });
+        check: checkTranslationBlockV2({ plan: state.workspace.plan, candidate: next.revision.candidate,
+          glossary: translationGlossaryForRevision(state.workspace, next.revision) }) });
       return { status: 'PROGRESSED' as const, blockIds: [next.revision.blockId] };
     }
     if (next.kind === 'DONE') {
@@ -88,7 +90,8 @@ export class CanonicalTranslationV2PluginService {
       const unchecked = state.revisions.find(revision => revision.provenance.generationRequestRef === request.generationRequestRef && !revision.check);
       if (unchecked && ['GENERATE', 'CORRECT'].includes(request.purpose)) {
         await this.workspaces.checkAndSelect({ ...fence, blockRevisionId: unchecked.blockRevisionId, expectedRowVersion: unchecked.rowVersion,
-          check: checkTranslationBlockV2({ plan: state.workspace.plan, candidate: unchecked.candidate }) });
+          check: checkTranslationBlockV2({ plan: state.workspace.plan, candidate: unchecked.candidate,
+            glossary: translationGlossaryForRevision(state.workspace, unchecked) }) });
         return { status: 'PROGRESSED' as const, blockIds: [unchecked.blockId] };
       }
       if (request.purpose === 'CHECK' || request.purpose === 'CHECK_BATCH') {
@@ -109,6 +112,7 @@ export class CanonicalTranslationV2PluginService {
             generationRequestRef: request.generationRequestRef, actualExecution: execution(result.producer) });
           checks.push({ blockRevisionId: revision.blockRevisionId, expectedRowVersion: revision.rowVersion,
             check: checkTranslationBlockV2({ plan: state.workspace.plan, candidate: revision.candidate,
+              glossary: translationGlossaryForRevision(state.workspace, revision),
               semanticReview: { result: result.review, provenance } }) });
         }
         await assertActive();
@@ -143,7 +147,8 @@ export class CanonicalTranslationV2PluginService {
       const [saved] = await this.workspaces.saveCandidates({ ...fence, generationRequestRef: request.generationRequestRef,
         candidates: [candidate], actualExecution: actual });
       await this.workspaces.checkAndSelect({ ...fence, blockRevisionId: saved.blockRevisionId, expectedRowVersion: saved.rowVersion,
-        check: checkTranslationBlockV2({ plan: state.workspace.plan, candidate: saved.candidate }) });
+        check: checkTranslationBlockV2({ plan: state.workspace.plan, candidate: saved.candidate,
+          glossary: translationGlossaryForRevision(state.workspace, saved) }) });
       return { status: 'PROGRESSED' as const, blockIds: [block.blockId] };
     } catch (error) {
       // Query the durable snapshot before describing a response loss as failed work.
