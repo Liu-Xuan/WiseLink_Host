@@ -64,6 +64,29 @@ test('natural sections reject missing, duplicated and extra output', () => {
   assert.throws(() => view.restoreOutput({ markdown: '<!-- WL-SECTION:1 -->\n<table><tbody><tr><td rowspan="2"><script>hidden</script></td></tr></tbody></table>' }), /HTML_INVALID/u);
 });
 
+test('empty source-only sections at the start, middle and end keep their marker boundaries', () => {
+  const blocks = [1, 2, 3, 4].map((index) => ({ blockId: `b${index}`, order: index,
+    kind: 'prose', anchorIds: index === 2 ? ['a2'] : [], sourceStructure: index === 2
+      ? [{ sourceUnitId: 'u2', kind: 'paragraph', payload: { text: 'Only source prose.' } }] : [] }));
+  const batch = { purpose: 'GENERATE', sourceLocale: 'en', targetLocale: 'zh-CN',
+    sourcePlanAnchorCount: 1, sourcePlanBlockCount: 4, blocks,
+    anchors: [{ anchorId: 'a2', sourceUnitId: 'u2', payloadPath: '/payload/text',
+      sourceText: 'Only source prose.' }],
+    documentContext: { blocks: [], anchors: [], scopedConditions: [] }, terminology: {} };
+  const view = buildTranslationModelView(batch);
+  const markdown = '<!-- WL-SECTION:1 -->\n\n<!-- WL-SECTION:2 -->\n唯一译文。\n\n' +
+    '<!-- WL-SECTION:3 -->\n\n<!-- WL-SECTION:4 -->';
+  assert.deepEqual(view.restoreOutput({ markdown }).blocks.map((block) => block.elements.length),
+    [0, 1, 0, 0]);
+  for (const index of [1, 3, 4]) {
+    const forged = markdown.replace(`<!-- WL-SECTION:${index} -->`,
+      `<!-- WL-SECTION:${index} -->\n伪造正文。`);
+    assert.throws(() => view.restoreOutput({ markdown: forged }), /STRUCTURE_ONLY_OUTPUT_INVALID/u);
+  }
+  assert.throws(() => view.restoreOutput({ markdown: markdown.replace('唯一译文。', '') }),
+    /SECTION_EMPTY/u);
+});
+
 test('old registered narrow context is not silently widened or called as full source', () => {
   const batch = fixture();
   batch.documentContext.blocks = [];
@@ -177,6 +200,12 @@ test('table column-name source anchors stay visible and align to labels', () => 
   const result = view.restoreOutput({ markdown: '<!-- WL-SECTION:1 -->\n<table><thead><tr><th>压力</th></tr></thead><tbody><tr><td rowspan="2">P/N O-001，5 秒</td></tr></tbody></table>' });
   assert.deepEqual(result.blocks[0].elements.map((element) => [element.kind, element.anchorIds]),
     [['label', ['a3']], ['table_cell', ['source-anchor-long-id']]]);
+  assert.throws(() => view.restoreOutput({ markdown: '<!-- WL-SECTION:1 -->\n<table><thead><tr><th colspan="2">压力</th></tr></thead><tbody><tr><td rowspan="2">P/N O-001，5 秒</td></tr></tbody></table>' }),
+    /TABLE_ALIGNMENT_UNSUPPORTED/u);
+  assert.throws(() => view.restoreOutput({ markdown: '<!-- WL-SECTION:1 -->\n<table><thead><tr><th rowspan="2">压力</th></tr></thead><tbody><tr><td rowspan="2">P/N O-001，5 秒</td></tr></tbody></table>' }),
+    /TABLE_ALIGNMENT_UNSUPPORTED/u);
+  assert.throws(() => view.restoreOutput({ markdown: '<!-- WL-SECTION:1 -->\n<table colspan="2"><thead><tr><th>压力</th></tr></thead><tbody><tr><td rowspan="2">P/N O-001，5 秒</td></tr></tbody></table>' }),
+    /HTML_INVALID/u);
 });
 
 test('a non-grid extracted table remains a text translation scope', () => {

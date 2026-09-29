@@ -25,6 +25,7 @@ function parseFragment(html) {
     const attrs = [...opening[2].matchAll(/\s+([a-z]+)="([^"]*)"/gu)]
       .map((match) => ({ name: match[1], value: decodeHtml(match[2]) }));
     if (attrs.length !== new Set(attrs.map((entry) => entry.name)).size ||
+        (attrs.length && !['td', 'th'].includes(opening[1])) ||
         attrs.some((entry) => !['rowspan', 'colspan'].includes(entry.name)))
       throw new Error('TRANSLATION_NATURAL_HTML_INVALID');
     const node = { tagName: opening[1], attrs, childNodes: [] };
@@ -237,7 +238,9 @@ function tableElements(block, anchors, markdown) {
         const ids = block.anchorIds.filter((id) => anchors.get(id).sourceUnitId === unit.sourceUnitId &&
           anchors.get(id).payloadPath === `/payload/columns/${columns[index].index}/name`);
         const translatedText = textContent(headerCells[index]).trim();
-        if (ids.length !== 1 || !translatedText)
+        if (ids.length !== 1 || !translatedText ||
+            span(headerCells[index], 'rowspan') !== 1 ||
+            span(headerCells[index], 'colspan') !== 1)
           throw new Error('TRANSLATION_TABLE_ALIGNMENT_UNSUPPORTED');
         elements.push({ kind: 'label', translatedText, anchorIds: ids });
       }
@@ -342,7 +345,7 @@ function parseSections(markdown, markers) {
   }
   if (previousMarker !== null) sections.set(previousMarker, markdown.slice(previousEnd).trim());
   if (sections.size !== markers.length || markers.some((marker, index) =>
-    [...sections.keys()][index] !== marker || !sections.get(marker)))
+    [...sections.keys()][index] !== marker))
     throw new Error('TRANSLATION_NATURAL_BOUNDARY_INVALID');
   return sections;
 }
