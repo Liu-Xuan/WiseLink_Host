@@ -1,7 +1,7 @@
 import { Inject, Injectable } from '@nestjs/common';
 import { randomUUID } from 'node:crypto';
 import { DRIZZLE_DATABASE, type PostgresJsDatabase } from '@lark-apaas/fullstack-nestjs-core';
-import { and, desc, eq, gt, inArray, isNull, lte, or, sql } from 'drizzle-orm';
+import { and, desc, eq, gt, inArray, isNull, like, lte, or, sql } from 'drizzle-orm';
 import { actionAttempt, translationBlockRevision, translationWorkspace } from '../../database/schema';
 import type { CanonicalExecutionModelSelection } from '@shared/api.interface';
 import { canonicalJson, canonicalSha256 } from './action-attempt-envelope';
@@ -31,9 +31,10 @@ export class DocumentTranslationAttemptRepository {
 
   async latest(scope: DocumentTranslationScope, requestId?: string) {
     const [row] = await this.db.select().from(actionAttempt).where(and(owned(scope),
-      requestId ? inArray(actionAttempt.triggerRequestId,
+      requestId ? or(inArray(actionAttempt.triggerRequestId,
         [requestId, `${requestId}:hosted-m3`, `${requestId}:partial-repair`,
-          `${requestId}:partial-repair-v2`, `${requestId}:known-failure`]) : undefined))
+          `${requestId}:partial-repair-v2`, `${requestId}:known-failure`]),
+        like(actionAttempt.triggerRequestId, `${requestId}:resume-%`)) : undefined))
       .orderBy(desc(actionAttempt.attemptNo)).limit(1);
     return row ?? null;
   }
@@ -43,10 +44,29 @@ export class DocumentTranslationAttemptRepository {
     return row ?? null;
   }
 
+  async readAttempt(scope: DocumentTranslationScope, attemptRef: string) {
+    const [row] = await this.db.select().from(actionAttempt)
+      .where(and(owned(scope), eq(actionAttempt.operationRef, attemptRef))).limit(1);
+    return row ?? null;
+  }
+
   /** One explicit, zero-output successor for an exact known generation failure. */
   async recoverKnownFailure(scope: DocumentTranslationScope, predecessorRef: string, rootRequestId: string,
     current: Pick<DocumentTranslationTaskEnvelope, 'parseRunId' | 'parseRevision' | 'modelInput'>,
     executionModel: CanonicalExecutionModelSelection) {
+    return this.recoverFailure(scope, predecessorRef, rootRequestId, current, executionModel, false);
+  }
+
+  /** Continue saved candidates after an exact known CHECK failure. */
+  async resumeSavedKnownFailure(scope: DocumentTranslationScope, predecessorRef: string, rootRequestId: string,
+    current: Pick<DocumentTranslationTaskEnvelope, 'parseRunId' | 'parseRevision' | 'modelInput'>,
+    executionModel: CanonicalExecutionModelSelection) {
+    return this.recoverFailure(scope, predecessorRef, rootRequestId, current, executionModel, true);
+  }
+
+  private async recoverFailure(scope: DocumentTranslationScope, predecessorRef: string, rootRequestId: string,
+    current: Pick<DocumentTranslationTaskEnvelope, 'parseRunId' | 'parseRevision' | 'modelInput'>,
+    executionModel: CanonicalExecutionModelSelection, savedOutput: boolean) {
     return this.db.transaction(async tx => {
       const locked = await tx.execute(sql`SELECT document_version_id FROM dm_document_version
         WHERE document_version_id=${scope.documentVersionId} FOR UPDATE`);
@@ -55,13 +75,31 @@ export class DocumentTranslationAttemptRepository {
         .where(and(owned(scope), eq(actionAttempt.operationRef, predecessorRef))).limit(1).for('update');
       if (!predecessor) throw new Error('DOCUMENT_TRANSLATION_PREDECESSOR_NOT_FOUND');
       const priorTask = parseDocumentTranslationTaskEnvelope(predecessor.taskEnvelopeJson ?? '');
+      if (savedOutput && priorTask.knownFailureRecovery?.kind === 'KNOWN_FAILURE') {
+        const lineage = priorTask.knownFailureRecovery;
+        const [root] = await tx.select().from(actionAttempt).where(and(owned(scope),
+          eq(actionAttempt.attemptId, lineage.predecessorAttemptId),
+          eq(actionAttempt.operationRef, lineage.predecessorAttemptRef))).limit(1);
+        if (!root || root.triggerRequestId !== rootRequestId || root.status !== 'FAILED' ||
+            root.producerRunId !== current.parseRunId)
+          throw new Error('DOCUMENT_TRANSLATION_RECOVERY_PREDECESSOR_INVALID');
+      }
       const currentModel = parseExecutionModel(executionModel);
       const priorModel = predecessor.executionModelJson
         ? parseExecutionModel(JSON.parse(predecessor.executionModelJson)) : null;
       if (predecessor.status !== 'FAILED' || !predecessor.errorCode || !predecessor.terminalReason ||
-          predecessor.triggerRequestId !== rootRequestId || predecessor.resultEnvelopeJson !== null ||
+          (predecessor.triggerRequestId !== rootRequestId && !(savedOutput && (
+            (priorTask.knownFailureRecovery?.kind === 'KNOWN_FAILURE' &&
+              predecessor.triggerRequestId === `${rootRequestId}:known-failure`) ||
+            (priorTask.knownFailureRecovery?.kind === 'SAVED_KNOWN_FAILURE' &&
+              priorTask.knownFailureRecovery.rootRequestId === rootRequestId &&
+              predecessor.triggerRequestId === `${rootRequestId}:resume-${predecessor.attemptNo}`)))) ||
+          predecessor.resultEnvelopeJson !== null ||
           predecessor.resultContentHash !== null || predecessor.projectionApplied ||
-          predecessor.commitStartedAt !== null || priorTask.recoveryOf || priorTask.knownFailureRecovery ||
+          predecessor.commitStartedAt !== null || priorTask.recoveryOf ||
+          (priorTask.knownFailureRecovery !== undefined &&
+            (!savedOutput || !['KNOWN_FAILURE', 'SAVED_KNOWN_FAILURE'].includes(
+              priorTask.knownFailureRecovery.kind))) ||
           priorTask.modelInput.retranslateBlockIds || priorTask.modelInput.documentProducer !== 'HOSTED_M3' ||
           predecessor.attemptId !== priorTask.actionAttemptId || predecessor.operationRef !== priorTask.operationRef ||
           predecessor.taskInputHash !== priorTask.inputHash || predecessor.producerRunId !== current.parseRunId ||
@@ -98,8 +136,10 @@ export class DocumentTranslationAttemptRepository {
       const plan = translationSourcePlanSchemaV2.parse(JSON.parse(workspaceRow.sourcePlanJson));
       if (canonicalJson(plan.source) !== canonicalJson(priorTask.modelInput.source))
         throw new Error('DOCUMENT_TRANSLATION_RECOVERY_PLAN_CHANGED');
-      const idempotencyKey = `document-translation:known-failure:${predecessor.attemptId}`;
-      const requestId = `${rootRequestId}:known-failure`;
+      const idempotencyKey = `document-translation:${savedOutput ? 'saved-known-failure' : 'known-failure'}:${predecessor.attemptId}`;
+      const requestId = savedOutput ? `${rootRequestId}:resume-${predecessor.attemptNo + 1}` :
+        `${rootRequestId}:known-failure`;
+      if (requestId.length > 96) throw new Error('DOCUMENT_TRANSLATION_RECOVERY_REQUEST_INVALID');
       const [existing] = await tx.select().from(actionAttempt).where(and(owned(scope),
         eq(actionAttempt.idempotencyKey, idempotencyKey))).limit(1);
       const [latest] = await tx.select().from(actionAttempt).where(and(eq(actionAttempt.tenantId, scope.tenantId),
@@ -107,12 +147,13 @@ export class DocumentTranslationAttemptRepository {
         eq(actionAttempt.actionType, 'DOCUMENT_TRANSLATE'))).orderBy(desc(actionAttempt.attemptNo)).limit(1);
       if (existing) {
         const task = parseDocumentTranslationTaskEnvelope(existing.taskEnvelopeJson ?? '');
-        if (task.knownFailureRecovery?.predecessorAttemptId !== predecessor.attemptId ||
+        if (task.knownFailureRecovery?.kind !== (savedOutput ? 'SAVED_KNOWN_FAILURE' : 'KNOWN_FAILURE') ||
+            task.knownFailureRecovery.predecessorAttemptId !== predecessor.attemptId ||
             task.knownFailureRecovery.predecessorAttemptRef !== predecessorRef ||
+            (savedOutput && task.knownFailureRecovery.rootRequestId !== rootRequestId) ||
             task.actionAttemptId !== existing.attemptId || task.operationRef !== existing.operationRef ||
             existing.triggerRequestId !== requestId ||
-            canonicalJson(task.modelInput) !== canonicalJson(current.modelInput) ||
-            workspaceRow.activeAttemptId !== existing.attemptId || latest?.attemptId !== existing.attemptId)
+            canonicalJson(task.modelInput) !== canonicalJson(current.modelInput))
           throw new Error('DOCUMENT_TRANSLATION_RECOVERY_REQUEST_CONFLICT');
         return existing;
       }
@@ -120,17 +161,26 @@ export class DocumentTranslationAttemptRepository {
         throw new Error('DOCUMENT_TRANSLATION_RECOVERY_HAS_OUTPUT');
       const generations = z.array(translationGenerationSchemaV2).parse(JSON.parse(workspaceRow.generationRequestsJson));
       const predecessorGenerations = generations.filter(item => item.attemptId === predecessor.attemptId);
-      if (!predecessorGenerations.length || predecessorGenerations.some(item =>
-          item.status !== 'FAILED' || item.error?.outcome !== 'KNOWN_FAILURE') ||
+      if (!predecessorGenerations.some(item => item.status === 'FAILED' &&
+          item.error?.outcome === 'KNOWN_FAILURE') || predecessorGenerations.some(item =>
+          savedOutput ? (item.status !== 'SAVED' &&
+            !(item.status === 'FAILED' && item.error?.outcome === 'KNOWN_FAILURE')) :
+            (item.status !== 'FAILED' || item.error?.outcome !== 'KNOWN_FAILURE')) ||
           generations.some(item => item.status === 'REGISTERED' || item.error?.outcome === 'GENERATION_UNKNOWN'))
         throw new Error('DOCUMENT_TRANSLATION_RECOVERY_GENERATION_UNSETTLED');
       const generationRefs = predecessorGenerations.map(item => item.generationRequestRef);
+      const savedGenerationRefs = generations.filter(item => item.status === 'SAVED')
+        .map(item => item.generationRequestRef);
       const [saved] = await tx.select({ id: translationBlockRevision.blockRevisionId }).from(translationBlockRevision)
         .where(and(eq(translationBlockRevision.tenantId, scope.tenantId),
           eq(translationBlockRevision.workspaceId, workspaceRow.workspaceId),
-          or(eq(translationBlockRevision.originAttemptId, predecessor.attemptId),
-            inArray(translationBlockRevision.generationRequestRef, generationRefs)))).limit(1);
-      if (saved) throw new Error('DOCUMENT_TRANSLATION_RECOVERY_SAVED_OUTPUT');
+          savedOutput
+            ? inArray(translationBlockRevision.generationRequestRef, savedGenerationRefs)
+            : or(eq(translationBlockRevision.originAttemptId, predecessor.attemptId),
+              inArray(translationBlockRevision.generationRequestRef, generationRefs)))).limit(1);
+      if (savedOutput ? !saved : Boolean(saved))
+        throw new Error(savedOutput ? 'DOCUMENT_TRANSLATION_RESUME_SAVED_OUTPUT_MISSING' :
+          'DOCUMENT_TRANSLATION_RECOVERY_SAVED_OUTPUT');
       const [activeOther] = await tx.select({ id: actionAttempt.attemptId }).from(actionAttempt)
         .where(and(eq(actionAttempt.tenantId, scope.tenantId),
           eq(actionAttempt.documentVersionId, scope.documentVersionId),
@@ -141,14 +191,14 @@ export class DocumentTranslationAttemptRepository {
       if (activeOther) throw new Error('DOCUMENT_TRANSLATION_RECOVERY_COORDINATOR_CHANGED');
       if (latest?.attemptId !== predecessor.attemptId || workspaceRow.activeAttemptId !== predecessor.attemptId)
         throw new Error('DOCUMENT_TRANSLATION_RECOVERY_COORDINATOR_CHANGED');
-      const identity = canonicalSha256({ kind: 'DOCUMENT_TRANSLATION_KNOWN_FAILURE',
+      const identity = canonicalSha256({ kind: savedOutput ? 'DOCUMENT_TRANSLATION_SAVED_KNOWN_FAILURE' : 'DOCUMENT_TRANSLATION_KNOWN_FAILURE',
         predecessorAttemptId: predecessor.attemptId });
       const { inputHash: _priorHash, ...priorInput } = priorTask;
       const task = sealDocumentTranslationTaskEnvelope({ ...priorInput,
         actionAttemptId: `DTA-${identity.slice(0, 40)}`, operationRef: `DTQ-${identity.slice(0, 40)}`,
         deadline: new Date(Date.now() + 12 * 60 * 60_000).toISOString(), idempotencyKey,
-        knownFailureRecovery: { kind: 'KNOWN_FAILURE', predecessorAttemptId: predecessor.attemptId,
-          predecessorAttemptRef: predecessorRef } });
+        knownFailureRecovery: { kind: savedOutput ? 'SAVED_KNOWN_FAILURE' : 'KNOWN_FAILURE', predecessorAttemptId: predecessor.attemptId,
+          predecessorAttemptRef: predecessorRef, ...(savedOutput ? { rootRequestId } : {}) } });
       const [successor] = await tx.insert(actionAttempt).values({ attemptId: task.actionAttemptId,
         operationRef: task.operationRef, subjectKind: 'DOCUMENT_VERSION', workItemId: null,
         documentVersionId: scope.documentVersionId, tenantId: scope.tenantId, actorUserId: scope.actorUserId,
@@ -202,8 +252,15 @@ export class DocumentTranslationAttemptRepository {
               eq(actionAttempt.attemptId, priorTask.knownFailureRecovery.predecessorAttemptId),
               eq(actionAttempt.operationRef, priorTask.knownFailureRecovery.predecessorAttemptRef)))
               .limit(1);
-            if (!root || root.triggerRequestId !== rootRequestId || root.status !== 'FAILED' ||
-                root.producerRunId !== parsed.parseRunId)
+            const predecessorTask = root?.taskEnvelopeJson
+              ? parseDocumentTranslationTaskEnvelope(root.taskEnvelopeJson) : null;
+            if (!root || (root.triggerRequestId !== rootRequestId &&
+                !(predecessorTask?.knownFailureRecovery?.kind === 'KNOWN_FAILURE' &&
+                  root.triggerRequestId === `${rootRequestId}:known-failure`) &&
+                !(predecessorTask?.knownFailureRecovery?.kind === 'SAVED_KNOWN_FAILURE' &&
+                  predecessorTask.knownFailureRecovery.rootRequestId === rootRequestId &&
+                  root.triggerRequestId === `${rootRequestId}:resume-${root.attemptNo}`)) ||
+                root.status !== 'FAILED' || root.producerRunId !== parsed.parseRunId)
               throw new Error('DOCUMENT_TRANSLATION_PARTIAL_SUCCESSOR_INELIGIBLE');
           }
           if (!rootRequestId || requestId !== `${rootRequestId}:partial-repair` ||
@@ -509,6 +566,11 @@ export class DocumentTranslationAttemptRepository {
 
 function partialRootRequestId(requestId: string, task: DocumentTranslationTaskEnvelope): string | null {
   if (task.knownFailureRecovery) {
+    if (task.knownFailureRecovery.kind === 'SAVED_KNOWN_FAILURE') {
+      const root = task.knownFailureRecovery.rootRequestId;
+      return root && /^resume-[1-9][0-9]*$/u.test(requestId.slice(root.length + 1)) &&
+        requestId.startsWith(`${root}:`) ? root : null;
+    }
     const suffix = ':known-failure';
     return requestId.endsWith(suffix) ? requestId.slice(0, -suffix.length) : null;
   }

@@ -290,7 +290,7 @@ describe('translation v2 quality and actual reading coverage', () => {
     const maximum = nextTranslationWorkV2(work, revisions, reading, 1_000_000, {
       batchSemanticChecks: true,
     });
-    expect(maximum.kind === 'CHECK_BATCH' && maximum.blockIds.length).toBe(32);
+    expect(maximum.kind === 'CHECK_BATCH' && maximum.blockIds.length).toBe(8);
     const oversized = nextTranslationWorkV2(work, revisions, reading, 1, {
       batchSemanticChecks: true,
     });

@@ -22,6 +22,7 @@ function setup() {
   let row: Record<string, unknown> | null = null;
   const attempts = { readRequest: jest.fn(async (_scope, requestId) =>
     row?.triggerRequestId === requestId ? row : null), latest: jest.fn(async () => row),
+    readAttempt: jest.fn(async (_scope, attemptRef) => row?.operationRef === attemptRef ? row : null),
     reserve: jest.fn(async (_scope, task, requestId, executionModel) => { row = { status: 'QUEUED', documentVersionId, producerRunId: parseRunId,
       attemptId: task.actionAttemptId, operationRef: task.operationRef, taskEnvelopeJson: JSON.stringify(task),
       triggerRequestId: requestId, executionModelJson: JSON.stringify(executionModel),
@@ -44,6 +45,22 @@ function setup() {
       row = { status: 'QUEUED', documentVersionId, producerRunId: parseRunId,
         attemptId: task.actionAttemptId, attemptNo: 2, operationRef: task.operationRef,
         taskEnvelopeJson: JSON.stringify(task), triggerRequestId: `${requestId}:known-failure`,
+        executionModelJson: JSON.stringify(executionModel), deadlineAt: new Date(task.deadline), errorCode: null };
+      return row;
+    }),
+    resumeSavedKnownFailure: jest.fn(async (_scope, _predecessorRef, requestId, current, executionModel) => {
+      const task = sealDocumentTranslationTaskEnvelope({
+        schemaVersion: 'wiselink.document.translation_task.v1', actionAttemptId: 'DTA-saved-successor',
+        operationRef: 'DTQ-saved-successor', tenantId: 'tenant', documentVersionId, parseRunId,
+        parseRevision: current.parseRevision, workspaceId: current.modelInput.workspaceId,
+        modelInput: current.modelInput, deadline: new Date(Date.now() + 60_000).toISOString(),
+        idempotencyKey: 'saved-known-failure', knownFailureRecovery: {
+          kind: 'SAVED_KNOWN_FAILURE', predecessorAttemptId: 'DTA-prior',
+          predecessorAttemptRef: _predecessorRef, rootRequestId: requestId },
+      });
+      row = { status: 'QUEUED', documentVersionId, producerRunId: parseRunId,
+        attemptId: task.actionAttemptId, attemptNo: 2, operationRef: task.operationRef,
+        taskEnvelopeJson: JSON.stringify(task), triggerRequestId: `${requestId}:resume-2`,
         executionModelJson: JSON.stringify(executionModel), deadlineAt: new Date(task.deadline), errorCode: null };
       return row;
     }),
@@ -102,6 +119,28 @@ describe('independent document translation runtime', () => {
     expect(result).toMatchObject({ attemptRef: first.attemptRef,
       recoveryStatus: 'REQUIRES_RECONCILIATION', progress: { completeness: 'PARTIAL' } });
     expect(f.attempts.reserve).toHaveBeenCalledTimes(1);
+  });
+  it('resumes saved candidates using the exact delivery and failed attempt', async () => {
+    const f = setup();
+    const deliveryRef = 'acquisition:sample';
+    const requestId = documentDeliveryRequestId('translation', deliveryRef);
+    const first = await f.service.run({ action: 'START', ...f.binding, deliveryRef, requestId });
+    if (!('attemptRef' in first)) throw new Error('expected first attempt');
+    await expect(f.service.run({ action: 'RESUME_KNOWN_FAILURE', ...f.binding,
+      attemptRef: first.attemptRef! })).rejects.toThrow('RECOVERY_SCOPE_INVALID');
+    await expect(f.service.run({ action: 'RESUME_KNOWN_FAILURE', ...f.binding,
+      deliveryRef, attemptRef: first.attemptRef!, requestId: 'caller-id' }))
+      .rejects.toThrow('RECOVERY_SCOPE_INVALID');
+    const resumed = await f.service.run({ action: 'RESUME_KNOWN_FAILURE', ...f.binding,
+      deliveryRef, attemptRef: first.attemptRef! });
+    expect(resumed).toMatchObject({ status: 'QUEUED', attemptRef: 'DTQ-saved-successor' });
+    expect(f.attempts.resumeSavedKnownFailure).toHaveBeenCalledWith(
+      expect.objectContaining({ actorUserId: 'actor' }), first.attemptRef, requestId,
+      expect.objectContaining({ modelInput: expect.objectContaining({ documentProducer: 'HOSTED_M3' }) }),
+      expect.objectContaining({ modelRef: 'm3probe/minimax-m3' }));
+    expect(await f.service.run({ action: 'STATUS', ...f.binding, deliveryRef }))
+      .toMatchObject({ attemptRef: 'DTQ-saved-successor', status: 'QUEUED' });
+    expect(f.attempts.recoverKnownFailure).not.toHaveBeenCalled();
   });
   it('continues a partial known-failure successor under the original delivery', async () => {
     const f = setup();

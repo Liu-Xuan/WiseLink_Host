@@ -9,8 +9,8 @@ const schema = z.strictObject({
   parseRunId: id, parseRevision: z.number().int().positive(), workspaceId: id,
   recoveryOf: z.strictObject({ operationRef: z.string().min(1).max(128),
     inputHash: z.string().regex(/^[a-f0-9]{64}$/) }).optional(),
-  knownFailureRecovery: z.strictObject({ kind: z.literal('KNOWN_FAILURE'), predecessorAttemptId: id,
-    predecessorAttemptRef: z.string().min(1).max(128) }).optional(),
+  knownFailureRecovery: z.strictObject({ kind: z.enum(['KNOWN_FAILURE', 'SAVED_KNOWN_FAILURE']), predecessorAttemptId: id,
+    predecessorAttemptRef: z.string().min(1).max(128), rootRequestId: id.optional() }).optional(),
   modelInput: z.strictObject({
     schemaVersion: z.literal('wiselink.3_1.translation_task.v2'),
     workspaceId: id, planRevision: z.number().int().positive(), contextRevision: z.number().int().positive(),
@@ -45,7 +45,8 @@ export function parseDocumentTranslationTaskEnvelope(value: string): DocumentTra
   if (canonicalSha256(input) !== inputHash) throw new Error('DOCUMENT_TRANSLATION_TASK_HASH_MISMATCH');
   if (task.workspaceId !== task.modelInput.workspaceId ||
       (task.knownFailureRecovery && (task.knownFailureRecovery.predecessorAttemptId === task.actionAttemptId ||
-        task.recoveryOf !== undefined)) ||
+        task.recoveryOf !== undefined || (task.knownFailureRecovery.kind === 'SAVED_KNOWN_FAILURE' &&
+          !task.knownFailureRecovery.rootRequestId))) ||
       task.documentVersionId !== task.modelInput.source.documentVersionId ||
       task.parseRunId !== task.modelInput.source.packageId ||
       task.documentVersionId !== task.modelInput.source.originalBinding.documentVersionId ||

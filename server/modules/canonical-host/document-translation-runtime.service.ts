@@ -25,7 +25,7 @@ export class DocumentTranslationRuntimeService {
     private readonly plugins: CanonicalTranslationV2PluginService, private readonly attempts: DocumentTranslationAttemptRepository, private readonly semantics: DocumentSemanticService, private readonly parsing: DocumentParsingHostedService,
     private readonly v2: CanonicalTranslationV2Service) {}
 
-  async run(input: { action: 'START' | 'RECOVER' | 'CONTINUE_PARTIAL' | 'RECOVER_PARTIAL_INPUT' | 'RECOVER_KNOWN_FAILURE' | 'STATUS' | 'STEP' | 'CANCEL' | 'CLAIM' | 'HEARTBEAT' | 'RELEASE' | 'WORKSPACE' | 'FINISH' | 'FAIL'; documentVersionId: string;
+  async run(input: { action: 'START' | 'RECOVER' | 'CONTINUE_PARTIAL' | 'RECOVER_PARTIAL_INPUT' | 'RECOVER_KNOWN_FAILURE' | 'RESUME_KNOWN_FAILURE' | 'STATUS' | 'STEP' | 'CANCEL' | 'CLAIM' | 'HEARTBEAT' | 'RELEASE' | 'WORKSPACE' | 'FINISH' | 'FAIL'; documentVersionId: string;
     parseRunId: string; deliveryRef?: string; requestId?: string; attemptRef?: string;
     leaseToken?: string; leaseGeneration?: number; phase?: string; workspaceCommand?: unknown; errorCode?: string }) {
     if (!this.authorization.authorizeDocumentWork) throw canonicalServiceScopeUnavailable();
@@ -43,15 +43,20 @@ export class DocumentTranslationRuntimeService {
       // semantic hydration. A successful status is not a content-health proof.
       await this.parsing.status(scope.documentVersionId, { ...scope, roles: [] });
       const assertAuthorized = async () => { await read(); };
-      if (input.action === 'RECOVER_KNOWN_FAILURE') {
+      if (input.action === 'RECOVER_KNOWN_FAILURE' || input.action === 'RESUME_KNOWN_FAILURE') {
         if (!expectedRequestId || !input.attemptRef || input.requestId)
           throw new Error('DOCUMENT_TRANSLATION_RECOVERY_SCOPE_INVALID');
         const original = await read();
         const artifact = original.run.manifestArtifact;
         if (!artifact || artifact.relativePath !== 'original/manifest.json' || artifact.readback !== 'VERIFIED')
           throw new Error('DOCUMENT_ORIGINAL_MANIFEST_REQUIRED');
-        const prior = await this.attempts.readRequest(scope, expectedRequestId);
-        if (!prior || prior.operationRef !== input.attemptRef)
+        const prior = input.action === 'RESUME_KNOWN_FAILURE'
+          ? await this.attempts.readAttempt(scope, input.attemptRef)
+          : await this.attempts.readRequest(scope, expectedRequestId);
+        if (!prior || prior.operationRef !== input.attemptRef ||
+            (input.action === 'RESUME_KNOWN_FAILURE' && prior.triggerRequestId !== expectedRequestId &&
+              prior.triggerRequestId !== `${expectedRequestId}:known-failure` &&
+              !prior.triggerRequestId?.startsWith(`${expectedRequestId}:resume-`)))
           throw new Error('DOCUMENT_TRANSLATION_PREDECESSOR_NOT_FOUND');
         const priorTask = parseDocumentTranslationTaskEnvelope(prior.taskEnvelopeJson ?? '');
         if (canonicalJson(priorTask.modelInput.source.originalBinding) !==
@@ -68,7 +73,10 @@ export class DocumentTranslationRuntimeService {
           assertAuthorized, requireCurrentPlan: true });
         const modelInput = this.plugins.taskInput(workspace);
         try {
-          return summary(await this.attempts.recoverKnownFailure(scope, input.attemptRef, expectedRequestId,
+          const recover = input.action === 'RESUME_KNOWN_FAILURE'
+            ? this.attempts.resumeSavedKnownFailure.bind(this.attempts)
+            : this.attempts.recoverKnownFailure.bind(this.attempts);
+          return summary(await recover(scope, input.attemptRef, expectedRequestId,
             { parseRunId: input.parseRunId, parseRevision: original.original.binding.parseRevision,
               modelInput: { ...modelInput, schemaVersion: 'wiselink.3_1.translation_task.v2',
                 source: { ...modelInput.source, originalBinding: original.original.binding },

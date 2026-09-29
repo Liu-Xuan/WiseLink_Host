@@ -342,9 +342,10 @@ export class MiaodaWorkItemRepository {
         OR EXISTS (SELECT 1 FROM ${actionAttempt} t
           WHERE t.tenant_id=${input.tenantId} AND t.actor_user_id=${input.actorUserId}
             AND t.document_version_id=${input.documentVersionId}
-            AND t.trigger_request_id IN (${input.translationRequestId},${`${input.translationRequestId}:hosted-m3`},
+            AND (t.trigger_request_id LIKE ${`${input.translationRequestId}:resume-%`}
+              OR t.trigger_request_id IN (${input.translationRequestId},${`${input.translationRequestId}:hosted-m3`},
               ${`${input.translationRequestId}:partial-repair`},${`${input.translationRequestId}:partial-repair-v2`},
-              ${`${input.translationRequestId}:known-failure`})
+              ${`${input.translationRequestId}:known-failure`}))
             AND t.subject_kind='DOCUMENT_VERSION' AND t.action_type='DOCUMENT_TRANSLATE'
             AND t.status IN ('QUEUED','RUNNING','RETRY_SCHEDULED')
             AND (t.trigger_request_id<>${`${input.translationRequestId}:partial-repair`}
@@ -368,7 +369,9 @@ export class MiaodaWorkItemRepository {
         OR EXISTS (SELECT 1 FROM ${actionAttempt} t
           WHERE t.tenant_id=${input.tenantId} AND t.actor_user_id=${input.actorUserId}
             AND t.document_version_id=${input.documentVersionId}
-            AND t.trigger_request_id IN (${input.translationRequestId},${`${input.translationRequestId}:hosted-m3`})
+            AND (t.trigger_request_id LIKE ${`${input.translationRequestId}:resume-%`}
+              OR t.trigger_request_id IN (${input.translationRequestId},
+                ${`${input.translationRequestId}:hosted-m3`},${`${input.translationRequestId}:known-failure`}))
             AND t.subject_kind='DOCUMENT_VERSION' AND t.action_type='DOCUMENT_TRANSLATE'
             AND t.status='SUCCEEDED' AND t.terminal_reason='REMAINING_LIMITATIONS'
             AND t.result_envelope_json::jsonb->'artifact'->>'completeness'='PARTIAL'
@@ -397,9 +400,10 @@ export class MiaodaWorkItemRepository {
         OR (${input.translationSelected} AND NOT EXISTS (SELECT 1 FROM ${actionAttempt} t
           WHERE t.tenant_id=${input.tenantId} AND t.actor_user_id=${input.actorUserId}
             AND t.document_version_id=${input.documentVersionId}
-            AND t.trigger_request_id IN (${input.translationRequestId},${`${input.translationRequestId}:hosted-m3`},
+            AND (t.trigger_request_id LIKE ${`${input.translationRequestId}:resume-%`}
+              OR t.trigger_request_id IN (${input.translationRequestId},${`${input.translationRequestId}:hosted-m3`},
               ${`${input.translationRequestId}:partial-repair`},${`${input.translationRequestId}:partial-repair-v2`},
-              ${`${input.translationRequestId}:known-failure`})
+              ${`${input.translationRequestId}:known-failure`}))
             AND t.subject_kind='DOCUMENT_VERSION' AND t.action_type='DOCUMENT_TRANSLATE'))
       ) AS missing`);
     return { pending: rows[0]?.pending === true, missing: rows[0]?.missing === true };

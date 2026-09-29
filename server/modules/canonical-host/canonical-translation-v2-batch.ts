@@ -28,6 +28,11 @@ export type TranslationNextWorkV2 =
 /** A scheduling target based on previous output measurements, not a token limit.
  * Whole semantic blocks are atomic even when one exceeds this target. */
 export const TRANSLATION_INITIAL_BATCH_SOURCE_CHARACTERS = 6_000;
+// The model still sees the complete document context. Bound only the number
+// of candidate revisions reviewed in one function response: a real 17-block
+// check returned incomplete_result while the preceding full-document generate
+// and corrections succeeded.
+export const TRANSLATION_SEMANTIC_CHECK_BATCH_BLOCKS = 8;
 
 export function nextTranslationWorkV2(
   workspace: TranslationWorkspaceV2,
@@ -111,7 +116,7 @@ export function nextTranslationWorkV2(
       if (options.batchSemanticChecks) {
         if (
           pendingChecks.length &&
-          (pendingChecks.length >= 32 ||
+          (pendingChecks.length >= TRANSLATION_SEMANTIC_CHECK_BATCH_BLOCKS ||
             checkCharacters + entry.source.sourceCharacterCount >
               targetSourceCharacters)
         )
