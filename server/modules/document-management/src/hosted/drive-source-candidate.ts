@@ -9,6 +9,9 @@ export interface DriveSourceCandidate {
   path: string;
   modifiedTime: string | null;
   identity: string;
+  /** Empty on legacy rows, which require a fresh list observation before intake. */
+  observedParentToken?: string;
+  ancestorTokens?: string[];
 }
 
 export type DriveSourceCandidateChange = DriveSourceCandidate & {
@@ -27,7 +30,8 @@ export function decodeDriveSourceCandidates(value: string): DriveSourceCandidate
 }
 
 /** Converts scan metadata into an identity-only candidate; it never treats a scan as analysis input. */
-export function toDriveSourceCandidates(sourceKey: string, entries: readonly (DriveEntry & { path: string })[]): DriveSourceCandidate[] {
+export function toDriveSourceCandidates(sourceKey: string, entries: readonly (DriveEntry & { path: string;
+  observedParentToken?: string; ancestorTokens?: string[] })[]): DriveSourceCandidate[] {
   return entries
     .filter(entry => entry.type !== 'folder')
     .map(entry => {
@@ -41,6 +45,8 @@ export function toDriveSourceCandidates(sourceKey: string, entries: readonly (Dr
         path: entry.path,
         modifiedTime: entry.modifiedTime ?? readString(entry, 'modified_time') ?? null,
         identity: `${sourceKey}:${entry.type}:${entry.token}:${providerVersionId ?? 'unversioned'}`,
+        ...(entry.observedParentToken ? { observedParentToken: entry.observedParentToken } : {}),
+        ...(entry.ancestorTokens?.length ? { ancestorTokens: [...entry.ancestorTokens] } : {}),
       };
     });
 }
@@ -80,6 +86,13 @@ function normalizeCandidate(value: unknown): DriveSourceCandidate {
   if (strings.some(key => typeof item[key] !== 'string' || !item[key])) throw new Error('DRIVE_CANDIDATE_SNAPSHOT_INVALID');
   if (item.providerVersionId !== null && typeof item.providerVersionId !== 'string') throw new Error('DRIVE_CANDIDATE_SNAPSHOT_INVALID');
   if (item.modifiedTime !== null && typeof item.modifiedTime !== 'string') throw new Error('DRIVE_CANDIDATE_SNAPSHOT_INVALID');
+  if (item.observedParentToken !== undefined && (typeof item.observedParentToken !== 'string' || !item.observedParentToken))
+    throw new Error('DRIVE_CANDIDATE_SNAPSHOT_INVALID');
+  if (item.ancestorTokens !== undefined && (!Array.isArray(item.ancestorTokens) ||
+    item.ancestorTokens.length === 0 || item.ancestorTokens.length > 64 ||
+    item.ancestorTokens.some(token => typeof token !== 'string' || !token) ||
+    item.ancestorTokens[item.ancestorTokens.length - 1] !== item.observedParentToken))
+    throw new Error('DRIVE_CANDIDATE_SNAPSHOT_INVALID');
   return {
     sourceKey: item.sourceKey as string,
     providerObjectId: item.providerObjectId as string,
@@ -89,5 +102,7 @@ function normalizeCandidate(value: unknown): DriveSourceCandidate {
     path: item.path as string,
     modifiedTime: item.modifiedTime as string | null,
     identity: item.identity as string,
+    ...(item.observedParentToken ? { observedParentToken: item.observedParentToken as string } : {}),
+    ...(item.ancestorTokens ? { ancestorTokens: [...item.ancestorTokens as string[]] } : {}),
   };
 }

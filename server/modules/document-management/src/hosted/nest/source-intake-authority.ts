@@ -17,7 +17,7 @@ export interface SourceDelegationPolicy {
   engineeringMode: 'DOCUMENT_ONLY' | 'AUTHORIZED_SCOPE';
 }
 
-/** Exact metadata binding only; the future scanner adapter must verify root membership. */
+/** Host immutable locator; the acquisition service verifies Drive root membership separately. */
 export interface SourceObservationBinding {
   sourceKey: string;
   rootToken: string;
@@ -91,7 +91,7 @@ export function parseSourceDelegationPolicy(raw: string | undefined): SourceDele
   return policies;
 }
 
-/** Internal port; no caller is wired until a scanner proves root membership and bytes. */
+/** Internal port; callers must prove root membership and actual-byte readback first. */
 export function mintSourceDelegationAuthority(input: {
   tenantId: string;
   sourceKey: string;

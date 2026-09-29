@@ -36,6 +36,7 @@ export function driveSourceScanRoots(
     folderToken: item.folderToken,
     path: item.displayName,
     depth: 0,
+    ancestorTokens: [item.folderToken],
   }));
 }
 

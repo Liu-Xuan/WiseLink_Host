@@ -17,12 +17,14 @@ export interface DriveFolderScanState {
   folderToken: string;
   path: string;
   depth: number;
+  /** Tokens proven by traversing list pages, from the configured root to this folder. */
+  ancestorTokens?: string[];
   pageToken?: string;
   entryOffset?: number;
 }
 
 export interface DriveFolderScanResult {
-  entries: Array<DriveEntry & { path: string; depth: number }>;
+  entries: Array<DriveEntry & { path: string; depth: number; observedParentToken: string; ancestorTokens: string[] }>;
   continuation: DriveFolderScanState[];
   visitedPages: string[];
   blockers: Array<{ folderToken: string; pageToken?: string; code: string }>;
@@ -52,7 +54,7 @@ export async function scanDriveFolders(
   if (![maxPages, maxEntries, maxRetries].every(value => Number.isSafeInteger(value) && value > 0))
     throw new Error('DRIVE_SCAN_OPTIONS_INVALID');
   const queue = roots.map(root => ({ ...root }));
-  const entries: Array<DriveEntry & { path: string; depth: number }> = [];
+  const entries: DriveFolderScanResult['entries'] = [];
   const continuation: DriveFolderScanState[] = [];
   const blockers: DriveFolderScanResult['blockers'] = [];
   const visitedPages: string[] = [];
@@ -60,11 +62,15 @@ export async function scanDriveFolders(
   let pages = 0;
   while (queue.length > 0) {
     const folder = queue.shift()!;
+    // A legacy checkpoint has display paths only. Its observations cannot
+    // establish root membership; restart at the registered root on the next scan.
+    const ancestorTokens = folder.ancestorTokens ?? (folder.depth === 0 ? [folder.folderToken] : []);
     let pageToken = folder.pageToken;
     let entryOffset = folder.entryOffset ?? 0;
     // Page offsets belong to the current page, never to the original resumed folder state.
     const position = (offset = entryOffset): DriveFolderScanState => ({
       folderToken: folder.folderToken, path: folder.path, depth: folder.depth,
+      ...(ancestorTokens.length ? { ancestorTokens } : {}),
       ...(pageToken ? { pageToken } : {}), ...(offset ? { entryOffset: offset } : {}),
     });
     let missingTokenRetries = 0;
@@ -103,8 +109,10 @@ export async function scanDriveFolders(
         if (seen.has(key)) continue;
         seen.add(key);
         const path = folder.path ? `${folder.path}/${entry.name}` : entry.name;
-        entries.push({ ...entry, path, depth: folder.depth });
-        if (entry.type === 'folder') queue.push({ folderToken: entry.token, path, depth: folder.depth + 1 });
+        entries.push({ ...entry, path, depth: folder.depth,
+          observedParentToken: folder.folderToken, ancestorTokens });
+        if (entry.type === 'folder') queue.push({ folderToken: entry.token, path,
+          depth: folder.depth + 1, ancestorTokens: [...ancestorTokens, entry.token] });
       }
       if (!page.hasMore) {
         entryOffset = 0;
@@ -130,7 +138,7 @@ export async function scanDriveFolders(
   return { entries, continuation, visitedPages, blockers };
 }
 
-function driveAuthorizationBlockerCode(error: unknown): string | null {
+export function driveAuthorizationBlockerCode(error: unknown): string | null {
   if (!error || typeof error !== 'object') return null;
   const value = error as { status?: unknown; statusCode?: unknown; code?: unknown; message?: unknown; response?: unknown };
   const response = value.response && typeof value.response === 'object' ? value.response as { status?: unknown; data?: unknown } : undefined;
