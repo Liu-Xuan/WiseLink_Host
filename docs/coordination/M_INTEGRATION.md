@@ -1,5 +1,12 @@
 # M 主控集成交接
 
+## 2026-09-29：上传 MinerU 修复已发布，真实上传验收待执行
+
+- 发布前重新读取线上回执，原提交确为 `4deb62ed1aa9ba58dc7966e67eb659a5ffd647b9`。`npm run build:prod` 成功，仅既有前端大块提示。来源扫描自动化现场仍 disabled；线上环境变量元数据未列出 `WISELINK_SOURCE_INTAKE_POLICIES_JSON`，未设置来源委托、未应用0070。
+- fetch 后发现平台发布祖先 `origin/main=7a6819d3f`；其树与上次发布相同。merge-tree预演与集成 HEAD 树同为 `5a02a59d64636a490292709550463f55ff39fec2`，正常合入后形成 `8efd18ae2b9be048323f2d6c91834bc74779fa47`，origin/github精确同名分支分别读回一致，无直接推main或重写历史。
+- 17b 发布 `7690762193998416852` 已最终 `finished`，回执精确提交 `8efd18ae2b9be048323f2d6c91834bc74779fa47`、`error_logs=[]`；创建到完成约115秒。期间仅轮询同一release，未并发重试。此发布包含已审查但关闭的P1/P2代码和上传worker修复，不启来源扫描或迁移权限。
+- 本机 `com.wiselink.local-mineru-worker` 现场已登记，60秒间隔、累计1411次、末次退出0、观察时 not running。未以此证明新上传任务成功。当前线上发布已完成，下一项是正常仅上传入口 → worker自然领取 → 原文/独立解读/OpenClaw翻译 → 本人读取的真实纵向证据；C136当前Skill及运行状态需现场核对。来源P3仍在独立工作树，未随本次发布。
+
 ## 2026-09-29：普通上传 MinerU 领取修复已集成，待发布纵向验收
 
 - Sol 独立提交 `528e03a5e153b6275490d2c191f4f0fcc1dabe78`（父 `eacc2e06402fd92f7b5ebf5359196d7afebf1032`）经 Astra 窄审接受，主控选择性集成为 `daea56c52`。仅 worker service、专用 unit 与既有 PG 测试三文件，无 schema、权限、路由或调度变更。
