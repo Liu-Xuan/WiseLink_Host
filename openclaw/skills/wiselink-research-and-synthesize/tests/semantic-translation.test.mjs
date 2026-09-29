@@ -7,12 +7,72 @@ import { runSemanticTranslation } from '../scripts/run-semantic-translation.mjs'
 const model = { modelRef: 'miaoda/minimax-m3', displayName: 'Synthetic M3', providerKind: 'BUILT_IN', settingsRevision: 1, selectedAt: '2026-09-09T00:00:00.000Z' };
 const output = { blocks: [{ blockId: 'b1', elements: [{ kind: 'paragraph', translatedText: '合成示例。', anchorIds: ['a1'] }] }] };
 function batch(ref = 'GEN-1') {
-  return { schemaVersion: 'wiselink.3_1.translation_semantic_batch.v2', workspaceId: 'TW-test', generationRequestRef: ref, purpose: 'GENERATE',
-    blocks: [{ blockId: 'b1', anchorIds: ['a1'] }], anchors: [{ anchorId: 'a1', sourceText: 'Synthetic example.' }], documentContext: { title: 'Synthetic' }, dependencies: {} };
+  return { schemaVersion: 'wiselink.3_1.translation_semantic_batch.v2', workspaceId: 'TW-test', generationRequestRef: ref, purpose: 'CORRECT',
+    blocks: [{ blockId: 'b1', anchorIds: ['a1'] }], anchors: [{ anchorId: 'a1', sourceText: 'Synthetic example.' }], documentContext: { title: 'Synthetic' }, dependencies: {},
+    previousBlockRevisionId: 'TB-synthetic', previousCandidate: output.blocks[0], correctionIssues: [] };
 }
 function options() { return { gatewayUrl: 'https://synthetic.invalid', gatewayToken: 'synthetic-test-token', gatewayChatCompletionsEnabled: true, executionModel: model, registeredModelRefs: [model.modelRef] }; }
 function response(value = output, extra = {}) { return { ok: true, status: 200, text: async () => JSON.stringify({ model: 'synthetic-actual-m3', usage: { prompt_tokens: 100, completion_tokens: 32 },
   choices: [{ finish_reason: 'tool_calls', message: { role: 'assistant', content: null, tool_calls: [{ type: 'function', function: { name: 'return_wiselink_translation_block', arguments: JSON.stringify({ candidate: JSON.parse(JSON.stringify(value).replaceAll('"b1"', '"B1"').replaceAll('"a1"', '"A1"').replaceAll('"b2"', '"B2"').replaceAll('"a2"', '"A2"')) }) } }] } }], ...extra }) }; }
+
+function naturalBatch(ref = 'GEN-natural') {
+  return { ...batch(ref), purpose: 'GENERATE', previousCandidate: null, previousBlockRevisionId: null,
+    sourcePlanAnchorCount: 2, sourcePlanBlockCount: 2, sourceLocale: 'en', targetLocale: 'zh-CN',
+    blocks: [{ blockId: 'b1', order: 0, kind: 'prose', anchorIds: ['a1'],
+      sourceStructure: [{ sourceUnitId: 'u1', kind: 'paragraph', payload: { text: 'Synthetic example.' } }] }],
+    anchors: [{ anchorId: 'a1', sourceUnitId: 'u1', payloadPath: '/payload/text', sourceText: 'Synthetic example.' }],
+    documentContext: { title: 'Synthetic', blocks: [{ blockId: 'b2', order: 1, kind: 'heading', anchorIds: ['a2'],
+      sourceStructure: [{ sourceUnitId: 'u2', kind: 'heading', payload: { text: 'Full context', level: 1 } }] }],
+    anchors: [{ anchorId: 'a2', sourceUnitId: 'u2', payloadPath: '/payload/text', sourceText: 'Full context' }],
+    scopedConditions: [] }, terminology: { terms: [], noTranslate: [] } };
+}
+
+test('natural generation reads full document and materializes the existing SAVE candidate', async () => {
+  let request;
+  const result = await invokeHostedTranslationBlock(naturalBatch(), options(), { requestGateway: async (_url, init) => {
+    request = JSON.parse(init.body);
+    return response({ markdown: '<!-- WL-SECTION:1 -->\n合成示例。' });
+  } });
+  const input = JSON.parse(request.messages[1].content);
+  assert.match(input.document, /Synthetic example\./u);
+  assert.match(input.document, /Full context/u);
+  assert.ok(!JSON.stringify(input).includes('a1'));
+  assert.equal(request.tools[0].function.parameters.properties.candidate.properties.markdown.type, 'string');
+  assert.deepEqual(result.output, output);
+});
+
+test('natural generations use one fresh native session per registered request', async () => {
+  const users = [];
+  for (const ref of ['GEN-natural-1', 'GEN-natural-2']) {
+    const result = await invokeHostedTranslationBlock(naturalBatch(ref), options(), {
+      requestGateway: async (_url, init) => {
+        const request = JSON.parse(init.body);
+        users.push(request.user);
+        assert.equal(request.tool_choice, 'required');
+        assert.equal(request.tools.length, 1);
+        return response({ markdown: '<!-- WL-SECTION:1 -->\n合成示例。' });
+      },
+    });
+    assert.deepEqual(result.output, output);
+  }
+  assert.deepEqual(users, ['translation:GEN-natural-1', 'translation:GEN-natural-2']);
+});
+
+test('natural generation length and gateway failures do not retry or save a partial body', async () => {
+  let calls = 0;
+  const incomplete = { choices: [{ finish_reason: 'length', message: { role: 'assistant',
+    content: null, tool_calls: [] } }] };
+  await assert.rejects(invokeHostedTranslationBlock(naturalBatch(), options(), {
+    requestGateway: async () => { calls++; return { ok: true, status: 200, text: async () => JSON.stringify(incomplete) }; },
+  }), /TRANSLATION_OUTPUT_TRUNCATED/u);
+  assert.equal(calls, 1);
+  calls = 0;
+  await assert.rejects(invokeHostedTranslationBlock(naturalBatch(), options(), {
+    requestGateway: async () => { calls++; return { ok: false, status: 400,
+      text: async () => JSON.stringify({ error: { code: 'incomplete_result' }, choices: [] }) }; },
+  }), /TRANSLATION_GATEWAY_HTTP_400/u);
+  assert.equal(calls, 1);
+});
 
 test('each registered generation has one short native session and actual provenance', async () => {
   const requests = [];
@@ -348,7 +408,7 @@ test('unknown generation is recorded and stops; a previously unresolved request 
 
 test('complete saved prefix is retained and final assembly retries only the same request', async () => {
   let nextNo = 0; let assembledNo = 0; const phases = [];
-  const larger = { ...batch(), blocks: [...batch().blocks, { blockId: 'b2', anchorIds: ['a2'] }] };
+  const larger = { ...batch(), purpose: 'GENERATE', blocks: [...batch().blocks, { blockId: 'b2', anchorIds: ['a2'] }] };
   const result = await runSemanticTranslation({ begin: begin(), requestId: 'synthetic-run', translate: async () => execution(),
     callTool: async (name, args) => {
       if (name === 'heartbeat_action_attempt') return {};

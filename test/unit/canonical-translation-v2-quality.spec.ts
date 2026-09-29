@@ -7,7 +7,7 @@ import type {
   TranslationWorkspaceV2,
 } from '@shared/canonical-translation-v2.interface';
 import { buildTranslationSourcePlan } from '../../server/modules/canonical-host/canonical-translation-source-plan';
-import { buildTranslationBatchV2, nextTranslationWorkV2 } from '../../server/modules/canonical-host/canonical-translation-v2-batch';
+import { buildTranslationBatchV2, nextTranslationWorkV2, translationBatchDependenciesV2 } from '../../server/modules/canonical-host/canonical-translation-v2-batch';
 import {
   buildTranslationWorkspaceReadingV2,
   checkTranslationBlockV2,
@@ -149,6 +149,31 @@ function workspace(
 }
 
 describe('translation v2 quality and actual reading coverage', () => {
+  it('delivers exact full-document source context while retaining old registered scopes', () => {
+    const sourcePlan = plan(['Synthetic first section.', 'Synthetic second section.'], true);
+    const work = workspace(sourcePlan);
+    const targetId = sourcePlan.blocks[0].blockId;
+    const dependencies = translationBatchDependenciesV2(work, [targetId]);
+    expect(dependencies.sourceAnchorIds).toEqual(sourcePlan.blocks[0].anchorIds);
+    expect(dependencies.contextAnchorIds).toEqual(sourcePlan.blocks[1].anchorIds);
+    const request: TranslationGenerationRequestV2 = {
+      generationRequestRef: 'TG-full', clientRequestId: 'client-full', attemptId: 'ATT-new',
+      leaseGeneration: 1, blockIds: [targetId], dependencies, purpose: 'GENERATE',
+      targetBlockRevisionId: null, status: 'REGISTERED', registeredAt: '2026-09-09T00:00:00.000Z',
+      finishedAt: null, error: null,
+    };
+    const batch = buildTranslationBatchV2(work, request, []);
+    expect(batch.documentContext.blocks.map((block) => block.blockId)).toEqual([sourcePlan.blocks[1].blockId]);
+    expect([...batch.anchors, ...batch.documentContext.anchors].map((anchor) => anchor.anchorId))
+      .toEqual(sourcePlan.anchors.map((anchor) => anchor.anchorId));
+    expect(batch.sourcePlanAnchorCount).toBe(sourcePlan.anchors.length);
+    expect(batch.sourcePlanBlockCount).toBe(sourcePlan.blocks.length);
+    const old = buildTranslationBatchV2(work, {
+      ...request, generationRequestRef: 'TG-old', dependencies: { ...dependencies, contextAnchorIds: [] },
+    }, []);
+    expect(old.documentContext.blocks).toEqual([]);
+    expect(old.documentContext.anchors).toEqual([]);
+  });
   it('keeps a 65-block repair scope while scheduling bounded generation batches', () => {
     const sourcePlan = plan(Array.from({ length: 65 }, () =>
       'Inspect the synthetic component and record its status. '.repeat(12)), true);
