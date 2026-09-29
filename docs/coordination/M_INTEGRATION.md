@@ -1,5 +1,17 @@
 # M 主控集成交接
 
+## 2026-09-29：P2 取得接线已集成，真实来源运行仍待权限与后续接线
+
+- 接续 `cba057d96`，上一轮已完成 P1 基础与双远端同步，本轮继续 P2 而不重做基线。用现有产品应用凭据调用官方 `POST /drive/v1/metas/batch_query`，technical-library 与 operations 两个既有根目录均 HTTP 200 / code 0，分别返回 metadata，无 failed_list 项。仅输出成功标志，未输出 token 或凭据。这证明根目录元数据可读，不证明列目录、文件下载或持续子目录权限已满足。
+- 官方 CLI schema/dry-run 确认 metadata 请求/响应：request_docs 使用 doc_token/doc_type，结果提供 latest_modify_time，不提供父目录链或正式版本；dry-run 未发请求，真实探针使用产品应用身份而非 CLI 的另一应用身份。列目录此前实测缺 scope；已向用户一次性请求 `space:document:retrieve` 与 `drive:file:download` 及对应审核/发布，答复前不改权限、不启扫描。
+- P2 身份合同：云盘文件 token/revision（允许空）及实际扫描父链保存在 sourceDescriptor；FileService provider 身份表示 Host 存储对象，不是厂家版次。复用 persistImmutableSource 的不覆盖保存和真实字节读回，云盘 acquisition 直接绑定该不可变对象。普通上传的 selected 对象与 immutable 副本可以不同，本轮不把 P1 reserve 接入上传后误称兼容，也不放宽为任意来源关联。
+- 检查点现场读回：dev 无记录；online 两个来源各一条，pending_count 均 0，checkpoint_version 1。两条 checkpoint 的 observed_at 均为 2026-09-16T19:49:39Z 附近，blockers 均为 DRIVE_SCOPE_MISSING。因此零 pending 不能解释为源目录为空或已处理完毕。查询未修改检查点或源文件。
+- 线上 P2 相关策略只读核对：action_attempt、dm_acquisition、dm_source_artifact 已有映射到精确 workspace service 的 permissive 路径；另一 action_attempt_document_subject_boundary 对非 DOCUMENT_VERSION 放行，不额外阻挡 ACQUISITION，0070 仍需调整既有 matter_or_document 分支。checkpoint 仅有精确 service 的 automation_tenant 策略。此为策略定义证据，不等于新迁移运行/来源 actor 已验证。
+- Sol 提交 `d9de0ed7abaeec113f7405d4dab52e66fa201815`（父 `cba057d96ad9c09a8e446d28b6d87e5ba64424c0`）经 Astra 最终窄审接受，选择性集成为 `7f30747f7`（同父）。16 个文件仅来源扫描/取得/受理及 Nest 组合测试；本地 6 suites/30 tests 通过，最后增加响应丢失用例后取得套件 10/10 与服务端类型检查通过，提交 precommit 的 ESLint/stylelint/前后端类型检查通过。主控检查差异、确切 ACK 和恢复合同；不重复无变化全仓测试。
+- P2 已接入既有扫描 Automation：technical-library 的 PDF pending→重新验证根目录父链→只读下载与前后 metadata 对比→Host 不可变原件及字节读回→Catalog acquisition→P1 intake→确切 pending ACK。operations 不进入取得/评估。缺少来源策略明确返回 DISABLED，服务 SQL actor 复用已有 middleware。每次至多处理 50 个 PDF；失败观察移到队尾，未支持类型单独计数。
+- 恢复合同：旧检查点缺父链则由既有 scanner 从根重扫；ACK/defer 行锁比较确切观察，不删除同时到达的新观察。目录移动进入取得身份，重复同一观察使用同一 acquisition/intake 身份。下载重定向拒绝而不携带凭据追随任意地址。最终窄审补充多页核验后、紧邻写入的委托重验，并补测已保存但响应丢失的恢复。
+- 本地候选验证与真实生产分开：目前仅根目录 metadata 是本轮实际来源调用证据；列目录权限仍缺、文件下载未验证。0070 未应用、来源委托未配置、扫描未启用，尚无新来源文档被受理。P3 身份识别、P4 文档交付和工程师授权读取投影仍待接线，不能将 RECORDED/WAITING_IDENTITY 当成文档已交付。
+
 ## 2026-09-29：P1 原件级受理基础已集成，来源处理未启用
 
 - Sol 独立提交 `8b7ac85b9c42dd54128c706d40c8335bb8306f77`（父 `6d5efbcecdc8b33746a3ae3fa1dfbaf249a5c175`）经 Astra 定向审查后选择性集成为 `0efb60452`（父 `21c752a8a`）。六个文件涵盖 source-intake authority/repository、Module 注册、0070 草案及两类测试，没有增加表、消费者或来源调度。未发布 Host、未应用 0070、未改变现有 0067–0069 或 C136。
