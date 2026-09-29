@@ -1,5 +1,13 @@
 # M 主控集成交接
 
+## 2026-09-29：P1 原件级受理基础已集成，来源处理未启用
+
+- Sol 独立提交 `8b7ac85b9c42dd54128c706d40c8335bb8306f77`（父 `6d5efbcecdc8b33746a3ae3fa1dfbaf249a5c175`）经 Astra 定向审查后选择性集成为 `0efb60452`（父 `21c752a8a`）。六个文件涵盖 source-intake authority/repository、Module 注册、0070 草案及两类测试，没有增加表、消费者或来源调度。未发布 Host、未应用 0070、未改变现有 0067–0069 或 C136。
+- 初次受理复用 ActionAttempt/RECORDED，固定 `source-intake:<acquisitionId>:initial`，依靠既有 tenant/idempotency 唯一约束；重放比较实际用途与来源绑定。可信上传与来源委托分开验证，不能靠自报 sourceKey/actor/tenant 取得资格。来源策略无配置默认关闭，operations 不允许 AUTHORIZED_SCOPE。暂停新处理后仍可读取同租户、来源、actor、executor 下的控制回执；这不是正文阅读权限。
+- 实际验证：服务端类型检查、定向 Jest 5/5、隔离 PostgreSQL 真实角色套件 1/1、定向 ESLint、precommit 通过。PG 用专用 `wl_delivery_test_source_intake` 的简化 schema 和宽 permissive policy，验证精确 service 正常受理、anon/auth 拒绝、缺字段/不完整来源拒绝、并发去重与旧 acquisition 删除；不证明 0067–0069 全量兼容、生产角色继承或平台重写后的策略。审查修复了 SECURITY DEFINER 角色语义、DELETE 返回、NULL 漏检、任意请求键重复与 JSON 字段顺序误拒。
+- 接线前仍有三项：P2 必须由真实扫描/下载证明根目录成员及当前执行 principal，并进入已验证 service SQL scope，set_config 本身不会切换角色；Drive 可空 revision 与 Host 原件存储身份须分开，不伪造厂家版次或永久 unversioned 去重；P4 须接工程师授权读取投影，0070 的来源 acquisition FOR ALL 限制也影响 SELECT，不能宣称只是写边界。当前 Module 仅注册服务，没有实际扫描/上传调用入口，故 P1 是基础候选而非完整统一受理验收。
+- 下一最小增量：在上述合同上接技术文档库的真实候选→只读取得→原件受理，保持 operations 仅检索；先补来源读取权限与实际身份映射，再进行受控来源样本及迁移组合验证。待批准的精确应用 scope 和 P0 现场证据见下节，未把缺权限伪装为空目录。
+
 ## 2026-09-29：来源驱动交接已接收，P0 现场核对进行中
 
 - 来源读取实测：使用本机现有产品应用配置取得 tenant token 成功，但 technical-library、operations 两个既有根目录的只读 list 均返回 HTTP 400 / 99991672，未取得文件、未下载或写入原目录。官方权限台显示 metadata 只读权限已开通，不能替代列表权限；精确所需项为 `space:document:retrieve`（目录清单，需审核）及 `drive:file:download`（下载，免审）。`drive:drive:readonly` 的官方能力包含评论，不作为最小选择。本轮未开通新权限；权限台另有既有待发布的 Aily 权限，后续发布不得无意捆绑。此证据来自本机当前产品凭据，不冒充云端运行时探针。
