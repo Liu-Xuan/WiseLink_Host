@@ -4,6 +4,7 @@ import { Navigate, Route, Routes, useLocation } from 'react-router-dom';
 import Layout from './components/Layout';
 import RouteOutletBoundary from './components/RouteOutletBoundary';
 import WorkspaceHomePage from './pages/WorkspaceHomePage/WorkspaceHomePage';
+import TranslationGlossaryPage from './pages/TranslationGlossaryPage/TranslationGlossaryPage';
 
 // Route chunks load on demand. AppContainer, identity providers and the
 // QueryClient stay mounted above the lazy boundary so navigation does not
@@ -193,6 +194,7 @@ const RoutesComponent = () => {
         />
         <Route path="runtime-probe" element={<RuntimeProbePage />} />
         <Route path="settings/models" element={<ModelSettingsPage />} />
+        <Route path="settings/translation-glossary" element={<TranslationGlossaryPage />} />
         <Route path="external-discovery" element={<ExternalDiscoveryPage />} />
         <Route path="situation" element={<EngineeringSituationPage />} />
         <Route path="timeline" element={<EngineeringTimelinePage />} />

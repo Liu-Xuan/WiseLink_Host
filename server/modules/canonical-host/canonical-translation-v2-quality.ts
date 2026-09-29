@@ -12,8 +12,17 @@ import type {
   TranslationWorkspaceV2,
 } from '@shared/canonical-translation-v2.interface';
 import { canonicalJson } from '../action-attempt/action-attempt-envelope';
+import type { TranslationGlossarySnapshot } from '@shared/api.interface';
 
-export const TRANSLATION_V2_CHECK_VERSION = 'semantic-block-check@2.1';
+export const TRANSLATION_V2_CHECK_VERSION = 'semantic-block-check@2.2';
+
+export function translationGlossaryForRevision(
+  workspace: TranslationWorkspaceV2,
+  revision: TranslationBlockRevisionV2,
+): TranslationGlossarySnapshot | undefined {
+  return workspace.generationRequests.find(request =>
+    request.generationRequestRef === revision.provenance.generationRequestRef)?.glossary;
+}
 
 export interface TranslationSemanticReviewV2 {
   blockId: string;
@@ -29,6 +38,7 @@ export interface TranslationSemanticReviewV2 {
 export function checkTranslationBlockV2(input: {
   plan: TranslationSourcePlanV2;
   candidate: TranslationBlockCandidateV2;
+  glossary?: TranslationGlossarySnapshot;
   semanticReview?: {
     result: TranslationSemanticReviewV2;
     provenance: TranslationBlockProvenanceV2;
@@ -112,6 +122,21 @@ export function checkTranslationBlockV2(input: {
       .map((element) => element.translatedText)
       .join('\n');
     const scope = group.anchors.map((anchor) => anchor.anchorId);
+    for (const entry of input.glossary?.entries ?? []) {
+      const escaped = entry.sourceText.replace(/[.*+?^${}()|[\]\\]/gu, '\\$&');
+      const sourcePattern = new RegExp(
+        `(?<![\\p{L}\\p{N}])${escaped}(?![\\p{L}\\p{N}])`, 'iu',
+      );
+      if (!sourcePattern.test(sourceText)) continue;
+      if (entry.kind === 'TERM' &&
+          !entry.targetRenderings.some(value => translatedText.includes(value)))
+        add('GLOSSARY_TERM_MISSING',
+          `术语“${entry.sourceText}”未使用术语表中的译法。`, scope);
+      if (entry.kind === 'NO_TRANSLATE' &&
+          !translatedText.includes(entry.sourceText))
+        add('GLOSSARY_TOKEN_CHANGED',
+          `术语表要求原样保留“${entry.sourceText}”。`, scope);
+    }
     const dateOrder = plan.documentContext.dateOrder;
     const originalValues = protectedValues(sourceText, dateOrder);
     const wrappedValues = protectedValues(
