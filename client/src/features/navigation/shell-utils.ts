@@ -273,6 +273,7 @@ export function deriveBreadcrumbs(
     '/external-discovery': '补充资料',
     '/runtime-probe': '连接状态',
     '/settings/models': '分析模型设置',
+    '/settings/translation-glossary': '翻译术语表',
   };
   crumbs.push({ label: pageLabels[pathname] ?? '页面未找到' });
   return crumbs;
