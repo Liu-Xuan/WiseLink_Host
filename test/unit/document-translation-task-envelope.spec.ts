@@ -52,4 +52,15 @@ describe('document translation task binding', () => {
       modelInput: { ...input.modelInput, retranslateBlockIds: ['block-1'] } });
     expect(compensated.recoveryOf?.inputHash).toBe(repair.inputHash);
   });
+  it('seals one exact known-failure predecessor and rejects conflicting recovery forms', () => {
+    const recovery = { kind: 'KNOWN_FAILURE' as const,
+      predecessorAttemptId: 'DTA-prior', predecessorAttemptRef: 'DTQ-prior' };
+    const sealed = sealDocumentTranslationTaskEnvelope({ ...input, knownFailureRecovery: recovery });
+    expect(parseDocumentTranslationTaskEnvelope(JSON.stringify(sealed)).knownFailureRecovery).toEqual(recovery);
+    expect(() => sealDocumentTranslationTaskEnvelope({ ...input, knownFailureRecovery: {
+      ...recovery, predecessorAttemptId: input.actionAttemptId } })).toThrow('TASK_SOURCE_MISMATCH');
+    expect(() => sealDocumentTranslationTaskEnvelope({ ...input, knownFailureRecovery: recovery,
+      recoveryOf: { operationRef: 'DTQ-other', inputHash: 'a'.repeat(64) } }))
+      .toThrow('TASK_SOURCE_MISMATCH');
+  });
 });

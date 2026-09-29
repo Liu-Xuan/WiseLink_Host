@@ -4,6 +4,7 @@ import { Inject, Injectable } from '@nestjs/common';
 import { randomUUID } from 'node:crypto';
 import { DocumentTranslationAttemptRepository, type DocumentTranslationScope } from '../action-attempt/document-translation-attempt.repository';
 import { parseDocumentTranslationTaskEnvelope, sealDocumentTranslationTaskEnvelope } from '../action-attempt/document-translation-task-envelope';
+import { canonicalJson } from '../action-attempt/action-attempt-envelope';
 import { UnifiedReaderService } from '../unified-reader/unified-reader.service';
 import { EngineeringMatterWorkingRepository } from './engineering-matter-working.repository';
 import { CanonicalTranslationV2PluginService } from './canonical-translation-v2-plugin.service';
@@ -24,7 +25,7 @@ export class DocumentTranslationRuntimeService {
     private readonly plugins: CanonicalTranslationV2PluginService, private readonly attempts: DocumentTranslationAttemptRepository, private readonly semantics: DocumentSemanticService, private readonly parsing: DocumentParsingHostedService,
     private readonly v2: CanonicalTranslationV2Service) {}
 
-  async run(input: { action: 'START' | 'RECOVER' | 'CONTINUE_PARTIAL' | 'RECOVER_PARTIAL_INPUT' | 'STATUS' | 'STEP' | 'CANCEL' | 'CLAIM' | 'HEARTBEAT' | 'RELEASE' | 'WORKSPACE' | 'FINISH' | 'FAIL'; documentVersionId: string;
+  async run(input: { action: 'START' | 'RECOVER' | 'CONTINUE_PARTIAL' | 'RECOVER_PARTIAL_INPUT' | 'RECOVER_KNOWN_FAILURE' | 'STATUS' | 'STEP' | 'CANCEL' | 'CLAIM' | 'HEARTBEAT' | 'RELEASE' | 'WORKSPACE' | 'FINISH' | 'FAIL'; documentVersionId: string;
     parseRunId: string; deliveryRef?: string; requestId?: string; attemptRef?: string;
     leaseToken?: string; leaseGeneration?: number; phase?: string; workspaceCommand?: unknown; errorCode?: string }) {
     if (!this.authorization.authorizeDocumentWork) throw canonicalServiceScopeUnavailable();
@@ -42,6 +43,47 @@ export class DocumentTranslationRuntimeService {
       // semantic hydration. A successful status is not a content-health proof.
       await this.parsing.status(scope.documentVersionId, { ...scope, roles: [] });
       const assertAuthorized = async () => { await read(); };
+      if (input.action === 'RECOVER_KNOWN_FAILURE') {
+        if (!expectedRequestId || !input.attemptRef || input.requestId)
+          throw new Error('DOCUMENT_TRANSLATION_RECOVERY_SCOPE_INVALID');
+        const original = await read();
+        const artifact = original.run.manifestArtifact;
+        if (!artifact || artifact.relativePath !== 'original/manifest.json' || artifact.readback !== 'VERIFIED')
+          throw new Error('DOCUMENT_ORIGINAL_MANIFEST_REQUIRED');
+        const prior = await this.attempts.readRequest(scope, expectedRequestId);
+        if (!prior || prior.operationRef !== input.attemptRef)
+          throw new Error('DOCUMENT_TRANSLATION_PREDECESSOR_NOT_FOUND');
+        const priorTask = parseDocumentTranslationTaskEnvelope(prior.taskEnvelopeJson ?? '');
+        if (canonicalJson(priorTask.modelInput.source.originalBinding) !==
+              canonicalJson(original.original.binding) ||
+            priorTask.modelInput.source.parsedArtifact.sha256 !== artifact.sha256 ||
+            priorTask.modelInput.source.parsedArtifact.byteLength !== artifact.byteLength)
+          throw new Error('DOCUMENT_TRANSLATION_RECOVERY_SOURCE_CHANGED');
+        const semanticMap = await this.semantics.read({ ...scope, roles: [] }, original);
+        if (!semanticMap) throw new Error('DOCUMENT_SEMANTIC_NOT_READY');
+        const workspace = await this.plugins.prepareOriginal({ tenantId: scope.tenantId, original: original.original,
+          semanticMap, artifact: { storeRole: 'UnifiedArtifactStoreCandidate',
+            ref: `document-original://${encodeURIComponent(scope.documentVersionId)}/${encodeURIComponent(input.parseRunId)}`,
+            sha256: artifact.sha256, byteLength: artifact.byteLength, mediaType: 'application/json' },
+          assertAuthorized, requireCurrentPlan: true });
+        const modelInput = this.plugins.taskInput(workspace);
+        try {
+          return summary(await this.attempts.recoverKnownFailure(scope, input.attemptRef, expectedRequestId,
+            { parseRunId: input.parseRunId, parseRevision: original.original.binding.parseRevision,
+              modelInput: { ...modelInput, schemaVersion: 'wiselink.3_1.translation_task.v2',
+                source: { ...modelInput.source, originalBinding: original.original.binding },
+                documentProducer: 'HOSTED_M3' } }, taskModelSelection()));
+        } catch (error) {
+          if (isPermissionRejection(error)) throw new Error('DOCUMENT_TRANSLATION_ADMISSION_DENIED');
+          if (error instanceof Error && ['DOCUMENT_TRANSLATION_RECOVERY_SAVED_OUTPUT',
+            'DOCUMENT_TRANSLATION_RECOVERY_HAS_OUTPUT'].includes(error.message)) {
+            return { ...summary(prior), recoveryStatus: 'REQUIRES_RECONCILIATION',
+              progress: await this.v2.readDocumentProgress({ tenantId: scope.tenantId, workItemId: null,
+                documentVersionId: scope.documentVersionId, workspaceId: priorTask.workspaceId }) };
+          }
+          throw error;
+        }
+      }
       if (input.action === 'START' || input.action === 'RECOVER' || input.action === 'CONTINUE_PARTIAL' ||
           input.action === 'RECOVER_PARTIAL_INPUT') {
         const requestId = input.action === 'CONTINUE_PARTIAL' && expectedRequestId
@@ -62,6 +104,11 @@ export class DocumentTranslationRuntimeService {
           const prior = await this.attempts.readRequest(scope, requestId);
           if (prior) {
             if (prior.producerRunId !== input.parseRunId) throw new Error('DOCUMENT_TRANSLATION_REQUEST_CONFLICT');
+            if (input.action === 'START') {
+              const current = await this.attempts.latest(scope, requestId);
+              if (current && current.attemptNo > prior.attemptNo &&
+                  current.producerRunId === input.parseRunId) return summary(current);
+            }
             return summary(prior);
           }
         }

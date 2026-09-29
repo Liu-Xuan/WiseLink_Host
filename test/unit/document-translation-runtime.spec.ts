@@ -32,6 +32,21 @@ function setup() {
       taskEnvelopeJson: JSON.stringify(task), triggerRequestId: `${requestId}:partial-repair-v2`,
       deadlineAt: new Date(task.deadline), errorCode: null,
     }; return row; }),
+    recoverKnownFailure: jest.fn(async (_scope, _predecessorRef, requestId, current, executionModel) => {
+      const task = sealDocumentTranslationTaskEnvelope({
+        schemaVersion: 'wiselink.document.translation_task.v1', actionAttemptId: 'DTA-successor',
+        operationRef: 'DTQ-successor', tenantId: 'tenant', documentVersionId, parseRunId,
+        parseRevision: current.parseRevision, workspaceId: current.modelInput.workspaceId,
+        modelInput: current.modelInput, deadline: new Date(Date.now() + 60_000).toISOString(),
+        idempotencyKey: 'known-failure', knownFailureRecovery: {
+          kind: 'KNOWN_FAILURE', predecessorAttemptId: 'DTA-prior', predecessorAttemptRef: _predecessorRef },
+      });
+      row = { status: 'QUEUED', documentVersionId, producerRunId: parseRunId,
+        attemptId: task.actionAttemptId, attemptNo: 2, operationRef: task.operationRef,
+        taskEnvelopeJson: JSON.stringify(task), triggerRequestId: `${requestId}:known-failure`,
+        executionModelJson: JSON.stringify(executionModel), deadlineAt: new Date(task.deadline), errorCode: null };
+      return row;
+    }),
     claim: jest.fn(async (_scope, attemptRef, principalId) => ({ attemptRef, principalId, leaseToken: 'token', leaseGeneration: 1 })),
     renew: jest.fn().mockResolvedValue(true), release: jest.fn().mockResolvedValue(true),
     cancel: jest.fn(), finish: jest.fn(), fail: jest.fn(), expire: jest.fn(),
@@ -56,6 +71,38 @@ function setup() {
 }
 
 describe('independent document translation runtime', () => {
+  it('requires the fixed delivery and predecessor for explicit known-failure recovery', async () => {
+    const f = setup();
+    const deliveryRef = 'acquisition:sample';
+    const requestId = documentDeliveryRequestId('translation', deliveryRef);
+    const first = await f.service.run({ action: 'START', ...f.binding, deliveryRef, requestId });
+    if (!('attemptRef' in first)) throw new Error('expected first attempt');
+    await expect(f.service.run({ action: 'RECOVER_KNOWN_FAILURE', ...f.binding,
+      attemptRef: first.attemptRef! })).rejects.toThrow('RECOVERY_SCOPE_INVALID');
+    const recovered = await f.service.run({ action: 'RECOVER_KNOWN_FAILURE', ...f.binding,
+      deliveryRef, attemptRef: first.attemptRef! });
+    expect(recovered).toMatchObject({ status: 'QUEUED', attemptRef: 'DTQ-successor' });
+    expect(f.attempts.recoverKnownFailure).toHaveBeenCalledWith(
+      expect.objectContaining({ actorUserId: 'actor' }), first.attemptRef, requestId,
+      expect.objectContaining({ modelInput: expect.objectContaining({ documentProducer: 'HOSTED_M3' }) }),
+      expect.objectContaining({ modelRef: 'm3probe/minimax-m3' }));
+    expect(await f.service.run({ action: 'STATUS', ...f.binding, deliveryRef })).toMatchObject(recovered);
+    expect(f.authorization.authorizeDocumentWork).toHaveBeenLastCalledWith({
+      documentVersionId: f.binding.documentVersionId, deliveryRef, purpose: 'TRANSLATION' });
+  });
+  it('returns saved-output reconciliation instead of dispatching another model attempt', async () => {
+    const f = setup();
+    const deliveryRef = 'acquisition:sample';
+    const requestId = documentDeliveryRequestId('translation', deliveryRef);
+    const first = await f.service.run({ action: 'START', ...f.binding, deliveryRef, requestId });
+    if (!('attemptRef' in first)) throw new Error('expected first attempt');
+    f.attempts.recoverKnownFailure.mockRejectedValueOnce(new Error('DOCUMENT_TRANSLATION_RECOVERY_SAVED_OUTPUT'));
+    const result = await f.service.run({ action: 'RECOVER_KNOWN_FAILURE', ...f.binding,
+      deliveryRef, attemptRef: first.attemptRef! });
+    expect(result).toMatchObject({ attemptRef: first.attemptRef,
+      recoveryStatus: 'REQUIRES_RECONCILIATION', progress: { completeness: 'PARTIAL' } });
+    expect(f.attempts.reserve).toHaveBeenCalledTimes(1);
+  });
   it('requires separate cancellation authority for a selected delivery', async () => {
     const f = setup();
     f.authorization.authorizeDocumentWork.mockRejectedValue(new Error('DYNAMIC_CANCEL_DENIED'));

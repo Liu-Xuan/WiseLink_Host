@@ -5,12 +5,14 @@ import { and, desc, eq, gt, inArray, isNull, lte, or, sql } from 'drizzle-orm';
 import { actionAttempt, translationBlockRevision, translationWorkspace } from '../../database/schema';
 import type { CanonicalExecutionModelSelection } from '@shared/api.interface';
 import { canonicalJson, canonicalSha256 } from './action-attempt-envelope';
-import { parseDocumentTranslationTaskEnvelope, type DocumentTranslationTaskEnvelope } from './document-translation-task-envelope';
+import { parseDocumentTranslationTaskEnvelope, sealDocumentTranslationTaskEnvelope,
+  type DocumentTranslationTaskEnvelope } from './document-translation-task-envelope';
 import { parseExecutionModel } from '../model-settings/canonical-execution-model';
 import { readTranslationWorkspaceSnapshot } from '../canonical-host/canonical-translation-workspace.repository';
 import { buildTranslationWorkspaceReadingV2 } from '../canonical-host/canonical-translation-v2-quality';
 import { documentTranslationRepairableBlockIds } from '../canonical-host/document-translation-repair-scope';
-import { translationManifestSchemaV2 } from '../canonical-host/canonical-translation-v2.contract';
+import { translationGenerationSchemaV2, translationManifestSchemaV2,
+  translationSourcePlanSchemaV2 } from '../canonical-host/canonical-translation-v2.contract';
 import { z } from 'zod/v4';
 
 const partialResult = z.object({ status: z.literal('REMAINING_LIMITATIONS'), artifact: z.object({
@@ -31,7 +33,7 @@ export class DocumentTranslationAttemptRepository {
     const [row] = await this.db.select().from(actionAttempt).where(and(owned(scope),
       requestId ? inArray(actionAttempt.triggerRequestId,
         [requestId, `${requestId}:hosted-m3`, `${requestId}:partial-repair`,
-          `${requestId}:partial-repair-v2`]) : undefined))
+          `${requestId}:partial-repair-v2`, `${requestId}:known-failure`]) : undefined))
       .orderBy(desc(actionAttempt.attemptNo)).limit(1);
     return row ?? null;
   }
@@ -39,6 +41,130 @@ export class DocumentTranslationAttemptRepository {
   async readRequest(scope: DocumentTranslationScope, requestId: string) {
     const [row] = await this.db.select().from(actionAttempt).where(and(owned(scope), eq(actionAttempt.triggerRequestId, requestId))).limit(1);
     return row ?? null;
+  }
+
+  /** One explicit, zero-output successor for an exact known generation failure. */
+  async recoverKnownFailure(scope: DocumentTranslationScope, predecessorRef: string, rootRequestId: string,
+    current: Pick<DocumentTranslationTaskEnvelope, 'parseRunId' | 'parseRevision' | 'modelInput'>,
+    executionModel: CanonicalExecutionModelSelection) {
+    return this.db.transaction(async tx => {
+      const locked = await tx.execute(sql`SELECT document_version_id FROM dm_document_version
+        WHERE document_version_id=${scope.documentVersionId} FOR UPDATE`);
+      if (!locked.length) throw new Error('DOCUMENT_VERSION_NOT_FOUND');
+      const [predecessor] = await tx.select().from(actionAttempt)
+        .where(and(owned(scope), eq(actionAttempt.operationRef, predecessorRef))).limit(1).for('update');
+      if (!predecessor) throw new Error('DOCUMENT_TRANSLATION_PREDECESSOR_NOT_FOUND');
+      const priorTask = parseDocumentTranslationTaskEnvelope(predecessor.taskEnvelopeJson ?? '');
+      const currentModel = parseExecutionModel(executionModel);
+      const priorModel = predecessor.executionModelJson
+        ? parseExecutionModel(JSON.parse(predecessor.executionModelJson)) : null;
+      if (predecessor.status !== 'FAILED' || !predecessor.errorCode || !predecessor.terminalReason ||
+          predecessor.triggerRequestId !== rootRequestId || predecessor.resultEnvelopeJson !== null ||
+          predecessor.resultContentHash !== null || predecessor.projectionApplied ||
+          predecessor.commitStartedAt !== null || priorTask.recoveryOf || priorTask.knownFailureRecovery ||
+          priorTask.modelInput.retranslateBlockIds || priorTask.modelInput.documentProducer !== 'HOSTED_M3' ||
+          predecessor.attemptId !== priorTask.actionAttemptId || predecessor.operationRef !== priorTask.operationRef ||
+          predecessor.taskInputHash !== priorTask.inputHash || predecessor.producerRunId !== current.parseRunId ||
+          predecessor.inputRevision !== current.parseRevision || priorTask.parseRunId !== current.parseRunId ||
+          priorTask.parseRevision !== current.parseRevision ||
+          canonicalJson(priorTask.modelInput) !== canonicalJson(current.modelInput) ||
+          !priorModel || priorModel.modelRef !== currentModel.modelRef ||
+          priorModel.providerKind !== currentModel.providerKind ||
+          priorModel.settingsRevision !== currentModel.settingsRevision ||
+          (predecessor.leaseOwner !== null && predecessor.leaseExpiresAt !== null &&
+            predecessor.leaseExpiresAt > new Date()))
+        throw new Error('DOCUMENT_TRANSLATION_RECOVERY_PREDECESSOR_INVALID');
+      const [published] = await tx.execute<{ parseRunId: string; parseRevision: number; sha256: string; byteLength: number }>(sql`
+        SELECT parse_run_id AS "parseRunId", parse_revision AS "parseRevision",
+          manifest_artifact->>'sha256' AS sha256, (manifest_artifact->>'byteLength')::bigint AS "byteLength"
+        FROM dm_document_parse_run WHERE tenant_id=${scope.tenantId} AND document_version_id=${scope.documentVersionId}
+          AND status='PUBLISHED' ORDER BY parse_revision DESC LIMIT 1 FOR SHARE`);
+      if (published?.parseRunId !== current.parseRunId || published.parseRevision !== current.parseRevision ||
+          published.sha256 !== priorTask.modelInput.source.parsedArtifact.sha256 ||
+          Number(published.byteLength) !== priorTask.modelInput.source.parsedArtifact.byteLength)
+        throw new Error('DOCUMENT_TRANSLATION_RECOVERY_SOURCE_CHANGED');
+      const [workspaceRow] = await tx.select().from(translationWorkspace)
+        .where(and(eq(translationWorkspace.tenantId, scope.tenantId),
+          eq(translationWorkspace.workspaceId, priorTask.workspaceId))).limit(1).for('update');
+      if (!workspaceRow || workspaceRow.workItemId !== null || workspaceRow.subjectKind !== 'DOCUMENT_VERSION' ||
+          workspaceRow.documentVersionId !== scope.documentVersionId ||
+          workspaceRow.packageId !== current.parseRunId || workspaceRow.targetLocale !== 'zh-CN' ||
+          workspaceRow.parsedArtifactRef !== priorTask.modelInput.source.parsedArtifact.ref ||
+          workspaceRow.parsedArtifactSha256 !== priorTask.modelInput.source.parsedArtifact.sha256 ||
+          workspaceRow.methodVersion !== priorTask.modelInput.methodVersion ||
+          workspaceRow.planRevision !== priorTask.modelInput.planRevision ||
+          workspaceRow.contextRevision !== priorTask.modelInput.contextRevision)
+        throw new Error('DOCUMENT_TRANSLATION_RECOVERY_WORKSPACE_CHANGED');
+      const plan = translationSourcePlanSchemaV2.parse(JSON.parse(workspaceRow.sourcePlanJson));
+      if (canonicalJson(plan.source) !== canonicalJson(priorTask.modelInput.source))
+        throw new Error('DOCUMENT_TRANSLATION_RECOVERY_PLAN_CHANGED');
+      const idempotencyKey = `document-translation:known-failure:${predecessor.attemptId}`;
+      const requestId = `${rootRequestId}:known-failure`;
+      const [existing] = await tx.select().from(actionAttempt).where(and(owned(scope),
+        eq(actionAttempt.idempotencyKey, idempotencyKey))).limit(1);
+      const [latest] = await tx.select().from(actionAttempt).where(and(eq(actionAttempt.tenantId, scope.tenantId),
+        eq(actionAttempt.documentVersionId, scope.documentVersionId), eq(actionAttempt.subjectKind, 'DOCUMENT_VERSION'),
+        eq(actionAttempt.actionType, 'DOCUMENT_TRANSLATE'))).orderBy(desc(actionAttempt.attemptNo)).limit(1);
+      if (existing) {
+        const task = parseDocumentTranslationTaskEnvelope(existing.taskEnvelopeJson ?? '');
+        if (task.knownFailureRecovery?.predecessorAttemptId !== predecessor.attemptId ||
+            task.knownFailureRecovery.predecessorAttemptRef !== predecessorRef ||
+            task.actionAttemptId !== existing.attemptId || task.operationRef !== existing.operationRef ||
+            existing.triggerRequestId !== requestId ||
+            canonicalJson(task.modelInput) !== canonicalJson(current.modelInput) ||
+            workspaceRow.activeAttemptId !== existing.attemptId || latest?.attemptId !== existing.attemptId)
+          throw new Error('DOCUMENT_TRANSLATION_RECOVERY_REQUEST_CONFLICT');
+        return existing;
+      }
+      if (workspaceRow.resultArtifactJson !== null || workspaceRow.resultManifestJson !== null)
+        throw new Error('DOCUMENT_TRANSLATION_RECOVERY_HAS_OUTPUT');
+      const generations = z.array(translationGenerationSchemaV2).parse(JSON.parse(workspaceRow.generationRequestsJson));
+      const predecessorGenerations = generations.filter(item => item.attemptId === predecessor.attemptId);
+      if (!predecessorGenerations.length || predecessorGenerations.some(item =>
+          item.status !== 'FAILED' || item.error?.outcome !== 'KNOWN_FAILURE') ||
+          generations.some(item => item.status === 'REGISTERED' || item.error?.outcome === 'GENERATION_UNKNOWN'))
+        throw new Error('DOCUMENT_TRANSLATION_RECOVERY_GENERATION_UNSETTLED');
+      const generationRefs = predecessorGenerations.map(item => item.generationRequestRef);
+      const [saved] = await tx.select({ id: translationBlockRevision.blockRevisionId }).from(translationBlockRevision)
+        .where(and(eq(translationBlockRevision.tenantId, scope.tenantId),
+          eq(translationBlockRevision.workspaceId, workspaceRow.workspaceId),
+          or(eq(translationBlockRevision.originAttemptId, predecessor.attemptId),
+            inArray(translationBlockRevision.generationRequestRef, generationRefs)))).limit(1);
+      if (saved) throw new Error('DOCUMENT_TRANSLATION_RECOVERY_SAVED_OUTPUT');
+      const [activeOther] = await tx.select({ id: actionAttempt.attemptId }).from(actionAttempt)
+        .where(and(eq(actionAttempt.tenantId, scope.tenantId),
+          eq(actionAttempt.documentVersionId, scope.documentVersionId),
+          eq(actionAttempt.subjectKind, 'DOCUMENT_VERSION'),
+          eq(actionAttempt.actionType, 'DOCUMENT_TRANSLATE'),
+          inArray(actionAttempt.status, ['QUEUED', 'RUNNING', 'RETRY_SCHEDULED', 'COMMITTING'])))
+        .limit(1);
+      if (activeOther) throw new Error('DOCUMENT_TRANSLATION_RECOVERY_COORDINATOR_CHANGED');
+      if (latest?.attemptId !== predecessor.attemptId || workspaceRow.activeAttemptId !== predecessor.attemptId)
+        throw new Error('DOCUMENT_TRANSLATION_RECOVERY_COORDINATOR_CHANGED');
+      const identity = canonicalSha256({ kind: 'DOCUMENT_TRANSLATION_KNOWN_FAILURE',
+        predecessorAttemptId: predecessor.attemptId });
+      const { inputHash: _priorHash, ...priorInput } = priorTask;
+      const task = sealDocumentTranslationTaskEnvelope({ ...priorInput,
+        actionAttemptId: `DTA-${identity.slice(0, 40)}`, operationRef: `DTQ-${identity.slice(0, 40)}`,
+        deadline: new Date(Date.now() + 12 * 60 * 60_000).toISOString(), idempotencyKey,
+        knownFailureRecovery: { kind: 'KNOWN_FAILURE', predecessorAttemptId: predecessor.attemptId,
+          predecessorAttemptRef: predecessorRef } });
+      const [successor] = await tx.insert(actionAttempt).values({ attemptId: task.actionAttemptId,
+        operationRef: task.operationRef, subjectKind: 'DOCUMENT_VERSION', workItemId: null,
+        documentVersionId: scope.documentVersionId, tenantId: scope.tenantId, actorUserId: scope.actorUserId,
+        producerRunId: task.parseRunId, actionType: 'DOCUMENT_TRANSLATE', attemptNo: predecessor.attemptNo + 1,
+        triggerRequestId: requestId, requestOrigin: 'HOST_DOCUMENT', status: 'QUEUED',
+        leaseGeneration: 0, claimCount: 0, retryCount: 0, maxAttempts: 3,
+        inputRevision: task.parseRevision, taskEnvelopeJson: canonicalJson(task), taskInputHash: task.inputHash,
+        idempotencyKey, deadlineAt: new Date(task.deadline), executionModelJson: predecessor.executionModelJson,
+        packageArtifactRef: task.modelInput.source.parsedArtifact.ref,
+        packageArtifactSha256: task.modelInput.source.parsedArtifact.sha256 }).returning();
+      await tx.update(translationWorkspace).set({ activeAttemptId: successor.attemptId,
+        rowVersion: workspaceRow.rowVersion + 1, updatedAt: new Date() })
+        .where(and(eq(translationWorkspace.tenantId, scope.tenantId),
+          eq(translationWorkspace.workspaceId, workspaceRow.workspaceId)));
+      return successor;
+    });
   }
 
   async expire(scope: DocumentTranslationScope): Promise<void> {
