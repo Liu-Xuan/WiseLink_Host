@@ -64,6 +64,21 @@ function setup() {
         executionModelJson: JSON.stringify(executionModel), deadlineAt: new Date(task.deadline), errorCode: null };
       return row;
     }),
+    recoverExpired: jest.fn(async (_scope, predecessorRef, requestId) => {
+      if (!row || row.operationRef !== predecessorRef) throw new Error('EXPIRED_PREDECESSOR_INVALID');
+      const old = JSON.parse(String(row.taskEnvelopeJson));
+      const { inputHash: _hash, ...unsealed } = old;
+      const task = sealDocumentTranslationTaskEnvelope({ ...unsealed,
+        actionAttemptId: 'DTA-expired-successor', operationRef: 'DTQ-expired-successor',
+        deadline: new Date(Date.now() + 60_000).toISOString(),
+        idempotencyKey: 'expired-successor', expiredRecovery: {
+          predecessorAttemptId: old.actionAttemptId, predecessorAttemptRef: predecessorRef,
+          rootRequestId: requestId } });
+      row = { ...row, status: 'QUEUED', attemptId: task.actionAttemptId,
+        operationRef: task.operationRef, taskEnvelopeJson: JSON.stringify(task),
+        triggerRequestId: `${requestId}:expired-resume`, deadlineAt: new Date(task.deadline) };
+      return row;
+    }),
     claim: jest.fn(async (_scope, attemptRef, principalId) => ({ attemptRef, principalId, leaseToken: 'token', leaseGeneration: 1 })),
     renew: jest.fn().mockResolvedValue(true), release: jest.fn().mockResolvedValue(true),
     cancel: jest.fn(), finish: jest.fn(), fail: jest.fn(), expire: jest.fn(),
@@ -88,6 +103,73 @@ function setup() {
 }
 
 describe('independent document translation runtime', () => {
+  it('authorizes the exact source before resuming a never-claimed deadline', async () => {
+    const f = setup();
+    const deliveryRef = 'acquisition:sample';
+    const requestId = documentDeliveryRequestId('translation', deliveryRef);
+    const started = await f.service.run({ action: 'START', ...f.binding,
+      deliveryRef, requestId });
+    if (!('attemptRef' in started)) throw new Error('expected attempt');
+    const row = await f.attempts.latest();
+    Object.assign(row!, { status: 'FAILED', errorCode: 'DOCUMENT_TRANSLATION_DEADLINE_EXPIRED',
+      claimCount: 0, startedAt: null, leaseOwner: null, leaseToken: null,
+      leaseExpiresAt: null, resultEnvelopeJson: null, resultContentHash: null,
+      projectionApplied: false, commitStartedAt: null, cancelRequestedAt: null });
+    expect(await f.service.run({ action: 'STATUS', ...f.binding, deliveryRef }))
+      .toMatchObject({ expiredRecoveryAvailable: true });
+    const resumed = await f.service.run({ action: 'RECOVER_EXPIRED', ...f.binding,
+      deliveryRef, attemptRef: started.attemptRef! });
+    expect(resumed).toMatchObject({ status: 'QUEUED', attemptRef: 'DTQ-expired-successor' });
+    expect(f.attempts.recoverExpired).toHaveBeenCalledWith(
+      expect.objectContaining({ actorUserId: 'actor' }), started.attemptRef, requestId);
+    expect(f.reader.readDocumentOriginal).toHaveBeenCalledWith(f.binding.documentVersionId,
+      f.binding.parseRunId, expect.objectContaining({ actorUserId: 'actor' }));
+    expect(f.authorization.authorizeDocumentWork).toHaveBeenLastCalledWith({
+      documentVersionId: f.binding.documentVersionId, deliveryRef, purpose: 'TRANSLATION' });
+  });
+  it('accepts only the exact expired successor for saved known-failure recovery', async () => {
+    const f = setup();
+    const deliveryRef = 'acquisition:sample';
+    const requestId = documentDeliveryRequestId('translation', deliveryRef);
+    const started = await f.service.run({ action: 'START', ...f.binding,
+      deliveryRef, requestId });
+    if (!('attemptRef' in started)) throw new Error('expected attempt');
+    Object.assign((await f.attempts.latest())!, { status: 'FAILED',
+      errorCode: 'DOCUMENT_TRANSLATION_DEADLINE_EXPIRED' });
+    const expired = await f.service.run({ action: 'RECOVER_EXPIRED', ...f.binding,
+      deliveryRef, attemptRef: started.attemptRef! });
+    if (!('attemptRef' in expired)) throw new Error('expected expired successor');
+    Object.assign((await f.attempts.latest())!, { status: 'FAILED',
+      errorCode: 'DOCUMENT_TRANSLATION_CHECK_FAILED' });
+    await expect(f.service.run({ action: 'RESUME_KNOWN_FAILURE', ...f.binding,
+      deliveryRef: 'acquisition:other', attemptRef: expired.attemptRef! }))
+      .rejects.toThrow('DOCUMENT_TRANSLATION_PREDECESSOR_NOT_FOUND');
+    Object.assign((await f.attempts.latest())!, {
+      triggerRequestId: `${requestId}:resume-unbound` });
+    await expect(f.service.run({ action: 'RESUME_KNOWN_FAILURE', ...f.binding,
+      deliveryRef, attemptRef: expired.attemptRef! }))
+      .rejects.toThrow('DOCUMENT_TRANSLATION_PREDECESSOR_NOT_FOUND');
+    Object.assign((await f.attempts.latest())!, {
+      triggerRequestId: `${requestId}:expired-resume` });
+    const resumed = await f.service.run({ action: 'RESUME_KNOWN_FAILURE',
+      ...f.binding, deliveryRef, attemptRef: expired.attemptRef! });
+    if (!('attemptRef' in resumed)) throw new Error('expected saved successor');
+    expect(resumed).toMatchObject({ status: 'QUEUED',
+      attemptRef: 'DTQ-saved-successor' });
+    expect(f.attempts.resumeSavedKnownFailure).toHaveBeenCalledWith(
+      expect.objectContaining({ actorUserId: 'actor' }),
+      expired.attemptRef, requestId, expect.any(Object), expect.any(Object));
+    Object.assign((await f.attempts.latest())!, { status: 'SUCCEEDED',
+      terminalReason: 'REMAINING_LIMITATIONS' });
+    expect(await f.service.run({ action: 'STATUS', ...f.binding, deliveryRef }))
+      .toMatchObject({ partialRepairAvailable: true });
+    const partial = await f.service.run({ action: 'CONTINUE_PARTIAL',
+      ...f.binding, deliveryRef, attemptRef: resumed.attemptRef! });
+    expect(partial).toMatchObject({ status: 'QUEUED' });
+    expect(f.attempts.reserve.mock.lastCall?.slice(2)).toMatchObject([
+      `${requestId}:partial-repair`, expect.objectContaining({ modelRef: 'm3probe/minimax-m3' }),
+      resumed.attemptRef, 'PARTIAL' ]);
+  });
   it('requires the fixed delivery and predecessor for explicit known-failure recovery', async () => {
     const f = setup();
     const deliveryRef = 'acquisition:sample';

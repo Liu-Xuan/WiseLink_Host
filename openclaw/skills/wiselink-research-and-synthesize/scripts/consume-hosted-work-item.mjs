@@ -1367,6 +1367,25 @@ async function advanceDocumentTranslation(documentVersionId, run, callTool, befo
       return callTool('document_translation', { action: 'RECOVER', ...binding,
         attemptRef: translation.attemptRef, requestId });
     }
+    if (translation.status === 'FAILED' &&
+        translation.errorCode === 'DOCUMENT_TRANSLATION_DEADLINE_EXPIRED' &&
+        translation.expiredRecoveryAvailable === true && deliveryRef) {
+      try {
+        const resumed = await callTool('document_translation', { action: 'RECOVER_EXPIRED',
+          ...binding, attemptRef: translation.attemptRef });
+        if (resumed?.documentVersionId !== documentVersionId ||
+            resumed.parseRunId !== run.parseRunId || !resumed.attemptRef ||
+            resumed.attemptRef === translation.attemptRef)
+          throw new Error('DOCUMENT_TRANSLATION_EXPIRED_SUCCESSOR_MISMATCH');
+        return resumed;
+      } catch (error) {
+        if (!error?.hostErrorCode?.startsWith('DOCUMENT_TRANSLATION_EXPIRED_') &&
+            !['DOCUMENT_TRANSLATION_RECOVERY_SOURCE_CHANGED',
+              'DOCUMENT_TRANSLATION_RECOVERY_PLAN_CHANGED'].includes(error?.hostErrorCode)) throw error;
+        return { ...translation, status: 'REQUIRES_ATTENTION',
+          recoveryErrorCode: error.hostErrorCode };
+      }
+    }
     if (translation.errorCode || ['FAILED','CANCELLED'].includes(translation.status))
       return { ...translation, status: 'REQUIRES_ATTENTION' };
     if (translation.status === 'SUCCEEDED') {

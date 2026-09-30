@@ -1,5 +1,8 @@
 import { drizzle } from 'drizzle-orm/postgres-js';
 import postgres from 'postgres';
+import { readFileSync } from 'node:fs';
+import { resolve } from 'node:path';
+import { randomUUID } from 'node:crypto';
 import { canonicalJson } from '../../server/modules/action-attempt/action-attempt-envelope';
 import { parseDocumentTranslationTaskEnvelope, sealDocumentTranslationTaskEnvelope } from '../../server/modules/action-attempt/document-translation-task-envelope';
 import { DocumentTranslationAttemptRepository } from '../../server/modules/action-attempt/document-translation-attempt.repository';
@@ -147,18 +150,46 @@ describePg('saved document translation recovery on isolated PostgreSQL temp tabl
         row_version integer, _created_at timestamptz DEFAULT now(), _created_by text,
         _updated_at timestamptz DEFAULT now(), _updated_by text);
     `);
+    const hosted = readFileSync(resolve(process.cwd(), 'migrations/0070_source_intake_acquisition_intent.sql'), 'utf8');
+    const subjectConstraint = hosted.match(/ALTER TABLE action_attempt ADD CONSTRAINT ck_action_attempt_subject CHECK \([\s\S]*?\n\);/u)?.[0];
+    const original = readFileSync(resolve(process.cwd(), 'migrations/0048_document_translation_attempt_subject.sql'), 'utf8');
+    const originalGuard = original.match(/CREATE FUNCTION action_attempt_check_document_original\(\)[\s\S]*?\$\$;/u)?.[0];
+    const immutableGuard = original.match(/CREATE FUNCTION action_attempt_preserve_document_subject\(\)[\s\S]*?\$\$;/u)?.[0];
+    if (!subjectConstraint || !originalGuard || !immutableGuard)
+      throw new Error('DOCUMENT_TRANSLATION_MIGRATION_GUARD_NOT_FOUND');
+    await client.unsafe(subjectConstraint);
+    await client.unsafe(originalGuard.replace('CREATE FUNCTION ', 'CREATE FUNCTION pg_temp.'));
+    await client.unsafe(immutableGuard.replace('CREATE FUNCTION ', 'CREATE FUNCTION pg_temp.'));
+    await client.unsafe(`CREATE TRIGGER action_attempt_check_document_original
+      BEFORE INSERT OR UPDATE ON action_attempt FOR EACH ROW
+      EXECUTE FUNCTION pg_temp.action_attempt_check_document_original();
+      CREATE TRIGGER action_attempt_preserve_document_subject
+      BEFORE UPDATE ON action_attempt FOR EACH ROW
+      EXECUTE FUNCTION pg_temp.action_attempt_preserve_document_subject();
+      CREATE UNIQUE INDEX uk_action_attempt_document_number
+        ON action_attempt(tenant_id,document_version_id,action_type,attempt_no)
+        WHERE subject_kind='DOCUMENT_VERSION';
+      CREATE UNIQUE INDEX uk_action_attempt_active_document_task
+        ON action_attempt(tenant_id,document_version_id,action_type)
+        WHERE subject_kind='DOCUMENT_VERSION'
+          AND status IN ('QUEUED','RUNNING','RETRY_SCHEDULED','COMMITTING');`);
     repository = new DocumentTranslationAttemptRepository(drizzle(client) as never);
   });
   afterAll(async () => { await client?.end(); });
 
-  async function seed() {
-    const data = fixture();
+  async function seed(expired = false) {
+    const base = fixture();
+    const { inputHash: _hash, ...priorInput } = base.prior;
+    const data = expired ? { ...base, prior: sealDocumentTranslationTaskEnvelope({
+      ...priorInput, deadline: new Date(Date.now() - 60_000).toISOString() }) } : base;
     await client`TRUNCATE action_attempt,translation_workspace,translation_block_revision,
       dm_document_version,dm_document_parse_run`;
     await client`INSERT INTO dm_document_version(document_version_id) VALUES (${scope.documentVersionId})`;
     await client`INSERT INTO dm_document_parse_run(tenant_id,document_version_id,parse_run_id,
       parse_revision,status,manifest_artifact) VALUES (${scope.tenantId},${scope.documentVersionId},
-      ${parseRunId},2,'PUBLISHED',${canonicalJson({ sha256: artifact.sha256, byteLength: artifact.byteLength })}::jsonb)`;
+      ${parseRunId},2,'PUBLISHED',${canonicalJson({ role: 'MANIFEST',
+        relativePath: 'original/manifest.json', readback: 'VERIFIED',
+        sha256: artifact.sha256, byteLength: artifact.byteLength })}::jsonb)`;
     await client`INSERT INTO action_attempt(attempt_id,subject_kind,action_type,attempt_no,
       trigger_request_id,request_origin,status,producer_run_id,error_code,actor_user_id,
       tenant_id,input_revision,document_version_id,task_envelope_json,task_input_hash,
@@ -167,7 +198,7 @@ describePg('saved document translation recovery on isolated PostgreSQL temp tabl
         ${rootRequestId},'HOST_DOCUMENT','FAILED',${parseRunId},'DOCUMENT_TRANSLATION_CHECK_FAILED',
         ${scope.actorUserId},${scope.tenantId},2,${scope.documentVersionId},
         ${canonicalJson(data.root)},${data.root.inputHash},${data.root.idempotencyKey},
-        '2026-09-30','DOCUMENT_TRANSLATION_CHECK_FAILED',${data.root.operationRef},${canonicalJson(model)})`;
+        ${data.root.deadline},'DOCUMENT_TRANSLATION_CHECK_FAILED',${data.root.operationRef},${canonicalJson(model)})`;
     await client`INSERT INTO action_attempt(attempt_id,subject_kind,action_type,attempt_no,
       trigger_request_id,request_origin,status,producer_run_id,error_code,actor_user_id,
       tenant_id,input_revision,document_version_id,task_envelope_json,task_input_hash,
@@ -176,7 +207,7 @@ describePg('saved document translation recovery on isolated PostgreSQL temp tabl
         ${`${rootRequestId}:known-failure`},'HOST_DOCUMENT','FAILED',${parseRunId},'DOCUMENT_TRANSLATION_CHECK_FAILED',
         ${scope.actorUserId},${scope.tenantId},2,${scope.documentVersionId},
         ${canonicalJson(data.prior)},${data.prior.inputHash},${data.prior.idempotencyKey},
-        '2026-09-30', 'DOCUMENT_TRANSLATION_CHECK_FAILED',${data.prior.operationRef},${canonicalJson(model)})`;
+        ${data.prior.deadline}, 'DOCUMENT_TRANSLATION_CHECK_FAILED',${data.prior.operationRef},${canonicalJson(model)})`;
     await client`INSERT INTO translation_workspace(workspace_id,tenant_id,work_item_id,subject_kind,
       document_version_id,package_id,parsed_artifact_ref,parsed_artifact_sha256,target_locale,
       plan_revision,context_revision,source_plan_json,method_version,active_attempt_id,
@@ -300,9 +331,9 @@ describePg('saved document translation recovery on isolated PostgreSQL temp tabl
     await client`UPDATE dm_document_parse_run SET manifest_artifact=${canonicalJson({ sha256: artifact.sha256, byteLength: 100 })}::jsonb`;
     await client`INSERT INTO action_attempt(attempt_id,subject_kind,action_type,attempt_no,
       trigger_request_id,request_origin,status,producer_run_id,actor_user_id,tenant_id,
-      document_version_id) VALUES ('DTA-other','DOCUMENT_VERSION','DOCUMENT_TRANSLATE',3,
+      document_version_id,input_revision) VALUES ('DTA-other','DOCUMENT_VERSION','DOCUMENT_TRANSLATE',3,
       'other','HOST_DOCUMENT','QUEUED',${parseRunId},${scope.actorUserId},${scope.tenantId},
-      ${scope.documentVersionId})`;
+      ${scope.documentVersionId},2)`;
     await expect(repository.resumeSavedKnownFailure(scope, data.prior.operationRef,
       rootRequestId, current, model)).rejects.toThrow('RECOVERY_COORDINATOR_CHANGED');
     await client`DELETE FROM action_attempt WHERE attempt_id='DTA-other'`;
@@ -311,5 +342,450 @@ describePg('saved document translation recovery on isolated PostgreSQL temp tabl
     await client`UPDATE translation_workspace SET generation_requests_json=${canonicalJson(unknown)}`;
     await expect(repository.resumeSavedKnownFailure(scope, data.prior.operationRef,
       rootRequestId, current, model)).rejects.toThrow('RECOVERY_GENERATION_UNSETTLED');
+  });
+
+  it('does not discover or select a nonnumeric resume suffix', async () => {
+    const data = await seed();
+    await client`INSERT INTO action_attempt(attempt_id,subject_kind,action_type,attempt_no,
+      trigger_request_id,request_origin,status,producer_run_id,actor_user_id,tenant_id,
+      input_revision,document_version_id,task_envelope_json,task_input_hash,
+      idempotency_key,deadline_at,operation_ref,execution_model_json)
+      VALUES ('DTA-unbound','DOCUMENT_VERSION','DOCUMENT_TRANSLATE',3,
+        ${`${rootRequestId}:resume-unbound`},'HOST_DOCUMENT','QUEUED',${parseRunId},
+        ${scope.actorUserId},${scope.tenantId},2,${scope.documentVersionId},
+        ${canonicalJson(data.prior)},${data.prior.inputHash},'unbound-request',
+        now()+interval '1 hour','DTQ-unbound',${canonicalJson(model)})`;
+    expect((await repository.latest(scope, rootRequestId))?.attemptId)
+      .toBe(data.prior.actionAttemptId);
+    const dispatch = await new MiaodaWorkItemRepository(drizzle(client) as never)
+      .documentDeliveryDispatchState({ ...scope, readingRequestId: 'unused-reading',
+        translationRequestId: rootRequestId, readingSelected: false,
+        translationSelected: true });
+    expect(dispatch).toEqual({ pending: false, missing: false });
+  });
+
+  async function seedNeverClaimedExpired() {
+    const data = await seed(true);
+    const expired = data.prior;
+    await client`UPDATE action_attempt SET status='FAILED',
+      error_code='DOCUMENT_TRANSLATION_DEADLINE_EXPIRED',
+      terminal_reason='DOCUMENT_TRANSLATION_DEADLINE_EXPIRED',
+      claim_count=0, started_at=NULL,
+      lease_owner=NULL, lease_token=NULL, lease_expires_at=NULL
+      WHERE attempt_id=${data.prior.actionAttemptId}`;
+    const previousGenerations = data.generations.map(request => ({ ...request,
+      attemptId: data.root.actionAttemptId }));
+    await client`UPDATE translation_workspace SET active_attempt_id=${data.root.actionAttemptId},
+      generation_requests_json=${canonicalJson(previousGenerations)}`;
+    for (const revision of data.revisions) {
+      await client`UPDATE translation_block_revision SET
+        origin_attempt_id=${data.root.actionAttemptId},
+        provenance_json=${canonicalJson({ ...revision.provenance,
+          originAttemptId: data.root.actionAttemptId })}
+        WHERE block_revision_id=${revision.blockRevisionId}`;
+    }
+    return { ...data, expired, previousGenerations };
+  }
+
+  it('discovers a never-claimed deadline and atomically creates one exact successor', async () => {
+    const data = await seedNeverClaimedExpired();
+    const dispatch = () => new MiaodaWorkItemRepository(drizzle(client) as never)
+      .documentDeliveryDispatchState({ ...scope, readingRequestId: 'unused-reading',
+        translationRequestId: rootRequestId, readingSelected: false,
+        translationSelected: true });
+    expect(await dispatch()).toEqual({ pending: true, missing: false });
+    const preserved = await client`SELECT block_revision_id,candidate_json,selected_for_reading
+      FROM translation_block_revision ORDER BY block_revision_id`;
+    const [first, duplicate] = await Promise.all([
+      repository.recoverExpired(scope, data.expired.operationRef, rootRequestId),
+      repository.recoverExpired(scope, data.expired.operationRef, rootRequestId),
+    ]);
+    expect(first.attemptId).toBe(duplicate.attemptId);
+    expect(first.triggerRequestId).toBe(`${rootRequestId}:expired-resume`);
+    expect(first.status).toBe('QUEUED');
+    expect(first.deadlineAt!.getTime()).toBeGreaterThan(Date.now());
+    const successorTask = parseDocumentTranslationTaskEnvelope(first.taskEnvelopeJson!);
+    expect(successorTask.expiredRecovery).toEqual({
+      predecessorAttemptId: data.expired.actionAttemptId,
+      predecessorAttemptRef: data.expired.operationRef, rootRequestId });
+    expect(successorTask.modelInput).toEqual(data.expired.modelInput);
+    expect(first.executionModelJson).toBe(canonicalJson(model));
+    const [old] = await client`SELECT status,deadline_at FROM action_attempt
+      WHERE attempt_id=${data.expired.actionAttemptId}`;
+    expect(old.status).toBe('FAILED');
+    expect(new Date(old.deadline_at).toISOString()).toBe(data.expired.deadline);
+    expect(await client`SELECT block_revision_id,candidate_json,selected_for_reading
+      FROM translation_block_revision ORDER BY block_revision_id`).toEqual(preserved);
+    const snapshot = await readTranslationWorkspaceSnapshot(drizzle(client) as never,
+      { tenantId: scope.tenantId, workItemId: null,
+        documentVersionId: scope.documentVersionId, workspaceId: data.prior.workspaceId });
+    const reading = buildTranslationWorkspaceReadingV2(snapshot.workspace, snapshot.revisions);
+    expect(nextTranslationWorkV2(snapshot.workspace, snapshot.revisions, reading,
+      undefined, { batchSemanticChecks: true })).toMatchObject({ kind: 'CHECK',
+      blockIds: [data.revisions[1].blockId] });
+    expect((await client`SELECT attempt_id FROM action_attempt WHERE
+      trigger_request_id=${`${rootRequestId}:expired-resume`}`)).toHaveLength(1);
+    expect(await dispatch()).toEqual({ pending: true, missing: false });
+    await client`UPDATE action_attempt SET status='SUCCEEDED' WHERE attempt_id=${first.attemptId}`;
+    expect(await dispatch()).toEqual({ pending: false, missing: false });
+    expect((await repository.latest(scope, rootRequestId))?.attemptId).toBe(first.attemptId);
+  });
+
+  it('rejects a claimed deadline and leaves unknown generations for attention', async () => {
+    const data = await seedNeverClaimedExpired();
+    await client`UPDATE action_attempt SET claim_count=1,started_at=now()-interval '2 hours'
+      WHERE attempt_id=${data.expired.actionAttemptId}`;
+    await expect(repository.recoverExpired(scope, data.expired.operationRef,
+      rootRequestId)).rejects.toThrow('EXPIRED_PREDECESSOR_INVALID');
+    await client`UPDATE action_attempt SET claim_count=0,started_at=NULL
+      WHERE attempt_id=${data.expired.actionAttemptId}`;
+    for (const generation of [{ ...data.previousGenerations[0], status: 'REGISTERED' as const },
+      { ...data.previousGenerations[0], error: {
+        origin: 'UPSTREAM' as const, code: 'TEST_UNKNOWN',
+        outcome: 'GENERATION_UNKNOWN' as const, retryable: false } }]) {
+      await client`UPDATE translation_workspace SET generation_requests_json=${canonicalJson([generation])}`;
+      const dispatch = await new MiaodaWorkItemRepository(drizzle(client) as never)
+        .documentDeliveryDispatchState({ ...scope, readingRequestId: 'unused-reading',
+          translationRequestId: rootRequestId, readingSelected: false,
+          translationSelected: true });
+      expect(dispatch).toEqual({ pending: false, missing: false });
+      await expect(repository.recoverExpired(scope, data.expired.operationRef,
+        rootRequestId)).rejects.toThrow('EXPIRED_GENERATION_UNSETTLED');
+    }
+  });
+
+  it('discovers an overdue queued attempt before STATUS records its terminal failure', async () => {
+    const data = await seedNeverClaimedExpired();
+    await client`UPDATE action_attempt SET status='QUEUED',error_code=NULL,
+      terminal_reason=NULL WHERE attempt_id=${data.expired.actionAttemptId}`;
+    const dispatch = () => new MiaodaWorkItemRepository(drizzle(client) as never)
+      .documentDeliveryDispatchState({ ...scope, readingRequestId: 'unused-reading',
+        translationRequestId: rootRequestId, readingSelected: false,
+        translationSelected: true });
+    expect(await dispatch()).toEqual({ pending: true, missing: false });
+    await repository.expire(scope);
+    const recovered = await repository.recoverExpired(scope,
+      data.expired.operationRef, rootRequestId);
+    expect(recovered.status).toBe('QUEUED');
+  });
+
+  it('continues saved blocks after the expired successor has a known CHECK failure', async () => {
+    const data = await seedNeverClaimedExpired();
+    const expired = await repository.recoverExpired(scope,
+      data.expired.operationRef, rootRequestId);
+    const checkFailure: TranslationGenerationRequestV2 = {
+      ...data.previousGenerations.at(-1)!,
+      generationRequestRef: 'TG-expired-check-failed',
+      clientRequestId: 'expired-check-failed',
+      attemptId: expired.attemptId, status: 'FAILED',
+      error: { origin: 'OUTPUT_CONTRACT', code: 'DOCUMENT_TRANSLATION_CHECK_FAILED',
+        outcome: 'KNOWN_FAILURE', retryable: false },
+    };
+    await client`UPDATE action_attempt SET status='FAILED',
+      error_code='DOCUMENT_TRANSLATION_CHECK_FAILED',
+      terminal_reason='DOCUMENT_TRANSLATION_CHECK_FAILED'
+      WHERE attempt_id=${expired.attemptId}`;
+    const current = { parseRunId, parseRevision: 2, modelInput: data.modelInput };
+    for (const unsettled of [
+      { ...checkFailure, status: 'REGISTERED' as const, error: null },
+      { ...checkFailure, error: { ...checkFailure.error!,
+        outcome: 'GENERATION_UNKNOWN' as const } },
+    ]) {
+      await client`UPDATE translation_workspace SET
+        generation_requests_json=${canonicalJson([...data.previousGenerations, unsettled])}`;
+      await expect(repository.resumeSavedKnownFailure(scope, expired.operationRef!,
+        rootRequestId, current, model)).rejects.toThrow('RECOVERY_GENERATION_UNSETTLED');
+    }
+    await client`UPDATE translation_workspace SET
+      generation_requests_json=${canonicalJson([...data.previousGenerations, checkFailure])}`;
+    await expect(repository.resumeSavedKnownFailure({ ...scope, actorUserId: 'other-actor' },
+      expired.operationRef!, rootRequestId, current, model))
+      .rejects.toThrow('DOCUMENT_TRANSLATION_PREDECESSOR_NOT_FOUND');
+    await expect(repository.resumeSavedKnownFailure(scope, expired.operationRef!,
+      'different-root', current, model)).rejects.toThrow('RECOVERY_PREDECESSOR_INVALID');
+    const resumed = await repository.resumeSavedKnownFailure(scope,
+      expired.operationRef!, rootRequestId, current, model);
+    expect(resumed.triggerRequestId).toBe(`${rootRequestId}:resume-${expired.attemptNo + 1}`);
+    expect((await repository.resumeSavedKnownFailure(scope,
+      expired.operationRef!, rootRequestId, current, model)).attemptId).toBe(resumed.attemptId);
+    const task = parseDocumentTranslationTaskEnvelope(resumed.taskEnvelopeJson!);
+    expect(task.expiredRecovery).toBeUndefined();
+    expect(task.modelInput).toEqual(data.modelInput);
+    const snapshot = await readTranslationWorkspaceSnapshot(drizzle(client) as never,
+      { tenantId: scope.tenantId, workItemId: null,
+        documentVersionId: scope.documentVersionId, workspaceId: data.prior.workspaceId });
+    expect(snapshot.revisions).toHaveLength(2);
+    const reading = buildTranslationWorkspaceReadingV2(snapshot.workspace, snapshot.revisions);
+    expect(nextTranslationWorkV2(snapshot.workspace, snapshot.revisions, reading,
+      undefined, { batchSemanticChecks: true })).toMatchObject({ kind: 'CHECK',
+      blockIds: [data.revisions[1].blockId] });
+    await expect(repository.recoverExpired(scope, expired.operationRef!, rootRequestId))
+      .rejects.toThrow('RECOVERY_REQUEST_CONFLICT');
+  });
+
+  it('admissibly repairs partial output across expired and known-failure successors', async () => {
+    const data = await seedNeverClaimedExpired();
+    const expired = await repository.recoverExpired(scope,
+      data.expired.operationRef, rootRequestId);
+    const checkFailure: TranslationGenerationRequestV2 = {
+      ...data.previousGenerations.at(-1)!,
+      generationRequestRef: 'TG-expired-partial-check',
+      clientRequestId: 'expired-partial-check', attemptId: expired.attemptId,
+      status: 'FAILED', error: { origin: 'OUTPUT_CONTRACT',
+        code: 'DOCUMENT_TRANSLATION_CHECK_FAILED', outcome: 'KNOWN_FAILURE',
+        retryable: false },
+    };
+    await client`UPDATE action_attempt SET status='FAILED',
+      error_code='DOCUMENT_TRANSLATION_CHECK_FAILED',
+      terminal_reason='DOCUMENT_TRANSLATION_CHECK_FAILED'
+      WHERE attempt_id=${expired.attemptId}`;
+    await client`UPDATE translation_workspace SET
+      generation_requests_json=${canonicalJson([...data.previousGenerations, checkFailure])}`;
+    const resumed = await repository.resumeSavedKnownFailure(scope,
+      expired.operationRef!, rootRequestId,
+      { parseRunId, parseRevision: 2, modelInput: data.modelInput }, model);
+    const blocked = { ...data.revisions[1].check!, semanticCheck: 'COMPLETED' as const,
+      issues: [{ code: 'TEST_REVIEW', severity: 'BLOCK' as const,
+        origin: 'TRANSLATION' as const, message: 'Synthetic issue',
+        blockIds: [data.revisions[1].blockId],
+        anchorIds: data.boundPlan.blocks[1].anchorIds }] };
+    await client`UPDATE translation_block_revision SET check_json=${canonicalJson(blocked)},
+      checked_at=${time} WHERE block_revision_id=${data.revisions[1].blockRevisionId}`;
+    await client`UPDATE translation_workspace SET result_artifact_json=${canonicalJson({
+      storeRole: 'UnifiedArtifactStoreCandidate', ref: 'artifact://synthetic/partial',
+      sha256: 'c'.repeat(64), byteLength: 1, mediaType: 'application/json' })}`;
+    await client`UPDATE action_attempt SET status='SUCCEEDED',
+      terminal_reason='REMAINING_LIMITATIONS',
+      result_envelope_json=${canonicalJson({ status: 'REMAINING_LIMITATIONS',
+        artifact: { completeness: 'PARTIAL' } })}
+      WHERE attempt_id=${resumed.attemptId}`;
+    const repairRequestId = `${rootRequestId}:partial-repair`;
+    const repairTask = sealDocumentTranslationTaskEnvelope({
+      schemaVersion: 'wiselink.document.translation_task.v1',
+      actionAttemptId: 'DTA-expired-partial-repair',
+      operationRef: 'DTQ-expired-partial-repair', tenantId: scope.tenantId,
+      documentVersionId: scope.documentVersionId, parseRunId, parseRevision: 2,
+      workspaceId: data.prior.workspaceId,
+      modelInput: { ...data.modelInput,
+        retranslateBlockIds: [data.revisions[1].blockId] },
+      deadline: new Date(Date.now() + 60_000).toISOString(),
+      idempotencyKey: `document-translation:${scope.documentVersionId}:${repairRequestId}` });
+    const reserve = (actorScope = scope, requestId = repairRequestId) =>
+      repository.reserve(actorScope, repairTask, requestId,
+        model, resumed.operationRef!, 'PARTIAL');
+    await expect(reserve({ ...scope, actorUserId: 'other-actor' }))
+      .rejects.toThrow('DOCUMENT_TRANSLATION_RECOVERY_INELIGIBLE');
+    await expect(reserve(scope, 'unrelated-root:partial-repair'))
+      .rejects.toThrow('DOCUMENT_TRANSLATION_PARTIAL_SUCCESSOR_INELIGIBLE');
+    for (const unsettled of [
+      { ...checkFailure, generationRequestRef: 'TG-unsettled',
+        status: 'REGISTERED' as const, finishedAt: null, error: null },
+      { ...checkFailure, generationRequestRef: 'TG-unknown',
+        error: { ...checkFailure.error!, outcome: 'GENERATION_UNKNOWN' as const } },
+    ]) {
+      await client`UPDATE translation_workspace SET generation_requests_json=${canonicalJson([
+        ...data.previousGenerations, checkFailure, unsettled])}`;
+      await expect(reserve()).rejects.toThrow('DOCUMENT_TRANSLATION_PARTIAL_SUCCESSOR_INELIGIBLE');
+    }
+    await client`UPDATE translation_workspace SET
+      generation_requests_json=${canonicalJson([...data.previousGenerations, checkFailure])}`;
+    const revisionsBefore = await client`SELECT block_revision_id,candidate_json FROM
+      translation_block_revision ORDER BY block_revision_id`;
+    const partial = await reserve();
+    expect(partial.status).toBe('QUEUED');
+    expect(partial.triggerRequestId).toBe(repairRequestId);
+    expect(parseDocumentTranslationTaskEnvelope(partial.taskEnvelopeJson!).modelInput
+      .retranslateBlockIds).toEqual([data.revisions[1].blockId]);
+    expect((await reserve()).attemptId).toBe(partial.attemptId);
+    expect(await client`SELECT block_revision_id,candidate_json FROM
+      translation_block_revision ORDER BY block_revision_id`).toEqual(revisionsBefore);
+  });
+
+  it('recovers a sealed partial-input defect after the expired known-failure chain', async () => {
+    const data = await seedNeverClaimedExpired();
+    const expired = await repository.recoverExpired(scope,
+      data.expired.operationRef, rootRequestId);
+    const checkFailure: TranslationGenerationRequestV2 = {
+      ...data.previousGenerations.at(-1)!, generationRequestRef: 'TG-input-check',
+      clientRequestId: 'input-check', attemptId: expired.attemptId,
+      status: 'FAILED', error: { origin: 'OUTPUT_CONTRACT',
+        code: 'DOCUMENT_TRANSLATION_CHECK_FAILED', outcome: 'KNOWN_FAILURE',
+        retryable: false },
+    };
+    await client`UPDATE action_attempt SET status='FAILED',
+      error_code='DOCUMENT_TRANSLATION_CHECK_FAILED',
+      terminal_reason='DOCUMENT_TRANSLATION_CHECK_FAILED'
+      WHERE attempt_id=${expired.attemptId}`;
+    await client`UPDATE translation_workspace SET
+      generation_requests_json=${canonicalJson([...data.previousGenerations, checkFailure])}`;
+    const resumed = await repository.resumeSavedKnownFailure(scope,
+      expired.operationRef!, rootRequestId,
+      { parseRunId, parseRevision: 2, modelInput: data.modelInput }, model);
+    const blocked = { ...data.revisions[1].check!, semanticCheck: 'COMPLETED' as const,
+      issues: [{ code: 'TEST_REVIEW', severity: 'BLOCK' as const,
+        origin: 'TRANSLATION' as const, message: 'Synthetic issue',
+        blockIds: [data.revisions[1].blockId],
+        anchorIds: data.boundPlan.blocks[1].anchorIds }] };
+    await client`UPDATE translation_block_revision SET check_json=${canonicalJson(blocked)},
+      checked_at=${time} WHERE block_revision_id=${data.revisions[1].blockRevisionId}`;
+    const resultArtifact = { storeRole: 'UnifiedArtifactStoreCandidate',
+      ref: 'artifact://synthetic/partial', sha256: 'c'.repeat(64),
+      byteLength: 1, mediaType: 'application/json' };
+    const manifest = { workspaceId: data.prior.workspaceId, planRevision: 1,
+      contextRevision: 1, workspaceRowVersion: 1,
+      blockRevisions: [{ blockId: data.revisions[0].blockId,
+        blockRevisionId: data.revisions[0].blockRevisionId,
+        contentRevision: data.revisions[0].contentRevision }] };
+    await client`UPDATE translation_workspace SET
+      result_artifact_json=${canonicalJson(resultArtifact)},
+      result_manifest_json=${canonicalJson(manifest)}`;
+    await client`UPDATE action_attempt SET status='SUCCEEDED',
+      terminal_reason='REMAINING_LIMITATIONS',
+      result_envelope_json=${canonicalJson({ status: 'REMAINING_LIMITATIONS',
+        artifact: { completeness: 'PARTIAL', manifest } })}
+      WHERE attempt_id=${resumed.attemptId}`;
+    const oldRequestId = `${rootRequestId}:partial-repair`;
+    const broken = sealDocumentTranslationTaskEnvelope({
+      schemaVersion: 'wiselink.document.translation_task.v1',
+      actionAttemptId: 'DTA-broken-partial-input',
+      operationRef: 'DTQ-broken-partial-input', tenantId: scope.tenantId,
+      documentVersionId: scope.documentVersionId, parseRunId, parseRevision: 2,
+      workspaceId: data.prior.workspaceId, modelInput: data.modelInput,
+      deadline: new Date(Date.now() + 60_000).toISOString(),
+      idempotencyKey: `document-translation:${scope.documentVersionId}:${oldRequestId}` });
+    await client`INSERT INTO action_attempt(attempt_id,subject_kind,action_type,attempt_no,
+      trigger_request_id,request_origin,status,producer_run_id,actor_user_id,tenant_id,
+      input_revision,document_version_id,task_envelope_json,task_input_hash,
+      idempotency_key,deadline_at,operation_ref,execution_model_json)
+      VALUES (${broken.actionAttemptId},'DOCUMENT_VERSION','DOCUMENT_TRANSLATE',
+        ${resumed.attemptNo + 1},${oldRequestId},'HOST_DOCUMENT','QUEUED',${parseRunId},
+        ${scope.actorUserId},${scope.tenantId},2,${scope.documentVersionId},
+        ${canonicalJson(broken)},${broken.inputHash},${broken.idempotencyKey},
+        ${broken.deadline},${broken.operationRef},${canonicalJson(model)})`;
+    await client`UPDATE translation_workspace SET active_attempt_id=${broken.actionAttemptId}`;
+    const fixedRequestId = `${rootRequestId}:partial-repair-v2`;
+    const corrected = sealDocumentTranslationTaskEnvelope({
+      schemaVersion: 'wiselink.document.translation_task.v1',
+      actionAttemptId: 'DTA-fixed-partial-input',
+      operationRef: 'DTQ-fixed-partial-input', tenantId: scope.tenantId,
+      documentVersionId: scope.documentVersionId, parseRunId, parseRevision: 2,
+      workspaceId: data.prior.workspaceId,
+      recoveryOf: { operationRef: broken.operationRef, inputHash: broken.inputHash },
+      modelInput: { ...data.modelInput,
+        retranslateBlockIds: [data.revisions[1].blockId] },
+      deadline: new Date(Date.now() + 60_000).toISOString(),
+      idempotencyKey: `document-translation:${scope.documentVersionId}:${fixedRequestId}` });
+    await expect(repository.recoverPartialInput({ ...scope, actorUserId: 'other-actor' },
+      corrected, rootRequestId, broken.operationRef, model))
+      .rejects.toThrow('PARTIAL_INPUT_RECOVERY_INELIGIBLE');
+    for (const unsettled of [
+      { ...checkFailure, generationRequestRef: 'TG-input-registered',
+        status: 'REGISTERED' as const, finishedAt: null, error: null },
+      { ...checkFailure, generationRequestRef: 'TG-input-unknown',
+        error: { ...checkFailure.error!, outcome: 'GENERATION_UNKNOWN' as const } },
+    ]) {
+      await client`UPDATE translation_workspace SET generation_requests_json=${canonicalJson([
+        ...data.previousGenerations, checkFailure, unsettled])}`;
+      await expect(repository.recoverPartialInput(scope, corrected,
+        rootRequestId, broken.operationRef, model))
+        .rejects.toThrow('PARTIAL_INPUT_RECOVERY_INELIGIBLE');
+    }
+    await client`UPDATE translation_workspace SET
+      generation_requests_json=${canonicalJson([...data.previousGenerations, checkFailure])}`;
+    const fixed = await repository.recoverPartialInput(scope, corrected,
+      rootRequestId, broken.operationRef, model);
+    expect(fixed.status).toBe('QUEUED');
+    expect(fixed.triggerRequestId).toBe(fixedRequestId);
+    expect((await repository.recoverPartialInput(scope, corrected,
+      rootRequestId, broken.operationRef, model)).attemptId).toBe(fixed.attemptId);
+    const [old] = await client`SELECT status,terminal_reason FROM action_attempt
+      WHERE attempt_id=${broken.actionAttemptId}`;
+    expect(old).toMatchObject({ status: 'CANCELLED',
+      terminal_reason: 'DOCUMENT_TRANSLATION_PARTIAL_INPUT_SUPERSEDED' });
+  });
+
+  it('serializes two database connections against the current migration guards', async () => {
+    const data = await seedNeverClaimedExpired();
+    const schema = `translation_expired_${randomUUID().replaceAll('-', '')}`;
+    const second = postgres(databaseUrl!, { max: 1, onnotice() {} });
+    try {
+      await client.unsafe(`CREATE SCHEMA ${schema}`);
+      for (const table of ['dm_document_version', 'dm_document_parse_run',
+        'dm_document_reading_run', 'action_attempt', 'translation_workspace',
+        'translation_block_revision']) {
+        await client.unsafe(`CREATE TABLE ${schema}.${table}
+          (LIKE pg_temp.${table} INCLUDING ALL)`);
+        await client.unsafe(`INSERT INTO ${schema}.${table} SELECT * FROM pg_temp.${table}`);
+      }
+      const original = readFileSync(resolve(process.cwd(),
+        'migrations/0048_document_translation_attempt_subject.sql'), 'utf8');
+      for (const name of ['action_attempt_check_document_original',
+        'action_attempt_preserve_document_subject']) {
+        const source = original.match(new RegExp(
+          `CREATE FUNCTION ${name}\\(\\)[\\s\\S]*?\\$\\$;`, 'u'))?.[0];
+        if (!source) throw new Error(`DOCUMENT_TRANSLATION_MIGRATION_${name}_NOT_FOUND`);
+        await client.unsafe(source.replace('CREATE FUNCTION ', `CREATE FUNCTION ${schema}.`));
+      }
+      await client.unsafe(`CREATE TRIGGER action_attempt_check_document_original
+        BEFORE INSERT OR UPDATE ON ${schema}.action_attempt FOR EACH ROW
+        EXECUTE FUNCTION ${schema}.action_attempt_check_document_original();
+        CREATE TRIGGER action_attempt_preserve_document_subject
+        BEFORE UPDATE ON ${schema}.action_attempt FOR EACH ROW
+        EXECUTE FUNCTION ${schema}.action_attempt_preserve_document_subject();`);
+      await client.unsafe(`CREATE FUNCTION ${schema}.engineering_matter_actor_has_tenant(t varchar)
+        RETURNS boolean LANGUAGE sql STABLE AS $$ SELECT t='resume-tenant' $$;
+        CREATE FUNCTION ${schema}.engineering_matter_document_owned_by_actor(t varchar,dv varchar)
+        RETURNS boolean LANGUAGE sql STABLE AS $$
+          SELECT t='resume-tenant' AND dv='DV-resume' $$;`);
+      await client.unsafe(`SET search_path TO ${schema},pg_temp`);
+      const ownership = original.match(/CREATE FUNCTION document_translation_attempt_owned\([\s\S]*?\$\$;/u)?.[0];
+      if (!ownership) throw new Error('DOCUMENT_TRANSLATION_RLS_FUNCTION_NOT_FOUND');
+      await client.unsafe(ownership.replace('CREATE FUNCTION ', `CREATE FUNCTION ${schema}.`));
+      for (const name of ['action_attempt_document_subject_boundary',
+        'action_attempt_document_read', 'action_attempt_document_actor',
+        'action_attempt_document_no_native_insert']) {
+        const source = original.match(new RegExp(`CREATE POLICY ${name}[\\s\\S]*?;`, 'u'))?.[0];
+        if (!source) throw new Error(`DOCUMENT_TRANSLATION_RLS_${name}_NOT_FOUND`);
+        await client.unsafe(source);
+      }
+      await client.unsafe(`ALTER TABLE ${schema}.action_attempt ENABLE ROW LEVEL SECURITY;
+        GRANT USAGE ON SCHEMA ${schema} TO service_role,authenticated;
+        GRANT SELECT,INSERT,UPDATE ON ALL TABLES IN SCHEMA ${schema}
+          TO service_role,authenticated;`);
+      await second.unsafe(`SET search_path TO ${schema},public`);
+      await client.unsafe(`SET app.user_id TO '${scope.actorUserId}'; SET ROLE service_role`);
+      await second.unsafe(`SET app.user_id TO '${scope.actorUserId}'; SET ROLE service_role`);
+      const firstRepository = new DocumentTranslationAttemptRepository(drizzle(client) as never);
+      const secondRepository = new DocumentTranslationAttemptRepository(drizzle(second) as never);
+      const [first, duplicate] = await Promise.all([
+        firstRepository.recoverExpired(scope, data.expired.operationRef, rootRequestId),
+        secondRepository.recoverExpired(scope, data.expired.operationRef, rootRequestId),
+      ]);
+      expect(first.attemptId).toBe(duplicate.attemptId);
+      const rows = await second`SELECT attempt_id FROM action_attempt
+        WHERE trigger_request_id=${`${rootRequestId}:expired-resume`}`;
+      expect(rows).toHaveLength(1);
+      const [old] = await second`SELECT status,deadline_at FROM action_attempt
+        WHERE attempt_id=${data.expired.actionAttemptId}`;
+      expect(old.status).toBe('FAILED');
+      expect(new Date(old.deadline_at).toISOString()).toBe(data.expired.deadline);
+      await second.unsafe("SET app.user_id TO 'other-actor'");
+      await expect(secondRepository.recoverExpired(scope, data.expired.operationRef,
+        rootRequestId)).rejects.toThrow('EXPIRED_PREDECESSOR_INVALID');
+      await second.unsafe(`SET app.user_id TO '${scope.actorUserId}'`);
+      await second.unsafe('RESET ROLE');
+      await second.unsafe('SET ROLE authenticated');
+      await expect(second`INSERT INTO action_attempt(attempt_id,subject_kind,action_type,
+        attempt_no,trigger_request_id,status,producer_run_id,actor_user_id,tenant_id,
+        input_revision,document_version_id) VALUES ('DTA-browser-forged','DOCUMENT_VERSION',
+        'DOCUMENT_TRANSLATE',9,'browser-forged','QUEUED',${parseRunId},${scope.actorUserId},
+        ${scope.tenantId},2,${scope.documentVersionId})`).rejects.toMatchObject({ code: '42501' });
+    } finally {
+      await client.unsafe('RESET ROLE');
+      await client.unsafe('SET search_path TO pg_temp,public');
+      await second.unsafe('RESET ROLE');
+      await second.end();
+      await client.unsafe(`DROP SCHEMA IF EXISTS ${schema} CASCADE`);
+    }
   });
 });

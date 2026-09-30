@@ -34,6 +34,7 @@ import { dmDocumentReadingRun } from '../../database/document-reading.schema';
 import {
   actionAttempt,
   translationBlockRevision,
+  translationWorkspace,
   workItem,
 } from '../../database/schema';
 import { readStoredExecutionModel } from '../model-settings/canonical-execution-model';
@@ -342,16 +343,58 @@ export class MiaodaWorkItemRepository {
         OR EXISTS (SELECT 1 FROM ${actionAttempt} t
           WHERE t.tenant_id=${input.tenantId} AND t.actor_user_id=${input.actorUserId}
             AND t.document_version_id=${input.documentVersionId}
-            AND (t.trigger_request_id LIKE ${`${input.translationRequestId}:resume-%`}
+            AND (t.trigger_request_id=${`${input.translationRequestId}:resume-`} || t.attempt_no::text
               OR t.trigger_request_id IN (${input.translationRequestId},${`${input.translationRequestId}:hosted-m3`},
               ${`${input.translationRequestId}:partial-repair`},${`${input.translationRequestId}:partial-repair-v2`},
-              ${`${input.translationRequestId}:known-failure`}))
+              ${`${input.translationRequestId}:known-failure`},${`${input.translationRequestId}:expired-resume`}))
             AND t.subject_kind='DOCUMENT_VERSION' AND t.action_type='DOCUMENT_TRANSLATE'
             AND t.status IN ('QUEUED','RUNNING','RETRY_SCHEDULED')
             AND (t.trigger_request_id<>${`${input.translationRequestId}:partial-repair`}
               OR jsonb_exists(t.task_envelope_json::jsonb->'modelInput','retranslateBlockIds'))
             AND t.deadline_at>CURRENT_TIMESTAMP
             AND (t.lease_expires_at IS NULL OR t.lease_expires_at<=CURRENT_TIMESTAMP))
+        OR EXISTS (SELECT 1 FROM ${actionAttempt} t JOIN ${translationWorkspace} ws
+          ON ws.tenant_id=t.tenant_id AND ws.workspace_id=t.task_envelope_json::jsonb->>'workspaceId'
+          WHERE t.tenant_id=${input.tenantId} AND t.actor_user_id=${input.actorUserId}
+            AND t.document_version_id=${input.documentVersionId}
+            AND (t.trigger_request_id=${`${input.translationRequestId}:resume-`} || t.attempt_no::text
+              OR t.trigger_request_id IN (${input.translationRequestId},
+                ${`${input.translationRequestId}:hosted-m3`},${`${input.translationRequestId}:known-failure`},
+                ${`${input.translationRequestId}:partial-repair`},${`${input.translationRequestId}:partial-repair-v2`}))
+            AND t.subject_kind='DOCUMENT_VERSION' AND t.action_type='DOCUMENT_TRANSLATE'
+            AND (t.status IN ('QUEUED','RUNNING','RETRY_SCHEDULED') OR
+              (t.status='FAILED' AND t.error_code='DOCUMENT_TRANSLATION_DEADLINE_EXPIRED'))
+            AND t.deadline_at<=CURRENT_TIMESTAMP AND t.claim_count=0 AND t.started_at IS NULL
+            AND t.lease_owner IS NULL AND t.lease_token IS NULL AND t.lease_expires_at IS NULL
+            AND t.result_envelope_json IS NULL AND t.result_content_hash IS NULL
+            AND t.projection_applied=false AND t.commit_started_at IS NULL
+            AND t.cancel_requested_at IS NULL AND t.execution_model_json IS NOT NULL
+            AND t.task_envelope_json::jsonb->'modelInput'->>'documentProducer'='HOSTED_M3'
+            AND ws.document_version_id=t.document_version_id AND ws.work_item_id IS NULL
+            AND (ws.active_attempt_id IS NULL OR ws.active_attempt_id=t.attempt_id OR
+              EXISTS (SELECT 1 FROM ${actionAttempt} coordinator
+                WHERE coordinator.tenant_id=t.tenant_id AND coordinator.actor_user_id=t.actor_user_id
+                  AND coordinator.document_version_id=t.document_version_id
+                  AND coordinator.attempt_id=ws.active_attempt_id
+                  AND coordinator.attempt_no<t.attempt_no
+                  AND coordinator.status IN ('FAILED','SUCCEEDED','CANCELLED')))
+            AND ws.result_artifact_json IS NULL
+            AND ws.result_manifest_json IS NULL
+            AND NOT EXISTS (SELECT 1 FROM jsonb_array_elements(ws.generation_requests_json::jsonb) g
+              WHERE g->>'attemptId'=t.attempt_id OR g->>'status'='REGISTERED'
+                OR g->'error'->>'outcome'='GENERATION_UNKNOWN')
+            AND NOT EXISTS (SELECT 1 FROM ${translationBlockRevision} b
+              WHERE b.tenant_id=t.tenant_id AND b.workspace_id=ws.workspace_id
+                AND b.origin_attempt_id=t.attempt_id)
+            AND NOT EXISTS (SELECT 1 FROM ${actionAttempt} newer
+              WHERE newer.tenant_id=t.tenant_id AND newer.document_version_id=t.document_version_id
+                AND newer.subject_kind='DOCUMENT_VERSION' AND newer.action_type='DOCUMENT_TRANSLATE'
+                AND newer.attempt_no>t.attempt_no)
+            AND NOT EXISTS (SELECT 1 FROM ${actionAttempt} successor
+              WHERE successor.tenant_id=t.tenant_id AND successor.actor_user_id=t.actor_user_id
+                AND successor.document_version_id=t.document_version_id
+                AND successor.subject_kind='DOCUMENT_VERSION' AND successor.action_type='DOCUMENT_TRANSLATE'
+                AND successor.trigger_request_id=${`${input.translationRequestId}:expired-resume`}))
         OR EXISTS (SELECT 1 FROM ${actionAttempt} t
           WHERE t.tenant_id=${input.tenantId} AND t.actor_user_id=${input.actorUserId}
             AND t.document_version_id=${input.documentVersionId}
@@ -369,9 +412,10 @@ export class MiaodaWorkItemRepository {
         OR EXISTS (SELECT 1 FROM ${actionAttempt} t
           WHERE t.tenant_id=${input.tenantId} AND t.actor_user_id=${input.actorUserId}
             AND t.document_version_id=${input.documentVersionId}
-            AND (t.trigger_request_id LIKE ${`${input.translationRequestId}:resume-%`}
+            AND (t.trigger_request_id=${`${input.translationRequestId}:resume-`} || t.attempt_no::text
               OR t.trigger_request_id IN (${input.translationRequestId},
-                ${`${input.translationRequestId}:hosted-m3`},${`${input.translationRequestId}:known-failure`}))
+                ${`${input.translationRequestId}:hosted-m3`},${`${input.translationRequestId}:known-failure`},
+                ${`${input.translationRequestId}:expired-resume`}))
             AND t.subject_kind='DOCUMENT_VERSION' AND t.action_type='DOCUMENT_TRANSLATE'
             AND t.status='SUCCEEDED' AND t.terminal_reason='REMAINING_LIMITATIONS'
             AND t.result_envelope_json::jsonb->'artifact'->>'completeness'='PARTIAL'
@@ -400,10 +444,10 @@ export class MiaodaWorkItemRepository {
         OR (${input.translationSelected} AND NOT EXISTS (SELECT 1 FROM ${actionAttempt} t
           WHERE t.tenant_id=${input.tenantId} AND t.actor_user_id=${input.actorUserId}
             AND t.document_version_id=${input.documentVersionId}
-            AND (t.trigger_request_id LIKE ${`${input.translationRequestId}:resume-%`}
+            AND (t.trigger_request_id=${`${input.translationRequestId}:resume-`} || t.attempt_no::text
               OR t.trigger_request_id IN (${input.translationRequestId},${`${input.translationRequestId}:hosted-m3`},
               ${`${input.translationRequestId}:partial-repair`},${`${input.translationRequestId}:partial-repair-v2`},
-              ${`${input.translationRequestId}:known-failure`}))
+              ${`${input.translationRequestId}:known-failure`},${`${input.translationRequestId}:expired-resume`}))
             AND t.subject_kind='DOCUMENT_VERSION' AND t.action_type='DOCUMENT_TRANSLATE'))
       ) AS missing`);
     return { pending: rows[0]?.pending === true, missing: rows[0]?.missing === true };

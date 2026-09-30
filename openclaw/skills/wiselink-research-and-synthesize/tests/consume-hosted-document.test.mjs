@@ -127,6 +127,55 @@ test('selected translation uses one request derived from its persisted delivery 
     `auto-translation-${createHash('sha256').update(deliveryRef).digest('hex').slice(0, 32)}`);
   assert.ok(calls.every(([, args]) => args.deliveryRef === deliveryRef));
 });
+test('selected expired translation uses one Host recovery and never repeats after success', async () => {
+  const current = state(); current.latestRun.status = 'PUBLISHED';
+  current.documentDelivery = { reading: false, translation: 'ZH_FULL' };
+  const calls = [];
+  let completed = false;
+  const input = { documentVersionId: 'DV-test', deliveryRef: 'acquisition:ACQ-test' };
+  const callTool = async (name, args) => {
+    calls.push([name, args]);
+    if (name === 'document_work') return args.action === 'INDEX'
+      ? { documentVersionId: 'DV-test', parseRunId: 'PRUN-test', status: 'INDEXED' } : current;
+    if (args.action === 'STATUS') return { documentVersionId: 'DV-test', parseRunId: 'PRUN-test',
+      attemptRef: completed ? 'DTQ-successor' : 'DTQ-expired',
+      status: completed ? 'SUCCEEDED' : 'FAILED',
+      errorCode: completed ? null : 'DOCUMENT_TRANSLATION_DEADLINE_EXPIRED',
+      expiredRecoveryAvailable: !completed,
+      ...(completed ? { progress: { completeness: 'COMPLETE' } } : {}) };
+    if (args.action === 'RECOVER_EXPIRED') return { documentVersionId: 'DV-test',
+      parseRunId: 'PRUN-test', attemptRef: 'DTQ-successor', status: 'QUEUED' };
+    throw new Error(`UNEXPECTED_${args.action}`);
+  };
+  expectRecovered(await consumeHostedWorkItem(input, { callTool }));
+  assert.equal(calls.find(([, args]) => args.action === 'RECOVER_EXPIRED')[1].deliveryRef,
+    input.deliveryRef);
+  completed = true;
+  calls.length = 0;
+  assert.equal((await consumeHostedWorkItem(input, { callTool })).status, 'DOCUMENT_READY');
+  assert.equal(calls.filter(([, args]) => args.action === 'RECOVER_EXPIRED').length, 0);
+  function expectRecovered(result) {
+    assert.equal(result.status, 'QUEUED');
+    assert.equal(result.attemptRef, 'DTQ-successor');
+  }
+});
+test('claimed expired translation is not automatically recovered', async () => {
+  const current = state(); current.latestRun.status = 'PUBLISHED';
+  current.documentDelivery = { reading: false, translation: 'ZH_FULL' };
+  const calls = [];
+  const result = await consumeHostedWorkItem({ documentVersionId: 'DV-test',
+    deliveryRef: 'acquisition:ACQ-test' }, { callTool: async (name, args) => {
+    calls.push([name, args]);
+    if (name === 'document_work') return args.action === 'INDEX'
+      ? { documentVersionId: 'DV-test', parseRunId: 'PRUN-test', status: 'INDEXED' } : current;
+    return { documentVersionId: 'DV-test', parseRunId: 'PRUN-test',
+      attemptRef: 'DTQ-claimed', status: 'FAILED',
+      errorCode: 'DOCUMENT_TRANSLATION_DEADLINE_EXPIRED', expiredRecoveryAvailable: false };
+  } });
+  assert.equal(result.status, 'REQUIRES_ATTENTION');
+  assert.deepEqual(calls.filter(([name]) => name === 'document_translation')
+    .map(([, args]) => args.action), ['STATUS']);
+});
 test('document translation checkpoints bounded HTTP 400 shape and never reports success when saving it fails', async () => {
   const { mkdtemp, rm } = await import('node:fs/promises');
   const { tmpdir } = await import('node:os');

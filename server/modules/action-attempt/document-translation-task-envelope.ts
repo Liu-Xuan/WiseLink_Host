@@ -9,6 +9,8 @@ const schema = z.strictObject({
   parseRunId: id, parseRevision: z.number().int().positive(), workspaceId: id,
   recoveryOf: z.strictObject({ operationRef: z.string().min(1).max(128),
     inputHash: z.string().regex(/^[a-f0-9]{64}$/) }).optional(),
+  expiredRecovery: z.strictObject({ predecessorAttemptId: id,
+    predecessorAttemptRef: z.string().min(1).max(128), rootRequestId: id }).optional(),
   knownFailureRecovery: z.strictObject({ kind: z.enum(['KNOWN_FAILURE', 'SAVED_KNOWN_FAILURE']), predecessorAttemptId: id,
     predecessorAttemptRef: z.string().min(1).max(128), rootRequestId: id.optional() }).optional(),
   modelInput: z.strictObject({
@@ -47,6 +49,7 @@ export function parseDocumentTranslationTaskEnvelope(value: string): DocumentTra
       (task.knownFailureRecovery && (task.knownFailureRecovery.predecessorAttemptId === task.actionAttemptId ||
         task.recoveryOf !== undefined || (task.knownFailureRecovery.kind === 'SAVED_KNOWN_FAILURE' &&
           !task.knownFailureRecovery.rootRequestId))) ||
+      (task.expiredRecovery && task.expiredRecovery.predecessorAttemptId === task.actionAttemptId) ||
       task.documentVersionId !== task.modelInput.source.documentVersionId ||
       task.parseRunId !== task.modelInput.source.packageId ||
       task.documentVersionId !== task.modelInput.source.originalBinding.documentVersionId ||
