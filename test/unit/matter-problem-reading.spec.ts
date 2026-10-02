@@ -46,3 +46,4 @@ test('does not restore an old overview when the selected work has no overview', 
   content.overviewStatus = 'CURRENT';
   expect(readableMatterOverview(revision)).toBe(old);
 });
+jest.mock('@client/src/features/matter/saved-jobaid-reading.css', () => ({}));

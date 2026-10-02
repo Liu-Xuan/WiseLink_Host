@@ -67,7 +67,7 @@ test('document quicklook reads selected historical version and does not silently
   };
   const render = (query: string) => renderToStaticMarkup(createElement(StaticRouter,
     {location: `/library?mode=document&familyId=F1&${query}`},
-    createElement(LibraryDocumentDetails, {document, onRefresh: jest.fn(), onViewTasks: jest.fn()})));
+    createElement(LibraryDocumentDetails, {document, assessmentQuicklook: {data:null,loading:false,error:null,accessDenied:false}, onRefresh: jest.fn(), onViewTasks: jest.fn()})));
   expect(render('selectedDocumentVersionId=OLD')).toContain('class="library-selected-version" data-document-version-id="OLD"');
   for (const query of ['selectedDocumentVersionId=missing', 'selectedDocumentVersionId=', 'selectedDocumentVersionId=OLD&selectedDocumentVersionId=NEW']) {
     const html = render(query);
@@ -290,7 +290,7 @@ test('directory scopes retain selection/filter differences and ignore unrelated 
 
 test('an unloaded selected family is not reported missing and does not silently select another row', () => {
   const html = renderToStaticMarkup(createElement(StaticRouter, { location: '/library?familyId=F-old' },
-    createElement(LibraryDocumentDetails, { document: null, selectionPending: true, onRefresh: jest.fn(), onViewTasks: jest.fn() })));
+    createElement(LibraryDocumentDetails, { document: null, assessmentQuicklook: {data:null,loading:false,error:null,accessDenied:false}, selectionPending: true, onRefresh: jest.fn(), onViewTasks: jest.fn() })));
   expect(html).toContain('原选择尚未在当前读取范围内加载');
   expect(html).toContain('不代表资料不存在');
   expect(html).toContain('不会自动改选首行');

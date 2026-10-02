@@ -23,6 +23,7 @@ export function LibraryClassificationControls({
   counts,
   disabled,
   fleet,
+  showGrouping = true,
 }: {
   grouping: LibraryGrouping;
   onGroupingChange: (value: LibraryGrouping) => void;
@@ -31,6 +32,7 @@ export function LibraryClassificationControls({
   counts: LibraryFacetCounts;
   disabled: boolean;
   fleet?: LibraryFleetRead;
+  showGrouping?: boolean;
 }) {
   const facets: {
     key: LibraryFacetKey;
@@ -42,7 +44,7 @@ export function LibraryClassificationControls({
   ];
   return (
     <section className="library-classification-controls" aria-label="目录层级与联合筛选">
-      <div className="library-grouping-heading">
+      {showGrouping ? <><div className="library-grouping-heading">
         <strong>目录首层</strong>
         <span>三项共同分类，只调整层级顺序</span>
       </div>
@@ -64,7 +66,7 @@ export function LibraryClassificationControls({
             {option.label}优先
           </Button>
         ))}
-      </div>
+      </div></> : null}
       <details className="library-facet-controls" open>
         <summary>联合筛选（含历史版本）</summary>
         <p className="library-classification-note">

@@ -5,6 +5,7 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 
 import EngineeringMatterPage from '../../client/src/features/matter/EngineeringMatterPage';
 import { libraryMatterFixture } from './fixtures/library-matter';
+jest.mock('@client/src/features/matter/saved-jobaid-reading.css', () => ({}));
 
 const { JSDOM } = require('jsdom');
 const mockHistoricalRead = jest.fn(
@@ -25,6 +26,7 @@ const mockHistoricalRead = jest.fn(
 const mockRefresh = jest.fn();
 let mockWorkspace: {
   data: ReturnType<typeof libraryMatterFixture> | null;
+  authorizedSessionGeneration: number | null;
   loading: boolean;
   error: string | null;
   refresh: typeof mockRefresh;
@@ -125,6 +127,7 @@ jest.mock('@client/src/features/matter/MatterProblemWork', () => ({
   __esModule: true,
   default: () => null,
 }));
+jest.mock('@client/src/features/matter/WikiRecentChanges', () => ({ __esModule: true, default: () => null }));
 jest.mock('@client/src/features/matter/OverviewSourceWork', () => ({
   __esModule: true,
   default: () => null,
@@ -163,12 +166,7 @@ it('does not restart the same historical read when the current workspace arrives
       value,
     });
   }
-  mockWorkspace = {
-    data: null,
-    loading: true,
-    error: null,
-    refresh: mockRefresh,
-  };
+  mockWorkspace = { data: null, authorizedSessionGeneration: null, loading: true, error: null, refresh: mockRefresh };
   mockHistoricalRead.mockClear();
   const router = createMemoryRouter(
     [{ path: '/matters/:matterId', element: createElement(WorkspaceHarness) }],
@@ -200,6 +198,7 @@ it('does not restart the same historical read when the current workspace arrives
     expect(mockHistoricalRead).toHaveBeenCalledTimes(1);
     mockWorkspace = {
       data: libraryMatterFixture(),
+      authorizedSessionGeneration: 7,
       loading: false,
       error: null,
       refresh: mockRefresh,

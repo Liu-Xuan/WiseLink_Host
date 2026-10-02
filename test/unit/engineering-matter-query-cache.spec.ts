@@ -1,6 +1,6 @@
 import { act, createElement, type ReactNode } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
-import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
+import { QueryClient, QueryClientProvider, notifyManager } from '@tanstack/react-query';
 
 import useEngineeringMatter, {
   clearEngineeringMatterQueries,
@@ -12,6 +12,7 @@ const { JSDOM } = require('jsdom');
 
 const mockWorkspaceRead = jest.fn();
 const mockHistoricalRead = jest.fn();
+const mockIdentityRead = jest.fn();
 let mockSession = 1;
 
 jest.mock('../../client/src/api/engineering-matter', () => ({
@@ -24,10 +25,7 @@ jest.mock('../../client/src/api/canonical-host', () => ({
   getCanonicalHostClientSessionGeneration: () => mockSession,
   isCanonicalHostClientSessionAuthenticationRequired: () => false,
   subscribeCanonicalHostClientSession: () => () => {},
-  getCanonicalHostIdentityContext: async () => ({
-    userId: 'actor-1',
-    tenantId: 'tenant-1',
-  }),
+  getCanonicalHostIdentityContext: (...args: unknown[]) => mockIdentityRead(...args),
 }));
 jest.mock('../../client/src/app/providers/CurrentUserSessionProvider', () => ({
   useCurrentUserSession: () => ({
@@ -142,9 +140,11 @@ describe('engineering matter QueryClient resource identity', () => {
 
   beforeEach(() => {
     jest.useFakeTimers();
+    notifyManager.setScheduler(queueMicrotask);
     mockSession = 1;
     mockWorkspaceRead.mockReset();
     mockHistoricalRead.mockReset();
+    mockIdentityRead.mockReset().mockResolvedValue({userId:'actor-1',tenantId:'tenant-1'});
     container = document.createElement('div');
     document.body.appendChild(container);
     queryClient = new QueryClient({
@@ -170,6 +170,7 @@ describe('engineering matter QueryClient resource identity', () => {
       jest.advanceTimersByTime(0);
       await Promise.resolve();
     });
+    notifyManager.setScheduler(callback=>setTimeout(callback,0));
     jest.useRealTimers();
     container.remove();
   });
@@ -351,7 +352,7 @@ describe('engineering matter QueryClient resource identity', () => {
     );
   });
 
-  test('network refresh keeps cached content while authorization rejects it', async () => {
+  test('refresh retains cache identity but withholds prior content after network or authorization failure', async () => {
     mockWorkspaceRead.mockResolvedValueOnce(workspace('Cached matter'));
     render(createElement(Consumer, { matterId: 'M-1', label: 'only' }));
     await waitUntil(
@@ -390,7 +391,10 @@ describe('engineering matter QueryClient resource identity', () => {
       container
         .querySelector('[data-consumer="only"]')
         ?.getAttribute('data-title'),
-    ).toBe('Refreshed matter');
+    ).toBe('');
+    const cached = queryClient.getQueryCache().getAll().find(query => query.queryKey.includes('workspace'));
+    expect(cached?.state.data).toEqual(expect.objectContaining({ kind: 'readable',
+      data: expect.objectContaining({ matter: expect.objectContaining({ title: 'Refreshed matter' }) }) }));
 
     mockWorkspaceRead.mockRejectedValueOnce(
       Object.assign(new Error('access denied'), { statusCode: 403 }),
@@ -905,4 +909,26 @@ describe('engineering matter QueryClient resource identity', () => {
     expect(hasWorkspace('A')).toBe(false);
     expect(hasWorkspace('B')).toBe(true);
   });
+  test('identity refresh failure hides shared cached resources and retry rechecks identity before resource reads', async () => {
+    mockWorkspaceRead.mockResolvedValue(workspace('Cached identity body'));
+    render(createElement(Pair,{showB:true}));
+    await waitUntil(()=>container.querySelector('[data-consumer="a"]')?.getAttribute('data-title')==='Cached identity body');
+    const pending=deferred<{userId:string;tenantId:string}>();
+    mockIdentityRead.mockReturnValueOnce(pending.promise);
+    await act(async()=>{void queryClient.invalidateQueries({predicate:query=>query.queryKey.includes('identity')});});
+    await waitUntil(()=>mockIdentityRead.mock.calls.length===2);
+    await waitUntil(()=>container.querySelector('[data-consumer="a"]')?.getAttribute('data-title')==='');
+    expect(container.querySelector('[data-consumer="a"]')?.getAttribute('data-title')).toBe('');
+    expect(container.querySelector('[data-consumer="b"]')?.getAttribute('data-title')).toBe('');
+    await act(async()=>pending.reject(new Error('identity unavailable')));
+    await waitUntil(()=>container.querySelector('[data-consumer="a"]')?.getAttribute('data-error')==='identity unavailable');
+    const retryIdentity=deferred<{userId:string;tenantId:string}>();mockIdentityRead.mockReturnValueOnce(retryIdentity.promise);
+    await act(async()=>container.querySelector<HTMLButtonElement>('[data-action="refresh-a"]')?.click());
+    await waitUntil(()=>mockIdentityRead.mock.calls.length===3);
+    expect(mockWorkspaceRead).toHaveBeenCalledTimes(1);
+    await act(async()=>retryIdentity.resolve({userId:'actor-1',tenantId:'tenant-1'}));
+    await waitUntil(()=>mockWorkspaceRead.mock.calls.length===2);
+    await waitUntil(()=>container.querySelector('[data-consumer="b"]')?.getAttribute('data-title')==='Cached identity body');
+  });
+
 });

@@ -4,6 +4,7 @@ import {
 } from './dialogue-assessment.repository';
 import type { AssessmentEvidence } from '@shared/assessment-reading.interface';
 import { isJobAidProblemProjection } from '@shared/jobaid-problem-assessment.interface';
+import type { JobAidWorkRevision } from '@shared/jobaid-problem-assessment.interface';
 import { CanonicalJobAidProblemService } from './canonical-jobaid-problem.service';
 import { overallModelEvidenceRegistry } from './overall-assessment-reading';
 import { Inject, Injectable, Logger, Optional } from '@nestjs/common';
@@ -136,7 +137,7 @@ export interface CommitReviewTurnResult {
     reviewActionExecuted: false;
     workItemRevisionChanged: false;
     currentChanged: false;
-    staleMarked: false;
+    staleMarked: boolean;
   };
 }
 
@@ -568,7 +569,7 @@ export class CanonicalHostOpenClawReviewService {
         reviewActionExecuted: false,
         workItemRevisionChanged: false,
         currentChanged: false,
-        staleMarked: false,
+        staleMarked: 'staleMarked' in persisted && persisted.staleMarked === true,
       },
     };
   }
@@ -604,6 +605,7 @@ export class CanonicalHostOpenClawReviewService {
     return this.matterWorkingRepository.withActorTransaction(
       authorized.conversation.actorId,
       async ({ database }) => {
+        let savedReviewWork: JobAidWorkRevision | null = null;
         if (authorized.turn.assistantCandidate) {
           if (
             authorized.turn.assistantCandidate.actionAttemptRef !==
@@ -625,6 +627,7 @@ export class CanonicalHostOpenClawReviewService {
             },
             database,
           );
+          savedReviewWork = saved.revision;
           input.candidate.jobAidWorkingUpdate = {
             status: 'APPLIED',
             workRevisionRef: saved.revision.workRevisionRef,
@@ -645,10 +648,16 @@ export class CanonicalHostOpenClawReviewService {
             affectedIssueKeys: [],
           };
         }
-        return this.conversations.persistOpenClawAssistantCandidate(
+        const persisted = await this.conversations.persistOpenClawAssistantCandidate(
           input,
           database,
         );
+        const staleMarked = savedReviewWork
+          ? await this.jobAid!.invalidateReviewOverall(
+              authorized.row, savedReviewWork, authorized.conversation.actorId, database,
+            )
+          : false;
+        return { ...persisted, staleMarked };
       },
     );
   }

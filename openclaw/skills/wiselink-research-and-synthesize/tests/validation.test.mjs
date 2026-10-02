@@ -5440,6 +5440,7 @@ test('recovers an ambiguous checkpointed review commit with one status read and 
   assert.equal(result.outcome, 'COMMIT_RESPONSE_LOSS_RECOVERED_READ_ONLY');
   assert.equal(counts.get('commit_review_turn_candidate'), 1);
   assert.equal(counts.get('get_action_attempt_status'), 1);
+  assert.equal(Object.hasOwn(result.authorityMutations, 'staleChanged'), false);
 });
 
 test('a restarted consumer settles a prior-version rejected commit with live status and no model or commit replay', async (t) => {
@@ -7178,6 +7179,38 @@ function reviewCommit(attemptRef) {
     },
   };
 }
+
+test('non-JobAid review cannot invalidate Overall with a fabricated APPLIED receipt', async () => {
+  const reviewTask = await readJson(REVIEW_TASK_FIXTURE_URL);
+  const candidate = await readJson(REVIEW_CANDIDATE_FIXTURE_URL);
+  const task = makeTask('OPENCLAW_INTERACTIVE_REVIEW', reviewTask);
+  await assert.rejects(runInteractiveReviewTurn({
+    mode: 'INTERACTIVE_REVIEW', reviewConversationRef: reviewTask.reviewConversationRef,
+    requestId: reviewTask.requestId,
+    callTool: async (name, args) => {
+      if (name === 'begin_review_turn') return runningBegin(task);
+      if (name === 'get_review_turn_context') return reviewContext(task, reviewTask);
+      if (name === 'read_source_refs') return {
+        schemaVersion: 'wiselink.3_1.review_source_refs.v1.c2', attemptRef: task.operationRef,
+        sourceRefs: args.sourceRefIds.map((sourceRefId) => ({ sourceRefId, kind: 'page', statement: 'Synthetic source.' })),
+      };
+      if (name === 'commit_review_turn_candidate') {
+        const result = JSON.parse(args.resultJson);
+        const committed = reviewCommit(task.operationRef);
+        committed.authority.staleMarked = true;
+        committed.assistantCandidate = { actionAttemptRef: task.operationRef,
+          provenance: { resultContentHash: result.contentHash },
+          jobAidWorkingUpdate: { status: 'APPLIED', workRevisionRef: 'JAWR-fabricated', workRevision: 1 } };
+        return committed;
+      }
+      throw new Error(`UNEXPECTED_TOOL:${name}`);
+    },
+    respond: async ({ readSourceRefs }) => {
+      await readSourceRefs(candidate.sourceRefs);
+      return { output: candidate, provenance: provenance() };
+    },
+  }), /HOST_MCP_REVIEW_COMMIT_RESULT_INVALID/u);
+});
 
 function attemptStatus(task, statusValue, result) {
   const committing = statusValue === 'COMMITTING';

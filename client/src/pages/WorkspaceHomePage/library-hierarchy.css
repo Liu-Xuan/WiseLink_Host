@@ -1,6 +1,18 @@
 .library-hierarchy {
   min-width: 0;
 }
+.library-ata-titles {
+  margin: 0 12px 8px;
+  color: var(--wl-muted);
+  font-size: 12px;
+  overflow-wrap: anywhere;
+}
+.library-ata-titles summary {
+  padding: 6px 0;
+}
+.library-ata-titles ul {
+  padding-inline-start: 20px;
+}
 .library-grouping-controls {
   display: flex;
   flex-wrap: wrap;

@@ -64,6 +64,7 @@ describe('exact Overall in authorized JobAid knowledge reads', () => {
     const revoked = setup();
     revoked.assertEvidenceOwned.mockRejectedValue(new Error('JOBAID_SOURCE_AUTHORIZATION_CHANGED'));
     await expect(revoked.service.readBrowserKnowledgeRevision('WI-1', 'JAWR-1', actor))
-      .rejects.toThrow('JOBAID_SOURCE_AUTHORIZATION_CHANGED');
+      .rejects.toMatchObject({ code: 'CANONICAL_WORK_ITEM_NOT_FOUND', statusCode: 404,
+        message: 'CANONICAL_WORK_ITEM_NOT_FOUND' });
   });
 });

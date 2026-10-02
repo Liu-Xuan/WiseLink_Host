@@ -116,6 +116,8 @@ const context = {
 function proposal(text = document.excerpt) {
   return {
     schemaVersion: 'wiselink.jobaid-problem-work.v3',
+    headline: 'Replacement is conditional; a normal inspection does not exclude intermittent failure',
+    listBrief: 'Preserve the five-second condition and the inspection limitation.',
     overview: text,
     headline: '更换条件与当前构型的评估',
     listBrief: '先核实持续条件和当前构型；未取得连续记录时保留开放问题。',
@@ -409,13 +411,13 @@ test(
             readMetadataSource: async () => ({version:{documentId:'doc-job',familyId:'family-job',
               sourceArtifactId:original.binding.sourceArtifactId,pdfSha256:original.binding.sourceSha256,
               byteLength:original.binding.sourceByteLength},source:{bucketId:'fixture'}}),
-          }, {readRequest:async () => null,reserve:async (_scope,input) => {
+          }, {read:async () => null,readRequest:async () => null,reserve:async (_scope,input) => {
             reservedSourceBinding=input.sourceBinding;
-            return {row:{parseRunId:'PR-TEST-2',documentVersionId:'dv-job',parseRevision:2,status:'RUNNING',
+            return {row:{parseRunId:'PR-TEST-2',documentVersionId:'dv-job',sourceBinding:input.sourceBinding,parseRevision:2,status:'RUNNING',
               artifactProgress:[],startedAt:new Date(),deadlineAt:new Date(),completedAt:null,errorCode:null}};
           }}, {configured:() => true}, {}, {assertCanRead:async input => {
             assert.equal(input.documentVersionId,'dv-job'); assert.equal(input.actorUserId,scope.actorUserId);
-          }});
+          }}, {capture: async () => ({localMineruFallbackEnabled:false})});
           await parser.start('dv-job',{requestId:'original-fixture',expectedPublishedRevision:1},scope);
           assert.ok(reservedSourceBinding);
           await sql`INSERT INTO dm_document_version(document_version_id) VALUES ('dv-job')`;

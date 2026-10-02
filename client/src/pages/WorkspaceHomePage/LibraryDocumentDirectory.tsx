@@ -27,6 +27,7 @@ import type { LibraryFleetRead } from './useLibraryFleetCatalog';
 import { libraryEntryId } from './library-document-read';
 import { libraryDateLabel } from './library-document-presentation';
 import { LibraryHierarchy } from './LibraryHierarchy';
+import { LibraryAtaHierarchy } from './LibraryAtaHierarchy';
 import LibraryDocumentRows from './LibraryDocumentRows';
 import { LibraryClassificationControls } from './LibraryClassificationControls';
 import type {
@@ -51,8 +52,8 @@ interface LibraryDocumentDirectoryProps {
   filters?: LibraryCatalogFilters;
   fleet?: LibraryFleetRead;
   onFilterChange?: (filters: LibraryCatalogFilters) => void;
-  presentation?: { grouping: LibraryGrouping; view: 'list' | 'tree' };
-  onPresentationChange?: (value: { grouping: LibraryGrouping; view: 'list' | 'tree' }) => void;
+  presentation?: { grouping: LibraryGrouping; view: 'list' | 'tree' | 'ata' };
+  onPresentationChange?: (value: { grouping: LibraryGrouping; view: 'list' | 'tree' | 'ata' }) => void;
 }
 
 export function LibraryDocumentDirectory({
@@ -76,7 +77,7 @@ export function LibraryDocumentDirectory({
   onPresentationChange,
 }: LibraryDocumentDirectoryProps) {
   const [localGrouping, setLocalGrouping] = useState<LibraryGrouping>('category');
-  const [localView, setLocalView] = useState<'list' | 'tree'>('list');
+  const [localView, setLocalView] = useState<'list' | 'tree' | 'ata'>('list');
   const [params, setParams] = useSearchParams();
   const expandedFamilyIds = (params.get('expandedFamilyIds') ?? '').split(',').filter(Boolean);
   const selectedDocumentVersionId = mode === 'document' ? params.get('selectedDocumentVersionId') ?? '' : '';
@@ -84,7 +85,7 @@ export function LibraryDocumentDirectory({
   const grouping = presentation?.grouping ?? localGrouping;
   const catalogView = presentation?.view ?? localView;
   const setGrouping = (value: LibraryGrouping) => onPresentationChange ? onPresentationChange({ grouping: value, view: catalogView }) : setLocalGrouping(value);
-  const setCatalogView = (value: 'list' | 'tree') => onPresentationChange ? onPresentationChange({ grouping, view: value }) : setLocalView(value);
+  const setCatalogView = (value: 'list' | 'tree' | 'ata') => onPresentationChange ? onPresentationChange({ grouping, view: value }) : setLocalView(value);
   const toggleFamily = (familyId: string) => {
     const next = expandedFamilyIds.includes(familyId)
       ? expandedFamilyIds.filter((id) => id !== familyId)
@@ -122,8 +123,8 @@ export function LibraryDocumentDirectory({
         {!taskMode ? <Button type="button" variant="ghost" size="sm" onClick={toggleDensity}>{compact ? '标准行距' : '紧凑行距'}</Button> : null}
       </form>
       {!taskMode ? <details className="atlas-library-filters suite-library-filters"><summary>筛选与目录</summary>
-        <div className="atlas-library-view-switch"><Button variant="outline" aria-pressed={catalogView === 'list'} onClick={() => setCatalogView('list')}>文档列表</Button><Button variant="outline" aria-pressed={catalogView === 'tree'} onClick={() => setCatalogView('tree')}>分类目录</Button></div>
-        <LibraryClassificationControls grouping={grouping} onGroupingChange={setGrouping} filters={filters} onFilterChange={onFilterChange ?? (() => undefined)} counts={directory} fleet={fleet} disabled={authenticationRequired || directory.loading || !onFilterChange} />
+        <div className="atlas-library-view-switch"><Button variant="outline" aria-pressed={catalogView === 'list'} onClick={() => setCatalogView('list')}>文档列表</Button><Button variant="outline" aria-pressed={catalogView === 'tree'} onClick={() => setCatalogView('tree')}>分类目录</Button><Button variant="outline" aria-pressed={catalogView === 'ata'} onClick={() => setCatalogView('ata')}>机型 / ATA 目录</Button></div>
+        <LibraryClassificationControls grouping={grouping} onGroupingChange={setGrouping} showGrouping={catalogView !== 'ata'} filters={filters} onFilterChange={onFilterChange ?? (() => undefined)} counts={directory} fleet={fleet} disabled={authenticationRequired || directory.loading || !onFilterChange} />
       </details> : null}
       {!taskMode &&
       !directory.items.length &&
@@ -161,6 +162,12 @@ export function LibraryDocumentDirectory({
               compact={compact}
               onToggleFamily={toggleFamily}
             />
+        ) : directory.items.length && !taskMode && catalogView === 'ata' ? (
+          <LibraryAtaHierarchy documents={directory.items.filter(item => item.kind === 'DOCUMENT')}
+            fleetCatalog={fleet?.catalog ?? null} filters={filters} hasMore={Boolean(directory.nextCursor)}
+            scheme={params.get('ataTitleScheme') === 'jasc' ? 'jasc' : 'ispec'}
+            onSchemeChange={scheme => { const next = new URLSearchParams(params); next.set('ataTitleScheme', scheme); setParams(next); }}
+            onSelect={onSelect} />
         ) : directory.items.length && !taskMode ? (
           <LibraryHierarchy
             documents={directory.items.filter(

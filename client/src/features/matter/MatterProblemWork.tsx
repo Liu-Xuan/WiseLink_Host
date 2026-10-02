@@ -4,16 +4,20 @@ import type { DocumentAssessmentEvidence } from './assessment-reading';
 import ReferenceWorkNotices from './ReferenceWorkNotices';
 import OverviewCorrectionNotices from './OverviewCorrectionNotices';
 import OverviewSourceWork from './OverviewSourceWork';
+import EngineeringIssueBody from './EngineeringIssueBody';
+import { SavedJobAidIssueContext, SavedJobAidMethodNotice } from './SavedJobAidReadingContext';
 import '@client/src/pages/DocumentParsingPage/jobaid-problem-workspace.css';
 
 export default function MatterProblemWork({
   revision,
   onLocateDocument,
   showReferenceNotices = true,
+  showMethodNotice = true,
 }: {
   revision: EngineeringMatterWorkingRevisionReadModel | null;
   onLocateDocument: (evidence: DocumentAssessmentEvidence) => void;
   showReferenceNotices?: boolean;
+  showMethodNotice?: boolean;
 }) {
   const work = revision?.state.problemWork;
   if (!work || !revision) return null;
@@ -23,6 +27,7 @@ export default function MatterProblemWork({
       aria-label="已保存的问题分析"
     >
       <h2 className="text-lg font-semibold">问题分析</h2>
+      {showMethodNotice ? <SavedJobAidMethodNotice work={work} /> : null}
       {work.historicalSourceSchema ? (
         <p>历史工作按原内容展开；这不是本轮新生成的分析。</p>
       ) : null}
@@ -51,29 +56,35 @@ export default function MatterProblemWork({
         </p>
       ))}
       {work.issues.map((issue) => (
-        <details
+        <article
           key={issue.issueRef}
           data-issue-ref={issue.issueRef}
           className="rounded-xl border border-border p-4"
         >
-          <summary className="cursor-pointer font-medium">
-            {issue.question}
-          </summary>
-          <div className="wl-jobaid-article mt-4">
-            {showReferenceNotices ? (
-              <ReferenceWorkNotices
-                notices={revision?.referenceWorkNotices?.filter((notice) =>
-                  notice.affectedIssueKeys.includes(issue.issueKey),
-                )}
-              />
-            ) : null}
-            <JobAidIssueArticle
-              issue={issue}
-              evidence={work.evidence}
-              onLocateDocument={onLocateDocument}
+          <h3 className="font-medium">{issue.question}</h3>
+          {showReferenceNotices ? (
+            <ReferenceWorkNotices
+              notices={revision.referenceWorkNotices?.filter((notice) =>
+                notice.affectedIssueKeys.includes(issue.issueKey),
+              )}
             />
-          </div>
-        </details>
+          ) : null}
+          <p className="text-sm text-muted-foreground">本版保存的完整问题判断</p>
+          {issue.body ? <EngineeringIssueBody body={issue.body} evidence={work.evidence} onLocateDocument={onLocateDocument} /> : <p>未取得本版保存正文，不能用问题标题替代判断。</p>}
+          <SavedJobAidIssueContext issue={issue} evidence={work.evidence} onLocateDocument={onLocateDocument} />
+          <details className="wl-jobaid-evidence">
+            <summary>展开本问题的分析理由与方法依据</summary>
+            <div className="wl-jobaid-article mt-4">
+              <JobAidIssueArticle
+                issue={issue}
+                evidence={work.evidence}
+                onLocateDocument={onLocateDocument}
+                bodyAlreadyVisible
+                contextAlreadyVisible
+              />
+            </div>
+          </details>
+        </article>
       ))}
       {work.capabilities
         .filter((item) => item.status !== 'AVAILABLE')

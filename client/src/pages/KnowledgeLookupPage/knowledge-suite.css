@@ -69,3 +69,30 @@
 html[data-wl-theme=dark] .wl-knowledge-suite{--surface:#22252a;--line:#353a43;--dim:#b8bfca;--ink:#edeef2;--blue:#80a7eb}
 
 .wl-knowledge-suite .knowledge-hit[aria-pressed=true]{color:var(--ink);border-color:var(--line)}
+.knowledge-issue-directory {
+  margin-block: 20px;
+}
+.knowledge-issue-directory > p {
+  color: var(--wl-muted);
+  font-size: 12px;
+}
+.knowledge-issue-table-scroll {
+  overflow-x: auto;
+}
+.knowledge-issue-directory table {
+  width: 100%;
+  min-width: 480px;
+  border-collapse: collapse;
+  font-size: 13px;
+}
+.knowledge-issue-directory th,
+.knowledge-issue-directory td {
+  border-bottom: 1px solid var(--wl-border);
+  padding: 10px 8px;
+  text-align: start;
+  vertical-align: top;
+  overflow-wrap: anywhere;
+}
+.knowledge-issue-directory tr[aria-selected='true'] {
+  background: var(--wl-selected);
+}

@@ -296,7 +296,9 @@ export async function runHostedReviewTurn(options, dependencies = {}) {
       reviewCandidatePersisted: result.ok === true,
       workItemRevisionChanged: false,
       currentChanged: false,
-      staleChanged: false,
+      // Status-only recovery proves the saved candidate, not an invalidation
+      // receipt. Omit this observation when the commit response is unavailable.
+      ...(result.committed ? { staleChanged: result.committed.authority.staleMarked } : {}),
       reviewActionExecuted: false,
     },
   };

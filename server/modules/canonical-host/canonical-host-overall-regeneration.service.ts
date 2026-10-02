@@ -1,4 +1,4 @@
-import { Inject, Injectable } from '@nestjs/common';
+import { Inject, Injectable, Optional } from '@nestjs/common';
 import type { Request } from 'express';
 
 import type {
@@ -10,6 +10,12 @@ import type {
   RequestCanonicalOverallRegenerationRequest,
   RequestCanonicalOverallRegenerationResponse,
 } from '@shared/api.interface';
+import { isJobAidProblemProjection } from '@shared/jobaid-problem-assessment.interface';
+import {
+  CanonicalJobAidProblemService,
+  type JobAidReviewOverallRegenerationMarker,
+  type JobAidReviewOverallRegenerationBinding,
+} from './canonical-jobaid-problem.service';
 import { ActionAttemptLifecycleService } from '../action-attempt/action-attempt-lifecycle.service';
 import type { ActionAttemptRow } from '../action-attempt/action-attempt.types';
 import { SessionResolver } from '../identity/session-resolver.service';
@@ -62,6 +68,7 @@ export class CanonicalHostOverallRegenerationService {
     private readonly clock: CanonicalHostClockPort,
     private readonly overall: CanonicalHostOpenClawOverallService,
     private readonly attempts: ActionAttemptLifecycleService,
+    @Optional() private readonly jobAid?: CanonicalJobAidProblemService,
   ) {}
 
   async request(
@@ -85,7 +92,33 @@ export class CanonicalHostOverallRegenerationService {
       };
     }
 
-    const workItem = requiredCurrentOverallCandidate(authorized.workItem);
+    let reviewWork: JobAidReviewOverallRegenerationBinding | undefined;
+    const integrated = authorized.workItem.integratedAssessment;
+    if (
+      isJobAidProblemProjection(integrated?.baseRules) &&
+      integrated?.status === 'OVERALL_CANDIDATE_STALE' &&
+      integrated.overallSynthesis?.status === 'STALE' &&
+      integrated.overallSynthesis.staleReason === 'BASE_RULE_RESULT_CHANGED'
+    ) {
+      if (authorized.workItem.revision !== normalizedInput.expectedRevision)
+        throw regenerationConflict('WORK_ITEM_CAS_CONFLICT');
+      assertSourceIdentity(authorized.workItem, normalizedInput.sourceIdentity);
+      if (!this.jobAid)
+        throw regenerationConflict('JOBAID_PROBLEM_RUNTIME_UNAVAILABLE');
+      reviewWork = await this.jobAid.reviewOverallRegenerationBinding(
+        {
+          workItem: authorized.workItem,
+          tenantId: authorized.grant.tenantId,
+          actorUserId: authorized.grant.actorUserId,
+        },
+        true,
+        'REQUEST',
+      );
+    }
+    const workItem = requiredCurrentOverallCandidate(
+      authorized.workItem,
+      !!reviewWork,
+    );
     if (workItem.revision !== normalizedInput.expectedRevision) {
       throw regenerationConflict('WORK_ITEM_CAS_CONFLICT');
     }
@@ -97,7 +130,7 @@ export class CanonicalHostOverallRegenerationService {
     if (!sourceOverallSha256) {
       throw regenerationConflict('OVERALL_REGENERATION_SOURCE_CHANGED');
     }
-    const marker: CanonicalOverallRegenerationRequestProjection = {
+    const marker: JobAidReviewOverallRegenerationMarker = {
       schemaVersion: 'wiselink.3_1.overall_regeneration_request.v1',
       requestId: normalizedInput.requestId,
       requestedByUserId: authorized.session.actor.canonicalSubject.id,
@@ -106,6 +139,7 @@ export class CanonicalHostOverallRegenerationService {
       executionRevision: workItem.revision + 1,
       staleReason: 'USER_REQUESTED_REGENERATION',
       sourceIdentity: structuredClone(normalizedInput.sourceIdentity),
+      ...(reviewWork ? { jobAidReviewWork: structuredClone(reviewWork) } : {}),
       sourceOverall: {
         revision: overall.revision,
         actionAttemptId: overall.actionAttemptId,
@@ -174,16 +208,48 @@ export class CanonicalHostOverallRegenerationService {
     const marker = authorized.workItem.overallRegenerationRequest;
     if (!marker) throw regenerationNotFound();
     assertRequestActor(marker, authorized);
+    if (
+      isJobAidProblemProjection(
+        authorized.workItem.integratedAssessment?.baseRules,
+      ) &&
+      (marker as JobAidReviewOverallRegenerationMarker).jobAidReviewWork &&
+      authorized.workItem.revision === marker.executionRevision &&
+      authorized.workItem.integratedAssessment?.overallSynthesis?.status ===
+        'STALE'
+    ) {
+      if (!this.jobAid)
+        throw regenerationConflict('JOBAID_PROBLEM_RUNTIME_UNAVAILABLE');
+      await this.jobAid.reviewOverallRegenerationBinding({
+        workItem: authorized.workItem,
+        tenantId: authorized.grant.tenantId,
+        actorUserId: authorized.grant.actorUserId,
+      });
+    }
     const existing = await this.readAttempt(authorized, marker);
     if (existing) return existing;
     if (authorized.workItem.revision !== marker.executionRevision) {
       throw regenerationConflict('OVERALL_REGENERATION_ATTEMPT_NOT_FOUND');
     }
-    await this.overall.enqueueUserRequestedRegeneration({
-      workItemId: authorized.workItem.workItemId,
-      tenantId: authorized.grant.tenantId,
-      permissionSnapshotVersion: authorized.grant.authorizationFingerprint,
-    });
+    if (
+      isJobAidProblemProjection(
+        authorized.workItem.integratedAssessment?.baseRules,
+      )
+    ) {
+      if (!this.jobAid)
+        throw regenerationConflict('JOBAID_PROBLEM_RUNTIME_UNAVAILABLE');
+      await this.jobAid.enqueueOverall(
+        authorized.workItem,
+        authorized.grant.tenantId,
+        authorized.grant.authorizationFingerprint,
+        true,
+      );
+    } else {
+      await this.overall.enqueueUserRequestedRegeneration({
+        workItemId: authorized.workItem.workItemId,
+        tenantId: authorized.grant.tenantId,
+        permissionSnapshotVersion: authorized.grant.authorizationFingerprint,
+      });
+    }
     const queued = await this.readAttempt(authorized, marker);
     if (!queued) {
       throw regenerationConflict('OVERALL_REGENERATION_QUEUE_READBACK_FAILED');
@@ -259,6 +325,7 @@ function assertRequestActor(
 
 function requiredCurrentOverallCandidate(
   workItem: CanonicalWorkItemProjection,
+  reviewWorkValidated = false,
 ): CanonicalWorkItemProjection {
   const integrated = workItem.integratedAssessment;
   const overall = integrated?.overallSynthesis;
@@ -274,8 +341,10 @@ function requiredCurrentOverallCandidate(
     !workItem.package ||
     !integrated?.baseRules ||
     !overall ||
-    overall.staleReason !== null ||
-    (!currentCandidate && !structureMissingLegacyCandidate)
+    (!reviewWorkValidated && overall.staleReason !== null) ||
+    (!currentCandidate &&
+      !structureMissingLegacyCandidate &&
+      !reviewWorkValidated)
   ) {
     throw regenerationConflict(
       'OVERALL_REGENERATION_CURRENT_CANDIDATE_REQUIRED',

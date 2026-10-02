@@ -1,4 +1,3 @@
-import { canonicalHostBareSha256 } from './canonical-host-sha256';
 import type { JobAidKnowledgeObservationStatus } from '@shared/jobaid-activity.interface';
 import { projectJobAidActivity } from './jobaid-activity';
 import { originalApplicabilityResultMatches } from './original-applicability-currentness';
@@ -7,12 +6,23 @@ import { UnifiedReaderService } from '../unified-reader/unified-reader.service';
 import { DocumentSemanticService } from './document-semantic.service';
 import { prepareDocumentOriginalEngineeringReader, findDocumentOriginalEvidence } from './document-original-engineering-reading';
 import { Inject, Injectable, Optional } from '@nestjs/common';
-import type { PostgresJsDatabase } from '@lark-apaas/fullstack-nestjs-core';
+import {
+  DRIZZLE_DATABASE,
+  type PostgresJsDatabase,
+} from '@lark-apaas/fullstack-nestjs-core';
+import { and, desc, eq, inArray, sql } from 'drizzle-orm';
+import {
+  actionAttempt,
+  assessmentWorkRevision,
+  reviewTurn,
+  workItem as workItemTable,
+} from '../../database/schema';
 import type { AssessmentEvidence } from '@shared/assessment-reading.interface';
 import type {
   CanonicalBaseRuleCandidateProjection,
   CanonicalIntegratedAssessmentProjection,
   CanonicalOpenClawOverallProjection,
+  CanonicalOverallRegenerationRequestProjection,
   CanonicalWorkItemProjection,
 } from '@shared/api.interface';
 import {
@@ -64,6 +74,7 @@ import {
   type CanonicalVerifiedOpenClawAttemptScope,
   type CanonicalVerifiedServiceScope,
 } from './canonical-service-scope.authorization';
+import { canonicalHostBareSha256 } from './canonical-host-sha256';
 import { preflightCanonicalHostOpenClawResult, parseCanonicalHostOpenClawAttemptTask, parseCanonicalHostOpenClawStoredResult } from './canonical-host-openclaw-runtime-policy';
 import {
   overallModelEvidenceRegistry,
@@ -96,6 +107,17 @@ import {
   promoteConfigurationEvidenceReevaluation,
   retryConfigurationEvidenceReevaluationStage,
 } from './configuration-evidence/configuration-evidence-reevaluation.state';
+
+// Host-only exact pointer; the immutable work and APPLIED Review receipt remain
+// authoritative. Browser read models deliberately do not expose this field.
+export interface JobAidReviewOverallRegenerationBinding {
+  workRevisionRef: string;
+  workRevision: number;
+}
+export type JobAidReviewOverallRegenerationMarker =
+  CanonicalOverallRegenerationRequestProjection & {
+    jobAidReviewWork?: JobAidReviewOverallRegenerationBinding;
+  };
 
 export interface BeginJobAidProblemResult {
   attemptRef: string;
@@ -131,6 +153,9 @@ export class CanonicalJobAidProblemService {
     @Optional() private readonly knowledge?: InitialAssessmentKnowledgeService,
     @Optional() private readonly originalReader?: UnifiedReaderService,
     @Optional() private readonly semantics?: DocumentSemanticService,
+    @Optional()
+    @Inject(DRIZZLE_DATABASE)
+    private readonly database?: PostgresJsDatabase,
   ) {}
 
   /** Deployment first installs dual readers; only explicitly enabled NEW tasks use v2. */
@@ -199,6 +224,10 @@ export class CanonicalJobAidProblemService {
         throw new Error('JOBAID_PROBLEM_V2_NEW_REQUEST_DISABLED');
       }
     }
+    // A queued task still names its sealed work. Recheck the exact Host marker
+    // before claiming so a later Review cannot expose obsolete model input.
+    if (purpose === 'OVERALL_CONSISTENCY' && workItem.overallRegenerationRequest)
+      await this.reviewOverallRegenerationBinding({workItem,tenantId:scope.tenantId,actorUserId},false);
     const claim = await this.attempts.reserveAndClaim({
       workItemId: workItem.workItemId,
       taskType,
@@ -232,6 +261,13 @@ export class CanonicalJobAidProblemService {
         ),
     });
     const input = parseJobAidProblemTask(claim.task);
+    if (purpose === 'OVERALL_CONSISTENCY') {
+      const [latest] = await this.work.listHeadersForRuntime({tenantId:scope.tenantId,
+        workItemId:workItem.workItemId,actorUserId});
+      if (!latest || input.previousWork?.workRevisionRef !== latest.workRevisionRef ||
+        input.previousWork.workRevision !== latest.workRevision)
+        throw new Error('JOBAID_OVERALL_EXACT_WORK_REQUIRED');
+    }
     await this.assertSourcesAuthorized(
       input.sourceCatalog,
       input,
@@ -529,6 +565,7 @@ export class CanonicalJobAidProblemService {
     workItem: CanonicalWorkItemProjection,
     tenantId: string,
     permissionSnapshotVersion: string,
+    requestContext = false,
   ) {
     const loaded = await this.workItems.loadTenantScopedProjection(
       workItem.workItemId,
@@ -536,6 +573,11 @@ export class CanonicalJobAidProblemService {
     );
     if (!loaded || loaded.row.documentVersionId !== workItem.source.documentVersionId)
       throw new Error('JOBAID_WORK_ITEM_BINDING_INVALID');
+    if (workItem.overallRegenerationRequest)
+      await this.reviewOverallRegenerationBinding(
+        { workItem, tenantId, actorUserId: loaded.row.requestedByUserId },
+        requestContext,
+      );
     const reserved = await this.attempts.reserve({
       workItemId: workItem.workItemId,
       taskType: 'OPENCLAW_OVERALL_SYNTHESIS',
@@ -562,6 +604,11 @@ export class CanonicalJobAidProblemService {
           permissionSnapshotVersion,
           'OVERALL_CONSISTENCY',
           identity.createdAt.toISOString(),
+          [],
+          undefined,
+          undefined,
+          undefined,
+          requestContext,
         ),
     });
     return {
@@ -585,17 +632,49 @@ export class CanonicalJobAidProblemService {
     },
     originalParseRunId?: string,
     successorWork?: JobAidWorkRevision,
+    requestContext = false,
   ): Promise<JobAidProblemTaskInput> {
     const readScope = new UnifiedArtifactReadScope(this.artifactStore);
     if (!this.originalReader) throw new Error('DOCUMENT_ORIGINAL_READER_UNAVAILABLE');
     if (!this.semantics) throw new Error('DOCUMENT_SEMANTIC_READER_UNAVAILABLE');
-    await this.sourceBindings([],workItem,tenantId,actorUserId);
-    const bound = originalParseRunId ? { parseRunId: originalParseRunId } : await this.work.publishedOriginalBinding({ tenantId, actorUserId, workItemId: workItem.workItemId,
-      documentVersionId: workItem.source.documentVersionId });
-    const original = await this.work.withActorScope(actorUserId, () => this.originalReader!.readDocumentOriginal(
-      workItem.source.documentVersionId,bound.parseRunId,{tenantId,actorUserId,roles:[]}));
-    const semanticMap = await this.work.withActorScope(actorUserId, () => this.semantics!.read(
-      {tenantId,actorUserId,documentVersionId:workItem.source.documentVersionId,roles:[]},original));
+    await this.sourceBindings(
+      [],
+      workItem,
+      tenantId,
+      actorUserId,
+      requestContext,
+    );
+    const originalScope = {
+      tenantId,
+      actorUserId,
+      workItemId: workItem.workItemId,
+      documentVersionId: workItem.source.documentVersionId,
+    };
+    const bound = originalParseRunId
+      ? { parseRunId: originalParseRunId }
+      : requestContext
+        ? await this.work.publishedOriginalBindingForRequest(originalScope)
+        : await this.work.publishedOriginalBinding(originalScope);
+    const readInContext = <T>(read: () => Promise<T>) =>
+      requestContext ? read() : this.work.withActorScope(actorUserId, read);
+    const original = await readInContext(() =>
+      this.originalReader!.readDocumentOriginal(
+        workItem.source.documentVersionId,
+        bound.parseRunId,
+        { tenantId, actorUserId, roles: [] },
+      ),
+    );
+    const semanticMap = await readInContext(() =>
+      this.semantics!.read(
+        {
+          tenantId,
+          actorUserId,
+          documentVersionId: workItem.source.documentVersionId,
+          roles: [],
+        },
+        original,
+      ),
+    );
     if (original.original.binding.sourceArtifactId !== workItem.source.sourceArtifactId ||
       original.original.binding.sourceSha256 !== canonicalHostBareSha256(workItem.source.sourceFileSha256) ||
       original.original.binding.sourceByteLength !== workItem.source.sourceByteLength)
@@ -620,11 +699,28 @@ export class CanonicalJobAidProblemService {
         reviewSelection,
         originalUnits,
       ),
-      this.work.listHeadersForRuntime({
-        tenantId: tenantId,
-        workItemId: workItem.workItemId,
-        actorUserId,
-      }),
+      requestContext
+        ? this.withInputDatabase(actorUserId, true, (database) =>
+            database
+              .select({
+                workRevisionRef:
+                  assessmentWorkRevision.assessmentWorkRevisionId,
+                workRevision: assessmentWorkRevision.workRevision,
+              })
+              .from(assessmentWorkRevision)
+              .where(
+                and(
+                  eq(assessmentWorkRevision.tenantId, tenantId),
+                  eq(assessmentWorkRevision.workItemId, workItem.workItemId),
+                ),
+              )
+              .orderBy(desc(assessmentWorkRevision.workRevision)),
+          )
+        : this.work.listHeadersForRuntime({
+            tenantId,
+            workItemId: workItem.workItemId,
+            actorUserId,
+          }),
     ]);
     const primary = [...primaryByRef.values()];
     const sourceCatalog = [
@@ -640,12 +736,18 @@ export class CanonicalJobAidProblemService {
         ? base.workRevisionRef
         : history[0]?.workRevisionRef);
     let previousWork = previousWorkRef
-      ? await this.work.readByRefForRuntime({
-          tenantId,
-          workItemId: workItem.workItemId,
-          actorUserId,
-          workRevisionRef: previousWorkRef,
-        })
+      ? requestContext
+        ? await this.work.readByRef({
+            tenantId,
+            workItemId: workItem.workItemId,
+            workRevisionRef: previousWorkRef,
+          })
+        : await this.work.readByRefForRuntime({
+            tenantId,
+            workItemId: workItem.workItemId,
+            actorUserId,
+            workRevisionRef: previousWorkRef,
+          })
       : null;
     if (previousWorkRef && !previousWork)
       throw new Error(
@@ -656,20 +758,52 @@ export class CanonicalJobAidProblemService {
     if (purpose === 'OVERALL_CONSISTENCY') {
       if (!isJobAidProblemProjection(base))
         throw new Error('JOBAID_OVERALL_EXACT_WORK_REQUIRED');
-      if (
-        !previousWork ||
-        previousWork.workRevision !== (successorWork?.workRevision ?? base.workRevision) ||
+      const seedRef = successorWork?.workRevisionRef ?? base.workRevisionRef;
+      const seedRevision = successorWork?.workRevision ?? base.workRevision;
+      if (!previousWork || previousWork.workRevisionRef !== seedRef ||
+        previousWork.workRevision !== seedRevision ||
         previousWork.documentVersionId !== workItem.source.documentVersionId ||
-        previousWork.content.roundCompletion === 'IN_PROGRESS'
-      )
+        previousWork.content.roundCompletion === 'IN_PROGRESS')
         throw new Error('JOBAID_OVERALL_EXACT_WORK_REQUIRED');
-      if (successorWork && previousWork.workRevisionRef !== history[0]?.workRevisionRef)
-        throw new Error('JOBAID_SUCCESSOR_OVERALL_WORK_CHANGED');
-      if (previousWork.workRevisionRef !== history[0]?.workRevisionRef)
-        previousWork = await this.recoverCancelledOverallWork({
-          workItem, tenantId, actorUserId, baseWork: previousWork,
-          latestWorkRevisionRef: history[0]?.workRevisionRef,
-        });
+      if (previousWork.workRevisionRef !== history[0]?.workRevisionRef) {
+        if (successorWork)
+          throw new Error('JOBAID_SUCCESSOR_OVERALL_WORK_CHANGED');
+        const baseWork = previousWork;
+        const latest = requestContext
+          ? null
+          : await this.work.readByRefForRuntime({
+              tenantId, actorUserId, workItemId: workItem.workItemId,
+              workRevisionRef: history[0]!.workRevisionRef,
+            });
+        const latestAttempt = latest && !workItem.overallRegenerationRequest
+          ? await this.attempts.readScopedById({
+              attemptId: latest.actionAttemptId, tenantId,
+              workItemId: workItem.workItemId,
+            })
+          : null;
+        if (latestAttempt?.actionType === 'OPENCLAW_OVERALL_SYNTHESIS' &&
+          latestAttempt.status === 'CANCELLED') {
+          // A cancelled Overall has its own continuous, source-bound save chain.
+          // A Host Review marker never enters this recovery branch.
+          previousWork = await this.recoverCancelledOverallWork({
+            workItem, tenantId, actorUserId, baseWork,
+            latestWorkRevisionRef: history[0]?.workRevisionRef,
+          });
+        } else {
+          // New Review work is admitted only through the exact durable receipt.
+          previousWork = await this.exactReviewWorkForOverall({
+            workItem, tenantId, actorUserId, requestContext,
+            workRevisionRef: history[0]?.workRevisionRef,
+            workRevision: history[0]?.workRevision,
+          });
+        }
+      }
+      if (!previousWork ||
+        previousWork.workRevisionRef !== history[0]?.workRevisionRef ||
+        previousWork.workRevision !== history[0]?.workRevision ||
+        previousWork.documentVersionId !== workItem.source.documentVersionId ||
+        previousWork.content.roundCompletion === 'IN_PROGRESS')
+        throw new Error('JOBAID_OVERALL_EXACT_WORK_REQUIRED');
     }
     // Authorize the complete new input inside buildModelInput, before the
     // lifecycle persists or claims an attempt. begin also rechecks replays.
@@ -678,6 +812,7 @@ export class CanonicalJobAidProblemService {
       workItem,
       tenantId,
       actorUserId,
+      requestContext,
     );
     const taskInput = buildJobAidProblemTask({
       workItem: assessmentWorkItem,
@@ -904,6 +1039,398 @@ export class CanonicalJobAidProblemService {
         ),
       },
       database,
+    );
+  }
+
+  /** Called in the same short actor transaction as the work and Review receipt.
+   * This changes candidate coverage, not the formal WorkItem revision or the
+   * old base artifact's exact identity. No artifact I/O runs in this transaction. */
+  async invalidateReviewOverall(
+    row: ActionAttemptRow,
+    revision: JobAidWorkRevision,
+    actorUserId: string,
+    database: PostgresJsDatabase,
+  ): Promise<boolean> {
+    const [owned] = await database
+      .select({
+        revision: workItemTable.revision,
+        projectionJson: workItemTable.projectionJson,
+      })
+      .from(workItemTable)
+      .where(
+        and(
+          eq(workItemTable.tenantId, row.tenantId),
+          eq(workItemTable.workItemId, row.workItemId),
+          eq(workItemTable.requestedByUserId, actorUserId),
+        ),
+      )
+      .limit(1)
+      .for('update');
+    if (!owned?.projectionJson)
+      throw new Error('JOBAID_SOURCE_AUTHORIZATION_CHANGED');
+    const current = JSON.parse(
+      owned.projectionJson,
+    ) as CanonicalWorkItemProjection;
+    const latest = await this.work.latest(
+      { tenantId: row.tenantId, workItemId: row.workItemId },
+      database,
+    );
+    const overall = current.integratedAssessment?.overallSynthesis;
+    if (
+      !overall ||
+      latest?.workRevisionRef !== revision.workRevisionRef ||
+      overall.basedOnJobAidWorkRevisionRef === revision.workRevisionRef
+    )
+      return false;
+    if (owned.revision !== row.baseRevision) return false;
+    if (
+      overall.status === 'STALE' &&
+      overall.staleReason === 'BASE_RULE_RESULT_CHANGED' &&
+      !current.aeo &&
+      !current.integratedAssessment!.overallForAeoConfirmation
+    )
+      return true;
+    const next: CanonicalWorkItemProjection = {
+      ...current,
+      aeo: null,
+      integratedAssessment: {
+        ...current.integratedAssessment!,
+        status: 'OVERALL_CANDIDATE_STALE',
+        overallSynthesis: {
+          ...overall,
+          status: 'STALE',
+          staleReason: 'BASE_RULE_RESULT_CHANGED',
+        },
+        overallForAeoConfirmation: null,
+      },
+    };
+    const updated = await database
+      .update(workItemTable)
+      .set({ projectionJson: JSON.stringify(next), updatedAt: new Date() })
+      .where(
+        and(
+          eq(workItemTable.tenantId, row.tenantId),
+          eq(workItemTable.workItemId, row.workItemId),
+          eq(workItemTable.requestedByUserId, actorUserId),
+          eq(workItemTable.revision, owned.revision),
+          eq(workItemTable.projectionJson, owned.projectionJson),
+        ),
+      )
+      .returning({ id: workItemTable.workItemId });
+    if (updated.length !== 1)
+      throw new Error('JOBAID_REVIEW_PROJECTION_CONFLICT');
+    return true;
+  }
+
+  /** Browser request validation uses its authenticated SQL actor, never a
+   * Hosted scope. Only the server chooses this branch, after fresh object access. */
+  async reviewOverallRegenerationBinding(
+    input: {
+      workItem: CanonicalWorkItemProjection;
+      tenantId: string;
+      actorUserId: string;
+    },
+    requestContext = true,
+    stage: 'REQUEST' | 'EXECUTION' = 'EXECUTION',
+  ): Promise<JobAidReviewOverallRegenerationBinding> {
+    const base = input.workItem.integratedAssessment?.baseRules;
+    if (!isJobAidProblemProjection(base))
+      throw new Error('JOBAID_OVERALL_EXACT_WORK_REQUIRED');
+    const { latest, previous } = await this.withInputDatabase(
+      input.actorUserId,
+      requestContext,
+      async (database) => ({
+        latest: await this.work.latest(
+          { tenantId: input.tenantId, workItemId: input.workItem.workItemId },
+          database,
+        ),
+        previous: await this.work.readByRef(
+          {
+            tenantId: input.tenantId,
+            workItemId: input.workItem.workItemId,
+            workRevisionRef: base.workRevisionRef,
+          },
+          database,
+        ),
+      }),
+    );
+    if (
+      !latest ||
+      !previous ||
+      previous.workRevisionRef !== base.workRevisionRef ||
+      previous.workRevision !== base.workRevision ||
+      previous.documentVersionId !== input.workItem.source.documentVersionId
+    )
+      throw new Error('JOBAID_OVERALL_EXACT_WORK_REQUIRED');
+    const marker = input.workItem.overallRegenerationRequest as
+      JobAidReviewOverallRegenerationMarker | undefined;
+    if (stage === 'EXECUTION' && marker &&
+      marker.jobAidReviewWork === undefined &&
+      latest.workRevisionRef === base.workRevisionRef &&
+      latest.workRevision === base.workRevision &&
+      latest.workItemId === input.workItem.workItemId &&
+      latest.documentVersionId === input.workItem.source.documentVersionId &&
+      latest.content.roundCompletion !== 'IN_PROGRESS') {
+      // Ordinary regeneration retains the exact base work. Its complete Host
+      // marker must still match the actor, formal revision, Overall and sources.
+      this.reviewRegenerationBaseRevision(input.workItem, input.actorUserId,
+        latest.workRevisionRef, latest.workRevision);
+      await this.sourceBindings(latest.content.evidence, input.workItem,
+        input.tenantId, input.actorUserId, requestContext);
+      return { workRevisionRef: latest.workRevisionRef, workRevision: latest.workRevision };
+    }
+    if (latest.workRevisionRef === base.workRevisionRef)
+      throw new Error('JOBAID_OVERALL_EXACT_WORK_REQUIRED');
+    const saved = await this.exactReviewWorkForOverall({
+      ...input,
+      requestContext,
+      ...(stage === 'REQUEST'
+        ? { requestedFromRevision: input.workItem.revision }
+        : {}),
+      workRevisionRef: latest.workRevisionRef,
+      workRevision: latest.workRevision,
+    });
+    if (saved.content.roundCompletion === 'IN_PROGRESS')
+      throw new Error('JOBAID_OVERALL_EXACT_WORK_REQUIRED');
+    await this.sourceBindings(
+      saved.content.evidence,
+      input.workItem,
+      input.tenantId,
+      input.actorUserId,
+      requestContext,
+    );
+    return {
+      workRevisionRef: saved.workRevisionRef,
+      workRevision: saved.workRevision,
+    };
+  }
+
+  private async withInputDatabase<T>(
+    actorUserId: string,
+    requestContext: boolean,
+    read: (database: PostgresJsDatabase) => Promise<T>,
+  ): Promise<T> {
+    if (!requestContext)
+      return this.work.withActorTransaction(actorUserId, read);
+    if (!this.database) throw new Error('JOBAID_REQUEST_DATABASE_UNAVAILABLE');
+    return this.database.transaction(async (transaction) => {
+      const database = transaction as PostgresJsDatabase;
+      const [identity] = await database.execute<{ actorId: string }>(
+        sql`SELECT current_setting('app.user_id',true) AS "actorId"`,
+      );
+      if (identity?.actorId !== actorUserId)
+        throw new Error('JOBAID_REQUEST_ACTOR_CONTEXT_REQUIRED');
+      return read(database);
+    });
+  }
+
+  private reviewRegenerationBaseRevision(
+    item: CanonicalWorkItemProjection,
+    actorUserId: string,
+    workRevisionRef: string,
+    workRevision: number | undefined,
+  ): number {
+    const request = item.overallRegenerationRequest as
+      | JobAidReviewOverallRegenerationMarker
+      | undefined;
+    if (!request) return item.revision;
+    const overall = item.integratedAssessment?.overallSynthesis;
+    const base = item.integratedAssessment?.baseRules;
+    const source = request.sourceIdentity;
+    const sameSha = (a: unknown, b: unknown) =>
+      !!canonicalHostBareSha256(a) &&
+      canonicalHostBareSha256(a) === canonicalHostBareSha256(b);
+    if (
+      request.schemaVersion !==
+        'wiselink.3_1.overall_regeneration_request.v1' ||
+      request.staleReason !== 'USER_REQUESTED_REGENERATION' ||
+      request.requestedByUserId !== actorUserId ||
+      request.executionRevision !== item.revision ||
+      request.executionRevision !== request.requestedFromRevision + 1 ||
+      (request.jobAidReviewWork === undefined
+        ? !isJobAidProblemProjection(base) || base.workRevisionRef !== workRevisionRef ||
+          base.workRevision !== workRevision
+        : request.jobAidReviewWork?.workRevisionRef !== workRevisionRef ||
+          request.jobAidReviewWork?.workRevision !== workRevision) ||
+      item.integratedAssessment?.status !== 'OVERALL_CANDIDATE_STALE' ||
+      overall?.status !== 'STALE' ||
+      overall.staleReason !== null ||
+      request.sourceOverall.revision !== overall.revision ||
+      request.sourceOverall.actionAttemptId !== overall.actionAttemptId ||
+      !sameSha(
+        request.sourceOverall.artifactSha256,
+        overall.artifact?.sha256,
+      ) ||
+      source.documentVersionId !== item.source.documentVersionId ||
+      source.sourceArtifactId !== item.source.sourceArtifactId ||
+      !sameSha(source.sourceFileSha256, item.source.sourceFileSha256) ||
+      source.packageId !== item.package?.packageId ||
+      !sameSha(source.packageArtifactSha256, item.package?.artifact.sha256)
+    )
+      throw new Error('JOBAID_OVERALL_EXACT_WORK_REQUIRED');
+    return request.requestedFromRevision;
+  }
+
+  private async exactReviewWorkForOverall(input: {
+    workItem: CanonicalWorkItemProjection;
+    tenantId: string;
+    actorUserId: string;
+    workRevisionRef: string | undefined;
+    workRevision: number | undefined;
+    requestContext?: boolean;
+    requestedFromRevision?: number;
+  }): Promise<JobAidWorkRevision> {
+    const fail = (): never => {
+      throw new Error('JOBAID_OVERALL_EXACT_WORK_REQUIRED');
+    };
+    if (!input.workRevisionRef) return fail();
+    const saved = input.requestContext
+      ? await this.work.readByRef({
+          tenantId: input.tenantId,
+          workItemId: input.workItem.workItemId,
+          workRevisionRef: input.workRevisionRef,
+        })
+      : await this.work.readByRefForRuntime({
+          tenantId: input.tenantId,
+          actorUserId: input.actorUserId,
+          workItemId: input.workItem.workItemId,
+          workRevisionRef: input.workRevisionRef,
+        });
+    const expectedBaseRevision =
+      input.requestedFromRevision ??
+      this.reviewRegenerationBaseRevision(
+        input.workItem,
+        input.actorUserId,
+        input.workRevisionRef,
+        input.workRevision,
+      );
+    if (
+      !saved ||
+      saved.workRevisionRef !== input.workRevisionRef ||
+      saved.workRevision !== input.workRevision ||
+      saved.workItemId !== input.workItem.workItemId ||
+      saved.documentVersionId !== input.workItem.source.documentVersionId ||
+      saved.basedOnWorkItemRevision !== expectedBaseRevision ||
+      !saved.requestId.startsWith('review-turn:')
+    )
+      return fail();
+    const reviewTurnId = saved.requestId.slice('review-turn:'.length);
+    return this.withInputDatabase(
+      input.actorUserId,
+      input.requestContext === true,
+      async (database) => {
+        const [turn] = await database
+          .select({
+            conversationId: reviewTurn.reviewConversationId,
+            operationRef: actionAttempt.operationRef,
+            resultContentHash: actionAttempt.resultContentHash,
+            taskEnvelopeJson: actionAttempt.taskEnvelopeJson,
+          })
+          .from(reviewTurn)
+          .innerJoin(
+            actionAttempt,
+            eq(actionAttempt.attemptId, reviewTurn.actionAttemptId),
+          )
+          .where(
+            and(
+              eq(reviewTurn.reviewTurnId, reviewTurnId),
+              eq(reviewTurn.tenantId, input.tenantId),
+              eq(reviewTurn.actorId, input.actorUserId),
+              eq(reviewTurn.workItemId, input.workItem.workItemId),
+              eq(reviewTurn.actionAttemptId, saved.actionAttemptId),
+              eq(reviewTurn.inputRevision, saved.basedOnWorkItemRevision),
+              eq(actionAttempt.tenantId, input.tenantId),
+              eq(actionAttempt.actorUserId, input.actorUserId),
+              eq(actionAttempt.workItemId, input.workItem.workItemId),
+              eq(actionAttempt.documentVersionId, saved.documentVersionId),
+              eq(actionAttempt.baseRevision, saved.basedOnWorkItemRevision),
+              eq(actionAttempt.actionType, 'OPENCLAW_INTERACTIVE_REVIEW'),
+              inArray(actionAttempt.status, ['COMMITTING', 'SUCCEEDED']),
+            ),
+          )
+          .limit(1);
+        if (!turn?.taskEnvelopeJson) return fail();
+        const task = parseTaskEnvelope(turn.taskEnvelopeJson);
+        const reviewTask = (
+          task.modelInput as { jobAidContext?: JobAidProblemTaskInput }
+        ).jobAidContext;
+        if (
+          task.workItemId !== input.workItem.workItemId ||
+          task.documentVersionId !== saved.documentVersionId ||
+          task.baseRevision !== saved.basedOnWorkItemRevision ||
+          reviewTask?.actorUserId !== input.actorUserId ||
+          reviewTask.modelInput.expectedWorkRevision !== saved.workRevision - 1
+        )
+          return fail();
+        await this.assertEvidenceOwned(
+          saved.content.evidence,
+          input.tenantId,
+          input.actorUserId,
+          input.workItem.workItemId,
+          database,
+        );
+        for (const source of reviewTask.sourceBindings) {
+          const actual = await this.work.loadOwnedSourceBinding(
+            {
+              workItemId: source.workItemId,
+              tenantId: input.tenantId,
+              actorUserId: input.actorUserId,
+              kind: source.kind,
+            },
+            database,
+          );
+          if (
+            !actual ||
+            actual.documentVersionId !== source.documentVersionId ||
+            actual.artifactRef !== source.artifactRef ||
+            actual.artifactSha256 !== source.artifactSha256
+          )
+            return fail();
+        }
+        // Use the existing browser repository reader under authenticated RLS.
+        // The OpenClaw reader intentionally requires Hosted runtime policies.
+        const aggregate = input.requestContext
+          ? await this.conversations.loadById(turn.conversationId, database)
+          : null;
+        const binding = input.requestContext
+          ? null
+          : await this.conversations.loadOpenClawTurnByIdBinding(
+              {
+                reviewConversationId: turn.conversationId,
+                reviewTurnId,
+                tenantId: input.tenantId,
+                actorId: input.actorUserId,
+                workItemId: input.workItem.workItemId,
+              },
+              database,
+            );
+        if (
+          input.requestContext &&
+          (!aggregate ||
+            aggregate.conversation.tenantId !== input.tenantId ||
+            aggregate.conversation.actorId !== input.actorUserId ||
+            aggregate.conversation.workItemId !== input.workItem.workItemId)
+        )
+          return fail();
+        const candidate = input.requestContext
+          ? aggregate?.turns.find(
+              (item) =>
+                item.reviewTurnId === reviewTurnId &&
+                item.inputRevision === saved.basedOnWorkItemRevision,
+            )?.assistantCandidate
+          : binding?.turn.assistantCandidate;
+        const receipt = candidate?.jobAidWorkingUpdate;
+        if (
+          candidate?.actionAttemptRef !== turn.operationRef ||
+          !turn.resultContentHash ||
+          candidate.provenance.resultContentHash !== turn.resultContentHash ||
+          receipt?.status !== 'APPLIED' ||
+          receipt.workRevisionRef !== saved.workRevisionRef ||
+          receipt.workRevision !== saved.workRevision
+        )
+          return fail();
+        return saved;
+      },
     );
   }
 
@@ -1396,10 +1923,14 @@ export class CanonicalJobAidProblemService {
       missingInputs: revision.content.issues.flatMap((issue) =>
         issue.openQuestions.map((item) => item.question),
       ),
-      applicabilityStatus: effective.applicability?.schemaVersion==='wiselink.3_1.applicability_candidate_projection.v3'
-        ? (assessmentOriginal && originalApplicabilityResultMatches(effective,assessmentOriginal)
-          ? effective.applicability.decision : 'UNKNOWN')
-        : effective.applicability?.decision ?? 'UNKNOWN',
+      applicabilityStatus:
+        effective.applicability?.schemaVersion ===
+        'wiselink.3_1.applicability_candidate_projection.v3'
+          ? assessmentOriginal &&
+            originalApplicabilityResultMatches(effective, assessmentOriginal)
+            ? effective.applicability.decision
+            : 'UNKNOWN'
+          : (effective.applicability?.decision ?? 'UNKNOWN'),
       engineeringReviewRequired: true,
       providers: {},
       modelVersion: prepared.result.modelVersion,
@@ -1499,7 +2030,7 @@ export class CanonicalJobAidProblemService {
       readingResult.scope.documentVersionId !== workItem.source.documentVersionId) {
       throw new Error('JOBAID_OVERALL_SOURCE_BINDING_INVALID');
     }
-    await this.assertEvidenceOwned(
+    await this.assertBrowserEvidenceOwned(
       readingResult.evidence, actor.tenantId, actor.userId, workItemId,
     );
     return { revision, overall: { status: overall.status, readingResult } };
@@ -1521,8 +2052,8 @@ export class CanonicalJobAidProblemService {
     const revision = await this.work.readByRef({
       tenantId: actor.tenantId, workItemId, workRevisionRef,
     });
-    if (!revision) throw Object.assign(new Error('JOBAID_WORK_NOT_FOUND'), { statusCode: 404 });
-    await this.assertEvidenceOwned(revision.content.evidence, actor.tenantId, actor.userId, workItemId);
+    if (!revision) throw jobAidBrowserWorkUnavailable();
+    await this.assertBrowserEvidenceOwned(revision.content.evidence, actor.tenantId, actor.userId, workItemId);
     return { workItem, revision };
   }
 
@@ -1546,7 +2077,7 @@ export class CanonicalJobAidProblemService {
       documentVersionId: workItem.source.documentVersionId,
     });
     if (current)
-      await this.assertEvidenceOwned(
+      await this.assertBrowserEvidenceOwned(
         current.content.evidence,
         actor.tenantId,
         actor.userId,
@@ -1617,6 +2148,7 @@ export class CanonicalJobAidProblemService {
     primary: CanonicalWorkItemProjection,
     tenantId: string,
     actorUserId: string,
+    requestContext = false,
   ): Promise<JobAidSourceBinding[]> {
     const ids = new Set([
       primary.workItemId,
@@ -1624,7 +2156,10 @@ export class CanonicalJobAidProblemService {
         item.kind === 'DOCUMENT_PASSAGE' ? [item.workItemId] : [],
       ),
     ]);
-    return this.work.withActorTransaction(actorUserId, async (database) => {
+    return this.withInputDatabase(
+      actorUserId,
+      requestContext,
+      async (database) => {
       await this.assertEvidenceOwned(
         evidence,
         tenantId,
@@ -1642,7 +2177,8 @@ export class CanonicalJobAidProblemService {
         bindings.push(binding);
       }
       return bindings;
-    });
+      },
+    );
   }
 
   private async assertSourcesAuthorized(
@@ -1689,8 +2225,11 @@ export class CanonicalJobAidProblemService {
         for (const item of originals) {
           const prefix = `DOCUMENT_ORIGINAL:${item.documentVersionId}:`;
           const parseRunId = item.evidenceRef.slice(prefix.length,-(item.sourceRefId.length+1));
-          if (!item.evidenceRef.startsWith(prefix) || !item.evidenceRef.endsWith(`:${item.sourceRefId}`) ||
-            !/^[A-Za-z0-9_-]{1,96}$/u.test(parseRunId)) throw new Error('JOBAID_ORIGINAL_SOURCE_BINDING_INVALID');
+          if (
+            !item.evidenceRef.startsWith(prefix) ||
+            !item.evidenceRef.endsWith(`:${item.sourceRefId}`) ||
+            !/^[A-Za-z0-9_-]{1,96}$/u.test(parseRunId)
+          ) throw new Error('JOBAID_ORIGINAL_SOURCE_BINDING_INVALID');
           const key = `${item.documentVersionId}:${parseRunId}`;
           if (!loaded.has(key)) loaded.set(key,await this.originalReader!.readDocumentOriginal(item.documentVersionId,parseRunId,
             {tenantId,actorUserId:input.actorUserId,roles:[]}));
@@ -1699,7 +2238,31 @@ export class CanonicalJobAidProblemService {
         }
       });
     }
+  }
 
+  private async assertBrowserEvidenceOwned(
+    evidence: AssessmentEvidence[],
+    tenantId: string,
+    actorUserId: string,
+    workItemId: string,
+  ): Promise<void> {
+    try {
+      await this.assertEvidenceOwned(evidence, tenantId, actorUserId, workItemId);
+    } catch (cause: unknown) {
+      // Only these verified bare authorization sentinels become the public
+      // unavailable response. Preserve explicit conflicts and storage errors.
+      if (
+        cause instanceof Error &&
+        !('code' in cause) &&
+        !('statusCode' in cause) &&
+        !('status' in cause) &&
+        (cause.message === 'JOBAID_SOURCE_AUTHORIZATION_CHANGED' ||
+          cause.message === 'JOBAID_ACTOR_AUTHORIZATION_CHANGED')
+      ) {
+        throw jobAidBrowserWorkUnavailable();
+      }
+      throw cause;
+    }
   }
 
   private async assertEvidenceOwned(
@@ -1864,6 +2427,13 @@ function attemptBinding(row: ActionAttemptRow) {
     baseRevision: row.baseRevision!,
   };
 }
+function jobAidBrowserWorkUnavailable(): Error & { code: string; statusCode: number } {
+  return Object.assign(new Error('CANONICAL_WORK_ITEM_NOT_FOUND'), {
+    code: 'CANONICAL_WORK_ITEM_NOT_FOUND',
+    statusCode: 404,
+  });
+}
+
 function problemIdempotencyKey(
   workItem: CanonicalWorkItemProjection,
   purpose: JobAidProblemModelInput['purpose'],
@@ -1879,6 +2449,20 @@ function problemIdempotencyKey(
       throw new Error('JOBAID_CONTINUATION_PURPOSE_INVALID');
     return `openclaw-v2:${purpose === 'INITIAL_PROBLEM_ASSESSMENT' ? 'dynamic' : 'overall'}:${workItem.workItemId}:${workItem.source.documentVersionId}:${requestId}`;
   }
+  const regeneration = workItem.overallRegenerationRequest;
+  if (
+    purpose === 'OVERALL_CONSISTENCY' &&
+    regeneration?.executionRevision === workItem.revision &&
+    regeneration.staleReason === 'USER_REQUESTED_REGENERATION'
+  )
+    return [
+      'openclaw-v1',
+      'overall',
+      workItem.workItemId,
+      workItem.revision,
+      'USER_REQUESTED_REGENERATION',
+      regeneration.requestId,
+    ].join(':');
   return `openclaw-v1:${purpose === 'INITIAL_PROBLEM_ASSESSMENT' ? 'dynamic' : 'overall'}:${workItem.workItemId}:${workItem.revision}:problem-v2`;
 }
 

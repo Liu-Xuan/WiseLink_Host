@@ -1,5 +1,5 @@
 import MemberSavedAssessmentReading from './MemberSavedAssessmentReading';
-import { useCallback, useEffect, useRef, useState, type FC } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState, type FC } from 'react';
 import {
   Link,
   useNavigate,
@@ -31,6 +31,8 @@ import MatterMaterials from './MatterMaterials';
 import MatterWorkingDetails from './MatterWorkingDetails';
 import MatterExecutionSummary from './MatterExecutionSummary';
 import MatterProblemWork from './MatterProblemWork';
+import { SavedJobAidMethodNotice } from './SavedJobAidReadingContext';
+import WikiRecentChanges from './WikiRecentChanges';
 import OverviewSourceWork from './OverviewSourceWork';
 import EngineeringIssueSearch from './EngineeringIssueSearch';
 import MatterDocumentSourceDialog from './MatterDocumentSourceDialog';
@@ -49,7 +51,7 @@ import {
   matterReadingScope,
   type ReadingLocation,
 } from './reading-location';
-import { matterReadingReturnParams } from './reading-return';
+import { knowledgeMatterReturnRoute, matterReadingReturnParams } from './reading-return';
 import useEngineeringMatter, {
   ENGINEERING_MATTER_QUERY_ROOT,
   useEngineeringMatterWorkingRevision,
@@ -93,12 +95,14 @@ const MatterWorkspace: FC<MatterWorkspaceProps> = ({
   const { publishCurrentObject } = useCurrentObjectContext();
   const {
     data,
+    authorizedSessionGeneration,
     loading,
     error,
     refresh: workspaceRefresh,
     revoked: workspaceRevoked,
   } = useEngineeringMatter(matterId, sessionGeneration, authenticationRequired);
   const requestedWorkRef: string = searchParams.get('workRef')?.trim() ?? '';
+  const knowledgeReturn = knowledgeMatterReturnRoute(searchParams, matterId, requestedWorkRef);
   const scopeKey: string = matterReadingScope(matterId, requestedWorkRef);
   const [initialLocation] = useState<ReadingLocation | null>(() =>
     readReadingLocation(scopeKey),
@@ -120,17 +124,14 @@ const MatterWorkspace: FC<MatterWorkspaceProps> = ({
     requestedWorkRef,
     sessionGeneration,
     authenticationRequired,
-    Boolean(
-      requestedWorkRef &&
-      currentRevision?.matterWorkRevisionId !== requestedWorkRef,
-    ),
+    Boolean(requestedWorkRef),
     workspaceRevoked,
   );
   const requestedRevision = requestedRevisionRead.data;
   const displayedRevision: EngineeringMatterWorkingRevisionReadModel | null =
     selectMatterWorkRevision(
       requestedWorkRef,
-      currentRevision,
+      requestedWorkRef ? null : currentRevision,
       requestedRevision,
     );
   const requestedRevisionLoading = requestedRevisionRead.loading;
@@ -139,6 +140,23 @@ const MatterWorkspace: FC<MatterWorkspaceProps> = ({
     await Promise.all([workspaceRefresh(), requestedRevisionRead.refresh()]);
     await queryClient.invalidateQueries({ queryKey: [...ENGINEERING_MATTER_QUERY_ROOT, 'execution-summary'] });
   }, [queryClient, requestedRevisionRead.refresh, workspaceRefresh]);
+  const displayedReadGeneration = requestedWorkRef
+    ? requestedRevisionRead.authorizedSessionGeneration : authorizedSessionGeneration;
+  const timelineSources = useMemo(() => {
+    const registered = new Map<string, { label: string; documentVersionId: string }>();
+    const evidence = [
+      ...(displayedRevision?.state.problemWork?.evidence ?? []),
+      ...(displayedRevision?.state.substantiveResult?.evidence ?? []),
+    ];
+    for (const source of evidence) {
+      if (source.kind !== 'DOCUMENT_PASSAGE' || !source.documentVersionId || registered.has(source.documentVersionId)) continue;
+      registered.set(source.documentVersionId, {
+        label: [source.title, source.versionLabel].filter(Boolean).join(' · ') || source.documentVersionId,
+        documentVersionId: source.documentVersionId,
+      });
+    }
+    return [...registered.values()];
+  }, [displayedRevision]);
   const result: AssessmentReadingResult | null =
     readableMatterOverview(displayedRevision);
   const overviewStatus = displayedRevision?.state.problemWork?.overviewStatus;
@@ -251,7 +269,7 @@ const MatterWorkspace: FC<MatterWorkspaceProps> = ({
               返回工程事项
             </Button>
             {!loading && !authenticationRequired ? (
-              <Button onClick={() => void refresh().catch(() => undefined)}>
+              <Button onClick={() => { void refresh().catch(() => undefined); }}>
                 重新读取
               </Button>
             ) : null}
@@ -272,6 +290,7 @@ const MatterWorkspace: FC<MatterWorkspaceProps> = ({
       className="wl-overview-page matter-wiki-page"
       aria-label="工程事项阅读与讨论"
     >
+      {knowledgeReturn ? <Button asChild variant="outline"><Link to={knowledgeReturn}><ArrowLeft aria-hidden="true" />返回工程知识</Link></Button> : null}
       <header className="matter-wiki-head flex flex-wrap items-center justify-between gap-4">
         <div className="space-y-1">
           <p className="text-xs text-muted-foreground">
@@ -287,7 +306,7 @@ const MatterWorkspace: FC<MatterWorkspaceProps> = ({
         <Button
           variant="outline"
           disabled={loading}
-          onClick={() => void refresh().catch(() => undefined)}
+          onClick={() => { void refresh().catch(() => undefined); }}
         >
           <RefreshCw aria-hidden="true" />
           {loading ? '正在读取…' : '重新读取'}
@@ -330,6 +349,9 @@ const MatterWorkspace: FC<MatterWorkspaceProps> = ({
                 ? `正在阅读已保存工作修订 ${displayedRevision.workingRevision}；这是指定版本，不会替换为最新工作。`
                 : '尚未取得指定工作修订。'}
         </p>
+      ) : null}
+      {requestedWorkRef && requestedRevisionRead.withheld && !workspaceRevoked ? (
+        <p role="alert">暂时无法读取指定工作。请重新核对来源与权限。</p>
       ) : null}
       <nav
         className="matter-wiki-tabs flex flex-wrap gap-2"
@@ -450,25 +472,20 @@ const MatterWorkspace: FC<MatterWorkspaceProps> = ({
             )}
             {!requestedWorkRef && !workspaceRevoked ? <MemberSavedAssessmentReading matterId={matterId}
               members={data.matter.catalog.entries} sessionGeneration={sessionGeneration} /> : null}
-            {displayedRevision &&
-            result &&
-            !displayedRevision.state.problemWork ? (
-              <OverviewSourceWork
-                matterId={matterId}
-                source={displayedRevision.overviewSourceWork}
-              />
-            ) : null}
-            {displayedRevision?.state.problemWork ? (
-              <details className="mt-5 border-t border-border pt-4">
-                <summary className="cursor-pointer text-sm font-medium">
-                  展开问题分析、过程与原文依据
-                </summary>
-                <MatterProblemWork
-                  revision={displayedRevision}
-                  onLocateDocument={openDocument}
-                />
-              </details>
-            ) : null}
+            {displayedRevision?.state.problemWork ? <SavedJobAidMethodNotice work={displayedRevision.state.problemWork} /> : null}
+            {displayedRevision && result && !displayedRevision.state.problemWork ? <OverviewSourceWork matterId={matterId} source={displayedRevision.overviewSourceWork} /> : null}
+            <MatterProblemWork
+              revision={displayedRevision}
+              onLocateDocument={openDocument}
+              showMethodNotice={false}
+            />
+            {displayedRevision && displayedReadGeneration != null ? <WikiRecentChanges
+              work={{ kind: 'ENGINEERING_MATTER', revision: displayedRevision }}
+              mode={requestedWorkRef ? 'HISTORICAL' : 'CURRENT'}
+              authorizedSessionGeneration={displayedReadGeneration}
+              reviewWorkItemId={primary?.workItemId ?? null}
+              sources={timelineSources}
+            /> : null}
           </article>
           <aside className="wl-side-panel matter-wiki-inspector">
             {requestedWorkRef ? (

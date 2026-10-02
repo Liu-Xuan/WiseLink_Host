@@ -472,6 +472,34 @@ describe('JobAid continuation requests', () => {
       .rejects.toThrow('JOBAID_OVERALL_EXACT_WORK_REQUIRED');
   });
 
+  it.each(['broken-chain', 'cycle', 'revision-gap', 'document-version', 'work-item', 'formal-version', 'unfinished', 'non-cancelled'] as const)(
+    'rejects %s in cancelled Overall recovery before claiming a queued continuation', async reason => {
+      const h = harness(); const base = savedWork();
+      h.current().integratedAssessment = { status: 'BASE_RULE_CANDIDATE_READY',
+        baseRules: { schemaVersion: JOBAID_PROBLEM_RESULT_SCHEMA,
+          workRevisionRef: base.workRevisionRef, workRevision: base.workRevision } } as never;
+      h.work.listForRuntime.mockResolvedValue([base]); h.work.readByRefForRuntime.mockResolvedValue(base);
+      const cancelled = await h.service.enqueueOverall(h.current(), TENANT, 'permission');
+      h.rows.get(cancelled.attemptRef)!.status = reason === 'non-cancelled' ? 'RUNNING' : 'CANCELLED';
+      const newer: JobAidWorkRevision = { ...base, content: structuredClone(base.content),
+        workRevisionRef: 'JAWR-OVERALL-INVALID', workRevision:4, previousWorkRevisionRef:base.workRevisionRef,
+        actionAttemptId:h.task(cancelled.attemptRef).actionAttemptId, requestId:'SAVE-OVERALL-INVALID' };
+      if (reason === 'broken-chain') newer.previousWorkRevisionRef = null;
+      if (reason === 'cycle') newer.previousWorkRevisionRef = newer.workRevisionRef;
+      if (reason === 'revision-gap') newer.workRevision = 5;
+      if (reason === 'document-version') newer.documentVersionId = 'DV-OTHER';
+      if (reason === 'work-item') newer.workItemId = 'WI-OTHER';
+      if (reason === 'formal-version') newer.basedOnWorkItemRevision++;
+      if (reason === 'unfinished') newer.content.roundCompletion = 'IN_PROGRESS';
+      h.work.listForRuntime.mockResolvedValue([newer, base]);
+      h.work.readByRefForRuntime.mockImplementation(async ({workRevisionRef}:{workRevisionRef:string}) =>
+        workRevisionRef === newer.workRevisionRef ? newer : base);
+      const queued = await h.enqueue(REQUEST_2, 'OVERALL_CONSISTENCY');
+      await expect(h.service.begin(h.current(), scope, 'OVERALL_CONSISTENCY', REQUEST_2))
+        .rejects.toThrow('JOBAID_OVERALL_EXACT_WORK_REQUIRED');
+      expect(h.rows.get(queued.attemptRef)!.status).toBe('QUEUED');
+    });
+
   it('prepares the same queued request with its reserved knowledge connector', async () => {
     const binding = { sessionId: '11111111-1111-4111-8111-111111111111', agentId: 'bound-agent-only' };
     const knowledge = { binding: jest.fn().mockResolvedValue({ binding, access: { available: true } }) };

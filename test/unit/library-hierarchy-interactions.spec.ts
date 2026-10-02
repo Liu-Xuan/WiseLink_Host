@@ -4,7 +4,7 @@ import { LibraryHierarchy } from '../../client/src/pages/WorkspaceHomePage/Libra
 import { libraryFamily, libraryMetadata } from './fixtures/canonical-library';
 
 jest.mock('@client/src/components/ui/button', () => ({ Button: 'button' }));
-jest.mock('@client/src/api/canonical-host', () => ({ getCanonicalHostClientSessionGeneration: () => 1 }));
+jest.mock('@client/src/api/canonical-host', () => ({ getCanonicalHostClientSessionGeneration: () => 1, subscribeCanonicalHostClientSession: () => () => undefined }));
 
 interface ActionProps { children?: ReactNode; onClick?: () => void; 'aria-label'?: string }
 function actions(node: ReactNode): ReactElement<ActionProps>[] {
@@ -16,6 +16,13 @@ function actions(node: ReactNode): ReactElement<ActionProps>[] {
 
 describe('joint facet controls and directory path actions', () => {
   const filters = { normalizedFamily: 'SB', ata: '34', aircraftModel: '737' };
+  it('hides inactive order actions for the fixed aircraft / ATA view while preserving real filters', () => {
+    const buttons = actions(LibraryClassificationControls({ grouping: 'aircraft', showGrouping: false,
+      onGroupingChange: jest.fn(), filters, onFilterChange: jest.fn(), disabled: false,
+      counts: { familyCounts: { SB: 1 }, ataCounts: { '34': 1 } } }));
+    expect(buttons.some(button => Children.toArray(button.props.children).join('').includes('优先'))).toBe(false);
+    expect(buttons.some(button => Children.toArray(button.props.children)[0] === 'SB')).toBe(true);
+  });
   it('changes hierarchy independently and edits one facet without dropping the others', () => {
     const onGroupingChange = jest.fn();
     const onFilterChange = jest.fn();

@@ -103,22 +103,7 @@ function issue(key, text) {
   return {
     issueKey: key,
     question: key === 'a' ? '当前更换条件是否成立？' : '独立限制如何保留？',
-    understanding: text,
-    statements: [
-      {
-        claimKey: 'condition',
-        text,
-        basis: 'SOURCE_FACT',
-        premises: [
-          {
-            evidenceRef: doc.evidenceRef,
-            role: 'SUPPORTS',
-            explanation: '以完整来源条件为依据。',
-            limitation: null,
-          },
-        ],
-      },
-    ],
+    body: `${text} [[${doc.evidenceRef}]]`,
     riskScenarios: [],
     measures: [],
     otherClassifications: [],
@@ -131,17 +116,14 @@ function issue(key, text) {
       },
     ],
     requirementHandling: [],
-    sourceDependencies: [doc.evidenceRef],
-    premiseRefs: [],
   };
 }
 function proposal(issues, unchangedIssueKeys = []) {
   return {
-    schemaVersion: 'wiselink.jobaid-problem-work.v2',
+    schemaVersion: 'wiselink.jobaid-problem-work.v3',
     headline: '完整条件继续适用',
     listBrief: '尚未取得足够连续记录。',
-    understanding: '更换条件与单次检查之间的区别仍需保留。',
-    decisiveIssueKeys: ['a'],
+    overview: '更换条件与单次检查之间的区别仍需保留。',
     roundCompletion: 'COMPLETE_WITH_OPEN_QUESTIONS',
     completionReason: '本轮分析完成，限制明确保留。',
     changeSummary: '按当前证据修订条件理解。',
@@ -166,7 +148,26 @@ function revision(content, number) {
   };
 }
 
-test('actual JobAid Host task and native Review driver preserve initial work through two source-bound corrections', async (t) => {
+const reviewReceiptCases = [
+  { name: 'legacy receipt', staleMarked: false },
+  { name: 'exact APPLIED receipt with derived Overall invalidation', staleMarked: true },
+  { name: 'missing receipt', reject: true, mutate: (value) => { delete value.assistantCandidate.jobAidWorkingUpdate; } },
+  { name: 'UNCHANGED receipt', reject: true, mutate: (value) => { value.assistantCandidate.jobAidWorkingUpdate.status = 'UNCHANGED'; } },
+  { name: 'missing work ref', reject: true, mutate: (value) => { value.assistantCandidate.jobAidWorkingUpdate.workRevisionRef = null; } },
+  { name: 'old work ref', reject: true, mutate: (value) => { value.assistantCandidate.jobAidWorkingUpdate.workRevisionRef = 'JAWR-2'; } },
+  { name: 'wrong work revision', reject: true, mutate: (value) => { value.assistantCandidate.jobAidWorkingUpdate.workRevision = 4; } },
+  { name: 'foreign attempt receipt', reject: true, mutate: (value) => { value.assistantCandidate.actionAttemptRef = 'AQ-other'; } },
+  { name: 'foreign sealed result', reject: true, mutate: (value) => { value.assistantCandidate.provenance.resultContentHash = '0'.repeat(64); } },
+  ...['reviewActionExecuted', 'workItemRevisionChanged', 'currentChanged'].map((key) => ({
+    name: `forbidden ${key}`, reject: true, mutate: (value) => { value.authority[key] = true; },
+  })),
+  { name: 'nonboolean invalidation', reject: true, mutate: (value) => { value.authority.staleMarked = 'true'; } },
+  { name: 'ordinary answer cannot invalidate Overall', reject: true, noDelta: true,
+    mutate: (value) => { value.assistantCandidate.jobAidWorkingUpdate.workRevisionRef = 'JAWR-3';
+      value.assistantCandidate.jobAidWorkingUpdate.workRevision = 3; } },
+];
+
+for (const receiptCase of reviewReceiptCases) test(`JobAid native Review driver: ${receiptCase.name}`, async (t) => {
   const legacy = JSON.parse(
     await readFile(
       new URL(
@@ -271,7 +272,7 @@ test('actual JobAid Host task and native Review driver preserve initial work thr
       deadline: '2099-09-09T12:00:00.000Z',
       idempotencyKey: `synthetic:${turn}`,
     });
-    const delta = proposal(
+    const delta = turn === 2 && receiptCase.noDelta ? null : proposal(
       [
         issue(
           'a',
@@ -284,7 +285,7 @@ test('actual JobAid Host task and native Review driver preserve initial work thr
     t.after(() => rm(directory, { recursive: true, force: true }));
     let modelCalls = 0;
     let commits = 0;
-    const result = await runHostedReviewTurn(
+    const pending = runHostedReviewTurn(
       {
         reviewConversationRef: contract.reviewConversationRef,
         requestId: contract.requestId,
@@ -341,7 +342,7 @@ test('actual JobAid Host task and native Review driver preserve initial work thr
             );
             assert.equal(candidate.reviewActionDraft, null);
             assert.deepEqual(candidate.affectedItemIds, []);
-            current = revision(
+            if (candidate.jobAidWorkingDelta) current = revision(
               materializeJobAidWork(candidate.jobAidWorkingDelta, {
                 ...validation,
                 previous: current.content,
@@ -349,20 +350,27 @@ test('actual JobAid Host task and native Review driver preserve initial work thr
               current.workRevision + 1,
             );
             commits += 1;
-            return {
+            const receipt = {
               schemaVersion: 'wiselink.3_1.review_turn_commit.v1.c2',
               attemptRef: task.operationRef,
               status: 'SUCCEEDED',
               replayed: false,
-              assistantCandidate: {},
+              assistantCandidate: {
+                actionAttemptRef: task.operationRef,
+                provenance: { resultContentHash: envelope.contentHash },
+                jobAidWorkingUpdate: { status: 'APPLIED', workRevisionRef: current.workRevisionRef,
+                  workRevision: current.workRevision, affectedIssueKeys: ['a'] },
+              },
               authority: {
                 candidatePersisted: true,
                 reviewActionExecuted: false,
                 workItemRevisionChanged: false,
                 currentChanged: false,
-                staleMarked: false,
+                staleMarked: turn === 2 ? (receiptCase.staleMarked ?? true) : false,
               },
             };
+            if (turn === 2) receiptCase.mutate?.(receipt);
+            return receipt;
           }
           throw new Error(`UNEXPECTED_SYNTHETIC_TOOL:${name}`);
         },
@@ -395,7 +403,7 @@ test('actual JobAid Host task and native Review driver preserve initial work thr
                   );
                 if (modelCalls === 1) {
                   assert.ok(serialized.includes('完整独立条件'));
-                  assert.ok(serialized.includes('claimKey'));
+                  assert.ok(serialized.includes('body'));
                   assert.equal(
                     body.tools.find(
                       (tool) =>
@@ -411,7 +419,7 @@ test('actual JobAid Host task and native Review driver preserve initial work thr
                   );
                 const output = {
                   responseType: 'ANSWER',
-                  answer: delta.changeSummary,
+                  answer: delta?.changeSummary ?? '这是普通讨论，不修订工作。',
                   sourceRefs: [doc.evidenceRef],
                   missingInputs: [],
                   candidateEvidenceRefs: [],
@@ -450,14 +458,23 @@ test('actual JobAid Host task and native Review driver preserve initial work thr
           ),
       },
     );
+    if (turn === 2 && receiptCase.reject) {
+      await assert.rejects(pending, /HOST_MCP_REVIEW_COMMIT_RESULT_INVALID/u);
+      assert.equal(commits, 1);
+      assert.equal(modelCalls, 2);
+      return;
+    }
+    const result = await pending;
     assert.equal(result.ok, true);
+    assert.equal(result.authorityMutations.staleChanged, turn === 2 && receiptCase.staleMarked === true);
+    assert.equal(result.authorityMutations.reviewActionExecuted, false);
+    assert.equal(result.authorityMutations.workItemRevisionChanged, false);
+    assert.equal(result.authorityMutations.currentChanged, false);
     assert.equal(modelCalls, 2);
     assert.equal(commits, 1);
     assert.deepEqual(current.content.issues[1], original);
-    assert.equal(
-      current.content.issues[0].statements[0].claimId,
-      `${doc.workItemId}:issue:a:claim:condition`,
-    );
+    assert.ok(current.content.issues[0].body.includes(doc.excerpt));
+    assert.ok(current.content.issues[0].body.includes(`[[${doc.evidenceRef}]]`));
     const tampered = structuredClone(contract);
     tampered.resourceRefs[0].value.kind = 'METHOD_CLAUSE';
     assert.throws(
