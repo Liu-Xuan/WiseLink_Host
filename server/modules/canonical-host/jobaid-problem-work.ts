@@ -11,6 +11,7 @@ import {
 import { isJobAidMethodBinding } from './jobaid-method-pack';
 import { collectIssueEvidenceUses } from '@shared/jobaid-evidence-uses';
 import { canonicalJson } from '../action-attempt/action-attempt-envelope';
+import { collectJobAidIssueInlineCitations } from './jobaid-inline-citations';
 
 /** Reject any issue addition, retirement or edit outside the explicit turn scope. */
 export function assertJobAidIssueEditScope(
@@ -297,11 +298,7 @@ export function materializeJobAidWork(
       });
       const sourceDependencies: string[] = [];
       const premiseRefs: string[] = [];
-      const usedRefs = new Set(collectIssueEvidenceUses({ issueKey, body, riskScenarios,
-        measures, otherClassifications, requirementHandling, sourceDependencies, premiseRefs,
-      }).map(use => use.evidenceRef));
-      sourceDependencies.push(...usedRefs);
-      return {
+      const savedIssue: JobAidProblemIssue = {
         issueKey,
         issueRef,
         question: text(issue.question, 'ISSUE_QUESTION'),
@@ -315,6 +312,13 @@ export function materializeJobAidWork(
         premiseRefs,
 
       };
+      const inlineRefs = collectJobAidIssueInlineCitations(savedIssue);
+      refs(inlineRefs, 'INLINE_CITATIONS', true);
+      sourceDependencies.push(...new Set([
+        ...collectIssueEvidenceUses(savedIssue).map(use => use.evidenceRef),
+        ...inlineRefs,
+      ]));
+      return savedIssue;
     },
   );
   const changedKeys = updates.map((issue) => issue.issueKey);
@@ -339,7 +343,10 @@ export function materializeJobAidWork(
   const issues = [...prior.values()];
   if (issues.length === 0) fail('SUBSTANTIVE_WORK_REQUIRED');
   for (const issue of issues)
-    for (const { evidenceRef: ref } of collectIssueEvidenceUses(issue))
+    for (const ref of new Set([
+      ...collectIssueEvidenceUses(issue).map(use => use.evidenceRef),
+      ...collectJobAidIssueInlineCitations(issue),
+    ]))
       if (!registry.has(ref))
         fail(`RETAINED_SOURCE_NO_LONGER_AUTHORIZED:${ref}`);
   // Omission retains the exact saved summary, never an inferred new conclusion.
