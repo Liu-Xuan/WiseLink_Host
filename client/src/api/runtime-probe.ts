@@ -10,24 +10,32 @@ export interface HostedRuntimeFingerprintResponse {
   schemaVersion: 'wiselink.3_1.hosted_runtime_probe.v1';
   status: 'PASS' | 'BLOCKED';
   deployedCommit: string;
-  releaseId: string;
-  apiContractVersion: string;
+  releaseId?: string;
+  apiContractVersion?: string;
 }
 
 export function runtimeFingerprintFrom(
   results: ReadOnlyProbeResult[],
 ): HostedRuntimeFingerprintResponse | null {
-  const body = results.find(
+  const result = results.find(
     (result) => result.path === '/api/runtime-probe',
-  )?.body;
-  if (!body || typeof body !== 'object') return null;
+  );
+  const body = result?.body;
+  if (!result || result.status < 200 || result.status >= 300 ||
+    !body || typeof body !== 'object' || Array.isArray(body)) return null;
   const value = body as Partial<HostedRuntimeFingerprintResponse>;
-  return value.schemaVersion === 'wiselink.3_1.hosted_runtime_probe.v1' &&
-    typeof value.deployedCommit === 'string' &&
-    typeof value.releaseId === 'string' &&
-    typeof value.apiContractVersion === 'string'
-    ? (value as HostedRuntimeFingerprintResponse)
-    : null;
+  if (value.schemaVersion !== 'wiselink.3_1.hosted_runtime_probe.v1' ||
+    (value.status !== 'PASS' && value.status !== 'BLOCKED') ||
+    typeof value.deployedCommit !== 'string' || !value.deployedCommit.trim()) return null;
+  return {
+    schemaVersion: value.schemaVersion,
+    status: value.status,
+    deployedCommit: value.deployedCommit,
+    ...(typeof value.releaseId === 'string' && value.releaseId.trim()
+      ? { releaseId: value.releaseId } : {}),
+    ...(typeof value.apiContractVersion === 'string' && value.apiContractVersion.trim()
+      ? { apiContractVersion: value.apiContractVersion } : {}),
+  };
 }
 
 export async function getHostedRuntimeFingerprint(): Promise<HostedRuntimeFingerprintResponse> {
