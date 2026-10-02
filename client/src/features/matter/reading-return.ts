@@ -30,7 +30,7 @@ export function knowledgeReadingIdentity(params: URLSearchParams):
 
 export function knowledgeReadingParams(params: URLSearchParams): URLSearchParams {
   const result = new URLSearchParams();
-  for (const key of ['query', 'subjectKind', 'subjectId', 'workRef', 'documentVersionId', 'scope', 'kind', 'after', 'listY', 'articleY']) {
+  for (const key of ['query', 'subjectKind', 'subjectId', 'workRef', 'documentVersionId', 'knowledgeIssueKey', 'scope', 'kind', 'after', 'listY', 'articleY']) {
     if (params.getAll(key).length !== 1) continue;
     const value = params.get(key) ?? '';
     const limit = key === 'after' ? 2400 : key === 'query' ? 200 : 255;
@@ -43,6 +43,17 @@ export function knowledgeReadingParams(params: URLSearchParams): URLSearchParams
   }
   result.sort();
   return result;
+}
+
+/** Wiki return is bound to the exact authorized work being opened. */
+export function knowledgeMatterReturnRoute(params: URLSearchParams, matterId: string, workRef: string): string | null {
+  if (params.getAll('returnKnowledgeWorkQuery').length !== 1 || params.getAll('workRef').length !== 1 || params.get('workRef') !== workRef) return null;
+  const raw = params.get('returnKnowledgeWorkQuery') ?? '';
+  if (!raw || raw.length > 4096) return null;
+  const state = new URLSearchParams(raw);
+  const pin = knowledgeReadingIdentity(state);
+  if (pin.state !== 'ok' || pin.identity.subjectKind !== 'ENGINEERING_MATTER' || pin.identity.subjectId !== matterId || pin.identity.workRef !== workRef || state.get('kind') === 'sources') return null;
+  return `/knowledge?${knowledgeReadingParams(state)}`;
 }
 
 function identifier(value: string | null): string {
@@ -84,7 +95,8 @@ export function libraryReadingParams(params: URLSearchParams): URLSearchParams {
     const value = params.get(key) ?? '';
     if (params.getAll(key).length === 1 && /^\d{1,7}$/.test(value)) result.set(key, value);
   }
-  if (params.get('catalogView') === 'tree') result.set('catalogView', 'tree');
+  if (params.getAll('catalogView').length === 1 && ['tree', 'ata'].includes(params.get('catalogView') ?? '')) result.set('catalogView', params.get('catalogView')!);
+  if (params.getAll('ataTitleScheme').length === 1 && ['ispec', 'jasc'].includes(params.get('ataTitleScheme') ?? '')) result.set('ataTitleScheme', params.get('ataTitleScheme')!);
   if (params.get('grouping') === 'ata' || params.get('grouping') === 'aircraft')
     result.set('grouping', params.get('grouping')!);
   result.sort();

@@ -1115,7 +1115,7 @@ export async function runInteractiveReviewTurn({
       cause: error,
     });
   }
-  assertReviewCommit(committed, begin.attemptRef);
+  assertReviewCommit(committed, begin.attemptRef, task, candidate, result);
   return completedResult({
     mode: 'INTERACTIVE_REVIEW',
     operation: 'REVIEW_TURN',
@@ -2123,7 +2123,22 @@ function assertExactKeys(value, required, optional, code) {
   }
 }
 
-function assertReviewCommit(value, attemptRef) {
+function assertReviewCommit(value, attemptRef, task, candidate, result) {
+  const saved = value?.assistantCandidate;
+  const update = saved?.jobAidWorkingUpdate;
+  const expected = task?.jobAidContext?.modelInput?.expectedWorkRevision;
+  // A saved JobAid correction may invalidate its derived Overall. This is
+  // permitted only by the Host's exact APPLIED receipt for this sealed result;
+  // it does not authorize a formal ReviewAction or a WorkItem/current change.
+  const exactJobAidInvalidation = task?.schemaVersion === REVIEW_JOBAID_TASK_SCHEMA &&
+    isRecord(candidate?.jobAidWorkingDelta) &&
+    saved?.actionAttemptRef === attemptRef &&
+    saved?.provenance?.resultContentHash === result?.contentHash &&
+    update?.status === 'APPLIED' &&
+    typeof update.workRevisionRef === 'string' && update.workRevisionRef.trim() !== '' &&
+    update.workRevisionRef !== task.jobAidContext.previousWork?.workRevisionRef &&
+    Number.isSafeInteger(expected) && expected >= 0 &&
+    Number.isSafeInteger(update.workRevision) && update.workRevision === expected + 1;
   if (
     !value ||
     typeof value !== 'object' ||
@@ -2135,7 +2150,8 @@ function assertReviewCommit(value, attemptRef) {
     value.authority?.reviewActionExecuted !== false ||
     value.authority?.workItemRevisionChanged !== false ||
     value.authority?.currentChanged !== false ||
-    value.authority?.staleMarked !== false
+    !(value.authority?.staleMarked === false ||
+      (value.authority?.staleMarked === true && exactJobAidInvalidation))
   ) {
     throw new Error('HOST_MCP_REVIEW_COMMIT_RESULT_INVALID');
   }

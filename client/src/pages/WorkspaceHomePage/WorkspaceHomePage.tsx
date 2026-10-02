@@ -617,7 +617,7 @@ function WorkspaceHomeContent() {
                     treeMode === 'tasks' ? deepLinkedWorkItemId : familyId
                   }
                   quicklookLoading={quicklook.loading}
-                  presentation={{ grouping: searchParams.get('grouping') === 'ata' ? 'ata' : searchParams.get('grouping') === 'aircraft' ? 'aircraft' : 'category', view: searchParams.get('catalogView') === 'tree' ? 'tree' : 'list' }}
+                  presentation={{ grouping: searchParams.get('grouping') === 'ata' ? 'ata' : searchParams.get('grouping') === 'aircraft' ? 'aircraft' : 'category', view: searchParams.get('catalogView') === 'ata' ? 'ata' : searchParams.get('catalogView') === 'tree' ? 'tree' : 'list' }}
                   onPresentationChange={({ grouping, view }) => {
                     const params = new URLSearchParams(searchParams);
                     params.set('grouping', grouping); params.set('catalogView', view);

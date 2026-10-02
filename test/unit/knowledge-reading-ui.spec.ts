@@ -97,3 +97,4 @@ test('shared source route keeps exact parse identity and prior Matter return bin
   expect(matter.searchParams.get('sourceRef')).toBe('SR-old');
   expect(readingReturnTarget(matter.searchParams, 'DV-old')!.route).toBe('/matters/M?workRef=MW3');
 });
+jest.mock('@client/src/features/matter/saved-jobaid-reading.css', () => ({}));

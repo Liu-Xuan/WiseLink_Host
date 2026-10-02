@@ -18,9 +18,9 @@ export default function RuntimeProbePage() {
   const fingerprint = {
     frontendSourceCommit: runtimeBuildFingerprint.sourceCommit,
     frontendBuildTime: runtimeBuildFingerprint.buildTime,
-    releaseId: runtime?.releaseId ?? 'UNAVAILABLE',
-    deployedCommit: runtime?.deployedCommit ?? 'UNAVAILABLE',
-    apiContractVersion: runtime?.apiContractVersion ?? 'UNAVAILABLE',
+    releaseId: runtime?.releaseId ?? '未知',
+    deployedCommit: runtime?.deployedCommit ?? '未知',
+    apiContractVersion: runtime?.apiContractVersion ?? '未知',
     visualVersion: runtimeBuildFingerprint.visualVersion,
   };
 

@@ -9,6 +9,7 @@ import { useCurrentUserSession } from '@client/src/app/providers/CurrentUserSess
 import EngineeringIssueBody from '@client/src/features/matter/EngineeringIssueBody';
 import { compactReadingSummary } from '@client/src/features/matter/compact-reading-summary';
 import { JobAidIssueArticle } from '@client/src/pages/DocumentParsingPage/JobAidIssueArticle';
+import { SavedJobAidMethodNotice } from '@client/src/features/matter/SavedJobAidReadingContext';
 import { exactDocumentSourceRoute, matterWorkRoute } from '@client/src/features/matter/matter-navigation';
 import { knowledgeReadingParams, knowledgeReadingIdentity } from '@client/src/features/matter/reading-return';
 import {
@@ -22,6 +23,7 @@ import OverviewCorrectionNotices from '@client/src/features/matter/OverviewCorre
 import ReferenceWorkNotices from '@client/src/features/matter/ReferenceWorkNotices';
 import OverviewSourceWork from '@client/src/features/matter/OverviewSourceWork';
 import { useKnowledgeResources } from './useKnowledgeResources';
+import { SavedWorkIssueDirectory, savedWorkIssueRows } from './SavedWorkIssueDirectory';
 import './knowledge-lookup.css';
 import './knowledge-suite.css';
 
@@ -109,6 +111,9 @@ function KnowledgeCatalogue() {
     : kind === 'matters' ? mattersError : documentsError;
   const reading = knowledge.reading;
   const readError = knowledge.workError ? failure(knowledge.workError) : '';
+  const selectedIssueKey = params.getAll('knowledgeIssueKey').length === 1 ? params.get('knowledgeIssueKey') ?? '' : '';
+  const issueRows = read ? savedWorkIssueRows(read.content.issues) : [];
+  const visibleIssues = issueRows.filter(row => !selectedIssueKey || row.issueKey === selectedIssueKey).flatMap(row => row.variants);
   const [retry, setRetry] = useState(0);
   function retryRead() { setRetry(value => value + 1); void knowledge.refresh(); }
   const [source, setSource] = useState<{ documentVersionId: string; sourceRef: string | null } | null>(null);
@@ -125,11 +130,11 @@ function KnowledgeCatalogue() {
   }
   function select(entry: EngineeringKnowledgeEntry) {
     clearPendingScroll();
-    setParams(prior => { const next = new URLSearchParams(prior); next.set('subjectKind', entry.subjectKind); next.set('subjectId', entry.subjectId); next.set('workRef', entry.workRef); next.delete('workItemId'); next.delete('articleY'); return next; }, { replace: true });
+    setParams(prior => { const next = new URLSearchParams(prior); next.set('subjectKind', entry.subjectKind); next.set('subjectId', entry.subjectId); next.set('workRef', entry.workRef); next.delete('workItemId'); next.delete('articleY'); next.delete('knowledgeIssueKey'); return next; }, { replace: true });
   }
   function change(key: string, value: string) {
     clearPendingScroll();
-    setParams(prior => { const next = new URLSearchParams(prior); next.set(key, value); ['after', 'subjectKind', 'subjectId', 'workRef', 'workItemId', 'documentVersionId', 'listY', 'articleY'].forEach(name => next.delete(name)); return next; }, { replace: true });
+    setParams(prior => { const next = new URLSearchParams(prior); next.set(key, value); ['after', 'subjectKind', 'subjectId', 'workRef', 'workItemId', 'documentVersionId', 'knowledgeIssueKey', 'listY', 'articleY'].forEach(name => next.delete(name)); return next; }, { replace: true });
   }
   function rememberScroll(key: 'listY' | 'articleY', top: number) {
     pendingScroll.current[key] = String(Math.min(9999999, Math.max(0, Math.round(top))));
@@ -217,6 +222,7 @@ function KnowledgeCatalogue() {
   }, [kind, selectedRelatedKey, selectedVersion?.readerWorkItemId, retry]);
 
   useEffect(() => { setSource(null); }, [selection, kind]);
+  useEffect(() => { if (!read) setSource(null); }, [read]);
 
   useEffect(() => {
     if (!loading && listRef.current) listRef.current.scrollTop = Number(currentParams.current.get('listY') ?? 0);
@@ -245,11 +251,22 @@ function KnowledgeCatalogue() {
     if (exact) openDocument(exact, evidence.documentVersionId);
     else setSource({ documentVersionId: evidence.documentVersionId, sourceRef: evidence.sourceRefId ?? null });
   }
+  function openIssue(issueKey: string) {
+    clearPendingScroll();
+    if (articleRef.current) articleRef.current.scrollTop = 0;
+    setParams(prior => { const next = new URLSearchParams(prior); if (issueKey) next.set('knowledgeIssueKey', issueKey); else next.delete('knowledgeIssueKey'); next.delete('articleY'); return next; }, { replace: true });
+  }
+  function workWikiRoute(entry: EngineeringKnowledgeEntry) {
+    const state = knowledgeReadingParams(currentParams.current);
+    state.set('listY', String(Math.round(listRef.current?.scrollTop ?? 0)));
+    state.set('articleY', String(Math.round(articleRef.current?.scrollTop ?? 0)));
+    return `${matterWorkRoute(entry.subjectId, entry.workRef)}&${new URLSearchParams({ returnKnowledgeWorkQuery: state.toString() })}`;
+  }
   const nextCursor = kind === 'works' ? page?.nextCursor
     : kind === 'matters' ? matters?.nextCursor : documents?.nextCursor;
   const pagination = <div className="knowledge-pagination">
     {after && <button onClick={() => change('kind', kind)}>回到首批</button>}
-    {nextCursor && <button onClick={() => { clearPendingScroll(); setParams(prior => { const next = new URLSearchParams(prior); next.set('after', nextCursor); ['subjectKind', 'subjectId', 'workRef', 'documentVersionId', 'listY', 'articleY'].forEach(key => next.delete(key)); return next; }); }}>下一批</button>}
+    {nextCursor && <button onClick={() => { clearPendingScroll(); setParams(prior => { const next = new URLSearchParams(prior); next.set('after', nextCursor); ['subjectKind', 'subjectId', 'workRef', 'documentVersionId', 'knowledgeIssueKey', 'listY', 'articleY'].forEach(key => next.delete(key)); return next; }); }}>下一批</button>}
   </div>;
   return <>
     <div className="knowledge-toolbar">
@@ -283,6 +300,10 @@ function KnowledgeCatalogue() {
           <div className="article-kicker">{read.entry.current ? '已保存的工程认识' : '当时的工程认识'} · 工作修订 {read.entry.workRevision}</div>
           <h1>{read.entry.headline || '已保存的工程认识'}</h1>{read.overall?.status !== 'CANDIDATE_ONLY' && compactReadingSummary(read.entry.headline, read.entry.listBrief) !== read.entry.headline && <p className="article-lead">{compactReadingSummary(read.entry.headline, read.entry.listBrief)}</p>}
           <small>{read.entry.subjectKind === 'ENGINEERING_MATTER' ? '工程事项' : '文档工作'} · {displayDate(read.entry.createdAt)}</small>
+          {read.entry.listBrief && <details className="knowledge-work-details"><summary>展开本工作保存的简明意见</summary>
+            <p className="whitespace-pre-wrap">{read.entry.listBrief}</p>
+          </details>}
+          <SavedJobAidMethodNotice work={read.content} />
           {!read.entry.current && <div className="knowledge-notice">当前显示当时保存的解释；查看当前事项是独立导航，不替换本条历史内容。</div>}
           {read.entry.subjectKind === 'ENGINEERING_MATTER' && read.entry.overviewStatus !== 'CURRENT' &&
             <div className="knowledge-notice">{read.entry.overviewStatus === 'STALE' ? '问题已更新，综合尚未覆盖。本页保留各部分的确切保存范围。' : '当前已保存问题解释，综合认识尚未形成。'}</div>}
@@ -291,23 +312,25 @@ function KnowledgeCatalogue() {
             {read.overall.status === 'STALE' && <p className="knowledge-notice">这份综合意见已过时，保留当时的判断和来源供核对。</p>}
             {read.overall.status === 'CANDIDATE_ONLY' && <p>{compactReadingSummary(read.overall.readingResult.content.headline, read.overall.readingResult.content.listBrief)}</p>}
             <details className="knowledge-work-details"><summary>展开综合判断与依据</summary>
+              <p className="whitespace-pre-wrap">{read.overall.readingResult.content.listBrief}</p>
               <SavedAssessmentReading result={read.overall.readingResult} depth="brief" onLocateDocument={locate} />
             </details>
           </section> : <div className="knowledge-notice">这份问题分析尚无与该修订绑定的综合意见。</div>)}
-          <details className="knowledge-work-details" key={keyOf(read.entry)}>
-            <summary>展开问题分析、依据与过程{read.content.issues.length ? `（${read.content.issues.length} 项）` : ''}</summary>
-            {read.entry.listBrief && <section className="knowledge-prose"><h2>完整保存摘要</h2><p>{read.entry.listBrief}</p></section>}
-            {read.content.understanding && <section className="knowledge-prose"><h2>本工作的问题理解</h2><EngineeringIssueBody body={read.content.understanding} evidence={read.content.evidence} onLocateDocument={locate} /></section>}
-            {read.content.issues.map(issue => <section className="knowledge-prose" key={issue.issueKey}><JobAidIssueArticle issue={issue} evidence={read.content.evidence} onLocateDocument={locate} /></section>)}
-            {read.entry.subjectKind === 'ENGINEERING_MATTER' && <>
-              <OverviewSourceWork matterId={read.entry.subjectId} source={read.overviewSourceWork} overviewStatus={read.entry.overviewStatus} />
-              <OverviewCorrectionNotices matterId={read.entry.subjectId} notices={read.overviewCorrectionNotices} />
-            </>}
-            {read.correctionNotices?.map(notice => <p role="note" key={`${notice.issueKey}:${notice.attemptRef}`}>{notice.unchanged ? '已核对并保留原认识：' : notice.correctedWorkRef ? '已有后继更正：' : '仍有待核更正：'}{notice.reason}</p>)}
-            <ReferenceWorkNotices notices={read.referenceWorkNotices} />
-          </details>
+          {read.content.understanding && <section className="knowledge-prose"><h2>本工作的问题理解</h2><EngineeringIssueBody body={read.content.understanding} evidence={read.content.evidence} onLocateDocument={locate} /></section>}
+          <SavedWorkIssueDirectory read={read} selectedIssueKey={selectedIssueKey} onOpen={openIssue} />
+          {selectedIssueKey && !visibleIssues.length ? <p role="alert">该问题不在当前读回的确切工作中，请重新选择。</p> : null}
+          {visibleIssues.map((issue, index) => <section className="knowledge-prose" key={`${issue.issueKey}:${index}`} data-saved-issue-key={issue.issueKey}><JobAidIssueArticle issue={issue} evidence={read.content.evidence} onLocateDocument={locate} /></section>)}
+          {read.entry.subjectKind === 'ENGINEERING_MATTER' && <>
+            <OverviewSourceWork matterId={read.entry.subjectId} source={read.overviewSourceWork} overviewStatus={read.entry.overviewStatus} />
+            <OverviewCorrectionNotices matterId={read.entry.subjectId} notices={read.overviewCorrectionNotices} />
+          </>}
+          {read.correctionNotices?.map(notice => <p role="note" key={`${notice.issueKey}:${notice.attemptRef}`}>{notice.unchanged ? '已核对并保留原认识：' : notice.correctedWorkRef ? '已有后继更正：' : '仍有待核更正：'}{notice.reason}</p>)}
+          <ReferenceWorkNotices notices={read.referenceWorkNotices} />
           <div className="knowledge-actions">{read.entry.subjectKind === 'ENGINEERING_MATTER' ? <>
-            <Link to={matterWorkRoute(read.entry.subjectId, read.entry.workRef)}><BookOpen size={16} />打开对应工作 Wiki</Link>
+            <Link to={workWikiRoute(read.entry)} onClick={event => {
+              if (event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
+              event.preventDefault(); clearPendingScroll(); navigate(workWikiRoute(read.entry));
+            }}><BookOpen size={16} />打开对应工作 Wiki</Link>
             {!read.entry.current && <Link to={`/matters/${encodeURIComponent(read.entry.subjectId)}`}>查看事项当前认识</Link>}
           </> : <Link to={`/work-items/${encodeURIComponent(read.entry.subjectId)}`}>查看文档工作</Link>}</div>
         </> : <p className="knowledge-empty">选择一条已有认识，阅读完整解释与来源。</p>}
@@ -510,6 +533,6 @@ function KnowledgeCatalogue() {
           selectedVersion.documentVersionId)}>精读该文档版本与原文</button></div>
       </> : <p className="knowledge-empty">选择一份工程文档，阅读其简明解读、条件和已登记关联事项。</p>}
     </section></div>}
-    {source && <MatterDocumentSourceDialog key={`${source.documentVersionId}:${source.sourceRef}`} {...source} onClose={() => setSource(null)} />}
+    {source && kind === 'works' && read && keyOf(read.entry) === selection && <MatterDocumentSourceDialog key={`${source.documentVersionId}:${source.sourceRef}`} {...source} onClose={() => setSource(null)} />}
   </>;
 }

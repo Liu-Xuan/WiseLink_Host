@@ -1,6 +1,7 @@
 import { createElement } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import type { AssessmentReadingResult } from '@shared/assessment-reading.interface';
+jest.mock('@client/src/features/matter/saved-jobaid-reading.css', () => ({}));
 jest.mock('@client/src/components/ui/button', () => ({ Button: 'button' }));
 jest.mock('@client/src/api/canonical-host', () => ({
   getCanonicalHostClientSessionGeneration: () => 1,

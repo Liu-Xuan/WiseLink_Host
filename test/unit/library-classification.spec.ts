@@ -6,7 +6,7 @@ import { StaticRouter } from 'react-router-dom/server';
 import { LibraryHierarchy } from '../../client/src/pages/WorkspaceHomePage/LibraryHierarchy';
 
 jest.mock('@client/src/components/ui/button', () => ({ Button: 'button' }));
-jest.mock('@client/src/api/canonical-host', () => ({ getCanonicalHostClientSessionGeneration: () => 1 }));
+jest.mock('@client/src/api/canonical-host', () => ({ getCanonicalHostClientSessionGeneration: () => 1, subscribeCanonicalHostClientSession: () => () => undefined }));
 jest.mock(
   '@lark-apaas/client-toolkit/utils/resolveAppUrl',
   () => ({ resolveAppUrl: (path: string) => path }),
@@ -118,13 +118,12 @@ describe('library category hierarchy', () => {
       ),
     );
     expect(html).toContain(
-      'href="/document-versions/DV%2Fexact-old"',
+      'href="/document-versions/DV%2Fexact-old?',
     );
     expect(html).not.toContain('/work-items//');
     expect(html).not.toContain('/original');
     expect(html).toContain('查看原件与解析');
-    expect(html).toContain('<strong>R1</strong>');
-    expect(html).toContain('<span>历史版本</span>');
+    expect(html).toContain('<span>R1 · 历史版本</span>');
     expect(html).toContain('old.pdf');
     expect(html).toContain('测试原文标题');
     expect(html).toContain('aria-label="SB-without-task 版本"');

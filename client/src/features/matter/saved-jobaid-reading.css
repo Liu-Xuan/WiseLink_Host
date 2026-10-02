@@ -1,0 +1,52 @@
+.wl-saved-jobaid-notice,
+.wl-saved-jobaid-context {
+  min-width: 0;
+  overflow-wrap: anywhere;
+  font-size: 14px;
+  line-height: 1.8;
+}
+
+.wl-saved-jobaid-notice {
+  margin: 16px 0;
+  padding-left: 12px;
+  border-left: 3px solid var(--border);
+  color: var(--muted-foreground);
+}
+
+.wl-saved-jobaid-context {
+  margin: 12px 0;
+}
+
+.wl-saved-jobaid-context > section {
+  margin: 12px 0;
+}
+
+.wl-saved-jobaid-context h4 {
+  margin: 8px 0;
+  font-weight: 600;
+}
+
+.wl-saved-jobaid-context p,
+.wl-saved-jobaid-notice p {
+  margin: 6px 0;
+}
+
+.wl-saved-jobaid-caveat {
+  color: var(--muted-foreground);
+}
+
+.wl-saved-jobaid-risk {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(180px, 100%), 1fr));
+  gap: 8px 16px;
+  margin: 12px 0;
+}
+
+.wl-saved-jobaid-risk dt {
+  color: var(--muted-foreground);
+  font-size: 12px;
+}
+
+.wl-saved-jobaid-risk dd {
+  margin: 0;
+}

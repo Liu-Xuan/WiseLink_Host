@@ -35,6 +35,7 @@ interface EngineeringMatterQueryIdentity {
 }
 
 export interface EngineeringMatterReadState {
+  authorizedSessionGeneration: number | null;
   data: EngineeringMatterWorkspaceRead | null;
   loading: boolean;
   error: string | null;
@@ -43,6 +44,7 @@ export interface EngineeringMatterReadState {
 }
 
 export interface EngineeringMatterWorkingRevisionReadState {
+  authorizedSessionGeneration: number | null;
   data: EngineeringMatterWorkingRevisionReadModel | null;
   loading: boolean;
   error: string | null;
@@ -63,6 +65,8 @@ export default function useEngineeringMatter(
     enabled,
     sessionGeneration,
   );
+  const identityUnavailable = identityQuery.isFetching || Boolean(identityQuery.error);
+  const queryClient = useQueryClient();
   const queryKey = identity
     ? engineeringMatterWorkspaceQueryKey(identity, effectiveMatterId)
     : ([...ENGINEERING_MATTER_QUERY_ROOT, 'workspace-pending'] as const);
@@ -75,7 +79,7 @@ export default function useEngineeringMatter(
         () => getEngineeringMatterWorkspace(effectiveMatterId, signal),
         sessionGeneration,
       ),
-    enabled: enabled && Boolean(identity),
+    enabled: enabled && Boolean(identity) && !identityUnavailable,
     staleTime: MATTER_STALE_TIME_MS,
     gcTime: MATTER_GC_TIME_MS,
     retry: false,
@@ -94,30 +98,38 @@ export default function useEngineeringMatter(
     writeReviewDraft(`matter:${effectiveMatterId}`, '', sessionGeneration);
     clearMatterReadingLocations(effectiveMatterId);
   }, [effectiveMatterId, revoked, sessionGeneration]);
-  const data: EngineeringMatterWorkspaceRead | null = revoked
+  const data: EngineeringMatterWorkspaceRead | null =
+    !enabled || identityUnavailable || workspaceQuery.isFetching || workspaceQuery.isError || revoked
     ? null
     : result?.kind === 'readable'
       ? result.data
       : null;
   const refresh = useCallback(async (): Promise<void> => {
     if (!enabled) return;
-    const identityResult = identityQuery.data
-      ? null
-      : await identityQuery.refetch({ cancelRefetch: true });
-    if (identityResult?.error) throw identityResult.error;
-    if (!identityQuery.data && !identityResult?.data) return;
-    const result = await workspaceQuery.refetch({ cancelRefetch: true });
-    if (result.error) throw result.error;
-  }, [
-    enabled,
-    identityQuery.data,
-    identityQuery.refetch,
-    workspaceQuery.refetch,
-  ]);
+    if (identityQuery.data && !identityUnavailable) {
+      const refreshed = await workspaceQuery.refetch({ cancelRefetch: true });
+      if (refreshed.error) throw refreshed.error;
+      return;
+    }
+    const checked = !identityQuery.data || identityQuery.error
+      ? await identityQuery.refetch({ cancelRefetch: true }) : null;
+    if (checked?.error) throw checked.error;
+    const authorizedIdentity = checked?.data ?? identityQuery.data;
+    if (!authorizedIdentity) return;
+    await queryClient.fetchQuery({
+      queryKey: engineeringMatterWorkspaceQueryKey(authorizedIdentity, effectiveMatterId),
+      queryFn: ({ signal }) => readMatterResource(
+        () => getEngineeringMatterWorkspace(effectiveMatterId, signal), sessionGeneration),
+      staleTime: 0,
+    });
+  }, [enabled, effectiveMatterId, identityQuery.data, identityQuery.error,
+    identityQuery.refetch, identityUnavailable, workspaceQuery.refetch, queryClient, sessionGeneration]);
   return {
     data,
+    authorizedSessionGeneration: data && result?.kind === 'readable'
+      ? result.sessionGeneration : null,
     loading:
-      enabled && !data && (identityQuery.isPending || workspaceQuery.isPending),
+      enabled && (identityQuery.isPending || identityQuery.isFetching || workspaceQuery.isFetching),
     error: authenticationRequired
       ? '请先登录，再读取当前事项。'
       : matterErrorMessage(error),
@@ -146,6 +158,8 @@ export function useEngineeringMatterWorkingRevision(
     queryEnabled,
     sessionGeneration,
   );
+  const identityUnavailable = identityQuery.isFetching || Boolean(identityQuery.error);
+  const queryClient = useQueryClient();
   const queryKey = identity
     ? engineeringMatterWorkingRevisionQueryKey(
         identity,
@@ -165,7 +179,7 @@ export function useEngineeringMatterWorkingRevision(
           ),
         sessionGeneration,
       ),
-    enabled: queryEnabled && Boolean(identity),
+    enabled: queryEnabled && Boolean(identity) && !identityUnavailable,
     staleTime: MATTER_STALE_TIME_MS,
     gcTime: MATTER_GC_TIME_MS,
     retry: false,
@@ -179,7 +193,8 @@ export function useEngineeringMatterWorkingRevision(
       : (revisionQuery.error ?? identityError);
   const revoked: boolean =
     result?.kind === 'rejected' || isRevokedMatterError(identityError);
-  const data: EngineeringMatterWorkingRevisionReadModel | null = revoked
+  const data: EngineeringMatterWorkingRevisionReadModel | null =
+    !queryEnabled || identityUnavailable || revisionQuery.isFetching || revisionQuery.isError || revoked
     ? null
     : authorizationDenied
       ? null
@@ -188,25 +203,31 @@ export function useEngineeringMatterWorkingRevision(
         : null;
   const refresh = useCallback(async (): Promise<void> => {
     if (!queryEnabled) return;
-    const identityResult = identityQuery.data
-      ? null
-      : await identityQuery.refetch({ cancelRefetch: true });
-    if (identityResult?.error) throw identityResult.error;
-    if (!identityQuery.data && !identityResult?.data) return;
-    const result = await revisionQuery.refetch({ cancelRefetch: true });
-    if (result.error) throw result.error;
-  }, [
-    identityQuery.data,
-    identityQuery.refetch,
-    queryEnabled,
-    revisionQuery.refetch,
-  ]);
+    if (identityQuery.data && !identityUnavailable) {
+      const refreshed = await revisionQuery.refetch({ cancelRefetch: true });
+      if (refreshed.error) throw refreshed.error;
+      return;
+    }
+    const checked = !identityQuery.data || identityQuery.error
+      ? await identityQuery.refetch({ cancelRefetch: true }) : null;
+    if (checked?.error) throw checked.error;
+    const authorizedIdentity = checked?.data ?? identityQuery.data;
+    if (!authorizedIdentity) return;
+    await queryClient.fetchQuery({
+      queryKey: engineeringMatterWorkingRevisionQueryKey(authorizedIdentity, effectiveMatterId, effectiveWorkRef),
+      queryFn: ({ signal }) => readMatterResource(
+        () => getEngineeringMatterWorkingRevision(effectiveMatterId, effectiveWorkRef, signal), sessionGeneration),
+      staleTime: 0,
+    });
+  }, [queryEnabled, effectiveMatterId, effectiveWorkRef, identityQuery.data,
+    identityQuery.error, identityQuery.refetch, identityUnavailable, revisionQuery.refetch, queryClient, sessionGeneration]);
   return {
     data,
+    authorizedSessionGeneration: data && result?.kind === 'readable'
+      ? result.sessionGeneration : null,
     loading:
       queryEnabled &&
-      !data &&
-      (identityQuery.isPending || revisionQuery.isPending),
+      (identityQuery.isPending || identityQuery.isFetching || revisionQuery.isFetching),
     error: matterErrorMessage(error),
     revoked,
     withheld: revoked || authorizationDenied,
@@ -311,7 +332,7 @@ function isRevokedMatterError(error: unknown): boolean {
 }
 
 type MatterResourceResult<T> =
-  | { kind: 'readable'; data: T }
+  | { kind: 'readable'; data: T; sessionGeneration: number }
   | { kind: 'rejected'; error: unknown };
 
 /**
@@ -326,7 +347,7 @@ export async function readMatterResource<T>(
   try {
     const data: T = await read();
     assertCurrentSession(sessionGeneration);
-    return { kind: 'readable', data };
+    return { kind: 'readable', data, sessionGeneration };
   } catch (error: unknown) {
     if (isRevokedMatterError(error)) return { kind: 'rejected', error };
     throw error;
