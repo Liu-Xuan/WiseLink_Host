@@ -530,9 +530,14 @@ test(
             'COMMITTING',
           );
           await sql`UPDATE action_attempt SET result_content_hash=${'d'.repeat(64)} WHERE attempt_id=${reviewRow.attemptId}`;
+          const assessmentInput = `WLR7:${canonicalJson({
+            schemaVersion: 'wiselink.3_1.review_engineer_input.v1.c7',
+            userMessage: 'Clarify the inspection limitation.',
+            attachments: [], purpose: 'UPDATE_ASSESSMENT', executionRequested: true,
+          })}`;
           await sql`INSERT INTO review_turn(review_turn_id,review_conversation_id,engineer_supplied_input_id,tenant_id,actor_id,work_item_id,
           turn_no,request_id,input_revision,user_message,input_type,adoption_status,created_at)
-          VALUES ('RT-q1','RC-q1','ESI-q1','tenant-job','actor-job','WI-job',1,'request-q1',1,'Clarify the inspection limitation.','ENGINEER_TEXT','CANDIDATE_UNADOPTED',now())`;
+          VALUES ('RT-q1','RC-q1','ESI-q1','tenant-job','actor-job','WI-job',1,'request-q1',1,${assessmentInput},'ENGINEER_TEXT','CANDIDATE_UNADOPTED',now())`;
           const binding = await hosted(() =>
             work.withActorTransaction(scope.actorUserId, (database) =>
               reviews.loadOpenClawTurnByIdBinding(
@@ -732,6 +737,87 @@ test(
             ),
           );
           await sql`UPDATE action_attempt SET status='SUCCEEDED' WHERE attempt_id=${reviewRow.attemptId}`;
+        },
+      );
+
+      await t.test(
+        'actor admits only a current full UPDATE_ASSESSMENT Review receipt for zero-model Overall',
+        async () => {
+          const item = await browser(current);
+          const exactInput = {
+            workItem: item, tenantId: scope.tenantId,
+            actorUserId: scope.actorUserId, expectedRevision: item.revision,
+            reviewConversationId: 'RC-q1', reviewTurnId: 'RT-q1',
+            workRevisionRef: saved.workRevisionRef,
+            expectedWorkRevision: saved.workRevision,
+          };
+          const exact = () => browser(() =>
+            service.exactSavedReviewWorkForProjection(exactInput));
+          assert.equal(saved.basedOnWorkItemRevision, item.revision);
+          assert.equal((await exact()).workRevisionRef, saved.workRevisionRef);
+          await assert.rejects(browser(() =>
+            service.exactSavedReviewWorkForProjection({
+              ...exactInput, expectedRevision: item.revision + 1,
+              workItem: { ...item, revision: item.revision + 1 },
+            })), /JOBAID_OVERALL_EXACT_WORK_REQUIRED/u);
+          await sql`UPDATE action_attempt SET status='COMMITTING' WHERE attempt_id=${reviewRow.attemptId}`;
+          try {
+            await assert.rejects(exact(), /JOBAID_OVERALL_EXACT_WORK_REQUIRED/u);
+          } finally {
+            await sql`UPDATE action_attempt SET status='SUCCEEDED' WHERE attempt_id=${reviewRow.attemptId}`;
+          }
+          const [turn] = await sql`SELECT user_message,result_provenance_json FROM review_turn WHERE review_turn_id='RT-q1'`;
+          const originalInput = turn.user_message;
+          const originalProvenance = JSON.parse(turn.result_provenance_json);
+          const corruptFixture = (mutate) => sql.begin(async (fixtureSql) => {
+            await fixtureSql`SET LOCAL session_replication_role='replica'`;
+            await mutate(fixtureSql);
+          });
+          const updateInput = async (change) => corruptFixture(async (fixtureSql) => {
+            const input = JSON.parse(originalInput.slice('WLR7:'.length));
+            change(input);
+            const encoded = `WLR7:${canonicalJson(input)}`;
+            await fixtureSql`UPDATE review_turn SET user_message=${encoded} WHERE review_turn_id='RT-q1'`;
+            await fixtureSql`UPDATE engineer_supplied_input SET candidate_text=${encoded} WHERE engineer_supplied_input_id='ESI-q1'`;
+          });
+          try {
+            await updateInput((input) => { input.purpose = 'CHAT'; });
+            await assert.rejects(exact(), /JOBAID_OVERALL_EXACT_WORK_REQUIRED/u);
+            await updateInput((input) => { input.targetIssueKeys = ['condition']; });
+            await assert.rejects(exact(), /JOBAID_OVERALL_EXACT_WORK_REQUIRED/u);
+            await updateInput(() => {});
+            const matterScope = {
+              schemaVersion: 'wiselink.3_1.matter_review_scope.v1',
+              kind: 'ENGINEERING_MATTER', matterId: 'MAT-other',
+              basedOnMatterRevisionId: 'MWR-other', expectedWorkingRevision: 1,
+              targetClaimId: null,
+              inputs: [{ inputId: 'MI-other', workItemId: scope.workItemId,
+                workItemRevision: item.revision, documentVersionId: 'dv-job',
+                resultRef: null, resultRevision: null }],
+            };
+            await corruptFixture(async (fixtureSql) => {
+              await fixtureSql`UPDATE review_turn SET review_scope_json=${JSON.stringify(matterScope)} WHERE review_turn_id='RT-q1'`;
+            });
+            await assert.rejects(exact(), /JOBAID_OVERALL_EXACT_WORK_REQUIRED/u);
+          } finally {
+            await corruptFixture(async (fixtureSql) => {
+              await fixtureSql`UPDATE review_turn SET user_message=${originalInput},review_scope_json=null WHERE review_turn_id='RT-q1'`;
+              await fixtureSql`UPDATE engineer_supplied_input SET candidate_text=${originalInput} WHERE engineer_supplied_input_id='ESI-q1'`;
+            });
+          }
+          const changedProvenance = structuredClone(originalProvenance);
+          changedProvenance.jobAidWorkingUpdate.status = 'UNCHANGED';
+          await corruptFixture(async (fixtureSql) => {
+            await fixtureSql`UPDATE review_turn SET result_provenance_json=${JSON.stringify(changedProvenance)} WHERE review_turn_id='RT-q1'`;
+          });
+          try {
+            await assert.rejects(exact(), /JOBAID_OVERALL_EXACT_WORK_REQUIRED/u);
+          } finally {
+            await corruptFixture(async (fixtureSql) => {
+              await fixtureSql`UPDATE review_turn SET result_provenance_json=${turn.result_provenance_json} WHERE review_turn_id='RT-q1'`;
+            });
+          }
+          assert.equal((await exact()).workRevisionRef, saved.workRevisionRef);
         },
       );
 

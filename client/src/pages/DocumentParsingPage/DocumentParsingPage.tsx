@@ -81,6 +81,7 @@ import RetainedWorkbenchPanel from '@client/src/features/workbench/RetainedWorkb
 import type { QuickOpenItem } from '@client/src/features/workbench/QuickOpen';
 import OverallAssessmentHero from '@client/src/features/workitem/OverallAssessmentHero';
 import { useOverallRegeneration } from '@client/src/features/workitem/useOverallRegeneration';
+import { useReviewOverallProjection } from '@client/src/features/workitem/useReviewOverallProjection';
 import AuthorityStrip from '@client/src/features/workitem/AuthorityStrip';
 import {
   staleReasonLabel,
@@ -262,6 +263,8 @@ export default function DocumentParsingPage() {
   const [continuousReviewReceipt, setContinuousReviewReceipt] = useState<
     ConfirmReviewActionDraftResponse['reviewAction'] | null
   >(null);
+  const [reviewOverallRefreshGeneration, setReviewOverallRefreshGeneration] =
+    useState(0);
   /** 版本冲突反馈（§4.3 冲突不自动覆盖，提供刷新） */
   const [conflictMessage, setConflictMessage] = useState<string | null>(null);
   const [treeMode, setTreeMode] = useState<NavigatorMode>('document');
@@ -313,6 +316,19 @@ export default function DocumentParsingPage() {
         current.authenticationRequired
       )
         return;
+      await current.load(current.query, current.sourceRef, fresh);
+    },
+  });
+  const reviewOverallProjection = useReviewOverallProjection({
+    workItemId,
+    workItemRevision: data?.workItem.revision ?? null,
+    sessionGeneration,
+    reviewRefreshGeneration: reviewOverallRefreshGeneration,
+    onSucceeded: async (fresh) => {
+      const current = latestLoadRef.current;
+      if (current.workItemId !== workItemId ||
+        current.sessionGeneration !== sessionGeneration ||
+        current.authenticationRequired) return;
       await current.load(current.query, current.sourceRef, fresh);
     },
   });
@@ -1269,6 +1285,21 @@ export default function DocumentParsingPage() {
               onLocateDocument={locateAssessmentDocument}
               presentation="assessment"
             >
+            {isJobAidProblemProjection(integratedAssessment?.baseRules) &&
+            (reviewOverallProjection.visible || reviewOverallProjection.message) ? (
+              <section className="parse-assessment-panel" aria-label="已保存评估综合">
+                {reviewOverallProjection.visible ? (
+                  <>
+                    <button type="button" disabled={reviewOverallProjection.busy || loading}
+                      onClick={() => void reviewOverallProjection.run()}>
+                      {reviewOverallProjection.busy ? '正在更新综合…' : '从已保存评估更新综合'}
+                    </button>
+                    <p>根据已保存的完整评估工作形成候选综合，不重新分析正文；工程结论仍需人工复核。</p>
+                  </>
+                ) : null}
+                {reviewOverallProjection.message ? <p role="status">{reviewOverallProjection.message}</p> : null}
+              </section>
+            ) : null}
             {assessmentEligible ? (
               <section
                 className="parse-assessment-panel parse-assessment-workspace"
@@ -1760,6 +1791,10 @@ export default function DocumentParsingPage() {
               })
             }
             onWorkItemRefresh={() => load(activeQuery)}
+            onWorkingRefresh={async () => {
+              await load(activeQuery);
+              setReviewOverallRefreshGeneration((generation) => generation + 1);
+            }}
             materials={{
               primary: {
                 title:

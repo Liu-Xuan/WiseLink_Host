@@ -164,7 +164,8 @@ function buildLibraryNodes(
           ? 'engineer-review'
           : 'dynamic-evaluation',
         kind: 'OVERALL_SYNTHESIS',
-        label: 'OpenClaw overall candidate',
+        label: integrated.overallSynthesis.executionKind === 'DETERMINISTIC_PROJECTION'
+          ? '已保存 Review 的确定性综合候选' : 'OpenClaw overall candidate',
         detail:
           `${integrated.overallSynthesis.findingCount} findings · ` +
           `${integrated.overallSynthesis.discoveryStatus}`,
@@ -472,7 +473,8 @@ function buildTimeline(
     const overall = workItem.integratedAssessment.overallSynthesis;
     pushEvent(events, {
       kind: 'OVERALL_SYNTHESIS',
-      label: 'OpenClaw overall candidate',
+      label: overall.executionKind === 'DETERMINISTIC_PROJECTION'
+        ? '已保存 Review 的确定性综合候选' : 'OpenClaw overall candidate',
       status: overall.status,
       detail: `${overall.findingCount} findings · gap ${overall.gap ?? 'NONE'}`,
       occurredAt: null,

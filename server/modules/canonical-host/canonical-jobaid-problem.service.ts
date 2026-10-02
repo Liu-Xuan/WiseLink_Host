@@ -27,6 +27,7 @@ import type {
 } from '@shared/api.interface';
 import {
   JOBAID_PROBLEM_RESULT_SCHEMA,
+  JOBAID_PROBLEM_WORK_SCHEMA,
   isJobAidProblemProjection,
   type CanonicalJobAidProblemCandidateProjection,
   type JobAidWorkRevision,
@@ -75,6 +76,7 @@ import {
   type CanonicalVerifiedServiceScope,
 } from './canonical-service-scope.authorization';
 import { canonicalHostBareSha256 } from './canonical-host-sha256';
+import { buildJobAidOverallProjection } from './jobaid-overall-projection';
 import { preflightCanonicalHostOpenClawResult, parseCanonicalHostOpenClawAttemptTask, parseCanonicalHostOpenClawStoredResult } from './canonical-host-openclaw-runtime-policy';
 import {
   overallModelEvidenceRegistry,
@@ -1278,13 +1280,23 @@ export class CanonicalJobAidProblemService {
     workRevisionRef: string | undefined;
     workRevision: number | undefined;
     requestContext?: boolean;
-    requestedFromRevision?: number;
+    requestedFromRevision?: number | readonly number[];
+    database?: PostgresJsDatabase;
+    reviewConversationId?: string;
+    reviewTurnId?: string;
+    requireSucceeded?: boolean;
   }): Promise<JobAidWorkRevision> {
     const fail = (): never => {
       throw new Error('JOBAID_OVERALL_EXACT_WORK_REQUIRED');
     };
     if (!input.workRevisionRef) return fail();
-    const saved = input.requestContext
+    const saved = input.database
+      ? await this.work.readByRef({
+          tenantId: input.tenantId,
+          workItemId: input.workItem.workItemId,
+          workRevisionRef: input.workRevisionRef,
+        }, input.database)
+      : input.requestContext
       ? await this.work.readByRef({
           tenantId: input.tenantId,
           workItemId: input.workItem.workItemId,
@@ -1310,21 +1322,22 @@ export class CanonicalJobAidProblemService {
       saved.workRevision !== input.workRevision ||
       saved.workItemId !== input.workItem.workItemId ||
       saved.documentVersionId !== input.workItem.source.documentVersionId ||
-      saved.basedOnWorkItemRevision !== expectedBaseRevision ||
+      !(Array.isArray(expectedBaseRevision)
+        ? expectedBaseRevision.includes(saved.basedOnWorkItemRevision)
+        : saved.basedOnWorkItemRevision === expectedBaseRevision) ||
       !saved.requestId.startsWith('review-turn:')
     )
       return fail();
     const reviewTurnId = saved.requestId.slice('review-turn:'.length);
-    return this.withInputDatabase(
-      input.actorUserId,
-      input.requestContext === true,
-      async (database) => {
+    if (input.reviewTurnId && input.reviewTurnId !== reviewTurnId) return fail();
+    const verify = async (database: PostgresJsDatabase) => {
         const [turn] = await database
           .select({
             conversationId: reviewTurn.reviewConversationId,
             operationRef: actionAttempt.operationRef,
             resultContentHash: actionAttempt.resultContentHash,
             taskEnvelopeJson: actionAttempt.taskEnvelopeJson,
+            status: actionAttempt.status,
           })
           .from(reviewTurn)
           .innerJoin(
@@ -1345,20 +1358,27 @@ export class CanonicalJobAidProblemService {
               eq(actionAttempt.documentVersionId, saved.documentVersionId),
               eq(actionAttempt.baseRevision, saved.basedOnWorkItemRevision),
               eq(actionAttempt.actionType, 'OPENCLAW_INTERACTIVE_REVIEW'),
-              inArray(actionAttempt.status, ['COMMITTING', 'SUCCEEDED']),
+              inArray(actionAttempt.status, input.requireSucceeded
+                ? ['SUCCEEDED'] : ['COMMITTING', 'SUCCEEDED']),
             ),
           )
           .limit(1);
         if (!turn?.taskEnvelopeJson) return fail();
+        if (input.reviewConversationId && turn.conversationId !== input.reviewConversationId)
+          return fail();
         const task = parseTaskEnvelope(turn.taskEnvelopeJson);
         const reviewTask = (
           task.modelInput as { jobAidContext?: JobAidProblemTaskInput }
         ).jobAidContext;
+        const reviewScope = (
+          task.modelInput as { context?: { issueEditScope?: unknown } }
+        ).context?.issueEditScope;
         if (
           task.workItemId !== input.workItem.workItemId ||
           task.documentVersionId !== saved.documentVersionId ||
           task.baseRevision !== saved.basedOnWorkItemRevision ||
           reviewTask?.actorUserId !== input.actorUserId ||
+          (input.requireSucceeded && reviewScope != null) ||
           reviewTask.modelInput.expectedWorkRevision !== saved.workRevision - 1
         )
           return fail();
@@ -1412,12 +1432,19 @@ export class CanonicalJobAidProblemService {
             aggregate.conversation.workItemId !== input.workItem.workItemId)
         )
           return fail();
-        const candidate = input.requestContext
+        const selectedTurn = input.requestContext
           ? aggregate?.turns.find(
               (item) =>
                 item.reviewTurnId === reviewTurnId &&
                 item.inputRevision === saved.basedOnWorkItemRevision,
-            )?.assistantCandidate
+            )
+          : null;
+        if (input.requireSucceeded &&
+          (selectedTurn?.purpose !== 'UPDATE_ASSESSMENT' ||
+            selectedTurn.reviewScope || selectedTurn.targetIssueKeys))
+          return fail();
+        const candidate = input.requestContext
+          ? selectedTurn?.assistantCandidate
           : binding?.turn.assistantCandidate;
         const receipt = candidate?.jobAidWorkingUpdate;
         if (
@@ -1430,8 +1457,82 @@ export class CanonicalJobAidProblemService {
         )
           return fail();
         return saved;
-      },
-    );
+      };
+    return input.database
+      ? verify(input.database)
+      : this.withInputDatabase(input.actorUserId, input.requestContext === true, verify);
+  }
+
+  /** Normal browser admission and commit reuse the exact persisted Review receipt. */
+  async exactSavedReviewWorkForProjection(input: {
+    workItem: CanonicalWorkItemProjection;
+    tenantId: string;
+    actorUserId: string;
+    expectedRevision: number;
+    reviewConversationId: string;
+    reviewTurnId: string;
+    workRevisionRef: string;
+    expectedWorkRevision: number;
+    database?: PostgresJsDatabase;
+  }): Promise<JobAidWorkRevision> {
+    const saved = await this.exactReviewWorkForOverall({
+      workItem: input.workItem,
+      tenantId: input.tenantId,
+      actorUserId: input.actorUserId,
+      workRevisionRef: input.workRevisionRef,
+      workRevision: input.expectedWorkRevision,
+      // Review persistence marks any old Overall stale without advancing the
+      // formal WorkItem revision. A later formal revision needs a new review.
+      requestedFromRevision: input.expectedRevision,
+      reviewConversationId: input.reviewConversationId,
+      reviewTurnId: input.reviewTurnId,
+      requireSucceeded: true,
+      requestContext: true,
+      database: input.database,
+    });
+    if (saved.content.schemaVersion !== JOBAID_PROBLEM_WORK_SCHEMA ||
+      saved.content.overviewStatus !== 'CURRENT' ||
+      saved.content.roundCompletion === 'IN_PROGRESS')
+      throw new Error('JOBAID_OVERALL_COMPLETE_REVIEW_WORK_REQUIRED');
+    const latest = await this.work.latest({ tenantId: input.tenantId,
+      workItemId: input.workItem.workItemId }, input.database);
+    if (latest?.workRevisionRef !== saved.workRevisionRef ||
+      latest.workRevision !== saved.workRevision)
+      throw new Error('JOBAID_OVERALL_EXACT_WORK_CHANGED');
+    return saved;
+  }
+
+  async assertProjectionOriginalCurrent(input: {
+    tenantId: string;
+    actorUserId: string;
+    workItem: CanonicalWorkItemProjection;
+    saved: JobAidWorkRevision;
+    database: PostgresJsDatabase;
+  }): Promise<void> {
+    const [source] = await input.database.select({
+      taskEnvelopeJson: actionAttempt.taskEnvelopeJson,
+    }).from(actionAttempt).where(and(
+      eq(actionAttempt.tenantId, input.tenantId),
+      eq(actionAttempt.actorUserId, input.actorUserId),
+      eq(actionAttempt.workItemId, input.workItem.workItemId),
+      eq(actionAttempt.attemptId, input.saved.actionAttemptId),
+      eq(actionAttempt.status, 'SUCCEEDED'),
+    )).limit(1);
+    if (!source?.taskEnvelopeJson) throw new Error('JOBAID_OVERALL_REVIEW_SOURCE_CHANGED');
+    const task = parseTaskEnvelope(source.taskEnvelopeJson);
+    const context = (task.modelInput as {
+      jobAidContext?: JobAidProblemTaskInput;
+    }).jobAidContext;
+    const sourceOriginal = context?.modelInput.documentOverview.original?.binding;
+    const published = await this.work.publishedOriginalBindingInTransaction({
+      tenantId: input.tenantId,
+      actorUserId: input.actorUserId,
+      workItemId: input.workItem.workItemId,
+      documentVersionId: input.workItem.source.documentVersionId,
+    }, input.database);
+    if (!sourceOriginal?.parseRunId ||
+      published.parseRunId !== sourceOriginal.parseRunId)
+      throw new Error('JOBAID_OVERALL_ORIGINAL_PARSE_CHANGED');
   }
 
   async readSources(input: {
@@ -1889,40 +1990,10 @@ export class CanonicalJobAidProblemService {
         }),
       ),
     );
-    const synthesis: CanonicalOpenClawOverallProjection = {
-      status: 'CANDIDATE_ONLY',
-      revision:
-        (workItem.integratedAssessment?.overallSynthesis?.revision ?? 0) + 1,
-      sourceResultId: `openclaw-overall://${prepared.row.triggerRequestId}`,
-      basedOnBaseRuleRevision: base.revision,
-      basedOnBaseRuleArtifactSha256: base.artifact.sha256,
-      basedOnEngineerReviewRevision:
-        workItem.integratedAssessment?.engineerReviews?.revision ?? null,
-      basedOnEngineerReviewArtifactSha256:
-        workItem.integratedAssessment?.engineerReviews?.artifact.sha256 ?? null,
-      discoveryStatus: 'NO_DISCOVERY',
-      gap:
-        revision.content.issues
-          .flatMap((issue) => issue.openQuestions.map((q) => q.question))
-          .join('；') || null,
-      candidateRefCount: 0,
-      findingCount: revision.content.issues.length,
-      unresolvedCount: revision.content.issues.reduce(
-        (sum, issue) => sum + issue.openQuestions.length,
-        0,
-      ),
-      authorityLevel: 'candidate_only',
-      externalDiscoveryIsEvidence: false,
-      artifact: artifact.artifact,
+    const synthesis = buildJobAidOverallProjection({
+      workItem, revision, artifact: artifact.artifact,
       actionAttemptId: prepared.row.attemptId,
-      staleReason: null,
-      overallCandidate: revision.content.understanding,
-      readingResult: reading,
-      basedOnJobAidWorkRevisionRef: revision.workRevisionRef,
-      affectedIssueKeys: revision.content.decisiveIssueKeys,
-      missingInputs: revision.content.issues.flatMap((issue) =>
-        issue.openQuestions.map((item) => item.question),
-      ),
+      sourceResultId: `openclaw-overall://${prepared.row.triggerRequestId}`,
       applicabilityStatus:
         effective.applicability?.schemaVersion ===
         'wiselink.3_1.applicability_candidate_projection.v3'
@@ -1931,13 +2002,13 @@ export class CanonicalJobAidProblemService {
             ? effective.applicability.decision
             : 'UNKNOWN'
           : (effective.applicability?.decision ?? 'UNKNOWN'),
-      engineeringReviewRequired: true,
-      providers: {},
-      modelVersion: prepared.result.modelVersion,
-      promptVersion: prepared.result.promptVersion,
-      skillVersion: prepared.result.skillVersion,
-      toolVersions: prepared.result.toolVersions,
-    };
+      modelProvenance: {
+        modelVersion: prepared.result.modelVersion,
+        promptVersion: prepared.result.promptVersion,
+        skillVersion: prepared.result.skillVersion,
+        toolVersions: prepared.result.toolVersions,
+      },
+    });
     let nextBase = base;
     if (revision.workRevisionRef !== base.workRevisionRef) {
       const saved = await this.artifactStore.persistAndReadback(

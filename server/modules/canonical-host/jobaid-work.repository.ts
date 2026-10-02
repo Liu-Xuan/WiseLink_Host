@@ -18,6 +18,7 @@ import {
   actionAttempt,
   assessmentWorkRevision,
   identitySubjectMapping,
+  reviewTurn,
   workItem,
 } from '../../database/schema';
 import { canonicalJson } from '../action-attempt/action-attempt-envelope';
@@ -88,6 +89,13 @@ export class JobAidWorkRepository {
     return this.db.transaction(database => this.readPublishedOriginalBinding(input, database as PostgresJsDatabase));
   }
 
+  async publishedOriginalBindingInTransaction(
+    input: { tenantId: string; actorUserId: string; workItemId: string; documentVersionId: string },
+    database: PostgresJsDatabase,
+  ) {
+    return this.readPublishedOriginalBinding(input, database);
+  }
+
   private async readPublishedOriginalBinding(
     input: { tenantId: string; actorUserId: string; workItemId: string; documentVersionId: string },
     database: PostgresJsDatabase,
@@ -156,6 +164,41 @@ export class JobAidWorkRepository {
       artifactRef: artifact.ref,
       artifactSha256: artifact.sha256,
     };
+  }
+
+  async reviewTurnBindingForProjection(input: {
+    tenantId: string;
+    actorUserId: string;
+    workItemId: string;
+    reviewTurnId: string;
+    actionAttemptId: string;
+  }): Promise<{ reviewConversationId: string } | null> {
+    const [turn] = await this.db.select({
+      reviewConversationId: reviewTurn.reviewConversationId,
+    }).from(reviewTurn).innerJoin(actionAttempt,
+      eq(actionAttempt.attemptId, reviewTurn.actionAttemptId))
+      .where(and(
+        eq(reviewTurn.tenantId, input.tenantId),
+        eq(reviewTurn.actorId, input.actorUserId),
+        eq(reviewTurn.workItemId, input.workItemId),
+        eq(reviewTurn.reviewTurnId, input.reviewTurnId),
+        eq(reviewTurn.actionAttemptId, input.actionAttemptId),
+        eq(actionAttempt.status, 'SUCCEEDED'),
+        eq(actionAttempt.actionType, 'OPENCLAW_INTERACTIVE_REVIEW'),
+      )).limit(1);
+    return turn ?? null;
+  }
+
+  async hasActiveReviewOverallConflict(tenantId: string, workItemId: string,
+    actionTypes: string[], statuses: string[]): Promise<boolean> {
+    const [active] = await this.db.select({ id: actionAttempt.attemptId })
+      .from(actionAttempt).where(and(
+        eq(actionAttempt.tenantId, tenantId),
+        eq(actionAttempt.workItemId, workItemId),
+        inArray(actionAttempt.actionType, actionTypes),
+        inArray(actionAttempt.status, statuses),
+      )).limit(1);
+    return !!active;
   }
 
   async list(

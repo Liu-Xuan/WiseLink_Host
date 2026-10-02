@@ -33,6 +33,7 @@ import { autoWorkItemAuthorization } from '../../database/auto-work-item-authori
 import { dmDocumentReadingRun } from '../../database/document-reading.schema';
 import {
   actionAttempt,
+  assessmentWorkRevision,
   translationBlockRevision,
   translationWorkspace,
   workItem,
@@ -2138,6 +2139,58 @@ export class MiaodaWorkItemRepository {
       });
     }
     return this.persistProjectionCas(input, this.db);
+  }
+
+  /** One browser actor transaction fences the exact Review work and commits
+   * its Host execution row together with the WorkItem projection. */
+  async withLockedReviewOverallProjection<T>(input: {
+    tenantId: string;
+    actorUserId: string;
+    workItemId: string;
+    expectedRevision: number;
+    workRevisionRef: string;
+    documentVersionId: string;
+  }, operation: (database: PostgresJsDatabase,
+    current: CanonicalWorkItemProjection) => Promise<{
+      next: Omit<CanonicalWorkItemProjection, 'revision'>;
+      value: T;
+    }>): Promise<{ saved: CanonicalWorkItemProjection; value: T }> {
+    return this.db.transaction(async (transaction) => {
+      const database = transaction as PostgresJsDatabase;
+      const [row] = await database.select({
+        revision: workItem.revision,
+        projectionJson: workItem.projectionJson,
+        documentVersionId: workItem.documentVersionId,
+        requestedByUserId: workItem.requestedByUserId,
+      }).from(workItem).where(and(
+        eq(workItem.tenantId, input.tenantId),
+        eq(workItem.workItemId, input.workItemId),
+      )).limit(1).for('update');
+      if (!row || row.revision !== input.expectedRevision ||
+        row.documentVersionId !== input.documentVersionId ||
+        row.requestedByUserId !== input.actorUserId || !row.projectionJson)
+        throw new Error('WORK_ITEM_CAS_CONFLICT');
+      const current = JSON.parse(row.projectionJson) as CanonicalWorkItemProjection;
+      if (current.revision !== row.revision || current.workItemId !== input.workItemId ||
+        current.source.documentVersionId !== input.documentVersionId)
+        throw new Error('WORK_ITEM_CAS_CONFLICT');
+      const [latest] = await database.select({
+        workRevisionRef: assessmentWorkRevision.assessmentWorkRevisionId,
+      }).from(assessmentWorkRevision).where(and(
+        eq(assessmentWorkRevision.tenantId, input.tenantId),
+        eq(assessmentWorkRevision.workItemId, input.workItemId),
+      )).orderBy(desc(assessmentWorkRevision.workRevision)).limit(1);
+      if (latest?.workRevisionRef !== input.workRevisionRef)
+        throw new Error('JOBAID_OVERALL_EXACT_WORK_CHANGED');
+      const result = await operation(database, current);
+      const saved = await this.persistProjectionCas({
+        workItemId: input.workItemId,
+        expectedRevision: input.expectedRevision,
+        syncPrimaryAttempt: false,
+        next: result.next,
+      }, database);
+      return { saved, value: result.value };
+    });
   }
 
   private async persistProjectionCas(
