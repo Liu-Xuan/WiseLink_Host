@@ -107,37 +107,40 @@ describe('ReviewConversationController request boundary', () => {
       .rejects.toMatchObject({ statusCode: 400 });
   });
 
-  it('accepts only a registered model reference for the new turn', async () => {
-    const setup = makeController();
-    const input = {
-      requestId: 'request-model',
-      userMessage: 'Review with the selected model',
-      modelRef: 'dli/gpt-5.6-sol',
-    };
-    await setup.controller.appendTextTurn('WI-1', 'RC-1', input, {} as never);
-    expect(setup.service.appendTextTurn).toHaveBeenCalledWith(
-      'WI-1',
-      'RC-1',
-      expect.objectContaining({ modelRef: input.modelRef }),
-      expect.anything(),
-    );
-    await expect(
-      setup.controller.appendTextTurn(
+  it.each(['dli/gpt-5.6-sol', 'miaoda/glm-5.3'])(
+    'accepts only a registered model reference for the new turn: %s',
+    async (modelRef) => {
+      const setup = makeController();
+      const input = {
+        requestId: 'request-model',
+        userMessage: 'Review with the selected model',
+        modelRef,
+      };
+      await setup.controller.appendTextTurn('WI-1', 'RC-1', input, {} as never);
+      expect(setup.service.appendTextTurn).toHaveBeenCalledWith(
         'WI-1',
         'RC-1',
-        { ...input, modelRef: 'other/unknown' },
-        {} as never,
-      ),
-    ).rejects.toThrow('TASK_MODEL_UNAVAILABLE');
-    await expect(
-      setup.controller.appendTextTurn(
-        'WI-1',
-        'RC-1',
-        { ...input, apiKey: 'not-a-real-key' },
-        {} as never,
-      ),
-    ).rejects.toThrow();
-  });
+        expect.objectContaining({ modelRef: input.modelRef }),
+        expect.anything(),
+      );
+      await expect(
+        setup.controller.appendTextTurn(
+          'WI-1',
+          'RC-1',
+          { ...input, modelRef: 'other/unknown' },
+          {} as never,
+        ),
+      ).rejects.toThrow('TASK_MODEL_UNAVAILABLE');
+      await expect(
+        setup.controller.appendTextTurn(
+          'WI-1',
+          'RC-1',
+          { ...input, apiKey: 'not-a-real-key' },
+          {} as never,
+        ),
+      ).rejects.toThrow();
+    },
+  );
   it('accepts automatic execution as an explicit append option', async () => {
     const setup = makeController();
     await setup.controller.appendTextTurn(

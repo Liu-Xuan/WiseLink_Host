@@ -3,8 +3,8 @@ import type {
   CanonicalModelOption,
 } from '@shared/api.interface';
 
-// Registration snapshot read from the official Hosted instance through 2026-09-25.
-// This is an allowlist of routing identifiers, not a live inference health check.
+// Allowlisted official Hosted routing identifiers; registration is checked before execution.
+// This is not a live inference health check.
 // Provider credentials and URLs remain in that instance's official settings.
 export const CANONICAL_REGISTERED_MODELS: readonly CanonicalModelOption[] = [
   {
@@ -31,6 +31,13 @@ export const CANONICAL_REGISTERED_MODELS: readonly CanonicalModelOption[] = [
   {
     modelRef: 'miaoda/miaoda-auto-multimodal',
     displayName: '多模态',
+    providerKind: 'BUILT_IN',
+    providerLabel: '妙搭',
+    available: true,
+  },
+  {
+    modelRef: 'miaoda/glm-5.3',
+    displayName: 'GLM 5.3',
     providerKind: 'BUILT_IN',
     providerLabel: '妙搭',
     available: true,

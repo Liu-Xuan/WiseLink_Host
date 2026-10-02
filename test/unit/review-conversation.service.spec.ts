@@ -124,7 +124,7 @@ describe('ReviewConversationService session and ACL boundary', () => {
     expect(setup.conversations.appendTextTurn).not.toHaveBeenCalled();
   });
 
-  it.each([undefined, 'miaoda/minimax-m3'])(
+  it.each([undefined, 'miaoda/minimax-m3', 'miaoda/glm-5.3'])(
     'inherits the last turn model unless a new request explicitly overrides it: %s',
     async (modelRef) => {
       const setup = makeService();
@@ -160,6 +160,9 @@ describe('ReviewConversationService session and ACL boundary', () => {
         expect.objectContaining({
           requestedModel: expect.objectContaining({
             modelRef: modelRef ?? 'dli/gpt-5.6-sol',
+            providerKind: modelRef?.startsWith('miaoda/')
+              ? 'BUILT_IN'
+              : 'CUSTOM',
           }),
         }),
       );
