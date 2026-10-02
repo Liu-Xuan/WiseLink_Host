@@ -58,9 +58,18 @@ describe('tenant global model selection', () => {
   it('offers registered task choices to a valid existing user without any global manager role', () => {
     delete process.env[CANONICAL_MODEL_MANAGER_ROLE_ENV];
     const { service, repository } = setup();
-    expect(service.taskOptions(actor([])).options).toEqual(
+    const taskOptions = service.taskOptions(actor([]));
+    expect(taskOptions.defaultModelRef).toBe('m3probe/minimax-m3');
+    expect(taskOptions.options).toEqual(
       expect.arrayContaining([
         expect.objectContaining({ modelRef: 'dli/gpt-5.6-sol' }),
+        {
+          modelRef: 'miaoda/glm-5.3',
+          displayName: 'GLM 5.3',
+          providerKind: 'BUILT_IN',
+          providerLabel: '妙搭',
+          available: true,
+        },
       ]),
     );
     expect(repository.read).not.toHaveBeenCalled();
