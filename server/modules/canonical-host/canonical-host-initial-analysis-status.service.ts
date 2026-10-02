@@ -174,11 +174,109 @@ export class CanonicalHostInitialAnalysisStatusService {
       jobAid: execution.integratedAssessment?.baseRules.actionAttemptId,
       overall: execution.integratedAssessment?.overallSynthesis?.actionAttemptId,
     };
-    const savedIds = Object.values(savedAttempts).filter((id): id is string => !!id);
+    const deterministicOverall = execution.integratedAssessment?.overallSynthesis?.executionKind ===
+      'DETERMINISTIC_PROJECTION' ? execution.integratedAssessment.overallSynthesis : null;
+    const sourceReviewAttemptId = deterministicOverall?.sourceReview?.actionAttemptId;
+    const savedIds = [...Object.values(savedAttempts), sourceReviewAttemptId]
+      .filter((id): id is string => !!id);
+    let invalidDeterministicOverall = Boolean(deterministicOverall &&
+      (!sourceReviewAttemptId ||
+        deterministicOverall.sourceReview?.workRevisionRef !==
+          deterministicOverall.basedOnJobAidWorkRevisionRef ||
+        !isJobAidProblemProjection(execution.integratedAssessment?.baseRules) ||
+        execution.integratedAssessment.baseRules.workRevisionRef !==
+          deterministicOverall.basedOnJobAidWorkRevisionRef));
+    if (deterministicOverall) {
+      const [record] = await this.db.select({
+        actionType: actionAttempt.actionType,
+        status: actionAttempt.status,
+        requestOrigin: actionAttempt.requestOrigin,
+        tenantId: actionAttempt.tenantId,
+        actorUserId: actionAttempt.actorUserId,
+        documentVersionId: actionAttempt.documentVersionId,
+        reviewActivityJson: actionAttempt.reviewActivityJson,
+        projectionApplied: actionAttempt.projectionApplied,
+      }).from(actionAttempt).where(and(
+        eq(actionAttempt.tenantId, input.tenantId),
+        eq(actionAttempt.workItemId, input.workItem.workItemId),
+        eq(actionAttempt.attemptId, deterministicOverall.actionAttemptId),
+      )).limit(1);
+      const [sourceAttempt] = sourceReviewAttemptId
+        ? await this.db.select({
+            status: actionAttempt.status,
+            actionType: actionAttempt.actionType,
+            documentVersionId: actionAttempt.documentVersionId,
+            actorUserId: actionAttempt.actorUserId,
+          }).from(actionAttempt).where(and(
+            eq(actionAttempt.tenantId, input.tenantId),
+            eq(actionAttempt.workItemId, input.workItem.workItemId),
+            eq(actionAttempt.attemptId, sourceReviewAttemptId),
+          )).limit(1)
+        : [];
+      let activity: Record<string, unknown> | null = null;
+      try {
+        activity = record?.reviewActivityJson
+          ? JSON.parse(record.reviewActivityJson) as Record<string, unknown>
+          : null;
+      } catch { activity = null; }
+      const source = deterministicOverall.sourceReview;
+      const savedInput = activity?.input as Record<string, unknown> | undefined;
+      const savedReceipt = activity?.receipt as Record<string, unknown> | undefined;
+      const savedSource = savedInput?.sourceIdentity as Record<string, unknown> | undefined;
+      invalidDeterministicOverall ||= !record ||
+        record.actionType !== 'HOST_REVIEW_OVERALL_PROJECTION' ||
+        record.requestOrigin !== 'HOST_BROWSER_PROJECTION' ||
+        record.status !== 'SUCCEEDED' || !record.projectionApplied ||
+        record.documentVersionId !== input.workItem.source.documentVersionId ||
+        activity?.executionKind !== 'DETERMINISTIC_PROJECTION' ||
+        activity?.modelRequests !== 0 ||
+        activity?.semanticReanalysisPerformed !== false ||
+        savedReceipt?.executionAttemptId !== deterministicOverall.actionAttemptId ||
+        savedReceipt?.basedOnJobAidWorkRevisionRef !==
+          deterministicOverall.basedOnJobAidWorkRevisionRef ||
+        savedInput?.reviewConversationId !== source?.reviewConversationId ||
+        savedInput?.reviewTurnId !== source?.reviewTurnId ||
+        savedInput?.workRevisionRef !== source?.workRevisionRef ||
+        savedSource?.documentVersionId !== input.workItem.source.documentVersionId ||
+        savedSource?.sourceArtifactId !== input.workItem.source.sourceArtifactId ||
+        canonicalHostBareSha256(savedSource?.sourceFileSha256) !==
+          canonicalHostBareSha256(input.workItem.source.sourceFileSha256) ||
+        savedSource?.packageId !== input.workItem.package?.packageId ||
+        canonicalHostBareSha256(savedSource?.packageArtifactSha256) !==
+          canonicalHostBareSha256(input.workItem.package?.artifact.sha256) ||
+        sourceAttempt?.status !== 'SUCCEEDED' ||
+        sourceAttempt.actionType !== 'OPENCLAW_INTERACTIVE_REVIEW' ||
+        sourceAttempt.documentVersionId !== input.workItem.source.documentVersionId;
+      const actorUserId = hostedServiceSql
+        ? (await this.db.select({ actor: workItem.requestedByUserId })
+          .from(workItem).where(and(
+            eq(workItem.workItemId, input.workItem.workItemId),
+            eq(workItem.tenantId, input.tenantId),
+          )).limit(1))[0]?.actor
+        : input.browserActorUserId;
+      if (!actorUserId || !this.originalWork) {
+        invalidDeterministicOverall = true;
+      } else {
+        invalidDeterministicOverall ||= record?.actorUserId !== actorUserId ||
+          sourceAttempt?.actorUserId !== actorUserId;
+        const latest = hostedServiceSql
+          ? await this.originalWork.withActorScope(actorUserId,
+              () => this.originalWork!.latest({ tenantId: input.tenantId,
+                workItemId: input.workItem.workItemId }))
+          : await this.originalWork.latest({ tenantId: input.tenantId,
+              workItemId: input.workItem.workItemId });
+        invalidDeterministicOverall ||= latest?.workRevisionRef !==
+          deterministicOverall.basedOnJobAidWorkRevisionRef;
+      }
+    }
     if (published?.[0] && savedIds.length) {
       const bases = await this.db.select({
         attemptId: actionAttempt.attemptId,
-        parseRunId: sql<string | null>`case when ${actionAttempt.taskEnvelopeJson}::jsonb #>> '{modelInput,schemaVersion}' = 'wiselink.3_1.applicability_task.v3' then ${actionAttempt.taskEnvelopeJson}::jsonb #>> '{modelInput,originalInput,binding,parseRunId}' else ${actionAttempt.taskEnvelopeJson}::jsonb #>> '{modelInput,modelInput,documentOverview,original,binding,parseRunId}' end`,
+        actionType: actionAttempt.actionType,
+        status: actionAttempt.status,
+        requestOrigin: actionAttempt.requestOrigin,
+        reviewActivityJson: actionAttempt.reviewActivityJson,
+        parseRunId: sql<string | null>`case when ${actionAttempt.actionType} = 'OPENCLAW_INTERACTIVE_REVIEW' then ${actionAttempt.taskEnvelopeJson}::jsonb #>> '{modelInput,jobAidContext,modelInput,documentOverview,original,binding,parseRunId}' when ${actionAttempt.taskEnvelopeJson}::jsonb #>> '{modelInput,schemaVersion}' = 'wiselink.3_1.applicability_task.v3' then ${actionAttempt.taskEnvelopeJson}::jsonb #>> '{modelInput,originalInput,binding,parseRunId}' else ${actionAttempt.taskEnvelopeJson}::jsonb #>> '{modelInput,modelInput,documentOverview,original,binding,parseRunId}' end`,
       }).from(actionAttempt).where(and(eq(actionAttempt.tenantId, input.tenantId),
         eq(actionAttempt.workItemId, input.workItem.workItemId),
         eq(actionAttempt.documentVersionId, input.workItem.source.documentVersionId),
@@ -207,7 +305,9 @@ export class CanonicalHostInitialAnalysisStatusService {
       for (const stage of ORIGINAL_ENGINEERING_STAGES) {
         const attemptId = savedAttempts[stage];
         if (!attemptId) continue;
-        const basis = bases.find(row => row.attemptId === attemptId);
+        const basis = bases.find(row => row.attemptId ===
+          (stage === 'overall' && sourceReviewAttemptId
+            ? sourceReviewAttemptId : attemptId));
         originalImpactStages[stage] = !basis?.parseRunId || changedByRun.get(basis.parseRunId) !== false;
       }
       // Overall also depends on the retained JobAid result, even if its own
@@ -234,6 +334,7 @@ export class CanonicalHostInitialAnalysisStatusService {
       {
         originalPublished,
         originalImpactStages,
+        invalidDeterministicOverall,
         originalAdmission,
         englishAssessmentEnabled:
           process.env.WL_JOBAID_PROBLEM_V2_ENABLED === '1',
@@ -458,7 +559,7 @@ export function initialAnalysisTerminalCode(row: {
 export function projectCanonicalHostInitialAnalysisStatus(
   workItem: CanonicalWorkItemProjection,
   attempts: readonly CanonicalInitialAnalysisAttemptObservation[],
-  options: { originalAdmission?: {contextRef:string|null;reason:string|null}; englishAssessmentEnabled?: boolean; originalPublished?: boolean; originalImpactPending?: boolean; originalImpactStages?: Partial<Record<OriginalEngineeringStage, boolean>> } = {},
+  options: { originalAdmission?: {contextRef:string|null;reason:string|null}; englishAssessmentEnabled?: boolean; originalPublished?: boolean; originalImpactPending?: boolean; originalImpactStages?: Partial<Record<OriginalEngineeringStage, boolean>>; invalidDeterministicOverall?: boolean } = {},
 ): AilyInitialAnalysisStatus {
   const attemptByAction = latestAttemptsByAction(attempts);
   const parsedPackageReady = options.originalPublished ?? isParsedPackageReady(workItem);
@@ -468,6 +569,10 @@ export function projectCanonicalHostInitialAnalysisStatus(
   const execution = reevaluation
     ? configurationEvidenceShadow(workItem)
     : workItem;
+  // A Host projection has its own successful execution record. A historical
+  // OpenClaw Overall attempt is not its continuation or terminal result.
+  const overallAttempt = execution.integratedAssessment?.overallSynthesis?.executionKind ===
+    'DETERMINISTIC_PROJECTION' ? undefined : attemptByAction.OPENCLAW_OVERALL_SYNTHESIS;
   const stages = parsedPackageReady
     ? {
         translation: projectStage(
@@ -500,12 +605,12 @@ export function projectCanonicalHostInitialAnalysisStatus(
           ? projectReevaluationStage(
               reevaluation.stages.overall,
               overallProjectionObservation(execution),
-              attemptByAction.OPENCLAW_OVERALL_SYNTHESIS,
+              overallAttempt,
               workItem.revision,
             )
           : projectStage(
               overallProjectionObservation(workItem),
-              attemptByAction.OPENCLAW_OVERALL_SYNTHESIS,
+              overallAttempt,
             ),
       }
     : pendingStages();
@@ -524,6 +629,9 @@ export function projectCanonicalHostInitialAnalysisStatus(
         terminalCode:'DOCUMENT_ORIGINAL_IMPACT_REVIEW_REQUIRED'};
     }
   }
+  if (options.invalidDeterministicOverall && stages.overall.status === 'SUCCEEDED')
+    stages.overall = { ...stages.overall, status: 'CONFLICT',
+      terminalCode: 'REVIEW_OVERALL_PROJECTION_RECORD_INVALID' };
   if (options.originalPublished && !workItem.package && !originalApplicabilityInputMatches(execution) && !options.originalAdmission?.contextRef && stages.applicability.status === 'PENDING')
     stages.applicability={...stages.applicability,status:'WAITING_INPUT',terminalCode:options.originalAdmission?.reason ?? 'ORIGINAL_APPLICABILITY_MAPPING_REQUIRED'};
   const progression = parsedPackageReady

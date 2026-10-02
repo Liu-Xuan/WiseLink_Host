@@ -47,6 +47,8 @@ import type {
   DocumentHistoricalImportRequest,
   CanonicalDevelopmentWorkItemRunRequest,
   CanonicalOverallRegenerationReadModel,
+  CanonicalReviewOverallProjectionEligibility,
+  CanonicalReviewOverallProjectionReceipt,
   CanonicalOrdinaryWorkItemRunResponse,
   CloseReviewConversationResponse,
   ConfirmReviewActionDraftRequest,
@@ -55,6 +57,7 @@ import type {
   CurrentReviewConversationResponse,
   RequestCanonicalOverallRegenerationRequest,
   RequestCanonicalOverallRegenerationResponse,
+  RequestCanonicalReviewOverallProjectionRequest,
   ReviewScopeSelection,
 } from '@shared/api.interface';
 
@@ -1162,6 +1165,42 @@ export async function requestOverallRegeneration(
       operation: '请求重新生成工程摘要',
     },
   );
+}
+
+function reviewOverallProjectionUrl(workItemId: string): string {
+  return `/api/canonical-host/work-items/${encodeURIComponent(workItemId)}/integrated-assessment/review-overall-projections`;
+}
+
+export async function getReviewOverallProjectionEligibility(workItemId: string):
+  Promise<CanonicalReviewOverallProjectionEligibility> {
+  const response = await axiosForBackend<CanonicalReviewOverallProjectionEligibility>({
+    url: `${reviewOverallProjectionUrl(workItemId)}/eligibility`, method: 'GET',
+  });
+  if (response.status < 200 || response.status >= 300)
+    throw backendResponseError(response.data, 'REVIEW_OVERALL_ELIGIBILITY_UNAVAILABLE');
+  return response.data;
+}
+
+export async function requestReviewOverallProjection(workItemId: string,
+  input: RequestCanonicalReviewOverallProjectionRequest):
+  Promise<CanonicalReviewOverallProjectionReceipt> {
+  const response = await axiosForBackend<CanonicalReviewOverallProjectionReceipt>({
+    url: reviewOverallProjectionUrl(workItemId), method: 'POST', data: input,
+  });
+  if (response.status < 200 || response.status >= 300)
+    throw backendResponseError(response.data, 'REVIEW_OVERALL_PROJECTION_FAILED');
+  return response.data;
+}
+
+export async function getReviewOverallProjectionStatus(workItemId: string,
+  requestId: string): Promise<CanonicalReviewOverallProjectionReceipt> {
+  const response = await axiosForBackend<CanonicalReviewOverallProjectionReceipt>({
+    url: `${reviewOverallProjectionUrl(workItemId)}/${encodeURIComponent(requestId)}`,
+    method: 'GET',
+  });
+  if (response.status < 200 || response.status >= 300)
+    throw backendResponseError(response.data, 'REVIEW_OVERALL_STATUS_UNAVAILABLE');
+  return response.data;
 }
 
 export async function getOverallRegenerationStatus(

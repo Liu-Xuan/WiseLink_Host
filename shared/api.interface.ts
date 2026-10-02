@@ -1789,6 +1789,16 @@ export interface CanonicalOpenClawOverallProjection {
   externalDiscoveryIsEvidence: false;
   artifact: UnifiedPackageArtifactDescriptor;
   actionAttemptId: string;
+  /** Absent on historical model-produced candidates. */
+  executionKind?: 'DETERMINISTIC_PROJECTION';
+  modelRequests?: 0;
+  sourceReview?: {
+    reviewConversationId: string;
+    reviewTurnId: string;
+    actionAttemptId: string;
+    workRevisionRef: string;
+    workRevision: number;
+  };
   staleReason: 'BASE_RULE_RESULT_CHANGED' | 'ENGINEER_REVIEW_CHANGED' | null;
   /** Business-readable candidate content copied from the verified overall artifact. */
   overallCandidate?: string;
@@ -1823,6 +1833,41 @@ export interface CanonicalOverallRegenerationSourceIdentity {
   sourceFileSha256: string;
   packageId: string;
   packageArtifactSha256: string;
+}
+
+export interface RequestCanonicalReviewOverallProjectionRequest {
+  requestId: string;
+  expectedRevision: number;
+  reviewConversationId: string;
+  reviewTurnId: string;
+  workRevisionRef: string;
+  expectedWorkRevision: number;
+  sourceIdentity: CanonicalOverallRegenerationSourceIdentity;
+}
+
+export interface CanonicalReviewOverallProjectionReceipt {
+  executionKind: 'DETERMINISTIC_PROJECTION';
+  modelRequests: 0;
+  requestId: string;
+  executionAttemptId: string;
+  status: 'SUCCEEDED';
+  replayed: boolean;
+  workItemRevision: number;
+  overallRevision: number;
+  basedOnJobAidWorkRevisionRef: string;
+  artifact: UnifiedPackageArtifactDescriptor;
+}
+
+export interface CanonicalReviewOverallProjectionEligibility {
+  eligible: boolean;
+  binding: {
+    expectedRevision: number;
+    reviewConversationId: string;
+    reviewTurnId: string;
+    workRevisionRef: string;
+    expectedWorkRevision: number;
+    sourceIdentity: CanonicalOverallRegenerationSourceIdentity;
+  } | null;
 }
 
 export interface RequestCanonicalOverallRegenerationRequest {

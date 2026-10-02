@@ -114,6 +114,18 @@ describe('CanonicalHost initial-analysis status projection', () => {
     expect(value.stages.overall).toMatchObject({status:'CONFLICT',terminalCode:'DOCUMENT_ORIGINAL_IMPACT_REVIEW_REQUIRED'});
   });
 
+  it('does not report a deterministic Overall success when its Host execution record is invalid', () => {
+    const source = { ...parsedWorkItem(), integratedAssessment: integratedAssessment() };
+    const value = projectCanonicalHostInitialAnalysisStatus(source, [], {
+      originalPublished: true,
+      invalidDeterministicOverall: true,
+    });
+    expect(value.stages.overall).toMatchObject({
+      status: 'CONFLICT',
+      terminalCode: 'REVIEW_OVERALL_PROJECTION_RECORD_INVALID',
+    });
+  });
+
   it('reconciles an orphaned RUNNING deadline before projecting progress without generating a successor', async () => {
     const workItem = parsedWorkItem();
     const row = { ...attempt('OPENCLAW_DYNAMIC_EVALUATION', 'RUNNING'),
@@ -266,6 +278,30 @@ describe('CanonicalHost initial-analysis status projection', () => {
       });
     },
   );
+
+  it('reports a verified Host projection despite an older OpenClaw Overall attempt', () => {
+    const integrated = integratedAssessment();
+    integrated.overallSynthesis = {
+      ...integrated.overallSynthesis!,
+      actionAttemptId: 'ATT-HOST-OVERALL',
+      executionKind: 'DETERMINISTIC_PROJECTION',
+      modelRequests: 0,
+      sourceReview: {
+        reviewConversationId: 'RC-1', reviewTurnId: 'RT-1',
+        actionAttemptId: 'ATT-REVIEW', workRevisionRef: 'JAWR-1', workRevision: 2,
+      },
+    };
+    const workItem = { ...translatedWorkItem(parsedWorkItem()),
+      integratedAssessment: integrated };
+    const oldAttempt = { ...attempt('OPENCLAW_OVERALL_SYNTHESIS', 'SUCCEEDED'),
+      requestId: 'old-overall-request' };
+    expect(projectCanonicalHostInitialAnalysisStatus(workItem, [oldAttempt],
+      { invalidDeterministicOverall: false }).stages.overall.status).toBe('SUCCEEDED');
+    expect(projectCanonicalHostInitialAnalysisStatus(workItem, [oldAttempt],
+      { invalidDeterministicOverall: true }).stages.overall).toMatchObject({
+        status: 'CONFLICT', terminalCode: 'REVIEW_OVERALL_PROJECTION_RECORD_INVALID',
+      });
+  });
 
   it.each([
     ['translation', 'BUSY'],

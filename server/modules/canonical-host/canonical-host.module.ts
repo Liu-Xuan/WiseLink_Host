@@ -37,6 +37,9 @@ import { CanonicalHostOpenClawDiscoveryService } from './canonical-host-openclaw
 import { CanonicalHostOpenClawOverallService } from './canonical-host-openclaw-overall.service';
 import { CanonicalHostOverallRegenerationController } from './canonical-host-overall-regeneration.controller';
 import { CanonicalHostOverallRegenerationService } from './canonical-host-overall-regeneration.service';
+import { CanonicalHostReviewOverallProjectionController } from './canonical-host-review-overall-projection.controller';
+import { CanonicalHostReviewOverallProjectionService } from './canonical-host-review-overall-projection.service';
+import { CanonicalHostReviewOverallProjectionRepository } from './canonical-host-review-overall-projection.repository';
 import { CanonicalHostOpenClawTranslationService } from './canonical-host-openclaw-translation.service';
 import { CanonicalTranslationWorkspaceRepository } from './canonical-translation-workspace.repository';
 import { CanonicalTranslationGlossaryController } from './canonical-translation-glossary.controller';
@@ -229,6 +232,7 @@ export interface CanonicalHostModuleOptions {
     CanonicalHostReviewActionController,
     CanonicalHostApplicabilitySelectionController,
     CanonicalHostOverallRegenerationController,
+    CanonicalHostReviewOverallProjectionController,
     CanonicalRuleSetLifecycleController,
     EngineeringMatterController,
     MatterAssessmentActivityController,
@@ -253,6 +257,8 @@ export interface CanonicalHostModuleOptions {
     CanonicalHostOpenClawDiscoveryService,
     CanonicalHostOpenClawOverallService,
     CanonicalHostOverallRegenerationService,
+    CanonicalHostReviewOverallProjectionService,
+    CanonicalHostReviewOverallProjectionRepository,
     CanonicalHostOpenClawTranslationService,
     CanonicalTranslationWorkspaceRepository,
     CanonicalTranslationGlossaryService,
@@ -487,6 +493,7 @@ export class CanonicalHostModule {
         CanonicalHostReviewActionController,
         CanonicalHostApplicabilitySelectionController,
         CanonicalHostOverallRegenerationController,
+        CanonicalHostReviewOverallProjectionController,
         CanonicalRuleSetLifecycleController,
         EngineeringMatterController,
         MatterAssessmentActivityController,
@@ -539,6 +546,8 @@ export class CanonicalHostModule {
         CanonicalHostOpenClawDiscoveryService,
         CanonicalHostOpenClawOverallService,
         CanonicalHostOverallRegenerationService,
+        CanonicalHostReviewOverallProjectionService,
+        CanonicalHostReviewOverallProjectionRepository,
         CanonicalHostOpenClawTranslationService,
         CanonicalTranslationWorkspaceRepository,
         CanonicalTranslationGlossaryService,
