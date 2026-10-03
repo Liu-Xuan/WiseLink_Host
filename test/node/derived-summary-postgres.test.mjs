@@ -44,7 +44,7 @@ test('real saved aggregate/upper consumer preserves exact work, pool1, CAS, leas
     const admin = postgres(databaseUrl, { max: 1, onnotice() {} });
     let connection;
     try {
-      await reset(admin);
+      await t.test('platform PUBLIC rewrite upgrades existing policies and replays without narrowing service/anon boundaries', () => reset(admin));
       await seed(admin);
       connection = postgres(databaseUrl, { max: 1, onnotice() {} });
       const database = drizzle(connection);
@@ -293,6 +293,46 @@ function nativeActor(userId, tenantId) {
     sessionRevision: null, sessionProvenance: 'UNAVAILABLE' } };
 }
 
+// Only the eight new narrowing policies belong to the PUBLIC boundary.
+// Existing Matter policy roles continue to be preserved separately.
+const publicBoundaries = [
+  ['action_attempt_summary_subject_boundary', 'action_attempt', '*'],
+  ['derived_summary_owner_boundary', 'derived_summary', '*'],
+  ['derived_summary_no_delete', 'derived_summary', 'd'],
+  ['derived_summary_revision_sources', 'derived_summary_revision', '*'],
+  ['derived_summary_revision_real_attempt', 'derived_summary_revision', 'a'],
+  ['derived_summary_revision_hosted_insert', 'derived_summary_revision', 'a'],
+  ['derived_summary_revision_no_update', 'derived_summary_revision', 'w'],
+  ['derived_summary_revision_no_delete', 'derived_summary_revision', 'd'],
+];
+
+function rewriteTopLevelPublicPolicies(ddl) {
+  // Model the observed platform transform on parsed top-level CREATE POLICY
+  // statements. Dollar-quoted DO/function bodies remain untouched, as in the
+  // actual prior dynamic old-policy extension accepted by the platform.
+  return ddl.replace(/(\$[a-z_]*\$)[\s\S]*?\1|CREATE POLICY[^;]+;/giu,
+    (statement, quoted) => quoted ? statement : statement.replace(/\bTO PUBLIC\b/gu, `TO authenticated_${roleSchema}`));
+}
+
+async function publicBoundaryRows(admin) {
+  return admin`SELECT p.polname,c.relname,p.polcmd,p.polpermissive,
+    p.polroles=ARRAY[0]::oid[] AS all_roles,
+    p.polroles=ARRAY[(SELECT oid FROM pg_roles WHERE rolname=${`authenticated_${roleSchema}`})]::oid[] AS ordinary_only
+    FROM pg_policy p JOIN pg_class c ON c.oid=p.polrelid
+    WHERE p.polname=ANY(${publicBoundaries.map(([name]) => name)}) ORDER BY p.polname`;
+}
+
+async function assertPublicBoundaries(admin) {
+  const rows = await publicBoundaryRows(admin);
+  assert.equal(rows.length, publicBoundaries.length);
+  for (const [name, table, command] of publicBoundaries) {
+    const row = rows.find(policy => policy.polname === name);
+    assert.equal(row.relname, table); assert.equal(row.polcmd, command);
+    assert.equal(row.polpermissive, false); assert.equal(row.all_roles, true, `${name} must retain PUBLIC OID 0`);
+    assert.equal(row.ordinary_only, false);
+  }
+}
+
 async function reset(admin) {
   await admin.unsafe('DROP SCHEMA public CASCADE');
   await admin.unsafe('CREATE SCHEMA public');
@@ -354,12 +394,29 @@ async function reset(admin) {
   // additive DDL upgrades it and remains reapplicable without altering legacy branches.
   const [oldPolicy] = await admin`SELECT polroles FROM pg_policy WHERE polrelid='action_attempt'::regclass
     AND polname='action_attempt_matter_or_document_subject_boundary'`;
-  await admin.unsafe(summaryDdl.replace("\n        AND action_type <> 'OPENCLAW_DERIVED_SUMMARY'", ''));
-  await admin.unsafe(summaryDdl);
+  await admin.unsafe(rewriteTopLevelPublicPolicies(summaryDdl.replace("\n        AND action_type <> 'OPENCLAW_DERIVED_SUMMARY'", '')));
+  // The real dev platform previously changed all eight PUBLIC targets into
+  // ordinary-only targets. Retain its existing tables and reproduce those
+  // exact pg_policy role targets before applying the corrective upgrade.
+  for (const [name, table] of publicBoundaries) {
+    await admin.unsafe(`ALTER POLICY ${name} ON ${table} TO authenticated_${roleSchema}`);
+  }
+  const narrowed = await publicBoundaryRows(admin);
+  assert.equal(narrowed.length, publicBoundaries.length);
+  assert.ok(narrowed.every(row => row.ordinary_only && !row.all_roles && !row.polpermissive));
+  // If a platform ever transforms even the DO body, the checked transaction
+  // must fail, not silently commit ordinary-only source/history protection.
+  await assert.rejects(admin.unsafe(summaryDdl.replaceAll('TO PUBLIC', `TO authenticated_${roleSchema}`)),
+    error => databaseCode(error) === '42501' && databaseMessageIncludes(error, 'DERIVED_SUMMARY_PUBLIC_BOUNDARY_REQUIRED'));
+  await admin.unsafe('ROLLBACK');
+  assert.deepEqual(await publicBoundaryRows(admin), narrowed, 'rejected target conversion rolls back the whole upgrade');
+  await admin.unsafe(rewriteTopLevelPublicPolicies(summaryDdl));
+  await assertPublicBoundaries(admin);
   const [extendedPolicy] = await admin`SELECT polroles FROM pg_policy WHERE polrelid='action_attempt'::regclass
     AND polname='action_attempt_matter_or_document_subject_boundary_summary'`;
   assert.deepEqual(extendedPolicy.polroles, oldPolicy.polroles, 'dynamic policy extension preserves actual schema-suffixed target roles');
-  await admin.unsafe(summaryDdl);
+  await admin.unsafe(rewriteTopLevelPublicPolicies(summaryDdl));
+  await assertPublicBoundaries(admin);
   // Simulate the documented broad platform-managed ACLs locally, including
   // TRUNCATE. These fixture-only statements are never part of deployed DDL.
   await admin.unsafe('GRANT ALL ON derived_summary,derived_summary_revision TO authenticated,service_role,anon');
