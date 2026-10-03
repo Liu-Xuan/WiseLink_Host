@@ -84,6 +84,20 @@ test('real saved aggregate/upper consumer preserves exact work, pool1, CAS, leas
         assert.equal(rows[0].work_item_id, null); assert.equal(rows[0].matter_id, null);
         assert.equal(JSON.parse(rows[0].execution_model_json).modelRef, 'miaoda/glm-5.3');
       });
+      await t.test('DB CHECK rejects a fake WI summary action while retaining ordinary WI and real summary subjects', async () => {
+        const insert = (attemptId, actionType) => admin`INSERT INTO action_attempt(attempt_id,work_item_id,subject_kind,attempt_no,
+          tenant_id,actor_user_id,action_type,trigger_request_id,request_origin,status)
+          VALUES (${attemptId},'WI-summary','WORK_ITEM',2,${owner.tenantId},${owner.actorUserId},${actionType},
+            ${attemptId},'OPENCLAW_MCP_V1','SUCCEEDED')`;
+        await assert.rejects(insert('ATT-fake-summary-WI', 'OPENCLAW_DERIVED_SUMMARY'),
+          error => databaseCode(error) === '23514' && databaseConstraint(error) === 'ck_action_attempt_derived_summary');
+        await insert('ATT-ordinary-WI', 'OPENCLAW_DYNAMIC_EVALUATION');
+        const rows = await admin`SELECT subject_kind,action_type,summary_id FROM action_attempt
+          WHERE attempt_id='ATT-ordinary-WI' OR operation_ref=${accepted.attemptRef}`;
+        assert.equal(rows.length, 2);
+        assert.ok(rows.some(row => row.subject_kind === 'WORK_ITEM' && row.action_type === 'OPENCLAW_DYNAMIC_EVALUATION' && row.summary_id === null));
+        assert.ok(rows.some(row => row.subject_kind === 'DERIVED_SUMMARY' && row.action_type === 'OPENCLAW_DERIVED_SUMMARY' && row.summary_id === accepted.summaryId));
+      });
       const target = () => ({ summaryId: accepted.summaryId, attemptRef: accepted.attemptRef, scope });
       let claim;
       await t.test('exact service delegation claims shared lease; fake service, missing save and stale fence fail', async () => {
@@ -201,6 +215,7 @@ test('real saved aggregate/upper consumer preserves exact work, pool1, CAS, leas
 
 function claimFence(claim) { return { leaseToken: claim.leaseToken, leaseGeneration: claim.leaseGeneration }; }
 function databaseCode(error) { for (let current = error; current; current = current.cause) if (current.code) return current.code; return null; }
+function databaseConstraint(error) { for (let current = error; current; current = current.cause) if (current.constraint_name) return current.constraint_name; return null; }
 function nativeActor(userId, tenantId) {
   return { userId, tenantId, appId: 'app_17bzc551rsg', roles: [], env: 'runtime', objectAccessActor: {
     principalKind: 'FINAL_USER', transport: 'MIAODA_AUTHENTICATED_HTTP', canonicalSubject: { namespace: 'MIAODA_USER_ID', id: userId },
@@ -264,8 +279,12 @@ async function reset(admin) {
     GRANT SELECT ON work_item TO authenticated,service_role;`);
   await admin.unsafe(await readFile('migrations/0026_assessment_work_revision.sql', 'utf8'));
   await admin.unsafe('GRANT SELECT ON assessment_work_revision TO authenticated,service_role');
-  await admin.unsafe(await readFile('server/database/derived-summary.ddl.sql', 'utf8'));
-  await admin.unsafe(await readFile('server/database/derived-summary.ddl.sql', 'utf8'));
+  const summaryDdl = await readFile('server/database/derived-summary.ddl.sql', 'utf8');
+  // Start with the prior weaker summary-only constraint, then prove the same
+  // additive DDL upgrades it and remains reapplicable without altering legacy branches.
+  await admin.unsafe(summaryDdl.replace("\n        AND action_type <> 'OPENCLAW_DERIVED_SUMMARY'", ''));
+  await admin.unsafe(summaryDdl);
+  await admin.unsafe(summaryDdl);
 }
 
 async function seed(admin) {

@@ -191,15 +191,17 @@ DO $$ BEGIN
     ALTER TABLE action_attempt ADD CONSTRAINT fk_action_attempt_derived_summary
       FOREIGN KEY (tenant_id, summary_id) REFERENCES derived_summary(tenant_id, summary_id);
   END IF;
-  IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'ck_action_attempt_derived_summary') THEN
-    ALTER TABLE action_attempt ADD CONSTRAINT ck_action_attempt_derived_summary CHECK (
+  -- Reapply this new subject boundary as well, so an earlier additive DDL
+  -- execution cannot retain a weaker non-summary action branch.
+  ALTER TABLE action_attempt DROP CONSTRAINT IF EXISTS ck_action_attempt_derived_summary;
+  ALTER TABLE action_attempt ADD CONSTRAINT ck_action_attempt_derived_summary CHECK (
       (subject_kind = 'DERIVED_SUMMARY' AND summary_id IS NOT NULL AND work_item_id IS NULL
         AND matter_id IS NULL AND matter_revision_id IS NULL AND document_version_id IS NULL
         AND action_type = 'OPENCLAW_DERIVED_SUMMARY' AND summary_request_command_json IS NOT NULL
         AND summary_delegated_principal_id IS NOT NULL)
-      OR (subject_kind <> 'DERIVED_SUMMARY' AND summary_id IS NULL)
+      OR (subject_kind <> 'DERIVED_SUMMARY' AND summary_id IS NULL
+        AND action_type <> 'OPENCLAW_DERIVED_SUMMARY')
     );
-  END IF;
 END $$;
 
 CREATE UNIQUE INDEX IF NOT EXISTS uk_action_attempt_summary_number
