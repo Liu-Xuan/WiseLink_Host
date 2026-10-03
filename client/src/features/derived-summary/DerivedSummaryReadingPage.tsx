@@ -45,7 +45,10 @@ function SummaryReading({ id, refPin, attempt, session }: { id: string; refPin?:
       <p className="text-sm">保存正文与本次执行结束分别核对。</p>
       {value.status.savedSummaryRefs.map(ref => <Link className="mr-3 underline" key={ref} to={`/summaries/${encodeURIComponent(id)}?${new URLSearchParams({ summaryRef: ref, attemptRef: value.status!.attemptRef })}`}>阅读该次确切保存版本</Link>)}
     </section> : null}
-    {value && !revision ? <><h1 className="text-2xl font-semibold">{value.reading.scope.title}</h1><p>尚无已保存的概述正文。可重新读取本次进度。</p></> : null}
+    {value && !revision ? <><h1 className="text-2xl font-semibold">{value.reading.scope.title}</h1><p>尚无已保存的概述正文。可重新读取本次进度。</p>
+      {value.status && ['FAILED', 'CANCELLED'].includes(value.status.status)
+        ? <Link className="underline" to={`/summaries/${encodeURIComponent(id)}/update`}>明确重新选取范围与成员，发起新请求</Link> : null}
+    </> : null}
     {revision && value ? <article className="space-y-5" data-summary-ref={revision.summaryRef} data-summary-revision={revision.revision}>
       <header className="space-y-2"><h1 className="text-2xl font-semibold">{revision.content.headline}</h1>
         <p>{revision.scope.title} · {revision.scope.kind} · 分类候选待核 · 正文候选</p>
@@ -74,7 +77,7 @@ function SummaryReading({ id, refPin, attempt, session }: { id: string; refPin?:
             <p>{member.member.kind === 'DERIVED_SUMMARY' ? `子概述修订 ${member.member.summaryRevision}` : `工作修订 ${member.member.workRevision} · 选取问题 ${member.member.issueKeys.join('、')}`}</p>
             {member.member.kind === 'WORK_ITEM_WORK' ? <DocumentVersionIdentityLabel documentVersionId={member.member.documentVersionId} session={session} /> : null}
             <p>{notice ? notice.current ? '当前成员工作' : '历史依据或成员工作已变化' : '成员现行性未能重新核对'} · 综合{member.overviewStatus === 'CURRENT' ? '已覆盖该工作' : member.overviewStatus === 'STALE' ? '待更新' : '尚未形成'}</p>
-            <p>{coverage ? `${coverage.delivered ? '已交付输入' : '未交付完整输入'} · ${coverage.used ? '正文实际使用' : '正文未使用'}` : '覆盖记录不可用，不能扩大已覆盖范围'}</p>
+            <p>{coverage ? `${coverage.delivered ? '已交付输入' : '未交付完整输入'} · ${coverage.used ? '正文直接引用成员工作' : '未直接引用成员工作'}` : '覆盖记录不可用，不能扩大已覆盖范围'}</p>
             {coverage?.limitation ? <p>{coverage.limitation}</p> : null}
             <ul className="list-disc pl-5">{[...member.limitations, ...(notice?.limitations ?? [])].map((item, index) => <li key={index}>{item}</li>)}</ul>
             <details><summary className="cursor-pointer">根来源与子概述叶子工作</summary>

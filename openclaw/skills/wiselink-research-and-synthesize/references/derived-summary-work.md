@@ -11,7 +11,8 @@ Matter or Review actor-context identity. The shared contract is
 The consumer uses STATUS, CLAIM, a real READ_MEMBER_WORK for **every** selected
 exact member, the official Hosted model, SAVE_SUMMARY, READ_SAVED_SUMMARY and
 FINISH. Optional model reads use only registered member/evidence refs and carry
-an explicit purpose. A direct member citation in the body is mandatory. Host
+an explicit purpose. The body must cite at least one registered member or source.
+Direct member use is recorded only for explicit member citations in the body. Host
 reauthorizes reads and saves, merges scope/member limitations, validates source
 identity, materializes coverage, owns CAS/idempotency and keeps every revision
 candidate-only. Full selected issues, conditions, measures, risk rationale,
