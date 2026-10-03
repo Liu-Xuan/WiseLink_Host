@@ -719,11 +719,6 @@
   font-size: var(--wl-text-caption);
 }
 
-.review-materials[open] ~ .continuous-review-composer {
-  position: relative;
-  bottom: auto;
-}
-
 @media (max-width: 760px) {
   .continuous-review {
     padding: 16px;
@@ -819,9 +814,6 @@
 }
 
 .continuous-review-composer {
-  position: sticky;
-  bottom: 10px;
-  z-index: 4;
   border-color: var(--wl-border-strong);
   background: var(--wl-floating);
   box-shadow: var(--wl-float-shadow);
@@ -844,10 +836,5 @@
     border-inline: 0;
     border-radius: 0;
     box-shadow: none;
-  }
-
-  .continuous-review-composer {
-    position: relative;
-    bottom: auto;
   }
 }
