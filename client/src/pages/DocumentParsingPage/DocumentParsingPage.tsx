@@ -1274,17 +1274,6 @@ export default function DocumentParsingPage() {
               }
               onConfigurationEvidenceAdopted={() => load(activeQuery)}
             />
-            <JobAidProblemWorkspace
-              workItemId={workItemId}
-              baseRevision={data.workItem.revision}
-              baseReadConfirmed={!loading}
-              baseReadProof={data}
-              initialAnalysis={data.initialAnalysis}
-              overall={integratedAssessment?.overallSynthesis}
-              onUpdated={() => void load(activeQuery)}
-              onLocateDocument={locateAssessmentDocument}
-              presentation="assessment"
-            >
             {isJobAidProblemProjection(integratedAssessment?.baseRules) &&
             (reviewOverallProjection.visible || reviewOverallProjection.message) ? (
               <section className="parse-assessment-panel" aria-label="已保存评估综合">
@@ -1300,6 +1289,17 @@ export default function DocumentParsingPage() {
                 {reviewOverallProjection.message ? <p role="status">{reviewOverallProjection.message}</p> : null}
               </section>
             ) : null}
+            <JobAidProblemWorkspace
+              workItemId={workItemId}
+              baseRevision={data.workItem.revision}
+              baseReadConfirmed={!loading}
+              baseReadProof={data}
+              initialAnalysis={data.initialAnalysis}
+              overall={integratedAssessment?.overallSynthesis}
+              onUpdated={() => void load(activeQuery)}
+              onLocateDocument={locateAssessmentDocument}
+              presentation="assessment"
+            >
             {assessmentEligible ? (
               <section
                 className="parse-assessment-panel parse-assessment-workspace"
