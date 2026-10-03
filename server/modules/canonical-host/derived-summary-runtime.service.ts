@@ -192,8 +192,6 @@ export class DerivedSummaryRuntimeService {
         ...task.modelInput.evidence.map(item => item.evidenceRef)]);
       const usedEvidenceRefs = summaryCitations(content, allowed);
       const bodyRefs = summaryCitations({ ...content, limitations: [] }, allowed);
-      if (!readings.some(member => bodyRefs.includes(member.evidenceRef)))
-        throw summaryError('DERIVED_SUMMARY_MEMBER_CITATION_REQUIRED', 400);
       const events = JSON.parse(current.reviewActivityJson ?? '[]') as Array<{ kind: string; evidenceRefs?: string[] }>;
       const delivered = new Set(events.filter(item => item.kind === 'DERIVED_SUMMARY_MEMBERS_READ').flatMap(item => item.evidenceRefs ?? []));
       if (readings.some(item => !delivered.has(item.evidenceRef))) throw summaryError('DERIVED_SUMMARY_MEMBER_READ_REQUIRED');

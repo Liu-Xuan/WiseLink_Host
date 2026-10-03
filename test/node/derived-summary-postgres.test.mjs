@@ -178,6 +178,40 @@ test('real saved aggregate/upper consumer preserves exact work, pool1, CAS, leas
         await assert.rejects(hosted(() => runtime.finish({ ...target(), ...claimFence(claim), requestId: request.requestId })), /REQUIRES_SAVED/u);
         await assert.rejects(hosted(() => runtime.heartbeat({ ...target(), ...claimFence(claim), leaseGeneration: 0 })), /LEASE_FENCE/u);
       });
+      await t.test('registered source-only support saves without direct member coverage; delivery and unknown-ref checks remain', async () => {
+        const sourceRequest = { ...request, requestId: 'ATA4-source-only-request' };
+        const receipt = await browser(() => summaries.create(sourceRequest, actor));
+        const sourceTarget = { summaryId: receipt.summaryId, attemptRef: receipt.attemptRef, scope };
+        const lease = await hosted(() => runtime.claim(sourceTarget));
+        const ref = lease.task.modelInput.members[0].evidenceRef;
+        const body = { headline: 'Candidate supported by the selected original', listBrief: 'Limited selected material',
+          body: `The original requirement remains conditional. [[${source.evidenceRef}]]`,
+          limitations: [`The saved member was delivered, without a direct body citation. [[${ref}]]`] };
+        const input = { ...sourceTarget, ...claimFence(lease), requestId: sourceRequest.requestId,
+          expectedSummaryRevision: 0, contentJson: JSON.stringify(body) };
+        await assert.rejects(hosted(() => runtime.save(input)), /MEMBER_READ_REQUIRED/u);
+        await hosted(() => runtime.readMemberWork({ ...sourceTarget, ...claimFence(lease),
+          evidenceRefs: [ref], purpose: 'Deliver exact saved member before summarizing originals' }));
+        for (const content of [
+          { ...body, body: 'No body citation' },
+          { ...body, body: `Registered [[${source.evidenceRef}]] and unknown [[foreign]]` },
+          { ...body, limitations: ['Unknown limitation [[foreign]]'] },
+        ]) await assert.rejects(hosted(() => runtime.save({ ...input, contentJson: JSON.stringify(content) })), /CITATION_INVALID/u);
+        const savedSource = await hosted(() => runtime.save(input));
+        const readback = await hosted(() => runtime.readSaved({ ...sourceTarget, requestId: sourceRequest.requestId }));
+        assert.equal(readback.receipt.summaryRef, savedSource.summaryRef);
+        assert.equal(readback.summary.content.body, body.body);
+        assert.equal(readback.summary.coverage[0].delivered, true);
+        assert.equal(readback.summary.coverage[0].used, false);
+        assert.deepEqual(readback.summary.coverage[0].rootRefs, [source.evidenceRef]);
+        assert.deepEqual(readback.summary.usedEvidenceRefs, [source.evidenceRef, ref]);
+        assert.equal((await hosted(() => runtime.save(input))).replay, true);
+        assert.equal((await hosted(() => runtime.finish({ ...sourceTarget, ...claimFence(lease),
+          requestId: sourceRequest.requestId }))).status, 'SUCCEEDED');
+        const exact = await browser(() => summaries.readRevision(sourceTarget.summaryId, savedSource.summaryRef, actor));
+        assert.equal(exact.revision.content.body, body.body);
+        assert.equal(exact.revision.coverage[0].used, false);
+      });
       let saved;
       let content;
       await t.test('actual member/source reads precede atomic save, exact readback and durable FINISH', async () => {
