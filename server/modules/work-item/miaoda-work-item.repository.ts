@@ -1669,11 +1669,12 @@ export class MiaodaWorkItemRepository {
   async loadTenantScopedProjection(
     workItemId: string,
     tenantId: string,
+    database: PostgresJsDatabase = this.db,
   ): Promise<{
     row: typeof workItem.$inferSelect;
     projection: CanonicalWorkItemProjection | null;
   } | null> {
-    const [row] = await this.db
+    const [row] = await database
       .select()
       .from(workItem)
       .where(
@@ -1811,8 +1812,8 @@ export class MiaodaWorkItemRepository {
     workItemId: string;
     tenantId: string;
     actorUserId: string;
-  }): Promise<WorkItemAuthorizationBinding | null> {
-    const [row] = await this.db
+  }, database: PostgresJsDatabase = this.db): Promise<WorkItemAuthorizationBinding | null> {
+    const [row] = await database
       .select({
         workItemId: workItem.workItemId,
         revision: workItem.revision,

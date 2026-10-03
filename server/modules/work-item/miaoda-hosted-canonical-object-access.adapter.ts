@@ -1,6 +1,7 @@
 import { createHash } from 'node:crypto';
 
 import { Inject, Injectable } from '@nestjs/common';
+import type { PostgresJsDatabase } from '@lark-apaas/fullstack-nestjs-core';
 
 import { CANONICAL_MIAODA_APP_ID } from '../canonical-host/canonical-host.constants';
 import {
@@ -41,6 +42,7 @@ export class MiaodaHostedCanonicalObjectAccessAdapter implements CanonicalObject
 
   async freshRead(
     input: CanonicalObjectAccessInput,
+    database?: PostgresJsDatabase,
   ): Promise<CanonicalObjectAccessResult> {
     if (!isHostedCanonicalFinalUserActor(input.actor)) {
       return denied(input, 'CANONICAL_IDENTITY_HANDOFF_UNAVAILABLE', 503);
@@ -74,11 +76,14 @@ export class MiaodaHostedCanonicalObjectAccessAdapter implements CanonicalObject
       return denied(input, 'CANONICAL_WORK_ITEM_REVISION_REQUIRED', 409);
     }
 
-    const binding = await this.workItems.loadAuthorizationBinding({
+    const ownerInput = {
       workItemId: input.accessRoot.id,
       tenantId: input.actor.tenantId,
       actorUserId: input.actor.canonicalSubject.id,
-    });
+    };
+    const binding = database
+      ? await this.workItems.loadAuthorizationBinding(ownerInput, database)
+      : await this.workItems.loadAuthorizationBinding(ownerInput);
     if (!ownedBindingMatches(binding, input.actor, input.accessRoot.id)) {
       return denied(input, 'CANONICAL_WORK_ITEM_NOT_FOUND', 404);
     }

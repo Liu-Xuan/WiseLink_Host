@@ -1,4 +1,5 @@
 import { Injectable } from '@nestjs/common';
+import type { PostgresJsDatabase } from '@lark-apaas/fullstack-nestjs-core';
 
 import type { CanonicalWorkItemProjection } from '@shared/api.interface';
 import type { CanonicalWorkItemRegistrarPort } from '../canonical-host/canonical-host.types';
@@ -46,11 +47,10 @@ export class MiaodaCanonicalWorkItemRegistrarAdapter implements CanonicalWorkIte
   async getTenantScopedByWorkItemId(input: {
     workItemId: string;
     tenantId: string;
-  }): Promise<CanonicalWorkItemProjection> {
-    const scoped = await this.repository.loadTenantScopedProjection(
-      input.workItemId,
-      input.tenantId,
-    );
+  }, database?: PostgresJsDatabase): Promise<CanonicalWorkItemProjection> {
+    const scoped = database
+      ? await this.repository.loadTenantScopedProjection(input.workItemId, input.tenantId, database)
+      : await this.repository.loadTenantScopedProjection(input.workItemId, input.tenantId);
     if (!scoped?.projection) {
       throw Object.assign(new Error('WORK_ITEM_NOT_FOUND'), {
         code: 'WORK_ITEM_NOT_FOUND',

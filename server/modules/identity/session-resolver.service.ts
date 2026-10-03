@@ -5,7 +5,10 @@ import {
   Injectable,
   UnauthorizedException,
 } from '@nestjs/common';
-import { SqlExecutionContextMiddleware } from '@lark-apaas/fullstack-nestjs-core';
+import {
+  SqlExecutionContextMiddleware,
+  type PostgresJsDatabase,
+} from '@lark-apaas/fullstack-nestjs-core';
 import type { Request, Response } from 'express';
 import { miaodaHostedFinalUserActor } from '../work-item/production-miaoda-browser-ingress';
 
@@ -119,9 +122,13 @@ export class SessionResolver {
    * is built from the server-stored VerifiedIdentity, NOT from any
    * caller-asserted field.
    */
-  async resolve(httpRequest: Request): Promise<ResolvedSession | null> {
+  async resolve(
+    httpRequest: Request,
+    database?: PostgresJsDatabase,
+  ): Promise<ResolvedSession | null> {
     const verified = this.requestSession.getStore();
-    if (verified?.request === httpRequest) {
+    // A commit-time read must recheck revocation and expiry in its transaction.
+    if (!database && verified?.request === httpRequest) {
       return verified.session &&
         verified.session.session.expiresAt.getTime() > Date.now()
         ? verified.session
@@ -130,7 +137,9 @@ export class SessionResolver {
     const token = this.extractToken(httpRequest);
     if (!token) return null;
 
-    const session = await this.sessionStore.validate(token);
+    const session = database
+      ? await this.sessionStore.validate(token, database)
+      : await this.sessionStore.validate(token);
     if (!session) return null;
 
     const { identity, revision } = session;

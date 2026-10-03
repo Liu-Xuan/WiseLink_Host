@@ -1,4 +1,5 @@
 import { Injectable } from '@nestjs/common';
+import type { PostgresJsDatabase } from '@lark-apaas/fullstack-nestjs-core';
 
 import {
   settleCanonicalWorkItemReads,
@@ -27,6 +28,7 @@ export class CanonicalObjectAccessRouter implements CanonicalObjectAccessPort {
 
   async freshRead(
     input: CanonicalObjectAccessInput,
+    database?: PostgresJsDatabase,
   ): Promise<CanonicalObjectAccessResult> {
     if (input.actor.principalKind === 'UNAVAILABLE') {
       if (
@@ -42,7 +44,9 @@ export class CanonicalObjectAccessRouter implements CanonicalObjectAccessPort {
     ) {
       return this.unavailableSession.freshRead(input);
     }
-    return this.finalUser.freshRead(input);
+    return database
+      ? this.finalUser.freshRead(input, database)
+      : this.finalUser.freshRead(input);
   }
 
   async freshReadBatch(

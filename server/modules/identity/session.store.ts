@@ -1,5 +1,6 @@
 import { createHash, randomBytes } from 'node:crypto';
 import { Injectable } from '@nestjs/common';
+import type { PostgresJsDatabase } from '@lark-apaas/fullstack-nestjs-core';
 
 import { IdentityRepository } from './identity.repository';
 import type { VerifiedIdentity } from './identity.types';
@@ -59,12 +60,16 @@ export class SessionStore {
     return { token, ...persisted };
   }
 
-  async validate(token: string): Promise<ValidatedSession | null> {
+  async validate(
+    token: string,
+    database?: PostgresJsDatabase,
+  ): Promise<ValidatedSession | null> {
     if (!token || token.trim().length === 0) return null;
-    const persisted = await this.repository.validateSession(
-      digest(token),
-      new Date(),
-    );
+    const tokenHash: string = digest(token);
+    const now: Date = new Date();
+    const persisted = database
+      ? await this.repository.validateSession(tokenHash, now, database)
+      : await this.repository.validateSession(tokenHash, now);
     if (!persisted) return null;
     return {
       sessionId: persisted.sessionId,
