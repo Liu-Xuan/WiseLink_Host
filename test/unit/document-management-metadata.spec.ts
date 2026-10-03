@@ -34,7 +34,71 @@ function extract(pages: string[][]) {
   });
 }
 
+function extractAtaTable(runs: Array<{ page: number; text: string; x: number;
+  y: number; fontSize: number }>) {
+  const source = layout([[], []]);
+  source.textRuns = runs.map((run) => ({ ...run, fontName: 'F1', bold: false }));
+  return extractActualPdfMetadata({
+    layout: source,
+    actualSha256: 'a'.repeat(64),
+    actualByteLength: 200,
+    identity: { documentFamily: 'FTD', issuer: 'BOEING' },
+  });
+}
+
+function ataTableRuns() {
+  return [
+    { page: 1, text: 'Aircraft', x: 50, y: 683, fontSize: 9 },
+    { page: 1, text: 'ATA', x: 173, y: 683, fontSize: 9 },
+    { page: 1, text: 'Variant', x: 348, y: 683, fontSize: 9 },
+    { page: 1, text: 'Example', x: 50, y: 668, fontSize: 9 },
+    { page: 1, text: '4600-00', x: 173, y: 668, fontSize: 9 },
+    { page: 1, text: 'Other', x: 348, y: 668, fontSize: 9 },
+  ];
+}
+
 describe('actual PDF descriptive metadata', () => {
+  it('reads the complete original ATA cell only from a nearby same-page table row', () => {
+    const metadata = extractAtaTable(ataTableRuns());
+    expect(metadata.ata).toEqual({ status: 'PENDING_REVIEW', observations: [{
+      value: '4600-00', status: 'PENDING_REVIEW',
+      evidence: [{ page: 1,
+        text: 'Aircraft ATA Variant Example 4600-00 Other' }],
+    }] });
+  });
+
+  it('leaves ambiguous, distant, other-column and cross-page ATA cells unknown', () => {
+    const scenarios = [
+      [...ataTableRuns(), { page: 1, text: '4610-00', x: 174, y: 668,
+        fontSize: 9 }],
+      [...ataTableRuns(), { page: 1, text: '4610-00', x: 185, y: 668,
+        fontSize: 9 }],
+      [...ataTableRuns(), { page: 1, text: '4610-00', x: 300, y: 668,
+        fontSize: 9 }],
+      ataTableRuns().map((run) => run.y === 668 ? { ...run, y: 640 } : run),
+      ataTableRuns().filter((run) => run.text !== '4600-00').map((run) =>
+        run.text === 'Other' ? { ...run, text: '4600-00' } : run),
+      ataTableRuns().map((run) => run.y === 668 ? { ...run, page: 2 } : run),
+      [...ataTableRuns(),
+        { page: 1, text: 'ATA', x: 173, y: 620, fontSize: 9 },
+        { page: 1, text: 'Aircraft', x: 50, y: 620, fontSize: 9 },
+        { page: 1, text: 'Variant', x: 348, y: 620, fontSize: 9 }],
+    ];
+    for (const runs of scenarios)
+      expect(extractAtaTable(runs).ata).toEqual({ status: 'NOT_FOUND',
+        observations: [] });
+  });
+
+  it('rejects missing or coerced table coordinates without changing existing text extraction', () => {
+    for (const coordinate of ['x', 'y', 'fontSize']) {
+      for (const invalid of [null, undefined, '', ' ', '173', Number.NaN]) {
+        const runs = ataTableRuns();
+        Reflect.set(runs[4], coordinate, invalid);
+        expect(extractAtaTable(runs).ata).toEqual({ status: 'NOT_FOUND',
+          observations: [] });
+      }
+    }
+  });
   it('captures title, type, issuer and explicit ATA with source pages, including late model mentions', () => {
     const metadata = extract([
       [

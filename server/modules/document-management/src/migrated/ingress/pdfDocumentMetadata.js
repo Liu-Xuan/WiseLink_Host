@@ -100,6 +100,47 @@ function trademarkDeclarationRanges(pageText) {
   }));
 }
 
+// A table cell is evidence only when its own column is unambiguous. Keep the
+// original code (including forms such as 4600-00); normalization belongs to
+// the catalogue, not to descriptive PDF metadata.
+function tabularAta(lines) {
+  const headers = [];
+  for (const [index, line] of lines.entries()) {
+    const ataRuns = line.runs.filter((run) => /^ATA$/iu.test(run.text));
+    if (ataRuns.length !== 1 ||
+      !line.runs.every((run) => run.tableCoordinatesValid)) continue;
+    const header = ataRuns[0];
+    if (header.fontSize <= 0) continue;
+    const otherColumns = line.runs.filter((run) =>
+      Math.abs(run.x - header.x) > header.fontSize * 3);
+    const left = Math.max(...otherColumns.filter((run) =>
+      run.x < header.x).map((run) => run.x));
+    const right = Math.min(...otherColumns.filter((run) =>
+      run.x > header.x).map((run) => run.x));
+    if (!Number.isFinite(left) || !Number.isFinite(right)) continue;
+    headers.push({ index, header, leftBoundary: left,
+      rightBoundary: right });
+  }
+  if (headers.length !== 1) return null;
+  const { index, header, leftBoundary, rightBoundary } = headers[0];
+  const row = lines[index + 1];
+  if (!row || !row.runs.every((run) => run.tableCoordinatesValid)) return null;
+  const gap = header.y - row.y;
+  if (!Number.isFinite(gap) || gap <= 0 || gap > header.fontSize * 2 ||
+    !row.runs.some((run) => run.x < header.x - header.fontSize * 3) ||
+    !row.runs.some((run) => run.x > header.x + header.fontSize * 3)) return null;
+  const cell = row.runs.filter((run) =>
+    run.x > leftBoundary && run.x < rightBoundary);
+  if (cell.length !== 1 ||
+    Math.abs(cell[0].x - header.x) > 2 ||
+    Math.abs(cell[0].fontSize - header.fontSize) > 0.5 ||
+    !/^(?:\d{4}-\d{2}|\d{6}|\d{4}|\d{2}(?:-\d{2}(?:-\d{2})?)?)$/u.test(
+      cell[0].text,
+    )) return null;
+  return { value: cell[0].text,
+    evidence: `${lines[index].text} ${row.text}` };
+}
+
 /** Source observations only. Identity/currentness remain owned by the ingress owner. */
 export function extractActualPdfMetadata({
   layout,
@@ -124,6 +165,9 @@ export function extractActualPdfMetadata({
       x: Number(run.x),
       y: Number(run.y),
       fontSize: Number(run.fontSize),
+      tableCoordinatesValid: [run.x, run.y, run.fontSize].every(
+        (value) => typeof value === 'number' && Number.isFinite(value),
+      ),
     });
   }
   const fields = Object.fromEntries(
@@ -218,6 +262,8 @@ export function extractActualPdfMetadata({
     )) {
       add('ata', match[1], page, match[0]);
     }
+    const tableAta = tabularAta(lines);
+    if (tableAta) add('ata', tableAta.value, page, tableAta.evidence);
     const trademarkRanges = trademarkDeclarationRanges(pageText);
     // Numeric variants require a written separator. A bare 7077 is a number,
     // not evidence for 707-7. Preserve explicit slash lists as one source phrase.
