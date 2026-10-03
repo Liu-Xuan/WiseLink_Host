@@ -116,7 +116,9 @@ export function validateDerivedSummaryReadSelection(intent, registry, operation)
 
 export function validateDerivedSummaryContent(content, modelInput) {
   assertSummaryExactKeys(content, ['headline', 'listBrief', 'body', 'limitations'], 'DERIVED_SUMMARY_CONTENT_INVALID');
-  if (![content.headline, content.listBrief, content.body].every(text) || !texts(content.limitations))
+  if (![content.headline, content.listBrief, content.body].every(text) || !texts(content.limitations) ||
+      content.headline.length > 240 || content.listBrief.length > 2000 || content.body.length > 1_000_000 ||
+      content.limitations.some(item => item.length > 4000))
     fail('DERIVED_SUMMARY_CONTENT_INVALID');
   const registry = derivedSummaryRegistry(modelInput);
   const bodyRefs = [...content.body.matchAll(/\[\[([^\]]+)\]\]/gu)].map(match => match[1]);
@@ -129,6 +131,7 @@ export function validateDerivedSummaryContent(content, modelInput) {
 }
 
 export function derivedSummaryStepTool() {
+  const contentText = maxLength => ({ type: 'string', minLength: 1, maxLength, pattern: '\\S' });
   const read = action => ({ type: 'object', additionalProperties: false, required: ['action', 'evidenceRefs', 'purpose'],
     properties: { action: { type: 'string', enum: [action] },
       evidenceRefs: { type: 'array', minItems: 1, uniqueItems: true, items: { type: 'string', minLength: 1 } },
@@ -137,9 +140,13 @@ export function derivedSummaryStepTool() {
     description: 'Serialize one exact source read or the complete candidate summary. The driver executes authorized reads and saves.',
     parameters: { type: 'object', additionalProperties: false, required: ['step'], properties: { step: { oneOf: [
       read('READ_MEMBER_WORK'), read('READ_SOURCES'),
-      { type: 'object', additionalProperties: false, required: ['action', 'contentJson'], properties: {
-        action: { type: 'string', enum: ['SAVE_SUMMARY'] }, contentJson: { type: 'string', minLength: 2,
-          description: 'JSON with exactly headline, listBrief, body and limitations. Use exact registered [[ref]] citations in body.' },
+      { type: 'object', additionalProperties: false, required: ['action', 'content'], properties: {
+        action: { type: 'string', enum: ['SAVE_SUMMARY'] }, content: {
+          type: 'object', additionalProperties: false, required: ['headline', 'listBrief', 'body', 'limitations'],
+          description: 'The complete candidate. Use exact registered [[ref]] citations in body.',
+          properties: { headline: contentText(240), listBrief: contentText(2000), body: contentText(1_000_000),
+            limitations: { type: 'array', minItems: 0, items: contentText(4000) } },
+        },
       } },
     ] } } } } };
 }

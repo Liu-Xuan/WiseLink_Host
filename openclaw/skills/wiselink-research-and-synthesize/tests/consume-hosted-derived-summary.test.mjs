@@ -110,7 +110,7 @@ function harness(checkpointRoot, hooks = {}) {
         gatewayCalls.push(JSON.parse(init.body));
         assert.equal(init.headers['x-openclaw-model'], task.executionModel.modelRef);
         const response = await (hooks.gateway ? hooks.gateway(gatewayCalls.length, init)
-          : gatewayStep({ action: 'SAVE_SUMMARY', contentJson: JSON.stringify(content) }));
+          : gatewayStep({ action: 'SAVE_SUMMARY', content }));
         const reason = response.ok ? 'tool_calls' : null;
         gatewayReceipt.upstreamDispatchCount += 1;
         gatewayReceipt.dispatches.push({ ordinal: gatewayReceipt.upstreamDispatchCount,
@@ -131,7 +131,7 @@ test('real summary adapter reads exact members and roots then saves, exact-reads
   const steps = [
     { action: 'READ_MEMBER_WORK', evidenceRefs: ['member-ref'], purpose: 'Compare exact historical issue' },
     { action: 'READ_SOURCES', evidenceRefs: ['root-ref'], purpose: 'Check limiting original requirement' },
-    { action: 'SAVE_SUMMARY', contentJson: JSON.stringify(content) },
+    { action: 'SAVE_SUMMARY', content },
   ];
   const h = harness(root, { gateway: n => gatewayStep(steps[n - 1], `call-${n}`) });
   const result = await consumeHostedDerivedSummary(h.options, h.dependencies);
@@ -147,16 +147,84 @@ test('real summary adapter reads exact members and roots then saves, exact-reads
     assert.equal(requestText.includes(privateField), false);
   assert.equal(h.gatewayCalls[0].model, 'openclaw/wiselink-engineering');
   assert.equal(h.gatewayCalls[0].max_completion_tokens, 64000);
+  const branches = h.gatewayCalls[0].tools[0].function.parameters.properties.step.oneOf;
+  assert.deepEqual(branches.slice(0, 2).map(branch => branch.required),
+    [['action', 'evidenceRefs', 'purpose'], ['action', 'evidenceRefs', 'purpose']]);
+  const saveSchema = branches.find(branch => branch.properties.action.enum[0] === 'SAVE_SUMMARY');
+  assert.deepEqual(saveSchema.required, ['action', 'content']);
+  assert.equal(saveSchema.additionalProperties, false);
+  const candidateSchema = saveSchema.properties.content;
+  assert.equal(candidateSchema.type, 'object'); assert.equal(candidateSchema.additionalProperties, false);
+  assert.deepEqual(candidateSchema.required, ['headline', 'listBrief', 'body', 'limitations']);
+  for (const [key, maxLength] of [['headline', 240], ['listBrief', 2000], ['body', 1_000_000]])
+    assert.deepEqual(candidateSchema.properties[key], { type: 'string', minLength: 1, maxLength, pattern: '\\S' });
+  assert.equal(new RegExp(candidateSchema.properties.headline.pattern, 'u').test('Candidate'), true);
+  assert.equal(new RegExp(candidateSchema.properties.headline.pattern, 'u').test('  \n'), false);
+  assert.deepEqual(candidateSchema.properties.limitations,
+    { type: 'array', minItems: 0, items: { type: 'string', minLength: 1, maxLength: 4000, pattern: '\\S' } });
+  const systemPrompt = h.gatewayCalls[0].messages[0].content;
+  assert.match(systemPrompt, /limitations is an array of nonempty strings and may be empty/);
+  assert.match(systemPrompt, /Follow the length requested by this task instruction/);
   const checkpoint = await createCheckpointStore(join(root, 'derived-summary', 'host', 'DS-one', 'AQ-one'));
   assert.equal((await checkpoint.readOptional('summary-candidate')).provenance.actualModel, 'synthetic-actual/model-v1');
+  assert.equal(h.saved.summary.producer.promptVersion, 'wiselink.derived-summary-prompt.v2');
   assert.deepEqual(h.saved.summary.content, content);
+}));
+
+test('typed empty model limitations save through the unchanged JSON transport with inherited Host limitations', () => fixture(async root => {
+  const empty = { ...content, limitations: [] };
+  const h = harness(root, { gateway: () => gatewayStep({ action: 'SAVE_SUMMARY', content: empty }) });
+  assert.equal((await consumeHostedDerivedSummary(h.options, h.dependencies)).summaryRef, 'SUMR-one');
+  const submitted = h.calls.find(call => call.operation === 'SAVE_SUMMARY');
+  assert.equal(typeof submitted.contentJson, 'string');
+  assert.equal(Object.hasOwn(submitted, 'content'), false);
+  assert.deepEqual(JSON.parse(submitted.contentJson), { ...empty, limitations: modelInput.limitations });
+  assert.deepEqual(h.saved.summary.content.limitations, modelInput.limitations);
+  assert.equal(h.gatewayCalls.length, 1);
+}));
+
+test('typed model failures remain failures without coercion or replay of their completed model response', () => fixture(async root => {
+  for (const [index, [step, code]] of [
+    [{ action: 'SAVE_SUMMARY', content: { ...content, limitations: 'A string instead of an array' } }, 'DERIVED_SUMMARY_CONTENT_INVALID'],
+    [{ action: 'SAVE_SUMMARY', content: { ...content, limitations: ['   '] } }, 'DERIVED_SUMMARY_CONTENT_INVALID'],
+    [{ action: 'SAVE_SUMMARY', content: { ...content, headline: 42 } }, 'DERIVED_SUMMARY_CONTENT_INVALID'],
+    [{ action: 'SAVE_SUMMARY', content: { ...content, producer: 'model supplied' } }, 'DERIVED_SUMMARY_CONTENT_INVALID'],
+    [{ action: 'SAVE_SUMMARY', content: JSON.stringify(content) }, 'DERIVED_SUMMARY_CONTENT_INVALID'],
+    [{ action: 'SAVE_SUMMARY', contentJson: JSON.stringify(content) }, 'DERIVED_SUMMARY_MODEL_SAVE_INVALID'],
+    [{ action: 'SAVE_SUMMARY', content, extra: true }, 'DERIVED_SUMMARY_MODEL_SAVE_INVALID'],
+  ].entries()) {
+    let failed = false;
+    const h = harness(join(root, `typed-invalid-${index}`), { gateway: () => gatewayStep(step), tool: async input => {
+      if (input.operation === 'FAIL') failed = true;
+      if (input.operation === 'STATUS' && failed) return { ...target, status: 'FAILED', savedSummaryRefs: [] };
+    } });
+    await assert.rejects(consumeHostedDerivedSummary(h.options, h.dependencies), new RegExp(code, 'u'));
+    assert.equal(h.calls.find(call => call.operation === 'FAIL').code, code);
+    assert.equal(h.calls.some(call => ['SAVE_SUMMARY', 'FINISH', 'CANCEL'].includes(call.operation)), false);
+    assert.equal(h.saved, null);
+    assert.equal((await consumeHostedDerivedSummary(h.options, h.dependencies)).attemptStatus, 'FAILED');
+    assert.equal(h.gatewayCalls.length, 1);
+  }
+}));
+
+test('typed content enforces the existing Host receive limits before SAVE', () => fixture(async root => {
+  for (const [index, invalid] of [
+    { ...content, headline: 'H'.repeat(241) }, { ...content, listBrief: 'B'.repeat(2001) },
+    { ...content, body: `${'B'.repeat(1_000_000)} [[member-ref]]` },
+    { ...content, limitations: ['L'.repeat(4001)] },
+  ].entries()) {
+    const h = harness(join(root, `host-limit-${index}`), { gateway: () => gatewayStep({ action: 'SAVE_SUMMARY', content: invalid }) });
+    await assert.rejects(consumeHostedDerivedSummary(h.options, h.dependencies), /DERIVED_SUMMARY_CONTENT_INVALID/);
+    assert.equal(h.calls.some(call => call.operation === 'SAVE_SUMMARY'), false);
+    assert.equal(h.gatewayCalls.length, 1);
+  }
 }));
 
 const sourceOnlyContent = { ...content, body: 'The original requirement remains conditional [[root-ref]].',
   limitations: [...content.limitations, 'The selected member was delivered [[member-ref]].'] };
 
 test('registered source-only body saves and finishes without inventing direct member use', () => fixture(async root => {
-  const h = harness(root, { gateway: () => gatewayStep({ action: 'SAVE_SUMMARY', contentJson: JSON.stringify(sourceOnlyContent) }) });
+  const h = harness(root, { gateway: () => gatewayStep({ action: 'SAVE_SUMMARY', content: sourceOnlyContent }) });
   assert.equal((await consumeHostedDerivedSummary(h.options, h.dependencies)).summaryRef, 'SUMR-one');
   assert.deepEqual(JSON.parse(h.calls.find(call => call.operation === 'SAVE_SUMMARY').contentJson), sourceOnlyContent);
   assert.equal(h.saved.summary.coverage[0].delivered, true);
@@ -167,7 +235,7 @@ test('registered source-only body saves and finishes without inventing direct me
 }));
 
 test('source citations cannot be reported as direct member coverage', () => fixture(async root => {
-  const h = harness(root, { gateway: () => gatewayStep({ action: 'SAVE_SUMMARY', contentJson: JSON.stringify(sourceOnlyContent) }),
+  const h = harness(root, { gateway: () => gatewayStep({ action: 'SAVE_SUMMARY', content: sourceOnlyContent }),
     afterSave: async saved => { saved.summary.coverage[0].used = true; } });
   await assert.rejects(consumeHostedDerivedSummary(h.options, h.dependencies), /SAVE_READBACK_MISMATCH/);
   assert.equal(h.calls.some(call => call.operation === 'FINISH'), false);
@@ -188,7 +256,7 @@ test('complete candidate normalization is stable under the Host trim then task-l
 });
 
 test('model boundary whitespace is normalized before checkpoint and SAVE with Host-equivalent exact readback', () => fixture(async root => {
-  const h = harness(root, { gateway: () => gatewayStep({ action: 'SAVE_SUMMARY', contentJson: JSON.stringify(whitespaceContent) }) });
+  const h = harness(root, { gateway: () => gatewayStep({ action: 'SAVE_SUMMARY', content: whitespaceContent }) });
   assert.equal((await consumeHostedDerivedSummary(h.options, h.dependencies)).summaryRef, 'SUMR-one');
   const checkpoint = await createCheckpointStore(join(root, 'derived-summary', 'host', 'DS-one', 'AQ-one'));
   assert.deepEqual((await checkpoint.readOptional('summary-candidate')).content, normalizedWhitespaceContent);
@@ -199,7 +267,7 @@ test('model boundary whitespace is normalized before checkpoint and SAVE with Ho
 
 test('legacy whitespace checkpoint resumes its exact saved candidate after lost FINISH without model or SAVE replay', () => fixture(async root => {
   let finishes = 0;
-  const h = harness(root, { gateway: () => gatewayStep({ action: 'SAVE_SUMMARY', contentJson: JSON.stringify(whitespaceContent) }),
+  const h = harness(root, { gateway: () => gatewayStep({ action: 'SAVE_SUMMARY', content: whitespaceContent }),
     tool: async input => {
       if (input.operation === 'FINISH' && ++finishes === 1) throw new Error('finish response lost');
     } });
@@ -241,7 +309,7 @@ test('an exact completed read intent replays its Host read but a retired native 
     if (input.operation === 'READ_SOURCES' && ++reads === 1) throw new Error('source read failed');
   }, gateway: n => gatewayStep(n === 1
     ? { action: 'READ_SOURCES', evidenceRefs: ['root-ref'], purpose: 'Check root' }
-    : { action: 'SAVE_SUMMARY', contentJson: JSON.stringify(content) }, `call-${n}`) });
+    : { action: 'SAVE_SUMMARY', content }, `call-${n}`) });
   await assert.rejects(consumeHostedDerivedSummary(h.options, h.dependencies), /source read failed/);
   h.generation = 2;
   await assert.rejects(consumeHostedDerivedSummary(h.options, h.dependencies), /GATEWAY_REARM_REQUIRES_NEW_REQUEST/);
@@ -259,7 +327,7 @@ test('unknown gateway dispatch never repeats on a later native invocation', () =
 
 test('safe transient gateway responses use the shared deadline-bound retry and exact Host heartbeat', () => fixture(async root => {
   const h = harness(root, { gateway: n => n === 1 ? new Response('{}', { status: 503 })
-    : gatewayStep({ action: 'SAVE_SUMMARY', contentJson: JSON.stringify(content) }) });
+    : gatewayStep({ action: 'SAVE_SUMMARY', content }) });
   assert.equal((await consumeHostedDerivedSummary(h.options, h.dependencies)).status, 'DERIVED_SUMMARY_SAVED');
   assert.equal(h.gatewayCalls.length, 2); assert.deepEqual(h.gatewayCalls[0], h.gatewayCalls[1]);
   assert.ok(h.calls.filter(call => call.operation === 'HEARTBEAT').length >= 3);
@@ -371,7 +439,7 @@ test('bounded summary Host codes remain visible without arbitrary exception pros
 
 
 test('actual model reporting remains null when the official gateway does not expose a downstream model', () => fixture(async root => {
-  const h = harness(root, { gateway: () => gatewayStep({ action: 'SAVE_SUMMARY', contentJson: JSON.stringify(content) },
+  const h = harness(root, { gateway: () => gatewayStep({ action: 'SAVE_SUMMARY', content },
     'call-one', { model: 'openclaw/wiselink-engineering' }) });
   await consumeHostedDerivedSummary(h.options, h.dependencies);
   const saved = h.calls.find(call => call.operation === 'SAVE_SUMMARY');
@@ -423,7 +491,7 @@ test('same-DV separate WorkItems are all read; no latest or reader WorkItem is s
 }));
 
 test('known model validation failure records its exact FAIL receipt, never CANCEL or a fake success', () => fixture(async root => {
-  const h = harness(root, { gateway: () => gatewayStep({ action: 'SAVE_SUMMARY', contentJson: JSON.stringify({ ...content, body: 'Bad [[foreign]]' }) }) });
+  const h = harness(root, { gateway: () => gatewayStep({ action: 'SAVE_SUMMARY', content: { ...content, body: 'Bad [[foreign]]' } }) });
   await assert.rejects(consumeHostedDerivedSummary(h.options, h.dependencies), /CITATION_NOT_REGISTERED/);
   const failed = h.calls.find(call => call.operation === 'FAIL');
   assert.equal(failed.code, 'DERIVED_SUMMARY_CITATION_NOT_REGISTERED'); assert.equal(failed.leaseToken, 'lease-1');

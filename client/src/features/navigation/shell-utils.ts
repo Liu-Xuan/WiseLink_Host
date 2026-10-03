@@ -219,6 +219,21 @@ export function deriveBreadcrumbs(
   const context: ShellRouteContext = deriveShellRouteContext(pathname, search);
   const crumbs: ShellCrumb[] = [{ label: '资料库', to: '/library' }];
 
+  if (pathname === '/summaries' || /^\/summaries\/[^/]+(?:\/update)?$/u.test(pathname)) {
+    crumbs.push({ label: '派生概述', ...(pathname !== '/summaries' ? { to: '/summaries' } : {}) });
+    if (pathname === '/summaries/new') {
+      crumbs.push({ label: '形成选定范围概述' });
+    } else if (pathname !== '/summaries') {
+      const summaryId: string = routeSegment(pathname, /^\/summaries\/([^/]+)(?:\/|$)/u);
+      crumbs.push({
+        label: shortId(summaryId),
+        ...(pathname.endsWith('/update') ? { to: `/summaries/${encodeURIComponent(summaryId)}` } : {}),
+      });
+      if (pathname.endsWith('/update')) crumbs.push({ label: '更新选定范围概述' });
+    }
+    return crumbs;
+  }
+
   if (context.workItemId) {
     const overview = `/work-items/${encodeURIComponent(context.workItemId)}`;
     crumbs.push({
