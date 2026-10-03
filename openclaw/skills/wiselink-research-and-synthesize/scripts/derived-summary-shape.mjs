@@ -119,9 +119,11 @@ export function validateDerivedSummaryContent(content, modelInput) {
   if (![content.headline, content.listBrief, content.body].every(text) || !texts(content.limitations))
     fail('DERIVED_SUMMARY_CONTENT_INVALID');
   const registry = derivedSummaryRegistry(modelInput);
-  const bodyRefs = [...content.body.matchAll(/\[\[([^\]\r\n]+)\]\]/gu)].map(match => match[1]);
-  const refs = [...`${content.body}\n${content.limitations.join('\n')}`.matchAll(/\[\[([^\]\r\n]+)\]\]/gu)].map(match => match[1]);
-  if (!bodyRefs.some(ref => registry.members.has(ref)) || refs.some(ref => !registry.members.has(ref) && !registry.evidence.has(ref)))
+  const bodyRefs = [...content.body.matchAll(/\[\[([^\]]+)\]\]/gu)].map(match => match[1]);
+  const refs = [...`${content.body}\n${content.limitations.join('\n')}`.matchAll(/\[\[([^\]]+)\]\]/gu)].map(match => match[1]);
+  // Match Host save: the body needs registered support, not a forced member citation.
+  // Direct member use remains a separate coverage fact in the saved revision.
+  if (!bodyRefs.length || refs.some(ref => !registry.members.has(ref) && !registry.evidence.has(ref)))
     fail('DERIVED_SUMMARY_CITATION_NOT_REGISTERED');
   return content;
 }

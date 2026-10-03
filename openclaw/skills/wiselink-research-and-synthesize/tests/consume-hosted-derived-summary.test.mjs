@@ -87,6 +87,7 @@ function harness(checkpointRoot, hooks = {}) {
           assert.equal(input.expectedSummaryRevision, 0); assert.equal(input.requestId, task.requestId);
           const receipt = { summaryId: target.summaryId, summaryRef: 'SUMR-one', revision: 1, replay: false };
           const submitted = JSON.parse(input.contentJson);
+          const bodyRefs = new Set([...submitted.body.matchAll(/\[\[([^\]]+)\]\]/gu)].map(match => match[1]));
           saved = { receipt: { ...receipt, replay: true }, summary: { ...receipt, requestId: task.requestId,
             attemptRef: target.attemptRef, scope: modelInput.scope, classificationStatus: 'CANDIDATE',
             content: { headline: submitted.headline.trim(), listBrief: submitted.listBrief.trim(),
@@ -94,7 +95,7 @@ function harness(checkpointRoot, hooks = {}) {
                 ...submitted.limitations.map(item => item.trim())])] },
             members: task.modelInput.members,
             producer: JSON.parse(input.provenanceJson), coverage: task.modelInput.members.map(member => ({
-              member: member.member, evidenceRef: member.evidenceRef, delivered: true, used: true,
+              member: member.member, evidenceRef: member.evidenceRef, delivered: true, used: bodyRefs.has(member.evidenceRef),
               rootRefs: member.rootRefs, limitation: member.limitations.join('\n') })), candidateOnly: true } };
           await hooks.afterSave?.(saved);
           return receipt;
@@ -149,6 +150,27 @@ test('real summary adapter reads exact members and roots then saves, exact-reads
   const checkpoint = await createCheckpointStore(join(root, 'derived-summary', 'host', 'DS-one', 'AQ-one'));
   assert.equal((await checkpoint.readOptional('summary-candidate')).provenance.actualModel, 'synthetic-actual/model-v1');
   assert.deepEqual(h.saved.summary.content, content);
+}));
+
+const sourceOnlyContent = { ...content, body: 'The original requirement remains conditional [[root-ref]].',
+  limitations: [...content.limitations, 'The selected member was delivered [[member-ref]].'] };
+
+test('registered source-only body saves and finishes without inventing direct member use', () => fixture(async root => {
+  const h = harness(root, { gateway: () => gatewayStep({ action: 'SAVE_SUMMARY', contentJson: JSON.stringify(sourceOnlyContent) }) });
+  assert.equal((await consumeHostedDerivedSummary(h.options, h.dependencies)).summaryRef, 'SUMR-one');
+  assert.deepEqual(JSON.parse(h.calls.find(call => call.operation === 'SAVE_SUMMARY').contentJson), sourceOnlyContent);
+  assert.equal(h.saved.summary.coverage[0].delivered, true);
+  assert.equal(h.saved.summary.coverage[0].used, false);
+  assert.deepEqual(h.saved.summary.coverage[0].rootRefs, ['root-ref']);
+  assert.equal(h.gatewayCalls.length, 1);
+  assert.ok(h.calls.some(call => call.operation === 'FINISH'));
+}));
+
+test('source citations cannot be reported as direct member coverage', () => fixture(async root => {
+  const h = harness(root, { gateway: () => gatewayStep({ action: 'SAVE_SUMMARY', contentJson: JSON.stringify(sourceOnlyContent) }),
+    afterSave: async saved => { saved.summary.coverage[0].used = true; } });
+  await assert.rejects(consumeHostedDerivedSummary(h.options, h.dependencies), /SAVE_READBACK_MISMATCH/);
+  assert.equal(h.calls.some(call => call.operation === 'FINISH'), false);
 }));
 
 const whitespaceContent = { headline: '\t Selected candidate \n', listBrief: '\n Selected scope only. \t',
@@ -243,10 +265,10 @@ test('safe transient gateway responses use the shared deadline-bound retry and e
   assert.ok(h.calls.filter(call => call.operation === 'HEARTBEAT').length >= 3);
 }));
 
-test('terminal/cancelled summary attempts invoke neither CLAIM nor model', () => fixture(async root => {
+for (const status of ['FAILED', 'CANCELLED']) test(`terminal ${status} summary attempt invokes neither CLAIM nor model`, () => fixture(async root => {
   const h = harness(root, { tool: async input => input.operation === 'STATUS'
-    ? { ...target, status: 'CANCELLED', savedSummaryRefs: [] } : undefined });
-  assert.equal((await consumeHostedDerivedSummary(h.options, h.dependencies)).attemptStatus, 'CANCELLED');
+    ? { ...target, status, savedSummaryRefs: [] } : undefined });
+  assert.equal((await consumeHostedDerivedSummary(h.options, h.dependencies)).attemptStatus, status);
   assert.equal(h.calls.length, 1); assert.equal(h.gatewayCalls.length, 0);
 }));
 
@@ -288,6 +310,17 @@ test('citation registry rejects foreign source/body injection and keeps member/s
   ]) assert.throws(() => validateDerivedSummaryReadSelection(intent, registry, 'READ_SOURCES'), /DERIVED_SUMMARY_/);
   assert.throws(() => validateDerivedSummaryContent({ ...content, body: 'Unknown [[foreign-ref]]' }, modelInput), /CITATION_NOT_REGISTERED/);
   assert.throws(() => validateDerivedSummaryContent({ ...content, body: 'No citation' }, modelInput), /CITATION_NOT_REGISTERED/);
+  for (const kind of ['DOCUMENT_PASSAGE', 'DOCUMENT_ORIGINAL', 'ENGINEER_ATTACHMENT']) {
+    const input = { ...modelInput, evidence: [{ ...source, kind }],
+      members: [{ ...reading, evidence: [{ ...source, kind }] }] };
+    assert.deepEqual(validateDerivedSummaryContent(sourceOnlyContent, input), sourceOnlyContent);
+  }
+  for (const candidate of [
+    { ...sourceOnlyContent, body: 'No body citation', limitations: ['Limitation [[member-ref]]'] },
+    { ...sourceOnlyContent, body: 'Registered [[root-ref]] and foreign [[foreign]]' },
+    { ...sourceOnlyContent, limitations: ['Foreign limitation [[foreign]]'] },
+    { ...sourceOnlyContent, body: 'Registered [[root-ref]] and malformed [[foreign\nref]]' },
+  ]) assert.throws(() => validateDerivedSummaryContent(candidate, modelInput), /CITATION_NOT_REGISTERED/);
   assert.throws(() => validateDerivedSummaryContent({ ...content, candidateOnly: false }, modelInput), /CONTENT_INVALID/);
 });
 
