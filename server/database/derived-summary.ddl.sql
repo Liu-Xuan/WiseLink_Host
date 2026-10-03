@@ -139,12 +139,6 @@ DO $$ DECLARE p record; added text; BEGIN
     EXECUTE format('DROP POLICY %I ON action_attempt',p.polname);
   END LOOP;
 END $$;
-DROP POLICY IF EXISTS action_attempt_summary_subject_boundary ON action_attempt;
-CREATE POLICY action_attempt_summary_subject_boundary ON action_attempt AS RESTRICTIVE FOR ALL TO PUBLIC
-  USING (subject_kind <> 'DERIVED_SUMMARY' OR (derived_summary_attempt_owned(tenant_id,actor_user_id,summary_id)
-    AND derived_summary_reading_sources_owned(tenant_id,actor_user_id,task_envelope_json::jsonb->'modelInput')))
-  WITH CHECK (subject_kind <> 'DERIVED_SUMMARY' OR (derived_summary_attempt_owned(tenant_id,actor_user_id,summary_id)
-    AND derived_summary_reading_sources_owned(tenant_id,actor_user_id,task_envelope_json::jsonb->'modelInput')));
 
 CREATE OR REPLACE FUNCTION action_attempt_preserve_summary_subject() RETURNS trigger LANGUAGE plpgsql AS $$
 BEGIN
@@ -246,43 +240,102 @@ CREATE POLICY derived_summary_actor ON derived_summary TO authenticated
   WITH CHECK (actor_user_id = current_setting('app.user_id', true));
 DROP POLICY IF EXISTS derived_summary_service ON derived_summary;
 CREATE POLICY derived_summary_service ON derived_summary TO service_role USING (true) WITH CHECK (true);
-DROP POLICY IF EXISTS derived_summary_owner_boundary ON derived_summary;
-CREATE POLICY derived_summary_owner_boundary ON derived_summary AS RESTRICTIVE FOR ALL TO PUBLIC
-  USING (derived_summary_sql_role_allowed(false) AND actor_user_id=current_setting('app.user_id',true) AND engineering_matter_actor_has_tenant(tenant_id))
-  WITH CHECK (derived_summary_sql_role_allowed(false) AND actor_user_id=current_setting('app.user_id',true) AND engineering_matter_actor_has_tenant(tenant_id));
-DROP POLICY IF EXISTS derived_summary_no_delete ON derived_summary;
-CREATE POLICY derived_summary_no_delete ON derived_summary AS RESTRICTIVE FOR DELETE TO PUBLIC USING (false);
 DROP POLICY IF EXISTS derived_summary_revision_actor_read ON derived_summary_revision;
 CREATE POLICY derived_summary_revision_actor_read ON derived_summary_revision FOR SELECT TO authenticated
   USING (actor_user_id = current_setting('app.user_id', true));
 DROP POLICY IF EXISTS derived_summary_revision_actor_insert ON derived_summary_revision;
 DROP POLICY IF EXISTS derived_summary_revision_service ON derived_summary_revision;
 CREATE POLICY derived_summary_revision_service ON derived_summary_revision TO service_role USING (true) WITH CHECK (true);
-DROP POLICY IF EXISTS derived_summary_revision_sources ON derived_summary_revision;
-CREATE POLICY derived_summary_revision_sources ON derived_summary_revision AS RESTRICTIVE FOR ALL TO PUBLIC
-  USING (derived_summary_reading_sources_owned(tenant_id,actor_user_id,content_json))
-  WITH CHECK (derived_summary_reading_sources_owned(tenant_id,actor_user_id,content_json));
-DROP POLICY IF EXISTS derived_summary_revision_real_attempt ON derived_summary_revision;
-CREATE POLICY derived_summary_revision_real_attempt ON derived_summary_revision AS RESTRICTIVE FOR INSERT TO PUBLIC
-  WITH CHECK (actor_user_id=current_setting('app.user_id',true) AND EXISTS (
-    SELECT 1 FROM action_attempt a WHERE a.attempt_id=derived_summary_revision.attempt_id
-      AND a.tenant_id=derived_summary_revision.tenant_id AND a.summary_id=derived_summary_revision.summary_id
-      AND a.actor_user_id=derived_summary_revision.actor_user_id AND a.subject_kind='DERIVED_SUMMARY'
-      AND a.action_type='OPENCLAW_DERIVED_SUMMARY' AND a.status='RUNNING' AND a.cancel_requested_at IS NULL
-      AND a.lease_token IS NOT NULL AND a.lease_expires_at>CURRENT_TIMESTAMP AND a.deadline_at>CURRENT_TIMESTAMP
-      AND a.base_revision+1=derived_summary_revision.revision AND a.trigger_request_id=derived_summary_revision.request_id
-  ));
 -- Preserve the original narrow table rights even if the platform installs
--- additional broad native CRUD policies. Restrictive PUBLIC policies only
--- constrain existing privileges; they do not give public access.
-DROP POLICY IF EXISTS derived_summary_revision_hosted_insert ON derived_summary_revision;
-CREATE POLICY derived_summary_revision_hosted_insert ON derived_summary_revision AS RESTRICTIVE FOR INSERT TO PUBLIC
-  WITH CHECK (derived_summary_sql_role_allowed(true));
-DROP POLICY IF EXISTS derived_summary_revision_no_update ON derived_summary_revision;
-CREATE POLICY derived_summary_revision_no_update ON derived_summary_revision AS RESTRICTIVE FOR UPDATE TO PUBLIC
-  USING (false) WITH CHECK (false);
-DROP POLICY IF EXISTS derived_summary_revision_no_delete ON derived_summary_revision;
-CREATE POLICY derived_summary_revision_no_delete ON derived_summary_revision AS RESTRICTIVE FOR DELETE TO PUBLIC USING (false);
+-- additional broad native CRUD policies. Restrictive policies only constrain
+-- the three actual SDK scopes; they do not give any additional access.
+
+-- The migration serializer maps PUBLIC to authenticated-only even when
+-- dev stores OID 0. Use the SDK's three actual schema-qualified SQL roles.
+-- Platform business RBAC remains app.role_ids under the authenticated role;
+-- this set does not claim protection for an arbitrary future SQL role.
+-- Recreate these narrowing policies when upgrading earlier target sets.
+DO $summary_sql_boundaries$ DECLARE role_targets text; role_oids oid[]; BEGIN
+  SELECT string_agg(quote_ident(rolname), ',' ORDER BY oid),array_agg(oid ORDER BY oid)
+    INTO role_targets,role_oids FROM pg_roles
+    WHERE rolname IN ('authenticated_' || current_schema(),
+      'service_role_' || current_schema(),'anon_' || current_schema());
+  IF cardinality(role_oids) IS DISTINCT FROM 3 THEN
+    RAISE EXCEPTION 'DERIVED_SUMMARY_SQL_ROLES_REQUIRED' USING ERRCODE='42501';
+  END IF;
+  IF EXISTS (SELECT 1 FROM pg_roles WHERE oid=ANY(role_oids) AND (rolsuper OR rolbypassrls)) THEN
+    RAISE EXCEPTION 'DERIVED_SUMMARY_SQL_ROLE_RLS_REQUIRED' USING ERRCODE='42501';
+  END IF;
+  EXECUTE 'DROP POLICY IF EXISTS action_attempt_summary_subject_boundary ON action_attempt';
+  EXECUTE format($policy$
+    CREATE POLICY action_attempt_summary_subject_boundary ON action_attempt AS RESTRICTIVE FOR ALL TO %s
+      USING (subject_kind <> 'DERIVED_SUMMARY' OR (derived_summary_attempt_owned(tenant_id,actor_user_id,summary_id)
+        AND derived_summary_reading_sources_owned(tenant_id,actor_user_id,task_envelope_json::jsonb->'modelInput')))
+      WITH CHECK (subject_kind <> 'DERIVED_SUMMARY' OR (derived_summary_attempt_owned(tenant_id,actor_user_id,summary_id)
+        AND derived_summary_reading_sources_owned(tenant_id,actor_user_id,task_envelope_json::jsonb->'modelInput')));
+  $policy$,role_targets);
+  EXECUTE 'DROP POLICY IF EXISTS derived_summary_owner_boundary ON derived_summary';
+  EXECUTE format($policy$
+    CREATE POLICY derived_summary_owner_boundary ON derived_summary AS RESTRICTIVE FOR ALL TO %s
+      USING (derived_summary_sql_role_allowed(false) AND actor_user_id=current_setting('app.user_id',true) AND engineering_matter_actor_has_tenant(tenant_id))
+      WITH CHECK (derived_summary_sql_role_allowed(false) AND actor_user_id=current_setting('app.user_id',true) AND engineering_matter_actor_has_tenant(tenant_id));
+  $policy$,role_targets);
+  EXECUTE 'DROP POLICY IF EXISTS derived_summary_no_delete ON derived_summary';
+  EXECUTE format($policy$
+    CREATE POLICY derived_summary_no_delete ON derived_summary AS RESTRICTIVE FOR DELETE TO %s USING (false);
+  $policy$,role_targets);
+  EXECUTE 'DROP POLICY IF EXISTS derived_summary_revision_sources ON derived_summary_revision';
+  EXECUTE format($policy$
+    CREATE POLICY derived_summary_revision_sources ON derived_summary_revision AS RESTRICTIVE FOR ALL TO %s
+      USING (derived_summary_reading_sources_owned(tenant_id,actor_user_id,content_json))
+      WITH CHECK (derived_summary_reading_sources_owned(tenant_id,actor_user_id,content_json));
+  $policy$,role_targets);
+  EXECUTE 'DROP POLICY IF EXISTS derived_summary_revision_real_attempt ON derived_summary_revision';
+  EXECUTE format($policy$
+    CREATE POLICY derived_summary_revision_real_attempt ON derived_summary_revision AS RESTRICTIVE FOR INSERT TO %s
+      WITH CHECK (actor_user_id=current_setting('app.user_id',true) AND EXISTS (
+        SELECT 1 FROM action_attempt a WHERE a.attempt_id=derived_summary_revision.attempt_id
+          AND a.tenant_id=derived_summary_revision.tenant_id AND a.summary_id=derived_summary_revision.summary_id
+          AND a.actor_user_id=derived_summary_revision.actor_user_id AND a.subject_kind='DERIVED_SUMMARY'
+          AND a.action_type='OPENCLAW_DERIVED_SUMMARY' AND a.status='RUNNING' AND a.cancel_requested_at IS NULL
+          AND a.lease_token IS NOT NULL AND a.lease_expires_at>CURRENT_TIMESTAMP AND a.deadline_at>CURRENT_TIMESTAMP
+          AND a.base_revision+1=derived_summary_revision.revision AND a.trigger_request_id=derived_summary_revision.request_id
+      ));
+  $policy$,role_targets);
+  EXECUTE 'DROP POLICY IF EXISTS derived_summary_revision_hosted_insert ON derived_summary_revision';
+  EXECUTE format($policy$
+    CREATE POLICY derived_summary_revision_hosted_insert ON derived_summary_revision AS RESTRICTIVE FOR INSERT TO %s
+      WITH CHECK (derived_summary_sql_role_allowed(true));
+  $policy$,role_targets);
+  EXECUTE 'DROP POLICY IF EXISTS derived_summary_revision_no_update ON derived_summary_revision';
+  EXECUTE format($policy$
+    CREATE POLICY derived_summary_revision_no_update ON derived_summary_revision AS RESTRICTIVE FOR UPDATE TO %s
+      USING (false) WITH CHECK (false);
+  $policy$,role_targets);
+  EXECUTE 'DROP POLICY IF EXISTS derived_summary_revision_no_delete ON derived_summary_revision';
+  EXECUTE format($policy$
+    CREATE POLICY derived_summary_revision_no_delete ON derived_summary_revision AS RESTRICTIVE FOR DELETE TO %s USING (false);
+  $policy$,role_targets);
+  -- Reject a transform that drops a SQL scope from any boundary. These
+  -- restrictive targets constrain existing privileges; they add none.
+  IF EXISTS (
+    SELECT 1 FROM (VALUES
+      ('action_attempt_summary_subject_boundary','action_attempt'::regclass,'*'),
+      ('derived_summary_owner_boundary','derived_summary'::regclass,'*'),
+      ('derived_summary_no_delete','derived_summary'::regclass,'d'),
+      ('derived_summary_revision_sources','derived_summary_revision'::regclass,'*'),
+      ('derived_summary_revision_real_attempt','derived_summary_revision'::regclass,'a'),
+      ('derived_summary_revision_hosted_insert','derived_summary_revision'::regclass,'a'),
+      ('derived_summary_revision_no_update','derived_summary_revision'::regclass,'w'),
+      ('derived_summary_revision_no_delete','derived_summary_revision'::regclass,'d')
+    ) AS expected(name,relation,command)
+    LEFT JOIN pg_policy p ON p.polname=expected.name AND p.polrelid=expected.relation
+    WHERE p.polname IS NULL OR p.polpermissive OR (SELECT array_agg(role_oid ORDER BY role_oid) FROM unnest(p.polroles) AS role_oid) IS DISTINCT FROM role_oids
+      OR p.polcmd::text IS DISTINCT FROM expected.command
+  ) THEN
+    RAISE EXCEPTION 'DERIVED_SUMMARY_SQL_BOUNDARY_REQUIRED' USING ERRCODE='42501';
+  END IF;
+END $summary_sql_boundaries$;
 
 -- Table/function ACLs are platform-managed; this DDL expresses the narrower
 -- actor/source/real-attempt boundaries with RLS and immutable triggers.

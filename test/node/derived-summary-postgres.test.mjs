@@ -44,7 +44,7 @@ test('real saved aggregate/upper consumer preserves exact work, pool1, CAS, leas
     const admin = postgres(databaseUrl, { max: 1, onnotice() {} });
     let connection;
     try {
-      await reset(admin);
+      await t.test('exact SDK SQL roles survive PUBLIC serializer conversion, upgrade and replay', () => reset(admin));
       await seed(admin);
       connection = postgres(databaseUrl, { max: 1, onnotice() {} });
       const database = drizzle(connection);
@@ -293,6 +293,49 @@ function nativeActor(userId, tenantId) {
     sessionRevision: null, sessionProvenance: 'UNAVAILABLE' } };
 }
 
+// Only these eight new narrowing policies target the exact SDK SQL scopes.
+// Existing Matter policy roles continue to be preserved separately.
+const sqlBoundaries = [
+  ['action_attempt_summary_subject_boundary', 'action_attempt', '*'],
+  ['derived_summary_owner_boundary', 'derived_summary', '*'],
+  ['derived_summary_no_delete', 'derived_summary', 'd'],
+  ['derived_summary_revision_sources', 'derived_summary_revision', '*'],
+  ['derived_summary_revision_real_attempt', 'derived_summary_revision', 'a'],
+  ['derived_summary_revision_hosted_insert', 'derived_summary_revision', 'a'],
+  ['derived_summary_revision_no_update', 'derived_summary_revision', 'w'],
+  ['derived_summary_revision_no_delete', 'derived_summary_revision', 'd'],
+];
+
+function rewriteTopLevelPublicPolicies(ddl) {
+  // Model the observed platform transform on parsed top-level CREATE POLICY
+  // statements. Dollar-quoted DO/function bodies remain untouched, as in the
+  // actual prior dynamic old-policy extension accepted by the platform.
+  return ddl.replace(/(\$[a-z_]*\$)[\s\S]*?\1|CREATE POLICY[^;]+;/giu,
+    (statement, quoted) => quoted ? statement : statement.replace(/\bTO PUBLIC\b/gu, `TO authenticated_${roleSchema}`));
+}
+
+async function sqlBoundaryRows(admin) {
+  return admin`SELECT p.polname,c.relname,p.polcmd,p.polpermissive,
+    p.polroles=ARRAY[0]::oid[] AS all_roles,
+    (SELECT array_agg(role_oid ORDER BY role_oid) FROM unnest(p.polroles) AS role_oid)=
+      (SELECT array_agg(oid ORDER BY oid) FROM pg_roles WHERE rolname=ANY(${['authenticated', 'service_role', 'anon'].map(role => `${role}_${roleSchema}`)})) AS exact_scopes,
+    p.polroles=ARRAY[(SELECT oid FROM pg_roles WHERE rolname=${`authenticated_${roleSchema}`})]::oid[] AS ordinary_only
+    FROM pg_policy p JOIN pg_class c ON c.oid=p.polrelid
+    WHERE p.polname=ANY(${sqlBoundaries.map(([name]) => name)}) ORDER BY p.polname`;
+}
+
+async function assertSqlBoundaries(admin) {
+  const rows = await sqlBoundaryRows(admin);
+  assert.equal(rows.length, sqlBoundaries.length);
+  for (const [name, table, command] of sqlBoundaries) {
+    const row = rows.find(policy => policy.polname === name);
+    assert.equal(row.relname, table); assert.equal(row.polcmd, command);
+    assert.equal(row.polpermissive, false); assert.equal(row.exact_scopes, true, `${name} must retain the three exact SDK SQL role OIDs`);
+    assert.equal(row.all_roles, false);
+    assert.equal(row.ordinary_only, false);
+  }
+}
+
 async function reset(admin) {
   await admin.unsafe('DROP SCHEMA public CASCADE');
   await admin.unsafe('CREATE SCHEMA public');
@@ -354,12 +397,56 @@ async function reset(admin) {
   // additive DDL upgrades it and remains reapplicable without altering legacy branches.
   const [oldPolicy] = await admin`SELECT polroles FROM pg_policy WHERE polrelid='action_attempt'::regclass
     AND polname='action_attempt_matter_or_document_subject_boundary'`;
-  await admin.unsafe(summaryDdl.replace("\n        AND action_type <> 'OPENCLAW_DERIVED_SUMMARY'", ''));
-  await admin.unsafe(summaryDdl);
+  await admin.unsafe(rewriteTopLevelPublicPolicies(summaryDdl.replace("\n        AND action_type <> 'OPENCLAW_DERIVED_SUMMARY'", '')));
+  // Dev already has the earlier DO/PUBLIC apply. Reproduce its OID 0
+  // metadata before the migration-compatible three-scope upgrade.
+  for (const [name, table] of sqlBoundaries) await admin.unsafe(`ALTER POLICY ${name} ON ${table} TO PUBLIC`);
+  const priorPublic = await sqlBoundaryRows(admin);
+  assert.ok(priorPublic.every(row => row.all_roles && !row.exact_scopes));
+  await admin.unsafe(rewriteTopLevelPublicPolicies(summaryDdl));
+  await assertSqlBoundaries(admin);
+  // Also support the older authenticated-only dev apply without new tables
+  // or data migration. Only actual restrictive policy role targets change.
+  for (const [name, table] of sqlBoundaries) {
+    await admin.unsafe(`ALTER POLICY ${name} ON ${table} TO authenticated_${roleSchema}`);
+  }
+  const narrowed = await sqlBoundaryRows(admin);
+  assert.equal(narrowed.length, sqlBoundaries.length);
+  assert.ok(narrowed.every(row => row.ordinary_only && !row.all_roles && !row.polpermissive));
+  // A bypass role cannot be treated as an RLS-constrained SDK scope.
+  await admin.unsafe(`ALTER ROLE anon_${roleSchema} BYPASSRLS`);
+  try {
+    await assert.rejects(admin.unsafe(summaryDdl), error => databaseCode(error) === '42501'
+      && databaseMessageIncludes(error, 'DERIVED_SUMMARY_SQL_ROLE_RLS_REQUIRED'));
+  } finally {
+    await admin.unsafe('ROLLBACK');
+    await admin.unsafe(`ALTER ROLE anon_${roleSchema} NOBYPASSRLS`);
+  }
+  assert.deepEqual(await sqlBoundaryRows(admin), narrowed, 'bypass-role upgrade leaves prior policy roles intact');
+  // Missing actual SQL scopes cannot become a smaller accepted target set.
+  await admin.unsafe(`ALTER ROLE anon_${roleSchema} RENAME TO summary_missing_anon`);
+  try {
+    await assert.rejects(admin.unsafe(summaryDdl), error => databaseCode(error) === '42501'
+      && databaseMessageIncludes(error, 'DERIVED_SUMMARY_SQL_ROLES_REQUIRED'));
+  } finally {
+    await admin.unsafe('ROLLBACK');
+    await admin.unsafe(`ALTER ROLE summary_missing_anon RENAME TO anon_${roleSchema}`);
+  }
+  assert.deepEqual(await sqlBoundaryRows(admin), narrowed, 'missing-role upgrade rolls back without replacing any policy');
+  // If a serializer ever drops a scope from an explicit target list, the
+  // checked transaction must reject the change rather than commit it.
+  await assert.rejects(admin.unsafe(summaryDdl.replaceAll('$policy$,role_targets)',
+    "$policy$,quote_ident('authenticated_' || current_schema()))")),
+  error => databaseCode(error) === '42501' && databaseMessageIncludes(error, 'DERIVED_SUMMARY_SQL_BOUNDARY_REQUIRED'));
+  await admin.unsafe('ROLLBACK');
+  assert.deepEqual(await sqlBoundaryRows(admin), narrowed, 'rejected target conversion rolls back the whole upgrade');
+  await admin.unsafe(rewriteTopLevelPublicPolicies(summaryDdl));
+  await assertSqlBoundaries(admin);
   const [extendedPolicy] = await admin`SELECT polroles FROM pg_policy WHERE polrelid='action_attempt'::regclass
     AND polname='action_attempt_matter_or_document_subject_boundary_summary'`;
   assert.deepEqual(extendedPolicy.polroles, oldPolicy.polroles, 'dynamic policy extension preserves actual schema-suffixed target roles');
-  await admin.unsafe(summaryDdl);
+  await admin.unsafe(rewriteTopLevelPublicPolicies(summaryDdl));
+  await assertSqlBoundaries(admin);
   // Simulate the documented broad platform-managed ACLs locally, including
   // TRUNCATE. These fixture-only statements are never part of deployed DDL.
   await admin.unsafe('GRANT ALL ON derived_summary,derived_summary_revision TO authenticated,service_role,anon');
