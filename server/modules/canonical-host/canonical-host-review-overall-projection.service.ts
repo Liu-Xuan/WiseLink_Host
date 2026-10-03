@@ -1,5 +1,6 @@
 import { Inject, Injectable } from '@nestjs/common';
 import type { Request } from 'express';
+import type { PostgresJsDatabase } from '@lark-apaas/fullstack-nestjs-core';
 import { and, eq, inArray } from 'drizzle-orm';
 import type {
   CanonicalReviewOverallProjectionEligibility,
@@ -50,8 +51,12 @@ export class CanonicalHostReviewOverallProjectionService {
     @Inject(UNIFIED_ARTIFACT_STORE) private readonly artifacts: UnifiedArtifactStorePort,
   ) {}
 
-  private async authorized(workItemId: string, request: Request) {
-    const session = await this.sessions.resolve(request);
+  private async authorized(
+    workItemId: string,
+    request: Request,
+    database?: PostgresJsDatabase,
+  ) {
+    const session = await this.sessions.resolve(request, database);
     if (!session)
       throw Object.assign(new Error('REVIEW_OVERALL_LOGIN_REQUIRED'),
         { code: 'REVIEW_OVERALL_LOGIN_REQUIRED', statusCode: 401 });
@@ -59,13 +64,13 @@ export class CanonicalHostReviewOverallProjectionService {
       actor: session.actor,
       action: 'REQUEST_OVERALL_REGENERATION',
       accessRoot: { kind: 'WORK_ITEM', id: workItemId },
-    });
+    }, database);
     if (grant.allowed === false)
       throw Object.assign(new Error(grant.code),
         { code: grant.code, statusCode: grant.statusCode });
     const item = await this.registrar.getTenantScopedByWorkItemId({
       workItemId, tenantId: grant.tenantId,
-    });
+    }, database);
     if (grant.action !== 'REQUEST_OVERALL_REGENERATION' ||
       grant.workItemId !== workItemId ||
       grant.tenantId !== session.actor.tenantId ||
@@ -218,7 +223,7 @@ export class CanonicalHostReviewOverallProjectionService {
         workRevisionRef: saved.workRevisionRef,
         documentVersionId: item.source.documentVersionId,
       }, async (database, current) => {
-        const fresh = await this.authorized(workItemId, request);
+        const fresh = await this.authorized(workItemId, request, database);
         if (fresh.item.revision !== current.revision ||
           fresh.tenantId !== authorized.tenantId ||
           fresh.actorUserId !== authorized.actorUserId)

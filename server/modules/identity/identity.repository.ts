@@ -198,8 +198,9 @@ export class IdentityRepository {
   async validateSession(
     tokenHash: string,
     now: Date,
+    database: PostgresJsDatabase = this.db,
   ): Promise<PersistedSession | null> {
-    const [row] = await this.db
+    const [row] = await database
       .select({
         sessionId: identitySession.id,
         sessionRevision: identitySession.revision,
@@ -229,7 +230,7 @@ export class IdentityRepository {
       )
       .limit(1);
     if (!row) return null;
-    await this.db
+    await database
       .update(identitySession)
       .set({ lastSeenAt: now, updatedAt: now })
       .where(eq(identitySession.id, row.sessionId));

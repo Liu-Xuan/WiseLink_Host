@@ -1,3 +1,4 @@
+import type { PostgresJsDatabase } from '@lark-apaas/fullstack-nestjs-core';
 import type {
   CanonicalEntryQueryRequest,
   CanonicalFailureValidationWriteReceipt,
@@ -144,7 +145,7 @@ export interface CanonicalWorkItemRegistrarPort {
   getTenantScopedByWorkItemId(input: {
     workItemId: string;
     tenantId: string;
-  }): Promise<CanonicalWorkItemProjection>;
+  }, database?: PostgresJsDatabase): Promise<CanonicalWorkItemProjection>;
 }
 
 export interface CanonicalHostBindingState {

@@ -1,3 +1,5 @@
+import type { PostgresJsDatabase } from '@lark-apaas/fullstack-nestjs-core';
+
 export const CANONICAL_OBJECT_ACCESS = Symbol('CANONICAL_OBJECT_ACCESS');
 
 export type CanonicalLegacyObjectAccessAction =
@@ -268,6 +270,7 @@ export interface CanonicalObjectAccessPort {
   /** Every grant-capable call must re-read Host-owned object relation facts. */
   freshRead(
     input: CanonicalObjectAccessInput,
+    database?: PostgresJsDatabase,
   ): Promise<CanonicalObjectAccessResult>;
   /** Optional bounded read: one fresh statement, one settled decision per input, no cross-call cache. */
   freshReadBatch?(
