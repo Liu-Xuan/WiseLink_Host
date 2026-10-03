@@ -67,6 +67,11 @@ import { CanonicalHostOpenClawReviewService } from './canonical-host-openclaw-re
 import { CanonicalHostCommonContextService } from './canonical-host-common-context.service';
 import { CanonicalJobAidProblemService } from './canonical-jobaid-problem.service';
 import { JobAidWorkRepository } from './jobaid-work.repository';
+import { DerivedSummaryController } from './derived-summary.controller';
+import { DerivedSummaryService } from './derived-summary.service';
+import { DerivedSummaryRuntimeService } from './derived-summary-runtime.service';
+import { DerivedSummaryRepository } from './derived-summary.repository';
+import { DerivedSummaryMembersService } from './derived-summary-members.service';
 import { DocumentWorkRuntimeService } from './document-work-runtime.service';
 import { DocumentSourceProjectionService } from './document-source-projection.service';
 import { DocumentSourceSearchService } from './document-source-search.service';
@@ -235,6 +240,7 @@ export interface CanonicalHostModuleOptions {
     CanonicalHostReviewOverallProjectionController,
     CanonicalRuleSetLifecycleController,
     EngineeringMatterController,
+    DerivedSummaryController,
     MatterAssessmentActivityController,
     CanonicalHostAeoEditingController,
     CanonicalTranslationKnowledgeController,
@@ -286,6 +292,10 @@ export interface CanonicalHostModuleOptions {
     EngineeringIssueSearchService,
     CanonicalJobAidProblemService,
     JobAidWorkRepository,
+    DerivedSummaryService,
+    DerivedSummaryRuntimeService,
+    DerivedSummaryRepository,
+    DerivedSummaryMembersService,
     CanonicalHostReviewActionService,
     HostOwnedV1TranslationRuleSetPrivateProvider,
     HostNativeDocumentFamilyPdfProducerAdapter,
@@ -496,6 +506,7 @@ export class CanonicalHostModule {
         CanonicalHostReviewOverallProjectionController,
         CanonicalRuleSetLifecycleController,
         EngineeringMatterController,
+        DerivedSummaryController,
         MatterAssessmentActivityController,
         CanonicalHostAeoEditingController,
         CanonicalTranslationKnowledgeController,
@@ -576,6 +587,10 @@ export class CanonicalHostModule {
         EngineeringIssueSearchService,
         CanonicalJobAidProblemService,
         JobAidWorkRepository,
+        DerivedSummaryService,
+        DerivedSummaryRuntimeService,
+        DerivedSummaryRepository,
+        DerivedSummaryMembersService,
         EngineeringSearchProjectionWriter,
         DocumentWorkRuntimeService,
         LocalMineruWorkerService,

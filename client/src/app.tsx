@@ -5,6 +5,9 @@ import Layout from './components/Layout';
 import RouteOutletBoundary from './components/RouteOutletBoundary';
 import WorkspaceHomePage from './pages/WorkspaceHomePage/WorkspaceHomePage';
 import TranslationGlossaryPage from './pages/TranslationGlossaryPage/TranslationGlossaryPage';
+import DerivedSummaryListPage from './features/derived-summary/DerivedSummaryListPage';
+import DerivedSummaryComposePage from './features/derived-summary/DerivedSummaryComposePage';
+import DerivedSummaryReadingPage from './features/derived-summary/DerivedSummaryReadingPage';
 
 // Route chunks load on demand. AppContainer, identity providers and the
 // QueryClient stay mounted above the lazy boundary so navigation does not
@@ -167,6 +170,10 @@ const RoutesComponent = () => {
         <Route path="dialogues" element={<DialoguePage />} />
         <Route path="dialogues/:threadRef" element={<DialoguePage />} />
         <Route path="library" element={<WorkspaceHomePage />} />
+        <Route path="summaries" element={<DerivedSummaryListPage />} />
+        <Route path="summaries/new" element={<DerivedSummaryComposePage />} />
+        <Route path="summaries/:summaryId/update" element={<DerivedSummaryComposePage />} />
+        <Route path="summaries/:summaryId" element={<DerivedSummaryReadingPage />} />
         <Route
           path="document-revisions"
           element={<DocumentRevisionReadingPage />}

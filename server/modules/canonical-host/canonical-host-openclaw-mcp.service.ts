@@ -4,6 +4,8 @@ import { DocumentTranslationRuntimeService } from './document-translation-runtim
 import { Inject, Injectable, Logger, Optional } from '@nestjs/common';
 import { MatterActionAttemptService } from './matter-action-attempt.service';
 import { registerMatterAttemptMcpTools } from './matter-attempt-mcp-tools';
+import { registerDerivedSummaryAttemptMcpTools } from './derived-summary-attempt-mcp-tools';
+import { DerivedSummaryRuntimeService } from './derived-summary-runtime.service';
 import { DocumentManagementHostedService } from '../document-management/src/hosted/nest/document-management-hosted.service';
 import {
   toNodeHandler,
@@ -215,6 +217,7 @@ export class CanonicalHostOpenClawMcpService {
     @Optional() private readonly originalReader?: UnifiedReaderService,
     @Optional() private readonly documentActivity?: DocumentActivityRuntimeService,
     @Optional() private readonly documentReading?: DocumentReadingRuntimeService,
+    @Optional() private readonly derivedSummary?: DerivedSummaryRuntimeService,
   ) {
     const handler = createMcpHandler(() => this.createServer(), {
       legacy: 'stateless',
@@ -246,6 +249,7 @@ export class CanonicalHostOpenClawMcpService {
       this.serviceScope,
     );
     if (this.matterAttempts) registerMatterAttemptMcpTools(server, this.matterAttempts, this.serviceScope, this.matterDocuments, this.originalReader);
+    if (this.derivedSummary) registerDerivedSummaryAttemptMcpTools(server, this.derivedSummary, this.serviceScope);
     if (this.documentWork) server.registerTool('document_work', {
       title: '推进已授权的文档原文步骤',
       description: 'STATUS读取精确文档状态及已明确受理的活动候选请求；STEP推进原文解析，INDEX只组织原文。ACTIVITY_BEGIN显式受理独立来源声明候选，CLAIM/READ/HEARTBEAT/SAVE/FAIL/CANCEL管理其读取与保存；模型由获授权Hosted生产者调用，Host保留准确来源、租约和版本校验。候选不是正式采用。',

@@ -947,6 +947,27 @@ export class CanonicalJobAidProblemService {
     return current;
   }
 
+  /** Aggregate consumers reuse the exact saved work and its existing source checks.
+   * The caller owns the authenticated/Hosted transaction; never borrow another connection. */
+  async readSummaryMemberInTransaction(input: {
+    tenantId: string; actorUserId: string; workItemId: string; workRef: string;
+  }, database: PostgresJsDatabase) {
+    const revision = await this.work.readByRef({ tenantId: input.tenantId,
+      workItemId: input.workItemId, workRevisionRef: input.workRef }, database);
+    if (!revision) throw new Error('JOBAID_WORK_NOT_FOUND');
+    await this.assertEvidenceOwned(revision.content.evidence, input.tenantId,
+      input.actorUserId, input.workItemId, database);
+    const [row] = await database.select({ projectionJson: workItemTable.projectionJson }).from(workItemTable)
+      .where(and(eq(workItemTable.tenantId, input.tenantId), eq(workItemTable.workItemId, input.workItemId),
+        eq(workItemTable.requestedByUserId, input.actorUserId))).limit(1);
+    if (!row?.projectionJson) throw new Error('JOBAID_SOURCE_AUTHORIZATION_CHANGED');
+    const projection = JSON.parse(row.projectionJson) as CanonicalWorkItemProjection;
+    if (projection.source.documentVersionId !== revision.documentVersionId)
+      throw new Error('JOBAID_SOURCE_AUTHORIZATION_CHANGED');
+    const latest = await this.work.latest({ tenantId: input.tenantId, workItemId: input.workItemId }, database);
+    return { revision, current: latest?.workRevisionRef === revision.workRevisionRef };
+  }
+
   async prepareReview(input: {
     workItem: CanonicalWorkItemProjection;
     tenantId: string;

@@ -1,10 +1,12 @@
 import type { CanonicalLibraryDocumentSummary } from '@shared/api.interface';
+import { Link } from 'react-router-dom';
 import type { CanonicalLibraryFleetCatalog } from '@shared/library-fleet.interface';
 import { Button } from '@client/src/components/ui/button';
 import { DocumentVersionLink } from './DocumentVersionLink';
 import { documentLabel, libraryVersionLabel } from './library-document-presentation';
 import { metadataValues, type LibraryCatalogFilters } from './library-classification';
 import { ataDirectoryTitles, buildLibraryAtaDirectory, type AtaDirectoryNode, type AtaTitleScheme } from './library-ata-directory';
+import { libraryAtaSummaryParams } from './library-summary-entry';
 
 export function LibraryAtaHierarchy({ documents, fleetCatalog, filters, hasMore, scheme, onSchemeChange, onSelect }: {
   documents: CanonicalLibraryDocumentSummary[];
@@ -22,6 +24,10 @@ export function LibraryAtaHierarchy({ documents, fleetCatalog, filters, hasMore,
       const titles = node.level === 'ata2' || node.level === 'ata4' ? ataDirectoryTitles(node.key, scheme) : [];
       return <details key={node.key} data-reading-key={`ata:${JSON.stringify(key)}`} open={path.length === 0}>
         <summary><span className="library-branch-label"><strong>{node.label}</strong></span><small>已加载 {new Set(node.items.map(item => item.document.familyId)).size} 份 / {node.items.length} 个版本</small></summary>
+        {node.level === 'ata4' && /^\d{2}-\d{2}$/u.test(node.key) ? <div className="my-2 flex flex-wrap gap-3">
+          <Link className="text-sm underline" to={`/summaries/new?${libraryAtaSummaryParams(node, path)}`}>为选定资料形成概述</Link>
+          <Link className="text-sm underline" to={`/summaries?${libraryAtaSummaryParams(node, path)}`}>阅读此范围已有概述</Link>
+        </div> : null}
         {node.level === 'ata2' || node.level === 'ata4' ? <div className="library-ata-titles">
           {titles.length ? titles.map(title => <details key={JSON.stringify([title.titleZH, title.titleEN])}>
             <summary>{title.titleZH || '中文标题待核'} · <span lang="en">{title.titleEN || '英文标题待核'}</span></summary>

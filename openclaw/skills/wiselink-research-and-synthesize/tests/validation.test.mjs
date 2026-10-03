@@ -1412,7 +1412,7 @@ test('accepts shared background in new JobAid and Overall inputs while retaining
   validatePayload('synthesis-input', { ...overall, commonContext });
 });
 
-test('requires 35 MCP capabilities, six review tools, and hosted provenance', () => {
+test('requires 36 MCP capabilities, six review tools, and hosted provenance', () => {
   assert.deepEqual(INITIAL_ANALYSIS_OPERATIONS, [
     'TRANSLATE',
     'EXTRACT_APPLICABILITY',
@@ -1427,10 +1427,11 @@ test('requires 35 MCP capabilities, six review tools, and hosted provenance', ()
     'get_action_attempt_status',
     'commit_review_turn_candidate',
   ]);
-  assert.equal(HOST_MCP_TOOLS.length, 35);
-  assert.equal(new Set(HOST_MCP_TOOLS).size, 35);
+  assert.equal(HOST_MCP_TOOLS.length, 36);
+  assert.equal(new Set(HOST_MCP_TOOLS).size, 36);
   for (const name of ['translation_workspace', 'read_assessment_sources', 'query_assessment_knowledge', 'save_assessment_work', 'read_assessment_work']) assert.ok(HOST_MCP_TOOLS.includes(name));
   assert.ok(HOST_MCP_TOOLS.includes('read_matter_current_work'));
+  assert.ok(HOST_MCP_TOOLS.includes('derived_summary_attempt'));
   assert.ok(HOST_MCP_TOOLS.includes('begin_applicability_evaluation'));
   assert.ok(HOST_MCP_TOOLS.includes('commit_applicability_candidate'));
   assert.equal(
@@ -9137,11 +9138,13 @@ const READ_MATTER_CURRENT_WORK_TOOL = {
   },
 };
 
+const DERIVED_SUMMARY_TOOL_METADATA = JSON.parse(await readFile(new URL('./fixtures/derived-summary-tool-metadata.json', import.meta.url), 'utf8'));
+
 const buildHostToolSurface = () => {
-  const names = 'document_reading document_work read_document_original document_translation next_original_assessment next_matter_assessment begin_matter_assessment matter_action_attempt read_matter_current_work query_review_aily get_parse_status query_parsed_package get_deep_link begin_translation commit_translation_candidate translation_workspace begin_applicability_evaluation commit_applicability_candidate begin_dynamic_evaluation commit_dynamic_evaluation_candidate read_assessment_sources query_assessment_knowledge save_assessment_work read_assessment_work record_oem_discovery_run begin_overall_synthesis resume_overall_synthesis commit_overall_candidate begin_review_turn get_review_turn_context read_source_refs get_action_attempt_status commit_review_turn_candidate heartbeat_action_attempt cancel_action_attempt get_pending_review_turn'.split(' ');
+  const names = 'document_reading document_work read_document_original document_translation next_original_assessment next_matter_assessment begin_matter_assessment matter_action_attempt derived_summary_attempt read_matter_current_work query_review_aily get_parse_status query_parsed_package get_deep_link begin_translation commit_translation_candidate translation_workspace begin_applicability_evaluation commit_applicability_candidate begin_dynamic_evaluation commit_dynamic_evaluation_candidate read_assessment_sources query_assessment_knowledge save_assessment_work read_assessment_work record_oem_discovery_run begin_overall_synthesis resume_overall_synthesis commit_overall_candidate begin_review_turn get_review_turn_context read_source_refs get_action_attempt_status commit_review_turn_candidate heartbeat_action_attempt cancel_action_attempt get_pending_review_turn'.split(' ');
   const commitRequired = ['attemptRef', 'leaseGeneration', 'leaseToken', 'resultJson'];
   const commitProperties = [...commitRequired, 'workItemId'];
-  return names.map(name => name === 'read_matter_current_work' ? structuredClone(READ_MATTER_CURRENT_WORK_TOOL) : ({ name, inputSchema: name === 'commit_review_turn_candidate' ? {
+  return names.map(name => name === 'derived_summary_attempt' ? structuredClone(DERIVED_SUMMARY_TOOL_METADATA) : name === 'read_matter_current_work' ? structuredClone(READ_MATTER_CURRENT_WORK_TOOL) : ({ name, inputSchema: name === 'commit_review_turn_candidate' ? {
     type: 'object', additionalProperties: false, required: commitRequired,
     properties: Object.fromEntries(commitProperties.map(key => [
       key, key === 'workItemId'
@@ -9216,4 +9219,23 @@ test('rejects weakened read_matter_current_work metadata through the real valida
   const missingMatterId = buildHostToolSurface();
   delete findPrecheck(missingMatterId).inputSchema.properties.matterId;
   assert.throws(() => validateHostToolMetadata({ tools: missingMatterId }), /REVIEW_HOST_MCP_PRECHECK_SCHEMA_MISMATCH/);
+});
+
+test('requires strict registered derived_summary_attempt metadata without granting extra inputs', () => {
+  const tools = buildHostToolSurface();
+  for (const alter of [
+    tool => { tool.inputSchema.oneOf[0].additionalProperties = true; },
+    tool => { tool.inputSchema.oneOf[0].required = ['operation', 'attemptRef']; },
+    tool => { tool.inputSchema.oneOf[0].properties.matterId = {}; },
+    tool => { delete tool.inputSchema.oneOf.find(branch => branch.properties.operation.const === 'SAVE_SUMMARY').properties.provenanceJson; },
+    tool => { tool.inputSchema.oneOf[0].properties.operation.const = 'READ_ALL'; },
+    tool => { tool.annotations.readOnlyHint = true; },
+    tool => { tool.annotations.destructiveHint = true; },
+    tool => { tool.annotations.openWorldHint = true; },
+  ]) {
+    const drift = structuredClone(tools);
+    alter(drift.find(tool => tool.name === 'derived_summary_attempt'));
+    assert.throws(() => validateHostToolMetadata({ tools: drift }), /DERIVED_SUMMARY_SCHEMA_MISMATCH/);
+  }
+  assert.throws(() => validateHostToolMetadata({ tools: tools.filter(tool => tool.name !== 'derived_summary_attempt') }), /EXACT20_MISMATCH/);
 });

@@ -1,6 +1,6 @@
 import { LibraryPaneScrollProvider } from './useLibraryPaneScroll';
 import { useEffect, useMemo, useRef, useState, type FormEvent } from 'react';
-import { useNavigate, useSearchParams } from 'react-router-dom';
+import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import {
   ArrowRight,
   CircleAlert,
@@ -434,6 +434,7 @@ function WorkspaceHomeContent() {
                   ? '查看每次工程评估的进展与候选判断，继续评估与讨论。'
                   : '先看文件与主题，再展开分类、当前版本和历史版本。'}
             </p>
+            <Link className="text-sm underline" to="/summaries">阅读选定范围的派生概述</Link>
           </div>
           <div className="library-home-status" aria-label="当前资料库视图">
             <span>
