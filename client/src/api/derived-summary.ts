@@ -1,7 +1,7 @@
 import { axiosForBackend } from '@lark-apaas/client-toolkit/utils/getAxiosForBackend';
 import type {
-  CreateDerivedSummaryRequest, DerivedSummaryReadModel, DerivedSummaryRequestReceipt,
-  DerivedSummaryRequestStatus, DerivedSummaryRevision, RequestDerivedSummaryUpdate,
+  CreateDerivedSummaryRequest, DerivedSummaryMetadata, DerivedSummaryReadModel, DerivedSummaryRequestReceipt,
+  DerivedSummaryRequestStatus, DerivedSummaryRevision, DerivedSummaryRevisionReadModel, RequestDerivedSummaryUpdate,
 } from '@shared/derived-summary.interface';
 import { getCanonicalHostClientSessionGeneration, requireCanonicalHostClientAuthentication } from './canonical-host';
 
@@ -35,18 +35,23 @@ async function request<T>(url: string, method: 'GET' | 'POST', signal?: AbortSig
   }
 }
 
-export const listDerivedSummaries = (signal?: AbortSignal) => request<DerivedSummaryReadModel[]>(base, 'GET', signal);
+export const listDerivedSummaries = (signal?: AbortSignal) => request<DerivedSummaryMetadata[]>(base, 'GET', signal);
 export async function readDerivedSummary(id: string, signal?: AbortSignal): Promise<DerivedSummaryReadModel> {
   const value = await request<DerivedSummaryReadModel>(path(id), 'GET', signal);
   if (value.summaryId !== id || value.classificationStatus !== 'CANDIDATE' || (value.current && (value.current.summaryId !== id || value.current.summaryRef !== value.currentSummaryRef || value.current.revision !== value.currentRevision || value.current.candidateOnly !== true)))
     throw new Error('概述指针与保存版本不一致，已停止展示。');
   return value;
 }
-export async function readDerivedSummaryRevision(id: string, ref: string, signal?: AbortSignal): Promise<DerivedSummaryRevision> {
-  const value = await request<DerivedSummaryRevision>(`${path(id)}/revisions/${encodeURIComponent(ref)}`, 'GET', signal);
-  if (value.summaryId !== id || value.summaryRef !== ref || value.candidateOnly !== true || value.classificationStatus !== 'CANDIDATE')
+export async function readDerivedSummaryExact(id: string, ref: string, signal?: AbortSignal): Promise<DerivedSummaryRevisionReadModel> {
+  const value = await request<DerivedSummaryRevisionReadModel>(`${path(id)}/revisions/${encodeURIComponent(ref)}`, 'GET', signal);
+  const saved = value.revision;
+  if (!saved || value.summaryId !== id || saved.summaryId !== id || saved.summaryRef !== ref || saved.candidateOnly !== true || saved.classificationStatus !== 'CANDIDATE')
     throw new Error('概述的确切保存身份不一致，已停止展示。');
   return value;
+}
+/** Child selection consumes the exact saved revision; it never reads the current body. */
+export async function readDerivedSummaryRevision(id: string, ref: string, signal?: AbortSignal): Promise<DerivedSummaryRevision> {
+  return (await readDerivedSummaryExact(id, ref, signal)).revision;
 }
 export const createDerivedSummary = (input: CreateDerivedSummaryRequest) => request<DerivedSummaryRequestReceipt>(base, 'POST', undefined, input);
 export async function updateDerivedSummary(id: string, input: RequestDerivedSummaryUpdate): Promise<DerivedSummaryRequestReceipt> {

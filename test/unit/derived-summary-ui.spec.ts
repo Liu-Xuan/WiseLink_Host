@@ -4,23 +4,25 @@ import { createMemoryRouter, RouterProvider } from 'react-router-dom';
 import type { DerivedSummaryScopeSelection } from '@shared/derived-summary.interface';
 import DerivedSummaryReadingPage from '@client/src/features/derived-summary/DerivedSummaryReadingPage';
 import DerivedSummaryComposePage from '@client/src/features/derived-summary/DerivedSummaryComposePage';
-import { summaryHead, summaryRevision } from './fixtures/derived-summary';
+import DerivedSummaryListPage from '@client/src/features/derived-summary/DerivedSummaryListPage';
+import { summaryExact, summaryHead } from './fixtures/derived-summary';
 const { JSDOM } = require('jsdom');
 const mockHead = jest.fn();
 const mockExact = jest.fn();
 const mockStatus = jest.fn();
 const mockCreate = jest.fn();
 const mockUpdate = jest.fn();
+const mockList = jest.fn();
 let mockSession = 1;
 jest.mock('@client/src/api/derived-summary', () => ({
-  readDerivedSummary: (...args: unknown[]) => mockHead(...args), readDerivedSummaryRevision: (...args: unknown[]) => mockExact(...args),
+  readDerivedSummary: (...args: unknown[]) => mockHead(...args), readDerivedSummaryExact: (...args: unknown[]) => mockExact(...args),
   readDerivedSummaryRequest: (...args: unknown[]) => mockStatus(...args), createDerivedSummary: (...args: unknown[]) => mockCreate(...args),
-  updateDerivedSummary: (...args: unknown[]) => mockUpdate(...args),
+  updateDerivedSummary: (...args: unknown[]) => mockUpdate(...args), listDerivedSummaries: (...args: unknown[]) => mockList(...args),
 }));
 jest.mock('@client/src/api/canonical-host', () => ({ getCanonicalHostClientSessionGeneration: () => mockSession, getCanonicalHostIdentityContext: async () => ({ tenantId: 'tenant-1', userId: 'actor-1' }),
   readDocumentParsingStatus: async (documentVersionId: string) => ({ documentVersionId, documentCode: '787-FTD-fixture', businessRevision: '旧R1', selectedVersionIsCurrent: false }) }));
 jest.mock('@client/src/app/providers/CurrentUserSessionProvider', () => ({ useCurrentUserSession: () => ({ sessionGeneration: mockSession, authenticationRequired: false }) }));
-jest.mock('@client/src/components/ui/button', () => ({ Button: 'button' }));
+jest.mock('@client/src/components/ui/button', () => ({ Button: ({ asChild: _asChild, ...props }: import('react').ComponentProps<'button'> & { asChild?: boolean }) => createElement('button', props) }));
 jest.mock('@client/src/components/ui/textarea', () => ({ Textarea: ({ onChange }: { onChange: (event: { target: { value: string } }) => void }) => createElement('button', { onClick: () => onChange({ target: { value: '仅工作23四问题，保留历史和未覆盖范围。' } }) }, '填写生成要求') }));
 jest.mock('@client/src/components/ui/checkbox', () => ({ Checkbox: ({ checked, disabled, onCheckedChange }: { checked: boolean; disabled: boolean; onCheckedChange: (value: boolean) => void }) => createElement('button', { disabled, 'aria-label': '确认选定范围', onClick: () => onCheckedChange(!checked) }, String(checked)) }));
 jest.mock('@client/src/features/derived-summary/DerivedSummaryBody', () => ({ __esModule: true, default: ({ revision }: { revision: { content: { body: string } } }) => createElement('div', { 'data-body': true }, revision.content.body) }));
@@ -37,7 +39,9 @@ beforeEach(() => {
   }
   container = dom.window.document.getElementById('root')!;
   jest.clearAllMocks(); mockSession = 1;
-  mockHead.mockResolvedValue(summaryHead()); mockExact.mockResolvedValue(summaryRevision());
+  mockHead.mockResolvedValue(summaryHead()); mockExact.mockResolvedValue(summaryExact());
+  const { current: _current, memberNotices: _notices, ...metadata } = summaryHead();
+  mockList.mockResolvedValue([metadata]);
   mockStatus.mockResolvedValue({ summaryId: 'DS-1', attemptRef: 'AQ-1', status: 'FAILED', errorCode: 'MODEL_FAILED', savedSummaryRefs: ['DSR-1'] });
 });
 afterEach(async () => {
@@ -46,7 +50,7 @@ afterEach(async () => {
   oldGlobals.clear();
 });
 async function mount(route: string) {
-  router = createMemoryRouter([{ path: '/summaries/new', element: createElement(DerivedSummaryComposePage) },
+  router = createMemoryRouter([{ path: '/summaries', element: createElement(DerivedSummaryListPage) }, { path: '/summaries/new', element: createElement(DerivedSummaryComposePage) },
     { path: '/summaries/:summaryId', element: createElement(DerivedSummaryReadingPage) }, { path: '*', element: createElement('div') }], { initialEntries: [route] });
   root = createRoot(container); await act(async () => { root.render(createElement(RouterProvider, { router, future: { v7_startTransition: true } })); });
 }
@@ -64,6 +68,46 @@ test('exact historical reading keeps old body and upper child ref while source c
   const upper = Array.from(container.querySelectorAll('a')).find(link => link.textContent?.includes('形成上层'))!;
   expect(new URL(upper.href).searchParams.get('fromSummaryRef')).toBe('DSR-1');
   expect(mockExact).toHaveBeenCalledWith('DS-1', 'DSR-1', expect.anything()); expect(mockCreate).not.toHaveBeenCalled();
+  expect(mockHead).not.toHaveBeenCalled();
+});
+test('V1 source A remains readable when V2 added source B has been revoked', async () => {
+  mockHead.mockRejectedValue(new Error('V2_SOURCE_B_REVOKED'));
+  const exact = summaryExact();
+  exact.revision.content.body = 'V1 仅依据仍获权来源 A';
+  exact.revision.members[0].rootRefs = ['SOURCE-A'];
+  mockExact.mockResolvedValue(exact);
+  await mount('/summaries/DS-1?summaryRef=DSR-1');
+  expect(container.textContent).toContain('V1 仅依据仍获权来源 A');
+  expect(container.textContent).toContain('历史保存修订'); expect(container.textContent).not.toContain('V2_SOURCE_B_REVOKED');
+  expect(mockHead).not.toHaveBeenCalled(); expect(mockExact).toHaveBeenCalledWith('DS-1', 'DSR-1', expect.anything());
+});
+test('historical member replaced in V2 displays its selected fresh notice instead of saved current flag', async () => {
+  const replaced = summaryHead();
+  replaced.current!.members[0].member = { kind: 'WORK_ITEM_WORK', workItemId: 'WI-2', documentVersionId: 'DV-2', workRef: 'JAWR-new', workRevision: 4, issueKeys: ['I2'] };
+  replaced.memberNotices = [{ member: replaced.current!.members[0].member, current: true, limitations: [] }];
+  mockHead.mockResolvedValue(replaced);
+  const exact = summaryExact();
+  exact.revision.members[0].current = true;
+  exact.memberNotices[0] = { member: exact.revision.members[0].member, current: false, limitations: ['本历史工作已被后继替换，新变化未覆盖'] };
+  mockExact.mockResolvedValue(exact);
+  await mount('/summaries/DS-1?summaryRef=DSR-1');
+  expect(container.textContent).toContain('本历史工作已被后继替换，新变化未覆盖');
+  expect(container.textContent).toContain('历史依据或成员工作已变化'); expect(container.textContent).not.toContain('当前成员工作');
+  expect(mockHead).not.toHaveBeenCalled();
+});
+test('missing selected fresh notice never falls back to a saved current assertion', async () => {
+  const exact = summaryExact(); exact.revision.members[0].current = true; exact.memberNotices = [];
+  mockExact.mockResolvedValue(exact);
+  await mount('/summaries/DS-1?summaryRef=DSR-1');
+  expect(container.textContent).toContain('成员现行性未能重新核对'); expect(container.textContent).not.toContain('当前成员工作');
+});
+test('owned summary directory reads metadata without loading revoked current bodies', async () => {
+  mockHead.mockRejectedValue(new Error('CURRENT_SOURCE_REVOKED'));
+  await mount('/summaries');
+  expect(container.textContent).toContain('B787 ATA46-00 选定资料');
+  expect(container.textContent).toContain('正文与成员来源在打开时重新核权');
+  expect(container.textContent).not.toContain('确切正文'); expect(container.textContent).not.toContain('CURRENT_SOURCE_REVOKED');
+  expect(mockHead).not.toHaveBeenCalled(); expect(mockExact).not.toHaveBeenCalled();
 });
 test('failed fresh source reauthorization removes previously readable body', async () => {
   await mount('/summaries/DS-1?summaryRef=DSR-1'); expect(container.textContent).toContain('确切正文 DSR-1');

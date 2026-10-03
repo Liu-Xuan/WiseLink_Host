@@ -1,4 +1,4 @@
-import type { DerivedSummaryReadModel, DerivedSummaryRevision } from '@shared/derived-summary.interface';
+import type { DerivedSummaryReadModel, DerivedSummaryRevision, DerivedSummaryRevisionReadModel } from '@shared/derived-summary.interface';
 import type { EngineeringKnowledgeRead } from '@shared/engineering-issue-search.interface';
 import { jobAidReadingResult } from '@shared/jobaid-problem-assessment.interface';
 import { jobAidReadingFixture } from '../semantic-reading-ui.fixtures';
@@ -24,4 +24,9 @@ export function summaryHead(): DerivedSummaryReadModel {
   const current = summaryRevision('DSR-2', 2);
   return { summaryId: current.summaryId, scope: current.scope, classificationStatus: 'CANDIDATE', currentSummaryRef: current.summaryRef,
     currentRevision: current.revision, current, memberNotices: [{ member: current.members[0].member, current: false, limitations: ['当前工作已有新变化，原概述未覆盖'] }] };
+}
+export function summaryExact(ref = 'DSR-1'): DerivedSummaryRevisionReadModel {
+  const revision = summaryRevision(ref);
+  return { summaryId: revision.summaryId, currentSummaryRef: 'DSR-2', currentRevision: 2, revision,
+    memberNotices: [{ member: revision.members[0].member, current: false, limitations: ['当前工作已有新变化，原概述未覆盖'] }] };
 }

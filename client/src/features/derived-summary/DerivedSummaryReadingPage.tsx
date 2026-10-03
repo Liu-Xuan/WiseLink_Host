@@ -1,6 +1,6 @@
 import { useCallback } from 'react';
 import { Link, useParams, useSearchParams } from 'react-router-dom';
-import { readDerivedSummary, readDerivedSummaryRequest, readDerivedSummaryRevision } from '@client/src/api/derived-summary';
+import { readDerivedSummary, readDerivedSummaryRequest, readDerivedSummaryExact } from '@client/src/api/derived-summary';
 import { useCurrentUserSession } from '@client/src/app/providers/CurrentUserSessionProvider';
 import { Button } from '@client/src/components/ui/button';
 import { summaryMemberKey, summaryMemberRoute, upperSummaryRoute } from './summary-selection';
@@ -24,14 +24,17 @@ export default function DerivedSummaryReadingPage() {
 }
 function SummaryReading({ id, refPin, attempt, session }: { id: string; refPin?: string; attempt?: string; session: number }) {
   const load = useCallback(async (signal: AbortSignal) => {
-    const [head, exact, status] = await Promise.all([readDerivedSummary(id, signal),
-      refPin ? readDerivedSummaryRevision(id, refPin, signal) : Promise.resolve(null),
+    const selected = refPin
+      ? readDerivedSummaryExact(id, refPin, signal).then(exact => ({ ...exact, scope: exact.revision.scope }))
+      : readDerivedSummary(id, signal).then(head => ({ summaryId: head.summaryId, currentSummaryRef: head.currentSummaryRef,
+        currentRevision: head.currentRevision, revision: head.current, memberNotices: head.memberNotices, scope: head.scope }));
+    const [reading, status] = await Promise.all([selected,
       attempt ? readDerivedSummaryRequest(id, attempt, signal) : Promise.resolve(null)]);
-    return { head, revision: exact ?? head.current, status };
+    return { reading, status };
   }, [id, refPin, attempt]);
   const read = useSummaryResource(JSON.stringify([id, refPin, attempt]), session, load);
   const value = read.data;
-  const revision = value?.revision;
+  const revision = value?.reading.revision;
   return <>
     <Button variant="outline" onClick={read.refresh}>重新核权并读取正文 / 进度</Button>
     {read.loading ? <p role="status">正在读取概述、确切成员与保留来源…</p> : null}
@@ -42,11 +45,11 @@ function SummaryReading({ id, refPin, attempt, session }: { id: string; refPin?:
       <p className="text-sm">保存正文与本次执行结束分别核对。</p>
       {value.status.savedSummaryRefs.map(ref => <Link className="mr-3 underline" key={ref} to={`/summaries/${encodeURIComponent(id)}?${new URLSearchParams({ summaryRef: ref, attemptRef: value.status!.attemptRef })}`}>阅读该次确切保存版本</Link>)}
     </section> : null}
-    {value && !revision ? <><h1 className="text-2xl font-semibold">{value.head.scope.title}</h1><p>尚无已保存的概述正文。可重新读取本次进度。</p></> : null}
+    {value && !revision ? <><h1 className="text-2xl font-semibold">{value.reading.scope.title}</h1><p>尚无已保存的概述正文。可重新读取本次进度。</p></> : null}
     {revision && value ? <article className="space-y-5" data-summary-ref={revision.summaryRef} data-summary-revision={revision.revision}>
       <header className="space-y-2"><h1 className="text-2xl font-semibold">{revision.content.headline}</h1>
         <p>{revision.scope.title} · {revision.scope.kind} · 分类候选待核 · 正文候选</p>
-        <p>{revision.summaryRef === value.head.currentSummaryRef ? '当前保存修订' : '历史保存修订'} {revision.revision} · {new Date(revision.createdAt).toLocaleString('zh-CN')}</p>
+        <p>{revision.summaryRef === value.reading.currentSummaryRef ? '当前保存修订' : '历史保存修订'} {revision.revision} · {new Date(revision.createdAt).toLocaleString('zh-CN')}</p>
         <p className="break-all text-xs text-muted-foreground">确切 summaryRef：{revision.summaryRef}</p>
         <p className="whitespace-pre-wrap">{revision.scope.selectionReason}</p>
         {revision.producer ? <details><summary className="cursor-pointer text-sm">生成记录</summary>
@@ -65,12 +68,12 @@ function SummaryReading({ id, refPin, attempt, session }: { id: string; refPin?:
         <p className="text-sm text-muted-foreground">子概述是派生工作；相同根来源不作为多份独立证据。</p>
         {revision.members.map(member => {
           const coverage = revision.coverage.find(item => summaryMemberKey(item.member) === summaryMemberKey(member.member));
-          const notice = value.head.memberNotices.find(item => summaryMemberKey(item.member) === summaryMemberKey(member.member));
+          const notice = value.reading.memberNotices.find(item => summaryMemberKey(item.member) === summaryMemberKey(member.member));
           return <div className="space-y-2 rounded-md border border-border p-3" key={summaryMemberKey(member.member)}>
             <Link className="font-semibold underline" to={summaryMemberRoute(member.member)}>{member.headline}</Link>
             <p>{member.member.kind === 'DERIVED_SUMMARY' ? `子概述修订 ${member.member.summaryRevision}` : `工作修订 ${member.member.workRevision} · 选取问题 ${member.member.issueKeys.join('、')}`}</p>
             {member.member.kind === 'WORK_ITEM_WORK' ? <DocumentVersionIdentityLabel documentVersionId={member.member.documentVersionId} session={session} /> : null}
-            <p>{(notice?.current ?? member.current) ? '当前成员工作' : '历史依据或成员工作已变化'} · 综合{member.overviewStatus === 'CURRENT' ? '已覆盖该工作' : member.overviewStatus === 'STALE' ? '待更新' : '尚未形成'}</p>
+            <p>{notice ? notice.current ? '当前成员工作' : '历史依据或成员工作已变化' : '成员现行性未能重新核对'} · 综合{member.overviewStatus === 'CURRENT' ? '已覆盖该工作' : member.overviewStatus === 'STALE' ? '待更新' : '尚未形成'}</p>
             <p>{coverage ? `${coverage.delivered ? '已交付输入' : '未交付完整输入'} · ${coverage.used ? '正文实际使用' : '正文未使用'}` : '覆盖记录不可用，不能扩大已覆盖范围'}</p>
             {coverage?.limitation ? <p>{coverage.limitation}</p> : null}
             <ul className="list-disc pl-5">{[...member.limitations, ...(notice?.limitations ?? [])].map((item, index) => <li key={index}>{item}</li>)}</ul>

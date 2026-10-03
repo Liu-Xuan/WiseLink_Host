@@ -1,8 +1,8 @@
 import { axiosForBackend } from '@lark-apaas/client-toolkit/utils/getAxiosForBackend';
-import { readDerivedSummaryRevision, readDerivedSummary, readDerivedSummaryRequest, createDerivedSummary } from '@client/src/api/derived-summary';
+import { readDerivedSummaryExact, readDerivedSummaryRevision, readDerivedSummary, readDerivedSummaryRequest, createDerivedSummary } from '@client/src/api/derived-summary';
 import { memberFromKnowledge, summaryMemberKey, summaryMemberRoute, summaryScopeError, upperSummaryRoute } from '@client/src/features/derived-summary/summary-selection';
 import { libraryAtaSummaryParams } from '@client/src/pages/WorkspaceHomePage/library-summary-entry';
-import { summaryHead, summaryKnowledge, summaryRevision } from './fixtures/derived-summary';
+import { summaryExact, summaryHead, summaryKnowledge, summaryRevision } from './fixtures/derived-summary';
 import { libraryDocuments } from './fixtures/canonical-library';
 import { requireCanonicalHostClientAuthentication } from '@client/src/api/canonical-host';
 let session = 1;
@@ -43,11 +43,21 @@ test('ATA entry carries candidate DV window without selecting WI, issues or curr
   expect(summaryScopeError(summaryRevision().scope, [])).toContain('明确加入');
 });
 test('exact GET encodes the saved ref and rejects cross identity readback', async () => {
-  transport.mockResolvedValueOnce({ status: 200, data: summaryRevision('ref/a') } as never);
+  transport.mockResolvedValueOnce({ status: 200, data: summaryExact('ref/a') } as never);
   await expect(readDerivedSummaryRevision('DS-1', 'ref/a')).resolves.toMatchObject({ summaryRef: 'ref/a' });
   expect(transport).toHaveBeenCalledWith(expect.objectContaining({ url: '/api/canonical-host/derived-summaries/DS-1/revisions/ref%2Fa', method: 'GET' }));
-  transport.mockResolvedValueOnce({ status: 200, data: summaryRevision('different') } as never);
+  transport.mockResolvedValueOnce({ status: 200, data: summaryExact('different') } as never);
   await expect(readDerivedSummaryRevision('DS-1', 'ref/a')).rejects.toThrow('身份不一致');
+});
+test('exact wrapper exposes owned pointer metadata and notices for the selected historical revision without current GET', async () => {
+  const exact = summaryExact();
+  exact.revision.members[0].current = true;
+  exact.memberNotices[0].current = false;
+  transport.mockResolvedValueOnce({ status: 200, data: exact } as never);
+  await expect(readDerivedSummaryExact('DS-1', 'DSR-1')).resolves.toMatchObject({ currentSummaryRef: 'DSR-2',
+    revision: { summaryRef: 'DSR-1' }, memberNotices: [{ current: false }] });
+  expect(transport).toHaveBeenCalledTimes(1);
+  expect(transport).not.toHaveBeenCalledWith(expect.objectContaining({ url: '/api/canonical-host/derived-summaries/DS-1' }));
 });
 test('head and attempt status reject mismatched saved pointers', async () => {
   transport.mockResolvedValueOnce({ status: 200, data: { ...summaryHead(), currentSummaryRef: 'other' } } as never);

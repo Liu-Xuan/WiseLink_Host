@@ -24,14 +24,14 @@ function SummaryDirectory({ session }: { session: number }) {
   return <>
     {params.get('ata4') ? <p>当前查看 ATA {params.get('ata4')} 的已保存概述。<Link className="ml-3 underline" to="/summaries">查看全部概述</Link></p> : null}
     <Button variant="outline" onClick={directory.refresh}>重新核权并读取</Button>
-    {directory.loading ? <p role="status">正在读取当前账户的概述…</p> : null}
+    {directory.loading ? <p role="status">正在读取本人概述目录…</p> : null}
     {directory.error ? <p role="alert">{directory.error}</p> : null}
-    {filtered && !filtered.length ? <p>本范围尚无当前可读取的派生概述。可从资料库 ATA4 节点选择确切工作。</p> : null}
+    {filtered && !filtered.length ? <p>本范围尚无本人派生概述。可从资料库 ATA4 节点选择确切工作。</p> : null}
     <ul className="space-y-3">{filtered?.map(item => <li className="space-y-2 rounded-md border border-border p-4" key={item.summaryId}>
-      <Link className="text-lg font-semibold underline" to={`/summaries/${encodeURIComponent(item.summaryId)}${item.currentSummaryRef ? `?${new URLSearchParams({ summaryRef: item.currentSummaryRef })}` : ''}`}>{item.current?.content.headline || item.scope.title}</Link>
+      <Link className="text-lg font-semibold underline" to={`/summaries/${encodeURIComponent(item.summaryId)}${item.currentSummaryRef ? `?${new URLSearchParams({ summaryRef: item.currentSummaryRef })}` : ''}`}>{item.scope.title}</Link>
       <p>{item.scope.kind} · {item.scope.fleetFamilyId} · {item.scope.ata4 || item.scope.ata2 || '机型范围'} · 候选待核</p>
-      <p>{item.current ? item.current.content.listBrief : '尚无保存正文'}</p>
-      <p className="text-sm text-muted-foreground">当前指针修订 {item.currentRevision} · 仅覆盖明确选定资料</p>
+      <p>{item.currentSummaryRef ? '已有保存修订，正文与成员来源在打开时重新核权。' : '尚无保存正文'}</p>
+      <p className="text-sm text-muted-foreground">当前指针修订 {item.currentRevision} · 目录只显示本人对象信息，正文仅覆盖明确选定资料</p>
     </li>)}</ul>
   </>;
 }
