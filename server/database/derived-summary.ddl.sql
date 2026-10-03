@@ -44,28 +44,43 @@ DO $$ DECLARE prior text; BEGIN
   END IF;
 END $$;
 
+-- The SDK installs a PostgreSQL-validated SET LOCAL ROLE before each query.
+-- Freeze the schema here; JWT/app claim GUCs and caller JSON are not roles.
+CREATE OR REPLACE FUNCTION derived_summary_sql_role_allowed(service_only boolean)
+RETURNS boolean LANGUAGE sql STABLE SECURITY DEFINER SET search_path FROM CURRENT AS $$
+  SELECT COALESCE(current_setting('role', true), '') = 'service_role_' || current_schema()
+    OR (service_only IS FALSE AND COALESCE(current_setting('role', true), '') = 'authenticated_' || current_schema());
+$$;
+
 CREATE OR REPLACE FUNCTION derived_summary_attempt_owned(t varchar, actor varchar, s varchar)
 RETURNS boolean LANGUAGE sql STABLE SECURITY DEFINER SET search_path FROM CURRENT AS $$
-  SELECT actor = current_setting('app.user_id', true) AND engineering_matter_actor_has_tenant(t)
+  SELECT derived_summary_sql_role_allowed(false)
+    AND actor = current_setting('app.user_id', true) AND engineering_matter_actor_has_tenant(t)
     AND EXISTS (SELECT 1 FROM derived_summary h WHERE h.tenant_id=t AND h.summary_id=s AND h.actor_user_id=actor);
 $$;
-REVOKE ALL ON FUNCTION derived_summary_attempt_owned(varchar,varchar,varchar) FROM PUBLIC;
-GRANT EXECUTE ON FUNCTION derived_summary_attempt_owned(varchar,varchar,varchar) TO authenticated,service_role;
 
 -- Only the existing Hosted service may resolve the actor of an explicitly
 -- delegated request, before entering that actor's ordinary RLS scope.
+-- The platform manages ACLs. PostgreSQL's special role setting records the
+-- SDK's validated SET LOCAL ROLE; current_user here would be the definer,
+-- and JWT/app claim GUCs are not trusted role identities.
 CREATE OR REPLACE FUNCTION derived_summary_runtime_actor(t varchar, s varchar, a varchar, principal varchar)
-RETURNS varchar LANGUAGE sql STABLE SECURITY DEFINER SET search_path FROM CURRENT AS $$
-  SELECT x.actor_user_id FROM action_attempt x JOIN derived_summary h
+RETURNS varchar LANGUAGE plpgsql STABLE SECURITY DEFINER SET search_path FROM CURRENT AS $$
+DECLARE bound_actor varchar;
+BEGIN
+  IF NOT derived_summary_sql_role_allowed(true) THEN
+    RAISE EXCEPTION 'DERIVED_SUMMARY_SERVICE_ROLE_REQUIRED' USING ERRCODE='42501';
+  END IF;
+  SELECT x.actor_user_id INTO bound_actor FROM action_attempt x JOIN derived_summary h
     ON h.tenant_id=x.tenant_id AND h.summary_id=x.summary_id AND h.actor_user_id=x.actor_user_id
   WHERE x.tenant_id=t AND x.summary_id=s AND x.operation_ref=a
     AND x.subject_kind='DERIVED_SUMMARY' AND x.action_type='OPENCLAW_DERIVED_SUMMARY'
     AND x.summary_delegated_principal_id=principal
     AND EXISTS (SELECT 1 FROM identity_subject_mapping m WHERE m.miaoda_user_id=x.actor_user_id
       AND m.miaoda_tenant_id=t AND m.expected_client_id='cli_aadde8b579f95bc9' AND m.status='ACTIVE');
+  RETURN bound_actor;
+END;
 $$;
-REVOKE ALL ON FUNCTION derived_summary_runtime_actor(varchar,varchar,varchar,varchar) FROM PUBLIC;
-GRANT EXECUTE ON FUNCTION derived_summary_runtime_actor(varchar,varchar,varchar,varchar) TO service_role;
 
 -- Ordinary source RLS also governs saved task/body copies. Exact leaf work and
 -- original carriers are retained in the Host reading snapshot, including upper summaries.
@@ -73,7 +88,8 @@ CREATE OR REPLACE FUNCTION derived_summary_reading_sources_owned(t varchar, acto
 RETURNS boolean LANGUAGE plpgsql STABLE SECURITY DEFINER SET search_path FROM CURRENT AS $$
 DECLARE member jsonb; leaf jsonb; e jsonb; saved record;
 BEGIN
-  IF actor IS DISTINCT FROM current_setting('app.user_id', true)
+  IF NOT derived_summary_sql_role_allowed(false)
+    OR actor IS DISTINCT FROM current_setting('app.user_id', true)
     OR NOT engineering_matter_actor_has_tenant(t)
     OR jsonb_typeof(reading->'members') IS DISTINCT FROM 'array'
     OR jsonb_typeof(reading->'evidence') IS DISTINCT FROM 'array' THEN RETURN false; END IF;
@@ -109,22 +125,22 @@ BEGIN
   END LOOP;
   RETURN true;
 END $$;
-REVOKE ALL ON FUNCTION derived_summary_reading_sources_owned(varchar,varchar,jsonb) FROM PUBLIC;
-GRANT EXECUTE ON FUNCTION derived_summary_reading_sources_owned(varchar,varchar,jsonb) TO authenticated,service_role;
 
 DO $$ DECLARE p record; added text; BEGIN
   FOR p IN SELECT polname,pg_get_expr(polqual,polrelid) AS predicate,
-      pg_get_expr(polwithcheck,polrelid) AS checks FROM pg_policy WHERE polrelid='action_attempt'::regclass
+      pg_get_expr(polwithcheck,polrelid) AS checks,
+      (SELECT string_agg(CASE WHEN role_oid=0 THEN 'PUBLIC' ELSE quote_ident(pg_get_userbyid(role_oid)) END, ',')
+        FROM unnest(polroles) AS role_oid) AS role_targets FROM pg_policy WHERE polrelid='action_attempt'::regclass
       AND polname IN ('action_attempt_matter_subject_boundary','action_attempt_matter_or_document_subject_boundary')
   LOOP
     added := '(subject_kind = ''DERIVED_SUMMARY'' AND derived_summary_attempt_owned(tenant_id,actor_user_id,summary_id))';
-    EXECUTE format('CREATE POLICY %I ON action_attempt AS RESTRICTIVE FOR ALL TO authenticated,service_role USING ((%s) OR %s) WITH CHECK ((%s) OR %s)',
-      p.polname || '_summary',p.predicate,added,COALESCE(p.checks,p.predicate),added);
+    EXECUTE format('CREATE POLICY %I ON action_attempt AS RESTRICTIVE FOR ALL TO %s USING ((%s) OR %s) WITH CHECK ((%s) OR %s)',
+      p.polname || '_summary',p.role_targets,p.predicate,added,COALESCE(p.checks,p.predicate),added);
     EXECUTE format('DROP POLICY %I ON action_attempt',p.polname);
   END LOOP;
 END $$;
 DROP POLICY IF EXISTS action_attempt_summary_subject_boundary ON action_attempt;
-CREATE POLICY action_attempt_summary_subject_boundary ON action_attempt AS RESTRICTIVE FOR ALL TO authenticated,service_role
+CREATE POLICY action_attempt_summary_subject_boundary ON action_attempt AS RESTRICTIVE FOR ALL TO PUBLIC
   USING (subject_kind <> 'DERIVED_SUMMARY' OR (derived_summary_attempt_owned(tenant_id,actor_user_id,summary_id)
     AND derived_summary_reading_sources_owned(tenant_id,actor_user_id,task_envelope_json::jsonb->'modelInput')))
   WITH CHECK (subject_kind <> 'DERIVED_SUMMARY' OR (derived_summary_attempt_owned(tenant_id,actor_user_id,summary_id)
@@ -181,6 +197,17 @@ DROP TRIGGER IF EXISTS derived_summary_revision_immutable ON derived_summary_rev
 CREATE TRIGGER derived_summary_revision_immutable BEFORE UPDATE OR DELETE ON derived_summary_revision
   FOR EACH ROW EXECUTE FUNCTION derived_summary_revision_immutable();
 
+-- Platform default table ACLs can include TRUNCATE, which bypasses RLS and
+-- row-level immutable triggers. Preserve candidate history under those ACLs.
+CREATE OR REPLACE FUNCTION derived_summary_reject_truncate() RETURNS trigger LANGUAGE plpgsql AS $$
+BEGIN RAISE EXCEPTION 'DERIVED_SUMMARY_TRUNCATE_DENIED' USING ERRCODE='42501'; END $$;
+DROP TRIGGER IF EXISTS derived_summary_no_truncate ON derived_summary;
+CREATE TRIGGER derived_summary_no_truncate BEFORE TRUNCATE ON derived_summary
+  FOR EACH STATEMENT EXECUTE FUNCTION derived_summary_reject_truncate();
+DROP TRIGGER IF EXISTS derived_summary_revision_no_truncate ON derived_summary_revision;
+CREATE TRIGGER derived_summary_revision_no_truncate BEFORE TRUNCATE ON derived_summary_revision
+  FOR EACH STATEMENT EXECUTE FUNCTION derived_summary_reject_truncate();
+
 DO $$ BEGIN
   IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'fk_derived_summary_current') THEN
     ALTER TABLE derived_summary ADD CONSTRAINT fk_derived_summary_current
@@ -220,9 +247,11 @@ CREATE POLICY derived_summary_actor ON derived_summary TO authenticated
 DROP POLICY IF EXISTS derived_summary_service ON derived_summary;
 CREATE POLICY derived_summary_service ON derived_summary TO service_role USING (true) WITH CHECK (true);
 DROP POLICY IF EXISTS derived_summary_owner_boundary ON derived_summary;
-CREATE POLICY derived_summary_owner_boundary ON derived_summary AS RESTRICTIVE FOR ALL TO authenticated,service_role
-  USING (actor_user_id=current_setting('app.user_id',true) AND engineering_matter_actor_has_tenant(tenant_id))
-  WITH CHECK (actor_user_id=current_setting('app.user_id',true) AND engineering_matter_actor_has_tenant(tenant_id));
+CREATE POLICY derived_summary_owner_boundary ON derived_summary AS RESTRICTIVE FOR ALL TO PUBLIC
+  USING (derived_summary_sql_role_allowed(false) AND actor_user_id=current_setting('app.user_id',true) AND engineering_matter_actor_has_tenant(tenant_id))
+  WITH CHECK (derived_summary_sql_role_allowed(false) AND actor_user_id=current_setting('app.user_id',true) AND engineering_matter_actor_has_tenant(tenant_id));
+DROP POLICY IF EXISTS derived_summary_no_delete ON derived_summary;
+CREATE POLICY derived_summary_no_delete ON derived_summary AS RESTRICTIVE FOR DELETE TO PUBLIC USING (false);
 DROP POLICY IF EXISTS derived_summary_revision_actor_read ON derived_summary_revision;
 CREATE POLICY derived_summary_revision_actor_read ON derived_summary_revision FOR SELECT TO authenticated
   USING (actor_user_id = current_setting('app.user_id', true));
@@ -230,11 +259,11 @@ DROP POLICY IF EXISTS derived_summary_revision_actor_insert ON derived_summary_r
 DROP POLICY IF EXISTS derived_summary_revision_service ON derived_summary_revision;
 CREATE POLICY derived_summary_revision_service ON derived_summary_revision TO service_role USING (true) WITH CHECK (true);
 DROP POLICY IF EXISTS derived_summary_revision_sources ON derived_summary_revision;
-CREATE POLICY derived_summary_revision_sources ON derived_summary_revision AS RESTRICTIVE FOR ALL TO authenticated,service_role
+CREATE POLICY derived_summary_revision_sources ON derived_summary_revision AS RESTRICTIVE FOR ALL TO PUBLIC
   USING (derived_summary_reading_sources_owned(tenant_id,actor_user_id,content_json))
   WITH CHECK (derived_summary_reading_sources_owned(tenant_id,actor_user_id,content_json));
 DROP POLICY IF EXISTS derived_summary_revision_real_attempt ON derived_summary_revision;
-CREATE POLICY derived_summary_revision_real_attempt ON derived_summary_revision AS RESTRICTIVE FOR INSERT TO authenticated,service_role
+CREATE POLICY derived_summary_revision_real_attempt ON derived_summary_revision AS RESTRICTIVE FOR INSERT TO PUBLIC
   WITH CHECK (actor_user_id=current_setting('app.user_id',true) AND EXISTS (
     SELECT 1 FROM action_attempt a WHERE a.attempt_id=derived_summary_revision.attempt_id
       AND a.tenant_id=derived_summary_revision.tenant_id AND a.summary_id=derived_summary_revision.summary_id
@@ -243,10 +272,20 @@ CREATE POLICY derived_summary_revision_real_attempt ON derived_summary_revision 
       AND a.lease_token IS NOT NULL AND a.lease_expires_at>CURRENT_TIMESTAMP AND a.deadline_at>CURRENT_TIMESTAMP
       AND a.base_revision+1=derived_summary_revision.revision AND a.trigger_request_id=derived_summary_revision.request_id
   ));
+-- Preserve the original narrow table rights even if the platform installs
+-- additional broad native CRUD policies. Restrictive PUBLIC policies only
+-- constrain existing privileges; they do not give public access.
+DROP POLICY IF EXISTS derived_summary_revision_hosted_insert ON derived_summary_revision;
+CREATE POLICY derived_summary_revision_hosted_insert ON derived_summary_revision AS RESTRICTIVE FOR INSERT TO PUBLIC
+  WITH CHECK (derived_summary_sql_role_allowed(true));
+DROP POLICY IF EXISTS derived_summary_revision_no_update ON derived_summary_revision;
+CREATE POLICY derived_summary_revision_no_update ON derived_summary_revision AS RESTRICTIVE FOR UPDATE TO PUBLIC
+  USING (false) WITH CHECK (false);
+DROP POLICY IF EXISTS derived_summary_revision_no_delete ON derived_summary_revision;
+CREATE POLICY derived_summary_revision_no_delete ON derived_summary_revision AS RESTRICTIVE FOR DELETE TO PUBLIC USING (false);
 
-GRANT SELECT, INSERT, UPDATE ON derived_summary TO authenticated, service_role;
-GRANT SELECT ON derived_summary_revision TO authenticated;
-GRANT SELECT, INSERT ON derived_summary_revision TO service_role;
+-- Table/function ACLs are platform-managed; this DDL expresses the narrower
+-- actor/source/real-attempt boundaries with RLS and immutable triggers.
 COMMENT ON COLUMN derived_summary.scope_json IS '@type import("@shared/derived-summary.interface").DerivedSummaryScopeSelection';
 COMMENT ON COLUMN derived_summary.members_json IS '@type import("@shared/derived-summary.interface").DerivedSummaryMember[]';
 COMMENT ON COLUMN derived_summary_revision.content_json IS '@type import("@shared/derived-summary.interface").DerivedSummaryRevision';
