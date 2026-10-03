@@ -23,7 +23,8 @@ const { DerivedSummaryRuntimeService } = require('../../server/modules/canonical
 const { JOBAID_METHOD_BINDING } = require('../../server/modules/canonical-host/jobaid-method-pack.ts');
 
 const databaseUrl = process.env.DERIVED_SUMMARY_TEST_DATABASE_URL;
-const roleSchema = 'derived_summary_test';
+// The SDK roleSchema is the actual fixed schema used by the functions.
+const roleSchema = 'public';
 const owner = { tenantId: 'tenant-summary', actorUserId: 'actor-summary' };
 const scope = { tenantId: owner.tenantId, principalId: 'service-summary', appId: 'app_17bzc551rsg', authorizationFingerprint: 'configured' };
 const source = { kind: 'DOCUMENT_PASSAGE', evidenceRef: 'SOURCE-DV-old-para1', title: 'Synthetic old publication',
@@ -98,6 +99,51 @@ test('real saved aggregate/upper consumer preserves exact work, pool1, CAS, leas
         assert.ok(rows.some(row => row.subject_kind === 'WORK_ITEM' && row.action_type === 'OPENCLAW_DYNAMIC_EVALUATION' && row.summary_id === null));
         assert.ok(rows.some(row => row.subject_kind === 'DERIVED_SUMMARY' && row.action_type === 'OPENCLAW_DERIVED_SUMMARY' && row.summary_id === accepted.summaryId));
       });
+      await t.test('platform ACLs cannot expose the service resolver to ordinary roles, forged claims or TRUNCATE', async () => {
+        const resolver = querySql`SELECT derived_summary_runtime_actor(${owner.tenantId},${accepted.summaryId},
+          ${accepted.attemptRef},${scope.principalId}) AS actor`;
+        const [privilege] = await admin`SELECT has_function_privilege('authenticated_public',
+          'derived_summary_runtime_actor(varchar,varchar,varchar,varchar)','EXECUTE') AS allowed`;
+        assert.equal(privilege.allowed, true, 'ordinary invocation is possible under platform ACLs, so the function must reject it itself');
+        await assert.rejects(browser(() => database.execute(resolver)), serviceRoleDenied);
+        await assert.rejects(browser(() => database.execute(querySql`WITH claims AS MATERIALIZED (SELECT
+          set_config('request.jwt.claims', ${JSON.stringify({ role: 'service_role', sub: owner.actorUserId, tenantId: owner.tenantId })}, true),
+          set_config('request.jwt.claim.role','service_role',true),set_config('app.role_ids','service_role_public',true))
+          SELECT derived_summary_runtime_actor(${owner.tenantId},${accepted.summaryId},${accepted.attemptRef},${scope.principalId}) FROM claims`)), serviceRoleDenied);
+        await assert.rejects(context(undefined, false, () => database.execute(resolver)), serviceRoleDenied);
+        const [binding] = await hosted(() => database.execute(resolver));
+        assert.equal(binding.actor, owner.actorUserId);
+        const [wrongTenant] = await hosted(() => database.execute(querySql`SELECT derived_summary_runtime_actor('other-tenant',
+          ${accepted.summaryId},${accepted.attemptRef},${scope.principalId}) AS actor`));
+        assert.equal(wrongTenant.actor, null);
+        const [anon] = await context(undefined, false, () => database.execute(querySql`WITH forged_actor AS MATERIALIZED (
+          SELECT set_config('app.user_id',${owner.actorUserId},true)) SELECT
+          derived_summary_attempt_owned(${owner.tenantId},${owner.actorUserId},${accepted.summaryId}) AS allowed,
+          derived_summary_reading_sources_owned(${owner.tenantId},${owner.actorUserId},'{"members":[],"evidence":[]}'::jsonb) AS sources
+          FROM forged_actor`));
+        assert.equal(anon.allowed, false); assert.equal(anon.sources, false);
+        await browser(() => database.execute(querySql`INSERT INTO derived_summary(summary_id,tenant_id,actor_user_id,
+          create_request_id,scope_json,members_json) VALUES ('DS-native-draft',${owner.tenantId},${owner.actorUserId},'native-draft',
+          ${JSON.stringify(request.scope)}::jsonb,'[]'::jsonb)`));
+        const deleteDraft = () => database.execute(querySql`DELETE FROM derived_summary WHERE summary_id='DS-native-draft' RETURNING summary_id`);
+        assert.equal((await browser(deleteDraft)).length, 0, 'ordinary head DELETE remains unavailable under broad CRUD');
+        assert.equal((await hosted(() => transactions.withActorScope(owner.actorUserId, deleteDraft))).length, 0,
+          'service head DELETE remains unavailable under broad CRUD');
+        assert.equal((await context(undefined, false, () => database.execute(querySql`SELECT summary_id FROM derived_summary`))).length, 0);
+        for (const run of [browser, hosted]) await assert.rejects(run(() => database.execute(querySql`
+          TRUNCATE derived_summary,derived_summary_revision CASCADE`)),
+        error => databaseCode(error) === '42501' && databaseMessageIncludes(error, 'DERIVED_SUMMARY_TRUNCATE_DENIED'));
+        // Unlike a custom JWT/app claim GUC, PostgreSQL validates its special
+        // role setting against the session user's actual role memberships.
+        const loginUrl = new URL(databaseUrl); loginUrl.username = 'summary_ordinary_login'; loginUrl.password = '';
+        const ordinary = postgres(loginUrl.toString(), { max: 1, onnotice() {} });
+        try {
+          await assert.rejects(ordinary.begin(async sql => {
+            await sql.unsafe('SET LOCAL ROLE authenticated_public');
+            await sql`SELECT set_config('role','service_role_public',true)`;
+          }), error => databaseCode(error) === '42501');
+        } finally { await ordinary.end({ timeout: 5 }); }
+      });
       const target = () => ({ summaryId: accepted.summaryId, attemptRef: accepted.attemptRef, scope });
       let claim;
       await t.test('exact service delegation claims shared lease; fake service, missing save and stale fence fail', async () => {
@@ -109,6 +155,16 @@ test('real saved aggregate/upper consumer preserves exact work, pool1, CAS, leas
         assert.equal(claim.task.modelInput.members[0].member.workRef, 'JA-summary23');
         assert.match(claim.task.modelInput.members[0].limitations.join(' '), /DV-old.*历史正式版.*DV-new.*未被本成员覆盖/u);
         assert.equal(claim.task.executionModel.modelRef, 'miaoda/glm-5.3');
+        const sourceCopy = { members: claim.task.modelInput.members, evidence: claim.task.modelInput.evidence };
+        const [eligible] = await browser(() => database.execute(querySql`SELECT
+          derived_summary_reading_sources_owned(${owner.tenantId},${owner.actorUserId},${JSON.stringify(sourceCopy)}::jsonb) AS sources,
+          EXISTS(SELECT 1 FROM action_attempt WHERE operation_ref=${accepted.attemptRef} AND status='RUNNING'
+            AND lease_token IS NOT NULL AND lease_expires_at>CURRENT_TIMESTAMP) AS active`));
+        assert.equal(eligible.sources, true); assert.equal(eligible.active, true);
+        await assert.rejects(browser(() => database.execute(querySql`INSERT INTO derived_summary_revision(summary_ref,summary_id,
+          tenant_id,actor_user_id,revision,request_id,attempt_id,content_json) VALUES ('DSR-native-forged',${accepted.summaryId},
+          ${owner.tenantId},${owner.actorUserId},1,${request.requestId},${claim.task.actionAttemptId},${JSON.stringify(sourceCopy)}::jsonb)`)),
+        error => databaseCode(error) === '42501');
         await assert.rejects(hosted(() => runtime.finish({ ...target(), ...claimFence(claim), requestId: request.requestId })), /REQUIRES_SAVED/u);
         await assert.rejects(hosted(() => runtime.heartbeat({ ...target(), ...claimFence(claim), leaseGeneration: 0 })), /LEASE_FENCE/u);
       });
@@ -139,6 +195,14 @@ test('real saved aggregate/upper consumer preserves exact work, pool1, CAS, leas
         assert.equal(readback.summary.candidateOnly, true);
         assert.equal((await hosted(() => runtime.finish({ ...target(), ...claimFence(claim), requestId: request.requestId }))).status, 'SUCCEEDED');
         assert.equal((await browser(() => summaries.read(accepted.summaryId, actor))).currentSummaryRef, saved.summaryRef);
+        for (const run of [browser, operation => hosted(() => transactions.withActorScope(owner.actorUserId, operation))]) {
+          const changed = await run(() => database.execute(querySql`UPDATE derived_summary_revision SET content_json='{}'::jsonb
+            WHERE summary_ref=${saved.summaryRef} RETURNING summary_ref`));
+          const deleted = await run(() => database.execute(querySql`DELETE FROM derived_summary_revision
+            WHERE summary_ref=${saved.summaryRef} RETURNING summary_ref`));
+          assert.equal(changed.length, 0); assert.equal(deleted.length, 0, 'revision mutations remain unavailable under broad CRUD');
+        }
+        assert.equal((await context(undefined, false, () => database.execute(querySql`SELECT summary_ref FROM derived_summary_revision`))).length, 0);
         await assert.rejects(browser(() => summaries.request(accepted.summaryId,
           { ...request, requestId: 'stale-request', expectedSummaryRevision: 0 }, actor)), /REVISION_CONFLICT/u);
         await assert.rejects(admin`UPDATE action_attempt SET summary_delegated_principal_id='other' WHERE operation_ref=${accepted.attemptRef}`,
@@ -216,6 +280,8 @@ test('real saved aggregate/upper consumer preserves exact work, pool1, CAS, leas
 function claimFence(claim) { return { leaseToken: claim.leaseToken, leaseGeneration: claim.leaseGeneration }; }
 function databaseCode(error) { for (let current = error; current; current = current.cause) if (current.code) return current.code; return null; }
 function databaseConstraint(error) { for (let current = error; current; current = current.cause) if (current.constraint_name) return current.constraint_name; return null; }
+function databaseMessageIncludes(error, message) { for (let current = error; current; current = current.cause) if (current.message?.includes(message)) return true; return false; }
+function serviceRoleDenied(error) { return databaseCode(error) === '42501' && databaseMessageIncludes(error, 'DERIVED_SUMMARY_SERVICE_ROLE_REQUIRED'); }
 function nativeActor(userId, tenantId) {
   return { userId, tenantId, appId: 'app_17bzc551rsg', roles: [], env: 'runtime', objectAccessActor: {
     principalKind: 'FINAL_USER', transport: 'MIAODA_AUTHENTICATED_HTTP', canonicalSubject: { namespace: 'MIAODA_USER_ID', id: userId },
@@ -233,8 +299,11 @@ async function reset(admin) {
   await admin.unsafe(`DO $$ BEGIN
     IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname='authenticated') THEN CREATE ROLE authenticated NOLOGIN; END IF;
     IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname='service_role') THEN CREATE ROLE service_role NOLOGIN; END IF;
+    IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname='anon') THEN CREATE ROLE anon NOLOGIN; END IF;
     IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname='authenticated_${roleSchema}') THEN CREATE ROLE authenticated_${roleSchema} NOLOGIN IN ROLE authenticated; END IF;
     IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname='service_role_${roleSchema}') THEN CREATE ROLE service_role_${roleSchema} NOLOGIN IN ROLE service_role; END IF;
+    IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname='anon_${roleSchema}') THEN CREATE ROLE anon_${roleSchema} NOLOGIN IN ROLE anon; END IF;
+    IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname='summary_ordinary_login') THEN CREATE ROLE summary_ordinary_login LOGIN IN ROLE authenticated_${roleSchema}; END IF;
   END $$`);
   await admin.unsafe('CREATE TYPE user_profile AS (user_id text)');
   const originalDdl = await readFile('server/database/work-item.ddl.sql', 'utf8');
@@ -266,13 +335,13 @@ async function reset(admin) {
     CREATE FUNCTION engineering_matter_all_links_owned_by_actor(t varchar,m varchar) RETURNS boolean LANGUAGE sql STABLE AS $$ SELECT false $$;
     ALTER TABLE action_attempt ENABLE ROW LEVEL SECURITY;
     CREATE POLICY legacy_attempt_access ON action_attempt TO authenticated,service_role USING (true);
-    CREATE POLICY action_attempt_matter_or_document_subject_boundary ON action_attempt AS RESTRICTIVE FOR ALL TO authenticated,service_role
+    CREATE POLICY action_attempt_matter_or_document_subject_boundary ON action_attempt AS RESTRICTIVE FOR ALL TO authenticated_${roleSchema},service_role_${roleSchema}
       USING (subject_kind IN ('WORK_ITEM','DOCUMENT_VERSION') OR subject_kind='ACQUISITION' OR
         (subject_kind='ENGINEERING_MATTER' AND engineering_matter_owned_by_actor(tenant_id,matter_id)));
     ALTER TABLE work_item ENABLE ROW LEVEL SECURITY;
     CREATE POLICY work_owner ON work_item TO authenticated,service_role USING
       (requested_by_user_id=current_setting('app.user_id',true) AND engineering_matter_actor_has_tenant(tenant_id));
-    GRANT USAGE ON SCHEMA public TO authenticated,service_role;
+    GRANT USAGE ON SCHEMA public TO authenticated,service_role,anon;
     GRANT SELECT ON identity_subject_mapping TO authenticated,service_role;
     GRANT SELECT ON dm_document_version,dm_publication_family TO authenticated,service_role;
     GRANT SELECT,INSERT,UPDATE ON action_attempt TO authenticated,service_role;
@@ -280,11 +349,23 @@ async function reset(admin) {
   await admin.unsafe(await readFile('migrations/0026_assessment_work_revision.sql', 'utf8'));
   await admin.unsafe('GRANT SELECT ON assessment_work_revision TO authenticated,service_role');
   const summaryDdl = await readFile('server/database/derived-summary.ddl.sql', 'utf8');
+  assert.doesNotMatch(summaryDdl, /\b(?:GRANT|REVOKE)\b/iu, 'production DDL leaves ACL administration to the platform');
   // Start with the prior weaker summary-only constraint, then prove the same
   // additive DDL upgrades it and remains reapplicable without altering legacy branches.
+  const [oldPolicy] = await admin`SELECT polroles FROM pg_policy WHERE polrelid='action_attempt'::regclass
+    AND polname='action_attempt_matter_or_document_subject_boundary'`;
   await admin.unsafe(summaryDdl.replace("\n        AND action_type <> 'OPENCLAW_DERIVED_SUMMARY'", ''));
   await admin.unsafe(summaryDdl);
+  const [extendedPolicy] = await admin`SELECT polroles FROM pg_policy WHERE polrelid='action_attempt'::regclass
+    AND polname='action_attempt_matter_or_document_subject_boundary_summary'`;
+  assert.deepEqual(extendedPolicy.polroles, oldPolicy.polroles, 'dynamic policy extension preserves actual schema-suffixed target roles');
   await admin.unsafe(summaryDdl);
+  // Simulate the documented broad platform-managed ACLs locally, including
+  // TRUNCATE. These fixture-only statements are never part of deployed DDL.
+  await admin.unsafe('GRANT ALL ON derived_summary,derived_summary_revision TO authenticated,service_role,anon');
+  await admin.unsafe('GRANT TRUNCATE ON ALL TABLES IN SCHEMA public TO authenticated,service_role,anon');
+  await admin.unsafe(`CREATE POLICY platform_native_crud ON derived_summary TO authenticated,service_role,anon USING(true) WITH CHECK(true);
+    CREATE POLICY platform_native_crud ON derived_summary_revision TO authenticated,service_role,anon USING(true) WITH CHECK(true);`);
 }
 
 async function seed(admin) {
