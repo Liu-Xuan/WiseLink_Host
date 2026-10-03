@@ -8,7 +8,8 @@ import { assertHostedModelGatewayReady, createCheckpointStore, createHostMcpConn
   resolveRuntimeConfig } from './run-hosted-review-turn.mjs';
 import { validateSummaryRunBudget } from './derived-summary-native-gateway.mjs';
 import { invokeHostedDerivedSummaryModel } from './invoke-hosted-derived-summary-model.mjs';
-import { derivedSummaryRegistry, validateDerivedSummaryContent, materializeDerivedSummaryContent, validateDerivedSummaryReadSelection,
+import { derivedSummaryRegistry, validateDerivedSummaryContent, materializeDerivedSummaryContent,
+  normalizeDerivedSummaryContent, validateDerivedSummaryReadSelection,
   validateDerivedSummaryReading, validateDerivedSummaryTask, validateDerivedSummaryProvenance } from './derived-summary-shape.mjs';
 
 const ACTIVE = new Set(['QUEUED', 'RUNNING', 'RETRY_SCHEDULED', 'COMMITTING']);
@@ -127,6 +128,9 @@ export async function consumeHostedDerivedSummary(options, dependencies) {
   };
   const requestId = task.requestId;
   let candidate = await checkpoint.readOptional('summary-candidate');
+  // Older checkpoints contain the same candidate before Host's trim/union.
+  // Apply those save rules without regenerating the candidate or its provenance.
+  if (candidate) candidate = { ...candidate, content: normalizeDerivedSummaryContent(candidate.content, task.modelInput) };
   let saved = await readSaved(requestId);
   if (saved !== null) assertSavedRead(saved, target, task, candidate?.content, candidate?.provenance);
   if (!saved) {

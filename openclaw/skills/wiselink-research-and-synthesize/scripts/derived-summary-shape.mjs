@@ -153,9 +153,19 @@ export function validateDerivedSummaryProvenance(value, executionModel) {
   return value;
 }
 
+/** Match Host parseSummaryContent followed by the task-limitations union. */
+export function normalizeDerivedSummaryContent(content, modelInput) {
+  validateDerivedSummaryContent(content, modelInput);
+  return { headline: content.headline.trim(), listBrief: content.listBrief.trim(), body: content.body.trim(),
+    limitations: [...new Set([...modelInput.limitations, ...content.limitations.map(item => item.trim())])] };
+}
+
 export function materializeDerivedSummaryContent(content, modelInput) {
   validateDerivedSummaryContent(content, modelInput);
-  return { ...content, limitations: [...new Set([...modelInput.limitations, ...content.limitations])] };
+  // Assemble the original complete candidate, then apply Host's save order.
+  // This is also stable when an inherited task limitation needs text trimming.
+  return normalizeDerivedSummaryContent({ ...content,
+    limitations: [...new Set([...modelInput.limitations, ...content.limitations])] }, modelInput);
 }
 
 /** Operation schemas are the actual Host discriminated union, rather than a

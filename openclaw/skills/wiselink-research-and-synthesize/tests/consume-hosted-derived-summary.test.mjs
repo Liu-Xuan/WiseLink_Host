@@ -6,6 +6,7 @@ import test from 'node:test';
 import { consumeHostedDerivedSummary, derivedSummaryCliTarget, withSummaryHeartbeat } from '../scripts/consume-hosted-derived-summary.mjs';
 import { invokeHostedDerivedSummaryModel, derivedSummaryModelMessages } from '../scripts/invoke-hosted-derived-summary-model.mjs';
 import { derivedSummaryRegistry, validateDerivedSummaryTask, validateDerivedSummaryContent,
+  materializeDerivedSummaryContent, normalizeDerivedSummaryContent,
   validateDerivedSummaryReadSelection } from '../scripts/derived-summary-shape.mjs';
 import { canonicalSha256 } from '../scripts/validate-payload.mjs';
 import { createCheckpointStore, executionModelHeaders, readHostMcpJsonResult } from '../scripts/run-hosted-review-turn.mjs';
@@ -85,9 +86,13 @@ function harness(checkpointRoot, hooks = {}) {
             'operation', 'requestId', 'expectedSummaryRevision', 'contentJson', 'provenanceJson'].sort());
           assert.equal(input.expectedSummaryRevision, 0); assert.equal(input.requestId, task.requestId);
           const receipt = { summaryId: target.summaryId, summaryRef: 'SUMR-one', revision: 1, replay: false };
+          const submitted = JSON.parse(input.contentJson);
           saved = { receipt: { ...receipt, replay: true }, summary: { ...receipt, requestId: task.requestId,
             attemptRef: target.attemptRef, scope: modelInput.scope, classificationStatus: 'CANDIDATE',
-            content: JSON.parse(input.contentJson), members: task.modelInput.members,
+            content: { headline: submitted.headline.trim(), listBrief: submitted.listBrief.trim(),
+              body: submitted.body.trim(), limitations: [...new Set([...task.modelInput.limitations,
+                ...submitted.limitations.map(item => item.trim())])] },
+            members: task.modelInput.members,
             producer: JSON.parse(input.provenanceJson), coverage: task.modelInput.members.map(member => ({
               member: member.member, evidenceRef: member.evidenceRef, delivered: true, used: true,
               rootRefs: member.rootRefs, limitation: member.limitations.join('\n') })), candidateOnly: true } };
@@ -144,6 +149,49 @@ test('real summary adapter reads exact members and roots then saves, exact-reads
   const checkpoint = await createCheckpointStore(join(root, 'derived-summary', 'host', 'DS-one', 'AQ-one'));
   assert.equal((await checkpoint.readOptional('summary-candidate')).provenance.actualModel, 'synthetic-actual/model-v1');
   assert.deepEqual(h.saved.summary.content, content);
+}));
+
+const whitespaceContent = { headline: '\t Selected candidate \n', listBrief: '\n Selected scope only. \t',
+  body: '\n  Body [[member-ref]]\n\nInterior paragraph [[root-ref]]  \n',
+  limitations: ['\t Candidate boundary. \n', 'Candidate boundary.'] };
+const normalizedWhitespaceContent = { headline: 'Selected candidate', listBrief: 'Selected scope only.',
+  body: 'Body [[member-ref]]\n\nInterior paragraph [[root-ref]]',
+  limitations: [...modelInput.limitations, 'Candidate boundary.'] };
+
+test('complete candidate normalization is stable under the Host trim then task-limitations union', () => {
+  const input = { ...modelInput, limitations: ['\n Inherited boundary. \t', ...modelInput.limitations] };
+  const candidate = materializeDerivedSummaryContent(whitespaceContent, input);
+  assert.deepEqual(candidate.limitations, [...input.limitations, 'Inherited boundary.', 'Candidate boundary.']);
+  assert.deepEqual(normalizeDerivedSummaryContent(candidate, input), candidate);
+});
+
+test('model boundary whitespace is normalized before checkpoint and SAVE with Host-equivalent exact readback', () => fixture(async root => {
+  const h = harness(root, { gateway: () => gatewayStep({ action: 'SAVE_SUMMARY', contentJson: JSON.stringify(whitespaceContent) }) });
+  assert.equal((await consumeHostedDerivedSummary(h.options, h.dependencies)).summaryRef, 'SUMR-one');
+  const checkpoint = await createCheckpointStore(join(root, 'derived-summary', 'host', 'DS-one', 'AQ-one'));
+  assert.deepEqual((await checkpoint.readOptional('summary-candidate')).content, normalizedWhitespaceContent);
+  assert.deepEqual(JSON.parse(h.calls.find(call => call.operation === 'SAVE_SUMMARY').contentJson), normalizedWhitespaceContent);
+  assert.deepEqual(h.saved.summary.content, normalizedWhitespaceContent);
+  assert.equal(h.calls.filter(call => call.operation === 'FINISH').length, 1);
+}));
+
+test('legacy whitespace checkpoint resumes its exact saved candidate after lost FINISH without model or SAVE replay', () => fixture(async root => {
+  let finishes = 0;
+  const h = harness(root, { gateway: () => gatewayStep({ action: 'SAVE_SUMMARY', contentJson: JSON.stringify(whitespaceContent) }),
+    tool: async input => {
+      if (input.operation === 'FINISH' && ++finishes === 1) throw new Error('finish response lost');
+    } });
+  await assert.rejects(consumeHostedDerivedSummary(h.options, h.dependencies), /finish response lost/);
+  const checkpoint = await createCheckpointStore(join(root, 'derived-summary', 'host', 'DS-one', 'AQ-one'));
+  const candidate = await checkpoint.readOptional('summary-candidate');
+  await checkpoint.write('summary-candidate', { ...candidate, content: { ...whitespaceContent,
+    limitations: [...modelInput.limitations, ...whitespaceContent.limitations] } });
+  h.generation = 2;
+  assert.equal((await consumeHostedDerivedSummary(h.options, h.dependencies)).summaryRef, 'SUMR-one');
+  assert.deepEqual(h.saved.summary.content, normalizedWhitespaceContent);
+  assert.equal(h.gatewayCalls.length, 1);
+  assert.equal(h.calls.filter(call => call.operation === 'SAVE_SUMMARY').length, 1);
+  assert.equal(h.calls.filter(call => call.operation === 'FINISH').length, 2);
 }));
 
 test('lost SAVE response reads back the same request before FINISH without another generation', () => fixture(async root => {
