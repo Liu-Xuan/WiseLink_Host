@@ -29,6 +29,17 @@ captured route must be the registered official `miaoda/glm-5.3`; a mismatching
 Host route is refused, never switched. The driver returns only source-read
 intents or candidate content through `return_wiselink_summary_step`.
 
+The model SAVE step uses `{action:'SAVE_SUMMARY', content:{headline,listBrief,body,limitations}}`.
+Its strict tool schema requires exactly these four content fields: headline,
+listBrief and body are nonempty strings; limitations is an array of nonempty
+strings and may be empty. The schema mirrors existing Host receive limits
+(240/2000/1000000 characters and 4000 per limitation); these are not requested
+summary lengths. Prompt v2 follows the task's requested length and asks for
+concise decisive premises, conclusions and conditions instead of copied member
+assessments. The driver validates the object, then sends the unchanged Host SAVE
+transport `contentJson: JSON.stringify(candidate.content)`. A string limitation
+is rejected, never converted to an array. READ intents retain their existing shape.
+
 Every run explicitly chooses timeout, completion cap and maximum actual model
 requests. These are adjustable run budgets within the Host deadline and current
 profile limits, not fixed model capabilities. The existing provider timeout is
