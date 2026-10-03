@@ -1,4 +1,5 @@
 #!/usr/bin/env node
+import { validateDerivedSummaryToolMetadata } from './derived-summary-shape.mjs';
 import { JOBAID_WORK_UPDATE_SHAPE, decodeJobAidValue, jobAidFunctionSchema } from './jobaid-work-shape.mjs';
 import { JOBAID_WORK_GUIDANCE } from './jobaid-problem-guidance.mjs';
 import { REVIEW_JOBAID_TASK_SCHEMA, REVIEW_JOBAID_CANDIDATE_SCHEMA } from './validate-payload.mjs';
@@ -1271,6 +1272,7 @@ export function validateHostToolMetadata(value) {
   ) {
     throw new Error('REVIEW_HOST_MCP_COMMIT_SCHEMA_MISMATCH');
   }
+  validateDerivedSummaryToolMetadata(tools.find(({ name }) => name === 'derived_summary_attempt'));
   // read_matter_current_work is the deployed Host read-only precheck. The
   // runtime pins its read-only annotations and its strict matterId-only
   // inputSchema; never widen either without a matching Host contract change.
@@ -1365,7 +1367,7 @@ function safeHostErrorCode(value) {
     return 'CANONICAL_SERVICE_SCOPE_UNAVAILABLE';
   const pluginQuotaCode = value.match(/^(?:Error:\s*)?(DOCUMENT_PLUGIN_QUOTA_EXHAUSTED|DOCUMENT_PLUGIN_RATE_LIMITED)(?=:|$)/u)?.[1];
   if (pluginQuotaCode) return pluginQuotaCode;
-  const code = value.match(/^(?:Error:\s*)?((?:CANONICAL|AILY|REVIEW|ACTION_ATTEMPT|OPENCLAW|ENGINEERING_MATTER|OVERALL|JOBAID|DYNAMIC_EVALUATION|CONFIGURATION_REEVALUATION|TRANSLATION|COMMON_CONTEXT|PACKAGE_ARTIFACT|SOURCE_CONTEXT|SOURCE_PAGE|DOCUMENT_READING)_[A-Z0-9_]+)(?=:|$)/u)?.[1];
+  const code = value.match(/^(?:Error:\s*)?((?:CANONICAL|AILY|REVIEW|ACTION_ATTEMPT|OPENCLAW|ENGINEERING_MATTER|OVERALL|JOBAID|DYNAMIC_EVALUATION|CONFIGURATION_REEVALUATION|TRANSLATION|COMMON_CONTEXT|PACKAGE_ARTIFACT|SOURCE_CONTEXT|SOURCE_PAGE|DOCUMENT_READING|DERIVED_SUMMARY)_[A-Z0-9_]+)(?=:|$)/u)?.[1];
   return code && code.length <= 160 ? code : null;
 }
 

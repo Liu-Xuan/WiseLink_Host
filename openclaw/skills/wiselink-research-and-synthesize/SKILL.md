@@ -686,3 +686,14 @@ Host documentActivityAction 的文档活动消费由 `scripts/consume-hosted-doc
 `--matter-expected-snapshot` 在下一次消费前复核指纹，不一致、活跃 attempt 或空工作均停止在调度之前。
 正常 cron 不增加预检调用，旧检查点恢复保持原路径。预检不保证未来状态，Host 后续调度与 BEGIN
 仍执行当前版本、来源授权和 CAS 检查；细节见 [Host MCP 编排](references/host-mcp-orchestration.md)。
+
+## Explicit selected-scope derived summary
+
+An admitted `OPENCLAW_DERIVED_SUMMARY` is its own `DERIVED_SUMMARY` subject. Run
+`scripts/consume-hosted-derived-summary.mjs` with its exact summaryId/attemptRef
+through the installed official A12b Gateway and one-shot adapter. Keep full
+selected work and root limitations, read every selected member, and save/read
+back the candidate before FINISH. Do not route it through a fake WorkItem,
+Matter or Review task. See [derived summary protocol](references/derived-summary-work.md)
+for adjustable run budgets, precise read/save recovery, provenance and the
+installed-baseline delta.
