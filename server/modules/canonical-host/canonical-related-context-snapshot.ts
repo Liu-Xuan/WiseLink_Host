@@ -160,7 +160,8 @@ function snapshotItems(
       ...(group.first.applicabilityResultRef
         ? { applicabilityResultRef: group.first.applicabilityResultRef }
         : {}),
-      currentness: resolved ? 'CURRENT' : 'UNKNOWN',
+      // Exact identity resolution does not establish publisher currentness.
+      currentness: 'UNKNOWN',
       authority: group.first.sourceAuthority,
       sourceAuthority: group.first.sourceAuthority,
       sourceBasis: 'PRIMARY_DOCUMENT_EXPLICIT_MENTION',
