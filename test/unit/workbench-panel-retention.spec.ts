@@ -64,11 +64,11 @@ describe('visited workbench panels', () => {
     const pdf = source('pages/DocumentParsingPage/PdfDocumentViewer.tsx');
     expect(review).toMatch(/if \(\s*!panelActive \|\|\s*!hasActiveExecution/u);
     expect(review).toContain('return () => window.clearTimeout(timer)');
-    expect(pdf).toContain('[pageCount, pdfDocument, panelActive]');
+    expect(pdf).toContain('[pageCount, pdfDocument, panelActive, mobilePage, targetSignal, sourceTargetPage]');
     expect(pdf).toContain(
-      '[document, highlighted, pageNumber, renderRequested, zoom, panelActive]',
+      '[document, pageNumber, activeRender, zoom, frameWidth]',
     );
-    expect(pdf).toContain('[preview.supportsRange, previewUrl]');
+    expect(pdf).toContain('[previewUrl, supportsRange]');
     expect(pdf).toContain('appliedScrollRequestRef.current === scrollRequest');
   });
 

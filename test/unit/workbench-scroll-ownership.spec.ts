@@ -110,10 +110,10 @@ describe('workbench scroll ownership', () => {
 
     expect(pdf).toContain('aria-label="PDF 页面"');
     expect(pdf).toContain('data-pdf-page={pageNumber}');
-    expect(pdf).toContain('container.scrollTo');
+    expect(pdf).toContain('followPdfPageTarget(container, scrollRequest.page');
     expect(pdf).toContain('onScroll={handlePagesScroll}');
     expect(pdf).toContain('pageAtReadingLine');
-    expect(pdf).toContain('renderRequested || highlighted');
+    expect(pdf).toContain('panelActive && renderRequested');
     expect(pdf).toContain("? 'requested' : 'deferred'");
     expect(pdfStyles).toMatch(
       /\.wl-workbench-main\.is-workspace \.parse-pdf-pages\s*\{[\s\S]*?max-height: none;[\s\S]*?min-height: 0;/,
