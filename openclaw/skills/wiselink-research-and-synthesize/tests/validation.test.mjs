@@ -9221,6 +9221,62 @@ test('rejects weakened read_matter_current_work metadata through the real valida
   assert.throws(() => validateHostToolMetadata({ tools: missingMatterId }), /REVIEW_HOST_MCP_PRECHECK_SCHEMA_MISMATCH/);
 });
 
+
+async function companionJobAidReceiptFixture(mutation = () => {}) {
+  const { task: reviewTask, candidate } = await emptyJobAidReviewFixture();
+  reviewTask.jobAidContext.modelInput.expectedWorkRevision = 7;
+  reviewTask.jobAidContext.previousWork.workRevisionRef = 'JAWR-preserved-7';
+  reviewTask.jobAidContext.previousWork.workRevision = 7;
+  candidate.responseType = 'RESYNTHESIS_RESULT';
+  candidate.jobAidWorkingDelta = { schemaVersion: 'wiselink.jobaid-problem-work.v3',
+    issues: [], overview: '保留当前工作，综合仅为候选。', roundCompletion: 'IN_PROGRESS',
+    completionReason: '仍有条件待核。', changeSummary: '更正保存后的派生综合覆盖。' };
+  const task = makeTask('OPENCLAW_INTERACTIVE_REVIEW', reviewTask);
+  let receipt;
+  const result = await runInteractiveReviewTurn({ mode: 'INTERACTIVE_REVIEW',
+    reviewConversationRef: reviewTask.reviewConversationRef, requestId: reviewTask.requestId,
+    callTool: async (name, args) => {
+      if (name === 'begin_review_turn') return runningBegin(task);
+      if (name === 'get_review_turn_context') return reviewContext(task, reviewTask);
+      if (name === 'commit_review_turn_candidate') {
+        const sealed = JSON.parse(args.resultJson);
+        receipt = reviewCommit(task.operationRef);
+        receipt.authority.staleMarked = true;
+        receipt.assistantCandidate = { actionAttemptRef: task.operationRef,
+          provenance: { resultContentHash: sealed.contentHash },
+          jobAidWorkingUpdate: { status: 'APPLIED', workRevisionRef: 'JAWR-saved-8', workRevision: 8 } };
+        mutation(receipt);
+        return receipt;
+      }
+      throw new Error(`UNEXPECTED_TOOL:${name}`);
+    }, respond: async () => ({ output: candidate, provenance: provenance() }) });
+  return { result, receipt };
+}
+
+test('companion exact JobAid APPLIED receipt permits Overall invalidation without a formal action', async () => {
+  const { result, receipt } = await companionJobAidReceiptFixture();
+  assert.equal(result.ok, true);
+  assert.equal(result.committed, receipt);
+  assert.equal(result.committed.authority.staleMarked, true);
+  assert.equal(result.committed.authority.currentChanged, false);
+  assert.equal(result.committed.authority.workItemRevisionChanged, false);
+  assert.equal(result.committed.authority.reviewActionExecuted, false);
+});
+
+for (const [name, mutation] of [
+  ['different attempt', r => { r.assistantCandidate.actionAttemptRef = 'AQ-another'; }],
+  ['different sealed hash', r => { r.assistantCandidate.provenance.resultContentHash = 'f'.repeat(64); }],
+  ['missing persisted update', r => { delete r.assistantCandidate.jobAidWorkingUpdate; }],
+  ['unchanged work reference', r => { r.assistantCandidate.jobAidWorkingUpdate.workRevisionRef = 'JAWR-preserved-7'; }],
+  ['wrong revision', r => { r.assistantCandidate.jobAidWorkingUpdate.workRevision = 9; }],
+  ['non applied receipt', r => { r.assistantCandidate.jobAidWorkingUpdate.status = 'UNCHANGED'; }],
+  ['formal current mutation', r => { r.authority.currentChanged = true; }],
+  ['formal WorkItem mutation', r => { r.authority.workItemRevisionChanged = true; }],
+  ['formal ReviewAction', r => { r.authority.reviewActionExecuted = true; }],
+]) test(`companion refuses invalidating receipt: ${name}`, async () => {
+  await assert.rejects(companionJobAidReceiptFixture(mutation), /HOST_MCP_REVIEW_COMMIT_RESULT_INVALID/u);
+});
+
 test('requires strict registered derived_summary_attempt metadata without granting extra inputs', () => {
   const tools = buildHostToolSurface();
   for (const alter of [
