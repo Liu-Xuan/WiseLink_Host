@@ -90,6 +90,7 @@ export function ShellAdapter({ children }: ShellAdapterProps) {
 
     // 添加查询参数
     const searchParams = new URLSearchParams();
+    if (page === 'graph') searchParams.set('scope', 'library');
     if (navParams?.query) searchParams.set('q', navParams.query);
     if (navParams?.event) searchParams.set('event', navParams.event);
     if (navParams?.view) searchParams.set('view', navParams.view);

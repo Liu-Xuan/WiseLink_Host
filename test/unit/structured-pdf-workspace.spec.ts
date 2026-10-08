@@ -1,5 +1,6 @@
 import { readFile } from 'node:fs/promises';
 import { resolve } from 'node:path';
+import * as ts from 'typescript';
 
 const root: string = resolve(__dirname, '../..');
 
@@ -34,7 +35,11 @@ describe('structured PDF workspace wiring', () => {
     expect(viewer).toContain(
       'pageFrames.forEach((frame: HTMLElement) => observer.observe(frame))',
     );
-    expect(viewer).toContain('[pdfDocument, targetPage, targetSignal]');
+    // The unchanged target effect also follows exact reading-scope changes.
+    // Compare its complete dependency contract, not source formatting.
+    expect(targetEffectDependencies(viewer)).toEqual([
+      ['pdfDocument', 'targetPage', 'targetSignal', 'positionKey'],
+    ]);
     // Target scrolling and late geometry are exercised by the real React
     // consumer in pdf-viewer-target-layout.spec.ts, not source spelling.
     expect(viewer).not.toContain('root: frame.parentElement');
@@ -59,4 +64,27 @@ describe('structured PDF workspace wiring', () => {
 
 function source(relative: string): Promise<string> {
   return readFile(resolve(root, relative), 'utf8');
+}
+
+function targetEffectDependencies(viewer: string): string[][] {
+  const file = ts.createSourceFile('PdfDocumentViewer.tsx', viewer,
+    ts.ScriptTarget.Latest, true, ts.ScriptKind.TSX);
+  const effects: string[][] = [];
+  function callsTarget(node: ts.Node): boolean {
+    if (ts.isCallExpression(node) && ts.isIdentifier(node.expression)
+      && node.expression.text === 'requestPdfPage') return true;
+    return ts.forEachChild(node, callsTarget) ?? false;
+  }
+  function visit(node: ts.Node): void {
+    if (ts.isCallExpression(node) && ts.isIdentifier(node.expression)
+      && node.expression.text === 'useEffect' && node.arguments[0]
+      && callsTarget(node.arguments[0])) {
+      const dependencies = node.arguments[1];
+      effects.push(dependencies && ts.isArrayLiteralExpression(dependencies)
+        ? dependencies.elements.map(item => item.getText(file)) : []);
+    }
+    ts.forEachChild(node, visit);
+  }
+  visit(file);
+  return effects;
 }

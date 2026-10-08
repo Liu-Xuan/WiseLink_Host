@@ -34,7 +34,7 @@ export default function DocumentOriginalCanvasPreview({
   readingScope,
   onVisiblePageChange,
   page,
-  autoLoad = false,
+  autoLoad = true,
   targetSignal = '',
   targetBoxes = null,
 }: DocumentOriginalCanvasPreviewProps) {
@@ -78,20 +78,21 @@ export default function DocumentOriginalCanvasPreview({
     return (
       <section className="document-original-inline" aria-label="PDF 原件">
         <div className="document-original-inline-empty">
-          <strong>原件按需读取</strong>
-          <p>读取后在此显示同一 DocumentVersion 的受控 PDF。</p>
-          <Button
-            type="button"
-            variant="outline"
-            disabled={busy}
-            onClick={openOriginal}
-          >
-            {busy
-              ? '正在读取原件…'
-              : url
-                ? '正在准备 PDF 阅读组件…'
-                : '读取受控原件'}
-          </Button>
+          <strong>PDF 原件</strong>
+          <p>显示同一 DocumentVersion 的受控 PDF。</p>
+          {!error && !moduleError && (autoLoad || busy || (requested && url)) ? (
+            <p role="status">{url ? '正在准备 PDF 阅读组件…' : '正在读取受控 PDF 原件…'}</p>
+          ) : null}
+          {error || (!autoLoad && !url && !busy) ? (
+            <Button
+              type="button"
+              variant="outline"
+              disabled={busy}
+              onClick={openOriginal}
+            >
+              {error ? '重试读取原件' : '读取受控原件'}
+            </Button>
+          ) : null}
           {error ? <p role="alert">{error}</p> : null}
           {moduleError ? (
             <div role="alert">

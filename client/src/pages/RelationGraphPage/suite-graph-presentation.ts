@@ -214,6 +214,8 @@ function relationEdge(
       businessTarget: relation.target,
       type: relation.type,
       label: relation.label,
+      ...(relation.authority === undefined ? {} : { authority: relation.authority }),
+      ...(relation.currentness === undefined ? {} : { currentness: relation.currentness }),
       viewKind: 'relationship',
       groupKey,
       ...appearance,
@@ -368,13 +370,13 @@ export function buildSuiteGraphPresentation(
 
   elements.push({
     group: 'nodes',
-    data: { id: HUB_ID(matter.id), ...(matter.rootKind === 'matter' ? { businessId: matter.id } : {}), rootKind: matter.rootKind, viewKind: 'hub', title: matter.title, code: matter.code, picture: matter.picture, w: 180, h: 180, virtual: matter.rootKind === 'display' },
+    data: { id: HUB_ID(matter.id), ...(matter.rootKind !== 'display' ? { businessId: matter.id } : {}), rootKind: matter.rootKind, viewKind: 'hub', title: matter.title, code: matter.code, picture: matter.picture, w: 180, h: 180, virtual: matter.rootKind === 'display' },
     position: HUB_POSITION,
     classes: 'matter-root',
     grabbable: false,
   });
 
-  const rootBusinessId = matter.rootKind === 'matter' ? matter.id : undefined;
+  const rootBusinessId = matter.rootKind !== 'display' ? matter.id : undefined;
   const visibleBusinessIds = new Set([...(rootBusinessId ? [rootBusinessId] : []), ...visibleItems.keys()]);
   const displayedBusinessIds = new Set([...(rootBusinessId ? [rootBusinessId] : []), ...itemGroup.keys()]);
   const individualRelations = matter.relations.filter((relation) => visibleBusinessIds.has(relation.source) && visibleBusinessIds.has(relation.target));
@@ -426,7 +428,10 @@ export function buildSuiteGraphPresentation(
     aggregatedRelations.forEach((relation) => {
       const source = relation.source === rootBusinessId ? HUB_ID(matter.id) : GROUP_ID(itemGroup.get(relation.source)!);
       const target = relation.target === rootBusinessId ? HUB_ID(matter.id) : GROUP_ID(itemGroup.get(relation.target)!);
-      const key = JSON.stringify([source, target]);
+      // Legacy relations keep the original bundle grouping and identity.
+      const key = relation.authority === undefined && relation.currentness === undefined
+        ? JSON.stringify([source, target])
+        : JSON.stringify([source, target, relation.authority ?? null, relation.currentness ?? null]);
       const bundle = bundles.get(key) ?? { source, target, relations: [], groupKey: itemGroup.get(relation.target) ?? itemGroup.get(relation.source) };
       bundle.relations.push(relation);
       bundles.set(key, bundle);
@@ -453,6 +458,8 @@ export function buildSuiteGraphPresentation(
           viewKind: 'bundle',
           label: labels.size === 1 ? bundle.relations[0].label : '资料关联',
           relationshipIds: ids,
+          ...(bundle.relations[0].authority === undefined ? {} : { authority: bundle.relations[0].authority }),
+          ...(bundle.relations[0].currentness === undefined ? {} : { currentness: bundle.relations[0].currentness }),
           groupKey: bundle.groupKey,
           ...appearanceForGroup(bundle.groupKey),
           curvature,
@@ -491,7 +498,7 @@ export function buildSuiteGraphPresentation(
       eligible: { groups: eligible.length, items: eligible.reduce((count, group) => count + group.items.length, 0) },
       page: { index: page, size: pageSize, count: groups.length, pageCount },
       shown: { groups: groups.length, items: visibleItems.size, cards: visibleItems.size },
-      represented: { relationships: representedRelations.length },
+      represented: { relationships: representedRelations.length, displayConnections: 0, businessRelationships: representedRelations.length },
     },
     omittedRelationships,
     bounds: (() => {

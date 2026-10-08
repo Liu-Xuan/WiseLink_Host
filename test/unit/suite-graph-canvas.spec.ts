@@ -227,6 +227,25 @@ describe('SuiteGraphCanvas', () => {
       expect(options.style.find((item) => item.selector === 'edge[color]')?.style).toMatchObject({
         'line-color': 'data(color)',
       });
+      const macroStyle = options.style.at(-1);
+      expect(macroStyle).toMatchObject({ selector: '.macro-containment', style: {
+        'target-arrow-shape': 'none', 'line-style': 'dashed', 'curve-style': 'straight', opacity: 0.2,
+      } });
+      const realCytoscape = jest.requireActual<typeof import('cytoscape')>('cytoscape');
+      const headless = realCytoscape({ headless: true, styleEnabled: true,
+        style: options.style as import('cytoscape').StylesheetStyle[],
+        elements: [ {data: {id: 'a', w: 24, h: 24}}, {data: {id: 'b', w: 24, h: 24}},
+          { data: { id: 'macro', source: 'a', target: 'b', tone: 'green', color: '#55aa88', curvature: 0 }, classes: 'macro-containment' },
+          { data: { id: 'legacy', source: 'a', target: 'b', tone: 'green', curvature: 0 }, classes: 'business-edge' } ],
+      });
+      try {
+        expect(headless.getElementById('macro').style('target-arrow-shape')).toBe('none');
+        expect(headless.getElementById('macro').style('line-style')).toBe('dashed');
+        expect(headless.getElementById('macro').style('opacity')).toBe('0.2');
+        expect(headless.getElementById('legacy').style('target-arrow-shape')).toBe('triangle');
+        expect(headless.getElementById('legacy').style('opacity')).toBe('0.68');
+      } finally { headless.destroy(); }
+
     } finally {
       globalThis.getComputedStyle = originalGetComputedStyle;
     }

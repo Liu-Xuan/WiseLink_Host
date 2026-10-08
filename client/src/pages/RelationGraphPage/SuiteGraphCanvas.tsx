@@ -61,6 +61,8 @@ export interface SuiteGraphCanvasProps {
   onViewport?: (viewport: { zoom: number; pan: { x: number; y: number } }) => void;
   className?: string;
   ariaLabel?: string;
+  /** Bounded macro pages use native Cytoscape points and labels, with zero per-node HTML. */
+  presentationStyle?: 'cards' | 'points';
 }
 
 export interface SuiteGraphCanvasHandle {
@@ -206,6 +208,15 @@ function buildStyleSheet(tokens: ThemeTokens): StylesheetStyle[] {
         'overlay-opacity': 0,
       },
     },
+    { selector: '.macro-point', style: { shape: 'ellipse', 'background-opacity': 0.88,
+      'background-color': tokens.tones.teal, 'border-width': 1, 'border-color': tokens.surface,
+      label: 'data(macroLabel)', color: tokens.ink, 'font-family': tokens.fontFamily, 'font-size': '12px',
+      'text-valign': 'bottom', 'text-margin-y': 9, 'text-wrap': 'wrap', 'text-max-width': '136px',
+      'text-background-color': tokens.surface, 'text-background-opacity': 0.8, 'text-background-padding': '3px' } },
+    { selector: '.macro-point.suite-selected', style: { 'border-width': 4, 'border-color': tokens.ink, 'background-opacity': 1 } },
+    { selector: '.macro-point[tone = "blue"]', style: { 'background-color': tokens.tones.blue } },
+    { selector: '.macro-point[tone = "green"]', style: { 'background-color': tokens.tones.green } },
+    { selector: '.macro-point[tone = "neutral"]', style: { 'background-color': tokens.tones.neutral } },
     { selector: '.visual-group', style: { 'background-opacity': 0, 'border-width': 0, opacity: 0 } },
     { selector: '.matter-root', style: { shape: 'ellipse', 'background-opacity': 0 } },
     {
@@ -253,6 +264,10 @@ function buildStyleSheet(tokens: ThemeTokens): StylesheetStyle[] {
     { selector: '.individual-edge.suite-connected-edge', style: { display: 'element', opacity: 0.92 } },
     { selector: '.individual-edge.suite-dimmed-edge', style: { display: 'none', opacity: 0 } },
   );
+  // Classification/containment is visual navigation, never an asserted business dependency.
+  sheets.push({ selector: '.macro-containment', style: {
+    'target-arrow-shape': 'none', 'line-style': 'dashed', 'curve-style': 'straight', opacity: 0.2,
+  } });
   return sheets;
 }
 
@@ -373,7 +388,7 @@ const OverlayCard = memo(function OverlayCard({
         <span className="suite-graph-hub-portrait" aria-hidden="true">{picture ? <Image src={picture} alt="" /> : <Network />}</span>
         <strong>{title}</strong>
         {text(data.code) && <small>{text(data.code)}</small>}
-        <span className="suite-graph-hub-sub">工程事项 · 持续认识</span>
+        <span className="suite-graph-hub-sub">{data.rootKind === 'document' ? '工程文档 · 准确版本邻域' : '工程事项 · 持续认识'}</span>
       </button>
     );
   }
@@ -427,7 +442,7 @@ function sameOverlayNodes(left: OverlayNode[], right: OverlayNode[]): boolean {
 }
 
 const SuiteGraphCanvas = forwardRef<SuiteGraphCanvasHandle, SuiteGraphCanvasProps>(function SuiteGraphCanvas(
-  { presentation, initialLayout, initialViewport, selectedId, focusGroupKey, onSelect, onGroup, onOverflow, onInspectRelationships, onViewport, className, ariaLabel = '关系图谱' },
+  { presentation, initialLayout, initialViewport, selectedId, focusGroupKey, onSelect, onGroup, onOverflow, onInspectRelationships, onViewport, className, ariaLabel = '关系图谱', presentationStyle = 'cards' },
   ref,
 ) {
   const mountRef = useRef<HTMLDivElement | null>(null);
@@ -556,7 +571,8 @@ const SuiteGraphCanvas = forwardRef<SuiteGraphCanvasHandle, SuiteGraphCanvasProp
 
   const applyAutoCamera = useCallback((cy: Core) => {
     internalCameraRef.current = true;
-    if (isNarrowLayout()) applyNarrowFocus(cy);
+    if (presentationStyle === 'points') cy.fit(undefined, 32);
+    else if (isNarrowLayout()) applyNarrowFocus(cy);
     else {
       cy.fit(undefined, 24);
       if (cy.zoom() < DESKTOP_READABLE_MIN_ZOOM) {
@@ -573,7 +589,7 @@ const SuiteGraphCanvas = forwardRef<SuiteGraphCanvasHandle, SuiteGraphCanvasProp
       }
     }
     internalCameraRef.current = false;
-  }, [applyNarrowFocus]);
+  }, [applyNarrowFocus, presentationStyle]);
 
   useEffect(() => {
     const mount = mountRef.current;
@@ -603,7 +619,7 @@ const SuiteGraphCanvas = forwardRef<SuiteGraphCanvasHandle, SuiteGraphCanvasProp
         cy.edges().toggleClass('suite-small-edge-label', hideLabels);
       }
       // Cytoscape mutates data/positions in place; retain detached snapshots.
-      const next = cy.nodes().map((node) => ({ id: node.id(), data: { ...node.data() } as Record<string, unknown>, position: { ...node.renderedPosition() } }));
+      const next = cy.nodes().filter((node) => !node.data('nativePoint')).map((node) => ({ id: node.id(), data: { ...node.data() } as Record<string, unknown>, position: { ...(node as NodeSingular).renderedPosition() } }));
       if (!sameOverlayNodes(lastNodes, next)) {
         lastNodes = next;
         setOverlayNodes(next);
@@ -620,6 +636,9 @@ const SuiteGraphCanvas = forwardRef<SuiteGraphCanvasHandle, SuiteGraphCanvasProp
     };
     syncNowRef.current = sync;
     cy.on('render resize pan zoom', scheduleSync);
+    cy.on('tap', 'node', (event: EventObject) => {
+      if (event.target.data('nativePoint') && event.target.data('businessId')) callbacksRef.current.onSelect?.(event.target.data(), false);
+    });
     cy.on('tap', 'edge', (event: EventObject) => {
       const ids = event.target.data('relationshipIds');
       if (Array.isArray(ids)) callbacksRef.current.onInspectRelationships?.(ids.filter((id): id is string => typeof id === 'string'));

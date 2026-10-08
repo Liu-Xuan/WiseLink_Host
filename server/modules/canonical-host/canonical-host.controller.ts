@@ -1,3 +1,4 @@
+import { libraryGraphHttpRequest } from './canonical-library-graph';
 import { CanonicalJobAidProblemService } from './canonical-jobaid-problem.service';
 import {
   BadRequestException,
@@ -97,6 +98,19 @@ export class CanonicalHostController {
     if (!this.libraryDocuments)
       throw new Error('CANONICAL_LIBRARY_SERVICE_UNCONFIGURED');
     return this.libraryDocuments.fleetCatalog(hostActor(httpRequest));
+  }
+
+  @Get('library/graph')
+  libraryGraph(
+    @Query() query: Record<string, unknown>,
+    @Req() httpRequest: Request,
+  ) {
+    if (!this.libraryDocuments)
+      throw new Error('CANONICAL_LIBRARY_SERVICE_UNCONFIGURED');
+    return this.libraryDocuments.graph(
+      libraryGraphHttpRequest(query),
+      hostActor(httpRequest),
+    );
   }
 
   @Get('library/documents')

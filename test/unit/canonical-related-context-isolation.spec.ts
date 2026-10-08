@@ -1,6 +1,7 @@
 import type {
   CanonicalReferenceMentionPreviewItem,
   CanonicalReferenceTargetResolution,
+  CanonicalRelatedContextSnapshot,
   CanonicalStructuredContentUnit,
   CanonicalWorkItemProjection,
   UnifiedPackageArtifactDescriptor,
@@ -324,7 +325,7 @@ describe('canonical related-context preview ordinary isolation', () => {
     );
   });
 
-  it('maps every resolution state without inventing identity or accepted use', () => {
+  it('maps every resolution state without inventing identity, currentness, or accepted use', () => {
     const resolutions: Array<{
       target: string;
       resolution: CanonicalReferenceTargetResolution;
@@ -382,15 +383,22 @@ describe('canonical related-context preview ordinary isolation', () => {
       ),
     });
     const snapshot = built.snapshot;
+    const serializedSnapshot: CanonicalRelatedContextSnapshot = JSON.parse(
+      new TextDecoder().decode(built.bytes),
+    );
+
+    expect(serializedSnapshot).toEqual(snapshot);
+    expect(serializedSnapshot.items[0].currentness).toBe('UNKNOWN');
 
     expect(snapshot.items[0]).toMatchObject({
       normalizedTarget: '777-SB-34-1001',
       resolvedDocumentVersionRef: 'DV-RELATED-EXACT',
       resolvedWorkItemRef: 'WI-RELATED-EXACT',
-      currentness: 'CURRENT',
+      currentness: 'UNKNOWN',
       targetApplicability: 'APPLICABLE',
       applicabilityResultRef: 'openclaw-applicability://RELATED-EXACT',
       availability: 'AVAILABLE',
+      contextUse: 'BACKGROUND_ONLY',
       acceptedContributionRoles: [],
       acceptedRelationTypes: [],
       evidenceStance: 'NOT_EVALUATED',

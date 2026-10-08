@@ -2,6 +2,7 @@ import { act, createElement } from 'react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { createRoot, type Root } from 'react-dom/client';
 import type { EngineeringMatterCatalogEntry } from '@shared/api.interface';
+import type { MatterDocumentSource } from '@client/src/features/matter/matter-document-sources';
 import { useSuiteGraphSources } from '../../client/src/pages/RelationGraphPage/useSuiteGraphSources';
 import type {
   SuiteGraphTimelineEventPins,
@@ -68,18 +69,20 @@ function catalogEntry(documentVersionId: string): EngineeringMatterCatalogEntry 
 let queryClient: QueryClient;
 let current: ReturnType<typeof useSuiteGraphSources>;
 
-function SourceProbe({ restorePins }: { restorePins?: SuiteGraphTimelineEventPins }) {
+interface ProbeProps { restorePins?: SuiteGraphTimelineEventPins; sources?: MatterDocumentSource[]; onAccessRejected?: (id: string) => void; }
+function SourceProbe({ restorePins, sources, onAccessRejected }: ProbeProps) {
   current = useSuiteGraphSources({
-    catalog: [catalogEntry('dv-a'), catalogEntry('dv-b')],
+    catalog: sources ?? [catalogEntry('dv-a'), catalogEntry('dv-b')],
     enabled: true,
     session: mockSession,
     denied: false,
     restorePins,
+    onAccessRejected,
   });
   return null;
 }
 
-function Probe(props: { restorePins?: SuiteGraphTimelineEventPins }) {
+function Probe(props: ProbeProps) {
   return createElement(QueryClientProvider, { client: queryClient }, createElement(SourceProbe, props));
 }
 
@@ -185,18 +188,18 @@ describe('useSuiteGraphSources exact event restoration', () => {
     expect(current.sources[0].status).toBe('unparsed');
   });
 
-  it('fresh denial replaces saved content, survives remount, and explicit retry recovers', async () => {
+  it('fresh denial replaces saved content, rechecks on remount, and explicit retry recovers', async () => {
     mockReadStatus.mockResolvedValue({ publishedRun: null });
     await act(async () => root.render(createElement(Probe)));
     mockReadStatus.mockRejectedValue(Object.assign(new Error('access denied'), { statusCode: 403 }));
     await act(async () => current.expandSource('dv-a'));
     await remount();
-    expect(mockReadStatus).toHaveBeenCalledTimes(2);
+    expect(mockReadStatus).toHaveBeenCalledTimes(3);
     expect(current.sources[0]).toMatchObject({ status: 'unavailable', notice: '该来源当前不可读，相关声明已从列表清除。' });
     expect(current.activities.size).toBe(0);
     mockReadStatus.mockResolvedValue({ publishedRun: null });
     await act(async () => current.expandSource('dv-a'));
-    expect(mockReadStatus).toHaveBeenCalledTimes(3);
+    expect(mockReadStatus).toHaveBeenCalledTimes(4);
     expect(current.sources[0].status).toBe('unparsed');
   });
 
@@ -252,6 +255,54 @@ describe('useSuiteGraphSources exact event restoration', () => {
     expect(mockReadStatus).toHaveBeenCalledTimes(1);
     await act(async () => resolve({ publishedRun: null }));
     expect(current.sources[0].status).toBe('unparsed');
+  });
+
+  it('keeps native document source reads on the main v1 request contract', async () => {
+    mockReadStatus.mockResolvedValue({ publishedRun: { parseRunId: 'parse-a' } });
+    mockReadActivity.mockResolvedValue({ familyId: 'family-a', binding: { documentVersionId: 'dv-a', parseRunId: 'parse-a' }, candidate: { runRef: 'run-a', statements: [] } });
+    await act(async () => root.render(createElement(Probe, { sources: [{ document: { documentVersionId: 'dv-a' }, familyId: 'family-a' }] })));
+    expect(mockReadActivity).toHaveBeenCalledWith({ documentVersionId: 'dv-a', parseRunId: 'parse-a' }, expect.any(AbortSignal));
+    expect(current.activities.has('dv-a')).toBe(true);
+  });
+
+  it('rejects a native source family mismatch without adopting a different candidate', async () => {
+    mockReadStatus.mockResolvedValue({ publishedRun: { parseRunId: 'parse-a' } });
+    mockReadActivity.mockResolvedValue({ familyId: 'wrong-family', binding: { documentVersionId: 'dv-a', parseRunId: 'parse-a' }, candidate: { runRef: 'run-a', statements: [] } });
+    await act(async () => root.render(createElement(Probe, { sources: [{ document: { documentVersionId: 'dv-a' }, familyId: 'family-a' }] })));
+    expect(current.activities.size).toBe(0);
+    expect(current.sources[0].status).toBe('unavailable');
+  });
+
+  it('does not substitute the default source when exact returned source is absent', async () => {
+    await act(async () => root.render(createElement(Probe, { restorePins: { ...pins, documentVersionId: 'removed-version' } })));
+    expect(current.activeSourceId).toBeNull();
+    expect(mockReadStatus).not.toHaveBeenCalled();
+    expect(mockReadActivity).not.toHaveBeenCalled();
+  });
+
+  it.each([401, 403, 404])('clears source candidate and denied cache on %s, then explicitly retries the same source', async (statusCode) => {
+    const rejected = jest.fn();
+    const props = { sources: [{ document: { documentVersionId: 'dv-a' }, familyId: 'family-a' }], onAccessRejected: rejected };
+    mockReadStatus.mockResolvedValue({ publishedRun: { parseRunId: 'parse-a' } });
+    mockReadActivity.mockResolvedValue({ familyId: 'family-a', binding: { documentVersionId: 'dv-a', parseRunId: 'parse-a' }, candidate: { runRef: 'run-a', statements: [] } });
+    await act(async () => root.render(createElement(Probe, props)));
+    expect(current.activities.has('dv-a')).toBe(true);
+    mockReadStatus.mockRejectedValue(Object.assign(new Error('access denied'), {statusCode}));
+    await act(async () => current.expandSource('dv-a'));
+    expect(current.activities.size).toBe(0);
+    expect(rejected).toHaveBeenCalledWith('dv-a');
+    expect(queryClient.getQueryData(['canonical-host', 'engineering-matter', 'graph-source', 'app', 'tenant', 'actor', 1, 'dv-a', 'family-a', null])).toBeUndefined();
+    mockReadStatus.mockResolvedValue({ publishedRun: null });
+    await act(async () => current.expandSource('dv-a'));
+    expect(mockReadStatus).toHaveBeenCalledTimes(3);
+    expect(current.sources[0].status).toBe('unparsed');
+  });
+
+  it('does not reuse source cache when the exact registered family binding changes', async () => {
+    mockReadStatus.mockResolvedValue({publishedRun: null});
+    await act(async () => root.render(createElement(Probe, { sources: [{document: {documentVersionId: 'dv-a'}, familyId: 'family-a'}] })));
+    await act(async () => root.render(createElement(Probe, { sources: [{document: {documentVersionId: 'dv-a'}, familyId: 'family-b'}] })));
+    expect(mockReadStatus).toHaveBeenCalledTimes(2);
   });
 
 });

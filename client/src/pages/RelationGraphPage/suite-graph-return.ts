@@ -1,3 +1,5 @@
+import { isLibraryGraphReturnToken } from './library-graph-return-memory';
+import { readDocumentGraphEntry } from './document-graph-route';
 import {
   suiteGraphSourceEventId,
   type SuiteGraphTimelineEventPins,
@@ -5,6 +7,8 @@ import {
 
 export interface SuiteGraphReadingState {
   selectedId?: string;
+  /** Exact members of a selected bundle, bounded display state only. */
+  selectedRelationIds?: string[];
   /** Opaque reference to bounded session-only geometry; never an authority or source pin. */
   layoutSnapshot?: string;
   hiddenGroups?: string[];
@@ -51,6 +55,10 @@ export function graphReadingParams(matterId: string, workRef: string | null, sta
   if (state.layoutSnapshot && /^gl-[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/.test(state.layoutSnapshot)) params.set('layoutSnapshot', state.layoutSnapshot);
   if (workRef) params.set('workRef', workRef);
   if (state.selectedId && text(state.selectedId, 2048)) params.set('selectedId', state.selectedId);
+  if (state.selectedRelationIds?.length && state.selectedRelationIds.length <= 100
+    && state.selectedRelationIds.every(id => text(id, 2048))
+    && JSON.stringify(state.selectedRelationIds).length <= 6000)
+    params.set('selectedRelationIds', JSON.stringify([...new Set(state.selectedRelationIds)]));
   if (state.hiddenGroups?.length && state.hiddenGroups.length <= 32 && state.hiddenGroups.every(key => text(key, 256))) params.set('hiddenGroups', JSON.stringify([...new Set(state.hiddenGroups)]));
   if (Number.isInteger(state.page) && state.page! >= 0 && state.page! <= 99999) params.set('page', String(state.page));
   if (Number.isInteger(state.density) && state.density! >= 1 && state.density! <= 6) params.set('density', String(state.density));
@@ -71,12 +79,39 @@ export function graphReadingParams(matterId: string, workRef: string | null, sta
   if (camera && Number.isFinite(camera.zoom) && camera.zoom >= .05 && camera.zoom <= 6 && [camera.pan.x, camera.pan.y].every(n => Number.isFinite(n) && Math.abs(n) <= 100000)) params.set('viewport', JSON.stringify(camera));
   return params;
 }
+/** A short session-only token keeps nested exact-source returns within their existing URL budget. */
+export function libraryGraphReturnToken(params: URLSearchParams): string | null {
+  const values = params.getAll('returnLibrarySnapshot');
+  return values.length === 1 && isLibraryGraphReturnToken(values[0]) ? values[0] : null;
+}
+/** Same bounded display state, with an independent exact document identity. */
+export function documentGraphReadingParams(documentVersionId: string, readerWorkItemId: string | undefined,
+  state: SuiteGraphReadingState, origin?: URLSearchParams): URLSearchParams {
+  const params = graphReadingParams('_', null, state);
+  params.delete('matterId');
+  params.delete('perspective');
+  params.set('scope', 'document');
+  params.set('documentVersionId', documentVersionId);
+  const libraryReturn = origin ? libraryGraphReturnToken(origin) : null;
+  if (libraryReturn) params.set('returnLibrarySnapshot', libraryReturn);
+  if (readerWorkItemId) params.set('readerWorkItemId', readerWorkItemId);
+  for (const name of ['familyCursor', 'matterCursor']) {
+    const value = origin ? single(origin, name) : '';
+    if (text(value, 2400)) params.set(name, value);
+  }
+  return params;
+}
 export function readGraphReadingState(params: URLSearchParams): SuiteGraphReadingState {
   const state: SuiteGraphReadingState = {};
   const snapshot = single(params, 'layoutSnapshot');
   if (/^gl-[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/.test(snapshot)) state.layoutSnapshot = snapshot;
   const selected = single(params, 'selectedId');
   if (text(selected, 2048)) state.selectedId = selected;
+  try {
+    const ids: unknown = JSON.parse(single(params, 'selectedRelationIds'));
+    if (Array.isArray(ids) && ids.length <= 100 && JSON.stringify(ids).length <= 6000
+      && ids.every(id => typeof id === 'string' && text(id, 2048))) state.selectedRelationIds = [...new Set(ids)];
+  } catch { /* Optional malformed bundle selection is omitted. */ }
   try {
     const hidden: unknown = JSON.parse(single(params, 'hiddenGroups'));
     if (Array.isArray(hidden) && hidden.length <= 32 && hidden.every(key => typeof key === 'string' && text(key, 256))) state.hiddenGroups = hidden;
@@ -164,6 +199,12 @@ export function graphReturnTarget(params: URLSearchParams, documentVersionId?: s
   if (targetWork && targetWork !== single(params, 'workRef') && targetWork !== single(params, 'sourceWorkRef')) return null;
   if (params.has('returnGraphParseRunId') && (!doc || single(params, 'returnGraphParseRunId') !== requestedRun)) return null;
   const query = new URLSearchParams(raw);
+  const documentScope = readDocumentGraphEntry(query);
+  if (documentScope.kind === 'invalid') return null;
+  if (documentScope.kind === 'document') {
+    return { route: `/graph?${documentGraphReadingParams(documentScope.documentVersionId,
+      documentScope.readerWorkItemId, readGraphReadingState(query), query)}`, label: '返回关系图谱' };
+  }
   const sourceMatter = single(query, 'matterId');
   const sourceWork = single(query, 'workRef');
   if (!text(sourceMatter) || query.getAll('workRef').length > 1 || (query.has('workRef') && !text(sourceWork))) return null;

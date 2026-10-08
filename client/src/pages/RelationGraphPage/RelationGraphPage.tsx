@@ -1,3 +1,7 @@
+import SuiteLibraryGraphPage from './SuiteLibraryGraphPage';
+import { readLibraryGraphEntry } from './library-graph-route';
+import SuiteDocumentGraphPage from './SuiteDocumentGraphPage';
+import { readDocumentGraphEntry } from './document-graph-route';
 import SuiteMatterGraphPage from './SuiteMatterGraphPage';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { Link, Navigate, useNavigate, useSearchParams } from 'react-router-dom';
@@ -132,6 +136,10 @@ export function RelationGraphPage(props: RelationGraphPageProps) {
   if (identity.kind === 'invalid') {
     return <p role="alert">{identity.message}</p>;
   }
+  if (identity.kind === 'library') return <SuiteLibraryGraphPage />;
+  if (identity.kind === 'document') {
+    return <SuiteDocumentGraphPage documentVersionId={identity.documentVersionId} readerWorkItemId={identity.readerWorkItemId} />;
+  }
   if (identity.kind === 'matter') {
     return <SuiteMatterGraphPage matterId={identity.matterId} />;
   }
@@ -159,6 +167,8 @@ export function RelationGraphPage(props: RelationGraphPageProps) {
 export default RelationGraphPage;
 
 type GraphIdentityState =
+  | { kind: 'library' }
+  | { kind: 'document'; documentVersionId: string; readerWorkItemId?: string }
   | { kind: 'invalid'; message: string }
   | { kind: 'matter'; matterId: string }
   | {
@@ -179,6 +189,12 @@ type GraphIdentityState =
  * requests, never repaired and never silently dropped.
  */
 function graphIdentityState(params: URLSearchParams): GraphIdentityState {
+  const libraryScope = readLibraryGraphEntry(params);
+  if (libraryScope.kind === 'invalid') return {kind: 'invalid', message: '全库概览范围或身份不明确，请重新选择分类范围。'};
+  if (libraryScope.kind === 'library') return {kind: 'library'};
+  const documentScope = readDocumentGraphEntry(params);
+  if (documentScope.kind === 'invalid') return { kind: 'invalid', message: '文档邻域范围或身份不明确，请从准确文档重新进入。' };
+  if (documentScope.kind === 'document') return documentScope;
   const injected = params.getAll('projection').length > 0;
   const matterPin = revisionTextPin(params, 'matterId');
   const workItemPin = revisionTextPin(params, 'workItemId');

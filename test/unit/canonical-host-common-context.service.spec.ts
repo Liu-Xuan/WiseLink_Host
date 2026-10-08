@@ -357,6 +357,8 @@ describe('shared pre-evaluation context', () => {
         {
           documentCode: targets[1],
           availability: 'AVAILABLE',
+          currentness: 'UNKNOWN',
+          contextUse: 'BACKGROUND_ONLY',
           availableSourceRefIds: ['SRC-GOOD'],
           readFragments: [
             { sourceRefId: 'SRC-GOOD', excerpt: 'Actual related evidence.' },

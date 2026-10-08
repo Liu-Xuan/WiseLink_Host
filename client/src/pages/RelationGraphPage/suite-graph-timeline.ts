@@ -1,4 +1,4 @@
-import type { EngineeringMatterCatalogEntry } from '@shared/api.interface';
+import { matterDocumentSourceLabel, type MatterDocumentSource } from '@client/src/features/matter/matter-document-sources';
 import type { DocumentActivityStatement } from '@shared/document-activity.interface';
 import type { EngineeringMatterWorkingRevisionReadModel } from '@shared/matter-working.interface';
 import { timelineItems } from '@client/src/features/trinity/document-activity-timeline';
@@ -67,8 +67,7 @@ export function suiteGraphSourceEventId(
   );
 }
 
-const sourceLabelFor = (entry: EngineeringMatterCatalogEntry): string =>
-  `${entry.document.documentCode} · ${entry.document.businessRevision}`;
+const sourceLabelFor = matterDocumentSourceLabel;
 
 /**
  * Project the left timeline from authorized saved data only: source-declared
@@ -77,7 +76,7 @@ const sourceLabelFor = (entry: EngineeringMatterCatalogEntry): string =>
  */
 export function buildSuiteGraphTimeline(input: {
   read: SuiteMatterGraphRead | null;
-  catalog: EngineeringMatterCatalogEntry[];
+  catalog: MatterDocumentSource[];
   activities: ReadonlyMap<string, SuiteGraphActivityCandidate>;
   revision: EngineeringMatterWorkingRevisionReadModel | null;
 }): { events: SuiteGraphTimelineEvent[] } {

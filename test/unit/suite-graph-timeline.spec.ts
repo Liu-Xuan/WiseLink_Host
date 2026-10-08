@@ -212,4 +212,15 @@ describe('buildSuiteGraphTimeline', () => {
     expect(events[0].pins).toBeNull();
     expect(events[0].id).toContain('mwr-1');
   });
+  it('uses native exact-document sources with fallback labels and unchanged v1 time/event semantics', () => {
+    const activities = new Map<string, SuiteGraphActivityCandidate>([['dv-a', {
+      familyId: 'family-dv-a', candidate: makeCandidate({ statements: [statement('st-1', '2026-02-01', '声明')] }),
+    }]]);
+    const { events } = buildSuiteGraphTimeline({ read: null, catalog: [{ document: { documentVersionId: 'dv-a' }, familyId: 'family-dv-a' }], activities, revision: null });
+    expect(events).toHaveLength(1);
+    expect(events[0].sourceLabel).toBe('dv-a');
+    expect(JSON.parse(events[0].id)).toEqual(['event', 'dv-a', 'pr-1', '2', 'run-1', 'st-1']);
+    expect(events[0].statement?.time?.raw).toBe('2026-02-01');
+  });
+
 });

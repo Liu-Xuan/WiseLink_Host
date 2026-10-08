@@ -1,3 +1,5 @@
+import type { CanonicalLibraryGraphRequest } from '@shared/library-graph.interface';
+import { readLibraryGraph } from './canonical-library-graph';
 import { jobAidReadingResult } from '@shared/jobaid-problem-assessment.interface';
 import { CanonicalJobAidProblemService } from './canonical-jobaid-problem.service';
 import {
@@ -48,6 +50,16 @@ export class CanonicalLibraryService {
     @Optional() private readonly jobAid?: CanonicalJobAidProblemService,
     @Optional() private readonly fleet?: CanonicalFleetMasterDataRepository,
   ) {}
+
+  graph(input: CanonicalLibraryGraphRequest, actor: CanonicalHostActor) {
+    const scope = ownedScope(actor);
+    return readLibraryGraph(
+      input,
+      { ...scope, appId: actor.appId },
+      () => this.fleetCatalog(actor),
+      (query) => this.repository.graph(query),
+    );
+  }
 
   async fleetCatalog(
     actor: CanonicalHostActor,

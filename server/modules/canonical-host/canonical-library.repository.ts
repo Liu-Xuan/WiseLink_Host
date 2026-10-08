@@ -1,3 +1,7 @@
+import {
+  listOwnedLibraryGraph,
+  type OwnedLibraryGraphQuery,
+} from '../document-management/src/hosted/nest/miaoda-hosted-library-graph-query';
 import { Inject, Injectable } from '@nestjs/common';
 import {
   DRIZZLE_DATABASE,
@@ -91,6 +95,10 @@ export class CanonicalLibraryRepository {
       ))
       .limit(1);
     return row?.selectedVersionIsCurrent ?? null;
+  }
+
+  graph(input: OwnedLibraryGraphQuery) {
+    return listOwnedLibraryGraph(this.db, input);
   }
 
   listDocuments(

@@ -1,0 +1,111 @@
+.suite-document-graph-page {
+  gap: 10px;
+  padding: 0 6px 12px;
+}
+
+.suite-document-graph-heading,
+.suite-document-graph-title,
+.suite-document-graph-actions,
+.suite-document-graph-toolbar,
+.suite-document-graph-footer,
+.suite-document-graph-pager,
+.suite-document-graph-inspector-head {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  gap: 8px;
+}
+
+.suite-document-graph-heading,
+.suite-document-graph-toolbar,
+.suite-document-graph-footer,
+.suite-document-graph-inspector-head { justify-content: space-between; }
+.suite-document-graph-heading { flex-shrink: 0; flex-wrap: wrap; }
+.suite-document-graph-title { flex: 1; }
+.suite-document-graph-title > div { min-width: 0; }
+.suite-document-graph-title span,
+.suite-document-graph-title small { color: var(--wl-muted); font-size: 11px; }
+.suite-document-graph-title h1 { margin: 3px 0; overflow-wrap: anywhere; font-size: 20px; line-height: 1.4; }
+.suite-document-graph-actions { flex-wrap: wrap; }
+.suite-document-graph-notices { max-height: 88px; flex-shrink: 0; overflow: auto; padding: 8px 12px; border-left: 2px solid var(--wl-accent); background: var(--wl-selected); }
+.suite-document-graph-notices p { margin: 0; color: var(--wl-muted); font-size: 11px; line-height: 1.65; overflow-wrap: anywhere; }
+
+.suite-document-graph-workspace {
+  display: grid;
+  min-height: 0;
+  min-width: 0;
+  flex: 1;
+  grid-template-columns: minmax(0, 1fr) 280px;
+  gap: 10px;
+}
+
+.suite-document-graph-center,
+.suite-document-graph-inspector {
+  display: flex;
+  min-height: 0;
+  min-width: 0;
+  flex-direction: column;
+  overflow: hidden;
+  border: 1px solid var(--wl-border);
+  border-radius: 12px;
+  background: var(--wl-sheet);
+}
+
+.suite-document-graph-center { position: relative; }
+.suite-document-graph-toolbar { flex-shrink: 0; flex-wrap: wrap; padding: 6px 9px; border-bottom: 1px solid var(--wl-border); }
+.suite-document-graph-toolbar span { color: var(--wl-muted); font-size: 11px; }
+.suite-document-graph-stage { position: relative; min-height: 260px; flex: 1; }
+.suite-document-graph-stage > .suite-graph-canvas { position: absolute; inset: 0; width: 100%; height: 100%; min-height: 0; border: 0; border-radius: 0; }
+.suite-document-graph-camera { position: absolute; right: 10px; bottom: 10px; z-index: 4; display: flex; gap: 4px; }
+.suite-document-graph-camera button { background: var(--wl-sheet); }
+.suite-document-graph-empty { position: absolute; bottom: 48px; left: 12px; right: 12px; color: var(--wl-muted); font-size: 12px; text-align: center; pointer-events: none; }
+.suite-document-graph-footer { flex-shrink: 0; flex-wrap: wrap; padding: 6px 10px; border-top: 1px solid var(--wl-border); color: var(--wl-muted); font-size: 11px; }
+.suite-document-graph-pager { flex-shrink: 0; font-size: 11px; font-variant-numeric: tabular-nums; }
+.suite-document-graph-inspector-head { flex-shrink: 0; padding: 8px 12px; border-bottom: 1px solid var(--wl-border); }
+.suite-document-graph-inspector h2 { margin: 0; font-size: 14px; line-height: 1.55; }
+.suite-document-graph-inspector-body { min-height: 0; flex: 1; overflow: auto; padding: 14px; font-size: 12px; line-height: 1.75; overflow-wrap: anywhere; scrollbar-width: thin; }
+.suite-document-graph-inspector-body h3 { margin: 14px 0 6px; font-size: 13px; }
+.suite-document-graph-inspector-body p { margin: 0 0 9px; }
+.suite-document-graph-inspector-body dt { color: var(--wl-muted); }
+.suite-document-graph-inspector-body dd { margin: 0 0 8px; }
+.suite-document-graph-detail-actions { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 12px; }
+.suite-document-graph-inspector-body button { max-width: 100%; white-space: normal; text-align: left; }
+.suite-document-graph-selection-note { padding: 7px 9px; border-radius: 6px; background: var(--wl-selected); color: var(--wl-muted); font-size: 11px; }
+.suite-document-graph-overflow { position: absolute; top: 58px; right: 12px; z-index: 5; width: min(360px, calc(100% - 24px)); max-height: calc(100% - 110px); overflow: auto; border: 1px solid var(--wl-border); border-radius: 9px; background: var(--wl-sheet-muted); box-shadow: 0 10px 32px color-mix(in srgb, var(--wl-ink) 12%, transparent); }
+.suite-document-graph-overflow > .suite-document-graph-pager { justify-content: center; padding: 4px; }
+.suite-document-graph-overflow-items { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 3px 6px; padding: 4px 10px; }
+.suite-document-graph-overflow-items button { min-width: 0; flex-direction: column; align-items: flex-start; gap: 1px; white-space: normal; text-align: left; overflow-wrap: anywhere; }
+.suite-document-graph-overflow-items button[aria-pressed='true'] { background: var(--wl-selected); color: var(--wl-accent); }
+.suite-document-graph-overflow-items small { color: var(--wl-muted); }
+
+.suite-document-graph-timeline-section { min-height: 0; flex-shrink: 0; overflow: hidden; border: 1px solid var(--wl-border); border-radius: 10px; background: var(--wl-sheet); }
+.suite-document-graph-timeline-toggle { width: 100%; justify-content: flex-start; }
+.suite-document-graph-timeline-toggle svg { transform: rotate(-90deg); }
+.suite-document-graph-timeline-toggle[aria-expanded='true'] svg { transform: rotate(0); }
+.suite-document-graph-timeline-body { max-height: 220px; overflow: auto; padding: 8px 18px 14px; border-top: 1px solid var(--wl-border); scrollbar-width: thin; }
+.suite-document-graph-timeline-body .suite-graph-timeline-events { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px 24px; }
+.suite-document-graph-timeline-body .suite-graph-timeline-event { padding-bottom: 8px; }
+.suite-document-graph-timeline-body .suite-graph-timeline-source-row { display: flex; flex-wrap: wrap; gap: 8px; }
+.suite-document-graph-timeline-body .suite-graph-timeline-source-row span { color: var(--wl-muted); font-size: 11px; }
+.suite-document-graph-timeline-body > .suite-document-graph-pager { justify-content: center; margin-top: 8px; }
+.suite-document-graph-page :focus-visible { outline: 2px solid var(--wl-accent); outline-offset: 2px; }
+
+@media (max-width: 1100px) {
+  .suite-document-graph-workspace { grid-template-columns: minmax(0, 1fr) 250px; }
+}
+
+@media (max-width: 760px) {
+  .suite-document-graph-page { overflow: auto; padding: 0 0 10px; }
+  .suite-document-graph-heading { padding: 0 4px; }
+  .suite-document-graph-title h1 { font-size: 17px; }
+  .suite-document-graph-workspace { display: flex; flex: none; flex-direction: column; }
+  .suite-document-graph-center { overflow: visible; }
+  .suite-document-graph-stage { height: 54dvh; min-height: 340px; flex: none; overflow: hidden; }
+  .suite-document-graph-inspector { max-height: 45dvh; min-height: 180px; }
+  .suite-document-graph-toolbar > button { margin-left: auto; }
+  .suite-document-graph-overflow { top: 90px; max-height: calc(100% - 160px); }
+  .suite-document-graph-overflow-items { grid-template-columns: 1fr; }
+  .suite-document-graph-timeline-body { max-height: 50dvh; }
+  .suite-document-graph-timeline-body .suite-graph-timeline-events { grid-template-columns: 1fr; }
+  .suite-document-graph-page button { touch-action: manipulation; }
+}

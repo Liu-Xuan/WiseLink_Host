@@ -164,7 +164,7 @@ function button(text: string): HTMLButtonElement {
 }
 const pdf = () => new Blob(['%PDF-test'], { type: 'application/pdf' });
 
-test('opens only on intent, starts both preparations, shows chunk failure and retries without rereading bytes', async () => {
+test('explicit autoLoad=false opens only on intent, prepares concurrently and retries chunk failure without rereading bytes', async () => {
   const chunk = deferred<typeof viewerModule>();
   const file = deferred<Blob>();
   mockImport.mockReturnValueOnce(chunk.promise);
@@ -218,7 +218,7 @@ test('a ready module does not hide file failure; retry and version/session chang
   expect(container.textContent).toContain('原件读取失败');
   expect(container.textContent).not.toContain('PDF 阅读组件加载失败');
   mockRead.mockResolvedValueOnce(pdf());
-  await act(async () => button('读取受控原件').click());
+  await act(async () => button('重试读取原件').click());
   expect(container.querySelector('[data-viewer]')).not.toBeNull();
   const oldFile = deferred<Blob>();
   mockRead.mockReturnValueOnce(oldFile.promise);
@@ -245,7 +245,7 @@ test('a ready module does not hide file failure; retry and version/session chang
   expect(mockRead).toHaveBeenCalledTimes(4);
   const exited = deferred<Blob>();
   mockRead.mockReturnValueOnce(exited.promise);
-  await act(async () => button('读取受控原件').click());
+  await act(async () => button('重试读取原件').click());
   const signal: AbortSignal = mockRead.mock.calls[4][1];
   await act(async () => {
     mockGeneration += 1;
