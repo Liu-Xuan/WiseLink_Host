@@ -8,7 +8,11 @@ import type { AnyDocumentActivityRevision as DocumentActivityRevision, AnyDocume
 import { activityStatementTimeText } from '@client/src/features/trinity/document-activity-presentation';
 import type { SuiteGraphGroup, SuiteGraphMatter, SuiteGraphRelation } from './suite-graph-model';
 
+import type { TdmsExactEndpoint, TdmsRecordSummary, TdmsRelationAssertion, TdmsReadReceipt } from '@shared/tdms-source.interface';
+
 export type SuiteMatterGraphTarget =
+  | { kind: 'tdms-record'; sourceRevisionRef: string; record: TdmsRecordSummary | null }
+  | { kind: 'tdms-unresolved'; endpoint: Extract<TdmsExactEndpoint, {kind: 'UNRESOLVED'}>; assertionRef: string; side: 'from' | 'to' }
   | { kind: 'root' }
   | { kind: 'input'; binding: EngineeringMatterWorkingInputBinding; workRef: string }
   | { kind: 'question'; item: EngineeringMatterWorkingTextItem; workRef: string }
@@ -19,6 +23,12 @@ export type SuiteMatterGraphTarget =
   | { kind: 'catalog-document'; entry: EngineeringMatterCatalogEntry }
   | { kind: 'statement'; statement: DocumentActivityStatement; documentVersionId: string; familyId: string; parseRunId: string; candidateRevision: number; runRef: string }
   | { kind: 'matter-node'; matterId: string; title: string; status: string | null };
+
+/** Exact source observations rendered by the Suite source layer; no Host adoption. */
+export type SuiteTdmsRelationDetail =
+  | { kind: 'TDMS_ASSERTION'; assertion: TdmsRelationAssertion; receipt: TdmsReadReceipt; limitations: string[] }
+  | { kind: 'TDMS_DOCUMENT_BINDING'; sourceRevisionRef: string; documentVersionId: string }
+  | { kind: 'TDMS_SAVED_EVIDENCE'; sourceRevisionRef: string; evidenceRef: string; workRef: string };
 
 export type SuiteGraphRelationDetailExtension =
   | { kind: 'CATALOG'; entry: EngineeringMatterCatalogEntry }
@@ -32,6 +42,8 @@ export interface SuiteMatterGraphRead {
   graph: SuiteGraphMatter;
   targets: Map<string, SuiteMatterGraphTarget>;
   relationDetails: Map<string, SuiteRelationDetail>;
+  /** Exact source relation observations; no Host adoption or execution authority. */
+  tdmsRelationDetails?: ReadonlyMap<string, SuiteTdmsRelationDetail>;
   notices: string[];
   workRef: string | null;
   /** True only when the selected work is older than the current work. */

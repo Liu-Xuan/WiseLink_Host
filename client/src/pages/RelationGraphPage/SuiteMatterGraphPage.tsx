@@ -1,3 +1,4 @@
+import SuiteTdmsSourceLayer from './SuiteTdmsSourceLayer';
 import { activateGraphLayoutSession } from './suite-graph-layout-memory';
 import { suiteDocumentPerspective } from './suite-document-perspective';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
@@ -409,12 +410,15 @@ function MatterGraphContent({
     ? ['matter', 'documents']
     : ['matter', 'documents', 'domain', 'panorama'];
   return (
-    <SuiteMatterGraphView
+    <SuiteTdmsSourceLayer read={displayRead} matterId={matterId} workRef={workRef} session={session}
+      allowCurrentSources={currentSourcesAllowed} onAccessRejected={read.refresh}
+      openDocument={version => open(`/document-versions/${encodeURIComponent(version)}`)}>
+    {(sourceRead, openSource) => <SuiteMatterGraphView
       key={navigation.key}
       initialState={navigation.state}
       layoutScope={read.graph?.workRef ? JSON.stringify([session, matterId, read.graph.workRef]) : undefined}
       onStateChange={handleStateChange}
-      read={displayRead}
+      read={sourceRead}
       perspectiveNotice={combinedNotice}
       perspectiveError={Boolean(directoryPage?.error)}
       onRetryPerspective={directoryPage?.retry}
@@ -434,7 +438,10 @@ function MatterGraphContent({
       onOpenWiki={openWiki}
       onOpenProcess={openProcess}
       onLocateEvidence={locateEvidence}
-      onOpenTarget={openTarget}
+      onOpenTarget={target => {
+        if (target.kind === 'tdms-record') openSource(target.sourceRevisionRef);
+        else if (target.kind !== 'tdms-unresolved') openTarget(target);
+      }}
       onOpenDocumentNeighborhood={currentSourcesAllowed ? target => {
         const version = target.kind === 'catalog-document' ? target.entry.document.documentVersionId
           : target.kind === 'document' ? target.documentVersionId
@@ -445,6 +452,7 @@ function MatterGraphContent({
         persistState(displayState.current);
         navigate(`/graph?${documentGraphReadingParams(version, reader, {})}`);
       } : undefined}
-    />
+    />}
+    </SuiteTdmsSourceLayer>
   );
 }

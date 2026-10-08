@@ -1,3 +1,5 @@
+import TdmsGraphSourceEntry from '@client/src/features/tdms-source/TdmsGraphSourceEntry';
+import { TDMS_SOURCE_UI_ENABLED } from '@client/src/features/tdms-source/tdms-source-enabled';
 import SuiteLibraryGraphPage from './SuiteLibraryGraphPage';
 import { readLibraryGraphEntry } from './library-graph-route';
 import SuiteDocumentGraphPage from './SuiteDocumentGraphPage';
@@ -838,6 +840,14 @@ function LegacyRelationGraphContent({
         </div>
       </header>
       {renderModeContent()}
+      {TDMS_SOURCE_UI_ENABLED && !injectedProjection && status === 'READY' && response &&
+        (pinnedWorkRef || response.workItem.currentJobAidWorkRevisionRef) ? <TdmsGraphSourceEntry
+          documentVersionId={response.document.documentVersionId}
+          savedWork={{ subjectKind: 'WORK_ITEM', subjectId: effectiveWorkItemId,
+            workRef: pinnedWorkRef || response.workItem.currentJobAidWorkRevisionRef! }}
+          onAccessRejected={() => { requestGenerationRef.current++; setProjectionState(null); setSelectedNode(null); setStatus('BLOCKED'); }}
+          openDocument={version => navigate(`/document-versions/${encodeURIComponent(version)}`)}
+        /> : null}
     </div>
   );
 }
