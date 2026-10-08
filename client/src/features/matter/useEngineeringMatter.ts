@@ -34,6 +34,11 @@ interface EngineeringMatterQueryIdentity {
   sessionGeneration: number;
 }
 
+function sameMatterIdentity(a: EngineeringMatterQueryIdentity, b: EngineeringMatterQueryIdentity): boolean {
+  return a.appId === b.appId && a.tenantId === b.tenantId &&
+    a.actorId === b.actorId && a.sessionGeneration === b.sessionGeneration;
+}
+
 export interface EngineeringMatterReadState {
   authorizedSessionGeneration: number | null;
   data: EngineeringMatterWorkspaceRead | null;
@@ -106,24 +111,32 @@ export default function useEngineeringMatter(
       : null;
   const refresh = useCallback(async (): Promise<void> => {
     if (!enabled) return;
-    if (identityQuery.data && !identityUnavailable) {
-      const refreshed = await workspaceQuery.refetch({ cancelRefetch: true });
+    // A consecutive refresh still starts a new exact read; fresh identity runs
+    // alongside it. A changed tenant never consumes this prior-scope result.
+    const priorIdentity = identityQuery.data;
+    const priorRead = priorIdentity && !identityQuery.error
+      ? workspaceQuery.refetch({ cancelRefetch: true }) : null;
+    void priorRead?.catch(() => undefined);
+    const checked = await identityQuery.refetch({ cancelRefetch: false });
+    if (checked.error) throw checked.error;
+    const authorizedIdentity = checked.data;
+    if (!authorizedIdentity) return;
+    if (priorRead && priorIdentity && sameMatterIdentity(priorIdentity, authorizedIdentity)) {
+      const refreshed = await priorRead;
       if (refreshed.error) throw refreshed.error;
+      if (refreshed.data?.kind === 'rejected') throw refreshed.data.error;
+      if (refreshed.data?.kind !== 'readable') throw new Error('事项授权读回尚未完成。');
       return;
     }
-    const checked = !identityQuery.data || identityQuery.error
-      ? await identityQuery.refetch({ cancelRefetch: true }) : null;
-    if (checked?.error) throw checked.error;
-    const authorizedIdentity = checked?.data ?? identityQuery.data;
-    if (!authorizedIdentity) return;
-    await queryClient.fetchQuery({
+    const refreshed = await queryClient.fetchQuery({
       queryKey: engineeringMatterWorkspaceQueryKey(authorizedIdentity, effectiveMatterId),
       queryFn: ({ signal }) => readMatterResource(
         () => getEngineeringMatterWorkspace(effectiveMatterId, signal), sessionGeneration),
       staleTime: 0,
     });
-  }, [enabled, effectiveMatterId, identityQuery.data, identityQuery.error,
-    identityQuery.refetch, identityUnavailable, workspaceQuery.refetch, queryClient, sessionGeneration]);
+    if (refreshed.kind === 'rejected') throw refreshed.error;
+  }, [enabled, effectiveMatterId, identityQuery.data, identityQuery.error, identityQuery.refetch,
+    workspaceQuery.refetch, queryClient, sessionGeneration]);
   return {
     data,
     authorizedSessionGeneration: data && result?.kind === 'readable'
@@ -203,24 +216,30 @@ export function useEngineeringMatterWorkingRevision(
         : null;
   const refresh = useCallback(async (): Promise<void> => {
     if (!queryEnabled) return;
-    if (identityQuery.data && !identityUnavailable) {
-      const refreshed = await revisionQuery.refetch({ cancelRefetch: true });
+    const priorIdentity = identityQuery.data;
+    const priorRead = priorIdentity && !identityQuery.error
+      ? revisionQuery.refetch({ cancelRefetch: true }) : null;
+    void priorRead?.catch(() => undefined);
+    const checked = await identityQuery.refetch({ cancelRefetch: false });
+    if (checked.error) throw checked.error;
+    const authorizedIdentity = checked.data;
+    if (!authorizedIdentity) return;
+    if (priorRead && priorIdentity && sameMatterIdentity(priorIdentity, authorizedIdentity)) {
+      const refreshed = await priorRead;
       if (refreshed.error) throw refreshed.error;
+      if (refreshed.data?.kind === 'rejected') throw refreshed.data.error;
+      if (refreshed.data?.kind !== 'readable') throw new Error('事项授权读回尚未完成。');
       return;
     }
-    const checked = !identityQuery.data || identityQuery.error
-      ? await identityQuery.refetch({ cancelRefetch: true }) : null;
-    if (checked?.error) throw checked.error;
-    const authorizedIdentity = checked?.data ?? identityQuery.data;
-    if (!authorizedIdentity) return;
-    await queryClient.fetchQuery({
+    const refreshed = await queryClient.fetchQuery({
       queryKey: engineeringMatterWorkingRevisionQueryKey(authorizedIdentity, effectiveMatterId, effectiveWorkRef),
       queryFn: ({ signal }) => readMatterResource(
         () => getEngineeringMatterWorkingRevision(effectiveMatterId, effectiveWorkRef, signal), sessionGeneration),
       staleTime: 0,
     });
-  }, [queryEnabled, effectiveMatterId, effectiveWorkRef, identityQuery.data,
-    identityQuery.error, identityQuery.refetch, identityUnavailable, revisionQuery.refetch, queryClient, sessionGeneration]);
+    if (refreshed.kind === 'rejected') throw refreshed.error;
+  }, [queryEnabled, effectiveMatterId, effectiveWorkRef, identityQuery.data, identityQuery.error,
+    identityQuery.refetch, revisionQuery.refetch, queryClient, sessionGeneration]);
   return {
     data,
     authorizedSessionGeneration: data && result?.kind === 'readable'
@@ -255,29 +274,41 @@ export function useEngineeringMatterQueryIdentity(
   sessionGeneration: number,
 ) {
   const { currentUser } = useCurrentUserSession();
+  const queryClient = useQueryClient();
   const appId: string = currentAppId();
   const actorId: string = currentUser.user_id?.trim() ?? '';
+  const identityKey = [
+    ...ENGINEERING_MATTER_QUERY_ROOT,
+    'identity', appId, actorId, sessionGeneration,
+  ] as const;
   const identityQuery = useQuery({
-    queryKey: [
-      ...ENGINEERING_MATTER_QUERY_ROOT,
-      'identity',
-      appId,
-      actorId,
-      sessionGeneration,
-    ],
+    queryKey: identityKey,
     queryFn: async (): Promise<EngineeringMatterQueryIdentity> => {
-      const identity = await getCanonicalHostIdentityContext();
+      const identity = await getCanonicalHostIdentityContext({ fresh: true });
       assertCurrentSession(sessionGeneration);
-      return {
+      const next: EngineeringMatterQueryIdentity = {
         appId,
         tenantId: identity.tenantId,
         actorId: identity.userId,
         sessionGeneration,
       };
+      const previous = queryClient.getQueryData<EngineeringMatterQueryIdentity>(identityKey);
+      if (previous && !sameMatterIdentity(previous, next)) {
+        const oldResource = (key: readonly unknown[]) =>
+          key[0] === ENGINEERING_MATTER_QUERY_ROOT[0] &&
+          key[1] === ENGINEERING_MATTER_QUERY_ROOT[1] && key[2] !== 'identity' &&
+          key[3] === previous.appId && key[4] === previous.tenantId &&
+          key[5] === previous.actorId && key[6] === previous.sessionGeneration;
+        await queryClient.cancelQueries({ predicate: query => oldResource(query.queryKey) });
+        queryClient.removeQueries({ predicate: query => oldResource(query.queryKey) });
+        assertCurrentSession(sessionGeneration);
+      }
+      return next;
     },
     enabled,
     staleTime: MATTER_STALE_TIME_MS,
     gcTime: MATTER_GC_TIME_MS,
+    refetchOnWindowFocus: 'always',
     retry: false,
   });
   return {

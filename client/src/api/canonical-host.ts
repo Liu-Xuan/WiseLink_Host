@@ -203,9 +203,10 @@ export function clearCanonicalHostClientSessionCache(): void {
   officialOauthRead = null;
 }
 
-export async function getCanonicalHostIdentityContext(): Promise<CanonicalHostIdentityContext> {
+/** A foreground authorization recheck must not reuse an earlier tenant observation. */
+export async function getCanonicalHostIdentityContext(options?: { fresh?: boolean }): Promise<CanonicalHostIdentityContext> {
   const generation = clientSessionGeneration;
-  if (identityContextRead?.generation === generation) {
+  if (!options?.fresh && identityContextRead?.generation === generation) {
     return identityContextRead.promise;
   }
 
@@ -218,7 +219,8 @@ export async function getCanonicalHostIdentityContext(): Promise<CanonicalHostId
         timeout: 45_000,
       });
       if (response.status === 401 || response.status === 403) {
-        requireCanonicalHostClientAuthentication(generation);
+        if (generation === clientSessionGeneration && identityContextRead?.promise === cachedPromise)
+          requireCanonicalHostClientAuthentication(generation);
         throw new Error('CANONICAL_HOST_IDENTITY_REQUIRED');
       }
       if (response.status < 200 || response.status >= 300) {
@@ -241,7 +243,8 @@ export async function getCanonicalHostIdentityContext(): Promise<CanonicalHostId
       return { ...response.data, userId, tenantId };
     })
     .catch((cause: unknown) => {
-      if (responseStatus(cause) === 401) {
+      if (responseStatus(cause) === 401 &&
+        generation === clientSessionGeneration && identityContextRead?.promise === cachedPromise) {
         requireCanonicalHostClientAuthentication(generation);
       }
       if (identityContextRead?.promise === cachedPromise) {
